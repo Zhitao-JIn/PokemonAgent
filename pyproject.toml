@@ -1,0 +1,30 @@
+[project]
+name = "pokemon-agent"
+version = "0.1.0"
+description = "Harness-driven Pokemon agent — prototype"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.6",
+    "langgraph>=0.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
+ignore = ["ANN101", "ANN102"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
