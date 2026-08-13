@@ -13,6 +13,24 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
+class Task(BaseModel):
+    """一个有明确成败判据的任务。**episode 的边界就是任务的边界。**
+
+    为什么不用"通关"做 episode：通关是几千步、只产出一个 0/1 结果，
+    机制三的蒙特卡洛回填折扣一路乘下去，回填到前期步骤上几乎是噪声；
+    评测也只能报"通关了没有"这一个二值数字。任务级则能报成功率、失败模式分布、
+    有记忆 vs 无记忆的对比。
+
+    但任务有**下界**：必须长到单靠上下文装不下、必须跨任务复用经验才做得好，
+    否则记忆架构就失去了存在理由。"打赢二号道馆"合适，"和 NPC 说句话"不合适。
+    """
+
+    task_id: str = Field(description="任务标识，同一任务的多次尝试共用它")
+    goal: str = Field(description="给 LLM 读的目标描述，会进 prompt")
+    success_criteria: str = Field(description="成败判据的人类可读描述；判定由 world 实现")
+    max_steps: int = Field(description="步数上限，超出即判失败。> 0")
+
+
 class Observation(BaseModel):
     """大脑在某一步看到的世界。
 
@@ -21,12 +39,17 @@ class Observation(BaseModel):
     """
 
     step: int = Field(description="本 episode 内的第几步，从 0 开始")
+    goal: str = Field(description="当前任务目标。大脑必须知道自己在干嘛，否则无从选择动作")
     summary: str = Field(description="给 LLM 读的自然语言状态描述")
     facts: dict[str, str] = Field(
         default_factory=dict,
         description="结构化状态字段（位置、HP、持有道具…）。机制一的 state key 未来从这里派生",
     )
-    done: bool = Field(default=False, description="episode 是否已终止")
+    done: bool = Field(default=False, description="episode 是否已终止（成功、失败或超步数）")
+    success: bool = Field(
+        default=False,
+        description="任务是否达成。**只在 done 为 True 时有意义**，否则恒为 False",
+    )
 
 
 class ActionSpace(BaseModel):
@@ -70,12 +93,34 @@ class ToolResult(BaseModel):
 class MemoryEntry(BaseModel):
     """一条记忆。
 
-    本阶段只有 episodic（这一局发生了什么）。semantic / 值回填留到机制三。
+    本阶段只有 **episodic**：这次任务尝试里发生了什么，是自己跑出来的轨迹。
+    作用域 = 一个 episode = 一次任务尝试。
+
+    不要和 **semantic** 混淆：semantic 是**外部领域知识**（"水属性克制火属性"、
+    某道馆馆主用什么属性），来自攻略/图鉴，不是自己跑出来的，也不随 episode 结束而失效。
+    跨任务复用的成功经验既不是 semantic，也应当先归到 episodic 的聚合，
+    或晋升后进 skill library（机制二）。
+
+    semantic 记忆与值回填都留到后面的机制，本阶段不做。
     """
 
     key: str = Field(description="state abstraction 产出的语义 key，本阶段用 step 占位")
     content: str = Field(description="记忆正文")
     step: int = Field(description="写入时所处的步数")
+
+
+class EpisodeOutcome(BaseModel):
+    """一次任务尝试的最终结果。
+
+    这是评测与机制三的输入：成功率按 task_id 分组统计，
+    MC 回填拿 success 作为 episode 的最终回报沿轨迹往回传。
+    """
+
+    episode_id: str = Field(description="本次尝试的标识")
+    task_id: str = Field(description="尝试的是哪个任务")
+    success: bool
+    steps: int = Field(description="实际用了多少步")
+    reason: str = Field(description="终止原因：success / failed / max_steps_exceeded / error")
 
 
 class EventType(str, Enum):
