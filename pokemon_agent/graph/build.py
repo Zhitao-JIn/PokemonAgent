@@ -53,15 +53,20 @@ def build_graph(brain: ReActBrain, harness: MockHarness) -> CompiledStateGraph:
     """
 
     def observe(state: AgentState) -> dict[str, Any]:
-        """取观测与动作空间。第一步顺便开 episode。"""
+        """取观测与动作空间。第一步顺便开 episode。
+
+        进到这里时 episode 必然未结束，两条入边都保证了：
+        图入口走 `start_episode()`，它 assert 了 step == 0 且 done 为 False；
+        回边由 `should_continue()` 判过 done。所以这里**不做 done 分支**——
+        那段代码永远不执行，而且它返回的 `action_space=None` 会让下一个节点的
+        assert 崩在更远的地方，是个假防御。
+        """
         if not state.started:
             obs = harness.start_episode(state.episode_id, state.task)
         else:
             obs = harness.perceive()
 
-        # episode 已结束就不再问动作空间——问了也没用，且 world 会拒绝继续 step。
-        if obs.done:
-            return {"observation": obs, "started": True, "action_space": None}
+        assert not obs.done, "observe() entered on a finished episode (routing bug)"
         return {"observation": obs, "started": True, "action_space": harness.get_action_space()}
 
     def think(state: AgentState) -> dict[str, Any]:

@@ -56,6 +56,9 @@ class MockHarness:
         self._memories: list[MemoryEntry] = []
         # 记住最近一次给出的动作空间，用来在 execute() 里执行 precondition。
         self._last_space: ActionSpace | None = None
+        # 以及那次动作空间是在哪一步给出的——ACT 事件要用它，
+        # 才能和同一步的 THINK / COST 落在同一个 step 上。两者同生同灭。
+        self._last_step: int | None = None
 
     # ---- episode 生命周期（harness 自己的接口，不属于 ToolPort）----
 
@@ -71,6 +74,7 @@ class MockHarness:
         self._episode_id = episode_id
         self._task = task
         self._last_space = None
+        self._last_step = None
 
         obs = self._world.reset(task)
         self._trace.append(episode_id, obs.step, EventType.OBSERVE, {"summary": obs.summary})
@@ -126,7 +130,10 @@ class MockHarness:
             descriptions={n: self._descriptions.get(n, "") for n in names},
         )
         # 记下来，execute() 的 precondition 要用它。
+        # step 一并记住：复用这里已经取到的 obs，不额外调 observe()——
+        # 真实模拟器上 observe() 是「截图 + VLM」，为记一条日志再感知一次太贵。
         self._last_space = space
+        self._last_step = obs.step
         return space
 
     def execute(self, action: Action) -> ToolResult:
@@ -141,15 +148,22 @@ class MockHarness:
             f"execute() got {action.name!r} outside the action space {self._last_space.names}"
         )
 
+        assert self._last_step is not None, "_last_step must be set together with _last_space"
+
         result = self._world.step(action)
         self._trace.append(
             self._episode_id,
-            result.observation.step if result.observation else 0,
+            # **执行前**的 step，不是执行后的。这一步的 THINK / COST / MEMORY_WRITE
+            # 用的都是执行前的值，ACT 必须和它们同桶——否则按 step 聚合时
+            # （失败模式统计、replay 重建、单步成本）动作会一律落进下一桶，
+            # 不报错，只是悄悄算歪。
+            self._last_step,
             EventType.ACT,
             {"action": action.name, "ok": str(result.ok), "message": result.message},
         )
         # 世界推进了，上一次的动作空间随即失效——下一步必须重新问。
         self._last_space = None
+        self._last_step = None
         return result
 
     def memory_query(self, query: str, limit: int = 5) -> list[MemoryEntry]:

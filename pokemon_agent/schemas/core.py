@@ -68,16 +68,53 @@ class ActionSpace(BaseModel):
         return name in self.names
 
 
+MAX_RATIONALE = 3
+"""一个动作最多带几条论据。
+
+抽成常量是因为它有两个执行点——`Action` 的字段约束（数据契约）和 `_parse`
+（外部输入校验）。两处必须同源，否则模型给 4 条时会得到一个自相矛盾的系统：
+解析器放行、构造时炸。
+"""
+
+
 class Action(BaseModel):
     """大脑选出的一个动作。
 
-    `thought` 一起存进来是刻意的：ReAct 的推理过程要进 trace，
-    否则 replay 时只知道选了什么、不知道为什么选。
+    它带着三样东西过来，服务于三个不同的消费方，**不要合并**：
+
+    - `name` / `args` —— 给世界执行。
+    - `thought` —— 完整推理，**只进 trace**，不参与任何后续决策。
+      不设长度上限：它的长度就是模型这一步的算力，压缩它压的是思考本身，
+      不是日志体积。
+    - `rationale` —— 最能支持这个动作的论据，**进 memory**，会被未来的步骤检索回去。
+
+    为什么进记忆的是论据而不是结论：结论（"所以该捡药水"）可以从 `name` 反推，
+    存进去等于把同一件事存两遍；论据（"地上有药水而我手上没有"）才是 `name`
+    里没有的信息。更要紧的是论据是**适用条件**——未来取回这条经验时可以检查
+    它现在还成不成立，结论做不到这件事。
+
+    论据一律按**有时效**处理，不区分持久与否。持久知识（"馆主是火属性"）的
+    跨 episode 复用属于 skill library（机制二），本阶段不做。
     """
 
     name: str = Field(description="动作名，必须来自当时的 ActionSpace")
-    args: dict[str, str] = Field(default_factory=dict, description="动作参数")
-    thought: str = Field(default="", description="选择该动作的推理，仅用于 trace 与调试")
+    args: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "动作参数。**当前没有任何消费方**——所有动作都是无参的，world 只按 name 分发。"
+            "为宏动作（带参数的按键序列）预留"
+        ),
+    )
+    thought: str = Field(
+        min_length=1,
+        description="选择该动作的完整推理。只进 trace，不进 memory，不影响后续决策",
+    )
+    rationale: list[str] = Field(
+        min_length=1,
+        max_length=MAX_RATIONALE,
+        description=f"最能支持该动作的论据，1-{MAX_RATIONALE} 条。"
+        "进 memory；经验能否迁移全看它",
+    )
 
 
 class ToolResult(BaseModel):

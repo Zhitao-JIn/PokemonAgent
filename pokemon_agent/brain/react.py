@@ -15,7 +15,14 @@ from pokemon_agent.errors import IllegalAction, MaxRetriesExceeded, ParseFailure
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.interfaces.tools import ToolPort
 from pokemon_agent.interfaces.trace import TracePort
-from pokemon_agent.schemas.core import Action, ActionSpace, EventType, MemoryEntry, Observation
+from pokemon_agent.schemas.core import (
+    MAX_RATIONALE,
+    Action,
+    ActionSpace,
+    EventType,
+    MemoryEntry,
+    Observation,
+)
 
 _PROMPT_TEMPLATE = """你在玩神奇宝贝。按 ReAct 的方式思考并选出下一个动作。
 
@@ -36,7 +43,13 @@ _PROMPT_TEMPLATE = """你在玩神奇宝贝。按 ReAct 的方式思考并选出
 
 ## 输出格式
 只输出一个 JSON 对象，不要有其他文字：
-{{"thought": "你的推理", "action": "动作名", "args": {{}}}}
+{{"thought": "你的完整推理", "rationale": ["论据一"], "action": "动作名", "args": {{}}}}
+
+- **thought**：完整推理，想多长都可以。它只用于记录，不会进入以后的决策。
+- **rationale**：1-{max_rationale} 条，写清楚「为什么这个动作在当前状态下成立」的依据。
+  不要复述动作本身（"所以该往前走"不是论据）。
+  **这些会被存进记忆，将来在相似状态下取回**——所以要写成以后还能判断真假的样子，
+  例如"地上有药水而我手上没有"，而不是"我觉得这样比较好"。
 """
 
 
@@ -136,12 +149,17 @@ class ReActBrain:
         前置条件：result 非空。
         本阶段记忆内容是朴素的自然语言拼接，key 用 step 占位——
         机制一接进来时换成 state abstraction 的语义 key，**这个方法的签名不变**。
+
+        写进去的是 `rationale` 而不是 `thought`：完整推理留在 trace 里，
+        进记忆的只有论据。这条经验因此是**自带标签**的——"我以为 P，结果 R"，
+        取回时反例就贴在同一行，一条错误论据不会被当成知识使用。
         """
         assert result, "remember() got an empty result"
 
+        because = "；".join(action.rationale)
         entry = MemoryEntry(
             key=str(obs.step),
-            content=f"在「{obs.summary}」时选择了 {action.name}，结果：{result}",
+            content=f"在「{obs.summary}」时，因为{because}，选择了 {action.name}，结果：{result}",
             step=obs.step,
         )
         self._tools.memory_write(entry)
@@ -172,7 +190,12 @@ class ReActBrain:
             f"- {name}: {space.descriptions.get(name, '（无说明）')}" for name in space.names
         )
         return _PROMPT_TEMPLATE.format(
-            goal=obs.goal, summary=obs.summary, facts=facts, memories=recalled, actions=actions
+            goal=obs.goal,
+            summary=obs.summary,
+            facts=facts,
+            memories=recalled,
+            actions=actions,
+            max_rationale=MAX_RATIONALE,
         )
 
     def _parse(self, text: str, space: ActionSpace) -> Action:
@@ -208,5 +231,44 @@ class ReActBrain:
         return Action(
             name=name,
             args={str(k): str(v) for k, v in args.items()},
-            thought=str(raw.get("thought", "")),
+            thought=self._parse_thought(text, raw),
+            rationale=self._parse_rationale(text, raw),
         )
+
+    @staticmethod
+    def _parse_thought(text: str, raw: dict[str, object]) -> str:
+        """取出推理。缺失是一类**单独的** ParseFailure。
+
+        reason 用独立字符串而不是新增异常类型：replay 按 reason 聚合就能把
+        "格式坏"和"不肯推理"拆开，够用了，不值得为它多一个异常类。
+        """
+        thought = raw.get("thought")
+        if not isinstance(thought, str) or not thought.strip():
+            raise ParseFailure(text, "missing 'thought' field")
+        return thought.strip()
+
+    @staticmethod
+    def _parse_rationale(text: str, raw: dict[str, object]) -> list[str]:
+        """取出论据。
+
+        容忍单条写成裸字符串（`"rationale": "..."`），理由同 ```json 包裹：
+        这是模型常见的格式偏差，语义无歧义，为它跑一轮重试不划算。
+
+        **超过上限走 ParseFailure 而不是截断。** 模型认为有 4 条是承重的，
+        悄悄丢掉第 4 条就是替它做了一个没有记录的决定；打回去重试至少留下痕迹。
+        代价是这类重试要花 token——如果实测下来它占比很高，再改成截断也不迟。
+        """
+        rationale = raw.get("rationale")
+        if isinstance(rationale, str):
+            rationale = [rationale]
+        if not isinstance(rationale, list):
+            raise ParseFailure(text, "missing 'rationale' field")
+
+        items = [str(r).strip() for r in rationale if str(r).strip()]
+        if not items:
+            raise ParseFailure(text, "missing 'rationale' field")
+        if len(items) > MAX_RATIONALE:
+            raise ParseFailure(
+                text, f"too many rationale items ({len(items)} > {MAX_RATIONALE})"
+            )
+        return items

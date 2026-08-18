@@ -36,9 +36,18 @@ class FakeLLM:
 
     @classmethod
     def scripted(cls, steps: list[tuple[str, str]], *, loop: bool = False) -> FakeLLM:
-        """从 (thought, action) 序列构造，省得测试里手写 JSON。"""
+        """从 (thought, action) 序列构造，省得测试里手写 JSON。
+
+        `rationale` 自动取 thought 本身：脚本化的 mock 里"想法"就是"理由"，
+        没有第三方信息可编。**要测 rationale 本身的行为，用原始文本构造方式**
+        （`FakeLLM([...])`），别在这里加参数——那会让所有只关心动作序列的测试
+        都被迫写一遍论据。
+        """
         texts = [
-            json.dumps({"thought": thought, "action": action, "args": {}}, ensure_ascii=False)
+            json.dumps(
+                {"thought": thought, "rationale": [thought], "action": action, "args": {}},
+                ensure_ascii=False,
+            )
             for thought, action in steps
         ]
         return cls(texts, loop=loop)
