@@ -50,3 +50,30 @@ class MaxRetriesExceeded(AgentError):
         super().__init__(f"gave up after {attempts} attempts, last: {last_reason}")
         self.attempts = attempts
         self.last_reason = last_reason
+
+
+class ImageNotDelivered(AgentError):
+    """图片没有真的送到模型，但网关装作一切正常。
+
+    实测于 DashScope 的 Anthropic 兼容端点：带 image block 的请求被接受、不报错、
+    返回一段读起来合理的描述，而模型压根没收到图——描述是从提示词里的几个字
+    凭空编出来的。
+
+    **走异常而不是 assert**：这是"外部世界不配合"，不是调用方违约（CLAUDE.md 第八节）。
+    调用方没做错任何事，是网关的行为。
+
+    **单独成一类而不是并进别的错误**：它在 replay 里是独立的失败模式，
+    而且是唯一一个"不修就会让全部实验数据静默作废"的那种。
+    统计里必须一眼能看见它，混进 ParseFailure 就被淹了。
+
+    判据是 token 数不是回答内容：模型怎么答不能说明图有没有到，
+    输入 token 塌回纯文本量级就是铁证。
+    """
+
+    def __init__(self, input_tokens: int, floor: int) -> None:
+        super().__init__(
+            f"image was silently dropped: input_tokens={input_tokens} < floor={floor}; "
+            "the model never saw the image and its answer is a hallucination"
+        )
+        self.input_tokens = input_tokens
+        self.floor = floor
