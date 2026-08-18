@@ -13,17 +13,21 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.core import Action, Observation, ToolResult
+from pokemon_agent.schemas.core import Action, Observation, Task, ToolResult
 
 
 @runtime_checkable
 class WorldPort(Protocol):
     """一个可推进、可观测的世界。"""
 
-    def reset(self) -> Observation:
-        """重置到初始状态并返回首个观测。
+    def reset(self, task: Task) -> Observation:
+        """按任务重置到初始状态并返回首个观测。
 
-        后置条件：返回的 observation.step == 0 且 done 为 False。
+        任务由外部传入而非 world 自选：**同一个世界要能跑不同任务**，
+        否则没法按 task_id 分组统计成功率。
+
+        前置条件：task.max_steps > 0。
+        后置条件：返回的 observation.step == 0、done 为 False、goal == task.goal。
         """
         ...
 
@@ -42,8 +46,10 @@ class WorldPort(Protocol):
     def step(self, action: Action) -> ToolResult:
         """执行动作，推进世界。
 
-        前置条件：action.name 在 all_actions() 中。
-        后置条件：若返回的 observation 非空，其 step 等于调用前的 step + 1。
+        前置条件：action.name 在 all_actions() 中；且当前 episode 未结束（done 为 False）。
+        后置条件：若返回的 observation 非空，其 step 等于调用前的 step + 1；
+            达成 task 的成败判据或用满 max_steps 时，observation.done 为 True。
+            **成败判定属于 world**——只有它知道游戏状态是否满足判据。
         失败：动作合法但没成功走 ok=False，不抛异常；
             action 不在 all_actions() 中是**调用方的 bug**，assert 拦下。
         """

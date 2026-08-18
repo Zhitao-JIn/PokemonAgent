@@ -31,7 +31,8 @@ class ToolPort(Protocol):
     def perceive(self) -> Observation:
         """取当前观测。
 
-        后置条件：返回的 observation.step 单调不减（同一步内多次调用返回相同 step）。
+        后置条件：返回的 observation.step 单调不减（同一步内多次调用返回相同 step）；
+            observation.goal 是当前 episode 所属任务的目标。
         注意这是**幂等**的：只读，不推进世界。推进只发生在 execute()。
         """
         ...
