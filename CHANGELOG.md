@@ -3,6 +3,108 @@
 > 最新在最上。每条固定四段：改了什么 / 为什么这么改 / 取舍 / 影响面。
 > 这是给人读的决策记录，不是 git log 的复制品。
 
+## 2026-08-13 —— 更正：harness 与 trace 也是 mock，移进 mocks/
+
+**改了什么**
+`harness/harness.py` → `mocks/mock_harness.py`（类名 `Harness` → `MockHarness`），
+`harness/trace.py` → `mocks/mock_trace.py`（`InMemoryTrace` → `MockTrace`）。
+`harness/` 包不再使用（挂载盘不允许删除，其 `__init__.py` 已移到 `_to_delete/`，
+请在本地删掉这个空目录和 `_to_delete/`）。两个模块的 docstring 重写，明确列出它们缺什么。
+
+**为什么这么改**
+上一条我用"是否完整实现契约"当判据，把 InMemoryTrace 归成了真实实现。判据用错了。
+**这一阶段的范围是"只做大脑，其余全部 mock"**，harness 和 trace 都在"其余"里：
+
+- MockHarness 的 masking 是写死的 if 分支（不是从状态表查）、记忆检索是字符集重叠
+  （没有 state abstraction、没有值回填），六件套只有 trace 一件，
+  缺权限确认、沙箱、成本控制、checkpoint、replay，动作空间不会增长。
+- MockTrace 只是个内存列表，不落盘、不推流、不做 checkpoint 事件源、不按失败类型聚合。
+
+它们后面是要被**重写**的，不是"换个存储介质"。放在 `harness/` 会让人以为那是成品，
+导致后面接着往上堆而不是推倒重来。
+
+**取舍**
+保留"替身也严格遵守契约"这一点（MockTrace 的 event_id 仍然真的单调、
+MockHarness 的 precondition 断言一个没少）。替身可以简陋，不能违约——
+否则换成真实实现时上层会崩，mock 的意义就没了。这条写进了两个文件的 docstring。
+
+`mocks/` 现在有四个文件（fake_llm / mock_world / mock_harness / mock_trace），
+对照之下 `brain/` 只有一个 —— 这个比例恰好说明了当前阶段的范围。
+
+**影响面**
+纯搬迁与改名，9 个测试仍全绿，ruff 无告警。
+
+## 2026-08-13 —— 最小闭环跑通（mock + harness + 图装配 + 测试）
+
+**改了什么**
+新增 `mocks/fake_llm.py`、`mocks/mock_world.py`、`harness/trace.py`（InMemoryTrace）、
+`harness/harness.py`、`graph/build.py`，以及 `tests/test_react.py`（5 个单元测试）和
+`tests/test_episode.py`（4 个集成测试）。9 个测试全绿，ruff 无告警。
+
+**为什么这么改**
+到这一步"最小闭环"才成立：一个任务从头跑到尾、全程有 trace、失败路径有计数。
+几个位置的决定：
+
+- **InMemoryTrace 放 `harness/` 而不是 `mocks/`**。判据：实现的是完整契约就进 harness，
+  只为让流程跑通的替身才进 mocks。它的 event_id 真的单调、replay 真的能回放，
+  和将来的 FileTrace 只差存储介质，而且测试会一直用它（测试不该往磁盘写东西）。
+- **masking 在 harness，成败判定在 world**。掩码是策略（什么时候允许买东西是设计决定），
+  判定是能力（只有世界知道状态是否满足判据）。这条边界写进了 Harness 的模块 docstring。
+- **`execute()` 前要先 `get_action_space()`**，harness 记住最近一次给出的空间做 precondition，
+  执行后立即置空——世界推进了，上一次的动作空间就失效了。
+- **AgentState 只存流转数据，不存业务状态**。业务状态在 harness 里。
+  因为图状态会被 LangGraph 复制、合并、快照，把记忆或世界塞进去会产生意料之外的副本。
+- **FakeLLM 支持返回坏 JSON 和 loop 模式**。解析失败与重试是大脑最重要的一条分支，
+  没有能制造失败的 mock 就测不到它。
+
+**取舍**
+- `memory_query` 用字符集重叠打分，粗糙。故意不上 embedding：
+  换向量检索是机制一的事，现在上会掩盖"检索策略属于实现方"这个分层是否真的成立。
+- `MockWorld` 的 DEMO_TASK 只有 12 步上限，**不满足 Task docstring 写的下界**
+  （必须长到上下文装不下）。代码注释里标了这一点：它只是让闭环跑起来的脚手架，
+  真实任务集要另行设计。
+- `build_demo()` 返回 harness 和 trace 三元组，比只返回图啰嗦。
+  但测试要读 trace 做断言，不返回就得从图里掏，那才是真的破坏封装。
+
+**影响面**
+全项目可运行。`pytest` 通过即表示：换真实模拟器只需换 `MockWorld`、
+换真实模型只需换 `FakeLLM`，brain 和 harness 一行不动。
+
+## 2026-08-13 —— episode 的边界从"通关"改成"一个任务"
+
+**改了什么**
+`schemas/core.py` 新增 `Task`（task_id / goal / success_criteria / max_steps）和
+`EpisodeOutcome`；`Observation` 加 `goal` 与 `success` 两个字段。
+`WorldPort.reset()` 改签名为 `reset(task)`，`step()` 的契约补上成败判定与终止条件。
+`ToolPort.perceive()` 后置条件补 goal。`ReActBrain` 的 prompt 加"当前任务目标"一节，
+`choose()` 入口增加两条 precondition（episode 未结束、goal 非空）。
+
+**为什么这么改**
+原来一个 episode = 一次通关，粒度太大，三处都出问题：
+
+1. **机制三拿不到信号**。通关是几千步只产出一个 0/1 结果，
+   MC 回填的折扣一路乘下去，回填到前期步骤上几乎是噪声。任务级几十到几百步才有梯度。
+2. **评测只能报二值结果**。任务级能报成功率、失败模式分布、有记忆 vs 无记忆的对比——
+   这才是"提升了多少"要的形态。
+3. **迭代周期以小时计**，每改一行都要跑一次通关才有反馈。
+
+**取舍**
+- **"长程"这个卖点会被稀释**：任务缩得太小，一个上下文窗口就装下了，记忆架构失去存在理由。
+  所以在 `Task` 的 docstring 里写死了下界：必须长到单靠上下文装不下、
+  必须跨任务复用经验才做得好。这条判据要在设计任务集时守住。
+- 采用两层结构：**episode = 一个任务**（回填与评测单位），**通关 = 一串 episode**（future work，不实现）。
+  额外收益是 episodic 记忆有了清晰的作用域：**一条轨迹 = 一个 episode = 一次任务尝试**，
+  MC 回填的边界与检索的相关性范围都由此确定。
+  （注意别把"跨任务复用的经验"叫 semantic —— semantic 是外部领域知识，
+  比如"水属性克制火属性"，来自攻略/图鉴而非自己跑出来的轨迹。
+  跨任务复用的成功经验属于 episodic 的聚合，或晋升后进 skill library。）
+- 成败判定放在 `WorldPort` 而不是 harness：只有世界知道游戏状态是否满足判据。
+  代价是 mock world 要实现判定逻辑。
+
+**影响面**
+接口签名变更（`reset`），但尚无实现，无返工。`Task` 与 `EpisodeOutcome` 是新增，
+`Observation` 的两个新字段有默认值，不破坏已有构造。
+
 ## 2026-08-13 —— 实现 ReActBrain（大脑，唯一的实现代码）
 
 **改了什么**
