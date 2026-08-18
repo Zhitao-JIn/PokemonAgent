@@ -15,6 +15,7 @@ from pokemon_agent.errors import IllegalAction, MaxRetriesExceeded, ParseFailure
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.interfaces.tools import ToolPort
 from pokemon_agent.interfaces.trace import TracePort
+from pokemon_agent.prompts import load as load_prompt
 from pokemon_agent.schemas.core import (
     MAX_RATIONALE,
     Action,
@@ -23,34 +24,6 @@ from pokemon_agent.schemas.core import (
     MemoryEntry,
     Observation,
 )
-
-_PROMPT_TEMPLATE = """你在玩神奇宝贝。按 ReAct 的方式思考并选出下一个动作。
-
-## 当前任务目标
-{goal}
-
-## 当前状态
-{summary}
-
-## 已知事实
-{facts}
-
-## 相关记忆
-{memories}
-
-## 可用动作（只能从中选一个）
-{actions}
-
-## 输出格式
-只输出一个 JSON 对象，不要有其他文字：
-{{"thought": "你的完整推理", "rationale": ["论据一"], "action": "动作名", "args": {{}}}}
-
-- **thought**：完整推理，想多长都可以。它只用于记录，不会进入以后的决策。
-- **rationale**：1-{max_rationale} 条，写清楚「为什么这个动作在当前状态下成立」的依据。
-  不要复述动作本身（"所以该往前走"不是论据）。
-  **这些会被存进记忆，将来在相似状态下取回**——所以要写成以后还能判断真假的样子，
-  例如"地上有药水而我手上没有"，而不是"我觉得这样比较好"。
-"""
 
 
 class ReActBrain:
@@ -81,6 +54,10 @@ class ReActBrain:
         self._trace = trace
         self._max_retries = max_retries
         self._memory_limit = memory_limit
+        # 构造时加载一次。持有它是为了 `sha` —— 每条 THINK 事件都带上它，
+        # 实验数据才说得清是哪一版 prompt 跑出来的。改了 prompt 不记版本，
+        # 前后两批数字就没法比。
+        self._prompt = load_prompt("decide_action")
 
     def choose(self, episode_id: str, obs: Observation, space: ActionSpace) -> Action:
         """选出下一步动作。
@@ -130,7 +107,12 @@ class ReActBrain:
                 episode_id,
                 obs.step,
                 EventType.THINK,
-                {"thought": action.thought, "action": action.name, "attempt": str(attempt)},
+                {
+                    "thought": action.thought,
+                    "action": action.name,
+                    "attempt": str(attempt),
+                    "prompt_sha": self._prompt.sha,
+                },
             )
             assert space.contains(action.name), f"brain returned {action.name!r} outside space"
             return action
@@ -189,7 +171,7 @@ class ReActBrain:
         actions = "\n".join(
             f"- {name}: {space.descriptions.get(name, '（无说明）')}" for name in space.names
         )
-        return _PROMPT_TEMPLATE.format(
+        return self._prompt.render(
             goal=obs.goal,
             summary=obs.summary,
             facts=facts,
