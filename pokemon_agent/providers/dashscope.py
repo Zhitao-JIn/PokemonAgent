@@ -8,7 +8,7 @@
 | 类 | Port | 模型 | 为什么 |
 |---|---|---|---|
 | `QwenText` | `LLMProvider` | qwen-plus | 有资源包抵扣（非思考模式，输入 ≤128K） |
-| `QwenVision` | `VisionProvider` | qwen3-vl-flash | 每步都调，要最便宜的；另有免费额度 |
+| `QwenVision` | `VisionProvider` | qwen3-vl-plus | flash 读不出格子级的几何，见 CHANGELOG |
 
 走 OpenAI 兼容端点而不是 Anthropic 兼容端点：后者实测会**静默丢弃图片**
 （见 `ImageNotDelivered`）。
@@ -28,6 +28,7 @@ import urllib.request
 from pokemon_agent.errors import ImageNotDelivered
 from pokemon_agent.interfaces.llm import Completion
 from pokemon_agent.interfaces.vision import VisionCompletion
+from pokemon_agent.vision.preprocess import ImageFilter, apply_all
 
 _DEFAULT_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
@@ -44,14 +45,24 @@ class _DashScopeBase:
         self,
         model: str,
         *,
+        temperature: float,
+        max_tokens: int = 1024,
         base_url: str | None = None,
         timeout: int = 90,
         max_attempts: int = 3,
     ) -> None:
+        """`temperature` 没有默认值，**必须由子类显式给出**。
+
+        走服务端默认值等于把一个影响全部实验结果的变量交给别人管，
+        而那个值是什么、会不会变，你我都不知道。两个子类各自定，理由见各自的类。
+        """
         assert model, "model must not be empty"
         assert max_attempts >= 1, f"max_attempts must be >= 1, got {max_attempts}"
+        assert 0.0 <= temperature <= 2.0, f"temperature out of range: {temperature}"
 
         self._model = model
+        self._temperature = temperature
+        self._max_tokens = max_tokens
         self._base = (base_url or os.environ.get("DASHSCOPE_BASE_URL") or _DEFAULT_BASE).rstrip("/")
         self._timeout = timeout
         self._max_attempts = max_attempts
@@ -73,6 +84,8 @@ class _DashScopeBase:
             f"{self._base}/chat/completions",
             data=json.dumps({
                 "model": self._model,
+                "temperature": self._temperature,
+                "max_tokens": self._max_tokens,
                 "messages": [{"role": "user", "content": content}],
             }).encode(),
             headers={
@@ -100,44 +113,130 @@ class _DashScopeBase:
             f"{type(last).__name__}: {last}"
         ) from last
 
+    def config(self) -> dict[str, str]:
+        """自报配置，进 run manifest。
+
+        实验可复现的前提是配置**被记下来**，而不是"当时应该是默认值吧"。
+        不含 key —— 它永远不进任何会被写出去的东西。
+        """
+        return {
+            "model": self._model,
+            "temperature": str(self._temperature),
+            "max_tokens": str(self._max_tokens),
+            "base_url": self._base,
+        }
+
     @staticmethod
-    def _unpack(resp: dict) -> tuple[str, int, int]:
+    def _unpack(resp: dict) -> tuple[str, int, int, bool]:
+        """取出正文、两个 token 数，以及**是否被截断**。
+
+        截断判据用 `finish_reason == "length"`，不用 `completion_tokens == max_tokens`：
+        后者是巧合（正好写满也可能是自然结束），前者是服务端的明确答复。
+        """
         choices = resp.get("choices") or [{}]
         text = (choices[0].get("message") or {}).get("content") or ""
+        truncated = choices[0].get("finish_reason") == "length"
         usage = resp.get("usage") or {}
-        return str(text), int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0))
+        return (str(text), int(usage.get("prompt_tokens", 0)),
+                int(usage.get("completion_tokens", 0)), truncated)
 
 
 class QwenText(_DashScopeBase):
-    """`LLMProvider` 的实现 —— 决策链路。"""
+    """`LLMProvider` 的实现 —— 决策链路。
 
-    def __init__(self, model: str = "qwen-plus", **kw: object) -> None:
-        super().__init__(model, **kw)  # type: ignore[arg-type]
+    **temperature 默认非零**，因为大脑的重试策略以此为前提：
+    `ReActBrain.choose()` 解析失败后用**完全相同的 prompt** 再问一次，
+    温度为 0 的话第二次会得到同样的坏输出，重试就是纯浪费。
+
+    0.7 是个起点不是结论——它会进 manifest，所以任何一批实验都说得清用的是多少。
+    """
+
+    def __init__(
+        self,
+        model: str = "qwen-plus",
+        *,
+        temperature: float = 0.7,
+        max_tokens: int = 3072,
+        **kw: object,
+    ) -> None:
+        """**max_tokens 比基类的默认值大得多，这是有实测依据的。**
+
+        `Action.thought` 刻意不设上限（它的长度就是模型这一步的算力）。1024 时
+        实测出现过一次 `completion_tokens` 正好 1024 的 `ParseFailure`——
+        JSON 是被切断的，不是写错的。那一次调用烧了 23 秒和一整笔 token，
+        产出为零，而错误信息指向的是"模型不会写 JSON"这个错误的方向。
+
+        3072 不是结论，是当前观测下的余量。它进 manifest，所以任何一批数据都说得清。
+        """
+        super().__init__(model, temperature=temperature, max_tokens=max_tokens, **kw)  # type: ignore[arg-type]
 
     def complete(self, prompt: str) -> Completion:
         """见 `LLMProvider.complete` 的契约。本方法不为输出格式负责。"""
         assert prompt, "complete() got an empty prompt"
 
-        text, n_in, n_out = self._unpack(self._post(prompt))
-        return Completion(text=text, prompt_tokens=n_in, completion_tokens=n_out)
+        text, n_in, n_out, cut = self._unpack(self._post(prompt))
+        return Completion(
+            text=text, prompt_tokens=n_in, completion_tokens=n_out, truncated=cut
+        )
 
 
 class QwenVision(_DashScopeBase):
     """`VisionProvider` 的实现 —— 感知链路。"""
 
     def __init__(
-        self, model: str = "qwen3-vl-flash", *, token_floor: int = IMAGE_TOKEN_FLOOR, **kw: object
+        self,
+        model: str = "qwen3-vl-plus",
+        *,
+        temperature: float = 0.0,
+        token_floor: int = IMAGE_TOKEN_FLOOR,
+        preprocess: tuple[ImageFilter, ...] = (),
+        **kw: object,
     ) -> None:
-        super().__init__(model, **kw)  # type: ignore[arg-type]
+        """**temperature 钉死在 0。**
+
+        感知是抽取不是创作。同一张图两次读出不同结果是纯噪声，而这个噪声会污染
+        全部下游数字：状态抽象准确率、state key 的稳定性、机制三的 value 回填——
+        后两者直接建立在"同一状态映射到同一 key"上，读不稳这个前提就没了。
+
+        这正是把感知和决策分成两个 Port 的又一个理由：它们对随机性的需求相反。
+
+        ## preprocess：送进模型之前先改图
+
+        为什么注入而不是写死：预处理和**问什么问题**是一对（叠了网格才谈得上
+        "第 3 行第 4 列那格"），这一对还要一起换好几轮。注入的话换预处理不用碰这个类。
+
+        为什么放在 provider 而不是 world：world 的职责是交出**这一帧的真实画面**，
+        网格是给模型看的辅助线，不是画面的一部分。存证、replay、将来换 CV 通道
+        用的都该是原图。
+
+        默认空元组：不写就是不改图，行为和以前完全一样。
+        """
+        super().__init__(model, temperature=temperature, **kw)  # type: ignore[arg-type]
         self._floor = token_floor
+        self._preprocess = tuple(preprocess)
+
+    def config(self) -> dict[str, str]:
+        """在基类的基础上补上预处理链。
+
+        **必须补。** 叠不叠网格会显著改变感知准确率，manifest 里没记的话，
+        两批数字摆在一起没人说得清差异是模型带来的还是网格带来的。
+        """
+        cfg = super().config()
+        cfg["preprocess"] = " -> ".join(
+            f.config().get("filter", type(f).__name__) for f in self._preprocess
+        ) or "none"
+        for i, f in enumerate(self._preprocess):
+            for k, v in f.config().items():
+                cfg[f"preprocess.{i}.{k}"] = v
+        return cfg
 
     def describe(self, image_png: bytes, prompt: str) -> VisionCompletion:
         """见 `VisionProvider.describe` 的契约，尤其是关于静默丢图的那一段。"""
         assert image_png, "describe() got an empty image"
         assert prompt, "describe() got an empty prompt"
 
-        b64 = base64.b64encode(image_png).decode()
-        text, n_in, n_out = self._unpack(self._post([
+        b64 = base64.b64encode(apply_all(image_png, self._preprocess)).decode()
+        text, n_in, n_out, _cut = self._unpack(self._post([
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
             {"type": "text", "text": prompt},
         ]))

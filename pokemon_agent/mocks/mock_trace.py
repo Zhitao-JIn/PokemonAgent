@@ -12,13 +12,15 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable
 
-from pokemon_agent.schemas.core import EventType, TraceEvent
+from pokemon_agent.schemas.core import EventType, Source, TraceEvent
 
 
 class MockTrace:
     """事件的追加与回放。没有删除和修改，这是刻意的。"""
 
-    def __init__(self) -> None:
+    def __init__(self, run_id: str = "local") -> None:
+        """`run_id` 在构造时定：一次实验一个 trace 实例，每条事件都属于它。"""
+        self._run_id = run_id
         self._events: list[TraceEvent] = []
         self._next_id = 0
 
@@ -27,6 +29,7 @@ class MockTrace:
         episode_id: str,
         step: int,
         type: EventType,
+        source: Source,
         payload: dict[str, str] | None = None,
     ) -> int:
         """追加一条事件，返回分配到的 event_id。
@@ -44,9 +47,11 @@ class MockTrace:
         self._events.append(
             TraceEvent(
                 event_id=event_id,
+                run_id=self._run_id,
                 episode_id=episode_id,
                 step=step,
                 type=type,
+                source=source,
                 payload=payload or {},
                 # ts 由实现方填：时间戳是 trace 的属性，不是业务参数。
                 ts=time.time(),

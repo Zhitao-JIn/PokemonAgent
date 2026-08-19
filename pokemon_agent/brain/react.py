@@ -10,8 +10,14 @@
 from __future__ import annotations
 
 import json
+import time
 
-from pokemon_agent.errors import IllegalAction, MaxRetriesExceeded, ParseFailure
+from pokemon_agent.errors import (
+    IllegalAction,
+    MaxRetriesExceeded,
+    OutputTruncated,
+    ParseFailure,
+)
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.interfaces.tools import ToolPort
 from pokemon_agent.interfaces.trace import TracePort
@@ -23,6 +29,7 @@ from pokemon_agent.schemas.core import (
     EventType,
     MemoryEntry,
     Observation,
+    Source,
 )
 
 
@@ -78,50 +85,66 @@ class ReActBrain:
         last_reason = ""
         for attempt in range(1, self._max_retries + 1):
             # 每次重试都重新调用，而不是复用上次输出——LLM 的随机性本身就是重试的意义所在。
+            t0 = time.perf_counter()
             completion = self._llm.complete(prompt)
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+
+            parsed: Action | None = None
+            reason = ""
+            try:
+                # 截断要**先于**解析检查。不然它会以 "少了个右括号" 的形式
+                # 变成一条 ParseFailure，指向完全错误的修法。
+                if completion.truncated:
+                    raise OutputTruncated(completion.completion_tokens)
+                parsed = self._parse(completion.text, space)
+            except (ParseFailure, IllegalAction, OutputTruncated) as exc:
+                # 外部输入不合法属于预期内情况（CLAUDE.md 第八节），走异常 + trace，不 assert。
+                reason = f"{type(exc).__name__}: {exc}"
+
+            # **一次模型调用 = 一条事件**，成功失败都记。
+            # 之前失败的那几次只留下 COST，拿不到它到底吐了什么；
+            # 而 `raw` 让你改进解析器之后能**离线重算，不必再花 token 重跑**。
             self._trace.append(
-                episode_id,
-                obs.step,
-                EventType.COST,
+                episode_id, obs.step, EventType.MODEL_CALL, Source.DECISION,
                 {
-                    "prompt_tokens": str(completion.prompt_tokens),
-                    "completion_tokens": str(completion.completion_tokens),
+                    "prompt_sha": self._prompt.sha,
+                    "input_tokens": str(completion.prompt_tokens),
+                    "output_tokens": str(completion.completion_tokens),
+                    "latency_ms": str(latency_ms),
                     "attempt": str(attempt),
+                    "ok": str(parsed is not None),
+                    "raw": completion.text,
                 },
             )
 
-            try:
-                action = self._parse(completion.text, space)
-            except (ParseFailure, IllegalAction) as exc:
-                # 外部输入不合法属于预期内情况（CLAUDE.md 第八节），走异常 + trace，不 assert。
-                last_reason = f"{type(exc).__name__}: {exc}"
+            if parsed is None:
+                last_reason = reason
                 self._trace.append(
-                    episode_id,
-                    obs.step,
-                    EventType.ERROR,
-                    {"reason": last_reason, "attempt": str(attempt)},
+                    episode_id, obs.step, EventType.ERROR, Source.DECISION,
+                    # kind 单独一列：聚合失败模式时不必去解析 reason 字符串
+                    {"kind": reason.split(":")[0], "reason": reason, "attempt": str(attempt)},
                 )
                 continue
 
             self._trace.append(
-                episode_id,
-                obs.step,
-                EventType.THINK,
+                episode_id, obs.step, EventType.THINK, Source.DECISION,
                 {
-                    "thought": action.thought,
-                    "action": action.name,
+                    "thought": parsed.thought,
+                    "action": parsed.name,
+                    # args 必须记：不记的话分不清「模型没给参数」和「给了但没显示」。
+                    "args": json.dumps(parsed.args, ensure_ascii=False),
+                    # rationale 也记在这里，不只依赖 MEMORY_WRITE ——
+                    # **无记忆基线组不写记忆**，那时 rationale 只剩这一处落点。
+                    "rationale": json.dumps(parsed.rationale, ensure_ascii=False),
                     "attempt": str(attempt),
-                    "prompt_sha": self._prompt.sha,
                 },
             )
-            assert space.contains(action.name), f"brain returned {action.name!r} outside space"
-            return action
+            assert space.contains(parsed.name), f"brain returned {parsed.name!r} outside space"
+            return parsed
 
         self._trace.append(
-            episode_id,
-            obs.step,
-            EventType.ERROR,
-            {"reason": "max_retries_exceeded", "last": last_reason},
+            episode_id, obs.step, EventType.ERROR, Source.DECISION,
+            {"kind": "MaxRetriesExceeded", "reason": "max_retries_exceeded", "last": last_reason},
         )
         raise MaxRetriesExceeded(self._max_retries, last_reason)
 
@@ -143,10 +166,12 @@ class ReActBrain:
             key=str(obs.step),
             content=f"在「{obs.summary}」时，因为{because}，选择了 {action.name}，结果：{result}",
             step=obs.step,
+            episode_id=episode_id,
         )
         self._tools.memory_write(entry)
         self._trace.append(
-            episode_id, obs.step, EventType.MEMORY_WRITE, {"key": entry.key}
+            episode_id, obs.step, EventType.MEMORY_WRITE, Source.HARNESS,
+            {"key": entry.key, "content": entry.content},
         )
 
     def _recall(self, episode_id: str, obs: Observation) -> list[MemoryEntry]:
@@ -154,8 +179,13 @@ class ReActBrain:
         memories = self._tools.memory_query(obs.summary, limit=self._memory_limit)
 
         assert len(memories) <= self._memory_limit, "memory_query returned more than limit"
+        # 记下**取回了哪几条**，不只是几条。
+        # 只记数量的话，replay 时无法回答「这个决策是被哪条经验影响的」——
+        # 而那正是「记忆到底有没有用」要查的东西。
         self._trace.append(
-            episode_id, obs.step, EventType.MEMORY_READ, {"count": str(len(memories))}
+            episode_id, obs.step, EventType.MEMORY_READ, Source.HARNESS,
+            {"count": str(len(memories)),
+             "refs": " ".join(f"({m.episode_id}, {m.step})" for m in memories)},
         )
         return memories
 
@@ -167,10 +197,14 @@ class ReActBrain:
         每次都从参数完整组装，不留历史——这是"大脑无状态"在代码层面的体现。
         """
         facts = "\n".join(f"- {k}: {v}" for k, v in obs.facts.items()) or "（无）"
-        recalled = "\n".join(f"- {m.content}" for m in memories) or "（无相关记忆）"
+        recalled = "\n".join(
+            f"- ({m.episode_id}, {m.step}) {m.content}" for m in memories
+        ) or "（无相关记忆）"
         actions = "\n".join(
             f"- {name}: {space.descriptions.get(name, '（无说明）')}" for name in space.names
         )
+        if space.note:
+            actions += f"\n\n{space.note}"
         return self._prompt.render(
             goal=obs.goal,
             summary=obs.summary,

@@ -2,11 +2,23 @@
 
 为什么要和 ToolPort 分开：
 ToolPort 是"大脑能做什么"，WorldPort 是"世界能做什么"，两者职责不同且变化速度不同。
-harness 用 WorldPort + 记忆实现 ToolPort。原型期 WorldPort 由 MockWorld 实现，
-将来换成真实模拟器时，**ToolPort 和大脑一行都不用改**——这就是分层的收益。
+harness 用 WorldPort + 记忆实现 ToolPort。当前唯一的实现是 `PyBoyWorld`，
+换模拟器时 **ToolPort 和大脑一行都不用改**——这就是分层的收益。
 
 注意这里没有 masking：动作掩码是 harness 的策略，不是世界的能力。
 世界只回答"全部动作是什么"和"执行这个动作会怎样"。
+
+## 为什么有 last_calls / last_frame_sha
+
+感知的开销（token、延迟、模型原始输出）和被感知的那一帧，**两处都放不下**：
+
+- 放不进 `Observation` —— 那是**大脑看的东西**，大脑不该知道 token 数；
+  而且它是跨层契约，加字段等于改接口。
+- 又必须进 trace —— 没有它，成本拆不开、读错的观测追查不到是哪一帧、
+  阶段 3.2 拿 VLM 输出和真值对标也对不上号。
+
+所以它们进 Port：**世界要能说明"我这次观测是怎么来的"**。
+不产生模型调用的世界返回空列表即可，这不是负担。
 """
 
 from __future__ import annotations
@@ -40,6 +52,30 @@ class WorldPort(Protocol):
 
         后置条件：非空，且内容在整个 episode 内不变。
             这是 masking 的全集，harness 从中筛出当前可用的子集。
+        """
+        ...
+
+    @property
+    def last_calls(self) -> list[dict[str, str]]:
+        """最近一次 `observe()` 里发生的**每一次**模型调用。
+
+        是列表不是单条：解析失败会重试，而失败的那几次同样烧了 token，
+        只留最后一次就把它们的成本和原始输出丢了。
+
+        每条至少含 `input_tokens` / `output_tokens` / `latency_ms` / `attempt` / `ok`；
+        `raw`（模型原始输出）建议一并给出——有了它，改进解析器之后能离线重算，
+        不必重新花钱调 API。
+
+        后置条件：不调用模型的世界返回空列表，**不返回 None**。
+        """
+        ...
+
+    @property
+    def last_frame_sha(self) -> str:
+        """最近一次观测所依据的那一帧的哈希。
+
+        没有它，一条读错的观测**无法追查是哪一帧**——而那是查感知错误的起点。
+        没有"帧"这个概念的世界返回空串。
         """
         ...
 

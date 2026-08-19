@@ -39,6 +39,22 @@ class IllegalAction(AgentError):
         self.allowed = allowed
 
 
+class OutputTruncated(AgentError):
+    """模型话没说完就被 max_tokens 切断了。
+
+    **必须和 `ParseFailure` 分开。** 截断在下游长得和"模型不会写 JSON"一模一样
+    （都是少个右括号），但修法完全相反：截断要调大额度或让模型少说，
+    格式错要改 prompt 或上约束解码。混成一类，统计里就永远看不见它——
+    实测里它表现为一次烧了 23 秒、产出为零、错误信息还指错方向的调用。
+
+    判据来自服务端的 `finish_reason == "length"`，不是拿 token 数去猜。
+    """
+
+    def __init__(self, tokens: int) -> None:
+        super().__init__(f"output hit the token limit at {tokens} tokens and was cut off")
+        self.tokens = tokens
+
+
 class MaxRetriesExceeded(AgentError):
     """连续重试仍拿不到合法动作。
 
@@ -77,3 +93,20 @@ class ImageNotDelivered(AgentError):
         )
         self.input_tokens = input_tokens
         self.floor = floor
+
+
+class PerceptionFailure(AgentError):
+    """反复调用视觉模型仍拿不到能解析的 `ScreenState`。
+
+    和 `ParseFailure` 分开：那是**大脑**的输出格式问题（改 prompt 或上约束解码），
+    这是**感知层**的（换模型、改预处理、或者这一帧本来就没法读）。
+    在 replay 里它们指向完全不同的修法，合并就丢了诊断信息。
+
+    与 `ImageNotDelivered` 也分开：那是图没送到（网关问题），
+    这是图送到了但读不出结构（能力问题）。
+    """
+
+    def __init__(self, attempts: int, last_reason: str) -> None:
+        super().__init__(f"perception failed after {attempts} attempts: {last_reason}")
+        self.attempts = attempts
+        self.last_reason = last_reason

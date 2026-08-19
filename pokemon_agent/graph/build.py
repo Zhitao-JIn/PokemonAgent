@@ -21,11 +21,11 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
 
 from pokemon_agent.brain.react import ReActBrain
-from pokemon_agent.interfaces.llm import LLMProvider
-from pokemon_agent.mocks.mock_harness import MockHarness
+from pokemon_agent.harness.harness import Harness
+from pokemon_agent.interfaces.trace import TracePort
 from pokemon_agent.mocks.mock_trace import MockTrace
-from pokemon_agent.mocks.mock_world import DEMO_ACTION_DESCRIPTIONS, MockWorld
 from pokemon_agent.schemas.core import Action, ActionSpace, EpisodeOutcome, Observation, Task
+from pokemon_agent.world.pyboy_world import PyBoyWorld
 
 
 class AgentState(BaseModel):
@@ -45,7 +45,7 @@ class AgentState(BaseModel):
     started: bool = Field(default=False, description="是否已 reset 过世界")
 
 
-def build_graph(brain: ReActBrain, harness: MockHarness) -> CompiledStateGraph:
+def build_graph(brain: ReActBrain, harness: Harness) -> CompiledStateGraph:
     """把 brain 和 harness 连成一张可执行的图。
 
     前置条件：两者都已装配好（各自的依赖已注入）。
@@ -110,17 +110,37 @@ def build_graph(brain: ReActBrain, harness: MockHarness) -> CompiledStateGraph:
     return graph.compile()
 
 
-def build_demo(llm: LLMProvider) -> tuple[CompiledStateGraph, MockHarness, MockTrace]:
-    """装配一整套原型：MockWorld + MockTrace + MockHarness + ReActBrain + 图。
+def build_real(
+    rom: str,
+    state_path: str | None = None,
+    *,
+    vision_model: str = "qwen3-vl-plus",
+    text_model: str = "qwen-plus",
+    watch: bool = False,
+    grid: bool = True,
+    trace: TracePort | None = None,
+) -> tuple[CompiledStateGraph, Harness, TracePort, PyBoyWorld]:
+    """装配真实的一套：PyBoy + 视觉感知 + 真实 LLM + 图。
 
-    **这里是全项目唯一 new 具体实现的地方**（CLAUDE.md 第三节第 3 条）。
-    换真实模拟器 = 换掉这里的 MockWorld；换真实模型 = 传进来的 llm 换一个实现。
-    上面所有代码都不用动。
+    **这里是全项目唯一一处 new 具体实现**（CLAUDE.md 第三节第 3 条）。
+    曾经还有一个 `build_demo`（MockWorld + FakeLLM，离线跑最小闭环），
+    真实环境接进来之后已删除——留着两条装配路径，等于留着一条**没人真的跑**的代码路径。
 
-    返回 harness 和 trace 是为了让调用方（测试、脚本）能读 trace 做断言。
+    两个模型是刻意分开的，不是设计洁癖——它由计费结构决定：
+    决策走有资源包的文本模型，感知每步都调、任务简单，走最便宜的视觉模型。
+    两个 Port 分开才能分别选型。
+
+    trace 仍是 `MockTrace`（内存列表，不落盘）。落盘、replay、checkpoint
+    是阶段 2 的事；在那之前跑出来的数据**进程一退就没了**，只适合调试。
     """
-    world = MockWorld()
-    trace = MockTrace()
-    harness = MockHarness(world, trace, action_descriptions=DEMO_ACTION_DESCRIPTIONS)
-    brain = ReActBrain(llm, harness, trace)
-    return build_graph(brain, harness), harness, trace
+    from pokemon_agent.providers.dashscope import QwenText, QwenVision
+    from pokemon_agent.vision.preprocess import GridOverlay
+
+    # 网格是**给模型看的辅助线**，不是画面的一部分——所以它挂在 provider 上，
+    # world 交出去的、存证用的、将来给 CV 通道用的，仍然是原图。
+    vision = QwenVision(model=vision_model, preprocess=(GridOverlay(),) if grid else ())
+    world = PyBoyWorld(rom, vision, state_path=state_path, watch=watch)
+    trace = trace or MockTrace()
+    harness = Harness(world, trace)
+    brain = ReActBrain(QwenText(model=text_model), harness, trace)
+    return build_graph(brain, harness), harness, trace, world
