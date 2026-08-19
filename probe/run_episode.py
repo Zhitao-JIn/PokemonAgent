@@ -1,0 +1,137 @@
+"""跑一个真实 episode —— LLM 控制宝可梦红。
+
+    $env:DASHSCOPE_API_KEY = "sk-..."
+    python -m probe.run_episode                                  # 12 步，无头
+    python -m probe.run_episode 30 "走出真新镇，向北进入一号道路"
+    python -m probe.run_episode 30 "…" watch                      # 开窗口看着它玩
+
+**默认无头**（`window="null"`）：跑实验时墙钟是瓶颈，开窗口和限速只会拖慢。
+`watch` 只影响你看不看得见，不影响 agent 行为——它读的是 `screen.ndarray`。
+
+⚠ 别同时开着 `probe.play`：两个 PyBoy 实例共用同一个 ROM 时，
+退出时都会写 `assets/rom.ram`，后退出的覆盖先退出的。
+
+每步会打印：观测摘要、可用动作、大脑选了什么、为什么。
+结束后汇总感知与决策**各自**的 token —— 这两笔账拆得开，
+是「感知走便宜模型、决策走强模型」这条成本叙事的依据。
+
+⚠ trace 是内存里的，进程一退就没了。落盘是阶段 2 的事。
+"""
+
+from __future__ import annotations
+
+import sys
+from datetime import datetime
+
+from pokemon_agent.errors import AgentError
+from pokemon_agent.graph.build import AgentState, build_real
+from pokemon_agent.mocks.mock_trace import MockTrace
+from pokemon_agent.schemas.core import EventType, Source, Task
+from probe.echo_trace import EchoTrace
+
+ROM = "assets/rom"
+STATE = "assets/rom.state"
+
+
+def _flag(name: str, default: str) -> str:
+    """从 `--name value` 里取值。写个小函数而不是上 argparse：
+
+    这是 probe 脚本，参数就三四个，argparse 的帮助信息和错误处理反而喧宾夺主。
+    """
+    argv = sys.argv[1:]
+    if name not in argv:
+        return default
+    i = argv.index(name) + 1
+    return argv[i] if i < len(argv) else default
+
+
+def main() -> None:
+    positional = [a for a in sys.argv[1:] if not a.startswith("--")]
+    # 跳过被 --flag 消费掉的那些值
+    consumed = {sys.argv[1:][i + 1] for i, a in enumerate(sys.argv[1:])
+                if a.startswith("--") and i + 1 < len(sys.argv) - 1}
+    positional = [a for a in positional if a not in consumed]
+
+    max_steps = int(positional[0]) if positional else 12
+    goal = positional[1] if len(positional) > 1 else "探索周围环境，向北走出真新镇"
+    watch = "watch" in positional[2:]
+
+    vision_model = _flag("--vision", "qwen3-vl-plus")
+    text_model = _flag("--text", "qwen-plus")
+    grid = _flag("--grid", "on") == "on"
+
+    task = Task(
+        task_id="explore-pallet",
+        goal=goal,
+        success_criteria="（本阶段不做成败判定，只跑满步数）",
+        max_steps=max_steps,
+    )
+
+    # 实时打印挂在 trace 上，不往图节点里塞 print：
+    # 实时观测和事后 replay 看的是同一份数据，不会出现「只有控制台有」的信息。
+    # id 规则：
+    #   run_id      一次进程调用，时间戳
+    #   episode_id  run_id + 序号，**全局唯一**
+    #   event_id    trace 分配的全局自增整数
+    run_id = datetime.now().strftime("%m%d-%H%M%S")
+    episode_id = f"{run_id}-ep0"
+
+    graph, harness, trace, world = build_real(
+        ROM, STATE,
+        vision_model=vision_model, text_model=text_model, grid=grid,
+        watch=watch, trace=EchoTrace(MockTrace(run_id=run_id)),
+    )
+    print(f"task      {goal}")
+    print(f"episode   {episode_id}")
+    # **模型必须打出来。** 换模型对比时，日志上不写型号，两份输出摆在一起
+    # 就分不清哪份是哪个跑的——而那正是做对比的全部目的。
+    print(f"models    vision={vision_model}  text={text_model}  grid={'on' if grid else 'off'}")
+    print(f"limit     {max_steps} steps | state {STATE} | "
+          f"{'windowed, realtime' if watch else 'headless, unlimited'}")
+    print("-" * 62)
+
+    try:
+        graph.invoke(AgentState(episode_id=episode_id, task=task), {"recursion_limit": 10_000})
+    except AgentError as e:
+        print(f"\n提前终止：{type(e).__name__}: {e}")
+    finally:
+        world.stop()
+
+    _summary(trace.all_events())
+
+
+def _summary(events: list) -> None:
+    """从 trace 里读汇总，而不是让脚本自己记账。
+
+    这一段以前是照着旧 schema 写的（`payload["source"]`、`EventType.COST`、
+    `prompt_tokens`），schema 改了它没跟着改，于是**跑完一整局才在最后一行崩掉**——
+    十几次模型调用的钱已经花完了。
+    汇总要按信封字段（`e.source` / `e.type`）读，那是契约的一部分；
+    payload 的键是各事件类型自己的事，最容易漂。
+    """
+    calls = [e for e in events if e.type is EventType.MODEL_CALL]
+
+    print("\n" + "=" * 62)
+    for src, label in ((Source.PERCEPTION, "perception"), (Source.DECISION, "decision")):
+        rows = [e for e in calls if e.source is src]
+        if not rows:
+            continue
+        n_in = sum(int(e.payload.get("input_tokens", 0)) for e in rows)
+        n_out = sum(int(e.payload.get("output_tokens", 0)) for e in rows)
+        lat = [int(e.payload["latency_ms"]) for e in rows if "latency_ms" in e.payload]
+        # 失败的调用同样烧了钱，所以单独报一列——只看总数会以为每次都有产出
+        failed = sum(1 for e in rows if e.payload.get("ok") != "True")
+        print(f"{label:<12} {len(rows):>3} 次（失败 {failed}）  "
+              f"in={n_in:<7} out={n_out:<6} 平均 {sum(lat) // max(len(lat), 1)} ms")
+
+    errors: dict[str, int] = {}
+    for e in events:
+        if e.type is EventType.ERROR:
+            errors[e.payload.get("kind", "?")] = errors.get(e.payload.get("kind", "?"), 0) + 1
+    if errors:
+        print("失败模式     " + "  ".join(f"{k}×{v}" for k, v in sorted(errors.items())))
+    print(f"事件         {len(events)} 条")
+
+
+if __name__ == "__main__":
+    main()
