@@ -155,6 +155,31 @@ class Place(BaseModel):
         return f"全局坐标 地图{self.map_id} x={self.x} y={self.y}"
 
 
+MIN_STITCH = 6
+"""拼接至少要重叠几个字符。
+
+太短会误拼：两句无关的话结尾和开头撞上三五个字符是常有的事，
+而拼错的那一条会以"他说过这句话"的样子进 prompt。GB 一行有十几个字符，
+重叠通常是整整一行，所以门槛设高一点几乎不会漏拼。
+"""
+
+
+def _stitch(prev: str, new: str) -> str | None:
+    """把滚动出来的下一个窗口接到上一句后面；接不上返回 `None`。
+
+    三种情况都算接得上：新的被包含（对话没动）、新的包含旧的（抄得更全）、
+    首尾重叠（滚了一行）。都不是就说明这是**另一句话**，该单独占一条。
+    """
+    if new in prev:
+        return prev
+    if prev in new:
+        return new
+    for k in range(min(len(prev), len(new)), MIN_STITCH - 1, -1):
+        if prev[-k:] == new[:k]:
+            return prev + new[k:]
+    return None
+
+
 class Landmark(BaseModel):
     """屏幕上一个值得记住的东西：门 / 招牌 / 人。类型和位置都来自模拟器内存。
 
@@ -269,11 +294,44 @@ class ObjectNote(BaseModel):
             del self.tried[stale]
 
     def see(self, line: str) -> None:
-        """记下一句。已经见过就不重复记——重复的文本会被模型当成强证据。"""
+        """记下一句。**滚动窗口要拼回一句话，不是当成好几句。**
+
+        GB 的对话框一次只显示两行，按一次 `a` 往上滚一行，视觉模型每帧抄下
+        看得见的部分。所以连着几帧抄回来的是**同一句话的四个重叠窗口**：
+
+            MOM: Oh good! You and your
+            You and your POKéMON are
+            POKéMON are looking great!
+            looking great! Take care now!
+
+        早一版只做完全相同去重，于是这四条各占一格、塞满 `MAX_OBJECT_LINES`，
+        下一句进来就把 `MOM: Oh good!` 挤掉——**而那是唯一带身份的一句**。
+        实测档案里那个 NPC 最后只剩半截话，"这是谁"完全丢了。
+
+        拼接是纯字符串运算：前一条的尾巴和这一条的开头重叠多少，就接在哪。
+        不需要模型，也不会引入新的错。
+        """
         text = line.strip()
-        if text and text not in self.lines:
+        if not text:
+            return
+        if self.lines:
+            merged = _stitch(self.lines[-1], text)
+            if merged is not None:
+                self.lines[-1] = merged
+                return
+        if text not in self.lines:
             self.lines.append(text)
-        del self.lines[:-MAX_OBJECT_LINES]
+        self._trim()
+
+    def _trim(self) -> None:
+        """留够条数，但**第一条永远留着**。
+
+        淘汰最早的那条是照抄滑动窗口的做法，而这里的第一条恰恰最不可替代：
+        NPC 的自我介绍、招牌的标题都在开头。后面的台词随剧情推进，
+        丢一句无所谓；丢了第一句，这条档案就回答不了"这是谁"了。
+        """
+        if len(self.lines) > MAX_OBJECT_LINES:
+            self.lines[:] = self.lines[:1] + self.lines[-(MAX_OBJECT_LINES - 1):]
 
     def _door_status(self) -> list[str]:
         """门的那一段。**只写结果，不写动作空间。**
