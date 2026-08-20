@@ -1,0 +1,75 @@
+"""装配 —— **全项目唯一一处 `new` 具体实现**（CLAUDE.md 第三节第 3 条）。
+
+想知道"这套东西是怎么拼起来的"，只需要读这一个文件；
+想知道"它们怎么互相调用"，读 `harness/harness.py`。这两件事分开放，
+是因为上一版把它们塞在同一个 `graph/build.py` 里，看上去就像图认识 LLM。
+
+    Harness  控制循环   ──→ ToolHost ──→ WorldPort ──→ PyBoyWorld ──→ VisionProvider
+                        └─→ BrainPort ──→ LLMProvider
+                        └─→ TracePort
+
+图里没有一行碰得到 provider：它们是构造函数传进去的，只有这里 import 具体类。
+
+曾经还有一个 `build_demo`（MockWorld + FakeLLM，离线跑最小闭环），
+真实环境接进来之后已删除——留着两条装配路径，等于留着一条**没人真的跑**的代码路径。
+"""
+
+from __future__ import annotations
+
+from pokemon_agent.brain.brain import Brain
+from pokemon_agent.harness.harness import Harness
+from pokemon_agent.interfaces.trace import TracePort
+from pokemon_agent.mocks.mock_trace import MockTrace
+from pokemon_agent.tools.game_tools import GameTools
+from pokemon_agent.world.pyboy_world import PyBoyWorld
+
+
+def build_real(
+    rom: str,
+    state_path: str | None = None,
+    *,
+    vision_model: str = "qwen3-vl-plus",
+    text_model: str = "qwen-plus",
+    judge_model: str = "",
+    max_tokens: int = 25600,
+    watch: bool = False,
+    grid: bool = True,
+    trace: TracePort | None = None,
+) -> tuple[Harness, TracePort, PyBoyWorld]:
+    """装配真实的一套：PyBoy + 视觉感知 + 真实 LLM + 循环。
+
+    三个模型是刻意分开的，不是设计洁癖——它由计费结构和实验方法共同决定：
+
+    - **决策**走有资源包的文本模型；
+    - **感知**每步都调、任务简单，走最便宜的视觉模型；
+    - **判定**必须和决策分开，否则就是误差同源（见 `brain/brain.py`）。
+      即使型号相同也**各建一个 provider 实例**：共用一个的话，将来想给判定
+      换模型就得改两处，而且 manifest 里两条链路会指向同一个对象，
+      看不出它们是可以分别选型的。
+
+    trace 仍是 `MockTrace`（内存列表，不落盘）。落盘、replay、checkpoint
+    是阶段 2 的事；在那之前跑出来的数据**进程一退就没了**，只适合调试。
+
+    返回 world 是为了让调用方能 `stop()` 它——模拟器是进程级资源，
+    谁开的谁关，Harness 不该管这件事。
+    """
+    from pokemon_agent.providers.dashscope import QwenText, QwenVision
+    from pokemon_agent.vision.preprocess import GridOverlay
+
+    # 网格是**给模型看的辅助线**，不是画面的一部分——所以它挂在 provider 上，
+    # world 交出去的、存证用的、将来给 CV 通道用的，仍然是原图。
+    vision = QwenVision(model=vision_model, preprocess=(GridOverlay(),) if grid else ())
+    world = PyBoyWorld(rom, vision, state_path=state_path, watch=watch)
+    trace = trace or MockTrace()
+
+    tools = GameTools(world)
+    # brain 拿不到 trace —— **写 trace 是 Harness 一个人的事**。
+    # 大脑把账（ModelCall）连同结果交出来，由 Harness 翻译成事件。
+    # 两条链路共用同一个 max_tokens 上限。判定每次只输出二三十个 token，
+    # 抬高上限对它没有影响；分开配置只会多一个没人调的旋钮。
+    brain = Brain(
+        decide_llm=QwenText(model=text_model, max_tokens=max_tokens),
+        judge_llm=QwenText(model=judge_model or text_model, max_tokens=max_tokens),
+        tools=tools,
+    )
+    return Harness(tools, brain, trace), trace, world
