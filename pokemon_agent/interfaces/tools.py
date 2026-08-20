@@ -70,7 +70,8 @@ class ToolPort(Protocol):
     def memory_write(self, entry: MemoryEntry) -> None:
         """写入一条记忆。
 
-        前置条件：entry.content 非空。
+        前置条件：entry.rationale 非空。没有理由的经验取回来也没用——
+            它说不出当时为什么这么判断，也就无法检查那个判断现在还成不成立。
         注意：harness 也可能自动写记忆。**大脑不能假设记忆库里只有自己写的东西。**
         """
         ...

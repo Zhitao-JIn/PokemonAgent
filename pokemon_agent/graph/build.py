@@ -86,9 +86,17 @@ def build_graph(brain: ReActBrain, harness: Harness) -> CompiledStateGraph:
         assert state.observation is not None, "act before observe"
 
         result = harness.execute(state.action)
-        brain.remember(state.episode_id, state.observation, state.action, result.message)
+        assert result.observation is not None, "world.step() must return the new observation"
 
-        obs = result.observation or harness.perceive()
+        # 顺序是有讲究的，三步都不能换：
+        #   execute  → ACT(N)          这一步做了什么
+        #   remember → MEMORY_WRITE(N) 这一步学到了什么（结果那一头就是新观测）
+        #   settle   → OBSERVE(N+1)    新观测入账，并交给判定器
+        # 把 settle 提到 remember 前面，事件流的步号就会 N+1 → N 往回跳。
+        obs = result.observation
+        brain.remember(state.episode_id, state.observation, state.action, obs)
+        obs = harness.settle(obs)
+
         outcome = harness.outcome(obs) if obs.done else None
         return {"observation": obs, "outcome": outcome}
 
@@ -116,6 +124,7 @@ def build_real(
     *,
     vision_model: str = "qwen3-vl-plus",
     text_model: str = "qwen-plus",
+    judge_model: str = "",
     watch: bool = False,
     grid: bool = True,
     trace: TracePort | None = None,
@@ -133,6 +142,7 @@ def build_real(
     trace 仍是 `MockTrace`（内存列表，不落盘）。落盘、replay、checkpoint
     是阶段 2 的事；在那之前跑出来的数据**进程一退就没了**，只适合调试。
     """
+    from pokemon_agent.harness.judge import LLMSuccessJudge
     from pokemon_agent.providers.dashscope import QwenText, QwenVision
     from pokemon_agent.vision.preprocess import GridOverlay
 
@@ -141,6 +151,10 @@ def build_real(
     vision = QwenVision(model=vision_model, preprocess=(GridOverlay(),) if grid else ())
     world = PyBoyWorld(rom, vision, state_path=state_path, watch=watch)
     trace = trace or MockTrace()
-    harness = Harness(world, trace)
+    # 判定器和大脑**各建一个 provider 实例**，即使型号相同。
+    # 共用一个的话，将来想给判定换个更强的模型就得改两处；而且 manifest 里
+    # 两条链路的配置会指向同一个对象，看不出它们是可以分别选型的。
+    judge = LLMSuccessJudge(QwenText(model=judge_model or text_model))
+    harness = Harness(world, trace, judge=judge)
     brain = ReActBrain(QwenText(model=text_model), harness, trace)
     return build_graph(brain, harness), harness, trace, world

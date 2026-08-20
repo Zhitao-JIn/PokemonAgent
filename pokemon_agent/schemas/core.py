@@ -142,31 +142,103 @@ class Action(BaseModel):
 
 
 class ToolResult(BaseModel):
-    """一次动作执行的结果。"""
+    """一次动作执行的结果。
 
-    ok: bool = Field(description="是否成功执行。失败不抛异常，因为动作失败是预期内的游戏事件")
+    ## 这里曾经有一个 `ok`
+
+    含义是"这个动作有没有产生预期效果"（撞墙 = False）。在 `PyBoyWorld` 上它被
+    写死成 `True`，因为从像素判断"这一下有没有改变世界"没有便宜可靠的办法——
+    画面本身就有动画，比对不出因果。
+
+    **一个恒为真的布尔值比没有更糟**：它出现在事件流里、出现在控制台的判断分支里，
+    让人以为那里有信息，而实际上每一条都是 True。
+
+    要让它诚实，唯一的办法是读内存里的坐标（走没走动）——但那是为一个**没有消费方**
+    的字段新增一处内存依赖。判断动作有没有生效，本来就该由**前后两次观察的对比**
+    来回答，而那件事记忆层已经在做了（`MemoryEntry` 两头各存一份完整快照）。
+
+    所以删掉，不是补上。
+    """
+
     message: str = Field(default="", description="给 LLM 读的结果描述")
     observation: Observation | None = Field(
         default=None, description="执行后的新观测；None 表示调用方需另行 perceive()"
     )
 
 
-class MemoryEntry(BaseModel):
-    """一条记忆。
+class Snapshot(BaseModel):
+    """一次观察的快照 —— **和大脑当时看到的是同一套东西**。
 
-    本阶段只有 **episodic**：这次任务尝试里发生了什么，是自己跑出来的轨迹。
-    作用域 = 一个 episode = 一次任务尝试。
-
-    不要和 **semantic** 混淆：semantic 是**外部领域知识**（"水属性克制火属性"、
-    某道馆馆主用什么属性），来自攻略/图鉴，不是自己跑出来的，也不随 episode 结束而失效。
-    跨任务复用的成功经验既不是 semantic，也应当先归到 episodic 的聚合，
-    或晋升后进 skill library（机制二）。
-
-    semantic 记忆与值回填都留到后面的机制，本阶段不做。
+    字段就是 `Observation.facts` 里那几项：整体印象、通行图、地标、位置。
+    刻意保持一致，因为记忆取回来是要和当前观察**对比着读**的：
+    "上次我在这样的画面里选了 X"——两边格式不同的话，这个对比就得由模型自己做换算，
+    而那是白白消耗它的注意力。
     """
 
-    key: str = Field(description="state abstraction 产出的语义 key，本阶段用 step 占位")
-    content: str = Field(description="记忆正文")
+    overview: str = Field(default="", description="整体印象，视觉模型给的")
+    walk_map: str = Field(default="", description="通行图，模拟器内存给的")
+    landmarks: str = Field(default="", description="带坐标的地标")
+    position: str = Field(
+        default="",
+        description="`地图 0 里的 x=10 y=2` —— **地图绝对坐标，刻意不用括号写法**。"
+        "`walk_map` 和 `landmarks` 里的 `(列,行)` 是屏幕格（主角恒在 (4,4)），"
+        "两者写成同一个样子的话，字面上分不开",
+    )
+
+    @classmethod
+    def of(cls, obs: Observation) -> Snapshot:
+        """从观测里抽出快照。**只抽，不加工**——加工过的快照和当时看到的就不是一回事了。"""
+        f = obs.facts
+        return cls(
+            overview=f.get("overview", "") or obs.summary,
+            walk_map=f.get("walk_map", ""),
+            landmarks=f.get("landmarks", ""),
+            position=f.get("where", ""),
+        )
+
+    def render(self, indent: str = "  ") -> str:
+        lines = []
+        if self.position:
+            lines.append(f"{indent}位置  {self.position}")
+        if self.overview:
+            lines.append(f"{indent}概况  {self.overview}")
+        if self.landmarks:
+            lines.append(f"{indent}地标  {self.landmarks}")
+        if self.walk_map:
+            for line in self.walk_map.splitlines():
+                lines.append(f"{indent}      {line}")
+        return "\n".join(lines)
+
+
+class MemoryEntry(BaseModel):
+    """一条情景记忆：**我看到这样的画面，因为这些理由，做了这个动作，然后变成了这样。**
+
+    ## 为什么两头都是完整观察
+
+    只记"结果：你在野外"这种一句话，等于把结果压成了一个没有信息量的标签——
+    上一版就是这样，取回十条全长一个样。**结果本身也是一次观察**，
+    只有把它完整记下来，这条经验才回答得了"那一下到底改变了什么"。
+
+    代价是上一条的 `after` 和下一条的 `before` 内容重复。这是有意接受的：
+    **每条自成一体**，取回时不用去拼上下文，也不依赖别的条目还在不在。
+
+    ## 这仍然只是 episodic
+
+    "这次尝试里发生了什么"，是自己跑出来的轨迹，有时效。
+
+    不要和 **semantic** 混淆：那是"世界是什么样"（"水克火"、"map 0 的 (5,5) 通往 map 37"），
+    自带作用域、在作用域内永远为真。也不要和**目标**混淆：目标有完成态，
+    凡是有完成态的都不是知识，它属于运行时状态，不进这里。
+
+    semantic 层、skill library（机制二）、值回填（机制三）都还没做。
+    """
+
+    before: Snapshot = Field(description="做决定时看到的画面")
+    rationale: list[str] = Field(description="当时的理由。**不是完整推理**——那留在 trace 里")
+    action: str = Field(description="选了什么，含连按次数，如 `right ×2`")
+    after: Snapshot = Field(description="执行之后的画面。**结果也是一次观察**")
+
+    key: str = Field(description="检索键。本阶段用位置占位，机制一接进来时换成状态抽象的语义 key")
     step: int = Field(description="写入时所处的步数")
     episode_id: str = Field(description="这条经验来自哪次尝试")
 
@@ -175,8 +247,22 @@ class MemoryEntry(BaseModel):
     # 不用 trace 的 `event_id`：那是**记录格式的产物**，取决于这一步之间穿插了
     # 多少别的事件，换个记录粒度就变。`step` 是**轨迹坐标**，而机制三沿轨迹
     # 回填折扣正是按 step 走的——用它，回填时不需要任何转换。
-    #
-    # 要在 trace 里定位这条记忆，按 `(episode_id, step, MEMORY_WRITE)` 过滤即可。
+
+    def render(self) -> str:
+        """渲染成进 prompt 的样子。**检索打分也用它**——
+
+        两处用同一份文本，是为了让"被选中的理由"和"看到的内容"是同一个东西。
+        分成两份的话，可能出现"按 A 的内容选中，却把 B 的内容喂进去"，而且不报错。
+        """
+        because = "；".join(self.rationale) or "（未给出理由）"
+        return "\n".join([
+            f"({self.episode_id}, {self.step}) 当时看到：",
+            self.before.render(),
+            f"  因为  {because}",
+            f"  做了  {self.action}",
+            "  之后变成：",
+            self.after.render(),
+        ])
 
 
 class EpisodeOutcome(BaseModel):
@@ -213,6 +299,7 @@ class Source(str, Enum):
     DECISION = "decision"       # 文本模型这条链
     HARNESS = "harness"         # 掩码、记忆、生命周期
     WORLD = "world"             # 模拟器
+    JUDGE = "judge"             # 成败判定 —— 和决策分开记账，才算得出它自己的准确率
 
 
 class EventType(str, Enum):
@@ -295,7 +382,8 @@ OVERLAY_ACTIONS: dict[Overlay, tuple[str, ...]] = {
 """
 
 SCENE_FIELDS: dict[Scene, tuple[str, ...]] = {
-    # 野外与室内**没有 fields**：它们的内容全部走 `walk_map` 和 `landmarks`。
+    # 野外与室内**没有 fields**：地形来自模拟器内存（`world/ram.py`），
+    # 语义来自 `overview` 和 `landmarks`。
     #
     # 曾经这里是 `facing, north, south, east, west, landmarks`，实测全是噪声：
     # `north: grass ×3` 在主角连走六步的过程中一字未变——它根本不是位置的函数，
@@ -334,61 +422,153 @@ PLAYER_CELL = (4, 4)
 """
 
 PLAYER_MARK = "@"
-UNKNOWN = "?"
+WALKABLE, BLOCKED = ".", "#"
 
+DOOR, SIGN, PERSON, GRASS = "D", "S", "N", "G"
 
-class Tile(BaseModel):
-    """一种地形符号的含义。
-
-    **只有名字和说明，没有 `walkable` 布尔位。** 曾经有过，但它没有任何消费方——
-    只被 `tile_legend()` 拿去渲染"能走 / 走不过去"几个字，其余全是测试在断言它自己。
-    通行性的判断本来就写在 `note` 里，多一个字段等于同一件事说两遍，
-    而两遍迟早会打架。等真的出现程序化的消费方（机制一从符号派生 state key、
-    或者路径规划器），再把它加回来不迟——那时它才有个明确的用户。
-
-    要紧的是这套符号解决的问题没变：**问"这格是什么"而不是"这格能不能走"。**
-    前者是分类，模型做得来；后者是推断，需要游戏知识——实测里它认出了门，
-    却因为门看着像墙标了"不能走"，大脑再花 765 个 token 编出解释来自圆其说。
-    """
-
-    name: str = Field(description="给人读的名字")
-    note: str = Field(description="这格意味着什么。**这句话会原样进两个 prompt**，"
-                                  "所以它要能独立读懂，不依赖任何别的字段")
-
-
-TILES: dict[str, Tile] = {
-    ".": Tile(name="普通地面", note="能走"),
-    "G": Tile(name="草丛", note="能走，走进去会遇野生宝可梦"),
-    "D": Tile(name="门/入口/楼梯", note="能进，通往另一张地图"),
-    "L": Tile(name="台阶断崖", note="只能从上往下跳，反方向过不去"),
-    "N": Tile(name="人", note="走不过去；面朝它按 A 可以对话"),
-    "S": Tile(name="招牌或可调查物", note="走不过去；面朝它按 A 可以调查"),
-    "W": Tile(name="水面", note="走不过去，学会冲浪之前过不去"),
-    "#": Tile(name="墙/树/建筑/家具", note="走不过去"),
-    UNKNOWN: Tile(name="看不清", note="这一帧没读出来。**不代表不能走**，想去就单独走一步试"),
-    PLAYER_MARK: Tile(name="主角自己", note="**必须且只能出现在 (4,4)**"),
+TERRAIN_MEANING: dict[str, str] = {
+    ".": "能走",
+    "G": "草丛，能走，走进去会遇野生宝可梦",
+    "D": "门 / 入口 / 楼梯，走进去会切换到另一张地图",
+    "S": "招牌或可调查物，走不过去；面朝它按 A 可以看",
+    "N": "人，走不过去；面朝它按 A 可以对话",
+    "#": "墙 / 树 / 建筑 / 水面，走不过去",
+    "@": "你自己，永远在 (4,4)",
 }
-"""地形符号表。**append-only**：一旦机制三开始积累 `(state-key, action) -> value`，
-符号的含义就不能再改，只能加新的——改一个字母的意思，等于让历史 value 全部失配。
+"""地形符号的含义。**每一个都来自模拟器内存，没有一个是认出来的。**
 
-为什么是这十个而不是更多：每多一个符号，模型就多一次分类机会，也多一处错。
-拆到"树 vs 墙"这个粒度对决策毫无影响（都走不过去），只是白白增加错误面。
-拆到 `G` 是必要的（它决定会不会遇野生宝可梦），拆到 `D` 是必要的
-（它是唯一"看着不能走但其实能过"的东西，也正是上一版栽的地方）。
+    .  #   ← tile id 查 tileset 的可通行表（游戏自己的 CheckTilePassable）
+    G      ← tileset 头里的 wGrassTile
+    D      ← 地图头的 warp 表（还带着通往哪张地图）
+    S      ← 地图头的 sign 表
+    N      ← 精灵表 wSpriteStateData1
+    @      ← 常量，镜头锁在主角身上
+
+这就是这一版和前三版的根本差别：视觉模型反复读错的东西（墙认成门、窗户认成人），
+在这里**根本不存在"认"这个动作**。
+
+这份 dict 同时是 prompt 里的图例来源（`terrain_legend()`），两边共用一份——
+各写一份必然漂移，而模型和大脑用两套字典这种错不会报错，只会静默互相误解。
 """
 
-WALK_CHARS = frozenset(TILES)
-WALKABLE = "."
-BLOCKED = "#"
+MAP_CHARS = frozenset(TERRAIN_MEANING)
 
 
-def tile_legend() -> str:
-    """渲染成 prompt 和动作说明里的图例。**两边共用一份，不手写。**
+def terrain_legend() -> str:
+    """渲染成 prompt 和动作说明里的图例。"""
+    return "\n".join(f"- `{ch}` {text}" for ch, text in TERRAIN_MEANING.items())
 
-    手写必然漂移：加一个符号却忘了改其中一处，模型和大脑就在用两套字典，
-    而这种错不会报错，只会静默地互相误解。
+
+class TerrainMap(BaseModel):
+    """从模拟器内存读出的通行图。**不是识别出来的。**
+
+    它抄的是游戏自己的碰撞判定（`CheckTilePassable`）：取目标格的 tile id，
+    在 tileset 的可通行表里查找。没有阈值、没有概率、没有识别——
+    几何这一维因此是 100% 而不是 87%。
+
+    **它不是 `Observation`**：`Observation` 是大脑看到的东西，这个是感知层的中间物，
+    由 `PyBoyWorld` 转成 `Observation.facts` 里的一段文本。
     """
-    return "\n".join(f"- `{ch}` {t.name} —— {t.note}" for ch, t in TILES.items())
+
+    cells: list[str] = Field(
+        description=f"{GRID_ROWS} 行、每行 {GRID_COLS} 个字符，取自 {sorted(MAP_CHARS)}"
+    )
+    map_id: int = Field(description="当前地图编号（wCurMap）")
+    player_x: int = Field(description="主角在地图里的 X 格坐标（wXCoord）")
+    player_y: int = Field(description="主角在地图里的 Y 格坐标（wYCoord）")
+    ambiguous_cells: int = Field(
+        default=0,
+        description="有多少格子的四个 8x8 子 tile 通行性不一致。"
+        "**这是采样规则的健康指标**：实测 90 格里只有 1 格（门）不一致，"
+        "取左下子格后与画面吻合。这个数涨起来就说明采样规则不够用了",
+    )
+
+    @field_validator("cells")
+    @classmethod
+    def _check_shape(cls, v: list[str]) -> list[str]:
+        """形状不对就打回。内存读出来的东西形状不对，说明地址或换算错了，
+        补齐只会把一个地址 bug 伪装成一张残缺的地图。
+        """
+        if len(v) != GRID_ROWS:
+            raise ValueError(f"terrain must have {GRID_ROWS} rows, got {len(v)}")
+        for i, row in enumerate(v):
+            if len(row) != GRID_COLS:
+                raise ValueError(f"row {i} has {len(row)} cells, expected {GRID_COLS}")
+            bad = set(row) - MAP_CHARS
+            if bad:
+                raise ValueError(f"row {i} has illegal characters {sorted(bad)}")
+        return v
+
+    def at(self, col: int, row: int) -> str:
+        return self.cells[row][col]
+
+    def neighbors(self) -> dict[str, str]:
+        """四个方向键各自通往的那一格是什么。
+
+        单独给一个方法，因为这四格和其余 86 格不是一回事：它们决定这一步能不能动。
+        """
+        col, row = PLAYER_CELL
+        return {
+            "up": self.at(col, row - 1), "down": self.at(col, row + 1),
+            "left": self.at(col - 1, row), "right": self.at(col + 1, row),
+        }
+
+    def render(self) -> str:
+        """渲染成带行列号的文本。
+
+        **格子之间不加空格。** 曾经用 `" ".join(...)` 排得整齐些，实测模型把那些
+        空格也当成了格子——一行 10 格看成 19 格，坐标全线错位。
+        紧凑排版难看一点，但它和字符数一一对应，数不错。
+
+        行列号必须和画在图上的网格标号一致——对不上的话，模型说的 (4,3)
+        和大脑理解的 (4,3) 不是同一格，而这种错不报错。
+        """
+        col, row = PLAYER_CELL
+        head = "    " + "".join(str(c) for c in range(GRID_COLS))
+        body = []
+        for r, line in enumerate(self.cells):
+            chars = list(line)
+            if r == row:
+                chars[col] = PLAYER_MARK
+            body.append(f"  {r} " + "".join(chars))
+        return "\n".join([head, *body])
+
+    def named_cells(self) -> dict[str, str]:
+        """值得起名字的格子：门、招牌、人。键是 `"(列,行)"`，值是符号。
+
+        **这些坐标是穷尽的**——它们来自内存里的结构化表，屏幕上有几个就是几个。
+        所以视觉模型不该自己去猜坐标，只该给这几个格子填名字。
+
+        上一版让它自己给坐标，实测一帧产出 6 条**丢掉 5 条**：它在做的是
+        "看画面找到一栋房子 → 猜它在第几列第几行"，而猜坐标正是它做不好的那件事。
+        """
+        return {
+            f"({c},{r})": ch
+            for r, line in enumerate(self.cells)
+            for c, ch in enumerate(line)
+            if ch in (DOOR, SIGN, PERSON)
+        }
+
+    def render_named_cells(self) -> str:
+        """渲染成 prompt 里那份"请给这几个格子起名字"的清单。"""
+        kind = {DOOR: "门/入口", SIGN: "招牌", PERSON: "人"}
+        items = self.named_cells()
+        if not items:
+            return "（这一帧没有需要命名的格子）"
+        return "\n".join(f"- `{cell}` {kind[ch]}" for cell, ch in sorted(items.items()))
+
+
+NEEDS_OVERVIEW = (Scene.FIELD, Scene.INDOOR)
+"""哪些场合必须给 `overview`。
+
+只有这两个：它们是**有布局可言**的画面，而 `overview` 的作用正是在挑细节之前
+先做一次全局判断，给后面的局部判断上约束。
+
+战斗、菜单、商店的内容全在 `fields` 和 `options` 里，那里的 `overview` 是装饰；
+把它也设成必填，只会给一堆和它无关的代码添噪声，而契约里的每一条约束
+都应该是有人真的依赖的。
+"""
+
 
 
 class ScreenState(BaseModel):
@@ -405,9 +585,9 @@ class ScreenState(BaseModel):
     overview: str = Field(
         default="",
         description="一句话描述整幅画面的布局，例如「左下角一栋房子，上方一片草丛，"
-        "中间横着一排断崖」。**必须写在 walk_map 之前**——字段的声明顺序就是模型的"
-        "输出顺序，先说整体会约束后面逐格填的结果；反过来先填格子再总结，"
-        "总结就只是在复述已经填错的东西",
+        "中间横着一排断崖」。**必须写在 landmarks 之前**——字段的声明顺序就是模型的"
+        "输出顺序，先说整体会约束后面挑地标的结果；反过来先挑地标再总结，"
+        "总结就只是在复述已经挑错的东西",
     )
 
     dialog_text: str = Field(
@@ -425,18 +605,23 @@ class ScreenState(BaseModel):
         description="该 scene 的结构化字段，键取自 SCENE_FIELDS。读不出的字段直接不放，"
         "**不要填占位值**——分不清'没读到'和'读到了空'会污染状态抽象准确率的标定",
     )
-    walk_map: list[str] = Field(
-        default_factory=list,
-        description=f"{GRID_ROWS} 行、每行 {GRID_COLS} 个字符的通行性矩阵，"
-        f"字符取自 {sorted(WALK_CHARS)}；`{PLAYER_MARK}` 必须落在 {PLAYER_CELL}。"
-        "只在 field / indoor 下有意义，其余场合留空列表",
+    labels: dict[str, str] = Field(
+        default_factory=dict,
+        description="给定格子的名字：键是 `\"(列,行)\"`，值是那一格是什么。"
+        "**坐标由我们给出，模型只填名字**——它不选格子，也就不可能把名字贴错地方。"
+        "认不出的格子直接不填",
     )
-    landmarks: list[str] = Field(
-        default_factory=list,
-        description="带坐标的地标，如 `宝可梦中心门 (4,3)`。"
-        "**矩阵只说得出「这格不能走」，说不出「这格是门」**，所以它不能被矩阵取代；"
-        "反过来，不带坐标的地标（'北边有一栋建筑'）已实测只会产生噪声，不要",
-    )
+
+    @model_validator(mode="after")
+    def _overview_comes_with_a_layout(self) -> ScreenState:
+        """野外和室内必须给 `overview`。
+
+        它不是补充说明，是**看细节之前的那次全局判断**。允许它缺失，模型就会跳过它
+        直接去挑地标——而跳过的正是唯一能牵制那些局部判断的东西。
+        """
+        if self.scene in NEEDS_OVERVIEW and not self.overview.strip():
+            raise ValueError(f"scene={self.scene.value} must come with an overview")
+        return self
 
     @field_validator("fields", mode="before")
     @classmethod
@@ -448,8 +633,8 @@ class ScreenState(BaseModel):
         `dict[str, str]` 被整条拒掉。23 帧里有 11 帧栽在这上面，
         而那和感知质量毫无关系。
 
-        判据同 ```json 包裹、rationale 裸字符串：**常见格式偏差、语义无歧义、
-        为它判错不划算。** `walkable` 是 `true` 还是 `"true"` 是序列化细节。
+        判据同 ```json 包裹：**常见格式偏差、语义无歧义，为它判错不划算。**
+        `walkable` 是 `true` 还是 `"true"` 是序列化细节。
 
         为什么不干脆放宽成 `dict[str, Any]`：机制一的 state key 要从 fields 派生，
         值的类型不统一就没法稳定地构造 key。规整在入口做一次，下游永远只见字符串。
@@ -471,97 +656,22 @@ class ScreenState(BaseModel):
                 out[str(k)] = str(val)
         return out
 
-    @field_validator("walk_map")
+    @field_validator("labels")
     @classmethod
-    def _check_walk_map(cls, v: list[str]) -> list[str]:
-        """形状和自检位都不对就整条打回。
+    def _check_label_keys(cls, v: dict[str, str]) -> dict[str, str]:
+        """键必须是 `(列,行)` 且在网格内。
 
-        **走异常不走截断**：一张行数不对的地图说明模型的坐标系是错的，
-        补齐或裁掉只会把错误藏起来，让下游拿着一张错地图规划路径。
-        空列表是合法的——战斗、菜单、过场本来就没有地图。
+        **这里只查格式，不查"该不该命名"** —— 后者要对着当前地图查，
+        而地图不在这个模型里。那一层过滤在 `PyBoyWorld.observe()`。
         """
-        if not v:
-            return v
-        if len(v) != GRID_ROWS:
-            raise ValueError(f"walk_map must have {GRID_ROWS} rows, got {len(v)}")
-        for i, row in enumerate(v):
-            if len(row) != GRID_COLS:
-                raise ValueError(f"row {i} has {len(row)} cells, expected {GRID_COLS}")
-            bad = set(row) - WALK_CHARS
-            if bad:
-                raise ValueError(f"row {i} has illegal characters {sorted(bad)}")
-
-        col, row_i = PLAYER_CELL
-        if v[row_i][col] != PLAYER_MARK:
-            # 自检位。模型认错了自己在哪，这一帧的每一格都不可信。
-            raise ValueError(
-                f"{PLAYER_MARK!r} must be at {PLAYER_CELL}, "
-                f"found {v[row_i][col]!r} there"
-            )
-        return v
-
-    @model_validator(mode="after")
-    def _overview_comes_with_the_map(self) -> ScreenState:
-        """有 `walk_map` 就必须有 `overview`。
-
-        它不是可选的补充说明，是**逐格填写之前的那次全局判断**。
-        允许它缺失，模型就会跳过它直接填格子——而跳过的正是唯一能约束
-        那 90 次孤立猜测的东西。
-        """
-        if self.walk_map and not self.overview.strip():
-            raise ValueError("a walk_map must come with an overview of the whole screen")
-        return self
-
-    @field_validator("landmarks")
-    @classmethod
-    def _check_landmarks(cls, v: list[str]) -> list[str]:
-        """每条地标都必须带一个**存在的**格子坐标。
-
-        不校验的话，模型会退回"北边有一栋建筑"那种无坐标描述——上一版实测证明
-        那只会产生噪声。而越界坐标（`(12,3)`）比没坐标更糟：它看起来可用，
-        大脑会拿它去规划一条通往屏幕外的路。
-        """
-        for item in v:
-            m = re.search(r"\((\d+)\s*,\s*(\d+)\)\s*$", item)
+        for cell in v:
+            m = re.fullmatch(r"\((\d+),\s*(\d+)\)", cell.strip())
             if not m:
-                raise ValueError(f"landmark {item!r} must end with a cell like '(4,3)'")
+                raise ValueError(f"label key {cell!r} must look like '(4,3)'")
             col, row = int(m.group(1)), int(m.group(2))
             if not (0 <= col < GRID_COLS and 0 <= row < GRID_ROWS):
-                raise ValueError(
-                    f"landmark {item!r} points at ({col},{row}), "
-                    f"outside the {GRID_COLS}x{GRID_ROWS} grid"
-                )
+                raise ValueError(f"label key {cell!r} is outside the grid")
         return v
-
-    def neighbors(self) -> dict[str, str]:
-        """主角四周那四格各是什么符号，键是方向键名。
-
-        单独给一个方法，因为这四格和其余 86 格**不是一回事**：
-        它们决定这一步能不能动，错一格就是原地撞墙；其余的只影响路径规划，
-        错一格多绕一步。标定时两者要分开报，混在一个"整体准确率"里，
-        「每步都错」会被藏在「85% 正确」底下。
-        """
-        if not self.walk_map:
-            return {}
-        col, row = PLAYER_CELL
-        return {
-            "up": self.walk_map[row - 1][col],
-            "down": self.walk_map[row + 1][col],
-            "left": self.walk_map[row][col - 1],
-            "right": self.walk_map[row][col + 1],
-        }
-
-    def render_walk_map(self) -> str:
-        """渲染成给大脑读的样子：带行列号，一行一行。
-
-        列号顶在上面、行号顶在左边，和画在图上的网格标号**必须一致**——
-        大脑读到的坐标和模型看到的坐标对不上，整套东西就白做了。
-        """
-        if not self.walk_map:
-            return ""
-        head = "   " + " ".join(str(c) for c in range(GRID_COLS))
-        body = [f" {r} " + " ".join(row) for r, row in enumerate(self.walk_map)]
-        return "\n".join([head, *body])
 
     def available_actions(self) -> tuple[str, ...]:
         """当前可按的键。**只由 overlay 决定**，masking 的数据来源。"""
@@ -599,18 +709,7 @@ EXAMPLES: dict[Scene, ScreenState] = {
         overlay=Overlay.NONE,
         overview="左上角一片草丛，中上方一栋房子、门开在正下方；"
                  "画面中间横着一排断崖，只在主角正下方有个缺口；下半部是空地，左侧立着一块招牌。",
-        walk_map=[
-            "GG####....",
-            "GG####....",
-            "GG####....",
-            "GG##D#....",
-            "....@.....",
-            "LLLL.LLLLL",
-            "..........",
-            "..S.......",
-            "..........",
-        ],
-        landmarks=["宝可梦中心 (4,3)", "路线指示牌 (2,7)"],
+        labels={"(4,3)": "宝可梦中心的门", "(2,7)": "写着「1 号道路」的招牌"},
     ),
     Scene.INDOOR: ScreenState(
         scene=Scene.INDOOR,
@@ -618,18 +717,7 @@ EXAMPLES: dict[Scene, ScreenState] = {
         overview="一间四面是墙的房间，中间一组柜子，柜子前站着一个人；"
                  "右下方有一处出口。画面下方三行被对话框盖住，看不到地面。",
         dialog_text="OAK: Hello there! Welcome to the world of POKéMON!",
-        walk_map=[
-            "##########",
-            "#........#",
-            "#..####..#",
-            "#..#N##..#",
-            "#...@....#",
-            "#....D...#",
-            "??????????",
-            "??????????",
-            "??????????",
-        ],
-        landmarks=["大木博士 (4,3)", "出口 (5,5)"],
+        labels={"(4,3)": "大木博士", "(5,5)": "通往一楼的楼梯"},
     ),
     Scene.BATTLE: ScreenState(
         scene=Scene.BATTLE,
@@ -667,14 +755,14 @@ EXAMPLES: dict[Scene, ScreenState] = {
 """每个 scene 一份合法样例，**同时是 prompt 的内容基准和测试基准**。
 
 为什么每类都要有：只给一份野外样例时，模型在战斗画面上会照着野外那份的形状填——
-把 `walk_map` 也填出来。样例是模型唯一能看到的"输出长什么样"的实例，
+把地标也照着编出来。样例是模型唯一能看到的"输出长什么样"的实例，
 缺哪一类，那一类就靠它自己猜。
 
 三个样例各自还在示范一件容易错的事：
 
 - `indoor` 带对话框：被挡住的三行**全部写 `?`**，不要凭印象补。
   这是 `?` 唯一一个高频用途，不示范的话模型永远不会用它。
-- `battle`：`walk_map` 和 `landmarks` 都是空的——战斗画面没有可走的地图。
+- `battle`：`landmarks` 是空的——战斗画面没有格子坐标可言。
 - `transition`：**什么都不填**。过场是一帧没有内容的画面，硬填就是编。
 
 prompt 里的样例是手写的（为了文件可读），本模块的这份是基准，

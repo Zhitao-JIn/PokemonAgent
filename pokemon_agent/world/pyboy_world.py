@@ -48,7 +48,6 @@ from __future__ import annotations
 import hashlib
 import pathlib
 import time
-from collections.abc import Callable
 
 from pyboy import PyBoy
 
@@ -63,8 +62,10 @@ from pokemon_agent.schemas.core import (
     Scene,
     ScreenState,
     Task,
+    TerrainMap,
     ToolResult,
 )
+from pokemon_agent.world.ram import read_terrain
 
 ALL_BUTTONS: tuple[str, ...] = ("a", "b", "up", "down", "left", "right", "start", "select")
 """世界支持的全部动作，**与状态无关**（`WorldPort.all_actions()` 的契约）。
@@ -153,7 +154,6 @@ class PyBoyWorld:
         state_path: str | None = None,
         prompt_name: str = "perceive_screen",
         max_perceive_retries: int = 2,
-        success: Callable[[ScreenState, int], bool] | None = None,
         watch: bool = False,
         speed: int = 1,
     ) -> None:
@@ -189,13 +189,11 @@ class PyBoyWorld:
         self._prompt = load_prompt(prompt_name)
         self._state_path = state_path
         self._retries = max_perceive_retries
-        self._success = success or (lambda _s, _step: False)
 
         self._task: Task | None = None
         self._step = 0
         self._done = False
-        self._won = False
-        self._cache: tuple[str, ScreenState] | None = None
+        self._cache: tuple[str, ScreenState, TerrainMap] | None = None
         self._facing = ""   # 未知。开局和过场之后都是未知，按一次方向键就确定
         self.last_calls: list[dict[str, str]] = []
         """最近一次 `_perceive()` 里发生的**每一次**模型调用。
@@ -225,7 +223,7 @@ class PyBoyWorld:
         else:
             self._tick(BOOT_FRAMES)
 
-        self._task, self._step, self._done, self._won, self._cache = task, 0, False, False, None
+        self._task, self._step, self._done, self._cache = task, 0, False, None
         self._facing = ""
         obs = self.observe()
 
@@ -236,20 +234,35 @@ class PyBoyWorld:
         """取当前观测。只读、幂等——**同一帧不会重复调用视觉模型**。"""
         assert self._task is not None, "observe() before reset()"
 
-        screen = self._perceive()
+        screen, terrain = self._perceive()
         facts: dict[str, str] = {
             "scene": screen.scene.value,
             "overlay": screen.overlay.value,
             **screen.fields,
         }
-        # **overview 排在 walk_map 前面。** facts 是有序 dict，大脑按这个顺序读到，
-        # 顺序就是"先整体后细节"——和感知那边的输出顺序一致。
+        # facts 是有序 dict，大脑按这个顺序读到，所以顺序本身就是一种表达：
+        # 先整体（overview），再地图（walk_map），最后细节（landmarks）。
         if screen.overview:
             facts["overview"] = screen.overview
-        if screen.walk_map:
-            facts["walk_map"] = screen.render_walk_map()
-        if screen.landmarks:
-            facts["landmarks"] = "; ".join(screen.landmarks)
+        # walk_map 来自模拟器内存，不是模型读出来的——它是这些事实里唯一 100% 的一项。
+        facts["walk_map"] = terrain.render()
+        # **绝对坐标不用括号写法。** `walk_map` 和 `landmarks` 里的 `(列,行)` 是
+        # **屏幕格**，随移动而变，主角恒在 (4,4)；这里的是**地图绝对坐标**。
+        # 两者都写成 `(8,5)` 的话，字面上无法区分，而 MAP_HINT 又明说"你永远在 (4,4)"——
+        # 直接矛盾。改成 `x=8 y=5`，一眼就不是同一种东西。
+        facts["map_id"] = str(terrain.map_id)
+        # 只留数据，不带解释。"这是全局坐标、和屏幕格不是一回事"写在动作说明里
+        # （`MAP_HINT` 的「两套坐标」那一段）——**说明写一次就够，数据每步都要发**。
+        facts["where"] = f"全局坐标 地图{terrain.map_id} x={terrain.player_x} y={terrain.player_y}"
+        named = terrain.named_cells()
+        kept = [f"{name} {cell}" for cell, name in sorted(screen.labels.items())
+                if cell in named and name.strip()]
+        # 键不在"该命名的格子"里 = 模型给了个我们没问的坐标。数出来，那是幻觉率。
+        dropped = sum(1 for cell in screen.labels if cell not in named)
+        if dropped:
+            facts["labels_dropped"] = str(dropped)
+        if kept:
+            facts["landmarks"] = "; ".join(kept)
         if self._facing:
             facts["facing"] = self._facing
         if screen.options:
@@ -263,7 +276,7 @@ class PyBoyWorld:
             summary=_summarize(screen),
             facts=facts,
             done=self._done,
-            success=self._won,
+            success=False,   # 达成与否由 harness 判定后覆写
         )
 
     def all_actions(self) -> list[str]:
@@ -276,9 +289,9 @@ class PyBoyWorld:
         前置条件：action.name 在 all_actions() 中；当前 episode 未结束。
         后置条件：返回的 observation.step 等于调用前 + 1。
 
-        **`ok` 恒为 True。** 「这一下有没有真的改变世界」在这个环境里没有便宜可靠的判据：
-        画面本身就有动画，像素比对量不出因果。动作若无效，下一步的观测会照实反映，
-        由大脑自己纠正——这比给一个不可靠的信号强。
+        **不报告"这一下有没有生效"。** 那个判断需要对比前后两次观察，
+        而对比是上层的事——记忆层两头各存一份完整快照，正是为了回答它。
+        world 只负责"我按了，世界推进了"。
         """
         assert self._task is not None, "step() before reset()"
         assert action.name in ALL_BUTTONS, f"unknown action {action.name!r}"
@@ -295,14 +308,18 @@ class PyBoyWorld:
         self._step += 1
         self._cache = None                      # 世界推进了，缓存失效
 
-        screen = self._perceive()
-        self._won = self._success(screen, self._step)
-        self._done = self._won or self._step >= self._task.max_steps
+        # **world 只按步数终止。** "任务达成了没有"由 harness 判（`harness/judge.py`）——
+        # 那是一次独立的模型调用，而 world 不该认识 LLM，也没有 TracePort 可以记账。
+        # 这里曾经有个 `success` 回调，收 `ScreenState`：没人注入过，恒为 False，
+        # 而且那个签名会把判定建立在**决策模型自己的感知**上，正是误差同源。
+        # 先置 done 再感知：`observe()` 组装时要读它。顺序反了 done 就慢一拍，
+        # 最后一步会带着 done=False 交出去，图的条件边跟着少判一轮。
+        self._done = self._step >= self._task.max_steps
 
-        obs = self.observe()
+        obs = self.observe()    # 缓存刚清过，这里是本步唯一一次真感知
         note = f"（按了 {times} 次）" if times > 1 else ""
         assert obs.step == before + 1, "step() must advance exactly one step"
-        return ToolResult(ok=True, message=obs.summary + note, observation=obs)
+        return ToolResult(message=obs.summary + note, observation=obs)
 
 
     @staticmethod
@@ -341,7 +358,7 @@ class PyBoyWorld:
         self._pyboy.screen.image.save(buf, format="PNG")
         return buf.getvalue()
 
-    def _perceive(self) -> ScreenState:
+    def _perceive(self) -> tuple[ScreenState, TerrainMap]:
         """调视觉模型读当前画面，按帧哈希缓存。
 
         失败：连续重试仍解析不出时抛 `PerceptionFailure`。
@@ -351,14 +368,23 @@ class PyBoyWorld:
         png = self._frame_png()
         sha = hashlib.sha256(png).hexdigest()[:12]
         if self._cache and self._cache[0] == sha:
-            return self._cache[1]
+            return self._cache[1], self._cache[2]
+
+        # **地形先读，而且和图片一起发给模型。**
+        # 它是确定的（抄的是游戏自己的碰撞判定），所以它是骨架；
+        # 模型不再回答"这格能不能走"，而是在一张已经正确的骨架上标语义——
+        # 哪一格是门、是招牌、是人。它擅长的正是这个。
+        terrain = read_terrain(self._pyboy.memory)
+        prompt = self._prompt.render(
+            known_map=terrain.render(), named_cells=terrain.render_named_cells()
+        )
 
         self.last_calls = []
         self.last_frame_sha = sha
         last = ""
         for attempt in range(1, self._retries + 1):
             t0 = time.perf_counter()
-            r = self._vision.describe(png, self._prompt.text)
+            r = self._vision.describe(png, prompt)
             screen = parse_screen(r.text)
             self.last_calls.append({
                 "frame_sha": sha,
@@ -371,8 +397,8 @@ class PyBoyWorld:
                 "raw": r.text,
             })
             if screen is not None:
-                self._cache = (sha, screen)
-                return screen
+                self._cache = (sha, screen, terrain)
+                return screen, terrain
             last = r.text[:200]
 
         raise PerceptionFailure(self._retries, f"unparsable output: {last!r}")

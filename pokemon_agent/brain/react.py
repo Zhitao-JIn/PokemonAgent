@@ -29,6 +29,7 @@ from pokemon_agent.schemas.core import (
     EventType,
     MemoryEntry,
     Observation,
+    Snapshot,
     Source,
 )
 
@@ -148,35 +149,50 @@ class ReActBrain:
         )
         raise MaxRetriesExceeded(self._max_retries, last_reason)
 
-    def remember(self, episode_id: str, obs: Observation, action: Action, result: str) -> None:
-        """把这一步发生的事写进记忆。
+    def remember(
+        self, episode_id: str, before: Observation, action: Action, after: Observation
+    ) -> None:
+        """把这一步发生的事写进记忆：**看到什么 → 为什么 → 做了什么 → 变成什么**。
 
-        前置条件：result 非空。
-        本阶段记忆内容是朴素的自然语言拼接，key 用 step 占位——
-        机制一接进来时换成 state abstraction 的语义 key，**这个方法的签名不变**。
+        `after` 是一个**完整的观察**，不是一句话结果。上一版只存
+        "结果：你在野外"，取回十条全长一个样——把结果压成标签，
+        这条经验就回答不了"那一下到底改变了什么"，而那正是它唯一的价值。
 
         写进去的是 `rationale` 而不是 `thought`：完整推理留在 trace 里，
         进记忆的只有论据。这条经验因此是**自带标签**的——"我以为 P，结果 R"，
         取回时反例就贴在同一行，一条错误论据不会被当成知识使用。
-        """
-        assert result, "remember() got an empty result"
 
-        because = "；".join(action.rationale)
+        `key` 本阶段用位置占位（比 step 强：位置是可复用的作用域，step 不是）。
+        机制一接进来时换成状态抽象的语义 key，**这个方法的签名不变**。
+        """
+        # 连按次数从动作本身取，不从观测里找——**动作是我们自己发出的，是确定的**。
+        raw = action.args.get("times", "1")
+        times = f" ×{raw}" if raw not in ("", "1") else ""
         entry = MemoryEntry(
-            key=str(obs.step),
-            content=f"在「{obs.summary}」时，因为{because}，选择了 {action.name}，结果：{result}",
-            step=obs.step,
+            before=Snapshot.of(before),
+            rationale=list(action.rationale),
+            action=f"{action.name}{times}",
+            after=Snapshot.of(after),
+            key=Snapshot.of(before).position or str(before.step),
+            step=before.step,
             episode_id=episode_id,
         )
         self._tools.memory_write(entry)
         self._trace.append(
-            episode_id, obs.step, EventType.MEMORY_WRITE, Source.HARNESS,
-            {"key": entry.key, "content": entry.content},
+            episode_id, before.step, EventType.MEMORY_WRITE, Source.HARNESS,
+            {"key": entry.key, "content": entry.render()},
         )
 
     def _recall(self, episode_id: str, obs: Observation) -> list[MemoryEntry]:
         """检索相关记忆。检索策略属于 harness，这里只负责问和记账。"""
-        memories = self._tools.memory_query(obs.summary, limit=self._memory_limit)
+        # **用当前快照的渲染文本去查，不用 `obs.summary`。**
+        # 记忆里存的是快照（位置 / 概况 / 地标 / 通行图），而 summary 是
+        # "你在野外" 这种一句话——两边词汇几乎不重叠，字符打分会一条都选不中。
+        # 查询和被查的东西必须是同一种表示，这也是 `Snapshot` 刻意照抄
+        # `Observation.facts` 字段的原因。
+        memories = self._tools.memory_query(
+            Snapshot.of(obs).render(), limit=self._memory_limit
+        )
 
         assert len(memories) <= self._memory_limit, "memory_query returned more than limit"
         # 记下**取回了哪几条**，不只是几条。
@@ -197,9 +213,7 @@ class ReActBrain:
         每次都从参数完整组装，不留历史——这是"大脑无状态"在代码层面的体现。
         """
         facts = "\n".join(f"- {k}: {v}" for k, v in obs.facts.items()) or "（无）"
-        recalled = "\n".join(
-            f"- ({m.episode_id}, {m.step}) {m.content}" for m in memories
-        ) or "（无相关记忆）"
+        recalled = "\n\n".join(m.render() for m in memories) or "（无相关记忆）"
         actions = "\n".join(
             f"- {name}: {space.descriptions.get(name, '（无说明）')}" for name in space.names
         )
