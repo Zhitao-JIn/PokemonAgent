@@ -33,9 +33,9 @@
 
 - **不判断动作有没有生效。** 画面本来就在动，像素比对量不出因果。
   动作没生效的话，下一步的观测会照实反映，由大脑自己纠正。
-- **成败判定注入，默认永不成功。** 真实判据（运行时由 LLM 读历史与状态）属于上层，
-  world 只负责「用满 max_steps 就终止」。不在这里编一套任务逻辑——
-  编出来的东西无法验证，还会挡住真实现。
+- **不判成败，也不数步。** 「任务达成了没有」要一次独立的模型调用，而 world
+  不该认识 LLM；「走了几步」是循环的账，同一个世界要能跑不同步数上限的任务。
+  两件事都在 `Harness` 里。world 只回答「世界现在什么样」和「我还在不在」。
 
 ## observe() 必须缓存
 
@@ -55,6 +55,7 @@ from pokemon_agent.errors import PerceptionFailure
 from pokemon_agent.interfaces.vision import VisionProvider
 from pokemon_agent.prompts import load as load_prompt
 from pokemon_agent.schemas.core import (
+    BUTTON_FACING,
     OVERLAY_ACTIONS,
     Action,
     Observation,
@@ -64,8 +65,16 @@ from pokemon_agent.schemas.core import (
     Task,
     TerrainMap,
     ToolResult,
+    terrain_legend,
 )
 from pokemon_agent.world.ram import read_terrain
+
+MAX_NOTES = 4
+"""同一帧里最多留几条细看的答案。
+
+`inspect` 不推进世界，所以 `step()` 的清空永远轮不到——没有上限的话
+一帧里能一直问下去，而这段文字**同时进决策 prompt 和判定 prompt**。
+"""
 
 ALL_BUTTONS: tuple[str, ...] = ("a", "b", "up", "down", "left", "right", "start", "select")
 """世界支持的全部动作，**与状态无关**（`WorldPort.all_actions()` 的契约）。
@@ -74,12 +83,9 @@ ALL_BUTTONS: tuple[str, ...] = ("a", "b", "up", "down", "left", "right", "start"
 增长的是掩码之外的 skill library（机制二）。
 """
 
-_FACING: dict[str, str] = {"up": "north", "down": "south", "left": "west", "right": "east"}
-"""方向键 → 朝向。
-
-**朝向是我们自己的动作推出来的，不是看出来的。** 宝可梦里按方向键，
-撞墙时人也会转过去（只是不移动），所以"按过 up"就等于"面朝北"，没有例外。
-这是确定的量；而实测让 VLM 读朝向是 8 步 8 次全错。
+_FACING = BUTTON_FACING
+"""方向键 → 朝向。定义在 `schemas/core.py`，**因为工具层也要用同一张表**
+（它要算"这一步走的是哪个方向"）。
 
 朝向要紧是因为 `a` 作用在**面朝的那一格**上：不知道朝向就不知道会调查到什么。
 """
@@ -154,6 +160,7 @@ class PyBoyWorld:
         state_path: str | None = None,
         prompt_name: str = "perceive_screen",
         max_perceive_retries: int = 2,
+        inspect_prompt_name: str = "inspect_focus",
         watch: bool = False,
         speed: int = 1,
     ) -> None:
@@ -187,22 +194,47 @@ class PyBoyWorld:
         self._pyboy.set_emulation_speed(speed if watch else 0)
         self._vision = vision
         self._prompt = load_prompt(prompt_name)
+        self._inspect_prompt = load_prompt(inspect_prompt_name)
         self._state_path = state_path
         self._retries = max_perceive_retries
 
         self._task: Task | None = None
-        self._step = 0
-        self._done = False
+        self._closed = False
+        """窗口被关了。**这是 world 唯一有资格宣告的终止**——世界没了，跑不下去。
+
+        「步数用尽」「任务达成」都不在这里判：前者是循环的事（只有 Harness 知道
+        走了几步），后者要一次独立的模型调用（world 不认识 LLM）。
+        world 只回答"我还在不在"。
+        """
         self._cache: tuple[str, ScreenState, TerrainMap] | None = None
         self._facing = ""   # 未知。开局和过场之后都是未知，按一次方向键就确定
-        self.last_calls: list[dict[str, str]] = []
-        """最近一次 `_perceive()` 里发生的**每一次**模型调用。
+        self._notes: dict[str, str] = {}
+        """`inspect()` 问出来的答案，**只在当前这一帧有效**。键是 focus。
+
+        推进世界就清空：它们描述的是那一帧画面，留到下一帧就是过期事实，
+        而过期事实比没有事实更糟——大脑分不出它是新的还是旧的。
+
+        **只增不改**：note 单独占一个 facts 键，不去覆盖 `landmarks` 之类的既有字段。
+        合并两份可能冲突的语义描述要定一套优先级规则，而那套规则本身就会错；
+        并排放着让大脑自己读，反而是它擅长的事。
+
+        **按 focus 去重，而且有条数上限**（见 `_note`）。用 dict 而不是 list：
+        `inspect` 不推进世界，所以同一帧里可以连着问很多次，而 `step()` 的清空
+        永远轮不到。实测连问 6 次同一个问题，`facts["inspected"]` 从 0 涨到 231 字符，
+        **同一条答案被原样拼了 6 遍**——重复的事实会被模型当成强证据，
+        比过期事实更糟，而且这段文字同时进决策 prompt 和判定 prompt。
+        """
+        self._pending_calls: list[dict[str, str]] = []
+        """**还没被记账**的模型调用。由 `drain_calls()` 取走并清空。
 
         是列表不是单条：解析失败会重试，而失败的那几次同样烧了 token，
         只留最后一次就把它们的成本和原始输出丢了。
 
         world 契约里没有 TracePort，所以这里只**暴露**记录，由上层写进 trace。
         不在 world 里塞 trace 依赖——那会让它认识本不该认识的东西。
+
+        取走而不是覆写，是为了让"**每次调用恰好记一次账**"由调用次数本身保证，
+        不依赖上层来得够早（见 `WorldPort.drain_calls` 的说明，两个方向都出过错）。
         """
         self.last_frame_sha = ""
 
@@ -212,7 +244,14 @@ class PyBoyWorld:
         """按任务重置。
 
         前置条件：task.max_steps > 0。
-        后置条件：step == 0、done 为 False、goal == task.goal。
+        后置条件：done 为 False。
+
+        **`step` 不由 world 填**（恒为 0，由 Harness 盖章）。同一个世界要能跑
+        不同步数上限的任务，"走了几步"就只能是循环的账。
+
+        **`task` 进来只用于断言和将来按任务选起始存档**——world 不需要知道
+        任务目标是什么。"现在要完成的是哪条"由 Harness 的目标栈保管：
+        任务目标只是栈底那一条，而 agent 当下在做的是栈顶那条，两者常常不同。
         """
         assert task.max_steps > 0, f"max_steps must be > 0, got {task.max_steps}"
 
@@ -223,11 +262,12 @@ class PyBoyWorld:
         else:
             self._tick(BOOT_FRAMES)
 
-        self._task, self._step, self._done, self._cache = task, 0, False, None
+        self._task, self._closed, self._cache = task, False, None
         self._facing = ""
+        self._notes = {}
         obs = self.observe()
 
-        assert obs.step == 0 and not obs.done, "reset() must return a fresh observation"
+        assert not obs.done, "reset() must return a fresh observation"
         return obs
 
     def observe(self) -> Observation:
@@ -235,11 +275,32 @@ class PyBoyWorld:
         assert self._task is not None, "observe() before reset()"
 
         screen, terrain = self._perceive()
+        overlay, text = screen.overlay, screen.dialog_text.strip()
+
+        # **说有对话框却一个字都没抄出来 = 它把别的东西看成对话框了。**
+        # 实测：室内地图下方的黑色边界被认成对话框，而同一帧（frame sha 一模一样）
+        # 上一步它还判的是 none。降级成 none，并把这次误判记下来。
+        #
+        # 这条交叉检验不需要任何新的输入——**它只是拿模型自己的两个输出对账**。
+        # 而 overlay 决定动作掩码，错一次大脑就会拿到一组它按不出效果的动作。
+        misread = ""
+        if overlay is Overlay.DIALOG and not text:
+            overlay, misread = Overlay.NONE, "dialog_without_text"
+
         facts: dict[str, str] = {
             "scene": screen.scene.value,
-            "overlay": screen.overlay.value,
+            "overlay": overlay.value,
             **screen.fields,
         }
+        # **对话框的文字必须进 facts，而且排在最前面。**
+        # 漏了这一项的代价大得离谱：判定器看不到对话内容，
+        # 「对话框里出现母亲说的话」这类判据**永远不可能成立**；
+        # 而决策模型看不到，就会按先验编一句出来当成自己读到的。
+        # 实测判定器自己说过：「对话框内容未提供，无法确认是否为母亲说的话」。
+        if text:
+            facts["dialog_text"] = text
+        if misread:
+            facts["perception_warning"] = misread
         # facts 是有序 dict，大脑按这个顺序读到，所以顺序本身就是一种表达：
         # 先整体（overview），再地图（walk_map），最后细节（landmarks）。
         if screen.overview:
@@ -253,31 +314,126 @@ class PyBoyWorld:
         facts["map_id"] = str(terrain.map_id)
         # 只留数据，不带解释。"这是全局坐标、和屏幕格不是一回事"写在动作说明里
         # （`MAP_HINT` 的「两套坐标」那一段）——**说明写一次就够，数据每步都要发**。
-        facts["where"] = f"全局坐标 地图{terrain.map_id} x={terrain.player_x} y={terrain.player_y}"
-        named = terrain.named_cells()
-        kept = [f"{name} {cell}" for cell, name in sorted(screen.labels.items())
-                if cell in named and name.strip()]
-        # 键不在"该命名的格子"里 = 模型给了个我们没问的坐标。数出来，那是幻觉率。
-        dropped = sum(1 for cell in screen.labels if cell not in named)
-        if dropped:
-            facts["labels_dropped"] = str(dropped)
-        if kept:
-            facts["landmarks"] = "; ".join(kept)
+        facts["where"] = terrain.place().render()
+        # **地标只有类型和位置，没有名字，而且用全局坐标。**
+        # 名字（这是谁家、招牌上写什么）在总览画面里没有可观测的证据——
+        # 招牌的字根本没渲染，所有的门都是同一个深色矩形。让视觉模型填，
+        # 它就按先验编：真新镇既没有宝可梦中心也没有商店，它照样给出了
+        # 「写着「POKéMON CENTER」的招牌」。名字要靠**走进去看见**再记住，
+        # 那是记忆层的事（见 `TerrainMap.landmarks` 的完整说明）。
+        if landmarks := terrain.render_landmarks():
+            facts["landmarks"] = landmarks
+        # 四邻单独给一行：它是唯一**相对"我"**的地形描述，所以是唯一能进记忆的那份
+        # （`walk_map` 的原点跟着人走，跨步骤引用会自相矛盾——见 `Snapshot`）。
+        facts["neighbors"] = terrain.render_neighbors()
         if self._facing:
             facts["facing"] = self._facing
         if screen.options:
             facts["options"] = " / ".join(screen.options)
         if screen.cursor is not None:
             facts["cursor"] = str(screen.cursor)
+        # 放最后：它是大脑自己追问出来的，优先级低于每步都有的那些字段，
+        # 而且**只对这一帧有效**（推进世界就清空）。
+        if self._notes:
+            facts["inspected"] = " | ".join(
+                f"{focus} → {answer}" for focus, answer in self._notes.items()
+            )
 
         return Observation(
-            step=self._step,
-            goal=self._task.goal,
+            # **step / done / success 由 Harness 盖章，这里只给占位值。**
+            # world 交出来的是"世界现在什么样"，不是"这一局跑到哪了"——
+            # 后者是循环的账，三家各记一份就是上一版步号回退的成因。
+            step=0,
+            # **结构化的位置也交出去。** `facts["where"]` 是给模型读的文本，
+            # 而交互记忆的键要拿 `(map_id, x, y)` 去算——反解字符串是迟早要出错的事。
+            place=terrain.place(),
             summary=_summarize(screen),
             facts=facts,
-            done=self._done,
-            success=False,   # 达成与否由 harness 判定后覆写
+            done=self._closed,
+            success=False,
         )
+
+    def inspect(self, focus: str) -> Observation:
+        """对**同一帧**再问一次视觉模型，问一个具体的问题。
+
+        前置条件：focus 非空。没有问题就没有细看，只有重复付钱。
+        后置条件：答案并进 `facts["inspected"]`，下一次 `observe()` 就能读到；
+            世界**不推进**，`step()` 之后自动清空。
+
+        ## 为什么不是"再调一次 observe"
+
+        `observe()` 按帧哈希缓存，同一帧再调返回的字节完全一样——**没有新信息**。
+        真正让它有价值的是这里换了一份 prompt：不再问"这一帧是什么"，
+        而是问"`(7,7)` 那格到底是门还是窗"。同一张图、不同的问题，
+        才会得到不同的答案。
+
+        失败不抛异常，把失败本身写成一条 note。细看是**锦上添花**：
+        问不出来就问不出来，为它中断一局不划算，而留一条"这次没看清"
+        至少让大脑知道别再问同一个问题。
+        """
+        assert self._task is not None, "inspect() before reset()"
+        assert focus.strip(), "inspect() got an empty focus"
+        assert not self._closed, "inspect() after the window was closed"
+
+        # **整段都在 try 里**，包括取帧、读内存、渲染 prompt。
+        # 契约写的是"失败不抛异常"，那就不能只护住模型调用那一行——
+        # `render()` 用的是 `Template.substitute`，模板少一个占位符就抛 KeyError，
+        # 而 prompt 正是最常改的那类文件。
+        t0 = time.perf_counter()
+        sha, tokens = "", {"input_tokens": "0", "output_tokens": "0"}
+        try:
+            png = self._frame_png()
+            sha = hashlib.sha256(png).hexdigest()[:12]
+            terrain = read_terrain(self._pyboy.memory)
+            prompt = self._inspect_prompt.render(
+                focus=focus, known_map=terrain.render(), legend=terrain_legend()
+            )
+            r = self._vision.describe(png, prompt)
+            answer = r.text.strip() or "（模型没说什么）"
+            tokens = {"input_tokens": str(r.input_tokens),
+                      "output_tokens": str(r.output_tokens)}
+            kind = ""
+        except Exception as exc:  # noqa: BLE001  细看失败不该让一局崩掉
+            answer = f"（没看清：{type(exc).__name__}）"
+            kind = type(exc).__name__
+
+        # token 字段**失败时也要有**（填 0）。`WorldPort.drain_calls` 的后置条件
+        # 要求每条都含 input/output_tokens；下游按 payload 累加成本的代码
+        # 碰到缺字段的记录只会 KeyError 或静默漏算。
+        record = {
+            **tokens,
+            "frame_sha": sha,
+            "prompt_sha": self._inspect_prompt.sha,
+            "latency_ms": str(int((time.perf_counter() - t0) * 1000)),
+            "attempt": "1",
+            "ok": str(not kind),
+            "raw": answer,
+        }
+        self._pending_calls.append(record)
+        self._note(focus, answer)
+
+        # **不清缓存**：`observe()` 每次都从缓存里的 ScreenState 重新组装 facts，
+        # 而 `_notes` 是组装时才读的，所以新答案自然会出现在下一次观测里。
+        # 顺序也不再要紧了——账是追加的，`observe()` 不会冲掉它。
+        return self.observe()
+
+    def drain_calls(self) -> list[dict[str, str]]:
+        """取走待记账的模型调用并清空。见 `WorldPort.drain_calls`。"""
+        calls, self._pending_calls = self._pending_calls, []
+        return calls
+
+    def _note(self, focus: str, answer: str) -> None:
+        """记下一条细看的答案。**同一个问题只留最新一条，总数有上限。**
+
+        问过的问题再问一次，答案覆盖而不是追加：重复的事实会被模型当成强证据。
+        上限到了就丢掉最早的那条——`inspect` 不推进世界，
+        所以这里是唯一挡得住"同一帧里一直问"的地方（`MAX_GOAL_DEPTH` 管的是拆解，
+        管不到这个）。丢掉的是最早的，因为大脑最近关心的问题更可能还在用。
+        """
+        self._notes.pop(focus, None)            # 覆盖时也要换到队尾
+        self._notes[focus] = answer
+        while len(self._notes) > MAX_NOTES:
+            self._notes.pop(next(iter(self._notes)))
 
     def all_actions(self) -> list[str]:
         """全部动作名，与状态无关。掩码是 harness 的事，不在这里做。"""
@@ -286,8 +442,8 @@ class PyBoyWorld:
     def step(self, action: Action) -> ToolResult:
         """按一个键，推进固定帧数。
 
-        前置条件：action.name 在 all_actions() 中；当前 episode 未结束。
-        后置条件：返回的 observation.step 等于调用前 + 1。
+        前置条件：action.name 在 all_actions() 中。
+        后置条件：`observation` 非空，是推进之后的新观测（`step` 未盖章）。
 
         **不报告"这一下有没有生效"。** 那个判断需要对比前后两次观察，
         而对比是上层的事——记忆层两头各存一份完整快照，正是为了回答它。
@@ -295,32 +451,52 @@ class PyBoyWorld:
         """
         assert self._task is not None, "step() before reset()"
         assert action.name in ALL_BUTTONS, f"unknown action {action.name!r}"
-        assert not self._done, "step() called on a finished episode"
+        assert not self._closed, "step() called after the window was closed"
 
         times = self._times(action)
+        # **对话框打开时连按被夹到 1。**
+        #
+        # 我们只在一步走完之后感知一次，所以连按会把中间那几帧**整个吃掉**。
+        # 而对话框恰恰是判据最常用的证据来源（"对话框里出现母亲说的话"）：
+        # 连按三次 a 推完整段对话，那几句话的每一帧都没被看到，最后一次按键还会
+        # 把对话框关掉——判定器看到的是一个没有对话框的画面，
+        # **一局本该成功的 episode 就这样被记成失败**，而且不报错。
+        #
+        # 夹在这里而不是靠 prompt 劝：连按是模型给的参数，劝它"预期有对话就别连按"
+        # 前提是它得先知道会有对话。而对话框**已经开着**这件事我们是确定知道的。
+        if times > 1 and self._dialog_is_open():
+            times = 1
         if action.name in _FACING:
             self._facing = _FACING[action.name]
-        before = self._step
         for _ in range(times):
             self._pyboy.button(action.name, delay=PRESS_FRAMES)
             self._tick(WITHIN_ACTION_FRAMES)
         self._tick(AFTER_ACTION_FRAMES)      # 等世界落定，再感知
-        self._step += 1
-        self._cache = None                      # 世界推进了，缓存失效
-
-        # **world 只按步数终止。** "任务达成了没有"由 harness 判（`harness/judge.py`）——
-        # 那是一次独立的模型调用，而 world 不该认识 LLM，也没有 TracePort 可以记账。
-        # 这里曾经有个 `success` 回调，收 `ScreenState`：没人注入过，恒为 False，
-        # 而且那个签名会把判定建立在**决策模型自己的感知**上，正是误差同源。
-        # 先置 done 再感知：`observe()` 组装时要读它。顺序反了 done 就慢一拍，
-        # 最后一步会带着 done=False 交出去，图的条件边跟着少判一轮。
-        self._done = self._step >= self._task.max_steps
+        self._notes = {}                        # 细看的答案只对那一帧有效
+        # **缓存不在这里清。** `_perceive()` 自己按帧哈希判，画面真变了它自然会
+        # 重新调模型；而按了键**画面没变**（对着空地按 a、朝墙走）时，
+        # 清掉缓存就是白花一次感知，还会引入噪声——
+        # 实测连着四步 frame sha 一模一样，模型却给出了不同的 overview，
+        # 其中一步把地图下方的黑边认成了对话框。同一帧只问一次，这类抖动直接消失。
 
         obs = self.observe()    # 缓存刚清过，这里是本步唯一一次真感知
+        asked = self._times(action)
         note = f"（按了 {times} 次）" if times > 1 else ""
-        assert obs.step == before + 1, "step() must advance exactly one step"
+        if asked > times:
+            # **夹了要说**，否则大脑会以为自己连按了 N 次，
+            # 而实际只走了一次——它下一步的推理就建立在错的前提上。
+            note = f"（对话框开着，连按 {asked} 次被夹成 1 次）"
         return ToolResult(message=obs.summary + note, observation=obs)
 
+
+    def _dialog_is_open(self) -> bool:
+        """当前这一帧有没有对话框。读的是缓存里的 `ScreenState`，不额外调模型。
+
+        缓存为空（刚 reset、或上一步刚推进过）时保守地当作没有——
+        那时下一次 `observe()` 才会知道，而夹连按是为了不丢证据帧，
+        少夹一次的代价远小于为它多调一次感知。
+        """
+        return self._cache is not None and self._cache[1].overlay is Overlay.DIALOG
 
     @staticmethod
     def _times(action: Action) -> int:
@@ -348,7 +524,7 @@ class PyBoyWorld:
         """
         for _ in range(frames):
             if not self._pyboy.tick(1):
-                self._done = True    # 窗口被关，当作 episode 终止
+                self._closed = True   # 窗口被关，世界没了——这是 world 唯一的终止权
                 return
 
     def _frame_png(self) -> bytes:
@@ -367,6 +543,9 @@ class PyBoyWorld:
         """
         png = self._frame_png()
         sha = hashlib.sha256(png).hexdigest()[:12]
+        self.last_frame_sha = sha
+        # **缓存命中就直接回，什么账都不动。** 没调模型就没有账，
+        # 而已经挂在那里、还没被取走的那些不归这里清——清了就是花了钱没记录。
         if self._cache and self._cache[0] == sha:
             return self._cache[1], self._cache[2]
 
@@ -375,18 +554,14 @@ class PyBoyWorld:
         # 模型不再回答"这格能不能走"，而是在一张已经正确的骨架上标语义——
         # 哪一格是门、是招牌、是人。它擅长的正是这个。
         terrain = read_terrain(self._pyboy.memory)
-        prompt = self._prompt.render(
-            known_map=terrain.render(), named_cells=terrain.render_named_cells()
-        )
+        prompt = self._prompt.render(known_map=terrain.render())
 
-        self.last_calls = []
-        self.last_frame_sha = sha
         last = ""
         for attempt in range(1, self._retries + 1):
             t0 = time.perf_counter()
             r = self._vision.describe(png, prompt)
             screen = parse_screen(r.text)
-            self.last_calls.append({
+            self._pending_calls.append({
                 "frame_sha": sha,
                 "prompt_sha": self._prompt.sha,
                 "input_tokens": str(r.input_tokens),

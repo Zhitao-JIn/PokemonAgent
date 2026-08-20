@@ -20,11 +20,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from datetime import datetime
 
+from pokemon_agent.build import build_real
 from pokemon_agent.errors import AgentError
-from pokemon_agent.graph.build import AgentState, build_real
 from pokemon_agent.mocks.mock_trace import MockTrace
 from pokemon_agent.schemas.core import EventType, Source, Task
 from probe.echo_trace import EchoTrace
@@ -59,11 +60,22 @@ def main() -> None:
     vision_model = _flag("--vision", "qwen3-vl-plus")
     text_model = _flag("--text", "qwen-plus")
     grid = _flag("--grid", "on") == "on"
+    judge_model = _flag("--judge", "")   # 空 = 和决策同型号
+    # **上限不是预算**：只在模型自己想说这么多时才花得掉。
+    # 被 API 拒了（各家对 max_tokens 有硬上限）就调低这个数。
+    max_tokens = int(_flag("--max-tokens", "25600"))
 
     task = Task(
-        task_id="explore-pallet",
+        # **task_id 不能写死。** 它是成功率的分组键：写死的话，命令行换了目标
+        # 跑出来的两批数据会被当成同一个任务聚合，算出来的成功率没有意义。
+        # 默认从目标文本派生（同一个目标 = 同一个 task_id，跨进程稳定），
+        # 想手动指定就用 --task-id。
+        task_id=_flag("--task-id", f"t{hashlib.sha256(goal.encode()).hexdigest()[:8]}"),
         goal=goal,
-        success_criteria="（本阶段不做成败判定，只跑满步数）",
+        # **默认判据是同义反复**（"出现证据"没说是什么证据），只够跑通链路。
+        # 真做实验必须用 --criteria 给一句**只看一帧就能判真假**的话，
+        # 否则判定器只能凭"看起来差不多了"回答，成功率就不可信。
+        success_criteria=_flag("--criteria", "画面上出现能直接证明这个目标已达成的证据"),
         max_steps=max_steps,
     )
 
@@ -76,22 +88,28 @@ def main() -> None:
     run_id = datetime.now().strftime("%m%d-%H%M%S")
     episode_id = f"{run_id}-ep0"
 
-    graph, harness, trace, world = build_real(
+    harness, trace, world = build_real(
         ROM, STATE,
-        vision_model=vision_model, text_model=text_model, grid=grid,
+        vision_model=vision_model, text_model=text_model,
+        judge_model=judge_model, grid=grid, max_tokens=max_tokens,
         watch=watch, trace=EchoTrace(MockTrace(run_id=run_id)),
     )
     print(f"task      {goal}")
+    print(f"criteria  {task.success_criteria}")
     print(f"episode   {episode_id}")
     # **模型必须打出来。** 换模型对比时，日志上不写型号，两份输出摆在一起
     # 就分不清哪份是哪个跑的——而那正是做对比的全部目的。
-    print(f"models    vision={vision_model}  text={text_model}  grid={'on' if grid else 'off'}")
+    print(f"models    vision={vision_model}  text={text_model}  "
+          f"judge={judge_model or text_model}  grid={'on' if grid else 'off'}  "
+          f"max_tokens={max_tokens}")
     print(f"limit     {max_steps} steps | state {STATE} | "
           f"{'windowed, realtime' if watch else 'headless, unlimited'}")
     print("-" * 62)
 
     try:
-        graph.invoke(AgentState(episode_id=episode_id, task=task), {"recursion_limit": 10_000})
+        outcome = harness.run(episode_id, task)
+        print(f"\n结果      success={outcome.success}  steps={outcome.steps}  "
+              f"reason={outcome.reason}")
     except AgentError as e:
         print(f"\n提前终止：{type(e).__name__}: {e}")
     finally:
@@ -112,7 +130,9 @@ def _summary(events: list) -> None:
     calls = [e for e in events if e.type is EventType.MODEL_CALL]
 
     print("\n" + "=" * 62)
-    for src, label in ((Source.PERCEPTION, "perception"), (Source.DECISION, "decision")):
+    for src, label in ((Source.PERCEPTION, "perception"),
+                       (Source.DECISION, "decision"),
+                       (Source.JUDGE, "judge")):
         rows = [e for e in calls if e.source is src]
         if not rows:
             continue
@@ -123,6 +143,17 @@ def _summary(events: list) -> None:
         failed = sum(1 for e in rows if e.payload.get("ok") != "True")
         print(f"{label:<12} {len(rows):>3} 次（失败 {failed}）  "
               f"in={n_in:<7} out={n_out:<6} 平均 {sum(lat) // max(len(lat), 1)} ms")
+    print("             ↑ perception 含细看（inspect 走的是同一个视觉模型，另一份 prompt）")
+
+    # **三类动作各用了多少**，以及拆出来的子目标有多少是白拆的。
+    # 这是目标栈和细看这两个机制唯一的直接证据：拆十条弹十条看着很好看，
+    # 但如果八条是 superseded（父目标先成了，它跟着作废），那说明它在乱拆不是在规划。
+    pressed = sum(1 for e in events if e.type is EventType.ACT)
+    looked = sum(1 for e in events if e.type is EventType.INSPECT)
+    pushed = sum(1 for e in events if e.type is EventType.GOAL_PUSH)
+    pops = [e.payload.get("reason", "?") for e in events if e.type is EventType.GOAL_POP]
+    print(f"动作         按键 {pressed} · 细看 {looked} · 拆子目标 {pushed}"
+          f"（完成 {pops.count('done')} / 作废 {pops.count('superseded')}）")
 
     errors: dict[str, int] = {}
     for e in events:

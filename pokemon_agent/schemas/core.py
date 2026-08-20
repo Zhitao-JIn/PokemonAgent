@@ -25,7 +25,6 @@
 
 from __future__ import annotations
 
-import re
 from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -49,6 +48,148 @@ class Task(BaseModel):
     max_steps: int = Field(description="步数上限，超出即判失败。> 0")
 
 
+BUTTON_FACING: dict[str, str] = {
+    "up": "north", "down": "south", "left": "west", "right": "east",
+}
+"""方向键 → 朝向。**朝向是我们自己的动作推出来的，不是看出来的。**
+
+宝可梦里按方向键，撞墙时人也会转过去（只是不移动），所以"按过 up"就等于"面朝北"，
+没有例外。实测让 VLM 读朝向是 8 步 8 次全错。
+
+放在 core 而不是 world，是因为**两处都要用**：world 用它更新 `facing`，
+工具层用它算"这一步走的是哪个方向"——而那两件事必须用同一张表。
+"""
+
+FACING_STEP: dict[str, tuple[int, int]] = {
+    "north": (0, -1), "south": (0, 1), "west": (-1, 0), "east": (1, 0),
+}
+"""朝向 → 全局坐标的位移。**`a` 作用在面朝的那一格上**，所以要拿这张表算出
+"我刚才是在跟谁互动"。y 向下增大，和 `walk_map` 的行号一致。"""
+
+MAX_OBJECT_LINES = 4
+"""一个对象最多记几句话。
+
+有上限不是怕内存，是怕 prompt：这些条目每一帧都要发，而一个 NPC 在剧情推进时
+可能说几十句。留最近几句够用了——**要点是"这是谁"，不是复述完整台词**。
+"""
+
+
+class Place(BaseModel):
+    """地图上的一个格子。**这是全项目唯一的"位置"表示。**
+
+    做成模型而不是三个散字段，是因为它现在**承载记忆的键**：
+    交互记忆按 `(map_id, x, y)` 索引，那三个数必须整体传递、整体比较。
+    散着传总有一天会漏掉 `map_id`，而漏掉之后两张地图上的同一个坐标会撞在一起——
+    那种错不报错，只会让记忆开始张冠李戴。
+    """
+
+    map_id: int
+    x: int
+    y: int
+
+    def step_toward(self, facing: str) -> Place:
+        """面朝 `facing` 时，`a` 会作用到的那一格。"""
+        dx, dy = FACING_STEP[facing]
+        return Place(map_id=self.map_id, x=self.x + dx, y=self.y + dy)
+
+    @property
+    def key(self) -> str:
+        """记忆的键。**跨 episode 稳定**——同一张地图上的同一格永远是同一个键。"""
+        return f"{self.map_id}:{self.x}:{self.y}"
+
+    def render(self) -> str:
+        """**全局坐标写成 `x= y=`，不用括号** —— 括号写法留给屏幕格。"""
+        return f"全局坐标 地图{self.map_id} x={self.x} y={self.y}"
+
+
+class Landmark(BaseModel):
+    """屏幕上一个值得记住的东西：门 / 招牌 / 人。类型和位置都来自模拟器内存。
+
+    **没有名字。** 名字在总览画面里没有可观测的证据，只能靠走过去交互再记住——
+    那正是 `ObjectNote` 的活。
+    """
+
+    kind: str = Field(description="门 / 招牌 / 人")
+    place: Place
+
+    def render(self) -> str:
+        return f"{self.kind} x={self.place.x} y={self.place.y}"
+
+
+class ObjectNote(BaseModel):
+    """**交互记忆**：某一格上的东西，跟它互动会得到什么。
+
+    ## 为什么它和情景记忆是两种东西
+
+    情景记忆（`MemoryEntry`）记的是「我在那种画面里选了什么、结果如何」——
+    作用域是**一次经过**，取回来靠画面相似。
+
+    这一条记的是「**地图39 x=2 y=3 那个人会说什么**」。作用域是那一格本身，
+    在那个作用域里**永远为真**，而且那个作用域会反复出现（下一步、下一局、下周）。
+    这正是长期记忆的范式：自带作用域 + 域内恒真 + 域会再现。
+
+    ## 它解决的具体问题
+
+    实测：agent 走进小茂家，对着一个 NPC 连按 `a`，自己在 rationale 里写下
+    "landmarks 中『人 x=2 y=3』…**确认为母亲**"——那是**凭空断言的身份**。
+    这句话进了情景记忆，下一步被取回，它照着自己的断言又按一次，如此循环。
+
+    判定器每一步都在说"这是 'BLUE is out at GrandPa's lab.'，不是母亲说的话"，
+    但**判定器的话到不了决策模型手里**（那条隔离是有意的：让被评价者看见评价者的
+    理由，它就会开始朝着评价者的措辞优化）。
+
+    有了这条记忆，下一次站在同一格前面，`known_objects` 里直接写着那个人说过什么——
+    **不需要再猜，也不需要再按一次才知道**。名字这一维终于有了正当来源。
+    """
+
+    landmark: Landmark
+
+    seen: int = Field(default=0, description="进过几次视野。**一步最多加一次**")
+    touched: int = Field(default=0, description="互动过几次（对着它按 a、或走进这扇门）")
+    first_seen: str = Field(default="", description="第一次见到的时刻，形如 `ep0#3`")
+    last_seen: str = Field(default="", description="最近一次见到的时刻")
+
+    lines: list[str] = Field(
+        default_factory=list,
+        description="跟它互动时出现过的文本，按第一次出现的顺序，去重。"
+        "**同一个 NPC 会说好几句**，所以是列表不是单条",
+    )
+    leads_to: int | None = Field(
+        default=None,
+        description="这扇门通往哪张地图。**只有门有，而且是走进去之后算出来的**："
+        "`before.map_id != after.map_id` 时，答案就是 `after` 的那个数。"
+        "纯算术，不会错——而且不是白送的，是它自己走进去换来的",
+    )
+
+    def see(self, line: str) -> None:
+        """记下一句。已经见过就不重复记——重复的文本会被模型当成强证据。"""
+        text = line.strip()
+        if text and text not in self.lines:
+            self.lines.append(text)
+        del self.lines[:-MAX_OBJECT_LINES]
+
+    def render(self) -> str:
+        """渲染成 `known_objects` 里的一行。
+
+        **"还没互动过"也要写出来。** 这份档案最有价值的一类条目正是它：
+        "这里有一扇门，我见过 7 次，一次都没进去过"——那是它自己的待办清单，
+        而没有这条信息，它只能靠 `landmarks` 看到那里有扇门，
+        分不出哪扇是探索过的、哪扇是新的。
+        """
+        parts: list[str] = []
+        if self.leads_to is not None:
+            parts.append(f"通往地图{self.leads_to}")
+        if self.lines:
+            parts.append(" / ".join(self.lines))
+        if not parts:
+            parts.append("互动过但没出现文字" if self.touched else "**还没互动过**")
+        return (
+            f"{self.landmark.place.render()} 的「{self.landmark.kind}」"
+            f" → {'；'.join(parts)}"
+            f"（见过 {self.seen} 次，互动 {self.touched} 次）"
+        )
+
+
 class Observation(BaseModel):
     """大脑在某一步看到的世界。
 
@@ -57,7 +198,12 @@ class Observation(BaseModel):
     """
 
     step: int = Field(description="本 episode 内的第几步，从 0 开始")
-    goal: str = Field(description="当前任务目标。大脑必须知道自己在干嘛，否则无从选择动作")
+    place: Place | None = Field(
+        default=None,
+        description="主角所在的格子。**结构化的那一份**——"
+        "`facts[\"where\"]` 是它渲染出来给模型读的文本，"
+        "而记忆的键要拿这三个数去算，不能靠反解字符串",
+    )
     summary: str = Field(description="给 LLM 读的自然语言状态描述")
     facts: dict[str, str] = Field(
         default_factory=dict,
@@ -77,7 +223,12 @@ class ActionSpace(BaseModel):
     增长的是掩码之外的 skill library（本阶段不做）。
     """
 
-    names: list[str] = Field(description="可用动作名，非空")
+    intents: list[Intent] = Field(
+        default_factory=lambda: [Intent.PRESS],
+        description="这一轮允许哪几类动作。**由 Harness 填**——"
+        "能不能拆子目标取决于栈有多深，那是循环的事，工具层不知道",
+    )
+    names: list[str] = Field(description="可用按键名，非空")
     descriptions: dict[str, str] = Field(
         default_factory=dict, description="动作名 -> 给 LLM 读的说明"
     )
@@ -101,6 +252,49 @@ MAX_RATIONALE = 3
 """
 
 
+class Intent(str, Enum):
+    """大脑这一轮想做哪一类事。**它是图的分派依据。**
+
+    分成三类而不是把它们都塞进按键里，是因为它们**代价和后果完全不同**：
+    只有 `PRESS` 推进世界（不可逆），另外两类只改变大脑自己的处境。
+    分开之后"它花了多少轮在想、多少轮在走"是可以直接从 trace 数出来的。
+
+    往里加第四类（读记忆、写记忆、调工具）时，加的是一个枚举值加一个图节点，
+    `choose()` 和 prompt 的形状不变——这是把它做成枚举而不是布尔标志的收益。
+    """
+
+    PRESS = "press"
+    """按键，推进世界。**唯一不可逆的一类。**"""
+
+    PUSH_GOAL = "push_goal"
+    """把当前目标拆出一个更近的子目标压进栈。不推进世界。"""
+
+    INSPECT = "inspect"
+    """对同一帧再问一次视觉模型，问一个具体的问题。不推进世界。
+
+    **必须带 `focus`**：不带的话它就是把同一帧原样再看一遍——
+    `perceive()` 是帧内缓存的，返回的字节完全一样，不产生任何新信息，
+    而模型在拿不准的时候一定会选它，然后下一轮看到同样的画面再选一次。
+    带上具体问题、走另一份 prompt，它才真的产出新事实，也才值那次钱。
+    """
+
+
+class Goal(BaseModel):
+    """一个目标：想达成什么，以及**怎么算达成**。
+
+    两样一起给，不能只给前者：判定器的输入就是这两项，没有判据它无从判断，
+    只能凭"看起来差不多了"回答——而那正是成功率会被污染的地方。
+
+    所以大脑压子目标时必须同时写出判据。写不出判据的子目标，
+    本身就说明它没想清楚要什么。
+    """
+
+    goal: str = Field(min_length=1, description="想达成什么，一句话")
+    criteria: str = Field(
+        min_length=1, description="画面上出现什么才算达成。**要能只看一帧就判断**"
+    )
+
+
 class Action(BaseModel):
     """大脑选出的一个动作。
 
@@ -121,13 +315,21 @@ class Action(BaseModel):
     跨 episode 复用属于 skill library（机制二），本阶段不做。
     """
 
-    name: str = Field(description="动作名，必须来自当时的 ActionSpace")
+    intent: Intent = Field(
+        default=Intent.PRESS,
+        description="这一轮做哪一类事。**分派靠它**，`name` 只在 PRESS 时有意义",
+    )
+    name: str = Field(
+        default="", description="按键名，必须来自当时的 ActionSpace。只在 PRESS 时有意义"
+    )
     args: dict[str, str] = Field(
-        default_factory=dict,
-        description=(
-            "动作参数。**当前没有任何消费方**——所有动作都是无参的，world 只按 name 分发。"
-            "为宏动作（带参数的按键序列）预留"
-        ),
+        default_factory=dict, description="按键参数，目前只有 `times`（连按几次）"
+    )
+    goal: Goal | None = Field(
+        default=None, description="要压进目标栈的子目标。只在 PUSH_GOAL 时有意义"
+    )
+    focus: str = Field(
+        default="", description="想细看什么，一句话。只在 INSPECT 时有意义"
     )
     thought: str = Field(
         min_length=1,
@@ -139,6 +341,22 @@ class Action(BaseModel):
         description=f"最能支持该动作的论据，1-{MAX_RATIONALE} 条。"
         "进 memory；经验能否迁移全看它",
     )
+
+    @model_validator(mode="after")
+    def _fields_must_match_the_intent(self) -> Action:
+        """每种 intent 的必填字段不同，**在这里挡住**，不要漏到分派的时候。
+
+        漏过去的话，`push_goal` 少了 `goal` 会在 Harness 里 assert 崩掉——
+        那是把**模型的输出问题**报成了**我们自己的契约违约**，看堆栈会指错方向。
+        在这里失败则走 `ParseFailure`，会被重试，也会按失败模式统计。
+        """
+        if self.intent is Intent.PRESS and not self.name:
+            raise ValueError("intent=press 必须给 action（按键名）")
+        if self.intent is Intent.PUSH_GOAL and self.goal is None:
+            raise ValueError("intent=push_goal 必须给 goal 和 criteria")
+        if self.intent is Intent.INSPECT and not self.focus.strip():
+            raise ValueError("intent=inspect 必须给 focus（想细看什么）")
+        return self
 
 
 class ToolResult(BaseModel):
@@ -167,22 +385,46 @@ class ToolResult(BaseModel):
 
 
 class Snapshot(BaseModel):
-    """一次观察的快照 —— **和大脑当时看到的是同一套东西**。
+    """一次观察的快照。**里面每一项都必须跨步骤成立。**
 
-    字段就是 `Observation.facts` 里那几项：整体印象、通行图、地标、位置。
-    刻意保持一致，因为记忆取回来是要和当前观察**对比着读**的：
-    "上次我在这样的画面里选了 X"——两边格式不同的话，这个对比就得由模型自己做换算，
-    而那是白白消耗它的注意力。
+    这是它和 `Observation.facts` 唯一的分歧：facts 是"这一帧的全部"，
+    快照是"其中还能拿到以后去用的那部分"。
+
+    ## 为什么 walk_map 不在里面
+
+    它天生是**屏幕相对**的：原点跟着人走，走一步同一个 `(7,7)` 就指向另一块地方。
+    `MAP_HINT` 里我们自己写着屏幕格"不能跨步骤引用"，早先却把整张图连同带屏幕格的
+    地标一起存进了记忆、下一步再喂回去。
+
+    实测代价：模型取回上一步的「民宅的门 (7,7)」，对照当前地图发现 `(7,7)` 是 `#`，
+    于是花了 **2235 个 output token、49 秒**反复重数那一行字符串，试图判断
+    是记忆错了还是地图错了。**两边都没错，是我们给的数据自相矛盾。**
+
+    ## 那"这一下到底改变了什么"靠什么看
+
+    靠 `position`（全局坐标）和 `neighbors`（相对"我"的四邻）：
+
+    - 撞墙 → 前后 `position` **一模一样**，这条经验的全部价值就在这。
+    - 进门 → `position` 里的地图编号变了。
+    - "我以为西边能走" → `neighbors["left"]` 白纸黑字写着当时是什么。
+
+    四邻是相对"我"的，不依赖屏幕原点，所以跨步骤永远成立。
+    整张图能多告诉你的只是"当时周围什么形状"，而那个信息没有稳定的坐标系可以承载。
     """
 
     overview: str = Field(default="", description="整体印象，视觉模型给的")
-    walk_map: str = Field(default="", description="通行图，模拟器内存给的")
-    landmarks: str = Field(default="", description="带坐标的地标")
+    landmarks: str = Field(
+        default="", description="地标，**全局坐标**（`门 x=13 y=5`），来自模拟器内存"
+    )
+    neighbors: str = Field(
+        default="",
+        description="四邻各是什么（`北 G 南 . 西 # 东 .`）。**相对『我』，不依赖屏幕原点**，"
+        "所以跨步骤成立。它承担的是『我以为那边能走』这类经验的证据",
+    )
     position: str = Field(
         default="",
-        description="`地图 0 里的 x=10 y=2` —— **地图绝对坐标，刻意不用括号写法**。"
-        "`walk_map` 和 `landmarks` 里的 `(列,行)` 是屏幕格（主角恒在 (4,4)），"
-        "两者写成同一个样子的话，字面上分不开",
+        description="`全局坐标 地图0 x=10 y=2` —— **全局坐标，刻意不用括号写法**。"
+        "括号写法留给屏幕格（主角恒在 (4,4)），两者写成同一个样子的话，字面上分不开",
     )
 
     @classmethod
@@ -191,23 +433,42 @@ class Snapshot(BaseModel):
         f = obs.facts
         return cls(
             overview=f.get("overview", "") or obs.summary,
-            walk_map=f.get("walk_map", ""),
             landmarks=f.get("landmarks", ""),
+            neighbors=f.get("neighbors", ""),
             position=f.get("where", ""),
+            dialog=f.get("dialog_text", ""),
         )
+
+    dialog: str = Field(
+        default="", description="对话框里的文字。**跨步骤成立**：那句话说过就是说过了"
+    )
 
     def render(self, indent: str = "  ") -> str:
         lines = []
         if self.position:
             lines.append(f"{indent}位置  {self.position}")
+        if self.neighbors:
+            lines.append(f"{indent}四邻  {self.neighbors}")
+        if self.dialog:
+            lines.append(f"{indent}对话  {self.dialog}")
         if self.overview:
             lines.append(f"{indent}概况  {self.overview}")
         if self.landmarks:
             lines.append(f"{indent}地标  {self.landmarks}")
-        if self.walk_map:
-            for line in self.walk_map.splitlines():
-                lines.append(f"{indent}      {line}")
         return "\n".join(lines)
+
+    def same_place_as(self, other: Snapshot) -> bool:
+        """两次观察是不是**完全没有区别**。
+
+        位置、四邻、对话框三项全同 = 那一下什么都没发生。
+        用这三项而不是全部：`overview` 是模型每次重写的自然语言，同一帧也会不一样，
+        拿它比会把"没变"误判成"变了"——实测同一个 frame sha 下它给出过三种不同措辞。
+        """
+        return (
+            self.position == other.position
+            and self.neighbors == other.neighbors
+            and self.dialog == other.dialog
+        )
 
 
 class MemoryEntry(BaseModel):
@@ -255,13 +516,24 @@ class MemoryEntry(BaseModel):
         分成两份的话，可能出现"按 A 的内容选中，却把 B 的内容喂进去"，而且不报错。
         """
         because = "；".join(self.rationale) or "（未给出理由）"
+        # **"什么都没发生"要明说，不要让它自己去比。**
+        # 前后两份快照摆在一起，理论上对比得出来；实测它不会——
+        # 连着三步按 `a` 对着空地，每一步都取回上一步"按 a 没变化"的记忆，
+        # 然后照着自己上一步那句"站在门格上按 a 是标准操作"再按一次。
+        # 它把过去的 `rationale` 当成了权威，而权威说的话恰恰是错的。
+        #
+        # 判定是纯比较，我们做得又快又准，就不该留给它。
+        after = (
+            "  之后变成：**什么都没变**（位置、四邻、对话框全部相同——这个动作没有效果）"
+            if self.after.same_place_as(self.before)
+            else "  之后变成：\n" + self.after.render()
+        )
         return "\n".join([
             f"({self.episode_id}, {self.step}) 当时看到：",
             self.before.render(),
             f"  因为  {because}",
             f"  做了  {self.action}",
-            "  之后变成：",
-            self.after.render(),
+            after,
         ])
 
 
@@ -313,6 +585,24 @@ class EventType(str, Enum):
     ACT = "act"
     MEMORY_READ = "memory_read"
     MEMORY_WRITE = "memory_write"
+    OBJECT_NOTE = "object_note"
+    """记下了「某一格的东西给了什么」。**和 MEMORY_WRITE 分开**：
+
+    它们是两种记忆（一次经过 vs 那一格本身），寿命和用途都不同。
+    混成一类就数不出"它认识了多少个东西"——而那正是交互记忆有没有用的直接指标。
+    """
+    INSPECT = "inspect"
+    """细看了一次。**和 OBSERVE 分开**：它是大脑主动要的，不是每步必发的那一帧。
+
+    混在一起就算不出「它多久要细看一次」，而那正是判断这个动作值不值那次钱的依据。
+    """
+    GOAL_PUSH = "goal_push"
+    GOAL_POP = "goal_pop"
+    """目标栈的进出。
+
+    分成两个类型而不是一个带方向的字段：**"它拆了几层"和"它完成了几层"是两个数**，
+    而拆得多完成得少正是目标栈失控的样子——按类型计数一眼就看得出来。
+    """
     ERROR = "error"
     CHECKPOINT = "checkpoint"
 
@@ -533,29 +823,64 @@ class TerrainMap(BaseModel):
             body.append(f"  {r} " + "".join(chars))
         return "\n".join([head, *body])
 
-    def named_cells(self) -> dict[str, str]:
-        """值得起名字的格子：门、招牌、人。键是 `"(列,行)"`，值是符号。
+    def landmarks(self) -> list[Landmark]:
+        """屏幕上的门 / 招牌 / 人，**换算成全局坐标**。返回 `(类型, x, y)`。
 
-        **这些坐标是穷尽的**——它们来自内存里的结构化表，屏幕上有几个就是几个。
-        所以视觉模型不该自己去猜坐标，只该给这几个格子填名字。
+        ## 为什么是全局坐标
 
-        上一版让它自己给坐标，实测一帧产出 6 条**丢掉 5 条**：它在做的是
-        "看画面找到一栋房子 → 猜它在第几列第几行"，而猜坐标正是它做不好的那件事。
+        地标是**地图上的一个地点**，它跨步骤存在，所以它的坐标也必须跨步骤成立。
+        用屏幕格写的话，走一步同一个 `(7,7)` 指的就是另一块地方了——
+        而我们还把它存进了记忆、下一步又喂回去。
+
+        实测代价：模型取回上一步的记忆「民宅的门 (7,7)」，对照当前地图发现
+        `(7,7)` 是 `#`，于是花了 **2235 个 output token、49 秒**反复重数那一行字符串，
+        试图搞清楚是记忆错了还是地图错了。**两边都没错，是我们给的数据自相矛盾**——
+        `MAP_HINT` 里明明白白写着屏幕格"不能跨步骤引用"，然后我们自己跨了。
+
+        换算是纯算术：`全局 = 主角全局坐标 + (屏幕格 - PLAYER_CELL)`，不读新的内存。
+
+        ## 为什么没有名字
+
+        名字（这是谁家、招牌上写什么）在总览画面里**没有可观测的证据**：
+        招牌的文字根本没渲染，要按 A 弹对话框才有；所有的门都是同一个深色矩形。
+        所以名字只有三个可能来源——
+
+        - **内存**：warp 表里就带着目标地图编号，精确。但那是"世界怎么连起来"，
+          正是长程记忆要学的东西，白送等于把这个项目要证明的事删掉。
+        - **视觉模型**：三轮实测全在编。真新镇既没有宝可梦中心也没有商店，
+          它照样给出了「写着「POKéMON CENTER」的招牌」——那是先验，不是观察。
+        - **经验**：走进去看见了什么，然后记住。**只有这一个是对的**，而它还没做。
+
+        所以现在只给类型和位置。等记忆系统能把"进过 x=13 y=5 那扇门，里面是小茂家"
+        沉淀下来，名字才会从那边长出来。
         """
-        return {
-            f"({c},{r})": ch
+        pc, pr = PLAYER_CELL
+        kind = {DOOR: "门", SIGN: "招牌", PERSON: "人"}
+        here = self.place()
+        return [
+            Landmark(
+                kind=kind[ch],
+                place=Place(map_id=here.map_id,
+                            x=here.x + (c - pc), y=here.y + (r - pr)),
+            )
             for r, line in enumerate(self.cells)
             for c, ch in enumerate(line)
             if ch in (DOOR, SIGN, PERSON)
-        }
+        ]
 
-    def render_named_cells(self) -> str:
-        """渲染成 prompt 里那份"请给这几个格子起名字"的清单。"""
-        kind = {DOOR: "门/入口", SIGN: "招牌", PERSON: "人"}
-        items = self.named_cells()
-        if not items:
-            return "（这一帧没有需要命名的格子）"
-        return "\n".join(f"- `{cell}` {kind[ch]}" for cell, ch in sorted(items.items()))
+    def place(self) -> Place:
+        """主角所在的格子。"""
+        return Place(map_id=self.map_id, x=self.player_x, y=self.player_y)
+
+    def render_neighbors(self) -> str:
+        """四邻渲染成一行。**相对『我』的方向，不依赖屏幕原点，所以能进记忆。**"""
+        n = self.neighbors()
+        名 = {"up": "北", "down": "南", "left": "西", "right": "东"}
+        return " ".join(f"{名[d]} {n[d]}" for d in ("up", "down", "left", "right"))
+
+    def render_landmarks(self) -> str:
+        """渲染成 facts 里那一行。**全局坐标写成 `x= y=`**，和屏幕格的括号写法分开。"""
+        return "; ".join(m.render() for m in self.landmarks())
 
 
 NEEDS_OVERVIEW = (Scene.FIELD, Scene.INDOOR)
@@ -605,13 +930,6 @@ class ScreenState(BaseModel):
         description="该 scene 的结构化字段，键取自 SCENE_FIELDS。读不出的字段直接不放，"
         "**不要填占位值**——分不清'没读到'和'读到了空'会污染状态抽象准确率的标定",
     )
-    labels: dict[str, str] = Field(
-        default_factory=dict,
-        description="给定格子的名字：键是 `\"(列,行)\"`，值是那一格是什么。"
-        "**坐标由我们给出，模型只填名字**——它不选格子，也就不可能把名字贴错地方。"
-        "认不出的格子直接不填",
-    )
-
     @model_validator(mode="after")
     def _overview_comes_with_a_layout(self) -> ScreenState:
         """野外和室内必须给 `overview`。
@@ -656,23 +974,6 @@ class ScreenState(BaseModel):
                 out[str(k)] = str(val)
         return out
 
-    @field_validator("labels")
-    @classmethod
-    def _check_label_keys(cls, v: dict[str, str]) -> dict[str, str]:
-        """键必须是 `(列,行)` 且在网格内。
-
-        **这里只查格式，不查"该不该命名"** —— 后者要对着当前地图查，
-        而地图不在这个模型里。那一层过滤在 `PyBoyWorld.observe()`。
-        """
-        for cell in v:
-            m = re.fullmatch(r"\((\d+),\s*(\d+)\)", cell.strip())
-            if not m:
-                raise ValueError(f"label key {cell!r} must look like '(4,3)'")
-            col, row = int(m.group(1)), int(m.group(2))
-            if not (0 <= col < GRID_COLS and 0 <= row < GRID_ROWS):
-                raise ValueError(f"label key {cell!r} is outside the grid")
-        return v
-
     def available_actions(self) -> tuple[str, ...]:
         """当前可按的键。**只由 overlay 决定**，masking 的数据来源。"""
         return OVERLAY_ACTIONS[self.overlay]
@@ -709,7 +1010,6 @@ EXAMPLES: dict[Scene, ScreenState] = {
         overlay=Overlay.NONE,
         overview="左上角一片草丛，中上方一栋房子、门开在正下方；"
                  "画面中间横着一排断崖，只在主角正下方有个缺口；下半部是空地，左侧立着一块招牌。",
-        labels={"(4,3)": "宝可梦中心的门", "(2,7)": "写着「1 号道路」的招牌"},
     ),
     Scene.INDOOR: ScreenState(
         scene=Scene.INDOOR,
@@ -717,7 +1017,6 @@ EXAMPLES: dict[Scene, ScreenState] = {
         overview="一间四面是墙的房间，中间一组柜子，柜子前站着一个人；"
                  "右下方有一处出口。画面下方三行被对话框盖住，看不到地面。",
         dialog_text="OAK: Hello there! Welcome to the world of POKéMON!",
-        labels={"(4,3)": "大木博士", "(5,5)": "通往一楼的楼梯"},
     ),
     Scene.BATTLE: ScreenState(
         scene=Scene.BATTLE,
@@ -778,3 +1077,76 @@ def json_output_examples() -> dict[Scene, str]:
 def json_output_example() -> str:
     """野外那一份。保留单数形式是因为它是最主要的一类，测试和文档都常单独引用它。"""
     return json_output_examples()[Scene.FIELD]
+
+
+class ModelCall(BaseModel):
+    """一次模型调用留下的账，外加它成没成。
+
+    ## 为什么大脑要把账"交出来"而不是自己记
+
+    **只有 Harness 写 trace。** 大脑是被调用方：它返回结果和账单，
+    由 Harness 翻译成事件。上一版不是这样——brain 自己写 MODEL_CALL / THINK /
+    ERROR / MEMORY_READ，harness 写 ACT / MEMORY_WRITE / OBSERVE / EPISODE_*，
+    于是"某类事件归谁写"要一条条记，还开了个例外（judge 不写 trace，为的是让
+    判定器碰不到自己的账）——用例外弥补一条不统一的规则。
+
+    统一之后规则只有一句：**谁控制循环，谁记账。** 判定器碰不到自己的账
+    也就不再是特权设计，而是所有大脑调用的共同处境。
+
+    `payload` 直接就是 trace 里 `MODEL_CALL` 的内容。`error_kind` 非空时
+    Harness 会**另外补一条 `ERROR` 事件**——账单和失败模式是两件事：
+    前者回答"花了多少钱"，后者回答"为什么没拿到东西"，混在一条里两个都统计不出来。
+    """
+
+    payload: dict[str, str] = Field(
+        default_factory=dict,
+        description="token、延迟、prompt 版本、第几次尝试、原始输出。**失败的调用也要有**——"
+        "它同样烧了钱，而 `raw` 让你改进解析器之后能离线重算，不必再花 token 重跑",
+    )
+    error_kind: str = Field(
+        default="",
+        description="失败类型（ParseFailure / IllegalAction / OutputTruncated…）。"
+        "空串表示这次成功了。**单独一列**：聚合失败模式时不必去解析 error 字符串",
+    )
+    error: str = Field(default="", description="失败详情，一句话")
+
+
+class Decision(BaseModel):
+    """大脑选一次动作的**全部产物**：动作、账单、它翻过哪些记忆。
+
+    `action` 为 None 表示重试全部用尽——**这不是异常，是一类要被统计的失败模式**。
+    抛异常的是 Harness（它才知道这一局的死活），大脑只如实汇报。
+    """
+
+    action: Action | None = Field(
+        default=None, description="选中的动作；None = 重试用尽，一次都没解析出合法动作"
+    )
+    calls: list[ModelCall] = Field(
+        default_factory=list, description="每一次尝试一条，成功失败都在里面，按发生顺序"
+    )
+    recalled: list[str] = Field(
+        default_factory=list,
+        description="取回了哪几条记忆，形如 `(episode_id, step)`。"
+        "**记引用而不只是条数**——只记数量的话，replay 时无法回答"
+        "「这个决策是被哪条经验影响的」，而那正是「记忆到底有没有用」要查的东西",
+    )
+
+
+class Verdict(BaseModel):
+    """一次成败判定的结果，连同它花了什么。
+
+    跨层了才做成模型：大脑产出它，Harness 读 `done` 决定要不要终止、
+    把 `call` 写进 trace。两边对这三个字段的期待必须是同一份契约。
+    """
+
+    done: bool = Field(description="任务达成了没有。**拿不准一律 False**")
+    why: str = Field(
+        description="看到了什么证据（或为什么证据不足）。"
+        "每一个 True 都得说得出依据，否则成功率就是一个无法证伪的数字"
+    )
+    call: ModelCall = Field(
+        default_factory=lambda: ModelCall(),
+        description="这次判定的账。判定和决策各自烧 token，分不开就说不清"
+        "「成功率这个数字本身花了多少钱」，也算不出判定器自己的失效率——"
+        "而**没有失效率的判定器等于没有判定器**",
+    )

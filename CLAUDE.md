@@ -65,12 +65,13 @@
 - 组件的依赖**一律从构造函数传入**，类型标成接口而非具体实现：
 
 ```python
-class ReActBrain:
-    def __init__(self, llm: LLMProvider, tools: ToolPort, trace: TracePort) -> None:
+class Brain:
+    def __init__(self, decide_llm: LLMProvider, judge_llm: LLMProvider,
+                 tools: ToolPort, trace: TracePort) -> None:
 ```
 
 - **禁止**：在类内部 `import` 并实例化依赖、模块级单例、读全局配置。
-- 组装只发生在**一个地方**（`graph/build.py` 或 `main.py` 的装配函数），
+- 组装只发生在**一个地方**（`build.py` 的装配函数），
   其余代码不许知道具体用的是 mock 还是真实实现。
   *为什么*：这是"mock 能无痛换真实实现"的机械保证，比铁律 3 更进一步——铁律管签名一致，
   依赖注入管调用方根本不知道自己拿的是谁。

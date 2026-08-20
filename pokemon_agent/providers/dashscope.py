@@ -156,7 +156,7 @@ class QwenText(_DashScopeBase):
         model: str = "qwen-plus",
         *,
         temperature: float = 0.7,
-        max_tokens: int = 3072,
+        max_tokens: int = 25600,
         **kw: object,
     ) -> None:
         """**max_tokens 比基类的默认值大得多，这是有实测依据的。**
@@ -166,7 +166,16 @@ class QwenText(_DashScopeBase):
         JSON 是被切断的，不是写错的。那一次调用烧了 23 秒和一整笔 token，
         产出为零，而错误信息指向的是"模型不会写 JSON"这个错误的方向。
 
-        3072 不是结论，是当前观测下的余量。它进 manifest，所以任何一批数据都说得清。
+        3072 也不够：实测单步 `thought` 到过 2235 token，离顶只剩八百，
+        而那还是它在**和自己的记忆吵架**的情况下——真正需要长推理的局面还没出现。
+
+        **这是上限不是预算。** 它只在模型自己想说这么多时才花得掉；
+        判定那条链路每次只输出二三十个 token，抬高上限对它没有任何影响。
+        真正控成本的是 `max_steps` 和 prompt 长度，不是这个数。
+
+        25600 不是结论，是当前观测下的余量。它进 manifest，所以任何一批数据都说得清。
+        **注意各家模型对 max_tokens 有自己的硬上限**（qwen-plus 一档通常是 8192），
+        超过会被 API 拒掉——被拒的话用 `--max-tokens` 调低，别改这里的默认值。
         """
         super().__init__(model, temperature=temperature, max_tokens=max_tokens, **kw)  # type: ignore[arg-type]
 

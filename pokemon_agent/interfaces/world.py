@@ -8,7 +8,7 @@ harness 用 WorldPort + 记忆实现 ToolPort。当前唯一的实现是 `PyBoyW
 注意这里没有 masking：动作掩码是 harness 的策略，不是世界的能力。
 世界只回答"全部动作是什么"和"执行这个动作会怎样"。
 
-## 为什么有 last_calls / last_frame_sha
+## 为什么有 drain_calls / last_frame_sha
 
 感知的开销（token、延迟、模型原始输出）和被感知的那一帧，**两处都放不下**：
 
@@ -39,12 +39,30 @@ class WorldPort(Protocol):
         否则没法按 task_id 分组统计成功率。
 
         前置条件：task.max_steps > 0。
-        后置条件：返回的 observation.step == 0、done 为 False、goal == task.goal。
+        后置条件：返回的 observation.done 为 False（`step` 由 Harness 盖章）。
+
+        **world 不需要知道任务目标。** `task` 传进来是为了让同一个世界能按不同任务
+        选不同的起始状态（现在还没用上，恒是同一个存档），以及断言 `max_steps > 0`。
+        "现在要完成的是哪条目标"由 Harness 的目标栈保管，随 `brain.choose` 下发。
         """
         ...
 
     def observe(self) -> Observation:
         """取当前观测，不推进世界（幂等）。"""
+        ...
+
+    def inspect(self, focus: str) -> Observation:
+        """对**同一帧**再问一次感知，问一个具体的问题。世界不推进。
+
+        前置条件：focus 非空。
+        后置条件：答案并进观测的 facts；下一次 `step()` 之后自动失效
+            （它描述的是那一帧，留到下一帧就是过期事实）。
+        失败：**不抛异常**。细看是锦上添花，问不出来就把"没看清"记成答案——
+            为它中断一局不划算。
+
+        和 `observe()` 的区别不在"再看一次"，而在**问的是不同的问题**：
+        `observe()` 按帧缓存，同一帧再调返回的字节完全一样，没有新信息。
+        """
         ...
 
     def all_actions(self) -> list[str]:
@@ -55,18 +73,29 @@ class WorldPort(Protocol):
         """
         ...
 
-    @property
-    def last_calls(self) -> list[dict[str, str]]:
-        """最近一次 `observe()` 里发生的**每一次**模型调用。
+    def drain_calls(self) -> list[dict[str, str]]:
+        """取走**自上次取走以来**发生的每一次模型调用，并清空。
 
-        是列表不是单条：解析失败会重试，而失败的那几次同样烧了 token，
-        只留最后一次就把它们的成本和原始输出丢了。
+        后置条件：连着调两次，第二次返回空列表。不调用模型的实现恒返回空列表，
+            **不返回 None**。
+
+        ## 为什么是"取走"而不是"最近一次"
+
+        早一版是 `last_calls` 属性，由**生产方**在下一次感知时清空。
+        那样它的正确性取决于"记账的人来得够早"，而这个前提两边都会破：
+
+        - 清得太晚（缓存命中时不清）：不推进世界的那些轮次（细看、拆子目标）
+          会把上一轮的账**再记一遍**，而且 inspect 的账会被当成 perceive 的账，
+          prompt 归因跟着错乱。
+        - 清得太早（进门就清）：`reset()` 里那次真实调用的账，会被紧接着那次
+          命中缓存的 `perceive()` 冲掉，**钱花了但没有记录**。
+
+        两个方向都错，说明问题不在时机而在归属。改成取走之后，不变量变成
+        **每一次调用恰好被记一次账**——它由调用次数本身保证，不依赖调用顺序。
 
         每条至少含 `input_tokens` / `output_tokens` / `latency_ms` / `attempt` / `ok`；
         `raw`（模型原始输出）建议一并给出——有了它，改进解析器之后能离线重算，
-        不必重新花钱调 API。
-
-        后置条件：不调用模型的世界返回空列表，**不返回 None**。
+        不必重新花钱调 API。**失败的调用也要在里面**：它们同样烧了 token。
         """
         ...
 
