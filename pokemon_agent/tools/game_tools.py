@@ -35,6 +35,8 @@ from __future__ import annotations
 from pokemon_agent.interfaces.world import WorldPort
 from pokemon_agent.schemas.core import (
     BUTTON_FACING,
+    FACING_CN,
+    FACING_OPPOSITE,
     OVERLAY_ACTIONS,
     Action,
     ActionSpace,
@@ -45,6 +47,7 @@ from pokemon_agent.schemas.core import (
     Overlay,
     Place,
     Task,
+    TerrainMap,
     ToolResult,
     terrain_legend,
 )
@@ -75,35 +78,57 @@ BUTTON_HELP: dict[Overlay, dict[str, str]] = {
 给大脑一份放之四海的说明，等于让它自己去猜当前语境。
 """
 
+def _sample_map() -> str:
+    """给模型看的读图范例。**由真正的渲染函数生成，不手写。**
+
+    手写的话它迟早和 `TerrainMap.render()` 漂移，而漂移的症状是模型照着一份
+    过时的范例去数一张新格式的图——那种错不报错。这和 `terrain_legend()`
+    两边共用一份 `TERRAIN_MEANING` 是同一条理由。
+    """
+    return TerrainMap(
+        cells=["#.....#.GG", "#.....#.GG", "#.....#.GG", "#####N##GG",
+               "....@..#GG", "####...#GG", "####...#GG", "#D##...#GG",
+               ".......#GG"],
+        map_id=0, player_x=15, player_y=2,
+    ).render()
+
+
 MAP_HINT = (
     "## 怎么读 walk_map\n"
     "已知事实里的 `walk_map` 是一张 10 列 x 9 行的地图，"
     "**它来自模拟器内存，不是看出来的，100% 准确**：\n"
     + terrain_legend() + "\n"
     "\n"
-    "## 两套坐标，别混\n"
-    "- **屏幕格 `(列,行)`** —— 只有 `walk_map` 用这套。**列在前，行在后**，\n"
-    "  和「第几行第几列」的说法**顺序是反的**：`(7,8)` 是第 8 行的第 7 个字符。\n"
-    "  画面永远跟着你走，所以**你恒在 `(4,4)`**；走一步之后同一个 `(3,4)` 就指向\n"
-    "  另一块地方了。**它不能跨步骤引用**，也不会出现在记忆里。\n"
-    "- **全局坐标 `x= y=`** —— `where`（你在哪）和 `landmarks`（门/招牌/人在哪）\n"
-    "  用这套。走一步 `where` 变一格，而 `landmarks` 里那些坐标**永远不变**。\n"
-    "  判断「我这一步到底动没动」「我是不是在原地打转」，只能看 `where`。\n"
+    "## 只有一套坐标\n"
+    "图上的行号 `y=..`，和 `where` / `landmarks` / `known_objects` 里的 `x= y=`\n"
+    "**是同一套数**，不需要任何换算，也没有第二套坐标。\n"
+    "\n" + _sample_map() + "\n"
     "\n"
-    "## 两套坐标怎么换算（**照抄，不要自己推**）\n"
-    "设 `where` 给的是 `x=X y=Y`：\n"
-    "  屏幕格 `(c,r)`  →  全局 `x = X + (c - 4)`，`y = Y + (r - 4)`\n"
-    "  全局 `(x,y)`    →  屏幕格 `c = 4 + (x - X)`，`r = 4 + (y - Y)`\n"
-    "要在 `walk_map` 上找某个 landmark，用第二条算出 `(c,r)` 就行，\n"
-    "**不要反过来去图上一个个数、再倒推它的全局坐标**。\n"
+    "`@` 就是你，它那一格的坐标 `where` 那一行写着。\n"
+    "**y 向下增大，x 向右增大。**\n"
     "\n"
-    "## 数字符的两条硬规矩\n"
-    "- `walk_map` **每一行恰好 10 个字符，没有空格**，第一行是列号表头 `0123456789`。\n"
-    "  要取第 c 个字符，**对着表头竖着看**，不要在心里从左往右数——\n"
-    "  `##...S#D##` 里 `##...` 是**三个点**，`S` 在列 5 不是列 4。\n"
-    "- **算出来的和 `landmarks` 给的对不上时，是你数错了，不是数据错了。**\n"
-    "  两者都来自模拟器内存，同一帧读出来的，不可能互相矛盾。\n"
-    "  发现对不上就用表头重新对一遍，**不要花篇幅论证哪一边可信**。\n"
+    "## 图上没有列号，别在图上找东西\n"
+    "一列只有一个字符宽，两三位数的 x 写不进去，所以**只给了行号**。\n"
+    "这不影响你做任何事，因为**你本来就不该在图上数格子找东西**：\n"
+    "- 门 / 招牌 / 人在哪 —— `landmarks` 和 `known_objects` 里写着确切坐标。\n"
+    "- 四个方向各是什么 —— `neighbors` 已经算好了，那是决定这一步能不能动的四格。\n"
+    "\n"
+    "**这张图剩下的用处是看形状**：朝那个方向走得通吗、哪边是死路、\n"
+    "绕过去要从哪边绕。看形状不需要列号，从 `@` 往那个方向看过去就行。\n"
+    "\n"
+    "`walk_map` **每一行恰好 10 个字符，没有空格**——`##...S#D##` 里 `##...`\n"
+    "是**三个点**。**图和 `landmarks` 对不上时是你数错了，不是数据错了**：\n"
+    "两者都来自模拟器内存，同一帧读出来的，不可能互相矛盾。\n"
+    "不要花篇幅论证哪一边可信，以 `landmarks` 为准。\n"
+    "\n"
+    "## 站在 `D` 上的时候，朝地图外面那个方向按\n"
+    "**室内的出口就是这么用的**：门格贴着地图边界，`neighbors` 会告诉你那个方向是\n"
+    "`#`，但**按下去就出去了**。`#` 说的是「走不过去」，不是「按了没用」——\n"
+    "门格上的那一下不是走路，是开门。\n"
+    "\n"
+    "所以站在 `D` 上没换图时，**先把四个方向里那个朝向地图边界的试一遍**，\n"
+    "而不是换一扇门。两扇门挨着的时候尤其要注意：\n"
+    "从这扇门走到那扇门，走的还是屋里，`map_id` 一个数都没变。\n"
     "\n"
     "## 地标没有名字，`known_objects` 才有\n"
     "`landmarks` 只说「这里有一扇门 / 一块招牌 / 一个人」和它在哪，**不说那是谁家、"
@@ -119,11 +144,19 @@ MAP_HINT = (
     "就去试没试过的那几个——而不是对着试过的再按一遍。\n"
     "门的「通往地图N」是**你自己走进去换来的**，没走过就没有。\n"
     "\n"
-    "**没在 `known_objects` 里给出内容的东西，你就是不知道它是谁。**\n"
-    "不要在 `rationale` 里写「确认为母亲」「这是宝可梦中心」这种没验证过的身份——\n"
-    "`rationale` 会进记忆，下一步取回来，你会把自己上一步的猜测当成已知事实，\n"
-    "然后一路照着它走下去。**猜错的身份比没有身份危险得多。**\n"
-    "想知道是谁，走过去按 `a`；下一步它就会出现在 `known_objects` 里。\n"
+    "## 门的档案已经替你下好结论了\n"
+    "门只有一种成功：**`map_id` 变了**。所以档案不会丢给你一串流水让你自己看，\n"
+    "它直接写出结论：\n"
+    "  `地图37 x=2 y=7 的「门」→ **站在上面按down** 能过去 → 地图0`\n"
+    "  `地图0 x=5 y=5 的「门」→ **还没打开过**；试过没用：…；**还没试过**：…`\n"
+    "\n"
+    "**「还没试过」那一段是这扇门的待办清单，也是死循环唯一的出口。**\n"
+    "这扇门还没打开、而你又想从这儿出去，就从那几个里挑一个没试过的，\n"
+    "**不要重试已经在「试过没用」里的**，也不要换一扇门——\n"
+    "从这扇门走到那扇门，走的还是屋里。\n"
+    "\n"
+    "姿势写的是**你当时站在哪**，不是你朝哪看——照着它先走到那一格去，再按那个键。\n"
+    "人和招牌不用这套：它们只有「面朝它按 `a`」一种碰法，说过的话直接写在条目里。\n"
     "\n"
     "`walk_map` 和 `landmarks` 都来自模拟器内存，**都不会错**。"
     "地图每一帧重新给出，不存在跨步骤的额度或余量。"
@@ -289,11 +322,19 @@ class GameTools:
     ) -> list[ObjectNote]:
         """这一步碰到了什么，记进档案。返回被更新的条目（可能为空）。
 
-        两种事各记各的，合成一个方法是因为它们**共用同一个触发点**（走完一步之后）
+        几件事各记各的，合成一个方法是因为它们**共用同一个触发点**（走完一步之后）
         和同一份档案：
 
         - **互动**（按 `a`）：面朝的那一格给了什么文字。
-        - **穿门**（按方向键，而且地图变了）：那扇门通往哪张地图。
+        - **姿势**（按方向键）：从旁边推过去、或者站在它上面朝外按，分别发生了什么。
+        - **穿门**（姿势的结果是换了地图）：那扇门通往哪张地图。
+
+        ## 姿势是这一步唯一新增的一维
+
+        用户的原话：有的门走上前就行，有的要踩在门上撞墙，有些坡只有一个方向能走。
+        这三件事的差别只有两维——**我人在它旁边还是在它上面**、**按的哪个方向**——
+        所以存成 `tried[姿势] = 结果`，而不是给每个 kind 加一个专属枚举字段。
+        结果也是算的：`before.place` 和 `after.place` 一减，换图 / 过去了 / 没动。
 
         ## 面朝哪一格是算出来的，不是认的
 
@@ -306,14 +347,20 @@ class GameTools:
         - 面朝的不是人/招牌/门：对着空地按 `a` 什么也不会发生。
           判据取自 `landmarks`——内存给的穷尽列表，不是模型认的。
         - 朝向未知（开局、过场之后）：算不出面朝哪一格，宁可不记也不能记错格子。
-        - **连按穿门**（`times > 1` 且地图变了）：门可能在中途任意一格，
-          算不准是哪一扇。宁可漏记一次，也不能把 `leads_to` 挂到错的门上——
+        - **连按方向键**（`times > 1`）：中途经过哪些格子算不出来，
+          结果挂不到确定的一格上。宁可漏记一次，也不能把 `leads_to` 挂到错的门上——
           错的那条会被当成事实反复使用。
+        - **原地转身**：宝可梦里朝向不同时按方向键，第一帧只转向不移动。
+          那种"没动"和"这边过不去"长得一模一样，所以只有**本来就朝着那个方向**
+          时才把 `没动` 记下来。
+        - **两个候选同时存在且换了图**：脚下和面前都是已知对象时，
+          算不出是哪一个把地图换掉的，整步作废。
 
         ## 没有文字也要记
 
         对着一扇门按 `a` 通常什么都不弹。**"我试过，没反应"本身就是有用的**：
-        它下次就不会再对着同一扇门按第二次。
+        它下次就不会再对着同一扇门按第二次。同理，`没动` 这条结果比"换到地图37"
+        还值钱——它是唯一能让 agent 停止重试一条走不通的路的东西。
         """
         # **按方向键时，朝向是这一次按键决定的，不是上一帧那个。**
         # `before.facts["facing"]` 是走这一步**之前**的朝向——用它去算"我走到了哪格"
@@ -324,27 +371,86 @@ class GameTools:
         if not facing or before.place is None or after.place is None:
             return []
 
-        target = before.place.step_toward(facing)
-        kinds = {
-            m.place.key: m.kind
-            for m in self._landmarks_of(before)
-            if m.kind in INTERACTIVE
-        }
-        if target.key not in kinds:
-            return []
-
-        moved_maps = before.place.map_id != after.place.map_id
+        ahead = before.place.step_toward(facing)
         if action.name == INTERACT_KEY:
-            note = self._touch(target, kinds[target.key])
+            kind = self._kind_at(before, ahead)
+            if kind is None:
+                return []
+            note = self._touch(ahead, kind)
             note.see(after.facts.get("dialog_text", ""))
             return [note]
 
-        if moved_maps and action.args.get("times", "1") == "1":
-            note = self._touch(target, kinds[target.key])
-            note.leads_to = after.place.map_id
-            return [note]
+        if action.args.get("times", "1") != "1":
+            return []
+        moved = self._outcome(before, after, facing)
+        if not moved:
+            return []
 
-        return []
+        ahead_kind = self._kind_at(before, ahead)
+        # 脚下这一格：**只能从档案里认**。人物精灵盖住了它，
+        # 当帧的 `landmarks` 已经不再报告那里有扇门了——而"踩在门上朝外按"
+        # 恰恰是室内出口唯一的走法。
+        on_kind = self._kind_at(before, before.place)
+        changed = before.place.map_id != after.place.map_id
+        if changed and ahead_kind is not None and on_kind is not None:
+            return []
+
+        warped = f"换到地图{after.place.map_id}"
+        touched: list[ObjectNote] = []
+        for place, kind, pose, result in (
+            (ahead, ahead_kind,
+             f"站在{FACING_CN[FACING_OPPOSITE[facing]]}边按{action.name}",
+             warped if changed else "没换图" if moved == "moved" else "没动"),
+            (before.place, on_kind, f"站在上面按{action.name}",
+             warped if changed else "没换图" if moved == "moved" else "没动"),
+        ):
+            if kind is None:
+                continue
+            note = self._touch(place, kind)
+            note.try_it(pose, result)
+            if changed:
+                note.leads_to = after.place.map_id
+            touched.append(note)
+        return touched
+
+    @staticmethod
+    def _outcome(before: Observation, after: Observation, facing: str) -> str:
+        """这一步动没动：`warp` / `moved` / `stay`；算不准返回空串（整步不记）。
+
+        早一版这里返回的是给模型看的字，而那句字是"过去了"——实测直接把 agent 卡死：
+        它站在 `x=2 y=7` 的门上，档案写着「站在上面按right→过去了」，
+        于是按 right 走到 `x=3 y=7` 的另一扇门上，那扇门也写着
+        「站在上面按left→过去了」，于是按 left 走回去——**两格之间来回踱步**，
+        每一步都在"确认"自己走对了。它把"过去了"读成了"穿过去了"。
+
+        现在这个歧义在**渲染层**解决：门的成功判据是固定的（`map_id` 变了），
+        所以 `ObjectNote._door_status()` 直接把"哪个姿势能过去"算出来写在最前面，
+        剩下的一律归进"试过没用"。这里只要如实报"动没动"就够了。
+
+        全部来自两个 `place` 相减——**没有一个字是模型说的**。
+        """
+        assert before.place is not None and after.place is not None
+        if after.place.map_id != before.place.map_id:
+            return "warp"
+        if (after.place.x, after.place.y) != (before.place.x, before.place.y):
+            return "moved"
+        if before.facts.get("facing", "") == facing:
+            return "stay"
+        return ""
+
+    def _kind_at(self, obs: Observation, place: Place) -> str | None:
+        """那一格上是什么。当帧的 `landmarks` 优先，认不出来再查档案。
+
+        两个来源不是冗余：`landmarks` 是内存给的当帧真相，但它**看不见被主角
+        踩住的那一格**；档案记的是"我以前见过那里有什么"，正好补上这个盲区。
+        """
+        for mark in self._landmarks_of(obs):
+            if mark.place.key == place.key and mark.kind in INTERACTIVE:
+                return mark.kind
+        note = self._objects.get(place.key)
+        if note is not None and note.landmark.kind in INTERACTIVE:
+            return note.landmark.kind
+        return None
 
     @staticmethod
     def _landmarks_of(obs: Observation) -> list[Landmark]:
@@ -460,6 +566,24 @@ class GameTools:
 
         assert len(hits) <= limit, "memory_query must respect the limit"
         return hits
+
+    def recent(self, episode_id: str, limit: int) -> list[MemoryEntry]:
+        """**这一局**最近几步，按时间顺序。判定器要的历史是这一份。
+
+        和 `memory_query()` 是两件事，不能互相替代：
+
+        - `memory_query` 按相似度找"以前遇到过的类似情形"，**跨 episode**，
+          给的是经验。
+        - 这一个按时间取"刚刚发生了什么"，**只限本局**，给的是证据。
+
+        只限本局是关键的一条线。判定器需要历史，因为证据可能出现在三步以前
+        那一帧的对话框里——尤其是子目标：一条第 10 步才压进来的目标，
+        前 9 步根本没人问过它，那几帧的证据就这么丢了。
+        但跨 episode 的历史会造出另一种错：上一局说过的那句话让它在**第 0 步**
+        就判完成。本局窗口两头都有界（局内 + 最近 N 步），那种错就发生不了。
+        """
+        assert limit > 0, "recent() needs a positive limit"
+        return [m for m in self._memories if m.episode_id == episode_id][-limit:]
 
     def memory_write(self, entry: MemoryEntry) -> None:
         assert entry.rationale, "memory_write() got an entry without a rationale"

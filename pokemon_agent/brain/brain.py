@@ -26,8 +26,10 @@
 
 合进一个类之后，这条隔离从**类型层面**降到了**约定层面**，所以它靠两条硬约束维持：
 
-1. `judge()` 的参数**只有 `(task, obs)`**。拿不到记忆、拿不到历史、
-   拿不到上一步的 thought——它想同源也没有输入可以同源。
+1. `judge()` 拿不到决策者的**任何说辞**。它看得到最近几步**发生了什么**
+   （证据可能在三步前的对话框里），但看不到那几步的 `rationale`、
+   看不到 thought、看不到当前这一步的候选动作。
+   **发生过的事和它对那件事的主张，是两样东西**，只给前者。
 2. `judge_llm` 是**另一个 provider 实例**，哪怕型号相同。共用一个的话，
    将来想给判定换模型就得改两处，而且 manifest 里两条链路会指向同一个对象，
    看不出它们是可以分别选型的。
@@ -46,7 +48,10 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+from collections.abc import Sequence
+from string import Template
 
 from pydantic import ValidationError
 
@@ -68,6 +73,73 @@ from pokemon_agent.schemas.core import (
     Verdict,
 )
 
+JUDGE_BLIND: frozenset[str] = frozenset({
+    "known_objects", "walk_map", "landmarks", "inspected",
+})
+"""判定器**看不到**的字段。判定器现在有历史了（`history` 参数），
+但那份历史是**有界的**：只有本局、只有最近几步。这几个字段是无界的，所以挡掉。
+
+- `known_objects`：**跨 episode 的流水**。「见过 7 次，互动 1 次」「他说过 XXX」
+  ——上一局说过的那句话会留在里面，目标是"和母亲对话"时，
+  它足以让判定器在**第 0 步**就判完成，而这一局什么都还没发生。
+  `history` 之所以安全正是因为它两头有界；这一份没有那个界。
+- `walk_map` / `landmarks`：**堵掉坐标推理的原料**。
+  光在 prompt 里写"别做坐标换算"是不够的——实测它照做了：
+  把 `walk_map` 的行号当成全局 y，得出"他还没进屋"，而 `map_id` 明写着他在屋里。
+  拿不到就不会用。位置证据由 `where` 一行直接给出，那是答案，不是原料。
+- `inspected`：那是**决策者自己挑的问题**得到的回答，跟着他的注意力走。
+  让判定器读它，等于让被评价者给评价者递材料。
+
+**这是一份黑名单而不是白名单**，方向是刻意选的：漏进一个新字段，代价是判定器
+多看一眼；漏掉一个新字段，代价是判定器瞎掉——`dialog_text` 那次就是后者，
+判定器一路在说"对话框内容未提供"，一局本该成功的 episode 被静默记成失败。
+两种失败模式不对称，所以宁可多给。
+"""
+
+SCREEN_COORD = re.compile(
+    r"屏幕格|屏幕坐标|walk_map|第\s*\d+\s*[行列]|\(\s*-?\d+\s*[,，]\s*-?\d+\s*\)"
+)
+"""目标里出现这些就打回去。**位置只能写成 `x=.. y=..`。**
+
+`walk_map` 的行列号现在**就是全局坐标**，两套坐标已经合成一套了
+（见 `TerrainMap.render`）。但这条拦截没有跟着删掉，因为它拦的是**残留的旧习惯**，
+而那个习惯造成过一整局的损失：
+
+    goal +  移动到屏幕格(7,4)
+            判据：walk_map上第4行第7列的字符是'.'，且我当前屏幕位置是(7,4)
+
+那种判据**永远不可能成立**——旧的屏幕格里主角恒在 `(4,4)`，走过去之后还是 `(4,4)`。
+判定器每步答"不是(7,4)"，它接着又拆一层 `(6,4)`，一层层全是永不完成的目标。
+
+还有一条独立的理由：**判定器看不到 `walk_map` 和 `landmarks`**（`JUDGE_BLIND`）。
+判据里提那张图，对他来说等于没说。
+
+裸的括号对 `(6,4)` 一律打回，哪怕它心里想的是全局坐标：
+写法和坐标系是两件事，但混着写会让人（和下一版的我）分不清它指的是哪一套。
+
+只在 `push_goal` 上拦，`thought` / `rationale` 里随便写：那两个是它的草稿纸。
+"""
+
+RETRY_NOTE = """
+
+---
+⚠ 你**上一次的输出不合法**，这是第 $attempt 次尝试。
+
+原因：$reason
+
+上次你输出的是：
+$raw
+
+**别再输出同样的东西。** 照着上面的要求改，只输出一个 JSON 对象。
+"""
+"""重试时追加在 prompt **末尾**的纠正块。
+
+早一版重试是原样再问一遍，指望模型的随机性碰对——那等于把三次调用当一次用，
+而且最常见的那类错误（判据里写屏幕坐标）是**系统性的**，重试多少次都一样错。
+
+追加在末尾是刻意的：前缀一个字没动，三次尝试共享同一段缓存。
+"""
+
 INTENT_HELP: dict[Intent, str] = {
     Intent.PRESS: (
         "按一个键，游戏往前走一步。**这是唯一会改变世界的一类**，"
@@ -75,8 +147,18 @@ INTENT_HELP: dict[Intent, str] = {
     ),
     Intent.PUSH_GOAL: (
         "把栈顶那个目标拆出一个**更近、更容易验证**的子目标压进去，"
-        "然后下一轮开始做它。适合当前目标太远、你需要先到某个中间位置的时候。"
-        "**必须同时写出判据**——一句只看一帧画面就能判真假的话。"
+        "然后下一轮开始做它。**必须同时写出判据**——"
+        "一句只看一帧画面就能判真假的话。\n"
+        "**子目标是里程碑，不是路径点。** 好的子目标是"
+        "「进到 x=13 y=5 那扇门里」「和 x=17 y=1 那个人说上话」「走到地图 12」——"
+        "达成的那一帧画面会**明显不一样**。"
+        "「往右走两格」不是子目标，那是一个按键：直接按就行。"
+        "拆成目标是白烧一步，而且它会一直挂在栈上，"
+        "**每一步都要为它多花一次判定调用**。\n"
+        "**位置一律写成 `x=.. y=..`**，不要写成 `(6,4)` 这种括号对、"
+        "不要写「第4行第7列」、不要提 `walk_map`。"
+        "`walk_map` 的行列号本来就是全局坐标，照抄那两个数即可；"
+        "而判定的人看不到那张图，判据里提它等于没说。"
     ),
     Intent.INSPECT: (
         "对**这一帧**再问一次画面，问一个具体问题（哪一格是什么、写着什么字）。"
@@ -157,12 +239,15 @@ class Brain:
         assert goals, "choose() got an empty goal stack"
 
         memories = self._recall(obs)
-        prompt = self._build_prompt(goals, obs, space, memories)
+        base = self._build_prompt(goals, obs, space, memories)
         refs = [f"({m.episode_id}, {m.step})" for m in memories]
 
         calls: list[ModelCall] = []
+        prompt = base
         for attempt in range(1, self._max_retries + 1):
-            # 每次重试都重新调用，而不是复用上次输出——LLM 的随机性本身就是重试的意义所在。
+            # 重试**带着上次的错误重问**，不是原样再问一遍。原样重问等于把三次调用
+            # 当一次用：最常见的那类错误是系统性的（判据里写屏幕坐标），
+            # 换个随机种子照样犯。纠正块追加在**末尾**，前缀缓存一个字不丢。
             t0 = time.perf_counter()
             completion = self._decide.complete(prompt)
             latency_ms = int((time.perf_counter() - t0) * 1000)
@@ -205,6 +290,10 @@ class Brain:
                 error_kind=kind,
                 error=reason,
             ))
+            if parsed is None:
+                prompt = base + Template(RETRY_NOTE).safe_substitute(
+                    attempt=attempt + 1, reason=reason, raw=completion.text[:400],
+                )
             if parsed is not None:
                 assert parsed.intent in space.intents, (
                     f"brain chose intent {parsed.intent} outside {space.intents}"
@@ -218,7 +307,9 @@ class Brain:
 
     # ---- 判定 ----
 
-    def judge(self, goal: Goal, obs: Observation) -> Verdict:
+    def judge(
+        self, goal: Goal, obs: Observation, history: Sequence[MemoryEntry] = ()
+    ) -> Verdict:
         """判断这个目标达成了没有。**永远返回 Verdict，不抛异常。**
 
         **任务目标和子目标走同一个方法**，只是 `goal` 从目标栈的不同层取。
@@ -230,9 +321,18 @@ class Brain:
         不写 `success`。不然 agent 可以压一个"我已经到家了"的子目标，
         让判定器判它完成，成功率就变成它自己发的奖状了。
 
-        签名里只有 `(goal, obs)`：**拿不到就不会用**。少一个参数就少一条
-        "它可能偷看历史"的路径。给了历史它就会开始推理"他走了这么多步应该快到了"，
-        而那正是我们要防的——判定只该基于**眼前的证据**。
+        ## `history` 给的是证据，不是说辞
+
+        判定器**需要**看到最近几步：证据可能出现在三步以前那一帧的对话框里。
+        子目标尤其如此——一条第 10 步才压进来的目标，前 9 步没人问过它，
+        那几帧就永远丢了。原来那版靠"每步都问一次"兜底，兜不住这个洞。
+
+        但历史里危险的不是画面，是 `rationale`——被评价者自己的说辞。
+        所以这里渲染时一律 `reason=False`（见 `MemoryEntry.render`）：
+        **发生过的事给它看，它对那件事的主张不给它看。**
+
+        窗口两头都有界：只有本局、只有最近几条（`Harness.JUDGE_HISTORY`）。
+        无界的历史会造出另一种错——上一局说过的那句话让它在第 0 步就判完成。
 
         `Verdict.call` 带着 token、延迟、原始输出交出去，由 Harness 记账。
         这已经不是判定器的特权设计，而是所有大脑调用的共同处境（见模块 docstring）。
@@ -245,10 +345,14 @@ class Brain:
             # 而 `_judge_all` 是并发调它的——一个 worker 抛出来会穿过整个循环，
             # 把一次本该记成"判定失败"的事件变成一局丢失的数据。
             rendered = (
-                "\n".join(f"- {k}: {v}" for k, v in obs.facts.items()) or obs.summary
+                "\n".join(
+                    f"- {k}: {v}" for k, v in obs.facts.items() if k not in JUDGE_BLIND
+                ) or obs.summary
             )
+            past = "\n\n".join(m.render(reason=False) for m in history)
             prompt = self._judge_prompt.render(
-                goal=goal.goal, criteria=goal.criteria, observation=rendered
+                goal=goal.goal, criteria=goal.criteria, observation=rendered,
+                history=past or "（这是第一步，之前什么都没发生）",
             )
             completion = self._judge_llm.complete(prompt)
         except Exception as exc:  # noqa: BLE001  判定器不该让整局崩掉
@@ -454,6 +558,17 @@ class Brain:
                 # **判据不能省。** 没有它判定器只能凭"看起来差不多了"回答，
                 # 而那正是成功率会被污染的地方。打回去重试，别替它编一个。
                 raise ParseFailure(text, "intent=push_goal but no 'criteria' field")
+            hit = SCREEN_COORD.search(f"{goal} {criteria}")
+            if hit:
+                # **位置只能写成 `x=.. y=..`。** 见 SCREEN_COORD 的完整说明。
+                raise ParseFailure(text, (
+                    f"目标或判据里出现了 {hit.group()!r}。"
+                    "位置一律写成 x=.. y=..，不要写括号对、不要写第几行第几列、"
+                    "不要提 walk_map——判定的人看不到那张图。"
+                    "walk_map 的行列号本来就是全局坐标，照抄那两个数即可，"
+                    "例如『进到 x=13 y=5 那扇门里』。"
+                    "更好的是别拿目标当路径点——走两格直接按方向键就行。"
+                ))
             fields = {"goal": Goal(goal=goal.strip(), criteria=criteria.strip())}
         else:
             focus = raw.get("focus")

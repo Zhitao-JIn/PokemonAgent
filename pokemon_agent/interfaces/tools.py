@@ -93,6 +93,18 @@ class ToolPort(Protocol):
         """
         ...
 
+    def recent(self, episode_id: str, limit: int) -> list[MemoryEntry]:
+        """**这一局**最近几条，按时间顺序。
+
+        前置条件：limit > 0。
+        后置条件：返回条数 <= limit；全部来自 `episode_id` 这一局；最新的在最后。
+
+        和 `memory_query` 是两件事，不能互相替代：那个按相似度找"以前的类似情形"，
+        跨 episode，给的是**经验**；这个按时间取"刚刚发生了什么"，只限本局，
+        给的是**证据**。判定器要的是后者，而且正因为它两头有界才是安全的。
+        """
+        ...
+
     def memory_write(self, entry: MemoryEntry) -> None:
         """写入一条记忆。
 

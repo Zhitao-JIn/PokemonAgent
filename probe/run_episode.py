@@ -4,6 +4,8 @@
     python -m probe.run_episode                                  # 12 步，无头
     python -m probe.run_episode 30 "走出真新镇，向北进入一号道路"
     python -m probe.run_episode 30 "…" watch                      # 开窗口看着它玩
+    python -m probe.run_episode 30 "…" --state assets/route1.state --task-id t_route1
+    python -m probe.run_episode 30 "…" --state none               # 从 ROM 开头跑
 
 **默认无头**（`window="null"`）：跑实验时墙钟是瓶颈，开窗口和限速只会拖慢。
 `watch` 只影响你看不看得见，不影响 agent 行为——它读的是 `screen.ndarray`。
@@ -21,6 +23,7 @@
 from __future__ import annotations
 
 import hashlib
+import pathlib
 import sys
 from datetime import datetime
 
@@ -32,6 +35,17 @@ from probe.echo_trace import EchoTrace
 
 ROM = "assets/rom"
 STATE = "assets/rom.state"
+"""默认存档。**用 `--state` 换掉它。**
+
+存档就是**任务的起点**：想让 agent 从"已经站在一号道路上"开跑，
+就存一个那儿的档、`--state` 指过去，用不着改任何代码。
+
+这也是唯一能让两批数据可比的办法——同一个 `task_id` 下的多次尝试，
+起点不同的话成功率就没有意义。**存档要和 `--task-id` 一起看**：
+换了存档就该换 task_id，否则两个不同的任务被聚合成了一个数。
+
+`--state none` = 不加载存档，从 ROM 开头跑（开场动画、命名流程都得自己过）。
+"""
 
 
 def _flag(name: str, default: str) -> str:
@@ -64,6 +78,14 @@ def main() -> None:
     # **上限不是预算**：只在模型自己想说这么多时才花得掉。
     # 被 API 拒了（各家对 max_tokens 有硬上限）就调低这个数。
     max_tokens = int(_flag("--max-tokens", "25600"))
+    # `none` 明确表示"不要存档"。用空串表示的话，它和"这个 flag 没写"
+    # 分不开，而那两件事的结果差着一整段开场动画。
+    state_flag = _flag("--state", STATE)
+    state = None if state_flag == "none" else state_flag
+    # **早失败。** 路径打错时 PyBoy 要么静默从头跑、要么在几十行
+    # 初始化日志之后才炸，两种都会浪费一整局才发现起点根本不对。
+    if state is not None and not pathlib.Path(state).is_file():
+        raise SystemExit(f"存档不存在：{state}（要从 ROM 开头跑就写 --state none）")
 
     task = Task(
         # **task_id 不能写死。** 它是成功率的分组键：写死的话，命令行换了目标
@@ -89,7 +111,7 @@ def main() -> None:
     episode_id = f"{run_id}-ep0"
 
     harness, trace, world = build_real(
-        ROM, STATE,
+        ROM, state,
         vision_model=vision_model, text_model=text_model,
         judge_model=judge_model, grid=grid, max_tokens=max_tokens,
         watch=watch, trace=EchoTrace(MockTrace(run_id=run_id)),
@@ -102,7 +124,7 @@ def main() -> None:
     print(f"models    vision={vision_model}  text={text_model}  "
           f"judge={judge_model or text_model}  grid={'on' if grid else 'off'}  "
           f"max_tokens={max_tokens}")
-    print(f"limit     {max_steps} steps | state {STATE} | "
+    print(f"limit     {max_steps} steps | state {state or 'none（从 ROM 开头）'} | "
           f"{'windowed, realtime' if watch else 'headless, unlimited'}")
     print("-" * 62)
 

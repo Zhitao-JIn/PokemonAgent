@@ -123,6 +123,20 @@ from pokemon_agent.schemas.core import (
     Verdict,
 )
 
+JUDGE_HISTORY = 3
+"""判定器能看到本局最近几步。
+
+不是 0：证据可能在三步以前那一帧的对话框里，而**一条第 10 步才压进来的子目标，
+前 9 步根本没人问过它**——那几帧的证据就这么丢了。原来那版靠"每步都问一次"兜底，
+兜不住这个洞。
+
+也不是"全部"：判定是每步 × 每层各一次，历史进的是**共享前缀**，
+条数一多，一局的判定成本就跟着步数平方增长。三条够覆盖"刚刚发生了什么"。
+
+历史里**不含 `rationale`**（`MemoryEntry.render(reason=False)`）——
+发生过的事给判定器看，决策者对那件事的主张不给。
+"""
+
 MAX_GOAL_DEPTH = 4
 """目标栈最多几层（含栈底的任务目标）。
 
@@ -573,7 +587,7 @@ class Harness:
         goals = list(state.goals)
         assert goals, "the goal stack must never be empty"
 
-        verdicts = self._judge_all(goals, obs)
+        verdicts = self._judge_all(state.episode_id, goals, obs)
         # **判定的账单单独记**（`Source.JUDGE`）。它和决策各自烧 token，混在一起
         # 就说不清"成功率这个数字本身花了多少钱"，也算不出判定器自己的失效率。
         # `depth` 进 payload：子目标判得多不代表任务判得多，两种粒度必须分得开，
@@ -619,7 +633,9 @@ class Harness:
             )
         return obs, remaining, False, ""
 
-    def _judge_all(self, goals: list[Goal], obs: Observation) -> list[Verdict]:
+    def _judge_all(
+        self, episode_id: str, goals: list[Goal], obs: Observation
+    ) -> list[Verdict]:
         """并发判每一层，**按栈的顺序返回**。
 
         ## 为什么是并发，而不是把整栈塞进一次调用
@@ -649,11 +665,15 @@ class Harness:
         - **不再有提前退出。** 顺序版判到第一条完成的就停，能省几次调用；
           并发版全判。用 token 换墙钟，这是这次改动明确选的那一边。
         """
+        # **同一份历史发给每一层**，不按层筛。除了"哪一层都可能需要那几帧"之外
+        # 还有个实际理由：它落在同一步内这几次调用**共享的前缀**里，
+        # 重复的 input token 基本免费。按层裁剪反而会把前缀切碎。
+        history = self._tools.recent(episode_id, JUDGE_HISTORY)
         if len(goals) == 1:
-            return [self._brain.judge(goals[0], obs)]
+            return [self._brain.judge(goals[0], obs, history)]
 
         with ThreadPoolExecutor(max_workers=len(goals)) as pool:
-            return list(pool.map(lambda g: self._brain.judge(g, obs), goals))
+            return list(pool.map(lambda g: self._brain.judge(g, obs, history), goals))
 
     # ---- 记账 ----
 

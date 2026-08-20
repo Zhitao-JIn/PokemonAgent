@@ -25,8 +25,13 @@ harness 写 ACT / MEMORY_WRITE / OBSERVE / EPISODE_*，于是"某类事件归谁
 它读错画面 → 以为达成了 → 判成功，而且错得越离谱数字越好看。
 成功率是这个项目唯一要报的硬数字，它不能由被评价者自己给出。
 
-所以 `judge` 的签名里**只有 `(goal, obs)`** —— 拿不到记忆、拿不到历史、
-拿不到上一步的 thought。它想同源也没有输入可以同源。**这条不许放宽。**
+所以 `judge` 拿不到决策者的**任何说辞**：拿不到 thought、拿不到候选动作、
+拿不到历史里那几步的 `rationale`。**这条不许放宽。**
+
+它**看得到**本局最近几步发生了什么（`history`）。那不是放宽，是补一个洞：
+证据可能在三步前那一帧的对话框里，而一条第 10 步才压进来的子目标，
+前 9 步根本没人问过它。**发生过的事**和**它对那件事的主张**是两样东西，
+只给前者——渲染时一律 `MemoryEntry.render(reason=False)`。
 
 目标栈接进来之后多了一条同样要紧的：**只有栈底那一层决定 episode 成败**。
 子目标是 agent 自己压的，如果它完成也能写 `success`，那 agent 就可以压一个
@@ -41,6 +46,7 @@ episode 的状态全在 Harness 手里，通过参数传进来。
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
 from pokemon_agent.schemas.core import (
@@ -84,13 +90,18 @@ class BrainPort(Protocol):
         """
         ...
 
-    def judge(self, goal: Goal, obs: Observation) -> Verdict:
+    def judge(
+        self, goal: Goal, obs: Observation, history: Sequence[MemoryEntry] = ()
+    ) -> Verdict:
         """判断**这一个目标**达成了没有。**永远返回 Verdict，不抛异常。**
 
         任务目标和子目标走同一个方法，只是 `goal` 从栈的不同层取——
         判定在两种粒度上是同一回事：拿着一句判据去看一帧画面。
         分成两个方法只会得到两份要各自标定的 prompt。
         区分哪一层是调用方的事（Harness 在 trace 里标 `depth`）。
+
+        `history` 是**本局最近几步**，按时间顺序，**不含 `rationale`**。
+        默认空元组：不传也要能判——多一份历史是多一份证据，不是必需品。
 
         前置条件：无。哪怕 obs 是空的也要能回答（答案是"没完成"）。
         后置条件：任何异常情况——解析失败、模型不回话、网络抖——一律判**没完成**。

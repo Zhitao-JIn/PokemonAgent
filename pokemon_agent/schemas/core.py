@@ -66,6 +66,49 @@ FACING_STEP: dict[str, tuple[int, int]] = {
 """朝向 → 全局坐标的位移。**`a` 作用在面朝的那一格上**，所以要拿这张表算出
 "我刚才是在跟谁互动"。y 向下增大，和 `walk_map` 的行号一致。"""
 
+FACING_OPPOSITE: dict[str, str] = {
+    "north": "south", "south": "north", "west": "east", "east": "west",
+}
+"""朝向的反面。**用来说清"我站在它的哪一边"**：面朝北去碰一个东西，
+说明我人在它的南边。姿势要写成"我站在哪"而不是"我朝哪看"——
+下次想复现这个动作，模型得先知道该走到哪一格去。"""
+
+FACING_CN: dict[str, str] = {
+    "north": "北", "south": "南", "west": "西", "east": "东",
+}
+"""渲染姿势用。这些字符串会进 prompt，所以写成中文方位而不是 `north`。"""
+
+KIND_DOOR, KIND_SIGN, KIND_PERSON = "门", "招牌", "人"
+"""地标的三种类型。**下半部分那组 `DOOR/SIGN/PERSON` 是地图上的字符 `D/S/N`，
+不是这个**——两组名字撞过一次，症状是门的分支静默不生效。"""
+
+WARPED = "换到地图"
+"""门被打开时结果字符串的前缀。**判"成功"就靠它**，所以只能有一处定义。"""
+
+DOOR_POSES: tuple[str, ...] = tuple(
+    [f"站在上面按{k}" for k in ("up", "down", "left", "right")]
+    + [f"站在{FACING_CN[FACING_OPPOSITE[f]]}边按{k}"
+       for k, f in BUTTON_FACING.items()]
+)
+"""一扇门总共有几种碰法：**两种站位 × 四个方向 = 8 种，穷尽**。
+
+穷尽这件事是这一版的关键。有了全集才算得出**「还没试过的是哪几种」**——
+而那正是 agent 卡住时唯一缺的信息。实测它在两扇挨着的门之间来回踱步，
+`down` 一次都没试过（`neighbors` 说南边是 `#`），
+如果档案里当时写着"没试过：down"，它不会卡。
+
+顺序是刻意的：先列"站在上面"。室内出口只有那一种走法，
+而它恰恰是 agent 最想不到的一种。
+"""
+
+MAX_TRIED = len(DOOR_POSES)
+"""一个对象最多记几种姿势 = 姿势的全集大小。
+
+早一版是 4，那是当"最近用过"的滑动窗口用的——但**试过的姿势不该被淘汰**：
+淘汰一条就等于把它变回"没试过"，agent 会重试一个已经排除的方向，
+而这份档案存在的全部意义就是让它别再重试。
+"""
+
 MAX_OBJECT_LINES = 4
 """一个对象最多记几句话。
 
@@ -100,6 +143,18 @@ class Place(BaseModel):
     def render(self) -> str:
         """**全局坐标写成 `x= y=`，不用括号** —— 括号写法留给屏幕格。"""
         return f"全局坐标 地图{self.map_id} x={self.x} y={self.y}"
+
+
+def _compact(poses: list[str]) -> str:
+    """把姿势列表压短一点。这几行每一帧都要发，`站在上面按` 重复四遍是纯浪费。
+
+        ['站在上面按up', '站在上面按left', '站在南边按up']
+        -> '站在上面按 up/left；站在南边按up'
+    """
+    on = [p.removeprefix("站在上面按") for p in poses if p.startswith("站在上面按")]
+    side = [p for p in poses if not p.startswith("站在上面按")]
+    out = ([f"站在上面按 {'/'.join(on)}"] if on else []) + side
+    return "；".join(out)
 
 
 class Landmark(BaseModel):
@@ -140,6 +195,24 @@ class ObjectNote(BaseModel):
 
     有了这条记忆，下一次站在同一格前面，`known_objects` 里直接写着那个人说过什么——
     **不需要再猜，也不需要再按一次才知道**。名字这一维终于有了正当来源。
+
+    ## 「怎么碰它」也是记忆的一部分，而且不按类型分字段
+
+    同一格东西的交互方式不止一种：有的门走上去就换图，有的门要**踩在门格上**
+    再朝外按方向才走得掉，坡只有一个方向能跳下去。看着是三类东西，
+    拆开只差两维：**我人在它旁边还是站在它上面**、**按的哪个方向**。
+
+    所以不给「门」加 `how`、给「坡」加 `one_way`——那些是**结论**，
+    只能靠模型断言或者我写死规则，而这个项目里凡是靠断言进记忆的东西
+    最后都会被当成事实反复使用。这里存的是 `tried`：**姿势 → 结果**，
+    两边都由 `place` 相减算出来，可证伪，也不需要预先知道有几种类型。
+
+    ## 通行性归内存，方向性归记忆
+
+    「这一格能不能站」永远不进这里——`walk_map` 每帧从内存现算，
+    那是低层控制，不该由长期记忆来猜。但 `walk_map` 只答"能不能站"，
+    **答不了方向**：从北边能跳下坡、从南边跳不上来，两次问的是同一格。
+    有方向的那一半才是这份档案的活。
     """
 
     landmark: Landmark
@@ -160,6 +233,42 @@ class ObjectNote(BaseModel):
         "`before.map_id != after.map_id` 时，答案就是 `after` 的那个数。"
         "纯算术，不会错——而且不是白送的，是它自己走进去换来的",
     )
+    tried: dict[str, str] = Field(
+        default_factory=dict,
+        description="**姿势 → 结果**，记「怎么碰它才有用」。"
+        "键形如 `站在南边按up` / `站在上面按up`，值形如 `换到地图37` / `过去了` / `没动`。"
+        "两边都是算出来的：键来自 `before.place` 和它的相对位置，"
+        "值来自 `before.place` 和 `after.place` 一减",
+    )
+
+    @property
+    def opened_by(self) -> str:
+        """打开这扇门的那个姿势；没打开过就是空串。
+
+        **成功是算出来的，不是模型判断的。** 每种 label 的成功长什么样是固定的：
+        门 = `map_id` 变了，人/招牌 = 弹出文字。所以不需要把一串流水交给模型
+        让它自己看出哪条是成功——直接把结论写出来。
+        """
+        return next((p for p, r in self.tried.items() if r.startswith(WARPED)), "")
+
+    @property
+    def untried(self) -> list[str]:
+        """还没试过的姿势。**只有门有意义**（人和招牌只有"按 a"一种碰法）。"""
+        return [p for p in DOOR_POSES if p not in self.tried]
+
+    def try_it(self, pose: str, result: str) -> None:
+        """记下一种姿势的结果。**同一姿势以最新的为准。**
+
+        不是"第一次记下就不改"，因为结果真的会变：一扇本来锁着的门后来开了、
+        一条本来有人挡着的路后来通了。旧结论留着比没有更糟——
+        它会让 agent 反复绕开一条已经通了的路。
+        """
+        if not pose or not result:
+            return
+        self.tried.pop(pose, None)   # 重新插到末尾，让淘汰按"最近用过"走
+        self.tried[pose] = result
+        for stale in list(self.tried)[:-MAX_TRIED]:
+            del self.tried[stale]
 
     def see(self, line: str) -> None:
         """记下一句。已经见过就不重复记——重复的文本会被模型当成强证据。"""
@@ -167,6 +276,33 @@ class ObjectNote(BaseModel):
         if text and text not in self.lines:
             self.lines.append(text)
         del self.lines[:-MAX_OBJECT_LINES]
+
+    def _door_status(self) -> list[str]:
+        """门的那几段。**给结论，不给流水。**
+
+        门的成功判据是固定的（`map_id` 变了），所以这里直接算出三件事：
+        打开它的姿势是哪个、哪些姿势已经排除、还剩哪些没试。
+        模型不需要从一串"站在上面按right→从这一格走开了"里自己悟出结论——
+        而实测它悟出来的是反的：把"走开了"读成了"穿过去了"，
+        在两扇挨着的门之间来回踱步。
+
+        没打开过时，**"还没试过"那一段比"试过没用"更要紧**：
+        它是这扇门唯一的待办清单，也是死循环唯一的出口。
+        """
+        opened = self.opened_by
+        if opened:
+            return [f"**{opened}** 能过去 → 地图{self.leads_to}"]
+        if not self.tried:
+            # 一次都没试过时不列全集：那 8 条对每一扇没碰过的门都一模一样，
+            # 每帧发一遍就是纯噪声。**"还没试过的是哪几种"只有在它开始试之后才有信息量**，
+            # 而那也正是它可能卡住的时候。
+            return ["**还没打开过**"]
+        out = ["**还没打开过**", "试过没用：" + _compact(list(self.tried))]
+        if self.untried:
+            # 八种全试遍了还没开：这扇门就是打不开（剧情没到、或者它根本是装饰）。
+            # 那时候写"还没试过：（没有）"是废话，删掉这一段本身就是结论。
+            out.append("**还没试过**：" + _compact(self.untried))
+        return out
 
     def render(self) -> str:
         """渲染成 `known_objects` 里的一行。
@@ -177,10 +313,12 @@ class ObjectNote(BaseModel):
         分不出哪扇是探索过的、哪扇是新的。
         """
         parts: list[str] = []
-        if self.leads_to is not None:
-            parts.append(f"通往地图{self.leads_to}")
         if self.lines:
             parts.append(" / ".join(self.lines))
+        if self.landmark.kind == KIND_DOOR:
+            parts.extend(self._door_status())
+        elif self.tried:
+            parts.append("；".join(f"{k}→{v}" for k, v in self.tried.items()))
         if not parts:
             parts.append("互动过但没出现文字" if self.touched else "**还没互动过**")
         return (
@@ -509,11 +647,17 @@ class MemoryEntry(BaseModel):
     # 多少别的事件，换个记录粒度就变。`step` 是**轨迹坐标**，而机制三沿轨迹
     # 回填折扣正是按 step 走的——用它，回填时不需要任何转换。
 
-    def render(self) -> str:
+    def render(self, *, reason: bool = True) -> str:
         """渲染成进 prompt 的样子。**检索打分也用它**——
 
         两处用同一份文本，是为了让"被选中的理由"和"看到的内容"是同一个东西。
         分成两份的话，可能出现"按 A 的内容选中，却把 B 的内容喂进去"，而且不报错。
+
+        `reason=False` 去掉「因为」那一行，**只留发生过的事**。判定器用这一版：
+        它需要历史（证据可能出现在三步以前的那一帧里），但**绝不能读到决策者的理由**。
+        `rationale` 是被评价者自己的说辞——"我已经和母亲说过话了"这种话一旦进了
+        判定器的上下文，成功率就变成它自己发的奖状。
+        画面、动作、结果是**发生过的事**，理由是**它对那件事的主张**，两者必须分开。
         """
         because = "；".join(self.rationale) or "（未给出理由）"
         # **"什么都没发生"要明说，不要让它自己去比。**
@@ -528,13 +672,14 @@ class MemoryEntry(BaseModel):
             if self.after.same_place_as(self.before)
             else "  之后变成：\n" + self.after.render()
         )
-        return "\n".join([
+        lines = [
             f"({self.episode_id}, {self.step}) 当时看到：",
             self.before.render(),
-            f"  因为  {because}",
-            f"  做了  {self.action}",
-            after,
-        ])
+        ]
+        if reason:
+            lines.append(f"  因为  {because}")
+        lines += [f"  做了  {self.action}", after]
+        return "\n".join(lines)
 
 
 class EpisodeOutcome(BaseModel):
@@ -723,7 +868,7 @@ TERRAIN_MEANING: dict[str, str] = {
     "S": "招牌或可调查物，走不过去；面朝它按 A 可以看",
     "N": "人，走不过去；面朝它按 A 可以对话",
     "#": "墙 / 树 / 建筑 / 水面，走不过去",
-    "@": "你自己，永远在 (4,4)",
+    "@": "你自己。图上标 @ 的那一格就是 `where` 那一行给的坐标",
 }
 """地形符号的含义。**每一个都来自模拟器内存，没有一个是认出来的。**
 
@@ -804,24 +949,55 @@ class TerrainMap(BaseModel):
         }
 
     def render(self) -> str:
-        """渲染成带行列号的文本。
+        """渲染成带行列号的文本。**行列号就是全局坐标。**
 
-        **格子之间不加空格。** 曾经用 `" ".join(...)` 排得整齐些，实测模型把那些
-        空格也当成了格子——一行 10 格看成 19 格，坐标全线错位。
-        紧凑排版难看一点，但它和字符数一一对应，数不错。
+        ## 为什么不是 0-9
 
-        行列号必须和画在图上的网格标号一致——对不上的话，模型说的 (4,3)
-        和大脑理解的 (4,3) 不是同一格，而这种错不报错。
+        原来列号是 `0123456789`、行号 `0..8`，那是**屏幕格**：主角恒在 `(4,4)`，
+        地图跟着他滚动。于是同一张图上有两套坐标——这里是屏幕格，
+        `where` / `landmarks` / `known_objects` 是全局坐标——中间隔着一次换算。
+
+        那次换算是全项目最大的一个错误来源，而且是**我们自己造出来的**：
+
+        - 决策模型每步花一千多个输出 token 反复核对同一行字符，
+          还是会得出"(6,4) 是 `#` 所以不可达"，而那一格明明是 `G`。
+        - 它把换算结果写进子目标（"移动到屏幕格(7,4)"），
+          而那种判据**永远不可能成立**——走过去之后他还是 `(4,4)`。
+        - 判定器拿到那句判据，只能把全局的 `x=16 y=2` 读成屏幕的 `(16,2)`。
+
+        把换算删掉，这三类错一起消失。**图上的每个数字和记忆里的每个数字
+        现在是同一套东西**，不需要任何转换就能对上。
+
+        ## 没有列号，这是故意的
+
+        行号能横着写（一行一个数，写在左边），列号不能——全局 x 是两三位数，
+        而一列只有一个字符宽。试过把列号竖着摞成两行（十位一行、个位一行），
+        **模型读不动**：那要求它对着某一列纵向拼数字，比原来的换算还难。
+
+        所以这里干脆不给列号，只在开头写一句这一屏覆盖到哪。
+        代价是它没法在图上直接读出某一列的 x——**而这个代价是零**，
+        因为它本来就不该在图上数格子找东西：门、招牌、人的确切坐标
+        `landmarks` 和 `known_objects` 里已经写好了，四邻 `neighbors` 也已经算好了。
+        这张图剩下的用处是**看形状**：往那个方向走得通吗、哪边是死路。
+        看形状不需要列号。
+
+        ## 格子之间不加空格
+
+        曾经用 `" ".join(...)` 排得整齐些，实测模型把那些空格也当成了格子——
+        一行 10 格看成 19 格，坐标全线错位。
         """
         col, row = PLAYER_CELL
-        head = "    " + "".join(str(c) for c in range(GRID_COLS))
-        body = []
+        ys = [self.player_y + r - row for r in range(GRID_ROWS)]
+        left, right = self.player_x - col, self.player_x + GRID_COLS - 1 - col
+        gutter = max(len(str(y)) for y in ys)
+
+        lines = [f"这一屏：x 从 {left} 到 {right}，y 从 {ys[0]} 到 {ys[-1]}"]
         for r, line in enumerate(self.cells):
             chars = list(line)
             if r == row:
                 chars[col] = PLAYER_MARK
-            body.append(f"  {r} " + "".join(chars))
-        return "\n".join([head, *body])
+            lines.append(f"y={ys[r]:<{gutter}} " + "".join(chars))
+        return "\n".join(lines)
 
     def landmarks(self) -> list[Landmark]:
         """屏幕上的门 / 招牌 / 人，**换算成全局坐标**。返回 `(类型, x, y)`。
