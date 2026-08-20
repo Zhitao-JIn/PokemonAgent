@@ -66,6 +66,16 @@ FACING_STEP: dict[str, tuple[int, int]] = {
 """朝向 → 全局坐标的位移。**`a` 作用在面朝的那一格上**，所以要拿这张表算出
 "我刚才是在跟谁互动"。y 向下增大，和 `walk_map` 的行号一致。"""
 
+INTERACT_KEY = "a"
+"""哪个键算"互动"。`a` 作用在**面朝的那一格**上：对着人说话、对着招牌看字、
+对着门进去。这是游戏的规则，不是策略。
+
+放在 core 而不是工具层，理由和 `BUTTON_FACING` 一样——**两处都要用**：
+工具层拿它判"这一步是不是在跟谁互动"，world 拿它把连按夹成一次
+（`a` 的收益全在中间那几帧上，连按会把它们整个吃掉）。
+两边各写一个 `"a"` 字面量不会报错，只会在有人改动时静默分叉。
+"""
+
 FACING_OPPOSITE: dict[str, str] = {
     "north": "south", "south": "north", "west": "east", "east": "west",
 }
@@ -143,18 +153,6 @@ class Place(BaseModel):
     def render(self) -> str:
         """**全局坐标写成 `x= y=`，不用括号** —— 括号写法留给屏幕格。"""
         return f"全局坐标 地图{self.map_id} x={self.x} y={self.y}"
-
-
-def _compact(poses: list[str]) -> str:
-    """把姿势列表压短一点。这几行每一帧都要发，`站在上面按` 重复四遍是纯浪费。
-
-        ['站在上面按up', '站在上面按left', '站在南边按up']
-        -> '站在上面按 up/left；站在南边按up'
-    """
-    on = [p.removeprefix("站在上面按") for p in poses if p.startswith("站在上面按")]
-    side = [p for p in poses if not p.startswith("站在上面按")]
-    out = ([f"站在上面按 {'/'.join(on)}"] if on else []) + side
-    return "；".join(out)
 
 
 class Landmark(BaseModel):
@@ -278,31 +276,28 @@ class ObjectNote(BaseModel):
         del self.lines[:-MAX_OBJECT_LINES]
 
     def _door_status(self) -> list[str]:
-        """门的那几段。**给结论，不给流水。**
+        """门的那一段。**只写结果，不写动作空间。**
 
-        门的成功判据是固定的（`map_id` 变了），所以这里直接算出三件事：
-        打开它的姿势是哪个、哪些姿势已经排除、还剩哪些没试。
-        模型不需要从一串"站在上面按right→从这一格走开了"里自己悟出结论——
-        而实测它悟出来的是反的：把"走开了"读成了"穿过去了"，
-        在两扇挨着的门之间来回踱步。
+        「一扇门有哪 8 种碰法」是**词汇表**，它对每一扇门都一样，
+        所以属于 prompt，写一次就够（`MAP_HINT`）。早一版把它铺进了每一条档案，
+        于是每一帧、每一扇门都重复一遍那 8 个词——那不是记忆，是噪声。
 
-        没打开过时，**"还没试过"那一段比"试过没用"更要紧**：
-        它是这扇门唯一的待办清单，也是死循环唯一的出口。
+        这里只留**这一扇门身上发生过什么**，而门的成功判据是固定的
+        （`map_id` 变了），所以直接写成结论：
+
+            站在上面按down → 地图0
+            没打开过（试过 站在上面按right、站在东边按left，还剩 6 种没试）
+
+        「还剩几种没试」只给个数：**哪几种**从词汇表减一下就知道，
+        而这个数回答的是唯一真正要紧的问题——**还有没有别的可试**。
+        没得试了这一句就消失，那本身就是结论：这扇门打不开（剧情没到，或者它是装饰）。
         """
-        opened = self.opened_by
-        if opened:
-            return [f"**{opened}** 能过去 → 地图{self.leads_to}"]
+        if self.opened_by:
+            return [f"{self.opened_by} → 地图{self.leads_to}"]
         if not self.tried:
-            # 一次都没试过时不列全集：那 8 条对每一扇没碰过的门都一模一样，
-            # 每帧发一遍就是纯噪声。**"还没试过的是哪几种"只有在它开始试之后才有信息量**，
-            # 而那也正是它可能卡住的时候。
             return ["**还没打开过**"]
-        out = ["**还没打开过**", "试过没用：" + _compact(list(self.tried))]
-        if self.untried:
-            # 八种全试遍了还没开：这扇门就是打不开（剧情没到、或者它根本是装饰）。
-            # 那时候写"还没试过：（没有）"是废话，删掉这一段本身就是结论。
-            out.append("**还没试过**：" + _compact(self.untried))
-        return out
+        rest = f"，还剩 {len(self.untried)} 种没试" if self.untried else ""
+        return [f"**还没打开过**（试过 {'、'.join(self.tried)}{rest}）"]
 
     def render(self) -> str:
         """渲染成 `known_objects` 里的一行。

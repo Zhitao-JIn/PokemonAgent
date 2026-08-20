@@ -56,6 +56,7 @@ from pokemon_agent.interfaces.vision import VisionProvider
 from pokemon_agent.prompts import load as load_prompt
 from pokemon_agent.schemas.core import (
     BUTTON_FACING,
+    INTERACT_KEY,
     OVERLAY_ACTIONS,
     Action,
     Observation,
@@ -455,17 +456,23 @@ class PyBoyWorld:
         assert not self._closed, "step() called after the window was closed"
 
         times = self._times(action)
-        # **对话框打开时连按被夹到 1。**
+        # **`a` 永远只按一次，连按一律夹到 1。**
         #
-        # 我们只在一步走完之后感知一次，所以连按会把中间那几帧**整个吃掉**。
-        # 而对话框恰恰是判据最常用的证据来源（"对话框里出现母亲说的话"）：
-        # 连按三次 a 推完整段对话，那几句话的每一帧都没被看到，最后一次按键还会
-        # 把对话框关掉——判定器看到的是一个没有对话框的画面，
-        # **一局本该成功的 episode 就这样被记成失败**，而且不报错。
+        # 我们一步只感知一次，所以连按会把中间那几帧**整个吃掉**。而 `a` 产出的
+        # 恰恰是全项目最要紧的证据——对话框文字：
         #
-        # 夹在这里而不是靠 prompt 劝：连按是模型给的参数，劝它"预期有对话就别连按"
-        # 前提是它得先知道会有对话。而对话框**已经开着**这件事我们是确定知道的。
-        if times > 1 and self._dialog_is_open():
+        # - 判据最常用的就是它（"对话框里出现母亲说的话"）。连按三次推完整段对话，
+        #   那几句话一帧都没被看到，最后一次还会把对话框关掉——判定器看到一个
+        #   没有对话框的画面，**一局本该成功的 episode 被静默记成失败**。
+        # - 档案里那一格的 `lines` 也只拿得到最后一句，中间几句直接丢。
+        #   而"这是谁"往往就写在第一句里。
+        #
+        # 早一版只在**对话框已经开着**时夹。那漏掉了最常见的情形：
+        # 对话框还没开，它对着 NPC 连按三次——第一次开、后两次推完，
+        # 我们一句都没记下。`a` 的收益全在中间那几帧上，**连按对它从来没有意义**。
+        #
+        # 方向键不夹：沿直线走几格是它省步数的正当手段，中间帧也没有证据。
+        if action.name == INTERACT_KEY or (times > 1 and self._dialog_is_open()):
             times = 1
         if action.name in _FACING:
             self._facing = _FACING[action.name]
@@ -486,7 +493,8 @@ class PyBoyWorld:
         if asked > times:
             # **夹了要说**，否则大脑会以为自己连按了 N 次，
             # 而实际只走了一次——它下一步的推理就建立在错的前提上。
-            note = f"（对话框开着，连按 {asked} 次被夹成 1 次）"
+            why = "a 只能一次一次按" if action.name == INTERACT_KEY else "对话框开着"
+            note = f"（{why}，连按 {asked} 次被夹成 1 次）"
         return ToolResult(message=obs.summary + note, observation=obs)
 
 
