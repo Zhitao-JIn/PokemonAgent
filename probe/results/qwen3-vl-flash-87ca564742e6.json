@@ -1,0 +1,594 @@
+[
+  {
+    "frame": "POKEMON RED-2026.08.18-06.32.45.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "dialog",
+      "dialog_text": "AC wants to fight!",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "foe_name": "AC",
+        "foe_level": "5",
+        "my_name": "PLAYER",
+        "my_hp": "19/19"
+      }
+    },
+    "want": {
+      "scene": "battle",
+      "overlay": "dialog",
+      "dialog_text": "AC wants to fight!"
+    },
+    "in": 1329,
+    "out": 84
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-06.33.07.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "dialog",
+      "dialog_text": "AC sent out CHARANDER!",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "foe_name": "CHARMANDER",
+        "foe_level": "5",
+        "my_name": "AC",
+        "my_hp": "19/19"
+      }
+    },
+    "want": {
+      "scene": "battle",
+      "overlay": "dialog",
+      "dialog_text": "AC sent out CHARMANDER!"
+    },
+    "in": 1329,
+    "out": 88
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-06.33.10.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "dialog",
+      "dialog_text": "Go! AL!",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "foe_name": "CHARMANDER",
+        "foe_level": "5",
+        "my_name": "AL",
+        "my_hp": "19/19"
+      }
+    },
+    "want": {
+      "scene": "battle",
+      "overlay": "dialog",
+      "dialog_text": "Go! AL!",
+      "fields": {
+        "foe_name": "CHARMANDER",
+        "my_name": "AL",
+        "my_hp": "19/19"
+      }
+    },
+    "in": 1329,
+    "out": 85
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-06.33.12.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "choice",
+      "dialog_text": "",
+      "options": [
+        "TACKLE",
+        "GROWL"
+      ],
+      "cursor": 0,
+      "fields": {
+        "foe_name": "CHARMANDER",
+        "foe_level": "5",
+        "my_name": "AL",
+        "my_hp": "19/19"
+      }
+    },
+    "want": {
+      "scene": "battle",
+      "overlay": "choice",
+      "fields": {
+        "foe_name": "CHARMANDER",
+        "my_name": "AL",
+        "my_hp": "19/19"
+      }
+    },
+    "in": 1329,
+    "out": 96
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-06.33.32.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "choice",
+      "dialog_text": "",
+      "options": [
+        "FIGHT",
+        "PKMN",
+        "ITEM",
+        "RUN"
+      ],
+      "cursor": 0,
+      "fields": {
+        "foe_name": "CHARMANDER",
+        "foe_level": "5",
+        "my_name": "AL",
+        "my_hp": "13/19"
+      }
+    },
+    "want": {
+      "scene": "battle",
+      "overlay": "choice",
+      "fields": {
+        "foe_name": "CHARMANDER",
+        "my_name": "AL",
+        "my_hp": "13/19"
+      }
+    },
+    "in": 1329,
+    "out": 102
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-06.34.03.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "choice",
+      "dialog_text": "",
+      "options": [
+        "FIGHT",
+        "PKMN",
+        "ITEM",
+        "RUN"
+      ],
+      "cursor": 0,
+      "fields": {
+        "foe_name": "CHARMANDER",
+        "foe_level": "5",
+        "my_name": "AL",
+        "my_hp": "9/19"
+      }
+    },
+    "want": {
+      "scene": "battle",
+      "overlay": "choice",
+      "fields": {
+        "foe_name": "CHARMANDER",
+        "my_name": "AL",
+        "my_hp": "9/19"
+      }
+    },
+    "in": 1329,
+    "out": 101
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-06.34.11.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "indoor",
+      "overlay": "dialog",
+      "dialog_text": "AK! Gramps! Smell you later!",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "place": "Pallet Town",
+        "facing": "down",
+        "walkable": "true",
+        "nearby": "Gramps"
+      }
+    },
+    "want": {
+      "scene": "indoor",
+      "overlay": "dialog",
+      "dialog_text": "AK! Gramps! Smell you later!"
+    },
+    "in": 1329,
+    "out": 86
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-06.34.17.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "field",
+      "overlay": "none",
+      "dialog_text": "",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "location": "Pallet Town",
+        "facing": "down",
+        "walkable": "true",
+        "nearby": "House, PC"
+      }
+    },
+    "want": {
+      "scene": "field",
+      "overlay": "none"
+    },
+    "in": 1329,
+    "out": 76
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-06.34.42.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "field",
+      "overlay": "none",
+      "dialog_text": "",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "location": "Route 1",
+        "facing": "down",
+        "walkable": "true",
+        "nearby": "Grass, Rock"
+      }
+    },
+    "want": {
+      "scene": "field",
+      "overlay": "none"
+    },
+    "in": 1329,
+    "out": 77
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-06.34.44.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "field",
+      "overlay": "none",
+      "dialog_text": "",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "location": "Pallet Town",
+        "facing": "down",
+        "walkable": "true",
+        "nearby": "Gramps"
+      }
+    },
+    "want": {
+      "scene": "field",
+      "overlay": "none"
+    },
+    "in": 1329,
+    "out": 75
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.13.20.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "field",
+      "overlay": "none",
+      "dialog_text": "",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "location": "Pallet Town",
+        "facing": "down",
+        "walkable": "true",
+        "nearby": "House, House"
+      }
+    },
+    "want": {
+      "scene": "field",
+      "overlay": "none"
+    },
+    "in": 1329,
+    "out": 76
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.13.27.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "dialog",
+      "dialog_text": "Wild RATTATA appeared!",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "foe_name": "RATTATA",
+        "foe_level": "5",
+        "my_name": "PLAYER",
+        "my_hp": "19/19"
+      }
+    },
+    "want": {
+      "scene": "battle",
+      "overlay": "dialog",
+      "dialog_text": "Wild RATTATA appeared!"
+    },
+    "in": 1329,
+    "out": 87
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.13.32.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "choice",
+      "dialog_text": "",
+      "options": [
+        "FIGHT",
+        "PKMN",
+        "ITEM",
+        "RUN"
+      ],
+      "cursor": 0,
+      "fields": {
+        "foe_name": "RATTATA",
+        "foe_level": "3",
+        "my_name": "C",
+        "my_hp": "20/23"
+      }
+    },
+    "want": {
+      "scene": "battle",
+      "overlay": "choice",
+      "fields": {
+        "foe_name": "RATTATA",
+        "my_name": "C",
+        "my_hp": "20/23"
+      }
+    },
+    "in": 1329,
+    "out": 102
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.13.41.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "dialog",
+      "dialog_text": "C gained 23 EXP. Points!",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "foe_name": "C",
+        "foe_level": "6",
+        "my_name": "C",
+        "my_hp": "11/23"
+      }
+    },
+    "want": {
+      "scene": "battle",
+      "overlay": "dialog",
+      "dialog_text": "C gained 23 EXP. Points!",
+      "fields": {
+        "my_name": "C",
+        "my_hp": "11/23"
+      }
+    },
+    "in": 1329,
+    "out": 88
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.13.51.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "choice",
+      "dialog_text": "",
+      "options": [
+        "FIGHT",
+        "PKMN",
+        "ITEM",
+        "RUN"
+      ],
+      "cursor": 0,
+      "fields": {
+        "foe_name": "RATTATA",
+        "foe_level": "12",
+        "my_name": "C",
+        "my_hp": "13/25"
+      }
+    },
+    "want": {
+      "scene": "battle",
+      "overlay": "choice",
+      "fields": {
+        "foe_name": "RATTATA",
+        "my_name": "C",
+        "my_hp": "13/25"
+      }
+    },
+    "in": 1329,
+    "out": 103
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.14.11.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "shop",
+      "overlay": "none",
+      "dialog_text": "",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "money": "1234"
+      }
+    },
+    "want": {
+      "scene": "field",
+      "overlay": "none"
+    },
+    "in": 1329,
+    "out": 51
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.14.17.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "indoor",
+      "overlay": "dialog",
+      "dialog_text": "Welcome to our POKEMON CENTER!",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "place": "POKEMON CENTER",
+        "facing": "down",
+        "walkable": "true",
+        "nearby": "Nurse Joy, Player, Child"
+      }
+    },
+    "want": {
+      "scene": "indoor",
+      "overlay": "dialog",
+      "dialog_text": "Welcome to our POKeMON CENTER!"
+    },
+    "in": 1329,
+    "out": 90
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.14.23.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "indoor",
+      "overlay": "none",
+      "dialog_text": "",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "place": "Pewter City",
+        "facing": "right",
+        "walkable": "true",
+        "nearby": "Gramps, Clerk"
+      }
+    },
+    "want": {
+      "scene": "indoor",
+      "overlay": "none"
+    },
+    "in": 1329,
+    "out": 79
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.15.02.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "choice",
+      "dialog_text": "",
+      "options": [
+        "Choose a POKéMON."
+      ],
+      "cursor": 0,
+      "fields": {
+        "foe_name": "C",
+        "foe_level": "7",
+        "my_hp": "25/25"
+      }
+    },
+    "want": {
+      "scene": "menu",
+      "overlay": "choice",
+      "dialog_text": "Choose a POKeMON."
+    },
+    "in": 1329,
+    "out": 83
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.15.06.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "battle",
+      "overlay": "none",
+      "dialog_text": "",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "foe_name": "C",
+        "foe_level": "17",
+        "my_name": "No. 001",
+        "my_hp": "25/25"
+      }
+    },
+    "want": {
+      "scene": "menu",
+      "overlay": "none"
+    },
+    "in": 1329,
+    "out": 85
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.16.18.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "indoor",
+      "overlay": "dialog",
+      "dialog_text": "AK got OAK's PARCEL !",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "place": "Pallet Town",
+        "facing": "right"
+      }
+    },
+    "want": {
+      "scene": "indoor",
+      "overlay": "dialog",
+      "dialog_text": "AK got OAK's PARCEL!"
+    },
+    "in": 1329,
+    "out": 68
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.17.36.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "indoor",
+      "overlay": "dialog",
+      "dialog_text": "AK delivered OAK's PARCEL.",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "place": "Pallet Town",
+        "facing": "down",
+        "walkable": "true"
+      }
+    },
+    "want": {
+      "scene": "indoor",
+      "overlay": "dialog",
+      "dialog_text": "AK delivered OAK's PARCEL."
+    },
+    "in": 1329,
+    "out": 75
+  },
+  {
+    "frame": "POKEMON RED-2026.08.18-10.17.44.png",
+    "parse_ok": true,
+    "got": {
+      "scene": "indoor",
+      "overlay": "dialog",
+      "dialog_text": "This is a great undertaking in",
+      "options": [],
+      "cursor": null,
+      "fields": {
+        "place": "Gym",
+        "facing": "right",
+        "walkable": "true",
+        "nearby": "Poke Ball"
+      }
+    },
+    "want": {
+      "scene": "indoor",
+      "overlay": "dialog",
+      "dialog_text": "This is a great undertaking in"
+    },
+    "in": 1329,
+    "out": 83
+  }
+]
