@@ -30,7 +30,8 @@ from datetime import datetime
 from pokemon_agent.build import build_real
 from pokemon_agent.errors import AgentError
 from pokemon_agent.mocks.mock_trace import MockTrace
-from pokemon_agent.schemas.core import EventType, Source, Task
+from pokemon_agent.schemas.task import Task
+from pokemon_agent.schemas.trace import EventType, Source
 from probe.echo_trace import EchoTrace
 
 ROM = "assets/rom"

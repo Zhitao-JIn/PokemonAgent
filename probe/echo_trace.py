@@ -17,7 +17,7 @@ import textwrap
 from collections.abc import Iterable
 
 from pokemon_agent.interfaces.trace import TracePort
-from pokemon_agent.schemas.core import EventType, Source, TraceEvent
+from pokemon_agent.schemas.trace import EventType, Source, TraceEvent
 
 LABEL_W = 15
 """标签列宽。
@@ -159,6 +159,10 @@ class EchoTrace:
         elif type is EventType.OBSERVE:
             print(f"  {'observe':<{LABEL_W}} {p.get('scene','?')}/{p.get('overlay','?')}"
                   f"   frame {p.get('frame_sha','?')}")
+            # **目标栈跟着这一帧打出来**——不然"它是不是明知栈里已经有这条
+            # 还是又压了一遍"这种问题只能翻回前面所有 goal +/goal ✓ 行手动重建。
+            if p.get("goals"):
+                print(f"  {'goals':<{LABEL_W}} {p['goals']}")
             for k, v in self._facts(p).items():
                 if k in ("scene", "overlay"):
                     continue
