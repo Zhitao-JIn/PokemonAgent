@@ -16,16 +16,22 @@
 
 ## 一轮循环长什么样
 
-    look        obs = self._observe(state)    -> MODEL_CALL(感知) + OBSERVE
-                                                 + MODEL_CALL(判定)×栈深 + GOAL_POP×弹了几层
-                space = self._space(goals)
-    think       d = brain.choose(goals, obs, space)
-                                              -> MEMORY_READ + MODEL_CALL(决策)×N
-                                                 + ERROR×失败次数 + THINK
-    ┌ press     tools.execute → reflect → memory_write   -> ACT + MEMORY_WRITE
-    ├ push_goal 压一个子目标                              -> GOAL_PUSH
-    └ inspect   对同一帧再问一个具体问题                    -> MODEL_CALL(感知) + INSPECT
-                                                 三条都 step += 1，然后回到 look
+    look             obs = self._observe(state)    -> MODEL_CALL(感知，通常 0 条，账已在上一步记过) + OBSERVE
+                                                      + MODEL_CALL(判定)×栈深 + GOAL_POP×弹了几层
+                     space = self._space(goals)
+    retrieve_memory  memories = memory.query_episodic(...)          -> MEMORY_READ
+    think            d = brain.choose(goals, obs, space, memories)
+                                                   -> MODEL_CALL(决策)×N + ERROR×失败次数 + THINK
+    ┌ press          tools.execute                 -> MODEL_CALL(感知，通常 0 条) + ACT
+    │ └ remember     reflect → memory.write_episodic → memory.note_step
+    │                                               -> MEMORY_WRITE + OBJECT_NOTE×N
+    ├ push_goal      压一个子目标                    -> GOAL_PUSH
+    └ inspect        对同一帧再问一个具体问题          -> MODEL_CALL(感知) + INSPECT
+                                                      三条链路都 step += 1，然后回到 look
+
+    `retrieve_memory`/`remember` 是**显式的图节点**，不是藏在 `think`/`press`
+    内部的几行代码——"每一步先查记忆再决策""只有真正推进世界那一步才写记忆"
+    这两条规则因此是图结构本身，一眼能看见（见 `_compile` 的完整说明）。
 
 **只有 `press` 推进世界。** 另外两类只改变大脑自己的处境，但**同样算一步**——
 它们烧的决策调用是一样的，不算的话 `max_steps` 就管不住"一直拆、从不走"这种局。
@@ -110,7 +116,7 @@ from pokemon_agent.interfaces.brain import BrainPort
 from pokemon_agent.interfaces.tools import GameToolPort, MemoryToolPort
 from pokemon_agent.interfaces.trace import TracePort
 from pokemon_agent.schemas.action import Action, ActionSpace, Goal, Intent
-from pokemon_agent.schemas.memory_episodic import Snapshot
+from pokemon_agent.schemas.memory_episodic import MemoryEntry, Snapshot
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.schemas.task import Task
 from pokemon_agent.schemas.trace import EpisodeOutcome, EventType, ModelCall, Source, Verdict
@@ -181,7 +187,18 @@ class LoopState(BaseModel):
 
     observation: Observation | None = None
     space: ActionSpace | None = None
+    memories: list[MemoryEntry] = Field(
+        default_factory=list,
+        description="`retrieve_memory` 查出来的、给这一步 `think` 用的情景记忆。"
+        "**图上单独一格**——查什么、查几条是循环控制的决策，不该藏在 `think` 内部",
+    )
     action: Action | None = None
+    press_result: Observation | None = None
+    """`press` 执行动作之后的新观测，交给紧跟着的 `remember` 去写记忆。
+
+    只在 `press → remember` 这一段之间有意义，`push_goal`/`inspect` 不产生它，
+    `remember` 结束后被下一轮 `look` 写的新 `observation` 盖过去，不跨步存活。
+    """
     outcome: EpisodeOutcome | None = None
 
 
@@ -243,7 +260,21 @@ class Harness:
         **这里不观测**——观测是 `look` 的事，而 `look` 是图的入口。
         记忆**不清空**——跨任务复用经验正是要验证的东西。
         """
-        self._game.reset(task)
+        reset = self._game.reset(task)
+
+        # `reset()` 里那次真实感知产生的调用记录，当场记账——**不留到下一次
+        # `_observe()` 才补记**。第一次 `look` 会命中这里刚建好的缓存，
+        # 这个 episode 只会有这一次真正的开局感知。
+        for call in reset.calls:
+            failed = call.get("ok") != "True"
+            self._record_call(
+                episode_id, 0, Source.PERCEPTION,
+                ModelCall(
+                    payload=call,
+                    error_kind="PerceptionParseFailure" if failed else "",
+                    error=call.get("raw", "")[:200] if failed else "",
+                ),
+            )
 
         # **episode 的边界必须进事件流。** 没有它，光看日志分不出一次尝试从哪开始，
         # 更不知道它带了多少条记忆进来——而那正是 A/B 实验的自变量本身。
@@ -262,27 +293,44 @@ class Harness:
     # ---- 图 ----
 
     def _compile(self) -> CompiledStateGraph:
-        """look → think → (press | push_goal | inspect) → look
+        """look → retrieve_memory → think → (press → remember | push_goal | inspect) → look
 
         **分派放在图的边上，不是某个节点里的 if。** 这样"agent 能做哪几类事"
         在图上一眼看得见，加一类 = 加一个枚举值 + 一个节点 + 一条边，
         `_think` 和 prompt 的形状都不用动。
+
+        `retrieve_memory` / `remember` 也是**显式的图节点**，不是藏在 `think`/`press`
+        内部的几行代码。以前查记忆是 `_think()` 里的第一步、写记忆是 `_press()`
+        里的最后几步——功能上没问题，但图上只看得到 `think`/`press` 两个方框，
+        看不出"每一步都先查记忆再决策""只有真正推进世界那一步才写记忆"这两条规则。
+        拆成独立节点之后这两条规则**是图结构本身**，不用看代码也看得出来；
+        以后想换检索/写入策略，改的是这一个节点，`think`/`press`/prompt 都不用动。
+
+        `remember` 只跟在 `press` 后面——`push_goal`/`inspect` 不推进世界，
+        写进去就是一堆"结果：什么都没发生"，会把检索结果稀释掉（原因见 `_remember`）。
         """
         graph = StateGraph(LoopState)
         graph.add_node("look", self._look)
+        graph.add_node("retrieve_memory", self._retrieve_memory)
         graph.add_node("think", self._think)
+        graph.add_node("remember", self._remember)
         for intent, node in self._nodes().items():
             graph.add_node(intent.value, node)
 
         graph.set_entry_point("look")
         # **唯一的终止分支在 look 出口**：看完才知道这一局还要不要继续。
         # 放在动作节点出口的话，"步数用尽"和"目标达成"要在三个地方各判一次。
-        graph.add_conditional_edges("look", self._route, {"think": "think", END: END})
+        graph.add_conditional_edges(
+            "look", self._route, {"retrieve_memory": "retrieve_memory", END: END}
+        )
+        graph.add_edge("retrieve_memory", "think")
         graph.add_conditional_edges(
             "think", self._dispatch, {i.value: i.value for i in Intent}
         )
         for intent in Intent:
-            graph.add_edge(intent.value, "look")
+            # `press` 多绕一步 remember 才回 look；另外两类世界没动，直接回。
+            graph.add_edge(intent.value, "remember" if intent is Intent.PRESS else "look")
+        graph.add_edge("remember", "look")
         return graph.compile()
 
     def _nodes(self) -> dict[Intent, Any]:
@@ -323,16 +371,44 @@ class Harness:
             intents.insert(1, Intent.PUSH_GOAL)
         return self._game.get_action_space().model_copy(update={"intents": intents})
 
+    def _retrieve_memory(self, state: LoopState) -> dict[str, Any]:
+        """查这一步要用的情景记忆，交给 `think`。**图上单独一格。**
+
+        查什么、查几条本身就是循环控制的决策（用哪种检索、限几条），
+        不该藏在 `think()` 内部的一行代码里——独立成节点之后，以后想换策略
+        （比如从字符重叠换成 embedding），改的是这一个节点，
+        `think()`/`brain.choose()` 的签名都不用动。
+
+        用当前快照的渲染文本去查，不用 `obs.summary`：记忆里存的是快照
+        （位置/概况/地标/通行图），summary 是"你在野外"这种一句话，
+        两边词汇几乎不重叠，字符打分会一条都选不中。
+        """
+        assert state.observation is not None, "retrieve_memory before look"
+        ep, step = state.episode_id, state.observation.step
+        memories = self._memory.query_episodic(
+            Snapshot.of(state.observation).render(), limit=MEMORY_RECALL_LIMIT
+        )
+        # 检索发生在决策模型调用之前，事件顺序照实写——**因果顺序**，不是排版偏好。
+        self._trace.append(
+            ep, step, EventType.MEMORY_READ, Source.DECISION,
+            {"count": str(len(memories)),
+             "refs": " ".join(f"({m.episode_id}, {m.step})" for m in memories)},
+        )
+        return {"memories": memories}
+
     def _think(self, state: LoopState) -> dict[str, Any]:
         """大脑推理，然后**把它交回来的账翻译成事件**。
 
         大脑一次 `choose()` 里可能调好几次模型（解析失败要重试），
-        所以这里写出来的是一组事件而不是一条。四类分开写，因为它们回答不同的问题：
+        所以这里写出来的是一组事件而不是一条。三类分开写，因为它们回答不同的问题：
 
-            MEMORY_READ   它翻了哪几条经验 —— 「这个决策是被哪条影响的」
             MODEL_CALL    每次尝试花了多少 —— 失败的那几次同样烧了钱
             ERROR         每次为什么失败   —— 按 kind 聚合就是失败模式分布
             THINK         最终选了什么     —— 决策内容本身
+
+        `MEMORY_READ` **不在这里写**——查记忆这件事本身已经挪到了图上单独一格
+        `retrieve_memory`，那条事件也跟着挪过去了（见该方法）。`state.memories`
+        就是那一格交出来的结果，这里直接用，不重新查一遍。
 
         失败：重试用尽时抛 `MaxRetriesExceeded`。**抛异常的是这里，不是大脑**——
         大脑只汇报"一次都没解析出合法动作"，而"这一局是否因此终止"是循环的判断。
@@ -341,21 +417,11 @@ class Harness:
         assert state.space is not None, "think without an action space"
         ep, step = state.episode_id, state.observation.step
 
-        # **检索发生在这里，不在大脑里。** `Brain.choose()` 不持有任何工具/记忆——
-        # 查什么、查几条是循环控制的事。用当前快照的渲染文本去查，不用
-        # `obs.summary`：记忆里存的是快照（位置/概况/地标/通行图），summary 是
-        # "你在野外"这种一句话，两边词汇几乎不重叠，字符打分会一条都选不中。
-        memories = self._memory.query_episodic(
-            Snapshot.of(state.observation).render(), limit=MEMORY_RECALL_LIMIT
+        decision = self._brain.choose(
+            state.goals, state.observation, state.space, state.memories
         )
-        decision = self._brain.choose(state.goals, state.observation, state.space, memories)
         assert decision.calls, "choose() must report at least one model call"
 
-        # 检索发生在模型调用之前，事件顺序照实写——**因果顺序**，不是排版偏好。
-        self._trace.append(
-            ep, step, EventType.MEMORY_READ, Source.DECISION,
-            {"count": str(len(decision.recalled)), "refs": " ".join(decision.recalled)},
-        )
         for call in decision.calls:
             self._record_call(ep, step, Source.DECISION, call)
 
@@ -390,15 +456,13 @@ class Harness:
     # ---- 三个动作节点。**只有 press 推进世界。** ----
 
     def _press(self, state: LoopState) -> dict[str, Any]:
-        """按键、记忆、推进一步。**这一整段的顺序是这个节点的全部意义。**
+        """按键，推进世界。**只管执行和账，不写记忆。**
 
-        `ACT` 和 `MEMORY_WRITE` 都属于第 n 步；`step + 1` 放在最后，
-        下一轮 `look` 写的 `OBSERVE` 才落在第 n+1 步上。
-        提前加一的话事件流的步号会往回跳，读日志的人会把那条记忆读成下一步的。
-
-        **记忆只在这里写。** `MemoryEntry` 的语义是"我看到 X，因为 Y，做了 Z，
-        变成 W"——另外两个节点世界没变，`after` 和 `before` 是同一帧，
-        写进去就是一堆"结果：什么都没发生"，会把检索结果稀释掉。
+        记忆写入挪到了紧跟着的 `_remember()`——图上能直接看出
+        "press 之后必然跟着 remember"，不用再靠读代码才知道这一步顺手把
+        记忆也写了。`step` 也不在这里加：`press → remember` 是一个整体，
+        加一次的地方在链路末尾（`_remember`），这样 `ACT`/`MEMORY_WRITE`
+        才会落在同一个（第 n）步上。
         """
         assert state.observation is not None, "press before look"
         assert state.action is not None, "press without an action"
@@ -407,16 +471,54 @@ class Harness:
         result = self._game.execute(action)
         assert result.observation is not None, "execute() must return the new observation"
 
+        # `result.calls` 是推进这一步期间（通常是执行后重新感知那一次）产生的
+        # 模型调用记录，**这一步的账当场记，不再拖到下一步 `_observe()` 才补记**——
+        # calls 现在跟着 `execute()` 的返回值一起交出来，不用再靠 `drain_calls()`
+        # 那种"下次谁来取谁就顺手把上一步的账也记了"的隐式时机。
+        for call in result.calls:
+            failed = call.get("ok") != "True"
+            self._record_call(
+                ep, before.step, Source.PERCEPTION,
+                ModelCall(
+                    payload=call,
+                    error_kind="PerceptionParseFailure" if failed else "",
+                    error=call.get("raw", "")[:200] if failed else "",
+                ),
+            )
+
         self._trace.append(
             ep, before.step, EventType.ACT, Source.WORLD,
             {"action": action.name, "args": json.dumps(action.args, ensure_ascii=False),
              "message": result.message},
         )
 
-        # `after` 用 `execute()` 返回的那一帧。它没盖过章（step 恒 0），
+        # 新观测交给 `_remember()`：它没盖过章（step 恒 0），
         # 但记忆只取 `Snapshot`——那里面全是 facts，和步号无关。
-        # `episode_id` 也是在这里盖的：大脑不知道自己在哪一局。
-        entry = self._brain.reflect(before, action, result.observation).model_copy(
+        return {"press_result": result.observation}
+
+    def _remember(self, state: LoopState) -> dict[str, Any]:
+        """把 `press` 刚推进的这一步写进记忆。**图上单独一格，只跟在 press 后面。**
+
+        从 `_press()` 里拆出来，是为了让"记忆写在哪个节点"在图上看得见——
+        以前一个 `press` 方框里塞了按键、情景记忆落库、语义记忆建档三件事，
+        图上读不出这三件事的先后关系，也读不出"只有推进世界那一步才写记忆"这条规则
+        （`push_goal`/`inspect` 世界没变，`after` 和 `before` 是同一帧，
+        写进去就是一堆"结果：什么都没发生"，会把检索结果稀释掉——所以它们不接这一格）。
+
+        `ACT`（在 `press` 里）和 `MEMORY_WRITE`（这里）都属于第 n 步；
+        `step + 1` 放在这里、这条链路的末尾，下一轮 `look` 写的 `OBSERVE`
+        才落在第 n+1 步上。提前加一的话事件流的步号会往回跳，
+        读日志的人会把这条记忆读成下一步的。
+        """
+        assert state.observation is not None, "remember before look"
+        assert state.action is not None, "remember without an action"
+        assert state.press_result is not None, "remember before press"
+        ep, before, action, after = (
+            state.episode_id, state.observation, state.action, state.press_result
+        )
+
+        # `episode_id` 在这里盖：大脑不知道自己在哪一局。
+        entry = self._brain.reflect(before, action, after).model_copy(
             update={"episode_id": ep}
         )
         self._memory.write_episodic(entry)
@@ -429,7 +531,7 @@ class Harness:
         # 情景记忆记"我在那种画面里选了什么"，作用域是一次经过；
         # 这一条记"地图39 x=2 y=3 那个人会说什么"，作用域是那一格，域内恒真、域会再现。
         # 它不需要模型判断——面朝哪一格是 `place + facing` 算出来的，两个输入都确定。
-        for note in self._memory.note_step(before, action, result.observation):
+        for note in self._memory.note_step(before, action, after):
             self._trace.append(
                 ep, before.step, EventType.OBJECT_NOTE, Source.HARNESS,
                 {"key": note.landmark.place.key, "kind": note.landmark.kind,
@@ -468,8 +570,8 @@ class Harness:
         assert state.action is not None and state.action.focus
         focus = state.action.focus
 
-        self._game.inspect(focus)
-        calls = self._game.drain_calls()
+        result = self._game.inspect(focus)
+        calls = result.calls
         for call in calls:
             self._record_call(
                 state.episode_id, state.observation.step, Source.PERCEPTION,
@@ -484,7 +586,7 @@ class Harness:
 
     def _route(self, state: LoopState) -> str:
         assert state.observation is not None, "routing before any observation"
-        return END if state.observation.done else "think"
+        return END if state.observation.done else "retrieve_memory"
 
     # ---- 观测：全项目唯一产出 Observation 的地方 ----
 
@@ -497,8 +599,9 @@ class Harness:
         `_traced_step` / `_judged_step` 那两个去重字段，原因就是这一句。
 
         `game.perceive()` 是纯读且按帧缓存：`act` 里 `execute()` 刚感知过的那一帧，
-        这里命中缓存，**不产生任何额外的模型调用**——`drain_calls()` 那时返回空列表，
-        这一步就没有 MODEL_CALL(perception) 事件，因为确实没有调用发生。
+        这里命中缓存，**不产生任何额外的模型调用**——`result.calls` 那时是空列表，
+        这一步就没有 MODEL_CALL(perception) 事件，因为确实没有调用发生
+        （执行阶段真正产生的那些调用，已经在 `_press()` 里当场记过账了）。
 
         终止有三个来源，这里全判了：
 
@@ -517,7 +620,8 @@ class Harness:
         的原始观测之后，另外问 `memory.known_here()` 要一段渲染好的文字，
         有内容才拼进 `facts["known_objects"]`——两个协议各管各的，组合是这一层的活。
         """
-        raw = self._game.perceive()
+        perceived = self._game.perceive()
+        raw = perceived.observation
         obs = raw.model_copy(update={
             "step": state.step,
             "done": raw.done or state.step >= state.task.max_steps,
@@ -531,7 +635,7 @@ class Harness:
         # 唯一一步产出一次观测的地方，而 `seen` 必须一步只加一次。
         self._memory.see_objects(obs, f"{state.episode_id}#{obs.step}")
 
-        for call in self._game.drain_calls():
+        for call in perceived.calls:
             # **`ok=False` 的那几次要带上 error_kind**，`_record_call` 才会补一条
             # ERROR。漏掉的话「视觉模型输出解析失败」这一类**永远不出现在失败模式
             # 分布里**，只能回头去解析 payload 里的 `ok` 字符串——而那正是
@@ -553,12 +657,33 @@ class Harness:
             #
             # `frame_sha` 同样关键：没有它，一条读错的观测**无法追查**是哪一帧，
             # 阶段 3.2 拿 VLM 输出和真值对标也对不上号。
+            #
+            # **`goals` 也要跟着这一帧一起记。** 以前目标栈只在 `GOAL_PUSH`/
+            # `GOAL_POP` 事件里出现过一次，读日志的人拿不到"这一帧、这个决策，
+            # 当时的栈到底长什么样"——于是"模型是不是明知栈里已经有这条还是
+            # 又压了一遍"这种问题只能靠回放前面所有 GOAL_PUSH/POP 事件手动重建。
+            # 这里记的是**这一帧被看到时**的栈（judge 弹栈之前），
+            # 因为 OBSERVE 必须先于本步的判定事件（因果顺序，见上），
+            # 判完之后的栈会在随后的 GOAL_POP 里体现。
             {"frame_sha": self._game.last_frame_sha,
              "summary": obs.summary,
              "scene": obs.facts.get("scene", ""), "overlay": obs.facts.get("overlay", ""),
-             "facts": json.dumps(obs.facts, ensure_ascii=False)},
+             "facts": json.dumps(obs.facts, ensure_ascii=False),
+             "goals": self._render_goal_stack(state.goals)},
         )
         return self._judge(state, obs)
+
+    @staticmethod
+    def _render_goal_stack(goals: list[Goal]) -> str:
+        """把目标栈压成一行，塞进 trace payload。**栈顶（当前要做的）在最后。**
+
+        payload 的值要求是字符串（`dict[str, str]`），且不方便塞多行——
+        这里选分号连接、深度前缀，跟 `Brain._render_goals`（多行、给模型读、
+        栈顶在最上面）刻意不同：一个是给人在日志里扫一眼查重复，
+        一个是给模型逐行读的完整 prompt 片段，两者的读者和用途都不一样，
+        没必要共用一份格式。
+        """
+        return " > ".join(f"[{depth}]{g.goal}" for depth, g in enumerate(goals))
 
     def _judge(
         self, state: LoopState, obs: Observation
