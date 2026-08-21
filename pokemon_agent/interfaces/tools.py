@@ -1,13 +1,23 @@
-"""工具层接口 —— 大脑伸向环境的手。
+"""工具层接口 —— **Harness 伸向环境和记忆的两只手，分开的。**
 
-## 两个协议，因为有两个调用方
+## 两个协议，因为 Harness 要跟两个不同的东西打交道
 
-    ToolPort   大脑看到的。**这五个方法就是大脑能力的全集。**
-    ToolHost   Harness 看到的。多出来的是"开局"和"这次观测是怎么来的"，
-               都是大脑不该知道的事。
+    GameToolPort     操作世界：感知、执行、开局、溯源。
+    MemoryToolPort   读写记忆：情景记忆 + 语义记忆（object）。
 
-往 `ToolPort` 里加方法前先问一句：这是大脑该知道的事，还是循环控制的事？
-放错一边的代价不对称——大脑多知道一件事，它就会开始围绕那件事推理。
+以前只有一个 `ToolHost`（另外还有一个更小的 `ToolPort` 给大脑用），
+"感知世界"和"记忆"混在同一个协议里、同一个实现类（`GameTools`）里。
+
+现在**大脑不再持有任何工具实例**——`Brain.choose()` 需要的情景记忆由 Harness
+先查好、当参数传进去（见 `interfaces/brain.py`）。大脑不再有机会主动调用
+`GameToolPort`/`MemoryToolPort` 的任何方法，`ToolPort` 这个"大脑看到的协议"
+也就没有存在的必要了——大脑该看到什么，现在完全由 `choose()`/`judge()`/
+`reflect()` 的参数表决定，不再需要一个额外的协议来兜底"它还能主动做什么"。
+
+拆成 `GameToolPort`/`MemoryToolPort` 两个协议而不是一个，是因为它们的实现
+本来就该是两个不相关的类（`GameTools` 只碰 `WorldPort`，`MemoryTool` 只碰
+`memory/` 包），揉进一个协议会让人以为它们必须由同一个对象同时实现。
+`Harness.__init__` 现在收两个参数：`game: GameToolPort` 和 `memory: MemoryToolPort`。
 
 ## perceive 是纯读，**它不构成一步**
 
@@ -17,26 +27,31 @@
 
 现在它只是查询：不写 trace、不推进世界、不触发判定。
 **"一步"的边界由 Harness 定义**，那里只有两个地方会产出新的一步。
+
+## known_objects 现在由 Harness 拼，不是 GameTools
+
+以前 `GameTools.perceive()` 会顺手把语义记忆的 `known_here()` 结果拼进
+`facts["known_objects"]`——那要求 `GameTools` 持有一份记忆的引用，
+恰恰是这次要拆掉的耦合。现在 `GameToolPort.perceive()` 只管世界，
+`facts["known_objects"]` 由 `Harness._observe()` 在拿到 `game.perceive()`
+的结果之后，另外调 `memory.known_here(obs)` 拼上去——两个协议各管各的，
+组合是 Harness 的活。
 """
 
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.core import (
-    Action,
-    ActionSpace,
-    MemoryEntry,
-    ObjectNote,
-    Observation,
-    Task,
-    ToolResult,
-)
+from pokemon_agent.schemas.action import Action, ActionSpace, ToolResult
+from pokemon_agent.schemas.memory_episodic import MemoryEntry
+from pokemon_agent.schemas.memory_semantic import ObjectFact
+from pokemon_agent.schemas.observation import Observation
+from pokemon_agent.schemas.task import Task
 
 
 @runtime_checkable
-class ToolPort(Protocol):
-    """大脑与外界的**唯一**通信边界（CLAUDE.md 铁律 2）。"""
+class GameToolPort(Protocol):
+    """Harness 用它操作世界：感知、执行、开局、溯源。**不碰任何记忆。**"""
 
     def perceive(self) -> Observation:
         """取当前观测。**幂等只读**：不推进世界、不写 trace、不触发判定。
@@ -83,46 +98,6 @@ class ToolPort(Protocol):
         """
         ...
 
-    def memory_query(self, query: str, limit: int = 5) -> list[MemoryEntry]:
-        """检索相关记忆。
-
-        前置条件：limit > 0。
-        后置条件：返回条数 <= limit；按相关性降序。
-            **检索策略属于实现方**——大脑不知道也不该知道记忆从哪来、怎么排的，
-            机制一、机制三接进来时改的是实现，这个签名不动。
-        """
-        ...
-
-    def recent(self, episode_id: str, limit: int) -> list[MemoryEntry]:
-        """**这一局**最近几条，按时间顺序。
-
-        前置条件：limit > 0。
-        后置条件：返回条数 <= limit；全部来自 `episode_id` 这一局；最新的在最后。
-
-        和 `memory_query` 是两件事，不能互相替代：那个按相似度找"以前的类似情形"，
-        跨 episode，给的是**经验**；这个按时间取"刚刚发生了什么"，只限本局，
-        给的是**证据**。判定器要的是后者，而且正因为它两头有界才是安全的。
-        """
-        ...
-
-    def memory_write(self, entry: MemoryEntry) -> None:
-        """写入一条记忆。
-
-        前置条件：`entry.rationale` 非空。没有理由的经验取回来也没用——
-            它说不出当时为什么这么判断，也就无法检查那个判断现在还成不成立。
-        注意：Harness 也会写记忆。**大脑不能假设记忆库里只有自己写的东西。**
-        """
-        ...
-
-
-@runtime_checkable
-class ToolHost(ToolPort, Protocol):
-    """Harness 看到的工具层：`ToolPort` 再加上开局与溯源。
-
-    分成两个协议而不是一个，是为了让"大脑能力的全集"这句话**在类型上成立**。
-    合成一个的话，`reset()` 就出现在大脑的工具清单里了——它会开始考虑要不要重开一局。
-    """
-
     def reset(self, task: Task) -> Observation:
         """按任务重置到初始状态并返回首个观测。
 
@@ -153,41 +128,79 @@ class ToolHost(ToolPort, Protocol):
         """
         ...
 
-    def note_seen(self, obs: Observation, stamp: str) -> None:
-        """把这一帧看到的地标全部记进档案，**没互动过的也记**。
-
-        前置条件：**一步只调一次**（`seen` 是"进过几次视野"）。
-        后置条件：档案里出现这一帧的每一个地标；已有的更新 `last_seen`。
-
-        没互动过的也建档，是因为档案最有价值的一类条目正是
-        "这里有一扇门，我见过 7 次，一次都没进去过"——**那是它自己的待办清单**。
-
-        `stamp` 是调用方给的不透明时刻标记；实现方不解释它，也就不需要知道 episode 是谁。
-        """
-        ...
-
-    def note_step(
-        self, before: Observation, action: Action, after: Observation
-    ) -> list[ObjectNote]:
-        """这一步碰到了什么，记进档案。返回被更新的条目。
-
-        两件事：**互动**（按 `a` → 面朝那格给了什么文字）和
-        **穿门**（按方向键且地图变了 → 那扇门通往哪张地图）。
-
-        后置条件：**面朝哪一格必须是算出来的**（位置 + 朝向，两个确定量），
-            不能靠模型认"我刚才在跟谁说话"——键错了这套档案就没有意义。
-            连按穿门（`times > 1`）时**宁可漏记**：门可能在中途任意一格，
-            把 `leads_to` 挂到错的门上，那条错会被当成事实反复使用。
-
-        **没有文字也要记**："我试过，没反应"本身就是有用的，它下次就不会再按一遍。
-        """
-        ...
-
     @property
     def last_frame_sha(self) -> str:
         """最近一次观测所依据的那一帧的哈希。
 
         没有它，一条读错的观测**无法追查是哪一帧**——而那是查感知错误的起点。
         没有"帧"这个概念的实现返回空串。
+        """
+        ...
+
+
+@runtime_checkable
+class MemoryToolPort(Protocol):
+    """Harness 用它读写记忆：情景记忆 + 语义记忆（object）。**不碰世界。**
+
+    两类记忆分开暴露，因为它们的读写语义不同：情景记忆按相似度/时间检索，
+    语义记忆按坐标查。程序记忆（procedural）还没做，先不占位。
+    """
+
+    # ---- 情景记忆：episodic ----
+
+    def query_episodic(self, query: str, limit: int = 5) -> list[MemoryEntry]:
+        """检索相关的情景记忆。
+
+        前置条件：limit > 0。
+        后置条件：返回条数 <= limit；按相关性降序。
+            **检索策略属于实现方**——调用方不知道也不该知道记忆从哪来、怎么排的。
+        """
+        ...
+
+    def recent(self, episode_id: str, limit: int) -> list[MemoryEntry]:
+        """**这一局**最近几条情景记忆，按时间顺序。
+
+        前置条件：limit > 0。
+        后置条件：返回条数 <= limit；全部来自 `episode_id` 这一局；最新的在最后。
+        """
+        ...
+
+    def write_episodic(self, entry: MemoryEntry) -> None:
+        """写入一条情景记忆。
+
+        前置条件：`entry.rationale` 非空。没有理由的经验取回来也没用——
+            它说不出当时为什么这么判断，也就无法检查那个判断现在还成不成立。
+        """
+        ...
+
+    @property
+    def episodic_size(self) -> int:
+        """库里有多少条情景记忆。**A/B 实验的自变量之一**，要能被记进事件流。"""
+        ...
+
+    # ---- 语义记忆：object ----
+
+    def known_here(self, obs: Observation) -> str:
+        """`obs.place` 所在地图上，已知的语义记忆（object）渲染成的一段文字。
+
+        后置条件：`obs.place` 为 None 时返回空串；没有任何已知条目时也返回空串——
+            调用方（Harness）据此决定要不要往 `facts["known_objects"]` 里塞东西。
+        """
+        ...
+
+    def see_objects(self, obs: Observation, stamp: str) -> None:
+        """把这一帧看到的地标全部记一遍。
+
+        前置条件：**一步只调一次**——`stamp` 非空，调用方保证不会同一步调两次。
+        """
+        ...
+
+    def note_step(
+        self, before: Observation, action: Action, after: Observation
+    ) -> list[ObjectFact]:
+        """这一步碰到了什么语义记忆（object），记下来。返回被更新的条目（可能为空）。
+
+        前置条件：`before`/`after` 都有 `place`。算不出确定的一格时（连按、
+            原地转身、两个候选同时存在）**不记**，宁可漏记也不能记错格子。
         """
         ...

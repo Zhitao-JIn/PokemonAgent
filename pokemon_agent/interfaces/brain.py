@@ -49,29 +49,39 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.core import (
-    Action,
-    ActionSpace,
-    Decision,
-    Goal,
-    MemoryEntry,
-    Observation,
-    Verdict,
-)
+from pokemon_agent.schemas.action import Action, ActionSpace, Goal
+from pokemon_agent.schemas.memory_episodic import MemoryEntry
+from pokemon_agent.schemas.observation import Observation
+from pokemon_agent.schemas.trace import Decision, Verdict
 
 
 @runtime_checkable
 class BrainPort(Protocol):
-    """Harness 认识的大脑。**Harness 不认识任何具体模型。**"""
+    """Harness 认识的大脑。**Harness 不认识任何具体模型。**
+
+    **大脑不持有任何工具/记忆实例。** `choose()` 需要的情景记忆由 Harness 检索好，
+    当参数 `memories` 传进来——这条和 `judge()` 的 `history` 是同一个道理：
+    大脑该看到什么，完全由方法的参数表决定，不给它一个能自己去翻记忆库的通道。
+    早一版是大脑自己持有 `tools` 去调 `memory_query`——"大脑自己决定检索什么"
+    听起来是给它自由度，实际效果是**记忆检索这件"循环控制的事"混进了大脑的构造函数**，
+    而且这条通道再也没被用来做别的事。收回来之后 `Brain` 连一个 Protocol 类型的
+    协作者都不用持有，无状态这条铁律在类型层面更容易守住。
+    """
 
     def choose(
-        self, goals: list[Goal], obs: Observation, space: ActionSpace
+        self, goals: list[Goal], obs: Observation, space: ActionSpace,
+        memories: list[MemoryEntry],
     ) -> Decision:
-        """选出下一步动作，连同这次花了什么、翻过哪些记忆。
+        """选出下一步动作，连同这次花了什么。
 
         `goals` 是**整个目标栈**，栈顶（最后一个）是这一轮要完成的那条。
         下面几层也要给：不给的话大脑不知道自己为什么在做这件事，
         也就无法判断这个子目标是不是已经偏离了任务。
+
+        `memories` 是 Harness **检索好**的情景记忆，直接进 prompt。
+        检索策略（按什么查、查几条）不是大脑的事——大脑只回答"给了我这些，
+        我选哪个动作"，这也是为什么 `Decision.recalled` 直接从这个参数派生，
+        不需要大脑自己去记"我刚才翻了哪几条"。
 
         动作分三类（`Action.intent`），只有 `PRESS` 推进世界。
         允许哪几类由 `space.intents` 给出——**它由 Harness 填**，

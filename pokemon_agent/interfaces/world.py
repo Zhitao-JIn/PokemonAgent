@@ -1,9 +1,10 @@
 """世界接口 —— harness 底下的那一层，**大脑看不到这个文件**。
 
-为什么要和 ToolPort 分开：
-ToolPort 是"大脑能做什么"，WorldPort 是"世界能做什么"，两者职责不同且变化速度不同。
-harness 用 WorldPort + 记忆实现 ToolPort。当前唯一的实现是 `PyBoyWorld`，
-换模拟器时 **ToolPort 和大脑一行都不用改**——这就是分层的收益。
+为什么要和 GameToolPort 分开：
+GameToolPort 是"Harness 能拿世界做什么"，WorldPort 是"世界本身能做什么"，
+两者职责不同且变化速度不同。`GameTools` 用 `WorldPort` 实现 `GameToolPort`。
+当前唯一的实现是 `PyBoyWorld`，换模拟器时 **GameToolPort 和大脑一行都不用改**——
+这就是分层的收益。
 
 注意这里没有 masking：动作掩码是 harness 的策略，不是世界的能力。
 世界只回答"全部动作是什么"和"执行这个动作会怎样"。
@@ -25,7 +26,9 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.core import Action, Observation, Task, ToolResult
+from pokemon_agent.schemas.action import Action, ToolResult
+from pokemon_agent.schemas.observation import Observation
+from pokemon_agent.schemas.task import Task
 
 
 @runtime_checkable

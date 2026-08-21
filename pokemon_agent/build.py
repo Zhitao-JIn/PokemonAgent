@@ -4,7 +4,8 @@
 想知道"它们怎么互相调用"，读 `harness/harness.py`。这两件事分开放，
 是因为上一版把它们塞在同一个 `graph/build.py` 里，看上去就像图认识 LLM。
 
-    Harness  控制循环   ──→ ToolHost ──→ WorldPort ──→ PyBoyWorld ──→ VisionProvider
+    Harness  控制循环   ──→ GameToolPort ──→ WorldPort ──→ PyBoyWorld ──→ VisionProvider
+                        └─→ MemoryToolPort ──→ memory/（语义记忆）
                         └─→ BrainPort ──→ LLMProvider
                         └─→ TracePort
 
@@ -21,6 +22,7 @@ from pokemon_agent.harness.harness import Harness
 from pokemon_agent.interfaces.trace import TracePort
 from pokemon_agent.mocks.mock_trace import MockTrace
 from pokemon_agent.tools.game_tools import GameTools
+from pokemon_agent.tools.memory_tool import MemoryTool
 from pokemon_agent.world.pyboy_world import PyBoyWorld
 
 
@@ -62,14 +64,16 @@ def build_real(
     world = PyBoyWorld(rom, vision, state_path=state_path, watch=watch)
     trace = trace or MockTrace()
 
-    tools = GameTools(world)
-    # brain 拿不到 trace —— **写 trace 是 Harness 一个人的事**。
-    # 大脑把账（ModelCall）连同结果交出来，由 Harness 翻译成事件。
+    game = GameTools(world)
+    memory = MemoryTool()
+    # brain 拿不到 trace，也拿不到 tools/memory —— **写 trace 是 Harness 一个人的事，
+    # 检索记忆也是**。大脑把账（ModelCall）连同结果交出来，由 Harness 翻译成事件。
     # 两条链路共用同一个 max_tokens 上限。判定每次只输出二三十个 token，
     # 抬高上限对它没有影响；分开配置只会多一个没人调的旋钮。
     brain = Brain(
         decide_llm=QwenText(model=text_model, max_tokens=max_tokens),
         judge_llm=QwenText(model=judge_model or text_model, max_tokens=max_tokens),
-        tools=tools,
     )
-    return Harness(tools, brain, trace), trace, world
+    # `game` 只碰 world，`memory` 只碰记忆——两个互不相识的对象，
+    # 组合是 `Harness` 的事，见 `interfaces/tools.py` 顶部说明。
+    return Harness(game, memory, brain, trace), trace, world
