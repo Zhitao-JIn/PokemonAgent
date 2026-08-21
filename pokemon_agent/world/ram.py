@@ -46,7 +46,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from pokemon_agent.schemas.core import (
+from pokemon_agent.schemas.observation import (
     DOOR,
     GRASS,
     GRID_COLS,

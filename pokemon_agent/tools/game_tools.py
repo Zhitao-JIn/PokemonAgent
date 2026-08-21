@@ -36,7 +36,11 @@ from __future__ import annotations
 from pokemon_agent.interfaces.world import WorldPort
 from pokemon_agent.prompts.game_hints import BUTTON_HELP, MAP_HINT, REPEAT_HINT
 from pokemon_agent.schemas.action import Action, ActionSpace, ToolResult
-from pokemon_agent.schemas.observation import OVERLAY_ACTIONS, Observation, Overlay
+from pokemon_agent.schemas.observation import (
+    OVERLAY_ACTIONS,
+    Overlay,
+    PerceptionResult,
+)
 from pokemon_agent.schemas.task import Task
 
 # `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT` 的组装逻辑在
@@ -60,24 +64,24 @@ class GameTools:
 
     # ---- GameToolPort ----
 
-    def reset(self, task: Task) -> Observation:
+    def reset(self, task: Task) -> PerceptionResult:
         """开新一局。"""
         self._last_space = None
         return self._world.reset(task)
-
-    def drain_calls(self) -> list[dict[str, str]]:
-        """取走待记账的模型调用。转发给 world。"""
-        return self._world.drain_calls()
 
     @property
     def last_frame_sha(self) -> str:
         return self._world.last_frame_sha
 
-    def perceive(self) -> Observation:
-        """看一眼当前画面。world 自己按帧缓存，所以一帧之内调多少次都只花一次感知的钱。"""
+    def perceive(self) -> PerceptionResult:
+        """看一眼当前画面。world 自己按帧缓存，所以一帧之内调多少次都只花一次感知的钱。
+
+        `result.calls` 直接是 `world.observe()` 交出来的那份，原样转发——
+        这一层不做任何记账相关的事，只是把 world 的返回值传上去。
+        """
         return self._world.observe()
 
-    def inspect(self, focus: str) -> Observation:
+    def inspect(self, focus: str) -> PerceptionResult:
         """对同一帧再问一次感知。转发给 world —— 换的是 prompt，不是画面。"""
         assert focus.strip(), "inspect() got an empty focus"
         return self._world.inspect(focus)
@@ -88,7 +92,10 @@ class GameTools:
         后置条件：names 非空。走投无路也必须给至少一个动作——
             空动作空间是这一层的 bug，不能推给大脑处理。
         """
-        obs = self._world.observe()
+        # calls 在这里丢弃是安全的：调用方（Harness._space）总是紧跟在
+        # `_observe()` 之后同一步内调用这个方法，画面没变过，这次 observe()
+        # 必然命中缓存、calls 必然是空列表——真正的账已经在 `_observe()` 里记过了。
+        obs = self._world.observe().observation
         overlay = Overlay(obs.facts.get("overlay", Overlay.NONE.value))
         names = [a for a in OVERLAY_ACTIONS[overlay] if a in self._world.all_actions()]
 

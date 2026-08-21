@@ -54,20 +54,20 @@ from pyboy import PyBoy
 from pokemon_agent.errors import PerceptionFailure
 from pokemon_agent.interfaces.vision import VisionProvider
 from pokemon_agent.prompts import load as load_prompt
-from pokemon_agent.schemas.core import (
+from pokemon_agent.schemas.action import Action, ToolResult
+from pokemon_agent.schemas.observation import (
     BUTTON_FACING,
     INTERACT_KEY,
     OVERLAY_ACTIONS,
-    Action,
     Observation,
     Overlay,
+    PerceptionResult,
     Scene,
     ScreenState,
-    Task,
     TerrainMap,
-    ToolResult,
     terrain_legend,
 )
+from pokemon_agent.schemas.task import Task
 from pokemon_agent.world.ram import read_terrain
 
 MAX_NOTES = 4
@@ -225,23 +225,11 @@ class PyBoyWorld:
         **同一条答案被原样拼了 6 遍**——重复的事实会被模型当成强证据，
         比过期事实更糟，而且这段文字同时进决策 prompt 和判定 prompt。
         """
-        self._pending_calls: list[dict[str, str]] = []
-        """**还没被记账**的模型调用。由 `drain_calls()` 取走并清空。
-
-        是列表不是单条：解析失败会重试，而失败的那几次同样烧了 token，
-        只留最后一次就把它们的成本和原始输出丢了。
-
-        world 契约里没有 TracePort，所以这里只**暴露**记录，由上层写进 trace。
-        不在 world 里塞 trace 依赖——那会让它认识本不该认识的东西。
-
-        取走而不是覆写，是为了让"**每次调用恰好记一次账**"由调用次数本身保证，
-        不依赖上层来得够早（见 `WorldPort.drain_calls` 的说明，两个方向都出过错）。
-        """
         self.last_frame_sha = ""
 
     # ---- WorldPort ----
 
-    def reset(self, task: Task) -> Observation:
+    def reset(self, task: Task) -> PerceptionResult:
         """按任务重置。
 
         前置条件：task.max_steps > 0。
@@ -266,16 +254,19 @@ class PyBoyWorld:
         self._task, self._closed, self._cache = task, False, None
         self._facing = ""
         self._notes = {}
-        obs = self.observe()
+        result = self.observe()
 
-        assert not obs.done, "reset() must return a fresh observation"
-        return obs
+        assert not result.observation.done, "reset() must return a fresh observation"
+        return result
 
-    def observe(self) -> Observation:
-        """取当前观测。只读、幂等——**同一帧不会重复调用视觉模型**。"""
+    def observe(self) -> PerceptionResult:
+        """取当前观测。只读、幂等——**同一帧不会重复调用视觉模型**。
+
+        `result.calls` 就是这次 `_perceive()` 产生的调用记录，命中缓存时为空列表。
+        """
         assert self._task is not None, "observe() before reset()"
 
-        screen, terrain = self._perceive()
+        screen, terrain, calls = self._perceive()
         overlay, text = screen.overlay, screen.dialog_text.strip()
 
         # **说有对话框却一个字都没抄出来 = 它把别的东西看成对话框了。**
@@ -341,7 +332,7 @@ class PyBoyWorld:
                 f"{focus} → {answer}" for focus, answer in self._notes.items()
             )
 
-        return Observation(
+        obs = Observation(
             # **step / done / success 由 Harness 盖章，这里只给占位值。**
             # world 交出来的是"世界现在什么样"，不是"这一局跑到哪了"——
             # 后者是循环的账，三家各记一份就是上一版步号回退的成因。
@@ -354,8 +345,9 @@ class PyBoyWorld:
             done=self._closed,
             success=False,
         )
+        return PerceptionResult(observation=obs, calls=calls)
 
-    def inspect(self, focus: str) -> Observation:
+    def inspect(self, focus: str) -> PerceptionResult:
         """对**同一帧**再问一次视觉模型，问一个具体的问题。
 
         前置条件：focus 非空。没有问题就没有细看，只有重复付钱。
@@ -399,7 +391,7 @@ class PyBoyWorld:
             answer = f"（没看清：{type(exc).__name__}）"
             kind = type(exc).__name__
 
-        # token 字段**失败时也要有**（填 0）。`WorldPort.drain_calls` 的后置条件
+        # token 字段**失败时也要有**（填 0）。`PerceptionResult.calls` 的后置条件
         # 要求每条都含 input/output_tokens；下游按 payload 累加成本的代码
         # 碰到缺字段的记录只会 KeyError 或静默漏算。
         record = {
@@ -411,18 +403,18 @@ class PyBoyWorld:
             "ok": str(not kind),
             "raw": answer,
         }
-        self._pending_calls.append(record)
         self._note(focus, answer)
 
         # **不清缓存**：`observe()` 每次都从缓存里的 ScreenState 重新组装 facts，
         # 而 `_notes` 是组装时才读的，所以新答案自然会出现在下一次观测里。
-        # 顺序也不再要紧了——账是追加的，`observe()` 不会冲掉它。
-        return self.observe()
-
-    def drain_calls(self) -> list[dict[str, str]]:
-        """取走待记账的模型调用并清空。见 `WorldPort.drain_calls`。"""
-        calls, self._pending_calls = self._pending_calls, []
-        return calls
+        #
+        # calls **按发生顺序拼**：这次细看的那条记录在前，随后 `observe()`
+        # 自己产生的记录（通常是空列表，因为帧没变、命中缓存）跟在后面——
+        # 这就是因果顺序，不需要再靠"谁先记账"去调和。
+        inner = self.observe()
+        return PerceptionResult(
+            observation=inner.observation, calls=[record, *inner.calls]
+        )
 
     def _note(self, focus: str, answer: str) -> None:
         """记下一条细看的答案。**同一个问题只留最新一条，总数有上限。**
@@ -487,7 +479,8 @@ class PyBoyWorld:
         # 实测连着四步 frame sha 一模一样，模型却给出了不同的 overview，
         # 其中一步把地图下方的黑边认成了对话框。同一帧只问一次，这类抖动直接消失。
 
-        obs = self.observe()    # 缓存刚清过，这里是本步唯一一次真感知
+        result = self.observe()    # 缓存刚清过，这里是本步唯一一次真感知
+        obs = result.observation
         asked = self._times(action)
         note = f"（按了 {times} 次）" if times > 1 else ""
         if asked > times:
@@ -495,7 +488,9 @@ class PyBoyWorld:
             # 而实际只走了一次——它下一步的推理就建立在错的前提上。
             why = "a 只能一次一次按" if action.name == INTERACT_KEY else "对话框开着"
             note = f"（{why}，连按 {asked} 次被夹成 1 次）"
-        return ToolResult(message=obs.summary + note, observation=obs)
+        return ToolResult(
+            message=obs.summary + note, observation=obs, calls=result.calls
+        )
 
 
     def _dialog_is_open(self) -> bool:
@@ -543,8 +538,13 @@ class PyBoyWorld:
         self._pyboy.screen.image.save(buf, format="PNG")
         return buf.getvalue()
 
-    def _perceive(self) -> tuple[ScreenState, TerrainMap]:
+    def _perceive(self) -> tuple[ScreenState, TerrainMap, list[dict[str, str]]]:
         """调视觉模型读当前画面，按帧哈希缓存。
+
+        调用记录**作为返回值的一部分直接交出去**，不再攒进实例状态——
+        谁调了这个方法，calls 就跟着这次调用的返回值一路往上传
+        （`observe()` → `reset()`/`inspect()`），不需要额外的 drain 步骤，
+        也就不存在"谁来得早谁来得晚"的记账错位（见 `PerceptionResult` 的说明）。
 
         失败：连续重试仍解析不出时抛 `PerceptionFailure`。
             不返回一个「空白状态」兜底——那会让大脑基于假观测决策，
@@ -553,10 +553,9 @@ class PyBoyWorld:
         png = self._frame_png()
         sha = hashlib.sha256(png).hexdigest()[:12]
         self.last_frame_sha = sha
-        # **缓存命中就直接回，什么账都不动。** 没调模型就没有账，
-        # 而已经挂在那里、还没被取走的那些不归这里清——清了就是花了钱没记录。
+        # **缓存命中就直接回，什么账都不产生。** 没调模型就没有账。
         if self._cache and self._cache[0] == sha:
-            return self._cache[1], self._cache[2]
+            return self._cache[1], self._cache[2], []
 
         # **地形先读，而且和图片一起发给模型。**
         # 它是确定的（抄的是游戏自己的碰撞判定），所以它是骨架；
@@ -565,12 +564,13 @@ class PyBoyWorld:
         terrain = read_terrain(self._pyboy.memory)
         prompt = self._prompt.render(known_map=terrain.render())
 
+        calls: list[dict[str, str]] = []
         last = ""
         for attempt in range(1, self._retries + 1):
             t0 = time.perf_counter()
             r = self._vision.describe(png, prompt)
             screen = parse_screen(r.text)
-            self._pending_calls.append({
+            calls.append({
                 "frame_sha": sha,
                 "prompt_sha": self._prompt.sha,
                 "input_tokens": str(r.input_tokens),
@@ -582,7 +582,7 @@ class PyBoyWorld:
             })
             if screen is not None:
                 self._cache = (sha, screen, terrain)
-                return screen, terrain
+                return screen, terrain, calls
             last = r.text[:200]
 
         raise PerceptionFailure(self._retries, f"unparsable output: {last!r}")
