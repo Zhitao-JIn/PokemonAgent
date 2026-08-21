@@ -51,27 +51,21 @@ import json
 import re
 import time
 from collections.abc import Sequence
-from string import Template
 
 from pydantic import ValidationError
 
 from pokemon_agent.errors import IllegalAction, OutputTruncated, ParseFailure
 from pokemon_agent.interfaces.llm import LLMProvider
-from pokemon_agent.interfaces.tools import ToolPort
 from pokemon_agent.prompts import load as load_prompt
-from pokemon_agent.schemas.core import (
-    MAX_RATIONALE,
-    Action,
-    ActionSpace,
-    Decision,
-    Goal,
-    Intent,
-    MemoryEntry,
-    ModelCall,
-    Observation,
-    Snapshot,
-    Verdict,
-)
+from pokemon_agent.prompts.brain_hints import INTENT_HELP
+from pokemon_agent.prompts.brain_hints import retry_note as _retry_note
+from pokemon_agent.schemas.action import MAX_RATIONALE, Action, ActionSpace, Goal, Intent
+from pokemon_agent.schemas.memory_episodic import MemoryEntry, Snapshot
+from pokemon_agent.schemas.observation import Observation
+from pokemon_agent.schemas.trace import Decision, ModelCall, Verdict
+
+# `INTENT_HELP`/`retry_note` 的组装逻辑搬去了 `pokemon_agent/prompts/brain_hints.py`——
+# 原因见那个文件的模块 docstring。这里只是消费方。
 
 JUDGE_BLIND: frozenset[str] = frozenset({
     "known_objects", "walk_map", "landmarks", "inspected",
@@ -120,63 +114,6 @@ SCREEN_COORD = re.compile(
 只在 `push_goal` 上拦，`thought` / `rationale` 里随便写：那两个是它的草稿纸。
 """
 
-RETRY_NOTE = """
-
----
-⚠ 你**上一次的输出不合法**，这是第 $attempt 次尝试。
-
-原因：$reason
-
-上次你输出的是：
-$raw
-
-**别再输出同样的东西。** 照着上面的要求改，只输出一个 JSON 对象。
-"""
-"""重试时追加在 prompt **末尾**的纠正块。
-
-早一版重试是原样再问一遍，指望模型的随机性碰对——那等于把三次调用当一次用，
-而且最常见的那类错误（判据里写屏幕坐标）是**系统性的**，重试多少次都一样错。
-
-追加在末尾是刻意的：前缀一个字没动，三次尝试共享同一段缓存。
-"""
-
-INTENT_HELP: dict[Intent, str] = {
-    Intent.PRESS: (
-        "按一个键，游戏往前走一步。**这是唯一会改变世界的一类**，"
-        "也是唯一不可逆的——按错了只能再想办法走回来。"
-    ),
-    Intent.PUSH_GOAL: (
-        "把栈顶那个目标拆出一个**更近、更容易验证**的子目标压进去，"
-        "然后下一轮开始做它。**必须同时写出判据**——"
-        "一句只看一帧画面就能判真假的话。\n"
-        "**子目标是里程碑，不是路径点。** 好的子目标是"
-        "「进到 x=13 y=5 那扇门里」「和 x=17 y=1 那个人说上话」「走到地图 12」——"
-        "达成的那一帧画面会**明显不一样**。"
-        "「往右走两格」不是子目标，那是一个按键：直接按就行。"
-        "拆成目标是白烧一步，而且它会一直挂在栈上，"
-        "**每一步都要为它多花一次判定调用**。\n"
-        "**位置一律写成 `x=.. y=..`**，不要写成 `(6,4)` 这种括号对、"
-        "不要写「第4行第7列」、不要提 `walk_map`。"
-        "`walk_map` 的行列号本来就是全局坐标，照抄那两个数即可；"
-        "而判定的人看不到那张图，判据里提它等于没说。"
-    ),
-    Intent.INSPECT: (
-        "对**这一帧**再问一次画面，问一个具体问题（哪一格是什么、写着什么字）。"
-        "游戏不动。整体描述你已经有了，所以问题要是新的——"
-        "问「再看看」不会得到任何新内容，只是白花一轮。"
-    ),
-}
-"""每类 intent 给大脑的说明。
-
-和 `BUTTON_HELP` 一样，这是**接口的一部分**而不是 prompt 模板的一部分：
-大脑能做哪几类事由 `ActionSpace.intents` 决定，说明得跟着实际下发的那几类走。
-写死在模板里的话，掩掉一类之后说明还在，模型会去选一个用不了的东西。
-
-`PRESS` 那条特意点出"唯一不可逆"：另外两类选错了只是浪费一轮，
-按错键可能要走十步回来。代价不对称，就该让它知道。
-"""
-
-
 class Brain:
     """`BrainPort` 的唯一实现。"""
 
@@ -184,28 +121,23 @@ class Brain:
         self,
         decide_llm: LLMProvider,
         judge_llm: LLMProvider,
-        tools: ToolPort,
         *,
         max_retries: int = 3,
-        memory_limit: int = 5,
     ) -> None:
         """依赖全部注入，类型标成接口而非实现（CLAUDE.md 第三节第 3 条）。
 
-        前置条件：max_retries >= 1，memory_limit >= 1。
+        前置条件：max_retries >= 1。
 
-        `tools` 只用来 `memory_query` ——**大脑自己决定检索什么**，而不是等着
-        Harness 把记忆喂过来。将来大脑要能自主调更多工具，这条通道得留着。
-        写库不走这里：`reflect()` 只返回 entry，落库由 Harness 做，
-        "谁改了记忆"才只有一个答案。
+        **不再收 `tools`。** 大脑不持有任何工具/记忆实例——`choose()` 需要的
+        情景记忆现在由 Harness 检索好，当参数传进来（见 `interfaces/brain.py`
+        `BrainPort.choose` 的说明）。写库同理不走这里：`reflect()` 只返回 entry，
+        落库由 Harness 做，"谁改了记忆"永远只有一个答案。
         """
         assert max_retries >= 1, f"max_retries must be >= 1, got {max_retries}"
-        assert memory_limit >= 1, f"memory_limit must be >= 1, got {memory_limit}"
 
         self._decide = decide_llm
         self._judge_llm = judge_llm
-        self._tools = tools
         self._max_retries = max_retries
-        self._memory_limit = memory_limit
         # 构造时加载一次。持有它们是为了 `sha` —— 每条事件都带上它，
         # 实验数据才说得清是哪一版 prompt 跑出来的。改了 prompt 不记版本，
         # 前后两批数字就没法比。
@@ -220,9 +152,13 @@ class Brain:
     # ---- 决策 ----
 
     def choose(
-        self, goals: list[Goal], obs: Observation, space: ActionSpace
+        self, goals: list[Goal], obs: Observation, space: ActionSpace,
+        memories: list[MemoryEntry],
     ) -> Decision:
         """选出下一步动作。一次 choose() = ReAct 的一轮 Thought -> Action。
+
+        `memories` 是 Harness 检索好的情景记忆，直接进 prompt——**检索策略
+        不是大脑的事**，大脑只回答"给了我这些，我选哪个动作"。
 
         前置条件：space.names 非空。空动作空间是工具层的 bug，大脑不为它兜底。
         后置条件：`action` 非 None 时它属于 `space`；`calls` 至少一条。
@@ -238,7 +174,6 @@ class Brain:
         assert not obs.done, "choose() called on a finished episode"
         assert goals, "choose() got an empty goal stack"
 
-        memories = self._recall(obs)
         base = self._build_prompt(goals, obs, space, memories)
         refs = [f"({m.episode_id}, {m.step})" for m in memories]
 
@@ -291,8 +226,8 @@ class Brain:
                 error=reason,
             ))
             if parsed is None:
-                prompt = base + Template(RETRY_NOTE).safe_substitute(
-                    attempt=attempt + 1, reason=reason, raw=completion.text[:400],
+                prompt = base + _retry_note(
+                    attempt + 1, reason, completion.text[:400],
                 )
             if parsed is not None:
                 assert parsed.intent in space.intents, (
@@ -433,7 +368,7 @@ class Brain:
         是这个方法该长成的样子，挂载点就在这里。**但本版是纯格式化。**
 
         理由是成本：开一次修饰就是每步第三次模型调用，而现在还没有任何证据说明
-        修饰过的条目检索得更准——检索本身都还是字符重叠（见 `GameTools.memory_query`）。
+        修饰过的条目检索得更准——检索本身都还是字符重叠（见 `MemoryTool.query_episodic`）。
         先把结构立在这里，等检索换成向量、能量出"修饰有没有提升命中"之后再开。
         开它的时候只改这一个方法体，签名和调用方都不动。
 
@@ -459,20 +394,6 @@ class Brain:
         )
 
     # ---- 内部 ----
-
-    def _recall(self, obs: Observation) -> list[MemoryEntry]:
-        """检索相关记忆。检索策略属于工具层，这里只负责问。"""
-        # **用当前快照的渲染文本去查，不用 `obs.summary`。**
-        # 记忆里存的是快照（位置 / 概况 / 地标 / 通行图），而 summary 是
-        # "你在野外" 这种一句话——两边词汇几乎不重叠，字符打分会一条都选不中。
-        # 查询和被查的东西必须是同一种表示，这也是 `Snapshot` 刻意照抄
-        # `Observation.facts` 字段的原因。
-        memories = self._tools.memory_query(
-            Snapshot.of(obs).render(), limit=self._memory_limit
-        )
-
-        assert len(memories) <= self._memory_limit, "memory_query returned more than limit"
-        return memories
 
     def _build_prompt(
         self,
