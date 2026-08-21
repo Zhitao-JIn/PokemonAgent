@@ -121,6 +121,43 @@ class Observation(BaseModel):
     )
 
 
+class PerceptionResult(BaseModel):
+    """一次感知动作（`perceive`/`inspect`/`reset`）的结果：观测 + 这次调用产生的模型调用记录。
+
+    `calls` 不放进 `Observation`，因为 `Observation` 是**大脑看的东西**，
+    大脑不该知道 token 数、延迟这类记账信息，加进去就是把跨层契约当日志用。
+    但这份记账又必须原样传到 Harness 手里去写 trace，所以让它跟 `Observation`
+    平行地挂在这一层薄包装上。
+
+    ## 这里曾经有一个 `drain_calls()`
+
+    产生调用记录的地方（世界内部按帧缓存的那个私有方法）被 `reset`/`perceive`/
+    `inspect` 三个不同的公开方法共用，而这三个方法的返回类型过去只有裸的
+    `Observation`，装不下 `calls`。于是早一版把调用记录攒进一个实例变量
+    （`_pending_calls`），另开一个 `drain_calls()` 方法给 Harness 单独来取。
+
+    这种"生产和消费分离，靠可变状态搭桥"的做法本身就是踩过坑的根源——
+    "什么时候清空缓冲区"这件事无论清早了还是清晚了都会把账算错（细看过依赖
+    `_pending_calls` 的旧版本能找到完整的事故描述）。真正的修法不是把
+    `drain_calls()` 挪个地方，而是让产生调用记录的地方**直接把它当返回值交出来**，
+    一路跟着 `_perceive()` → `observe()` → `reset()`/`perceive()`/`inspect()`
+    普通地往上传——不需要缓冲区，也就不存在"漏记一次账"或"记重一次账"这类
+    依赖时机的 bug。
+
+    `calls` 为空列表表示这次调用命中缓存，没有产生新的模型调用——
+    **不是 None**，调用方不用先判空值。
+    """
+
+    observation: Observation
+    calls: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="这次调用（可能是重试了好几次）产生的每一条模型调用记录，"
+        "按发生顺序排列。每条至少含 input_tokens/output_tokens/latency_ms/"
+        "attempt/ok，建议一并给 raw（模型原始输出）。**失败的调用也在里面**——"
+        "它们同样烧了 token",
+    )
+
+
 # =====================================================================
 #  以下不跨层 —— 一帧画面被解析成什么。由 `PyBoyWorld` 产出并就地转成
 #  `Observation.facts` 里的字符串，一次都不出现在 `interfaces/` 的签名里。

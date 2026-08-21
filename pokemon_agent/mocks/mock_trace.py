@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable
 
-from pokemon_agent.schemas.core import EventType, Source, TraceEvent
+from pokemon_agent.schemas.trace import EventType, Source, TraceEvent
 
 
 class MockTrace:

@@ -177,3 +177,11 @@ class ToolResult(BaseModel):
     observation: Observation | None = Field(
         default=None, description="执行后的新观测；None 表示调用方需另行 perceive()"
     )
+    calls: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="推进这一步过程中产生的模型调用记录（通常是执行后重新感知那一次）。"
+        "语义同 `PerceptionResult.calls`：按序排列、失败的也算数、"
+        "空列表表示命中缓存没有新调用，**不是 None**。放在这里而不是单独一个"
+        "`drain_calls()`——calls 就是这次 `execute()` 顺带产出的东西，"
+        "没有理由靠额外一次取账把它和结果分开传",
+    )
