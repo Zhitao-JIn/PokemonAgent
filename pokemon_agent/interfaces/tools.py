@@ -36,6 +36,17 @@
 `facts["known_objects"]` 由 `Harness._observe()` 在拿到 `game.perceive()`
 的结果之后，另外调 `memory.known_here(obs)` 拼上去——两个协议各管各的，
 组合是 Harness 的活。
+
+## 模型调用记账不再靠 drain_calls
+
+`perceive`/`inspect`/`reset` 曾经返回裸的 `Observation`，模型调用记录另开一个
+`drain_calls()` 方法、靠世界内部一个缓冲区攒着给 Harness 单独取——这是典型的
+"生产和消费分离，靠可变状态搭桥"，缓冲区清早清晚都能把账算错。
+
+现在这三个方法改成返回 `PerceptionResult`（`observation` + `calls` 两个平行字段），
+`execute()` 的 `calls` 就挂在已有的 `ToolResult` 上。调用记录跟着它产生的那次
+调用一起，作为普通返回值直接交给 Harness，不需要任何跨调用的状态，也就不存在
+"drain 的时机对不对"这一整类 bug。见 `PerceptionResult` 的完整说明。
 """
 
 from __future__ import annotations
@@ -45,7 +56,7 @@ from typing import Protocol, runtime_checkable
 from pokemon_agent.schemas.action import Action, ActionSpace, ToolResult
 from pokemon_agent.schemas.memory_episodic import MemoryEntry
 from pokemon_agent.schemas.memory_semantic import ObjectFact
-from pokemon_agent.schemas.observation import Observation
+from pokemon_agent.schemas.observation import PerceptionResult
 from pokemon_agent.schemas.task import Task
 
 
@@ -53,25 +64,27 @@ from pokemon_agent.schemas.task import Task
 class GameToolPort(Protocol):
     """Harness 用它操作世界：感知、执行、开局、溯源。**不碰任何记忆。**"""
 
-    def perceive(self) -> Observation:
+    def perceive(self) -> PerceptionResult:
         """取当前观测。**幂等只读**：不推进世界、不写 trace、不触发判定。
 
         后置条件：同一帧内多次调用**不产生额外的模型调用**（实现方要在帧内缓存——
-            感知是每步都要付钱的那一项）。
+            感知是每步都要付钱的那一项）；`result.calls` 是这次调用产生的模型调用
+            记录，命中缓存时为空列表（**不是 None**）。
 
-        返回内容在同一帧内也是稳定的，**除非期间调用过 `inspect()`**：
+        返回的 `observation` 在同一帧内也是稳定的，**除非期间调用过 `inspect()`**：
         那会往 facts 里加一条 `inspected`。这是刻意的（细看的答案要能被下一轮读到），
         但它意味着"幂等"只对模型调用成立，对返回值不成立。
         """
         ...
 
-    def inspect(self, focus: str) -> Observation:
+    def inspect(self, focus: str) -> PerceptionResult:
         """对同一帧再问一次感知，问一个具体的问题。**世界不推进。**
 
         前置条件：focus 非空。**没有具体问题就不该调它**——
             那样它只是把同一帧原样再看一遍（`perceive()` 帧内缓存，字节完全一样），
             不产生任何新信息，纯粹白烧一次调用。
-        后置条件：答案并进下一次 `perceive()` 的 facts；`execute()` 之后自动失效。
+        后置条件：答案并进下一次 `perceive()` 的 facts；`execute()` 之后自动失效；
+            `result.calls` 是这次细看产生的调用记录。
         失败：不抛异常，把"没看清"写成答案。
         """
         ...
@@ -95,36 +108,17 @@ class GameToolPort(Protocol):
             而不是变成一个语义不明的模拟器错误。
         后置条件：`result.observation` 非空，是执行后的新观测。
             它的 `step` **还没有盖章**——盖章是 Harness 的事。
+            `result.calls` 是推进这一步期间产生的模型调用记录（通常来自
+            推进后重新感知那一次），命中缓存时为空列表。
         """
         ...
 
-    def reset(self, task: Task) -> Observation:
+    def reset(self, task: Task) -> PerceptionResult:
         """按任务重置到初始状态并返回首个观测。
 
         前置条件：`task.max_steps > 0`。
-        后置条件：`done` 为 False；`step` 未盖章（由 Harness 填 0）。
-        """
-        ...
-
-    def drain_calls(self) -> list[dict[str, str]]:
-        """取走**自上次取走以来**发生的每一次模型调用，并清空。
-
-        后置条件：连着调两次，第二次返回空列表。不调用模型的实现恒返回空列表，
-            **不返回 None**。
-
-        ## 为什么是"取走"而不是"最近一次"
-
-        早一版是 `last_calls` 属性，由**生产方**在下一次感知时清空。
-        那样它的正确性取决于"记账的人来得够早"，而这个前提两边都会破：
-
-        - 清得太晚（缓存命中时不清）：不推进世界的那些轮次（细看、拆子目标）
-          会把上一轮的账**再记一遍**，而且 inspect 的账会被当成 perceive 的账，
-          prompt 归因跟着错乱。
-        - 清得太早（进门就清）：`reset()` 里那次真实调用的账，会被紧接着那次
-          命中缓存的 `perceive()` 冲掉，**钱花了但没有记录**。
-
-        两个方向都错，说明问题不在时机而在归属。改成取走之后，不变量变成
-        **每一次调用恰好被记一次账**——它由调用次数本身保证，不依赖调用顺序。
+        后置条件：`result.observation.done` 为 False；`step` 未盖章（由 Harness 填 0）；
+            `result.calls` 是这次重置期间产生的模型调用记录。
         """
         ...
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.core import EventType, Source, TraceEvent
+from pokemon_agent.schemas.trace import EventType, Source, TraceEvent
 
 
 @runtime_checkable
