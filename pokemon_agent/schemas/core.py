@@ -76,47 +76,28 @@ INTERACT_KEY = "a"
 两边各写一个 `"a"` 字面量不会报错，只会在有人改动时静默分叉。
 """
 
-FACING_OPPOSITE: dict[str, str] = {
-    "north": "south", "south": "north", "west": "east", "east": "west",
-}
-"""朝向的反面。**用来说清"我站在它的哪一边"**：面朝北去碰一个东西，
-说明我人在它的南边。姿势要写成"我站在哪"而不是"我朝哪看"——
-下次想复现这个动作，模型得先知道该走到哪一格去。"""
-
-FACING_CN: dict[str, str] = {
-    "north": "北", "south": "南", "west": "西", "east": "东",
-}
-"""渲染姿势用。这些字符串会进 prompt，所以写成中文方位而不是 `north`。"""
-
 KIND_DOOR, KIND_SIGN, KIND_PERSON = "门", "招牌", "人"
 """地标的三种类型。**下半部分那组 `DOOR/SIGN/PERSON` 是地图上的字符 `D/S/N`，
 不是这个**——两组名字撞过一次，症状是门的分支静默不生效。"""
 
-WARPED = "换到地图"
-"""门被打开时结果字符串的前缀。**判"成功"就靠它**，所以只能有一处定义。"""
+RESULT_NONE = "无效果"
+RESULT_DIALOG = "对话"
+RESULT_WARP_PREFIX = "进入新地图"
+"""固定结果集合。**只有这三种**，判"这扇门开没开"就靠是不是
+以 `RESULT_WARP_PREFIX` 开头——所以这个前缀只能有一处定义。
 
-DOOR_POSES: tuple[str, ...] = tuple(
-    [f"站在上面按{k}" for k in ("up", "down", "left", "right")]
-    + [f"站在{FACING_CN[FACING_OPPOSITE[f]]}边按{k}"
-       for k, f in BUTTON_FACING.items()]
-)
-"""一扇门总共有几种碰法：**两种站位 × 四个方向 = 8 种，穷尽**。
-
-穷尽这件事是这一版的关键。有了全集才算得出**「还没试过的是哪几种」**——
-而那正是 agent 卡住时唯一缺的信息。实测它在两扇挨着的门之间来回踱步，
-`down` 一次都没试过（`neighbors` 说南边是 `#`），
-如果档案里当时写着"没试过：down"，它不会卡。
-
-顺序是刻意的：先列"站在上面"。室内出口只有那一种走法，
-而它恰恰是 agent 最想不到的一种。
+早一版门专门区分"没换图"和"没动"，人/招牌区分"没反应"和"没出现文字"——
+四种叫法说的其实都是同一件事："这次按键没起作用"。合并成
+`RESULT_NONE` 一种，模型不需要再学两套近义词。
 """
 
-MAX_TRIED = len(DOOR_POSES)
-"""一个对象最多记几种姿势 = 姿势的全集大小。
+MAX_TRIED = 8
+"""一个对象最多记几条尝试。
 
-早一版是 4，那是当"最近用过"的滑动窗口用的——但**试过的姿势不该被淘汰**：
-淘汰一条就等于把它变回"没试过"，agent 会重试一个已经排除的方向，
-而这份档案存在的全部意义就是让它别再重试。
+一扇门总共只有 8 种碰法（**站在门上按 4 个方向 + 从 4 个相邻格推 1 个方向 = 8**，
+这是坐标几何决定的穷尽上限，不需要再单独列一张词汇表）。
+**试过的不淘汰**——超过上限时丢最早的一条，但同一个 `(坐标, 按键)` 再试一次
+只会覆盖旧值、不占新名额，所以正常情况下 8 条足够盖住全部碰法。
 """
 
 MAX_OBJECT_LINES = 4
@@ -250,48 +231,43 @@ class ObjectNote(BaseModel):
         description="跟它互动时出现过的文本，按第一次出现的顺序，去重。"
         "**同一个 NPC 会说好几句**，所以是列表不是单条",
     )
-    leads_to: int | None = Field(
-        default=None,
-        description="这扇门通往哪张地图。**只有门有，而且是走进去之后算出来的**："
-        "`before.map_id != after.map_id` 时，答案就是 `after` 的那个数。"
-        "纯算术，不会错——而且不是白送的，是它自己走进去换来的",
-    )
-    tried: dict[str, str] = Field(
+    attempts: dict[str, str] = Field(
         default_factory=dict,
-        description="**姿势 → 结果**，记「怎么碰它才有用」。"
-        "键形如 `站在南边按up` / `站在上面按up`，值形如 `换到地图37` / `过去了` / `没动`。"
-        "两边都是算出来的：键来自 `before.place` 和它的相对位置，"
-        "值来自 `before.place` 和 `after.place` 一减",
+        description="**`x=.. y=..→按键` → 结果**，记「怎么碰它才有用」。"
+        "键就是按键那一刻角色自己的坐标 + 按了哪个键，不翻译成中文姿势——"
+        "角色坐标和这个对象的坐标一比就知道是站在上面还是从哪边推。"
+        "值只有三种（见 `RESULT_NONE` / `RESULT_DIALOG` / `RESULT_WARP_PREFIX`），"
+        "都是算出来的：键来自按键那一刻的 `before.place`，"
+        "值来自 `before.place` 和 `after.place` 一减、或 `after` 有没有新对话文字",
     )
 
     @property
-    def opened_by(self) -> str:
-        """打开这扇门的那个姿势；没打开过就是空串。
+    def leads_to(self) -> int | None:
+        """这扇门通往哪张地图；没打开过就是 `None`。
 
-        **成功是算出来的，不是模型判断的。** 每种 label 的成功长什么样是固定的：
-        门 = `map_id` 变了，人/招牌 = 弹出文字。所以不需要把一串流水交给模型
-        让它自己看出哪条是成功——直接把结论写出来。
+        **不是存下来的字段，是从 `attempts` 里算出来的**——省去了"两处真相"
+        （字段和 `attempts` 里的那条 `进入新地图N` 万一对不上）的问题。
+        成功是算出来的，不是模型判断的：门 = `map_id` 变了，
+        所以直接扫 `attempts` 里第一条以 `RESULT_WARP_PREFIX` 开头的结果。
         """
-        return next((p for p, r in self.tried.items() if r.startswith(WARPED)), "")
+        for result in self.attempts.values():
+            if result.startswith(RESULT_WARP_PREFIX):
+                return int(result.removeprefix(RESULT_WARP_PREFIX))
+        return None
 
-    @property
-    def untried(self) -> list[str]:
-        """还没试过的姿势。**只有门有意义**（人和招牌只有"按 a"一种碰法）。"""
-        return [p for p in DOOR_POSES if p not in self.tried]
-
-    def try_it(self, pose: str, result: str) -> None:
-        """记下一种姿势的结果。**同一姿势以最新的为准。**
+    def record(self, key_desc: str, result: str) -> None:
+        """记下一次尝试的结果。**同一个 `(坐标, 按键)` 以最新的为准。**
 
         不是"第一次记下就不改"，因为结果真的会变：一扇本来锁着的门后来开了、
         一条本来有人挡着的路后来通了。旧结论留着比没有更糟——
         它会让 agent 反复绕开一条已经通了的路。
         """
-        if not pose or not result:
+        if not key_desc or not result:
             return
-        self.tried.pop(pose, None)   # 重新插到末尾，让淘汰按"最近用过"走
-        self.tried[pose] = result
-        for stale in list(self.tried)[:-MAX_TRIED]:
-            del self.tried[stale]
+        self.attempts.pop(key_desc, None)   # 重新插到末尾，让淘汰按"最近用过"走
+        self.attempts[key_desc] = result
+        for stale in list(self.attempts)[:-MAX_TRIED]:
+            del self.attempts[stale]
 
     def see(self, line: str) -> None:
         """记下一句。**滚动窗口要拼回一句话，不是当成好几句。**
@@ -333,30 +309,6 @@ class ObjectNote(BaseModel):
         if len(self.lines) > MAX_OBJECT_LINES:
             self.lines[:] = self.lines[:1] + self.lines[-(MAX_OBJECT_LINES - 1):]
 
-    def _door_status(self) -> list[str]:
-        """门的那一段。**只写结果，不写动作空间。**
-
-        「一扇门有哪 8 种碰法」是**词汇表**，它对每一扇门都一样，
-        所以属于 prompt，写一次就够（`MAP_HINT`）。早一版把它铺进了每一条档案，
-        于是每一帧、每一扇门都重复一遍那 8 个词——那不是记忆，是噪声。
-
-        这里只留**这一扇门身上发生过什么**，而门的成功判据是固定的
-        （`map_id` 变了），所以直接写成结论：
-
-            站在上面按down → 地图0
-            没打开过（试过 站在上面按right、站在东边按left，还剩 6 种没试）
-
-        「还剩几种没试」只给个数：**哪几种**从词汇表减一下就知道，
-        而这个数回答的是唯一真正要紧的问题——**还有没有别的可试**。
-        没得试了这一句就消失，那本身就是结论：这扇门打不开（剧情没到，或者它是装饰）。
-        """
-        if self.opened_by:
-            return [f"{self.opened_by} → 地图{self.leads_to}"]
-        if not self.tried:
-            return ["**还没打开过**"]
-        rest = f"，还剩 {len(self.untried)} 种没试" if self.untried else ""
-        return [f"**还没打开过**（试过 {'、'.join(self.tried)}{rest}）"]
-
     def render(self) -> str:
         """渲染成 `known_objects` 里的一行。
 
@@ -364,14 +316,27 @@ class ObjectNote(BaseModel):
         "这里有一扇门，我见过 7 次，一次都没进去过"——那是它自己的待办清单，
         而没有这条信息，它只能靠 `landmarks` 看到那里有扇门，
         分不出哪扇是探索过的、哪扇是新的。
+
+        门用 `leads_to` 单独判过一次——开没开是**唯一要紧的问题**，
+        开了就直接写结论，不用把一串尝试流水交给模型自己找哪条是成功。
+        没开的话把 `attempts` 原样列出来：键本来就是"坐标→按键"，
+        模型自己拿角色当时的位置一比就知道是推门还是站上面按，
+        不需要这一层再翻译成"站在南边"这种措辞。
         """
         parts: list[str] = []
         if self.lines:
             parts.append(" / ".join(self.lines))
         if self.landmark.kind == KIND_DOOR:
-            parts.extend(self._door_status())
-        elif self.tried:
-            parts.append("；".join(f"{k}→{v}" for k, v in self.tried.items()))
+            if self.leads_to is not None:
+                parts.append(f"通往地图{self.leads_to}")
+            elif self.attempts:
+                tried = "；".join(f"{k}→{v}" for k, v in self.attempts.items())
+                rest = f"，还剩 {MAX_TRIED - len(self.attempts)} 种没试" if len(self.attempts) < MAX_TRIED else ""
+                parts.append(f"**还没打开过**（试过 {tried}{rest}）")
+            else:
+                parts.append("**还没打开过**")
+        elif self.attempts:
+            parts.append("；".join(f"{k}→{v}" for k, v in self.attempts.items()))
         if not parts:
             parts.append("互动过但没出现文字" if self.touched else "**还没互动过**")
         return (
