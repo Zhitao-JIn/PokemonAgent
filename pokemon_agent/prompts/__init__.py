@@ -64,3 +64,41 @@ def load(name: str) -> PromptTemplate:
     text = path.read_text(encoding="utf-8")
     sha = hashlib.sha256(text.encode()).hexdigest()[:12]
     return PromptTemplate(name=name, text=text, sha=sha)
+
+
+def _split(text: str, marker: str) -> dict[str, str]:
+    """按 `marker + 名字`（独占一行）切块，返回 `{名字: 块内容}`（去掉首尾空行）。"""
+    sections: dict[str, str] = {}
+    name: str | None = None
+    buf: list[str] = []
+    for line in text.splitlines():
+        if line.startswith(marker):
+            if name is not None:
+                sections[name] = "\n".join(buf).strip()
+            name = line.removeprefix(marker).strip()
+            buf = []
+        elif name is not None:
+            buf.append(line)
+    if name is not None:
+        sections[name] = "\n".join(buf).strip()
+    return sections
+
+
+def load_sections(name: str) -> dict[str, str]:
+    """按 `## 名字` 切块加载 `prompts/<name>.md`。
+
+    有些 prompt 片段不是一整块文字，而是**按情形分叉**的——每个 intent 一段、
+    每个按键一段。这类内容照样该放进这个目录，理由和模块 docstring 里那三条一样：
+    可 review、可归因、无花括号冲突；只是它们在代码里原来是 dict 字面量，
+    不是单一模板。Markdown 的标题天然就是"分叉"的写法，不用发明新格式，
+    也不用为了塞进一个 `PromptTemplate` 就把结构拍扁成一整块文字。
+    """
+    return _split(load(name).text, "## ")
+
+
+def load_nested_sections(name: str) -> dict[str, dict[str, str]]:
+    """两层版本：`## 外层` 下面再按 `### 内层` 切块（例如「overlay → 按键说明」）。"""
+    return {
+        outer: _split(body, "### ")
+        for outer, body in _split(load(name).text, "## ").items()
+    }
