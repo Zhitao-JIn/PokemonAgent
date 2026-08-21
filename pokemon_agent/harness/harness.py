@@ -107,21 +107,18 @@ from pydantic import BaseModel, Field
 
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.interfaces.brain import BrainPort
-from pokemon_agent.interfaces.tools import ToolHost
+from pokemon_agent.interfaces.tools import GameToolPort, MemoryToolPort
 from pokemon_agent.interfaces.trace import TracePort
-from pokemon_agent.schemas.core import (
-    Action,
-    ActionSpace,
-    EpisodeOutcome,
-    EventType,
-    Goal,
-    Intent,
-    ModelCall,
-    Observation,
-    Source,
-    Task,
-    Verdict,
-)
+from pokemon_agent.schemas.action import Action, ActionSpace, Goal, Intent
+from pokemon_agent.schemas.memory_episodic import Snapshot
+from pokemon_agent.schemas.observation import Observation
+from pokemon_agent.schemas.task import Task
+from pokemon_agent.schemas.trace import EpisodeOutcome, EventType, ModelCall, Source, Verdict
+
+MEMORY_RECALL_LIMIT = 5
+"""每次决策检索几条情景记忆。原来是 `Brain` 构造时的 `memory_limit` 参数——
+大脑不再持有检索通道之后，"查几条"变成了循环控制的事，搬到这里来。
+"""
 
 JUDGE_HISTORY = 3
 """判定器能看到本局最近几步。
@@ -191,8 +188,16 @@ class LoopState(BaseModel):
 class Harness:
     """一局的控制器。**它自己没有状态**——状态全在 `LoopState` 里流。"""
 
-    def __init__(self, tools: ToolHost, brain: BrainPort, trace: TracePort) -> None:
-        self._tools = tools
+    def __init__(
+        self, game: GameToolPort, memory: MemoryToolPort,
+        brain: BrainPort, trace: TracePort,
+    ) -> None:
+        self._game = game
+        self._memory = memory
+        """情景记忆 + 语义记忆（object）都走这一个端口。**和 `game` 是两个不相关的
+        对象**——`GameToolPort` 只碰 world，`MemoryToolPort` 只碰记忆，
+        见 `interfaces/tools.py` 的模块说明。
+        """
         self._brain = brain
         self._trace = trace
         self._graph = self._compile()
@@ -238,7 +243,7 @@ class Harness:
         **这里不观测**——观测是 `look` 的事，而 `look` 是图的入口。
         记忆**不清空**——跨任务复用经验正是要验证的东西。
         """
-        self._tools.reset(task)
+        self._game.reset(task)
 
         # **episode 的边界必须进事件流。** 没有它，光看日志分不出一次尝试从哪开始，
         # 更不知道它带了多少条记忆进来——而那正是 A/B 实验的自变量本身。
@@ -246,7 +251,7 @@ class Harness:
             episode_id, 0, EventType.EPISODE_START, Source.HARNESS,
             {"task_id": task.task_id, "goal": task.goal,
              "max_steps": str(task.max_steps),
-             "memory_carried": str(getattr(self._tools, "memory_size", -1))},
+             "memory_carried": str(self._memory.episodic_size)},
         )
         # 栈底是任务目标本身。**它永远在，也永远是成败的唯一依据。**
         return LoopState(
@@ -316,7 +321,7 @@ class Harness:
         intents = [Intent.PRESS, Intent.INSPECT]
         if len(goals) < MAX_GOAL_DEPTH:
             intents.insert(1, Intent.PUSH_GOAL)
-        return self._tools.get_action_space().model_copy(update={"intents": intents})
+        return self._game.get_action_space().model_copy(update={"intents": intents})
 
     def _think(self, state: LoopState) -> dict[str, Any]:
         """大脑推理，然后**把它交回来的账翻译成事件**。
@@ -336,7 +341,14 @@ class Harness:
         assert state.space is not None, "think without an action space"
         ep, step = state.episode_id, state.observation.step
 
-        decision = self._brain.choose(state.goals, state.observation, state.space)
+        # **检索发生在这里，不在大脑里。** `Brain.choose()` 不持有任何工具/记忆——
+        # 查什么、查几条是循环控制的事。用当前快照的渲染文本去查，不用
+        # `obs.summary`：记忆里存的是快照（位置/概况/地标/通行图），summary 是
+        # "你在野外"这种一句话，两边词汇几乎不重叠，字符打分会一条都选不中。
+        memories = self._memory.query_episodic(
+            Snapshot.of(state.observation).render(), limit=MEMORY_RECALL_LIMIT
+        )
+        decision = self._brain.choose(state.goals, state.observation, state.space, memories)
         assert decision.calls, "choose() must report at least one model call"
 
         # 检索发生在模型调用之前，事件顺序照实写——**因果顺序**，不是排版偏好。
@@ -392,7 +404,7 @@ class Harness:
         assert state.action is not None, "press without an action"
         ep, before, action = state.episode_id, state.observation, state.action
 
-        result = self._tools.execute(action)
+        result = self._game.execute(action)
         assert result.observation is not None, "execute() must return the new observation"
 
         self._trace.append(
@@ -407,17 +419,17 @@ class Harness:
         entry = self._brain.reflect(before, action, result.observation).model_copy(
             update={"episode_id": ep}
         )
-        self._tools.memory_write(entry)
+        self._memory.write_episodic(entry)
         self._trace.append(
             ep, before.step, EventType.MEMORY_WRITE, Source.HARNESS,
             {"key": entry.key, "content": entry.render()},
         )
 
-        # **交互记忆和情景记忆是两回事，分开写。**
+        # **语义记忆和情景记忆是两回事，分开写。**
         # 情景记忆记"我在那种画面里选了什么"，作用域是一次经过；
         # 这一条记"地图39 x=2 y=3 那个人会说什么"，作用域是那一格，域内恒真、域会再现。
         # 它不需要模型判断——面朝哪一格是 `place + facing` 算出来的，两个输入都确定。
-        for note in self._tools.note_step(before, action, result.observation):
+        for note in self._memory.note_step(before, action, result.observation):
             self._trace.append(
                 ep, before.step, EventType.OBJECT_NOTE, Source.HARNESS,
                 {"key": note.landmark.place.key, "kind": note.landmark.kind,
@@ -456,8 +468,8 @@ class Harness:
         assert state.action is not None and state.action.focus
         focus = state.action.focus
 
-        self._tools.inspect(focus)
-        calls = self._tools.drain_calls()
+        self._game.inspect(focus)
+        calls = self._game.drain_calls()
         for call in calls:
             self._record_call(
                 state.episode_id, state.observation.step, Source.PERCEPTION,
@@ -484,7 +496,7 @@ class Harness:
         只有 `_look` 调它，所以**一步恰好一次**。这一版之所以不需要
         `_traced_step` / `_judged_step` 那两个去重字段，原因就是这一句。
 
-        `tools.perceive()` 是纯读且按帧缓存：`act` 里 `execute()` 刚感知过的那一帧，
+        `game.perceive()` 是纯读且按帧缓存：`act` 里 `execute()` 刚感知过的那一帧，
         这里命中缓存，**不产生任何额外的模型调用**——`drain_calls()` 那时返回空列表，
         这一步就没有 MODEL_CALL(perception) 事件，因为确实没有调用发生。
 
@@ -498,19 +510,28 @@ class Harness:
         再记观测本身，最后才是基于它的判定。反过来记的话，拿事件流做 replay
         的人会先看到结果、再看到产生它的原因。控制台上排版不好看是**显示层的问题**，
         在显示层解决——不能为了排版去改事件流，trace 是唯一的事实来源。
+
+        ## `known_objects` 在这里拼，不在 `GameTools` 里
+
+        `GameToolPort` 只碰 world，不知道语义记忆的存在。这里拿到 `game.perceive()`
+        的原始观测之后，另外问 `memory.known_here()` 要一段渲染好的文字，
+        有内容才拼进 `facts["known_objects"]`——两个协议各管各的，组合是这一层的活。
         """
-        raw = self._tools.perceive()
+        raw = self._game.perceive()
         obs = raw.model_copy(update={
             "step": state.step,
             "done": raw.done or state.step >= state.task.max_steps,
         })
+        known = self._memory.known_here(obs)
+        if known:
+            obs = obs.model_copy(update={"facts": {**obs.facts, "known_objects": known}})
 
         # **看到的都建档**，没互动过的也建——"这里有一扇门，我见过 7 次一次没进过"
         # 正是这份档案最有用的一类条目。放在这里是因为 `_observe()` 是全项目
         # 唯一一步产出一次观测的地方，而 `seen` 必须一步只加一次。
-        self._tools.note_seen(obs, f"{state.episode_id}#{obs.step}")
+        self._memory.see_objects(obs, f"{state.episode_id}#{obs.step}")
 
-        for call in self._tools.drain_calls():
+        for call in self._game.drain_calls():
             # **`ok=False` 的那几次要带上 error_kind**，`_record_call` 才会补一条
             # ERROR。漏掉的话「视觉模型输出解析失败」这一类**永远不出现在失败模式
             # 分布里**，只能回头去解析 payload 里的 `ok` 字符串——而那正是
@@ -532,7 +553,7 @@ class Harness:
             #
             # `frame_sha` 同样关键：没有它，一条读错的观测**无法追查**是哪一帧，
             # 阶段 3.2 拿 VLM 输出和真值对标也对不上号。
-            {"frame_sha": self._tools.last_frame_sha,
+            {"frame_sha": self._game.last_frame_sha,
              "summary": obs.summary,
              "scene": obs.facts.get("scene", ""), "overlay": obs.facts.get("overlay", ""),
              "facts": json.dumps(obs.facts, ensure_ascii=False)},
@@ -668,7 +689,7 @@ class Harness:
         # **同一份历史发给每一层**，不按层筛。除了"哪一层都可能需要那几帧"之外
         # 还有个实际理由：它落在同一步内这几次调用**共享的前缀**里，
         # 重复的 input token 基本免费。按层裁剪反而会把前缀切碎。
-        history = self._tools.recent(episode_id, JUDGE_HISTORY)
+        history = self._memory.recent(episode_id, JUDGE_HISTORY)
         if len(goals) == 1:
             return [self._brain.judge(goals[0], obs, history)]
 
