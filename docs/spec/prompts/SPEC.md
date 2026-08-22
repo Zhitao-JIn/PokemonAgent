@@ -184,9 +184,9 @@ def retry_note(attempt, reason, raw):
 - 强调只输出一个 JSON 对象，不要任何其他文字，不要 ```json 包裹。
 - 先给出画面网格坐标系约定：`(列, 行)`，主角固定在 `(4,4)`，这套编号**只在模型与调用方之间使用**，不能写进 `overview` 字段（因为下游读 `overview` 的人用的是另一套全局坐标）。
 - "一、判定界面类型"：`scene`（`field`/`indoor`/`battle`/`menu`/`shop`/`transition`）和 `overlay`（`none`/`dialog`/`choice`）是两个独立维度，各自给出详细判别标准（例如战斗必须同时有两个状态框，精灵状态页/列表/背包/START菜单都算 `menu` 不算 `battle`；对话框判据是"白底黑框且能抄出文字"，用以区分和纯黑地图边界的差异）。
-- "二、Gen1 战斗界面布局"：硬规则说明左上角状态框属于对手、右下角属于我方，PP/属性数字不要误填进 HP 字段。
+- "二、Gen1 战斗界面布局"：判归属的**唯一判据是 HP 数字有无**——右下角那个写着 `当前/最大` 数字 HP 的状态框是我方，左上角只有血条、没有数字的是对手；先在两个框里找哪个有数字，再据此定位置，**不允许用种类/等级/是否御三家做归属推理**（附一条真实翻车过的反面例子：`RATTATA :L2` 只有血条却被填成我方，`BULBASAUR :L5` 写着 `18/20` 却被填成对手）。`foe_hp` 本来就没有数字可抄（Gen1 原版对手状态框只有血条），填血条挡位（满/较高/过半/较低/危险），**不允许编一个 `nn/nn` 出来**；选招式界面下 `TYPE/xxx` + 一组 `nn/nn` 是 PP、不是 HP，判据是"这个框里有没有宝可梦名字和等级"——没有就是 PP，两个状态框在选招式界面上依然显示在原位，`my_hp`/`foe_hp` 任何时候都只从这两个框读。
 - "三、野外与室内"：告知 `$known_map` 已经 100% 准确，模型**不需要重新判断地形**，只需要写 `overview`（一两句话描述观感，不是复述地图）；明确指示**不要给门/招牌/人起名字**（因为总览画面里往往没有文字证据支撑，模型会按游戏常识编造）。
-- "四、按 scene 填 fields"：列出六种 `scene` 各自要求填哪些字段（`battle` 要 `my_name/my_level/my_hp/foe_name/foe_level/foe_hp`，`menu` 要 `title`，`shop` 要 `money/items`，其余留空对象）。
+- "四、按 scene 填 fields"：列出六种 `scene` 各自要求填哪些字段（`battle` 要 `my_name/my_level/my_hp/foe_name/foe_level/foe_hp`——`my_hp` 是 `当前/最大` 数字，`foe_hp` 是血条挡位，两者格式不同；`menu` 要 `title`，`shop` 要 `money/items`，其余留空对象）。
 - "五、抄写规则"：名字原样抄英文不翻译、不猜地名、数字原样抄不计算、`fields` 的值一律写成字符串、读不出来的字段直接不放进去（不要填占位值）、`dialog_text`/`options`/`cursor` 的填法。
 - "六、每一类的输出样例"：为 `field`/`indoor`/`battle`/`menu`/`shop`/`transition` 各给一份完整 JSON 示例。
 

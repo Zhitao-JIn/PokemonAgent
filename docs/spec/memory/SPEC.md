@@ -2,7 +2,8 @@
 
 覆盖文件：`memory/port.py`、`memory/util.py`、`memory/semantic/object_store.py`、
 `memory/semantic/__init__.py`，以及它们所依赖的类型定义
-`schemas/memory_semantic.py`（`ObjectFact`）、`schemas/observation.py`（`Place`、`Landmark`）。
+`schemas/memory_semantic.py`（`ObjectFact`）、`schemas/observation.py`（`Place`、`Landmark`）；
+以及新增的 `memory/knowledge/store.py`、`memory/knowledge/__init__.py`（第 6 节）。
 
 ---
 
@@ -56,7 +57,9 @@
 
 模块 docstring 把整体设计动机概括为一句话：
 
-> "现在只有一类语义记忆：object（门/招牌/人）。协议按'输入 / 输出'拆成两半，
+> "现在只有一类语义记忆：object（门/招牌/人）。（**这句话现在过期了**——见第 6 节
+> 新增的 `memory/knowledge/`，一个不经过 `port.py` 这三个 Protocol 的第二类语义记忆；
+> 这一节其余关于 `object` 类的描述仍然准确。）协议按'输入 / 输出'拆成两半，
 > 再合成一个'存储'协议，理由是三件事分别回答不同的问题：
 >
 > ```
@@ -385,3 +388,53 @@ def __init__(self) -> None:
 （`PyBoyWorld`/`TerrainMap.landmarks()`）产出，是 `memory/util.py`
 的 `parse_landmarks`/`kind_in_frame` 与 `memory/semantic/object_store.py`
 的 `see`/`touch`/`record_attempt` 共同消费的输入类型，同样是跨层契约的一部分。
+
+---
+
+## 6. `memory/knowledge/`：第二类语义记忆，和坐标无关的通用先验
+
+新增的 `memory/knowledge/store.py`（另有一个只写了模块 docstring 的
+`memory/knowledge/__init__.py`）是一个**独立的第二类语义记忆**，和第 1-5 节描述
+的 `object`（门/招牌/人，按坐标索引）**不共用协议、不共用存储**，是刻意的：
+
+- **`object` 类回答"这一格有什么"**（`known_here(obs)` 按 `obs.place` 筛出这张地图
+  上互动过的东西），**`knowledge` 类回答"这类局通常怎么打"**（比如"草丛遭遇是概率
+  事件，连按比试探一次更有效"）——前者的作用域是一格、一张地图，后者和站在哪一格
+  完全无关，是 agent 每一局开局就该知道的常识。两者的检索策略天然不同（一个按坐标
+  筛，一个不筛），硬塞进同一个 `port.py` 的 `Reader`/`Writer`/`Store` 三件套只会让
+  "为什么这个方法不用管 `place` 参数"变成一个要额外解释的特例。
+- **`knowledge` 类目前只读不写**：内容是运营手动维护的 `.md` 文件（例如
+  `wild_encounters.md`），不是 agent 跑的过程中自动积累出来的，所以没有 `Writer`
+  协议，也没有 `port.py` 那种 Reader/Writer/Store 拆分的必要——`store.py` 只有一个
+  函数。
+
+### `store.py` 的接口：`load_all() -> str`
+
+```python
+def load_all() -> str:
+    """把这个目录下所有 `.md` 文件的内容原样拼起来，按文件名排序（确定性）。
+    不做任何筛选、不做检索。
+    """
+```
+
+- **不筛选、不检索**：把 `memory/knowledge/` 目录下全部 `*.md` 文件按文件名排序后
+  原样拼接（`"\n\n".join(...)`）返回，是这一层刻意做出的设计决定，文档在模块
+  docstring 里给了理由——内容量小（个位数文件）时，筛选带来的"漏掉一条相关先验"
+  风险比"多花几百 token 全读进去"更贵；等内容量真的涨到需要筛的地步，再在这一层
+  加检索逻辑，现在不预先设计一套用不上的接口。
+- **每次调用都重新读盘，不缓存**：`tools/memory_tool.py` 的 `MemoryTool.knowledge_base()`
+  直接调 `load_all()`，不在 `__init__` 里缓存结果——这样可以在 episode 运行期间
+  编辑 `.md` 文件、不重启进程就让下一步的 `retrieve_memory` 读到新内容。个位数小
+  文件、每步一次磁盘读，代价可以接受。
+- **消费方**：`tools/memory_tool.py` 的 `MemoryTool`（经由 `MemoryToolPort.knowledge_base()`），
+  再往上是 `harness.py` 的 `_retrieve_memory()`（详见 `harness/SPEC.md` 4.5 节）——
+  折进 `obs.facts["knowledge"]`，和 `known_objects` 走同一个"查记忆"节点，
+  不放进 `_observe()`（`look` 节点），理由同样是"这是记忆的读，不是这一帧看到的东西"。
+
+### 内容示例：`wild_encounters.md`
+
+第一条落地的先验，纠正的是一个具体的任务失败模式："只按一次方向键走进草丛、
+没触发遭遇，就误判这片草丛没有宝可梦"——实际上野生遭遇是**每往草丛里挪一格才判定
+一次**的概率事件，条目建议连按（`press` 的 `args.times`）走到草丛尽头而不是
+一步一步试探。这类内容的共同特征：**和当前坐标无关、可复用于任何一局**，
+是这一类知识和 `object` 类语义记忆的根本区别。

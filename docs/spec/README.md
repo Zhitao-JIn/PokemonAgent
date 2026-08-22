@@ -25,7 +25,8 @@ pokemon_agent/
 ├── prompts/       所有 prompt 模板 + 组装辅助函数
 ├── providers/      具体的 LLM/视觉模型接入（DashScope/Qwen）
 ├── vision/        图像预处理（网格叠加等）
-├── mocks/         TracePort 的内存实现
+├── trace/         TracePort 的内存实现（store.py: MockTrace，append/replay/sse）
+│                  + 事件 payload 组装的纯函数（utils.py: trace_utils）
 ├── experiment/    实验 manifest（尚未接入主流程）
 └── build.py       唯一的装配点（全项目唯一出现 `new` 具体实现的地方）
 
@@ -46,13 +47,13 @@ probe/             命令行脚本（跑真实 episode、调试工具）
 - [`harness/SPEC.md`](harness/SPEC.md) —— 控制循环图，**项目里最核心的一份规格**
 - [`prompts/SPEC.md`](prompts/SPEC.md) —— 九个 prompt 模板 + 加载/组装机制
 - [`providers/SPEC.md`](providers/SPEC.md) —— DashScope/Qwen 接入 + 图像预处理
-- [`build/SPEC.md`](build/SPEC.md) —— 装配、异常类型、`MockTrace`、命令行入口
+- [`build/SPEC.md`](build/SPEC.md) —— 装配、异常类型、`MockTrace`/`trace_utils`、命令行入口
 
 ## 分层关系（谁认识谁）
 
 ```
 probe/run_episode.py
-        │  只 import build.py + errors + mocks/echo_trace
+        │  只 import build.py + errors + trace.store.MockTrace
         ▼
 build.py ── 全项目唯一一处具体类的 `new`
         │
@@ -65,8 +66,10 @@ build.py ── 全项目唯一一处具体类的 `new`
            │            │           │           │
      GameToolPort  MemoryToolPort BrainPort  TracePort
            │            │           │           │
-      GameTools    MemoryTool     Brain      MockTrace(+EchoTrace装饰)
-      (tools/)      (tools/)    (brain/)      (mocks/)
+      GameTools    MemoryTool     Brain       MockTrace
+      (tools/)      (tools/)    (brain/)      (trace/store.py)
+                                            payload 组装另在
+                                            trace/utils.py（不认识 TracePort）
            │            │           │
       WorldPort   SemanticObjectStore  LLMProvider ×2
            │            │        (decide_llm / judge_llm)
@@ -97,11 +100,15 @@ build.py ── 全项目唯一一处具体类的 `new`
 1. **look**：`Harness._observe()` 调 `GameToolPort.perceive()` →
    一路调到 `PyBoyWorld._perceive()` → 触发 `VisionProvider.describe()`
    （除非命中帧哈希缓存）→ 解析成 `schemas/observation.py` 里的 `ScreenState`/
-   `TerrainMap` → 组装成 `Observation`。`Harness` 再调
-   `MemoryToolPort.known_here()` 把语义记忆拼进 `facts["known_objects"]`。
+   `TerrainMap` → 组装成 `Observation`。`known_objects`/`knowledge` **不在这里拼**——
+   `_observe()` 只产出这一帧实际看到的东西，语义记忆的读挪到下一步。
 2. **retrieve_memory**：`Harness` 调 `MemoryToolPort.query_episodic()` →
    `MemoryTool._overlap()` 按字符重叠打分，取回 `list[MemoryEntry]`
-   （`schemas/memory_episodic.py`）。
+   （`schemas/memory_episodic.py`）；同一个节点里再调
+   `MemoryToolPort.known_here()` 把语义记忆拼进 `facts["known_objects"]`、
+   `MemoryToolPort.knowledge_base()`（每次都重新读盘）拼进 `facts["knowledge"]`——
+   三种记忆的读共用这一个图节点，判定（`_judge`）已经在上一步跑完，
+   所以判定模型永远看不到这两个字段。
 3. **think**：`Harness` 把 `goals`/`obs`/`space`/`memories` 交给
    `BrainPort.choose()` → `Brain` 用 `prompts/decide_action.md` 组装 prompt →
    调 `LLMProvider.complete()` → 解析成一个合法的 `Action`
@@ -114,7 +121,8 @@ build.py ── 全项目唯一一处具体类的 `new`
    把这一步的语义记忆（门/招牌/人给出的信息）落进 `memory/` 包。
 6. 每一步产生的所有模型调用记录（`calls`，见下一节）和状态转移，最终都由
    `Harness` 一个人翻译成 `TracePort.append()` 事件——这是全项目唯一写
-   trace 的地方。
+   trace 的地方（但组装 `payload` 这一步委托给 `trace/utils.py` 的纯函数，
+   `Harness` 自己不拼 `dict` 字面量，见 `interfaces/SPEC.md` 第 4 节）。
 
 ## 贯穿全项目的几条不变量
 
@@ -150,11 +158,14 @@ build.py ── 全项目唯一一处具体类的 `new`
 
 写这份规格时项目正处于几处过渡：
 
-- `pokemon_agent/schemas/core.py`（旧的单文件契约，已被拆分成六个文件取代）
-  和 `pokemon_agent/memory/object_memory.py`（旧的语义记忆实现，已被
-  `memory/semantic/object_store.py` + `tools/memory_tool.py` 取代）
-  这两个文件应当删除但尚未删除——项目里已经没有任何代码 import 它们。
+- `pokemon_agent/schemas/core.py`（旧的单文件契约）、
+  `pokemon_agent/memory/object_memory.py`（旧的语义记忆实现）、
+  `pokemon_agent/mocks/mock_trace.py`（`MockTrace` 的旧位置，已搬到
+  `pokemon_agent/trace/store.py`）、`probe/echo_trace.py`（`EchoTrace` 装饰器，
+  打印逻辑已并入 `MockTrace.sse()`）——这四个曾经的"应删除但尚未删除"文件
+  **现已全部删除**，本节这条不变量记录到此为止；`trace/` 包的当前形态见
+  `interfaces/SPEC.md` 第 4 节、`build/SPEC.md` 第 4、6 节。
 - `experiment/manifest.py` 定义了实验配置骨架，但尚未接入
   `probe/run_episode.py` 这个主入口。
-- `MockTrace` 是 `TracePort` 唯一的实现——落盘、SSE 推流、按失败类型聚合统计
-  都还没做（`build/SPEC.md` 里有完整说明）。
+- `MockTrace` 是 `TracePort` 唯一的实现——落盘、真正的浏览器推流（`sse()` 目前
+  只打印到控制台）、按失败类型聚合统计都还没做（`build/SPEC.md` 里有完整说明）。

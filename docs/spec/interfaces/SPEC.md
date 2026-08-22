@@ -84,11 +84,11 @@
 
 现在 `perceive()` 只是查询：不写 trace、不推进世界、不触发判定。**"一步"的边界由 Harness 定义**，只有两个地方会产出新的一步。
 
-### 2.3 `known_objects` 现在由 Harness 拼，不是 `GameTools`
+### 2.3 `known_objects`/`knowledge` 现在由 Harness 拼，不是 `GameTools`，也不在 `_observe()` 里
 
 以前 `GameTools.perceive()` 会顺手把语义记忆的 `known_here()` 结果拼进 `facts["known_objects"]`——这要求 `GameTools` 持有一份记忆的引用，正是这次拆分要去掉的耦合。
 
-现在：`GameToolPort.perceive()` 只管世界；`facts["known_objects"]` 由 `Harness._observe()` 在拿到 `game.perceive()` 结果之后，另外调 `memory.known_here(obs)` 拼上去。两个协议各管各的，**组合是 Harness 的活**。
+现在：`GameToolPort.perceive()` 只管世界，不拼任何记忆字段。`facts["known_objects"]`/`facts["knowledge"]` 由 `Harness._retrieve_memory()`（图上专门的"查记忆"节点，不是 `look` 节点）在判定跑完之后，另外调 `memory.known_here(obs)`/`memory.knowledge_base()` 拼上去。两个协议各管各的，**组合是 Harness 的活**；放在 `_retrieve_memory()` 而不是 `_observe()`，是因为这两个字段本质是**语义记忆的读**，不是"这一帧模拟器实际给出的东西"——混进 `_observe()` 曾经让 `knowledge` 在 `judge` 之前就出现在 `obs.facts` 里，被判定模型白白看到、浪费 token。
 
 ### 2.4 模型调用记账不再靠 `drain_calls`（与 `world.py` 同一段历史的工具层版本）
 
@@ -125,8 +125,11 @@
 | 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
 |---|---|---|---|---|
 | `known_here` | `known_here(self, obs: Observation) -> str` | 无 | `obs.place` 所在地图上已知的语义记忆渲染成的一段文字；`obs.place` 为 `None` 时返回空串；没有任何已知条目时也返回空串——调用方（Harness）据此决定要不要往 `facts["known_objects"]` 里塞东西 | 未文档化 |
+| `knowledge_base` | `knowledge_base(self) -> str` | 无 | 项目自带的、和坐标无关的通用游戏先验（`memory/knowledge/*.md` 全部拼接），库为空时返回空串；**每次调用都重新读盘，不缓存**——这是刻意的，为的是能一边跑 episode 一边改 `.md` 文件、不重启进程就生效 | 未文档化 |
 | `see_objects` | `see_objects(self, obs: Observation, stamp: str) -> None` | **一步只调一次**——`stamp` 非空，调用方保证不会同一步调两次 | 把这一帧看到的地标全部记一遍 | 未文档化 |
 | `note_step` | `note_step(self, before: Observation, action: Action, after: Observation) -> list[ObjectFact]` | `before`/`after` 都有 `place`；算不出确定的一格时（连按、原地转身、两个候选同时存在）**不记**，宁可漏记也不能记错格子 | 返回被更新的条目（可能为空） | 未文档化 |
+
+`known_here` 按 `obs.place` 筛（这张地图上互动过的东西），`knowledge_base` **不按任何东西筛**（和站在哪一格无关，是"开局就该知道"的常识），两者都是语义记忆的读，但检索策略不同——不要因为都叫"语义记忆"就以为它们该合并成一个方法。
 
 ### 2.7 谁实现、谁消费
 
@@ -196,10 +199,15 @@
 
 ### 4.1 设计原则
 
-接口按"能落盘、能重放、能推流"设计：
+接口按"能落盘、能重放、能推流"设计，三个方法各管一件事，不合并：
 
 - `append` 不返回事件本身而是返回 `event_id`，因为落盘实现要在这里分配序号。
 - `replay` 带 `after_event_id`，是给 SSE 断线重连补发用的（对应 HTTP `Last-Event-ID` 语义）。
+- `sse` 是**推**：接收一条已经写好的 `TraceEvent`，把它送到当前的观测通道
+  （现在是控制台打印，以后是浏览器推流），**不带 `episode_id`/`after_event_id`
+  这类协调坐标**——它不查询，只是把已经发生的事件转发出去。`append`/`replay`
+  是拉（按坐标查），`sse` 是推（收一条推一条），三者语义不同、不能互相替代。
+  只有 `append` 的实现会调 `sse`：一条事件先落盘、再推流，顺序固定。
 
 ### 4.2 为什么没有删除/修改
 
@@ -215,11 +223,14 @@
 |---|---|---|---|---|
 | `append` | `append(self, episode_id: str, step: int, type: EventType, source: Source, payload: dict[str, str] \| None = None) -> int` | `step >= 0` | 返回分配到的 `event_id`，严格大于此前任何一次 `append` 返回的值（实现方必须 `assert` 这条——**SSE 的断线补发完全依赖它**，一旦出现重复或回退，观测台会静默丢事件）；`source` 是必填的（成本要按感知/决策拆开，失败要归到具体某一层；做成必填而不是可选，是因为可选参数最终总会有人不填）；`ts` 与 `run_id` 由实现方填，调用方不传 | 未文档化 |
 | `replay` | `replay(self, episode_id: str, after_event_id: int = -1) -> Iterable[TraceEvent]` | `after_event_id >= -1`（`-1` 表示从头开始） | 按 `event_id` 升序回放事件；返回的事件 `event_id` 严格递增，且全部 `> after_event_id` | 未文档化 |
+| `sse` | `sse(self, event: TraceEvent) -> None` | 无（收一条已完整构造好的 `TraceEvent`） | 把这条事件推给当前的观测通道；不落盘、不分配 `event_id`——那是 `append` 的活，`sse` 只管转发 | 未文档化 |
 
 ### 4.5 谁实现、谁消费
 
-- **实现方**：具体的落盘/内存实现（如 `pokemon_agent/mocks/mock_trace.py` 中的 mock 版本，以及生产环境下的落盘实现）。
-- **消费方**：`Harness`（写事件的唯一入口，呼应 `brain.py` 中"谁控制循环，谁记账"的规则）；此外 replay / SSE 观测台 / 成本统计 / 失败聚合 / 实验归因等下游消费者也读它，如 `probe/echo_trace.py`。
+- **实现方**：`pokemon_agent/trace/store.py` 里的 `MockTrace`——内存事件表 + 控制台打印的 `sse()`，是目前唯一的 `TracePort` 实现（生产环境下换成落盘 + 浏览器推流的实现，`append`/`replay` 的调用方不用改）。
+  - 组装 `append()` 五个位置参数（尤其是 `payload` 这个 `dict[str, str]`）的活**不在这个类里**，在同目录下的 `pokemon_agent/trace/utils.py`——一批纯函数，输入领域对象（`Observation`/`Action`/`Goal`/`ModelCall`……），输出 `append()` 能直接展开传的元组。`store.py` 不认识这些领域类型，`utils.py` 不认识 `TracePort`、不做任何 I/O，两者故意不合并成一个类：前者管"记下来、推出去"，后者管"记的话该记成什么样"。
+  - 曾经有一个 `EchoTrace` 装饰器（`probe/echo_trace.py`）包在 `TracePort` 外面做控制台打印；协议加了 `sse` 之后这层装饰器**已删除**——打印逻辑并入了 `MockTrace.sse()`，因为"推给观测通道"本来就是 `sse` 该管的事，不需要一个额外的包装层。
+- **消费方**：`Harness`（写事件的唯一入口，呼应 `brain.py` 中"谁控制循环，谁记账"的规则）——但 `Harness` 只调 `self._trace.append(*trace_utils.xxx(...))`，组装 payload 这一步委托给 `trace_utils`，自己不拼任何 `dict` 字面量（呼应"Harness 只负责调度，不负责模块逻辑"）；此外 replay / SSE 观测台 / 成本统计 / 失败聚合 / 实验归因等下游消费者也读它。
 
 ---
 
@@ -313,10 +324,10 @@
                  依赖四个协议，互不认识彼此的实现类
         ┌─────────────┬─────────────┼─────────────┬──────────────┐
         ▼             ▼             ▼             ▼              ▼
-  GameToolPort  MemoryToolPort   BrainPort    TracePort     （直接用 memory.known_here
-   (感知/执行/   (情景+语义记忆)  (choose/     (append/       拼 facts["known_objects"]，
-    开局/溯源)                    judge/       replay)        组合逻辑在 Harness 里)
-        │                          reflect)
+  GameToolPort  MemoryToolPort   BrainPort    TracePort     （known_objects/knowledge
+   (感知/执行/   (情景+语义记忆)  (choose/     (append/       的读发生在专门的
+    开局/溯源)                    judge/       replay/sse)    retrieve_memory 节点里，
+        │                          reflect)                   不在 GameToolPort 结果里）
         │ 实现方 GameTools 内部持有
         ▼
     WorldPort  ←── 实现方 PyBoyWorld
@@ -334,7 +345,7 @@
 - **`MemoryTool`（`tools/memory_tool.py`）实现 `MemoryToolPort`**，只碰 `memory/` 包，与 `GameTools` 完全不相关——这正是拆成两个协议要保证的隔离。
 - **`Harness` 只认识 `GameToolPort`、`MemoryToolPort`、`BrainPort`、`TracePort` 四个协议**，构造时收具体实现的实例，但类型层面只依赖协议。这四个协议是 Harness 与外部世界打交道的**全部**通道。
 - **`Brain` 只认识 `LLMProvider` 和 `VisionProvider`**（严格说，`VisionProvider` 是感知链路用的，`Brain` 本身不持有它——大脑不该有看图能力，见 6.1）。`Brain` 不持有 `GameToolPort`/`MemoryToolPort` 的任何实例，这是 3.4 节明确拆掉的耦合。
-- **`known_objects` 的拼接**发生在 `Harness._observe()` 里,是 `GameToolPort.perceive()` 结果和 `MemoryToolPort.known_here()` 结果的组合,不属于任何单一协议的方法体内,这体现了"组合是 Harness 的活"的原则。
+- **`known_objects`/`knowledge` 的拼接**发生在 `Harness._retrieve_memory()` 里（图上单独一格），**不在** `_observe()`（`look` 节点）里——两者都是语义记忆的读，属于"查记忆"，不属于"看一眼"；混进 `_observe()` 曾经导致 `knowledge` 在 `judge` 之前就进了 `obs.facts`，白白被判定模型看到、浪费 token（`judge` 不该看这类字段，见 `brain/SPEC.md` 的 `JUDGE_BLIND`）。现在判定先跑完、`_retrieve_memory()` 才把两者折进 `obs.facts`，`judge` 天然看不到。`known_objects`/`knowledge` 分别是 `MemoryToolPort.known_here()`（按坐标筛）和 `MemoryToolPort.knowledge_base()`（不筛、每次都重新读盘）的结果，不属于任何单一协议的方法体内，体现"组合是 Harness 的活"的原则。
 
 ## 8. 全局共通的设计模式
 

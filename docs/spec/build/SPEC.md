@@ -6,9 +6,14 @@
 - `pokemon_agent/build.py`
 - `pokemon_agent/errors.py`
 - `pokemon_agent/experiment/manifest.py`
-- `pokemon_agent/mocks/mock_trace.py`
+- `pokemon_agent/trace/store.py`（`MockTrace`，原 `pokemon_agent/mocks/mock_trace.py`，已迁移）
+- `pokemon_agent/trace/utils.py`（`trace_utils`，新增——见 `interfaces/SPEC.md` 第 4 节、`harness/SPEC.md` 4.5/4.17 节）
 - `probe/run_episode.py`
-- `probe/echo_trace.py`
+
+> **`probe/echo_trace.py`（`EchoTrace` 装饰器）已删除**，不再是本文档覆盖范围。
+> 控制台打印逻辑并入了 `MockTrace.sse()`——`TracePort` 协议新增了 `sse` 方法
+> （推流，"现在是控制台，以后是浏览器"），`append()` 的实现在落盘后自动调
+> `sse()`，不再需要一层外部装饰器。第 4、6 节已按此重写。
 
 ---
 
@@ -119,9 +124,13 @@ return Harness(game, memory, brain, trace), trace, world
 
 ### 1.5 `trace` 参数与 `MockTrace`
 
-`trace` 参数默认走 `MockTrace()`——内存列表，不落盘。docstring 明确指出：落盘、
-replay、checkpoint 是"阶段 2"的事；在那之前跑出来的数据**进程一退就没了**，
-只适合调试，不适合正式实验积累。
+`trace` 参数默认走 `MockTrace()`（`pokemon_agent/trace/store.py`，原先住在
+`pokemon_agent/mocks/mock_trace.py`，已搬到独立的 `trace/` 包下）——内存列表，
+不落盘。docstring 明确指出：落盘、replay、checkpoint 是"阶段 2"的事；在那之前
+跑出来的数据**进程一退就没了**，只适合调试，不适合正式实验积累。
+
+`MockTrace` 现在**自带控制台打印**：`append()` 落盘之后会自动调 `self.sse(event)`，
+`sse()` 就是打印实现本身（不再需要外面套一层 `EchoTrace` 装饰器，见第 4、6 节）。
 
 ### 1.6 `brain` 拿不到 `trace`，也拿不到 `tools`/`memory`
 
@@ -297,25 +306,42 @@ def _git_commit() -> str:
 
 ---
 
-## 4. `pokemon_agent/mocks/mock_trace.py` —— `MockTrace`
+## 4. `pokemon_agent/trace/store.py` —— `MockTrace`
+
+**这个类已从 `pokemon_agent/mocks/mock_trace.py` 搬到独立的 `pokemon_agent/trace/`
+包下**，与它同目录的 `trace/utils.py`（`trace_utils`）不在本节展开——那部分是纯函数、
+不认识 `TracePort`，详见 `interfaces/SPEC.md` 第 4 节和 `harness/SPEC.md` 4.5/4.17 节。
 
 ### 4.1 定位
 
-模块 docstring 开门见山："它是 mock"。`MockTrace` 确实完整满足 `TracePort` 的契约
-（`event_id` 单调递增、`replay` 能按 episode 过滤），但真正的 trace 实现应当：
+模块 docstring 开门见山："它是 mock 存储"（内存列表，进程一退就没了），但
+`TracePort` 的三个方法（`append`/`replay`/`sse`）它都**真的实现**，不是占位：
+`append` 持久化 + 分配单调 `event_id`，`replay` 按 episode 过滤重放，`sse` 推流——
+**现在打印到控制台，以后是推给浏览器的连接，调用点不变，换的只是 `sse()` 这一个
+方法内部的实现**。
 
-- 落盘；
-- 能推流给 SSE 观测台；
-- 作为 checkpoint 的事件源；
-- 能按失败类型聚合统计。
-
-这些 `MockTrace` 一个都没有实现——它存在只是为了让"大脑"这一层能够先跑起来。
+真正落盘、按失败类型聚合统计——这些还没做，仍然是"阶段 2"的事。
 
 保留它严格满足契约这一点是**刻意的设计**："替身也必须遵守契约，否则换成真实实现时
 上层会崩"——即 mock 不能只是形似，必须行为等价（至少在契约描述的可观察行为上等价），
 这样上层代码在从 mock 切换到真实实现时不需要任何改动。
 
-### 4.2 如何实现 `TracePort`
+### 4.2 打印逻辑并入 `sse()`——`EchoTrace` 已删除
+
+以前打印和存储分在两个文件、两层对象里：`mocks/mock_trace.py` 只管存储，
+`probe/echo_trace.py` 是包住它的一个装饰器（`EchoTrace`），专门负责在 `append()`
+外面加一层打印。拆开的原因是当时 `TracePort` 协议里**没有"推流"这个位置**——
+`EchoTrace` 只能从外面在 `append` 上加一层旁路。
+
+现在协议本身有了 `sse()`，打印就是这个方法**应该长的样子**：`append()` 落盘之后
+自动调 `self.sse(event)`，`sse()` 内部就是原来 `EchoTrace._echo()` 的完整分支逻辑
+（`EPISODE_START`/`EPISODE_END`、`MODEL_CALL` 判定 vs 其他来源的不同排版、
+`OBSERVE` 带 goals 行、`MEMORY_READ`、`THINK`、`GOAL_PUSH`/`GOAL_POP`、`INSPECT`、
+`MEMORY_WRITE`、`ERROR`），原样搬进 `MockTrace.sse()`，`LABEL_W`/`COST_LABEL` 两个
+模块级常量也一起搬了过来。不再需要外面再包一层装饰器；换成推浏览器时，也只需要
+换一个实现了 `TracePort` 的类，`append`/`replay` 的代码一行不用抄——见第 6 节。
+
+### 4.3 如何实现 `TracePort`
 
 ```python
 class MockTrace:
@@ -323,6 +349,7 @@ class MockTrace:
         self._run_id = run_id
         self._events: list[TraceEvent] = []
         self._next_id = 0
+        self._step_shown: tuple[str, int] | None = None  # sse() 用，见下
 ```
 
 `run_id` 在构造时确定：一次实验对应一个 trace 实例，每条事件都归属于它。
@@ -341,6 +368,7 @@ def append(self, episode_id, step, type, source, payload=None) -> int:
 - 后置条件（`assert`）：新事件的 `event_id` 严格大于上一条事件的 `event_id`。
   docstring 强调这一点的实际影响：**SSE 的断线补发完全依赖这一单调性**，一旦
   `event_id` 重复或回退，观测台会静默丢事件。
+- **落盘之后调用 `self.sse(event)`**——一条事件先记下来、再推流，顺序固定。
 
 **`replay()`**：
 
@@ -353,16 +381,34 @@ def replay(self, episode_id: str, after_event_id: int = -1) -> Iterable[TraceEve
 - 因为内部 list 本身就是按 `event_id` 升序追加的，不需要重新排序，直接用列表推导
   过滤即可。
 
+**`sse()`**：
+
+```python
+def sse(self, event: TraceEvent) -> None:
+```
+
+- 把这条事件推给当前的观测通道——现在的实现是按 `event.type` 分支，往控制台打印
+  一行到几行不等的格式化文本（表头/成本行/thought/action 等各有自己的排版）。
+- `self._step_shown` 记的是"这一步的表头打过没有"，由 **step 值变化**触发表头打印，
+  而不是挂在某个特定 `EventType` 上——挂在 `OBSERVE` 上不行，因为事件流里
+  `MODEL_CALL(perception)` 在它前面（因果顺序，产出观测的调用当然更早），表头会
+  打在本步的成本行下面。排版问题在这里解决，**不去改动事件流**——trace 是唯一的
+  事实来源，`sse()` 只负责怎么呈现它。
+- `LABEL_W = 15`（最长标签 `perception_cost` 决定的列宽）、
+  `COST_LABEL: dict[Source, str]`（`MODEL_CALL` 事件按来源打印的标签，
+  `perception_cost`/`decision_cost`/`judge_cost`）两个模块级常量支撑这套排版。
+
 **契约之外的调试方法**（注释明确标注"不属于 TracePort 契约"）：
 
 - `all_events()`：返回全部事件（含所有 episode），供测试断言用。
 - `count(episode_id, type)`：统计某个 episode 里某类事件的条数，供测试断言重试次数
   / 失败次数用。
 
-### 4.3 与真实实现的差距（源码注释明确列出）
+### 4.4 与真实实现的差距（源码注释明确列出）
 
 1. 事件只存在内存 `list` 里，**不落盘**——进程一退，数据全部丢失。
-2. 不能推流给 SSE 观测台（无实时对外通道）。
+2. `sse()` 目前只打印到控制台，还没有真正的浏览器推流通道——但协议层面的"推流"
+   接口已经就位，换实现不用改调用点。
 3. 不能作为 checkpoint 的事件源（无持久化，无法从某个 event_id 恢复状态）。
 4. 不能按失败类型聚合统计（无查询/索引层，只有线性扫描的 `count()` 辅助方法）。
 
@@ -470,12 +516,14 @@ probe（探针/调试）脚本，参数只有三四个，`argparse` 生成的帮
        ROM, state,
        vision_model=vision_model, text_model=text_model,
        judge_model=judge_model, grid=grid, max_tokens=max_tokens,
-       watch=watch, trace=EchoTrace(MockTrace(run_id=run_id)),
+       watch=watch, trace=MockTrace(run_id=run_id),
    )
    ```
 
-   关键点：传入的 `trace` 是 `EchoTrace(MockTrace(run_id=run_id))`——用
-   `EchoTrace` 包住 `MockTrace`，既保留内存事件存储能力，又获得实时控制台打印。
+   关键点：传入的 `trace` 就是 `MockTrace(run_id=run_id)`本身——**不再需要外面
+   包一层 `EchoTrace`**。`MockTrace.append()` 落盘之后会自动调 `self.sse(event)`，
+   `sse()` 就是（原来 `EchoTrace` 那套）控制台打印逻辑本身，既保留内存事件存储
+   能力，又自带实时控制台打印，一个对象两件事都做。
    注释重申"实时打印挂在 trace 上，不往图节点里塞 print：实时观测和事后 replay
    看的是同一份数据，不会出现只有控制台有的信息"。
 7. **打印运行头信息**：目标（task）、判据（criteria）、episode id、三个模型名与
@@ -573,9 +621,28 @@ schema 升级后这段代码没跟着改，结果是**跑完一整局才在最�
 
 ---
 
-## 6. `probe/echo_trace.py` —— `EchoTrace`：实时打印装饰器
+## 6. 控制台打印：曾经的 `EchoTrace` 装饰器，现在是 `MockTrace.sse()`
 
-### 6.1 定位与设计取舍
+> **本节描述的类已删除。** `probe/echo_trace.py`/`EchoTrace` 不再存在——下面
+> 6.1-6.5 节里的设计取舍、排版细节、辅助方法，**内容本身仍然准确**，但现在全部
+> 是 `pokemon_agent/trace/store.py` 里 `MockTrace.sse()` 方法的一部分，不再是一个
+> 独立的、包住 `TracePort` 的装饰器类。差异只有两点，其余原样保留供理解排版逻辑：
+>
+> 1. **不再是装饰器**：`EchoTrace.__init__(self, inner: TracePort)` 那种"包住任意
+>    `TracePort` 实现"的结构已经不存在——`MockTrace` 自己既存储又打印，
+>    `append()` 落盘后直接 `self.sse(event)`，不经过 `self._inner.append()` 这一层
+>    转发。原因见 `interfaces/SPEC.md` 第 4 节："`sse` 是推，`append`/`replay` 是
+>    拉，三者是同一个 `TracePort` 的三个方法"——协议本身有了推流的位置，不再需要
+>    外部装饰器来补这个洞。
+> 2. **方法名与触发点变了**：原来的 `EchoTrace.append()`（转发 + 打印）拆成了
+>    `MockTrace.append()`（只管落盘 + 分配 `event_id` + 调 `sse()`）和
+>    `MockTrace.sse(event: TraceEvent)`（只管把一条已经写好的事件呈现出来）——
+>    下文提到的 `_echo()` 现在就是 `sse()` 本身，不再是一个被 `append()` 调用的
+>    私有辅助方法。`__getattr__` 透传这层也不需要了：没有内外两层对象，
+>    `run_episode.py` 里的 `trace.all_events()`/`trace.count()` 直接调
+>    `MockTrace` 自己的方法。
+
+### 6.1 定位与设计取舍（历史记录，见上方说明）
 
 `EchoTrace` 是包住任意 `TracePort` 实现的**装饰器**（不是替代品）：真实（或被包住的）
 trace 实现照常收到全部事件，打印只是"旁路"附加行为。
@@ -748,11 +815,12 @@ probe/run_episode.py : main()
     ▼
 pokemon_agent/build.py : build_real(ROM, state, vision_model=..., text_model=...,
                                      judge_model=..., grid=..., max_tokens=...,
-                                     watch=..., trace=EchoTrace(MockTrace(run_id=run_id)))
+                                     watch=..., trace=MockTrace(run_id=run_id))
     │  —— 全项目唯一的具体实现装配点 ——
     │  · QwenVision(model=vision_model, preprocess=(GridOverlay(),) if grid else ())
     │  · PyBoyWorld(rom, vision, state_path=state, watch=watch)
-    │  · trace = 传入的 EchoTrace(MockTrace(...))（外层打印 + 内层内存存储）
+    │  · trace = 传入的 MockTrace(...)（自带内存存储 + sse() 控制台打印，不再需要
+    │    外面套 EchoTrace——该类已删除，见第 4、6 节）
     │  · GameTools(world) —— 只碰 world
     │  · MemoryTool() —— 独立的语义记忆
     │  · Brain(decide_llm=QwenText(text_model,...), judge_llm=QwenText(judge_model or text_model,...))
@@ -770,11 +838,13 @@ Harness.run(episode_id, task)
     │     MemoryToolPort → memory/（记忆读写）
     │     BrainPort → LLMProvider（决策 / 判定）
     │     TracePort（事件写入）
-    │  · 每一次 append() 调用都先经过 EchoTrace：
-    │        EchoTrace.append() → 转发给 MockTrace.append()（分配 event_id、
-    │        校验单调性、存入内存 list）→ EchoTrace._echo() 按 EventType 分支
-    │        实时格式化打印到控制台（OBSERVE / THINK / MODEL_CALL / GOAL_PUSH /
-    │        GOAL_POP / INSPECT / MEMORY_WRITE / ERROR / EPISODE_START/END 等）
+    │  · 每一次 append() 调用：MockTrace.append()（分配 event_id、校验单调性、
+    │        存入内存 list）→ 落盘后自动调 self.sse(event) → sse() 按 EventType
+    │        分支实时格式化打印到控制台（OBSERVE / THINK / MODEL_CALL / GOAL_PUSH /
+    │        GOAL_POP / INSPECT / MEMORY_WRITE / ERROR / EPISODE_START/END 等）——
+    │        payload 的组装不在这里，`Harness` 调用点上是先经过 `trace_utils.xxx()`
+    │        拼好 `AppendArgs` 再 `self._trace.append(*args)`，`MockTrace` 本身
+    │        不认识任何领域对象（见 `interfaces/SPEC.md` 第 4 节）
     │
     ▼
 main() 收尾
@@ -783,8 +853,8 @@ main() 收尾
     │     "提前终止：{类型名}: {消息}"
     │  7. finally: world.stop()（释放 PyBoy 进程级资源，谁开的谁关）
     │  8. _summary(trace.all_events())
-    │       —— trace 是 EchoTrace，__getattr__ 透传到内层 MockTrace 的
-    │          all_events()，取出完整事件列表
+    │       —— trace 就是 MockTrace 本身，直接调 all_events() 取出完整事件列表
+    │          （不再有 EchoTrace 那层 __getattr__ 透传）
     │       —— 按 e.type / e.source（信封字段，而非 payload 内部键）统计：
     │            · perception / decision / judge 三类 MODEL_CALL 各自的
     │              调用次数、失败次数、input/output token 总量、平均延迟
@@ -800,20 +870,27 @@ main() 收尾
   只调用 `build.py` 暴露的 `build_real()`。
 - `build.py` 是唯一知道 `QwenText` / `QwenVision` / `PyBoyWorld` / `GridOverlay`
   等具体实现的地方；它把 trace 参数做成可注入的（`trace: TracePort | None`），
-  使 `run_episode.py` 能够传入 `EchoTrace(MockTrace(...))` 这种"内层存储 + 外层
-  打印"的组合，而 `build_real()` 内部逻辑完全不需要知道 trace 具体是被包装过的。
+  使 `run_episode.py` 能够直接传入 `MockTrace(run_id=run_id)`——存储和打印现在是
+  同一个对象的两件事（`append()` 落盘后自动 `sse()`），不再是"内层存储 + 外层
+  装饰器打印"的组合，`build_real()` 内部逻辑同样不需要知道 trace 具体怎么实现。
 - `errors.py` 中的 `AgentError` 家族是 `Harness`/`Brain` 与 `run_episode.py` 之间
   的失败契约：`run_episode.py` 只需要认识基类 `AgentError` 就能安全兜住所有预期内
   的失败，同时通过 `type(e).__name__` 保留具体失败类型用于打印。
 - `experiment/manifest.py`（`RunManifest`）定义了实验可复现性记录的模型，但在
   当前读到的调用链（`run_episode.py` → `build_real()`）中**尚未被实际调用**——
   它是为落盘/replay 等"阶段 2"能力预先搭好的骨架，目前独立存在。
-- `mock_trace.py` 与 `echo_trace.py` 共同构成当前唯一可用的 trace 实现路径：
-  `MockTrace` 满足 `TracePort` 契约但只存内存，`EchoTrace` 装饰它以获得实时控制台
-  观测，二者组合是 `run_episode.py` 里显式写出的 `EchoTrace(MockTrace(run_id=run_id))`。
+- `trace/store.py`（`MockTrace`）是当前唯一可用的 trace 实现：满足 `TracePort`
+  契约（`append`/`replay`/`sse`），只存内存，`sse()` 自带实时控制台打印——曾经
+  拆在两个文件、两层对象里的 `mock_trace.py`（存储）+ `echo_trace.py`（打印装饰器
+  `EchoTrace`）已经合并；`run_episode.py` 里现在显式写出的是
+  `MockTrace(run_id=run_id)`，不再是 `EchoTrace(MockTrace(run_id=run_id))`。
+  `trace/utils.py`（`trace_utils`）是这次拆分额外长出来的第三块：一批不认识
+  `TracePort` 的纯函数，专管"把领域对象翻译成 `append()` 的参数"，`Harness` 是
+  唯一调用它们的地方（详见 `interfaces/SPEC.md` 第 4 节、`harness/SPEC.md`）。
 
 ---
 
-*本文档所有结论均来自对上述六个源文件（含中文注释）的直接阅读，未对源码之外的行为
+*本文档所有结论均来自对上述源文件（含中文注释）的直接阅读，未对源码之外的行为
 做推测性描述；涉及"未在本次阅读范围内验证"的内容（如各 `AgentError` 子类的具体抛出
-点）已在正文中明确标注。*
+点）已在正文中明确标注。第 4、6 节及本节已依据 `pokemon_agent/trace/` 包的当前
+实现（`MockTrace.sse()` 取代 `EchoTrace`）更新，其余章节未受这次改动影响。*

@@ -23,7 +23,7 @@
 
 1. **`LoopState` 拥有"这一局跑到哪了"**：`step`、`goals`、`succeeded` 等身份字段全部在 `LoopState` 里流转，不作为 `Harness` 的实例字段存在。
 2. **`Harness` 本身无状态**：类文档字符串明确写明"它自己没有状态——状态全在 `LoopState` 里流"。
-3. **Harness 是唯一写 trace 的人**：模块顶部注释强调"全项目 `trace.append` 只出现在这个文件里"。大脑（Brain）把账（`ModelCall`）连同结果一起交出来，由 Harness 统一翻译成事件；判定器（judge）碰不到自己的账，这不是特权设计，而是**所有大脑调用的共同处境**——即凡是要花钱调模型的组件，记账权一律收归 Harness。
+3. **Harness 是唯一写 trace 的人**：模块顶部注释强调"全项目 `trace.append` 只出现在这个文件里"。大脑（Brain）把账（`ModelCall`）连同结果一起交出来，由 Harness 统一翻译成事件；判定器（judge）碰不到自己的账，这不是特权设计，而是**所有大脑调用的共同处境**——即凡是要花钱调模型的组件，记账权一律收归 Harness。**"唯一写"不等于"唯一拼"**：`Harness` 只调 `self._trace.append(*trace_utils.xxx(...))`，把领域对象（`Observation`/`Action`/`Goal`/`ModelCall`……）翻译成 `append()` 需要的五元组这一步，委托给纯函数模块 `pokemon_agent/trace/utils.py`——`Harness` 自己不拼任何 `dict[str, str]` 字面量。这是"harness 只负责调度，不负责模块逻辑"这条原则在 trace 这一侧的落地：调用点（决定"这一步该不该记、记成哪类事件"）留在 Harness，组装点（决定"记的话该记成什么样"）搬到 `trace_utils`。
 
 ### 1.3 状态为什么全在 LoopState 里——判据是"会不会影响下一个 prompt"
 
@@ -213,8 +213,8 @@ def _nodes(self) -> dict[Intent, Any]:
 
 **流程**：
 1. `reset = self._game.reset(task)` 真实重置世界（这次重置里通常包含一次真实的开局感知）。
-2. 对 `reset.calls` 里的每一条模型调用记录，当场调用 `_record_call`（`Source.PERCEPTION`），**不留到下一次 `_observe()` 才补记**——注释强调"第一次 `look` 会命中这里刚建好的缓存，这个 episode 只会有这一次真正的开局感知"。
-3. 写 `EPISODE_START` 事件（`Source.HARNESS`），payload 含 `task_id`/`goal`/`max_steps`/`memory_carried`（当前记忆库情景记忆条数）。注释解释了必要性：episode 的边界必须进事件流，否则光看日志分不出一次尝试从哪开始，更不知道它带了多少条记忆进来——而那正是 A/B 实验的自变量本身。
+2. 对 `reset.calls` 里的每一条模型调用记录，当场 `for args in trace_utils.model_call(ep, 0, Source.PERCEPTION, call): self._trace.append(*args)`，**不留到下一次 `_observe()` 才补记**——注释强调"第一次 `look` 会命中这里刚建好的缓存，这个 episode 只会有这一次真正的开局感知"。
+3. `self._trace.append(*trace_utils.episode_start(episode_id, task, memory_carried))` 写 `EPISODE_START` 事件（`Source.HARNESS`），payload 含 `task_id`/`goal`/`max_steps`/`memory_carried`（当前记忆库情景记忆条数）。注释解释了必要性：episode 的边界必须进事件流，否则光看日志分不出一次尝试从哪开始，更不知道它带了多少条记忆进来——而那正是 A/B 实验的自变量本身。
 4. 构造并返回 `LoopState`，`goals` 初始化为单元素列表 `[Goal(goal=task.goal, criteria=task.success_criteria)]`——栈底是任务目标本身，"它永远在，也永远是成败的唯一依据"。
 
 **读写 LoopState 字段**：不读（构造前），写：`episode_id`/`task`/`goals`（其余用默认值）。
@@ -227,7 +227,7 @@ def _nodes(self) -> dict[Intent, Any]:
 
 **读写字段**：读 `state`（传给 `_observe`）；写 `observation`/`goals`/`succeeded`/`why`；若 `obs.done` 为真，额外写 `outcome`（调 `_outcome`）；否则额外写 `space`（调 `_space(goals)`）。
 
-**trace 事件**：不直接写，全部委托给 `_observe`（及其调用的 `_judge`/`_record_call`）与（若终止）`_outcome`。
+**trace 事件**：不直接写，全部委托给 `_observe`（及其调用的 `_judge`，二者都通过 `trace_utils` 拼 payload）与（若终止）`_outcome`。
 
 ### 4.4 `_space(goals) -> ActionSpace`（`harness.py:361-372`）
 
@@ -235,15 +235,25 @@ def _nodes(self) -> dict[Intent, Any]:
 
 **读写字段**：读 `goals`（参数传入，非直接读 state）；不写 trace。
 
-### 4.5 `_retrieve_memory(state) -> dict`（`harness.py:374-397`）
+### 4.5 `_retrieve_memory(state) -> dict`（`harness.py`）
 
-**职责**：查这一步要用的情景记忆，交给 `think`。图上单独一格。用**当前快照**（`Snapshot.of(state.observation).render()`）去查，而不用 `obs.summary`——注释解释：记忆里存的是快照（位置/概况/地标/通行图），summary 是"你在野外"这种一句话，两边词汇几乎不重叠，字符打分会一条都选不中。
+**职责**：这一步**全部的记忆读**都在这里发生——不只是情景记忆检索，`known_objects`（语义记忆，按坐标筛）和 `knowledge`（语义记忆，不筛的通用先验）也在这里读、折进返回的 `observation` 里。图上单独一格，是"查记忆"这个动作唯一的入口。
 
-**流程**：`self._memory.query_episodic(..., limit=MEMORY_RECALL_LIMIT)`（`MEMORY_RECALL_LIMIT = 5`）。
+用**当前快照**（`Snapshot.of(state.observation).render()`）去查情景记忆，而不用 `obs.summary`——注释解释：记忆里存的是快照（位置/概况/地标/通行图），summary 是"你在野外"这种一句话，两边词汇几乎不重叠，字符打分会一条都选不中。
 
-**读写字段**：断言 `state.observation is not None`；读 `state.episode_id`/`state.observation`；写 `memories`。
+**流程**：
+1. `memories = self._memory.query_episodic(..., limit=MEMORY_RECALL_LIMIT)`（`MEMORY_RECALL_LIMIT = 5`）。
+2. `known = self._memory.known_here(obs)`；非空则 `obs = obs.model_copy(update={"facts": {**obs.facts, "known_objects": known}})`。
+3. `knowledge = self._memory.knowledge_base()`；非空则同样折进 `obs.facts["knowledge"]`。
+4. `self._trace.append(*trace_utils.memory_read(ep, step, memories, known, knowledge))`。
 
-**trace 事件**：`MEMORY_READ`（`Source.DECISION`），payload 含 `count`（条数）与 `refs`（`(episode_id, step)` 列表拼接）。注释指出"检索发生在决策模型调用之前，事件顺序照实写——因果顺序，不是排版偏好"。
+**为什么不放在 `_observe()`（`look` 节点）里**：`known_objects`/`knowledge` 是语义记忆的读，属于"查记忆"，不属于"看一眼"——`_observe()` 只该产出"这一帧模拟器/视觉模型实际给出的东西"。这不只是分类洁癖：早先把这两者塞进 `_observe()` 时，它们会在 `_judge()` 跑之前就出现在 `obs.facts` 里，被判定模型一起看到、白白花 token（`judge` 本不该看这类字段，见 `brain/SPEC.md` 的 `JUDGE_BLIND`）。现在 `_judge()` 在 `_observe()` 内部先跑完，`_retrieve_memory()` 是后一个图节点，判定模型天然看不到这两个字段。
+
+`knowledge` **每次都重新读盘**（`MemoryTool.knowledge_base()` 不缓存），这是刻意的：要能一边跑 episode 一边改 `memory/knowledge/*.md`、不重启进程就生效。
+
+**读写字段**：断言 `state.observation is not None`；读 `state.episode_id`/`state.observation`；写 `observation`（折了 `known_objects`/`knowledge` 之后的新副本）与 `memories`。
+
+**trace 事件**：`MEMORY_READ`（`Source.DECISION`），payload 含 `count`（条数）、`refs`（`(episode_id, step)` 列表拼接），以及非空时的 `known_objects`/`knowledge`——三种读共用一条事件，因为它们都发生在同一个节点里，拆成三条反而让人以为它们发生在循环的不同位置。注释指出"检索发生在决策模型调用之前，事件顺序照实写——因果顺序，不是排版偏好"。
 
 ### 4.6 `_think(state) -> dict`（`harness.py:399-450`）
 
@@ -252,13 +262,13 @@ def _nodes(self) -> dict[Intent, Any]:
 **流程**：
 1. `decision = self._brain.choose(state.goals, state.observation, state.space, state.memories)`（**不重新查记忆**，直接用 `state.memories`——`MEMORY_READ` 已挪到 `retrieve_memory`，这里不再写）。
 2. 断言 `decision.calls` 非空。
-3. 对每条 `call` 调 `_record_call(ep, step, Source.DECISION, call)`。
-4. 若 `decision.action is None`（重试用尽）：写一条 `ERROR`（`kind="MaxRetriesExceeded"`），然后 `raise MaxRetriesExceeded(...)`。注释强调"抛异常的是这里，不是大脑——大脑只汇报'一次都没解析出合法动作'，而'这一局是否因此终止'是循环的判断"。
-5. 否则写 `THINK` 事件，payload 含 `thought`/`action`/`args`（json）/`rationale`（json）/`attempt`（重试次数）。`args` 必须记，"不记的话分不清'模型没给参数'和'给了但没显示'"；`rationale` 也记在这里，"不只依赖 `MEMORY_WRITE`——无记忆基线组不写记忆，那时 rationale 只剩这一处落点"。
+3. 对每条 `call`，`for args in trace_utils.model_call(ep, step, Source.DECISION, call): self._trace.append(*args)`——一条 `MODEL_CALL`，`call.error_kind` 非空时 `trace_utils.model_call` 会多吐一条 `ERROR`，Harness 只管把这个列表逐条 append，不自己判断"这次调用要不要额外记一条错误"。
+4. 若 `decision.action is None`（重试用尽）：`self._trace.append(*trace_utils.decision_failed(ep, step, last))` 写一条 `ERROR`（`kind="MaxRetriesExceeded"`），然后 `raise MaxRetriesExceeded(...)`。注释强调"抛异常的是这里，不是大脑——大脑只汇报'一次都没解析出合法动作'，而'这一局是否因此终止'是循环的判断"。
+5. 否则 `self._trace.append(*trace_utils.think(ep, step, decision.action, attempt=len(decision.calls)))`，payload 含 `thought`/`action`/`args`（json）/`rationale`（json）/`attempt`（重试次数）。`args` 必须记，"不记的话分不清'模型没给参数'和'给了但没显示'"；`rationale` 也记在这里，"不只依赖 `MEMORY_WRITE`——无记忆基线组不写记忆，那时 rationale 只剩这一处落点"。
 
 **读写字段**：读 `observation`/`space`/`goals`/`memories`；写 `action`。
 
-**trace 事件**：`MODEL_CALL`×N（跟随 `decision.calls`）；可能的 `ERROR`×失败次数（经 `_record_call`）；成功时额外一条 `THINK`；失败耗尽时额外一条独立的 `ERROR`（`kind=MaxRetriesExceeded`）。
+**trace 事件**：`MODEL_CALL`×N（跟随 `decision.calls`，经 `trace_utils.model_call`）；可能的 `ERROR`×失败次数（同一批 `trace_utils.model_call` 调用里带出来的）；成功时额外一条 `THINK`；失败耗尽时额外一条独立的 `ERROR`（`kind=MaxRetriesExceeded`，经 `trace_utils.decision_failed`）。
 
 ### 4.7 `_dispatch(state) -> str`（`harness.py:452-454`）
 
@@ -270,8 +280,8 @@ def _nodes(self) -> dict[Intent, Any]:
 
 **流程**：
 1. `result = self._game.execute(action)`，断言 `result.observation is not None`。
-2. 对 `result.calls`（执行期间通常是执行后重新感知产生的调用记录）逐条 `_record_call(ep, before.step, Source.PERCEPTION, ...)`。注释强调"这一步的账当场记，不再拖到下一步 `_observe()` 才补记——calls 现在跟着 `execute()` 的返回值一起交出来，不用再靠 `drain_calls()` 那种隐式时机"。
-3. 写 `ACT` 事件（`Source.WORLD`），payload 含 `action`/`args`/`message`，step 用 `before.step`（即执行前的步号，也就是"这一步"）。
+2. 对 `result.calls`（执行期间通常是执行后重新感知产生的调用记录），逐条 `for args in trace_utils.model_call(ep, before.step, Source.PERCEPTION, call): self._trace.append(*args)`。注释强调"这一步的账当场记，不再拖到下一步 `_observe()` 才补记——calls 现在跟着 `execute()` 的返回值一起交出来，不用再靠 `drain_calls()` 那种隐式时机"。
+3. `self._trace.append(*trace_utils.act(ep, before.step, action, message))` 写 `ACT` 事件（`Source.WORLD`），payload 含 `action`/`args`/`message`，step 用 `before.step`（即执行前的步号，也就是"这一步"）。
 4. 返回 `{"press_result": result.observation}`——新观测暂不盖步号章（`step` 恒为 0，因为它还没被 `_observe` 处理过），但 `_remember` 只取其 `Snapshot`，与步号无关。
 
 **读写字段**：读 `observation`/`action`；写 `press_result`（**不写 `step`**）。
@@ -285,8 +295,8 @@ def _nodes(self) -> dict[Intent, Any]:
 **流程**：
 1. 断言 `observation`/`action`/`press_result` 均非 `None`。
 2. `entry = self._brain.reflect(before, action, after).model_copy(update={"episode_id": ep})`——`episode_id` 在这里盖章，因为"大脑不知道自己在哪一局"。
-3. `self._memory.write_episodic(entry)`，写 `MEMORY_WRITE` 事件（`Source.HARNESS`），payload 含 `key`/`content`（`entry.render()`），step 用 `before.step`。
-4. `for note in self._memory.note_step(before, action, after):` 逐条写 `OBJECT_NOTE` 事件（`Source.HARNESS`），payload 含 `key`（`note.landmark.place.key`）/`kind`/`content`。注释区分了两类记忆的作用域：情景记忆记"我在那种画面里选了什么"（作用域是一次经过），`OBJECT_NOTE` 记"地图39 x=2 y=3 那个人会说什么"（作用域是那一格，域内恒真、域会再现）；后者不需要模型判断——面朝哪一格由 `place + facing` 算出，两个输入都确定。
+3. `self._memory.write_episodic(entry)`，`self._trace.append(*trace_utils.memory_write(ep, before.step, entry))` 写 `MEMORY_WRITE` 事件（`Source.HARNESS`），payload 含 `key`/`content`（`entry.render()`），step 用 `before.step`。
+4. `for note in self._memory.note_step(before, action, after): self._trace.append(*trace_utils.object_note(ep, before.step, note))` 逐条写 `OBJECT_NOTE` 事件（`Source.HARNESS`），payload 含 `key`（`note.landmark.place.key`）/`kind`/`content`。注释区分了两类记忆的作用域：情景记忆记"我在那种画面里选了什么"（作用域是一次经过），`OBJECT_NOTE` 记"地图39 x=2 y=3 那个人会说什么"（作用域是那一格，域内恒真、域会再现）；后者不需要模型判断——面朝哪一格由 `place + facing` 算出，两个输入都确定。
 5. 返回 `{"step": state.step + 1}`——**`step + 1` 放在这条链路的末尾**，下一轮 `look` 写的 `OBSERVE` 才落在第 n+1 步上。若提前加一，事件流的步号会往回跳，读日志的人会把这条记忆读成下一步的。
 
 **职责划分（press vs remember）**：`press` 负责"execute + 记执行期间的账 + 写 ACT"，`remember` 负责"reflect + 落库（情景记忆与语义记忆）+ step 自增"。二者通过 `press_result` 传递 after 观测：`press` 把 `execute()` 返回的新观测存进 `press_result`（不打步号章），`remember` 从 `state.press_result` 读出这份 after 观测用于 `reflect`/`note_step`。
@@ -299,7 +309,7 @@ def _nodes(self) -> dict[Intent, Any]:
 
 **职责**：把一个子目标压进栈。世界不动，但**仍然算一步**——因为它同样烧了一次决策调用，不算的话 `max_steps` 管不住"一直拆、从不走"这种局。
 
-**流程**：断言 `len(state.goals) < MAX_GOAL_DEPTH`（`_space()` 应已把 `PUSH_GOAL` 从可选项摘掉，这里是防御性断言）；写 `GOAL_PUSH` 事件（`Source.DECISION`），payload 含 `depth`（当前深度，压入前）/`goal`/`criteria`/`rationale`；返回 `{"goals": [*state.goals, goal], "step": state.step + 1}`。
+**流程**：断言 `len(state.goals) < MAX_GOAL_DEPTH`（`_space()` 应已把 `PUSH_GOAL` 从可选项摘掉，这里是防御性断言）；`self._trace.append(*trace_utils.goal_push(ep, step, depth, goal, rationale))` 写 `GOAL_PUSH` 事件（`Source.DECISION`），payload 含 `depth`（当前深度，压入前）/`goal`/`criteria`/`rationale`；返回 `{"goals": [*state.goals, goal], "step": state.step + 1}`。
 
 **读写字段**：读 `observation`/`action`（取其 `goal`）/`goals`；写 `goals`（追加）/`step`（自增）。
 
@@ -309,7 +319,7 @@ def _nodes(self) -> dict[Intent, Any]:
 
 **职责**：对同一帧再问一次视觉模型。世界不动，但仍然算一步。注释指出 `INSPECT` 与 `OBSERVE` 是两个不同事件类型：后者每步必发，前者是大脑主动要的——混成一类就算不出"它多久要细看一次"，而那是判断这个动作值不值那次钱的依据。
 
-**流程**：`result = self._game.inspect(focus)`；对 `result.calls` 逐条 `_record_call(..., Source.PERCEPTION, ...)`（错误类型标为 `InspectFailed`）；写 `INSPECT` 事件（`Source.PERCEPTION`），payload 含 `focus`/`answer`（最后一次调用的 `raw`）；返回 `{"step": state.step + 1}`。
+**流程**：`result = self._game.inspect(focus)`；对 `result.calls` 逐条 `for args in trace_utils.model_call(ep, step, Source.PERCEPTION, call): self._trace.append(*args)`（错误类型标为 `InspectFailed`）；`self._trace.append(*trace_utils.inspect(ep, step, focus, answer))` 写 `INSPECT` 事件（`Source.PERCEPTION`），payload 含 `focus`/`answer`（最后一次调用的 `raw`）；返回 `{"step": state.step + 1}`。
 
 **读写字段**：读 `observation`/`action`（取其 `focus`）；写 `step`（自增）。
 
@@ -326,10 +336,10 @@ def _nodes(self) -> dict[Intent, Any]:
 **流程**：
 1. `perceived = self._game.perceive()`，取 `raw = perceived.observation`。
 2. `obs = raw.model_copy(update={"step": state.step, "done": raw.done or state.step >= state.task.max_steps})`——**盖步号**、**判"步数用尽"这一类终止**。
-3. **known_objects 怎么拼进 facts**：`known = self._memory.known_here(obs)`；若非空，`obs = obs.model_copy(update={"facts": {**obs.facts, "known_objects": known}})`。这一步是"两个协议各管各的，组合是这一层的活"的体现——`GameToolPort` 只碰 world，不知道语义记忆的存在；这里拿到原始观测后单独问 `memory.known_here(obs)` 要一段渲染好的文字，有内容才拼进去。
-4. `self._memory.see_objects(obs, f"{state.episode_id}#{obs.step}")`——"看到的都建档，没互动过的也建"，放在这里是因为 `_observe()` 是唯一一步产出一次观测的地方，"seen 必须一步只加一次"。
-5. 对 `perceived.calls` 逐条 `_record_call(..., Source.PERCEPTION, ...)`（`ok != "True"` 时标 `PerceptionParseFailure`）。注释强调 `ok=False` 的调用要带 `error_kind`，否则"视觉模型输出解析失败"这一类永远不出现在失败模式分布里。
-6. 写 `OBSERVE` 事件（`Source.PERCEPTION`），payload 含 `frame_sha`/`summary`/`scene`/`overlay`/`facts`（json）/**`goals`**（`self._render_goal_stack(state.goals)`）。
+3. **`known_objects`/`knowledge` 不在这里拼**：它们是语义记忆的读，属于"查记忆"，不属于"看一眼"——放在 `_retrieve_memory()`（图上单独一格，紧跟在 `_observe()`/`_judge()` 之后）里，不放在这里。`_observe()` 只产出**这一帧模拟器/视觉模型实际给出的东西**。这是从"混进 `_observe()`"改过来的：那样会让 `knowledge` 在 `_judge()` 跑之前就出现在 `obs.facts` 里，被判定模型一起看到、白白花 token。
+4. `self._memory.see_objects(obs, f"{state.episode_id}#{obs.step}")`——"看到的都建档，没互动过的也建"，放在这里是因为 `_observe()` 是唯一一步产出一次观测的地方，"seen 必须一步只加一次"；这一步写的是**语义记忆的写**（不是读），不受上面那条移动的影响。
+5. 对 `perceived.calls` 逐条 `for args in trace_utils.model_call(ep, obs.step, Source.PERCEPTION, call): self._trace.append(*args)`（`ok != "True"` 时标 `PerceptionParseFailure`）。注释强调 `ok=False` 的调用要带 `error_kind`，否则"视觉模型输出解析失败"这一类永远不出现在失败模式分布里。
+6. `self._trace.append(*trace_utils.observe(ep, obs, state.goals, self._game.last_frame_sha))` 写 `OBSERVE` 事件（`Source.PERCEPTION`），payload 含 `frame_sha`/`summary`/`scene`/`overlay`/`facts`（json）/**`goals`**（`trace_utils._render_goal_stack(state.goals)`，`trace_utils.observe` 内部调用）。
    - **`goals` 字段是判定弹栈之前的栈**：注释明确写道，"这里记的是这一帧被看到时的栈（judge 弹栈之前），因为 OBSERVE 必须先于本步的判定事件（因果顺序），判完之后的栈会在随后的 `GOAL_POP` 里体现"。即 `OBSERVE.payload["goals"]` 反映的是 `state.goals`（本步开始时、判定发生前的栈），不是判定之后可能已经弹出若干层的栈。加这个字段的动机：以前目标栈只在 `GOAL_PUSH`/`GOAL_POP` 事件里出现过一次，读日志的人拿不到"这一帧、这个决策，当时的栈到底长什么样"，只能靠回放前面所有 push/pop 事件手动重建。
 7. `return self._judge(state, obs)`——把最终的判定工作委托给 `_judge`，返回值直接透传给 `_look`。
 
@@ -337,9 +347,9 @@ def _nodes(self) -> dict[Intent, Any]:
 
 **trace 事件顺序（因果顺序）**：`MODEL_CALL`(感知)×若干 + 可能的 `ERROR` → `OBSERVE`×1 → （委托给 `_judge`）`MODEL_CALL`(判定)×栈深 + 可能的 `ERROR` → `GOAL_POP`×0或多条。注释强调这个顺序不能反："先记产生这一帧观测的那几次感知调用，再记观测本身，最后才是基于它的判定。反过来记的话，拿事件流做 replay 的人会先看到结果、再看到产生它的原因。"
 
-### 4.14 `_render_goal_stack(goals) -> str`（静态方法，`harness.py:676-686`）
+### 4.14 `trace_utils._render_goal_stack(goals) -> str`（私有函数，`pokemon_agent/trace/utils.py`，非 `Harness` 方法）
 
-把目标栈压成一行字符串，塞进 trace payload：`" > ".join(f"[{depth}]{g.goal}" for depth, g in enumerate(goals))`，**栈顶（当前要做的）在最后**。注释说明这与 `Brain._render_goals`（多行、给模型读、栈顶在最上面）刻意不同——payload 值要求是字符串且不方便塞多行；一个格式是给人在日志里扫一眼查重复用的，一个是给模型逐行读的完整 prompt 片段，读者和用途不同，没必要共用一份格式。
+把目标栈压成一行字符串，塞进 trace payload：`" > ".join(f"[{depth}]{g.goal}" for depth, g in enumerate(goals))`，**栈顶（当前要做的）在最后**。注释说明这与 `Brain._render_goals`（多行、给模型读、栈顶在最上面）刻意不同——payload 值要求是字符串且不方便塞多行；一个格式是给人在日志里扫一眼查重复用的，一个是给模型逐行读的完整 prompt 片段，读者和用途不同，没必要共用一份格式。这个函数不在 `Harness` 里——它是 `trace_utils.observe()` 内部用的私有格式化辅助，只服务于"payload 该长什么样"，不属于 Harness 的调度逻辑。
 
 ### 4.15 `_judge(state, obs) -> tuple[...]`（`harness.py:688-780`）
 
@@ -348,7 +358,7 @@ def _nodes(self) -> dict[Intent, Any]:
 **算法**：
 1. **早退分支**：若 `state.succeeded` 已为真，直接返回 `(obs.model_copy(done=True, success=True), state.goals, True, state.why)`，不再判。注释解释这一分支在当前图内实际走不到（判成成功的那一步同时置了 `obs.done`，`_route` 直接走 END），但为 resume 场景保留：从一个 `succeeded=True` 的 checkpoint 恢复时，不打标记的话 `_look` 不出 outcome 会转而进 `think`，而那时 `goals` 已是空的（成功那一步清空了），`brain.choose` 的 `assert goals` 会当场崩掉。
 2. 否则：`goals = list(state.goals)`（断言非空——"目标栈必须永远不为空"）；调 `_judge_all(episode_id, goals, obs)` 并发判每一层，得到 `verdicts`（按栈顺序）。
-3. 逐条 `_record_call(..., Source.JUDGE, verdict.call.model_copy(update={"payload": {**verdict.call.payload, "depth": str(depth)}}))`——**判定的账单单独记**（`Source.JUDGE`），`depth` 塞进 payload 以区分"子目标判得多"和"任务判得多"两种粒度，否则子目标的判定成本会淹没任务本身判定成本这个数。
+3. 逐条 `for args in trace_utils.judge_call(ep, step, depth, verdict.call): self._trace.append(*args)`——**判定的账单单独记**（`Source.JUDGE`），`depth` 塞进 payload 以区分"子目标判得多"和"任务判得多"两种粒度，否则子目标的判定成本会淹没任务本身判定成本这个数。`trace_utils.judge_call` 内部就是调 `trace_utils.model_call(..., Source.JUDGE, call.model_copy(update={"payload": {**call.payload, "depth": str(depth)}}))`，多包一层只是把"往 payload 塞 depth"这个判定专属的动作单独命名。
 4. `done_at = next((d for d, v in enumerate(verdicts) if v.done), None)`——找**最深的**那条已完成的目标（`enumerate` 从栈底 depth=0 往上，取第一个 `done=True` 的索引，即最深完成的那层，因为 verdicts 与 goals 顺序一致，深度越大在数组里下标越大，`next` 找到的是最先出现、也是索引最大的那个 done——需配合 `goals` 定义：`goals[0]` 是栈底，往后越深）。
 5. 若无一层完成（`done_at is None`）：`return obs, goals, False, ""`。
 6. 若有：
@@ -370,7 +380,7 @@ def _nodes(self) -> dict[Intent, Any]:
 
 **读写字段**：读 `state.succeeded`/`state.why`/`state.goals`/`state.episode_id`；不直接写 `LoopState`（通过返回元组，由 `_look` 写回 `observation`/`goals`/`succeeded`/`why`）。
 
-**trace 事件**：`MODEL_CALL`(判定)×栈深（跟随 `verdicts`，经 `_record_call`）+ 可能的 `ERROR`；`GOAL_POP`×(出栈层数，0 到 栈深) 条。
+**trace 事件**：`MODEL_CALL`(判定)×栈深（跟随 `verdicts`，经 `trace_utils.judge_call`）+ 可能的 `ERROR`；`GOAL_POP`×(出栈层数，0 到 栈深) 条（经 `trace_utils.goal_pop`）。
 
 ### 4.16 `_judge_all(episode_id, goals, obs) -> list[Verdict]`（`harness.py:782-822`）
 
@@ -390,24 +400,25 @@ def _nodes(self) -> dict[Intent, Any]:
 
 **读写字段**：读 `goals`/`obs`（参数）；不写 `LoopState`，不写 trace（记账在调用方 `_judge` 里做）。
 
-### 4.17 `_record_call(episode_id, step, source, call)`（`harness.py:826-840`）
+### 4.17 `trace_utils.model_call(episode_id, step, source, call) -> list[AppendArgs]`（`pokemon_agent/trace/utils.py`，不再是 `Harness` 方法）
 
-**职责**：把一次模型调用（`ModelCall`）翻译成 trace 事件——"一次模型调用 → 一条 `MODEL_CALL`，失败的再补一条 `ERROR`"。
+**职责**：把一次模型调用（`ModelCall`）翻译成 trace 事件——"一次模型调用 → 一条 `MODEL_CALL`，失败的再补一条 `ERROR`"。**这曾经是 `Harness._record_call`**（直接 `self._trace.append(...)`），现在拆成一个不认识 `TracePort`、不做任何 I/O 的纯函数：输入 `ModelCall`，输出 `AppendArgs` 的 `list`（长度 1 或 2），调用方（`Harness`）自己逐条 `self._trace.append(*args)`。
 
-**流程**：
+**返回值构造**（等价逻辑）：
 ```python
-self._trace.append(episode_id, step, EventType.MODEL_CALL, source, call.payload)
+events = [(episode_id, step, EventType.MODEL_CALL, source, call.payload)]
 if call.error_kind:
-    self._trace.append(
+    events.append((
         episode_id, step, EventType.ERROR, source,
         {"kind": call.error_kind, "reason": call.error,
          "attempt": call.payload.get("attempt", "")},
-    )
+    ))
+return events
 ```
 
-**设计理由**：账单和失败模式是两件事——前者回答"花了多少钱"，后者回答"为什么没拿到东西"。混进一条里，按失败类型聚合时就得去解析 payload 里的字符串。
+**设计理由**：账单和失败模式是两件事——前者回答"花了多少钱"，后者回答"为什么没拿到东西"。混进一条里，按失败类型聚合时就得去解析 payload 里的字符串。拆成纯函数之后还多了一条好处：可以脱离 `TracePort`/`Harness` 单独单元测试——给一个 `ModelCall` 断言吐出来的 `list` 长什么样，不需要造一个假 `TracePort`。
 
-**调用方**（全项目）：`_begin`（reset 的感知调用）、`_press`（执行期间的感知调用）、`_inspect`（inspect 的感知调用）、`_observe`（perceive 的感知调用）、`_think`（决策调用）、`_judge`（判定调用）。
+**调用方**（全项目，均在 `Harness` 里，逐条 `self._trace.append(*args)`）：`_begin`（reset 的感知调用）、`_press`（执行期间的感知调用）、`_inspect`（inspect 的感知调用）、`_observe`（perceive 的感知调用）、`_think`（决策调用）、`_judge`（判定调用，经 `trace_utils.judge_call` 这个薄包装）。
 
 ### 4.18 `_outcome(state, obs, why) -> EpisodeOutcome`（`harness.py:842-861`）
 
@@ -417,7 +428,7 @@ if call.error_kind:
 1. 断言 `obs.done`。
 2. 计算 `reason`：`"success"`（若 `obs.success`）/ `"max_steps_exceeded"`（若 `obs.step >= state.task.max_steps`）/ `"world_ended"`（其余情况，如窗口被关）。
 3. 构造 `EpisodeOutcome(episode_id, task_id, success=obs.success, steps=obs.step, reason=reason)`。
-4. 写 `EPISODE_END` 事件（`Source.HARNESS`），payload 含 `success`/`steps`/`reason`/`task_id`/`why`。注释强调"成功与否必须落进事件流，不记的话光看日志算不出成功率——而那是这个项目唯一的一组硬数字"；`why` 也要留档，"每一个 `True` 都得说得出依据"。
+4. `self._trace.append(*trace_utils.episode_end(episode_id, result, why))` 写 `EPISODE_END` 事件（`Source.HARNESS`），payload 含 `success`/`steps`/`reason`/`task_id`/`why`。注释强调"成功与否必须落进事件流，不记的话光看日志算不出成功率——而那是这个项目唯一的一组硬数字"；`why` 也要留档，"每一个 `True` 都得说得出依据"。
 5. 返回 `result`。
 
 **读写字段**：读 `state.episode_id`/`state.task`；不写 `LoopState`（`outcome` 由调用方 `_look` 写回）。
@@ -459,7 +470,7 @@ if call.error_kind:
    ```
    **`recursion_limit` 怎么算**：`task.max_steps * 6 + 20`。注释解释："每一步走三个节点，留一倍余量"——即每步（look → retrieve_memory → think → press/push_goal/inspect → [remember] → 回到 look）大致对应 LangGraph 计数的若干个节点转移，估算约 3 个节点转移每步，乘以 6 是留了一倍余量（3×2=6），`+20` 是额外的固定缓冲（覆盖 `_begin` 之外图内部的开销及边界情况）。这个上限只是"图执行不要陷入死循环/超长递归"的安全阀，真正的步数上限由 `_observe` 里 `state.step >= state.task.max_steps` 判定并触发 `done`。
 3. **异常处理**：若图执行抛出任何 `Exception`：
-   - 先补写一条 `EPISODE_END`（`success="False"`, `steps="-1"`, `reason="error"`, `task_id`, `why=f"{type(exc).__name__}: {exc}"[:300]`）。
+   - 先 `self._trace.append(*trace_utils.episode_error(episode_id, task.task_id, exc))` 补写一条 `EPISODE_END`（`success="False"`, `steps="-1"`, `reason="error"`, `task_id`, `why=f"{type(exc).__name__}: {exc}"[:300]`）。
    - 注释解释了为什么必须补：**异常逃出去之前必须把 `EPISODE_END` 补上**。不补的话这一局在事件流里永远"没有结束"——离线统计成功率时它既不在成功里也不在失败里，**直接从分母上消失**——而 `MaxRetriesExceeded`（决策模型连着几次吐不出合法动作）恰恰是最该被记成失败的那一类。
    - 记完后**照常向外抛出**（`raise`，不带参数，保留原始异常和堆栈）：这一局确实跑不下去了，吞掉异常只会让调用方拿到一个语义不明的空结果。
 4. 若图正常结束：`outcome = LoopState.model_validate(final).outcome`；断言 `outcome is not None`（"the graph must not end without an outcome"——图只有在 `look` 判定 `obs.done` 时才会走向 `END`，而那条路径必然先经过 `_outcome` 写好了 `outcome` 字段）；返回 `outcome`。

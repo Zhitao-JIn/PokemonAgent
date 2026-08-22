@@ -40,9 +40,11 @@ LLM、不知道 episode 是谁。
 
 同样地，早先 `GameTools` 还持有一份 `ObjectMemory` 的引用，`perceive()` 顺手把
 语义记忆拼进 `facts["known_objects"]`；这条耦合已被拆掉。`GameTools` 现在没有
-任何字段指向记忆，`memory/` 包整个是它看不见的东西。`known_objects` 现在由
-`Harness._observe()` 在拿到 `GameTools.perceive()` 结果之后，**另外**调
-`MemoryToolPort.known_here()` 拼上去——两个协议各管各的，组合是 Harness 的活。
+任何字段指向记忆，`memory/` 包整个是它看不见的东西。`known_objects`/`knowledge`
+现在由 `Harness._retrieve_memory()`（**不是** `_observe()`——两者都是语义记忆的
+读，属于图上专门的"查记忆"节点，不属于"看一眼"）在拿到 `GameTools.perceive()`
+结果、判定跑完之后，**另外**调 `MemoryToolPort.known_here()`/`knowledge_base()`
+拼上去——两个协议各管各的，组合是 Harness 的活。
 
 ---
 
@@ -535,6 +537,28 @@ docstring 记录了一个真实踩过的坑：早一版这里返回的是给模�
 剩下的一律归进 `RESULT_NONE`；`_outcome` 这里只要如实报"动没动"就够了。全部
 来自两个 `place` 相减——**没有一个字是模型说的**。
 
+### 3.4 通用先验（`knowledge_base`）
+
+```python
+def knowledge_base(self) -> str:
+    return _load_knowledge_base()  # pokemon_agent.memory.knowledge.store.load_all
+```
+
+第二类语义记忆，和 3.3 节的 `object` 类（按坐标存取）**不共用存储**——直接转发
+`memory/knowledge/store.py` 的 `load_all()`，`MemoryTool` 这一层不做任何编排，
+因为这类知识没有"一次按键该查哪几格候选"这种游戏规则性质的判断要做，
+读端只是原样转发。
+
+**不缓存，每次调用都重新读盘**：这里没有像 `_episodes`/`_objects` 那样的实例
+字段存一份 `knowledge`，构造函数也没有多收一个参数——`__init__` 完全不变。
+这是刻意的：知识库是要**运营**的东西，要能一边跑着 episode 一边改
+`memory/knowledge/*.md` 文件、不重启进程就生效；缓存在构造时读一次的话，
+中途改了文件也影响不到正在跑的这一局。每一步一次磁盘读、个位数小文件，
+这个代价完全可以接受。
+
+消费方：`Harness._retrieve_memory()`（不是 `_observe()`），和 `known_here()`
+的结果一起折进 `obs.facts`，见 `harness/SPEC.md` 4.5 节。
+
 ---
 
 ## 4. Port 方法签名总表
@@ -559,6 +583,7 @@ docstring 记录了一个真实踩过的坑：早一版这里返回的是给模�
 | `write_episodic` | `(entry: MemoryEntry) -> None` | 前置：`entry.rationale` 非空 |
 | `episodic_size`（property） | `-> int` | 库里情景记忆条数；A/B 实验自变量 |
 | `known_here` | `(obs: Observation) -> str` | 后置：`obs.place` 为 None 或无已知条目时返回空串 |
+| `knowledge_base` | `() -> str` | 和坐标无关的通用先验；不筛选，全部拼接；每次调用重新读盘，不缓存；库为空返回空串 |
 | `see_objects` | `(obs: Observation, stamp: str) -> None` | 前置：一步只调一次，`stamp` 非空 |
 | `note_step` | `(before: Observation, action: Action, after: Observation) -> list[ObjectFact]` | 前置：`before`/`after` 都有 `place`；算不出确定格子时不记，宁可漏记不可记错 |
 
@@ -587,6 +612,11 @@ docstring 记录了一个真实踩过的坑：早一版这里返回的是给模�
   `interfaces/tools.py` 的 `MemoryToolPort` 才是 Harness 真正认识的那一层。
   情景记忆（`self._episodes: list[MemoryEntry]`）则没有额外协议层，直接是
   `MemoryTool` 自己管理的列表。
+
+- **`MemoryTool.knowledge_base()` 直接转发 `memory/knowledge/store.py` 的
+  `load_all()`**，不经过 `SemanticObjectStore`、不经过任何协议层——`MemoryTool`
+  这一侧没有为它多存一个字段，每次调用都是一次直接的函数调用 + 磁盘读。这类
+  记忆没有编排逻辑要做，`port.py` 那套 Reader/Writer/Store 三件套对它是过度设计。
 
 - **Harness 是组合两者的地方**：`Harness.__init__` 收 `game: GameToolPort` 和
   `memory: MemoryToolPort` 两个独立参数；`facts["known_objects"]` 这类需要

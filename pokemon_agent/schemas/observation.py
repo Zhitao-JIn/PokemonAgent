@@ -210,6 +210,11 @@ SCENE_FIELDS: dict[Scene, tuple[str, ...]] = {
     Scene.FIELD: (),
     Scene.INDOOR: (),
     Scene.BATTLE: ("my_name", "my_level", "my_hp", "foe_name", "foe_level", "foe_hp"),
+    # `my_hp` 是 `当前/最大` 数字（我方状态框右下角有数字 HP）；
+    # `foe_hp` 没有数字可抄——对手状态框原版就只有一条血条，没有 `当前/最大`
+    # 这种数字，所以 `foe_hp` 填的是血条挡位（满/较高/过半/较低/危险），
+    # 不是分数。两个字段格式不一样，是画面本身决定的，不是疏漏。
+    # 见 `prompts/perceive_screen.md` 第二节。
     Scene.MENU: ("title",),
     Scene.SHOP: ("money", "items"),
     Scene.TRANSITION: (),
@@ -582,7 +587,7 @@ EXAMPLES: dict[Scene, ScreenState] = {
         options=["FIGHT", "PKMN", "ITEM", "RUN"],
         cursor=0,
         fields={
-            "foe_name": "CHARMANDER", "foe_level": "5", "foe_hp": "18/18",
+            "foe_name": "CHARMANDER", "foe_level": "5", "foe_hp": "满",
             "my_name": "AL", "my_level": "5", "my_hp": "19/19",
         },
     ),

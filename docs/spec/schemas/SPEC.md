@@ -180,7 +180,7 @@ task.py  (无对本模块内其他文件的依赖)
 ### 2.12 常量：`SCENE_FIELDS: dict[Scene, tuple[str, ...]]`
 
 - `FIELD: ()`、`INDOOR: ()` —— 无字段
-- `BATTLE: ("my_name","my_level","my_hp","foe_name","foe_level","foe_hp")`
+- `BATTLE: ("my_name","my_level","my_hp","foe_name","foe_level","foe_hp")`——`my_hp` 是 `当前/最大` 数字（我方状态框右下角有数字 HP）；`foe_hp` 没有数字可抄，填血条挡位（满/较高/过半/较低/危险），因为 Gen1 原版对手状态框只有一条血条，没有 `当前/最大` 这种数字——两个字段格式不一样是画面本身决定的，不是遗漏（见 `prompts/perceive_screen.md` 第二节）
 - `MENU: ("title",)`
 - `SHOP: ("money","items")`
 - `TRANSITION: ()`
