@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from pokemon_agent.memory.semantic.knowledge import load_all as _load_knowledge_base
+from pokemon_agent.memory.semantic.knowledge.store import load_all as _load_knowledge_base
 from pokemon_agent.memory.port import SemanticObjectStore
 from pokemon_agent.memory.semantic.object_store import ObjectMemory
 from pokemon_agent.memory.util import kind_in_frame, parse_landmarks, surrounding_cells

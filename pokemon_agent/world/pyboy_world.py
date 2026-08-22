@@ -111,8 +111,8 @@ assert {b for buttons in OVERLAY_ACTIONS.values() for b in buttons} <= set(ALL_B
 )
 
 PRESS_FRAMES = 10          # 按键按住多少帧
-WITHIN_ACTION_FRAMES = 60  # 连按时，每次按完推进多少帧（1 秒）
-AFTER_ACTION_FRAMES = 120  # 整个动作结束后再推进多少帧（2 秒），然后才感知
+WITHIN_ACTION_FRAMES = 120  # 连按时，每次按完推进多少帧（1 秒）
+AFTER_ACTION_FRAMES = 360  # 整个动作结束后再推进多少帧（2 秒），然后才感知
 BOOT_FRAMES = 600          # 无存档时空转多少帧越过开机 logo
 
 
