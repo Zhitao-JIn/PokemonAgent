@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from pokemon_agent.memory.knowledge.store import load_all as _load_knowledge_base
 from pokemon_agent.memory.port import SemanticObjectStore
 from pokemon_agent.memory.semantic.object_store import ObjectMemory
 from pokemon_agent.memory.util import kind_in_frame, parse_landmarks, surrounding_cells
@@ -45,6 +46,9 @@ class MemoryTool:
         self._objects: SemanticObjectStore = objects or ObjectMemory()
         """默认建一个 `ObjectMemory`，但接受注入——**类型标成协议**，测试可以喂一个
         假实现，将来换存储后端也不用碰这个类的任何一行。"""
+        self._knowledge = _load_knowledge_base()
+        """开局读一次就够——`memory/knowledge/*.md` 的内容在一次进程运行期间
+        不会变，没必要每次调用 `knowledge_base()` 都重新扫一遍目录。"""
 
     # ---- 情景记忆：episodic ----
 
@@ -118,6 +122,10 @@ class MemoryTool:
             return ""
         lines = [fact.render() for fact in self._objects.query_map(obs.place.map_id)]
         return "\n".join(sorted(lines))
+
+    def knowledge_base(self) -> str:
+        """通用游戏先验，原样返回——**不按任何东西筛**，见 `memory/knowledge/store.py`。"""
+        return self._knowledge
 
     def see_objects(self, obs: Observation, stamp: str) -> None:
         """把这一帧看到的地标全部记进语义记忆（没互动过的也记）。

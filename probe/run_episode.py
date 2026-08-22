@@ -29,10 +29,9 @@ from datetime import datetime
 
 from pokemon_agent.build import build_real
 from pokemon_agent.errors import AgentError
-from pokemon_agent.mocks.mock_trace import MockTrace
 from pokemon_agent.schemas.task import Task
 from pokemon_agent.schemas.trace import EventType, Source
-from probe.echo_trace import EchoTrace
+from pokemon_agent.trace.store import MockTrace
 
 ROM = "assets/rom"
 STATE = "assets/rom.state"
@@ -102,8 +101,9 @@ def main() -> None:
         max_steps=max_steps,
     )
 
-    # 实时打印挂在 trace 上，不往图节点里塞 print：
-    # 实时观测和事后 replay 看的是同一份数据，不会出现「只有控制台有」的信息。
+    # 实时打印现在是 `MockTrace.sse()` 自带的行为（`append()` 落盘之后自动调它），
+    # 不用再另外包一层装饰器：实时观测和事后 replay 看的是同一份数据，
+    # 不会出现「只有控制台有」的信息。
     # id 规则：
     #   run_id      一次进程调用，时间戳
     #   episode_id  run_id + 序号，**全局唯一**
@@ -115,7 +115,7 @@ def main() -> None:
         ROM, state,
         vision_model=vision_model, text_model=text_model,
         judge_model=judge_model, grid=grid, max_tokens=max_tokens,
-        watch=watch, trace=EchoTrace(MockTrace(run_id=run_id)),
+        watch=watch, trace=MockTrace(run_id=run_id),
     )
     print(f"task      {goal}")
     print(f"criteria  {task.success_criteria}")

@@ -20,9 +20,9 @@ from __future__ import annotations
 from pokemon_agent.brain.brain import Brain
 from pokemon_agent.harness.harness import Harness
 from pokemon_agent.interfaces.trace import TracePort
-from pokemon_agent.mocks.mock_trace import MockTrace
 from pokemon_agent.tools.game_tools import GameTools
 from pokemon_agent.tools.memory_tool import MemoryTool
+from pokemon_agent.trace.store import MockTrace
 from pokemon_agent.world.pyboy_world import PyBoyWorld
 
 
@@ -76,4 +76,10 @@ def build_real(
     )
     # `game` 只碰 world，`memory` 只碰记忆——两个互不相识的对象，
     # 组合是 `Harness` 的事，见 `interfaces/tools.py` 顶部说明。
+    #
+    # `Harness` 拿到的是裸的 `TracePort`——组装 payload 是 `trace/utils.py`
+    # 里那堆纯函数的事（`Harness` 调用它们，自己不拼 `dict`），落地/推流是
+    # `TracePort` 具体实现（这里是 `MockTrace`）的事。返回值里的 `trace`
+    # 和 `Harness` 手上那个是同一个对象，调用方可以直接用它做 `all_events()`
+    # 这类调试查询。
     return Harness(game, memory, brain, trace), trace, world
