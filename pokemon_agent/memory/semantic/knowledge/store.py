@@ -3,18 +3,21 @@
 和 `memory/semantic/object_store.py` 的区别：那边记的是"这一格东西是什么、
 互动过没有"，是 agent 自己在这一局/跨局探索出来的，天然按坐标索引；这里放的
 是不需要探索、写死就对的游戏机制常识（比如"草丛要多走几步才会遇到野生
-宝可梦，可以连按走到草丛尽头，不用一格一格试"）——这类知识不属于任何一格，
-agent 每一局开局就该知道，不该靠它自己撞几十次墙才总结出来。
+宝可梦，可以连按走到草丛尽头，不用一格一格试"、"水系克制火系"这类攻略型知识）
+——这类知识不属于任何一格，agent 每一局开局就该知道，不该靠它自己撞几十次墙
+才总结出来。
 
 存成 `.md` 而不是 Python 字符串常量：这些是要**运营/迭代**的内容——加一条新的
 游戏机制先验，应该是加一个 `.md` 文件或者编辑一段文字，而不是改代码。
 
-## 检索策略：全部读入，不筛选
+## 检索策略：按文件作为检索单元
 
-现在只有个位数条目，**筛选的成本（写检索逻辑、可能筛漏）比直接全喂给模型的
-token 成本更高**。等条目多到影响 prompt 长度、或者出现互相矛盾/不相关的知识时，
-再按需要引入相关性检索（比如复用 `MemoryTool.query_episodic` 那套字符重叠打分，
-或者换更好的方案）——这一层现在不用为了那个还没到来的问题预留复杂接口。
+**这条规则已经变了**——早先"全部读入"的判断，是在知识库只有少量内容时下的。
+现在每个 `.md` 文件是一个独立知识 chunk，交给 `MemoryTool` 用和跨局摘要记忆一样
+的混合检索（见 `memory/retrieval.py`）按需挑出相关文件，而不是整座知识库照单全收。
+
+`load_all()` 留着没删，供需要整合知识库文本的调用方使用；`load_chunks()` 保留
+文件边界，避免把不同主题的 markdown 拼成一个检索单元。
 """
 
 from __future__ import annotations
@@ -27,9 +30,35 @@ _DIR = pathlib.Path(__file__).parent
 def load_all() -> str:
     """把这个目录下所有 `.md` 文件的内容原样拼起来，按文件名排序（确定性）。
 
-    **不做任何筛选、不做检索**——现在条目少，直接全喂比筛选更便宜也更不容易漏。
-
     后置条件：目录下没有任何 `.md` 文件时返回空串。
     """
     files = sorted(p for p in _DIR.glob("*.md"))
     return "\n\n".join(f.read_text(encoding="utf-8").strip() for f in files)
+
+
+def load_chunks() -> list[str]:
+    """把每个非空 `.md` 文件作为一个独立 chunk，按文件名确定顺序。
+
+    不在文件内部按段落拆分：同一文件中的标题、说明和例子共同构成一个知识主题，
+    保留在同一个检索单元里，避免召回段落时丢失上下文。
+
+    后置条件：目录下没有任何 `.md` 文件、或全部文件都是空文件时返回空列表——
+        调用方（`MemoryTool.knowledge_base`）据此知道"没有知识可检索"，
+        不必特殊处理"检索了但库是空的"这种情况，两者应该是同一件事。
+    """
+    files = sorted(p for p in _DIR.glob("*.md"))
+    return [text for f in files if (text := f.read_text(encoding="utf-8").strip())]
+
+
+def mtime() -> float:
+    """知识库目录下全部 `.md` 文件里最新的修改时间；没有文件时返回 0.0。
+
+    `MemoryTool` 用它判断"要不要重新算一遍知识片段的 embedding"——
+        embedding 现算一次有成本，但知识库内容会被运营编辑，值得按"文件有没有变过"
+        决定要不要重新读取文件并重算 embedding，
+    见 `MemoryTool.knowledge_base` 的说明。
+    """
+    files = list(_DIR.glob("*.md"))
+    if not files:
+        return 0.0
+    return max(f.stat().st_mtime for f in files)

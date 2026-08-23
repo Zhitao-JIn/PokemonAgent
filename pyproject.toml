@@ -6,7 +6,13 @@ requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.6",
     "langgraph>=0.2",
+    "fastembed>=0.8",
+    "rank-bm25>=0.2",
 ]
+# fastembed：本地跑 embedding/reranker（ONNX runtime，不需要 torch），首次用某个模型时
+# 会从 HuggingFace Hub 下一次权重、之后离线复用——这是"混合检索"（关键词 BM25 +
+# 向量 + reranker 精排）里向量和精排两段用的库，见 memory/retrieval.py。
+# rank-bm25：纯 Python 的 BM25 实现，混合检索里关键词那一段用它，不用再手写一遍。
 
 [project.optional-dependencies]
 dev = [

@@ -31,7 +31,8 @@ from pokemon_agent.build import build_real
 from pokemon_agent.errors import AgentError
 from pokemon_agent.schemas.task import Task
 from pokemon_agent.schemas.trace import EventType, Source
-from pokemon_agent.trace.store import MockTrace
+from pokemon_agent.trace.store import LocalTrace
+from pokemon_agent.trace.browser import BrowserTraceServer
 
 try:
     from pokemon_agent.trace.index import EpisodeIndex
@@ -128,6 +129,9 @@ def build_session(run_id: str, state: str | None, watch: bool):
         print("要从 ROM 开头跑请指定 --state none")
         sys.exit(1)
 
+    browser = BrowserTraceServer()
+    browser.start()
+    print(f"[INFO] 浏览器观测台: {browser.url}")
     return build_real(
         ROM,
         state,
@@ -137,7 +141,7 @@ def build_session(run_id: str, state: str | None, watch: bool):
         grid="on",
         max_tokens=25600,
         watch=watch,
-        trace=MockTrace(run_id=run_id),
+        trace=LocalTrace(run_id=run_id, sse_sink=browser.publish),
     )
 
 

@@ -1,0 +1,1 @@
+{"event_id":4,"run_id":"0823-164419-734555","episode_id":"0823-164419-734555-ep164447164","step":0,"type":"episode_end","phase":"episode","source":"harness","payload":{"success":"False","steps":"-1","reason":"error","task_id":"t1bddbb73","why":"ModuleNotFoundError: No module named 'fastembed'"},"ts":60290.472298,"schema_version":2}

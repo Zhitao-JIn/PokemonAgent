@@ -119,6 +119,7 @@ from pokemon_agent.interfaces.brain import BrainPort
 from pokemon_agent.interfaces.tools import GameToolPort, MemoryToolPort
 from pokemon_agent.interfaces.trace import TracePort
 from pokemon_agent.schemas.action import Action, ActionSpace, Goal, Intent
+from pokemon_agent.schemas.memory_episode import EpisodeMemory
 from pokemon_agent.schemas.memory_episodic import MemoryEntry, Snapshot
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.schemas.task import Task
@@ -128,6 +129,11 @@ from pokemon_agent.trace import utils as trace_utils
 MEMORY_RECALL_LIMIT = 5
 """每次决策检索几条情景记忆。原来是 `Brain` 构造时的 `memory_limit` 参数——
 大脑不再持有检索通道之后，"查几条"变成了循环控制的事，搬到这里来。
+"""
+
+EPISODE_MEMORY_RECALL_LIMIT = 3
+"""每次决策检索几条跨局摘要记忆。比 `MEMORY_RECALL_LIMIT` 小：这是"别的局
+蒸馏出的经验"，本来就该比"这一局刚发生的事"占更少的 prompt 篇幅。
 """
 
 JUDGE_HISTORY = 3
@@ -211,7 +217,7 @@ class Harness:
 
     def __init__(
         self, game: GameToolPort, memory: MemoryToolPort,
-        brain: BrainPort, trace: TracePort,
+        brain: BrainPort, trace: TracePort, run_id: str = "local",
     ) -> None:
         self._game = game
         self._memory = memory
@@ -224,6 +230,13 @@ class Harness:
         """裸的 `TracePort`。`Harness` 自己调 `append()`，但从不自己拼
         `dict[str, str]`——payload 全部由 `trace_utils` 里的纯函数组装好，
         这里只负责在正确的时机把它们的输出转给 `self._trace.append(*...)`。
+        """
+        self._run_id = run_id
+        """蒸馏跨局摘要记忆（`MemoryTool.summarize_episode`）时要标在
+        `EpisodeMemory.run_id` 上——`TracePort` 的实现自己持有一份同样的
+        `run_id`（见 `interfaces/trace.py`），但那个不对调用方暴露 getter，
+        `Harness` 只能自己另外持有一份。默认值和 `LocalTrace(run_id="local")`
+        的默认值保持一致，避免两处默认值打架。
         """
         self._graph = self._compile()
 
@@ -384,13 +397,14 @@ class Harness:
         （位置/概况/地标/通行图），summary 是"你在野外"这种一句话，
         两边词汇几乎不重叠，字符打分会一条都选不中。
 
-        ## `known_objects`/`knowledge` 也在这里查，**不在 `_observe()` 里**
+        ## `known_objects`/`knowledge`/`episode_memories` 也在这里查，**不在 `_observe()` 里**
 
-        两者都是语义记忆的读——`known_here()` 按坐标查这张地图互动过的东西，
-        `knowledge_base()` 查和坐标无关的通用先验——是"查记忆"，不是"看一眼"。
-        放进 `_observe()`（`look` 节点）的话，"每一步先查记忆再决策"这条规则
-        就又变回散在两个节点里、图上看不出来，而这正是当初把 `retrieve_memory`
-        拆成独立节点要解决的问题。
+        三者都是记忆的读，不是"看一眼"：`known_here()` 按坐标查这张地图互动过的东西
+        （语义记忆·object），`knowledge_base()` 查和坐标无关的通用先验（语义记忆·
+        knowledge），`query_episode_memories()` 查和当前任务相关的、别的局蒸馏出的
+        经验（跨局摘要记忆，见 `schemas/memory_episode.py`）。放进 `_observe()`
+        （`look` 节点）的话，"每一步先查记忆再决策"这条规则就又变回散在多个节点里、
+        图上看不出来，而这正是当初把 `retrieve_memory` 拆成独立节点要解决的问题。
 
         代价是它们**发生在 judge 之后**（`_observe()`/`look` 已经判过这一步）——
         这其实是好事，不是坏事：`knowledge` 之前放在 `_observe()` 里时，
@@ -405,19 +419,36 @@ class Harness:
         """
         assert state.observation is not None, "retrieve_memory before look"
         obs, ep, step = state.observation, state.episode_id, state.observation.step
-        memories = self._memory.query_episodic(
-            Snapshot.of(obs).render(), limit=MEMORY_RECALL_LIMIT
-        )
+        memories = self._memory.query_episodic(ep)
 
         known = self._memory.known_here(obs)
         if known:
             obs = obs.model_copy(update={"facts": {**obs.facts, "known_objects": known}})
-        knowledge = self._memory.knowledge_base()
+        knowledge = self._memory.knowledge_base(query=state.task.goal, limit=MEMORY_RECALL_LIMIT)
         if knowledge:
             obs = obs.model_copy(update={"facts": {**obs.facts, "knowledge": knowledge}})
 
+        # 跨局摘要记忆：查"和当前任务相关的、别的局蒸馏出的经验"，不是"这一帧长什么样"，
+        # 所以查询词用 `state.task.goal`，不是 `Snapshot.of(obs).render()`——
+        # `EpisodeMemory.render()` 里压根没有位置/地标这些字段，拿快照去比只会一条都选不中。
+        # 场景过滤需要一个具体地图；`obs.place` 为 None（刚重置、过场动画里）时没有场景可过滤，
+        # 这一步直接跳过，和 `known_here()` 处理 `obs.place is None` 的方式一致。
+        episode_memories: list[EpisodeMemory] = []
+        if obs.place is not None:
+            episode_memories = self._memory.query_episode_memories(
+                scene=str(obs.place.map_id), query=state.task.goal,
+                limit=EPISODE_MEMORY_RECALL_LIMIT,
+            )
+            if episode_memories:
+                rendered = "\n\n".join(m.render() for m in episode_memories)
+                obs = obs.model_copy(
+                    update={"facts": {**obs.facts, "episode_memories": rendered}}
+                )
+
         # 检索发生在决策模型调用之前，事件顺序照实写——**因果顺序**，不是排版偏好。
-        self._trace.append(*trace_utils.memory_read(ep, step, memories, known, knowledge))
+        self._trace.append(
+            *trace_utils.memory_read(ep, step, memories, known, knowledge, episode_memories)
+        )
         return {"observation": obs, "memories": memories}
 
     def _think(self, state: LoopState) -> dict[str, Any]:
@@ -791,5 +822,29 @@ class Harness:
             episode_id=state.episode_id, task_id=state.task.task_id,
             success=obs.success, steps=obs.step, reason=reason,
         )
+        self._summarize_episode(state, result)
         self._trace.append(*trace_utils.episode_end(state.episode_id, result, why))
         return result
+
+    def _summarize_episode(self, state: LoopState, result: EpisodeOutcome) -> None:
+        """这一局落盘的**唯一**跨局摘要记忆写入点：`_outcome()` 里、`EPISODE_END` 之前调一次。
+
+        **不在每一步调**——单步情景记忆（`MemoryEntry`）和语义记忆（object）才是
+        每步在 `_remember()` 里落盘的那两类；跨局摘要记忆的检索单元是一整局，
+        自然也只在一整局跑完之后蒸馏一次，见 `schemas/memory_episode.py` 顶部
+        对两类记忆的区分。
+
+        蒸馏依赖一次额外的 LLM 调用，会失败（`EpisodeMemoryGenerator.generate_summary`
+        解析不出合法 JSON 时抛 `ValueError`，且已经在内部留了一条 `ERROR` trace 事件，
+        见 `memory/episode_summarizer.py`）。这里只吞这一种、单据齐全的失败——
+        蒸馏失败不该拖累这一局本该正常记的 `EPISODE_END`：这一局确实跑完了，
+        只是没能力提炼经验，这是两件事。
+        """
+        try:
+            self._memory.summarize_episode(
+                state.episode_id, self._run_id, state.task.goal,
+                {"success": result.success, "steps": result.steps,
+                 "max_steps": state.task.max_steps},
+            )
+        except ValueError:
+            pass

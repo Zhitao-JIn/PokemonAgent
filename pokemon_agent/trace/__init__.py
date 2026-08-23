@@ -4,7 +4,7 @@
 `replay`/`sse`），刻意不认识任何领域类型。这个包放的是围绕它的两件具体的事，
 而且**故意不合并成一个类**：
 
-- `store.MockTrace` —— `TracePort` 的一个具体实现：`append` 落盘（内存列表）、
+- `store.LocalTrace` —— `TracePort` 的本地具体实现：`append` 落盘（内存列表）、
   `replay` 历史拉取、`sse` 推流（现在打印到控制台，以后推给浏览器）。
   它只认识 `EventType`/`Source`/`payload: dict[str, str]` 这些 trace 自己的类型。
 - `utils` —— 一组纯函数，把领域对象（`Observation`/`Action`/`Goal`/

@@ -119,6 +119,9 @@ class Source(str, Enum):
     HARNESS = "harness"         # 掩码、记忆、生命周期
     WORLD = "world"             # 模拟器
     JUDGE = "judge"             # 成败判定 —— 和决策分开记账，才算得出它自己的准确率
+    MEMORY = "memory"           # 跨局摘要记忆生成（EpisodeMemoryGenerator）——
+    # 和 DECISION 分开记账：这条链的 token 花费不发生在 ReAct 循环里，
+    # 一局只烧一次，混进 DECISION 会让"决策平均成本"这个数字失真。
 
 
 class EventType(str, Enum):
@@ -152,6 +155,13 @@ class EventType(str, Enum):
     """
     ERROR = "error"
     CHECKPOINT = "checkpoint"
+    EPISODE_MEMORY_WRITE = "episode_memory_write"
+    """写入一条跨局摘要记忆（`EpisodeMemory`，见 `schemas/memory_episode.py`）。
+
+    **和 `MEMORY_WRITE` 分开**：那是单步记忆，一局内产生也可能一局内被读回；
+    这条是一局结束后蒸馏出的摘要，跨局存在、跨局检索。混成一类，
+    "一局到底攒了几条经验 vs 沉淀出几条可复用摘要"这两个数就分不出来了。
+    """
 
 
 class TraceEvent(BaseModel):
@@ -170,6 +180,11 @@ class TraceEvent(BaseModel):
     episode_id: str = Field(description="所属 episode")
     step: int = Field(description="发生在第几步。**不是主键**——一步内有多条事件")
     type: EventType
+    phase: str = Field(
+        default="",
+        description="循环阶段（observe / retrieve_memory / think / act 等）。"
+        "由事件类型推导，和 episode_id + step 一起供观测台聚合。",
+    )
     source: Source = Field(description="由哪一层产生。成本拆分与失败归因都按它切")
     payload: dict[str, str] = Field(default_factory=dict, description="该类型的结构化内容")
     ts: float = Field(

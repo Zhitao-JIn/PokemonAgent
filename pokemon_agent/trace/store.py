@@ -26,14 +26,25 @@ COST_LABEL: dict[Source, str] = {
     Source.DECISION: "decision_cost",
     Source.JUDGE: "judge_cost",
 }
+
+PHASE_BY_TYPE: dict[EventType, str] = {
+    EventType.OBSERVE: "observe", EventType.MODEL_CALL: "model_call",
+    EventType.THINK: "think", EventType.ACT: "act",
+    EventType.MEMORY_READ: "retrieve_memory", EventType.MEMORY_WRITE: "memory_write",
+    EventType.OBJECT_NOTE: "memory_write", EventType.EPISODE_MEMORY_WRITE: "memory_write",
+    EventType.INSPECT: "inspect", EventType.GOAL_PUSH: "goal", EventType.GOAL_POP: "goal",
+    EventType.ERROR: "error", EventType.EPISODE_START: "episode",
+    EventType.EPISODE_END: "episode", EventType.CHECKPOINT: "checkpoint",
+}
 """MODEL_CALL 事件的标签，要带 `_cost` 后缀：这一行报的是这次调用花了多少
 （token、延迟），不是"感知到了什么"，混进 `perception`/`observe` 会当成一件事。
 """
 
 
-class MockTrace:
-    def __init__(self, run_id: str = "local") -> None:
+class LocalTrace:
+    def __init__(self, run_id: str = "local", sse_sink: object | None = None) -> None:
         self._run_id = run_id
+        self._sse_sink = sse_sink
         self._run_dir = STORAGE_ROOT / run_id
         self._episodes_dir = self._run_dir / "episodes"
         self._events: list[TraceEvent] = []
@@ -67,6 +78,7 @@ class MockTrace:
             episode_id=episode_id,
             step=step,
             type=type,
+            phase=PHASE_BY_TYPE.get(type, type.value),
             source=source,
             payload=payload or {},
             ts=(datetime.combine(datetime.min, datetime.now().time()) - datetime.min).total_seconds(),
@@ -140,13 +152,19 @@ class MockTrace:
 
         调用点不变，换的只是这一个方法内部的实现。
         """
+        if callable(self._sse_sink):
+            self._sse_sink(event)
         ep, step, type_, source = event.episode_id, event.step, event.type, event.source
         p = event.payload
+
+        if type_ in (EventType.OBSERVE, EventType.MEMORY_READ, EventType.THINK,
+                     EventType.ACT, EventType.INSPECT, EventType.MEMORY_WRITE):
+            return
 
         # 表头逻辑（在所有分支之前）：EPISODE_START/END 不属于某一步，跳过。
         if type_ not in (EventType.EPISODE_START, EventType.EPISODE_END):
             if self._step_shown != (ep, step):
-                print(f"\nstep {step}")
+                print(f"\n----- STEP {step} -----")
                 self._step_shown = (ep, step)
 
         if type_ is EventType.EPISODE_START:
@@ -180,10 +198,14 @@ class MockTrace:
                 print(self._wrapped("goals", p["goals"]))
 
         elif type_ is EventType.MEMORY_READ:
-            print(f"{'recall':<{LABEL_W}} count={p.get('count', '0')} "
+            print("--- MEMORY RETRIEVAL ---")
+            print(f"{'step_memory':<{LABEL_W}} count={p.get('step_memory_count', p.get('count', '0'))} "
                   f"refs={p.get('refs', '')}")
-            print(self._wrapped("known_objects", p.get("known_objects", "(无)")))
-            print(self._wrapped("knowledge", p.get("knowledge", "(无)")))
+            print(f"{'known_object':<{LABEL_W}} {p.get('known_object_names', '(无)')}")
+            print(f"{'knowledge':<{LABEL_W}} {p.get('knowledge_titles', '(无)')}")
+            print(f"{'episode_level':<{LABEL_W}} "
+                  f"count={p.get('episode_level_count', p.get('episode_memory_count', '0'))} "
+                  f"refs={p.get('episode_memory_refs', '')}")
 
         elif type_ is EventType.THINK:
             # 上一版这里连 action/×N/第几次尝试 一起打印，跟紧随其后的 ACT
@@ -275,3 +297,7 @@ class MockTrace:
     def all_events(self) -> list[TraceEvent]:
         """获取所有事件（供测试使用）"""
         return self._events
+
+
+# 兼容旧测试和外部脚本；新代码统一使用 LocalTrace。
+MockTrace = LocalTrace

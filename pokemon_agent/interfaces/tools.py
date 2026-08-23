@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
-from typing import Dict, Any, List
 
 from pokemon_agent.schemas.action import Action, ActionSpace, ToolResult
+from pokemon_agent.schemas.memory_episode import EpisodeMemory
 from pokemon_agent.schemas.memory_episodic import MemoryEntry
 from pokemon_agent.schemas.memory_semantic import ObjectFact
 from pokemon_agent.schemas.observation import PerceptionResult, Observation
@@ -84,20 +84,29 @@ class GameToolPort(Protocol):
 
 @runtime_checkable
 class MemoryToolPort(Protocol):
-    """Harness 用它读写记忆：情景记忆 + 语义记忆（object）。**不碰世界。**
+    """Harness 用它读写记忆：情景记忆 + 语义记忆（object + knowledge）+ 跨局摘要记忆。
+    **不碰世界。**
 
-    两类记忆分开暴露，因为它们的读写语义不同：情景记忆按相似度/时间检索，
-    语义记忆按坐标查。程序记忆（procedural）还没做，先不占位。
+    几类记忆分开暴露，因为它们的读写语义不同：单步情景记忆**全量返回**（一局的
+    单步记忆本来就该完整保留、完整交给决策，见 `query_episodic` 的说明）；
+    语义记忆（object）按坐标查；跨局摘要记忆和知识库都走同一套混合检索
+    （关键词 + 向量 + reranker，见 `memory/retrieval.py`）。程序记忆
+    （procedural）还没做，先不占位。
     """
 
     # ---- 情景记忆：episodic ----
 
-    def query_episodic(self, query: str, limit: int = 5) -> list[MemoryEntry]:
-        """检索相关的情景记忆。
+    def query_episodic(self, episode_id: str) -> list[MemoryEntry]:
+        """**这一局**全部的单步情景记忆，按发生顺序（`step` 升序）。
 
-        前置条件：limit > 0。
-        后置条件：返回条数 <= limit；按相关性降序。
-            **检索策略属于实现方**——调用方不知道也不该知道记忆从哪来、怎么排的。
+        **不做相关性排序、不截断**——单步记忆本来就该完整保留：它记的是
+        "这一步做过什么、结果如何"，是这一局自己的完整轨迹，不是从一个大库里
+        挑几条相关的出来，见 `schemas/memory_episode.py` 顶部对
+        `MemoryEntry`（单步、全量、限定这一局）和 `EpisodeMemory`（跨局、
+        检索、限定相关）的区分。
+
+        前置条件：`episode_id` 非空。
+        后置条件：返回的每一条 `entry.episode_id == episode_id`；按 `step` 升序。
         """
         ...
 
@@ -120,6 +129,52 @@ class MemoryToolPort(Protocol):
     @property
     def episodic_size(self) -> int:
         """库里有多少条情景记忆。**A/B 实验的自变量之一**，要能被记进事件流。"""
+        ...
+
+    # ---- 跨局摘要记忆：episode memory ----
+    #
+    # 和上面的"情景记忆"是两条不同的检索路径（见 `schemas/memory_episode.py` 顶部
+    # 对 `MemoryEntry` vs `EpisodeMemory` 的区分）：这里检索/写入的单元是**一整局**，
+    # 不是一步，一局内的单步记忆不会、也不该经这两个方法被跨局取走。
+
+    def query_episode_memories(self, scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]:
+        """检索和当前场景相关的跨局摘要记忆。
+
+        前置条件：`scene` 非空；`limit > 0`。
+        后置条件：返回条数 <= limit；按"场景匹配 + 相关性 + 质量/成功"降序——
+            **检索策略属于实现方**，调用方不知道也不该知道具体怎么排的。
+            场景过滤允许"通用经验"（`applicable_scenes` 为空或含通配值）参与任何场景的检索，
+            见 `EpisodeMemory.matches_scene`；实现方在"精确匹配场景"命中为空时，
+            必须退回到"只看通用经验"而不是直接返回空列表——一次标注失误
+            （LLM 蒸馏时场景标错）不该让这条摘要在所有场景下都检索不到。
+        """
+        ...
+
+    def write_episode_memory(self, entry: EpisodeMemory) -> None:
+        """写入一条跨局摘要记忆。
+
+        前置条件：`entry.rationale` 非空、`entry.content.summary` 非空——
+            没有总结和理由的摘要，检索回来也无法判断它凭什么被认为有价值。
+        """
+        ...
+
+    @property
+    def episode_memory_size(self) -> int:
+        """库里有多少条跨局摘要记忆。同 `episodic_size`，是要能被记进事件流的可观测量。"""
+        ...
+
+    def summarize_episode(
+        self, episode_id: str, run_id: str, goal: str, outcome: dict[str, str | int | bool]
+    ) -> EpisodeMemory:
+        """一局结束时调用：把这一局的单步记忆蒸馏成一条跨局摘要记忆，写入并返回。
+
+        前置条件：`episode_id` 对应的单步记忆已经全部写完——调用方（Harness）
+            保证在真正结束这一局之后才调它，不是提前调。`outcome` 至少含
+            `success`（bool）与 `steps`（int）。
+        失败：蒸馏用的 LLM 输出解析不出合法结构时抛 `ValueError`，不吞——
+            解析失败是预期内的运行时情况，调用方决定要不要吞掉这次失败
+            （Harness 的选择是吞：见 `harness/harness.py` 的 `_summarize_episode`）。
+        """
         ...
 
     # ---- 语义记忆：object ----
@@ -150,37 +205,17 @@ class MemoryToolPort(Protocol):
         ...
 
     # ---- 语义记忆：知识库（和坐标无关的通用先验） ----
-    def knowledge_base(self) -> str:
-        """项目自带的通用游戏先验（草丛怎么走、类似的机制常识……），全部拼成一段文字。
+    def knowledge_base(self, query: str, limit: int = 5) -> str:
+        """项目自带的通用游戏先验（草丛怎么走、属性克制表、道馆打法……）里，
+        和 `query` 相关的那几条，拼成一段文字。
 
-        和 `known_here()` 不同：那个按 `obs.place` 筛，这个**不按任何东西筛**——
-        内容和当前站在哪一格无关，agent 每一局开局就该知道。
-        后置条件：库是空的时返回空串——调用方据此决定要不要往 `facts` 里塞东西。
-        """
-        ...
+        和 `known_here()` 不同：那个按 `obs.place` 筛，这个不按坐标筛，
+        按内容相关性筛——知识库条目量级会随内容增长（不再是"个位数、全喂"
+        那个阶段，见 `memory/semantic/knowledge/store.py` 顶部说明），
+        混合检索（关键词 + 向量 + reranker）负责从里面挑出这一步真正用得上的。
 
-    # ---- 情景记忆生成：episode摘要 ----
-    def generate_and_store_episode_summary(
-        self,
-        episode_id: str,
-        run_id: str,
-        goal: str,
-        outcome: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """生成并存储情景记忆摘要
-
-        前置条件: episode_id非空，outcome包含success和steps
-        后置条件: 新记忆已存入系统，model_call将被trace记录
-
-        Args:
-            episode_id: episode标识符
-            run_id: run标识符
-            goal: 任务目标
-            outcome: 任务执行结果
-
-        Returns:
-            Dict包含:
-                - model_call: 记录LLM调用的关键信息
-                - memory_id: 新记忆的ID
+        前置条件：`query` 非空；`limit > 0`。
+        后置条件：返回条数 <= limit 条知识片段拼接；库是空的、或检索不到
+            任何片段时返回空串——调用方据此决定要不要往 `facts` 里塞东西。
         """
         ...

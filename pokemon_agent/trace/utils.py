@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 
 from pokemon_agent.schemas.action import Action, Goal
+from pokemon_agent.schemas.memory_episode import EpisodeMemory
 from pokemon_agent.schemas.memory_episodic import MemoryEntry
 from pokemon_agent.schemas.memory_semantic import ObjectFact
 from pokemon_agent.schemas.observation import Observation
@@ -125,23 +126,51 @@ def observe(episode_id: str, obs: Observation, goals: list[Goal], frame_sha: str
 def memory_read(
     episode_id: str, step: int, memories: list[MemoryEntry],
     known_objects: str = "", knowledge: str = "",
+    episode_memories: list[EpisodeMemory] = (),
 ) -> AppendArgs:
-    """这一步从记忆里读出来的**全部**东西：情景记忆（检索到的几条）+ 语义记忆
-    （`known_objects`：这张地图上互动过的东西；`knowledge`：和坐标无关的通用先验）。
+    """这一步从记忆里读出来的**全部**东西：单步情景记忆（检索到的几条）+ 语义记忆
+    （`known_objects`：这张地图上互动过的东西；`knowledge`：和坐标无关的通用先验）
+    + 跨局摘要记忆（`episode_memories`：和当前任务相关的、别的局蒸馏出的经验）。
 
-    三种读都发生在 `retrieve_memory` 这一个节点里，所以**共用一条事件**——
-    拆成三条事件反而会让人以为它们发生在循环的不同位置。`known_objects`/
-    `knowledge` 只在非空时才进 payload：大多数步的知识库内容不会变，
-    但坐标为 None（比如刚重置、过场动画里）时 `known_objects` 确实是空的，
-    留一条空字符串没有信息量。
+    四种读都发生在 `retrieve_memory` 这一个节点里，所以**共用一条事件**——
+    拆成多条事件反而会让人以为它们发生在循环的不同位置。`known_objects`/
+    `knowledge`/`episode_memories` 只在非空时才进 payload：大多数步的知识库内容
+    不会变，但坐标为 None（比如刚重置、过场动画里）时 `known_objects` 确实是空的，
+    留一条空字符串没有信息量；`episode_memories` 同理——场景过滤命中为空也是
+    正常情况（还没积累过相关经验），不是错误。
     """
-    payload = {"count": str(len(memories)),
-               "refs": " ".join(f"({m.episode_id}, {m.step})" for m in memories)}
+    payload = {
+        "count": str(len(memories)),
+        "step_memory_count": str(len(memories)),
+        "refs": " ".join(f"({m.episode_id}, {m.step})" for m in memories),
+    }
     if known_objects:
-        payload["known_objects"] = known_objects
+        payload["known_objects"] = "1"
+        payload["known_object"] = "1"
+        payload["known_object_names"] = _short_labels(known_objects)
+        payload["known_objects_chars"] = str(len(known_objects))
     if knowledge:
-        payload["knowledge"] = knowledge
+        payload["knowledge"] = "1"
+        payload["knowledge_titles"] = _short_labels(knowledge)
+        payload["knowledge_chars"] = str(len(knowledge))
+    if episode_memories:
+        payload["episode_memory_count"] = str(len(episode_memories))
+        payload["episode_level_count"] = str(len(episode_memories))
+        payload["episode_memory_refs"] = " ".join(m.episode_id for m in episode_memories)
     return (episode_id, step, EventType.MEMORY_READ, Source.DECISION, payload)
+
+
+def _short_labels(text: str, limit: int = 5) -> str:
+    """从多段渲染文本取每段第一行，作为观测台的短标签。"""
+    labels: list[str] = []
+    for block in text.split("\n\n"):
+        first = next((line.strip() for line in block.splitlines() if line.strip()), "")
+        first = first.lstrip("# ").strip()
+        if first and first not in labels:
+            labels.append(first[:80])
+        if len(labels) >= limit:
+            break
+    return " | ".join(labels)
 
 
 def think(episode_id: str, step: int, action: Action, attempt: int) -> AppendArgs:
