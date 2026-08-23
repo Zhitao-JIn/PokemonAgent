@@ -1,34 +1,23 @@
-"""`MockTrace` —— `TracePort` 的实现，把事件堆在内存列表里，顺手推流到控制台。
+# pokemon_agent/trace/store.py
 
-**它是 mock 存储**（内存列表、进程一退就没了），但 `TracePort` 的三个方法它都
-**真的实现**，不是占位：`append` 持久化 + 分配单调 event_id，`replay` 按
-episode 过滤重放，`sse` 推流——**现在打印到控制台，以后是推给浏览器的连接**，
-调用点不变，换的只是 `sse()` 这一个方法内部的实现（见 `interfaces/trace.py`）。
-
-以前这两件事分在两个文件、两层对象里：`mocks/mock_trace.py` 只管存储，
-`probe/echo_trace.py` 是包住它的一个装饰器，专门负责打印。拆开是因为当时
-`TracePort` 协议里没有"推流"这个位置——`EchoTrace` 只能从外面在 `append` 上
-加一层旁路。现在协议本身有了 `sse()`，打印就是这个方法**应该长的样子**，
-不再需要外面再包一层装饰器；换成推浏览器时，也只需要换一个实现了
-`TracePort` 的类，`append`/`replay` 的代码一行不用抄。
-
-真正落盘、按失败类型聚合统计——这些还没做，那是阶段 2 的事。
-"""
-
-from __future__ import annotations
-
+import os
 import json
 import textwrap
-import time
-from collections.abc import Iterable
+from pathlib import Path
+from typing import Dict, Any, Iterable
+from datetime import datetime
 
-from pokemon_agent.schemas.trace import EventType, Source, TraceEvent
+from pokemon_agent.schemas.trace import TraceEvent, EventType, Source, TRACE_SCHEMA_VERSION
+from .index import EpisodeIndex
+
+# 项目根目录（通过 __file__ 回溯三级）
+project_root = Path(__file__).parent.parent.parent
+# 数据存储目录（在项目根目录下）
+STORAGE_ROOT = project_root / "trace_data"
 
 LABEL_W = 15
-"""标签列宽。
-
-由最长的标签 `perception_cost` 决定。写成常量而不是散在各处的 `:<9`，
-是因为对齐一旦不一致，多行的 `thought` 会和单行的 `action` 错开——
+"""标签列宽，由最长的标签 `perception_cost` 决定。写成常量而不是散在各处的
+`:<9`，是因为对齐一旦不一致，多行的 `thought` 会和单行的 `action` 错开——
 读日志的人第一眼看到的就是排版乱，而不是内容。
 """
 
@@ -37,53 +26,41 @@ COST_LABEL: dict[Source, str] = {
     Source.DECISION: "decision_cost",
     Source.JUDGE: "judge_cost",
 }
-"""MODEL_CALL 事件的标签。
-
-**要带 `_cost`**：那一行报的是 token 和延迟，是**这次调用花了多少**，
-不是"感知到了什么"。光写 `perception` 会和下面的 `observe` 混成一件事，
-而它们一个是账单一个是内容。
+"""MODEL_CALL 事件的标签，要带 `_cost` 后缀：这一行报的是这次调用花了多少
+（token、延迟），不是"感知到了什么"，混进 `perception`/`observe` 会当成一件事。
 """
 
 
 class MockTrace:
-    """事件的追加、回放与推送。没有删除和修改，这是刻意的。"""
-
     def __init__(self, run_id: str = "local") -> None:
-        """`run_id` 在构造时定：一次实验一个 trace 实例，每条事件都属于它。"""
         self._run_id = run_id
+        self._run_dir = STORAGE_ROOT / run_id
+        self._episodes_dir = self._run_dir / "episodes"
         self._events: list[TraceEvent] = []
         self._next_id = 0
         self._step_shown: tuple[str, int] | None = None
-        """这一步的表头打过没有，`sse()` 用。
-
-        表头是 **step 的标题**，不是某个事件的标题，所以由步号变化触发，
-        而不是挂在某个特定 `EventType` 上——挂在 `OBSERVE` 上是不行的：
-        事件流里 `MODEL_CALL(perception)` 在它前面（因果顺序，产出观测的调用
-        当然更早），表头就会打在本步的成本行下面，看日志的人把那行成本
-        读成上一步的。排版问题在这里解决，**不去改事件流**——trace 是唯一的
-        事实来源。
+        """这一步的表头打过没有，`sse()` 用。表头由 step 值变化触发，不挂在
+        `OBSERVE` 上——`MODEL_CALL(perception)` 因果顺序上先于 `OBSERVE`，
+        挂在 `OBSERVE` 上表头会打在本步成本行下面。
         """
 
-    def append(
-        self,
-        episode_id: str,
-        step: int,
-        type: EventType,
-        source: Source,
-        payload: dict[str, str] | None = None,
-    ) -> int:
-        """追加一条事件，返回分配到的 event_id，随后推给 `sse()`。
+        # 确保存储结构
+        self._run_dir.mkdir(parents=True, exist_ok=True)
+        self._episodes_dir.mkdir(exist_ok=True)
 
-        前置条件：step >= 0、episode_id 非空。
-        后置条件：返回值严格大于此前任何一次 append 的返回值。
-            SSE 的断线补发完全依赖这条，一旦重复或回退，观测台会静默丢事件。
-        """
-        assert step >= 0, f"step must be >= 0, got {step}"
-        assert episode_id, "append() got an empty episode_id"
+        # 清理之前未完成的episodes
+        EpisodeIndex.clean_incomplete_episodes(run_id)
 
+    def append(self, episode_id: str, step: int, type: EventType,
+               source: Source, payload: dict[str, str] | None = None) -> int:
+        # 校验前置条件
+        assert step >= 0, "step 必须非负"
+
+        # 生成 event_id
         event_id = self._next_id
         self._next_id += 1
 
+        # 构造完整事件
         event = TraceEvent(
             event_id=event_id,
             run_id=self._run_id,
@@ -92,182 +69,209 @@ class MockTrace:
             type=type,
             source=source,
             payload=payload or {},
-            # ts 由实现方填：时间戳是 trace 的属性，不是业务参数。
-            ts=time.time(),
+            ts=(datetime.combine(datetime.min, datetime.now().time()) - datetime.min).total_seconds(),
+            schema_version=TRACE_SCHEMA_VERSION,
         )
-        self._events.append(event)
 
-        assert not self._events[:-1] or event_id > self._events[-2].event_id, (
-            "event_id must be strictly increasing"
-        )
-        # **落盘之后立刻推**——推流的事件和落盘的事件是同一条，
-        # 不能有第二个源头（见 `interfaces/trace.py` 对 `append` 的后置条件）。
+        # 验证全局唯一性
+        if event_id == 0 and not EpisodeIndex.is_unique(episode_id, self._run_id):
+            raise ValueError(f"严重错误: episode_id '{episode_id}' 已存在! 原因: 不允许覆盖已完成的阶段")
+
+        # 持久化到磁盘
+        self._save_event(event)
+
+        # 内存存储
+        self._events.append(event)
+        assert event_id == self._events[-1].event_id  # 确保单调性
+
+        # 推流到 SSE
         self.sse(event)
+
         return event_id
 
+    def _save_event(self, event: TraceEvent) -> None:
+        """原子化写入事件到 JSONL 文件"""
+        episode_path = self._episodes_dir / f"{event.episode_id}.jsonl"
+        temp_path = episode_path.with_suffix(".jsonl.tmp")
+
+        # 1. 写入临时文件
+        with temp_path.open("a", encoding="utf-8") as f:
+            f.write(event.model_dump_json() + "\n")
+
+        # 2. 原子化重命名
+        try:
+            os.replace(temp_path, episode_path)
+        except AttributeError:  # Windows 不支持 os.replace
+            if episode_path.exists():
+                os.remove(episode_path)
+            os.rename(temp_path, episode_path)
+
+        # 3. 更新索引
+        EpisodeIndex.register(event.episode_id, event.run_id)
+
     def replay(self, episode_id: str, after_event_id: int = -1) -> Iterable[TraceEvent]:
-        """按 event_id 升序回放某个 episode 的事件。
+        """从磁盘加载事件流"""
+        # 1. 检查内存缓存
+        cached = [e for e in self._events
+                  if e.episode_id == episode_id and e.event_id > after_event_id]
+        if cached:
+            return sorted(cached, key=lambda e: e.event_id)
 
-        前置条件：after_event_id >= -1（-1 表示从头开始）。
-        后置条件：返回的事件 event_id 严格递增且全部 > after_event_id。
-        """
-        assert after_event_id >= -1, f"after_event_id must be >= -1, got {after_event_id}"
+        # 2. 从磁盘加载
+        episode_path = self._episodes_dir / f"{episode_id}.jsonl"
+        if not episode_path.exists():
+            return []
 
-        # 内部 list 本身就是按 event_id 升序追加的，不需要再排序。
-        return [
-            e
-            for e in self._events
-            if e.episode_id == episode_id and e.event_id > after_event_id
-        ]
+        events = []
+        with episode_path.open(encoding="utf-8") as f:
+            for line in f:
+                try:
+                    event = TraceEvent.model_validate_json(line.strip())
+                    if event.event_id > after_event_id:
+                        events.append(event)
+                except json.JSONDecodeError:
+                    pass
+
+        # 3. 严格排序
+        return sorted(events, key=lambda e: e.event_id)
 
     def sse(self, event: TraceEvent) -> None:
-        """推流：**现在直接打到控制台**，以后换成推给浏览器的 SSE 连接。
+        """把这条事件推给当前的观测通道——现在打印到控制台，以后是浏览器推流。
 
-        只有 `append` 会调它。控制台格式和事件本身的字段是两回事——
-        这里怎么排版、缩不缩进、要不要折行，都不影响 `TraceEvent`/`payload`
-        长什么样，改这个方法不会动到事件流本身。
+        调用点不变，换的只是这一个方法内部的实现。
         """
-        episode_id, step, type, source, p = (
-            event.episode_id, event.step, event.type, event.source, event.payload
-        )
-        # episode 的开头/结尾不属于任何一步，不触发表头
-        in_step = type not in (EventType.EPISODE_START, EventType.EPISODE_END)
-        if in_step and self._step_shown != (episode_id, step):
-            self._step_shown = (episode_id, step)
-            print(f"\nstep {step}")
+        ep, step, type_, source = event.episode_id, event.step, event.type, event.source
+        p = event.payload
 
-        if type is EventType.EPISODE_START:
-            print(f"\n=== episode start  task={p.get('task_id','?')}  "
-                  f"memory_carried={p.get('memory_carried','?')} ===")
+        # 表头逻辑（在所有分支之前）：EPISODE_START/END 不属于某一步，跳过。
+        if type_ not in (EventType.EPISODE_START, EventType.EPISODE_END):
+            if self._step_shown != (ep, step):
+                print(f"\nstep {step}")
+                self._step_shown = (ep, step)
 
-        elif type is EventType.EPISODE_END:
-            print(f"\n=== episode end  success={p.get('success','?')}  "
-                  f"steps={p.get('steps','?')}  reason={p.get('reason','?')} ===")
+        if type_ is EventType.EPISODE_START:
+            print(f"\n{'=' * 62}")
+            print(f"episode {ep} start  task={p.get('task_id', '')}  "
+                  f"goal={p.get('goal', '')}  max_steps={p.get('max_steps', '')}  "
+                  f"memory_carried={p.get('memory_carried', '')}")
 
-        elif type is EventType.MODEL_CALL and source is Source.JUDGE:
-            # 判定单独打一行，而且**把理由打出来**：成功率是要报的数字，
-            # 每一个判定都得当场看得见它凭什么这么判。
-            ok = "" if p.get("ok") == "True" else "  FAILED"
-            # depth 要打出来：0 是任务目标，>0 是 agent 自己拆的子目标。
-            # 不标的话满屏 judge 分不清哪次决定成败、哪次只是弹栈。
-            at = f"  [depth {p['depth']}]" if "depth" in p else ""
-            print(f"  {'judge_cost':<{LABEL_W}} {p.get('input_tokens','?')} in / "
-                  f"{p.get('output_tokens','?')} out · {p.get('latency_ms','?')} ms{at}{ok}")
-            self._wrapped("judge", p.get("raw", p.get("error", "")))
+        elif type_ is EventType.EPISODE_END:
+            print(f"\nepisode {ep} end  success={p.get('success', '')}  "
+                  f"steps={p.get('steps', '')}  reason={p.get('reason', '')}")
+            print(self._wrapped("why", p.get("why", "")))
+            print("=" * 62)
 
-        elif type is EventType.MODEL_CALL:
-            ok = "" if p.get("ok") == "True" else "  FAILED"
+        elif type_ is EventType.MODEL_CALL:
             label = COST_LABEL.get(source, f"{source.value}_cost")
-            print(f"  {label:<{LABEL_W}} {p.get('input_tokens','?')} in / "
-                  f"{p.get('output_tokens','?')} out · {p.get('latency_ms','?')} ms"
-                  f"  (attempt {p.get('attempt','?')}){ok}")
+            depth = f" depth={p['depth']}" if "depth" in p else ""
+            print(f"{label:<{LABEL_W}} in={p.get('input_tokens', '?')} "
+                  f"out={p.get('output_tokens', '?')} "
+                  f"latency={p.get('latency_ms', '?')}ms "
+                  f"attempt={p.get('attempt', '?')} ok={p.get('ok', '?')}{depth}")
 
-        elif type is EventType.OBSERVE:
-            print(f"  {'observe':<{LABEL_W}} {p.get('scene','?')}/{p.get('overlay','?')}"
-                  f"   frame {p.get('frame_sha','?')}")
-            # **目标栈跟着这一帧打出来**——不然"它是不是明知栈里已经有这条
-            # 还是又压了一遍"这种问题只能翻回前面所有 goal +/goal ✓ 行手动重建。
+        elif type_ is EventType.OBSERVE:
+            print(f"{'observe':<{LABEL_W}} scene={p.get('scene', '')} "
+                  f"overlay={p.get('overlay', '')} frame={p.get('frame_sha', '')[:8]}")
+            print(self._wrapped("summary", p.get("summary", "")))
+            facts = self._facts(p)
+            if facts.get("walk_map"):
+                print(self._wrapped("walk_map", facts["walk_map"]))
             if p.get("goals"):
-                print(f"  {'goals':<{LABEL_W}} {p['goals']}")
-            for k, v in self._facts(p).items():
-                if k in ("scene", "overlay"):
-                    continue
-                # walk_map 是多行的，缩进对齐后整块打出来，不能挤成一行
-                head, *rest = str(v).splitlines() or [""]
-                print(f"  {'':<{LABEL_W}} {k:<10} {head}")
-                for line in rest:
-                    print(f"  {'':<{LABEL_W}} {'':<10} {line}")
+                print(self._wrapped("goals", p["goals"]))
 
-        elif type is EventType.MEMORY_READ:
-            if p.get("count", "0") != "0":
-                print(f"  {'recall':<{LABEL_W}} {p['count']} · {p.get('refs', '')}")
+        elif type_ is EventType.MEMORY_READ:
+            print(f"{'recall':<{LABEL_W}} count={p.get('count', '0')} "
+                  f"refs={p.get('refs', '')}")
+            print(self._wrapped("known_objects", p.get("known_objects", "(无)")))
+            print(self._wrapped("knowledge", p.get("knowledge", "(无)")))
 
-        elif type is EventType.THINK:
-            self._wrapped("thought", p.get("thought", ""))
-            # intent 不是 press 时 action 是空的，别打一个空字符串出来
-            if p.get("action"):
-                print(f"  {'action':<{LABEL_W}} {p['action']}{self._times(p)}")
+        elif type_ is EventType.THINK:
+            # 上一版这里连 action/×N/第几次尝试 一起打印，跟紧随其后的 ACT
+            # 那一行（本来就有 action/×N）重复，是那部分该去掉——不是把
+            # thought 本身也一起去掉。推理文字还是要看的，只是不用再重复
+            # 报一遍这次选了哪个动作。
+            print(self._wrapped("thought", p.get("thought", "")))
 
-        elif type is EventType.GOAL_PUSH:
-            # 缩进随深度递增：目标栈是有层次的，**打成一列就看不出层次**，
-            # 而"它拆到第几层了"正是判断目标栈有没有失控的那个数。
-            pad = "  " * int(p.get("depth", "0"))
-            print(f"  {'goal +':<{LABEL_W}} {pad}{p.get('goal','?')}")
-            print(f"  {'':<{LABEL_W}} {pad}判据：{p.get('criteria','?')}")
+        elif type_ is EventType.ACT:
+            times = self._times(p)
+            print(f"{'act':<{LABEL_W}} action={p.get('action', '')}{times}  "
+                  f"{p.get('message', '')}")
 
-        elif type is EventType.GOAL_POP:
-            pad = "  " * int(p.get("depth", "0"))
-            print(f"  {'goal ✓':<{LABEL_W}} {pad}{p.get('goal','?')}")
-            self._wrapped("", p.get("why", ""))
+        elif type_ is EventType.MEMORY_WRITE:
+            # payload["key"] 目前是 MemoryEntry.key——本阶段只是"位置占位"
+            # （见 schemas/memory_episodic.py 的字段说明，检索现在也不靠它，
+            # 靠 Snapshot 字符重叠），打出来除了一串坐标什么都看不出，不如不印。
+            print(f"{'remember':<{LABEL_W}} 写入一条情景记忆")
 
-        elif type is EventType.INSPECT:
-            # 和 observe 分开显示：它是大脑主动问的，问了什么和答了什么都要看得见——
-            # "它问的问题有没有价值"是判断这个动作值不值那次钱的唯一依据。
-            self._wrapped("inspect ?", p.get("focus", ""))
-            self._wrapped("inspect →", p.get("answer", ""))
+        elif type_ is EventType.OBJECT_NOTE:
+            print(f"{'object_note':<{LABEL_W}} key={p.get('key', '')} kind={p.get('kind', '')}")
+            print(self._wrapped("content", p.get("content", "")))
 
-        # ACT 事件不打印：动作本身已经由 THINK 那一行的 `action` 显示，
-        # 而 `message` 就是执行后的新 summary，和下一步的 observe 完全重复。
+        elif type_ is EventType.GOAL_PUSH:
+            print(f"{'goal_push':<{LABEL_W}} depth={p.get('depth', '')} "
+                  f"goal={p.get('goal', '')}")
+            print(self._wrapped("criteria", p.get("criteria", "")))
 
-        elif type is EventType.MEMORY_WRITE:
-            # content 里带着 rationale —— 这一步为什么这么选，只有它记下来了。
-            # **不再前置 `ref`**：`MemoryEntry.render()` 自己开头就是那个坐标，
-            # 拼上去就成了 `(ep, 2) (ep, 2) 当时看到…`。
-            self._wrapped("remember", p.get("content", ""))
+        elif type_ is EventType.GOAL_POP:
+            print(f"{'goal_pop':<{LABEL_W}} depth={p.get('depth', '')} "
+                  f"reason={p.get('reason', '')} goal={p.get('goal', '')}")
+            if p.get("why"):
+                print(self._wrapped("why", p["why"]))
 
-        elif type is EventType.ERROR:
-            self._wrapped("ERROR", p.get("reason", ""))
+        elif type_ is EventType.INSPECT:
+            print(f"{'inspect':<{LABEL_W}} focus={p.get('focus', '')}")
+            print(self._wrapped("answer", p.get("answer", "")))
+
+        elif type_ is EventType.ERROR:
+            print(f"{'ERROR':<{LABEL_W}} kind={p.get('kind', '')} "
+                  f"attempt={p.get('attempt', '')}")
+            print(self._wrapped("reason", p.get("reason", "")))
+
+        else:
+            print(f"{type_.value:<{LABEL_W}} {p}")
 
     @staticmethod
-    def _facts(p: dict[str, str]) -> dict[str, str]:
+    def _wrapped(label: str, text: str) -> str:
+        """整段打印，不截断、保留原有换行——先按原有换行拆分，再对每一行分别
+        折行（宽度 88），不对整段文本直接 `textwrap.wrap`（那样会把原有换行
+        当普通空白吃掉，压坏多行内容，例如 `walk_map`）。
+        """
+        if not text:
+            return f"{label:<{LABEL_W}}"
+        lines = []
+        for i, raw_line in enumerate(str(text).split("\n")):
+            wrapped = textwrap.wrap(raw_line, width=88) or [""]
+            for j, line in enumerate(wrapped):
+                prefix = f"{label:<{LABEL_W}}" if i == 0 and j == 0 else " " * LABEL_W
+                lines.append(f"{prefix}{line}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _facts(p: dict[str, str]) -> dict[str, Any]:
+        """把 payload["facts"]（JSON 字符串）解析成 dict，解析失败时返回空 dict。"""
         try:
             return json.loads(p.get("facts", "{}"))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             return {}
 
     @staticmethod
-    def _wrapped(label: str, text: str) -> None:
-        """整段打印，**不截断，且保留原有换行**。
-
-        thought / remember / ERROR 是这一步的实质内容，截断等于把最该看的地方切掉。
-
-        **先按原有换行拆，再对每一行做折行**：早一版直接 `textwrap.wrap(text)`，
-        它会把所有换行当空白吃掉——于是 `remember` 里那张 10x9 的 walk_map
-        被压成一条横着的字符串，正好是这一步最该看清的东西。
-        """
-        lines: list[str] = []
-        for raw in text.splitlines() or [""]:
-            lines.extend(textwrap.wrap(raw, width=88) or [""])
-        print(f"  {label:<{LABEL_W}} {lines[0] if lines else ''}")
-        for extra in lines[1:]:
-            print(f"  {'':<{LABEL_W}} {extra}")
-
-    @staticmethod
     def _times(p: dict[str, str]) -> str:
-        """把 args 里的连按次数显示成 `×N`。
-
-        **「模型明确给了 1」和「模型压根没给 times」必须区分开**——
-        这两者长得一样的话，你分不清是「它选择不连按」还是「它不知道能连按」，
-        而这两个问题的修法完全不同（前者调 prompt 措辞，后者查渲染链路）。
+        """把 args JSON 里的 times（连按次数）格式化成 `×N`。必须区分"模型
+        明确给了 1"和"模型压根没给 times"——修法完全不同（前者调 prompt 措辞，
+        后者排查渲染链路是否把这个能力告诉了模型）。
         """
         try:
             args = json.loads(p.get("args", "{}"))
-        except json.JSONDecodeError:
-            return "   [args 不是合法 JSON]"
+        except (json.JSONDecodeError, TypeError):
+            return " [args 不是合法 JSON]"
         if "times" not in args:
-            return "   [无 times]"
+            return " [无 times]"
         try:
             n = int(args["times"])
-        except (ValueError, TypeError):
-            return f"   [times={args['times']!r} 非法]"
-        return f" ×{n}" if n > 1 else " ×1"
-
-    # ---- 便于测试与调试，不属于 TracePort 契约 ----
+        except (TypeError, ValueError):
+            return f" [times={args['times']} 非法]"
+        return f" ×{n}"
 
     def all_events(self) -> list[TraceEvent]:
-        """全部事件（含所有 episode）。测试断言用。"""
-        return list(self._events)
-
-    def count(self, episode_id: str, type: EventType) -> int:
-        """某个 episode 里某类事件的条数。测试断言重试次数、失败次数用。"""
-        return sum(1 for e in self._events if e.episode_id == episode_id and e.type is type)
+        """获取所有事件（供测试使用）"""
+        return self._events

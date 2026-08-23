@@ -1,0 +1,1 @@
+{"event_id":77,"run_id":"0823-073529-e5318c","episode_id":"0823-073529-e5318c-ep073530607","step":9,"type":"episode_end","source":"harness","payload":{"success":"True","steps":"9","reason":"success","task_id":"tc500417a","why":"对话框里显示'Enemy RATTATA fainted!'，直接证明野生拉达已被击败"},"ts":27445.320946,"schema_version":2}

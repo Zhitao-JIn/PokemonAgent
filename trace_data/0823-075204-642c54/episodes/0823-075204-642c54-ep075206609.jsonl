@@ -1,0 +1,1 @@
+{"event_id":5,"run_id":"0823-075204-642c54","episode_id":"0823-075204-642c54-ep075206609","step":0,"type":"episode_end","source":"harness","payload":{"success":"True","steps":"0","reason":"success","task_id":"ta1c0a9fd","why":"dialog_text: 'Wild RATTATA appeared!'"},"ts":28331.95007,"schema_version":2}

@@ -265,9 +265,15 @@ class Harness:
         """
         reset = self._game.reset(task)
 
-        # `reset()` 里那次真实感知产生的调用记录，当场记账——**不留到下一次
-        # `_observe()` 才补记**。第一次 `look` 会命中这里刚建好的缓存，
-        # 这个 episode 只会有这一次真正的开局感知。
+        # **episode 的边界事件先写**：`EPISODE_START` 打头，reset() 里那次
+        # 真实感知产生的调用记录紧跟其后——都发生在 `_begin()` 这一次调用里，
+        # 谁先谁后不影响"当场记账、不留到下一次 `_observe()` 才补记"这条规则，
+        # 但顺序本身有意义：episode 的边界应该是这一局在事件流里看到的第一条
+        # 事件，而不是"先花了一次钱、才想起来这局开始了"。
+        self._trace.append(
+            *trace_utils.episode_start(episode_id, task, self._memory.episodic_size)
+        )
+
         for call in reset.calls:
             failed = call.get("ok") != "True"
             for args in trace_utils.model_call(
@@ -279,10 +285,6 @@ class Harness:
                 ),
             ):
                 self._trace.append(*args)
-
-        self._trace.append(
-            *trace_utils.episode_start(episode_id, task, self._memory.episodic_size)
-        )
         # 栈底是任务目标本身。**它永远在，也永远是成败的唯一依据。**
         return LoopState(
             episode_id=episode_id, task=task,

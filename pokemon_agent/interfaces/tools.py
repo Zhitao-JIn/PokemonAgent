@@ -1,62 +1,12 @@
-"""工具层接口 —— **Harness 伸向环境和记忆的两只手，分开的。**
-
-## 两个协议，因为 Harness 要跟两个不同的东西打交道
-
-    GameToolPort     操作世界：感知、执行、开局、溯源。
-    MemoryToolPort   读写记忆：情景记忆 + 语义记忆（object）。
-
-以前只有一个 `ToolHost`（另外还有一个更小的 `ToolPort` 给大脑用），
-"感知世界"和"记忆"混在同一个协议里、同一个实现类（`GameTools`）里。
-
-现在**大脑不再持有任何工具实例**——`Brain.choose()` 需要的情景记忆由 Harness
-先查好、当参数传进去（见 `interfaces/brain.py`）。大脑不再有机会主动调用
-`GameToolPort`/`MemoryToolPort` 的任何方法，`ToolPort` 这个"大脑看到的协议"
-也就没有存在的必要了——大脑该看到什么，现在完全由 `choose()`/`judge()`/
-`reflect()` 的参数表决定，不再需要一个额外的协议来兜底"它还能主动做什么"。
-
-拆成 `GameToolPort`/`MemoryToolPort` 两个协议而不是一个，是因为它们的实现
-本来就该是两个不相关的类（`GameTools` 只碰 `WorldPort`，`MemoryTool` 只碰
-`memory/` 包），揉进一个协议会让人以为它们必须由同一个对象同时实现。
-`Harness.__init__` 现在收两个参数：`game: GameToolPort` 和 `memory: MemoryToolPort`。
-
-## perceive 是纯读，**它不构成一步**
-
-这一条踩过坑：`perceive()` 曾经既是"给大脑看一眼"，又是"新的一步开始了"。
-两种身份对它的期待不一样，于是要靠"这一步我是不是已经记过 trace 了"去调和，
-而那个判断本身就是 bug 的温床（实测出现过步号回退、判定重复计费）。
-
-现在它只是查询：不写 trace、不推进世界、不触发判定。
-**"一步"的边界由 Harness 定义**，那里只有两个地方会产出新的一步。
-
-## known_objects 现在由 Harness 拼，不是 GameTools
-
-以前 `GameTools.perceive()` 会顺手把语义记忆的 `known_here()` 结果拼进
-`facts["known_objects"]`——那要求 `GameTools` 持有一份记忆的引用，
-恰恰是这次要拆掉的耦合。现在 `GameToolPort.perceive()` 只管世界，
-`facts["known_objects"]` 由 `Harness._observe()` 在拿到 `game.perceive()`
-的结果之后，另外调 `memory.known_here(obs)` 拼上去——两个协议各管各的，
-组合是 Harness 的活。
-
-## 模型调用记账不再靠 drain_calls
-
-`perceive`/`inspect`/`reset` 曾经返回裸的 `Observation`，模型调用记录另开一个
-`drain_calls()` 方法、靠世界内部一个缓冲区攒着给 Harness 单独取——这是典型的
-"生产和消费分离，靠可变状态搭桥"，缓冲区清早清晚都能把账算错。
-
-现在这三个方法改成返回 `PerceptionResult`（`observation` + `calls` 两个平行字段），
-`execute()` 的 `calls` 就挂在已有的 `ToolResult` 上。调用记录跟着它产生的那次
-调用一起，作为普通返回值直接交给 Harness，不需要任何跨调用的状态，也就不存在
-"drain 的时机对不对"这一整类 bug。见 `PerceptionResult` 的完整说明。
-"""
-
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
+from typing import Dict, Any, List
 
 from pokemon_agent.schemas.action import Action, ActionSpace, ToolResult
 from pokemon_agent.schemas.memory_episodic import MemoryEntry
 from pokemon_agent.schemas.memory_semantic import ObjectFact
-from pokemon_agent.schemas.observation import PerceptionResult
+from pokemon_agent.schemas.observation import PerceptionResult, Observation
 from pokemon_agent.schemas.task import Task
 
 
@@ -200,12 +150,37 @@ class MemoryToolPort(Protocol):
         ...
 
     # ---- 语义记忆：知识库（和坐标无关的通用先验） ----
-
     def knowledge_base(self) -> str:
         """项目自带的通用游戏先验（草丛怎么走、类似的机制常识……），全部拼成一段文字。
 
         和 `known_here()` 不同：那个按 `obs.place` 筛，这个**不按任何东西筛**——
         内容和当前站在哪一格无关，agent 每一局开局就该知道。
         后置条件：库是空的时返回空串——调用方据此决定要不要往 `facts` 里塞东西。
+        """
+        ...
+
+    # ---- 情景记忆生成：episode摘要 ----
+    def generate_and_store_episode_summary(
+        self,
+        episode_id: str,
+        run_id: str,
+        goal: str,
+        outcome: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """生成并存储情景记忆摘要
+
+        前置条件: episode_id非空，outcome包含success和steps
+        后置条件: 新记忆已存入系统，model_call将被trace记录
+
+        Args:
+            episode_id: episode标识符
+            run_id: run标识符
+            goal: 任务目标
+            outcome: 任务执行结果
+
+        Returns:
+            Dict包含:
+                - model_call: 记录LLM调用的关键信息
+                - memory_id: 新记忆的ID
         """
         ...

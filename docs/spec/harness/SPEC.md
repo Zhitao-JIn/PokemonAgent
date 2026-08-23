@@ -213,13 +213,13 @@ def _nodes(self) -> dict[Intent, Any]:
 
 **流程**：
 1. `reset = self._game.reset(task)` 真实重置世界（这次重置里通常包含一次真实的开局感知）。
-2. 对 `reset.calls` 里的每一条模型调用记录，当场 `for args in trace_utils.model_call(ep, 0, Source.PERCEPTION, call): self._trace.append(*args)`，**不留到下一次 `_observe()` 才补记**——注释强调"第一次 `look` 会命中这里刚建好的缓存，这个 episode 只会有这一次真正的开局感知"。
-3. `self._trace.append(*trace_utils.episode_start(episode_id, task, memory_carried))` 写 `EPISODE_START` 事件（`Source.HARNESS`），payload 含 `task_id`/`goal`/`max_steps`/`memory_carried`（当前记忆库情景记忆条数）。注释解释了必要性：episode 的边界必须进事件流，否则光看日志分不出一次尝试从哪开始，更不知道它带了多少条记忆进来——而那正是 A/B 实验的自变量本身。
+2. `self._trace.append(*trace_utils.episode_start(episode_id, task, memory_carried))` **先**写 `EPISODE_START` 事件（`Source.HARNESS`），payload 含 `task_id`/`goal`/`max_steps`/`memory_carried`（当前记忆库情景记忆条数）。注释解释了必要性：episode 的边界必须进事件流，否则光看日志分不出一次尝试从哪开始，更不知道它带了多少条记忆进来——而那正是 A/B 实验的自变量本身。
+3. 对 `reset.calls` 里的每一条模型调用记录，**紧跟其后**当场 `for args in trace_utils.model_call(ep, 0, Source.PERCEPTION, call): self._trace.append(*args)`，**不留到下一次 `_observe()` 才补记**——注释强调"第一次 `look` 会命中这里刚建好的缓存，这个 episode 只会有这一次真正的开局感知"。`EPISODE_START` 排在这几条模型调用之前是刻意的：episode 的边界应该是这一局在事件流里出现的第一条事件，不是"先花了一次钱、才想起来这局开始了"——这条顺序只影响控制台/replay 里先看到什么，不影响"当场记账、不拖延"这条规则本身（两步都发生在同一次 `_begin()` 调用里）。
 4. 构造并返回 `LoopState`，`goals` 初始化为单元素列表 `[Goal(goal=task.goal, criteria=task.success_criteria)]`——栈底是任务目标本身，"它永远在，也永远是成败的唯一依据"。
 
 **读写 LoopState 字段**：不读（构造前），写：`episode_id`/`task`/`goals`（其余用默认值）。
 
-**trace 事件**：`EPISODE_START`；以及若干条 `MODEL_CALL`（+ 可能的 `ERROR`），均 step=0。
+**trace 事件**：`EPISODE_START`（先）；随后若干条 `MODEL_CALL`（+ 可能的 `ERROR`），均 step=0。
 
 ### 4.3 `_look(state) -> dict`（`harness.py:348-359`）
 

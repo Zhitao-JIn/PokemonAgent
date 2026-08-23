@@ -15,3 +15,5 @@
 但组装 payload 这件事全部委托给 `trace_utils` 里的纯函数——`harness.py`
 里因此没有任何 `dict[str, str]` 字面量。
 """
+
+from .index import EpisodeIndex
