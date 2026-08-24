@@ -29,7 +29,14 @@ from rank_bm25 import BM25Okapi
 
 from pokemon_agent.interfaces.embedding import EmbeddingProvider
 from pokemon_agent.interfaces.rerank import RerankerProvider
-from pokemon_agent.memory.vector import tokenize
+
+
+def tokenize(text: str) -> list[str]:
+    """将中文文本切成字符 bigram，供 BM25 使用。"""
+    chars = [char for char in text if not char.isspace()]
+    if len(chars) < 2:
+        return chars
+    return [chars[index] + chars[index + 1] for index in range(len(chars) - 1)]
 
 RRF_K = 60
 """RRF 公式里的平滑常数，`1 / (k + rank)`——60 是文献（Cormack et al. 2009）

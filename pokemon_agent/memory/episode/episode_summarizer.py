@@ -8,7 +8,7 @@ import jinja2
 
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.interfaces.trace import TracePort
-from pokemon_agent.memory.utils import _create_episode_memory
+from pokemon_agent.memory.episode.utils import _create_episode_memory
 from pokemon_agent.schemas.memory_episode import EpisodeMemory
 from pokemon_agent.schemas.memory_episode_summary import EpisodeContext, EpisodeSummaryResponse
 from pokemon_agent.schemas.trace import EventType, Source
