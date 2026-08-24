@@ -1,0 +1,20 @@
+{
+  "task_id": "knowledge_wild_encounter",
+  "attempts": 2,
+  "successes": 2,
+  "success_rate": 1.0,
+  "runs": [
+    {
+      "success": true,
+      "steps": 9,
+      "reason": "success",
+      "episode_id": "0824-054130-35c29f-ep054134381"
+    },
+    {
+      "success": true,
+      "steps": 3,
+      "reason": "success",
+      "episode_id": "0824-061405-db1335-ep061408064"
+    }
+  ]
+}

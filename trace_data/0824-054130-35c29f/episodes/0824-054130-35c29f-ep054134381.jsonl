@@ -1,0 +1,1 @@
+{"event_id":78,"run_id":"0824-054130-35c29f","episode_id":"0824-054130-35c29f-ep054134381","step":9,"type":"episode_end","phase":"episode","source":"harness","payload":{"success":"True","steps":"9","reason":"success","task_id":"t43d4ec50","why":"对话框显示‘WILD RATTATA appeared!’，直接证明已在草丛中遇到一只野生宝可梦"},"ts":20877.546819,"schema_version":2}
