@@ -4,9 +4,9 @@ from typing import Dict, Any
 
 from pokemon_agent.interfaces.embedding import EmbeddingProvider
 from pokemon_agent.interfaces.rerank import RerankerProvider
-from pokemon_agent.memory.episode_summarizer import EpisodeMemoryGenerator
-from pokemon_agent.memory.retrieval import hybrid_retrieve
-from pokemon_agent.memory.utils import _get_episode_memories, _memory_entry_to_episode_steps
+from pokemon_agent.memory.episode.episode_summarizer import EpisodeMemoryGenerator
+from pokemon_agent.memory.semantic.retrieval import hybrid_retrieve
+from pokemon_agent.memory.episode.utils import _get_episode_memories, _memory_entry_to_episode_steps
 from pokemon_agent.schemas.action import Action
 from pokemon_agent.schemas.memory_episode import EpisodeMemory
 from pokemon_agent.schemas.memory_episode_summary import EpisodeContext
@@ -16,9 +16,9 @@ from pokemon_agent.interfaces.trace import TracePort
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.memory.semantic.knowledge.store import load_chunks as _load_knowledge_chunks
 from pokemon_agent.memory.semantic.knowledge.store import mtime as _knowledge_dir_mtime
-from pokemon_agent.memory.port import SemanticObjectStore
+from pokemon_agent.interfaces.semantic_memory import SemanticObjectStore
 from pokemon_agent.memory.semantic.object_store import ObjectMemory
-from pokemon_agent.memory.util import kind_in_frame, parse_landmarks, surrounding_cells
+from pokemon_agent.memory.semantic.util import kind_in_frame, parse_landmarks, surrounding_cells
 from pokemon_agent.schemas.memory_semantic import (
     RESULT_DIALOG,
     RESULT_NONE,

@@ -108,6 +108,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any
 
 from langgraph.graph import END, StateGraph
@@ -218,6 +219,7 @@ class Harness:
     def __init__(
         self, game: GameToolPort, memory: MemoryToolPort,
         brain: BrainPort, trace: TracePort, run_id: str = "local",
+        episode_state_dir: Path | None = None,
     ) -> None:
         self._game = game
         self._memory = memory
@@ -232,6 +234,7 @@ class Harness:
         这里只负责在正确的时机把它们的输出转给 `self._trace.append(*...)`。
         """
         self._run_id = run_id
+        self._episode_state_dir = episode_state_dir
         """蒸馏跨局摘要记忆（`MemoryTool.summarize_episode`）时要标在
         `EpisodeMemory.run_id` 上——`TracePort` 的实现自己持有一份同样的
         `run_id`（见 `interfaces/trace.py`），但那个不对调用方暴露 getter，
@@ -277,6 +280,8 @@ class Harness:
         记忆**不清空**——跨任务复用经验正是要验证的东西。
         """
         reset = self._game.reset(task)
+        if self._episode_state_dir is not None:
+            self._game.save_state(str(self._episode_state_dir / f"{episode_id}.start.state"))
 
         # **episode 的边界事件先写**：`EPISODE_START` 打头，reset() 里那次
         # 真实感知产生的调用记录紧跟其后——都发生在 `_begin()` 这一次调用里，

@@ -91,6 +91,20 @@ class RunManifest(BaseModel):
         description="图像预处理方式。熔断把它当变量（原生 vs 放大），不记就分不清哪组是哪组",
     )
     notes: str = Field(default="", description="这次想验证什么。给三周后的自己看")
+    experiment_kind: str = Field(default="single_episode", description="single_episode 或 sequential_episodes")
+    task_ids: list[str] = Field(default_factory=list, description="本次实验预注册的任务顺序")
+    initial_state: str | None = Field(default=None, description="实验起点存档的相对路径")
+    memory_policy: str = Field(
+        default="session_local",
+        description="摘要经验只在当前 session/run 内有效；固定值，不是消融开关",
+    )
+
+    def validate_design(self) -> RunManifest:
+        """检查实验元数据足以解释成功率分母和记忆自变量。"""
+        assert self.experiment_kind in {"single_episode", "sequential_episodes"}
+        assert self.memory_policy == "session_local", "episode summaries are run-local"
+        assert self.task_ids, "manifest must declare at least one task"
+        return self
 
     def with_prompts(self, *names: str) -> RunManifest:
         """把这些 prompt 的原文和 sha 收进来。"""

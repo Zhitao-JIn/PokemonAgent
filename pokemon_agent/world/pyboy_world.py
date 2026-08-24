@@ -589,3 +589,10 @@ class PyBoyWorld:
 
     def stop(self) -> None:
         self._pyboy.stop()
+
+    def save_state(self, path: str) -> None:
+        target = pathlib.Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("wb") as handle:
+            self._pyboy.save_state(handle)
+        assert target.is_file(), f"save_state() did not create {target}"

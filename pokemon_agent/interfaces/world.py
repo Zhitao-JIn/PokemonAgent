@@ -42,6 +42,9 @@ from pokemon_agent.schemas.task import Task
 
 @runtime_checkable
 class WorldPort(Protocol):
+    def save_state(self, path: str) -> None:
+        """保存当前模拟器状态，供 episode replay 使用。"""
+        ...
     """一个可推进、可观测的世界。"""
 
     def reset(self, task: Task) -> PerceptionResult:

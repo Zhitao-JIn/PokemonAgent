@@ -122,7 +122,9 @@ class LocalTrace:
         EpisodeIndex.register(event.episode_id, event.run_id)
 
     def replay(self, episode_id: str, after_event_id: int = -1) -> Iterable[TraceEvent]:
-        """从磁盘加载事件流"""
+        """从 episode 起点加载完整事件流；不允许 partial replay。"""
+        if after_event_id != -1:
+            raise ValueError("replay only supports playing an episode from its beginning")
         # 1. 检查内存缓存
         cached = [e for e in self._events
                   if e.episode_id == episode_id and e.event_id > after_event_id]

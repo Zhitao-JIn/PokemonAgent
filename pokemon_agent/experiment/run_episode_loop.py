@@ -3,7 +3,9 @@
 """循环执行器：人类引导式长程任务
 
 用法:
-  python -m probe.run_episode_loop <步数> [--state <存档>] [--watch]
+  python -m pokemon_agent.experiment.run_episode_loop <步数> [--state <存档>] [--watch]
+
+说明：短程单 episode 请使用 run_episode.py；本文件只负责同一 session 内的多 episode 长程任务。
 
 交互命令:
 - 输入目标描述: 每次运行指定独立任务目标
@@ -20,7 +22,7 @@ from datetime import datetime
 
 # 本地导入 (避免循环依赖)
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from probe.run_episode import build_session, run_one
+from pokemon_agent.experiment.run_episode import build_session, run_one
 
 try:
     from pokemon_agent.trace.index import EpisodeIndex
@@ -90,7 +92,7 @@ def get_next_goal(run_id: str, previous_goal: str | None = None) -> str | None:
         print("\n[ERROR] 脚本需要在交互式终端中运行")
         print("原因：需要等待用户输入新目标")
         print("请在命令行中直接运行，而不是通过管道/重定向")
-        print("例如：python -m probe.run_episode_loop 5 --state assets/pallet.state")
+        print("例如：python -m pokemon_agent.experiment.run_episode_loop 5 --state assets/pallet.state")
         sys.exit(1)
 
     print("\n" + "="*50)
@@ -279,8 +281,8 @@ if __name__ == "__main__":
 
     # 验证参数
     if len(sys.argv) < 3:
-        print("用法: python -m probe.run_episode_loop <步数> [--state <存档>] [--watch]")
-        print("示例: python -m probe.run_episode_loop 20 \"向北走出真新镇\" --state assets/pallet.state")
+        print("用法: python -m pokemon_agent.experiment.run_episode_loop <步数> [--state <存档>] [--watch]")
+        print("示例: python -m pokemon_agent.experiment.run_episode_loop 20 \"向北走出真新镇\" --state assets/pallet.state")
         sys.exit(1)
 
 

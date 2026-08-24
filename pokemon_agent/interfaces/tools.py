@@ -12,6 +12,9 @@ from pokemon_agent.schemas.task import Task
 
 @runtime_checkable
 class GameToolPort(Protocol):
+    def save_state(self, path: str) -> None:
+        """保存当前世界状态，供 episode replay 使用。"""
+        ...
     """Harness 用它操作世界：感知、执行、开局、溯源。**不碰任何记忆。**"""
 
     def perceive(self) -> PerceptionResult:

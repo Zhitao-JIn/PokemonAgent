@@ -69,6 +69,9 @@ class GameTools:
         self._last_space = None
         return self._world.reset(task)
 
+    def save_state(self, path: str) -> None:
+        self._world.save_state(path)
+
     @property
     def last_frame_sha(self) -> str:
         return self._world.last_frame_sha

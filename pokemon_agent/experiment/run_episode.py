@@ -1,13 +1,12 @@
-# probe/run_episode.py
+# pokemon_agent/experiment/run_episode.py
 
 """跑一个真实 episode —— LLM 控制宝可梦红。
 
     $env:DASHSCOPE_API_KEY = "sk-..."
-    python -m probe.run_episode_loop                                  # 12 步，无头
-    python -m probe.run_episode_loop 30 "走出真新镇，向北进入一号道路"
-    python -m probe.run_episode_loop 30 "…" --watch                    # 开窗口看着它玩
-    python -m probe.run_episode_loop 30 "…" --state assets/route1.state --task-id t_route1
-    python -m probe.run_episode_loop 30 "…" --state none               # 从 ROM 开头跑
+    python -m pokemon_agent.experiment.run_episode 12 "向北走出真新镇" --state assets/rom.state
+    python -m pokemon_agent.experiment.run_episode 30 "走出真新镇，向北进入一号道路" --state assets/rom.state
+    python -m pokemon_agent.experiment.run_episode 30 "…" --watch --state assets/rom.state
+    python -m pokemon_agent.experiment.run_episode 30 "…" --state none
 
 ⚠️ 本文件必须被 run_episode_loop.py 调用，不能直接执行
 ⚠️ trace 落盘在 trace_data/ 下，同时也推流到控制台（见 pokemon_agent/trace/）。
@@ -67,8 +66,8 @@ def check_environment():
         print("原因: 任务阶段必须通过 run_episode_loop.py 启动")
         print("      直接运行会导致实验数据断裂")
         print("\n正确的启动方式:")
-        print("  python -m probe.run_episode_loop <steps> <goal> [--state PATH] [--watch]")
-        print("  (例如: python -m probe.run_episode_loop 5 '向北走出真新镇' --state assets/pallet.state)")
+        print("  python -m pokemon_agent.experiment.run_episode_loop <steps> <goal> [--state PATH] [--watch]")
+        print("  (例如: python -m pokemon_agent.experiment.run_episode_loop 5 '向北走出真新镇' --state assets/pallet.state)")
         print("="*50)
         sys.exit(1)
 
@@ -128,6 +127,7 @@ def build_session(run_id: str, state: str | None, watch: bool):
         print(f"错误: 存档不存在：{state}")
         print("要从 ROM 开头跑请指定 --state none")
         sys.exit(1)
+    os.environ["EPISODE_START_STATE"] = state or ""
 
     browser = BrowserTraceServer()
     browser.start()
@@ -148,6 +148,7 @@ def build_session(run_id: str, state: str | None, watch: bool):
 def run_one(harness, run_id: str, max_steps: int, goal: str) -> dict:
     """在一个已经建好的 harness 上跑一个 episode。不建、不关 world。"""
     episode_id = generate_episode_id(run_id)
+    _snapshot_episode_start(run_id, episode_id)
     print(f"\n🔍 实验标识: run_id={run_id}, episode_id={episode_id}")
     print(f"   • 目标: {goal}")
 
@@ -172,6 +173,19 @@ def run_one(harness, run_id: str, max_steps: int, goal: str) -> dict:
     save_episode_state(run_id, f"assets/run_{run_id}.state")
 
     return {**outcome, "episode_id": episode_id}
+
+
+def _snapshot_episode_start(run_id: str, episode_id: str) -> None:
+    """保存本 episode 实际使用的起点存档；replay/resume 不能只依赖 run 级存档。"""
+    configured = os.environ.get("EPISODE_START_STATE", "")
+    source = pathlib.Path(configured) if configured else pathlib.Path(f"assets/run_{run_id}.state")
+    if not source.is_file():
+        source = pathlib.Path(STATE)
+    if not source.is_file():
+        return
+    target = pathlib.Path("trace_data") / run_id / "episodes" / f"{episode_id}.start.state"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source.read_bytes())
 
 
 # 单发调用入口：build + 跑一个 + stop，全焊在一起。保留给"只想跑一次、

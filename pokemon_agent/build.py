@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pokemon_agent.brain.brain import Brain
 from pokemon_agent.harness.harness import Harness
 from pokemon_agent.interfaces.trace import TracePort
@@ -100,4 +102,7 @@ def build_real(
     # `TracePort` 具体实现（这里是 `LocalTrace`）的事。返回值里的 `trace`
     # 和 `Harness` 手上那个是同一个对象，调用方可以直接用它做 `all_events()`
     # 这类调试查询。
-    return Harness(game, memory, brain, trace, run_id=run_id), trace, world
+    return Harness(
+        game, memory, brain, trace, run_id=run_id,
+        episode_state_dir=Path("trace_data") / run_id / "episodes",
+    ), trace, world
