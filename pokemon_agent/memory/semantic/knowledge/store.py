@@ -50,6 +50,15 @@ def load_chunks() -> list[str]:
     return [text for f in files if (text := f.read_text(encoding="utf-8").strip())]
 
 
+def load_named_chunks() -> list[tuple[str, str]]:
+    """加载 `(文件名, 正文)`，供检索结果的展示层引用来源文件。"""
+    return [
+        (f.name, text)
+        for f in sorted(_DIR.glob("*.md"))
+        if (text := f.read_text(encoding="utf-8").strip())
+    ]
+
+
 def mtime() -> float:
     """知识库目录下全部 `.md` 文件里最新的修改时间；没有文件时返回 0.0。
 

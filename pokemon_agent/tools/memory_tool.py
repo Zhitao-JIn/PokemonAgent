@@ -15,6 +15,7 @@ from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.interfaces.trace import TracePort
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.memory.semantic.knowledge.store import load_chunks as _load_knowledge_chunks
+from pokemon_agent.memory.semantic.knowledge.store import load_named_chunks as _load_named_knowledge_chunks
 from pokemon_agent.memory.semantic.knowledge.store import mtime as _knowledge_dir_mtime
 from pokemon_agent.interfaces.semantic_memory import SemanticObjectStore
 from pokemon_agent.memory.semantic.object_store import ObjectMemory
@@ -86,6 +87,7 @@ class MemoryTool:
         self._embedding = embedding_provider
         self._reranker = reranker_provider
         self._knowledge_chunks: list[str] = []
+        self._knowledge_names: list[str] = []
         self._knowledge_vectors: list[list[float]] = []
         self._knowledge_mtime: float = -1.0
         """哨兵值：任何真实 mtime 都 ≥ 0，第一次 `knowledge_base()` 调用
@@ -289,6 +291,19 @@ class MemoryTool:
         hits = results[:limit]
         return "\n\n".join(self._knowledge_chunks[idx] for idx, _ in hits)
 
+    def knowledge_sources(self, query: str, limit: int = 5) -> list[str]:
+        assert query, "knowledge_sources() needs a non-empty query"
+        assert limit > 0, "knowledge_sources() limit must be positive"
+        self._refresh_knowledge_index()
+        if not self._knowledge_chunks:
+            return []
+        results = hybrid_retrieve(
+            query, self._knowledge_chunks, self._embedding, self._reranker,
+            fuse_top_k=max(limit * 3, KNOWLEDGE_FUSE_TOP_K),
+            document_vectors=self._knowledge_vectors,
+        )
+        return [self._knowledge_names[idx] for idx, _ in results[:limit]]
+
     def _refresh_knowledge_index(self) -> None:
         """知识库文件的 mtime 变了才重新分片、重新 embed——**不是每次查询都重算**。
 
@@ -300,6 +315,7 @@ class MemoryTool:
         current = _knowledge_dir_mtime()
         if current != self._knowledge_mtime:
             self._knowledge_chunks = _load_knowledge_chunks()
+            self._knowledge_names = [name for name, _ in _load_named_knowledge_chunks()]
             self._knowledge_vectors = (
                 self._embedding.embed(self._knowledge_chunks) if self._knowledge_chunks else []
             )

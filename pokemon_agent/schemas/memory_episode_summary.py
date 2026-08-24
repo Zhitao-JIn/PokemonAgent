@@ -85,3 +85,5 @@ class EpisodeSummaryResponse(BaseModel):
         le=1.0,
         description="LLM对生成内容的置信度"
     )
+    filename: str = Field(default="episode_memory", description="用于保存 Markdown 记忆的文件名")
+    markdown: str = Field(default="", description="要原样保存的 Markdown 记忆正文")

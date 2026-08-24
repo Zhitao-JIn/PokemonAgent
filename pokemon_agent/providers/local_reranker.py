@@ -28,3 +28,6 @@ class FastEmbedReranker:
         assert all(d for d in documents), "rerank() got an empty string in documents"
         model = self._ensure_loaded()
         return [float(s) for s in model.rerank(query, documents)]
+
+    def config(self) -> dict[str, str]:
+        return {"model": self._model_name, "runtime": "fastembed"}

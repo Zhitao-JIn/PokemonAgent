@@ -222,3 +222,7 @@ class MemoryToolPort(Protocol):
             任何片段时返回空串——调用方据此决定要不要往 `facts` 里塞东西。
         """
         ...
+
+    def knowledge_sources(self, query: str, limit: int = 5) -> list[str]:
+        """返回本次 knowledge 检索命中的 Markdown 文件名，仅供 trace 展示。"""
+        ...

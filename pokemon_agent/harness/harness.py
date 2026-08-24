@@ -430,6 +430,9 @@ class Harness:
         if known:
             obs = obs.model_copy(update={"facts": {**obs.facts, "known_objects": known}})
         knowledge = self._memory.knowledge_base(query=state.task.goal, limit=MEMORY_RECALL_LIMIT)
+        knowledge_sources = self._memory.knowledge_sources(
+            query=state.task.goal, limit=MEMORY_RECALL_LIMIT
+        )
         if knowledge:
             obs = obs.model_copy(update={"facts": {**obs.facts, "knowledge": knowledge}})
 
@@ -440,8 +443,13 @@ class Harness:
         # 这一步直接跳过，和 `known_here()` 处理 `obs.place is None` 的方式一致。
         episode_memories: list[EpisodeMemory] = []
         if obs.place is not None:
+            scene_key = "|".join(filter(None, (
+                f"map:{obs.place.map_id}",
+                f"scene:{obs.facts.get('scene', '')}",
+                f"overlay:{obs.facts.get('overlay', '')}",
+            )))
             episode_memories = self._memory.query_episode_memories(
-                scene=str(obs.place.map_id), query=state.task.goal,
+                scene=scene_key, query=state.task.goal,
                 limit=EPISODE_MEMORY_RECALL_LIMIT,
             )
             if episode_memories:
@@ -452,7 +460,10 @@ class Harness:
 
         # 检索发生在决策模型调用之前，事件顺序照实写——**因果顺序**，不是排版偏好。
         self._trace.append(
-            *trace_utils.memory_read(ep, step, memories, known, knowledge, episode_memories)
+            *trace_utils.memory_read(
+                ep, step, memories, known, knowledge, episode_memories,
+                knowledge_sources=knowledge_sources,
+            )
         )
         return {"observation": obs, "memories": memories}
 

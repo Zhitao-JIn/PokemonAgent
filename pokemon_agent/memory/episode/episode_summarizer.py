@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-import os
+import re
+from pathlib import Path
 from typing import Dict, Any
 
 import jinja2
@@ -38,8 +39,8 @@ class EpisodeMemoryGenerator:
         self._trace_port = trace_port
         self._llm_provider = llm_provider
 
-        template_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "episode_summary.md")
-        with open(template_path, "r", encoding="utf-8") as f:
+        template_path = Path(__file__).resolve().parents[2] / "prompts" / "episode_summary.md"
+        with template_path.open("r", encoding="utf-8") as f:
             self._template = jinja2.Template(f.read())
 
     def generate_summary(
@@ -77,6 +78,8 @@ class EpisodeMemoryGenerator:
             episode_id, run_id, goal, outcome,
             response.content, response.rationale, stamp=f"{run_id}#{episode_id}",
         )
+
+        self._save_markdown(response.filename, response.markdown, episode_id)
 
         self._trace_port.append(
             episode_id, context.steps, EventType.EPISODE_MEMORY_WRITE, Source.MEMORY,
@@ -127,9 +130,27 @@ class EpisodeMemoryGenerator:
 
         try:
             data = json.loads(json_match.group(0))
+            filename = str(data.pop("filename", "episode_memory"))
+            markdown = str(data.pop("markdown", ""))
             return EpisodeSummaryResponse(
                 content=data,
                 rationale=data.get("rationale", f"成功完成目标'{data.get('summary', '')[:50]}...'"),
+                filename=filename,
+                markdown=markdown,
             )
         except Exception as e:
             raise ValueError(f"LLM 响应解析失败: {str(e)}") from e
+
+    @staticmethod
+    def _save_markdown(filename: str, markdown: str, episode_id: str) -> None:
+        """保存 LLM 生成的单条 episode Markdown 记忆。"""
+        assert markdown.strip(), "LLM generated an empty memory markdown"
+        safe_name = re.sub(r"[^a-z0-9_-]+", "_", filename.lower()).strip("_-")
+        assert safe_name, "LLM generated an empty memory filename"
+        target_dir = Path(__file__).resolve().parent / "memory"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"{safe_name}.md"
+        if target.exists():
+            suffix = re.sub(r"[^a-zA-Z0-9_-]+", "_", episode_id).strip("_-")
+            target = target_dir / f"{safe_name}_{suffix}.md"
+        target.write_text(markdown, encoding="utf-8")

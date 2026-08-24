@@ -63,7 +63,8 @@ class EpisodeMemory(BaseModel):
         scenes = self.content.applicable_scenes
         if not scenes or SCENE_ANY in scenes:
             return True
-        return scene in scenes
+        current = set(scene.split("|"))
+        return any(label in current or label == f"map:{scene}" for label in scenes)
 
     def render(self) -> str:
         """渲染成进 prompt 的样子，**检索打分也用它**——理由同

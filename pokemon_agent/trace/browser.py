@@ -96,12 +96,19 @@ function render(e){
   if(key!==current){current=key;line('----- STEP '+e.step+' -----','step')}
   line('--- '+e.phase.toUpperCase()+' ---','phase');
   const p=e.payload||{};
-  if(e.type==='observe') line('观察：'+(p.summary||'')+' ['+(p.scene||'')+']');
+  if(e.type==='observe'){
+    let facts={};
+    try{facts=JSON.parse(p.facts||'{}')}catch(_error){}
+    line('观察：'+(p.summary||''));
+    line('  scene       = '+(p.scene||facts.scene||'(无)'));
+    line('  overlay     = '+(p.overlay||facts.overlay||'(无)'));
+    line('  walk_map    = '+(facts.walk_map||'(无)'));
+  }
   else if(e.type==='memory_read'){
     line('记忆：');
     line('  step_memory   = '+(p.step_memory_count||p.count||0));
     line('  known_object  = '+(p.known_object_names||'(无)'));
-    line('  knowledge     = '+(p.knowledge_titles||'(无)'));
+    line('  knowledge     = '+(p.knowledge_sources||'(无)'));
     line('  episode_level = '+(p.episode_level_count||0));
   }
   else if(e.type==='think') line('思考：'+(p.thought||''));

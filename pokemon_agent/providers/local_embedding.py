@@ -41,3 +41,6 @@ class FastEmbedText:
         assert all(t for t in texts), "embed() got an empty string in texts"
         model = self._ensure_loaded()
         return [vec.tolist() for vec in model.embed(texts)]
+
+    def config(self) -> dict[str, str]:
+        return {"model": self._model_name, "runtime": "fastembed"}

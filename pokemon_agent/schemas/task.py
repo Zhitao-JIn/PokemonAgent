@@ -21,3 +21,7 @@ class Task(BaseModel):
     goal: str = Field(description="给 LLM 读的目标描述，会进 prompt")
     success_criteria: str = Field(description="成败判据的人类可读描述；判定由 world 实现")
     max_steps: int = Field(description="步数上限，超出即判失败。> 0")
+    initial_state_hint: str = Field(
+        default="",
+        description="实验采集起点要求；不参与模型 prompt，仅用于选择和核对 state 文件",
+    )

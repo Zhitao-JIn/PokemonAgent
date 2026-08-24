@@ -204,7 +204,7 @@ class LocalTrace:
             print(f"{'step_memory':<{LABEL_W}} count={p.get('step_memory_count', p.get('count', '0'))} "
                   f"refs={p.get('refs', '')}")
             print(f"{'known_object':<{LABEL_W}} {p.get('known_object_names', '(无)')}")
-            print(f"{'knowledge':<{LABEL_W}} {p.get('knowledge_titles', '(无)')}")
+            print(f"{'knowledge':<{LABEL_W}} {p.get('knowledge_sources', '(无)')}")
             print(f"{'episode_level':<{LABEL_W}} "
                   f"count={p.get('episode_level_count', p.get('episode_memory_count', '0'))} "
                   f"refs={p.get('episode_memory_refs', '')}")

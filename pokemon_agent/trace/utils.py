@@ -127,6 +127,7 @@ def memory_read(
     episode_id: str, step: int, memories: list[MemoryEntry],
     known_objects: str = "", knowledge: str = "",
     episode_memories: list[EpisodeMemory] = (),
+    knowledge_sources: list[str] = (),
 ) -> AppendArgs:
     """这一步从记忆里读出来的**全部**东西：单步情景记忆（检索到的几条）+ 语义记忆
     （`known_objects`：这张地图上互动过的东西；`knowledge`：和坐标无关的通用先验）
@@ -151,8 +152,7 @@ def memory_read(
         payload["known_objects_chars"] = str(len(known_objects))
     if knowledge:
         payload["knowledge"] = "1"
-        payload["knowledge_titles"] = _short_labels(knowledge)
-        payload["knowledge_chars"] = str(len(knowledge))
+        payload["knowledge_sources"] = " ".join(knowledge_sources)
     if episode_memories:
         payload["episode_memory_count"] = str(len(episode_memories))
         payload["episode_level_count"] = str(len(episode_memories))
