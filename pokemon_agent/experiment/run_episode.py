@@ -58,18 +58,9 @@ STATE = "assets/rom.state"
 
 # 验证执行环境
 def check_environment():
-    """确保本文件由 run_episode_loop 调用"""
+    """为直接短程入口准备 run_id；长程入口会提前设置它。"""
     if "CLAUDE_RUN_ID" not in os.environ:
-        print("\n" + "="*50)
-        print("⚠️ 严重错误: 缺少 CLAUDE_RUN_ID 环境變量")
-        print("="*50)
-        print("原因: 任务阶段必须通过 run_episode_loop.py 启动")
-        print("      直接运行会导致实验数据断裂")
-        print("\n正确的启动方式:")
-        print("  python -m pokemon_agent.experiment.run_episode_loop <steps> <goal> [--state PATH] [--watch]")
-        print("  (例如: python -m pokemon_agent.experiment.run_episode_loop 5 '向北走出真新镇' --state assets/pallet.state)")
-        print("="*50)
-        sys.exit(1)
+        os.environ["CLAUDE_RUN_ID"] = f"short-{datetime.now().strftime('%m%d-%H%M%S')}"
 
 
 # 生成唯一 episode_id
@@ -148,7 +139,6 @@ def build_session(run_id: str, state: str | None, watch: bool):
 def run_one(harness, run_id: str, max_steps: int, goal: str) -> dict:
     """在一个已经建好的 harness 上跑一个 episode。不建、不关 world。"""
     episode_id = generate_episode_id(run_id)
-    _snapshot_episode_start(run_id, episode_id)
     print(f"\n🔍 实验标识: run_id={run_id}, episode_id={episode_id}")
     print(f"   • 目标: {goal}")
 
@@ -175,17 +165,6 @@ def run_one(harness, run_id: str, max_steps: int, goal: str) -> dict:
     return {**outcome, "episode_id": episode_id}
 
 
-def _snapshot_episode_start(run_id: str, episode_id: str) -> None:
-    """保存本 episode 实际使用的起点存档；replay/resume 不能只依赖 run 级存档。"""
-    configured = os.environ.get("EPISODE_START_STATE", "")
-    source = pathlib.Path(configured) if configured else pathlib.Path(f"assets/run_{run_id}.state")
-    if not source.is_file():
-        source = pathlib.Path(STATE)
-    if not source.is_file():
-        return
-    target = pathlib.Path("trace_data") / run_id / "episodes" / f"{episode_id}.start.state"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(source.read_bytes())
 
 
 # 单发调用入口：build + 跑一个 + stop，全焊在一起。保留给"只想跑一次、
