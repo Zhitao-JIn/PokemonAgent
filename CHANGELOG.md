@@ -3,6 +3,38 @@
 > 最新在最上。每条固定四段：改了什么 / 为什么这么改 / 取舍 / 影响面。
 > 这是给人读的决策记录，不是 git log 的复制品。
 
+## 2026-08-25 —— docs/spec 追上代码
+
+**改了什么**：`harness/SPEC.md` 整篇重写；`schemas/SPEC.md` 删 `Intent` 一节、
+新增 `completion.py` 一节；`brain`/`prompts`/`interfaces`/`tools` 四份按实际接口订正；
+`build/SPEC.md` 新增「3b. `agent_permission` —— 横切的权限层」并更新 manifest 现状；
+`README.md` 的循环流程、不变量、过渡态三节重写。
+
+**为什么这么改**：spec 的漂移**不止这次改动造成的**。清点下来，代码里已经不存在、
+spec 里还在描述的名字有：`_inspect`（7 处）、`_dispatch`、`_push_goal`、`_nodes`、
+`see_objects`、`recent`、`Intent`（26 处）、`MAX_GOAL_DEPTH`；此外
+`known_here`/`knowledge_base`/`write_episodic`/`note_step`/`query_episodic` 这批
+`MemoryToolPort` 的旧方法名在 spec 里出现 60 多次，代码里早就改成了
+`query_objects`/`query_knowledge`/`store_episode_step`/`store_objects_interactions`/
+`query_episode_steps`。一份指着不存在的方法讲设计的文档，比没有文档更费时间——
+读的人会先花半小时确认自己没找错地方。
+
+**取舍**：**删掉的东西留"墓碑"而不是直接抹去。** `Intent`、`INTENT_HELP`、
+`intent_help.md`、`_judge_all` 各自保留一节，写清楚它是什么、为什么删、
+以及**重写时要捡回来的那几条论证**（多层判定的隔离与可标定性、判据不能省、
+`SCREEN_COORD` 拦的是哪个具体教训、代价不对称要让模型知道）。
+这些论证是踩出来的，代码里删干净了就只剩这一处载体。
+
+**不再标注行号。** 上一版每节都挂着 `harness.py:295-334`，一次重构之后全部失效，
+而失效的坐标比没有坐标更糟——它会把人带到错误的地方。改成按方法名索引。
+
+**没做**：`world`/`providers`/`memory` 三份没动，`MemoryToolPort` 旧方法名那 60 多处
+也没改——那些是这次改动之前就欠下的，混进来会让这条记录说不清是哪一半的锅。
+`README.md` 的「已知的过渡态」里记了三条待办：`inspect` 半死链路、
+拆子目标机制待重写、`tests/` 被 gitignore。
+
+**影响面**：纯文档。
+
 ## 2026-08-25 —— outcome 只在 run() 的出口算一次，`LoopState.outcome` 删掉
 
 **改了什么**：`_outcome()` 这个方法删了，内容内联进 `run()` 的出口；

@@ -27,7 +27,7 @@ pokemon_agent/
 ├── vision/        图像预处理（网格叠加等）
 ├── trace/         TracePort 的内存实现（store.py: MockTrace，append/replay/sse）
 │                  + 事件 payload 组装的纯函数（utils.py: trace_utils）
-├── experiment/    实验 manifest（尚未接入主流程）
+├── experiment/    实验 manifest（已接入 run_experiment.py）+ 任务定义 + 跑批入口
 └── build.py       唯一的装配点（全项目唯一出现 `new` 具体实现的地方）
 
 probe/             命令行脚本（跑真实 episode、调试工具）
@@ -113,13 +113,19 @@ build.py ── 全项目唯一一处具体类的 `new`
    `BrainPort.choose()` → `Brain` 用 `prompts/decide_action.md` 组装 prompt →
    调 `LLMProvider.complete()` → 解析成一个合法的 `Action`
    （`schemas/action.py`），失败则重试并把 `retry_note.md` 塞进下一次 prompt。
-4. **press / push_goal / inspect**：三选一，只有 `press` 真正调
-   `GameToolPort.execute()` 推进世界。
+4. **press**：**这一版只有按键一类动作**，直接调 `GameToolPort.execute()` 推进世界。
+   以前这里是 `press / push_goal / inspect` 三选一，按 `Action.intent` 在图上分派；
+   拆子目标的机制要在别处重写，所以 `Intent` 连同分派一起删了（见
+   [`harness/SPEC.md`](harness/SPEC.md) 3.1）。
 5. **remember**（只在 press 之后）：`Harness` 调 `BrainPort.reflect()` 把
    前后两份 `Observation` 整理成一条 `MemoryEntry`，写回
    `MemoryToolPort.write_episodic()`；再调 `MemoryToolPort.note_step()`
    把这一步的语义记忆（门/招牌/人给出的信息）落进 `memory/` 包。
-6. 每一步产生的所有模型调用记录（`calls`，见下一节）和状态转移，最终都由
+6. **summarize**（只在终止那一轮）：`look` 判出 `done` 之后不进 `retrieve_memory`，
+   改走 `summarize` —— 把这一局蒸馏成一条跨局摘要记忆（`EpisodeMemory`）。
+   它**要调一次模型**，所以在图上占一格：图上看得见的东西才会被算进成本。
+   随后图结束，`EPISODE_END` 由 `run()` 写下——正常结束和异常终止共用这一个出口。
+7. 每一步产生的所有模型调用记录（`calls`，见下一节）和状态转移，最终都由
    `Harness` 一个人翻译成 `TracePort.append()` 事件——这是全项目唯一写
    trace 的地方（但组装 `payload` 这一步委托给 `trace/utils.py` 的纯函数，
    `Harness` 自己不拼 `dict` 字面量，见 `interfaces/SPEC.md` 第 4 节）。
@@ -145,9 +151,15 @@ build.py ── 全项目唯一一处具体类的 `new`
   `build.py` 认识；这一层的意义是让 Harness 换模拟器、换 LLM 供应商时一行
   不用改。
 - **图结构本身承载设计规则，而不是靠代码里的调用顺序。** `retrieve_memory`/
-  `remember` 拆成独立的图节点（而不是 `think`/`press` 内部的几行代码），
-  是因为"每一步先查记忆再决策""只有推进世界那一步才写记忆"这两条规则
+  `remember`/`summarize` 拆成独立的图节点，是因为"每一步先查记忆再决策"
+  "只有推进世界那一步才写记忆""一局只在结束时蒸馏一次经验"这三条规则
   现在从图的边上就能看出来，不用读代码才知道。
+  推论是反过来也成立：**不花钱、不改世界、不写记忆的纯计算不该占一格**——
+  构造 `EpisodeOutcome` 因此留在 `run()` 里，给它一个方框会稀释"读图 = 看这一局
+  做了哪些真事"这个读法。
+- **同一份信息只在一个地方算。** `EpisodeOutcome` 和 `EPISODE_END` 的 payload
+  逐字段对应，所以它们写在相邻两行、从同一个 `obs` 派生。算在两个地方的话，
+  漂移时**没有任何东西会报错**——返回值说成功、事件流说失败，要等到对账才发现。
 - **跨层类型 vs 模块内部类型的界限很刻意。** `ObjectFact` 定义在
   `schemas/memory_semantic.py` 而不是 `memory/` 包内部，因为它要出现在
   `MemoryToolPort` 的签名里（跨层）；`ScreenState`/`TerrainMap` 虽然也在
@@ -165,7 +177,15 @@ build.py ── 全项目唯一一处具体类的 `new`
   打印逻辑已并入 `MockTrace.sse()`）——这四个曾经的"应删除但尚未删除"文件
   **现已全部删除**，本节这条不变量记录到此为止；`trace/` 包的当前形态见
   `interfaces/SPEC.md` 第 4 节、`build/SPEC.md` 第 4、6 节。
-- `experiment/manifest.py` 定义了实验配置骨架，但尚未接入
-  `probe/run_episode.py` 这个主入口。
+- **拆子目标的机制不在了。** `Intent`/`push_goal`/多层并发判定（`_judge_all`）
+  这一整套删掉了，目标栈的形状留着但恒为一层，当前目标恒为栈顶。
+  重写它时要捡回来的那几条论证记在 `harness/SPEC.md` 第 5 节和
+  `brain/SPEC.md` 3.4 的引用块里——**不留在代码里占位**，占位的抽象会把下一版
+  往旧形状上带。
+- **`inspect` 是一条半死的链路**：`WorldPort.inspect()` / `PyBoyWorld.inspect()`
+  还在，`EventType.INSPECT` / `trace_utils.inspect()` / `prompts/inspect_focus.md`
+  也还在，但 `GameToolPort` 早已不暴露它，没有任何调用方。要么接回来，要么整条删掉。
+- **`tests/` 整个目录在 `.gitignore` 里**（`git ls-files tests/` 是 0）。
+  CLAUDE.md 第十节要求必须存在的那两个测试，对任何 clone 这个仓库的人都不存在。
 - `MockTrace` 是 `TracePort` 唯一的实现——落盘、真正的浏览器推流（`sse()` 目前
   只打印到控制台）、按失败类型聚合统计都还没做（`build/SPEC.md` 里有完整说明）。

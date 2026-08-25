@@ -16,8 +16,8 @@
 | `tools.py` | `GameToolPort`、`MemoryToolPort` | Harness 伸向环境和记忆的两只手 |
 | `brain.py` | `BrainPort` | 所有需要 LLM 才能回答的问题 |
 | `trace.py` | `TracePort` | 追加写的事件日志 |
-| `llm.py` | `LLMProvider`、`Completion` | 纯文本模型的出口 |
-| `vision.py` | `VisionProvider`、`VisionCompletion` | 视觉模型的出口 |
+| `llm.py` | `LLMProvider` | 纯文本模型的出口。返回类型 `Completion` 在 `schemas/completion.py` |
+| `vision.py` | `VisionProvider` | 视觉模型的出口。返回类型 `VisionCompletion` 在 `schemas/completion.py` |
 
 ---
 
@@ -102,7 +102,7 @@
 |---|---|---|---|---|
 | `perceive` | `perceive(self) -> PerceptionResult` | 无 | **幂等只读**：不推进世界、不写 trace、不触发判定；同一帧内多次调用不产生额外模型调用（实现方要在帧内缓存，感知是每步都要付钱的一项）；`result.calls` 是这次调用产生的模型调用记录，命中缓存时为空列表（**不是 None**）；返回的 `observation` 在同一帧内稳定，**除非期间调用过 `inspect()`**（会往 facts 加一条 `inspected`，这是刻意的，意味着"幂等"只对模型调用成立、对返回值不成立） | 未文档化 |
 | `inspect` | `inspect(self, focus: str) -> PerceptionResult` | `focus` 非空；**没有具体问题就不该调它**——否则只是把同一帧原样再看一遍（`perceive()` 帧内缓存字节完全一样），不产生新信息，纯粹白烧一次调用 | 答案并进下一次 `perceive()` 的 facts；`execute()` 之后自动失效；`result.calls` 是这次细看产生的调用记录 | 不抛异常，把"没看清"写成答案 |
-| `get_action_space` | `get_action_space(self) -> ActionSpace` | 无 | `names` 非空——走投无路的状态也必须至少给一个动作，空动作空间是工具层的 bug，不能让大脑处理；`intents` **不由这一层填**（能不能拆子目标取决于目标栈深度，那是循环的事，工具层只管按键） | 未文档化 |
+| `get_action_space` | `get_action_space(self) -> ActionSpace` | 无 | `names` 非空——走投无路的状态也必须至少给一个动作，空动作空间是工具层的 bug，不能让大脑处理。**工具层给出的就是完整的动作空间**，Harness 不再覆写（`ActionSpace.intents` 已随 `Intent` 一起删掉） | 未文档化 |
 | `execute` | `execute(self, action: Action) -> ToolResult` | `action.name` 属于**调用前最近一次** `get_action_space()` 的结果；实现方必须 `assert` 这点——大脑幻觉出不存在的动作要在这里就地爆炸，不能变成语义不明的模拟器错误 | `result.observation` 非空，是执行后的新观测；它的 `step` **还没有盖章**（盖章是 Harness 的事）；`result.calls` 是推进这一步期间产生的模型调用记录（通常来自推进后重新感知那一次），命中缓存时为空列表 | 未文档化（见前置条件的 assert） |
 | `reset` | `reset(self, task: Task) -> PerceptionResult` | `task.max_steps > 0` | `result.observation.done` 为 `False`；`step` 未盖章（由 Harness 填 0）；`result.calls` 是这次重置期间产生的模型调用记录 | 未文档化 |
 | `last_frame_sha`（属性） | `@property last_frame_sha -> str` | 无 | 最近一次观测所依据的那一帧的哈希，用于追查读错的观测出自哪一帧；没有"帧"概念的实现返回空串 | 无 |
@@ -180,7 +180,7 @@
 
 | 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
 |---|---|---|---|---|
-| `choose` | `choose(self, goals: list[Goal], obs: Observation, space: ActionSpace, memories: list[MemoryEntry]) -> Decision` | `space.names` 与 `space.intents` 非空、`goals` 非空、`obs.done` 为 `False`（空动作空间是 Tools 的 bug，大脑不为它兜底） | `decision.action` 非 `None` 时，其 `intent` 属于 `space.intents`，且为 `PRESS` 时 `name` 属于 `space.names`；`decision.calls` 至少一条 | **重试全部失败时返回 `action=None`，不抛异常**——那是一类要被统计的失败模式，不是"再试试就好"，而"这一局要不要因此终止"是 Harness 的判断，大脑只如实汇报；**模型调不通（网络、鉴权）仍然会抛**（与 `judge` 对照） |
+| `choose` | `choose(self, goals: list[Goal], obs: Observation, space: ActionSpace, memories: list[MemoryEntry]) -> Decision` | `space.names` 非空、`goals` 非空、`obs.done` 为 `False`（空动作空间是 Tools 的 bug，大脑不为它兜底） | `decision.action` 非 `None` 时其 `name` 属于 `space.names`；`decision.calls` 至少一条 | **重试全部失败时返回 `action=None`，不抛异常**——那是一类要被统计的失败模式，不是"再试试就好"，而"这一局要不要因此终止"是 Harness 的判断，大脑只如实汇报；**模型调不通（网络、鉴权）仍然会抛**（与 `judge` 对照） |
 | `judge` | `judge(self, goal: Goal, obs: Observation, history: Sequence[MemoryEntry] = ()) -> Verdict` | 无——哪怕 `obs` 是空的也要能回答（答案是"没完成"） | **永远返回 `Verdict`，不抛异常**；任何异常情况（解析失败、模型不回话、网络抖）一律判**没完成**；理由不对称：判成"完成"会立刻终止这一局且直接进实验数据，判成"没完成"只是多跑几步，下一步还有机会纠正，所以所有不确定都往"没完成"倒 | 见后置条件；这是与 `choose` 刻意不同的一点——判定器坏掉不该让一局崩掉,那会把一次本可标记为"判定失败"的事件变成一局丢失的数据；而决策模型真的调不通时，这一局本来就跑不下去，硬撑只会产出无意义的步骤 |
 | `reflect` | `reflect(self, before: Observation, action: Action, after: Observation) -> MemoryEntry` | `action.rationale` 非空 | 返回的 entry 内容完整（看到什么 → 为什么 → 做了什么 → 变成什么）；`episode_id` 留空由 Harness 盖章（和 `Observation.step` 一个道理——大脑不知道自己在哪一局）；**方法自己不写库**（写库是状态变更,大脑无状态,由 Harness 落库,"谁改了记忆"永远只有一个答案） | 未文档化 |
 
@@ -240,7 +240,14 @@
 
 当前唯一的实现是 `providers/dashscope.QwenText`，换模型只改装配处的一行。
 
-### 5.1 `Completion`（数据类型，非协议）
+### 5.1 `Completion` —— **已搬到 `schemas/completion.py`**
+
+字段表见 `schemas/SPEC.md` 第 7 节。搬家的理由：`schemas/` 放 Pydantic 数据模型、
+`interfaces/` 放 Protocol；数据模型混在接口文件里，读的人分不清哪些是**契约**、
+哪些是**契约里流的东西**，而「光读 `interfaces/` 就能看懂整个系统怎么运转」正是
+这个目录存在的理由。没有留 re-export 兼容层。
+
+字段速查（完整说明在 `schemas/SPEC.md`）：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -283,7 +290,9 @@
 
 和 `LLMProvider` 一样做得很薄：只负责"图片进、文本出"。**分类、schema 填充、类型判定都不在这里**——那些是感知层的事，换模型不该动它们。
 
-### 6.2 `VisionCompletion`（数据类型，非协议）
+### 6.2 `VisionCompletion` —— **已搬到 `schemas/completion.py`**
+
+理由同 5.1。字段速查：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|

@@ -124,8 +124,9 @@ if a in self._world.all_actions()]`。`descriptions` 同样按 overlay 从
 后置条件用 assert 硬守：`names` 绝不能为空——走投无路也必须给至少一个动作，
 空动作空间是这一层的 bug，不能推给大脑处理。
 
-`intents` 字段留空（`ActionSpace` 默认只有 press），由 Harness 覆写：能不能
-拆子目标取决于目标栈有多深，工具层不知道也不该知道。
+**`ActionSpace` 就在这里定型，Harness 不再覆写它。** 这里曾经留空一个 `intents`
+字段交给 Harness 填（能不能拆子目标取决于目标栈有多深，那是循环的账），
+intent 分派删掉之后那个字段也没了。
 
 方法末尾把 `(space, self._world.last_frame_sha)` 存入 `_last_space`——注释强调
 "掩码是**按这一帧的 overlay 算的**，换帧就作废"。
@@ -569,7 +570,7 @@ def knowledge_base(self) -> str:
 |---|---|---|
 | `perceive` | `() -> PerceptionResult` | 幂等只读，帧内缓存不产生额外模型调用；不写 trace、不推进世界、不触发判定 |
 | `inspect` | `(focus: str) -> PerceptionResult` | 前置：`focus` 非空；世界不推进；不抛异常，问不出来就写"没看清" |
-| `get_action_space` | `() -> ActionSpace` | 后置：`names` 非空；`intents` 不在此层填 |
+| `get_action_space` | `() -> ActionSpace` | 后置：`names` 非空。**这一层给出的就是完整动作空间** |
 | `execute` | `(action: Action) -> ToolResult` | 前置：`action.name` 属于调用前最近一次 `get_action_space()` 的结果，需 assert；后置：`result.observation` 非空 |
 | `reset` | `(task: Task) -> PerceptionResult` | 前置：`task.max_steps > 0`；后置：`observation.done` 为 False |
 | `last_frame_sha`（property） | `-> str` | 最近一次观测所依据帧的哈希；无"帧"概念的实现返回空串 |

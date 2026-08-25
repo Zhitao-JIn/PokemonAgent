@@ -3,7 +3,9 @@
 > 源码：`pokemon_agent/brain/brain.py`
 > 接口：`pokemon_agent/interfaces/brain.py`（`BrainPort`）
 > 辅助：`pokemon_agent/prompts/brain_hints.py`
-> 模板：`pokemon_agent/prompts/decide_action.md`、`intent_help.md`、`judge_success.md`、`retry_note.md`
+> 模板：`pokemon_agent/prompts/decide_action.md`、`judge_success.md`、`retry_note.md`
+>
+> （`intent_help.md` 随 intent 分派一起删了，见 3.4、4.2。）
 
 ---
 
@@ -93,12 +95,12 @@ def choose(
 
 - **`goals`**：整个目标栈（`list[Goal]`），**栈顶（列表最后一个）是这一轮要完成的那条**。下面几层也要传入——见 3.3 节 `_render_goals` 的论证。
 - **`obs`**：当前观察（`Observation`），含 `summary`、`facts`、`done` 等字段。
-- **`space`**：`ActionSpace`，给出这一轮允许哪些 intent（`space.intents`）、哪些具体按键（`space.names`/`space.descriptions`）、以及可选的 `space.note`。**它由 Harness 填**，因为"还能不能再拆一层子目标"取决于当前栈有多深。
+- **`space`**：`ActionSpace`，给出这一轮可用的按键（`space.names`/`space.descriptions`）以及可选的 `space.note`。**这一版只有按键一类动作**——`space.intents` 那个字段连同 `Intent` 枚举一起删了，`ActionSpace` 直接来自工具层，Harness 不再覆写它。
 - **`memories`**：Harness **已经检索好**的情景记忆，直接进 prompt。**检索策略（按什么查、查几条）不是大脑的事**——大脑只回答"给了我这些，我选哪个动作"。
 
-前置条件（`assert`）：`space.names` 非空、`space.intents` 非空、`obs.done` 为 `False`、`goals` 非空。空动作空间被明确定性为"工具层的 bug，大脑不为它兜底"。
+前置条件（`assert`）：`space.names` 非空、`obs.done` 为 `False`、`goals` 非空。空动作空间被明确定性为"工具层的 bug，大脑不为它兜底"。
 
-后置条件：`action` 非 `None` 时，它必属于 `space`（`intent` 在 `space.intents` 里，且若为 `PRESS` 则 `name` 在 `space.names` 里）；`calls` 至少一条。
+后置条件：`action` 非 `None` 时 `action.name` 必在 `space.names` 里；`calls` 至少一条。
 
 **重试用尽时返回 `action=None`，不抛异常。** 这是一类要被统计的失败模式，"这一局要不要因此终止"是 Harness 的判断，大脑只如实汇报结果。
 
@@ -116,7 +118,7 @@ def choose(
    - `pydantic.ValidationError`：`Action` 的 `model_validator` 抛的是 `ValueError`，pydantic 会把它包装成 `ValidationError`——它**不是** `AgentError` 的子类，如果不特别捕获会穿透重试循环，直接让整局崩溃。正常路径下走不到这里，因为 `_parse` 在构造 `Action` 之前已经把每条约束手工验证过一遍；但这意味着**同一套校验写了两份、且没有机制保证两边同步**——哪天 `Action` 上新增一条约束而 `_parse` 没跟上，症状会从"一次可统计的重试"退化成"整局崩溃"。这里兜住它，转换成 `kind="ParseFailure"`，让它退化回一次可统计的解析失败。
 5. **无论成功失败，每次调用都追加一条 `ModelCall`**——"一次模型调用 = 一条账"。`payload` 里带 `prompt_sha`、`input_tokens`、`output_tokens`、`latency_ms`、`attempt`、`ok`（是否解析成功）、以及**原始文本 `raw`**。保留 `raw` 的用意是：以后改进解析器可以**离线用历史数据重算**，不需要再花 token 重新跑一遍。失败的那几次调用同样消耗了 token，因此也要留痕。
 6. 若 `parsed is None`：把 `prompt` 更新为 `base + _retry_note(attempt + 1, reason, completion.text[:400])`，用于下一轮尝试。
-7. 若 `parsed is not None`：先用 `assert` 复核 `intent` 在 `space.intents` 内、且 `PRESS` 时 `name` 在 `space.names` 内（这两条本应由 `_parse` 内部保证，这里是双重确认），然后返回 `Decision(action=parsed, calls=calls, recalled=refs)`，循环提前结束。
+7. 若 `parsed is not None`：先用 `assert space.contains(parsed.name)` 复核（这条本应由 `_parse` 内部保证，这里是出口的双重确认——**它是"大脑不会幻觉出不存在的动作"这个核心主张的运行时证据**），然后返回 `Decision(action=parsed, calls=calls, recalled=refs)`，循环提前结束。
 8. 循环耗尽仍未成功：返回 `Decision(action=None, calls=calls, recalled=refs)`。
 
 **重试是"带着上次错误重问"，不是原样再问一遍。** 原样重问等价于把三次模型调用当一次用：最常见的失败是系统性的（比如子目标判据里写了屏幕坐标），换一次随机种子照样会犯同样的错。纠正块被追加在 prompt **末尾**而不是开头或中间，是为了让前缀完全不变，三次尝试可以共享同一段 prompt 缓存。
@@ -133,7 +135,6 @@ def _build_prompt(self, goals, obs, space, memories) -> str
 - `recalled`：把 `memories` 逐条 `render()` 后用两个换行拼接，为空时填"（无相关记忆）"。
 - `actions`：把 `space.names` 逐个渲染成 `- name: 说明`（说明取自 `space.descriptions`，缺失则显示"（无说明）"），若 `space.note` 非空则追加在后面。
 - `goals`：调用 `_render_goals(goals)`（见下）。
-- `intents`：把 `space.intents` 中每个 intent 渲染成 `` - `value`：说明 `` ，说明文字来自 `INTENT_HELP[i]`（`brain_hints.py`）。
 
 最终用 `self._decide_prompt.render(...)` 把这些字段代入 `decide_action.md` 模板，同时传入 `max_rationale=MAX_RATIONALE`（来自 `schemas.action`）。
 
@@ -160,21 +161,25 @@ def _render_goals(goals: list[Goal]) -> str
 1. 去除首尾空白；若以 ` ``` ` 开头，容忍 ` ```json ` 包裹形式，取出内层内容——这是模型最常见的格式偏差，为它单独重试一轮不划算。
 2. `json.loads`；失败抛 `ParseFailure(text, "not valid json (...)")`。
 3. 顶层若不是对象，抛 `ParseFailure`。
-4. `_parse_intent`：取出 `intent`：
-   - 若字段缺失但存在 `action` 字段（旧格式），容忍并回退为 `Intent.PRESS`——语义无歧义,为此单独重试不划算。
-   - 若两者都没有，不去猜——猜错会让模型做一件它本来没打算做的事，直接 `ParseFailure`。
-   - 若给出的值不在 `Intent` 枚举里，`ParseFailure`。
-   - **回退出来的 `PRESS` 同样要过 `space.intents` 掩码检查**，不允许直接 `return`：早一版是直接返回，将来一旦出现"只准思考不准动"这类状态把 `press` 掩掉，症状会变成 `choose()` 出口处的 `assert` 直接崩溃，而不是一次可重试、可统计的 `IllegalAction`。
-   - 若不在允许集合内，抛的是 `IllegalAction` 而非 `ParseFailure`——因为这不是格式问题，是模型在**幻觉一个此刻不可用的能力**（比如目标栈已满仍想 `push_goal`）。两者在 replay 时是不同的失败模式，需要改的地方也不同（`ParseFailure` 该改 prompt/上约束解码；`IllegalAction` 该改动作说明或收紧掩码）。
-5. 按 `intent` 分支取字段：
-   - `PRESS`：需要 `action`（字符串，且必须在 `space.contains(name)` 内，否则 `IllegalAction`）；`args` 需为 dict（缺省为空 dict），所有值转为字符串。
-   - `PUSH_GOAL`：需要非空的 `goal` 和 `criteria` 字符串。**`criteria` 不能省**——没有它判定器只能凭"看起来差不多了"回答，那正是成功率被污染的地方，缺失时打回去重试而不是替它编一个。随后用 `SCREEN_COORD` 正则检查 `goal`+`criteria` 拼接文本，命中屏幕坐标类写法（"屏幕格"、"屏幕坐标"、`walk_map`、"第N行/列"、裸括号坐标对）时抛 `ParseFailure`，并给出详细的纠正说明（位置只能写 `x=.. y=..`，因为 `walk_map` 的行列号已经就是全局坐标，且判定器根本看不到 `walk_map`）。
-   - `INSPECT`：需要非空的 `focus` 字符串。
+4. **取按键**：`action` 必须是非空字符串，否则 `ParseFailure("no 'action' field")`；必须满足 `space.contains(name)`，否则 **`IllegalAction`**。
+   - 走 `IllegalAction` 而不是 `ParseFailure`：格式是对的，模型是在**幻觉一个此刻不可用的按键**。两者在 replay 里是不同的失败模式，该改的东西也不同（`ParseFailure` 改 prompt 或上约束解码；`IllegalAction` 改动作说明或收紧掩码）。
+5. **取参数**：`args` 需为 dict（缺省为空 dict），所有值转为字符串。
+
+   > 这里曾经有一段 `_parse_intent` + 按 intent 三分支（`PRESS`/`PUSH_GOAL`/`INSPECT`）的解析，
+   > 连同 `SCREEN_COORD` 正则（拦截判据里的屏幕坐标写法）一起删了——**只剩按键一类动作**。
+   > 其中两条论证值得在重写拆解机制时捡回来：
+   >
+   > - **判据不能省。** 没有它判定器只能凭"看起来差不多了"回答，那正是成功率被污染的地方；
+   >   缺失时打回去重试，不要替它编一个。
+   > - **`SCREEN_COORD` 拦的是残留的旧习惯。** 旧版 walk_map 的行列号和全局坐标是两套系统，
+   >   混用造成过一整局的损失：目标写成"移动到屏幕格(7,4)"，而旧版主角在屏幕上恒定显示在
+   >   `(4,4)`，走过去之后还是 `(4,4)`，判据**永不成立**，模型于是一层层拆出永不完成的子目标。
+   >   现在两套坐标已合并成一套，但只要判据还由模型自己写，这条拦截就仍然有独立理由：
+   >   判定器看不到 `walk_map`/`landmarks`（见 `JUDGE_BLIND`），判据里提那张图等于没说。
+   >   拦截只该落在**判据**上，`thought`/`rationale` 不受限——那两个是模型自己的草稿纸。
 6. `_parse_thought`：取出 `thought`，缺失或空则单独抛 `ParseFailure("missing 'thought' field")`——用独立的 reason 字符串（而非新增异常类型）区分"格式坏"和"不肯推理"这两类失败，足够 replay 时按 reason 聚合分析，不值得为此多开一个异常类。
 7. `_parse_rationale`：取出 `rationale`。容忍裸字符串写法（自动包成单元素列表）。非 list 则 `ParseFailure`。过滤空字符串后若为空列表，`ParseFailure`。**若条数超过 `MAX_RATIONALE`，走 `ParseFailure` 而不是静默截断**——模型认为需要 4 条论据是有分量的，悄悄丢掉第 4 条等于替它做了一个没有留痕的决定；打回去重试至少留下痕迹，代价是这类重试会多花 token（如果实测占比很高，未来可以改成截断）。
-8. 最终用取出的字段构造 `Action(intent=..., thought=..., rationale=..., **fields)`。
-
-`SCREEN_COORD` 正则本身有专门的设计记录：它拦的是"残留的旧习惯"——旧版本 walk_map 的行列号和全局坐标是两套系统，混用坐标造成过一整局的损失（目标写成"移动到屏幕格(7,4)"，因为旧版主角在屏幕上恒定显示在 `(4,4)`，走过去后位置依旧是 `(4,4)`，判据永不成立，模型于是一层层拆出永不完成的子目标）。现在两套坐标已经合并成一套，但拦截没有跟着删掉，因为它防的是习惯性错误，而不是当前坐标系是否统一。此外它还有独立理由：判定器看不到 `walk_map`/`landmarks`（见 `JUDGE_BLIND`），判据里提这张图对判定器来说等于没说。**这条只在 `push_goal` 的 `goal`/`criteria` 上拦截**，`thought`/`rationale` 不受限——那两个字段是模型自己的草稿纸。
+8. 最终构造 `Action(name=..., args=..., thought=..., rationale=...)`。
 
 **失败后的重试循环**：解析出的异常在 `choose()` 里被捕获，转换成 `(kind, reason)`，随后 `prompt = base + _retry_note(attempt + 1, reason, completion.text[:400])`（见 3.2 节和 4.1 节）。
 
@@ -195,28 +200,26 @@ def _render_goals(goals: list[Goal]) -> str
 按顺序包含以下部分：
 
 1. **开场**：说明这是在玩宝可梦，按 ReAct 方式思考并选下一个动作。
-2. **目标栈**（`$goals`）：来自 `_render_goals` 的渲染结果，并提示"你只需要完成栈顶那一条，完成后自动出栈"。
+2. **目标**（`$goals`）：来自 `_render_goals` 的渲染结果，并提示"你只需要完成栈顶那一条"。
 3. **当前状态**（`$summary`）：`obs.summary`。
 4. **已知事实**（`$facts`）：`obs.facts` 逐条列出。
 5. **相关记忆**（`$memories`）：Harness 检索好的 `memories` 渲染结果。
-6. **这一轮你可以做三类事之一**（`$intents`）：来自 `INTENT_HELP`，按 `space.intents` 过滤。
-7. **可用按键**（`$actions`）：`space.names`（及其说明）+ 可选的 `space.note`。
-8. **输出格式**：要求只输出一个 JSON 对象，并按 `intent` 给出三种示例（`press`/`push_goal`/`inspect`）。
-9. **各字段的要求**：
+6. **可用按键**（`$actions`）：`space.names`（及其说明）+ 可选的 `space.note`。
+7. **输出格式**：只输出一个 JSON 对象，一个示例（`thought`/`rationale`/`action`/`args`）。
+8. **各字段的要求**：
    - `thought`：完整推理，只用于记录，不进入后续决策。
    - `rationale`：1 到 `$max_rationale` 条，要求写"为什么这个动作在当前状态下成立"的依据，不要复述动作本身；强调**这些会被存进记忆、以后在相似状态下取回**，所以要写成"以后还能判断真假"的样子（例如"地上有药水而我手上没有"而非"我觉得这样比较好"）。
-   - `args.times`（press）：1 到 8，press 时必须出现，默认 `"1"`；只有"沿直线走几格"是唯一正当的调大场景，因为连按期间看不到中间画面；`a` 键永远是 1（写大了会被夹成 1），因为对话是逐句出现的，连按会吞掉中间的句子而判据往往就要那句话。
-   - `goal`（push_goal）：强调是**里程碑不是路径点**，达成时画面要明显不同；拆错成本是"白烧一步且每步都要多花一次判定调用"。
-   - `criteria`（push_goal）：必须只看一帧画面就能判断真假；明确告诉模型"判定的人看不到你的推理，也看不到 `walk_map` 和 `landmarks`，只有 `where`/`map_id`/`scene`/对话框文字/`overview`"；位置一律 `x=.. y=..`。
-   - `focus`（inspect）：要求是具体问题，不是"再看看"。
+   - `args.times`：1 到 8，必须出现，默认 `"1"`；只有"沿直线走几格"是唯一正当的调大场景，因为连按期间看不到中间画面；`a` 键永远是 1（写大了会被夹成 1），因为对话是逐句出现的，连按会吞掉中间的句子而判据往往就要那句话。
+### 4.2 `intent_help.md` —— **已删除**
 
-### 4.2 `intent_help.md`：`INTENT_HELP` 的内容来源
+曾经以 `## press` / `## push_goal` / `## inspect` 三个 section 组织，由
+`brain_hints.py` 的 `load_sections("intent_help")` 拆开装进 `INTENT_HELP`。
+intent 分派删掉之后它没有任何读者，随之删除（`load_sections()` 也因此变成零调用方，
+但它和 `load_nested_sections()` 是一对，暂时留着）。
 
-以 `## press` / `## push_goal` / `## inspect` 三个 section 组织，被 `brain_hints.py` 的 `load_sections("intent_help")` 拆开、按 `Intent` 分类装进 `INTENT_HELP: dict[Intent, str]`。
-
-- **press**：唯一会改变世界、唯一不可逆的一类；按错了只能想办法走回来。
-- **push_goal**：把栈顶目标拆出一个更近、更容易验证的子目标，必须同时给出判据；重申"子目标是里程碑不是路径点"、位置写法要求；额外给出一条策略提示——碰到 `known_objects` 里还没互动过的门/招牌/人时，先拆子目标去"够到它"，具体按哪个键、试哪个朝向不用现猜，那部分已经有 `known_objects` 里"试过"和"还剩几种"的记录，子目标只管够到，怎么碰是更低层的事。
-- **inspect**：对当前这一帧再问一个具体问题，游戏不动；强调问题必须是新的，问"再看看"得不到新内容。
+里面那条策略提示值得在重写时捡回来：碰到 `known_objects` 里还没互动过的门/招牌/人时，
+先拆子目标去"够到它"——**具体按哪个键、试哪个朝向不用现猜**，那部分已经有
+`known_objects` 里"试过"和"还剩几种"的记录，子目标只管够到，怎么碰是更低层的事。
 
 ### 4.3 `judge_success.md`：判定 prompt 的组织方式
 
@@ -244,7 +247,12 @@ def _render_goals(goals: list[Goal]) -> str
 这个文件不是 prompt 文字本身的来源（文字在 `.md` 文件里），而是**组装逻辑**，理由是"怎么拼接"和"prompt 文字"是两件事，都不该留在 `brain.py` 里（那里该管"怎么决策"）：
 
 - **`retry_note(attempt, reason, raw) -> str`**：返回 `"\n\n" + _RETRY_PROMPT.render(...)`。两个换行是刻意的，给和上文留出视觉分隔；`retry_note.md` 的内容从 `---` 开始正是为此设计。追加在**末尾**而非重新组织整个 prompt，是为了让前缀完全不变，三次尝试共享同一段缓存。
-- **`INTENT_HELP: dict[Intent, str]`**：由 `load_sections("intent_help")` 拆分 `intent_help.md` 得到,按 `Intent.PRESS`/`PUSH_GOAL`/`INSPECT` 建立字典。被记录为"接口的一部分"而非"prompt 模板的一部分"：大脑能做哪几类事由 `ActionSpace.intents` 决定,说明文字必须跟着实际下发的那几类走——如果写死在模板里,某个 intent 被掩掉后说明还留着,模型会去选一个用不了的东西。
+
+这里曾经还有一个 `INTENT_HELP: dict[Intent, str]`，随 intent 分派一起删了。
+它当时被记录为"**接口的一部分**而非 prompt 模板的一部分"——大脑能做哪几类事由
+`ActionSpace.intents` 决定，说明文字必须跟着实际下发的那几类走；写死在模板里的话，
+某个 intent 被掩掉之后说明还留着，模型会去选一个用不了的东西。
+这条原则对**按键说明**（`BUTTON_HELP`）依然成立，重写拆解机制时也依然成立。
 
 ---
 

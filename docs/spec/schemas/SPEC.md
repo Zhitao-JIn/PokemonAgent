@@ -20,7 +20,7 @@
 
 一句话总结这个分层原则：**跨层类型是不同子系统之间唯一被允许交换的数据形状；模块内部类型只在产生它的那个子系统内部流动，最终都要被"压平"成跨层类型能装下的形式（通常是字符串）交给下一层。**
 
-### 0.2 为什么原来的 `core.py` 拆成六个文件
+### 0.2 为什么原来的 `core.py` 拆成多个文件
 
 拆分依据是"契约管的是哪件事"，而不是技术上的字段分组：
 
@@ -32,6 +32,7 @@
 | `memory_episodic.py` | 情景记忆契约——"我在那种画面里选了什么、结果如何"，作用域是一次经过、有时效 |
 | `memory_semantic.py` | 语义记忆契约——"世界是什么样"，自带作用域、域内恒真 |
 | `trace.py` | Trace 契约——记账、判定结果、事件流 |
+| `completion.py` | 模型调用的返回值——文本模型的 `Completion`、视觉模型的 `VisionCompletion` |
 
 `observation.py` 内部虽然又分成"跨层的感知结果"（`Observation`/`Place`/`Landmark`）和"不跨层的画面解析中间产物"（`Scene`/`Overlay`/`ScreenState`/`TerrainMap`），但没有进一步拆成两个文件，理由是文件 docstring 明说的：**它们是同一件事的两个阶段**——"世界被感知成什么结构"和"结构怎么变成大脑看到的那份 `Observation`"——拆成两个文件反而要在中间加一层 import 才能看出这层因果关系，得不偿失。
 
@@ -304,15 +305,19 @@ task.py  (无对本模块内其他文件的依赖)
 
 依赖：`from .observation import Observation`。
 
-### 3.1 `Intent`（`str, Enum`，跨层）
+### 3.1 `Intent` —— **已删除**
 
-大脑这一轮想做哪一类事，是流程图的分派依据。取值：
+曾经是一个 `str, Enum`（`PRESS` / `PUSH_GOAL` / `INSPECT`），是流程图的分派依据。
+连同 `Action.intent`、`Action.goal`、`Action.focus`、`ActionSpace.intents`
+和图上的 `push_goal` / `inspect` 节点一起删掉了：**这一版只有按键一类动作**。
 
-- `PRESS = "press"`：按键，推进世界，**唯一不可逆的一类**。
-- `PUSH_GOAL = "push_goal"`：把子目标压进目标栈，不推进世界。
-- `INSPECT = "inspect"`：对同一帧再问视觉模型一个具体问题，不推进世界。**必须带 `focus`**——不带的话等于把同一帧原样再看一遍（`perceive()` 是帧内缓存的，返回字节完全一样，不产生新信息），模型拿不准时一定会选它，下一轮看到同样画面会再选一次；带上具体问题、走另一份 prompt，才真的产出新事实、值那次调用的钱。
+删而不是留：拆子目标的机制要在别处重写，而留一半最坏——`Intent` 还在 schema 里、
+图上却没有 `push_goal` 的去处时，模型照样能输出 `intent: "push_goal"`（prompt 里
+还写着），然后在分派处炸，成为一个只在特定输出下才出现的崩溃。
 
-**设计理由**：分成三类而不是全塞进按键里，是因为它们代价和后果完全不同——只有 `PRESS` 不可逆推进世界，另两类只改变大脑自己的处境；分开后"花了多少轮想、多少轮走"可以直接从 trace 数出来。做成枚举而非布尔标志的收益：未来加第四类（读记忆、写记忆、调工具）时，只需加一个枚举值加一个图节点，`choose()` 和 prompt 的形状不变。
+当时把它做成枚举而不是布尔标志的理由记在这里，重写时可以参考：它们**代价和后果
+完全不同**——只有 `PRESS` 不可逆地推进世界，另两类只改变大脑自己的处境；
+分开之后"花了多少轮在想、多少轮在走"可以直接从 trace 数出来。
 
 ### 3.2 `Goal`
 
@@ -337,11 +342,8 @@ task.py  (无对本模块内其他文件的依赖)
 
 | 字段 | 类型 | 默认值 | 约束 |
 |---|---|---|---|
-| `intent` | `Intent` | `Intent.PRESS` | 这一轮做哪类事，分派靠它，`name` 只在 PRESS 时有意义 |
-| `name` | `str` | `""` | 按键名，须来自当时的 `ActionSpace`，只在 PRESS 有意义 |
+| `name` | `str` | 必填 | `min_length=1`，按键名，须来自当时的 `ActionSpace` |
 | `args` | `dict[str, str]` | `{}` | 按键参数，目前只有 `times`（连按次数） |
-| `goal` | `Goal \| None` | `None` | 要压入目标栈的子目标，只在 PUSH_GOAL 有意义 |
-| `focus` | `str` | `""` | 想细看什么，只在 INSPECT 有意义 |
 | `thought` | `str` | 必填 | `min_length=1`，选择该动作的完整推理；**只进 trace，不进 memory，不影响后续决策**；不设长度上限 |
 | `rationale` | `list[str]` | 必填 | `min_length=1, max_length=MAX_RATIONALE`，最能支持该动作的论据；**进情景记忆** |
 
@@ -350,12 +352,14 @@ task.py  (无对本模块内其他文件的依赖)
 - 进记忆的是**论据而不是结论**：结论（"所以该捡药水"）可从 `name` 反推，存进去等于把同一件事存两遍；论据（"地上有药水而我手上没有"）是 `name` 里没有的信息，且论据是"适用条件"——未来取回时可检查它现在是否还成立，结论做不到这一点。
 - 论据一律按"有时效"处理，不区分持久与否；持久知识跨 episode 复用属于 skill library（机制二），本阶段不做。
 
-**校验逻辑**：`model_validator(mode="after")` `_fields_must_match_the_intent`：
-- `intent=PRESS` 且 `name` 为空 → 报错。
-- `intent=PUSH_GOAL` 且 `goal is None` → 报错。
-- `intent=INSPECT` 且 `focus.strip()` 为空 → 报错。
+**校验逻辑**：没有了。曾经有一个 `model_validator(mode="after")`
+（`_fields_must_match_the_intent`）按 intent 校验必填字段；只剩一类动作之后，
+"`name` 必填"这件事由 `min_length=1` 直接表达，不需要再跑一个校验器。
 
-理由：每种 intent 必填字段不同，必须在这里挡住，不能漏到分派环节。若漏过去，例如 `push_goal` 缺 `goal` 会在 Harness 里 assert 崩掉——这会把"模型的输出问题"错误地报成"我们自己的契约违约"，排查时看堆栈会指错方向。在这里失败则走 `ParseFailure` 路径，会被重试，也会按失败模式统计。
+当时那条理由仍然成立、重写时要留住：**每种 intent 必填字段不同，必须在数据契约这一层
+挡住，不能漏到分派环节**。漏过去的话（比如 `push_goal` 缺 `goal`）会在 Harness 里
+assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契约违约"，看堆栈会指错方向。
+在 schema 这一层失败则走 `ParseFailure`，会被重试、也会按失败模式统计。
 
 ### 3.5 `ActionSpace`
 
@@ -363,7 +367,6 @@ task.py  (无对本模块内其他文件的依赖)
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `intents` | `list[Intent]` | `[Intent.PRESS]` | 这一轮允许哪几类 intent；**由 Harness 填**——能否拆子目标取决于目标栈深度，那是循环层面的事，工具层不知道 |
 | `names` | `list[str]` | 必填 | 可用按键名，应非空 |
 | `descriptions` | `dict[str, str]` | `{}` | 动作名 → 给 LLM 读的说明 |
 | `note` | `str` | `""` | 关于整个动作空间的说明（如连按用法），不属于任何单个动作；**必须存在**——prompt 只渲染 `names` 里列出的动作说明，塞进 `descriptions` 的额外条目永远不会被渲染出去 |
@@ -371,6 +374,10 @@ task.py  (无对本模块内其他文件的依赖)
 方法：`contains(name) -> bool`。
 
 **设计理由**：语义上这不是"全部动作"，是"此刻允许的动作"；动作空间本身不增长，增长的是掩码之外的 skill library（本阶段不做）。
+
+这里曾经还有一个 `intents: list[Intent]` 字段，"由 Harness 填"——因为能不能拆子目标
+取决于目标栈有多深，那是循环的账，工具层不知道。intent 删掉之后这个字段也没了，
+**工具层给出的就是完整的动作空间，Harness 不再覆写它**。
 
 ### 3.6 `ToolResult`（跨层）
 
@@ -594,12 +601,14 @@ task.py  (无对本模块内其他文件的依赖)
 
 ### 6.7 `EventType`（`str, Enum`）
 
-trace 事件类型，取值：`EPISODE_START`、`EPISODE_END`、`OBSERVE`、`MODEL_CALL`、`THINK`、`ACT`、`MEMORY_READ`、`MEMORY_WRITE`、`OBJECT_NOTE`、`INSPECT`、`GOAL_PUSH`、`GOAL_POP`、`ERROR`、`CHECKPOINT`。
+trace 事件类型，取值：`EPISODE_START`、`EPISODE_END`、`OBSERVE`、`MODEL_CALL`、`THINK`、`ACT`、`MEMORY_READ`、`MEMORY_WRITE`、`OBJECT_NOTE`、`INSPECT`、`GOAL_POP`、`ERROR`、`CHECKPOINT`、`EPISODE_MEMORY_WRITE`。
 
 **分类设计理由**：
 - `OBJECT_NOTE`（记下语义记忆·object 的新事实）与 `MEMORY_WRITE`（情景记忆写入）**故意分开**——二者是两种记忆（一次经过 vs. 那一格本身），寿命和用途不同；混成一类就数不出"它认识了多少个东西"这一直接反映语义记忆有没有用的指标。
 - `INSPECT`（细看）与 `OBSERVE`（每步必发的常规观测）分开：`INSPECT` 是大脑主动要的，混在一起就算不出"它多久要细看一次"，无法判断这个动作值不值那次调用成本。
-- `GOAL_PUSH`/`GOAL_POP` 拆成两类而不是一个带方向的字段：目标栈"拆了几层"和"完成了几层"是两个独立的数，拆得多完成得少正是目标栈失控的表现，按类型分开计数就能一眼看出。
+- `GOAL_POP` 现在是唯一和目标栈有关的事件。配套的 `GOAL_PUSH` **删掉了**：压栈的唯一途径（`push_goal`）没有了，一个零生产者的事件类型只会让统计脚本里多一个恒为 0 的桶。
+  拆解机制回来时它跟着回来，而且届时**仍然是两个类型、不是一个带方向的字段**——目标栈"拆了几层"和"完成了几层"是两个独立的数，拆得多完成得少正是目标栈失控的样子，按类型分开计数才一眼看得出。
+  `goal_pop` 的 `reason` 字段同理留着（现在只有 `done` 一个取值，`superseded` 随多层判定一起删了）：拆解回来时"完成"和"白拆"必须分得开。
 
 ### 6.8 `TraceEvent`
 
@@ -618,3 +627,63 @@ trace 事件类型，取值：`EPISODE_START`、`EPISODE_END`、`OBSERVE`、`MOD
 | `schema_version` | `int` | `TRACE_SCHEMA_VERSION` | 事件形状版本号 |
 
 **设计理由**：本类是**不可变的事件**，不是可变的状态快照——文档明确警告不要往里加"当前状态"这类字段，否则会破坏可重放性（replay 依赖事件流的纯追加、不可变特性）。
+
+---
+
+## 7. `completion.py`
+
+依赖：只依赖 `pydantic`。**不被本模块内其他文件依赖**——它是给
+`interfaces/llm.py` 和 `interfaces/vision.py` 的 Protocol 用的返回类型。
+
+### 7.1 为什么在 `schemas/` 而不是 `interfaces/`
+
+这两个类原本长在 `interfaces/llm.py` 和 `interfaces/vision.py` 里，就在用它们的
+Protocol 旁边——读起来顺，但那让 `interfaces/` 同时承担了两件事。代价不是洁癖：
+接口先行那条规矩说「光读 `interfaces/` 就能看懂整个系统怎么运转」，而数据模型
+混在里面，读的人分不清哪些是**契约**、哪些是**契约里流的东西**。
+
+搬家时**没有留 re-export 兼容层**：留了等于 `interfaces/` 还在导出数据模型。
+
+### 7.2 为什么两个放同一个文件
+
+它们回答同一个问题——「一次模型调用回来了什么」——而且**都带着一个不是记账、
+而是正确性证据的字段**（`truncated` / `input_tokens`，见下）。这个共同点是本项目
+踩出来的，分成两个文件就没地方写它。
+
+### 7.3 `Completion`
+
+| 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `text` | `str` | 必填 | 补全文本，**可能是任意字符串，包括不合法的 JSON** |
+| `prompt_tokens` | `int` | `0` | 输入 token 数 |
+| `completion_tokens` | `int` | `0` | 输出 token 数 |
+| `truncated` | `bool` | `False` | 输出是不是被 `max_tokens` 截断了 |
+
+**token 数放进返回值**而不是让调用方去查，是为了成本统计能在**调用点**就地产出 trace，
+不需要 LLM 实现和成本模块互相认识。
+
+**`truncated` 必须由 provider 给，不能让调用方猜。** 调用方不知道 `max_tokens` 是多少，
+只能拿 `completion_tokens == 某个整数` 去猜，那是巧合不是判据。判据来自服务端的
+`finish_reason == "length"`。
+
+**为什么值得单开一个字段**：截断在下游表现为"JSON 少了个右括号"，和"模型不会写 JSON"
+长得一模一样，但**修法完全相反**——前者要调大 `max_tokens` 或让模型少说，后者要改
+prompt 或上约束解码。混成一类 `ParseFailure`，统计里就永远看不见它。
+对应的异常是 `OutputTruncated`（见 `build/SPEC.md` 的异常一节）。
+
+### 7.4 `VisionCompletion`
+
+| 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `text` | `str` | 必填 | 视觉模型的输出 |
+| `input_tokens` | `int` | `0` | 输入 token 数 |
+| `output_tokens` | `int` | `0` | 输出 token 数 |
+
+**`input_tokens` 不是可选的记账信息，它是正确性的证据**：网关静默丢弃图片时，
+这个数会塌回纯文本的量级。`VisionProvider.describe` 的实现方必须据此校验图片确实
+被消费了，判定为未送达时抛 `ImageNotDelivered`——详见 `interfaces/SPEC.md`。
+
+### 7.5 字段名为什么不统一
+
+文本那边是 `prompt_tokens`/`completion_tokens`，视觉那边是 `input_tokens`/`output_tokens`，
+**跟各自网关返回的名字走**。中间再翻译一层，排查"网关到底报了什么"时就得反查映射表。

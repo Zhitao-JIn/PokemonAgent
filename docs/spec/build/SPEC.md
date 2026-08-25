@@ -229,7 +229,7 @@ trace 是"每步一条"的事件流，manifest 是"每次实验一份"的快照�
 
 | | 放什么 | 判据 |
 |---|---|---|
-| manifest | prompt 原文、模型与温度、git commit、预处理方式 | 全程不变 |
+| manifest | prompt 原文、模型与温度、git commit、预处理方式、**权限配置** | 全程不变 |
 | trace 事件 | frame_sha、tokens、延迟、模型原始输出 | 每步都变 |
 
 ### 3.2 为什么 prompt 要存原文而不是只存 sha
@@ -237,6 +237,20 @@ trace 是"每步一条"的事件流，manifest 是"每次实验一份"的快照�
 `prompt_sha` 只有在"查得到内容"时才有意义。如果改了 prompt 却没提交代码就跑了实验，
 那个 sha 就指向一个查无实据的虚空——三周后面对一批数字，无法确认它们对应哪一版
 prompt。manifest 里直接存原文，这个依赖链就被切断了。
+
+### 3.2b 权限配置为什么也要存原文
+
+和 prompt 是同一个论证。`config/permissions.json` 决定 agent 能调哪些工具——
+角色里少一条 `read:memory:knowledge`，这一批 run 跑的其实是"无知识库"那个消融组，
+而 **trace 里没有任何字段说得出这件事**。它全程不变，所以属于 manifest 这一层；
+它不在版本库里（是运行时配置），所以只存 sha 会指向虚空，得连原文一起存。
+
+`context.json` 同理：`roles` 是实验条件本身，`subject_id` 是审计流（`log/audit.jsonl`）
+与 trace 的连接键。
+
+对应字段是 `permissions: dict[str, dict[str, str]]`（`文件名 -> {sha, text}`，
+和 `prompts` 同一个形状），由 `with_permissions(config_dir=Path("config"))` 收集。
+`validate_design()` 断言它非空——**宁可开跑前炸，也不要事后拿到一批无法归因的数据**。
 
 ### 3.3 不存什么
 
@@ -287,6 +301,11 @@ def _git_commit() -> str:
 
 - `with_prompts(*names) -> RunManifest`：批量把指定 prompt（通过
   `pokemon_agent.prompts.load` 加载）的 `sha` 和 `text` 收进 `self.prompts`，链式调用。
+- `with_permissions(config_dir=Path("config")) -> RunManifest`：把 `context.json` 与
+  `permissions.json` 的 `sha`（sha256 前 12 位）和 `text` 收进 `self.permissions`。
+  前置条件用 `assert path.is_file()` 守：这两个文件是 `agent_permission` 启动的硬要求
+  （见 `harness.run()` 的 `@initialize`），跑到这里还没有就该当场停，而不是记一份空的
+  权限快照、让这批数据事后无法归因。
 - `with_provider(role, provider: Configurable) -> RunManifest`：记录一个 provider 的
   配置。用 `assert hasattr(provider, "config")` 断言其满足 `Configurable`；配置内容
   来自 `provider.config()` 而非让 manifest 自己认识具体 provider 类型——"装配处才是
@@ -296,13 +315,67 @@ def _git_commit() -> str:
   docstring 强调**必须写在 trace 之前**："先有 manifest，后有数据"，顺序反了的话，
   实验中途崩溃会留下一堆无法归因的 trace 事件。
 
-### 3.7 与本次阅读的其他文件的关系
+### 3.7 接入现状
 
-`manifest.py` 目前**没有**被 `build.py` 或 `probe/run_episode.py` 直接调用/引用
-（这两个文件的源码中未出现 `RunManifest` 或 `experiment.manifest` 的 import）。据此可
-判断：manifest 机制已经实现，但尚未接入当前的命令行入口——`run_episode.py`
-运行时不会自动生成/保存 manifest，这与其 docstring 里"落盘、replay、checkpoint 是
-阶段 2 的事"的表述一致，manifest 目前更像是为未来阶段准备好的基础设施。
+manifest **已经接入** `pokemon_agent/experiment/run_experiment.py`：
+
+```python
+manifest = RunManifest(...).with_prompts("decide_action", "judge_success") \
+                           .with_permissions() \
+                           .validate_design()
+manifest.save(pathlib.Path("experiment_results") / run_id / "manifest.json")
+```
+
+`probe/run_episode.py` 那条调试入口仍然不生成 manifest——它跑的是单局调试，
+不是要归档的实验。
+
+`validate_design()` 现在断言四件事：`experiment_kind` 取值合法、
+`memory_policy == "session_local"`、`task_ids` 非空、**`permissions` 非空**。
+最后一条是硬失败：任何漏掉 `.with_permissions()` 的装配会在开跑前就炸掉。
+
+---
+
+## 3b. `agent_permission` —— 横切的权限层
+
+第三方库（`github.com/Zhitao-JIn/AgentPermission`），以**装饰器**形式散布，不是本项目的一个模块。
+
+### 3b.1 装在哪
+
+| 位置 | 权限名 |
+|---|---|
+| `Harness.run()` | `@initialize`（不是检查，是每局重载配置） |
+| `GameTools` 各方法 | `read:game:perceive` / `read:game:action_space` / `read:game:last_frame_sha` / `execute:game:reset` / `execute:game:press` / `execute:game:save_state` / `execute:llm:perception` |
+| `MemoryTool` 各方法 | `read:memory:{episodic,episode,objects,knowledge}` / `write:memory:{episodic,episode,objects}` / `execute:llm:memory_summary` |
+| `Brain.choose/judge/reflect` | `execute:llm:decision` / `execute:llm:judge` / `execute:llm:memory_reflection` |
+
+**装在大脑上不违反铁律 2**：横切设施和"brain 不许 import harness 的具体实现"是两回事。
+粒度也刻意对齐"哪一类模型调用"——挪到 `providers/` 会把五条路径塌缩成一个权限，粒度全丢。
+
+### 3b.2 配置
+
+从**进程启动目录**下的 `config/` 读（`Path.cwd() / "config"`）：
+
+- `context.json`：`subject_id` / `roles` / `metadata`。
+- `permissions.json`：`roles`（角色 → 权限通配列表）决定有没有；`policies` 决定有了之后要不要审批。
+
+目前唯一挂 `approval_required: true` 的是 `execute:game:save_state`（走控制台审批，等 10 秒）。
+
+### 3b.3 Harness 这一侧只承担一件事
+
+**权限失败不能让这一局从 trace 里消失。** 库里四个异常
+（`PermissionDenied` / `ApprovalRequired` / `ApprovalRejected` / `ApprovalExpired`）
+**各自直接继承 `Exception`，没有共同基类**，所以任何"列举权限异常"的写法都会在库新增
+异常类型时静默漏掉。`run()` 因此不列举，只用 `except Exception` 兜底补 `EPISODE_END`
+再原样抛出——详见 `harness/SPEC.md` 6.3。
+
+### 3b.4 已知的坑
+
+- **`_current_context` 曾经是 `ContextVar`**，导致 worker 线程读不到身份（ContextVar 的值
+  按执行上下文隔离，新线程带的是空表），症状是"并发时权限全被拒、单线程一切正常"。
+  已改成普通模块全局。代价是同一进程内不能并发跑两个不同 subject。
+- **`audit.jsonl` 和 trace 目前对不上**：`context.json` 里的 `metadata.episode_id` 是
+  字面量占位符，`@initialize` 每局从文件重读，所以每条审计记录的 episode 都一样。
+  要按 episode 关联两条流，得让身份能带上运行时的 `episode_id`。
 
 ---
 

@@ -8,13 +8,12 @@
 prompts/
 ├── __init__.py          # PromptTemplate / load / load_sections / load_nested_sections
 ├── game_hints.py         # BUTTON_HELP / MAP_HINT / REPEAT_HINT（供 tools/game_tools.py 用）
-├── brain_hints.py        # INTENT_HELP / retry_note()（供 brain/brain.py 用）
+├── brain_hints.py        # retry_note()（供 brain/brain.py 用）
 ├── perceive_screen.md    # 感知：把一帧画面解析成结构化 JSON
 ├── inspect_focus.md      # 细看：对同一帧画面回答一个具体问题
 ├── decide_action.md      # 决策：大脑的 ReAct 主 prompt
 ├── judge_success.md      # 判定：独立判定目标是否完成
 ├── button_help.md         # 按键说明素材（按 overlay 分类）
-├── intent_help.md         # intent 说明素材（按 intent 分类）
 ├── map_hint.md             # 地图（walk_map）读法说明素材
 ├── repeat_hint.md          # 连按（times）用法说明素材
 └── retry_note.md           # 重试时追加的纠正块素材
@@ -74,7 +73,9 @@ path = _DIR / f"{name}.md"
 
 **用途**：有些 prompt 片段不是一整块文字，而是**按情形分叉**的——例如每个 intent 一段说明、每个按键一段说明。这类内容依旧遵循"放进 `prompts/` 目录、走同一套可 review / 可归因 / 无花括号冲突流程"的原则，只是它们在代码里原本是 dict 字面量而不是单一模板字符串。用 Markdown 的 `##` 标题天然表达"分叉"结构，不需要为此发明新的文件格式，也不必为了塞进单一 `PromptTemplate` 而把结构拍扁成一整块文字。
 
-调用方：`brain_hints.py` 用它加载 `intent_help.md`（切成 `press` / `push_goal` / `inspect` 三段）。
+调用方：**目前没有**。唯一的用户 `INTENT_HELP` 随 intent 分派一起删了。
+留着是因为它和 `load_nested_sections()`（还在被按键说明用着）是一对，删一个留一个更怪；
+拆解机制在别处重写时如果不再用分节 prompt，它该跟着删。
 
 ### 1.6 `load_nested_sections(name) -> dict[str, dict[str, str]]`
 
@@ -133,28 +134,26 @@ REPEAT_HINT = load("repeat_hint").text
 
 ---
 
-## 三、`brain_hints.py`：决策 prompt 用的 intent 说明与重试提示
+## 三、`brain_hints.py`：决策 prompt 的组装层（目前只剩重试提示）
 
-模块 docstring 定位与 `game_hints.py` 一致：内容都在 `.md` 里，本文件只做**组装**——`INTENT_HELP` 需要按 `Intent`（来自 `schemas.action`）分类，`retry_note()` 需要在渲染结果前面拼接两个换行符，这两件"怎么拼接"的逻辑不该留在 `brain/brain.py` 里，因为那个模块该管"怎么做决策"，不该同时管"这段说明文字怎么拼出来"。
+模块 docstring 定位与 `game_hints.py` 一致：内容都在 `.md` 里，本文件只做**组装**——`retry_note()` 需要在渲染结果前面拼接两个换行符，这件"怎么拼接"的逻辑不该留在 `brain/brain.py` 里，因为那个模块该管"怎么做决策"，不该同时管"这段说明文字怎么拼出来"。
 
-### 3.1 `INTENT_HELP: dict[Intent, str]`
+### 3.1 `INTENT_HELP` —— **已删除**
 
-```python
-_INTENT_SECTIONS = load_sections("intent_help")
-INTENT_HELP = {
-    Intent.PRESS: _INTENT_SECTIONS["press"],
-    Intent.PUSH_GOAL: _INTENT_SECTIONS["push_goal"],
-    Intent.INSPECT: _INTENT_SECTIONS["inspect"],
-}
-```
+曾经由 `load_sections("intent_help")` 拆分 `intent_help.md`，按
+`Intent.PRESS`/`PUSH_GOAL`/`INSPECT` 建成字典，在 `decide_action.md` 里渲染进
+`$intents` 占位符：只渲染当前 `ActionSpace` 实际开放的那几类。intent 分派删掉之后
+（**这一版只有按键一类动作**），它和 `intent_help.md` 一起没了。
 
-来源是 `intent_help.md`，按 `##` 切成 `press` / `push_goal` / `inspect` 三段，分别对应大脑一轮决策可选的三类 intent。
+当时那条设计理由对**按键说明**（`BUTTON_HELP`）依然成立、重写时也依然成立：
+这是**接口的一部分**而不是 prompt 模板固定写死的一部分——大脑能做哪几类事由运行时的
+`ActionSpace` 决定，说明文字必须跟着实际下发的那几类走。写死在模板里的话，
+某一类被掩掉之后说明还留着，模型就会去选一个实际用不了的选项。
 
-设计理由：和 `BUTTON_HELP` 一样，这是**接口的一部分**而不是 prompt 模板固定写死的一部分——大脑这一轮能做哪几类事由 `ActionSpace.intents` 在运行时决定，说明文字必须跟着实际下发的那几类走。如果直接写死在 `decide_action.md` 模板里，一旦某种场景下屏蔽掉了一类 intent，说明文字却还在，模型就会去选一个实际用不了的选项。
-
-`decide_action.md` 里用法：`"\n".join(f"- \`{i.value}\`：{INTENT_HELP[i]}" for i in space.intents)`，即只渲染当前 `ActionSpace` 实际开放的那几类 intent 的说明，动态拼进 `$intents` 占位符。
-
-内容要点（`press` 一段特意点出）："这是唯一会改变世界的一类，也是唯一不可逆的"——`push_goal` 和 `inspect` 选错了只是浪费一轮调用，但 `press` 按错键可能需要玩家/模型再走十步才能纠正回来。三种 intent 代价不对称，所以说明里要让模型明确知道这一点。
+`press` 那一段当时特意点出"这是唯一会改变世界、也是唯一不可逆的一类"：
+另外两类选错只是浪费一轮调用，而 `press` 按错键可能要再走十步才纠正得回来。
+**代价不对称，就该让模型知道**——这条在只剩一类动作的今天没有对象，
+但拆解机制回来时要第一时间捡回来。
 
 ### 3.2 `retry_note(attempt: int, reason: str, raw: str) -> str`
 
@@ -208,20 +207,16 @@ def retry_note(attempt, reason, raw):
 
 **用途**：大脑每一轮做决策时使用的核心 prompt，要求模型按 ReAct 方式推理并输出下一步动作。是整个系统里占位符最多、结构最复杂的模板。
 
-**占位符**：`$goals`（目标栈渲染结果，栈顶在最上）、`$summary`（当前状态摘要）、`$facts`（已知事实列表）、`$memories`（相关记忆）、`$intents`（当前开放的 intent 说明，来自 `INTENT_HELP` 按 `space.intents` 动态拼出）、`$actions`（可用按键列表及说明，来自 `space.names`/`space.descriptions`，若 `space.note` 存在则追加在后面）、`$max_rationale`（`rationale` 字段最多允许几条论据）。
+**占位符**：`$goals`（目标栈渲染结果，栈顶在最上）、`$summary`（当前状态摘要）、`$facts`（已知事实列表）、`$memories`（相关记忆）、`$actions`（可用按键列表及说明，来自 `space.names`/`space.descriptions`，若 `space.note` 存在则追加在后面）、`$max_rationale`（`rationale` 字段最多允许几条论据）。
 
 **内容结构概要**：
 - 目标栈规则：只需要完成栈顶那一条，完成后自动出栈。
-- 三类可选 intent（`press`/`push_goal`/`inspect`）的说明由 `$intents` 动态填入。
-- 可用按键列表由 `$actions` 动态填入，仅当 `intent=press` 时可选。
-- 输出格式：只输出一个 JSON 对象；根据 `intent` 决定填哪些字段，给出三种 intent 各自的完整 JSON 示例（`press` 带 `action`/`args.times`；`push_goal` 带 `goal`/`criteria`；`inspect` 带 `focus`）。
+- 可用按键列表由 `$actions` 动态填入。
+- 输出格式：只输出一个 JSON 对象，一个示例（`thought` / `rationale` / `action` / `args.times`）。
 - "各字段的要求"逐项细化：
   - `thought`：仅用于记录，不进入后续决策。
   - `rationale`：1 到 `$max_rationale` 条，要求写成"以后还能验证真假"的具体依据（例如"地上有药水而我手上没有"），而不是主观判断（"我觉得这样比较好"）；因为这些内容会被存入记忆，未来在相似状态下被检索复用。
-  - `args.times`（仅 `press`）：连按次数 1-8，**intent 为 press 时该字段必须出现**，默认 `"1"`；只有"沿直线走几格"是正当用法；`a` 键永远只能是 1（会被强制夹到 1），因为对话是逐句出现的，连按会吞掉中间的关键文字。
-  - `goal`（`push_goal`）：必须是"里程碑"而不是"路径点"——达成时画面要明显不同（进门/对话/换图），"往右走两格"不算子目标，直接按键即可；拆子目标本身有成本，它会一直挂在栈上，每一步都要为它多花一次判定调用。
-  - `criteria`（`push_goal`）：必须**只看一帧画面**就能判真假；判定的人看不到 `thought`/`rationale`，也**看不到 `walk_map` 和 `landmarks`**，只能拿到 `where`/`map_id`/`scene`/对话框文字/`overview`；位置一律写成 `x=.. y=..`，不要写 `(6,4)` 括号对，也不要提 `walk_map`。
-  - `focus`（`inspect`）：必须是一个具体新问题，不能是笼统的"再看看"。
+  - `args.times`：连按次数 1-8，**必须出现**，默认 `"1"`；只有"沿直线走几格"是正当用法；`a` 键永远只能是 1（会被强制夹到 1），因为对话是逐句出现的，连按会吞掉中间的关键文字。
 
 ### 4.4 `judge_success.md` —— 判定：独立判断目标是否完成
 
@@ -248,18 +243,21 @@ def retry_note(attempt, reason, raw):
 - `dialog`：`a`（推进对话到下一句，**一次一句**，连按会吞掉中间可能正是要找的证据文字；文件特别强调"对话框挡住整个画面时，唯一能做的就是按 a"，不管此前目标是什么，都要先把对话推完）。
 - `choice`：`up`/`down`（移动光标）、`a`（确认选中项）、`b`（取消/退回上一层）。
 
-### 4.6 `intent_help.md` —— intent 说明素材（按 intent 分类）
+### 4.6 `intent_help.md` —— **已删除**
 
-**用途**：被 `brain_hints.py` 用 `load_sections` 解析为 `INTENT_HELP` 字典，供 `decide_action.md` 的 `$intents` 段动态拼接。
+曾经是三个 `##` 段（`press` / `push_goal` / `inspect`），被 `brain_hints.py` 用
+`load_sections` 解析成 `INTENT_HELP`，供 `decide_action.md` 的 `$intents` 段动态拼接。
+intent 分派删掉之后没有任何读者，随之删除。
 
-**占位符**：无（纯静态文本，按 `##` 一层结构组织）。
+三段里值得在重写拆解机制时捡回来的内容：
 
-**结构**：三个 `##` 段：
-- `press`：唯一会推动游戏世界、也是唯一不可逆的一类操作。
-- `push_goal`：把栈顶目标拆出一个更近、更容易验证的子目标，必须同时给出判据；强调子目标是"里程碑不是路径点"，位置写法要求（`x=.. y=..`，不要括号对、不要行列描述、不要提 `walk_map`）；并给出一条具体指引——遇到 `known_objects` 里还没互动过的门/招牌/人时，先拆一个"够到它"的子目标，具体按哪个键、试哪个朝向不用现猜（那部分已经在 `known_objects` 的"试过/还剩几种"记录里算好了）。
-- `inspect`：对同一帧再问一个具体问题，游戏不推进；强调问题必须是新的，问"再看看"得不到新内容、只会白花一轮。
-
-（与 4.3 节中 `decide_action.md` 输出示例的三种 intent 一一对应。）
+- `press`：**唯一会推动游戏世界、也是唯一不可逆的一类**。代价不对称就该让模型知道。
+- `push_goal`：子目标是"里程碑不是路径点"；位置一律写 `x=.. y=..`（不要括号对、
+  不要行列描述、不要提 `walk_map`——判定的人看不到那张图）；遇到 `known_objects` 里
+  还没互动过的门/招牌/人时，先拆一个"够到它"的子目标，**具体按哪个键、试哪个朝向
+  不用现猜**，那部分已经在 `known_objects` 的"试过/还剩几种"记录里算好了。
+- `inspect`：问题必须是新的，问"再看看"得不到新内容——`perceive()` 是帧内缓存的，
+  同一帧原样再看一遍返回的字节完全一样。
 
 ### 4.7 `map_hint.md` —— 地图（walk_map）读法说明素材
 
@@ -336,7 +334,6 @@ if space.note:
     actions += f"\n\n{space.note}"
 return self._decide_prompt.render(
     goals=self._render_goals(goals),
-    intents="\n".join(f"- `{i.value}`：{INTENT_HELP[i]}" for i in space.intents),
     summary=obs.summary,
     facts=facts,
     memories=recalled,
@@ -346,9 +343,8 @@ return self._decide_prompt.render(
 ```
 
 - `goals` 由 `_render_goals()` 把目标栈倒序渲染成文本（栈顶显示在最上面，因为模型是从上往下读 prompt 的）。
-- `intents` 只遍历当前 `space.intents`（实际开放的 intent 集合），从 `INTENT_HELP`（来自 `intent_help.md`）里取对应说明拼接——这就是为什么 `INTENT_HELP` 要按 `Intent` 枚举做成 dict：只渲染当前实际可选的那几类。
 - `actions` 遍历 `space.names`，从 `space.descriptions` 取每个按键的说明；若 `space.note` 非空（即 `REPEAT_HINT` 等按键接口层面的补充说明），追加在末尾。这里的 `descriptions` 具体内容来源于 `BUTTON_HELP`（按当前 `Overlay` 索引出的按键说明字典），由更上层的调用逻辑（`tools/game_tools.py` 的 `get_action_space`）构造 `ActionSpace` 时填入。
-- 渲染出的完整 prompt 连同截图（或不带截图，取决于 `decide_action` 是否需要视觉输入——从模板内容本身看它只依赖文本占位符）交给决策模型，模型按 `decide_action.md` 里的输出格式约定返回 JSON（`intent`/`action`/`args`/`goal`/`criteria`/`focus` 等字段视 `intent` 而定）。
+- 渲染出的完整 prompt 交给决策模型（不带截图——模板本身只依赖文本占位符），模型按 `decide_action.md` 的约定返回 JSON：`thought` / `rationale` / `action` / `args`。
 - 重试：若这次响应解析失败或不满足契约（如选了 action space 之外的键），调用方会调用 `brain_hints.retry_note(attempt, reason, raw)`，把结果追加在**同一份原 prompt 之后**再次请求，直到成功或达到重试上限。
 
 ### 5.4 判定阶段 —— `judge_success.md` 被 `brain.py` 的判定逻辑使用
@@ -374,11 +370,8 @@ completion = self._judge_llm.complete(prompt)
 ### 5.5 小结：一次完整回合中模板的先后关系
 
 1. **感知**：`perceive_screen.md`（+模拟器内存地形）→ 结构化 `facts`。
-2. **决策**：`decide_action.md`（+ `BUTTON_HELP`/`INTENT_HELP`/`REPEAT_HINT`/`MAP_HINT` 等组装出的 `$actions`/`$intents`/`$facts` 等）→ 模型输出 `intent`。
-   - 若 `intent=press`：直接执行按键，进入下一帧感知。
-   - 若 `intent=push_goal`：压入新目标，下一轮从该目标开始决策，同时该目标后续每帧都会被判定阶段检查。
-   - 若 `intent=inspect`：调用 `inspect_focus.md`（同一帧，游戏不动），把回答返回给大脑作为下一轮决策的参考。
-3. **判定**：每当有目标在栈上，`judge_success.md` 独立判断该目标是否已经完成（不依赖决策阶段的推理过程，只看事实证据）；判定为 `done=true` 时目标出栈。
+2. **决策**：`decide_action.md`（+ `BUTTON_HELP`/`REPEAT_HINT`/`MAP_HINT` 等组装出的 `$actions`/`$facts` 等）→ 模型输出一个按键。**这一版只有按键一类动作**，直接执行，进入下一帧感知。
+3. **判定**：`judge_success.md` 独立判断**栈顶**目标是否已经完成（不依赖决策阶段的推理过程，只看事实证据）；判定为 `done=true` 时目标出栈，栈空即任务完成。
 4. **重试**：决策或判定阶段任一次输出不合法，追加 `retry_note.md` 内容在原 prompt 末尾重新请求，同一 prompt 前缀保持不变以复用缓存。
 
 所有渲染动作最终都经过 `PromptTemplate.render()`（即 `string.Template.substitute()`），因此修改任一 `.md` 模板文件时必须同步核对：新增/删除的 `$xxx` 占位符是否和上述各调用点传入的关键字参数集合完全一致，否则会在运行期直接抛出异常（决策/判定阶段有各自的重试或降级机制兜底，但异常本身仍会被记录为一次失败，不会被吞掉）。
