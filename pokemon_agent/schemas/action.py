@@ -35,6 +35,13 @@ MAX_RATIONALE = 3
 """
 
 
+class ActionSegment(BaseModel):
+    """动作链中的一个连续按键段。"""
+
+    name: str = Field(min_length=1, description="按键名")
+    times: int = Field(default=1, ge=1, le=8, description="连续按键次数")
+
+
 class Action(BaseModel):
     """大脑选出的一个动作。
 
@@ -73,6 +80,21 @@ class Action(BaseModel):
         description=f"最能支持该动作的论据，1-{MAX_RATIONALE} 条。"
         "进情景记忆；经验能否迁移全看它",
     )
+    sequence: list[ActionSegment] = Field(
+        default_factory=list, description="按顺序执行的按键链；为空时使用 name/args"
+    )
+
+    def segments(self) -> list[ActionSegment]:
+        """返回规范化后的动作链，兼容旧的单按键字段。"""
+        if self.sequence:
+            return list(self.sequence)
+        return [ActionSegment(name=self.name, times=int(self.args.get("times", "1")))]
+
+    def describe(self) -> str:
+        """返回适合写入 trace 和记忆的动作链文本。"""
+        return " -> ".join(
+            f"{segment.name}×{segment.times}" for segment in self.segments()
+        )
 
 
 class ActionSpace(BaseModel):

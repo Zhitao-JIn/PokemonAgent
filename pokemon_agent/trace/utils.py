@@ -163,7 +163,13 @@ def memory_read(
     if known_objects:
         payload["known_objects"] = "1"
         payload["known_object"] = "1"
-        payload["known_object_names"] = _short_labels(known_objects)
+        # **全文进 payload。** 以前这里只存每条的首行、截到 80 字符，
+        # 于是控制台上看到的是半截档案（`…x=3 y=4→dow`），而且因为当时
+        # `query_objects` 用单换行拼接，整段被当成一条，实际上只显示了第一条。
+        # 这一段是决策模型真正读到的东西：日志里存不全，事后就无法回答
+        # "它当时到底看到了什么"——而那是 replay 存在的全部理由。
+        payload["known_objects_text"] = known_objects
+        payload["known_object_count"] = str(len(known_objects.split("\n\n")))
         payload["known_objects_chars"] = str(len(known_objects))
     if knowledge:
         payload["knowledge"] = "1"
@@ -175,29 +181,38 @@ def memory_read(
     return (episode_id, step, EventType.MEMORY_READ, Source.DECISION, payload)
 
 
-def _short_labels(text: str, limit: int = 5) -> str:
-    """从多段渲染文本取每段第一行，作为观测台的短标签。
+def action_chain(action: Action) -> dict[str, str]:
+    """动作链在 payload 里的形状。**`think` 和 `act` 共用这一个函数**——
+    记的是同一条链，形状不一致的话"想按的"和"按下去的"就没法直接比对。
 
-    取每段渲染文本的首行当短标签。
+    **结构化的 `sequence` 必须记，不能只记 `action` 那行渲染文本。**
+    渲染文本（`up×4 -> down×2`）是给人读的；"链平均多长、多少步用到了链"
+    这类聚合如果去解析它，就得反向分词，而分词一旦和 `describe()` 的措辞漂移，
+    统计会**静默地**错。
+
+    **旧的顶层 `name` / `args` 不再进 payload。** 格式只剩 `sequence` 一种，
+    留一个恒为空的 `args` 会让读日志的人以为"模型这次没给参数"——那正是
+    这个字段当初存在的理由，理由没了字段就该走。
+
+    把一条动作链拼成 payload 片段。
     """
-    labels: list[str] = []
-    for block in text.split("\n\n"):
-        first = next((line.strip() for line in block.splitlines() if line.strip()), "")
-        first = first.lstrip("# ").strip()
-        if first and first not in labels:
-            labels.append(first[:80])
-        if len(labels) >= limit:
-            break
-    return " | ".join(labels)
+    segments = action.segments()
+    return {
+        "action": action.describe(),
+        "sequence": json.dumps(
+            [segment.model_dump() for segment in segments], ensure_ascii=False
+        ),
+        "segment_count": str(len(segments)),
+        "press_count": str(sum(segment.times for segment in segments)),
+    }
 
 
 def think(episode_id: str, step: int, action: Action, attempt: int) -> AppendArgs:
     """把这一步选出的动作拼成事件。"""
     return (
         episode_id, step, EventType.THINK, Source.DECISION,
-        {"thought": action.thought, "action": action.name,
-         # args 必须记：不记的话分不清「模型没给参数」和「给了但没显示」。
-         "args": json.dumps(action.args, ensure_ascii=False),
+        {**action_chain(action),
+         "thought": action.thought,
          # rationale 也记在这里，不只依赖 MEMORY_WRITE——
          # **无记忆基线组不写记忆**，那时 rationale 只剩这一处落点。
          "rationale": json.dumps(action.rationale, ensure_ascii=False),
@@ -206,11 +221,14 @@ def think(episode_id: str, step: int, action: Action, attempt: int) -> AppendArg
 
 
 def act(episode_id: str, step: int, action: Action, message: str) -> AppendArgs:
-    """把这一次按键的结果拼成事件。"""
+    """把这一次按键的结果拼成事件。
+
+    **和 `think` 记的是同一条链**（同一个 `action_chain`），差别只在这条多一个
+    世界返回的 `message`：链里每一段的结果在这里已经被 `execute()` 拼成一句了。
+    """
     return (
         episode_id, step, EventType.ACT, Source.WORLD,
-        {"action": action.name, "args": json.dumps(action.args, ensure_ascii=False),
-         "message": message},
+        {**action_chain(action), "message": message},
     )
 
 

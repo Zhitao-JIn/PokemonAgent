@@ -36,7 +36,7 @@ from pokemon_agent.errors import IllegalAction, OutputTruncated, ParseFailure
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.prompts import load as load_prompt
 from pokemon_agent.prompts.brain_hints import retry_note as _retry_note
-from pokemon_agent.schemas.action import MAX_RATIONALE, Action, ActionSpace, Goal
+from pokemon_agent.schemas.action import MAX_RATIONALE, Action, ActionSegment, ActionSpace, Goal
 from pokemon_agent.schemas.memory_episodic import MemoryEntry, Snapshot
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.schemas.trace import Decision, ModelCall, Verdict
@@ -268,14 +268,11 @@ class Brain:
         """
         assert action.rationale, "reflect() got an action without a rationale"
 
-        # 连按次数从动作本身取：动作是我们自己发出的，是确定的。
-        raw = action.args.get("times", "1")
-        times = f" ×{raw}" if raw not in ("", "1") else ""
         snapshot = Snapshot.of(before)
         return MemoryEntry(
             before=snapshot,
             rationale=list(action.rationale),
-            action=f"{action.name}{times}",
+            action=action.describe(),
             after=Snapshot.of(after),
             key=snapshot.position or str(before.step),
             step=before.step,
@@ -335,23 +332,44 @@ class Brain:
             raise ParseFailure(text, "top level is not an object")
 
         # 只剩按键一类动作，所以没有"先取 intent 再分叉"那一段。
-        name = raw.get("action")
-        if not isinstance(name, str) or not name:
-            raise ParseFailure(text, "no 'action' field")
-        if not space.contains(name):
-            # 走 `IllegalAction` 而不是 `ParseFailure`：格式是对的，它在幻觉一个
-            # 此刻不可用的按键——两者该改的东西不同（掩码/prompt vs 输出格式）。
-            raise IllegalAction(name, space.names)
-        args = raw.get("args") or {}
-        if not isinstance(args, dict):
-            raise ParseFailure(text, "'args' is not an object")
+        raw_sequence = raw.get("sequence")
+        if not isinstance(raw_sequence, list) or not raw_sequence:
+            raise ParseFailure(text, "'sequence' must be a non-empty array")
+        sequence = []
+        for segment in raw_sequence:
+            if not isinstance(segment, dict) or not isinstance(segment.get("action"), str):
+                raise ParseFailure(text, "each sequence item needs an action")
+            sequence.append(ActionSegment(
+                name=segment["action"], times=self._parse_times(text, segment),
+            ))
+        if len(sequence) > 1 and any(segment.name not in {"up", "down"} for segment in sequence):
+            raise ParseFailure(text, "multi-step sequence may contain only up/down")
+        name = sequence[0].name
+        args = {}
+
+        for segment in sequence:
+            if not space.contains(segment.name):
+                raise IllegalAction(segment.name, space.names)
 
         return Action(
             name=name,
             args={str(k): str(v) for k, v in args.items()},
             thought=self._parse_thought(text, raw),
             rationale=self._parse_rationale(text, raw),
+            sequence=sequence,
         )
+
+    @staticmethod
+    def _parse_times(text: str, values: dict[str, object]) -> int:
+        """解析按键段次数，把外部格式错误转成可重试的 ParseFailure。"""
+        raw_times = values.get("times", 1)
+        try:
+            times = int(raw_times)
+        except (TypeError, ValueError) as exc:
+            raise ParseFailure(text, "times must be an integer") from exc
+        if not 1 <= times <= 8:
+            raise ParseFailure(text, "times must be between 1 and 8")
+        return times
 
     @staticmethod
     def _parse_thought(text: str, raw: dict[str, object]) -> str:

@@ -120,9 +120,16 @@ class GameTools:
         """
         assert self._last_space is not None, "execute() before get_action_space()"
         space, frame = self._last_space
-        assert space.contains(action.name), (
-            f"execute() got {action.name!r} outside {space.names}"
-        )
+        for segment in action.segments():
+            assert space.contains(segment.name), (
+                f"execute() got {segment.name!r} outside {space.names}"
+            )
+        if action.sequence:
+            assert len(action.sequence) == 1 or all(
+                segment.name in {"up", "down"} for segment in action.sequence
+            ), (
+                "multi-step action sequence may contain only up/down"
+            )
         # **掩码必须是给当前这一帧算的。** 只查名字是不够的：`a` 在野外、对话框、
         # 选择框里都可用，名字对得上不代表语境对得上。画面换过之后再拿旧清单放行，
         # 就是在一个已经变了的世界里按一个按当时语境选的键。
@@ -131,8 +138,24 @@ class GameTools:
             f"({frame} != {self._world.last_frame_sha}) — call get_action_space() again"
         )
 
-        result = self._world.step(action)
+        result = None
+        messages: list[str] = []
+        calls: list[dict[str, str]] = []
+        for segment in action.segments():
+            for _ in range(segment.times):
+                segment_action = action.model_copy(update={
+                    "name": segment.name,
+                    "args": {"times": "1"},
+                    "sequence": [],
+                })
+                result = self._world.step(segment_action)
+                messages.append(result.message)
+                calls.extend(result.calls)
         self._last_space = None      # 世界推进了，上次的空间失效
 
+        assert result is not None, "action sequence must contain at least one segment"
         assert result.observation is not None, "world.step() must return the new observation"
-        return result
+        return result.model_copy(update={
+            "message": " ".join(message for message in messages if message),
+            "calls": calls,
+        })

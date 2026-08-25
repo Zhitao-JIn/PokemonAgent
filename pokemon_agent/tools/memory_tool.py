@@ -231,11 +231,17 @@ class MemoryTool:
 
     @require_permission("read:memory:objects")
     def query_objects(self, obs: Observation) -> str:
-        """把这张地图上已知的 object 渲染成一段文字。"""
+        """把这张地图上已知的 object 渲染成一段文字。
+
+        **条与条之间空一行。** `ObjectFact.render()` 现在自己就是多行（抬头 +
+        缩进的明细），单个换行连起来的话，上一条的明细和下一条的抬头之间
+        没有任何视觉边界；空行也是 trace / 观测台数"这一屏有几条档案"的依据
+        （`known_object_count`），用单换行拼会让整段被当成一条。
+        """
         if obs.place is None:
             return ""
-        lines = [fact.render() for fact in self._objects.query_map(obs.place.map_id)]
-        return "\n".join(sorted(lines))
+        blocks = [fact.render() for fact in self._objects.query_map(obs.place.map_id)]
+        return "\n\n".join(sorted(blocks))
 
     @require_permission("write:memory:objects")
     def store_objects_interactions(
@@ -244,17 +250,30 @@ class MemoryTool:
         action: Action,
         after: Observation
     ) -> list[ObjectFact]:
-        """把这一步碰到的 object 记下来，返回被更新的条目。"""
+        """把这一步碰到的 object 记下来，返回被更新的条目。
+
+        **多段动作链一律不记。** 这份档案的键是「在哪一格、按了哪个键」，
+        而一条链的 `before` / `after` 是**整条链的两头**：中间路过了哪些格子、
+        哪一次按键才是撞在门上的那一次，这里都看不到。把 `up×4 -> down×2`
+        记成"在起点按了一次 up"，写进去的是一条**假的尝试记录**——
+        而这份档案的全部价值就在于"哪些碰法试过了"可信。
+        少记一条只是慢一点，记错一条会让它以后永远不再试那个正确的碰法。
+        """
         if not self._should_store_interactions(before, action, after):
             return []
 
-        facing = BUTTON_FACING.get(action.name, before.facts.get("facing", ""))
+        segments = action.segments()
+        if len(segments) != 1:
+            return []
+        segment = segments[0]
+
+        facing = BUTTON_FACING.get(segment.name, before.facts.get("facing", ""))
         if not facing or before.place is None or after.place is None:
             return []
 
         ahead = before.place.step_toward(facing)
-        key_desc = f"x={before.place.x} y={before.place.y}→{action.name}"
-        if action.name == INTERACT_KEY:
+        key_desc = f"x={before.place.x} y={before.place.y}→{segment.name}"
+        if segment.name == INTERACT_KEY:
             kind = self._kind_at(before, ahead)
             if kind is None:
                 return []
@@ -265,7 +284,9 @@ class MemoryTool:
             )
             return [fact]
 
-        if action.args.get("times", "1") != "1":
+        # 连按同样不算一次干净的推门尝试：走了 4 步之后停在哪、
+        # 是被墙挡住还是走到了别处，这里同样分不出来。
+        if segment.times != 1:
             return []
 
         moved = self._outcome(before, after, facing)
@@ -315,8 +336,18 @@ class MemoryTool:
 
     @staticmethod
     def _should_store_interactions(before: Observation, action: Action, after: Observation) -> bool:
-        """判断这一步算不算一次值得记录的互动。"""
-        return before.place is not None and after.place is not None and action.name != ""
+        """判断这一步算不算一次值得记录的互动。
+
+        只管"有没有位置、有没有按键"这两件事；**链长不在这里判**——
+        那是 `store_objects_interactions` 里带着理由的一处提前返回，
+        混进这个纯粹的前置检查会让人以为多段链是"无效输入"，
+        它不是，它只是不适合写进这份按格子索引的档案。
+        """
+        return (
+            before.place is not None
+            and after.place is not None
+            and bool(action.segments())
+        )
 
     # ---- 语义记忆：知识库（和坐标无关的通用先验，混合检索） ----
 

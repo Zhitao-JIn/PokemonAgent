@@ -190,42 +190,91 @@ class ObjectFact(BaseModel):
             self.lines[:] = self.lines[:1] + self.lines[-(MAX_OBJECT_LINES - 1):]
 
     def render(self) -> str:
-        """渲染成 `known_objects` 里的一行。
+        """渲染成 `known_objects` 里的一条档案，**多行**。
+
+        ## 为什么从一行改成多行
+
+        原来整条挤成一行，用 `→` 和 `；` 分隔：
+
+            全局坐标 地图42 x=3 y=3 的「人」 → No! POTIONS are all sold out.；x=3 y=4→a→无效果（见过 12 次，互动 3 次）
+
+        这一行里 `→` 出现了三次，**三次的意思都不一样**：第一个是"这个对象的
+        情况是"，第二个是"在那一格按那个键"，第三个是"结果是"。读的人（和模型）
+        得先猜这一层结构，才谈得上读内容。更糟的是 `x=3 y=4` 紧挨着对象自己的
+        `x=3 y=3`，**看起来像是同一个东西的两个坐标**，而它其实是角色按键时站的格。
+
+        一行还有一个连带后果：观测台那边只能截前 80 个字符当标签，于是这条
+        在 `x=3 y=4→dow` 处被切断——一个半截的按键名。
+
+        现在的形状是"一个抬头 + 若干条明细"：
+
+            全局坐标 地图42 x=3 y=3 的「人」（见过 12 次，互动 3 次）
+              说过：No! POTIONS are all sold out.
+              站在 x=3 y=4 按 a → 无效果
+
+        次数放回抬头，因为它是这条档案的属性，不是最后一条明细的尾巴。
+
+        ## 姿势名字仍然不写，但坐标要说清是谁的
+
+        以前这里写着"不需要翻译成『站在南边』这种措辞"——那句仍然成立，
+        方位词要求读的人先算相对关系，反而更绕。改的只是**给坐标加上主语**：
+        「站在 x=3 y=4 按 a」比「x=3 y=4→a」多了三个字，换来的是它不会再被
+        误读成对象自己的坐标。拿这个坐标和抬头里的坐标一比，是站在上面按
+        还是从旁边推，一眼就分得出来。
+
+        ## 门仍然特判
+
+        开没开是门**唯一要紧的问题**，开了就直接写结论（`通往地图N`），
+        不把一串尝试流水丢给模型自己找哪条是成功的那条。没开的话列出试过的碰法，
+        并写明还剩几种——那个数大于 0 就意味着"还有得试"，是它的待办依据。
 
         **"还没互动过"也要写出来。** 这份档案最有价值的一类条目正是它：
-        "这里有一扇门，我见过 7 次，一次都没进去过"——那是它自己的待办清单，
-        而没有这条信息，它只能靠 `landmarks` 看到那里有扇门，
-        分不出哪扇是探索过的、哪扇是新的。
+        "这里有一扇门，我见过 7 次，一次都没进去过"——没有这条信息，
+        它只能靠 `landmarks` 看到那里有扇门，分不出哪扇探索过、哪扇是新的。
 
-        门用 `leads_to` 单独判过一次——开没开是**唯一要紧的问题**，
-        开了就直接写结论，不用把一串尝试流水交给模型自己找哪条是成功。
-        没开的话把 `attempts` 原样列出来：键本来就是"坐标→按键"，
-        模型自己拿角色当时的位置一比就知道是推门还是站上面按，
-        不需要这一层再翻译成"站在南边"这种措辞。
-
-        渲染成 `known_objects` 里的那一行。
+        渲染成多行文本；条与条之间由调用方用空行隔开（见 `MemoryTool.query_objects`）。
         """
-        parts: list[str] = []
-        if self.lines:
-            parts.append(" / ".join(self.lines))
-        if self.landmark.kind == KIND_DOOR:
-            if self.leads_to is not None:
-                parts.append(f"通往地图{self.leads_to}")
-            elif self.attempts:
-                tried = "；".join(f"{k}→{v}" for k, v in self.attempts.items())
-                rest = f"，还剩 {MAX_TRIED - len(self.attempts)} 种没试" if len(self.attempts) < MAX_TRIED else ""
-                parts.append(f"**还没打开过**（试过 {tried}{rest}）")
-            else:
-                parts.append("**还没打开过**")
-        elif self.attempts:
-            parts.append("；".join(f"{k}→{v}" for k, v in self.attempts.items()))
-        if not parts:
-            parts.append("互动过但没出现文字" if self.touched else "**还没互动过**")
-        return (
+        head = (
             f"{self.landmark.place.render()} 的「{self.landmark.kind}」"
-            f" → {'；'.join(parts)}"
             f"（见过 {self.seen} 次，互动 {self.touched} 次）"
         )
+        details: list[str] = [f"说过：{line}" for line in self.lines]
+
+        if self.landmark.kind == KIND_DOOR and self.leads_to is not None:
+            details.append(f"**已经走通**：通往地图{self.leads_to}")
+            # 走通了就只留成功的那一条碰法——它是"下次怎么再走一遍"的操作说明。
+            # 失败的那些这时已经没用了：门开过了，不再需要待办清单。
+            details.extend(
+                _render_attempt(key, result)
+                for key, result in self.attempts.items()
+                if result.startswith(RESULT_WARP_PREFIX)
+            )
+        else:
+            if self.landmark.kind == KIND_DOOR:
+                rest = MAX_TRIED - len(self.attempts)
+                details.append(
+                    "**还没打开过**"
+                    + (f"（还剩 {rest} 种碰法没试）" if rest > 0 else "（8 种碰法全试过了）")
+                )
+            details.extend(_render_attempt(key, result)
+                           for key, result in self.attempts.items())
+
+        if not details:
+            details.append("互动过但没出现文字" if self.touched else "**还没互动过**")
+        return "\n".join([head] + [f"  {line}" for line in details])
+
+
+def _render_attempt(key: str, result: str) -> str:
+    """把一条尝试记录渲染成人话。
+
+    `key` 的存储形状是 `x=3 y=4→a`（`MemoryTool` 写入时拼的），
+    **这里只负责显示，不改存储**：键是落盘的档案里的键，改格式就等于让
+    已有存档全部失配。解析不出来时原样返回——显示层不该因为一条脏数据抛异常。
+    """
+    coord, sep, button = key.partition("→")
+    if not sep:
+        return f"{key} → {result}"
+    return f"站在 {coord} 按 {button} → {result}"
 
 
 MIN_STITCH = 6

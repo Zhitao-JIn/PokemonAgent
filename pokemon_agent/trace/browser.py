@@ -124,12 +124,17 @@ function render(e){
   else if(e.type==='memory_read'){
     line('记忆：');
     line('  step_memory   = '+(p.step_memory_count||p.count||0));
-    line('  known_object  = '+(p.known_object_names||'(无)'));
+    line('  known_object  = '+(p.known_objects_text?('共 '+(p.known_object_count||'?')+' 条'):'(无)'));
+    if(p.known_objects_text) line(p.known_objects_text.replace(/^/gm,'    '));
     line('  knowledge     = '+(p.knowledge_sources||'(无)'));
     line('  episode_level = '+(p.episode_level_count||0));
   }
   else if(e.type==='think') line('思考：'+(p.thought||''));
-  else if(e.type==='act') line('行动：'+(p.action||'')+' '+(p.message||''));
+  else if(e.type==='act'){
+    const chain=(p.segment_count&&p.segment_count!=='1')
+      ?'  ('+p.segment_count+' 段 / '+(p.press_count||'?')+' 次按键)':'';
+    line('行动：'+(p.action||'')+chain+' '+(p.message||''));
+  }
   else if(e.type==='inspect') line('细看：'+(p.answer||''));
   else line('记忆写入');
 }

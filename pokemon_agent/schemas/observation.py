@@ -367,6 +367,14 @@ class TerrainMap(BaseModel):
         **模型读不动**：那要求它对着某一列纵向拼数字，比原来的换算还难。
 
         所以这里干脆不给列号，只在开头写一句这一屏覆盖到哪。
+
+        那一句原来是「这一屏：x 从 2 到 11，y 从 1 到 9」。两个「从…到…」并排，
+        读的人得自己认出哪个数配哪一边，而 y 的范围其实**每行开头都写着**，
+        重复一遍只是把注意力从真正缺失的那一维（列号）上引开。现在写成
+        「最左一列 x=2，最右一列 x=11」——直接说这个数是哪一列的，
+        不需要再从一个区间里反推。行列数也一并写出来，`inspect` 那边要拿它
+        把全局坐标换算到画面上第几列第几行（见 `prompts/inspect_focus.md`），
+        以前那个数只存在于 prompt 的手写文字里，改了网格尺寸就会漂。
         代价是它没法在图上直接读出某一列的 x——**而这个代价是零**，
         因为它本来就不该在图上数格子找东西：门、招牌、人的确切坐标
         `landmarks` 和 `known_objects` 里已经写好了，四邻 `neighbors` 也已经算好了。
@@ -383,7 +391,11 @@ class TerrainMap(BaseModel):
         left, right = self.player_x - col, self.player_x + GRID_COLS - 1 - col
         gutter = max(len(str(y)) for y in ys)
 
-        lines = [f"这一屏：x 从 {left} 到 {right}，y 从 {ys[0]} 到 {ys[-1]}"]
+        lines = [
+            f"这一屏 {GRID_COLS} 列 × {GRID_ROWS} 行："
+            f"最左一列 x={left}，最右一列 x={right}；"
+            f"每行开头的 y= 就是那一行的 y（最上 y={ys[0]}，最下 y={ys[-1]}）"
+        ]
         for r, line in enumerate(self.cells):
             chars = list(line)
             if r == row:

@@ -17,7 +17,7 @@ import os
 import json
 import textwrap
 from pathlib import Path
-from typing import Dict, Any, Iterable
+from typing import Iterable
 from datetime import datetime
 
 from pokemon_agent.schemas.trace import TraceEvent, EventType, Source, TRACE_SCHEMA_VERSION
@@ -30,7 +30,7 @@ STORAGE_ROOT = project_root / "trace_data"
 
 LABEL_W = 15
 """标签列宽，由最长的标签 `perception_cost` 决定。写成常量而不是散在各处的
-`:<9`，是因为对齐一旦不一致，多行的 `thought` 会和单行的 `action` 错开——
+`:<9`，是因为对齐一旦不一致，多行的 `why` / `reason` 会和单行的成本行错开——
 读日志的人第一眼看到的就是排版乱，而不是内容。
 """
 
@@ -39,6 +39,9 @@ COST_LABEL: dict[Source, str] = {
     Source.DECISION: "decision_cost",
     Source.JUDGE: "judge_cost",
 }
+"""MODEL_CALL 事件的标签，要带 `_cost` 后缀：这一行报的是这次调用花了多少
+（token、延迟），不是"感知到了什么"，混进 `perception`/`observe` 会当成一件事。
+"""
 
 PHASE_BY_TYPE: dict[EventType, str] = {
     EventType.OBSERVE: "observe", EventType.MODEL_CALL: "model_call",
@@ -49,8 +52,25 @@ PHASE_BY_TYPE: dict[EventType, str] = {
     EventType.ERROR: "error", EventType.EPISODE_START: "episode",
     EventType.EPISODE_END: "episode", EventType.CHECKPOINT: "checkpoint",
 }
-"""MODEL_CALL 事件的标签，要带 `_cost` 后缀：这一行报的是这次调用花了多少
-（token、延迟），不是"感知到了什么"，混进 `perception`/`observe` 会当成一件事。
+BROWSER_ONLY = frozenset({
+    EventType.OBSERVE, EventType.MEMORY_READ, EventType.THINK,
+    EventType.ACT, EventType.INSPECT, EventType.MEMORY_WRITE,
+    EventType.OBJECT_NOTE,
+})
+"""这几类**只在浏览器观测台上看**，终端一个字都不打。
+
+分工是有意的：终端留给"跑得对不对"——账单、错误、目标出栈、episode 起止，
+一屏能扫完；观测台留给"它当时看到了什么、想了什么"——观测、记忆、推理、动作，
+那些内容一条就是十几行，混在终端里会把前一类冲掉。
+
+**这里以前是 `sse()` 里一句裸的提前 return，下面却还留着这七类的完整打印分支。**
+那些分支永远执行不到，但读代码的人看不出来——改了它们、跑一遍、终端毫无变化，
+只能怀疑是自己改错了。死代码在这里的代价不是几十行，是**读的人对整个文件的信任**。
+所以现在这份名单是唯一的事实来源：要让某一类回到终端，从这个集合里删掉它，
+再去写它的打印分支。
+
+`payload` 里的东西一样不少（`append()` 落盘和推流是同一条事件），
+所以事后 replay、观测台、统计都不受影响。
 """
 
 
@@ -181,8 +201,8 @@ class LocalTrace:
         ep, step, type_, source = event.episode_id, event.step, event.type, event.source
         p = event.payload
 
-        if type_ in (EventType.OBSERVE, EventType.MEMORY_READ, EventType.THINK,
-                     EventType.ACT, EventType.INSPECT, EventType.MEMORY_WRITE):
+        # **在表头之前**返回：只有观测台事件的那一步，终端不该冒出一个空的 STEP 表头。
+        if type_ in BROWSER_ONLY:
             return
 
         # 表头逻辑（在所有分支之前）：EPISODE_START/END 不属于某一步，跳过。
@@ -211,56 +231,11 @@ class LocalTrace:
                   f"latency={p.get('latency_ms', '?')}ms "
                   f"attempt={p.get('attempt', '?')} ok={p.get('ok', '?')}{depth}")
 
-        elif type_ is EventType.OBSERVE:
-            print(f"{'observe':<{LABEL_W}} scene={p.get('scene', '')} "
-                  f"overlay={p.get('overlay', '')} frame={p.get('frame_sha', '')[:8]}")
-            print(self._wrapped("summary", p.get("summary", "")))
-            facts = self._facts(p)
-            if facts.get("walk_map"):
-                print(self._wrapped("walk_map", facts["walk_map"]))
-            if p.get("goals"):
-                print(self._wrapped("goals", p["goals"]))
-
-        elif type_ is EventType.MEMORY_READ:
-            print("--- MEMORY RETRIEVAL ---")
-            print(f"{'step_memory':<{LABEL_W}} count={p.get('step_memory_count', p.get('count', '0'))} "
-                  f"refs={p.get('refs', '')}")
-            print(f"{'known_object':<{LABEL_W}} {p.get('known_object_names', '(无)')}")
-            print(f"{'knowledge':<{LABEL_W}} {p.get('knowledge_sources', '(无)')}")
-            print(f"{'episode_level':<{LABEL_W}} "
-                  f"count={p.get('episode_level_count', p.get('episode_memory_count', '0'))} "
-                  f"refs={p.get('episode_memory_refs', '')}")
-
-        elif type_ is EventType.THINK:
-            # 上一版这里连 action/×N/第几次尝试 一起打印，跟紧随其后的 ACT
-            # 那一行（本来就有 action/×N）重复，是那部分该去掉——不是把
-            # thought 本身也一起去掉。推理文字还是要看的，只是不用再重复
-            # 报一遍这次选了哪个动作。
-            print(self._wrapped("thought", p.get("thought", "")))
-
-        elif type_ is EventType.ACT:
-            times = self._times(p)
-            print(f"{'act':<{LABEL_W}} action={p.get('action', '')}{times}  "
-                  f"{p.get('message', '')}")
-
-        elif type_ is EventType.MEMORY_WRITE:
-            # payload["key"] 目前是 MemoryEntry.key——本阶段只是"位置占位"
-            # （见 schemas/memory_episodic.py 的字段说明，检索现在也不靠它，
-            # 靠 Snapshot 字符重叠），打出来除了一串坐标什么都看不出，不如不印。
-            print(f"{'remember':<{LABEL_W}} 写入一条情景记忆")
-
-        elif type_ is EventType.OBJECT_NOTE:
-            return
-
         elif type_ is EventType.GOAL_POP:
             print(f"{'goal_pop':<{LABEL_W}} depth={p.get('depth', '')} "
                   f"reason={p.get('reason', '')} goal={p.get('goal', '')}")
             if p.get("why"):
                 print(self._wrapped("why", p["why"]))
-
-        elif type_ is EventType.INSPECT:
-            print(f"{'inspect':<{LABEL_W}} focus={p.get('focus', '')}")
-            print(self._wrapped("answer", p.get("answer", "")))
 
         elif type_ is EventType.ERROR:
             print(f"{'ERROR':<{LABEL_W}} kind={p.get('kind', '')} "
@@ -287,37 +262,6 @@ class LocalTrace:
                 prefix = f"{label:<{LABEL_W}}" if i == 0 and j == 0 else " " * LABEL_W
                 lines.append(f"{prefix}{line}")
         return "\n".join(lines)
-
-    @staticmethod
-    def _facts(p: dict[str, str]) -> dict[str, Any]:
-        """把 payload["facts"]（JSON 字符串）解析成 dict，解析失败时返回空 dict。
-
-        把 payload 里的 facts 解析回 dict。
-        """
-        try:
-            return json.loads(p.get("facts", "{}"))
-        except (json.JSONDecodeError, TypeError):
-            return {}
-
-    @staticmethod
-    def _times(p: dict[str, str]) -> str:
-        """把 args JSON 里的 times（连按次数）格式化成 `×N`。必须区分"模型
-        明确给了 1"和"模型压根没给 times"——修法完全不同（前者调 prompt 措辞，
-        后者排查渲染链路是否把这个能力告诉了模型）。
-
-        把连按次数格式化成 `×N`。
-        """
-        try:
-            args = json.loads(p.get("args", "{}"))
-        except (json.JSONDecodeError, TypeError):
-            return " [args 不是合法 JSON]"
-        if "times" not in args:
-            return " [无 times]"
-        try:
-            n = int(args["times"])
-        except (TypeError, ValueError):
-            return f" [times={args['times']} 非法]"
-        return f" ×{n}"
 
     def all_events(self) -> list[TraceEvent]:
         """获取所有事件（供测试使用）
