@@ -7,6 +7,7 @@ from pokemon_agent.schemas.memory_episode import EpisodeMemory
 from pokemon_agent.schemas.memory_episodic import MemoryEntry
 from pokemon_agent.schemas.memory_semantic import ObjectFact
 from pokemon_agent.schemas.observation import PerceptionResult, Observation
+from pokemon_agent.schemas.knowledge import KnowledgeQueryResult
 from pokemon_agent.schemas.task import Task
 
 
@@ -27,18 +28,6 @@ class GameToolPort(Protocol):
         返回的 `observation` 在同一帧内也是稳定的，**除非期间调用过 `inspect()`**：
         那会往 facts 里加一条 `inspected`。这是刻意的（细看的答案要能被下一轮读到），
         但它意味着"幂等"只对模型调用成立，对返回值不成立。
-        """
-        ...
-
-    def inspect(self, focus: str) -> PerceptionResult:
-        """对同一帧再问一次感知，问一个具体的问题。**世界不推进。**
-
-        前置条件：focus 非空。**没有具体问题就不该调它**——
-            那样它只是把同一帧原样再看一遍（`perceive()` 帧内缓存，字节完全一样），
-            不产生任何新信息，纯粹白烧一次调用。
-        后置条件：答案并进下一次 `perceive()` 的 facts；`execute()` 之后自动失效；
-            `result.calls` 是这次细看产生的调用记录。
-        失败：不抛异常，把"没看清"写成答案。
         """
         ...
 
@@ -91,7 +80,7 @@ class MemoryToolPort(Protocol):
     **不碰世界。**
 
     几类记忆分开暴露，因为它们的读写语义不同：单步情景记忆**全量返回**（一局的
-    单步记忆本来就该完整保留、完整交给决策，见 `query_episodic` 的说明）；
+    单步记忆本来就该完整保留、完整交给决策，见 `query_episode_steps` 的说明）；
     语义记忆（object）按坐标查；跨局摘要记忆和知识库都走同一套混合检索
     （关键词 + 向量 + reranker，见 `memory/retrieval.py`）。程序记忆
     （procedural）还没做，先不占位。
@@ -99,7 +88,7 @@ class MemoryToolPort(Protocol):
 
     # ---- 情景记忆：episodic ----
 
-    def query_episodic(self, episode_id: str) -> list[MemoryEntry]:
+    def query_episode_steps(self, episode_id: str) -> list[MemoryEntry]:
         """**这一局**全部的单步情景记忆，按发生顺序（`step` 升序）。
 
         **不做相关性排序、不截断**——单步记忆本来就该完整保留：它记的是
@@ -113,7 +102,7 @@ class MemoryToolPort(Protocol):
         """
         ...
 
-    def recent(self, episode_id: str, limit: int) -> list[MemoryEntry]:
+    def query_recent_steps(self, episode_id: str, limit: int) -> list[MemoryEntry]:
         """**这一局**最近几条情景记忆，按时间顺序。
 
         前置条件：limit > 0。
@@ -121,7 +110,7 @@ class MemoryToolPort(Protocol):
         """
         ...
 
-    def write_episodic(self, entry: MemoryEntry) -> None:
+    def store_episode_step(self, entry: MemoryEntry) -> None:
         """写入一条情景记忆。
 
         前置条件：`entry.rationale` 非空。没有理由的经验取回来也没用——
@@ -130,7 +119,7 @@ class MemoryToolPort(Protocol):
         ...
 
     @property
-    def episodic_size(self) -> int:
+    def episode_step_count(self) -> int:
         """库里有多少条情景记忆。**A/B 实验的自变量之一**，要能被记进事件流。"""
         ...
 
@@ -140,7 +129,7 @@ class MemoryToolPort(Protocol):
     # 对 `MemoryEntry` vs `EpisodeMemory` 的区分）：这里检索/写入的单元是**一整局**，
     # 不是一步，一局内的单步记忆不会、也不该经这两个方法被跨局取走。
 
-    def query_episode_memories(self, scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]:
+    def query_episode_summaries(self, scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]:
         """检索和当前场景相关的跨局摘要记忆。
 
         前置条件：`scene` 非空；`limit > 0`。
@@ -153,20 +142,12 @@ class MemoryToolPort(Protocol):
         """
         ...
 
-    def write_episode_memory(self, entry: EpisodeMemory) -> None:
-        """写入一条跨局摘要记忆。
-
-        前置条件：`entry.rationale` 非空、`entry.content.summary` 非空——
-            没有总结和理由的摘要，检索回来也无法判断它凭什么被认为有价值。
-        """
-        ...
-
     @property
-    def episode_memory_size(self) -> int:
-        """库里有多少条跨局摘要记忆。同 `episodic_size`，是要能被记进事件流的可观测量。"""
+    def episode_summary_count(self) -> int:
+        """库里有多少条跨局摘要记忆，是要能被记进事件流的可观测量。"""
         ...
 
-    def summarize_episode(
+    def store_episode_summary(
         self, episode_id: str, run_id: str, goal: str, outcome: dict[str, str | int | bool]
     ) -> EpisodeMemory:
         """一局结束时调用：把这一局的单步记忆蒸馏成一条跨局摘要记忆，写入并返回。
@@ -182,7 +163,7 @@ class MemoryToolPort(Protocol):
 
     # ---- 语义记忆：object ----
 
-    def known_here(self, obs: Observation) -> str:
+    def query_objects(self, obs: Observation) -> str:
         """`obs.place` 所在地图上，已知的语义记忆（object）渲染成的一段文字。
 
         后置条件：`obs.place` 为 None 时返回空串；没有任何已知条目时也返回空串——
@@ -190,14 +171,7 @@ class MemoryToolPort(Protocol):
         """
         ...
 
-    def see_objects(self, obs: Observation, stamp: str) -> None:
-        """把这一帧看到的地标全部记一遍。
-
-        前置条件：**一步只调一次**——`stamp` 非空，调用方保证不会同一步调两次。
-        """
-        ...
-
-    def note_step(
+    def store_objects_interactions(
         self, before: Observation, action: Action, after: Observation
     ) -> list[ObjectFact]:
         """这一步碰到了什么语义记忆（object），记下来。返回被更新的条目（可能为空）。
@@ -208,21 +182,16 @@ class MemoryToolPort(Protocol):
         ...
 
     # ---- 语义记忆：知识库（和坐标无关的通用先验） ----
-    def knowledge_base(self, query: str, limit: int = 5) -> str:
+    def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
         """项目自带的通用游戏先验（草丛怎么走、属性克制表、道馆打法……）里，
         和 `query` 相关的那几条，拼成一段文字。
 
-        和 `known_here()` 不同：那个按 `obs.place` 筛，这个不按坐标筛，
+        和 `query_objects()` 不同：那个按 `obs.place` 筛，这个不按坐标筛，
         按内容相关性筛——知识库条目量级会随内容增长（不再是"个位数、全喂"
         那个阶段，见 `memory/semantic/knowledge/store.py` 顶部说明），
         混合检索（关键词 + 向量 + reranker）负责从里面挑出这一步真正用得上的。
 
         前置条件：`query` 非空；`limit > 0`。
-        后置条件：返回条数 <= limit 条知识片段拼接；库是空的、或检索不到
-            任何片段时返回空串——调用方据此决定要不要往 `facts` 里塞东西。
+        后置条件：返回内容和来源来自同一次检索；没有命中时两者都是空列表。
         """
-        ...
-
-    def knowledge_sources(self, query: str, limit: int = 5) -> list[str]:
-        """返回本次 knowledge 检索命中的 Markdown 文件名，仅供 trace 展示。"""
         ...

@@ -30,7 +30,6 @@
     │ └ remember     reflect → memory.write_episodic → memory.note_step
     │                                               -> MEMORY_WRITE + OBJECT_NOTE×N
     ├ push_goal      压一个子目标                    -> GOAL_PUSH
-    └ inspect        对同一帧再问一个具体问题          -> MODEL_CALL(感知) + INSPECT
                                                       三条链路都 step += 1，然后回到 look
 
     `retrieve_memory`/`remember` 是**显式的图节点**，不是藏在 `think`/`press`
@@ -289,7 +288,7 @@ class Harness:
         # 但顺序本身有意义：episode 的边界应该是这一局在事件流里看到的第一条
         # 事件，而不是"先花了一次钱、才想起来这局开始了"。
         self._trace.append(
-            *trace_utils.episode_start(episode_id, task, self._memory.episodic_size)
+            *trace_utils.episode_start(episode_id, task, self._memory.episode_step_count)
         )
 
         for call in reset.calls:
@@ -325,7 +324,7 @@ class Harness:
         拆成独立节点之后这两条规则**是图结构本身**，不用看代码也看得出来；
         以后想换检索/写入策略，改的是这一个节点，`think`/`press`/prompt 都不用动。
 
-        `remember` 只跟在 `press` 后面——`push_goal`/`inspect` 不推进世界，
+        `remember` 只跟在 `press` 后面——`push_goal` 不推进世界，
         写进去就是一堆"结果：什么都没发生"，会把检索结果稀释掉（原因见 `_remember`）。
         """
         graph = StateGraph(LoopState)
@@ -361,7 +360,6 @@ class Harness:
         return {
             Intent.PRESS: self._press,
             Intent.PUSH_GOAL: self._push_goal,
-            Intent.INSPECT: self._inspect,
         }
 
     def _look(self, state: LoopState) -> dict[str, Any]:
@@ -385,7 +383,7 @@ class Harness:
         说明和可选项必须一致，否则模型会去选一个用不了的东西，
         白花一轮再吃一条 IllegalAction。
         """
-        intents = [Intent.PRESS, Intent.INSPECT]
+        intents = [Intent.PRESS]
         if len(goals) < MAX_GOAL_DEPTH:
             intents.insert(1, Intent.PUSH_GOAL)
         return self._game.get_action_space().model_copy(update={"intents": intents})
@@ -424,16 +422,16 @@ class Harness:
         """
         assert state.observation is not None, "retrieve_memory before look"
         obs, ep, step = state.observation, state.episode_id, state.observation.step
-        memories = self._memory.query_episodic(ep)
+        memories = self._memory.query_episode_steps(ep)
 
-        known = self._memory.known_here(obs)
+        known = self._memory.query_objects(obs)
         if known:
             obs = obs.model_copy(update={"facts": {**obs.facts, "known_objects": known}})
-        knowledge = self._memory.knowledge_base(query=state.task.goal, limit=MEMORY_RECALL_LIMIT)
-        knowledge_sources = self._memory.knowledge_sources(
+        knowledge_result = self._memory.query_knowledge(
             query=state.task.goal, limit=MEMORY_RECALL_LIMIT
         )
-        if knowledge:
+        knowledge = "\n\n".join(knowledge_result.contents)
+        if knowledge_result.contents:
             obs = obs.model_copy(update={"facts": {**obs.facts, "knowledge": knowledge}})
 
         # 跨局摘要记忆：查"和当前任务相关的、别的局蒸馏出的经验"，不是"这一帧长什么样"，
@@ -448,7 +446,7 @@ class Harness:
                 f"scene:{obs.facts.get('scene', '')}",
                 f"overlay:{obs.facts.get('overlay', '')}",
             )))
-            episode_memories = self._memory.query_episode_memories(
+            episode_memories = self._memory.query_episode_summaries(
                 scene=scene_key, query=state.task.goal,
                 limit=EPISODE_MEMORY_RECALL_LIMIT,
             )
@@ -462,7 +460,7 @@ class Harness:
         self._trace.append(
             *trace_utils.memory_read(
                 ep, step, memories, known, knowledge, episode_memories,
-                knowledge_sources=knowledge_sources,
+                knowledge_sources=knowledge_result.sources,
             )
         )
         return {"observation": obs, "memories": memories}
@@ -574,14 +572,14 @@ class Harness:
         entry = self._brain.reflect(before, action, after).model_copy(
             update={"episode_id": ep}
         )
-        self._memory.write_episodic(entry)
+        self._memory.store_episode_step(entry)
         self._trace.append(*trace_utils.memory_write(ep, before.step, entry))
 
         # **语义记忆和情景记忆是两回事，分开写。**
         # 情景记忆记"我在那种画面里选了什么"，作用域是一次经过；
         # 这一条记"地图39 x=2 y=3 那个人会说什么"，作用域是那一格，域内恒真、域会再现。
         # 它不需要模型判断——面朝哪一格是 `place + facing` 算出来的，两个输入都确定。
-        for note in self._memory.note_step(before, action, after):
+        for note in self._memory.store_objects_interactions(before, action, after):
             self._trace.append(*trace_utils.object_note(ep, before.step, note))
 
         return {"step": state.step + 1}
@@ -604,31 +602,6 @@ class Harness:
             goal, state.action.rationale,
         ))
         return {"goals": [*state.goals, goal], "step": state.step + 1}
-
-    def _inspect(self, state: LoopState) -> dict[str, Any]:
-        """对同一帧再问一次视觉模型。**世界不动，但仍然算一步。**
-
-        `INSPECT` 和 `OBSERVE` 是两个事件类型：后者每步必发，前者是大脑主动要的。
-        混成一类就算不出"它多久要细看一次"，而那是判断这个动作值不值那次钱的依据。
-        """
-        assert state.observation is not None, "inspect before look"
-        assert state.action is not None and state.action.focus
-        focus = state.action.focus
-
-        result = self._game.inspect(focus)
-        calls = result.calls
-        for call in calls:
-            for args in trace_utils.model_call(
-                state.episode_id, state.observation.step, Source.PERCEPTION,
-                ModelCall(payload=call, error_kind="" if call.get("ok") == "True"
-                          else "InspectFailed", error=call.get("raw", "")),
-            ):
-                self._trace.append(*args)
-        self._trace.append(*trace_utils.inspect(
-            state.episode_id, state.observation.step, focus,
-            calls[-1].get("raw", "") if calls else "",
-        ))
-        return {"step": state.step + 1}
 
     def _route(self, state: LoopState) -> str:
         assert state.observation is not None, "routing before any observation"
@@ -676,8 +649,6 @@ class Harness:
         # **看到的都建档**，没互动过的也建——"这里有一扇门，我见过 7 次一次没进过"
         # 正是这份档案最有用的一类条目。放在这里是因为 `_observe()` 是全项目
         # 唯一一步产出一次观测的地方，而 `seen` 必须一步只加一次。
-        self._memory.see_objects(obs, f"{state.episode_id}#{obs.step}")
-
         for call in perceived.calls:
             # **`ok=False` 的那几次要带上 error_kind**，`trace_utils.model_call()`
             # 才会吐出那条 ERROR。漏掉的话「视觉模型输出解析失败」这一类**永远不出现在失败模式
@@ -819,7 +790,7 @@ class Harness:
         # **同一份历史发给每一层**，不按层筛。除了"哪一层都可能需要那几帧"之外
         # 还有个实际理由：它落在同一步内这几次调用**共享的前缀**里，
         # 重复的 input token 基本免费。按层裁剪反而会把前缀切碎。
-        history = self._memory.recent(episode_id, JUDGE_HISTORY)
+        history = self._memory.query_recent_steps(episode_id, JUDGE_HISTORY)
         if len(goals) == 1:
             return [self._brain.judge(goals[0], obs, history)]
 
@@ -857,7 +828,7 @@ class Harness:
         只是没能力提炼经验，这是两件事。
         """
         try:
-            self._memory.summarize_episode(
+                self._memory.store_episode_summary(
                 state.episode_id, self._run_id, state.task.goal,
                 {"success": result.success, "steps": result.steps,
                  "max_steps": state.task.max_steps},

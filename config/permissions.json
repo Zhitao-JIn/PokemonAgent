@@ -1,0 +1,33 @@
+{
+  "roles": {
+    "player-agent": [
+    ],
+    "trusted-agent": [
+      "read:game:perceive",
+      "read:game:action_space",
+      "read:game:last_frame_sha",
+      "execute:game:reset",
+      "execute:game:press",
+      "execute:game:save_state",
+      "read:memory:episodic",
+      "read:memory:episode",
+      "read:memory:objects",
+      "read:memory:knowledge",
+      "write:memory:episodic",
+      "write:memory:episode",
+      "write:memory:objects",
+      "execute:llm:decision",
+      "execute:llm:judge",
+      "execute:llm:perception",
+      "execute:llm:memory_reflection",
+      "execute:llm:memory_summary",
+      "write:harness:trace"
+    ]
+  },
+  "policies": {
+    "execute:game:save_state": {
+      "risk": "HIGH",
+      "approval_required": true
+    }
+  }
+}

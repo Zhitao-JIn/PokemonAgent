@@ -28,15 +28,6 @@ class Intent(str, Enum):
     PUSH_GOAL = "push_goal"
     """把当前目标拆出一个更近的子目标压进栈。不推进世界。"""
 
-    INSPECT = "inspect"
-    """对同一帧再问一次视觉模型，问一个具体的问题。不推进世界。
-
-    **必须带 `focus`**：不带的话它就是把同一帧原样再看一遍——
-    `perceive()` 是帧内缓存的，返回的字节完全一样，不产生任何新信息，
-    而模型在拿不准的时候一定会选它，然后下一轮看到同样的画面再选一次。
-    带上具体问题、走另一份 prompt，它才真的产出新事实，也才值那次钱。
-    """
-
 
 class Goal(BaseModel):
     """一个目标：想达成什么，以及**怎么算达成**。
@@ -96,9 +87,6 @@ class Action(BaseModel):
     goal: Goal | None = Field(
         default=None, description="要压进目标栈的子目标。只在 PUSH_GOAL 时有意义"
     )
-    focus: str = Field(
-        default="", description="想细看什么，一句话。只在 INSPECT 时有意义"
-    )
     thought: str = Field(
         min_length=1,
         description="选择该动作的完整推理。只进 trace，不进 memory，不影响后续决策",
@@ -122,8 +110,6 @@ class Action(BaseModel):
             raise ValueError("intent=press 必须给 action（按键名）")
         if self.intent is Intent.PUSH_GOAL and self.goal is None:
             raise ValueError("intent=push_goal 必须给 goal 和 criteria")
-        if self.intent is Intent.INSPECT and not self.focus.strip():
-            raise ValueError("intent=inspect 必须给 focus（想细看什么）")
         return self
 
 

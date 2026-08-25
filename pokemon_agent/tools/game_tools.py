@@ -84,11 +84,6 @@ class GameTools:
         """
         return self._world.observe()
 
-    def inspect(self, focus: str) -> PerceptionResult:
-        """对同一帧再问一次感知。转发给 world —— 换的是 prompt，不是画面。"""
-        assert focus.strip(), "inspect() got an empty focus"
-        return self._world.inspect(focus)
-
     def get_action_space(self) -> ActionSpace:
         """掩码发生在这里，**只看 overlay**。
 

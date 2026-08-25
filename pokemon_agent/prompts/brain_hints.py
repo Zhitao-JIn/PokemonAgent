@@ -35,7 +35,6 @@ _INTENT_SECTIONS = load_sections("intent_help")
 INTENT_HELP: dict[Intent, str] = {
     Intent.PRESS: _INTENT_SECTIONS["press"],
     Intent.PUSH_GOAL: _INTENT_SECTIONS["push_goal"],
-    Intent.INSPECT: _INTENT_SECTIONS["inspect"],
 }
 """每类 intent 给大脑的说明。
 

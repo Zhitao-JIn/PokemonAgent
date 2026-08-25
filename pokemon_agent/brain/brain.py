@@ -492,10 +492,7 @@ class Brain:
                 ))
             fields = {"goal": Goal(goal=goal.strip(), criteria=criteria.strip())}
         else:
-            focus = raw.get("focus")
-            if not isinstance(focus, str) or not focus.strip():
-                raise ParseFailure(text, "intent=inspect but no 'focus' field")
-            fields = {"focus": focus.strip()}
+            raise ParseFailure(text, f"unsupported intent {intent.value!r}")
 
         return Action(
             intent=intent,

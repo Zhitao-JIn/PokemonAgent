@@ -9,6 +9,7 @@ from pokemon_agent.memory.semantic.retrieval import hybrid_retrieve
 from pokemon_agent.memory.episode.utils import _get_episode_memories, _memory_entry_to_episode_steps
 from pokemon_agent.schemas.action import Action
 from pokemon_agent.schemas.memory_episode import EpisodeMemory
+from pokemon_agent.schemas.knowledge import KnowledgeQueryResult
 from pokemon_agent.schemas.memory_episode_summary import EpisodeContext
 from pokemon_agent.schemas.memory_episodic import MemoryEntry
 from pokemon_agent.schemas.observation import Observation
@@ -97,34 +98,34 @@ class MemoryTool:
 
     # ---- 情景记忆：episodic（单步，全量，不检索） ----
 
-    def query_episodic(self, episode_id: str) -> list[MemoryEntry]:
-        assert episode_id, "query_episodic() needs a non-empty episode_id"
+    def query_episode_steps(self, episode_id: str) -> list[MemoryEntry]:
+        assert episode_id, "query_episode_steps() needs a non-empty episode_id"
         hits = sorted(
             (m for m in self._episodes if m.episode_id == episode_id),
             key=lambda m: m.step,
         )
         return hits
 
-    def recent(self, episode_id: str, limit: int) -> list[MemoryEntry]:
-        assert limit > 0, "recent() needs a positive limit"
+    def query_recent_steps(self, episode_id: str, limit: int) -> list[MemoryEntry]:
+        assert limit > 0, "query_recent_steps() needs a positive limit"
         return [m for m in self._episodes if m.episode_id == episode_id][-limit:]
 
-    def write_episodic(self, entry: MemoryEntry) -> None:
-        assert entry.rationale, "write_episodic() got an entry without a rationale"
+    def store_episode_step(self, entry: MemoryEntry) -> None:
+        assert entry.rationale, "store_episode_step() got an entry without a rationale"
         self._episodes.append(entry)
 
     @property
-    def episodic_size(self) -> int:
+    def episode_step_count(self) -> int:
         return len(self._episodes)
 
     # ---- 跨局摘要记忆：episode memory（混合检索） ----
 
-    def query_episode_memories(self, scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]:
+    def query_episode_summaries(self, scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]:
         """场景硬过滤（含通配，见 `EpisodeMemory.matches_scene`）之后，
         用混合检索（BM25 + 向量 + reranker）排出"文本相关性"，
         再叠加质量分和是否成功两个信号，取前 `limit` 条。
         """
-        assert scene, "query_episode_memories() needs a non-empty scene"
+        assert scene, "query_episode_summaries() needs a non-empty scene"
         assert limit > 0, f"limit must be > 0, got {limit}"
         candidates = [m for m in self._episode_memories if m.matches_scene(scene)]
         if not candidates:
@@ -151,17 +152,11 @@ class MemoryTool:
         assert len(hits) <= limit, "query_episode_memories must respect the limit"
         return hits
 
-    def write_episode_memory(self, entry: EpisodeMemory) -> None:
-        assert entry.rationale, "write_episode_memory() got an entry without a rationale"
-        assert entry.content.summary, "write_episode_memory() got an entry without a summary"
-        self._episode_memories.append(entry)
-        self._episode_memory_vectors[entry.episode_id] = self._embedding.embed([entry.render()])[0]
-
     @property
-    def episode_memory_size(self) -> int:
+    def episode_summary_count(self) -> int:
         return len(self._episode_memories)
 
-    def summarize_episode(
+    def store_episode_summary(
         self, episode_id: str, run_id: str, goal: str, outcome: Dict[str, Any]
     ) -> EpisodeMemory:
         """一局结束时调用：把这一局的单步记忆蒸馏成一条跨局摘要记忆，写入并返回。
@@ -169,6 +164,8 @@ class MemoryTool:
         前置条件：`episode_id` 对应的单步记忆已经全部写完（调用方保证——
             harness 在真正结束这一局之后才该调它，不是提前调）。
         """
+        assert episode_id, "store_episode_summary() needs a non-empty episode_id"
+        assert goal, "store_episode_summary() needs a non-empty goal"
         entries = _get_episode_memories(self._episodes, episode_id)
         context = EpisodeContext(
             episode_id=episode_id,
@@ -184,27 +181,27 @@ class MemoryTool:
         episode_memory = self.episode_generator.generate_summary(
             episode_id, run_id, goal, outcome, context
         )
-        self.write_episode_memory(episode_memory)
+        self._episode_memories.append(episode_memory)
+        self._episode_memory_vectors[episode_memory.episode_id] = self._embedding.embed(
+            [episode_memory.render()]
+        )[0]
         return episode_memory
 
     # ---- 语义记忆：object ----
 
-    def known_here(self, obs: Observation) -> str:
+    def query_objects(self, obs: Observation) -> str:
         if obs.place is None:
             return ""
         lines = [fact.render() for fact in self._objects.query_map(obs.place.map_id)]
         return "\n".join(sorted(lines))
 
-    def see_objects(self, obs: Observation, stamp: str) -> None:
-        self._objects.see(parse_landmarks(obs), stamp)
-
-    def note_step(
+    def store_objects_interactions(
         self,
         before: Observation,
         action: Action,
         after: Observation
     ) -> list[ObjectFact]:
-        if not self._should_note_step(before, action, after):
+        if not self._should_store_interactions(before, action, after):
             return []
 
         facing = BUTTON_FACING.get(action.name, before.facts.get("facing", ""))
@@ -271,17 +268,17 @@ class MemoryTool:
         return ""
 
     @staticmethod
-    def _should_note_step(before: Observation, action: Action, after: Observation) -> bool:
+    def _should_store_interactions(before: Observation, action: Action, after: Observation) -> bool:
         return before.place is not None and after.place is not None and action.name != ""
 
     # ---- 语义记忆：知识库（和坐标无关的通用先验，混合检索） ----
 
-    def knowledge_base(self, query: str, limit: int = 5) -> str:
-        assert query, "knowledge_base() needs a non-empty query"
+    def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
+        assert query, "query_knowledge() needs a non-empty query"
         assert limit > 0, f"limit must be > 0, got {limit}"
         self._refresh_knowledge_index()
         if not self._knowledge_chunks:
-            return ""
+            return KnowledgeQueryResult(contents=[], sources=[])
 
         fuse_top_k = max(limit * 3, KNOWLEDGE_FUSE_TOP_K)
         results = hybrid_retrieve(
@@ -289,20 +286,10 @@ class MemoryTool:
             fuse_top_k=fuse_top_k, document_vectors=self._knowledge_vectors,
         )
         hits = results[:limit]
-        return "\n\n".join(self._knowledge_chunks[idx] for idx, _ in hits)
-
-    def knowledge_sources(self, query: str, limit: int = 5) -> list[str]:
-        assert query, "knowledge_sources() needs a non-empty query"
-        assert limit > 0, "knowledge_sources() limit must be positive"
-        self._refresh_knowledge_index()
-        if not self._knowledge_chunks:
-            return []
-        results = hybrid_retrieve(
-            query, self._knowledge_chunks, self._embedding, self._reranker,
-            fuse_top_k=max(limit * 3, KNOWLEDGE_FUSE_TOP_K),
-            document_vectors=self._knowledge_vectors,
+        return KnowledgeQueryResult(
+            contents=[self._knowledge_chunks[idx] for idx, _ in hits],
+            sources=[self._knowledge_names[idx] for idx, _ in hits],
         )
-        return [self._knowledge_names[idx] for idx, _ in results[:limit]]
 
     def _refresh_knowledge_index(self) -> None:
         """知识库文件的 mtime 变了才重新分片、重新 embed——**不是每次查询都重算**。

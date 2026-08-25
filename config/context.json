@@ -1,0 +1,9 @@
+{
+  "subject_id": "pokemon-agent",
+  "roles": ["player-agent"],
+  "metadata": {
+    "run_id": "runtime",
+    "episode_id": "runtime",
+    "task_id": "runtime"
+  }
+}
