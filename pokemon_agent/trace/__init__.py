@@ -1,19 +1,13 @@
-"""trace 的具体实现——存储/推流（`store.py`）与 payload 组装（`utils.py`）。
+"""trace 包：事件流的实现与它的周边。
 
-`interfaces/trace.py` 里的 `TracePort` 协议本身极简，三个方法（`append`/
-`replay`/`sse`），刻意不认识任何领域类型。这个包放的是围绕它的两件具体的事，
-而且**故意不合并成一个类**：
+    store.py    `TracePort` 的实现：追加写、落盘、控制台推流
+    utils.py    payload 组装的纯函数——**不认识 TracePort，不做任何 I/O**
+    index.py    episode 的全局索引：保证 id 唯一、清理跑了一半的局
+    browser.py  把事件推给浏览器的那个小服务
 
-- `store.LocalTrace` —— `TracePort` 的本地具体实现：`append` 落盘（内存列表）、
-  `replay` 历史拉取、`sse` 推流（现在打印到控制台，以后推给浏览器）。
-  它只认识 `EventType`/`Source`/`payload: dict[str, str]` 这些 trace 自己的类型。
-- `utils` —— 一组纯函数，把领域对象（`Observation`/`Action`/`Goal`/
-  `ModelCall`……）组装成 `append()` 能直接展开调用的参数元组。不认识
-  `TracePort`，不做任何 I/O，可以脱离 trace 单独单元测试。
-
-`Harness` 依赖裸的 `TracePort`（不是某个包装类）：它自己调 `append()`，
-但组装 payload 这件事全部委托给 `trace_utils` 里的纯函数——`harness.py`
-里因此没有任何 `dict[str, str]` 字面量。
+`utils.py` 单独拎出来是因为"这一步该不该记"和"记的话该长什么样"是两件事：
+前者是 Harness 的调度判断，后者是纯翻译。拆开之后组装逻辑可以脱离 `TracePort`
+单测——给一个 `ModelCall` 断言吐出来的元组长什么样，不需要造假实现。
 """
 
 from .index import EpisodeIndex

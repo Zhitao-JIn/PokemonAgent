@@ -31,14 +31,17 @@ except ImportError:
     class EpisodeIndex:
         @classmethod
         def is_unique(cls, episode_id: str, run_id: str) -> bool:
+            """看这个 episode_id 有没有被用过。"""
             return True
 
         @classmethod
         def register(cls, episode_id: str, run_id: str) -> None:
+            """把新的 episode_id 记进全局索引。"""
             pass
 
         @classmethod
         def clean_incomplete_episodes(cls, run_id: str) -> None:
+            """删掉没有终止事件的那些局。"""
             pass
 
 STORAGE_ROOT = Path("trace_data")
@@ -256,6 +259,7 @@ def setup_signal_handlers():
     """设置信号处理器"""
     import signal
     def signal_handler(signum, frame):
+        """收到 Ctrl-C 时把当前这一局收尾再退出。"""
         print(f"\n\n[INFO] 正在保存当前实验数据... (信号: {signum})")
         os.environ['EXIT_REQUESTED'] = '1'
     signal.signal(signal.SIGINT, signal_handler)

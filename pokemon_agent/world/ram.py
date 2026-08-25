@@ -1,45 +1,13 @@
-"""从模拟器内存读地形 —— **不是识别，是照抄游戏自己的判定依据**。
+"""直接读模拟器内存：坐标、地图编号、地形通行图、门与招牌的位置。
 
-## 为什么有这个模块
+**这些是确定的，不会读错。** 视觉模型看得懂"屏幕上有一扇门"，但说不准它在哪一格；
+RAM 说得准。所以凡是 RAM 能回答的，都不问模型——省钱是次要的，主要是省掉一整类
+读错。两边的分工写在 `pyboy_world.py` 的模块 docstring 里。
 
-视觉模型试了三轮（方向字段 → 通行性二值 → 语义符号），每轮换的都是**问法**，
-答案一样：墙认成门、窗户认成人。瓶颈不在问法，在通道——
-从 160x144 像素里做 90 次格子级分类，本来就不是它擅长的事。
-
-而这个判断游戏自己每一步都在做。`CheckTilePassable` 的全部逻辑是：
-
-    取目标格的 tile id，去 wTilesetCollisionPtr 指向的表里线性查找，
-    命中 = 能走，查到 $FF = 撞墙。
-
-我们照抄这一段。**没有阈值、没有识别、没有概率**，几何这一维直接是 100%。
-
-## 分工
-
-    地形 / 门 / 招牌 / 人 / 草丛 / 坐标 / 地图编号   ← 这个模块（模拟器内存，精确）
-    这看起来是什么地方 / 对话文本 / 战斗数值 / 名字   ← 视觉模型（看图，会错）
-
-**这条线是按"错了会怎样"划的，不是按"谁能做"划的。**
-
-线上面这些，错一个就是 agent 撞墙、走错门、跟空气说话——每一步都在用，
-错误会沿着轨迹放大。所以它们必须精确，而内存里恰好就有精确答案。
-
-线下面这些错了只是"描述得不准"：把民宅说成宝可梦中心，大脑顶多多走一趟。
-它们也没有别的来源——`overview` 那种"这里看起来是个小镇"的判断，
-只有看图才给得出，而那正是视觉模型擅长的。
-
-所以视觉模型现在的角色是**给这张精确的地图配一段人话**，不是提供事实。
-
-## 实测验证（2026-08-19，真新镇存档）
-
-- 20x18 通行图与画面逐格吻合：树、房子、招牌、门的位置全对。
-- 唯一"四个子 tile 意见不一"的格子正好是**门**，取左下子格后与画面一致。
-- 连按 `left` 三次主角坐标不动——因为那格是树。**读出的图正确预测了撞墙。**
-
-## 地址来源
-
-- https://datacrystal.tcrf.net/wiki/Pok%C3%A9mon_Red_and_Blue/RAM_map
-- https://github.com/pret/pokered/blob/master/ram/wram.asm
-- https://github.com/pret/pokered/blob/master/home/overworld.asm
+代价是**这一层和游戏版本强绑定**：里面每个地址常量都是《宝可梦 红》的。
+换版本要重来一遍，而且读错地址不会报错，只会给出一张看起来合理的错地图——
+所以这里的函数都尽量做到"读出来的东西自带可核对的结构"（比如地形图的形状固定
+10×9，越界的门和招牌静默丢弃而不是画到别处）。
 """
 
 from __future__ import annotations
@@ -118,7 +86,9 @@ class Memory(Protocol):
     也就不需要为了测它去起一个真模拟器。
     """
 
-    def __getitem__(self, addr: int | slice) -> int | list[int]: ...
+    def __getitem__(self, addr: int | slice) -> int | list[int]:
+        """按地址或切片读原始字节。"""
+        ...
 
 
 def read_passable(mem: Memory) -> set[int]:
@@ -132,6 +102,8 @@ def read_passable(mem: Memory) -> set[int]:
     （`CheckTilePassable` 直接 `ld a, [hli]`）。
     我第一版照着 `wTilesetBank` 读，得到的是别的数据段的两个字节——
     **不报错，只是安静地给了一张错的表，然后整屏都变成"不可通行"**。
+
+    取当前 tileset 里可以走的 tile 编号。
     """
     lo, hi = mem[W_COLLISION_PTR], mem[W_COLLISION_PTR + 1]
     addr = (hi << 8) | lo
@@ -148,13 +120,19 @@ def read_passable(mem: Memory) -> set[int]:
 
 
 def read_screen_tiles(mem: Memory) -> list[list[int]]:
-    """屏幕上 20x18 个 tile 的 id。"""
+    """屏幕上 20x18 个 tile 的 id。
+
+    取屏幕上 20×18 个 tile 的 id。
+    """
     raw = mem[W_TILEMAP:W_TILEMAP + SCREEN_COLS * SCREEN_ROWS]
     return [list(raw[r * SCREEN_COLS:(r + 1) * SCREEN_COLS]) for r in range(SCREEN_ROWS)]
 
 
 def _entries(mem: Memory, addr: int, stride: int, limit: int = 16) -> list[list[int]]:
-    """读一张"先一个数量、再 N 条定长记录"的表。红版的 warp / sign 都是这个形状。"""
+    """读一张"先一个数量、再 N 条定长记录"的表。红版的 warp / sign 都是这个形状。
+
+    读一张「先一个数量、再 N 条定长记录」的表。
+    """
     n = min(int(mem[addr]), limit)
     return [[int(mem[addr + 1 + i * stride + k]) for k in range(stride)] for i in range(n)]
 
@@ -172,6 +150,8 @@ def read_terrain(mem: Memory) -> TerrainMap:
 
     所以这里读出来的每一个符号都是**精确**的。视觉模型三轮都读错的东西
     （墙认成门、窗户认成人），在这里根本不存在"认"这个动作。
+
+    读出 10×9 的地形图、主角坐标和地图编号。
     """
     passable = read_passable(mem)
     tiles = read_screen_tiles(mem)
@@ -198,7 +178,10 @@ def read_terrain(mem: Memory) -> TerrainMap:
 
     def place(map_x: int, map_y: int, ch: str) -> None:
         """把地图坐标画到屏幕格子上。**越界的静默丢弃**——地图上的门和招牌
-        大多在屏幕外，那不是错误，只是这一帧看不到。"""
+        大多在屏幕外，那不是错误，只是这一帧看不到。
+
+        把地图坐标画到屏幕格子上，越界的丢弃。
+        """
         c, r = pc + (map_x - px), pr + (map_y - py)
         if 0 <= c < GRID_COLS and 0 <= r < GRID_ROWS:
             rows[r][c] = ch

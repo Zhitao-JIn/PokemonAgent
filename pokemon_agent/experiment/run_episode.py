@@ -42,14 +42,17 @@ except ImportError:
     class EpisodeIndex:
         @classmethod
         def is_unique(cls, episode_id: str, run_id: str) -> bool:
+            """看这个 episode_id 有没有被用过。"""
             return True
 
         @classmethod
         def register(cls, episode_id: str, run_id: str) -> None:
+            """把新的 episode_id 记进全局索引。"""
             pass
 
         @classmethod
         def clean_incomplete_episodes(cls, run_id: str) -> None:
+            """删掉没有终止事件的那些局。"""
             pass
 
 ROM = "assets/rom"
@@ -113,6 +116,8 @@ def build_session(run_id: str, state: str | None, watch: bool):
 
     调用方负责在真正要结束这个会话时调 `world.stop()`——这个函数本身
     不会关闭任何东西。
+
+    接好 world/trace/harness，返回可复用的一套。
     """
     if state is not None and not pathlib.Path(state).is_file():
         print(f"错误: 存档不存在：{state}")
@@ -171,6 +176,7 @@ def run_one(harness, run_id: str, max_steps: int, goal: str) -> dict:
 # 跑完就关"的直接调用场景；run_episode_loop.py 现在改走上面 build_session()
 # + run_one() 那条路径，不再经过这里。
 def main():
+    """解析命令行、装配一整套实现，跑一局并打印结果。"""
     # 1. 环境验证
     check_environment()
     run_id = os.environ["CLAUDE_RUN_ID"]

@@ -1,35 +1,14 @@
-"""run manifest —— 一次实验的全部不变量。
+"""run manifest：一次实验的**全部不变量**，每次实验存一份。
 
-## 为什么要分两层
+和 trace 分两层：trace 是每步一条的事件流，manifest 是全程不变的那些东西
+（prompt 原文、模型与温度、git commit、预处理方式、权限配置）。
+把它们塞进每条事件，跑一万步就存一万遍同样的内容。
 
-trace 是**每步一条**的事件流，manifest 是**每次实验一份**的快照。
-把 prompt 原文、模型配置这些全程不变的东西塞进每条事件，跑一万步就存一万遍同样的内容。
+**prompt 和权限配置都存原文，不只存 sha。** sha 只有在查得到内容时才有意义；
+这两样都可能没进版本库（改了没提交、或本来就是运行时配置），
+只存 sha 就是指向虚空——三周后拿着一批数字，说不清它们是哪一版跑出来的。
 
-分层之后各归各位：
-
-| | 放什么 | 判据 |
-|---|---|---|
-| manifest | prompt 原文、模型与温度、git commit、预处理方式、权限配置 | 全程不变 |
-| trace 事件 | frame_sha、tokens、延迟、模型原始输出 | 每步都变 |
-
-## 为什么 prompt 要存原文而不是只存 sha
-
-`prompt_sha` 只有在**查得到内容**时才有意义。改了 prompt 没提交就跑实验，
-那个 sha 就指向虚空——三周后你拿着一批数字，不知道它们是哪一版 prompt 跑出来的。
-manifest 里存原文，这个依赖就断了。
-
-## 权限配置为什么也要存原文
-
-和 prompt 是同一个论证。`config/permissions.json` 决定 agent 能调哪些工具——
-角色里少一条 `read:memory:knowledge`，这一批 run 跑的其实是"无知识库"那个消融组，
-而 trace 里**没有任何字段说得出这件事**。它全程不变，所以属于 manifest 这一层；
-它不在版本库里（是运行时配置），所以只存 sha 会指向虚空，得连原文一起存。
-
-`context.json` 同理：`roles` 是实验条件本身，`subject_id` 是审计流的连接键。
-
-## 不存什么
-
-API key。它不进任何会被写出去的东西，`config()` 也不返回它。
+**不存 API key。** 它不进任何会被写出去的东西，`config()` 也不返回它。
 """
 
 from __future__ import annotations
@@ -54,7 +33,9 @@ class Configurable(Protocol):
     provider 不需要显式声明实现它，Port 也不用变宽。
     """
 
-    def config(self) -> dict[str, str]: ...
+    def config(self) -> dict[str, str]:
+        """自报这个 provider 的配置，进 manifest 用。"""
+        ...
 
 
 def _git_commit() -> str:
@@ -62,6 +43,8 @@ def _git_commit() -> str:
 
     取不到本身是有信息的：说明这次实验跑在一个非 git 环境或脏状态下，
     事后应当对它的可复现性打个折扣。
+
+    取当前 commit，脏工作区会标出来。
     """
     try:
         out = subprocess.run(
@@ -142,6 +125,8 @@ class RunManifest(BaseModel):
             权限快照、让这批数据事后无法归因。
 
         后置条件：`permissions` 里每个文件都同时有 `sha` 和 `text`。
+
+        把权限配置的原文和 sha 收进 manifest。
         """
         for name in ("context.json", "permissions.json"):
             path = config_dir / name
@@ -158,6 +143,8 @@ class RunManifest(BaseModel):
 
         配置从 `provider.config()` 取，而不是让 manifest 认识具体的 provider 类型——
         装配处才是"唯一知道具体实现是谁"的地方，这里只负责抄下来。
+
+        把一个 provider 自报的配置抄进 manifest。
         """
         assert hasattr(provider, "config"), f"{type(provider).__name__} 没有 config()"
         self.providers[role] = provider.config()
@@ -167,6 +154,8 @@ class RunManifest(BaseModel):
         """写盘。**写在 trace 之前**——先有 manifest，后有数据。
 
         顺序反了的话，实验中途崩溃会留下一堆无法归因的事件。
+
+        把 manifest 写成 JSON。
         """
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(

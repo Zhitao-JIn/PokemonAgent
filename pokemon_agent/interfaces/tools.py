@@ -1,3 +1,19 @@
+"""Harness 伸向环境和记忆的两只手：`GameToolPort` 和 `MemoryToolPort`。
+
+**它们是两个不相关的协议，不是一个协议的两半。** `Harness.__init__` 收两个独立
+参数：`GameToolPort` 只碰 world，`MemoryToolPort` 只碰记忆，两者互不相识，
+把它们组合起来是 Harness 一个人的事。上一版是一个大 `ToolHost` 把感知世界和
+读写记忆混在同一个实现类里，换记忆后端就得动世界那一侧的代码。
+
+记忆分四类暴露，因为读写语义不同：**单步情景记忆**全量返回（一局的轨迹本来就该
+完整交给决策）；**语义记忆 object** 按坐标查；**知识库**和**跨局摘要**走同一套
+混合检索（关键词 + 向量 + reranker）。程序记忆还没做，先不占位。
+
+每个方法的 docstring 说明三件事——承诺什么、什么情况下失败、调用方要保证什么。
+**这些方法上挂着权限装饰器**（`@require_permission`），所以除了各自写明的失败之外，
+它们都可能抛权限异常；Harness 的兜底不按类型分支，见 `harness/harness.py` 的 `run()`。
+"""
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
@@ -14,7 +30,10 @@ from pokemon_agent.schemas.task import Task
 @runtime_checkable
 class GameToolPort(Protocol):
     def save_state(self, path: str) -> None:
-        """保存当前世界状态，供 episode replay 使用。"""
+        """保存当前世界状态，供 episode replay 使用。
+
+        把当前世界状态存成一个文件。
+        """
         ...
     """Harness 用它操作世界：感知、执行、开局、溯源。**不碰任何记忆。**"""
 
@@ -28,6 +47,8 @@ class GameToolPort(Protocol):
         返回的 `observation` 在同一帧内也是稳定的，**除非期间调用过 `inspect()`**：
         那会往 facts 里加一条 `inspected`。这是刻意的（细看的答案要能被下一轮读到），
         但它意味着"幂等"只对模型调用成立，对返回值不成立。
+
+        读当前这一帧，连同这次产生的模型调用记录一起交出来。
         """
         ...
 
@@ -40,6 +61,8 @@ class GameToolPort(Protocol):
         工具层只管按键。这里曾经有一句"`intents` 不由这一层填"——
         `ActionSpace.intents` 这个字段已经删了（只剩按键一类动作），
         所以现在工具层给出的就是完整的动作空间，Harness 不再覆写它。
+
+        给出此刻允许按的键。
         """
         ...
 
@@ -53,6 +76,8 @@ class GameToolPort(Protocol):
             它的 `step` **还没有盖章**——盖章是 Harness 的事。
             `result.calls` 是推进这一步期间产生的模型调用记录（通常来自
             推进后重新感知那一次），命中缓存时为空列表。
+
+        执行一个动作，推进世界，返回结果与新观测。
         """
         ...
 
@@ -62,6 +87,8 @@ class GameToolPort(Protocol):
         前置条件：`task.max_steps > 0`。
         后置条件：`result.observation.done` 为 False；`step` 未盖章（由 Harness 填 0）；
             `result.calls` 是这次重置期间产生的模型调用记录。
+
+        按任务重置世界，返回第一帧观测。
         """
         ...
 
@@ -71,6 +98,8 @@ class GameToolPort(Protocol):
 
         没有它，一条读错的观测**无法追查是哪一帧**——而那是查感知错误的起点。
         没有"帧"这个概念的实现返回空串。
+
+        给出最近那一帧的哈希。
         """
         ...
 
@@ -100,6 +129,8 @@ class MemoryToolPort(Protocol):
 
         前置条件：`episode_id` 非空。
         后置条件：返回的每一条 `entry.episode_id == episode_id`；按 `step` 升序。
+
+        取这一局全部的单步情景记忆，按发生顺序。
         """
         ...
 
@@ -108,6 +139,8 @@ class MemoryToolPort(Protocol):
 
         前置条件：limit > 0。
         后置条件：返回条数 <= limit；全部来自 `episode_id` 这一局；最新的在最后。
+
+        取这一局最近几条情景记忆。
         """
         ...
 
@@ -116,6 +149,8 @@ class MemoryToolPort(Protocol):
 
         前置条件：`entry.rationale` 非空。没有理由的经验取回来也没用——
             它说不出当时为什么这么判断，也就无法检查那个判断现在还成不成立。
+
+        写入一条情景记忆。
         """
         ...
 
@@ -140,6 +175,8 @@ class MemoryToolPort(Protocol):
             见 `EpisodeMemory.matches_scene`；实现方在"精确匹配场景"命中为空时，
             必须退回到"只看通用经验"而不是直接返回空列表——一次标注失误
             （LLM 蒸馏时场景标错）不该让这条摘要在所有场景下都检索不到。
+
+        检索几条和当前场景、当前任务相关的跨局经验。
         """
         ...
 
@@ -159,6 +196,8 @@ class MemoryToolPort(Protocol):
         失败：蒸馏用的 LLM 输出解析不出合法结构时抛 `ValueError`，不吞——
             解析失败是预期内的运行时情况，调用方决定要不要吞掉这次失败
             （Harness 的选择是吞：见 `harness/harness.py` 的 `_summarize`）。
+
+        把这一局蒸馏成一条跨局摘要记忆，写入并返回。
         """
         ...
 
@@ -169,6 +208,8 @@ class MemoryToolPort(Protocol):
 
         后置条件：`obs.place` 为 None 时返回空串；没有任何已知条目时也返回空串——
             调用方（Harness）据此决定要不要往 `facts["known_objects"]` 里塞东西。
+
+        把这张地图上已知的 object 渲染成一段文字。
         """
         ...
 
@@ -179,6 +220,8 @@ class MemoryToolPort(Protocol):
 
         前置条件：`before`/`after` 都有 `place`。算不出确定的一格时（连按、
             原地转身、两个候选同时存在）**不记**，宁可漏记也不能记错格子。
+
+        把这一步碰到的 object 记下来，返回被更新的条目。
         """
         ...
 
@@ -194,5 +237,7 @@ class MemoryToolPort(Protocol):
 
         前置条件：`query` 非空；`limit > 0`。
         后置条件：返回内容和来源来自同一次检索；没有命中时两者都是空列表。
+
+        从通用游戏先验里检索出这一步用得上的那几条。
         """
         ...

@@ -77,6 +77,7 @@ class Place(BaseModel):
         return f"{self.map_id}:{self.x}:{self.y}"
 
     def render(self) -> str:
+        """渲染成进 prompt 的样子。"""
         """**全局坐标写成 `x= y=`，不用括号** —— 括号写法留给屏幕格。"""
         return f"全局坐标 地图{self.map_id} x={self.x} y={self.y}"
 
@@ -92,6 +93,7 @@ class Landmark(BaseModel):
     place: Place
 
     def render(self) -> str:
+        """渲染成 prompt 里那一行。"""
         return f"{self.kind} x={self.place.x} y={self.place.y}"
 
 
@@ -308,6 +310,8 @@ class TerrainMap(BaseModel):
     def _check_shape(cls, v: list[str]) -> list[str]:
         """形状不对就打回。内存读出来的东西形状不对，说明地址或换算错了，
         补齐只会把一个地址 bug 伪装成一张残缺的地图。
+
+        校验地形图的形状，不对就当场打回。
         """
         if len(v) != GRID_ROWS:
             raise ValueError(f"terrain must have {GRID_ROWS} rows, got {len(v)}")
@@ -320,12 +324,15 @@ class TerrainMap(BaseModel):
         return v
 
     def at(self, col: int, row: int) -> str:
+        """取这一格的地形字符。"""
         return self.cells[row][col]
 
     def neighbors(self) -> dict[str, str]:
         """四个方向键各自通往的那一格是什么。
 
         单独给一个方法，因为这四格和其余 86 格不是一回事：它们决定这一步能不能动。
+
+        给出四个方向键各自通往的那一格。
         """
         col, row = PLAYER_CELL
         return {
@@ -415,6 +422,8 @@ class TerrainMap(BaseModel):
 
         所以现在只给类型和位置。语义记忆把"进过 x=13 y=5 那扇门，里面是小茂家"
         沉淀下来之后，名字才会从那边长出来。
+
+        把屏幕上的门/招牌/人换算成全局坐标。
         """
         pc, pr = PLAYER_CELL
         kind = {DOOR: "门", SIGN: "招牌", PERSON: "人"}
@@ -498,6 +507,8 @@ class ScreenState(BaseModel):
 
         它不是补充说明，是**看细节之前的那次全局判断**。允许它缺失，模型就会跳过它
         直接去挑地标——而跳过的正是唯一能牵制那些局部判断的东西。
+
+        校验野外和室内必须给出 overview。
         """
         if self.scene in NEEDS_OVERVIEW and not self.overview.strip():
             raise ValueError(f"scene={self.scene.value} must come with an overview")
@@ -521,6 +532,8 @@ class ScreenState(BaseModel):
 
         **列表排序后再拼**：模型两次读同一个画面可能给出不同顺序的 `nearby`，
         不排序的话同一个状态会派生出不同的 state key，机制三直接失稳。
+
+        把字段值规整成字符串，容器一律排序。
         """
         if not isinstance(v, dict):
             return v

@@ -35,5 +35,7 @@ class RerankerProvider(Protocol):
             自己按拿到的这一批分数的 min/max 做，不该由这一层替它决定）。
         失败：底层模型不可用时抛异常，不返回全零分数列表——理由同
             `EmbeddingProvider.embed`。
+
+        给每条候选打一个相对查询的相关性分，顺序与输入一致。
         """
         ...

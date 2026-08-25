@@ -19,6 +19,7 @@ class ParseFailure(AgentError):
     """
 
     def __init__(self, raw_text: str, reason: str) -> None:
+        """记下模型吐了什么、为什么解析不了。"""
         super().__init__(f"{reason}: {raw_text[:200]!r}")
         self.raw_text = raw_text
         self.reason = reason
@@ -34,6 +35,7 @@ class IllegalAction(AgentError):
     """
 
     def __init__(self, name: str, allowed: list[str]) -> None:
+        """记下它选了哪个动作、当时允许哪些。"""
         super().__init__(f"action {name!r} not in action space {allowed}")
         self.name = name
         self.allowed = allowed
@@ -51,6 +53,7 @@ class OutputTruncated(AgentError):
     """
 
     def __init__(self, tokens: int) -> None:
+        """记下被切断时已经吐了多少 token。"""
         super().__init__(f"output hit the token limit at {tokens} tokens and was cut off")
         self.tokens = tokens
 
@@ -63,6 +66,7 @@ class MaxRetriesExceeded(AgentError):
     """
 
     def __init__(self, attempts: int, last_reason: str) -> None:
+        """记下试了几次、最后一次为什么失败。"""
         super().__init__(f"gave up after {attempts} attempts, last: {last_reason}")
         self.attempts = attempts
         self.last_reason = last_reason
@@ -87,6 +91,7 @@ class ImageNotDelivered(AgentError):
     """
 
     def __init__(self, input_tokens: int, floor: int) -> None:
+        """记下实际输入 token 数与判定下界。"""
         super().__init__(
             f"image was silently dropped: input_tokens={input_tokens} < floor={floor}; "
             "the model never saw the image and its answer is a hallucination"
@@ -107,6 +112,7 @@ class PerceptionFailure(AgentError):
     """
 
     def __init__(self, attempts: int, last_reason: str) -> None:
+        """记下试了几次、最后一次为什么失败。"""
         super().__init__(f"perception failed after {attempts} attempts: {last_reason}")
         self.attempts = attempts
         self.last_reason = last_reason

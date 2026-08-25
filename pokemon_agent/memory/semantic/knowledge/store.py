@@ -31,6 +31,8 @@ def load_all() -> str:
     """把这个目录下所有 `.md` 文件的内容原样拼起来，按文件名排序（确定性）。
 
     后置条件：目录下没有任何 `.md` 文件时返回空串。
+
+    把目录下所有 `.md` 的正文按文件名顺序拼起来。
     """
     files = sorted(p for p in _DIR.glob("*.md"))
     return "\n\n".join(f.read_text(encoding="utf-8").strip() for f in files)
@@ -45,6 +47,8 @@ def load_chunks() -> list[str]:
     后置条件：目录下没有任何 `.md` 文件、或全部文件都是空文件时返回空列表——
         调用方（`MemoryTool.knowledge_base`）据此知道"没有知识可检索"，
         不必特殊处理"检索了但库是空的"这种情况，两者应该是同一件事。
+
+    把每个非空 `.md` 当成一个独立分片返回。
     """
     files = sorted(p for p in _DIR.glob("*.md"))
     return [text for f in files if (text := f.read_text(encoding="utf-8").strip())]
@@ -66,6 +70,8 @@ def mtime() -> float:
         embedding 现算一次有成本，但知识库内容会被运营编辑，值得按"文件有没有变过"
         决定要不要重新读取文件并重算 embedding，
     见 `MemoryTool.knowledge_base` 的说明。
+
+    取知识库里最新的那个修改时间。
     """
     files = list(_DIR.glob("*.md"))
     if not files:

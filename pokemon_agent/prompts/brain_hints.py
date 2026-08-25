@@ -27,5 +27,7 @@ def retry_note(attempt: int, reason: str, raw: str) -> str:
     而且最常见的那类错误（判据里写屏幕坐标）是**系统性的**，重试多少次都一样错。
 
     追加在末尾是刻意的：前缀一个字没动，三次尝试共享同一段缓存。
+
+    拼出追加在 prompt 末尾的那段纠正说明。
     """
     return "\n\n" + _RETRY_PROMPT.render(attempt=attempt, reason=reason, raw=raw)

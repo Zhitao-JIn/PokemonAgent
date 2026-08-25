@@ -34,6 +34,8 @@ AppendArgs = tuple[str, int, EventType, Source, dict[str, str]]
 def episode_start(episode_id: str, task: Task, memory_carried: int) -> AppendArgs:
     """**episode 的边界必须进事件流。** 没有它，光看日志分不出一次尝试从哪开始，
     更不知道它带了多少条记忆进来——而那正是 A/B 实验的自变量本身。
+
+    拼出这一局的开始事件。
     """
     return (
         episode_id, 0, EventType.EPISODE_START, Source.HARNESS,
@@ -45,6 +47,8 @@ def episode_start(episode_id: str, task: Task, memory_carried: int) -> AppendArg
 def episode_end(episode_id: str, outcome: EpisodeOutcome, why: str) -> AppendArgs:
     """**成功与否必须落进事件流。** 不记的话，光看日志算不出成功率——
     而那是这个项目唯一的一组硬数字。
+
+    拼出这一局的结束事件，带上成败与依据。
     """
     return (
         episode_id, outcome.steps, EventType.EPISODE_END, Source.HARNESS,
@@ -59,6 +63,8 @@ def episode_error(episode_id: str, task_id: str, exc: Exception) -> AppendArgs:
     """**异常逃出去之前必须把 EPISODE_END 补上。** 不补的话这一局在事件流里
     永远"没有结束"：离线统计成功率时它既不在成功里也不在失败里，
     **直接从分母上消失**——而 `MaxRetriesExceeded` 恰恰是最该被记成失败的那一类。
+
+    把逃出来的异常拼成一条结束事件。
     """
     return (
         episode_id, 0, EventType.EPISODE_END, Source.HARNESS,
@@ -74,6 +80,8 @@ def model_call(episode_id: str, step: int, source: Source, call: ModelCall) -> l
 
     **账单和失败模式是两件事**：前者回答"花了多少钱"，后者回答"为什么没拿到东西"。
     混进一条里，按失败类型聚合的时候就得去解析 payload 里的字符串。
+
+    把一次模型调用拼成账单，失败的再补一条错误。
     """
     events = [(episode_id, step, EventType.MODEL_CALL, source, call.payload)]
     if call.error_kind:
@@ -88,6 +96,8 @@ def model_call(episode_id: str, step: int, source: Source, call: ModelCall) -> l
 def judge_call(episode_id: str, step: int, depth: int, call: ModelCall) -> list[AppendArgs]:
     """判定的账单，多记一个 `depth`——子目标判得多不代表任务判得多，
     两种粒度必须分得开，否则"判定花了多少钱"这个数会被子目标的量淹掉。
+
+    同上，但多带一个目标层号。
     """
     return model_call(
         episode_id, step, Source.JUDGE,
@@ -96,6 +106,7 @@ def judge_call(episode_id: str, step: int, depth: int, call: ModelCall) -> list[
 
 
 def decision_failed(episode_id: str, step: int, last: ModelCall) -> AppendArgs:
+    """重试用尽时的那条错误事件。"""
     return (
         episode_id, step, EventType.ERROR, Source.DECISION,
         {"kind": "MaxRetriesExceeded", "reason": "max_retries_exceeded",
@@ -113,6 +124,8 @@ def observe(episode_id: str, obs: Observation, goals: list[Goal], frame_sha: str
 
     **`goals` 也要跟着这一帧一起记**——以前目标栈只在 `GOAL_PUSH`/`GOAL_POP`
     事件里出现过一次，读日志的人拿不到"这一帧、这个决策，当时的栈长什么样"。
+
+    把这一帧观测拼成事件。
     """
     return (
         episode_id, obs.step, EventType.OBSERVE, Source.PERCEPTION,
@@ -139,6 +152,8 @@ def memory_read(
     不会变，但坐标为 None（比如刚重置、过场动画里）时 `known_objects` 确实是空的，
     留一条空字符串没有信息量；`episode_memories` 同理——场景过滤命中为空也是
     正常情况（还没积累过相关经验），不是错误。
+
+    把这一步读到的四类记忆拼成一条事件。
     """
     payload = {
         "count": str(len(memories)),
@@ -161,7 +176,10 @@ def memory_read(
 
 
 def _short_labels(text: str, limit: int = 5) -> str:
-    """从多段渲染文本取每段第一行，作为观测台的短标签。"""
+    """从多段渲染文本取每段第一行，作为观测台的短标签。
+
+    取每段渲染文本的首行当短标签。
+    """
     labels: list[str] = []
     for block in text.split("\n\n"):
         first = next((line.strip() for line in block.splitlines() if line.strip()), "")
@@ -174,6 +192,7 @@ def _short_labels(text: str, limit: int = 5) -> str:
 
 
 def think(episode_id: str, step: int, action: Action, attempt: int) -> AppendArgs:
+    """把这一步选出的动作拼成事件。"""
     return (
         episode_id, step, EventType.THINK, Source.DECISION,
         {"thought": action.thought, "action": action.name,
@@ -187,6 +206,7 @@ def think(episode_id: str, step: int, action: Action, attempt: int) -> AppendArg
 
 
 def act(episode_id: str, step: int, action: Action, message: str) -> AppendArgs:
+    """把这一次按键的结果拼成事件。"""
     return (
         episode_id, step, EventType.ACT, Source.WORLD,
         {"action": action.name, "args": json.dumps(action.args, ensure_ascii=False),
@@ -195,6 +215,7 @@ def act(episode_id: str, step: int, action: Action, message: str) -> AppendArgs:
 
 
 def memory_write(episode_id: str, step: int, entry: MemoryEntry) -> AppendArgs:
+    """把新写入的那条情景记忆拼成事件。"""
     return (
         episode_id, step, EventType.MEMORY_WRITE, Source.HARNESS,
         {"key": entry.key, "content": entry.render()},
@@ -202,7 +223,10 @@ def memory_write(episode_id: str, step: int, entry: MemoryEntry) -> AppendArgs:
 
 
 def object_note(episode_id: str, step: int, note: ObjectFact) -> AppendArgs:
-    """语义记忆和情景记忆是两回事，分开写——见 `memory_write`。"""
+    """语义记忆和情景记忆是两回事，分开写——见 `memory_write`。
+
+    把一条语义记忆的更新拼成事件。
+    """
     return (
         episode_id, step, EventType.OBJECT_NOTE, Source.HARNESS,
         {"key": note.landmark.place.key, "kind": note.landmark.kind,
@@ -220,6 +244,8 @@ def goal_pop(episode_id: str, step: int, depth: int, goal: Goal, reason: str, wh
 
     配套的 `goal_push()` 也删了：压栈的唯一途径没有了，一个零生产者的纯函数
     只会让人以为图上还有那条路径。
+
+    把一次目标出栈拼成事件。
     """
     return (
         episode_id, step, EventType.GOAL_POP, Source.JUDGE,
@@ -228,7 +254,10 @@ def goal_pop(episode_id: str, step: int, depth: int, goal: Goal, reason: str, wh
 
 
 def inspect(episode_id: str, step: int, focus: str, answer: str) -> AppendArgs:
-    """和 `observe` 分开：这是大脑主动要的，不是每步必发的那一帧。"""
+    """和 `observe` 分开：这是大脑主动要的，不是每步必发的那一帧。
+
+    把一次细看拼成事件。
+    """
     return (
         episode_id, step, EventType.INSPECT, Source.PERCEPTION,
         {"focus": focus, "answer": answer},
@@ -243,5 +272,7 @@ def _render_goal_stack(goals: list[Goal]) -> str:
     跟 `Brain._render_goals`（多行、给模型读、栈顶在最上面）刻意不同：
     一个是给人在日志里扫一眼查重复，一个是给模型逐行读的完整 prompt 片段，
     两者的读者和用途都不一样，没必要共用一份格式。
+
+    把目标栈压成一行文本。
     """
     return " > ".join(f"[{depth}]{g.goal}" for depth, g in enumerate(goals))

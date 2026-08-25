@@ -1,3 +1,13 @@
+"""把一整局的单步记忆蒸馏成一条跨局摘要记忆（`EpisodeMemory`）。
+
+**这是唯一一处"读一整局、写一条经验"的地方。** 输入是这一局全部的 `MemoryEntry`
+加上成败结果，输出是一条带场景标注、能被别的局检索到的经验。
+
+解析不出合法结构时抛 `ValueError`，**但抛之前先留一条 `ERROR` trace 事件**——
+那是这次失败出现在失败模式分布里的凭证。调用方（Harness 的 `_summarize`）
+据此可以放心吞掉这个异常：单据齐全的失败才允许被吞。
+"""
+
 from __future__ import annotations
 
 import json
@@ -33,6 +43,8 @@ class EpisodeMemoryGenerator:
     def __init__(self, trace_port: TracePort, llm_provider: LLMProvider) -> None:
         """前置条件：`trace_port`、`llm_provider` 均非空——两者都是必须的依赖，
         缺一个说明装配（`build.py`）出了 bug，不是运行期该处理的情况。
+
+        接好 trace 与文本模型。
         """
         assert trace_port is not None, "EpisodeMemoryGenerator needs a trace_port"
         assert llm_provider is not None, "EpisodeMemoryGenerator needs an llm_provider"
@@ -59,6 +71,8 @@ class EpisodeMemoryGenerator:
             （成功是 `EPISODE_MEMORY_WRITE`，解析失败是 `ERROR`，二选一，不会两条都没有）。
         失败：LLM 输出解析不出合法 JSON 时抛 `ValueError`，不吞——
             解析失败是预期内的运行时情况（CLAUDE.md 第八节），调用方决定要不要重试。
+
+        把这一局蒸馏成一条跨局摘要记忆。
         """
         assert episode_id, "generate_summary() needs a non-empty episode_id"
 
@@ -121,6 +135,8 @@ class EpisodeMemoryGenerator:
 
         失败：提不出 JSON、或 JSON 不满足 schema，都统一包成 `ValueError` 抛出——
         调用方（`generate_summary`）只需要知道"解析失败了"，不需要区分是哪一种。
+
+        把模型输出解析成结构化的摘要。
         """
         import re
 

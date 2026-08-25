@@ -47,6 +47,8 @@ class PromptTemplate:
         前置条件：模板里出现的每个占位符都必须给值。
         用 `substitute` 而不是 `safe_substitute`：漏传一个变量应当当场炸，
         而不是把字面量 `$foo` 悄悄发给模型——那会得到一个看似正常的错误结果。
+
+        把占位符替换成实参，返回完整 prompt。
         """
         return string.Template(self.text).substitute(**kw)
 
@@ -55,6 +57,8 @@ def load(name: str) -> PromptTemplate:
     """按名字加载 `prompts/<name>.md`。
 
     失败：文件不存在直接抛。prompt 缺失不是可以兜底的情况。
+
+    按名字读出一份 prompt 模板。
     """
     path = _DIR / f"{name}.md"
     if not path.is_file():
@@ -97,6 +101,8 @@ def load_sections(name: str) -> dict[str, str]:
     （两层版本 `load_nested_sections()` 还在被按键说明用着）。留着是因为它和
     `load_nested_sections()` 是一对，删一个留一个更怪；拆解机制在别处重写时
     如果不再用分节 prompt，它该跟着删。
+
+    按 `##` 把一份 prompt 切成若干命名片段。
     """
     return _split(load(name).text, "## ")
 

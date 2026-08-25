@@ -54,6 +54,8 @@ class _DashScopeBase:
 
         走服务端默认值等于把一个影响全部实验结果的变量交给别人管，
         而那个值是什么、会不会变，你我都不知道。两个子类各自定，理由见各自的类。
+
+        记下 base_url、型号与温度，此后不再变。
         """
         assert model, "model must not be empty"
         assert max_attempts >= 1, f"max_attempts must be >= 1, got {max_attempts}"
@@ -78,6 +80,8 @@ class _DashScopeBase:
 
         **只重试网络层错误，不重试 HTTP 错误。** 4xx/5xx 是服务端的明确答复
         （型号不对、没权限、超限），重试改变不了任何东西，只是把钱和时间烧两遍。
+
+        POST 一次，网络层失败按退避重试。
         """
         req = urllib.request.Request(
             f"{self._base}/chat/completions",
@@ -131,6 +135,8 @@ class _DashScopeBase:
 
         截断判据用 `finish_reason == "length"`，不用 `completion_tokens == max_tokens`：
         后者是巧合（正好写满也可能是自然结束），前者是服务端的明确答复。
+
+        从响应里取出正文、两个 token 数和截断标记。
         """
         choices = resp.get("choices") or [{}]
         text = (choices[0].get("message") or {}).get("content") or ""
@@ -175,6 +181,8 @@ class QwenText(_DashScopeBase):
         25600 不是结论，是当前观测下的余量。它进 manifest，所以任何一批数据都说得清。
         **注意各家模型对 max_tokens 有自己的硬上限**（qwen-plus 一档通常是 8192），
         超过会被 API 拒掉——被拒的话用 `--max-tokens` 调低，别改这里的默认值。
+
+        同上，另外把 max_tokens 定在实测够用的档位。
         """
         super().__init__(model, temperature=temperature, max_tokens=max_tokens, **kw)  # type: ignore[arg-type]
 
@@ -218,6 +226,8 @@ class QwenVision(_DashScopeBase):
         用的都该是原图。
 
         默认空元组：不写就是不改图，行为和以前完全一样。
+
+        同上，另外接好图像预处理链。
         """
         super().__init__(model, temperature=temperature, **kw)  # type: ignore[arg-type]
         self._floor = token_floor

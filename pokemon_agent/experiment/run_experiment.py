@@ -22,6 +22,7 @@ def state_for_task(task_id: str) -> pathlib.Path:
 
 
 def main() -> None:
+    """解析命令行、写下 manifest，然后跑一个 knowledge 短程实验。"""
     parser = argparse.ArgumentParser(description="运行一个 knowledge 短程实验")
     parser.add_argument("--task-id", help="任务 id；不填时列出任务")
     parser.add_argument("--max-steps", type=int, default=15)

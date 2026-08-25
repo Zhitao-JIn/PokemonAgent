@@ -1,20 +1,16 @@
-"""语义记忆契约：**世界是什么样，域内恒真。**
+"""语义记忆的契约：**"那一格上的东西是什么"**，自带作用域、域内恒真。
 
-现在只有一类语义记忆——**object**：某一格上的东西（门/招牌/人），跟它互动会得到
-什么。以后加别的类别（比如"属性克制表"）时，各类别各有自己的事实模型，
-不要都往 `ObjectFact` 里塞字段——那会把"这一格给了什么"和"水克火"这种
-不挂在坐标上的知识混进同一张表。
+和情景记忆分成两个文件，是因为它们回答不同的问题：情景记忆答"我做了什么、
+结果如何"（有时效，取回靠画面相似）；这里答"世界是什么样"（不会过期）。
+混在一张表里，"这一格给了什么"和"水克火"这类不挂坐标的知识就搅在一起了。
 
-这是 `ObjectNote` 改的名字：早先它只是"这次交互记了什么"的一个临时想法，
-搬进语义记忆这一层之后它的身份更明确了——**它是语义记忆里"object"这一类事实
-的存储形状**，`memory/port.py` 的协议、`memory/semantic/object_store.py` 的实现，
-读写的都是这个类型。往后语义记忆还会有更多用途（比如从 `attempts` 里学出
-"这一类地形的门都要从北边推"这种跨对象的规律），`ObjectFact` 这个名字留了空间，
-`ObjectNote`（"记了一笔"）没有。
+一条档案记三样：**见过几次**（`seen`，看到就加，没互动过的也加——
+"见过 7 次一次没进过的那扇门"正是最有用的条目）、**碰过几次**（`touched`）、
+**在哪个姿势下碰出了什么**（`attempts`）。第三样让"还剩几种没试"变成可算的数，
+而不是每次都从头猜。
 
-**跨层，但只跨这一小段**：从不出现在 `WorldPort`/`GameToolPort` 的签名里，
-只出现在 `MemoryToolPort`（见 `interfaces/tools.py`）——大脑不该知道
-"语义记忆""ObjectFact"这些词，它看到的只是 `known_objects` 里的一段渲染文字。
+`ObjectFact` 定义在这里而不是 `memory/` 包内部，因为它出现在 `MemoryToolPort`
+的签名里——**跨层的类型归 schemas**。
 """
 
 from __future__ import annotations
@@ -125,6 +121,8 @@ class ObjectFact(BaseModel):
         （字段和 `attempts` 里的那条 `进入新地图N` 万一对不上）的问题。
         成功是算出来的，不是模型判断的：门 = `map_id` 变了，
         所以直接扫 `attempts` 里第一条以 `RESULT_WARP_PREFIX` 开头的结果。
+
+        看这扇门通往哪张地图，没开过就是 None。
         """
         for result in self.attempts.values():
             if result.startswith(RESULT_WARP_PREFIX):
@@ -137,6 +135,8 @@ class ObjectFact(BaseModel):
         不是"第一次记下就不改"，因为结果真的会变：一扇本来锁着的门后来开了、
         一条本来有人挡着的路后来通了。旧结论留着比没有更糟——
         它会让 agent 反复绕开一条已经通了的路。
+
+        记下一次尝试的结果，同一个姿势以最新的为准。
         """
         if not key_desc or not result:
             return
@@ -162,6 +162,8 @@ class ObjectFact(BaseModel):
 
         拼接是纯字符串运算：前一条的尾巴和这一条的开头重叠多少，就接在哪。
         不需要模型，也不会引入新的错。
+
+        把这一句记进档案，滚动窗口会拼回同一句。
         """
         text = line.strip()
         if not text:
@@ -181,6 +183,8 @@ class ObjectFact(BaseModel):
         淘汰最早的那条是照抄滑动窗口的做法，而这里的第一条恰恰最不可替代：
         NPC 的自我介绍、招牌的标题都在开头。后面的台词随剧情推进，
         丢一句无所谓；丢了第一句，这条档案就回答不了"这是谁"了。
+
+        按上限裁掉旧的，第一条永远留着。
         """
         if len(self.lines) > MAX_OBJECT_LINES:
             self.lines[:] = self.lines[:1] + self.lines[-(MAX_OBJECT_LINES - 1):]
@@ -198,6 +202,8 @@ class ObjectFact(BaseModel):
         没开的话把 `attempts` 原样列出来：键本来就是"坐标→按键"，
         模型自己拿角色当时的位置一比就知道是推门还是站上面按，
         不需要这一层再翻译成"站在南边"这种措辞。
+
+        渲染成 `known_objects` 里的那一行。
         """
         parts: list[str] = []
         if self.lines:

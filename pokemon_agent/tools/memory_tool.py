@@ -1,3 +1,23 @@
+"""`MemoryToolPort` 的实现：Harness 和四类记忆之间那层壳。**不碰世界。**
+
+四类记忆在这里汇合，但读写语义各不相同：
+
+    单步情景记忆    这一局做过什么      全量返回，不排序不截断
+    语义记忆 object  那一格上有什么东西  按坐标查
+    知识库          和坐标无关的先验    混合检索（BM25 + 向量 + reranker）
+    跨局摘要        别的局蒸馏的经验    场景硬过滤 + 混合检索
+
+**混合检索的两路分数要先各自归一化再加权**：BM25 的分无上界，向量余弦在 [-1,1]，
+直接相加等于让 BM25 独裁。
+
+**知识库按文件 mtime 增量重建索引**，不是每次查询都重新 embed——那会让每一步决策
+都多等几百毫秒。代价是改完文件要等一次 mtime 变化才生效，但这正好支持
+"一边跑 episode 一边改 `memory/knowledge/*.md`"。
+
+方法上挂着权限装饰器，所以除各自写明的失败外都可能抛权限异常。
+更多设计记录见 `docs/spec/memory/SPEC.md`。
+"""
+
 from __future__ import annotations
 
 from agent_permission import require_permission
@@ -60,6 +80,8 @@ def _normalize(scores: list[float]) -> list[float]:
     """min-max 归一化到 [0, 1]。全部并列（`max == min`）时统一给 1.0——
     这种情况下没有相关性上的高低之分，不该被除零判成全部是 0（那样会让
     质量/成功权重在"文本同样相关"的场景里反而失去区分度）。
+
+    把一组分数压到 [0, 1]。
     """
     lo, hi = min(scores), max(scores)
     if hi == lo:
@@ -80,6 +102,7 @@ class MemoryTool:
         reranker_provider: RerankerProvider,
         objects: SemanticObjectStore | None = None,
     ) -> None:
+        """接好四类记忆的后端，备好检索器与索引缓存。"""
         self._episodes: list[MemoryEntry] = []
         self._episode_memories: list[EpisodeMemory] = []
         self._episode_memory_vectors: dict[str, list[float]] = {}
@@ -102,6 +125,7 @@ class MemoryTool:
 
     @require_permission("read:memory:episodic")
     def query_episode_steps(self, episode_id: str) -> list[MemoryEntry]:
+        """取这一局全部的单步情景记忆，按 step 升序。"""
         assert episode_id, "query_episode_steps() needs a non-empty episode_id"
         hits = sorted(
             (m for m in self._episodes if m.episode_id == episode_id),
@@ -111,16 +135,19 @@ class MemoryTool:
 
     @require_permission("read:memory:episodic")
     def query_recent_steps(self, episode_id: str, limit: int) -> list[MemoryEntry]:
+        """取这一局最近几条情景记忆。"""
         assert limit > 0, "query_recent_steps() needs a positive limit"
         return [m for m in self._episodes if m.episode_id == episode_id][-limit:]
 
     @require_permission("write:memory:episodic")
     def store_episode_step(self, entry: MemoryEntry) -> None:
+        """写入一条情景记忆。"""
         assert entry.rationale, "store_episode_step() got an entry without a rationale"
         self._episodes.append(entry)
 
     @property
     def episode_step_count(self) -> int:
+        """库里有多少条情景记忆。"""
         return len(self._episodes)
 
     # ---- 跨局摘要记忆：episode memory（混合检索） ----
@@ -130,6 +157,8 @@ class MemoryTool:
         """场景硬过滤（含通配，见 `EpisodeMemory.matches_scene`）之后，
         用混合检索（BM25 + 向量 + reranker）排出"文本相关性"，
         再叠加质量分和是否成功两个信号，取前 `limit` 条。
+
+        先按场景硬过滤，再按相关性挑出前几条跨局经验。
         """
         assert scene, "query_episode_summaries() needs a non-empty scene"
         assert limit > 0, f"limit must be > 0, got {limit}"
@@ -160,6 +189,7 @@ class MemoryTool:
 
     @property
     def episode_summary_count(self) -> int:
+        """库里有多少条跨局摘要记忆。"""
         return len(self._episode_memories)
 
     @require_permission("write:memory:episode")
@@ -171,6 +201,8 @@ class MemoryTool:
 
         前置条件：`episode_id` 对应的单步记忆已经全部写完（调用方保证——
             harness 在真正结束这一局之后才该调它，不是提前调）。
+
+        调一次蒸馏，把这一局的经验写入并返回。
         """
         assert episode_id, "store_episode_summary() needs a non-empty episode_id"
         assert goal, "store_episode_summary() needs a non-empty goal"
@@ -199,6 +231,7 @@ class MemoryTool:
 
     @require_permission("read:memory:objects")
     def query_objects(self, obs: Observation) -> str:
+        """把这张地图上已知的 object 渲染成一段文字。"""
         if obs.place is None:
             return ""
         lines = [fact.render() for fact in self._objects.query_map(obs.place.map_id)]
@@ -211,6 +244,7 @@ class MemoryTool:
         action: Action,
         after: Observation
     ) -> list[ObjectFact]:
+        """把这一步碰到的 object 记下来，返回被更新的条目。"""
         if not self._should_store_interactions(before, action, after):
             return []
 
@@ -258,6 +292,7 @@ class MemoryTool:
         return touched
 
     def _kind_at(self, obs: Observation, place: Place) -> str | None:
+        """看这一格上的东西是哪一类。"""
         kind = kind_in_frame(obs, place, INTERACTIVE)
         if kind is not None:
             return kind
@@ -268,6 +303,7 @@ class MemoryTool:
 
     @staticmethod
     def _outcome(before: Observation, after: Observation, facing: str) -> str:
+        """把这次互动的结果压成一句可存的描述。"""
         assert before.place is not None and after.place is not None
         if after.place.map_id != before.place.map_id:
             return "warp"
@@ -279,12 +315,14 @@ class MemoryTool:
 
     @staticmethod
     def _should_store_interactions(before: Observation, action: Action, after: Observation) -> bool:
+        """判断这一步算不算一次值得记录的互动。"""
         return before.place is not None and after.place is not None and action.name != ""
 
     # ---- 语义记忆：知识库（和坐标无关的通用先验，混合检索） ----
 
     @require_permission("read:memory:knowledge")
     def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
+        """从通用游戏先验里检索出这一步用得上的那几条。"""
         assert query, "query_knowledge() needs a non-empty query"
         assert limit > 0, f"limit must be > 0, got {limit}"
         self._refresh_knowledge_index()
@@ -309,6 +347,8 @@ class MemoryTool:
         用 mtime 判断"文件是不是被运营编辑过"，既保留了原来"编辑 `.md` 文件
         不用重启进程就生效"的性质（见 `memory/semantic/knowledge/store.py`），
         又不用像 `load_all()` 那版一样每次查询都重新付一次 embedding 的成本。
+
+        文件变了才重新分片和 embed，否则复用上次的索引。
         """
         current = _knowledge_dir_mtime()
         if current != self._knowledge_mtime:

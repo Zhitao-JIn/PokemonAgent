@@ -94,6 +94,7 @@ class ActionSpace(BaseModel):
     )
 
     def contains(self, name: str) -> bool:
+        """这个按键在不在当前动作空间里。"""
         return name in self.names
 
 

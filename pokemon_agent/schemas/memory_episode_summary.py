@@ -1,3 +1,9 @@
+"""蒸馏器和模型之间那份结构：LLM 按这个 schema 吐 JSON，解析成它再转成 `EpisodeMemory`。
+
+**和 `EpisodeMemory` 分开**：那个是落库、被检索的形状；这个是模型输出的形状。
+合成一个的话，改存储字段就会连带改 prompt 的输出契约，两件事被绑死。
+"""
+
 from __future__ import annotations
 
 import datetime

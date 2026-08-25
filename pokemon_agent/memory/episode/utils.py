@@ -1,3 +1,9 @@
+"""蒸馏跨局摘要时用的几个纯函数：把一局的单步记忆压成能进 prompt 的形状。
+
+单独拎出来是因为它们不碰模型也不碰库，可以脱离 LLM 单测——
+给一串 `MemoryEntry` 断言压出来的文本长什么样，不需要造假 provider。
+"""
+
 from __future__ import annotations
 
 from typing import List, Dict, Any
@@ -23,6 +29,8 @@ def _memory_entry_to_episode_steps(
     `MemoryEntry` 本身不含"场景"这个字段（它按位置检索，不按场景分类），
     这里用 `before.position` 兜底填 `scene`——蒸馏 prompt 只需要一个人可读的
     场景标识，不需要结构化的 `map_id`。
+
+    把单步记忆整理成喂给蒸馏 prompt 的形状。
     """
     steps: List[EpisodeStep] = []
     for i, entry in enumerate(entries, 1):
@@ -51,6 +59,8 @@ def _create_episode_memory(
     前置条件：`outcome` 至少含 `success`（bool）与 `steps`（int）——
         由调用方（`EpisodeMemoryGenerator.generate_summary`）保证，
         这两个值来自 harness 对这一局的结算，不是这里要重新计算的东西。
+
+    把蒸馏结果和这一局的元信息组装成一条摘要记忆。
     """
     return EpisodeMemory(
         episode_id=episode_id,

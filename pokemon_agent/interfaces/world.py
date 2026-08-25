@@ -1,34 +1,18 @@
-"""世界接口 —— harness 底下的那一层，**大脑看不到这个文件**。
+"""世界的接口：模拟器 + 视觉模型被抽象成的那一层。
 
-为什么要和 GameToolPort 分开：
-GameToolPort 是"Harness 能拿世界做什么"，WorldPort 是"世界本身能做什么"，
-两者职责不同且变化速度不同。`GameTools` 用 `WorldPort` 实现 `GameToolPort`。
-当前唯一的实现是 `PyBoyWorld`，换模拟器时 **GameToolPort 和大脑一行都不用改**——
-这就是分层的收益。
+之下唯一的实现是 `world/pyboy_world.py`。这一层的意义是让上面换模拟器、
+换视觉模型时一行不用改——**它只回答"世界现在什么样、按下去会怎样"**，
+不数步数、不判成败、不碰记忆。
 
-注意这里没有 masking：动作掩码是 harness 的策略，不是世界的能力。
-世界只回答"全部动作是什么"和"执行这个动作会怎样"。
+两条要点：
 
-## 为什么 reset/observe/inspect 返回 PerceptionResult 而不是裸 Observation
+- **`observe()` 幂等，`step()` 不幂等。** 同一帧内重复 `observe()` 不该产生额外的
+  模型调用（实现方要按帧缓存）——感知是每步都要付钱的那一项。
+- **模型调用记录跟着返回值走。** `PerceptionResult.calls` / `ToolResult.calls` 由
+  产生调用的方法原样交出来，调用方当场记账，没有任何跨调用的缓冲区。
+  这一条是踩出来的：上一版靠 `drain_calls()` 攒着给别人来取，清早清晚都能把账算错。
 
-感知的开销（token、延迟、模型原始输出）和被感知的那一帧，**两处都放不下**：
-
-- 放不进 `Observation` —— 那是**大脑看的东西**，大脑不该知道 token 数；
-  而且它是跨层契约，加字段等于改接口。
-- 又必须进 trace —— 没有它，成本拆不开、读错的观测追查不到是哪一帧、
-  阶段 3.2 拿 VLM 输出和真值对标也对不上号。
-
-这里曾经用一个 `drain_calls()` 方法外加一个内部缓冲区解决这个矛盾：产生调用
-记录的地方先攒到 `self._pending_calls`，Harness 再单独调 `drain_calls()` 取走
-清空。这个"生产/消费分离、靠可变状态搭桥"的设计本身就是 bug 的温床——
-缓冲区什么时候清、被谁清，两个方向都能错（见 `PerceptionResult` 的完整说明）。
-
-现在改成 `calls` 跟着 `Observation` 一起，作为 `PerceptionResult` 的返回值原样
-交出来：产生调用记录的地方直接把它 return 出去，一路跟着 `_perceive()` →
-`observe()` → `reset()`/`inspect()` 普通地往上传，不需要任何跨调用的状态。
-`step()` 同理，`calls` 就挂在已经存在的 `ToolResult` 上，不必新开一个类型。
-
-不产生模型调用的世界，`calls` 返回空列表即可，这不是负担。
+`Observation.step` 在这一层是**占位值**：世界不知道自己在第几步，盖章是 Harness 的事。
 """
 
 from __future__ import annotations
@@ -60,6 +44,8 @@ class WorldPort(Protocol):
         **world 不需要知道任务目标。** `task` 传进来是为了让同一个世界能按不同任务
         选不同的起始状态（现在还没用上，恒是同一个存档），以及断言 `max_steps > 0`。
         "现在要完成的是哪条目标"由 Harness 的目标栈保管，随 `brain.choose` 下发。
+
+        把世界恢复到任务起点，返回第一帧观测。
         """
         ...
 
@@ -68,6 +54,8 @@ class WorldPort(Protocol):
 
         后置条件：`result.calls` 非空当且仅当这次调用真的调了视觉模型；
             命中缓存时是空列表，**不是 None**。
+
+        读当前这一帧，不推进世界。
         """
         ...
 
@@ -84,6 +72,8 @@ class WorldPort(Protocol):
 
         和 `observe()` 的区别不在"再看一次"，而在**问的是不同的问题**：
         `observe()` 按帧缓存，同一帧再调返回的字节完全一样，没有新信息。
+
+        对同一帧追问一个具体问题，把答案并进观测。
         """
         ...
 
@@ -92,6 +82,8 @@ class WorldPort(Protocol):
 
         后置条件：非空，且内容在整个 episode 内不变。
             这是 masking 的全集，harness 从中筛出当前可用的子集。
+
+        列出这个世界支持的全部动作名。
         """
         ...
 
@@ -101,6 +93,8 @@ class WorldPort(Protocol):
 
         没有它，一条读错的观测**无法追查是哪一帧**——而那是查感知错误的起点。
         没有"帧"这个概念的世界返回空串。
+
+        给出最近那一帧的哈希。
         """
         ...
 
@@ -115,5 +109,7 @@ class WorldPort(Protocol):
             推进后重新感知那一次）；命中缓存时为空列表。
         失败：动作合法但没成功走 ok=False，不抛异常；
             action 不在 all_actions() 中是**调用方的 bug**，assert 拦下。
+
+        按下一个动作，推进世界一步，返回结果与新观测。
         """
         ...

@@ -24,6 +24,8 @@ def _stitch(prev: str, new: str) -> str | None:
 
     三种情况都算接得上：新的被包含（对话没动）、新的包含旧的（抄得更全）、
     首尾重叠（滚了一行）。都不是就说明这是**另一句话**，该单独占一条。
+
+    把滚出来的下一个窗口接回上一句，接不上返回 None。
     """
     if new in prev:
         return prev
@@ -94,6 +96,7 @@ class Snapshot(BaseModel):
         )
 
     def render(self, indent: str = "  ") -> str:
+        """把这条快照渲染成一段可读、可打分的文本。"""
         lines = []
         if self.position:
             lines.append(f"{indent}位置  {self.position}")
@@ -113,6 +116,8 @@ class Snapshot(BaseModel):
         位置、四邻、对话框三项全同 = 那一下什么都没发生。
         用这三项而不是全部：`overview` 是模型每次重写的自然语言，同一帧也会不一样，
         拿它比会把"没变"误判成"变了"——实测同一个 frame sha 下它给出过三种不同措辞。
+
+        看两次观察是不是完全没有区别。
         """
         return (
             self.position == other.position
@@ -170,6 +175,8 @@ class MemoryEntry(BaseModel):
         `rationale` 是被评价者自己的说辞——"我已经和母亲说过话了"这种话一旦进了
         判定器的上下文，成功率就变成它自己发的奖状。
         画面、动作、结果是**发生过的事**，理由是**它对那件事的主张**，两者必须分开。
+
+        渲染成进 prompt 的样子，可选择带不带理由。
         """
         because = "；".join(self.rationale) or "（未给出理由）"
         # **"什么都没发生"要明说，不要让它自己去比。**

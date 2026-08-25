@@ -1,4 +1,12 @@
-"""最小本地 SSE 观测台：只负责把 trace 事件推给一个浏览器页面。"""
+"""把 trace 事件推给浏览器的那个小服务：一个 HTTP server + 一条 SSE 通道。
+
+只做两件事：发一张静态页面，和把新事件顺着 SSE 推出去。**它不认识 `TracePort`**，
+`MockTrace.sse()` 调它，反过来不成立——观测台坏了不该影响这一局跑不跑得下去。
+
+断线重连靠 `event_id` 补发，所以这里对事件顺序的唯一要求就是 id 单调，
+而那是 `TracePort.append` 的后置条件，不是这一层的事。
+"""
+
 
 from __future__ import annotations
 
@@ -11,21 +19,23 @@ from pokemon_agent.schemas.trace import EventType, TraceEvent
 
 
 class BrowserTraceServer:
-    """后台运行的单页 SSE 服务；没有浏览器连接时事件仍会被直接丢弃。"""
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8765) -> None:
+        """起一个本地端口，备好事件队列。"""
         self._clients: list[queue.Queue[str]] = []
         self._lock = threading.Lock()
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:  # noqa: N802
+                """按路径分发：要页面就发页面，要事件流就挂一条 SSE 长连接。"""
                 if self.path == "/events":
                     owner._serve_events(self)
                     return
                 self._serve_page()
 
             def _serve_page(self) -> None:
+                """把静态页面写回响应。"""
                 body = owner.page().encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -34,6 +44,7 @@ class BrowserTraceServer:
                 self.wfile.write(body)
 
             def log_message(self, format: str, *args: object) -> None:
+                """吞掉 http.server 默认的请求日志，别刷屏。"""
                 return
 
         self._server = ThreadingHTTPServer((host, port), Handler)
@@ -41,18 +52,22 @@ class BrowserTraceServer:
 
     @property
     def url(self) -> str:
+        """观测台的访问地址。"""
         return f"http://{self._server.server_address[0]}:{self._server.server_address[1]}"
 
     def start(self, open_browser: bool = True) -> None:
+        """在后台线程里把服务跑起来。"""
         self._thread.start()
         if open_browser:
             webbrowser.open(self.url)
 
     def close(self) -> None:
+        """停掉服务，断开还连着的浏览器。"""
         self._server.shutdown()
         self._server.server_close()
 
     def publish(self, event: TraceEvent) -> None:
+        """把一条事件放进推流队列。"""
         message = f"data: {event.model_dump_json()}\n\n"
         with self._lock:
             clients = list(self._clients)
@@ -60,6 +75,7 @@ class BrowserTraceServer:
             client.put_nowait(message)
 
     def _serve_events(self, handler: BaseHTTPRequestHandler) -> None:
+        """维持一条 SSE 长连接，把队列里的事件源源推出去。"""
         client: queue.Queue[str] = queue.Queue()
         with self._lock:
             self._clients.append(client)
@@ -81,6 +97,7 @@ class BrowserTraceServer:
 
     @staticmethod
     def page() -> str:
+        """观测台那张静态页面的 HTML。"""
         return """<!doctype html>
 <meta charset="utf-8"><title>Pokemon Agent Trace</title>
 <style>body{background:#111;color:#ddd;font:15px ui-monospace,monospace;margin:24px}

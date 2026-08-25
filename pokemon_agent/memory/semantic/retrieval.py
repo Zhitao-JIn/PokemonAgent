@@ -1,24 +1,14 @@
-"""混合检索：BM25（关键词）+ embedding（向量）用 RRF 融合出候选集，
-再用 reranker 精排出最终顺序和分数。**只依赖注入进来的 `EmbeddingProvider`/
-`RerankerProvider`，不知道具体是 `fastembed` 还是别的什么**——理由同
-`memory/util.py`：这一层是编排逻辑，不是存储，不该跟具体后端绑死。
+"""混合检索：BM25 + 向量各排一次，RRF 融合，再交叉编码器精排。
 
-## 为什么是"粗筛 + 精排"两段，不是直接精排全部候选
+三段各补对方的短板：BM25 认得死词（技能名、地名），向量认得改写，
+交叉编码器读得懂"这条到底答不答得上这个问题"但太贵，所以只对前几条跑。
 
-`RerankerProvider.rerank()` 是逐对计算的 cross-encoder，对每一对
-`(query, document)` 都要跑一次推理——候选集一旦上百条，直接精排全部的延迟
-和成本都不划算。所以先用两路便宜的排名（BM25 不需要模型、embedding 可以
-批量算）粗筛出一小撮最有希望的候选（`fuse_top_k`），只对这一小撮跑精排。
-这是标准 RAG 管线的形状，不是这个项目自己发明的取巧。
+**两路分数必须先各自归一化再融合。** BM25 的分无上界，向量余弦在 [-1,1]，
+直接相加等于让 BM25 独裁。这里用 RRF（只看排名不看绝对分），
+连归一化这一步都省了——两路分数的量纲从此不必对齐。
 
-## 为什么粗筛是"两路 RRF 融合"，不是"BM25 or 向量选一个"
-
-关键词检索（BM25）和向量检索（embedding 余弦）各有各的盲区：BM25 只认
-字面重叠，同义改写、说法不同但意思一样的文本它找不到；向量检索能捕捉语义
-相近，但短查询、专有名词（"招式"、"PP 值"这类游戏黑话）反而是 BM25 更可靠。
-两路各自独立排名，用 Reciprocal Rank Fusion 合并——RRF 只看"排第几"不看
-"分数具体是多少"，避免了 BM25 分数和余弦相似度**量纲完全不同**、
-没法直接相加这个问题。
+纯函数，不碰库也不碰模型（向量和精排分数由调用方算好传进来），
+所以可以脱离 provider 单测。
 """
 
 from __future__ import annotations
@@ -50,6 +40,8 @@ def bm25_rank(query: str, documents: list[str]) -> list[int]:
     分词复用 `memory/vector.py` 的字符 bigram `tokenize`——和 TF-IDF 那版
     共用同一套"什么算一个 token"的定义，不是巧合：两者都是"没有分词器时，
     字符 bigram 是中文短文本最省事的折中"这同一个理由。
+
+    用 BM25 给候选打分，返回降序的下标。
     """
     assert documents, "bm25_rank() needs at least one document"
     corpus = [tokenize(doc) for doc in documents]
@@ -73,6 +65,8 @@ def embedding_rank(
     不传的话（`None`）退回"每次都现算"，调用方图省事、候选集本来就很小时可以这样。
 
     前置条件：传了 `document_vectors` 时长度必须和 `documents` 一致。
+
+    用向量余弦给候选打分，返回降序的下标。
     """
     assert documents, "embedding_rank() needs at least one document"
     query_vec = embedder.embed([query])[0]
@@ -88,6 +82,7 @@ def embedding_rank(
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
+    """两个向量的余弦相似度。"""
     dot = sum(x * y for x, y in zip(a, b))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
@@ -101,6 +96,8 @@ def reciprocal_rank_fusion(rankings: list[list[int]], k: int = RRF_K) -> dict[in
 
     后置条件：返回的 dict 只包含**至少在一路排名里出现过**的下标——
         融合分数为 0 等价于"哪一路都没选中它"，不需要显式列出来。
+
+    把多路排名融合成一份，返回融合后的下标与分数。
     """
     scores: dict[int, float] = {}
     for ranking in rankings:
@@ -127,6 +124,8 @@ def hybrid_retrieve(
     这个分数之上再叠加别的排序信号（比如质量分、成败），不用重新计算一遍。
 
     前置条件：`documents` 非空。
+
+    关键词与向量各排一次、融合、再精排，返回前几条。
     """
     assert documents, "hybrid_retrieve() needs at least one document"
     bm25_ranking = bm25_rank(query, documents)

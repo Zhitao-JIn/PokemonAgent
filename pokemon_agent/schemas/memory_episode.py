@@ -1,19 +1,12 @@
-"""跨局摘要记忆契约：**这一局打完了，值得留给下一局的是什么。**
+"""跨局摘要记忆：**一整局蒸馏出来的一条经验**。
 
-和 `schemas/memory_episodic.py` 的 `MemoryEntry` 不是同一种东西，虽然中文名字都带"情景"：
+和单步情景记忆（`memory_episodic.py`）是两类东西，检索单元不同：那边一条 = 一步，
+按发生顺序全量交给决策；这边一条 = 一整局，从别的局里按相关性挑几条回来。
+混成一类，"这一局攒了几条经验"和"沉淀出几条可复用摘要"这两个数就分不出来。
 
-    MemoryEntry    单步记忆。"我在那个画面里选了什么、结果如何"，检索单元是**一步**，
-                   同一局内随时可能被下一步取回，服务的是"这一局别再撞同一次墙"。
-    EpisodeMemory  跨局摘要记忆（本文件）。"这一整局打下来，值得复用的经验是什么"，
-                   检索单元是**一整局**，被检索方是未来某一局的开局/规划阶段，
-                   服务的是"这一类任务下次要不要重复上次的策略"。
-
-两者的检索时机、检索粒度、生命周期全部不同：`MemoryEntry` 一局之内产生、
-也可能一局之内被取回；`EpisodeMemory` 要等一局**结束**、由
-`memory/episode_summarizer.py` 从这一局的 `MemoryEntry` 序列蒸馏出来，之后跨局存在。
-**一局里的单步记忆不该被跨局检索拿走**——它们太琐碎，拿到别的局里只会是噪音，
-这正是拆成两个类型、两条检索路径的理由（`MemoryTool.query_episodic` 只管前者，
-`MemoryTool.query_episode_memories` 只管后者，互不混用）。
+**场景标注允许通配。** `applicable_scenes` 为空或含通配值的条目算"通用经验"，
+任何场景都能检索到它——一次标注失误（蒸馏时 LLM 把场景标错）不该让这条摘要
+在所有场景下都彻底检索不到。
 """
 
 from __future__ import annotations
@@ -58,6 +51,8 @@ class EpisodeMemory(BaseModel):
             要保证传进来的是一个具体场景标识（当前实现下是 `map_id` 的字符串形式）。
         后置条件：`content.applicable_scenes` 为空、或显式含 `SCENE_ANY`，
             视为"任何场景都命中"（见 `SCENE_ANY` 的说明）；否则要求精确命中列表中的一项。
+
+        看这条摘要在给定场景下适不适用。
         """
         assert scene, "matches_scene() got an empty scene"
         scenes = self.content.applicable_scenes
@@ -70,6 +65,8 @@ class EpisodeMemory(BaseModel):
         """渲染成进 prompt 的样子，**检索打分也用它**——理由同
         `MemoryEntry.render`（`schemas/memory_episodic.py`）：两处用同一份文本，
         避免"按 A 的内容选中，却把 B 的内容喂进去"这种不报错的错位。
+
+        渲染成进 prompt、也用于检索打分的那段文本。
         """
         c = self.content
         lines = [f"({self.episode_id}) 目标：{self.goal}（{'成功' if self.success else '未成功'}，{self.steps} 步）"]

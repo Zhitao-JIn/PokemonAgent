@@ -1,14 +1,12 @@
-"""`ObjectMemory` —— `SemanticObjectStore` 协议（见 `memory/port.py`）的具体实现。
+"""`SemanticObjectStore` 的实现：按"地图 + 坐标"存一格上的东西。**不认识游戏规则。**
 
-**纯存储，没有编排逻辑。** 它只知道"按坐标存一条 `ObjectFact`、按坐标/按地图取"，
-不知道"一次按键该查哪几格候选""这次尝试算不算数"这类**编排**问题——
-那些是 `tools/memory_tool.py` 的活（它是 Harness 真正调用的那一层，
-拿着 `before`/`action`/`after` 三个观测去决定该调这个类的哪个方法）。
+键是 `Place.key`，**跨 episode 稳定**——同一张地图上的同一格永远是同一个键，
+所以这份档案会随着一局又一局越攒越厚，这正是它的用处。
 
-这条边界是这次重写要立的规矩：以前的 `ObjectMemory.note_step()` 一个方法里
-混了"这次按键碰到了什么候选""朝向算不算数""要不要跳过连按"和"写进哪条档案"——
-存储和编排揉在一起，换存储后端（哪怕只是想加个 sqlite）就得把编排逻辑照抄一遍。
-拆开之后这个类只有五个方法，**没有一个知道"按键""朝向""连按"这些游戏概念**。
+`see` 和 `touch` 分开：前者看到就记（没互动过的也建档），后者确认碰到了。
+"我见过 7 次一次没进过的那扇门"只有在两者分开时才数得出来。
+
+"哪一格算面朝的那一格"不在这里算——那要知道朝向和按键语义，是上一层的事。
 """
 
 from __future__ import annotations
@@ -26,20 +24,24 @@ class ObjectMemory:
     """
 
     def __init__(self) -> None:
+        """接好底层存储。"""
         self._objects: dict[str, ObjectFact] = {}
         """`(map_id,x,y)` 的 key → 那一格的档案。**语义记忆的全部状态都在这一个字典里。**"""
 
     # ---- SemanticObjectReader ----
 
     def query(self, place: Place) -> ObjectFact | None:
+        """取这一格的档案，没有就返回 None。"""
         return self._objects.get(place.key)
 
     def query_map(self, map_id: int) -> list[ObjectFact]:
+        """取这张地图上的全部档案，未排序。"""
         return [f for f in self._objects.values() if f.landmark.place.map_id == map_id]
 
     # ---- SemanticObjectWriter ----
 
     def see(self, marks: list[Landmark], stamp: str) -> None:
+        """把这一帧看到的地标各记一次「见过」。"""
         for mark in marks:
             fact = self._objects.setdefault(
                 mark.place.key, ObjectFact(landmark=mark, first_seen=stamp)
@@ -48,6 +50,7 @@ class ObjectMemory:
             fact.last_seen = stamp
 
     def touch(self, place: Place, kind: str, text: str = "") -> ObjectFact:
+        """确认这一格上有东西，建档或取回已有档案。"""
         fact = self._objects.setdefault(
             place.key, ObjectFact(landmark=Landmark(kind=kind, place=place))
         )
@@ -57,6 +60,7 @@ class ObjectMemory:
         return fact
 
     def record_attempt(self, place: Place, kind: str, key_desc: str, result: str) -> ObjectFact:
+        """记下「在这个姿势下碰它得到了什么」。"""
         fact = self._objects.setdefault(
             place.key, ObjectFact(landmark=Landmark(kind=kind, place=place))
         )

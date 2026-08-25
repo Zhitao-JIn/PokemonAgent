@@ -20,6 +20,8 @@ def surrounding_cells(place: Place) -> list[Place]:
     不是环——严格意义上的"一圈"应该排除中心，而中心（脚下）恰恰是
     最容易被漏掉、也最要紧的一格（人物精灵盖住它，当帧 `landmarks` 报不出来）。
     名字里不该带一个会让人以为"脚下不算"的词。
+
+    给出脚下这格加四邻，一共五格。
     """
     return [place] + [
         Place(map_id=place.map_id, x=place.x + dx, y=place.y + dy)
@@ -34,6 +36,8 @@ def parse_landmarks(obs: Observation) -> list[Landmark]:
     （`门 x=13 y=5; 人 x=2 y=7`）。真正干净的做法是让 `Observation` 直接带
     结构化的 landmarks，但那要给跨层契约再加一个字段，而目前只有语义记忆
     这一个消费方——等第二个消费方出现再提上去。
+
+    把 facts 里的地标那一行读回结构化列表。
     """
     if obs.place is None:
         return []
@@ -57,6 +61,8 @@ def kind_in_frame(obs: Observation, place: Place, interactive: tuple[str, ...]) 
     拆开是因为这一半是无状态的纯查询，档案那一半要碰 `_objects`，两者的
     可信来源也不同：这一半答的是"这一帧确实看见了"，另一半答的是
     "我以前见过那里有什么"（当帧看不见时补上，比如人物精灵盖住了脚下的门）。
+
+    看这一格在这一帧里是什么类型。
     """
     for mark in parse_landmarks(obs):
         if mark.place.key == place.key and mark.kind in interactive:

@@ -27,20 +27,24 @@ class FastEmbedText:
     """
 
     def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5") -> None:
+        """记下模型名，**先不加载**。"""
         self._model_name = model_name
         self._model = None  # 懒加载，见类文档
 
     def _ensure_loaded(self):
+        """第一次真要用的时候才把模型载进来。"""
         if self._model is None:
             from fastembed import TextEmbedding
             self._model = TextEmbedding(model_name=self._model_name)
         return self._model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        """把每段文本变成一个向量，顺序与输入一致。"""
         assert texts, "embed() needs at least one text"
         assert all(t for t in texts), "embed() got an empty string in texts"
         model = self._ensure_loaded()
         return [vec.tolist() for vec in model.embed(texts)]
 
     def config(self) -> dict[str, str]:
+        """自报模型与运行时，进 manifest 用。"""
         return {"model": self._model_name, "runtime": "fastembed"}

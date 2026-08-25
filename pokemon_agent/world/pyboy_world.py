@@ -1,46 +1,20 @@
-"""`WorldPort` 的真实实现 —— PyBoy + 视觉感知。
+"""`WorldPort` 的唯一实现：PyBoy 模拟器 + 视觉模型的粘合层。
 
-## 分层：感知在 world，掩码在 harness
+一帧画面变成 `Observation` 要经过三条来源，各管一段，互不替代：
 
-`WorldPort.observe()` 的契约是交出 `Observation`（含 `summary` 与 `facts`），
-而从像素产出这两样必须调 VLM——所以**感知只能在 world 里**，否则交不出合同要求的东西。
+    RAM      坐标、地图编号、地形通行图、门与招牌的位置   确定，不会读错
+    视觉模型  场景类别、对话框文字、屏幕上有什么           会读错，所以要重试和记账
+    动作历史  朝向（`_facing`）                          RAM 里没有，只能推
 
-但**掩码是 harness 的策略**（CLAUDE.md 已定），而掩码规则依赖 `overlay`，那是感知的产物。
-解法不改任何契约：**把 `scene` 与 `overlay` 放进 `Observation.facts`**。
-`facts` 本就是 Observation 的公开部分，harness 读它做掩码不算越界。
+**感知按帧哈希缓存。** 同一帧内重复 `observe()` 不再调模型——感知是每步都要付钱的
+那一项，而 Harness 一步之内会从好几个地方读观测。缓存的代价是"幂等"只对模型调用
+成立：`inspect()` 会往 facts 里加一条，返回值因此会变。
 
-    observe()  →  VLM → ScreenState → Observation(facts={"scene":…, "overlay":…, …})
-    harness    →  读 facts["overlay"] → OVERLAY_ACTIONS 查表
+**朝向是推出来的，不是读出来的**，所以它不在模拟器存档里——这是 checkpoint
+恢复不出来的那个洞（见 `docs/spec/harness/SPEC.md` 1.4）。
 
-感知是能力（world），掩码是策略（harness），边界与原设计一致。
-
-## 时序：同步 + 固定缓冲
-
-    按一次键 → 推进 1 秒 → （若连按，重复）→ 推进 2 秒 → 感知
-
-**曾用「连续 N 帧不变」判稳定，不行**：草丛、水面、NPC 走动、闪烁光标、
-战斗中的呼吸动画——很多画面根本不会静止，等稳定会大面积超时。
-
-**也曾把模拟器放进后台线程异步跑**，让模型的思考时间充当天然的等待。
-那样动画问题自己就没了，但代价是不可复现（同一存档跑两次结果不同），
-而且线程、队列、条件变量、退出时唤醒等待者……一堆复杂度全是为了这一个好处。
-**固定缓冲用远少的代码换到了同一个效果的九成，还顺带把可复现性拿了回来。**
-
-剩下的风险是偶尔感知到动画中间帧——那是概率问题不是正确性问题，
-可以量（感知失败率），不必先解决掉。
-
-## 另外两个取舍
-
-- **不判断动作有没有生效。** 画面本来就在动，像素比对量不出因果。
-  动作没生效的话，下一步的观测会照实反映，由大脑自己纠正。
-- **不判成败，也不数步。** 「任务达成了没有」要一次独立的模型调用，而 world
-  不该认识 LLM；「走了几步」是循环的账，同一个世界要能跑不同步数上限的任务。
-  两件事都在 `Harness` 里。world 只回答「世界现在什么样」和「我还在不在」。
-
-## observe() 必须缓存
-
-契约写明它幂等只读，但每调一次就是一次 VLM 调用。按帧哈希缓存：画面没变直接返回。
-不缓存的话 `get_action_space()` 与 `perceive()` 各调一次，**每步感知成本翻倍**。
+模型调用记录跟着 `PerceptionResult` / `ToolResult` 的返回值走，这里不攒缓冲区。
+更多设计记录见 `docs/spec/world/SPEC.md`。
 """
 
 from __future__ import annotations
@@ -122,6 +96,8 @@ def parse_screen(text: str) -> ScreenState | None:
 
     容忍 ```json 包裹——模型最常见的格式偏差，为它多跑一轮不划算。
     其余一律不兜底：解析不出来就是解析不出来，交给调用方重试。
+
+    把视觉模型吐的 JSON 解析成 `ScreenState`。
     """
     t = text.strip()
     if t.startswith("```"):
@@ -136,6 +112,8 @@ def _summarize(s: ScreenState) -> str:
     """给大脑读的自然语言状态。
 
     有意做得简短：详细字段在 `facts` 里，这句话只是让 prompt 有个上下文开头。
+
+    把这一帧压成给大脑读的一句话。
     """
     where = {
         Scene.FIELD: "你在野外", Scene.INDOOR: "你在室内", Scene.BATTLE: "你在战斗中",
@@ -174,6 +152,8 @@ class PyBoyWorld:
         `state_path` **显式传入**，不用 PyBoy 默认的 `<rom>.state`：
         后面会有多个命名起点（真新镇出口 / 一号道馆前 / …），默认路径只有一个坑位，
         而且改 ROM 文件名就对不上。用哪个存档起跑要进 manifest。
+
+        接好模拟器与视觉模型，备好缓存和推导状态。
         """
         assert max_perceive_retries >= 1, "max_perceive_retries must be >= 1"
 
@@ -241,6 +221,8 @@ class PyBoyWorld:
         **`task` 进来只用于断言和将来按任务选起始存档**——world 不需要知道
         任务目标是什么。"现在要完成的是哪条"由 Harness 的目标栈保管：
         任务目标只是栈底那一条，而 agent 当下在做的是栈顶那条，两者常常不同。
+
+        载入起点存档，清掉推导状态，返回第一帧观测。
         """
         assert task.max_steps > 0, f"max_steps must be > 0, got {task.max_steps}"
 
@@ -263,6 +245,8 @@ class PyBoyWorld:
         """取当前观测。只读、幂等——**同一帧不会重复调用视觉模型**。
 
         `result.calls` 就是这次 `_perceive()` 产生的调用记录，命中缓存时为空列表。
+
+        读当前这一帧，命中缓存就不再调模型。
         """
         assert self._task is not None, "observe() before reset()"
 
@@ -364,6 +348,8 @@ class PyBoyWorld:
         失败不抛异常，把失败本身写成一条 note。细看是**锦上添花**：
         问不出来就问不出来，为它中断一局不划算，而留一条"这次没看清"
         至少让大脑知道别再问同一个问题。
+
+        对同一帧追问一个具体问题，把答案并进观测。
         """
         assert self._task is not None, "inspect() before reset()"
         assert focus.strip(), "inspect() got an empty focus"
@@ -423,6 +409,8 @@ class PyBoyWorld:
         上限到了就丢掉最早的那条——`inspect` 不推进世界，
         所以这里是唯一挡得住"同一帧里一直问"的地方。
         丢掉的是最早的，因为大脑最近关心的问题更可能还在用。
+
+        记下一条细看的答案，同一个问题只留最新的一条。
         """
         self._notes.pop(focus, None)            # 覆盖时也要换到队尾
         self._notes[focus] = answer
@@ -430,7 +418,10 @@ class PyBoyWorld:
             self._notes.pop(next(iter(self._notes)))
 
     def all_actions(self) -> list[str]:
-        """全部动作名，与状态无关。掩码是 harness 的事，不在这里做。"""
+        """全部动作名，与状态无关。掩码是 harness 的事，不在这里做。
+
+        列出这个世界支持的全部动作名。
+        """
         return list(ALL_BUTTONS)
 
     def step(self, action: Action) -> ToolResult:
@@ -442,6 +433,8 @@ class PyBoyWorld:
         **不报告"这一下有没有生效"。** 那个判断需要对比前后两次观察，
         而对比是上层的事——记忆层两头各存一份完整快照，正是为了回答它。
         world 只负责"我按了，世界推进了"。
+
+        按下一个键、推进固定帧数，返回新观测。
         """
         assert self._task is not None, "step() before reset()"
         assert action.name in ALL_BUTTONS, f"unknown action {action.name!r}"
@@ -499,6 +492,8 @@ class PyBoyWorld:
         缓存为空（刚 reset、或上一步刚推进过）时保守地当作没有——
         那时下一次 `observe()` 才会知道，而夹连按是为了不丢证据帧，
         少夹一次的代价远小于为它多调一次感知。
+
+        看缓存里的这一帧有没有对话框。
         """
         return self._cache is not None and self._cache[1].overlay is Overlay.DIALOG
 
@@ -510,6 +505,8 @@ class PyBoyWorld:
         为它跑一轮重试不划算——判据同 ```json 包裹。
 
         后置条件：返回值落在 [1, MAX_TIMES]。
+
+        取连按次数，越界一律夹回合法区间。
         """
         raw = action.args.get("times", "1")
         try:
@@ -525,6 +522,8 @@ class PyBoyWorld:
 
         批量调用在 watch 模式下会让画面一跳一跳，逐帧才是平滑的实时。
         无头模式不限速，逐帧的额外开销可以忽略。
+
+        逐帧推进 N 帧。
         """
         for _ in range(frames):
             if not self._pyboy.tick(1):
@@ -532,6 +531,7 @@ class PyBoyWorld:
                 return
 
     def _frame_png(self) -> bytes:
+        """把当前画面截成 PNG 字节。"""
         import io
 
         buf = io.BytesIO()
@@ -549,6 +549,8 @@ class PyBoyWorld:
         失败：连续重试仍解析不出时抛 `PerceptionFailure`。
             不返回一个「空白状态」兜底——那会让大脑基于假观测决策，
             而且这类失败在 replay 里必须能被统计到。
+
+        调一次视觉模型读画面，按帧哈希缓存。
         """
         png = self._frame_png()
         sha = hashlib.sha256(png).hexdigest()[:12]
@@ -588,9 +590,11 @@ class PyBoyWorld:
         raise PerceptionFailure(self._retries, f"unparsable output: {last!r}")
 
     def stop(self) -> None:
+        """关掉模拟器。"""
         self._pyboy.stop()
 
     def save_state(self, path: str) -> None:
+        """把模拟器状态存成一个文件。"""
         target = pathlib.Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("wb") as handle:

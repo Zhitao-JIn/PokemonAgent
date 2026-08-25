@@ -38,6 +38,8 @@ def _sample_map() -> str:
     手写的话它迟早和 `TerrainMap.render()` 漂移，而漂移的症状是模型照着一份
     过时的范例去数一张新格式的图——那种错不报错。这和 `terrain_legend()`
     两边共用一份 `TERRAIN_MEANING` 是同一条理由。
+
+    生成给模型看的那份读图范例。
     """
     return TerrainMap(
         cells=["#.....#.GG", "#.....#.GG", "#.....#.GG", "#####N##GG",

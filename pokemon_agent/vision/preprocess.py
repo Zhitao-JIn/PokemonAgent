@@ -117,6 +117,8 @@ class GridOverlay:
 
         前置条件：png 非空且能被解码。
         后置条件：输出尺寸 = 原尺寸 + margin（左和上各一条），**游戏像素本身不缩放**。
+
+        在原图上叠一层网格，必要时补一圈带行列号的边。
         """
         assert png, "GridOverlay got an empty image"
 
@@ -174,6 +176,8 @@ def _line_mask(
     """只在网格线所在的像素上开 alpha，其余位置完全不动。
 
     单独抽出来是因为这是**唯一会改动游戏像素的地方**，值得能被单独看、单独测。
+
+    算出只在网格线像素上开 alpha 的那张遮罩。
     """
     mask = Image.new("L", size, 0)
     pen = ImageDraw.Draw(mask)
@@ -189,6 +193,8 @@ def apply_all(png: bytes, filters: tuple[ImageFilter, ...]) -> bytes:
     """按顺序跑完一串过滤器。空串原样返回。
 
     顺序是有意义的（先叠网格再画标记 ≠ 反过来），所以是 tuple 不是 set。
+
+    按顺序跑完一串过滤器，返回处理后的 PNG。
     """
     for f in filters:
         png = f(png)

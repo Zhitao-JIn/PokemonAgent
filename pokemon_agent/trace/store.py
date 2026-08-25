@@ -1,3 +1,16 @@
+"""`TracePort` 的实现：事件**追加写**进内存与 JSONL，同时推一份给观测台。
+
+`event_id` 由这里分配，**严格单调**——SSE 断线补发完全依赖它，重号或回退会让
+观测台静默丢事件。落盘用逐条追加的 JSONL 而不是最后一次性 dump：
+进程被 Ctrl-C 掐掉时，已经跑过的那些步不该跟着没。
+
+**推流和落盘是同一条事件，没有第二个源头。** `append()` 里落完盘就调 `sse()`，
+不给"控制台看到的"和"文件里存的"留下分叉的机会。
+
+控制台打印曾经是一个独立的 `EchoTrace` 装饰器，现在并进 `sse()`——
+一条事件要经过两个对象才被看见，出问题时得先分清是谁没打印。
+"""
+
 # pokemon_agent/trace/store.py
 
 import os
@@ -43,6 +56,7 @@ PHASE_BY_TYPE: dict[EventType, str] = {
 
 class LocalTrace:
     def __init__(self, run_id: str = "local", sse_sink: object | None = None) -> None:
+        """备好内存事件表、落盘路径和可选的观测台。"""
         self._run_id = run_id
         self._sse_sink = sse_sink
         self._run_dir = STORAGE_ROOT / run_id
@@ -64,6 +78,7 @@ class LocalTrace:
 
     def append(self, episode_id: str, step: int, type: EventType,
                source: Source, payload: dict[str, str] | None = None) -> int:
+        """分配单调的 event_id，落盘并推流，返回这个 id。"""
         # 校验前置条件
         assert step >= 0, "step 必须非负"
 
@@ -102,27 +117,32 @@ class LocalTrace:
         return event_id
 
     def _save_event(self, event: TraceEvent) -> None:
-        """原子化写入事件到 JSONL 文件"""
-        episode_path = self._episodes_dir / f"{event.episode_id}.jsonl"
-        temp_path = episode_path.with_suffix(".jsonl.tmp")
+        """**直接追加一行**，不做"写临时文件再原子重命名"。
 
-        # 1. 写入临时文件
-        with temp_path.open("a", encoding="utf-8") as f:
+        那个模式只对**整份文件重写**成立：把完整内容写进 temp、再一次性换过去。
+        这里是追加，写完一行就 `os.replace(temp, path)`，等于每次都用"只含这一条
+        事件的临时文件"把已有的整份覆盖掉——**磁盘上永远只剩最后一条**。
+        内存里的 `self._events` 还是全的，控制台打印也正常，所以它完全静默：
+        实测仓库里每个 episode 的 `.jsonl` 都只有 1 行。
+
+        换成直接追加。单进程写、每次一行、行长远小于 `PIPE_BUF`，
+        POSIX 下这一次 `write` 本身就是原子的，不需要额外的重命名把戏。
+        真要防"写到一半进程被杀"，正确做法是读取端跳过最后一行不完整的 JSON，
+        而不是在写入端把前面的数据删掉。
+
+        把这条事件追加进 JSONL 文件。
+        """
+        episode_path = self._episodes_dir / f"{event.episode_id}.jsonl"
+        with episode_path.open("a", encoding="utf-8") as f:
             f.write(event.model_dump_json() + "\n")
 
-        # 2. 原子化重命名
-        try:
-            os.replace(temp_path, episode_path)
-        except AttributeError:  # Windows 不支持 os.replace
-            if episode_path.exists():
-                os.remove(episode_path)
-            os.rename(temp_path, episode_path)
-
-        # 3. 更新索引
         EpisodeIndex.register(event.episode_id, event.run_id)
 
     def replay(self, episode_id: str, after_event_id: int = -1) -> Iterable[TraceEvent]:
-        """从 episode 起点加载完整事件流；不允许 partial replay。"""
+        """从 episode 起点加载完整事件流；不允许 partial replay。
+
+        从起点把这一局的事件完整读回来。
+        """
         if after_event_id != -1:
             raise ValueError("replay only supports playing an episode from its beginning")
         # 1. 检查内存缓存
@@ -153,6 +173,8 @@ class LocalTrace:
         """把这条事件推给当前的观测通道——现在打印到控制台，以后是浏览器推流。
 
         调用点不变，换的只是这一个方法内部的实现。
+
+        把这条事件打到控制台，并推给观测台。
         """
         if callable(self._sse_sink):
             self._sse_sink(event)
@@ -254,6 +276,8 @@ class LocalTrace:
         """整段打印，不截断、保留原有换行——先按原有换行拆分，再对每一行分别
         折行（宽度 88），不对整段文本直接 `textwrap.wrap`（那样会把原有换行
         当普通空白吃掉，压坏多行内容，例如 `walk_map`）。
+
+        整段打印，保留原有换行。
         """
         if not text:
             return f"{label:<{LABEL_W}}"
@@ -267,7 +291,10 @@ class LocalTrace:
 
     @staticmethod
     def _facts(p: dict[str, str]) -> dict[str, Any]:
-        """把 payload["facts"]（JSON 字符串）解析成 dict，解析失败时返回空 dict。"""
+        """把 payload["facts"]（JSON 字符串）解析成 dict，解析失败时返回空 dict。
+
+        把 payload 里的 facts 解析回 dict。
+        """
         try:
             return json.loads(p.get("facts", "{}"))
         except (json.JSONDecodeError, TypeError):
@@ -278,6 +305,8 @@ class LocalTrace:
         """把 args JSON 里的 times（连按次数）格式化成 `×N`。必须区分"模型
         明确给了 1"和"模型压根没给 times"——修法完全不同（前者调 prompt 措辞，
         后者排查渲染链路是否把这个能力告诉了模型）。
+
+        把连按次数格式化成 `×N`。
         """
         try:
             args = json.loads(p.get("args", "{}"))
@@ -292,7 +321,10 @@ class LocalTrace:
         return f" ×{n}"
 
     def all_events(self) -> list[TraceEvent]:
-        """获取所有事件（供测试使用）"""
+        """获取所有事件（供测试使用）
+
+        取全部事件，测试用。
+        """
         return self._events
 
 

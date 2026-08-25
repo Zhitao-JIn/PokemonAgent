@@ -48,5 +48,7 @@ class VisionProvider(Protocol):
 
         校验形式由实现方定（token 下界是最便宜的一种），
         但**判定为未送达时必须抛 `ImageNotDelivered`，不能静默继续**。
+
+        把一张图和一段提示交给视觉模型，换回一段文本描述。
         """
         ...

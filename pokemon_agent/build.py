@@ -65,6 +65,8 @@ def build_real(
 
     返回 world 是为了让调用方能 `stop()` 它——模拟器是进程级资源，
     谁开的谁关，Harness 不该管这件事。
+
+    把真实的一整套实现接好，返回 harness 与 world。
     """
     from pokemon_agent.providers.dashscope import QwenText, QwenVision
     from pokemon_agent.vision.preprocess import GridOverlay
