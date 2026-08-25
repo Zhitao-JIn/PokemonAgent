@@ -106,6 +106,8 @@
 
 from __future__ import annotations
 
+from agent_permission import initialize, require_permission
+
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -244,6 +246,8 @@ class Harness:
 
     # ---- 对外只有这一个入口 ----
 
+    @initialize
+    @require_permission("write:harness:trace")
     def run(self, episode_id: str, task: Task) -> EpisodeOutcome:
         """跑完一局，返回结果。
 

@@ -33,6 +33,8 @@
 
 from __future__ import annotations
 
+from agent_permission import require_permission
+
 from pokemon_agent.interfaces.world import WorldPort
 from pokemon_agent.prompts.game_hints import BUTTON_HELP, MAP_HINT, REPEAT_HINT
 from pokemon_agent.schemas.action import Action, ActionSpace, ToolResult
@@ -64,18 +66,24 @@ class GameTools:
 
     # ---- GameToolPort ----
 
+    @require_permission("execute:game:reset")
+    @require_permission("execute:llm:perception")
     def reset(self, task: Task) -> PerceptionResult:
         """开新一局。"""
         self._last_space = None
         return self._world.reset(task)
 
+    @require_permission("execute:game:save_state")
     def save_state(self, path: str) -> None:
         self._world.save_state(path)
 
     @property
+    @require_permission("read:game:last_frame_sha")
     def last_frame_sha(self) -> str:
         return self._world.last_frame_sha
 
+    @require_permission("read:game:perceive")
+    @require_permission("execute:llm:perception")
     def perceive(self) -> PerceptionResult:
         """看一眼当前画面。world 自己按帧缓存，所以一帧之内调多少次都只花一次感知的钱。
 
@@ -84,6 +92,7 @@ class GameTools:
         """
         return self._world.observe()
 
+    @require_permission("read:game:action_space")
     def get_action_space(self) -> ActionSpace:
         """掩码发生在这里，**只看 overlay**。
 
@@ -109,6 +118,8 @@ class GameTools:
         self._last_space = (space, self._world.last_frame_sha)
         return space
 
+    @require_permission("execute:game:press")
+    @require_permission("execute:llm:perception")
     def execute(self, action: Action) -> ToolResult:
         """执行动作，推进世界。
 

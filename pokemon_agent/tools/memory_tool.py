@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from agent_permission import require_permission
+
 from typing import Dict, Any
 
 from pokemon_agent.interfaces.embedding import EmbeddingProvider
@@ -98,6 +100,7 @@ class MemoryTool:
 
     # ---- 情景记忆：episodic（单步，全量，不检索） ----
 
+    @require_permission("read:memory:episodic")
     def query_episode_steps(self, episode_id: str) -> list[MemoryEntry]:
         assert episode_id, "query_episode_steps() needs a non-empty episode_id"
         hits = sorted(
@@ -106,10 +109,12 @@ class MemoryTool:
         )
         return hits
 
+    @require_permission("read:memory:episodic")
     def query_recent_steps(self, episode_id: str, limit: int) -> list[MemoryEntry]:
         assert limit > 0, "query_recent_steps() needs a positive limit"
         return [m for m in self._episodes if m.episode_id == episode_id][-limit:]
 
+    @require_permission("write:memory:episodic")
     def store_episode_step(self, entry: MemoryEntry) -> None:
         assert entry.rationale, "store_episode_step() got an entry without a rationale"
         self._episodes.append(entry)
@@ -120,6 +125,7 @@ class MemoryTool:
 
     # ---- 跨局摘要记忆：episode memory（混合检索） ----
 
+    @require_permission("read:memory:episode")
     def query_episode_summaries(self, scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]:
         """场景硬过滤（含通配，见 `EpisodeMemory.matches_scene`）之后，
         用混合检索（BM25 + 向量 + reranker）排出"文本相关性"，
@@ -156,6 +162,8 @@ class MemoryTool:
     def episode_summary_count(self) -> int:
         return len(self._episode_memories)
 
+    @require_permission("write:memory:episode")
+    @require_permission("execute:llm:memory_summary")
     def store_episode_summary(
         self, episode_id: str, run_id: str, goal: str, outcome: Dict[str, Any]
     ) -> EpisodeMemory:
@@ -189,12 +197,14 @@ class MemoryTool:
 
     # ---- 语义记忆：object ----
 
+    @require_permission("read:memory:objects")
     def query_objects(self, obs: Observation) -> str:
         if obs.place is None:
             return ""
         lines = [fact.render() for fact in self._objects.query_map(obs.place.map_id)]
         return "\n".join(sorted(lines))
 
+    @require_permission("write:memory:objects")
     def store_objects_interactions(
         self,
         before: Observation,
@@ -273,6 +283,7 @@ class MemoryTool:
 
     # ---- 语义记忆：知识库（和坐标无关的通用先验，混合检索） ----
 
+    @require_permission("read:memory:knowledge")
     def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
         assert query, "query_knowledge() needs a non-empty query"
         assert limit > 0, f"limit must be > 0, got {limit}"

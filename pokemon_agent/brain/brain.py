@@ -47,6 +47,8 @@
 
 from __future__ import annotations
 
+from agent_permission import require_permission
+
 import json
 import re
 import time
@@ -151,6 +153,7 @@ class Brain:
 
     # ---- 决策 ----
 
+    @require_permission("execute:llm:decision")
     def choose(
         self, goals: list[Goal], obs: Observation, space: ActionSpace,
         memories: list[MemoryEntry],
@@ -242,6 +245,7 @@ class Brain:
 
     # ---- 判定 ----
 
+    @require_permission("execute:llm:judge")
     def judge(
         self, goal: Goal, obs: Observation, history: Sequence[MemoryEntry] = ()
     ) -> Verdict:
@@ -346,6 +350,7 @@ class Brain:
 
     # ---- 记忆整理 ----
 
+    @require_permission("execute:llm:memory_reflection")
     def reflect(
         self, before: Observation, action: Action, after: Observation
     ) -> MemoryEntry:
