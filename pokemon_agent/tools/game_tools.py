@@ -107,8 +107,6 @@ class GameTools:
         names = [a for a in OVERLAY_ACTIONS[overlay] if a in self._world.all_actions()]
 
         assert names, f"action space must never be empty (overlay={overlay})"
-        # `intents` 留空（默认只有 press）—— 由 Harness 覆写。
-        # 能不能拆子目标取决于目标栈有多深，工具层不知道也不该知道。
         space = ActionSpace(
             names=names,
             descriptions=dict(BUTTON_HELP[overlay]),

@@ -83,14 +83,14 @@ class BrainPort(Protocol):
         我选哪个动作"，这也是为什么 `Decision.recalled` 直接从这个参数派生，
         不需要大脑自己去记"我刚才翻了哪几条"。
 
-        动作分三类（`Action.intent`），只有 `PRESS` 推进世界。
-        允许哪几类由 `space.intents` 给出——**它由 Harness 填**，
-        因为"还能不能再拆一层"取决于栈有多深。
+        **这一版只有按键一类动作。** `Action.intent` 那套分派（press / push_goal）
+        连同枚举一起删了，拆子目标的机制会在别处重写。所以 `space` 里只剩 `names`，
+        大脑只回答"按哪个键"。
 
-        前置条件：`space.names` 与 `space.intents` 非空、`goals` 非空、
-            `obs.done` 为 False。空动作空间是 Tools 的 bug，大脑不为它兜底。
-        后置条件：`decision.action` 非 None 时，它的 `intent` 属于 `space.intents`，
-            且 `PRESS` 时 `name` 属于 `space.names`；`decision.calls` 至少一条。
+        前置条件：`space.names` 非空、`goals` 非空、`obs.done` 为 False。
+            空动作空间是 Tools 的 bug，大脑不为它兜底。
+        后置条件：`decision.action` 非 None 时，它的 `name` 属于 `space.names`；
+            `decision.calls` 至少一条。
 
         **重试全部失败时返回 `action=None`，不抛异常。** 那是一类要被统计的
         失败模式，不是"再试试就好"；而"这一局要不要因此终止"是 Harness 的判断，

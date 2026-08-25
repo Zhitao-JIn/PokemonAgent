@@ -4,29 +4,9 @@
 
 from __future__ import annotations
 
-from enum import Enum
-
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from .observation import Observation
-
-
-class Intent(str, Enum):
-    """大脑这一轮想做哪一类事。**它是图的分派依据。**
-
-    分成三类而不是把它们都塞进按键里，是因为它们**代价和后果完全不同**：
-    只有 `PRESS` 推进世界（不可逆），另外两类只改变大脑自己的处境。
-    分开之后"它花了多少轮在想、多少轮在走"是可以直接从 trace 数出来的。
-
-    往里加第四类（读记忆、写记忆、调工具）时，加的是一个枚举值加一个图节点，
-    `choose()` 和 prompt 的形状不变——这是把它做成枚举而不是布尔标志的收益。
-    """
-
-    PRESS = "press"
-    """按键，推进世界。**唯一不可逆的一类。**"""
-
-    PUSH_GOAL = "push_goal"
-    """把当前目标拆出一个更近的子目标压进栈。不推进世界。"""
 
 
 class Goal(BaseModel):
@@ -35,8 +15,9 @@ class Goal(BaseModel):
     两样一起给，不能只给前者：判定器的输入就是这两项，没有判据它无从判断，
     只能凭"看起来差不多了"回答——而那正是成功率会被污染的地方。
 
-    所以大脑压子目标时必须同时写出判据。写不出判据的子目标，
-    本身就说明它没想清楚要什么。
+    本阶段一局只有一个目标，由任务给定（`goals` 栈里恒为一层，见
+    `harness.LoopState.goals`）。目标栈这个形状留着，是因为拆子目标要回来——
+    但**拆的机制会在别处重写**，不是现在这个 intent 分派。
     """
 
     goal: str = Field(min_length=1, description="想达成什么，一句话")
@@ -59,7 +40,9 @@ class Action(BaseModel):
 
     它带着三样东西过来，服务于三个不同的消费方，**不要合并**：
 
-    - `name` / `args` —— 给世界执行。
+    - `name` / `args` —— 给世界执行。**这一版只有按键一类动作**：
+      `intent` 分派（press / push_goal）连同它的枚举一起删了，
+      拆子目标的机制会在别处重写。
     - `thought` —— 完整推理，**只进 trace**，不参与任何后续决策。
       不设长度上限：它的长度就是模型这一步的算力，压缩它压的是思考本身，
       不是日志体积。
@@ -74,18 +57,11 @@ class Action(BaseModel):
     跨 episode 复用属于 skill library（机制二），本阶段不做。
     """
 
-    intent: Intent = Field(
-        default=Intent.PRESS,
-        description="这一轮做哪一类事。**分派靠它**，`name` 只在 PRESS 时有意义",
-    )
     name: str = Field(
-        default="", description="按键名，必须来自当时的 ActionSpace。只在 PRESS 时有意义"
+        min_length=1, description="按键名，必须来自当时的 ActionSpace"
     )
     args: dict[str, str] = Field(
         default_factory=dict, description="按键参数，目前只有 `times`（连按几次）"
-    )
-    goal: Goal | None = Field(
-        default=None, description="要压进目标栈的子目标。只在 PUSH_GOAL 时有意义"
     )
     thought: str = Field(
         min_length=1,
@@ -98,20 +74,6 @@ class Action(BaseModel):
         "进情景记忆；经验能否迁移全看它",
     )
 
-    @model_validator(mode="after")
-    def _fields_must_match_the_intent(self) -> Action:
-        """每种 intent 的必填字段不同，**在这里挡住**，不要漏到分派的时候。
-
-        漏过去的话，`push_goal` 少了 `goal` 会在 Harness 里 assert 崩掉——
-        那是把**模型的输出问题**报成了**我们自己的契约违约**，看堆栈会指错方向。
-        在这里失败则走 `ParseFailure`，会被重试，也会按失败模式统计。
-        """
-        if self.intent is Intent.PRESS and not self.name:
-            raise ValueError("intent=press 必须给 action（按键名）")
-        if self.intent is Intent.PUSH_GOAL and self.goal is None:
-            raise ValueError("intent=push_goal 必须给 goal 和 criteria")
-        return self
-
 
 class ActionSpace(BaseModel):
     """当前状态下**可用**的动作集合（state-dependent action masking）。
@@ -120,11 +82,6 @@ class ActionSpace(BaseModel):
     增长的是掩码之外的 skill library（本阶段不做）。
     """
 
-    intents: list[Intent] = Field(
-        default_factory=lambda: [Intent.PRESS],
-        description="这一轮允许哪几类动作。**由 Harness 填**——"
-        "能不能拆子目标取决于栈有多深，那是循环的事，工具层不知道",
-    )
     names: list[str] = Field(description="可用按键名，非空")
     descriptions: dict[str, str] = Field(
         default_factory=dict, description="动作名 -> 给 LLM 读的说明"

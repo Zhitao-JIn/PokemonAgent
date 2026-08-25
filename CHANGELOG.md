@@ -3,6 +3,176 @@
 > 最新在最上。每条固定四段：改了什么 / 为什么这么改 / 取舍 / 影响面。
 > 这是给人读的决策记录，不是 git log 的复制品。
 
+## 2026-08-25 —— outcome 只在 run() 的出口算一次，`LoopState.outcome` 删掉
+
+**改了什么**：`_outcome()` 这个方法删了，内容内联进 `run()` 的出口；
+`LoopState.outcome` 字段删了；`_look` 的终止分支不再多带字段；
+`_summarize` 的 `success` / `steps` 直接从 `state.observation` 读。
+
+**为什么这么改**：两条，第二条是真的会咬人。
+
+一是位置不对：`_outcome()` 挂在 `_look` 里，一个叫"看一眼"的节点顺手把这一局的
+最终结论下了。和上一版把蒸馏、`EPISODE_END` 从它里面搬走是同一类毛病，只是轻一些。
+
+二是**同一份信息算了两遍**：`EpisodeOutcome` 和 `EPISODE_END` 的 payload
+逐字段对应（success / steps / reason）。算在两个地方，迟早不一致——
+而不一致时**没有任何东西会报错**：返回值说成功、事件流说失败，
+离线统计和调用方各信一半，而且要等到对账的时候才发现。
+搬到一起之后它们从同一个 `obs` 派生，不一致这件事在结构上就不可能。
+
+**取舍**：不包成方法。它只有一个调用方，而且是三行纯翻译（三个 if 选一个字符串），
+包起来只会让"这个数是怎么来的"多隔一跳。做成图节点更不行——
+图上的格子代表"发生了一件事"（调模型、推世界、写库），
+`_outcome` 不花钱不改世界不写记忆，给它一格会稀释"读图 = 看这一局做了哪些真事"。
+
+顺带解掉一个隐患：`space` 和 `outcome` 以前互斥填充，`LoopState` 里任何时刻
+都有一个是上一轮的陈值，靠调用图保证下游不会读错——不是靠类型。
+`outcome` 没了之后这个形状本身消失了。
+
+`run()` 的出口断言也跟着换了：从"某个字段被填了"（`outcome is not None`）
+换成"图不该在这一局跑完之前结束"（`obs is not None and obs.done`）——
+后者才是真正要保的那条。
+
+**影响面**：`Harness.run()` 的签名与返回值不变。`LoopState` 少一个字段，
+自建 `LoopState` 的地方（只有 `_begin`）不受影响。
+
+## 2026-08-25 —— 图拉直：删掉 intent 分派与多层判定，收尾拆成 summarize + run
+
+**改了什么**：
+
+- 删 `Intent` 枚举、`Action.intent` / `Action.goal`、`ActionSpace.intents`、
+  `_fields_must_match_the_intent`；`Action.name` 从可选变必填。
+- 删 `_dispatch` / `_push_goal` / `_nodes` / `_space` / `MAX_GOAL_DEPTH`
+  / `EventType.GOAL_PUSH` / `trace_utils.goal_push()`；`harness/utils.py` 清空。
+- 删 `_judge_all`（线程池并发判每一层）。`_judge` 改成只判栈顶 `goals[-1]`，
+  完成就出栈，栈空 = 任务完成。
+- 图新增 `summarize` 节点：`look --done--> summarize --> END`。
+  `_summarize_episode` 从 `_outcome()` 里搬进去，并与节点函数合并成一个 `_summarize(state)`
+  ——`result` 是从 `state.outcome` 取出来又传回去的同一个对象，去掉参数之后
+  两者签名一模一样、其中一个只剩一行转调，那就是一个方法多了；
+  节点函数额外收一份自己就能读到的状态，还会让人以为它可以被喂进一个和 `state`
+  不一致的 outcome。`_outcome()` 变成纯构造。
+- `EPISODE_END` 从 `_outcome()` 搬到 `run()`，和异常路径共用一个出口。
+- brain 侧跟着删 `_parse_intent`、intent 校验、`$intents` 渲染、`INTENT_HELP`、
+  `SCREEN_COORD`；`decide_action.md` 去掉 intent 段落和 push_goal / inspect 两个例子。
+
+**为什么这么改**：拆子目标的机制要**换个地方重写**，所以先把当前这套接线拆干净。
+
+拆一半最坏：`Intent` 留在 schema 里、图上却没有 `push_goal` 的去处，
+模型照样能输出 `intent: "push_goal"`（prompt 里还写着），然后在分派处炸——
+一个只在特定输出下才出现的崩溃。要么两头都留，要么两头都删。
+
+`_judge_all` 跟着删是因为它的前提没了。它存在的理由是"中间层完成时，上面那些
+当初为它拆出来的一起作废"，而压栈的唯一途径已经删了、栈恒为一层。
+对一层的栈来说"每层各判一次"和"判栈顶"是同一件事，只是前者还额外背着一个线程池、
+一段并发写 trace 的注意事项、一个恒为 0 的 `depth`。
+
+`summarize` 独立成节点，是因为它**要调一次模型**。藏在 `_outcome()` 里的时候，
+图上看不到"这一局结束时还额外烧了一次调用"，读图的人会以为一局的开销就是
+`steps × (感知 + 决策 + 判定)`。图上看得见的东西才会被算进成本。
+
+`EPISODE_END` 搬进 `run()`，是为了让正常结束和异常终止共用同一个出口。
+分散到图内图外各写一次，迟早有一条路径漏掉——而漏掉的那些局会直接从
+成功率的分母上消失，正是上一条改动刚修完的那类问题。
+
+**取舍**：
+
+`goals` 保留成**栈**而不是压成单个 `goal`，当前目标恒为栈顶。栈恒为一层，
+所以 `if not remaining`（栈空才写 success）在今天永远成立——留着它不是为了当下分支，
+而是把"只有任务目标本身完成才算成功"写成代码：子目标回来之后，agent 自己压的那些
+完成了只该弹栈，不该给自己发奖状。这是唯一刻意保留的"占位"，因为它是一条**规则**，
+不是一个抽象。
+
+反过来，多层判定那份权衡（判定之间的隔离、单目标判定的可标定性 vs 合成一次省 token）
+**只记在这里，不留在代码里占位**。占位的抽象会把下一版往旧形状上带，
+而拆解机制在别处重写时，多层判定要不要回来、以什么形状回来，是那时的决定。
+
+`goal_pop` 的 `reason` 字段留着（现在只有 `done` 一个取值，`superseded` 没了）：
+拆解回来时"完成"和"白拆"仍然必须分得开，而那是判断目标栈到底帮没帮上忙的那个数。
+
+**影响面**：`Action` / `ActionSpace` 的形状变了，所有构造点已扫过（测试里的
+`Action(name=..., thought=..., rationale=[...])` 本来就没传 intent，不受影响）。
+`Harness` 与 `BrainPort` 的对外签名不变。
+`prompts/intent_help.md` 和 `harness/utils.py` 已清空但**还需要手动删除文件**；
+`prompts.load_sections()` 随之变成零调用方，留着还是删掉见该函数的说明。
+
+## 2026-08-25 —— `Completion` / `VisionCompletion` 从 interfaces 挪进 schemas
+
+**改了什么**：新增 `schemas/completion.py`，把 `interfaces/llm.py` 的 `Completion`
+和 `interfaces/vision.py` 的 `VisionCompletion` 搬进去；两个接口文件改成从
+`schemas` 引入，各自的模块 docstring 说明"这里只放 Protocol"；
+`providers/dashscope.py` 和三个测试文件的 import 跟着改；
+目录说明那一行补上 `Completion`。
+
+**为什么这么改**：目录分工写的是 `schemas/` 放 Pydantic 数据模型、`interfaces/`
+放 Protocol（第四节）。这两个类长在接口文件里读起来顺——就在用它们的 Protocol 旁边——
+但那让 `interfaces/` 同时承担了两件事。代价不是洁癖：接口先行那条规矩说
+「光读 `interfaces/` 就能看懂整个系统怎么运转」，数据模型混在里面，
+读的人分不清哪些是**契约**、哪些是**契约里流的东西**。
+
+**取舍**：两个类放同一个文件，不各建一个。它们回答同一个问题（"一次模型调用回来了什么"），
+而且都带着一个不是记账、而是正确性证据的字段（`truncated` / `input_tokens`）——
+这个共同点是踩出来的，分成两个文件就没地方写。
+字段名仍然不统一（`prompt_tokens` vs `input_tokens`），跟各自网关返回的名字走：
+中间再翻译一层，排查"网关到底报了什么"时就得反查映射表。
+**没有留 re-export 兼容层**——留了等于 `interfaces/` 还在导出数据模型，这次改动就白做。
+
+**影响面**：纯搬家，没有行为变化。`from pokemon_agent.interfaces.llm import Completion`
+这种写法会断，仓库内的引用点已全部改完（4 处）。
+
+## 2026-08-25 —— 一局无论怎么死，trace 里都留下完整的 START…END
+
+**改了什么**：`_begin()` 挪进 `run()` 的 `try`；`EPISODE_START` 挪到 `_begin()` 的
+第一行（`reset()`/`save_state()` **之前**）；删掉专门捕获权限异常的那个 `except`；
+`RunManifest` 新增 `permissions` 字段与 `with_permissions()`，`validate_design()`
+断言它非空，`run_experiment.py` 的装配链上加一环；新增
+`tests/test_harness_episode_boundary.py`。
+
+**为什么这么改**：三件事其实是同一件——**"这一局到底发生了什么"必须能被事后重建**。
+
+`_begin()` 在 `try` 外面是真 bug：它调 `save_state()`，而 `execute:game:save_state`
+是配置里唯一 `approval_required` 的权限。人类拒批或审批超时抛出来的异常从这里逃走，
+这一局连 `EPISODE_END` 都没有，正好撞上那段注释要防的"从分母上消失"。
+`EPISODE_START` 也一样：它原本写在 `reset()`/`save_state()` 之后，注释却声称
+"episode 的边界应该是这一局在事件流里看到的第一条事件"——那句话只在这两步都成功时成立。
+
+权限那个 `except` 的函数体和兜底逐字相同，删掉它程序行为一个字节不变。留着的坏处是
+它**看起来**已经把权限失败单独处理过了，于是这件事不会再有人回来做。
+
+manifest 记权限配置是 prompt 那条论证的同一个应用：`permissions.json` 里角色少一条
+`read:memory:knowledge`，这批 run 跑的其实是"无知识库"那个消融组，而 trace 里
+**没有任何字段说得出这件事**。它全程不变、又不在版本库里，所以既要 sha 也要原文。
+
+**取舍**：`EPISODE_START` 提前写，代价是可能出现"一步没跑就结束"的 episode，
+但那本来就是事实，`EPISODE_END` 的 `reason` 会说清楚。
+权限失败仍然不单独成一类失败模式——真要按权限名聚合时，改的地方是
+`trace_utils.episode_error()` 内部（翻译异常是那个纯函数的职责），不是控制流。
+`validate_design()` 断言 `permissions` 非空会让**任何**没走 `with_permissions()`
+的装配当场失败，这是故意的：宁可开跑前炸，也不要事后拿到一批无法归因的数据。
+
+**影响面**：`Harness` 的对外签名不变。`RunManifest` 多一个必填约束——
+自建 manifest 的调用方（目前只有 `run_experiment.py`）必须补 `.with_permissions()`。
+测试新增一个文件，不动已有测试。
+
+## 2026-08-25 —— 抬到 Python 3.11，并把 agent-permission 写进依赖
+
+**改了什么**：`requires-python` 从 `>=3.10` 改为 `>=3.11`，ruff `target-version`
+跟着改成 `py311`；`agent-permission` 补进 `dependencies`；CLAUDE.md / AGENTS.md
+第七节的"Python 3.10"同步改掉。
+
+**为什么这么改**：`agent_permission.audit` 用了 `enum.StrEnum`，那是 3.11 才有的。
+声明 `>=3.10` 是一句**假的**承诺——照着它建 3.10 环境，装完在 import 权限库时就炸，
+而报错指向 `enum`，离病因隔了两层。依赖漏写是同一类问题的另一半：这个库一直靠开发机上
+恰好装过才跑得起来，干净环境 clone 下来根本起不来，而那正是复现实验的起点环境。
+
+**取舍**：抬版本而不是给库降级（把 `StrEnum` 换成 `class X(str, Enum)` 也能跑 3.10）。
+理由是这个项目没有任何跑在 3.10 上的理由，而降级要改的是**另一个仓库**，
+为了迁就一个我们自己都不需要的下限去改上游，方向反了。
+依赖用 git URL 而不是版本号，是因为权限库还没发到 PyPI；发了之后换成版本号，
+届时要能锁版本——`permissions.json` 的语义变化会静默改变实验条件。
+
+**影响面**：只动构建元数据和规范文档，不动运行代码。已有的 3.10 环境需要重建。
+
 ## 2026-08-23 —— 记忆观测改为显示名称和标题
 
 **改了什么**：`known_object` 改为显示物体名称，`knowledge` 改为显示知识标题，
@@ -1327,3 +1497,8 @@ Harness、InMemoryTrace 和图装配。
 **为什么这么改**：权限系统实际检查的是被调用的具体函数，接口声明不会自动继承装饰器；在实现边界执行检查才能阻止未授权调用真正发生。
 **取舍**：`Harness.run()` 负责 episode 开始时执行 `initialize`；多权限方法使用多个装饰器逐项检查；`Brain.reflect()` 当前仍是本地逻辑，但预先纳入记忆反思权限以约束未来 LLM 化。
 **影响面**：受保护函数在权限上下文未初始化、权限不足或审批拒绝时不会执行；配置和运行 context 已同步更新。
+## 2026-08-25 —— 明确无权限错误处理
+**改了什么**：Harness 对 `PermissionDenied`、`ApprovalExpired` 和 `ApprovalRejected` 增加显式捕获并写入 episode error trace；移除 `Harness.run()` 自身的 trace 权限门。
+**为什么这么改**：权限拒绝是预期内的运行时失败，不应重试或静默吞掉；如果先拦截 `Harness.run()`，连拒绝事件都无法写入 trace。
+**取舍**：记录后继续向上抛出，让 episode 调用方决定结束或展示错误；不把权限失败伪装成模型解析失败或非法动作。
+**影响面**：只改变权限错误的记录与传播方式，不改变允许调用的执行路径。

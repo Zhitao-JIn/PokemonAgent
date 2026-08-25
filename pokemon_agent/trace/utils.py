@@ -210,17 +210,16 @@ def object_note(episode_id: str, step: int, note: ObjectFact) -> AppendArgs:
     )
 
 
-def goal_push(episode_id: str, step: int, depth: int, goal: Goal, rationale: list[str]) -> AppendArgs:
-    return (
-        episode_id, step, EventType.GOAL_PUSH, Source.DECISION,
-        {"depth": str(depth), "goal": goal.goal, "criteria": goal.criteria,
-         "rationale": json.dumps(rationale, ensure_ascii=False)},
-    )
-
-
 def goal_pop(episode_id: str, step: int, depth: int, goal: Goal, reason: str, why: str) -> AppendArgs:
-    """`reason` 分 `done`/`superseded` 两种：不分的话算不出**拆出来的子目标
-    有多少是白拆的**，而那是判断目标栈到底帮没帮上忙的那个数。
+    """一层目标判为完成、出栈。
+
+    `reason` 目前只有 `done` 一个取值——曾经还有 `superseded`（中间层完成时，
+    上面那些当初为它拆出来的一起作废），随多层判定一起删了。字段留着，
+    因为拆解机制回来时"完成"和"白拆"仍然必须分得开，而那正是判断目标栈
+    到底帮没帮上忙的那个数。
+
+    配套的 `goal_push()` 也删了：压栈的唯一途径没有了，一个零生产者的纯函数
+    只会让人以为图上还有那条路径。
     """
     return (
         episode_id, step, EventType.GOAL_POP, Source.JUDGE,

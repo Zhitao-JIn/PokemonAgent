@@ -50,7 +50,6 @@ from __future__ import annotations
 from agent_permission import require_permission
 
 import json
-import re
 import time
 from collections.abc import Sequence
 
@@ -59,14 +58,13 @@ from pydantic import ValidationError
 from pokemon_agent.errors import IllegalAction, OutputTruncated, ParseFailure
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.prompts import load as load_prompt
-from pokemon_agent.prompts.brain_hints import INTENT_HELP
 from pokemon_agent.prompts.brain_hints import retry_note as _retry_note
-from pokemon_agent.schemas.action import MAX_RATIONALE, Action, ActionSpace, Goal, Intent
+from pokemon_agent.schemas.action import MAX_RATIONALE, Action, ActionSpace, Goal
 from pokemon_agent.schemas.memory_episodic import MemoryEntry, Snapshot
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.schemas.trace import Decision, ModelCall, Verdict
 
-# `INTENT_HELP`/`retry_note` 的组装逻辑搬去了 `pokemon_agent/prompts/brain_hints.py`——
+# `retry_note` 的组装逻辑在 `pokemon_agent/prompts/brain_hints.py`——
 # 原因见那个文件的模块 docstring。这里只是消费方。
 
 JUDGE_BLIND: frozenset[str] = frozenset({
@@ -90,30 +88,6 @@ JUDGE_BLIND: frozenset[str] = frozenset({
 多看一眼；漏掉一个新字段，代价是判定器瞎掉——`dialog_text` 那次就是后者，
 判定器一路在说"对话框内容未提供"，一局本该成功的 episode 被静默记成失败。
 两种失败模式不对称，所以宁可多给。
-"""
-
-SCREEN_COORD = re.compile(
-    r"屏幕格|屏幕坐标|walk_map|第\s*\d+\s*[行列]|\(\s*-?\d+\s*[,，]\s*-?\d+\s*\)"
-)
-"""目标里出现这些就打回去。**位置只能写成 `x=.. y=..`。**
-
-`walk_map` 的行列号现在**就是全局坐标**，两套坐标已经合成一套了
-（见 `TerrainMap.render`）。但这条拦截没有跟着删掉，因为它拦的是**残留的旧习惯**，
-而那个习惯造成过一整局的损失：
-
-    goal +  移动到屏幕格(7,4)
-            判据：walk_map上第4行第7列的字符是'.'，且我当前屏幕位置是(7,4)
-
-那种判据**永远不可能成立**——旧的屏幕格里主角恒在 `(4,4)`，走过去之后还是 `(4,4)`。
-判定器每步答"不是(7,4)"，它接着又拆一层 `(6,4)`，一层层全是永不完成的目标。
-
-还有一条独立的理由：**判定器看不到 `walk_map` 和 `landmarks`**（`JUDGE_BLIND`）。
-判据里提那张图，对他来说等于没说。
-
-裸的括号对 `(6,4)` 一律打回，哪怕它心里想的是全局坐标：
-写法和坐标系是两件事，但混着写会让人（和下一版的我）分不清它指的是哪一套。
-
-只在 `push_goal` 上拦，`thought` / `rationale` 里随便写：那两个是它的草稿纸。
 """
 
 class Brain:
@@ -173,7 +147,6 @@ class Brain:
         解析不出来算失败、选了不存在的动作也算失败，而这两件事 provider 都不知道。
         """
         assert space.names, "choose() got an empty action space"
-        assert space.intents, "choose() got an empty intent set"
         assert not obs.done, "choose() called on a finished episode"
         assert goals, "choose() got an empty goal stack"
 
@@ -233,10 +206,7 @@ class Brain:
                     attempt + 1, reason, completion.text[:400],
                 )
             if parsed is not None:
-                assert parsed.intent in space.intents, (
-                    f"brain chose intent {parsed.intent} outside {space.intents}"
-                )
-                assert parsed.intent is not Intent.PRESS or space.contains(parsed.name), (
+                assert space.contains(parsed.name), (
                     f"brain chose key {parsed.name!r} outside {space.names}"
                 )
                 return Decision(action=parsed, calls=calls, recalled=refs)
@@ -280,9 +250,10 @@ class Brain:
         try:
             # **渲染也在 try 里。** `render()` 用的是 `Template.substitute`，
             # 模板少一个占位符就抛 KeyError，而 prompt 是最常改的那类文件。
-            # 放在外面的话，"判定器永不抛异常"这条契约就有一个缺口，
-            # 而 `_judge_all` 是并发调它的——一个 worker 抛出来会穿过整个循环，
-            # 把一次本该记成"判定失败"的事件变成一局丢失的数据。
+            # 放在外面的话，"判定器永不抛异常"这条契约就有一个缺口——
+            # 一次本该记成"判定失败"的事件会变成一局丢失的数据。
+            # （多层并发判定那一版里这条更要紧：worker 抛出来会穿过整个线程池。
+            #  并发删了，契约不变——它保的是"判不出来"和"判了没完成"分得开。）
             rendered = (
                 "\n".join(
                     f"- {k}: {v}" for k, v in obs.facts.items() if k not in JUDGE_BLIND
@@ -420,7 +391,6 @@ class Brain:
             actions += f"\n\n{space.note}"
         return self._decide_prompt.render(
             goals=self._render_goals(goals),
-            intents="\n".join(f"- `{i.value}`：{INTENT_HELP[i]}" for i in space.intents),
             summary=obs.summary,
             facts=facts,
             memories=recalled,
@@ -464,77 +434,27 @@ class Brain:
         if not isinstance(raw, dict):
             raise ParseFailure(text, "top level is not an object")
 
-        intent = self._parse_intent(text, raw, space)
-        fields: dict[str, object] = {}
-        if intent is Intent.PRESS:
-            name = raw.get("action")
-            if not isinstance(name, str) or not name:
-                raise ParseFailure(text, "intent=press but no 'action' field")
-            if not space.contains(name):
-                raise IllegalAction(name, space.names)
-            args = raw.get("args") or {}
-            if not isinstance(args, dict):
-                raise ParseFailure(text, "'args' is not an object")
-            fields = {"name": name, "args": {str(k): str(v) for k, v in args.items()}}
-        elif intent is Intent.PUSH_GOAL:
-            goal, criteria = raw.get("goal"), raw.get("criteria")
-            if not isinstance(goal, str) or not goal.strip():
-                raise ParseFailure(text, "intent=push_goal but no 'goal' field")
-            if not isinstance(criteria, str) or not criteria.strip():
-                # **判据不能省。** 没有它判定器只能凭"看起来差不多了"回答，
-                # 而那正是成功率会被污染的地方。打回去重试，别替它编一个。
-                raise ParseFailure(text, "intent=push_goal but no 'criteria' field")
-            hit = SCREEN_COORD.search(f"{goal} {criteria}")
-            if hit:
-                # **位置只能写成 `x=.. y=..`。** 见 SCREEN_COORD 的完整说明。
-                raise ParseFailure(text, (
-                    f"目标或判据里出现了 {hit.group()!r}。"
-                    "位置一律写成 x=.. y=..，不要写括号对、不要写第几行第几列、"
-                    "不要提 walk_map——判定的人看不到那张图。"
-                    "walk_map 的行列号本来就是全局坐标，照抄那两个数即可，"
-                    "例如『进到 x=13 y=5 那扇门里』。"
-                    "更好的是别拿目标当路径点——走两格直接按方向键就行。"
-                ))
-            fields = {"goal": Goal(goal=goal.strip(), criteria=criteria.strip())}
-        else:
-            raise ParseFailure(text, f"unsupported intent {intent.value!r}")
+        # **只剩按键一类动作。** intent 分派（press / push_goal）连同枚举一起删了，
+        # 所以这里不再有"先取 intent、再按 intent 分叉"那一段——
+        # 拆子目标的机制会在别处重写，届时分叉回到这里还是换个形状，是那时的决定。
+        name = raw.get("action")
+        if not isinstance(name, str) or not name:
+            raise ParseFailure(text, "no 'action' field")
+        if not space.contains(name):
+            # **走 `IllegalAction` 而不是 `ParseFailure`**：格式是对的，
+            # 它是在幻觉一个此刻不可用的按键。两者在 replay 里是不同的失败模式，
+            # 该改的东西也不同（前者改 masking 或 prompt，后者改输出格式）。
+            raise IllegalAction(name, space.names)
+        args = raw.get("args") or {}
+        if not isinstance(args, dict):
+            raise ParseFailure(text, "'args' is not an object")
 
         return Action(
-            intent=intent,
+            name=name,
+            args={str(k): str(v) for k, v in args.items()},
             thought=self._parse_thought(text, raw),
             rationale=self._parse_rationale(text, raw),
-            **fields,       # type: ignore[arg-type]
         )
-
-    @staticmethod
-    def _parse_intent(text: str, raw: dict[str, object], space: ActionSpace) -> Intent:
-        """取出 intent。缺失时**只在它明显是按键的情况下**才补默认值。
-
-        容忍 `intent` 缺失但有 `action`：那是旧格式，语义无歧义，
-        为它跑一轮重试不划算——判据同 ```json 包裹。
-        反过来两个都没有就不猜了：猜错会让它做一件它没想做的事。
-
-        不在允许集合里走 `IllegalAction` 而不是 `ParseFailure`：
-        它格式是对的，是在**幻觉一个此刻不可用的能力**（比如栈满了还想拆子目标），
-        两者在 replay 里是不同的失败模式，该改的东西也不同。
-        """
-        value = raw.get("intent")
-        if value is None:
-            if not isinstance(raw.get("action"), str):
-                raise ParseFailure(text, "missing 'intent' field")
-            intent = Intent.PRESS
-        else:
-            try:
-                intent = Intent(str(value))
-            except ValueError:
-                raise ParseFailure(text, f"unknown intent {value!r}") from None
-
-        # **回退出来的 PRESS 也要过掩码。** 早一版是直接 return，
-        # 于是 `press` 被掩掉的那天（比如将来加一类"只准思考不准动"的状态），
-        # 症状会是 `choose()` 出口那条 assert 崩掉，而不是一次可重试的 IllegalAction。
-        if intent not in space.intents:
-            raise IllegalAction(intent.value, [i.value for i in space.intents])
-        return intent
 
     @staticmethod
     def _parse_thought(text: str, raw: dict[str, object]) -> str:

@@ -12,25 +12,15 @@
 
 和 `LLMProvider` 一样做得很薄：只负责"图片进、文本出"。
 **分类、schema 填充、类型判定都不在这里**——那些是感知层的事，换模型不该动它们。
+
+返回值 `VisionCompletion` 在 `schemas/completion.py`，理由同 `interfaces/llm.py`。
 """
 
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pydantic import BaseModel
-
-
-class VisionCompletion(BaseModel):
-    """一次视觉补全的结果。
-
-    `input_tokens` 不是可选的记账信息，**它是正确性的证据**：
-    网关静默丢弃图片时，这个数会塌回纯文本的量级。见 `VisionProvider.describe` 的说明。
-    """
-
-    text: str
-    input_tokens: int = 0
-    output_tokens: int = 0
+from pokemon_agent.schemas.completion import VisionCompletion
 
 
 @runtime_checkable

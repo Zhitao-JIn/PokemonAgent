@@ -37,8 +37,9 @@ class GameToolPort(Protocol):
         后置条件：`names` 非空。走投无路的状态也必须至少给一个动作——
             空动作空间是工具层的 bug，不能让大脑去处理这种情况。
 
-        注意 `intents` **不由这一层填**：能不能拆子目标取决于目标栈有多深，
-        那是循环的事。工具层只管按键。
+        工具层只管按键。这里曾经有一句"`intents` 不由这一层填"——
+        `ActionSpace.intents` 这个字段已经删了（只剩按键一类动作），
+        所以现在工具层给出的就是完整的动作空间，Harness 不再覆写它。
         """
         ...
 
@@ -157,7 +158,7 @@ class MemoryToolPort(Protocol):
             `success`（bool）与 `steps`（int）。
         失败：蒸馏用的 LLM 输出解析不出合法结构时抛 `ValueError`，不吞——
             解析失败是预期内的运行时情况，调用方决定要不要吞掉这次失败
-            （Harness 的选择是吞：见 `harness/harness.py` 的 `_summarize_episode`）。
+            （Harness 的选择是吞：见 `harness/harness.py` 的 `_summarize`）。
         """
         ...
 

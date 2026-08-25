@@ -146,7 +146,7 @@ def choose(self, obs: Observation, space: ActionSpace) -> Action:
 
 ```
 pokemon_agent/
-├── schemas/          Pydantic 数据模型（Observation / Action / ActionSpace / MemoryEntry / TraceEvent）
+├── schemas/          Pydantic 数据模型（Observation / Action / ActionSpace / MemoryEntry / TraceEvent / Completion）
 ├── interfaces/       Protocol 定义：LLMProvider、ToolPort（五个 MCP 工具）、TracePort
 ├── brain/            ReAct 循环。无状态。只依赖 interfaces + schemas
 ├── harness/          状态管理、工具注册、trace、成本统计（本阶段大部分是壳）
@@ -179,7 +179,7 @@ pyproject.toml
 
 ## 七、代码风格
 
-- Python 3.10。所有公开函数、方法、Pydantic 字段**必须有类型注解**。
+- Python 3.11（不是 3.10——`agent_permission` 依赖 3.11 的 `enum.StrEnum`）。所有公开函数、方法、Pydantic 字段**必须有类型注解**。
 - `ruff` 管 lint + format，行宽 100。提交前跑 `ruff check . && ruff format .`。
 - 命名用完整英文单词，不用缩写（`action_space` 不是 `act_sp`）。
 - 注释只写**为什么**，不写做了什么。代码讲不清的取舍才写注释。

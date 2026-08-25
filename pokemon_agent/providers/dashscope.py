@@ -26,8 +26,7 @@ import urllib.error
 import urllib.request
 
 from pokemon_agent.errors import ImageNotDelivered
-from pokemon_agent.interfaces.llm import Completion
-from pokemon_agent.interfaces.vision import VisionCompletion
+from pokemon_agent.schemas.completion import Completion, VisionCompletion
 from pokemon_agent.vision.preprocess import ImageFilter, apply_all
 
 _DEFAULT_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"

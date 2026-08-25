@@ -9,7 +9,7 @@ trace 是**每步一条**的事件流，manifest 是**每次实验一份**的快
 
 | | 放什么 | 判据 |
 |---|---|---|
-| manifest | prompt 原文、模型与温度、git commit、预处理方式 | 全程不变 |
+| manifest | prompt 原文、模型与温度、git commit、预处理方式、权限配置 | 全程不变 |
 | trace 事件 | frame_sha、tokens、延迟、模型原始输出 | 每步都变 |
 
 ## 为什么 prompt 要存原文而不是只存 sha
@@ -18,6 +18,15 @@ trace 是**每步一条**的事件流，manifest 是**每次实验一份**的快
 那个 sha 就指向虚空——三周后你拿着一批数字，不知道它们是哪一版 prompt 跑出来的。
 manifest 里存原文，这个依赖就断了。
 
+## 权限配置为什么也要存原文
+
+和 prompt 是同一个论证。`config/permissions.json` 决定 agent 能调哪些工具——
+角色里少一条 `read:memory:knowledge`，这一批 run 跑的其实是"无知识库"那个消融组，
+而 trace 里**没有任何字段说得出这件事**。它全程不变，所以属于 manifest 这一层；
+它不在版本库里（是运行时配置），所以只存 sha 会指向虚空，得连原文一起存。
+
+`context.json` 同理：`roles` 是实验条件本身，`subject_id` 是审计流的连接键。
+
 ## 不存什么
 
 API key。它不进任何会被写出去的东西，`config()` 也不返回它。
@@ -25,6 +34,7 @@ API key。它不进任何会被写出去的东西，`config()` 也不返回它�
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -86,6 +96,11 @@ class RunManifest(BaseModel):
     prompts: dict[str, dict[str, str]] = Field(
         default_factory=dict, description="prompt 名 -> {sha, text}。**存原文**，见模块 docstring"
     )
+    permissions: dict[str, dict[str, str]] = Field(
+        default_factory=dict,
+        description="配置文件名 -> {sha, text}。和 `prompts` 同一个形状、同一个理由："
+        "权限配置决定 agent 能调哪些工具，是实验条件，且不在版本库里",
+    )
     preprocess: str = Field(
         default="native",
         description="图像预处理方式。熔断把它当变量（原生 vs 放大），不记就分不清哪组是哪组",
@@ -104,6 +119,9 @@ class RunManifest(BaseModel):
         assert self.experiment_kind in {"single_episode", "sequential_episodes"}
         assert self.memory_policy == "session_local", "episode summaries are run-local"
         assert self.task_ids, "manifest must declare at least one task"
+        # 权限配置决定 agent 能调哪些工具。缺了它，这批 run 属于哪个消融组
+        # 事后**无从判断**——和缺 prompt 原文是同一等级的问题。
+        assert self.permissions, "manifest must record the permission config"
         return self
 
     def with_prompts(self, *names: str) -> RunManifest:
@@ -111,6 +129,28 @@ class RunManifest(BaseModel):
         for name in names:
             tpl = load_prompt(name)
             self.prompts[name] = {"sha": tpl.sha, "text": tpl.text}
+        return self
+
+    def with_permissions(
+        self, config_dir: pathlib.Path = pathlib.Path("config")
+    ) -> RunManifest:
+        """把权限配置的原文和 sha 收进来。
+
+        前置条件：`config_dir` 下存在 `context.json` 与 `permissions.json`——
+            它们是 `agent_permission` 启动的硬要求（见 `harness.run()` 的
+            `@initialize`），跑到这里还没有就该当场停，而不是记一份空的
+            权限快照、让这批数据事后无法归因。
+
+        后置条件：`permissions` 里每个文件都同时有 `sha` 和 `text`。
+        """
+        for name in ("context.json", "permissions.json"):
+            path = config_dir / name
+            assert path.is_file(), f"permission config is missing: {path}"
+            text = path.read_text(encoding="utf-8")
+            self.permissions[name] = {
+                "sha": hashlib.sha256(text.encode("utf-8")).hexdigest()[:12],
+                "text": text,
+            }
         return self
 
     def with_provider(self, role: str, provider: Configurable) -> RunManifest:

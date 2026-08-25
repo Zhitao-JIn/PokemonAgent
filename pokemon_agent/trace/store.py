@@ -32,7 +32,7 @@ PHASE_BY_TYPE: dict[EventType, str] = {
     EventType.THINK: "think", EventType.ACT: "act",
     EventType.MEMORY_READ: "retrieve_memory", EventType.MEMORY_WRITE: "memory_write",
     EventType.OBJECT_NOTE: "memory_write", EventType.EPISODE_MEMORY_WRITE: "memory_write",
-    EventType.INSPECT: "inspect", EventType.GOAL_PUSH: "goal", EventType.GOAL_POP: "goal",
+    EventType.INSPECT: "inspect", EventType.GOAL_POP: "goal",
     EventType.ERROR: "error", EventType.EPISODE_START: "episode",
     EventType.EPISODE_END: "episode", EventType.CHECKPOINT: "checkpoint",
 }
@@ -230,11 +230,6 @@ class LocalTrace:
         elif type_ is EventType.OBJECT_NOTE:
             print(f"{'object_note':<{LABEL_W}} key={p.get('key', '')} kind={p.get('kind', '')}")
             print(self._wrapped("content", p.get("content", "")))
-
-        elif type_ is EventType.GOAL_PUSH:
-            print(f"{'goal_push':<{LABEL_W}} depth={p.get('depth', '')} "
-                  f"goal={p.get('goal', '')}")
-            print(self._wrapped("criteria", p.get("criteria", "")))
 
         elif type_ is EventType.GOAL_POP:
             print(f"{'goal_pop':<{LABEL_W}} depth={p.get('depth', '')} "

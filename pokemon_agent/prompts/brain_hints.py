@@ -1,17 +1,17 @@
-"""组装好的、大脑决策相关的 prompt 常量：`INTENT_HELP` 和 `retry_note()`。
+"""组装好的、大脑决策相关的 prompt 常量。目前只剩 `retry_note()`。
 
 和 `game_hints.py` 是同一类文件：内容在 `prompts/*.md` 里，这里只做**组装**——
-`INTENT_HELP` 要按 `Intent` 分类（依赖 `schemas.action`），`retry_note()` 要在
-渲染结果前面拼两个换行（"怎么拼接"，不是 prompt 文字本身）。这两件事都不该
-留在 `brain/brain.py` 里：那个模块该管"怎么决策"，不该同时管"这段说明文字
-怎么拼出来"。
+`retry_note()` 要在渲染结果前面拼两个换行（"怎么拼接"，不是 prompt 文字本身）。
+这件事不该留在 `brain/brain.py` 里：那个模块该管"怎么决策"，
+不该同时管"这段说明文字怎么拼出来"。
+
+这里曾经还有一个 `INTENT_HELP`（每类 intent 给大脑的说明），
+随 intent 分派一起删了——拆子目标的机制在别处重写时，它要不要回来是那时的决定。
 """
 
 from __future__ import annotations
 
-from pokemon_agent.schemas.action import Intent
-
-from . import load, load_sections
+from . import load
 
 _RETRY_PROMPT = load("retry_note")
 
@@ -29,19 +29,3 @@ def retry_note(attempt: int, reason: str, raw: str) -> str:
     追加在末尾是刻意的：前缀一个字没动，三次尝试共享同一段缓存。
     """
     return "\n\n" + _RETRY_PROMPT.render(attempt=attempt, reason=reason, raw=raw)
-
-
-_INTENT_SECTIONS = load_sections("intent_help")
-INTENT_HELP: dict[Intent, str] = {
-    Intent.PRESS: _INTENT_SECTIONS["press"],
-    Intent.PUSH_GOAL: _INTENT_SECTIONS["push_goal"],
-}
-"""每类 intent 给大脑的说明。
-
-和 `BUTTON_HELP` 一样，这是**接口的一部分**而不是 prompt 模板的一部分：
-大脑能做哪几类事由 `ActionSpace.intents` 决定，说明得跟着实际下发的那几类走。
-写死在模板里的话，掩掉一类之后说明还在，模型会去选一个用不了的东西。
-
-`PRESS` 那条特意点出"唯一不可逆"：另外两类选错了只是浪费一轮，
-按错键可能要走十步回来。代价不对称，就该让它知道。
-"""

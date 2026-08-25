@@ -49,7 +49,7 @@ def main() -> None:
             "embedding": {"model": "BAAI/bge-small-zh-v1.5", "runtime": "fastembed"},
             "reranker": {"model": "BAAI/bge-reranker-base", "runtime": "fastembed"},
         },
-    ).with_prompts("decide_action", "judge_success").validate_design()
+    ).with_prompts("decide_action", "judge_success").with_permissions().validate_design()
     manifest.save(pathlib.Path("experiment_results") / run_id / "manifest.json")
 
     import os

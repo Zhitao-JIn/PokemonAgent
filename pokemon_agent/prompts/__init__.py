@@ -87,11 +87,16 @@ def _split(text: str, marker: str) -> dict[str, str]:
 def load_sections(name: str) -> dict[str, str]:
     """按 `## 名字` 切块加载 `prompts/<name>.md`。
 
-    有些 prompt 片段不是一整块文字，而是**按情形分叉**的——每个 intent 一段、
-    每个按键一段。这类内容照样该放进这个目录，理由和模块 docstring 里那三条一样：
+    有些 prompt 片段不是一整块文字，而是**按情形分叉**的——每个按键一段、
+    每个 overlay 一段。这类内容照样该放进这个目录，理由和模块 docstring 里那三条一样：
     可 review、可归因、无花括号冲突；只是它们在代码里原来是 dict 字面量，
     不是单一模板。Markdown 的标题天然就是"分叉"的写法，不用发明新格式，
     也不用为了塞进一个 `PromptTemplate` 就把结构拍扁成一整块文字。
+
+    **目前零调用方**：唯一的用户 `INTENT_HELP` 随 intent 分派一起删了
+    （两层版本 `load_nested_sections()` 还在被按键说明用着）。留着是因为它和
+    `load_nested_sections()` 是一对，删一个留一个更怪；拆解机制在别处重写时
+    如果不再用分节 prompt，它该跟着删。
     """
     return _split(load(name).text, "## ")
 

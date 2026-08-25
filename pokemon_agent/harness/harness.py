@@ -19,25 +19,33 @@
 
 ## 一轮循环长什么样
 
-    look             obs = self._observe(state)    -> MODEL_CALL(感知，通常 0 条，账已在上一步记过) + OBSERVE
-                                                      + MODEL_CALL(判定)×栈深 + GOAL_POP×弹了几层
-                     space = self._space(goals)
+    look             obs = self._observe(state)    -> MODEL_CALL(感知，通常 0 条，账已在上一步记过)
+                                                      + OBSERVE + MODEL_CALL(判定) + GOAL_POP(完成时)
+                     space = game.get_action_space()
     retrieve_memory  memories = memory.query_episodic(...)
                      obs 折进 known_objects/knowledge（语义记忆的读）  -> MEMORY_READ
     think            d = brain.choose(goals, obs, space, memories)
                                                    -> MODEL_CALL(决策)×N + ERROR×失败次数 + THINK
-    ┌ press          tools.execute                 -> MODEL_CALL(感知，通常 0 条) + ACT
-    │ └ remember     reflect → memory.write_episodic → memory.note_step
-    │                                               -> MEMORY_WRITE + OBJECT_NOTE×N
-    ├ push_goal      压一个子目标                    -> GOAL_PUSH
-                                                      三条链路都 step += 1，然后回到 look
+    press            tools.execute                 -> MODEL_CALL(感知，通常 0 条) + ACT
+    remember         reflect → memory.write_episodic → memory.note_step
+                                                   -> MEMORY_WRITE + OBJECT_NOTE×N
+                                                      step += 1，回到 look
 
-    `retrieve_memory`/`remember` 是**显式的图节点**，不是藏在 `think`/`press`
-    内部的几行代码——"每一步先查记忆再决策""只有真正推进世界那一步才写记忆"
-    这两条规则因此是图结构本身，一眼能看见（见 `_compile` 的完整说明）。
+    look 判出终止时改走：
+    summarize        memory.store_episode_summary  -> MODEL_CALL(蒸馏) + EPISODE_MEMORY_WRITE
+    （回到 run()）    EPISODE_END
 
-**只有 `press` 推进世界。** 另外两类只改变大脑自己的处境，但**同样算一步**——
-它们烧的决策调用是一样的，不算的话 `max_steps` 就管不住"一直拆、从不走"这种局。
+`retrieve_memory`/`remember`/`summarize` 是**显式的图节点**，不是藏在别处的几行代码——
+"每一步先查记忆再决策""只有推进世界那一步才写记忆""一局只在结束时蒸馏一次"
+这三条规则因此是图结构本身，一眼能看见（见 `_compile` 的完整说明）。
+
+**收尾（`EPISODE_END`）不在图里，在 `run()`。** `END` 是 LangGraph 的哨兵、
+挂不上动作；更要紧的是正常结束和异常终止都得写这条事件，
+写在 `run()` 里两条路径才共用同一个出口。
+
+**这一版只有一类动作。** 以前 `think` 出口按 `Action.intent` 分三岔
+（press / push_goal / inspect），现在是一条直线——intent 连同它的枚举一起删了，
+拆子目标的机制会在别处重写。
 
 **观测只在 `look` 里产生，一步一次。** `_observe()` 是全项目唯一给
 `step` / `done` / `success` 赋值的地方，而它只有 `_look` 一个调用方。
@@ -48,23 +56,20 @@
 
 ## 目标栈
 
-`goals[0]` 恒为任务目标，上面是 agent 自己拆的子目标（`push_goal`）。
+`goals` 这个栈的形状留着，但**这一版它恒为一层**：栈底是任务目标，
+而压栈的唯一途径 `push_goal` 已经删了。**当前目标永远是栈顶**（`goals[-1]`），
+判定只判它，完成就出栈；栈空 = 任务完成，只有这一条路径写 `success`。
 
-**每层各判一次（并发发出），最深的那条"已完成"连同它上面的全部出栈。**
-一条规则，没有特例：
+`if not remaining` 在只有一层时永远成立，留着不是为了当下分支，
+而是把"只有任务目标本身完成才算成功"写成代码——子目标回来之后，
+agent 自己压的那些完成了只该弹栈，不该给自己发奖状。
 
-- 栈底那条必然每步都判（它是其中一层）——任务可能顺手就完成了。
-- 中间层完成时，上面那些**当初就是为它拆的**，一起作废（`reason=superseded`），
-  不再花步数去做已经没有意义的事。
-- 只有栈底那条完成才写 `success`（`if depth == 0`）。子目标是 agent 自己定的，
-  能写 success 的话它可以压一个"我已经到家了"让判定器给自己发奖状。
-
-出栈理由分 `done` 和 `superseded` 两种：不分的话算不出**拆出来的子目标有多少是白拆的**，
-而那是判断目标栈到底帮没帮上忙的那个数。
-
-判定**并发发出**（`_judge_all`），所以一步的判定延迟是 `max` 而不是 `sum`，
-和"把整栈塞进一次调用"一样快，但每条目标仍然各判各的——隔离和可标定性都不丢。
-写 trace 不并发：`event_id` 必须单调，那是 SSE 断线补发的唯一依据。
+这里曾经有一套「每层各判一次、并发发出、最深的那条完成连同上面的全部出栈」的机制
+（`_judge_all` + `reason=superseded`）。前提是栈会长起来，现在不会，
+所以退回最简形态：一个线程池、一段并发写 trace 的注意事项、一个恒为 0 的 `depth`，
+全都不必要。当时那份权衡（判定之间的隔离与可标定性 vs 省 token）记在 CHANGELOG 里，
+**不留在代码里占位**——占位的抽象会把下一版往旧形状上带，而拆解机制在别处重写时，
+多层判定要不要回来、以什么形状回来，是那时的决定。
 
 ## 状态为什么全在 LoopState 里
 
@@ -106,12 +111,10 @@
 
 from __future__ import annotations
 
-from agent_permission import initialize, require_permission
-
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from agent_permission import initialize
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
@@ -120,13 +123,14 @@ from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.interfaces.brain import BrainPort
 from pokemon_agent.interfaces.tools import GameToolPort, MemoryToolPort
 from pokemon_agent.interfaces.trace import TracePort
-from pokemon_agent.schemas.action import Action, ActionSpace, Goal, Intent
+from pokemon_agent.schemas.action import Action, ActionSpace, Goal
 from pokemon_agent.schemas.memory_episode import EpisodeMemory
 from pokemon_agent.schemas.memory_episodic import MemoryEntry, Snapshot
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.schemas.task import Task
 from pokemon_agent.schemas.trace import EpisodeOutcome, ModelCall, Source, Verdict
 from pokemon_agent.trace import utils as trace_utils
+
 
 MEMORY_RECALL_LIMIT = 5
 """每次决策检索几条情景记忆。原来是 `Brain` 构造时的 `memory_limit` 参数——
@@ -152,24 +156,17 @@ JUDGE_HISTORY = 3
 发生过的事给判定器看，决策者对那件事的主张不给。
 """
 
-MAX_GOAL_DEPTH = 4
-"""目标栈最多几层（含栈底的任务目标）。
-
-有上限不是怕内存，是怕**无限拆解**：拆一层不推进世界，模型在"还没想清楚"的时候
-会一直拆下去。到顶之后 `push_goal` 从 `intents` 里掉出去，它就只能去走或者去看。
-
-选 4 不是算出来的，是个起手值。真实分布要看 trace 里 `goal_push` 的深度直方图——
-如果绝大多数局只用到 2 层，这个数就该调小；如果频繁顶到 4，说明任务粒度本来就太粗。
-"""
-
-
 class LoopState(BaseModel):
     """一局的**全部**可序列化状态。
 
     分两组，但两组都在这里——分组只是为了读的人知道哪些跨步、哪些不跨：
 
         身份    episode_id / task / step / succeeded / why   跨步，checkpoint 要的就是它
-        流转    observation / space / action / outcome        单步内，从一个节点传到下一个
+        流转    observation / space / action                  单步内，从一个节点传到下一个
+
+    **`outcome` 不在这里。** 它是这一局的最终结论，由 `run()` 在图跑完之后
+    从 `observation` 直接算出来——放进 state 就得有个节点负责填它，
+    而"下结论"不该是任何一个循环节点的副业（详见 `run()` 里的说明）。
 
     **活对象一个都不进来**（world / tools / brain / trace）：它们序列化不了，
     进来就把整个状态变成不可存的。它们是 Harness 的构造参数，由装配处注入。
@@ -208,10 +205,9 @@ class LoopState(BaseModel):
     press_result: Observation | None = None
     """`press` 执行动作之后的新观测，交给紧跟着的 `remember` 去写记忆。
 
-    只在 `press → remember` 这一段之间有意义，`push_goal`/`inspect` 不产生它，
+    只在 `press → remember` 这一段之间有意义，
     `remember` 结束后被下一轮 `look` 写的新 `observation` 盖过去，不跨步存活。
     """
-    outcome: EpisodeOutcome | None = None
 
 
 class Harness:
@@ -247,7 +243,6 @@ class Harness:
     # ---- 对外只有这一个入口 ----
 
     @initialize
-    @require_permission("write:harness:trace")
     def run(self, episode_id: str, task: Task) -> EpisodeOutcome:
         """跑完一局，返回结果。
 
@@ -257,9 +252,15 @@ class Harness:
         assert episode_id, "run() got an empty episode_id"
         assert task.max_steps > 0, f"max_steps must be > 0, got {task.max_steps}"
 
-        state = self._begin(episode_id, task)
+        # **`_begin()` 也在 try 里面。** 它会 `reset()` 世界、`save_state()` 存档，
+        # 而 `execute:game:save_state` 是配置里唯一 `approval_required` 的权限——
+        # 人类拒批/审批超时抛出来的异常要是从这里逃走，这一局连 `EPISODE_END`
+        # 都没有，正是下面那段注释要防的"从分母上消失"。
         try:
-            # 每一步走三个节点，留一倍余量。
+            state = self._begin(episode_id, task)
+            # 一步走五个节点（look / retrieve_memory / think / press / remember），
+            # 外加收尾的 summarize。留一倍余量：递归上限撞上去的症状是
+            # 一局无声截断，宁可给宽。
             final = self._graph.invoke(state, {"recursion_limit": task.max_steps * 6 + 20})
         except Exception as exc:
             # **异常逃出去之前必须把 EPISODE_END 补上。** 不补的话这一局在事件流里
@@ -269,11 +270,42 @@ class Harness:
             #
             # 记完照常往外抛：这一局确实跑不下去了，吞掉只会让调用方拿到一个
             # 语义不明的空结果。
+            #
+            # **权限失败不单开一个 `except` 分支。** 曾经有一个，函数体和这里
+            # 逐字相同——删掉它程序行为一个字节不变，它只是让人误以为权限失败
+            # 已经被单独处理过了，于是这件事不会再有人回来做。将来真要按权限名
+            # 聚合（"哪一项权限最常拦住 agent"），改的地方是 `episode_error()`
+            # 内部：那是"把异常翻译成事件"的纯函数的职责，不是控制流的。
             self._trace.append(*trace_utils.episode_error(episode_id, task.task_id, exc))
             raise
 
-        outcome = LoopState.model_validate(final).outcome
-        assert outcome is not None, "the graph must not end without an outcome"
+        final_state = LoopState.model_validate(final)
+        obs = final_state.observation
+        # **收尾只有这一个地方**，而且 `outcome` 就在这里算。
+        #
+        # 它以前是 `_look` 里调的一个 `_outcome()` 方法，算完塞进 `LoopState.outcome`
+        # 带过来。两个问题：一个叫"看一眼"的节点顺手把这一局的结论下了；
+        # 而 `outcome` 和下面那条 `EPISODE_END` 的 payload 本来就是**同一份信息的
+        # 两个形态**（success / steps / reason 逐字段对应），算在两个地方，
+        # 迟早不一致——而不一致时没有任何东西会报错，返回值说成功、事件流说失败，
+        # 离线统计和调用方各信一半。
+        #
+        # 不包成方法是因为它只有这一个调用方，而且是三行纯翻译：
+        # 包起来只会让"这个数是怎么来的"多隔一跳。
+        reason = ("success" if obs.success
+                  else "max_steps_exceeded" if obs.step >= task.max_steps
+                  else "world_ended")
+        outcome = EpisodeOutcome(
+            episode_id=episode_id, task_id=task.task_id,
+            success=obs.success, steps=obs.step, reason=reason,
+        )
+
+        # 正常结束写在这里，异常终止写在上面的 except 里，两条路径共用同一条
+        # `EPISODE_END` —— 图内图外各写一次的话，迟早有一条路径漏掉，
+        # 而漏掉的那些局会直接从成功率的分母上消失。
+        self._trace.append(
+            *trace_utils.episode_end(episode_id, outcome, final_state.why)
+        )
         return outcome
 
     def _begin(self, episode_id: str, task: Task) -> LoopState:
@@ -282,19 +314,27 @@ class Harness:
         **这里不观测**——观测是 `look` 的事，而 `look` 是图的入口。
         记忆**不清空**——跨任务复用经验正是要验证的东西。
         """
-        reset = self._game.reset(task)
-        if self._episode_state_dir is not None:
-            self._game.save_state(str(self._episode_state_dir / f"{episode_id}.start.state"))
-
-        # **episode 的边界事件先写**：`EPISODE_START` 打头，reset() 里那次
-        # 真实感知产生的调用记录紧跟其后——都发生在 `_begin()` 这一次调用里，
-        # 谁先谁后不影响"当场记账、不留到下一次 `_observe()` 才补记"这条规则，
-        # 但顺序本身有意义：episode 的边界应该是这一局在事件流里看到的第一条
-        # 事件，而不是"先花了一次钱、才想起来这局开始了"。
+        # **`EPISODE_START` 在做任何事之前就写。**
+        #
+        # 以前它写在 `reset()` / `save_state()` 之后，注释却说"episode 的边界应该是
+        # 这一局在事件流里看到的第一条事件"——那句话只在**这两步都成功**时才成立。
+        # `reset()` 要调模拟器和视觉模型，`save_state()` 挂着唯一那条
+        # `approval_required` 的权限，两者都可能抛。抛在这一行之前的话，
+        # `run()` 的兜底只会补一条 `EPISODE_END`，事件流里出现一个没有开头的结尾，
+        # 比彻底没有记录更难读。
+        #
+        # 写在前面的代价是"这一局可能一步没跑就结束了"，但那本来就是事实，
+        # 而且 `EPISODE_END` 会把原因说清楚。
         self._trace.append(
             *trace_utils.episode_start(episode_id, task, self._memory.episode_step_count)
         )
 
+        reset = self._game.reset(task)
+        if self._episode_state_dir is not None:
+            self._game.save_state(str(self._episode_state_dir / f"{episode_id}.start.state"))
+
+        # reset() 里那次真实感知产生的调用记录紧跟其后——当场记账，
+        # 不留到下一次 `_observe()` 才补记。
         for call in reset.calls:
             failed = call.get("ok") != "True"
             for args in trace_utils.model_call(
@@ -315,56 +355,54 @@ class Harness:
     # ---- 图 ----
 
     def _compile(self) -> CompiledStateGraph:
-        """look → retrieve_memory → think → (press → remember | push_goal | inspect) → look
+        """look → retrieve_memory → think → press → remember → look
+                └─(done)→ summarize → END
 
-        **分派放在图的边上，不是某个节点里的 if。** 这样"agent 能做哪几类事"
-        在图上一眼看得见，加一类 = 加一个枚举值 + 一个节点 + 一条边，
-        `_think` 和 prompt 的形状都不用动。
+        **一条直线，没有分派。** 以前 `think` 出口按 `Action.intent` 分三岔
+        （press / push_goal / inspect），现在只剩按键一类动作——intent 连同它的
+        枚举一起删了，拆子目标的机制会在别处重写。分派的边留着也没有第二个去处，
+        留着只会让人以为图上还有分支。
 
-        `retrieve_memory` / `remember` 也是**显式的图节点**，不是藏在 `think`/`press`
-        内部的几行代码。以前查记忆是 `_think()` 里的第一步、写记忆是 `_press()`
-        里的最后几步——功能上没问题，但图上只看得到 `think`/`press` 两个方框，
-        看不出"每一步都先查记忆再决策""只有真正推进世界那一步才写记忆"这两条规则。
-        拆成独立节点之后这两条规则**是图结构本身**，不用看代码也看得出来；
-        以后想换检索/写入策略，改的是这一个节点，`think`/`press`/prompt 都不用动。
+        `retrieve_memory` / `remember` / `summarize` 都是**显式的图节点**，
+        不是藏在别的节点里的几行代码。这样三条规则**是图结构本身**，
+        不用读代码也看得出来：
 
-        `remember` 只跟在 `press` 后面——`push_goal` 不推进世界，
-        写进去就是一堆"结果：什么都没发生"，会把检索结果稀释掉（原因见 `_remember`）。
+            每一步先查记忆再决策        retrieve_memory 在 think 前面
+            推进世界那一步才写记忆      remember 只跟在 press 后面
+            一局只在结束时蒸馏一次经验  summarize 只在 look 的终止分支上
+
+        `summarize` 是这一版新加的。以前蒸馏藏在收尾逻辑里，
+        跟着 `EPISODE_END` 一起发生——图上看不到"这一局结束时还额外调了一次模型"，
+        而那是一次真金白银的调用。摆成一格之后它有了自己的位置：
+        **`look` 判出终止 → 蒸馏 → 才算走完**。
+
+        **收尾（`EPISODE_END`）不在图里，在 `run()`。** `END` 是 LangGraph 的
+        哨兵，不是节点，挂不上动作；更要紧的是正常结束和异常终止都得写这条事件，
+        写在 `run()` 里两条路径才共用同一个出口——分散到图内图外各写一次，
+        迟早有一条路径漏掉，而漏掉的那些局会直接从成功率的分母上消失。
         """
         graph = StateGraph(LoopState)
         graph.add_node("look", self._look)
         graph.add_node("retrieve_memory", self._retrieve_memory)
         graph.add_node("think", self._think)
+        graph.add_node("press", self._press)
         graph.add_node("remember", self._remember)
-        for intent, node in self._nodes().items():
-            graph.add_node(intent.value, node)
+        graph.add_node("summarize", self._summarize)
 
         graph.set_entry_point("look")
         # **唯一的终止分支在 look 出口**：看完才知道这一局还要不要继续。
-        # 放在动作节点出口的话，"步数用尽"和"目标达成"要在三个地方各判一次。
+        # 放在动作节点出口的话，"步数用尽"和"目标达成"要在两个地方各判一次。
         graph.add_conditional_edges(
-            "look", self._route, {"retrieve_memory": "retrieve_memory", END: END}
+            "look",
+            lambda state : "summarize" if state.observation.done else "retrieve_memory",
+            {"retrieve_memory": "retrieve_memory", "summarize": "summarize"},
         )
         graph.add_edge("retrieve_memory", "think")
-        graph.add_conditional_edges(
-            "think", self._dispatch, {i.value: i.value for i in Intent}
-        )
-        for intent in Intent:
-            # `press` 多绕一步 remember 才回 look；另外两类世界没动，直接回。
-            graph.add_edge(intent.value, "remember" if intent is Intent.PRESS else "look")
+        graph.add_edge("think", "press")
+        graph.add_edge("press", "remember")
         graph.add_edge("remember", "look")
+        graph.add_edge("summarize", END)
         return graph.compile()
-
-    def _nodes(self) -> dict[Intent, Any]:
-        """intent → 节点函数。**写成一张表**，漏一类当场 KeyError。
-
-        散在 `add_node` 调用里的话，加了枚举值忘了加节点，症状是运行到一半
-        LangGraph 报"未知节点"——离病因隔了一层。
-        """
-        return {
-            Intent.PRESS: self._press,
-            Intent.PUSH_GOAL: self._push_goal,
-        }
 
     def _look(self, state: LoopState) -> dict[str, Any]:
         """看一眼，然后决定要不要接着走。**每一步都从这里开始。**
@@ -372,25 +410,39 @@ class Harness:
         开局那一帧也走这里——它是图的入口。所以"起点存档就已经满足判据"
         这种 episode 会在第 0 步就被判出来，一步都不用走。
         不这样的话这类局会白跑满步数，而成功率里少掉的正是最容易达成的那些。
+
+        ## 返回值是**状态增量**，不是"结果"
+
+        这是 LangGraph 的节点约定（CLAUDE.md 第五节）：节点返回一个 dict，
+        里面只放**这一步改了哪些字段**，由 LangGraph 合并进 `LoopState`；
+        没写进去的字段保持原样。所以下面 return 的不是"look 算出了什么"，
+        而是"look 要求把 state 的这几个字段改成这些值"。
+
+        只有"接着跑"那条分支多带一个 `space`（`think` 节点要用）；
+        终止那条什么都不多给——**这一局的结论由 `run()` 算**，
+        `_look` 只负责看一眼、判一次、把结果写回 state。
         """
         obs, goals, succeeded, why = self._observe(state)
-        out = {"observation": obs, "goals": goals, "succeeded": succeeded, "why": why}
-        if obs.done:
-            return out | {"outcome": self._outcome(state, obs, why)}
-        return out | {"space": self._space(goals)}
 
-    def _space(self, goals: list[Goal]) -> ActionSpace:
-        """按键由工具层给，**intent 由这里给**。
+        update: dict[str, Any] = {
+            "observation": obs,
+            "goals": goals,
+            "succeeded": succeeded,
+            "why": why,
+        }
 
-        能不能再拆一层取决于栈有多深，那是循环的账，工具层不知道。
-        栈满了就把 `push_goal` 摘掉——**不是靠 prompt 劝它别拆**。
-        说明和可选项必须一致，否则模型会去选一个用不了的东西，
-        白花一轮再吃一条 IllegalAction。
-        """
-        intents = [Intent.PRESS]
-        if len(goals) < MAX_GOAL_DEPTH:
-            intents.insert(1, Intent.PUSH_GOAL)
-        return self._game.get_action_space().model_copy(update={"intents": intents})
+        if not obs.done:
+            # 按键由工具层给。`intents` 那一层没有了——能做哪几类事曾经是循环的账，
+            # 现在只有一类，`ActionSpace` 里连这个字段都删了。
+            update["space"] = self._game.get_action_space()
+
+        return update
+
+    def _look_route(self, state: LoopState) -> str:
+        """终止就去蒸馏，否则接着跑。**不直接连 END**——见 `_compile`。"""
+        assert state.observation is not None, "routing before any observation"
+
+
 
     def _retrieve_memory(self, state: LoopState) -> dict[str, Any]:
         """查这一步要用的**全部**记忆，交给 `think`。**图上单独一格。**
@@ -507,11 +559,7 @@ class Harness:
         self._trace.append(*trace_utils.think(ep, step, decision.action, attempt=len(decision.calls)))
         return {"action": decision.action}
 
-    def _dispatch(self, state: LoopState) -> str:
-        assert state.action is not None, "dispatch without an action"
-        return state.action.intent.value
-
-    # ---- 三个动作节点。**只有 press 推进世界。** ----
+    # ---- 唯一的动作节点。**只有 press 推进世界。** ----
 
     def _press(self, state: LoopState) -> dict[str, Any]:
         """按键，推进世界。**只管执行和账，不写记忆。**
@@ -556,9 +604,11 @@ class Harness:
 
         从 `_press()` 里拆出来，是为了让"记忆写在哪个节点"在图上看得见——
         以前一个 `press` 方框里塞了按键、情景记忆落库、语义记忆建档三件事，
-        图上读不出这三件事的先后关系，也读不出"只有推进世界那一步才写记忆"这条规则
-        （`push_goal`/`inspect` 世界没变，`after` 和 `before` 是同一帧，
-        写进去就是一堆"结果：什么都没发生"，会把检索结果稀释掉——所以它们不接这一格）。
+        图上读不出这三件事的先后关系。这一版只有 `press` 一类动作，所以
+        "只有推进世界那一步才写记忆"这条规则暂时没有反例；它仍然值得摆成独立一格，
+        因为不推进世界的动作回来时（`after` 和 `before` 是同一帧，
+        写进去就是一堆"结果：什么都没发生"，会把检索结果稀释掉），
+        要改的是这条边接不接，而不是去 `_press()` 里加 if。
 
         `ACT`（在 `press` 里）和 `MEMORY_WRITE`（这里）都属于第 n 步；
         `step + 1` 放在这里、这条链路的末尾，下一轮 `look` 写的 `OBSERVE`
@@ -587,30 +637,6 @@ class Harness:
             self._trace.append(*trace_utils.object_note(ep, before.step, note))
 
         return {"step": state.step + 1}
-
-    def _push_goal(self, state: LoopState) -> dict[str, Any]:
-        """把一个子目标压进栈。**世界不动，但仍然算一步。**
-
-        算一步是刻意的：它同样烧了一次决策调用。不算的话 `max_steps` 就管不住
-        "一直拆、从不走"这种局——而那正是目标栈最容易出的毛病。
-        """
-        assert state.observation is not None, "push_goal before look"
-        assert state.action is not None and state.action.goal is not None
-        goal = state.action.goal
-
-        assert len(state.goals) < MAX_GOAL_DEPTH, (
-            "push_goal past MAX_GOAL_DEPTH — _space() should have masked it out"
-        )
-        self._trace.append(*trace_utils.goal_push(
-            state.episode_id, state.observation.step, len(state.goals),
-            goal, state.action.rationale,
-        ))
-        return {"goals": [*state.goals, goal], "step": state.step + 1}
-
-    def _route(self, state: LoopState) -> str:
-        assert state.observation is not None, "routing before any observation"
-        return END if state.observation.done else "retrieve_memory"
-
     # ---- 观测：全项目唯一产出 Observation 的地方 ----
 
     def _observe(self, state: LoopState) -> tuple[Observation, list[Goal], bool, str]:
@@ -680,41 +706,38 @@ class Harness:
     def _judge(
         self, state: LoopState, obs: Observation
     ) -> tuple[Observation, list[Goal], bool, str]:
-        """**每层各判一次（并发），最深的那条"已完成"连同它上面的全部出栈。**
+        """**判栈顶那一条。完成就出栈。**
 
-        一条规则，没有特例。
+        ## 只判栈顶，不再每层各判一次
 
-        ## 为什么是"最深的那条已完成"
+        以前每层各判一次、并发发出（`_judge_all`），为的是"中间层完成时，
+        上面那些当初为它拆出来的一起作废"。那套机制的前提是**栈会长起来**，
+        而压栈的唯一途径 `push_goal` 已经删了——栈恒为一层。
+        对一层的栈来说，"每层各判一次"和"判栈顶"是同一件事，
+        只是前者还额外背着一个线程池、一段并发写 trace 的注意事项，
+        以及一个恒等于 0 的 `depth`。
 
-        子目标是**为了它下面那条**才拆出来的。所以只要某一层完成了，
-        它上面那些的存在理由就没了——`[任务, 走到门口, 绕过树]` 里
-        "走到门口"完成的那一刻，"绕过树"就是白干，不该再花一步去做它。
+        所以这里退回最简形态。拆解机制在别处重写时，多层判定要不要回来、
+        以什么形状回来（并发 / 合成一次 / 只判栈顶）是**那时**的决定——
+        当时那份权衡（隔离与可标定性 vs token）记在 CHANGELOG 里，不留在代码里
+        占位，因为占位的抽象会把下一版往旧形状上带。
 
-        早一版是"先判栈底，再从栈顶往下弹"，两段特殊逻辑，而且**漏掉中间层**：
-        栈是 `[任务, A, B]` 时只判了任务和 B，A 完成了也发现不了，
-        于是继续做一个已经没有意义的 B。
+        ## 栈顶完成才写 success
 
-        ## 栈底那条必然每步都判
+        栈恒为一层，所以栈顶就是栈底、就是任务目标。这条 `if not remaining`
+        在只有一层时永远成立——留着它不是为了当下分支，是为了**把"只有任务目标
+        本身完成才算成功"这句话写成代码**：子目标回来之后，agent 自己压的那些
+        完成了只该弹栈，不该给自己发奖状。
 
-        它是其中一层，所以自动每步都判。这一点不能退：任务完全可能顺手完成
-        （压着"走到门口"往那边走，路上母亲先说话了）。只判栈顶的话这类局会被记成
-        max_steps_exceeded——**成功率被系统性地压低，方向还很难看**。
-
-        ## 只有栈底那条写 success
-
-        子目标是 agent 自己定的。如果它完成也能写 success，agent 就可以压一个
-        "我已经到家了"的子目标让判定器判它完成——成功率变成它自己发的奖状。
-        这条落在下面的 `if depth == 0`，不是一句注释。
-
-        **`obs.done` 不是跳过的理由**（那里的 `done` 是"步数用尽"，
+        **`obs.done` 不是跳过判定的理由**（那里的 `done` 是"步数用尽"，
         而任务完全可能恰好在最后一步达成）；**判过成功之后不再问**
         （结论不会反悔——"已经和母亲说过话了"不会因为多走一步就变回没说过）。
         """
         if state.succeeded:
             # **早退也要把 done/success 打上。** 当前图里走不到这个分支
-            # （判成成功的那一步同时置了 `obs.done`，`_route` 直接走 END），
+            # （判成成功的那一步同时置了 `obs.done`，`_look_route` 直接去 summarize），
             # 但 resume 会：从一个 `succeeded=True` 的 checkpoint 恢复时，
-            # 不打标记的话 `_look` 不出 outcome，转而进 `think`，
+            # 不打标记的话 `_look_route` 不去 summarize，转而进 `think`，
             # 而那时 `goals` 已经是空的（成功那一步清空了）——`brain.choose`
             # 的 `assert goals` 当场崩掉。
             return (
@@ -725,117 +748,75 @@ class Harness:
         goals = list(state.goals)
         assert goals, "the goal stack must never be empty"
 
-        verdicts = self._judge_all(state.episode_id, goals, obs)
+        # **同一份历史给判定器。** 证据可能在三步以前那一帧的对话框里。
+        history = self._memory.query_recent_steps(state.episode_id, JUDGE_HISTORY)
+        verdict = self._brain.judge(goals[-1], obs, history)
+
         # **判定的账单单独记**（`Source.JUDGE`）。它和决策各自烧 token，混在一起
         # 就说不清"成功率这个数字本身花了多少钱"，也算不出判定器自己的失效率。
         # 判定失败会顺带补一条 ERROR —— "判了没完成"和"根本没判出来"必须分得开，
         # 否则判定器坏掉的时候，表现就是成功率悄悄变成 0，而没人知道为什么。
-        for depth, verdict in enumerate(verdicts):
-            for args in trace_utils.judge_call(state.episode_id, obs.step, depth, verdict.call):
-                self._trace.append(*args)
+        depth = len(goals) - 1
+        for args in trace_utils.judge_call(state.episode_id, obs.step, depth, verdict.call):
+            self._trace.append(*args)
 
-        done_at = next((d for d, v in enumerate(verdicts) if v.done), None)
-        if done_at is None:
+        if not verdict.done:
             return obs, goals, False, ""
 
-        # 这一层完成 → 它和它上面的全部出栈。**从上往下记**，读日志的人看到的
-        # 顺序和栈的形状一致：先作废最外层，再收掉完成的这一层。
-        for gone in range(len(goals) - 1, done_at, -1):
-            self._trace.append(*trace_utils.goal_pop(
-                state.episode_id, obs.step, gone, goals[gone],
-                "superseded", f"第 {done_at} 层已完成，它不再有意义",
-            ))
-        why = verdicts[done_at].why
-        self._trace.append(
-            *trace_utils.goal_pop(state.episode_id, obs.step, done_at, goals[done_at], "done", why)
-        )
-
-        remaining = goals[:done_at]
-        if done_at == 0:
-            # 栈底完成 = 任务完成。**只有这一条路径写 success。**
+        self._trace.append(*trace_utils.goal_pop(
+            state.episode_id, obs.step, depth, goals[-1], "done", verdict.why
+        ))
+        remaining = goals[:-1]
+        if not remaining:
+            # 栈空 = 任务完成。**只有这一条路径写 success。**
             return (
                 obs.model_copy(update={"done": True, "success": True}),
-                remaining, True, why,
+                remaining, True, verdict.why,
             )
         return obs, remaining, False, ""
 
-    def _judge_all(
-        self, episode_id: str, goals: list[Goal], obs: Observation
-    ) -> list[Verdict]:
-        """并发判每一层，**按栈的顺序返回**。
-
-        ## 为什么是并发，而不是把整栈塞进一次调用
-
-        直觉的省法是"一次问完所有目标"。那样确实少了几次调用，但会丢两样东西：
-
-        - **判定之间的隔离。** 现在每条目标各判各的，模型看不到别的目标。
-          合成一次之后它同时看到任务目标和子目标，就会开始互相推理
-          （"子目标完成了，那任务应该也快了"）——污染源只是从"决策模型"
-          换成了"栈上的其他目标"，性质一样。
-        - **可标定性。** 单目标判定是干净的二分类：`(目标, 判据, 帧) → 0/1`，
-          拿人工标注一批就能算准确率。合成一次之后输出是长度可变的向量，
-          而且**同一份 prompt 在栈深 1 和栈深 4 下不是同一个东西**——
-          误差不再独立，算出来的数没法解释。
-
-        而这几次调用**天然独立**（每次只看一条目标和同一帧画面），
-        所以并发就够了：延迟是 `max` 而不是 `sum`，和合成一次一样快。
-        合并省的是 token，不是时间——而 token 那一头由 prompt 的字段顺序解决：
-        `judge_success.md` 把固定说明和画面放在前面、目标放在最后，
-        同一步内这几次调用共享一大段前缀，重复的 input 基本免费。
-
-        ## 两个实现约束
-
-        - **模型调用并发，写 trace 不并发。** `TracePort.append` 要分配单调的
-          event_id，多线程写进去就会乱序甚至重号，而 SSE 的断线补发完全依赖它。
-          所以这里只并发拿结果，记账回到主线程按 depth 顺序做。
-        - **不再有提前退出。** 顺序版判到第一条完成的就停，能省几次调用；
-          并发版全判。用 token 换墙钟，这是这次改动明确选的那一边。
-        """
-        # **同一份历史发给每一层**，不按层筛。除了"哪一层都可能需要那几帧"之外
-        # 还有个实际理由：它落在同一步内这几次调用**共享的前缀**里，
-        # 重复的 input token 基本免费。按层裁剪反而会把前缀切碎。
-        history = self._memory.query_recent_steps(episode_id, JUDGE_HISTORY)
-        if len(goals) == 1:
-            return [self._brain.judge(goals[0], obs, history)]
-
-        with ThreadPoolExecutor(max_workers=len(goals)) as pool:
-            return list(pool.map(lambda g: self._brain.judge(g, obs, history), goals))
-
     # ---- 收尾 ----
 
-    def _outcome(self, state: LoopState, obs: Observation, why: str) -> EpisodeOutcome:
-        assert obs.done, "_outcome() called before the episode finished"
+    def _summarize(self, state: LoopState) -> dict[str, Any]:
+        """**图上的最后一格**：把这一局蒸馏成一条跨局摘要记忆。
 
-        reason = ("success" if obs.success
-                  else "max_steps_exceeded" if obs.step >= state.task.max_steps
-                  else "world_ended")
-        result = EpisodeOutcome(
-            episode_id=state.episode_id, task_id=state.task.task_id,
-            success=obs.success, steps=obs.step, reason=reason,
-        )
-        self._summarize_episode(state, result)
-        self._trace.append(*trace_utils.episode_end(state.episode_id, result, why))
-        return result
+        摆成节点而不是藏在收尾逻辑里，是因为它**要调一次模型**。
+        图上看得见的东西才会被算进成本：藏起来的那次调用不出现在任何方框里，
+        读图的人会以为一局的开销就是 `steps × (感知 + 决策 + 判定)`。
 
-    def _summarize_episode(self, state: LoopState, result: EpisodeOutcome) -> None:
-        """这一局落盘的**唯一**跨局摘要记忆写入点：`_outcome()` 里、`EPISODE_END` 之前调一次。
+        `success` / `steps` **直接从 `observation` 读**，不经过 `EpisodeOutcome`。
+        以前这里收一个 `result: EpisodeOutcome` 参数，而那个对象是 `_look` 算好、
+        塞进 state 带过来的——绕这一圈的唯一收益是少写两个字段名，
+        代价是这一局的结论必须提前算出来、并且在 state 里多占一个字段。
+        现在 `outcome` 只在 `run()` 的出口构造一次。
 
-        **不在每一步调**——单步情景记忆（`MemoryEntry`）和语义记忆（object）才是
-        每步在 `_remember()` 里落盘的那两类；跨局摘要记忆的检索单元是一整局，
-        自然也只在一整局跑完之后蒸馏一次，见 `schemas/memory_episode.py` 顶部
-        对两类记忆的区分。
+        `EPISODE_END` **不在这里写**——它在 `run()`，和异常路径共用一个出口。
+
+        ## 为什么是这里、而不是每一步
+
+        单步情景记忆（`MemoryEntry`）和语义记忆（object）才是每步在 `_remember()`
+        里落盘的那两类；跨局摘要记忆的**检索单元是一整局**，自然也只在一整局
+        跑完之后蒸馏一次，见 `schemas/memory_episode.py` 顶部对两类记忆的区分。
+
+        ## 只吞 `ValueError` 这一种失败
 
         蒸馏依赖一次额外的 LLM 调用，会失败（`EpisodeMemoryGenerator.generate_summary`
         解析不出合法 JSON 时抛 `ValueError`，且已经在内部留了一条 `ERROR` trace 事件，
-        见 `memory/episode_summarizer.py`）。这里只吞这一种、单据齐全的失败——
-        蒸馏失败不该拖累这一局本该正常记的 `EPISODE_END`：这一局确实跑完了，
-        只是没能力提炼经验，这是两件事。
+        见 `memory/episode/episode_summarizer.py`）。**单据齐全**才吞：那条 ERROR
+        事件是它出现在失败模式统计里的凭证，没有凭证的静默吞掉就是在丢数据。
+
+        吞掉是因为蒸馏失败不该拖累这一局本该正常记的 `EPISODE_END`——
+        这一局确实跑完了，只是没能力提炼经验，这是两件事。
+        别的异常照常往上抛，由 `run()` 的兜底记成一局失败。
         """
+        obs = state.observation
+        assert obs is not None and obs.done, "summarize before the episode finished"
         try:
-                self._memory.store_episode_summary(
+            self._memory.store_episode_summary(
                 state.episode_id, self._run_id, state.task.goal,
-                {"success": result.success, "steps": result.steps,
+                {"success": obs.success, "steps": obs.step,
                  "max_steps": state.task.max_steps},
             )
         except ValueError:
             pass
+        return {}
