@@ -35,8 +35,8 @@ from pokemon_agent.interfaces.brain import BrainPort
 from pokemon_agent.interfaces.tools import GameToolPort, MemoryToolPort
 from pokemon_agent.interfaces.trace import TracePort
 from pokemon_agent.schemas.action import Action, ActionSpace, Goal
-from pokemon_agent.schemas.memory_episode import EpisodeMemory
-from pokemon_agent.schemas.memory_episodic import MemoryEntry, Snapshot
+from pokemon_agent.schemas.episode_memory import EpisodeMemory
+from pokemon_agent.schemas.step_memory import StepMemory, Snapshot
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.schemas.task import Task
 from pokemon_agent.schemas.trace import EpisodeOutcome, ModelCall, Source, Verdict
@@ -63,7 +63,7 @@ JUDGE_HISTORY = 3
 也不是"全部"：判定是每步 × 每层各一次，历史进的是**共享前缀**，
 条数一多，一局的判定成本就跟着步数平方增长。三条够覆盖"刚刚发生了什么"。
 
-历史里**不含 `rationale`**（`MemoryEntry.render(reason=False)`）——
+历史里**不含 `rationale`**（`StepMemory.render(reason=False)`）——
 发生过的事给判定器看，决策者对那件事的主张不给。
 """
 
@@ -107,7 +107,7 @@ class LoopState(BaseModel):
 
     observation: Observation | None = None
     space: ActionSpace | None = None
-    memories: list[MemoryEntry] = Field(
+    memories: list[StepMemory] = Field(
         default_factory=list,
         description="`retrieve_memory` 查出来的、给这一步 `think` 用的情景记忆。"
         "**图上单独一格**——查什么、查几条是循环控制的决策，不该藏在 `think` 内部",

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.memory_semantic import ObjectFact
+from pokemon_agent.schemas.object_fact import ObjectFact
 from pokemon_agent.schemas.observation import Landmark, Place
 
 

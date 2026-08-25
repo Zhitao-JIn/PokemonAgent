@@ -21,7 +21,7 @@
 
 ### 1.1 不持有 tools / memory 的约束，以及它的由来
 
-`Brain` 的构造函数只接收 `decide_llm`、`judge_llm`、`max_retries` 三样，**不收任何 `tools` 或记忆实例**。`choose()` 需要的情景记忆（`memories` 参数）由 Harness 检索好之后当参数传进来；`reflect()` 也只返回整理好的 `MemoryEntry`，写库这一步同样不在 Brain 内部发生，由 Harness 完成。
+`Brain` 的构造函数只接收 `decide_llm`、`judge_llm`、`max_retries` 三样，**不收任何 `tools` 或记忆实例**。`choose()` 需要的情景记忆（`memories` 参数）由 Harness 检索好之后当参数传进来；`reflect()` 也只返回整理好的 `StepMemory`，写库这一步同样不在 Brain 内部发生，由 Harness 完成。
 
 `interfaces/brain.py` 的 docstring 明确记录了这条约束的来历——**旧设计的问题**：
 
@@ -87,7 +87,7 @@ def __init__(
 ```python
 def choose(
     self, goals: list[Goal], obs: Observation, space: ActionSpace,
-    memories: list[MemoryEntry],
+    memories: list[StepMemory],
 ) -> Decision:
 ```
 
@@ -261,7 +261,7 @@ intent 分派删掉之后它没有任何读者，随之删除（`load_sections()
 ```python
 def reflect(
     self, before: Observation, action: Action, after: Observation
-) -> MemoryEntry:
+) -> StepMemory:
 ```
 
 前置条件：`action.rationale` 非空（`assert`）。
@@ -288,7 +288,7 @@ def reflect(
 
 ```python
 def judge(
-    self, goal: Goal, obs: Observation, history: Sequence[MemoryEntry] = ()
+    self, goal: Goal, obs: Observation, history: Sequence[StepMemory] = ()
 ) -> Verdict:
 ```
 
@@ -300,7 +300,7 @@ def judge(
 
 ### 6.1 `history` 给的是证据，不是说辞
 
-`judge()` 现在有一个 `history: Sequence[MemoryEntry]` 参数（默认空元组，不传也要能判——多一份历史是多一份证据，不是必需品）。它是**本局最近几步**、按时间顺序、**不含 `rationale`** 的记录。
+`judge()` 现在有一个 `history: Sequence[StepMemory]` 参数（默认空元组，不传也要能判——多一份历史是多一份证据，不是必需品）。它是**本局最近几步**、按时间顺序、**不含 `rationale`** 的记录。
 
 需要它的原因：判定器需要看到最近几步，因为证据可能出现在三步之前那一帧的对话框里——尤其是子目标场景：一条第 10 步才被压入栈的子目标，前 9 步根本没有人问过它，那几帧画面因此永远丢失（如果只让判定器看当前这一帧）。旧版本靠"每一步都重新问一次"来兜底，但兜不住这个"证据已经翻篇"的洞。
 
@@ -361,4 +361,4 @@ JUDGE_BLIND: frozenset[str] = frozenset({
 
 ## 7. Brain 如何被 Harness 使用
 
-`Brain` 是 `BrainPort` 的实现，被 Harness 通过 Protocol 类型持有和调用；Harness 负责控制主循环、检索并传入 `memories`/`history`、把 `Decision.calls` 和 `Verdict.call` 翻译成 trace 事件、把 `reflect()` 返回的 `MemoryEntry` 落库、以及决定 `choose()` 返回 `action=None` 或 `judge()` 判定失败时这一局该如何处理。Harness 内部的循环控制、记账翻译、检索策略、`JUDGE_HISTORY` 窗口大小等具体机制属于 Harness 模块自身的规格范围，本文档不展开。
+`Brain` 是 `BrainPort` 的实现，被 Harness 通过 Protocol 类型持有和调用；Harness 负责控制主循环、检索并传入 `memories`/`history`、把 `Decision.calls` 和 `Verdict.call` 翻译成 trace 事件、把 `reflect()` 返回的 `StepMemory` 落库、以及决定 `choose()` 返回 `action=None` 或 `judge()` 判定失败时这一局该如何处理。Harness 内部的循环控制、记账翻译、检索策略、`JUDGE_HISTORY` 窗口大小等具体机制属于 Harness 模块自身的规格范围，本文档不展开。

@@ -115,9 +115,9 @@
 
 | 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
 |---|---|---|---|---|
-| `query_episodic` | `query_episodic(self, query: str, limit: int = 5) -> list[MemoryEntry]` | `limit > 0` | 返回条数 `<= limit`；按相关性降序；**检索策略属于实现方**——调用方不知道也不该知道记忆从哪来、怎么排的 | 未文档化 |
-| `recent` | `recent(self, episode_id: str, limit: int) -> list[MemoryEntry]` | `limit > 0` | 返回条数 `<= limit`；全部来自 `episode_id` 这一局；最新的在最后 | 未文档化 |
-| `write_episodic` | `write_episodic(self, entry: MemoryEntry) -> None` | `entry.rationale` 非空——没有理由的经验取回来也没用，说不出当时为什么这么判断，也就无法检查那个判断现在还成不成立 | 无返回值 | 未文档化 |
+| `query_episodic` | `query_episodic(self, query: str, limit: int = 5) -> list[StepMemory]` | `limit > 0` | 返回条数 `<= limit`；按相关性降序；**检索策略属于实现方**——调用方不知道也不该知道记忆从哪来、怎么排的 | 未文档化 |
+| `recent` | `recent(self, episode_id: str, limit: int) -> list[StepMemory]` | `limit > 0` | 返回条数 `<= limit`；全部来自 `episode_id` 这一局；最新的在最后 | 未文档化 |
+| `write_episodic` | `write_episodic(self, entry: StepMemory) -> None` | `entry.rationale` 非空——没有理由的经验取回来也没用，说不出当时为什么这么判断，也就无法检查那个判断现在还成不成立 | 无返回值 | 未文档化 |
 | `episodic_size`（属性） | `@property episodic_size -> int` | 无 | 库里有多少条情景记忆；**A/B 实验的自变量之一**，要能被记进事件流 | 无 |
 
 语义记忆（object）：
@@ -162,7 +162,7 @@
 
 所以 `judge` 拿不到决策者的任何说辞：拿不到 thought、拿不到候选动作、拿不到历史里那几步的 `rationale`。**这条不许放宽。**
 
-`judge` **看得到**本局最近几步发生了什么（`history`）——那不是放宽，是补一个洞：证据可能在三步前那一帧的对话框里，而一条第 10 步才压进来的子目标，前 9 步根本没人问过它。**"发生过的事"和"它对那件事的主张"是两样东西**，只给前者——渲染时一律 `MemoryEntry.render(reason=False)`。
+`judge` **看得到**本局最近几步发生了什么（`history`）——那不是放宽，是补一个洞：证据可能在三步前那一帧的对话框里，而一条第 10 步才压进来的子目标，前 9 步根本没人问过它。**"发生过的事"和"它对那件事的主张"是两样东西**，只给前者——渲染时一律 `StepMemory.render(reason=False)`。
 
 目标栈接进来之后多了一条同样要紧的规则：**只有栈底那一层决定 episode 成败。** 子目标是 agent 自己压的，如果它完成也能写 `success`，agent 就可以压一个"我已经到家了"的子目标让判定器判它完成——成功率变成它自己发的奖状。所以子目标判成完成只弹栈，`success` 只在栈底那条被判成时才写。
 
@@ -180,9 +180,9 @@
 
 | 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
 |---|---|---|---|---|
-| `choose` | `choose(self, goals: list[Goal], obs: Observation, space: ActionSpace, memories: list[MemoryEntry]) -> Decision` | `space.names` 非空、`goals` 非空、`obs.done` 为 `False`（空动作空间是 Tools 的 bug，大脑不为它兜底） | `decision.action` 非 `None` 时其 `name` 属于 `space.names`；`decision.calls` 至少一条 | **重试全部失败时返回 `action=None`，不抛异常**——那是一类要被统计的失败模式，不是"再试试就好"，而"这一局要不要因此终止"是 Harness 的判断，大脑只如实汇报；**模型调不通（网络、鉴权）仍然会抛**（与 `judge` 对照） |
-| `judge` | `judge(self, goal: Goal, obs: Observation, history: Sequence[MemoryEntry] = ()) -> Verdict` | 无——哪怕 `obs` 是空的也要能回答（答案是"没完成"） | **永远返回 `Verdict`，不抛异常**；任何异常情况（解析失败、模型不回话、网络抖）一律判**没完成**；理由不对称：判成"完成"会立刻终止这一局且直接进实验数据，判成"没完成"只是多跑几步，下一步还有机会纠正，所以所有不确定都往"没完成"倒 | 见后置条件；这是与 `choose` 刻意不同的一点——判定器坏掉不该让一局崩掉,那会把一次本可标记为"判定失败"的事件变成一局丢失的数据；而决策模型真的调不通时，这一局本来就跑不下去，硬撑只会产出无意义的步骤 |
-| `reflect` | `reflect(self, before: Observation, action: Action, after: Observation) -> MemoryEntry` | `action.rationale` 非空 | 返回的 entry 内容完整（看到什么 → 为什么 → 做了什么 → 变成什么）；`episode_id` 留空由 Harness 盖章（和 `Observation.step` 一个道理——大脑不知道自己在哪一局）；**方法自己不写库**（写库是状态变更,大脑无状态,由 Harness 落库,"谁改了记忆"永远只有一个答案） | 未文档化 |
+| `choose` | `choose(self, goals: list[Goal], obs: Observation, space: ActionSpace, memories: list[StepMemory]) -> Decision` | `space.names` 非空、`goals` 非空、`obs.done` 为 `False`（空动作空间是 Tools 的 bug，大脑不为它兜底） | `decision.action` 非 `None` 时其 `name` 属于 `space.names`；`decision.calls` 至少一条 | **重试全部失败时返回 `action=None`，不抛异常**——那是一类要被统计的失败模式，不是"再试试就好"，而"这一局要不要因此终止"是 Harness 的判断，大脑只如实汇报；**模型调不通（网络、鉴权）仍然会抛**（与 `judge` 对照） |
+| `judge` | `judge(self, goal: Goal, obs: Observation, history: Sequence[StepMemory] = ()) -> Verdict` | 无——哪怕 `obs` 是空的也要能回答（答案是"没完成"） | **永远返回 `Verdict`，不抛异常**；任何异常情况（解析失败、模型不回话、网络抖）一律判**没完成**；理由不对称：判成"完成"会立刻终止这一局且直接进实验数据，判成"没完成"只是多跑几步，下一步还有机会纠正，所以所有不确定都往"没完成"倒 | 见后置条件；这是与 `choose` 刻意不同的一点——判定器坏掉不该让一局崩掉,那会把一次本可标记为"判定失败"的事件变成一局丢失的数据；而决策模型真的调不通时，这一局本来就跑不下去，硬撑只会产出无意义的步骤 |
+| `reflect` | `reflect(self, before: Observation, action: Action, after: Observation) -> StepMemory` | `action.rationale` 非空 | 返回的 entry 内容完整（看到什么 → 为什么 → 做了什么 → 变成什么）；`episode_id` 留空由 Harness 盖章（和 `Observation.step` 一个道理——大脑不知道自己在哪一局）；**方法自己不写库**（写库是状态变更,大脑无状态,由 Harness 落库,"谁改了记忆"永远只有一个答案） | 未文档化 |
 
 补充：`judge` 中任务目标和子目标走**同一个方法**，只是 `goal` 从目标栈的不同层取——判定在两种粒度上是同一回事：拿着一句判据去看一帧画面。分成两个方法只会得到两份要各自标定的 prompt。区分哪一层是调用方的事（Harness 在 trace 里标 `depth`）。
 

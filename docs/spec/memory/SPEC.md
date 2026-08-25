@@ -2,7 +2,7 @@
 
 覆盖文件：`memory/port.py`、`memory/util.py`、`memory/semantic/object_store.py`、
 `memory/semantic/__init__.py`，以及它们所依赖的类型定义
-`schemas/memory_semantic.py`（`ObjectFact`）、`schemas/observation.py`（`Place`、`Landmark`）；
+`schemas/object_fact.py`（`ObjectFact`）、`schemas/observation.py`（`Place`、`Landmark`）；
 以及新增的 `memory/knowledge/store.py`、`memory/knowledge/__init__.py`（第 6 节）。
 
 ---
@@ -72,7 +72,7 @@
 > 比如给判定器一份只读视图，类型层面就能保证它写不进去，不用靠约定。"
 
 三个 Protocol 都用 `@runtime_checkable` 装饰，`from __future__ import annotations`。
-依赖的类型：`ObjectFact`（来自 `schemas/memory_semantic.py`）、`Landmark`/`Place`
+依赖的类型：`ObjectFact`（来自 `schemas/object_fact.py`）、`Landmark`/`Place`
 （来自 `schemas/observation.py`）。
 
 ### 2.1 `SemanticObjectReader`
@@ -261,7 +261,7 @@ def __init__(self) -> None:
 - **key**：`Place.key`（`schemas/observation.py` 中定义为
   `f"{self.map_id}:{self.x}:{self.y}"`），即"`(map_id,x,y)` 的 key"——跨 episode
   稳定的字符串键。
-- **value**：一条 `ObjectFact`（定义于 `schemas/memory_semantic.py`，见第 5 节）。
+- **value**：一条 `ObjectFact`（定义于 `schemas/object_fact.py`，见第 5 节）。
 - 类注释直接点明："**语义记忆的全部状态都在这一个字典里。**"
 
 ### 4.3 各方法行为
@@ -310,7 +310,7 @@ def __init__(self) -> None:
   按 `place.key` 取已有档案，或以调用方给的 `kind` 新建一条（此路径下
   `first_seen` 使用 `ObjectFact` 的默认值，不像 `see()` 那样传入 `stamp`）；
   `touched` 计数加一；若 `text` 非空，调用 `ObjectFact.see(text)`
-  （定义在 `schemas/memory_semantic.py`，做滚动窗口文本拼接，见第 5 节）
+  （定义在 `schemas/object_fact.py`，做滚动窗口文本拼接，见第 5 节）
   把这句话记入 `lines`。返回该档案。
 
 - `record_attempt(self, place: Place, kind: str, key_desc: str, result: str) -> ObjectFact`
@@ -342,8 +342,8 @@ def __init__(self) -> None:
 ## 5. `memory/` 与 `schemas/` 层的关系：为什么 `ObjectFact` 不在这个包内部
 
 `memory/port.py` 与 `memory/semantic/object_store.py` 读写的数据类型
-`ObjectFact`，其定义位于 `schemas/memory_semantic.py`，不在 `memory/` 包内部。
-`schemas/memory_semantic.py` 顶部与 `ObjectFact` 类文档给出了理由：
+`ObjectFact`，其定义位于 `schemas/object_fact.py`，不在 `memory/` 包内部。
+`schemas/object_fact.py` 顶部与 `ObjectFact` 类文档给出了理由：
 
 1. **它是跨层契约的一部分，但只跨这一小段**：
    > "从不出现在 `WorldPort`/`GameToolPort` 的签名里，只出现在 `MemoryToolPort`

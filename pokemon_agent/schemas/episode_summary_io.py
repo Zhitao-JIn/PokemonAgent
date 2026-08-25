@@ -2,6 +2,17 @@
 
 **和 `EpisodeMemory` 分开**：那个是落库、被检索的形状；这个是模型输出的形状。
 合成一个的话，改存储字段就会连带改 prompt 的输出契约，两件事被绑死。
+
+**这里没有记忆，只有一次调用的两个方向。** 名字里的 `_io` 是有意的：
+`EpisodeSummaryRequest` 那半是喂进去的，`EpisodeSummaryResponse` 那半是吐出来的，
+只叫 `request` 会和住在同一个文件里的 response 直接打架，
+而原来的 `memory_episode_summary.py` 挂着 `memory_` 前缀，看上去像第三种记忆。
+和 `episode_memory.py` 并排读：那个是**存储形状**，这个是**线上形状**。
+
+**一个例外**：`EpisodeMemoryContent` 定义在这里，却被 `EpisodeMemory.content`
+拿去当落库字段——也就是说模型输出的形状直接成了存储的形状，这跟上面那句
+"两件事必须分开"是半个矛盾。留着是因为现在两边确实一字不差，
+但**哪天蒸馏的输出要加字段而存储不想跟着变，第一件事就是把它拆开**。
 """
 
 from __future__ import annotations

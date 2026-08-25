@@ -146,7 +146,11 @@ def choose(self, obs: Observation, space: ActionSpace) -> Action:
 
 ```
 pokemon_agent/
-├── schemas/          Pydantic 数据模型（Observation / Action / ActionSpace / MemoryEntry / TraceEvent / Completion）
+├── schemas/          Pydantic 数据模型。记忆一族按**检索单元**命名，不按学名：
+│                     step_memory（一条=一步）/ episode_memory（一条=一整局）/
+│                     object_fact（一条=一格）/ knowledge（不挂坐标的先验）/
+│                     episode_summary_io（蒸馏那次调用的请求+响应，不是记忆）
+│                     其余：Observation / Action / ActionSpace / TraceEvent / Completion
 ├── interfaces/       Protocol 定义：LLMProvider、ToolPort（五个 MCP 工具）、TracePort
 ├── brain/            ReAct 循环。无状态。只依赖 interfaces + schemas
 ├── harness/          状态管理、工具注册、trace、成本统计（本阶段大部分是壳）

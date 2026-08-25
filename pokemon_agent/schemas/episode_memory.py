@@ -1,6 +1,6 @@
 """跨局摘要记忆：**一整局蒸馏出来的一条经验**。
 
-和单步情景记忆（`memory_episodic.py`）是两类东西，检索单元不同：那边一条 = 一步，
+和单步情景记忆（`step_memory.py`）是两类东西，检索单元不同：那边一条 = 一步，
 按发生顺序全量交给决策；这边一条 = 一整局，从别的局里按相关性挑几条回来。
 混成一类，"这一局攒了几条经验"和"沉淀出几条可复用摘要"这两个数就分不出来。
 
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from .memory_episode_summary import EpisodeMemoryContent
+from .episode_summary_io import EpisodeMemoryContent
 
 SCENE_ANY = "*"
 """"不限场景"的通配值。
@@ -63,7 +63,7 @@ class EpisodeMemory(BaseModel):
 
     def render(self) -> str:
         """渲染成进 prompt 的样子，**检索打分也用它**——理由同
-        `MemoryEntry.render`（`schemas/memory_episodic.py`）：两处用同一份文本，
+        `StepMemory.render`（`schemas/step_memory.py`）：两处用同一份文本，
         避免"按 A 的内容选中，却把 B 的内容喂进去"这种不报错的错位。
 
         渲染成进 prompt、也用于检索打分的那段文本。

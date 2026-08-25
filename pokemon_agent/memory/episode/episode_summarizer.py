@@ -1,6 +1,6 @@
 """把一整局的单步记忆蒸馏成一条跨局摘要记忆（`EpisodeMemory`）。
 
-**这是唯一一处"读一整局、写一条经验"的地方。** 输入是这一局全部的 `MemoryEntry`
+**这是唯一一处"读一整局、写一条经验"的地方。** 输入是这一局全部的 `StepMemory`
 加上成败结果，输出是一条带场景标注、能被别的局检索到的经验。
 
 解析不出合法结构时抛 `ValueError`，**但抛之前先留一条 `ERROR` trace 事件**——
@@ -20,8 +20,8 @@ import jinja2
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.interfaces.trace import TracePort
 from pokemon_agent.memory.episode.utils import _create_episode_memory
-from pokemon_agent.schemas.memory_episode import EpisodeMemory
-from pokemon_agent.schemas.memory_episode_summary import EpisodeContext, EpisodeSummaryResponse
+from pokemon_agent.schemas.episode_memory import EpisodeMemory
+from pokemon_agent.schemas.episode_summary_io import EpisodeContext, EpisodeSummaryResponse
 from pokemon_agent.schemas.trace import EventType, Source
 
 

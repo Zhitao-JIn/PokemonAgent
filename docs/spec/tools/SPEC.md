@@ -198,11 +198,11 @@ world"**。`VisionProvider` 留在 `PyBoyWorld` 里，理由是 `Observation` �
 ```python
 class MemoryTool:
     def __init__(self, objects: SemanticObjectStore | None = None) -> None:
-        self._episodes: list[MemoryEntry] = []
+        self._episodes: list[StepMemory] = []
         self._objects: SemanticObjectStore = objects or ObjectMemory()
 ```
 
-- `_episodes: list[MemoryEntry]` —— 情景记忆，简单的列表。
+- `_episodes: list[StepMemory]` —— 情景记忆，简单的列表。
 - `_objects: SemanticObjectStore` —— 语义记忆（object）存储，默认创建一个
   `ObjectMemory()`，但接受注入。docstring 强调：**类型标成协议**（
   `SemanticObjectStore`），测试可以喂一个假实现，将来换存储后端也不用碰这个
@@ -220,7 +220,7 @@ class MemoryTool:
 
 ### 3.2 情景记忆（episodic）
 
-#### 3.2.1 `query_episodic(query: str, limit: int = 5) -> list[MemoryEntry]`
+#### 3.2.1 `query_episodic(query: str, limit: int = 5) -> list[StepMemory]`
 
 ```python
 assert limit > 0, f"limit must be > 0, got {limit}"
@@ -262,7 +262,7 @@ step 倒序返回最近 N 条"。写这段的用意：做「有记忆 vs 无记�
 很容易把"最近 N 条也有用"误读成"检索有用"——那是两个完全不同的结论。文中
 预告"机制一（状态归并 + 向量检索）"要换掉的就是这个方法体。
 
-#### 3.2.2 `recent(episode_id: str, limit: int) -> list[MemoryEntry]`
+#### 3.2.2 `recent(episode_id: str, limit: int) -> list[StepMemory]`
 
 ```python
 assert limit > 0, "recent() needs a positive limit"
@@ -280,7 +280,7 @@ return [m for m in self._episodes if m.episode_id == episode_id][-limit:]
 对话框里），但跨 episode 的历史会造出另一种错——上一局说过的那句话让它在
 **第 0 步**就判完成。
 
-#### 3.2.3 `write_episodic(entry: MemoryEntry) -> None`
+#### 3.2.3 `write_episodic(entry: StepMemory) -> None`
 
 ```python
 assert entry.rationale, "write_episodic() got an entry without a rationale"
@@ -579,9 +579,9 @@ def knowledge_base(self) -> str:
 
 | 方法 | 签名 | 要点 |
 |---|---|---|
-| `query_episodic` | `(query: str, limit: int = 5) -> list[MemoryEntry]` | 前置：`limit > 0`；后置：条数 ≤ limit，按相关性降序；检索策略属于实现方 |
-| `recent` | `(episode_id: str, limit: int) -> list[MemoryEntry]` | 前置：`limit > 0`；后置：条数 ≤ limit，全部来自该 episode，最新在最后 |
-| `write_episodic` | `(entry: MemoryEntry) -> None` | 前置：`entry.rationale` 非空 |
+| `query_episodic` | `(query: str, limit: int = 5) -> list[StepMemory]` | 前置：`limit > 0`；后置：条数 ≤ limit，按相关性降序；检索策略属于实现方 |
+| `recent` | `(episode_id: str, limit: int) -> list[StepMemory]` | 前置：`limit > 0`；后置：条数 ≤ limit，全部来自该 episode，最新在最后 |
+| `write_episodic` | `(entry: StepMemory) -> None` | 前置：`entry.rationale` 非空 |
 | `episodic_size`（property） | `-> int` | 库里情景记忆条数；A/B 实验自变量 |
 | `known_here` | `(obs: Observation) -> str` | 后置：`obs.place` 为 None 或无已知条目时返回空串 |
 | `knowledge_base` | `() -> str` | 和坐标无关的通用先验；不筛选，全部拼接；每次调用重新读盘，不缓存；库为空返回空串 |
@@ -611,7 +611,7 @@ def knowledge_base(self) -> str:
   "底层协议，不是大脑看到的接口"：大脑连"语义记忆"这个词都不该知道；
   `MemoryTool` 组合这个协议、翻译成 Harness 能用的方法，
   `interfaces/tools.py` 的 `MemoryToolPort` 才是 Harness 真正认识的那一层。
-  情景记忆（`self._episodes: list[MemoryEntry]`）则没有额外协议层，直接是
+  情景记忆（`self._episodes: list[StepMemory]`）则没有额外协议层，直接是
   `MemoryTool` 自己管理的列表。
 
 - **`MemoryTool.knowledge_base()` 直接转发 `memory/knowledge/store.py` 的

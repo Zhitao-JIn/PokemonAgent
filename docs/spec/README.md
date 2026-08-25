@@ -36,7 +36,7 @@ probe/             命令行脚本（跑真实 episode、调试工具）
 各模块的详细规格：
 
 - [`schemas/SPEC.md`](schemas/SPEC.md) —— 六个契约文件（task/observation/action/
-  memory_episodic/memory_semantic/trace）的完整类型定义
+  step_memory/object_fact/trace）的完整类型定义
 - [`memory/SPEC.md`](memory/SPEC.md) —— 语义记忆存储层：三个协议 + 两个纯函数 +
   一个实现类
 - [`tools/SPEC.md`](tools/SPEC.md) —— `GameTools`/`MemoryTool`：Harness 唯一认识的
@@ -103,8 +103,8 @@ build.py ── 全项目唯一一处具体类的 `new`
    `TerrainMap` → 组装成 `Observation`。`known_objects`/`knowledge` **不在这里拼**——
    `_observe()` 只产出这一帧实际看到的东西，语义记忆的读挪到下一步。
 2. **retrieve_memory**：`Harness` 调 `MemoryToolPort.query_episodic()` →
-   `MemoryTool._overlap()` 按字符重叠打分，取回 `list[MemoryEntry]`
-   （`schemas/memory_episodic.py`）；同一个节点里再调
+   `MemoryTool._overlap()` 按字符重叠打分，取回 `list[StepMemory]`
+   （`schemas/step_memory.py`）；同一个节点里再调
    `MemoryToolPort.known_here()` 把语义记忆拼进 `facts["known_objects"]`、
    `MemoryToolPort.knowledge_base()`（每次都重新读盘）拼进 `facts["knowledge"]`——
    三种记忆的读共用这一个图节点，判定（`_judge`）已经在上一步跑完，
@@ -118,7 +118,7 @@ build.py ── 全项目唯一一处具体类的 `new`
    拆子目标的机制要在别处重写，所以 `Intent` 连同分派一起删了（见
    [`harness/SPEC.md`](harness/SPEC.md) 3.1）。
 5. **remember**（只在 press 之后）：`Harness` 调 `BrainPort.reflect()` 把
-   前后两份 `Observation` 整理成一条 `MemoryEntry`，写回
+   前后两份 `Observation` 整理成一条 `StepMemory`，写回
    `MemoryToolPort.write_episodic()`；再调 `MemoryToolPort.note_step()`
    把这一步的语义记忆（门/招牌/人给出的信息）落进 `memory/` 包。
 6. **summarize**（只在终止那一轮）：`look` 判出 `done` 之后不进 `retrieve_memory`，
@@ -161,7 +161,7 @@ build.py ── 全项目唯一一处具体类的 `new`
   逐字段对应，所以它们写在相邻两行、从同一个 `obs` 派生。算在两个地方的话，
   漂移时**没有任何东西会报错**——返回值说成功、事件流说失败，要等到对账才发现。
 - **跨层类型 vs 模块内部类型的界限很刻意。** `ObjectFact` 定义在
-  `schemas/memory_semantic.py` 而不是 `memory/` 包内部，因为它要出现在
+  `schemas/object_fact.py` 而不是 `memory/` 包内部，因为它要出现在
   `MemoryToolPort` 的签名里（跨层）；`ScreenState`/`TerrainMap` 虽然也在
   `schemas/observation.py`，但明确标注"不跨层"——只在 `PyBoyWorld` 内部
   产出、就地转换成 `Observation.facts` 里的字符串。

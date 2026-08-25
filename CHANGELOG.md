@@ -1,5 +1,27 @@
 # 变更日志
 
+## 2026-08-25 —— schemas 里的记忆一族按检索单元重命名
+**改了什么**：
+`memory_episodic.py` → `step_memory.py`（`MemoryEntry` → `StepMemory`，`Snapshot` 不动）、
+`memory_episode.py` → `episode_memory.py`、
+`memory_episode_summary.py` → `episode_summary_io.py`、
+`memory_semantic.py` → `object_fact.py`。26 个文件里的 import、docstring、
+docs/spec 与 CLAUDE.md 的目录说明一起改。**只改名字，一行行为都没动。**
+**为什么这么改**：`episodic` 和 `episode` 靠一个词尾区分"一条=一步"和"一条=一整局"——
+那是英语的语法差别，不是概念差别，读的人没有任何线索去猜哪个是哪个（这三个文件的
+检索单元完全不同，选错就是把一整局的经验当成一步喂进去）。`MemoryEntry` 的
+「Entry」等于什么都没说，而这个类的全部要点恰恰是"一条 = 一步"。
+`memory_episode_summary.py` 里**根本没有记忆**，全是蒸馏那次 LLM 调用的请求/响应契约，
+挂着 `memory_` 前缀会被当成第三种记忆。
+**取舍**：`Snapshot` 留着不改——它在 `StepMemory` 的上下文里意思很清楚，
+换成 `ObservationDigest` 只是更长。`episode_summary_io` 的 `_io` 是必要的：文件里
+`EpisodeSummaryRequest` 和 `EpisodeSummaryResponse` 各占一半，只叫 `..._request`
+会和住在同一个文件里的 response 直接打架；"summary" 保留是因为它已经是这条链路上
+大家在用的词，换成 `distill_*` 的收益不抵重新建立词汇的成本。
+一个文件一个主类的对应关系现在是硬的：读 `schemas/` 的目录就知道有几种记忆。
+**影响面**：纯重命名，无行为变更；旧的落盘数据不受影响（存的是字段，不是类名）。
+外部若有脚本 `from pokemon_agent.schemas.memory_episodic import MemoryEntry` 要跟着改。
+
 ## 2026-08-25 —— 删掉测试里那个接管审批的 fixture
 **改了什么**：`tests/test_run_experiment.py` 的 `approved` fixture 及其 `sys.stdin` 接管删除，
 文件头的说明改成现状。

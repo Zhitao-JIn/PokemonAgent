@@ -30,10 +30,10 @@ from pokemon_agent.memory.episode.episode_summarizer import EpisodeMemoryGenerat
 from pokemon_agent.memory.semantic.retrieval import hybrid_retrieve
 from pokemon_agent.memory.episode.utils import _get_episode_memories, _memory_entry_to_episode_steps
 from pokemon_agent.schemas.action import Action
-from pokemon_agent.schemas.memory_episode import EpisodeMemory
+from pokemon_agent.schemas.episode_memory import EpisodeMemory
 from pokemon_agent.schemas.knowledge import KnowledgeQueryResult
-from pokemon_agent.schemas.memory_episode_summary import EpisodeContext
-from pokemon_agent.schemas.memory_episodic import MemoryEntry
+from pokemon_agent.schemas.episode_summary_io import EpisodeContext
+from pokemon_agent.schemas.step_memory import StepMemory
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.interfaces.trace import TracePort
 from pokemon_agent.interfaces.llm import LLMProvider
@@ -43,7 +43,7 @@ from pokemon_agent.memory.semantic.knowledge.store import mtime as _knowledge_di
 from pokemon_agent.interfaces.semantic_memory import SemanticObjectStore
 from pokemon_agent.memory.semantic.object_store import ObjectMemory
 from pokemon_agent.memory.semantic.util import kind_in_frame, parse_landmarks, surrounding_cells
-from pokemon_agent.schemas.memory_semantic import (
+from pokemon_agent.schemas.object_fact import (
     RESULT_DIALOG,
     RESULT_NONE,
     RESULT_WARP_PREFIX,
@@ -103,7 +103,7 @@ class MemoryTool:
         objects: SemanticObjectStore | None = None,
     ) -> None:
         """接好四类记忆的后端，备好检索器与索引缓存。"""
-        self._episodes: list[MemoryEntry] = []
+        self._episodes: list[StepMemory] = []
         self._episode_memories: list[EpisodeMemory] = []
         self._episode_memory_vectors: dict[str, list[float]] = {}
         """`episode_id → embedding`，**写入时算好、缓存住**——查询时只用现算
@@ -124,7 +124,7 @@ class MemoryTool:
     # ---- 情景记忆：episodic（单步，全量，不检索） ----
 
     @require_permission("read:memory:episodic")
-    def query_episode_steps(self, episode_id: str) -> list[MemoryEntry]:
+    def query_episode_steps(self, episode_id: str) -> list[StepMemory]:
         """取这一局全部的单步情景记忆，按 step 升序。"""
         assert episode_id, "query_episode_steps() needs a non-empty episode_id"
         hits = sorted(
@@ -134,13 +134,13 @@ class MemoryTool:
         return hits
 
     @require_permission("read:memory:episodic")
-    def query_recent_steps(self, episode_id: str, limit: int) -> list[MemoryEntry]:
+    def query_recent_steps(self, episode_id: str, limit: int) -> list[StepMemory]:
         """取这一局最近几条情景记忆。"""
         assert limit > 0, "query_recent_steps() needs a positive limit"
         return [m for m in self._episodes if m.episode_id == episode_id][-limit:]
 
     @require_permission("write:memory:episodic")
-    def store_episode_step(self, entry: MemoryEntry) -> None:
+    def store_episode_step(self, entry: StepMemory) -> None:
         """写入一条情景记忆。"""
         assert entry.rationale, "store_episode_step() got an entry without a rationale"
         self._episodes.append(entry)

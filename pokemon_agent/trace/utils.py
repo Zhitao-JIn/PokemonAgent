@@ -18,9 +18,9 @@ from __future__ import annotations
 import json
 
 from pokemon_agent.schemas.action import Action, Goal
-from pokemon_agent.schemas.memory_episode import EpisodeMemory
-from pokemon_agent.schemas.memory_episodic import MemoryEntry
-from pokemon_agent.schemas.memory_semantic import ObjectFact
+from pokemon_agent.schemas.episode_memory import EpisodeMemory
+from pokemon_agent.schemas.step_memory import StepMemory
+from pokemon_agent.schemas.object_fact import ObjectFact
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.schemas.task import Task
 from pokemon_agent.schemas.trace import EpisodeOutcome, EventType, ModelCall, Source
@@ -137,7 +137,7 @@ def observe(episode_id: str, obs: Observation, goals: list[Goal], frame_sha: str
 
 
 def memory_read(
-    episode_id: str, step: int, memories: list[MemoryEntry],
+    episode_id: str, step: int, memories: list[StepMemory],
     known_objects: str = "", knowledge: str = "",
     episode_memories: list[EpisodeMemory] = (),
     knowledge_sources: list[str] = (),
@@ -232,7 +232,7 @@ def act(episode_id: str, step: int, action: Action, message: str) -> AppendArgs:
     )
 
 
-def memory_write(episode_id: str, step: int, entry: MemoryEntry) -> AppendArgs:
+def memory_write(episode_id: str, step: int, entry: StepMemory) -> AppendArgs:
     """把新写入的那条情景记忆拼成事件。"""
     return (
         episode_id, step, EventType.MEMORY_WRITE, Source.HARNESS,

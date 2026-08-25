@@ -1,32 +1,32 @@
 """蒸馏跨局摘要时用的几个纯函数：把一局的单步记忆压成能进 prompt 的形状。
 
 单独拎出来是因为它们不碰模型也不碰库，可以脱离 LLM 单测——
-给一串 `MemoryEntry` 断言压出来的文本长什么样，不需要造假 provider。
+给一串 `StepMemory` 断言压出来的文本长什么样，不需要造假 provider。
 """
 
 from __future__ import annotations
 
 from typing import List, Dict, Any
 
-from pokemon_agent.schemas.memory_episode import EpisodeMemory
-from pokemon_agent.schemas.memory_episode_summary import EpisodeMemoryContent, EpisodeStep
-from pokemon_agent.schemas.memory_episodic import MemoryEntry
+from pokemon_agent.schemas.episode_memory import EpisodeMemory
+from pokemon_agent.schemas.episode_summary_io import EpisodeMemoryContent, EpisodeStep
+from pokemon_agent.schemas.step_memory import StepMemory
 
 
 def _get_episode_memories(
-    memory_entries: List[MemoryEntry],
+    memory_entries: List[StepMemory],
     episode_id: str
-) -> List[MemoryEntry]:
+) -> List[StepMemory]:
     """获取特定episode的所有基础（单步）记忆条目。"""
     return [m for m in memory_entries if m.episode_id == episode_id]
 
 
 def _memory_entry_to_episode_steps(
-    entries: List[MemoryEntry]
+    entries: List[StepMemory]
 ) -> List[EpisodeStep]:
-    """把单步记忆（`MemoryEntry`）序列，整理成喂给蒸馏 prompt 的 `EpisodeStep` 序列。
+    """把单步记忆（`StepMemory`）序列，整理成喂给蒸馏 prompt 的 `EpisodeStep` 序列。
 
-    `MemoryEntry` 本身不含"场景"这个字段（它按位置检索，不按场景分类），
+    `StepMemory` 本身不含"场景"这个字段（它按位置检索，不按场景分类），
     这里用 `before.position` 兜底填 `scene`——蒸馏 prompt 只需要一个人可读的
     场景标识，不需要结构化的 `map_id`。
 

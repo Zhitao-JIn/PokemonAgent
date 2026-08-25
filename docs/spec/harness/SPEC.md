@@ -85,7 +85,7 @@ Harness 这一侧只承担一件事：**权限失败不能让这一局从 trace 
 | `why` | `str` | `""` | 判成功时的依据。成功率是要报的数字，每个 `True` 都得说得出依据 |
 | `observation` | `Observation \| None` | `None` | 当前这一步 `look` 拿到的观测 |
 | `space` | `ActionSpace \| None` | `None` | 本步可用按键 |
-| `memories` | `list[MemoryEntry]` | `[]` | `retrieve_memory` 查出来、给这一步 `think` 用的情景记忆 |
+| `memories` | `list[StepMemory]` | `[]` | `retrieve_memory` 查出来、给这一步 `think` 用的情景记忆 |
 | `action` | `Action \| None` | `None` | `think` 选出的动作 |
 | `press_result` | `Observation \| None` | `None` | `press` 执行后的新观测，交给紧跟着的 `remember` |
 
@@ -367,7 +367,7 @@ return update
 
 ### 5.2 常量
 
-- `JUDGE_HISTORY = 3` —— 判定器能看到本局最近几步。不是 0：证据可能在三步以前那一帧的对话框里。也不是"全部"：判定是每步一次，条数一多成本就跟着步数增长。历史里**不含 `rationale`**（`MemoryEntry.render(reason=False)`）——发生过的事给判定器看，决策者对那件事的主张不给。
+- `JUDGE_HISTORY = 3` —— 判定器能看到本局最近几步。不是 0：证据可能在三步以前那一帧的对话框里。也不是"全部"：判定是每步一次，条数一多成本就跟着步数增长。历史里**不含 `rationale`**（`StepMemory.render(reason=False)`）——发生过的事给判定器看，决策者对那件事的主张不给。
 
 ---
 

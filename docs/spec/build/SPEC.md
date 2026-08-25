@@ -863,7 +863,7 @@ self._step_shown: tuple[str, int] | None = None
 
 - **`MEMORY_WRITE`**：用 `_wrapped("remember", content)` 打印。注释说明 content
   里已经带着 rationale（这一步为什么这么选，只有它记下来了）；并说明**不再把
-  `ref` 前置**在标签里，因为 `MemoryEntry.render()` 自己开头就已经是那个坐标信息，
+  `ref` 前置**在标签里，因为 `StepMemory.render()` 自己开头就已经是那个坐标信息，
   再拼一次会变成重复的 `(ep, 2) (ep, 2) 当时看到…`。
 
 - **`ERROR`**：用 `_wrapped("ERROR", reason)` 打印失败原因原文。

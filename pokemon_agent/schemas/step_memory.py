@@ -1,7 +1,16 @@
-"""情景记忆契约：**我在那种画面里选了什么、结果如何。**
+"""单步记忆契约：**我在那种画面里选了什么、结果如何。** 一条 = 一步。
 
-作用域是**一次经过**，取回来靠画面相似，有时效。不要和语义记忆混淆——
-那答的是"世界是什么样"，自带作用域，域内永远为真（见 `schemas/memory_semantic.py`）。
+作用域是**一次经过**，取回来靠画面相似，有时效。三类记忆的分工：
+
+    step_memory.py      一条 = 一步       本局全量按顺序交给决策
+    episode_memory.py   一条 = 一整局     从别的局里按相关性挑几条
+    object_fact.py      一条 = 一格       "世界是什么样"，域内永远为真
+
+这个文件以前叫 `memory_episodic.py`，隔壁那个叫 `memory_episode.py`——
+**靠一个词尾区分"一步"和"一局"**，而那是英语的语法差别，不是概念上的差别，
+读的人没有任何线索去猜哪个是哪个。现在用 step / episode 分，一眼就分得开。
+同理 `MemoryEntry` 改叫 `StepMemory`：「Entry」（条目）等于什么都没说，
+而这个类的全部要点恰恰是"一条 = 一步"。
 """
 
 from __future__ import annotations
@@ -126,7 +135,7 @@ class Snapshot(BaseModel):
         )
 
 
-class MemoryEntry(BaseModel):
+class StepMemory(BaseModel):
     """一条情景记忆：**我看到这样的画面，因为这些理由，做了这个动作，然后变成了这样。**
 
     ## 为什么两头都是完整观察

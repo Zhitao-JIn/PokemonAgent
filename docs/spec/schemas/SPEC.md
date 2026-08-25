@@ -1,6 +1,6 @@
 # `schemas` 模块技术规格
 
-本文档覆盖 `pokemon_agent/schemas/` 下六个文件：`task.py`、`observation.py`、`action.py`、`memory_episodic.py`、`memory_semantic.py`、`trace.py`。
+本文档覆盖 `pokemon_agent/schemas/` 下六个文件：`task.py`、`observation.py`、`action.py`、`step_memory.py`、`object_fact.py`、`trace.py`。
 
 ---
 
@@ -14,8 +14,8 @@
   - `task.py` 整个文件都是跨层的（`Task` 出现在 `WorldPort.reset()`/`GameToolPort.reset()`）。
   - `observation.py` 里只有 `Observation`/`Place`/`Landmark` 跨层（出现在 `WorldPort`/`GameToolPort` 签名里）；`Scene`/`Overlay`/`ScreenState`/`TerrainMap` 及以下**不跨层**，是 `PyBoyWorld` 内部把一帧画面解析成结构化状态、再压成 `Observation.facts` 里字符串的中间产物，**大脑不该碰**。文件注释明确说这条边界"现在只能靠人守"——历史上曾靠 `react.py` 只 import `core` 强制，合并/拆分模块之后这层强制力已经不存在，只剩纪律约束。
   - `action.py` 整个文件跨层，出现在 `GameToolPort`/`BrainPort` 签名里。
-  - `memory_episodic.py`（`MemoryEntry`/`Snapshot`）不跨层描述未见于文件顶部，但其 import 只被记忆子系统内部使用；作用域是"一次经过"的经验。
-  - `memory_semantic.py` 的 `ObjectFact` **"跨层，但只跨这一小段"**：从不出现在 `WorldPort`/`GameToolPort` 签名里，只出现在 `MemoryToolPort`；大脑看不到 `ObjectFact` 这个类型本身，只看到 `known_objects` 里渲染出的一段文字。
+  - `step_memory.py`（`StepMemory`/`Snapshot`）不跨层描述未见于文件顶部，但其 import 只被记忆子系统内部使用；作用域是"一次经过"的经验。
+  - `object_fact.py` 的 `ObjectFact` **"跨层，但只跨这一小段"**：从不出现在 `WorldPort`/`GameToolPort` 签名里，只出现在 `MemoryToolPort`；大脑看不到 `ObjectFact` 这个类型本身，只看到 `known_objects` 里渲染出的一段文字。
   - `trace.py` 里 `ModelCall`/`Decision`/`Verdict` 出现在 `BrainPort` 签名里，`TraceEvent` 出现在 `TracePort` 签名里，均跨层。
 
 一句话总结这个分层原则：**跨层类型是不同子系统之间唯一被允许交换的数据形状；模块内部类型只在产生它的那个子系统内部流动，最终都要被"压平"成跨层类型能装下的形式（通常是字符串）交给下一层。**
@@ -29,14 +29,14 @@
 | `task.py` | 任务契约——一次尝试（episode）的成败判据与边界 |
 | `observation.py` | 感知契约——大脑在某一步看到的世界是什么样，以及"一帧画面怎么被解析成这个样子" |
 | `action.py` | 动作契约——大脑能做什么、选出来的一步长什么样 |
-| `memory_episodic.py` | 情景记忆契约——"我在那种画面里选了什么、结果如何"，作用域是一次经过、有时效 |
-| `memory_semantic.py` | 语义记忆契约——"世界是什么样"，自带作用域、域内恒真 |
+| `step_memory.py` | 情景记忆契约——"我在那种画面里选了什么、结果如何"，作用域是一次经过、有时效 |
+| `object_fact.py` | 语义记忆契约——"世界是什么样"，自带作用域、域内恒真 |
 | `trace.py` | Trace 契约——记账、判定结果、事件流 |
 | `completion.py` | 模型调用的返回值——文本模型的 `Completion`、视觉模型的 `VisionCompletion` |
 
 `observation.py` 内部虽然又分成"跨层的感知结果"（`Observation`/`Place`/`Landmark`）和"不跨层的画面解析中间产物"（`Scene`/`Overlay`/`ScreenState`/`TerrainMap`），但没有进一步拆成两个文件，理由是文件 docstring 明说的：**它们是同一件事的两个阶段**——"世界被感知成什么结构"和"结构怎么变成大脑看到的那份 `Observation`"——拆成两个文件反而要在中间加一层 import 才能看出这层因果关系，得不偿失。
 
-`memory_episodic.py` 与 `memory_semantic.py` 分成两个文件，是因为二者是本质不同的两类记忆，文件顶部各自都强调"不要与另一类混淆"：情景记忆答"我做了什么、结果如何"（有时效，取回靠画面相似）；语义记忆答"世界是什么样"（自带作用域、域内恒真，不会过期）。混在一个文件/一个模型里会把"这一格给了什么"和"水克火"这类不挂坐标的知识混进同一张表。
+`step_memory.py` 与 `object_fact.py` 分成两个文件，是因为二者是本质不同的两类记忆，文件顶部各自都强调"不要与另一类混淆"：情景记忆答"我做了什么、结果如何"（有时效，取回靠画面相似）；语义记忆答"世界是什么样"（自带作用域、域内恒真，不会过期）。混在一个文件/一个模型里会把"这一格给了什么"和"水克火"这类不挂坐标的知识混进同一张表。
 
 ### 0.3 文件间依赖关系
 
@@ -49,13 +49,13 @@ action.py
       │ from .action import Action
 trace.py
 
-memory_episodic.py  → from .observation import Observation
-memory_semantic.py  → from .observation import KIND_DOOR, Landmark
+step_memory.py  → from .observation import Observation
+object_fact.py  → from .observation import KIND_DOOR, Landmark
 
 task.py  (无对本模块内其他文件的依赖)
 ```
 
-即：`observation.py` 是全模块的地基（`Place`/`Landmark`/`Observation` 被 `action.py`、`memory_episodic.py`、`memory_semantic.py` 复用）；`action.py` 依赖 `observation.py`；`trace.py` 依赖 `action.py`（间接依赖 `observation.py`）；`task.py` 完全独立；`memory_episodic.py` 与 `memory_semantic.py` 都只依赖 `observation.py`，二者互不依赖。
+即：`observation.py` 是全模块的地基（`Place`/`Landmark`/`Observation` 被 `action.py`、`step_memory.py`、`object_fact.py` 复用）；`action.py` 依赖 `observation.py`；`trace.py` 依赖 `action.py`（间接依赖 `observation.py`）；`task.py` 完全独立；`step_memory.py` 与 `object_fact.py` 都只依赖 `observation.py`，二者互不依赖。
 
 ---
 
@@ -389,11 +389,11 @@ assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契�
 | `observation` | `Observation \| None` | `None` | 执行后的新观测；None 表示调用方需另行 `perceive()` |
 | `calls` | `list[dict[str, str]]` | `[]` | 推进这一步产生的模型调用记录（通常是执行后重新感知那一次）；语义同 `PerceptionResult.calls`：按序排列、失败也计入、空列表表示命中缓存无新调用（不是 None） |
 
-**设计理由（这里曾经有一个 `ok` 字段）**：原含义是"这个动作有没有产生预期效果"（撞墙=False）。在 `PyBoyWorld` 上它被写死成 `True`，因为从像素判断"这一下有没有改变世界"没有便宜可靠的办法（画面自带动画，比对不出因果）。一个恒为真的布尔值比没有更糟——它会出现在事件流和控制台判断分支里，让人误以为那里有信息，实际每条都是 True。要让它诚实唯一的办法是读内存坐标（走没走动），但那是为一个**没有消费方**的字段新增内存依赖。判断动作是否生效本应由前后两次观察对比来回答，而这件事情景记忆层（`MemoryEntry` 两头各存一份完整快照）已经在做，所以选择**删掉而不是补上**。
+**设计理由（这里曾经有一个 `ok` 字段）**：原含义是"这个动作有没有产生预期效果"（撞墙=False）。在 `PyBoyWorld` 上它被写死成 `True`，因为从像素判断"这一下有没有改变世界"没有便宜可靠的办法（画面自带动画，比对不出因果）。一个恒为真的布尔值比没有更糟——它会出现在事件流和控制台判断分支里，让人误以为那里有信息，实际每条都是 True。要让它诚实唯一的办法是读内存坐标（走没走动），但那是为一个**没有消费方**的字段新增内存依赖。判断动作是否生效本应由前后两次观察对比来回答，而这件事情景记忆层（`StepMemory` 两头各存一份完整快照）已经在做，所以选择**删掉而不是补上**。
 
 ---
 
-## 4. `memory_episodic.py`
+## 4. `step_memory.py`
 
 依赖：`from .observation import Observation`。
 
@@ -430,7 +430,7 @@ assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契�
 
 **校验逻辑说明（`same_place_as` 为什么不比较全部字段）**：`overview` 是模型每次重写的自然语言，同一帧也可能措辞不同（实测同一 frame sha 下出现过三种不同措辞），用它比较会把"没变"误判成"变了"。
 
-### 4.4 `MemoryEntry`
+### 4.4 `StepMemory`
 
 一条情景记忆：**我看到这样的画面，因为这些理由，做了这个动作，然后变成了这样**。
 
@@ -462,7 +462,7 @@ assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契�
 
 ---
 
-## 5. `memory_semantic.py`
+## 5. `object_fact.py`
 
 依赖：`from .observation import KIND_DOOR, Landmark`。
 
@@ -523,11 +523,11 @@ assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契�
 
 ### 5.5 常量：`MIN_STITCH = 6`（本文件内独立定义）
 
-**设计理由**：取值理由同 `memory_episodic.py` 的同名常量，但两处**各自独立定义**，因为拼接的是两种不同的滚动窗口内容（对话滚动 vs. 情景记忆的文本片段），没有必要共用同一个值。
+**设计理由**：取值理由同 `step_memory.py` 的同名常量，但两处**各自独立定义**，因为拼接的是两种不同的滚动窗口内容（对话滚动 vs. 情景记忆的文本片段），没有必要共用同一个值。
 
 ### 5.6 函数：`_stitch(prev, new) -> str | None`（本文件内独立定义）
 
-逻辑与 `memory_episodic.py` 中的同名函数完全一致，供 `ObjectFact.see` 使用；同样是本文件独立复制而非跨文件共享的实现。
+逻辑与 `step_memory.py` 中的同名函数完全一致，供 `ObjectFact.see` 使用；同样是本文件独立复制而非跨文件共享的实现。
 
 ---
 

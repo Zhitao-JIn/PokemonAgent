@@ -52,7 +52,7 @@ class ObjectFact(BaseModel):
 
     ## 为什么它和情景记忆是两种东西
 
-    情景记忆（`MemoryEntry`）记的是「我在那种画面里选了什么、结果如何」——
+    情景记忆（`StepMemory`）记的是「我在那种画面里选了什么、结果如何」——
     作用域是**一次经过**，取回来靠画面相似。
 
     这一条记的是「**地图39 x=2 y=3 那个人会说什么**」。作用域是那一格本身，
@@ -278,7 +278,7 @@ def _render_attempt(key: str, result: str) -> str:
 
 
 MIN_STITCH = 6
-"""拼接至少要重叠几个字符（见 `_stitch`）。取值理由同 `schemas/memory_episodic.py`
+"""拼接至少要重叠几个字符（见 `_stitch`）。取值理由同 `schemas/step_memory.py`
 的那份——两处各自独立，因为拼接的是两种不同的滚动窗口内容，没有必要共用一个值。
 """
 

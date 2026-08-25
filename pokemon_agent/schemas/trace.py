@@ -157,7 +157,7 @@ class EventType(str, Enum):
     ERROR = "error"
     CHECKPOINT = "checkpoint"
     EPISODE_MEMORY_WRITE = "episode_memory_write"
-    """写入一条跨局摘要记忆（`EpisodeMemory`，见 `schemas/memory_episode.py`）。
+    """写入一条跨局摘要记忆（`EpisodeMemory`，见 `schemas/episode_memory.py`）。
 
     **和 `MEMORY_WRITE` 分开**：那是单步记忆，一局内产生也可能一局内被读回；
     这条是一局结束后蒸馏出的摘要，跨局存在、跨局检索。混成一类，

@@ -37,7 +37,7 @@ from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.prompts import load as load_prompt
 from pokemon_agent.prompts.brain_hints import retry_note as _retry_note
 from pokemon_agent.schemas.action import MAX_RATIONALE, Action, ActionSegment, ActionSpace, Goal
-from pokemon_agent.schemas.memory_episodic import MemoryEntry, Snapshot
+from pokemon_agent.schemas.step_memory import StepMemory, Snapshot
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.schemas.trace import Decision, ModelCall, Verdict
 
@@ -101,7 +101,7 @@ class Brain:
     @require_permission("execute:llm:decision")
     def choose(
         self, goals: list[Goal], obs: Observation, space: ActionSpace,
-        memories: list[MemoryEntry],
+        memories: list[StepMemory],
     ) -> Decision:
         """选出下一步动作。一次 `choose()` = ReAct 的一轮 Thought → Action。
 
@@ -176,7 +176,7 @@ class Brain:
 
     @require_permission("execute:llm:judge")
     def judge(
-        self, goal: Goal, obs: Observation, history: Sequence[MemoryEntry] = ()
+        self, goal: Goal, obs: Observation, history: Sequence[StepMemory] = ()
     ) -> Verdict:
         """判断这个目标达成了没有。**永远返回 Verdict，不抛异常。**
 
@@ -254,12 +254,12 @@ class Brain:
     @require_permission("execute:llm:memory_reflection")
     def reflect(
         self, before: Observation, action: Action, after: Observation
-    ) -> MemoryEntry:
+    ) -> StepMemory:
         """把这一步整理成一条经验：**看到什么 → 为什么 → 做了什么 → 变成什么**。
 
         **本版不调模型**：四样东西都已经在参数里，让模型再复述一遍只会引入
         它自己的措辞偏差，还多烧一次调用。要不要上模型是以后的事，
-        接口按"可能会调"设计（返回 `MemoryEntry` 而不是就地写库）。
+        接口按"可能会调"设计（返回 `StepMemory` 而不是就地写库）。
 
         **这个方法自己不写库**：写库是状态变更，而大脑无状态。
         `episode_id` 也留空由 Harness 盖章——大脑不知道自己在哪一局。
@@ -269,7 +269,7 @@ class Brain:
         assert action.rationale, "reflect() got an action without a rationale"
 
         snapshot = Snapshot.of(before)
-        return MemoryEntry(
+        return StepMemory(
             before=snapshot,
             rationale=list(action.rationale),
             action=action.describe(),
@@ -287,7 +287,7 @@ class Brain:
         goals: list[Goal],
         obs: Observation,
         space: ActionSpace,
-        memories: list[MemoryEntry],
+        memories: list[StepMemory],
     ) -> str:
         """每次从参数完整组装，不留历史——"大脑无状态"在代码层面的体现。"""
         facts = "\n".join(f"- {k}: {v}" for k, v in obs.facts.items()) or "（无）"

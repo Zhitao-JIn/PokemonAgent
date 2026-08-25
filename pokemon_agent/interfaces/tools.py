@@ -19,9 +19,9 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from pokemon_agent.schemas.action import Action, ActionSpace, ToolResult
-from pokemon_agent.schemas.memory_episode import EpisodeMemory
-from pokemon_agent.schemas.memory_episodic import MemoryEntry
-from pokemon_agent.schemas.memory_semantic import ObjectFact
+from pokemon_agent.schemas.episode_memory import EpisodeMemory
+from pokemon_agent.schemas.step_memory import StepMemory
+from pokemon_agent.schemas.object_fact import ObjectFact
 from pokemon_agent.schemas.observation import PerceptionResult, Observation
 from pokemon_agent.schemas.knowledge import KnowledgeQueryResult
 from pokemon_agent.schemas.task import Task
@@ -118,13 +118,13 @@ class MemoryToolPort(Protocol):
 
     # ---- 情景记忆：episodic ----
 
-    def query_episode_steps(self, episode_id: str) -> list[MemoryEntry]:
+    def query_episode_steps(self, episode_id: str) -> list[StepMemory]:
         """**这一局**全部的单步情景记忆，按发生顺序（`step` 升序）。
 
         **不做相关性排序、不截断**——单步记忆本来就该完整保留：它记的是
         "这一步做过什么、结果如何"，是这一局自己的完整轨迹，不是从一个大库里
-        挑几条相关的出来，见 `schemas/memory_episode.py` 顶部对
-        `MemoryEntry`（单步、全量、限定这一局）和 `EpisodeMemory`（跨局、
+        挑几条相关的出来，见 `schemas/episode_memory.py` 顶部对
+        `StepMemory`（单步、全量、限定这一局）和 `EpisodeMemory`（跨局、
         检索、限定相关）的区分。
 
         前置条件：`episode_id` 非空。
@@ -134,7 +134,7 @@ class MemoryToolPort(Protocol):
         """
         ...
 
-    def query_recent_steps(self, episode_id: str, limit: int) -> list[MemoryEntry]:
+    def query_recent_steps(self, episode_id: str, limit: int) -> list[StepMemory]:
         """**这一局**最近几条情景记忆，按时间顺序。
 
         前置条件：limit > 0。
@@ -144,7 +144,7 @@ class MemoryToolPort(Protocol):
         """
         ...
 
-    def store_episode_step(self, entry: MemoryEntry) -> None:
+    def store_episode_step(self, entry: StepMemory) -> None:
         """写入一条情景记忆。
 
         前置条件：`entry.rationale` 非空。没有理由的经验取回来也没用——
@@ -161,8 +161,8 @@ class MemoryToolPort(Protocol):
 
     # ---- 跨局摘要记忆：episode memory ----
     #
-    # 和上面的"情景记忆"是两条不同的检索路径（见 `schemas/memory_episode.py` 顶部
-    # 对 `MemoryEntry` vs `EpisodeMemory` 的区分）：这里检索/写入的单元是**一整局**，
+    # 和上面的"情景记忆"是两条不同的检索路径（见 `schemas/episode_memory.py` 顶部
+    # 对 `StepMemory` vs `EpisodeMemory` 的区分）：这里检索/写入的单元是**一整局**，
     # 不是一步，一局内的单步记忆不会、也不该经这两个方法被跨局取走。
 
     def query_episode_summaries(self, scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]:

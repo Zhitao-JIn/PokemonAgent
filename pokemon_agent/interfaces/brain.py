@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
 from pokemon_agent.schemas.action import Action, ActionSpace, Goal
-from pokemon_agent.schemas.memory_episodic import MemoryEntry
+from pokemon_agent.schemas.step_memory import StepMemory
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.schemas.trace import Decision, Verdict
 
@@ -44,7 +44,7 @@ class BrainPort(Protocol):
 
     def choose(
         self, goals: list[Goal], obs: Observation, space: ActionSpace,
-        memories: list[MemoryEntry],
+        memories: list[StepMemory],
     ) -> Decision:
         """选出下一步动作，连同这次花了什么。
 
@@ -77,7 +77,7 @@ class BrainPort(Protocol):
         ...
 
     def judge(
-        self, goal: Goal, obs: Observation, history: Sequence[MemoryEntry] = ()
+        self, goal: Goal, obs: Observation, history: Sequence[StepMemory] = ()
     ) -> Verdict:
         """判断**这一个目标**达成了没有。**永远返回 Verdict，不抛异常。**
 
@@ -106,7 +106,7 @@ class BrainPort(Protocol):
 
     def reflect(
         self, before: Observation, action: Action, after: Observation
-    ) -> MemoryEntry:
+    ) -> StepMemory:
         """把这一步整理成一条可检索的经验：**看到什么 → 为什么 → 做了什么 → 变成什么**。
 
         前置条件：`action.rationale` 非空。
