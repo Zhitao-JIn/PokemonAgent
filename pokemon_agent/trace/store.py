@@ -250,8 +250,7 @@ class LocalTrace:
             print(f"{'remember':<{LABEL_W}} 写入一条情景记忆")
 
         elif type_ is EventType.OBJECT_NOTE:
-            print(f"{'object_note':<{LABEL_W}} key={p.get('key', '')} kind={p.get('kind', '')}")
-            print(self._wrapped("content", p.get("content", "")))
+            return
 
         elif type_ is EventType.GOAL_POP:
             print(f"{'goal_pop':<{LABEL_W}} depth={p.get('depth', '')} "

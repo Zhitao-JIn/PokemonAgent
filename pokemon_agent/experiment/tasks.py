@@ -3,10 +3,25 @@
 from __future__ import annotations
 
 from pokemon_agent.schemas.task import Task
+from pydantic import BaseModel, Field
 
 
-def knowledge_recall_tasks(max_steps: int = 15) -> list[Task]:
-    """返回建议自然耗时 5-15 步的 knowledge 召回短程任务。"""
+class TaskChain(BaseModel):
+    """按顺序执行的一组任务；链内任务共享同一个已装配的游戏世界。"""
+
+    chain_id: str = Field(description="实验任务链标识")
+    tasks: list[Task] = Field(min_length=1, description="按执行顺序排列的子任务")
+    initial_state_hint: str = Field(default="", description="任务链起始状态说明")
+
+    @property
+    def initial_task(self) -> Task:
+        """返回决定任务链初始存档的第一个子任务。"""
+        assert self.tasks, "task chain must contain at least one task"
+        return self.tasks[0]
+
+
+def knowledge_recall_tasks(max_steps: int = 15) -> list[TaskChain]:
+    """返回 knowledge 召回实验任务链；单任务统一表示为单节点链。"""
     cases = (
         ("wild_encounter", "在草丛中连续行走，直到确认遇到一只野生宝可梦",
          "画面出现战斗场景、野生宝可梦名称或明确遭遇提示", "野外草丛边缘，scene=field overlay=none"),
@@ -69,13 +84,37 @@ def knowledge_recall_tasks(max_steps: int = 15) -> list[Task]:
         "knowledge_pokemon_center_enter", "knowledge_pokemon_center_heal",
         "knowledge_pokemon_center_leave",
     }
-    return [
+    tasks = [
         Task(task_id=f"knowledge_{name}", goal=goal,
              success_criteria=criteria, max_steps=max_steps,
              initial_state_hint=state_hint)
         for name, goal, criteria, state_hint in cases
         if f"knowledge_{name}" in available_state_tasks
     ]
+    task_by_id = {task.task_id: task for task in tasks}
+    chain_specs = (
+        ("knowledge_encounter_and_battle", (
+            "knowledge_wild_encounter", "knowledge_battle_action_menu",
+        )),
+        ("knowledge_shop_purchase_flow", (
+            "knowledge_shop_open_buy_menu", "knowledge_shop_select_item",
+            "knowledge_shop_confirm_purchase",
+        )),
+        ("knowledge_pokemon_center_flow", (
+            "knowledge_pokemon_center_enter", "knowledge_pokemon_center_heal",
+            "knowledge_pokemon_center_leave",
+        )),
+    )
+    chains = [
+        TaskChain(chain_id=chain_id, tasks=[task_by_id[task_id] for task_id in task_ids])
+        for chain_id, task_ids in chain_specs
+        if all(task_id in task_by_id for task_id in task_ids)
+    ]
+    chains.extend(
+        TaskChain(chain_id=task.task_id, tasks=[task], initial_state_hint=task.initial_state_hint)
+        for task in tasks
+    )
+    return chains
 
 
 def episodic_recall_tasks(max_steps: int = 80) -> list[Task]:

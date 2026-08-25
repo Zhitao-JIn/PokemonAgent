@@ -1,6 +1,6 @@
 {
   "subject_id": "pokemon-agent",
-  "roles": ["trusted-agent"],
+  "roles": ["env"],
   "metadata": {
     "run_id": "runtime",
     "episode_id": "runtime",

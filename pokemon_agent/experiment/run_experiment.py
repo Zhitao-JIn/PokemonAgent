@@ -30,19 +30,21 @@ def main() -> None:
     parser.add_argument("--watch", action="store_true")
     args = parser.parse_args()
 
-    tasks = {task.task_id: task for task in knowledge_recall_tasks(args.max_steps)}
+    chains = {chain.chain_id: chain for chain in knowledge_recall_tasks(args.max_steps)}
     if not args.task_id:
-        for task in tasks.values():
-            print(f"{task.task_id}\t{task.initial_state_hint}")
+        for chain in chains.values():
+            task_names = " -> ".join(task.task_id for task in chain.tasks)
+            print(f"{chain.chain_id}\t{task_names}")
         return
-    assert args.task_id in tasks, f"unknown task_id: {args.task_id}"
+    assert args.task_id in chains, f"unknown task_id: {args.task_id}"
+    chain = chains[args.task_id]
 
     run_id = args.run_id or f"{datetime.now().strftime('%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
-    state = state_for_task(args.task_id)
+    state = state_for_task(chain.initial_task.task_id)
     manifest = RunManifest(
         run_id=run_id, started_at=datetime.now().isoformat(),
-        experiment_kind="single_episode", task_ids=[args.task_id],
-        initial_state=str(state), notes=f"knowledge short task: {args.task_id}",
+        experiment_kind="sequential_episodes", task_ids=[task.task_id for task in chain.tasks],
+        initial_state=str(state), notes=f"knowledge task chain: {args.task_id}",
         providers={
             "vision": {"model": "qwen3-vl-flash", "temperature": "0.0", "preprocess": "grid"},
             "text": {"model": "qwen-plus", "temperature": "0.7", "max_tokens": "25600"},
@@ -59,9 +61,24 @@ def main() -> None:
     harness, _, world = build_session(run_id, str(state), args.watch)
     try:
         print(f"[EXPERIMENT] run_id={run_id} task_id={args.task_id} state={state}")
-        outcome = run_one(harness, run_id, args.max_steps, tasks[args.task_id].goal)
-        update_task_stats(args.task_id, outcome)
-        print(outcome)
+        outcomes = []
+        for index, task in enumerate(chain.tasks, start=1):
+            print(f"[EXPERIMENT] chain step {index}/{len(chain.tasks)}: {task.task_id}")
+            outcome = run_one(harness, run_id, task.max_steps, task.goal)
+            outcome["task_id"] = task.task_id
+            outcomes.append(outcome)
+            update_task_stats(task.task_id, outcome)
+            if not outcome["success"]:
+                break
+        chain_outcome = {
+            "chain_id": chain.chain_id,
+            "success": len(outcomes) == len(chain.tasks) and all(
+                bool(outcome["success"]) for outcome in outcomes
+            ),
+            "tasks": outcomes,
+        }
+        update_task_stats(chain.chain_id, chain_outcome)
+        print(chain_outcome)
     finally:
         world.stop()
 
