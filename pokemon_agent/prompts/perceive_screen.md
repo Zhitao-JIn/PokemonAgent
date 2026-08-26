@@ -178,7 +178,10 @@ $known_map
   漏填是可以统计的，猜错是无法察觉的。
 - `dialog_text` 抄对话框里的全部文本，换行用空格连接。没有对话框就留空字符串。
 - `options` 按屏幕上从上到下的顺序列出选项原文。没有选择框就留空数组。
-- `cursor` 是光标指向第几项，从 0 开始。看不出光标位置就填 `null`。
+  **一行里有并排的两项时，先左后右**（战斗指令框就是这样，见下）。
+- `cursor` 是**光标指向的那一项的原文**，照抄，比如 `"RUN"`。**不是序号，不要数第几项。**
+  必须和 `options` 里的某一项**一字不差**——对不上会被当成没读准直接作废。
+  看不出光标停在哪就填 `null`，不要猜。
 - `scene=menu` 时 `title` 填这个菜单是什么（如 `状态`、`背包`、`精灵列表`、`主菜单`）；
   菜单里的条目放 `options`，**不要**把状态页上的属性数值硬塞进 `fields`——
   那部分本阶段不提取。
@@ -221,6 +224,21 @@ $known_map
 
 战斗画面没有地图可言，`overview` 照样要写。
 
+**指令框是 2×2，不是竖着的四行：**
+
+```
+FIGHT   PKMN
+ITEM    RUN
+```
+
+所以 `options` 写成 `["FIGHT", "PKMN", "ITEM", "RUN"]`——先左后右、先上后下。
+
+**`cursor` 要抄光标真正指着的那一项，光标可能在这四个位置的任何一个。**
+`▶` 在左下就是 `"ITEM"`，在右下就是 `"RUN"`。**不要默认它在 `FIGHT`**：
+指令框每次弹出时光标确实回到 `FIGHT`，但玩家按过方向键之后就不在那儿了，
+而我们问你的正是"现在在哪一项"——这一帧最容易读错、也最要紧的就是这个值。
+`▶` 被动画盖住、或者你不确定它指的是左边那列还是右边那列时，填 `null`。
+
 ```json
 {
   "scene": "battle",
@@ -233,7 +251,7 @@ $known_map
     "ITEM",
     "RUN"
   ],
-  "cursor": 0,
+  "cursor": "FIGHT",
   "fields": {
     "foe_name": "CHARMANDER",
     "foe_level": "5",
@@ -247,13 +265,13 @@ $known_map
 
 ### `menu`
 
-菜单条目放 `options`，`cursor` 是光标停在第几项（0 起）。
+菜单条目放 `options`，`cursor` 抄光标指向的那一项的原文。
 
 ```json
 {
   "scene": "menu",
   "overlay": "choice",
-  "overview": "画面右侧弹出一列主菜单条目，光标停在第二项。",
+  "overview": "画面右侧弹出一列主菜单条目，光标停在 POKéMON 上。",
   "dialog_text": "",
   "options": [
     "POKéDEX",
@@ -264,7 +282,7 @@ $known_map
     "OPTION",
     "EXIT"
   ],
-  "cursor": 1,
+  "cursor": "POKéMON",
   "fields": {
     "title": "主菜单"
   }
@@ -287,7 +305,7 @@ $known_map
     "ANTIDOTE",
     "CANCEL"
   ],
-  "cursor": 0,
+  "cursor": "POKé BALL",
   "fields": {
     "money": "3000",
     "items": "POKé BALL, POTION, ANTIDOTE"

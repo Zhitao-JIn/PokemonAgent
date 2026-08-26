@@ -95,7 +95,7 @@ def _status_line(s: ScreenState) -> str:
     if s.overlay is Overlay.DIALOG and s.dialog_text:
         bits.append(f"对话框：「{s.dialog_text}」")
     elif s.overlay is Overlay.CHOICE and s.options:
-        cur = f"，光标在第 {s.cursor + 1} 项" if s.cursor is not None else ""
+        cur = f"，光标在 {s.cursor}" if s.cursor else ""
         bits.append(f"可选项：{ '/ '.join(s.options) }{cur}")
     return "".join(bits)
 
@@ -259,8 +259,8 @@ class PyBoyWorld:
             facts["facing"] = terrain.facing
         if screen.options:
             facts["options"] = " / ".join(screen.options)
-        if screen.cursor is not None:
-            facts["cursor"] = str(screen.cursor)
+        if screen.cursor:
+            facts["cursor"] = screen.cursor
 
         obs = Observation(
             # **step / done / success 由 Harness 盖章，这里只给占位值。**

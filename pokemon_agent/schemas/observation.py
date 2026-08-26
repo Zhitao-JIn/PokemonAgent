@@ -213,7 +213,7 @@ OVERLAY_ACTIONS: dict[Overlay, tuple[str, ...]] = {
     # **给不出正确的键，换来的不是它不动，是它编一个能解释掩码的世界模型。**
     #
     # 代价是竖排选择框里左右成了空按键：按下去画面不变，白费一步。
-    # 这个代价可见（`Snapshot.same_place_as` 会把它记成"什么都没变"），
+    # 这个代价可见（记忆里前后两份快照摆在一起，字段一模一样），
     # 而够不着的选项不可见——只会表现为某个任务成功率恒为 0。
     Overlay.CHOICE: ("up", "down", "left", "right", "a", "b"),
 }
@@ -538,14 +538,35 @@ class ScreenState(BaseModel):
         default_factory=list,
         description="overlay=CHOICE 时的选项列表。**菜单的区别在这里，不在类型上**",
     )
-    cursor: int | None = Field(
-        default=None, description="overlay=CHOICE 时光标停在第几项，0 起；未知为 None"
+    cursor: str | None = Field(
+        default=None,
+        description="overlay=CHOICE 时光标指向的**那一项的原文**（`\"RUN\"`）；未知为 None。"
+        "**不是序号。** 要序号就得让视觉模型数数，而数数正是它最不擅长的一件事——"
+        "`facing` 当初从'问模型'改成读内存，就是因为 8/8 全错。抄一个词它只需做一次"
+        "视觉配对，不需要计数。而且这样是**可校验的**：不在 `options` 里就是读错了，"
+        "当场作废（见 `_cursor_must_be_one_of_the_options`）；填个 `2` 你没有任何办法"
+        "知道它对不对",
     )
     fields: dict[str, str] = Field(
         default_factory=dict,
         description="该 scene 的结构化字段，键取自 SCENE_FIELDS。读不出的字段直接不放，"
         "**不要填占位值**——分不清'没读到'和'读到了空'会污染状态抽象准确率的标定",
     )
+
+    @model_validator(mode="after")
+    def _cursor_must_be_one_of_the_options(self) -> ScreenState:
+        """光标读出来的词必须是 `options` 里的一项，否则作废成 `None`。
+
+        **这是换成字符串换来的东西**：序号版本没有任何自校验的余地——`cursor=2` 在
+        四选项菜单里永远"合法"，读错了也看不出来。词就不一样，对不上就是没读准，
+        与其把一个错的词发下去，不如说"不知道"。
+
+        `None` 而不是抛异常：读不出光标是**这一帧的常态**（动画中、光标被挡住），
+        不是解析失败。抛异常会让整次感知重跑，代价和收益完全不匹配。
+        """
+        if self.cursor is not None and self.cursor not in self.options:
+            object.__setattr__(self, "cursor", None)
+        return self
 
     @model_validator(mode="after")
     def _overview_comes_with_a_layout(self) -> ScreenState:
@@ -644,7 +665,7 @@ EXAMPLES: dict[Scene, ScreenState] = {
         overlay=Overlay.CHOICE,
         overview="战斗画面：右上是对手，左下是我方背影，右下角是四选项指令框。",
         options=["FIGHT", "PKMN", "ITEM", "RUN"],
-        cursor=0,
+        cursor="FIGHT",
         fields={
             "foe_name": "CHARMANDER", "foe_level": "5", "foe_hp": "满",
             "my_name": "AL", "my_level": "5", "my_hp": "19/19",
@@ -655,7 +676,7 @@ EXAMPLES: dict[Scene, ScreenState] = {
         overlay=Overlay.CHOICE,
         overview="画面右侧弹出一列主菜单条目，光标停在第二项。",
         options=["POKéDEX", "POKéMON", "ITEM", "RED", "SAVE", "OPTION", "EXIT"],
-        cursor=1,
+        cursor="POKéMON",
         fields={"title": "主菜单"},
     ),
     Scene.SHOP: ScreenState(
@@ -663,7 +684,7 @@ EXAMPLES: dict[Scene, ScreenState] = {
         overlay=Overlay.CHOICE,
         overview="商店买卖界面：上方是所持金钱，下方是商品与价格的列表。",
         options=["POKé BALL", "POTION", "ANTIDOTE", "CANCEL"],
-        cursor=0,
+        cursor="POKé BALL",
         fields={"money": "3000", "items": "POKé BALL, POTION, ANTIDOTE"},
     ),
     Scene.TRANSITION: ScreenState(
