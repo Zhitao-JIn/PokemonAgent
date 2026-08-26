@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import unicodedata
+
 from pydantic import BaseModel, Field
 
 from .observation import Observation
@@ -46,21 +48,68 @@ def _stitch(prev: str, new: str) -> str | None:
     return None
 
 
+def _display_width(text: str) -> int:
+    """这段文字占几个字符宽。**中日韩字符算两格。**
+
+    对齐要用它而不是 `len()`：标签里中英混排（`位置` 和 `my_hp` 同时出现），
+    按字数补空格的话，中文那几行会短一半——而这份文本的**唯一用途**就是让大脑
+    逐行对照前后两份快照，列对不齐等于把配对的活又推回给它。
+    """
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
+
+
+SNAPSHOT_BLIND: frozenset[str] = frozenset({"known_objects", "knowledge"})
+"""**不进快照的字段。** 快照里每一项都必须跨步骤成立，这三项都不成立：
+
+- `known_objects`：跨 episode 的流水，不是"这一帧看到了什么"。
+- `knowledge`：语义记忆的检索结果，本来就不是观察。
+
+除此之外一律照搬。**这里是排除表而不是白名单**，是有意的：新增一个观测字段时，
+默认它应该进记忆，需要理由的是把它挡在外面——反过来的话，加字段的人得记得
+回来改清单，而忘了改不报错，只表现为某类画面的变化永远看不见。
+"""
+
+FIELD_ORDER: tuple[str, ...] = (
+    "scene", "overlay", "where", "facing", "neighbors", "landmarks",
+    "dialog_text", "options", "cursor",
+    "my_name", "my_level", "my_hp", "foe_name", "foe_level", "foe_hp",
+    "overview", "walk_map",
+)
+"""渲染顺序。`walk_map` 和 `overview` 垫底：一个占九行、一个措辞每次都变，
+摆在前面会把真正逐行对照的那几项挤下去。`overview` 更靠前——它是这堆字段里唯一由视觉模型自由措辞的一项，
+同一帧能给出三种说法，摆在前面会让大脑先读到噪声最大的那行。"""
+
+FIELD_LABEL: dict[str, str] = {
+    "where": "位置", "neighbors": "四邻", "dialog_text": "对话",
+    "overview": "概况", "landmarks": "地标", "options": "选项",
+    "cursor": "光标", "scene": "场景", "overlay": "叠加层", "facing": "朝向",
+}
+"""字段名 → 中文标签。表外的字段直接用原名，不强行翻译。"""
+
+
 class Snapshot(BaseModel):
     """一次观察的快照。**里面每一项都必须跨步骤成立。**
 
     这是它和 `Observation.facts` 唯一的分歧：facts 是"这一帧的全部"，
     快照是"其中还能拿到以后去用的那部分"。
 
-    ## 为什么 walk_map 不在里面
+    ## walk_map 进来了——那条旧禁令的前提已经没了
 
-    它天生是**屏幕相对**的：原点跟着人走，走一步同一个 `(7,7)` 就指向另一块地方。
-    `MAP_HINT` 里我们自己写着屏幕格"不能跨步骤引用"，早先却把整张图连同带屏幕格的
-    地标一起存进了记忆、下一步再喂回去。
+    早先它被挡在外面，理由是**屏幕相对**：原点跟着人走，走一步同一个 `(7,7)` 就指向
+    另一块地方。实测代价也记着：模型取回上一步的「民宅的门 (7,7)」，对照当前地图发现
+    `(7,7)` 是 `#`，花了 **2235 个 output token、49 秒**反复重数那一行字符串想判断是
+    记忆错了还是地图错了——**两边都没错，是我们给的数据自相矛盾。**
 
-    实测代价：模型取回上一步的「民宅的门 (7,7)」，对照当前地图发现 `(7,7)` 是 `#`，
-    于是花了 **2235 个 output token、49 秒**反复重数那一行字符串，试图判断
-    是记忆错了还是地图错了。**两边都没错，是我们给的数据自相矛盾。**
+    但那是屏幕格时代的账。`TerrainMap.render()` 后来把屏幕格删掉了，行列号**就是全局
+    坐标**，和 `where` / `landmarks` 用的是同一套数（见那个方法的说明）。自相矛盾的
+    来源没了，禁令的前提也就没了：现在两步的图摆在一起，同一个 `x=12 y=24` 在两张图上
+    指的是同一格，**逐格对照是成立的**。
+
+    留着旧禁令的代价反而是实的：地形变化（门开了、挡路的 NPC 走了、进了新区域）
+    是"那一下改变了什么"里信息量最大的一类，而它整个看不见。
+
+    代价是 token：一张图九行，一条记忆两张，取回三条就是六张。这笔账目前认了——
+    看不见的变化比读得慢贵。真要省，该省的是**取回条数**，不是每条的完整度。
 
     ## 那"这一下到底改变了什么"靠什么看
 
@@ -74,65 +123,58 @@ class Snapshot(BaseModel):
     整张图能多告诉你的只是"当时周围什么形状"，而那个信息没有稳定的坐标系可以承载。
     """
 
-    overview: str = Field(default="", description="整体印象，视觉模型给的")
-    landmarks: str = Field(
-        default="", description="地标，**全局坐标**（`门 x=13 y=5`），来自模拟器内存"
+    status: str = Field(default="", description="那一帧的状态行")
+    facts: dict[str, str] = Field(
+        default_factory=dict,
+        description="那一帧的事实字段，**除去 SNAPSHOT_BLIND 之外原样照搬**。"
+        "早先这里是手挑的五个字段（overview/landmarks/neighbors/position/dialog），"
+        "那份清单是为野外挑的：战斗帧的 `cursor`、`options`、`my_hp`、`foe_hp` "
+        "一个都不在里面，于是「那一下改变了什么」在战斗中永远答不出来。"
+        "**字段该由观测决定，不由一份写死的清单决定**",
     )
-    neighbors: str = Field(
-        default="",
-        description="四邻各是什么（`北 G 南 . 西 # 东 .`）。**相对『我』，不依赖屏幕原点**，"
-        "所以跨步骤成立。它承担的是『我以为那边能走』这类经验的证据",
-    )
-    position: str = Field(
-        default="",
-        description="`全局坐标 地图0 x=10 y=2` —— **全局坐标，刻意不用括号写法**。"
-        "括号写法留给屏幕格（主角恒在 (4,4)），两者写成同一个样子的话，字面上分不开",
-    )
-    dialog: str = Field(
-        default="", description="对话框里的文字。**跨步骤成立**：那句话说过就是说过了"
-    )
+
+    # 兼容取用：这两项有具名调用方（`memory/episode/utils.py`）。
+    @property
+    def overview(self) -> str:
+        """整体印象，视觉模型给的。"""
+        return self.facts.get("overview", "") or self.status
+
+    @property
+    def position(self) -> str:
+        """`全局坐标 地图0 x=10 y=2` —— **全局坐标，刻意不用括号写法**。"""
+        return self.facts.get("where", "")
 
     @classmethod
     def of(cls, obs: Observation) -> Snapshot:
         """从观测里抽出快照。**只抽，不加工**——加工过的快照和当时看到的就不是一回事了。"""
-        f = obs.facts
         return cls(
-            overview=f.get("overview", "") or obs.status,
-            landmarks=f.get("landmarks", ""),
-            neighbors=f.get("neighbors", ""),
-            position=f.get("where", ""),
-            dialog=f.get("dialog_text", ""),
+            status=obs.status,
+            facts={k: v for k, v in obs.facts.items() if k not in SNAPSHOT_BLIND},
         )
 
     def render(self, indent: str = "  ") -> str:
-        """把这条快照渲染成一段可读、可打分的文本。"""
-        lines = []
-        if self.position:
-            lines.append(f"{indent}位置  {self.position}")
-        if self.neighbors:
-            lines.append(f"{indent}四邻  {self.neighbors}")
-        if self.dialog:
-            lines.append(f"{indent}对话  {self.dialog}")
-        if self.overview:
-            lines.append(f"{indent}概况  {self.overview}")
-        if self.landmarks:
-            lines.append(f"{indent}地标  {self.landmarks}")
-        return "\n".join(lines)
+        """把这条快照渲染成一段可读、可打分的文本。
 
-    def same_place_as(self, other: Snapshot) -> bool:
-        """两次观察是不是**完全没有区别**。
-
-        位置、四邻、对话框三项全同 = 那一下什么都没发生。
-        用这三项而不是全部：`overview` 是模型每次重写的自然语言，同一帧也会不一样，
-        拿它比会把"没变"误判成"变了"——实测同一个 frame sha 下它给出过三种不同措辞。
-
-        看两次观察是不是完全没有区别。
+        **按 `FIELD_ORDER` 排，表外的字段按名字排在后面。** 顺序固定不是为了好看：
+        前后两份快照要摆在一起给大脑比对，同一个字段在两份里必须出现在同一个相对
+        位置，否则"哪一项变了"就得靠它先做一次字段配对。
         """
-        return (
-            self.position == other.position
-            and self.neighbors == other.neighbors
-            and self.dialog == other.dialog
-        )
+        keys = [k for k in FIELD_ORDER if k in self.facts]
+        keys += sorted(k for k in self.facts if k not in FIELD_ORDER)
+        if not keys:
+            return f"{indent}{self.status}"
+        labels = {k: FIELD_LABEL.get(k, k) for k in keys}
+        width = max(_display_width(v) for v in labels.values())
+        lines = []
+        for k in keys:
+            pad = " " * (width - _display_width(labels[k]) + 2)
+            # **多行的值（`walk_map`）续行要缩进到同一列。** 顶格续行的话，
+            # 图的第二行看起来就像下一个字段，而这份文本存在的意义正是让大脑
+            # 按列扫过去比对前后两份。
+            gutter = " " * (len(indent) + width + 2)
+            body = self.facts[k].replace("\n", "\n" + gutter)
+            lines.append(f"{indent}{labels[k]}{pad}{body}")
+        return "\n".join(lines)
 
 
 class StepMemory(BaseModel):
@@ -188,23 +230,27 @@ class StepMemory(BaseModel):
         渲染成进 prompt 的样子，可选择带不带理由。
         """
         because = "；".join(self.rationale) or "（未给出理由）"
-        # **"什么都没发生"要明说，不要让它自己去比。**
-        # 前后两份快照摆在一起，理论上对比得出来；实测它不会——
-        # 连着三步按 `a` 对着空地，每一步都取回上一步"按 a 没变化"的记忆，
-        # 然后照着自己上一步那句"站在门格上按 a 是标准操作"再按一次。
-        # 它把过去的 `rationale` 当成了权威，而权威说的话恰恰是错的。
+        # **前后两份都完整摆出来，结论留给大脑。**
         #
-        # 判定是纯比较，我们做得又快又准，就不该留给它。
-        after = (
-            "  之后变成：**什么都没变**（位置、四邻、对话框全部相同——这个动作没有效果）"
-            if self.after.same_place_as(self.before)
-            else "  之后变成：\n" + self.after.render()
-        )
+        # 这里曾经有一次 `same_place_as(before, after)`：前后一样就折叠成一句
+        # 「**什么都没变**（这个动作没有效果）」。折叠掉的理由是实测——连着三步按 `a`
+        # 对着空地，它取回上一步的记忆却不去对比，照着自己上一步那句
+        # 「站在门格上按 `a` 是标准操作」再按一次。
+        #
+        # 但那个比较**只看位置、四邻、对话框**，而这三项是为野外挑的。战斗帧里它们
+        # 是进战斗前残留的野外值，恒等——于是战斗中每一步都被宣布成"这个动作没有效果"，
+        # 哪怕光标确实移动了。实测大脑照单全收：它引用这句话，推翻自己上一步正确的
+        # 按键，然后编出一套能解释"为什么没生效"的菜单模型。
+        #
+        # **错误的结论比没有结论贵得多。** 一句加粗的判断，大脑对它的信任度正好是
+        # 我们承诺的那么高；而它是不是对的，取决于比的是不是这一帧真正会变的字段——
+        # 那个清单不可能手工穷举。所以现在只摆事实：两份快照字段对齐、顺序固定，
+        # 变没变由它自己读。防不去对比的那条，改在决策 prompt 里说（`decide.md`）。
         lines = [
             f"({self.episode_id}, {self.step}) 当时看到：",
             self.before.render(),
         ]
         if reason:
             lines.append(f"  因为  {because}")
-        lines += [f"  做了  {self.action}", after]
+        lines += [f"  做了  {self.action}", "  之后变成：\n" + self.after.render()]
         return "\n".join(lines)
