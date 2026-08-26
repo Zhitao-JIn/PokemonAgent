@@ -37,12 +37,16 @@
 
 ### 1.4 光有 LoopState 还复现不了
 
-恢复目标是"恢复 state + 恢复模拟器存档 = 接着往下跑"，但还缺两样：
+恢复目标是"恢复 state + 恢复模拟器存档 = 接着往下跑"，还缺一样：
 
 - **记忆库**：进 prompt，但既不在 state 也不在存档里。
-- **`world._facing`**：朝向是从我们自己的动作历史推的，不是从 RAM 读的，pyboy 的 save state 里没有它——而它进 `facts`、进 prompt。这个洞更隐蔽。
 
-补法留给阶段 2 的 `Checkpoint`：`LoopState` + 记忆库 + 模拟器存档 + world 的推导状态 + manifest。
+**这里原来还有第二个洞：`world._facing`。** 朝向当时是从我们自己的动作历史推的，
+不在 pyboy 的 save state 里，而它进 `facts`、进 prompt。现在朝向直接读 RAM
+（精灵表 `+9`，见 `ram.read_facing`），存档里有它，洞自然没了——
+world 不再持有任何推导出来的状态。
+
+补法留给阶段 2 的 `Checkpoint`：`LoopState` + 记忆库 + 模拟器存档 + manifest。
 
 两个概念要分清：**replay** 是不调模型、从 trace 里取 `raw` 重新解析（只需要 trace）；**resume** 是接着跑（需要完整 checkpoint）。
 
@@ -115,6 +119,17 @@ look → retrieve_memory → think → press → remember → look
 
 **一条直线，没有分派。** 以前 `think` 出口按 `Action.intent` 分三岔（press / push_goal / inspect），现在只剩按键一类动作——`Intent` 枚举连同 `Action.intent`、`ActionSpace.intents`、`push_goal` 节点、`GOAL_PUSH` 事件一起删了。拆子目标的机制会在别处重写。
 
+**这里曾经有一条"细看"（inspect）链路**：`WorldPort.inspect()` 单独再问一次视觉模型，
+结果落进 `facts["inspected"]`，并由 `trace.inspect()` 记成一条 `INSPECT` 事件。
+它整条被删了——它烧的是一次和 `perceive()` 同源的感知调用，看的还是同一帧，
+换来的只是"再描述一遍"；而且它自成一步（算进 `max_steps`），
+于是模型学会了用"再看一眼"来拖时间，那一步既不推进世界也不写记忆。
+真正要补的是感知本身讲得够不够清楚，不是在循环里多开一个只看不动的出口。
+
+`EventType.INSPECT` 这个枚举值**留着**（`trace/store.py` 里也仍有它的显示分支）：
+旧 trace 文件里有这类事件，回放不能因为枚举里没有这个值就整条读不出来。
+枚举值只增不改，是事件流这种 append-only 数据的基本约束。
+
 ### 3.2 节点表
 
 | 节点名 | 方法 | 花不花钱 |
@@ -131,7 +146,7 @@ look → retrieve_memory → think → press → remember → look
 ### 3.3 边
 
 - **入口**：`set_entry_point("look")`
-- **`look` 的条件边**（`_look_route`）：`obs.done` → `"summarize"`；否则 → `"retrieve_memory"`。
+- **`look` 的条件边**（判据见 4.3）：`obs.done` → `"summarize"`；否则 → `"retrieve_memory"`。
   **这是图上唯一的终止分支**：看完才知道这一局还要不要继续。放在动作节点出口的话，"步数用尽"和"目标达成"要在两个地方各判一次。
 - `retrieve_memory` → `think` → `press` → `remember` → `look`，全是固定边。
 - `summarize` → `END`。
@@ -229,9 +244,14 @@ return update
 
 **trace 事件**：不直接写，全部委托给 `_observe`（及它调用的 `_judge`）。
 
-### 4.3 `_look_route(state) -> str`
+### 4.3 `look` 出口的路由
 
-纯路由：`"summarize" if state.observation.done else "retrieve_memory"`。挂在 `look` 的条件边上，是图上唯一的终止分支。**不直接连 `END`**——终止要先经过蒸馏。不写 trace。
+判据是 `"summarize" if state.observation.done else "retrieve_memory"`，写在 `_compile()` 里
+`add_conditional_edges` 的内联 lambda 上，是图上唯一的终止分支。**不直接连 `END`**——
+终止要先经过蒸馏。不写 trace。
+
+（`harness.py` 里还留着一个同名的 `_look_route` 方法，但它已经不在图上：
+条件边挂的是上面那个 lambda。**以方法名索引这份文档时以图的装配为准。**）
 
 ### 4.4 `_retrieve_memory(state) -> dict`
 
@@ -276,6 +296,23 @@ return update
 
 **流程**：`result = self._game.execute(action)` → 断言 `result.observation` 非空 → 对 `result.calls` 逐条记账（`Source.PERCEPTION`）→ 写 `ACT`（`Source.WORLD`，step 用 `before.step`）→ 返回 `{"press_result": result.observation}`。
 
+**一步交出去的是一整条动作链。** `Action.sequence`（`list[ActionSegment]`，每段是
+"按哪个键 × 连按几次"）由**一次** `execute()` 整条交给 world，world 只在**链尾**感知一次。
+所以一步之内的感知事件数是 **1**（还常常因为帧缓存变成 0），不再随按键次数增长——
+走 5 格从 5 次视觉调用变成 1 次，成本和延迟一起砍到五分之一。
+代价是链的中间状态 agent 看不见：撞墙了也会把剩下几次按完。这是时序抽象的经典取舍，
+`MAX_TIMES` 是给它的闸。
+
+**`ACT` 记的是结构化的链本身**（`trace_utils.action_chain()`，`think` 和 `act` 共用它，
+所以"想按的"和"按下去的"能逐字段比对）：`sequence`(json) / `segment_count` /
+`press_count`，外加给人读的一行 `action`（`up×4 -> down×2`）。
+
+**这里曾经还记一个 `message`：** `ToolResult.message`，world 返回的一句"结果描述"。
+它的字段说明写着"给 LLM 读的"，而全仓库唯一的消费方就是这条 `ACT` 事件；内容又只是
+`observation.status`，紧接着还会作为下一条 `OBSERVE` 的 `status` 再出现一遍，
+观测台上纯属复读。字段和 `trace_utils.act()` 的那个参数一起删了——现在签名是
+`act(episode_id, step, action)`。**按完之后世界变成什么样，答案是下一条完整的 `OBSERVE`，不是一句转述。**
+
 新观测**没盖过章**（`step` 恒 0），但 `remember` 只取它的 `Snapshot`——里面全是 facts，和步号无关。
 
 ### 4.7 `_remember(state) -> dict`
@@ -286,10 +323,18 @@ return update
 
 1. `entry = self._brain.reflect(before, action, after).model_copy(update={"episode_id": ep})`——`episode_id` 在这里盖章，因为大脑不知道自己在哪一局。
 2. `self._memory.store_episode_step(entry)` + 写 `MEMORY_WRITE`。
-3. `for note in self._memory.store_objects_interactions(before, action, after)` 逐条写 `OBJECT_NOTE`。
+3. `for note in self._memory.store_objects_interactions(before, action, after)` 逐条写 `OBJECT_NOTE`（可能一条都没有，见下）。
 4. 返回 `{"step": state.step + 1}`。
 
 **两类记忆分开写**：情景记忆记"我在那种画面里选了什么"（作用域是一次经过）；`OBJECT_NOTE` 记"地图39 x=2 y=3 那个人会说什么"（作用域是那一格，域内恒真、域会再现）。后者不需要模型判断——面朝哪一格由 `place + facing` 算出，两个输入都确定。
+
+**动作链让这一类记忆多了一条"宁可不记"的规则**（在 `MemoryTool` 那侧，Harness 只是照单转记）：
+多段链、以及单段但连按（`times != 1`）的移动，**一律不记**。这份档案的键是
+「在哪一格按了哪个键」，而一条链的 `before`/`after` 是**整条链的两头**——中间路过了哪些格子、
+哪一次按键才是撞在门上的那一次，这里都看不到。把 `up×4 -> down×2` 记成"在起点按了一次 up"，
+写进去的是一条**假的尝试记录**。少记一条只是慢一点；记错一条会让它以后永远不再试那个正确的碰法。
+
+所以链一长，这一步的 `OBJECT_NOTE` 数就是 0——**这不是漏记，是这一步确实没有可信的证据。**
 
 **顺序不能换**：`ACT`（在 `press`）和 `MEMORY_WRITE`（这里）都属于第 n 步，`step + 1` 放在链路末尾，下一轮 `look` 写的 `OBSERVE` 才落在第 n+1 步。提前加一的话事件流的步号会往回跳。
 
@@ -307,7 +352,12 @@ return update
 
 **流程**：`perceived = self._game.perceive()` → 盖 `step` 和 `done` → 对 `perceived.calls` 逐条记账（`ok != "True"` 时标 `PerceptionParseFailure`）→ 写 `OBSERVE` → `return self._judge(state, obs)`。
 
-`OBSERVE` 的 payload 含 `frame_sha`/`summary`/`scene`/`overlay`/`facts`(json)/`goals`。**`goals` 记的是判定弹栈之前的栈**——`OBSERVE` 必须先于本步的判定事件（因果顺序），判完之后的栈会在随后的 `GOAL_POP` 里体现。
+`OBSERVE` 的 payload 含 `frame_sha`/`status`/`scene`/`overlay`/`facts`(json)/`goals`。**`goals` 记的是判定弹栈之前的栈**——`OBSERVE` 必须先于本步的判定事件（因果顺序），判完之后的栈会在随后的 `GOAL_POP` 里体现。
+
+字段名是 `status` 不是 `summary`：`Observation.summary` 改叫 `Observation.status` 了——
+那一行是 scene + overlay 机械拼出来的**状态行**（`你在野外。对话框：「…」`），
+不是画面描述。画面描述是视觉模型写的 `facts["overview"]`，叫 summary 会让人以为
+"读这一个字段就等于看过这一帧"，而实质内容一直在 `facts` 里。
 
 **`known_objects`/`knowledge` 不在这里拼**：见 4.4。
 
@@ -319,7 +369,7 @@ return update
 
 **算法**：
 
-1. **早退分支**：若 `state.succeeded` 已为真，直接返回 `(obs.model_copy(done=True, success=True), state.goals, True, state.why)`。当前图内走不到（判成成功的那一步同时置了 `obs.done`），但 resume 会：从一个 `succeeded=True` 的 checkpoint 恢复时，不打标记的话 `_look_route` 不去 summarize、转而进 `think`，而那时 `goals` 已是空的，`brain.choose` 的 `assert goals` 会当场崩掉。
+1. **早退分支**：若 `state.succeeded` 已为真，直接返回 `(obs.model_copy(done=True, success=True), state.goals, True, state.why)`。当前图内走不到（判成成功的那一步同时置了 `obs.done`），但 resume 会：从一个 `succeeded=True` 的 checkpoint 恢复时，不打标记的话 `look` 的条件边不去 summarize、转而进 `think`，而那时 `goals` 已是空的，`brain.choose` 的 `assert goals` 会当场崩掉。
 2. `history = self._memory.query_recent_steps(episode_id, JUDGE_HISTORY)`。
 3. `verdict = self._brain.judge(goals[-1], obs, history)`。
 4. 写判定的账（`Source.JUDGE`），`depth = len(goals) - 1` 塞进 payload。
@@ -446,6 +496,10 @@ return outcome
 
 `perceive()` 按帧缓存，所以 `_press` 刚感知过同一帧时，`_observe` 里的 `perceived.calls` 通常是空列表——不产生 `MODEL_CALL`，因为确实没有调用发生。
 
+`execute()` 那一行的账**至多一条**：整条动作链交出去，world 只在链尾感知一次（见 4.6）。
+"一步烧几次感知"因此和按键次数脱钩了——按成本读事件流时，`press` 那一格的
+`MODEL_CALL` 数不再是"这一步按了几下"的代理指标。
+
 **`trace_utils.model_call()` 是纯函数**：输入一个 `ModelCall`，输出 `list[AppendArgs]`（长度 1 或 2——失败时多一条 `ERROR`），调用方自己逐条 `append`。它不认识 `TracePort`、不做 I/O，可以脱离 Harness 单测。账单和失败模式是两件事：前者回答"花了多少钱"，后者回答"为什么没拿到东西"；混进一条里，按失败类型聚合时就得去解析 payload 里的字符串。
 
 ---
@@ -466,10 +520,10 @@ return outcome
 | 8 | `MODEL_CALL`（决策）×N | `think` | `DECISION` | n |
 | 9 | （可能）`ERROR`×失败次数 | 同上 | `DECISION` | n |
 | 10 | `THINK` | `think` | `DECISION` | n |
-| 11 | `MODEL_CALL`（感知，执行期间）×若干 | `press` | `PERCEPTION` | n |
+| 11 | `MODEL_CALL`（感知，链尾一次）×0 或 1 | `press` | `PERCEPTION` | n |
 | 12 | `ACT` | `press` | `WORLD` | n |
 | 13 | `MEMORY_WRITE` | `remember` | `HARNESS` | n |
-| 14 | `OBJECT_NOTE`×M | `remember` | `HARNESS` | n |
+| 14 | `OBJECT_NOTE`×M（多段链或连按时 M 恒为 0，见 4.7） | `remember` | `HARNESS` | n |
 
 之后 `step` 自增为 `n+1`，回到 `look`。
 

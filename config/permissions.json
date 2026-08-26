@@ -3,7 +3,6 @@
     "env": [
       "read:game:perceive",
       "read:game:action_space",
-      "read:game:last_frame_sha",
       "execute:game:reset",
       "execute:game:press",
       "execute:game:save_state",
@@ -18,15 +17,12 @@
       "execute:llm:judge",
       "execute:llm:perception",
       "execute:llm:memory_reflection",
-      "execute:llm:memory_summary",
-      "write:harness:trace"
+      "execute:llm:memory_summary"
     ],
-    "player-agent": [
-    ],
+    "player-agent": [],
     "trusted-agent": [
       "read:game:perceive",
       "read:game:action_space",
-      "read:game:last_frame_sha",
       "execute:game:reset",
       "execute:game:press",
       "execute:game:save_state",
@@ -41,8 +37,7 @@
       "execute:llm:judge",
       "execute:llm:perception",
       "execute:llm:memory_reflection",
-      "execute:llm:memory_summary",
-      "write:harness:trace"
+      "execute:llm:memory_summary"
     ]
   },
   "policies": {

@@ -1,6 +1,8 @@
 # `schemas` 模块技术规格
 
-本文档覆盖 `pokemon_agent/schemas/` 下六个文件：`task.py`、`observation.py`、`action.py`、`step_memory.py`、`object_fact.py`、`trace.py`。
+本文档覆盖 `pokemon_agent/schemas/` 下的文件：`task.py`、`observation.py`、`action.py`、`step_memory.py`、`episode_memory.py`、`episode_summary_io.py`、`object_fact.py`、`trace.py`、`completion.py`。
+
+记忆一族的文件名和类名刚刚整体改过一轮（**只改名，行为一律没动**），旧名字在其它文档或旧分支里还会出现，对照表见 0.4。
 
 ---
 
@@ -8,13 +10,14 @@
 
 ### 0.1 "跨层契约" vs 模块内部类型
 
-这六个文件里的每个模块 docstring 开头都会标注该文件是不是"跨层"的，这是整个 `schemas` 目录的组织原则：
+这些文件里的每个模块 docstring 开头都会标注该文件是不是"跨层"的，这是整个 `schemas` 目录的组织原则：
 
 - **跨层类型**：出现在 `interfaces/`（`WorldPort`、`GameToolPort`、`BrainPort`、`MemoryToolPort`、`TracePort` 等 Protocol）的方法签名里的类型。它们是不同层（world、tool、brain、memory、harness/trace）之间真正传递数据的契约，必须放在一个所有层都能 import 的公共位置，否则各层各自定义会导致契约漂移。
   - `task.py` 整个文件都是跨层的（`Task` 出现在 `WorldPort.reset()`/`GameToolPort.reset()`）。
   - `observation.py` 里只有 `Observation`/`Place`/`Landmark` 跨层（出现在 `WorldPort`/`GameToolPort` 签名里）；`Scene`/`Overlay`/`ScreenState`/`TerrainMap` 及以下**不跨层**，是 `PyBoyWorld` 内部把一帧画面解析成结构化状态、再压成 `Observation.facts` 里字符串的中间产物，**大脑不该碰**。文件注释明确说这条边界"现在只能靠人守"——历史上曾靠 `react.py` 只 import `core` 强制，合并/拆分模块之后这层强制力已经不存在，只剩纪律约束。
   - `action.py` 整个文件跨层，出现在 `GameToolPort`/`BrainPort` 签名里。
-  - `step_memory.py`（`StepMemory`/`Snapshot`）不跨层描述未见于文件顶部，但其 import 只被记忆子系统内部使用；作用域是"一次经过"的经验。
+  - `step_memory.py`（`StepMemory`/`Snapshot`）、`episode_memory.py`（`EpisodeMemory`）不跨层描述未见于文件顶部，但其 import 只被记忆子系统内部使用；前者作用域是"一次经过"里的**一步**，后者是**一整局**蒸馏出的一条经验。
+  - `episode_summary_io.py`（`EpisodeSummaryRequest`/`EpisodeSummaryResponse`/`EpisodeMemoryContent` 等）**不是记忆**，是蒸馏那次 LLM 调用的 request + response 契约，即"线上形状"；落库形状在 `episode_memory.py`。
   - `object_fact.py` 的 `ObjectFact` **"跨层，但只跨这一小段"**：从不出现在 `WorldPort`/`GameToolPort` 签名里，只出现在 `MemoryToolPort`；大脑看不到 `ObjectFact` 这个类型本身，只看到 `known_objects` 里渲染出的一段文字。
   - `trace.py` 里 `ModelCall`/`Decision`/`Verdict` 出现在 `BrainPort` 签名里，`TraceEvent` 出现在 `TracePort` 签名里，均跨层。
 
@@ -29,7 +32,9 @@
 | `task.py` | 任务契约——一次尝试（episode）的成败判据与边界 |
 | `observation.py` | 感知契约——大脑在某一步看到的世界是什么样，以及"一帧画面怎么被解析成这个样子" |
 | `action.py` | 动作契约——大脑能做什么、选出来的一步长什么样 |
-| `step_memory.py` | 情景记忆契约——"我在那种画面里选了什么、结果如何"，作用域是一次经过、有时效 |
+| `step_memory.py` | 单步记忆契约——"我在那种画面里选了什么、结果如何"，一条 = 一步，作用域是一次经过、有时效 |
+| `episode_memory.py` | 跨局摘要记忆契约——一条 = 一整局蒸馏出的可复用经验，按相关性从别的局里挑回来 |
+| `episode_summary_io.py` | 蒸馏调用的输入/输出契约（不是记忆）——LLM 按它吐 JSON，再转成 `EpisodeMemory` |
 | `object_fact.py` | 语义记忆契约——"世界是什么样"，自带作用域、域内恒真 |
 | `trace.py` | Trace 契约——记账、判定结果、事件流 |
 | `completion.py` | 模型调用的返回值——文本模型的 `Completion`、视觉模型的 `VisionCompletion` |
@@ -49,13 +54,31 @@ action.py
       │ from .action import Action
 trace.py
 
-step_memory.py  → from .observation import Observation
-object_fact.py  → from .observation import KIND_DOOR, Landmark
+step_memory.py       → from .observation import Observation
+object_fact.py       → from .observation import KIND_DOOR, Landmark
+episode_memory.py    → from .episode_summary_io import EpisodeMemoryContent
+episode_summary_io.py（只依赖 pydantic）
 
 task.py  (无对本模块内其他文件的依赖)
 ```
 
-即：`observation.py` 是全模块的地基（`Place`/`Landmark`/`Observation` 被 `action.py`、`step_memory.py`、`object_fact.py` 复用）；`action.py` 依赖 `observation.py`；`trace.py` 依赖 `action.py`（间接依赖 `observation.py`）；`task.py` 完全独立；`step_memory.py` 与 `object_fact.py` 都只依赖 `observation.py`，二者互不依赖。
+即：`observation.py` 是全模块的地基（`Place`/`Landmark`/`Observation` 被 `action.py`、`step_memory.py`、`object_fact.py` 复用）；`action.py` 依赖 `observation.py`；`trace.py` 依赖 `action.py`（间接依赖 `observation.py`）；`task.py` 完全独立；`step_memory.py` 与 `object_fact.py` 都只依赖 `observation.py`，二者互不依赖；`episode_memory.py` 只依赖 `episode_summary_io.py`（拿 `EpisodeMemoryContent` 当落库字段，这半个矛盾见 `episode_summary_io.py` 顶部注释：两边现在一字不差，哪天蒸馏输出要加字段而存储不想跟着变，第一件事就是拆开它）。
+
+### 0.4 记忆一族的改名（只改名，行为没变）
+
+| 旧 | 新 |
+|---|---|
+| `memory_episodic.py` / `MemoryEntry` | `step_memory.py` / `StepMemory`（`Snapshot` 名字不变） |
+| `memory_episode.py` | `episode_memory.py`（`EpisodeMemory`） |
+| `memory_episode_summary.py` | `episode_summary_io.py` |
+| `memory_semantic.py` | `object_fact.py`（`ObjectFact`） |
+
+改名的理由都是同一件事——**读的人分不出来**：
+
+1. `episodic` 和 `episode` 只差一个词尾，而那是英语的语法差别，不是概念上的差别——两个文件一个"一条 = 一步"、一个"一条 = 一整局"，光看文件名没有任何线索去猜哪个是哪个。改成 `step_` / `episode_` 之后，检索单元直接写在名字里。
+2. `MemoryEntry` 里的"Entry"（条目）等于什么都没说，而这个类的全部要点恰恰是"一条 = 一步"。
+3. `memory_semantic.py` → `object_fact.py`：文件名和它唯一装的类 `ObjectFact` 从此对得上。
+4. `memory_episode_summary.py` 里**根本没有记忆**：它装的是蒸馏调用的 request 和 response 两个方向。挂着 `memory_` 前缀会让人以为那是第三种记忆；`_io` 后缀是有意的——只叫 `request` 会和住在同一个文件里的 response 打架。
 
 ---
 
@@ -82,9 +105,11 @@ task.py  (无对本模块内其他文件的依赖)
 
 ### 2.1 常量：`BUTTON_FACING: dict[str, str]`
 
-`{"up":"north","down":"south","left":"west","right":"east"}`。方向键到朝向的映射。
+`{"up":"north","down":"south","left":"west","right":"east"}`。**这张表答的是"这一步往哪个方向按了"，不是"现在面朝哪"。**
 
-**设计理由**：朝向是"我们自己的动作推出来的，不是看出来的"。宝可梦里按方向键撞墙时人也会转向（只是不移动），所以"按过 up"就等价于"面朝北"，没有例外；实测让 VLM 读朝向是 8 步 8 次全错。该表放在 `observation.py` 而不是 `world` 层，是因为 world（更新 `facing`）和工具层（计算这一步走的是哪个方向）两处都要用同一张表，必须共享单一定义。
+**设计理由**：朝向曾经是推出来的——撞墙时人也会转过去，所以"按过 up"就等价于"面朝北"。那个推论本身没错，但有两个洞：开局和过场之后朝向是未知的，而且它不在存档里，checkpoint 恢复不出来。现在朝向**直接读内存**（`ram.read_facing()`，精灵表 +9，见 `TerrainMap.facing`），两个洞一起消失。让 VLM 读朝向则更早就被否掉了：实测 8 步 8 次全错。
+
+这张表留着，是因为工具层还要用它算"这一步走的是哪个方向"（语义记忆 `attempts` 的键）——那是关于**动作**的问题，不是关于状态的。表放在 `observation.py` 而不是 `world` 层，是因为两处都要用同一张，必须共享单一定义。
 
 ### 2.2 常量：`FACING_STEP: dict[str, tuple[int, int]]`
 
@@ -140,25 +165,29 @@ task.py  (无对本模块内其他文件的依赖)
 |---|---|---|---|
 | `step` | `int` | 必填 | 本 episode 内第几步，从 0 开始 |
 | `place` | `Place \| None` | `None` | 主角所在格子的结构化表示；`facts["where"]` 是它渲染给模型看的文本，记忆键要用这三个数直接算，不能反解字符串 |
-| `summary` | `str` | 必填 | 给 LLM 读的自然语言状态描述 |
+| `status` | `str` | 必填 | 这一帧的**状态行**：由 scene + overlay 机械拼出来的一句话（`你在野外。对话框：「…」`）。**不是画面描述**——画面描述是视觉模型写的 `facts["overview"]` |
 | `facts` | `dict[str, str]` | `{}` | 结构化状态字段（位置、HP、道具等）；机制一的 state key 未来从这里派生 |
 | `done` | `bool` | `False` | episode 是否已终止 |
 | `success` | `bool` | `False` | 任务是否达成，**只在 `done=True` 时有意义**，否则恒为 False |
 
 **设计理由**：只放"大脑决策需要的"信息。原始画面、模拟器内部状态不进这里——那些属于 harness，大脑看不到也不该看到。
 
+**`summary` 为什么改叫 `status`**：这个字段从来不是"这一帧看起来怎么样"，而是 scene + overlay 机械拼出来的一行状态，进的是 prompt 里"当前状态"那一行。叫 `summary`（摘要）会让人以为它是画面的概括，于是两件事被搞混：真正的画面描述是视觉模型写的 `facts["overview"]`。名字改成 `status` 之后，"机械拼出来的状态行"和"看出来的画面描述"在字面上就分得开——这也是 `ToolResult.message` 被删掉时能一眼看出它只是复读 `status` 的前提。
+
 ### 2.8 `PerceptionResult`（跨层）
 
-一次感知动作（`perceive`/`inspect`/`reset`）的结果：观测 + 这次调用产生的模型调用记录。
+一次感知动作（`perceive`/`reset`）的结果：观测 + 这次调用产生的模型调用记录。（这里曾经还有一个 `inspect`——细看，整条链路已经删除，见 6.7。）
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `observation` | `Observation` | 必填 | 感知结果 |
+| `frame_sha` | `str` | `""` | 产生这次观测的那一帧的哈希；没有"帧"概念的实现给空串。它是查感知错误的起点——一条读错的观测得能追回是哪一帧 |
 | `calls` | `list[dict[str, str]]` | `[]` | 每条模型调用记录，按发生顺序；至少含 `input_tokens`/`output_tokens`/`latency_ms`/`attempt`/`ok`，建议附 `raw`。**空列表表示命中缓存，不是 None**——调用方不用先判空 |
 
 **设计理由**：
 - `calls` 不放进 `Observation` 内部：`Observation` 是"大脑看的东西"，大脑不该知道 token 数、延迟这类记账信息；放进去就是把跨层契约当日志用。但这份账又必须原样传给 Harness 写 trace，所以让它跟 `Observation` 平行挂在这层薄包装上。
-- **曾经有一个 `drain_calls()`**：早期版本把调用记录攒进私有实例变量 `_pending_calls`，靠 `reset`/`perceive`/`inspect` 共用的产账方法写入，再由 Harness 单独调用 `drain_calls()` 取出。这种"生产和消费分离、靠可变状态搭桥"的设计本身是坑：缓冲区"什么时候清空"无论早了晚了都会把账算错。真正的修法是让产生调用记录的地方直接把它当返回值交出来，一路跟着 `_perceive()` → `observe()` → `reset()`/`perceive()`/`inspect()` 普通地往上传，不需要缓冲区，也就不存在"漏记账"或"记重账"这类依赖时机的 bug。
+- **`frame_sha` 和 `calls` 是同一个理由**。它曾经是 `ToolPort` 上一个单独的 property，Harness 在 `perceive()` 之后再调一次去取。那和下面 `drain_calls()` 是同一个形状：值属于刚刚产生的那一帧，却要回头去另一个地方拿。而这个字段的全部意义就是"这条观测是哪一帧"——用第二次读取的结果去回答第一次读取的归属，前提本身就不成立。单线程下不会错，但那是调用顺序碰巧保证的，不是结构保证的。详见 `tools/SPEC.md` 2.7。
+- **曾经有一个 `drain_calls()`**：早期版本把调用记录攒进私有实例变量 `_pending_calls`，靠 `reset`/`perceive` 等公开方法共用的产账方法写入，再由 Harness 单独调用 `drain_calls()` 取出。这种"生产和消费分离、靠可变状态搭桥"的设计本身是坑：缓冲区"什么时候清空"无论早了晚了都会把账算错。真正的修法是让产生调用记录的地方直接把它当返回值交出来，一路跟着 `_perceive()` → `observe()` → `reset()`/`perceive()` 普通地往上传，不需要缓冲区，也就不存在"漏记账"或"记重账"这类依赖时机的 bug。
 
 ### 2.9 `Scene`（`str, Enum`，不跨层）
 
@@ -187,7 +216,7 @@ task.py  (无对本模块内其他文件的依赖)
 - `TRANSITION: ()`
 
 **设计理由**：
-- 野外/室内没有 `fields`：地形来自模拟器内存（`world/ram.py`），语义来自 `overview` 和 `landmarks`。曾经这里放过 `facing, north, south, east, west, landmarks`，实测全是噪声——例如 `north: grass ×3` 在主角连走六步过程中一字未变，说明它不是位置的函数，而是"这张图上半部分是草"的函数；字段名承诺"测量"，VLM 交付的是"描述"，两者差一个数量级，不是靠改 prompt 能弥合的。`facing` 更不该问模型：朝向就是最后一次按的方向键，world 自己知道，是确定量，问模型等于把已知量换成一个 8/8 全错的猜测（参见 `BUTTON_FACING`）。
+- 野外/室内没有 `fields`：地形来自模拟器内存（`world/ram.py`），语义来自 `overview` 和 `landmarks`。曾经这里放过 `facing, north, south, east, west, landmarks`，实测全是噪声——例如 `north: grass ×3` 在主角连走六步过程中一字未变，说明它不是位置的函数，而是"这张图上半部分是草"的函数；字段名承诺"测量"，VLM 交付的是"描述"，两者差一个数量级，不是靠改 prompt 能弥合的。`facing` 更不该问模型：朝向是内存里读得到的确定量（`ram.read_facing()`，现在挂在 `TerrainMap.facing` 上），问模型等于把已知量换成一个 8/8 全错的猜测（参见 2.1）。
 - `SCENE_FIELDS` **是数据不是类型**：给某个 scene 加字段不改变任何枚举值，不触发 append-only 约束。字段名进 prompt 告诉 VLM 该填什么，填出来的值进 `ScreenState.fields`。
 
 ### 2.13 常量：`GRID_COLS, GRID_ROWS = 10, 9`
@@ -228,7 +257,10 @@ task.py  (无对本模块内其他文件的依赖)
 | `map_id` | `int` | 必填 | 当前地图编号（`wCurMap`） |
 | `player_x` | `int` | 必填 | 主角地图内 X 格坐标（`wXCoord`） |
 | `player_y` | `int` | 必填 | 主角地图内 Y 格坐标（`wYCoord`） |
+| `facing` | `str` | `""` | 主角面朝哪边（`north`/`south`/`west`/`east`），**读自精灵表**（`ram.read_facing()`，+9）；空串表示这一格内存读出来不是四个已知值之一 |
 | `ambiguous_cells` | `int` | `0` | 有多少格子的四个 8x8 子 tile 通行性不一致；采样规则的健康指标，实测 90 格中仅 1 格（门）不一致 |
+
+**`facing` 为什么长在这里**：这一族字段的共同点是"这一帧从内存里读出来的确定量"，朝向和 `map_id`/`player_x`/`player_y` 是同一次读取的产物，跟着它们走最省事。它取代的是原先靠 `BUTTON_FACING` 推朝向的做法（见 2.1）：推的那份补不出开局和过场后的朝向，也不在存档里。空串是诚实的"读不出来"，**不填默认方向**——填了就是把一次读取失败伪装成一个确定的朝向，而 `a` 键作用在哪一格全靠它。
 
 **校验逻辑**：`field_validator("cells")` `_check_shape`——检查行数是否等于 `GRID_ROWS`，每行长度是否等于 `GRID_COLS`，字符是否都在 `MAP_CHARS` 内，任一不满足抛 `ValueError`。**理由**：内存读出的东西形状不对，说明地址或换算错了；若强行补齐，会把一个地址 bug 伪装成一张残缺的地图，掩盖真实错误。
 
@@ -336,19 +368,48 @@ task.py  (无对本模块内其他文件的依赖)
 
 **设计理由**：有两个执行点共享这个常量——`Action` 的字段约束（数据契约）和 `Brain._parse`（外部输入校验），必须同源，否则模型给 4 条论据时会出现"解析器放行、构造时报错"的自相矛盾系统。
 
-### 3.4 `Action`（跨层）
+### 3.4 常量：`MAX_TIMES = 8`
 
-大脑选出的一个动作。
+一段最多连按几次（`ActionSegment.times` 的上限）。
+
+**设计理由**：和 `MAX_RATIONALE` 一样有两个执行点——`ActionSegment` 的字段约束（数据契约）和 `Brain._parse_times`（外部输入校验），**必须同源**，否则模型写 `"times": 100` 时会出现"解析器放行、构造时炸"的自相矛盾系统。
+
+上限本身存在的理由：模型真的会写 `"times": "100"`。**连按期间 agent 看不见中间状态**，撞墙了也会把剩下几次按完——这是时序抽象的经典取舍，次数就是宏动作（机制二）的原始形态。收益是**省感知调用**：走 5 格从 5 次 VLM 调用变成 1 次，而感知是每步都花钱的那一项，成本和延迟一起砍到五分之一。
+
+### 3.5 `ActionSegment`
+
+动作链里的一段连续按键。
 
 | 字段 | 类型 | 默认值 | 约束 |
 |---|---|---|---|
-| `name` | `str` | 必填 | `min_length=1`，按键名，须来自当时的 `ActionSpace` |
-| `args` | `dict[str, str]` | `{}` | 按键参数，目前只有 `times`（连按次数） |
+| `name` | `str` | 必填 | `min_length=1`，按键名 |
+| `times` | `int` | `1` | `ge=1, le=MAX_TIMES`，连续按几次 |
+
+### 3.6 `Action`（跨层）
+
+大脑选出的一个动作。**这一版它是一条动作链，不再是单个按键。**
+
+| 字段 | 类型 | 默认值 | 约束 |
+|---|---|---|---|
+| `name` | `str` | 必填 | `min_length=1`，按键名，须来自当时的 `ActionSpace`；现在等于 `sequence[0].name`，由 `Brain._parse` 填 |
+| `args` | `dict[str, str]` | `{}` | 旧的单按键参数（只有 `times`），`segments()` 的兼容分支还会读它 |
 | `thought` | `str` | 必填 | `min_length=1`，选择该动作的完整推理；**只进 trace，不进 memory，不影响后续决策**；不设长度上限 |
 | `rationale` | `list[str]` | 必填 | `min_length=1, max_length=MAX_RATIONALE`，最能支持该动作的论据；**进情景记忆** |
+| `sequence` | `list[ActionSegment]` | `[]` | 按顺序执行的按键链；为空时回落到 `name`/`args` |
+
+方法：
+- `segments() -> list[ActionSegment]`：规范化后的动作链。`sequence` 非空就用它，否则用 `name` + `args["times"]` 拼一段——这条兼容分支让下游（world、trace、记忆）**只需要认识"链"这一种形状**，不必到处判断这个 `Action` 是新格式还是旧格式。
+- `describe() -> str`：渲染成 `up×4 -> down×2`，供 trace 和记忆写入用。做成方法而不是各处自己拼，是因为 trace 聚合要按动作分组：各拼各的一旦措辞漂移，聚合就得反向分词（见 `trace/utils.py`）。
+
+**为什么改成链**：一次决策只在链的结尾感知一次，所以"走四格再走两格"从 6 次 VLM 调用压成 1 次——和 `times` 是同一笔账，链只是把它推到"一次能表达多段"。
+
+**约束都在解析器那一层，不在 schema 里**（`Brain._parse`）：
+- 顶层 `action`/`args` 的旧格式**不再被接受**，`sequence` 必须是非空数组；缺了就是 `ParseFailure`，会被重试、也会按失败模式统计。
+- **多段链只能由 `up`/`down` 组成**。方向多一维就多一分"中间撞墙、后面全按空"的风险，先只开纵向这一对；这是可以放宽的口子，不是原理性限制。
+- `a` 的 `times` 在解析期被**写死成 1**：`a` 的收益全在中间那几帧（对话框文字），连按会把它们整个吃掉，最后一次还会把对话框关掉，判定器看到一个没有对话框的画面，**一局本该成功的 episode 被静默记成失败**。夹在解析期而不是执行层：让非法的东西一路走到 world 再被悄悄改写，大脑会以为自己按了三次；写死之后交给 world 的链**就是真正会发生的那条链**。
 
 **设计理由**：
-- `thought`/`rationale`/`name+args` 服务于三个不同消费方，不要合并。`thought` 不设上限，因为它的长度就是模型这一步的算力，压缩它压的是思考本身而不是日志体积。
+- `thought`/`rationale`/`sequence` 服务于三个不同消费方，不要合并。`thought` 不设上限，因为它的长度就是模型这一步的算力，压缩它压的是思考本身而不是日志体积。
 - 进记忆的是**论据而不是结论**：结论（"所以该捡药水"）可从 `name` 反推，存进去等于把同一件事存两遍；论据（"地上有药水而我手上没有"）是 `name` 里没有的信息，且论据是"适用条件"——未来取回时可检查它现在是否还成立，结论做不到这一点。
 - 论据一律按"有时效"处理，不区分持久与否；持久知识跨 episode 复用属于 skill library（机制二），本阶段不做。
 
@@ -361,7 +422,7 @@ task.py  (无对本模块内其他文件的依赖)
 assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契约违约"，看堆栈会指错方向。
 在 schema 这一层失败则走 `ParseFailure`，会被重试、也会按失败模式统计。
 
-### 3.5 `ActionSpace`
+### 3.7 `ActionSpace`
 
 当前状态下**可用**的动作集合（state-dependent action masking）。
 
@@ -379,15 +440,16 @@ assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契�
 取决于目标栈有多深，那是循环的账，工具层不知道。intent 删掉之后这个字段也没了，
 **工具层给出的就是完整的动作空间，Harness 不再覆写它**。
 
-### 3.6 `ToolResult`（跨层）
+### 3.8 `ToolResult`（跨层）
 
 一次动作执行的结果。
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `message` | `str` | `""` | 给 LLM 读的结果描述 |
 | `observation` | `Observation \| None` | `None` | 执行后的新观测；None 表示调用方需另行 `perceive()` |
 | `calls` | `list[dict[str, str]]` | `[]` | 推进这一步产生的模型调用记录（通常是执行后重新感知那一次）；语义同 `PerceptionResult.calls`：按序排列、失败也计入、空列表表示命中缓存无新调用（不是 None） |
+
+**设计理由（这里曾经有一个 `message` 字段）**：含义是 world 返回的一句"结果描述"，字段说明白纸黑字写着"给 LLM 读的"——而**没有任何一条路径把它交给 LLM**。全仓库唯一的消费方是 trace 的 ACT 事件，内容也只是 `observation.status`，而那一句紧接着又会作为下一条 OBSERVE 的 `status` 出现，观测台上纯属复读。这是一个典型的"描述写着它服务于谁、实际没人这么用"的字段：它不报错，只是让每个读契约的人都以为大脑能看见这句话。**动作之后世界变成什么样，答案是下一条完整的观测，不是一句转述**，所以删掉。（这条能被看清，也得益于 `Observation.summary` 改名 `status`——名字诚实之后，"这就是同一句话"一眼可见，见 2.7。）
 
 **设计理由（这里曾经有一个 `ok` 字段）**：原含义是"这个动作有没有产生预期效果"（撞墙=False）。在 `PyBoyWorld` 上它被写死成 `True`，因为从像素判断"这一下有没有改变世界"没有便宜可靠的办法（画面自带动画，比对不出因果）。一个恒为真的布尔值比没有更糟——它会出现在事件流和控制台判断分支里，让人误以为那里有信息，实际每条都是 True。要让它诚实唯一的办法是读内存坐标（走没走动），但那是为一个**没有消费方**的字段新增内存依赖。判断动作是否生效本应由前后两次观察对比来回答，而这件事情景记忆层（`StepMemory` 两头各存一份完整快照）已经在做，所以选择**删掉而不是补上**。
 
@@ -397,7 +459,15 @@ assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契�
 
 依赖：`from .observation import Observation`。
 
-模块定位：情景记忆答的是"我在那种画面里选了什么、结果如何"，作用域是**一次经过**、取回靠画面相似、**有时效**；不要与语义记忆（答"世界是什么样"，自带作用域、域内恒真）混淆。
+模块定位：**单步记忆**，一条 = 一步——"我在那种画面里选了什么、结果如何"，作用域是**一次经过**、取回靠画面相似、**有时效**。三类记忆的分工（文件顶部的表）：
+
+```
+step_memory.py      一条 = 一步       本局全量按顺序交给决策
+episode_memory.py   一条 = 一整局     从别的局里按相关性挑几条
+object_fact.py      一条 = 一格       "世界是什么样"，域内永远为真
+```
+
+不要与语义记忆（`object_fact.py`，答"世界是什么样"，自带作用域、域内恒真）混淆；文件改名的经过见 0.4。
 
 ### 4.1 常量：`MIN_STITCH = 6`
 
@@ -438,7 +508,7 @@ assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契�
 |---|---|---|---|
 | `before` | `Snapshot` | 必填 | 做决定时看到的画面 |
 | `rationale` | `list[str]` | 必填 | 当时的理由；**不是完整推理**，那留在 trace 里 |
-| `action` | `str` | 必填 | 选了什么，含连按次数，如 `right ×2` |
+| `action` | `str` | 必填 | 选了什么，由 `Action.describe()` 渲染的动作链文本，如 `up×4 -> down×2` |
 | `after` | `Snapshot` | 必填 | 执行之后的画面；结果本身也是一次观察 |
 | `key` | `str` | 必填 | 检索键；本阶段用位置占位，机制一接入后换成状态抽象的语义 key |
 | `step` | `int` | 必填 | 写入时所处步数 |
@@ -468,7 +538,7 @@ assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契�
 
 模块定位：语义记忆答"世界是什么样，域内恒真"。目前只有一类：**object**——某一格上的东西（门/招牌/人），跟它互动会得到什么。未来加别的类别（如属性克制表）时应各自建模型，不要都塞进 `ObjectFact`——那会把"这一格给了什么"和"水克火"这种不挂坐标的知识混进同一张表。
 
-命名说明：`ObjectFact` 是 `ObjectNote` 改的名字。`ObjectNote`（"记了一笔"）只表达了"这次交互记了什么"的临时想法；搬进语义记忆层之后身份更明确——它是语义记忆里"object"这一类事实的存储形状，`memory/port.py` 的协议、`memory/semantic/object_store.py` 的实现读写的都是这个类型。`ObjectFact` 这个名字为未来"从 attempts 里学出跨对象规律"（如"这类地形的门都要从北边推"）这种更泛化的用途留了空间，`ObjectNote` 没有。
+命名说明：文件随记忆一族那轮改名从 `memory_semantic.py` 改成 `object_fact.py`（只改名，内容没动，见 0.4），文件名与类名 `ObjectFact` 从此一致。类名 `ObjectFact` 则是更早从 `ObjectNote` 改的。`ObjectNote`（"记了一笔"）只表达了"这次交互记了什么"的临时想法；搬进语义记忆层之后身份更明确——它是语义记忆里"object"这一类事实的存储形状，`memory/port.py` 的协议、`memory/semantic/object_store.py` 的实现读写的都是这个类型。`ObjectFact` 这个名字为未来"从 attempts 里学出跨对象规律"（如"这类地形的门都要从北边推"）这种更泛化的用途留了空间，`ObjectNote` 没有。
 
 跨层范围：`ObjectFact` **从不出现在 `WorldPort`/`GameToolPort` 签名里**，只出现在 `MemoryToolPort`——大脑不该知道"语义记忆""ObjectFact"这些词，它看到的只是 `known_objects` 里的一段渲染文字。
 
@@ -519,13 +589,49 @@ assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契�
 - `record(key_desc, result) -> None`：记一次尝试结果。**同一个 `(坐标, 按键)` 以最新为准**——`attempts.pop` 后重新插入使其排到末尾（淘汰按"最近用过"走），超出 `MAX_TRIED` 删最早的键。理由：结果真的会变化（本来锁着的门后来开了、本来有人挡的路后来通了），旧结论留着比没有更糟——会让 agent 反复绕开已经通了的路。
 - `see(line) -> None`：记一句台词，先尝试用 `_stitch` 和 `lines[-1]` 拼接，拼不上再判重复追加，然后调用 `_trim()`。**理由**：GB 对话框一次显示两行，按 `a` 滚一行，视觉模型每帧抄下可见部分，连续几帧抄回的是同一句话的多个重叠窗口；早一版只做完全相同去重，导致重叠窗口各占一格塞满 `MAX_OBJECT_LINES`，把带身份信息的第一句挤掉，实测档案里 NPC 最后只剩半截话、"这是谁"完全丢失。拼接是纯字符串运算（重叠部分接上），不需要模型也不引入新错误。
 - `_trim() -> None`：超出 `MAX_OBJECT_LINES` 时保留第一条 + 最近的若干条。**理由**：第一条最不可替代（NPC 自我介绍、招牌标题常在开头），后续台词随剧情推进丢一句无所谓，丢了第一句这条档案就答不了"这是谁"。
-- `render() -> str`：渲染成 `known_objects` 里一行。**"还没互动过"也要显式写出**——这是档案最有价值的一类条目（"这里有扇门，见过 7 次，一次都没进去过"是它自己的待办清单），没有这条信息就分不出哪扇门探索过、哪扇是新的。门类对象单独用 `leads_to` 判断（开没开是唯一要紧的问题，开了直接写结论；没开则原样列出 `attempts`，因为键本来就是"坐标→按键"，模型自己拿角色当时位置一比即知是推门还是站上按，不需要再翻译成"站在南边"这种措辞）。
+- `render() -> str`：渲染成 `known_objects` 里的一条档案，**多行**（条与条之间由调用方 `MemoryTool.query_objects` 用空行隔开）。形状是"一个抬头 + 若干条缩进明细"：
 
-### 5.5 常量：`MIN_STITCH = 6`（本文件内独立定义）
+```
+全局坐标 地图42 x=3 y=3 的「人」（见过 12 次，互动 3 次）
+  说过：No! POTIONS are all sold out.
+  站在 x=3 y=4 按 a → 无效果
+```
+
+门则可能是：
+
+```
+全局坐标 地图42 x=5 y=1 的「门」（见过 7 次，互动 0 次）
+  **还没打开过**（还剩 7 种碰法没试）
+  站在 x=5 y=2 按 up → 无效果
+```
+
+**为什么从一行改成多行**：原来整条挤成一行，用 `→` 和 `；` 分隔——
+
+```
+全局坐标 地图42 x=3 y=3 的「人」 → No! POTIONS are all sold out.；x=3 y=4→a→无效果（见过 12 次，互动 3 次）
+```
+
+一行里 `→` 出现了三次，**三次的意思都不一样**：第一个是"这个对象的情况是"，第二个是"在那一格按那个键"，第三个是"结果是"。读的人（和模型）得先猜出这一层结构，才谈得上读内容。更糟的是 `x=3 y=4` 紧挨着对象自己的 `x=3 y=3`，**看起来像是同一个东西的两个坐标**，而它其实是角色按键时站的那一格。一行还有一个连带后果：观测台只能截前 80 个字符当标签，于是这条在 `x=3 y=4→dow` 处被切断，留下一个半截的按键名。次数（见过/互动）现在放回抬头，因为它是这条档案的属性，不是最后一条明细的尾巴。
+
+**姿势名字仍然不写，但坐标要说清是谁的**：以前这里写着"不需要翻译成『站在南边』这种措辞"——那句仍然成立，方位词要求读的人先算相对关系，反而更绕。改的只是**给坐标加上主语**：「站在 x=3 y=4 按 a」比「x=3 y=4→a」多了三个字，换来的是它不会再被误读成对象自己的坐标；拿它和抬头里的坐标一比，是站在上面按还是从旁边推，一眼分得出。
+
+**门仍然特判**：开没开是门**唯一要紧的问题**。走通了就直接写结论（`**已经走通**：通往地图N`），并且**只列成功的那一条碰法**——它是"下次怎么再走一遍"的操作说明，失败的那些这时已经没用了，门开过了就不再需要待办清单。没走通则写 `**还没打开过**` 并给出"还剩 N 种碰法没试"（`MAX_TRIED - len(attempts)`，为 0 时写"8 种碰法全试过了"）——那个数大于 0 就意味着"还有得试"，是它的待办依据。
+
+**"还没互动过"也要显式写出**——这是档案最有价值的一类条目（"这里有扇门，见过 7 次，一次都没进去过"是它自己的待办清单），没有这条信息就分不出哪扇门探索过、哪扇是新的。互动过但一句文字都没出现，则写"互动过但没出现文字"，与"没碰过"分开。
+
+### 5.5 函数：`_render_attempt(key, result) -> str`（模块级私有）
+
+把一条尝试记录渲染成人话：`x=3 y=4→a` + `无效果` → `站在 x=3 y=4 按 a → 无效果`。
+
+**设计理由**：**只负责显示，不改存储**。`attempts` 的键是落盘档案里的键（`MemoryTool` 写入时拼的 `x=.. y=..→按键`），改格式就等于让已有存档全部失配。解析不出 `→` 时**原样返回**而不是抛异常——显示层不该因为一条脏数据把整份 `known_objects` 打掉。
+
+单独抽成函数而不是写在 `render()` 里，是因为门的两个分支（走通了只列成功那条 / 没走通列全部）都要用它，两处各拼一遍迟早会分叉。
+
+### 5.6 常量：`MIN_STITCH = 6`（本文件内独立定义）
 
 **设计理由**：取值理由同 `step_memory.py` 的同名常量，但两处**各自独立定义**，因为拼接的是两种不同的滚动窗口内容（对话滚动 vs. 情景记忆的文本片段），没有必要共用同一个值。
 
-### 5.6 函数：`_stitch(prev, new) -> str | None`（本文件内独立定义）
+### 5.7 函数：`_stitch(prev, new) -> str | None`（本文件内独立定义）
 
 逻辑与 `step_memory.py` 中的同名函数完全一致，供 `ObjectFact.see` 使用；同样是本文件独立复制而非跨文件共享的实现。
 
@@ -595,7 +701,9 @@ assert 崩掉——那是把"模型的输出问题"报成了"我们自己的契�
 
 ### 6.6 `Source`（`str, Enum`）
 
-事件由哪一层产生：`PERCEPTION`（视觉模型链）、`DECISION`（文本模型链）、`HARNESS`（掩码/记忆/生命周期）、`WORLD`（模拟器）、`JUDGE`（成败判定，与决策分开记账才能算出判定器自己的准确率）。
+事件由哪一层产生：`PERCEPTION`（视觉模型链）、`DECISION`（文本模型链）、`HARNESS`（掩码/记忆/生命周期）、`WORLD`（模拟器）、`JUDGE`（成败判定，与决策分开记账才能算出判定器自己的准确率）、`MEMORY`（跨局摘要记忆生成，`EpisodeMemoryGenerator`）。
+
+`MEMORY` 与 `DECISION` 分开的理由：这条链的 token 花费不发生在 ReAct 循环里，**一局只烧一次**，混进 `DECISION` 会让"决策平均成本"这个数字失真。
 
 **设计理由**：每种聚合几乎都要按它切分（感知/决策各烧多少 token，失败集中在哪一层，延迟花在哪），它是横切维度，因此放进事件"信封"字段而不是 `payload` 内容。
 
@@ -605,7 +713,8 @@ trace 事件类型，取值：`EPISODE_START`、`EPISODE_END`、`OBSERVE`、`MOD
 
 **分类设计理由**：
 - `OBJECT_NOTE`（记下语义记忆·object 的新事实）与 `MEMORY_WRITE`（情景记忆写入）**故意分开**——二者是两种记忆（一次经过 vs. 那一格本身），寿命和用途不同；混成一类就数不出"它认识了多少个东西"这一直接反映语义记忆有没有用的指标。
-- `INSPECT`（细看）与 `OBSERVE`（每步必发的常规观测）分开：`INSPECT` 是大脑主动要的，混在一起就算不出"它多久要细看一次"，无法判断这个动作值不值那次调用成本。
+- `INSPECT`（细看）**已经没有生产者了**：细看功能整条链路删除（world 的方法、`PerceptionResult` 里的那条路径、`Observation.facts` 里的 `inspected` 键都没了）。枚举成员**保留**，因为旧的 trace 文件里有这类事件，而 `TraceEvent` 要能把它们解析回来——删掉成员，replay 旧数据会在校验那一步炸。**不要给它写新的发射点**：要恢复细看，就连同 world 的方法一起恢复。
+  当初把它与 `OBSERVE`（每步必发的常规观测）分开的理由留在这里，重做时仍然成立：`INSPECT` 是大脑主动要的，混在一起就算不出"它多久要细看一次"，也就无法判断这个动作值不值那次调用成本。
 - `GOAL_POP` 现在是唯一和目标栈有关的事件。配套的 `GOAL_PUSH` **删掉了**：压栈的唯一途径（`push_goal`）没有了，一个零生产者的事件类型只会让统计脚本里多一个恒为 0 的桶。
   拆解机制回来时它跟着回来，而且届时**仍然是两个类型、不是一个带方向的字段**——目标栈"拆了几层"和"完成了几层"是两个独立的数，拆得多完成得少正是目标栈失控的样子，按类型分开计数才一眼看得出。
   `goal_pop` 的 `reason` 字段同理留着（现在只有 `done` 一个取值，`superseded` 随多层判定一起删了）：拆解回来时"完成"和"白拆"必须分得开。
@@ -621,6 +730,7 @@ trace 事件类型，取值：`EPISODE_START`、`EPISODE_END`、`OBSERVE`、`MOD
 | `episode_id` | `str` | 必填 | 所属 episode |
 | `step` | `int` | 必填 | 发生在第几步；**不是主键**，一步内可能有多条事件 |
 | `type` | `EventType` | 必填 | 事件类型 |
+| `phase` | `str` | `""` | 循环阶段（`observe` / `retrieve_memory` / `think` / `act` 等），由事件类型推导；和 `episode_id` + `step` 一起供观测台聚合 |
 | `source` | `Source` | 必填 | 由哪一层产生；成本拆分与失败归因都按它切 |
 | `payload` | `dict[str, str]` | `{}` | 该类型的结构化内容 |
 | `ts` | `float` | 必填 | Unix 时间戳（秒），用于算延迟、对齐外部日志；**不能替代 `event_id` 排序**——同毫秒多条事件、时钟回拨都会让时间序失真 |

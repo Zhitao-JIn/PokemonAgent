@@ -25,7 +25,7 @@ pokemon_agent/
 ├── prompts/       所有 prompt 模板 + 组装辅助函数
 ├── providers/      具体的 LLM/视觉模型接入（DashScope/Qwen）
 ├── vision/        图像预处理（网格叠加等）
-├── trace/         TracePort 的内存实现（store.py: MockTrace，append/replay/sse）
+├── trace/         TracePort 的实现（store.py: LocalTrace，append/replay/sse；browser.py: 浏览器观测台）
 │                  + 事件 payload 组装的纯函数（utils.py: trace_utils）
 ├── experiment/    实验 manifest（已接入 run_experiment.py）+ 任务定义 + 跑批入口
 └── build.py       唯一的装配点（全项目唯一出现 `new` 具体实现的地方）
@@ -47,13 +47,13 @@ probe/             命令行脚本（跑真实 episode、调试工具）
 - [`harness/SPEC.md`](harness/SPEC.md) —— 控制循环图，**项目里最核心的一份规格**
 - [`prompts/SPEC.md`](prompts/SPEC.md) —— 九个 prompt 模板 + 加载/组装机制
 - [`providers/SPEC.md`](providers/SPEC.md) —— DashScope/Qwen 接入 + 图像预处理
-- [`build/SPEC.md`](build/SPEC.md) —— 装配、异常类型、`MockTrace`/`trace_utils`、命令行入口
+- [`build/SPEC.md`](build/SPEC.md) —— 装配、异常类型、`LocalTrace`/`trace_utils`、命令行入口
 
 ## 分层关系（谁认识谁）
 
 ```
 probe/run_episode.py
-        │  只 import build.py + errors + trace.store.MockTrace
+        │  只 import build.py + errors + trace.store.LocalTrace
         ▼
 build.py ── 全项目唯一一处具体类的 `new`
         │
@@ -66,7 +66,7 @@ build.py ── 全项目唯一一处具体类的 `new`
            │            │           │           │
      GameToolPort  MemoryToolPort BrainPort  TracePort
            │            │           │           │
-      GameTools    MemoryTool     Brain       MockTrace
+      GameTools    MemoryTool     Brain       LocalTrace
       (tools/)      (tools/)    (brain/)      (trace/store.py)
                                             payload 组装另在
                                             trace/utils.py（不认识 TracePort）
@@ -102,25 +102,29 @@ build.py ── 全项目唯一一处具体类的 `new`
    （除非命中帧哈希缓存）→ 解析成 `schemas/observation.py` 里的 `ScreenState`/
    `TerrainMap` → 组装成 `Observation`。`known_objects`/`knowledge` **不在这里拼**——
    `_observe()` 只产出这一帧实际看到的东西，语义记忆的读挪到下一步。
-2. **retrieve_memory**：`Harness` 调 `MemoryToolPort.query_episodic()` →
-   `MemoryTool._overlap()` 按字符重叠打分，取回 `list[StepMemory]`
-   （`schemas/step_memory.py`）；同一个节点里再调
-   `MemoryToolPort.known_here()` 把语义记忆拼进 `facts["known_objects"]`、
-   `MemoryToolPort.knowledge_base()`（每次都重新读盘）拼进 `facts["knowledge"]`——
-   三种记忆的读共用这一个图节点，判定（`_judge`）已经在上一步跑完，
-   所以判定模型永远看不到这两个字段。
+2. **retrieve_memory**：**四类记忆的读共用这一个图节点**——
+   `query_episode_steps()` 取本局单步流水（全量、按 step 升序，
+   `schemas/step_memory.py`）、`query_objects()` 拼进 `facts["known_objects"]`、
+   `query_knowledge()`（混合检索）拼进 `facts["knowledge"]`、
+   `query_episode_summaries()`（按场景 + 相关性）拼进 `facts["episode_memories"]`。
+   判定（`_judge`）已经在上一步跑完，所以判定模型永远看不到这几个字段。
 3. **think**：`Harness` 把 `goals`/`obs`/`space`/`memories` 交给
    `BrainPort.choose()` → `Brain` 用 `prompts/decide_action.md` 组装 prompt →
    调 `LLMProvider.complete()` → 解析成一个合法的 `Action`
    （`schemas/action.py`），失败则重试并把 `retry_note.md` 塞进下一次 prompt。
 4. **press**：**这一版只有按键一类动作**，直接调 `GameToolPort.execute()` 推进世界。
+   一步交出的是一条**按键链**（`Action.sequence`，多段链只能是 `up`/`down`），
+   `execute()` 把整条链交给 `world.step()`，**世界只在链尾感知一次**——
+   感知是每步都要付钱的那一项，`up×4` 拆成四次按键就是四次视觉调用。
    以前这里是 `press / push_goal / inspect` 三选一，按 `Action.intent` 在图上分派；
    拆子目标的机制要在别处重写，所以 `Intent` 连同分派一起删了（见
    [`harness/SPEC.md`](harness/SPEC.md) 3.1）。
 5. **remember**（只在 press 之后）：`Harness` 调 `BrainPort.reflect()` 把
    前后两份 `Observation` 整理成一条 `StepMemory`，写回
-   `MemoryToolPort.write_episodic()`；再调 `MemoryToolPort.note_step()`
-   把这一步的语义记忆（门/招牌/人给出的信息）落进 `memory/` 包。
+   `MemoryToolPort.store_episode_step()`；再调
+   `MemoryToolPort.store_objects_interactions()` 把这一步的语义记忆
+   （门/招牌/人给出的信息）落进 `memory/` 包——**多段动作链和连按这一步不记**，
+   因为链的两头之间路过了哪些格子看不到，记下来就是一条假的尝试记录。
 6. **summarize**（只在终止那一轮）：`look` 判出 `done` 之后不进 `retrieve_memory`，
    改走 `summarize` —— 把这一局蒸馏成一条跨局摘要记忆（`EpisodeMemory`）。
    它**要调一次模型**，所以在图上占一格：图上看得见的东西才会被算进成本。
@@ -139,8 +143,8 @@ build.py ── 全项目唯一一处具体类的 `new`
   Harness 一个人的工作。这条规则最近的体现：模型调用记账从
   `drain_calls()` + 内部缓冲区（生产者/消费者通过可变状态搭桥）改成了
   `calls` 直接跟着 `PerceptionResult`/`ToolResult` 返回值走——
-  `reset`/`perceive`/`inspect`/`execute` 四个方法各自把这次调用产生的账单
-  原样交出来，Harness 在 `_begin`/`_press`/`_inspect`/`_observe` 里当场记账，
+  `reset`/`perceive`/`execute` 三个方法各自把这次调用产生的账单
+  原样交出来，Harness 在 `_begin`/`_press`/`_observe` 里当场记账，
   不再有任何跨调用的隐藏状态。完整历史见 `interfaces/SPEC.md` 和
   `world/SPEC.md`。
 - **`step` 只有一个主人。** `LoopState.step` 由 Harness 盖章，`Observation.step`
@@ -172,9 +176,9 @@ build.py ── 全项目唯一一处具体类的 `new`
 
 - `pokemon_agent/schemas/core.py`（旧的单文件契约）、
   `pokemon_agent/memory/object_memory.py`（旧的语义记忆实现）、
-  `pokemon_agent/mocks/mock_trace.py`（`MockTrace` 的旧位置，已搬到
+  `pokemon_agent/mocks/mock_trace.py`（`LocalTrace` 的旧位置，已搬到
   `pokemon_agent/trace/store.py`）、`probe/echo_trace.py`（`EchoTrace` 装饰器，
-  打印逻辑已并入 `MockTrace.sse()`）——这四个曾经的"应删除但尚未删除"文件
+  打印逻辑已并入 `LocalTrace.sse()`）——这四个曾经的"应删除但尚未删除"文件
   **现已全部删除**，本节这条不变量记录到此为止；`trace/` 包的当前形态见
   `interfaces/SPEC.md` 第 4 节、`build/SPEC.md` 第 4、6 节。
 - **拆子目标的机制不在了。** `Intent`/`push_goal`/多层并发判定（`_judge_all`）
@@ -182,10 +186,24 @@ build.py ── 全项目唯一一处具体类的 `new`
   重写它时要捡回来的那几条论证记在 `harness/SPEC.md` 第 5 节和
   `brain/SPEC.md` 3.4 的引用块里——**不留在代码里占位**，占位的抽象会把下一版
   往旧形状上带。
-- **`inspect` 是一条半死的链路**：`WorldPort.inspect()` / `PyBoyWorld.inspect()`
-  还在，`EventType.INSPECT` / `trace_utils.inspect()` / `prompts/inspect_focus.md`
-  也还在，但 `GameToolPort` 早已不暴露它，没有任何调用方。要么接回来，要么整条删掉。
+- **`inspect` 整条链路已经删除。** `WorldPort.inspect()` / `PyBoyWorld.inspect()` /
+  `trace_utils.inspect()` / `facts["inspected"]` / `prompts/inspect_focus.md` /
+  `JUDGE_BLIND` 里的那一项全部删掉——它长期**没有任何调用方**（brain 和 harness 里
+  一处都没有，trace 里也从没出现过 INSPECT 事件），却带着一份 prompt、一个 4 条上限的
+  缓存、一条 facts 键和一条黑名单条目在维护。
+  **`EventType.INSPECT` 枚举成员保留**：旧的 trace 文件里有这类事件，删掉成员
+  replay 会在校验那一步炸。观测台的 inspect 分支同理保留。两处都标了"没有生产者了"。
+  它留下的那条经验记在 `prompts/SPEC.md` 4.2 和 5.2：细看和 `observe()` 的区别不在
+  "再看一次"，而在**问的是不同的问题**——`observe()` 按帧缓存，同一帧再问一遍
+  返回的字节完全一样。
 - **`tests/` 整个目录在 `.gitignore` 里**（`git ls-files tests/` 是 0）。
   CLAUDE.md 第十节要求必须存在的那两个测试，对任何 clone 这个仓库的人都不存在。
-- `MockTrace` 是 `TracePort` 唯一的实现——落盘、真正的浏览器推流（`sse()` 目前
-  只打印到控制台）、按失败类型聚合统计都还没做（`build/SPEC.md` 里有完整说明）。
+- `LocalTrace` 是 `TracePort` 唯一的实现，但它**已经不只是内存实现了**：事件逐条
+  追加落 JSONL（`trace_data/<run_id>/episodes/*.jsonl`），并通过 `browser.py` 的
+  SSE 推给浏览器观测台。终端只打印账单、错误、目标出栈、episode 起止这几类；
+  观测、记忆、推理、动作这七类由 `store.BROWSER_ONLY` 挡在终端之外，只在观测台看
+  ——它们一条就是十几行，混进终端会把前一类冲掉。
+  **按失败类型聚合统计**仍然没做（`build/SPEC.md` 里有完整说明）。
+- **`tests/` 现在有四个文件**（`test_run_experiment.py` 真实环境端到端、
+  `test_prompts.py` prompt 漂移、`test_trace.py` trace payload，以及几个 0 字节的
+  占位文件）。但整个目录仍在 `.gitignore` 里，见上一条。

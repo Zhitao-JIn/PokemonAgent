@@ -36,14 +36,21 @@ from pokemon_agent.errors import IllegalAction, OutputTruncated, ParseFailure
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.prompts import load as load_prompt
 from pokemon_agent.prompts.brain_hints import retry_note as _retry_note
-from pokemon_agent.schemas.action import MAX_RATIONALE, Action, ActionSegment, ActionSpace, Goal
+from pokemon_agent.schemas.action import (
+    MAX_RATIONALE,
+    MAX_TIMES,
+    Action,
+    ActionSegment,
+    ActionSpace,
+    Goal,
+)
 from pokemon_agent.schemas.step_memory import StepMemory, Snapshot
-from pokemon_agent.schemas.observation import Observation
+from pokemon_agent.schemas.observation import INTERACT_KEY, Observation
 from pokemon_agent.schemas.trace import Decision, ModelCall, Verdict
 
 
 JUDGE_BLIND: frozenset[str] = frozenset({
-    "known_objects", "walk_map", "landmarks", "inspected",
+    "known_objects", "walk_map", "landmarks",
 })
 """判定器**看不到**的字段。判定器现在有历史了（`history` 参数），
 但那份历史是**有界的**：只有本局、只有最近几步。这几个字段是无界的，所以挡掉。
@@ -56,9 +63,6 @@ JUDGE_BLIND: frozenset[str] = frozenset({
   光在 prompt 里写"别做坐标换算"是不够的——实测它照做了：
   把 `walk_map` 的行号当成全局 y，得出"他还没进屋"，而 `map_id` 明写着他在屋里。
   拿不到就不会用。位置证据由 `where` 一行直接给出，那是答案，不是原料。
-- `inspected`：那是**决策者自己挑的问题**得到的回答，跟着他的注意力走。
-  让判定器读它，等于让被评价者给评价者递材料。
-
 **这是一份黑名单而不是白名单**，方向是刻意选的：漏进一个新字段，代价是判定器
 多看一眼；漏掉一个新字段，代价是判定器瞎掉——`dialog_text` 那次就是后者，
 判定器一路在说"对话框内容未提供"，一局本该成功的 episode 被静默记成失败。
@@ -196,7 +200,7 @@ class Brain:
             rendered = (
                 "\n".join(
                     f"- {k}: {v}" for k, v in obs.facts.items() if k not in JUDGE_BLIND
-                ) or obs.summary
+                ) or obs.status
             )
             past = "\n\n".join(m.render(reason=False) for m in history)
             prompt = self._judge_prompt.render(
@@ -299,7 +303,7 @@ class Brain:
             actions += f"\n\n{space.note}"
         return self._decide_prompt.render(
             goals=self._render_goals(goals),
-            summary=obs.summary,
+            status=obs.status,
             facts=facts,
             memories=recalled,
             actions=actions,
@@ -339,21 +343,33 @@ class Brain:
         for segment in raw_sequence:
             if not isinstance(segment, dict) or not isinstance(segment.get("action"), str):
                 raise ParseFailure(text, "each sequence item needs an action")
-            sequence.append(ActionSegment(
-                name=segment["action"], times=self._parse_times(text, segment),
-            ))
-        if len(sequence) > 1 and any(segment.name not in {"up", "down"} for segment in sequence):
-            raise ParseFailure(text, "multi-step sequence may contain only up/down")
-        name = sequence[0].name
-        args = {}
+            name = segment["action"]
+            times = self._parse_times(text, segment)
+            # **`a` 只按一次，在这里就定死。**
+            #
+            # 一条链只在结尾感知一次，所以连按会把中间那几帧整个吃掉；而 `a` 产出的
+            # 恰恰是全项目最要紧的证据——对话框文字。连按三次推完整段对话，那几句
+            # 一帧都没被看到，最后一次还会把对话框关掉，判定器看到一个没有对话框的
+            # 画面，**一局本该成功的 episode 被静默记成失败**。`a` 的收益全在中间帧上，
+            # **连按对它从来没有意义**。
+            #
+            # 夹在这里而不是 world 里：动作合法性是解析期的事，让非法的东西一路
+            # 走到执行层再被悄悄改写，大脑就会以为自己按了三次。写死成 1 之后，
+            # 交给 world 的链**就是真正会发生的那条链**。
+            if name == INTERACT_KEY:
+                times = 1
+            sequence.append(ActionSegment(name=name, times=times))
+        if len(sequence) > 1 and any(
+            segment.name not in {"up", "down", "left", "right"} for segment in sequence
+        ):
+            raise ParseFailure(text, "multi-step sequence may contain only directional keys")
 
         for segment in sequence:
             if not space.contains(segment.name):
                 raise IllegalAction(segment.name, space.names)
 
         return Action(
-            name=name,
-            args={str(k): str(v) for k, v in args.items()},
+            name=sequence[0].name,
             thought=self._parse_thought(text, raw),
             rationale=self._parse_rationale(text, raw),
             sequence=sequence,
@@ -367,8 +383,8 @@ class Brain:
             times = int(raw_times)
         except (TypeError, ValueError) as exc:
             raise ParseFailure(text, "times must be an integer") from exc
-        if not 1 <= times <= 8:
-            raise ParseFailure(text, "times must be between 1 and 8")
+        if not 1 <= times <= MAX_TIMES:
+            raise ParseFailure(text, f"times must be between 1 and {MAX_TIMES}")
         return times
 
     @staticmethod

@@ -18,6 +18,31 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pokemon_agent.schemas.trace import EventType, TraceEvent
 
 
+_SHARED: "BrowserTraceServer | None" = None
+
+
+def shared_server() -> "BrowserTraceServer":
+    """整个进程共用的那一台观测台。**端口是进程级资源，服务也该是。**
+
+    `BrowserTraceServer.__init__` 就地 `bind` 到固定端口 8765。一个进程里跑第二局
+    （`run_experiment --repeat`、或任何连着建两次会话的流程）时再 new 一台，
+    在 Linux 上会直接 `EADDRINUSE`，而在 **Windows 上更坏**：`allow_reuse_address`
+    让第二次 bind **也成功**，于是同一个端口上有两台服务，浏览器那个标签页还挂在
+    第一台的 SSE 连接上——**第二局的事件全推给了第二台，页面从此一个字都不再更新**。
+    症状是"第二次循环浏览器就没信息了"，而日志和落盘一切正常。
+
+    共用一台之后，一个进程里跑多少局，都推进同一条 SSE，标签页不用重开。
+    每局开头由页面打一条 RUN 分隔线区分。
+
+    **这是有意的进程级单例**：端口只有一个，谁先拿到谁就是它。
+    """
+    global _SHARED
+    if _SHARED is None:
+        _SHARED = BrowserTraceServer()
+        _SHARED.start()
+    return _SHARED
+
+
 class BrowserTraceServer:
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8765) -> None:
@@ -104,11 +129,15 @@ class BrowserTraceServer:
 #log{white-space:pre-wrap;max-width:1000px}.step{color:#7dd3fc;margin-top:18px}
 .phase{color:#fbbf24;margin-top:8px}.control{color:#888}</style>
 <div id="log"></div><script>
-const log=document.querySelector('#log'); let current='';
+const log=document.querySelector('#log'); let current=''; let currentRun='';
+// inspect 还留着：功能已经删了，但旧的 trace 文件里有这类事件，回放要看得见。
 const info=new Set(['observe','memory_read','think','act','inspect','memory_write']);
 function line(s, cls=''){const e=document.createElement('div');e.textContent=s;e.className=cls;log.append(e)}
 function render(e){
   if(!info.has(e.type)) return;
+  // 一个进程可以连着跑好几局（--repeat），它们推的是同一条 SSE。
+  // 没有这条分隔线的话，第二局的 STEP 0 直接接在第一局的 STEP 12 后面。
+  if(e.run_id&&e.run_id!==currentRun){currentRun=e.run_id;line('===== RUN '+e.run_id+' =====','step')}
   const key=e.episode_id+':'+e.step;
   if(key!==current){current=key;line('----- STEP '+e.step+' -----','step')}
   line('--- '+e.phase.toUpperCase()+' ---','phase');
@@ -116,10 +145,28 @@ function render(e){
   if(e.type==='observe'){
     let facts={};
     try{facts=JSON.parse(p.facts||'{}')}catch(_error){}
-    line('观察：'+(p.summary||''));
+    line('观察：'+(p.status||p.summary||''));
     line('  scene       = '+(p.scene||facts.scene||'(无)'));
     line('  overlay     = '+(p.overlay||facts.overlay||'(无)'));
-    line('  walk_map    = '+(facts.walk_map||'(无)'));
+    // overview 是视觉模型写的那一整段；status 只是 scene+overlay 拼的一行。
+    // 以前这里只印 status，等于把这一帧真正被看到的东西藏了起来。
+    if(facts.overview) line('  overview    = '+facts.overview);
+    if(facts.dialog_text) line('  dialog      = 「'+facts.dialog_text+'」');
+    if(facts.where) line('  where       = '+facts.where
+        +(facts.facing?('  朝向 '+facts.facing):'  朝向 ?'));
+    if(facts.neighbors) line('  neighbors   = '+facts.neighbors);
+    if(facts.landmarks) line('  landmarks   = '+facts.landmarks);
+    // walk_map 逐行打，别指望 pre-wrap：它一行 10 个字符、行首带 y=，
+    // 挤成一段之后**看不出形状**，而这张图的全部用处就是看形状。
+    //
+    // **换行符写成 \\n（两个反斜杠）。** 这段 JS 住在 Python 的三引号字符串里，
+    // 写 \\n 的话 Python 会把它变成一个真换行，JS 字符串就断成两行、整个 script
+    // 语法错误——症状是观测台**一个字都不显示**，而不是这一块出问题。
+    if(facts.walk_map){
+      const rows=facts.walk_map.split('\\n');
+      line('  walk_map    = '+rows[0]);
+      for(let i=1;i<rows.length;i++) line('                '+rows[i]);
+    } else line('  walk_map    = (无)');
   }
   else if(e.type==='memory_read'){
     line('记忆：');
@@ -133,7 +180,7 @@ function render(e){
   else if(e.type==='act'){
     const chain=(p.segment_count&&p.segment_count!=='1')
       ?'  ('+p.segment_count+' 段 / '+(p.press_count||'?')+' 次按键)':'';
-    line('行动：'+(p.action||'')+chain+' '+(p.message||''));
+    line('行动：'+(p.action||'')+chain);
   }
   else if(e.type==='inspect') line('细看：'+(p.answer||''));
   else line('记忆写入');

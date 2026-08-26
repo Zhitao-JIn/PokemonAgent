@@ -1,4 +1,275 @@
-# 变更日志
+## 2026-08-26 —— 帧哈希跟着 `PerceptionResult` 走，删掉 `ToolPort.last_frame_sha`
+
+**改了什么**：`PerceptionResult` 加 `frame_sha` 字段；`PyBoyWorld._perceive()` 把 sha
+作为返回值的第一项交出去，`observe()` 填进结果；删掉 `GameTools.last_frame_sha`
+（property + `@require_permission("read:game:last_frame_sha")`）与 `ToolPort` 上的声明；
+`harness._observe` 改用 `perceived.frame_sha`；`permissions.json` 删掉那条权限串。
+
+**为什么这么改**：
+
+1. **那个权限守不住任何东西**。`GameTools` 自己在 `get_action_space()` 和 `execute()`
+   里直接读 `self._world.last_frame_sha` 做动作空间的过期检查，绕过守卫。
+   同一个文件里能随手绕过的检查不是边界。
+2. **它是 `drain_calls()` 的同一个形状**。`_observe()` 在 `perceive()` 之后再调一次
+   去取哈希，而值属于刚刚产生的那一帧 —— `PerceptionResult` 的 docstring 早就把这个
+   教训写下来了：让产生它的地方直接当返回值交出来。
+3. **前提不成立**。这个字段的全部意义是「这条观测是哪一帧」，用第二次读取的结果去
+   回答第一次读取的归属，逻辑上就不对。单线程下现在不会错，但那是调用顺序碰巧保证的，
+   不是结构保证的。
+
+**取舍**：`WorldPort.last_frame_sha` **保留**。动作空间的过期检查要它，那是工具层
+内部的用途，和「交给 Harness 记账」是两件事。属性和返回值各管一头。
+
+**顺带清掉 `write:harness:trace`**：两个角色里都有它，但全项目没有任何
+`@require_permission("write:harness:trace")` —— 是个悬空的权限串。悬空的授权比缺失的
+授权更坏：它让人以为 trace 写入被守着，实际上一行检查都没有。要给 trace 加守卫，
+该是先加装饰器再加这条串。
+
+**影响面**：`ToolPort` 少一个成员（契约变更，实现方要跟）；`PerceptionResult` 多一个
+有默认值的字段（旧数据反序列化不受影响，`frame_sha` 为空串）；`read:game:last_frame_sha`
+与 `write:harness:trace` 从权限清单消失。行为不变 —— OBSERVE 事件里那个 sha 的值和
+从前一样，两条权限串本来也没有守着任何东西。
+
+## 2026-08-25 —— docs/spec 全量同步：十份 SPEC 追上代码
+**改了什么**：`docs/spec/` 下十份文档全部对着代码校了一遍，
++1036 / -552 行。今天所有变更的痕迹（动作链、一链一感知、`summary` → `status`、
+`ToolResult.message` 删除、朝向读 RAM、细看整条删除、记忆一族改名、trace payload
+变化、`--repeat`、观测台单例）都落进了对应的 SPEC；顺带修了**今天之前就已经漂了**
+的一批：`MemoryToolPort` 整张签名表（`query_episodic`/`known_here`/`knowledge_base`/
+`note_step`/`see_objects` 一个都不剩）、知识库从"全量拼接、每次读盘"改成混合检索 +
+mtime 增量索引、`MockTrace` → `LocalTrace`、`memory/port.py` 这个不存在的路径、
+`probe/run_episode.py` 已搬到 `pokemon_agent/experiment/`、`save_state` 从来没进过
+签名表。
+**为什么这么改**：文档漂了不会有任何症状——直到有人照着它改代码。这一轮里
+`repeat_hint.md` 就是活的证据：它一个字没改，于是模型同时收到两套互相矛盾的说明。
+SPEC 比 prompt 更隐蔽，因为它不进模型的上下文，只进人的上下文。
+**取舍**：删掉的东西**不是抹掉，是改写成「这里曾经有一个 X …… 为什么删」**——
+`inspect` 那条"细看和 observe 的区别不在再看一次、而在问的是不同的问题"、
+`query_episodic` 那条"打分对着的必须和喂进 prompt 的是同一份文本"、
+知识库那条"要能一边跑一边改 .md"，都是踩出来的判断，删了代码不等于删了理由。
+`build/SPEC.md` 第 5 节描述的旧入口（`probe/run_episode.py`）没有逐节重写，
+只在节首标明它已搬走、下面按旧文件读——那几节讲的 `_summary()` 统计逻辑仍有参考价值。
+**怎么做的**：五份用 subagent 并行改（world/schemas/tools/interfaces/brain），
+其余六份手工改。中途撞上会话额度上限，四个 agent 被腰斩，后半程改回手工。
+**影响面**：只动文档，一行代码没碰；`pytest tests` 仍是 15 passed + 1 skipped。
+
+## 2026-08-25 —— 同步 repeat hint 的方向键规则
+**改了什么**：在 `repeat_hint.md` 中明确废弃旧的“多段链只能上下、right 必须换步”说明，改为允许四个方向键组成多段链。
+**为什么这么改**：仅修改 `decide_action.md` 会让 `repeat_hint.md` 继续向模型提供相互矛盾的路径规划规则。
+**取舍**：保留旧文字作为历史说明并追加覆盖规则，避免破坏 prompt 文件的既有结构。
+**影响面**：统一 `repeat_hint.md` 与执行器对方向键链的约束。
+
+## 2026-08-25 —— 允许四个方向键组成多段链
+**改了什么**：将多段 `sequence` 的允许按键从 `up/down` 扩展为 `up/down/left/right`。
+**为什么这么改**：多段按键链表达的是移动路径，四个方向键都属于移动指令，不能只限制上下移动。
+**取舍**：`a` 等非方向键仍只能出现在长度为 1 的 sequence 中，避免把交互动作混入移动链。
+**影响面**：同步更新决策解析、执行校验和 prompt 规则。
+
+## 2026-08-25 —— 蒸馏 prompt 并入统一加载路径；NPC 说明去重；补上 `tests/test_prompts.py`
+**改了什么**：
+1. `episode_summary.md` 从 jinja2（`{{ }}`）改成 `$` 占位符，`EpisodeMemoryGenerator`
+   不再自己 `jinja2.Template(open(...))`，改用 `prompts.load`；`success` 那个条件表达式
+   挪进代码（传 `result="成功完成"/"未能完成"`）；`with_prompts` 里加上它。
+   顺带把通篇的"情景记忆"改成"跨局摘要记忆"，并点明它和 `StepMemory` 不是一回事。
+2. NPC 那段说明只留 `map_hint.md` 一份，`decide_action.md` 里删掉，
+   `decide_action` 独有的那句"只是重复固定台词就换一个"并进 map_hint。
+3. 新增 `tests/test_prompts.py`（原来是个 0 字节的空文件）。
+**为什么这么改**：
+自己读文件的代价不是多几行代码，是这份 prompt **没有 sha、进不了 manifest**——
+那一局的蒸馏用的是哪一版说明，事后查不出来，而 manifest 存在的全部意义就是回答这个。
+两套模板引擎并存还意味着 `$` 和 `{{ }}` 两种语法在同一个目录里，改错一个不会报错。
+NPC 说明重复两份、两份都每步进 prompt，改一处漏一处是迟早的事。
+**最要紧的是第 3 条**：`schemas/observation.py` 里 `describe_scene_fields()` /
+`json_output_examples()` 的注释一直写着"漂移由 `test_prompts.py` 挡"，
+而那个文件是**空的**——**声称存在的锁不存在，比没有锁更糟**：那两个函数因此
+零调用方（看起来像死代码），而 prompt 和 `SCENE_FIELDS` 真漂了也没人知道。
+现在它测三件事：每份 prompt 的 `$占位符` 和调用方实参双向吻合（漏传当场 KeyError、
+多传静默丢内容）、字段清单逐字一致、六个 JSON 样例按解析后的 dict 一致。
+实测当前全部吻合，没有存量漂移。
+**取舍**：`CALLERS` 那张表是**手写**的，就是"调用方的契约"。从代码里自动扒
+`render(...)` 的实参等于两边同源，那就什么都测不出来了。
+**影响面**：新 run 的 manifest 会多一份 `episode_summary` 原文；测试从 1 个涨到 12 个。
+
+## 2026-08-25 —— 全部 prompt 过了一遍，清掉两条已经不成立的说法
+**改了什么**：`repeat_hint.md` 里的 `?` 地形符改掉——`TERRAIN_MEANING` 只有
+`. G D S N # @` 七个字符，**没有 `?`**，那是上一版地图的遗留；改成按真实图例说
+"数到 `#`、`D`、`S`、`N` 或转弯处为止"，"什么时候别拉长链"也从"目标格是 `?`"
+改成"路上要穿过 `G`"（会遇野生宝可梦，这才是真会中途出事的那种格子）。
+`map_hint.md` 末尾"本例中 `x=1,y=5` 的 `N` 就属于这种情况"删掉——**prompt 里
+没有这个例子**，那句话指向空气。
+**为什么这么改**：prompt 里指向不存在的符号和不存在的例子，模型只能自己编一个
+去匹配，而编出来的东西读日志的人分辨不出是它读错了还是我们说错了。
+**顺带加的检查**：写了个小脚本把每个模板里的 `$占位符` 和调用方实际传的参数对了一遍
+（`Template.substitute` 漏传会当场抛 KeyError，而 prompt 是最常改的文件）——
+七个模板全部吻合，没有多也没有少。
+**没改但要记一笔**：
+1. `episode_summary.md` 走的是**另一套模板引擎**（`episode_summarizer` 自己
+   `jinja2.Template`，`{{ }}` 语法），不经过 `prompts.load`，因此**没有 sha、
+   也不进 manifest**——这一局用的是哪一版蒸馏 prompt，事后查不出来。
+2. NPC 那段说明在 `decide_action.md` 和 `map_hint.md` 里各写了一遍，内容重复；
+   两份都在每步的 prompt 里，改一处漏一处是迟早的事。
+3. `episode_summary.md` 通篇管跨局摘要叫"情景记忆"，和刚定下的
+   step_memory / episode_memory 词汇对不上。
+
+## 2026-08-25 —— prompt 跟上动作链：`repeat_hint` 还在教已经废掉的 `args.times`
+**改了什么**：`repeat_hint.md` 整篇重写（它每步都进决策 prompt，挂在动作空间的 note 上）；
+`decide_action.md` 开头从"选出下一个动作"改成"选出这一步要按的按键链"，
+`sequence` 那条说明拆成三条规则并写清楚拐弯怎么办。
+**为什么这么改**：`repeat_hint.md` 一个字都没改过，还在教
+`用 "args": {"times": "N"} 连按同一个键`——**那个格式现在直接 ParseFailure**。
+它还在教"把开头那段同方向的一次走完，下一步再转弯"，那是一步一个键时代的战术。
+两份说明打架的结果在 trace 里看得很清楚：模型规划出 `down×2 → right×3 → up`，
+然后卡在"sequence 长度>1 只能 up/down"上，自我说服成"当前只需输出下一步"。
+**它不是不会用链，是我们同时给了它两套互相矛盾的说明。**
+**取舍**：把"`right×3` 自己单独成一步完全合法"写成显式的一条——多段链只能 up/down
+这条规则本身容易被读成"拐弯的方向不能连按"，而那是错的。
+`a` 的措辞从"会被夹成 1"改成"会被改成 1"，因为夹的位置已经从执行层挪到了解析期。
+**影响面**：只动 prompt。`manifest` 存的是 `decide_action` / `judge_success` 的原文，
+这次改动会体现在新的 run 里。
+**没做**：多段链只能 up/down 这条规则本身没动——那是你定的边界，我只是把它说清楚。
+
+## 2026-08-25 —— 修：`--repeat` 第二局起观测台不再更新（每局都新起一台服务抢同一个端口）
+**改了什么**：`trace/browser.py` 加进程级单例 `shared_server()`，`build_session()`
+改成用它，不再每次建会话都 `BrowserTraceServer()`。页面在 `run_id` 变化时打一条
+`===== RUN <id> =====` 分隔线。
+**为什么这么改**：`BrowserTraceServer.__init__` 就地 bind 固定端口 8765。一个进程里
+跑第二局时再 new 一台，Linux 上直接 `EADDRINUSE`，而 **Windows 上更坏**：
+`allow_reuse_address` 让第二次 bind 也成功，同一端口上于是有两台服务，
+而浏览器那个标签页还挂在**第一台**的 SSE 连接上——第二局的事件全推给了第二台，
+页面从此一个字都不再更新。日志和落盘全都正常，所以从终端完全看不出来。
+**取舍**：进程级单例（模块级可变状态）。端口本来就是进程级资源，谁先拿到谁就是它；
+把服务做成每会话一个，等于假装这个资源可以有多份。多局共用一条 SSE，
+靠 RUN 分隔线区分，标签页不用重开。
+**影响面**：`--repeat N` 现在整轮都能在同一个页面上看完。
+**怎么验的**：起一条真的 SSE 连接，同一进程里连着建两个 `LocalTrace`（run-A / run-B）
+各推两条事件，四条**都到了同一条连接**上。
+
+## 2026-08-25 —— 修：观测台整页空白（JS 字符串被 Python 转义打断）
+**改了什么**：`browser.py` 里 `facts.walk_map.split('\\n')` 的换行符改成写两个反斜杠。
+**为什么这么改**：那段 JS 住在 Python 的三引号字符串里。写 `\n` 的话 **Python**
+先把它变成一个真换行，送到浏览器的就是断成两行的字符串字面量，`script` 整段
+语法错误——症状不是"walk_map 那一块不对"，而是**观测台一个字都不显示**。
+上一条改动就是这么把整页打没的。
+**取舍**：这类"字符串里的字符串"没有类型系统看着，只能靠一条规则记住：
+`browser.py` 的 HTML 块里，任何要交给 JS 的反斜杠都得写两遍。注释就写在那一行上面。
+**怎么防**：现在可以用 `node --check` 验——把那段 HTML 里的 `<script>` 抠出来
+喂给它，语法错误当场就报。这次改完验过了，另外拿一条真的 observe 事件跑了一遍
+渲染函数，九行 walk_map 逐行输出正常。
+
+## 2026-08-25 —— 观测台的 observe 块补齐：朝向、四邻、地标各占一行，walk_map 逐行打
+**改了什么**：`browser.py` 的 observe 块加 `facing`（并进 where 那行，读不到时显示
+`朝向 ?`）、`neighbors` 和 `landmarks` 各自成行；`walk_map` 按 `\n` 拆开逐行输出。
+**为什么这么改**：`walk_map` 原来整段丢给一个 `line()`，虽然 CSS 是 `pre-wrap`，
+但实际读起来仍是一坨——**这张图的全部用处就是看形状**（往那边走得通吗、哪边是死路），
+挤成一段就什么都看不出来。`facing` 是新读出来的字段（精灵表 +9），
+而它决定 `a` 作用在哪一格，观测台上看不到就没法判断"它为什么对着空气按 a"。
+`朝向 ?` 而不是省略：读不出来是要查的事，静默省略会让人以为这一帧没有朝向概念。
+**取舍**：observe 块从 5 行涨到十几行。可接受——这本来就是"它当时看到了什么"
+唯一的展示位，而终端那边已经完全不打这类事件了。
+**影响面**：只动观测台的渲染，事件和 payload 不变。
+
+## 2026-08-25 —— 朝向改为读内存；细看（inspect）整条链路删除
+**改了什么**：
+新增 `ram.read_facing()`（精灵表 `+9`，`0/4/8/12` → south/north/west/east），
+`TerrainMap` 加 `facing` 字段，`facts["facing"]` 从它来。`PyBoyWorld._facing`
+连同 `step()` 里的更新一起删除。
+细看整条链路删除：`PyBoyWorld.inspect()` / `_note()` / `_notes` / `MAX_NOTES` /
+`facts["inspected"]`、`WorldPort.inspect`、`trace.inspect()`、`JUDGE_BLIND` 里的
+`inspected`、`prompts/inspect_focus.md`（移到 `_to_delete/`，这台机器上删不掉文件）。
+**为什么这么改**：
+朝向——`+9` 那个字节的含义**这个文件自己的注释里早就写着**（`ram.py` 的精灵表说明），
+只是从来没读。推的那一版有两个洞：开局和过场之后朝向未知（没按过键），
+而且它不进存档，checkpoint 恢复不回来（`docs/spec/harness/SPEC.md` 1.4 记的就是它）。
+读内存两个洞一起消失。
+细看——**没有任何调用方**。`brain` 和 `harness` 里一处都没有，最近几局 trace 里
+一条 INSPECT 事件都没有。它带着一份 prompt、一个 4 条上限的缓存、一条 `facts` 键、
+一条判定器黑名单，全是维护成本却没有执行路径。
+**取舍**：`EventType.INSPECT` 保留——旧 trace 文件里有这类事件，删掉枚举成员
+replay 会在校验那一步炸；观测台的 inspect 分支同理保留。两处都标了"没有生产者了"。
+`BUTTON_FACING` 保留但改了说明：它现在只回答"这一步往哪按"（工具层算 attempts 键要用），
+不再是"现在面朝哪"的来源。
+**影响面**：`facts["facing"]` 从此开局就有值（以前要按过一次方向键才出现）；
+`Observation.facts` 少了 `inspected` 键；`WorldPort` 少一个方法。
+**要验证**：`+9` 的地址和取值靠的是文件里的既有注释，我没有 ROM 可跑。
+实跑第一局时看一眼 `facts["facing"]` 和画面里主角朝向对不对得上。
+
+## 2026-08-25 —— `Observation.summary` 改名 `status`；`ToolResult.message` 删除
+**改了什么**：`Observation.summary` → `Observation.status`（`_summarize()` →
+`_status_line()`，OBSERVE 事件的 payload 键、`decide_action.md` 的 `$summary`
+占位符一起改）。`ToolResult.message` 字段删除，`trace.act()` 不再收 message 参数，
+ACT 事件只剩动作链。
+**为什么这么改**：那个字段不是摘要。它是 `scene` + `overlay` 机械拼出来的一行
+（`你在野外。对话框：「…」`），prompt 里对应的小标题正是「当前状态」；而这一帧
+真正被看到的东西是视觉模型写的 `facts["overview"]`。叫 summary 会让人以为
+"这一帧的信息都在这句里了"，于是观测台只印它、ACT 又复读一遍它——**信息看起来
+到齐了，其实一直藏着**。
+`message` 更直接：它的字段描述写着"给 LLM 读的结果描述"，而没有任何一条路径把它
+交给 LLM，全仓库唯一的消费方是 ACT 事件，内容就是 `status` 本身。动作之后世界
+变成什么样，答案是**下一条完整的 OBSERVE**，不是一句转述。
+**取舍**：`status` 这个名字对应 prompt 里的小标题，不再暗示它是全部信息。
+ACT 事件从此只回答"按了什么"，OBSERVE 回答"变成了什么样"，两件事不再混在一条里。
+**影响面**：`Observation` 是跨层 schema，改名波及 brain / world / trace / prompt；
+旧 JSONL 里的 `summary` 键不迁移，观测台读 `p.status||p.summary` 兼容旧数据。
+`WorldPort.step` 的返回值少一个字段。
+
+## 2026-08-25 —— 「a 只按一次」挪到解析期；world 收到什么按什么
+**改了什么**：`Brain._parse` 里遇到 `a` 直接把 `times` 定死为 1。
+`PyBoyWorld` 的 `_clamped()` / `_dialog_is_open()` 整段删除，`step()` 现在
+逐段按 `segment.times` 执行、不改写任何东西，`message` 也不再拼"被夹成 N 次"的说明。
+`MAX_TIMES` 从 `world` 搬到 `schemas/action.py`，成为 `ActionSegment.times` 和
+`Brain._parse_times` 的**同一个来源**（原来三处各写一个 8，且 world 那个已无人使用）。
+观测台的 observe 块补上 `overview` / `dialog_text` / `where+neighbors`。
+**为什么这么改**：动作合法性是解析期的事。执行层再悄悄夹一次，**大脑交出去的链
+和真正发生的链就对不上**——它以为自己按了三次 `a`，实际只按了一次，下一步的推理
+建立在错的前提上。原来的补救是把"被夹了"写进 `message`，而 `message` 只进 trace，
+大脑根本看不见。现在解析期定死，交给 world 的链就是真正会发生的那条链。
+另一条「对话框开着时方向键连按夹到 1」直接没了也不亏：`OVERLAY_ACTIONS[DIALOG]`
+本来就只有 `a`，对话框开着时方向键连动作空间都进不去。
+**取舍**：`a×5` 被静默改成 `a×1`，不重试——动作名是对的，只是次数不合规范，
+为它跑一轮重试不划算（判据同 ```json 包裹）。观测台从此能看到 `overview` 那一整段，
+代价是每步多几行；`summary` 那句缩写留着，它是 prompt 的上下文开头。
+**影响面**：`world.step()` 不再有任何改写行为，`WorldPort` 的契约随之变干净。
+
+## 2026-08-25 —— 一次决策 = 一次感知：整条动作链交给 world 执行，结尾只感知一次
+**改了什么**：`GameTools.execute()` 不再拆链，直接 `world.step(action)` 一次。
+`PyBoyWorld.step()` 改成遍历 `action.segments()`，段与段之间不感知，跑完整条链
+才 `observe()` 一次；夹连按的逻辑抽成 `_clamped(segment)`，按段判。
+`WorldPort.step` 的契约文档同步成"执行整条链、结尾感知一次"。
+删掉 `_times()`（从 `args["times"]` 抠字符串的那条通道，已无调用方——次数现在
+由 `ActionSegment.times` 在解析期校验）。观测台的行动行不再复读 message。
+**为什么这么改**：感知是每步花钱的那一项。展开成一次一按时 `up×4` 是**四次视觉调用**
+（实测 17k input token、6.6 秒）；改成一段一次仍然是两次。而多段链按规则只能是
+移动键，中间那几帧没有任何会被用到的信息。`up×4 -> down×2` 现在是 1 次感知。
+message 那行「你在野外。你在野外。你在野外。你在野外。」也随之消失——它本来就是
+四段拼的，而且和紧随其后的 OBSERVE summary 是同一句话，观测台上纯属复读。
+**取舍**：链中途的画面彻底看不到，所以链**不能**包含会产出证据的按键——这正是
+「多段链只能是 up/down」那条规则的理由，现在它从"约定"变成了"不这样就会丢证据"。
+`a` 仍由 world 夹回一次一按：它的收益全在中间帧上。
+**影响面**：`execute()` 从 20 行变成 1 行调用；trace 里一步的 perception 事件数
+从 `press_count` 降到 1。`WorldPort` 的实现方（目前只有 `PyBoyWorld`）要按新契约走。
+**没做**：链的中途中止（野生宝可梦在第二按跳出来，剩下两按仍会打进去）——
+本轮明确不做，动作合法性由解析期保证就够了。
+
+## 2026-08-25 —— 动作链每段只感知一次（原来一段 N 次按键 = N 次视觉调用）
+**改了什么**：`GameTools.execute()` 不再把 `up×4` 展开成 4 次 `step(times=1)`，
+改成一段一次 `step(times=4)`，连按次数交回给 `world`。
+**为什么这么改**：`world.step()` 每次结尾必定感知一次。展开之后 `right×4` 在真实
+trace 里产生了**四条 perception 事件**（4×~4300 input token、6.6 秒），而那四帧里
+有用的只有最后一帧。返回的 message 也是四段拼起来的，控制台上就是
+「你在野外。 你在野外。 你在野外。 你在野外。」。更隐蔽的是：`world.step()` 里
+连按 N 次再感知一次的那段逻辑（`WITHIN_ACTION_FRAMES`）被架空成了死代码，
+连带「`a` 连按夹到 1」「对话框开着时夹到 1」两条保护一起失效——它们判的是
+`times > 1`，而展开之后永远是 1。
+**取舍**：中间帧看不到了，这正是 world 里那两条夹逻辑存在的理由——方向键的中间帧
+没有证据，`a` 的中间帧全是证据，所以 `a` 由 world 夹回一次一按。
+`up×4 -> down×2` 现在是 2 次感知，不是 6 次。
+**影响面**：只动 `execute()` 的循环；trace 里一步的 perception 事件数会从
+`press_count` 降到 `segment_count`。
+**还没解决**：**动作链没有中途中止条件**。`execute()` 只在链的开头校验一次
+frame sha 和 action space，之后整条链跑完。实测有一局野生宝可梦在 `right×4` 的
+最后一按才跳出来——要是它在第二按跳出来，剩下两下会打进一个按"野外"算出来的
+动作空间里。廉价的做法是每按一次从 RAM 读 map_id/坐标（不调视觉模型），
+变了就丢掉剩余按键；需要给 `ram.py` 加一个战斗标志地址。
 
 ## 2026-08-25 —— schemas 里的记忆一族按检索单元重命名
 **改了什么**：

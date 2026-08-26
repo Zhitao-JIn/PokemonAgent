@@ -1,9 +1,7 @@
 {
   "subject_id": "pokemon-agent",
-  "roles": ["env"],
-  "metadata": {
-    "run_id": "runtime",
-    "episode_id": "runtime",
-    "task_id": "runtime"
-  }
+  "roles": [
+    "env"
+  ],
+  "metadata": {}
 }

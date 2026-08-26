@@ -32,7 +32,7 @@
 - 当前唯一的实现是 `PyBoyWorld`（`pokemon_agent/world/pyboy_world.py`）。换模拟器时，**`GameToolPort` 和大脑一行都不用改**——这正是分层要买的收益。
 - 这里没有动作掩码（masking）：掩码是 Harness 的策略,不是世界的能力。世界只回答"全部动作是什么"和"执行这个动作会怎样"，筛选可用子集是上层的事。
 
-### 1.2 为什么 `reset`/`observe`/`inspect` 返回 `PerceptionResult` 而不是裸 `Observation`
+### 1.2 为什么 `reset`/`observe` 返回 `PerceptionResult` 而不是裸 `Observation`
 
 感知的开销（token 数、延迟、模型原始输出）和被感知的那一帧，两个地方都放不下：
 
@@ -41,7 +41,7 @@
 
 **历史方案（已废弃）**：曾经用一个 `drain_calls()` 方法 + 一个内部缓冲区 `self._pending_calls` 解决这个矛盾——产生调用记录的地方先攒到缓冲区，Harness 再单独调 `drain_calls()` 取走清空。这种"生产/消费分离、靠可变状态搭桥"的设计本身就是 bug 温床：缓冲区什么时候清、被谁清，两个方向都能出错。
 
-**现方案**：`calls` 跟着 `Observation` 一起，作为 `PerceptionResult` 的返回值原样交出来——产生调用记录的地方直接 return 出去，一路跟着 `_perceive()` → `observe()` → `reset()`/`inspect()` 普通地往上传，不需要任何跨调用的状态。`step()` 同理，`calls` 挂在已有的 `ToolResult` 上,不必新开类型。不产生模型调用的世界，`calls` 返回空列表即可，这不是负担。
+**现方案**：`calls` 跟着 `Observation` 一起，作为 `PerceptionResult` 的返回值原样交出来——产生调用记录的地方直接 return 出去，一路跟着 `_perceive()` → `observe()` → `reset()` 普通地往上传，不需要任何跨调用的状态。`step()` 同理，`calls` 挂在已有的 `ToolResult` 上,不必新开类型。不产生模型调用的世界，`calls` 返回空列表即可，这不是负担。
 
 ### 1.3 方法签名表
 
@@ -49,14 +49,21 @@
 |---|---|---|---|---|
 | `reset` | `reset(self, task: Task) -> PerceptionResult` | `task.max_steps > 0` | 返回的 `result.observation.done` 为 `False`（`step` 由 Harness 盖章）；`result.calls` 是这次重置期间产生的模型调用记录（通常来自随后那次感知） | 未文档化 |
 | `observe` | `observe(self) -> PerceptionResult` | 无 | 幂等，不推进世界；`result.calls` 非空当且仅当真的调了视觉模型，命中缓存时是空列表（**不是 None**） | 未文档化 |
-| `inspect` | `inspect(self, focus: str) -> PerceptionResult` | `focus` 非空 | 世界不推进；答案并进观测的 facts；下一次 `step()` 之后自动失效（下一帧就过期）；`result.calls` 含这次细看产生的调用记录在前，随后内部再看一眼观测（通常命中缓存）产生的记录（若有）跟在后面 | **不抛异常**。细看是锦上添花，问不出来就把"没看清"记成答案——为它中断一局不划算 |
 | `all_actions` | `all_actions(self) -> list[str]` | 无 | 非空，且内容在整个 episode 内不变；这是 masking 的全集,Harness 从中筛出当前可用子集 | 未文档化 |
-| `last_frame_sha`（属性） | `@property last_frame_sha -> str` | 无 | 最近一次观测所依据的那一帧的哈希；没有"帧"概念的世界返回空串 | 用途：没有它,一条读错的观测无法追查是哪一帧,而那是查感知错误的起点 |
-| `step` | `step(self, action: Action) -> ToolResult` | `action.name` 在 `all_actions()` 中；且当前 episode 未结束（`done` 为 `False`） | 若返回的 observation 非空，其 `step` 等于调用前的 `step + 1`；达成 task 成败判据或用满 `max_steps` 时 `observation.done` 为 `True`（**成败判定属于 world**——只有它知道游戏状态是否满足判据）；`result.calls` 含推进这一步期间产生的模型调用记录（通常来自推进后重新感知那一次），命中缓存时为空列表 | 动作合法但没成功走 `ok=False`，不抛异常；action 不在 `all_actions()` 中是**调用方的 bug**，由 `assert` 拦下 |
+| `save_state` | `save_state(self, path: str) -> None` | 无 | 把世界当前状态存到 `path`。**每局开局存一次**：A/B 对比要求每个 episode 从逐字节相同的起点开始，而"这一局到底从哪个字节起跑"必须能事后拿出来 | 未文档化 |
+| `step` | `step(self, action: Action) -> ToolResult` | **每一段的按键**都在 `all_actions()` 中；且当前 episode 未结束（`done` 为 `False`） | 若返回的 observation 非空，其 `step` 等于调用前的 `step + 1`；达成 task 成败判据或用满 `max_steps` 时 `observation.done` 为 `True`（**成败判定属于 world**——只有它知道游戏状态是否满足判据）；`result.calls` 含推进这一步期间产生的模型调用记录（通常来自推进后重新感知那一次），命中缓存时为空列表 | 动作合法但没成功走 `ok=False`，不抛异常；**某一段**的按键不在 `all_actions()` 中是**调用方的 bug**，由 `assert` 拦下 |
 
-### 1.4 `observe` 与 `inspect` 的区别
+`step()` 执行的是**整条动作链**，不是一个按键：`action.segments()` 里的每一段按 `times` 次连按，**段与段之间不感知，只在链的结尾感知一次**。这条取舍买的是钱：感知是每步都要付钱的那一项，一次决策只允许一次视觉模型调用，走 5 格于是从 5 次调用变成 1 次。代价是**中间帧看不到**——撞墙了也会把剩下几次按完。之所以敢付这个代价，是因为 `Action.sequence` 那一侧配了对应的约束（多段链只能是移动键），而移动的中间帧本来就没有证据可读；换成会开对话框、会进菜单的键，看不见中间帧就是真的丢信息了。
 
-不在"再看一次"，而在**问的是不同的问题**：`observe()` 按帧缓存，同一帧再调返回的字节完全一样，没有新信息；`inspect()` 是对同一帧问一个具体问题。
+### 1.4 这里曾经有一个 `inspect(focus)`
+
+"对同一帧问一个具体问题"的细看接口，答案并进 `facts["inspected"]`、下一次 `step()` 之后失效。**整条链路已经删掉**，`facts["inspected"]` 也一起没了。
+
+删的理由是**它没有消费方**：brain 里一处没调，harness 里一处没调，trace 里从来没出现过 INSPECT 事件。一个只有定义、没有调用的接口不是"留着以后用"，它是三处要一起维护的成本（协议、`PyBoyWorld` 的实现、`GameTools` 的转发），还得在每张签名表里回答"它和 `observe()` 到底差在哪"。
+
+它当时确实和 `observe()` 问的是不同的问题——`observe()` 按帧缓存、同一帧再调字节完全一样，`inspect()` 是对同一帧另问一句——但"能问出新信息"和"有人会去问"是两回事，真要把细看做回来，该先有调用方再有接口。
+
+`EventType.INSPECT` 这个枚举成员**保留**：删了它，历史 trace 文件就回放不了。事件类型是写进磁盘的历史，删接口和删枚举不是同一件事。
 
 ### 1.5 谁实现、谁消费
 
@@ -86,13 +93,13 @@
 
 ### 2.3 `known_objects`/`knowledge` 现在由 Harness 拼，不是 `GameTools`，也不在 `_observe()` 里
 
-以前 `GameTools.perceive()` 会顺手把语义记忆的 `known_here()` 结果拼进 `facts["known_objects"]`——这要求 `GameTools` 持有一份记忆的引用，正是这次拆分要去掉的耦合。
+以前 `GameTools.perceive()` 会顺手把语义记忆的 `query_objects()` 结果拼进 `facts["known_objects"]`——这要求 `GameTools` 持有一份记忆的引用，正是这次拆分要去掉的耦合。
 
-现在：`GameToolPort.perceive()` 只管世界，不拼任何记忆字段。`facts["known_objects"]`/`facts["knowledge"]` 由 `Harness._retrieve_memory()`（图上专门的"查记忆"节点，不是 `look` 节点）在判定跑完之后，另外调 `memory.known_here(obs)`/`memory.knowledge_base()` 拼上去。两个协议各管各的，**组合是 Harness 的活**；放在 `_retrieve_memory()` 而不是 `_observe()`，是因为这两个字段本质是**语义记忆的读**，不是"这一帧模拟器实际给出的东西"——混进 `_observe()` 曾经让 `knowledge` 在 `judge` 之前就出现在 `obs.facts` 里，被判定模型白白看到、浪费 token。
+现在：`GameToolPort.perceive()` 只管世界，不拼任何记忆字段。`facts["known_objects"]`/`facts["knowledge"]` 由 `Harness._retrieve_memory()`（图上专门的"查记忆"节点，不是 `look` 节点）在判定跑完之后，另外调 `memory.query_objects(obs)`/`memory.query_knowledge(...)` 拼上去。两个协议各管各的，**组合是 Harness 的活**；放在 `_retrieve_memory()` 而不是 `_observe()`，是因为这两个字段本质是**语义记忆的读**，不是"这一帧模拟器实际给出的东西"——混进 `_observe()` 曾经让 `knowledge` 在 `judge` 之前就出现在 `obs.facts` 里，被判定模型白白看到、浪费 token。
 
 ### 2.4 模型调用记账不再靠 `drain_calls`（与 `world.py` 同一段历史的工具层版本）
 
-`perceive`/`inspect`/`reset` 曾经返回裸的 `Observation`，模型调用记录另开一个 `drain_calls()` 方法、靠世界内部一个缓冲区攒着给 Harness 单独取——典型的"生产和消费分离，靠可变状态搭桥"，缓冲区清早清晚都能把账算错。
+`perceive`/`reset` 曾经返回裸的 `Observation`，模型调用记录另开一个 `drain_calls()` 方法、靠世界内部一个缓冲区攒着给 Harness 单独取——典型的"生产和消费分离，靠可变状态搭桥"，缓冲区清早清晚都能把账算错。
 
 现在这三个方法改成返回 `PerceptionResult`（`observation` + `calls` 两个平行字段），`execute()` 的 `calls` 挂在已有的 `ToolResult` 上。调用记录跟着它产生的那次调用一起，作为普通返回值直接交给 Harness，不存在"drain 时机对不对"这一整类 bug。
 
@@ -100,36 +107,57 @@
 
 | 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
 |---|---|---|---|---|
-| `perceive` | `perceive(self) -> PerceptionResult` | 无 | **幂等只读**：不推进世界、不写 trace、不触发判定；同一帧内多次调用不产生额外模型调用（实现方要在帧内缓存，感知是每步都要付钱的一项）；`result.calls` 是这次调用产生的模型调用记录，命中缓存时为空列表（**不是 None**）；返回的 `observation` 在同一帧内稳定，**除非期间调用过 `inspect()`**（会往 facts 加一条 `inspected`，这是刻意的，意味着"幂等"只对模型调用成立、对返回值不成立） | 未文档化 |
-| `inspect` | `inspect(self, focus: str) -> PerceptionResult` | `focus` 非空；**没有具体问题就不该调它**——否则只是把同一帧原样再看一遍（`perceive()` 帧内缓存字节完全一样），不产生新信息，纯粹白烧一次调用 | 答案并进下一次 `perceive()` 的 facts；`execute()` 之后自动失效；`result.calls` 是这次细看产生的调用记录 | 不抛异常，把"没看清"写成答案 |
+| `perceive` | `perceive(self) -> PerceptionResult` | 无 | **幂等只读**：不推进世界、不写 trace、不触发判定；同一帧内多次调用不产生额外模型调用（实现方要在帧内缓存，感知是每步都要付钱的一项）；`result.calls` 是这次调用产生的模型调用记录，命中缓存时为空列表（**不是 None**）；返回的 `observation` 在同一帧内**完全稳定**：同一帧问几次，拿到的字节一样，没有例外（细看接口删掉之后，"幂等"对模型调用和返回值同时成立，见 1.4） | 未文档化 |
 | `get_action_space` | `get_action_space(self) -> ActionSpace` | 无 | `names` 非空——走投无路的状态也必须至少给一个动作，空动作空间是工具层的 bug，不能让大脑处理。**工具层给出的就是完整的动作空间**，Harness 不再覆写（`ActionSpace.intents` 已随 `Intent` 一起删掉） | 未文档化 |
 | `execute` | `execute(self, action: Action) -> ToolResult` | `action.name` 属于**调用前最近一次** `get_action_space()` 的结果；实现方必须 `assert` 这点——大脑幻觉出不存在的动作要在这里就地爆炸，不能变成语义不明的模拟器错误 | `result.observation` 非空，是执行后的新观测；它的 `step` **还没有盖章**（盖章是 Harness 的事）；`result.calls` 是推进这一步期间产生的模型调用记录（通常来自推进后重新感知那一次），命中缓存时为空列表 | 未文档化（见前置条件的 assert） |
 | `reset` | `reset(self, task: Task) -> PerceptionResult` | `task.max_steps > 0` | `result.observation.done` 为 `False`；`step` 未盖章（由 Harness 填 0）；`result.calls` 是这次重置期间产生的模型调用记录 | 未文档化 |
 | `last_frame_sha`（属性） | `@property last_frame_sha -> str` | 无 | 最近一次观测所依据的那一帧的哈希，用于追查读错的观测出自哪一帧；没有"帧"概念的实现返回空串 | 无 |
+| `save_state` | `save_state(self, path: str) -> None` | 无 | 把世界当前状态存到 `path`。**每局开局存一次**：A/B 对比要求每个 episode 从逐字节相同的起点开始，而"这一局到底从哪个字节起跑"必须能事后拿出来 | 未文档化 |
+
+`GameToolPort` 这一侧也曾经有一个 `inspect(focus)`（转发给 `WorldPort.inspect()`），已随下层一起删掉，理由见 1.4。它留下的痕迹是 `perceive` 那一行原先的例外条款——"同一帧内稳定，除非期间调用过 `inspect()`"；现在那条例外没有了。
+
+`execute()` 收到的 `Action` 可能是一条**多段动作链**（`Action.sequence`），底下 `WorldPort.step()` 会把每一段按完再感知一次；顶层的 `action.name`/`args` 只是单段链的兼容写法，由 `Action.segments()` 归一。
 
 ### 2.6 `MemoryToolPort` 方法签名表
 
-> 两类记忆分开暴露，因为读写语义不同：情景记忆按相似度/时间检索，语义记忆按坐标查。程序记忆（procedural）还没做，先不占位。
+> **四类记忆分开暴露**，因为检索单元和读写语义都不同：单步流水按 episode 全量取、
+> 跨局摘要按场景+相关性挑、object 按坐标查、knowledge 混合检索。
+> 程序记忆（procedural）还没做，先不占位。
 
-情景记忆（episodic）：
-
-| 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
-|---|---|---|---|---|
-| `query_episodic` | `query_episodic(self, query: str, limit: int = 5) -> list[StepMemory]` | `limit > 0` | 返回条数 `<= limit`；按相关性降序；**检索策略属于实现方**——调用方不知道也不该知道记忆从哪来、怎么排的 | 未文档化 |
-| `recent` | `recent(self, episode_id: str, limit: int) -> list[StepMemory]` | `limit > 0` | 返回条数 `<= limit`；全部来自 `episode_id` 这一局；最新的在最后 | 未文档化 |
-| `write_episodic` | `write_episodic(self, entry: StepMemory) -> None` | `entry.rationale` 非空——没有理由的经验取回来也没用，说不出当时为什么这么判断，也就无法检查那个判断现在还成不成立 | 无返回值 | 未文档化 |
-| `episodic_size`（属性） | `@property episodic_size -> int` | 无 | 库里有多少条情景记忆；**A/B 实验的自变量之一**，要能被记进事件流 | 无 |
-
-语义记忆（object）：
+单步情景记忆（一条 = 一步）：
 
 | 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
 |---|---|---|---|---|
-| `known_here` | `known_here(self, obs: Observation) -> str` | 无 | `obs.place` 所在地图上已知的语义记忆渲染成的一段文字；`obs.place` 为 `None` 时返回空串；没有任何已知条目时也返回空串——调用方（Harness）据此决定要不要往 `facts["known_objects"]` 里塞东西 | 未文档化 |
-| `knowledge_base` | `knowledge_base(self) -> str` | 无 | 项目自带的、和坐标无关的通用游戏先验（`memory/knowledge/*.md` 全部拼接），库为空时返回空串；**每次调用都重新读盘，不缓存**——这是刻意的，为的是能一边跑 episode 一边改 `.md` 文件、不重启进程就生效 | 未文档化 |
-| `see_objects` | `see_objects(self, obs: Observation, stamp: str) -> None` | **一步只调一次**——`stamp` 非空，调用方保证不会同一步调两次 | 把这一帧看到的地标全部记一遍 | 未文档化 |
-| `note_step` | `note_step(self, before: Observation, action: Action, after: Observation) -> list[ObjectFact]` | `before`/`after` 都有 `place`；算不出确定的一格时（连按、原地转身、两个候选同时存在）**不记**，宁可漏记也不能记错格子 | 返回被更新的条目（可能为空） | 未文档化 |
+| `query_episode_steps` | `(self, episode_id: str) -> list[StepMemory]` | `episode_id` 非空 | 这一局
+**全部**单步记忆，按 `step` 升序，**不打分、不截断**——本局的步骤是流水，要回答的是"我这一局做过什么" | 未文档化 |
+| `query_recent_steps` | `(self, episode_id: str, limit: int) -> list[StepMemory]` | `limit > 0` | 条数 `<= limit`；全部来自该局；最新的在最后。判定器的历史用它，**必须有界** | 未文档化 |
+| `store_episode_step` | `(self, entry: StepMemory) -> None` | `entry.rationale` 非空——没有理由的经验取回来也没用，说不出当时为什么这么判断，也就无法检查那个判断縀在还成不成立 | 无返回值 | 未文档化 |
+| `episode_step_count` | `(self) -> int` | 无 | 库里有多少条单步记忆；**A/B 实验的自变量之一**，要能被记进事件流 | 无 |
 
-`known_here` 按 `obs.place` 筛（这张地图上互动过的东西），`knowledge_base` **不按任何东西筛**（和站在哪一格无关，是"开局就该知道"的常识），两者都是语义记忆的读，但检索策略不同——不要因为都叫"语义记忆"就以为它们该合并成一个方法。
+跨局摘要记忆（一条 = 一整局）：
+
+| 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
+|---|---|---|---|---|
+| `query_episode_summaries` | `(self, scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]` | `scene` 非空、`limit > 0` | 条数 `<= limit`；先按场景过滤（`applicable_scenes` 为空或含 `*` 视为通用经验），再按相关性 + 质量 + 成功与否加权排序 | 未文档化 |
+| `store_episode_summary` | `(self, ...) -> EpisodeMemory` | 一局结束时调一次 | 蔸馏出一条落库并返回 | 蔸馏解析失败戛 `ValueError`，内部已留一条 `ERROR` trace 事件 |
+| `episode_summary_count` | `(self) -> int` | 无 | 库里有多少条跨局摘要 | 无 |
+
+语义记忆（object / knowledge）：
+
+| 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
+|---|---|---|---|---|
+| `query_objects` | `(self, obs: Observation) -> str` | 无 | `obs.place` 所在地图上已知的档案渲染成的一段文字，**条与条之间空一行**（一条档案本身是多行：抬头 + 缩进明细）；`obs.place` 为 `None` 或没有已知条目时返回空串——调用方据此决定要不要往 `facts["known_objects"]` 里塜东西 | 未文档化 |
+| `query_knowledge` | `(self, query: str, limit: int = 5) -> KnowledgeQueryResult` | `query` 非空、`limit > 0` | 和坐标无关的通用先验，走混合检索（BM25 + 向量 + rerank），按目录 mtime 增量重建索引；返回 `contents`（正文）和 `sources`（命中了哪几个文件）——**trace 只记后者**，几千字的正文不进事件流 | 未文档化 |
+| `store_objects_interactions` | `(self, before: Observation, action: Action, after: Observation) -> list[ObjectFact]` | `before`/`after` 都有 `place` | 返回被更新的条目（可能为空）。算不出确定的一格时**不记**：**多段銟作链**ﾈ两头之间路过哪些格子看不到）、连按、原地转纫、两个候选同时存在——宕可漏记也不能记错格子 | 未文档化 |
+
+**这张表以前写的是 `query_episodic` / `recent` / `write_episodic` / `episodic_size` /
+`known_here` / `knowledge_base` / `see_objects` / `note_step`，一个都不剩了。**
+两轮变化叠在一起：一轮是记忆分类改名（`episodic`/`episode` 只差一个词尾，读的人F分不出"一条=一步"和"一条=一整局"），一轮是知识库从"全量拼接"改成混合检索。
+`see_objects` 整个方法没有了（建档改由 `Harness._observe` 直接操作 object store）。
+
+`query_objects` 按 `obs.place` 筛（这张地图上互动过的东西），`query_knowledge`
+**不按位置筛**（和站在哪一格无关，是"开局就该知道"的常识）——两者都是语义记忆的读，
+但检索策略不同，不要因为都叫"语义记必"就以为它们该合并成一个方法。
 
 ### 2.7 谁实现、谁消费
 
@@ -334,13 +362,13 @@
         ┌─────────────┬─────────────┼─────────────┬──────────────┐
         ▼             ▼             ▼             ▼              ▼
   GameToolPort  MemoryToolPort   BrainPort    TracePort     （known_objects/knowledge
-   (感知/执行/   (情景+语义记忆)  (choose/     (append/       的读发生在专门的
+   (感知/执行/   (四类记忆的读写)  (choose/     (append/       的读发生在专门的
     开局/溯源)                    judge/       replay/sse)    retrieve_memory 节点里，
         │                          reflect)                   不在 GameToolPort 结果里）
         │ 实现方 GameTools 内部持有
         ▼
     WorldPort  ←── 实现方 PyBoyWorld
-   (reset/observe/inspect/all_actions/step)
+   (reset/observe/all_actions/step)
 
   Brain 内部持有：
     LLMProvider   (choose/judge/reflect 的文本补全，实现方 QwenText)
@@ -354,11 +382,11 @@
 - **`MemoryTool`（`tools/memory_tool.py`）实现 `MemoryToolPort`**，只碰 `memory/` 包，与 `GameTools` 完全不相关——这正是拆成两个协议要保证的隔离。
 - **`Harness` 只认识 `GameToolPort`、`MemoryToolPort`、`BrainPort`、`TracePort` 四个协议**，构造时收具体实现的实例，但类型层面只依赖协议。这四个协议是 Harness 与外部世界打交道的**全部**通道。
 - **`Brain` 只认识 `LLMProvider` 和 `VisionProvider`**（严格说，`VisionProvider` 是感知链路用的，`Brain` 本身不持有它——大脑不该有看图能力，见 6.1）。`Brain` 不持有 `GameToolPort`/`MemoryToolPort` 的任何实例，这是 3.4 节明确拆掉的耦合。
-- **`known_objects`/`knowledge` 的拼接**发生在 `Harness._retrieve_memory()` 里（图上单独一格），**不在** `_observe()`（`look` 节点）里——两者都是语义记忆的读，属于"查记忆"，不属于"看一眼"；混进 `_observe()` 曾经导致 `knowledge` 在 `judge` 之前就进了 `obs.facts`，白白被判定模型看到、浪费 token（`judge` 不该看这类字段，见 `brain/SPEC.md` 的 `JUDGE_BLIND`）。现在判定先跑完、`_retrieve_memory()` 才把两者折进 `obs.facts`，`judge` 天然看不到。`known_objects`/`knowledge` 分别是 `MemoryToolPort.known_here()`（按坐标筛）和 `MemoryToolPort.knowledge_base()`（不筛、每次都重新读盘）的结果，不属于任何单一协议的方法体内，体现"组合是 Harness 的活"的原则。
+- **`known_objects`/`knowledge` 的拼接**发生在 `Harness._retrieve_memory()` 里（图上单独一格），**不在** `_observe()`（`look` 节点）里——两者都是语义记忆的读，属于"查记忆"，不属于"看一眼"；混进 `_observe()` 曾经导致 `knowledge` 在 `judge` 之前就进了 `obs.facts`，白白被判定模型看到、浪费 token（`judge` 不该看这类字段，见 `brain/SPEC.md` 的 `JUDGE_BLIND`）。现在判定先跑完、`_retrieve_memory()` 才把两者折进 `obs.facts`，`judge` 天然看不到。`known_objects`/`knowledge` 分别是 `MemoryToolPort.query_objects()`（按坐标筛）和 `MemoryToolPort.query_knowledge()`（不按位置筛，走混合检索）的结果，不属于任何单一协议的方法体内，体现"组合是 Harness 的活"的原则。
 
 ## 8. 全局共通的设计模式
 
 1. **`PerceptionResult`（`observation` + `calls`）取代了历史上的 `drain_calls()` + 内部缓冲区方案。** 这一模式在 `world.py` 和 `tools.py` 中重复出现，本质是同一次架构演进：把"生产/消费分离、靠可变状态搭桥"的设计换成"调用记录跟着它产生的那次调用一起、作为普通返回值直接交出"。
 2. **"谁控制循环，谁记账"**：`brain.py`、`trace.py` 都体现这条规则——大脑、World、Tools 都不持有 `TracePort`，也不接收 `episode_id`/`step`，记账动作全部发生在 Harness 一侧。
-3. **失败语义分层**：区分"调不通"（抛异常，如 `LLMProvider.complete`、`VisionProvider.describe`、`Brain.choose` 遇到网络/鉴权问题）和"调通了但没用/没完成"（不抛异常，返回带有失败语义的值，如 `judge` 永远返回 `Verdict`、`inspect` 不抛异常而是把"没看清"写成答案、`choose` 重试失败返回 `action=None`）。这条区分反复出现在多个协议里，是本模块的核心设计哲学之一。
+3. **失败语义分层**：区分"调不通"（抛异常，如 `LLMProvider.complete`、`VisionProvider.describe`、`Brain.choose` 遇到网络/鉴权问题）和"调通了但没用/没完成"（不抛异常，返回带有失败语义的值，如 `judge` 永远返回 `Verdict`、`choose` 重试失败返回 `action=None`）。这条区分反复出现在多个协议里，是本模块的核心设计哲学之一。
 4. **协议即最小可见面**：每个协议只暴露消费方真正需要的方法，且方法参数表决定了消费方能看到什么（例如 `judge` 拿不到 `choose` 的说辞、大脑拿不到检索策略的控制权）。这是"谁该知道什么"这一原则在类型系统层面的落地。

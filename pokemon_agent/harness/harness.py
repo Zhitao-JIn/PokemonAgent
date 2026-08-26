@@ -292,12 +292,6 @@ class Harness:
 
         return update
 
-    def _look_route(self, state: LoopState) -> str:
-        """路由：终止去蒸馏，否则接着跑。**不直接连 END**——见 `_compile`。"""
-        assert state.observation is not None, "routing before any observation"
-
-
-
     def _retrieve_memory(self, state: LoopState) -> dict[str, Any]:
         """查这一步要用的**全部**记忆，交给 `think`。**图上单独一格。**
 
@@ -416,7 +410,7 @@ class Harness:
             ):
                 self._trace.append(*args)
 
-        self._trace.append(*trace_utils.act(ep, before.step, action, result.message))
+        self._trace.append(*trace_utils.act(ep, before.step, action))
 
         # 新观测没盖过章（step 恒 0），但记忆只取 `Snapshot`，和步号无关。
         return {"press_result": result.observation}
@@ -492,7 +486,7 @@ class Harness:
                 self._trace.append(*args)
         # `goals` 记的是**判定弹栈之前**的栈：OBSERVE 必须先于本步的判定事件。
         self._trace.append(
-            *trace_utils.observe(state.episode_id, obs, state.goals, self._game.last_frame_sha)
+            *trace_utils.observe(state.episode_id, obs, state.goals, perceived.frame_sha)
         )
         return self._judge(state, obs)
 

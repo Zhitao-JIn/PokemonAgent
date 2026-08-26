@@ -59,24 +59,6 @@ class WorldPort(Protocol):
         """
         ...
 
-    def inspect(self, focus: str) -> PerceptionResult:
-        """对**同一帧**再问一次感知，问一个具体的问题。世界不推进。
-
-        前置条件：focus 非空。
-        后置条件：答案并进观测的 facts；下一次 `step()` 之后自动失效
-            （它描述的是那一帧，留到下一帧就是过期事实）。
-            `result.calls` 含这次细看产生的调用记录，在前；随后内部再看一眼
-            观测（通常命中缓存，不产生新调用）的记录若有，跟在后面。
-        失败：**不抛异常**。细看是锦上添花，问不出来就把"没看清"记成答案——
-            为它中断一局不划算。
-
-        和 `observe()` 的区别不在"再看一次"，而在**问的是不同的问题**：
-        `observe()` 按帧缓存，同一帧再调返回的字节完全一样，没有新信息。
-
-        对同一帧追问一个具体问题，把答案并进观测。
-        """
-        ...
-
     def all_actions(self) -> list[str]:
         """世界支持的**全部**动作名（与当前状态无关）。
 
@@ -99,17 +81,22 @@ class WorldPort(Protocol):
         ...
 
     def step(self, action: Action) -> ToolResult:
-        """执行动作，推进世界。
+        """执行**整条动作链**，推进世界，**只在链的结尾感知一次**。
 
-        前置条件：action.name 在 all_actions() 中；且当前 episode 未结束（done 为 False）。
+        `action.segments()` 里的每一段按 `times` 次，段与段之间不感知——
+        一次决策 = 一次感知，这是成本的硬约束：每次感知都是一次视觉模型调用。
+        中间帧因此看不到，这是有意的取舍，见 `Action.sequence` 的规则
+        （多段链只能是移动键，移动的中间帧没有证据）。
+
+        前置条件：每一段的按键都在 all_actions() 中；且当前 episode 未结束（done 为 False）。
         后置条件：若返回的 observation 非空，其 step 等于调用前的 step + 1；
             达成 task 的成败判据或用满 max_steps 时，observation.done 为 True。
             **成败判定属于 world**——只有它知道游戏状态是否满足判据。
             `result.calls` 含推进这一步期间产生的模型调用记录（通常来自
             推进后重新感知那一次）；命中缓存时为空列表。
         失败：动作合法但没成功走 ok=False，不抛异常；
-            action 不在 all_actions() 中是**调用方的 bug**，assert 拦下。
+            某一段的按键不在 all_actions() 中是**调用方的 bug**，assert 拦下。
 
-        按下一个动作，推进世界一步，返回结果与新观测。
+        按完整条动作链，推进世界一步，返回结果与新观测。
         """
         ...

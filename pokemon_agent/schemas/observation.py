@@ -23,13 +23,15 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 BUTTON_FACING: dict[str, str] = {
     "up": "north", "down": "south", "left": "west", "right": "east",
 }
-"""方向键 → 朝向。**朝向是我们自己的动作推出来的，不是看出来的。**
+"""方向键 → 朝向。**这张表回答的是"这一步往哪个方向按了"，不是"现在面朝哪"。**
 
-宝可梦里按方向键，撞墙时人也会转过去（只是不移动），所以"按过 up"就等于"面朝北"，
-没有例外。实测让 VLM 读朝向是 8 步 8 次全错。
+后者从内存直接读（`ram.read_facing`，精灵表 +9），不用推。曾经是推的——
+"按过 up 就等于面朝北"，因为撞墙时人也会转过去；那个推论本身没错，
+但它有两个洞：开局和过场之后朝向是未知的，而且它不在存档里，
+checkpoint 恢复不出来。读内存两个洞一起消失。
 
-放在这里而不是 world，是因为**两处都要用**：world 用它更新 `facing`，
-工具层用它算"这一步走的是哪个方向"——而那两件事必须用同一张表。
+留着这张表是因为工具层要用它算"这一步走的是哪个方向"（语义记忆的 attempts 键），
+那是关于**动作**的问题，不是关于状态的。
 """
 
 FACING_STEP: dict[str, tuple[int, int]] = {
@@ -111,7 +113,12 @@ class Observation(BaseModel):
         "`facts[\"where\"]` 是它渲染出来给模型读的文本，"
         "而记忆的键要拿这三个数去算，不能靠反解字符串",
     )
-    summary: str = Field(description="给 LLM 读的自然语言状态描述")
+    status: str = Field(
+        description="这一帧的**状态行**：由 scene + overlay 机械拼出来的一句话"
+        "（`你在野外。对话框：「…」`）。**不是画面描述**——画面描述是视觉模型写的"
+        "`facts[\"overview\"]`，那才是这一帧真正被看到的东西。"
+        "这一句只是 prompt 里「当前状态」那一行的内容",
+    )
     facts: dict[str, str] = Field(
         default_factory=dict,
         description="结构化状态字段（位置、HP、持有道具…）。机制一的 state key 未来从这里派生",
@@ -124,7 +131,7 @@ class Observation(BaseModel):
 
 
 class PerceptionResult(BaseModel):
-    """一次感知动作（`perceive`/`inspect`/`reset`）的结果：观测 + 这次调用产生的模型调用记录。
+    """一次感知动作（`perceive`/`reset`）的结果：观测 + 这次调用产生的模型调用记录。
 
     `calls` 不放进 `Observation`，因为 `Observation` 是**大脑看的东西**，
     大脑不该知道 token 数、延迟这类记账信息，加进去就是把跨层契约当日志用。
@@ -133,24 +140,36 @@ class PerceptionResult(BaseModel):
 
     ## 这里曾经有一个 `drain_calls()`
 
-    产生调用记录的地方（世界内部按帧缓存的那个私有方法）被 `reset`/`perceive`/
-    `inspect` 三个不同的公开方法共用，而这三个方法的返回类型过去只有裸的
-    `Observation`，装不下 `calls`。于是早一版把调用记录攒进一个实例变量
+    产生调用记录的地方（世界内部按帧缓存的那个私有方法）被 `reset`/`perceive`
+    这些公开方法共用，而它们的返回类型过去只有裸的 `Observation`，装不下 `calls`。于是早一版把调用记录攒进一个实例变量
     （`_pending_calls`），另开一个 `drain_calls()` 方法给 Harness 单独来取。
 
     这种"生产和消费分离，靠可变状态搭桥"的做法本身就是踩过坑的根源——
     "什么时候清空缓冲区"这件事无论清早了还是清晚了都会把账算错（细看过依赖
     `_pending_calls` 的旧版本能找到完整的事故描述）。真正的修法不是把
     `drain_calls()` 挪个地方，而是让产生调用记录的地方**直接把它当返回值交出来**，
-    一路跟着 `_perceive()` → `observe()` → `reset()`/`perceive()`/`inspect()`
+    一路跟着 `_perceive()` → `observe()` → `reset()`/`perceive()`
     普通地往上传——不需要缓冲区，也就不存在"漏记一次账"或"记重一次账"这类
     依赖时机的 bug。
 
     `calls` 为空列表表示这次调用命中缓存，没有产生新的模型调用——
     **不是 None**，调用方不用先判空值。
+
+    ## `frame_sha` 也在这里，理由完全一样
+
+    它曾经是 `ToolPort` 上一个单独的 property，Harness 在 `perceive()` 之后
+    **再调一次**去取。那和上面 `drain_calls()` 是同一个形状：值属于刚刚产生的
+    那一帧，却要回头去另一个地方拿。而这个字段的全部意义就是「这条观测是哪一帧」——
+    用第二次读取的结果去回答第一次读取的归属，前提本身就不成立。单线程下不会错，
+    但那是调用顺序碰巧保证的，不是结构保证的。
     """
 
     observation: Observation
+    frame_sha: str = Field(
+        default="",
+        description="产生这次观测的那一帧的哈希。没有『帧』这个概念的实现给空串——"
+        "它是查感知错误的起点：一条读错的观测得能追回是哪一帧",
+    )
     calls: list[dict[str, str]] = Field(
         default_factory=list,
         description="这次调用（可能是重试了好几次）产生的每一条模型调用记录，"
@@ -298,6 +317,11 @@ class TerrainMap(BaseModel):
     map_id: int = Field(description="当前地图编号（wCurMap）")
     player_x: int = Field(description="主角在地图里的 X 格坐标（wXCoord）")
     player_y: int = Field(description="主角在地图里的 Y 格坐标（wYCoord）")
+    facing: str = Field(
+        default="",
+        description="主角面朝哪边（north/south/west/east），**读自精灵表**（见 `ram.read_facing`）。"
+        "空串表示这一格内存读出来不是四个已知值之一",
+    )
     ambiguous_cells: int = Field(
         default=0,
         description="有多少格子的四个 8x8 子 tile 通行性不一致。"
@@ -372,9 +396,8 @@ class TerrainMap(BaseModel):
         读的人得自己认出哪个数配哪一边，而 y 的范围其实**每行开头都写着**，
         重复一遍只是把注意力从真正缺失的那一维（列号）上引开。现在写成
         「最左一列 x=2，最右一列 x=11」——直接说这个数是哪一列的，
-        不需要再从一个区间里反推。行列数也一并写出来，`inspect` 那边要拿它
-        把全局坐标换算到画面上第几列第几行（见 `prompts/inspect_focus.md`），
-        以前那个数只存在于 prompt 的手写文字里，改了网格尺寸就会漂。
+        不需要再从一个区间里反推。行列数一并写出来而不是留在 prompt 的手写文字里，
+        是因为改了网格尺寸那个数就会漂。
         代价是它没法在图上直接读出某一列的 x——**而这个代价是零**，
         因为它本来就不该在图上数格子找东西：门、招牌、人的确切坐标
         `landmarks` 和 `known_objects` 里已经写好了，四邻 `neighbors` 也已经算好了。

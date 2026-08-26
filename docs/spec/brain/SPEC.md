@@ -4,6 +4,7 @@
 > 接口：`pokemon_agent/interfaces/brain.py`（`BrainPort`）
 > 辅助：`pokemon_agent/prompts/brain_hints.py`
 > 模板：`pokemon_agent/prompts/decide_action.md`、`judge_success.md`、`retry_note.md`
+> 记忆条目：`pokemon_agent/schemas/step_memory.py`（`StepMemory` / `Snapshot`）
 >
 > （`intent_help.md` 随 intent 分派一起删了，见 3.4、4.2。）
 
@@ -94,7 +95,8 @@ def choose(
 四个参数：
 
 - **`goals`**：整个目标栈（`list[Goal]`），**栈顶（列表最后一个）是这一轮要完成的那条**。下面几层也要传入——见 3.3 节 `_render_goals` 的论证。
-- **`obs`**：当前观察（`Observation`），含 `summary`、`facts`、`done` 等字段。
+- **`obs`**：当前观察（`Observation`），含 `status`、`facts`、`done` 等字段。
+  > 这里曾经是 `Observation.summary`。改名成 `status` 是因为「summary」听起来像「把这一帧总结一下」，而它其实是**此刻的状态描述**——一句现在时的画面陈述，不是对历史的概括。名字诱导了写它的人和读它的模型，所以连同 `decide_action.md` 的占位符（`$summary` → `$status`）一起改掉。
 - **`space`**：`ActionSpace`，给出这一轮可用的按键（`space.names`/`space.descriptions`）以及可选的 `space.note`。**这一版只有按键一类动作**——`space.intents` 那个字段连同 `Intent` 枚举一起删了，`ActionSpace` 直接来自工具层，Harness 不再覆写它。
 - **`memories`**：Harness **已经检索好**的情景记忆，直接进 prompt。**检索策略（按什么查、查几条）不是大脑的事**——大脑只回答"给了我这些，我选哪个动作"。
 
@@ -136,7 +138,7 @@ def _build_prompt(self, goals, obs, space, memories) -> str
 - `actions`：把 `space.names` 逐个渲染成 `- name: 说明`（说明取自 `space.descriptions`，缺失则显示"（无说明）"），若 `space.note` 非空则追加在后面。
 - `goals`：调用 `_render_goals(goals)`（见下）。
 
-最终用 `self._decide_prompt.render(...)` 把这些字段代入 `decide_action.md` 模板，同时传入 `max_rationale=MAX_RATIONALE`（来自 `schemas.action`）。
+最终用 `self._decide_prompt.render(...)` 把这些字段代入 `decide_action.md` 模板：`goals` / `status`（= `obs.status`）/ `facts` / `memories` / `actions`，同时传入 `max_rationale=MAX_RATIONALE`（来自 `schemas.action`）。
 
 #### `_render_goals`：目标栈的渲染规则
 
@@ -161,9 +163,19 @@ def _render_goals(goals: list[Goal]) -> str
 1. 去除首尾空白；若以 ` ``` ` 开头，容忍 ` ```json ` 包裹形式，取出内层内容——这是模型最常见的格式偏差，为它单独重试一轮不划算。
 2. `json.loads`；失败抛 `ParseFailure(text, "not valid json (...)")`。
 3. 顶层若不是对象，抛 `ParseFailure`。
-4. **取按键**：`action` 必须是非空字符串，否则 `ParseFailure("no 'action' field")`；必须满足 `space.contains(name)`，否则 **`IllegalAction`**。
-   - 走 `IllegalAction` 而不是 `ParseFailure`：格式是对的，模型是在**幻觉一个此刻不可用的按键**。两者在 replay 里是不同的失败模式，该改的东西也不同（`ParseFailure` 改 prompt 或上约束解码；`IllegalAction` 改动作说明或收紧掩码）。
-5. **取参数**：`args` 需为 dict（缺省为空 dict），所有值转为字符串。
+4. **取动作链**：`sequence` 必须是**非空数组**，否则 `ParseFailure("'sequence' must be a non-empty array")`。**顶层的 `action` / `args` 写法不再接受**——一步交出的是一条链，不是一个键。
+5. 逐段解析成 `ActionSegment` 列表，**校验顺序是刻意的**（先便宜后昂贵、先格式后语义）。前三条逐段做，后两条在整条链拼好之后做：
+
+   1. 每段必须是对象且 `action` 是字符串，否则 `ParseFailure("each sequence item needs an action")`。
+   2. `times` 走 `_parse_times`：非整数 → `ParseFailure("times must be an integer")`；不在 `1..MAX_TIMES` → `ParseFailure`。`MAX_TIMES` 现在**只定义在 `schemas/action.py` 一处**（`ActionSegment.times` 的字段约束和这里的外部输入校验同源）。
+      > 这里曾经硬编码成 `8`，而且 world 里还另有一份同样的数。同一个上限散在几处、谁也不引用谁——改一处别处会静默不同步，症状是解析器放行的链在构造 `ActionSegment` 时炸掉。理由同 `MAX_RATIONALE`：**有两个执行点的数必须同源。**
+   3. **`a`（`INTERACT_KEY`）的 `times` 在这里直接定死为 1**，不报错、不重试。
+      > 这里曾经在**执行层**夹：`PyBoyWorld.step()` 里的 `_clamped` 把超出的次数改成 1，并把「被夹成 1 次」写进 `ToolResult.message`。问题是 **`message` 只进 trace，大脑从来看不见**——它交出去 `a×3`，实际只按了一次，而它一直以为自己按了三次，下一步的推理于是建立在一个没发生过的事实上。现在改在解析期定死：**交给 world 的那条链，就是真正会发生的那条链**；world 侧的夹逻辑已经删掉。
+      > 为什么是 1 而不是别的：一条链只在**结尾**感知一次，中间几帧整个看不到；而 `a` 产出的恰恰是全项目最要紧的证据——对话框文字。连按三次推完整段对话，那几句一帧都没被看到，最后一次还会把对话框关掉，判定器看到一个没有对话框的画面，**一局本该成功的 episode 被静默记成失败**。`a` 的收益全在中间帧上，**连按对它从来没有意义**，所以这不是加一条限制，是把一个只会产生损失的选项去掉。
+   4. **多段链只能由 `up` / `down` 组成**，否则 `ParseFailure("multi-step sequence may contain only up/down")`。转弯必须换一步交——`{"action": "right", "times": 3}` 单独成一步完全合法，只是不能和别的段拼在一条链里。
+   5. 每一段的按键都要在动作空间里，否则 **`IllegalAction`**（带上非法键名和 `space.names`）。
+      - 走 `IllegalAction` 而不是 `ParseFailure`：格式是对的，模型是在**幻觉一个此刻不可用的按键**。两者在 replay 里是不同的失败模式，该改的东西也不同（`ParseFailure` 改 prompt 或上约束解码；`IllegalAction` 改动作说明或收紧掩码）。
+      - 这一步刻意放在**最后**：格式错和越界次数是更便宜、更早能判的失败，先把它们筛掉，剩下的才是真正的「幻觉了一个不可用的键」，失败模式统计因此不会被格式噪声污染。
 
    > 这里曾经有一段 `_parse_intent` + 按 intent 三分支（`PRESS`/`PUSH_GOAL`/`INSPECT`）的解析，
    > 连同 `SCREEN_COORD` 正则（拦截判据里的屏幕坐标写法）一起删了——**只剩按键一类动作**。
@@ -179,7 +191,8 @@ def _render_goals(goals: list[Goal]) -> str
    >   拦截只该落在**判据**上，`thought`/`rationale` 不受限——那两个是模型自己的草稿纸。
 6. `_parse_thought`：取出 `thought`，缺失或空则单独抛 `ParseFailure("missing 'thought' field")`——用独立的 reason 字符串（而非新增异常类型）区分"格式坏"和"不肯推理"这两类失败，足够 replay 时按 reason 聚合分析，不值得为此多开一个异常类。
 7. `_parse_rationale`：取出 `rationale`。容忍裸字符串写法（自动包成单元素列表）。非 list 则 `ParseFailure`。过滤空字符串后若为空列表，`ParseFailure`。**若条数超过 `MAX_RATIONALE`，走 `ParseFailure` 而不是静默截断**——模型认为需要 4 条论据是有分量的，悄悄丢掉第 4 条等于替它做了一个没有留痕的决定；打回去重试至少留下痕迹，代价是这类重试会多花 token（如果实测占比很高，未来可以改成截断）。
-8. 最终构造 `Action(name=..., args=..., thought=..., rationale=...)`。
+8. 最终构造 `Action(name=sequence[0].name, thought=..., rationale=..., sequence=sequence)`。
+   `name` 取链的**第一段**，是为了让「一个动作有个名字」这件事在链化之后仍然成立——`choose()` 出口的 `assert space.contains(parsed.name)` 和 trace 里的动作名都还靠它；链的完整形态由 `sequence` 承载，`describe()` 渲染成 `up×4 -> down×2`。
 
 **失败后的重试循环**：解析出的异常在 `choose()` 里被捕获，转换成 `(kind, reason)`，随后 `prompt = base + _retry_note(attempt + 1, reason, completion.text[:400])`（见 3.2 节和 4.1 节）。
 
@@ -199,17 +212,23 @@ def _render_goals(goals: list[Goal]) -> str
 
 按顺序包含以下部分：
 
-1. **开场**：说明这是在玩宝可梦，按 ReAct 方式思考并选下一个动作。
+1. **开场**：说明这是在玩宝可梦，按 ReAct 方式思考，选出**这一步要按的按键链**——并点明「一步交出的不是一个键，而是一条链，链里的按键连着按完、中间不重新观察」，因此「这一步做多少」由模型自己决定：能一次走完的走完，遇到转弯或预期会有事发生就收住。
 2. **目标**（`$goals`）：来自 `_render_goals` 的渲染结果，并提示"你只需要完成栈顶那一条"。
-3. **当前状态**（`$summary`）：`obs.summary`。
+3. **当前状态**（`$status`）：`obs.status`。
+   > 这个占位符曾经叫 `$summary`（对应 `Observation.summary`）。改名连着字段一起改——模板里的占位符名和字段名不一致的话，`Template.substitute` 会直接抛 `KeyError`，而不是给出一个能看懂的错。
 4. **已知事实**（`$facts`）：`obs.facts` 逐条列出。
 5. **相关记忆**（`$memories`）：Harness 检索好的 `memories` 渲染结果。
-6. **可用按键**（`$actions`）：`space.names`（及其说明）+ 可选的 `space.note`。
-7. **输出格式**：只输出一个 JSON 对象，一个示例（`thought`/`rationale`/`action`/`args`）。
+6. **可用按键（可组成有限按键链）**（`$actions`）：`space.names`（及其说明）+ 可选的 `space.note`（连按/读图那几段说明就挂在这里下发）。
+7. **输出格式**：只输出一个 JSON 对象，示例字段是 `thought` / `rationale` / `sequence`——**示例里给的就是一条多段链**，因为模型照着示例的形状写，示例只给一段的话它基本不会自己想到可以拼链。
 8. **各字段的要求**：
    - `thought`：完整推理，只用于记录，不进入后续决策。
    - `rationale`：1 到 `$max_rationale` 条，要求写"为什么这个动作在当前状态下成立"的依据，不要复述动作本身；强调**这些会被存进记忆、以后在相似状态下取回**，所以要写成"以后还能判断真假"的样子（例如"地上有药水而我手上没有"而非"我觉得这样比较好"）。
-   - `args.times`：1 到 8，必须出现，默认 `"1"`；只有"沿直线走几格"是唯一正当的调大场景，因为连按期间看不到中间画面；`a` 键永远是 1（写大了会被夹成 1），因为对话是逐句出现的，连按会吞掉中间的句子而判据往往就要那句话。
+   - `sequence`：非空数组，每段 `{"action": 键, "times": N}`，N 为 1 到 8；长度为 1 时可以是任意可用按键，长度大于 1 时**每段只能是 `up` / `down`**（要拐弯就把这一步收在拐弯前）；**`a` 永远是 1**，理由是对话一句一句出来、连按会吞掉中间那几句，而判据要的那句往往就在中间。
+
+> 这份模板曾经教的是「顶层 `action` + `args.times`」那一套单键格式。改写的原因不是格式更好看：**旧格式让"这一步走几格"和"这一步按哪个键"绑死在一个键上**，模型想表达"先直走两格再拐弯"只能拆成两步，而每一步都要付一次完整的感知调用。链化之后规划粒度和感知粒度才分开。
+>
+> **NPC 那段策略说明（碰到 `known_objects` 里没互动过的门/招牌/人该怎么办）现在只留在 `map_hint.md` 一份。** 它曾经在两份 prompt 里各写了一遍，措辞还不完全一样——同一条策略有两个来源，改了一处另一处就变成静默的反例，而模型没有办法知道该听哪一份。
+
 ### 4.2 `intent_help.md` —— **已删除**
 
 曾经以 `## press` / `## push_goal` / `## inspect` 三个 section 组织，由
@@ -266,11 +285,20 @@ def reflect(
 
 前置条件：`action.rationale` 非空（`assert`）。
 
+> 返回类型曾经叫 `MemoryEntry`，住在 `schemas/memory_episodic.py`。改成 `StepMemory` /
+> `step_memory.py` 是为了让名字说出**粒度**：这条记忆恰好覆盖**一步**（前一帧 → 这条链 →
+> 后一帧），不是"一段情景"也不是"一条任意的记忆"。旧名字留出了一个它并不支持的想象空间，
+> 而粒度正是这个类唯一不能变的东西——`before`/`after` 各一份快照的结构只有在"一步"这个
+> 尺度上才成立。同一个文件里的 `Snapshot` **没有改名**，它本来就叫对了。
+
 组装的字段：
 
 - `before` = `Snapshot.of(before)`（动作执行前的快照）。
 - `rationale` = `list(action.rationale)`——**写进去的是 `rationale`，不是 `thought`**。完整的推理过程留在 trace 里，进入记忆的只有论据本身。这使得这条记忆是**自带标签**的："我以为 P，结果 R"——取回这条记忆时,反例会直接贴在同一行,一条错误的论据不会被当成可靠知识继续使用。若单纯记录"结论"（比如判断成功/失败），未来的检索者拿到的就只是一个标签,看不到当初支撑这个结论的依据是否仍然成立。
-- `action` = `f"{action.name}{times}"`，其中连按次数 `times` 从 `action.args.get("times", "1")` 取，非 `""`/`"1"` 时格式化成 `" ×N"`。连按次数**从动作本身取，不从观测里找**——因为"发出了几次这个按键"是我们自己确定的动作参数,不需要也不应该从观测结果里反推。
+- `action` = `action.describe()`，即整条链渲染成 `up×4 -> down×2` 这样的一行文本。
+  > 这里曾经是 `f"{action.name}{times}"`，`times` 从 `action.args.get("times", "1")` 拼出来——那时一步只有一个键。动作链化之后这种拼法只能记住第一段，记忆里会出现"做了 `up×4`、画面却变成了走完 `up×4 -> down×2` 之后的样子"这种前后对不上的条目，而**记忆的全部价值就在于「做了什么 → 变成什么」这一对**，动作那一半记漏了，这条经验就是有害的。
+  > 渲染逻辑放在 `Action.describe()` 而不是 `reflect()` 里：trace 和记忆都要这一行，同一个形状写两遍迟早会分叉。
+  > 不变的一条：链的形状**从动作本身取，不从观测里反推**——"发出了几次这个按键"是我们自己确定的动作参数。
 - `after` = `Snapshot.of(after)`——**是一个完整观察，不是一句话结果**。早期版本只存"结果：你在野外"这类压缩过的标签，取回十条记忆全都长一个样，无法回答"那一下到底改变了什么"，而这正是这条记忆存在的唯一价值。
 - `key` = `snapshot.position or str(before.step)`——本阶段用位置作为占位符（比用 `step` 更好，因为位置是可复用的作用域,同一位置的经验对未来路过此处仍然有用,而 `step` 编号本身没有复用价值）。文档标注：机制抽象接入后会换成状态语义 key，但**这个方法的签名不变**。
 - `step` = `before.step`。
@@ -312,7 +340,7 @@ def judge(
 
 流程：
 
-1. 渲染 `rendered`：把 `obs.facts` 中**排除 `JUDGE_BLIND`** 字段后的部分逐条列出；若为空则回退用 `obs.summary`。
+1. 渲染 `rendered`：把 `obs.facts` 中**排除 `JUDGE_BLIND`** 字段后的部分逐条列出；若为空则回退用 `obs.status`。
 2. 渲染 `past`：`history` 中每条 `m.render(reason=False)` 用两个换行拼接；为空时填"（这是第一步，之前什么都没发生）"。
 3. 用 `self._judge_prompt.render(goal=goal.goal, criteria=goal.criteria, observation=rendered, history=...)` 得到最终 prompt。
 4. 调用 `self._judge_llm.complete(prompt)`。
@@ -345,15 +373,15 @@ def _parse_verdict(text: str) -> tuple[bool, str, str]
 
 ```python
 JUDGE_BLIND: frozenset[str] = frozenset({
-    "known_objects", "walk_map", "landmarks", "inspected",
+    "known_objects", "walk_map", "landmarks",
 })
 ```
 
-这是一份**黑名单**（不是白名单），在渲染 `obs.facts` 给判定器时被排除。四个字段各自的理由：
+这是一份**黑名单**（不是白名单），在渲染 `obs.facts` 给判定器时被排除。三个字段各自的理由：
 
 - **`known_objects`**：**跨 episode 的流水**（"见过 7 次，互动 1 次""他说过 XXX"）。上一局说过的那句话会残留在里面；如果目标是"和母亲对话"，这个字段足以让判定器在**第 0 步**就误判完成，而这一局其实什么都还没发生。`history` 参数之所以是安全的，正因为它两头都有界（只有本局、只有最近几步）；`known_objects` 没有这个界。
 - **`walk_map` / `landmarks`**：**堵掉坐标推理的原料**。仅在 prompt 里写"别做坐标换算"不够——实测判定器仍然会做：把 `walk_map` 的行号当成全局 y 坐标，得出"他还没进屋"的错误结论，而 `map_id` 已经明写着他在屋内。拿不到原料，判定器就用不了这套错误推理。位置证据改由 `where` 字段直接给出——那是答案，不是需要推理的原料。
-- **`inspected`**：这是**决策者自己挑的问题**得到的回答，跟着决策者当时的注意力走。让判定器读它，等于让被评价者向评价者递材料。
+> 这里曾经还有第四个字段 `inspected`（细看功能的产物）。挡它的理由是：那是**决策者自己挑的问题**得到的回答，跟着决策者当时的注意力走，让判定器读它等于让被评价者向评价者递材料。细看功能整条链路已经删除，这个字段不再存在，所以从名单里去掉——**黑名单里留着一个不存在的字段不是无害的**：它让读名单的人以为系统里还有那样一个东西，也让"这三个字段各自的理由"变成一份对不上代码的清单。这条论证本身在重新引入任何"决策者点播的信息"时依然成立。
 
 设计上刻意选择"黑名单"而不是"白名单"，因为两种失效模式不对称：漏进一个不该给的新字段，代价是判定器多看一眼（可能造成误判，但可发现、可修）；漏掉一个该给的字段，代价是判定器直接瞎掉——文档提到 `dialog_text` 曾经因白名单式思路被漏掉，判定器一路回答"对话框内容未提供"，导致一局本该成功的 episode 被静默记成失败。两种失败代价不对称，所以宁可默认多给（黑名单只挡明确有害的字段）。
 

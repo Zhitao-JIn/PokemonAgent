@@ -35,11 +35,27 @@ MAX_RATIONALE = 3
 """
 
 
+MAX_TIMES = 8
+"""一段最多连按几次。
+
+**同一个数有两个执行点**——这里的字段约束（数据契约）和 `Brain._parse`
+（外部输入校验），所以必须同源，理由同 `MAX_RATIONALE`。
+
+上限存在的理由：模型会写 `"times": "100"`。连按期间 agent 看不见中间状态，
+撞墙了也会把剩下几次按完——这是时序抽象的经典取舍，次数是宏动作（机制二）的原始形态。
+
+收益是**省感知调用**：走 5 格从 5 次 VLM 调用变成 1 次。
+感知是每步都花钱的那一项，这一下把成本和延迟都砍到五分之一。
+"""
+
+
 class ActionSegment(BaseModel):
     """动作链中的一个连续按键段。"""
 
     name: str = Field(min_length=1, description="按键名")
-    times: int = Field(default=1, ge=1, le=8, description="连续按键次数")
+    times: int = Field(
+        default=1, ge=1, le=MAX_TIMES, description=f"连续按键次数，1-{MAX_TIMES}"
+    )
 
 
 class Action(BaseModel):
@@ -139,7 +155,12 @@ class ToolResult(BaseModel):
     所以删掉，不是补上。
     """
 
-    message: str = Field(default="", description="给 LLM 读的结果描述")
+    # 这里曾经有一个 `message`：world 返回的一句"结果描述"。
+    #
+    # 它的描述写着"给 LLM 读的"，而**没有任何一条路径把它交给 LLM**——
+    # 全仓库唯一的消费方是 trace 的 ACT 事件。内容也只是 `observation.status`，
+    # 而那一句紧接着又会作为下一条 OBSERVE 的 `status` 出现，观测台上纯属复读。
+    # 动作之后世界变成什么样，答案是**下一条完整的观测**，不是一句转述。
     observation: Observation | None = Field(
         default=None, description="执行后的新观测；None 表示调用方需另行 perceive()"
     )

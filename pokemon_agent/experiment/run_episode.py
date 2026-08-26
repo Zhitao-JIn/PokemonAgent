@@ -31,7 +31,7 @@ from pokemon_agent.errors import AgentError
 from pokemon_agent.schemas.task import Task
 from pokemon_agent.schemas.trace import EventType, Source
 from pokemon_agent.trace.store import LocalTrace
-from pokemon_agent.trace.browser import BrowserTraceServer
+from pokemon_agent.trace.browser import shared_server
 
 try:
     from pokemon_agent.trace.index import EpisodeIndex
@@ -125,8 +125,9 @@ def build_session(run_id: str, state: str | None, watch: bool):
         sys.exit(1)
     os.environ["EPISODE_START_STATE"] = state or ""
 
-    browser = BrowserTraceServer()
-    browser.start()
+    # **共用进程里那一台观测台**，不是每次建会话都 new 一台——见 `shared_server()`：
+    # 第二台会悄悄抢走同一个端口，而浏览器还连在第一台上。
+    browser = shared_server()
     print(f"[INFO] 浏览器观测台: {browser.url}")
     return build_real(
         ROM,

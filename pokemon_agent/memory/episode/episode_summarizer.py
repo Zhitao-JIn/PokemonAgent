@@ -15,10 +15,9 @@ import re
 from pathlib import Path
 from typing import Dict, Any
 
-import jinja2
-
 from pokemon_agent.interfaces.llm import LLMProvider
 from pokemon_agent.interfaces.trace import TracePort
+from pokemon_agent.prompts import load as load_prompt
 from pokemon_agent.memory.episode.utils import _create_episode_memory
 from pokemon_agent.schemas.episode_memory import EpisodeMemory
 from pokemon_agent.schemas.episode_summary_io import EpisodeContext, EpisodeSummaryResponse
@@ -51,9 +50,11 @@ class EpisodeMemoryGenerator:
         self._trace_port = trace_port
         self._llm_provider = llm_provider
 
-        template_path = Path(__file__).resolve().parents[2] / "prompts" / "episode_summary.md"
-        with template_path.open("r", encoding="utf-8") as f:
-            self._template = jinja2.Template(f.read())
+        # **走和别的 prompt 同一条加载路径**（`prompts.load`），不再自己
+        # `jinja2.Template(open(...))`。自己读文件的代价不是多几行代码，是这份
+        # prompt **没有 sha、也进不了 manifest**——那一局的蒸馏用的是哪一版说明，
+        # 事后查不出来，而 manifest 存在的全部意义就是回答这个。
+        self._template = load_prompt("episode_summary")
 
     def generate_summary(
         self,
@@ -119,9 +120,11 @@ class EpisodeMemoryGenerator:
             steps_text += f"  - **结果**: {step.result_summary}\n"
             steps_text += f"  - **场景**: {step.scene}\n\n"
 
+        # `success` 在模板里曾经是一个 jinja 条件表达式。换成 `$` 占位符之后
+        # 判断挪到这里：模板只负责放文字，**分支逻辑属于代码**。
         return self._template.render(
             goal=context.goal,
-            success=context.success,
+            result="成功完成" if context.success else "未能完成",
             steps=context.steps,
             max_steps=context.max_steps,
             initial_state=context.initial_state,

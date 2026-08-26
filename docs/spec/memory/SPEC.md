@@ -1,9 +1,9 @@
 # `pokemon_agent/memory/` 技术规格
 
-覆盖文件：`memory/port.py`、`memory/util.py`、`memory/semantic/object_store.py`、
+覆盖文件：`interfaces/semantic_memory.py`、`memory/semantic/util.py`、`memory/semantic/object_store.py`、
 `memory/semantic/__init__.py`，以及它们所依赖的类型定义
 `schemas/object_fact.py`（`ObjectFact`）、`schemas/observation.py`（`Place`、`Landmark`）；
-以及新增的 `memory/knowledge/store.py`、`memory/knowledge/__init__.py`（第 6 节）。
+以及新增的 `memory/semantic/knowledge/store.py`、`memory/semantic/knowledge/__init__.py`（第 6 节）。
 
 ---
 
@@ -34,7 +34,7 @@
   "调用方保证一步只调一次"——这一层完全不知道"一步"是什么，它只负责按传进来的
   `Landmark` 列表建档，"什么算一步"是调用方（`MemoryTool`）要守的约束。
 - `SemanticObjectWriter.touch(place, kind, text="")` 的 docstring："`kind` 由调用方给
-  （当帧地标或档案兜底，见 `memory/util.py`），这一层不判断'这一格上到底是什么'——
+  （当帧地标或档案兜底，见 `memory/semantic/util.py`），这一层不判断'这一格上到底是什么'——
   那是几何/解析的事，不是存储的事。"
 - `SemanticObjectWriter.record_attempt(place, kind, key_desc, result)` 的前置条件："
   `result` 必须是 `RESULT_NONE` / `RESULT_DIALOG` / 或以 `RESULT_WARP_PREFIX` 开头——
@@ -53,12 +53,14 @@
 
 ---
 
-## 2. `memory/port.py`：三个 Protocol
+## 2. `interfaces/semantic_memory.py`：三个 Protocol
+
+（**这份 Protocol 住在 `interfaces/` 而不是 `memory/` 包内部**——跨层的类型归 `interfaces`，理由和 `ObjectFact` 归 `schemas` 一样，见第 5 节。文档里以前写的 `memory/port.py` 这个路径不存在。）
 
 模块 docstring 把整体设计动机概括为一句话：
 
 > "现在只有一类语义记忆：object（门/招牌/人）。（**这句话现在过期了**——见第 6 节
-> 新增的 `memory/knowledge/`，一个不经过 `port.py` 这三个 Protocol 的第二类语义记忆；
+> 新增的 `memory/semantic/knowledge/`，一个不经过 `port.py` 这三个 Protocol 的第二类语义记忆；
 > 这一节其余关于 `object` 类的描述仍然准确。）协议按'输入 / 输出'拆成两半，
 > 再合成一个'存储'协议，理由是三件事分别回答不同的问题：
 >
@@ -114,7 +116,7 @@
 #### `touch(self, place: Place, kind: str, text: str = "") -> ObjectFact`
 
 - "确认这一格上有个东西：建档或取已有档案，`touched += 1`；`text` 非空则记一句。"
-- "`kind` 由调用方给（当帧地标或档案兜底，见 `memory/util.py`），这一层不判断
+- "`kind` 由调用方给（当帧地标或档案兜底，见 `memory/semantic/util.py`），这一层不判断
   '这一格上到底是什么'——那是几何/解析的事，不是存储的事。"
 - 返回更新后的 `ObjectFact`。
 
@@ -141,7 +143,7 @@ class SemanticObjectStore(SemanticObjectReader, SemanticObjectWriter, Protocol):
 
 ---
 
-## 3. `memory/util.py`：三个纯函数
+## 3. `memory/semantic/util.py`：三个纯函数
 
 模块 docstring："纯函数：算坐标、解析当帧地标。**不碰任何存储状态**——这是它们和
 `memory/semantic/object_store.py`（有状态的 `_objects` 字典）的唯一区别，也是拆成
@@ -245,7 +247,7 @@ def kind_in_frame(obs: Observation, place: Place, interactive: tuple[str, ...]) 
 
 `ObjectMemory` 实现 `SemanticObjectStore`（即同时满足 `SemanticObjectReader` 与
 `SemanticObjectWriter`）。类文档强调它是"`SemanticObjectStore` 协议（见
-`memory/port.py`）的具体实现"，且"不随 episode 清空"：
+`interfaces/semantic_memory.py`）的具体实现"，且"不随 episode 清空"：
 
 > "'地图39 x=2 y=3 那个人不是母亲'这件事，下一局仍然成立，跨局复用正是要验证
 > 的东西。清空的话机是每次 `Harness.reset()` 该做的事，不是这个类自己的责任。"
@@ -341,7 +343,7 @@ def __init__(self) -> None:
 
 ## 5. `memory/` 与 `schemas/` 层的关系：为什么 `ObjectFact` 不在这个包内部
 
-`memory/port.py` 与 `memory/semantic/object_store.py` 读写的数据类型
+`interfaces/semantic_memory.py` 与 `memory/semantic/object_store.py` 读写的数据类型
 `ObjectFact`，其定义位于 `schemas/object_fact.py`，不在 `memory/` 包内部。
 `schemas/object_fact.py` 顶部与 `ObjectFact` 类文档给出了理由：
 
@@ -349,7 +351,7 @@ def __init__(self) -> None:
    > "从不出现在 `WorldPort`/`GameToolPort` 的签名里，只出现在 `MemoryToolPort`
    > （见 `interfaces/tools.py`）——大脑不该知道'语义记忆''ObjectFact'这些词，
    > 它看到的只是 `known_objects` 里的一段渲染文字。"
-   `ObjectFact` 需要被 `memory/port.py` 的协议签名、`memory/semantic/object_store.py`
+   `ObjectFact` 需要被 `interfaces/semantic_memory.py` 的协议签名、`memory/semantic/object_store.py`
    的实现、以及 `interfaces/tools.py` 的 `MemoryToolPort`（供 Harness/`MemoryTool`
    使用）三处共同引用，因此它是一个**跨模块共享的数据契约**，而不是
    `memory/` 包私有的实现细节——放进 `schemas/` 与 `Landmark`、`Place`
@@ -364,7 +366,7 @@ def __init__(self) -> None:
    滚动窗口拼接（GB 对话框一次显示两行、按 `a` 滚一行，同一句话被拆成多个
    重叠窗口抄回来，需要用 `_stitch()` 做字符串重叠拼接，且第一条永远保留
    因为"NPC 的自我介绍……都在开头"）；`ObjectFact.render()` 负责把一条档案
-   渲染成 `known_objects` 里的一行文字，并对"门"做特殊处理（用
+   渲染成 `known_objects` 里的**一段多行文本**（抬头 + 缩进明细，见 5.4），并对"门"做特殊处理（用
    `leads_to`——一个从 `attempts` 里动态算出、而非单独存储的字段——直接给出
    "通往地图N"这样的结论，避免"两处真相"不一致）。这些是**这一类事实自己的
    业务规则**，`memory/` 包（`ObjectMemory`/协议）完全不碰这些规则，只把
@@ -385,19 +387,19 @@ def __init__(self) -> None:
 语义记忆按 `(map_id, x, y)` 索引，那三个数必须整体传递、整体比较"，同时它也
 出现在 `WorldPort`/`GameToolPort` 等更上层的跨层契约里，不是 `memory/`
 包能独占的类型；`Landmark`（门/招牌/人的类型+位置，"没有名字"）由感知层
-（`PyBoyWorld`/`TerrainMap.landmarks()`）产出，是 `memory/util.py`
+（`PyBoyWorld`/`TerrainMap.landmarks()`）产出，是 `memory/semantic/util.py`
 的 `parse_landmarks`/`kind_in_frame` 与 `memory/semantic/object_store.py`
 的 `see`/`touch`/`record_attempt` 共同消费的输入类型，同样是跨层契约的一部分。
 
 ---
 
-## 6. `memory/knowledge/`：第二类语义记忆，和坐标无关的通用先验
+## 6. `memory/semantic/knowledge/`：第二类语义记忆，和坐标无关的通用先验
 
-新增的 `memory/knowledge/store.py`（另有一个只写了模块 docstring 的
-`memory/knowledge/__init__.py`）是一个**独立的第二类语义记忆**，和第 1-5 节描述
+新增的 `memory/semantic/knowledge/store.py`（另有一个只写了模块 docstring 的
+`memory/semantic/knowledge/__init__.py`）是一个**独立的第二类语义记忆**，和第 1-5 节描述
 的 `object`（门/招牌/人，按坐标索引）**不共用协议、不共用存储**，是刻意的：
 
-- **`object` 类回答"这一格有什么"**（`known_here(obs)` 按 `obs.place` 筛出这张地图
+- **`object` 类回答"这一格有什么"**（`query_objects(obs)` 按 `obs.place` 筛出这张地图
   上互动过的东西），**`knowledge` 类回答"这类局通常怎么打"**（比如"草丛遭遇是概率
   事件，连按比试探一次更有效"）——前者的作用域是一格、一张地图，后者和站在哪一格
   完全无关，是 agent 每一局开局就该知道的常识。两者的检索策略天然不同（一个按坐标
@@ -408,7 +410,11 @@ def __init__(self) -> None:
   协议，也没有 `port.py` 那种 Reader/Writer/Store 拆分的必要——`store.py` 只有一个
   函数。
 
-### `store.py` 的接口：`load_all() -> str`
+### `store.py` 的接口：`load_all()` / `load_chunks()` / `load_named_chunks()` / `mtime()`
+
+`load_all()` 仍在（下面这段说明保留，因为它记着"为什么一开始不做检索"这个判断），
+但检索层现在用的是 `load_named_chunks()`（按 `##` 切块、带文件名）和 `mtime()`
+（目录最新修改时间，`_refresh_knowledge_index()` 拿它判断要不要重建索引）。
 
 ```python
 def load_all() -> str:
@@ -417,19 +423,27 @@ def load_all() -> str:
     """
 ```
 
-- **不筛选、不检索**：把 `memory/knowledge/` 目录下全部 `*.md` 文件按文件名排序后
+- **不筛选、不检索**：把 `memory/semantic/knowledge/` 目录下全部 `*.md` 文件按文件名排序后
   原样拼接（`"\n\n".join(...)`）返回，是这一层刻意做出的设计决定，文档在模块
   docstring 里给了理由——内容量小（个位数文件）时，筛选带来的"漏掉一条相关先验"
   风险比"多花几百 token 全读进去"更贵；等内容量真的涨到需要筛的地步，再在这一层
   加检索逻辑，现在不预先设计一套用不上的接口。
-- **每次调用都重新读盘，不缓存**：`tools/memory_tool.py` 的 `MemoryTool.knowledge_base()`
-  直接调 `load_all()`，不在 `__init__` 里缓存结果——这样可以在 episode 运行期间
-  编辑 `.md` 文件、不重启进程就让下一步的 `retrieve_memory` 读到新内容。个位数小
-  文件、每步一次磁盘读，代价可以接受。
-- **消费方**：`tools/memory_tool.py` 的 `MemoryTool`（经由 `MemoryToolPort.knowledge_base()`），
-  再往上是 `harness.py` 的 `_retrieve_memory()`（详见 `harness/SPEC.md` 4.5 节）——
-  折进 `obs.facts["knowledge"]`，和 `known_objects` 走同一个"查记忆"节点，
-  不放进 `_observe()`（`look` 节点），理由同样是"这是记忆的读，不是这一帧看到的东西"。
+- **这里曾经是"每次调用都重新读盘、不缓存、不检索"。** 那一版 `MemoryTool.knowledge_base()`
+  直接调 `load_all()` 把整个目录拼成一大段全量塞进 prompt，理由是"内容量小的时候，
+  漏掉一条相关先验比多花几百 token 更贵"。这条理由随内容量增长失效了。
+
+  **现在是混合检索 + 增量索引**：`MemoryTool.query_knowledge(query, limit)` 先调
+  `_refresh_knowledge_index()`——**知识库文件的 mtime 变了才重新分片、重新 embed**，
+  不是每次查询都重算——然后走 `hybrid_retrieve()`（BM25 + 向量召回，RRF 融合，
+  再过 reranker），返回 `KnowledgeQueryResult(contents, sources)`。
+  `sources` 单独返回是为了 trace：`memory_read` 事件记的是命中了哪几个文件，
+  而不是几千字的正文。
+
+  运行期改 `.md` 仍然生效（mtime 一变下次查询就重建索引），只是不再每步读盘。
+- **消费方**：`tools/memory_tool.py` 的 `MemoryTool`（经由 `MemoryToolPort.query_knowledge()`），
+  再往上是 `harness.py` 的 `_retrieve_memory()`——折进 `obs.facts["knowledge"]`，
+  和 `known_objects` 走同一个"查记忆"节点，不放进 `_observe()`（`look` 节点），
+  理由同样是"这是记忆的读，不是这一帧看到的东西"。
 
 ### 内容示例：`wild_encounters.md`
 

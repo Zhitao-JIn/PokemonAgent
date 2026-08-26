@@ -23,7 +23,7 @@
 
 | 层 | 职责 | 是否感知 |
 |---|---|---|
-| `WorldPort` / `PyBoyWorld`（本模块） | 世界本身能做什么：`reset`/`observe`/`inspect`/`step`/`all_actions` | **是**，所有调 VLM、读内存、组装 `Observation.facts` 的逻辑都在这里 |
+| `WorldPort` / `PyBoyWorld`（本模块） | 世界本身能做什么：`reset`/`observe`/`step`/`all_actions` | **是**，所有调 VLM、读内存、组装 `Observation.facts` 的逻辑都在这里 |
 | `GameToolPort` / `GameTools`（`tools/game_tools.py`） | Harness 能拿世界做什么，即暴露给"决策"链路的工具接口 | **否**，`GameTools` 只是用 `WorldPort` 去实现 `GameToolPort`，纯粹转发调用，不掺杂任何感知/解析逻辑 |
 
 `interfaces/world.py` 的 docstring 把这条分界讲得很直接：
@@ -126,8 +126,8 @@ def read_terrain(mem: Memory) -> TerrainMap
 
 ### 3.1 顶层设计取舍（类之前的模块级论证）
 
-- **分层**：`observe()` 的契约要求交出含 `summary` 与 `facts` 的 `Observation`，而这必须调 VLM——所以感知只能在 world 里。但掩码是 harness 的策略，依赖的 `overlay`/`scene` 是感知产物；解法是**把 `scene` 与 `overlay` 放进 `Observation.facts`**，harness 读 `facts` 做掩码不算越界（`facts` 本就是 `Observation` 的公开部分）。
-- **时序：同步 + 固定缓冲**，流程是"按一次键 → 推进 1 秒 →（若连按，重复）→ 推进 2 秒 → 感知"。
+- **分层**：`observe()` 的契约要求交出含 `status` 与 `facts` 的 `Observation`，而这必须调 VLM——所以感知只能在 world 里。但掩码是 harness 的策略，依赖的 `overlay`/`scene` 是感知产物；解法是**把 `scene` 与 `overlay` 放进 `Observation.facts`**，harness 读 `facts` 做掩码不算越界（`facts` 本就是 `Observation` 的公开部分）。
+- **时序：同步 + 固定缓冲**，流程是"按一次键 → 推进 `WITHIN_ACTION_FRAMES` 帧 →（链上还有下一次按键，重复）→ 推进 `AFTER_ACTION_FRAMES` 帧 → 感知"。整条动作链只在**结尾感知一次**（见 3.3 `step()`）。
   - 曾用"连续 N 帧不变"判稳定，不可行：草丛、水面、NPC 走动、闪烁光标、战斗呼吸动画很多画面根本不会静止，等稳定会大面积超时。
   - 曾把模拟器放进后台线程异步跑，让模型思考时间充当天然等待；动画问题自己消失，但代价是**不可复现**（同一存档跑两次结果不同），且线程/队列/条件变量/退出唤醒的复杂度全是为了这一个好处。
   - 固定缓冲用远少的代码换到同一效果的九成，还顺带拿回了可复现性。剩下的风险（偶尔感知到动画中间帧）是概率问题不是正确性问题，可测量但不必优先解决。
@@ -146,7 +146,6 @@ def __init__(
     state_path: str | None = None,
     prompt_name: str = "perceive_screen",
     max_perceive_retries: int = 2,
-    inspect_prompt_name: str = "inspect_focus",
     watch: bool = False,
     speed: int = 1,
 ) -> None
@@ -159,7 +158,6 @@ def __init__(
 | `state_path` | 起始存档路径，**显式传入**，不用 PyBoy 默认的 `<rom>.state`。理由：后续会有多个命名起点（真新镇出口/一号道馆前/…），默认路径只有一个坑位，且改 ROM 文件名就对不上；用哪个存档起跑要进 manifest。若给出且文件不存在，构造时立刻抛 `FileNotFoundError`。若为 `None`，`reset()` 时从开机空转 `BOOT_FRAMES` 帧越过开机 logo。 |
 | `prompt_name` | 主感知 prompt 模板名（默认 `perceive_screen`），供 `_perceive()` 用。 |
 | `max_perceive_retries` | `_perceive()` 解析失败时的重试上限。前置条件 `>= 1`，构造时 `assert`。 |
-| `inspect_prompt_name` | `inspect()` 用的追问 prompt 模板名（默认 `inspect_focus`）。 |
 | `watch` | 是否开窗口实时观看。为 `True` 时用 `window="SDL2"`，否则 `window="null"`（无头）。也决定 `set_emulation_speed` 是否受 `speed` 控制还是恒为 0（无头不限速）。 |
 | `speed` | `watch=True` 时的模拟器播放速度。`watch=False` 时该参数不生效（速度设为 0，即不限速全速跑）。 |
 
@@ -170,11 +168,9 @@ def __init__(
 构造函数中还初始化的重要状态：
 - `self._closed`：窗口是否已关闭，是 world **唯一有资格宣告终止**的标志（世界没了，跑不下去；步数用尽/任务达成不归 world 判）。
 - `self._cache`：帧级感知缓存，初始为 `None`。
-- `self._facing`：朝向，初始为空字符串（未知）。
-- `self._notes`：`inspect()` 答案的字典，初始为空。
 - `self.last_frame_sha`：初始为空字符串。
 
-### 3.3 五个 `WorldPort` 方法
+### 3.3 四个 `WorldPort` 方法
 
 #### `reset(task: Task) -> PerceptionResult`
 
@@ -183,7 +179,7 @@ def __init__(
 逻辑：
 1. 若有 `state_path`：打开文件、`load_state`，然后 `tick(1)`——**读档后必须 tick 一次才会重绘画面**。
 2. 若无 `state_path`：`_tick(BOOT_FRAMES)`（600 帧）空转过开机动画。
-3. 重置 `self._task`、`self._closed=False`、`self._cache=None`（帧缓存失效，因为画面已经变了）、`self._facing=""`、`self._notes={}`。
+3. 重置 `self._task`、`self._closed=False`、`self._cache=None`（帧缓存失效，因为画面已经变了）。
 4. 调用 `self.observe()` 得到首个观测。
 5. 断言返回的 `observation.done` 为 `False`。
 
@@ -195,7 +191,7 @@ def __init__(
 
 1. `assert self._task is not None`（必须先 `reset()`）。
 2. 调 `self._perceive()` 拿到 `(screen, terrain, calls)`。
-3. **对话框误判降级**（见 3.7）：若 `overlay is DIALOG` 但 `dialog_text` 去空白后为空串，降级为 `Overlay.NONE`，并记 `misread = "dialog_without_text"`。
+3. **对话框误判降级**（见 3.6）：若 `overlay is DIALOG` 但 `dialog_text` 去空白后为空串，降级为 `Overlay.NONE`，并记 `misread = "dialog_without_text"`。
 4. 组装 `facts` 字典，**顺序即语义**，依次是：
    - `scene`、`overlay`（降级后的值）、`screen.fields`（模型输出里其余结构化字段）
    - `dialog_text`（若有文字，且必须排最前面附近——见下方"为什么排最前"）
@@ -206,34 +202,38 @@ def __init__(
    - `where`：`terrain.place().render()`
    - `landmarks`：`terrain.render_landmarks()`（若非空）——只有类型和位置，没有名字（名字要靠走进去看见，是记忆层的事）
    - `neighbors`：`terrain.render_neighbors()`——唯一"相对我"的地形描述，是唯一能进记忆的那份（`walk_map` 的原点跟着人走，跨步骤引用会自相矛盾）
-   - `facing`（若已知）
+   - `facing`（若 `terrain.facing` 非空，见 3.5）
    - `options`、`cursor`（若有）
-   - `inspected`（若 `self._notes` 非空，放最后，因为它是大脑自己追问出来的，优先级低于每步都有的字段，且只对这一帧有效）
-5. 构造 `Observation(step=0, place=terrain.place(), summary=_summarize(screen), facts=facts, done=self._closed, success=False)`。`step`/`done`/`success` 只是占位值/由 Harness 盖章的语义（`done` 这里传的是 `self._closed`，即窗口是否已关，这是 world 唯一能宣告的终止形式）。
+5. 构造 `Observation(step=0, place=terrain.place(), status=_status_line(screen), facts=facts, done=self._closed, success=False)`。`step`/`done`/`success` 只是占位值/由 Harness 盖章的语义（`done` 这里传的是 `self._closed`，即窗口是否已关，这是 world 唯一能宣告的终止形式）。
 6. 返回 `PerceptionResult(observation=obs, calls=calls)`——`calls` 非空当且仅当这次真的调了模型，命中缓存时是空列表。
 
 **关于 `dialog_text` 必须排最前面**的注释特别强调其代价：漏了这一项，判定器看不到对话内容，"对话框里出现母亲说的话"这类判据永远不可能成立；而决策模型看不到就会按先验编一句当成自己读到的。实测判定器自己说过："对话框内容未提供，无法确认是否为母亲说的话"。
 
 **关于坐标系统统一**：全项目只有一套坐标（`walk_map` 行列号、`where`、`landmarks`、`known_objects` 里的 `x= y=` 都是同一套数，不需要换算），写法统一成 `x=8 y=5` 而不是 `(8,5)`，因为括号对是旧屏幕格写法，留着会让"这指的是哪一套"重新变成一个问题。
 
-#### `inspect(focus: str) -> PerceptionResult`
+#### 这里曾经有一个 `inspect(focus)`
 
-对**同一帧**再问一次视觉模型，问一个具体问题；世界不推进。
+它对**同一帧**再问一次视觉模型（换 `inspect_focus` 那份 prompt，问"`x=7 y=7` 那格
+到底是门还是窗"这类具体问题），世界不推进，答案攒进 `_notes`，再作为
+`facts["inspected"]` 并进下一次 `observe()`。整条链路——`PyBoyWorld.inspect()`、
+`_note()`/`_notes`/`MAX_NOTES`、构造参数 `inspect_prompt_name`、
+`prompts/inspect_focus.md`，连同 `WorldPort.inspect` 协议方法——**都已删除**。
 
-前置条件：`focus` 非空（`assert`），`self._task is not None`，`self._closed` 为假。
+留下来的经验（删之前踩过的坑，换个形式还会再踩）：
 
-逻辑（**整段包在 try 里**，包括取帧、读内存、渲染 prompt——因为契约是"失败不抛异常"，只护住模型调用那一行不够，`Template.render`/`substitute` 缺占位符会抛 `KeyError`，而 prompt 是最常改的文件）：
+- `inspect()` 不推进世界，所以 `step()` 的"世界一动就清空"机制永远轮不到它，
+  理论上一帧里能一直问下去，于是不得不加 `MAX_NOTES = 4` 这个上限。
+  实测连问 6 次同一个问题，`facts["inspected"]` 从 0 涨到 231 字符，
+  同一条答案被原样拼了 6 遍——**重复的事实会被模型当成强证据**，比过期事实更糟。
+- 答案只对那一帧有效：世界一推进就是过期事实，而过期事实比没有事实更糟
+  （大脑分不出它是新的还是旧的）。所以它需要一个明确的清空点，
+  而"什么时候清"正是这类跨调用可变状态最容易出错的地方（同 5.4 的 `_pending_calls`）。
+- 它也是唯一让 `observe()` 的"幂等"打折扣的东西：调过 `inspect()` 之后，
+  同一帧的 `observe()` 返回值会多一条 `inspected`——幂等只对模型调用成立、
+  对返回值不成立。删掉之后这条例外没有了。
 
-1. 取当前帧 PNG、算 sha、`read_terrain` 读地形。
-2. 渲染 `inspect_prompt`（带 `focus`、`known_map`、`legend`）。
-3. 调 `self._vision.describe(png, prompt)`，取文本；若为空则填占位符"（模型没说什么）"。
-4. 若整个过程抛异常：`answer = "（没看清：{异常类型名}）"`，`kind` 记异常类型名。
-5. 无论成败都构造一条 `record`（含 `input_tokens`/`output_tokens`——失败时填 `"0"`，因为 `PerceptionResult.calls` 的后置条件要求每条都含这两个字段，下游按 payload 累加成本的代码碰到缺字段只会 `KeyError` 或静默漏算）。
-6. `self._note(focus, answer)` 写入 `_notes`（见 3.5）。
-7. **不清缓存**：`observe()` 每次都从缓存里的 `ScreenState` 重新组装 `facts`，而 `_notes` 是组装时才读的，新答案自然出现在下一次 `observe()` 里。
-8. 调 `self.observe()` 拿 `inner`，返回 `PerceptionResult(observation=inner.observation, calls=[record, *inner.calls])`——`calls` 按发生顺序拼：这次细看的记录在前，随后 `observe()` 自己产生的记录（通常是空列表，因为帧没变、命中缓存）跟在后面，这是因果顺序，不需要再靠记账先后去调和。
-
-`inspect()` 和 `observe()` 的区别不在"再看一次"，而在**问的是不同的问题**：`observe()` 按帧缓存，同一帧再调返回字节完全一样没有新信息；`inspect()` 换了一份 prompt，问的是"`(7,7)` 那格到底是门还是窗"这类具体问题，同一张图不同问题才会得到不同答案。
+`EventType.INSPECT` 这个枚举成员**仍然保留**，但只为让旧 trace 文件回放时还看得见
+那类事件，不再有任何代码产生它。
 
 #### `all_actions() -> list[str]`
 
@@ -241,78 +241,84 @@ def __init__(
 
 #### `step(action: Action) -> ToolResult`
 
-前置条件：`self._task is not None`；`action.name in ALL_BUTTONS`；`not self._closed`（均 `assert`）。
+前置条件：`self._task is not None`；`not self._closed`；`action.segments()` 里**每一段**的 `name` 都在 `ALL_BUTTONS` 中（均 `assert`）。
 
 逻辑：
-1. `times = self._times(action)` 取原始连按次数（已夹到 `[1, MAX_TIMES]`，见 3.4）。
-2. 应用连按夹逼规则（见 3.4）。
-3. 若 `action.name in _FACING`：更新 `self._facing`（见 3.6）。
-4. 循环 `times` 次：`self._pyboy.button(action.name, delay=PRESS_FRAMES)` 然后 `self._tick(WITHIN_ACTION_FRAMES)`（每次按完推进 60 帧 = 1 秒）。
-5. 循环结束后 `self._tick(AFTER_ACTION_FRAMES)`（再推进 120 帧 = 2 秒），等世界落定再感知。
-6. `self._notes = {}`——细看的答案只对那一帧有效，一旦世界推进就清空（这是 `_notes` 唯一的清空点）。
-7. **不清 `_cache`**：`_perceive()` 自己按帧哈希判断，画面真变了自然会重新调模型；若按键后画面没变（对着空地按 a、朝墙走），清缓存就是白花一次感知还会引入噪声——实测连着四步 frame sha 一模一样，模型却给出了不同的 `overview`，其中一步把地图下方的黑边认成了对话框，同一帧只问一次这类抖动直接消失。
-8. `result = self.observe()`——由于 `_cache` 刚被上一帧内容占据（但 sha 会变，因为世界已推进），这是本步唯一一次真感知。
-9. 构造提示语 `note`：若 `times > 1` 则标注"（按了 N 次）"；若原始请求次数 `asked > times`（即发生了夹逼），改写为"（{原因}，连按 {asked} 次被夹成 1 次）"，原因是 `"a 只能一次一次按"`（交互键）或 `"对话框开着"`（对话框场景）。**夹了要说**，否则大脑会以为自己连按了 N 次，而实际只走了一次，它下一步的推理就建立在错的前提上。
-10. 返回 `ToolResult(message=obs.summary + note, observation=obs, calls=result.calls)`。
+1. `segments = action.segments()` 拿到规范化的动作链（见 3.4）。
+2. 逐段、段内逐次执行：`self._pyboy.button(segment.name, delay=PRESS_FRAMES)` 然后 `self._tick(WITHIN_ACTION_FRAMES)`。
+3. 整条链跑完后 `self._tick(AFTER_ACTION_FRAMES)`，等世界落定再感知。
+4. **不清 `_cache`**：`_perceive()` 自己按帧哈希判断，画面真变了自然会重新调模型；若按键后画面没变（对着空地按 a、朝墙走），清缓存就是白花一次感知还会引入噪声——实测连着四步 frame sha 一模一样，模型却给出了不同的 `overview`，其中一步把地图下方的黑边认成了对话框，同一帧只问一次这类抖动直接消失。
+5. `result = self.observe()`——**整条链唯一的一次真感知**。
+6. 返回 `ToolResult(observation=obs, calls=result.calls)`。
+
+**一次决策 = 一次感知。** 段与段之间不感知：每次感知都是一次视觉模型调用，
+`up×4 -> down×2` 要是每按一次感知一次，一步就是六次调用、十几秒，而中间那五帧
+没有任何会被用到的信息——多段链按规则只能是移动键（`up`/`down`），
+走过的格子长什么样并不重要，重要的是走到哪里。
+
+**收到什么就按什么，world 不改写动作。** 这里曾经有一层"二次夹逼"：
+`step()` 里按 `if action.name == INTERACT_KEY or (times > 1 and self._dialog_is_open())`
+把次数改成 1，并在返回的 message 里补一句"（…，连按 N 次被夹成 1 次）"。
+规则本身是对的（理由见 3.4），但**夹在执行层是错的地方**：大脑交出去的链和真正
+发生的链对不上，而它下一步的推理建立在前者上，所以还得反过来在 message 里把
+"我偷偷改了你的动作"告诉它。现在这条规则前移到 `Brain._parse`——解析期就把 `a`
+的 `times` 定死为 1，交给 world 的链**就是真正会发生的那条链**，
+`_times()`、`_clamped()`、`_dialog_is_open()` 和那句提示语于是一起消失了。
+
+**`ToolResult.message` 也一并删了**：它当年的内容是 `obs.summary` 加上那句夹逼提示。
+提示没了之后它只剩把 `observation.status` 原样抄一遍，而下游本来就拿得到
+`observation`——同一句话存两份，迟早会有一份先过期。
 
 该方法**不报告"这一下有没有生效"**：那需要对比前后两次观察，是上层（记忆层，两头各存一份完整快照）的事；world 只负责"我按了，世界推进了"。
 
-### 3.4 连按（`times`）的夹逼规则
+### 3.4 动作链与连按（`times`）
 
-`_times(action)` 静态方法：从 `action.args["times"]` 取值，非法/无法转 int 时返回 1；否则 `max(1, min(n, MAX_TIMES))`，`MAX_TIMES = 8`。**不因次数写错而判整个动作失败**——动作名是对的，只是参数不合规范，为它跑一轮重试不划算（判据同 ```json 包裹）。
+一个 `Action` 带着 `sequence: list[ActionSegment]`，每段是 `name` + `times`；
+`Action.segments()` 交出规范化后的链，`Action.describe()` 把它渲染成
+`up×4 -> down×2` 这样一行（进 trace 和记忆）。约束都在 world 之外定死：
 
-`MAX_TIMES=8` 存在的理由：模型会写 `"times": "100"`；连按期间 agent 看不见中间状态，撞墙了也会把剩下几次按完（时序抽象的经典取舍，次数是宏动作的原始形态）。收益是省感知调用：走 5 格从 5 次 VLM 调用变成 1 次，把成本和延迟都砍到五分之一。
+- `times` 取值 1-`MAX_TIMES`，`MAX_TIMES = 8` 定义在 `schemas/action.py`
+  （数据契约），`Brain._parse` 校验外部输入时用的是同一个常量——**同一个数
+  两个执行点必须同源**，否则模型给 100 时会得到一个自相矛盾的系统。
+- 顶层的 `action`/`args` 写法**不再被接受**（解析期就拒），链是唯一的形状。
+- **多段链只能由 `up`/`down` 组成**，其余按键只能单段。
 
-在 `step()` 里，实际执行前还有一层**二次夹逼**：
+`MAX_TIMES=8` 存在的理由：模型会写 `"times": "100"`；连按期间 agent 看不见中间状态，
+撞墙了也会把剩下几次按完（时序抽象的经典取舍，次数是宏动作的原始形态）。
+收益是省感知调用：走 5 格从 5 次 VLM 调用变成 1 次，把成本和延迟都砍到五分之一。
 
-```python
-if action.name == INTERACT_KEY or (times > 1 and self._dialog_is_open()):
-    times = 1
-```
+**`a` 恒为 1，但这条规则不在 world 里**——它在 `Brain._parse`，解析期直接把
+`INTERACT_KEY` 的 `times` 写死成 1。理由（这段实测经验值得留着）：
 
-三条具体规则及各自背后的实测坑：
-
-1. **交互键（`a`）恒被夹成 1**：因为一步只感知一次，连按会把中间那几帧整个吃掉，而 `a` 产出的恰恰是全项目最要紧的证据——对话框文字。具体代价两条：
-   - 判据最常用的就是对话内容（比如"对话框里出现母亲说的话"）；连按三次推完整段对话，那几句话一帧都没被看到，最后一次还会把对话框关掉——判定器看到一个没有对话框的画面，**一局本该成功的 episode 被静默记成失败**。
+1. 一步只感知一次，连按会把中间那几帧整个吃掉，而 `a` 产出的恰恰是全项目最要紧的
+   证据——对话框文字。具体代价两条：
+   - 判据最常用的就是对话内容（比如"对话框里出现母亲说的话"）；连按三次推完整段
+     对话，那几句话一帧都没被看到，最后一次还会把对话框关掉——判定器看到一个没有
+     对话框的画面，**一局本该成功的 episode 被静默记成失败**。
    - 档案里那一格的 `lines` 只拿得到最后一句，中间几句直接丢，而"这是谁"往往写在第一句里。
+2. **早一版的坑**：更早的实现只在"对话框已经开着"时夹（world 里的 `_dialog_is_open()`）。
+   这漏掉了最常见的情形：**对话框还没开**，模型对着 NPC 连按三次 `a`——第一次开对话框、
+   后两次推完整段对话，一句话都没记下。因为 `a` 的收益全在中间那几帧上，
+   **连按对它从来没有意义**，所以规则改成不管对话框状态如何，`a` 恒为 1；
+   而一旦不再依赖"对话框现在开没开"这个感知结果，这条规则就不必留在 world 里了。
+3. **方向键不夹**：沿直线走几格是连按省步数的正当手段，中间帧本来就没有额外证据
+   （走过的格子长什么样并不重要，重要的是走到哪里）。
 
-2. **对话框已经开着时，连按被夹成 1**：这是第二条件 `times > 1 and self._dialog_is_open()`。
+### 3.5 朝向（`facing`）从 RAM 读
 
-3. **早一版的坑**：早期实现只在"对话框已经开着"时夹（即只有上面第 2 条，没有第 1 条对 `a` 的无条件夹逼）。这漏掉了最常见的情形：**对话框还没开**，模型对着 NPC 连按三次 `a`——第一次开对话框、后两次推完整段对话，一句话都没记下。因为 `a` 的收益全在中间那几帧上，**连按对它从来没有意义**，所以最终规则是不管对话框状态如何，`a` 恒为 1。
-
-4. **方向键不夹**：沿直线走几格是连按省步数的正当手段，中间帧本来就没有额外证据（走过的格子长什么样并不重要，重要的是走到哪里），所以方向键的 `times` 保持原值（在 `MAX_TIMES` 范围内）。
-
-### 3.5 朝向（`facing`）的维护
-
-朝向**完全从按键推导，不问模型**：
-
-- `_FACING = BUTTON_FACING`（定义在 `schemas/core.py`，因为工具层也要用同一张表去算"这一步走的是哪个方向"）。
-- 在 `step()` 里，若 `action.name in _FACING`，则 `self._facing = _FACING[action.name]`。
+- `ram.read_facing(mem)` 读精灵表 `+9`（0/4/8/12 → south/north/west/east），
+  结果放进 `TerrainMap.facing`，`observe()` 组装 `facts["facing"]` 时直接取。
 - 朝向要紧是因为 `a` 键作用在**面朝的那一格**上：不知道朝向就不知道 `a` 会调查到什么。
-- 初始为空字符串（未知）；开局和过场之后都是未知，按一次方向键就确定。空值时 `observe()` 组装 `facts` 不会写入 `facing` 字段（`if self._facing:` 判断）。
+- 读不出四个已知值之一时返回空串，`facts` 里就不写这个键（正常情况下不会发生）。
 
-### 3.6 `_notes`（`inspect` 答案）的生命周期
+**这里原来是从按键推的**：`step()` 里按了方向键就更新 `self._facing`。
+那个推论本身没错（撞墙时人也会转过去），但它有两个洞：开局和过场之后朝向是未知的，
+而且它不在存档里，checkpoint 恢复不回来（`harness/SPEC.md` 1.4）。
+`+9` 这个字节的含义在 `ram.py` 的精灵表说明里一直写着，只是没读。
+`BUTTON_FACING` 仍然留着，但它现在只回答"这一步往哪个方向按了"（工具层算
+语义记忆的 attempts 键要用），不再是"现在面朝哪"的来源。
 
-- **写入时机**：`inspect(focus)` 成功或失败都会调 `self._note(focus, answer)` 写入，无论是模型真答复还是"（没看清：…）"的降级答案。
-- **清空时机**：唯一的清空点是 `step()` 里的 `self._notes = {}`——世界一旦推进，这些答案描述的是上一帧，留到下一帧就是过期事实，而过期事实比没有事实更糟（大脑分不出它是新的还是旧的）。`reset()` 也会清空（`self._notes = {}`），是因为整个世界状态被重置。
-- **上限**：`MAX_NOTES = 4`。`_note()` 内部用 `dict`（不是 `list`）按 `focus` 去重：
-  - 同一 focus 再问一次，`self._notes.pop(focus, None)` 先删旧的再插入新的（覆盖时也要换到队尾，保证插入顺序反映"最近问过"）。
-  - 超过 `MAX_NOTES` 条时，`while len(self._notes) > MAX_NOTES: self._notes.pop(next(iter(self._notes)))`——丢掉最早插入的那条，因为大脑最近关心的问题更可能还在用。
-- **为什么需要上限**：`inspect()` 不推进世界，所以 `step()` 的清空机制永远轮不到它——理论上一帧里能一直问下去。而这段"inspected"文字**同时进决策 prompt 和判定 prompt**，实测连问 6 次同一个问题，`facts["inspected"]` 从 0 涨到 231 字符，同一条答案被原样拼了 6 遍——重复的事实会被模型当成强证据，比过期事实更糟。
-- **写法上的补充设计原则**：`_notes` 是"只增不改"式地作为单独的 `facts["inspected"]` 键，**不去覆盖 `landmarks` 等既有字段**。合并两份可能冲突的语义描述需要一套优先级规则，而那套规则本身就会出错；并排放着让大脑自己读，反而是大脑（LLM）擅长的事。
-
-### 3.7 `_dialog_is_open()` 与对话框误判降级
-
-#### `_dialog_is_open()`
-
-```python
-def _dialog_is_open(self) -> bool:
-    return self._cache is not None and self._cache[1].overlay is Overlay.DIALOG
-```
-
-读的是缓存里的 `ScreenState`，**不额外调模型**。缓存为空（刚 `reset()`，或上一步刚推进过、还没重新感知）时保守地当作"没有对话框"——那时下一次 `observe()` 才会真正知道；夹连按是为了不丢证据帧，少夹一次的代价远小于为它多调一次感知。它被 `step()` 用来判断第 3.4 节中规则 2 是否触发。
-
-#### 对话框误判降级（`misread` / `dialog_without_text`）
+### 3.6 对话框误判降级（`misread` / `dialog_without_text`）
 
 在 `observe()` 里，拿到 `(screen, terrain, calls)` 后：
 
@@ -328,26 +334,24 @@ if overlay is Overlay.DIALOG and not text:
 
 **为什么这条交叉检验成立**：它不需要任何新的输入——只是拿模型自己的两个输出（`overlay` 判断与 `dialog_text` 抄写）对账。而 `overlay` 决定动作掩码，错一次大脑就会拿到一组它按不出效果的动作（比如掩码给出"继续对话"相关的按键，但根本没有对话框），所以这条纠错很有必要。
 
+**这里曾经还有一个 `_dialog_is_open()`**：读缓存里的 `ScreenState` 判断对话框开没开，
+不额外调模型，专供 `step()` 的连按二次夹逼用。夹逼规则前移到 `Brain._parse` 之后
+（见 3.4），它没有了唯一的调用方，一并删除。
+
 ---
 
 ## 4. 与 `VisionProvider` 的交互
 
-`PyBoyWorld` 持有一个 `VisionProvider` 实例（构造时传入），通过它唯一的方法 `describe(image_png: bytes, prompt: str) -> VisionCompletion` 完成所有感知调用。共有两处调用点：
+`PyBoyWorld` 持有一个 `VisionProvider` 实例（构造时传入），通过它唯一的方法 `describe(image_png: bytes, prompt: str) -> VisionCompletion` 完成所有感知调用。现在只剩**一处**调用点（曾经还有一处是 `inspect()`，已随细看链路删除）：
 
-### 4.1 `_perceive()`（主感知，`observe()`/`reset()` 间接触发）
+### 4.1 `_perceive()`（主感知，`observe()`/`reset()`/`step()` 间接触发）
 
 - **传什么**：当前帧的 PNG 字节（`self._frame_png()`）+ 渲染好的主感知 prompt（`self._prompt.render(known_map=terrain.render())`，即把地形骨架文本嵌入 prompt，让模型在已经正确的骨架上标语义，而不是自己判断能不能走）。
 - **收到什么**：`VisionCompletion(text, input_tokens, output_tokens)`。`text` 经 `parse_screen()` 解析成 `ScreenState`（容忍 ` ```json ` 包裹，其余解析失败一律返回 `None` 交给调用方重试）。
 - **重试**：最多 `self._retries`（即 `max_perceive_retries`）次，每次都记一条调用日志（`frame_sha`/`prompt_sha`/`input_tokens`/`output_tokens`/`latency_ms`/`attempt`/`ok`/`raw`）。全部失败则抛 `PerceptionFailure`，**不返回空白状态兜底**——那会让大脑基于假观测决策，且这类失败必须能在 replay 里被统计到。
 - 成功则写入 `self._cache = (sha, screen, terrain)` 并返回。
 
-### 4.2 `inspect()`（追问，同一帧换一份 prompt）
-
-- **传什么**：同一帧的 PNG（重新截取，非复用缓存图像字节，但会算出与之前相同的 sha）+ `inspect_prompt.render(focus=focus, known_map=terrain.render(), legend=terrain_legend())`。
-- **收到什么**：同样是 `VisionCompletion`；文本被当作最终答案（去空白，空则填占位符），不再走 `parse_screen`（不要求是结构化 `ScreenState`，因为 `inspect` 问的是开放式问题）。
-- 失败（异常）时不重试，直接把异常类型名写进答案文本，且这条记录的 `ok` 字段标 `false`。
-
-两处都遵循 `VisionProvider.describe` 契约里的关键警告：**实现方必须校验图片确实被消费了**（token 数下界），因为已知有网关会静默丢图但仍返回一段"读起来合理"的描述——这属于 `VisionProvider` 实现自身的职责（抛 `ImageNotDelivered`），不是 `PyBoyWorld` 在调用点做的事，但 `PyBoyWorld` 依赖这个契约来保证 `input_tokens`/`output_tokens` 字段的可信度（记入 `calls`，供下游按 payload 核算成本、排查感知错误)。
+这处调用遵循 `VisionProvider.describe` 契约里的关键警告：**实现方必须校验图片确实被消费了**（token 数下界），因为已知有网关会静默丢图但仍返回一段"读起来合理"的描述——这属于 `VisionProvider` 实现自身的职责（抛 `ImageNotDelivered`），不是 `PyBoyWorld` 在调用点做的事，但 `PyBoyWorld` 依赖这个契约来保证 `input_tokens`/`output_tokens` 字段的可信度（记入 `calls`，供下游按 payload 核算成本、排查感知错误)。
 
 ---
 
@@ -359,7 +363,10 @@ def _perceive(self) -> tuple[ScreenState, TerrainMap, list[dict[str, str]]]
 
 ### 5.1 完整流程
 
-1. 截取当前帧 PNG（`self._frame_png()`），计算 `sha = hashlib.sha256(png).hexdigest()[:12]`，写入 `self.last_frame_sha`（不论缓存命中与否都更新——它代表的是"最近一次观测所依据的那一帧"，供追查感知错误用）。
+1. 截取当前帧 PNG（`self._frame_png()`），计算 `sha = hashlib.sha256(png).hexdigest()[:12]`，写入 `self.last_frame_sha`（不论缓存命中与否都更新——它代表的是"最近一次观测所依据的那一帧"），
+   **并作为返回值的第一项交出去**，由 `observe()` 填进 `PerceptionResult.frame_sha`。
+   属性和返回值各有用途：属性供 `GameTools` 做动作空间的过期检查，返回值供 Harness 记 trace——
+   后者必须走返回值，理由同 `calls`（见 `PerceptionResult` 的说明）。
 2. **缓存命中判定**：若 `self._cache is not None and self._cache[0] == sha`，直接返回 `(self._cache[1], self._cache[2], [])`——**什么账都不产生，因为没调模型**。
 3. 未命中：`read_terrain(self._pyboy.memory)` 读地形骨架，渲染主 prompt。
 4. 在 `[1, self._retries]` 范围内循环调 `self._vision.describe(png, prompt)`，尝试 `parse_screen`：
@@ -373,7 +380,7 @@ def _perceive(self) -> tuple[ScreenState, TerrainMap, list[dict[str, str]]]
 
 ### 5.3 缓存键为什么是帧哈希而不是别的
 
-因为契约要求 `observe()` "只读、幂等"，而每次真调模型都有 token/延迟成本。帧的像素内容（PNG 字节的 sha256）是判断"世界是否发生了肉眼可见变化"的天然、精确的键：只要 PyBoy 输出的画面字节没变，就认为没有新信息值得重新花钱去问模型。`step()` 特意不清空缓存（见 3.3 `step()` 步骤 7），完全依赖这个哈希判定自然失效。
+因为契约要求 `observe()` "只读、幂等"，而每次真调模型都有 token/延迟成本。帧的像素内容（PNG 字节的 sha256）是判断"世界是否发生了肉眼可见变化"的天然、精确的键：只要 PyBoy 输出的画面字节没变，就认为没有新信息值得重新花钱去问模型。`step()` 特意不清空缓存（见 3.3 `step()` 步骤 4），完全依赖这个哈希判定自然失效。
 
 ### 5.4 为什么现在返回三元组而不是 `_pending_calls` 缓冲区（最近一次重构）
 
@@ -385,16 +392,16 @@ def _perceive(self) -> tuple[ScreenState, TerrainMap, list[dict[str, str]]]
 
 > 这个设计本身就是 bug 的温床——缓冲区什么时候清、被谁清，两个方向都能错。
 
-具体隐患：`_perceive()` 可能被 `reset()`/`observe()`/`inspect()`/`step()` 多处共用地间接调用，如果 `drain_calls()` 被调用的时机和产生记录的时机没对齐（比如两次 `_perceive()` 之间忘了 drain，或者 drain 早了漏了后一次的记录，或者 drain 晚了把不该属于这次调用的旧记录也带出去），trace 里的账就会算错，而这种错误往往很难在测试里稳定复现。
+具体隐患：`_perceive()` 可能被 `reset()`/`observe()`/`step()` 多处共用地间接调用（当时还有 `inspect()`），如果 `drain_calls()` 被调用的时机和产生记录的时机没对齐（比如两次 `_perceive()` 之间忘了 drain，或者 drain 早了漏了后一次的记录，或者 drain 晚了把不该属于这次调用的旧记录也带出去），trace 里的账就会算错，而这种错误往往很难在测试里稳定复现。
 
 **新方案（`calls` 跟着返回值走）**：`_perceive()` 直接返回 `(ScreenState, TerrainMap, calls)` 三元组，调用记录**作为返回值的一部分直接交出去，不再攒进实例状态**。谁调用了 `_perceive()`，`calls` 就跟着这次调用的返回值一路原样向上传：
 
 ```
-_perceive() → observe() → reset() / inspect()
+_perceive() → observe() → reset()
 _perceive() → observe() → step()（经由 ToolResult.calls）
 ```
 
-`inspect()` 里体现得最清楚：它自己产生一条 `record`（细看的调用记录），然后调 `self.observe()` 拿到 `inner.calls`（通常是空列表，因为帧没变命中缓存），最终按因果顺序拼成 `[record, *inner.calls]`。`step()` 同理，`calls` 就挂在已经存在的 `ToolResult` 上，不必新开一个类型。
+`step()` 里体现得最清楚：它调 `self.observe()`，把拿到的 `result.calls` 原样挂在已经存在的 `ToolResult` 上——不必新开一个类型，也不必记得在某个时机去 drain。
 
 **这个方案的优点**：
 - 不需要任何跨调用的可变状态，也就不存在"谁来得早谁来得晚"的记账错位问题。
@@ -407,9 +414,9 @@ _perceive() → observe() → step()（经由 ToolResult.calls）
 
 ## 6. 其他内部细节速查
 
-- **`_summarize(s: ScreenState) -> str`**：给大脑读的极简自然语言状态，只是 prompt 的上下文开头，详细字段都在 `facts` 里。按 `Scene` 枚举给一句"你在……"的话，再视 `overlay` 追加对话框摘录或选项列表。
+- **`_status_line(s: ScreenState) -> str`**（结果进 `Observation.status`；函数和字段都曾叫 `summary`，改名是因为它是**一句状态**，不是对这一帧的概括）：给大脑读的极简自然语言状态，只是 prompt 的上下文开头，详细字段都在 `facts` 里。按 `Scene` 枚举给一句"你在……"的话，再视 `overlay` 追加对话框摘录或选项列表。
 - **`parse_screen(text)`**：把模型原始文本解析为 `ScreenState`，容忍 ` ```json ` 包裹（模型最常见的格式偏差），其余解析失败一律返回 `None`，不做其它兜底。
 - **`_tick(frames)`**：逐帧调用 `self._pyboy.tick(1)`，不是批量 `tick(n)`——因为 `tick(n)` 只在最后限速一次，批量调用在 `watch` 模式下画面会一跳一跳，逐帧才平滑；无头模式不限速，逐帧的额外开销可忽略。若某次 `tick(1)` 返回假值（窗口被关），置 `self._closed = True` 并立即返回——这是 world 唯一的终止权。
-- **`PRESS_FRAMES=10`**（按键按住的帧数）、**`WITHIN_ACTION_FRAMES=60`**（连按时每次按完推进 1 秒）、**`AFTER_ACTION_FRAMES=120`**（整个动作结束后再推进 2 秒才感知）、**`BOOT_FRAMES=600`**（无存档时空转越过开机 logo）。
+- **`PRESS_FRAMES=10`**（按键按住的帧数）、**`WITHIN_ACTION_FRAMES=120`**（链上每按一次之后推进多少帧）、**`AFTER_ACTION_FRAMES=360`**（整条链跑完后再推进多少帧才感知）、**`BOOT_FRAMES=600`**（无存档时空转越过开机 logo）。
 - **导入期防护性断言**：模块顶层有一条 `assert`，检查 `OVERLAY_ACTIONS`（定义在 `schemas/observation.py`，掩码表）里出现的每个键都在 `ALL_BUTTONS` 里。这条**在导入时查，不留给测试**：两张表分处 `schemas` 和 `world` 两个文件，改了一边忘了另一边时，harness 会交出一个世界不认识的动作，而错误要等到大脑选中它、`step()` 真正执行时才会炸——离病因隔了三层，导入期断言把这类错误提前到进程启动那一刻。
 - **`stop()`**：`self._pyboy.stop()`，非 `WorldPort` 协议方法，是资源释放的收尾。

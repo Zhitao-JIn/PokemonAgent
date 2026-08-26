@@ -65,6 +65,26 @@ SPRITE_STRIDE = 16
 y 差的那 4 像素是贴图偏移，这也顺带验证了换算公式。
 """
 
+FACING_BY_BYTE: dict[int, str] = {0: "south", 4: "north", 8: "west", 12: "east"}
+"""精灵表 +9 那个字节 → 朝向。取值和 `BUTTON_FACING` 的是同一套词，
+因为工具层要拿"这一步按的方向"和"现在面朝的方向"直接比。
+"""
+
+
+def read_facing(mem: Memory) -> str:
+    """主角面朝哪边。**读的是游戏自己的状态，不是从我们按过的键推的。**
+
+    推的那一版有两个洞：开局和过场之后朝向未知（没按过键），而且它不进存档，
+    checkpoint 恢复不回来——`docs/spec/harness/SPEC.md` 1.4 记的正是这个洞。
+    这个字节一直在那儿，只是以前没读。
+
+    后置条件：返回 `BUTTON_FACING` 的四个值之一，或空串（读到的不是已知值）。
+
+    读出主角当前朝向。
+    """
+    return FACING_BY_BYTE.get(int(mem[W_SPRITES + 9]), "")
+
+
 SUB_TILE = (0, 1)
 """一个 16x16 格子里，拿哪个 8x8 子 tile 去查通行表。`(dc, dr)` = 左下。
 
@@ -207,5 +227,6 @@ def read_terrain(mem: Memory) -> TerrainMap:
         map_id=int(mem[W_CUR_MAP]),
         player_x=px,
         player_y=py,
+        facing=read_facing(mem),
         ambiguous_cells=ambiguous,
     )

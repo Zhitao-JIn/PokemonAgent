@@ -129,7 +129,7 @@ def observe(episode_id: str, obs: Observation, goals: list[Goal], frame_sha: str
     """
     return (
         episode_id, obs.step, EventType.OBSERVE, Source.PERCEPTION,
-        {"frame_sha": frame_sha, "summary": obs.summary,
+        {"frame_sha": frame_sha, "status": obs.status,
          "scene": obs.facts.get("scene", ""), "overlay": obs.facts.get("overlay", ""),
          "facts": json.dumps(obs.facts, ensure_ascii=False),
          "goals": _render_goal_stack(goals)},
@@ -220,16 +220,17 @@ def think(episode_id: str, step: int, action: Action, attempt: int) -> AppendArg
     )
 
 
-def act(episode_id: str, step: int, action: Action, message: str) -> AppendArgs:
-    """把这一次按键的结果拼成事件。
+def act(episode_id: str, step: int, action: Action) -> AppendArgs:
+    """把这一次按键拼成事件。
 
-    **和 `think` 记的是同一条链**（同一个 `action_chain`），差别只在这条多一个
-    世界返回的 `message`：链里每一段的结果在这里已经被 `execute()` 拼成一句了。
+    **和 `think` 记的是同一条链**（同一个 `action_chain`），差别只在来源：
+    `think` 是大脑打算按的，`act` 是世界真的按了的。两条形状一致，正是为了
+    能直接比对——一旦哪天执行层又开始改写动作，diff 立刻看得见。
+
+    **不记"结果"。** 按完之后世界变成什么样，答案是下一条 OBSERVE 事件里那份
+    完整观测，不是一句转述。
     """
-    return (
-        episode_id, step, EventType.ACT, Source.WORLD,
-        {**action_chain(action), "message": message},
-    )
+    return (episode_id, step, EventType.ACT, Source.WORLD, action_chain(action))
 
 
 def memory_write(episode_id: str, step: int, entry: StepMemory) -> AppendArgs:
@@ -268,17 +269,6 @@ def goal_pop(episode_id: str, step: int, depth: int, goal: Goal, reason: str, wh
     return (
         episode_id, step, EventType.GOAL_POP, Source.JUDGE,
         {"depth": str(depth), "goal": goal.goal, "reason": reason, "why": why},
-    )
-
-
-def inspect(episode_id: str, step: int, focus: str, answer: str) -> AppendArgs:
-    """和 `observe` 分开：这是大脑主动要的，不是每步必发的那一帧。
-
-    把一次细看拼成事件。
-    """
-    return (
-        episode_id, step, EventType.INSPECT, Source.PERCEPTION,
-        {"focus": focus, "answer": answer},
     )
 
 

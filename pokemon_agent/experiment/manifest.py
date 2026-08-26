@@ -124,6 +124,10 @@ class RunManifest(BaseModel):
             `@initialize`），跑到这里还没有就该当场停，而不是记一份空的
             权限快照、让这批数据事后无法归因。
 
+            **这个断言比从前更重要**：库曾经在 import 时就读这两个文件，缺了会在
+            `import` 那一刻炸；现在只有 `@initialize` 读，缺了要跑到第一次
+            `harness.run()` 才炸——那时 world 已经建好、模型已经加载。
+
         后置条件：`permissions` 里每个文件都同时有 `sha` 和 `text`。
 
         把权限配置的原文和 sha 收进 manifest。

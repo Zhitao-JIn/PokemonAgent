@@ -64,12 +64,6 @@ class GameTools:
         """把当前世界状态存成一个文件。"""
         self._world.save_state(path)
 
-    @property
-    @require_permission("read:game:last_frame_sha")
-    def last_frame_sha(self) -> str:
-        """最近一次观测所依据的那一帧的哈希。"""
-        return self._world.last_frame_sha
-
     @require_permission("read:game:perceive")
     @require_permission("execute:llm:perception")
     def perceive(self) -> PerceptionResult:
@@ -126,9 +120,9 @@ class GameTools:
             )
         if action.sequence:
             assert len(action.sequence) == 1 or all(
-                segment.name in {"up", "down"} for segment in action.sequence
+                segment.name in {"up", "down", "left", "right"} for segment in action.sequence
             ), (
-                "multi-step action sequence may contain only up/down"
+                "multi-step action sequence may contain only directional keys"
             )
         # **掩码必须是给当前这一帧算的。** 只查名字是不够的：`a` 在野外、对话框、
         # 选择框里都可用，名字对得上不代表语境对得上。画面换过之后再拿旧清单放行，
@@ -138,24 +132,18 @@ class GameTools:
             f"({frame} != {self._world.last_frame_sha}) — call get_action_space() again"
         )
 
-        result = None
-        messages: list[str] = []
-        calls: list[dict[str, str]] = []
-        for segment in action.segments():
-            for _ in range(segment.times):
-                segment_action = action.model_copy(update={
-                    "name": segment.name,
-                    "args": {"times": "1"},
-                    "sequence": [],
-                })
-                result = self._world.step(segment_action)
-                messages.append(result.message)
-                calls.extend(result.calls)
+        # **整条链交给 world 一次执行完。** 这里不再自己展开。
+        #
+        # 展开过两版，两版都是错的：一次一按（`step(times=1)`）让 `up×4` 变成
+        # **四次视觉调用**（实测一步 17k input token、6.6 秒）；一段一次
+        # （`step(times=4)`）好一些，但 `up×4 -> down×2` 仍是两次。
+        # 感知是每步花钱的那一项，而多段链按规则只能是移动键——中间那几帧
+        # 没有任何会被用到的信息。一次决策就该是一次感知。
+        #
+        # 连按次数也不再经过 `args["times"]` 这条字符串通道：`world` 直接读
+        # `action.segments()`，次数在 `ActionSegment.times`（1-8）解析期就校验过了。
+        result = self._world.step(action)
         self._last_space = None      # 世界推进了，上次的空间失效
 
-        assert result is not None, "action sequence must contain at least one segment"
         assert result.observation is not None, "world.step() must return the new observation"
-        return result.model_copy(update={
-            "message": " ".join(message for message in messages if message),
-            "calls": calls,
-        })
+        return result

@@ -97,7 +97,7 @@ class Snapshot(BaseModel):
         """从观测里抽出快照。**只抽，不加工**——加工过的快照和当时看到的就不是一回事了。"""
         f = obs.facts
         return cls(
-            overview=f.get("overview", "") or obs.summary,
+            overview=f.get("overview", "") or obs.status,
             landmarks=f.get("landmarks", ""),
             neighbors=f.get("neighbors", ""),
             position=f.get("where", ""),

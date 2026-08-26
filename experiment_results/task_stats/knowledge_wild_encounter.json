@@ -1,7 +1,7 @@
 {
   "task_id": "knowledge_wild_encounter",
-  "attempts": 4,
-  "successes": 4,
+  "attempts": 6,
+  "successes": 6,
   "success_rate": 1.0,
   "runs": [
     {
@@ -33,6 +33,27 @@
           "steps": 3,
           "reason": "success",
           "episode_id": "0825-154157-cc50eb-ep154200072",
+          "task_id": "knowledge_wild_encounter"
+        }
+      ]
+    },
+    {
+      "success": true,
+      "steps": 5,
+      "reason": "success",
+      "episode_id": "0825-162857-c006df-r1-ep162859361",
+      "task_id": "knowledge_wild_encounter"
+    },
+    {
+      "chain_id": "knowledge_wild_encounter",
+      "run_id": "0825-162857-c006df-r1",
+      "success": true,
+      "tasks": [
+        {
+          "success": true,
+          "steps": 5,
+          "reason": "success",
+          "episode_id": "0825-162857-c006df-r1-ep162859361",
           "task_id": "knowledge_wild_encounter"
         }
       ]
