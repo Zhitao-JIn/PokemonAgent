@@ -114,6 +114,21 @@ def decision_failed(episode_id: str, step: int, last: ModelCall) -> AppendArgs:
     )
 
 
+def permission_skipped(
+    episode_id: str,
+    step: int,
+    permission: str,
+    function: str,
+    fallback: str,
+) -> AppendArgs:
+    """记录一次权限拒绝后的可观测降级。"""
+    return (
+        episode_id, step, EventType.ERROR, Source.HARNESS,
+        {"kind": "PermissionSkipped", "permission": permission,
+         "function": function, "fallback": fallback},
+    )
+
+
 # ---- 一步之内的各类事件 ----
 
 def observe(episode_id: str, obs: Observation, goals: list[Goal]) -> AppendArgs:

@@ -1,3 +1,15 @@
+## 2026-08-26 —— 权限拒绝按最低运行能力降级
+**改了什么**：memory 查询、memory 写入、`Brain.reflect` 和 episode 摘要写入增加权限拒绝降级；每次降级都写一条 `ERROR` trace。`Brain.reflect` 被拒时跳过整个记忆写入分支，但仍推进已执行动作的 step。
+**为什么这么改**：这些能力不影响世界推进、动作选择和成功判定；权限拒绝不应把本来还能继续的一局变成无记录的异常终止，同时每次记录才能保留权限失败发生的真实位置。
+**取舍**：权限异常单独识别，其他异常继续抛出；`save_state`、reset、perception、action space、press、decision、judge 仍是硬失败。
+**影响面**：修改 Harness 的 memory/summary 调用路径和 trace 工具；新增权限降级事件 payload，不改变正常授权路径。
+
+## 2026-08-26 —— 统计只提交任务链结果
+**改了什么**：`run_chain()` 不再把链内 task outcome 单独写入统计，只提交最终 chain outcome。
+**为什么这么改**：单任务链中 `task_id` 与 `chain_id` 相同，双重写入会让一次独立 run 被统计两次。
+**取舍**：保留 chain 的完整任务明细在 `runs[].tasks` 中；不再维护同一统计文件下的 task 级重复计数。
+**影响面**：只影响 `experiment_results/task_stats/` 的后续统计写入，不修改已有历史统计。
+
 ## 2026-08-26（其二）—— 一帧只感知一次，帧哈希从项目里消失
 
 **改了什么**：观测由 world 在 `reset()` / `step()` 的结尾产出，沿返回值传到 harness，

@@ -25,7 +25,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from agent_permission import initialize
+from agent_permission import (
+    ApprovalExpired,
+    ApprovalRejected,
+    ApprovalRequired,
+    PermissionDenied,
+    initialize,
+)
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
@@ -36,6 +42,7 @@ from pokemon_agent.interfaces.tools import GameToolPort, MemoryToolPort
 from pokemon_agent.interfaces.trace import TracePort
 from pokemon_agent.schemas.action import Action, ActionSpace, Goal
 from pokemon_agent.schemas.episode_memory import EpisodeMemory
+from pokemon_agent.schemas.knowledge import KnowledgeQueryResult
 from pokemon_agent.schemas.step_memory import StepMemory, Snapshot
 from pokemon_agent.schemas.observation import Observation
 from pokemon_agent.schemas.task import Task
@@ -66,6 +73,22 @@ JUDGE_HISTORY = 3
 历史里**不含 `rationale`**（`StepMemory.render(reason=False)`）——
 发生过的事给判定器看，决策者对那件事的主张不给。
 """
+
+PERMISSION_ERRORS = (
+    PermissionDenied,
+    ApprovalRequired,
+    ApprovalRejected,
+    ApprovalExpired,
+)
+
+
+def _permission_was_denied(exc: Exception) -> bool:
+    """识别 agent_permission 的权限/审批失败。
+
+    该库的四类异常没有共同基类，因此集中组成 tuple；其他异常不能被降级吞掉。
+    """
+    return isinstance(exc, PERMISSION_ERRORS)
+
 
 class LoopState(BaseModel):
     """一局的**全部**可序列化状态。
@@ -319,14 +342,40 @@ class Harness:
         """
         assert state.observation is not None, "retrieve_memory before look"
         obs, ep, step = state.observation, state.episode_id, state.observation.step
-        memories = self._memory.query_episode_steps(ep)
+        try:
+            memories = self._memory.query_episode_steps(ep)
+        except Exception as exc:
+            if not _permission_was_denied(exc):
+                raise
+            self._trace.append(*trace_utils.permission_skipped(
+                ep, step, "read:memory:episodic", "query_episode_steps", "[]"
+            ))
+            memories = []
 
-        known = self._memory.query_objects(obs)
+        try:
+            known = self._memory.query_objects(obs)
+        except Exception as exc:
+            if not _permission_was_denied(exc):
+                raise
+            self._trace.append(*trace_utils.permission_skipped(
+                ep, step, "read:memory:objects", "query_objects", ""
+            ))
+            known = ""
         if known:
             obs = obs.model_copy(update={"facts": {**obs.facts, "known_objects": known}})
-        knowledge_result = self._memory.query_knowledge(
-            query=state.task.goal, limit=MEMORY_RECALL_LIMIT
-        )
+
+        try:
+            knowledge_result = self._memory.query_knowledge(
+                query=state.task.goal, limit=MEMORY_RECALL_LIMIT
+            )
+        except Exception as exc:
+            if not _permission_was_denied(exc):
+                raise
+            self._trace.append(*trace_utils.permission_skipped(
+                ep, step, "read:memory:knowledge", "query_knowledge",
+                "empty KnowledgeQueryResult"
+            ))
+            knowledge_result = KnowledgeQueryResult(contents=[], sources=[])
         knowledge = "\n\n".join(knowledge_result.contents)
         if knowledge_result.contents:
             obs = obs.model_copy(update={"facts": {**obs.facts, "knowledge": knowledge}})
@@ -340,10 +389,18 @@ class Harness:
                 f"scene:{obs.facts.get('scene', '')}",
                 f"overlay:{obs.facts.get('overlay', '')}",
             )))
-            episode_memories = self._memory.query_episode_summaries(
-                scene=scene_key, query=state.task.goal,
-                limit=EPISODE_MEMORY_RECALL_LIMIT,
-            )
+            try:
+                episode_memories = self._memory.query_episode_summaries(
+                    scene=scene_key, query=state.task.goal,
+                    limit=EPISODE_MEMORY_RECALL_LIMIT,
+                )
+            except Exception as exc:
+                if not _permission_was_denied(exc):
+                    raise
+                self._trace.append(*trace_utils.permission_skipped(
+                    ep, step, "read:memory:episode", "query_episode_summaries", "[]"
+                ))
+                episode_memories = []
             if episode_memories:
                 rendered = "\n\n".join(m.render() for m in episode_memories)
                 obs = obs.model_copy(
@@ -448,15 +505,43 @@ class Harness:
         )
 
         # `episode_id` 在这里盖：大脑不知道自己在哪一局。
-        entry = self._brain.reflect(before, action, after).model_copy(
-            update={"episode_id": ep}
-        )
-        self._memory.store_episode_step(entry)
-        self._trace.append(*trace_utils.memory_write(ep, before.step, entry))
+        try:
+            entry = self._brain.reflect(before, action, after).model_copy(
+                update={"episode_id": ep}
+            )
+        except Exception as exc:
+            if not _permission_was_denied(exc):
+                raise
+            self._trace.append(*trace_utils.permission_skipped(
+                ep, before.step, "execute:llm:memory_reflection", "Brain.reflect",
+                "skip remember"
+            ))
+            return {"step": state.step + 1}
+
+        try:
+            self._memory.store_episode_step(entry)
+        except Exception as exc:
+            if not _permission_was_denied(exc):
+                raise
+            self._trace.append(*trace_utils.permission_skipped(
+                ep, before.step, "write:memory:episodic", "store_episode_step", "skip"
+            ))
+        else:
+            self._trace.append(*trace_utils.memory_write(ep, before.step, entry))
 
         # 语义记忆和情景记忆是两回事，分开写；这一条不需要模型判断，
         # 面朝哪一格由 `place + facing` 算出来。
-        for note in self._memory.store_objects_interactions(before, action, after):
+        try:
+            notes = self._memory.store_objects_interactions(before, action, after)
+        except Exception as exc:
+            if not _permission_was_denied(exc):
+                raise
+            self._trace.append(*trace_utils.permission_skipped(
+                ep, before.step, "write:memory:objects",
+                "store_objects_interactions", "skip"
+            ))
+            notes = []
+        for note in notes:
             self._trace.append(*trace_utils.object_note(ep, before.step, note))
 
         return {"step": state.step + 1}
@@ -558,7 +643,8 @@ class Harness:
         摆成节点而不是藏在收尾逻辑里，是因为它**要调一次模型**——图上看得见的
         东西才会被算进成本，藏起来的那次调用不出现在任何方框里。
 
-        只吞 `ValueError` 这一种失败，而且**单据齐全才吞**：蒸馏器内部已经留了一条
+        解析失败只吞 `ValueError`，权限拒绝则记录降级事件；两类都不影响这一局结束：
+        蒸馏器内部已经留了一条
         `ERROR` trace 事件，那是它出现在失败模式统计里的凭证。吞掉是因为
         "这一局跑完了"和"没能力提炼经验"是两件事，后者不该拖累前者的 `EPISODE_END`。
 
@@ -574,4 +660,16 @@ class Harness:
             )
         except ValueError:
             pass
+        except Exception as exc:
+            if not _permission_was_denied(exc):
+                raise
+            self._trace.append(
+                *trace_utils.permission_skipped(
+                    state.episode_id,
+                    obs.step,
+                    "write:memory:episode + execute:llm:memory_summary",
+                    "store_episode_summary",
+                    "skip",
+                )
+            )
         return {}

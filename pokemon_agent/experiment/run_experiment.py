@@ -106,7 +106,6 @@ def run_chain(
             outcome = run_one(harness, run_id, task.max_steps, task.goal)
             outcome["task_id"] = task.task_id
             outcomes.append(outcome)
-            update_task_stats(task.task_id, outcome)
             if not outcome["success"]:
                 break
         chain_outcome = {
