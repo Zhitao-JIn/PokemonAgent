@@ -1,1 +1,0 @@
-{"event_id":36,"run_id":"0823-094611-ae97a8","episode_id":"0823-094611-ae97a8-ep094632381","step":4,"type":"episode_end","source":"harness","payload":{"success":"False","steps":"4","reason":"world_ended","task_id":"t22a90448","why":""},"ts":35341.374992,"schema_version":2}

@@ -1,1 +1,0 @@
-{"event_id":53,"run_id":"0823-081813-fd1020","episode_id":"0823-081813-fd1020-ep081819283","step":6,"type":"episode_end","source":"harness","payload":{"success":"True","steps":"6","reason":"success","task_id":"ta1c0a9fd","why":"对话框里明确显示'Wild PIDGEY appeared!'，直接证明已遇到野生精灵"},"ts":30142.170641,"schema_version":2}
