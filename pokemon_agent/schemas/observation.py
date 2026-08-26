@@ -204,12 +204,28 @@ class Overlay(str, Enum):
 OVERLAY_ACTIONS: dict[Overlay, tuple[str, ...]] = {
     Overlay.NONE: ("up", "down", "left", "right", "a", "start"),
     Overlay.DIALOG: ("a",),                      # 方向键无效，只能推进
-    Overlay.CHOICE: ("up", "down", "a", "b"),    # 移光标 / 确认 / 取消
+    # 左右**必须在**：`choice` 底下盖着两种物理布局——商店/对话的 yes-no 是竖排，
+    # 战斗行动菜单是 2×2（FIGHT PKMN / ITEM RUN）。曾经这里只有 up/down，
+    # 取的是两者的交集，后果是 `RUN` 和 `PKMN` **物理上够不着**：
+    # `battle_run_attempt` 这个任务定义了却永远不可能成功。
+    # 而大脑不会因此停下——实测它拿"right 不在动作空间"当证据，反推出
+    # 「这个菜单其实是线性焦点导航」，然后按 down×3 停在 ITEM 上宣布到达 RUN。
+    # **给不出正确的键，换来的不是它不动，是它编一个能解释掩码的世界模型。**
+    #
+    # 代价是竖排选择框里左右成了空按键：按下去画面不变，白费一步。
+    # 这个代价可见（`Snapshot.same_place_as` 会把它记成"什么都没变"），
+    # 而够不着的选项不可见——只会表现为某个任务成功率恒为 0。
+    Overlay.CHOICE: ("up", "down", "left", "right", "a", "b"),
 }
 """动作掩码**只看 overlay**，与 scene 无关。
 
 这就是拆成二元组最直接的回报：三条规则覆盖所有场合，
 而不是每个"场合 × 叠加层"的组合各写一遍。
+
+代价在 `CHOICE` 上付：它盖着的两种布局按键需求不同，掩码取的是**并集**而不是
+交集——宁可多给两个当帧无效的键，也不能少给一个够得着某个选项的键。
+真要按 scene 收窄，就得把这张表的键从 `Overlay` 改成 `(Scene, Overlay)`，
+`BUTTON_HELP` 跟着一起改；那是另一笔账，不在这条注释解决。
 """
 
 SCENE_FIELDS: dict[Scene, tuple[str, ...]] = {
