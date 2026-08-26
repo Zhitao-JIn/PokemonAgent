@@ -354,7 +354,7 @@ manifest.save(pathlib.Path("experiment_results") / run_id / "manifest.json")
 | 位置 | 权限名 |
 |---|---|
 | `Harness.run()` | `@initialize`（不是检查，是每局重载配置） |
-| `GameTools` 各方法 | `read:game:perceive` / `read:game:action_space` / `execute:game:reset` / `execute:game:press` / `execute:game:save_state` / `execute:llm:perception` |
+| `GameTools` 各方法 | `read:game:action_space` / `execute:game:reset` / `execute:game:press` / `execute:game:save_state` / `execute:llm:perception` |
 | `MemoryTool` 各方法 | `read:memory:{episodic,episode,objects,knowledge}` / `write:memory:{episodic,episode,objects}` / `execute:llm:memory_summary` |
 | `Brain.choose/judge/reflect` | `execute:llm:decision` / `execute:llm:judge` / `execute:llm:memory_reflection` |
 

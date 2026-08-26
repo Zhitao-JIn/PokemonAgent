@@ -29,28 +29,21 @@ from pokemon_agent.schemas.task import Task
 
 @runtime_checkable
 class GameToolPort(Protocol):
+    """Harness 用它操作世界：执行、开局、存档。**不碰任何记忆。**
+
+    **这里没有 `perceive()`。** 观测由 world 在 `reset()` / `step()` 的结尾产出，
+    沿返回值往上传；要看当下什么样，用手上那份，不要回头再问一次。
+    详见 `tools/SPEC.md` 2.7。
+    """
+
     def save_state(self, path: str) -> None:
         """保存当前世界状态，供 episode replay 使用。
 
         把当前世界状态存成一个文件。
         """
         ...
-    """Harness 用它操作世界：感知、执行、开局、溯源。**不碰任何记忆。**"""
 
-    def perceive(self) -> PerceptionResult:
-        """取当前观测。**幂等只读**：不推进世界、不写 trace、不触发判定。
-
-        后置条件：同一帧内多次调用**不产生额外的模型调用**（实现方要在帧内缓存——
-            感知是每步都要付钱的那一项）；`result.calls` 是这次调用产生的模型调用
-            记录，命中缓存时为空列表（**不是 None**）。
-
-        返回的 `observation` 在同一帧内**完全稳定**：同一帧问几次，拿到的字节一样。
-
-        读当前这一帧，连同这次产生的模型调用记录一起交出来。
-        """
-        ...
-
-    def get_action_space(self) -> ActionSpace:
+    def get_action_space(self, obs: Observation) -> ActionSpace:
         """取当前状态下可用的按键（含 masking）。
 
         后置条件：`names` 非空。走投无路的状态也必须至少给一个动作——
@@ -64,12 +57,13 @@ class GameToolPort(Protocol):
         """
         ...
 
-    def execute(self, action: Action) -> ToolResult:
+    def execute(self, action: Action, obs: Observation) -> ToolResult:
         """执行一个动作，推进世界。
 
-        前置条件：`action.name` 属于**调用前最近一次** `get_action_space()` 的结果。
-            实现方必须 assert 这一点——大脑幻觉出不存在的动作要在这里就地爆炸，
-            而不是变成一个语义不明的模拟器错误。
+        前置条件：`obs` 是这个动作**据以选出**的那份观测，`action.name` 属于
+            `get_action_space(obs)` 的结果。实现方必须 assert 这一点——大脑幻觉出
+            不存在的动作要在这里就地爆炸，而不是变成一个语义不明的模拟器错误。
+            依据由调用方交出来，所以"用过期的掩码"在结构上不可能发生。
         后置条件：`result.observation` 非空，是执行后的新观测。
             它的 `step` **还没有盖章**——盖章是 Harness 的事。
             `result.calls` 是推进这一步期间产生的模型调用记录（通常来自

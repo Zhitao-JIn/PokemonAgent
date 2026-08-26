@@ -113,11 +113,16 @@ class LoopState(BaseModel):
         "**图上单独一格**——查什么、查几条是循环控制的决策，不该藏在 `think` 内部",
     )
     action: Action | None = None
-    press_result: Observation | None = None
-    """`press` 执行动作之后的新观测，交给紧跟着的 `remember` 去写记忆。
+    pending_observation: Observation | None = None
+    """**还没盖章的新观测**，等着下一轮 `look` 给它盖 step、判成败。
 
-    只在 `press → remember` 这一段之间有意义，
-    `remember` 结束后被下一轮 `look` 写的新 `observation` 盖过去，不跨步存活。
+    两个来源：开局那一帧由 `_begin` 从 `reset()` 的返回值里收下，之后每一帧
+    由 `press` 从 `execute()` 的返回值里收下。**全项目只有这两处产出观测**——
+    harness 自己不再主动感知（曾经 `_look` 每步都调一次 `perceive()`，
+    而那和上一步末尾感知的是同一帧，靠帧缓存挡掉才没花两份钱）。
+
+    `remember` 也读它，当作动作后的那份快照（`before`/`after` 的 after）。
+    它在 `press → remember → look` 这一段里活着，被 `look` 消费掉。
     """
 
 
@@ -213,6 +218,7 @@ class Harness:
         )
 
         reset = self._game.reset(task)
+        assert reset.observation is not None, "reset() must return the first observation"
         if self._episode_state_dir is not None:
             self._game.save_state(str(self._episode_state_dir / f"{episode_id}.start.state"))
 
@@ -229,9 +235,11 @@ class Harness:
             ):
                 self._trace.append(*args)
         # 栈底是任务目标本身，也是成败的唯一依据。
+        # **开局那一帧就是 `reset()` 交出来的这份**，不再由 `_look` 另外感知一次。
         return LoopState(
             episode_id=episode_id, task=task,
             goals=[Goal(goal=task.goal, criteria=task.success_criteria)],
+            pending_observation=reset.observation,
         )
 
     # ---- 图 ----
@@ -267,7 +275,10 @@ class Harness:
         return graph.compile()
 
     def _look(self, state: LoopState) -> dict[str, Any]:
-        """看一眼，然后决定要不要接着走。**每一步都从这里开始。**
+        """接住上一步交下来的那一帧，盖章、判定，决定要不要接着走。
+
+        **名字仍然叫 `look`，但它不再感知。** 观测是上一步末尾（或开局 `reset()`）
+        产出的，沿 `pending_observation` 传下来——一帧只感知一次，见 `_observe()`。
 
         开局那一帧也走这里（它是图的入口），所以"起点存档就已经满足判据"这种
         episode 会在第 0 步就被判出来——不这样的话它们会白跑满步数，
@@ -275,7 +286,7 @@ class Harness:
 
         返回值是 LangGraph 的**状态增量**（只放这一步改了哪些字段），不是"结果"。
 
-        观测、判定，把新观测与目标栈写回 state；没终止就再取一次动作空间。
+        盖章、判定，把新观测与目标栈写回 state；没终止就按这份观测算动作空间。
         """
         obs, goals, succeeded, why = self._observe(state)
 
@@ -287,8 +298,9 @@ class Harness:
         }
 
         if not obs.done:
-            # 动作空间由工具层给全，Harness 不再覆写。
-            update["space"] = self._game.get_action_space()
+            # **掩码按的就是刚盖完章的这份观测。** 工具层不再自己去看一眼——
+            # 它只需要 `facts["overlay"]`，而那就在手上这份里。
+            update["space"] = self._game.get_action_space(obs)
 
         return update
 
@@ -394,7 +406,8 @@ class Harness:
         assert state.action is not None, "press without an action"
         ep, before, action = state.episode_id, state.observation, state.action
 
-        result = self._game.execute(action)
+        # **把依据交出去**：这个动作是按 `before` 这份观测选的，工具层照它验掩码。
+        result = self._game.execute(action, before)
         assert result.observation is not None, "execute() must return the new observation"
 
         # 这一步的账当场记：`calls` 跟着 `execute()` 的返回值一起交出来。
@@ -412,8 +425,9 @@ class Harness:
 
         self._trace.append(*trace_utils.act(ep, before.step, action))
 
-        # 新观测没盖过章（step 恒 0），但记忆只取 `Snapshot`，和步号无关。
-        return {"press_result": result.observation}
+        # 新观测没盖过章（step 恒 0）：`remember` 只取 `Snapshot`、和步号无关，
+        # 章由下一轮 `look` 来盖。
+        return {"pending_observation": result.observation}
 
     def _remember(self, state: LoopState) -> dict[str, Any]:
         """把 `press` 刚推进的这一步写进记忆。**只跟在 `press` 后面。**
@@ -428,9 +442,9 @@ class Harness:
         """
         assert state.observation is not None, "remember before look"
         assert state.action is not None, "remember without an action"
-        assert state.press_result is not None, "remember before press"
+        assert state.pending_observation is not None, "remember before press"
         ep, before, action, after = (
-            state.episode_id, state.observation, state.action, state.press_result
+            state.episode_id, state.observation, state.action, state.pending_observation
         )
 
         # `episode_id` 在这里盖：大脑不知道自己在哪一局。
@@ -449,45 +463,39 @@ class Harness:
     # ---- 观测：全项目唯一产出 Observation 的地方 ----
 
     def _observe(self, state: LoopState) -> tuple[Observation, list[Goal], bool, str]:
-        """读一帧，盖上步号与终止判断，判一次成败，记进 trace。
+        """给上一步交下来的那一帧盖上步号与终止判断，判一次成败，记进 trace。
 
-        全项目**唯一**产出 `Observation` 的地方，而且只有 `_look` 调它——
-        "一步恰好一次"是调用图的形状本身保证的，不需要任何去重字段。
+        **这里不感知。** 全项目产出 `Observation` 的地方只有 world 的
+        `reset()` 和 `step()`，一帧恰好一次；这一层拿到的是沿
+        `pending_observation` 传下来的那份，盖上只有循环才知道的两件事——
+        第几步、要不要终止。
+
+        ## 这里曾经调用 `perceive()`
+
+        每步一次，而它和上一步 `step()` 结尾那次感知的是同一帧。当时靠 world 内部
+        的帧哈希缓存挡住，所以只花一次感知的钱，代价是：整条"同一帧被感知四次"
+        的结构被缓存掩盖着，`after` 和下一步观测相等这件事也只是碰巧成立
+        （靠"中间没人 tick 世界"，没有任何断言）。现在观测沿调用流传递，
+        两者是**同一个对象**，不需要保证；缓存和帧哈希也就一起没有了存在理由。
+
+        感知调用的账因此记在**产生它的那一步**：第 N 步的观测由第 N-1 步的
+        `press` 感知出来，那条 MODEL_CALL 记在 `step=N-1` 下。这是对的——
+        那次调用确实发生在第 N-1 步。
 
         终止的三个来源这里全判了：步数用尽（只有这层知道走了几步）、世界不可用
         （window 被关，world 自己置 `done`）、目标达成（问大脑，见 `_judge`）。
 
-        事件顺序是**因果顺序**：先记产生这一帧的感知调用，再记观测本身，
-        最后才是基于它的判定。反过来记，replay 的人会先看到结果再看到原因。
-
-        感知一帧、盖章、记 OBSERVE，然后把判定的活交给 `_judge`。
+        盖章、记 OBSERVE，然后把判定的活交给 `_judge`。
         """
-        perceived = self._game.perceive()
-        raw = perceived.observation
+        raw = state.pending_observation
+        assert raw is not None, "look without an observation — _begin seeds the first one"
         obs = raw.model_copy(update={
             "step": state.step,
             "done": raw.done or state.step >= state.task.max_steps,
         })
 
-        # 看到的都建档，没互动过的也建——"见过 7 次一次没进过"正是最有用的条目。
-        # 放在这里是因为 `seen` 必须一步只加一次。
-        for call in perceived.calls:
-            # `ok=False` 的那几次要带上 `error_kind`，否则「视觉模型解析失败」
-            # 这一类永远不出现在失败模式分布里。
-            failed = call.get("ok") != "True"
-            for args in trace_utils.model_call(
-                state.episode_id, obs.step, Source.PERCEPTION,
-                ModelCall(
-                    payload=call,
-                    error_kind="PerceptionParseFailure" if failed else "",
-                    error=call.get("raw", "")[:200] if failed else "",
-                ),
-            ):
-                self._trace.append(*args)
         # `goals` 记的是**判定弹栈之前**的栈：OBSERVE 必须先于本步的判定事件。
-        self._trace.append(
-            *trace_utils.observe(state.episode_id, obs, state.goals, perceived.frame_sha)
-        )
+        self._trace.append(*trace_utils.observe(state.episode_id, obs, state.goals))
         return self._judge(state, obs)
 
     def _judge(

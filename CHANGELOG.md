@@ -1,3 +1,52 @@
+## 2026-08-26（其二）—— 一帧只感知一次，帧哈希从项目里消失
+
+**改了什么**：观测由 world 在 `reset()` / `step()` 的结尾产出，沿返回值传到 harness，
+不再由 harness 每步主动 `perceive()` 一次。
+
+- `ToolPort.perceive()` 删除（无调用方），连带 `read:game:perceive` 这条权限。
+- `get_action_space()` → `get_action_space(obs)`，纯函数，不再自己去 `world.observe()`。
+- `execute(action)` → `execute(action, obs)`，收下"这个动作是按哪份观测选的"；
+  `GameTools._last_space` 整个删除，掩码校验改用模块级纯函数 `_mask(obs, all_actions)`。
+- `PyBoyWorld._cache`（帧哈希缓存）、`WorldPort.last_frame_sha`、
+  `PerceptionResult.frame_sha`、`OBSERVE` 与 `MODEL_CALL` payload 里的 `frame_sha`
+  全部删除。`hashlib` 依赖随之消失。
+- `LoopState.press_result` → `pending_observation`：`_begin` 从 `reset()` 收下开局
+  那一帧，`press` 从 `execute()` 收下之后每一帧，`look` 拿它盖章、`remember` 拿它当 after。
+- `Harness._observe()` 不再感知，只盖 `step`/`done` 并写 `OBSERVE`。
+
+**为什么这么改**：**同一帧曾经被感知四次**——`_look` 一次、`get_action_space()` 一次、
+`step()` 结尾一次、下一步 `_look` 又一次。world 内部的帧哈希缓存把三次挡掉，所以
+稳态下只花一次感知的钱。但缓存是在补一个结构问题，而且掩盖了两件事：
+
+1. `get_action_space()` 去 `world.observe()` 只为读 `facts["overlay"]` 一个字段——
+   那次感知完全多余，掩码本来就是 `Observation` 的纯函数。
+2. 「记忆里的 `after` 和下一步的观测相等」只是碰巧成立（靠"`press` 和 `look` 之间
+   没人 tick 世界"），没有任何断言守着。插一个会推进世界的节点就静默不一致。
+
+现在观测沿调用流传递，两者是**同一个对象**——不需要保证的东西才不会漂。缓存和帧哈希
+随之失去全部理由：前者没有东西可缓存，后者没有东西可比较。
+
+**取舍**：
+- **`execute` 收 `obs` 而不是 `space`**。space 是 obs 的派生物，传 obs 更诚实——
+  传 space 等于让调用方替被调方保管一份它自己能算的东西。
+- **`_mask` 是模块级函数，不是让 `execute()` 去调 `get_action_space()`**：后者会在
+  一次权限守卫调用里再触发一次守卫，审计流多一条没有意义的记录。掩码本身不需要授权，
+  需要授权的是"向外交出动作空间"。
+- **`_look` 不改名**。它不再"看"了，但它仍然是每一步的入口，改名的收益不抵调用方
+  和文档里几十处引用的成本。
+- **接受感知调用的记账归属变化**：第 N 步的观测由第 N-1 步的 `press` 感知出来，
+  那条 `MODEL_CALL` 落在 `step=N-1` 下。那次调用确实发生在第 N-1 步。
+
+**丢掉的能力**：trace 里少了"这两条观测是不是同一帧"。它曾用于诊断两件事——
+「模型在同一张图上给了不同答案」（以后不可能发生，同一帧不会被问两遍）和
+「卡住了」（换判据：比 `place` + `status` 有没有变）。
+
+**影响面**：**破坏性变更。** `GameToolPort` 少一个方法、两个方法改签名；
+`WorldPort` 少一个成员；`PerceptionResult` 少一个字段；`OBSERVE` 事件的 payload
+少一个键（旧 trace 文件里有这个键，replay 时忽略即可）；`read:game:perceive`
+从权限清单消失。**每步的视觉模型调用次数不变**（一直是 1，只是从"靠缓存达成"
+变成"靠结构达成"）。
+
 ## 2026-08-26 —— 帧哈希跟着 `PerceptionResult` 走，删掉 `ToolPort.last_frame_sha`
 
 **改了什么**：`PerceptionResult` 加 `frame_sha` 字段；`PyBoyWorld._perceive()` 把 sha

@@ -41,14 +41,14 @@
 
 **历史方案（已废弃）**：曾经用一个 `drain_calls()` 方法 + 一个内部缓冲区 `self._pending_calls` 解决这个矛盾——产生调用记录的地方先攒到缓冲区，Harness 再单独调 `drain_calls()` 取走清空。这种"生产/消费分离、靠可变状态搭桥"的设计本身就是 bug 温床：缓冲区什么时候清、被谁清，两个方向都能出错。
 
-**现方案**：`calls` 跟着 `Observation` 一起，作为 `PerceptionResult` 的返回值原样交出来——产生调用记录的地方直接 return 出去，一路跟着 `_perceive()` → `observe()` → `reset()` 普通地往上传，不需要任何跨调用的状态。`step()` 同理，`calls` 挂在已有的 `ToolResult` 上,不必新开类型。不产生模型调用的世界，`calls` 返回空列表即可，这不是负担。
+**现方案**：`calls` 跟着 `Observation` 一起，作为 `PerceptionResult` 的返回值原样交出来——产生调用记录的地方直接 return 出去，一路跟着 `_perceive()` → `observe()` → `reset()`/`step()` 普通地往上传，不需要任何跨调用的状态。`step()` 同理，`calls` 挂在已有的 `ToolResult` 上,不必新开类型。不产生模型调用的世界，`calls` 返回空列表即可，这不是负担。
 
 ### 1.3 方法签名表
 
 | 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
 |---|---|---|---|---|
 | `reset` | `reset(self, task: Task) -> PerceptionResult` | `task.max_steps > 0` | 返回的 `result.observation.done` 为 `False`（`step` 由 Harness 盖章）；`result.calls` 是这次重置期间产生的模型调用记录（通常来自随后那次感知） | 未文档化 |
-| `observe` | `observe(self) -> PerceptionResult` | 无 | 幂等，不推进世界；`result.calls` 非空当且仅当真的调了视觉模型，命中缓存时是空列表（**不是 None**） | 未文档化 |
+| `observe` | `observe(self) -> PerceptionResult` | 无 | 不推进世界；**每次调用都是一次真感知**（没有缓存）。调用方只有 `reset()` 和 `step()` 两处——一帧恰好一次，别处要观测就用手上那份沿返回值传下来的 | 未文档化 |
 | `all_actions` | `all_actions(self) -> list[str]` | 无 | 非空，且内容在整个 episode 内不变；这是 masking 的全集,Harness 从中筛出当前可用子集 | 未文档化 |
 | `save_state` | `save_state(self, path: str) -> None` | 无 | 把世界当前状态存到 `path`。**每局开局存一次**：A/B 对比要求每个 episode 从逐字节相同的起点开始，而"这一局到底从哪个字节起跑"必须能事后拿出来 | 未文档化 |
 | `step` | `step(self, action: Action) -> ToolResult` | **每一段的按键**都在 `all_actions()` 中；且当前 episode 未结束（`done` 为 `False`） | 若返回的 observation 非空，其 `step` 等于调用前的 `step + 1`；达成 task 成败判据或用满 `max_steps` 时 `observation.done` 为 `True`（**成败判定属于 world**——只有它知道游戏状态是否满足判据）；`result.calls` 含推进这一步期间产生的模型调用记录（通常来自推进后重新感知那一次），命中缓存时为空列表 | 动作合法但没成功走 `ok=False`，不抛异常；**某一段**的按键不在 `all_actions()` 中是**调用方的 bug**，由 `assert` 拦下 |
@@ -85,17 +85,19 @@
 1. **大脑不再持有任何工具实例。** `Brain.choose()` 需要的情景记忆现在由 Harness 先查好、当参数（`memories`）传进去（详见 `brain.py` 一节）。大脑不再有机会主动调用 `GameToolPort`/`MemoryToolPort` 的任何方法，因此**大脑看到的那个小协议 `ToolPort` 已经没有存在的必要**——大脑该看到什么，完全由 `choose()`/`judge()`/`reflect()` 的参数表决定,不再需要一个额外协议来兜底"它还能主动做什么"。
 2. **拆成 `GameToolPort`/`MemoryToolPort` 两个协议而不是一个**，是因为它们的实现本来就该是两个不相关的类：`GameTools` 只碰 `WorldPort`，`MemoryTool` 只碰 `memory/` 包。揉进一个协议会让人误以为它们必须由同一个对象同时实现。`Harness.__init__` 现在收两个参数：`game: GameToolPort` 和 `memory: MemoryToolPort`。
 
-### 2.2 `perceive` 是纯读，它不构成"一步"——踩过的坑
+### 2.2 `perceive` 曾经是纯读，而它不构成"一步"——踩过的坑
 
 `perceive()` 曾经既是"给大脑看一眼"，又是"新的一步开始了"两种身份，而这两种身份对它的期待不一样——于是要靠"这一步我是不是已经记过 trace 了"这种运行时判断去调和，而这个判断本身就是 bug 的温床（**实测出现过步号回退、判定重复计费**）。
 
-现在 `perceive()` 只是查询：不写 trace、不推进世界、不触发判定。**"一步"的边界由 Harness 定义**，只有两个地方会产出新的一步。
+后来 `perceive()` 只是查询：不写 trace、不推进世界、不触发判定。**"一步"的边界由 Harness 定义**，只有两个地方会产出新的一步。
+
+**再后来 `GameToolPort.perceive()` 整个删掉了**：它每步被调一次，而那和上一步 `step()` 结尾感知的是同一帧——靠 world 内部的帧缓存挡住才没花两份钱。现在观测由 world 在 `reset()` / `step()` 的结尾产出、沿返回值往上传，一帧只感知一次，`ToolPort` 这一侧不再有"看一眼"这个动作。详见 `tools/SPEC.md` 2.7。
 
 ### 2.3 `known_objects`/`knowledge` 现在由 Harness 拼，不是 `GameTools`，也不在 `_observe()` 里
 
 以前 `GameTools.perceive()` 会顺手把语义记忆的 `query_objects()` 结果拼进 `facts["known_objects"]`——这要求 `GameTools` 持有一份记忆的引用，正是这次拆分要去掉的耦合。
 
-现在：`GameToolPort.perceive()` 只管世界，不拼任何记忆字段。`facts["known_objects"]`/`facts["knowledge"]` 由 `Harness._retrieve_memory()`（图上专门的"查记忆"节点，不是 `look` 节点）在判定跑完之后，另外调 `memory.query_objects(obs)`/`memory.query_knowledge(...)` 拼上去。两个协议各管各的，**组合是 Harness 的活**；放在 `_retrieve_memory()` 而不是 `_observe()`，是因为这两个字段本质是**语义记忆的读**，不是"这一帧模拟器实际给出的东西"——混进 `_observe()` 曾经让 `knowledge` 在 `judge` 之前就出现在 `obs.facts` 里，被判定模型白白看到、浪费 token。
+当时的结论：`GameToolPort.perceive()` 只管世界，不拼任何记忆字段（该方法现已删除，但这条分工不变，只是搬到了 world 的 `observe()` 上）。`facts["known_objects"]`/`facts["knowledge"]` 由 `Harness._retrieve_memory()`（图上专门的"查记忆"节点，不是 `look` 节点）在判定跑完之后，另外调 `memory.query_objects(obs)`/`memory.query_knowledge(...)` 拼上去。两个协议各管各的，**组合是 Harness 的活**；放在 `_retrieve_memory()` 而不是 `_observe()`，是因为这两个字段本质是**语义记忆的读**，不是"这一帧模拟器实际给出的东西"——混进 `_observe()` 曾经让 `knowledge` 在 `judge` 之前就出现在 `obs.facts` 里，被判定模型白白看到、浪费 token。
 
 ### 2.4 模型调用记账不再靠 `drain_calls`（与 `world.py` 同一段历史的工具层版本）
 
@@ -107,14 +109,12 @@
 
 | 方法 | 签名 | 前置条件 | 后置条件 | 失败语义 |
 |---|---|---|---|---|
-| `perceive` | `perceive(self) -> PerceptionResult` | 无 | **幂等只读**：不推进世界、不写 trace、不触发判定；同一帧内多次调用不产生额外模型调用（实现方要在帧内缓存，感知是每步都要付钱的一项）；`result.calls` 是这次调用产生的模型调用记录，命中缓存时为空列表（**不是 None**）；返回的 `observation` 在同一帧内**完全稳定**：同一帧问几次，拿到的字节一样，没有例外（细看接口删掉之后，"幂等"对模型调用和返回值同时成立，见 1.4） | 未文档化 |
 | `get_action_space` | `get_action_space(self) -> ActionSpace` | 无 | `names` 非空——走投无路的状态也必须至少给一个动作，空动作空间是工具层的 bug，不能让大脑处理。**工具层给出的就是完整的动作空间**，Harness 不再覆写（`ActionSpace.intents` 已随 `Intent` 一起删掉） | 未文档化 |
-| `execute` | `execute(self, action: Action) -> ToolResult` | `action.name` 属于**调用前最近一次** `get_action_space()` 的结果；实现方必须 `assert` 这点——大脑幻觉出不存在的动作要在这里就地爆炸，不能变成语义不明的模拟器错误 | `result.observation` 非空，是执行后的新观测；它的 `step` **还没有盖章**（盖章是 Harness 的事）；`result.calls` 是推进这一步期间产生的模型调用记录（通常来自推进后重新感知那一次），命中缓存时为空列表 | 未文档化（见前置条件的 assert） |
+| `execute` | `execute(self, action: Action, obs: Observation) -> ToolResult` | `obs` 是这个动作**据以选出**的那份观测；`action` 每一段的按键属于 `get_action_space(obs)` 的结果；实现方必须 `assert` 这点——大脑幻觉出不存在的动作要在这里就地爆炸，不能变成语义不明的模拟器错误。**依据由调用方交出来**，所以"用过期的掩码"在结构上不可能发生 | `result.observation` 非空，是执行后的新观测，也是下一步 `look` 要用的那一帧；它的 `step` **还没有盖章**（盖章是 Harness 的事）；`result.calls` 是推进这一步期间产生的模型调用记录 | 未文档化（见前置条件的 assert） |
 | `reset` | `reset(self, task: Task) -> PerceptionResult` | `task.max_steps > 0` | `result.observation.done` 为 `False`；`step` 未盖章（由 Harness 填 0）；`result.calls` 是这次重置期间产生的模型调用记录 | 未文档化 |
-| `last_frame_sha`（属性） | `@property last_frame_sha -> str` | 无 | 最近一次观测所依据的那一帧的哈希，用于追查读错的观测出自哪一帧；没有"帧"概念的实现返回空串 | 无 |
 | `save_state` | `save_state(self, path: str) -> None` | 无 | 把世界当前状态存到 `path`。**每局开局存一次**：A/B 对比要求每个 episode 从逐字节相同的起点开始，而"这一局到底从哪个字节起跑"必须能事后拿出来 | 未文档化 |
 
-`GameToolPort` 这一侧也曾经有一个 `inspect(focus)`（转发给 `WorldPort.inspect()`），已随下层一起删掉，理由见 1.4。它留下的痕迹是 `perceive` 那一行原先的例外条款——"同一帧内稳定，除非期间调用过 `inspect()`"；现在那条例外没有了。
+`GameToolPort` 这一侧也曾经有一个 `inspect(focus)`（转发给 `WorldPort.inspect()`），已随下层一起删掉，理由见 1.4。它留下的痕迹是 `perceive` 那一行原先的例外条款——"同一帧内稳定，除非期间调用过 `inspect()`"；`perceive` 本身后来也删掉了（见 2.2）。
 
 `execute()` 收到的 `Action` 可能是一条**多段动作链**（`Action.sequence`），底下 `WorldPort.step()` 会把每一段按完再感知一次；顶层的 `action.name`/`args` 只是单段链的兼容写法，由 `Action.segments()` 归一。
 

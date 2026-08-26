@@ -18,7 +18,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import pathlib
 import time
 
@@ -158,8 +157,6 @@ class PyBoyWorld:
         走了几步），后者要一次独立的模型调用（world 不认识 LLM）。
         world 只回答"我还在不在"。
         """
-        self._cache: tuple[str, ScreenState, TerrainMap] | None = None
-        self.last_frame_sha = ""
 
     # ---- WorldPort ----
 
@@ -187,26 +184,29 @@ class PyBoyWorld:
         else:
             self._tick(BOOT_FRAMES)
 
-        self._task, self._closed, self._cache = task, False, None
+        self._task, self._closed = task, False
         result = self.observe()
 
         assert not result.observation.done, "reset() must return a fresh observation"
         return result
 
     def observe(self) -> PerceptionResult:
-        """取当前观测。只读、幂等——**同一帧不会重复调用视觉模型**。
+        """感知当前这一帧。**每次调用都是一次真感知。**
 
-        `result.calls` 就是这次 `_perceive()` 产生的调用记录，命中缓存时为空列表。
+        调用方只有两个：`reset()`（开局第一帧）和 `step()`（按完之后那一帧）——
+        一帧恰好一次。别的地方要观测，用手上那份沿调用流传下来的，不要回头再问。
+
+        `result.calls` 就是这次 `_perceive()` 产生的调用记录。
 
         读当前这一帧，命中缓存就不再调模型。
         """
         assert self._task is not None, "observe() before reset()"
 
-        frame_sha, screen, terrain, calls = self._perceive()
+        screen, terrain, calls = self._perceive()
         overlay, text = screen.overlay, screen.dialog_text.strip()
 
         # **说有对话框却一个字都没抄出来 = 它把别的东西看成对话框了。**
-        # 实测：室内地图下方的黑色边界被认成对话框，而同一帧（frame sha 一模一样）
+        # 实测：室内地图下方的黑色边界被认成对话框，而**画面一动没动**的情况下
         # 上一步它还判的是 none。降级成 none，并把这次误判记下来。
         #
         # 这条交叉检验不需要任何新的输入——**它只是拿模型自己的两个输出对账**。
@@ -275,7 +275,7 @@ class PyBoyWorld:
             done=self._closed,
             success=False,
         )
-        return PerceptionResult(observation=obs, frame_sha=frame_sha, calls=calls)
+        return PerceptionResult(observation=obs, calls=calls)
 
     def all_actions(self) -> list[str]:
         """全部动作名，与状态无关。掩码是 harness 的事，不在这里做。
@@ -315,11 +315,6 @@ class PyBoyWorld:
                 self._tick(WITHIN_ACTION_FRAMES)
 
         self._tick(AFTER_ACTION_FRAMES)      # 等世界落定，再感知
-        # **缓存不在这里清。** `_perceive()` 自己按帧哈希判，画面真变了它自然会
-        # 重新调模型；而按了键**画面没变**（对着空地按 a、朝墙走）时，
-        # 清掉缓存就是白花一次感知，还会引入噪声——
-        # 实测连着四步 frame sha 一模一样，模型却给出了不同的 overview，
-        # 其中一步把地图下方的黑边认成了对话框。同一帧只问一次，这类抖动直接消失。
 
         result = self.observe()    # 整条链唯一的一次真感知
         obs = result.observation
@@ -348,13 +343,21 @@ class PyBoyWorld:
         self._pyboy.screen.image.save(buf, format="PNG")
         return buf.getvalue()
 
-    def _perceive(self) -> tuple[str, ScreenState, TerrainMap, list[dict[str, str]]]:
-        """调视觉模型读当前画面，按帧哈希缓存。
+    def _perceive(self) -> tuple[ScreenState, TerrainMap, list[dict[str, str]]]:
+        """调视觉模型读当前画面。**每次调用都是一次真感知，没有缓存。**
 
         调用记录**作为返回值的一部分直接交出去**，不再攒进实例状态——
         谁调了这个方法，calls 就跟着这次调用的返回值一路往上传
-        （`observe()` → `reset()`/`perceive()`），不需要额外的 drain 步骤，
+        （`observe()` → `reset()`/`step()`），不需要额外的 drain 步骤，
         也就不存在"谁来得早谁来得晚"的记账错位（见 `PerceptionResult` 的说明）。
+
+        ## 这里曾经有一个按帧哈希的缓存
+
+        它存在的原因是同一帧会被感知四次：`_look` 一次、`get_action_space()` 一次、
+        `step()` 结尾一次、下一步 `_look` 又一次。缓存把其中三次挡掉，于是稳态下
+        每步只花一次感知的钱。但那是**在补一个结构问题**——同一帧本来就不该被
+        问四遍。现在通往这里的路径只剩 `reset()` 和 `step()`，一帧恰好一次，
+        缓存没有东西可缓存，帧哈希也没有东西可比较。两个一起删了。
 
         失败：连续重试仍解析不出时抛 `PerceptionFailure`。
             不返回一个「空白状态」兜底——那会让大脑基于假观测决策，
@@ -363,13 +366,6 @@ class PyBoyWorld:
         调一次视觉模型读画面，按帧哈希缓存。
         """
         png = self._frame_png()
-        sha = hashlib.sha256(png).hexdigest()[:12]
-        # 属性仍然留着：`GameTools` 拿它做动作空间的过期检查（"这份动作空间是不是
-        # 上一帧的"）。但**产出给调用方的那一份走返回值**，和 `calls` 同一个理由。
-        self.last_frame_sha = sha
-        # **缓存命中就直接回，什么账都不产生。** 没调模型就没有账。
-        if self._cache and self._cache[0] == sha:
-            return sha, self._cache[1], self._cache[2], []
 
         # **地形先读，而且和图片一起发给模型。**
         # 它是确定的（抄的是游戏自己的碰撞判定），所以它是骨架；
@@ -385,7 +381,6 @@ class PyBoyWorld:
             r = self._vision.describe(png, prompt)
             screen = parse_screen(r.text)
             calls.append({
-                "frame_sha": sha,
                 "prompt_sha": self._prompt.sha,
                 "input_tokens": str(r.input_tokens),
                 "output_tokens": str(r.output_tokens),
@@ -395,8 +390,7 @@ class PyBoyWorld:
                 "raw": r.text,
             })
             if screen is not None:
-                self._cache = (sha, screen, terrain)
-                return sha, screen, terrain, calls
+                return screen, terrain, calls
             last = r.text[:200]
 
         raise PerceptionFailure(self._retries, f"unparsable output: {last!r}")

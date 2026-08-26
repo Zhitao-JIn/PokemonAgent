@@ -116,11 +116,9 @@ def decision_failed(episode_id: str, step: int, last: ModelCall) -> AppendArgs:
 
 # ---- 一步之内的各类事件 ----
 
-def observe(episode_id: str, obs: Observation, goals: list[Goal], frame_sha: str) -> AppendArgs:
+def observe(episode_id: str, obs: Observation, goals: list[Goal]) -> AppendArgs:
     """**facts 必须进 payload。** 它才是观测的实质内容。只记 summary 的话，
     replay 出来只剩「你在野外」这种废话。
-
-    `frame_sha` 同样关键：没有它，一条读错的观测**无法追查**是哪一帧。
 
     **`goals` 也要跟着这一帧一起记**——以前目标栈只在 `GOAL_PUSH`/`GOAL_POP`
     事件里出现过一次，读日志的人拿不到"这一帧、这个决策，当时的栈长什么样"。
@@ -129,7 +127,7 @@ def observe(episode_id: str, obs: Observation, goals: list[Goal], frame_sha: str
     """
     return (
         episode_id, obs.step, EventType.OBSERVE, Source.PERCEPTION,
-        {"frame_sha": frame_sha, "status": obs.status,
+        {"status": obs.status,
          "scene": obs.facts.get("scene", ""), "overlay": obs.facts.get("overlay", ""),
          "facts": json.dumps(obs.facts, ensure_ascii=False),
          "goals": _render_goal_stack(goals)},

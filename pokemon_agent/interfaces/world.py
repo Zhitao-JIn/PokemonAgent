@@ -69,17 +69,6 @@ class WorldPort(Protocol):
         """
         ...
 
-    @property
-    def last_frame_sha(self) -> str:
-        """最近一次观测所依据的那一帧的哈希。
-
-        没有它，一条读错的观测**无法追查是哪一帧**——而那是查感知错误的起点。
-        没有"帧"这个概念的世界返回空串。
-
-        给出最近那一帧的哈希。
-        """
-        ...
-
     def step(self, action: Action) -> ToolResult:
         """执行**整条动作链**，推进世界，**只在链的结尾感知一次**。
 

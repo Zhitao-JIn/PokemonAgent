@@ -133,7 +133,9 @@ def read_terrain(mem: Memory) -> TerrainMap
   - 固定缓冲用远少的代码换到同一效果的九成，还顺带拿回了可复现性。剩下的风险（偶尔感知到动画中间帧）是概率问题不是正确性问题，可测量但不必优先解决。
 - **不判断动作有没有生效**：画面本来就在动，像素比对量不出因果；动作没生效的话下一步观测会照实反映，由大脑自己纠正。
 - **不判成败、不数步**：任务达成需要一次独立模型调用，world 不该认识 LLM；走了几步是循环的账，同一世界要跑不同步数上限的任务。这两件事都在 `Harness`。
-- **`observe()` 必须缓存**：契约写明幂等只读，但每调一次就是一次 VLM 调用；不缓存的话动作空间计算与感知各调一次，每步感知成本翻倍。
+- **`observe()` 每次都是真感知**：每调一次就是一次 VLM 调用，所以调用点必须
+  受控——只有 `reset()` 和 `step()` 的结尾会调它，一帧恰好一次。曾经它按帧缓存，
+  因为上层同一帧要问四次；那个结构已经改掉了（见 5.3）。
 
 ### 3.2 构造函数参数
 
@@ -167,8 +169,6 @@ def __init__(
 
 构造函数中还初始化的重要状态：
 - `self._closed`：窗口是否已关闭，是 world **唯一有资格宣告终止**的标志（世界没了，跑不下去；步数用尽/任务达成不归 world 判）。
-- `self._cache`：帧级感知缓存，初始为 `None`。
-- `self.last_frame_sha`：初始为空字符串。
 
 ### 3.3 四个 `WorldPort` 方法
 
@@ -179,7 +179,7 @@ def __init__(
 逻辑：
 1. 若有 `state_path`：打开文件、`load_state`，然后 `tick(1)`——**读档后必须 tick 一次才会重绘画面**。
 2. 若无 `state_path`：`_tick(BOOT_FRAMES)`（600 帧）空转过开机动画。
-3. 重置 `self._task`、`self._closed=False`、`self._cache=None`（帧缓存失效，因为画面已经变了）。
+3. 重置 `self._task`、`self._closed=False`。
 4. 调用 `self.observe()` 得到首个观测。
 5. 断言返回的 `observation.done` 为 `False`。
 
@@ -205,7 +205,7 @@ def __init__(
    - `facing`（若 `terrain.facing` 非空，见 3.5）
    - `options`、`cursor`（若有）
 5. 构造 `Observation(step=0, place=terrain.place(), status=_status_line(screen), facts=facts, done=self._closed, success=False)`。`step`/`done`/`success` 只是占位值/由 Harness 盖章的语义（`done` 这里传的是 `self._closed`，即窗口是否已关，这是 world 唯一能宣告的终止形式）。
-6. 返回 `PerceptionResult(observation=obs, calls=calls)`——`calls` 非空当且仅当这次真的调了模型，命中缓存时是空列表。
+6. 返回 `PerceptionResult(observation=obs, calls=calls)`——`calls` 记的是这次感知产生的每一次模型调用（含重试）。
 
 **关于 `dialog_text` 必须排最前面**的注释特别强调其代价：漏了这一项，判定器看不到对话内容，"对话框里出现母亲说的话"这类判据永远不可能成立；而决策模型看不到就会按先验编一句当成自己读到的。实测判定器自己说过："对话框内容未提供，无法确认是否为母亲说的话"。
 
@@ -247,7 +247,8 @@ def __init__(
 1. `segments = action.segments()` 拿到规范化的动作链（见 3.4）。
 2. 逐段、段内逐次执行：`self._pyboy.button(segment.name, delay=PRESS_FRAMES)` 然后 `self._tick(WITHIN_ACTION_FRAMES)`。
 3. 整条链跑完后 `self._tick(AFTER_ACTION_FRAMES)`，等世界落定再感知。
-4. **不清 `_cache`**：`_perceive()` 自己按帧哈希判断，画面真变了自然会重新调模型；若按键后画面没变（对着空地按 a、朝墙走），清缓存就是白花一次感知还会引入噪声——实测连着四步 frame sha 一模一样，模型却给出了不同的 `overview`，其中一步把地图下方的黑边认成了对话框，同一帧只问一次这类抖动直接消失。
+4. 结尾 `self.observe()` 感知一次——**这是整条动作链唯一的一次真感知**，返回的观测
+   会沿 `ToolResult` → `pending_observation` 一路传到下一步的 `look`。
 5. `result = self.observe()`——**整条链唯一的一次真感知**。
 6. 返回 `ToolResult(observation=obs, calls=result.calls)`。
 
@@ -334,7 +335,7 @@ if overlay is Overlay.DIALOG and not text:
 
 **为什么这条交叉检验成立**：它不需要任何新的输入——只是拿模型自己的两个输出（`overlay` 判断与 `dialog_text` 抄写）对账。而 `overlay` 决定动作掩码，错一次大脑就会拿到一组它按不出效果的动作（比如掩码给出"继续对话"相关的按键，但根本没有对话框），所以这条纠错很有必要。
 
-**这里曾经还有一个 `_dialog_is_open()`**：读缓存里的 `ScreenState` 判断对话框开没开，
+**这里曾经还有一个 `_dialog_is_open()`**：读上一次感知出的 `ScreenState` 判断对话框开没开，
 不额外调模型，专供 `step()` 的连按二次夹逼用。夹逼规则前移到 `Brain._parse` 之后
 （见 3.4），它没有了唯一的调用方，一并删除。
 
@@ -348,14 +349,14 @@ if overlay is Overlay.DIALOG and not text:
 
 - **传什么**：当前帧的 PNG 字节（`self._frame_png()`）+ 渲染好的主感知 prompt（`self._prompt.render(known_map=terrain.render())`，即把地形骨架文本嵌入 prompt，让模型在已经正确的骨架上标语义，而不是自己判断能不能走）。
 - **收到什么**：`VisionCompletion(text, input_tokens, output_tokens)`。`text` 经 `parse_screen()` 解析成 `ScreenState`（容忍 ` ```json ` 包裹，其余解析失败一律返回 `None` 交给调用方重试）。
-- **重试**：最多 `self._retries`（即 `max_perceive_retries`）次，每次都记一条调用日志（`frame_sha`/`prompt_sha`/`input_tokens`/`output_tokens`/`latency_ms`/`attempt`/`ok`/`raw`）。全部失败则抛 `PerceptionFailure`，**不返回空白状态兜底**——那会让大脑基于假观测决策，且这类失败必须能在 replay 里被统计到。
-- 成功则写入 `self._cache = (sha, screen, terrain)` 并返回。
+- **重试**：最多 `self._retries`（即 `max_perceive_retries`）次，每次都记一条调用日志（`prompt_sha`/`input_tokens`/`output_tokens`/`latency_ms`/`attempt`/`ok`/`raw`）。全部失败则抛 `PerceptionFailure`，**不返回空白状态兜底**——那会让大脑基于假观测决策，且这类失败必须能在 replay 里被统计到。
+- 成功则直接返回 `(screen, terrain, calls)`。
 
 这处调用遵循 `VisionProvider.describe` 契约里的关键警告：**实现方必须校验图片确实被消费了**（token 数下界），因为已知有网关会静默丢图但仍返回一段"读起来合理"的描述——这属于 `VisionProvider` 实现自身的职责（抛 `ImageNotDelivered`），不是 `PyBoyWorld` 在调用点做的事，但 `PyBoyWorld` 依赖这个契约来保证 `input_tokens`/`output_tokens` 字段的可信度（记入 `calls`，供下游按 payload 核算成本、排查感知错误)。
 
 ---
 
-## 5. `_perceive()`：帧哈希缓存机制完整原理
+## 5. `_perceive()`：一次真感知，没有缓存
 
 ```python
 def _perceive(self) -> tuple[ScreenState, TerrainMap, list[dict[str, str]]]
@@ -363,24 +364,33 @@ def _perceive(self) -> tuple[ScreenState, TerrainMap, list[dict[str, str]]]
 
 ### 5.1 完整流程
 
-1. 截取当前帧 PNG（`self._frame_png()`），计算 `sha = hashlib.sha256(png).hexdigest()[:12]`，写入 `self.last_frame_sha`（不论缓存命中与否都更新——它代表的是"最近一次观测所依据的那一帧"），
-   **并作为返回值的第一项交出去**，由 `observe()` 填进 `PerceptionResult.frame_sha`。
-   属性和返回值各有用途：属性供 `GameTools` 做动作空间的过期检查，返回值供 Harness 记 trace——
-   后者必须走返回值，理由同 `calls`（见 `PerceptionResult` 的说明）。
-2. **缓存命中判定**：若 `self._cache is not None and self._cache[0] == sha`，直接返回 `(self._cache[1], self._cache[2], [])`——**什么账都不产生，因为没调模型**。
-3. 未命中：`read_terrain(self._pyboy.memory)` 读地形骨架，渲染主 prompt。
-4. 在 `[1, self._retries]` 范围内循环调 `self._vision.describe(png, prompt)`，尝试 `parse_screen`：
+1. 截取当前帧 PNG（`self._frame_png()`）。
+2. `read_terrain(self._pyboy.memory)` 读地形骨架，渲染主 prompt。
+3. 在 `[1, self._retries]` 范围内循环调 `self._vision.describe(png, prompt)`，尝试 `parse_screen`：
    - 每次尝试都追加一条调用记录到 `calls` 列表。
-   - 一旦解析成功：`self._cache = (sha, screen, terrain)`，返回 `(screen, terrain, calls)`。
-5. 全部重试失败：抛 `PerceptionFailure(self._retries, f"unparsable output: {last!r}")`。
+   - 一旦解析成功：返回 `(screen, terrain, calls)`。
+4. 全部重试失败：抛 `PerceptionFailure(self._retries, f"unparsable output: {last!r}")`。
+
+**每次调用都是一次真感知。** 调用路径只有两条——`reset()` 和 `step()` 结尾的
+`observe()`，一帧恰好一次，所以没有要缓存的东西。
 
 ### 5.2 重试逻辑
 
 `max_perceive_retries`（默认 2）控制最多尝试几次。每次失败原因只有一种——`parse_screen` 返回 `None`（模型输出不是合法的 `ScreenState` JSON，且不是常见的 ` ```json ` 包裹偏差）。重试之间不改变 prompt 或图片，纯粹是指望模型下一次输出格式正确的 JSON。重试期间产生的每一次调用（无论成败）都计入 `calls`，因此 `calls` 长度可能大于 1，供上游核算真实花费的模型调用次数与 token。
 
-### 5.3 缓存键为什么是帧哈希而不是别的
+### 5.3 这里曾经有一个按帧哈希的缓存
 
-因为契约要求 `observe()` "只读、幂等"，而每次真调模型都有 token/延迟成本。帧的像素内容（PNG 字节的 sha256）是判断"世界是否发生了肉眼可见变化"的天然、精确的键：只要 PyBoy 输出的画面字节没变，就认为没有新信息值得重新花钱去问模型。`step()` 特意不清空缓存（见 3.3 `step()` 步骤 4），完全依赖这个哈希判定自然失效。
+`_cache: tuple[str, ScreenState, TerrainMap]`，键是 PNG 字节的 sha256 前 12 位。
+它存在的原因是**同一帧会被感知四次**：`Harness._look` 一次、`get_action_space()`
+一次、`step()` 结尾一次、下一步 `_look` 又一次。缓存把其中三次挡掉，于是稳态下
+每步只花一次感知的钱。
+
+**但那是在补一个结构问题**——同一帧本来就不该被问四遍。而且缓存掩盖了另一件事：
+「记忆里的 `after` 和下一步的观测相等」当时只是碰巧成立（靠"中间没人 tick 世界"），
+没有任何断言守着。
+
+改成一帧只感知一次之后，缓存没有东西可缓存，帧哈希也没有东西可比较，两个一起删了。
+完整论证见 `tools/SPEC.md` 2.7。
 
 ### 5.4 为什么现在返回三元组而不是 `_pending_calls` 缓冲区（最近一次重构）
 

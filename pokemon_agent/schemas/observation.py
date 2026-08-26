@@ -155,21 +155,16 @@ class PerceptionResult(BaseModel):
     `calls` 为空列表表示这次调用命中缓存，没有产生新的模型调用——
     **不是 None**，调用方不用先判空值。
 
-    ## `frame_sha` 也在这里，理由完全一样
+    ## 这里没有帧哈希
 
-    它曾经是 `ToolPort` 上一个单独的 property，Harness 在 `perceive()` 之后
-    **再调一次**去取。那和上面 `drain_calls()` 是同一个形状：值属于刚刚产生的
-    那一帧，却要回头去另一个地方拿。而这个字段的全部意义就是「这条观测是哪一帧」——
-    用第二次读取的结果去回答第一次读取的归属，前提本身就不成立。单线程下不会错，
-    但那是调用顺序碰巧保证的，不是结构保证的。
+    曾经有过（`ToolPort` 上一个 property，后来短暂地成为本类的一个字段），
+    它的用途是按帧缓存感知结果、以及在 trace 里标出"这条观测是哪一帧"。
+    两者都随"**一帧只感知一次**"这条结构约束一起消失了：同一帧不会被问第二遍，
+    就没有要缓存的东西，也就不需要一个标记去判断两次观测是不是同一帧。
+    详见 `tools/SPEC.md` 2.7。
     """
 
     observation: Observation
-    frame_sha: str = Field(
-        default="",
-        description="产生这次观测的那一帧的哈希。没有『帧』这个概念的实现给空串——"
-        "它是查感知错误的起点：一条读错的观测得能追回是哪一帧",
-    )
     calls: list[dict[str, str]] = Field(
         default_factory=list,
         description="这次调用（可能是重试了好几次）产生的每一条模型调用记录，"

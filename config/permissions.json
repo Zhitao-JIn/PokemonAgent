@@ -1,7 +1,6 @@
 {
   "roles": {
     "env": [
-      "read:game:perceive",
       "read:game:action_space",
       "execute:game:reset",
       "execute:game:press",
@@ -21,7 +20,6 @@
     ],
     "player-agent": [],
     "trusted-agent": [
-      "read:game:perceive",
       "read:game:action_space",
       "execute:game:reset",
       "execute:game:press",

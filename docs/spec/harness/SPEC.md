@@ -75,7 +75,7 @@ Harness 这一侧只承担一件事：**权限失败不能让这一局从 trace 
 | 分组 | 字段 | 特点 |
 |---|---|---|
 | 身份 | `episode_id` / `task` / `step` / `goals` / `succeeded` / `why` | 跨步存活，是 checkpoint 要恢复的那部分 |
-| 流转 | `observation` / `space` / `memories` / `action` / `press_result` | 单步内，从一个图节点传到下一个 |
+| 流转 | `observation` / `space` / `memories` / `action` / `pending_observation` | 单步内，从一个图节点传到下一个 |
 
 ### 2.2 完整字段表
 
@@ -91,7 +91,7 @@ Harness 这一侧只承担一件事：**权限失败不能让这一局从 trace 
 | `space` | `ActionSpace \| None` | `None` | 本步可用按键 |
 | `memories` | `list[StepMemory]` | `[]` | `retrieve_memory` 查出来、给这一步 `think` 用的情景记忆 |
 | `action` | `Action \| None` | `None` | `think` 选出的动作 |
-| `press_result` | `Observation \| None` | `None` | `press` 执行后的新观测，交给紧跟着的 `remember` |
+| `pending_observation` | `Observation \| None` | `None` | **还没盖章的新观测**。开局那份来自 `reset()`，之后每份来自 `execute()`；`remember` 拿它当 after，`look` 拿它盖章 |
 
 ### 2.3 这里**没有** `outcome`
 
@@ -101,9 +101,20 @@ Harness 这一侧只承担一件事：**权限失败不能让这一局从 trace 
 
 顺带，这也消掉了一个形状问题：`space` 和 `outcome` 曾经互斥填充，`LoopState` 里任何时刻都有一个是上一轮的陈值，靠调用图保证下游不读错——不是靠类型。
 
-### 2.4 `press_result` 的生命周期
+### 2.4 `pending_observation` 的生命周期
 
-"专用信使"字段：只在同一轮循环内由 `press` 写入、由紧接着的 `remember` 读取一次，随后被下一轮 `look` 产生的新 `observation` 在语义上覆盖（字段本身不显式清空）。
+**它是观测进入这一层的唯一入口。** 由 `_begin`（开局那一帧，来自 `reset()`）或
+`press`（来自 `execute()`）写入，`remember` 读一次当作动作后的快照（`after`），
+下一轮 `look` 读一次、盖上 `step` 与 `done` 之后写进 `observation`。
+字段本身不显式清空，下一次 `press` 覆盖它。
+
+它曾经叫 `press_result`，是个"专用信使"——只在 `press → remember` 之间有意义，
+因为那时 `look` 会自己 `perceive()` 一遍拿新观测。删掉那次感知之后，同一个值
+多了一个消费方（`look`），名字也就不准了：它不只来自 press，开局那份来自 reset。
+
+**`after` 和下一步的观测现在是同一个对象**，不是"相等"。以前它们靠 world 的帧
+缓存碰巧相等（前提是 `press` 和 `look` 之间没人推进世界），没有任何断言守着——
+插一个会 tick 的节点就会静默不一致。现在没有什么需要守。
 
 ---
 
@@ -134,10 +145,10 @@ look → retrieve_memory → think → press → remember → look
 
 | 节点名 | 方法 | 花不花钱 |
 |---|---|---|
-| `look` | `_look` | 感知（通常命中缓存）+ 判定各一次调用 |
+| `look` | `_look` | 判定一次调用。**不感知**——观测是上一步交下来的 |
 | `retrieve_memory` | `_retrieve_memory` | 不调模型（检索走本地 embedding/reranker） |
 | `think` | `_think` | 决策调用 ×N（N 含重试） |
-| `press` | `_press` | 执行后重新感知（通常命中缓存） |
+| `press` | `_press` | 执行后感知一次。**这是一步之内唯一的感知** |
 | `remember` | `_remember` | 反思调用 ×1 |
 | `summarize` | `_summarize` | 蒸馏调用 ×1 |
 
@@ -294,11 +305,17 @@ return update
 
 **职责**：按键，推进世界。**只管执行和账，不写记忆**；**`step` 也不在这里加**——`press → remember` 是一个整体，加一次的地方在链路末尾。
 
-**流程**：`result = self._game.execute(action)` → 断言 `result.observation` 非空 → 对 `result.calls` 逐条记账（`Source.PERCEPTION`）→ 写 `ACT`（`Source.WORLD`，step 用 `before.step`）→ 返回 `{"press_result": result.observation}`。
+**流程**：`result = self._game.execute(action, before)` → 断言 `result.observation` 非空 → 对 `result.calls` 逐条记账（`Source.PERCEPTION`）→ 写 `ACT`（`Source.WORLD`，step 用 `before.step`）→ 返回 `{"pending_observation": result.observation}`。
+
+**`before` 要交给 `execute()`**：它是这个动作据以选出的那份观测，工具层照它重算掩码
+做校验。依据随参数传入，"用过期的掩码"在结构上不可能发生（见 `tools/SPEC.md` 2.6）。
+
+**返回的观测就是下一步 `look` 要用的那一帧**，不是"顺便带回来的东西"。
+`look` 不再自己感知，见 4.x `_observe`。
 
 **一步交出去的是一整条动作链。** `Action.sequence`（`list[ActionSegment]`，每段是
 "按哪个键 × 连按几次"）由**一次** `execute()` 整条交给 world，world 只在**链尾**感知一次。
-所以一步之内的感知事件数是 **1**（还常常因为帧缓存变成 0），不再随按键次数增长——
+所以一步之内的感知事件数**恰好是 1**，不再随按键次数增长——
 走 5 格从 5 次视觉调用变成 1 次，成本和延迟一起砍到五分之一。
 代价是链的中间状态 agent 看不见：撞墙了也会把剩下几次按完。这是时序抽象的经典取舍，
 `MAX_TIMES` 是给它的闸。
@@ -350,9 +367,19 @@ return update
 - **世界不可用**（窗口被关）——world 自己置 `done`，这里保留。
 - **目标达成**——问大脑，见 `_judge`。
 
-**流程**：`perceived = self._game.perceive()` → 盖 `step` 和 `done` → 对 `perceived.calls` 逐条记账（`ok != "True"` 时标 `PerceptionParseFailure`）→ 写 `OBSERVE` → `return self._judge(state, obs)`。
+**流程**：从 `state.pending_observation` 取出上一步交下来的那一帧 → 盖 `step` 和 `done` → 写 `OBSERVE` → `return self._judge(state, obs)`。
 
-`OBSERVE` 的 payload 含 `frame_sha`/`status`/`scene`/`overlay`/`facts`(json)/`goals`。**`goals` 记的是判定弹栈之前的栈**——`OBSERVE` 必须先于本步的判定事件（因果顺序），判完之后的栈会在随后的 `GOAL_POP` 里体现。
+**这里不感知，也不记感知的账。** 曾经它调 `self._game.perceive()`，而那和上一步
+`step()` 结尾感知的是同一帧——靠 world 内部的帧缓存挡住才没花两份钱。现在观测由
+world 在 `reset()` / `step()` 的结尾产出、沿 `pending_observation` 传下来，一帧只
+感知一次（完整论证见 `tools/SPEC.md` 2.7）。
+
+副作用是**感知调用的账记在产生它的那一步**：第 N 步的观测由第 N-1 步的 `press`
+感知出来，那条 `MODEL_CALL` 落在 `step=N-1` 下。这是对的——那次调用确实发生在
+第 N-1 步。开局那一帧同理，由 `_begin` 记在 `step=0` 下。
+
+`OBSERVE` 的 payload 含 `status`/`scene`/`overlay`/`facts`(json)/`goals`
+（曾经还有 `frame_sha`，随帧哈希一起删了）。**`goals` 记的是判定弹栈之前的栈**——`OBSERVE` 必须先于本步的判定事件（因果顺序），判完之后的栈会在随后的 `GOAL_POP` 里体现。
 
 字段名是 `status` 不是 `summary`：`Observation.summary` 改叫 `Observation.status` 了——
 那一行是 scene + overlay 机械拼出来的**状态行**（`你在野外。对话框：「…」`），
@@ -485,7 +512,6 @@ return outcome
 | 来源 | 在哪记 | Source |
 |---|---|---|
 | `reset()` | `_begin` | `PERCEPTION` |
-| `perceive()` | `_observe` | `PERCEPTION` |
 | `execute()` | `_press` | `PERCEPTION` |
 | `choose()` | `_think` | `DECISION` |
 | `judge()` | `_judge` | `JUDGE` |
@@ -494,7 +520,8 @@ return outcome
 
 旧机制的问题：`drain_calls()` 是"下次谁来取谁就顺手把上一步的账也记了"的隐式时机，账目会跨步错位。新机制要求每个产生调用的接口把 `calls` 随返回值交出来，调用方在**当场**完成记账。
 
-`perceive()` 按帧缓存，所以 `_press` 刚感知过同一帧时，`_observe` 里的 `perceived.calls` 通常是空列表——不产生 `MODEL_CALL`，因为确实没有调用发生。
+`_observe` 不再出现在这张表里：它不感知，所以不产生任何模型调用记录。一步之内
+产生感知调用的地方只有 `press`（开局那一步是 `_begin` 的 `reset()`）。
 
 `execute()` 那一行的账**至多一条**：整条动作链交出去，world 只在链尾感知一次（见 4.6）。
 "一步烧几次感知"因此和按键次数脱钩了——按成本读事件流时，`press` 那一格的

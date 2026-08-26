@@ -35,16 +35,15 @@
 （`harness/harness.py`）。合在一个类里的时候，`perceive()` 同时是"看一眼"和
 "新的一步"，于是需要按步去重来调和两种身份，而那个去重制造了**步号回退**和
 **判定重复计费**这两类实测出现过的 bug。拆开之后 `GameTools` **没有任何跨步骤
-状态**，只有"上一次给出的动作空间"（`_last_space`）；它不写 trace、不认识
-LLM、不知道 episode 是谁。
+状态**（曾经还留着"上一次给出的动作空间"，即 `_last_space`，后来也删了，见 2.1）；
+它不写 trace、不认识 LLM、不知道 episode 是谁。
 
 同样地，早先 `GameTools` 还持有一份 `ObjectMemory` 的引用，`perceive()` 顺手把
 语义记忆拼进 `facts["known_objects"]`；这条耦合已被拆掉。`GameTools` 现在没有
 任何字段指向记忆，`memory/` 包整个是它看不见的东西。`known_objects`/`knowledge`
 现在由 `Harness._retrieve_memory()`（**不是** `_observe()`——两者都是语义记忆的
-读，属于图上专门的"查记忆"节点，不属于"看一眼"）在拿到 `GameTools.perceive()`
-结果、判定跑完之后，**另外**调 `MemoryToolPort.query_objects()`/`query_knowledge()`
-拼上去——两个协议各管各的，组合是 Harness 的活。
+读，属于图上专门的"查记忆"节点，不属于"看一眼"）在观测盖完章、判定跑完之后，
+**另外**调 `MemoryToolPort.query_objects()`/`query_knowledge()` 拼上去——两个协议各管各的，组合是 Harness 的活。
 
 ---
 
@@ -56,38 +55,25 @@ LLM、不知道 episode 是谁。
 class GameTools:
     def __init__(self, world: WorldPort) -> None:
         self._world = world
-        self._last_space: tuple[ActionSpace, str] | None = None
 ```
 
 - `_world: WorldPort` —— 唯一的依赖，持有世界。构造后不再改变。
-- `_last_space: tuple[ActionSpace, str] | None` —— "上一次交出去的动作空间，
-  **连同它是给哪一帧算的**"。它回答两个问题，缺一不可：
+- **没有别的字段。这个对象没有状态。**
 
-  1. `execute()` 里那个动作确实来自最近一次 `get_action_space()`（不是大脑
-     幻觉出来的名字）；
-  2. 那次动作空间**没有过期**——画面换过之后再拿旧清单放行，就是在一个已经
-     变了的世界里按一个按当时语境选的键。
-
-  所以把帧哈希（`ActionSpace` + `last_frame_sha` 组成的二元组）一起存下来，
-  让"这份清单过期了"变成一条能当场炸掉的契约（见 2.5 节 `execute()` 的
-  assert）。
+这里曾经有一个 `_last_space: tuple[ActionSpace, str]`，存着上次交出去的动作空间
+和当时的帧哈希，用来在 `execute()` 里验动作合法、并判断那份掩码有没有过期。
+两件事现在都由参数回答：`execute(action, obs)` 收下"这个动作是按哪份观测选的"，
+就地用同一个纯函数重算掩码去校验。**攒起来再回头取，就得额外发明一个办法判断
+攒的那份还新不新**——而调用方本来就知道答案，让它说出来即可（见 2.6）。
 
 ### 2.2 `reset(task: Task) -> PerceptionResult`
 
-开新一局：先清空 `_last_space = None`（旧的动作空间对新局无意义），再转发给
-`self._world.reset(task)`。
+直接转发 `self._world.reset(task)`。曾经还要清空 `_last_space`，那个字段已经没有了。
 
-### 2.3 `perceive() -> PerceptionResult`
+### 2.3 这里曾经有一个 `perceive() -> PerceptionResult`
 
-看一眼当前画面，直接转发 `self._world.observe()`。world 自己按帧缓存，所以
-一帧之内调多少次都只花一次感知的钱。`result.calls` 直接是 `world.observe()`
-交出来的那份，原样转发——这一层不做任何记账相关的事。
-
-协议这一侧的承诺现在是**同一帧内完全稳定**：同一帧问几次，拿到的字节一样。
-这句话以前带着一个例外——"除非期间调用过 `inspect()`"。细看功能整条删掉之后，
-这个例外没有了；而它本来就是这层契约里最难用的一处：调用方要记住"我这一步
-有没有细看过"才能知道手上那份观测还算不算数，一条**有条件成立的幂等**
-和没有幂等差不多。
+转发 `world.observe()`。Harness 每步开头调它看一眼，而它和上一步 `step()` 结尾
+感知的是同一帧。删掉了，理由见 2.7。
 
 ### 2.4 这里曾经有一个 `inspect(focus: str)`
 
@@ -101,12 +87,11 @@ class GameTools:
 花钱的那一项。要更细的信息，代价该花在**把一次感知做好**上，不是在同一帧上
 再买一次。
 
-### 2.5 `get_action_space() -> ActionSpace`
+### 2.5 `get_action_space(obs: Observation) -> ActionSpace`
 
 **掩码发生在这里，只看 overlay。** 完整逻辑：
 
 ```python
-obs = self._world.observe().observation
 overlay = Overlay(obs.facts.get("overlay", Overlay.NONE.value))
 names = [a for a in OVERLAY_ACTIONS[overlay] if a in self._world.all_actions()]
 
@@ -116,14 +101,17 @@ space = ActionSpace(
     descriptions=dict(BUTTON_HELP[overlay]),
     note=f"{MAP_HINT}\n\n{REPEAT_HINT}",
 )
-self._last_space = (space, self._world.last_frame_sha)
 return space
 ```
 
+**它是纯函数，不碰 world。** 曾经它自己去 `world.observe()` 取一份观测，只为读
+`facts["overlay"]` 这一个字段——那次感知完全多余，靠帧缓存挡住才没花钱（见 2.7）。
+现在依据由调用方交出来：它按哪份观测做的决策，就拿哪份观测算动作空间。
+
 **掩码规则的具体算法**：从 `obs.facts["overlay"]`（缺省 `Overlay.NONE.value`）
 读出当前的 `Overlay` 枚举值，用它去查常量表 `OVERLAY_ACTIONS[overlay]` 得到
-"这个 overlay 下理论上可用的动作名列表"，再和 `self._world.all_actions()`
-（世界支持的全部动作名）取交集——即 `names = [a for a in OVERLAY_ACTIONS[overlay]
+"这个 overlay 下理论上可用的动作名列表"，再和 `all_actions`
+（世界支持的全部动作名，由 `GameTools` 从 world 取来传入）取交集——即 `names = [a for a in OVERLAY_ACTIONS[overlay]
 if a in self._world.all_actions()]`。`descriptions` 同样按 overlay 从
 `BUTTON_HELP[overlay]` 取。
 
@@ -140,20 +128,19 @@ if a in self._world.all_actions()]`。`descriptions` 同样按 overlay 从
 字段交给 Harness 填（能不能拆子目标取决于目标栈有多深，那是循环的账），
 intent 分派删掉之后那个字段也没了。
 
-方法末尾把 `(space, self._world.last_frame_sha)` 存入 `_last_space`——注释强调
-"掩码是**按这一帧的 overlay 算的**，换帧就作废"。
+**实现放在模块级的 `_mask(obs, all_actions)` 里**，`get_action_space()` 和
+`execute()` 共用它，而不是让后者去调前者——那会在一次权限守卫调用里再触发一次守卫，
+审计流多一条没有意义的记录。掩码本身不是需要授权的动作，需要授权的是"向外交出
+动作空间"。
 
-关于该方法内部丢弃 `observe()` 返回的 `calls`：代码注释解释这是安全的，因为
-调用方（`Harness._space`）总是紧跟在 `_observe()` 之后同一步内调用这个方法，
-画面没变过，这次 `observe()` 必然命中缓存、`calls` 必然是空列表——真正的账
-已经在 `_observe()` 里记过了。
+方法末尾曾经把 `(space, world.last_frame_sha)` 存入 `_last_space`，用来在
+`execute()` 里判断掩码有没有过期。`_last_space` 已经删掉，见 2.6。
 
-### 2.6 `execute(action: Action) -> ToolResult`
+### 2.6 `execute(action: Action, obs: Observation) -> ToolResult`
 
 ```python
-def execute(self, action: Action) -> ToolResult:
-    assert self._last_space is not None, "execute() before get_action_space()"
-    space, frame = self._last_space
+def execute(self, action: Action, obs: Observation) -> ToolResult:
+    space = _mask(obs, self._world.all_actions())
     for segment in action.segments():
         assert space.contains(segment.name), (
             f"execute() got {segment.name!r} outside {space.names}"
@@ -164,31 +151,29 @@ def execute(self, action: Action) -> ToolResult:
         ), (
             "multi-step action sequence may contain only up/down"
         )
-    assert frame == self._world.last_frame_sha, (
-        "execute() got an action space computed for an older frame "
-        f"({frame} != {self._world.last_frame_sha}) — call get_action_space() again"
-    )
-
     result = self._world.step(action)
-    self._last_space = None
 
     assert result.observation is not None, "world.step() must return the new observation"
     return result
 ```
 
 **动作现在是一条链**（`Action.sequence: list[ActionSegment]`，见
-`schemas/action.py`），所以校验是按段做的，四条：
+`schemas/action.py`），所以校验是按段做的，两条：
 
-1. `self._last_space is not None`：防止**没调过 `get_action_space()` 就直接
-   `execute()`**——没有可对照的动作空间，任何动作都无从验证合法性。
-2. **每一段**的 `space.contains(segment.name)`：防止大脑幻觉出不存在的动作名。
+1. **每一段**的 `space.contains(segment.name)`：防止大脑幻觉出不存在的动作名。
    链里有一段越界，整条链就不该按下去。
-3. **多段链只能是 `up`/`down`**（单段不受此限）：多段链的中间帧是看不到的
-   （见下），能这样闭眼走的只有移动键。
-4. `frame == self._world.last_frame_sha`：防止**用过期的动作空间去执行动作**。
-   docstring 特别指出，只查名字是不够的：`a` 在野外、对话框、选择框里都可用，
-   **名字对得上不代表语境对得上**。画面换过之后再拿旧清单放行，就是在一个
-   已经变了的世界里按一个按当时语境选的键。
+2. **多段链只能是移动键**（单段不受此限）：多段链的中间帧是看不到的（见下），
+   能这样闭眼走的只有移动键。
+
+**依据由调用方交出来，所以"用过期的掩码"在结构上不可能发生。** 这里曾经有第三条
+校验：`frame == world.last_frame_sha`，比对帧哈希，防止拿上一帧算的动作空间去按键。
+它存在的原因是掩码被攒在 `_last_space` 这个实例变量里——攒起来再回头取，就得额外
+发明一个办法判断攒的那份还新不新。现在 `execute(action, obs)` 收下"这个动作是按
+哪份观测选的"，就地用同一个纯函数重算掩码去校验，`_last_space` 整个删掉。
+
+那条 docstring 的论点仍然成立、而且正是这么做的理由：只查名字是不够的，`a` 在野外、
+对话框、选择框里都可用，**名字对得上不代表语境对得上**——所以校验必须绑定到具体
+哪一份观测，而不是"最近一次"。
 
 **整条链交给 world 一次执行完——这一层不再自己拆。** `execute()` 只调一次
 `self._world.step(action)`，world 按 `action.segments()` 依次按完，**在链的
@@ -208,8 +193,8 @@ def execute(self, action: Action) -> ToolResult:
 连按次数也不再经过 `args["times"]` 这条字符串通道：world 直接读
 `action.segments()`，次数在 `ActionSegment.times`（1-8）解析期就已经校验过。
 
-`execute()` 推进世界后立刻把 `_last_space` 置回 `None`——世界推进了，上一次的
-动作空间自然失效，强制调用方在下一步前重新调用 `get_action_space()`。最后
+`execute()` 推进世界后曾经把 `_last_space` 置回 `None`（世界推进了，上一次的动作
+空间自然失效）——那个字段已经删掉，失效问题由"依据随参数传入"从结构上消掉了。最后
 assert `result.observation is not None` 作为后置条件——`world.step()` 必须
 返回新观测。
 
@@ -222,23 +207,43 @@ LLM**——全仓库唯一的消费方是 trace 的 ACT 事件，内容也只是
 不是一句转述。（同一段历史里还删过一个恒为 `True` 的 `ok`，理由同类，
 见 `schemas/action.py` 的 `ToolResult` docstring。）
 
-### 2.7 帧哈希为什么不在这一层
+### 2.7 一帧只感知一次，所以这一层没有帧哈希、也没有 `perceive()`
 
-曾经这里有一个 `last_frame_sha` property，直接转发 `world.last_frame_sha`，
-Harness 在 `perceive()` 之后**再调一次**去取，拼进 OBSERVE 事件。
+**曾经同一帧被感知四次**，每步都走一遍：
 
-删掉了，值改成跟着 `PerceptionResult.frame_sha` 一起返回。三条理由：
+| # | 路径 | 结果 |
+|---|---|---|
+| A | `Harness._look` → `GameTools.perceive()` → `world.observe()` | 缓存命中 |
+| B | `Harness._look` → `get_action_space()` → `world.observe()` | 缓存命中 |
+| C | `Harness._press` → `execute()` → `world.step()` 结尾的 `observe()` | **真调模型** |
+| D | 下一步的 A | 缓存命中 |
 
-1. **这个权限守不住东西**：`GameTools` 自己在 `get_action_space()` 和 `execute()`
-   里直接读 `self._world.last_frame_sha`（做动作空间的过期检查），绕过守卫。
-   同一个文件里能随手绕过的检查不是边界。
-2. **它是 `drain_calls()` 的同一个形状**（见 `PerceptionResult` 的说明）：值属于
-   刚刚产生的那一帧，却要回头去另一个地方拿。
-3. **这个字段的全部意义就是「这条观测是哪一帧」**——用第二次读取的结果去回答
-   第一次读取的归属，前提本身就不成立。单线程下不会错，但那是调用顺序碰巧保证的。
+world 内部按帧哈希缓存，把 B/C/D 三条挡掉，稳态下每步只花一次感知的钱。
+**但缓存是在补一个结构问题**——同一帧本来就不该被问四遍。而且它掩盖了另一件事：
+「记忆里的 `after` 和下一步的观测相等」当时只是碰巧成立（靠"中间没人 tick 世界"），
+没有任何断言，`press` 和 `look` 之间插一个会推进世界的节点就会静默不一致。
 
-`WorldPort.last_frame_sha` **保留**：动作空间的过期检查要它，那是工具层内部的用途，
-和「交给 Harness 记账」是两件事。
+**现在只留 C。** 观测由 world 在 `reset()` / `step()` 的结尾产出，沿返回值往上传：
+
+- **A 删掉**：`_look` 不再感知，用上一步传下来的 `pending_observation`；
+  开局那一帧由 `reset()` 给。`after` 和下一步的观测因此是**同一个对象**，
+  不是"相等"——不需要保证的东西才不会漂。
+- **B 删掉**：`get_action_space()` 曾经自己去 `world.observe()`，只为读
+  `facts["overlay"]` 这一个字段。掩码是 `Observation` 的纯函数
+  （`all_actions()` 按其 docstring 与状态无关），依据应该由调用方交出来。
+- **缓存删掉**：一帧只感知一次，没有东西可缓存。
+- **帧哈希删掉**：它的两个用途——当缓存的键、在 trace 里标"这是哪一帧"——
+  一个随缓存消失，另一个随"同一帧不会被问第二遍"消失。
+  `ToolPort.last_frame_sha`、`WorldPort.last_frame_sha`、`PerceptionResult.frame_sha`、
+  MODEL_CALL 里的 `frame_sha` 键，全部没有了。
+- **`ToolPort.perceive()` 删掉**：没有调用方了。连带 `read:game:perceive` 这条权限。
+
+**代价，写在这里**：trace 里少了"这两条观测是不是同一帧"这个信息。它曾经用来诊断
+两件事——「模型在同一张图上给了不同答案」（以后不可能发生，同一帧不会被问两遍）
+和「卡住了」（换判据：比 `place` + `status` 有没有变）。
+
+**感知调用的账因此记在产生它的那一步**：第 N 步的观测由第 N-1 步的 `press` 感知出来，
+那条 MODEL_CALL 记在 `step=N-1` 下。这是对的——那次调用确实发生在第 N-1 步。
 
 ### 2.8 感知归 world，这一层只是转发
 
@@ -651,9 +656,8 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
 
 | 方法 | 签名 | 要点 |
 |---|---|---|
-| `perceive` | `() -> PerceptionResult` | 幂等只读，帧内缓存不产生额外模型调用；返回的 `observation` 在同一帧内**完全稳定**（曾经有过"除非期间调用过 `inspect()`"这个例外，`inspect` 删掉后没有了）；不写 trace、不推进世界、不触发判定 |
-| `get_action_space` | `() -> ActionSpace` | 后置：`names` 非空。**这一层给出的就是完整动作空间** |
-| `execute` | `(action: Action) -> ToolResult` | 前置：**每一段**（`action.segments()`）的按键都属于调用前最近一次 `get_action_space()` 的结果，需 assert；多段链只能是 up/down；后置：`result.observation` 非空。整条链交给 `world.step()` **一次**执行，链尾只感知一次 |
+| `get_action_space` | `(obs: Observation) -> ActionSpace` | 纯函数，不碰 world。后置：`names` 非空。**这一层给出的就是完整动作空间** |
+| `execute` | `(action: Action, obs: Observation) -> ToolResult` | 前置：`obs` 是这个动作据以选出的那份观测，**每一段**（`action.segments()`）的按键都属于 `get_action_space(obs)` 的结果，需 assert；多段链只能是移动键；后置：`result.observation` 非空。整条链交给 `world.step()` **一次**执行，链尾只感知一次 |
 | `reset` | `(task: Task) -> PerceptionResult` | 前置：`task.max_steps > 0`；后置：`observation.done` 为 False |
 | `save_state` | `(path: str) -> None` | 把模拟器状态存到 `path`。**每局开局存一次**，用于事后复现某一局的起点；权限 `execute:game:save_state`（`config/permissions.json` 里 `approval_required: false`）|
 
@@ -682,7 +686,7 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
 - **`GameTools` 组合 `WorldPort`**：构造函数持有一个 `world: WorldPort` 字段
   （`self._world`），是纯粹的组合关系——`GameTools` 不了解 `world/` 包内部
   实现（当前唯一实现是 `PyBoyWorld`），只通过 `WorldPort` 协议交互
-  （`reset`/`observe`/`all_actions`/`last_frame_sha`/`step`——`last_frame_sha` 只在 `WorldPort` 上，`ToolPort` 那份已删，见 2.7；`inspect` 已随细看功能一起删除）。
+  （`reset`/`observe`/`all_actions`/`step`；`last_frame_sha` 与 `inspect` 都已删除，前者见 2.7）。
   `interfaces/world.py` 明确指出：`GameToolPort` 是"Harness 能拿世界做什么"，
   `WorldPort` 是"世界本身能做什么"，两者职责不同且变化速度不同；换模拟器时
   **`GameToolPort` 和大脑一行都不用改**——这就是分层的收益。掩码这类策略
@@ -706,7 +710,8 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
 
 - **Harness 是组合两者的地方**：`Harness.__init__` 收 `game: GameToolPort` 和
   `memory: MemoryToolPort` 两个独立参数；`facts["known_objects"]` 这类需要
-  同时用到世界观测和语义记忆的信息，由 `Harness._observe()` 先调
-  `game.perceive()` 拿到 `Observation`，再调 `memory.query_objects(obs)` 拼接，
+  同时用到世界观测和语义记忆的信息，由 `Harness._retrieve_memory()` 拿着手上那份
+  `Observation`（来自上一步 `execute()` 或开局 `reset()`），调
+  `memory.query_objects(obs)` 拼接，
   两个协议各管各的，跨协议的组合逻辑全部留在 Harness 一层，`GameTools` 与
   `MemoryTool` 彼此互不知道对方的存在。
