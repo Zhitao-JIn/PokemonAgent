@@ -21,6 +21,7 @@ from pokemon_agent.interfaces.world import WorldPort
 from pokemon_agent.prompts.game_hints import BUTTON_HELP, MAP_HINT, REPEAT_HINT
 from pokemon_agent.schemas.action import Action, ActionSpace, ToolResult
 from pokemon_agent.schemas.observation import (
+    INTERACT_KEY,
     OVERLAY_ACTIONS,
     Observation,
     Overlay,
@@ -121,18 +122,21 @@ class GameTools:
             assert space.contains(segment.name), (
                 f"execute() got {segment.name!r} outside {space.names}"
             )
-        if action.sequence:
-            assert len(action.sequence) == 1 or all(
-                segment.name in {"up", "down", "left", "right"} for segment in action.sequence
+        if action.sequence and len(action.sequence) > 1:
+            body, tail = action.sequence[:-1], action.sequence[-1]
+            directions = {"up", "down", "left", "right"}
+            assert all(segment.name in directions for segment in body) and (
+                tail.name in directions or (tail.name == INTERACT_KEY and tail.times == 1)
             ), (
-                "multi-step action sequence may contain only directional keys"
+                "multi-step action sequence may contain only directional keys, "
+                "plus at most one trailing 'a'"
             )
         # **整条链交给 world 一次执行完。** 这里不再自己展开。
         #
         # 展开过两版，两版都是错的：一次一按（`step(times=1)`）让 `up×4` 变成
         # **四次视觉调用**（实测一步 17k input token、6.6 秒）；一段一次
         # （`step(times=4)`）好一些，但 `up×4 -> down×2` 仍是两次。
-        # 感知是每步花钱的那一项，而多段链按规则只能是移动键——中间那几帧
+        # 感知是每步花钱的那一项，而多段链按规则链体只能是移动键（链尾可带一个 `a`）——中间那几帧
         # 没有任何会被用到的信息。一次决策就该是一次感知。
         #
         # 连按次数也不再经过 `args["times"]` 这条字符串通道：`world` 直接读

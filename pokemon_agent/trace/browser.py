@@ -146,27 +146,44 @@ function render(e){
     let facts={};
     try{facts=JSON.parse(p.facts||'{}')}catch(_error){}
     line('观察：'+(p.status||p.summary||''));
-    line('  scene       = '+(p.scene||facts.scene||'(无)'));
-    line('  overlay     = '+(p.overlay||facts.overlay||'(无)'));
-    // overview 是视觉模型写的那一整段；status 只是 scene+overlay 拼的一行。
-    // 以前这里只印 status，等于把这一帧真正被看到的东西藏了起来。
-    if(facts.overview) line('  overview    = '+facts.overview);
-    if(facts.dialog_text) line('  dialog      = 「'+facts.dialog_text+'」');
-    if(facts.where) line('  where       = '+facts.where
-        +(facts.facing?('  朝向 '+facts.facing):'  朝向 ?'));
-    if(facts.neighbors) line('  neighbors   = '+facts.neighbors);
-    if(facts.landmarks) line('  landmarks   = '+facts.landmarks);
-    // walk_map 逐行打，别指望 pre-wrap：它一行 10 个字符、行首带 y=，
-    // 挤成一段之后**看不出形状**，而这张图的全部用处就是看形状。
+    if(p.goals) line('  目标栈：'+p.goals);
+
+    // **把 facts 里的每一项都印出来，不要挑。**
     //
-    // **换行符写成 \\n（两个反斜杠）。** 这段 JS 住在 Python 的三引号字符串里，
-    // 写 \\n 的话 Python 会把它变成一个真换行，JS 字符串就断成两行、整个 script
-    // 语法错误——症状是观测台**一个字都不显示**，而不是这一块出问题。
-    if(facts.walk_map){
-      const rows=facts.walk_map.split('\\n');
-      line('  walk_map    = '+rows[0]);
+    // 以前这里是一份手写的字段清单（scene/overlay/overview/dialog/where/
+    // neighbors/landmarks/walk_map）。那份清单是照野外帧写的，于是战斗帧的
+    // options、cursor、my_hp、foe_hp 一个都不显示——而 cursor 恰恰是 choice 帧里
+    // 唯一会因为上一步按键而改变的量。查战斗菜单的问题时，页面上连着两帧一模一样，
+    // 分不出是按键没生效还是我们没显示。
+    //
+    // 清单式渲染的坏处不是"少显示了几个字段"，是**它不会报错**：
+    // 感知层新增一个字段，这里不改就永远看不见，而且没有任何迹象。
+    // 所以改成遍历——顺序按 ORDER 排，表外的字段排在后面，一个都不丢。
+    const ORDER=['scene','overlay','where','facing','neighbors','landmarks',
+                 'dialog_text','options','cursor',
+                 'my_name','my_level','my_hp','foe_name','foe_level','foe_hp',
+                 'overview','walk_map'];
+    const keys=ORDER.filter(k=>k in facts)
+      .concat(Object.keys(facts).filter(k=>!ORDER.includes(k)).sort());
+    // choice 帧没读出光标时也要占一行：静默省略的话，"没读出来"和"在第一项"
+    // 在页面上长得一样，而那是完全不同的两件事。
+    if(facts.overlay==='choice'&&!('cursor' in facts)) keys.push('cursor');
+
+    const pad=s=>(s+'            ').slice(0,12);
+    for(const k of keys){
+      const v=k in facts?String(facts[k]):'(读不出)';
+      // 多行的值（walk_map）续行缩进到同一列——顶格续行的话，
+      // 图的第二行看起来就像下一个字段，而这张图的全部用处就是看形状。
+      //
+      // **这段 JS 住在 Python 的三引号字符串里，写反斜杠要写两个。**
+      // 只写一个的话 Python 求值时就把它吃掉、变成真换行，JS 字符串断成两行、
+      // 整个 script 语法错误——症状是观测台**一个字都不显示**，
+      // 而不是这一块出问题。注释里也一样：单反斜杠会把 // 这一行劈开，
+      // 后半截变成裸代码。所以下面提到分隔符时一律用文字描述，不写符号。
+      const rows=v.split('\\n');
+      line('  '+pad(k)+'= '+rows[0]);
       for(let i=1;i<rows.length;i++) line('                '+rows[i]);
-    } else line('  walk_map    = (无)');
+    }
   }
   else if(e.type==='memory_read'){
     line('记忆：');

@@ -56,10 +56,11 @@ assert {b for buttons in OVERLAY_ACTIONS.values() for b in buttons} <= set(ALL_B
     "OVERLAY_ACTIONS references a button that the world cannot execute"
 )
 
+GB_FPS = 60                # Game Boy 大约每秒 60 帧；下面几个常量都按这个换算成秒
 PRESS_FRAMES = 10          # 按键按住多少帧
-WITHIN_ACTION_FRAMES = 120  # 连按时，每次按完推进多少帧（1 秒）
-AFTER_ACTION_FRAMES = 360  # 整个动作结束后再推进多少帧（2 秒），然后才感知
-BOOT_FRAMES = 600          # 无存档时空转多少帧越过开机 logo
+WITHIN_ACTION_FRAMES = 2 * GB_FPS   # 连按时，每次按完推进多少帧（2 秒）
+AFTER_ACTION_FRAMES = 10 * GB_FPS   # 整条链按完后再推进多少帧（10 秒），然后才感知
+BOOT_FRAMES = 10 * GB_FPS  # 无存档时空转多少帧越过开机 logo
 
 
 
@@ -80,7 +81,7 @@ def parse_screen(text: str) -> ScreenState | None:
         return None
 
 
-def _status_line(s: ScreenState) -> str:
+def _status_line(s: ScreenState, cursor: str = "") -> str:
     """给大脑读的自然语言状态。
 
     有意做得简短：详细字段在 `facts` 里，这句话只是让 prompt 有个上下文开头。
@@ -95,7 +96,10 @@ def _status_line(s: ScreenState) -> str:
     if s.overlay is Overlay.DIALOG and s.dialog_text:
         bits.append(f"对话框：「{s.dialog_text}」")
     elif s.overlay is Overlay.CHOICE and s.options:
-        cur = f"，光标在 {s.cursor}" if s.cursor else ""
+        # **读不出来要明写"读不出"。** 静默省略这半句的话，
+        # 「可选项：A/ B/ C」和「可选项：A/ B/ C，光标在 A」扫过去几乎一样，
+        # 而"没读出光标"和"光标在第一项"是完全不同的两件事。
+        cur = f"，光标在 {cursor}" if cursor else "，光标读不出"
         bits.append(f"可选项：{ '/ '.join(s.options) }{cur}")
     return "".join(bits)
 
@@ -261,6 +265,12 @@ class PyBoyWorld:
             facts["options"] = " / ".join(screen.options)
         if screen.cursor:
             facts["cursor"] = screen.cursor
+        # **不一致就留证据。** `cursor` 现在从 `option_lines` 派生，
+        # 而模型自己也说了一个（`cursor_said`，只在两者不同时非空）。
+        # 记下来是为了能数出"逐行照抄"到底纠正了多少次——不然这个改动值不值得
+        # 只能靠感觉。它不给大脑读，只是跟着 facts 进 trace 和观测台。
+        if screen.cursor_said:
+            facts["cursor_said"] = screen.cursor_said
 
         obs = Observation(
             # **step / done / success 由 Harness 盖章，这里只给占位值。**
@@ -270,7 +280,7 @@ class PyBoyWorld:
             # **结构化的位置也交出去。** `facts["where"]` 是给模型读的文本，
             # 而交互记忆的键要拿 `(map_id, x, y)` 去算——反解字符串是迟早要出错的事。
             place=terrain.place(),
-            status=_status_line(screen),
+            status=_status_line(screen, facts.get("cursor", "")),
             facts=facts,
             done=self._closed,
             success=False,
@@ -314,7 +324,18 @@ class PyBoyWorld:
                 self._pyboy.button(segment.name, delay=PRESS_FRAMES)
                 self._tick(WITHIN_ACTION_FRAMES)
 
-        self._tick(AFTER_ACTION_FRAMES)      # 等世界落定，再感知
+        # **按完之后给世界 10 秒自己演化，再感知。**
+        #
+        # 这一段里不按任何键，纯 tick。它等的是**按键按下去之后才开始、
+        # 而且不需要再按键就会自己走完**的那些过程：换图的淡入淡出、
+        # 战斗开场动画、对话框逐字打出、菜单弹出的那几帧、遭遇触发时的闪屏。
+        # 等不够就感知，抄到的是一张过场中间的画面——视觉模型会照着那张半成品
+        # 填 scene 和 fields，而**那一帧对应的状态在下一步已经不存在了**，
+        # 决策和判定都建立在一个不再为真的世界上。
+        #
+        # 无头模式下 tick 不限速，600 帧的开销相对一次视觉调用可以忽略——
+        # 这里省时间省不出什么，赌的却是整步的正确性。
+        self._tick(AFTER_ACTION_FRAMES)
 
         result = self.observe()    # 整条链唯一的一次真感知
         obs = result.observation

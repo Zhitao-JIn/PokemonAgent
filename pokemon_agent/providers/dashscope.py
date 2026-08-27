@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import pathlib
 import base64
 import json
 import os
@@ -196,6 +197,30 @@ class QwenText(_DashScopeBase):
         )
 
 
+_DUMP_DIR = os.environ.get("VISION_DUMP_DIR", "")
+"""把送进视觉模型的图写到这个目录。空 = 不写。
+
+    VISION_DUMP_DIR=vision_dump python -m pokemon_agent.experiment.run_experiment ...
+
+存的是**预处理之后**的字节，也就是模型真正收到的那一份——存预处理之前的
+没有意义，那张图和模型看到的不是同一个东西。
+"""
+
+_dump_seq = 0
+
+
+def _dump(png: bytes) -> None:
+    """写一张图，文件名按序号递增。**出错就算了，不能影响这一局。**"""
+    global _dump_seq
+    try:
+        _dump_seq += 1
+        d = pathlib.Path(_DUMP_DIR)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{_dump_seq:04d}.png").write_bytes(png)
+    except Exception:  # noqa: BLE001  排查工具不该让实验挂掉
+        pass
+
+
 class QwenVision(_DashScopeBase):
     """`VisionProvider` 的实现 —— 感知链路。"""
 
@@ -253,7 +278,19 @@ class QwenVision(_DashScopeBase):
         assert image_png, "describe() got an empty image"
         assert prompt, "describe() got an empty prompt"
 
-        b64 = base64.b64encode(apply_all(image_png, self._preprocess)).decode()
+        sent = apply_all(image_png, self._preprocess)
+
+        # **把真正送出去的那张图落盘。** 感知出错时，唯一没被任何日志覆盖的东西
+        # 就是模型实际看到的像素——人盯着模拟器窗口看到的是 `scale=4` 的 SDL 窗口，
+        # 和这里送出去的是两条不同的路径，肉眼比对不能当证据。
+        # 实测卡过一整轮：人看得清光标在 RUN，模型始终报 FIGHT，而当时没有任何办法
+        # 分辨是"图里没有"还是"模型没看"。
+        #
+        # 靠环境变量开，默认不写：这是排查用的，不该在正常实验里生成上千张图。
+        if _DUMP_DIR:
+            _dump(sent)
+
+        b64 = base64.b64encode(sent).decode()
         text, n_in, n_out, _cut = self._unpack(self._post([
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
             {"type": "text", "text": prompt},

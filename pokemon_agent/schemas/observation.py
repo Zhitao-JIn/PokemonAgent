@@ -244,9 +244,12 @@ SCENE_FIELDS: dict[Scene, tuple[str, ...]] = {
     Scene.BATTLE: ("my_name", "my_level", "my_hp", "foe_name", "foe_level", "foe_hp"),
     # `my_hp` 是 `当前/最大` 数字（我方状态框右下角有数字 HP）；
     # `foe_hp` 没有数字可抄——对手状态框原版就只有一条血条，没有 `当前/最大`
-    # 这种数字，所以 `foe_hp` 填的是血条挡位（满/较高/过半/较低/危险），
-    # 不是分数。两个字段格式不一样，是画面本身决定的，不是疏漏。
-    # 见 `prompts/perceive_screen.md` 第二节。
+    # 这种数字，所以 `foe_hp` 填的是血条挡位，不是分数。
+    # **五档是有序的、封闭的**：满 > 较高 > 过半 > 较低 > 危险，只能是这五个词——
+    # `catch_weaken_target` 的判据是"挡位比历史里那几步低"，比大小的前提是
+    # 取值落在同一个有序集合里；多一个近义词，那条判据就没法机械核对。
+    # 怎么按血条长度分这五档（四等分槽、分界线上往高了取、不要用颜色——画面是黑白的），
+    # 见 `prompts/perceive_screen.md` 第二节「五个挡位怎么分」。
     Scene.MENU: ("title",),
     Scene.SHOP: ("money", "items"),
     Scene.TRANSITION: (),
@@ -512,6 +515,15 @@ NEEDS_OVERVIEW = (Scene.FIELD, Scene.INDOOR)
 """
 
 
+CURSOR_MARKS: frozenset[str] = frozenset("\u25b6\u25ba\u25b8\u27a4>")
+"""能当光标的那几个字符：`▶` `►` `▸` `➤` `>`。
+
+只收形状对的，不做模糊匹配——模型在不同帧里写过其中好几个，
+为一个字符的差异丢掉整帧读数不划算；但也不能把任意字符都当光标，
+否则选项本身以标点开头就会被误判成"被选中"。
+"""
+
+
 class ScreenState(BaseModel):
     """一帧画面被解析成的结构化状态。
 
@@ -536,11 +548,28 @@ class ScreenState(BaseModel):
     )
     options: list[str] = Field(
         default_factory=list,
-        description="overlay=CHOICE 时的选项列表。**菜单的区别在这里，不在类型上**",
+        description="overlay=CHOICE 时的选项列表。**菜单的区别在这里，不在类型上**。"
+        "给了 `option_lines` 时由它派生，视觉模型不必单独再抄一遍",
+    )
+    option_lines: list[str] = Field(
+        default_factory=list,
+        description="选项框逐行照抄，**含最左边那个字符**：有光标写 `▶`，没有写空格"
+        "（`[\"▶TACKLE\", \" GROWL\"]`）。`options` 和 `cursor` 都从它派生。"
+        "\n\n"
+        "**为什么绕这一道：把判断换成转写。** 直接问「光标在哪一项」，"
+        "模型要先找到三角、再把它和某个词配对、再说出那个词——是定位加归属判断，"
+        "实测经常配错，而配错和配对在输出上一模一样。逐行照抄只要求它回答"
+        "「这一行开头有没有三角」，是个局部问题，而三角和选项文字本来就挨着。"
+        "\n\n"
+        "还白捡两样东西：`options` 不会再被凑成四项（抄几行是几行），"
+        "以及**零行或多行带三角时可以判定读错**（见 `_derive_cursor_from_lines`）——"
+        "现在读错至少有一半会变成「读不出」，而不是变成一个错的词",
     )
     cursor: str | None = Field(
         default=None,
-        description="overlay=CHOICE 时光标指向的**那一项的原文**（`\"RUN\"`）；未知为 None。"
+        description="光标指向那一项的原文（`\"RUN\"`）；未知为 None。"
+        "**给了 `option_lines` 时这个字段由派生结果覆盖**，模型自己填的那份只留作对照"
+        "（`cursor_said`）——两者不一致的比例就是这个改动值不值得的证据。"
         "**不是序号。** 要序号就得让视觉模型数数，而数数正是它最不擅长的一件事——"
         "`facing` 当初从'问模型'改成读内存，就是因为 8/8 全错。抄一个词它只需做一次"
         "视觉配对，不需要计数。而且这样是**可校验的**：不在 `options` 里就是读错了，"
@@ -552,6 +581,35 @@ class ScreenState(BaseModel):
         description="该 scene 的结构化字段，键取自 SCENE_FIELDS。读不出的字段直接不放，"
         "**不要填占位值**——分不清'没读到'和'读到了空'会污染状态抽象准确率的标定",
     )
+
+    cursor_said: str | None = Field(
+        default=None,
+        description="模型**自己**说的光标位置，仅在它和派生结果不一致时留下。"
+        "不是给大脑读的，是给我们数错误率的——它会随 facts 一起进 trace 和观测台",
+    )
+
+    @model_validator(mode="after")
+    def _derive_cursor_from_lines(self) -> ScreenState:
+        """有 `option_lines` 就用它派生 `options` 和 `cursor`。**派生的赢。**
+
+        恰好一行带光标标记才算数：**零行或两行以上一律 `None`**。这是转写换来的
+        自校验——"我没看见三角"和"我看见两个三角"都是明确的读不准信号，
+        而在旧契约里它们只会表现为一个看着合法的词。
+
+        标记接受几种常见写法：模型在不同帧里写过 `▶` `►` `>`，形状对就行，
+        为一个字符的差异丢掉整帧读数不划算。
+        """
+        if not self.option_lines:
+            return self
+        marked = [ln for ln in self.option_lines if ln[:1] in CURSOR_MARKS]
+        stripped = [ln[1:].strip() if ln[:1] in CURSOR_MARKS else ln.strip()
+                    for ln in self.option_lines]
+        derived = marked[0][1:].strip() if len(marked) == 1 else None
+        object.__setattr__(self, "options", [x for x in stripped if x])
+        if self.cursor != derived:
+            object.__setattr__(self, "cursor_said", self.cursor)
+        object.__setattr__(self, "cursor", derived)
+        return self
 
     @model_validator(mode="after")
     def _cursor_must_be_one_of_the_options(self) -> ScreenState:

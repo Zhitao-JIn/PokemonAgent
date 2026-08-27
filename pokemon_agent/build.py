@@ -41,6 +41,7 @@ def build_real(
     max_tokens: int = 25600,
     watch: bool = False,
     grid: bool = True,
+    upscale: int = 4,
     trace: TracePort | None = None,
     run_id: str = "local",
 ) -> tuple[Harness, TracePort, PyBoyWorld]:
@@ -69,11 +70,17 @@ def build_real(
     把真实的一整套实现接好，返回 harness 与 world。
     """
     from pokemon_agent.providers.dashscope import QwenText, QwenVision
-    from pokemon_agent.vision.preprocess import GridOverlay
+    from pokemon_agent.vision.preprocess import GridOverlay, Upscale
 
     # 网格是**给模型看的辅助线**，不是画面的一部分——所以它挂在 provider 上，
     # world 交出去的、存证用的、将来给 CV 通道用的，仍然是原图。
-    vision = QwenVision(model=vision_model, preprocess=(GridOverlay(),) if grid else ())
+    # **`Upscale` 排在最后。** `GridOverlay` 的 cell=16 和标签尺寸都是按原始像素
+    # 定的，放大挪到它前面就得跟着改那两个数；放最后则网格线仍落在格子边界上。
+    # 放大本身是最近邻整数倍，不发明像素，只是让 8×8 的光标三角占得下几个 token。
+    filters = ((GridOverlay(),) if grid else ()) + (
+        (Upscale(upscale),) if upscale > 1 else ()
+    )
+    vision = QwenVision(model=vision_model, preprocess=filters)
     world = PyBoyWorld(rom, vision, state_path=state_path, watch=watch)
     trace = trace or LocalTrace()
 

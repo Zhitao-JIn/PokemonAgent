@@ -58,11 +58,16 @@ def _display_width(text: str) -> int:
     return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
 
 
-SNAPSHOT_BLIND: frozenset[str] = frozenset({"known_objects", "knowledge"})
+SNAPSHOT_BLIND: frozenset[str] = frozenset(
+    {"known_objects", "knowledge", "cursor_said"}
+)
 """**不进快照的字段。** 快照里每一项都必须跨步骤成立，这三项都不成立：
 
 - `known_objects`：跨 episode 的流水，不是"这一帧看到了什么"。
 - `knowledge`：语义记忆的检索结果，本来就不是观察。
+- `cursor_said`：视觉模型自己那份光标读数，只在它和派生结果不一致时才有。
+  它是**给我们数错误率的**，不是这一帧的事实——进了记忆，大脑就会看到
+  两个互相矛盾的光标值，然后去调和它们。
 
 除此之外一律照搬。**这里是排除表而不是白名单**，是有意的：新增一个观测字段时，
 默认它应该进记忆，需要理由的是把它挡在外面——反过来的话，加字段的人得记得

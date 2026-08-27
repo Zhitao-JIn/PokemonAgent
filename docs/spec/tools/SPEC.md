@@ -162,8 +162,10 @@ def execute(self, action: Action, obs: Observation) -> ToolResult:
 
 1. **每一段**的 `space.contains(segment.name)`：防止大脑幻觉出不存在的动作名。
    链里有一段越界，整条链就不该按下去。
-2. **多段链只能是移动键**（单段不受此限）：多段链的中间帧是看不到的（见下），
-   能这样闭眼走的只有移动键。
+2. **多段链的链体只能是移动键，链尾可以带一个 `a`**（单段不受此限）：多段链的中间帧
+   是看不到的（见下），能这样闭眼走的只有移动键；而**链尾那一帧本来就会被感知**，
+   所以把 `a` 放在末尾不丢证据——「走过去再按一下」于是能一次决策做完。
+   `a` 最多出现一次、且必须是最后一段（`times` 恒为 1）。
 
 **依据由调用方交出来，所以"用过期的掩码"在结构上不可能发生。** 这里曾经有第三条
 校验：`frame == world.last_frame_sha`，比对帧哈希，防止拿上一帧算的动作空间去按键。
@@ -187,7 +189,7 @@ def execute(self, action: Action, obs: Observation) -> ToolResult:
   `up×4 -> down×2` 仍然是两次感知。
 
 为什么最后收敛到一次：感知是每步花钱的那一项，而按第 3 条规则，多段链里
-只可能是移动键——中间那几帧没有任何会被用到的信息。**一次决策就该是一次
+只可能是移动键（链尾可带一个 `a`）——中间那几帧没有任何会被用到的信息。**一次决策就该是一次
 感知**。中间帧看不见是有意的取舍，不是遗漏。
 
 连按次数也不再经过 `args["times"]` 这条字符串通道：world 直接读
@@ -657,7 +659,7 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
 | 方法 | 签名 | 要点 |
 |---|---|---|
 | `get_action_space` | `(obs: Observation) -> ActionSpace` | 纯函数，不碰 world。后置：`names` 非空。**这一层给出的就是完整动作空间** |
-| `execute` | `(action: Action, obs: Observation) -> ToolResult` | 前置：`obs` 是这个动作据以选出的那份观测，**每一段**（`action.segments()`）的按键都属于 `get_action_space(obs)` 的结果，需 assert；多段链只能是移动键；后置：`result.observation` 非空。整条链交给 `world.step()` **一次**执行，链尾只感知一次 |
+| `execute` | `(action: Action, obs: Observation) -> ToolResult` | 前置：`obs` 是这个动作据以选出的那份观测，**每一段**（`action.segments()`）的按键都属于 `get_action_space(obs)` 的结果，需 assert；多段链链体只能是移动键、链尾可带一个 `a`；后置：`result.observation` 非空。整条链交给 `world.step()` **一次**执行，链尾只感知一次 |
 | `reset` | `(task: Task) -> PerceptionResult` | 前置：`task.max_steps > 0`；后置：`observation.done` 为 False |
 | `save_state` | `(path: str) -> None` | 把模拟器状态存到 `path`。**每局开局存一次**，用于事后复现某一局的起点；权限 `execute:game:save_state`（`config/permissions.json` 里 `approval_required: false`）|
 

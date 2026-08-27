@@ -46,6 +46,8 @@ from pokemon_agent.schemas.action import (
 )
 from pokemon_agent.schemas.step_memory import StepMemory, Snapshot
 from pokemon_agent.schemas.observation import INTERACT_KEY, Observation
+
+DIRECTION_KEYS = frozenset({"up", "down", "left", "right"})
 from pokemon_agent.schemas.trace import Decision, ModelCall, Verdict
 
 
@@ -359,10 +361,23 @@ class Brain:
             if name == INTERACT_KEY:
                 times = 1
             sequence.append(ActionSegment(name=name, times=times))
-        if len(sequence) > 1 and any(
-            segment.name not in {"up", "down", "left", "right"} for segment in sequence
-        ):
-            raise ParseFailure(text, "multi-step sequence may contain only directional keys")
+        # **多段链：中间只能是方向键，结尾允许一个 `a`。**
+        #
+        # 中间帧看不到，所以链体里只放"闭眼也不丢信息"的移动键。链尾不一样：
+        # 链尾那一帧本来就会被感知，`a` 打开的对话框/菜单**正好出现在这一帧**，
+        # 证据没有丢。这样"走过去再按一下"就能一次决策做完，省掉一次视觉调用。
+        # `a` 仍然只允许出现一次、且必须在末尾——出现在中间就等于把它产出的
+        # 那几帧对话丢掉了（`times` 在上面已经写死成 1）。
+        if len(sequence) > 1:
+            body, tail = sequence[:-1], sequence[-1]
+            body_bad = [seg.name for seg in body if seg.name not in DIRECTION_KEYS]
+            tail_bad = tail.name not in DIRECTION_KEYS and tail.name != INTERACT_KEY
+            if body_bad or tail_bad:
+                raise ParseFailure(
+                    text,
+                    "multi-step sequence may contain only directional keys, "
+                    f"plus at most one trailing {INTERACT_KEY!r}",
+                )
 
         for segment in sequence:
             if not space.contains(segment.name):

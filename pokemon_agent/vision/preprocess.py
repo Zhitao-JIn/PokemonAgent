@@ -200,3 +200,65 @@ def apply_all(png: bytes, filters: tuple[ImageFilter, ...]) -> bytes:
         png = f(png)
         assert png, f"{type(f).__name__} returned an empty image"
     return png
+
+
+class Upscale:
+    """整数倍**最近邻**放大。放在预处理链的最后一环。
+
+    ## 为什么需要它
+
+    送给视觉模型的一直是 160×144 的原图（`PyBoy(scale=4)` 只放大 SDL 窗口，
+    不影响 `screen.image`）。在那张图上，**战斗指令框的光标三角只有 8×8 像素**，
+    经模型自己那套预处理再缩一道，几乎不剩什么。
+
+    实测症状：人在模拟器窗口里看得清清楚楚光标在 `RUN`，模型逐行照抄却始终把三角
+    标在第一行。它不是判断错——**是那几个像素撑不起一次判断，于是退回先验**
+    （四选项菜单默认停在第一项）。这类错加多少 prompt 都改不掉：
+    prompt 能纠正推理，纠正不了看不见。
+
+    ## 为什么必须最近邻
+
+    双线性/兰索斯会把 8 像素的三角糊成一团渐变的灰——**比小更糟**，
+    小至少还是个清晰的形状。最近邻在整数倍下是**无损**的：每个原像素变成
+    factor×factor 个同色像素，一个点都没被发明出来，只是占的面积大了。
+    Game Boy 画面本来就是像素艺术，这是它唯一正确的放大方式。
+
+    ## 为什么在链的最后
+
+    `GridOverlay` 的 `cell=16` 是按**原始**像素定的，也在原始尺度上画标签。
+    放在它前面的话，那两个数字全得跟着改。放在最后，网格和标签一起被放大，
+    线仍然落在格子边界上，标签还更清楚。
+    """
+
+    def __init__(self, factor: int = 4) -> None:
+        """
+        前置条件：factor >= 1 的整数。**非整数不接受**——那才需要插值，
+            而插值正是这个类要避免的东西。
+        """
+        assert isinstance(factor, int) and factor >= 1, (
+            f"factor must be an integer >= 1, got {factor!r}"
+        )
+        self._factor = factor
+
+    def __call__(self, png: bytes) -> bytes:
+        """放大。
+
+        前置条件：png 非空且能被解码。
+        后置条件：输出尺寸 = 输入尺寸 × factor，颜色集合不变（最近邻的性质）。
+        """
+        assert png, "Upscale got an empty image"
+
+        src = Image.open(io.BytesIO(png))
+        w, h = src.size
+        out = src.resize((w * self._factor, h * self._factor), Image.NEAREST)
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def config(self) -> dict[str, str]:
+        """自报参数，进 run manifest。
+
+        `resample` 也报出来：**换成双线性会让这批数字和上一批不可比**，
+        而那种差异在准确率上看得见、在配置里看不见。
+        """
+        return {"filter": "upscale", "factor": str(self._factor), "resample": "nearest"}

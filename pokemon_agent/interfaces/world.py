@@ -75,7 +75,7 @@ class WorldPort(Protocol):
         `action.segments()` 里的每一段按 `times` 次，段与段之间不感知——
         一次决策 = 一次感知，这是成本的硬约束：每次感知都是一次视觉模型调用。
         中间帧因此看不到，这是有意的取舍，见 `Action.sequence` 的规则
-        （多段链只能是移动键，移动的中间帧没有证据）。
+        （多段链的链体只能是移动键，移动的中间帧没有证据；链尾允许一个 `a`，那一帧会被感知）。
 
         前置条件：每一段的按键都在 all_actions() 中；且当前 episode 未结束（done 为 False）。
         后置条件：若返回的 observation 非空，其 step 等于调用前的 step + 1；

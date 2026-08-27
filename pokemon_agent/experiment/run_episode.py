@@ -132,10 +132,17 @@ def build_session(run_id: str, state: str | None, watch: bool):
     return build_real(
         ROM,
         state,
-        vision_model="qwen3-vl-flash",
+        # **感知走 plus 不走 flash。** 实测证据在 `vision_dump/`：同一张 696×632 的图里
+        # 指令框的光标三角清晰可见（人一眼可读、没被网格压住），flash 连着两次把它报成
+        # 第一项 FIGHT——不是信息不足，是这个档位分辨不了 8×8 的小图元。
+        # 换句话说这是**感知精度不够**，加 prompt、加分辨率都补不上。
+        vision_model="qwen3-vl-plus",
         text_model="qwen-plus",
         judge_model="qwen-plus",
         grid="on",
+        # 放大和网格是**一对要一起 A/B 的旋钮**，所以都从这里显式传，
+        # 不吃 build_real 的默认值——manifest 里那行 preprocess 才对得上。
+        upscale=4,
         max_tokens=25600,
         watch=watch,
         trace=LocalTrace(run_id=run_id, sse_sink=browser.publish),

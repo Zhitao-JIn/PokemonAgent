@@ -85,7 +85,12 @@ def run_chain(
         experiment_kind="sequential_episodes", task_ids=[task.task_id for task in chain.tasks],
         initial_state=str(state), notes=f"knowledge task chain: {chain.chain_id}",
         providers={
-            "vision": {"model": "qwen3-vl-flash", "temperature": "0.0", "preprocess": "grid"},
+            # ⚠ **这一份是手写的，会和真实配置漂移。** `QwenVision.config()` 已经
+            # 能导出真实的模型名和滤镜链（含每个滤镜的参数），但 manifest 在
+            # `build_real()` 之前就拼好了，这里拿不到 provider。要修得调整装配顺序，
+            # 那是另一件事——在那之前，改了预处理**记得手动改这里**。
+            "vision": {"model": "qwen3-vl-plus", "temperature": "0.0",
+                       "preprocess": "grid -> upscale"},
             "text": {"model": "qwen-plus", "temperature": "0.7", "max_tokens": "25600"},
             "judge": {"model": "qwen-plus", "temperature": "0.7", "max_tokens": "25600"},
             "embedding": {"model": "BAAI/bge-small-zh-v1.5", "runtime": "fastembed"},
