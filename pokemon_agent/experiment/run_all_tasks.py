@@ -85,7 +85,13 @@ def main() -> None:
     if args.repeat < 1:
         parser.error(f"--repeat 至少是 1，收到 {args.repeat}")
 
-    chains = knowledge_recall_tasks(args.max_steps)
+    # **只跑单任务，不跑任务链。** `knowledge_recall_tasks` 返回的里面混着
+    # 多节点链（shop_purchase_flow 这类），它们和短任务测的不是一件事：
+    # 链是"前一条成功了才跑下一条"，失败会在中途截断，
+    # 那张表里的"成功率"既不是每条任务的成功率、也不是链的成功率。
+    # 基线要的是每条短任务各自独立的成功率，所以在这里就滤掉。
+    chains = [chain for chain in knowledge_recall_tasks(args.max_steps)
+              if len(chain.tasks) == 1]
     if args.only:
         wanted = {name if name.startswith("knowledge_") else f"knowledge_{name}"
                   for name in args.only}
