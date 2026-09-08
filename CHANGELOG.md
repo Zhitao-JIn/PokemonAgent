@@ -1,3 +1,40 @@
+## 2026-09-08 —— 新增真实链路端到端核对脚本 `real_integration_check.py`
+
+**改了什么**：新增 `pokemon_agent/experiment/real_integration_check.py`——跟
+`run_episode.py`（只关心"任务跑没跑成"）不同，这个脚本跑完一个短 episode
+后逐模块核对产物是否真的落盘：trace（run 级 + episode 级骨架事件都在、
+event_id 全局排序后严格连续无缺号无重号）、checkpoint（`run.json` +
+至少一个 step 存档、`state`/`json` 成对）、StepMemory/ObjectMemory（报告
+落盘状态，episode 成功收尾后 StepMemory 文件被蒸馏链清空是预期行为，不当
+失败项）。跑完打印模块级 PASS/FAIL 表，非零退出码表示核对未通过。
+
+**为什么这么改**：本次真实集成测试（v.s. `tests/` 里 Mock/Fake 驱动的
+测试）已经现场抓出一个阻断性 bug（见上一条 changelog：`RunHarness` 权限
+运行时初始化顺序）——这说明"接真实 Brain + 真实 agent_permission 跑一遍"
+这件事本身有价值，值得留一条可重复执行的核对路径，而不是每次都临时手搓。
+用户要求"我把脚本写好、你自己在真实 PowerShell 里跑"（这台 device_bash
+沙盒的出站代理不放行 ARK/DashScope 域名，见上一条），所以这个脚本设计成
+读环境变量拿 key、不硬编码任何密钥、不依赖我这边的沙盒环境。
+
+**取舍**：核对边界只到"文件确实落地、event_id 没有缺号重号、成对关系没被
+破坏"这一层，不做"内容语义正确"这类更深的核对（比如 trace 里的 verdict
+是不是判对了）——那属于 judge/verify 本身的正确性，不是这次真实集成想
+测的"harness/checkpoint/trace/memory 四个模块的写入路径是不是接线正确"。
+权限审计日志（`agent_permission` 自己的 audit trail）没有独立核对，篇幅
+和优先级都不如上面四项，先留空。
+
+**影响面**：纯新增脚本，不改变任何现有代码路径；`ruff` 干净（行宽已控制
+在 100 内），`ast.parse` 通过，并用今天早些时候 pytest 跑集成测试留下的
+真实 trace 产物（`trace_data/itest-*-run/`）验证过 `check_trace()` 的解析
+逻辑（发现并修了一个我自己的 bug：两个事件文件按读取顺序拼接后不能直接
+比较"是否已排序"，必须先按 event_id 全局排序）。用户自己在真实 PowerShell
+里跑：
+
+    $env:PYTHONPATH = ""
+    $env:ARK_API_KEY = "..."
+    $env:DASHSCOPE_API_KEY = "..."
+    python -m pokemon_agent.experiment.real_integration_check
+
 ## 2026-09-08 —— 修复 RunHarness 权限运行时未初始化：真实集成测试跑出的阻断性 bug
 
 **改了什么**：`@initialize`（`agent_permission`）从 `EpisodeHarness.run()` 挪到
