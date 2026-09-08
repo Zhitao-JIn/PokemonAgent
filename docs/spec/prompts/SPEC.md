@@ -220,8 +220,12 @@ def retry_note(attempt, reason, raw):
 - **换算不出来就直说看不出来**：画面上叠的红色网格坐标和全局坐标不是同一套，硬凑出来的坐标是最难查的一类错。
 - 它是唯一一份**要求自由文本、明确禁止 JSON** 的模板，和其余模板形成对照。
 
-`trace` 那边仍然保留 `EventType.INSPECT` 和回放器里的 `inspect` 分支
-（`trace/browser.py`）：功能删了，但旧的 trace 文件里有这类事件，**回放要看得见**。
+**更正（0902 全项目可观测扫描发现）**：这两句原来说 trace 那边仍保留
+`EventType.INSPECT` 和回放分支，但实际代码里没有——`EventType` 枚举和
+`trace/store.py` 都不含 `INSPECT`，功能删的时候枚举成员也一起删了，带这类
+旧事件的历史 trace 文件回放不了（`docs/spec/README.md`/`docs/spec/DATAFLOW.md`
+是准确的版本）；`trace/browser.py` 这个文件本身也已经不存在（被 `pokemon_agent/api.py`
+取代，见该文件顶部说明）。
 
 ### 4.3 `decide_action.md` —— 决策：大脑的 ReAct 主 prompt
 
@@ -351,7 +355,7 @@ intent 分派删掉之后没有任何读者，随之删除。
 
 ### 4.10 `episode_summary.md` —— 蒸馏：把一整局蒸馏成一条跨局摘要记忆
 
-**用途**：被 `memory/episode/episode_summarizer.py` 的 `EpisodeMemoryGenerator` 渲染，
+**用途**：被 `memory/episode/episode_store.py` 的 `EpisodeMemoryGenerator` 渲染，
 一局结束后调一次文本模型，产出 `EpisodeSummaryResponse`（再转成 `EpisodeMemory` 落库）。
 
 **占位符**：`$goal`、`$result`、`$steps`、`$max_steps`、`$initial_state`、`$final_state`、`$steps_text`。

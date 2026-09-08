@@ -17,22 +17,25 @@ from __future__ import annotations
 
 from agent_permission import require_permission
 
-from pokemon_agent.interfaces.world import WorldPort
-from pokemon_agent.prompts.game_hints import BUTTON_HELP, MAP_HINT, REPEAT_HINT
-from pokemon_agent.schemas.action import Action, ActionSpace, ToolResult
-from pokemon_agent.schemas.observation import (
+from pokemon_agent.interfaces import WorldPort
+from pokemon_agent.prompts import BUTTON_HELP, MAP_HINT, REPEAT_HINT
+from pokemon_agent.schemas.communication import FromGameToolToWorldPerceiveOnceResp
+from pokemon_agent.schemas.domain import (
+    INTERACT_KEY,
     OVERLAY_ACTIONS,
-    Observation,
+    ActionFromBrain,
+    ActionSpaceForBrain,
+    ObservationFromWorld,
     Overlay,
-    PerceptionResult,
+    TaskForHarness,
 )
-from pokemon_agent.schemas.task import Task
 
-# `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT` 的组装逻辑在
-# `pokemon_agent/prompts/game_hints.py`——这里只是消费方。
+# `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT` 的组装逻辑全在
+# `pokemon_agent/prompts/decide_action.py`（decide_action.md 一个模板的
+# 全部装配逻辑收在一处）——这里只是消费方。
 
 
-def _mask(obs: Observation, all_actions: list[str]) -> ActionSpace:
+def _mask(obs: ObservationFromWorld, all_actions: list[str]) -> ActionSpaceForBrain:
     """按这份观测的 overlay 算动作空间。**纯函数，不碰 world。**
 
     后置条件：`names` 非空。走投无路也必须给至少一个动作——
@@ -46,10 +49,14 @@ def _mask(obs: Observation, all_actions: list[str]) -> ActionSpace:
     names = [a for a in OVERLAY_ACTIONS[overlay] if a in all_actions]
 
     assert names, f"action space must never be empty (overlay={overlay})"
-    return ActionSpace(
+    return ActionSpaceForBrain(
         names=names,
         descriptions=dict(BUTTON_HELP[overlay]),
-        note=f"{MAP_HINT}\n\n{REPEAT_HINT}",
+        # `note`/`map_note` 分开是有意的：地图/证据规则（`map_note`）要紧跟在已知事实
+        # 后面渲染，连按用法（`note`）留在可用按键说明这一节——见
+        # `ActionSpaceForBrain.map_note` 的字段说明。
+        note=REPEAT_HINT,
+        map_note=MAP_HINT,
     )
 
 
@@ -59,60 +66,69 @@ class GameTools:
     def __init__(self, world: WorldPort) -> None:
         """接好世界。**本对象没有状态。**
 
-        这里曾经有一个 `_last_space`（上次交出去的动作空间 + 当时的帧哈希），
-        用来在 `execute()` 里验动作合法、并判断那份掩码有没有过期。
-        现在两件事都由参数回答：`execute(action, obs)` 收下"这个动作是按哪份观测
-        选的"，就地用同一个纯函数重算一遍掩码去校验——攒起来再回头取，就得额外
-        发明一个办法判断攒的那份还新不新，而调用方本来就知道答案。
+        掩码校验的依据由参数回答：`execute(action, obs)` 收下"这个动作是按
+        哪份观测选的"，就地用同一个纯函数重算一遍掩码去校验——依据不在
+        本对象攒着（那次取舍见 `CHANGELOG.md` 2026-09-03 条目）。
         """
         self._world = world
 
     # ---- GameToolPort ----
 
     @require_permission("execute:game:reset")
-    @require_permission("execute:llm:perception")
-    def reset(self, task: Task) -> PerceptionResult:
-        """开新一局。
+    def reset(self, task: TaskForHarness) -> None:
+        """开新一局。**不感知**——调用方另调 `perceive_once()` 拿第一帧。
 
-        开新一局，返回第一帧观测。
+        开新一局。
         """
-        return self._world.reset(task)
+        self._world.reset(task)
+
+    @require_permission("execute:llm:perception")
+    def perceive_once(self) -> FromGameToolToWorldPerceiveOnceResp:
+        """感知当前这一帧，只问一次视觉模型，不重试。
+
+        转发给 world；重试循环在 Harness。
+        """
+        return self._world.perceive_once()
 
     @require_permission("execute:game:save_state")
     def save_state(self, path: str) -> None:
         """把当前世界状态存成一个文件。"""
         self._world.save_state(path)
 
+    @require_permission("execute:game:save_state")
+    def save_state_bytes(self) -> bytes:
+        """把当前世界状态存成字节串（checkpoint 每步世界快照用）。"""
+        return self._world.save_state_bytes()
+
+    @require_permission("execute:game:save_state")
+    def load_state_bytes(self, data: bytes) -> None:
+        """从字节串恢复世界状态（checkpoint 恢复用）。"""
+        self._world.load_state_bytes(data)
+
     @require_permission("read:game:action_space")
-    def get_action_space(self, obs: Observation) -> ActionSpace:
+    def get_action_space(self, obs: ObservationFromWorld) -> ActionSpaceForBrain:
         """掩码发生在这里，**只看 obs 里的 overlay**。
 
         前置条件：`obs` 是调用方当下正在依据的那份观测。
         后置条件：names 非空。走投无路也必须给至少一个动作——
             空动作空间是这一层的 bug，不能推给大脑处理。
 
-        **这是一个纯函数，不碰 world。** 它曾经自己去 `world.observe()` 取一份
-        观测，只为了读 `facts["overlay"]` 这一个字段——那一次感知完全是多余的，
-        当年靠帧缓存挡住才没花钱。掩码的依据应该由调用方交出来：它按哪份观测
-        做的决策，就该拿哪份观测算动作空间。这样"用过期的掩码"在结构上不可能发生，
-        不需要运行时比对帧哈希去发现。
+        **这是一个纯函数，不碰 world。** 掩码的依据由调用方交出来：它按哪份
+        观测做的决策，就该拿哪份观测算动作空间。这样"用过期的掩码"在结构上
+        不可能发生，不需要运行时比对帧哈希去发现。
 
         按这份观测的 overlay 给出能按的键。
         """
         return _mask(obs, self._world.all_actions())
 
     @require_permission("execute:game:press")
-    @require_permission("execute:llm:perception")
-    def execute(self, action: Action, obs: Observation) -> ToolResult:
-        """执行动作，推进世界。
+    def execute(self, action: ActionFromBrain, obs: ObservationFromWorld) -> None:
+        """执行动作，推进世界。**不感知**——调用方另调 `perceive_once()` 拿新观测。
 
         前置条件：`obs` 是这个动作**据以选出**的那份观测。
-        后置条件：`result.observation` 非空。
 
-        **依据由调用方交出来，不由本对象攒着。** 这里曾经有一个 `_last_space`
-        实例变量，存着上次算的动作空间和当时的帧哈希，执行时比对帧哈希来防止
-        "拿过期的掩码去按键"。攒起来再回头取，就得额外发明一个办法去判断攒的
-        那份还新不新——而调用方本来就知道自己按的是哪份观测，让它说出来即可。
+        **依据由调用方交出来，不由本对象攒着**——调用方本来就知道自己按的是
+        哪份观测，让它说出来即可。
 
         校验动作合法后按下去，推进世界。
         """
@@ -121,23 +137,35 @@ class GameTools:
             assert space.contains(segment.name), (
                 f"execute() got {segment.name!r} outside {space.names}"
             )
-        if action.sequence:
-            assert len(action.sequence) == 1 or all(
-                segment.name in {"up", "down", "left", "right"} for segment in action.sequence
+        if action.sequence and len(action.sequence) > 1:
+            body, tail = action.sequence[:-1], action.sequence[-1]
+            directions = {"up", "down", "left", "right"}
+            assert all(segment.name in directions for segment in body) and (
+                tail.name in directions or (tail.name == INTERACT_KEY and tail.times == 1)
             ), (
-                "multi-step action sequence may contain only directional keys"
+                "multi-step action sequence may contain only directional keys, "
+                "plus at most one trailing 'a'"
             )
-        # **整条链交给 world 一次执行完。** 这里不再自己展开。
-        #
-        # 展开过两版，两版都是错的：一次一按（`step(times=1)`）让 `up×4` 变成
-        # **四次视觉调用**（实测一步 17k input token、6.6 秒）；一段一次
-        # （`step(times=4)`）好一些，但 `up×4 -> down×2` 仍是两次。
-        # 感知是每步花钱的那一项，而多段链按规则只能是移动键——中间那几帧
-        # 没有任何会被用到的信息。一次决策就该是一次感知。
-        #
-        # 连按次数也不再经过 `args["times"]` 这条字符串通道：`world` 直接读
-        # `action.segments()`，次数在 `ActionSegment.times`（1-8）解析期就校验过了。
-        result = self._world.step(action)
+        # **整条链交给 world 一次执行完**，这里不自己展开——一次决策就是一次
+        # 感知（中间帧没有会被用到的信息，展开成逐次调用会成倍烧感知 token，
+        # 实测数据见 `CHANGELOG.md` 2026-09-03 条目）。连按次数走
+        # `ActionSegmentFromBrain.times`（1-8，解析期已校验），不走字符串参数。
+        self._world.step(action)
 
-        assert result.observation is not None, "world.step() must return the new observation"
-        return result
+    @require_permission("execute:game:press")
+    def evolve(self, frames: int) -> None:
+        """无输入推进 N 帧（世界自己演化）——harness 等决策 LLM 时的空闲填充。
+
+        复用 `execute:game:press` 权限：和按键一样是"推进世界"的操作，
+        只是没有按键这一下。
+        """
+        self._world.evolve(frames)
+
+    def latest_frame(self) -> bytes | None:
+        """取最新一帧的 PNG 字节（消费者接口）；还没 tick 过返回 `None`。
+
+        帧管道是生产者-消费者模型：`_tick`（生产者）每帧塞进槽，这里
+        （消费者，经 world 转发）按自己的节奏取最新帧。编码是惰性的——
+        只在取帧那一刻发生。供 API 的独立 SSE 端点推给前端。
+        """
+        return self._world.latest_frame()

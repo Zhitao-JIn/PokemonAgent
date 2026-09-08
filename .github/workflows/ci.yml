@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dev dependencies
+        run: pip install -e ".[dev]"
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dev dependencies
+        run: pip install -e ".[dev]"
+      # `tests/`（pokemon_agent 包）与 `evaluation/tests/`（测评子系统）
+      # 都不许连网、不许调真实模型（CLAUDE.md 第十节 / evaluation/SPEC.md
+      # 第一节），所以这一步不需要任何密钥。`pyproject.toml` 的 `testpaths`
+      # 已经同时列了这两个目录，`pytest` 不加参数就会两边都跑。
+      - name: pytest
+        run: pytest --cov=pokemon_agent --cov=evaluation --cov-report=term-missing

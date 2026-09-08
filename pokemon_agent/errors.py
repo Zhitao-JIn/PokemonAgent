@@ -7,20 +7,25 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pokemon_agent.schemas.domain import ModelCall
+
 
 class AgentError(Exception):
     """本项目所有预期内失败的基类。捕获它意味着"我知道这里会出问题"。"""
 
 
 class ParseFailure(AgentError):
-    """LLM 输出无法解析成 Action。
+    """LLM 输出无法解析成 ActionFromBrain。
 
     这是**最常见**的一类，且是可重试的。带上原始文本，因为 replay 时要看模型到底吐了什么。
     """
 
     def __init__(self, raw_text: str, reason: str) -> None:
         """记下模型吐了什么、为什么解析不了。"""
-        super().__init__(f"{reason}: {raw_text[:200]!r}")
+        super().__init__(f"{reason}: {raw_text!r}")
         self.raw_text = raw_text
         self.reason = reason
 
@@ -70,6 +75,66 @@ class MaxRetriesExceeded(AgentError):
         super().__init__(f"gave up after {attempts} attempts, last: {last_reason}")
         self.attempts = attempts
         self.last_reason = last_reason
+
+
+class ToolTimeout(AgentError):
+    """外部提供者（模型网关/API）调用不通——网络层或服务端 5xx，重试后仍失败。
+
+    和 `ParseFailure` 分开：那是"调通了但输出没法用"，这是"根本没调通"。
+    replay 里它们指向不同修法：前者改 prompt/解析，后者查网关/配额。
+
+    **归 `AgentError` 家族是关键**：`RunHarness.dispatch` 只捕 `AgentError`——
+    网络抖动重试后仍失败，应该让**这一局失败**（由 run 级重试预算接管），
+    而不是一路穿过让整个 run 崩掉。
+
+    **4xx（401/403/400）不在这里**：那是配置/请求错误，不是抖动，重试多少次
+    都一样，必须当场崩（装配期就该暴露）。
+    """
+
+
+class DecisionAttemptFailed(AgentError):
+    """一次决策尝试失败（解析不出/幻觉了动作/被截断）。
+
+    **单次尝试**的失败，可重试；账（`ModelCall`）随异常带出来，调用方
+    （Harness）决定要不要再问一次、以及重试预算耗尽后升不升级成
+    `MaxRetriesExceeded`。和 `MaxRetriesExceeded` 分开正是因为"这一次没成"
+    和"这一步彻底完了"是循环控制者才知道的两件事，大脑不该替它下判断
+    （见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"）。
+    """
+
+    def __init__(self, call: ModelCall) -> None:
+        """记下这次失败的账单。"""
+        super().__init__(f"decision attempt failed: {call.error_kind}: {call.error}")
+        self.call = call
+
+
+class PlanAttemptFailed(AgentError):
+    """一次 run 级规划尝试失败（解析不出 `RunPlanResp`）。
+
+    **单次尝试**的失败，可重试；账（`ModelCall`）随异常带出来，调用方
+    （`RunHarness`）决定要不要再问一次、以及重试预算耗尽后怎么收场——跟
+    `DecisionAttemptFailed` 是同一个模式在 run 级图上的落地（"谁控制循环，
+    谁记账"，见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"）。
+    """
+
+    def __init__(self, call: ModelCall) -> None:
+        """记下这次失败的账单。"""
+        super().__init__(f"plan attempt failed: {call.error_kind}: {call.error}")
+        self.call = call
+
+
+class PerceptionAttemptFailed(AgentError):
+    """一次感知尝试失败（视觉模型输出解析不出 `ScreenState`）。
+
+    **单次尝试**的失败，可重试；账（普通 dict，字段同 `ModelCall.payload`）
+    随异常带出来。和 `PerceptionFailure` 分开：那是重试预算耗尽后的升级态，
+    这里只是"问一次没读出来"。
+    """
+
+    def __init__(self, call: dict[str, str]) -> None:
+        """记下这次失败的账单。"""
+        super().__init__(f"perception attempt failed: {call.get('raw', '')[:200]!r}")
+        self.call = call
 
 
 class ImageNotDelivered(AgentError):

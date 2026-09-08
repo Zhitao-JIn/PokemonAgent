@@ -10,7 +10,8 @@
 设计文档在 Obsidian：`AI Infra/Harness-Engineering/Projects/项目B-Harness驱动神奇宝贝Agent设计文档.md`。
 代码与文档冲突时，以文档的架构约束为准，实现细节以代码为准。
 
-**当前阶段：快速原型。** 只做大脑的 ReAct 循环，其余全部 mock。
+**当前阶段：原型已接上真实模拟器与真实模型。** 大脑的 ReAct 循环、语义记忆、
+独立判定器都在真实环境里跑；状态表在线归并（机制一）与 MC 回填（机制三）仍未做（见第十一节）。
 
 ## 二、铁律（违反即返工，不接受"先这样以后再改"）
 
@@ -30,7 +31,7 @@
    *为什么*：接口边界靠类型说话；后面接约束解码时 schema 直接复用。
 
 5. **每一步都必须产出 trace 事件。** 没有 trace 的执行路径视为未完成。
-   *为什么*：trace 是 replay、checkpoint、SSE 观测台、成本统计四件事的共同底座，后补代价极高。
+   *为什么*：trace 是 replay、checkpoint、成本统计的共同底座，后补代价极高。
 
 ## 三、可读性与可维护性（和铁律同等强制）
 
@@ -146,16 +147,25 @@ def choose(self, obs: Observation, space: ActionSpace) -> Action:
 
 ```
 pokemon_agent/
-├── schemas/          Pydantic 数据模型。记忆一族按**检索单元**命名，不按学名：
+├── schemas/          Pydantic 数据模型（跨层契约）。记忆一族按**检索单元**命名：
 │                     step_memory（一条=一步）/ episode_memory（一条=一整局）/
 │                     object_fact（一条=一格）/ knowledge（不挂坐标的先验）/
 │                     episode_summary_io（蒸馏那次调用的请求+响应，不是记忆）
 │                     其余：Observation / Action / ActionSpace / TraceEvent / Completion
-├── interfaces/       Protocol 定义：LLMProvider、ToolPort（五个 MCP 工具）、TracePort
-├── brain/            ReAct 循环。无状态。只依赖 interfaces + schemas
-├── harness/          状态管理、工具注册、trace、成本统计（本阶段大部分是壳）
-├── mocks/            FakeLLM（脚本化）、MockWorld（假的神奇宝贝世界）、InMemoryTrace
-└── graph/            LangGraph StateGraph 装配
+├── interfaces/       Protocol 定义（"港口"）：WorldPort / GameToolPort / MemoryToolPort /
+│                     BrainPort / TracePort / LLMProvider / VisionProvider 等
+├── brain/            纯决策层。无状态。只依赖 interfaces + schemas
+├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方
+├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层
+├── tools/            GameTools / MemoryTool：Harness 伸向环境和记忆的两只手
+├── memory/           语义记忆的纯存储层（episode/ 情景记忆，semantic/ 语义记忆）
+├── providers/        具体 LLM/视觉模型接入（DashScope/Qwen）
+├── vision/           图像预处理（网格叠加、放大）
+├── trace/            TracePort 实现（LocalTrace，落盘 JSONL）+ 事件 payload 组装
+├── experiment/       实验 manifest、任务定义、跑批入口
+├── prompts/          所有 prompt 模板 + 组装辅助函数
+└── build.py          唯一的装配点（全项目唯一 new 具体实现的地方）
+
 tests/
 CLAUDE.md          开发规范（本文件）
 CHANGELOG.md       变更日志，每次改动追加
@@ -167,7 +177,7 @@ pyproject.toml
 ## 五、编排：LangGraph
 
 - 循环用 `StateGraph` 承载，**不手写 while 循环**。
-- `AgentState` 是唯一的图状态载体，必须是 Pydantic 模型或 TypedDict，字段有明确类型。
+- `LoopState` 是唯一的图状态载体，必须是 Pydantic 模型或 TypedDict，字段有明确类型。
 - 节点函数是纯函数形态：`(state) -> state 增量`，副作用只允许发生在工具调用节点。
 - **LangGraph 只管循环调度与状态传递。** 记忆层、状态表、值回填一律自己实现，
   不用 LangChain 的 Memory / Agent / Tool 封装。
@@ -175,8 +185,9 @@ pyproject.toml
 
 ## 六、LLM 与输出格式
 
-- 本阶段只有 `FakeLLM`：按预设脚本或简单规则返回，**同样输入必须同样输出**。
-- 真实 provider 通过 `LLMProvider` Protocol 接入，代码里不许出现任何直连 SDK 的调用。
+- 本阶段已有真实 provider（`providers/dashscope.py` 的 `QwenText` / `QwenVision`），
+  通过 `LLMProvider` / `VisionProvider` Protocol 接入；`FakeLLM` 已随 `mocks/` 删除。
+  代码里**不许出现任何直连模型 SDK 的调用**——直连只发生在 `providers/` 这一层。
 - 动作选择输出用 **Pydantic schema**（`Thought` / `Action` / `Args`）解析。
 - **解析失败要重试并计数**，重试次数与失败计数进 trace。不许静默吞掉解析错误。
 - 约束解码（constrained decoding）留到接真实模型时再上，现在不做。
@@ -197,21 +208,21 @@ pyproject.toml
 - 每类失败要有名字（`ParseFailure` / `IllegalAction` / `ToolTimeout`），
   因为后面 replay 要按失败类型归类统计。
 
-## 九、trace 约定（后面 SSE / checkpoint / replay 全靠它）
+## 九、trace 约定（后面 checkpoint / replay 全靠它）
 
 每条事件至少含：
 
 | 字段 | 说明 |
 |---|---|
-| `event_id` | **单调递增整数**，SSE 断线重连靠它补发 |
+| `event_id` | **单调递增整数**，replay 排序与断线补发靠它 |
 | `episode_id` | 一次 episode 的标识 |
 | `step` | 第几步 |
-| `type` | `observe` / `think` / `act` / `memory_read` / `memory_write` / `error` / `cost` |
+| `type` | 14 类（`pokemon_agent/schemas/datastore/__init__.py::EventType`，见 `docs/spec/DATAFLOW.md` 2.2）：`run_start` / `run_end` / `episode_start` / `episode_end` / `observe` / `model_call` / `think` / `act` / `memory_read` / `step_memory_write` / `object_memory_write` / `stall_check` / `error` / `episode_memory_write`。**注**：这张表 0902 之前还写着旧版七类（含已拆分的 `memory_write` 和从不存在的独立类型 `cost`），已同步更正——`memory_write` 早拆成三类（单步/对象/跨局），成本信息挂在 `MODEL_CALL.payload`，不是独立事件类型 |
 | `payload` | 该类型的结构化内容 |
 | `ts` | 时间戳 |
 
 - trace 是**追加写的事件序列**，不是可变状态快照。checkpoint 存事件序列而非最终状态。
-- 本阶段 `InMemoryTrace` 就够，但接口按"能落盘"设计。
+- 本阶段 `LocalTrace`（落盘 JSONL）就够，但接口按"能落盘、能重放"设计。
 
 ## 十、测试
 
@@ -224,8 +235,7 @@ pyproject.toml
 
 ## 十一、这个阶段明确不做
 
-状态表在线归并（机制一）、MC 回填（机制三）、skill library、SSE 观测台、
-真实模拟器接入、权限确认、沙箱、真实 LLM。
+状态表在线归并（机制一）、MC 回填（机制三）、skill library（机制二）、沙箱。
 
 **别提前做。** 但接口要留得住：设计任何抽象时问一句"机制一接进来时这里要改吗"，
 要改就说明抽象错了。

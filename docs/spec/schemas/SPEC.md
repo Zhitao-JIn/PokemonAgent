@@ -4,6 +4,13 @@
 
 记忆一族的文件名和类名刚刚整体改过一轮（**只改名，行为一律没动**），旧名字在其它文档或旧分支里还会出现，对照表见 0.4。
 
+> **已知缺口**：`episode_memory.py`（`EpisodeMemory`，一条 = 一整局蒸馏出的经验）与
+> `episode_summary_io.py`（蒸馏那次 LLM 调用的 request/response 契约，非记忆）在本文档
+> 里没有独立的字段表——§4（step_memory）之后直接跳到了 §5（object_fact）。二者的
+> 方法语义见 `interfaces/SPEC.md` 的 `MemoryToolPort`（`query_episode_summaries` /
+> `store_episode_summary` 的签名与前置/后置条件）、`memory/SPEC.md` 与
+> `memory/episode/episode_store.py` 的 docstring。补齐字段表待下一次同步。
+
 ---
 
 ## 0. 模块定位
@@ -94,6 +101,7 @@ task.py  (无对本模块内其他文件的依赖)
 | `goal` | `str` | 必填 | 给 LLM 读的目标描述，会进 prompt |
 | `success_criteria` | `str` | 必填 | 成败判据的人类可读描述；**判定由 world 实现**，本类只存描述文本 |
 | `max_steps` | `int` | 必填 | 步数上限，超出即判失败，应 > 0（文档说明，非 Pydantic 校验强制） |
+| `initial_state_hint` | `str` | `""` | 实验采集起点的要求说明；**不参与模型 prompt**，只用于选择和核对 `experiment_states/` 里对应的 `.state` 存档 |
 
 **设计理由**：为什么用"任务"而不是"通关"作为 episode 边界——通关是几千步、只产出一个 0/1 结果，机制三（蒙特卡洛回填）的折扣一路乘下去，回填到前期步骤上几乎是噪声；评测也只能报"通关了没有"这一个二值数字。任务级颗粒度则能报成功率、失败模式分布、有记忆 vs 无记忆的对比。但任务有下界：必须长到单靠上下文装不下、必须跨任务复用经验才做得好，否则记忆架构失去存在理由（例：合适的粒度是"打赢二号道馆"，不合适的是"和 NPC 说句话"）。
 
@@ -202,7 +210,9 @@ task.py  (无对本模块内其他文件的依赖)
 
 - `NONE` → `("up","down","left","right","a","start")`
 - `DIALOG` → `("a",)`（方向键无效，只能推进）
-- `CHOICE` → `("up","down","a","b")`（移光标/确认/取消）
+- `CHOICE` → `("up","down","left","right","a","b")`（移光标/确认/取消）
+
+`CHOICE` 里带 `left`/`right`：选择框盖着两种布局——战斗行动菜单是 2×2 方阵、下层菜单是竖排，光标移动方向需求不同，掩码取的是**并集**而不是某一布局的精确集合（取并集的理由见 `observation.py` 里 `OVERLAY_ACTIONS` 顶部注释）。
 
 **设计理由**：动作掩码**只看 overlay，与 scene 无关**。这是把动作可用性拆成"场合(Scene) × 叠加层(Overlay)"二元组、而不是每个组合单独定义规则的直接回报——三条规则即可覆盖所有场合。
 
@@ -297,9 +307,13 @@ task.py  (无对本模块内其他文件的依赖)
 | `overlay` | `Overlay` | 必填 | |
 | `overview` | `str` | `""` | 一句话描述整幅画面布局；**字段声明顺序即模型输出顺序**，必须写在 landmarks 之前 |
 | `dialog_text` | `str` | `""` | `overlay=DIALOG` 时框内文字，其他情况为空 |
-| `options` | `list[str]` | `[]` | `overlay=CHOICE` 时的选项列表 |
-| `cursor` | `int \| None` | `None` | `overlay=CHOICE` 时光标位置，0 起，未知为 None |
+| `options` | `list[str]` | `[]` | `overlay=CHOICE` 时的选项列表；给了 `option_lines` 时由它派生 |
+| `option_lines` | `list[str]` | `[]` | `overlay=CHOICE` 时屏幕上的选项**原文逐行**（如 `["▶TACKLE", " GROWL"]`），`options` 和 `cursor` 都从它派生 |
+| `cursor` | `str \| None` | `None` | `overlay=CHOICE` 时光标所指的**选项原文**（如 `"FIGHT"`），未知为 None。**给了 `option_lines` 时由派生结果覆盖**，模型自己填的那份只留作对照（`cursor_said`） |
+| `cursor_said` | `str \| None` | `None` | 视觉模型自己那份光标读数；只在它和派生结果不一致时才有值。**不进快照**（`SNAPSHOT_BLIND`），是给我们数错误率的，不是这一帧的事实 |
 | `fields` | `dict[str, str]` | `{}` | 该 scene 的结构化字段，键取自 `SCENE_FIELDS`；读不出的字段直接不放，**不填占位值** |
+
+**`cursor` 从序号改成选项原文的理由**（`_derive_cursor_from_lines` / `_cursor_must_be_one_of_the_options` 两个校验器支撑它）：序号（`0` 起）没有任何自校验的余地——`cursor=2` 即使没有第 3 个选项也无从发现；换成原文之后，"光标值必须是某个选项之一"变成一条可机械执行的校验，读错当场作废而不是喂给大脑一个不存在的选项。这正是这条改动换来的东西，见 `observation.py` 的注释。
 
 **设计理由（字段值统一放 `fields` 扁平 dict）**：机制三的 state key 要从 `(scene, overlay, fields)` 均匀派生；若给每个 scene 定单独子模型，key 的构造就要对 scene 分支，得不偿失。
 
@@ -480,24 +494,27 @@ object_fact.py      一条 = 一格       "世界是什么样"，域内永远为
 
 ### 4.3 `Snapshot`
 
-一次观察的快照；与 `Observation.facts` 唯一分歧在于：facts 是"这一帧的全部"，快照是"其中还能拿到、以后要用的那部分"。
+一次观察的快照；与 `Observation.facts` 唯一分歧在于：facts 是"这一帧的全部"，快照是"其中还能拿到、以后要用的那部分"。**每一项都必须跨步骤成立**。
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `overview` | `str` | `""` | 整体印象，视觉模型给的 |
-| `landmarks` | `str` | `""` | 地标，全局坐标（如 `门 x=13 y=5`），来自模拟器内存 |
-| `neighbors` | `str` | `""` | 四邻各是什么（如 `北 G 南 . 西 # 东 .`），**相对"我"、不依赖屏幕原点**，跨步骤成立 |
-| `position` | `str` | `""` | `全局坐标 地图0 x=10 y=2`，刻意不用括号写法 |
-| `dialog` | `str` | `""` | 对话框文字，跨步骤成立（说过就是说过了） |
-
-**设计理由（为什么 `walk_map`/整张地图不在快照里）**：整张图天生是**屏幕相对**的，原点跟着人走，走一步同一个 `(7,7)` 就指向另一块地方；`MAP_HINT` 里明文写着屏幕格"不能跨步骤引用"，但早先版本把整张图和带屏幕格的地标一起存进记忆、下一步又喂回去。实测代价：模型取回上一步记忆「民宅的门 (7,7)」，对照当前地图发现 `(7,7)` 是 `#`，花了 2235 个 output token、49 秒反复重数字符串试图判断是记忆错还是地图错——两边都没错，是数据自相矛盾。真正靠得住的是 `position`（全局坐标）和 `neighbors`（相对"我"的四邻）：撞墙 → 前后 `position` 一模一样；进门 → `position` 里地图编号变了；"我以为西边能走" → `neighbors["left"]` 记录了当时的真实情况。四邻相对"我"、不依赖屏幕原点，因此跨步骤永远成立；整张图能多提供的只是"当时周围的形状"，而这个信息没有稳定坐标系可承载，所以不存。
+| `status` | `str` | `""` | 那一帧的状态行（`Observation.status`） |
+| `facts` | `dict[str, str]` | `{}` | 那一帧的事实字段，**除去 `SNAPSHOT_BLIND` 之外原样照搬**（不再是一份写死的手挑字段清单） |
 
 方法：
-- `of(cls, obs: Observation) -> Snapshot`（classmethod）：从 `Observation.facts` 抽字段构造快照，**只抽不加工**——加工过的快照和当时看到的就不是一回事了。
-- `render(indent="  ") -> str`：按位置/四邻/对话/概况/地标顺序渲染非空字段。
-- `same_place_as(other) -> bool`：仅比较 `position`/`neighbors`/`dialog` 三项是否全同，来判断"完全没有区别"。
+- `of(cls, obs: Observation) -> Snapshot`（classmethod）：从 `Observation` 抽字段构造快照，**只抽不加工**——加工过的快照和当时看到的就不是一回事了。
+- `render(indent="  ") -> str`：按 `FIELD_ORDER` 排、表外字段按名字排在后面；顺序固定是为了前后两份快照摆在同一个相对位置供大脑逐列比对。
+- `overview`（property）：`facts.get("overview", "") or status`，给具名调用方（`memory/episode/utils.py`）兼容取用。
+- `position`（property）：`facts.get("where", "")`，即全局坐标行。
 
-**校验逻辑说明（`same_place_as` 为什么不比较全部字段）**：`overview` 是模型每次重写的自然语言，同一帧也可能措辞不同（实测同一 frame sha 下出现过三种不同措辞），用它比较会把"没变"误判成"变了"。
+**`same_place_as(other)` 已删除**。它曾只比较 `position`/`neighbors`/`dialog` 三项来判断"完全没区别"，`render()` 里据此把前后相同折叠成一句「**什么都没变**」。折叠掉的理由见 §4.4——那份"为野外挑的三个字段"清单在战斗帧里恒等，把"光标确实移动了"也误判成"没效果"。
+
+**三份常量（`SNAPSHOT_BLIND` / `FIELD_ORDER` / `FIELD_LABEL`）**：
+
+- `SNAPSHOT_BLIND = {"known_objects", "knowledge", "cursor_said"}`：**不进快照的排除表**。`known_objects` 是跨 episode 的流水、`knowledge` 是检索结果、`cursor_said` 是模型读数不是帧事实。用排除表而不是白名单是有意的——新增观测字段默认该进记忆，需要理由的是把它挡在外面；反过来的话，忘改清单不报错，只表现为某类画面变化永远看不见。
+- `FIELD_ORDER` / `FIELD_LABEL`：渲染顺序与中文字段标签。`walk_map`/`overview` 垫底，前者占九行、后者措辞每次变，摆前面会把真正逐行对照的那几项挤下去。
+
+**为什么 `walk_map`/整张图现在**进**快照了**：早先挡它的理由是**屏幕相对**——原点跟着人走，同一个 `(7,7)` 走一步就指向另一块。那是屏幕格时代的账；`TerrainMap.render()` 删掉屏幕格之后行列号就是全局坐标，两张图同一个 `x=12 y=24` 指同一格，自相矛盾的来源没了，禁令前提也就没了。留着旧禁令的代价反而是实的：地形变化（门开了、挡路的 NPC 走了）是"那一下改变了什么"里信息量最大的一类，整个看不见。
 
 ### 4.4 `StepMemory`
 
@@ -521,12 +538,12 @@ object_fact.py      一条 = 一格       "世界是什么样"，域内永远为
 
 方法：`render(reason=True) -> str`：
 - `because` 由 `rationale` 用"；"拼接，空则显示"（未给出理由）"。
-- `after` 若与 `before` `same_place_as` 为真，显式渲染为"**什么都没变**（位置、四邻、对话框全部相同——这个动作没有效果）"，而不是留给读者自行比较两份快照。
+- **前后两份快照都完整摆出，结论留给大脑。** 这里曾经有一次 `same_place_as` 折叠——前后相同就渲染成一句「**什么都没变**（这个动作没有效果）」。折叠掉的理由：那个比较只看位置/四邻/对话框，是为野外挑的，战斗帧里它们是进战斗前残留的野外值、恒等，于是战斗中每一步都被宣布成"没效果"（哪怕光标确实移动了）；而"错误的结论比没有结论贵"——一句加粗的判断，大脑对它的信任正好是我们承诺的那么高。现在只摆事实、字段对齐、顺序固定，变没变由大脑自己读（防"不去对比"的那条改在 `decide_action.md` 里说）。
 - `reason=False` 去掉"因为"那一行，只留发生过的事；判定器使用该模式。
 
 **关键设计理由**：
 1. 渲染文本同时用于"进 prompt 的样子"和"检索打分"，两处共用一份，是为了保证"被选中的理由"和"看到的内容"是同一个东西，避免"按 A 内容选中、却把 B 内容喂进去"且不报错的问题。
-2. "什么都没发生"必须显式说明、不能让模型自己去比较：实测模型不会自己比对——连着三步对空地按 `a`，每步都取回上一步"按 a 没变化"的记忆，然后照着自己上一步"站在门格上按 a 是标准操作"的错误结论再按一次，把过去的 `rationale` 当成权威，而那权威恰恰是错的。判定是纯比较，程序做得又快又准，不该留给模型判断。
+2. "什么都没发生"不再由程序显式下结论（`same_place_as` 已删，见 §4.3）：判定是纯比较，程序做得又快又准——但那取决于比的是不是"这一帧真正会变的字段"，那个清单不可能手工穷举（战斗帧的坑就是反例）。所以现在把两份完整快照对齐摆出、顺序固定，变没变留给模型自己读；防"不去对比"的那条规则改写在决策 prompt 里。
 3. `render(reason=False)` 供判定器使用：判定器需要历史（证据可能出现在几步前），但绝不能读到决策者自己的理由——`rationale` 是被评价者自己的说辞，一旦进入判定器上下文，成功率就会变成决策者自己发给自己的奖状；画面、动作、结果是"发生过的事"，理由是"它对那件事的主张"，两者必须分开。
 
 ---
@@ -708,15 +725,37 @@ object_fact.py      一条 = 一格       "世界是什么样"，域内永远为
 
 ### 6.7 `EventType`（`str, Enum`）
 
-trace 事件类型，取值：`EPISODE_START`、`EPISODE_END`、`OBSERVE`、`MODEL_CALL`、`THINK`、`ACT`、`MEMORY_READ`、`MEMORY_WRITE`、`OBJECT_NOTE`、`INSPECT`、`GOAL_POP`、`ERROR`、`CHECKPOINT`、`EPISODE_MEMORY_WRITE`。
+**更正（0902 全项目可观测扫描发现）**：这一节原来列的是一份很旧的取值表
+（`MEMORY_WRITE`/`OBJECT_NOTE`/`INSPECT`/`GOAL_POP`/`CHECKPOINT` 这几个当时都
+还在，`RUN_START`/`RUN_END`/`STEP_MEMORY_WRITE`/`OBJECT_MEMORY_WRITE`/
+`STALL_CHECK` 都还没加），且关于 `INSPECT`"枚举成员保留"的说法跟实际代码
+不符——`docs/spec/README.md`/`docs/spec/DATAFLOW.md` 才是准确的版本：这些
+旧值删兼容时是真删了，不是删代码留枚举。以 `pokemon_agent/schemas/
+datastore/__init__.py::EventType` 当前定义（14 个成员，与 `docs/spec/
+DATAFLOW.md` 2.2 的事件总表一致）为准：
 
-**分类设计理由**：
-- `OBJECT_NOTE`（记下语义记忆·object 的新事实）与 `MEMORY_WRITE`（情景记忆写入）**故意分开**——二者是两种记忆（一次经过 vs. 那一格本身），寿命和用途不同；混成一类就数不出"它认识了多少个东西"这一直接反映语义记忆有没有用的指标。
-- `INSPECT`（细看）**已经没有生产者了**：细看功能整条链路删除（world 的方法、`PerceptionResult` 里的那条路径、`Observation.facts` 里的 `inspected` 键都没了）。枚举成员**保留**，因为旧的 trace 文件里有这类事件，而 `TraceEvent` 要能把它们解析回来——删掉成员，replay 旧数据会在校验那一步炸。**不要给它写新的发射点**：要恢复细看，就连同 world 的方法一起恢复。
-  当初把它与 `OBSERVE`（每步必发的常规观测）分开的理由留在这里，重做时仍然成立：`INSPECT` 是大脑主动要的，混在一起就算不出"它多久要细看一次"，也就无法判断这个动作值不值那次调用成本。
-- `GOAL_POP` 现在是唯一和目标栈有关的事件。配套的 `GOAL_PUSH` **删掉了**：压栈的唯一途径（`push_goal`）没有了，一个零生产者的事件类型只会让统计脚本里多一个恒为 0 的桶。
-  拆解机制回来时它跟着回来，而且届时**仍然是两个类型、不是一个带方向的字段**——目标栈"拆了几层"和"完成了几层"是两个独立的数，拆得多完成得少正是目标栈失控的样子，按类型分开计数才一眼看得出。
-  `goal_pop` 的 `reason` 字段同理留着（现在只有 `done` 一个取值，`superseded` 随多层判定一起删了）：拆解回来时"完成"和"白拆"必须分得开。
+`RUN_START`、`RUN_END`、`EPISODE_START`、`EPISODE_END`、`OBSERVE`、
+`MODEL_CALL`、`THINK`、`ACT`、`MEMORY_READ`、`STEP_MEMORY_WRITE`、
+`OBJECT_MEMORY_WRITE`、`STALL_CHECK`、`ERROR`、`EPISODE_MEMORY_WRITE`。
+
+**分类设计理由（仍然成立的部分）**：
+- `STEP_MEMORY_WRITE`（单步情景记忆写入）与 `OBJECT_MEMORY_WRITE`（记下语义
+  记忆·object 的新事实）**故意分开**——原来统一叫 `MEMORY_WRITE`/`OBJECT_NOTE`，
+  现在命名同步成 `schemas` 里的实际类名；二者是两种记忆（一次经过 vs. 那一格
+  本身），寿命和用途不同，混成一类就数不出"它认识了多少个东西"这一直接反映
+  语义记忆有没有用的指标。`EPISODE_MEMORY_WRITE`（跨局摘要蒸馏）是第三类，
+  同理不与前两者混。
+- **`INSPECT`/`GOAL_POP`/`MEMORY_WRITE`（旧名）/`OBJECT_NOTE`/`CHECKPOINT`
+  都已经不存在了**，不是"保留兼容"。细看链路（`inspect`）整条删除时，枚举
+  成员也一并删掉；带这类旧事件的历史 trace 文件目前无法被当前 `TraceEvent`
+  解析（`docs/spec/README.md`"删兼容时的明确决定"）。拆子目标机制
+  （`GOAL_PUSH`/`GOAL_POP`）连同 `Intent` 分派一起删除，目标栈现在恒为一层。
+  两者重做时该怎么设计，各自的历史论证留在 `docs/spec/interfaces/SPEC.md`
+  1.4（细看）与 `docs/spec/harness/SPEC.md` 第 5 节（拆子目标），这里不重复。
+- **新增的三类**（0902 陆续加的）：`RUN_START`/`RUN_END`——run 级生命周期
+  闭环（`docs/ROADMAP.md` 第 4 条 a），没有它们就分不出一个 run 是正常收尾
+  还是被打断；`STALL_CHECK`——`detect_stall` 每一步的停摆键/连续计数快照，
+  以前只活在内存里，一局跑完就没了。
 
 ### 6.8 `TraceEvent`
 

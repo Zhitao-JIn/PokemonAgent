@@ -17,25 +17,10 @@ import hashlib
 import json
 import pathlib
 import subprocess
-from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
 from pokemon_agent.prompts import load as load_prompt
-
-
-@runtime_checkable
-class Configurable(Protocol):
-    """能自报配置的东西。
-
-    **刻意不放进 `LLMProvider` / `VisionProvider`。** 那两个 Port 描述的是能力，
-    自报配置是可复现性的需求，属于另一个关注点。用结构化类型在这里单独表达，
-    provider 不需要显式声明实现它，Port 也不用变宽。
-    """
-
-    def config(self) -> dict[str, str]:
-        """自报这个 provider 的配置，进 manifest 用。"""
-        ...
 
 
 def _git_commit() -> str:
@@ -89,7 +74,9 @@ class RunManifest(BaseModel):
         description="图像预处理方式。熔断把它当变量（原生 vs 放大），不记就分不清哪组是哪组",
     )
     notes: str = Field(default="", description="这次想验证什么。给三周后的自己看")
-    experiment_kind: str = Field(default="single_episode", description="single_episode 或 sequential_episodes")
+    experiment_kind: str = Field(
+        default="single_episode", description="single_episode 或 sequential_episodes"
+    )
     task_ids: list[str] = Field(default_factory=list, description="本次实验预注册的任务顺序")
     initial_state: str | None = Field(default=None, description="实验起点存档的相对路径")
     memory_policy: str = Field(
@@ -114,9 +101,7 @@ class RunManifest(BaseModel):
             self.prompts[name] = {"sha": tpl.sha, "text": tpl.text}
         return self
 
-    def with_permissions(
-        self, config_dir: pathlib.Path = pathlib.Path("config")
-    ) -> RunManifest:
+    def with_permissions(self, config_dir: pathlib.Path = pathlib.Path("config")) -> RunManifest:
         """把权限配置的原文和 sha 收进来。
 
         前置条件：`config_dir` 下存在 `context.json` 与 `permissions.json`——
@@ -124,9 +109,8 @@ class RunManifest(BaseModel):
             `@initialize`），跑到这里还没有就该当场停，而不是记一份空的
             权限快照、让这批数据事后无法归因。
 
-            **这个断言比从前更重要**：库曾经在 import 时就读这两个文件，缺了会在
-            `import` 那一刻炸；现在只有 `@initialize` 读，缺了要跑到第一次
-            `harness.run()` 才炸——那时 world 已经建好、模型已经加载。
+            这个断言要当场炸：只有 `@initialize` 读这两个文件，缺了要跑到第一次
+            `harness.run()` 才炸——那时 world 已经建好、模型已经加载，越晚越贵。
 
         后置条件：`permissions` 里每个文件都同时有 `sha` 和 `text`。
 
@@ -140,18 +124,6 @@ class RunManifest(BaseModel):
                 "sha": hashlib.sha256(text.encode("utf-8")).hexdigest()[:12],
                 "text": text,
             }
-        return self
-
-    def with_provider(self, role: str, provider: Configurable) -> RunManifest:
-        """记一个 provider 的配置。
-
-        配置从 `provider.config()` 取，而不是让 manifest 认识具体的 provider 类型——
-        装配处才是"唯一知道具体实现是谁"的地方，这里只负责抄下来。
-
-        把一个 provider 自报的配置抄进 manifest。
-        """
-        assert hasattr(provider, "config"), f"{type(provider).__name__} 没有 config()"
-        self.providers[role] = provider.config()
         return self
 
     def save(self, path: pathlib.Path) -> pathlib.Path:

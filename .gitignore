@@ -11,3 +11,18 @@ screenshots/
 tests/
 _to_delete/
 .claude/
+
+# 运行产物与数据（不该进版本库）
+trace_data/
+screenshot/
+experiment_results/
+vision_dump/
+vision_dump_smoke/
+assets/
+# episode 摘要 md 是运行产物：留在包内，但不进 git
+pokemon_agent/memory/episode/memory/
+pokemon_agent/memory/semantic/object_events/
+.workbuddy/
+docs/experiments/
+log
+*.egg-info/

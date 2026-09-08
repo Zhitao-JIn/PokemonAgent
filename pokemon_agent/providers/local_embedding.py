@@ -23,7 +23,7 @@ class FastEmbedText:
     模型在**首次调用 `embed()` 时才加载**（懒加载，不在 `__init__` 里就下载/
     加载权重）——构造这个 provider 的代价应该只是"记下要用哪个模型"，
     不该在装配阶段（`build.py`）就付一次模型加载的时间，尤其是像
-    `EpisodeMemoryGenerator`/测试这类不一定每次都会真正调用 embedding 的场景。
+    测试这类不一定每次都会真正调用 embedding 的场景。
     """
 
     def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5") -> None:
@@ -35,6 +35,7 @@ class FastEmbedText:
         """第一次真要用的时候才把模型载进来。"""
         if self._model is None:
             from fastembed import TextEmbedding
+
             self._model = TextEmbedding(model_name=self._model_name)
         return self._model
 

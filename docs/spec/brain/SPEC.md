@@ -22,7 +22,7 @@
 
 ### 1.1 不持有 tools / memory 的约束，以及它的由来
 
-`Brain` 的构造函数只接收 `decide_llm`、`judge_llm`、`max_retries` 三样，**不收任何 `tools` 或记忆实例**。`choose()` 需要的情景记忆（`memories` 参数）由 Harness 检索好之后当参数传进来；`reflect()` 也只返回整理好的 `StepMemory`，写库这一步同样不在 Brain 内部发生，由 Harness 完成。
+`Brain` 的构造函数只接收 `decide_llm`、`judge_llm` 两样，**不收任何 `tools`、记忆实例，也不收重试预算**——重试循环挪到 Harness 之后（见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"），大脑连"问几次"这件事都不知道，只知道"问一次"（`choose_once()`）。`choose_once()` 需要的情景记忆（`memories` 参数）由 Harness 检索好之后当参数传进来；`reflect()` 也只返回整理好的 `StepMemory`，写库这一步同样不在 Brain 内部发生，由 Harness 完成。
 
 `interfaces/brain.py` 的 docstring 明确记录了这条约束的来历——**旧设计的问题**：
 
@@ -38,26 +38,24 @@
 
 ### 1.3 无状态
 
-`Brain` 没有任何跨步骤的实例变量（对应 CLAUDE.md 铁律 1）。构造函数里存的都是不可变的协作者（两个 provider、`max_retries`、两份加载好的 prompt 模板）。判据是：**连续两次用相同参数调用 `choose()`，行为必须完全一致**。
+`Brain` 没有任何跨步骤的实例变量（对应 CLAUDE.md 铁律 1）。构造函数里存的都是不可变的协作者（两个 provider、两份加载好的 prompt 模板）。判据是：**连续两次用相同参数调用 `choose_once()`，行为必须完全一致**。
 
 它也不认识 `Harness` 和 `world`，只认识 `Protocol`（对应 CLAUDE.md 铁律 2）。
 
 ---
 
-## 2. 构造函数：`decide_llm` / `judge_llm` / `max_retries`
+## 2. 构造函数：`decide_llm` / `judge_llm`
 
 ```python
 def __init__(
     self,
     decide_llm: LLMProvider,
     judge_llm: LLMProvider,
-    *,
-    max_retries: int = 3,
 ) -> None:
 ```
 
 - 两个依赖都以接口类型（`LLMProvider`）注入，而不是具体实现类型。
-- 前置条件：`max_retries >= 1`（用 `assert` 校验）。
+- **没有 `max_retries`**——决策重试预算（`DECISION_MAX_RETRIES`）现在归 Harness 管，见第 3 节。
 - 构造时**加载一次**两份 prompt 模板（`decide_action`、`judge_success`），保存下来是为了拿到各自的 `sha`：每一条产生的事件都要带上它，实验数据才说得清"这批结果是哪一版 prompt 跑出来的"——改了 prompt 不记版本，前后两批数字就没法比较。这两份 sha 通过 `prompt_shas` 属性对外暴露，供写入 manifest。
 
 ### 2.1 为什么决策和判定必须是两个独立的 provider 实例，即使型号相同
@@ -81,15 +79,28 @@ def __init__(
 
 ---
 
-## 3. `choose()`：选下一步动作
+## 3. `choose_once()`：一次决策尝试
 
-### 3.1 完整签名
+> **本节部分示例代码仍用旧类名（`Goal`/`Observation`/`ActionSpace`/`Decision`），
+> 是本文档更早一版遗留的过时之处，不是本次改动引入的——当前代码里对应的类型是
+> `GoalForBrain`/`ObservationFromWorld`/`ActionSpaceForBrain`，返回值是
+> `tuple[ActionFromBrain, ModelCall]` 而不是 `Decision`。这条留作已知的文档
+> 债务，本次只修正"重试循环在哪一层"这个会误导人的部分（见下）。
+>
+> **2026-09-01 改动**：重试循环从 `Brain.choose()` 挪到了 `EpisodeHarness.think()`
+> （见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"）。`Brain` 只剩
+> `build_decision_prompt()`（组装一次 base prompt）+ `choose_once()`（问一次、
+> 解析一次，失败抛 `DecisionAttemptFailed`）——**不再有 `for attempt in range(...)`
+> 循环，也不再有 `max_retries`**。下面 3.1-3.5 节描述的仍是"一次尝试要做什么"，
+> 只是这些步骤现在发生在 `choose_once()` 里、由 Harness 反复调用，而不是发生在
+> 一个自带循环的 `choose()` 里。
+
+### 3.1 完整签名（示意；参数名对应关系见上）
 
 ```python
-def choose(
-    self, goals: list[Goal], obs: Observation, space: ActionSpace,
-    memories: list[StepMemory],
-) -> Decision:
+def choose_once(
+    self, req: BrainDecisionReq, prompt: str,
+) -> tuple[Action, ModelCall]:
 ```
 
 四个参数：
@@ -108,22 +119,21 @@ def choose(
 
 重试策略之所以放在 `Brain` 里而不是 `LLMProvider` 里，是因为"什么算失败"是**大脑的判断**：解析不出来算失败、选了不存在的动作也算失败，而这两件事底层的 provider 都判断不了。
 
-### 3.2 内部重试循环
+### 3.2 一次尝试做什么（重试循环现在在 Harness 里）
 
-`choose()` 本质是一个 `for attempt in range(1, max_retries + 1)` 循环：
+`choose_once()` 是**单次**尝试，不含循环：
 
-1. 用当前 `prompt`（首轮是 `base = self._build_prompt(...)`）调用 `self._decide.complete(prompt)`，同时用 `time.perf_counter()` 记录延迟。
+1. 用调用方传入的 `prompt`（首轮是 `build_decision_prompt()` 的结果；第 N 次重试的 prompt 由 Harness 自己拼上纠正说明再传进来）调用 `self._decide.complete(prompt)`，同时用 `time.perf_counter()` 记录延迟。
 2. 先检查 `completion.truncated`——**截断检查必须先于解析检查**：如果不这样做，截断会以"少了个右括号"的形式表现成一条 `ParseFailure`，把排查方向指向完全错误的地方（以为是格式问题，实际是输出长度不够）。截断时抛 `OutputTruncated`。
 3. 否则调用 `self._parse(completion.text, space)` 尝试解析出 `Action`。
 4. 捕获三类异常：
    - `ParseFailure` / `IllegalAction` / `OutputTruncated`：这些是"外部输入不合法"，属于预期内情况，走异常而非 `assert`。记下 `kind`（异常类名）和 `reason`（异常信息）。
-   - `pydantic.ValidationError`：`Action` 的 `model_validator` 抛的是 `ValueError`，pydantic 会把它包装成 `ValidationError`——它**不是** `AgentError` 的子类，如果不特别捕获会穿透重试循环，直接让整局崩溃。正常路径下走不到这里，因为 `_parse` 在构造 `Action` 之前已经把每条约束手工验证过一遍；但这意味着**同一套校验写了两份、且没有机制保证两边同步**——哪天 `Action` 上新增一条约束而 `_parse` 没跟上，症状会从"一次可统计的重试"退化成"整局崩溃"。这里兜住它，转换成 `kind="ParseFailure"`，让它退化回一次可统计的解析失败。
-5. **无论成功失败，每次调用都追加一条 `ModelCall`**——"一次模型调用 = 一条账"。`payload` 里带 `prompt_sha`、`input_tokens`、`output_tokens`、`latency_ms`、`attempt`、`ok`（是否解析成功）、以及**原始文本 `raw`**。保留 `raw` 的用意是：以后改进解析器可以**离线用历史数据重算**，不需要再花 token 重新跑一遍。失败的那几次调用同样消耗了 token，因此也要留痕。
-6. 若 `parsed is None`：把 `prompt` 更新为 `base + _retry_note(attempt + 1, reason, completion.text[:400])`，用于下一轮尝试。
-7. 若 `parsed is not None`：先用 `assert space.contains(parsed.name)` 复核（这条本应由 `_parse` 内部保证，这里是出口的双重确认——**它是"大脑不会幻觉出不存在的动作"这个核心主张的运行时证据**），然后返回 `Decision(action=parsed, calls=calls, recalled=refs)`，循环提前结束。
-8. 循环耗尽仍未成功：返回 `Decision(action=None, calls=calls, recalled=refs)`。
+   - `pydantic.ValidationError`：`Action` 的 `model_validator` 抛的是 `ValueError`，pydantic 会把它包装成 `ValidationError`——它**不是** `AgentError` 的子类，如果不特别捕获会让这次尝试之外的异常穿透。正常路径下走不到这里，因为 `_parse` 在构造 `Action` 之前已经把每条约束手工验证过一遍；但这意味着**同一套校验写了两份、且没有机制保证两边同步**。这里兜住它，转换成 `kind="ParseFailure"`，让它退化回一次可统计的解析失败。
+5. **无论成功失败都拼一条 `ModelCall`**——"一次模型调用 = 一条账"。`payload` 里带 `input_tokens`、`output_tokens`、`latency_ms`、`ok`（是否解析成功）、以及**原始文本 `raw`**（`attempt` 字段现在由 Harness 在收到账单后盖章，`choose_once()` 自己不知道这是第几次）。
+6. 若 `parsed is None`：抛 `DecisionAttemptFailed(call)`——要不要再问一次、下一轮 prompt 怎么拼纠正说明，都是 Harness 的事（Harness 直接调用 `prompts.brain_hints.retry_note()`）。
+7. 若 `parsed is not None`：先用 `assert space.contains(parsed.name)` 复核（这条本应由 `_parse` 内部保证，这里是出口的双重确认——**它是"大脑不会幻觉出不存在的动作"这个核心主张的运行时证据**），然后返回 `(parsed, call)`。
 
-**重试是"带着上次错误重问"，不是原样再问一遍。** 原样重问等价于把三次模型调用当一次用：最常见的失败是系统性的（比如子目标判据里写了屏幕坐标），换一次随机种子照样会犯同样的错。纠正块被追加在 prompt **末尾**而不是开头或中间，是为了让前缀完全不变，三次尝试可以共享同一段 prompt 缓存。
+**Harness 侧的循环**（`EpisodeHarness.think()`，`DECISION_MAX_RETRIES` 次）：带着上次错误重问，不是原样再问一遍——原样重问等价于把三次模型调用当一次用，最常见的失败是系统性的，换一次随机种子照样会犯同样的错。纠正块被追加在 prompt **末尾**而不是开头或中间，是为了让前缀完全不变，多次尝试可以共享同一段 prompt 缓存。全部尝试耗尽后 Harness 抛 `MaxRetriesExceeded`——这是"这一步彻底失败了"，和 `DecisionAttemptFailed`（单次尝试失败，可重试）是两个不同的层级。
 
 ### 3.3 `_build_prompt`：组装 prompt
 

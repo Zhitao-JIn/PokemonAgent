@@ -1,110 +1,166 @@
-"""装配 —— **全项目唯一一处 `new` 具体实现**（CLAUDE.md 第三节第 3 条）。
+"""全项目唯一装配点：把所有具体实现 new 起来，拼成 RunHarness 与 world。
 
-想知道"这套东西是怎么拼起来的"，只需要读这一个文件；
-想知道"它们怎么互相调用"，读 `harness/harness.py`。这两件事分开放，
-是因为上一版把它们塞在同一个 `graph/build.py` 里，看上去就像图认识 LLM。
+想知道"怎么拼起来"读这个文件；想知道"怎么互相调用"读 harness/run_harness.py。
 
-    Harness  控制循环   ──→ GameToolPort ──→ WorldPort ──→ PyBoyWorld ──→ VisionProvider
-                        └─→ MemoryToolPort ──→ memory/（语义记忆）
-                        └─→ BrainPort ──→ LLMProvider
-                        └─→ TracePort
-
-图里没有一行碰得到 provider：它们是构造函数传进去的，只有这里 import 具体类。
-
-曾经还有一个 `build_demo`（MockWorld + FakeLLM，离线跑最小闭环），
-真实环境接进来之后已删除——留着两条装配路径，等于留着一条**没人真的跑**的代码路径。
+**入口是 run 级**：返回的 `RunHarness` 是主 agent（完整一局游戏），内部
+包着 `EpisodeHarness`（子 agent，解决栈顶一个目标）。旧调用方拿到的
+`harness.run(run_id, goals)` 是 run 级签名。
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from pokemon_agent.brain.brain import Brain
-from pokemon_agent.harness.harness import Harness
-from pokemon_agent.interfaces.trace import TracePort
-from pokemon_agent.tools.game_tools import GameTools
-from pokemon_agent.tools.memory_tool import MemoryTool
-from pokemon_agent.providers.local_embedding import FastEmbedText
-from pokemon_agent.providers.local_reranker import FastEmbedReranker
-from pokemon_agent.trace.store import LocalTrace
-from pokemon_agent.world.pyboy_world import PyBoyWorld
+from pokemon_agent.brain import Brain
+from pokemon_agent.harness import EpisodeHarness, RunDataCenter, RunHarness
+from pokemon_agent.interfaces import HumanReviewer
+from pokemon_agent.providers import FastEmbedReranker, FastEmbedText
+from pokemon_agent.tools import BrainTool, GameTools, MemoryTool, TraceTool
+from pokemon_agent.trace import LocalTrace
+from pokemon_agent.world import PyBoyWorld
 
 
 def build_real(
     rom: str,
-    state_path: str | None = None,
-    *,
-    vision_model: str = "qwen3-vl-plus",
+    state_file: str | None = None,
+    vision_model: str = "qwen3.8-max",
     text_model: str = "qwen-plus",
-    judge_model: str = "",
-    memory_model: str = "",
+    judge_model: str = "qwen3.8-max",
+    verify_model: str = "doubao-seed-2-1-pro-260628",
+    plan_model: str = "doubao-seed-2-1-pro-260628",
     max_tokens: int = 25600,
     watch: bool = False,
-    grid: bool = True,
-    trace: TracePort | None = None,
     run_id: str = "local",
-) -> tuple[Harness, TracePort, PyBoyWorld]:
-    """装配真实的一套：PyBoy + 视觉感知 + 真实 LLM + 循环。
+    resume_cursor: int | None = None,
+    # 供应商与模型按"图费结构"分岗（0908 实测，见 CHANGELOG）：
+    # - perception/judge 走 qwen3.8-max（DashScope）：图像按分辨率计费，
+    #   原生 160×144 每张仅 74 tok（judge 每步带 2-3 张历史帧）；
+    # - verify/plan 留在火山方舟（`ArkProvider`，豆包）：豆包图像按张计费
+    #   （实测恒定 1294 tok/张，与分辨率无关），verify 的多帧拼接成一张后
+    #   图费与帧数解耦（0909 去掉 2x 上采样：不省图费、省模型显存压力）；
+    #   plan 将来
+    #   带跨局历史图片时同理受益。传给 `ArkProvider` 的必须是豆包模型名
+    #   （带日期后缀，见 `ArkProvider.__init__` 的 assert），传 Qwen 型号名
+    #   会直接 404，不是"退化成纯文本"这种优雅失败。
+    # `vision_model`/`text_model`/`judge_model` 走 DashScope（`QwenProvider`）。
+    # state_file: None = 从开机起跑；API 装配默认传 `rom + ".state"`（存在时）。
+    reviewer: HumanReviewer | None = None,
+    data_center: RunDataCenter | None = None,
+    auto_push_goals: bool = True,
+    auto_decide_done: bool = True,
+) -> tuple[RunHarness, LocalTrace, PyBoyWorld, GameTools]:
+    """装配真实链路；返回 `(harness, trace, world, tools)`。
 
-    三个模型是刻意分开的，不是设计洁癖——它由计费结构和实验方法共同决定：
+    `world` 给调用方管生命周期（`close`）；`tools` 的 `latest_frame()` 是
+    实时画面管道的消费者接口（API 的独立 SSE 端点用它推帧）。
 
-    - **决策**走有资源包的文本模型；
-    - **感知**每步都调、任务简单，走最便宜的视觉模型；
-    - **判定**必须和决策分开，否则就是误差同源（见 `brain/brain.py`）。
-      即使型号相同也**各建一个 provider 实例**：共用一个的话，将来想给判定
-      换模型就得改两处，而且 manifest 里两条链路会指向同一个对象，
-      看不出它们是可以分别选型的。
-
-    trace 仍是 `LocalTrace`（本地事件列表 + JSONL）。
-    是阶段 2 的事；在那之前跑出来的数据**进程一退就没了**，只适合调试。
-
-    `run_id` 默认和 `LocalTrace(run_id="local")` 的默认值对齐——**这里没有单一
-    真相来源**：`TracePort` 的实现自己持有一份 `run_id`（不对外暴露），
-    `Harness` 另外持有一份用来标 `EpisodeMemory.run_id`。传自定义 `trace` 时
-    记得把这里的 `run_id` 也传成同一个值，否则两处对不上。
-
-    返回 world 是为了让调用方能 `stop()` 它——模拟器是进程级资源，
-    谁开的谁关，Harness 不该管这件事。
-
-    把真实的一整套实现接好，返回 harness 与 world。
+    `data_center`：前后端交互中间层（goals 槽 + review 槽）。API 层要接
+    `DataCenterReviewer` 时，必须把**同一个** `RunDataCenter` 实例传两处——
+    这里和 `reviewer`——两边才是在读写同一份状态，不传就各自新建一个，
+    互不相干。
     """
-    from pokemon_agent.providers.dashscope import QwenText, QwenVision
-    from pokemon_agent.vision.preprocess import GridOverlay
+    from pokemon_agent.providers import ArkProvider, QwenProvider
 
-    # 网格是**给模型看的辅助线**，不是画面的一部分——所以它挂在 provider 上，
-    # world 交出去的、存证用的、将来给 CV 通道用的，仍然是原图。
-    vision = QwenVision(model=vision_model, preprocess=(GridOverlay(),) if grid else ())
-    world = PyBoyWorld(rom, vision, state_path=state_path, watch=watch)
-    trace = trace or LocalTrace()
+    # temperature 钉死在 0：感知是抽取不是创作，同一张图两次读出不同结果是
+    # 纯噪声（`QwenProvider` 不自带默认值，每次构造都要显式给，见该类
+    # `__init__` 的 docstring）。
+    vision = QwenProvider(model=vision_model, temperature=0.0)
 
+    # PyBoy 模拟器 + 视觉感知的粘合层
+    world = PyBoyWorld(rom, vision, state_path=state_file, watch=watch)
+
+    # 事件逐条落盘 JSONL + 内存表（SSE 端点直接轮询内存表，无推送钩子）
+    data_center = data_center or RunDataCenter()
+    trace = LocalTrace(
+        run_id=run_id,
+        resume_after_event_id=resume_cursor,
+        event_sink=data_center.publish_event,
+    )
+    # harness 的记账通道：组装 req → tool 按 kind 渲染 payload → 落盘
+    trace_tool = TraceTool(trace)
+
+    # EpisodeHarness 伸向世界的唯一通道
     game = GameTools(world)
-    # 跨局摘要记忆的蒸馏（`EpisodeMemoryGenerator`）也要一个文本模型——独立建一个
-    # `QwenText` 实例，不借用 `decide_llm`：即使型号相同，理由和判定器分开建
-    # 是一样的（见下面 `Brain` 那句注释）——manifest 里要能看出这条链路是可以
-    # 单独换模型/调 max_tokens 的，共用一个实例就看不出来了。
+
+    # EpisodeHarness 伸向记忆的唯一通道
     memory = MemoryTool(
-        trace_port=trace,
-        llm_provider=QwenText(model=memory_model or text_model, max_tokens=max_tokens),
         embedding_provider=FastEmbedText(),
         reranker_provider=FastEmbedReranker(),
     )
-    # brain 拿不到 trace，也拿不到 tools/memory —— **写 trace 是 Harness 一个人的事，
-    # 检索记忆也是**。大脑把账（ModelCall）连同结果交出来，由 Harness 翻译成事件。
-    # 两条链路共用同一个 max_tokens 上限。判定每次只输出二三十个 token，
-    # 抬高上限对它没有影响；分开配置只会多一个没人调的旋钮。
-    brain = Brain(
-        decide_llm=QwenText(model=text_model, max_tokens=max_tokens),
-        judge_llm=QwenText(model=judge_model or text_model, max_tokens=max_tokens),
-    )
-    # `game` 只碰 world，`memory` 只碰记忆——两个互不相识的对象，
-    # 组合是 `Harness` 的事，见 `interfaces/tools.py` 顶部说明。
+
+    # checkpoint 手（PLAN_checkpoint）：run 目录 = trace 的落盘目录
+    from pokemon_agent.tools import CheckpointTool
+
+    checkpoint_tool = CheckpointTool(run_dir=Path("trace_data") / run_id, memory=memory)
+
+    # 决策走 DashScope（Qwen），判定/校验走火山方舟（豆包）——两条链路
+    # 不同供应商。
     #
-    # `Harness` 拿到的是裸的 `TracePort`——组装 payload 是 `trace/utils.py`
-    # 里那堆纯函数的事（`Harness` 调用它们，自己不拼 `dict`），落地/推流是
-    # `TracePort` 具体实现（这里是 `LocalTrace`）的事。返回值里的 `trace`
-    # 和 `Harness` 手上那个是同一个对象，调用方可以直接用它做 `all_events()`
-    # 这类调试查询。
-    return Harness(
-        game, memory, brain, trace, run_id=run_id,
+    # temperature 分层（0907 实测依据，见 CHANGELOG）：judge/verify/plan 是
+    # 判定与结构化输出任务，确定性优先 → 0；decision 保留 0.3 的少量随机
+    # （完全归零会让同一局面反复交出同一动作，探索多样性靠它兜底，
+    # 死循环另有 stall 检测与 judge 兜底）。doubao 实测理睬 temperature
+    # （temp=0 三次输出全同、temp=1 出现变化），不是被服务端强制覆盖的摆设。
+    brain = Brain(
+        decide_llm=QwenProvider(model=text_model, temperature=0.3, max_tokens=max_tokens),
+        judge_llm=QwenProvider(model=judge_model, temperature=0.0, max_tokens=max_tokens),
+        # verify（step 校验）单独一个 provider 实例（豆包 + 多帧拼接，见
+        # `prompts/verify_and_summarize.py` 的 `stitch_frames`）——回退链只落
+        # 豆包默认型号：judge_model 已换成 Qwen 型号名，传给 `ArkProvider`
+        # 会 404，不能再作 verify/plan 的回退。
+        verify_llm=ArkProvider(
+            model=verify_model or "doubao-seed-2-1-pro-260628",
+            temperature=0.0,
+            max_tokens=max_tokens,
+        ),
+        # run 级规划器（plan_once）同样单独一个 provider 实例——回退链落
+        # judge_model（跟 verify 同理）。这是同一个 `Brain` 实例的第四个技能，
+        # 不是另开一条依赖：episode 内的决策和 run 级规划共享这一个大脑。
+        plan_llm=ArkProvider(
+            model=plan_model or "doubao-seed-2-1-pro-260628",
+            temperature=0.0,
+            max_tokens=max_tokens,
+        ),
+    )
+
+    # harness 与大脑之间那层翻译壳：两跳契约独立维护，Brain 只在这里出现
+    brain_tool = BrainTool(brain)
+
+    # `data_center` 在这里先落实成一个真实例（不传就自己建一个）——
+    # `EpisodeHarness`（human_note 槽）和 `RunHarness`（goals/review 两槽）
+    # 必须共享同一个实例，缺一处这里落实就会各自新建一份、互不相干
+    # （`RunHarness.__init__` 自己也有"不传就新建"的兜底，但那个兜底建出来的
+    # 实例不会是 `EpisodeHarness` 手里这份，两边就断开了）。
+
+    # 子 agent（一局）→ 主 agent（一个 run）：
+    # 同一个 trace 实例注入两端——episode 写事件、run 级按类型 mask 读；
+    # 同一个 data_center 实例注入两端——episode 消费 human_note 槽、run 级
+    # 消费 goals/review 两槽。
+    episode = EpisodeHarness(
+        game,
+        memory,
+        brain_tool,
+        trace_tool,
+        run_id=run_id,
         episode_state_dir=Path("trace_data") / run_id / "episodes",
-    ), trace, world
+        data_center=data_center,
+        checkpoint=checkpoint_tool,
+    )
+    run_harness = RunHarness(
+        episode=episode,
+        trace=trace_tool,
+        # run 级规划：同一个 `BrainTool` 实例（`plan_once` 是 Brain 的第四个
+        # 技能）——`RunHarness` 只认 `BrainToolPort`，跟 trace 的接线同一个模式。
+        brain_tool=brain_tool,
+        # human-in-the-loop：不传默认 AutoContinueReviewer；API 层注入阻塞式审查者。
+        reviewer=reviewer,
+        data_center=data_center,
+        checkpoint=checkpoint_tool,
+        # `False`：plan 不自动压栈，新目标改走人工通道 `POST /runs/{id}/goals`。
+        auto_push_goals=auto_push_goals,
+        # `False`：plan 也不自己判 done，栈空时改路由去 review 问人，
+        # 只有人类的 STOP 才能真的结束 run。
+        auto_decide_done=auto_decide_done,
+    )
+
+    return run_harness, trace, world, game

@@ -1,9 +1,15 @@
 # `pokemon_agent/memory/` 技术规格
 
-覆盖文件：`interfaces/semantic_memory.py`、`memory/semantic/util.py`、`memory/semantic/object_store.py`、
-`memory/semantic/__init__.py`，以及它们所依赖的类型定义
-`schemas/object_fact.py`（`ObjectFact`）、`schemas/observation.py`（`Place`、`Landmark`）；
-以及新增的 `memory/semantic/knowledge/store.py`、`memory/semantic/knowledge/__init__.py`（第 6 节）。
+覆盖文件：`interfaces/memory/semantic_object_store.py`、`interfaces/memory/semantic_knowledge_store.py`、
+`memory/semantic/util.py`、`memory/semantic/semantic_store.py`、`memory/semantic/__init__.py`，
+`memory/retrieval.py`（共享混合检索），以及它们所依赖的类型定义
+（`schemas/datastore/object_memory.py` 的 `ObjectMemory`、`schemas/domain/place_in_world.py` 的
+`PlaceInWorld` / `LandmarkInWorld`）。
+
+> **同步说明（2026-08-30）**：第 1-5 节的类名 / 路径是 schemas 重命名与 memory 重组前的旧称
+> （`interfaces/semantic_memory.py`、`schemas/object_fact.py`、`ObjectFact`、`Place` 等），
+> 本文档曾整体落后于代码；本次只把头部与第 6 节追平到当前结构，其余章节的字段级同步
+> 留待下一次全量 spec 同步（本次重组详情见 CHANGELOG 2026-08-30）。
 
 ---
 
@@ -393,11 +399,12 @@ def __init__(self) -> None:
 
 ---
 
-## 6. `memory/semantic/knowledge/`：第二类语义记忆，和坐标无关的通用先验
+## 6. `KnowledgeStore`：第二类语义记忆，和坐标无关的通用先验
 
-新增的 `memory/semantic/knowledge/store.py`（另有一个只写了模块 docstring 的
-`memory/semantic/knowledge/__init__.py`）是一个**独立的第二类语义记忆**，和第 1-5 节描述
-的 `object`（门/招牌/人，按坐标索引）**不共用协议、不共用存储**，是刻意的：
+`memory/semantic/semantic_store.py` 里的 `KnowledgeStore` 是**独立的第二类语义记忆**，
+和第 1-5 节描述的 `object`（门/招牌/人，按坐标索引）**不共用协议、不共用存储**，是刻意的。
+`knowledge/` 目录现在只放 `.md` 数据（不再有代码）；读端接口在
+`interfaces/memory/semantic_knowledge_store.py`（`SemanticKnowledgeStore`）。
 
 - **`object` 类回答"这一格有什么"**（`query_objects(obs)` 按 `obs.place` 筛出这张地图
   上互动过的东西），**`knowledge` 类回答"这类局通常怎么打"**（比如"草丛遭遇是概率
@@ -407,35 +414,39 @@ def __init__(self) -> None:
   "为什么这个方法不用管 `place` 参数"变成一个要额外解释的特例。
 - **`knowledge` 类目前只读不写**：内容是运营手动维护的 `.md` 文件（例如
   `wild_encounters.md`），不是 agent 跑的过程中自动积累出来的，所以没有 `Writer`
-  协议，也没有 `port.py` 那种 Reader/Writer/Store 拆分的必要——`store.py` 只有一个
-  函数。
+  协议，也没有 `port.py` 那种 Reader/Writer/Store 拆分的必要——`SemanticKnowledgeStore`
+  只有读端两个方法（`chunks` / `mtime`）。
 
-### `store.py` 的接口：`load_all()` / `load_chunks()` / `load_named_chunks()` / `mtime()`
-
-`load_all()` 仍在（下面这段说明保留，因为它记着"为什么一开始不做检索"这个判断），
-但检索层现在用的是 `load_named_chunks()`（按 `##` 切块、带文件名）和 `mtime()`
-（目录最新修改时间，`_refresh_knowledge_index()` 拿它判断要不要重建索引）。
+### `KnowledgeStore` 的接口：`chunks()` / `mtime()`（`memory/semantic/semantic_store.py`）
 
 ```python
-def load_all() -> str:
-    """把这个目录下所有 `.md` 文件的内容原样拼起来，按文件名排序（确定性）。
-    不做任何筛选、不做检索。
-    """
+class KnowledgeStore:
+    def __init__(self, directory: str | Path | None = None) -> None: ...
+    def chunks(self) -> list[tuple[str, str]]:
+        """一次读盘返回 `[(文件名, 正文)]`，只含非空 `.md`，按文件名排序。"""
+        ...
+    def mtime(self) -> float:
+        """目录下最新 `.md` 的修改时间；没有文件时返回 0.0。"""
+        ...
 ```
 
-- **不筛选、不检索**：把 `memory/semantic/knowledge/` 目录下全部 `*.md` 文件按文件名排序后
-  原样拼接（`"\n\n".join(...)`）返回，是这一层刻意做出的设计决定，文档在模块
-  docstring 里给了理由——内容量小（个位数文件）时，筛选带来的"漏掉一条相关先验"
-  风险比"多花几百 token 全读进去"更贵；等内容量真的涨到需要筛的地步，再在这一层
-  加检索逻辑，现在不预先设计一套用不上的接口。
+- **按文件作为检索单元，保留文件边界**：`chunks()` 把每个非空 `.md` 当成一个独立
+  分片返回（带文件名），避免把不同主题的 markdown 拼成一个检索单元；不在文件内部
+  按段落拆分——同一文件中的标题、说明和例子共同构成一个知识主题，保留在同一个
+  检索单元里，避免召回段落时丢失上下文。
+- **一次读盘**：`chunks()` 同时给出文件名与正文，`MemoryTool._refresh_knowledge_index()`
+  一次调用即可重建索引——早先 `load_chunks()` + `load_named_chunks()` 两个函数各把
+  全部文件读了一遍，合并成 `chunks()` 后只读一次。
+- **目录可注入**：`directory` 不传时默认 `memory/semantic/knowledge/`；测试可注入
+  `tmp_path`，不用碰运营数据目录。
 - **这里曾经是"每次调用都重新读盘、不缓存、不检索"。** 那一版 `MemoryTool.knowledge_base()`
   直接调 `load_all()` 把整个目录拼成一大段全量塞进 prompt，理由是"内容量小的时候，
   漏掉一条相关先验比多花几百 token 更贵"。这条理由随内容量增长失效了。
 
   **现在是混合检索 + 增量索引**：`MemoryTool.query_knowledge(query, limit)` 先调
   `_refresh_knowledge_index()`——**知识库文件的 mtime 变了才重新分片、重新 embed**，
-  不是每次查询都重算——然后走 `hybrid_retrieve()`（BM25 + 向量召回，RRF 融合，
-  再过 reranker），返回 `KnowledgeQueryResult(contents, sources)`。
+  不是每次查询都重算——然后走 `hybrid_retrieve()`（`memory/retrieval.py`，BM25 + 向量
+  召回，RRF 融合，再过 reranker），返回 `KnowledgeQueryResult(contents, sources)`。
   `sources` 单独返回是为了 trace：`memory_read` 事件记的是命中了哪几个文件，
   而不是几千字的正文。
 

@@ -12,8 +12,11 @@
       "write:memory:episodic",
       "write:memory:episode",
       "write:memory:objects",
+      "delete:memory:episodic",
       "execute:llm:decision",
+      "execute:llm:plan",
       "execute:llm:judge",
+      "execute:llm:verify",
       "execute:llm:perception",
       "execute:llm:memory_reflection",
       "execute:llm:memory_summary"
@@ -31,8 +34,11 @@
       "write:memory:episodic",
       "write:memory:episode",
       "write:memory:objects",
+      "delete:memory:episodic",
       "execute:llm:decision",
+      "execute:llm:plan",
       "execute:llm:judge",
+      "execute:llm:verify",
       "execute:llm:perception",
       "execute:llm:memory_reflection",
       "execute:llm:memory_summary"

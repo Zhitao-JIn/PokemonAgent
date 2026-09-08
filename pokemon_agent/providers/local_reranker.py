@@ -27,6 +27,7 @@ class FastEmbedReranker:
         """第一次真要用的时候才把模型载进来。"""
         if self._model is None:
             from fastembed.rerank.cross_encoder import TextCrossEncoder
+
             self._model = TextCrossEncoder(model_name=self._model_name)
         return self._model
 

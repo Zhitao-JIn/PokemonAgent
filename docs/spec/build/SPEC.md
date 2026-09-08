@@ -57,10 +57,13 @@ def build_real(
     vision_model: str = "qwen3-vl-plus",
     text_model: str = "qwen-plus",
     judge_model: str = "",
+    memory_model: str = "",
     max_tokens: int = 25600,
     watch: bool = False,
     grid: bool = True,
+    upscale: int = 4,
     trace: TracePort | None = None,
+    run_id: str = "local",
 ) -> tuple[Harness, TracePort, PyBoyWorld]:
 ```
 
@@ -71,10 +74,13 @@ def build_real(
 | `vision_model` | `str`（关键字） | `"qwen3-vl-plus"` | 感知（视觉）链路用的模型，走"最便宜的视觉模型" |
 | `text_model` | `str`（关键字） | `"qwen-plus"` | 决策链路用的文本模型，"走有资源包的文本模型" |
 | `judge_model` | `str`（关键字） | `""` | 判定链路用的模型；空字符串表示与 `text_model` 同型号 |
+| `memory_model` | `str`（关键字） | `""` | 跨局摘要蒸馏（`EpisodeMemoryGenerator`）用的文本模型；空字符串表示与 `text_model` 同型号 |
 | `max_tokens` | `int`（关键字） | `25600` | 决策与判定两条链路**共用**的输出 token 上限 |
 | `watch` | `bool`（关键字） | `False` | 是否开窗口实时观看（不影响 agent 行为，只影响人能否看见） |
 | `grid` | `bool`（关键字） | `True` | 是否给视觉模型的输入图叠加网格辅助线（`GridOverlay`） |
+| `upscale` | `int`（关键字） | `4` | 是否放大输入图（`Upscale`，最近邻整数倍）；`<= 1` 表示不放大 |
 | `trace` | `TracePort \| None`（关键字） | `None` | 传入的 trace 实现；为空则用 `LocalTrace()` 兜底 |
+| `run_id` | `str`（关键字） | `"local"` | 传给 `Harness` 的 run 标识；需与 `LocalTrace(run_id=...)` 对齐 |
 
 返回值：`tuple[Harness, TracePort, PyBoyWorld]` —— 装配好的控制循环、trace 实例、
 世界对象。
@@ -83,32 +89,47 @@ def build_real(
 
 ```python
 from pokemon_agent.providers.dashscope import QwenText, QwenVision
-from pokemon_agent.vision.preprocess import GridOverlay
+from pokemon_agent.vision.preprocess import GridOverlay, Upscale
 
-vision = QwenVision(model=vision_model, preprocess=(GridOverlay(),) if grid else ())
+filters = ((GridOverlay(),) if grid else ()) + ((Upscale(upscale),) if upscale > 1 else ())
+vision = QwenVision(model=vision_model, preprocess=filters)
 world = PyBoyWorld(rom, vision, state_path=state_path, watch=watch)
 trace = trace or LocalTrace()
 
 game = GameTools(world)
-memory = MemoryTool()
+memory = MemoryTool(
+    trace_port=trace,
+    llm_provider=QwenText(model=memory_model or text_model, max_tokens=max_tokens),
+    embedding_provider=FastEmbedText(),
+    reranker_provider=FastEmbedReranker(),
+)
 brain = Brain(
     decide_llm=QwenText(model=text_model, max_tokens=max_tokens),
     judge_llm=QwenText(model=judge_model or text_model, max_tokens=max_tokens),
 )
-return Harness(game, memory, brain, trace), trace, world
+return Harness(
+    game, memory, brain, trace, run_id=run_id,
+    episode_state_dir=Path("trace_data") / run_id / "episodes",
+), trace, world
 ```
 
-1. **组建视觉 provider**：`QwenVision`，按 `grid` 开关决定是否挂 `GridOverlay` 预处理。
-   `import` 延迟到函数体内部（而非模块顶部），使 `build.py` 顶层不强依赖具体的
-   `providers.dashscope` / `vision.preprocess` 模块。
+1. **组建视觉 provider**：`QwenVision`，预处理是 `GridOverlay`（按 `grid` 开关）与
+   `Upscale`（按 `upscale` 开关）的串联。**`Upscale` 排在最后**：`GridOverlay` 的
+   `cell=16` 和标签尺寸都是按原始像素定的，放大挪它前面就得跟着改那两个数；放最后
+   则网格线仍落在格子边界上。放大是最近邻整数倍、不发明像素，只是让 8×8 的光标三角
+   占得下几个 token。`import` 延迟到函数体内部，使 `build.py` 顶层不强依赖
+   `providers.dashscope` / `vision.preprocess`。
 2. **组建世界**：`PyBoyWorld(rom, vision, state_path=state_path, watch=watch)`，把视觉
    provider 注入世界对象。
 3. **确定 trace**：调用方传入的优先，否则退回 `LocalTrace()`。
-4. **组建工具层**：`GameTools(world)` 只碰 world；`MemoryTool()` 独立存在，与
-   `GameTools` 互不相识——"组合是 `Harness` 的事"。
+4. **组建工具层**：`GameTools(world)` 只碰 world；`MemoryTool` 收四个依赖
+   （`trace_port` + `llm_provider` + `embedding_provider` + `reranker_provider`），
+   与 `GameTools` 互不相识——"组合是 `Harness` 的事"。蒸馏链路的 `llm_provider` 是
+   **独立新建的 `QwenText`**，不借用 `decide_llm`（理由同判定器分开建）。
 5. **组建大脑**：`Brain` 接收 `decide_llm` 和 `judge_llm` 两个**各自独立构造**的
    `QwenText` 实例（即便模型名相同也不共用一个 provider 对象）。
-6. **组建控制循环**：`Harness(game, memory, brain, trace)`。
+6. **组建控制循环**：`Harness(game, memory, brain, trace, run_id=..., episode_state_dir=...)`，
+   把 `run_id` 和 episode 状态目录一并注入。
 
 ### 1.4 三个模型分开的设计理由（源码原文归纳）
 
@@ -877,8 +898,8 @@ self._step_shown: tuple[str, int] | None = None
 ```python
 BROWSER_ONLY = frozenset({
     EventType.OBSERVE, EventType.MEMORY_READ, EventType.THINK,
-    EventType.ACT, EventType.INSPECT, EventType.MEMORY_WRITE,
-    EventType.OBJECT_NOTE,
+    EventType.ACT, EventType.STEP_MEMORY_WRITE,
+    EventType.OBJECT_MEMORY_WRITE,
 })
 ```
 
@@ -895,8 +916,7 @@ BROWSER_ONLY = frozenset({
   `reason`），`END` 再用 `_wrapped("why", ...)` 打印判定理由原文。
 - **`MODEL_CALL`**：按 `COST_LABEL` 取标签（`perception_cost` / `decision_cost` /
   `judge_cost`），打印 `in` / `out` token、`latency`、`attempt`、`ok`，判定多打一个 `depth`
-  ——`depth` 必须标出，否则满屏 judge 行分不清哪次决定整局成败、哪次只是子目标弹栈。
-- **`GOAL_POP`**：`depth` / `reason` / `goal`，外加 `_wrapped("why", ...)`。
+  ——`depth` 必须标出，否则满屏 judge 行分不清哪次决定整局成败。
 - **`ERROR`**：`kind` / `attempt` + `_wrapped("reason", ...)`。
 
 **这里曾经是一句裸的提前 `return` 加下面一大片永远执行不到的分支。** OBSERVE /
@@ -913,7 +933,8 @@ MEMORY_READ / THINK / ACT / INSPECT / MEMORY_WRITE / OBJECT_NOTE 七类的完整
   和下一条 `OBSERVE` 完全重复。这个判断后来走到了尽头——**`message` 字段本身删掉了**，
   因为除了这条复读没有任何消费方（详见 `schemas/SPEC.md` 的 `ToolResult` 一节）。
 - `MEMORY_WRITE` 不把 `ref` 前置在标签里：`StepMemory.render()` 自己开头就是那个坐标，
-  再拼一次会变成 `(ep, 2) (ep, 2) 当时看到…`。
+  再拼一次会变成 `(ep, 2) (ep, 2) 当时看到…`。（`MEMORY_WRITE` 现名
+  `STEP_MEMORY_WRITE`，这条判断依然成立。）
 - `OBSERVE` 的多行值（如 `walk_map`）要按行缩进对齐整体打印，不能挤成一行——
   这条现在活在观测台的渲染里（`browser.py` 把 `walk_map` 按 `\n` 拆开逐行输出）。
 

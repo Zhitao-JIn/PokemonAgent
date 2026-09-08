@@ -7,9 +7,8 @@ import pathlib
 import uuid
 from datetime import datetime
 
-from pokemon_agent.experiment.manifest import RunManifest
-from pokemon_agent.experiment.tasks import TaskChain, knowledge_recall_tasks
-
+from .manifest import RunManifest
+from .tasks import TaskChain, knowledge_recall_tasks
 
 STATE_ROOT = pathlib.Path("pokemon_agent/experiment/experiment_states/knowledge")
 
@@ -29,9 +28,11 @@ def main() -> None:
     parser.add_argument("--run-id", default="")
     parser.add_argument("--watch", action="store_true")
     parser.add_argument(
-        "--repeat", type=int, default=1,
+        "--repeat",
+        type=int,
+        default=1,
         help="同一个任务重复跑几遍（每遍都是独立的一次 run：独立的 run_id、"
-             "独立的 manifest、从同一个 state 重新开局）",
+        "独立的 manifest、从同一个 state 重新开局）",
     )
     args = parser.parse_args()
 
@@ -62,13 +63,13 @@ def main() -> None:
 
     if args.repeat > 1:
         succeeded = sum(1 for outcome in outcomes if outcome["success"])
-        print(f"\n[EXPERIMENT] {chain.chain_id} 跑了 {args.repeat} 遍，"
-              f"成功 {succeeded} 遍（{succeeded / args.repeat:.0%}）")
+        print(
+            f"\n[EXPERIMENT] {chain.chain_id} 跑了 {args.repeat} 遍，"
+            f"成功 {succeeded} 遍（{succeeded / args.repeat:.0%}）"
+        )
 
 
-def run_chain(
-    chain: TaskChain, run_id: str, state: pathlib.Path, watch: bool
-) -> dict[str, object]:
+def run_chain(chain: TaskChain, run_id: str, state: pathlib.Path, watch: bool) -> dict[str, object]:
     """跑完一条任务链，返回这一遍的结果。
 
     **每一遍都是一次完整独立的 run**：自己的 manifest、自己的 trace 目录、
@@ -80,24 +81,44 @@ def run_chain(
     而不是带着一个坏掉的环境把剩下 N-1 遍也跑成假数据。已经跑完的那几遍
     统计早就落盘了（`update_task_stats` 每局都写），不会白跑。
     """
-    manifest = RunManifest(
-        run_id=run_id, started_at=datetime.now().isoformat(),
-        experiment_kind="sequential_episodes", task_ids=[task.task_id for task in chain.tasks],
-        initial_state=str(state), notes=f"knowledge task chain: {chain.chain_id}",
-        providers={
-            "vision": {"model": "qwen3-vl-flash", "temperature": "0.0", "preprocess": "grid"},
-            "text": {"model": "qwen-plus", "temperature": "0.7", "max_tokens": "25600"},
-            "judge": {"model": "qwen-plus", "temperature": "0.7", "max_tokens": "25600"},
-            "embedding": {"model": "BAAI/bge-small-zh-v1.5", "runtime": "fastembed"},
-            "reranker": {"model": "BAAI/bge-reranker-base", "runtime": "fastembed"},
-        },
-    ).with_prompts("decide_action", "judge_success", "episode_summary").with_permissions().validate_design()
+    manifest = (
+        RunManifest(
+            run_id=run_id,
+            started_at=datetime.now().isoformat(),
+            experiment_kind="sequential_episodes",
+            task_ids=[task.task_id for task in chain.tasks],
+            initial_state=str(state),
+            notes=f"knowledge task chain: {chain.chain_id}",
+            providers={
+                # ⚠ **这一份是手写的，会和真实配置漂移。** `QwenProvider.config()` 已经
+                # 能导出真实的模型名/温度/base_url，但 manifest 在 `build_real()`
+                # 之前就拼好了，这里拿不到 provider。要修得调整装配顺序，那是另一件事。
+                # `preprocess` 字段恒为 "native"——预处理插件机制已删除。
+                "vision": {"model": "qwen3.8-max", "temperature": "0.0", "preprocess": "native"},
+                "text": {"model": "qwen-plus", "temperature": "0.7", "max_tokens": "25600"},
+                # judge/verify 走火山方舟（Ark）——这一份手写 manifest 已知会
+                # 跟真实装配漂移（见上面那条注释），供应商本身这里反映不出来。
+                "judge": {
+                    "model": "doubao-seed-2-1-pro-260628",
+                    "temperature": "0.7",
+                    "max_tokens": "25600",
+                },
+                "embedding": {"model": "BAAI/bge-small-zh-v1.5", "runtime": "fastembed"},
+                "reranker": {"model": "BAAI/bge-reranker-base", "runtime": "fastembed"},
+            },
+        )
+        .with_prompts("decide_action", "judge_success")
+        .with_permissions()
+        .validate_design()
+    )
     manifest.save(pathlib.Path("experiment_results") / run_id / "manifest.json")
 
     import os
+
     os.environ["CLAUDE_RUN_ID"] = run_id
-    from pokemon_agent.experiment.run_episode import build_session, run_one
-    harness, _, world = build_session(run_id, str(state), watch)
+    from .run_episode import build_session, run_one
+
+    harness, _, world, _tools = build_session(run_id, str(state), watch)
     try:
         print(f"[EXPERIMENT] run_id={run_id} task_id={chain.chain_id} state={state}")
         outcomes = []
@@ -111,9 +132,8 @@ def run_chain(
         chain_outcome = {
             "chain_id": chain.chain_id,
             "run_id": run_id,
-            "success": len(outcomes) == len(chain.tasks) and all(
-                bool(outcome["success"]) for outcome in outcomes
-            ),
+            "success": len(outcomes) == len(chain.tasks)
+            and all(bool(outcome["success"]) for outcome in outcomes),
             "tasks": outcomes,
         }
         update_task_stats(chain.chain_id, chain_outcome)
@@ -130,7 +150,11 @@ def update_task_stats(task_id: str, outcome: dict[str, object]) -> None:
     path = pathlib.Path("experiment_results") / "task_stats" / f"{task_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     stats: dict[str, object] = {
-        "task_id": task_id, "attempts": 0, "successes": 0, "success_rate": 0.0, "runs": [],
+        "task_id": task_id,
+        "attempts": 0,
+        "successes": 0,
+        "success_rate": 0.0,
+        "runs": [],
     }
     if path.is_file():
         stats = json.loads(path.read_text(encoding="utf-8"))

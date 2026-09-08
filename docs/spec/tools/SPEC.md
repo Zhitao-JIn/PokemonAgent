@@ -162,8 +162,10 @@ def execute(self, action: Action, obs: Observation) -> ToolResult:
 
 1. **每一段**的 `space.contains(segment.name)`：防止大脑幻觉出不存在的动作名。
    链里有一段越界，整条链就不该按下去。
-2. **多段链只能是移动键**（单段不受此限）：多段链的中间帧是看不到的（见下），
-   能这样闭眼走的只有移动键。
+2. **多段链的链体只能是移动键，链尾可以带一个 `a`**（单段不受此限）：多段链的中间帧
+   是看不到的（见下），能这样闭眼走的只有移动键；而**链尾那一帧本来就会被感知**，
+   所以把 `a` 放在末尾不丢证据——「走过去再按一下」于是能一次决策做完。
+   `a` 最多出现一次、且必须是最后一段（`times` 恒为 1）。
 
 **依据由调用方交出来，所以"用过期的掩码"在结构上不可能发生。** 这里曾经有第三条
 校验：`frame == world.last_frame_sha`，比对帧哈希，防止拿上一帧算的动作空间去按键。
@@ -187,7 +189,7 @@ def execute(self, action: Action, obs: Observation) -> ToolResult:
   `up×4 -> down×2` 仍然是两次感知。
 
 为什么最后收敛到一次：感知是每步花钱的那一项，而按第 3 条规则，多段链里
-只可能是移动键——中间那几帧没有任何会被用到的信息。**一次决策就该是一次
+只可能是移动键（链尾可带一个 `a`）——中间那几帧没有任何会被用到的信息。**一次决策就该是一次
 感知**。中间帧看不见是有意的取舍，不是遗漏。
 
 连按次数也不再经过 `args["times"]` 这条字符串通道：world 直接读
@@ -332,8 +334,9 @@ return sorted((m for m in self._episodes if m.episode_id == episode_id),
 
 #### 3.2.4 `episode_step_count` —— 现在是方法不是 property
 
-`episode_step_count()`：库里一共多少条单步记忆。`EPISODE_START` 事件的
-`memory_carried` 字段用它，回答"这一局开局时带着多少条经验"。
+`episode_step_count()`：库里一共多少条单步记忆。**不再是** `EPISODE_START`
+的 `memory_carried` 来源——step 记忆生命周期收紧后（按 episode 隔离、蒸馏后即弃，
+见 CHANGELOG 2026-08-31），开局时这个数恒为 0，已经不能反映"带着多少经验开局"。
 
 #### 3.2.5 跨局摘要记忆（episode memory）
 
@@ -657,7 +660,7 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
 | 方法 | 签名 | 要点 |
 |---|---|---|
 | `get_action_space` | `(obs: Observation) -> ActionSpace` | 纯函数，不碰 world。后置：`names` 非空。**这一层给出的就是完整动作空间** |
-| `execute` | `(action: Action, obs: Observation) -> ToolResult` | 前置：`obs` 是这个动作据以选出的那份观测，**每一段**（`action.segments()`）的按键都属于 `get_action_space(obs)` 的结果，需 assert；多段链只能是移动键；后置：`result.observation` 非空。整条链交给 `world.step()` **一次**执行，链尾只感知一次 |
+| `execute` | `(action: Action, obs: Observation) -> ToolResult` | 前置：`obs` 是这个动作据以选出的那份观测，**每一段**（`action.segments()`）的按键都属于 `get_action_space(obs)` 的结果，需 assert；多段链链体只能是移动键、链尾可带一个 `a`；后置：`result.observation` 非空。整条链交给 `world.step()` **一次**执行，链尾只感知一次 |
 | `reset` | `(task: Task) -> PerceptionResult` | 前置：`task.max_steps > 0`；后置：`observation.done` 为 False |
 | `save_state` | `(path: str) -> None` | 把模拟器状态存到 `path`。**每局开局存一次**，用于事后复现某一局的起点；权限 `execute:game:save_state`（`config/permissions.json` 里 `approval_required: false`）|
 
@@ -668,10 +671,10 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
 | `query_episode_steps` | `(episode_id: str) -> list[StepMemory]` | 前置：`episode_id` 非空；后置：全部来自该 episode，按 `step` 升序，**全量、不截断** |
 | `query_recent_steps` | `(episode_id: str, limit: int) -> list[StepMemory]` | 前置：`limit > 0`；后置：条数 ≤ limit，最新在最后。判定器的历史用它，**必须有界** |
 | `store_episode_step` | `(entry: StepMemory) -> None` | 前置：`entry.rationale` 非空 |
-| `episode_step_count` | `() -> int` | 库里单步记忆条数；A/B 实验自变量（`EPISODE_START` 的 `memory_carried`）|
+| `episode_step_count` | `() -> int` | 库里单步记忆条数（本局内，蒸馏后即弃，不再跨局累积）|
 | `query_episode_summaries` | `(scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]` | 跨局摘要：先按 `scene` 过滤（空或含 `*` 视为通用），再按相关性 + 质量 + 成功加权排序 |
 | `store_episode_summary` | `(...) -> EpisodeMemory` | 一局结束时蒸馏一条落库；蒸馏失败抛 `ValueError`（内部已留一条 ERROR 事件）|
-| `episode_summary_count` | `() -> int` | 库里跨局摘要条数 |
+| `episode_summary_count` | `() -> int` | 库里跨局摘要条数；**A/B 实验自变量**，`EPISODE_START` 的 `memory_carried` 用它——开局时跨局摘要池有多大 |
 | `query_objects` | `(obs: Observation) -> str` | 后置：`obs.place` 为 None 或无已知条目时返回空串；条与条之间**空一行**（`\n\n`），因为一条档案本身是多行 |
 | `query_knowledge` | `(query: str, limit: int = 5) -> KnowledgeQueryResult` | 和坐标无关的通用先验；混合检索（BM25 + 向量 + rerank），按目录 mtime 增量重建索引；返回 `contents` 和 `sources`（trace 只记后者）|
 | `store_objects_interactions` | `(before: Observation, action: Action, after: Observation) -> list[ObjectFact]` | 前置：`before`/`after` 都有 `place`；算不出确定格子时不记（**多段链**、连按、原地转身、两个候选同时存在），宁可漏记不可记错 |
@@ -702,8 +705,9 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
   情景记忆（`self._episodes: list[StepMemory]`）则没有额外协议层，直接是
   `MemoryTool` 自己管理的列表。
 
-- **`MemoryTool.query_knowledge()` 走 `memory/semantic/knowledge/store.py`**，
-  不经过 `SemanticObjectStore`、不经过任何协议层。这类记忆**只读**（内容是人手工
+- **`MemoryTool.query_knowledge()` 走 `memory/semantic/semantic_store.py` 的 `KnowledgeStore`（经 `SemanticKnowledgeStore` 接口注入）**，
+  不经过 `SemanticObjectStore`（那是 object 半身的协议）；它自己的读端接口是
+  `SemanticKnowledgeStore`，只读两方法。这类记忆**只读**（内容是人手工
   维护的 `.md`，不是 agent 跑出来的），`Reader`/`Writer`/`Store` 三件套对它是过度设计。
   它在 `MemoryTool` 这一侧确实多了几个字段——分片、向量和一个 mtime，
   那是检索索引的缓存（见 3.4）；早一版"每次调用直接读盘全量返回"没有任何字段。
