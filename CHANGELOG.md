@@ -1,3 +1,40 @@
+## 2026-09-08 —— 真实链路端到端核对改写成 pytest：`tests/test_real_integration.py`
+
+**改了什么**：上一条 changelog 加的 `pokemon_agent/experiment/real_integration_check.py`
+（独立脚本 + 自定义 `Check` 类手搓 PASS/FAIL 表）删掉，改写成
+`tests/test_real_integration.py`——一个 `pytest.mark.skipif`（没有两个
+API key 就整体跳过，`pytest tests/` 默认跑不需要网络的那批）+ 一个
+`scope="module"` 的 fixture 真跑一次 episode（避免每条断言各自重跑一遍）+
+四个各自独立的 `test_*` 函数（run 跑完 / trace event_id 连续无缺号 / 
+checkpoint state-json 成对 / StepMemory-ObjectMemory 落盘状态自洽），核对
+逻辑不变，只是从"脚本打印一张表"变成"pytest 原生的每个模块一个测试用例、
+各自 PASS/FAIL"。
+
+**为什么这么改**：用户要求"应该写在 test 里，用 pytest 开启"——独立脚本
+自己维护一套 `Check`/打印表格的机制是在重新发明 pytest 已经做好的事（用例
+发现、跳过、失败汇总、`-v`/`-k` 过滤），改成 pytest 用例后跟其余测试
+（`test_checkpoint_resume.py` 等）享受同一套运行方式，`skipif` 也比脚本
+自己手写"检查环境变量再 `sys.exit(1)`"更贴合 pytest 的习惯用法。
+
+**取舍**：保留了同一份落盘路径核对逻辑（trace/checkpoint/StepMemory/
+ObjectMemory 四项），没有额外加内容语义正确性核对——跟上一条的边界一致。
+`skipif` 卡在"两个 key 都要有"，而不是分别对 ARK/DashScope 单独判断——
+这次真实调用两条链路都要用到（judge/decide 走 DashScope，plan/verify 走
+Ark），少一个就跑不完整，没必要支持"只测一半"的中间态。
+
+**影响面**：删除独立脚本，新增 `tests/test_real_integration.py`（跟其余
+测试文件同规则：gitignore 收着、`git add -f` 入库）。`ruff` 干净（补了一处
+`E741` 歧义变量名）；`pytest tests/` 在没有 key 的环境下 15 例正常跑、5 例
+（本文件）正确跳过，全程无残留副作用；`test_trace_event_ids_are_globally_contiguous`
+的解析逻辑再次用真实 trace 产物（`trace_data/itest-*-run/`）验证过，
+`test_checkpoint_step_files_are_paired` 用同一份数据验证了"没有 checkpoint
+文件时应该失败"的负向路径。用户自己在真实 PowerShell 里跑：
+
+    $env:PYTHONPATH = ""
+    $env:ARK_API_KEY = "..."
+    $env:DASHSCOPE_API_KEY = "..."
+    pytest tests/test_real_integration.py -v -s
+
 ## 2026-09-08 —— 新增真实链路端到端核对脚本 `real_integration_check.py`
 
 **改了什么**：新增 `pokemon_agent/experiment/real_integration_check.py`——跟
