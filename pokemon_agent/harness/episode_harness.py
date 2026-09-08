@@ -550,17 +550,15 @@ class EpisodeHarness:
         # 它一路冒穿 Harness。
         history = self._memory.query_recent_steps(state.episode_id, JUDGE_HISTORY)
 
-        # 步骤 2.5：图 + 图对应的观测，一次 `dedup_snapshots()` 调用一并拿到。
-        # `snapshots[-1]` 就是"当前观测"——两个列表由 `dedup_snapshots()` 同一次
-        # 遍历保证对得上号（当前帧不现读的取舍与已知代价见 `CHANGELOG.md`
-        # 2026-09-06 条目）。
-        images, snapshots = dedup_snapshots(list(history))
+        # 步骤 2.5：这次问模型要带的截图，去重后一并拿到（不再单独取
+        # `snapshots`——"当前观测"改由 `judge_success.build_prompt()` 直接复用
+        # `history` 最后一条的"之后变成"，见 0909 CHANGELOG 条目）。
+        images, _ = dedup_snapshots(list(history))
 
         verdict_req = FromHarnessToBrainToolJudgeReq(
             goal=goals[-1],
             history=history,
             images=images,
-            snapshots=snapshots,
         )
         try:
             verdict_req = verdict_req.model_copy(

@@ -9,6 +9,25 @@
 **只有一个输入参数**：`build_prompt()` 收 `FromBrainToolToBrainJudgeReq`——跟 `Brain.judge()`
 共享同一个对象（先拼 prompt，`req.model_copy(update={"prompt": ...})` 回填，
 再整个交给 `Brain`），不必为"拼 prompt"和"问模型"各定义一套参数。
+
+**不再单独拼"当前观测"（0909 拍板）**：以前这里从 `req.snapshots[-1]` 另起一份
+`$observation`，跟 `$history` 最后一条的"之后变成"是同一份观测、渲染两遍。
+judge 第 0 步不问模型（`episode_harness.py::judge()` 的硬编码分支），走到这里
+`history` 保证非空，最后一条的"之后变成"本来就是当前这一帧，直接复用即可。
+`req.snapshots` 字段随这次改动一并从 `FromBrainToolToBrainJudgeReq`/
+`FromHarnessToBrainToolJudgeReq` 删除（不用的字段不留）。
+
+原来 `JUDGE_BLIND` 常量（挡 `known_objects`/`walk_map`/`landmarks` 三个字段
+不让判定器看到）也随这次改动删除——它只用来过滤那份被删掉的"当前观测"，
+不是判定器输入的通用防线：`known_objects` 从写入 `StepMemory` 时就被
+`SNAPSHOT_BLIND` 挡在外面，历史里从来没出现过；`walk_map` 本来就被
+`StepMemory._render_obs()` 挡在历史渲染之外；只有 `landmarks` 是真正被这个
+常量单独挡住的，但它一直都在 `$history` 里对判定器可见（`_render_obs()` 不挡
+`landmarks`），删掉这份重复的"当前观测"不会让 `landmarks` 新增暴露给判定器，
+只是让这份不一致自己消失。**如果以后要真的不让判定器看到 `landmarks`**，
+正确的地方是改 `StepMemory._render_obs()`/`render_sequence()`——但那是
+`judge`/`verify_and_summarize` 共用的渲染路径，改了会同时影响校验链，这次
+不在改动范围内。
 """
 
 from __future__ import annotations
@@ -18,30 +37,6 @@ from pokemon_agent.schemas.datastore import render_sequence
 
 from . import load
 
-JUDGE_BLIND: frozenset[str] = frozenset(
-    {
-        "known_objects",
-        "walk_map",
-        "landmarks",
-    }
-)
-"""判定器**看不到**的字段。判定器现在有历史了（`history` 参数），
-但那份历史是**有界的**：只有本局、只有最近几步。这几个字段是无界的，所以挡掉。
-
-- `known_objects`：**跨 episode 的流水**。「见过 7 次，互动 1 次」「他说过 XXX」
-  ——上一局说过的那句话会留在里面，目标是"和母亲对话"时，
-  它足以让判定器在**第 0 步**就判完成，而这一局什么都还没发生。
-  `history` 之所以安全正是因为它两头有界；这一份没有那个界。
-- `walk_map` / `landmarks`：**堵掉坐标推理的原料**。
-  光在 prompt 里写"别做坐标换算"是不够的——实测它照做了：
-  把 `walk_map` 的行号当成全局 y，得出"他还没进屋"，而 `map_id` 明写着他在屋里。
-  拿不到就不会用。位置证据由 `where` 一行直接给出，那是答案，不是原料。
-**这是一份黑名单而不是白名单**，方向是刻意选的：漏进一个新字段，代价是判定器
-多看一眼；漏掉一个新字段，代价是判定器瞎掉——`dialog_text` 那次就是后者，
-判定器一路在说"对话框内容未提供"，一局本该成功的 episode 被静默记成失败。
-两种失败模式不对称，所以宁可多给。
-"""
-
 _TEMPLATE = load("judge_success")
 
 
@@ -50,7 +45,7 @@ def build_prompt(req: FromBrainToolToBrainJudgeReq) -> str:
     是这次调用要回填的输出，不是输入。
 
     `history` 用 `render(reason=False)`：**发生过的事给判定器看，
-    决策者对那件事的主张不给。** `JUDGE_BLIND` 挡掉的是同一条隔离的另一半。
+    决策者对那件事的主张不给。**
 
     可能抛 `KeyError`（模板占位符对不上，prompt 是改得最勤的那类文件）——
     调用方负责兜住，见模块文档。
@@ -60,32 +55,15 @@ def build_prompt(req: FromBrainToolToBrainJudgeReq) -> str:
     `after`/`before` 重复这件事本身跟窗口大小无关——只要窗口里有连续的
     两步，重复就存在，所以两条链路必须走同一个去重渲染。
 
-    **"当前观测"读 `req.snapshots[-1]`**：`snapshots` 跟 `req.images` 是
-    `step_memory.dedup_snapshots()` 同一次遍历一并算出来的，`snapshots[-1]`
-    与 `images` 里最后一张截图严格对应同一份观测——不用靠"最后一条 history
-    就是当前观测"这条推理去翻 `history[-1].after`（调用方在 history 为空的
-    第 0 步已经直接不问
-    模型，所以这里只要跑到，正常情况下 `snapshots` 非空）。`snapshots`
-    仍可能因为上一步落库被权限拒绝、或那一步截图确实没能落盘而意外为空——
-    这时退化成"（这一步之前没有任何观测）"，不抛异常，跟 `history` 本身为空
-    时的降级（"这是第一步，之前什么都没发生"）是同一个取舍：宁可这一步
-    判定器少看一点，不该让 build_prompt() 崩掉。
+    **没有单独的"当前观测"**：`history` 最后一条的"之后变成"就是当前这一帧
+    （judge 第 0 步不问模型，走到这里 `history` 保证非空），模板里也不再有
+    独立的 `$observation` 占位符——理由见模块文档。
     """
-    goal, history, snapshots = req.goal, req.history, req.snapshots
-    current = snapshots[-1] if snapshots else None
-    rendered = (
-        (
-            "\n".join(f"- {k}: {v}" for k, v in current.facts.items() if k not in JUDGE_BLIND)
-            or current.status
-        )
-        if current is not None
-        else "（这一步之前没有任何观测）"
-    )
+    goal, history = req.goal, req.history
     steps = render_sequence(list(history), reason=False)
     past = "\n\n".join(f"## 第 {i} 条\n{r}" for i, r in enumerate(steps))
     return _TEMPLATE.render(
         goal=goal.goal,
         criteria=goal.criteria,
-        observation=rendered,
         history=past or "（这是第一步，之前什么都没发生）",
     )

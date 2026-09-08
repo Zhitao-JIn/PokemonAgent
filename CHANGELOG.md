@@ -1,3 +1,36 @@
+## 2026-09-08 —— judge 去掉重复的"当前观测"，直接复用 history 最后一条
+
+**改了什么**：`judge_success.py` 的 `build_prompt()` 不再从 `req.snapshots[-1]`
+单独拼一份"当前观测"塞进 `$observation`；`judge_success.md` 模板删掉
+「## 他现在看到的画面」这一节，改在「这一局最近发生的几步」的说明里点明
+"最后一条的『之后变成』就是他现在看到的画面"。`FromBrainToolToBrainJudgeReq`/
+`FromHarnessToBrainToolJudgeReq` 删掉不再使用的 `snapshots` 字段；
+`episode_harness.py::judge()` 相应改成 `images, _ = dedup_snapshots(...)`，
+不再取 `snapshots` 传给 req。原来挡"当前观测"三个字段的 `JUDGE_BLIND` 常量
+一并删除（它只用来过滤这份被删掉的内容，不是判定器输入的通用防线）。
+
+**为什么这么改**：`history` 最后一条的"之后变成"和这份单独拼的"当前观测"
+本来就是同一份 `ObservationFromWorld`（`dedup_snapshots()` 一次遍历一并算出
+来的），每次判定都被渲染两遍——而 judge 第 0 步已经不问模型
+（`episode_harness.py::judge()` 的硬编码分支），走到 `build_prompt()` 这条路
+时 `history` 保证非空，`current is None` 的兜底分支从这套调用点看是死代码。
+
+**取舍**：`JUDGE_BLIND` 里 `known_objects`/`walk_map` 两项本来就不会经这条
+路径泄漏（`known_objects` 从写入 `StepMemory` 起就被 `SNAPSHOT_BLIND` 挡住；
+`walk_map` 被 `StepMemory._render_obs()` 挡在历史渲染之外），只有 `landmarks`
+是真正只被 `JUDGE_BLIND` 挡住的，但它一直都在 `$history` 里对判定器可见
+（`_render_obs()` 不挡 `landmarks`）——删掉这份重复的"当前观测"不会新增
+`landmarks` 的暴露面，只是让这处不一致自己消失。如果以后要真的不让判定器
+看到 `landmarks`，正确的地方是改 `StepMemory._render_obs()`/`render_sequence()`
+——但那是 `judge`/`verify_and_summarize` 共用的渲染路径，这次不在改动范围内。
+
+**影响面**：判定 prompt 里"现在"这份信息只出现一次（少一份重复的坐标外观测
+文本，省 token）；`FromBrainToolToBrainJudgeReq`/`FromHarnessToBrainToolJudgeReq`
+的字段集从 4 个减到 3 个，两个 req 类字段仍保持一一对应（`BrainTool.judge()`
+靠 `model_dump()` 互转不受影响）；未跑真机验证，行为等价性靠人工核对
+`render_sequence()` 的最后一条渲染结果与原先 `current.facts` 渲染的内容
+（除 `landmarks` 外）逐字段一致得出。
+
 ## 2026-09-08 —— walk_map 行尾标全局 x 范围 + decide prompt 静态前移动态后移
 
 **改了什么**：

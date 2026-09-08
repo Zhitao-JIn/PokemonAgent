@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from pydantic import BaseModel
 
 from pokemon_agent.schemas.datastore import StepMemory
-from pokemon_agent.schemas.domain import GoalForBrain, ObservationFromWorld
+from pokemon_agent.schemas.domain import GoalForBrain
 
 
 class FromHarnessToBrainToolJudgeReq(BaseModel):
@@ -20,5 +20,4 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     goal: GoalForBrain
     history: Sequence[StepMemory] = ()
     images: Sequence[bytes] = ()
-    snapshots: Sequence[ObservationFromWorld] = ()
     prompt: str = ""
