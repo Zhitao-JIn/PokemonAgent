@@ -34,7 +34,6 @@ import base64
 from pathlib import Path
 from typing import Any
 
-from agent_permission import initialize
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -157,7 +156,15 @@ class EpisodeHarness:
 
     # ---- 对外只有这一个入口 ----
 
-    @initialize
+    # 注意：这里**不带** `@initialize`。生产路径下这个方法只会被
+    # `RunHarness.dispatch()` 调用（见 `run_harness.py`），`@initialize` 挂在
+    # 那一层的 `RunHarness.run()`/`resume_run()` 上——它们的图入口 `plan` 节点
+    # 在第一次 `dispatch` 之前就要调用受权限守卫的 `Brain.plan_once`，权限运行时
+    # 必须在那时已经初始化，等不到这里。这里若也挂 `@initialize` 会在
+    # `dispatch → episode.run()` 处形成嵌套调用，被 `agent_permission` 的
+    # 嵌套检查直接断言失败（`runtime.py` 明写不允许静默容忍）。独立于
+    # `RunHarness` 单跑这个方法（如集成测试的"episode 级"场景）时，调用方
+    # 自己在调用点包一层 `@initialize`。
     def run(
         self,
         episode_id: str,

@@ -1,3 +1,46 @@
+## 2026-09-08 —— 修复 RunHarness 权限运行时未初始化：真实集成测试跑出的阻断性 bug
+
+**改了什么**：`@initialize`（`agent_permission`）从 `EpisodeHarness.run()` 挪到
+`RunHarness.run()`/`resume_run()`。`EpisodeHarness.run()` 不再自带这个装饰器，
+方法上补了注释说明原因；`tests/test_integration_tool_layer.py`（未入库，
+本地测试文件）里直接单跑 `EpisodeHarness.run()` 的"episode 级"场景相应改成
+自己包一层 `@initialize`。
+
+**为什么这么改**：用户要求"直接操作 PowerShell 跑一个三步就退出的任务，
+真实情况下的集成测试，测试所有模块"——computer-use 对终端类应用只能到
+click-only 权限，打不了字，改用 device_bash 补齐 pyboy/真实 API key 环境后
+跑 `python -m pokemon_agent.experiment.run_episode 3 "..." --state assets/rom.state`，
+第一步就炸：`RunHarness` 的图是 `begin → plan → dispatch → ...`，`plan` 节点
+在第一次 `dispatch`（进而调用 `EpisodeHarness.run()`）之前就要调用受
+`@require_permission` 守卫的 `Brain.plan_once`，而权限运行时只在
+`EpisodeHarness.run()` 的 `@initialize` 里初始化——`plan` 永远先于它执行，
+权限运行时永远还没起来，`RuntimeError: ... was called before the permission
+runtime was initialized` 是**每一次**真实调用 `RunHarness.run()` 的必现结果，
+不分走 CLI（`run_episode.py`）还是走生产 API（`api.py::_execute()`，同样直接
+调 `harness.run(...)`，同一个坑）。`test_integration_tool_layer.py` 的"run 级"
+场景没测出来，是因为它用 `FakeBrain`（未挂 `@require_permission`）代替真实
+`Brain`，权限检查这条路径压根没被这个测试走到——只有接上真实 `Brain` +
+真实 `agent_permission` 运行时的集成测试才会现形，这正是这次"真实情况下
+集成测试"的价值所在。
+
+**取舍**：没有让 `agent_permission` 支持"已初始化就跳过"的软化嵌套语义
+（库自己的设计立场很明确：嵌套调用必须硬炸，见 `runtime.py` 的注释——静默
+容忍会把一次 run 的审计流从中间切成两段且没有任何报警）；改成把装饰器
+挪到唯一正确的位置——`RunHarness.run()`/`resume_run()`，两者都是从
+`plan` 节点起步的同一张图。`EpisodeHarness.run()` 在生产路径下只被
+`RunHarness.dispatch()` 调用（`grep` 确认全项目仅此一处），独立单跑它只发生
+在测试里，测试自己包一层的成本可以接受。
+
+**影响面**：这是一个此前从未被真实调用路径验证过的阻断性 bug——只要接了
+真实 `Brain`，`RunHarness.run()`/`resume_run()` 此前 100% 必现崩溃，`api.py`
+的生产 HTTP 入口同样受影响。修复后 `pytest tests/`（14 例）与
+`ruff check pokemon_agent --select F821` 均验证通过；真实端到端验证（真实
+API key + 真实网络请求）卡在这台 device_bash 沙盒的出站代理不放行
+`ark.cn-beijing.volces.com`/`dashscope.aliyuncs.com`（`curl` 直接确认两个域名
+都收到代理层 403），已确认修复让流程正确推进到"发起真实网络请求"这一步
+（此前是权限运行时崩溃，现在是纯网络出站限制），完整的真实网络往返验证
+需要在真实 PowerShell（有互联网访问）里跑同一条命令。
+
 ## 2026-09-08 —— checkpoint 文档与代码对齐（第 16 条）+ 修复 resume_run() 的 NameError 死代码
 
 **改了什么**：核对发现 `docs/ROADMAP.md` 第 16 条（存档/checkpoint 机制）

@@ -46,6 +46,8 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from pokemon_agent.errors import AgentError
+from agent_permission import initialize
+
 from pokemon_agent.interfaces import (
     MAX_GOAL_RETRIES,
     MAX_PLAN_PUSH,
@@ -146,6 +148,12 @@ class RunHarness:
 
     # ---- 入口 ----
 
+    # `@initialize` 挂在这里而不是 `EpisodeHarness.run()`：图入口 `plan` 节点
+    # 会在第一次 `dispatch`（进而调用 `episode.run()`）之前调用受权限守卫的
+    # `Brain.plan_once`，权限运行时必须已经初始化——`plan → dispatch` 的顺序
+    # 决定了这个装饰器只能挂在这一层，挂在 `EpisodeHarness.run()` 上等
+    # `dispatch` 第一次调用它时反而会触发嵌套 `@initialize` 断言失败。
+    @initialize
     def run(self, run_id: str, goals: list[TaskForHarness]) -> RunOutcomeResp:
         """跑完一个 run：目标栈逐个解决（每层一个 episode），返回 run 级结算。
 
@@ -188,6 +196,7 @@ class RunHarness:
             raise
         return self._close(final, run_id)
 
+    @initialize  # 同 run()：resume 也从 plan 节点起步，见 run() 上的注释
     def resume_run(self, run_id: str, episode_id: str, step: int) -> RunOutcomeResp:
         """恢复入口：三元组 `(run_id, episode_id, step)` 定位（PLAN_checkpoint §4）。
 
