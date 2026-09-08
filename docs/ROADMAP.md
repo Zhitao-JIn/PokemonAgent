@@ -545,122 +545,56 @@ trace `Source` / schema 类名）各起了一个名字，读代码时得靠"这�
 `docs/ROADMAP.md` 状态本条之前一直停在"📋 未开始"没跟着代码更新，这次一并
 修正。
 
-### 16. 📋 存档/checkpoint 机制——0906 方案拍板（含 object_fact 事件流），待实施
+### 16. ✅ 存档/checkpoint 机制——run/episode/step 三级恢复，PLAN_checkpoint.md v4 已实施
 
-**澄清一个前置的设计现实（0902 可观测/审计扫描时提出、用户确认维持现状）**：
-`LocalTrace` 每次进程/run 启动都从 `event_id=0` 重新分配，不会从磁盘 JSONL
-回填内存表（`trace/store.py` 自己的注释也写"跨进程的完整历史由磁盘 JSONL
-承担……那是 checkpoint/恢复的话题，这里不做"）。当前这是**符合设计意图的**：
-现在每个 `run_id` 就假定对应一个连续的进程生命周期，不存在"同一个 run_id
-在同一进程里断了又续"这种场景，所以从 0 开始不算 bug。但这条约束**没有
-自动消失**——真做 checkpoint/resume 时，如果打算让恢复后的 run 复用原
-`run_id` 继续写 trace，就必须显式解决 `event_id` 续接的问题（读盘找最大
-`event_id` 再接着分配，或者恢复后一律换新 `run_id` 另起一段历史，两种都
-没有实现，选哪个会影响这条下面 4 件套设计要不要再加一件）。
+**0908 文档对齐**：本条曾长期停在"📋 0906 方案拍板，待实施"，但 0907 会话已
+经把完整方案（v4）落地并接线（详见 `docs/spec/harness/PLAN_checkpoint.md`——
+三级恢复语义、落盘签名三元组、废弃归档、判断点拍板记录，`CHECKPOINT_handoff_2026-09-07.md`
+是同一次工作的架构现状盘点/契约草案/改动触点清单）。**这两份文档才是权威
+来源**，本条不再重复方案细节，只记结论、现状与本次核对发现的问题。
 
-（用户 0902 提出：加上存档机制。现状排查见下，`docs/spec/harness/SPEC.md` 1.4
-已经把恢复目标缺什么排查清楚，这条把它并进路线图供排期。）
+**0908 git 对象丢失事件**：`.git/objects` 松散对象一度整体丢失（`00`-`d7`
+前缀），checkpoint 相关的 4 次逐条提交（`c288b3fa57` 前置改造 /
+`6d154ae3ed` CheckpointTool 实现 / `98ff1e5499` 图接线 / `414760c32f`
+DataCenter+测试）连同其余 61 次提交的对象一并不可找回，git 历史里已看不到
+这些 commit——但**工作区源码文件本身完好**，损坏只发生在 `.git` 内部
+（详见 `docs/spec/GIT_RECOVERY_2026-09-08.md`），代码是真实存在且已实施的，
+不是"计划了但没写"。修复时两分支指针改指向各自最后一个有效祖先，当前
+工作区状态整体提交为一个恢复快照 `6573b1f`。
 
-现状：`EpisodeHarness._begin()` 已经会在开局存一份"起点存档"
-（`self._game.save_state(...)`，`episode_state_dir` 非 `None` 时才存），但这只
-解决"每个 episode 从逐字节相同的起点重新跑"这一件事，不是断点续跑。
-`docs/spec/harness/SPEC.md` 1.4 已经排查过完整恢复缺什么：
+**已落地范围**（对照 PLAN v4 §7/§9 逐项核对）：run/episode/step 三级恢复
+入口、`save_checkpoint` 图节点（18 节点，episode 图入口）、显式签名三元组
+`(run_id, episode_id, step)`（StepMemory/ObjectMemory 落盘记录、模拟器快照
+配对 json 均已补 `run_id` 字段）、`CheckpointToolPort`/`CheckpointTool`
+（save_step/save_run/load/latest_run/void_after）、废弃时间线归档（截断+搬
+voided 目录，不做静默删除）、`WorldPort.load_state`、`RunDataCenter` 事件流
+槽（`LocalTrace` 内存表迁移，前端恢复单点重建）、`StepMemory` 落盘写穿
+（同构 `EventObjectStore`）。object_fact 事件流本身（`ObjectFactEventBase`/
+`ObjectDialogEvent`/`ObjectWarpEvent`/`ObjectStillEvent` + `EventObjectStore`
+的 `append`/`query`/`query_range`/`query_map`/`truncate`）已经是这套方案的
+地基，跟 `PLAN_checkpoint.md` v3 起的设定完全一致。
 
-```
-恢复目标 = LoopState（身份：episode_id/task/step/goals/succeeded/why）
-         + 记忆库（现在只进 prompt，不在 state 也不在存档里）
-         + 模拟器存档（已有，但只存起点，不是"任意一步"）
-         + manifest（模型/prompt 版本，重建 Brain/World 用）
-```
+**验证（0908 本次核对，非首次实施时的验证）**：
+- `pytest tests/` 全绿（8 例：`test_checkpoint_resume.py` 4 例 + 既有 2 个
+  测试文件），环境为临时搭建的 Python 3.12 venv（`pydantic`/`langgraph`/
+  `rank-bm25`/`agent-permission`，跳过 `fastembed`——本次验证范围不需要它）。
+- `ruff check pokemon_agent` 发现一个**真实 bug 并已修复**：
+  `run_harness.py::resume_run()` 用到 `ResumeEpisode`（`interfaces` 包已导出
+  这个类）但导入块里漏加，是会在恢复路径炸 `NameError` 的死代码，此前没
+  测试覆盖到这一行（`test_checkpoint_resume.py` 覆盖的是 `CheckpointTool`
+  本身与存储层截断语义，不含 `RunHarness.resume_run()` 的调用路径）——已
+  补上 `ResumeEpisode` 导入，`ruff` 与全部测试确认修复后无回归。
+- ruff 其余 53 条是既有格式/类型标注类债务（`E501`/`ANN2xx`/`UP042` 等），
+  跟 checkpoint 本身无关，不在本次范围内处理。
 
-同一份文档还区分了两个不该混淆的概念：**replay**（不调模型，从 trace 的 `raw`
-里重新解析，只需要 trace）vs **resume**（接着跑，需要上面这套完整
-checkpoint）——现在只有 trace（能 replay），连 resume 需要的"任意一步存档 +
-记忆库快照 + manifest 绑定"都没有。
-
-**0906 拍板（与用户逐条对齐的方案，实施未开始）**：
-
-- **不用 LangGraph checkpointer，自管步级 checkpoint**。它存得了图状态、存不了
-  世界（PyBoy 在 `WorldPort` 后面是黑盒，恢复到 step N 必须把模拟器回卷到那一帧）；
-  且它的恢复点在每个节点边界，与步级粒度错位。存档 = `EpisodeRunState` 整份
-  `model_dump_json()` + PyBoy `save_state()` 二进制，LangGraph 的
-  `get_state_history` 留给调试用，生产恢复不依赖它。
-- **存档点 = 图入口**。新增专职 `save_checkpoint` 节点放在
-  `store_object_semantic_memory` → `look` 之间，恢复入口 = 图入口——新局与恢复
-  同一条代码路径，`look` 不做任何改动（快照里 `pending_observation` 还在，
-  `look` 有帧可接）；新局首进图也存一份 step-0 存档。附带把"succeeded=True
-  恢复误入 think"那个坑从结构上消掉：`judge` 判 done 后走收尾分支，不经过
-  存档点，**存档永远是主循环中段状态**。
-- **bundle 四件套**：状态快照（整份 dump，含 `observation`，恢复后不重调 VLM）/
-  PyBoy 存档（二进制单放，不塞 JSON）/ manifest（装配参数 per-run 一份，
-  恢复时经 `build.py` 装配点重建 Brain/World——装配点唯一，正好复用）/
-  记忆 store 指针。
-- **记忆不进 checkpoint，store 写穿**（write-through：store 被写的那一刻同时
-  落盘）。四类记忆分档——step_memory / object_fact 写穿（现状纯进程内，要改）；
-  episode_memory 已落盘（收尾链才写，run 级 checkpoint 每局一次自然覆盖）；
-  knowledge 已落盘、当外部只读资源记 manifest。checkpoint 只存"绑定 + 断点"
-  不存内容：避免两个真相源、memory 内部结构泄漏进 harness 落盘格式、以及
-  每步全量拷记忆的 O(N²) 写放大。
-- **object_fact 改事件流（写时定型）**【0906 用户新拍板，终版】：判定搬 harness，
-  结构是 **`kind → 姿势判定函数列表`**：候选集 = 脚下 + 四邻 + facing 延伸一格
-  （柜台/桌子隔空），每个候选格按 kind 查姿势函数（门两条姿势：站门格朝外按、
-  面向门走进去；人/招牌正对或隔柜台 + a；坡单向跳），返回 `None` = 与本次按键
-  无关；加 kind/加姿势 = 表加一行，接口留得住。事件**写时定型**、discriminated
-  union：公共戳 `episode_id`/`step` + `actor_place`（按键时角色格）+ `place`
-  （物体格）+ `kind` + `button`，三个子类型：`dialog`（对话正文）、`warp`
-  （`map_id`）、`still`（无效果）——result 字符串约定与 `leads_to` 派生退役
-  （"门通向哪" = 该格最近一条 warp 事件）。memory 侧是**纯事件日志**：
-  `append`（每局 `ep-{id}.jsonl` 写穿 + 内存 list）/ `query`（按 map/episode/
-  step≤ 过滤，直接返回事件，不做任何折叠）/ `truncate`（过滤 step > N 重写，
-  幂等）——内存 list 是存储本体而非物化视图。文字化 = prompts/ 组装辅助纯函数，
-  **逐事件一行**（行首 ep/step → "站在 actor 格按 button → 对象格+kind：载荷"），
-  **无裁剪、无拼接、无门特判、无次数抬头**——`MAX_TRIED`/`MAX_OBJECT_LINES`/
-  `MIN_STITCH`/`_stitch`/`RESULT_*` 全部随 `ObjectMemory` 退役；新旧由行内
-  step 自明，将来真嫌长再上"同姿势留最新"（一行改动）。`ObjectMemory` 可变
-  档案类退役。每帧查询重放 O(事件数)，本规模毫秒级，真慢在接口后加缓存。
-- **蒸馏组装函数上移 brain**【0906 拍板】：蒸馏的 LLM 调用本就在
-  `Brain.verify_and_summarize()` 里；memory 层剩的纯组装
-  （`EpisodeMemoryGenerator.build_from_response` + `_create_episode_memory`）
-  搬进 `brain.py`（不单独成文件），`verify_and_summarize` 节点调用方式不变，
-  `episode_store.py` 只剩存储，AGENTS.md 树"episode_store.py 含蒸馏器"注记
-  同步改。
-- **任意存档点续跑 = 截断**【0906 二次拍板，替代"分支 + attempt id"方案】：选定
-  step N 的存档续跑时，删掉 N 之后的一切——N 之后的存档文件、step_memory 的
-  step > N 记录（按 `(episode_id, step)` 键删）、object_fact 的 step > N 增量
-  （过滤 step > N 后重写文件）。单时间线：无 attempt id、无 fork、无分支折叠，
-  检索端保持"一个 episode 一个平目录"。删除是键控幂等操作，中断了重跑一遍
-  即可。**代价**：回到 step 50 之后再也不能回到曾经历过的 step 200 之后——但被
-  放弃尝试的完整过程在 trace 底账里都有（trace 追加写、从不删），实验数据不丢。
-- **崩溃续跑是截断的特例**：对最新存档续跑时未来信息 ≤1 步（存档点之后到下次
-  存档之间只有 store_记忆一次写盘），同样截断掉即可，正确性不依赖 upsert
-  （键控覆盖仍是写入语义，顺手保留）。
-- **"检索不读未来"本来就是正确语义**：`retrieve_*` 加 step 上限过滤只是把
-  隐式不变量显式化，不是恢复特有的补丁，恢复场景白捡。过滤边界（< 还是 ≤
-  当前步）在实现时用 assert 钉住——正常运行的检索只该看到已完成步的记忆，
-  这条也保证截断万一漏删的记录不会被读进来。
-- **收尾链中途不存档**：崩了从最后一个主循环存档恢复、重跑整条收尾链，浪费
-  一次判定调用，换"蒸馏不会重复落库"。
-- **review retry 白捡**：截断正是"倒回去改一步重跑"需要的全部操作，第 1 条的
-  retry 语义将来直接复用这套，不用再单独设计 rewind 接口。
-
-**恢复时的 assert 契约**：bundle 齐全且快照 step 与文件名一致；截断完成后
-store 里该 episode 不存在 step > N 的事件（幂等操作，不满足就再删一遍）；快照内
-的模型/prompt 版本与 manifest 一致——不一致就地爆炸，恢复出来的是"另一个大脑"。
-事件侧：`append` 前置断言事件 step ≥ 该局文件已有最大 step（等于容忍崩溃窗口，
-由恢复时的截断清理）；事件为写时定型的 discriminated union，消费方按类型过滤，
-不存在字符串约定。
-
-**还没定的**：
-
-- trace 续接（本条开头的前置设计现实）：恢复后复用原 `run_id`（LocalTrace
-  从盘上找最大 `event_id` 续分）还是换新 `run_id` 另起一段历史——待拍板。
-- AGENTS.md 九"checkpoint 存事件序列而非最终状态"一句与本方案冲突（本方案 =
-  状态快照 + 记忆事件流，trace 不参与恢复），实施时同步改规范。
-- 分期：崩溃续跑（截断逻辑最薄）可以先行，object_fact 事件化是截断它的地基、
-  必须同一期落——"追加写 + step 戳"这半个先做不会白做。
-
-跟第 1 条（审查 `retry` 语义）、第 4 条（trace 生命周期）、第 6 条（内存环境
-框架重构）的交叠仍在，但方向已定，实施按上面方案走。
+**还没定的**（PLAN v4 §9 判断点已回答大部分，这两条仍开着）：
+- AGENTS.md 九"trace 是追加写的事件序列……checkpoint 存事件序列而非最终
+  状态"一句与实际方案不符（实际 = 状态快照 + 事件游标对账，见
+  `PLAN_checkpoint.md` §3.2），本条一并同步改掉，见下面 AGENTS.md 改动。
+- 档位 B（LangGraph `SqliteSaver` 步级 checkpointer）在 handoff 文档里标为
+  "选做，只留接口不做实现"——现状用的是自管 `save_checkpoint` 节点方案
+  （handoff §3.1 已拍板 A 方案为必做），档位 B 未做且没有排期信号，暂不
+  视为缺口。
 
 ### 17. ✅ 本次可观测/审计全项目扫描的其余发现——多为文档滞后，随手修掉；两条明确暂不处理
 

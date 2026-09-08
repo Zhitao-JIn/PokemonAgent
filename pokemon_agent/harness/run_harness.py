@@ -54,6 +54,7 @@ from pokemon_agent.interfaces import (
     CheckpointToolPort,
     EpisodeHarnessPort,
     HumanReviewer,
+    ResumeEpisode,
     RunState,
     TraceToolPort,
 )

@@ -1,3 +1,37 @@
+## 2026-09-08 —— checkpoint 文档与代码对齐（第 16 条）+ 修复 resume_run() 的 NameError 死代码
+
+**改了什么**：核对发现 `docs/ROADMAP.md` 第 16 条（存档/checkpoint 机制）
+仍停在"0906 方案拍板，待实施"，但实际 0907 会话已经把 `PLAN_checkpoint.md`
+v4 方案完整实施并接线（`CheckpointToolPort`/`CheckpointTool`、
+`save_checkpoint` 图节点、三级恢复入口、废弃归档、`WorldPort.load_state`、
+`RunDataCenter` 事件流槽、`StepMemory` 落盘化）——只是 0908 一次 git 对象
+丢失事件（详见 `docs/spec/GIT_RECOVERY_2026-09-08.md`）抹掉了这几次提交的
+历史记录，代码本身在工作区完好无损。本次把第 16 条改成 ✅ 状态、指向
+`PLAN_checkpoint.md`/`CHECKPOINT_handoff_2026-09-07.md` 为权威来源，不再
+重复方案细节；同步改掉 `AGENTS.md` 第九节"checkpoint 存事件序列而非最终
+状态"一句（与实际方案不符——实际是状态快照 + 事件游标对账，不是纯事件
+重放）。核对过程中用 ruff 扫了一遍 `pokemon_agent/`，发现
+`run_harness.py::resume_run()` 用到的 `ResumeEpisode` 没有被导入（`F821`
+undefined-name）——这是恢复路径上会直接炸 `NameError` 的死代码，补上导入。
+
+**为什么这么改**：用户指出"objectmemory已经变成event流了，你先和现有文档
+对齐一遍"——文档滞后于代码是比代码本身有 bug 更容易造成误导的问题（下一个
+读 ROADMAP 的人会以为 checkpoint 还没做，重新设计一遍）。`ResumeEpisode`
+这个 bug 是核对过程中顺手用 ruff 扫出来的，不是本次目标，但既然扫到了、
+修复成本又低（补一行 import），随手一并修掉。
+
+**取舍**：没有去重建丢失的 4 次逐条提交历史（git 对象已经找不回，
+`GIT_RECOVERY_2026-09-08.md` 里保留了提交说明供追溯，但 diff 内容拿不到
+了）——工作区文件是当前唯一真相源，重建 commit 历史的收益不值得为一个
+纯考古目的重写。`ruff` 剩余的 53 条既有格式/类型标注类债务本次不处理，
+跟 checkpoint 无关。
+
+**影响面**：纯文档对齐 + 一处 import 修复，不改变任何运行时行为（除了让
+`resume_run()` 从"必炸"变成"能跑"）。`pytest tests/`（8 例，含
+`test_checkpoint_resume.py` 4 例）与 `ruff check pokemon_agent`（`F821`
+归零）均已用临时搭建的 Python 3.12 venv（`pydantic`/`langgraph`/
+`rank-bm25`/`agent-permission`）验证通过。
+
 ## 2026-09-08 —— memory 新增 MemoryIndexPort/MemoryIndexStore：项目无关的元数据倒排索引 + 语义检索（第 24 条 Phase 1）
 
 **改了什么**：新增 `pokemon_agent/interfaces/memory/memory_index_port.py`

@@ -230,7 +230,12 @@ pyproject.toml
 | `payload` | 该类型的结构化内容 |
 | `ts` | 时间戳 |
 
-- trace 是**追加写的事件序列**，不是可变状态快照。checkpoint 存事件序列而非最终状态。
+- trace 是**追加写的事件序列**，不是可变状态快照——但这说的是 trace 自身的写入
+  方式，不是 checkpoint 的存储形态。checkpoint 存的是**状态快照 + 事件游标**
+  （快照 = `RunState`/`EpisodeRunState` 整份 dump + 模拟器世界快照，游标指向
+  trace 的 `event_id`/记忆的 `step` 用于对账），不是靠重放事件序列重建状态——
+  模拟器世界与已花的模型调用成本都不可能从事件重建。详见
+  `docs/spec/harness/PLAN_checkpoint.md` §3.2、`docs/ROADMAP.md` 第 16 条。
 - 本阶段 `LocalTrace`（落盘 JSONL）就够，但接口按"能落盘、能重放"设计。
 
 ## 十、测试
