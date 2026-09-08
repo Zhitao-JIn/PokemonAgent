@@ -2,7 +2,7 @@
 
 > 单一权威版本。别处（`docs/EXPERIENCE_DOCS.md`、`evaluation/SPEC.md`）只做链接，
 > 不再各自维护一份路线图表格。
-> 最后更新：2026-09-06。
+> 最后更新：2026-09-08。
 
 ## 状态图例
 
@@ -817,6 +817,52 @@ query_episode_summaries()` 检索排序目前只看 BM25+向量融合+reranker �
 **没定的地方**：分级原则写进 AGENTS.md 还是只写装配注释；要不要补一组
 "决策链升档/判定链降档"的对照实验——这条跟第 21 条（VLM 感知可靠性）耦合：
 先有当前模型的正确率基线，降档实验才有可比的对照组。
+
+### 24. 📋 memory 检索接口重做：项目无关的元数据倒排索引 + 语义检索（0908 拍板，待实施）
+
+**现状**：`MemoryToolPort` 上的读方法是按各自的消费方专门定制的，形状互不相同——
+`query_episode_steps(episode_id)` / `query_recent_steps(episode_id, limit)` 按局查，
+`query_object_events(map_id, before_step)` / `query_object_events_at(place)` 按图/按格
+查（且刻意不按 `episode_id` 过滤，是跨局的“这张图的共有知识”，服务
+`decide`/`think_action`），`query_episode_summaries(scene, query, limit, run_id)` 按场景
+做语义检索、单独收了一个 `run_id` 参数。每加一种新的检索维度就要新开一个方法，
+接口没法直接挪给别的项目用。
+
+**目标（0908 会话拍板）**：memory 只对外提供两种能力——元数据过滤检索、语义
+相似度检索——不再为每种检索维度各开一个专用方法。
+
+- **记录标识**：每条记录写入时由 memory 生成一个内部 uuid，不带语义，调用方
+  不能也不需要从 `project`/`run_id`/`episode_id`/`step` 反推出它。
+- **元数据过滤检索（倒排索引）**：memory 为每个 (字段, 值) 组合维护一份反向表
+  （值本身怎么序列化由调用方决定，memory 不理解字段含义）：`(字段,值) → 记录
+  uuid 集合`。查询时传一个“字段→值”的过滤条件字典，各字段各查各的候选集合、
+  取交集。**所有字段地位完全对等**——`project`/`run_id`/`episode_id`/`step`/
+  `map`/`scene`/`kind`……都是同一种字段，没有谁是“主键”、没有谁被结构性标记
+  为必选，查询可以任意组合、任意增减字段，不需要为不同字段组合预建索引。
+- **语义相似度检索**：向量检索，跟过滤检索是并列、独立的另一条路径，取代现在
+  `query_episode_summaries` 这类专用实现。
+- **数值型条件（如 `step` 的大小比较）不进过滤检索**：倒排索引只回答“相不相等”，
+  回答不了“大不大于”。这类查询由 tool 层自己先用其余字段（比如 `episode_id`）
+  把候选集筛到足够小，再对候选集里的数值字段做一次普通比较——这是 tool 层的
+  领域知识（“`step` 只有同一局内才能比大小”），不是 memory 该内置的规则；tool
+  层漏传该带的过滤字段，是调用方把查询写错了，跟别的查询漏加一个条件是同一类
+  错误，不该也不能靠 memory 内部强制某个字段必选来兜底。
+- **写入侧对称**：harness 把它知道的全部上下文（`project`/`run_id`/`episode_id`/
+  `step`，以及 `map`/`scene`/`kind` 这类游戏语义字段）交给 tool 层；tool 层负责
+  组装成写入时要带的字段集合、或者查询时要用的过滤条件字典，memory 只机械执行，
+  不做任何折叠、派生或语义判定（沿用 `AGENTS.md` 第四节的分层原则）。
+
+**影响面**：`MemoryToolPort` 现有的 `query_episode_steps`/`query_recent_steps`/
+`query_object_events`/`query_object_events_at`/`query_episode_summaries` 这批专用
+方法要收敛成“过滤检索 + 语义检索”两个通用方法，原来每个方法各自的查询逻辑
+（按局、按图、按窗口……）下沉到 tool 层用通用方法自己拼过滤条件字典实现；
+`EventObjectStore`/`KnowledgeStore` 等现有存储实现要重新落在这套统一索引结构上。
+
+**没定的地方**：索引数据结构的具体落地（内存字典 / 落盘 B-tree 等）、现有
+JSONL 落盘格式怎么迁移到这套“uuid + 元数据字典 + payload”的记录形状、这次
+要不要顺带把 memory 拆成独立可复用的包（服务“以后别的项目也用”这个目标）
+还是先在本仓库内把接口收敛掉——这几点留到实施前再定，这一条先只定接口设计
+本身。
 
 ## 后续阶段（P1 起，依赖 P0 完成）
 
