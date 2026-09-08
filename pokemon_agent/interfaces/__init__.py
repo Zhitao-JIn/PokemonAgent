@@ -25,6 +25,7 @@ __all__ = [
     "LLMProvider",
     "MAX_GOAL_RETRIES",
     "MAX_PLAN_PUSH",
+    "MemoryIndexPort",
     "MemoryToolPort",
     "PLAN_MAX_ATTEMPTS",
     "RerankerProvider",
@@ -55,6 +56,7 @@ from .memory.episode_memory_store import (
     EpisodeMemoryStore,
     EpisodeMemoryWriter,
 )
+from .memory.memory_index_port import MemoryIndexPort
 from .memory.semantic_knowledge_store import SemanticKnowledgeStore
 from .memory.semantic_object_store import (
     SemanticObjectReader,

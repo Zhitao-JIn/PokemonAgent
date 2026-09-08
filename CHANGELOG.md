@@ -1,3 +1,45 @@
+## 2026-09-08 —— memory 新增 MemoryIndexPort/MemoryIndexStore：项目无关的元数据倒排索引 + 语义检索（第 24 条 Phase 1）
+
+**改了什么**：新增 `pokemon_agent/interfaces/memory/memory_index_port.py`
+（`MemoryIndexPort` Protocol：`put`/`get`/`get_many`/`filter`/`search`/
+`delete_many`）和 `pokemon_agent/memory/index/index_store.py`
+（`MemoryIndexStore` 默认实现），并在 `interfaces/__init__.py`、
+`memory/__init__.py` 的统一出口里注册导出。这是全新的独立模块，不触碰任何
+现有调用方——`MemoryToolPort`/`EventObjectStore`/`KnowledgeStore` 等现有接口
+和实现都未改动。`MemoryIndexStore` 内部：每条记录写入时生成一个不带语义的
+uuid；`(字段,值) → uuid 集合` 的倒排索引支持任意字段组合的等值过滤检索
+（`filter()`），所有字段地位对等，没有主键；`search()` 接受一句话文本，
+候选集先按 `conditions` 过滤缩小范围，再调 `memory/retrieval.py::hybrid_retrieve`
+做 BM25+embedding+RRF+reranker 的混合排序，排序细节对调用方完全不透明；
+单文件 JSONL 写穿落盘、启动时全量读回内存重建倒排索引（跟 `EventObjectStore`
+同一取舍）；`delete_many()` 整文件重写（跟 `EventObjectStore.truncate()`
+同一取舍）。
+
+**为什么这么改**：`docs/ROADMAP.md` 第 24 条（0908 拍板）——现有
+`MemoryToolPort` 的读方法按各自消费方专门定制（按局/按图/按格/按场景……），
+形状互不相同，每加一种检索维度就要新开一个方法，接口没法挪给别的项目复用。
+这次先只搭一个通用、项目无关的检索底座（过滤检索 + 语义检索两种能力），
+不碰现有调用方，验证接口设计站得住之后再考虑要不要把现有查询逐个迁移过来。
+
+**取舍**：`search()` 最初设计是接受调用方算好的查询向量，后来发现现有
+`query_episode_summaries` 实际跑的是 BM25+embedding+RRF+reranker 的完整混合
+检索管线，不是简单向量余弦——改成接受原始文本、内部自己跑完整管线，重排
+也算检索的一部分，保持跟现有检索质量对齐、对调用方不透明。索引结构选了
+最简单的内存字典+JSONL 写穿落盘，没有做真正的磁盘索引结构（B-tree 等）——
+现在的数据量级用不上，跟 `EventObjectStore`/`KnowledgeStore` 一致的取舍。
+倒排索引只支持等值/成员匹配，不支持大小比较（比如 `step` 的区间查询）——
+这是索引支持的操作类型的限制，数值比较由调用方自己先用等值条件筛小候选集
+再手动比较，不是这层该内置的规则。
+
+**影响面**：新增文件，不影响任何现有代码路径。已用真实依赖（`pydantic`
+2.13.5、`rank-bm25`）在一次性搭建的 Python 3.12 虚拟环境里做了功能级冒烟
+测试（非仅语法检查）：`put`/`get`/`get_many`/`filter`（含多字段交集、空
+条件返回全部、无匹配返回空）/`search`（含 `conditions` 缩小候选范围、
+候选集为空返回空列表、未写 `text` 的记录不可被检索到）/`delete_many`，
+以及重启后从磁盘重建索引的持久化一致性，全部通过。尚未接入任何现有调用方
+（`MemoryToolPort`/`EventObjectStore`/`KnowledgeStore` 迁移属于后续 Phase，
+按 ROADMAP 第 24 条"没定的地方"暂缓，等用户明确要做再启动）。
+
 ## 2026-09-08 —— judge 去掉重复的"当前观测"，直接复用 history 最后一条
 
 **改了什么**：`judge_success.py` 的 `build_prompt()` 不再从 `req.snapshots[-1]`
