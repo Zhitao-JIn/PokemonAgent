@@ -61,7 +61,7 @@ class ResumeEpisode(BaseModel):
     （PLAN_checkpoint §4）。由 `RunHarness.resume_run()` 置入，分派完成后清空。
     """
 
-    episode_id: str = Field(description="要恢复的局（= 锚点 run.json 里记录的那局）")
+    episode_id: str = Field(description="要恢复的局")
     step: int = Field(ge=0, description="恢复到该局第几步开局（0 = 本局从头重跑）")
 
 

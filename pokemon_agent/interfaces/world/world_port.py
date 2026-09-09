@@ -42,6 +42,15 @@ class WorldPort(Protocol):
         """
         ...
 
+    def set_task(self, task: TaskForHarness) -> None:
+        """只挂任务标记，**不动模拟器状态**（checkpoint 恢复后配 `load_state_bytes` 用）。
+
+        task：要接上跑的任务。
+        前置条件：task.max_steps > 0；`load_state_bytes()` 已经把模拟器摆到了正确的帧。
+        后置条件：`_task`/`_closed` 就位，`step()`/`perceive_once()` 的前置断言不再拦它。
+        """
+        ...
+
     def all_actions(self) -> list[str]:
         """列出这个世界支持的全部动作名。
 

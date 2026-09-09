@@ -2,7 +2,8 @@
 
 契约（PLAN_checkpoint v4）：签名三元组 `(run_id, episode_id, step)` 显式落在
 每份 checkpoint 的 json 里；`last_event_id` 是 trace 游标——恢复的主坐标，
-`event_id` 大于它的事件全部属于废弃时间线。
+`event_id` 大于它的事件全部属于废弃时间线。只有一种落盘形态：`EpisodeRunState`
+与当时的 `RunState` 打包进同一份 `<step>.json`（无单独的 run 级文件）。
 """
 
 from __future__ import annotations
@@ -18,27 +19,25 @@ from pokemon_agent.schemas.communication import (
 
 @runtime_checkable
 class CheckpointToolPort(Protocol):
-    """Harness 的 checkpoint 手：存（两级）、取（三元组定位）、废弃归档。"""
+    """Harness 的 checkpoint 手：存、取（三元组定位）、废弃归档。"""
 
     def save(self, req: FromHarnessToCheckpointToolSaveReq) -> None:
-        """存一份 checkpoint（按 req.level 落 step/ 或 run.json）。
+        """存一份 checkpoint（`step/<episode_id>/<step>.*`）。
 
-        前置条件：`req.emulator_state` 在 level="step" 时非 None。
         后置条件：先世界快照后 json（json 是提交点）；中途 crash 留下的是
         上一号有效 checkpoint（恢复管线按"成对存在 + 签名匹配"识别）。
         """
         ...
 
-    def load(self, run_id: str, episode_id: str, step: int) -> FromCheckpointToolToHarnessRestoreResp | None:
+    def load(
+        self, run_id: str, episode_id: str, step: int
+    ) -> FromCheckpointToolToHarnessRestoreResp | None:
         """按三元组取一份 checkpoint；不存在（或 state/json 不成对）返回 None。
 
-        step=0 时依次尝试 `step/<eid>/0.json` → `run.json`（仅当其 episode_id
-        匹配）——run 级锚点是 step0 感知前就崩的唯一恢复源。
+        返回值同时带 `state_dump`（EpisodeRunState）与 `run_state_dump`
+        （RunState）——调用方按自己需要的那层取，不用分两次查、也不用猜
+        该读哪个文件。
         """
-        ...
-
-    def latest_run(self) -> FromCheckpointToolToHarnessRestoreResp | None:
-        """取最近的 run 级锚点；没有返回 None。"""
         ...
 
     def void_after(

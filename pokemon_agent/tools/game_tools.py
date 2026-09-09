@@ -105,6 +105,11 @@ class GameTools:
         """从字节串恢复世界状态（checkpoint 恢复用）。"""
         self._world.load_state_bytes(data)
 
+    @require_permission("execute:game:reset")
+    def set_task(self, task: TaskForHarness) -> None:
+        """只挂任务标记，不动模拟器状态（checkpoint 恢复后配 load_state_bytes 用）。"""
+        self._world.set_task(task)
+
     @require_permission("read:game:action_space")
     def get_action_space(self, obs: ObservationFromWorld) -> ActionSpaceForBrain:
         """掩码发生在这里，**只看 obs 里的 overlay**。

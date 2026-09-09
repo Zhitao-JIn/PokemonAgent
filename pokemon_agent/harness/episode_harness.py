@@ -137,6 +137,10 @@ class EpisodeHarness:
         世界连续性（取舍见 `CHANGELOG.md` 2026-09-03 条目）。"""
         self._checkpoint = checkpoint
         """checkpoint 手；`None` = 不做 checkpoint，`save_checkpoint` 节点空转。"""
+        self._run_state_dump: dict[str, Any] | None = None
+        """当前正在跑的这一局对应的 `RunState.model_dump()`——`run()`/`resume()`
+        入口处赋值，`save_checkpoint()` 节点原样打包进每一步的存档，本层不解读
+        （纯透传，见 `checkpoint_tool.py` 落盘布局说明）。"""
         self._graph = self._compile()
 
     def _frame_b64(self, episode_id: str, step: int) -> str | None:
@@ -166,6 +170,7 @@ class EpisodeHarness:
         episode_id: str,
         task: TaskForHarness,
         stack: list[TaskForHarness],
+        run_state: dict[str, Any],
     ) -> HarnessEpisodeOutcomeResp:
         """跑完一局：解决栈顶这一个目标。
 
@@ -173,7 +178,10 @@ class EpisodeHarness:
         后置条件：trace 里恰好多一条 EPISODE_START 和一条 EPISODE_END。
 
         `stack` 是整个目标栈（全局信息）——投影成 `goals`（判只判栈顶，
-        `goals[-1]` = task.goal），其余层是给大脑的全局视野。
+        `goals[-1]` = task.goal），其余层是给大脑的全局视野。`run_state` 是
+        `RunHarness.dispatch()` 派发这一局时的 `RunState.model_dump()`——本层
+        不解读，只存起来供 `save_checkpoint()` 原样打包进每一步的存档（run
+        级状态跟 episode 级状态从此共存一份文件，见 `checkpoint_tool.py`）。
 
         开局、跑图、收尾三段，异常路径也补齐 EPISODE_END 后原样抛出。
         """
@@ -182,6 +190,7 @@ class EpisodeHarness:
         assert stack and stack[-1].task_id == task.task_id, (
             "run() needs a non-empty stack whose top is the task being run"
         )
+        self._run_state_dump = run_state
 
         # 步骤 1：开局，跑图直到终止。
         # `recursion_limit` = 17 × max_steps + 20：continue 分支一步要走 16 个
@@ -213,23 +222,31 @@ class EpisodeHarness:
         task: TaskForHarness,
         stack: list[TaskForHarness],
         step: int,
+        run_state: dict[str, Any],
     ) -> HarnessEpisodeOutcomeResp:
         """从本局第 `step` 步开局的 checkpoint 恢复并跑完（PLAN_checkpoint §5，step 级入口）。
 
         前置条件：构造时注入了 checkpoint 工具；`(episode_id, step)` 的存档成对存在。
         恢复语义：世界快照回载 + 状态快照重建（记忆由各 store 落盘读回），
         **不重调视觉模型、不重跑已完成节点**；废弃时间线（step 之后的事件/记忆/
-        截图）在进图前由 `void_after` 归档截断。
+        截图）在进图前由 `void_after` 归档截断。`run_state` 同 `run()`——纯透传，
+        供后续每一步的 `save_checkpoint()` 使用。
         """
         assert self._checkpoint is not None, "resume() needs a checkpoint tool"
+        self._run_state_dump = run_state
         # 步骤 1：取存档（签名/成对校验在 tool 内）。
         checkpoint = self._checkpoint.load(self._run_id, episode_id, step)
         assert checkpoint is not None, f"no checkpoint for ({episode_id}, {step})"
-        assert checkpoint.emulator_state is not None, "step checkpoint missing world snapshot"
         # 步骤 2：废弃处理（对账游标 = checkpoint 的 last_event_id）。
         self._checkpoint.void_after(self._run_id, episode_id, step, checkpoint.last_event_id)
-        # 步骤 3：世界快照回载——唯一不可从事件重建的东西。
+        # 步骤 3：世界快照回载——唯一不可从事件重建的东西。`load_state_bytes()`
+        # 只回载模拟器字节，不认得 `_task`/`_closed`（纯 Python 记账，不进存档）；
+        # 不补 `set_task()` 的话，本局自己靠 `pending_observation` 收尾没事，
+        # 但本 run 后续再派发新 episode 时（同一个长命 world，`_world_reset_done`
+        # 已是 True、不会走 `reset()`）会在 `perceive_once()`/`step()` 撞上
+        # "before reset()" 断言——这是 check_restore.py 端到端跑出来的真故障。
         self._game.load_state_bytes(checkpoint.emulator_state)
+        self._game.set_task(task)
         self._world_reset_done = True
         # 步骤 4：状态重建（记忆层由各 store 构造时从落盘读回，无需重建）。
         state = EpisodeRunState.model_validate(checkpoint.state_dump)
@@ -314,8 +331,8 @@ class EpisodeHarness:
                     run_id=self._run_id,
                     episode_id=state.episode_id,
                     step=state.step,
-                    level="step",
                     state_dump=state.model_dump(),
+                    run_state_dump=self._run_state_dump,
                     last_event_id=self._trace.cursor(),
                     emulator_state=self._game.save_state_bytes(),
                 )

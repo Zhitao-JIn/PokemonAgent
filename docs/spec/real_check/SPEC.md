@@ -61,13 +61,19 @@ build_real（装配）/ harness.run（图 + 模型调用）/ world.stop（收尾
 
 ### 维度 3 —— `check_checkpoint.py`：存档配对
 
-读 `trace_data/<run_id>/checkpoints/run.json`（run 级锚点，dispatch 派发前覆盖写）
-和 `checkpoints/step/<episode_id>/` 下的 step 存档——每份由一对
-`<step>.state`（模拟器世界快照）+ `<step>.json`（EpisodeRunState dump + 游标，
-提交点）构成。
+读 `checkpoints/step/<episode_id>/` 下的 step 存档——每份由一对 `<step>.state`
+（模拟器世界快照）+ `<step>.json`（**EpisodeRunState dump ＋ 当时的 RunState
+dump ＋ 游标**，提交点）构成。0909 起没有独立的 `run.json`：run 级状态（目标栈/
+结算）跟 episode 级状态打包进同一份 `<step>.json`（同一局内 RunState 不变，
+只在局间被 `dispatch`/`reflect` 改动），resume 只需读一份文件就能同时重建
+两层状态——原先 `resume_run()` 靠"猜 step=0 该读哪个文件"读 run 锚点，
+只要这一局跑过 step0 就会被自己的 step0 存档抢先命中，run.json 永远读不到，
+这是实测踩出来的真实 bug（详见 `PLAN_checkpoint.md` v5 变更），不是这次顺手
+优化。
 
-**通过判定**：run.json 存在；state 与 json 的文件名（不含后缀）集合完全一致。
-不成对 = 存档写坏了，`CheckpointTool.load()` 恢复时会直接拒绝。
+**通过判定**：state 与 json 的文件名（不含后缀）集合完全一致；json 里能读出
+非空的 `run_state_dump` 且其 `run_id` 与当前 run 一致。不成对 = 存档写坏了，
+`CheckpointTool.load()` 恢复时会直接拒绝。
 
 ### 维度 4 —— `check_memory.py`：记忆落盘自洽
 
@@ -85,8 +91,9 @@ build_real（装配）/ harness.run（图 + 模型调用）/ world.stop（收尾
 **读回路径的真实执行**：
 
 - **阶段 A**：`build_real` 完整跑一个 3 步 run，生成 trace / checkpoint / 记忆产物；
-- **阶段 B**：模拟"崩溃后重启"——读 run.json 拿事件游标，带 `resume_cursor`
-  重新 `build_real`（新进程语义：trace 从游标 +1 续写），调
+- **阶段 B**：模拟"崩溃后重启"——读**要恢复到的那一步自己的 checkpoint**
+  （`step/<eid>/<N>.json`，0909 起 run.json 已合并进来，见维度 3）拿事件游标，
+  带 `resume_cursor` 重新 `build_real`（新进程语义：trace 从游标 +1 续写），调
   `resume_run(run_id, episode_id, step)` 走
   `CheckpointTool.load → void_after（废弃时间线归档截断）→ 世界快照回载
   （load_state_bytes）→ 状态重建 → 进图续跑`。

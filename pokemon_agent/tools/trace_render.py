@@ -126,8 +126,13 @@ def run_error(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 def episode_start(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     """**episode 的边界必须进事件流。** 没有它，光看日志分不出一次尝试从哪开始。
 
-    任务本体快照进 payload（`goal`/`max_steps`）；**`task_id` 不进**——那是
-    实验层的分组键，实验层自己知道在跑哪个任务。
+    任务本体快照进 payload（`goal`/`success_criteria`/`max_steps`）；**`task_id`
+    不进**——那是实验层的分组键，实验层自己知道在跑哪个任务。
+
+    **`success_criteria` 必须逐局快照**：run_start 只记初始目标栈的判据，且
+    那条在 run 级 jsonl 里——只读 episode 级文件的人（维度 2/3/4、复核脚本）
+    看不到判据原文；而且 plan 压栈后每一局的判据可以和初始栈不同，"这一局
+    实际用的判据"的权威落点在这里，不在 run_start。
 
     **`memory_carried` 必须显式传入，不给默认值**——开局时"这一局能检索到
     多少条跨局摘要经验"是调用方已经知道的事实，不是这一层该替它猜的。这个
@@ -143,6 +148,7 @@ def episode_start(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
         {
             "kind": "episode_start",
             "goal": task.goal,
+            "success_criteria": task.success_criteria,
             "max_steps": str(task.max_steps),
             "memory_carried": str(req.memory_carried),
         },

@@ -11,7 +11,13 @@ agent_permission 的脚本——"硬崩溃/重启"如果出在这一步，看打
 
 from __future__ import annotations
 
+import faulthandler
 import time
+
+# 同 check_restore：enable() 抓 native 崩溃，dump_traceback_later 抓卡死
+# （每 4 分钟例行打印全线程栈，健康跑完会有 1-2 次噪音）。
+faulthandler.enable()
+faulthandler.dump_traceback_later(timeout=240, repeat=True)
 
 
 def main() -> None:

@@ -1,3 +1,212 @@
+## 2026-09-09 —— 新增调试脚本 `resume_only.py`：跳过阶段 A，直接对已有 checkpoint 发起 resume_run()
+
+**改了什么**：新增 `pokemon_agent/experiment/real_check/resume_only.py`。
+跟 `check_restore.py` 阶段 B 同构（读该 step 自己的 checkpoint 拿游标 →
+带 `resume_cursor` 重新 `build_real` → 调 `resume_run()`），但跳过阶段 A
+（造一局全新的 3 步 run），直接对着磁盘上已有的 `(run_id, episode_id, step)`
+三元组发起恢复；不带 `check_restore.py` 那四条 PASS/FAIL 断言，是给人调试
+用的，不是回归判据。不给参数时用 `common.resolve_run()` 自动定位最近一次
+产物，也可以用 `--run-id`/`--episode-id`/`--step` 精确指定。
+
+**为什么加**：排查 resume 之后 `think_action` 疑似卡住（后来定位为一次
+LLM 调用网络抖动，非代码问题）时，每次复现都要先陪跑一遍阶段 A（build_real
+装配 + 3 步决策，几十秒到几分钟），这个脚本让反复调试同一个卡点不用每次
+重新造数据。
+
+**影响文件**：新增 `pokemon_agent/experiment/real_check/resume_only.py`。
+
+**验证**：`ast.parse` 语法检查通过；未实际跑（同批次其余改动的环境限制，
+`agent_permission`/Python 3.11 装不进沙箱），逻辑照抄 `check_restore.py`
+阶段 B 已验证过的路径。
+
+## 2026-09-09 —— resume_run() 自己的恢复标记被自己的 void_after 连带归档；维度 2/5 补齐多 episode
+
+**改了什么**：
+- `RunHarness.resume_run()`：run 级的 `CHECKPOINT_RESTORE` 标记事件从
+  "`graph.invoke()` 之前 append" 挪到"之后 append"。
+- `check_trace.py`（维度 2）：事件加载从"`resolve_run()` 选中的那一个
+  episode 文件"改成"该 run_id 下**全部** `<run_id>-ep*.jsonl`"。
+- `check_restore.py`（维度 5）判定 2/3 的事件加载做同样的改动。
+- `check_restore.py` 删掉 `faulthandler.dump_traceback_later(timeout=240,
+  repeat=True)`，只留 `faulthandler.enable()`——240s 比一次决策模型调用的
+  最坏耗时（90s 超时 ×3 次重试 + 退避，能到 4 分半）还短，健康跑也会假警报。
+
+**为什么这么改（两个独立的真实 bug，都是 `check_restore.py` 端到端实测出来的）**：
+
+1. **自己的恢复标记被自己归档**：`resume_run()` 原来在 `graph.invoke()`
+   **之前**就 append 了 run 级 `CHECKPOINT_RESTORE`，这条新事件的 id 必然
+   > cursor（`rebuild()` 之后新分配的）；但 `graph.invoke()` 内部
+   `episode.resume()` 会用**同一个 cursor** 调 `void_after()`，把磁盘上
+   `event_id > cursor` 的行不分文件全部归档——这条刚写的标记自己就满足
+   这个条件，当场被自己的 `void_after` 吃掉。实测：cursor=53，标记写在
+   id=54，随后被归档，连续性检查里凭空留下一个洞。改成 `invoke()` 之后
+   再写，此时这局的 `void_after` 已经跑完，不会回头吃新事件。
+
+2. **一个 run 可能有不止一个 episode**：`reflect()` 判定失败且重试预算未
+   耗尽会直接 `dispatch()` 出下一个 episode——resume 完 ep1 后，这次视觉
+   模型判定跟阶段 A 原本的结论不同（`success=False`），触发了正常重试，
+   派发出 `ep2`。`check_trace.py`/`check_restore.py` 都只读
+   `resolve_run()`/`resume_run()` 认定的那**一个** episode 文件，`ep2` 的
+   事件整段漏读，连续性检查里看起来"从 60 缺到 122"——两个 episode 首尾
+   相接的真实数据被误判成缺号。改成读该 run_id 下全部 `<run_id>-ep*.jsonl`
+   文件。
+
+**影响文件**：`pokemon_agent/harness/run_harness.py`、
+`pokemon_agent/experiment/real_check/check_trace.py`、
+`pokemon_agent/experiment/real_check/check_restore.py`。
+
+**验证**：磁盘上现成的 `restorecheck-0909-153643` 产物手工重放了修复后的
+加载逻辑（run 级 + ep1 + ep2 三个文件按 event_id 排序），确认改动后不再
+出现假性缺号；`resume_run()` 的重排序改动逻辑自洽（`invoke()` 已经把这局
+所有 void_after 都跑完，之后再 append 不会被回头处理），未能跑真实回归
+（`agent_permission`/Python 3.11 装不进沙箱），建议用户本机重新跑一遍
+`check_restore.py` + `check_trace.py` 端到端确认。
+
+**用户本机复核（0909 当天）**：`check_restore.py`
+PASS（自 step 3 恢复，游标 53 后续写 123 条连续，归档 1 个 voided）；
+`check_trace.py` PASS（123 条事件、event_id [0..122] 连续无缺号无重号，
+model_call 21 条）；`check_checkpoint.py`/`check_memory.py` 同样 PASS。
+维度 2/3/4/5 全部真实跑通，闭环验证完成。
+
+## 2026-09-09 —— 修复 resume() 恢复后续 episode 崩溃：补 world.set_task()
+
+**改了什么**：`WorldPort`/`GameToolPort` 新增 `set_task(task)`——只挂
+`_task`/`_closed` 记账标记，不动模拟器状态（`reset()` 步骤 2 单独拎出来，
+`PyBoyWorld.set_task()`/`GameTools.set_task()` 是具体实现/转发）。
+`EpisodeHarness.resume()` 在 `self._game.load_state_bytes(...)` 之后紧跟着
+调一次 `self._game.set_task(task)`。
+
+**为什么这么改**：`load_state_bytes()` 只回载 PyBoy 的模拟器字节，不认得
+`_task`/`_closed`——这两个是纯 Python 记账，不进存档。`resume()` 之前只
+`load_state_bytes()` 不补记账，本局自己靠 checkpoint 里的 `pending_observation`
+收尾，不会立刻触发；但本 run 后续再派发新的 episode 时（同一个长命 world，
+`_world_reset_done` 已经是 `True`、不会再走 `reset()`——"后续 episode 不重置"
+是设计好的取舍，见 2026-09-03 条目），会在 `perceive_once()` 里撞上
+`assert self._task is not None, "perceive_once() before reset()"`。
+
+这是用 `check_restore.py` 端到端实测跑出来的真实崩溃（用户本机跑通了
+阶段 A + 阶段 B 的 `resume_run()` 调用本身，但 resume 完的那一局判定后
+`RunHarness` 又派发了下一个 episode 时炸的），跟前一条 run.json 合并的改动
+是两个独立的 bug——那条修的是"读哪份 checkpoint 锚点"，这条修的是"恢复完
+一局之后，世界对象本身缺了一块纯 Python 记账"。
+
+**影响文件**：`pokemon_agent/interfaces/world/world_port.py`、
+`pokemon_agent/world/pyboy_world.py`、
+`pokemon_agent/interfaces/tools/game_tool_port.py`、
+`pokemon_agent/tools/game_tools.py`、`pokemon_agent/harness/episode_harness.py`。
+
+**验证**：未能在本机跑通 `check_restore.py` 真实回归（`agent_permission`/
+Python 3.11 依赖装不进沙箱环境）；改动是读代码定位到的根因直接对症，逻辑上
+自洽（`reset()` 步骤 2 原样搬到新方法），建议用户本机重跑一次
+`check_restore.py` 做端到端确认。
+
+## 2026-09-09 —— run.json 合并进 step 存档：彻底消掉 resume_run() 的锚点读取歧义
+
+**改了什么**：`CheckpointTool` 不再单独落一份 `checkpoints/run.json`——
+`RunState`（目标栈/结算）跟 `EpisodeRunState` 打包进同一份
+`step/<episode_id>/<step>.json`。具体：
+
+- `FromHarnessToCheckpointToolSaveReq`/`FromCheckpointToolToHarnessRestoreResp`
+  去掉 `level` 字段，新增 `run_state_dump`，`emulator_state` 从 Optional 改必填
+  （只剩一种落盘形态，不再有 run/step 二选一）。
+- `CheckpointTool.save()`/`load()` 简化成单一路径；删除 `latest_run()`。
+- `EpisodeHarness.run()`/`resume()` 新增 `run_state` 参数（纯透传，本层不解读），
+  `save_checkpoint()` 节点把它跟 `EpisodeRunState` 一起打包写盘。
+- `RunHarness.dispatch()` 不再单独调 `checkpoint.save(level="run", ...)`，改成
+  把 `state.model_dump()` 透传给 `episode.run()`/`resume()`；`resume_run()` 直接
+  用真实的 `(run_id, episode_id, step)` 三元组调 `load()` 拿锚点，删掉原来
+  `load(run_id, episode_id, 0) or latest_run()` 这段有歧义的兜底逻辑。
+- `check_checkpoint.py`（维度 3）改核对 `run_state_dump` 而不是 `run.json` 是否
+  存在；`check_restore.py` 改从"要恢复到的那一步"自己的 checkpoint 读游标。
+
+**为什么这么改**：`resume_run()` 原来靠 `load(run_id, episode_id, 0)` 取 run
+锚点，指望"这一局还没有 step0 存档时顺便回退读 run.json"——但只要这一局跑过
+step0（几乎总是），`load()` 就会先命中它自己的 `step/<eid>/0.json`（`level=
+"step"`），`run.json` 的兜底分支永远走不到，`resume_run()` 断言
+`anchor.level == "run"` 必炸。这是用 `check_restore.py` 实测跑出来的真实
+崩溃（`AssertionError: no run.json anchor`），不是理论推演。
+
+深挖之下这不只是"取数据时选错了函数"：`run.json` 覆盖式写入本身也只支持
+"恢复当前正在跑的这一局"，撑不住"恢复到好几局之前、把中间已跑完的局当
+废弃时间线归档"这个 `void_after()` 本来就设计要支持的场景（归档逻辑一直
+有处理"未来局"复数的代码，只是从来没被 `run.json` 的存储形态真正接住过）。
+把 `RunState` 跟着每一步的 checkpoint走（而不是单独覆盖写一份）能同时解决
+这两个问题：resume 只需读一份文件，且天然按 episode/step 区分，不再有
+"哪份是最新的"这个问题。
+
+**已知遗留缺口**（不是这次引入的，这次顺带放弃掉）：一局如果连第 0 步都没
+跑完就崩（`_begin()` 已完成、图入口 `save_checkpoint` 还没来得及写第一份
+存档），这一局没有任何 checkpoint 可恢复——原设计想靠一份 `.start.state`
+起点快照兜这个窗口，但那份快照从来没被恢复逻辑读过（是死代码，已在更早的
+"删除每局起点快照"改动里删掉），这次一并确认放弃，需要时再补。
+
+**验证**：`agent_permission`（第三方私有包）与 Python 3.11（`enum.StrEnum`）
+在改动这台机器上都装不上，没能跑通端到端 `check_restore.py`（需要用户在
+装好依赖的机器上重跑验证）；改为对 `CheckpointTool` 本体做了一次隔离的
+本地回归测试（伪造 schema 依赖绕开整个包的 import 链），覆盖：①从已完整
+跑过 step0 的局用 step=3（原 bug 的确切触发条件）恢复，正确拿到
+`run_state_dump`；②用 step=0 恢复同样正确、不再有分支歧义；③不存在的
+step 正确返回 `None`；④ state/json 不成对正确返回 `None`。四条全部通过。
+
+**影响面**：`checkpoint_tool.py`/`checkpoint_tool_port.py`/两个 schema/
+`episode_harness.py`/`run_harness.py`/两个 real_check 脚本/
+`PLAN_checkpoint.md`（新增 v5 变更说明）/`real_check/SPEC.md`。落盘格式变更，
+旧的 `run.json` 产物作废（本地开发数据，无需迁移）。
+
+## 2026-09-09 —— real_check 重脚本打开 faulthandler（维度 5 进程静默死亡排查）
+
+**改了什么**：`check_harness.py` / `check_restore.py` 模块顶部加
+`faulthandler.enable()` + `faulthandler.dump_traceback_later(240, repeat=True)`。
+
+**为什么这么改**：维度 5 阶段 A 在 episode 完整收尾（trace 最后事件
+`episode_end`，11:55:01）后不再前进，用户等了 20 分钟无变化后手动结束进程。
+静态排查了 episode_end → A4 打印之间的全部路径——reflect（纯函数）、review
+（60s 有界轮询，超时兜底 STOP，维度 1 同路径 60s 即过）、permission 审批
+（10s 有界）、world（无后台线程，tick 全在内联）——每一段都有界，读不出
+卡点。所以改为运行时取证：每 4 分钟把全线程栈 dump 到 stderr，再卡住时
+终端直接给出卡在哪个文件哪一行。
+
+**取舍**：健康跑完会有 1-2 次例行栈打印噪音，核对脚本可接受；不引入
+py-spy/调试器依赖。
+
+**影响面**：仅两个核对脚本；正常路径零行为变化，ruff 全过。
+
+## 2026-09-09 —— episode_start 补记 `success_criteria` 判据原文
+
+**改了什么**：`tools/trace_render.py` 的 `episode_start()` payload 新增
+`success_criteria` 字段（取自 `task.success_criteria`），与 `goal`/`max_steps`
+一起做逐局快照。
+
+**为什么这么改**：判据原文此前只在 `run_start`（event 0，run 级 jsonl）有一份
+初始栈的——只读 episode 级文件的人（维度 2/3/4 核对、复核脚本）翻不到"这一局
+用的判据是什么"；且 plan 压栈后每局的判据可以和初始栈不同，逐局快照才是
+"这一局实际判据"的权威落点。
+
+**取舍**：与 `run_start` 的 `success_criteria` 有信息重复——不省，两边读者
+不同（run 级 vs episode 级文件），episode 级自洽比去重重要。
+
+**影响面**：payload 加字段是增量变更，`evaluation/eval_report.py` 按字段名
+解析、不受影响；ruff 全过。
+
+## 2026-09-09 —— 维度 5（check_restore）与维度 1 装配全面对齐
+
+**改了什么**：`check_restore.py` 两处 `build_real`（阶段 A 新跑、阶段 B 恢复）
+补齐与 `check_harness.py` 相同的装配参数：显式 `vision_model="qwen3.8-max"` /
+`text_model="qwen-plus"` / `max_tokens=25600`（原先吃缺省值，两维度跑的模型
+配置不一致）；`[A2/B2]` 打印 review 超时秒数；阶段 A 补 `outcome.reason`
+非空断言；`world.stop` 完成后补完成打印。
+
+**为什么这么改**：review 装配（`make_review_pair` + 双开关全关）此前已对齐，
+但模型参数两维度不一致——维度 1 显式三参、维度 5 用缺省，同一套核对跑出
+的 model_call 配置没有可比性，排查问题时多一个变量。
+
+**取舍**：`reviewer`/`data_center` 阶段 B 用新的一对（模拟"崩溃后新进程"，
+不复用阶段 A 的实例）——保持原设计不动。
+
+**影响面**：仅 `experiment/real_check/check_restore.py`；ruff 全过，未跑
+真实链路。静态核对确认两处 build_real 八个关键参数齐全、make_review_pair
+各阶段一次。
+
 ## 2026-09-09 —— 删除每局起点快照（`<episode_id>.start.state`）：纯冗余
 
 **改了什么**：删掉 `EpisodeHarness` 的 `episode_state_dir` 参数、`_begin` 里的

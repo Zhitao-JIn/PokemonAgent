@@ -64,7 +64,6 @@ from pokemon_agent.prompts import run_plan as run_plan_prompt
 from pokemon_agent.schemas.communication import (
     FromCheckpointToolToHarnessRestoreResp,
     FromHarnessToBrainToolPlanOnceReq,
-    FromHarnessToCheckpointToolSaveReq,
     FromHarnessToTraceToolAppendReq,
     GoalsEdit,
     HarnessEpisodeOutcomeResp,
@@ -206,29 +205,23 @@ class RunHarness:
         - 废弃时间线（该步之后的事件/记忆/截图/未来局）由 episode 级
           `resume()` 内的 `void_after` 归档截断。
 
-        前置条件：构造时注入了 checkpoint 工具；run 级锚点（run.json）存在。
+        前置条件：构造时注入了 checkpoint 工具；`(run_id, episode_id, step)` 三元组
+        指定的那份 checkpoint 存在——它同时带 run 级与 episode 级两份状态
+        （见 `checkpoint_tool.py` 落盘布局说明），这里只取 run 级的那份。
+
+        run 级的 `checkpoint_restore` 标记事件在 `graph.invoke()` **之后**才
+        append（顺序本身是契约的一部分，别挪到前面）——原因见方法体里那段注释。
         """
         assert self._checkpoint is not None, "resume_run() needs a checkpoint tool"
-        anchor: FromCheckpointToolToHarnessRestoreResp = (
-            self._checkpoint.load(run_id, episode_id, 0) or self._checkpoint.latest_run()
+        anchor: FromCheckpointToolToHarnessRestoreResp | None = self._checkpoint.load(
+            run_id, episode_id, step
         )
-        assert anchor is not None and anchor.level == "run", "no run.json anchor"
-        state = RunState.model_validate(anchor.state_dump)
+        assert anchor is not None, f"no checkpoint for episode={episode_id!r} step={step}"
+        state = RunState.model_validate(anchor.run_state_dump)
         assert state.run_id == run_id
 
-        # DataCenter 单点重建：事件主前缀 + goals 槽对齐（恢复事件在其后 append，
-        # 经 sink 双写自然进槽——run 级槽位约定：episode_id 位放 run_id、step 恒 0）。
+        # DataCenter 单点重建：事件主前缀 + goals 槽对齐。
         self.data_center.rebuild(self._trace.read_disk_events(), state.goals)
-        self._trace.append(
-            FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.CHECKPOINT_RESTORE,
-                step=0,
-                episode_id=run_id,
-                restored_episode_id=episode_id,
-                restored_step=step,
-                cursor=anchor.last_event_id,
-            )
-        )
         state = state.model_copy(
             update={"resume_episode": ResumeEpisode(episode_id=episode_id, step=step)}
         )
@@ -245,6 +238,26 @@ class RunHarness:
                 )
             )
             raise
+
+        # run 级恢复标记**必须在 graph.invoke() 之后才 append**——这一局的
+        # `episode.resume()` 内部会用同一个 cursor 调 `void_after()`，把磁盘上
+        # 所有 `event_id > cursor` 的行（不分文件）都归档；这个标记事件本身
+        # 的 id 必然 > cursor（它是 rebuild() 之后新分配的），如果在
+        # `graph.invoke()` **之前**就写盘，会被这一局自己的 `void_after` 当场
+        # 连带归档掉，在连续性判定里凭空留下一个洞（0909 实测踩到：
+        # `restore_step` 的游标是 53，先写的这条标记恰好落在 id 54，
+        # 结果自己被自己的 void_after 判定"> 53"而归档）。放到 `invoke()`
+        # 之后写，此时该局的 void_after 已经跑完，不会再回头吃掉新事件。
+        self._trace.append(
+            FromHarnessToTraceToolAppendReq(
+                kind=TraceKind.CHECKPOINT_RESTORE,
+                step=0,
+                episode_id=run_id,
+                restored_episode_id=episode_id,
+                restored_step=step,
+                cursor=anchor.last_event_id,
+            )
+        )
         return self._close(final, run_id)
 
     def _close(self, final: dict[str, Any], run_id: str) -> RunOutcomeResp:
@@ -429,27 +442,20 @@ class RunHarness:
         top = state.goals[-1]
         episode_id = f"{state.run_id}-ep{len(state.outcomes) + 1}"
 
-        # run 级锚点：每次派发前覆盖写 run.json（PLAN_checkpoint §3/§4）——
-        # 进程死在本局任何时刻，恢复都从这里重入本局。恢复分派走 resume 分支。
-        if self._checkpoint is not None and state.resume_episode is None:
-            self._checkpoint.save(
-                FromHarnessToCheckpointToolSaveReq(
-                    run_id=state.run_id,
-                    episode_id=episode_id,
-                    step=0,
-                    level="run",
-                    state_dump=state.model_dump(),
-                    last_event_id=self._trace.cursor(),
-                    emulator_state=None,
-                )
-            )
+        # run 级状态不再单独落盘：`state.model_dump()` 直接透传给 episode 层，
+        # 由它在每一步的 checkpoint 里原样打包（PLAN_checkpoint §3/§4 v5 改法，
+        # 见 `checkpoint_tool.py` 落盘布局说明）——进程死在本局任何时刻，
+        # 恢复时读那一步的 checkpoint 就能同时拿回两层状态，不用再猜"该读
+        # run 锚点还是 episode 锚点"。
         if state.resume_episode is not None:
             assert state.resume_episode.episode_id == episode_id, (
                 f"resume target mismatch: {state.resume_episode.episode_id} != {episode_id}"
             )
             step = state.resume_episode.step
             try:
-                outcome = self._episode.resume(episode_id, top, state.goals, step)
+                outcome = self._episode.resume(
+                    episode_id, top, state.goals, step, run_state=state.model_dump()
+                )
             except AgentError as exc:
                 outcome = HarnessEpisodeOutcomeResp(
                     episode_id=episode_id,
@@ -466,7 +472,7 @@ class RunHarness:
             }
 
         try:
-            outcome = self._episode.run(episode_id, top, state.goals)
+            outcome = self._episode.run(episode_id, top, state.goals, run_state=state.model_dump())
         except AgentError as exc:
             outcome = HarnessEpisodeOutcomeResp(
                 episode_id=episode_id,

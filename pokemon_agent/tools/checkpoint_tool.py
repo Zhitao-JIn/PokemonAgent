@@ -8,10 +8,22 @@
 落盘布局（全部在 run 目录下）：
 
     trace_data/<run_id>/checkpoints/
-    ├── run.json                            （run 级锚点，dispatch 派发前覆盖写）
     ├── step/<episode_id>/<step>.state      （模拟器世界快照，二进制）
-    ├── step/<episode_id>/<step>.json       （EpisodeRunState dump + 游标，提交点）
+    ├── step/<episode_id>/<step>.json       （EpisodeRunState + RunState 双重
+    │                                          dump + 游标，唯一提交点）
     └── voided-<ts>/                        （废弃时间线归档，先归档后截断）
+
+**没有单独的 run 级文件**：`RunState`（目标栈/结算）跟 `EpisodeRunState` 打包进
+同一份 `<step>.json`——同一局内 `RunState` 每一步都相同（只有 `dispatch`/
+`reflect` 会改它，均发生在局与局之间），一份文件天然带两层信息，`resume` 只
+需读一次就能同时重建两层状态，不必再猜"该读 run 锚点还是 episode 锚点"
+（早期设计有一份单独覆盖写的 `run.json`，被 `resume_run()` 里一处查找歧义
+坑过一次，改成现在这样彻底消掉了那类歧义，见 0909 CHANGELOG）。
+
+**已知缺口**：一局如果连第 0 步都没跑完就崩（`_begin()` 已经完成，但图入口
+`save_checkpoint` 还没来得及写第一份存档），这一局没有任何 checkpoint 可
+恢复——原设计想靠一份 run 起点快照兜底这个窗口，但那份快照从来没有被恢复
+逻辑读过，是死代码，删除时一并放弃了这个窗口的支持（需要时再补）。
 
 签名原则（PLAN v4 §3）：每份 checkpoint 的 json 显式内嵌三元组
 `(run_id, episode_id, step)`——加载时校验签名匹配，不靠目录位置推断。
@@ -53,13 +65,7 @@ class CheckpointTool:
     # ---- 存 ----
 
     def save(self, req: FromHarnessToCheckpointToolSaveReq) -> None:
-        """按 level 落盘：先世界快照，后 json（json 是提交点）。"""
-        if req.level == "run":
-            meta = self._meta(req)
-            self._atomic_write_json(self._dir / "run.json", meta)
-            return
-
-        assert req.emulator_state is not None, "save(step) requires emulator_state"
+        """存一份 checkpoint：先世界快照，后 json（json 是提交点）。"""
         target_dir = self._step_dir / _safe(req.episode_id)
         target_dir.mkdir(parents=True, exist_ok=True)
         # 步骤 1：世界快照（先写——json 才是提交点）。
@@ -72,24 +78,11 @@ class CheckpointTool:
     def load(
         self, run_id: str, episode_id: str, step: int
     ) -> FromCheckpointToolToHarnessRestoreResp | None:
-        """按三元组取 checkpoint；不成对/签名不匹配返回 None（见 Protocol docstring）。"""
+        """按三元组取 checkpoint；不成对/签名不匹配返回 None。"""
         step_json = self._step_dir / _safe(episode_id) / f"{step}.json"
-        if step_json.is_file():
-            return self._read_checkpoint(step_json, run_id, episode_id, step)
-        if step == 0:
-            run_json = self._dir / "run.json"
-            if run_json.is_file():
-                resp = self._read_checkpoint(run_json, run_id, episode_id, 0)
-                if resp is not None and resp.episode_id == episode_id:
-                    return resp
-        return None
-
-    def latest_run(self) -> FromCheckpointToolToHarnessRestoreResp | None:
-        """取最近的 run 级锚点。"""
-        run_json = self._dir / "run.json"
-        if not run_json.is_file():
+        if not step_json.is_file():
             return None
-        return self._read_checkpoint(run_json, None, None, None)
+        return self._read_checkpoint(step_json, run_id, episode_id, step)
 
     # ---- 废弃归档 ----
 
@@ -180,13 +173,13 @@ class CheckpointTool:
     # ---- 内部 ----
 
     def _meta(self, req: FromHarnessToCheckpointToolSaveReq) -> dict:
-        """json 提交点的内容：签名三元组 + 快照 + 游标 + 时间。"""
+        """json 提交点的内容：签名三元组 + 两层快照 + 游标 + 时间。"""
         return {
             "run_id": req.run_id,
             "episode_id": req.episode_id,
             "step": req.step,
-            "level": req.level,
             "state_dump": req.state_dump,
+            "run_state_dump": req.run_state_dump,
             "last_event_id": req.last_event_id,
             "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
@@ -216,20 +209,17 @@ class CheckpointTool:
             return None
         if step is not None and meta.get("step") != step:
             return None
-        emulator_state: bytes | None = None
-        if meta.get("level") == "step":
-            state_path = json_path.with_suffix(".state")
-            if not state_path.is_file():
-                return None  # state/json 不成对 = 提交点未完成
-            emulator_state = state_path.read_bytes()
+        state_path = json_path.with_suffix(".state")
+        if not state_path.is_file():
+            return None  # state/json 不成对 = 提交点未完成
         return FromCheckpointToolToHarnessRestoreResp(
             run_id=meta["run_id"],
             episode_id=meta["episode_id"],
             step=meta["step"],
-            level=meta["level"],
             state_dump=meta["state_dump"],
+            run_state_dump=meta["run_state_dump"],
             last_event_id=meta["last_event_id"],
-            emulator_state=emulator_state,
+            emulator_state=state_path.read_bytes(),
             saved_at=meta.get("saved_at", ""),
         )
 

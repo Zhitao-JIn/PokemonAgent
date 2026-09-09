@@ -5,6 +5,18 @@
 > 废弃时间线的 trace 与 memory 的处理（v1 缺失，用户指出）。
 > v3 变更：**ObjectMemory（EventObjectStore）已落盘且自带 `truncate(eid, step)`，恢复直接调用；StepMemory 落盘化为前置改造（与 EventObjectStore 同构），删除 `rebuild_from_trace`**；术语正名（模拟器世界快照 / LocalTrace 内存表）。
 > v4 变更（用户拍板）：**落盘签名统一三元组** (run_id, episode_id, step)——StepMemory 落盘加 run_id、ObjectMemory 补 run_id 字段、模拟器世界快照签名进配对 json；**存储层职责修正**——补范围查询，归档组装归 checkpoint 层；**LocalTrace 内存表迁 DataCenter**（前端单点恢复，观测台数据可恢复）。
+> v5 变更（0909，用户拍板）：**取消独立的 `run.json`/`.start.state`**——原因是 v4
+> 落地后 `resume_run()` 复用 `load(run_id, episode_id, 0)` 去读 run 锚点，只要这一局
+> 跑过 step0（几乎总是）就会先命中它自己的 `step/<eid>/0.json`，`run.json` 永远读
+> 不到，`resume_run` 断言必炸——这是实测（`check_restore.py`）踩出来的真实 bug，
+> 不是笔误。改法：`RunState`（run 级）跟 `EpisodeRunState`（episode 级）打包进
+> **同一份** `step/<eid>/<step>.json`——同一局内 `RunState` 每一步都相同（只有
+> `dispatch`/`reflect` 会改它，均发生在局间），一份文件天然带两层信息，彻底
+> 消掉"该读哪个文件"的歧义。代价：一局连 step0 都没跑完就崩（`_begin()` 已完成
+> 但 `save_checkpoint` 还没来得及写）这个窗口没有任何 checkpoint 可恢复——`.start.state`
+> 本来想兜这个窗口但从来没被恢复逻辑读过（死代码），这次一并放弃，需要时再补。
+> §3.1/§4/§7.1 的 `run.json`/`save_run`/`latest_run` 相关描述已按此更新，仅保留
+> 历史小节说明当时的设计考虑；实现以 `checkpoint_tool.py`/`SPEC.md` 为准。
 > 基线：commit `c8b9ab7`。事实清单见同目录 `CHECKPOINT_handoff_2026-09-07.md` §1-2。
 
 ## 1. 三级恢复的精确定义
@@ -64,28 +76,28 @@ START → save_checkpoint → look → judge ─(done)→ 收尾链 → END
 | StepMemory 落盘记录 | **schema 加 `run_id` 字段**（现状没有，前置改造一并加）；文件按 episode 分文件，记录内含三元组 |
 | ObjectMemory（`ObjectFactEventBase`） | **加 `run_id` 字段**（现状 episode_id/step 有、run_id 无）；旧文件读取时按 episode_id 前缀推断回填（生成规则稳定） |
 | 模拟器世界快照 | 二进制无法内嵌签名 → **配对 json 内嵌三元组**，加载时校验成对 + 签名匹配 |
-| `run.json` | 记录内含 run_id + episode_id + 游标 |
 
-### 3.1 存储布局
+（v5 起没有独立的 run.json，RunState 签名并入下面的 `<step>.json`）
+
+### 3.1 存储布局（v5：合并单文件，见头部 v5 变更）
 
 ```
 trace_data/<run_id>/
 ├── events（JSONL 主前缀；恢复时可能被截断，见 §6）
-├── episodes/<episode_id>.start.state          （现状）
 ├── screenshots/                                （现状）
 ├── checkpoints/
-│   ├── run.json                                （run 级锚点：RunState dump + 游标 + episode_id，每次 dispatch 覆盖写）
 │   ├── voided-<ts>/                            （废弃时间线归档，见 §6）
 │   └── step/<episode_id>/
 │       ├── <step>.state                        （模拟器存档，二进制）
-│       └── <step>.json                         （EpisodeRunState dump + 游标）
+│       └── <step>.json                         （EpisodeRunState dump ＋ 当时的
+│                                                  RunState dump ＋ 游标，唯一提交点）
 ```
 
 - 写入顺序：**先模拟器存档，再 json（json = 提交点）**；中间 crash = 该号
   checkpoint 无效，恢复回退上一号（对账时校验 json 与 state 成对存在）；
 - 全量保留每个 step（百 KB 量级 × 步数，几十 MB 级），GC 留开关 v1 不做；
-- run.json 在 `dispatch` 派发每局前覆盖写——它是"run 级恢复"的锚点：进程死在
-  局间或 step0 感知前，从 run.json + `<episode_id>.start.state` 重建。
+- 没有单独的 run 级文件：`RunState` 打包进每一步的 `<step>.json`，一份文件
+  同时是"这一步的 episode 状态"和"这一局开始前的 run 状态"两份锚点。
 
 ## 4. 恢复入口与三级定位
 
@@ -94,8 +106,15 @@ trace_data/<run_id>/
 | 调用 | 定位 | 数据源 |
 |---|---|---|
 | step 级 | `(run_id, eid, N)`，N>0 | `step/<eid>/<N>.{state,json}` |
-| episode 级 | `(run_id, eid, 0)` | `step/<eid>/0.*`（即 step0 checkpoint；若不存在——step0 感知前就崩——回退 `run.json` + `.start.state`） |
-| run 级 | `(run_id, eid, 0)` 且 eid=run.json 里记录的 episode | `run.json` + `.start.state`（放弃半途进度，X 从 step0 重跑） |
+| episode 级 | `(run_id, eid, 0)` | `step/<eid>/0.{state,json}` |
+| run 级 | `(run_id, eid, N)`，任意 N | 同一份 `step/<eid>/<N>.json` 里的 `run_state_dump` |
+
+（v5 起三行的数据源本质是同一处：`step/<eid>/<N>.json` 天生带两层信息，
+`run_state_dump` 取 run 级、`state_dump` 取 episode 级，不再需要区分文件。
+**已知缺口**：一局连 step0 都没跑完就崩（`_begin()` 已完成、`save_checkpoint`
+还没来得及写第一份存档）这个窗口没有任何 checkpoint 可恢复——原设想里
+`run.json` + `.start.state` 曾想兜这个窗口，但 `.start.state` 从来没被恢复
+逻辑读过，是死代码，v5 删除时一并放弃，需要时再补。）
 
 恢复管线（§5）三级共用；差别只在 state 来源与"进 run 图还是 episode 图"。
 
@@ -166,7 +185,11 @@ voided 归档 → 调 store.truncate**。存储层职责 = 存、查、截断三
   base64 大字段，落盘体积与 GC 策略一并考虑。
 - **StepMemory 加 `run_id` 字段**（现状没有）：落盘签名统一三元组（§3）。
 
-### 7.1 新增契约（命名照 617c6eb 规则）
+### 7.1 新增契约（命名照 617c6eb 规则；**已过时，实现以 `checkpoint_tool_port.py` 为准**）
+
+以下是规划时设想的接口，跟最终落地不完全一致（`save_step`/`save_run` 从没
+分开过，落地时一直是单一 `save(req)`；v5 起 `save()`/`load()` 都不再区分
+run/step 两级，`latest_run()` 已删除）——保留仅供追溯设计演变：
 
 ```
 interfaces/tools/checkpoint_tool_port.py

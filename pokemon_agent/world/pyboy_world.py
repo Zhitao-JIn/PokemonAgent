@@ -220,6 +220,20 @@ class PyBoyWorld:
         # 步骤 2。
         self._task, self._closed = task, False
 
+    def set_task(self, task: TaskForHarness) -> None:
+        """只挂任务标记，**不动模拟器状态**——`reset()` 步骤 2 单独拎出来。
+
+        用于 checkpoint 恢复：`load_state_bytes()` 已经把模拟器摆到了正确的
+        那一帧，这里不需要（也不能）再走 `reset()` 的步骤 1（重新读档/空转），
+        只需要把 `_task`/`_closed` 补上——它们是纯 Python 记账，不在存档字节里，
+        `load_state_bytes()` 管不到（见 `episode_harness.resume()` 的调用点）。
+
+        前置条件：task.max_steps > 0；调用前模拟器已经处于正确帧（`load_state_bytes()`
+        或紧随其后的一次 `reset()`）。
+        """
+        assert task.max_steps > 0, f"max_steps must be > 0, got {task.max_steps}"
+        self._task, self._closed = task, False
+
     def all_actions(self) -> list[str]:
         """全部动作名，与状态无关。掩码是 harness 的事，不在这里做。
 

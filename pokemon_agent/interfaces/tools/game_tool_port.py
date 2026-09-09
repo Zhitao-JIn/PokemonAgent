@@ -57,6 +57,14 @@ class GameToolPort(Protocol):
         """
         ...
 
+    def set_task(self, task: TaskForHarness) -> None:
+        """只挂任务标记，**不动模拟器状态**（checkpoint 恢复后配 `load_state_bytes` 用）。
+
+        task：要接上跑的任务。
+        前置条件：task.max_steps > 0；`load_state_bytes()` 已经把模拟器摆到了正确的帧。
+        """
+        ...
+
     def perceive_once(self) -> FromGameToolToWorldPerceiveOnceResp:
         """感知当前这一帧，**只问一次视觉模型，不重试**。
 
