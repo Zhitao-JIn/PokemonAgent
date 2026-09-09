@@ -2,7 +2,7 @@
 
 > 单一权威版本。别处（`docs/EXPERIENCE_DOCS.md`、`evaluation/SPEC.md`）只做链接，
 > 不再各自维护一份路线图表格。
-> 最后更新：2026-09-08。
+> 最后更新：2026-09-09。
 
 ## 状态图例
 
@@ -820,6 +820,83 @@ JSONL 落盘格式怎么迁移到这套“uuid + 元数据字典 + payload”的
 | 批次实验严格串行 | 19 条任务顺序跑，一批要跑数小时 | 中，等 P0 做完再考虑 |
 | 没有跨批次回归对比 | `eval_report.py` 只产出单批次报表 | 低 |
 | `trace_data/`、`log/audit.jsonl` 均无 rotation/归档，持续追加写不清理 | 长期运行单目录读取变慢、磁盘占用不可控；`log/audit.jsonl`（`agent_permission` 库自动写的权限审计日志）目前纯写无读，没有任何代码汇总/告警它；0904 新增 `TraceEvent.frame_png`（原始感知帧，base64 内嵌进 `episodes/*.jsonl` 每一行，不是独立文件——设计中途从"另存 PNG 文件+路径引用"改成"直接存二进制字段"），行体积因此明显变大，同样没有 rotation，长期高频跑量时这条缺口应该优先处理 | 中（原"低"，帧数据加入后磁盘占用增长速度明显变快，权限审计那部分仍按用户 0902 的话"先放着"） |
+
+### 25. 📋 项目拆分五块：主框架 / memory / plan 系统 / judge 系统 / A2A（0909 定方向，细节未定）
+
+**用户 0909 提出的拆分方向**：把现在这个单体项目拆成五块——① 现在的主框架
+（harness 靠 tools 跟各外部系统打交道那一套）；② memory 系统，细分三条腿：
+a. 元数据查询、b. 相似度查询、c. wiki 类知识库（用户指定参照
+[Tencent/WeKnora](https://github.com/Tencent/WeKnora)——文档→可查询 RAG→
+agent 自动蒸馏成结构化互链 wiki 词条+知识图谱、自维护不用人工整理）；
+③ plan 系统，独立出来、支持背景信息组装 + human review；④ judge 系统，
+同样独立、同样支持背景信息 + human review；⑤ A2A 系统，把现在的
+`RunDataCenter`（第 1 条）拆出来。**这次只定大方向和建议顺序，每一块具体
+怎么改留到分别动手时再定**，写这条只是把方向和顺序记下来，不是开工。
+
+**跟现有条目的关系**（拆分不是从零开始，是把已经存在的接口边界拉开）：
+
+- ①主框架：不是新增职责，是②③④拆完之后的收尾——`RunHarness.plan()`/
+  `EpisodeHarness.judge()` 两个节点退化成"调一次独立系统的端口方法"，
+  跟现在调 `BrainToolPort.choose_once()` 一个形状。
+- ②memory：a/b 两条腿本质上就是**第 24 条**（元数据倒排索引 + 语义检索，
+  0908 已拍板待实施）——c 条 wiki 腿是这次新加的第三条，建立在 24 条的
+  通用检索能力之上：wiki 词条本身也是"一条记录"，一样吃 24 条的存储/检索
+  设计，不需要另起一套存储层。
+- ③④plan/judge：现在分别是 `RunHarness.plan()`/`Brain.plan_once()` 和
+  `EpisodeHarness.judge()`/`Brain.judge()`，骨架已经对——两个系统形状高度
+  相似（问模型 → 背景信息组装 → 可选人工审查 → 写回结果），建议**同批做**，
+  不要先做一个再回头改另一个。human review 复用 `RunDataCenter`
+  已经跑通的槽位传输层（第 1 条），给 plan/judge 各开一个独立槽位，不是
+  重新发明一套协议——现在 `RunHarness.review()` 只有 episode 结算后一个
+  时机，这次要拆出"计划生成后""判定给出后"两个更早、更细粒度的介入点。
+- ⑤A2A：`RunDataCenter`（第 1 条）现在是 `RunHarness`/`api.py` 共享的
+  进程内对象，本质已经是 Task（goals/review 槽=待处理请求，前端轮询）的
+  雏形，跟 [Google A2A 协议](https://a2a-protocol.org/latest/specification/)
+  的 Task/Message/Agent Card 概念比想象中接近。**不建议一步到位换协议**：
+  先让它变成一个能被多个 client（`RunHarness`、`api.py`、以后可能的 plan/
+  judge 独立服务）共同访问的边界（哪怕先只是本地 HTTP），协议细节等真的
+  需要接第二个独立 agent 时再补。
+
+**建议顺序**：② memory 补 wiki 腿 → ③+④ plan/judge 同批拆（背景信息组装+
+review 槽位公共骨架抽一次，两边套用）→ ① 主框架瘦身收尾 → ⑤ A2A 对外拆分。
+理由：②是③④的地基（plan/judge 的背景信息组装要吃 memory 检索）；①天然是
+③④做完之后的收尾动作；⑤涉及进程边界，最该等前四块内部形状稳定了再动。
+
+**怎么实现（简单描述，接口/schema 等真动手时再细化）**：
+
+- **①主框架**：不新写代码，是②③④拆完后的摘除动作——`RunHarness.plan()`/
+  `EpisodeHarness.judge()` 节点体里现在直接调 `Brain.plan_once()`/
+  `Brain.judge()` 的部分，换成调新拆出去的 PlanSystem/JudgeSystem 的端口
+  方法（形状照抄现在 `BrainToolPort.choose_once()` 那种"harness 只管调、
+  不管怎么问模型"的样子），`Brain` 瘦身、两个方法搬家。
+- **②memory（补 c 条）**：新开 `memory/wiki/` 包，存储层直接复用第 24 条
+  要建的通用倒排索引（词条也是一条"记录"，带 `kind=wiki_entry` 元数据，
+  走同一套过滤检索，不用另起存储层）。新增一条"蒸馏成词条"的生成流程，
+  形状类似现有 `episode_store.py` 的摘要蒸馏链——定期/按需把一批 episode
+  摘要+知识库检索命中喂给模型，产出"新增/更新哪条词条"，词条之间交叉引用
+  先用字符串 id 互指（不用真图数据库）；可追溯来源靠现有 trace 的
+  `event_id` 反查，不用另建审计表。
+- **③④plan/judge（同批做，形状一样）**：各开一个新模块（如
+  `plan_system/`、`judge_system/`），每个里面三样东西——① 一个"背景信息
+  组装"函数（显式列清楚这次喂模型的上下文：目标栈/历史摘要/知识检索命中，
+  不隐式拼字符串）；② 复用 `Brain` 现有的 `plan_once`/`judge` 方法问模型
+  （原样保留，只是调用方换了）；③ `RunDataCenter` 里新增两组 review 槽
+  （如 `plan_review`/`judge_review`），字段形状和阻塞轮询逻辑照抄现在的
+  review 槽，不重新设计协议。`RunHarness.plan()`/`EpisodeHarness.judge()`
+  节点问完模型后多一步"发布到对应槽、等（或不等）人工确认"。
+- **⑤A2A**：先不换协议，把 `RunDataCenter` 从"`RunHarness`/`api.py` 各持
+  一个引用的 Python 对象"改成"自己起一个小 HTTP 服务（进程内嵌或独立进程
+  都行，先选简单的），暴露现在那几个方法对应的 REST 端点"——`api.py` 现有
+  的 `/goals`/`/review`/`/note` 端点形状不用大改，只是背后从"直接调 Python
+  对象"变成"`api.py` 和 `RunHarness` 都通过 HTTP 调同一个服务"，为以后接
+  第二个独立 agent（比如独立部署的 plan 系统）铺路。
+
+参考案例（讨论时查的，不是照搬）：[Voyager](https://arxiv.org/abs/2305.16291)
+（经验→蒸馏→入库→检索复用的自动化闭环，对应②c 和 Agent 清单第 9 条）、
+[HiPlan](https://arxiv.org/pdf/2508.19076)（全局里程碑+每步局部提示的双层
+规划，对应③的背景信息组装）、[Architecting Resilient LLM Agents:
+Plan-then-Execute](https://arxiv.org/abs/2509.08646)（规划与执行分离、
+阶段边界天然是审查点，对应③④的 review 槽位设计）。
 
 ## 对照业界：现在的测评覆盖了什么
 
