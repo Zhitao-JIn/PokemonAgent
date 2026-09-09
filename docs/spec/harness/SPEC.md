@@ -19,7 +19,7 @@
 改名 + 重构之后只剩两个角色：
 
 - **`LoopState`** 拥有"这一局跑到哪了"。`step` 在这里盖章，别的角色只读不写。
-- **`Harness`** 拥有生死判断与记账职责，**自己不持有任何状态字段**（`__init__` 只挂 `game`/`memory`/`brain`/`trace` 四个端口、`run_id`、`episode_state_dir` 和编译好的 `_graph`）。
+- **`Harness`** 拥有生死判断与记账职责，**自己不持有任何状态字段**（`__init__` 只挂 `game`/`memory`/`brain`/`trace` 四个端口、`run_id` 和编译好的 `_graph`）。
 
 ### 1.2 唯一性规则
 
@@ -235,9 +235,8 @@ look → retrieve_memory → think → press → remember → look
    代价是"这一局可能一步没跑就结束了"，但那本来就是事实，`EPISODE_END` 的 `reason` 会说清楚。
 
 2. `reset = self._game.reset(task)` 真实重置世界（通常含一次真实的开局感知）。
-3. 若配置了 `episode_state_dir`，`self._game.save_state(...)` 存一份起点存档。
-4. 对 `reset.calls` 逐条当场记账（`Source.PERCEPTION`），**不留到下一次 `_observe()` 才补记**。
-5. 构造 `LoopState`，`goals=[Goal(goal=task.goal, criteria=task.success_criteria)]`——栈底是任务目标本身，"它永远在，也永远是成败的唯一依据"。
+3. 对 `reset.calls` 逐条当场记账（`Source.PERCEPTION`），**不留到下一次 `_observe()` 才补记**。
+4. 构造 `LoopState`，`goals=[Goal(goal=task.goal, criteria=task.success_criteria)]`——栈底是任务目标本身，"它永远在，也永远是成败的唯一依据"。
 
 **trace 事件**：`EPISODE_START` ×1（先）→ `MODEL_CALL`（+ 可能的 `ERROR`）×若干，均 `step=0`。
 

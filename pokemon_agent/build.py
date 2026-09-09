@@ -142,7 +142,6 @@ def build_real(
         brain_tool,
         trace_tool,
         run_id=run_id,
-        episode_state_dir=Path("trace_data") / run_id / "episodes",
         data_center=data_center,
         checkpoint=checkpoint_tool,
     )

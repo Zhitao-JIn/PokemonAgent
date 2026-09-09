@@ -109,7 +109,6 @@ brain = Brain(
 )
 return Harness(
     game, memory, brain, trace, run_id=run_id,
-    episode_state_dir=Path("trace_data") / run_id / "episodes",
 ), trace, world
 ```
 
@@ -128,8 +127,8 @@ return Harness(
    **独立新建的 `QwenText`**，不借用 `decide_llm`（理由同判定器分开建）。
 5. **组建大脑**：`Brain` 接收 `decide_llm` 和 `judge_llm` 两个**各自独立构造**的
    `QwenText` 实例（即便模型名相同也不共用一个 provider 对象）。
-6. **组建控制循环**：`Harness(game, memory, brain, trace, run_id=..., episode_state_dir=...)`，
-   把 `run_id` 和 episode 状态目录一并注入。
+6. **组建控制循环**：`Harness(game, memory, brain, trace, run_id=...)`，把 `run_id`
+   注入（局起点快照已取消——上一局最后一个圈入口 checkpoint 就是下一局起点）。
 
 ### 1.4 三个模型分开的设计理由（源码原文归纳）
 

@@ -31,7 +31,6 @@
 from __future__ import annotations
 
 import base64
-from pathlib import Path
 from typing import Any
 
 from langgraph.graph import END, StateGraph
@@ -110,7 +109,6 @@ class EpisodeHarness:
         brain_tool: BrainToolPort,
         trace: TraceToolPort,
         run_id: str = "local",
-        episode_state_dir: Path | None = None,
         data_center: RunDataCenter | None = None,
         checkpoint: CheckpointToolPort | None = None,
     ) -> None:
@@ -126,15 +124,13 @@ class EpisodeHarness:
         self._trace = trace
         """记账 req 由这里组装，payload 渲染与落盘都在 `TraceTool`。"""
         self._run_id = run_id
-        self._episode_state_dir = episode_state_dir
         self._data_center = data_center
         """人类实时插话的来源（`RunDataCenter` 的 human_note 槽）。
         `None` = 没接前端（测试、CLI），`think_action` 每步照常跑，只是永远
         取不到插话——跟 `reviewer`/`data_center` 在 `RunHarness` 里"不传就是
         没有真人"的兜底是同一个约定。**只读它的 human_note 槽**，不碰
         goals/review 两个槽——那两个是 run 级的事，不归 episode 管。"""
-        """蒸馏摘要时标在 `EpisodeMemory.run_id` 上的 run_id；存档目录（非 None 时
-        开局存起点存档）。"""
+        """蒸馏摘要时标在 `EpisodeMemory.run_id` 上的 run_id。"""
         self._world_reset_done = False
         """世界起点存档只读一次——run 启动后第一个 episode 的 `_begin` 读，
         之后的 episode **接着上一局结束的状态继续跑**，episode 之间保持
@@ -365,12 +361,13 @@ class EpisodeHarness:
 
         # 步骤 2：世界起点只在 run 的第一个 episode 读一次；后续 episode
         # **不重置**，接着上一局结束的状态继续跑（取舍见 `CHANGELOG.md`
-        # 2026-09-03 条目）。每局仍存一份起点快照供 replay 定位"这局从哪开始"。
+        # 2026-09-03 条目）。局起点不再另存快照——终止判定全在 `judge`
+        # 出口，退出前最后一圈入口的 checkpoint（`save_checkpoint`）就是
+        # 本局的终止画面，也是下一局的起点画面；ep1 起点 = `reset()`
+        # 加载的 ROM 存档，同样可复现。
         if not self._world_reset_done:
             self._game.reset(task)
             self._world_reset_done = True
-        if self._episode_state_dir is not None:
-            self._game.save_state(str(self._episode_state_dir / f"{episode_id}.start.state"))
 
         # 步骤 3：感知第一帧（重试循环在 `game_utils.perceive_with_retry`；
         # 原始画面随该函数内部的感知 MODEL_CALL 事件落盘）。

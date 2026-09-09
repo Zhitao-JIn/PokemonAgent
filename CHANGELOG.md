@@ -1,3 +1,27 @@
+## 2026-09-09 —— 删除每局起点快照（`<episode_id>.start.state`）：纯冗余
+
+**改了什么**：删掉 `EpisodeHarness` 的 `episode_state_dir` 参数、`_begin` 里的
+`save_state(...)` 写入点和 `build.py` 的接线；`docs/spec/harness/SPEC.md` 与
+`docs/spec/build/SPEC.md` 的对应描述同步更新。`_world_reset_done` 的 reset
+逻辑原样保留。
+
+**为什么这么改**：图结构决定了它没有信息量。终止判定全在 `judge` 出口，
+`look` 只盖步号、不碰世界——episode 从"最后一圈入口的 checkpoint"到收尾
+之间没有任何世界交互，所以**最后一个 step 存档就是本局的终止画面**，也
+就是下一局的起点画面（episode 之间不 reset）；ep1 起点 = `reset()` 加载的
+ROM 存档，可复现。实测 trace 也证实：step 3 只有 view/judge/verify，没有
+executed。每局再存一份起点快照是零信息冗余（此前代码里也确实无人读它）。
+
+**取舍**：replay 若将来需要"从某局开头加载模拟器续跑"，用上一局的最后
+checkpoint 或 ROM 存档即可，不依赖这份快照；若 replay 只做事件/截图回放，
+更用不上。历史上它只写不读，属于未兑现的设想，先删——需要时随 replay
+一起设计。
+
+**影响面**：`episode_harness.py`（构造函数签名少一个可选参数）、`build.py`
+（少一行接线）。`EpisodeHarness` 是内部装配点构造的，无外部调用方传过这个
+参数；trace 产物里不再出现 `episodes/*.start.state`，维度 2/3 的核对逻辑
+不检查该文件，无需改动。
+
 ## 2026-09-09 —— run_start trace 补 `success_criteria` 字段
 
 **改了什么**：`trace_render.py::run_start()` 的 payload 里新增 `success_criteria`
