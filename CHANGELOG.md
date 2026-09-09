@@ -1,4 +1,33 @@
-## 2026-09-08 —— 真实链路端到端核对改写成 pytest：`tests/test_real_integration.py`
+## 2026-09-09 —— 真实核对补上"读回路径"：新增维度 5（checkpoint 恢复）与维度 6（记忆读写回环）
+
+**改了什么**：`real_check/` 新增两个独立脚本。`check_restore.py`（维度 5）真实走一遍
+跨进程恢复：阶段 A 用 `build_real` 完整跑一个 3 步 run 生成存档；阶段 B 读 run.json
+拿事件游标，带 `resume_cursor` 重新 `build_real`（模拟崩溃后新进程），调
+`resume_run()` 走 `load → void_after → 世界快照回载 → 状态重建 → 续跑`，断言四条：
+恢复后出 `RunOutcomeResp`、trace 里有 `checkpoint_restore` 且 restored 三元组对得上、
+全部事件按 event_id 排序仍严格连续（废弃段截掉后从游标 +1 无缝续写）、`voided-*`
+归档目录真实生成。`check_memory_roundtrip.py`（维度 6）把 MemoryTool 五条读写路径
+在真实实现下过一遍（临时目录注入，不污染真实记忆库）：episodic 写读回环、object
+按图/按格读回、知识库混合检索（真实 fastembed + reranker）、跨局摘要写入 + 检索 +
+run_id 隔离、`void_memory_after` 截断计数。
+
+**为什么这么改**：用户指出"这些测试不够——真实情况下的存档恢复逻辑呢，所有模块
+都要真实情况下试试"。原四个维度全部只验"落盘产物长什么样"（写路径的静态检查），
+没有任何一条**读回路径**被执行过：`CheckpointTool.load()` / `void_after()` /
+`resume_run()` 从没被真实调用，MemoryTool 的检索（BM25+向量+reranker）也没在真实
+链路里跑过——这类"写没问题、读炸了"的 bug（如 `_read_checkpoint` 签名校验、
+`_episode_vector` 惰性补算）只有真的读一遍才现形。
+
+**取舍**：维度 6 的存储后端注入临时目录而不是打真实记忆库——测试要可重复、
+无残留，但 store 实现与 fastembed 推理保持真实；维度 5 选拉满（两次 PyBoy +
+全程真模型，约 6-8 分钟）而不是只测 `CheckpointTool.load()` 的纯读——恢复的价值
+就在"恢复后能继续跑"，半截恢复测不出 dispatch resume 分支的接线问题。
+已知风险：judge 带图调用是昨夜两次硬断电的共同峰值点，维度 5 有触发硬件保护
+断电的可能（用户已知情，选择先跑）。
+
+**影响面**：新增两个脚本与 `real_check/__init__.py` 无改动；`check_restore` 跑完
+会把 last-run 指针指向恢复后的时间线，维度 2/3/4 可直接复核恢复后的产物。
+
 
 **改了什么**：上一条 changelog 加的 `pokemon_agent/experiment/real_integration_check.py`
 （独立脚本 + 自定义 `Check` 类手搓 PASS/FAIL 表）删掉，改写成
@@ -34,6 +63,69 @@ Ark），少一个就跑不完整，没必要支持"只测一半"的中间态。
     $env:ARK_API_KEY = "..."
     $env:DASHSCOPE_API_KEY = "..."
     pytest tests/test_real_integration.py -v -s
+
+## 2026-09-09 —— 维度 2/3/4 产物定位改为"指针优先 + 回退扫描"；核对规格落成 SPEC 文档
+
+**改了什么**：`common.py` 新增 `resolve_run()`——优先读 `.last_realcheck.json`
+指针，指针缺失/失效时回退扫描 `trace_data/` 下最新的 `restorecheck-*` /
+`realcheck-*` 目录，取其中最近修改且非空的 episode 级 jsonl；维度 2/3/4 的
+`read_last_run()` 调用点全部换成它。另新增 `docs/spec/real_check/SPEC.md`，
+描述六个维度各自的测试对象、真实依赖、通过判定、运行方式、已验证状态与
+已知风险。
+
+**为什么这么改**：0909 凌晨的 restore 跑批随会话重启被杀，指针文件没写、
+0908 的旧产物也早已被清空——维度 2/3/4 此前完全依赖"上一个脚本恰好跑完
+最后一行"写下的指针，这在会话频繁重启的现实下太脆。用户同时要求把这套
+核对出一份可读的描述，按 AGENTS.md 的约定落成 `docs/spec/real_check/SPEC.md`。
+
+**取舍**：回退扫描只认 `restorecheck-` / `realcheck-` 两个前缀并按 mtime 取新，
+不做更聪明的"哪个 run 是完整的"判定——完整性正是维度 2 的职责（run_end
+缺失会如实 FAIL），定位层不重复做这件事。
+
+**影响面**：`check_trace` / `check_checkpoint` / `check_memory` 的 import 与
+调用点各改一处；`read_last_run()` 保留（check_restore 语义上仍只写指针），
+无对外行为变化。
+
+## 2026-09-09 —— 核对脚本终止方式改正：plan 双开关全关，review 交 DataCenterReviewer 超时收场
+
+**改了什么**：`check_harness.py` / `check_restore.py`（阶段 A、B 两处）的
+`build_real()` 调用统一改为 `auto_push_goals=False, auto_decide_done=False`，
+并按 `api.py` 同构装配 `reviewer=DataCenterReviewer(data_center, timeout=REVIEW_TIMEOUT)`、
+`data_center=...`（`common.py` 新增 `make_review_pair()` 与 `REVIEW_TIMEOUT`，
+沿用 `POKEMON_REVIEW_TIMEOUT` 环境变量、缺省 60s）。
+
+**为什么这么改**：原先核对脚本用缺省装配，`plan` 的 `auto_push_goals=True`
+让规划模型在目标完成后自主压新目标续跑——3 步任务实际跑了 10 步（0909
+restorecheck 的 ep2 存了 0-9 步存档），"有限任务跑完即停"的预期落空。中途
+误改成只关 `auto_push_goals`，用户纠正：两个开关本来就为跳过 plan 而写，
+直接用；终止交 human review，等超时按 STOP 收场。注意 `reviewer=None` 时
+RunHarness 缺省是 `AutoContinueReviewer`（永远 CONTINUE、无超时概念），
+双开关全关+栈空会 plan↔review 空转到 recursion_limit 炸图——必须显式换
+`DataCenterReviewer` 才有"等超时就结束"的语义。
+
+**取舍**：不改 `run_harness` 本体的缺省值——开放任务（玩通神奇宝贝）要
+plan 自主扩栈，有限终止是核对脚本的诉求，用装配参数表达，不动全局行为。
+
+**影响面**：仅 `experiment/real_check/` 三个文件；生产装配（`build.py`
+缺省、`api.py`）不变。维度 2/3/4 只读产物，不受影响。
+
+## 2026-09-09 —— 判据直给，停步字面量按模型实际可见的步号写
+
+**改了什么**：`common.py` 的 `SUCCESS_CRITERIA` 改成一句话直给：
+"看到 step=2 就停（why 写「步数用尽」）。没到之前，看到目标所述动作完成
+且画面出现反应才判完成，没看到就判 false。"字面量由 `STEPS - 1` 派生。
+
+**为什么这么改**：judge 问到第 3 步的当前帧时该帧还没落库，模型看到的
+history 最大步号是 2——"step=3" 这个字面串在 prompt 里永远不会出现，
+照 step=STEPS 写模型永远等不到停步信号。判据必须按模型实际能看到的步号写。
+（演变过程：先写机械的渲染机制说明，被否；改写成"goal 的性质"含蓄版，
+再被否——用户要的就是直给"看到 step=N 就停"，只是 N 取 STEPS-1。）
+
+**取舍**：判据与"judge 先问、当前帧后写库"的渲染时机耦合，若哪天当前帧
+提前落库，判据要改回 step=STEPS。harness 侧 `max_steps` 硬限制不受影响，
+双保险仍在；`verdict.done → success=True` 的耦合没动（核对脚本不断言 success）。
+
+**影响面**：仅判据文本；judge 在边界步按 history 末条 step=2 判停。
 
 ## 2026-09-08 —— 新增真实链路端到端核对脚本 `real_integration_check.py`
 
