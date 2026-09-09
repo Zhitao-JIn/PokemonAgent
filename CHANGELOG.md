@@ -1,3 +1,21 @@
+## 2026-09-09 —— run_start trace 补 `success_criteria` 字段
+
+**改了什么**：`trace_render.py::run_start()` 的 payload 里新增 `success_criteria`
+字段（多目标栈时同 `goals` 一样用 `" > "` 拼接），docstring 同步说明。
+
+**为什么这么改**：`run_start` 此前只记 `goal` 文字，判据原文不进事件流——复盘
+一条历史 trace 时，只能看到"目标是什么"，看不到"当时的成败判据写的是什么"。
+两者本来就是 `TaskForHarness` 起 run 时一起传入的必填字段（`goal`/`success_criteria`
+同源），只是渲染函数当初做了选择性摘取，没有漏传。
+
+**取舍**：`evaluation/eval_report.py` 只用 `run_start` 的 `ts` 字段算耗时，不解析
+`goals`/`goal_count`，加这个新字段不影响报表解析（`trace_render.py` 文件头的
+跨模块契约只约束字段名/删字段，纯新增字段安全）。
+
+**影响面**：仅 `trace_render.py` 一处；trace 产物从这次 realcheck
+（`realcheck-0909-105454`）起 `run_start.payload.success_criteria` 有值，之前
+产物这个字段缺失，读历史 trace 时留意。
+
 ## 2026-09-09 —— judge 看不到步号：render_sequence 去重分支保留条目头，包装头改真实步号
 
 **改了什么**：三处。① `step_memory.py::render_sequence()` 的去重分支不再整段

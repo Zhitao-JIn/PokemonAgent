@@ -58,7 +58,8 @@ def _tag_attempt(payload: dict[str, str], attempt: int) -> dict[str, str]:
 
 def run_start(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     """**run 的边界必须进事件流**，跟 `episode_start` 是同一个理由：没有它，
-    replay/统计分不出一个 run 从哪开始，也看不出初始目标栈长什么样。
+    replay/统计分不出一个 run 从哪开始，也看不出初始目标栈的目标文字和判据
+    长什么样（`success_criteria` 只有当时的判据原文，判定逻辑不在这里）。
 
     `episode_id` 位置放 `run_id`、`step` 恒为 0——run 级事件不挂在任何一局
     上，跟 `RunHarness.plan` 的 `MODEL_CALL`（`Source.PLAN`）是同一个约定。
@@ -73,6 +74,7 @@ def run_start(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
             "kind": "run_start",
             "goal_count": str(len(goals)),
             "goals": " > ".join(g.goal for g in goals),
+            "success_criteria": " > ".join(g.success_criteria for g in goals),
         },
     )
 
