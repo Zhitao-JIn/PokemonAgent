@@ -151,7 +151,7 @@ class EpisodeHarness:
         （把 `before`/`after` 两帧编进去）；`judge()` 的图完全来自 history 里
         已经存好的截图，不走这里。
         """
-        raw = read_screenshot(screenshot_filename(self._run_id, episode_id, step))
+        raw = read_screenshot(self._run_id, screenshot_filename(self._run_id, episode_id, step))
         return base64.b64encode(raw).decode() if raw is not None else None
 
     # ---- 对外只有这一个入口 ----

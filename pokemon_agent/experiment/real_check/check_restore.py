@@ -46,6 +46,7 @@ def main() -> None:
         STATE,
         STEPS,
         SUCCESS_CRITERIA,
+        CHECKPOINT_ROOT,
         TRACE_ROOT,
         make_review_pair,
         safe,
@@ -94,7 +95,8 @@ def main() -> None:
     assert outcome.reason, "阶段 A outcome.reason 不应为空"
 
     run_dir = TRACE_ROOT / run_id
-    step_dir = run_dir / "checkpoints" / "step" / safe(episode_id)
+    cp_dir = CHECKPOINT_ROOT / run_id
+    step_dir = cp_dir / "step" / safe(episode_id)
     saved_steps = sorted(int(p.stem) for p in step_dir.glob("*.json"))
     assert saved_steps, f"阶段 A 没有留下任何 step 存档：{step_dir}"
     restore_step = saved_steps[-1]
@@ -178,7 +180,7 @@ def main() -> None:
     assert ids[-1] > cursor, f"恢复后没有新事件写入（最大 id {ids[-1]} ≤ 游标 {cursor}）"
 
     # ---- 判定 4：voided 归档目录真实生成 ----
-    voided = sorted((run_dir / "checkpoints").glob("voided-*"))
+    voided = sorted(cp_dir.glob("voided-*"))
     assert voided, "恢复后没有任何 voided-* 归档目录——废弃时间线处理没发生"
 
     write_last_run(run_id, episode_id)

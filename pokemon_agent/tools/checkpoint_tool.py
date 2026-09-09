@@ -5,13 +5,22 @@
 不 import harness）；trace 的截断按游标直接操作 JSONL 文件（按局分文件，
 `event_id` 全 run 单调，游标即主前缀长度）。
 
-落盘布局（全部在 run 目录下）：
+落盘布局：
 
-    trace_data/<run_id>/checkpoints/
+    checkpoints/<run_id>/                     （0909 起独立于 trace_data，见下）
     ├── step/<episode_id>/<step>.state      （模拟器世界快照，二进制）
     ├── step/<episode_id>/<step>.json       （EpisodeRunState + RunState 双重
     │                                          dump + 游标，唯一提交点）
     └── voided-<ts>/                        （废弃时间线归档，先归档后截断）
+
+**checkpoint 根目录独立于 `trace_data/`**：`trace_data/<run_id>/`是"这个 run
+的可观测事件流"——`episodes/*.jsonl`一次写入、只追加、只回放；`checkpoints/`
+是另一种东西——**可变的恢复状态**，会被覆盖、会被`void_after()`整目录搬走
+归档。两者语义不同，不该是同一棵树下的兄弟目录（旧布局下`void_after()`里
+"改 jsonl 文件内容"和"搬 checkpoint 目录"看着像同一类操作，只是因为路径
+恰好挨在一起）。`trace_data/<run_id>/episodes/`与`trace_data/<run_id>/
+screenshots/`的截断（本类的另一半职责）仍然要碰，见`__init__`的
+`trace_dir`参数。
 
 **没有单独的 run 级文件**：`RunState`（目标栈/结算）跟 `EpisodeRunState` 打包进
 同一份 `<step>.json`——同一局内 `RunState` 每一步都相同（只有 `dispatch`/
@@ -56,10 +65,14 @@ def _safe(episode_id: str) -> str:
 class CheckpointTool:
     """`CheckpointToolPort` 的唯一实现。持有 run 目录与记忆工具，不持有状态。"""
 
-    def __init__(self, run_dir: Path, memory: MemoryTool) -> None:
-        self._run_dir = Path(run_dir)
-        self._dir = self._run_dir / "checkpoints"
+    def __init__(self, checkpoint_dir: Path, trace_dir: Path, memory: MemoryTool) -> None:
+        """`checkpoint_dir`：这个 run 自己的 checkpoint 根（`checkpoints/<run_id>/`，
+        独立于 trace_data，见类 docstring）。`trace_dir`：这个 run 的
+        `trace_data/<run_id>/`——`void_after()`截断 trace/截图要用，本类不
+        持有 trace 相关状态，只按这个路径读写。"""
+        self._dir = Path(checkpoint_dir)
         self._step_dir = self._dir / "step"
+        self._trace_dir = Path(trace_dir)
         self._memory = memory
 
     # ---- 存 ----
@@ -97,7 +110,7 @@ class CheckpointTool:
         screenshots_voided = 0
 
         # 步骤 1：trace 按局分文件逐个处理——游标前的行保留，之后的行归档。
-        episodes_dir = self._run_dir / "episodes"
+        episodes_dir = self._trace_dir / "episodes"
         kept_episodes: set[str] = set()
         voided_episodes: set[str] = set()
         if episodes_dir.is_dir():
@@ -228,15 +241,17 @@ class CheckpointTool:
     ) -> int:
         """把一局 step > keep_step 的人眼截图搬进 voided（keep_step=-1 = 整局）。
 
-        截图目录扁平（文件名含三元组），按 `screenshot_filename()` 的命名规则
-        逐个核对前缀搬移；`_save_screenshot` 撞名生成的 `(n)` 后缀文件一并搬。
+        截图现在按 run 分文件夹（`trace_data/<run_id>/screenshots/`），一个 run
+        内仍然是扁平的（多个 episode 共享同一个目录），按 `screenshot_filename()`
+        的命名规则逐个核对 episode_id 前缀搬移；`_save_screenshot` 撞名生成的
+        `(n)` 后缀文件一并搬。
         """
-        from pokemon_agent.trace.store import SCREENSHOT_ROOT
+        screenshots_dir = self._trace_dir / "screenshots"
 
         moved = 0
         prefix = f"{run_id}_{episode_id}_"
         target_dir = voided_dir / "screenshots"
-        for path in sorted(SCREENSHOT_ROOT.glob(f"{prefix}*.png")):
+        for path in sorted(screenshots_dir.glob(f"{prefix}*.png")):
             stem = path.stem  # {run_id}_{eid}_{step} 或带 (n)
             suffix_part = stem[len(prefix) :]
             step_token = suffix_part.split("(")[0]

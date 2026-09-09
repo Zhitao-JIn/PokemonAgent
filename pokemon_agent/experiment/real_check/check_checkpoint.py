@@ -14,14 +14,14 @@ from __future__ import annotations
 
 import json
 
-from pokemon_agent.experiment.real_check.common import TRACE_ROOT, resolve_run, safe
+from pokemon_agent.experiment.real_check.common import CHECKPOINT_ROOT, resolve_run, safe
 
 
 def main() -> None:
     meta = resolve_run()
     run_id, episode_id = meta["run_id"], meta["episode_id"]
 
-    cp_dir = TRACE_ROOT / run_id / "checkpoints"
+    cp_dir = CHECKPOINT_ROOT / run_id
     step_dir = cp_dir / "step" / safe(episode_id)
     assert step_dir.is_dir(), f"没有 step 存档目录：{step_dir}"
     state_steps = {p.stem for p in step_dir.glob("*.state")}

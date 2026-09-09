@@ -69,7 +69,7 @@ class StepMemory(BaseModel):
         "下一条的 before），文字字段重复是接受的成本，这条也一并接受：换来的是"
         "`judge`/`verify_steps` 用的时候不用再去读盘、不用再关心截图文件是否"
         "存在/是否被撞名改了后缀——`store_step_episode_memory()` 写这条记忆时"
-        "已经从 `screenshot/` 读过一次盘、编码好了，后面全是内存里的字符串。"
+        "已经从 `trace_data/<run_id>/screenshots/` 读过一次盘、编码好了，后面全是内存里的字符串。"
         "**可能是 `None`**（那一步感知失败、截图确实没能落盘）——调用方"
         "（`judge`/`verify_steps` 拼请求）按跳过这张图处理，不能因为一步缺图"
         "让整条判定链路失败",

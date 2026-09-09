@@ -23,9 +23,13 @@ from pokemon_agent.schemas.datastore import TRACE_SCHEMA_VERSION, EventType, Sou
 project_root = Path(__file__).parent.parent.parent
 # 数据存储目录（在项目根目录下）
 STORAGE_ROOT = project_root / "trace_data"
-# 感知帧的人眼可读副本——跟 trace JSONL 里 base64 的 frame_png
-# 是同一份字节的第二份拷贝，纯粹方便肉眼直接翻看，不是权威来源。
-SCREENSHOT_ROOT = project_root / "screenshot"
+# 感知帧的人眼可读副本——跟 trace JSONL 里 base64 的 frame_png 是同一份字节的
+# 第二份拷贝，纯粹方便肉眼直接翻看，不是权威来源。0909 从项目根目录的全局
+# `screenshot/` 挪进 `trace_data/<run_id>/screenshots/`——截图天然是"某个 run
+# 某一局某一步"的观测产物，该跟 episodes/*.jsonl 同一个粒度按 run 分文件夹，
+# 不该是不分 run 的全局目录（旧布局逼得 `void_after()` 只能靠文件名前缀在
+# 全局目录里扫，见 CHANGELOG）。不再有模块级 `SCREENSHOT_ROOT`——每个
+# `LocalTrace` 实例按自己的 `run_id` 算 `self._screenshots_dir`。
 
 # 没有"每个事件一个 phase 标签"的表——TraceEvent.phase 直接取 type 的字面值
 # （子语义在 payload.kind）。
@@ -49,13 +53,14 @@ class LocalTrace:
         self._run_id = run_id
         self._run_dir = STORAGE_ROOT / run_id
         self._episodes_dir = self._run_dir / "episodes"
+        self._screenshots_dir = self._run_dir / "screenshots"
         self._event_sink = event_sink
         self._next_id = 0
 
         # 确保存储结构
         self._run_dir.mkdir(parents=True, exist_ok=True)
         self._episodes_dir.mkdir(exist_ok=True)
-        SCREENSHOT_ROOT.mkdir(exist_ok=True)
+        self._screenshots_dir.mkdir(exist_ok=True)
         if resume_after_event_id is not None:
             self._next_id = resume_after_event_id + 1
 
@@ -72,8 +77,8 @@ class LocalTrace:
         """分配单调的 event_id，落盘，返回这个 id。
 
         frame_png：这一步感知到的原始画面，直接进这一条
-            `TraceEvent.frame_png`。**非 None 时额外另存一份 PNG 到项目根目录
-            的 `screenshot/`**（命名见 `screenshot_filename()`，
+            `TraceEvent.frame_png`。**非 None 时额外另存一份 PNG 到这个 run
+            自己的 `trace_data/<run_id>/screenshots/`**（命名见 `screenshot_filename()`，
             见 `_save_screenshot`）——trace JSONL 里的 base64 只适合程序读，
             这份是给人肉眼直接翻看用的，两份是同一份字节的独立拷贝，
             权威来源仍是 `TraceEvent.frame_png`，这份丢了不影响任何回放/复现逻辑。
@@ -154,8 +159,8 @@ class LocalTrace:
     def _save_screenshot(
         self, run_id: str, episode_id: str, step: int, frame_png: str
     ) -> None:
-        """把这一帧原始画面另存一份 PNG 到 `screenshot/`（项目根目录下，跟
-        `trace_data/` 平级），命名见 `screenshot_filename()`。
+        """把这一帧原始画面另存一份 PNG 到这个 run 自己的
+        `trace_data/<run_id>/screenshots/`，命名见 `screenshot_filename()`。
 
         **纯粹是人眼翻看的便利副本，不是权威数据源**——那份是 `TraceEvent.frame_png`
         （已经落进 JSONL）。三者拼在一起理论上已经唯一（同一个 episode 同一步
@@ -175,10 +180,10 @@ class LocalTrace:
         下被写两次"的源头（0 号帧、before/after 共用 step 号）。
         """
         base = screenshot_filename(run_id, episode_id, step).removesuffix(".png")
-        path = SCREENSHOT_ROOT / f"{base}.png"
+        path = self._screenshots_dir / f"{base}.png"
         n = 1
         while path.exists():
-            path = SCREENSHOT_ROOT / f"{base}({n}).png"
+            path = self._screenshots_dir / f"{base}({n}).png"
             n += 1
         # 入参现在是 base64 文本（`TraceEvent.frame_png` 的统一形态），落盘前解码。
         path.write_bytes(base64.b64decode(frame_png))
@@ -239,11 +244,16 @@ def screenshot_filename(run_id: str, episode_id: str, step: int) -> str:
     return f"{run_id}_{episode_id}_{step}.png"
 
 
-def read_screenshot(filename: str) -> bytes | None:
-    """按文件名读一张已存的截图，读不到（没落盘、被撞名改了后缀）就返回 `None`
-    ——调用方（judge/verify_steps 拼多模态请求那几处）按"这张图可能缺"处理，
-    不因为一张便利副本缺失就让判定链路整个失败。"""
-    path = SCREENSHOT_ROOT / filename
+def read_screenshot(run_id: str, filename: str) -> bytes | None:
+    """按 `(run_id, filename)` 读一张已存的截图，读不到（没落盘、被撞名改了
+    后缀）就返回 `None`——调用方（judge/verify_steps 拼多模态请求那几处）按
+    "这张图可能缺"处理，不因为一张便利副本缺失就让判定链路整个失败。
+
+    0909 起截图按 run 分文件夹（`trace_data/<run_id>/screenshots/`），模块级
+    函数因此需要 `run_id` 才能算出路径——文件名本身仍含 run_id 前缀
+    （`screenshot_filename()` 不变），这里的 `run_id` 只用来定位目录，不做
+    二次校验。"""
+    path = STORAGE_ROOT / run_id / "screenshots" / filename
     if not path.exists():
         return None
     return path.read_bytes()

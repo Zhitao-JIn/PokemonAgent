@@ -88,10 +88,16 @@ def build_real(
         reranker_provider=FastEmbedReranker(),
     )
 
-    # checkpoint 手（PLAN_checkpoint）：run 目录 = trace 的落盘目录
+    # checkpoint 手（PLAN_checkpoint）：checkpoint 根目录独立于 trace 的落盘
+    # 目录（0909 起不再是 trace_data 下的子目录，见 CheckpointTool 类
+    # docstring）；trace_dir 仍然要给它——void_after() 截断 trace/截图要用。
     from pokemon_agent.tools import CheckpointTool
 
-    checkpoint_tool = CheckpointTool(run_dir=Path("trace_data") / run_id, memory=memory)
+    checkpoint_tool = CheckpointTool(
+        checkpoint_dir=Path("checkpoints") / run_id,
+        trace_dir=Path("trace_data") / run_id,
+        memory=memory,
+    )
 
     # 决策走 DashScope（Qwen），判定/校验走火山方舟（豆包）——两条链路
     # 不同供应商。

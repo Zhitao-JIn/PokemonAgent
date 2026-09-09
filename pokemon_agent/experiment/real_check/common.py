@@ -51,6 +51,9 @@ def make_review_pair() -> tuple[RunDataCenter, DataCenterReviewer]:
 
 
 TRACE_ROOT = ROOT / "trace_data"
+CHECKPOINT_ROOT = ROOT / "checkpoints"
+"""0909 起 checkpoint 根目录独立于 trace_data（见 `CheckpointTool` 类
+docstring）——`checkpoints/<run_id>/`，不再是 `trace_data/<run_id>/checkpoints/`。"""
 LAST_RUN = TRACE_ROOT / ".last_realcheck.json"
 
 STEP_MEMORY_DIR = ROOT / "pokemon_agent" / "memory" / "episode" / "memory"

@@ -1,3 +1,59 @@
+## 2026-09-09 —— checkpoint 根目录搬出 trace_data；screenshot 从全局目录搬进 trace_data/<run_id>/
+
+**改了什么**：
+- `checkpoints/`不再是`trace_data/<run_id>/checkpoints/`——独立成
+  `checkpoints/<run_id>/`（跟`trace_data/<run_id>/`平级）。
+- `screenshot/`不再是项目根目录下的全局目录——搬进
+  `trace_data/<run_id>/screenshots/`，按 run 分文件夹。
+- `CheckpointTool.__init__`签名从`(run_dir, memory)`改成
+  `(checkpoint_dir, trace_dir, memory)`——`void_after()`本来就要同时碰
+  两棵树（自己的 step 存档、trace 的 jsonl+screenshots），拆开两个参数后
+  职责边界写在签名里，不用靠内部约定猜"这个 run_dir 到底指哪一棵"。
+- `LocalTrace`/`read_screenshot()`/`_save_screenshot()`不再用模块级
+  `SCREENSHOT_ROOT`常量，改成每个`LocalTrace`实例按自己的`run_id`算
+  `self._screenshots_dir`；`read_screenshot()`签名新增`run_id`参数。
+- `build.py`：`CheckpointTool(checkpoint_dir=Path("checkpoints")/run_id,
+  trace_dir=Path("trace_data")/run_id, memory=memory)`。
+- `real_check/common.py`新增`CHECKPOINT_ROOT`常量；
+  `check_checkpoint.py`/`check_restore.py`/`resume_only.py`三处硬编码的
+  `<run_dir>/checkpoints`改成`CHECKPOINT_ROOT/<run_id>`。
+
+**为什么这么改（用户 0909 复核架构图时提的两条真实设计问题）**：
+
+1. **checkpoint 不该在 trace_data 下面**：`trace_data/<run_id>/`的语义是
+   "这个 run 的可观测事件流"——`episodes/*.jsonl`一次写入、只追加、只回放；
+   `checkpoints/`是另一种东西——**可变的恢复状态**，会被覆盖、会被
+   `void_after()`整目录搬走归档。两者混在一个目录树下，容易把"改文件内容"
+   和"搬目录"两种完全不同的操作误当成同一类维护对象。
+2. **screenshot 反而该在 trace_data 下面**：截图天然是"某个 run 某一局
+   某一步"的观测产物，跟`episodes/*.jsonl`该是同一个粒度，之前却是**不分
+   run 的全局目录**（`project_root/screenshot/`）。这逼得
+   `CheckpointTool._void_screenshots()`只能靠文件名前缀
+   `{run_id}_{episode_id}_{step}.png`在全局目录里扫、处理撞名`(n)`后缀
+   ——典型的"路径放错了、只好靠命名约定硬凑"的补丁写法。改成按 run 分
+   文件夹后，`void_after()`直接对着这个 run 自己的`screenshots/`子目录
+   操作，文件名格式不变（仍含 run_id 前缀，只是现在冗余）。
+
+**影响文件**：`pokemon_agent/trace/store.py`、
+`pokemon_agent/tools/checkpoint_tool.py`、`pokemon_agent/build.py`、
+`pokemon_agent/harness/episode_harness.py`（`read_screenshot()`调用点补
+`run_id`）、`pokemon_agent/interfaces/trace/trace_port.py`/
+`pokemon_agent/schemas/datastore/step_memory.py`（路径描述性注释同步）、
+`pokemon_agent/experiment/real_check/{common,check_checkpoint,
+check_restore,resume_only}.py`。落盘布局变更，旧的
+`trace_data/<run_id>/checkpoints/`与项目根目录`screenshot/`产物作废（本地
+开发数据，无需迁移）。
+
+**已知遗留**：`tests/test_checkpoint_resume.py`/
+`tests/test_integration_tool_layer.py`/`tests/test_real_integration.py`
+三个测试文件里还固定用着旧路径/旧`CheckpointTool`签名，`docs/spec/harness/
+PLAN_checkpoint.md`等 spec 文档的落盘布局图也还没跟着改——按项目约定测试
+与 spec 改动要先问，这次只改了生产代码，等用户确认后再动这两类文件。
+
+**验证**：`ast.parse`全项目语法检查通过；这台机器装不上`agent_permission`/
+`langgraph`（长期已知限制），没能端到端真实跑一次`check_restore.py`确认新
+布局下 resume 全链路仍然通过，需要用户本机重跑确认。
+
 ## 2026-09-09 —— 新增调试脚本 `resume_only.py`：跳过阶段 A，直接对已有 checkpoint 发起 resume_run()
 
 **改了什么**：新增 `pokemon_agent/experiment/real_check/resume_only.py`。

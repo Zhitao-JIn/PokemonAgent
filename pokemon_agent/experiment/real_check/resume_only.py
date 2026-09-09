@@ -38,7 +38,7 @@ def main() -> None:
     from pokemon_agent.experiment.real_check.common import (
         ROM,
         STATE,
-        TRACE_ROOT,
+        CHECKPOINT_ROOT,
         make_review_pair,
         resolve_run,
         safe,
@@ -57,8 +57,8 @@ def main() -> None:
         run_id = args.run_id or located["run_id"]
         episode_id = args.episode_id or located["episode_id"]
 
-    run_dir = TRACE_ROOT / run_id
-    step_dir = run_dir / "checkpoints" / "step" / safe(episode_id)
+    cp_dir = CHECKPOINT_ROOT / run_id
+    step_dir = cp_dir / "step" / safe(episode_id)
     step = args.step if args.step is not None else _latest_step(step_dir)
 
     step_json = step_dir / f"{step}.json"

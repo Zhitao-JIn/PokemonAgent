@@ -37,7 +37,8 @@ class TracePort(Protocol):
             由 `episode_utils.perceive_with_retry()` 在给这次感知的 MODEL_CALL 调
             `trace.append(*args, frame_png=...)` 时一并传入。多数事件
             没有对应的帧，留 `None`。**非 None 时实现方还应另存一份人眼可读的
-            PNG 副本**（`LocalTrace` 存到项目根目录 `screenshot/`，
+            PNG 副本**（`LocalTrace` 存到这个 run 自己的
+            `trace_data/<run_id>/screenshots/`，
             命名 `{run_id}_{episode_id}_{step}.png`，撞名加 `(n)` 后缀）——
             `TraceEvent.frame_png` 仍是权威数据源，这份副本纯粹是方便肉眼翻看，
             丢了不影响任何回放/复现逻辑，因此不算进 `append()` 的后置条件。
