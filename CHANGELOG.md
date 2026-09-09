@@ -1,3 +1,32 @@
+## 2026-09-09 —— judge 看不到步号：render_sequence 去重分支保留条目头，包装头改真实步号
+
+**改了什么**：三处。① `step_memory.py::render_sequence()` 的去重分支不再整段
+替换条目头——保留 `(episode_id, step=N) 当时看到：（同上一条「之后变成」…）`，
+只省画面内容；② `StepMemory.render()` 与 `render_sequence()` 的条目头格式从
+`(ep, 2)` 改成 `(ep, step=2)`，让判据里的 "step=2" 在 prompt 里有字面量可对；
+③ `judge_success.build_prompt()` 的包装头从窗口序号 `## 第 {i} 条` 改成真实
+步号 `## 第 {entry.step} 步`。模板 `judge_success.md` 补一段：判据里的硬性
+停止规则（"看到 step=N 就停"）命中即判 true，不受"默认没完成"约束，步号看
+条目头 `(…, step=N)`。
+
+**为什么这么改**：0909 05:27 那次 realcheck（run realcheck-0909-052751）跑了
+ep1/ep2/ep3 三局、每局都到 step 3 结束——judge(3) 时 history=[step1, step2]，
+step2 的条目头被去重整段替换，**prompt 里根本没有"2"这个数字**（窗口编号
+还是从 0 重数的"第 0/1 条"）；判据"看到 step=2 就停"要模型找一个不存在的
+字面量，模板的"默认没完成/拿不准一律 false"压倒一切 → done=false → harness
+强制 done 但 success=False → reflect 直连重派（1+MAX_GOAL_RETRIES 次）→
+"一直卡在 3"。根因在渲染层，判据措辞本身没错。
+
+**取舍**：条目头进 prompt 的字节数多了（每条十几字节），换来步号永远可见；
+`(ep, step=N)` 格式同时是检索打分文本（render 的两用约定），格式变化对检索
+无解析影响。`judge_success` 的包装头只动 judge 这条链，校验链（step_verify）
+的窗口编号与 `StepVerifyVerdict.index` 对应关系不碰。
+
+**影响面**：judge / verify 共用的渲染路径文本变了——两者 prompt 里条目头
+多出 `step=N` 字样与保留头；不涉及任何代码逻辑分支。维度 1 需重跑验证
+（判停应发生在 judge(3) 看见 step=2 时，模型判 true → success=True → 弹栈 →
+review 超时 STOP → RUN_END，单局收场）。
+
 ## 2026-09-09 —— 真实核对补上"读回路径"：新增维度 5（checkpoint 恢复）与维度 6（记忆读写回环）
 
 **改了什么**：`real_check/` 新增两个独立脚本。`check_restore.py`（维度 5）真实走一遍

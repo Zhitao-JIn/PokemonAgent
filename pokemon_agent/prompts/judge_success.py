@@ -61,7 +61,12 @@ def build_prompt(req: FromBrainToolToBrainJudgeReq) -> str:
     """
     goal, history = req.goal, req.history
     steps = render_sequence(list(history), reason=False)
-    past = "\n\n".join(f"## 第 {i} 条\n{r}" for i, r in enumerate(steps))
+    # 包装头用**真实步号**（history[i].step），不用窗口序号——判据里
+    # "看到 step=N 就停"指的是轨迹坐标，窗口从 0 重编号会让模型在两套
+    # 数字之间对不上号（0909 维度 1 卡 step 3 的事故之一）。
+    past = "\n\n".join(
+        f"## 第 {entry.step} 步\n{rendered}" for entry, rendered in zip(history, steps, strict=True)
+    )
     return _TEMPLATE.render(
         goal=goal.goal,
         criteria=goal.criteria,

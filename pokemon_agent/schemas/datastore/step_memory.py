@@ -112,7 +112,7 @@ class StepMemory(BaseModel):
         # 结论贵得多。只摆事实：两份快照字段对齐、顺序固定，变没变由它
         # 自己读。防不去对比的那条，改在决策 prompt 里说（`decide.md`）。
         lines = [
-            f"({self.episode_id}, {self.step}) 当时看到：",
+            f"({self.episode_id}, step={self.step}) 当时看到：",
             self._render_obs(self.before),
         ]
         if reason:
@@ -169,10 +169,17 @@ def render_sequence(entries: list[StepMemory], *, reason: bool = True) -> list[s
             and prev.step + 1 == entry.step
             and StepMemory._snapshot_equal(prev.after, entry.before)
         ):
-            before_block = "当时看到：（同上一条「之后变成」，同一帧，不重复贴）"
+            # 去重只省画面内容，**条目头必须保留**：头里的 step 号是判定器
+            # 执行"看到 step=N 就停"这类步数判据的唯一依据——整段替换掉
+            # 的话，窗口里最后一条（恰恰是判停要看的那个步号）在 prompt 里
+            # 没有数字，判据永远等不到信号（0909 维度 1 卡 step 3 的事故）。
+            before_block = (
+                f"({entry.episode_id}, step={entry.step}) 当时看到："
+                "（同上一条「之后变成」，同一帧，不重复贴）"
+            )
         else:
             before_block = (
-                f"({entry.episode_id}, {entry.step}) 当时看到：\n"
+                f"({entry.episode_id}, step={entry.step}) 当时看到：\n"
                 + StepMemory._render_obs(entry.before)
             )
         lines = [before_block]
