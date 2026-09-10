@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.datastore import EventType, Source
+from pokemon_agent.schemas.trace import EventType, Source
 
 
 @runtime_checkable
@@ -23,7 +23,6 @@ class TracePort(Protocol):
         source: Source,
         payload: dict[str, str] | None = None,
         frame_png: str | None = None,
-        screenshot_step: int | None = None,
     ) -> int:
         """追加一条事件，返回分配到的 event_id。
 
@@ -38,16 +37,12 @@ class TracePort(Protocol):
             `trace.append(*args, frame_png=...)` 时一并传入。多数事件
             没有对应的帧，留 `None`。**非 None 时实现方还应另存一份人眼可读的
             PNG 副本**（`LocalTrace` 存到这个 run 自己的
-            `trace_data/<run_id>/screenshots/`，
-            命名 `{run_id}_{episode_id}_{step}.png`，撞名加 `(n)` 后缀）——
+            `trace_data/<run_id>/screenshot/`，文件名 = 这条事件自己的
+            `event_id`——截图与 trace 事件共享 id，永远递增零撞名）——
             `TraceEvent.frame_png` 仍是权威数据源，这份副本纯粹是方便肉眼翻看，
             丢了不影响任何回放/复现逻辑，因此不算进 `append()` 的后置条件。
-        screenshot_step：截图文件名单独用的 step 号，
-            缺省等于 `step`——只有"这条事件记账用的 step"和"这张截图代表第几步
-            的开局画面"数值不同时才需要传，见 `LocalTrace.append()` 的说明。
         前置条件：step >= 0。
         后置条件：返回的 event_id 严格大于此前任何一次 append 的值（实现方 assert）；
             事件已落盘。
         """
         ...
-

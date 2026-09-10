@@ -12,7 +12,6 @@
 | POST | `/runs`                   | 启动一个 run（后台线程执行） |
 | GET  | `/runs/{id}/events`       | SSE 事件流（实时 + 断线补发） |
 | GET  | `/runs/{id}`              | run 状态与结算 |
-| GET  | `/runs/{id}/metrics`      | 实时聚合报表（按 Source 的 token/延迟/失败/降级/审计失效率），复用 `evaluation/eval_report.py` 核心 |
 | GET  | `/runs`                   | 活跃 run 列表 |
 
 # SSE 协议
@@ -20,7 +19,7 @@
 `/runs/{id}/events` 返回 `text/event-stream`，三类消息：
 
 - `event: trace`   —— 一条 `TraceEvent`（`data` 即其 JSON，`id` 是 `event_id`）
-- `event: done`    —— run 结束（`data` 是 `RunOutcomeResp` JSON），随后流关闭
+- `event: done`    —— run 结束（`data` 是本层拼的结算 JSON），随后流关闭
 - `event: error`   —— run 异常终止（`data` 是 `{"message": ...}`），随后流关闭
 
 数据源没有广播总线：端点按 `EVENT_POLL_INTERVAL`（0.1s）轮询两个只读源——
@@ -36,10 +35,10 @@ LocalTrace 内存事件表（trace，账本即真相）与 handle 终态（done/
 
 # 为什么单进程只能跑一个 run
 
-`agent_permission` 的 `@initialize` 是**模块级全局 + 嵌套检查**（runtime.py 明写
-"同一进程内不能并发跑两个不同 subject"）——两个 run 并发跑会在 episode 层撞
-`nested @initialize` 断言。所以并发 `POST /runs` 返回 409，这是库的硬约束，
-不是 API 的设计选择。
+`_runs` 是这层自己的进程内字典，`start_run()` 一旦发现有 run 处于 `running`
+就拒绝新请求（409）——这是 API 自己的设计选择：世界（PyBoy 模拟器）和帧管道
+都是进程内单例，两个 run 共用同一份世界会互相踩状态。要并发跑多个 run，
+出路是多进程/多实例，不是在这一层加锁排队。
 
 # 装配
 
@@ -72,13 +71,16 @@ from pydantic import BaseModel, Field
 from pokemon_agent.build import build_real
 from pokemon_agent.harness import DataCenterReviewer, RunDataCenter, RunHarness
 from pokemon_agent.interfaces import TracePort
-from pokemon_agent.schemas.communication import (
-    GoalsEdit,
-    HumanDecision,
-    HumanReviewRespFromFrontend,
-    RunOutcomeResp,
+from pokemon_agent.schemas.brain import TaskForBrain
+from pokemon_agent.schemas.frontend import (
+    FromFrontendToGameToolLatestFrameReq,
+    FromFrontendToGameToolLatestFrameResp,
+    FromFrontendToRunHarnessSubmitEditReq,
 )
-from pokemon_agent.schemas.domain import TaskForHarness
+from pokemon_agent.schemas.harness import (
+    FromHarnessToReviewerReviewResp,
+    HumanDecision,
+)
 
 SSE_HEARTBEAT = 15.0
 """SSE 心跳间隔（秒）：代理/浏览器空闲超时不会掐断连接。"""
@@ -154,7 +156,10 @@ class _RunHandle:
         trace: TracePort,
         harness: RunHarness,
         world: Any = None,
-        frames: Callable[[], bytes | None] | None = None,
+        frames: Callable[
+            [FromFrontendToGameToolLatestFrameReq], FromFrontendToGameToolLatestFrameResp
+        ]
+        | None = None,
     ) -> None:
         self.run_id = run_id
         self.trace = trace
@@ -168,7 +173,9 @@ class _RunHandle:
         不产帧（测试的 fake 工厂没接帧管道）。
         """
         self.thread: threading.Thread | None = None
-        self.outcome: RunOutcomeResp | None = None
+        self.outcome: dict[str, Any] | None = None
+        """run 级结算，**由本层自己拼**：harness 交出的是四个裸值，
+        推给前端的 JSON 形状归 API 决定。"""
         self.error: str | None = None
         self.data_center = harness.data_center
         """跟 `harness` 内部读写的是同一个实例（构造时已经是同一份引用）——
@@ -184,10 +191,17 @@ class _RunHandle:
         return "running" if (self.thread is not None and self.thread.is_alive()) else "stopped"
 
 
-def _execute(handle: _RunHandle, harness: RunHarness, goals: list[TaskForHarness]) -> None:
+def _execute(handle: _RunHandle, harness: RunHarness, goals: list[TaskForBrain]) -> None:
     """run 线程体：跑完存终态（SSE 端点轮询可见），最后关掉进程级资源。"""
     try:
-        handle.outcome = harness.run(handle.run_id, goals)
+        outcomes, total, succeeded, success_rate = harness.run(run_id=handle.run_id, goals=goals)
+        handle.outcome = {
+            "run_id": handle.run_id,
+            "outcomes": [o.model_dump() for o in outcomes],
+            "total": total,
+            "succeeded": succeeded,
+            "success_rate": success_rate,
+        }
     except Exception as exc:  # noqa: BLE001  守护线程内无处上抛，必须转成终态
         handle.error = str(exc)
     finally:
@@ -249,10 +263,10 @@ class HumanNoteReq(BaseModel):
 
 class ReviewDecisionReq(BaseModel):
     """POST /runs/{id}/review 的请求体：人类（或未来的 LLM reviewer）对本轮
-    审查的决策——形状对应 `HumanReviewRespFromFrontend`。
+    审查的决策——形状对应 `FromHarnessToReviewerReviewResp`。
 
     加/改/删目标统一走
-    `POST /runs/{id}/goals`（`GoalsEdit`），不在这个决策里。
+    `POST /runs/{id}/goals`（`FromFrontendToRunHarnessSubmitEditReq`），不在这个决策里。
     """
 
     decision: Literal["continue", "stop", "retry"] = Field(description="continue / stop / retry")
@@ -332,12 +346,12 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    def goal_to_task(g: Goal, run_id: str, index: int, prefix: str = "api") -> TaskForHarness:
-        """GoalIn → TaskForHarness；task_id 缺省生成（`{prefix}-{run_id}-{n}`，从 1 起）。
+    def goal_to_task(g: Goal, run_id: str, index: int, prefix: str = "api") -> TaskForBrain:
+        """GoalIn → TaskForBrain；task_id 缺省生成（`{prefix}-{run_id}-{n}`，从 1 起）。
 
         `prefix` 区分来源：初始栈 `api-`、观测台 push 编辑 `edit-`——不同来源
         都从 1 编号，不区分会撞 task_id（remove/replace 靠它定位）。"""
-        return TaskForHarness(
+        return TaskForBrain(
             task_id=g.task_id or f"{prefix}-{run_id}-{index + 1}",
             goal=g.goal,
             success_criteria=g.success_criteria,
@@ -350,7 +364,7 @@ def create_app(
         if any(h.status == "running" for h in _runs.values()):
             raise HTTPException(
                 status_code=409,
-                detail="同一进程一次只能跑一个 run（agent_permission 的 @initialize 是模块级全局）",
+                detail="同一进程一次只能跑一个 run（世界/帧管道是进程内单例）",
             )
         run_id = body.run_id or f"run-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
         goals = [goal_to_task(g, run_id, i) for i, g in enumerate(body.goals)]
@@ -398,7 +412,7 @@ def create_app(
             "run_id": handle.run_id,
             "status": handle.status,
             "event_count": len(handle.data_center.events()),
-            "outcome": outcome.model_dump() if outcome is not None else None,
+            "outcome": outcome,
             "error": handle.error,
             "goals": goals_view(handle),
             "review_pending": handle.data_center.pending_review() is not None,
@@ -431,7 +445,7 @@ def create_app(
         if handle.outcome is not None or handle.error is not None:
             raise HTTPException(status_code=409, detail="run 已结束，不能再编辑目标栈")
         push_goals = [goal_to_task(g, run_id, i, prefix="push") for i, g in enumerate(body.goals)]
-        handle.harness.submit_edit(GoalsEdit(goals=push_goals))
+        handle.harness.submit_edit(FromFrontendToRunHarnessSubmitEditReq(goals=push_goals))
         return {"accepted": True}
 
     @app.post("/runs/{run_id}/note")
@@ -451,80 +465,9 @@ def create_app(
         handle.harness.submit_human_note(body.text)
         return {"accepted": True}
 
-    @app.get("/runs/{run_id}/metrics")
-    def get_metrics(run_id: str) -> dict[str, Any]:
-        """实时聚合报表——`docs/ROADMAP.md` 第 2 条"观测台"的第二拍，复用
-        `evaluation/eval_report.py` 的核心 `aggregate_events`，喂的是这个
-        进程里 `handle.trace.events()`（内存表，追加序，跟 SSE 事件流读的
-        是同一份数据），不读磁盘、不用等 run 结束——run 还在跑的时候调用，
-        看到的就是到目前为止的实时数字。
-
-        **惰性 import**：`evaluation` 在包外（`pokemon_agent/` 之外的顶层
-        目录），模块级 import 会让 `evaluation/` 缺失时连 `pokemon_agent.api`
-        本体都导不了——这是 `evaluation/SPEC.md` 10.7 早就记下的顾虑
-        （"包内 import 会破坏装包"）。import 放函数体内：只有真调用这个
-        端点才需要 `evaluation/` 在场，其余端点、`api.py` 本身的可导入性
-        不受影响。
-
-        `aggregate_events` 吃的是任意有 `type`/`source`/`payload`/`ts`/
-        `event_id`/`run_id` 属性的对象序列——`TraceEvent`（pydantic 模型）
-        原样满足这个鸭子类型接口，不需要先转换成 `evaluation.eval_report.Event`
-        那个轻量 dataclass。
-        """
-        handle = _runs.get(run_id)
-        if handle is None:
-            raise HTTPException(status_code=404, detail=f"run {run_id} 不存在")
-        from evaluation.eval_report import aggregate_events
-
-        result = aggregate_events(handle.data_center.events())
-        return {
-            "by_source": {
-                # `source` 这里是真的 `Source` 枚举实例（`TraceEvent.source: Source`），
-                # 不是 `eval_report.py` CLI 路径读 JSONL 拿到的纯字符串——`str(enum)`
-                # 会给出 "Source.VERIFY" 这种 repr，不是想要的 "verify"，用 `.value`
-                # 取真正的字符串值；`getattr(..., "value", source)` 顺带兼容传入纯
-                # 字符串的场景（没有 `.value` 属性就原样用）。
-                getattr(source, "value", source): {
-                    "calls": m.calls,
-                    "ok": m.ok,
-                    "failed": m.failed,
-                    "retries": m.retries,
-                    "tokens_in": m.tokens_in,
-                    "tokens_out": m.tokens_out,
-                    "tokens_cached": m.tokens_cached,
-                    "tokens_reasoning": m.tokens_reasoning,
-                    "malformed": m.malformed,
-                    "error_kinds": m.error_kinds,
-                    "degraded": m.degraded,
-                    "p50": m.p50,
-                    "p90": m.p90,
-                    "max_latency": m.max_latency,
-                    "verify_total": m.verify_total,
-                    "verify_unreliable": m.verify_unreliable,
-                    "verify_unreliable_rate": m.verify_unreliable_rate,
-                    "verify_parse_errors": m.verify_parse_errors,
-                }
-                for source, m in result.by_source.items()
-            },
-            "runs": [
-                {
-                    "run_id": r.run_id,
-                    "episodes": r.episodes,
-                    "succeeded": r.succeeded,
-                    "failed": r.failed,
-                    "tokens_in": r.tokens_in,
-                    "tokens_out": r.tokens_out,
-                    "tokens_cached": r.tokens_cached,
-                    "tokens_reasoning": r.tokens_reasoning,
-                    "duration": r.duration,
-                }
-                for r in result.runs
-            ],
-        }
-
     @app.get("/runs/{run_id}/review")
     def get_pending_review(run_id: str) -> dict[str, Any] | None:
-        """当前待处理的审查请求（`HumanReviewReqFromHarness`），没有则 `null`。
+        """当前待处理的审查请求（`FromHarnessToReviewerReviewReq`），没有则 `null`。
 
         前端按 `GET /runs/{id}` 的 `review_pending` 标志判断要不要拉这个
         端点——避免每次轮询都传一份可能带完整 `episode_trace` 的大 payload。
@@ -549,7 +492,7 @@ def create_app(
         if handle is None:
             raise HTTPException(status_code=404, detail=f"run {run_id} 不存在")
         accepted = handle.data_center.submit_review_response(
-            HumanReviewRespFromFrontend(
+            FromHarnessToReviewerReviewResp(
                 decision=HumanDecision(body.decision),
             )
         )
@@ -604,7 +547,7 @@ def create_app(
                         emitted = True
                 # 2) 终态 → 补发后关流
                 if handle.outcome is not None:
-                    yield sse_message("done", handle.outcome.model_dump_json())
+                    yield sse_message("done", json.dumps(handle.outcome, ensure_ascii=False))
                     return
                 if handle.error is not None:
                     yield sse_message(
@@ -641,7 +584,11 @@ def create_app(
             while True:
                 if handle.outcome is not None or handle.error is not None:
                     return  # run 已终态，关流
-                frame = handle.frames() if handle.frames is not None else None
+                frame = (
+                    handle.frames(FromFrontendToGameToolLatestFrameReq()).frame_png
+                    if handle.frames is not None
+                    else None
+                )
                 if frame is not None:
                     payload = json.dumps(
                         {"frame_png": base64.b64encode(frame).decode("ascii")},

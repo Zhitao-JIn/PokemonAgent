@@ -5,7 +5,7 @@
   kind），payload 字段格式、条件字段、一拆多全部是 tool 的处理；
 - `events`：读侧没有要转换的数据，原样转发（调用方拿存储形状 `TraceEvent`）。
 
-**边界不对称**：写者只有 harness（走本端口）；读者是 api/evaluation
+**边界不对称**：写者只有 harness（走本端口）；读者是 api
 （运维侧，直读 `TracePort`/`LocalTrace`，不进 tool 层）。
 """
 
@@ -13,8 +13,11 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.communication import FromHarnessToTraceToolAppendReq
-from pokemon_agent.schemas.datastore import TraceEvent
+from pokemon_agent.schemas.harness import (
+    FromHarnessToTraceToolAppendReq,
+    FromHarnessToTraceToolReadDiskEventsReq,
+    FromHarnessToTraceToolReadDiskEventsResp,
+)
 
 
 @runtime_checkable
@@ -35,6 +38,8 @@ class TraceToolPort(Protocol):
         """当前游标：最后一条已分配的 event_id（checkpoint 快照用）。"""
         ...
 
-    def read_disk_events(self) -> list[TraceEvent]:
+    def read_disk_events(
+        self, req: FromHarnessToTraceToolReadDiskEventsReq
+    ) -> FromHarnessToTraceToolReadDiskEventsResp:
         """读盘上全部事件（checkpoint 恢复的主前缀来源，event_id 升序）。"""
         ...

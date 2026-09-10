@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.communication import FromGameToolToWorldPerceiveOnceResp
-from pokemon_agent.schemas.domain import ActionFromBrain, TaskForHarness
+from pokemon_agent.schemas.brain import ActionFromBrain, TaskForBrain
+from pokemon_agent.schemas.world import PerceiveOnceResp
 
 
 @runtime_checkable
@@ -34,7 +34,7 @@ class WorldPort(Protocol):
         """
         ...
 
-    def reset(self, task: TaskForHarness) -> None:
+    def reset(self, task: TaskForBrain) -> None:
         """按任务重置到初始状态。**不感知**——第一帧由调用方另调 `perceive_once()` 拿。
 
         task：要跑的任务。
@@ -42,7 +42,7 @@ class WorldPort(Protocol):
         """
         ...
 
-    def set_task(self, task: TaskForHarness) -> None:
+    def set_task(self, task: TaskForBrain) -> None:
         """只挂任务标记，**不动模拟器状态**（checkpoint 恢复后配 `load_state_bytes` 用）。
 
         task：要接上跑的任务。
@@ -68,7 +68,7 @@ class WorldPort(Protocol):
         """
         ...
 
-    def perceive_once(self) -> FromGameToolToWorldPerceiveOnceResp:
+    def perceive_once(self) -> PerceiveOnceResp:
         """感知当前这一帧，**只问一次视觉模型，不重试**。
 
         调用方在 `reset()`/`step()` 之后调它拿观测；重试预算与循环归调用方

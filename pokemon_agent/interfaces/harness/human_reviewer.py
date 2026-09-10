@@ -1,7 +1,7 @@
 """`HumanReviewer`：run 级 human-in-the-loop 的审查接口。
 
-每个 episode 之间，`RunHarness.review` 节点调它：把 `HumanReviewReqFromHarness`
-（run 到哪了、各局成败、当前栈）交给人类，拿回 `HumanReviewRespFromFrontend`
+每个 episode 之间，`RunHarness.review` 节点调它：把 `FromHarnessToReviewerReviewReq`
+（run 到哪了、各局成败、当前栈）交给人类，拿回 `FromHarnessToReviewerReviewResp`
 （继续 / 停止 / 重试）。加/改/删目标统一走 `POST /runs/{id}/goals`，
 不是这里的一个决策分支。
 
@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.communication import (
-    HumanReviewReqFromHarness,
-    HumanReviewRespFromFrontend,
+from pokemon_agent.schemas.harness import (
+    FromHarnessToReviewerReviewReq,
+    FromHarnessToReviewerReviewResp,
 )
 
 
@@ -23,7 +23,7 @@ from pokemon_agent.schemas.communication import (
 class HumanReviewer(Protocol):
     """run 级的人类审查者：读上下文，回决策。"""
 
-    def review(self, req: HumanReviewReqFromHarness) -> HumanReviewRespFromFrontend:
+    def review(self, req: FromHarnessToReviewerReviewReq) -> FromHarnessToReviewerReviewResp:
         """审查上一局的结果，决定下一步。
 
         req：递给人类的上下文（run_id / 已完成结算 / 当前栈 / 刚跑完的目标）。

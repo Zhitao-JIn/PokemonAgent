@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.communication import (
-    FromCheckpointToolToHarnessRestoreResp,
-    FromCheckpointToolToHarnessVoidReport,
+from pokemon_agent.schemas.harness import (
+    FromHarnessToCheckpointToolLoadReq,
+    FromHarnessToCheckpointToolLoadResp,
     FromHarnessToCheckpointToolSaveReq,
+    FromHarnessToCheckpointToolVoidReq,
+    FromHarnessToCheckpointToolVoidResp,
 )
 
 
@@ -30,8 +32,8 @@ class CheckpointToolPort(Protocol):
         ...
 
     def load(
-        self, run_id: str, episode_id: str, step: int
-    ) -> FromCheckpointToolToHarnessRestoreResp | None:
+        self, req: FromHarnessToCheckpointToolLoadReq
+    ) -> FromHarnessToCheckpointToolLoadResp | None:
         """按三元组取一份 checkpoint；不存在（或 state/json 不成对）返回 None。
 
         返回值同时带 `state_dump`（EpisodeRunState）与 `run_state_dump`
@@ -41,8 +43,8 @@ class CheckpointToolPort(Protocol):
         ...
 
     def void_after(
-        self, run_id: str, episode_id: str, step: int, cursor: int
-    ) -> FromCheckpointToolToHarnessVoidReport:
+        self, req: FromHarnessToCheckpointToolVoidReq
+    ) -> FromHarnessToCheckpointToolVoidResp:
         """废弃时间线处理：trace 按 cursor 截断归档、记忆层截断、截图/存档归档。
 
         前置条件：调用方已完成对账（快照签名/游标合法）。

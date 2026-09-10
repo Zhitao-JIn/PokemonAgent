@@ -39,8 +39,10 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.communication import HarnessEpisodeOutcomeResp, RunOutcomeResp
-from pokemon_agent.schemas.domain import TaskForHarness
+from pokemon_agent.schemas.brain import TaskForBrain
+from pokemon_agent.schemas.harness import (
+    FromRunHarnessToEpisodeHarnessRunResp,
+)
 
 MAX_GOAL_RETRIES = 2
 """同一个目标最多自动重试几次（不含首次派发）——即最多被派发
@@ -82,7 +84,7 @@ class RunState(BaseModel):
     """
 
     run_id: str = Field(description="这次 run 的标识（完整一局游戏会话），trace 按它分组")
-    goals: list[TaskForHarness] = Field(
+    goals: list[TaskForBrain] = Field(
         description="目标栈，**栈顶 = goals[-1]**（下一个要解决的）；"
         "其余层是给子 agent 的全局信息（投影成它的 goals）",
     )
@@ -91,17 +93,16 @@ class RunState(BaseModel):
         description="与 goals 平行的派发计数，attempts[i] = 第 i 层已被派发几次。"
         "invariant：len(attempts) == len(goals)。reflect 拿栈顶计数判断重试预算",
     )
-    outcomes: list[HarnessEpisodeOutcomeResp] = Field(
+    outcomes: list[FromRunHarnessToEpisodeHarnessRunResp] = Field(
         default_factory=list,
-        description="已完成的 episode 结算（含重试的失败局），按执行顺序——"
-        "`RunOutcomeResp` 的汇总源",
+        description="已完成的 episode 结算（含重试的失败局），按执行顺序——`RunResp` 的汇总源",
     )
 
     episode_id: str | None = Field(default=None, description="本轮派发的 episode 标识")
-    outcome: HarnessEpisodeOutcomeResp | None = Field(
+    outcome: FromRunHarnessToEpisodeHarnessRunResp | None = Field(
         default=None, description="本轮刚收的结算（reflect 弹栈/重试的依据）"
     )
-    last_task: TaskForHarness | None = Field(
+    last_task: TaskForBrain | None = Field(
         default=None, description="刚派发的那一层目标（review 的 RETRY 压回栈顶用）"
     )
     plan_note: str = Field(
@@ -117,8 +118,7 @@ class RunState(BaseModel):
 
     resume_episode: ResumeEpisode | None = Field(
         default=None,
-        description="恢复分派定位；仅 `resume_run()` 置入，dispatch 消费后清空。"
-        "None = 正常流程",
+        description="恢复分派定位；仅 `resume_run()` 置入，dispatch 消费后清空。None = 正常流程",
     )
     done: bool = Field(default=False, description="run 是否结束（栈空且无新目标 / 人类停止）")
     why: str = Field(default="", description="结束原因（全部目标解决 / 重试耗尽 / 人类停止）")
@@ -135,14 +135,19 @@ class HarnessPort(Protocol):
 
     # ---- 顶层入口 ----
 
-    def run(self, run_id: str, goals: list[TaskForHarness]) -> RunOutcomeResp:
+    def run(
+        self, run_id: str, goals: list[TaskForBrain]
+    ) -> tuple[list[FromRunHarnessToEpisodeHarnessRunResp], int, int, float]:
         """跑完一个 run：按目标栈逐个解决（每层一个 episode），返回 run 级结算。
 
         run_id：这次 run 的标识（完整一局游戏会话）。
         goals：初始目标栈，栈顶（最后一个）先解决；之后由主 agent 自主压栈。
+        返回：`(outcomes, total, succeeded, success_rate)` 四个裸值——每个 episode
+            的结算（按执行顺序）、跑了几局、成了几局、成功率。**不打包成对象**：
+            外壳边不立契约，要 JSON 的调用方自己拼。
         前置条件：run_id 非空、goals 非空。
-        后置条件：返回的 `RunOutcomeResp.outcomes` 与 trace 里各局的
-            EPISODE_START/END 对同一 run 给出同一份结论。
+        后置条件：`outcomes` 与 trace 里各局的 EPISODE_START/END 对同一 run
+            给出同一份结论。
         """
         ...
 

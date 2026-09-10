@@ -10,25 +10,27 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.communication import (
-    FromBrainToolToBrainChooseOnceReq,
-    FromBrainToolToBrainChooseOnceResp,
-    FromBrainToolToBrainJudgeReq,
-    FromBrainToolToBrainJudgeResp,
-    FromBrainToolToBrainPlanOnceReq,
-    FromBrainToolToBrainPlanOnceResp,
-    FromBrainToolToBrainReflectReq,
-    FromBrainToolToBrainVerifyAndSummarizeReq,
-    FromBrainToolToBrainVerifyAndSummarizeResp,
+from pokemon_agent.schemas.brain import (
+    ChooseOnceReq,
+    ChooseOnceResp,
+    JudgeReq,
+    JudgeResp,
+    PlanOnceReq,
+    PlanOnceResp,
+    ReflectReq,
+    VerifyAndSummarizeReq,
+    VerifyAndSummarizeResp,
 )
-from pokemon_agent.schemas.datastore import StepMemory
+from pokemon_agent.schemas.memory import StepMemory
 
 
 @runtime_checkable
 class BrainPort(Protocol):
     """Harness 认识的大脑。"""
 
-    def choose_once(self, req: FromBrainToolToBrainChooseOnceReq) -> FromBrainToolToBrainChooseOnceResp:
+    def choose_once(
+        self, req: ChooseOnceReq
+    ) -> ChooseOnceResp:
         """一次决策尝试：问一次模型、解析。**不重试**——重试循环在 Harness 手里
         （见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"）。
 
@@ -44,21 +46,21 @@ class BrainPort(Protocol):
         """
         ...
 
-    def judge(self, req: FromBrainToolToBrainJudgeReq) -> FromBrainToolToBrainJudgeResp:
+    def judge(self, req: JudgeReq) -> JudgeResp:
         """判断这一个目标达成了没有。
 
         req：`req.prompt` 是这次问模型用的完整 prompt——调用方经
             `pokemon_agent.prompts.judge_success.build_prompt(req)` 拼好、
             回填进同一个 req。`BrainPort` 不提供任何"帮你拼 prompt"的方法，
             `Brain` 只认 req。
-        后置条件：永远返回 FromBrainToolToBrainJudgeResp，不抛异常；任何不确定都判没完成。
+        后置条件：永远返回 JudgeResp，不抛异常；任何不确定都判没完成。
             注意：这条"不抛异常"的契约只覆盖 `judge()` 内部（模型调用/解析）——
             `req.prompt` 本身的拼装（可能抛 `KeyError`）发生在调用方，调用方
             要自己兜住，不能指望 `judge()` 替它兜。
         """
         ...
 
-    def reflect(self, req: FromBrainToolToBrainReflectReq) -> StepMemory:
+    def reflect(self, req: ReflectReq) -> StepMemory:
         """把这一步整理成一条可检索的经验。
 
         req：打包前后两帧观测和这次的动作——同其余三个方法，只收一个 req。
@@ -67,7 +69,7 @@ class BrainPort(Protocol):
         """
         ...
 
-    def plan_once(self, req: FromBrainToolToBrainPlanOnceReq) -> FromBrainToolToBrainPlanOnceResp:
+    def plan_once(self, req: PlanOnceReq) -> PlanOnceResp:
         """一次 run 级规划尝试：问一次模型、解析。**不重试**——重试循环在 Harness
         手里（`harness/run_plan_utils.py::ask_planner_with_retry`），跟
         `choose_once()` 是同一个分工在 run 级图上的落地——`plan` 本质上是
@@ -86,7 +88,9 @@ class BrainPort(Protocol):
         """
         ...
 
-    def verify_and_summarize(self, req: FromBrainToolToBrainVerifyAndSummarizeReq) -> FromBrainToolToBrainVerifyAndSummarizeResp:
+    def verify_and_summarize(
+        self, req: VerifyAndSummarizeReq
+    ) -> VerifyAndSummarizeResp:
         """校验本局 step 记忆哪些可信，只用可信的蒸馏成一条跨局摘要——一次
         调用问完两件事（见
         `docs/ROADMAP.md`"verify_steps 与 summarize 合并"一条）。
@@ -96,7 +100,7 @@ class BrainPort(Protocol):
             拼好、回填进同一个 req；`req.entries` 的条数就是校验失败时要
             补全的条数。`BrainPort` 不提供任何"帮你拼 prompt"的方法，
             `Brain` 只认 req。
-        后置条件：永远返回 FromBrainToolToBrainVerifyAndSummarizeResp，不抛异常；verdicts 与
+        后置条件：永远返回 VerifyAndSummarizeResp，不抛异常；verdicts 与
             req.entries 等长——解析失败时全部标不可靠（宁可少喂，不可把错的
             当对的）；summary 解析/调用失败时为 `None`，调用方据此决定这一局
             这次不写跨局摘要。同 `judge()`：这条"不抛异常"契约不覆盖 prompt

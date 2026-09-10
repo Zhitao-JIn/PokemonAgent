@@ -44,9 +44,7 @@ from __future__ import annotations
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
-
 from pokemon_agent.errors import AgentError
-from agent_permission import initialize
 
 from pokemon_agent.interfaces import (
     MAX_GOAL_RETRIES,
@@ -61,18 +59,21 @@ from pokemon_agent.interfaces import (
     TraceToolPort,
 )
 from pokemon_agent.prompts import run_plan as run_plan_prompt
-from pokemon_agent.schemas.communication import (
-    FromCheckpointToolToHarnessRestoreResp,
+from pokemon_agent.schemas.brain import TaskForBrain
+from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
+from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceReq,
+    FromHarnessToCheckpointToolLoadReq,
+    FromHarnessToCheckpointToolLoadResp,
+    FromHarnessToReviewerReviewReq,
     FromHarnessToTraceToolAppendReq,
-    GoalsEdit,
-    HarnessEpisodeOutcomeResp,
+    FromHarnessToTraceToolReadDiskEventsReq,
+    FromRunHarnessToEpisodeHarnessRunReq,
+    FromRunHarnessToEpisodeHarnessRunResp,
     HumanDecision,
-    HumanReviewReqFromHarness,
-    RunOutcomeResp,
-    TraceKind,
+    RunResp,
 )
-from pokemon_agent.schemas.domain import TaskForHarness
+from pokemon_agent.schemas.trace import TraceKind
 
 from . import run_plan_utils, run_utils
 from .auto_reviewer import AutoContinueReviewer
@@ -147,14 +148,13 @@ class RunHarness:
 
     # ---- 入口 ----
 
-    # `@initialize` 挂在这里而不是 `EpisodeHarness.run()`：图入口 `plan` 节点
-    # 会在第一次 `dispatch`（进而调用 `episode.run()`）之前调用受权限守卫的
-    # `Brain.plan_once`，权限运行时必须已经初始化——`plan → dispatch` 的顺序
-    # 决定了这个装饰器只能挂在这一层，挂在 `EpisodeHarness.run()` 上等
-    # `dispatch` 第一次调用它时反而会触发嵌套 `@initialize` 断言失败。
-    @initialize
-    def run(self, run_id: str, goals: list[TaskForHarness]) -> RunOutcomeResp:
+    def run(
+        self, run_id: str, goals: list[TaskForBrain]
+    ) -> tuple[list[FromRunHarnessToEpisodeHarnessRunResp], int, int, float]:
         """跑完一个 run：目标栈逐个解决（每层一个 episode），返回 run 级结算。
+
+        返回 `(outcomes, total, succeeded, success_rate)` 四个裸值，不打包成对象——
+        trace 里那条 RUN_END 内嵌的 `RunResp` 由 `_close()` 自己组装，跟返回值无关。
 
         `goals` 是初始目标栈，栈顶（最后一个）先解决；`plan` 每轮读历史决定
         压不压新目标；失败的目标由 reflect 在重试预算内自动重试，预算耗尽交
@@ -195,8 +195,9 @@ class RunHarness:
             raise
         return self._close(final, run_id)
 
-    @initialize  # 同 run()：resume 也从 plan 节点起步，见 run() 上的注释
-    def resume_run(self, run_id: str, episode_id: str, step: int) -> RunOutcomeResp:
+    def resume_run(
+        self, run_id: str, episode_id: str, step: int
+    ) -> tuple[list[FromRunHarnessToEpisodeHarnessRunResp], int, int, float]:
         """恢复入口：三元组 `(run_id, episode_id, step)` 定位（PLAN_checkpoint §4）。
 
         - step > 0：恢复到该局第 step 步开局，跑完本局后 run 图从 reflect 继续
@@ -213,15 +214,18 @@ class RunHarness:
         append（顺序本身是契约的一部分，别挪到前面）——原因见方法体里那段注释。
         """
         assert self._checkpoint is not None, "resume_run() needs a checkpoint tool"
-        anchor: FromCheckpointToolToHarnessRestoreResp | None = self._checkpoint.load(
-            run_id, episode_id, step
+        anchor: FromHarnessToCheckpointToolLoadResp | None = self._checkpoint.load(
+            FromHarnessToCheckpointToolLoadReq(run_id=run_id, episode_id=episode_id, step=step)
         )
         assert anchor is not None, f"no checkpoint for episode={episode_id!r} step={step}"
         state = RunState.model_validate(anchor.run_state_dump)
         assert state.run_id == run_id
 
         # DataCenter 单点重建：事件主前缀 + goals 槽对齐。
-        self.data_center.rebuild(self._trace.read_disk_events(), state.goals)
+        self.data_center.rebuild(
+            self._trace.read_disk_events(FromHarnessToTraceToolReadDiskEventsReq()).events,
+            state.goals,
+        )
         state = state.model_copy(
             update={"resume_episode": ResumeEpisode(episode_id=episode_id, step=step)}
         )
@@ -260,12 +264,17 @@ class RunHarness:
         )
         return self._close(final, run_id)
 
-    def _close(self, final: dict[str, Any], run_id: str) -> RunOutcomeResp:
-        """收尾：组装结算并写 RUN_END（run/resume_run 共用）。"""
+    def _close(
+        self, final: dict[str, Any], run_id: str
+    ) -> tuple[list[FromRunHarnessToEpisodeHarnessRunResp], int, int, float]:
+        """收尾：组装结算并写 RUN_END（run/resume_run 共用）。
+
+        结算对象只活在这个函数里：写进 RUN_END 事件，然后拆成四个裸值交出去。
+        """
         final_state = RunState.model_validate(final)
         outcomes = final_state.outcomes
         succeeded = sum(1 for o in outcomes if o.success)
-        result = RunOutcomeResp(
+        result = RunResp(
             run_id=run_id,
             outcomes=outcomes,
             total=len(outcomes),
@@ -280,7 +289,7 @@ class RunHarness:
                 outcome_run=result,
             )
         )
-        return result
+        return result.outcomes, result.total, result.succeeded, result.success_rate
 
     # ---- 大图的五个节点（每个：(RunState) -> 状态增量）----
 
@@ -457,7 +466,7 @@ class RunHarness:
                     episode_id, top, state.goals, step, run_state=state.model_dump()
                 )
             except AgentError as exc:
-                outcome = HarnessEpisodeOutcomeResp(
+                outcome = FromRunHarnessToEpisodeHarnessRunResp(
                     episode_id=episode_id,
                     success=False,
                     steps=0,
@@ -472,9 +481,16 @@ class RunHarness:
             }
 
         try:
-            outcome = self._episode.run(episode_id, top, state.goals, run_state=state.model_dump())
+            outcome = self._episode.run(
+                FromRunHarnessToEpisodeHarnessRunReq(
+                    episode_id=episode_id,
+                    task=top,
+                    stack=state.goals,
+                    run_state=state.model_dump(),
+                )
+            )
         except AgentError as exc:
-            outcome = HarnessEpisodeOutcomeResp(
+            outcome = FromRunHarnessToEpisodeHarnessRunResp(
                 episode_id=episode_id,
                 success=False,
                 steps=0,
@@ -525,7 +541,7 @@ class RunHarness:
                        弹出，重试 = 直连重派，这里无需动作）
 
         `PUSH` 决策已删——加/改/删目标统一走
-        `POST /runs/{id}/goals`（`GoalsEdit`，整栈原子替换），跟"这一轮
+        `POST /runs/{id}/goals`（`FromFrontendToRunHarnessSubmitEditReq`，整栈原子替换），跟"这一轮
         episode 怎么办"分开，用户确认"只保留 goal 的 push（整栈同步）和
         goals 的 read（独立的 `GET /runs/{id}/goals`），去掉 review 的 push"。
         """
@@ -534,7 +550,7 @@ class RunHarness:
             if state.episode_id
             else []
         )
-        req = HumanReviewReqFromHarness(
+        req = FromHarnessToReviewerReviewReq(
             run_id=state.run_id,
             outcomes=state.outcomes,
             goals=state.goals,
@@ -561,7 +577,7 @@ class RunHarness:
 
     # ---- 运行时观测/编辑（观测台用）----
 
-    def latest_goals(self) -> list[TaskForHarness]:
+    def latest_goals(self) -> list[TaskForBrain]:
         """最近一次 plan 的目标栈快照（栈顶 = 最后一个）；run 未开始过为空。
 
         快照在 plan 入口记录：栈只在 reflect（弹）/ plan（压）/ review（压）
@@ -583,10 +599,10 @@ class RunHarness:
         """
         self.data_center.submit_human_note(text)
 
-    def submit_edit(self, edit: GoalsEdit) -> None:
+    def submit_edit(self, edit: FromFrontendToRunHarnessSubmitEditReq) -> None:
         """收一条目标栈编辑指令进单槽（最新覆盖），plan 轮消费生效。
 
-        `GoalsEdit`（只剩一种：整栈原子替换，不锁栈顶）
+        `FromFrontendToRunHarnessSubmitEditReq`（只剩一种：整栈原子替换，不锁栈顶）
         在消费时才真正应用（`run_utils.apply_goals_edit`）。同上，薄委托
         给 `self.data_center`。
         """

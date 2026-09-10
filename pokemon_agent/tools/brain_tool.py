@@ -11,12 +11,14 @@
 from __future__ import annotations
 
 from pokemon_agent.interfaces import BrainPort
-from pokemon_agent.schemas.communication import (
-    FromBrainToolToBrainChooseOnceReq,
-    FromBrainToolToBrainJudgeReq,
-    FromBrainToolToBrainPlanOnceReq,
-    FromBrainToolToBrainReflectReq,
-    FromBrainToolToBrainVerifyAndSummarizeReq,
+from pokemon_agent.schemas.brain import (
+    ChooseOnceReq,
+    JudgeReq,
+    PlanOnceReq,
+    ReflectReq,
+    VerifyAndSummarizeReq,
+)
+from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
     FromHarnessToBrainToolJudgeReq,
@@ -37,28 +39,34 @@ class BrainTool:
         """接好大脑。**本对象没有状态**，纯转发+翻译。"""
         self._brain = brain
 
-    def choose_once(self, req: FromHarnessToBrainToolChooseOnceReq) -> FromHarnessToBrainToolChooseOnceResp:
+    def choose_once(
+        self, req: FromHarnessToBrainToolChooseOnceReq
+    ) -> FromHarnessToBrainToolChooseOnceResp:
         """决策：翻译 req → 调 `Brain.choose_once()` → 翻译 resp。"""
-        resp = self._brain.choose_once(FromBrainToolToBrainChooseOnceReq(**req.model_dump()))
+        resp = self._brain.choose_once(ChooseOnceReq(**req.model_dump()))
         return FromHarnessToBrainToolChooseOnceResp(**resp.model_dump())
 
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         """判定：翻译 req → 调 `Brain.judge()` → 翻译 resp。"""
-        resp = self._brain.judge(FromBrainToolToBrainJudgeReq(**req.model_dump()))
+        resp = self._brain.judge(JudgeReq(**req.model_dump()))
         return FromHarnessToBrainToolJudgeResp(**resp.model_dump())
 
     def reflect(self, req: FromHarnessToBrainToolReflectReq) -> FromHarnessToBrainToolReflectResp:
-        """反思：翻译 req → 调 `Brain.reflect()`（原生返回裸 `StepMemory`）→
-        包成 `FromHarnessToBrainToolReflectResp`。"""
-        entry = self._brain.reflect(FromBrainToolToBrainReflectReq(**req.model_dump()))
-        return FromHarnessToBrainToolReflectResp(entry=entry)
+        """反思：翻译 req → 调 `Brain.reflect()` → 取 `entry` 包成
+        `FromHarnessToBrainToolReflectResp`。"""
+        resp = self._brain.reflect(ReflectReq(**req.model_dump()))
+        return FromHarnessToBrainToolReflectResp(entry=resp.entry)
 
-    def verify_and_summarize(self, req: FromHarnessToBrainToolVerifyAndSummarizeReq) -> FromHarnessToBrainToolVerifyAndSummarizeResp:
+    def verify_and_summarize(
+        self, req: FromHarnessToBrainToolVerifyAndSummarizeReq
+    ) -> FromHarnessToBrainToolVerifyAndSummarizeResp:
         """校验+蒸馏：翻译 req → 调 `Brain.verify_and_summarize()` → 翻译 resp。"""
-        resp = self._brain.verify_and_summarize(FromBrainToolToBrainVerifyAndSummarizeReq(**req.model_dump()))
+        resp = self._brain.verify_and_summarize(VerifyAndSummarizeReq(**req.model_dump()))
         return FromHarnessToBrainToolVerifyAndSummarizeResp(**resp.model_dump())
 
-    def plan_once(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
+    def plan_once(
+        self, req: FromHarnessToBrainToolPlanOnceReq
+    ) -> FromHarnessToBrainToolPlanOnceResp:
         """run 级规划：翻译 req → 调 `Brain.plan_once()` → 翻译 resp。"""
-        resp = self._brain.plan_once(FromBrainToolToBrainPlanOnceReq(**req.model_dump()))
+        resp = self._brain.plan_once(PlanOnceReq(**req.model_dump()))
         return FromHarnessToBrainToolPlanOnceResp(**resp.model_dump())

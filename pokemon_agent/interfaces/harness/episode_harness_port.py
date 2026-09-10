@@ -37,18 +37,14 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.communication import (
+from pokemon_agent.schemas.brain import ActionFromBrain, GoalForBrain, TaskForBrain
+from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryKnowledgeResp,
-    HarnessEpisodeOutcomeResp,
+    FromRunHarnessToEpisodeHarnessRunReq,
+    FromRunHarnessToEpisodeHarnessRunResp,
 )
-from pokemon_agent.schemas.datastore import EpisodeMemory, StepMemory
-from pokemon_agent.schemas.domain import (
-    ActionFromBrain,
-    ActionSpaceForBrain,
-    GoalForBrain,
-    ObservationFromWorld,
-    TaskForHarness,
-)
+from pokemon_agent.schemas.memory import EpisodeMemory, StepMemory
+from pokemon_agent.schemas.world import ActionSpaceForBrain, ObservationFromWorld
 
 
 class EpisodeRunState(BaseModel):
@@ -75,7 +71,7 @@ class EpisodeRunState(BaseModel):
     """
 
     episode_id: str = Field(description="这一局的标识，全局唯一。trace 按它分组")
-    task: TaskForHarness = Field(description="在跑哪个任务。目标、判据、步数上限都在里面")
+    task: TaskForBrain = Field(description="在跑哪个任务。目标、判据、步数上限都在里面")
     step: int = Field(
         default=0,
         description="跑到第几步。**全项目只有这一个 step**。"
@@ -94,19 +90,19 @@ class EpisodeRunState(BaseModel):
         default_factory=list,
         description="`retrieve_step_episode_memory` 查出来的、给这一步 `think_action` 用的"
         "本局单步情景记忆。**不折进 observation**——`think_action` 直接拿这份列表"
-        "拼 `FromBrainToolToBrainChooseOnceReq.memories`",
+        "拼 `ChooseOnceReq.memories`",
     )
     global_episode_memories: list[EpisodeMemory] = Field(
         default_factory=list,
         description="`retrieve_global_episode_memory` 查出来的跨局摘要记忆"
         "（按场景 + 任务目标）。**不折进 `observation.facts`**——`think_action`"
-        "直接拿这份列表渲染成文本，拼 `FromBrainToolToBrainChooseOnceReq.episode_memories`（prompt 里"
+        "直接拿这份列表渲染成文本，拼 `ChooseOnceReq.episode_memories`（prompt 里"
         "单独一节、单独给可信度说明，不跟这一帧的真实数据混在一起）",
     )
     knowledge_semantic_memory: FromHarnessToMemoryToolQueryKnowledgeResp | None = None
     """`retrieve_knowledge_semantic_memory` 查出来的知识库结果（内容 + 来源）。
     **不折进 `observation.facts`**——`think_action` 直接拿 `.contents` 拼
-    `FromBrainToolToBrainChooseOnceReq.knowledge`（prompt 里单独一节）；`enrich_observation` 仍会用它
+    `ChooseOnceReq.knowledge`（prompt 里单独一节）；`enrich_observation` 仍会用它
     算 `knowledge_text` 记一条 `MEMORY_READ`。`None` = 这一步还没查（图上未终止分支
     必经，只在没走到这一格时才是 None，比如刚开局那一帧）。"""
     object_semantic_memory: str = ""
@@ -188,17 +184,15 @@ class EpisodeHarnessPort(Protocol):
     # ---- 顶层入口 ----
 
     def run(
-        self,
-        episode_id: str,
-        task: TaskForHarness,
-        stack: list[TaskForHarness],
-    ) -> HarnessEpisodeOutcomeResp:
+        self, req: FromRunHarnessToEpisodeHarnessRunReq
+    ) -> FromRunHarnessToEpisodeHarnessRunResp:
         """跑完一局：解决栈顶这一个目标。
 
-        episode_id：这一局的标识。
-        task：栈顶目标（执行单元，含判据/步数上限）。
-        stack：**整个目标栈（全局信息）**——投影成 `EpisodeRunState.goals`：
+        req.episode_id：这一局的标识。
+        req.task：栈顶目标（执行单元，含判据/步数上限）。
+        req.stack：**整个目标栈（全局信息）**——投影成 `EpisodeRunState.goals`：
             判只判栈顶（`goals[-1]` = task.goal），其余层给大脑全局视野。
+        req.run_state：RunState 的 model_dump（图状态重建/透传）。
         前置条件：episode_id 非空、task.max_steps > 0、stack 非空且栈顶 == task。
         后置条件：trace 里恰好多一条 EPISODE_START 和一条 EPISODE_END；
             返回的 outcome 与事件流对同一局给出同一份结论。
