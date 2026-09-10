@@ -1,3 +1,845 @@
+## 2026-09-10（16）—— 修恢复时记忆侧的两处漏网：`keep_step` 取错一步 + 局摘要不参与作废
+
+**改了什么**：① `CheckpointTool.void_after` 的 `target_scope` 里目标局那项由 `step` 改为
+`step - 1`——checkpoint N 是"第 N 步开局"，拍它时完成的只有 step 0..N-1，保留区间是
+`step <= N-1`；`step=0` 自然落到哨兵 `-1`（整局废弃）。② `MemoryTool.void_memory_after`
+新增第三类作废对象：该局的 `episode_memory` **整条搬走、不按 step 筛**（新增私有方法
+`_void_episode_summaries`，与 `_void_kind` 并列）；`removed` 字典加 `episode_memories` 键，
+`FromHarnessToCheckpointToolVoidResp` 加同名字段透出计数。③ `void_after` 的 docstring 与
+注释跟着改：作废范围与筛法，以及步骤 4"目标局的 step 目录**也**搬走"（原文写"目标局的
+保留"，与实现不符——`target_scope` 里每一局的 step 目录都会被搬进 `voided-<ts>/`）。
+④ `check_restore` 判定 5 扩成三条：新增"该局恢复前的摘要 uuid 与恢复后无交集""恢复后该局
+摘要至多一条"，并把"记忆侧确有归档"从只在中间步检查改为"该局恢复前有摘要或还有后续步"
+就检查。⑤ `check_memory_roundtrip` 路径 5 跟着走：`removed` 等值断言补
+`episode_memories: 1`，新增"归档后该局摘要不可再检索、归档目录里有那条 md"，路径 5b 的
+重建复活检查扩到 `episode_memory`。⑥ 盘上历史遗留的 4 对重复摘要已用
+`MemoryStore.archive_many` **归档（不是删除）** 到 `memory/voided-20260910-184007/episode_memory/`。
+
+**为什么**：两条都是同一个病——**作废口径与 checkpoint 语义对不上**。
+· `keep_step` 取 `N` 而非 `N-1`：废弃分支写下的 step N 记录落在保留区漏网，重跑再写一条，
+  同一局同一步两条（`query_episode_steps` 会把两条都交给大脑）。末步恢复看不见（末步只有
+  终局判定、不写 step 记忆），从中间步恢复才暴露。
+· 局摘要不参与作废：局收尾（verify → `write_episode` → `episode_end`）发生在该局最后一个
+  checkpoint **之后**、且自己没有 checkpoint，所以**任何**恢复点都会把那次收尾圈进废弃窗口。
+  0910 真机恢复实测 4/4 复现：4 个 episode、8 条摘要，每个 episode 两份互相矛盾的账
+  （如 `restorecheck-0910-182428-ep1` 同时有 steps=1 与 steps=3 两版）。原 docstring 的理由
+  "蒸馏发生在局收尾后，废弃窗口内没有新摘要"被这份实测证伪——它把"收尾在 checkpoint 之后"
+  当成了"收尾在废弃窗口之外"。危害落在检索口：`query_episode_summaries` 按 `run_id` 等值筛，
+  两条同 run/同 episode 的摘要都进候选、都过 `matches_scene`，**恢复重跑期间大脑会拿到已废弃
+  时间线那一份**。
+
+**取舍**：摘要整条作废而不做 step 筛——摘要没有 step 概念，而"恢复点 ≤ 末步 ⇒ 摘要在未来"
+恒成立，无条件归档既正确又简单；真崩溃（局尚未收尾）时该局没有摘要，归档是空操作，
+所以这个口径对"真恢复"和"跑完再回退"两种用法都安全。`knowledge` 仍排除（全局先验、不属
+任何一局）。不给 `MemoryTool` 增加"按 step 删摘要"的能力——没有这种语义需求。
+
+**影响面**：`pokemon_agent/tools/{memory_tool,checkpoint_tool}.py`、
+`pokemon_agent/schemas/harness/communication/{FromHarnessToCheckpointToolVoidResp,FromHarnessToMemoryToolVoidMemoryAfterReq}.py`、
+`pokemon_agent/interfaces/tools/memory_tool_port.py`、`experiment/real_check/{check_restore,check_memory_roundtrip}.py`、
+`docs/spec/memory/PLAN_memory_trace_layout.md`、`docs/spec/real_check/SPEC.md`。
+
+**验证**：改动文件 `ruff check`/`ruff format --check` 全绿、`py_compile` 通过；离线脚本
+（临时目录、不碰 PyBoy/不加载模型）跑通 `void_after` 全链路——两局场景下
+`step_memories_voided=4`（改前为 3，正是漏掉的那条 step N）、`episode_memories_voided=2`、
+保留局只剩 step 0、废弃局整局清空、游标之后的事件全部被打上 `valid=false`、游标之内不受影响。
+真机由 `py -3.12 -m experiment.real_check.check_restore --step 1` 复核。
+
+## 2026-09-10（15）—— 维度 5 支持从中间步恢复（`check_restore --step`）+ 记忆侧判据
+
+**改了什么**：`check_restore.py` 加 `--step N`——恢复点不再写死 `saved_steps[-1]`，不给参数时
+行为与原先完全一致；新增**判定 5**（记忆侧）：① 中间步恢复时 `memory/voided-*/` 必须新增
+（快照前后目录名差集，避免把历史遗留当成"本次归档"）；② 全盘 step 记忆按
+`(episode_id, step)` 分组不得有重号。`experiment/real_check/__init__.py` 的用法块补上
+`check_restore` / `check_memory_roundtrip` / `resume_only` 三个被漏掉的脚本，并改掉
+"先导出两个 key"——密钥早已由 `common.load_env_file()` 从仓库根 `.env` 自动注入。
+
+**为什么这么改**：末步恢复**压不到记忆作废路径**。checkpoint N 是"第 N 步开局"，
+所以末步 N 只有终局判定、不执行动作也不写 step 记忆，那段废弃时间线里没有任何记忆记录
+可归档（0910 实测末步恢复：checkpoint 侧 voided 有 4 份存档，记忆侧归档 0 条、
+`memory/voided-*` 根本不生成）。此前所有脚本都只从最后一个存档步恢复，
+`check_restore` 的判定 4 也只查 checkpoint 侧 voided——记忆侧作废从未被压过。
+
+**取舍**：不新开脚本——`check_restore` 是维度 5 的归属文件，恢复步骤本来就是它的一个参数，
+克隆一份 200 行文件只改一行是负收益。`resume_only` 已有 `--step`，但它无断言、也不看记忆侧，
+压不出结论（它只回答"恢复不崩"）。
+
+**影响面**：`experiment/real_check/check_restore.py`、`experiment/real_check/__init__.py`。
+**顺带查出一处待修缺陷（本轮未动代码）**：`CheckpointTool.void_after` 给 `MemoryTool` 的
+`keep_step` 取了**恢复步本身**，而 `_step_within` 判 `step <= keep_step` 保留——于是废弃
+分支写下的 step N 记录正好落在保留区漏网，重跑又从 step N 写一条新的，同一局同一步出现
+两条记录（`query_episode_steps` 会把两条都交给大脑）。修法是把 `target_scope` 里目标局那项
+取 `step - 1`：`step=0` 时自然落到哨兵 `-1` = 整局废弃，正是"从第 0 步重跑"该有的语义，
+这个巧合也反证了口径本该如此。离线已复现（`恢复步=1/2 → 保留 [0,1]/[0,1,2]`，各漏一条），
+真机由 `check_restore --step 1` 的判定 5 确认。
+
+## 2026-09-10（14）—— 撤 `memory_carried` 可观测 + 补 `refresh_changed` 的 metadata 倒排刷新
+
+**改了什么**：① 删掉 `EPISODE_START` 的 `memory_carried` 字段——`schemas/…/FromHarnessToTraceToolAppendReq.memory_carried`、
+`trace_render.episode_start` 的 payload 与那段"必须显式传入"的论证、`episode_harness._begin()`
+里取数与传参；连带删掉 `MemoryToolPort.episode_summary_count`（Port 属性声明 + `MemoryTool`
+实现）——它的唯一消费方就是这个字段，删完即成死接口。② `MemoryStore.refresh_changed()`
+从"只重读正文、重算向量"扩成"重读整条记录"：新增 `_unindex` + `_index_record` 按新
+frontmatter metadata 重建倒排，并修掉一处返回值顺序错误（原写 `_, _, text = self._read_record(...)`，
+而该方法返回 `(text, metadata, payload)`——第三位是 payload 不是正文）。③ 配套两处：
+`put()` 落盘后记下该条 mtime（否则刚写完的记录会被 `refresh_changed` 判成 changed、
+白跑一遍 embed），`_unindex()` 顺带清 mtime 表。
+
+**为什么这么改**：① 用户裁定"这个字段没有意思，之后都会重新检索一次的"——每一局开局都会
+重新查一次跨局摘要，开局那一刻的池子大小既不决定这一局能检索到什么、也不反映它实际用到了
+什么，作为"记忆污染"的诊断入口是假的；留着一个没人读、且推断错误的值，比没有更糟。
+② 运营直接编辑 `memory/knowledge_memory/*.md` 是保留能力（`refresh_changed` 就是为它存在），
+但旧实现只刷正文：改 frontmatter 里的 `source` 这类**过滤字段**，倒排索引永远停在重建那一刻，
+`filter()` 查不到新值——"改了不重启就生效"这条性质只兑现了一半。
+
+**取舍**：① `refresh_changed` 仍做 mtime 增量、不做全量重建——单文件夹千级记录、索引几百 KB，
+增量已经够，且 `_unindex`/`_index_record` 是现成的、无需新抽象。② 那个返回值顺序错误
+一直没暴露，是因为现有知识条目的 payload 恰好是 `{}`——空 dict 被判假，`_put_vector` 的
+`if not text: return` 恰好把错误拦住了；这是运气不是正确性（`episode_memory` 的 payload
+非空，一旦它调 `refresh_changed` 就会当场炸），所以一并修正、不留在原地。
+③ 本轮只删 `memory_carried` 与本条属性，`docs/spec/interfaces/SPEC.md`、`docs/spec/tools/SPEC.md`
+里整体过时（仍描述信封化之前的接口形状）的问题不在本轮范围内，另计。
+
+**影响面**：`memory/store.py`、`memory/ports.py`、`tools/memory_tool.py`、
+`interfaces/tools/memory_tool_port.py`、`harness/episode_harness.py`、`tools/trace_render.py`、
+`schemas/harness/communication/FromHarnessToTraceToolAppendReq.py`；文档 `AGENTS.md`、
+`docs/ROADMAP.md`、`docs/spec/{interfaces,tools,harness}/SPEC.md`、
+`docs/spec/memory/PLAN_memory_query_convergence.md`。验证：改动文件 `ruff check` 全绿、
+临时目录单测确认"改 frontmatter 后 `filter` 命中新值 / 旧值归零 / 正文同步刷新"、
+`episode_harness` 与 `trace_render` 导入烟测 OK。`experiment/real_check/check_trace.py`
+只断言 kind 集合，不受本改动影响。
+
+## 2026-09-10（13）—— 撤 `discard_episode_steps`（局收尾不碰记忆）+ 契约与实现改名
+
+**改了什么**：① 删掉 `MemoryToolPort.discard_episode_steps`、`MemoryTool.discard_episode_steps`、
+信封 `FromHarnessToMemoryToolDiscardEpisodeStepsReq`（schema 文件 + `schemas/harness` 导出）
+以及 `episode_harness.verify_and_summarize` 里唯一那处调用——全仓 `discard` 引用归零；
+`MemoryTool._retired_dir()` 与 `memory/retired-<ts>/` 落点一并删除。② **改名**：
+`MemoryIndexPort` → `MemoryStorePort`、`MemoryIndexStore` → `MemoryStore`；模块
+`memory/index/index_store.py` → `memory/store.py`（`memory/index/` 目录整个消失——里面只有
+一个文件，没有理由再包一层），`memory/` 现在是 `ports.py` + `store.py` + `retrieval.py` 三个
+平级模块。③ 真机 `check_memory_roundtrip` 新增路径 5b：归档后删 `index.json` 强制重建，
+断言被归档的记录不复活。
+
+**为什么这么改**：① 用户裁定"一个 episode 结束，无需删除索引，因为本来查询的时候就会隔离，
+也就是不做任何操作"——`query_episode_steps` / `query_recent_steps` 本来就按 `episode_id`
+等值筛，`step_memory` 上没有任何 `search` / `rank` 调用，历史局的 step 记忆压根进不了检索
+世界，清场纯属多余。顺带消掉两个副作用：每局新建一个 `retired-<ts>/` 目录（跑 100 局就是
+100 个目录）、以及"归档"从两个时机收成一个（只剩 resume 作废），索引重建的漏洞面随之从
+两处收成一处。② `Index` 是 0908 的相对词——当时 memory 包里同时活着 `EpisodeMemoryStore` /
+`SemanticObjectStore` / `SemanticKnowledgeStore` 和它，`Index` 用来区分"那套不区分记忆类型
+的"；0910 把另外两套删了，对照物消失、`Index` 从限定词变成了"全部"，名字停在旧出身里。
+用户点名 `MemoryStorePort`；不改名会让"拷走 `memory/` 就能复用"这条主张在命名上自相矛盾。
+
+**取舍**：`Store` 保留（用户提出"store 也不准确，明明存读都有"）——项目里 `XxxPort` 是契约、
+去掉 `Port` 是实现的定式（`MemoryToolPort`/`MemoryTool`、`GameToolPort`/`GameTools`），而
+`store` 在通用用法里本来就是读写双向的（key-value store / data store），并非"只写"；真正
+放错位置的是 `Index`。改名不做别名兼容（无外部消费者）；本条目之前的 CHANGELOG 与两份 PLAN
+的历史章节保留旧名，不回改历史记录。一个未处理的相邻问题：`MemoryStorePort` 现有 9 个方法，
+仍超 AGENTS.md 三·2 的 6 个上限（用户已裁定"不拆"，规则是否加例外仍挂起）。
+
+**影响面**：`memory/`（新增 `store.py`、删 `index/`）、`memory/ports.py`、`memory/__init__.py`、
+`tools/memory_tool.py`、`interfaces/tools/memory_tool_port.py`、`interfaces/__init__.py`、
+`harness/episode_harness.py`、`schemas/harness/__init__.py`（+ 删一个信封文件）、
+`experiment/real_check/{check_memory,check_memory_roundtrip}.py`；文档 `AGENTS.md`、
+`CLAUDE.md`、`docs/spec/README.md`、`docs/spec/memory/{SPEC,PLAN_memory_trace_layout,
+PLAN_memory_query_convergence}.md`。验证：改动文件 `ruff check` / `ruff format --check` 全绿、
+全链路导入烟测 OK、真机 `check_memory_roundtrip` **七条路径全 PASS**。
+
+## 2026-09-10（12）—— 契约收窄到 9 个方法：撤 `forget_many` / `delete_many`，`discard` 改走归档
+
+**改了什么**：`MemoryIndexPort` 撤掉 `forget_many`（"摘索引但文件原地留"）与
+`delete_many`（自述仅测试用），**11 → 9 个方法**；`MemoryIndexStore` 删掉对应实现。
+`MemoryTool.discard_episode_steps` 从 `forget_many` 改为 `archive_many`，归档到新增的
+`_retired_dir()`（`memory/retired-<ts>/<kind>/`，与 void 的 `voided-<ts>/` 并列）。
+`memory/ports.py`、`memory/index/index_store.py`、`tools/memory_tool.py` 的模块与方法
+docstring 同步。顺带修掉 `memory/retrieval.py` 两处 B905（`zip()` 缺 `strict=`，上一轮
+遗留、阻塞 `ruff check`），取 `strict=True`——长度不等是上游 bug，按项目规则 fail-fast。
+文档：重写 `docs/spec/memory/SPEC.md`（**465 → 107 行**，原内容描述的是 0910 已整体
+退役的按类存储实现）；`docs/spec/README.md` 的模块地图、架构图与链接描述追平；
+设计稿出六稿（§8 全部定案）。
+
+**为什么这么改**：用户 0910 裁定"`forget_many` 不用，都只是移动归档"——"摘索引但文件
+原地留"这个第三种状态**在索引重建时无法还原**（重建的输入是目录下所有 `<uuid>.json`），
+会让被 `discard` 丢弃的 step 记忆复活，破掉"step 记忆不跨 episode"这条架构约束。
+删掉这个状态而不是修补它，改动面更小。`delete_many` 同理：它与 `archive_many` 的差别
+只是真删还是搬走，而生产路径从不需要真删（"落盘了就不丢"）。
+
+**取舍**：`rank` 保持单列而不并进 `search`（`search` 本来就是 `rank` 的封装
+——"filter 圈候选 + 截断"，方向不能倒）；`get` / `get_many` **保留**，因为 `filter()`
+是零读盘的（只查内存倒排表，内容按 uuid 惰性取），让它直接返记录会把"索引落盘"换来的
+收益扔掉。接口不按"读/写/维护"拆三块（用户裁定），代价是与 AGENTS.md 三·2
+「接口方法超过 6 个就该拆」冲突（现 9 个）——该规则要不要加例外（"只有跨层边界才强制"）
+**挂起待议**，因为改规范要先讨论。
+
+**影响面**：`memory/ports.py`、`memory/index/index_store.py`、`memory/retrieval.py`、
+`tools/memory_tool.py`、`docs/spec/memory/SPEC.md`、`docs/spec/README.md`、设计稿。
+验证：改动文件 ruff check/format 全绿、导入烟测 OK、真机 `check_memory_roundtrip`
+五路径 PASS，另有专项实测确认"归档后重建不复活"（put 3 条 → 归档其中 2 条 → 删
+`index.json` 强制重建 → 被归档的没回来，留档文件在 `retired-*/step_memory/` 里）。
+
+## 2026-09-10（11）—— `MemoryIndexPort` 随包归位：契约从 `interfaces/` 搬进 `memory/ports.py`
+
+**改了什么**：把 `pokemon_agent/interfaces/memory/memory_index_port.py` 搬到
+`pokemon_agent/memory/ports.py`（`interfaces/memory/` 目录随之删除，
+`interfaces/__init__.py` 去掉它的 import 与 `__all__` 项，docstring 注明 memory 的
+契约不在本层）；`memory/__init__.py` 补上 re-export 与说明段；`memory/index/__init__.py`、
+`memory/index/index_store.py` 的 docstring 指向新位置。顺带修 import 卫生：
+`memory/index/index_store.py` 与 `memory/retrieval.py` 对 `EmbeddingProvider` /
+`RerankerProvider` 的 import 收进 `TYPE_CHECKING`。`AGENTS.md` 目录树同步——
+`memory/` 一段原本描述的还是 0910 已删的 `episode/` / `semantic/` 包，一并改写。
+设计稿 `PLAN_memory_query_convergence.md` 出五稿（§8 已决加两条、§11.5 记为"归位"、
+§12 两条实测标注处置）。
+
+**为什么这么改**：用户 0910 拍板"memory 层做通用方法、tool 层不做"——那 memory 就是
+要能被整体拷走的子系统，它的契约就该与实现同住一包，而不是留在本项目的跨层港口目录
+`interfaces/` 里。搬的过程顺带消灭了一个真实害处：原来 `from pokemon_agent.interfaces
+import ...` 会执行 `interfaces/__init__.py`（re-export 全部 16 个 Port），把整个
+`schemas` 层拖进 `memory` 的传递依赖——实测 `import pokemon_agent.memory` 后
+`sys.modules` 里有 **103** 个 `schemas.*`；改 `TYPE_CHECKING` 后为 **0**，
+`pokemon_agent.interfaces` 也不再被加载。
+
+**取舍**：没把两个 provider Protocol 也抄进 `memory/`——同一契约两份定义必然漂移，
+而 `TYPE_CHECKING` 已拿到"运行期零依赖"的全部好处（两处依赖都只是函数签名上的类型注解，
+`from __future__ import annotations` 让注解延迟求值，运行期不需要符号）。
+**方法清单本次未动**：用户另裁定的"`forget_many` 撤除"要连带决定
+`discard_episode_steps` 的归档落点，留到下一步（设计稿 §8.2 点 2）。
+
+**影响面**：新增 `memory/ports.py`；删 `interfaces/memory/`（4 个文件——3 个是上一轮
+重构就已删的旧 store，本轮清掉第 4 个 `memory_index_port.py`）；改
+`interfaces/__init__.py`、`memory/__init__.py`、`memory/index/{__init__,index_store}.py`、
+`memory/retrieval.py`、`AGENTS.md`、设计稿。**方法形状与运行行为零变化**——
+真机 `check_memory_roundtrip` 五路径复跑全 PASS，改动文件 ruff check/format 全绿。
+
+## 2026-09-10（10）—— 文档收尾：build SPEC 退役节整节删 + ROADMAP 补第 27 条
+
+**改了什么**：`docs/spec/build/SPEC.md` 删掉三节整节——§3（`experiment/manifest.py`）、
+§3b（`agent_permission` 权限层）、§5（`experiment/` 命令行入口）；标题
+"装配、错误体系、实验记录与观测层"去掉"实验记录"，开头文件清单去掉 manifest 那一条，
+并在引言加一条"编号有缺口是刻意的"说明（§4/§6/§7 编号保留——`docs/spec/README.md`
+按编号引用它们）。`docs/ROADMAP.md` 补第 27 条（0910 落盘重构 + `TraceEvent.valid`
++ 实验资产边界收敛的全量记录，含验证矩阵与取舍），另加一条全局作废声明，
+并把四处会误导现状的 `eval_report.py` 引用就地标注退役（P2 可审计行、
+工程基础设施的"跨批次回归对比"行、第 3 条的"落地脚本"一句、文件头的链接清单）。
+另新增设计稿 `docs/spec/memory/PLAN_memory_query_convergence.md`——ROADMAP 24
+剩下一半（`MemoryToolPort` 六个专用查询方法收敛成 filter/search）的接口设计，
+把 24 条原文"查询逻辑下沉到 tool 层"那句的歧义摊成 A/B 两方案 + 5 个待拍板点；
+ROADMAP 24 与第 27 条已加指针。
+
+**为什么这么改**：三整节描述的模块（manifest / agent_permission / experiment 跑批
+入口）在 0910 已全部退役，留着就是"读起来像活的、实际不存在"的文档；ROADMAP 第 27
+条是用户 0910 拍板要补的（valid 字段 + 实验资产边界）。
+
+**取舍**：ROADMAP 只动会误导"现状"的四处，`CHANGELOG.md`、`docs/experiences/`、
+ROADMAP 已完成区里的 `evaluation/*` 字样一律按史实保留——理由同"ROADMAP 里的历史
+记载不改"。没有给三节做编号重排（重排会打断外部按编号的引用）。
+
+**影响面**：纯文档，无代码改动。`build/SPEC.md` 从 1040 行降到 633 行。
+
+## 2026-09-10（9）—— evaluation 全删，metrics 端点与前端面板一并退役
+
+**改了什么**：整目录删除 `evaluation/`（`eval_report.py` / `SPEC.md` / `README.md` /
+`tests/` / `__init__.py`）。它的活引用一并清掉：`pokemon_agent/api.py` 删掉
+`GET /runs/{id}/metrics` 端点（聚合核心 `aggregate_events` 就住在 evaluation 里，
+函数内惰性 import 一断端点即 500）与端点一览表那一行；`web/src/` 删 `useMetrics.ts`、
+`MetricsPanel`（含 `metricsTable`/`metricsTh`/`metricsTd` 三个样式）、
+`api.ts::getMetrics`、`types.ts` 的 `SourceMetrics`/`RunMetricsSummary`/`RunMetrics`；
+`pyproject.toml` 的 `testpaths` 收回 `["tests"]`、删 `evaluation/tests/*` 的 ANN 豁免、
+两处注释里把 evaluation 当"会被 setuptools 误发现"的例子换掉；
+`.github/workflows/ci.yml` 去掉 `--cov=evaluation` 与对应注释；
+`docs/spec/memory/PLAN_memory_trace_layout.md` 的两行改动清单去掉
+`evaluation/eval_report.py`。包内 7 处把 evaluation 当"payload 字段契约的消费方"
+引用的 docstring（`tools/__init__.py`、`tools/trace_tool.py`、`tools/trace_render.py`、
+`schemas/trace/domain/trace_kind.py`、
+`schemas/harness/communication/FromHarnessToTraceToolAppendReq.py`、
+`interfaces/tools/trace_tool_port.py` 的"读者是 api/evaluation"）改成
+"观测台前端按字段名渲染"——**契约本身没变，只是换了个消费者**。
+
+**为什么这么改**：evaluation 的数据源 `trace_data/<run_id>/episodes/<episode_id>.jsonl`
+在 0910 的 trace 落盘重构里已经不存在（改成 `events/<run_id>-<event_id>.json`），
+它的 CLI 路径早就读不到东西；0910 用户拍板"evaluation 全删"。
+
+**取舍**：① **按链路聚合 token/延迟的能力一起退役**——用户拍板"端点 + 前端面板
+一起删"，没有把 `aggregate_events` 挪进包内保命，观测台因此少一个面板，
+要看这些数字以后得从 trace 事件离线自己算（ROADMAP 第 2/27 条与 P2 行已标注）。
+② 没有为"以后可能还想看报表"预留空壳端点——留一个明知会 500 的端点比删掉更糟。
+
+**影响面**：`evaluation/` 从仓库消失；`pokemon_agent.api` 少一个端点；前端少
+一个模块（`useMetrics.ts`）与一个面板。验证：`grep -rn "evaluation\|eval_report"
+--include=*.py pokemon_agent/` → 0 行；`ruff check` 对本次改动的 8 个文件只剩
+改动前就存在的 5 处历史遗留（api.py 的 ANN401/SIM105/ANN202×2、trace_tool.py
+的 ANN001，均未新增）；`ruff format --check` 对改动文件全过；
+`import pokemon_agent.api` / `import pokemon_agent.build` 烟测 OK；
+前端 `npx tsc --noEmit` 退出码 0。
+
+## 2026-09-10（8）—— experiment 上移仓库根级，只留三样
+
+**改了什么**：`pokemon_agent/experiment/` 整体上移为仓库根级
+`experiment/`，只保留三样（0910 拍板）：`tasks.py`（任务定义 +
+goal/criteria 写法规范）、`experiment_states/`（知识库探索钉死存档，19 个
+.state）、`real_check/`（六维度核对脚本，7 个文件的
+`pokemon_agent.experiment.real_check` 导入路径同步改为
+`experiment.real_check`）。删除四个退役模块：`manifest.py`（上一条已拆掉
+权限快照后只剩 prompt/任务快照，无消费方）、`run_all_tasks.py` /
+`run_episode.py` / `run_experiment.py`（跑批入口，消费方全在包内）。包
+`__init__.py` 重写为只出口 tasks 一族。文档同步：README 快速开始改用
+`check_memory_roundtrip`、CLAUDE.md / AGENTS.md 目录树、
+`docs/spec/real_check/SPEC.md` 全部命令路径、`evaluation/SPEC.md` 两处活
+引用、`openai_compatible.py` VISION_DUMP 示例；`docs/spec/build/SPEC.md`
+第 3/5 节（manifest 与跑批入口）加删除线退役标注，正文存档不动；
+ROADMAP / experiences / experiments 里的历史记载不改（史实）。
+
+**为什么这么改**：跑批入口和 manifest 已随 agent_permission 移除与
+tests 清空失去存在意义；experiment 是实验侧资产、不是 pokemon_agent
+运行时的一部分——放包内让"运行时最小集"和"实验资产"的边界含糊。
+real_check 是唯一还活着的实验侧消费，值得和 tasks/states 一起放在根级
+显眼处。
+
+**取舍**：`evaluation/eval_report.py` 保留（报表工具本身无死依赖，只改
+了两处指向 run_experiment 的说明文字）——它读的是 `experiment_results/`
+历史产物，不依赖被删模块。`experiment_results/` 历史数据不动。
+
+**影响面**：根级新增 `experiment/`（git mv 保历史）；包内
+`pokemon_agent/experiment/` 消失；`experiment.real_check.*` 六脚本的
+`python -m` 命令从仓库根运行。`real_check/common.py` 的 `ROOT` 从写死
+`parents[3]`（按包内第 3 层算）改为向上找 `pyproject.toml` 界标——上移
+一层后写死层级静默指到上级目录，读产物路径全体偏移（check_trace 真机
+首跑即暴露，已修）。验证：`from experiment import TaskChain` OK；
+`python -m experiment.real_check.check_memory_roundtrip` 五路径 PASS、
+`check_trace` / `check_memory` PASS（均从新路径跑）；ruff 对
+experiment/ 仅剩 3 处迁移前就存在的历史遗留（tasks.py 两条 docstring 内
+E501、resume_only ANN001）。
+
+## 2026-09-10（7）—— 清掉（5）漏掉的 agent_permission 残留接入面
+
+**改了什么**：`real_check/check_memory_roundtrip.py` 拆掉 `@initialize`
+装饰器与 `from agent_permission import initialize`（real_check 六脚本里仅存
+的硬依赖）；`real_check/check_harness.py` docstring 去掉 agent_permission
+表述；`experiment/manifest.py` 整段删除权限快照机制——`permissions` 字段、
+`with_permissions()` 方法、`validate_design()` 里的对应 assert、模块
+docstring 里的权限配置叙事、随之失效的 `hashlib` 导入；`run_experiment.py`
+去掉 `.with_permissions()` 调用；`tests/test_real_integration.py` docstring
+改写（权限运行时的历史叙事不留在测试文档里）。`config/` 目录删除
+（`context.json`/`permissions.json` 曾于 0910 下午为实现期验证临时从
+6573b1f 恢复，拆完后正式不需要）。
+
+**为什么这么改**：（5）声称"连根拔掉"，但六个 real_check 脚本与 manifest
+的权限快照链路漏网——roundtrip 不装 agent_permission 包就 ImportError，
+`run_experiment` 没有 config/ 两个文件就 assert 炸。本次补齐，包外代码
+零依赖目标达成。
+
+**取舍**：`eval_report.py` 里 `degraded` 字段的注释（"移除后暂无写入方"）
+保留不动——它描述的是移除后的现状，不是残留；`pyproject.toml` 顶部
+"agent-permission 已整体移除"的说明注释同理保留。三个**陈旧测试文件**
+（`test_integration_tool_layer.py` 未入库、对着 harness 两级重构前的旧
+`episode.run(episode_id, task, stack)` 签名；`test_render_all_kinds.py`
+未入库、引用已删除的 `TraceKind.PERMISSION_SKIPPED`；`test_index_store.py`
+已入库、对着索引层中间版 `directory=` 关键字签名）经用户拍板**全部删除**
+——tests/ 回到从零重建起点，测试按新 API 重写时再落盘。
+
+**影响面**：`experiment/manifest.py`（schema 少一个字段，旧 manifest.json
+里多出的 permissions 键不影响读取——Pydantic 默认忽略额外字段）、
+`experiment/run_experiment.py`、`real_check/` 两脚本、`tests/` 一个
+docstring、`config/` 目录删除。验证：roundtrip 五路径 PASS（无权限运行时
+裸跑）、manifest/run_experiment/check_harness 导入烟测 OK、触碰文件
+ruff 全绿。
+
+## 2026-09-10（6）—— 记忆与 trace 落盘布局重构（uuid 一条一文件 + 倒排索引 + valid 标记）
+
+**改了什么**：三层运行产物全部搬出包体、落仓库根级，形状从"追加文件"改成
+"一条记录一个 uuid 文件"。`pokemon_agent/memory/` 下的旧 store
+（`episode/`、`semantic/` 及三个 Port 文件）整体退役删除，替换为统一索引层
+`memory/index/index_store.py::MemoryIndexStore`——一个 kind 一个文件夹
+（`memory/step_memory|object_memory|episode_memory|knowledge_memory/`），
+每文件夹一份写穿倒排索引 `index.json`（等值取交集查询，启动时按盘上文件集
+自愈重建），记录按需惰性读；知识库 12 条 md 从包内迁到
+`memory/knowledge_memory/`（拍板⑩：memory 不按 run 分层，`run_id` 只是
+metadata 字段）。trace 改为一条事件一个 json（`trace_data/<run_id>/events/
+<run_id>-<event_id>.json`），`TraceEvent` 加 `valid` 字段（schema v3→v4），
+checkpoint `void_after` 把废弃分支事件原地打 `valid=false`（不删不挪），
+`LocalTrace._next_id` 从盘上 max(event_id)+1 现算；截图与事件共用 event_id
+（`screenshot/<event_id>.png`），resume 不再作废截图。`MemoryTool` 全部读写
+方法改在索引层上实现，`void_memory_after` 从"删"改为"归档到
+`memory/voided-<ts>/`"；`MemoryToolPort` 对外签名不变（只换实现）。
+读端六个 real_check 脚本同步改写；`check_trace` 的断言语义从"有效事件连续"
+改为"盘上全量连续 + 废弃块是一段中间连续区间"。
+
+**为什么这么改**：旧布局三类记忆各自为政（episode jsonl / object jsonl /
+knowledge 散 md），文件名里塞 run_id/episode_id/step 语义，违反 ROADMAP 24
+"记录身份零语义"；检索靠全量扫描，倒排索引把元数据过滤降到 O(命中数)；
+trace 一局一个 jsonl 的中间粒度让 resume 的废弃分支无法表达——`valid` 字段
+让"作废"成为数据而不是文件操作，截图绑 event_id 后 id 永远递增、无碰撞。
+
+**取舍**：索引是派生物、真相永远是记录文件——索引损坏可全量重建，换来的是
+查询零扫描；等值交集够用、范围比较留给调用方先等值缩小再数值筛（这是领域
+知识不该内置进索引）；md 类记录（episode/knowledge）保留 JSON frontmatter
++ 正文，人可直接编辑（`refresh_changed` 按 mtime 增量生效）；旧的废弃分支
+trace 数据不迁移——schema v4 起新文件才有 `valid` 字段，旧 run 产物视为
+只读历史。
+
+**影响面**：`schemas/trace`（v4 + valid）、`interfaces/memory`（三个旧 Port
+删除、`MemoryIndexPort` 重写）、`memory/`（包内 store 目录删除、新索引层）、
+`tools/memory_tool.py` + `tools/checkpoint_tool.py` + `tools/trace_tool.py`
+（重写/瘦身）、`trace/store.py` + `harness/episode_harness.py` +
+`harness/game_utils.py` + `harness/object_interactions.py`（截图绑 event_id）、
+`experiment/real_check/*`（六个脚本）、`.gitignore`、CLAUDE.md 第四/九节。
+新增仓库根级运行产物目录：`memory/<kind>/`、`trace_data/<run_id>/`。
+真机验证：`check_memory_roundtrip` 五条路径 PASS（含 void 归档），
+`check_trace` / `check_memory` / `check_restore` PASS。
+
+## 2026-09-10（5）—— 彻底移除 agent_permission 接入
+
+**改了什么**：删掉 `agent_permission` 这条外部依赖在全仓库的全部接入面。
+`pyproject.toml` 去掉这条 git 依赖；`run_harness.py` 去掉 `@initialize`
+（`run()`/`resume_run()` 两处）；`brain.py`/`tools/game_tools.py`/
+`tools/memory_tool.py` 去掉全部 `@require_permission(...)` 装饰器（合计约
+20 处）；`harness/episode_harness.py` 拆掉全部 14 处
+`try: ... except Exception as exc: if not permission_was_denied(exc): raise`
+权限降级兜底，改回直接调用（异常该怎么冒泡就怎么冒泡，不再吞成
+`PERMISSION_SKIPPED`）；`harness/episode_utils.py` 删掉
+`permission_was_denied`/`PERMISSION_ERRORS`；`TraceKind.PERMISSION_SKIPPED`
+连同 `tools/trace_render.py::permission_skipped()`、
+`tools/trace_tool.py` 里的分派表条目、
+`FromHarnessToTraceToolAppendReq` 的 `permission`/`function`/`fallback`
+三个字段一并删除；`evaluation/eval_report.py` 去掉对 `"PermissionSkipped"`
+这个错误 kind 的特判分支（`degraded` 字段/报表列先留空，见字段旁注释）。
+`config/permissions.json`、`config/context.json` 两个专用配置文件删除。
+`api.py`"为什么单进程只能跑一个 run"的文档/报错文案，从"agent_permission
+的模块级全局"改写成 API 自己的设计选择（世界/帧管道是进程内单例）。
+CLAUDE.md/AGENTS.md/README.md 里引用 `agent_permission` 的几处说明同步改写。
+
+**为什么这么改**：`agent_permission` 从来没有真正跑通过——`config/
+context.json`/`permissions.json` 只是满足它启动要求的空壳配置，`docs/
+progress.md` 记录过它在这台 device VM 的精简 Python 环境里装不上，端到端
+HTTP 测试因此一直卡在这道坎上。用户明确要求先把它连根拔掉，不留兜底骨架，
+好让代码和测试能在没有这个包的环境里正常跑起来。
+
+**取舍**：`episode_harness.py` 里原本"权限被拒就静默降级、继续跑"这条容错
+路径整段删除，而不是留着骨架以后好接回——`permission_was_denied` 的判据
+来自 `agent_permission` 的四个异常类型，包一撤，判据也没了意义，留着只是
+装样子的死代码。如果以后要重新引入某种权限/审批机制，届时再按新设计接回
+（不一定是同一套装饰器 + trace kind 的形状）。`evaluation/eval_report.py`
+的 `degraded` 统计字段/报表列没有跟着删——它是一个通用的"按原因分类的降级
+计数"桶，不是 `agent_permission` 专属概念，删列涉及 `evaluation/SPEC.md`
+的报表格式，按批量提交约定留到有信号时再处理；这次只删了它唯一的写入触发
+点（`kind == "PermissionSkipped"` 判断），改动前该字段就已经是本仓库唯一
+的降级来源，改动后它会一直是空字典，直到有新的降级来源接入。
+`docs/spec/`、`tests/` 里仍有多处引用 `agent_permission`/`require_permission`
+/`PERMISSION_SKIPPED`（如 `docs/spec/tools/SPEC.md`、
+`docs/spec/harness/SPEC.md` 等）——按批量提交约定这次不动，等测试/文档
+更新的信号。
+
+**影响面**：`pyproject.toml` 依赖列表少一条，`requires-python>=3.11` 的
+理由改成 `enum.StrEnum`（不再依赖那个包），环境要求不变。`FromHarnessToTraceToolAppendReq`
+少三个可选字段——`evaluation/eval_report.py` 按字段名解析的老 trace
+JSONL（历史落盘数据）如果带这三个字段，pydantic 忽略未声明字段，读不出
+报错。`ruff check --select F,E9` 对本次改动的文件全部通过（无悬空
+import/未定义名字）。语法检查（`ast.parse`）全部通过。**没跑
+pytest/realcheck**——`tests/`、`evaluation/tests/` 按约定留到有信号时
+一起处理，且这个 device VM 装不上 `agent_permission`（也是本次改动的
+起因）本就没法跑通端到端用例，这次改完之后理论上不再需要它，但验证留给
+下一次拿到信号的批次。
+
+## 2026-09-10（4）—— run 的返回值也拆成裸值，API 自己拼 JSON
+
+**改了什么**：`RunHarness.run()` / `resume_run()` / `HarnessPort.run()` 的返回类型
+从 `RunResp` 改成 `(outcomes, total, succeeded, success_rate)` 四元组；`_close()`
+仍在内部组装 `RunResp` 写进 RUN_END，然后拆开交出去。`api.py` 的
+`_RunHandle.outcome` 改成本层自己拼的 `dict`（JSON 形状不变，前端无感），
+SSE `done` 事件改走 `json.dumps`。其余调用方（run_episode / check_harness /
+check_restore / resume_only / test_real_integration）改成解包取 `outcomes[0]`。
+
+**为什么这么改**：上一版把返回值留成模型，理由写的是"trace 要内嵌它"——**这个
+理由是错的**：trace 是在 `_close()` 里 append 的，事件内嵌的是函数内部组装的局部
+对象，`run()` 返回什么它都不关心。返回值真正的消费方是 api（推 SSE）和几个
+real_check 脚本（取 `outcomes[0]`）。外壳边不立契约，那就连返回值一起拆开，
+JSON 形状归 API 自己决定。
+
+**取舍**：四元组比对象难读一点，`outcomes` 之外三个值调用方多半用不上（现在
+只有 api 用全）——接受，因为它们本来就是 `len(outcomes)` 的派生量，包成对象
+只是让"谁算的"看起来更重要。`RunResp` 保留，但降级为 harness 内部的产出模型，
+只服务 RUN_END 事件。
+
+**影响面**：`schemas/harness` 出口不变（`RunResp` 仍在，`RunReq` 已删）；
+ruff check 相对改动前零新增；静态自检 159 个文件无悬空名字。realcheck 与
+pytest 仍未跑。
+
+## 2026-09-10（3）—— run 入参改裸字段，顺手修 HarnessPort 的悬空 import
+
+**改了什么**：`RunHarness.run()` / `HarnessPort.run()` 从收 `RunReq` 改成收裸字段
+`run(run_id: str, goals: list[TaskForBrain]) -> RunResp`，`RunReq` 模型删除；
+调用侧 api / run_episode / check_harness / check_restore 一并改。第十二节第 1 条
+补写"外壳 → Harness 这条边不强制包装"。另外修掉上一条留下的悬空 import：
+`interfaces/harness/harness_port.py` 还在 import 已改名的
+`FromFrontendToRunHarnessRun{Req,Resp}`。
+
+**为什么这么改**：api 是外壳不是我们的模块，那条边没有"模块间契约"要立，
+`resume_run(run_id, episode_id, step)` 本来就是裸参数——`run` 单独包一层 Req
+只是把两个字段裹进对象再拆开，读的人多一跳。返回值不同：run 结算是 harness
+自己算的产出，仍是模型（记账层要内嵌它）。
+
+**取舍**：外壳边"不强制"而不是"禁止"——`submit_edit` / `latest_frame` 暂时留着
+信封没动，等统一口径时一起处理，先不为了整齐做半截迁移。
+
+**影响面**：`RunReq` 从 schemas/harness 出口退出；静态自检这次把 `interfaces/`
+全量纳入（上一轮工作副本缺这批文件，正是漏掉 harness_port 的原因），159 个文件
+无悬空名字；ruff check 相对改动前零新增。realcheck 与 pytest 仍未跑。
+
+## 2026-09-10（2）—— run 结算改裸名归 harness，trace 信封改回内嵌
+
+**改了什么**：`FromFrontendToRunHarnessRun{Req,Resp}` 改名为裸名 `RunReq`/`RunResp`，
+从 `schemas/frontend/` 移到 `schemas/harness/`；`FromHarnessToTraceToolAppendReq`
+去掉上一条加的 `run_total`/`run_succeeded`/`run_success_rate` 三个裸字段，
+改回内嵌 `outcome_run: RunResp`。调用侧 api / run_harness / run_episode /
+check_harness / check_restore / build / trace_render / 测试 fixture 一并改名。
+AGENTS.md 第十二节新增第 5 条记这条教训。
+
+**为什么这么改**：上一条为了断 harness → frontend 的反向依赖，把结算摊成三个裸
+字段，这是把归属错误藏进字段列表。真正的毛病是模型归错了地方：run 的五个结算
+字段全由 `RunHarness._close()` 自己数出，跟谁发起这次 run 无关（api 调、
+experiment 调都是它），按第十二节第 2 条判据它是**接口模型**而不是那条调用边的
+信封，本就该裸名归产出方。归属一改，trace 内嵌它变成同包引用，反向依赖与循环
+import 同时消失，RUN_END 也拿回完整结算（含每个 episode 的 outcomes）。
+
+**取舍**：`frontend` 包因此只剩三个名字（提交目标编辑 + 取帧两半），没有为了
+"包要有分量"而把 run 的信封留在那里——包的大小不是归属依据。
+
+**影响面**：`schemas/frontend` 出口 5 → 3，`schemas/harness` 出口 52 → 54；
+ruff check 相对改动前零新增问题，全仓 py_compile 通过、schemas 七个出口可导入。
+realcheck 与 pytest 仍未跑（需真实模拟器与模型）。
+
+## 2026-09-10 —— 补齐 game_tool / memory_tool 的第一跳信封，RunResp 归位发起方
+
+**改了什么**：三件事。一、`GameToolPort` 9 个方法、`MemoryToolPort` 11 个方法
+（`query_knowledge` 之外的全部）从裸参数改为收发信封，新增 27 个
+`FromHarnessTo{Game,Memory}Tool*` 文件；两个 Tool 实现负责拆装信封，往里调
+world / store 仍是裸参数。二、`FromFrontendToRunHarnessRunResp` 从
+`schemas/harness/` 移到 `schemas/frontend/`，与 Req 两半合并到发起方；
+`FromHarnessToTraceToolAppendReq` 不再内嵌它，RUN_END 改摊
+`run_total`/`run_succeeded`/`run_success_rate` 三个裸字段。三、AGENTS.md 第十二节
+补写聚合方向登记与豁免清单，修掉 schemas 三处指向已删包的说明。
+
+**为什么这么改**：第十二节的"第一跳永远是信封"此前只在 brain_tool /
+checkpoint_tool / trace_tool 三条边成立，game_tool 一条没有、memory_tool 只有
+1/12——撤销"转发型不造信封"那条之后，这两条边失去依据，要么登记豁免要么补齐，
+选了补齐。RunResp 分居两包则是因为它被当成"harness 的产物"而不是"frontend 那条
+调用边的响应"；合并时发现 trace 信封内嵌它会形成 `schemas.frontend ↔
+schemas.harness` 的循环 import（实测起不来），根因是记账层去记了前端那条边的
+模型——摘掉这层依赖，环随之消失。
+
+**取舍**：信封只装模块原来的返回类型（`FromHarnessToGameToolPerceiveOnceResp`
+里就一个 `PerceiveOnceResp` 字段），不重抄字段——取值多一层 `.perceived`，
+换字段单点定义。零参 + 标量返回的 `episode_summary_count` / `cursor` 不套信封，
+登记为豁免：没有载荷可装，空壳信封只是噪音。
+
+**影响面**：调用侧改动集中在 `episode_harness`（18 处）、`game_utils`、
+`checkpoint_tool`、`check_memory_roundtrip` 与两个测试的 fake；
+`schemas/harness` 出口从 25 涨到 51 个信封。ruff check 相对改动前无新增问题，
+全仓 py_compile 通过。**未跑 realcheck 六维度**（需真实模拟器与模型），
+恢复路径与 memory_roundtrip 的实跑验证待补。
+
+## 2026-09-09（晚 6）—— 修复 resume 路径漏改的信封调用点（realcheck 维度 5 抓到）
+
+**改了什么**：`run_harness.py::resume_run()` 的 `self._checkpoint.load(run_id,
+episode_id, step)` 改为构造 `FromHarnessToCheckpointToolLoadReq` 信封传入
+（含 import 补充）。全仓扫描其余工具调用点（`episode_harness` 的
+save/void_after/load/query_knowledge、`brain_utils`、`run_plan_utils`、
+`game_utils`）确认无同类漏网。
+**为什么这么改**：Phase A 信封化把 `CheckpointTool.load` 签名改成收信封，
+但迁移漏了 resume 路径唯一调用点——`check_harness` 不经过它，四个磁盘校验
+维度也查不到调用侧，直到维度 5（真实跨进程恢复）才以
+`TypeError: takes 2 positional arguments but 4 were given` 暴露。
+**取舍**：修调用侧而非回退 tool 签名——第一跳 harness→Tool 永远是信封是
+第十二节定稿规则，tool 侧签名是对的。
+**影响面**：realcheck 六维度全 PASS：harness(3 步 success) / trace(64 条
+event_id 0..63 连续无缺重号) / checkpoint(存档 0..3 成对带 run_state_dump) /
+memory(落盘自洽) / memory_roundtrip(五路径含 void_memory_after 裸参) /
+restore(自 step3 恢复，游标 53 后续写 123 条连续，voided 归档 1 个)。
+首次运行留有 restorecheck-0909-230141 半程产物（阶段 A 完整、阶段 B 崩在
+load 调用），未清理。
+
+## 2026-09-09（晚 5）—— realcheck 接入 `.env`：密钥不再依赖终端手动 export
+
+**改了什么**：新增项目根 `.env` 骨架（ARK_API_KEY / DASHSCOPE_API_KEY /
+ANTHROPIC_AUTH_TOKEN，值留空由用户填写）；`.gitignore` 忽略 `.env`；
+`real_check/common.py` 新增 `load_env_file()` 并在模块 import 时执行——
+外部已有变量优先（setdefault 语义），空值/注释/坏行跳过，`.env` 缺失静默跳过。
+**为什么这么改**：realcheck 前置条件要求 ARK/DASHSCOPE 双 key，此前只能靠
+开发终端手动 export，核对脚本在别的 shell（含 AI 沙箱）里必然挂在
+provider 初始化；`.env` 是不进版本库的标准解，加载点收在四个核对脚本
+唯一的公共件里，`python -m` 各入口零改动。
+**取舍**：不引入 python-dotenv 依赖——20 行解析足够（本项目 .env 只有
+KEY=VALUE）；加载放在 common.py 的 import 侧而非各 main()，换来四个脚本
+不用各自记得调用。
+**影响面**：real_check 四脚本行为不变（.env 未填时与之前等价）；已验证
+加载器工作、`.env` 被 git 忽略。uv 环境另有 `.venv` 为 POSIX 残留
+（Windows 下 `uv run` 重建失败）的问题，未动，待用户决定是否进 ROADMAP。
+
+## 2026-09-09（晚 4）—— 澄清"拆 tool 层"的准确含义：拆的是 schemas 侧影子，不是 tools/ 代码层
+
+**改了什么**：仅修 AGENTS.md 第十二节"方向"段。更正为：已拆掉的是 schemas
+里的 tool 层影子（`brain_tool/`、`game_tool/`、`checkpoint/` 三个子包）及
+tool 层到具体模块的第二跳信封；`tools/` 代码层本体（五个 Tool 门面）保留，
+harness 经 Tool 门面调模块的架构不变，第一跳信封（`FromHarnessToBrainTool*`）
+保留现名、不改名。
+**为什么这么改**：「晚 2」条目把"拆 tool 层"误读为"tools/ 五个 Tool 溶解进
+harness、harness 直连各模块"，系我方误读、非用户决策；用户澄清后即时更正，
+防止错误方向误导后续重构。
+**取舍**：不改「晚 2」历史条目（沿用当日"追加修正、不改旧记录"惯例）；
+代码零改动——本轮拆的本来就只有 schemas 侧，与澄清后的口径一致，无返工。
+**影响面**：AGENTS.md 第十二节方向段；后续无"tool 层本体拆除"这一重构项。
+
+## 2026-09-09（晚 3）—— AGENTS.md 第十二节删去「转发/产物不造信封」条款
+
+**改了什么**：第十二节原第 3 条整条删除（含判据句），原 4/5 条顺位上移。
+**为什么这么改**：用户判定删除。删后转发与产物场景自然落在规则 2 的裸名原则
+与规则 1 的信封定义之下，该条独立成条不新增约束力，只留下"何时算转发"的
+解释空间。
+**取舍**：仅删规范文本，代码不动（`void_memory_after` 裸参、`PerceiveOnceResp`
+裸名均为既成事实，行为不受影响）。
+**影响面**：AGENTS.md 第十二节 5 条 → 4 条。
+
+## 2026-09-09（晚 2）—— 拆第二跳信封：模块接口回归裸名/实体；tool 层定方向
+
+**改了什么**：
+- **架构方向定稿（用户拍板）**：tool 层将拆除，harness 直接调 brain / memory /
+  trace / world；tool 现有代码是过渡态。理由：brain/memory/trace 未来都可能接
+  第三方，Tool 层是防腐层——第一跳（我方契约）信封永生，第二跳（模块实现侧）
+  信封是赌一个注定被换掉的接口。
+- **`FromBrainToolToBrain*` ×11 拆除**：改名为裸名接口模型
+  （`ChooseOnceReq/Resp`、`JudgeReq/Resp`、`PlanOnceReq/Resp`、`ReflectReq/Resp`、
+  `VerifyAndSummarizeReq/Resp`）并归 `schemas/brain/communication/`——与 providers
+  的 `LlmCompleteReq` 同规则。`schemas/brain_tool/` 包删除。
+- **`FromGameToolToWorldPerceiveOnceResp` → `PerceiveOnceResp`**，归
+  `schemas/world/`（它本就是 World 的接口模型，observe+calls 结构有 0903
+  设计决策，不拆字段）。`schemas/game_tool/` 包删除。
+- **`FromCheckpointToolToMemoryTool*` ×2 删除**，`void_memory_after` 回退裸参
+  `（episode_id, step) -> dict`（转发型边界不造信封）。`schemas/checkpoint/` 包删除。
+- **改名**：`RunPlanResp`→`RunPlan`、`EpisodeSummaryResp`→`EpisodeSummary`
+  （Resp 是信封命名空间，domain 实体不占用）。
+- **`screen_model.py` 删除后恢复**：先按"孤儿"删除，随即发现判定搜错了标识符
+  （真实导出是 Scene/Overlay/terrain_legend 等，被 prompts/game_tools/world 三处
+  消费），从 git index 恢复。**结论改为：保留，非孤儿。**
+- **AGENTS.md 新增第十二节**：信封与接口模型命名规则（信封=我方模块间契约、
+  文件放 A；模块接口模型裸名；转发/产物不造信封；豁免登记；domain 产出方归属）。
+
+**为什么这么改**：tool 层将被拆除，第二跳信封（`From[Tool]To[模块]`）是赌
+"tool 永远存在"的接口投资；清掉它们后，将来拆 tool 层时 schema 侧零阻力，
+brain/world 的对外接口就是第三方可直接替换的形态。
+
+**取舍**：tool 层本体（tools/ 五个 Tool、harness 对它们的调用）本轮未动——
+拆除是独立的大重构，等 schema 面清干净后单独一轮；`FromHarnessToBrainTool*`
+等第一跳信封保留现名，随 tool 层拆除时再改名（`FromHarnessToBrain*`）。
+memory→world 的两条 domain 依赖（step_memory 嵌观测、object_memory 嵌地点）
+维持为记录在案的例外。
+
+**影响面**：schemas 包 10→7（删 brain_tool/game_tool/checkpoint），导出
+90→91；约 25 个文件 import/类名更新；brain_port/brain_tool_port/game_tool_port/
+world_port/memory_tool_port 签名同步。全部验证通过（compileall 0 错、393 个
+schema import 名 AST 解析 0 失败、ruff F821/F401/I001 清零）。**未提交**。
+
+## 2026-09-09（晚）—— 修正跨包依赖描述：类型层存在 brain↔world 双向，"world 是叶子"失实
+
+**改了什么**：仅文档，零代码改动。本日早前两条目中"DAG：`harness → brain → memory → world`，
+trace/providers/world 是叶子"的表述已加修正标注；本条给出修正后的依赖图，以此为准。
+
+**为什么这么改**：对 domain 实体做消费方反向扫描（谁 import 了 domain），发现
+`world/pyboy_world.py:28` imports `schemas.brain`（`ActionFromBrain, TaskForBrain`——
+`reset/set_task/step` 签名需要），world 不是叶子；`brain/brain.py:68-70` 同引
+`schemas.memory` 与 `schemas.world`；`memory/datastore` 嵌 `schemas.world` 实体。
+真实包级图：`harness → {brain, brain_tool 两跳, checkpoint_tool, memory_tool, game_tool,
+trace_tool, reviewer}`；`brain → memory → world → brain` 构成**类型层三环**。
+成因：产出方归属规则下每个实体的放置都合规——brain 产 `ActionFromBrain`（world 消费）、
+world 产 `ObservationFromWorld`（brain 消费）——环来自两个模块互为对方的产消方，
+是规则的固有张力，不是放错文件。
+
+**取舍**：不改代码。运行时无风险：三包互引的都是零依赖叶子实体，Python import 正常解析
+（compileall 0 错、全仓 AST import 校验通过）；运行时 brain 与 world 从不直接对话
+（harness 持有两边），环只存在于类型层。若未来造成实际问题，备选方案：①跨界实体
+（ActionFromBrain 的执行视图 / ObservationFromWorld）下沉共享底层；②`WorldPort.execute`
+改收 world 自有的最小执行视图，在 BrainTool/harness 做翻译。
+
+**影响面**：schemas 跨包依赖的权威描述以本条为准；`screen_model`（world/domain）确认为
+无消费方孤儿，处置待定。
+## 2026-09-09（晚）—— communication 信封按"文件放 A 处 + 请求方视角"整编，补齐 req 信封
+
+**改了什么**：
+- **搬家 24 个信封文件**（不改名）：`FromHarnessToBrainTool*`×10 `brain/`→`harness/`；
+  `FromBrainToolToBrain*`×9 `brain/`→新建 `schemas/brain_tool/`（BrainTool 独立模块）；
+  `FromHarnessToCheckpointToolSaveReq` `checkpoint/`→`harness/`；
+  `FromHarnessToMemoryToolQueryKnowledge*`×2 `memory/`→`harness/`；
+  `FromFrontendToRunHarnessSubmitEditReq` `harness/`→新建 `schemas/frontend/`（Frontend=api.py）；
+  `FromGameToolToWorldPerceiveOnceResp` `world/`→新建 `schemas/game_tool/`。
+- **改名 6 个**（resp 统一请求方视角，与 req 同 From/To 前缀）：
+  `EpisodeHarnessOutcomeResp`→`FromRunHarnessToEpisodeHarnessRunResp`；
+  `RunHarnessOutcomeResp`→`FromFrontendToRunHarnessRunResp`；
+  `FromCheckpointToolToHarnessRestoreResp`→`FromHarnessToCheckpointToolLoadResp`；
+  `FromCheckpointToolToHarnessVoidReport`→`FromHarnessToCheckpointToolVoidResp`。
+  **位置例外**：`FromFrontendToRunHarnessRunResp` 文件留 `harness/`——它嵌套同包的
+  Episode 级 Resp，若按 A 处放 `frontend/` 会造成 `harness→frontend→harness` schema 包循环。
+- **providers 层豁免 From/To 标注**（用户裁定：最底层共用层）：`LlmCompleteReq/Resp`、
+  `VisionDescribeReq/Resp` 保持裸名留 `schemas/providers/`。
+- **新增 11 个信封补齐裸参交互**：`FromHarnessToCheckpointToolLoadReq/VoidReq`、
+  `FromRunHarnessToEpisodeHarnessRunReq`、`FromFrontendToRunHarnessRunReq`、
+  `FromHarnessToTraceToolReadDiskEventsReq/Resp`、`FromFrontendToGameToolLatestFrameReq/Resp`、
+  `FromCheckpointToolToMemoryToolVoidMemoryAfterReq/Resp`（tool-to-tool 边首次信封化）、
+  `FromBrainToolToBrainReflectResp`（Brain.reflect 从裸 `StepMemory` 改返回信封）。
+- **接线**：`CheckpointTool.load/void_after`、`MemoryTool.void_memory_after`（并补进
+  `MemoryToolPort`——原先 port 漏声明该方法）、`TraceTool.read_disk_events`、
+  `GameTools.latest_frame`、`LLMProvider.complete`（原裸 `prompt: str`）、
+  `RunHarness.run`、`EpisodeHarness.run`（port 原缺 `run_state` 参数，req 化顺带对齐）；
+  调用方 `run_harness/episode_harness/api.py/brain.py/brain_tool.py/checkpoint_tool.py`
+  与 `experiment/` 三个 real_check/run 脚本同步。
+
+**为什么这么改**：信封住 B 侧导致"发起方在代码里查不到自己的请求长什么样"；
+resp 双视角（checkpoint 用响应方、brain/game 用请求方）让同一交互 req/resp 名字对不上；
+裸参交互没有信封就没有契约载体。统一"请求方视角 + 文件放 A 处"后，一个交互一个名字、
+查一个函数的信封两边一起命中。
+
+**取舍**：MemoryTool 其余 9 方法、GameTools 7 方法、GameTools→World 的 9 个方法、
+`EpisodeHarness.resume` 仍裸参——信封化是 Port 签名的整体改动，留第二阶段单独一轮；
+RunDataCenter 直读（events/决策槽）维持豁免（共享状态观察面，不是 RPC 语义）；
+`TraceTool`→`TracePort` 与 World 帧管道内部保持原样。providers 层豁免标注是本次会话
+新裁定，若未来出现第二个 `complete()` 调用方再重新评估。
+
+**影响面**：schemas 七个包 `__init__` 导出重排（总导出 81→90）；约 20 个文件 import 更新；
+全部验证通过（compileall 0 错、全仓 408 个 schema import 名字 AST 解析 0 失败、
+ruff F821/F401/I001 清零、新引入 E501 清零）。**未提交**——工作区含 0909 会话未提交改动，
+按用户要求不做任何 commit。
+
+## 2026-09-09 —— communication 统一 From-To 命名、非信封类型下沉 domain；命名规则补一条“共用端口不填 From”
+
+**改了什么**：
+- **`communication/` 只留一次调用的信封，命名统一到 `From{调用方}To{被调方}{方法}{Req|Resp}`**
+  （文件名 = 类名）。8 个 snake 命名的文件按真实调用重命名，其中两个各拆成一对：
+  `human_review.py`→`FromHarnessToReviewerReviewReq/Resp.py`（原 Resp 叫 `FromFrontend`，
+  但实现有三个：api 前端、`AutoContinueReviewer`、`DataCenterReviewer`，统称 Reviewer 才准）；
+  `goals_edit.py`→`FromFrontendToRunHarnessSubmitEditReq.py`；
+  `vision_completion.py`→`VisionDescribeReq/Resp.py`；`text_completion.py`→`LlmCompleteResp.py`；
+  `run_outcome.py`→`RunHarnessOutcomeResp.py`；`harness_episode_outcome.py`→`EpisodeHarnessOutcomeResp.py`。
+- **不是信封的类型下沉到各自 `domain/`（snake 命名）**：`RunPlanResp`（+内嵌的 `PlanGoal`）与
+  `StepVerifyVerdict`→`brain/domain/`，`HumanDecision`→`harness/domain/human_decision.py`，
+  `TraceKind`→`trace/domain/trace_kind.py`。`trace/communication/` 随之消失。
+- `PlanGoal` 从顶层类改成 `RunPlanResp` 的**内部类**（`RunPlanResp.PlanGoal`），
+  唯一消费点 `run_plan_utils.to_tasks()` 的签名跟着改。
+- `FromBrainToLlmEpisodeSummaryResp`→`brain/domain/episode_summary.py::EpisodeSummaryResp`：
+  它跟 `RunPlanResp`/`StepVerifyVerdict` 同类——都是 `Brain` 从模型输出解析出的产物
+  （`brain.py` 内构造，再经 `_create_episode_memory` 适配成 `EpisodeMemory`），不是一次调用的
+  载体。**有 Resp 没 Req 就是"不是信封"的信号**（它自己的 docstring 早写着"不存在单独的
+  蒸馏请求协议"）。上一轮下沉另外两个时漏了它。
+
+**为什么这么改**：
+
+1. **`communication/` 的语义是“一次调用的消息载体”**，而 `TraceKind`/`HumanDecision`/
+   `StepVerifyVerdict`/`RunPlanResp` 是**别的信封的字段类型**，不是载体本身——放在
+   communication 下，From-To 规则对它们永远不成立。下沉到 domain 后 communication 零例外。
+2. **原命名把方向信息藏在后缀里**（`HumanReviewReqFromHarness`）或干脆没有
+   （`run_outcome.py`），跟同目录 20 个 `From…To…` 文件两套约定并存；按产出方拆包后
+   同一目录里两种大小写并排，读起来像混乱而不是规则。
+3. **命名规则补两条边界**（原规则只覆盖“调用方唯一、方法唯一”的情形）：
+   - **共用端口不填 From**：`VisionProvider.describe()` 有两个正当调用方——
+     `PyBoyWorld.perceive_once()`（感知当前屏幕）与 `Brain._ask()`（判定/校验时带图问，
+     images 为空则降级走 `complete()`）。硬填一个 `From{A}` 就是撒谎，也不该因为两个调用方
+     就把同一份契约拆成两个类。故记作 `VisionDescribeReq/Resp`。
+   - **一个模块对外的统一返回形状不填 From 和方法名**：`RunHarnessOutcomeResp` 同时是
+     `run()` 与 `resume_run()` 的返回值，`EpisodeHarnessOutcomeResp` 是三个方法的返回值，
+     写死任一方法名都会误导；`LlmCompleteResp` 由通用 provider 构造，它不该知道调用方是谁。
+   - 由此规则读法是：**带 From-To = 一次特定调用（调用方与方法都唯一）；只写被调方 + 形状 =
+     被多方或多方法共用**。大小写不变，名字也短很多。
+
+**取舍**：
+- `PlanGoal` 内部类化的代价是签名变长（`list[RunPlanResp.PlanGoal]`），换来 communication
+  与 domain 都不必为一个只在单处使用的嵌套模型开文件。`HumanDecision`/`TraceKind`/
+  `StepVerifyVerdict` 没这么处理——它们分别被 4 / 8 / 3 个文件独立使用，内部类化会让
+  `TraceKind.MODEL_CALL` 变成 `FromHarnessToTraceToolAppendReq.TraceKind.MODEL_CALL`。
+- `ruff` 的 `select` **故意不加 `N`（pep8-naming）**：communication 下的 PascalCase 文件名是
+  本项目刻意的约定（文件名 = 信封类名），加了 N 会把这 32 个文件全报成 N999。
+
+**影响文件**：`pokemon_agent/schemas/` 下 12 个文件改名 / 移位 / 拆分 + 2 个新建
+（`harness/domain/human_decision.py`、`trace/domain/trace_kind.py`）；8 个类改名波及
+`pokemon_agent/`、`evaluation/` 共 33 个文件；`run_plan_utils.py` 签名改动。无运行时行为变更。
+
+**已知遗留**：
+- **`checkpoint/` 两个文件的方向词与其余包相反，本轮未动（用户明确暂缓）**：
+  `brain`/`memory`/`world` 的 Req 与 Resp 共用**调用方向**前缀
+  （`FromHarnessToBrainToolChooseOnceReq` 与 `…Resp`），而
+  `FromCheckpointToolToHarnessRestoreResp`/`…VoidReport` 用的是**数据回流方向**——
+  `load()`/`void_after()` 实际都是 harness 调 checkpoint_tool（`episode_harness.py:244`）。
+  按主流约定应为 `FromHarnessToCheckpointToolLoadResp`/`…VoidAfterResp`；另外
+  `VoidReport` 缺 `Req|Resp` 后缀，`RestoreResp` 的方法名与端口方法 `load()` 对不上。
+- `FromHarnessToTraceToolAppendReq` 住在 `harness/` 而非按被调方该去的 `trace/`——
+  这是上一条（解 `trace → brain` 环）刻意付的代价，不是疏漏。
+- `docs/spec/` 与 `CLAUDE.md` 仍写着旧类名与旧目录树，按约定 spec 待用户确认后再改。
+- `RunPlanResp`/`EpisodeSummaryResp` 现居 domain 却仍带 `Resp` 后缀，是否去掉未定。
+- 测试未跑（本机装不上 pyboy/langgraph/agent_permission）。
+
+**验证**：七个出口在 Python 3.11 下全部可导入、81 个对外名字无缺失；全仓库 162 处 schema
+import 逐个对账，问题 0；跨包依赖图仍为 DAG（`harness → brain → memory → world`，
+trace/providers/world/checkpoint 为叶子）【0909 晚修正：此表述失实——world 引
+schemas.brain 不是叶子，真实图见本日末条目】；`ruff check` 总问题 57→39，剩余全部为改动前
+既有类别。
+
+## 2026-09-09 —— schemas 归类方向翻转：先按产出模块、最底层再按种类；七个产出模块各自一个统一出口
+
+**改了什么**：
+- `schemas/`从`domain`/`datastore`/`communication`三个种类目录，改成七个**产出模块**
+  包——`brain`/`world`/`memory`/`trace`/`checkpoint`/`providers`/`harness`，每包内部
+  再按`communication`/`domain`/`datastore`分子目录。50 个 schema 文件全部按产出方归位。
+- 出口从三个种类出口改成**每个产出模块一个出口**（`schemas/<模块>/__init__.py`），
+  `schemas/__init__.py`**不做根出口、不 re-export 任何名字**，只写目录导览。消费方写
+  `from pokemon_agent.schemas.brain import X`。全仓库 86 个文件的 schema import 已改写。
+- 旧`domain/__init__.py`与`datastore/__init__.py`里内联定义的约 200 行实体全部拆进实体
+  文件：`Scene`/`Overlay`/`OVERLAY_ACTIONS`/`TERRAIN_MEANING`/格子常量→新增
+  `world/domain/screen_model.py`；`BUTTON_FACING`/`FACING_STEP`/`INTERACT_KEY`→新增
+  `world/domain/action_semantics.py`；`KIND_*`→`world/domain/place_in_world.py`；
+  `MAX_RATIONALE`/`MAX_TIMES`→`brain/domain/action_from_brain.py`；
+  `TRACE_SCHEMA_VERSION`/`Source`/`EventType`→`trace/datastore/trace_event.py`。
+- `TaskForHarness`改名`TaskForBrain`（文件`task_for_harness.py`→`task_for_brain.py`），
+  与`GoalForBrain`一起从 harness 归到`brain/domain/`；`FromHarnessToTraceToolAppendReq`
+  从 trace 归到`harness/communication/`。
+
+**为什么这么改**：
+
+1. **归类方向反了**：先按种类切成一棵全局大树，从目录看不出一个结构是谁造出来的，改一个
+   模块要满树找它的 schema。产出方信息本来全在文件名的方位词里（`From{A}To{B}`），目录却
+   没体现。第一级改成产出模块后，`communication/`里那 37 个平铺文件按协作者分开了。
+2. **根出口抹掉了架构信号**：分模块出口让每个文件的 import 块直接写出"我跟哪几个协作者的
+   契约打交道"——`episode_harness.py`一眼看得出它碰了六个协作者的契约，这本身是它太厚的
+   证据。根出口把这个信号抹平，且会长成 60 个名字的巨型文件。同时避免同一个名字有两条
+   import 路径。
+3. **扁平结构藏住了一个真实的循环依赖**：拆包后立刻暴露出
+   `brain → harness → trace → brain`的环（`FromHarnessToTraceToolAppendReq`要
+   `ActionFromBrain`，`human_review`要`TraceEvent`，大脑的 Req 要`GoalForBrain`/
+   `TaskForHarness`）。按产出方把 append 信封归 harness、把两个实体归 brain 之后，
+   依赖图收敛成 DAG：`harness → brain → memory → world`，trace/providers/world 是叶子。
+   【0909 晚修正：当时按 import 对账未覆盖 world→brain 这条边；真实图见本日末条目】
+   在同一个`communication/`包里，这个环永远不会被发现。
+4. **出口文件不该承载定义**：旧的两个出口同时是出口又是实现，`trace_event.py`只好写
+   `from . import Source`——实现文件反过来 import 自己的出口。拆开后这类反向依赖消失。
+
+**取舍**：
+- `ModelCall`按**语义归属**放`providers/domain/`，而不是按构造方（它被 brain、harness、
+  game_utils 三处构造）。理由是"一次模型调用的账"跟文本/视觉补全信封是同一件事，放一起
+  `providers/`就是"一切跟调模型有关的契约"。
+- 三类记忆形状（`StepMemory`/`EpisodeMemory`/对象事件）按**存储方**归`memory/datastore/`，
+  而不是按构造方（brain 的 reflect/summarize 产出它们）。否则 memory 包下一个 schema 都
+  没有，全在 brain 下——持久化结构的产出地读作"谁拥有这个形状"更自洽。
+- `TaskForBrain`改名的代价：它同时被 harness（`RunHarness.run(task)`）和 world
+  （`GameToolPort.reset(task)`）消费，在那两处签名里"ForBrain"读起来别扭。接受，理由是
+  目录归属优先——它是大脑`PlanOnceReq`的字段，名字跟着产出地走。
+
+**影响文件**：`pokemon_agent/schemas/`全树重排（50 个文件搬运 + 7 个新出口 + 2 个新实体
+文件）；`pokemon_agent/`与`evaluation/`共 127 个文件的 import 改写；全仓库`TaskForHarness`
+标识符改名。无运行时行为变更——纯目录与 import 路径重排。
+
+**已知遗留**：`docs/spec/`（尤其`schemas/SPEC.md`、`DATAFLOW.md`）与`CLAUDE.md`第四节的
+目录树还写着旧的三种类结构，按项目约定 spec 改动要先问，本次未动。测试未跑（本机装不上
+pyboy/langgraph/agent_permission）。
+
+**验证**：七个出口在 Python 3.11 下全部可导入、82 个对外名字无缺失；全仓库 162 处 schema
+import 逐个对账到出口，问题 0；跨包依赖图复检为 DAG、无环；`ruff check`总问题数从改动前
+的 57 降到 40（E501 30→16、I001 3→0），剩余项全部是改动前就有的类别；全项目`ast.parse`
+语法检查通过。
+
 ## 2026-09-09 —— checkpoint 根目录搬出 trace_data；screenshot 从全局目录搬进 trace_data/<run_id>/
 
 **改了什么**：
