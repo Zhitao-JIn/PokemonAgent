@@ -2,22 +2,21 @@
 name = "pokemon-agent"
 version = "0.1.0"
 description = "Harness-driven Pokemon agent — prototype"
-# 3.11 而不是 3.10：agent-permission 用了 3.11 才有的 `enum.StrEnum`。
+# 3.11：`enum.StrEnum`（schemas/trace/domain/trace_kind.py 等）需要。
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6",
     "langgraph>=0.2",
     "fastembed>=0.8",
     "rank-bm25>=0.2",
-    "agent-permission @ git+https://github.com/Zhitao-JIn/AgentPermission.git",
 ]
 # fastembed：本地跑 embedding/reranker（ONNX runtime，不需要 torch），首次用某个模型时
 # 会从 HuggingFace Hub 下一次权重、之后离线复用——这是"混合检索"（关键词 BM25 +
 # 向量 + reranker 精排）里向量和精排两段用的库，见 memory/retrieval.py。
 # rank-bm25：纯 Python 的 BM25 实现，混合检索里关键词那一段用它，不用再手写一遍。
-# agent-permission：工具/大脑调用上的权限切面（@require_permission）。**之前一直没写进
-# 依赖**，靠开发机上装过才跑得起来——干净环境 clone 下来 import 就炸。它还要求启动目录下
-# 存在 config/context.json 与 config/permissions.json，见 harness/harness.py 的 @initialize。
+# agent-permission（工具/大脑调用上的权限切面）已整体移除接入——见 CHANGELOG.md
+# 2026-09-10 相关条目；不再是依赖，也不再需要 config/context.json、
+# config/permissions.json。
 
 [project.optional-dependencies]
 dev = [
@@ -35,11 +34,11 @@ api = [
 
 # **必须显式声明包范围**——不加这一段，setuptools 的 flat-layout 自动发现
 # 会把仓库根目录下所有"看起来像包"的目录都当成候选（`log`/`web`/`assets`/
-# `config`/`evaluation`/`trace_data` 全部命中），报 "Multiple top-level
-# packages discovered" 直接拒绝构建。`pip install -e .` 在这次改动之前就没有
-# 真的跑通过（那也是为什么 `evaluation/` 这类新目录一冒出来就把这个坑炸开了）。
+# `trace_data` 全部命中），报 "Multiple top-level
+# packages discovered" 直接拒绝构建。`pip install -e .` 曾经就没有
+# 真的跑通过（那也是为什么前些年的独立子目录一冒出来就把这个坑炸开了）。
 # 只声明 `pokemon_agent`：这是唯一要被安装、被其他项目 import 的分发内容；
-# `evaluation/`、`tests/` 不装包，靠 `[tool.pytest.ini_options]` 的
+# `tests/` 不装包，靠 `[tool.pytest.ini_options]` 的
 # `pythonpath = ["."]` 直接跑，不需要被 setuptools 发现。
 [tool.setuptools.packages.find]
 include = ["pokemon_agent*"]
@@ -55,13 +54,10 @@ ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN"]
-"evaluation/tests/*" = ["ANN"]
 
 [tool.pytest.ini_options]
-# `tests/`：pokemon_agent 包各模块的测试。`evaluation/tests/`：测评子系统
-# 自己的测试（不依赖 pokemon_agent，见 evaluation/SPEC.md 目录约定一节）——
-# 两个子系统平行，测试目录也平行，不混进同一棵 tests/ 树。
-testpaths = ["tests", "evaluation/tests"]
+# `tests/`：pokemon_agent 包各模块的测试。
+testpaths = ["tests"]
 addopts = "-q"
-# 包没 pip install 进环境，把项目根塞进 sys.path，测试里才能 import pokemon_agent / evaluation。
+# 包没 pip install 进环境，把项目根塞进 sys.path，测试里才能 import pokemon_agent。
 pythonpath = ["."]

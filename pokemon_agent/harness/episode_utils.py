@@ -6,8 +6,6 @@
 `MemoryToolPort`）是同一层拆分：那三个文件各自只碰一根依赖会用到的重试
 循环与记账，这里放的是不需要碰任何依赖、纯粹算状态的函数。
 
-跨 episode 的权限降级判据（`permission_was_denied`）住在这里——它的唯一
-消费者是 `EpisodeHarness` 的节点（权限拒绝时降级记账，不是真错误）；
 跨 episode/run 两层图的 `tag_attempt` 在 `tag_attempt.py`（消费者跨两层，
 放任何一层都会让另一层反向依赖）。
 
@@ -17,27 +15,8 @@ run 级图对应的工具函数在 `run_utils.py`/`run_plan_utils.py`，两层�
 
 from __future__ import annotations
 
-from agent_permission import (
-    ApprovalExpired,
-    ApprovalRejected,
-    ApprovalRequired,
-    PermissionDenied,
-)
-
-from pokemon_agent.schemas.domain import ActionFromBrain, ObservationFromWorld
-
-PERMISSION_ERRORS = (
-    PermissionDenied,
-    ApprovalRequired,
-    ApprovalRejected,
-    ApprovalExpired,
-)
-"""agent_permission 的四类权限/审批失败——权限拒绝时降级记账，不是真错误。"""
-
-
-def permission_was_denied(exc: Exception) -> bool:
-    """识别 agent_permission 的权限/审批失败（见 `PERMISSION_ERRORS`）。"""
-    return isinstance(exc, PERMISSION_ERRORS)
+from pokemon_agent.schemas.brain import ActionFromBrain
+from pokemon_agent.schemas.world import ObservationFromWorld
 
 
 def derive_episode_reason(success: bool, step: int, max_steps: int, *, stalled: bool) -> str:

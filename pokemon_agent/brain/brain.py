@@ -33,7 +33,6 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 
-from agent_permission import require_permission
 from pydantic import ValidationError
 
 from pokemon_agent.errors import (
@@ -44,32 +43,28 @@ from pokemon_agent.errors import (
     PlanAttemptFailed,
 )
 from pokemon_agent.interfaces import JudgeProvider, LLMProvider
-from pokemon_agent.schemas.communication import (
-    FromBrainToLlmEpisodeSummaryResp,
-    FromBrainToolToBrainChooseOnceReq,
-    FromBrainToolToBrainChooseOnceResp,
-    FromBrainToolToBrainJudgeReq,
-    FromBrainToolToBrainJudgeResp,
-    FromBrainToolToBrainPlanOnceReq,
-    FromBrainToolToBrainPlanOnceResp,
-    FromBrainToolToBrainReflectReq,
-    FromBrainToolToBrainVerifyAndSummarizeReq,
-    FromBrainToolToBrainVerifyAndSummarizeResp,
-    RunPlanResp,
-    StepVerifyVerdict,
-    VisionCompletionReq,
-)
-from pokemon_agent.schemas.datastore import SNAPSHOT_BLIND, EpisodeMemory, StepMemory
-from pokemon_agent.schemas.domain import (
-    INTERACT_KEY,
+from pokemon_agent.schemas.brain import (
     MAX_RATIONALE,
     MAX_TIMES,
     ActionFromBrain,
     ActionSegmentFromBrain,
-    ActionSpaceForBrain,
-    ModelCall,
-    ObservationFromWorld,
+    ChooseOnceReq,
+    ChooseOnceResp,
+    EpisodeSummary,
+    JudgeReq,
+    JudgeResp,
+    PlanOnceReq,
+    PlanOnceResp,
+    ReflectReq,
+    ReflectResp,
+    RunPlan,
+    StepVerifyVerdict,
+    VerifyAndSummarizeReq,
+    VerifyAndSummarizeResp,
 )
+from pokemon_agent.schemas.memory import SNAPSHOT_BLIND, EpisodeMemory, StepMemory
+from pokemon_agent.schemas.providers import LlmCompleteReq, ModelCall, VisionDescribeReq
+from pokemon_agent.schemas.world import INTERACT_KEY, ActionSpaceForBrain, ObservationFromWorld
 
 DIRECTION_KEYS = frozenset({"up", "down", "left", "right"})
 
@@ -93,11 +88,11 @@ def _create_episode_memory(
     goal: str,
     success: bool,
     steps: int,
-    resp: FromBrainToLlmEpisodeSummaryResp,
+    resp: EpisodeSummary,
 ) -> EpisodeMemory:
-    """把 LLM 蒸馏出的 `FromBrainToLlmEpisodeSummaryResp` 和这一局的元信息组装成一条 `EpisodeMemory`。
+    """把 LLM 蒸馏出的 `EpisodeSummary` 和这一局的元信息组装成一条 `EpisodeMemory`。
 
-    这是通信层（`FromBrainToLlmEpisodeSummaryResp`）到存储层（`EpisodeMemory`）的**显式适配点**：
+    这是通信层（`EpisodeSummary`）到存储层（`EpisodeMemory`）的**显式适配点**：
     两边的经验本体字段同构、但各自独立定义，这里做字段搬运。蒸馏器原来住在
     memory 层（ROADMAP 16：memory 只做读写，不承担组装），上移到 brain——
     蒸馏和它的产物组装是同一个产出动作的两半。
@@ -175,8 +170,9 @@ class Brain:
 
     # ---- 决策 ----
 
-    @require_permission("execute:llm:decision")
-    def choose_once(self, req: FromBrainToolToBrainChooseOnceReq) -> FromBrainToolToBrainChooseOnceResp:
+    def choose_once(
+        self, req: ChooseOnceReq
+    ) -> ChooseOnceResp:
         """一次决策尝试：问一次模型、解析。**不重试**——重试是 Harness 的循环。
 
         **只有一个输入参数**：`req.prompt` 由调用方经
@@ -184,7 +180,7 @@ class Brain:
         再叠 `retry_prompt()`，回填进同一个 req 的 `prompt` 字段）——`Brain`
         只管拿 `req.prompt` 问模型，不知道、也不需要知道它是怎么拼出来的；
         `req.space` 用来校验解析出的动作。
-        后置条件：成功时返回的 `FromBrainToolToBrainChooseOnceResp.action` 属于 `req.space`，
+        后置条件：成功时返回的 `ChooseOnceResp.action` 属于 `req.space`，
         `calls` 恰好这一次尝试的一条账（多次尝试的累积由 Harness 那层的
         `episode_utils.choose_with_retry` 做），`recalled` 是 `req.memories`
         投影成的 `(episode_id, step)` 列表——**全部产物**打包一起交回去，
@@ -194,12 +190,12 @@ class Brain:
         交给了 Harness。
 
         步骤 1：调模型。
-        步骤 2：解析，失败就把账封进异常抛出去；成功就打包成 `FromBrainToolToBrainChooseOnceResp` 交回去。
+        步骤 2：解析，失败就把账封进异常抛出去；成功就打包成 `ChooseOnceResp` 交回去。
         """
         space = req.space
 
         # 步骤 1：调模型。
-        completion = self._decide.complete(req.prompt)
+        completion = self._decide.complete(LlmCompleteReq(prompt=req.prompt))
 
         # 步骤 2：解析。
         parsed: ActionFromBrain | None = None
@@ -242,12 +238,11 @@ class Brain:
             f"brain chose key outside {space.names}"
         )
         recalled = [f"({m.episode_id}, {m.step})" for m in req.memories]
-        return FromBrainToolToBrainChooseOnceResp(action=parsed, calls=[call], recalled=recalled)
+        return ChooseOnceResp(action=parsed, calls=[call], recalled=recalled)
 
     # ---- 规划（run 级）----
 
-    @require_permission("execute:llm:plan")
-    def plan_once(self, req: FromBrainToolToBrainPlanOnceReq) -> FromBrainToolToBrainPlanOnceResp:
+    def plan_once(self, req: PlanOnceReq) -> PlanOnceResp:
         """一次 run 级规划尝试：问一次模型、解析。**不重试**——重试是 Harness
         的循环，跟 `choose_once()` 同一个分工（见 `docs/ROADMAP.md` "重试循环
         该不该从 brain 挪到 harness"）。
@@ -260,13 +255,13 @@ class Brain:
         这类方法。
 
         步骤 1：调模型（`plan_llm`，纯文本，不带图）。
-        步骤 2：解析，失败就把账封进异常抛出去；成功就打包成 `FromBrainToolToBrainPlanOnceResp` 交回去。
+        步骤 2：解析，失败就把账封进异常抛出去；成功就打包成 `PlanOnceResp` 交回去。
         """
         # 步骤 1：调模型。
-        completion = self._plan_llm.complete(req.prompt)
+        completion = self._plan_llm.complete(LlmCompleteReq(prompt=req.prompt))
 
         # 步骤 2：解析。
-        parsed: RunPlanResp | None = None
+        parsed: RunPlan | None = None
         kind = reason = ""
         try:
             parsed = self._parse_plan(completion.text)
@@ -290,13 +285,12 @@ class Brain:
         if parsed is None:
             raise PlanAttemptFailed(call)
 
-        return FromBrainToolToBrainPlanOnceResp(plan=parsed, calls=[call])
+        return PlanOnceResp(plan=parsed, calls=[call])
 
     # ---- 判定 ----
 
-    @require_permission("execute:llm:judge")
-    def judge(self, req: FromBrainToolToBrainJudgeReq) -> FromBrainToolToBrainJudgeResp:
-        """判断这个目标达成了没有。**永远返回 FromBrainToolToBrainJudgeResp，不抛异常。**
+    def judge(self, req: JudgeReq) -> JudgeResp:
+        """判断这个目标达成了没有。**永远返回 JudgeResp，不抛异常。**
 
         判不出来就是"没达成"加一条失败记录——判定器坏掉时表现是成功率悄悄变 0，
         必须能在失败模式分布里看见它。
@@ -315,7 +309,7 @@ class Brain:
             # 这里捕的是**预期外异常（含 bug）**——取舍是：判定器不值得为一局的
             # 成败把内部 bug 暴露出来，代价是 judge 里的 bug 会静默（表现为
             # 成功率悄悄变 0，且 trace 的 judge_call 带 `why=判定调用失败：Xxx`）。
-            return FromBrainToolToBrainJudgeResp(
+            return JudgeResp(
                 done=False,
                 why=f"判定调用失败：{type(exc).__name__}",
                 call=ModelCall(
@@ -333,7 +327,7 @@ class Brain:
             )
 
         done, why, kind = self._parse_verdict(text)
-        return FromBrainToolToBrainJudgeResp(
+        return JudgeResp(
             done=done,
             why=why,
             call=ModelCall(
@@ -365,14 +359,14 @@ class Brain:
         文件名，或者文件确实不在磁盘上）不该让整条判定链路直接失败，降级成
         纯文本判定总比抛异常/硬编一个失败结果强。
 
-        两种 provider 返回的字段名不一样（`TextCompletionResp.prompt_tokens`/
-        `completion_tokens` vs `VisionCompletionResp.input_tokens`/
+        两种 provider 返回的字段名不一样（`LlmCompleteResp.prompt_tokens`/
+        `completion_tokens` vs `VisionDescribeResp.input_tokens`/
         `output_tokens`，`cached_tokens` 字段名倒是两边一致）——这里统一抹平成
         `(text, 输入 token, 输出 token, 命中缓存 token, 思考 token)` 五元组，
         `judge()`/`verify_and_summarize()` 都不用关心这次走的是哪条路。
         """
         if images:
-            resp = provider.describe(VisionCompletionReq(images=list(images), prompt=prompt))
+            resp = provider.describe(VisionDescribeReq(images=list(images), prompt=prompt))
             return (
                 resp.text,
                 resp.input_tokens,
@@ -380,7 +374,7 @@ class Brain:
                 resp.cached_tokens,
                 resp.reasoning_tokens,
             )
-        completion = provider.complete(prompt)
+        completion = provider.complete(LlmCompleteReq(prompt=prompt))
         return (
             completion.text,
             completion.prompt_tokens,
@@ -406,10 +400,11 @@ class Brain:
 
     # ---- step 记忆校验 + 蒸馏（独立判定器，一次调用问完两件事） ----
 
-    @require_permission("execute:llm:verify")
-    def verify_and_summarize(self, req: FromBrainToolToBrainVerifyAndSummarizeReq) -> FromBrainToolToBrainVerifyAndSummarizeResp:
+    def verify_and_summarize(
+        self, req: VerifyAndSummarizeReq
+    ) -> VerifyAndSummarizeResp:
         """校验本局 step 记忆哪些可信，只用可信的那些蒸馏成一条跨局摘要。
-        **永远返回 FromBrainToolToBrainVerifyAndSummarizeResp，不抛异常。**
+        **永远返回 VerifyAndSummarizeResp，不抛异常。**
 
         校验与蒸馏合在**一次调用**（取舍：省一次模型往返，代价是校验与摘要
         同生共死——合并的完整论证见 `docs/ROADMAP.md`"verify_steps 与
@@ -436,7 +431,7 @@ class Brain:
                 self._verify_llm, req.prompt, req.images
             )
         except Exception as exc:  # noqa: BLE001  校验/蒸馏都不该让整局崩掉（同 judge）
-            return FromBrainToolToBrainVerifyAndSummarizeResp(
+            return VerifyAndSummarizeResp(
                 verdicts=[
                     StepVerifyVerdict(
                         index=i, reliable=False, why=f"合并调用失败：{type(exc).__name__}"
@@ -471,7 +466,7 @@ class Brain:
             if summary is not None
             else None
         )
-        return FromBrainToolToBrainVerifyAndSummarizeResp(
+        return VerifyAndSummarizeResp(
             verdicts=verdicts,
             summary=summary,
             episode_memory=episode_memory,
@@ -494,7 +489,7 @@ class Brain:
     @staticmethod
     def _parse_verify_and_summarize(
         text: str, count: int
-    ) -> tuple[list[StepVerifyVerdict], FromBrainToLlmEpisodeSummaryResp | None]:
+    ) -> tuple[list[StepVerifyVerdict], EpisodeSummary | None]:
         """把合并输出解析成 `(verdicts, summary)`。
 
         `verdicts` 解析失败/畸形时**全部标不可靠**（保守兜底，逻辑同原
@@ -519,13 +514,13 @@ class Brain:
         verdicts = Brain._verdicts_from_raw(raw.get("verdicts"), count)
 
         summary_data = raw.get("summary")
-        summary: FromBrainToLlmEpisodeSummaryResp | None = None
+        summary: EpisodeSummary | None = None
         if isinstance(summary_data, dict):
             try:
                 data = dict(summary_data)
                 filename = str(data.pop("filename", "episode_memory"))
                 markdown = str(data.pop("markdown", ""))
-                summary = FromBrainToLlmEpisodeSummaryResp(
+                summary = EpisodeSummary(
                     summary=data["summary"],
                     reusable_patterns=data.get("reusable_patterns", []),
                     critical_decisions=data.get("critical_decisions", []),
@@ -583,8 +578,7 @@ class Brain:
 
     # ---- 记忆整理 ----
 
-    @require_permission("execute:llm:memory_reflection")
-    def reflect(self, req: FromBrainToolToBrainReflectReq) -> StepMemory:
+    def reflect(self, req: ReflectReq) -> ReflectResp:
         """把这一步整理成一条经验：**看到什么 → 为什么 → 做了什么 → 变成什么**。
 
         **只有一个输入参数**：`req` 打包前后两帧观测和这次的动作——跟其他
@@ -592,7 +586,7 @@ class Brain:
 
         **本版不调模型**：四样东西都已经在 req 里，让模型再复述一遍只会引入
         它自己的措辞偏差，还多烧一次调用。要不要上模型是以后的事，
-        接口按"可能会调"设计（返回 `StepMemory` 而不是就地写库）。
+        接口按"可能会调"设计（返回记忆条目而不是就地写库）。
 
         **这个方法自己不写库**：写库是状态变更，而大脑无状态。
         `episode_id` 也留空由 Harness 盖章——大脑不知道自己在哪一局。
@@ -601,14 +595,16 @@ class Brain:
         """
         assert req.action.rationale, "reflect() got an action without a rationale"
 
-        return StepMemory(
-            before=self._blind(req.before),
-            rationale=list(req.action.rationale),
-            action=req.action.describe(),
-            after=self._blind(req.after),
-            step=req.before.step,
-            # `episode_id` 由 Harness 盖章——大脑不知道自己在哪一局。
-            episode_id="",
+        return ReflectResp(
+            entry=StepMemory(
+                before=self._blind(req.before),
+                rationale=list(req.action.rationale),
+                action=req.action.describe(),
+                after=self._blind(req.after),
+                step=req.before.step,
+                # `episode_id` 由 Harness 盖章——大脑不知道自己在哪一局。
+                episode_id="",
+            )
         )
 
     @staticmethod
@@ -630,8 +626,8 @@ class Brain:
     # ---- 内部 ----
 
     @staticmethod
-    def _parse_plan(text: str) -> RunPlanResp:
-        """把规划模型的原始文本输出解析成 `RunPlanResp`；失败抛 `ParseFailure`。
+    def _parse_plan(text: str) -> RunPlan:
+        """把规划模型的原始文本输出解析成 `RunPlan`；失败抛 `ParseFailure`。
 
         先剥 ```json 围栏（模型最常见的格式偏差，`choose_once`/`_parse` 同样
         处理）——不剥的话 `json.loads` 会在第一个反引号处报"char 0"，误导成
@@ -645,9 +641,9 @@ class Brain:
         if not isinstance(raw, dict):
             raise ParseFailure(text, "top level is not an object")
         try:
-            return RunPlanResp.model_validate(raw)
+            return RunPlan.model_validate(raw)
         except ValidationError as exc:
-            raise ParseFailure(text, f"RunPlanResp 字段不合法：{exc.errors()[:1]}") from exc
+            raise ParseFailure(text, f"RunPlan 字段不合法：{exc.errors()[:1]}") from exc
 
     def _parse(self, text: str, space: ActionSpaceForBrain) -> ActionFromBrain:
         """把 LLM 输出解析成 `ActionFromBrain`，不合法就抛 `ParseFailure` / `IllegalAction`。"""
