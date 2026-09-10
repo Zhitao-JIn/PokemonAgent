@@ -16,9 +16,11 @@
 ```
 pokemon_agent/
 ├── schemas/       跨层数据契约（Pydantic 模型）—— 大脑/工具/记忆/trace 之间传递的一切类型
-├── memory/        语义记忆的纯存储层（不知道任何游戏规则）
+├── memory/        记忆子系统整块：对外契约 + 统一记录存储 + 混合检索，
+│                  可整体拷走复用（不知道任何游戏规则）
 ├── tools/         Harness 伸向环境和记忆的两只手（GameTools / MemoryTool）
 ├── interfaces/    Protocol 定义（"港口"）—— 解耦 Harness 与具体实现
+│                  （memory 自己的契约随 memory 包走）
 ├── world/         WorldPort 的唯一实现：PyBoy + 视觉模型的粘合层
 ├── brain/         纯决策层：LLM 怎么变成一个合法的 Action
 ├── harness/       两级控制循环（LangGraph 状态图）：run_harness.py 大图（主 agent，
@@ -39,8 +41,8 @@ pokemon_agent/
   三条通道、每一步数据的形状，先读这份
 - [`schemas/SPEC.md`](schemas/SPEC.md) —— 跨层数据契约（communication/domain/datastore
   三包）的类型定义
-- [`memory/SPEC.md`](memory/SPEC.md) —— 语义记忆存储层：三个协议 + 两个纯函数 +
-  一个实现类
+- [`memory/SPEC.md`](memory/SPEC.md) —— 记忆子系统：对外契约（`ports.py`）+
+  统一记录存储（`store.py`）+ 混合检索（`retrieval.py`）
 - [`tools/SPEC.md`](tools/SPEC.md) —— `GameTools`/`MemoryTool`：Harness 唯一认识的
   两个具体实现
 - [`interfaces/SPEC.md`](interfaces/SPEC.md) —— 全部 Protocol 定义（Port/Provider/Store
@@ -84,10 +86,10 @@ build.py ── 全项目唯一一处具体类的 `new`（返回 RunHarness + Lo
                                             payload 组装另在
                                             trace/utils.py（不认识 TracePort）
            │           │           │
-      WorldPort  EpisodeMemoryStore  LLMProvider ×2
-           │    SemanticObjectStore  (decide_llm / judge_llm)
-      PyBoyWorld   (memory/episode/   │
-      (world/)      + memory/semantic)  QwenText/QwenVision
+      WorldPort    MemoryStore         LLMProvider ×2
+           │      (memory/store.py   (decide_llm / judge_llm)
+      PyBoyWorld   四类记忆各一实例       │
+      (world/)     memory/<kind>/)    QwenText/QwenVision
            │                        (providers/)
       VisionProvider
            │

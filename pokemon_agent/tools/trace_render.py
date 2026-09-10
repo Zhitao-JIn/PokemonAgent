@@ -7,10 +7,10 @@
 会连带产生 ERROR 事件的几个（`model_call`/`judge_call`/`verify_call`）
 吐出这种三元组的 list，由 `TraceTool.append()` 展开逐条落盘。
 
-**payload 字段格式是跨模块契约**：`evaluation/eval_report.py` 按字段名解析
+**payload 字段格式是跨模块契约**：观测台前端按字段名渲染
 （`cached_tokens`/`verdicts`/`attempt`/`success`……），harness 改字段名/删
-字段会让报表**静默**算错——本文件的字段变更是 harness 与 evaluation 之间
-的跨模块变更，改字段必须同步 evaluation 的解析逻辑。
+字段会让面板**静默**缺失——本文件的字段变更是 tool 与前端的跨模块变更，
+改字段必须同步前端的读取逻辑。
 
 各 kind 必填的 req 字段用每个函数入口的 assert 表达（precondition），
 与 `FromHarnessToTraceToolAppendReq` 的 docstring 一一对应。
@@ -20,27 +20,23 @@ from __future__ import annotations
 
 import json
 
-from pokemon_agent.schemas.communication import (
-    FromHarnessToTraceToolAppendReq,
-    RunOutcomeResp,
+from pokemon_agent.schemas.brain import (
+    ActionFromBrain,
+    GoalForBrain,
     StepVerifyVerdict,
+    TaskForBrain,
 )
-from pokemon_agent.schemas.datastore import (
+from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, RunResp
+from pokemon_agent.schemas.memory import (
     EpisodeMemory,
-    EventType,
     ObjectDialogEvent,
     ObjectFactEvent,
     ObjectWarpEvent,
-    Source,
     StepMemory,
 )
-from pokemon_agent.schemas.domain import (
-    ActionFromBrain,
-    GoalForBrain,
-    ModelCall,
-    ObservationFromWorld,
-    TaskForHarness,
-)
+from pokemon_agent.schemas.providers import ModelCall
+from pokemon_agent.schemas.trace import EventType, Source
+from pokemon_agent.schemas.world import ObservationFromWorld
 
 RenderedEvent = tuple[EventType, Source, dict[str, str]]
 """`append(episode_id, step, type, source, payload)` 的后三个位置参数。"""
@@ -66,7 +62,7 @@ def run_start(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 
     前置条件：req.task 列表非空语义由调用方保证（goals 可以为空列表）。
     """
-    goals: list[TaskForHarness] = req.run_goals or []
+    goals: list[TaskForBrain] = req.run_goals or []
     return (
         EventType.LIFECYCLE,
         Source.HARNESS,
@@ -87,7 +83,7 @@ def run_end(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 
     前置条件：req.outcome_run 非 None。
     """
-    outcome: RunOutcomeResp = req.outcome_run
+    outcome: RunResp = req.outcome_run
     return (
         EventType.LIFECYCLE,
         Source.HARNESS,
@@ -134,14 +130,9 @@ def episode_start(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     看不到判据原文；而且 plan 压栈后每一局的判据可以和初始栈不同，"这一局
     实际用的判据"的权威落点在这里，不在 run_start。
 
-    **`memory_carried` 必须显式传入，不给默认值**——开局时"这一局能检索到
-    多少条跨局摘要经验"是调用方已经知道的事实，不是这一层该替它猜的。这个
-    数字是 `evaluation/SPEC.md` 里"success rate 会不会被同批次内的记忆积累
-    污染"这个问题的唯一诊断入口。
-
-    前置条件：req.task、req.memory_carried 非 None。
+    前置条件：req.task 非 None。
     """
-    task: TaskForHarness = req.task
+    task: TaskForBrain = req.task
     return (
         EventType.LIFECYCLE,
         Source.HARNESS,
@@ -150,7 +141,6 @@ def episode_start(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
             "goal": task.goal,
             "success_criteria": task.success_criteria,
             "max_steps": str(task.max_steps),
-            "memory_carried": str(req.memory_carried),
         },
     )
 
@@ -277,27 +267,6 @@ def decision_failed(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
             "kind": "MaxRetriesExceeded",
             "reason": "max_retries_exceeded",
             "last": f"{last.error_kind}: {last.error}",
-        },
-    )
-
-
-def permission_skipped(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
-    """记录一次权限拒绝后的可观测降级。
-
-    `req.source` 应按"被拒的到底是哪个子系统"传（记忆子系统的读/写/蒸馏
-    权限被拒传 `Source.MEMORY`），不传是历史行为（HARNESS）。
-
-    前置条件：req.permission、req.function、req.fallback 非 None。
-    """
-    source = req.source or Source.HARNESS
-    return (
-        EventType.ERROR,
-        source,
-        {
-            "kind": "PermissionSkipped",
-            "permission": req.permission,
-            "function": req.function,
-            "fallback": req.fallback,
         },
     )
 

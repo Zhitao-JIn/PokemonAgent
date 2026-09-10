@@ -1,38 +1,37 @@
-"""记忆层：episode / semantic 两类具体记忆 + index 一类项目无关的通用检索。
+"""记忆层：对外契约 + 统一记录存储 + 混合检索纯函数。
 
-- `episode/`：情景记忆——单步（step）与跨局摘要（summary）的存储。
-- `semantic/`：语义记忆——object（按坐标的事件日志）与 knowledge（不挂坐标）的存储。
-- `index/`：项目无关的记忆检索（`MemoryIndexStore`）——写入 + 过滤检索 + 语义
-  检索 + 删除，不理解字段/内容语义（0908 拍板，`docs/ROADMAP.md` 第 24 条）。
-  `episode`/`semantic` 两类是现有调用方还没迁过来之前的旧实现，先并存。
-- `retrieval.py`：`index/` 内部检索用的混合检索纯函数，只认字符串，不认任何
-  记忆类型；也仍被 `episode`/`semantic` 两类旧实现直接调用。
+- `ports.py`：本层的对外契约（`MemoryStorePort`）——写入 / 等值过滤检索 /
+  语义检索 / 归档。**与实现同住一包**：拷走 `memory/` 就同时拿到契约、实现与
+  算法，不需要回头翻本项目的 `interfaces/`（0910 拍板，见 ROADMAP 第 24 条）。
+- `store.py`：统一记录存储（`MemoryStore`）——一条记录一个 `<uuid>.json/.md`
+  文件 + 每文件夹倒排索引（`index.json`，派生物、写穿、可自愈重建）+ 向量
+  sidecar。四类记忆（step_memory / object_memory / episode_memory /
+  knowledge_memory）各一个文件夹、各一个实例；全项目不按 run 分层，`run_id`
+  是 metadata 里的普通过滤字段（0910 重构，见 `PLAN_memory_trace_layout.md`）。
+- `retrieval.py`：语义检索用的混合检索纯函数（BM25 bigram + embedding
+  余弦 + RRF + reranker 精排），只认字符串，不认任何记忆类型。
 
-接口在 `interfaces/memory/`（`EpisodeMemoryStore` / `SemanticObjectStore` /
-`SemanticKnowledgeStore` / `MemoryIndexPort`），实现在这里，`MemoryTool` 只认
-接口。object 的交互判定在 harness（`harness/object_interactions.py`）——
-memory 只做读写与索引，不理解游戏（见 AGENTS.md 四·分层原则）。
+旧的按类拆分的存储实现（`episode/`、`semantic/` 包）已退役：它们的存储职责
+全部并入 `store.py`，领域对象的组装（`StepMemory`/`EpisodeMemory`/`ObjectFactEvent`
+的解析与渲染）在 tool 层（`tools/memory_tool.py`）完成——"发生了什么、影响了谁"
+的语义判定归 tool 层，memory 只机械执行（AGENTS.md 四·分层原则）。
 
-本文件同时是统一出口：存储类与检索纯函数从这里 re-export，
+object 的交互判定在 harness（`harness/object_interactions.py`）。
+
+本文件同时是统一出口：契约、存储类与检索纯函数从这里 re-export，
 消费方只写 `from pokemon_agent.memory import X`，不深到子目录的模块文件。
 """
 
 __all__ = [
-    "EventObjectStore",
-    "FileEpisodeMemoryStore",
-    "KnowledgeStore",
-    "MemoryIndexStore",
+    "MemoryStore",
+    "MemoryStorePort",
     "bm25_rank",
     "embedding_rank",
     "hybrid_retrieve",
-    "parse_md",
     "reciprocal_rank_fusion",
-    "safe_filename",
     "tokenize",
 ]
-from .episode.episode_store import FileEpisodeMemoryStore
-from .episode.util import parse_md, safe_filename
-from .index.index_store import MemoryIndexStore
+from .ports import MemoryStorePort
 from .retrieval import (
     bm25_rank,
     embedding_rank,
@@ -40,4 +39,4 @@ from .retrieval import (
     reciprocal_rank_fusion,
     tokenize,
 )
-from .semantic.semantic_store import EventObjectStore, KnowledgeStore
+from .store import MemoryStore

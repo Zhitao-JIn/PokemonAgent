@@ -11,6 +11,7 @@ screenshots/
 tests/
 _to_delete/
 .claude/
+.env
 
 # 运行产物与数据（不该进版本库）
 trace_data/
@@ -19,9 +20,15 @@ experiment_results/
 vision_dump/
 vision_dump_smoke/
 assets/
-# episode 摘要 md 是运行产物：留在包内，但不进 git
-pokemon_agent/memory/episode/memory/
-pokemon_agent/memory/semantic/object_events/
+checkpoints/
+# 0910 起记忆落盘在仓库根级 memory/（一条记录一个 uuid 文件）——运行期产物
+# 不进 git；唯一例外是 knowledge_memory/（运营手写的共享源，随源进 git）。
+memory/step_memory/
+memory/object_memory/
+memory/episode_memory/
+memory/voided-*/
+memory/*/vectors.jsonl
+memory/*/index.json
 .workbuddy/
 docs/experiments/
 log

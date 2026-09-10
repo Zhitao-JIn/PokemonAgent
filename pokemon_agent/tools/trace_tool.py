@@ -6,10 +6,10 @@
 要转换的数据（调用方拿的是存储形状 `TraceEvent`，跟 `MemoryToolPort` 返回
 领域对象同一个模式）。
 
-**payload 字段格式是跨模块契约**：`evaluation/eval_report.py` 按字段名解析，
+**payload 字段格式是跨模块契约**：观测台前端按字段名渲染，
 格式变更权在本层（见 `trace_render.py` 模块 docstring）。
 
-**边界不对称**：写者只有 harness（走本端口）；读者是 api/evaluation
+**边界不对称**：写者只有 harness（走本端口）；读者是 api
 （运维侧，直读 `TracePort`/`LocalTrace`，不进 tool 层）。
 """
 
@@ -18,10 +18,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from pokemon_agent.interfaces import TracePort
-from pokemon_agent.schemas.communication import (
+from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
-    TraceKind,
+    FromHarnessToTraceToolReadDiskEventsReq,
+    FromHarnessToTraceToolReadDiskEventsResp,
 )
+from pokemon_agent.schemas.trace import TraceKind
 from pokemon_agent.tools import trace_render
 
 _RENDERERS = {
@@ -35,7 +37,6 @@ _RENDERERS = {
     TraceKind.JUDGE_CALL: trace_render.judge_call,
     TraceKind.VERIFY_CALL: trace_render.verify_call,
     TraceKind.DECISION_FAILED: trace_render.decision_failed,
-    TraceKind.PERMISSION_SKIPPED: trace_render.permission_skipped,
     TraceKind.OBSERVE: trace_render.observe,
     TraceKind.MEMORY_READ: trace_render.memory_read,
     TraceKind.MEMORY_WRITE: trace_render.memory_write,
@@ -85,13 +86,14 @@ class TraceTool:
                 source,
                 payload,
                 frame_png=req.frame_png,
-                screenshot_step=req.screenshot_step,
             )
         return last_id
 
-    def read_disk_events(self) -> list:
+    def read_disk_events(
+        self, req: FromHarnessToTraceToolReadDiskEventsReq
+    ) -> FromHarnessToTraceToolReadDiskEventsResp:
         """读盘上全部事件（原样转发 `TracePort.read_disk_events`，checkpoint 恢复用）。"""
-        return self._trace.read_disk_events()
+        return FromHarnessToTraceToolReadDiskEventsResp(events=self._trace.read_disk_events())
 
     def cursor(self) -> int:
         """当前游标：最后一条已分配的 event_id（原样转发 `TracePort.cursor`）。"""

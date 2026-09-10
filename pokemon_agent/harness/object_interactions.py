@@ -22,18 +22,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pokemon_agent.interfaces import SemanticObjectReader
-from pokemon_agent.schemas.datastore import (
+from pokemon_agent.interfaces import MemoryToolPort
+from pokemon_agent.schemas.brain import ActionFromBrain
+from pokemon_agent.schemas.memory import (
     ObjectDialogEvent,
     ObjectFactEvent,
     ObjectStillEvent,
     ObjectWarpEvent,
 )
-from pokemon_agent.schemas.domain import (
+from pokemon_agent.schemas.world import (
     BUTTON_FACING,
     FACING_STEP,
     INTERACT_KEY,
-    ActionFromBrain,
     LandmarkInWorld,
     ObservationFromWorld,
     PlaceInWorld,
@@ -177,7 +177,7 @@ _POSTURES: dict[str, tuple] = {
 
 
 def _kind_at(
-    obs: ObservationFromWorld, place: PlaceInWorld, known: SemanticObjectReader
+    obs: ObservationFromWorld, place: PlaceInWorld, known: MemoryToolPort
 ) -> str | None:
     """看这一格上的东西是哪一类。当帧 landmarks 优先；当帧看不见（人物精灵
     盖住脚下那格）时查已有事件兜底——以前见过那里有什么，同样算数。
@@ -200,7 +200,7 @@ def object_fact_events(
     after: ObservationFromWorld,
     episode_id: str,
     step: int,
-    known: SemanticObjectReader,
+    known: MemoryToolPort,
 ) -> list[ObjectFactEvent]:
     """判定这次按键碰到了哪些物体、各发生了什么，产出待追加的交互事件。
 

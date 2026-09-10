@@ -1,33 +1,35 @@
 """CheckpointTool —— `CheckpointToolPort` 的唯一实现：存、取、废弃归档。
 
 **纯读写编排，不理解游戏**：状态快照（model_dump）与世界快照字节由调用方
-（harness）组装递进来；记忆层的范围查询与截断委托 `MemoryTool`（注入实例，
-不 import harness）；trace 的截断按游标直接操作 JSONL 文件（按局分文件，
-`event_id` 全 run 单调，游标即主前缀长度）。
+（harness）组装递进来；记忆层的废弃归档委托 `MemoryTool.void_memory_after()`
+（注入实例，不 import harness）；trace 的废弃处理按游标直接操作
+`events/<uuid>.json` 文件——**原地打 `valid=false`，不搬走不删除**（0910
+拍板③：废弃分支也是"发生过什么"的审计记录，且读端靠 valid 过滤就够，
+不需要学任何跳区间逻辑）。
 
 落盘布局：
 
-    checkpoints/<run_id>/                     （0909 起独立于 trace_data，见下）
+    checkpoints/<run_id>/                     （0909 起独立于 trace_data）
     ├── step/<episode_id>/<step>.state      （模拟器世界快照，二进制）
     ├── step/<episode_id>/<step>.json       （EpisodeRunState + RunState 双重
     │                                          dump + 游标，唯一提交点）
-    └── voided-<ts>/                        （废弃时间线归档，先归档后截断）
+    └── voided-<ts>/                        （废弃局的 step checkpoint 归档）
+
+memory 侧的归档落 `memory/voided-<ts>/<kind>/`（时间戳由 MemoryTool 定），
+trace 侧**没有归档**——事件只是被改写 valid 字段，文件原地不动。
+
+**trace 截图不参与废弃处理**（0910 拍板⑨）：截图文件名 = 帧事件的 event_id，
+永远递增，resume 重跑零撞名，废弃事件的截图原地保留。
 
 **checkpoint 根目录独立于 `trace_data/`**：`trace_data/<run_id>/`是"这个 run
-的可观测事件流"——`episodes/*.jsonl`一次写入、只追加、只回放；`checkpoints/`
-是另一种东西——**可变的恢复状态**，会被覆盖、会被`void_after()`整目录搬走
-归档。两者语义不同，不该是同一棵树下的兄弟目录（旧布局下`void_after()`里
-"改 jsonl 文件内容"和"搬 checkpoint 目录"看着像同一类操作，只是因为路径
-恰好挨在一起）。`trace_data/<run_id>/episodes/`与`trace_data/<run_id>/
-screenshots/`的截断（本类的另一半职责）仍然要碰，见`__init__`的
-`trace_dir`参数。
+的可观测事件流"——一条事件一个文件、只写不删；`checkpoints/`是另一种东西
+——**可变的恢复状态**，会被覆盖、会被`void_after()`整目录搬走归档。两者语义
+不同，不该是同一棵树下的兄弟目录。
 
 **没有单独的 run 级文件**：`RunState`（目标栈/结算）跟 `EpisodeRunState` 打包进
 同一份 `<step>.json`——同一局内 `RunState` 每一步都相同（只有 `dispatch`/
 `reflect` 会改它，均发生在局与局之间），一份文件天然带两层信息，`resume` 只
-需读一次就能同时重建两层状态，不必再猜"该读 run 锚点还是 episode 锚点"
-（早期设计有一份单独覆盖写的 `run.json`，被 `resume_run()` 里一处查找歧义
-坑过一次，改成现在这样彻底消掉了那类歧义，见 0909 CHANGELOG）。
+需读一次就能同时重建两层状态，不必再猜"该读 run 锚点还是 episode 锚点"。
 
 **已知缺口**：一局如果连第 0 步都没跑完就崩（`_begin()` 已经完成，但图入口
 `save_checkpoint` 还没来得及写第一份存档），这一局没有任何 checkpoint 可
@@ -46,12 +48,15 @@ import shutil
 import time
 from pathlib import Path
 
-from pokemon_agent.schemas.communication import (
-    FromCheckpointToolToHarnessRestoreResp,
-    FromCheckpointToolToHarnessVoidReport,
+from pokemon_agent.schemas.harness import (
+    FromHarnessToCheckpointToolLoadReq,
+    FromHarnessToCheckpointToolLoadResp,
     FromHarnessToCheckpointToolSaveReq,
+    FromHarnessToCheckpointToolVoidReq,
+    FromHarnessToCheckpointToolVoidResp,
+    FromHarnessToMemoryToolVoidMemoryAfterReq,
 )
-from pokemon_agent.schemas.datastore import TraceEvent
+from pokemon_agent.schemas.trace import TraceEvent
 from pokemon_agent.tools.memory_tool import MemoryTool
 
 
@@ -67,9 +72,9 @@ class CheckpointTool:
 
     def __init__(self, checkpoint_dir: Path, trace_dir: Path, memory: MemoryTool) -> None:
         """`checkpoint_dir`：这个 run 自己的 checkpoint 根（`checkpoints/<run_id>/`，
-        独立于 trace_data，见类 docstring）。`trace_dir`：这个 run 的
-        `trace_data/<run_id>/`——`void_after()`截断 trace/截图要用，本类不
-        持有 trace 相关状态，只按这个路径读写。"""
+        独立于 trace_data）。`trace_dir`：这个 run 的 `trace_data/<run_id>/`——
+        `void_after()` 给废弃事件打 valid 标要用，本类不持有 trace 相关状态，
+        只按这个路径读写。"""
         self._dir = Path(checkpoint_dir)
         self._step_dir = self._dir / "step"
         self._trace_dir = Path(trace_dir)
@@ -89,88 +94,99 @@ class CheckpointTool:
     # ---- 取 ----
 
     def load(
-        self, run_id: str, episode_id: str, step: int
-    ) -> FromCheckpointToolToHarnessRestoreResp | None:
+        self, req: FromHarnessToCheckpointToolLoadReq
+    ) -> FromHarnessToCheckpointToolLoadResp | None:
         """按三元组取 checkpoint；不成对/签名不匹配返回 None。"""
-        step_json = self._step_dir / _safe(episode_id) / f"{step}.json"
+        step_json = self._step_dir / _safe(req.episode_id) / f"{req.step}.json"
         if not step_json.is_file():
             return None
-        return self._read_checkpoint(step_json, run_id, episode_id, step)
+        return self._read_checkpoint(step_json, req.run_id, req.episode_id, req.step)
 
-    # ---- 废弃归档 ----
+    # ---- 废弃处理 ----
 
     def void_after(
-        self, run_id: str, episode_id: str, step: int, cursor: int
-    ) -> FromCheckpointToolToHarnessVoidReport:
-        """废弃时间线处理（PLAN §6）：先归档后截断，主前缀外零残留。"""
+        self, req: FromHarnessToCheckpointToolVoidReq
+    ) -> FromHarnessToCheckpointToolVoidResp:
+        """废弃时间线处理（PLAN_memory_trace_layout §7）：四步，先归档后继续。
+
+        1. **trace 打标**：扫 `events/`，`event_id > cursor` 的事件**原地**改写
+           `valid=false`（不搬走不删除——废弃分支也是审计记录；读端过滤
+           valid 即得干净时间线，不需要任何跳区间逻辑）。
+        2. **圈定 memory 作废集合**（走 MemoryTool）：目标局 `step > N-1`（N 是
+           恢复步——checkpoint N 是"第 N 步开局"，拍它时完成的只有 step 0..N-1，
+           废弃分支写的 step N..M 全要作废）；该局的跨局摘要整条作废（摘要由局
+           收尾蒸馏，收尾在最后一个 checkpoint 之后）；废弃局（只出现在游标后
+           事件里的局）整局。knowledge 不进作废范围（全局先验、不属任何一局）。
+        3. **memory 归档**：MemoryTool 把作废记录搬进 `memory/voided-<ts>/<kind>/`
+           并摘出索引（不 unlink——落盘了就不丢）。
+        4. **checkpoint 归档**：`target_scope` 里每一局的 step 目录整体搬进
+           `checkpoints/<run_id>/voided-<ts>/`——目标局也搬（旧时间线的存档一律
+           离场，重跑会写出新的那批）。
+
+        截图不参与（拍板⑨）：event_id 永远递增，resume 重跑零撞名，废弃事件
+        的截图原地保留。
+        """
+        run_id, episode_id, step, cursor = req.run_id, req.episode_id, req.step, req.cursor
         voided_dir = self._dir / f"voided-{time.strftime('%Y%m%d-%H%M%S')}"
         voided_dir.mkdir(parents=True, exist_ok=True)
-        trace_events_voided = 0
-        future_episodes: list[str] = []
-        screenshots_voided = 0
 
-        # 步骤 1：trace 按局分文件逐个处理——游标前的行保留，之后的行归档。
-        episodes_dir = self._trace_dir / "episodes"
+        # 步骤 1：trace 废弃事件原地打 valid=false；顺路圈定废弃局。
+        trace_events_voided = 0
         kept_episodes: set[str] = set()
         voided_episodes: set[str] = set()
-        if episodes_dir.is_dir():
-            for path in sorted(episodes_dir.glob("*.jsonl")):
-                kept_lines: list[str] = []
-                voided_lines: list[str] = []
-                for line in path.read_text(encoding="utf-8").splitlines():
-                    if not line.strip():
-                        continue
-                    try:
-                        event = TraceEvent.model_validate_json(line)
-                    except Exception:
-                        continue  # 残行跟归档一起走
-                    if event.event_id <= cursor:
-                        kept_lines.append(line)
-                        kept_episodes.add(event.episode_id)
-                    else:
-                        voided_lines.append(line)
-                        voided_episodes.add(event.episode_id)
-                        trace_events_voided += 1
-                if voided_lines:
-                    (voided_dir / path.name).write_text(
-                        "\n".join(voided_lines) + "\n", encoding="utf-8"
-                    )
-                if kept_lines:
-                    tmp = path.with_suffix(".jsonl.tmp")
-                    tmp.write_text("\n".join(kept_lines) + "\n", encoding="utf-8")
-                    os.replace(tmp, path)
-                else:
-                    path.unlink(missing_ok=True)
+        events_dir = self._trace_dir / "events"
+        if events_dir.is_dir():
+            for path in sorted(events_dir.glob("*.json")):
+                if path.name.endswith(".tmp"):
+                    continue
+                try:
+                    event = TraceEvent.model_validate_json(path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue  # 残文件是预期内的运行期情况，跳过
+                if event.event_id <= cursor:
+                    kept_episodes.add(event.episode_id)
+                    continue
+                voided_episodes.add(event.episode_id)
+                trace_events_voided += 1
+                if not event.valid:
+                    continue  # 已经是废弃标记，不重复写
+                event = event.model_copy(update={"valid": False})
+                tmp = path.with_suffix(".json.tmp")
+                tmp.write_text(event.model_dump_json(), encoding="utf-8")
+                os.replace(tmp, path)
 
-        # 步骤 2：废弃局 = 只出现在游标之后的事件里的局。
+        # 步骤 2：废弃局 = 只出现在游标之后的事件里的局；目标局本身也可能
+        # 整个废弃（run 级恢复放弃半途进度时它的 step≥N 都废弃）。
+        # 目标局的 keep_step 取 `step - 1`：checkpoint N 是"第 N 步开局"，拍它时
+        # 完成的只有 step 0..N-1，所以保留区间是 `step <= N-1`。取 N 会让废弃
+        # 分支写下的 step N 漏网——重跑又从 step N 写一条，同一局同一步两条记录。
+        # `step=0` 自然落到哨兵 -1（=整局废弃），正是"从第 0 步重跑"该有的语义。
         future_episodes = sorted(voided_episodes - kept_episodes)
-        # 目标局本身也可能整个废弃（run 级恢复放弃半途进度时它的 step≥N 都废弃）。
-        target_scope: list[tuple[str, int]] = [(episode_id, step)]
+        target_scope: list[tuple[str, int]] = [(episode_id, step - 1)]
         for eid in future_episodes:
             target_scope.append((eid, -1))
 
-        # 步骤 3：记忆层截断（目标局截到 step；废弃局整局清）。
+        # 步骤 2+3：memory 层圈集合并归档（MemoryTool 自己知道 uuid → 路径，
+        # 搬进 memory/voided-<ts>/<kind>/ 并摘出索引）。
         step_memories_voided = 0
         object_events_voided = 0
+        episode_memories_voided = 0
         for eid, keep_step in target_scope:
-            counts = self._memory.void_memory_after(eid, keep_step)
+            counts = self._memory.void_memory_after(
+                FromHarnessToMemoryToolVoidMemoryAfterReq(episode_id=eid, step=keep_step)
+            ).removed
             step_memories_voided += counts["step_memories"]
             object_events_voided += counts["object_events"]
+            episode_memories_voided += counts["episode_memories"]
 
-        # 步骤 4：截图归档（同号重跑会撞名加 (n)，必须搬走）。
-        for eid, keep_step in target_scope:
-            screenshots_voided += self._void_screenshots(run_id, eid, keep_step, voided_dir)
-
-        # 步骤 5：废弃局的 step checkpoint 目录整体归档；目标局 step>N 的也归档。
-        for eid, keep_step in target_scope:
+        # 步骤 4：target_scope 里每一局的 step checkpoint 目录整体归档（目标局也搬）。
+        for eid, _keep_step in target_scope:
             eid_dir = self._step_dir / _safe(eid)
             if eid_dir.is_dir():
                 dst = voided_dir / f"step-{_safe(eid)}"
                 shutil.move(str(eid_dir), str(dst))
-            elif keep_step >= 0:
-                pass  # 目录不存在 = 无可归档
 
-        return FromCheckpointToolToHarnessVoidReport(
+        return FromHarnessToCheckpointToolVoidResp(
             run_id=run_id,
             episode_id=episode_id,
             step=step,
@@ -179,7 +195,7 @@ class CheckpointTool:
             future_episodes=future_episodes,
             step_memories_voided=step_memories_voided,
             object_events_voided=object_events_voided,
-            screenshots_voided=screenshots_voided,
+            episode_memories_voided=episode_memories_voided,
             voided_dir=str(voided_dir),
         )
 
@@ -210,7 +226,7 @@ class CheckpointTool:
         run_id: str | None,
         episode_id: str | None,
         step: int | None,
-    ) -> FromCheckpointToolToHarnessRestoreResp | None:
+    ) -> FromHarnessToCheckpointToolLoadResp | None:
         """读 json + 配对世界快照，校验签名；不成对/不匹配返回 None。
 
         后置条件：返回的 Resp 三元组与请求一致（调用方传入的定位参数核对）。
@@ -225,7 +241,7 @@ class CheckpointTool:
         state_path = json_path.with_suffix(".state")
         if not state_path.is_file():
             return None  # state/json 不成对 = 提交点未完成
-        return FromCheckpointToolToHarnessRestoreResp(
+        return FromHarnessToCheckpointToolLoadResp(
             run_id=meta["run_id"],
             episode_id=meta["episode_id"],
             step=meta["step"],
@@ -235,30 +251,3 @@ class CheckpointTool:
             emulator_state=state_path.read_bytes(),
             saved_at=meta.get("saved_at", ""),
         )
-
-    def _void_screenshots(
-        self, run_id: str, episode_id: str, keep_step: int, voided_dir: Path
-    ) -> int:
-        """把一局 step > keep_step 的人眼截图搬进 voided（keep_step=-1 = 整局）。
-
-        截图现在按 run 分文件夹（`trace_data/<run_id>/screenshots/`），一个 run
-        内仍然是扁平的（多个 episode 共享同一个目录），按 `screenshot_filename()`
-        的命名规则逐个核对 episode_id 前缀搬移；`_save_screenshot` 撞名生成的
-        `(n)` 后缀文件一并搬。
-        """
-        screenshots_dir = self._trace_dir / "screenshots"
-
-        moved = 0
-        prefix = f"{run_id}_{episode_id}_"
-        target_dir = voided_dir / "screenshots"
-        for path in sorted(screenshots_dir.glob(f"{prefix}*.png")):
-            stem = path.stem  # {run_id}_{eid}_{step} 或带 (n)
-            suffix_part = stem[len(prefix) :]
-            step_token = suffix_part.split("(")[0]
-            if not step_token.lstrip("-").isdigit():
-                continue  # 命名规则外的文件不动
-            if int(step_token) > keep_step:
-                target_dir.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(path), str(target_dir / path.name))
-                moved += 1
-        return moved

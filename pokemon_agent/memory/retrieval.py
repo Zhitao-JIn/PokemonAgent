@@ -18,10 +18,12 @@
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
 from rank_bm25 import BM25Okapi
 
-from pokemon_agent.interfaces import EmbeddingProvider, RerankerProvider
+if TYPE_CHECKING:
+    from pokemon_agent.interfaces import EmbeddingProvider, RerankerProvider
 
 
 def tokenize(text: str) -> list[str]:
@@ -86,7 +88,7 @@ def embedding_rank(
 
 def _cosine(a: list[float], b: list[float]) -> float:
     """两个向量的余弦相似度。"""
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
     if norm_a == 0.0 or norm_b == 0.0:
@@ -139,6 +141,8 @@ def hybrid_retrieve(
     candidate_docs = [documents[i] for i in candidate_idx]
     rerank_scores = reranker.rerank(query, candidate_docs)
 
-    paired = sorted(zip(candidate_idx, rerank_scores), key=lambda p: p[1], reverse=True)
+    paired = sorted(
+        zip(candidate_idx, rerank_scores, strict=True), key=lambda p: p[1], reverse=True
+    )
     assert len(paired) <= fuse_top_k, "hybrid_retrieve must respect fuse_top_k"
     return paired

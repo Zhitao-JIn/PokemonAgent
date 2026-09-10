@@ -36,7 +36,6 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from pokemon_agent.harness.episode_utils import permission_was_denied
 from pokemon_agent.interfaces import (
     BrainToolPort,
     CheckpointToolPort,
@@ -49,24 +48,38 @@ from pokemon_agent.prompts import decide_action as decide_action_prompt
 from pokemon_agent.prompts import judge_success as judge_success_prompt
 from pokemon_agent.prompts import verify_and_summarize as verify_and_summarize_prompt
 from pokemon_agent.prompts.object_render import render_object_events
-from pokemon_agent.schemas.communication import (
+from pokemon_agent.schemas.brain import GoalForBrain, StepVerifyVerdict, TaskForBrain
+from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolJudgeReq,
     FromHarnessToBrainToolJudgeResp,
     FromHarnessToBrainToolReflectReq,
     FromHarnessToBrainToolVerifyAndSummarizeReq,
     FromHarnessToBrainToolVerifyAndSummarizeResp,
+    FromHarnessToCheckpointToolLoadReq,
     FromHarnessToCheckpointToolSaveReq,
+    FromHarnessToCheckpointToolVoidReq,
+    FromHarnessToGameToolExecuteReq,
+    FromHarnessToGameToolGetActionSpaceReq,
+    FromHarnessToGameToolLoadStateBytesReq,
+    FromHarnessToGameToolResetReq,
+    FromHarnessToGameToolSetTaskReq,
+    FromHarnessToMemoryToolAppendObjectEventsReq,
+    FromHarnessToMemoryToolQueryEpisodeStepsReq,
+    FromHarnessToMemoryToolQueryEpisodeSummariesReq,
     FromHarnessToMemoryToolQueryKnowledgeReq,
-    FromHarnessToMemoryToolQueryKnowledgeResp,
+    FromHarnessToMemoryToolQueryObjectEventsReq,
+    FromHarnessToMemoryToolQueryRecentStepsReq,
+    FromHarnessToMemoryToolStoreEpisodeStepReq,
+    FromHarnessToMemoryToolStoreEpisodeSummaryReq,
     FromHarnessToTraceToolAppendReq,
-    HarnessEpisodeOutcomeResp,
-    StepVerifyVerdict,
-    TraceKind,
+    FromRunHarnessToEpisodeHarnessRunReq,
+    FromRunHarnessToEpisodeHarnessRunResp,
 )
-from pokemon_agent.schemas.datastore import Source, dedup_snapshots
-from pokemon_agent.schemas.domain import GoalForBrain, ModelCall, TaskForHarness
-from pokemon_agent.trace import read_screenshot, screenshot_filename
+from pokemon_agent.schemas.memory import dedup_snapshots
+from pokemon_agent.schemas.providers import ModelCall
+from pokemon_agent.schemas.trace import TraceKind
+from pokemon_agent.trace import read_screenshot
 
 from . import brain_utils, episode_utils, game_utils, memory_query_utils
 from .object_interactions import object_fact_events
@@ -137,6 +150,12 @@ class EpisodeHarness:
         世界连续性（取舍见 `CHANGELOG.md` 2026-09-03 条目）。"""
         self._checkpoint = checkpoint
         """checkpoint 手；`None` = 不做 checkpoint，`save_checkpoint` 节点空转。"""
+        self._frame_event_ids: dict[tuple[str, int], int] = {}
+        """`(episode_id, frame_step) → 帧事件的 event_id`：登记"这张图是第几步的
+        开局画面"。截图文件名 = 承载 frame_png 的事件自己的 event_id（共享 id、
+        永远递增零撞名），不再按 step 号拼公式——本表就是"步号 → 截图"的对账。
+        只登记本进程感知到的帧；checkpoint 恢复后首个 store 步的历史帧查不到，
+        `before_frame` 按 None 处理（缺图跳过是既有契约，判定链路不因此失败）。"""
         self._run_state_dump: dict[str, Any] | None = None
         """当前正在跑的这一局对应的 `RunState.model_dump()`——`run()`/`resume()`
         入口处赋值，`save_checkpoint()` 节点原样打包进每一步的存档，本层不解读
@@ -144,34 +163,27 @@ class EpisodeHarness:
         self._graph = self._compile()
 
     def _frame_b64(self, episode_id: str, step: int) -> str | None:
-        """读第 `step` 步对应的便利截图、编成 base64，读不到就是 `None`。
+        """读第 `step` 步开局画面对应的便利截图、编成 base64，读不到就是 `None`。
 
-        `StepMemory.before_frame`/`after_frame` 已直接存 base64（见该字段文档），
-        只有 `store_step_episode_memory()` 反思成一条记忆的这一刻才需要现读现编
-        （把 `before`/`after` 两帧编进去）；`judge()` 的图完全来自 history 里
-        已经存好的截图，不走这里。
+        截图与 trace 事件共享 event_id（拍板⑦）：这里用 `_frame_event_ids`
+        里登记的帧事件 event_id 定位文件（`screenshot/<event_id>.png`），不再有
+        按 step 号拼文件名的公式。`StepMemory.before_frame`/`after_frame` 已直接
+        存 base64（见该字段文档），只有 `store_step_episode_memory()` 反思成一条
+        记忆的这一刻才需要现读现编；`judge()` 的图完全来自 history 里已经存好的
+        截图，不走这里。查不到登记（checkpoint 恢复后首个 store 步的历史帧）
+        返回 `None`——缺图跳过是既有契约。
         """
-        raw = read_screenshot(self._run_id, screenshot_filename(self._run_id, episode_id, step))
+        event_id = self._frame_event_ids.get((episode_id, step))
+        if event_id is None:
+            return None
+        raw = read_screenshot(self._run_id, event_id)
         return base64.b64encode(raw).decode() if raw is not None else None
 
     # ---- 对外只有这一个入口 ----
 
-    # 注意：这里**不带** `@initialize`。生产路径下这个方法只会被
-    # `RunHarness.dispatch()` 调用（见 `run_harness.py`），`@initialize` 挂在
-    # 那一层的 `RunHarness.run()`/`resume_run()` 上——它们的图入口 `plan` 节点
-    # 在第一次 `dispatch` 之前就要调用受权限守卫的 `Brain.plan_once`，权限运行时
-    # 必须在那时已经初始化，等不到这里。这里若也挂 `@initialize` 会在
-    # `dispatch → episode.run()` 处形成嵌套调用，被 `agent_permission` 的
-    # 嵌套检查直接断言失败（`runtime.py` 明写不允许静默容忍）。独立于
-    # `RunHarness` 单跑这个方法（如集成测试的"episode 级"场景）时，调用方
-    # 自己在调用点包一层 `@initialize`。
     def run(
-        self,
-        episode_id: str,
-        task: TaskForHarness,
-        stack: list[TaskForHarness],
-        run_state: dict[str, Any],
-    ) -> HarnessEpisodeOutcomeResp:
+        self, req: FromRunHarnessToEpisodeHarnessRunReq
+    ) -> FromRunHarnessToEpisodeHarnessRunResp:
         """跑完一局：解决栈顶这一个目标。
 
         前置条件：episode_id 非空、task.max_steps > 0、stack 非空且栈顶 == task。
@@ -185,6 +197,7 @@ class EpisodeHarness:
 
         开局、跑图、收尾三段，异常路径也补齐 EPISODE_END 后原样抛出。
         """
+        episode_id, task, stack, run_state = req.episode_id, req.task, req.stack, req.run_state
         assert episode_id, "run() got an empty episode_id"
         assert task.max_steps > 0, f"max_steps must be > 0, got {task.max_steps}"
         assert stack and stack[-1].task_id == task.task_id, (
@@ -219,11 +232,11 @@ class EpisodeHarness:
     def resume(
         self,
         episode_id: str,
-        task: TaskForHarness,
-        stack: list[TaskForHarness],
+        task: TaskForBrain,
+        stack: list[TaskForBrain],
         step: int,
         run_state: dict[str, Any],
-    ) -> HarnessEpisodeOutcomeResp:
+    ) -> FromRunHarnessToEpisodeHarnessRunResp:
         """从本局第 `step` 步开局的 checkpoint 恢复并跑完（PLAN_checkpoint §5，step 级入口）。
 
         前置条件：构造时注入了 checkpoint 工具；`(episode_id, step)` 的存档成对存在。
@@ -235,18 +248,31 @@ class EpisodeHarness:
         assert self._checkpoint is not None, "resume() needs a checkpoint tool"
         self._run_state_dump = run_state
         # 步骤 1：取存档（签名/成对校验在 tool 内）。
-        checkpoint = self._checkpoint.load(self._run_id, episode_id, step)
+        checkpoint = self._checkpoint.load(
+            FromHarnessToCheckpointToolLoadReq(
+                run_id=self._run_id, episode_id=episode_id, step=step
+            )
+        )
         assert checkpoint is not None, f"no checkpoint for ({episode_id}, {step})"
         # 步骤 2：废弃处理（对账游标 = checkpoint 的 last_event_id）。
-        self._checkpoint.void_after(self._run_id, episode_id, step, checkpoint.last_event_id)
+        self._checkpoint.void_after(
+            FromHarnessToCheckpointToolVoidReq(
+                run_id=self._run_id,
+                episode_id=episode_id,
+                step=step,
+                cursor=checkpoint.last_event_id,
+            )
+        )
         # 步骤 3：世界快照回载——唯一不可从事件重建的东西。`load_state_bytes()`
         # 只回载模拟器字节，不认得 `_task`/`_closed`（纯 Python 记账，不进存档）；
         # 不补 `set_task()` 的话，本局自己靠 `pending_observation` 收尾没事，
         # 但本 run 后续再派发新 episode 时（同一个长命 world，`_world_reset_done`
         # 已是 True、不会走 `reset()`）会在 `perceive_once()`/`step()` 撞上
         # "before reset()" 断言——这是 check_restore.py 端到端跑出来的真故障。
-        self._game.load_state_bytes(checkpoint.emulator_state)
-        self._game.set_task(task)
+        self._game.load_state_bytes(
+            FromHarnessToGameToolLoadStateBytesReq(emulator_state=checkpoint.emulator_state)
+        )
+        self._game.set_task(FromHarnessToGameToolSetTaskReq(task=task))
         self._world_reset_done = True
         # 步骤 4：状态重建（记忆层由各 store 构造时从落盘读回，无需重建）。
         state = EpisodeRunState.model_validate(checkpoint.state_dump)
@@ -277,15 +303,15 @@ class EpisodeHarness:
             raise
         return self._close(final, episode_id, task)
 
-    def _invoke(self, state: EpisodeRunState, task: TaskForHarness) -> dict[str, Any]:
+    def _invoke(self, state: EpisodeRunState, task: TaskForBrain) -> dict[str, Any]:
         """跑图直到终止。`recursion_limit` 按剩余步数换算（新跑/恢复同一条公式）。"""
         return self._graph.invoke(
             state, {"recursion_limit": (task.max_steps - state.step) * 17 + 20}
         )
 
     def _close(
-        self, final: dict[str, Any], episode_id: str, task: TaskForHarness
-    ) -> HarnessEpisodeOutcomeResp:
+        self, final: dict[str, Any], episode_id: str, task: TaskForBrain
+    ) -> FromRunHarnessToEpisodeHarnessRunResp:
         """收尾：outcome 与 EPISODE_END 从同一份 final_state 派生（run/resume 共用）。
 
         `done`/`success` 是 `EpisodeRunState` 自己的字段（`judge` 产出）；
@@ -299,7 +325,7 @@ class EpisodeHarness:
             task.max_steps,
             stalled=final_state.stall_count >= STALL_LIMIT,
         )
-        outcome = HarnessEpisodeOutcomeResp(
+        outcome = FromRunHarnessToEpisodeHarnessRunResp(
             episode_id=episode_id,
             success=final_state.success,
             steps=obs.step,
@@ -320,59 +346,38 @@ class EpisodeHarness:
 
         **只写存档，不改状态**——返回空增量。三件套：模拟器世界快照 +
         `EpisodeRunState` dump + trace 游标。checkpoint 工具未注入（测试/单局
-        直跑）时空转；存档失败若因权限被拒，记 PERMISSION_SKIPPED 后继续跑
-        （跟 store 系节点同一兜底），其余异常原样上抛。
+        直跑）时空转。
         """
         if self._checkpoint is None:
             return {}
-        try:
-            self._checkpoint.save(
-                FromHarnessToCheckpointToolSaveReq(
-                    run_id=self._run_id,
-                    episode_id=state.episode_id,
-                    step=state.step,
-                    state_dump=state.model_dump(),
-                    run_state_dump=self._run_state_dump,
-                    last_event_id=self._trace.cursor(),
-                    emulator_state=self._game.save_state_bytes(),
-                )
+        self._checkpoint.save(
+            FromHarnessToCheckpointToolSaveReq(
+                run_id=self._run_id,
+                episode_id=state.episode_id,
+                step=state.step,
+                state_dump=state.model_dump(),
+                run_state_dump=self._run_state_dump,
+                last_event_id=self._trace.cursor(),
+                emulator_state=self._game.save_state_bytes().emulator_state,
             )
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=state.episode_id,
-                    step=state.step,
-                    permission="execute:game:save_state",
-                    function="CheckpointTool.save",
-                    fallback="skip save_checkpoint",
-                    source=Source.HARNESS,
-                )
-            )
+        )
         return {}
 
     def _begin(
-        self, episode_id: str, task: TaskForHarness, stack: list[TaskForHarness]
+        self, episode_id: str, task: TaskForBrain, stack: list[TaskForBrain]
     ) -> EpisodeRunState:
         """开一局：写 EPISODE_START、reset 世界、存起点存档、感知第一帧，返回初始状态。
 
         `stack` 是整个目标栈（run 级投影）：`goals` = 全栈投影，**判只判栈顶**
         （`goals[-1]` = task.goal），其余层是给大脑的全局信息。
-
-        `memory_carried`（跨局摘要池大小）必须在 `reset()` 之前取——契约上它
-        描述的是「开局那一刻」，晚取容易被悄悄改成「reset 之后」。
         """
         # 步骤 1：开局账——EPISODE_START。
-        memory_carried = self._memory.episode_summary_count
         self._trace.append(
             FromHarnessToTraceToolAppendReq(
                 kind=TraceKind.EPISODE_START,
                 step=0,
                 episode_id=episode_id,
                 task=task,
-                memory_carried=memory_carried,
             )
         )
 
@@ -383,12 +388,17 @@ class EpisodeHarness:
         # 本局的终止画面，也是下一局的起点画面；ep1 起点 = `reset()`
         # 加载的 ROM 存档，同样可复现。
         if not self._world_reset_done:
-            self._game.reset(task)
+            self._game.reset(FromHarnessToGameToolResetReq(task=task))
             self._world_reset_done = True
 
         # 步骤 3：感知第一帧（重试循环在 `game_utils.perceive_with_retry`；
-        # 原始画面随该函数内部的感知 MODEL_CALL 事件落盘）。
-        obs = game_utils.perceive_with_retry(self._game, self._trace, episode_id, step=0)
+        # 原始画面随该函数内部的感知 MODEL_CALL 事件落盘）。登记帧事件的
+        # event_id——这一帧就是第 0 步的开局画面，`store_step_episode_memory`
+        # 反思成记忆时按它读截图。
+        obs, frame_event_id = game_utils.perceive_with_retry(
+            self._game, self._trace, episode_id, step=0
+        )
+        self._frame_event_ids[(episode_id, 0)] = frame_event_id
         assert not obs.done, "reset() must return a fresh observation"
 
         # 步骤 4：组装初始状态。
@@ -569,7 +579,11 @@ class EpisodeHarness:
         # 但 judge() 扛着"永远不抛异常"的契约，渲染搬出来之后这条契约不能丢：
         # 拼装本身可能抛的 KeyError（模板占位符对不上）在这里就近吞掉，不能让
         # 它一路冒穿 Harness。
-        history = self._memory.query_recent_steps(state.episode_id, JUDGE_HISTORY)
+        history = self._memory.query_recent_steps(
+            FromHarnessToMemoryToolQueryRecentStepsReq(
+                episode_id=state.episode_id, limit=JUDGE_HISTORY
+            )
+        ).steps
 
         # 步骤 2.5：这次问模型要带的截图，去重后一并拿到（不再单独取
         # `snapshots`——"当前观测"改由 `judge_success.build_prompt()` 直接复用
@@ -637,7 +651,9 @@ class EpisodeHarness:
         """
         assert state.observation is not None, "get_action_space before judge"
         # "这一步允许了哪些动作"留痕——它是大脑决策的合法边界。
-        space = self._game.get_action_space(state.observation)
+        space = self._game.get_action_space(
+            FromHarnessToGameToolGetActionSpaceReq(observation=state.observation)
+        ).action_space
         self._trace.append(
             FromHarnessToTraceToolAppendReq(
                 kind=TraceKind.ACTION_SPACE,
@@ -658,23 +674,9 @@ class EpisodeHarness:
         """
         assert state.observation is not None, "retrieve_step_episode_memory before judge"
         ep, step = state.episode_id, state.observation.step
-        try:
-            memories = self._memory.query_episode_steps(ep)
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=state.observation.step,
-                    permission="read:memory:episodic",
-                    function="query_episode_steps",
-                    fallback="[]",
-                    source=Source.MEMORY,
-                )
-            )
-            memories = []
+        memories = self._memory.query_episode_steps(
+            FromHarnessToMemoryToolQueryEpisodeStepsReq(episode_id=ep)
+        ).steps
         refs = " ".join(f"({m.episode_id}, {m.step})" for m in memories)
         self._trace.append(
             FromHarnessToTraceToolAppendReq(
@@ -708,29 +710,15 @@ class EpisodeHarness:
                 )
             )
             return {"global_episode_memories": []}
-        try:
-            episode_memories = self._memory.query_episode_summaries(
+        episode_memories = self._memory.query_episode_summaries(
+            FromHarnessToMemoryToolQueryEpisodeSummariesReq(
                 scene=scene_key,
                 query=state.task.goal,
                 limit=EPISODE_MEMORY_RECALL_LIMIT,
                 # 只检索本 run 沉淀的摘要（取舍见 `CHANGELOG.md` 2026-09-03 条目）。
                 run_id=self._run_id,
             )
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=step,
-                    permission="read:memory:episode",
-                    function="query_episode_summaries",
-                    fallback="[]",
-                    source=Source.MEMORY,
-                )
-            )
-            episode_memories = []
+        ).summaries
         refs = " ".join(m.episode_id for m in episode_memories)
         self._trace.append(
             FromHarnessToTraceToolAppendReq(
@@ -751,28 +739,12 @@ class EpisodeHarness:
         """
         assert state.observation is not None, "retrieve_knowledge_semantic_memory before judge"
         obs, ep, step = state.observation, state.episode_id, state.observation.step
-        try:
-            result = self._memory.query_knowledge(
-                FromHarnessToMemoryToolQueryKnowledgeReq(
-                    query=memory_query_utils.build_knowledge_query(obs, state.task.goal),
-                    limit=MEMORY_RECALL_LIMIT,
-                )
+        result = self._memory.query_knowledge(
+            FromHarnessToMemoryToolQueryKnowledgeReq(
+                query=memory_query_utils.build_knowledge_query(obs, state.task.goal),
+                limit=MEMORY_RECALL_LIMIT,
             )
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=step,
-                    permission="read:memory:knowledge",
-                    function="query_knowledge",
-                    fallback="empty FromHarnessToMemoryToolQueryKnowledgeResp",
-                    source=Source.MEMORY,
-                )
-            )
-            result = FromHarnessToMemoryToolQueryKnowledgeResp(contents=[], sources=[])
+        )
         self._trace.append(
             FromHarnessToTraceToolAppendReq(
                 kind=TraceKind.RETRIEVE_NODE,
@@ -790,29 +762,15 @@ class EpisodeHarness:
         **只改 `object_semantic_memory` 一处。**"""
         assert state.observation is not None, "retrieve_object_semantic_memory before judge"
         ep, step = state.episode_id, state.observation.step
-        try:
-            if state.observation.place is None:
-                events: list = []
-            else:
-                events = self._memory.query_object_events(
-                    state.observation.place.map_id, before_step=step
+        if state.observation.place is None:
+            events: list = []
+        else:
+            events = self._memory.query_object_events(
+                FromHarnessToMemoryToolQueryObjectEventsReq(
+                    map_id=state.observation.place.map_id, before_step=step
                 )
-            known = render_object_events(events)
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=step,
-                    permission="read:memory:objects",
-                    function="query_object_events",
-                    fallback="",
-                    source=Source.MEMORY,
-                )
-            )
-            events, known = [], ""
+            ).events
+        known = render_object_events(events)
         # 统计口径 = 事件条数（渲染文本一行一条事件，两者恒相等）
         self._trace.append(
             FromHarnessToTraceToolAppendReq(
@@ -967,7 +925,7 @@ class EpisodeHarness:
         ep, before, action = state.episode_id, state.observation, state.action
 
         # 步骤 1：按 `before` 这份观测执行（工具层照它验掩码），只推进世界，不感知。
-        self._game.execute(action, before)
+        self._game.execute(FromHarnessToGameToolExecuteReq(action=action, observation=before))
 
         # 步骤 2：写 ACT，交给下一格 look_after_action 去感知。
         self._trace.append(
@@ -990,22 +948,23 @@ class EpisodeHarness:
         ep, before = state.episode_id, state.observation
 
         # 步骤 1：感知这一步之后的新帧，交给停摆检测和落库那几格。原始画面
-        # 随感知 MODEL_CALL 直接落盘。
+        # 随感知 MODEL_CALL 直接落盘（一条感知一个截图文件，文件名 = 帧事件的
+        # event_id）。
         #
-        # `screenshot_step=before.step + 1`：这一帧感知到的是"下一步的开局画面"
-        # （它马上会变成 pending_observation，下一轮 `look()` 才会正式把它标成
-        # `before.step + 1` 步），截图要按它未来的身份编号，不能沿用
-        # `before.step`——否则跟 `_begin()` 存的开局第一帧（固定编号 0）撞名，
-        # `StepMemory` 按 step 号回头找文件时会找错。MODEL_CALL 事件本身仍然
-        # 按 `before.step` 记账（这次感知发生在第 `before.step` 步的回合里），
-        # 两者解耦见 `LocalTrace.append()`。
-        obs = game_utils.perceive_with_retry(
+        # 这一帧感知到的是"下一步的开局画面"（它马上会变成
+        # pending_observation，下一轮 `look()` 才会正式把它标成
+        # `before.step + 1` 步），所以登记键用 `before.step + 1`——
+        # `store_step_episode_memory` 反思这一步时 `after_frame` 正是按它查。
+        # MODEL_CALL 事件本身仍然按 `before.step` 记账（这次感知发生在第
+        # `before.step` 步的回合里），记账 step 与帧的语义 step 解耦，只是
+        # 两者的对应关系现在由本表记，不再靠文件名公式。
+        obs, frame_event_id = game_utils.perceive_with_retry(
             self._game,
             self._trace,
             ep,
             before.step,
-            screenshot_step=before.step + 1,
         )
+        self._frame_event_ids[(ep, before.step + 1)] = frame_event_id
         # 步骤 2：留一条轻量观察摘要（`EventType.LOOK_AFTER`）——该节点的
         # 痕迹只有感知 MODEL_CALL（要归 model_call 列）；完整 facts 由下一步
         # look 的 OBSERVE 携带，这里不重复。
@@ -1086,63 +1045,31 @@ class EpisodeHarness:
         # 顺便盖两张截图的 base64——大脑不知道 run_id，也不该知道磁盘上的存储
         # 约定，这两样都是 harness 自己的事，跟盖 episode_id 同一个道理）。
         # `before_frame` 是第 `before.step` 步的开局画面，`after_frame` 是
-        # 第 `before.step + 1` 步的开局画面（= 这一步做完动作后的画面，两者
-        # 是同一份东西，见 `screenshot_filename()`/`LocalTrace.append()` 的
-        # `screenshot_step` 说明）。直接存 base64 的取舍见 `CHANGELOG.md`
+        # 第 `before.step + 1` 步的开局画面（= 这一步做完动作后的画面，两次
+        # 感知的 event_id 都登记在 `_frame_event_ids`，见该表与
+        # `look_after_action` 的说明）。直接存 base64 的取舍见 `CHANGELOG.md`
         # 2026-09-05 条目。
-        try:
-            entry = self._brain_tool.reflect(
-                FromHarnessToBrainToolReflectReq(before=before, action=action, after=after)
-            ).entry.model_copy(
-                update={
-                    "episode_id": ep,
-                    "run_id": self._run_id,
-                    "before_frame": self._frame_b64(ep, before.step),
-                    "after_frame": self._frame_b64(ep, before.step + 1),
-                }
-            )
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=before.step,
-                    permission="execute:llm:memory_reflection",
-                    function="Brain.reflect",
-                    fallback="skip store_step_episode_memory",
-                    source=Source.MEMORY,
-                )
-            )
-            return {}
+        entry = self._brain_tool.reflect(
+            FromHarnessToBrainToolReflectReq(before=before, action=action, after=after)
+        ).entry.model_copy(
+            update={
+                "episode_id": ep,
+                "run_id": self._run_id,
+                "before_frame": self._frame_b64(ep, before.step),
+                "after_frame": self._frame_b64(ep, before.step + 1),
+            }
+        )
 
         # 步骤 2：落库。
-        try:
-            self._memory.store_episode_step(entry)
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=before.step,
-                    permission="write:memory:episodic",
-                    function="store_episode_step",
-                    fallback="skip",
-                    source=Source.MEMORY,
-                )
+        self._memory.store_episode_step(FromHarnessToMemoryToolStoreEpisodeStepReq(entry=entry))
+        self._trace.append(
+            FromHarnessToTraceToolAppendReq(
+                kind=TraceKind.MEMORY_WRITE,
+                episode_id=ep,
+                step=before.step,
+                entry=entry,
             )
-        else:
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.MEMORY_WRITE,
-                    episode_id=ep,
-                    step=before.step,
-                    entry=entry,
-                )
-            )
+        )
         return {}
 
     def store_object_semantic_memory(self, state: EpisodeRunState) -> dict[str, Any]:
@@ -1159,28 +1086,14 @@ class EpisodeHarness:
         )
 
         # 步骤 1：判定（kind 方法表）+ 落库，逐事件记 OBJECT_NOTE。
-        try:
-            events = object_fact_events(before, action, after, ep, before.step, self._memory)
-            if events:
-                # 盖 run_id 章（落盘签名三元组之一），同 store_step 的 episode_id 盖章。
-                self._memory.append_object_events(
-                    [e.model_copy(update={"run_id": self._run_id}) for e in events]
-                )
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=before.step,
-                    permission="write:memory:objects",
-                    function="append_object_events",
-                    fallback="skip",
-                    source=Source.MEMORY,
+        events = object_fact_events(before, action, after, ep, before.step, self._memory)
+        if events:
+            # 盖 run_id 章（落盘签名三元组之一），同 store_step 的 episode_id 盖章。
+            self._memory.append_object_events(
+                FromHarnessToMemoryToolAppendObjectEventsReq(
+                    events=[e.model_copy(update={"run_id": self._run_id}) for e in events]
                 )
             )
-            events = []
         for event in events:
             self._trace.append(
                 FromHarnessToTraceToolAppendReq(
@@ -1200,29 +1113,16 @@ class EpisodeHarness:
         `retrieve_step_episode_memory` 是同一个 level：查库单独成节点，不跟
         判定逻辑缝在一起。
 
-        只在判完成的收尾分支上跑一次（不是每步）。没有 step 记忆（或查询
-        权限被拒）时留空列表——下游路由据此直接结束这一局的收尾链。
+        只在判完成的收尾分支上跑一次（不是每步）。没有 step 记忆时留空列表——
+        下游路由据此直接结束这一局的收尾链。
         """
         assert state.observation is not None and state.done, (
             "retrieve_verify_step_memory before the episode finished"
         )
         ep, step = state.episode_id, state.observation.step
-        try:
-            entries = self._memory.query_episode_steps(ep)
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=step,
-                    permission="read:memory:episodic",
-                    function="query_episode_steps",
-                    fallback="[]",
-                )
-            )
-            return {"verify_step_entries": []}
+        entries = self._memory.query_episode_steps(
+            FromHarnessToMemoryToolQueryEpisodeStepsReq(episode_id=ep)
+        ).steps
         # 这个节点只在收尾链跑一次，但也要留自己的痕迹——entries 为空（下游
         # 跳 verify 直接蒸馏）时这条正好说明"查了，没有可校验的 step 记忆"。
         refs = " ".join(f"({m.episode_id}, {m.step})" for m in entries)
@@ -1243,37 +1143,19 @@ class EpisodeHarness:
         **图上单独一格，只改 `verify_knowledge` 一处。**
 
         只在 `verify_step_entries` 非空时才会走到这一格（路由见 `_compile`）。
-        检索权限被拒就当没有知识——校验器仍能靠方法论层自洽判一部分，召回
-        覆盖不到的领域判断由校验器自己判"无法确认"，这一层不兜底。检索账
-        单独记一条 `MEMORY_READ`（收尾路径没有 `enrich_observation` 可以顺路
-        记账，这里自己记，否则 trace 看不出"校验器看到了什么知识"）。
+        检索账单独记一条 `MEMORY_READ`（收尾路径没有 `enrich_observation`
+        可以顺路记账，这里自己记，否则 trace 看不出"校验器看到了什么知识"）。
         """
         assert state.observation is not None, "retrieve_verify_knowledge before judge"
         ep, step = state.episode_id, state.observation.step
-        try:
-            knowledge_result = self._memory.query_knowledge(
-                FromHarnessToMemoryToolQueryKnowledgeReq(
-                    query=memory_query_utils.build_verify_knowledge_query(
-                        state.verify_step_entries, state.task.goal
-                    ),
-                    limit=MEMORY_RECALL_LIMIT,
-                )
+        knowledge_result = self._memory.query_knowledge(
+            FromHarnessToMemoryToolQueryKnowledgeReq(
+                query=memory_query_utils.build_verify_knowledge_query(
+                    state.verify_step_entries, state.task.goal
+                ),
+                limit=MEMORY_RECALL_LIMIT,
             )
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=step,
-                    permission="read:memory:knowledge",
-                    function="query_knowledge",
-                    fallback="empty FromHarnessToMemoryToolQueryKnowledgeResp",
-                    source=Source.MEMORY,
-                )
-            )
-            knowledge_result = FromHarnessToMemoryToolQueryKnowledgeResp(contents=[], sources=[])
+        )
         self._trace.append(
             FromHarnessToTraceToolAppendReq(
                 kind=TraceKind.MEMORY_READ,
@@ -1322,8 +1204,8 @@ class EpisodeHarness:
         # Harness 自己经 pokemon_agent.prompts.verify_and_summarize 拼 prompt、
         # 回填进同一个 req（同 judge 的模式）：拼装本身可能抛的 KeyError 在这
         # 就近吞成"全部标不可靠 + 不写摘要"，不冒穿；真正问模型那步
-        # （`self._brain_tool.verify_and_summarize`）单独一层 try，只处理权限被拒——
-        # 两层各管各的失败原因，不要混在一起。全量历史对应的截图（`StepMemory`
+        # （`self._brain_tool.verify_and_summarize`）异常原样上抛，两层各管各的
+        # 失败原因，不要混在一起。全量历史对应的截图（`StepMemory`
         # 自带 base64，不用读盘），去重后一起交给校验器——跟 judge 同一套
         # `dedup_snapshots()`，区别只是这里没有"当前帧"要额外拼进来（校验的是
         # 已经结束的一局，没有正在进行的"当前"这一说），第二个返回值（对应的
@@ -1364,22 +1246,7 @@ class EpisodeHarness:
                 why=f"合并调用失败：{type(exc).__name__}",
             )
         else:
-            try:
-                result = self._brain_tool.verify_and_summarize(req)
-            except Exception as exc:
-                if not permission_was_denied(exc):
-                    raise
-                self._trace.append(
-                    FromHarnessToTraceToolAppendReq(
-                        kind=TraceKind.PERMISSION_SKIPPED,
-                        episode_id=ep,
-                        step=step,
-                        permission="execute:llm:verify",
-                        function="Brain.verify_and_summarize",
-                        fallback="skip verify",
-                    )
-                )
-                return {"verified_steps": None}
+            result = self._brain_tool.verify_and_summarize(req)
 
         # 步骤 2：合并调用的账单（MODEL_CALL，VERIFY）——逐条 verdicts 由 tool
         # 结构化进 payload（报表按它解析失效率）。
@@ -1419,23 +1286,9 @@ class EpisodeHarness:
             )
             return {"verified_steps": verified}
 
-        try:
-            episode_memory = self._memory.store_episode_summary(result.episode_memory)
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=step,
-                    permission="write:memory:episode",
-                    function="store_episode_summary",
-                    fallback="skip",
-                    source=Source.MEMORY,
-                )
-            )
-            return {"verified_steps": verified}
+        episode_memory = self._memory.store_episode_summary(
+            FromHarnessToMemoryToolStoreEpisodeSummaryReq(memory=result.episode_memory)
+        ).memory
 
         self._trace.append(
             FromHarnessToTraceToolAppendReq(
@@ -1446,21 +1299,4 @@ class EpisodeHarness:
             )
         )
 
-        # 丢弃本局 step 记忆（不跨局累积；权限拒绝静默，下局照样跑）。
-        try:
-            self._memory.discard_episode_steps(ep)
-        except Exception as exc:
-            if not permission_was_denied(exc):
-                raise
-            self._trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.PERMISSION_SKIPPED,
-                    episode_id=ep,
-                    step=step,
-                    permission="delete:memory:episodic",
-                    function="discard_episode_steps",
-                    fallback="skip",
-                    source=Source.MEMORY,
-                )
-            )
         return {"verified_steps": verified}

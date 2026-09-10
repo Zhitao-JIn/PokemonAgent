@@ -140,7 +140,6 @@
 |---|---|---|---|---|
 | `query_episode_summaries` | `(self, scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]` | `scene` 非空、`limit > 0` | 条数 `<= limit`；先按场景过滤（`applicable_scenes` 为空或含 `*` 视为通用经验），再按相关性 + 质量 + 成功与否加权排序 | 未文档化 |
 | `store_episode_summary` | `(self, ...) -> EpisodeMemory` | 一局结束时调一次 | 蔸馏出一条落库并返回 | 蔸馏解析失败戛 `ValueError`，内部已留一条 `ERROR` trace 事件 |
-| `episode_summary_count` | `(self) -> int` | 无 | 库里有多少条跨局摘要 | 无 |
 
 语义记忆（object / knowledge）：
 
