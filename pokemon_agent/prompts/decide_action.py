@@ -3,9 +3,9 @@
 
 - **常量** `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT`：给 `game_tools.py` 构造
   `ActionSpaceForBrain` 用（按当前 overlay 选按键说明、挂地图/连按提示）。
-- **函数** `build_prompt(req: FromBrainToolToBrainChooseOnceReq)`/`retry_prompt(req: RetryPromptReq)`：
+- **函数** `build_prompt(req: ChooseOnceReq)`/`retry_prompt(req: RetryPromptReq)`：
   给调用方（`EpisodeHarness`）用，各自对应一次决策请求的"首次组装"和"重试
-  追加"，**都只收一个 req 参数**——`build_prompt` 直接复用 `FromBrainToolToBrainChooseOnceReq`
+  追加"，**都只收一个 req 参数**——`build_prompt` 直接复用 `ChooseOnceReq`
   （跟 `Brain.choose_once()` 共享同一个对象：先拼 prompt，回填 `req.prompt`，
   再整个交给 `Brain`），`retry_prompt` 用本文件自己的 `RetryPromptReq`。
 
@@ -25,8 +25,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pokemon_agent.schemas.communication import FromBrainToolToBrainChooseOnceReq
-from pokemon_agent.schemas.domain import MAX_RATIONALE, GoalForBrain, Overlay, terrain_legend
+from pokemon_agent.schemas.brain import MAX_RATIONALE, ChooseOnceReq, GoalForBrain
+from pokemon_agent.schemas.world import Overlay, terrain_legend
 
 from . import load, load_nested_sections
 
@@ -146,7 +146,7 @@ def _render_human_note(note: str) -> str:
     return _HUMAN_NOTE_TEMPLATE.render(note=note)
 
 
-def build_prompt(req: FromBrainToolToBrainChooseOnceReq) -> str:
+def build_prompt(req: ChooseOnceReq) -> str:
     """组装一次决策请求对应的完整 `decide_action.md`。**只组装一次**——重试
     追加纠正说明是 `retry_prompt()` 的事，不会重新调用这里（同一份基础
     prompt 前缀，多次重试尝试才能共享缓存，见 `retry_prompt()`）。
@@ -207,7 +207,7 @@ _RETRY_TEMPLATE = load("retry_note")
 @dataclass(frozen=True)
 class RetryPromptReq:
     """`retry_prompt()` 的唯一输入——同一模式，只是这个调用没有现成的
-    `communication` schema 可以复用（`FromBrainToolToBrainChooseOnceReq` 是决策请求的形状，
+    `communication` schema 可以复用（`ChooseOnceReq` 是决策请求的形状，
     跟"在已有 prompt 后追加一段纠正说明"不是同一件事），所以就地定义一个
     轻量 dataclass，不进 `schemas/communication`（那边放的是跨 Brain/Harness
     的协议，这个纯粹是 prompts 内部的拼接参数）。

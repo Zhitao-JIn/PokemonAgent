@@ -50,10 +50,11 @@ import urllib.request
 from PIL import Image
 
 from pokemon_agent.errors import ImageNotDelivered, ParseFailure, ToolTimeout
-from pokemon_agent.schemas.communication import (
-    TextCompletionResp,
-    VisionCompletionReq,
-    VisionCompletionResp,
+from pokemon_agent.schemas.providers import (
+    LlmCompleteReq,
+    LlmCompleteResp,
+    VisionDescribeReq,
+    VisionDescribeResp,
 )
 
 # 一张 160x144 的 GB 截图真被当图处理时，输入至少是这个量级。
@@ -234,7 +235,7 @@ class _OpenAICompatibleBase:
 _DUMP_DIR = os.environ.get("VISION_DUMP_DIR", "")
 """把送进视觉模型的图写到这个目录。空 = 不写。
 
-    VISION_DUMP_DIR=vision_dump python -m pokemon_agent.experiment.run_experiment ...
+    VISION_DUMP_DIR=vision_dump python -m <任一入口脚本> ...
 
 存的是**实际发出去**的字节，也就是模型真正收到的那一份（没有预处理这一步，
 发出去的就是感知拿到的原图）。
@@ -246,7 +247,7 @@ _dump_seq = 0
 def _dump(image_b64: str) -> None:
     """写一张图，文件名按序号递增。**出错就算了，不能影响这一局。**
 
-    入参是 base64 字符串（跟 `VisionCompletionReq.images` 类型一致），落盘前
+    入参是 base64 字符串（跟 `VisionDescribeReq.images` 类型一致），落盘前
     先解码回字节——这个函数存在的意义就是让人肉眼能直接打开看，存 base64
     文本没有这个用处。
     """
@@ -281,8 +282,9 @@ class _MultimodalMixin:
         """
         return list(images)
 
-    def complete(self, prompt: str) -> TextCompletionResp:
+    def complete(self, req: LlmCompleteReq) -> LlmCompleteResp:
         """见 `LLMProvider.complete` 的契约。本方法不为输出格式负责。"""
+        prompt = req.prompt
         assert prompt, "complete() got an empty prompt"
 
         text, n_in, n_out, n_cached, n_reason, cut = self._unpack(self._post(prompt))
@@ -295,7 +297,7 @@ class _MultimodalMixin:
                 f"模型返回空正文（completion_tokens={n_out}，truncated={cut}）——"
                 "已请求关闭思考模式；若仍复现，检查该模型是否真的支持这个关闭参数",
             )
-        return TextCompletionResp(
+        return LlmCompleteResp(
             text=text,
             prompt_tokens=n_in,
             completion_tokens=n_out,
@@ -304,7 +306,7 @@ class _MultimodalMixin:
             truncated=cut,
         )
 
-    def describe(self, req: VisionCompletionReq) -> VisionCompletionResp:
+    def describe(self, req: VisionDescribeReq) -> VisionDescribeResp:
         """见 `VisionProvider.describe` 的契约，尤其是关于静默丢图的那一段。
 
         图片是一组（`judge`/`verify_and_summarize` 会带 `StepMemory` 历史里的
@@ -362,7 +364,7 @@ class _MultimodalMixin:
         if n_in < floor:
             raise ImageNotDelivered(n_in, floor)
 
-        return VisionCompletionResp(
+        return VisionDescribeResp(
             text=text,
             input_tokens=n_in,
             output_tokens=n_out,
@@ -439,15 +441,11 @@ def pack_images_grid(images: list[str]) -> str:
     assert images, "pack_images_grid() got no images"
     if len(images) == 1:
         return images[0]
-    frames = [
-        Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB") for b64 in images
-    ]
+    frames = [Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB") for b64 in images]
     w, h = frames[0].size
     rows, cols = image_grid_dims(len(frames))
     sep = 4
-    canvas = Image.new(
-        "RGB", (cols * w + (cols - 1) * sep, rows * h + (rows - 1) * sep), (0, 0, 0)
-    )
+    canvas = Image.new("RGB", (cols * w + (cols - 1) * sep, rows * h + (rows - 1) * sep), (0, 0, 0))
     for i, f in enumerate(frames):
         canvas.paste(f, ((i % cols) * (w + sep), (i // cols) * (h + sep)))
     buf = io.BytesIO()

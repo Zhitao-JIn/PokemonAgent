@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pokemon_agent.schemas.domain import ModelCall
+    from pokemon_agent.schemas.providers import ModelCall
 
 
 class AgentError(Exception):
@@ -109,7 +109,7 @@ class DecisionAttemptFailed(AgentError):
 
 
 class PlanAttemptFailed(AgentError):
-    """一次 run 级规划尝试失败（解析不出 `RunPlanResp`）。
+    """一次 run 级规划尝试失败（解析不出 `RunPlan`）。
 
     **单次尝试**的失败，可重试；账（`ModelCall`）随异常带出来，调用方
     （`RunHarness`）决定要不要再问一次、以及重试预算耗尽后怎么收场——跟

@@ -37,9 +37,7 @@ jobs:
           cache: pip
       - name: Install dev dependencies
         run: pip install -e ".[dev]"
-      # `tests/`（pokemon_agent 包）与 `evaluation/tests/`（测评子系统）
-      # 都不许连网、不许调真实模型（CLAUDE.md 第十节 / evaluation/SPEC.md
-      # 第一节），所以这一步不需要任何密钥。`pyproject.toml` 的 `testpaths`
-      # 已经同时列了这两个目录，`pytest` 不加参数就会两边都跑。
+      # `tests/` 不许连网、不许调真实模型（CLAUDE.md 第十节），所以这一步
+      # 不需要任何密钥。`pyproject.toml` 的 `testpaths` 已经列了它。
       - name: pytest
-        run: pytest --cov=pokemon_agent --cov=evaluation --cov-report=term-missing
+        run: pytest --cov=pokemon_agent --cov-report=term-missing

@@ -228,7 +228,7 @@ look → retrieve_memory → think → press → remember → look
 
 **流程（顺序是刻意的）**：
 
-1. **先写 `EPISODE_START`**（`Source.HARNESS`），payload 含 `goal`/`max_steps`/`memory_carried`（开局时 `memory.episode_summary_count`——跨局摘要池当时有多大，是判断 success rate 会不会被同批次内记忆积累污染的诊断入口，见 `evaluation/SPEC.md`）。**`task_id` 不进 payload**——批次实验的分组键靠 `run_id` 前缀区分（`experiment/run_all_tasks.py`），run 级自主拆解目标的 `task_id` 是 harness 生成的序号（`plan-{run_id}-{i}`），本身不携带跨局可比的语义（`schemas/communication/run_plan.py`），两种情况都不该进 trace。
+1. **先写 `EPISODE_START`**（`Source.HARNESS`），payload 含 `goal`/`success_criteria`/`max_steps`。**`task_id` 不进 payload**——批次实验的分组键靠 `run_id` 前缀区分（`experiment/run_all_tasks.py`），run 级自主拆解目标的 `task_id` 是 harness 生成的序号（`plan-{run_id}-{i}`），本身不携带跨局可比的语义（`schemas/communication/run_plan.py`），两种情况都不该进 trace。
 
    **在做任何事之前就写。** 以前它排在 `reset()`/`save_state()` 之后，注释却声称"episode 的边界应该是这一局在事件流里看到的第一条事件"——那句话只在这两步都成功时才成立。`reset()` 要调模拟器和视觉模型，`save_state()` 挂着唯一那条 `approval_required` 的权限，两者都可能抛；抛在这一行之前的话，`run()` 的兜底只会补一条 `EPISODE_END`，事件流里出现一个没有开头的结尾，比彻底没有记录更难读。
 

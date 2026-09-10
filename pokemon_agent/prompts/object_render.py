@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from pokemon_agent.schemas.datastore import (
+from pokemon_agent.schemas.memory import (
     ObjectDialogEvent,
     ObjectFactEvent,
     ObjectStillEvent,

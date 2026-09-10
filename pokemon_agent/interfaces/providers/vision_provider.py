@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.communication import VisionCompletionReq, VisionCompletionResp
+from pokemon_agent.schemas.providers import VisionDescribeReq, VisionDescribeResp
 
 from .llm_provider import LLMProvider
 
@@ -13,7 +13,7 @@ from .llm_provider import LLMProvider
 class VisionProvider(Protocol):
     """把「一张或多张图 + 一段提示」变成文本。"""
 
-    def describe(self, req: VisionCompletionReq) -> VisionCompletionResp:
+    def describe(self, req: VisionDescribeReq) -> VisionDescribeResp:
         """把图片交给视觉模型，返回一段描述。
 
         req：一次视觉补全请求（一组图片 + 要问的问题）。

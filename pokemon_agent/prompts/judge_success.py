@@ -6,7 +6,7 @@
 调用方必须自己包一层等价的兜底（把 `build_prompt()` 可能抛的 `KeyError` 吞成
 `done=False`），不能让模板缺个占位符就让 `KeyError` 一路冒穿 Harness。
 
-**只有一个输入参数**：`build_prompt()` 收 `FromBrainToolToBrainJudgeReq`——跟 `Brain.judge()`
+**只有一个输入参数**：`build_prompt()` 收 `JudgeReq`——跟 `Brain.judge()`
 共享同一个对象（先拼 prompt，`req.model_copy(update={"prompt": ...})` 回填，
 再整个交给 `Brain`），不必为"拼 prompt"和"问模型"各定义一套参数。
 
@@ -14,7 +14,7 @@
 `$observation`，跟 `$history` 最后一条的"之后变成"是同一份观测、渲染两遍。
 judge 第 0 步不问模型（`episode_harness.py::judge()` 的硬编码分支），走到这里
 `history` 保证非空，最后一条的"之后变成"本来就是当前这一帧，直接复用即可。
-`req.snapshots` 字段随这次改动一并从 `FromBrainToolToBrainJudgeReq`/
+`req.snapshots` 字段随这次改动一并从 `JudgeReq`/
 `FromHarnessToBrainToolJudgeReq` 删除（不用的字段不留）。
 
 原来 `JUDGE_BLIND` 常量（挡 `known_objects`/`walk_map`/`landmarks` 三个字段
@@ -32,15 +32,15 @@ judge 第 0 步不问模型（`episode_harness.py::judge()` 的硬编码分支�
 
 from __future__ import annotations
 
-from pokemon_agent.schemas.communication import FromBrainToolToBrainJudgeReq
-from pokemon_agent.schemas.datastore import render_sequence
+from pokemon_agent.schemas.brain import JudgeReq
+from pokemon_agent.schemas.memory import render_sequence
 
 from . import load
 
 _TEMPLATE = load("judge_success")
 
 
-def build_prompt(req: FromBrainToolToBrainJudgeReq) -> str:
+def build_prompt(req: JudgeReq) -> str:
     """拼 `judge()` 用的 prompt。**只读 `req.prompt` 之外的字段**——`prompt`
     是这次调用要回填的输出，不是输入。
 

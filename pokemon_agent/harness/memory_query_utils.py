@@ -10,8 +10,8 @@ query 字符串，交给调用方去调 `MemoryToolPort` 的查询方法——**
 
 from __future__ import annotations
 
-from pokemon_agent.schemas.datastore import StepMemory
-from pokemon_agent.schemas.domain import ObservationFromWorld
+from pokemon_agent.schemas.memory import StepMemory
+from pokemon_agent.schemas.world import ObservationFromWorld
 
 
 def build_knowledge_query(obs: ObservationFromWorld, goal: str) -> str:

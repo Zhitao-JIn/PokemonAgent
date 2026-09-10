@@ -1,15 +1,15 @@
 """`run_plan.md` 的装配逻辑：加载、拼装、渲染，都在这一个文件里。
 
 跟 `decide_action.py`/`judge_success.py`/`verify_and_summarize.py` 同一个
-模式——`RunHarness` 只负责查 trace、组装 `FromBrainToolToBrainPlanOnceReq`（`events`/`goals` 保持
+模式——`RunHarness` 只负责查 trace、组装 `PlanOnceReq`（`events`/`goals` 保持
 结构化），struct→text（trace 事件折成「每局一行」历史、目标栈渲成带箭头的
 多行文本）交给这里的 `build_prompt()`——五份 prompt 的组装方式保持一致。
 """
 
 from __future__ import annotations
 
-from pokemon_agent.schemas.communication import FromBrainToolToBrainPlanOnceReq
-from pokemon_agent.schemas.datastore import EventType, TraceEvent
+from pokemon_agent.schemas.brain import PlanOnceReq
+from pokemon_agent.schemas.trace import EventType, TraceEvent
 
 from . import load
 
@@ -43,7 +43,7 @@ def _goals_lines(goals: list) -> str:
     )
 
 
-def build_prompt(req: FromBrainToolToBrainPlanOnceReq) -> str:
+def build_prompt(req: PlanOnceReq) -> str:
     """拼出这一轮 `plan` 用的完整 prompt。"""
     return _TEMPLATE.render(
         history=_history_lines(req.events),

@@ -4,7 +4,7 @@
 - `brain_tool.py`（`BrainToolPort`）对接 brain——req 翻译成 brain 原生输入；
 - `trace_tool.py`（`TraceToolPort`）对接 trace——按 `TraceKind` 渲染 payload
   再落盘，渲染规则在 `trace_render.py`（payload 字段格式是跨模块契约，
-  `evaluation/eval_report.py` 按字段名解析，变更权在本层）；
+  观测台前端按字段名渲染，变更权在本层）；
 - `game_tools.py`（`GameToolPort`）对接 world；
 - `memory_tool.py`（`MemoryToolPort`）对接 memory。
 

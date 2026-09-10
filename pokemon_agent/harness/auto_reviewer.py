@@ -6,16 +6,16 @@
 
 from __future__ import annotations
 
-from pokemon_agent.schemas.communication import (
+from pokemon_agent.schemas.harness import (
+    FromHarnessToReviewerReviewReq,
+    FromHarnessToReviewerReviewResp,
     HumanDecision,
-    HumanReviewReqFromHarness,
-    HumanReviewRespFromFrontend,
 )
 
 
 class AutoContinueReviewer:
     """占位实现：每个 episode 之间都答复"继续"。"""
 
-    def review(self, req: HumanReviewReqFromHarness) -> HumanReviewRespFromFrontend:
+    def review(self, req: FromHarnessToReviewerReviewReq) -> FromHarnessToReviewerReviewResp:
         """永远返回 `CONTINUE`，不看上下文。"""
-        return HumanReviewRespFromFrontend(decision=HumanDecision.CONTINUE)
+        return FromHarnessToReviewerReviewResp(decision=HumanDecision.CONTINUE)

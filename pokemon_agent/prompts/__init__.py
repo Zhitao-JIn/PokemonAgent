@@ -34,7 +34,7 @@
   服务 `Brain.judge()`——渲染搬出来给调用方（`EpisodeHarness`），`Brain`
   只收现成的 `prompt: str`；`verify_and_summarize.py` 同理服务
   `Brain.verify_and_summarize()`；`run_plan.py` 服务 `RunHarness.plan()`——
-  `RunHarness` 只组装结构化的 `FromBrainToolToBrainPlanOnceReq`，struct→text 一律在这层做。
+  `RunHarness` 只组装结构化的 `PlanOnceReq`，struct→text 一律在这层做。
   `perceive_screen` 没有配 `.py`：它不经过 `Brain` 也不经过任何 Harness 节点
   ——`PyBoyWorld` 自己 `load()` 并渲染，是"拥有这次 LLM 调用的那个类"自己的事。
   （`episode_summary.md` 已删除——蒸馏并入了 `Brain.verify_and_summarize()`

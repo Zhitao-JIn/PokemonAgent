@@ -11,7 +11,7 @@
 **朝向从内存读**（精灵表 +9），不按按键推断——按键推断在开局和过场之后是
 未知的，且不进存档、checkpoint 恢复不回来。
 
-模型调用记录跟着 `FromGameToolToWorldPerceiveOnceResp` / `FromGameToolToWorldPerceiveOnceResp` 的返回值走，这里不攒缓冲区。
+模型调用记录跟着 `PerceiveOnceResp` / `PerceiveOnceResp` 的返回值走，这里不攒缓冲区。
 更多设计记录见 `docs/spec/world/SPEC.md`。
 """
 
@@ -25,17 +25,14 @@ from pyboy import PyBoy
 from pokemon_agent.errors import PerceptionAttemptFailed
 from pokemon_agent.interfaces import VisionProvider
 from pokemon_agent.prompts import load as load_prompt
-from pokemon_agent.schemas.communication import (
-    FromGameToolToWorldPerceiveOnceResp,
-    VisionCompletionReq,
-)
-from pokemon_agent.schemas.domain import (
+from pokemon_agent.schemas.brain import ActionFromBrain, TaskForBrain
+from pokemon_agent.schemas.providers import VisionDescribeReq
+from pokemon_agent.schemas.world import (
     OVERLAY_ACTIONS,
-    ActionFromBrain,
     ObservationFromWorld,
     Overlay,
+    PerceiveOnceResp,
     Scene,
-    TaskForHarness,
     terrain_legend,
 )
 
@@ -178,7 +175,7 @@ class PyBoyWorld:
         self._frames = FrameSlot()
         """实时画面的单槽管道：`_tick` 每帧生产，`latest_frame()` 消费（SSE）。"""
 
-        self._task: TaskForHarness | None = None
+        self._task: TaskForBrain | None = None
         self._closed = False
         """窗口被关了。**这是 world 唯一有资格宣告的终止**——世界没了，跑不下去。
 
@@ -189,7 +186,7 @@ class PyBoyWorld:
 
     # ---- WorldPort ----
 
-    def reset(self, task: TaskForHarness) -> None:
+    def reset(self, task: TaskForBrain) -> None:
         """按任务重置。**不感知**——第一帧由 Harness 调 `perceive_once()` 拿。
 
         前置条件：task.max_steps > 0。
@@ -220,7 +217,7 @@ class PyBoyWorld:
         # 步骤 2。
         self._task, self._closed = task, False
 
-    def set_task(self, task: TaskForHarness) -> None:
+    def set_task(self, task: TaskForBrain) -> None:
         """只挂任务标记，**不动模拟器状态**——`reset()` 步骤 2 单独拎出来。
 
         用于 checkpoint 恢复：`load_state_bytes()` 已经把模拟器摆到了正确的
@@ -284,7 +281,7 @@ class PyBoyWorld:
         # 瞬间跳变；无头模式不限速，这 10 秒游戏时间的 tick 本身是瞬间的。
         self._tick(AFTER_ACTION_FRAMES)
 
-    def perceive_once(self) -> FromGameToolToWorldPerceiveOnceResp:
+    def perceive_once(self) -> PerceiveOnceResp:
         """感知当前这一帧，**只问一次视觉模型，不重试**。
 
         调用方（`EpisodeHarness`）在 `reset()`/`step()` 之后调它拿观测；
@@ -320,7 +317,7 @@ class PyBoyWorld:
         # 统一格式，见该字段文档）；这里是唯一产出原始字节的地方，编码就在这
         # 做——下游不用关心谁该编码。
         r = self._vision.describe(
-            VisionCompletionReq(images=[base64.b64encode(png).decode()], prompt=prompt)
+            VisionDescribeReq(images=[base64.b64encode(png).decode()], prompt=prompt)
         )
         screen = parse_screen(r.text)
         call = {
@@ -407,7 +404,7 @@ class PyBoyWorld:
             # ——世界压根不知道目标是什么，不给恒为 False 的占位值。
             done=self._closed,
         )
-        return FromGameToolToWorldPerceiveOnceResp(
+        return PerceiveOnceResp(
             observation=obs, calls=[call], frame_png=base64.b64encode(png).decode()
         )
 

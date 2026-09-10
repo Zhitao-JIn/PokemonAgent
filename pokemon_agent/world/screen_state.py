@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from pokemon_agent.schemas.domain import Overlay, Scene
+from pokemon_agent.schemas.world import Overlay, Scene
 
 CURSOR_MARKS: frozenset[str] = frozenset("\u25b6\u25ba\u25b8\u27a4>")
 """能当光标的那几个字符：`▶` `►` `▸` `➤` `>`。

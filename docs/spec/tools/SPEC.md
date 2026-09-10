@@ -334,9 +334,9 @@ return sorted((m for m in self._episodes if m.episode_id == episode_id),
 
 #### 3.2.4 `episode_step_count` —— 现在是方法不是 property
 
-`episode_step_count()`：库里一共多少条单步记忆。**不再是** `EPISODE_START`
-的 `memory_carried` 来源——step 记忆生命周期收紧后（按 episode 隔离、蒸馏后即弃，
-见 CHANGELOG 2026-08-31），开局时这个数恒为 0，已经不能反映"带着多少经验开局"。
+`episode_step_count()`：库里一共多少条单步记忆。step 记忆生命周期收紧后
+（按 episode 隔离、蒸馏后即弃，见 CHANGELOG 2026-08-31），开局时这个数恒为 0，
+不能反映"带着多少经验开局"。
 
 #### 3.2.5 跨局摘要记忆（episode memory）
 
@@ -346,7 +346,6 @@ return sorted((m for m in self._episodes if m.episode_id == episode_id),
   先按 `scene` 过滤（`applicable_scenes` 为空或含 `*` 视为通用经验，见
   `schemas/episode_memory.py` 的 `SCENE_ANY`），再按相关性 + 质量 + 成功与否加权排序。
 - `store_episode_summary(...)`：一局结束时调 `EpisodeMemoryGenerator` 蒸馏一条落库。
-- `episode_summary_count()`：库里有多少条。
 
 ### 3.3 语义记忆（object）
 
@@ -674,7 +673,6 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
 | `episode_step_count` | `() -> int` | 库里单步记忆条数（本局内，蒸馏后即弃，不再跨局累积）|
 | `query_episode_summaries` | `(scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]` | 跨局摘要：先按 `scene` 过滤（空或含 `*` 视为通用），再按相关性 + 质量 + 成功加权排序 |
 | `store_episode_summary` | `(...) -> EpisodeMemory` | 一局结束时蒸馏一条落库；蒸馏失败抛 `ValueError`（内部已留一条 ERROR 事件）|
-| `episode_summary_count` | `() -> int` | 库里跨局摘要条数；**A/B 实验自变量**，`EPISODE_START` 的 `memory_carried` 用它——开局时跨局摘要池有多大 |
 | `query_objects` | `(obs: Observation) -> str` | 后置：`obs.place` 为 None 或无已知条目时返回空串；条与条之间**空一行**（`\n\n`），因为一条档案本身是多行 |
 | `query_knowledge` | `(query: str, limit: int = 5) -> KnowledgeQueryResult` | 和坐标无关的通用先验；混合检索（BM25 + 向量 + rerank），按目录 mtime 增量重建索引；返回 `contents` 和 `sources`（trace 只记后者）|
 | `store_objects_interactions` | `(before: Observation, action: Action, after: Observation) -> list[ObjectFact]` | 前置：`before`/`after` 都有 `place`；算不出确定格子时不记（**多段链**、连按、原地转身、两个候选同时存在），宁可漏记不可记错 |

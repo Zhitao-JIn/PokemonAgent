@@ -6,7 +6,7 @@
 
 校验（`step_verify`）与蒸馏（`episode_summary`）在同一次 LLM 调用里问，
 问题合并成一份 prompt 问。`build_prompt()`
-只读 `FromBrainToolToBrainVerifyAndSummarizeReq` 除 `prompt` 外的字段拼出字符串；调用方
+只读 `VerifyAndSummarizeReq` 除 `prompt` 外的字段拼出字符串；调用方
 （`EpisodeHarness.verify_and_summarize`）拿到字符串后 `req.model_copy(update=
 {"prompt": ...})` 回填，再整个交给 `Brain.verify_and_summarize()`——跟
 `judge_success` 是同一个模式，`Brain` 不认识
@@ -15,15 +15,15 @@
 
 from __future__ import annotations
 
-from pokemon_agent.schemas.communication import FromBrainToolToBrainVerifyAndSummarizeReq
-from pokemon_agent.schemas.datastore import render_sequence
+from pokemon_agent.schemas.brain import VerifyAndSummarizeReq
+from pokemon_agent.schemas.memory import render_sequence
 
 from . import load
 
 _TEMPLATE = load("verify_and_summarize")
 
 
-def build_prompt(req: FromBrainToolToBrainVerifyAndSummarizeReq) -> str:
+def build_prompt(req: VerifyAndSummarizeReq) -> str:
     """拼出这次合并调用要问的完整 prompt。
 
     `entries` 用 `render_sequence()` 去重相邻重复快照，`## 第 i 条` 编号；

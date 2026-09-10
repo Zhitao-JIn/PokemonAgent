@@ -21,7 +21,6 @@ import type {
   PendingReview,
   ReviewSubmitReq,
   ReviewSubmitResp,
-  RunMetrics,
   SseEvent,
   StartRunReq,
   StartRunResp,
@@ -84,12 +83,6 @@ export function submitReview(req: ReviewSubmitReq): Promise<ReviewSubmitResp> {
 export function submitHumanNote(req: HumanNoteReq): Promise<HumanNoteResp> {
   const { run_id, ...body } = req;
   return request(`/runs/${run_id}/note`, { method: "POST", body: JSON.stringify(body) });
-}
-
-/** 查实时聚合报表（GET /runs/{id}/metrics）——run 还在跑也能查，看到的是到
- *  目前为止的数字，不用等 run 结束。`docs/ROADMAP.md` 第 2 条"可观测"第二拍。 */
-export function getMetrics(req: GetRunReq): Promise<RunMetrics> {
-  return request(`/runs/${req.run_id}/metrics`);
 }
 
 /**

@@ -153,21 +153,24 @@ pokemon_agent/
 │                     episode_summary_io（蒸馏那次调用的请求+响应，不是记忆）
 │                     其余：Observation / Action / ActionSpace / TraceEvent / Completion
 ├── interfaces/       Protocol 定义（"港口"）：WorldPort / GameToolPort / MemoryToolPort /
-│                     BrainPort / TracePort / LLMProvider / VisionProvider 等
+│                     BrainPort / TracePort / LLMProvider / VisionProvider 等。
+│                     memory 自己的契约不在此层，随 memory 包走（见下）
 ├── brain/            纯决策层。无状态。只依赖 interfaces + schemas
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方
 ├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层
 ├── tools/            GameTools / MemoryTool：Harness 伸向环境和记忆的两只手
-├── memory/           记忆的纯存储层，episode / semantic 两类对称，每类两个文件
-│                     （xxx_store.py + util.py）；semantic_store.py 含
-│                     object+knowledge 两个 store；蒸馏调用在 brain，
-│                     episode_store.py 纯存储（见 ROADMAP 16）；
-│                     retrieval.py 是两类共用的混合检索（只认字符串）。
+├── memory/           memory 子系统整块（契约 + 实现 + 算法，可整体拷走复用）：
+│                     ports.py 是对外契约（MemoryStorePort）；store.py 是统一记录
+│                     存储（MemoryStore：一条记录一个 <uuid>.json/.md + 每文件夹
+│                     倒排索引 index.json + 向量 sidecar vectors.jsonl）；
+│                     retrieval.py 是混合检索纯函数（BM25 + embedding + RRF +
+│                     reranker，只认字符串，不认记忆类型）。
 │                     只做读写与索引，不做语义判定（见下方分层原则）
 ├── providers/        具体 LLM/视觉模型接入（DashScope/Qwen）
 ├── vision/           图像预处理（网格叠加、放大）
 ├── trace/            TracePort 实现（LocalTrace，落盘 JSONL）+ 事件 payload 组装
-├── experiment/       实验 manifest、任务定义、跑批入口
+├── experiment/       实验任务定义（tasks.py）、experiment_states/（钉死存档）、
+│                     real_check/（六维度真实链路核对）——仓库根级，不在包内
 ├── prompts/          所有 prompt 模板 + 组装辅助函数
 └── build.py          唯一的装配点（全项目唯一 new 具体实现的地方）
 
@@ -201,7 +204,7 @@ pyproject.toml
 
 ## 七、代码风格
 
-- Python 3.11（不是 3.10——`agent_permission` 依赖 3.11 的 `enum.StrEnum`）。所有公开函数、方法、Pydantic 字段**必须有类型注解**。
+- Python 3.11（不是 3.10——`enum.StrEnum` 要 3.11 才有，`schemas/trace/domain/trace_kind.py` 等用到）。所有公开函数、方法、Pydantic 字段**必须有类型注解**。
 - `ruff` 管 lint + format，行宽 100。提交前跑 `ruff check . && ruff format .`。
 - 命名用完整英文单词，不用缩写（`action_space` 不是 `act_sp`）。
 - 注释仅三处：**文件顶层 docstring、函数顶层 docstring、函数内步骤进度**（`# 步骤 N：`）。
@@ -253,3 +256,47 @@ pyproject.toml
 
 **别提前做。** 但接口要留得住：设计任何抽象时问一句"机制一接进来时这里要改吗"，
 要改就说明抽象错了。
+
+## 十二、schemas：信封与接口模型命名（2026-09-10 定稿）
+
+**分包形态**：七个产出模块各自一个包、各自一个统一出口（`frontend` / `harness` /
+`brain` / `world` / `memory` / `trace` / `providers`），包内按种类落到
+`communication/` `domain/` `datastore/`。schemas 侧**不给 tool 门面单开子包**——
+`tools/` 代码层的五个门面保留，harness 经门面调模块的架构不变。
+
+1. **信封 = 我们自己的模块间契约**，命名 `From[模块A]To[模块B][函数名][Req/Resp]`，
+   **两半都放 A 处（发起方）**。强制适用范围是 **Harness ↔ 各门面**这一跳。
+   **外壳（api / experiment）→ Harness 这条边不包装**：外壳不是我们的模块，
+   入参与返回值都走裸字段——`run(run_id, goals)` 返回
+   `(outcomes, total, succeeded, success_rate)`，`resume_run(run_id, episode_id, step)`
+   同款；推给前端的 JSON 由 API 自己拼，形状归 API。（`submit_edit` /
+   `latest_frame` 还带着信封，待统一。）
+   注意别把这条推到记账层：**信封该内嵌模型就内嵌模型**——RUN_END 里的
+   `RunResp` 由 `_close()` 内部组装，跟 `run()` 返回什么无关（第 5 条）。
+   第一跳（调用方 → 模块门面）永远是信封，**门面上的每个方法都算**——
+   `game_tool` 与 `memory_tool` 已于 0910 补齐（此前只有 `query_knowledge` 一条）。
+   有入参就有 Req，返回结构化载荷就有 Resp；返回 None 的没有 Resp
+   （`FromHarnessToCheckpointToolSaveReq` 是先例）。
+2. **模块对外的接口模型用裸名**，不带 From/To（providers 的 `LlmCompleteReq`、
+   brain 的 `ChooseOnceReq`、world 的 `PerceiveOnceResp`、harness 的 `RunResp`）——因为发起方可能换人
+   （今天 harness，明天第三方），From/To 前缀是赌一个注定被换掉的名字。
+   **第二跳（门面 → 具体模块）走裸参数、返回模块自己的类型**，不造信封也不新建模型。
+3. **豁免登记**（只有这两条，其余一律违规）：
+   - `RunDataCenter` 直读——共享观察面，不是 RPC 语义。
+   - **零参标量属性读取**：`TracePort.cursor`。没有载荷可装，套信封
+     只剩一个空壳。
+4. **domain 实体按产出方归属**；**跨包引用只允许向下**，登记如下：
+   - 聚合方 → 被聚合方：`frontend → harness/brain`、`harness → 各家`、`memory → world`、
+     `brain → world/memory`（`ChooseOnceReq` 天然要吃观测与记忆）。
+   - `providers` / `trace` 是**最底层共用层**，任何包可引用（`ModelCall` 挂账、
+     `TraceEvent` 进 plan 上下文），它们自己零跨包引用。
+   - 叶子包之间零引用、**永不反向**：被调方不许 import 发起方的包。
+5. **反向依赖的正解是改归属，不是摊字段。** 0910 的现场教训：
+   `FromHarnessToTraceToolAppendReq` 内嵌 run 结算，而结算当时叫
+   `FromFrontendToRunHarnessRunResp`、归在 frontend 包——记账层要内嵌它就得反向
+   import 前端包（实测还成了 `schemas.frontend ↔ schemas.harness` 的循环 import）。
+   正解是认出**这个模型本来就不属于那条边**：五个字段全是 `RunHarness._close()`
+   自己数出来的，跟谁发起这次 run 无关，所以按第 2 条改成裸名 `RunResp`
+   归 harness（入参那半直接摊成裸字段，见第 1 条），trace 内嵌它就是同包引用。
+   **不要为了断依赖把结算摊成 `run_total`/`run_succeeded`/`run_success_rate` 这类裸字段**
+   ——信封该内嵌模型就内嵌模型，摊平只是把归属错误藏进字段列表里。

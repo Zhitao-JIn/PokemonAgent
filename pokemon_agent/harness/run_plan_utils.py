@@ -2,14 +2,14 @@
 
 **只放这一根依赖会用到的重试循环、记账与纯计算**——跟 `run_utils.py`
 （图控制本身用到的、不绑定任何依赖的纯函数）是同一层拆分：那边放
-`goal_retries_exhausted`/`apply_goals_edit` 这类只碰 `RunState`/`GoalsEdit`
+`goal_retries_exhausted`/`apply_goals_edit` 这类只碰 `RunState`/`FromFrontendToRunHarnessSubmitEditReq`
 的函数，这里放"问规划模型"这一整条链路会用到的东西。
 
 `ask_planner_with_retry` 是依赖注入的编排函数：`BrainToolPort`/`TraceToolPort`
 是**参数**、不是 `self` 属性——调用方（`RunHarness.plan()`）传自己的
 `self._brain`/`self._trace` 进来，这里就能用假端口独立测试。
 
-run 级规划的原始文本 → `RunPlanResp` 解析（剥 json 围栏、`json.loads`、
+run 级规划的原始文本 → `RunPlan` 解析（剥 json 围栏、`json.loads`、
 字段校验）在 `brain/brain.py::Brain._parse_plan` 里，跟
 `choose_once`/`Brain._parse` 同一个位置——`plan` 是"另一种要问模型的问题"，
 不是"另一个模块的原始返回值"。这里只剩"问、重试、记账"和"契约内对象
@@ -20,15 +20,12 @@ from __future__ import annotations
 
 from pokemon_agent.errors import PlanAttemptFailed
 from pokemon_agent.interfaces import PLAN_MAX_ATTEMPTS, BrainToolPort, TraceToolPort
-from pokemon_agent.schemas.communication import (
+from pokemon_agent.schemas.brain import RunPlan, TaskForBrain
+from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceReq,
     FromHarnessToTraceToolAppendReq,
-    PlanGoal,
-    RunPlanResp,
-    TraceKind,
 )
-from pokemon_agent.schemas.datastore import EventType, Source
-from pokemon_agent.schemas.domain import TaskForHarness
+from pokemon_agent.schemas.trace import EventType, Source, TraceKind
 
 RUN_TRACE_MASK = frozenset({EventType.LIFECYCLE, EventType.ERROR})
 """run 级 plan 读 trace 时的 type 粗 mask——只取流程边界 + 失败两种家族，
@@ -37,11 +34,11 @@ RUN_TRACE_MASK = frozenset({EventType.LIFECYCLE, EventType.ERROR})
 折算逻辑按 payload kind 再筛一层（type 只到家族粒度，语义在 kind）。"""
 
 
-def to_tasks(goals: list[PlanGoal], run_id: str) -> list[TaskForHarness]:
+def to_tasks(goals: list[RunPlan.PlanGoal], run_id: str) -> list[TaskForBrain]:
     """把 LLM 的新目标转成可派发的任务——`task_id` 由 harness 生成
     （`plan-{run_id}-{序号}`），run 级自主拆解的目标没有实验分组键。"""
     return [
-        TaskForHarness(
+        TaskForBrain(
             task_id=f"plan-{run_id}-{i + 1}",
             goal=g.goal,
             success_criteria=g.success_criteria,
@@ -56,7 +53,7 @@ def ask_planner_with_retry(
     trace: TraceToolPort,
     run_id: str,
     req: FromHarnessToBrainToolPlanOnceReq,
-) -> tuple[RunPlanResp | None, bool]:
+) -> tuple[RunPlan | None, bool]:
     """反复问一次规划，最多 `PLAN_MAX_ATTEMPTS` 次——**循环、端口调用、记账都
     在这里**，`brain_tool.plan_once()` 只负责单次尝试（问模型 + 解析），跟
     `brain_utils.choose_with_retry` 是同一个模式在 run 级图上的落地。

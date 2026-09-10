@@ -158,11 +158,17 @@ pokemon_agent/
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方
 ├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层
 ├── tools/            GameTools / MemoryTool：Harness 伸向环境和记忆的两只手
-├── memory/           语义记忆的纯存储层（episode/ 情景记忆，semantic/ 语义记忆）
+├── memory/           记忆子系统整块：ports.py 对外契约（MemoryStorePort）+ store.py
+│                     统一记录存储（MemoryStore：一个 kind 一个文件夹 step_memory /
+│                     object_memory / episode_memory / knowledge_memory，一条记录一个
+│                     uuid 文件 + 每文件夹一份写穿倒排索引 index.json，可自愈重建）
+│                     + retrieval.py 混合检索纯函数
 ├── providers/        具体 LLM/视觉模型接入（DashScope/Qwen）
 ├── vision/           图像预处理（网格叠加、放大）
-├── trace/            TracePort 实现（LocalTrace，落盘 JSONL）+ 事件 payload 组装
-├── experiment/       实验 manifest、任务定义、跑批入口
+├── trace/            TracePort 实现（LocalTrace：一条事件一个 json 落盘
+│                     trace_data/<run_id>/events/）+ 事件 payload 组装
+├── experiment/       实验任务定义（tasks.py）、experiment_states/（钉死存档）、
+│                     real_check/（六维度真实链路核对）——仓库根级，不在包内
 ├── prompts/          所有 prompt 模板 + 组装辅助函数
 └── build.py          唯一的装配点（全项目唯一 new 具体实现的地方）
 
@@ -194,7 +200,7 @@ pyproject.toml
 
 ## 七、代码风格
 
-- Python 3.11（不是 3.10——`agent_permission` 依赖 3.11 的 `enum.StrEnum`）。所有公开函数、方法、Pydantic 字段**必须有类型注解**。
+- Python 3.11（不是 3.10——`enum.StrEnum` 要 3.11 才有，`schemas/trace/domain/trace_kind.py` 等用到）。所有公开函数、方法、Pydantic 字段**必须有类型注解**。
 - `ruff` 管 lint + format，行宽 100。提交前跑 `ruff check . && ruff format .`。
 - 命名用完整英文单词，不用缩写（`action_space` 不是 `act_sp`）。
 - 注释只写**为什么**，不写做了什么。代码讲不清的取舍才写注释。
@@ -217,12 +223,15 @@ pyproject.toml
 | `event_id` | **单调递增整数**，replay 排序与断线补发靠它 |
 | `episode_id` | 一次 episode 的标识 |
 | `step` | 第几步 |
-| `type` | 14 类（`pokemon_agent/schemas/datastore/__init__.py::EventType`，见 `docs/spec/DATAFLOW.md` 2.2）：`run_start` / `run_end` / `episode_start` / `episode_end` / `observe` / `model_call` / `think` / `act` / `memory_read` / `step_memory_write` / `object_memory_write` / `stall_check` / `error` / `episode_memory_write`。**注**：这张表 0902 之前还写着旧版七类（含已拆分的 `memory_write` 和从不存在的独立类型 `cost`），已同步更正——`memory_write` 早拆成三类（单步/对象/跨局），成本信息挂在 `MODEL_CALL.payload`，不是独立事件类型 |
+| `type` | 7 类（`pokemon_agent/schemas/datastore/__init__.py::EventType`，见 `docs/spec/DATAFLOW.md` 2.2）：`model_call` / `error` / `llm_outcome` / `view` / `act` / `memory_io` / `lifecycle`。**0903 收敛原则**：type 与生产者（source）正交、数量极小；原 20 类里"哪个节点/哪类产物"的语义全部降级为 `payload.kind`（如 llm_outcome=intent/verdict/audit、memory_io=read_*/write_*、lifecycle=run/episode 边界 + step） |
+| `valid` | 废弃分支标记，默认 `true`。checkpoint 的 `void_after` 把游标之后的事件**原地**打 `valid=false`（不删不挪）；读端只收 `valid=true`。resume 写新 event_id、从不重用旧号 |
 | `payload` | 该类型的结构化内容 |
 | `ts` | 时间戳 |
 
 - trace 是**追加写的事件序列**，不是可变状态快照。checkpoint 存事件序列而非最终状态。
-- 本阶段 `LocalTrace`（落盘 JSONL）就够，但接口按"能落盘、能重放"设计。
+- 落盘形状（0910 起）：一条事件一个 json，`trace_data/<run_id>/events/<run_id>-<event_id>.json`；
+  截图与事件共用 event_id，落 `trace_data/<run_id>/screenshot/<event_id>.png`（resume 不作废截图）。
+  `LocalTrace._next_id` 从盘上 max(event_id)+1 现算，接口按"能落盘、能重放"设计。
 
 ## 十、测试
 

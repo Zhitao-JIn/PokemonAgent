@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getGoals, pushGoals, startRun, submitHumanNote, submitReview } from "./api";
 import { useFrameStream } from "./useFrameStream";
-import { useMetrics } from "./useMetrics";
 import { useReview } from "./useReview";
 import { useRunStream } from "./useRunStream";
-import type { DraftGoal, GoalView, HumanDecision, PendingReview, RunMetrics, SseEvent, TraceEvent } from "./types";
+import type { DraftGoal, GoalView, HumanDecision, PendingReview, SseEvent, TraceEvent } from "./types";
 
 /**
  * 观测台主页：左栏（画面 + 目标栈）+ 右栏"当前步轨迹"链——一条链 = 一步在
@@ -234,7 +233,6 @@ export default function App() {
   const { events, connected } = useRunStream(runId);
   const frameUrl = useFrameStream(runId);
   const review = useReview(runId);
-  const metrics = useMetrics(runId);
   // 目标栈的任何编辑（追加/行内改/删除）现在跟 review 绑在一起：只有真有
   // 待审查请求时才允许改——用户 0904 明确要求"也改成只有 review 的时候能
   // 改"。`human_note` 不受这条影响（各自独立门控，见 HumanNotePanel）。
@@ -409,17 +407,6 @@ export default function App() {
       )}
       {timeoutNotice && (
         <div style={styles.timeoutBanner}>上一轮审查已超时，自动按 continue 处理</div>
-      )}
-
-      {/* 实时数字：独立常驻面板，不随链/交互状态变化（用户 0903 拍板：一直保留、
-          不与链放一起）。run 未启动或数据未到时显示占位。 */}
-      {metrics === null ? (
-        <section style={styles.panel}>
-          <h2 style={styles.section}>实时数字</h2>
-          <div style={styles.placeholder}>等待 run 数据…</div>
-        </section>
-      ) : (
-        <MetricsPanel metrics={metrics} />
       )}
 
       {/* 观测区：左画面+目标栈；右链。model_call 日志栏挪到页面最下面（见下） */}
@@ -643,105 +630,9 @@ function HumanNotePanel(props: { runId: string | null }) {
 }
 
 /**
- * 实时聚合报表面板——`docs/ROADMAP.md` 第 2 条"可观测"第二拍，`GET
- * /runs/{id}/metrics` 每 2s 拉一次（`useMetrics`），复用 `evaluation/
- * eval_report.py` 的聚合核心，run 还没跑完也能看到到目前为止的数字。
- * 按 Source 一行：调用/成功/失败/tokens/p50/p90 延迟；有降级或校验判定的
- * 链路（目前只有 `verify`）多渲染一行明细，没有就不占地方。用户对这块的
- * 要求是"能用就行"，一张原始表格，不做图表。
- *
- * 0905 新增"缓存命中"/"命中率"两列——DashScope/火山方舟隐式缓存命中的
- * token 只按标准输入价 20% 计费，命中率 = tokens_cached / tokens_in，
- * `tokens_in` 为 0 时显示"-"（避免除零）。
- */
-function MetricsPanel(props: { metrics: RunMetrics }) {
-  const { by_source, runs } = props.metrics;
-  const run = runs[0]; // 观测台一次只跟一个 run，取第一条即可
-
-  return (
-    <section style={styles.panel}>
-      <h2 style={styles.section}>实时数字</h2>
-      {run && (
-        <div style={styles.placeholder}>
-          {run.episodes} 局（成功 {run.succeeded} / 失败 {run.failed}）· tokens_in{" "}
-          {run.tokens_in} · tokens_out {run.tokens_out} · 缓存命中 {run.tokens_cached}
-          {run.tokens_in > 0 &&
-            ` (${((run.tokens_cached / run.tokens_in) * 100).toFixed(1)}%)`}
-          {run.duration !== null && ` · 时长 ${run.duration.toFixed(1)}s`}
-        </div>
-      )}
-      <div style={{ overflowX: "auto" }}>
-        <table style={styles.metricsTable}>
-          <thead>
-            <tr>
-              {[
-                "链路", "调用", "成功", "失败", "重试", "tokens_in", "tokens_out",
-                "缓存命中", "命中率", "p50(s)", "p90(s)",
-              ].map((h) => (
-                <th key={h} style={styles.metricsTh}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(by_source).sort(([a], [b]) => a.localeCompare(b)).map(([source, m]) => (
-              <tr key={source}>
-                <td style={styles.metricsTd}>{source}</td>
-                <td style={styles.metricsTd}>{m.calls}</td>
-                <td style={styles.metricsTd}>{m.ok}</td>
-                <td style={styles.metricsTd}>{m.failed}</td>
-                <td style={styles.metricsTd}>{m.retries}</td>
-                <td style={styles.metricsTd}>{m.tokens_in}</td>
-                <td style={styles.metricsTd}>{m.tokens_out}</td>
-                <td style={styles.metricsTd}>{m.tokens_cached}</td>
-                <td style={styles.metricsTd}>
-                  {m.tokens_in > 0 ? `${((m.tokens_cached / m.tokens_in) * 100).toFixed(1)}%` : "-"}
-                </td>
-                <td style={styles.metricsTd}>{m.p50 ?? "-"}</td>
-                <td style={styles.metricsTd}>{m.p90 ?? "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {Object.entries(by_source).map(([source, m]) => {
-        const degradedTotal = Object.values(m.degraded).reduce((a, b) => a + b, 0);
-        const errorTotal = Object.values(m.error_kinds).reduce((a, b) => a + b, 0);
-        const lines: string[] = [];
-        if (degradedTotal > 0) {
-          lines.push(
-            `降级 ${degradedTotal}：` +
-              Object.entries(m.degraded).map(([k, v]) => `${k}×${v}`).join("、"),
-          );
-        }
-        if (errorTotal > 0) {
-          lines.push(
-            `错误 ${errorTotal}：` +
-              Object.entries(m.error_kinds).map(([k, v]) => `${k}×${v}`).join("、"),
-          );
-        }
-        if (m.verify_total > 0 || m.verify_parse_errors > 0) {
-          const rate = m.verify_unreliable_rate !== null ? `${(m.verify_unreliable_rate * 100).toFixed(1)}%` : "-";
-          lines.push(
-            `校验不可信率 ${m.verify_unreliable}/${m.verify_total}（${rate}）` +
-              (m.verify_parse_errors ? `，另有 ${m.verify_parse_errors} 次判定解析失败` : ""),
-          );
-        }
-        if (lines.length === 0) return null;
-        return (
-          <div key={source} style={styles.placeholder}>
-            <strong>{source}</strong>：{lines.join("；")}
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
-/**
  * 当前步轨迹链（步历史翻页）：每步一页，页 = 该步 look 起的事件归到 19 个节点。
  * 页标签栏列出全部历史步（局·step），点标签切到那一页；没有手动翻页时自动
- * 跟随最新页。链节点点击钉住看内容、再点取消；翻页时清空钉住。实时数字是
- * 独立常驻面板（MetricsPanel），不在这里。
+ * 跟随最新页。链节点点击钉住看内容、再点取消；翻页时清空钉住。
  */
 function ChainPanel(props: { events: SseEvent[] }) {
   const { events } = props;
@@ -1013,15 +904,6 @@ const styles: Record<string, React.CSSProperties> = {
   disconnectedBanner: {
     background: "#331a1a", border: "1px solid #6b2f2f", borderRadius: 8,
     padding: "8px 12px", marginBottom: 16, color: "#E07A7A", fontSize: 13,
-  },
-  metricsTable: { width: "100%", borderCollapse: "collapse", fontSize: 12 },
-  metricsTh: {
-    textAlign: "left", padding: "4px 8px", color: "#888",
-    borderBottom: "1px solid #333", whiteSpace: "nowrap",
-  },
-  metricsTd: {
-    padding: "4px 8px", color: "#e6e6e6",
-    borderBottom: "1px solid #2a2a2a", whiteSpace: "nowrap",
   },
   grid: { display: "grid", gridTemplateColumns: "380px 1fr", gap: 16 },
   modelCallDetails: { marginTop: 16, color: "#666", fontSize: 12 },

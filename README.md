@@ -28,7 +28,7 @@ pokemon_agent/
 ├── providers/     具体的 LLM/视觉模型接入（DashScope/Qwen）
 ├── vision/        图像预处理（网格叠加等）
 ├── trace/         TracePort 的实现 + 事件 payload 组装
-├── experiment/    实验 manifest、任务定义、跑批入口（run_experiment.py / run_all_tasks.py）
+├── experiment/    实验任务定义（tasks.py）、状态存档、真实链路核对（real_check/）
 └── build.py       唯一的装配点（全项目唯一出现具体实现 `new` 的地方）
 
 docs/experiments/  每批实验数据的分析文档
@@ -38,11 +38,10 @@ docs/experiments/  每批实验数据的分析文档
 
 ```bash
 pip install -e ".[dev]"
-python -m pokemon_agent.experiment.run_all_tasks --repeat 10
+python -m experiment.real_check.check_memory_roundtrip
 ```
 
-需要 Python ≥ 3.11，且启动目录下存在 `config/context.json` 与 `config/permissions.json`
-（`agent-permission` 的权限切面要求）。
+需要 Python ≥ 3.11。
 
 ## 铁律（节选，完整版见 AGENTS.md）
 

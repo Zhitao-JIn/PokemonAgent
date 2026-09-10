@@ -21,13 +21,13 @@ from __future__ import annotations
 from pokemon_agent.errors import DecisionAttemptFailed, MaxRetriesExceeded
 from pokemon_agent.interfaces import BrainToolPort, TraceToolPort
 from pokemon_agent.prompts import decide_action as decide_action_prompt
-from pokemon_agent.schemas.communication import (
+from pokemon_agent.schemas.brain import ActionFromBrain
+from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToTraceToolAppendReq,
-    TraceKind,
 )
-from pokemon_agent.schemas.datastore import Source
-from pokemon_agent.schemas.domain import ActionFromBrain, ModelCall
+from pokemon_agent.schemas.providers import ModelCall
+from pokemon_agent.schemas.trace import Source, TraceKind
 
 DECISION_MAX_RETRIES = 3
 """决策重试预算：一次决策最多问几次模型。重试循环在这里（不在 Brain）——

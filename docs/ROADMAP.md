@@ -1,8 +1,13 @@
 # 项目路线图（ROADMAP）
 
-> 单一权威版本。别处（`docs/EXPERIENCE_DOCS.md`、`evaluation/SPEC.md`）只做链接，
+> 单一权威版本。别处（`docs/EXPERIENCE_DOCS.md`）只做链接，
 > 不再各自维护一份路线图表格。
-> 最后更新：2026-09-09。
+> 最后更新：2026-09-10。
+>
+> **一条全局作废声明（0910）**：`evaluation/` 已整体删除（连同 eval_report.py、
+> evaluation/SPEC.md、evaluation/tests/），它唯一的活消费方 `GET /runs/{id}/metrics`
+> 与前端 MetricsPanel 一并退役——见第 27 条。本文件正文里所有对 `evaluation/*`、
+> `eval_report.py` 的引用都是**历史记载**，不再是现状。
 
 ## 状态图例
 
@@ -167,9 +172,11 @@ import/pytest。
 已按用户决定删除——见 `evaluation/SPEC.md` 五节）现在已经不存在，只剩
 `verify_steps` 这类零散校验，还没有一份"要测哪些指标、每个指标怎么打分"的
 统一规范。至少要覆盖：success rate（已有）、cost per run、每链路 token；
-无效步占比先按"已知是下界"接受（见第 7 条），不等它解决。落地脚本是
-`evaluation/eval_report.py`。**排在可观测之后的第二优先级**：报表要用的
-"每链路 token/延迟"聚合就是第 2 条要建的东西，两条高度相关，可以共用。
+无效步占比先按"已知是下界"接受（见第 7 条），不等它解决。落地的报表脚本
+原来是 `evaluation/eval_report.py`——**该工具已随 `evaluation/` 整体删除
+（第 27 条），这条要落地得有一份新的聚合实现**。**排在可观测之后的第二
+优先级**：报表要用的"每链路 token/延迟"聚合就是第 2 条要建的东西，两条
+高度相关，可以共用。
 
 **0903 用户重新表述了范围**（起因：trace#20 出现"正上方即为宝可梦中心入口门"这类无
 依据结论，见下方已完成表的 `map_hint.md` 修复）——用户要求先只做 prompt 层修复，
@@ -801,11 +808,17 @@ JSONL 落盘格式怎么迁移到这套“uuid + 元数据字典 + payload”的
 还是先在本仓库内把接口收敛掉——这几点留到实施前再定，这一条先只定接口设计
 本身。
 
+**0910 补充**：这一条拆成的两半，**存储形状那半已落地**（第 27 条）；
+**接口形状这半（`MemoryToolPort` 六个专用查询方法收敛成 filter/search）
+0910 用户拍板"先出设计稿评审、通过后再实施"**，设计稿在
+`docs/spec/memory/PLAN_memory_query_convergence.md`——里面把 24 条原文
+"查询逻辑下沉到 tool 层"那句的歧义摊开成了 A/B 两个方案，并列出 5 个待拍板点。
+
 ## 后续阶段（P1 起，依赖 P0 完成）
 
 | 阶段 | 内容 | 依赖 | 状态 |
 |---|---|---|---|
-| P2 可审计 | 审计器失效率统计（`eval_report.py` 已实现，见 `evaluation/SPEC.md` 10.4a）；judge/verify 人工标定样本仍未做 | 第 2 条可观测 | 🚧 进行中 |
+| P2 可审计 | ⏪ 审计器失效率统计——原实现在 `eval_report.py`（见 `evaluation/SPEC.md` 10.4a），已随 `evaluation/` 删除退役（第 27 条）；judge/verify 人工标定样本仍未做 | 第 2 条可观测 | 🚧 进行中 |
 | P4 文档体系 | 目录建好、每篇新问题有经验文档、索引持续更新 | 无 | ✅ 运转中 |
 
 （原 P1 可观测已提升为路线图第 2 条，不在这张表里重复列出。）
@@ -818,7 +831,7 @@ JSONL 落盘格式怎么迁移到这套“uuid + 元数据字典 + payload”的
 | prompt sha 没接进测评报表 | 人要手工对照版本 | 低 |
 | CI 到不了真实集成 | ROM 不进 git，CI 只能跑 mock 路径 | 低，结构性限制 |
 | 批次实验严格串行 | 19 条任务顺序跑，一批要跑数小时 | 中，等 P0 做完再考虑 |
-| 没有跨批次回归对比 | `eval_report.py` 只产出单批次报表 | 低 |
+| 没有跨批次回归对比 | 原 `eval_report.py` 只产出单批次报表，该工具已随 `evaluation/` 退役（第 27 条）；缺口本身依旧 | 低 |
 | `trace_data/`、`log/audit.jsonl` 均无 rotation/归档，持续追加写不清理 | 长期运行单目录读取变慢、磁盘占用不可控；`log/audit.jsonl`（`agent_permission` 库自动写的权限审计日志）目前纯写无读，没有任何代码汇总/告警它；0904 新增 `TraceEvent.frame_png`（原始感知帧，base64 内嵌进 `episodes/*.jsonl` 每一行，不是独立文件——设计中途从"另存 PNG 文件+路径引用"改成"直接存二进制字段"），行体积因此明显变大，同样没有 rotation，长期高频跑量时这条缺口应该优先处理 | 中（原"低"，帧数据加入后磁盘占用增长速度明显变快，权限审计那部分仍按用户 0902 的话"先放着"） |
 
 ### 25. 📋 项目拆分六块：主框架 / memory / plan 系统 / judge 系统 / A2A / prompt 管理与优化（0909 定方向，细节未定）
@@ -989,6 +1002,63 @@ https://github.com/stanfordnlp/dspy)（把 prompt 优化当成对一个带 metri
 多稳的一致率、观察多长时间的窗口，都还没有方案，留到真正推进到那一步时
 再定。这条目前只是把方向和参照框架记下来，不是要立刻动手。
 
+### 27. ✅ memory/trace 落盘布局重构 + `TraceEvent.valid` + 实验资产边界收敛（0910 完成）
+
+**改了什么**（一个 session 内三块一起做完，真机四脚本全 PASS）：
+
+- **落盘布局（记忆侧）**：四类产物搬出包、落在仓库根级
+  `memory/{step,object,episode,knowledge}_memory/`；**一条记录一个文件**
+  （`<uuid>.json` / `<uuid>.md`），uuid 不带语义——`run_id`/`episode_id`/
+  `step`/`seq` 全部降级成记录内**彼此对等**的 metadata 字段（对齐第 24 条）。
+  每个 kind 文件夹一份倒排索引 `index.json`（随记录写穿落盘 + 启动对账
+  自愈），`records.jsonl` 取消、记录文件即存储。**memory 不按 run 分层**——
+  `run_id` 只是普通过滤字段，`episode_memory` 天然跨 run 共池。
+  知识库取消 run 快照（共享源即唯一副本，审计走 trace 的 MEMORY_READ 账）。
+- **落盘布局（trace 侧）**：`TraceEvent` 升到 schema **v4**、新增
+  `valid: bool`；落盘改 `trace_data/<run_id>/events/<run_id>-<event_id>.json`
+  （一条事件一个文件、tmp + `os.replace` 原子写）；`void_after` 不再搬事件，
+  改成**原地打 `valid=false`** + 补一条 `lifecycle/payload.kind=resume`；
+  `LocalTrace._next_id` 改扫盘 `max(event_id)+1`（废弃分支还占着 id）。
+  截图绑 trace 事件的 `event_id`、放 `trace_data/<run_id>/screenshot/`，
+  **不参与 void**（event_id 递增天然不撞名）。void 收成四步：trace 打标 →
+  圈 memory 作废集 → memory 归档 `memory/voided-<ts>/<kind>/` → checkpoint
+  归档——**文件一律不删**，"落盘了就不丢"贯彻到废弃分支。
+- **实验资产边界**：`experiment/` 从包内上移到**仓库根级**，只留
+  `tasks.py` / `experiment_states/`（19 个钉死存档）/ `real_check/`；
+  `manifest.py` / `run_all_tasks.py` / `run_episode.py` / `run_experiment.py`
+  删除；包外代码对 `agent_permission` 的依赖清到零（`@initialize` 守卫、
+  权限快照链、`config/` 目录全删）。`tests/` 清空（三个陈旧测试对不上新
+  API）待从零重建。`evaluation/` **整体删除**——它的数据源
+  `episodes/*.jsonl` 已随本次 trace 重构消失，属于同一批死资产。
+
+**为什么这么改**：设计与拍板记录在
+`docs/spec/memory/PLAN_memory_trace_layout.md`（①-⑩），变更决策记录在
+`CHANGELOG.md` 2026-09-10 条目（6）（7）（8）。三条主线：记录标识不带语义
+（第 24 条）、索引落盘换 filter 零扫描、废弃分支只归档不销毁。
+
+**取舍**：① 旧数据不写迁移脚本（开发期数据，旧目录原地不动、新代码不读）；
+② 截图不 void、知识库源改动**即时生效**（取消"下一个 run 生效"的快照隔离，
+运营中途改库会影响进行中的 run——拍板⑩的已知代价）；③ `evaluation/` 的按
+链路 token/延迟聚合能力**随删除一起没了**，以后要看这些数字得从 trace 事件
+离线自己算；④ 本条的落盘重构**不含**第 24 条的另一半——`MemoryToolPort`
+的专用查询方法（`query_episode_steps`/`query_object_events`/
+`query_episode_summaries`……）**对外签名本次一个没动**，收敛成 filter+search
+仍待做（0910 拍板：先出设计稿评审，通过后再实施）。
+
+**影响面**：`pokemon_agent/memory/` 包内只剩 index 层 + `retrieval.py`
+（`FileEpisodeMemoryStore`/`EventObjectStore`/`KnowledgeStore` 三个旧 store
+退役）；`MemoryTool` 新增 `knowledge_root` 参数（知识库全局共享，不被测试的
+`memory_root` 重定向）；`real_check/common.py` 的 `ROOT` 从写死 `parents[3]`
+改成向上找 `pyproject.toml` 的界标（目录层级一变就静默指错）；读端（API/观测
+台）只多一道 `valid=false` 过滤，不需要学"跳区间"逻辑。
+
+**验证**（改动当天真机跑，`py -3.12 -m experiment.real_check.<脚本>`，
+key 从仓库根 `.env` 读）：
+`check_memory_roundtrip` 五路径 PASS ｜ `check_trace` PASS（66 条有效事件、
+盘上全量 `[0..75]` 连续、废弃块 `[54..63]` 10 条 `valid=false`）｜
+`check_memory` PASS（本局 3 条 StepMemory、对象记忆无记录属正常）｜
+`check_restore` PASS（自 step 3 恢复、游标 53 后续写 66 条连续、归档 1 个 voided）。
+
 ## 对照业界：现在的测评覆盖了什么
 
 现在 19 条 `knowledge_*` 短任务（≤15 步、单目标、二元成败）大致对应
@@ -1023,7 +1093,7 @@ Sources: [PokéChamp (ICML 2025)](https://arxiv.org/abs/2503.04094) ·
 | ⏪ 测评：judge 机械复核（已移除） | `evaluation/audit_verdicts.py` 曾实现（19 条任务规则 + 32 个回归测试），2026-09-02 用户决定不需要、已删除，见 `evaluation/SPEC.md` 五节 |
 | ✅ CI/CD 骨架 | `.github/workflows/ci.yml`：lint（ruff）+ test（pytest，3.11/3.12 矩阵） |
 | ✅ 打包 bug 修复 | `pyproject.toml` 补显式包声明，`pip install -e .` 之前从未真正跑通过 |
-| ✅ `memory_carried` 可观测 | `EPISODE_START` 记录开局时跨局摘要池大小，能看出批次内记忆污染 |
+| ⏪ `memory_carried` 可观测（已移除） | `EPISODE_START` 曾记录开局时跨局摘要池大小。0910 判定该快照没有诊断价值——每一局都会重新检索一次，开局那个数不代表这一局实际能用到什么；字段与 `episode_summary_count` 一并删除 |
 | ✅ 重试循环从 brain 挪到 harness | `Brain.choose_once`/`_perceive_once` 只负责单次尝试，重试驱动移到 `harness_utils.choose_with_retry`/`perceive_with_retry`；trace 里每次 attempt 现在是独立调用，时间戳分得清 |
 | ✅ 无头模式限速回归修复 + 决策 async 移除 | `pyboy_world.py` 恢复无头不限速（并补回被误删的 `_tick`/`_frame_png`/`latest_frame`）；`choose_with_retry` 改同步调用，`Brain.choose_once_async`/`_executor`/`IDLE_FRAMES_PER_POLL` 删掉——decision 本身的模型延迟长尾原因仍未查清，见第 10 条 |
 | ✅ `Source` 精细化 + 补 `STALL_CHECK` 事件 | 新增 `Source.PLAN`（`RunHarness.plan` 的模型调用从 `Source.HARNESS` 移出，不再和零成本记账事件混算 token）；`MEMORY_READ`/`STEP_MEMORY_WRITE`/`OBJECT_MEMORY_WRITE`/多数记忆相关 `permission_skipped` 统一改 `Source.MEMORY`（以前分散在 `DECISION`/`HARNESS`）；新增 `EventType.STALL_CHECK`，`detect_stall` 每一步把 `stall_key`/`stall_count` 写进 trace，不再只活在内存里。`verify_steps` 的两处 `Source`/事件粒度问题特意没动，见第 9 条 |

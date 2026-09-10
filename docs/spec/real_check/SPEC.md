@@ -1,6 +1,6 @@
 # real_check —— 真实链路核对规格（六个维度）
 
-> 位置：`pokemon_agent/experiment/real_check/`。一个维度一个文件，`python -m`
+> 位置：`experiment/real_check/`。一个维度一个文件，`python -m`
 > 独立进程运行，互不依赖对方的执行逻辑（只共享 `common.py` 的纯函数与路径）。
 >
 > **核心目的**：验证 `RunHarness` 接真实 Brain / agent_permission / PyBoy 跑通全链路。
@@ -11,18 +11,18 @@
 
 ```bash
 # 维度 1：驱动真实链路跑一局（生产者，生成全部产物）——重负载
-python -m pokemon_agent.experiment.real_check.check_harness
+python -m experiment.real_check.check_harness
 
 # 维度 5：完整跑一局 + 从中段存档恢复续跑（两次真实 PyBoy + 模型）——最重
-python -m pokemon_agent.experiment.real_check.check_restore
+python -m experiment.real_check.check_restore
 
 # 维度 2/3/4：只读产物做核对（消费者，秒级，不起模拟器/模型）
-python -m pokemon_agent.experiment.real_check.check_trace
-python -m pokemon_agent.experiment.real_check.check_checkpoint
-python -m pokemon_agent.experiment.real_check.check_memory
+python -m experiment.real_check.check_trace
+python -m experiment.real_check.check_checkpoint
+python -m experiment.real_check.check_memory
 
 # 维度 6：MemoryTool 真实读写回环（fastembed 本地推理，无外部 key 依赖）
-python -m pokemon_agent.experiment.real_check.check_memory_roundtrip
+python -m experiment.real_check.check_memory_roundtrip
 ```
 
 环境变量：维度 1/5 需要 `ARK_API_KEY` 与 `DASHSCOPE_API_KEY`。
@@ -98,17 +98,27 @@ dump ＋ 游标**，提交点）构成。0909 起没有独立的 `run.json`：ru
   `CheckpointTool.load → void_after（废弃时间线归档截断）→ 世界快照回载
   （load_state_bytes）→ 状态重建 → 进图续跑`。
 
-**通过判定**（四条独立）：① 阶段 B 返回 `RunOutcomeResp`；② trace 里出现
+**通过判定**（五条独立）：① 阶段 B 返回 `RunOutcomeResp`；② trace 里出现
 `checkpoint_restore` 事件且 restored 三元组（episode_id, step）对得上；
-③ 恢复后全部事件按 event_id 全局排序仍严格连续（废弃段截掉游标后的内容，
-新事件必须从游标 +1 无缝续写）；④ `checkpoints/voided-*/` 归档目录真实生成。
+③ 恢复后**有效**事件（valid=true）按 event_id 全局排序仍严格连续——主前缀
+[0..cursor] 连续、游标之后从某个 >cursor 的号起连续，中间的缺号正是被废弃的
+分支（盘上还在、只是 valid=false）；④ `checkpoints/voided-*/` 归档目录真实生成；
+⑤ 记忆侧跟着一起作废：`(episode_id, step)` 至多一条 step 记忆；该局恢复前的
+**跨局摘要**必须已被归档（恢复前后 uuid 无交集）且恢复后该局至多一条摘要；
+`memory/voided-*/` 确有新增。
+
+`--step N` 指定恢复到该局第几步开局（不给则取最后一个存档步，即原先的唯一口径）。
+末步恢复**也会**归档该局的跨局摘要——局收尾（verify → `write_episode`）发生在最后
+一个 checkpoint 之后、且自己没有 checkpoint，任何恢复点都会把那次收尾圈进废弃
+窗口；`--step 1`（中间步）才可能额外压到 step 记忆的归档路径，前提是阶段 A 在
+恢复步真的执行过动作（目标一步即达成时压不到，此时判定 5 的第一条是真空过）。
 跑完把 last-run 指针指向恢复后的时间线，维度 2/3/4 可直接复核恢复后的产物。
 
 ### 维度 6 —— `check_memory_roundtrip.py`：MemoryTool 真实读写回环
 
 维度 4 只查"记忆文件落盘了没有"，维度 6 把 MemoryTool **每条读写路径**在真实
-实现下过一遍：真实 `FileEpisodeMemoryStore` / `EventObjectStore` / `KnowledgeStore`
-（store 注入 `trace_data/memcheck-<ts>/` 临时目录，不污染真实记忆库，跑完清理）、
+实现下过一遍：真实 `MemoryStore`（注入临时 `memory_root`，不污染真实记忆库，
+跑完清理）、
 真实 fastembed ONNX（embedding + reranker）、真实权限运行时（`@initialize`，
 方法上的 `@require_permission` 全部生效）。
 
@@ -120,7 +130,9 @@ dump ＋ 游标**，提交点）构成。0909 起没有独立的 `run.json`：ru
 4. 跨局摘要写入 + 混合检索 + **run_id 隔离**：自造摘要落盘后检索命中它，
    且换一个 run_id 查不到（失败局蒸馏的"已验证"经验跨 run 污染决策是真实风险）；
 5. 截断（checkpoint 恢复的记忆侧）：`void_memory_after(eid, 2)` 后 step>2 的
-   单步记忆与交互事件全部消失，返回计数精确。
+   单步记忆与交互事件、**以及该局的跨局摘要**（摘要不按 step 筛，整条走）全部
+   消失，返回计数精确（含 `episode_memories`）；再删 `index.json` 强制重建，
+   被归档的记录不得复活。
 
 ## 已验证状态（2026-09-09 凌晨）
 

@@ -69,7 +69,8 @@ def build_real(
     # PyBoy 模拟器 + 视觉感知的粘合层
     world = PyBoyWorld(rom, vision, state_path=state_file, watch=watch)
 
-    # 事件逐条落盘 JSONL + 内存表（SSE 端点直接轮询内存表，无推送钩子）
+    # 一条事件一个 json 文件落盘（0910 重构，见 PLAN_memory_trace_layout §6）
+    # + 内存表（SSE 端点直接轮询内存表，无推送钩子）
     data_center = data_center or RunDataCenter()
     trace = LocalTrace(
         run_id=run_id,

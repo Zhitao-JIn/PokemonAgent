@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 sys.path.insert(0, r"D:\Users\GummiGu\PycharmProjects\Pokemon_Agent")
 
 from pokemon_agent.providers.openai_compatible import ArkProvider, pack_images_grid
-from pokemon_agent.schemas.communication import VisionCompletionReq
+from pokemon_agent.schemas.providers import VisionDescribeReq
 
 SRC = (
     r"D:\Users\GummiGu\PycharmProjects\Pokemon_Agent\pokemon_agent"
@@ -22,6 +22,7 @@ with open(SRC, encoding="utf-8") as f:
 real = [rec["before_frame"], rec["after_frame"]]
 print("real frames:", [len(x) for x in real])
 
+
 def badge(b64: str, num: int) -> str:
     """在帧左上角盖一个数字徽章（白字黑底），返回 base64。"""
     im = Image.open(io.BytesIO(__import__("base64").b64decode(b64))).convert("RGB")
@@ -31,6 +32,7 @@ def badge(b64: str, num: int) -> str:
     buf = io.BytesIO()
     im.save(buf, "PNG")
     return __import__("base64").b64encode(buf.getvalue()).decode()
+
 
 frames = [badge(real[i % len(real)], i + 1) for i in range(9)]
 grid = pack_images_grid(frames)
@@ -45,7 +47,7 @@ prompt = (
 )
 
 ark = ArkProvider(model="doubao-seed-2-1-pro-260628", temperature=0.0)
-resp = ark.describe(VisionCompletionReq(images=[grid], prompt=prompt))
+resp = ark.describe(VisionDescribeReq(images=[grid], prompt=prompt))
 print("--- 模型回答 ---")
 print(resp.text)
 print(

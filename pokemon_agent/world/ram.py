@@ -16,7 +16,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
-from pokemon_agent.schemas.domain import (
+from pokemon_agent.schemas.world import (
     DOOR,
     GRASS,
     GRID_COLS,
@@ -350,10 +350,7 @@ class TerrainMapFromRam(BaseModel):
         left, right = self.player_x - col, self.player_x + GRID_COLS - 1 - col
         gutter = max(len(str(y)) for y in ys)
 
-        lines = [
-            f"这一屏 {GRID_COLS} 列 × {GRID_ROWS} 行；"
-            f"每行末尾括号里是该行首尾两格的全局 x"
-        ]
+        lines = [f"这一屏 {GRID_COLS} 列 × {GRID_ROWS} 行；每行末尾括号里是该行首尾两格的全局 x"]
         for r, line in enumerate(self.cells):
             chars = list(line)
             if r == row:

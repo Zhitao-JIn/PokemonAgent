@@ -16,7 +16,7 @@
   新状态的容器。
 
 这次统一顺带打开一个口子：`review` 槽的决策生产者不必是真人——接一个
-LLM 驱动的 reviewer（读 `HumanReviewReqFromHarness`，尤其是 `episode_trace`，
+LLM 驱动的 reviewer（读 `FromHarnessToReviewerReviewReq`，尤其是 `episode_trace`，
 自己判断 continue/stop/retry/push）可以复用同一套槽位协议，只是
 `submit_review_response` 的调用方从"前端按钮"换成"另一个模型调用"。
 """
@@ -26,14 +26,14 @@ from __future__ import annotations
 import threading
 import time
 
-from pokemon_agent.schemas.communication import (
-    GoalsEdit,
+from pokemon_agent.schemas.brain import TaskForBrain
+from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
+from pokemon_agent.schemas.harness import (
+    FromHarnessToReviewerReviewReq,
+    FromHarnessToReviewerReviewResp,
     HumanDecision,
-    HumanReviewReqFromHarness,
-    HumanReviewRespFromFrontend,
 )
-from pokemon_agent.schemas.datastore import TraceEvent
-from pokemon_agent.schemas.domain import TaskForHarness
+from pokemon_agent.schemas.trace import TraceEvent
 
 REVIEW_POLL_INTERVAL = 0.2
 """`await_review_response` 阻塞轮询的节拍（秒）——够快到人提交后近乎无感，
@@ -52,12 +52,12 @@ class RunDataCenter:
         self._events_lock = threading.Lock()
         self._events: list[TraceEvent] = []
         """事件流槽（PLAN_checkpoint §7.2）：前端可见状态的唯一聚合点——
-        SSE/实时数字/eval_report 都读这里；checkpoint 恢复时由
+        SSE 与实时数字都读这里；checkpoint 恢复时由
         `rebuild()` 单点重建（主前缀 + goals），观测台历史完整可恢复。"""
-        self._goals_edit: GoalsEdit | None = None
-        self._latest_goals: list[TaskForHarness] = []
-        self._review_request: HumanReviewReqFromHarness | None = None
-        self._review_response: HumanReviewRespFromFrontend | None = None
+        self._goals_edit: FromFrontendToRunHarnessSubmitEditReq | None = None
+        self._latest_goals: list[TaskForBrain] = []
+        self._review_request: FromHarnessToReviewerReviewReq | None = None
+        self._review_response: FromHarnessToReviewerReviewResp | None = None
         self._review_timeout = review_timeout
         self._review_deadline: float | None = None
         """请求发布那一刻算出的绝对截止时间戳（`time.time()` 口径，不是
@@ -84,7 +84,7 @@ class RunDataCenter:
             return snapshot
         return [e for e in snapshot if e.type in event_types]
 
-    def rebuild(self, prefix_events: list[TraceEvent], goals: list[TaskForHarness]) -> None:
+    def rebuild(self, prefix_events: list[TraceEvent], goals: list[TaskForBrain]) -> None:
         """checkpoint 恢复的单点重建：事件主前缀整体换入 + goals 槽对齐。
 
         前置条件：`prefix_events` 是截断后的主前缀（event_id 升序）。
@@ -96,22 +96,22 @@ class RunDataCenter:
 
     # ---- goals 槽：harness 发布快照 / 消费编辑；api 读快照 / 写编辑 ----
 
-    def publish_goals(self, goals: list[TaskForHarness]) -> None:
+    def publish_goals(self, goals: list[TaskForBrain]) -> None:
         """harness 在 `plan` 入口发布最新目标栈快照（观测台读用）。"""
         with self._lock:
             self._latest_goals = list(goals)
 
-    def latest_goals(self) -> list[TaskForHarness]:
+    def latest_goals(self) -> list[TaskForBrain]:
         """观测台读最近一次快照；run 未开始过为空。"""
         with self._lock:
             return list(self._latest_goals)
 
-    def submit_goals_edit(self, edit: GoalsEdit) -> None:
+    def submit_goals_edit(self, edit: FromFrontendToRunHarnessSubmitEditReq) -> None:
         """api 层收一条编辑指令进单槽（最新一条覆盖，还没消费的旧指令丢弃）。"""
         with self._lock:
             self._goals_edit = edit
 
-    def take_goals_edit(self) -> GoalsEdit | None:
+    def take_goals_edit(self) -> FromFrontendToRunHarnessSubmitEditReq | None:
         """harness 在 `plan` 入口消费一次：取走并清空。"""
         with self._lock:
             edit = self._goals_edit
@@ -136,7 +136,7 @@ class RunDataCenter:
 
     # ---- review 槽：请求（harness 写）/ 决策（api 或未来的 LLM reviewer 写）----
 
-    def publish_review_request(self, req: HumanReviewReqFromHarness) -> None:
+    def publish_review_request(self, req: FromHarnessToReviewerReviewReq) -> None:
         """harness 进 `review()` 节点时发布这一轮要问的上下文，顺带清掉
         上一轮可能残留的决策（新一轮请求必须配一个新答案，不能复用旧的）。
 
@@ -158,13 +158,13 @@ class RunDataCenter:
         with self._lock:
             return self._review_deadline
 
-    def pending_review(self) -> HumanReviewReqFromHarness | None:
+    def pending_review(self) -> FromHarnessToReviewerReviewReq | None:
         """api 层查有没有待处理的审查请求（`GET /runs/{id}` 的
         `review_pending` 字段、`GET /runs/{id}/review` 的详情都读它）。"""
         with self._lock:
             return self._review_request
 
-    def submit_review_response(self, resp: HumanReviewRespFromFrontend) -> bool:
+    def submit_review_response(self, resp: FromHarnessToReviewerReviewResp) -> bool:
         """写决策。没有待处理请求时返回 `False`（不是错误——这次提交要么
         来晚了，要么本来就没什么好答的），调用方（API 端点）据此决定要不要
         报 409。"""
@@ -176,7 +176,7 @@ class RunDataCenter:
 
     def await_review_response(
         self, timeout: float, poll_interval: float = REVIEW_POLL_INTERVAL
-    ) -> HumanReviewRespFromFrontend | None:
+    ) -> FromHarnessToReviewerReviewResp | None:
         """`RunHarness` 侧阻塞轮询决策槽，直到有答复或超时。
 
         **必须是真的等**：读一次没有就当默认，等于没有真的问人，"人机协作"
@@ -226,9 +226,9 @@ class DataCenterReviewer:
         self._data_center = data_center
         self._timeout = timeout
 
-    def review(self, req: HumanReviewReqFromHarness) -> HumanReviewRespFromFrontend:
+    def review(self, req: FromHarnessToReviewerReviewReq) -> FromHarnessToReviewerReviewResp:
         """等 `timeout` 秒；有答复用答复，超时就 `STOP`（不再是 `CONTINUE`）。"""
         resp = self._data_center.await_review_response(self._timeout)
         if resp is not None:
             return resp
-        return HumanReviewRespFromFrontend(decision=HumanDecision.STOP)
+        return FromHarnessToReviewerReviewResp(decision=HumanDecision.STOP)

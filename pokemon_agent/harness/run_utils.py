@@ -14,8 +14,8 @@ run 层的存在。
 from __future__ import annotations
 
 from pokemon_agent.interfaces import MAX_GOAL_RETRIES, RunState
-from pokemon_agent.schemas.communication import GoalsEdit
-from pokemon_agent.schemas.datastore import TraceEvent
+from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
+from pokemon_agent.schemas.trace import TraceEvent
 
 
 def episode_trace_events(events: list[TraceEvent], episode_id: str) -> list[TraceEvent]:
@@ -24,7 +24,7 @@ def episode_trace_events(events: list[TraceEvent], episode_id: str) -> list[Trac
 
     `TracePort.events` 只支持按 `EventType` mask，不支持按 `episode_id`
     过滤——`review()` 节点要把"刚跑完那一局的完整 trace"塞进
-    `HumanReviewReqFromHarness.episode_trace`，这里在 Python 侧按
+    `FromHarnessToReviewerReviewReq.episode_trace`，这里在 Python 侧按
     `episode_id` 筛一遍（调用方传 `events(None)` 的全量结果进来）。
     """
     return [ev for ev in events if ev.episode_id == episode_id]
@@ -42,7 +42,7 @@ def goal_retries_exhausted(attempts_used: int) -> bool:
     return retries_used >= MAX_GOAL_RETRIES
 
 
-def apply_goals_edit(state: RunState, edit: GoalsEdit) -> None:
+def apply_goals_edit(state: RunState, edit: FromFrontendToRunHarnessSubmitEditReq) -> None:
     """把观测台的编辑指令应用到当前目标栈（原地改 `state`）：整栈原子替换、
     不锁栈顶——前端把目标栈变成纯本地草稿（含栈顶），只在 review 阶段可
     编辑，点 push 时一次性把整份草稿同步过来。
