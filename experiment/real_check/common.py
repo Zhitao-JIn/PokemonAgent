@@ -17,7 +17,45 @@ if TYPE_CHECKING:
     from pokemon_agent.harness.run_data_center import DataCenterReviewer, RunDataCenter
 
 # 项目根目录：real_check/common.py → experiment → pokemon_agent → 项目根
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+def _find_root() -> pathlib.Path:
+    """从本文件向上找仓库根（以 pyproject.toml 为界标）。
+
+    不写死 `parents[N]`——目录层级一变（比如 0910 从 pokemon_agent/ 包内
+    上移到根级）静默指错层，读产物路径全体偏移还难以察觉。
+    """
+    for parent in pathlib.Path(__file__).resolve().parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent
+    raise FileNotFoundError("repo root (pyproject.toml) not found from real_check/common.py")
+
+
+ROOT = _find_root()
+
+
+def load_env_file(path: pathlib.Path = ROOT / ".env") -> None:
+    """把项目根 `.env` 的 KEY=VALUE 注入 os.environ。
+
+    契约：外部环境已有的同名变量优先，文件值不覆盖（`setdefault` 语义）；
+    空值行、注释行、解析不了的行一律跳过；`.env` 不存在则静默跳过——
+    核对脚本在没配密钥的机器上也能 import，缺密钥由 provider 自己报错。
+    前置条件：path 存在时必须是 UTF-8 文本。
+    后置条件：文件里每个非空 KEY=VALUE 都已进入 os.environ（除非外部已有同名变量）。
+    """
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :]
+        key, sep, value = line.partition("=")
+        if not sep or not key.strip().isidentifier() or not value.strip():
+            continue
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+load_env_file()
 
 ROM = "assets/rom"
 STATE = "assets/rom.state"
@@ -56,8 +94,9 @@ CHECKPOINT_ROOT = ROOT / "checkpoints"
 docstring）——`checkpoints/<run_id>/`，不再是 `trace_data/<run_id>/checkpoints/`。"""
 LAST_RUN = TRACE_ROOT / ".last_realcheck.json"
 
-STEP_MEMORY_DIR = ROOT / "pokemon_agent" / "memory" / "episode" / "memory"
-OBJECT_EVENTS_DIR = ROOT / "pokemon_agent" / "memory" / "semantic" / "object_events"
+MEMORY_ROOT = ROOT / "memory"
+"""0910 起记忆落盘根：`memory/<kind>/<uuid>.json|.md`（一条记录一个文件，
+不按 run 分层，run_id 在记录 metadata 里），不再有包内目录。"""
 
 
 def safe(episode_id: str) -> str:
@@ -76,14 +115,21 @@ def resolve_run() -> dict[str, str]:
     """定位最近一次真实 run 的产物：优先 last-run 指针，指针缺失/失效时回退扫描。
 
     回退规则：`trace_data/` 下名字以 `restorecheck-` / `realcheck-` 开头的目录
-    按 mtime 取最新，再取它 episodes 里最近修改且非空的 episode 级 jsonl
-    （run 级文件名是 `<run_id>.jsonl`，episode 级是 `<run_id>-ep*.jsonl`）。
+    按 mtime 取最新，再取它 events 里最近修改且非空的事件文件（0910 起一条
+    事件一个 `<run_id>-<event_id>.json`，文件主名带 run_id 前缀）。
     会话重启会丢后台进程和指针文件，产物本身还在——回退扫描让维度 2/3/4
     不依赖"上一个脚本恰好跑完了最后一行"。
+
+    指针也要过产物校验：目标 run 目录没有 `events/`（旧格式落盘，或指针悬空）
+    就视为失效，穿透到回退扫描——和索引的自愈重建同一哲学，指针只是缓存。
     """
     if LAST_RUN.is_file():
         meta = json.loads(LAST_RUN.read_text(encoding="utf-8"))
-        if meta.get("run_id") and meta.get("episode_id"):
+        if (
+            meta.get("run_id")
+            and meta.get("episode_id")
+            and (TRACE_ROOT / meta["run_id"] / "events").is_dir()
+        ):
             return meta
 
     prefixes = ("restorecheck-", "realcheck-")
@@ -93,14 +139,29 @@ def resolve_run() -> dict[str, str]:
         reverse=True,
     )
     for run_dir in candidates:
-        episodes = run_dir / "episodes"
-        if not episodes.is_dir():
+        events_dir = run_dir / "events"
+        if not events_dir.is_dir():
             continue
-        ep_files = [p for p in episodes.glob(f"{run_dir.name}-ep*.jsonl") if p.stat().st_size > 0]
-        if not ep_files:
+        event_files = [
+            p
+            for p in events_dir.glob(f"{run_dir.name}-*.json")
+            if p.stat().st_size > 0 and not p.name.endswith(".tmp")
+        ]
+        if not event_files:
             continue
-        ep_file = max(ep_files, key=lambda p: p.stat().st_mtime)
-        return {"run_id": run_dir.name, "episode_id": ep_file.stem}
+        # episode_id 从事件内容里取：文件名只有 run_id + event_id，没有局号。
+        episode_id = ""
+        for path in sorted(event_files, key=lambda p: p.stat().st_mtime, reverse=True):
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            eid = raw.get("episode_id", "")
+            if eid and eid != run_dir.name:  # run 级事件 episode_id 位放 run_id，跳过
+                episode_id = eid
+                break
+        if episode_id:
+            return {"run_id": run_dir.name, "episode_id": episode_id}
 
     raise SystemExit("trace_data 下没有任何 realcheck/restorecheck 产物——先跑 check_harness")
 

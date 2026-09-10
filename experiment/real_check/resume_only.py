@@ -34,20 +34,22 @@ def _latest_step(step_dir) -> int:
 
 
 def main() -> None:
-    from pokemon_agent.build import build_real
-    from pokemon_agent.experiment.real_check.common import (
+    from experiment.real_check.common import (
+        CHECKPOINT_ROOT,
         ROM,
         STATE,
-        CHECKPOINT_ROOT,
         make_review_pair,
         resolve_run,
         safe,
     )
+    from pokemon_agent.build import build_real
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", default=None, help="不给则用 resolve_run() 自动定位")
     parser.add_argument("--episode-id", default=None, help="不给则用 resolve_run() 自动定位")
-    parser.add_argument("--step", type=int, default=None, help="不给则取该 episode 已存档的最大 step")
+    parser.add_argument(
+        "--step", type=int, default=None, help="不给则取该 episode 已存档的最大 step"
+    )
     args = parser.parse_args()
 
     if args.run_id and args.episode_id:
@@ -85,8 +87,8 @@ def main() -> None:
     )
     print("[3/4] build_real 完成，resume_run 开始...", flush=True)
     try:
-        result = harness.resume_run(run_id, episode_id, step)
-        print(f"[4/4] resume_run 完成：outcomes={[o.model_dump() for o in result.outcomes]}")
+        outcomes, _total, _succeeded, _rate = harness.resume_run(run_id, episode_id, step)
+        print(f"[4/4] resume_run 完成：outcomes={[o.model_dump() for o in outcomes]}")
     finally:
         print("world.stop 收尾...", flush=True)
         world.stop()

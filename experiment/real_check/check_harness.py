@@ -1,8 +1,8 @@
 """维度 1（harness）：build_real 装配真实链路，跑 3 步短目标。
 
 要求：`begin → plan → dispatch → ... → run_end` 整张图跑到底不崩、返回
-`RunOutcomeResp`。这是四个核对里唯一真正驱动 PyBoy + 真实 Brain +
-agent_permission 的脚本——"硬崩溃/重启"如果出在这一步，看打印停在哪一行
+run 级结算四元组。这是四个核对里唯一真正驱动 PyBoy + 真实 Brain 的
+脚本——"硬崩溃/重启"如果出在这一步，看打印停在哪一行
 就能定位是 build_real（PyBoy 初始化）、harness.run（图 + 真实模型调用）、
 还是 world.stop（模拟器收尾）。
 
@@ -21,8 +21,7 @@ faulthandler.dump_traceback_later(timeout=240, repeat=True)
 
 
 def main() -> None:
-    from pokemon_agent.build import build_real
-    from pokemon_agent.experiment.real_check.common import (
+    from experiment.real_check.common import (
         GOAL,
         REVIEW_TIMEOUT,
         ROM,
@@ -32,7 +31,8 @@ def main() -> None:
         make_review_pair,
         write_last_run,
     )
-    from pokemon_agent.schemas.domain import TaskForHarness
+    from pokemon_agent.build import build_real
+    from pokemon_agent.schemas.brain import TaskForBrain
 
     run_id = f"realcheck-{time.strftime('%m%d-%H%M%S')}"
     print(f"[1/6] build_real 装配中（run_id={run_id}）...", flush=True)
@@ -54,7 +54,7 @@ def main() -> None:
     )
     print(f"[2/6] build_real 完成（review 超时 {REVIEW_TIMEOUT:.0f}s）。", flush=True)
 
-    task = TaskForHarness(
+    task = TaskForBrain(
         task_id="realcheck",
         goal=GOAL,
         success_criteria=SUCCESS_CRITERIA,
@@ -63,14 +63,14 @@ def main() -> None:
 
     try:
         print("[3/6] harness.run 开始（3 步短目标）...", flush=True)
-        result = harness.run(run_id, [task])
+        outcomes, _total, _succeeded, _rate = harness.run(run_id=run_id, goals=[task])
         print("[4/6] harness.run 完成。", flush=True)
     finally:
         print("[5/6] world.stop 收尾...", flush=True)
         world.stop()
         print("[6/6] world.stop 完成。", flush=True)
 
-    outcome = result.outcomes[0]
+    outcome = outcomes[0]
     assert outcome.steps >= 1, f"outcome.steps 应为正，实为 {outcome.steps}"
     assert outcome.reason, "outcome.reason 不应为空"
 

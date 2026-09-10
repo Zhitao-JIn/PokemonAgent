@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 
-from pokemon_agent.experiment.real_check.common import CHECKPOINT_ROOT, resolve_run, safe
+from experiment.real_check.common import CHECKPOINT_ROOT, resolve_run, safe
 
 
 def main() -> None:
