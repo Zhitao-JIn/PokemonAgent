@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.world import ObservationFromWorld
+from pokemon_agent.world import Observation
 
 SNAPSHOT_BLIND: frozenset[str] = frozenset({"known_objects", "knowledge"})
 """**不进记忆的字段。** 记忆里每一项都必须跨步骤成立，这两项都不成立：
@@ -46,10 +46,10 @@ class StepMemory(BaseModel):
     程序记忆、skill library（机制二）、值回填（机制三）都还没做。
     """
 
-    before: ObservationFromWorld = Field(description="做决定时看到的画面")
+    before: Observation = Field(description="做决定时看到的画面")
     rationale: list[str] = Field(description="当时的理由。**不是完整推理**——那留在 trace 里")
     action: str = Field(description="选了什么，含连按次数，如 `right ×2`")
-    after: ObservationFromWorld = Field(description="执行之后的画面。**结果也是一次观察**")
+    after: Observation = Field(description="执行之后的画面。**结果也是一次观察**")
 
     step: int = Field(description="写入时所处的步数")
     episode_id: str = Field(description="这条经验来自哪次尝试")
@@ -121,7 +121,7 @@ class StepMemory(BaseModel):
         return "\n".join(lines)
 
     @staticmethod
-    def _render_obs(obs: ObservationFromWorld) -> str:
+    def _render_obs(obs: Observation) -> str:
         """渲染观测快照，**排除 `walk_map`**——它是坐标推理原料（这一屏哪格能走），
         在记忆的前后对比里几乎不变（同一地图内恒定），每条记忆带两份纯属浪费：
         实测一条记忆 1300 字符，其中 walk_map 占 ~800（before+after 各一份），
@@ -132,7 +132,7 @@ class StepMemory(BaseModel):
         return obs.model_copy(update={"facts": facts}).render()
 
     @staticmethod
-    def _snapshot_equal(a: ObservationFromWorld, b: ObservationFromWorld) -> bool:
+    def _snapshot_equal(a: Observation, b: Observation) -> bool:
         """忽略 `step` 号之外，两份观测是否完全一致。"""
         return a.model_copy(update={"step": 0}) == b.model_copy(update={"step": 0})
 
@@ -196,10 +196,10 @@ def render_sequence(entries: list[StepMemory], *, reason: bool = True) -> list[s
 
 def dedup_snapshots(
     entries: list[StepMemory],
-) -> tuple[list[str], list[ObservationFromWorld]]:
+) -> tuple[list[str], list[Observation]]:
     """把一串 `StepMemory` 摊平成 `(before, after, before, after, ...)` 的观测
     序列，去重后**一次遍历、一口气**返回两条严格对齐的列表：截图（base64
-    字符串，喂 `VisionDescribeReq.images`）和它们各自对应的 `ObservationFromWorld`
+    字符串，喂 `VisionDescribeReq.images`）和它们各自对应的 `Observation`
     （给调用方转文字，比如"当前观测"要渲成 `$observation`）。**两条列表长度、
     顺序永远一一对应**——`frames[i]` 就是 `snapshots[i]` 这份观测的那张截图。
 
@@ -224,7 +224,7 @@ def dedup_snapshots(
     出现，也不能让长度对不上。
     """
     frames: list[str] = []
-    snapshots: list[ObservationFromWorld] = []
+    snapshots: list[Observation] = []
     for entry in entries:
         for obs, frame in ((entry.before, entry.before_frame), (entry.after, entry.after_frame)):
             if frame is None:

@@ -5,7 +5,7 @@
 挪到这里跟 `Facts` 放一起没有任何循环导入风险。
 
 它依然**不是跨层领域实体**：视觉模型的文本输出在这里解析成结构化状态，随即拆成
-`ObservationFromWorld` 的 `status`/`facts` 标量，从不离开 `world` 层、从不进
+`Observation` 的 `status`/`facts` 标量，从不离开 `world` 层、从不进
 顶层 `schemas/`——全项目只有 `pyboy_world.py` 一个文件认识它，所以它仍然放在
 `world/` 这一侧（只是从"实现文件"搬到了"这个子系统自己的 interface"），不是
 `pokemon_agent/schemas/`。

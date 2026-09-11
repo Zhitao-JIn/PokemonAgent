@@ -1,6 +1,6 @@
 """`WorldPort` 的唯一实现：PyBoy 模拟器 + 视觉模型的粘合层。
 
-一帧画面变成 `ObservationFromWorld` 要经过三条来源，各管一段，互不替代：
+一帧画面变成 `Observation` 要经过三条来源，各管一段，互不替代：
 
     RAM      坐标、地图编号、朝向、地形通行图、门与招牌的位置   确定，不会读错
     视觉模型  场景类别、对话框文字、屏幕上有什么               会读错，所以要重试和记账
@@ -11,7 +11,7 @@
 **朝向从内存读**（精灵表 +9），不按按键推断——按键推断在开局和过场之后是
 未知的，且不进存档、checkpoint 恢复不回来。
 
-模型调用记录跟着 `PerceiveOnceResp` / `PerceiveOnceResp` 的返回值走，这里不攒缓冲区。
+模型调用记录跟着 `Perceived` 的返回值走，这里不攒缓冲区。
 更多设计记录见 `docs/spec/world/SPEC.md`。
 """
 
@@ -22,16 +22,32 @@ import pathlib
 
 from pyboy import PyBoy
 
-from pokemon_agent.brain import ActionFromBrain, TaskForBrain
+from dataclasses import dataclass
+
 from pokemon_agent.errors import PerceptionAttemptFailed
 from pokemon_agent.prompts import load as load_prompt
 from pokemon_agent.providers import VisionProvider
 from pokemon_agent.schemas.providers import VisionDescribeReq
-from pokemon_agent.schemas.world import ObservationFromWorld, PerceiveOnceResp, terrain_legend
 
 from .frame_slot import FrameSlot
-from .interface import OVERLAY_ACTIONS, Facts, ScreenState
+from .interface import OVERLAY_ACTIONS, Facts, Observation, Perceived, ScreenState
+from .interface.domain import terrain_legend
 from .ram import read_terrain
+
+
+@dataclass
+class _Task:
+    """`reset()`/`set_task()` 收到的裸字段，攒成一个内部记账用的小结构。
+
+    **不是模块间的信封**——只在这个文件里用，字段就是 `TaskForBrain`
+    （brain 的类型，world 不依赖它）里 world 真正用得到的那几个。
+    """
+
+    task_id: str
+    goal: str
+    success_criteria: str
+    max_steps: int
+    initial_state_hint: str = ""
 
 ALL_BUTTONS: tuple[str, ...] = ("a", "b", "up", "down", "left", "right", "start", "select")
 """世界支持的全部动作，**与状态无关**（`WorldPort.all_actions()` 的契约）。
@@ -168,7 +184,7 @@ class PyBoyWorld:
         self._frames = FrameSlot()
         """实时画面的单槽管道：`_tick` 每帧生产，`latest_frame()` 消费（SSE）。"""
 
-        self._task: TaskForBrain | None = None
+        self._task: _Task | None = None
         self._closed = False
         """窗口被关了。**这是 world 唯一有资格宣告的终止**——世界没了，跑不下去。
 
@@ -179,22 +195,32 @@ class PyBoyWorld:
 
     # ---- WorldPort ----
 
-    def reset(self, task: TaskForBrain) -> None:
+    def reset(
+        self,
+        *,
+        task_id: str,
+        goal: str,
+        success_criteria: str,
+        max_steps: int,
+        initial_state_hint: str = "",
+    ) -> None:
         """按任务重置。**不感知**——第一帧由 Harness 调 `perceive_once()` 拿。
 
-        前置条件：task.max_steps > 0。
+        前置条件：max_steps > 0。
 
         **`step` 不由 world 填**（恒为 0，由 Harness 盖章）。同一个世界要能跑
         不同步数上限的任务，"走了几步"就只能是循环的账。
 
-        **`task` 进来只用于断言和将来按任务选起始存档**——world 不需要知道
-        任务目标是什么。"现在要完成的是哪条"由 Harness 的目标栈保管：
-        任务目标只是栈底那一条，而 agent 当下在做的是栈顶那条，两者常常不同。
+        **参数只用于断言和将来按任务选起始存档**——world 不需要知道任务目标是
+        什么，这几个裸字段是 `TaskForBrain`（brain 的类型，world 不依赖它）
+        拆开后 world 真正用得到的那一份。"现在要完成的是哪条"由 Harness 的
+        目标栈保管：任务目标只是栈底那一条，而 agent 当下在做的是栈顶那条，
+        两者常常不同。
 
         步骤 1：载入起点存档（或空转过开机 logo）。
         步骤 2：清掉推导状态，标记这一局开始了。
         """
-        assert task.max_steps > 0, f"max_steps must be > 0, got {task.max_steps}"
+        assert max_steps > 0, f"max_steps must be > 0, got {max_steps}"
 
         # 步骤 1。
         if self._state_path:
@@ -208,9 +234,18 @@ class PyBoyWorld:
             self._tick(BOOT_FRAMES)
 
         # 步骤 2。
-        self._task, self._closed = task, False
+        self._task = _Task(task_id, goal, success_criteria, max_steps, initial_state_hint)
+        self._closed = False
 
-    def set_task(self, task: TaskForBrain) -> None:
+    def set_task(
+        self,
+        *,
+        task_id: str,
+        goal: str,
+        success_criteria: str,
+        max_steps: int,
+        initial_state_hint: str = "",
+    ) -> None:
         """只挂任务标记，**不动模拟器状态**——`reset()` 步骤 2 单独拎出来。
 
         用于 checkpoint 恢复：`load_state_bytes()` 已经把模拟器摆到了正确的
@@ -218,11 +253,12 @@ class PyBoyWorld:
         只需要把 `_task`/`_closed` 补上——它们是纯 Python 记账，不在存档字节里，
         `load_state_bytes()` 管不到（见 `episode_harness.resume()` 的调用点）。
 
-        前置条件：task.max_steps > 0；调用前模拟器已经处于正确帧（`load_state_bytes()`
+        前置条件：max_steps > 0；调用前模拟器已经处于正确帧（`load_state_bytes()`
         或紧随其后的一次 `reset()`）。
         """
-        assert task.max_steps > 0, f"max_steps must be > 0, got {task.max_steps}"
-        self._task, self._closed = task, False
+        assert max_steps > 0, f"max_steps must be > 0, got {max_steps}"
+        self._task = _Task(task_id, goal, success_criteria, max_steps, initial_state_hint)
+        self._closed = False
 
     def all_actions(self) -> list[str]:
         """全部动作名，与状态无关。掩码是 harness 的事，不在这里做。
@@ -231,10 +267,12 @@ class PyBoyWorld:
         """
         return list(ALL_BUTTONS)
 
-    def step(self, action: ActionFromBrain) -> None:
+    def step(self, segments: list[tuple[str, int]]) -> None:
         """按完整条动作链，推进固定帧数。**不感知**——链尾那一帧由 Harness
         调 `perceive_once()` 拿。
 
+        segments：`(按键名, 连按次数)` 的列表——`ActionFromBrain.sequence`
+            拆开的裸字段，world 不关心 `thought`/`rationale` 这些字段。
         前置条件：每一段的按键都在 all_actions() 中。
 
         **一次决策 = 一次感知。** 段与段之间不感知：每次感知是一次视觉模型调用，
@@ -247,18 +285,17 @@ class PyBoyWorld:
         """
         assert self._task is not None, "step() before reset()"
         assert not self._closed, "step() called after the window was closed"
-        segments = action.segments()
 
         # 步骤 1。
-        for segment in segments:
-            assert segment.name in ALL_BUTTONS, f"unknown action {segment.name!r}"
+        for name, _times in segments:
+            assert name in ALL_BUTTONS, f"unknown action {name!r}"
 
         # 步骤 2。**收到什么就按什么，这里不改写。** 「`a` 只按一次」这类规则在
         # `Brain._parse` 里就已经定死了（见那里的说明）——执行层再悄悄夹一次，
         # 大脑交出去的链和真正发生的链就对不上，而它下一步的推理建立在前者上。
-        for segment in segments:
-            for _ in range(segment.times):
-                self._pyboy.button(segment.name, delay=PRESS_FRAMES)
+        for name, times in segments:
+            for _ in range(times):
+                self._pyboy.button(name, delay=PRESS_FRAMES)
                 self._tick(WITHIN_ACTION_FRAMES)
 
         # 步骤 3。**按完之后给世界 10 秒自己演化，再交回控制权。**
@@ -274,7 +311,7 @@ class PyBoyWorld:
         # 瞬间跳变；无头模式不限速，这 10 秒游戏时间的 tick 本身是瞬间的。
         self._tick(AFTER_ACTION_FRAMES)
 
-    def perceive_once(self) -> PerceiveOnceResp:
+    def perceive_once(self) -> Perceived:
         """感知当前这一帧，**只问一次视觉模型，不重试**。
 
         调用方（`EpisodeHarness`）在 `reset()`/`step()` 之后调它拿观测；
@@ -342,7 +379,7 @@ class PyBoyWorld:
         # 招牌的字根本没渲染，所有的门都是同一个深色矩形。让视觉模型填，
         # 它就按先验编：真新镇既没有宝可梦中心也没有商店，它照样给出了
         # 「写着「POKéMON CENTER」的招牌」。名字要靠**走进去看见**再记住，
-        # 那是记忆层的事（见 `TerrainMapFromRam.landmarks` 的完整说明）。
+        # 那是记忆层的事（见 `TerrainMap.landmarks` 的完整说明）。
         landmarks = terrain.landmarks()
 
         # **`Facts` 是结构化模型，字段该是什么类型就是什么类型。** 不再需要先把
@@ -352,7 +389,7 @@ class PyBoyWorld:
         # 且只在真的要喂给大脑读、或者拼检索 query 的那一刻才发生。
         #
         # **全项目只有一套坐标。** `walk_map` 的行列号、`where`、`landmarks` 里的
-        # `x= y=` 是同一套数，不需要任何换算（见 `TerrainMapFromRam.render` 里为
+        # `x= y=` 是同一套数，不需要任何换算（见 `TerrainMap.render` 里为
         # 什么删掉了屏幕格）。写法统一成 `x=8 y=5` 而不是 `(8,5)`：括号对是旧屏幕
         # 格的写法，留着它只会让"这指的是哪一套"重新变成一个问题。
         #
@@ -380,7 +417,7 @@ class PyBoyWorld:
             **screen.fields,
         )
 
-        obs = ObservationFromWorld(
+        obs = Observation(
             # **step 由 Harness 盖章，这里只给占位值。**
             # world 交出来的是"世界现在什么样"，不是"这一局跑到哪了"——
             # 后者是循环的账。
@@ -395,7 +432,7 @@ class PyBoyWorld:
             # ——世界压根不知道目标是什么，不给恒为 False 的占位值。
             done=self._closed,
         )
-        return PerceiveOnceResp(
+        return Perceived(
             observation=obs, calls=[call], frame_png=base64.b64encode(png).decode()
         )
 

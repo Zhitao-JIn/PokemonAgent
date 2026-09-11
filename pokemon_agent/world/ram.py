@@ -10,14 +10,15 @@ RAM 说得准。所以凡是 RAM 能回答的，都不问模型——省钱是�
 10×9，越界的门和招牌静默丢弃而不是画到别处）。
 
 **这个文件只留"怎么读"。** "读出来是什么形状"的两份定义——`Memory`（一个
-Protocol，只要求能按地址取字节）和 `TerrainMapFromRam`（`read_terrain` 的产出
+Protocol，只要求能按地址取字节）和 `TerrainMap`（`read_terrain` 的产出
 schema）——都搬到了 `interface/`（`memory.py` + `domain/terrain_map.py`），
-这里只 `from .interface import Memory, TerrainMapFromRam` 拿来用。
+这里只 `from .interface import Memory, TerrainMap` 拿来用。
 """
 
 from __future__ import annotations
 
-from pokemon_agent.schemas.world import (
+from .interface import Facts, Memory, TerrainMap
+from .interface.domain import (
     BOULDER,
     DOOR,
     GRASS,
@@ -28,8 +29,6 @@ from pokemon_agent.schemas.world import (
     PLAYER_CELL,
     SIGN,
 )
-
-from .interface import Facts, Memory, TerrainMapFromRam
 
 W_TILEMAP = 0xC3A0
 """屏幕上 20x18 个 tile 的 id。
@@ -192,7 +191,7 @@ def _entries(mem: Memory, addr: int, stride: int, limit: int = 16) -> list[list[
     return [[int(mem[addr + 1 + i * stride + k]) for k in range(stride)] for i in range(n)]
 
 
-def read_terrain(mem: Memory) -> TerrainMapFromRam:
+def read_terrain(mem: Memory) -> TerrainMap:
     """读出 10x9 的地形图、主角坐标、地图编号。
 
     后置条件：`cells` 是 GRID_ROWS 行、每行 GRID_COLS 个字符；主角那格标 `@`。
@@ -259,7 +258,7 @@ def read_terrain(mem: Memory) -> TerrainMapFromRam:
         if 0 <= c < GRID_COLS and 0 <= r < GRID_ROWS:
             rows[r][c] = _sprite_kind(pic_id)
 
-    return TerrainMapFromRam(
+    return TerrainMap(
         cells=["".join(row) for row in rows],
         map_id=int(mem[W_CUR_MAP]),
         player_x=px,

@@ -34,17 +34,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pokemon_agent.brain import ActionFromBrain
-from pokemon_agent.schemas.memory import (
+from pokemon_agent.memory import (
     ObjectDialogEvent,
     ObjectFactEvent,
     ObjectStillEvent,
     ObjectWarpEvent,
 )
-from pokemon_agent.schemas.world import (
+from pokemon_agent.world import (
     BUTTON_FACING,
     FACING_STEP,
     INTERACT_KEY,
-    ObservationFromWorld,
+    Observation,
     PlaceInWorld,
 )
 
@@ -72,7 +72,7 @@ def surrounding_cells(place: PlaceInWorld) -> list[PlaceInWorld]:
 
 
 def kind_in_frame(
-    obs: ObservationFromWorld, place: PlaceInWorld, interactive: tuple[str, ...]
+    obs: Observation, place: PlaceInWorld, interactive: tuple[str, ...]
 ) -> str | None:
     """`place` 这一格在这一帧的 `obs.facts.landmarks` 里是什么。认不出来返回 `None`。
 
@@ -95,8 +95,8 @@ class _Press:
 
     episode_id: str
     step: int
-    before: ObservationFromWorld
-    after: ObservationFromWorld
+    before: Observation
+    after: Observation
     actor_place: PlaceInWorld
     button: str
     facing: str
@@ -185,9 +185,9 @@ _POSTURES: dict[str, tuple] = {
 
 
 def object_fact_events(
-    before: ObservationFromWorld,
+    before: Observation,
     action: ActionFromBrain,
-    after: ObservationFromWorld,
+    after: Observation,
     episode_id: str,
     step: int,
 ) -> list[ObjectFactEvent]:

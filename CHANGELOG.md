@@ -1,3 +1,98 @@
+## 2026-09-11（12）—— 新一轮重构第一步：world 模块与 schemas 彻底解耦，`ObservationFromWorld`/`ActionSpaceForBrain`/`TerrainMapFromRam` 去 From/For 后缀
+
+**背景**：上一轮"interfaces/schemas 集中制撤销"（本文件（7）~（11）条）只解决了
+"港口协议physically挨着实现"，没解决"港口协议本身还在收发别的模块/schemas 的
+信封"这个更根本的问题——用户指出这正是循环导入反复出现的根因，并给出新的
+架构要求：`brain`/`world`/`memory`/`trace` 这几个领域模块之间、以及它们与
+`schemas.*` 之间完全没有相互依赖（`providers` 例外，当作底层公共库）；模块间
+只靠**裸函数**和 **tool 层**交互，不造信封；`schemas/` 最终只留信封
+（communication），随后改名 `communication/`。详细方案见
+`docs/PLAN_bare_boundary_refactor.md`。这是这个大方向下的第一步：world。
+
+**改了什么**：
+1. **命名**：`ObservationFromWorld` → `Observation`、`ActionSpaceForBrain` →
+   `ActionSpace`、`TerrainMapFromRam` → `TerrainMap`——domain 类型不需要
+   From/For 这类方向性前缀，那是信封才需要的命名（用户确认：只有信封需要
+   from/to，domain 里不需要）。全项目按标识符做了机械改名（31 个文件）。
+2. **数据搬家**：`schemas/world/domain/{action_semantics,place_in_world,
+   action_space_for_brain→action_space,observation_from_world→observation,
+   screen_model}.py` 全部 `git mv` 进 `world/interface/domain/`，跟已经在
+   那里的 `Facts`/`ScreenState`/`TerrainMap` 会合——这几个类型本来就是
+   world 自己对外承诺的数据形状，只是历史上错放在 `schemas/` 里。
+   `schemas/world/domain/` 目录随之清空删除。
+3. **WorldPort 裸字段化**（`world/interface/world_port.py`）：
+   - `reset()`/`set_task()` 不再收 `TaskForBrain`（brain 的类型），改收
+     `task_id`/`goal`/`success_criteria`/`max_steps`/`initial_state_hint`
+     五个裸字段。
+   - `step()` 不再收 `ActionFromBrain`（brain 的类型），改收
+     `list[tuple[str, int]]`（按键名 + 连按次数）。
+   - `perceive_once()` 不再返回 `schemas.world.communication.PerceiveOnceResp`
+     这个信封，改返回 world 自己的 `Perceived`（新增
+     `world/interface/domain/perceived.py`，字段跟原来的 `PerceiveOnceResp`
+     一样：`observation`/`calls`/`frame_png`，区别只是"归属"——这是 world
+     自己的数据形状，不是"跟别的模块协商出的契约"）。
+   - `WorldPort` 因此变成零依赖（不再 `import pokemon_agent.brain`、不再
+     `import pokemon_agent.schemas.*`），`world/__init__.py` 里它也从懒加载
+     改成了立即加载。
+4. **`pyboy_world.py`**（`WorldPort` 唯一实现）同步改写：内部用一个纯本地
+   的 `_Task` dataclass（不是任何模块间的信封）攒 `reset()`/`set_task()`
+   收到的五个裸字段；`step()` 直接遍历 `(name, times)` 元组列表；
+   `perceive_once()` 返回 `Perceived`。**仍然依赖 `providers`**
+   （`VisionProvider`/`VisionDescribeReq`）——`providers` 按用户确认当作
+   底层公共库，各模块都能直接依赖，不算模块间耦合。
+5. **`tools/game_tools.py`**（`GameToolPort` 实现，tool 层）承接"拆信封 →
+   调裸函数 → 拼信封"：`reset()`/`set_task()` 把 `req.task`
+   （`TaskForBrain`）拆成五个裸字段传给 world；`execute()` 把
+   `req.action.segments()` 拆成 `(name, times)` 列表传给 world；
+   `perceive_once()` 把 world 返回的 `Perceived` 三个字段原样摊开进
+   `FromHarnessToGameToolPerceiveOnceResp`（这个信封本身也改了——不再嵌套
+   `perceived: PerceiveOnceResp` 一层，直接是 `observation`/`calls`/
+   `frame_png` 三个字段）。
+6. **顺带完成用户指出的"上次忘记"的两块搬家**：
+   - `schemas/memory/datastore/{episode_memory,object_memory,
+     step_memory}.py` → `pokemon_agent/memory/datastore/`，`memory/__init__.py`
+     增加对应 re-export。
+   - `schemas/trace/datastore/trace_event.py` → `pokemon_agent/trace/datastore/`，
+     `trace/store.py`/`trace/interface/trace_port.py` 改成相对导入自己包内的
+     `datastore`，`trace/__init__.py` 增加对应 re-export。
+   - `schemas/memory/`、`schemas/trace/`、`schemas/world/` 三个子包因此完全
+     清空，整包删除。`schemas/__init__.py` 顶层 docstring 同步更新为"四个
+     产出模块"（frontend/harness/brain/providers）。
+7. 全项目对应消费方的 import 路径同步改写（约 55 个文件）：
+   `from pokemon_agent.schemas.{memory,trace,world} import X` →
+   `from pokemon_agent.{memory,trace,world} import X`。
+
+**为什么这么改**：见背景——用户指出的根本原则是"模块间零依赖、只靠裸函数和
+tool 层交互"，`WorldPort` 收发 `ActionFromBrain`/`TaskForBrain`/
+`PerceiveOnceResp` 正是这条原则要消灭的东西，也是本项目里循环导入反复
+出现的真正原因（信封天然容易牵扯到别的模块的类型，形成隐蔽的双向依赖）。
+
+**已知遗留、留给后续步骤**：
+- `memory/datastore/{step_memory,object_memory}.py` 仍然直接引用
+  `pokemon_agent.world` 的 `Observation`/`PlaceInWorld`（只是把
+  `from pokemon_agent.schemas.world import X` 原样改成
+  `from pokemon_agent.world import X`）——这仍然是"memory 依赖 world"，
+  违反"模块间零依赖"，留给 memory 自己的重构步骤去把这两个字段也裸字段化。
+- `brain`（`brain/brain.py`/`brain/interface/brain_port.py`）仍然依赖
+  `schemas.brain`/`schemas.harness`/`pokemon_agent.memory`——`BrainPort`
+  的五个方法还没有裸字段化，留给 brain 自己的重构步骤。
+- `harness/interface/episode_harness_port.py` 里的状态模型仍引用
+  `Observation`/`ActionSpace`（world 的类型）——同样留给后续。
+- 详细的分步计划、开放问题（bare-function 是否也要覆盖这些）见
+  `docs/PLAN_bare_boundary_refactor.md`。
+
+**验证**：`find pokemon_agent -name '*.py' | xargs python3 -m py_compile`
+全项目通过；用 pydantic/langgraph/rank_bm25 stub 在
+`python3.10` 下跑了 5 种导入顺序（`world_first`/`memory_first`/
+`trace_first`/`harness_first`/`everything`）全部通过，并断言了
+`Observation`/`ActionSpace`/`PlaceInWorld`/`Perceived`/`TerrainMap`/
+`INTERACT_KEY`/`StepMemory`/`EpisodeMemory`/`ObjectFactEvent`/`TraceEvent`
+等改名/搬家后的名字都能从新位置正确取到。
+
+**影响面**：`pokemon_agent/schemas/{memory,trace,world}/` 三个子包已删除；
+`schemas/` 现在只剩 `frontend`/`harness`/`brain`/`providers` 四个产出模块，
+且 `brain`/`harness` 仍有非信封内容待后续步骤清理。
+
 ## 2026-09-11（11）—— interfaces/schemas 集中制逐步撤销，第五步（最后一步）：harness，`pokemon_agent/interfaces/` 整包删除
 
 **改了什么**：

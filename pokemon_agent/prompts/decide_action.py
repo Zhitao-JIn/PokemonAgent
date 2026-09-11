@@ -2,7 +2,7 @@
 都在这一个文件里，对外只暴露两类东西：
 
 - **常量** `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT`：给 `game_tools.py` 构造
-  `ActionSpaceForBrain` 用（按当前 overlay 选按键说明、挂地图/连按提示）。
+  `ActionSpace` 用（按当前 overlay 选按键说明、挂地图/连按提示）。
 - **函数** `build_prompt(req: ChooseOnceReq)`/`retry_prompt(req: RetryPromptReq)`：
   给调用方（`EpisodeHarness`）用，各自对应一次决策请求的"首次组装"和"重试
   追加"，**都只收一个 req 参数**——`build_prompt` 直接复用 `ChooseOnceReq`
@@ -27,7 +27,7 @@ from dataclasses import dataclass
 
 from pokemon_agent.brain import MAX_RATIONALE, GoalForBrain
 from pokemon_agent.schemas.brain import ChooseOnceReq
-from pokemon_agent.schemas.world import terrain_legend
+from pokemon_agent.world import terrain_legend
 from pokemon_agent.world.interface import Facts
 
 from . import load, load_nested_sections
@@ -52,7 +52,7 @@ markdown 的分段结果搬进 `dict[Facts.Overlay, ...]` 这个类型化的形�
 
 
 def _sample_map() -> str:
-    """给模型看的读图范例（手写内联，按 `TerrainMapFromRam.render()` 的格式）。
+    """给模型看的读图范例（手写内联，按 `TerrainMap.render()` 的格式）。
 
     `render()` 的行列号是拿 `player_x/player_y` 换算出来的，手写这份时
     已经按范例的参数（`map_id=0, player_x=15, player_y=2`）换算好写死。
@@ -114,7 +114,7 @@ REPEAT_HINT = load("repeat_hint").text
 反过来，"什么时候不该连按"也要写明（目标是 `?`、预期中途有事件），
 否则收紧一处会在另一处过度放开。
 
-**放 `ActionSpaceForBrain.note` 而不是 `descriptions`**：prompt 只遍历 `names`
+**放 `ActionSpace.note` 而不是 `descriptions`**：prompt 只遍历 `names`
 渲染说明，塞进 descriptions 的额外键永远不会被渲染出去——写了等于没写。
 """
 

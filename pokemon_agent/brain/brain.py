@@ -65,9 +65,9 @@ from .interface import (
     RunPlan,
     StepVerifyVerdict,
 )
-from pokemon_agent.schemas.memory import SNAPSHOT_BLIND, EpisodeMemory, StepMemory
+from pokemon_agent.memory import SNAPSHOT_BLIND, EpisodeMemory, StepMemory
 from pokemon_agent.schemas.providers import LlmCompleteReq, VisionDescribeReq
-from pokemon_agent.schemas.world import INTERACT_KEY, ActionSpaceForBrain, ObservationFromWorld
+from pokemon_agent.world import INTERACT_KEY, ActionSpace, Observation
 
 DIRECTION_KEYS = frozenset({"up", "down", "left", "right"})
 
@@ -611,14 +611,14 @@ class Brain:
         )
 
     @staticmethod
-    def _blind(obs: ObservationFromWorld) -> ObservationFromWorld:
+    def _blind(obs: Observation) -> Observation:
         """滤掉不该进记忆的字段（`SNAPSHOT_BLIND`），构造记忆用的那份观测。
 
         记忆里每一项都必须跨步骤成立，`known_objects`/`knowledge`
         不成立——前者是跨 episode 流水，后者本就不是"这一帧看到了什么"。
         过滤只发生在写记忆这一步，大脑决策时看到的仍是完整观测。
         """
-        return ObservationFromWorld(
+        return Observation(
             step=obs.step,
             place=obs.place,
             status=obs.status,
@@ -651,7 +651,7 @@ class Brain:
         except ValidationError as exc:
             raise ParseFailure(text, f"RunPlan 字段不合法：{exc.errors()[:1]}") from exc
 
-    def _parse(self, text: str, space: ActionSpaceForBrain) -> ActionFromBrain:
+    def _parse(self, text: str, space: ActionSpace) -> ActionFromBrain:
         """把 LLM 输出解析成 `ActionFromBrain`，不合法就抛 `ParseFailure` / `IllegalAction`。"""
         # 步骤 1：剥 ```json 围栏。
         stripped = _strip_json_fence(text)

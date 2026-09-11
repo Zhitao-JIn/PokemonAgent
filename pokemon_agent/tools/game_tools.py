@@ -30,15 +30,21 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolSaveStateReq,
     FromHarnessToGameToolSetTaskReq,
 )
-from pokemon_agent.schemas.world import INTERACT_KEY, ActionSpaceForBrain, ObservationFromWorld
-from pokemon_agent.world import OVERLAY_ACTIONS, Facts, WorldPort
+from pokemon_agent.world import (
+    INTERACT_KEY,
+    OVERLAY_ACTIONS,
+    ActionSpace,
+    Facts,
+    Observation,
+    WorldPort,
+)
 
 # `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT` 的组装逻辑全在
 # `pokemon_agent/prompts/decide_action.py`（decide_action.md 一个模板的
 # 全部装配逻辑收在一处）——这里只是消费方。
 
 
-def _mask(obs: ObservationFromWorld, all_actions: list[str]) -> ActionSpaceForBrain:
+def _mask(obs: Observation, all_actions: list[str]) -> ActionSpace:
     """按这份观测的 overlay 算动作空间。**纯函数，不碰 world。**
 
     后置条件：`names` 非空。走投无路也必须给至少一个动作——
@@ -55,12 +61,12 @@ def _mask(obs: ObservationFromWorld, all_actions: list[str]) -> ActionSpaceForBr
     names = [a for a in OVERLAY_ACTIONS[overlay] if a in all_actions]
 
     assert names, f"action space must never be empty (overlay={overlay})"
-    return ActionSpaceForBrain(
+    return ActionSpace(
         names=names,
         descriptions=dict(BUTTON_HELP[overlay]),
         # `note`/`map_note` 分开是有意的：地图/证据规则（`map_note`）要紧跟在已知事实
         # 后面渲染，连按用法（`note`）留在可用按键说明这一节——见
-        # `ActionSpaceForBrain.map_note` 的字段说明。
+        # `ActionSpace.map_note` 的字段说明。
         note=REPEAT_HINT,
         map_note=MAP_HINT,
     )
@@ -83,16 +89,30 @@ class GameTools:
     def reset(self, req: FromHarnessToGameToolResetReq) -> None:
         """开新一局。**不感知**——调用方另调 `perceive_once()` 拿第一帧。
 
-        开新一局。
+        把 `req.task`（`TaskForBrain`）拆成裸字段交给 world——world 不认识
+        `TaskForBrain` 这个 brain 的类型，只用得到这几个原始值。
         """
-        self._world.reset(req.task)
+        task = req.task
+        self._world.reset(
+            task_id=task.task_id,
+            goal=task.goal,
+            success_criteria=task.success_criteria,
+            max_steps=task.max_steps,
+            initial_state_hint=task.initial_state_hint,
+        )
 
     def perceive_once(self) -> FromHarnessToGameToolPerceiveOnceResp:
         """感知当前这一帧，只问一次视觉模型，不重试。
 
-        转发给 world；重试循环在 Harness。
+        转发给 world；重试循环在 Harness。world 吐出来的是它自己的
+        `Perceived`（不是信封），这里原样摊开进 harness 认识的 Resp。
         """
-        return FromHarnessToGameToolPerceiveOnceResp(perceived=self._world.perceive_once())
+        perceived = self._world.perceive_once()
+        return FromHarnessToGameToolPerceiveOnceResp(
+            observation=perceived.observation,
+            calls=perceived.calls,
+            frame_png=perceived.frame_png,
+        )
 
     def save_state(self, req: FromHarnessToGameToolSaveStateReq) -> None:
         """把当前世界状态存成一个文件。"""
@@ -110,7 +130,14 @@ class GameTools:
 
     def set_task(self, req: FromHarnessToGameToolSetTaskReq) -> None:
         """只挂任务标记，不动模拟器状态（checkpoint 恢复后配 load_state_bytes 用）。"""
-        self._world.set_task(req.task)
+        task = req.task
+        self._world.set_task(
+            task_id=task.task_id,
+            goal=task.goal,
+            success_criteria=task.success_criteria,
+            max_steps=task.max_steps,
+            initial_state_hint=task.initial_state_hint,
+        )
 
     def get_action_space(
         self, req: FromHarnessToGameToolGetActionSpaceReq
@@ -158,9 +185,9 @@ class GameTools:
             )
         # **整条链交给 world 一次执行完**，这里不自己展开——一次决策就是一次
         # 感知（中间帧没有会被用到的信息，展开成逐次调用会成倍烧感知 token，
-        # 实测数据见 `CHANGELOG.md` 2026-09-03 条目）。连按次数走
-        # `ActionSegmentFromBrain.times`（1-8，解析期已校验），不走字符串参数。
-        self._world.step(action)
+        # 实测数据见 `CHANGELOG.md` 2026-09-03 条目）。world 不认识
+        # `ActionFromBrain`，这里拆成 `(按键名, 连按次数)` 的裸列表交给它。
+        self._world.step([(segment.name, segment.times) for segment in action.segments()])
 
     def evolve(self, req: FromHarnessToGameToolEvolveReq) -> None:
         """无输入推进 N 帧（世界自己演化）——harness 等决策 LLM 时的空闲填充。"""

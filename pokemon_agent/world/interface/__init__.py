@@ -1,53 +1,79 @@
 """world/interface 包统一出口：这个子系统的港口（`WorldPort`/`Memory` 协议）+
-数据 schema（`Facts`/`ScreenState`/`TerrainMapFromRam`）。
+全部数据 schema（`domain/` 子包：`Facts`/`ScreenState`/`TerrainMap`/`Observation`/
+`ActionSpace`/`PlaceInWorld`/`Perceived`/一批常量）。
 
 `WorldPort` 原来放在顶层 `pokemon_agent/interfaces/world/`，跟着"协议物理挨着它吐出
 的数据形状"这条原则搬到了这里；`pokemon_agent/interfaces/` 这个集中注册表已经
-整个撤销，消费方直接 `from pokemon_agent.world import WorldPort`（`brain → 各模块
-interface/ ← harness` 的依赖方向不变——见 CLAUDE.md）。`Memory`、`Facts`、
-`ScreenState`、`TerrainMapFromRam`
-原来分别定义在 `world/ram.py`、`world/screen_state.py` 这些"实现文档"里——它们是
-协议或数据形状，不是"怎么读/怎么算"的实现，所以搬到这里，跟 `WorldPort` 归在
-同一个子包下。
+整个撤销，消费方直接 `from pokemon_agent.world import WorldPort`。
 
-**`WorldPort` 是懒加载的，其余都不是**：`world_port.py` 要
-`import pokemon_agent.schemas.brain`，那条链可能绕回 `pokemon_agent.schemas.world`
-（`ChooseOnceReq`/`ReflectReq` 都拿 `ObservationFromWorld`）——而
-`schemas/world/domain/observation_from_world.py` 又要从这里拿 `Facts`。两条依赖
-在初始化顺序上正面相撞：`schemas.world` 聚合 `__init__` 走到
-`observation_from_world` 那一行时，如果这里连 `WorldPort` 一起立即导入，就会在
-`schemas.world` 自己还没跑完的时候被回头要 `ObservationFromWorld`，直接炸成
-`ImportError: cannot import name ... from partially initialized module`。
-`Memory`（零依赖）、`Facts`/`ScreenState`/`TerrainMapFromRam`（对 `schemas.world`
-的依赖都推迟到各自方法体内部现导，见 `domain/terrain_map.py` 的模块 docstring）
-本身都不依赖 `schemas.brain`，可以放心立即导入；`WorldPort` 推迟到真的有人
-访问 `.WorldPort` 时才导入，两头都不用再对导入顺序小心翼翼。
+**`WorldPort` 现在是零依赖的，不再需要懒加载。** 之前 `world_port.py` 要
+`import pokemon_agent.brain`（`ActionFromBrain`/`TaskForBrain` 做参数类型）、
+`import pokemon_agent.schemas.world.communication.PerceiveOnceResp`（做返回类型），
+这两条依赖分别撞过初始化顺序的坑。按"模块间零依赖，只靠裸函数和 tool 层交互"
+这条原则（brain/world/memory/trace 互相都不能依赖），`WorldPort` 的方法签名
+改成了裸字段（`reset`/`set_task` 收 `task_id`/`goal`/`success_criteria`/
+`max_steps`/`initial_state_hint` 五个原始参数，`step` 收
+`list[tuple[str, int]]` 的按键段列表），返回值也换成了 world 自己的
+`Perceived`（`domain/perceived.py`，不是 schemas 里的信封）。`WorldPort` 因此
+可以放心立即导入，不再需要 `__getattr__` 懒加载这层机制。
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from .domain import OVERLAY_ACTIONS, Facts, ScreenState, TerrainMapFromRam
+from .domain import (
+    ActionSpace,
+    BOULDER,
+    BUTTON_FACING,
+    DOOR,
+    FACING_STEP,
+    Facts,
+    GRASS,
+    GRID_COLS,
+    GRID_ROWS,
+    INTERACT_KEY,
+    ITEM,
+    MAP_CHARS,
+    Observation,
+    OVERLAY_ACTIONS,
+    PERSON,
+    PLAYER_CELL,
+    PLAYER_MARK,
+    Perceived,
+    PlaceInWorld,
+    SIGN,
+    ScreenState,
+    TERRAIN_MEANING,
+    TerrainMap,
+    terrain_legend,
+)
 from .memory import Memory
-
-if TYPE_CHECKING:
-    from .world_port import WorldPort
+from .world_port import WorldPort
 
 __all__ = [
+    "ActionSpace",
+    "BOULDER",
+    "BUTTON_FACING",
+    "DOOR",
+    "FACING_STEP",
     "Facts",
+    "GRASS",
+    "GRID_COLS",
+    "GRID_ROWS",
+    "INTERACT_KEY",
+    "ITEM",
+    "MAP_CHARS",
     "Memory",
+    "Observation",
     "OVERLAY_ACTIONS",
+    "PERSON",
+    "PLAYER_CELL",
+    "PLAYER_MARK",
+    "Perceived",
+    "PlaceInWorld",
+    "SIGN",
     "ScreenState",
-    "TerrainMapFromRam",
+    "TERRAIN_MEANING",
+    "TerrainMap",
     "WorldPort",
+    "terrain_legend",
 ]
-
-
-def __getattr__(name: str):
-    if name == "WorldPort":
-        from .world_port import WorldPort as _WorldPort
-
-        globals()["WorldPort"] = _WorldPort
-        return _WorldPort
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

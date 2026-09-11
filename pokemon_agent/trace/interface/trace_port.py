@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.trace import EventType, Source
+from ..datastore import EventType, Source
 
 
 @runtime_checkable

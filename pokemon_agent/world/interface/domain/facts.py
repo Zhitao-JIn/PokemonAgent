@@ -1,6 +1,6 @@
 """Facts：大脑在某一步看到的世界的结构化事实容器。
 
-原来 `ObservationFromWorld.facts` 是 `dict[str, str]`——结构化的东西（地标、场景、
+原来 `Observation.facts` 是 `dict[str, str]`——结构化的东西（地标、场景、
 叠加层）先渲染成文本塞进去，判定层/记忆检索再从文本反解回来，这条弯路本身就是
 错误的来源。这里只定义**一个**"总的" facts 类型：`Facts` 本身是 Pydantic 模型，
 字段该是什么类型就是什么类型；`Scene`/`Overlay`/`Landmark` 都收成 `Facts` 的
@@ -117,7 +117,7 @@ class Facts(BaseModel):
             `from __future__ import annotations` 关闭字符串化的地方（比如运行时
             `typing.get_type_hints()`）一样会在模块顶层触发那次导致循环导入的解析。
             """
-            from pokemon_agent.schemas.world.domain.place_in_world import PlaceInWorld
+            from .place_in_world import PlaceInWorld
 
             return PlaceInWorld(map_id=self.map_id, x=self.x, y=self.y)
 
@@ -127,12 +127,12 @@ class Facts(BaseModel):
 
     scene: Scene | None = Field(default=None, description="这一帧在什么场合")
     overlay: Overlay | None = Field(default=None, description="这一帧屏幕上盖着什么")
-    where: str = Field(default="", description="主角位置渲染成的文本（结构化的那份在 `ObservationFromWorld.place`）")
+    where: str = Field(default="", description="主角位置渲染成的文本（结构化的那份在 `Observation.place`）")
     facing: str = Field(default="", description="朝向（up/down/left/right），来自精灵表，不是按键推断")
     neighbors: str = Field(default="", description="四邻通行性，相对'我'的地形描述")
     landmarks: list[Landmark] = Field(
         default_factory=list,
-        description="这一帧屏幕上的地标（门/招牌/人/物/石），来自 `TerrainMapFromRam.landmarks()`。"
+        description="这一帧屏幕上的地标（门/招牌/人/物/石），来自 `TerrainMap.landmarks()`。"
         "**结构化原件**——判定层（`harness/object_interactions.py`）直接用，不用再从"
         "渲染出去的文本反解一遍。空列表就是这一帧没有地标，不是漏填",
     )
@@ -225,7 +225,7 @@ class Facts(BaseModel):
         return [(k, text) for k, _label, text in self._entries()]
 
     def stall_key_part(self) -> str:
-        """停摆检测键里由 facts 贡献的那一段，给 `ObservationFromWorld.stall_key()` 用。
+        """停摆检测键里由 facts 贡献的那一段，给 `Observation.stall_key()` 用。
 
         只含不会因重读而变化的字段：`scene`/`overlay`/`cursor`/`dialog_text`。
         `dialog_text` **在键里**是刻意的：长对话逐句推进时，场景/光标/位置全都
@@ -236,7 +236,7 @@ class Facts(BaseModel):
 
     def render(self, indent: str = "  ") -> str:
         """把这份 facts 渲染成一段可读、可打分的文本，供 prompt 用。空 facts 返回空串
-        （调用方——`ObservationFromWorld.render()`——自己决定空的时候摆什么）。
+        （调用方——`Observation.render()`——自己决定空的时候摆什么）。
         """
         entries = self._entries()
         if not entries:

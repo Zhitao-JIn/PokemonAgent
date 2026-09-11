@@ -56,7 +56,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToCheckpointToolVoidResp,
     FromHarnessToMemoryToolVoidMemoryAfterReq,
 )
-from pokemon_agent.schemas.trace import TraceEvent
+from pokemon_agent.trace import TraceEvent
 from pokemon_agent.tools.memory_tool import MemoryTool
 
 

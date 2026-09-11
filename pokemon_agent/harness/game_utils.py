@@ -14,8 +14,8 @@ from __future__ import annotations
 from pokemon_agent.errors import PerceptionAttemptFailed, PerceptionFailure
 from pokemon_agent.providers import ModelCall
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq
-from pokemon_agent.schemas.trace import Source
-from pokemon_agent.schemas.world import ObservationFromWorld
+from pokemon_agent.trace import Source
+from pokemon_agent.world import Observation
 from pokemon_agent.tools import GameToolPort, TraceToolPort
 from pokemon_agent.trace import TraceKind
 
@@ -28,7 +28,7 @@ def perceive_with_retry(
     trace: TraceToolPort,
     episode_id: str,
     step: int,
-) -> tuple[ObservationFromWorld, int]:
+) -> tuple[Observation, int]:
     """反复问一次感知，直到成功或预算耗尽——**循环、端口调用、记账都在这里**，
     `perceive_once()` 只负责单次尝试（见 `docs/ROADMAP.md`）。
 
@@ -52,7 +52,7 @@ def perceive_with_retry(
     for attempt in range(1, PERCEPTION_MAX_RETRIES + 1):
         # 步骤 1：问一次感知。
         try:
-            result = game.perceive_once().perceived
+            result = game.perceive_once()
         except PerceptionAttemptFailed as exc:
             # 步骤 2：失败，记账，进入下一次尝试。
             last_raw = exc.call.get("raw", "")

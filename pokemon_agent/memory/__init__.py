@@ -18,19 +18,43 @@
 
 object 的交互判定在 harness（`harness/object_interactions.py`）。
 
-本文件同时是统一出口：契约、存储类与检索纯函数从这里 re-export，
-消费方只写 `from pokemon_agent.memory import X`，不深到子目录的模块文件。
+本文件同时是统一出口：契约、存储类、检索纯函数，外加三类被持久化的记忆记录
+形状（`datastore/`，原来放在 `schemas/memory/datastore/`，物理上归回自己的包）
+都从这里 re-export，消费方只写 `from pokemon_agent.memory import X`，不深到
+子目录的模块文件。
 """
 
 __all__ = [
+    "EpisodeMemory",
     "MemoryStore",
     "MemoryStorePort",
+    "ObjectDialogEvent",
+    "ObjectFactEvent",
+    "ObjectStillEvent",
+    "ObjectWarpEvent",
+    "SCENE_ANY",
+    "SNAPSHOT_BLIND",
+    "StepMemory",
     "bm25_rank",
+    "dedup_snapshots",
     "embedding_rank",
     "hybrid_retrieve",
     "reciprocal_rank_fusion",
+    "render_sequence",
     "tokenize",
 ]
+from .datastore import (
+    SCENE_ANY,
+    SNAPSHOT_BLIND,
+    EpisodeMemory,
+    ObjectDialogEvent,
+    ObjectFactEvent,
+    ObjectStillEvent,
+    ObjectWarpEvent,
+    StepMemory,
+    dedup_snapshots,
+    render_sequence,
+)
 from .ports import MemoryStorePort
 from .retrieval import (
     bm25_rank,

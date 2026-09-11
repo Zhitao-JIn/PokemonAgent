@@ -10,16 +10,22 @@
 `tools/trace_render.py`——payload 组装是 tool 层的处理职责，本模块只做
 存储：只依赖 schemas，不依赖任何调用方的领域逻辑。
 
-本文件同时是统一出口：`TraceKind`/`TracePort`/`LocalTrace` 与截图读取从这里
-re-export，消费方只写 `from pokemon_agent.trace import LocalTrace, TraceKind,
-TracePort`。
+本文件同时是统一出口：`TraceKind`/`TracePort`/`LocalTrace` 与截图读取，外加
+落盘的事件记录形状（`datastore/`，原来放在 `schemas/trace/datastore/`，物理上
+归回自己的包）都从这里 re-export，消费方只写 `from pokemon_agent.trace import
+LocalTrace, TraceEvent, TraceKind, TracePort`。
 """
 
+from .datastore import TRACE_SCHEMA_VERSION, EventType, Source, TraceEvent
 from .interface import TraceKind, TracePort
 from .store import LocalTrace, read_screenshot, screenshot_filename
 
 __all__ = [
+    "TRACE_SCHEMA_VERSION",
+    "EventType",
     "LocalTrace",
+    "Source",
+    "TraceEvent",
     "TraceKind",
     "TracePort",
     "read_screenshot",

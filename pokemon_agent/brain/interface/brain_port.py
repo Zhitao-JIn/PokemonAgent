@@ -25,7 +25,7 @@ from pokemon_agent.schemas.brain import (
     VerifyAndSummarizeReq,
     VerifyAndSummarizeResp,
 )
-from pokemon_agent.schemas.memory import StepMemory
+from pokemon_agent.memory import StepMemory
 
 
 @runtime_checkable

@@ -32,7 +32,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pokemon_agent.schemas.trace import TRACE_SCHEMA_VERSION, EventType, Source, TraceEvent
+from .datastore import TRACE_SCHEMA_VERSION, EventType, Source, TraceEvent
 
 # 项目根目录（通过 __file__ 回溯三级）
 project_root = Path(__file__).parent.parent.parent

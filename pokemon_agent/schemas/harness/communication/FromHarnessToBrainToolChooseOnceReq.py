@@ -9,8 +9,8 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import GoalForBrain
-from pokemon_agent.schemas.memory import StepMemory
-from pokemon_agent.schemas.world import ActionSpaceForBrain, ObservationFromWorld
+from pokemon_agent.memory import StepMemory
+from pokemon_agent.world import ActionSpace, Observation
 
 
 class FromHarnessToBrainToolChooseOnceReq(BaseModel):
@@ -19,8 +19,8 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     """
 
     goals: list[GoalForBrain]
-    obs: ObservationFromWorld
-    space: ActionSpaceForBrain
+    obs: Observation
+    space: ActionSpace
     memories: list[StepMemory]
     knowledge: str = ""
     episode_memories: str = ""

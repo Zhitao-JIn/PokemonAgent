@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import GoalForBrain
-from pokemon_agent.schemas.memory import StepMemory
+from pokemon_agent.memory import StepMemory
 
 
 class JudgeReq(BaseModel):
@@ -26,8 +26,8 @@ class JudgeReq(BaseModel):
         `build_prompt()` 直接复用 `render_sequence()` 渲出来的最后一条，
         不再从旧的 `snapshots[-1]` 另起一份重复渲染同一份观测（0909 拍板，
         见 CHANGELOG）。
-    images：由 `pokemon_agent.schemas.memory.step_memory.
-        dedup_snapshots(history)` 算出来的去重截图（PNG 字节），这次问模型
+    images：由 `pokemon_agent.memory.dedup_snapshots(history)` 算出来的
+        去重截图（PNG 字节），这次问模型
         要带的图。不是 `build_prompt()` 算的——跟 `prompt` 一样由 Harness
         （`episode_harness.py` 的 `judge()`）在拼完文字 prompt 之后一并填
         进来，因为只有 Harness 知道截图文件存在哪个 run/episode 下、读不读

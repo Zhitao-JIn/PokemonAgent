@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from pokemon_agent.schemas.brain import PlanOnceReq
-from pokemon_agent.schemas.trace import EventType, TraceEvent
+from pokemon_agent.trace import EventType, TraceEvent
 
 from . import load
 

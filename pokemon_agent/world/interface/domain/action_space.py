@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class ActionSpaceForBrain(BaseModel):
+class ActionSpace(BaseModel):
     """**喂给大脑的**当前可用动作集合（state-dependent action masking）。
 
     注意语义：这不是"全部动作"，是"此刻允许的动作"。动作空间不增长，

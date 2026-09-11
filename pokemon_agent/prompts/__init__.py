@@ -30,7 +30,7 @@
   独有重试纠正说明这个概念）。
   `decide_action.py` 的拼装内容（`BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT`
   三个常量 + 重试纠正说明 + 最终拼装）集中在这一个文件，三个常量仍对外暴露
-  （给 `game_tools.py` 构造 `ActionSpaceForBrain` 用）。`judge_success.py`
+  （给 `game_tools.py` 构造 `ActionSpace` 用）。`judge_success.py`
   服务 `Brain.judge()`——渲染搬出来给调用方（`EpisodeHarness`），`Brain`
   只收现成的 `prompt: str`；`verify_and_summarize.py` 同理服务
   `Brain.verify_and_summarize()`；`run_plan.py` 服务 `RunHarness.plan()`——

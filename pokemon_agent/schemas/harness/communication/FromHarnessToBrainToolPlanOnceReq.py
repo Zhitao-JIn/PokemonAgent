@@ -9,7 +9,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import TaskForBrain
-from pokemon_agent.schemas.trace import TraceEvent
+from pokemon_agent.trace import TraceEvent
 
 
 class FromHarnessToBrainToolPlanOnceReq(BaseModel):

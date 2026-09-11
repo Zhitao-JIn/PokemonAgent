@@ -2,7 +2,7 @@
 
 **只放这一根依赖会用到的纯计算**——跟 `game_utils.py`/`brain_utils.py`
 是同一个原则在 harness 各根依赖上各自的落地。这里全是纯函数：从
-`ObservationFromWorld`/`StepMemory` 这些已经在契约内的对象拼出检索用的
+`Observation`/`StepMemory` 这些已经在契约内的对象拼出检索用的
 query 字符串，交给调用方去调 `MemoryToolPort` 的查询方法——**不碰
 `MemoryToolPort` 本身**，不属于数据结构转换（那是 `tools/memory_tool.py`
 的活），纯粹是"编排已经在契约内的对象"。
@@ -10,11 +10,11 @@ query 字符串，交给调用方去调 `MemoryToolPort` 的查询方法——**
 
 from __future__ import annotations
 
-from pokemon_agent.schemas.memory import StepMemory
-from pokemon_agent.schemas.world import ObservationFromWorld
+from pokemon_agent.memory import StepMemory
+from pokemon_agent.world import Observation
 
 
-def build_knowledge_query(obs: ObservationFromWorld, goal: str) -> str:
+def build_knowledge_query(obs: Observation, goal: str) -> str:
     """拼知识库检索 query：observation 特征 + goal，不只按 goal 检索。
 
     只按 goal（"走到镇长家"）时，战斗/菜单类先验（2×2 行动菜单、a 确认 b 取消）
@@ -57,7 +57,7 @@ def build_verify_knowledge_query(entries: list[StepMemory], goal: str) -> str:
     return " ".join(bits + [f"目标：{goal}"])
 
 
-def build_scene_key(obs: ObservationFromWorld) -> str | None:
+def build_scene_key(obs: Observation) -> str | None:
     """拼跨局摘要检索用的场景键；`obs.place` 为 None 时没有场景可过滤，返回 None。"""
     if obs.place is None:
         return None

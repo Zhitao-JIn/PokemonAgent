@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.memory import EpisodeMemory
+from pokemon_agent.memory import EpisodeMemory
 
 
 class FromHarnessToMemoryToolQueryEpisodeSummariesResp(BaseModel):

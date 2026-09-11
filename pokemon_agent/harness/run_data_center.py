@@ -32,7 +32,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerReviewReq,
     FromHarnessToReviewerReviewResp,
 )
-from pokemon_agent.schemas.trace import TraceEvent
+from pokemon_agent.trace import TraceEvent
 
 from .interface import HumanDecision
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.world import PlaceInWorld
+from pokemon_agent.world import PlaceInWorld
 
 
 class FromHarnessToMemoryToolQueryObjectEventsAtReq(BaseModel):

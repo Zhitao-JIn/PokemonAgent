@@ -26,14 +26,14 @@ from pydantic import BaseModel, Field, field_validator
 from .facts import Facts
 
 
-class TerrainMapFromRam(BaseModel):
+class TerrainMap(BaseModel):
     """**从内存读出来**的通行图。**不是识别出来的。**
 
     它抄的是游戏自己的碰撞判定（`CheckTilePassable`）：取目标格的 tile id，
     在 tileset 的可通行表里查找。没有阈值、没有概率、没有识别——
     几何这一维因此是 100% 而不是 87%。
 
-    **它不是 `ObservationFromWorld`**：观测是大脑看到的东西，这个是感知层的中间物，
+    **它不是 `Observation`**：观测是大脑看到的东西，这个是感知层的中间物，
     由 `PyBoyWorld` 转成观测 `facts` 里的一段文本。
     """
 
@@ -64,7 +64,7 @@ class TerrainMapFromRam(BaseModel):
 
         校验地形图的形状，不对就当场打回。
         """
-        from pokemon_agent.schemas.world.domain.screen_model import (
+        from .screen_model import (
             GRID_COLS,
             GRID_ROWS,
             MAP_CHARS,
@@ -91,7 +91,7 @@ class TerrainMapFromRam(BaseModel):
 
         给出四个方向键各自通往的那一格。
         """
-        from pokemon_agent.schemas.world.domain.screen_model import PLAYER_CELL
+        from .screen_model import PLAYER_CELL
 
         col, row = PLAYER_CELL
         return {
@@ -141,7 +141,7 @@ class TerrainMapFromRam(BaseModel):
         警示：空格会被模型当成格子——一行 10 格看成 19 格，坐标全线错位。
         行尾的 `(x=..)` 括号是标注不是格子，图例里没有 `(` 和 `)` 这两种字符。
         """
-        from pokemon_agent.schemas.world.domain.screen_model import (
+        from .screen_model import (
             GRID_COLS,
             GRID_ROWS,
             PLAYER_CELL,
@@ -197,7 +197,7 @@ class TerrainMapFromRam(BaseModel):
 
         把屏幕上的门/招牌/人/物/石换算成全局坐标。
         """
-        from pokemon_agent.schemas.world.domain.screen_model import (
+        from .screen_model import (
             BOULDER,
             DOOR,
             ITEM,
@@ -229,7 +229,7 @@ class TerrainMapFromRam(BaseModel):
 
     def place(self) -> Any:  # 返回 PlaceInWorld；标 Any 避免顶层依赖，见模块 docstring
         """主角所在的格子。"""
-        from pokemon_agent.schemas.world.domain.place_in_world import PlaceInWorld
+        from .place_in_world import PlaceInWorld
 
         return PlaceInWorld(map_id=self.map_id, x=self.player_x, y=self.player_y)
 

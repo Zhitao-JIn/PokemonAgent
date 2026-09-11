@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from pokemon_agent.brain.interface import ActionFromBrain
-from pokemon_agent.schemas.world import ObservationFromWorld
+from pokemon_agent.world import Observation
 
 
 class FromHarnessToGameToolExecuteReq(BaseModel):
@@ -16,4 +16,4 @@ class FromHarnessToGameToolExecuteReq(BaseModel):
     """
 
     action: ActionFromBrain = Field(description="大脑选出的动作")
-    observation: ObservationFromWorld = Field(description="这个动作所依据的观测")
+    observation: Observation = Field(description="这个动作所依据的观测")

@@ -26,7 +26,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToTraceToolAppendReq,
 )
-from pokemon_agent.schemas.trace import Source
+from pokemon_agent.trace import Source
 from pokemon_agent.tools import BrainToolPort, TraceToolPort
 from pokemon_agent.trace import TraceKind
 

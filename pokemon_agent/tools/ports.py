@@ -218,7 +218,7 @@ class GameToolPort(Protocol):
 
         调用方在 `reset()`/`execute()` 之后调它拿观测；重试预算与循环归
         调用方（Harness）管，见 `docs/ROADMAP.md`。
-        后置条件：resp.perceived.observation 非空；step 未盖章（Harness 的事）。
+        后置条件：resp.observation 非空；step 未盖章（Harness 的事）。
         失败：解析不出结构化状态时抛 `PerceptionAttemptFailed`（附这次的账）。
         """
         ...

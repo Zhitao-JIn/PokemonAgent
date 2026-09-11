@@ -23,7 +23,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.world import PlaceInWorld
+from pokemon_agent.world import PlaceInWorld
 
 
 class ObjectFactEventBase(BaseModel):

@@ -28,15 +28,15 @@ from pokemon_agent.brain import (
 )
 from pokemon_agent.providers import ModelCall
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, RunResp
-from pokemon_agent.schemas.memory import (
+from pokemon_agent.memory import (
     EpisodeMemory,
     ObjectDialogEvent,
     ObjectFactEvent,
     ObjectWarpEvent,
     StepMemory,
 )
-from pokemon_agent.schemas.trace import EventType, Source
-from pokemon_agent.schemas.world import ObservationFromWorld
+from pokemon_agent.trace import EventType, Source
+from pokemon_agent.world import Observation
 
 RenderedEvent = tuple[EventType, Source, dict[str, str]]
 """`append(episode_id, step, type, source, payload)` 的后三个位置参数。"""
@@ -287,7 +287,7 @@ def observe(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 
     前置条件：req.obs 非 None。
     """
-    obs: ObservationFromWorld = req.obs
+    obs: Observation = req.obs
     goals: list[GoalForBrain] = req.goals or []
     return (
         EventType.VIEW,

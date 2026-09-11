@@ -21,10 +21,17 @@
 
 2. **大脑只能通过接口层与外界交互。** `brain/` 不许 import `harness/` 的任何具体实现，
    只许 import 各模块自己的 `interface/`（Protocol 定义，原来集中在顶层 `interfaces/`，
-   现在物理挨着各自的实现——`world/interface/`、`brain/interface/` 等，见 CHANGELOG）
-   和 `schemas/`。依赖方向永远是 `brain → 各模块 interface/ ← harness`，
+   现在物理挨着各自的实现——`world/interface/`、`brain/interface/` 等，见 CHANGELOG）。
+   **`brain`/`world`/`memory`/`trace` 这几个领域模块之间、以及它们与 `schemas.*`
+   之间，原则是完全没有相互依赖**（`providers` 例外，当作底层公共库，各模块都能
+   直接依赖）——模块间只靠**裸函数**和 **tool 层**交互，不造信封；tool 层是
+   唯一被允许同时认识多个领域模块、做信封拆装的地方（`world` 已经按这条原则
+   完成裸字段化，其余模块正在推进，见 `docs/PLAN_bare_boundary_refactor.md` 与
+   CHANGELOG 对应条目）。依赖方向永远是 `brain → 各模块 interface/ ← harness`，
    **绝不反向，绝不横向**。
-   *为什么*：这条一旦破，mock 换真实实现就要改大脑代码，原型的意义就没了。
+   *为什么*：这条一旦破，mock 换真实实现就要改大脑代码，原型的意义就没了；
+   模块间零依赖是这一版重构消灭循环导入的根本手段——信封天然容易牵扯到别的
+   模块的类型，形成隐蔽的双向依赖。
 
 3. **mock 与真实实现必须实现同一个 Protocol。** 不许出现"mock 多一个方法"或"mock 签名不一样"。
    *为什么*：mock 的唯一价值是能被无痛替换。
@@ -188,26 +195,37 @@ pokemon_agent/
 │                     的字段又要从这里拿回 `HumanDecision`，两条依赖在初始化顺序上
 │                     会正面相撞，取舍见 `CHANGELOG.md` 对应条目
 ├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层。`world/interface/`
-│                     是这个子系统自己的港口 + 数据 schema 出口，跟"怎么读/怎么算"
-│                     的实现文件物理分开：
-│                     - `world/interface/`：协议——`world_port.py`（`WorldPort`）+
-│                       `memory.py`（`Memory`，只要求"能按地址取字节"）；数据——
-│                       `domain/facts.py`（`Facts`，`Scene`/`Overlay`/`Landmark`
-│                       是它的**内部类**）、`domain/screen_state.py`
-│                       （`ScreenState`，视觉模型输出的 schema）、
-│                       `domain/terrain_map.py`（`TerrainMapFromRam`，`read_terrain`
-│                       的产出 schema）
+│                     是这个子系统自己的港口 + 全部数据 schema 出口，跟"怎么读/
+│                     怎么算"的实现文件物理分开，且**零依赖**（不 import
+│                     `pokemon_agent.brain`、不 import `schemas.*`）：
+│                     - `world/interface/`：协议——`world_port.py`（`WorldPort`，
+│                       方法签名全部裸字段化：`reset`/`set_task` 收
+│                       `task_id`/`goal`/`success_criteria`/`max_steps`/
+│                       `initial_state_hint`，`step` 收
+│                       `list[tuple[str, int]]`，`perceive_once` 返回
+│                       `Perceived`，都不是别的模块的类型）+ `memory.py`
+│                       （`Memory`，只要求"能按地址取字节"）；数据——
+│                       `domain/facts.py`（`Facts`）、`domain/screen_state.py`
+│                       （`ScreenState`）、`domain/terrain_map.py`（`TerrainMap`，
+│                       `read_terrain` 的产出 schema）、`domain/observation.py`
+│                       （`Observation`）、`domain/action_space.py`
+│                       （`ActionSpace`）、`domain/place_in_world.py`
+│                       （`PlaceInWorld`）、`domain/perceived.py`（`Perceived`，
+│                       `perceive_once()` 的返回形状）、`domain/action_semantics.py`
+│                       / `domain/screen_model.py`（跨模块常量）——后面这几个
+│                       原来放在 `schemas/world/domain/`，按"模块间零依赖"这条
+│                       原则物理搬回了这里
 │                     - `pyboy_world.py` / `ram.py` / `frame_slot.py`：三份"怎么
 │                       读/怎么算"的实现，各自 `from .interface import ...` 拿协议
-│                       和数据形状来用，不重复定义
-│                     `world/__init__.py` 对 `interface/` 是立即加载，对
+│                       和数据形状来用，不重复定义；仍然依赖 `providers`
+│                       （`VisionProvider`），`providers` 当作底层公共库，不算
+│                       模块间耦合
+│                     `world/__init__.py` 对 `interface/`（含 `WorldPort`）是
+│                     立即加载——零依赖之后不再需要懒加载；对
 │                     `pyboy_world.py`/`ram.py`/`frame_slot.py` 这几个重实现文件
-│                     是**懒加载**（`__getattr__` 按需导入）——避免只要
-│                     `WorldPort`/`Facts` 类型定义的调用方被迫连带拖着 PyBoy 一起
-│                     import；`WorldPort` 本身在 `world/interface/` 与
-│                     `world/__init__.py` 两层都懒加载，避免它要
-│                     `import pokemon_agent.brain` 跟 `schemas.world` 反过来要
-│                     `Facts` 形成真正的循环导入，取舍见 `CHANGELOG.md` 对应条目
+│                     仍是**懒加载**（`__getattr__` 按需导入），单纯是为了不让
+│                     只要类型定义的调用方被迫连带拖着 PyBoy 一起 import，跟
+│                     循环导入无关
 ├── tools/            `ports.py`：五个对外契约（`BrainToolPort`/
 │                     `CheckpointToolPort`/`GameToolPort`/`MemoryToolPort`/
 │                     `TraceToolPort`，原来在顶层 `interfaces/tools/`）——扁平文件，
@@ -215,7 +233,13 @@ pokemon_agent/
 │                     零循环依赖风险，立即加载；`brain_tool.py`/`checkpoint_tool.py`/
 │                     `game_tools.py`/`memory_tool.py`/`trace_tool.py`：五个 Port 各自
 │                     唯一的实现，harness 伸向 brain/checkpoint/环境/记忆/trace 的五只手
-├── memory/           记忆子系统整块：ports.py 对外契约（MemoryStorePort）+ store.py
+├── memory/           记忆子系统整块：ports.py 对外契约（MemoryStorePort，本来就
+│                     只收发裸字段/dict，零依赖）+ datastore/（`StepMemory`/
+│                     `EpisodeMemory`/`ObjectFactEvent` 等被持久化的记录形状，
+│                     原来在 `schemas/memory/datastore/`，物理搬回自己的包；
+│                     `StepMemory`/`object_memory.py` 仍引用 `pokemon_agent.world`
+│                     的 `Observation`/`PlaceInWorld`，属于"模块间零依赖"这条
+│                     原则的已知遗留，留给 memory 自己的重构步骤）+ store.py
 │                     统一记录存储（MemoryStore：一个 kind 一个文件夹 step_memory /
 │                     object_memory / episode_memory / knowledge_memory，一条记录一个
 │                     uuid 文件 + 每文件夹一份写穿倒排索引 index.json，可自愈重建）
@@ -230,8 +254,11 @@ pokemon_agent/
 ├── vision/           图像预处理（网格叠加、放大）
 ├── trace/            事件流：`interface/`（`TracePort` 协议 + `TraceKind` 账目
 │                     词表，原来分别在顶层 `interfaces/trace/` 和
-│                     `schemas/trace/domain/`，现在同住一包）+ `store.py`
-│                     （`LocalTrace`：一条事件一个 json 落盘
+│                     `schemas/trace/domain/`，现在同住一包）+ `datastore/`
+│                     （`TraceEvent`/`EventType`/`Source`/`TRACE_SCHEMA_VERSION`，
+│                     原来在 `schemas/trace/datastore/`，物理搬回自己的包，
+│                     `store.py`/`interface/trace_port.py` 改成相对导入）+
+│                     `store.py`（`LocalTrace`：一条事件一个 json 落盘
 │                     trace_data/<run_id>/events/）+ 事件 payload 组装
 ├── experiment/       实验任务定义（tasks.py）、experiment_states/（钉死存档）、
 │                     real_check/（六维度真实链路核对）——仓库根级，不在包内

@@ -24,9 +24,9 @@ from pokemon_agent.brain.interface import (
     TaskForBrain,
 )
 from pokemon_agent.providers.interface import ModelCall
-from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, StepMemory
-from pokemon_agent.schemas.trace import Source
-from pokemon_agent.schemas.world import ObservationFromWorld
+from pokemon_agent.memory import EpisodeMemory, ObjectFactEvent, StepMemory
+from pokemon_agent.trace import Source
+from pokemon_agent.world import Observation
 from pokemon_agent.trace.interface import TraceKind
 
 from .FromRunHarnessToEpisodeHarnessRunResp import FromRunHarnessToEpisodeHarnessRunResp
@@ -69,7 +69,7 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     outcome_episode: FromRunHarnessToEpisodeHarnessRunResp | None = None
 
     # ---- 决策 / 观测 ----
-    obs: ObservationFromWorld | None = None
+    obs: Observation | None = None
     goals: list[GoalForBrain] | None = None
     action: ActionFromBrain | None = None
     names: list[str] | None = None

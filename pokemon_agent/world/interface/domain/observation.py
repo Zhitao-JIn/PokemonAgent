@@ -4,19 +4,11 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from .facts import Facts
 from .place_in_world import PlaceInWorld
 
-from pokemon_agent.world.interface import Facts
 
-# **`place_in_world` 排在 `world.interface` 前面导入，是刻意的顺序**：
-# `Facts`（`world/interface/domain/facts.py`）自己也要 `PlaceInWorld`
-# （`Facts.Landmark.place`），如果这个文件先导 `Facts` 再导 `PlaceInWorld`，
-# 等 `Facts` 内部去找 `PlaceInWorld` 时，这个模块所在的 `schemas.world` 聚合包
-# 可能还没跑到定义它的那一行——先把 `PlaceInWorld` 在这里导完，`Facts` 内部
-# 再要同一个类型时命中的是已经缓存好的模块，不会重新触发一次可能踩坑的导入链。
-
-
-class ObservationFromWorld(BaseModel):
+class Observation(BaseModel):
     """**从世界来的观测**——大脑在某一步看到的世界。
 
     只放**大脑决策需要的**信息。原始画面、模拟器内部状态不进这里——

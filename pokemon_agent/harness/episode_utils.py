@@ -16,7 +16,7 @@ run 级图对应的工具函数在 `run_utils.py`/`run_plan_utils.py`，两层�
 from __future__ import annotations
 
 from pokemon_agent.brain import ActionFromBrain
-from pokemon_agent.schemas.world import ObservationFromWorld
+from pokemon_agent.world import Observation
 
 
 def derive_episode_reason(success: bool, step: int, max_steps: int, *, stalled: bool) -> str:
@@ -37,7 +37,7 @@ def derive_episode_reason(success: bool, step: int, max_steps: int, *, stalled: 
 
 
 def compute_stall(
-    after: ObservationFromWorld, action: ActionFromBrain, prev_key: str, prev_count: int
+    after: Observation, action: ActionFromBrain, prev_key: str, prev_count: int
 ) -> tuple[str, int]:
     """算这一步的停摆键（画面机械状态 + 动作描述）与更新后的连续计数。
 

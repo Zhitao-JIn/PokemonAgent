@@ -47,8 +47,8 @@ from pokemon_agent.schemas.harness import (
     FromRunHarnessToEpisodeHarnessRunReq,
     FromRunHarnessToEpisodeHarnessRunResp,
 )
-from pokemon_agent.schemas.memory import EpisodeMemory, StepMemory
-from pokemon_agent.schemas.world import ActionSpaceForBrain, ObservationFromWorld
+from pokemon_agent.memory import EpisodeMemory, StepMemory
+from pokemon_agent.world import ActionSpace, Observation
 
 
 class EpisodeRunState(BaseModel):
@@ -88,8 +88,8 @@ class EpisodeRunState(BaseModel):
         "其余层是给大脑的全局信息——知道最终目标是什么、自己在哪一层",
     )
 
-    observation: ObservationFromWorld | None = None
-    action_space: ActionSpaceForBrain | None = None
+    observation: Observation | None = None
+    action_space: ActionSpace | None = None
     step_episode_memories: list[StepMemory] = Field(
         default_factory=list,
         description="`retrieve_step_episode_memory` 查出来的、给这一步 `think_action` 用的"
@@ -116,7 +116,7 @@ class EpisodeRunState(BaseModel):
     不像 `knowledge`/`global_episode_memories` 那样是跨场景/跨局的检索结果。"""
 
     action: ActionFromBrain | None = None
-    pending_observation: ObservationFromWorld | None = None
+    pending_observation: Observation | None = None
     """**还没盖章的新观测**，等着下一轮 `look` 给它盖 step、判成败。
 
     两个来源：开局那一帧由 `begin` 从 `reset()` 的返回值里收下，之后每一帧
@@ -138,14 +138,14 @@ class EpisodeRunState(BaseModel):
     done: bool = False
     """这一局该不该结束——`judge` 综合三类机械条件（世界结束/步数用尽/停摆）
     +（不管前三类是否已成立都会问一次的）模型判定后给出的结论。**不在
-    `ObservationFromWorld.done` 上**：那个字段是世界层自己的信号
+    `Observation.done` 上**：那个字段是世界层自己的信号
     （窗口关没关），这个才是 harness 的终止裁决，两者语义不同，硬塞进同一个
     字段名会让"是不是被 judge 改过"变得含糊。跟 `stall_key`/`stall_count`
     一样，只有 `judge` 改它。"""
     success: bool = False
     """任务是否达成。**只在 `done` 为 True 时有意义**，否则恒为 False——
     唯一来源是 `judge` 里模型给出 `verdict.done=True` 那一刻，跟世界层、
-    机械终止条件都无关。不占 `ObservationFromWorld.success`，
+    机械终止条件都无关。不占 `Observation.success`，
     理由同上：世界本来就不该有"任务算不算完成"这个概念，那是 harness 的
     判断，不是观测的一部分。"""
 
