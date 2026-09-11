@@ -15,8 +15,9 @@ from pokemon_agent.errors import PerceptionAttemptFailed, PerceptionFailure
 from pokemon_agent.interfaces import GameToolPort, TraceToolPort
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq
 from pokemon_agent.schemas.providers import ModelCall
-from pokemon_agent.schemas.trace import Source, TraceKind
+from pokemon_agent.schemas.trace import Source
 from pokemon_agent.schemas.world import ObservationFromWorld
+from pokemon_agent.trace import TraceKind
 
 PERCEPTION_MAX_RETRIES = 2
 """感知重试预算：一帧最多问几次视觉模型。循环在这里不在 World。"""

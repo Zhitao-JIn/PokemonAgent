@@ -78,8 +78,7 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.schemas.memory import dedup_snapshots
 from pokemon_agent.schemas.providers import ModelCall
-from pokemon_agent.schemas.trace import TraceKind
-from pokemon_agent.trace import read_screenshot
+from pokemon_agent.trace import TraceKind, read_screenshot
 
 from . import brain_utils, episode_utils, game_utils, memory_query_utils
 from .object_interactions import object_fact_events

@@ -11,11 +11,13 @@ tools/providers/trace）实现这些 Protocol，消费方（brain/harness）只�
 本文件是统一出口：本层全部 Port 与状态模型从这里 re-export，
 消费方只写 `from pokemon_agent.interfaces import X`，不深到子目录的模块文件。
 
-**`WorldPort` 是唯一的例外**：它的物理文件搬到了 `pokemon_agent/world/interface/
-world_port.py`——跟这个子系统吐出的数据形状（`Facts`，同目录 `domain/facts.py`）
-放在一起，理由和取舍见那边的 CHANGELOG 条目。这里仍然原样 re-export，消费方
-写法不变，依赖方向也不变：只是这一个 Protocol 不再要求它的实现方（`world/`）
-反过来依赖这个包才能定义自己的协议。
+**这个包正在被逐步淘汰**：`WorldPort` 已经搬到 `pokemon_agent/world/interface/
+world_port.py`，`TracePort`（连同它的账目词表 `TraceKind`）已经搬到
+`pokemon_agent/trace/interface/`——都跟着各自的实现同住一包，理由和取舍见
+对应 CHANGELOG 条目。这次不再在这里保留 re-export：消费方直接
+`from pokemon_agent.world import WorldPort` / `from pokemon_agent.trace import
+TracePort`。本文件剩下的其余 Port 会按 trace → providers → brain → tools →
+harness 的顺序逐个搬完，搬完最后一个后这个包整体删除。
 """
 
 __all__ = [
@@ -37,10 +39,8 @@ __all__ = [
     "RerankerProvider",
     "ResumeEpisode",
     "RunState",
-    "TracePort",
     "TraceToolPort",
     "VisionProvider",
-    "WorldPort",
 ]
 from .brain.brain_port import BrainPort
 from .harness.episode_harness_port import EpisodeHarnessPort, EpisodeRunState
@@ -62,5 +62,3 @@ from .tools.checkpoint_tool_port import CheckpointToolPort
 from .tools.game_tool_port import GameToolPort
 from .tools.memory_tool_port import MemoryToolPort
 from .tools.trace_tool_port import TraceToolPort
-from .trace.trace_port import TracePort
-from pokemon_agent.world.interface import WorldPort

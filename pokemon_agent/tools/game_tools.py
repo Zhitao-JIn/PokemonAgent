@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from pokemon_agent.interfaces import WorldPort
 from pokemon_agent.prompts import BUTTON_HELP, MAP_HINT, REPEAT_HINT
 from pokemon_agent.schemas.frontend import (
     FromFrontendToGameToolLatestFrameReq,
@@ -32,7 +31,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolSetTaskReq,
 )
 from pokemon_agent.schemas.world import INTERACT_KEY, ActionSpaceForBrain, ObservationFromWorld
-from pokemon_agent.world.interface import OVERLAY_ACTIONS, Facts
+from pokemon_agent.world import OVERLAY_ACTIONS, Facts, WorldPort
 
 # `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT` 的组装逻辑全在
 # `pokemon_agent/prompts/decide_action.py`（decide_action.md 一个模板的

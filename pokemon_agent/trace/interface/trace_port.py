@@ -1,4 +1,10 @@
-"""事件流接口：追加写的序列，按类型 mask 读。"""
+"""事件流接口：追加写的序列，按类型 mask 读。
+
+原来放在顶层 `pokemon_agent/interfaces/trace/`；跟 `WorldPort` 搬到
+`world/interface/` 是同一个道理——协议物理上挨着它自己的实现（`trace/store.py`
+的 `LocalTrace`）走，`pokemon_agent/interfaces/` 这个集中注册表这次整个撤销，
+消费方直接 `from pokemon_agent.trace import TracePort`。
+"""
 
 from __future__ import annotations
 

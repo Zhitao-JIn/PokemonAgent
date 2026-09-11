@@ -17,14 +17,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from pokemon_agent.interfaces import TracePort
 from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     FromHarnessToTraceToolReadDiskEventsReq,
     FromHarnessToTraceToolReadDiskEventsResp,
 )
-from pokemon_agent.schemas.trace import TraceKind
 from pokemon_agent.tools import trace_render
+from pokemon_agent.trace import TraceKind, TracePort
 
 _RENDERERS = {
     TraceKind.RUN_START: trace_render.run_start,

@@ -152,12 +152,16 @@ pokemon_agent/
 │                     object_fact（一条=一格）/ knowledge（不挂坐标的先验）/
 │                     episode_summary_io（蒸馏那次调用的请求+响应，不是记忆）
 │                     其余：Observation / Action / ActionSpace / TraceEvent / Completion
-├── interfaces/       Protocol 定义（"港口"）的统一出口：GameToolPort / MemoryToolPort /
-│                     BrainPort / TracePort / LLMProvider / VisionProvider 等直接
-│                     定义在这里。**`WorldPort` 是唯一的例外**——物理文件搬到了
-│                     `world/interface/`（见下），这里只 re-export，
-│                     `from pokemon_agent.interfaces import WorldPort` 照常能用，
-│                     依赖方向不变
+├── interfaces/       **正在被逐步淘汰的过渡目录。** Protocol 定义（"港口"）曾经
+│                     统一收在这里；现在改成"协议physically 挨着它自己的实现"，
+│                     一个模块一个模块搬（`WorldPort`→`world/interface/`、
+│                     `TracePort`→`trace/interface/` 已搬完，其余
+│                     GameToolPort/MemoryToolPort/BrainPort/LLMProvider/
+│                     VisionProvider 等待搬），不再保留 re-export 薄壳——搬完的
+│                     消费方直接 `from pokemon_agent.world import WorldPort` /
+│                     `from pokemon_agent.trace import TracePort` 这样各自认
+│                     模块。搬完最后一个后这个目录整体删除，取舍见 CHANGELOG
+│                     对应条目
 ├── brain/            纯决策层。无状态。只依赖 interfaces + schemas
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方
 ├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层。`world/interface/`
@@ -187,7 +191,10 @@ pokemon_agent/
 │                     + retrieval.py 混合检索纯函数
 ├── providers/        具体 LLM/视觉模型接入（DashScope/Qwen）
 ├── vision/           图像预处理（网格叠加、放大）
-├── trace/            TracePort 实现（LocalTrace：一条事件一个 json 落盘
+├── trace/            事件流：`interface/`（`TracePort` 协议 + `TraceKind` 账目
+│                     词表，原来分别在顶层 `interfaces/trace/` 和
+│                     `schemas/trace/domain/`，现在同住一包）+ `store.py`
+│                     （`LocalTrace`：一条事件一个 json 落盘
 │                     trace_data/<run_id>/events/）+ 事件 payload 组装
 ├── experiment/       实验任务定义（tasks.py）、experiment_states/（钉死存档）、
 │                     real_check/（六维度真实链路核对）——仓库根级，不在包内

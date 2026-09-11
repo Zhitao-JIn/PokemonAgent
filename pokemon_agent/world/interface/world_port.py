@@ -3,7 +3,7 @@
 **物理位置**：原来在顶层 `pokemon_agent/interfaces/world/`，跟这个子系统吐出来的
 数据形状（`Facts`，同目录 `domain/facts.py`）搬到了一起——协议和协议吐出来的数据
 形状本来就是同一件事的两个角度，没道理分居两处。`pokemon_agent.interfaces` 仍然
-re-export 这个类型（`from pokemon_agent.interfaces import WorldPort` 照常能用），
+曾经原样 re-export 这个类型；现在 `pokemon_agent.interfaces` 整个撤销，
 `brain → interfaces ← harness` 的依赖方向不变，见 CLAUDE.md 对应条目。
 """
 

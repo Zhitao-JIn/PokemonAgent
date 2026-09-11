@@ -73,7 +73,7 @@ from pokemon_agent.schemas.harness import (
     HumanDecision,
     RunResp,
 )
-from pokemon_agent.schemas.trace import TraceKind
+from pokemon_agent.trace import TraceKind
 
 from . import run_plan_utils, run_utils
 from .auto_reviewer import AutoContinueReviewer

@@ -25,8 +25,9 @@ from pokemon_agent.schemas.brain import (
 )
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, StepMemory
 from pokemon_agent.schemas.providers import ModelCall
-from pokemon_agent.schemas.trace import Source, TraceKind
+from pokemon_agent.schemas.trace import Source
 from pokemon_agent.schemas.world import ObservationFromWorld
+from pokemon_agent.trace.interface import TraceKind
 
 from .FromRunHarnessToEpisodeHarnessRunResp import FromRunHarnessToEpisodeHarnessRunResp
 from .RunResp import RunResp

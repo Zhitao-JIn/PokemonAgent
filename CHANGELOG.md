@@ -1,3 +1,70 @@
+## 2026-09-11（7）—— interfaces/schemas 集中制逐步撤销，第一步：trace
+
+**改了什么**：
+1. `pokemon_agent/interfaces/trace/trace_port.py`（`TracePort`）→
+   `pokemon_agent/trace/interface/trace_port.py`。
+2. `pokemon_agent/schemas/trace/domain/trace_kind.py`（`TraceKind`）→
+   `pokemon_agent/trace/interface/domain/trace_kind.py`；`schemas/trace/domain/`
+   目录随之清空删除。
+3. 新增 `trace/interface/__init__.py`（立即加载：`TracePort`、`TraceKind` 都不
+   依赖任何重实现）、`trace/interface/domain/__init__.py`；`trace/__init__.py`
+   把两者一起 re-export，消费方写 `from pokemon_agent.trace import TraceKind,
+   TracePort`。
+4. `schemas/trace/__init__.py` 不再 re-export `TraceKind`——它的 docstring
+   "本包是依赖叶子，不引用任何其他产出模块" 因此继续成立（`TraceKind` 从来
+   没让它依赖别的产出模块，只是这次连它自己都不再从这里出）。
+5. 全项目改调用点：`from pokemon_agent.interfaces import TracePort` →
+   `from pokemon_agent.trace import TracePort`（`api.py`/`tools/trace_tool.py`）；
+   `from pokemon_agent.schemas.trace import TraceKind` →
+   `from pokemon_agent.trace import TraceKind`（`harness/` 下五个文件、
+   `tools/trace_tool.py`）；`schemas/harness/communication/
+   FromHarnessToTraceToolAppendReq.py`（一份 schemas 信封，需要 `TraceKind`
+   做字段类型）改成 `from pokemon_agent.trace.interface import TraceKind`——
+   跟 `schemas/world/domain/observation_from_world.py` 里 `from
+   pokemon_agent.world.interface import Facts` 是同一个先例。
+6. **顺手把 `WorldPort` 也从 `interfaces/` 的 re-export 里摘掉**（原来是
+   "保留薄壳"，这次用户明确要求整个撤销 `interfaces/`，索性一次改到位）：
+   `tools/game_tools.py` 改成 `from pokemon_agent.world import WorldPort`。
+7. `pokemon_agent/interfaces/__init__.py` 更新 docstring，说明这个包正在被
+   逐步淘汰、按 trace → providers → brain → tools → harness 的顺序搬，搬完
+   最后一个后整体删除；`__all__` 去掉已搬走的 `TracePort`/`WorldPort`。
+
+**为什么这么改**：用户要求把 `interfaces/` 里的港口文件和 `schemas/*/domain/`
+里的数据模型都"放到各个模块内部"，理由跟 `WorldPort`/`Facts` 那次搬家一致——
+协议和数据形状physically 挨着自己的实现，不用为了看一个类型定义就去翻另一个
+顶层目录。用户额外拍板：`pokemon_agent/interfaces/` 这次不保留 re-export 薄壳
+（跟上次 `WorldPort` 的处理方式不同），搬完的模块由调用方直接认，整体搬完后
+这个目录会被删除；实施顺序按依赖图从叶子到顶层——`trace` 自己 docstring 就
+写明"依赖叶子，不引用任何其他产出模块"，全项目里依赖它的最多、被它依赖的
+最少，最适合第一个搬，出问题也最好定位。
+
+**取舍**：
+- `TracePort`/`TraceKind` 都不需要像 `Facts.Landmark.place` 那样做懒加载
+  处理：`TracePort` 只依赖 `schemas.trace`（`EventType`/`Source`，留在原地
+  没搬），`TraceKind` 零依赖；而且 `schemas.trace` 本来就是"依赖叶子"，不会
+  反过来向 `trace/interface` 要任何东西——所以这次没有重演 `Facts`/`WorldPort`
+  那种双向循环，`trace/interface/__init__.py` 可以老老实实地整个包立即加载，
+  不需要 `__getattr__` 懒加载。这也是选 `trace` 第一个搬的直接原因：它是
+  这批改动里结构最干净的一个，可以验证"搬迁配方"本身没问题，再去处理
+  `brain`/`harness` 这种依赖网更密的模块。
+- `trace/store.py` 的 `LocalTrace` 没有引入懒加载：它不依赖任何第三方重
+  SDK（不像 `world/pyboy_world.py` 要 `import pyboy`），`trace/__init__.py`
+  可以整个包一次性 eager 加载，不需要 world 那种"interface 立即加载、实现
+  懒加载"的两段式。
+- 用 `python3.10`（配合 `/tmp/stubs/pydantic`）验证了 `pokemon_agent.trace`
+  与 `pokemon_agent.schemas.harness`（`TraceKind` 的消费方之一）互相先导后导
+  的三种顺序，外加 `interfaces`/`world`/`schemas.*` 一起导入的粗验证，均通过。
+
+**影响面**：`pokemon_agent/interfaces/trace/`、`schemas/trace/domain/` 两个
+目录消失；`pokemon_agent/interfaces/__init__.py` 少了两个 re-export；八个
+调用点的 import 语句改了归属（`api.py`、`tools/game_tools.py`、
+`tools/trace_tool.py`、`harness/brain_utils.py`、`harness/episode_harness.py`、
+`harness/game_utils.py`、`harness/run_harness.py`、`harness/run_plan_utils.py`、
+`schemas/harness/communication/FromHarnessToTraceToolAppendReq.py`）。
+`pokemon_agent/interfaces/` 剩余的港口（`brain`/`harness`/`providers`/`tools`
+四个子目录）下一步按 providers → brain → tools → harness 顺序继续搬，
+每步单独一条 CHANGELOG。
+
 ## 2026-09-11（6）—— world/ 实现文件里的 Protocol/schema 挪进 world/interface
 
 **改了什么**：

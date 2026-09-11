@@ -25,7 +25,8 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceReq,
     FromHarnessToTraceToolAppendReq,
 )
-from pokemon_agent.schemas.trace import EventType, Source, TraceKind
+from pokemon_agent.schemas.trace import EventType, Source
+from pokemon_agent.trace import TraceKind
 
 RUN_TRACE_MASK = frozenset({EventType.LIFECYCLE, EventType.ERROR})
 """run 级 plan 读 trace 时的 type 粗 mask——只取流程边界 + 失败两种家族，

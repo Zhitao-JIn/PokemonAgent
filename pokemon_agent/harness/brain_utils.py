@@ -27,7 +27,8 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
 )
 from pokemon_agent.schemas.providers import ModelCall
-from pokemon_agent.schemas.trace import Source, TraceKind
+from pokemon_agent.schemas.trace import Source
+from pokemon_agent.trace import TraceKind
 
 DECISION_MAX_RETRIES = 3
 """决策重试预算：一次决策最多问几次模型。重试循环在这里（不在 Brain）——

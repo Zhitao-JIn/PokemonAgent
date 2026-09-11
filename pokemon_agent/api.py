@@ -70,7 +70,6 @@ from pydantic import BaseModel, Field
 
 from pokemon_agent.build import build_real
 from pokemon_agent.harness import DataCenterReviewer, RunDataCenter, RunHarness
-from pokemon_agent.interfaces import TracePort
 from pokemon_agent.schemas.brain import TaskForBrain
 from pokemon_agent.schemas.frontend import (
     FromFrontendToGameToolLatestFrameReq,
@@ -81,6 +80,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerReviewResp,
     HumanDecision,
 )
+from pokemon_agent.trace import TracePort
 
 SSE_HEARTBEAT = 15.0
 """SSE 心跳间隔（秒）：代理/浏览器空闲超时不会掐断连接。"""
