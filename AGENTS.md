@@ -10,7 +10,8 @@
 设计文档在 Obsidian：`AI Infra/Harness-Engineering/Projects/项目B-Harness驱动神奇宝贝Agent设计文档.md`。
 代码与文档冲突时，以文档的架构约束为准，实现细节以代码为准。
 
-**当前阶段：快速原型。** 只做大脑的 ReAct 循环，其余全部 mock。
+**当前阶段：原型已接上真实模拟器与真实模型。** 大脑的 ReAct 循环、语义记忆、
+独立判定器都在真实环境里跑；状态表在线归并（机制一）与 MC 回填（机制三）仍未做（见第十一节）。
 
 ## 二、铁律（违反即返工，不接受"先这样以后再改"）
 
@@ -30,7 +31,7 @@
    *为什么*：接口边界靠类型说话；后面接约束解码时 schema 直接复用。
 
 5. **每一步都必须产出 trace 事件。** 没有 trace 的执行路径视为未完成。
-   *为什么*：trace 是 replay、checkpoint、SSE 观测台、成本统计四件事的共同底座，后补代价极高。
+   *为什么*：trace 是 replay、checkpoint、成本统计的共同底座，后补代价极高。
 
 ## 三、可读性与可维护性（和铁律同等强制）
 
@@ -146,28 +147,47 @@ def choose(self, obs: Observation, space: ActionSpace) -> Action:
 
 ```
 pokemon_agent/
-├── schemas/          Pydantic 数据模型。记忆一族按**检索单元**命名，不按学名：
+├── schemas/          Pydantic 数据模型（跨层契约）。记忆一族按**检索单元**命名：
 │                     step_memory（一条=一步）/ episode_memory（一条=一整局）/
 │                     object_fact（一条=一格）/ knowledge（不挂坐标的先验）/
 │                     episode_summary_io（蒸馏那次调用的请求+响应，不是记忆）
 │                     其余：Observation / Action / ActionSpace / TraceEvent / Completion
-├── interfaces/       Protocol 定义：LLMProvider、ToolPort（五个 MCP 工具）、TracePort
-├── brain/            ReAct 循环。无状态。只依赖 interfaces + schemas
-├── harness/          状态管理、工具注册、trace、成本统计（本阶段大部分是壳）
-├── mocks/            FakeLLM（脚本化）、MockWorld（假的神奇宝贝世界）、InMemoryTrace
-└── graph/            LangGraph StateGraph 装配
+├── interfaces/       Protocol 定义（"港口"）：WorldPort / GameToolPort / MemoryToolPort /
+│                     BrainPort / TracePort / LLMProvider / VisionProvider 等。
+│                     memory 自己的契约不在此层，随 memory 包走（见下）
+├── brain/            纯决策层。无状态。只依赖 interfaces + schemas
+├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方
+├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层
+├── tools/            GameTools / MemoryTool：Harness 伸向环境和记忆的两只手
+├── memory/           memory 子系统整块（契约 + 实现 + 算法，可整体拷走复用）：
+│                     ports.py 是对外契约（MemoryStorePort）；store.py 是统一记录
+│                     存储（MemoryStore：一条记录一个 <uuid>.json/.md + 每文件夹
+│                     倒排索引 index.json + 向量 sidecar vectors.jsonl）；
+│                     retrieval.py 是混合检索纯函数（BM25 + embedding + RRF +
+│                     reranker，只认字符串，不认记忆类型）。
+│                     只做读写与索引，不做语义判定（见下方分层原则）
+├── providers/        具体 LLM/视觉模型接入（DashScope/Qwen）
+├── vision/           图像预处理（网格叠加、放大）
+├── trace/            TracePort 实现（LocalTrace，落盘 JSONL）+ 事件 payload 组装
+├── experiment/       实验任务定义（tasks.py）、experiment_states/（钉死存档）、
+│                     real_check/（六维度真实链路核对）——仓库根级，不在包内
+├── prompts/          所有 prompt 模板 + 组装辅助函数
+└── build.py          唯一的装配点（全项目唯一 new 具体实现的地方）
+
 tests/
 AGENTS.md          开发规范（本文件）
 CHANGELOG.md       变更日志，每次改动追加
 pyproject.toml
 ```
 
+**分层原则：memory 只保管 harness 交给它的数据结构与索引、按键原样读写；"发生了什么、影响了谁"这类语义判定（交互判定、受影响对象计算）由 harness 完成后以数据的形式交给它——memory 不理解游戏，只理解键和记录。**
+
 一个模块超过 300 行就拆。一个函数超过 50 行就拆。
 
 ## 五、编排：LangGraph
 
 - 循环用 `StateGraph` 承载，**不手写 while 循环**。
-- `AgentState` 是唯一的图状态载体，必须是 Pydantic 模型或 TypedDict，字段有明确类型。
+- `LoopState` 是唯一的图状态载体，必须是 Pydantic 模型或 TypedDict，字段有明确类型。
 - 节点函数是纯函数形态：`(state) -> state 增量`，副作用只允许发生在工具调用节点。
 - **LangGraph 只管循环调度与状态传递。** 记忆层、状态表、值回填一律自己实现，
   不用 LangChain 的 Memory / Agent / Tool 封装。
@@ -175,18 +195,21 @@ pyproject.toml
 
 ## 六、LLM 与输出格式
 
-- 本阶段只有 `FakeLLM`：按预设脚本或简单规则返回，**同样输入必须同样输出**。
-- 真实 provider 通过 `LLMProvider` Protocol 接入，代码里不许出现任何直连 SDK 的调用。
+- 本阶段已有真实 provider（`providers/dashscope.py` 的 `QwenText` / `QwenVision`），
+  通过 `LLMProvider` / `VisionProvider` Protocol 接入；`FakeLLM` 已随 `mocks/` 删除。
+  代码里**不许出现任何直连模型 SDK 的调用**——直连只发生在 `providers/` 这一层。
 - 动作选择输出用 **Pydantic schema**（`Thought` / `Action` / `Args`）解析。
 - **解析失败要重试并计数**，重试次数与失败计数进 trace。不许静默吞掉解析错误。
 - 约束解码（constrained decoding）留到接真实模型时再上，现在不做。
 
 ## 七、代码风格
 
-- Python 3.11（不是 3.10——`agent_permission` 依赖 3.11 的 `enum.StrEnum`）。所有公开函数、方法、Pydantic 字段**必须有类型注解**。
+- Python 3.11（不是 3.10——`enum.StrEnum` 要 3.11 才有，`schemas/trace/domain/trace_kind.py` 等用到）。所有公开函数、方法、Pydantic 字段**必须有类型注解**。
 - `ruff` 管 lint + format，行宽 100。提交前跑 `ruff check . && ruff format .`。
 - 命名用完整英文单词，不用缩写（`action_space` 不是 `act_sp`）。
-- 注释只写**为什么**，不写做了什么。代码讲不清的取舍才写注释。
+- 注释仅三处：**文件顶层 docstring、函数顶层 docstring、函数内步骤进度**（`# 步骤 N：`）。
+  注释只写契约与进度；取舍论证与历史叙事一律进 `CHANGELOG.md`（变更类）或
+  `docs/spec/<模块>/SPEC.md`（设计类），不留在代码里。分节线（`# ---- x ----`）保留。
 - 不写 README 除非明确要求；说明写在 AGENTS.md 或 docstring。
 
 ## 八、错误处理
@@ -197,21 +220,26 @@ pyproject.toml
 - 每类失败要有名字（`ParseFailure` / `IllegalAction` / `ToolTimeout`），
   因为后面 replay 要按失败类型归类统计。
 
-## 九、trace 约定（后面 SSE / checkpoint / replay 全靠它）
+## 九、trace 约定（后面 checkpoint / replay 全靠它）
 
 每条事件至少含：
 
 | 字段 | 说明 |
 |---|---|
-| `event_id` | **单调递增整数**，SSE 断线重连靠它补发 |
+| `event_id` | **单调递增整数**，replay 排序与断线补发靠它 |
 | `episode_id` | 一次 episode 的标识 |
 | `step` | 第几步 |
-| `type` | `observe` / `think` / `act` / `memory_read` / `memory_write` / `error` / `cost` |
+| `type` | 7 类（`pokemon_agent/schemas/datastore/__init__.py::EventType`，见 `docs/spec/DATAFLOW.md` 2.2）：`model_call` / `error` / `llm_outcome` / `view` / `act` / `memory_io` / `lifecycle`。**0903 收敛原则**：type 与生产者（source）正交、数量极小；原 20 类里"哪个节点/哪类产物"的语义全部降级为 `payload.kind`（如 llm_outcome=intent/verdict/audit、memory_io=read_*/write_*、lifecycle=run/episode 边界 + step）。`model_call`/`error` 是唯二天然跨 source 的纯种类，其余五个是承认领域本质单源的产物种类。`TRACE_SCHEMA_VERSION` 升到 3，v2 旧文件（type 值如 observe/think/retrieve…）不再可解析 |
 | `payload` | 该类型的结构化内容 |
 | `ts` | 时间戳 |
 
-- trace 是**追加写的事件序列**，不是可变状态快照。checkpoint 存事件序列而非最终状态。
-- 本阶段 `InMemoryTrace` 就够，但接口按"能落盘"设计。
+- trace 是**追加写的事件序列**，不是可变状态快照——但这说的是 trace 自身的写入
+  方式，不是 checkpoint 的存储形态。checkpoint 存的是**状态快照 + 事件游标**
+  （快照 = `RunState`/`EpisodeRunState` 整份 dump + 模拟器世界快照，游标指向
+  trace 的 `event_id`/记忆的 `step` 用于对账），不是靠重放事件序列重建状态——
+  模拟器世界与已花的模型调用成本都不可能从事件重建。详见
+  `docs/spec/harness/PLAN_checkpoint.md` §3.2、`docs/ROADMAP.md` 第 16 条。
+- 本阶段 `LocalTrace`（落盘 JSONL）就够，但接口按"能落盘、能重放"设计。
 
 ## 十、测试
 
@@ -224,8 +252,51 @@ pyproject.toml
 
 ## 十一、这个阶段明确不做
 
-状态表在线归并（机制一）、MC 回填（机制三）、skill library、SSE 观测台、
-真实模拟器接入、权限确认、沙箱、真实 LLM。
+状态表在线归并（机制一）、MC 回填（机制三）、skill library（机制二）、沙箱。
 
 **别提前做。** 但接口要留得住：设计任何抽象时问一句"机制一接进来时这里要改吗"，
 要改就说明抽象错了。
+
+## 十二、schemas：信封与接口模型命名（2026-09-10 定稿）
+
+**分包形态**：七个产出模块各自一个包、各自一个统一出口（`frontend` / `harness` /
+`brain` / `world` / `memory` / `trace` / `providers`），包内按种类落到
+`communication/` `domain/` `datastore/`。schemas 侧**不给 tool 门面单开子包**——
+`tools/` 代码层的五个门面保留，harness 经门面调模块的架构不变。
+
+1. **信封 = 我们自己的模块间契约**，命名 `From[模块A]To[模块B][函数名][Req/Resp]`，
+   **两半都放 A 处（发起方）**。强制适用范围是 **Harness ↔ 各门面**这一跳。
+   **外壳（api / experiment）→ Harness 这条边不包装**：外壳不是我们的模块，
+   入参与返回值都走裸字段——`run(run_id, goals)` 返回
+   `(outcomes, total, succeeded, success_rate)`，`resume_run(run_id, episode_id, step)`
+   同款；推给前端的 JSON 由 API 自己拼，形状归 API。（`submit_edit` /
+   `latest_frame` 还带着信封，待统一。）
+   注意别把这条推到记账层：**信封该内嵌模型就内嵌模型**——RUN_END 里的
+   `RunResp` 由 `_close()` 内部组装，跟 `run()` 返回什么无关（第 5 条）。
+   第一跳（调用方 → 模块门面）永远是信封，**门面上的每个方法都算**——
+   `game_tool` 与 `memory_tool` 已于 0910 补齐（此前只有 `query_knowledge` 一条）。
+   有入参就有 Req，返回结构化载荷就有 Resp；返回 None 的没有 Resp
+   （`FromHarnessToCheckpointToolSaveReq` 是先例）。
+2. **模块对外的接口模型用裸名**，不带 From/To（providers 的 `LlmCompleteReq`、
+   brain 的 `ChooseOnceReq`、world 的 `PerceiveOnceResp`、harness 的 `RunResp`）——因为发起方可能换人
+   （今天 harness，明天第三方），From/To 前缀是赌一个注定被换掉的名字。
+   **第二跳（门面 → 具体模块）走裸参数、返回模块自己的类型**，不造信封也不新建模型。
+3. **豁免登记**（只有这两条，其余一律违规）：
+   - `RunDataCenter` 直读——共享观察面，不是 RPC 语义。
+   - **零参标量属性读取**：`TracePort.cursor`。没有载荷可装，套信封
+     只剩一个空壳。
+4. **domain 实体按产出方归属**；**跨包引用只允许向下**，登记如下：
+   - 聚合方 → 被聚合方：`frontend → harness/brain`、`harness → 各家`、`memory → world`、
+     `brain → world/memory`（`ChooseOnceReq` 天然要吃观测与记忆）。
+   - `providers` / `trace` 是**最底层共用层**，任何包可引用（`ModelCall` 挂账、
+     `TraceEvent` 进 plan 上下文），它们自己零跨包引用。
+   - 叶子包之间零引用、**永不反向**：被调方不许 import 发起方的包。
+5. **反向依赖的正解是改归属，不是摊字段。** 0910 的现场教训：
+   `FromHarnessToTraceToolAppendReq` 内嵌 run 结算，而结算当时叫
+   `FromFrontendToRunHarnessRunResp`、归在 frontend 包——记账层要内嵌它就得反向
+   import 前端包（实测还成了 `schemas.frontend ↔ schemas.harness` 的循环 import）。
+   正解是认出**这个模型本来就不属于那条边**：五个字段全是 `RunHarness._close()`
+   自己数出来的，跟谁发起这次 run 无关，所以按第 2 条改成裸名 `RunResp`
+   归 harness（入参那半直接摊成裸字段，见第 1 条），trace 内嵌它就是同包引用。
+   **不要为了断依赖把结算摊成 `run_total`/`run_succeeded`/`run_success_rate` 这类裸字段**
+   ——信封该内嵌模型就内嵌模型，摊平只是把归属错误藏进字段列表里。

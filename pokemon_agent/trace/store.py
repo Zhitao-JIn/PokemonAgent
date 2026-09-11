@@ -1,104 +1,115 @@
-"""`TracePort` 的实现：事件**追加写**进内存与 JSONL，同时推一份给观测台。
+"""`TracePort` 的实现：**一条事件一个 json 文件**，事件名就是它的 uuid。
 
-`event_id` 由这里分配，**严格单调**——SSE 断线补发完全依赖它，重号或回退会让
-观测台静默丢事件。落盘用逐条追加的 JSONL 而不是最后一次性 dump：
-进程被 Ctrl-C 掐掉时，已经跑过的那些步不该跟着没。
+`event_id` 由这里分配，**严格单调**——replay 与断线补发依赖它，重号或回退会让
+读取端静默丢事件。落盘从旧版"按局 JSONL 追加"改为一条事件一个
+`events/<uuid>.json`（0910 重构，见 `PLAN_memory_trace_layout.md` §6）：单文件
+写完即完整（临时文件 + `os.replace` 原子写），truncate/void 从"读整份 jsonl →
+过滤 → 临时文件重写 → rename"简化成对文件直接操作；废弃分支不搬不删，原地打
+`valid=false`（拍板③）。
 
-**推流和落盘是同一条事件，没有第二个源头。** `append()` 里落完盘就调 `sse()`，
-不给"控制台看到的"和"文件里存的"留下分叉的机会。
+（`TracePort` 只负责追加写——分配 event_id、落盘、截图副本；**读端不在这里**：
+事件流槽在 `harness/run_data_center.py` 的 `RunDataCenter`（前端可见状态的
+唯一聚合点），`LocalTrace` 落盘成功后经 `event_sink` 双写过去。checkpoint
+恢复的续写（`_next_id` 从盘上最大 event_id + 1 起算）与磁盘读取
+（`read_disk_events`，只返回 valid=true）也在这层。）
 
-控制台打印曾经是一个独立的 `EchoTrace` 装饰器，现在并进 `sse()`——
-一条事件要经过两个对象才被看见，出问题时得先分清是谁没打印。
+**`_next_id` 从盘上算，不从游标算**：resume 后废弃分支的事件还留在盘上占着
+id（valid=false），游标只当"有效/废弃分界"，不再决定起点——构造时扫一遍
+events/ 取 max(event_id) + 1，游标参数仅作前置断言（盘上 max ≥ cursor，
+否则说明 void 没做完，就地爆炸）。
+
+**截图与 trace 事件共享 event_id**（拍板⑦）：`frame_png` 非空时另存一份
+`screenshot/<event_id>.png`——event_id 永远递增，天然不撞名，撞名 `(n)` 后缀
+逻辑随之消灭；截图不参与 void（拍板⑨），废弃事件的截图原地保留，与
+valid=false 的事件一起构成废弃分支的审计记录。
 """
 
 # pokemon_agent/trace/store.py
 
+import base64
 import os
-import json
-import textwrap
+import time
 from pathlib import Path
-from typing import Iterable
-from datetime import datetime
+from typing import Any
 
-from pokemon_agent.schemas.trace import TraceEvent, EventType, Source, TRACE_SCHEMA_VERSION
-from .index import EpisodeIndex
+from pokemon_agent.schemas.trace import TRACE_SCHEMA_VERSION, EventType, Source, TraceEvent
 
 # 项目根目录（通过 __file__ 回溯三级）
 project_root = Path(__file__).parent.parent.parent
 # 数据存储目录（在项目根目录下）
 STORAGE_ROOT = project_root / "trace_data"
+# 没有"每个事件一个 phase 标签"的表——TraceEvent.phase 直接取 type 的字面值
+# （子语义在 payload.kind）。
 
-LABEL_W = 15
-"""标签列宽，由最长的标签 `perception_cost` 决定。写成常量而不是散在各处的
-`:<9`，是因为对齐一旦不一致，多行的 `why` / `reason` 会和单行的成本行错开——
-读日志的人第一眼看到的就是排版乱，而不是内容。
-"""
 
-COST_LABEL: dict[Source, str] = {
-    Source.PERCEPTION: "perception_cost",
-    Source.DECISION: "decision_cost",
-    Source.JUDGE: "judge_cost",
-}
-"""MODEL_CALL 事件的标签，要带 `_cost` 后缀：这一行报的是这次调用花了多少
-（token、延迟），不是"感知到了什么"，混进 `perception`/`observe` 会当成一件事。
-"""
-
-PHASE_BY_TYPE: dict[EventType, str] = {
-    EventType.OBSERVE: "observe", EventType.MODEL_CALL: "model_call",
-    EventType.THINK: "think", EventType.ACT: "act",
-    EventType.MEMORY_READ: "retrieve_memory", EventType.MEMORY_WRITE: "memory_write",
-    EventType.OBJECT_NOTE: "memory_write", EventType.EPISODE_MEMORY_WRITE: "memory_write",
-    EventType.INSPECT: "inspect", EventType.GOAL_POP: "goal",
-    EventType.ERROR: "error", EventType.EPISODE_START: "episode",
-    EventType.EPISODE_END: "episode", EventType.CHECKPOINT: "checkpoint",
-}
-BROWSER_ONLY = frozenset({
-    EventType.OBSERVE, EventType.MEMORY_READ, EventType.THINK,
-    EventType.ACT, EventType.INSPECT, EventType.MEMORY_WRITE,
-    EventType.OBJECT_NOTE,
-})
-"""这几类**只在浏览器观测台上看**，终端一个字都不打。
-
-分工是有意的：终端留给"跑得对不对"——账单、错误、目标出栈、episode 起止，
-一屏能扫完；观测台留给"它当时看到了什么、想了什么"——观测、记忆、推理、动作，
-那些内容一条就是十几行，混在终端里会把前一类冲掉。
-
-**这里以前是 `sse()` 里一句裸的提前 return，下面却还留着这七类的完整打印分支。**
-那些分支永远执行不到，但读代码的人看不出来——改了它们、跑一遍、终端毫无变化，
-只能怀疑是自己改错了。死代码在这里的代价不是几十行，是**读的人对整个文件的信任**。
-所以现在这份名单是唯一的事实来源：要让某一类回到终端，从这个集合里删掉它，
-再去写它的打印分支。
-
-`payload` 里的东西一样不少（`append()` 落盘和推流是同一条事件），
-所以事后 replay、观测台、统计都不受影响。
-"""
+def _atomic_write_text(path: Path, text: str) -> None:
+    """临时文件 + rename 的原子写：写完即完整，崩溃最多少一个未 rename 的 tmp。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
 
 
 class LocalTrace:
-    def __init__(self, run_id: str = "local", sse_sink: object | None = None) -> None:
-        """备好内存事件表、落盘路径和可选的观测台。"""
-        self._run_id = run_id
-        self._sse_sink = sse_sink
-        self._run_dir = STORAGE_ROOT / run_id
-        self._episodes_dir = self._run_dir / "episodes"
-        self._events: list[TraceEvent] = []
-        self._next_id = 0
-        self._step_shown: tuple[str, int] | None = None
-        """这一步的表头打过没有，`sse()` 用。表头由 step 值变化触发，不挂在
-        `OBSERVE` 上——`MODEL_CALL(perception)` 因果顺序上先于 `OBSERVE`，
-        挂在 `OBSERVE` 上表头会打在本步成本行下面。
+    def __init__(
+        self,
+        run_id: str = "local",
+        resume_after_event_id: int | None = None,
+        event_sink: Any = None,
+    ) -> None:
+        """接好 run 目录与事件槽（读端在 `RunDataCenter`，见模块 docstring）。
+
+        构造时**扫一遍 events/ 目录**：`_next_id` 从盘上最大 event_id + 1 起算
+        （废弃分支的事件还占着 id，不能从游标续）；顺路记下已完整收尾的局
+        （episode_end 判定用）。`resume_after_event_id`（checkpoint 恢复传入
+        的游标）只作前置断言：盘上 max ≥ cursor，否则 void 没做完，就地爆炸。
+        `event_sink`：落盘成功后的双写目标（`RunDataCenter.publish_event`），
+        注入不构成 import 依赖。
         """
+        self._run_id = run_id
+        self._run_dir = STORAGE_ROOT / run_id
+        self._events_dir = self._run_dir / "events"
+        self._screenshot_dir = self._run_dir / "screenshot"
+        self._event_sink = event_sink
 
-        # 确保存储结构
         self._run_dir.mkdir(parents=True, exist_ok=True)
-        self._episodes_dir.mkdir(exist_ok=True)
+        self._events_dir.mkdir(exist_ok=True)
+        self._screenshot_dir.mkdir(exist_ok=True)
 
-        # 清理之前未完成的episodes
-        EpisodeIndex.clean_incomplete_episodes(run_id)
+        # 扫盘：_next_id 与"已完整收尾的局"集合都从这里来。
+        self._next_id = 0
+        self._completed_episodes: set[str] = set()
+        for event in self._scan_events(valid_only=False):
+            self._next_id = max(self._next_id, event.event_id + 1)
+            if event.type is EventType.LIFECYCLE and event.payload.get("kind") == "episode_end":
+                self._completed_episodes.add(event.episode_id)
 
-    def append(self, episode_id: str, step: int, type: EventType,
-               source: Source, payload: dict[str, str] | None = None) -> int:
-        """分配单调的 event_id，落盘并推流，返回这个 id。"""
+        if resume_after_event_id is not None:
+            assert self._next_id > resume_after_event_id, (
+                f"disk max event_id {self._next_id - 1} <= resume cursor "
+                f"{resume_after_event_id}: void_after() 没做完或游标给错了"
+            )
+
+    def append(
+        self,
+        episode_id: str,
+        step: int,
+        type: EventType,
+        source: Source,
+        payload: dict[str, str] | None = None,
+        frame_png: str | None = None,
+    ) -> int:
+        """分配单调的 event_id，落一个 json 文件，返回这个 id。
+
+        frame_png：这一步感知到的原始画面，直接进这一条
+            `TraceEvent.frame_png`。**非 None 时额外另存一份 PNG 到这个 run
+            自己的 `trace_data/<run_id>/screenshot/`，文件名 = 这条事件自己的
+            event_id**（共享 id，永远递增零撞名）——trace json 里的 base64 只
+            适合程序读，这份是给人肉眼直接翻看用的，两份是同一份字节的独立
+            拷贝，权威来源仍是 `TraceEvent.frame_png`，这份丢了不影响任何
+            回放/复现逻辑。**引用方式是记 event_id**（谁要用这一帧，从事件里
+            读 event_id 来定位文件），不再有按 step 号拼文件名的公式。
+        """
         # 校验前置条件
         assert step >= 0, "step 必须非负"
 
@@ -113,163 +124,122 @@ class LocalTrace:
             episode_id=episode_id,
             step=step,
             type=type,
-            phase=PHASE_BY_TYPE.get(type, type.value),
+            phase=type.value,
             source=source,
             payload=payload or {},
-            ts=(datetime.combine(datetime.min, datetime.now().time()) - datetime.min).total_seconds(),
+            frame_png=frame_png,
+            ts=time.time(),
             schema_version=TRACE_SCHEMA_VERSION,
         )
 
-        # 验证全局唯一性
-        if event_id == 0 and not EpisodeIndex.is_unique(episode_id, self._run_id):
-            raise ValueError(f"严重错误: episode_id '{episode_id}' 已存在! 原因: 不允许覆盖已完成的阶段")
+        # 已完成的一局不允许覆盖（首条事件就撞上完整存档 = 调用方重复用 id）。
+        # 跑一半的局（进程被杀）允许重跑覆盖——各写各的 uuid 文件，互不干扰。
+        if event_id == 0 and self._episode_is_complete(episode_id):
+            raise ValueError(
+                f"严重错误: episode_id '{episode_id}' 已存在! 原因: 不允许覆盖已完成的阶段"
+            )
 
-        # 持久化到磁盘
-        self._save_event(event)
+        # 持久化到磁盘（一条事件一个文件，原子写）
+        _atomic_write_text(
+            self._events_dir / f"{self._event_filename(event)}.json", event.model_dump_json()
+        )
+        if frame_png is not None:
+            self._save_screenshot(event)
 
-        # 内存存储
-        self._events.append(event)
-        assert event_id == self._events[-1].event_id  # 确保单调性
+        # 完整收尾标记同步维护（episode_end 判定的内存副本）
+        if type is EventType.LIFECYCLE and (payload or {}).get("kind") == "episode_end":
+            self._completed_episodes.add(episode_id)
 
-        # 推流到 SSE
-        self.sse(event)
+        # 双写：事件槽（前端可见状态，RunDataCenter.publish_event）。
+        if self._event_sink is not None:
+            self._event_sink(event)
 
         return event_id
 
-    def _save_event(self, event: TraceEvent) -> None:
-        """**直接追加一行**，不做"写临时文件再原子重命名"。
+    def _event_filename(self, event: TraceEvent) -> str:
+        """事件文件主名：`<run_id>-<event_id>`——run 前缀给人肉眼对账，
+        event_id 是排序与截图共享的那个数；文件名的语义不参与任何程序内
+        查找（读端一律扫目录解析 event_id，见 `read_disk_events`）。"""
+        return f"{self._run_id}-{event.event_id:012d}"
 
-        那个模式只对**整份文件重写**成立：把完整内容写进 temp、再一次性换过去。
-        这里是追加，写完一行就 `os.replace(temp, path)`，等于每次都用"只含这一条
-        事件的临时文件"把已有的整份覆盖掉——**磁盘上永远只剩最后一条**。
-        内存里的 `self._events` 还是全的，控制台打印也正常，所以它完全静默：
-        实测仓库里每个 episode 的 `.jsonl` 都只有 1 行。
+    def _save_screenshot(self, event: TraceEvent) -> None:
+        """把这一帧原始画面另存一份 PNG 到这个 run 自己的
+        `trace_data/<run_id>/screenshot/`，文件名 = 这条事件自己的 event_id。
 
-        换成直接追加。单进程写、每次一行、行长远小于 `PIPE_BUF`，
-        POSIX 下这一次 `write` 本身就是原子的，不需要额外的重命名把戏。
-        真要防"写到一半进程被杀"，正确做法是读取端跳过最后一行不完整的 JSON，
-        而不是在写入端把前面的数据删掉。
-
-        把这条事件追加进 JSONL 文件。
+        **纯粹是人眼翻看的便利副本，不是权威数据源**——那份是
+        `TraceEvent.frame_png`（已经落进事件 json）。event_id 全 run 单调递增，
+        天然不撞名，不覆盖、不加后缀。跟 `_save_screenshot` 的调用方一样不做
+        try/except——磁盘层面的失败（比如空间写满）应该跟事件落盘一样直接
+        暴露，不该假装这一步成功了。截图不参与 void：废弃事件的截图原地
+        保留（拍板⑨）。
         """
-        episode_path = self._episodes_dir / f"{event.episode_id}.jsonl"
-        with episode_path.open("a", encoding="utf-8") as f:
-            f.write(event.model_dump_json() + "\n")
+        path = self._screenshot_dir / f"{event.event_id}.png"
+        # 入参是 base64 文本（`TraceEvent.frame_png` 的统一形态），落盘前解码。
+        path.write_bytes(base64.b64decode(event.frame_png or ""))
 
-        EpisodeIndex.register(event.episode_id, event.run_id)
+    def cursor(self) -> int:
+        """当前游标：最后一条已分配的 event_id（没有事件时 -1）。
 
-    def replay(self, episode_id: str, after_event_id: int = -1) -> Iterable[TraceEvent]:
-        """从 episode 起点加载完整事件流；不允许 partial replay。
-
-        从起点把这一局的事件完整读回来。
+        checkpoint 保存（`save_checkpoint` 节点）用它当快照游标——恢复时它是
+        "有效/废弃分界"：void_after 把 `event_id > cursor` 的事件打 valid=false，
+        之后续写的 id 从盘上 max + 1 起算（`__init__` 的扫盘保证），严格单调
+        不断链。
         """
-        if after_event_id != -1:
-            raise ValueError("replay only supports playing an episode from its beginning")
-        # 1. 检查内存缓存
-        cached = [e for e in self._events
-                  if e.episode_id == episode_id and e.event_id > after_event_id]
-        if cached:
-            return sorted(cached, key=lambda e: e.event_id)
+        return self._next_id - 1
 
-        # 2. 从磁盘加载
-        episode_path = self._episodes_dir / f"{episode_id}.jsonl"
-        if not episode_path.exists():
-            return []
+    def read_disk_events(self) -> list[TraceEvent]:
+        """读盘上**有效**事件（valid=true，event_id 升序）——checkpoint 恢复的
+        主前缀来源：恢复管线把它交给 `RunDataCenter.rebuild()` 做前端单点重建。
 
-        events = []
-        with episode_path.open(encoding="utf-8") as f:
-            for line in f:
-                try:
-                    event = TraceEvent.model_validate_json(line.strip())
-                    if event.event_id > after_event_id:
-                        events.append(event)
-                except json.JSONDecodeError:
-                    pass
-
-        # 3. 严格排序
-        return sorted(events, key=lambda e: e.event_id)
-
-    def sse(self, event: TraceEvent) -> None:
-        """把这条事件推给当前的观测通道——现在打印到控制台，以后是浏览器推流。
-
-        调用点不变，换的只是这一个方法内部的实现。
-
-        把这条事件打到控制台，并推给观测台。
+        废弃分支的事件（valid=false）**不返回**——读端永远只见一条干净时间线，
+        不需要任何"跳区间"逻辑（拍板③的读端形态）。崩溃残文件（解析失败）
+        按预期内情况跳过。
         """
-        if callable(self._sse_sink):
-            self._sse_sink(event)
-        ep, step, type_, source = event.episode_id, event.step, event.type, event.source
-        p = event.payload
+        return self._scan_events(valid_only=True)
 
-        # **在表头之前**返回：只有观测台事件的那一步，终端不该冒出一个空的 STEP 表头。
-        if type_ in BROWSER_ONLY:
-            return
+    def _scan_events(self, valid_only: bool) -> list[TraceEvent]:
+        """扫 events/ 目录：逐文件解析 TraceEvent，按 event_id 升序。
 
-        # 表头逻辑（在所有分支之前）：EPISODE_START/END 不属于某一步，跳过。
-        if type_ not in (EventType.EPISODE_START, EventType.EPISODE_END):
-            if self._step_shown != (ep, step):
-                print(f"\n----- STEP {step} -----")
-                self._step_shown = (ep, step)
-
-        if type_ is EventType.EPISODE_START:
-            print(f"\n{'=' * 62}")
-            print(f"episode {ep} start  task={p.get('task_id', '')}  "
-                  f"goal={p.get('goal', '')}  max_steps={p.get('max_steps', '')}  "
-                  f"memory_carried={p.get('memory_carried', '')}")
-
-        elif type_ is EventType.EPISODE_END:
-            print(f"\nepisode {ep} end  success={p.get('success', '')}  "
-                  f"steps={p.get('steps', '')}  reason={p.get('reason', '')}")
-            print(self._wrapped("why", p.get("why", "")))
-            print("=" * 62)
-
-        elif type_ is EventType.MODEL_CALL:
-            label = COST_LABEL.get(source, f"{source.value}_cost")
-            depth = f" depth={p['depth']}" if "depth" in p else ""
-            print(f"{label:<{LABEL_W}} in={p.get('input_tokens', '?')} "
-                  f"out={p.get('output_tokens', '?')} "
-                  f"latency={p.get('latency_ms', '?')}ms "
-                  f"attempt={p.get('attempt', '?')} ok={p.get('ok', '?')}{depth}")
-
-        elif type_ is EventType.GOAL_POP:
-            print(f"{'goal_pop':<{LABEL_W}} depth={p.get('depth', '')} "
-                  f"reason={p.get('reason', '')} goal={p.get('goal', '')}")
-            if p.get("why"):
-                print(self._wrapped("why", p["why"]))
-
-        elif type_ is EventType.ERROR:
-            print(f"{'ERROR':<{LABEL_W}} kind={p.get('kind', '')} "
-                  f"attempt={p.get('attempt', '')}")
-            print(self._wrapped("reason", p.get("reason", "")))
-
-        else:
-            print(f"{type_.value:<{LABEL_W}} {p}")
-
-    @staticmethod
-    def _wrapped(label: str, text: str) -> str:
-        """整段打印，不截断、保留原有换行——先按原有换行拆分，再对每一行分别
-        折行（宽度 88），不对整段文本直接 `textwrap.wrap`（那样会把原有换行
-        当普通空白吃掉，压坏多行内容，例如 `walk_map`）。
-
-        整段打印，保留原有换行。
+        残文件/旧格式文件解析失败是预期内的运行期情况，跳过不报错。
         """
-        if not text:
-            return f"{label:<{LABEL_W}}"
-        lines = []
-        for i, raw_line in enumerate(str(text).split("\n")):
-            wrapped = textwrap.wrap(raw_line, width=88) or [""]
-            for j, line in enumerate(wrapped):
-                prefix = f"{label:<{LABEL_W}}" if i == 0 and j == 0 else " " * LABEL_W
-                lines.append(f"{prefix}{line}")
-        return "\n".join(lines)
+        events: list[TraceEvent] = []
+        for path in sorted(self._events_dir.glob("*.json")):
+            if path.suffix != ".json" or path.name.endswith(".tmp"):
+                continue
+            try:
+                event = TraceEvent.model_validate_json(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if valid_only and not event.valid:
+                continue
+            events.append(event)
+        events.sort(key=lambda e: e.event_id)
+        return events
 
-    def all_events(self) -> list[TraceEvent]:
-        """获取所有事件（供测试使用）
+    def _episode_is_complete(self, episode_id: str) -> bool:
+        """这一局是不是已经完整收尾（盘上有 lifecycle/episode_end）。
 
-        取全部事件，测试用。
-        """
-        return self._events
+        用构造时扫盘建好的内存集合，O(1)——集合在 append 时同步维护。"""
+        return episode_id in self._completed_episodes
 
 
-# 兼容旧测试和外部脚本；新代码统一使用 LocalTrace。
-MockTrace = LocalTrace
+def screenshot_filename(event_id: int) -> str:
+    """算"这条帧事件的截图该叫什么文件名"——`<event_id>.png`。
+
+    截图与 trace 事件**共享 event_id**（拍板⑦）：事件 json 里的 event_id 就是
+    截图文件名，引用从"按 step 号拼公式"变"记 event_id"。模块级函数、不挂在
+    `LocalTrace` 上——纯字符串计算，调用方不该为了调它去牵一个 `LocalTrace`
+    实例。**不保证文件真的存在**——截图只是便利副本，调用方自己兜底
+    （`read_screenshot` 读不到返回 None）。
+    """
+    return f"{event_id}.png"
+
+
+def read_screenshot(run_id: str, event_id: int) -> bytes | None:
+    """按 `(run_id, event_id)` 读一张已存的截图，读不到（没落盘、那一步感知
+    失败）就返回 `None`——调用方按"这张图可能缺"处理，不能因为一张便利副本
+    缺失就让判定链路整个失败。"""
+    path = STORAGE_ROOT / run_id / "screenshot" / screenshot_filename(event_id)
+    if not path.exists():
+        return None
+    return path.read_bytes()

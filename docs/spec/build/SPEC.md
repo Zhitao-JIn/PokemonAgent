@@ -1,14 +1,18 @@
-# Pokemon Agent 技术规格：装配、错误体系、实验记录与观测层
+# Pokemon Agent 技术规格：装配、错误体系与观测层
 
-本文档基于源码（含中文注释中的设计动机）梳理以下六个文件，并说明它们如何串成
+本文档基于源码（含中文注释中的设计动机）梳理以下文件，并说明它们如何串成
 "从命令行到真实跑一局"的完整调用链：
 
 - `pokemon_agent/build.py`
 - `pokemon_agent/errors.py`
-- `pokemon_agent/experiment/manifest.py`
 - `pokemon_agent/trace/store.py`（`LocalTrace`，原 `pokemon_agent/mocks/mock_trace.py`，已迁移）
 - `pokemon_agent/trace/utils.py`（`trace_utils`，新增——见 `interfaces/SPEC.md` 第 4 节、`harness/SPEC.md` 4.5/4.17 节）
 - `probe/run_episode.py`
+
+> **编号有缺口是刻意的**：§3（`experiment/manifest.py`）、§3b（`agent_permission`）、
+> §5（`experiment/` 命令行入口）三节整节删除——它们描述的模块已全部退役
+> （2026-09-10 拍板）。§4/§6/§7 的编号保留不动，因为别处文档按编号引用它们
+> （如 `docs/spec/README.md`）。标题里的"实验记录"也随之去掉。
 
 > **`probe/echo_trace.py`（`EchoTrace` 装饰器）已删除**，不再是本文档覆盖范围。
 > 控制台打印逻辑并入了 `LocalTrace.sse()`——`TracePort` 协议新增了 `sse` 方法
@@ -57,10 +61,13 @@ def build_real(
     vision_model: str = "qwen3-vl-plus",
     text_model: str = "qwen-plus",
     judge_model: str = "",
+    memory_model: str = "",
     max_tokens: int = 25600,
     watch: bool = False,
     grid: bool = True,
+    upscale: int = 4,
     trace: TracePort | None = None,
+    run_id: str = "local",
 ) -> tuple[Harness, TracePort, PyBoyWorld]:
 ```
 
@@ -71,10 +78,13 @@ def build_real(
 | `vision_model` | `str`（关键字） | `"qwen3-vl-plus"` | 感知（视觉）链路用的模型，走"最便宜的视觉模型" |
 | `text_model` | `str`（关键字） | `"qwen-plus"` | 决策链路用的文本模型，"走有资源包的文本模型" |
 | `judge_model` | `str`（关键字） | `""` | 判定链路用的模型；空字符串表示与 `text_model` 同型号 |
+| `memory_model` | `str`（关键字） | `""` | 跨局摘要蒸馏（`EpisodeMemoryGenerator`）用的文本模型；空字符串表示与 `text_model` 同型号 |
 | `max_tokens` | `int`（关键字） | `25600` | 决策与判定两条链路**共用**的输出 token 上限 |
 | `watch` | `bool`（关键字） | `False` | 是否开窗口实时观看（不影响 agent 行为，只影响人能否看见） |
 | `grid` | `bool`（关键字） | `True` | 是否给视觉模型的输入图叠加网格辅助线（`GridOverlay`） |
+| `upscale` | `int`（关键字） | `4` | 是否放大输入图（`Upscale`，最近邻整数倍）；`<= 1` 表示不放大 |
 | `trace` | `TracePort \| None`（关键字） | `None` | 传入的 trace 实现；为空则用 `LocalTrace()` 兜底 |
+| `run_id` | `str`（关键字） | `"local"` | 传给 `Harness` 的 run 标识；需与 `LocalTrace(run_id=...)` 对齐 |
 
 返回值：`tuple[Harness, TracePort, PyBoyWorld]` —— 装配好的控制循环、trace 实例、
 世界对象。
@@ -83,32 +93,46 @@ def build_real(
 
 ```python
 from pokemon_agent.providers.dashscope import QwenText, QwenVision
-from pokemon_agent.vision.preprocess import GridOverlay
+from pokemon_agent.vision.preprocess import GridOverlay, Upscale
 
-vision = QwenVision(model=vision_model, preprocess=(GridOverlay(),) if grid else ())
+filters = ((GridOverlay(),) if grid else ()) + ((Upscale(upscale),) if upscale > 1 else ())
+vision = QwenVision(model=vision_model, preprocess=filters)
 world = PyBoyWorld(rom, vision, state_path=state_path, watch=watch)
 trace = trace or LocalTrace()
 
 game = GameTools(world)
-memory = MemoryTool()
+memory = MemoryTool(
+    trace_port=trace,
+    llm_provider=QwenText(model=memory_model or text_model, max_tokens=max_tokens),
+    embedding_provider=FastEmbedText(),
+    reranker_provider=FastEmbedReranker(),
+)
 brain = Brain(
     decide_llm=QwenText(model=text_model, max_tokens=max_tokens),
     judge_llm=QwenText(model=judge_model or text_model, max_tokens=max_tokens),
 )
-return Harness(game, memory, brain, trace), trace, world
+return Harness(
+    game, memory, brain, trace, run_id=run_id,
+), trace, world
 ```
 
-1. **组建视觉 provider**：`QwenVision`，按 `grid` 开关决定是否挂 `GridOverlay` 预处理。
-   `import` 延迟到函数体内部（而非模块顶部），使 `build.py` 顶层不强依赖具体的
-   `providers.dashscope` / `vision.preprocess` 模块。
+1. **组建视觉 provider**：`QwenVision`，预处理是 `GridOverlay`（按 `grid` 开关）与
+   `Upscale`（按 `upscale` 开关）的串联。**`Upscale` 排在最后**：`GridOverlay` 的
+   `cell=16` 和标签尺寸都是按原始像素定的，放大挪它前面就得跟着改那两个数；放最后
+   则网格线仍落在格子边界上。放大是最近邻整数倍、不发明像素，只是让 8×8 的光标三角
+   占得下几个 token。`import` 延迟到函数体内部，使 `build.py` 顶层不强依赖
+   `providers.dashscope` / `vision.preprocess`。
 2. **组建世界**：`PyBoyWorld(rom, vision, state_path=state_path, watch=watch)`，把视觉
    provider 注入世界对象。
 3. **确定 trace**：调用方传入的优先，否则退回 `LocalTrace()`。
-4. **组建工具层**：`GameTools(world)` 只碰 world；`MemoryTool()` 独立存在，与
-   `GameTools` 互不相识——"组合是 `Harness` 的事"。
+4. **组建工具层**：`GameTools(world)` 只碰 world；`MemoryTool` 收四个依赖
+   （`trace_port` + `llm_provider` + `embedding_provider` + `reranker_provider`），
+   与 `GameTools` 互不相识——"组合是 `Harness` 的事"。蒸馏链路的 `llm_provider` 是
+   **独立新建的 `QwenText`**，不借用 `decide_llm`（理由同判定器分开建）。
 5. **组建大脑**：`Brain` 接收 `decide_llm` 和 `judge_llm` 两个**各自独立构造**的
    `QwenText` 实例（即便模型名相同也不共用一个 provider 对象）。
-6. **组建控制循环**：`Harness(game, memory, brain, trace)`。
+6. **组建控制循环**：`Harness(game, memory, brain, trace, run_id=...)`，把 `run_id`
+   注入（局起点快照已取消——上一局最后一个圈入口 checkpoint 就是下一局起点）。
 
 ### 1.4 三个模型分开的设计理由（源码原文归纳）
 
@@ -215,189 +239,6 @@ finally:
   范围内，未在源码中直接验证，此处不做臆测。
 - 捕获方：至少确认 `probe/run_episode.py` 的 `main()` 用 `except AgentError as e`
   统一捕获整个家族，作为 episode 提前终止的处理路径。
-
----
-
-## 3. `pokemon_agent/experiment/manifest.py` —— 一次实验的不变量快照
-
-### 3.1 定位：为什么要和 trace 分两层
-
-trace 是"每步一条"的事件流，manifest 是"每次实验一份"的快照。如果把 prompt 原文、
-模型配置这类全程不变的信息塞进每一条 trace 事件，跑一万步就要重复存一万遍相同内容。
-
-分层后各自存什么，源码给出了明确对照表：
-
-| | 放什么 | 判据 |
-|---|---|---|
-| manifest | prompt 原文、模型与温度、git commit、预处理方式、**权限配置** | 全程不变 |
-| trace 事件 | frame_sha、tokens、延迟、模型原始输出 | 每步都变 |
-
-### 3.2 为什么 prompt 要存原文而不是只存 sha
-
-`prompt_sha` 只有在"查得到内容"时才有意义。如果改了 prompt 却没提交代码就跑了实验，
-那个 sha 就指向一个查无实据的虚空——三周后面对一批数字，无法确认它们对应哪一版
-prompt。manifest 里直接存原文，这个依赖链就被切断了。
-
-### 3.2b 权限配置为什么也要存原文
-
-和 prompt 是同一个论证。`config/permissions.json` 决定 agent 能调哪些工具——
-角色里少一条 `read:memory:knowledge`，这一批 run 跑的其实是"无知识库"那个消融组，
-而 **trace 里没有任何字段说得出这件事**。它全程不变，所以属于 manifest 这一层；
-它不在版本库里（是运行时配置），所以只存 sha 会指向虚空，得连原文一起存。
-
-`context.json` 同理：`roles` 是实验条件本身，`subject_id` 是审计流（`log/audit.jsonl`）
-里这一批 run 的身份。`metadata` 现在是空的——它曾经放着 `run_id` / `episode_id` /
-`task_id` 三个字面量 `"runtime"` 占位符，从来没被填过、也没有任何读取方，
-而权限流的编号现在由库自己铸（见 3b.4）。
-
-对应字段是 `permissions: dict[str, dict[str, str]]`（`文件名 -> {sha, text}`，
-和 `prompts` 同一个形状），由 `with_permissions(config_dir=Path("config"))` 收集。
-`validate_design()` 断言它非空——**宁可开跑前炸，也不要事后拿到一批无法归因的数据**。
-
-### 3.3 不存什么
-
-明确排除 API key：它不进任何会被写出去的东西，`config()` 方法也不返回它。
-
-### 3.4 `Configurable` 协议
-
-```python
-@runtime_checkable
-class Configurable(Protocol):
-    def config(self) -> dict[str, str]: ...
-```
-
-刻意**不**把"自报配置"的能力放进 `LLMProvider` / `VisionProvider` 这两个 Port
-接口里。理由：Port 描述的是"能做什么"（能力），而自报配置服务于"可复现性"这个另外
-的关注点。用一个独立的结构化类型（Protocol）在这里单独表达，好处是 provider 不需要
-显式声明实现它（鸭子类型），Port 接口也不必因此变宽。
-
-### 3.5 `_git_commit()`
-
-```python
-def _git_commit() -> str:
-```
-
-取当前 commit 短 hash（前 12 位），并检测工作区是否 dirty：
-
-- 取不到 commit（非 git 环境等）→ 返回 `"unavailable"`，**不猜、不留空**——"取不到"
-  本身就是有信息量的（说明这次实验跑在不可靠的可复现性环境下）。
-- 取到 commit 但取不到 dirty 状态 → 只返回 sha。
-- 工作区 dirty → 返回 `"{sha}-dirty"`，因为"代码和 commit 对不上时，commit 号是
-  误导性的"，必须显式标出。
-- 任何子进程异常都被 `except Exception` 兜底（注释 `noqa: BLE001` 说明是有意为之：
-  "取不到 commit 不该让实验跑不起来"）。
-
-### 3.6 `RunManifest` 模型（`pydantic.BaseModel`）
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `run_id` | `str` | 本次实验标识，trace 事件靠它归组 |
-| `started_at` | `str` | ISO 时间戳，由调用方传入 |
-| `git_commit` | `str` | 默认由 `_git_commit()` 生成 |
-| `providers` | `dict[str, dict[str, str]]` | 角色 → 配置，角色至少含 `"vision"` 和 `"text"`，配置来自 `provider.config()` |
-| `prompts` | `dict[str, dict[str, str]]` | prompt 名 → `{sha, text}`，**存原文** |
-| `preprocess` | `str`，默认 `"native"` | 图像预处理方式（原生 vs 放大等），用于消融实验分组 |
-| `notes` | `str`，默认空 | 这次实验想验证什么，"给三周后的自己看" |
-
-方法：
-
-- `with_prompts(*names) -> RunManifest`：批量把指定 prompt（通过
-  `pokemon_agent.prompts.load` 加载）的 `sha` 和 `text` 收进 `self.prompts`，链式调用。
-  **现在收三份**：`decide_action`、`judge_success`、`episode_summary`。
-  最后那份是后补的：`episode_summary.md` 原来走的是另一套模板引擎
-  （`EpisodeMemoryGenerator` 自己 `jinja2.Template(open(...))`，`{{ }}` 语法），
-  **不经过 `prompts.load`，所以既没有 sha、也进不了 manifest**——某一局的蒸馏用的是
-  哪一版说明，事后查不出来，而这正是 manifest 存在的全部意义。
-  它现在改成 `$` 占位符、走同一条加载路径。
-  **判断标准是"这份 prompt 影响不影响这批数据"**，不是"它在不在每步的回路里"：
-  蒸馏一局只跑一次，但它决定了落库的经验长什么样。
-- `with_permissions(config_dir=Path("config")) -> RunManifest`：把 `context.json` 与
-  `permissions.json` 的 `sha`（sha256 前 12 位）和 `text` 收进 `self.permissions`。
-  前置条件用 `assert path.is_file()` 守：这两个文件是 `agent_permission` 启动的硬要求
-  （见 `harness.run()` 的 `@initialize`），跑到这里还没有就该当场停，而不是记一份空的
-  权限快照、让这批数据事后无法归因。
-- `with_provider(role, provider: Configurable) -> RunManifest`：记录一个 provider 的
-  配置。用 `assert hasattr(provider, "config")` 断言其满足 `Configurable`；配置内容
-  来自 `provider.config()` 而非让 manifest 自己认识具体 provider 类型——"装配处才是
-  唯一知道具体实现是谁的地方，这里只负责抄下来"（呼应 `build.py` 的"唯一装配点"
-  原则）。
-- `save(path) -> pathlib.Path`：写盘为 JSON（`ensure_ascii=False, indent=2`）。
-  docstring 强调**必须写在 trace 之前**："先有 manifest，后有数据"，顺序反了的话，
-  实验中途崩溃会留下一堆无法归因的 trace 事件。
-
-### 3.7 接入现状
-
-manifest **已经接入** `pokemon_agent/experiment/run_experiment.py`：
-
-```python
-manifest = RunManifest(...).with_prompts("decide_action", "judge_success", "episode_summary") \
-                           .with_permissions() \
-                           .validate_design()
-manifest.save(pathlib.Path("experiment_results") / run_id / "manifest.json")
-```
-
-`probe/run_episode.py` 那条调试入口仍然不生成 manifest——它跑的是单局调试，
-不是要归档的实验。
-
-`validate_design()` 现在断言四件事：`experiment_kind` 取值合法、
-`memory_policy == "session_local"`、`task_ids` 非空、**`permissions` 非空**。
-最后一条是硬失败：任何漏掉 `.with_permissions()` 的装配会在开跑前就炸掉。
-
----
-
-## 3b. `agent_permission` —— 横切的权限层
-
-第三方库（`github.com/Zhitao-JIn/AgentPermission`），以**装饰器**形式散布，不是本项目的一个模块。
-
-### 3b.1 装在哪
-
-| 位置 | 权限名 |
-|---|---|
-| `Harness.run()` | `@initialize`（不是检查，是每局重载配置） |
-| `GameTools` 各方法 | `read:game:action_space` / `execute:game:reset` / `execute:game:press` / `execute:game:save_state` / `execute:llm:perception` |
-| `MemoryTool` 各方法 | `read:memory:{episodic,episode,objects,knowledge}` / `write:memory:{episodic,episode,objects}` / `execute:llm:memory_summary` |
-| `Brain.choose/judge/reflect` | `execute:llm:decision` / `execute:llm:judge` / `execute:llm:memory_reflection` |
-
-**装在大脑上不违反铁律 2**：横切设施和"brain 不许 import harness 的具体实现"是两回事。
-粒度也刻意对齐"哪一类模型调用"——挪到 `providers/` 会把五条路径塌缩成一个权限，粒度全丢。
-
-### 3b.2 配置
-
-从**进程启动目录**下的 `config/` 读（`Path.cwd() / "config"`）：
-
-- `context.json`：`subject_id` / `roles` / `metadata`。
-- `permissions.json`：`roles`（角色 → 权限通配列表）决定有没有；`policies` 决定有了之后要不要审批。
-
-目前唯一挂 `approval_required: true` 的是 `execute:game:save_state`（走控制台审批，等 10 秒）。
-
-### 3b.3 Harness 这一侧只承担一件事
-
-**权限失败不能让这一局从 trace 里消失。** 库里四个异常
-（`PermissionDenied` / `ApprovalRequired` / `ApprovalRejected` / `ApprovalExpired`）
-**各自直接继承 `Exception`，没有共同基类**，所以任何"列举权限异常"的写法都会在库新增
-异常类型时静默漏掉。`run()` 因此不列举，只用 `except Exception` 兜底补 `EPISODE_END`
-再原样抛出——详见 `harness/SPEC.md` 6.3。
-
-### 3b.4 已知的坑
-
-- **`_current_context` 曾经是 `ContextVar`**，导致 worker 线程读不到身份（ContextVar 的值
-  按执行上下文隔离，新线程带的是空表），症状是"并发时权限全被拒、单线程一切正常"。
-  已改成普通模块全局。代价是同一进程内不能并发跑两个不同 subject。
-- **`audit.jsonl` 和 trace 刻意不对齐**（曾经作为"坑"记在这里，现在是设计）。
-  权限流的三个 ID 全部**由库自己生成**，三层嵌套：`episode_id`（一次 `@initialize`
-  到下一次之间）⊃ `trace_id`（一次守卫调用的完整链路）⊃ `event_id`（一条记录），
-  外加只在审批分支出现的 `approval_id`。它们都不接受调用方注入。
-
-  依赖方向是**调用方读库**，不是库接调用方的坐标：真要按 episode 关联两条流，
-  是 harness 读一次 `get_current_context().episode_id`、在自己的事件流里记一次映射。
-  反过来（把 harness 的 `episode_id` / `step` 喂进权限库）会让库需要认识调用方的函数
-  签名，而调用方还得为权限流的编号负责——耦合是白加的。当前**不需要**关联，所以
-  这个映射也没记。
-- **`import agent_permission` 不再有副作用**。它曾经在模块级跑 `_load_runtime()`，
-  于是 import 就要读 **cwd 下**的 `config/`，从别的目录 import 直接炸。现在只有
-  `@initialize` 会读——代价是第一次 `@initialize` 之前调被守卫的函数会抛
-  `RuntimeError`（而不是从前那样静默退化成 `anonymous` 然后全被拒）。
-  本项目所有被守卫的调用都在 `harness.run()` 之内，不受影响。
 
 ---
 
@@ -532,229 +373,6 @@ def sse(self, event: TraceEvent) -> None:
 
 ---
 
-## 5. `pokemon_agent/experiment/` —— 命令行跑实验
-
-**这一节的文件搬过家**：原来是 `probe/run_episode.py`，现在是
-`pokemon_agent/experiment/run_episode.py`（装配会话、跑一个 episode）和
-`pokemon_agent/experiment/run_experiment.py`（真正的实验入口：选任务链、
-写 manifest、`--repeat` 跑 N 遍、累积 `task_stats`）。下面的用法示例是旧的，
-现在的入口是：
-
-```
-python -m pokemon_agent.experiment.run_experiment                      # 列出任务
-python -m pokemon_agent.experiment.run_experiment --task-id X --repeat 10
-```
-
-`--repeat N` 的每一遍都是**一次完整独立的 run**：独立 run_id、独立 manifest、
-独立 trace 目录、world 新建又关掉。不复用——复用的话第 2 遍会从第 1 遍结束的
-画面开始，测的就不是同一件事了。`--repeat 1` 时 run_id 保持原样不加后缀
-（`--run-id` 是拿来指名道姓找这一跑数据的），大于 1 才加 `-r1`/`-r2`。
-
-### 5.1 旧入口的用法与注意事项（`probe/run_episode.py`，已搬走；下面几节的代码引用按旧文件读）
-
-```
-$env:DASHSCOPE_API_KEY = "sk-..."
-python -m probe.run_episode                                  # 12 步，无头
-python -m probe.run_episode 30 "走出真新镇，向北进入一号道路"
-python -m probe.run_episode 30 "…" watch                      # 开窗口看着它玩
-python -m probe.run_episode 30 "…" --state assets/route1.state --task-id t_route1
-python -m probe.run_episode 30 "…" --state none               # 从 ROM 开头跑
-```
-
-默认无头（`watch=False`）：因为跑实验时墙钟是瓶颈，开窗口和限速只会拖慢速度。
-`watch` 只影响人是否看得见画面，**不影响** agent 行为——agent 读取的是
-`screen.ndarray`，与窗口是否打开无关。
-
-⚠ 注意事项（源码原文）：
-
-- 不要同时开着 `probe.play`：两个 PyBoy 实例共用同一 ROM 时，退出都会写
-  `assets/rom.ram`，后退出的会覆盖先退出的。
-- 每步会打印观测摘要、可用动作、大脑选了什么、为什么；结束后汇总感知与决策**各自**
-  的 token 消耗——这两笔账要拆得开，是"感知走便宜模型、决策走强模型"这条成本叙事的
-  依据。
-- trace 是内存里的，进程一退就没了；落盘是阶段 2 的事。
-
-### 5.2 常量
-
-```python
-ROM = "assets/rom"
-STATE = "assets/rom.state"
-```
-
-`STATE` 是默认存档，用 `--state` 可以换掉。docstring 强调存档就是"任务的起点"：想让
-agent 从"已经站在一号道路上"开跑，只需存一个那个位置的档并用 `--state` 指过去，无需
-改任何代码。这也是让不同批次数据可比的唯一办法——同一个 `task_id` 下多次尝试起点必须
-相同，否则成功率无意义；因此**存档要和 `--task-id` 一起看**：换了存档就该换
-`task_id`，否则不同任务会被错误聚合成一个统计数字。`--state none` 表示不加载存档，
-从 ROM 开头跑（连开场动画、命名流程都要自己走完）。
-
-### 5.3 `_flag()` —— 极简参数解析
-
-```python
-def _flag(name: str, default: str) -> str:
-    argv = sys.argv[1:]
-    if name not in argv:
-        return default
-    i = argv.index(name) + 1
-    return argv[i] if i < len(argv) else default
-```
-
-从形如 `--name value` 的参数里取值。源码注释明确了为什么不用 `argparse`：这是一个
-probe（探针/调试）脚本，参数只有三四个，`argparse` 生成的帮助信息和错误处理反而喧宾
-夺主，增加不必要的复杂度。
-
-### 5.4 `main()` 完整流程
-
-1. **解析位置参数**：从 `sys.argv[1:]` 里剔除所有 `--` 开头的 flag 及其消费掉的值，
-   剩下的是位置参数：
-   - `positional[0]`（若存在）→ `max_steps`，默认 `12`；
-   - `positional[1]`（若存在）→ `goal`，默认 `"探索周围环境，向北走出真新镇"`；
-   - `positional[2:]` 中出现字面量 `"watch"` → `watch=True`。
-2. **解析关键字 flag**（均经 `_flag()`）：
-   - `--vision`（默认 `qwen3-vl-plus`）→ `vision_model`
-   - `--text`（默认 `qwen-plus`）→ `text_model`
-   - `--grid`（默认 `"on"`，等于 `"on"` 时 `grid=True`）
-   - `--judge`（默认空串，空表示与决策同型号）→ `judge_model`
-   - `--max-tokens`（默认 `"25600"`）→ `max_tokens`（int）。注释强调"上限不是预算"：
-     只有模型自己想说这么多时才会真的花掉；若被 API 拒绝（各家对 `max_tokens` 有硬
-     上限），应调低这个数。
-   - `--state`（默认 `STATE`）→ `state_flag`；值为字面量 `"none"` 时 `state=None`，
-     否则 `state=state_flag`。注释解释为何要用 `"none"` 而非空串表达"不要存档"：
-     空串会和"这个 flag 根本没写"分不开，而这两种情况的结果差着一整段开场动画。
-3. **早失败校验**：若 `state is not None` 且对应文件不存在，`raise SystemExit`
-   直接报错退出。注释强调这是"早失败"的设计：路径打错时 PyBoy 可能静默从头跑，或者
-   在几十行初始化日志之后才报错，两种情况都会浪费一整局才发现起点错误。
-4. **构造 `Task`**（`pokemon_agent.schemas.task.Task`）：
-   - `task_id`：默认由 `--task-id` 指定；若未指定，则从 `goal` 文本派生
-     （`f"t{hashlib.sha256(goal.encode()).hexdigest()[:8]}"`），保证同一目标文本
-     在跨进程运行时得到稳定一致的 `task_id`。注释强调 `task_id` **不能写死**：
-     它是成功率的分组键，写死会导致命令行换了目标后新数据被错误聚合进旧任务。
-   - `goal`：即目标文本。
-   - `success_criteria`：默认为 `--criteria` 指定的同义反复式判据
-     （`"画面上出现能直接证明这个目标已达成的证据"`）。注释指出这个默认判据只够
-     跑通链路；真做实验必须用 `--criteria` 给出"只看一帧就能判真假"的具体判据，
-     否则判定器只能凭"看起来差不多了"作答，成功率不可信。
-   - `max_steps`：即上面解析出的步数上限。
-5. **生成 id**：
-   - `run_id = datetime.now().strftime("%m%d-%H%M%S")`（一次进程调用对应一个
-     时间戳形式的 run_id）；
-   - `episode_id = f"{run_id}-ep0"`（`run_id` + 序号，全局唯一）；
-   - `event_id` 由 trace 内部分配的全局自增整数（不在本脚本生成）。
-6. **调用 `build_real()` 装配**：
-
-   ```python
-   harness, trace, world = build_real(
-       ROM, state,
-       vision_model=vision_model, text_model=text_model,
-       judge_model=judge_model, grid=grid, max_tokens=max_tokens,
-       watch=watch, trace=LocalTrace(run_id=run_id, sse_sink=browser.publish),
-   )
-   ```
-
-   关键点：传入的 `trace` 就是 `LocalTrace(run_id=run_id, sse_sink=...)` 本身——**不再需要外面
-   包一层 `EchoTrace`**。`LocalTrace.append()` 落盘之后会自动调 `self.sse(event)`，
-   `sse()` 就是（原来 `EchoTrace` 那套）控制台打印逻辑本身，既保留内存事件存储
-   能力，又自带实时控制台打印，一个对象两件事都做。
-   注释重申"实时打印挂在 trace 上，不往图节点里塞 print：实时观测和事后 replay
-   看的是同一份数据，不会出现只有控制台有的信息"。
-7. **打印运行头信息**：目标（task）、判据（criteria）、episode id、三个模型名与
-   grid 开关状态、`max_tokens`、步数上限、存档路径（或"从 ROM 开头"）、
-   无头/有窗口状态。注释强调**模型必须打出来**：换模型对比实验时，若日志不写型号，
-   两份输出摆在一起就分不清哪份是哪个模型跑出来的，而这正是做对比实验的全部目的。
-8. **运行 episode**：
-
-   ```python
-   try:
-       outcome = harness.run(episode_id, task)
-       print(f"\n结果      success={outcome.success}  steps={outcome.steps}  "
-             f"reason={outcome.reason}")
-   except AgentError as e:
-       print(f"\n提前终止：{type(e).__name__}: {e}")
-   finally:
-       world.stop()
-   ```
-
-   `AgentError` 家族统一捕获、打印类型名与消息；无论成功/失败/异常，`finally` 里
-   都会调用 `world.stop()` 释放 PyBoy 进程级资源。
-9. **调用 `_summary(trace.all_events())`** 打印汇总统计（见下节）。
-
-### 5.5 `_summary()` —— 从 trace 事件里统计三类调用的 token 消耗
-
-```python
-def _summary(events: list) -> None:
-```
-
-模块内注释交代了这段代码存在的历史教训：早前版本是照着旧 schema 写的
-（用 `payload["source"]`、`EventType.COST`、`prompt_tokens` 这类已废弃的字段/类型），
-schema 升级后这段代码没跟着改，结果是**跑完一整局才在最后一行崩掉**——彼时十几次
-模型调用的钱已经花完了。教训归纳为一条原则：汇总必须按"信封字段"（`e.source` /
-`e.type`，即 `TraceEvent` 顶层的结构化字段）读取，因为这是契约的一部分，稳定；而
-`payload` 内部的键是各事件类型自己私有的东西，最容易漂移、改名。
-
-具体统计逻辑：
-
-1. **筛出所有模型调用事件**：`calls = [e for e in events if e.type is EventType.MODEL_CALL]`。
-2. **按 `Source` 三分统计感知/决策/判定**：
-
-   ```python
-   for src, label in ((Source.PERCEPTION, "perception"),
-                      (Source.DECISION, "decision"),
-                      (Source.JUDGE, "judge")):
-       rows = [e for e in calls if e.source is src]
-       ...
-       n_in = sum(int(e.payload.get("input_tokens", 0)) for e in rows)
-       n_out = sum(int(e.payload.get("output_tokens", 0)) for e in rows)
-       lat = [int(e.payload["latency_ms"]) for e in rows if "latency_ms" in e.payload]
-       failed = sum(1 for e in rows if e.payload.get("ok") != "True")
-       print(f"{label:<12} {len(rows):>3} 次（失败 {failed}）  "
-             f"in={n_in:<7} out={n_out:<6} 平均 {sum(lat) // max(len(lat), 1)} ms")
-   ```
-
-   对每个来源（perception / decision / judge）分别打印：调用次数、失败次数、输入
-   token 总量、输出 token 总量、平均延迟（毫秒）。**失败调用同样计入 token 统计**，
-   注释解释：失败的调用同样烧了钱，单独报"失败"这一列，是因为只看总调用数会误以为
-   每次调用都有产出。
-   循环结束后曾经打印一行"↑ perception 含细看"——细看整条链路已经删除，
-   现在 perception 这一类就是每步一次的感知（**动作链只在链尾感知一次**，
-   所以一步一次，不再随按键次数翻倍）。
-
-3. **动作类型统计**：
-
-   ```python
-   pressed = sum(1 for e in events if e.type is EventType.ACT)
-   looked = sum(1 for e in events if e.type is EventType.INSPECT)
-   pushed = sum(1 for e in events if e.type is EventType.GOAL_PUSH)
-   pops = [e.payload.get("reason", "?") for e in events if e.type is EventType.GOAL_POP]
-   print(f"动作         按键 {pressed} · 细看 {looked} · 拆子目标 {pushed}"
-         f"（完成 {pops.count('done')} / 作废 {pops.count('superseded')}）")
-   ```
-
-   （**细看和拆子目标这两类现在都不产生事件了**：`INSPECT` 整条链路已删除，
-   `GOAL_PUSH` 随 intent 分派一起删了，目标栈恒为一层。这段统计代码所属的旧入口
-   也已搬走，留在这里是因为下面那句判断以后重做拆解机制时还用得上。）
-   统计三类动作：按键（`ACT`）、细看（`INSPECT`）、拆子目标（`GOAL_PUSH`），并进一步
-   统计子目标出栈（`GOAL_POP`）的原因分布——`done`（完成）与 `superseded`（因父目标
-   已先完成而作废）。注释指出这是"目标栈和细看这两个机制唯一的直接证据"：拆十条弹
-   十条表面上很好看，但如果其中八条是 `superseded`，说明模型在乱拆子目标而不是在
-   真正规划。
-
-4. **失败模式统计**：
-
-   ```python
-   errors: dict[str, int] = {}
-   for e in events:
-       if e.type is EventType.ERROR:
-           errors[e.payload.get("kind", "?")] = errors.get(e.payload.get("kind", "?"), 0) + 1
-   if errors:
-       print("失败模式     " + "  ".join(f"{k}×{v}" for k, v in sorted(errors.items())))
-   print(f"事件         {len(events)} 条")
-   ```
-
-   遍历所有 `EventType.ERROR` 事件，按 `payload["kind"]`（失败类型名，对应
-   `errors.py` 中各异常类）分类计数，排序后打印，最后打印事件总条数。
-
----
-
 ## 6. 控制台打印：曾经的 `EchoTrace` 装饰器，现在是 `LocalTrace.sse()`
 
 > **本节描述的类已删除。** `probe/echo_trace.py`/`EchoTrace` 不再存在——下面
@@ -877,8 +495,8 @@ self._step_shown: tuple[str, int] | None = None
 ```python
 BROWSER_ONLY = frozenset({
     EventType.OBSERVE, EventType.MEMORY_READ, EventType.THINK,
-    EventType.ACT, EventType.INSPECT, EventType.MEMORY_WRITE,
-    EventType.OBJECT_NOTE,
+    EventType.ACT, EventType.STEP_MEMORY_WRITE,
+    EventType.OBJECT_MEMORY_WRITE,
 })
 ```
 
@@ -895,8 +513,7 @@ BROWSER_ONLY = frozenset({
   `reason`），`END` 再用 `_wrapped("why", ...)` 打印判定理由原文。
 - **`MODEL_CALL`**：按 `COST_LABEL` 取标签（`perception_cost` / `decision_cost` /
   `judge_cost`），打印 `in` / `out` token、`latency`、`attempt`、`ok`，判定多打一个 `depth`
-  ——`depth` 必须标出，否则满屏 judge 行分不清哪次决定整局成败、哪次只是子目标弹栈。
-- **`GOAL_POP`**：`depth` / `reason` / `goal`，外加 `_wrapped("why", ...)`。
+  ——`depth` 必须标出，否则满屏 judge 行分不清哪次决定整局成败。
 - **`ERROR`**：`kind` / `attempt` + `_wrapped("reason", ...)`。
 
 **这里曾经是一句裸的提前 `return` 加下面一大片永远执行不到的分支。** OBSERVE /
@@ -913,7 +530,8 @@ MEMORY_READ / THINK / ACT / INSPECT / MEMORY_WRITE / OBJECT_NOTE 七类的完整
   和下一条 `OBSERVE` 完全重复。这个判断后来走到了尽头——**`message` 字段本身删掉了**，
   因为除了这条复读没有任何消费方（详见 `schemas/SPEC.md` 的 `ToolResult` 一节）。
 - `MEMORY_WRITE` 不把 `ref` 前置在标签里：`StepMemory.render()` 自己开头就是那个坐标，
-  再拼一次会变成 `(ep, 2) (ep, 2) 当时看到…`。
+  再拼一次会变成 `(ep, 2) (ep, 2) 当时看到…`。（`MEMORY_WRITE` 现名
+  `STEP_MEMORY_WRITE`，这条判断依然成立。）
 - `OBSERVE` 的多行值（如 `walk_map`）要按行缩进对齐整体打印，不能挤成一行——
   这条现在活在观测台的渲染里（`browser.py` 把 `walk_map` 按 `\n` 拆开逐行输出）。
 

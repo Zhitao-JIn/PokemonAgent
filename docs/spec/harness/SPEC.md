@@ -19,7 +19,7 @@
 改名 + 重构之后只剩两个角色：
 
 - **`LoopState`** 拥有"这一局跑到哪了"。`step` 在这里盖章，别的角色只读不写。
-- **`Harness`** 拥有生死判断与记账职责，**自己不持有任何状态字段**（`__init__` 只挂 `game`/`memory`/`brain`/`trace` 四个端口、`run_id`、`episode_state_dir` 和编译好的 `_graph`）。
+- **`Harness`** 拥有生死判断与记账职责，**自己不持有任何状态字段**（`__init__` 只挂 `game`/`memory`/`brain`/`trace` 四个端口、`run_id` 和编译好的 `_graph`）。
 
 ### 1.2 唯一性规则
 
@@ -137,9 +137,16 @@ look → retrieve_memory → think → press → remember → look
 于是模型学会了用"再看一眼"来拖时间，那一步既不推进世界也不写记忆。
 真正要补的是感知本身讲得够不够清楚，不是在循环里多开一个只看不动的出口。
 
-`EventType.INSPECT` 这个枚举值**留着**（`trace/store.py` 里也仍有它的显示分支）：
-旧 trace 文件里有这类事件，回放不能因为枚举里没有这个值就整条读不出来。
-枚举值只增不改，是事件流这种 append-only 数据的基本约束。
+**更正（0902 全项目可观测扫描发现）**：这段原来写"`EventType.INSPECT` 这个
+枚举值留着"，跟 `docs/spec/DATAFLOW.md`（"没有兼容成员……旧数据文件无法再被
+`TraceEvent` 解析，删兼容时的明确决定"）互相矛盾，而且**两边都跟实际代码不符**
+——`pokemon_agent/schemas/datastore/__init__.py` 的 `EventType` 枚举、
+`trace/store.py` 都没有 `INSPECT` 这个成员，没有任何显示分支。以
+`DATAFLOW.md` 为准：`inspect` 连同其他几个旧值（`memory_write`/`object_note`/
+`goal_pop`）在拆分记忆事件类型、删 inspect 链路那次改动里被彻底删掉，不保留
+兼容成员；带这类旧事件的历史 trace 文件目前确实无法被当前 `TraceEvent`
+解析（这是当时的明确取舍，不是本次新决定）。"枚举值只增不改"这条原则本身
+没错，只是当时 `INSPECT` 没有被当作"要保留兼容"的枚举值处理。
 
 ### 3.2 节点表
 
@@ -221,16 +228,15 @@ look → retrieve_memory → think → press → remember → look
 
 **流程（顺序是刻意的）**：
 
-1. **先写 `EPISODE_START`**（`Source.HARNESS`），payload 含 `task_id`/`goal`/`max_steps`/`memory_carried`（当前情景记忆条数，是 A/B 实验的自变量本身）。
+1. **先写 `EPISODE_START`**（`Source.HARNESS`），payload 含 `goal`/`success_criteria`/`max_steps`。**`task_id` 不进 payload**——批次实验的分组键靠 `run_id` 前缀区分（`experiment/run_all_tasks.py`），run 级自主拆解目标的 `task_id` 是 harness 生成的序号（`plan-{run_id}-{i}`），本身不携带跨局可比的语义（`schemas/communication/run_plan.py`），两种情况都不该进 trace。
 
    **在做任何事之前就写。** 以前它排在 `reset()`/`save_state()` 之后，注释却声称"episode 的边界应该是这一局在事件流里看到的第一条事件"——那句话只在这两步都成功时才成立。`reset()` 要调模拟器和视觉模型，`save_state()` 挂着唯一那条 `approval_required` 的权限，两者都可能抛；抛在这一行之前的话，`run()` 的兜底只会补一条 `EPISODE_END`，事件流里出现一个没有开头的结尾，比彻底没有记录更难读。
 
    代价是"这一局可能一步没跑就结束了"，但那本来就是事实，`EPISODE_END` 的 `reason` 会说清楚。
 
 2. `reset = self._game.reset(task)` 真实重置世界（通常含一次真实的开局感知）。
-3. 若配置了 `episode_state_dir`，`self._game.save_state(...)` 存一份起点存档。
-4. 对 `reset.calls` 逐条当场记账（`Source.PERCEPTION`），**不留到下一次 `_observe()` 才补记**。
-5. 构造 `LoopState`，`goals=[Goal(goal=task.goal, criteria=task.success_criteria)]`——栈底是任务目标本身，"它永远在，也永远是成败的唯一依据"。
+3. 对 `reset.calls` 逐条当场记账（`Source.PERCEPTION`），**不留到下一次 `_observe()` 才补记**。
+4. 构造 `LoopState`，`goals=[Goal(goal=task.goal, criteria=task.success_criteria)]`——栈底是任务目标本身，"它永远在，也永远是成败的唯一依据"。
 
 **trace 事件**：`EPISODE_START` ×1（先）→ `MODEL_CALL`（+ 可能的 `ERROR`）×若干，均 `step=0`。
 
@@ -260,9 +266,6 @@ return update
 判据是 `"summarize" if state.observation.done else "retrieve_memory"`，写在 `_compile()` 里
 `add_conditional_edges` 的内联 lambda 上，是图上唯一的终止分支。**不直接连 `END`**——
 终止要先经过蒸馏。不写 trace。
-
-（`harness.py` 里还留着一个同名的 `_look_route` 方法，但它已经不在图上：
-条件边挂的是上面那个 lambda。**以方法名索引这份文档时以图的装配为准。**）
 
 ### 4.4 `_retrieve_memory(state) -> dict`
 

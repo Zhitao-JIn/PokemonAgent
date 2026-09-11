@@ -2,13 +2,20 @@
 
 它不是"一个模型"，是**一组互不通气的模型技能**的容器：
 
-    choose   看着当前画面和可用动作，选下一步          decide_llm
+    choose_once  看着当前画面和可用动作，问一次模型选下一步  decide_llm
+                 （重试循环在 Harness，同步调用，见 `docs/ROADMAP.md`）
     judge    看着当前画面和任务目标，判达成没达成       judge_llm
     reflect  把这一步整理成一条可检索的经验            （本版无模型调用）
+    verify_and_summarize  校验本局 step 记忆 + 只用可信的蒸馏摘要（一次调用）  verify_llm（缺省同 judge_llm）
+    plan_once  看 run 级历史 + 目标栈，问一次模型该压什么/该不该收尾  plan_llm（缺省同 judge_llm）
+                 （重试循环在 RunHarness，同步调用，跟 choose_once 同一个分工——
+                 run 级规划是"另一种要问模型的问题"，不是要接触的另一个外部
+                 模块，所以不单独开一个 tool，见 `pokemon_agent/tools/__init__.py`）
 
-**它不写 trace，也不知道自己在哪一局。** 三个方法都不收 `episode_id` / `step`，
-构造函数里也没有 `TracePort`——账（`ModelCall`）跟着结果交给 Harness。
-规则只有一句：**谁控制循环，谁记账。**
+**它不写 trace，也不知道自己在哪一局。** 四个方法都不收 `step`（
+`verify_and_summarize` 额外收 `episode_id`/`run_id`——只用于把蒸馏结果组装成
+`EpisodeMemory`，判定本身不依赖"我是谁"），构造函数里也没有 `TracePort`——
+账（`ModelCall`）跟着结果交给 Harness。规则只有一句：**谁控制循环，谁记账。**
 
 **`choose` 和 `judge` 必须分开。** 让做决策的模型顺便回答"我成功了吗"是误差同源：
 它读错画面 → 以为达成了 → 判成功，错得越离谱数字越好看。隔离靠两条硬约束维持：
@@ -18,58 +25,99 @@
 **无状态**（铁律 1）：没有任何跨步骤的实例变量，构造函数存的是不可变的协作者；
 连续两次用相同参数调 `choose()`，行为必须完全一致。只认识 Protocol（铁律 2）。
 
-完整论证——为什么这仍不是独立真值、上一版"谁写哪类事件"为什么难维护——
-见 `docs/spec/brain/SPEC.md`。
+完整论证——为什么这仍不是独立真值——见 `docs/spec/brain/SPEC.md`。
 """
 
 from __future__ import annotations
 
-from agent_permission import require_permission
-
 import json
-import time
 from collections.abc import Sequence
 
 from pydantic import ValidationError
 
-from pokemon_agent.errors import IllegalAction, OutputTruncated, ParseFailure
-from pokemon_agent.interfaces.llm import LLMProvider
-from pokemon_agent.prompts import load as load_prompt
-from pokemon_agent.prompts.brain_hints import retry_note as _retry_note
-from pokemon_agent.schemas.action import (
+from pokemon_agent.errors import (
+    DecisionAttemptFailed,
+    IllegalAction,
+    OutputTruncated,
+    ParseFailure,
+    PlanAttemptFailed,
+)
+from pokemon_agent.interfaces import JudgeProvider, LLMProvider
+from pokemon_agent.schemas.brain import (
     MAX_RATIONALE,
     MAX_TIMES,
-    Action,
-    ActionSegment,
-    ActionSpace,
-    Goal,
+    ActionFromBrain,
+    ActionSegmentFromBrain,
+    ChooseOnceReq,
+    ChooseOnceResp,
+    EpisodeSummary,
+    JudgeReq,
+    JudgeResp,
+    PlanOnceReq,
+    PlanOnceResp,
+    ReflectReq,
+    ReflectResp,
+    RunPlan,
+    StepVerifyVerdict,
+    VerifyAndSummarizeReq,
+    VerifyAndSummarizeResp,
 )
-from pokemon_agent.schemas.step_memory import StepMemory, Snapshot
-from pokemon_agent.schemas.observation import INTERACT_KEY, Observation
+from pokemon_agent.schemas.memory import SNAPSHOT_BLIND, EpisodeMemory, StepMemory
+from pokemon_agent.schemas.providers import LlmCompleteReq, ModelCall, VisionDescribeReq
+from pokemon_agent.schemas.world import INTERACT_KEY, ActionSpaceForBrain, ObservationFromWorld
 
 DIRECTION_KEYS = frozenset({"up", "down", "left", "right"})
-from pokemon_agent.schemas.trace import Decision, ModelCall, Verdict
 
 
-JUDGE_BLIND: frozenset[str] = frozenset({
-    "known_objects", "walk_map", "landmarks",
-})
-"""判定器**看不到**的字段。判定器现在有历史了（`history` 参数），
-但那份历史是**有界的**：只有本局、只有最近几步。这几个字段是无界的，所以挡掉。
+def _strip_json_fence(text: str) -> str:
+    """剥掉模型常见的 ```json 代码围栏；没有围栏则原样返回。
 
-- `known_objects`：**跨 episode 的流水**。「见过 7 次，互动 1 次」「他说过 XXX」
-  ——上一局说过的那句话会留在里面，目标是"和母亲对话"时，
-  它足以让判定器在**第 0 步**就判完成，而这一局什么都还没发生。
-  `history` 之所以安全正是因为它两头有界；这一份没有那个界。
-- `walk_map` / `landmarks`：**堵掉坐标推理的原料**。
-  光在 prompt 里写"别做坐标换算"是不够的——实测它照做了：
-  把 `walk_map` 的行号当成全局 y，得出"他还没进屋"，而 `map_id` 明写着他在屋里。
-  拿不到就不会用。位置证据由 `where` 一行直接给出，那是答案，不是原料。
-**这是一份黑名单而不是白名单**，方向是刻意选的：漏进一个新字段，代价是判定器
-多看一眼；漏掉一个新字段，代价是判定器瞎掉——`dialog_text` 那次就是后者，
-判定器一路在说"对话框内容未提供"，一局本该成功的 episode 被静默记成失败。
-两种失败模式不对称，所以宁可多给。
-"""
+    模型给 JSON 包 markdown 围栏是最常见的格式偏差（brain 的决策/判定与
+    run 级 plan 都实测遇到过）。只处理最外层围栏，不做任何内容修复——
+    内容坏了应该让解析失败走重试，而不是在这里猜着改。
+    """
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.split("```")[1].removeprefix("json").strip()
+    return stripped
+
+
+def _create_episode_memory(
+    episode_id: str,
+    run_id: str,
+    goal: str,
+    success: bool,
+    steps: int,
+    resp: EpisodeSummary,
+) -> EpisodeMemory:
+    """把 LLM 蒸馏出的 `EpisodeSummary` 和这一局的元信息组装成一条 `EpisodeMemory`。
+
+    这是通信层（`EpisodeSummary`）到存储层（`EpisodeMemory`）的**显式适配点**：
+    两边的经验本体字段同构、但各自独立定义，这里做字段搬运。蒸馏器原来住在
+    memory 层（ROADMAP 16：memory 只做读写，不承担组装），上移到 brain——
+    蒸馏和它的产物组装是同一个产出动作的两半。
+
+    前置条件：由调用方（`Brain.verify_and_summarize()`）保证 `success`/`steps`
+        来自 harness 对这一局的结算，不是这里要重新计算的东西。
+    """
+    return EpisodeMemory(
+        episode_id=episode_id,
+        run_id=run_id,
+        goal=goal,
+        success=success,
+        steps=steps,
+        summary=resp.summary,
+        reusable_patterns=resp.reusable_patterns,
+        critical_decisions=resp.critical_decisions,
+        failure_points=resp.failure_points,
+        quality_score=resp.quality_score,
+        quality_rationale=resp.quality_rationale,
+        applicable_scenes=resp.applicable_scenes,
+        tags=resp.tags,
+        filename=resp.filename,
+        markdown=resp.markdown,
+    )
+
 
 class Brain:
     """`BrainPort` 的唯一实现。"""
@@ -77,257 +125,530 @@ class Brain:
     def __init__(
         self,
         decide_llm: LLMProvider,
-        judge_llm: LLMProvider,
-        *,
-        max_retries: int = 3,
+        judge_llm: JudgeProvider,
+        verify_llm: JudgeProvider | None = None,
+        plan_llm: LLMProvider | None = None,
     ) -> None:
         """依赖全部注入，类型标成接口而非实现（CLAUDE.md 第三节第 3 条）。
 
         `judge_llm` 单独一个参数、哪怕和 `decide_llm` 同型号：换判定模型时只改装配处，
         manifest 里两条链路也才看得出是可以分别选型的。
 
-        存下两个 provider 与两份 prompt 模板，此后不再变。
-        """
-        assert max_retries >= 1, f"max_retries must be >= 1, got {max_retries}"
+        `verify_llm`：step 校验+蒸馏（`verify_and_summarize`）用的模型，单独一个参数——
+        跟 `judge_llm` 同理，哪怕型号相同也不共用同一个 provider 实例，manifest
+        才看得出这条链路可以单独换型号/调参。缺省（`None`）回退到 `judge_llm`：
+        两者都是"独立判定"性质，不传时沿用旧行为（复用同一个判定模型）。
 
+        `plan_llm`：run 级规划（`plan_once`）用的模型，同样单独一个参数、
+        缺省回退到 `judge_llm`——跟 `verify_llm` 同理：规划和判定都不是"决策"，
+        分组更接近，装配处（`build.py`）实际也一直把这条链路的模型跟
+        judge/verify 放在同一个供应商（火山方舟）下。类型是纯 `LLMProvider`
+        （不是 `JudgeProvider`）：`plan_once` 只读 trace 历史文字和目标栈，
+        不带图，不需要 `describe()`。
+
+        `judge_llm`/`verify_llm` 的类型是 `JudgeProvider`（`LLMProvider` +
+        `VisionProvider`），不是纯 `LLMProvider`——`judge()`/
+        `verify_and_summarize()` 带得到截图时会走 `describe()` 问一次多模态，一张图都
+        凑不齐时才退化成 `complete()`；`decide_llm`/`plan_llm` 不受影响，这两条
+        链路本来就不该看图（见模块文档"choose 和 judge 必须分开"那段，这里不是
+        同一件事，但同理不该无端扩大它们的职责）。
+
+        **没有 `max_retries`**——决策重试的预算和循环都在 Harness
+        （`DECISION_MAX_RETRIES`，见 `docs/ROADMAP.md`），大脑不知道
+        "问几次"这件事，只知道"问一次"。
+
+        存下四个 provider，此后不再变——prompt 全部由调用方拼好递进来。
+        """
         self._decide = decide_llm
         self._judge_llm = judge_llm
-        self._max_retries = max_retries
-        # 持有它们是为了 `sha`：改了 prompt 不记版本，前后两批数字就没法比。
-        self._decide_prompt = load_prompt("decide_action")
-        self._judge_prompt = load_prompt("judge_success")
-
-    @property
-    def prompt_shas(self) -> dict[str, str]:
-        """两条链路各自的 prompt 版本，进 manifest 用。"""
-        return {"decide": self._decide_prompt.sha, "judge": self._judge_prompt.sha}
+        self._verify_llm = verify_llm or judge_llm
+        self._plan_llm = plan_llm or judge_llm
+        # `decide_action.md`/`judge_success.md`/`step_verify.md`/`run_plan.md`
+        # 完全不在这里——四个方法都只接收调用方（Harness）已经拼好的 prompt
+        # 字符串，`Brain` 不知道 `pokemon_agent.prompts` 这个包的存在，谁调用
+        # 它、prompt 从哪来，`Brain` 不关心。
 
     # ---- 决策 ----
 
-    @require_permission("execute:llm:decision")
-    def choose(
-        self, goals: list[Goal], obs: Observation, space: ActionSpace,
-        memories: list[StepMemory],
-    ) -> Decision:
-        """选出下一步动作。一次 `choose()` = ReAct 的一轮 Thought → Action。
+    def choose_once(
+        self, req: ChooseOnceReq
+    ) -> ChooseOnceResp:
+        """一次决策尝试：问一次模型、解析。**不重试**——重试是 Harness 的循环。
 
-        前置条件：`space.names` 非空、`goals` 非空、`obs.done` 为 False。
-        后置条件：`action` 非 None 时它属于 `space`；`calls` 至少一条。
+        **只有一个输入参数**：`req.prompt` 由调用方经
+        `pokemon_agent.prompts.decide_action.build_prompt(req)` 拼好（重试时
+        再叠 `retry_prompt()`，回填进同一个 req 的 `prompt` 字段）——`Brain`
+        只管拿 `req.prompt` 问模型，不知道、也不需要知道它是怎么拼出来的；
+        `req.space` 用来校验解析出的动作。
+        后置条件：成功时返回的 `ChooseOnceResp.action` 属于 `req.space`，
+        `calls` 恰好这一次尝试的一条账（多次尝试的累积由 Harness 那层的
+        `episode_utils.choose_with_retry` 做），`recalled` 是 `req.memories`
+        投影成的 `(episode_id, step)` 列表——**全部产物**打包一起交回去，
+        不是散的元组。
+        失败：解析不出来 / 选了不存在的键 / 被截断，抛 `DecisionAttemptFailed`
+        （附这次的账）——"什么算失败"仍是大脑的判断，只是"要不要再问一次"
+        交给了 Harness。
 
-        **重试用尽时返回 `action=None`，不抛异常**：那是一类要被统计的失败模式，
-        而"这一局要不要因此终止"是 Harness 的判断。重试策略放在这里而不是
-        provider 里，因为"什么算失败"（解析不出来、选了不存在的键）是大脑的判断。
-
-        组装 prompt、调模型、解析成合法动作，失败就带着纠正说明重试。
+        步骤 1：调模型。
+        步骤 2：解析，失败就把账封进异常抛出去；成功就打包成 `ChooseOnceResp` 交回去。
         """
-        assert space.names, "choose() got an empty action space"
-        assert not obs.done, "choose() called on a finished episode"
-        assert goals, "choose() got an empty goal stack"
+        space = req.space
 
-        base = self._build_prompt(goals, obs, space, memories)
-        refs = [f"({m.episode_id}, {m.step})" for m in memories]
+        # 步骤 1：调模型。
+        completion = self._decide.complete(LlmCompleteReq(prompt=req.prompt))
 
-        calls: list[ModelCall] = []
-        prompt = base
-        for attempt in range(1, self._max_retries + 1):
-            # 带着上次的错误重问，不是原样再问——常见错误是系统性的，换个随机种子
-            # 照样犯。纠正块追加在**末尾**，前缀缓存一个字不丢。
-            t0 = time.perf_counter()
-            completion = self._decide.complete(prompt)
-            latency_ms = int((time.perf_counter() - t0) * 1000)
+        # 步骤 2：解析。
+        parsed: ActionFromBrain | None = None
+        kind = reason = ""
+        try:
+            # 截断要**先于**解析检查，否则它会伪装成"少了个右括号"的 ParseFailure。
+            if completion.truncated:
+                raise OutputTruncated(completion.completion_tokens)
+            parsed = self._parse(completion.text, space)
+        except (ParseFailure, IllegalAction, OutputTruncated) as exc:
+            kind, reason = type(exc).__name__, str(exc)
+        except ValidationError as exc:
+            # `ValidationError` **不是** `AgentError` 的子类，不带上会让这次
+            # 尝试之外的异常穿透。正常走不到（`_parse` 已经验过），但那套校验
+            # 写了两遍且没有机制保证同步——兜住，退化成一次可统计的解析失败。
+            kind, reason = "ParseFailure", f"ActionFromBrain 字段不合法：{exc.errors()[:1]}"
 
-            parsed: Action | None = None
-            kind = reason = ""
-            try:
-                # 截断要**先于**解析检查，否则它会伪装成"少了个右括号"的 ParseFailure。
-                if completion.truncated:
-                    raise OutputTruncated(completion.completion_tokens)
-                parsed = self._parse(completion.text, space)
-            except (ParseFailure, IllegalAction, OutputTruncated) as exc:
-                kind, reason = type(exc).__name__, str(exc)
-            except ValidationError as exc:
-                # `ValidationError` **不是** `AgentError` 的子类，不带上会穿过重试
-                # 崩掉一整局。正常走不到（`_parse` 已经验过），但那套校验写了两遍
-                # 且没有机制保证同步——兜住，让它退化成一次可统计的解析失败。
-                kind, reason = "ParseFailure", f"Action 字段不合法：{exc.errors()[:1]}"
+        # 一次模型调用 = 一条账，成功失败都留：失败的那次同样烧了 token，
+        # 而 `raw` 让改进解析器之后能离线重算，不必再花钱重跑。
+        call = ModelCall(
+            payload={
+                "input_tokens": str(completion.prompt_tokens),
+                "output_tokens": str(completion.completion_tokens),
+                "cached_tokens": str(completion.cached_tokens),
+                "reasoning_tokens": str(completion.reasoning_tokens),
+                "ok": str(parsed is not None),
+                "raw": completion.text,
+                "prompt": req.prompt,
+            },
+            error_kind=kind,
+            error=reason,
+        )
+        if parsed is None:
+            raise DecisionAttemptFailed(call)
 
-            # 一次模型调用 = 一条账，成功失败都留：失败的那几次同样烧了 token，
-            # 而 `raw` 让改进解析器之后能离线重算，不必再花钱重跑。
-            calls.append(ModelCall(
-                payload={
-                    "prompt_sha": self._decide_prompt.sha,
-                    "input_tokens": str(completion.prompt_tokens),
-                    "output_tokens": str(completion.completion_tokens),
-                    "latency_ms": str(latency_ms),
-                    "attempt": str(attempt),
-                    "ok": str(parsed is not None),
-                    "raw": completion.text,
-                },
-                error_kind=kind,
-                error=reason,
-            ))
-            if parsed is None:
-                prompt = base + _retry_note(
-                    attempt + 1, reason, completion.text[:400],
-                )
-            if parsed is not None:
-                assert space.contains(parsed.name), (
-                    f"brain chose key {parsed.name!r} outside {space.names}"
-                )
-                return Decision(action=parsed, calls=calls, recalled=refs)
+        # 出口断言（postcondition）：大脑不会产出空动作或空间外的按键。
+        # `_parse` 已逐段校验过，这里是运行时全覆盖的兜底证明。
+        assert parsed.sequence, "choose_once() returned an action with an empty sequence"
+        assert all(space.contains(seg.name) for seg in parsed.sequence), (
+            f"brain chose key outside {space.names}"
+        )
+        recalled = [f"({m.episode_id}, {m.step})" for m in req.memories]
+        return ChooseOnceResp(action=parsed, calls=[call], recalled=recalled)
 
-        return Decision(action=None, calls=calls, recalled=refs)
+    # ---- 规划（run 级）----
+
+    def plan_once(self, req: PlanOnceReq) -> PlanOnceResp:
+        """一次 run 级规划尝试：问一次模型、解析。**不重试**——重试是 Harness
+        的循环，跟 `choose_once()` 同一个分工（见 `docs/ROADMAP.md` "重试循环
+        该不该从 brain 挪到 harness"）。
+
+        **只有一个输入参数**：`req.prompt` 由调用方经
+        `pokemon_agent.prompts.run_plan.build_prompt(req)` 拼好、回填进同一个
+        req——`Brain` 只管拿 `req.prompt` 问模型，不知道、也不需要知道它是
+        怎么拼出来的。**不带纠正重试**：`run_plan` 的重试是原样重问，不像
+        `decide_action` 那样叠加纠正说明，所以这里没有 `retry_prompt()`
+        这类方法。
+
+        步骤 1：调模型（`plan_llm`，纯文本，不带图）。
+        步骤 2：解析，失败就把账封进异常抛出去；成功就打包成 `PlanOnceResp` 交回去。
+        """
+        # 步骤 1：调模型。
+        completion = self._plan_llm.complete(LlmCompleteReq(prompt=req.prompt))
+
+        # 步骤 2：解析。
+        parsed: RunPlan | None = None
+        kind = reason = ""
+        try:
+            parsed = self._parse_plan(completion.text)
+        except ParseFailure as exc:
+            kind, reason = type(exc).__name__, str(exc)
+
+        # 一次模型调用 = 一条账，成功失败都留：失败的那次同样烧了 token。
+        call = ModelCall(
+            payload={
+                "input_tokens": str(completion.prompt_tokens),
+                "output_tokens": str(completion.completion_tokens),
+                "cached_tokens": str(completion.cached_tokens),
+                "reasoning_tokens": str(completion.reasoning_tokens),
+                "ok": str(parsed is not None),
+                "raw": completion.text,
+                "prompt": req.prompt,
+            },
+            error_kind=kind,
+            error=reason,
+        )
+        if parsed is None:
+            raise PlanAttemptFailed(call)
+
+        return PlanOnceResp(plan=parsed, calls=[call])
 
     # ---- 判定 ----
 
-    @require_permission("execute:llm:judge")
-    def judge(
-        self, goal: Goal, obs: Observation, history: Sequence[StepMemory] = ()
-    ) -> Verdict:
-        """判断这个目标达成了没有。**永远返回 Verdict，不抛异常。**
+    def judge(self, req: JudgeReq) -> JudgeResp:
+        """判断这个目标达成了没有。**永远返回 JudgeResp，不抛异常。**
 
         判不出来就是"没达成"加一条失败记录——判定器坏掉时表现是成功率悄悄变 0，
-        必须能在失败模式分布里看见它。渲染也在 try 里：模板少个占位符就抛 KeyError，
-        而 prompt 是最常改的那类文件。
+        必须能在失败模式分布里看见它。
 
-        `history` 用 `render(reason=False)`：**发生过的事给判定器看，
-        决策者对那件事的主张不给。** `JUDGE_BLIND` 挡掉的是同一条隔离的另一半。
-
-        拿目标、判据和这一帧问一次判定模型，返回达成与否及依据。
+        **只有一个输入参数**：`req.prompt` 由调用方经
+        `pokemon_agent.prompts.judge_success.build_prompt(req)` 拼好、回填进
+        同一个 req——`Brain` 不管拼装，只管拿 `req.prompt` 问模型。渲染本身
+        可能抛的 `KeyError` 由调用方兜住（渲染已经不在这个 try 里了，这里只兜
+        模型调用失败）。
         """
-        t0 = time.perf_counter()
         try:
-            # **渲染也在 try 里**：模板少一个占位符就抛 KeyError，而 prompt 是最常改的
-            # 那类文件。放在外面的话"判定器永不抛异常"这条契约就有一个缺口。
-            rendered = (
-                "\n".join(
-                    f"- {k}: {v}" for k, v in obs.facts.items() if k not in JUDGE_BLIND
-                ) or obs.status
+            text, n_in, n_out, n_cached, n_reason = self._ask(
+                self._judge_llm, req.prompt, req.images
             )
-            past = "\n\n".join(m.render(reason=False) for m in history)
-            prompt = self._judge_prompt.render(
-                goal=goal.goal, criteria=goal.criteria, observation=rendered,
-                history=past or "（这是第一步，之前什么都没发生）",
-            )
-            completion = self._judge_llm.complete(prompt)
         except Exception as exc:  # noqa: BLE001  判定器不该让整局崩掉
-            return Verdict(
+            # 这里捕的是**预期外异常（含 bug）**——取舍是：判定器不值得为一局的
+            # 成败把内部 bug 暴露出来，代价是 judge 里的 bug 会静默（表现为
+            # 成功率悄悄变 0，且 trace 的 judge_call 带 `why=判定调用失败：Xxx`）。
+            return JudgeResp(
                 done=False,
                 why=f"判定调用失败：{type(exc).__name__}",
                 call=ModelCall(
+                    # judge 不重试（`attempt` 恒为 "1"）——见
+                    # `docs/ROADMAP.md`"judge 链路的 MODEL_CALL 缺 attempt 字段"。
                     payload={
-                        "prompt_sha": self._judge_prompt.sha, "ok": "False",
-                        "latency_ms": str(int((time.perf_counter() - t0) * 1000)),
+                        "ok": "False",
+                        "attempt": "1",
+                        "prompt": req.prompt,
+                        "n_images": str(len(req.images)),
                     },
                     error_kind=type(exc).__name__,
-                    error=f"{exc}"[:200],
+                    error=f"{exc}",
                 ),
             )
 
-        done, why, kind = self._parse_verdict(completion.text)
-        return Verdict(done=done, why=why, call=ModelCall(
-            payload={
-                "prompt_sha": self._judge_prompt.sha,
-                "input_tokens": str(completion.prompt_tokens),
-                "output_tokens": str(completion.completion_tokens),
-                "latency_ms": str(int((time.perf_counter() - t0) * 1000)),
-                "raw": completion.text,
-                "ok": str(not kind),
-            },
-            error_kind=kind,
-            error=why if kind else "",
-        ))
+        done, why, kind = self._parse_verdict(text)
+        return JudgeResp(
+            done=done,
+            why=why,
+            call=ModelCall(
+                payload={
+                    "input_tokens": str(n_in),
+                    "output_tokens": str(n_out),
+                    "cached_tokens": str(n_cached),
+                    "reasoning_tokens": str(n_reason),
+                    "raw": text,
+                    "ok": str(not kind),
+                    # judge 不重试，`attempt` 恒为 "1"——同上，不是漏记，是没有第二次。
+                    "attempt": "1",
+                    "prompt": req.prompt,
+                    # 带没带图直接影响这次判定看到了什么——没有这一项，回头分不清
+                    # "这次判错是因为没带图"还是"带了图还是判错了"。
+                    "n_images": str(len(req.images)),
+                },
+                error_kind=kind,
+                error=why if kind else "",
+            ),
+        )
+
+    @staticmethod
+    def _ask(
+        provider: JudgeProvider, prompt: str, images: Sequence[bytes]
+    ) -> tuple[str, int, int, int, int]:
+        """问一次判定器：`images` 非空就带图问（`describe()`），空的话退化成
+        纯文本（`complete()`）——一张便利副本缺失（`StepMemory` 没留下截图
+        文件名，或者文件确实不在磁盘上）不该让整条判定链路直接失败，降级成
+        纯文本判定总比抛异常/硬编一个失败结果强。
+
+        两种 provider 返回的字段名不一样（`LlmCompleteResp.prompt_tokens`/
+        `completion_tokens` vs `VisionDescribeResp.input_tokens`/
+        `output_tokens`，`cached_tokens` 字段名倒是两边一致）——这里统一抹平成
+        `(text, 输入 token, 输出 token, 命中缓存 token, 思考 token)` 五元组，
+        `judge()`/`verify_and_summarize()` 都不用关心这次走的是哪条路。
+        """
+        if images:
+            resp = provider.describe(VisionDescribeReq(images=list(images), prompt=prompt))
+            return (
+                resp.text,
+                resp.input_tokens,
+                resp.output_tokens,
+                resp.cached_tokens,
+                resp.reasoning_tokens,
+            )
+        completion = provider.complete(LlmCompleteReq(prompt=prompt))
+        return (
+            completion.text,
+            completion.prompt_tokens,
+            completion.completion_tokens,
+            completion.cached_tokens,
+            completion.reasoning_tokens,
+        )
 
     @staticmethod
     def _parse_verdict(text: str) -> tuple[bool, str, str]:
         """解析成 `(done, why, 失败类型)`，第三项为空串表示解析成功。"""
-        stripped = text.strip()
-        if stripped.startswith("```"):
-            stripped = stripped.split("```")[1].removeprefix("json").strip()
+        stripped = _strip_json_fence(text)
         try:
             raw = json.loads(stripped)
         except json.JSONDecodeError:
-            return False, f"判定输出不是合法 JSON：{text[:80]!r}", "ParseFailure"
+            return False, f"判定输出不是合法 JSON：{text!r}", "ParseFailure"
 
         if not isinstance(raw, dict) or not isinstance(raw.get("done"), bool):
-            return False, f"判定输出缺少布尔 done：{text[:80]!r}", "ParseFailure"
+            return False, f"判定输出缺少布尔 done：{text!r}", "ParseFailure"
 
         why = raw.get("why")
         return bool(raw["done"]), str(why) if why else "（未说明）", ""
 
+    # ---- step 记忆校验 + 蒸馏（独立判定器，一次调用问完两件事） ----
+
+    def verify_and_summarize(
+        self, req: VerifyAndSummarizeReq
+    ) -> VerifyAndSummarizeResp:
+        """校验本局 step 记忆哪些可信，只用可信的那些蒸馏成一条跨局摘要。
+        **永远返回 VerifyAndSummarizeResp，不抛异常。**
+
+        校验与蒸馏合在**一次调用**（取舍：省一次模型往返，代价是校验与摘要
+        同生共死——合并的完整论证见 `docs/ROADMAP.md`"verify_steps 与
+        summarize 合并"一条，这是用户明确要的取舍，不是遗漏）。
+
+        蒸馏前把关的动机：step 记忆是模型自述（`reflect` 拼的
+        before/action/after），没有验证——直接当事实喂蒸馏，错误操作会被
+        蒸馏成经验并跨局传播。这条防线体现在**同一次输出里的两段结构**
+        （先 `verdicts` 逐条判可信，再 `summary` 只引用可信的部分），而不是
+        两次调用之间的先后关系——真正的防线一直是"prompt 里写死了摘要只能
+        引用 reliable 的记录"，不是"这是不是独立的第二次调用"。
+
+        **只有一个输入参数**：`req.prompt` 由调用方经
+        `pokemon_agent.prompts.verify_and_summarize.build_prompt(req)` 拼好、
+        回填进同一个 req——`Brain` 不管拼装，只管拿 `req.prompt` 问模型。
+
+        调用/解析失败时：`verdicts` 全部标不可靠（宁可少喂不可把错的当对的），
+        `summary` 为 `None`（调用方据此决定这一局这次不写跨局摘要，只记一条
+        错误）。
+        """
+        count = len(req.entries)
+        try:
+            text, n_in, n_out, n_cached, n_reason = self._ask(
+                self._verify_llm, req.prompt, req.images
+            )
+        except Exception as exc:  # noqa: BLE001  校验/蒸馏都不该让整局崩掉（同 judge）
+            return VerifyAndSummarizeResp(
+                verdicts=[
+                    StepVerifyVerdict(
+                        index=i, reliable=False, why=f"合并调用失败：{type(exc).__name__}"
+                    )
+                    for i in range(count)
+                ],
+                summary=None,
+                call=ModelCall(
+                    # 不重试，`attempt` 恒为 "1"——同 judge/原 verify_steps。
+                    payload={
+                        "ok": "False",
+                        "attempt": "1",
+                        "prompt": req.prompt,
+                        "n_images": str(len(req.images)),
+                    },
+                    error_kind=type(exc).__name__,
+                    error=f"{exc}",
+                ),
+                why=f"合并调用失败：{type(exc).__name__}",
+            )
+
+        verdicts, summary = self._parse_verify_and_summarize(text, count)
+        episode_memory = (
+            _create_episode_memory(
+                episode_id=req.episode_id,
+                run_id=req.run_id,
+                goal=req.goal,
+                success=req.success,
+                steps=req.steps,
+                resp=summary,
+            )
+            if summary is not None
+            else None
+        )
+        return VerifyAndSummarizeResp(
+            verdicts=verdicts,
+            summary=summary,
+            episode_memory=episode_memory,
+            call=ModelCall(
+                payload={
+                    "input_tokens": str(n_in),
+                    "output_tokens": str(n_out),
+                    "cached_tokens": str(n_cached),
+                    "reasoning_tokens": str(n_reason),
+                    "raw": text,
+                    "ok": str(summary is not None),
+                    "attempt": "1",
+                    "prompt": req.prompt,
+                    "n_images": str(len(req.images)),
+                },
+            ),
+            why="" if summary is not None else "合并输出解析不出合法 summary",
+        )
+
+    @staticmethod
+    def _parse_verify_and_summarize(
+        text: str, count: int
+    ) -> tuple[list[StepVerifyVerdict], EpisodeSummary | None]:
+        """把合并输出解析成 `(verdicts, summary)`。
+
+        `verdicts` 解析失败/畸形时**全部标不可靠**（保守兜底，逻辑同原
+        `Brain._parse_verify`：按 `count` 补全、强制按 `index` 顺序输出）；
+        `summary` 段解析失败/缺失时为 `None`——两段解析互不影响对方：外层
+        JSON 解析不出来时两者都用保守默认值，外层解析成功但 `summary` 那部分
+        字段不全时，`verdicts` 仍然正常返回（这一局的可信过滤没有理由因为
+        摘要那半写坏了而跟着丢）。
+        """
+        try:
+            raw = json.loads(_strip_json_fence(text))
+            assert isinstance(raw, dict)
+        except Exception:  # noqa: BLE001  输出畸形，两段都保守兜底
+            return (
+                [
+                    StepVerifyVerdict(index=i, reliable=False, why="合并输出解析失败")
+                    for i in range(count)
+                ],
+                None,
+            )
+
+        verdicts = Brain._verdicts_from_raw(raw.get("verdicts"), count)
+
+        summary_data = raw.get("summary")
+        summary: EpisodeSummary | None = None
+        if isinstance(summary_data, dict):
+            try:
+                data = dict(summary_data)
+                filename = str(data.pop("filename", "episode_memory"))
+                markdown = str(data.pop("markdown", ""))
+                summary = EpisodeSummary(
+                    summary=data["summary"],
+                    reusable_patterns=data.get("reusable_patterns", []),
+                    critical_decisions=data.get("critical_decisions", []),
+                    failure_points=data.get("failure_points", []),
+                    quality_score=data["quality_score"],
+                    quality_rationale=data["quality_rationale"],
+                    applicable_scenes=data.get("applicable_scenes", []),
+                    tags=data.get("tags", []),
+                    filename=filename,
+                    markdown=markdown,
+                )
+            except Exception:  # noqa: BLE001  summary 段畸形，留 None，verdicts 不受影响
+                summary = None
+
+        return verdicts, summary
+
+    @staticmethod
+    def _verdicts_from_raw(raw: object, count: int) -> list[StepVerifyVerdict]:
+        """把已经反序列化的 `verdicts` 数组（可能是 `None`/畸形）对齐成与
+        `count` 等长的判定列表；解析失败/畸形时**全部标不可靠**。
+
+        原 `Brain._parse_verify` 的核心逻辑原样保留（模型可能漏条、乱序、
+        重复：按 `count` 补全、强制按 `index` 顺序输出），只是入参从"整段
+        文本"改成"已经解析出的数组"——合并输出的 `verdicts` 只是外层 JSON
+        对象里的一个字段，不需要再单独 `json.loads` 一次。
+        """
+        try:
+            by_index = {
+                int(item["index"]): item
+                for item in raw
+                if isinstance(item, dict) and "index" in item
+            }
+        except Exception:  # noqa: BLE001  畸形，保守兜底
+            return [
+                StepVerifyVerdict(index=i, reliable=False, why="校验输出解析失败")
+                for i in range(count)
+            ]
+
+        verdicts: list[StepVerifyVerdict] = []
+        for i in range(count):
+            item = by_index.get(i)
+            if item is None:
+                verdicts.append(
+                    StepVerifyVerdict(index=i, reliable=False, why="校验遗漏该条，按不可靠处理")
+                )
+            else:
+                verdicts.append(
+                    StepVerifyVerdict(
+                        index=i,
+                        reliable=bool(item.get("reliable", False)),
+                        why=str(item.get("why", "")),
+                    )
+                )
+        return verdicts
+
     # ---- 记忆整理 ----
 
-    @require_permission("execute:llm:memory_reflection")
-    def reflect(
-        self, before: Observation, action: Action, after: Observation
-    ) -> StepMemory:
+    def reflect(self, req: ReflectReq) -> ReflectResp:
         """把这一步整理成一条经验：**看到什么 → 为什么 → 做了什么 → 变成什么**。
 
-        **本版不调模型**：四样东西都已经在参数里，让模型再复述一遍只会引入
+        **只有一个输入参数**：`req` 打包前后两帧观测和这次的动作——跟其他
+        三个方法同一个规则，模块间调用只认一个 req。
+
+        **本版不调模型**：四样东西都已经在 req 里，让模型再复述一遍只会引入
         它自己的措辞偏差，还多烧一次调用。要不要上模型是以后的事，
-        接口按"可能会调"设计（返回 `StepMemory` 而不是就地写库）。
+        接口按"可能会调"设计（返回记忆条目而不是就地写库）。
 
         **这个方法自己不写库**：写库是状态变更，而大脑无状态。
         `episode_id` 也留空由 Harness 盖章——大脑不知道自己在哪一局。
 
         把前后两帧和这次动作拼成一条可检索的记忆条目返回。
         """
-        assert action.rationale, "reflect() got an action without a rationale"
+        assert req.action.rationale, "reflect() got an action without a rationale"
 
-        snapshot = Snapshot.of(before)
-        return StepMemory(
-            before=snapshot,
-            rationale=list(action.rationale),
-            action=action.describe(),
-            after=Snapshot.of(after),
-            key=snapshot.position or str(before.step),
-            step=before.step,
-            # `episode_id` 由 Harness 盖章——大脑不知道自己在哪一局。
-            episode_id="",
+        return ReflectResp(
+            entry=StepMemory(
+                before=self._blind(req.before),
+                rationale=list(req.action.rationale),
+                action=req.action.describe(),
+                after=self._blind(req.after),
+                step=req.before.step,
+                # `episode_id` 由 Harness 盖章——大脑不知道自己在哪一局。
+                episode_id="",
+            )
+        )
+
+    @staticmethod
+    def _blind(obs: ObservationFromWorld) -> ObservationFromWorld:
+        """滤掉不该进记忆的字段（`SNAPSHOT_BLIND`），构造记忆用的那份观测。
+
+        记忆里每一项都必须跨步骤成立，`known_objects`/`knowledge`
+        不成立——前者是跨 episode 流水，后者本就不是"这一帧看到了什么"。
+        过滤只发生在写记忆这一步，大脑决策时看到的仍是完整观测。
+        """
+        return ObservationFromWorld(
+            step=obs.step,
+            place=obs.place,
+            status=obs.status,
+            facts={k: v for k, v in obs.facts.items() if k not in SNAPSHOT_BLIND},
+            done=obs.done,
         )
 
     # ---- 内部 ----
 
-    def _build_prompt(
-        self,
-        goals: list[Goal],
-        obs: Observation,
-        space: ActionSpace,
-        memories: list[StepMemory],
-    ) -> str:
-        """每次从参数完整组装，不留历史——"大脑无状态"在代码层面的体现。"""
-        facts = "\n".join(f"- {k}: {v}" for k, v in obs.facts.items()) or "（无）"
-        recalled = "\n\n".join(m.render() for m in memories) or "（无相关记忆）"
-        actions = "\n".join(
-            f"- {name}: {space.descriptions.get(name, '（无说明）')}" for name in space.names
-        )
-        if space.note:
-            actions += f"\n\n{space.note}"
-        return self._decide_prompt.render(
-            goals=self._render_goals(goals),
-            status=obs.status,
-            facts=facts,
-            memories=recalled,
-            actions=actions,
-            max_rationale=MAX_RATIONALE,
-        )
-
     @staticmethod
-    def _render_goals(goals: list[Goal]) -> str:
-        """把目标栈画出来，栈顶在最上面——模型是从上往下读 prompt 的。"""
-        lines = []
-        for depth, g in reversed(list(enumerate(goals))):
-            mark = "← 你现在要完成的" if depth == len(goals) - 1 else ""
-            role = "任务目标" if depth == 0 else f"子目标（第 {depth} 层）"
-            lines.append(f"{depth}. [{role}] {g.goal}\n   判据：{g.criteria} {mark}".rstrip())
-        return "\n".join(lines)
+    def _parse_plan(text: str) -> RunPlan:
+        """把规划模型的原始文本输出解析成 `RunPlan`；失败抛 `ParseFailure`。
 
-    def _parse(self, text: str, space: ActionSpace) -> Action:
-        """把 LLM 输出解析成 `Action`，不合法就抛 `ParseFailure` / `IllegalAction`。"""
-        stripped = text.strip()
-        # 容忍 ```json 包裹：这是模型最常见的格式偏差，为它单独重试一轮不划算。
-        if stripped.startswith("```"):
-            stripped = stripped.split("```")[1].removeprefix("json").strip()
+        先剥 ```json 围栏（模型最常见的格式偏差，`choose_once`/`_parse` 同样
+        处理）——不剥的话 `json.loads` 会在第一个反引号处报"char 0"，误导成
+        空输出。
+        """
+        stripped = _strip_json_fence(text)
+        try:
+            raw = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise ParseFailure(text, f"not valid json ({exc.msg})") from exc
+        if not isinstance(raw, dict):
+            raise ParseFailure(text, "top level is not an object")
+        try:
+            return RunPlan.model_validate(raw)
+        except ValidationError as exc:
+            raise ParseFailure(text, f"RunPlan 字段不合法：{exc.errors()[:1]}") from exc
+
+    def _parse(self, text: str, space: ActionSpaceForBrain) -> ActionFromBrain:
+        """把 LLM 输出解析成 `ActionFromBrain`，不合法就抛 `ParseFailure` / `IllegalAction`。"""
+        # 步骤 1：剥 ```json 围栏。
+        stripped = _strip_json_fence(text)
 
         try:
             raw = json.loads(stripped)
@@ -360,7 +681,7 @@ class Brain:
             # 交给 world 的链**就是真正会发生的那条链**。
             if name == INTERACT_KEY:
                 times = 1
-            sequence.append(ActionSegment(name=name, times=times))
+            sequence.append(ActionSegmentFromBrain(name=name, times=times))
         # **多段链：中间只能是方向键，结尾允许一个 `a`。**
         #
         # 中间帧看不到，所以链体里只放"闭眼也不丢信息"的移动键。链尾不一样：
@@ -383,8 +704,7 @@ class Brain:
             if not space.contains(segment.name):
                 raise IllegalAction(segment.name, space.names)
 
-        return Action(
-            name=sequence[0].name,
+        return ActionFromBrain(
             thought=self._parse_thought(text, raw),
             rationale=self._parse_rationale(text, raw),
             sequence=sequence,
@@ -433,7 +753,5 @@ class Brain:
         if not items:
             raise ParseFailure(text, "missing 'rationale' field")
         if len(items) > MAX_RATIONALE:
-            raise ParseFailure(
-                text, f"too many rationale items ({len(items)} > {MAX_RATIONALE})"
-            )
+            raise ParseFailure(text, f"too many rationale items ({len(items)} > {MAX_RATIONALE})")
         return items

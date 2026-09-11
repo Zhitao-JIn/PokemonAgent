@@ -63,7 +63,7 @@
 
 它当时确实和 `observe()` 问的是不同的问题——`observe()` 按帧缓存、同一帧再调字节完全一样，`inspect()` 是对同一帧另问一句——但"能问出新信息"和"有人会去问"是两回事，真要把细看做回来，该先有调用方再有接口。
 
-`EventType.INSPECT` 这个枚举成员**保留**：删了它，历史 trace 文件就回放不了。事件类型是写进磁盘的历史，删接口和删枚举不是同一件事。
+**更正（0902 全项目可观测扫描发现）**：这句原来说"`EventType.INSPECT` 这个枚举成员保留"，但实际代码里这个枚举成员**没有保留**——`docs/spec/README.md`（"删兼容时的明确决定"一段）和 `docs/spec/DATAFLOW.md`（"没有兼容成员"）才是准确的：`INSPECT` 连同 `GOAL_POP`/旧值 `memory_write`/`object_note` 一起被删掉了，`EventType` 现在只含有生产者的类型，带这类旧值的历史 trace 文件确实回放不了。当时"删接口和删枚举不是同一件事"这个原则本身没错，只是最终决定是两个都删，不是只删接口留枚举。
 
 ### 1.5 谁实现、谁消费
 
@@ -140,7 +140,6 @@
 |---|---|---|---|---|
 | `query_episode_summaries` | `(self, scene: str, query: str, limit: int = 3) -> list[EpisodeMemory]` | `scene` 非空、`limit > 0` | 条数 `<= limit`；先按场景过滤（`applicable_scenes` 为空或含 `*` 视为通用经验），再按相关性 + 质量 + 成功与否加权排序 | 未文档化 |
 | `store_episode_summary` | `(self, ...) -> EpisodeMemory` | 一局结束时调一次 | 蔸馏出一条落库并返回 | 蔸馏解析失败戛 `ValueError`，内部已留一条 `ERROR` trace 事件 |
-| `episode_summary_count` | `(self) -> int` | 无 | 库里有多少条跨局摘要 | 无 |
 
 语义记忆（object / knowledge）：
 
@@ -255,7 +254,7 @@
 
 ### 4.5 谁实现、谁消费
 
-- **实现方**：`pokemon_agent/trace/store.py` 里的 `MockTrace`——内存事件表 + 控制台打印的 `sse()`，是目前唯一的 `TracePort` 实现（生产环境下换成落盘 + 浏览器推流的实现，`append`/`replay` 的调用方不用改）。
+- **实现方**：`pokemon_agent/trace/store.py` 里的 `LocalTrace`——**已经不只是内存实现**：事件逐条追加落 JSONL（`trace_data/<run_id>/episodes/*.jsonl`）、`sse()` 同时推给浏览器观测台（`trace/browser.py`，HTTP + SSE 长连接）并做终端打印。文件末尾有 `MockTrace = LocalTrace` 这一行，纯粹是给旧测试和旧脚本的兼容别名，**新代码一律写 `LocalTrace`**。它是目前唯一的 `TracePort` 实现（换落盘后端时 `append`/`replay` 的调用方不用改）。
   - 组装 `append()` 五个位置参数（尤其是 `payload` 这个 `dict[str, str]`）的活**不在这个类里**，在同目录下的 `pokemon_agent/trace/utils.py`——一批纯函数，输入领域对象（`Observation`/`Action`/`Goal`/`ModelCall`……），输出 `append()` 能直接展开传的元组。`store.py` 不认识这些领域类型，`utils.py` 不认识 `TracePort`、不做任何 I/O，两者故意不合并成一个类：前者管"记下来、推出去"，后者管"记的话该记成什么样"。
   - 曾经有一个 `EchoTrace` 装饰器（`probe/echo_trace.py`）包在 `TracePort` 外面做控制台打印；协议加了 `sse` 之后这层装饰器**已删除**——打印逻辑并入了 `MockTrace.sse()`，因为"推给观测通道"本来就是 `sse` 该管的事，不需要一个额外的包装层。
 - **消费方**：`Harness`（写事件的唯一入口，呼应 `brain.py` 中"谁控制循环，谁记账"的规则）——但 `Harness` 只调 `self._trace.append(*trace_utils.xxx(...))`，组装 payload 这一步委托给 `trace_utils`，自己不拼任何 `dict` 字面量（呼应"Harness 只负责调度，不负责模块逻辑"）；此外 replay / SSE 观测台 / 成本统计 / 失败聚合 / 实验归因等下游消费者也读它。

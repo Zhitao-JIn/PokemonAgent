@@ -232,8 +232,10 @@ def __init__(
   同一帧的 `observe()` 返回值会多一条 `inspected`——幂等只对模型调用成立、
   对返回值不成立。删掉之后这条例外没有了。
 
-`EventType.INSPECT` 这个枚举成员**仍然保留**，但只为让旧 trace 文件回放时还看得见
-那类事件，不再有任何代码产生它。
+**更正（0902 全项目可观测扫描发现）**：这句原来说 `EventType.INSPECT` 仍然
+保留，但实际代码里没有——`EventType` 枚举不含这个成员，`docs/spec/README.md`/
+`docs/spec/DATAFLOW.md` 才是准确的版本：枚举成员随功能一起删掉了，带这类
+旧事件的历史 trace 文件回放不了，不是"删了代码、留着枚举兼容"。
 
 #### `all_actions() -> list[str]`
 
@@ -427,6 +429,6 @@ _perceive() → observe() → step()（经由 ToolResult.calls）
 - **`_status_line(s: ScreenState) -> str`**（结果进 `Observation.status`；函数和字段都曾叫 `summary`，改名是因为它是**一句状态**，不是对这一帧的概括）：给大脑读的极简自然语言状态，只是 prompt 的上下文开头，详细字段都在 `facts` 里。按 `Scene` 枚举给一句"你在……"的话，再视 `overlay` 追加对话框摘录或选项列表。
 - **`parse_screen(text)`**：把模型原始文本解析为 `ScreenState`，容忍 ` ```json ` 包裹（模型最常见的格式偏差），其余解析失败一律返回 `None`，不做其它兜底。
 - **`_tick(frames)`**：逐帧调用 `self._pyboy.tick(1)`，不是批量 `tick(n)`——因为 `tick(n)` 只在最后限速一次，批量调用在 `watch` 模式下画面会一跳一跳，逐帧才平滑；无头模式不限速，逐帧的额外开销可忽略。若某次 `tick(1)` 返回假值（窗口被关），置 `self._closed = True` 并立即返回——这是 world 唯一的终止权。
-- **`PRESS_FRAMES=10`**（按键按住的帧数）、**`WITHIN_ACTION_FRAMES=120`**（链上每按一次之后推进多少帧）、**`AFTER_ACTION_FRAMES=360`**（整条链跑完后再推进多少帧才感知）、**`BOOT_FRAMES=600`**（无存档时空转越过开机 logo）。
+- **`GB_FPS=60`**（帧率常量，其余帧数一律写成「秒 × GB_FPS」避免再漂）、**`PRESS_FRAMES=10`**（按键按住的帧数）、**`WITHIN_ACTION_FRAMES=120`**（= `2 × GB_FPS`，链上每按一次之后推进多少帧）、**`AFTER_ACTION_FRAMES=600`**（= `10 × GB_FPS`，整条链跑完后再推进多少帧才感知）、**`BOOT_FRAMES=600`**（无存档时空转越过开机 logo）。`AFTER_ACTION_FRAMES` 从 360（≈6 秒）改成 600（10 秒），等的是"按下去之后自己走完、不用再按键"的过场（换图淡入、战斗开场、对话逐字、菜单弹出）——等不够就感知，抄回来的是过场中间一张半成品，而那一帧对应的状态到下一步已不存在。无头模式 tick 不限速，600 帧相对一次视觉调用可忽略；`watch` 模式每步会明显多停 4 秒。
 - **导入期防护性断言**：模块顶层有一条 `assert`，检查 `OVERLAY_ACTIONS`（定义在 `schemas/observation.py`，掩码表）里出现的每个键都在 `ALL_BUTTONS` 里。这条**在导入时查，不留给测试**：两张表分处 `schemas` 和 `world` 两个文件，改了一边忘了另一边时，harness 会交出一个世界不认识的动作，而错误要等到大脑选中它、`step()` 真正执行时才会炸——离病因隔了三层，导入期断言把这类错误提前到进程启动那一刻。
 - **`stop()`**：`self._pyboy.stop()`，非 `WorldPort` 协议方法，是资源释放的收尾。
