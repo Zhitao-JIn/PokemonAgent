@@ -2,9 +2,10 @@
 数据 schema（`Facts`/`ScreenState`/`TerrainMapFromRam`）。
 
 `WorldPort` 原来放在顶层 `pokemon_agent/interfaces/world/`，跟着"协议物理挨着它吐出
-的数据形状"这条原则搬到了这里；`pokemon_agent.interfaces` 仍然 re-export 它
-（`brain → interfaces ← harness` 的依赖方向不变，只是这一个 Protocol 的物理文件
-挪了地方——见 CLAUDE.md）。`Memory`、`Facts`、`ScreenState`、`TerrainMapFromRam`
+的数据形状"这条原则搬到了这里；`pokemon_agent/interfaces/` 这个集中注册表已经
+整个撤销，消费方直接 `from pokemon_agent.world import WorldPort`（`brain → 各模块
+interface/ ← harness` 的依赖方向不变——见 CLAUDE.md）。`Memory`、`Facts`、
+`ScreenState`、`TerrainMapFromRam`
 原来分别定义在 `world/ram.py`、`world/screen_state.py` 这些"实现文档"里——它们是
 协议或数据形状，不是"怎么读/怎么算"的实现，所以搬到这里，跟 `WorldPort` 归在
 同一个子包下。

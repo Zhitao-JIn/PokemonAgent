@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..domain.human_decision import HumanDecision
+from pokemon_agent.harness.interface import HumanDecision
 
 
 class FromHarnessToReviewerReviewResp(BaseModel):

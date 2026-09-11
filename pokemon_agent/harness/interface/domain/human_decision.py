@@ -1,4 +1,8 @@
-"""人类对“下一层怎么办”的决策枚举。"""
+"""人类对"下一层怎么办"的决策枚举。
+
+原来放在 `schemas/harness/domain/`；跟着"协议物理挨着它自己的实现"这条
+原则搬到了 `harness/interface/domain/`。
+"""
 
 from __future__ import annotations
 

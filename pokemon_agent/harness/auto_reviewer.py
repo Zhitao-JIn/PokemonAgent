@@ -1,7 +1,7 @@
 """`AutoContinueReviewer`：`HumanReviewer` 的占位实现——永远自动继续。
 
 保证装配出的 run 不被打断地跑完初始栈。**前端接入后替换**（见
-`interfaces/harness/human_reviewer.py`）。
+`harness/interface/human_reviewer.py`）。
 """
 
 from __future__ import annotations
@@ -9,8 +9,9 @@ from __future__ import annotations
 from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerReviewReq,
     FromHarnessToReviewerReviewResp,
-    HumanDecision,
 )
+
+from .interface import HumanDecision
 
 
 class AutoContinueReviewer:

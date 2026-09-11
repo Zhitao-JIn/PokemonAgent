@@ -10,6 +10,11 @@ Frontend 发起的信封（提交目标编辑、取帧）归 `schemas/frontend/`
 
 本文件是 `schemas/harness/` 的统一出口，只做 re-export、不定义任何实体；
 消费方只写 `from pokemon_agent.schemas.harness import X`，不深到 communication/ 等子目录。
+
+**`HumanDecision` 不在这里**：原来放在 `domain/human_decision.py`，现在跟着
+"协议物理挨着它自己的实现"这条原则搬到了 `pokemon_agent.harness.interface`
+——消费方改写 `from pokemon_agent.harness import HumanDecision` 这样各自
+认模块，详见 CHANGELOG 对应条目。
 """
 
 __all__ = [
@@ -64,7 +69,6 @@ __all__ = [
     "FromRunHarnessToEpisodeHarnessRunReq",
     "FromRunHarnessToEpisodeHarnessRunResp",
     "RunResp",
-    "HumanDecision",
 ]
 from .communication.FromHarnessToBrainToolChooseOnceReq import FromHarnessToBrainToolChooseOnceReq
 from .communication.FromHarnessToBrainToolChooseOnceResp import FromHarnessToBrainToolChooseOnceResp
@@ -173,4 +177,3 @@ from .communication.FromRunHarnessToEpisodeHarnessRunResp import (
     FromRunHarnessToEpisodeHarnessRunResp,
 )
 from .communication.RunResp import RunResp
-from .domain.human_decision import HumanDecision

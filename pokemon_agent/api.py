@@ -70,16 +70,18 @@ from pydantic import BaseModel, Field
 
 from pokemon_agent.brain import TaskForBrain
 from pokemon_agent.build import build_real
-from pokemon_agent.harness import DataCenterReviewer, RunDataCenter, RunHarness
+from pokemon_agent.harness import (
+    DataCenterReviewer,
+    HumanDecision,
+    RunDataCenter,
+    RunHarness,
+)
 from pokemon_agent.schemas.frontend import (
     FromFrontendToGameToolLatestFrameReq,
     FromFrontendToGameToolLatestFrameResp,
     FromFrontendToRunHarnessSubmitEditReq,
 )
-from pokemon_agent.schemas.harness import (
-    FromHarnessToReviewerReviewResp,
-    HumanDecision,
-)
+from pokemon_agent.schemas.harness import FromHarnessToReviewerReviewResp
 from pokemon_agent.trace import TracePort
 
 SSE_HEARTBEAT = 15.0

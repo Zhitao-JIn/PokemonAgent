@@ -12,8 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pokemon_agent.brain import Brain
-from pokemon_agent.harness import EpisodeHarness, RunDataCenter, RunHarness
-from pokemon_agent.interfaces import HumanReviewer
+from pokemon_agent.harness import EpisodeHarness, HumanReviewer, RunDataCenter, RunHarness
 from pokemon_agent.providers import FastEmbedReranker, FastEmbedText
 from pokemon_agent.tools import BrainTool, GameTools, MemoryTool, TraceTool
 from pokemon_agent.trace import LocalTrace

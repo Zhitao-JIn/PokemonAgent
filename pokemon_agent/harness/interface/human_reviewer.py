@@ -1,5 +1,9 @@
 """`HumanReviewer`：run 级 human-in-the-loop 的审查接口。
 
+原来放在顶层 `pokemon_agent/interfaces/harness/`；跟着"协议物理挨着它自己的
+实现"这条原则搬到了这里，`pokemon_agent/interfaces/` 这个集中注册表这次
+整个撤销，消费方直接 `from pokemon_agent.harness import HumanReviewer`。
+
 每个 episode 之间，`RunHarness.review` 节点调它：把 `FromHarnessToReviewerReviewReq`
 （run 到哪了、各局成败、当前栈）交给人类，拿回 `FromHarnessToReviewerReviewResp`
 （继续 / 停止 / 重试）。加/改/删目标统一走 `POST /runs/{id}/goals`，

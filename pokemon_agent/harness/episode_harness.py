@@ -37,7 +37,6 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from pokemon_agent.brain import GoalForBrain, StepVerifyVerdict, TaskForBrain
-from pokemon_agent.interfaces import EpisodeRunState
 from pokemon_agent.prompts import decide_action as decide_action_prompt
 from pokemon_agent.prompts import judge_success as judge_success_prompt
 from pokemon_agent.prompts import verify_and_summarize as verify_and_summarize_prompt
@@ -81,6 +80,7 @@ from pokemon_agent.tools import (
 from pokemon_agent.trace import TraceKind, read_screenshot
 
 from . import brain_utils, episode_utils, game_utils, memory_query_utils
+from .interface import EpisodeRunState
 from .object_interactions import object_fact_events
 from .run_data_center import RunDataCenter
 

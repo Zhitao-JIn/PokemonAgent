@@ -31,9 +31,10 @@ from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
 from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerReviewReq,
     FromHarnessToReviewerReviewResp,
-    HumanDecision,
 )
 from pokemon_agent.schemas.trace import TraceEvent
+
+from .interface import HumanDecision
 
 REVIEW_POLL_INTERVAL = 0.2
 """`await_review_response` 阻塞轮询的节拍（秒）——够快到人提交后近乎无感，

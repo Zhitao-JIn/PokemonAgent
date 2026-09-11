@@ -2,9 +2,9 @@
 
 **物理位置**：原来在顶层 `pokemon_agent/interfaces/world/`，跟这个子系统吐出来的
 数据形状（`Facts`，同目录 `domain/facts.py`）搬到了一起——协议和协议吐出来的数据
-形状本来就是同一件事的两个角度，没道理分居两处。`pokemon_agent.interfaces` 仍然
-曾经原样 re-export 这个类型；现在 `pokemon_agent.interfaces` 整个撤销，
-`brain → interfaces ← harness` 的依赖方向不变，见 CLAUDE.md 对应条目。
+形状本来就是同一件事的两个角度，没道理分居两处。`pokemon_agent/interfaces/` 这个
+集中注册表已经整个撤销，消费方直接 `from pokemon_agent.world import WorldPort`；
+`brain → 各模块 interface/ ← harness` 的依赖方向不变，见 CLAUDE.md 对应条目。
 """
 
 from __future__ import annotations
@@ -16,8 +16,7 @@ from pokemon_agent.schemas.world.communication.PerceiveOnceResp import PerceiveO
 
 # 认叶子模块（`schemas.world.communication.PerceiveOnceResp`），不认
 # `pokemon_agent.schemas.world` 这个聚合出口——`Facts`（同目录 `domain/facts.py`）
-# 会被 `schemas/world/domain/observation_from_world.py` 引用，而这个文件
-# 又会被 `pokemon_agent.interfaces` re-export，link 起来的路径上有可能正撞上
+# 会被 `schemas/world/domain/observation_from_world.py` 引用，而这条链路有可能正撞上
 # `schemas.world` 聚合 `__init__` 自己还没跑完的那个窗口期；绕开聚合出口，
 # 直接认叶子模块，这条路径就不吃初始化顺序。
 

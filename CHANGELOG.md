@@ -1,3 +1,69 @@
+## 2026-09-11（11）—— interfaces/schemas 集中制逐步撤销，第五步（最后一步）：harness，`pokemon_agent/interfaces/` 整包删除
+
+**改了什么**：
+1. `pokemon_agent/interfaces/harness/{harness_port,episode_harness_port,
+   human_reviewer}.py`（`HarnessPort`+`RunState`/`ResumeEpisode`+三个常量
+   `MAX_GOAL_RETRIES`/`MAX_PLAN_PUSH`/`PLAN_MAX_ATTEMPTS`；`EpisodeHarnessPort`+
+   `EpisodeRunState`；`HumanReviewer`）→ `pokemon_agent/harness/interface/`
+   下的同名文件。
+2. `pokemon_agent/schemas/harness/domain/human_decision.py`（`HumanDecision`）→
+   `pokemon_agent/harness/interface/domain/human_decision.py`；
+   `schemas/harness/domain/` 目录随之清空删除。
+3. 新增 `harness/interface/domain/__init__.py`（立即加载：`HumanDecision`
+   零依赖）、`harness/interface/__init__.py`（`HumanDecision` 立即加载，
+   三个 Port + 它们各自模块内的状态模型/常量全部懒加载）。
+4. `harness/__init__.py` 重写：`HumanDecision` 立即从 `.interface`
+   re-export；其余全部（三个 Port、`RunState`/`ResumeEpisode`/
+   `EpisodeRunState`、三个常量、`RunHarness`/`EpisodeHarness`/
+   `RunDataCenter`/`DataCenterReviewer`/`AutoContinueReviewer`/
+   `STALL_LIMIT` 五个实现类）都改成**懒加载**（`__getattr__`，跟
+   `brain/__init__.py` 对 `Brain`/`BrainPort` 的处理同一套机制）。
+5. `schemas/harness/__init__.py` 不再 re-export `HumanDecision`。
+6. `schemas/harness/communication/FromHarnessToReviewerReviewResp.py`
+   （需要 `HumanDecision` 作字段类型）改成
+   `from pokemon_agent.harness.interface import HumanDecision`——跟
+   `ModelCall`/`Facts`/`TraceKind`/六个 brain 数据形状是同一种"schema
+   文件反过来依赖实现模块的 interface 子包"写法。
+7. 消费方同步改 import：`harness/` 包内文件（`episode_harness.py`/
+   `run_harness.py`/`run_plan_utils.py`/`run_utils.py`/
+   `auto_reviewer.py`/`run_data_center.py`）改成 `from .interface import
+   X`（同包相对导入，跟 `brain/brain.py` 的写法一致）；包外消费方
+   （`api.py`/`build.py`）改成 `from pokemon_agent.harness import X`。
+8. **`pokemon_agent/interfaces/` 整包删除**——五步计划（trace → providers →
+   brain → tools → harness）至此全部完成，`brain → interfaces ← harness`
+   这条历史依赖锚点不再存在，改为"消费方直接认各模块自己的 `interface/`"。
+9. `CLAUDE.md` 同步更新：铁律 2（大脑只能 import 各模块自己的 `interface/`
+   + `schemas/`，不再提顶层 `interfaces/`）、"接口先行"一节、目录树里
+   `interfaces/`/`brain/`/`harness/`/`world/` 几处描述。
+
+**为什么这么改**：跟前四步一样，港口协议和它内嵌的数据形状/状态模型本来
+就该挨着实现住。
+
+**取舍**：这是第三次需要懒加载才能避开循环导入（继 `WorldPort`、
+`BrainPort` 之后）——`harness_port.py`/`episode_harness_port.py`/
+`human_reviewer.py` 都要 `import pokemon_agent.schemas.harness`，而
+`schemas/harness/communication/FromHarnessToReviewerReviewResp.py` 的字段
+又要从 `harness.interface` 拿回 `HumanDecision`，两条依赖在初始化顺序上
+正面相撞。这次的取舍比 `brain` 那一步更彻底：不仅 `HarnessPort`/
+`EpisodeHarnessPort`/`HumanReviewer` 三个 Protocol 要懒加载，它们各自
+模块里定义的状态模型（`RunState`/`ResumeEpisode`/`EpisodeRunState`）和
+三个常量也全部跟着懒加载——因为这些名字和 Port 协议同住一个模块文件，
+访问任何一个都会触发同一次 `import pokemon_agent.schemas.harness`。用
+pydantic stub 跑了 5 种导入顺序（`harness_first`/`schemas_harness_first`/
+`harness_interface_first`/`port_access_first`/`everything`，`everything`
+这次覆盖了删除 `pokemon_agent.interfaces` 后的全系统导入）全部通过；
+过程中还发现并修复了三处真实的遗留 bug——`harness/auto_reviewer.py`、
+`api.py`、`harness/run_data_center.py` 三个文件仍在从
+`pokemon_agent.schemas.harness` 导入已经搬走的 `HumanDecision`（这次搬迁
+之前就已经不该从那里导入，是更早的 schemas 整理留下的技术债，这次一并
+清理）；顺带给 pydantic stub 补了缺失的 `TypeAdapter`，给测试环境补了
+`langgraph`/`rank_bm25` 最小 stub（都是纯测试基建缺口，不是代码问题）。
+
+**影响面**：`pokemon_agent/interfaces/` 目录已删除，全项目不再有任何
+"跨模块集中港口注册表"，每个模块的港口协议、数据形状、状态模型全部与
+它自己的实现同住一个包。五步迁移计划（trace/providers/brain/tools/
+harness）至此全部完成。
+
 ## 2026-09-11（10）—— interfaces/schemas 集中制逐步撤销，第四步：tools
 
 **改了什么**：

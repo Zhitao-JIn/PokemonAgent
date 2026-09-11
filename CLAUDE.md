@@ -19,9 +19,11 @@
    每一步的全部输入都来自参数，全部记忆都来自工具调用。
    *为什么*：大脑无状态是整个架构的地基，一旦漏了状态，harness 的 trace / replay / checkpoint 全部失真。
 
-2. **大脑只能通过 MCP 接口层与外界交互。** `brain/` 不许 import `harness/` 的任何具体实现，
-   只许 import `interfaces/`（Protocol 定义）和 `schemas/`。
-   依赖方向永远是 `brain → interfaces ← harness`，**绝不反向，绝不横向**。
+2. **大脑只能通过接口层与外界交互。** `brain/` 不许 import `harness/` 的任何具体实现，
+   只许 import 各模块自己的 `interface/`（Protocol 定义，原来集中在顶层 `interfaces/`，
+   现在物理挨着各自的实现——`world/interface/`、`brain/interface/` 等，见 CHANGELOG）
+   和 `schemas/`。依赖方向永远是 `brain → 各模块 interface/ ← harness`，
+   **绝不反向，绝不横向**。
    *为什么*：这条一旦破，mock 换真实实现就要改大脑代码，原型的意义就没了。
 
 3. **mock 与真实实现必须实现同一个 Protocol。** 不许出现"mock 多一个方法"或"mock 签名不一样"。
@@ -54,8 +56,11 @@
 
 ### 2. 接口先行 —— 先写接口类，再写实现
 
-- 每个模块的对外能力**先在 `interfaces/` 里写成 `Protocol`（或 ABC）**，带完整类型注解和 docstring，
-  再去写实现。接口文件本身就应该是可读的设计文档：**光读 `interfaces/` 就能看懂整个系统怎么运转。**
+- 每个模块的对外能力**先在它自己的 `interface/`（或没有专属数据形状的模块走扁平
+  `ports.py`，见 `memory/`/`tools/`）里写成 `Protocol`（或 ABC）**，带完整类型注解和
+  docstring，再去写实现。接口文件本身就应该是可读的设计文档：**光读各模块的
+  `interface/`/`ports.py` 就能看懂整个系统怎么运转。**（历史上这些接口曾集中放在
+  顶层 `interfaces/`，2026-09-11 逐个模块搬完后该目录已删除，见 CHANGELOG。）
 - 接口的 docstring 要写清楚三件事：**这个方法承诺什么、什么情况下会失败、调用方要保证什么前置条件。**
 - 用 `Protocol` 而不是继承基类，除非需要共享实现。
   *为什么*：Protocol 是结构化类型，mock 不需要显式继承就能替换，测试里最省事。
@@ -152,25 +157,8 @@ pokemon_agent/
 │                     object_fact（一条=一格）/ knowledge（不挂坐标的先验）/
 │                     episode_summary_io（蒸馏那次调用的请求+响应，不是记忆）
 │                     其余：Observation / Action / ActionSpace / TraceEvent / Completion
-├── interfaces/       **正在被逐步淘汰的过渡目录。** Protocol 定义（"港口"）曾经
-│                     统一收在这里；现在改成"协议physically 挨着它自己的实现"，
-│                     一个模块一个模块搬（`WorldPort`→`world/interface/`、
-│                     `TracePort`+`TraceKind`→`trace/interface/`、
-│                     `LLMProvider`/`VisionProvider`/`JudgeProvider`/
-│                     `EmbeddingProvider`/`RerankerProvider`+`ModelCall`→
-│                     `providers/interface/`、`BrainPort`+六个数据形状→
-│                     `brain/interface/`、`BrainToolPort`/`CheckpointToolPort`/
-│                     `GameToolPort`/`MemoryToolPort`/`TraceToolPort`→
-│                     `tools/ports.py` 已搬完，其余 HarnessPort/EpisodeHarnessPort/
-│                     HumanReviewer 等待搬），不再保留 re-export 薄壳——搬完的
-│                     消费方直接 `from pokemon_agent.world import WorldPort` /
-│                     `from pokemon_agent.trace import TracePort` /
-│                     `from pokemon_agent.providers import LLMProvider` /
-│                     `from pokemon_agent.brain import BrainPort` /
-│                     `from pokemon_agent.tools import BrainToolPort` 这样各自
-│                     认模块。搬完最后一个后这个目录整体删除，取舍见 CHANGELOG
-│                     对应条目
-├── brain/            纯决策层。无状态。只依赖 interfaces + schemas。`interface/`
+├── brain/            纯决策层。无状态。只依赖各模块自己的 interface/ + schemas。
+│                     `interface/`
 │                     是这个子系统自己的港口 + 数据 schema 出口：`brain_port.py`
 │                     （`BrainPort`）+ 六个数据形状（`ActionFromBrain`/
 │                     `EpisodeSummary`/`GoalForBrain`/`RunPlan`/
@@ -183,7 +171,22 @@ pokemon_agent/
 │                     `schemas/brain/communication/*.py` 里的协议字段又要从
 │                     这里拿回数据形状，两条依赖在初始化顺序上会正面相撞，
 │                     取舍见 `CHANGELOG.md` 对应条目
-├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方
+├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方。
+│                     `interface/`：这个子系统自己的两张港口（`harness_port.py` 的
+│                     `HarnessPort`+`RunState`/`ResumeEpisode`+三个常量
+│                     `MAX_GOAL_RETRIES`/`MAX_PLAN_PUSH`/`PLAN_MAX_ATTEMPTS`；
+│                     `episode_harness_port.py` 的 `EpisodeHarnessPort`+
+│                     `EpisodeRunState`；`human_reviewer.py` 的 `HumanReviewer`）+
+│                     数据形状（`domain/human_decision.py` 的 `HumanDecision`，
+│                     原来在 `schemas/harness/domain/`），跟"怎么跑图"的实现
+│                     （`run_harness.py`/`episode_harness.py` 等）物理分开。
+│                     `harness/__init__.py` 对 `HumanDecision` 是立即加载，对
+│                     其余全部（三个 Port + 状态模型 + 常量 + 全部实现类）都是
+│                     **懒加载**——原因跟 `brain/__init__.py` 对 `Brain`/`BrainPort`
+│                     的处理一样：这些文件都要 `import pokemon_agent.schemas.harness`，
+│                     而 `schemas/harness/communication/FromHarnessToReviewerReviewResp.py`
+│                     的字段又要从这里拿回 `HumanDecision`，两条依赖在初始化顺序上
+│                     会正面相撞，取舍见 `CHANGELOG.md` 对应条目
 ├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层。`world/interface/`
 │                     是这个子系统自己的港口 + 数据 schema 出口，跟"怎么读/怎么算"
 │                     的实现文件物理分开：
@@ -201,8 +204,10 @@ pokemon_agent/
 │                     `pyboy_world.py`/`ram.py`/`frame_slot.py` 这几个重实现文件
 │                     是**懒加载**（`__getattr__` 按需导入）——避免只要
 │                     `WorldPort`/`Facts` 类型定义的调用方被迫连带拖着 PyBoy 一起
-│                     import，也避免和 `pyboy_world.py` 反过来 `import interfaces`
-│                     形成真正的循环导入，取舍见 `CHANGELOG.md` 对应条目
+│                     import；`WorldPort` 本身在 `world/interface/` 与
+│                     `world/__init__.py` 两层都懒加载，避免它要
+│                     `import pokemon_agent.brain` 跟 `schemas.world` 反过来要
+│                     `Facts` 形成真正的循环导入，取舍见 `CHANGELOG.md` 对应条目
 ├── tools/            `ports.py`：五个对外契约（`BrainToolPort`/
 │                     `CheckpointToolPort`/`GameToolPort`/`MemoryToolPort`/
 │                     `TraceToolPort`，原来在顶层 `interfaces/tools/`）——扁平文件，

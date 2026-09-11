@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from pokemon_agent.brain import RunPlan, TaskForBrain
 from pokemon_agent.errors import PlanAttemptFailed
-from pokemon_agent.interfaces import PLAN_MAX_ATTEMPTS
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceReq,
     FromHarnessToTraceToolAppendReq,
@@ -28,6 +27,8 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.trace import EventType, Source
 from pokemon_agent.tools import BrainToolPort, TraceToolPort
 from pokemon_agent.trace import TraceKind
+
+from .interface import PLAN_MAX_ATTEMPTS
 
 RUN_TRACE_MASK = frozenset({EventType.LIFECYCLE, EventType.ERROR})
 """run 级 plan 读 trace 时的 type 粗 mask——只取流程边界 + 失败两种家族，

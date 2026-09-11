@@ -46,16 +46,6 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 from pokemon_agent.brain import TaskForBrain
 from pokemon_agent.errors import AgentError
-
-from pokemon_agent.interfaces import (
-    MAX_GOAL_RETRIES,
-    MAX_PLAN_PUSH,
-    PLAN_MAX_ATTEMPTS,
-    EpisodeHarnessPort,
-    HumanReviewer,
-    ResumeEpisode,
-    RunState,
-)
 from pokemon_agent.prompts import run_plan as run_plan_prompt
 from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
 from pokemon_agent.schemas.harness import (
@@ -67,7 +57,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolReadDiskEventsReq,
     FromRunHarnessToEpisodeHarnessRunReq,
     FromRunHarnessToEpisodeHarnessRunResp,
-    HumanDecision,
     RunResp,
 )
 from pokemon_agent.tools import BrainToolPort, CheckpointToolPort, TraceToolPort
@@ -75,6 +64,16 @@ from pokemon_agent.trace import TraceKind
 
 from . import run_plan_utils, run_utils
 from .auto_reviewer import AutoContinueReviewer
+from .interface import (
+    MAX_GOAL_RETRIES,
+    MAX_PLAN_PUSH,
+    PLAN_MAX_ATTEMPTS,
+    EpisodeHarnessPort,
+    HumanDecision,
+    HumanReviewer,
+    ResumeEpisode,
+    RunState,
+)
 from .run_data_center import RunDataCenter
 
 

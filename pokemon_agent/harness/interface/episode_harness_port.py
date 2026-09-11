@@ -29,6 +29,10 @@
 
 `EpisodeRunState` 是这一局在图上流转的全部可序列化状态，与接口同文件：
 它和节点签名互为契约——节点读它、写它的增量，`run()` 用它的最终形态结算。
+
+原来放在顶层 `pokemon_agent/interfaces/harness/`；跟着"协议物理挨着它自己的实现"这条原则搬到了这里，`pokemon_agent/interfaces/`
+这个集中注册表这次整个撤销，消费方直接
+`from pokemon_agent.harness import EpisodeHarnessPort, EpisodeRunState`。
 """
 
 from __future__ import annotations

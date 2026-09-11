@@ -31,6 +31,10 @@
 
 **三条通道**：① 显式调用（dispatch → episode.run）；② Trace（episode 写事件、
 run 按类型 mask 读——plan 的思考依据）；③ Memory（共享实例，跨 episode 连续性）。
+
+原来放在顶层 `pokemon_agent/interfaces/harness/`；跟着"协议物理挨着它自己的实现"这条原则搬到了这里，`pokemon_agent/interfaces/`
+这个集中注册表这次整个撤销，消费方直接
+`from pokemon_agent.harness import HarnessPort, RunState`。
 """
 
 from __future__ import annotations

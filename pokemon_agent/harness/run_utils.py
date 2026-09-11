@@ -13,9 +13,10 @@ run 层的存在。
 
 from __future__ import annotations
 
-from pokemon_agent.interfaces import MAX_GOAL_RETRIES, RunState
 from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
 from pokemon_agent.schemas.trace import TraceEvent
+
+from .interface import MAX_GOAL_RETRIES, RunState
 
 
 def episode_trace_events(events: list[TraceEvent], episode_id: str) -> list[TraceEvent]:
