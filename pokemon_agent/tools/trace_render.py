@@ -295,9 +295,9 @@ def observe(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
         {
             "kind": "frame",
             "status": obs.status,
-            "scene": obs.facts.get("scene", ""),
-            "overlay": obs.facts.get("overlay", ""),
-            "facts": json.dumps(obs.facts, ensure_ascii=False),
+            "scene": obs.facts.scene_value,
+            "overlay": obs.facts.overlay_value,
+            "facts": obs.facts.model_dump_json(),
             "goals": _render_goal_stack(goals),
         },
     )

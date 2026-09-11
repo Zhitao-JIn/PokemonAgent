@@ -1,18 +1,23 @@
-"""一帧画面被解析成的结构化状态（world 实现层的私有解析结构）。
+"""一帧画面被解析成的结构化状态——视觉模型输出的 schema。
 
-**这不是跨层领域实体**：`ScreenState` 只在感知实现内部活一瞬——
-视觉模型的文本输出在这里解析成结构化状态，随即拆成 `ObservationFromWorld` 的
-`status`/`facts` 标量，从不离开 world 层、从不进 schemas——全项目只有
-`pyboy_world.py` 一个文件认识它，所以放 world 层。
+原来定义在 `world/screen_state.py`（"实现文档"）里；它本身不依赖模拟器、不依赖
+`schemas.world`，只依赖同一个 `domain/` 包里的 `Facts`，纯粹是一份数据形状定义，
+挪到这里跟 `Facts` 放一起没有任何循环导入风险。
+
+它依然**不是跨层领域实体**：视觉模型的文本输出在这里解析成结构化状态，随即拆成
+`ObservationFromWorld` 的 `status`/`facts` 标量，从不离开 `world` 层、从不进
+顶层 `schemas/`——全项目只有 `pyboy_world.py` 一个文件认识它，所以它仍然放在
+`world/` 这一侧（只是从"实现文件"搬到了"这个子系统自己的 interface"），不是
+`pokemon_agent/schemas/`。
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from pokemon_agent.schemas.world import Overlay, Scene
+from .facts import Facts
 
-CURSOR_MARKS: frozenset[str] = frozenset("\u25b6\u25ba\u25b8\u27a4>")
+CURSOR_MARKS: frozenset[str] = frozenset("▶►▸➤>")
 """能当光标的那几个字符：`▶` `►` `▸` `➤` `>`。
 
 只收形状对的，不做模糊匹配——模型在不同帧里写过其中好几个，
@@ -20,7 +25,7 @@ CURSOR_MARKS: frozenset[str] = frozenset("\u25b6\u25ba\u25b8\u27a4>")
 否则选项本身以标点开头就会被误判成"被选中"。
 """
 
-NEEDS_OVERVIEW = (Scene.FIELD, Scene.INDOOR)
+NEEDS_OVERVIEW = (Facts.Scene.FIELD, Facts.Scene.INDOOR)
 """哪些场合必须给 `overview`。
 
 只有这两个：它们是**有布局可言**的画面，而 `overview` 的作用正是在挑细节之前
@@ -40,8 +45,8 @@ class ScreenState(BaseModel):
     分成多个子模型会让 key 的构造对 scene 分支，得不偿失。
     """
 
-    scene: Scene
-    overlay: Overlay
+    scene: Facts.Scene
+    overlay: Facts.Overlay
 
     overview: str = Field(
         default="",

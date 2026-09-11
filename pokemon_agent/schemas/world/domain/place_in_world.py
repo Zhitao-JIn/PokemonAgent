@@ -1,4 +1,10 @@
-"""地图上的格子（`PlaceInWorld`）与格子上的东西（`LandmarkInWorld`）。"""
+"""地图上的格子（`PlaceInWorld`）。**这是全项目唯一的"位置"表示。**
+
+`LandmarkInWorld`（格子上的东西）与它的 `KIND_*` 常量原来在这个文件，搬到了
+`world/interface/domain/facts.py`，变成 `Facts.Landmark`（内部类，`KIND_*`
+常量变成它的 `ClassVar`）——那是"世界事实"这个概念的一部分，跟 `PlaceInWorld`
+（放之四海皆准的坐标表示，`Facts` 之外也大量被引用）不是同一层次的东西。
+"""
 
 from __future__ import annotations
 
@@ -34,23 +40,3 @@ class PlaceInWorld(BaseModel):
         """渲染成进 prompt 的样子。"""
         """**全局坐标写成 `x= y=`，不用括号** —— 括号写法留给屏幕格。"""
         return f"全局坐标 地图{self.map_id} x={self.x} y={self.y}"
-
-
-class LandmarkInWorld(BaseModel):
-    """世界里格子上的一个东西：门 / 招牌 / 人。类型和位置都来自模拟器内存。
-
-    **没有名字。** 名字在总览画面里没有可观测的证据，只能靠走过去交互再记住——
-    那正是语义记忆（object）的活。
-    """
-
-    kind: str = Field(description="门 / 招牌 / 人")
-    place: PlaceInWorld
-
-    def render(self) -> str:
-        """渲染成 prompt 里那一行。"""
-        return f"{self.kind} x={self.place.x} y={self.place.y}"
-
-
-KIND_DOOR, KIND_SIGN, KIND_PERSON = "门", "招牌", "人"
-"""地标的三种类型。**下半部分那组 `DOOR/SIGN/PERSON` 是地图上的字符 `D/S/N`，
-不是这个**——两组名字撞过一次，症状是门的分支静默不生效。"""

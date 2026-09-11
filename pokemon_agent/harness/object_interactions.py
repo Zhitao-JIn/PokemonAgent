@@ -12,6 +12,17 @@ memory 层只存事件、不做语义判定（分层原则见 AGENTS.md 四）�
 加新 kind / 加新姿势 = `_POSTURES` 加一行（机制一要求的扩展点），不碰
 事件 schema、不碰 memory。
 
+**脚下这格不会被人物精灵挡住。** 门/招牌来自 warp/sign 表，人/物/石来自精灵表——
+精灵表遍历时 0 号槽位（玩家自己）被显式跳过（见 `world/ram.py::read_terrain`），
+不会覆盖别的精灵的坐标，所以脚下这格该是什么就读得出是什么。
+
+**判定只认 `before` 这一帧自己的 `landmarks`，不查 memory。** 候选格（脚下 + 四邻，
+或 facing 方向）都在屏幕可见范围内，RAM 读取又是精确的、不存在"认错"，所以
+`before.facts.landmarks` 本身就是这次判定需要的全部依据。查 memory 兜底曾经是这里的
+一个机制，但它的前提（"当帧可能因为遮挡读不到"）已经不成立——现在真要读不到，
+只可能是这一格本来就没有交互物，兜底带回来的是"以前有过、现在早就不在了"的
+过期信息，对本次判定没有意义，反而会让"这次按键碰到了什么"这个问题混进历史。
+
 **多段动作链一律不产出事件**：事件的键是「角色在哪格、按了哪个键」，而一条链的
 `before` / `after` 是整条链的两头——中间哪一次按键才是撞在门上的那次，这里看不到。
 把 `up×4 -> down×2` 记成"在起点按了一次 up"，写进去的是一条假事件；少记一条
@@ -22,7 +33,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pokemon_agent.interfaces import MemoryToolPort
 from pokemon_agent.schemas.brain import ActionFromBrain
 from pokemon_agent.schemas.memory import (
     ObjectDialogEvent,
@@ -34,12 +44,13 @@ from pokemon_agent.schemas.world import (
     BUTTON_FACING,
     FACING_STEP,
     INTERACT_KEY,
-    LandmarkInWorld,
     ObservationFromWorld,
     PlaceInWorld,
 )
 
-INTERACTIVE = ("人", "招牌", "门")
+INTERACTIVE = ("人", "招牌", "门", "物")
+"""不含"石"：巨石不弹对话、不会消失，这一版没有推动判定（见 `_POSTURES` 之前的说明），
+放进来也没有姿势函数会命中，纯粹多一次无意义的候选格查询。"""
 
 
 # ---- 候选格与 kind 判定的纯函数（原 memory/semantic/util.py 收编） ----
@@ -51,8 +62,8 @@ def surrounding_cells(place: PlaceInWorld) -> list[PlaceInWorld]:
     这是一次方向键按下去唯一可能影响到的范围——按键要么改变自己脚下这格
     的状态（踩在门上朝外按），要么作用在某个相邻格上（从旁边推）。
     叫 `surrounding_cells` 不叫 `ring`：这五格是"十"字形（含中心），
-    而中心（脚下）恰恰是最容易被漏掉的一格——人物精灵盖住它，
-    当帧 `landmarks` 报不出来。
+    中心（脚下）容易被漏掉不是因为读不到——门/物这类会触发"踩上去就变"
+    （warp / 拾取）的东西，恰恰是判定脚下这格才有意义。
     """
     return [place] + [
         PlaceInWorld(map_id=place.map_id, x=place.x + dx, y=place.y + dy)
@@ -60,38 +71,16 @@ def surrounding_cells(place: PlaceInWorld) -> list[PlaceInWorld]:
     ]
 
 
-def parse_landmarks(obs: ObservationFromWorld) -> list[LandmarkInWorld]:
-    """把 `obs.facts["landmarks"]` 那一行读回结构化的 `LandmarkInWorld` 列表。
-
-    只在这里解析一次，且解析的是我们自己渲染出去的格式（`门 x=13 y=5; 人 x=2 y=7`）。
-    """
-    if obs.place is None:
-        return []
-    out: list[LandmarkInWorld] = []
-    for item in obs.facts.get("landmarks", "").split("; "):
-        parts = item.split()
-        if len(parts) != 3 or not parts[1].startswith("x=") or not parts[2].startswith("y="):
-            continue
-        out.append(
-            LandmarkInWorld(
-                kind=parts[0],
-                place=PlaceInWorld(
-                    map_id=obs.place.map_id, x=int(parts[1][2:]), y=int(parts[2][2:])
-                ),
-            )
-        )
-    return out
-
-
 def kind_in_frame(
     obs: ObservationFromWorld, place: PlaceInWorld, interactive: tuple[str, ...]
 ) -> str | None:
-    """**只看当帧**：`place` 这一格在这一帧的 `landmarks` 里是什么。认不出来返回 `None`。
+    """`place` 这一格在这一帧的 `obs.facts.landmarks` 里是什么。认不出来返回 `None`。
 
-    这是 kind 判定的"当帧那一半"；另一半（档案兜底）看的是以前见过那里有什么，
-    两者的可信来源不同。
+    直接读 `Facts.landmarks`（结构化原件，见该字段文档）——不再有"渲染成文本再
+    解析回来"这一趟，也不再需要向 memory 查历史兜底：候选格都在屏幕可见范围内，
+    RAM 读取本身就是精确、当场的。
     """
-    for mark in parse_landmarks(obs):
+    for mark in obs.facts.landmarks:
         if mark.place.key == place.key and mark.kind in interactive:
             return mark.kind
     return None
@@ -115,7 +104,7 @@ class _Press:
 
 def _dialog_or_still(press: _Press, place: PlaceInWorld, kind: str) -> ObjectFactEvent:
     """a 键互动的两种结局：弹出对话记正文，什么都没有记 still。"""
-    text = press.after.facts.get("dialog_text", "")
+    text = press.after.facts.dialog_text
     common = {
         "episode_id": press.episode_id,
         "step": press.step,
@@ -153,6 +142,21 @@ def _door_walk_into(press: _Press, candidate: PlaceInWorld, kind: str) -> Object
     return _warp_or_still(press, candidate, kind)
 
 
+def _pickup_or_still(press: _Press, candidate: PlaceInWorld, kind: str) -> ObjectFactEvent | None:
+    """姿势：走上物品格——拾取脚本在踏入的同一拍触发，弹出「获得了 XXX」对话，
+    跟 a 键弹对话框是同一种结局判定（复用 `_dialog_or_still`），只是触发键
+    是方向键（走进去），不是 a——面朝物品按 a 在游戏里什么都不会发生。
+
+    前置条件：candidate 是 facing 邻格（跟 `_door_walk_into` 同一个姿势几何，
+    物品不会像门那样"站在格子上朝外按"，因为站上去的同一拍它已经被捡走了）。
+    """
+    if press.button == INTERACT_KEY:
+        return None
+    if candidate != press.actor_place.step_toward(press.facing):
+        return None
+    return _dialog_or_still(press, candidate, kind)
+
+
 def _door_stand_on_push(
     press: _Press, candidate: PlaceInWorld, kind: str
 ) -> ObjectFactEvent | None:
@@ -173,22 +177,8 @@ _POSTURES: dict[str, tuple] = {
     "门": (_door_walk_into, _door_stand_on_push, _interact_dialog),
     "人": (_interact_dialog,),
     "招牌": (_interact_dialog,),
+    "物": (_pickup_or_still,),
 }
-
-
-def _kind_at(
-    obs: ObservationFromWorld, place: PlaceInWorld, known: MemoryToolPort
-) -> str | None:
-    """看这一格上的东西是哪一类。当帧 landmarks 优先；当帧看不见（人物精灵
-    盖住脚下那格）时查已有事件兜底——以前见过那里有什么，同样算数。
-    """
-    kind = kind_in_frame(obs, place, INTERACTIVE)
-    if kind is not None:
-        return kind
-    events = known.query(place)
-    if events and events[-1].kind in INTERACTIVE:
-        return events[-1].kind
-    return None
 
 
 # ---- 入口 ----
@@ -200,7 +190,6 @@ def object_fact_events(
     after: ObservationFromWorld,
     episode_id: str,
     step: int,
-    known: MemoryToolPort,
 ) -> list[ObjectFactEvent]:
     """判定这次按键碰到了哪些物体、各发生了什么，产出待追加的交互事件。
 
@@ -218,7 +207,7 @@ def object_fact_events(
         return []
     segment = segments[0]
 
-    facing = BUTTON_FACING.get(segment.name, before.facts.get("facing", ""))
+    facing = BUTTON_FACING.get(segment.name, before.facts.facing)
     if not facing:
         return []
     press = _Press(
@@ -237,19 +226,19 @@ def object_fact_events(
     if segment.name == INTERACT_KEY:
         ahead = before.place.step_toward(facing)
         candidates = [ahead]
-        if _kind_at(before, ahead, known) is None:
+        if kind_in_frame(before, ahead, INTERACTIVE) is None:
             candidates.append(ahead.step_toward(facing))
     else:
         if segment.times != 1:
             return []
-        if before.facts.get("facing", "") != facing:
+        if before.facts.facing != facing:
             return []
         candidates = surrounding_cells(before.place)
 
     # 步骤 3：按 kind 查姿势函数，命中的产出事件。
     events: list[ObjectFactEvent] = []
     for candidate in candidates:
-        kind = _kind_at(before, candidate, known)
+        kind = kind_in_frame(before, candidate, INTERACTIVE)
         if kind is None:
             continue
         for posture in _POSTURES.get(kind, ()):

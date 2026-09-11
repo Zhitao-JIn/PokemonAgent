@@ -31,13 +31,8 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolSaveStateReq,
     FromHarnessToGameToolSetTaskReq,
 )
-from pokemon_agent.schemas.world import (
-    INTERACT_KEY,
-    OVERLAY_ACTIONS,
-    ActionSpaceForBrain,
-    ObservationFromWorld,
-    Overlay,
-)
+from pokemon_agent.schemas.world import INTERACT_KEY, ActionSpaceForBrain, ObservationFromWorld
+from pokemon_agent.world.interface import OVERLAY_ACTIONS, Facts
 
 # `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT` 的组装逻辑全在
 # `pokemon_agent/prompts/decide_action.py`（decide_action.md 一个模板的
@@ -54,7 +49,10 @@ def _mask(obs: ObservationFromWorld, all_actions: list[str]) -> ActionSpaceForBr
     两个方法各自对外的语义不同（一个交出动作空间、一个校验并执行），
     让后者内部调前者只会多绕一层，读代码的人还要多想一步谁依赖谁。
     """
-    overlay = Overlay(obs.facts.get("overlay", Overlay.NONE.value))
+    # 直接拿结构化的 `facts.overlay`——不再是"文本塞回枚举"的反解，
+    # `obs.facts` 本来就是 `Facts` 模型，`overlay` 该是 `Facts.Overlay` 就是
+    # `Facts.Overlay`，缺失时才退回 `NONE`。
+    overlay = obs.facts.overlay or Facts.Overlay.NONE
     names = [a for a in OVERLAY_ACTIONS[overlay] if a in all_actions]
 
     assert names, f"action space must never be empty (overlay={overlay})"

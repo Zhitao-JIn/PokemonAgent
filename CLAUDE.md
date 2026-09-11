@@ -152,11 +152,33 @@ pokemon_agent/
 │                     object_fact（一条=一格）/ knowledge（不挂坐标的先验）/
 │                     episode_summary_io（蒸馏那次调用的请求+响应，不是记忆）
 │                     其余：Observation / Action / ActionSpace / TraceEvent / Completion
-├── interfaces/       Protocol 定义（"港口"）：WorldPort / GameToolPort / MemoryToolPort /
-│                     BrainPort / TracePort / LLMProvider / VisionProvider 等
+├── interfaces/       Protocol 定义（"港口"）的统一出口：GameToolPort / MemoryToolPort /
+│                     BrainPort / TracePort / LLMProvider / VisionProvider 等直接
+│                     定义在这里。**`WorldPort` 是唯一的例外**——物理文件搬到了
+│                     `world/interface/`（见下），这里只 re-export，
+│                     `from pokemon_agent.interfaces import WorldPort` 照常能用，
+│                     依赖方向不变
 ├── brain/            纯决策层。无状态。只依赖 interfaces + schemas
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方
-├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层
+├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层。`world/interface/`
+│                     是这个子系统自己的港口 + 数据 schema 出口，跟"怎么读/怎么算"
+│                     的实现文件物理分开：
+│                     - `world/interface/`：协议——`world_port.py`（`WorldPort`）+
+│                       `memory.py`（`Memory`，只要求"能按地址取字节"）；数据——
+│                       `domain/facts.py`（`Facts`，`Scene`/`Overlay`/`Landmark`
+│                       是它的**内部类**）、`domain/screen_state.py`
+│                       （`ScreenState`，视觉模型输出的 schema）、
+│                       `domain/terrain_map.py`（`TerrainMapFromRam`，`read_terrain`
+│                       的产出 schema）
+│                     - `pyboy_world.py` / `ram.py` / `frame_slot.py`：三份"怎么
+│                       读/怎么算"的实现，各自 `from .interface import ...` 拿协议
+│                       和数据形状来用，不重复定义
+│                     `world/__init__.py` 对 `interface/` 是立即加载，对
+│                     `pyboy_world.py`/`ram.py`/`frame_slot.py` 这几个重实现文件
+│                     是**懒加载**（`__getattr__` 按需导入）——避免只要
+│                     `WorldPort`/`Facts` 类型定义的调用方被迫连带拖着 PyBoy 一起
+│                     import，也避免和 `pyboy_world.py` 反过来 `import interfaces`
+│                     形成真正的循环导入，取舍见 `CHANGELOG.md` 对应条目
 ├── tools/            GameTools / MemoryTool：Harness 伸向环境和记忆的两只手
 ├── memory/           记忆子系统整块：ports.py 对外契约（MemoryStorePort）+ store.py
 │                     统一记录存储（MemoryStore：一个 kind 一个文件夹 step_memory /

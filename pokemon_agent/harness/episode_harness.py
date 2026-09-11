@@ -973,8 +973,8 @@ class EpisodeHarness:
                 kind=TraceKind.LOOK_AFTER,
                 episode_id=ep,
                 step=before.step,
-                scene=obs.facts.get("scene", ""),
-                overlay=obs.facts.get("overlay", ""),
+                scene=obs.facts.scene_value,
+                overlay=obs.facts.overlay_value,
                 status=obs.status,
                 done=obs.done,
             )
@@ -1086,7 +1086,7 @@ class EpisodeHarness:
         )
 
         # 步骤 1：判定（kind 方法表）+ 落库，逐事件记 OBJECT_NOTE。
-        events = object_fact_events(before, action, after, ep, before.step, self._memory)
+        events = object_fact_events(before, action, after, ep, before.step)
         if events:
             # 盖 run_id 章（落盘签名三元组之一），同 store_step 的 episode_id 盖章。
             self._memory.append_object_events(

@@ -11,7 +11,7 @@
 调用方（harness 判定层）保证：
 
 - 同一 `episode_id` 的事件 `step` 单调不减（恢复时先截断，见 ROADMAP 16）；
-- `kind` 是能建档的交互类别（门/人/招牌…），`place` 是**物体格**——
+- `kind` 是能建档的交互类别（门/人/招牌/物/石…），`place` 是**物体格**——
   不是角色站的格子，角色位置在 `actor_place`。
 
 事件一旦落库不可变：修正只能靠新事件（同姿势后写覆盖先读）或恢复时的截断。
@@ -43,7 +43,7 @@ class ObjectFactEventBase(BaseModel):
     )
     actor_place: PlaceInWorld = Field(description="按键那一刻角色所在的格")
     place: PlaceInWorld = Field(description="被影响的物体格")
-    kind: str = Field(description="物体类别（门/人/招牌…）；建档与渲染抬头用")
+    kind: str = Field(description="物体类别（门/人/招牌/物/石…）；建档与渲染抬头用")
     button: str = Field(
         description="按了哪个键（a/up/down/left/right）；不设值域，把关在姿势方法表"
     )

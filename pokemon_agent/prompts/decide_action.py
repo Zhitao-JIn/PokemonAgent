@@ -26,17 +26,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pokemon_agent.schemas.brain import MAX_RATIONALE, ChooseOnceReq, GoalForBrain
-from pokemon_agent.schemas.world import Overlay, terrain_legend
+from pokemon_agent.schemas.world import terrain_legend
+from pokemon_agent.world.interface import Facts
 
 from . import load, load_nested_sections
 
 # ---- 按 overlay 分流的按键说明（给 game_tools.py 构造动作空间用）----
 
 _BUTTON_SECTIONS = load_nested_sections("button_help")
-BUTTON_HELP: dict[Overlay, dict[str, str]] = {
-    Overlay.NONE: _BUTTON_SECTIONS["none"],
-    Overlay.DIALOG: _BUTTON_SECTIONS["dialog"],
-    Overlay.CHOICE: _BUTTON_SECTIONS["choice"],
+BUTTON_HELP: dict[Facts.Overlay, dict[str, str]] = {
+    Facts.Overlay.NONE: _BUTTON_SECTIONS["none"],
+    Facts.Overlay.DIALOG: _BUTTON_SECTIONS["dialog"],
+    Facts.Overlay.CHOICE: _BUTTON_SECTIONS["choice"],
 }
 """同一个键在不同 overlay 下含义不同，说明也得跟着变（内容见
 `calls/decide_action/button_help.md`）。
@@ -44,8 +45,8 @@ BUTTON_HELP: dict[Overlay, dict[str, str]] = {
 `a` 在野外是「互动」、在对话框里是「推进」、在选择框里是「确认」——
 给大脑一份放之四海的说明，等于让它自己去猜当前语境。
 
-`Overlay` 的三个成员和 `button_help.md` 的三个 `##` 段一一对应，这里只是把
-markdown 的分段结果搬进 `dict[Overlay, ...]` 这个类型化的形状。
+`Facts.Overlay` 的三个成员和 `button_help.md` 的三个 `##` 段一一对应，这里只是把
+markdown 的分段结果搬进 `dict[Facts.Overlay, ...]` 这个类型化的形状。
 """
 
 

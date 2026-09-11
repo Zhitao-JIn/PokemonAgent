@@ -128,7 +128,7 @@ class StepMemory(BaseModel):
         而 judge（3 条历史）/ 审计（整局 8 条）都要渲染它，输入就是这么膨胀的。
         「四邻」（北 G 南 G 西 G 东 G）已给出各方向可通行性，撞墙判断够用，
         不需要整张图。"""
-        facts = {k: v for k, v in obs.facts.items() if k != "walk_map"}
+        facts = obs.facts.model_copy(update={"walk_map": ""})
         return obs.model_copy(update={"facts": facts}).render()
 
     @staticmethod

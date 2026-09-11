@@ -1,3 +1,317 @@
+## 2026-09-11（6）—— world/ 实现文件里的 Protocol/schema 挪进 world/interface
+
+**改了什么**：
+1. 上一条（条目 5）建了 `world/interface/` 放 `WorldPort` + `Facts`，但
+   `world/` 根目录那几个原有实现文件（`ram.py`/`screen_state.py`）里还各自
+   混着一份"协议或数据形状"的定义。这次把它们摘出来，搬进 `world/interface/`：
+   - `ram.py` 里的 `Memory(Protocol)` → `world/interface/memory.py`（零依赖，
+     纯 `typing.Protocol`，挪动零风险）
+   - `ram.py` 里的 `TerrainMapFromRam(BaseModel)`（`read_terrain` 的产出结构）
+     → `world/interface/domain/terrain_map.py`
+   - `world/screen_state.py` 整个文件（`ScreenState` + `CURSOR_MARKS` +
+     `NEEDS_OVERVIEW`）→ `world/interface/domain/screen_state.py`；原文件
+     内容搬空后直接删除（`git rm`，历史仍能通过 rename 检测追到）
+2. `ram.py` 现在只留"怎么读"——`read_terrain`/`read_passable`/`read_facing` 等
+   函数照旧，改成 `from .interface import Facts, Memory, TerrainMapFromRam`
+   把协议和产出结构拿过来用；`pyboy_world.py` 相应把
+   `from .screen_state import ScreenState` 合并进
+   `from .interface import OVERLAY_ACTIONS, Facts, ScreenState`。
+3. `world/interface/__init__.py`、`domain/__init__.py` 的统一出口加上
+   `Memory`/`ScreenState`/`TerrainMapFromRam`；`world/__init__.py` 的 `_LAZY`
+   表去掉这三个（不再需要懒加载——它们现在跟着 `interface/` 一起立即加载），
+   只保留 `WorldPort`/`FrameSlot`/`PyBoyWorld`/`parse_screen`/`read_*` 这几个
+   真正拖着重依赖或只做"怎么算"的名字。
+4. `CLAUDE.md` 的 `world/` 目录说明重写为"协议+数据在 interface/，怎么读/怎么算
+   在实现文件"，不再提 `impl/` 子包。
+
+**为什么这么改**：上一条改动只处理了 `WorldPort`/`Facts` 这两个"看得见"的协议
+和数据，但用户指出实现文件里还各自私藏着一份没挪的协议/schema——这次改动之前
+我曾误把用户"把原有文件也整理一下"的要求理解成"建一个 `world/impl/` 子包包住
+这四个实现文件"，被用户纠正：**不是要建 impl 目录，而是要把实现文件里"长得像
+协议/schema"的定义摘出来放进 interface**。这次改动就是照这个更正过的理解做的：
+`world/` 根目录下不引入任何新的物理分层子包，`pyboy_world.py`/`ram.py`/
+`frame_slot.py` 仍然平铺在 `world/` 下，只是它们内部原来夹带的类型定义搬了家。
+
+**取舍**：
+- `Memory` 放在 `interface/` 顶层（跟 `world_port.py` 平级），不进 `domain/`：
+  `domain/` 是数据形状，`Memory` 是行为契约（Protocol），跟顶层
+  `pokemon_agent/interfaces/` 里"协议"和 `schemas/` 里"数据"的分工是同一套
+  道理，只是这个 Protocol 太小、太内部，不值得挂到顶层 `interfaces/` 去。
+- `TerrainMapFromRam` 搬到 `interface/domain/` 之后，重新踩了一遍
+  `Facts.Landmark.place` 当初踩过的坑：`world/interface/` 是立即加载的包，
+  而 `TerrainMapFromRam.place()`/`.landmarks()`/`.render()`/`_check_shape()`
+  原来在模块顶层就 `import pokemon_agent.schemas.world` 拿 `PlaceInWorld` 和
+  几个地形字符常量——这条依赖反过来会经 `schemas/world/__init__.py` →
+  `observation_from_world.py` 绕回来要 `world.interface.Facts`，在某些包
+  初始化顺序下（`world`/`world.interface` 先于 `schemas.world` 被导入）会炸出
+  `ImportError: cannot import name 'Facts' from partially initialized module`。
+  修法和 `Facts.Landmark.place` 一样：这些依赖全部挪进各自方法体内部现导，
+  模块顶层只留同一个 `domain/` 包里零依赖的 `Facts`；`cells` 字段的 Field
+  说明里那句 `f"... 取自 {sorted(MAP_CHARS)}"` 没法惰性化（Field 的 description
+  是类定义时就要算出来的字符串），改成写死的行列数（10×9，游戏屏幕的固定
+  常量，不会变）+ 一句指向 `schemas.world.domain.screen_model.MAP_CHARS` 的
+  说明，不再在类体里直接引用这个名字。
+- 没有把 `ram.py`/`pyboy_world.py`/`frame_slot.py` 归进任何新子包（比如
+  `impl/`）——这是这次改动明确要撤销的部分：用户要的是"摘出协议/schema"，
+  不是"给实现文件加一层物理包装"，`world/` 根目录下这三个实现文件维持原来的
+  扁平结构。
+- 用 `python3.10`（配合 `/tmp/stubs/pydantic` 最小 stub，本机没有可用的
+  pydantic/Python 3.11+ 环境）重新跑了四向循环导入验证（`schemas.world` 先导 /
+  `world` 先导 / `world.interface` 先导 / `interfaces` 先导），每个分支里都
+  直接构造了 `ScreenState`、`TerrainMapFromRam`（并调用它的
+  `place()`/`neighbors()`/`render()`/`render_neighbors()`/`landmarks()` 全部
+  五个方法）、访问了 `Memory`，确认这次搬动没有引入新的循环导入——四个分支
+  全部通过。
+
+**影响面**：只有 `pokemon_agent/world/` 包内部：`ram.py` 少了两个类定义、
+`screen_state.py` 整个文件消失、`interface/` 下新增 `memory.py` +
+`domain/terrain_map.py` + `domain/screen_state.py`，以及几处 `__init__.py`
+出口表和 `world/__init__.py` 的 `_LAZY` 表。包外任何调用方都只通过
+`from pokemon_agent.world import X` 这个统一出口引用这些名字，本次改动零影响。
+`docs/spec/*.md` 里如果还提到 `pokemon_agent/world/ram.py` 里定义
+`TerrainMapFromRam`/`Memory` 这种旧说法，按既定约定（代码与文档冲突时以代码
+为准）不逐一改。
+
+## 2026-09-11（5）—— facts 变成真正的 Facts 模型；WorldPort 搬到 world/interface/
+
+**改了什么**：
+1. 新增 `pokemon_agent/world/interface/`：`world_port.py`（`WorldPort` 协议，原
+   `pokemon_agent/interfaces/world/world_port.py` 整体搬过来）+
+   `domain/facts.py`（新的 `Facts` 模型）。`pokemon_agent/interfaces/__init__.py`
+   继续 `from pokemon_agent.world.interface import WorldPort` 原样 re-export，
+   消费方写法不变。
+2. `ObservationFromWorld.facts` 从 `dict[str, str]` 改成 `Facts`——一个真正的
+   Pydantic 模型，`scene`/`overlay`/`landmarks`/`where`/`facing`/… 是具名字段，
+   类型该是什么就是什么（`Facts.Scene`/`Facts.Overlay`/`Facts.Landmark` 都是
+   `Facts` 的**内部类**）；`Facts` 用 `extra="allow"` 接住视觉模型按 scene 自由给
+   的动态字段（`my_hp`/`foe_level`/…），不用为每个 scene 都开一个具名字段。
+   上一版临时加的 `ObservationFromWorld.landmarks`（结构化字段）和
+   `facts["landmarks"]`（同一份东西的文本渲染）两份并存的写法**删掉**——现在只有
+   `facts.landmarks: list[Facts.Landmark]` 一份，`render()`/`items()` 才把它转成
+   文本，且只在真的要喂给大脑读、或者拼检索 query 的那一刻转换。
+   `screen_model.py`/`place_in_world.py` 里的 `Scene`/`Overlay`/`OVERLAY_ACTIONS`/
+   `LandmarkInWorld`/`KIND_*` 全部删掉，`schemas/world/__init__.py` 相应收窄
+   `__all__`。跟着改了全部消费方：`pyboy_world.py`（`Facts(...)` 直接构造，不再
+   分两步拼 dict 再塞）、`ram.py`（`landmarks()` 产出 `Facts.Landmark`）、
+   `game_tools.py`（`_mask()` 直接读 `facts.overlay`，不再 `Overlay(obs.facts.get(...))`
+   反解文本）、`decide_action.py`（`BUTTON_HELP` 键类型改成 `Facts.Overlay`）、
+   `object_interactions.py`（`kind_in_frame()` 读 `obs.facts.landmarks`）、
+   `step_memory.py`/`memory_query_utils.py`/`trace_render.py`/`episode_harness.py`
+   （改用 `Facts.scene_value`/`overlay_value`/`model_dump_json()`，不再手写
+   `.get("scene", "")` 这类裸字典访问）、`brain.py`（`_blind()` 改用
+   `Facts.exclude()` 直接摘掉 `SNAPSHOT_BLIND` 里的动态字段，不再靠 dict 推导式）。
+3. `Facts.Landmark` 不直接嵌 `PlaceInWorld`，改存 `map_id`/`x`/`y` 三个原始字段 +
+   一个惰性 `.place` 属性（运行时才 `import PlaceInWorld`）。
+4. `pokemon_agent/world/__init__.py` 改成局部懒加载：`interface/`（`Facts`/
+   `OVERLAY_ACTIONS`/`WorldPort`）立即可用，`PyBoyWorld`/`ScreenState`/
+   `TerrainMapFromRam`/… 等重实现改成 `__getattr__` 按需导入；
+   `world/interface/__init__.py` 同理只让 `WorldPort` 懒加载，`Facts` 立即加载。
+5. CLAUDE.md 目录结构一节同步更新 `interfaces/`/`world/` 两条描述。
+
+**为什么这么改**：
+- 用户明确要求 facts 别再绕"结构化 → 渲染成文本 → 再反解回结构化"这条弯路，也不要
+  再靠"加一个平行的结构化字段"这种局部补丁（上一条改动就是这种局部补丁），而是让
+  `facts` 本身就是结构化的——但也明确不要一个"什么都要素声明齐全"的重型模型，
+  "爱存啥存啥，保证不需要来回转换就行"，所以选了"具名字段 + `extra="allow"`
+  接动态字段"这个折中，而不是纯 `dict[str, Any]`（那样 `model_dump()`/
+  `model_dump_json()` 不会自动递归处理 `Any` 类型字段里的嵌套模型/枚举，判定层/
+  持久化都得自己再补一层转换逻辑，回到了"来回转换"）。
+- 用户进一步要求把 `WorldPort` 从顶层 `interfaces/` 挪到 `world/interface/`、
+  `Facts` 放 `world/interface/domain/` 下——协议和协议吐出来的数据形状本来是
+  同一件事的两个角度，没道理分居两个目录；顶层 `interfaces/` 继续 re-export，
+  是为了不破坏"brain → interfaces ← harness"这条依赖方向锚点。
+- **懒加载不是可选的优化，是绕不开的正确性问题**：`WorldPort` 需要
+  `schemas.brain`（`ActionFromBrain`/`TaskForBrain`），而 `schemas.brain` 的
+  `ChooseOnceReq`/`ReflectReq` 又需要 `schemas.world` 的 `ObservationFromWorld`；
+  `ObservationFromWorld.facts: Facts` 又需要从 `world.interface` 拿 `Facts`。
+  这是一个真实存在于包之间的双向依赖，只要 `world/__init__.py`/
+  `world/interface/__init__.py` 在包初始化时**立即**导入 `WorldPort`/
+  `PyBoyWorld`，不管先动哪一边，另一边在反向回指时都会撞上"我还没初始化完"，
+  炸成 `ImportError: cannot import name ... from partially initialized module`
+  ——这不是理论推演，是实测出来的（用一个不依赖真 pydantic 的最小 stub 包重放了
+  三种触发顺序，改之前全部复现，改之后全部通过，见下）。
+  `Facts.Landmark` 不直接嵌 `PlaceInWorld` 也是同一个理由的延伸：`Facts.Landmark`
+  作为 Pydantic 模型，字段类型在类定义那一刻就要能解析，没法"引用一个还没导入的
+  类型、等以后再补"；改成惰性 `.place` 属性之后，`world/interface/domain/facts.py`
+  在模块顶层彻底不碰 `schemas.world`，这条依赖方向上的循环就没有成立的条件了，
+  不用再靠"谁先导入谁"这种脆弱的顺序技巧。
+
+**取舍**：
+- `Facts` 不是严格 schema——`extra="allow"` 意味着"每个 scene 具体给了哪些字段"
+  这件事仍然只活在 `perceive_screen.md` 的 prompt 约定里、不进类型系统；这是
+  用户明确要的折中（"爱存啥存啥"），换来的是新增一种 scene 字段时不用碰这个模型。
+- 验证环境里真 pydantic 装不上（无网络出口，`.venv` 也是坏的，见此前多条
+  CHANGELOG），这次用一个几十行的最小 stub 包替代 pydantic 跑了完整的
+  三向导入顺序回归（`world` 先、`world.interface` 先、`interfaces` 先）+
+  `Facts` 方法（`render`/`items`/`stall_key_part`/`exclude`/`Landmark.place`）
+  的行为验证，没有跑真正的 Pydantic 校验/序列化路径（比如 `model_dump_json()`
+  对嵌套模型的真实递归行为）——这部分只能等能装真依赖的环境里跑一次集成测试
+  兜底，本地改动范围内不引入新的裸 dict，风险应该是可控的。
+- `docs/spec/*.md` 仍未同步（继续沿用"代码与文档冲突时以代码为准"）。
+
+**影响面**：`ObservationFromWorld.facts` 的类型变了（`dict[str, str]` →
+`Facts`），触达 `pyboy_world.py`/`ram.py`/`game_tools.py`/`decide_action.py`/
+`object_interactions.py`/`step_memory.py`/`memory_query_utils.py`/
+`trace_render.py`/`episode_harness.py`/`brain.py`/`screen_state.py`；
+`WorldPort` 的物理文件位置变了（顶层 `interfaces/world/` → `world/interface/`），
+`from pokemon_agent.interfaces import WorldPort` 这条对外契约不变。
+`Scene`/`Overlay`/`OVERLAY_ACTIONS`/`LandmarkInWorld`/`KIND_*` 不再能从
+`pokemon_agent.schemas.world` 导入，改从 `pokemon_agent.world.interface` 导入
+（`Facts.Scene`/`Facts.Overlay`/`OVERLAY_ACTIONS`/`Facts.Landmark`/
+`Facts.Landmark.KIND_*`）。
+
+## 2026-09-11（4）—— object 判定去掉 memory 兜底，landmarks 从 obs 结构化字段直读
+
+**改了什么**：`ObservationFromWorld` 新增 `landmarks: list[LandmarkInWorld]` 字段
+（`schemas/world/domain/observation_from_world.py`），跟 `facts["landmarks"]` 出自
+`pyboy_world.py::perceive_once()` 里同一次 `terrain.landmarks()` 调用——前者是结构化
+原件，后者是渲染给大脑读的文本，只算一次、两份消费方各拿各的形状。
+`harness/object_interactions.py::kind_in_frame()` 改成直接读 `obs.landmarks`，删掉了
+`parse_landmarks()`（原来"把自己渲染出去的文本再解析回来"那个函数）。`_kind_at()`
+里"当帧读不到就查 `known.query(place)` 兜底"这段也删掉了，`kind_in_frame()` 现在就是
+`_kind_at()` 的全部逻辑，两个函数合成一个；`object_fact_events()` 签名去掉了
+`known: MemoryToolPort` 参数，`episode_harness.py` 调用点跟着去掉最后一个实参。
+顺带把 `tools/memory_tool.py` 里那个只为这条兜底而存在、且从没进过 `MemoryToolPort`
+接口声明的孤儿方法 `query(place)` 删掉了（它的 docstring 自称是"`SemanticObjectReader`
+端口的同名方法"，但仓库里根本没有这个 Protocol——类型标注写的是 `MemoryToolPort`，
+调用的却是这个接口没声明的方法，只是因为 Python 不在调用时校验 Protocol 才没报错）。
+
+**为什么这么改**：两条各自独立、但互相印证的理由。第一，候选格（脚下 + 四邻，或
+facing 方向 1~2 格）永远在屏幕可见范围内，RAM 读取本身又是精确的，`before` 这一帧
+自己的 `landmarks` 就是这次判定需要的全部依据——查 memory 兜底的原始动机（"当帧可能
+因为遮挡读不到"）在上一条改动里已经证伪，继续留着这条兜底，一旦真的命中，带回来的
+只会是"以前有过、现在早就不在了"的过期信息（最典型就是"物"被拾取之后），对本次判定
+没有意义，只会把"这次按键碰到了什么"这个问题混进历史。第二，`facts: dict[str, str]`
+这个类型本身是对的——它的用途是给 `render()`/prompt 渲染统一按字符串对齐，不该为了
+一个字段改成异构类型；但 `landmarks` 同时还有另一个消费方（判定层）需要结构化数据，
+硬塞进 `facts` 文本、再在判定层里用 `.split("; ")` 手写一个反解析器，等于给同一份数据
+维护了两份实现，只靠注释保证格式一致——这正是项目在别处（`TERRAIN_MEANING`
+两边共用一份 dict）反复强调要避免的"分头实现容易漂移"。让 `ObservationFromWorld`
+把结构化原件也带出来，判定层直接读，两个问题一起解决。
+
+**取舍**：`landmarks` 字段进了 `ObservationFromWorld.model_dump()`，会跟着 OBSERVE
+trace 事件、`StepMemory` 落盘，内容跟 `facts["landmarks"]` 文本基本重复，多付一点
+存储体积——比起维护两份格式契约、且其中一份只在读不到时才会暴露不一致，这笔存储
+成本换来的正确性和可读性划算。`MemoryToolPort` 接口本身声明的 `query_object_events_at`
+这次没有动——它是正式声明在 Protocol 里的方法，跟被删掉的孤儿方法 `query()` 不是
+一回事，虽然现在也没有调用方，但不是这次改动要收拾的对象，留给下次真正用到或
+确认要删的时候再处理。
+
+**影响面**：`pokemon_agent/schemas/world/domain/observation_from_world.py`、
+`pokemon_agent/world/pyboy_world.py`、`pokemon_agent/world/ram.py`（删掉了现在没有
+调用方的 `render_landmarks()`）、`pokemon_agent/harness/object_interactions.py`、
+`pokemon_agent/harness/episode_harness.py`（调用点少一个实参）、
+`pokemon_agent/tools/memory_tool.py`（删孤儿方法 + 删掉因此不再用到的 `PlaceInWorld`
+导入）。`ObjectFactEvent`/`MemoryToolPort` 的 Protocol 声明本身没有改动，接口边界
+没有反向依赖变化。本仓库目前没有 `tests/` 覆盖这几个模块，这次也没有新增测试。
+
+## 2026-09-11（3）—— landmark 补"物"/"石"两类 kind，纠正"脚下被精灵挡住"的错误归因
+
+**改了什么**：`world/ram.py` 精灵表遍历新增 `_sprite_kind()`/`_STILL_SPRITE_KIND`——
+按图片 id（`+0` 字节）把精灵分派成 `人`/`物`/`石` 三类而不是一律当"人"，分界值
+（`FIRST_STILL_SPRITE = 0x3D`）与具体 id（宝可梦球 0x3D、化石 0x3E、巨石 0x3F、
+卡比兽 0x43、化石翼龙 0x45、睡着的杂鱼 0x48……）来自 pokered 反汇编的
+`SPRITE_CONSTANTS`（https://github.com/pret/pokered/blob/master/constants/sprite_constants.asm），
+不是猜的。`schemas/world` 新增地图符号 `ITEM`/`BOULDER`（`I`/`B`）与地标类型
+`KIND_ITEM`/`KIND_BOULDER`（"物"/"石"），`landmarks()` 的 kind 映射表从三项扩到五项。
+`harness/object_interactions.py` 的 `INTERACTIVE` 加入"物"，新增姿势
+`_pickup_or_still`（复用 `_dialog_or_still` 的"弹对话记正文/没弹记 still"判定，
+只是触发键是方向键"走进去"而不是 a）并挂进 `_POSTURES["物"]`；"石"暂不挂姿势
+（不弹对话、不消失，这版没有推动判定）。顺带把 `object_interactions.py` 模块
+docstring 与 `surrounding_cells()`/`_kind_at()` 里"脚下这格容易被人物精灵盖住，
+当帧读不出来"这句改成准确的说法——同步更新了 `decide_action/map_hint.md`、
+`perceive_screen.md`、`schemas/memory/datastore/object_memory.py` 里跟着提到
+"门/招牌/人"三类的措辞。
+
+**为什么这么改**：查证后发现"人物精灵盖住脚下格"这个归因是错的——精灵表遍历时
+0 号槽位（玩家自己）本来就被跳过（`for i in range(1, 16)`），不会覆盖别的精灵的
+坐标，门/招牌更是直接从 warp/sign 表按坐标写入，跟玩家站哪无关。真正会让脚下这格
+"当帧读不到"的是拾取脚本本身：踏上物品格的同一拍游戏就清空了它的精灵槽，这不是
+"挡住"，是那一帧它已经不在了——`_kind_at()` 的兜底（查 `known.query()`）本来就是
+为这种情况准备的，只是原来的注释把原因归错了地方。而更上游的问题是：物品（宝可梦球/
+化石这类）压根不在旧的 `INTERACTIVE = ("人", "招牌", "门")` 里，根本没有 kind 可归——
+不是"识别但被挡住"，是"从来没被识别过"。把这两件事分开之后，"脚下的物品难以统计"
+就有了具体的修法：先把 kind 表按 pokered 的精灵常量补全，"当帧读不到"才归位成
+"兜底查历史"这一条已有机制该接住的情况，不用再造一条新的容错。
+
+**取舍**：`SPRITE_PAPER`/`SPRITE_POKEDEX`/`SPRITE_CLIPBOARD`（0x40/0x41/0x42）三个
+先按"物"记但标了不确定——它们各自绑在某张地图的具体剧情脚本上（图鉴只在大木研究所
+开局出现一次，写字板只在撒法瑞乐园入口），反汇编里没查到"走上去/按 A 之后是消失还是
+留着"这类脚本细节，真遇到那一格再按实测校正（跟当年定 `SUB_TILE` 的方法一样）。"石"
+（巨石）只做识别、不做推动判定——怪力谜题不是这个阶段的目标，加入 `INTERACTIVE` 但
+不挂姿势，多一次候选格查询但没有下游副作用，等真正要做推动机制时再补，比现在猜一套
+用不上的规则更划算。`docs/spec/` 下引用"门/招牌/人"三类的历史叙述性文档（`brain/SPEC.md`
+`prompts/SPEC.md`  `schemas/SPEC.md` `world/SPEC.md` 等）这次没有跟着改——那些是设计过程的
+叙事记录，不是运行时会读到的东西，代码与文档冲突时以代码为准（CLAUDE.md 开篇），
+留到下次系统性过一遍 docs/spec 时再一并处理，不为这一个小改动打散好几份文档的行文。
+
+**影响面**：`pokemon_agent/schemas/world/domain/{screen_model,place_in_world}.py`、
+`pokemon_agent/schemas/world/__init__.py`、`pokemon_agent/world/ram.py`、
+`pokemon_agent/harness/object_interactions.py`、
+`pokemon_agent/schemas/memory/datastore/object_memory.py`、
+`pokemon_agent/prompts/calls/decide_action/map_hint.md`、
+`pokemon_agent/prompts/calls/perceive_screen.md`。`ObjectFactEvent.kind` 本来就是
+不设值域的 `str`，新 kind 不需要改 schema；`_POSTURES`/`INTERACTIVE` 是机制一文档
+点名的扩展点，这次改动没有碰事件 schema 或 memory 存储格式。本仓库目前没有
+`tests/` 覆盖这几个模块，这次没有新增测试文件——按十节的要求，下次给 `harness/`
+补集成测试时应该把"走上物品格产出 dialog 事件"这个用例带上。
+
+## 2026-09-11（2）—— DeepSeekProvider 补默认模型 deepseek-flash（V4.1 Flash）
+
+**改了什么**：`pokemon_agent/providers/openai_compatible.py` 的 `DeepSeekProvider.__init__`
+给 `model` 参数补上默认值 `"deepseek-flash"`（即 DeepSeek-V4.1-Flash）；入口 assert
+从"必须非空字符串（不给默认值）"改为"不能是空字符串"（校验对象变了，含义不同：前者是
+"调用方必须显式选"，后者是普通的非空防御）。类 docstring 同步改写，去掉"model 没有
+默认值，跟 ArkProvider 同理"的旧论述。
+
+**为什么这么改**：上一条（1）里 `model` 不给默认值，理由是"flash/v4-pro 两个候选，
+项目里没有实测数据替调用方拍板"——这个理由本身没错，但前提已经变了：DeepSeek 官方
+文档明确写着 **2026-09-14 起 `deepseek-v4-pro` 的全部请求会被路由到 V4.1 Flash**，
+即官方自己把"两个候选"收敛成了"一个当前模型 + 一个即将失效的别名"，不再是项目需要
+自己权衡的开放问题。继续不给默认值，等于揣着官方已经给出的答案装作不知道，跟
+CLAUDE.md 第六节"不伪造没有依据的默认值"这条的精神反而是相悖的——这里的默认值
+恰恰是**有**依据的。`deepseek-v4-pro` 仍然接受显式传入（同一个类，只是构造函数默认
+不再是它），不做破坏性收窄。
+
+**取舍**：没有连带去动 `token_floor`——那处的"未实测"结论不受这次信息更新影响，
+仍然要等真机数据才能标定，不能顺手也给它一个自信的默认。
+
+**影响面**：`pokemon_agent/providers/openai_compatible.py`。`providers/__init__.py`
+无需改动（导出的是类，不是默认值）；`build.py` 未改——本次只是把 provider 类本身的
+默认值收敛，接不接进 decide/judge/verify/plan 哪条链路仍是装配处的决定，留给下一步。
+
+## 2026-09-11（1）—— providers 层接入 DeepSeek 官方 API
+
+**改了什么**：`pokemon_agent/providers/openai_compatible.py` 新增 `DeepSeekProvider`
+类（继承 `_MultimodalMixin` + `_OpenAICompatibleBase`，与 `QwenProvider`/`ArkProvider`
+同构）：`BASE_URL = "https://api.deepseek.com"`，`API_KEY_ENVS = ("DEEPSEEK_API_KEY",)`，
+`_disable_thinking_payload()` 返回 `{"thinking": {"type": "disabled"}}`（嵌套对象，
+与火山方舟同形、与 DashScope 的扁平布尔字段不同）；`model` 不设默认值（当前有
+`deepseek-flash`/`deepseek-v4-pro` 两个候选，理由同 `ArkProvider`）；`max_tokens`
+默认沿用 `QwenProvider` 的 25600（`Action.thought` 不设上限这条理由与供应商无关）；
+`token_floor` 沿用基类默认 `IMAGE_TOKEN_FLOOR=100`，未做 DeepSeek 专属实测标定。
+`providers/__init__.py` 的 `__all__` 与导入语句同步加入 `DeepSeekProvider`，模块
+docstring 补一句三家供应商并列的说明。未改动 `build.py` 装配处——本次只接入
+provider 类本身，接哪条链路（decide/judge/verify/plan）留给装配处按需决定。
+
+**为什么这么改**：DeepSeek 官方 API 是 OpenAI 兼容协议（`chat/completions`、
+`image_url` 结构与 OpenAI 标准一致，见
+https://api-docs.deepseek.com/zh-cn/ ），落在 `_OpenAICompatibleBase` 既有的
+"一个供应商一个类、子类只钉死 BASE_URL/API_KEY_ENVS/关思考写法"这套约定里，
+不需要新开一条继承链。关思考模式官方文档给了 `thinking.type` 与顶层
+`reasoning_effort` 两条路，选前者是为了跟 `_disable_thinking_payload()` 钩子
+已有的两种形状（扁平布尔 / 嵌套对象）对齐，不引入第三种。`model` 不给默认值、
+`token_floor` 标注"未实测"：两处都是照 CLAUDE.md 第六节"不许直连模型 SDK 之外
+再假装知道自己不知道的事"的原则——没有真机数据的地方，宁可要求调用方显式给，
+也不伪造一个看似合理实则没有依据的默认值（`ArkProvider.model` 与
+`QwenVision`/`ArkProvider` 的 `token_floor` 实测依据是先例）。
+
+**影响面**：`pokemon_agent/providers/openai_compatible.py`、
+`pokemon_agent/providers/__init__.py`。未触及 `build.py`、`interfaces/`、
+`schemas/`——`DeepSeekProvider` 复用的是已有的 `LLMProvider`/`VisionProvider`
+Protocol 与 `LlmCompleteReq`/`LlmCompleteResp`/`VisionDescribeReq`/
+`VisionDescribeResp` schema，接口边界不变。
+
 ## 2026-09-10（16）—— 修恢复时记忆侧的两处漏网：`keep_step` 取错一步 + 局摘要不参与作废
 
 **改了什么**：① `CheckpointTool.void_after` 的 `target_scope` 里目标局那项由 `step` 改为

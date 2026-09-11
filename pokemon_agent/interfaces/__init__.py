@@ -10,6 +10,12 @@ tools/providers/trace）实现这些 Protocol，消费方（brain/harness）只�
 
 本文件是统一出口：本层全部 Port 与状态模型从这里 re-export，
 消费方只写 `from pokemon_agent.interfaces import X`，不深到子目录的模块文件。
+
+**`WorldPort` 是唯一的例外**：它的物理文件搬到了 `pokemon_agent/world/interface/
+world_port.py`——跟这个子系统吐出的数据形状（`Facts`，同目录 `domain/facts.py`）
+放在一起，理由和取舍见那边的 CHANGELOG 条目。这里仍然原样 re-export，消费方
+写法不变，依赖方向也不变：只是这一个 Protocol 不再要求它的实现方（`world/`）
+反过来依赖这个包才能定义自己的协议。
 """
 
 __all__ = [
@@ -57,4 +63,4 @@ from .tools.game_tool_port import GameToolPort
 from .tools.memory_tool_port import MemoryToolPort
 from .tools.trace_tool_port import TraceToolPort
 from .trace.trace_port import TracePort
-from .world.world_port import WorldPort
+from pokemon_agent.world.interface import WorldPort

@@ -497,3 +497,66 @@ class ArkProvider(_MultimodalMixin, _OpenAICompatibleBase):
         的原因**，见模块 docstring。
         """
         return {"thinking": {"type": "disabled"}}
+
+class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
+    """DeepSeek 官方 API——默认模型 `deepseek-flash`（即 DeepSeek-V4.1-Flash，
+    原生多模态，文本+视觉两用），换模型只改 `model=`。
+
+    接入点：`https://api.deepseek.com`（OpenAI 兼容格式，见官方文档
+    https://api-docs.deepseek.com/zh-cn/ ），messages 结构与 DashScope/
+    火山方舟一致，走的都是同一套 `POST /chat/completions`。
+
+    **关思考模式的写法与火山方舟同形**：`{"thinking": {"type": "disabled"}}`，
+    嵌套对象——DeepSeek 官方文档同时给了 `thinking.type` 与顶层
+    `reasoning_effort` 两条路，这里固定走前者，跟 `_disable_thinking_payload()`
+    钩子的既有形状（"要么扁平布尔，要么嵌套对象"）对齐，不额外引入第三种形状。
+
+    **`model` 默认值定为 `deepseek-flash`，不再留成"两个候选都不选"。**
+    这一点跟最初接入时（0911 早些时候）的判断不同——当时 `deepseek-v4-pro`
+    还是并行在用的候选，比照 `ArkProvider` 的 pro/turbo 两候选不预设默认；
+    但官方文档已明确 2026-09-14 起 `deepseek-v4-pro` 全量路由到 V4.1 Flash
+    （等于官方替我们把选择做掉了，不是项目自己猜的），且 flash 在效果/成本/
+    速度上全面优于 v4-pro——这时候还坚持不给默认值，就是揣着明白装糊涂。
+    `deepseek-v4-pro` 仍可传（走的是同一个类，只是最终会被官方路由到同一个
+    模型），只是不再是构造函数的默认。
+
+    **`token_floor` 沿用基类默认值（`IMAGE_TOKEN_FLOOR = 100`），未针对
+    DeepSeek 单独实测过。** 官方文档给出的是图片消耗 token 的量级（每张
+    上限约 1024，按尺寸折算），不是"图片真被处理时的下界"——`QwenVision`/
+    `ArkProvider` 的 100 是从各自实测的"丢图 vs 正常"两种场景的数量级差异
+    里定出来的，DeepSeek 还没有等价的实测数据。这个默认值先借用同一套判据
+    （"差一个数量级就够用，不需要精调"），真机跑出数据后应按 3.4 节同样的
+    方法重新标定，而不是假设它天然适用。
+    """
+
+    BASE_URL = "https://api.deepseek.com"
+    API_KEY_ENVS = ("DEEPSEEK_API_KEY",)
+
+    def __init__(
+        self,
+        model: str = "deepseek-flash",
+        *,
+        temperature: float,
+        max_tokens: int = 25600,
+        token_floor: int = IMAGE_TOKEN_FLOOR,
+        **kw: object,
+    ) -> None:
+        """`model` 默认 `deepseek-flash`，理由见类 docstring（官方已把
+        v4-pro 路由到它，不是项目单方面替调用方拍板）。`max_tokens` 默认值
+        沿用 `QwenProvider` 的实测依据（`Action.thought` 刻意不设上限，
+        1024/3072 均实测不够，见该类 `__init__` docstring）——这个理由与
+        "打的是哪家供应商"无关，是"decide 这条链路本身需要多少输出余量"的
+        问题，DeepSeek 侧没有理由更少。**注意 DeepSeek 官方文档给出的
+        `max_tokens` 硬上限是 384K**，比 Qwen/Ark 都宽松得多，但这里不因此
+        抬高默认值——真正控成本的是 `max_steps` 和 prompt 长度，不是这个数
+        （同 `QwenProvider` 的理由）。
+        """
+        assert model, "DeepSeekProvider 的 model 不能是空字符串"
+        super().__init__(model, temperature=temperature, max_tokens=max_tokens, **kw)  # type: ignore[arg-type]
+        self._floor = token_floor
+
+    def _disable_thinking_payload(self) -> dict[str, object]:
+        """DeepSeek 关思考模式的写法：嵌套对象，与火山方舟同形、与 DashScope
+        的扁平布尔字段不同——同一个理由：这正是不能把这个字段塞进共享
+        `_post()` 的原因，见模块 docstring。"""
+        return {"thinking": {"type": "disabled"}}

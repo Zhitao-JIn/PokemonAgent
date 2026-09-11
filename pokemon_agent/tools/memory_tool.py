@@ -58,7 +58,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolVoidMemoryAfterResp,
 )
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, StepMemory
-from pokemon_agent.schemas.world import PlaceInWorld
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -328,13 +327,6 @@ class MemoryTool:
         place = req.place
         events = self._object_events({"map_id": str(place.map_id), "place": place.key})
         return FromHarnessToMemoryToolQueryObjectEventsAtResp(events=events)
-
-    def query(self, place: PlaceInWorld) -> list[ObjectFactEvent]:
-        """`SemanticObjectReader` 端口的同名方法——harness 判定层
-        （`object_interactions` 的 kind 兜底）把 MemoryToolPort 直接当 reader
-        用，端口语义就是 `query(place)`；与 `query_object_events_at` 同一实现，
-        两个名字都在是为了两个端口各自读起来自洽。"""
-        return self._object_events({"map_id": str(place.map_id), "place": place.key})
 
     def append_object_events(self, req: FromHarnessToMemoryToolAppendObjectEventsReq) -> None:
         """追加一批交互事件（harness 判定层构造好；逐条落一个 uuid 文件，写穿）。

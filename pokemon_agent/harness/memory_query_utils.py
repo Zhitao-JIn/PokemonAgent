@@ -22,8 +22,8 @@ def build_knowledge_query(obs: ObservationFromWorld, goal: str) -> str:
     这类错（knowledge 里都有，就是没被检索到）。
     """
     bits = [
-        f"scene:{obs.facts.get('scene', '')}",
-        f"overlay:{obs.facts.get('overlay', '')}",
+        f"scene:{obs.facts.scene_value}",
+        f"overlay:{obs.facts.overlay_value}",
         obs.status,
     ]
     if obs.place is not None:
@@ -44,10 +44,10 @@ def build_verify_knowledge_query(entries: list[StepMemory], goal: str) -> str:
     actions: set[str] = set()
     for entry in entries:
         for obs in (entry.before, entry.after):
-            if obs.facts.get("scene"):
-                scenes.add(obs.facts["scene"])
-            if obs.facts.get("overlay"):
-                overlays.add(obs.facts["overlay"])
+            if obs.facts.scene is not None:
+                scenes.add(obs.facts.scene_value)
+            if obs.facts.overlay is not None:
+                overlays.add(obs.facts.overlay_value)
         actions.add(entry.action)
     bits = (
         [f"scene:{s}" for s in sorted(scenes)]
@@ -66,8 +66,8 @@ def build_scene_key(obs: ObservationFromWorld) -> str | None:
             None,
             (
                 f"map:{obs.place.map_id}",
-                f"scene:{obs.facts.get('scene', '')}",
-                f"overlay:{obs.facts.get('overlay', '')}",
+                f"scene:{obs.facts.scene_value}",
+                f"overlay:{obs.facts.overlay_value}",
             ),
         )
     )

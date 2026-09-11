@@ -619,7 +619,10 @@ class Brain:
             step=obs.step,
             place=obs.place,
             status=obs.status,
-            facts={k: v for k, v in obs.facts.items() if k not in SNAPSHOT_BLIND},
+            # `Facts.exclude()` 直接改结构化字段，不走"渲染成文本再反解"那一趟——
+            # `obs.facts` 本来就是 `Facts` 模型，这里只是拿掉几个不该进记忆的
+            # 动态字段。
+            facts=obs.facts.exclude(SNAPSHOT_BLIND),
             done=obs.done,
         )
 

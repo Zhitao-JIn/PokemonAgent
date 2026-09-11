@@ -27,18 +27,11 @@ from pokemon_agent.interfaces import VisionProvider
 from pokemon_agent.prompts import load as load_prompt
 from pokemon_agent.schemas.brain import ActionFromBrain, TaskForBrain
 from pokemon_agent.schemas.providers import VisionDescribeReq
-from pokemon_agent.schemas.world import (
-    OVERLAY_ACTIONS,
-    ObservationFromWorld,
-    Overlay,
-    PerceiveOnceResp,
-    Scene,
-    terrain_legend,
-)
+from pokemon_agent.schemas.world import ObservationFromWorld, PerceiveOnceResp, terrain_legend
 
 from .frame_slot import FrameSlot
+from .interface import OVERLAY_ACTIONS, Facts, ScreenState
 from .ram import read_terrain
-from .screen_state import ScreenState
 
 ALL_BUTTONS: tuple[str, ...] = ("a", "b", "up", "down", "left", "right", "start", "select")
 """世界支持的全部动作，**与状态无关**（`WorldPort.all_actions()` 的契约）。
@@ -90,17 +83,17 @@ def _status_line(s: ScreenState, cursor: str = "") -> str:
     把这一帧压成给大脑读的一句话。
     """
     where = {
-        Scene.FIELD: "你在野外",
-        Scene.INDOOR: "你在室内",
-        Scene.BATTLE: "你在战斗中",
-        Scene.MENU: "你在菜单里",
-        Scene.SHOP: "你在商店",
-        Scene.TRANSITION: "画面正在切换",
+        Facts.Scene.FIELD: "你在野外",
+        Facts.Scene.INDOOR: "你在室内",
+        Facts.Scene.BATTLE: "你在战斗中",
+        Facts.Scene.MENU: "你在菜单里",
+        Facts.Scene.SHOP: "你在商店",
+        Facts.Scene.TRANSITION: "画面正在切换",
     }[s.scene]
     bits = [where + "。"]
-    if s.overlay is Overlay.DIALOG and s.dialog_text:
+    if s.overlay is Facts.Overlay.DIALOG and s.dialog_text:
         bits.append(f"对话框：「{s.dialog_text}」")
-    elif s.overlay is Overlay.CHOICE and s.options:
+    elif s.overlay is Facts.Overlay.CHOICE and s.options:
         # **读不出来要明写"读不出"。** 静默省略这半句的话，
         # 「可选项：A/ B/ C」和「可选项：A/ B/ C，光标在 A」扫过去几乎一样，
         # 而"没读出光标"和"光标在第一项"是完全不同的两件事。
@@ -341,63 +334,61 @@ class PyBoyWorld:
         #
         # 这条交叉检验不需要任何新的输入——**它只是拿模型自己的两个输出对账**。
         # 而 overlay 决定动作掩码，错一次大脑就会拿到一组它按不出效果的动作。
-        if overlay is Overlay.DIALOG and not text:
-            overlay = Overlay.NONE
+        if overlay is Facts.Overlay.DIALOG and not text:
+            overlay = Facts.Overlay.NONE
 
-        facts: dict[str, str] = {
-            "scene": screen.scene.value,
-            "overlay": overlay.value,
-            **screen.fields,
-        }
-        # **对话框的文字必须进 facts，而且排在最前面。**
-        # 漏了这一项的代价大得离谱：判定器看不到对话内容，
-        # 「对话框里出现母亲说的话」这类判据**永远不可能成立**；
-        # 而决策模型看不到，就会按先验编一句出来当成自己读到的。
-        # 实测判定器自己说过：「对话框内容未提供，无法确认是否为母亲说的话」。
-        if text:
-            facts["dialog_text"] = text
-        # facts 是有序 dict，大脑按这个顺序读到，所以顺序本身就是一种表达：
-        # 先整体（overview），再地图（walk_map），最后细节（landmarks）。
-        if screen.overview:
-            facts["overview"] = screen.overview
-        # walk_map 来自模拟器内存，不是模型读出来的——它是这些事实里唯一 100% 的一项。
-        facts["walk_map"] = terrain.render()
-        # **全项目只有一套坐标。** `walk_map` 的行列号、`where`、`landmarks`、
-        # `known_objects` 里的 `x= y=` 是同一套数，不需要任何换算
-        # （见 `TerrainMapFromRam.render` 里为什么删掉了屏幕格）。
-        # 写法统一成 `x=8 y=5` 而不是 `(8,5)`：括号对是旧屏幕格的写法，
-        # 留着它只会让"这指的是哪一套"重新变成一个问题。
-        facts["map_id"] = str(terrain.map_id)
-        # 只留数据，不带解释。怎么读图写在动作说明里（`MAP_HINT`）——
-        # **说明写一次就够，数据每步都要发**。
-        facts["where"] = terrain.place().render()
         # **地标只有类型和位置，没有名字，而且用全局坐标。**
         # 名字（这是谁家、招牌上写什么）在总览画面里没有可观测的证据——
         # 招牌的字根本没渲染，所有的门都是同一个深色矩形。让视觉模型填，
         # 它就按先验编：真新镇既没有宝可梦中心也没有商店，它照样给出了
         # 「写着「POKéMON CENTER」的招牌」。名字要靠**走进去看见**再记住，
         # 那是记忆层的事（见 `TerrainMapFromRam.landmarks` 的完整说明）。
-        if landmarks := terrain.render_landmarks():
-            facts["landmarks"] = landmarks
-        # 四邻单独给一行：它是唯一**相对"我"**的地形描述，所以是唯一能进记忆的那份
-        # （`walk_map` 的原点跟着人走，跨步骤引用会自相矛盾）。
-        facts["neighbors"] = terrain.render_neighbors()
-        if terrain.facing:
-            facts["facing"] = terrain.facing
-        if screen.options:
-            facts["options"] = " / ".join(screen.options)
-        if screen.cursor:
-            facts["cursor"] = screen.cursor
+        landmarks = terrain.landmarks()
+
+        # **`Facts` 是结构化模型，字段该是什么类型就是什么类型。** 不再需要先把
+        # `scene`/`overlay`/`landmarks` 渲染成文本塞进一个 `dict[str, str]`——
+        # 判定层（`harness/object_interactions.py`）和记忆检索直接拿 `facts.scene`/
+        # `facts.landmarks` 这些结构化字段用，`render()`/`items()` 才做"转文本"，
+        # 且只在真的要喂给大脑读、或者拼检索 query 的那一刻才发生。
+        #
+        # **全项目只有一套坐标。** `walk_map` 的行列号、`where`、`landmarks` 里的
+        # `x= y=` 是同一套数，不需要任何换算（见 `TerrainMapFromRam.render` 里为
+        # 什么删掉了屏幕格）。写法统一成 `x=8 y=5` 而不是 `(8,5)`：括号对是旧屏幕
+        # 格的写法，留着它只会让"这指的是哪一套"重新变成一个问题。
+        #
+        # **对话框的文字必须进去。** 漏了这一项的代价大得离谱：判定器看不到对话
+        # 内容，「对话框里出现母亲说的话」这类判据**永远不可能成立**；而决策模型
+        # 看不到，就会按先验编一句出来当成自己读到的。
+        facts = Facts(
+            scene=screen.scene,
+            overlay=overlay,
+            where=terrain.place().render(),
+            facing=terrain.facing or "",
+            # 四邻是唯一**相对"我"**的地形描述，所以是唯一能进记忆的那份
+            # （`walk_map` 的原点跟着人走，跨步骤引用会自相矛盾）。
+            neighbors=terrain.render_neighbors(),
+            landmarks=landmarks,
+            dialog_text=text,
+            options=screen.options,
+            cursor=screen.cursor or "",
+            overview=screen.overview,
+            # walk_map 来自模拟器内存，不是模型读出来的——它是这些事实里唯一 100% 的一项。
+            walk_map=terrain.render(),
+            map_id=terrain.map_id,
+            # 视觉模型按当前 scene 自由给的字段（my_hp/foe_level/…）——`Facts` 的
+            # `extra="allow"` 接住它们，不需要为每个 scene 各开一个具名字段。
+            **screen.fields,
+        )
 
         obs = ObservationFromWorld(
             # **step 由 Harness 盖章，这里只给占位值。**
             # world 交出来的是"世界现在什么样"，不是"这一局跑到哪了"——
             # 后者是循环的账。
             step=0,
-            # **结构化的位置也交出去。** `facts["where"]` 是给模型读的文本，
+            # **结构化的位置也交出去。** `facts.where` 是给模型读的文本，
             # 而交互记忆的键要拿 `(map_id, x, y)` 去算——反解字符串是迟早要出错的事。
             place=terrain.place(),
-            status=_status_line(screen, facts.get("cursor", "")),
+            status=_status_line(screen, facts.cursor or ""),
             facts=facts,
             # **`done` 是世界层自己唯一能报的信号**（窗口关没关）；
             # "这一局该不该结束"/"任务完不完成"归 `EpisodeRunState.done`/`.success`
