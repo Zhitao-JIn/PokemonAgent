@@ -1,6 +1,9 @@
 # 计划：模块彻底解耦 + schemas → communication
 
-**状态：草案，等待确认后再动手。不改任何代码。**
+**状态：A/B/C/D 四个问题已由用户确认（A=彻底裸字段化；B=domain 类型也不带
+For/From 后缀；C=datastore；D=TraceEvent 一并搬）。第一步（world）已完成并提交
+（见 CHANGELOG "2026-09-11（12）"）。第二步起（memory/trace/providers/brain/tools）
+待续。**
 
 ## 0. 背景
 
