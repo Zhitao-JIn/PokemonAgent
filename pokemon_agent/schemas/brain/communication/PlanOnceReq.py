@@ -5,9 +5,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from pokemon_agent.brain.interface import TaskForBrain
 from pokemon_agent.schemas.trace import TraceEvent
-
-from ..domain.task_for_brain import TaskForBrain
 
 
 class PlanOnceReq(BaseModel):

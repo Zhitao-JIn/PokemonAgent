@@ -14,15 +14,15 @@ tools/providers/trace）实现这些 Protocol，消费方（brain/harness）只�
 **这个包正在被逐步淘汰**：`WorldPort`→`pokemon_agent/world/interface/`、
 `TracePort`+`TraceKind`→`pokemon_agent/trace/interface/`、
 `LLMProvider`/`VisionProvider`/`JudgeProvider`/`EmbeddingProvider`/
-`RerankerProvider`+`ModelCall`→`pokemon_agent/providers/interface/` 已经搬完，
-都跟着各自的实现同住一包，理由和取舍见对应 CHANGELOG 条目。这次不再在这里
-保留 re-export：消费方直接 `from pokemon_agent.providers import LLMProvider`
-这样各自认模块。本文件剩下的其余 Port（brain/harness/tools 三个子目录）会按
-brain → tools → harness 的顺序逐个搬完，搬完最后一个后这个包整体删除。
+`RerankerProvider`+`ModelCall`→`pokemon_agent/providers/interface/`、
+`BrainPort`+六个数据形状→`pokemon_agent/brain/interface/` 已经搬完，都跟着
+各自的实现同住一包，理由和取舍见对应 CHANGELOG 条目。这次不再在这里保留
+re-export：消费方直接 `from pokemon_agent.brain import BrainPort` 这样各自
+认模块。本文件剩下的其余 Port（harness/tools 两个子目录）会按 tools →
+harness 的顺序逐个搬完，搬完最后一个后这个包整体删除。
 """
 
 __all__ = [
-    "BrainPort",
     "BrainToolPort",
     "CheckpointToolPort",
     "EpisodeHarnessPort",
@@ -38,7 +38,6 @@ __all__ = [
     "RunState",
     "TraceToolPort",
 ]
-from .brain.brain_port import BrainPort
 from .harness.episode_harness_port import EpisodeHarnessPort, EpisodeRunState
 from .harness.harness_port import (
     MAX_GOAL_RETRIES,

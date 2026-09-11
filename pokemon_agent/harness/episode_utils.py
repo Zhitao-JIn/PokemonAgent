@@ -15,7 +15,7 @@ run 级图对应的工具函数在 `run_utils.py`/`run_plan_utils.py`，两层�
 
 from __future__ import annotations
 
-from pokemon_agent.schemas.brain import ActionFromBrain
+from pokemon_agent.brain import ActionFromBrain
 from pokemon_agent.schemas.world import ObservationFromWorld
 
 

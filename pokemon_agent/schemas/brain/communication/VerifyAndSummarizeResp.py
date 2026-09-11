@@ -5,11 +5,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from pokemon_agent.brain.interface import EpisodeSummary, StepVerifyVerdict
 from pokemon_agent.providers.interface import ModelCall
 from pokemon_agent.schemas.memory import EpisodeMemory
-
-from ..domain.episode_summary import EpisodeSummary
-from ..domain.step_verify import StepVerifyVerdict
 
 
 class VerifyAndSummarizeResp(BaseModel):

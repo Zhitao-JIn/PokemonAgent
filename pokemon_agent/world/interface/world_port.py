@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from pokemon_agent.schemas.brain import ActionFromBrain, TaskForBrain
+from pokemon_agent.brain import ActionFromBrain, TaskForBrain
 from pokemon_agent.schemas.world.communication.PerceiveOnceResp import PerceiveOnceResp
 
 # 认叶子模块（`schemas.world.communication.PerceiveOnceResp`），不认

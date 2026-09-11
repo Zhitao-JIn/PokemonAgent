@@ -39,7 +39,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.brain import TaskForBrain
+from pokemon_agent.brain import TaskForBrain
 from pokemon_agent.schemas.harness import (
     FromRunHarnessToEpisodeHarnessRunResp,
 )

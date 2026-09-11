@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.brain import ActionFromBrain
+from pokemon_agent.brain.interface import ActionFromBrain
 from pokemon_agent.schemas.world import ObservationFromWorld
 
 

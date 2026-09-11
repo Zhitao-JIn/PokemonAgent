@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from pokemon_agent.brain.interface import ActionFromBrain
 from pokemon_agent.providers.interface import ModelCall
-from pokemon_agent.schemas.brain import ActionFromBrain
 
 
 class FromHarnessToBrainToolChooseOnceResp(BaseModel):

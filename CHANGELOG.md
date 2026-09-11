@@ -1,3 +1,71 @@
+## 2026-09-11（9）—— interfaces/schemas 集中制逐步撤销，第三步：brain
+
+**改了什么**：
+1. `pokemon_agent/interfaces/brain/brain_port.py`（`BrainPort`）→
+   `pokemon_agent/brain/interface/brain_port.py`。
+2. `pokemon_agent/schemas/brain/domain/{action_from_brain,episode_summary,
+   goal_for_brain,run_plan,step_verify,task_for_brain}.py`（`ActionFromBrain`/
+   `ActionSegmentFromBrain`/`MAX_RATIONALE`/`MAX_TIMES`/`EpisodeSummary`/
+   `GoalForBrain`/`RunPlan`/`StepVerifyVerdict`/`TaskForBrain`）→
+   `pokemon_agent/brain/interface/domain/` 下的同名文件；
+   `schemas/brain/domain/` 目录随之清空删除。
+3. 新增 `brain/interface/domain/__init__.py`（立即加载：六个数据形状 + 两个
+   常量全部零依赖，只依赖 pydantic）、`brain/interface/__init__.py`（数据
+   形状立即加载，`BrainPort` 懒加载）。
+4. `brain/__init__.py` 重写：六个数据形状 + 两个常量立即从 `.interface`
+   re-export；`Brain`（`brain.py` 的实现类）和 `BrainPort` 都改成
+   **懒加载**（`__getattr__`，跟 `world/__init__.py` 对 `WorldPort`/
+   `PyBoyWorld` 的处理同一套机制）。
+5. `schemas/brain/__init__.py` 不再 re-export 六个数据形状和两个常量，只保留
+   `ChooseOnceReq`/`ChooseOnceResp`/`JudgeReq`/`JudgeResp`/`PlanOnceReq`/
+   `PlanOnceResp`/`ReflectReq`/`ReflectResp`/`VerifyAndSummarizeReq`/
+   `VerifyAndSummarizeResp` 这十个通信协议。
+6. `schemas/brain/communication/*.py`（`ChooseOnceReq`/`ChooseOnceResp`/
+   `JudgeReq`/`PlanOnceReq`/`PlanOnceResp`/`ReflectReq`/
+   `VerifyAndSummarizeResp`）、`schemas/harness/communication/*.py`
+   （`FromHarnessToBrainTool*`/`FromHarnessToGameTool*`/
+   `FromHarnessToReviewerReviewReq`/`FromHarnessToTraceToolAppendReq`/
+   `FromRunHarnessToEpisodeHarnessRunReq`）里引用这六个数据形状的地方，
+   改成 `from pokemon_agent.brain.interface import X`——跟 `ModelCall`/
+   `Facts`/`TraceKind` 是同一种"schema 文件反过来依赖实现模块的 interface
+   子包"写法。
+7. `brain/brain.py` 自己也要这六个数据形状，改成 `from .interface import
+   (...)`（同包内的相对导入）。
+8. 其余消费方（`api.py`、`harness/*.py`、`interfaces/harness/*.py`、
+   `prompts/decide_action.py`、`schemas/frontend/communication/
+   FromFrontendToRunHarnessSubmitEditReq.py`、`tools/{brain_tool,
+   trace_render}.py`、`world/{pyboy_world,interface/world_port}.py`）
+   把 `from pokemon_agent.schemas.brain import X`（六个数据形状）/
+   `from pokemon_agent.interfaces import BrainPort` 改成
+   `from pokemon_agent.brain import X`。
+9. `pokemon_agent/interfaces/__init__.py` 去掉 `BrainPort` 的 re-export，
+   `pokemon_agent/interfaces/brain/` 目录（只剩 `__pycache__`）一并清空；
+   docstring 更新搬迁进度（world/trace/providers/brain 已搬完，剩
+   harness/tools 两个）。
+
+**为什么这么改**：跟 `world`/`trace`/`providers` 一样，港口协议和它内嵌的
+数据形状本来就该挨着实现住。
+
+**取舍**：这次是继 `WorldPort` 之后第二次需要懒加载才能避开循环导入——
+`brain_port.py`/`brain.py` 都要 `import pokemon_agent.schemas.brain`（拿
+`ChooseOnceReq` 等通信协议），而 `schemas/brain/communication/*.py` 里这些
+协议的字段又要从 `brain.interface` 拿回 `GoalForBrain`/`ActionFromBrain`
+等数据形状，两条依赖在初始化顺序上正面相撞。跟 `world/interface` 只需要
+把 `WorldPort` 一个名字懒加载不同，这次因为 `Brain`（`brain.py`）本身也
+一样依赖 `schemas.brain`，`brain/__init__.py` 顶层必须把 `Brain` 和
+`BrainPort` **两个**名字都懒加载——否则光是 `import pokemon_agent.brain`
+（哪怕不碰 `Brain`/`BrainPort`）就会先跑完 `brain/__init__.py`，而它对
+`.brain` 的旧日 eager import 会立刻拖出同一个循环。用 pydantic stub 跑了
+6 种导入顺序（`brain_first`/`schemas_brain_first`/`schemas_harness_first`/
+`brain_interface_first`/`brain_port_access`/`everything`，含专门测"先
+import pokemon_agent.brain 再立刻访问 .BrainPort/.Brain"这一最坏情形）
+全部通过；顺带给 pydantic stub 补了缺失的 `ValidationError`（`brain.py`
+一直依赖它，之前的 stub 没有这个名字，纯测试基建缺口，不是代码问题）。
+
+**影响面**：`pokemon_agent.interfaces` 里现在只剩 harness/tools 两类
+Port，按计划顺序（tools → harness）继续搬，搬完最后一个后
+`pokemon_agent/interfaces/` 整包删除。
+
 ## 2026-09-11（8）—— interfaces/schemas 集中制逐步撤销，第二步：providers
 
 **改了什么**：

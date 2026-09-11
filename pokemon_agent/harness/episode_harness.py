@@ -36,6 +36,7 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from pokemon_agent.brain import GoalForBrain, StepVerifyVerdict, TaskForBrain
 from pokemon_agent.interfaces import (
     BrainToolPort,
     CheckpointToolPort,
@@ -49,7 +50,6 @@ from pokemon_agent.prompts import judge_success as judge_success_prompt
 from pokemon_agent.prompts import verify_and_summarize as verify_and_summarize_prompt
 from pokemon_agent.prompts.object_render import render_object_events
 from pokemon_agent.providers import ModelCall
-from pokemon_agent.schemas.brain import GoalForBrain, StepVerifyVerdict, TaskForBrain
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolJudgeReq,

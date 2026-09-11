@@ -68,9 +68,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from pokemon_agent.brain import TaskForBrain
 from pokemon_agent.build import build_real
 from pokemon_agent.harness import DataCenterReviewer, RunDataCenter, RunHarness
-from pokemon_agent.schemas.brain import TaskForBrain
 from pokemon_agent.schemas.frontend import (
     FromFrontendToGameToolLatestFrameReq,
     FromFrontendToGameToolLatestFrameResp,

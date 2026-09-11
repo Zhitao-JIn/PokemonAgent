@@ -44,23 +44,26 @@ from pokemon_agent.errors import (
 )
 from pokemon_agent.providers import JudgeProvider, LLMProvider, ModelCall
 from pokemon_agent.schemas.brain import (
-    MAX_RATIONALE,
-    MAX_TIMES,
-    ActionFromBrain,
-    ActionSegmentFromBrain,
     ChooseOnceReq,
     ChooseOnceResp,
-    EpisodeSummary,
     JudgeReq,
     JudgeResp,
     PlanOnceReq,
     PlanOnceResp,
     ReflectReq,
     ReflectResp,
-    RunPlan,
-    StepVerifyVerdict,
     VerifyAndSummarizeReq,
     VerifyAndSummarizeResp,
+)
+
+from .interface import (
+    MAX_RATIONALE,
+    MAX_TIMES,
+    ActionFromBrain,
+    ActionSegmentFromBrain,
+    EpisodeSummary,
+    RunPlan,
+    StepVerifyVerdict,
 )
 from pokemon_agent.schemas.memory import SNAPSHOT_BLIND, EpisodeMemory, StepMemory
 from pokemon_agent.schemas.providers import LlmCompleteReq, VisionDescribeReq

@@ -18,9 +18,9 @@ run 级规划的原始文本 → `RunPlan` 解析（剥 json 围栏、`json.load
 
 from __future__ import annotations
 
+from pokemon_agent.brain import RunPlan, TaskForBrain
 from pokemon_agent.errors import PlanAttemptFailed
 from pokemon_agent.interfaces import PLAN_MAX_ATTEMPTS, BrainToolPort, TraceToolPort
-from pokemon_agent.schemas.brain import RunPlan, TaskForBrain
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceReq,
     FromHarnessToTraceToolAppendReq,

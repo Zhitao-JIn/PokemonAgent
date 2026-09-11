@@ -4,6 +4,10 @@
 这个 req 同时是对应 `pokemon_agent.prompts.*.build_prompt()` 的输入——调用方
 先拿 req 拼 prompt，把结果回填进 req 的 `prompt` 字段，再把同一个 req 整个
 交给这里的方法，不需要额外单独传 prompt 或其它参数。
+
+原来放在顶层 `pokemon_agent/interfaces/brain/`；跟 `WorldPort`/`TracePort` 搬到
+各自实现旁边是同一个道理，`pokemon_agent/interfaces/` 这个集中注册表这次整个
+撤销，消费方直接 `from pokemon_agent.brain import BrainPort`。
 """
 
 from __future__ import annotations

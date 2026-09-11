@@ -17,7 +17,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.brain import TaskForBrain
+from pokemon_agent.brain import TaskForBrain
 
 
 class FromFrontendToRunHarnessSubmitEditReq(BaseModel):

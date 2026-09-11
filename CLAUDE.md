@@ -158,16 +158,30 @@ pokemon_agent/
 │                     `TracePort`+`TraceKind`→`trace/interface/`、
 │                     `LLMProvider`/`VisionProvider`/`JudgeProvider`/
 │                     `EmbeddingProvider`/`RerankerProvider`+`ModelCall`→
-│                     `providers/interface/` 已搬完，其余
-│                     BrainPort/GameToolPort/MemoryToolPort/CheckpointToolPort/
+│                     `providers/interface/`、`BrainPort`+六个数据形状→
+│                     `brain/interface/` 已搬完，其余
+│                     GameToolPort/MemoryToolPort/CheckpointToolPort/
 │                     TraceToolPort/HarnessPort/EpisodeHarnessPort/
 │                     HumanReviewer 等待搬），不再保留 re-export 薄壳——搬完的
 │                     消费方直接 `from pokemon_agent.world import WorldPort` /
 │                     `from pokemon_agent.trace import TracePort` /
-│                     `from pokemon_agent.providers import LLMProvider` 这样
-│                     各自认模块。搬完最后一个后这个目录整体删除，取舍见
-│                     CHANGELOG 对应条目
-├── brain/            纯决策层。无状态。只依赖 interfaces + schemas
+│                     `from pokemon_agent.providers import LLMProvider` /
+│                     `from pokemon_agent.brain import BrainPort` 这样各自认
+│                     模块。搬完最后一个后这个目录整体删除，取舍见 CHANGELOG
+│                     对应条目
+├── brain/            纯决策层。无状态。只依赖 interfaces + schemas。`interface/`
+│                     是这个子系统自己的港口 + 数据 schema 出口：`brain_port.py`
+│                     （`BrainPort`）+ 六个数据形状（`ActionFromBrain`/
+│                     `EpisodeSummary`/`GoalForBrain`/`RunPlan`/
+│                     `StepVerifyVerdict`/`TaskForBrain`，原来在
+│                     `schemas/brain/domain/`）。`brain/__init__.py` 对六个
+│                     数据形状是立即加载，对 `Brain`（`brain.py`）/`BrainPort`
+│                     都是**懒加载**——原因跟 `world/__init__.py` 对 `WorldPort`
+│                     的处理一样：`brain_port.py`/`brain.py` 都要
+│                     `import pokemon_agent.schemas.brain`，而
+│                     `schemas/brain/communication/*.py` 里的协议字段又要从
+│                     这里拿回数据形状，两条依赖在初始化顺序上会正面相撞，
+│                     取舍见 `CHANGELOG.md` 对应条目
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方
 ├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层。`world/interface/`
 │                     是这个子系统自己的港口 + 数据 schema 出口，跟"怎么读/怎么算"

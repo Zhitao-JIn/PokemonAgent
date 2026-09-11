@@ -10,7 +10,7 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel
 
-from pokemon_agent.schemas.brain import GoalForBrain
+from pokemon_agent.brain.interface import GoalForBrain
 from pokemon_agent.schemas.memory import StepMemory
 
 

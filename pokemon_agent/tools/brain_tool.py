@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from pokemon_agent.interfaces import BrainPort
+from pokemon_agent.brain import BrainPort
 from pokemon_agent.schemas.brain import (
     ChooseOnceReq,
     JudgeReq,

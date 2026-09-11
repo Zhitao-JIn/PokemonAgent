@@ -26,7 +26,7 @@ from __future__ import annotations
 import threading
 import time
 
-from pokemon_agent.schemas.brain import TaskForBrain
+from pokemon_agent.brain import TaskForBrain
 from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
 from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerReviewReq,

@@ -25,7 +25,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pokemon_agent.schemas.brain import MAX_RATIONALE, ChooseOnceReq, GoalForBrain
+from pokemon_agent.brain import MAX_RATIONALE, GoalForBrain
+from pokemon_agent.schemas.brain import ChooseOnceReq
 from pokemon_agent.schemas.world import terrain_legend
 from pokemon_agent.world.interface import Facts
 

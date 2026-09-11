@@ -18,11 +18,11 @@
 
 from __future__ import annotations
 
+from pokemon_agent.brain import ActionFromBrain
 from pokemon_agent.errors import DecisionAttemptFailed, MaxRetriesExceeded
 from pokemon_agent.interfaces import BrainToolPort, TraceToolPort
 from pokemon_agent.prompts import decide_action as decide_action_prompt
 from pokemon_agent.providers import ModelCall
-from pokemon_agent.schemas.brain import ActionFromBrain
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToTraceToolAppendReq,

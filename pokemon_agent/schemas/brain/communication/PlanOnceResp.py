@@ -5,9 +5,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from pokemon_agent.brain.interface import RunPlan
 from pokemon_agent.providers.interface import ModelCall
-
-from ..domain.run_plan import RunPlan
 
 
 class PlanOnceResp(BaseModel):

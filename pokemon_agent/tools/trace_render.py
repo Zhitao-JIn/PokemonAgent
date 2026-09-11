@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 
-from pokemon_agent.schemas.brain import (
+from pokemon_agent.brain import (
     ActionFromBrain,
     GoalForBrain,
     StepVerifyVerdict,

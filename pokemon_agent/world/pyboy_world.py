@@ -22,10 +22,10 @@ import pathlib
 
 from pyboy import PyBoy
 
+from pokemon_agent.brain import ActionFromBrain, TaskForBrain
 from pokemon_agent.errors import PerceptionAttemptFailed
 from pokemon_agent.prompts import load as load_prompt
 from pokemon_agent.providers import VisionProvider
-from pokemon_agent.schemas.brain import ActionFromBrain, TaskForBrain
 from pokemon_agent.schemas.providers import VisionDescribeReq
 from pokemon_agent.schemas.world import ObservationFromWorld, PerceiveOnceResp, terrain_legend
 

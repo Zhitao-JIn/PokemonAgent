@@ -7,9 +7,8 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel
 
+from pokemon_agent.brain.interface import GoalForBrain
 from pokemon_agent.schemas.memory import StepMemory
-
-from ..domain.goal_for_brain import GoalForBrain
 
 
 class JudgeReq(BaseModel):

@@ -44,6 +44,7 @@ from __future__ import annotations
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
+from pokemon_agent.brain import TaskForBrain
 from pokemon_agent.errors import AgentError
 
 from pokemon_agent.interfaces import (
@@ -59,7 +60,6 @@ from pokemon_agent.interfaces import (
     TraceToolPort,
 )
 from pokemon_agent.prompts import run_plan as run_plan_prompt
-from pokemon_agent.schemas.brain import TaskForBrain
 from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceReq,

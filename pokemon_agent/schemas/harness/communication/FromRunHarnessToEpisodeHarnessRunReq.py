@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.brain import TaskForBrain
+from pokemon_agent.brain.interface import TaskForBrain
 
 
 class FromRunHarnessToEpisodeHarnessRunReq(BaseModel):

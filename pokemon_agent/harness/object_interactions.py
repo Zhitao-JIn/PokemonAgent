@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pokemon_agent.schemas.brain import ActionFromBrain
+from pokemon_agent.brain import ActionFromBrain
 from pokemon_agent.schemas.memory import (
     ObjectDialogEvent,
     ObjectFactEvent,
