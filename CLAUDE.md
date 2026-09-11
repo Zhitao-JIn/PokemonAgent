@@ -159,15 +159,16 @@ pokemon_agent/
 │                     `LLMProvider`/`VisionProvider`/`JudgeProvider`/
 │                     `EmbeddingProvider`/`RerankerProvider`+`ModelCall`→
 │                     `providers/interface/`、`BrainPort`+六个数据形状→
-│                     `brain/interface/` 已搬完，其余
-│                     GameToolPort/MemoryToolPort/CheckpointToolPort/
-│                     TraceToolPort/HarnessPort/EpisodeHarnessPort/
+│                     `brain/interface/`、`BrainToolPort`/`CheckpointToolPort`/
+│                     `GameToolPort`/`MemoryToolPort`/`TraceToolPort`→
+│                     `tools/ports.py` 已搬完，其余 HarnessPort/EpisodeHarnessPort/
 │                     HumanReviewer 等待搬），不再保留 re-export 薄壳——搬完的
 │                     消费方直接 `from pokemon_agent.world import WorldPort` /
 │                     `from pokemon_agent.trace import TracePort` /
 │                     `from pokemon_agent.providers import LLMProvider` /
-│                     `from pokemon_agent.brain import BrainPort` 这样各自认
-│                     模块。搬完最后一个后这个目录整体删除，取舍见 CHANGELOG
+│                     `from pokemon_agent.brain import BrainPort` /
+│                     `from pokemon_agent.tools import BrainToolPort` 这样各自
+│                     认模块。搬完最后一个后这个目录整体删除，取舍见 CHANGELOG
 │                     对应条目
 ├── brain/            纯决策层。无状态。只依赖 interfaces + schemas。`interface/`
 │                     是这个子系统自己的港口 + 数据 schema 出口：`brain_port.py`
@@ -202,7 +203,13 @@ pokemon_agent/
 │                     `WorldPort`/`Facts` 类型定义的调用方被迫连带拖着 PyBoy 一起
 │                     import，也避免和 `pyboy_world.py` 反过来 `import interfaces`
 │                     形成真正的循环导入，取舍见 `CHANGELOG.md` 对应条目
-├── tools/            GameTools / MemoryTool：Harness 伸向环境和记忆的两只手
+├── tools/            `ports.py`：五个对外契约（`BrainToolPort`/
+│                     `CheckpointToolPort`/`GameToolPort`/`MemoryToolPort`/
+│                     `TraceToolPort`，原来在顶层 `interfaces/tools/`）——扁平文件，
+│                     没有自己专属的 domain schema，跟 `memory/ports.py` 同一个道理，
+│                     零循环依赖风险，立即加载；`brain_tool.py`/`checkpoint_tool.py`/
+│                     `game_tools.py`/`memory_tool.py`/`trace_tool.py`：五个 Port 各自
+│                     唯一的实现，harness 伸向 brain/checkpoint/环境/记忆/trace 的五只手
 ├── memory/           记忆子系统整块：ports.py 对外契约（MemoryStorePort）+ store.py
 │                     统一记录存储（MemoryStore：一个 kind 一个文件夹 step_memory /
 │                     object_memory / episode_memory / knowledge_memory，一条记录一个

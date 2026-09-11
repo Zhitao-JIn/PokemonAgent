@@ -20,12 +20,13 @@ from __future__ import annotations
 
 from pokemon_agent.brain import RunPlan, TaskForBrain
 from pokemon_agent.errors import PlanAttemptFailed
-from pokemon_agent.interfaces import PLAN_MAX_ATTEMPTS, BrainToolPort, TraceToolPort
+from pokemon_agent.interfaces import PLAN_MAX_ATTEMPTS
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceReq,
     FromHarnessToTraceToolAppendReq,
 )
 from pokemon_agent.schemas.trace import EventType, Source
+from pokemon_agent.tools import BrainToolPort, TraceToolPort
 from pokemon_agent.trace import TraceKind
 
 RUN_TRACE_MASK = frozenset({EventType.LIFECYCLE, EventType.ERROR})

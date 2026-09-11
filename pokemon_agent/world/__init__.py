@@ -14,13 +14,13 @@
 
 **`interface/` 立即加载，其余懒加载。** `interface/` 只有协议定义和 pydantic
 schema，不碰 PyBoy；`pyboy_world.py` 一整条链会拖着 `from pyboy import PyBoy`
-这个重依赖，而且它自己又要 `from pokemon_agent.interfaces import VisionProvider`——
-如果这里在包初始化时就把它也一并导入，`pokemon_agent.interfaces`（几乎所有模块的
-必经之路，且它自己要 re-export `WorldPort`）跟这个包之间就会形成真正的循环导入：
-`interfaces.__init__` → `world.interface`（触发 `world/__init__.py` 全量执行）→
-（若这里也急着导 `pyboy_world.py`）→ `interfaces`（还没初始化完）。`__getattr__`
-把这几个重名字改成按需导入，`from pokemon_agent.world import X` 用起来和之前
-一模一样，只是不再是包初始化时就全量加载。
+这个重依赖，而且它自己又要 `from pokemon_agent.providers import VisionProvider`、
+`from pokemon_agent.brain import ActionFromBrain, TaskForBrain`——这些依赖本身不循环，
+但 `WorldPort`（`world/interface/world_port.py`）要 `import pokemon_agent.brain`，
+而 `schemas/world/domain/observation_from_world.py` 又要从这里拿回 `Facts`，
+两条依赖在初始化顺序上正面相撞（同 `brain/__init__.py` 对 `BrainPort` 的处理）。
+`__getattr__` 把这几个重名字改成按需导入，`from pokemon_agent.world import X`
+用起来和之前一模一样，只是不再是包初始化时就全量加载。
 """
 
 from __future__ import annotations

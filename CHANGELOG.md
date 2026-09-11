@@ -1,3 +1,51 @@
+## 2026-09-11（10）—— interfaces/schemas 集中制逐步撤销，第四步：tools
+
+**改了什么**：
+1. `pokemon_agent/interfaces/tools/{brain_tool_port,checkpoint_tool_port,
+   game_tool_port,memory_tool_port,trace_tool_port}.py`（`BrainToolPort`/
+   `CheckpointToolPort`/`GameToolPort`/`MemoryToolPort`/`TraceToolPort`）
+   合并成一个新文件 `pokemon_agent/tools/ports.py`——跟 `memory/ports.py`
+   同一个道理走**扁平文件**，不像 `world`/`trace`/`providers`/`brain`
+   那样开 `interface/` 子包：这五个 Port 全部只依赖 `schemas.harness` 的
+   信封类型，没有自己专属的 domain schema，不需要分协议/数据形状两层。
+   `pokemon_agent/interfaces/tools/` 目录随之清空删除。
+2. `tools/__init__.py` 新增五个 Port 的 re-export，跟已有的五个实现类
+   （`BrainTool`/`CheckpointTool`/`GameTools`/`MemoryTool`/`TraceTool`）
+   一起统一出口；零循环依赖风险（`schemas.harness` 对 `tools/` 没有反向
+   依赖），立即加载，不需要懒加载。
+3. `pokemon_agent/interfaces/__init__.py` 去掉五个 ToolPort 的 re-export，
+   docstring 更新搬迁进度（world/trace/providers/brain/tools 已搬完，只剩
+   `harness/` 一个子目录）。
+4. 消费方（`harness/{brain_utils,game_utils,run_plan_utils,episode_harness,
+   run_harness}.py`）把 `from pokemon_agent.interfaces import
+   BrainToolPort/CheckpointToolPort/GameToolPort/MemoryToolPort/
+   TraceToolPort` 改成 `from pokemon_agent.tools import X`；`harness/`
+   里仍然留在 `interfaces` 的名字（`EpisodeRunState`/`PLAN_MAX_ATTEMPTS`/
+   `MAX_GOAL_RETRIES`/`RunState`/`EpisodeHarnessPort`/`HumanReviewer` 等）
+   不动，等 `harness` 模块自己那一步再搬。
+5. 顺带修掉 `world/__init__.py` 文档字符串的一处历史遗留过时描述——它还在
+   说"`pokemon_agent.interfaces` 要 re-export `WorldPort`"、`VisionProvider`
+   还在 `interfaces` 里，这两条在更早的 trace/providers 步骤里已经不成立，
+   这次一并更新成当前实际情况（`WorldPort` 要 `import pokemon_agent.brain`
+   而不是 `pokemon_agent.interfaces`，`VisionProvider` 已在 `providers`）。
+
+**为什么这么改**：跟前三步一样，港口协议应该跟它的消费方（这里是五个 tool
+实现）物理挨着；tools 这一层恰好没有自己的 domain schema，用扁平文件比照
+`memory/` 的先例，不用为了跟 world/trace/providers/brain 保持形式一致而
+硬凑一个空的 `interface/domain/` 子包。
+
+**取舍**：这是目前四步里最简单的一步——五个 Port 都只依赖
+`schemas.harness`，`schemas.harness` 对 `tools/` 没有任何反向依赖，
+零循环风险，不需要像 `WorldPort`/`BrainPort` 那样懒加载。用 pydantic
+stub 跑了 4 种导入顺序（`tools_first`/`schemas_harness_first`/
+`interfaces_first`/`everything`）全部通过；顺带给 pydantic stub 补了
+缺失的 `TypeAdapter`（`memory_tool.py` 一直依赖它，之前的 stub 没有这个
+名字，纯测试基建缺口，不是代码问题）。
+
+**影响面**：`pokemon_agent.interfaces` 里现在只剩 `harness/` 一个子目录
+（`HarnessPort`/`EpisodeHarnessPort`/`HumanReviewer`/几个常量），这是
+五步计划的最后一步，搬完后 `pokemon_agent/interfaces/` 整包删除。
+
 ## 2026-09-11（9）—— interfaces/schemas 集中制逐步撤销，第三步：brain
 
 **改了什么**：
