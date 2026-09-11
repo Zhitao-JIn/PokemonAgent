@@ -155,13 +155,18 @@ pokemon_agent/
 ├── interfaces/       **正在被逐步淘汰的过渡目录。** Protocol 定义（"港口"）曾经
 │                     统一收在这里；现在改成"协议physically 挨着它自己的实现"，
 │                     一个模块一个模块搬（`WorldPort`→`world/interface/`、
-│                     `TracePort`→`trace/interface/` 已搬完，其余
-│                     GameToolPort/MemoryToolPort/BrainPort/LLMProvider/
-│                     VisionProvider 等待搬），不再保留 re-export 薄壳——搬完的
+│                     `TracePort`+`TraceKind`→`trace/interface/`、
+│                     `LLMProvider`/`VisionProvider`/`JudgeProvider`/
+│                     `EmbeddingProvider`/`RerankerProvider`+`ModelCall`→
+│                     `providers/interface/` 已搬完，其余
+│                     BrainPort/GameToolPort/MemoryToolPort/CheckpointToolPort/
+│                     TraceToolPort/HarnessPort/EpisodeHarnessPort/
+│                     HumanReviewer 等待搬），不再保留 re-export 薄壳——搬完的
 │                     消费方直接 `from pokemon_agent.world import WorldPort` /
-│                     `from pokemon_agent.trace import TracePort` 这样各自认
-│                     模块。搬完最后一个后这个目录整体删除，取舍见 CHANGELOG
-│                     对应条目
+│                     `from pokemon_agent.trace import TracePort` /
+│                     `from pokemon_agent.providers import LLMProvider` 这样
+│                     各自认模块。搬完最后一个后这个目录整体删除，取舍见
+│                     CHANGELOG 对应条目
 ├── brain/            纯决策层。无状态。只依赖 interfaces + schemas
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方
 ├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层。`world/interface/`
@@ -189,7 +194,13 @@ pokemon_agent/
 │                     object_memory / episode_memory / knowledge_memory，一条记录一个
 │                     uuid 文件 + 每文件夹一份写穿倒排索引 index.json，可自愈重建）
 │                     + retrieval.py 混合检索纯函数
-├── providers/        具体 LLM/视觉模型接入（DashScope/Qwen）
+├── providers/        `interface/`：五个提供方协议（`LLMProvider`/`VisionProvider`/
+│                     `JudgeProvider`/`EmbeddingProvider`/`RerankerProvider`，原来在
+│                     顶层 `interfaces/providers/`）+ `ModelCall`（原来在
+│                     `schemas/providers/domain/`，信封数据形状），现在同住一包，
+│                     立即加载（都只依赖 `schemas.providers`，无重实现依赖，不需要
+│                     `world/interface` 那种懒加载）；具体 LLM/视觉模型接入实现
+│                     （DashScope/Qwen/DeepSeek/FastEmbed）在同目录下的实现文件里
 ├── vision/           图像预处理（网格叠加、放大）
 ├── trace/            事件流：`interface/`（`TracePort` 协议 + `TraceKind` 账目
 │                     词表，原来分别在顶层 `interfaces/trace/` 和

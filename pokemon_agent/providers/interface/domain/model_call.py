@@ -1,4 +1,11 @@
-"""一次模型调用留下的账，外加它成没成。"""
+"""一次模型调用留下的账，外加它成没成。
+
+原来放在 `schemas/providers/domain/model_call.py`；跟 `LLMProvider`/
+`VisionProvider` 这些协议一样，是 `providers/` 这个模块自己的数据形状，
+不是"给别人看的跨层契约"，挪到这里同住一包。`schemas/providers/__init__.py`
+不再 re-export 它——需要的地方直接 `from pokemon_agent.providers import
+ModelCall`。
+"""
 
 from __future__ import annotations
 

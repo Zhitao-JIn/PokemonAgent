@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from pokemon_agent.providers.interface import ModelCall
 from pokemon_agent.schemas.brain import (
     ActionFromBrain,
     GoalForBrain,
@@ -24,7 +25,6 @@ from pokemon_agent.schemas.brain import (
     TaskForBrain,
 )
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, StepMemory
-from pokemon_agent.schemas.providers import ModelCall
 from pokemon_agent.schemas.trace import Source
 from pokemon_agent.schemas.world import ObservationFromWorld
 from pokemon_agent.trace.interface import TraceKind

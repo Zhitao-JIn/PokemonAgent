@@ -1,4 +1,9 @@
-"""LLM 提供方接口。"""
+"""LLM 提供方接口。
+
+原来放在顶层 `pokemon_agent/interfaces/providers/`；这次跟 `providers/` 的
+实现（`QwenProvider`/`ArkProvider`/`DeepSeekProvider`）同住一包，
+`pokemon_agent/interfaces/` 这个集中注册表这次整个撤销。
+"""
 
 from __future__ import annotations
 

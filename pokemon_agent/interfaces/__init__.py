@@ -11,36 +11,32 @@ tools/providers/trace）实现这些 Protocol，消费方（brain/harness）只�
 本文件是统一出口：本层全部 Port 与状态模型从这里 re-export，
 消费方只写 `from pokemon_agent.interfaces import X`，不深到子目录的模块文件。
 
-**这个包正在被逐步淘汰**：`WorldPort` 已经搬到 `pokemon_agent/world/interface/
-world_port.py`，`TracePort`（连同它的账目词表 `TraceKind`）已经搬到
-`pokemon_agent/trace/interface/`——都跟着各自的实现同住一包，理由和取舍见
-对应 CHANGELOG 条目。这次不再在这里保留 re-export：消费方直接
-`from pokemon_agent.world import WorldPort` / `from pokemon_agent.trace import
-TracePort`。本文件剩下的其余 Port 会按 trace → providers → brain → tools →
-harness 的顺序逐个搬完，搬完最后一个后这个包整体删除。
+**这个包正在被逐步淘汰**：`WorldPort`→`pokemon_agent/world/interface/`、
+`TracePort`+`TraceKind`→`pokemon_agent/trace/interface/`、
+`LLMProvider`/`VisionProvider`/`JudgeProvider`/`EmbeddingProvider`/
+`RerankerProvider`+`ModelCall`→`pokemon_agent/providers/interface/` 已经搬完，
+都跟着各自的实现同住一包，理由和取舍见对应 CHANGELOG 条目。这次不再在这里
+保留 re-export：消费方直接 `from pokemon_agent.providers import LLMProvider`
+这样各自认模块。本文件剩下的其余 Port（brain/harness/tools 三个子目录）会按
+brain → tools → harness 的顺序逐个搬完，搬完最后一个后这个包整体删除。
 """
 
 __all__ = [
     "BrainPort",
     "BrainToolPort",
     "CheckpointToolPort",
-    "EmbeddingProvider",
     "EpisodeHarnessPort",
     "EpisodeRunState",
     "GameToolPort",
     "HarnessPort",
     "HumanReviewer",
-    "JudgeProvider",
-    "LLMProvider",
     "MAX_GOAL_RETRIES",
     "MAX_PLAN_PUSH",
     "MemoryToolPort",
     "PLAN_MAX_ATTEMPTS",
-    "RerankerProvider",
     "ResumeEpisode",
     "RunState",
     "TraceToolPort",
-    "VisionProvider",
 ]
 from .brain.brain_port import BrainPort
 from .harness.episode_harness_port import EpisodeHarnessPort, EpisodeRunState
@@ -53,10 +49,6 @@ from .harness.harness_port import (
     RunState,
 )
 from .harness.human_reviewer import HumanReviewer
-from .providers.embedding_provider import EmbeddingProvider
-from .providers.llm_provider import LLMProvider
-from .providers.reranker_provider import RerankerProvider
-from .providers.vision_provider import JudgeProvider, VisionProvider
 from .tools.brain_tool_port import BrainToolPort
 from .tools.checkpoint_tool_port import CheckpointToolPort
 from .tools.game_tool_port import GameToolPort

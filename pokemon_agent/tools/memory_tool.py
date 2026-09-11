@@ -35,8 +35,8 @@ from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
-from pokemon_agent.interfaces import EmbeddingProvider, RerankerProvider
 from pokemon_agent.memory import MemoryStore
+from pokemon_agent.providers import EmbeddingProvider, RerankerProvider
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolAppendObjectEventsReq,
     FromHarnessToMemoryToolQueryEpisodeStepsReq,

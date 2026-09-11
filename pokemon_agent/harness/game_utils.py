@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from pokemon_agent.errors import PerceptionAttemptFailed, PerceptionFailure
 from pokemon_agent.interfaces import GameToolPort, TraceToolPort
+from pokemon_agent.providers import ModelCall
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq
-from pokemon_agent.schemas.providers import ModelCall
 from pokemon_agent.schemas.trace import Source
 from pokemon_agent.schemas.world import ObservationFromWorld
 from pokemon_agent.trace import TraceKind

@@ -48,6 +48,7 @@ from pokemon_agent.prompts import decide_action as decide_action_prompt
 from pokemon_agent.prompts import judge_success as judge_success_prompt
 from pokemon_agent.prompts import verify_and_summarize as verify_and_summarize_prompt
 from pokemon_agent.prompts.object_render import render_object_events
+from pokemon_agent.providers import ModelCall
 from pokemon_agent.schemas.brain import GoalForBrain, StepVerifyVerdict, TaskForBrain
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
@@ -77,7 +78,6 @@ from pokemon_agent.schemas.harness import (
     FromRunHarnessToEpisodeHarnessRunResp,
 )
 from pokemon_agent.schemas.memory import dedup_snapshots
-from pokemon_agent.schemas.providers import ModelCall
 from pokemon_agent.trace import TraceKind, read_screenshot
 
 from . import brain_utils, episode_utils, game_utils, memory_query_utils

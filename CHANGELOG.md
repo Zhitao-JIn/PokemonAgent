@@ -1,3 +1,55 @@
+## 2026-09-11（8）—— interfaces/schemas 集中制逐步撤销，第二步：providers
+
+**改了什么**：
+1. `pokemon_agent/interfaces/providers/{llm_provider,vision_provider,
+   embedding_provider,reranker_provider}.py`（`LLMProvider`/`VisionProvider`/
+   `JudgeProvider`/`EmbeddingProvider`/`RerankerProvider`）→
+   `pokemon_agent/providers/interface/` 下的同名文件。
+2. `pokemon_agent/schemas/providers/domain/model_call.py`（`ModelCall`）→
+   `pokemon_agent/providers/interface/domain/model_call.py`；
+   `schemas/providers/domain/` 目录随之清空删除。
+3. 新增 `providers/interface/__init__.py`（立即加载：五个协议 + `ModelCall`
+   都只依赖 `schemas.providers` 这个信封类型包，不依赖任何重实现——
+   `fastembed`/PIL/真实网络调用都在各自实现文件内部懒加载或按需 import，
+   不需要 `world/interface` 那种懒加载）、
+   `providers/interface/domain/__init__.py`；`providers/__init__.py` 把
+   `interface/` 的六个名字和已有的具体实现（`FastEmbedText`/`FastEmbedReranker`/
+   `ArkProvider`/`DeepSeekProvider`/`QwenProvider`）一起 re-export，消费方写
+   `from pokemon_agent.providers import LLMProvider, ModelCall`。
+4. `schemas/providers/__init__.py` 不再 re-export `ModelCall`。
+5. 消费方逐个改 import：`brain/brain.py`、`errors.py`、
+   `harness/{brain_utils,episode_harness,game_utils}.py`、
+   `memory/{retrieval,store}.py`（仅 `TYPE_CHECKING`）、
+   `tools/{memory_tool,trace_render}.py`、`world/pyboy_world.py`，全部从
+   `pokemon_agent.interfaces` / `pokemon_agent.schemas.providers` 改成
+   `pokemon_agent.providers`。
+6. `schemas/brain/communication/{ChooseOnceResp,JudgeResp,PlanOnceResp,
+   VerifyAndSummarizeResp}.py`、`schemas/harness/communication/
+   {FromHarnessToBrainToolChooseOnceResp,FromHarnessToBrainToolJudgeResp,
+   FromHarnessToBrainToolPlanOnceResp,FromHarnessToBrainToolVerifyAndSummarizeResp,
+   FromHarnessToTraceToolAppendReq}.py` 需要 `ModelCall` 作字段类型，改成
+   `from pokemon_agent.providers.interface import ModelCall`——跟
+   `observation_from_world.py` 需要 `from pokemon_agent.world.interface import
+   Facts` 是同一种"schema 文件反过来依赖实现模块的 interface 子包"的写法。
+7. `pokemon_agent/interfaces/__init__.py` 去掉五个 provider 协议 + `ModelCall`
+   的 re-export，docstring 更新搬迁进度（trace、providers 已搬完，剩
+   brain/tools/harness 三个）。
+
+**为什么这么改**：跟 `world`/`trace` 一样，港口协议和它信封数据形状本来就该
+挨着实现住；`providers/` 恰好没有 world 那种"实现极重（PyBoy）不能立即加载"
+的问题，`interface/` 可以放心立即加载，不用再引入一层懒加载。
+
+**取舍**：`providers/interface/` 判定为零循环依赖风险——`schemas.providers`
+是它唯一依赖，而 `schemas.providers` 对 `providers/` 没有反向依赖，所以这次
+没有像 `world/interface/domain/terrain_map.py` 那样需要把任何 import 挪进
+方法体内部延迟加载。用 pydantic stub 跑了 5 种导入顺序
+（`providers_first`/`schemas_brain_first`/`schemas_harness_first`/
+`schemas_providers_first`/`everything`）全部通过。
+
+**影响面**：`pokemon_agent.interfaces` 里现在只剩 brain/tools/harness 三类
+Port，按计划顺序（brain → tools → harness）继续搬，搬完最后一个后
+`pokemon_agent/interfaces/` 整包删除。
+
 ## 2026-09-11（7）—— interfaces/schemas 集中制逐步撤销，第一步：trace
 
 **改了什么**：

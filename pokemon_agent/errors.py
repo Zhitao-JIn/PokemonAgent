@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pokemon_agent.schemas.providers import ModelCall
+    from pokemon_agent.providers import ModelCall
 
 
 class AgentError(Exception):

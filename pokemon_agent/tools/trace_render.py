@@ -26,6 +26,7 @@ from pokemon_agent.schemas.brain import (
     StepVerifyVerdict,
     TaskForBrain,
 )
+from pokemon_agent.providers import ModelCall
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, RunResp
 from pokemon_agent.schemas.memory import (
     EpisodeMemory,
@@ -34,7 +35,6 @@ from pokemon_agent.schemas.memory import (
     ObjectWarpEvent,
     StepMemory,
 )
-from pokemon_agent.schemas.providers import ModelCall
 from pokemon_agent.schemas.trace import EventType, Source
 from pokemon_agent.schemas.world import ObservationFromWorld
 

@@ -1,4 +1,8 @@
-"""视觉模型提供方接口。"""
+"""视觉模型提供方接口。
+
+原来放在顶层 `pokemon_agent/interfaces/providers/`；跟 `llm_provider.py` 一起
+搬进这里，同住一包。
+"""
 
 from __future__ import annotations
 

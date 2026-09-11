@@ -47,7 +47,7 @@ from pokemon_agent.memory.retrieval import hybrid_retrieve
 if TYPE_CHECKING:
     # 仅类型检查期依赖：运行期不 import interfaces（否则会连带拖进整层
     # schemas）。注入进来的 embedder/reranker 只需结构上满足 Protocol。
-    from pokemon_agent.interfaces import EmbeddingProvider, RerankerProvider
+    from pokemon_agent.providers import EmbeddingProvider, RerankerProvider
 
 # md 类 kind：记录是 frontmatter + 正文的 markdown；其余 kind 是整文件 JSON。
 _MD_KINDS = frozenset({"episode_memory", "knowledge_memory"})

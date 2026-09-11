@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from pokemon_agent.providers.interface import ModelCall
 from pokemon_agent.schemas.brain import EpisodeSummary, StepVerifyVerdict
 from pokemon_agent.schemas.memory import EpisodeMemory
-from pokemon_agent.schemas.providers import ModelCall
 
 
 class FromHarnessToBrainToolVerifyAndSummarizeResp(BaseModel):

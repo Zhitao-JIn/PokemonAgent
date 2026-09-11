@@ -42,7 +42,7 @@ from pokemon_agent.errors import (
     ParseFailure,
     PlanAttemptFailed,
 )
-from pokemon_agent.interfaces import JudgeProvider, LLMProvider
+from pokemon_agent.providers import JudgeProvider, LLMProvider, ModelCall
 from pokemon_agent.schemas.brain import (
     MAX_RATIONALE,
     MAX_TIMES,
@@ -63,7 +63,7 @@ from pokemon_agent.schemas.brain import (
     VerifyAndSummarizeResp,
 )
 from pokemon_agent.schemas.memory import SNAPSHOT_BLIND, EpisodeMemory, StepMemory
-from pokemon_agent.schemas.providers import LlmCompleteReq, ModelCall, VisionDescribeReq
+from pokemon_agent.schemas.providers import LlmCompleteReq, VisionDescribeReq
 from pokemon_agent.schemas.world import INTERACT_KEY, ActionSpaceForBrain, ObservationFromWorld
 
 DIRECTION_KEYS = frozenset({"up", "down", "left", "right"})

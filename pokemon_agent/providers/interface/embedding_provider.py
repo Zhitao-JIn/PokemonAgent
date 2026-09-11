@@ -1,4 +1,7 @@
-"""Embedding 提供方接口。"""
+"""Embedding 提供方接口。
+
+原来放在顶层 `pokemon_agent/interfaces/providers/`。
+"""
 
 from __future__ import annotations
 

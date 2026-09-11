@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.providers import ModelCall
+from pokemon_agent.providers.interface import ModelCall
 
 
 class JudgeResp(BaseModel):

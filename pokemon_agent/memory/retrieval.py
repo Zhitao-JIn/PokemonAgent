@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 from rank_bm25 import BM25Okapi
 
 if TYPE_CHECKING:
-    from pokemon_agent.interfaces import EmbeddingProvider, RerankerProvider
+    from pokemon_agent.providers import EmbeddingProvider, RerankerProvider
 
 
 def tokenize(text: str) -> list[str]:
