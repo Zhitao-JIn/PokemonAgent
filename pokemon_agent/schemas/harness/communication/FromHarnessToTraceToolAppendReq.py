@@ -24,7 +24,7 @@ from pokemon_agent.brain.interface import (
     TaskForBrain,
 )
 from pokemon_agent.providers.interface import ModelCall
-from pokemon_agent.memory import EpisodeMemory, ObjectFactEvent, StepMemory
+from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, StepMemory
 from pokemon_agent.trace import Source
 from pokemon_agent.world import Observation
 from pokemon_agent.trace.interface import TraceKind

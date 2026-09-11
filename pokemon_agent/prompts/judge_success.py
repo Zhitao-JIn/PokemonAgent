@@ -33,7 +33,7 @@ judge 第 0 步不问模型（`episode_harness.py::judge()` 的硬编码分支�
 from __future__ import annotations
 
 from pokemon_agent.schemas.brain import JudgeReq
-from pokemon_agent.memory import render_sequence
+from pokemon_agent.schemas.memory import render_sequence
 
 from . import load
 

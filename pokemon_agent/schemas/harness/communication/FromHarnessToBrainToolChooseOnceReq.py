@@ -9,7 +9,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import GoalForBrain
-from pokemon_agent.memory import StepMemory
+from pokemon_agent.schemas.memory import StepMemory
 from pokemon_agent.world import ActionSpace, Observation
 
 

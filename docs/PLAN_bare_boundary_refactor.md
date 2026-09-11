@@ -2,8 +2,25 @@
 
 **状态：A/B/C/D 四个问题已由用户确认（A=彻底裸字段化；B=domain 类型也不带
 For/From 后缀；C=datastore；D=TraceEvent 一并搬）。第一步（world）已完成并提交
-（见 CHANGELOG "2026-09-11（12）"）。第二步起（memory/trace/providers/brain/tools）
-待续。**
+（见 CHANGELOG "2026-09-11（12）"）。
+
+**（12）条对 memory 的处理有一处错误，已在 (13) 条修正**：`StepMemory`/
+`EpisodeMemory`/`ObjectFactEvent` **不该**搬进 `pokemon_agent/memory/`——
+`MemoryStorePort` 完全不透明（只收发裸字段/dict），不像 `TracePort` 那样真的
+需要在内部构造/解析这几个类，所以它们物理上留在/搬回 `schemas/memory/`；
+`StepMemory`/`ObjectFactEvent` 对 `world.Observation`/`PlaceInWorld` 的引用
+改成了各自的内部类（`StepMemory.Observation`、`ObjectFactEventBase.Place`），
+组装方（`brain.brain.py::reflect()`、`harness/object_interactions.py`）负责
+转换。`trace/datastore/`（`TraceEvent`）不受影响——它是被套用同一条规则时
+唯一判断正确的一例。详见 CHANGELOG "2026-09-11（13）"。
+
+**判断一个数据形状该不该归某个模块自己的准确标准**（这次教训之后收敛出来的）：
+只有当该模块自己的 Port/实现**真的需要构造或消费它的具体样子**时，才归它——
+`TracePort.append()`/`LocalTrace.read_disk_events()` 满足，`MemoryStorePort`
+不满足。
+
+第二步起（memory 的 `world.Observation`/`PlaceInWorld` 引用已随 (13) 条一并
+处理；trace/providers/brain/tools 各自的零依赖化）待续。**
 
 ## 0. 背景
 

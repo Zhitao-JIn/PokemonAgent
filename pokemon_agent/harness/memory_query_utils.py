@@ -10,7 +10,7 @@ query 字符串，交给调用方去调 `MemoryToolPort` 的查询方法——**
 
 from __future__ import annotations
 
-from pokemon_agent.memory import StepMemory
+from pokemon_agent.schemas.memory import StepMemory
 from pokemon_agent.world import Observation
 
 

@@ -47,7 +47,7 @@ from pokemon_agent.schemas.harness import (
     FromRunHarnessToEpisodeHarnessRunReq,
     FromRunHarnessToEpisodeHarnessRunResp,
 )
-from pokemon_agent.memory import EpisodeMemory, StepMemory
+from pokemon_agent.schemas.memory import EpisodeMemory, StepMemory
 from pokemon_agent.world import ActionSpace, Observation
 
 

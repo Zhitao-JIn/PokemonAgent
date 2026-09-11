@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from pokemon_agent.brain.interface import EpisodeSummary, StepVerifyVerdict
 from pokemon_agent.providers.interface import ModelCall
-from pokemon_agent.memory import EpisodeMemory
+from pokemon_agent.schemas.memory import EpisodeMemory
 
 
 class VerifyAndSummarizeResp(BaseModel):

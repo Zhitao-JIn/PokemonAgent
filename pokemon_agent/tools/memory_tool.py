@@ -57,7 +57,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolVoidMemoryAfterReq,
     FromHarnessToMemoryToolVoidMemoryAfterResp,
 )
-from pokemon_agent.memory import EpisodeMemory, ObjectFactEvent, StepMemory
+from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, StepMemory
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 

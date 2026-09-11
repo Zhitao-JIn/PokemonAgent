@@ -28,7 +28,7 @@ from pokemon_agent.brain import (
 )
 from pokemon_agent.providers import ModelCall
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, RunResp
-from pokemon_agent.memory import (
+from pokemon_agent.schemas.memory import (
     EpisodeMemory,
     ObjectDialogEvent,
     ObjectFactEvent,

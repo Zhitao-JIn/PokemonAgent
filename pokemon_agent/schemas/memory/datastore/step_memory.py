@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import unicodedata
+from typing import Any
 
-from pokemon_agent.world import Observation
+from pydantic import BaseModel, ConfigDict, Field
 
 SNAPSHOT_BLIND: frozenset[str] = frozenset({"known_objects", "knowledge"})
 """**不进记忆的字段。** 记忆里每一项都必须跨步骤成立，这两项都不成立：
@@ -21,6 +22,21 @@ SNAPSHOT_BLIND: frozenset[str] = frozenset({"known_objects", "knowledge"})
 默认它应该进记忆，需要理由的是把它挡在外面——反过来的话，加字段的人得记得
 回来改清单，而忘了改不报错，只表现为某类画面的变化永远看不见。
 """
+
+
+def _display_width(text: str) -> int:
+    """这段文字占几个字符宽。**中日韩字符算两格。**
+
+    跟 `world.interface.domain.facts._display_width` 是同一份算法——两处都是
+    "对齐一段中英混排文本"这一件事，不是彼此依赖的两个模块，各自留一份纯函数
+    没有额外代价，换来的是这里不用在类级别 import `pokemon_agent.world`。
+    """
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
+
+
+_EXTRA_ORDER: tuple[str, ...] = ("my_name", "my_level", "my_hp", "foe_name", "foe_level", "foe_hp")
+"""同 `world.interface.domain.facts._EXTRA_ORDER`：视觉模型按 scene 自由给的那批
+字段里，这几个几乎每帧都出现、值得固定顺序，其余按字母序排在后面。"""
 
 
 class StepMemory(BaseModel):
@@ -45,6 +61,139 @@ class StepMemory(BaseModel):
 
     程序记忆、skill library（机制二）、值回填（机制三）都还没做。
     """
+
+    class Observation(BaseModel):
+        """`StepMemory` 自己存的"观测快照"——**不是** `pokemon_agent.world.Observation`。
+
+        这条记忆只需要"当时看到的样子"——渲染成文本、跟另一份快照比对是否相同，
+        从不需要 `world.Observation`/`Facts` 的任何**行为**（那些是 world 子系统
+        对外承诺的 Port 产物）。按"模块间零依赖，只靠裸字段交互"这条边界，这里
+        重新声明一份字段形状完全一致、类本身互不引用的内部类型——`StepMemory`
+        唯一认识两边形状的组装方是 `brain.brain.py::reflect()`，它负责在构造
+        `StepMemory` 之前把真身 `Observation.model_dump(mode="json")` 拍平后
+        验证成这里的类型（字段名一致，一次 `model_validate()` 就能转过去，不需要
+        逐字段手写映射）。
+        """
+
+        class Facts(BaseModel):
+            """同 `world.interface.domain.facts.Facts` 的快照版：字段、渲染对齐
+            算法照抄（两边要渲染出一模一样的文本，大脑才能拿旧记忆和当前观测
+            直接比对），但类不互相引用。`extra="allow"`——视觉模型按 scene 自由
+            给的字段（`my_hp`/`foe_level`…）原样收进来，同真身一致。
+            """
+
+            model_config = ConfigDict(extra="allow")
+
+            class Landmark(BaseModel):
+                """同 `Facts.Landmark` 的快照版：门/招牌/人/物/石，只留渲染要用的字段。"""
+
+                kind: str
+                map_id: int
+                x: int
+                y: int
+
+                def render(self) -> str:
+                    return f"{self.kind} x={self.x} y={self.y}"
+
+            scene: str | None = None
+            overlay: str | None = None
+            where: str = ""
+            facing: str = ""
+            neighbors: str = ""
+            landmarks: list[Landmark] = Field(default_factory=list)
+            dialog_text: str = ""
+            options: list[str] = Field(default_factory=list)
+            cursor: str | None = None
+            overview: str = ""
+            walk_map: str = ""
+            map_id: int | None = None
+
+            @property
+            def scene_value(self) -> str:
+                """`scene` 的文本值；`scene` 为 `None` 时给空串。同真身
+                `Facts.scene_value`——给只要文本的调用方用（知识检索 query）。"""
+                return self.scene or ""
+
+            @property
+            def overlay_value(self) -> str:
+                """同 `scene_value`，针对 `overlay`。"""
+                return self.overlay or ""
+
+            def _entries(self) -> list[tuple[str, str, str]]:
+                """`(字段名, 中文标签, 文本)` 列表，只含"有值"的字段，按固定顺序。
+                同真身 `Facts._entries()`——顺序必须一致，两边渲染出的文本才能
+                让大脑逐行对照。
+                """
+                entries: list[tuple[str, str, str]] = []
+                if self.scene is not None:
+                    entries.append(("scene", "场景", self.scene))
+                if self.overlay is not None:
+                    entries.append(("overlay", "叠加层", self.overlay))
+                if self.where:
+                    entries.append(("where", "位置", self.where))
+                if self.map_id is not None:
+                    entries.append(("map_id", "地图", str(self.map_id)))
+                if self.facing:
+                    entries.append(("facing", "朝向", self.facing))
+                if self.neighbors:
+                    entries.append(("neighbors", "四邻", self.neighbors))
+                if self.landmarks:
+                    entries.append(("landmarks", "地标", "; ".join(m.render() for m in self.landmarks)))
+                if self.dialog_text:
+                    entries.append(("dialog_text", "对话", self.dialog_text))
+                if self.options:
+                    entries.append(("options", "选项", " / ".join(self.options)))
+                if self.cursor:
+                    entries.append(("cursor", "光标", self.cursor))
+                extra: dict[str, Any] = self.model_extra or {}
+                seen = set()
+                for k in _EXTRA_ORDER:
+                    if k in extra and extra[k] not in (None, ""):
+                        entries.append((k, k, str(extra[k])))
+                        seen.add(k)
+                for k in sorted(extra):
+                    if k in seen or extra[k] in (None, ""):
+                        continue
+                    entries.append((k, k, str(extra[k])))
+                if self.overview:
+                    entries.append(("overview", "概况", self.overview))
+                if self.walk_map:
+                    entries.append(("walk_map", "walk_map", self.walk_map))
+                return entries
+
+            def render(self, indent: str = "  ") -> str:
+                """把这份 facts 渲染成一段可读、可打分的文本。同真身 `Facts.render()`。"""
+                entries = self._entries()
+                if not entries:
+                    return ""
+                width = max(_display_width(label) for _k, label, _v in entries)
+                lines = []
+                for _k, label, body in entries:
+                    pad = " " * (width - _display_width(label) + 2)
+                    gutter = " " * (len(indent) + width + 2)
+                    body = body.replace("\n", "\n" + gutter)
+                    lines.append(f"{indent}{label}{pad}{body}")
+                return "\n".join(lines)
+
+        class Place(BaseModel):
+            """同 `PlaceInWorld` 的快照版：只留 `map_id`/`x`/`y` 三个原始字段——
+            `.step_toward()` 这类行为只有判定层（harness）拿着真身才用得到，
+            这里只是存下来的记忆，不需要。"""
+
+            map_id: int
+            x: int
+            y: int
+
+        step: int = Field(description="本 episode 内的第几步，从 0 开始")
+        place: Place | None = Field(default=None, description="主角所在的格子（结构化坐标）")
+        status: str = Field(description="这一帧的状态行")
+        facts: Facts = Field(default_factory=Facts, description="结构化事实容器的快照")
+        done: bool = Field(default=False, description="产生这份观测时世界层是否已经不在了")
+
+        def render(self, indent: str = "  ") -> str:
+            """同真身 `Observation.render()`。"""
+            body = self.facts.render(indent)
+            return body if body else f"{indent}{self.status}"
 
     before: Observation = Field(description="做决定时看到的画面")
     rationale: list[str] = Field(description="当时的理由。**不是完整推理**——那留在 trace 里")
@@ -121,7 +270,7 @@ class StepMemory(BaseModel):
         return "\n".join(lines)
 
     @staticmethod
-    def _render_obs(obs: Observation) -> str:
+    def _render_obs(obs: StepMemory.Observation) -> str:
         """渲染观测快照，**排除 `walk_map`**——它是坐标推理原料（这一屏哪格能走），
         在记忆的前后对比里几乎不变（同一地图内恒定），每条记忆带两份纯属浪费：
         实测一条记忆 1300 字符，其中 walk_map 占 ~800（before+after 各一份），
@@ -132,7 +281,7 @@ class StepMemory(BaseModel):
         return obs.model_copy(update={"facts": facts}).render()
 
     @staticmethod
-    def _snapshot_equal(a: Observation, b: Observation) -> bool:
+    def _snapshot_equal(a: StepMemory.Observation, b: StepMemory.Observation) -> bool:
         """忽略 `step` 号之外，两份观测是否完全一致。"""
         return a.model_copy(update={"step": 0}) == b.model_copy(update={"step": 0})
 
@@ -196,12 +345,13 @@ def render_sequence(entries: list[StepMemory], *, reason: bool = True) -> list[s
 
 def dedup_snapshots(
     entries: list[StepMemory],
-) -> tuple[list[str], list[Observation]]:
+) -> tuple[list[str], list[StepMemory.Observation]]:
     """把一串 `StepMemory` 摊平成 `(before, after, before, after, ...)` 的观测
     序列，去重后**一次遍历、一口气**返回两条严格对齐的列表：截图（base64
-    字符串，喂 `VisionDescribeReq.images`）和它们各自对应的 `Observation`
-    （给调用方转文字，比如"当前观测"要渲成 `$observation`）。**两条列表长度、
-    顺序永远一一对应**——`frames[i]` 就是 `snapshots[i]` 这份观测的那张截图。
+    字符串，喂 `VisionDescribeReq.images`）和它们各自对应的 `StepMemory.
+    Observation` 快照（给调用方转文字，比如"当前观测"要渲成 `$observation`）。
+    **两条列表长度、顺序永远一一对应**——`frames[i]` 就是 `snapshots[i]`
+    这份观测的那张截图。
 
     两条列表由构造保证一一对应，调用方不必自己论证“这个索引对应那份观测”
     （靠“最后一条的 after 就是当前观测”去猜索引，只在 history 非空且连续时
@@ -224,7 +374,7 @@ def dedup_snapshots(
     出现，也不能让长度对不上。
     """
     frames: list[str] = []
-    snapshots: list[Observation] = []
+    snapshots: list[StepMemory.Observation] = []
     for entry in entries:
         for obs, frame in ((entry.before, entry.before_frame), (entry.after, entry.after_frame)):
             if frame is None:

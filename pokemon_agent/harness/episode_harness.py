@@ -69,7 +69,7 @@ from pokemon_agent.schemas.harness import (
     FromRunHarnessToEpisodeHarnessRunReq,
     FromRunHarnessToEpisodeHarnessRunResp,
 )
-from pokemon_agent.memory import dedup_snapshots
+from pokemon_agent.schemas.memory import dedup_snapshots
 from pokemon_agent.tools import (
     BrainToolPort,
     CheckpointToolPort,

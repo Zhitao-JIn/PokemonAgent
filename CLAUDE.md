@@ -159,11 +159,22 @@ def choose(self, obs: Observation, space: ActionSpace) -> Action:
 
 ```
 pokemon_agent/
-├── schemas/          Pydantic 数据模型（跨层契约）。记忆一族按**检索单元**命名：
-│                     step_memory（一条=一步）/ episode_memory（一条=一整局）/
-│                     object_fact（一条=一格）/ knowledge（不挂坐标的先验）/
-│                     episode_summary_io（蒸馏那次调用的请求+响应，不是记忆）
-│                     其余：Observation / Action / ActionSpace / TraceEvent / Completion
+├── schemas/          Pydantic 数据模型（跨层契约 + 本项目自己的记录形状）。
+│                     `memory/`：记忆一族按**检索单元**命名——step_memory（一条=
+│                     一步，`StepMemory`）/ episode_memory（一条=一整局，
+│                     `EpisodeMemory`）/ object_fact（一条=一格，`ObjectFactEvent`）/
+│                     knowledge（不挂坐标的先验）/ episode_summary_io（蒸馏那次
+│                     调用的请求+响应，不是记忆）——这三类记录形状物理归这里而不是
+│                     `memory/` 自己的包：`MemoryStorePort` 完全不透明（只收发裸
+│                     字段/dict），从不需要知道它们具体长什么样，只有 tool 层/
+│                     组装方（`brain.brain.py::reflect()`、
+│                     `harness/object_interactions.py`、`tools/memory_tool.py`）
+│                     才认识；`StepMemory.Observation`/`ObjectFactEventBase.Place`
+│                     是各自的内部类，跟 `pokemon_agent.world` 的 `Observation`/
+│                     `PlaceInWorld` 字段一致但类不互相引用，组装方用
+│                     `.model_dump(mode="json")` → `.model_validate()` 转换。
+│                     `world`/`trace` 不再有子包（`Observation`/`ActionSpace`/
+│                     `TerrainMap`/`TraceEvent` 等已物理归回各自的模块，见下）
 ├── brain/            纯决策层。无状态。只依赖各模块自己的 interface/ + schemas。
 │                     `interface/`
 │                     是这个子系统自己的港口 + 数据 schema 出口：`brain_port.py`
@@ -233,17 +244,17 @@ pokemon_agent/
 │                     零循环依赖风险，立即加载；`brain_tool.py`/`checkpoint_tool.py`/
 │                     `game_tools.py`/`memory_tool.py`/`trace_tool.py`：五个 Port 各自
 │                     唯一的实现，harness 伸向 brain/checkpoint/环境/记忆/trace 的五只手
-├── memory/           记忆子系统整块：ports.py 对外契约（MemoryStorePort，本来就
-│                     只收发裸字段/dict，零依赖）+ datastore/（`StepMemory`/
-│                     `EpisodeMemory`/`ObjectFactEvent` 等被持久化的记录形状，
-│                     原来在 `schemas/memory/datastore/`，物理搬回自己的包；
-│                     `StepMemory`/`object_memory.py` 仍引用 `pokemon_agent.world`
-│                     的 `Observation`/`PlaceInWorld`，属于"模块间零依赖"这条
-│                     原则的已知遗留，留给 memory 自己的重构步骤）+ store.py
-│                     统一记录存储（MemoryStore：一个 kind 一个文件夹 step_memory /
-│                     object_memory / episode_memory / knowledge_memory，一条记录一个
-│                     uuid 文件 + 每文件夹一份写穿倒排索引 index.json，可自愈重建）
-│                     + retrieval.py 混合检索纯函数
+├── memory/           记忆子系统整块，**完全不认识** `StepMemory`/`EpisodeMemory`/
+│                     `ObjectFactEvent` 这几个类——ports.py 对外契约
+│                     （MemoryStorePort：只收发 `metadata: dict[str, str]` +
+│                     `payload: dict` 两个裸字段，零依赖）+ store.py 统一记录存储
+│                     （MemoryStore：一个 kind 一个文件夹 step_memory / object_memory /
+│                     episode_memory / knowledge_memory，一条记录一个 uuid 文件 +
+│                     每文件夹一份写穿倒排索引 index.json，可自愈重建）+ retrieval.py
+│                     混合检索纯函数。三类被持久化的记录形状归 `schemas/memory/`
+│                     （见该目录说明）——`StepMemory`/`ObjectFactEvent` 曾经短暂搬
+│                     进来过，但 `MemoryStorePort` 从头到尾不需要知道它们的具体
+│                     形状，只有 tool 层/组装方才需要，因此物理上搬回 `schemas/`
 ├── providers/        `interface/`：五个提供方协议（`LLMProvider`/`VisionProvider`/
 │                     `JudgeProvider`/`EmbeddingProvider`/`RerankerProvider`，原来在
 │                     顶层 `interfaces/providers/`）+ `ModelCall`（原来在

@@ -1,3 +1,81 @@
+## 2026-09-11（13）—— 修正（12）的错误：`StepMemory`/`EpisodeMemory`/`ObjectFactEvent` 搬回 `schemas/memory/`，`Observation`/`PlaceInWorld` 引用改内部类
+
+**背景**：（12）条把 `schemas/memory/datastore/*.py` 当作"数据形状归它自己模块"
+的普通一例，搬进了 `pokemon_agent/memory/datastore/`——跟 `trace/datastore/`
+（`TraceEvent`）套用同一条规则处理的。用户指出这一步套错了规则：`memory/ports.py`
+的 `MemoryStorePort` 是**完全不透明**的协议（`put`/`get_many`/`filter`/
+`archive_many` 全程只认 `metadata: dict[str, str]` + `payload: dict`
+两个裸字段，`store.py` 的实现同理，从不 import `StepMemory` 这几个类），
+不像 `TracePort.append()`/`LocalTrace.read_disk_events()` 那样**真的要在
+内部构造/解析** `TraceEvent`。判断一个数据形状该不该归某个模块自己，标准是
+"这个模块的 Port/实现是否真的需要构造或消费它的具体样子"——`memory` 不需要，
+所以 `StepMemory`/`EpisodeMemory`/`ObjectFactEvent` 不该进 `memory/`，该待在
+`schemas/`（本项目自己的跨层契约层）。
+
+**改了什么**：
+
+1. `git mv pokemon_agent/memory/datastore/{episode_memory,object_memory,
+   step_memory}.py` 回 `pokemon_agent/schemas/memory/datastore/`（重新建起
+   `schemas/memory/__init__.py`/`schemas/memory/datastore/__init__.py`）；
+   `pokemon_agent/memory/__init__.py` 去掉这三个类的 re-export，恢复成只出
+   `MemoryStore`/`MemoryStorePort`/检索纯函数。
+2. `schemas/memory/datastore/step_memory.py`：去掉
+   `from pokemon_agent.world import Observation`，改成 `StepMemory.Observation`
+   ——跟 `world.Observation` 字段一致（`step`/`place`/`status`/`facts`/`done`，
+   `Facts`/`Landmark`/`PlaceInWorld` 对应内部类 `Observation.Facts`/
+   `Observation.Facts.Landmark`/`Observation.Place`）、渲染对齐算法照抄
+   （两边要能渲出一模一样的文本，大脑才能拿旧记忆和当前观测直接比对），但
+   类本身跟 world 的真身互不引用。**唯一的组装方** `brain.brain.py::reflect()`
+   新增 `Brain._snapshot()`：`StepMemory.Observation.model_validate(
+   obs.model_dump(mode="json"))`——字段名两边一致，一次转换不需要逐字段
+   手写映射。
+3. `schemas/memory/datastore/object_memory.py`：`ObjectFactEventBase.actor_place`/
+   `place` 字段类型从 `pokemon_agent.world.PlaceInWorld` 改成内部类
+   `ObjectFactEventBase.Place`（同样字段一致、类不互相引用，`.key` property
+   照抄——语义记忆按 `(map_id, x, y)` 索引，这个键算法两边必须一致）。
+   **唯一的组装方** `harness/object_interactions.py` 新增 `_common_fields()`
+   辅助函数：构造事件前把 `PlaceInWorld` 真身 `.model_dump()` 拍平成 dict。
+4. 全项目 `from pokemon_agent.memory import {StepMemory,EpisodeMemory,
+   ObjectFactEvent,ObjectDialogEvent,ObjectWarpEvent,ObjectStillEvent,
+   SNAPSHOT_BLIND,SCENE_ANY,render_sequence,dedup_snapshots}` 改成
+   `from pokemon_agent.schemas.memory import ...`（约 26 处文件，`tools/
+   memory_tool.py` 的 `from pokemon_agent.memory import MemoryStore` 不受
+   影响——那是真的属于 `memory/` 自己的类型）。
+5. `CLAUDE.md`：`memory/` 目录树条目改成"完全不认识这三个类"；`schemas/`
+   条目补上"这三类记录形状为什么物理归这里、内部类边界怎么划"的说明，顺带
+   去掉早已过期的"其余：Observation/ActionSpace/TraceEvent"（这几个在（12）
+   条已经搬进各自模块，`schemas/` 不再持有）。
+
+**为什么这么改**：这次教训是"数据形状归属"不能按"原来在 schemas，现在物理
+搬回对应模块"一刀切处理——要先问这个模块的 Port 到底透不透明。`trace` 不透明
+的只是**输入**（`TracePort.append()` 收裸字段），落盘格式是它自己的事，所以
+`TraceEvent` 该搬；`memory` 连存储格式都不关心（`payload: dict` 打到底），
+搬的判断标准套错了，搬错了地方。
+
+**已知遗留**：`brain/brain.py`（`reflect()`）、`harness/object_interactions.py`
+仍然在类级别 `import pokemon_agent.world`（分别拿 `Observation`、
+`PlaceInWorld`/`Observation` 判定用）——这是 brain/harness 自己那一步"模块间
+零依赖"重构要处理的范围，不在本条修正内；这两处目前是**唯一**认识"world 的
+真身"和"schemas.memory 的记录形状"两边长什么样的地方，是有意的（组装职责
+必须落在某处）。
+
+**验证**：`py_compile` 全量扫描；基于 `/tmp/stubs`（pydantic/langgraph/
+rank_bm25 极简桩包）+ `enum.StrEnum = enum.Enum` 补丁的多导入顺序测试
+（world_first/memory_first/trace_first/harness_first/everything）全部通过，
+新增断言：`pokemon_agent.memory` 上不再挂 `StepMemory`/`EpisodeMemory`/
+`ObjectFactEvent`，`pokemon_agent.schemas.memory` 上有；本机没有真实 pydantic
+可用（沙箱无网络），未做 `StepMemory`/`ObjectFactEvent` 的运行时构造/序列化/
+渲染 smoke test，逻辑改动是纯粹的"字段对字段照抄 + 独立类"，风险面小，但
+这一点严格说不如前几条改动那样有运行时验证兜底，用户如果发现渲染文本/
+序列化行为有出入应优先怀疑这里。
+
+**影响面**：`memory/`、`schemas/memory/`、`brain/brain.py`、
+`harness/object_interactions.py`，以及约 26 个只做 re-export/引用的文件的
+import 路径；不改变任何序列化格式（`StepMemory.model_dump()`/`model_dump_json()`
+产出的字段名、结构跟改动前一致，落盘的旧记录仍能被新代码 `model_validate()`
+读回——字段名没变，只是类的 identity 变了）。
+
+
 ## 2026-09-11（12）—— 新一轮重构第一步：world 模块与 schemas 彻底解耦，`ObservationFromWorld`/`ActionSpaceForBrain`/`TerrainMapFromRam` 去 From/For 后缀
 
 **背景**：上一轮"interfaces/schemas 集中制撤销"（本文件（7）~（11）条）只解决了

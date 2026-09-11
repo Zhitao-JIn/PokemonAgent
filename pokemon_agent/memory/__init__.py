@@ -11,50 +11,32 @@
 - `retrieval.py`：语义检索用的混合检索纯函数（BM25 bigram + embedding
   余弦 + RRF + reranker 精排），只认字符串，不认任何记忆类型。
 
-旧的按类拆分的存储实现（`episode/`、`semantic/` 包）已退役：它们的存储职责
-全部并入 `store.py`，领域对象的组装（`StepMemory`/`EpisodeMemory`/`ObjectFactEvent`
-的解析与渲染）在 tool 层（`tools/memory_tool.py`）完成——"发生了什么、影响了谁"
-的语义判定归 tool 层，memory 只机械执行（AGENTS.md 四·分层原则）。
+**`MemoryStorePort` 完全不透明**：`put`/`get_many`/`filter`/`archive_many`
+这一整套协议只认 `metadata: dict[str, str]` + `payload: dict` 两个裸字段，
+`store.py` 的实现同理，从来不 import、不需要知道 `StepMemory`/
+`EpisodeMemory`/`ObjectFactEvent` 这三个类具体长什么样。按"数据形状只有在
+某个模块的 Port/实现真的需要构造或消费它的具体样子时，才归那个模块自己"
+这条边界，这三个类因此**不在**这个包里——它们是 `schemas.memory` 的东西
+（本项目自己的跨层契约层），"发生了什么、影响了谁"的语义判定/组装分别在
+`brain.brain.py::reflect()`、`harness/object_interactions.py`、
+tool 层（`tools/memory_tool.py`）完成，见 `pokemon_agent/schemas/memory/
+__init__.py` 的说明。
 
 object 的交互判定在 harness（`harness/object_interactions.py`）。
 
-本文件同时是统一出口：契约、存储类、检索纯函数，外加三类被持久化的记忆记录
-形状（`datastore/`，原来放在 `schemas/memory/datastore/`，物理上归回自己的包）
-都从这里 re-export，消费方只写 `from pokemon_agent.memory import X`，不深到
-子目录的模块文件。
+本文件是统一出口：契约、存储类、检索纯函数都从这里 re-export，消费方写
+`from pokemon_agent.memory import X`，不深到子目录的模块文件。
 """
 
 __all__ = [
-    "EpisodeMemory",
     "MemoryStore",
     "MemoryStorePort",
-    "ObjectDialogEvent",
-    "ObjectFactEvent",
-    "ObjectStillEvent",
-    "ObjectWarpEvent",
-    "SCENE_ANY",
-    "SNAPSHOT_BLIND",
-    "StepMemory",
     "bm25_rank",
-    "dedup_snapshots",
     "embedding_rank",
     "hybrid_retrieve",
     "reciprocal_rank_fusion",
-    "render_sequence",
     "tokenize",
 ]
-from .datastore import (
-    SCENE_ANY,
-    SNAPSHOT_BLIND,
-    EpisodeMemory,
-    ObjectDialogEvent,
-    ObjectFactEvent,
-    ObjectStillEvent,
-    ObjectWarpEvent,
-    StepMemory,
-    dedup_snapshots,
-    render_sequence,
-)
 from .ports import MemoryStorePort
 from .retrieval import (
     bm25_rank,

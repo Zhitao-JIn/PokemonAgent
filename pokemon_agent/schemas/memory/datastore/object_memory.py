@@ -23,8 +23,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.world import PlaceInWorld
-
 
 class ObjectFactEventBase(BaseModel):
     """三种交互事件的公共字段：什么时候、在哪、对什么、按了什么。
@@ -34,6 +32,31 @@ class ObjectFactEventBase(BaseModel):
     两者是不同语义的坐标，不互相推导。
     """
 
+    class Place(BaseModel):
+        """事件里"格子"的快照——**不是** `pokemon_agent.world.PlaceInWorld`。
+
+        事件一旦落库就不可变，这里只需要 `PlaceInWorld` 的**形状**
+        （`map_id`/`x`/`y`），不需要它的行为（`step_toward()` 只有判定层
+        `harness/object_interactions.py` 拿着真身才用得到，`render()` 这类
+        文案也各自需要各自的措辞）。按"模块间零依赖，只靠裸字段交互"这条
+        边界，这里独立声明一份字段一致、类不互相引用的内部类型——
+        `harness/object_interactions.py`（唯一的组装方）负责在构造事件前
+        把真身 `PlaceInWorld.model_dump()` 拍平后验证成这里的类型。
+
+        `key` property 照抄真身：语义记忆按 `(map_id, x, y)` 索引，这个键
+        跟真身的算法必须一致，`tools/memory_tool.py` 落索引时两边不能算出
+        两个不同的字符串。
+        """
+
+        map_id: int
+        x: int
+        y: int
+
+        @property
+        def key(self) -> str:
+            """记忆的键。**跨 episode 稳定**——同一张地图上的同一格永远是同一个键。"""
+            return f"{self.map_id}:{self.x}:{self.y}"
+
     episode_id: str = Field(description="这一局的标识；落盘按局分文件（ep-{id}.jsonl）")
     step: int = Field(ge=0, description="这次交互发生在第几步；截断与'不读未来'的坐标轴")
     run_id: str = Field(
@@ -41,8 +64,8 @@ class ObjectFactEventBase(BaseModel):
         description="这个交互发生在哪个 run——checkpoint 恢复的落盘签名三元组之一"
         "（run_id/episode_id/step），由 Harness 盖章",
     )
-    actor_place: PlaceInWorld = Field(description="按键那一刻角色所在的格")
-    place: PlaceInWorld = Field(description="被影响的物体格")
+    actor_place: Place = Field(description="按键那一刻角色所在的格")
+    place: Place = Field(description="被影响的物体格")
     kind: str = Field(description="物体类别（门/人/招牌/物/石…）；建档与渲染抬头用")
     button: str = Field(
         description="按了哪个键（a/up/down/left/right）；不设值域，把关在姿势方法表"

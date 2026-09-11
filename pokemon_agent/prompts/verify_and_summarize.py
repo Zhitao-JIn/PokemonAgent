@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from pokemon_agent.schemas.brain import VerifyAndSummarizeReq
-from pokemon_agent.memory import render_sequence
+from pokemon_agent.schemas.memory import render_sequence
 
 from . import load
 

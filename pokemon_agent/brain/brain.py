@@ -65,7 +65,7 @@ from .interface import (
     RunPlan,
     StepVerifyVerdict,
 )
-from pokemon_agent.memory import SNAPSHOT_BLIND, EpisodeMemory, StepMemory
+from pokemon_agent.schemas.memory import SNAPSHOT_BLIND, EpisodeMemory, StepMemory
 from pokemon_agent.schemas.providers import LlmCompleteReq, VisionDescribeReq
 from pokemon_agent.world import INTERACT_KEY, ActionSpace, Observation
 
@@ -600,15 +600,28 @@ class Brain:
 
         return ReflectResp(
             entry=StepMemory(
-                before=self._blind(req.before),
+                before=self._snapshot(self._blind(req.before)),
                 rationale=list(req.action.rationale),
                 action=req.action.describe(),
-                after=self._blind(req.after),
+                after=self._snapshot(self._blind(req.after)),
                 step=req.before.step,
                 # `episode_id` 由 Harness 盖章——大脑不知道自己在哪一局。
                 episode_id="",
             )
         )
+
+    @staticmethod
+    def _snapshot(obs: Observation) -> StepMemory.Observation:
+        """把 world 的真身 `Observation` 转成 `StepMemory` 自己的快照类型。
+
+        `StepMemory.Observation` 是跟 `world.Observation` 字段一致但类不互相
+        引用的内部类型（边界见 `schemas/memory/datastore/step_memory.py`
+        的说明）——这里是**唯一**认识两边形状、需要做这次转换的地方：大脑
+        本来就要在 `reflect()` 里把 `Observation` 组装进 `StepMemory`，是
+        天然的转换点。`mode="json"` 把枚举/内部类都拍平成普通 dict/字符串，
+        字段名两边一致，`model_validate()` 不需要逐字段手写映射。
+        """
+        return StepMemory.Observation.model_validate(obs.model_dump(mode="json"))
 
     @staticmethod
     def _blind(obs: Observation) -> Observation:

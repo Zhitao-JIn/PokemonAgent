@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pokemon_agent.brain import ActionFromBrain
-from pokemon_agent.memory import (
+from pokemon_agent.schemas.memory import (
     ObjectDialogEvent,
     ObjectFactEvent,
     ObjectStillEvent,
@@ -102,17 +102,27 @@ class _Press:
     facing: str
 
 
-def _dialog_or_still(press: _Press, place: PlaceInWorld, kind: str) -> ObjectFactEvent:
-    """a 键互动的两种结局：弹出对话记正文，什么都没有记 still。"""
-    text = press.after.facts.dialog_text
-    common = {
+def _common_fields(press: _Press, place: PlaceInWorld, kind: str) -> dict:
+    """三种事件共用的字段，**把 `PlaceInWorld` 真身拍平成 `ObjectFactEventBase.
+    Place` 快照**——这是本文件（唯一的事件组装方）跟 `schemas.memory` 的边界：
+    事件的 `actor_place`/`place` 字段类型是 `ObjectFactEventBase.Place`
+    （跟 `PlaceInWorld` 字段一致但类不互相引用的内部类型），不能直接塞真身
+    进去，要在这里转一次。
+    """
+    return {
         "episode_id": press.episode_id,
         "step": press.step,
-        "actor_place": press.actor_place,
-        "place": place,
+        "actor_place": press.actor_place.model_dump(),
+        "place": place.model_dump(),
         "kind": kind,
         "button": press.button,
     }
+
+
+def _dialog_or_still(press: _Press, place: PlaceInWorld, kind: str) -> ObjectFactEvent:
+    """a 键互动的两种结局：弹出对话记正文，什么都没有记 still。"""
+    text = press.after.facts.dialog_text
+    common = _common_fields(press, place, kind)
     if text.strip():
         return ObjectDialogEvent(**common, text=text)
     return ObjectStillEvent(**common)
@@ -120,14 +130,7 @@ def _dialog_or_still(press: _Press, place: PlaceInWorld, kind: str) -> ObjectFac
 
 def _warp_or_still(press: _Press, place: PlaceInWorld, kind: str) -> ObjectFactEvent:
     """方向键的两种结局：穿过这格进新图记 warp，否则记 still。"""
-    common = {
-        "episode_id": press.episode_id,
-        "step": press.step,
-        "actor_place": press.actor_place,
-        "place": place,
-        "kind": kind,
-        "button": press.button,
-    }
+    common = _common_fields(press, place, kind)
     after_place = press.after.place
     assert after_place is not None
     if after_place.map_id != press.before.place.map_id:
