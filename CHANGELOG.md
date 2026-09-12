@@ -1,3 +1,62 @@
+## 2026-09-11（16）—— 步的边界收进一个节点：`look`+`advance_step` → `record_observation`+`close_step`
+
+**改了什么**
+
+1. **`advance_step` → `close_step`**：职责从"步号 +1"扩成"**扶正当前帧 + 步号 +1**"
+   （改 `observation`/`step` 两处——"一步结束了"这一个判定的两面），位置从
+   `detect_stall` 之后挪到两个 store **之后**；链内小循环的条件边出口随之从
+   `store_object_semantic_memory` 挪到 `close_step`。
+2. **`look` → `record_observation`**：摘掉扶正与盖步号，只剩"把当前帧记成一条
+   `OBSERVE`"——**只记账、不改状态、返回空增量**。
+3. **`act` 从"改三处"缩回"改两处"**（不再扶正），断言基准换成 `state.observation`。
+4. **`_begin` 直接产出已扶正的 `observation`**（第 0 步）——开局没有"上一步"，
+   不需要 `pending_observation` 那道接力。
+5. 契约与外围同步：`episode_harness_port.py`（模块图 + `record_observation`/`act`/
+   `close_step` 三个节点契约 + `observation`/`pending_observation` 两个字段说明 +
+   `stall_count` 那句写错的"强制终止判断在 `look`"）、`web/src/App.tsx`
+   （相位表、`phaseKeyOf`、若干注释与一句占位文案）、`trace_render.step_advance` 的
+   docstring、`step_memory` 两处去重论证、`trace_event` 的 `VIEW` 说明、
+   `episode_utils` 的预算注释。核验脚本补了 3 条拓扑断言（52 条全绿）。
+
+**为什么这么改**：`act` 的第三处（扶正）**不是"刻意的原子性"，是宿主消失**。
+扶正本来是 `look` 的活（它的 docstring 自己写着"只改 `observation` 一处"）；
+`step == decision` 时代 `look` 每步都跑，扶正从不缺宿主，链内小循环把 `look` 降到
+链边界，它就没了着落。而扶正**必须落在两个 store 之后**——那三格要 `before`
+（`observation`）与 `after`（`pending_observation`）两帧同时在场，谁先扶正都会把
+`before` 冲掉——那个位置的下游只有一条条件边、没有节点体。于是它只能寄居在下一圈
+第一个节点 = `act`。**根在 `look` 的混合粒度**（扶正=步级、`OBSERVE`=链级），不在
+`act`。把扶正还给"这一步的终点"（`close_step`）之后，三格各归其位：`close_step` 扶正、
+`act` 只读不算、`record_observation` 只记。诊断与两个方案的对比见
+`docs/spec/harness/PLAN_graph_readability.md` §3.4。
+
+**`look` 的工作没有全部消失——它只是不能再兼任扶正**：`OBSERVE` 必须**每链一条**
+（链内每个键要么只读 RAM、本来就没有 `MODEL_CALL` 可挂，要么只有 `LOOK_AFTER` 的
+轻量摘要，不含完整 `facts` 也不承载 `goals`）；这一格没了，replay 与观测台就没有
+"大脑当时看到的世界"的结构化原件。所以它保留为**单一职责节点**并因此改名——它不
+"看"，只记账。
+
+**取舍**
+
+- **不新增节点**（方案 A 会 19→20、`NODES_PER_PRESS` 6→7，链越长越贵），也**不拆**
+  `look`（链内每步都要跑扶正 = 再 +1 节点/键，`judge` 入口与两条边都得挪）。
+- **checkpoint 内容变了**：B 之后存档里的 `observation` 与 `pending_observation` 同值
+  （之前落后一帧）。逐项核对过：`save_checkpoint` 写在 `record_observation` 之前，
+  **`resume()` 六步一字不改**，链内没有任何节点读 `state.step`。
+- **把 `look` 这个名字留给真正在看的那个**（`look_after_action`）。
+
+**影响面**
+
+- 图的**节点集合不变**（19 个）；边改 3 条：`save_checkpoint→record_observation`、
+  `record_observation→judge`、`store_object_semantic_memory→close_step`，条件边出口
+  从 `store_object` 挪到 `close_step`。`NODES_PER_DECISION`/`NODES_PER_PRESS` 与
+  `recursion_limit` 的量级都不变。
+- `MODEL_CALL` 条数、`step` 语义、记忆的键 `(episode_id, step)` 全不变；离线核验
+  **52 条全绿**。
+- **web 相位表的既有漂移这轮没动**（缺 `save_checkpoint`、`verify_steps`+`summarize`
+  仍画成两格、`MAIN_END=15` 应为 16）——它和本次改动无关，按 `PLAN_graph_readability.md`
+  §6 单独落；本轮只保证 `close_step` 落在主循环区间内、事件能归到正确的格。
+- 真机六条脚本仍未跑（worktree 分支没有 `.env`）。
+
 ## 2026-09-11（15）—— 首次接真实模型核验：段论据的条数规则缺失（已补）+ 两个既有失败模式的实测
 
 **背景**：`（14）` 的验收全部走假端口，它证明实现自洽，**证明不了模型会按新格式输出**。
