@@ -1,14 +1,19 @@
-"""tools 层的五张对外契约：`BrainToolPort`/`CheckpointToolPort`/`GameToolPort`/
-`MemoryToolPort`/`TraceToolPort`——harness 认识的五张工具门面。
+"""tools 层的四张对外契约：`BrainToolPort`/`GameToolPort`/`MemoryToolPort`/
+`TraceToolPort`——harness 认识的工具门面。
+
+（曾是五张：`CheckpointToolPort` 已在步 5b 解散——存档不再是「外面递进来的一根 Port」，
+而是 harness 自己的状态模型 `EpisodeCheckpoint` 的落盘能力，只剩
+`HarnessDeps.checkpoint_root` 一条路径的身份。）
 
 原来分别放在顶层 `pokemon_agent/interfaces/tools/`，跟 `memory/ports.py`
-同一个道理搬到了这里：这五个 Port 全部只依赖 `schemas.harness` 的信封类型，
+同一个道理搬到了这里：这四张 Port 全部只依赖 `schemas.harness` 的信封类型，
 没有自己专属的 domain schema（跟 `world`/`trace`/`providers`/`brain` 不同，
 不需要开一个 `interface/` 子包分协议和数据形状），所以走扁平的 `ports.py`，
-跟实现文件（`brain_tool.py`/`checkpoint_tool.py`/`game_tools.py`/
-`memory_tool.py`/`trace_tool.py`）同住 `tools/` 包顶层。
+跟实现文件（`brain_tool.py`/`game_tools.py`/`memory_tool.py`）同住 `tools/`
+包顶层（trace 那一个已收成 `tools/trace/` 包，分派器 + `render.py` +
+`model_calls.py`，见 D8-③；checkpoint 那一个已在步 5b 解散进 harness，不再有实现文件）。
 
-零循环依赖风险：`schemas.harness` 对 `tools/` 没有反向依赖，这五个 Port
+零循环依赖风险：`schemas.harness` 对 `tools/` 没有反向依赖，这四张 Port
 可以放心立即加载，不需要懒加载。
 
 **上面那段的后半截已经过期（2026-09-12）。** 事实部分今天依然成立——只依赖
@@ -42,11 +47,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolReflectResp,
     FromHarnessToBrainToolVerifyAndSummarizeReq,
     FromHarnessToBrainToolVerifyAndSummarizeResp,
-    FromHarnessToCheckpointToolLoadReq,
-    FromHarnessToCheckpointToolLoadResp,
-    FromHarnessToCheckpointToolSaveReq,
-    FromHarnessToCheckpointToolVoidReq,
-    FromHarnessToCheckpointToolVoidResp,
     FromHarnessToGameToolEvolveReq,
     FromHarnessToGameToolExecuteReq,
     FromHarnessToGameToolGetActionSpaceReq,
@@ -75,9 +75,11 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolStoreEpisodeSummaryResp,
     FromHarnessToMemoryToolVoidMemoryAfterReq,
     FromHarnessToMemoryToolVoidMemoryAfterResp,
+    FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
     FromHarnessToTraceToolReadDiskEventsReq,
     FromHarnessToTraceToolReadDiskEventsResp,
+    FromHarnessToTraceToolVoidAfterReq,
 )
 
 
@@ -123,47 +125,6 @@ class BrainToolPort(Protocol):
         self, req: FromHarnessToBrainToolPlanOnceReq
     ) -> FromHarnessToBrainToolPlanOnceResp:
         """转发一次 run 级规划尝试。失败：抛 `PlanAttemptFailed`（同 `BrainPort`）。"""
-        ...
-
-
-@runtime_checkable
-class CheckpointToolPort(Protocol):
-    """Harness 的 checkpoint 手：存、取（三元组定位）、废弃归档。
-
-    契约（PLAN_checkpoint v4）：签名三元组 `(run_id, episode_id, step)` 显式落在
-    每份 checkpoint 的 json 里；`last_event_id` 是 trace 游标——恢复的主坐标，
-    `event_id` 大于它的事件全部属于废弃时间线。只有一种落盘形态：`EpisodeRunState`
-    与当时的 `RunState` 打包进同一份 `<step>.json`（无单独的 run 级文件）。
-    """
-
-    def save(self, req: FromHarnessToCheckpointToolSaveReq) -> None:
-        """存一份 checkpoint（`step/<episode_id>/<step>.*`）。
-
-        后置条件：先世界快照后 json（json 是提交点）；中途 crash 留下的是
-        上一号有效 checkpoint（恢复管线按"成对存在 + 签名匹配"识别）。
-        """
-        ...
-
-    def load(
-        self, req: FromHarnessToCheckpointToolLoadReq
-    ) -> FromHarnessToCheckpointToolLoadResp | None:
-        """按三元组取一份 checkpoint；不存在（或 state/json 不成对）返回 None。
-
-        返回值同时带 `state_dump`（EpisodeRunState）与 `run_state_dump`
-        （RunState）——调用方按自己需要的那层取，不用分两次查、也不用猜
-        该读哪个文件。
-        """
-        ...
-
-    def void_after(
-        self, req: FromHarnessToCheckpointToolVoidReq
-    ) -> FromHarnessToCheckpointToolVoidResp:
-        """废弃时间线处理：trace 按 cursor 截断归档、记忆层截断、截图/存档归档。
-
-        前置条件：调用方已完成对账（快照签名/游标合法）。
-        后置条件：主前缀（event_id ≤ cursor）之外无任何残留——重跑同三元组
-        不会撞名、不会读到"未来"的记忆；被废弃数据全部在 voided 归档目录。
-        """
         ...
 
 
@@ -362,7 +323,8 @@ class MemoryToolPort(Protocol):
     def append_object_events(self, req: FromHarnessToMemoryToolAppendObjectEventsReq) -> None:
         """追加一批交互事件（写穿：落盘与索引同时生效）。
 
-        req.events：harness 判定层（`harness/object_interactions.py`）构造好的事件。
+        req.events：harness 判定层
+        （`harness/episode/store/store_object_semantic_memory/rules.py`）构造好的事件。
         前置条件：每个事件的 step ≥ 其所在局已有最大 step。
         """
         ...
@@ -402,10 +364,18 @@ class MemoryToolPort(Protocol):
 class TraceToolPort(Protocol):
     """事件流的记账与读取。
 
-    两个方法，跟 `TracePort` 一一对应：
-    - `append`：harness 只组装 `FromHarnessToTraceToolAppendReq`（挑字段 + 声明
-      kind），payload 字段格式、条件字段、一拆多全部是 tool 的处理；
-    - `events`：读侧没有要转换的数据，原样转发（调用方拿存储形状 `TraceEvent`）。
+    两个写方法是同一条分工——**harness 只组装信封（挑字段、声明来源），拆解
+    规则全在 tool 层**：
+    - `append`：一笔账 → 按 `kind` 渲染 payload，必要时一拆多；
+    - `append_model_calls`：一次模型交互的 N 次尝试 → N 条 `MODEL_CALL`。
+
+    读方法跟 `TracePort` 一一对应：`cursor` / `read_disk_events` 原样转发
+    （调用方拿存储形状 `TraceEvent`）。
+
+    **签名只用信封，不用任何模块的领域类型**：这是本文件所有端口共守的边界
+    （见模块 docstring 与 `docs/PLAN_tool_interface.md`）。所以"一次交互的尝试账"
+    在签名里是 `FromHarnessToTraceToolAppendModelCallsReq`，而不是那个裸的
+    `ModelCallLog`。
 
     **边界不对称**：写者只有 harness（走本端口）；读者是 api
     （运维侧，直读 `TracePort`/`LocalTrace`，不进 tool 层）。
@@ -421,6 +391,18 @@ class TraceToolPort(Protocol):
         """
         ...
 
+    def append_model_calls(self, req: FromHarnessToTraceToolAppendModelCallsReq) -> None:
+        """记一次模型交互的**全部尝试**：一笔交互 → N 条 `MODEL_CALL`。
+
+        跟 `append` 同一分工——调用方只组装信封（定位字段 + `source` + 原始尝试账），
+        "每条带什么 `attempt`、怎么落"是 tool 的处理。
+
+        前置条件：`req.log` 按 `attempt` 升序（重试循环保证）。
+        后置条件：`req.log` 里每一条都已落盘；空 log 合法且不写任何事件
+            （`ram_only=True` 的感知压根没调模型）。
+        """
+        ...
+
     def cursor(self) -> int:
         """当前游标：最后一条已分配的 event_id（checkpoint 快照用）。"""
         ...
@@ -429,4 +411,17 @@ class TraceToolPort(Protocol):
         self, req: FromHarnessToTraceToolReadDiskEventsReq
     ) -> FromHarnessToTraceToolReadDiskEventsResp:
         """读盘上全部事件（checkpoint 恢复的主前缀来源，event_id 升序）。"""
+        ...
+
+    def void_after(self, req: FromHarnessToTraceToolVoidAfterReq) -> list[str]:
+        """把游标之后的事件作废（原地打 `valid=false`），返回**整局废弃**的局列表。
+
+        打标与「哪些局只活在游标之后」都是存储层的知识（见 `TracePort.void_after`），
+        本层原样转发；"拿这份名单去作废哪些记忆、哪些存档"是恢复语义，归调用方
+        （`episode_entry.void_timeline`）。
+
+        前置条件：`req.cursor` ≥ -1（调用方已完成对账）。
+        后置条件：游标之后的事件全部 `valid=false`（已废弃的不重复写）；返回的局
+            在废弃时间线里整局作废。
+        """
         ...

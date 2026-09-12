@@ -10,8 +10,9 @@
 （`TracePort` 只负责追加写——分配 event_id、落盘、截图副本；**读端不在这里**：
 事件流槽在 `harness/run_data_center.py` 的 `RunDataCenter`（前端可见状态的
 唯一聚合点），`LocalTrace` 落盘成功后经 `event_sink` 双写过去。checkpoint
-恢复的续写（`_next_id` 从盘上最大 event_id + 1 起算）与磁盘读取
-（`read_disk_events`，只返回 valid=true）也在这层。）
+恢复的续写（`_next_id` 从盘上最大 event_id + 1 起算）、磁盘读取
+（`read_disk_events`，只返回 valid=true）与**废弃打标**（`void_after`，把游标
+之后的事件原地改 `valid=false`，顺路算出一份"整局废弃"的名单）也在这层。）
 
 **`_next_id` 从盘上算，不从游标算**：resume 后废弃分支的事件还留在盘上占着
 id（valid=false），游标只当"有效/废弃分界"，不再决定起点——构造时扫一遍
@@ -197,12 +198,37 @@ class LocalTrace:
         """
         return self._scan_events(valid_only=True)
 
-    def _scan_events(self, valid_only: bool) -> list[TraceEvent]:
-        """扫 events/ 目录：逐文件解析 TraceEvent，按 event_id 升序。
+    def void_after(self, cursor: int) -> list[str]:
+        """打废弃标：`event_id > cursor` 的事件**原地** `valid=false`（见 `TracePort`）。
+
+        返回**只出现在游标之后的局**（升序）——它们在废弃时间线里整局作废。
+        **边扫边打**：同一次遍历既完成打标，又顺手把"游标前见过谁 / 游标后才见谁"
+        两个集合建起来，两者之差就是整局废弃的名单（不需要第二遍扫盘）。
+        """
+        kept_episodes: set[str] = set()
+        voided_episodes: set[str] = set()
+        for path, event in self._iter_event_files():
+            if event.event_id <= cursor:
+                kept_episodes.add(event.episode_id)
+                continue
+            voided_episodes.add(event.episode_id)
+            if not event.valid:
+                continue  # 已经是废弃标记，不重复写
+            voided = event.model_copy(update={"valid": False})
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(voided.model_dump_json(), encoding="utf-8")
+            os.replace(tmp, path)
+        return sorted(voided_episodes - kept_episodes)
+
+    def _iter_event_files(self) -> list[tuple[Path, TraceEvent]]:
+        """扫 events/ 目录：逐文件解析 TraceEvent，返回 `(路径, 事件)`、按 event_id 升序。
+
+        **打标（`void_after`）要路径，读端只要事件**——所以这一层吐配对，
+        两个调用方各取自己那一半。
 
         残文件/旧格式文件解析失败是预期内的运行期情况，跳过不报错。
         """
-        events: list[TraceEvent] = []
+        pairs: list[tuple[Path, TraceEvent]] = []
         for path in sorted(self._events_dir.glob("*.json")):
             if path.suffix != ".json" or path.name.endswith(".tmp"):
                 continue
@@ -210,11 +236,17 @@ class LocalTrace:
                 event = TraceEvent.model_validate_json(path.read_text(encoding="utf-8"))
             except Exception:
                 continue
-            if valid_only and not event.valid:
-                continue
-            events.append(event)
-        events.sort(key=lambda e: e.event_id)
-        return events
+            pairs.append((path, event))
+        pairs.sort(key=lambda pair: pair[1].event_id)
+        return pairs
+
+    def _scan_events(self, valid_only: bool) -> list[TraceEvent]:
+        """盘上的事件，按 event_id 升序；`valid_only` 时滤掉 `valid=false` 的。"""
+        return [
+            event
+            for _path, event in self._iter_event_files()
+            if not (valid_only and not event.valid)
+        ]
 
     def _episode_is_complete(self, episode_id: str) -> bool:
         """这一局是不是已经完整收尾（盘上有 lifecycle/episode_end）。

@@ -72,8 +72,9 @@ dump ＋ 游标**，提交点）构成。0909 起没有独立的 `run.json`：ru
 优化。
 
 **通过判定**：state 与 json 的文件名（不含后缀）集合完全一致；json 里能读出
-非空的 `run_state_dump` 且其 `run_id` 与当前 run 一致。不成对 = 存档写坏了，
-`CheckpointTool.load()` 恢复时会直接拒绝。
+非空的 `episode_state`（本局状态，**内嵌**）与非空的 `run_state_dump` 且其 `run_id`
+与当前 run 一致（json 键名步 5b 起由 `state_dump` 改为 `episode_state`，**旧档不可读**）。
+不成对 = 存档写坏了，`EpisodeCheckpoint.read()` 恢复时会直接拒绝（返回 `None`）。
 
 ### 维度 4 —— `check_memory.py`：记忆落盘自洽
 
@@ -95,8 +96,8 @@ dump ＋ 游标**，提交点）构成。0909 起没有独立的 `run.json`：ru
   （`step/<eid>/<N>.json`，0909 起 run.json 已合并进来，见维度 3）拿事件游标，
   带 `resume_cursor` 重新 `build_real`（新进程语义：trace 从游标 +1 续写），调
   `resume_run(run_id, episode_id, step)` 走
-  `CheckpointTool.load → void_after（废弃时间线归档截断）→ 世界快照回载
-  （load_state_bytes）→ 状态重建 → 进图续跑`。
+  `EpisodeCheckpoint.read → void_timeline（trace 打标 + 记忆/存档归档）→ 世界快照
+  回载（load_state_bytes）→ 状态重建 → 进图续跑`。
 
 **通过判定**（五条独立）：① 阶段 B 返回 `RunOutcomeResp`；② trace 里出现
 `checkpoint_restore` 事件且 restored 三元组（episode_id, step）对得上；

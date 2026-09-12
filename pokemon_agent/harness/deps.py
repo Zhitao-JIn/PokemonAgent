@@ -28,12 +28,13 @@ run 带着上一次的帧账残留（`pending_frames` 里塞着已经不存在�
 
 | 带 | 字段 | 何时定 |
 |---|---|---|
-| **依赖** | 6 根 Port + 2 个策略对象 + `checkpoint_root` | 装配时注入，整 run 不变 |
+| **依赖** | 5 根 Port + 2 个策略对象 + `checkpoint_root` | 装配时注入，整 run 不变 |
 | **开关** | `auto_push_goals` / `auto_decide_done` | 构造时定，`plan` 读它决定"模型能否自主改栈" |
 | **记号** | `run_id` / `world_reset_done` | 整 run 的 |
 | **账** | `frame_event_ids` / `pending_frames` / `run_state_snapshot` | 键带 `episode_id`，累积 |
 
-（"依赖"是 6 根而不是 5 根：多出来的是 `checkpoint`，**步 5 会删掉它**。）
+（步 5b 之前是 6 根：多出来那根 `checkpoint` 已随 `tools/checkpoint_tool.py` 的解散
+销账——`checkpoint_root` 只是「一条路径」，不是一根 Port。）
 
 **步 2 落地了什么**：`EpisodeHarness` 在构造时建出（或收下）一份 `HarnessDeps`，
 `self.deps`，并把原先的宿主字段**指向它**——`_frame_event_ids` / `_pending_frames`
@@ -42,18 +43,17 @@ run 带着上一次的帧账残留（`pending_frames` 里塞着已经不存在�
 `episode/entry.py` 的四个装配器收的也是这份 `deps`——于是"图外侧门"与"节点"看到
 的是同一个对象，不会出现两个真源。
 
-**还没做的**（留给后面两步，别以为已经完成）：
+**这两步都已落地（2026-09-12 注）**：
 
-- **步 3**：节点搬成自由函数，签名改成
-  `def act(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict`，
-  依赖从 `runtime.context` 读——那时 `self.deps` 这层别名才消掉；
-- **步 5**：`checkpoint_root` 取代 `checkpoint`（checkpoint 解散进 harness 后，
-  它只剩"存档根目录"这一个身份）。
+- ~~**步 3**~~：节点已搬成自由函数（签名 `(state, runtime: Runtime[HarnessDeps])`），
+  依赖从 `runtime.context` 读，`self.deps` 这层别名已消掉；
+- ~~**步 5**~~：**步 5b 已完成**——`checkpoint_root` 取代了 `checkpoint`：存档读写
+  归 `episode/episode_state.py` 的 `EpisodeCheckpoint.write()` / `.read()`。
 
-**生命周期（F11 的代价）暂未收口**：本步的 `deps` 仍跟 `EpisodeHarness` 同生同死
-（构建期一份），不是"一次 run 新建一份"——跨 run 复用会带着上一次的 `frame_event_ids`
-残留。这条与现状**行为一致**（那些表本来就活在 `EpisodeHarness` 上），收口放在步 3
-（那时 `RunHarness.run()` 建 `deps` 才有意义：节点真的会读它）。
+**生命周期（F11 的代价）已收口（2026-09-12 注）**：`deps` 由 `build.py` 装配、
+一次 run 一份（`RunHarness.__init__(deps)`），不再是随 `EpisodeHarness` 走的构建期
+字段——那个类已删。跨 run 复用同一个实例仍会带着上一次的帧账残留，这条约束现在由
+装配处保证。
 """
 
 from __future__ import annotations
@@ -64,7 +64,6 @@ from typing import Any
 
 from pokemon_agent.tools.interface import (
     BrainToolPort,
-    CheckpointToolPort,
     GameToolPort,
     MemoryToolPort,
     TraceToolPort,
@@ -91,17 +90,16 @@ class HarnessDeps:
     """记账 req 由 harness 组装，payload 渲染与落盘都在 tool 层。"""
     reviewer: HumanReviewer
     """人类审查者（`AutoContinueReviewer` 是没接前端时的默认实现）。"""
-    checkpoint: CheckpointToolPort | None = None
-    """checkpoint 手。**步 5 会删掉这个字段**——D9-v6 把 checkpoint 解散进 harness
-    之后，它只剩 `checkpoint_root` 那一条路径的身份。步 2 还需要它，因为
-    `episode/entry.py` 的 `prepare_resume()` 要调 `load()` / `void_after()`
-    （那是"读 + 废弃编排"，D9-v6 说它归 `entry.py`）。"""
     data_center: RunDataCenter | None = None
     """前后端交互的中间层（goals 槽 + review 槽 + human_note 槽）。`None` = 没接前端。"""
     checkpoint_root: Path | None = None
-    """存档根目录。**步 5 之前这个字段是 `None`**——那时 checkpoint 还是
-    `CheckpointToolPort` 这根 Port 在跑；D9-v6 把 checkpoint 解散进 harness 之后，
-    它只剩"一条路径"这一个身份（`PLAN_graph_composition.md` §4 D9）。"""
+    """**存档根目录**（`checkpoints/<run_id>/`）——步 5b 之后它是 checkpoint 唯一的身份。
+
+    此前这里还有一根 `CheckpointToolPort`（"存档手"），D9-v6 把它解散了：存档读写
+    不是能力，是 harness 自己状态模型的落盘（`episode/episode_state.py` 的
+    `EpisodeCheckpoint.write()` / `.read()`），没有"换实现"的需求。`None` = 这个 run
+    不落存档（测试、单局直跑）——`save_checkpoint` 节点据此空转，恢复入口据此断言
+    失败（`PLAN_graph_composition.md` §4 D9）。"""
 
     # ---- 开关：构造时定，整 run 不变 ----
 

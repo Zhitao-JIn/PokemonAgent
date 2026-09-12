@@ -16,14 +16,17 @@
 > 但 `save_checkpoint` 还没来得及写）这个窗口没有任何 checkpoint 可恢复——`.start.state`
 > 本来想兜这个窗口但从来没被恢复逻辑读过（死代码），这次一并放弃，需要时再补。
 > §3.1/§4/§7.1 的 `run.json`/`save_run`/`latest_run` 相关描述已按此更新，仅保留
-> 历史小节说明当时的设计考虑；实现以 `checkpoint_tool.py`/`SPEC.md` 为准。
+> 历史小节说明当时的设计考虑；实现以 `EpisodeCheckpoint`（`episode/episode_state.py`）
+> / `SPEC.md` 为准——**步 5b 订正**：`tools/checkpoint_tool.py` 已解散。
 > v6 变更（0911，用户拍板）：**帧账随存档走**——`_frame_event_ids`（步号 → 承载这一帧
 > 那条事件的 event_id，截图文件名就是它）与 `_pending_frames`（还没挂上任何事件的那一帧的
 > 原图，只有第 0 步会非空）都是 harness 的**内存态**，原先不进存档，于是 `resume()` 后第一条
 > `OBSERVE` 与第一个 store 步的 `before_frame` 一起丢图（真机 `check_restore` 观察到的现象：
 > 恢复段链首事件只有 payload、没有帧）。改法：`SaveReq`/`LoadResp` 各加两个字段（**本局
 > 切片**，整数步号键，落盘写成 `"<step>"`），`CheckpointTool` 落盘读回，`resume()` 灌回两张表；
-> 旧档缺字段 = 空表（向后兼容）。§3.1/§5 已按此更新，实现以 `checkpoint_tool.py` 为准。
+> 旧档缺字段 = 空表（向后兼容）。§3.1/§5 已按此更新，实现以 `EpisodeCheckpoint` 为准
+> （**步 5b**：`SaveReq`/`LoadResp` 那两个信封已随 tool 一起删除，字段现由
+> `EpisodeCheckpoint.frame_event_ids` / `.pending_frames` 承载）。
 > 基线：commit `c8b9ab7`。事实清单见同目录 `CHECKPOINT_handoff_2026-09-07.md` §1-2。
 
 ## 1. 三级恢复的精确定义

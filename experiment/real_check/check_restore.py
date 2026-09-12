@@ -87,7 +87,7 @@ def main() -> None:
         safe,
         write_last_run,
     )
-    from pokemon_agent.brain import TaskForBrain
+    from pokemon_agent.brain import Task
     from pokemon_agent.build import build_real
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -100,7 +100,7 @@ def main() -> None:
     args = parser.parse_args()
 
     run_id = f"restorecheck-{time.strftime('%m%d-%H%M%S')}"
-    task = TaskForBrain(
+    task = Task(
         task_id="restorecheck",
         goal=GOAL,
         success_criteria=SUCCESS_CRITERIA,
@@ -154,7 +154,7 @@ def main() -> None:
 
     # 游标从"要恢复到的那一步"自己的 checkpoint 里读——0909 起 run.json 已经
     # 合并进 step 存档（不再有单独的 run 级文件），一份 json 里游标跟
-    # run_state_dump/state_dump 天然一致。
+    # run_state_dump/episode_state 天然一致（步 5b 起键名由 state_dump 改成后者）。
     anchor = json.loads((step_dir / f"{restore_step}.json").read_text(encoding="utf-8"))
     cursor = anchor["last_event_id"]
     print(
@@ -286,7 +286,7 @@ def main() -> None:
     duplicates = sorted(k for k, n in seen.items() if n > 1)
     assert not duplicates, (
         f"同一局同一步存在多条 step 记忆（恢复步={restore_step}）：{duplicates}——"
-        "checkpoint_tool.void_after 给 MemoryTool 的 keep_step 取错了（该取恢复步 - 1），"
+        "void_timeline() 给 MemoryTool 的 keep_step 取错了（该取恢复步 - 1），"
         "废弃分支那条 step N 记录落在保留区里漏网，重跑又写一条新记录"
     )
 

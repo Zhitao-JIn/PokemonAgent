@@ -330,6 +330,11 @@ payload = {run_id, episode_id, step, cursor}
 
 ## 7. void / resume 编排（checkpoint_tool + memory_tool 分工）
 
+> **步 5b 订正（2026-09-12）**：编排已从 `CheckpointTool.void_after()` 搬到
+> `harness/episode/episode_entry.py::void_timeline()`；第 1 步的 trace 打标也**走上端口**
+> （`TraceToolPort.void_after`），不再由 checkpoint 持 `trace_dir` 直接读写文件。
+> 下面四步的**语义一字未变**，只是换了宿主与分层方式。
+
 `CheckpointTool.void_after()` 重写为四步，归档先行的原则不变：
 
 1. **trace 打标**：扫 events/，`event_id > cursor` 的文件原地写 `valid=false`。
@@ -351,9 +356,9 @@ payload = {run_id, episode_id, step, cursor}
 event_id、新的截图，与旧截图零撞名——旧截图原地保留，与 valid=false 的事件
 一起构成废弃分支的审计记录。
 
-分层不破：checkpoint_tool 只做编排，memory 文件的圈定与搬运都在 memory 层完成
-（它自己知道 uuid → 路径），trace 文件直接操作维持现状模式（checkpoint_tool 本就
-持有 trace_dir、不持有 LocalTrace 实例）。
+分层不破：编排方（今 `void_timeline()`）只做编排，memory 文件的圈定与搬运都在
+memory 层完成（它自己知道 uuid → 路径）。**步 5b 后 trace 那一步也归一了**：
+打标由 trace 端口自己实现（`LocalTrace.void_after`），编排方不再持 `trace_dir`。
 
 ---
 
