@@ -1,3 +1,52 @@
+## 2026-09-12（26）—— harness 图组合重构方案（PLAN v1）：九条实测把"内置父子图拼接"从想法变成有边界的工程
+
+**改了什么**
+1. **新增 `docs/spec/harness/PLAN_graph_composition.md`（v1 方案稿，未动任何代码）**：
+   把"两级图 + 一节点一文件"拆成四件事（拼起来 / 分家 / 立契约 / 立机械保证），
+   含目标目录树（`graph/{run,episode}/` + 25 个节点文件 + 6 个功能域）、六个设计决策、
+   四步迁移顺序（每步可独立验收、可独立停）。
+2. **沉淀图引擎语义探针**：新增技能脚本
+   `~/.workbuddy/skills/pokemon-agent-offline-verify/scripts/probe_langgraph_subgraph.py`
+   （**23 条断言，全绿**，纯 langgraph、不碰 PyBoy 也不碰项目代码）。技能 SKILL.md 的
+   铁律加第 ⑤ 条（改图的组合方式 / 升级 langgraph 必跑）、§4 加四条语义要点、§5 加脚本条目。
+
+**为什么这么改**
+用户提出用 langgraph 内置父子图把 harness 重构成"两级图 + 一节点一文件"。**"内置拼接"听起来
+是个小改动，实测却发现三处否决性问题**——不先解决，照着改会当场炸：
+① 父子 state **同名不同型**会 `ValidationError`（本项目现成的一对：run 的
+`goals: list[TaskForBrain]` vs episode 的 `goals: list[GoalForBrain]`）；
+② 直挂子图的内部异常**一路冒到 `invoke()` 调用方**，父图节点接不住——现在"单局异常不崩掉
+整个 run"这条契约（`dispatch` 的 try/except）**会失去落点**；
+③ 子图步数**计入父图 `recursion_limit`**（父 1 + 子 3 需要 `limit ≥ 4`），两层各自标定 limit
+的做法必须重算成一个总上界。
+另有两条正面发现把它从"理想"变成"可行"：`add_node(..., error_handler=fn)` **能兜住子图
+异常**、handler 拿到的是**父 state**、返回 `Command(goto=…)` 流程照常继续（正好是现在
+`dispatch` 返回状态增量的等价物）；`context_schema` + `Runtime[Deps]` 的 context **自动穿透
+父子图**，节点保持纯函数形态——依赖注入的官方落点，**不需要**闭包/偏函数/节点工厂。
+
+**取舍**
+1. **拼接方式推荐"纯内置"**（`add_node("episode", ep_graph, error_handler=…)`）而非"薄壳桥接"
+   （= 现状换个名字，不是内置拼接）。两个代价列明账：**`resume()` 必须保留图外侧门**（它的
+   七步准备里 `void_after`/`load_state_bytes` 是"进图之前截断世界"，不是图状态，图表达不了）；
+   **`recursion_limit` 从"两层各自精确"退化为"一个总上界"**——补偿办法是用已知上界算
+   （`max_steps`/`goals` 数/重试次数都是已知的）再加一条"实际步数 ≤ 预算"的 assert，
+   把"无声截断"换成"开发期就地炸"。
+2. **提出收窄两张 Port**：节点变成自由函数后签名统一是 `(state, runtime) -> dict`，
+   用 Protocol 声明 20 个同签名方法 = 零信息量。主张 Protocol 只留 `run()`/`resume()` 入口，
+   节点级契约交给那张"改哪处/写哪条账"的表（它**已有** `check_graph_phases.py` 机械核对）。
+   **这是本方案唯一"减少现有契约载体"的决策，单独列进待拍板**。
+3. **`goals` 改名方向**：推荐子侧 `EpisodeRunState.goals` → `episode_goals`（父侧 `goals` 是
+   领域概念"目标栈"，全仓一提 `goals` 都指它；子侧那份是投影出来的视图）。
+4. **探针不落仓、落技能**：它是"langgraph 怎么解释父子图"的复跑工具，不是项目产物。
+5. **未动任何代码**，按既定做法等拍板。
+
+**影响面**
+新增一份文档 + 一条技能脚本（技能侧）。**代码与运行时行为零改动**；
+`docs/spec/harness/` 下与 `PLAN_graph_readability.md`（管"图里有什么"，已收口）、
+`PLAN_action_step_granularity.md`（管"步的粒度"）并列不冲突，本份管"图怎么拼、节点住哪"。
+另发现一处文档漂移：`docs/spec/harness/SPEC.md` §1.7 还写着"缺沙箱、成本上限、**checkpoint**、
+replay"——checkpoint 早已落地（2026-09-11（21）），属待订正的滞后项（本次未动）。
+
 ## 2026-09-12（25）—— tool 层协议搬家：`tools/interface/` + 出口分家 + 实现懒加载
 
 **改了什么**
