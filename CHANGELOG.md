@@ -1,3 +1,33 @@
+## 2026-09-11（17）—— 顺序口径统一：`close_step` 的字面位置对齐执行顺序
+
+**改了什么**
+
+1. `episode_harness.py` 的 `_compile()`：`add_node("close_step", ...)` 从 `detect_stall`
+   之后挪到 `store_object_semantic_memory` 之后——`add_node` 的**字面顺序现在 = 执行顺序**。
+2. `episode_harness_port.py`：`close_step` 的方法**声明**同样后移（`detect_stall` →
+   `store_step_episode_memory` → `store_object_semantic_memory` → `close_step`），
+   让"接口即图"的宣布顺序与执行顺序一致。
+3. 文档：`PLAN_graph_readability.md` 升到 **v3**——§3.4 记录 B 已采纳并落地；§2.1 定名
+   `record_observation`（v1 提的 `stamp_observation` 随扶正挪走而失效）并回写"`look` 的工作
+   还需要吗"；§4 对照表 13-16 行按执行顺序重排；§6 补落地记录；§7 勾掉两条已拍板项。
+
+**为什么这么改**：`web/src/App.tsx` 的表头写着"与 `_compile` 的 19 个节点一一对应、**顺序照抄**"，
+而表里 `close_step` 排在两个 store **之后**（这是执行顺序，也是观测台该展示的顺序）。
+`add_node` 的字面顺序不影响 LangGraph 的拓扑（拓扑由边定义），所以两边"都对"——
+但两种口径并存会让 §6 那条机械核对永远只能比集合，"顺序照抄"也就永远是一句没法验证的话。
+把字面位置挪到与执行顺序一致，是把一句口头约定变成**可断言的形状**。这正是本 PLAN 针对的
+病根：漂移能藏两个月，靠的是没有断言守着。
+
+**取舍**：没有反过来改前端去迁就 `add_node` 的旧字面顺序——那会让观测台上"关步"排在
+"两个 store"之前，与刚刚挪走的那种错位同形（读图的人会以为先扶正、再落库）。宁动一句
+`add_node` 的位置，不动"链按执行顺序展示"这条观测台的语义。
+
+**影响面**：`add_node` 的方法注册顺序对图引擎无语义，Protocol 方法声明顺序同理 →
+**运行时行为零变化**。离线核验脚本 52 条仍全绿；`ruff check`/`format` 干净
+（`port.py:43` 的 E501 是改动前就有的历史遗留）。web 相位表的形状级漂移
+（`save_checkpoint` 缺位、`MAIN_END` 15→16、尾链 `verify_steps`+`summarize` 4→3）
+**本轮仍未动**，见 PLAN §1.1 的 #1/#2/#4/#5/#6。
+
 ## 2026-09-11（16）—— 步的边界收进一个节点：`look`+`advance_step` → `record_observation`+`close_step`
 
 **改了什么**
