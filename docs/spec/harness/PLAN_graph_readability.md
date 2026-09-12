@@ -531,6 +531,10 @@ v6 的暂存表存在的**唯一**理由是"一帧的落点要等队列截断完
 `harness/trace_write.py` 的 `append_model_calls()` 一行写完——否则那段 `AppendReq` 样板会在
 5 个写点各抄一遍。
 
+> **（步 5a 现状，2026-09-12）**：这个函数已随 D8-③ 下沉到 `tools/trace/model_calls.py`，
+> harness 侧改由 `TraceToolPort.append_model_calls(FromHarnessToTraceToolAppendModelCallsReq)`
+> 交账；下面提到的 `harness/trace_write.py` 是**当时的落点**，保留原文不改。
+
 **代价（明账，用户已认）**：`LocalTrace.append` 是**逐条原子落盘**。今天 `MODEL_CALL` 边重试边写，
 "重试到第 2 次时进程被杀"仍留有前一次的账；搬完之后要等 util 返回才落盘，**进程死在模型调用里就全丢**。
 窗口 ≤ 一次决策的重试条数（decision 3 / perception 2），且那时本来也不会有 `EPISODE_END`。
@@ -565,7 +569,7 @@ v6 的暂存表存在的**唯一**理由是"一帧的落点要等队列截断完
 | 备选 | 为什么不 |
 |---|---|
 | 截断账的条件写成 `stop is not None`（任何中止都记一条） | 会为"`blocked` 但队列里没有同向键可丢"的键写一条**没发生截断**的截断账。用户原话是"只有真的截断了"，所以条件取 `dropped` 非空。代价：那一类键的 `stop` 不进 trace（仍进 `StepMemory.stop`，大脑那侧不受影响） |
-| 把 `dropped` 的展开逻辑塞进节点 | `AppendReq` + 渲染层已经承担"按 kind 拼 payload"，节点只该交回 `list[ActionSegmentFromBrain]` |
+| 把 `dropped` 的展开逻辑塞进节点 | `AppendReq` + 渲染层已经承担"按 kind 拼 payload"，节点只该交回 `list[ActionSegment]` |
 | `_pending_frames` 整个删掉 | 第 0 步那一帧没有事件可挂（`_begin` 在图外），删不掉 |
 | 把尝试账的"1:N 展开"塞回渲染层（`AppendReq` 收一个 log） | 两条路都成立；选 `trace_write.py` 是因为它保住"一个写点一行、字段全在眼前"，且不动 `AppendReq` 与 `model_call` 的现有形状（`judge_call`/`verify_call` 靠包 `model_call` 实现） |
 

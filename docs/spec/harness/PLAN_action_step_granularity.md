@@ -6,7 +6,7 @@
 >
 > **v3 修订（同日）**：v2 把 `rationale` 留在记忆里，理由是"它属于这一步"——**这个前提是错的**：
 > `rationale` 支持的是整条链（"为什么要交出这串动作"），对单个键并不成立。v3 按同一条判据
-> 把它处理掉：**`ActionFromBrain.rationale` 删除，理由下沉到段**（`ActionSegmentFromBrain.
+> 把它处理掉：**`Action.rationale` 删除，理由下沉到段**（`ActionSegment.
 > rationale`）；链级的"为什么"由 `thought` 承担（它本来就只进 trace）。至此记忆里没有任何
 > 链级字段，归属规则做到零例外——见 §4b。
 
@@ -47,19 +47,19 @@
 新增两个 state 字段（都进 checkpoint dump，恢复后接着把链按完）：
 
 ```
-plan             : ActionFromBrain | None          决策交出的整条链（`thought` 是链级的；论据在段上，见 §4b）
-pending_presses  : list[ActionSegmentFromBrain]    展开成"一键一段"的待按队列
+plan             : Action | None          决策交出的整条链（`thought` 是链级的；论据在段上，见 §4b）
+pending_presses  : list[ActionSegment]    展开成"一键一段"的待按队列
 ```
 
 这两个是**循环状态**（随 checkpoint dump，恢复后接着把链按完），**不是记忆字段**——
 `StepMemory` 一律不含链，见 §4。
 
 `think_action` 产出 plan 并把 `sequence` 按 `times` 展开进 `pending_presses`；
-`act` 每圈弹队首，**派生一个单键 `ActionFromBrain`**（单段、`times=1`，
+`act` 每圈弹队首，**派生一个单键 `Action`**（单段、`times=1`，
 `thought` 沿用 plan 的、`rationale` 取自所在段）交给 `execute`。
 
 > 派生而不是新建类型，是为了让 `reflect` / trace / 记忆 / `describe()` 全都
-> **不用改结构**——它们只认 `ActionFromBrain`，而它照样是"这一步要做的动作"。
+> **不用改结构**——它们只认 `Action`，而它照样是"这一步要做的动作"。
 > 链在 state 里是 `plan`，在循环里是队列，在执行处仍是那个小 action。
 
 > **现状指引（2026-09-11）**：下面这段图素描写于本次改动当时；此后 `look` → `record_observation`、`advance_step` → `close_step`、`look_after_action` → `perceive_after_action` + `record_action_result`。当前图见 `pokemon_agent/harness/interface/episode_harness_port.py` 的模块 docstring。
@@ -173,7 +173,7 @@ v1 曾写 `plan` / `chain_index` / `chain_length`。删掉它们不是省字段�
   要么承认异质（那当初就不该写 `times=4`）**。
 - 段是**一次决策里最小的不可再分意图单元**：一段 = 一个意图 × 连按次数。
   `up×4 -> down×2` 两段的理由可以不同（"往上走到头试撞门" / "没撞到就下来找妈"）。
-- **它更贴合 `rationale` 的原设计意图。** `ActionFromBrain` 的 docstring 写着"论据是
+- **它更贴合 `rationale` 的原设计意图。** `Action` 的 docstring 写着"论据是
   **适用条件**——未来取回这条经验时可以检查它现在还成不成立"。适用条件天然是段级的：
   "地上有药水而我手上没有"支持的是"往右走捡药水"，不是"往右再往上"这个整体计划。
 - **成本按段数付，不按键数付**：`up×4 -> down×2` 是 2 条理由而不是 6 条；单段链零增
@@ -183,8 +183,8 @@ v1 曾写 `plan` / `chain_index` / `chain_length`。删掉它们不是省字段�
 
 | 类型 | 改动 |
 |---|---|
-| `ActionSegmentFromBrain` | **新增** `rationale: list[str]`（1..`MAX_RATIONALE`，必填） |
-| `ActionFromBrain` | **删除** `rationale` 字段；链级的"为什么"由 `thought` 承担（它本来就只进 trace） |
+| `ActionSegment` | **新增** `rationale: list[str]`（1..`MAX_RATIONALE`，必填） |
+| `Action` | **删除** `rationale` 字段；链级的"为什么"由 `thought` 承担（它本来就只进 trace） |
 | `Brain._parse` | `_parse_rationale` 从顶层移到每段（段 JSON 里读），错误信息要点明"第几段"；**顶层出现 `rationale` 要报 `ParseFailure`**——不许两个位置都能写 |
 | `prompts/calls/decide_action/decide_action.md` | JSON 示例改成段内带 `rationale`；"只写为什么选这个动作"改成"这一段为什么" |
 | `StepMemory.rationale` | 形状不变（`list[str]`、非空断言照旧），语义从链级变段级 → **历史记忆文件不用迁移** |
@@ -277,7 +277,7 @@ v1 曾写 `plan` / `chain_index` / `chain_length`。删掉它们不是省字段�
 | §7.8 `THINK:ACT` 1:N | **已落地**：`THINK` 落链首，`STEP_ADVANCE`/`MEMORY_WRITE`/`OBJECT_NOTE` 逐键各一条 |
 | §7.9 `MAX_TIMES` 保留 | **已落地**（它是书写压缩，不是执行粒度） |
 | §7.10 `world.step(settle=)` | `settle` **已落地**；**链内等待窗口仍未验证**——见 §10.3 |
-| §7.11 `rationale` 下沉到段 | **已落地**（`ActionFromBrain.rationale` 删除，段级 `rationale` 必填） |
+| §7.11 `rationale` 下沉到段 | **已落地**（`Action.rationale` 删除，段级 `rationale` 必填） |
 | §7.12 段级论据预算 | **已定**：`MAX_SEGMENTS = 4`（段数上限）+ `MAX_RATIONALE = 2`（段级条数上限） |
 
 1. **`recursion_limit = 17 * max_steps + 20`**（`run()`）——每圈节点数变了
@@ -306,7 +306,7 @@ v1 曾写 `plan` / `chain_index` / `chain_length`。删掉它们不是省字段�
 7. **截图落盘改挂 `ACT`**（见 §3）。
 8. **trace 的 THINK:ACT 从 1:1 变成 1:N。** THINK 落在链首那一步；
    `STEP_ADVANCE`/`MEMORY_WRITE`/`OBJECT_NOTE` 逐键各一条。统计脚本按新关系读。
-9. **`ActionFromBrain` 结构不变**，`MAX_TIMES` 保留——它是"计划里一段连按几次"的
+9. **`Action` 结构不变**，`MAX_TIMES` 保留——它是"计划里一段连按几次"的
    压缩写法（让模型写 `up×4` 而不是四个段），不是执行粒度。
 10. **`world.step()` 需要知道"这一键后面要不要 settle"。** 今天 `AFTER_ACTION_FRAMES`
     （10 秒）是 `step()` 内部无条件执行的，链内键不该等 10 秒。倾向给
@@ -315,7 +315,7 @@ v1 曾写 `plan` / `chain_index` / `chain_length`。删掉它们不是省字段�
     另一件要定的事：**链内等待窗口（现为 `WITHIN_ACTION_FRAMES` = 2 秒）够不够读出
     换图后的 `map_id`**——换图有淡入淡出，2 秒是猜的，必须真机验；不够就得给链内
     单独立一个常量。
-11. **`rationale` 下沉到段是破坏性契约改动**（§4b）：`ActionFromBrain` 的字段、
+11. **`rationale` 下沉到段是破坏性契约改动**（§4b）：`Action` 的字段、
     `Brain._parse`、`decide_action.md` 的 JSON 示例三处必须同时改——任何一处漏改都表现为
     "解析全失败并重试"，而且报错信息会指向错误的位置（顶层 vs 段内）。
 12. **段级论据的 token 预算**（§4b）：段数 × 条数，而段数现在无上限。和 §7.9 的
@@ -332,7 +332,7 @@ v1 曾写 `plan` / `chain_index` / `chain_length`。删掉它们不是省字段�
    这份清单是整份方案的地基——它有多宽，`warp` 之外的判定与中止就能覆盖多宽，
    §5 的 `scene_shift` 也挂在它上面。
 1. 契约与结构：`plan`/`pending_presses` state 字段、`StepMemory` 的 `stop` 字段、
-   **段级 `rationale` + 删除 `ActionFromBrain.rationale`**（§4b）、单键 action 派生、
+   **段级 `rationale` + 删除 `Action.rationale`**（§4b）、单键 action 派生、
    `world.step(settle=)`。
 2. 循环拆成链内小循环（队列条件边）+ 感知策略（逐键 RAM / 链尾视觉）+ 截图改挂 ACT。
 3. 判定层收窄成单键（`object_fact_events` 入参不再收链）+ `_dialog_or_still` 在无视觉

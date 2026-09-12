@@ -1,4 +1,9 @@
-"""按键 → 物体交互事件：harness 侧的判定层。
+"""按键 → 物体交互事件：**判定层**（`store/store_object_semantic_memory/rules.py`）。
+
+**它为什么住在 store 域**：这 200 多行是"这一步碰到了什么"的判定规则，唯一的消费者是
+`store/object_semantic_memory` 那个节点——按"删掉它唯一的调用者之后还有没有人要"这条
+判据（`PLAN_graph_composition.md` §3.5），它跟着节点走；而 270 行的判定层塞进节点文件
+会让"一节点一文件"的体积失衡，所以那个域拆成包（节点本体在 `__init__.py`，规则在这里）。
 
 memory 层只存事件、不做语义判定（分层原则见 AGENTS.md 四），"发生了什么、
 影响了谁"全部在这里算完并构造好事件交给 memory。结构是**先圈候选格、
@@ -44,7 +49,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pokemon_agent.brain import ActionFromBrain
+from pokemon_agent.brain import Action
 from pokemon_agent.schemas.memory import (
     ObjectDialogEvent,
     ObjectFactEvent,
@@ -208,7 +213,7 @@ _POSTURES: dict[str, tuple] = {
 
 def object_fact_events(
     before: Observation,
-    action: ActionFromBrain,
+    action: Action,
     after: Observation,
     episode_id: str,
     step: int,
