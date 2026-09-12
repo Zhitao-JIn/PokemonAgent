@@ -6,10 +6,10 @@
 harness 发起的交互信封归 `schemas/harness/`（发起方 A 处）。
 
 **动作 / 目标 / 任务实体、模型解析产物（计划 / 校验结论 / 局摘要）不在这里**：
-`ActionFromBrain`/`EpisodeSummary`/`GoalForBrain`/`RunPlan`/`StepVerifyVerdict`/
-`TaskForBrain`（以及 `MAX_RATIONALE`/`MAX_TIMES`）原来放在 `domain/` 子目录，
+`Action`/`EpisodeSummary`/`Goal`/`RunPlan`/`StepVerifyVerdict`/
+`Task`（以及 `MAX_RATIONALE`/`MAX_TIMES`）原来放在 `domain/` 子目录，
 现在跟着"协议物理挨着它自己的实现"这条原则搬到了 `pokemon_agent.brain.interface`
-——消费方改写 `from pokemon_agent.brain import TaskForBrain` 这样各自认模块，
+——消费方改写 `from pokemon_agent.brain import Task` 这样各自认模块，
 详见 CHANGELOG 对应条目。
 """
 

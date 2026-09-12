@@ -1,23 +1,52 @@
 # Harness 技术规格说明
 
-> **现状（2026-09-11）**：
+> **现状（2026-09-12，v13 后）**：
 >
-> - **源文件**：`pokemon_agent/harness/episode_harness.py`（`EpisodeHarness` 类），
->   同目录还有 run 级的 `run_harness.py` 与 `brain_utils.py` / `game_utils.py` /
->   `memory_query_utils.py` / `run_plan_utils.py` / `trace_write.py`。
->   **0902 版本文档写的那份 `harness.py` 已经不存在。**
-> - **图**：一局 **20** 个节点，状态载体 `EpisodeRunState`，LangGraph `StateGraph`；
->   两条分叉边 + 一条链内小循环。**权威描述在
->   `pokemon_agent/harness/interface/episode_harness_port.py` 的模块 docstring**
->   ——那里与代码同文件、离 `add_node` 最近，并且被 `scripts/check_graph_phases.py`
->   与观测台相位表（`web/src/App.tsx` 的 `CHAIN_PHASES`）机械核对。
-> - **状态类**：`EpisodeRunState`，不再是 `LoopState`。
+> - **⚠ 本文正文里对下列旧名字的引用，那些对象已经不存在——它们是历史记载，按约定保留不重写。**
+>   统一映射：
+>   - `episode_harness.py` / `EpisodeHarness` 类 → **已删**（步 3）。节点改为
+>     `episode/<域>/<节点名>.py` 的自由函数。
+>   - `run_harness.py`（756 行巨类）→ **已删**（步 4）。拆成 `run/` 下 6 个节点文件 +
+>     `run_entry.py` + 128 行的 `run/harness.py` 薄类。
+>   - `interface/episode_harness_port.py` / `interface/harness_port.py`（两张 Port，441 行）
+>     → **已删**（步 4，D5）。
+>   - `brain_utils.py` / `game_utils.py` / `episode_utils.py` / `memory_query_utils.py` /
+>     `run_plan_utils.py` / `run_utils.py` / `object_interactions.py` → **全部解散**（步 3/步 4），
+>     函数归了各自的宿主节点。
+>   - `harness/trace_write.py` → **已删**（**步 5a**，D8-③）。沉到 `tools/trace/model_calls.py`；
+>     端口方法是 `TraceToolPort.append_model_calls(FromHarnessToTraceToolAppendModelCallsReq)`。
+>   - `tools/trace_tool.py` / `tools/trace_render.py` → **已删**（**步 5a**），收进 `tools/trace/` 包
+>     （`__init__.py` 摆 `TraceTool` + 分派表 / `render.py` 摆 30 个 payload 纯函数 / `model_calls.py` 摆批量账）。
+>   - `ModelCallLog` → ~~住 `trace/interface/domain/model_call_log.py`（trace 的领域类型）~~
+>     **v13 订正：改住信封自己的模块**
+>     （`schemas/harness/communication/FromHarnessToTraceToolAppendModelCallsReq.py` 内，
+>     作为该信封的内部件），仍**由 `schemas/harness` 转交给 harness**；
+>     harness 不从 trace 深处取值（§5.3-⑥ 的机械保证管这条）。
+>   - **`pokemon_agent/trace/` 是独立模块**（v13）：对本仓其余部分**零 import**，只认自己的
+>     词表（`TraceKind` / `Source` / `EventType`）与 `payload: dict[str, str]` 裸字段；
+>     "业务对象 → 裸字段"的转换归 tool 层（`tools/trace/render.py`）——§5.3-⑦ 的机械保证管这条。
+>   - `tools/checkpoint_tool.py` → **已于步 5b 解散**（D9-v6）：格式与读写归
+>     `episode/episode_state.py::EpisodeCheckpoint`，写点 `open/save_checkpoint.py`，
+>     读点 `episode_entry.py`（含 `void_timeline()`）与 `run/run_entry.py`。
+> - **源文件**：两张图、一人一个文件——
+>   run 级 `pokemon_agent/harness/run/`（`run_graph.py` + 6 个节点，平铺在包根）；
+>   episode 级 `pokemon_agent/harness/episode/`（`episode_graph.py` + 21 个节点，按七域
+>   `open gate retrieve decide press store close` 分目录）。
+> - **图**：run 图 **6 格**（`begin` / `plan` / `dispatch` / `episode` / `reflect` / `review`），
+>   episode 图 **21 个节点**。`episode` 那一格是**形态 B**（节点里 `invoke` 子图，父子各算
+>   各自的 `recursion_limit`）。**权威描述在 `episode/episode_graph.py` 的模块 docstring**
+>   ——那里与代码同文件、离 `add_node` 最近（那张 21 行职责表也在那儿），并被
+>   `scripts/check_graph_phases.py` 与观测台相位表（`web/src/App.tsx` 的 `CHAIN_PHASES`）
+>   机械核对。run 侧对应 `run/run_graph.py`。
+> - **状态类**：episode 级 `EpisodeRunState`（`episode/episode_state.py`，`EpisodeCheckpoint`
+>   同文件）；run 级 `RunState`（`run/run_state.py`）。都不是 `LoopState`。
 > - **逐节点对照表**（改哪处 state / 写哪条事件 / 一句话）：
 >   `docs/spec/harness/PLAN_graph_readability.md` §4。
-> - **本文档怎么读**：§2/§3 已按现状重写；§1/§4/§5/§6/§7/§8 保留 0902 原文并在节首
+> - **本文档怎么读**：§2/§3 已按 0907 现状重写；§1/§4/§5/§6/§7/§8 保留 0902 原文并在节首
 >   标注——那些节里"为什么这样设计"的论证（唯一性规则、`outcome` 为什么不进 state、
->   记账为什么跟着返回值走）与图有 6 个还是 20 个节点无关，重写等于把历史论证丢掉。
->   订正范围与依据见 `docs/spec/harness/PLAN_graph_readability.md` §1.2。
+>   记账为什么跟着返回值走）与图有 6 个还是 21 个节点无关，重写等于把历史论证丢掉。
+>   订正范围与依据见 `docs/spec/harness/PLAN_graph_readability.md` §1.2；
+>   步 3 / 步 4 的结构变更见 `PLAN_graph_composition.md` 的 v8→v9 / v9→v10 两节。
 
 本规格基于源文件的实现与模块内嵌的设计说明整理，目标是让读者不用逐行读代码就能看懂
 这一层的结构与事件流。
@@ -30,7 +59,7 @@
 
 ## 1. 模块定位与设计哲学
 
-> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 **`episode/episode_graph.py` 的模块 docstring** 为准（0902 时那里写作 `interface/episode_harness_port.py`，该文件已在步 4 删除）。
 
 ### 1.1 为什么叫 Harness——一次改名的历史
 
@@ -84,8 +113,13 @@ Harness 这一侧只承担一件事：**权限失败不能让这一局从 trace 
 
 六件套目前有 trace 和权限确认（后者只到"装饰器 + 控制台审批"这一步）；缺沙箱、成本上限、checkpoint、replay。
 
-> **订正 2026-09-12**：这句里的 **checkpoint 早已落地**（`EpisodeHarness.save_checkpoint()` /
-> `resume()` + `tools/checkpoint_tool.py`，真机 `check_restore` 跑通）。当次写的时候确实缺。
+> **订正 2026-09-12**：这句里的 **checkpoint 早已落地**（写点在
+> `episode/open/save_checkpoint.py`，读与废弃编排在 `episode/episode_entry.py`，格式
+> `EpisodeCheckpoint` 住 `episode/episode_state.py`；真机 `check_restore` 跑通）。当次写的时候
+> 确实缺。**（步 4 再订正）**原文指的 `EpisodeHarness.save_checkpoint()` 那个类已删；
+> **（步 5b 再订正）**`tools/checkpoint_tool.py` 也已解散——D9-v6 认定的落点是
+> `episode/episode_state.py::EpisodeCheckpoint`（步 5a 另把 `harness/trace_write.py`
+> 下沉到 `tools/trace/model_calls.py`）。
 > 现在实际缺的是**沙箱 / 成本上限 / replay** 三件（replay 的底座 trace 已在）。
 
 ### 1.8 `harness/` 里那些散件：边界是四列，不是文件名
@@ -93,6 +127,24 @@ Harness 这一侧只承担一件事：**权限失败不能让这一局从 trace 
 > **本节写于 2026-09-12**，起因是"这些 `*_utils` 到底谁管什么"反复被问。
 > 规则本身早就在各文件的模块 docstring 里、并且互不矛盾；散的是**它没有一个
 > 统一入口说清楚**。本节就是那个入口。
+
+> **2026-09-12 步 3 / 步 4 / 步 5a / v13 现状（权威）**
+> `brain_utils.py` / `game_utils.py` / `episode_utils.py` / `memory_query_utils.py`（步 3）、
+> `run_plan_utils.py` / `run_utils.py`（步 4）各自归了唯一的宿主节点；
+> `object_interactions.py` 搬到 `episode/store/store_object_semantic_memory/rules.py`（步 3）。
+> **步 5a 已把 `harness/trace_write.py` 下沉到 `tools/trace/model_calls.py`**（与两个 trace 相关文件一起收进
+> `tools/trace/` 包）。**v13 订正**：`ModelCallLog` **不住 trace**——它改住信封自己的模块
+> （`schemas/harness/communication/FromHarnessToTraceToolAppendModelCallsReq.py` 内），
+> 仍由 `schemas/harness` 转交；同时 `pokemon_agent/trace/` 收成**对本仓其余部分零 import**
+> 的独立模块（§5.3-⑦）。
+> **步 5b 清账**：`tools/checkpoint_tool.py` 已解散（见 §1.7 的订正）——
+> 这一批散件**一个不剩**，本节的四列边界判据从「说明它去哪了」变回「以后往哪放」。
+>
+> 所以下面这张表与三条判据的价值**收敛成了规则本身**（"边界由四件事决定，跟它叫 `*_utils`
+> 还是别的没关系"）；举例的文件名请对照**文首现状块**的映射读。
+> **§1.8.2 的三条 `grep` 命令已全部失效**（路径不存在）；机械核对现在由
+> `scripts/check_graph_phases.py` 承担（`harness/` 根清单 + `Runtime[...]` 类型 + 两图的
+> `add_node` ↔ 文件对应）。
 
 harness 包 = 两张图（`episode_harness.py` / `run_harness.py`）+ 两张 Port
 （`interface/`）+ 一层散件。**散件的归属由四件事决定，跟它叫 `*_utils` 还是别的没关系：**
@@ -105,7 +157,7 @@ harness 包 = 两张图（`episode_harness.py` / `run_harness.py`）+ 两张 Por
 | `episode_utils.py` | 图算法 | — | episode | `EpisodeHarness`（终局结论 / 停摆 / 中止范围） |
 | `run_utils.py` | 图算法 | — | run | `RunHarness`（目标栈 / trace 挑局） |
 | `memory_query_utils.py` | 图算法 | — | episode | `EpisodeHarness`（检索 query 串三处） |
-| `trace_write.py` | 写账共用件 | `TraceToolPort` | **跨两层** | 上面三个依赖循环的宿主 |
+| `trace_write.py`（**步 5a 已下沉** `tools/trace/model_calls.py`） | 写账共用件 | `TraceToolPort` | **跨两层** | 上面三个依赖循环的宿主 |
 
 三条判据（都可机械核对，§1.8.2）：
 
@@ -115,7 +167,8 @@ harness 包 = 两张图（`episode_harness.py` / `run_harness.py`）+ 两张 Por
 2. **episode 层与 run 层互不依赖。** run 层不越过 `EpisodeHarnessPort` 去拿 episode 的件，
    episode 层不知道 run 层存在。所以同名后缀的两个文件（`episode_utils`/`run_utils`）
    是**平行**的，不是上下游。
-3. **`trace_write.py` 是唯一的第三类**，也几乎是全部困惑的来源：它绑了 `TraceToolPort`
+3. **`trace_write.py` 是唯一的第三类**（**步 5a 起它已搬去 `tools/trace/model_calls.py`**，
+   判据不变），也几乎是全部困惑的来源：它绑了 `TraceToolPort`
    （所以不是"图算法"），但不属于任何一层图（所以也不是"某根依赖的循环"）——
    它服务的是**三个依赖循环的宿主**。第三类今天只有它一个成员。
 
@@ -159,7 +212,7 @@ grep -rn "object_interactions" pokemon_agent/harness/run_harness.py   # 期望 0
 ## 2. `EpisodeRunState`
 
 > **本节是现状版（2026-09-11）**：随 `LoopState` → `EpisodeRunState` 一并重写。
-> 字段的**权威定义**在同名文件的 `episode_harness_port.py`（状态类与接口同文件）。
+> 字段的**权威定义**在 `pokemon_agent/harness/episode/episode_state.py`（状态类住自己的文件；0902 时写在 `interface/episode_harness_port.py`，该文件已在步 4 删除）。
 > 本节只讲分组、形状与几个关键判据，不抄字段表——抄本会漂移，而字段表恰恰是漂移代价
 > 最高的那种文档（0902 版这份抄本把 `succeeded`/`why`/`space`/`memories` 四个早已不存在
 > 的字段名写了很久）。
@@ -179,7 +232,7 @@ grep -rn "object_interactions" pokemon_agent/harness/run_harness.py   # 期望 0
 
 ### 2.2 字段的权威定义在哪
 
-`pokemon_agent/harness/interface/episode_harness_port.py::EpisodeRunState`——每个字段都带
+`pokemon_agent/harness/episode/episode_state.py::EpisodeRunState`——每个字段都带
 docstring，写清了"谁写它、什么时候写、别的格子怎么读"。**本规格不再抄一份**：
 字段表是接口契约，只有一份能是对的。
 
@@ -232,11 +285,12 @@ docstring，写清了"谁写它、什么时候写、别的格子怎么读"。**�
 
 ## 3. 图结构
 
-> **本节是现状版（2026-09-11）**：0902 版描述的是 `harness.py` 的 6 节点直线图，
-> 那个文件已不存在。现行是 `episode_harness.py` 的 **20** 节点图。
-> **拓扑的权威版本在 `episode_harness_port.py` 的模块 docstring**（接口即图：20 个节点
-> 方法就是 20 个节点），并被 `scripts/check_graph_phases.py` 与
-> `web/src/App.tsx` 的相位表逐条机械核对。
+> **本节是现状版（2026-09-11；2026-09-12 步 4 再订正三处）**：0902 版描述的是 `harness.py` 的
+> 6 节点直线图，那个文件已不存在。现行是 **`episode/` 的 21 个节点**（`episode_harness.py` 与
+> `EpisodeHarness` 类已在步 3 删除）。**拓扑的权威版本在 `episode/episode_graph.py` 的模块
+> docstring**（图即那张 21 行职责表；0902 时写作 `interface/episode_harness_port.py` 的
+> 20 个方法，该文件已在步 4 删除），并被 `scripts/check_graph_phases.py` 与
+> `web/src/App.tsx` 的相位表逐条机械核对。**run 侧**另有 6 格（`run/run_graph.py`）。
 
 ### 3.1 顶层形状
 
@@ -289,7 +343,7 @@ save_checkpoint → record_observation → judge ─(done)→ 收尾链(3 节点
 
 ### 3.4 ASCII 图
 
-以 `episode_harness_port.py` 模块 docstring 里的那张图为权威版本——它与代码同文件、
+以 `episode/episode_graph.py` 模块 docstring 里的那张图为权威版本——它与代码同文件、
 离 `add_node` 最近，改图的人先看到它。0902 版这里那张六节点 ASCII 图不再保留。
 
 ### 3.5 为什么 `merge_retrieval` / 两个 store / `verify_and_summarize` 是独立节点
@@ -331,7 +385,7 @@ save_checkpoint → record_observation → judge ─(done)→ 收尾链(3 节点
 
 ## 4. 逐节点方法详解
 
-> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 **`episode/episode_graph.py` 的模块 docstring** 为准（0902 时那里写作 `interface/episode_harness_port.py`，该文件已在步 4 删除）。
 
 ### 4.1 `_begin(episode_id, task) -> LoopState`
 
@@ -537,7 +591,7 @@ world 在 `reset()` / `step()` 的结尾产出、沿 `pending_observation` 传�
 
 ## 5. 目标栈
 
-> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 **`episode/episode_graph.py` 的模块 docstring** 为准（0902 时那里写作 `interface/episode_harness_port.py`，该文件已在步 4 删除）。
 
 `goals` 这个栈的形状留着，但**这一版它恒为一层**：栈底是任务目标，而压栈的唯一途径 `push_goal` 已经删了。**当前目标永远是栈顶**（`goals[-1]`），判定只判它，完成就出栈；栈空 = 任务完成，只有这一条路径写 `success`。
 
@@ -566,7 +620,7 @@ world 在 `reset()` / `step()` 的结尾产出、沿 `pending_observation` 传�
 
 ## 6. `run()` 整体流程
 
-> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 **`episode/episode_graph.py` 的模块 docstring** 为准（0902 时那里写作 `interface/episode_harness_port.py`，该文件已在步 4 删除）。
 
 `run(self, episode_id: str, task: Task) -> EpisodeOutcome`，`Harness` **对外唯一的入口**，挂着 `@initialize`（每局重载权限配置）。
 
@@ -625,7 +679,7 @@ return outcome
 
 ## 7. 模型调用记账机制
 
-> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 **`episode/episode_graph.py` 的模块 docstring** 为准（0902 时那里写作 `interface/episode_harness_port.py`，该文件已在步 4 删除）。
 
 账跟着 `PerceptionResult`/`ToolResult` 的返回值走，**不再靠 `drain_calls()`**：
 
@@ -653,7 +707,7 @@ return outcome
 
 ## 8. 一轮循环的事件时间线
 
-> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 **`episode/episode_graph.py` 的模块 docstring** 为准（0902 时那里写作 `interface/episode_harness_port.py`，该文件已在步 4 删除）。
 
 以"某一步、模型一次决策成功、执行后记忆库检测到语义记忆条目"为例（`n` 为本轮开始时的 `state.step`）：
 

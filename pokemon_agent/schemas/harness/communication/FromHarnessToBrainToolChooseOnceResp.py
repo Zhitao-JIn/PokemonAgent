@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain.interface import ActionFromBrain
+from pokemon_agent.brain.interface import Action
 from pokemon_agent.providers.interface import ModelCall
 
 
@@ -17,6 +17,6 @@ class FromHarnessToBrainToolChooseOnceResp(BaseModel):
     `ChooseOnceResp`（今天原样转发，未来 `BrainTool` 可以在这里做裁剪）。
     """
 
-    action: ActionFromBrain = Field(description="这次尝试解析出的合法动作")
+    action: Action = Field(description="这次尝试解析出的合法动作")
     calls: list[ModelCall] = Field(min_length=1, max_length=1, description="这次尝试自己的账")
     recalled: list[str] = Field(default_factory=list, description="取回了哪几条情景记忆")

@@ -1,10 +1,14 @@
 """全项目唯一装配点：把所有具体实现 new 起来，拼成 RunHarness 与 world。
 
-想知道"怎么拼起来"读这个文件；想知道"怎么互相调用"读 harness/run_harness.py。
+想知道"怎么拼起来"读这个文件；想知道"怎么互相调用"读 harness/run/harness.py。
 
-**入口是 run 级**：返回的 `RunHarness` 是主 agent（完整一局游戏），内部
-包着 `EpisodeHarness`（子 agent，解决栈顶一个目标）。旧调用方拿到的
-`harness.run(run_id, goals)` 是 run 级签名。
+**入口是 run 级**：返回的 `RunHarness` 是主 agent（完整一局游戏），它内部编译并
+`invoke` episode 子图（21 个节点，按七个功能域分文件夹，见 `harness/episode/`）。
+旧调用方拿到的 `harness.run(run_id, goals)` 是 run 级签名。
+
+**步 4 起装配只剩"造一个 `HarnessDeps`"这一件事**：全图唯一的 context 里装着
+6 根 Port + 策略对象 + 两个行为开关 + 整 run 的记号——`RunHarness(deps)` 只收它，
+不再逐个把同样的东西再递一遍（那会有两份真源，而"两边不是同一个对象"不报错）。
 """
 
 from __future__ import annotations
@@ -12,7 +16,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from pokemon_agent.brain import Brain
-from pokemon_agent.harness import EpisodeHarness, HumanReviewer, RunDataCenter, RunHarness
+from pokemon_agent.harness import (
+    AutoContinueReviewer,
+    HarnessDeps,
+    HumanReviewer,
+    RunDataCenter,
+    RunHarness,
+)
 from pokemon_agent.providers import FastEmbedReranker, FastEmbedText
 from pokemon_agent.tools import BrainTool, GameTools, MemoryTool, TraceTool
 from pokemon_agent.trace import LocalTrace
@@ -88,16 +98,11 @@ def build_real(
         reranker_provider=FastEmbedReranker(),
     )
 
-    # checkpoint 手（PLAN_checkpoint）：checkpoint 根目录独立于 trace 的落盘
-    # 目录（0909 起不再是 trace_data 下的子目录，见 CheckpointTool 类
-    # docstring）；trace_dir 仍然要给它——void_after() 截断 trace/截图要用。
-    from pokemon_agent.tools import CheckpointTool
-
-    checkpoint_tool = CheckpointTool(
-        checkpoint_dir=Path("checkpoints") / run_id,
-        trace_dir=Path("trace_data") / run_id,
-        memory=memory,
-    )
+    # 存档根目录（PLAN_checkpoint）：独立于 trace 的落盘目录（0909 起不再是
+    # trace_data 下的子目录）。**步 5b 起它只是「一条路径」**——存档读写归
+    # `episode/episode_state.py` 的 `EpisodeCheckpoint`（自己拼这个根下的
+    # `step/<episode_id>/<step>.{state,json}`），不再有一根 checkpoint Port。
+    checkpoint_root = Path("checkpoints") / run_id
 
     # 决策走 DashScope（Qwen），判定/校验走火山方舟（豆包）——两条链路
     # 不同供应商。
@@ -133,39 +138,35 @@ def build_real(
     brain_tool = BrainTool(brain)
 
     # `data_center` 在这里先落实成一个真实例（不传就自己建一个）——
-    # `EpisodeHarness`（human_note 槽）和 `RunHarness`（goals/review 两槽）
-    # 必须共享同一个实例，缺一处这里落实就会各自新建一份、互不相干
-    # （`RunHarness.__init__` 自己也有"不传就新建"的兜底，但那个兜底建出来的
-    # 实例不会是 `EpisodeHarness` 手里这份，两边就断开了）。
+    # episode 的 `decide/think_action`（human_note 槽）和 run 图的 `plan`/`review`
+    # （goals/review 两槽）必须共享同一个实例，缺一处这里落实就会各自新建一份、
+    # 互不相干（`RunHarness.__init__` 自己也有"缺省就新建"的兜底，但那个兜底建
+    # 出来的实例不会是节点手里这份，两边就断开了）。
 
-    # 子 agent（一局）→ 主 agent（一个 run）：
-    # 同一个 trace 实例注入两端——episode 写事件、run 级按类型 mask 读；
-    # 同一个 data_center 实例注入两端——episode 消费 human_note 槽、run 级
-    # 消费 goals/review 两槽。
-    episode = EpisodeHarness(
-        game,
-        memory,
-        brain_tool,
-        trace_tool,
-        run_id=run_id,
-        data_center=data_center,
-        checkpoint=checkpoint_tool,
-    )
-    run_harness = RunHarness(
-        episode=episode,
-        trace=trace_tool,
-        # run 级规划：同一个 `BrainTool` 实例（`plan_once` 是 Brain 的第四个
-        # 技能）——`RunHarness` 只认 `BrainToolPort`，跟 trace 的接线同一个模式。
+    # **全图唯一的 context**（D3/F10）：episode 子图的 21 个节点、run 图的 6 个节点、
+    # 图外两个入口（`episode_entry.run_new`/`run_resume` 与 `run_entry.new_run`/
+    # `resume_run`）共用它一份。同一个 trace 实例注入两端——episode 写事件、run 级按
+    # 类型 mask 读；同一个 data_center 实例注入两端——episode 消费 human_note 槽、
+    # run 级消费 goals/review 两槽。
+    #
+    # **两个行为开关也住这里**（步 4 归位）：它们是"这次 run 怎么跑"的构造期决定，
+    # 读它的是 `run/plan.py`。此前它们是 `RunHarness.__init__` 的参数、与 deps 各存
+    # 一份——现在只有一个来源。
+    deps = HarnessDeps(
+        game=game,
+        memory=memory,
         brain_tool=brain_tool,
-        # human-in-the-loop：不传默认 AutoContinueReviewer；API 层注入阻塞式审查者。
-        reviewer=reviewer,
+        trace=trace_tool,
+        reviewer=reviewer or AutoContinueReviewer(),
         data_center=data_center,
-        checkpoint=checkpoint_tool,
+        checkpoint_root=checkpoint_root,
+        run_id=run_id,
         # `False`：plan 不自动压栈，新目标改走人工通道 `POST /runs/{id}/goals`。
         auto_push_goals=auto_push_goals,
         # `False`：plan 也不自己判 done，栈空时改路由去 review 问人，
         # 只有人类的 STOP 才能真的结束 run。
         auto_decide_done=auto_decide_done,
     )
+    run_harness = RunHarness(deps)
 
     return run_harness, trace, world, game

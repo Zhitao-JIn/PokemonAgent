@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain.interface import TaskForBrain
+from pokemon_agent.brain.interface import Task
 
 
 class FromRunHarnessToEpisodeHarnessRunReq(BaseModel):
@@ -17,6 +17,6 @@ class FromRunHarnessToEpisodeHarnessRunReq(BaseModel):
     """
 
     episode_id: str = Field(description="这一局的标识")
-    task: TaskForBrain = Field(description="栈顶目标（本局要解决的）")
-    stack: list[TaskForBrain] = Field(description="完整目标栈，栈顶 == task")
+    task: Task = Field(description="栈顶目标（本局要解决的）")
+    stack: list[Task] = Field(description="完整目标栈，栈顶 == task")
     run_state: dict[str, Any] = Field(description="RunState.model_dump()，图状态重建用")

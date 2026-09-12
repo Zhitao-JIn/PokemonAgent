@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from pokemon_agent.brain.interface import ActionFromBrain
+from pokemon_agent.brain.interface import Action
 from pokemon_agent.world import Observation
 
 
@@ -20,5 +20,5 @@ class ReflectReq(BaseModel):
     """
 
     before: Observation
-    action: ActionFromBrain
+    action: Action
     after: Observation

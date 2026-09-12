@@ -70,7 +70,7 @@ known_objects/knowledge 非空分支。
 PLAN_VERDICT）req 缺 `step`（原实现硬编码 0，episode_end 用 outcome.steps）；
 ② `OBSERVE` 缺 `step=obs.step`；③ `store_step_episode_memory` 没解包
 reflect 响应的 `.entry`；④ run_start 的 `goals`（TaskForHarness）撞
-observe 的 `goals`（GoalForBrain），拆出独立 `run_goals` 字段。
+observe 的 `goals`（Goal），拆出独立 `run_goals` 字段。
 → 提示：原转换是脚本批处理，复核时若发现同类"req 缺字段/字段带错"模式，
 很可能还有漏网——第 2 节"未点亮"清单是首选排查区。
 

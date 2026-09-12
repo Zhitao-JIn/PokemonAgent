@@ -102,11 +102,11 @@ EpisodeHarnessPort.run(
 | 身份（跨步） | `episode_id` | `str` | 全局唯一，trace 按它分组 |
 | | `task` | `TaskForHarness` | 在跑哪个任务（目标/判据/步数上限） |
 | | `step` | `int` | 第几步。**全项目只有这一个 step**，max_steps 是一道闸 |
-| | `goals` | `list[GoalForBrain]` | 目标栈（run 级投影）。**判只判栈顶 `goals[-1]`**，全程只读 |
+| | `goals` | `list[Goal]` | 目标栈（run 级投影）。**判只判栈顶 `goals[-1]`**，全程只读 |
 | 流转（单步） | `observation` | `ObservationFromWorld \| None` | 当前帧（盖章后的） |
 | | `action_space` | `ActionSpaceForBrain \| None` | 此刻能按的键（look 算好，think 消费） |
 | | `memories` | `list[StepMemory]` | `retrieve_memory` 查出的情景记忆 → `think` |
-| | `action` | `ActionFromBrain \| None` | `think` 产出 → `press` 消费 |
+| | `action` | `Action \| None` | `think` 产出 → `press` 消费 |
 | | `pending_observation` | `ObservationFromWorld \| None` | 还没盖章的新观测（`press`/`begin` 产出 → `look` 消费） |
 
 **`outcome` 不在 state 里**——由 `run()` 在图跑完后从 `observation` 直接算。
@@ -117,9 +117,9 @@ EpisodeHarnessPort.run(
 run 级：  goals = [TaskForHarness(t3), TaskForHarness(t2), TaskForHarness(t1)]
                                                           └─ 栈顶，先做
 dispatch 时把全栈传给 episode：
-episode： goals = [GoalForBrain(goal=t3.goal, criteria=t3.criteria),   ← 全局信息
-                   GoalForBrain(goal=t2.goal, criteria=t2.criteria),
-                   GoalForBrain(goal=t1.goal, criteria=t1.criteria)]  ← 栈顶，判它
+episode： goals = [Goal(goal=t3.goal, criteria=t3.criteria),   ← 全局信息
+                   Goal(goal=t2.goal, criteria=t2.criteria),
+                   Goal(goal=t1.goal, criteria=t1.criteria)]  ← 栈顶，判它
 ```
 
 - **判只判栈顶**：`judge(goal=goals[-1])`；判成即本局结束（done+success）。
@@ -326,7 +326,7 @@ run("run1", [t3, t2, t1])
 │    outcome = episode.run("run1-ep1", t1, [t3,t2,t1])
 │    │
 │    │  ┌─ _begin：EPISODE_START{goal=t1.goal, max_steps} 写 trace
-│    │  │    goals 投影 = [GoalForBrain(t3), GoalForBrain(t2), GoalForBrain(t1)]
+│    │  │    goals 投影 = [Goal(t3), Goal(t2), Goal(t1)]
 │    │  │    pending_observation = world.reset(task) 的第一帧
 │    │  │
 │    │  ├─ look：盖章（step/done）→ OBSERVE{status,scene,overlay,facts,goals}

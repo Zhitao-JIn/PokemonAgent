@@ -3,8 +3,8 @@
 四个产出模块各自一个包、各自一个统一出口：
 
 - `frontend`：前端产出——前端发起的第一跳信封（启动 run、提交目标编辑、取帧）
-- `harness`：编排层产出——harness 发起的全部第一跳信封（brain_tool / checkpoint_tool /
-  game_tool / memory_tool / reviewer / trace_tool 六个门面，外加 run → episode）与人工复核实体
+- `harness`：编排层产出——harness 发起的全部第一跳信封（brain_tool /
+  game_tool / memory_tool / reviewer / trace_tool 五个门面，外加 run → episode）与人工复核实体
 - `brain`：决策层产出——对外接口模型（`ChooseOnceReq` 等裸名）
 - `providers`：模型接入层产出——文本与视觉补全的接口模型、一次调用的账
 

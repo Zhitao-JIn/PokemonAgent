@@ -31,7 +31,7 @@ def main() -> None:
         make_review_pair,
         write_last_run,
     )
-    from pokemon_agent.brain import TaskForBrain
+    from pokemon_agent.brain import Task
     from pokemon_agent.build import build_real
 
     run_id = f"realcheck-{time.strftime('%m%d-%H%M%S')}"
@@ -54,7 +54,7 @@ def main() -> None:
     )
     print(f"[2/6] build_real 完成（review 超时 {REVIEW_TIMEOUT:.0f}s）。", flush=True)
 
-    task = TaskForBrain(
+    task = Task(
         task_id="realcheck",
         goal=GOAL,
         success_criteria=SUCCESS_CRITERIA,

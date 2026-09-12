@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain.interface import ActionFromBrain
+from pokemon_agent.brain.interface import Action
 from pokemon_agent.providers.interface import ModelCall
 
 
@@ -19,7 +19,7 @@ class ChooseOnceResp(BaseModel):
     不在这里滚存。
     """
 
-    action: ActionFromBrain = Field(description="这次尝试解析出的合法动作")
+    action: Action = Field(description="这次尝试解析出的合法动作")
     calls: list[ModelCall] = Field(
         min_length=1, max_length=1, description="这次尝试自己的账，恰好一条"
     )

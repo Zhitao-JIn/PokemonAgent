@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain.interface import TaskForBrain
+from pokemon_agent.brain.interface import Task
 from pokemon_agent.trace import TraceEvent
 
 
@@ -18,14 +18,14 @@ class PlanOnceReq(BaseModel):
     """
 
     run_id: str = Field(description="这次 run 的标识（完整一局游戏会话）")
-    goals: list[TaskForBrain] = Field(description="当前目标栈，栈顶 = goals[-1]（下一步要解决的）")
+    goals: list[Task] = Field(description="当前目标栈，栈顶 = goals[-1]（下一步要解决的）")
     events: list[TraceEvent] = Field(
-        description="按 `run_plan_utils.RUN_TRACE_MASK` 过滤过的 trace 事件——"
+        description="按 `run/plan.py` 的 `RUN_TRACE_MASK` 过滤过的 trace 事件——"
         "`build_prompt()` 从里面折出「每局一行」的历史摘要，是「根据历史压栈」"
         "的依据",
     )
     max_push: int = Field(
-        description="一次最多压几个新目标（`harness_port.MAX_PLAN_PUSH`），"
+        description="一次最多压几个新目标（`run/plan.py` 的 `MAX_PLAN_PUSH`），"
         "prompt 里要把这个上限告诉模型",
     )
     prompt: str = Field(

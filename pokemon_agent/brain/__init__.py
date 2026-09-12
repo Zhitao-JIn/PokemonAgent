@@ -1,8 +1,8 @@
 """brain 包：纯决策层。无状态——每一步的全部输入来自参数，全部记忆来自工具调用。
 
 - `interface/`：这个子系统的港口（`BrainPort`）+ 它内嵌的数据形状
-  （`ActionFromBrain`/`EpisodeSummary`/`GoalForBrain`/`RunPlan`/
-  `StepVerifyVerdict`/`TaskForBrain`），跟"怎么决策"的实现物理分开
+  （`Action`/`EpisodeSummary`/`Goal`/`RunPlan`/
+  `StepVerifyVerdict`/`Task`），跟"怎么决策"的实现物理分开
 - `brain.py`：`BrainPort` 的唯一实现（`Brain`）
 
 本文件是统一出口：消费方只写 `from pokemon_agent.brain import X`，不深到
@@ -12,7 +12,7 @@
 `world/__init__.py` 对 `WorldPort` 的处理一模一样：`brain.py`（`Brain` 的
 实现）要 `from pokemon_agent.schemas.brain import (ChooseOnceReq, ...)`，
 而 `schemas/brain/communication/*.py` 里这些协议的字段又要从
-`brain.interface` 拿回 `GoalForBrain`/`ActionFromBrain` 等数据形状——如果
+`brain.interface` 拿回 `Goal`/`Action` 等数据形状——如果
 这里在包初始化时就把 `Brain`/`BrainPort` 也一并导入，`schemas.brain` 跟
 这个包之间就会形成真正的循环导入。`__getattr__` 把这两个名字改成按需导入，
 `from pokemon_agent.brain import X` 用起来和之前一模一样，只是不再是包
@@ -28,13 +28,13 @@ from .interface import (
     MAX_RATIONALE,
     MAX_SEGMENTS,
     MAX_TIMES,
-    ActionFromBrain,
-    ActionSegmentFromBrain,
+    Action,
+    ActionSegment,
     EpisodeSummary,
-    GoalForBrain,
+    Goal,
     RunPlan,
     StepVerifyVerdict,
-    TaskForBrain,
+    Task,
 )
 
 if TYPE_CHECKING:
@@ -45,15 +45,15 @@ __all__ = [
     "MAX_RATIONALE",
     "MAX_SEGMENTS",
     "MAX_TIMES",
-    "ActionFromBrain",
-    "ActionSegmentFromBrain",
+    "Action",
+    "ActionSegment",
     "Brain",
     "BrainPort",
     "EpisodeSummary",
-    "GoalForBrain",
+    "Goal",
     "RunPlan",
     "StepVerifyVerdict",
-    "TaskForBrain",
+    "Task",
 ]
 
 _LAZY: dict[str, tuple[str, str]] = {

@@ -15,7 +15,7 @@ class PlanOnceResp(BaseModel):
     只在成功路径上用——失败（解析不出 `RunPlan`）时 `plan_once()` 抛
     `PlanAttemptFailed`（附这次的账），不走这个 resp；`calls` 恰好一条
     （这次尝试自己的账），多次尝试的累积在 Harness 那层的
-    `run_plan_utils.ask_planner_with_retry` 做，不在这里滚存。
+    `run/plan.py::ask_planner_with_retry` 做，不在这里滚存。
     """
 
     plan: RunPlan = Field(description="这次尝试解析出的计划")

@@ -88,8 +88,8 @@ class GameTools:
     def reset(self, req: FromHarnessToGameToolResetReq) -> None:
         """开新一局。**不感知**——调用方另调 `perceive_once()` 拿第一帧。
 
-        把 `req.task`（`TaskForBrain`）拆成裸字段交给 world——world 不认识
-        `TaskForBrain` 这个 brain 的类型，只用得到这几个原始值。
+        把 `req.task`（`Task`）拆成裸字段交给 world——world 不认识
+        `Task` 这个 brain 的类型，只用得到这几个原始值。
         """
         task = req.task
         self._world.reset(
@@ -178,7 +178,7 @@ class GameTools:
         segment = action.sequence[0]
         space = _mask(req.observation, self._world.all_actions())
         assert space.contains(segment.name), f"execute() got {segment.name!r} outside {space.names}"
-        # world 不认识 `ActionFromBrain`，这里拆成 `(按键名, 连按次数)` 的裸列表交给它。
+        # world 不认识 `Action`，这里拆成 `(按键名, 连按次数)` 的裸列表交给它。
         # `settle` 原样转达：链中间的键不等过场走完（理由见 `ExecuteReq.settle`）。
         self._world.step([(segment.name, segment.times)], settle=req.settle)
 

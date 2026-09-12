@@ -7,7 +7,7 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel
 
-from pokemon_agent.brain.interface import GoalForBrain
+from pokemon_agent.brain.interface import Goal
 from pokemon_agent.schemas.memory import StepMemory
 
 
@@ -38,7 +38,7 @@ class JudgeReq(BaseModel):
         回填，才交给 `Brain.judge(req)`。
     """
 
-    goal: GoalForBrain
+    goal: Goal
     history: Sequence[StepMemory] = ()
     images: Sequence[bytes] = ()
     prompt: str = ""

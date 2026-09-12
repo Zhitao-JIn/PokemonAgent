@@ -8,24 +8,24 @@
 **零依赖**：`brain`/`world`/`memory`/`trace` 这几个领域模块之间、以及它们与
 `schemas.*` 之间，原则是完全没有相互依赖——模块间只靠裸函数和 tool 层交互
 （`providers` 例外，当作底层公共库，各模块都能直接依赖）。这个协议原来收
-`ActionFromBrain`/`TaskForBrain`（来自 `pokemon_agent.brain`）、返回
+`Action`/`Task`（来自 `pokemon_agent.brain`）、返回
 `schemas.world.communication.PerceiveOnceResp`（来自 `schemas`）——两条依赖
 都得去掉：
 
-- `reset()`/`set_task()` 不再收 `TaskForBrain` 这个 brain 的类型，改收裸字段
+- `reset()`/`set_task()` 不再收 `Task` 这个 brain 的类型，改收裸字段
   （`task_id`/`goal`/`success_criteria`/`max_steps`/`initial_state_hint`）——
-  world 本来就只用得到这几个原始值，`TaskForBrain` 剩下的字段（比如给 LLM
+  world 本来就只用得到这几个原始值，`Task` 剩下的字段（比如给 LLM
   读的 `goal` 怎么措辞）它从来不关心。
-- `step()` 不再收 `ActionFromBrain` 这个 brain 的类型，改收
+- `step()` 不再收 `Action` 这个 brain 的类型，改收
   `list[tuple[str, int]]`（按键名 + 连按次数的按键段列表）——world 只关心
-  "按哪个键、按几次"，不关心 `ActionFromBrain.thought`/`rationale` 这些只有
+  "按哪个键、按几次"，不关心 `Action.thought`/`rationale` 这些只有
   brain/trace/memory 关心的字段。
 - `perceive_once()` 不再返回 `schemas` 里的信封，改返回 `Perceived`
   （`domain/perceived.py`）——world 自己的数据形状，不是"两个模块协商出的
   信封"。
 
 `tools/game_tools.py`（`GameToolPort` 的实现）是唯一的调用方，负责把
-harness 那一侧的 `TaskForBrain`/`ActionFromBrain`/信封拆成这里要的裸字段，
+harness 那一侧的 `Task`/`Action`/信封拆成这里要的裸字段，
 再把这里吐出来的 `Perceived` 拼回 harness 认识的信封——这正是"tool 层承接
 拆信封/拼信封"这条分工在 world 这一侧的落地。
 """
@@ -74,7 +74,7 @@ class WorldPort(Protocol):
     ) -> None:
         """按任务重置到初始状态。**不感知**——第一帧由调用方另调 `perceive_once()` 拿。
 
-        参数是 `TaskForBrain` 拆开的裸字段——world 只用得到这几个原始值。
+        参数是 `Task` 拆开的裸字段——world 只用得到这几个原始值。
         前置条件：max_steps > 0。
         """
         ...
@@ -107,7 +107,7 @@ class WorldPort(Protocol):
         `perceive_once()` 拿。
 
         segments：按序执行的按键段，每段是 `(按键名, 连按次数)`——
-            `ActionFromBrain.sequence` 拆开的裸字段，world 不需要知道
+            `Action.sequence` 拆开的裸字段，world 不需要知道
             `thought`/`rationale` 这些字段。执行层恒传单键（一段、一次）。
         settle：按完之后要不要给世界一段**无输入演化时间**再交回控制权。
             `True` = 等（换图的淡入淡出、战斗开场动画、对话逐字打出、菜单弹出

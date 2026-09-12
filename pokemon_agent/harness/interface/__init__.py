@@ -1,25 +1,28 @@
-"""harness/interface 包统一出口：harness 层的两张港口（`HarnessPort`/
-`EpisodeHarnessPort`）+ `HumanReviewer`，以及它们各自内嵌的数据形状
-（`RunState`/`ResumeEpisode`/`EpisodeRunState`/`HumanDecision`）和三个
-常量（`MAX_GOAL_RETRIES`/`MAX_PLAN_PUSH`/`PLAN_MAX_ATTEMPTS`）。
+"""harness/interface 包统一出口：harness 层**真端口**——`HumanReviewer` 与它的数据形状
+`HumanDecision`。
 
-三个 Port 原来放在顶层 `pokemon_agent/interfaces/harness/`；`HumanDecision`
-原来放在 `schemas/harness/domain/`——都跟着"协议物理挨着它自己的实现/数据
-形状"这条原则搬到了这里。
+**判据：港口 = 实现方在系统之外**（`PLAN_graph_composition.md` §3.4）。这里曾经住着
+两张"镜子"——`HarnessPort`/`EpisodeHarnessPort`，实现方就是隔壁文件的
+`RunHarness`/`EpisodeHarness`；D5 已删（步 4：653 行零信息量的抄本，20 个方法全是
+`...`，而"图有哪些节点"由 `episode_graph.py` 的 `add_node` 说、"节点改哪一处"由那张
+21 行职责表说，都**可执行/可核对**）。同一次收口里搬走的还有：
 
-**`HumanDecision` 立即加载，其余全部懒加载**：跟 `world/interface` 的
-`WorldPort`/`brain/interface` 的 `BrainPort` 同一个道理——`harness_port.py`/
-`episode_harness_port.py`/`human_reviewer.py` 都要
+- `RunState`/`ResumeEpisode` → `run/run_state.py`（状态不是能力）；
+- `EpisodeRunState` → `episode/episode_state.py`；
+- 三个常量（`MAX_GOAL_RETRIES`/`MAX_PLAN_PUSH`/`PLAN_MAX_ATTEMPTS`）→ 各自服务的
+  节点文件（D8-②），包出口只是**再导出**它们（`harness/__init__.py`）。
+
+一句话：`interface/` 从此只回答"harness 需要外面给什么"，不再回答"harness 自己长
+什么样"。
+
+**`HumanDecision` 立即加载，`HumanReviewer` 懒加载**：后者要
 `import pokemon_agent.schemas.harness`，而
-`schemas/harness/communication/FromHarnessToReviewerReviewResp.py` 的字段
-又要从这里拿回 `HumanDecision`。两条依赖在初始化顺序上正面相撞：
-`schemas.harness` 聚合 `__init__` 走到这个 communication 文件那一行时，
-如果这里把 `HarnessPort`/`EpisodeHarnessPort`/`HumanReviewer`/`RunState`/
-`ResumeEpisode`/`EpisodeRunState`/三个常量也一起立即导入，就会在
+`schemas/harness/communication/FromHarnessToReviewerReviewResp.py` 的字段又要从这里
+拿回 `HumanDecision`。两条依赖在初始化顺序上正面相撞：`schemas.harness` 聚合 `__init__`
+走到这个 communication 文件那一行时，如果这里也把 `HumanReviewer` 一并立即导入，就会在
 `schemas.harness` 自己还没跑完的时候被回头要还没绑定的名字，直接炸成
 `ImportError: cannot import name ... from partially initialized module`。
-`HumanDecision` 零依赖，可以放心立即导入；其余全部（三个 Port + 它们各自
-模块里定义的状态模型/常量）推迟到真的有人访问时才导入。
+`HumanDecision` 零依赖（一个 `str` 枚举），可以放心立即导入。
 """
 
 from __future__ import annotations
@@ -30,35 +33,14 @@ from typing import TYPE_CHECKING
 from .domain import HumanDecision
 
 if TYPE_CHECKING:
-    from pokemon_agent.harness.episode.state import EpisodeRunState
-    from pokemon_agent.harness.run.state import ResumeEpisode, RunState
-
-    from .episode_harness_port import EpisodeHarnessPort
-    from .harness_port import MAX_GOAL_RETRIES, MAX_PLAN_PUSH, PLAN_MAX_ATTEMPTS, HarnessPort
     from .human_reviewer import HumanReviewer
 
 __all__ = [
-    "MAX_GOAL_RETRIES",
-    "MAX_PLAN_PUSH",
-    "PLAN_MAX_ATTEMPTS",
-    "EpisodeHarnessPort",
-    "EpisodeRunState",
-    "HarnessPort",
     "HumanDecision",
     "HumanReviewer",
-    "ResumeEpisode",
-    "RunState",
 ]
 
 _LAZY: dict[str, tuple[str, str]] = {
-    "EpisodeHarnessPort": (".episode_harness_port", "EpisodeHarnessPort"),
-    "EpisodeRunState": ("pokemon_agent.harness.episode.state", "EpisodeRunState"),
-    "MAX_GOAL_RETRIES": (".harness_port", "MAX_GOAL_RETRIES"),
-    "MAX_PLAN_PUSH": (".harness_port", "MAX_PLAN_PUSH"),
-    "PLAN_MAX_ATTEMPTS": (".harness_port", "PLAN_MAX_ATTEMPTS"),
-    "HarnessPort": (".harness_port", "HarnessPort"),
-    "ResumeEpisode": ("pokemon_agent.harness.run.state", "ResumeEpisode"),
-    "RunState": ("pokemon_agent.harness.run.state", "RunState"),
     "HumanReviewer": (".human_reviewer", "HumanReviewer"),
 }
 

@@ -266,7 +266,7 @@ class StepMemory(BaseModel):
     rationale: list[str] = Field(
         description="**这一步所属那一小段**的论据。不是完整推理——那留在 trace 里；"
         "也不是整条链的理由——链级的「为什么要交出这串动作」对其中任何一个键都不成立，"
-        "所以它归 `thought`（只进 trace）。这里落的是 `ActionSegmentFromBrain.rationale`"
+        "所以它归 `thought`（只进 trace）。这里落的是 `ActionSegment.rationale`"
     )
     action: str = Field(description="**一个键**，如 `up`。连按已经展开成多步，这里不再是链")
     stop: StopReason | None = Field(

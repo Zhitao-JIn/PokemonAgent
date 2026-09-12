@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain.interface import TaskForBrain
+from pokemon_agent.brain.interface import Task
 from pokemon_agent.trace import TraceEvent
 
 from .FromRunHarnessToEpisodeHarnessRunResp import FromRunHarnessToEpisodeHarnessRunResp
@@ -25,10 +25,10 @@ class FromHarnessToReviewerReviewReq(BaseModel):
     outcomes: list[FromRunHarnessToEpisodeHarnessRunResp] = Field(
         description="已完成的 episode 结算，按执行顺序；最后一条 = 刚跑完的",
     )
-    goals: list[TaskForBrain] = Field(
+    goals: list[Task] = Field(
         description="当前目标栈，栈顶 = goals[-1]（下一层要解决的）",
     )
-    last_task: TaskForBrain | None = Field(
+    last_task: Task | None = Field(
         default=None, description="刚跑完那一层的目标（RETRY 时压回栈顶用）"
     )
     episode_trace: list[TraceEvent] = Field(

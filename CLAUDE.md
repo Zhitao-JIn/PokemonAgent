@@ -178,9 +178,9 @@ pokemon_agent/
 ├── brain/            纯决策层。无状态。只依赖各模块自己的 interface/ + schemas。
 │                     `interface/`
 │                     是这个子系统自己的港口 + 数据 schema 出口：`brain_port.py`
-│                     （`BrainPort`）+ 六个数据形状（`ActionFromBrain`/
-│                     `EpisodeSummary`/`GoalForBrain`/`RunPlan`/
-│                     `StepVerifyVerdict`/`TaskForBrain`，原来在
+│                     （`BrainPort`）+ 六个数据形状（`Action`/
+│                     `EpisodeSummary`/`Goal`/`RunPlan`/
+│                     `StepVerifyVerdict`/`Task`，原来在
 │                     `schemas/brain/domain/`）。`brain/__init__.py` 对六个
 │                     数据形状是立即加载，对 `Brain`（`brain.py`）/`BrainPort`
 │                     都是**懒加载**——原因跟 `world/__init__.py` 对 `WorldPort`
@@ -190,16 +190,43 @@ pokemon_agent/
 │                     这里拿回数据形状，两条依赖在初始化顺序上会正面相撞，
 │                     取舍见 `CHANGELOG.md` 对应条目
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方。
-│                     `interface/`：这个子系统自己的两张港口（`harness_port.py` 的
-│                     `HarnessPort`+`RunState`/`ResumeEpisode`+三个常量
-│                     `MAX_GOAL_RETRIES`/`MAX_PLAN_PUSH`/`PLAN_MAX_ATTEMPTS`；
-│                     `episode_harness_port.py` 的 `EpisodeHarnessPort`+
-│                     `EpisodeRunState`；`human_reviewer.py` 的 `HumanReviewer`）+
-│                     数据形状（`domain/human_decision.py` 的 `HumanDecision`，
-│                     原来在 `schemas/harness/domain/`），跟"怎么跑图"的实现
-│                     （`run_harness.py`/`episode_harness.py` 等）物理分开。
+│                     **两张图、节点一人一个文件**：run 级 `run/`（`run_graph.py` +
+│                     6 格**平铺在包根**：`begin`/`plan`/`dispatch`/`episode`/`reflect`/
+│                     `review`）、episode 级 `episode/`（`episode_graph.py` + 21 格按
+│                     七域 `open gate retrieve decide press store close` 分目录）。
+│                     **规则：节点文件名 = 对应 `<level>_graph.py` 里 `add_node` 的
+│                     字面量**（所以有 `retrieve/retrieve_step_episode_memory.py` 这种
+│                     "看着冗余"的全名——basename 要能**单独**说清"我是哪张图的哪一格"）；
+│                     结构性文件带层级前缀（`run_graph.py`/`run_entry.py`/`run_state.py`、
+│                     `episode_graph.py`/`episode_entry.py`/`episode_state.py`）。
+│                     `harness/` 根下只许**四个** `.py`（`__init__.py`/`deps.py`/
+│                     `auto_reviewer.py`/`run_data_center.py`——**步 5a 起这是终态**，
+│                     原先第五个 `trace_write.py` 已下沉 `tools/trace/model_calls.py`）
+│                     + `run/`/`episode/`/`interface/` 三个目录。
+│                     **入口是函数、不是类**：`run/run_entry.py` 的 `new_run`/`resume_run`
+│                     （+`close`）、`episode/episode_entry.py` 的 `run_new`/`run_resume`；
+│                     `RunHarness` 只剩 128 行薄类（`__init__(deps)` + 两个入口转调 +
+│                     三个 `data_center` 委托 + `_compile`），唯一的构造参数是 `deps.py` 的
+│                     `HarnessDeps`（缺省 `data_center` 在 `__init__` 里落实并**写回 deps**，
+│                     保证节点与外部调用面拿到同一个对象）。常量各自跟着宿主节点住
+│                     （`MAX_GOAL_RETRIES` 在 `run/reflect.py`；`MAX_PLAN_PUSH`/
+│                     `PLAN_MAX_ATTEMPTS`/`RUN_TRACE_MASK` 在 `run/plan.py`；两个节点数常量
+│                     在 `episode/episode_graph.py`；两层的 `recursion_limit` **各一个常量**——
+│                     run 级是**闸门** `RUN_RECURSION_LIMIT`（`run/run_entry.py`，一个大数，
+│                     不按公式算），episode 级是**贴身预算**，由 `episode_entry.episode_budget()`
+│                     按剩余步数逐局算）。
+│                     两张图的**交界键表**写在 `episode_graph.py` 的 `EpisodeInput`/
+│                     `EpisodeOutput` 两个模型里（run 给一局什么、一局还 run 什么），
+│                     `scripts/check_graph_phases.py` 机械核对"每个键都真的存在于两侧 state"。
+│                     `interface/`：**只剩两个真端口**——`human_reviewer.py` 的
+│                     `HumanReviewer` + 数据形状 `domain/human_decision.py` 的
+│                     `HumanDecision`（原来在 `schemas/harness/domain/`）。判据是"实现方
+│                     在不在系统之外"：`HumanReviewer` 的真实现是**人**；其余协作方都在
+│                     系统内（靠 `HarnessDeps` 递），不该有 Port——原 `harness_port.py` 的
+│                     `HarnessPort` 与 `episode_harness_port.py` 的 `EpisodeHarnessPort`
+│                     两张 Port 因此已删（D5，见 `docs/spec/harness/PLAN_graph_composition.md`）。
 │                     `harness/__init__.py` 对 `HumanDecision` 是立即加载，对
-│                     其余全部（三个 Port + 状态模型 + 常量 + 全部实现类）都是
+│                     其余全部（`HumanReviewer` + 状态模型 + 常量 + 全部实现类）都是
 │                     **懒加载**——原因跟 `brain/__init__.py` 对 `Brain`/`BrainPort`
 │                     的处理一样：这些文件都要 `import pokemon_agent.schemas.harness`，
 │                     而 `schemas/harness/communication/FromHarnessToReviewerReviewResp.py`
@@ -237,13 +264,16 @@ pokemon_agent/
 │                     仍是**懒加载**（`__getattr__` 按需导入），单纯是为了不让
 │                     只要类型定义的调用方被迫连带拖着 PyBoy 一起 import，跟
 │                     循环导入无关
-├── tools/            `ports.py`：五个对外契约（`BrainToolPort`/
-│                     `CheckpointToolPort`/`GameToolPort`/`MemoryToolPort`/
-│                     `TraceToolPort`，原来在顶层 `interfaces/tools/`）——扁平文件，
+├── tools/            `ports.py`：四个对外契约（`BrainToolPort`/
+│                     `GameToolPort`/`MemoryToolPort`/`TraceToolPort`，原来在顶层
+│                     `interfaces/tools/`）——扁平文件，
 │                     没有自己专属的 domain schema，跟 `memory/ports.py` 同一个道理，
-│                     零循环依赖风险，立即加载；`brain_tool.py`/`checkpoint_tool.py`/
-│                     `game_tools.py`/`memory_tool.py`/`trace_tool.py`：五个 Port 各自
-│                     唯一的实现，harness 伸向 brain/checkpoint/环境/记忆/trace 的五只手
+│                     零循环依赖风险，立即加载；`brain_tool.py`/
+│                     `game_tools.py`/`memory_tool.py`/`trace/`（**步 5a 收成包**）：四个 Port 各自
+│                     唯一的实现，harness 伸向 brain/环境/记忆/trace 的四只手。
+│                     **步 5b 销账**：`CheckpointToolPort` + `checkpoint_tool.py` 已解散
+│                     ——存档不是「能力」（没有第二种后端），它是 harness 自己状态模型的
+│                     落盘能力，现住 `harness/episode/episode_state.py::EpisodeCheckpoint`
 ├── memory/           记忆子系统整块，**完全不认识** `StepMemory`/`EpisodeMemory`/
 │                     `ObjectFactEvent` 这几个类——ports.py 对外契约
 │                     （MemoryStorePort：只收发 `metadata: dict[str, str]` +

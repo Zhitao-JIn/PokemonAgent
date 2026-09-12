@@ -1,5 +1,5 @@
-"""编排层产出的契约：harness 发起的全部第一跳信封（brain_tool / checkpoint_tool /
-game_tool / memory_tool / reviewer / trace_tool 六个门面，外加 run → episode 这条内部边）
+"""编排层产出的契约：harness 发起的全部第一跳信封（brain_tool /
+game_tool / memory_tool / reviewer / trace_tool 五个门面，外加 run → episode 这条内部边）
 与人工复核实体。
 
 Frontend 发起的信封（提交目标编辑、取帧）归 `schemas/frontend/`。
@@ -10,6 +10,12 @@ Frontend 发起的信封（提交目标编辑、取帧）归 `schemas/frontend/`
 
 本文件是 `schemas/harness/` 的统一出口，只做 re-export、不定义任何实体；
 消费方只写 `from pokemon_agent.schemas.harness import X`，不深到 communication/ 等子目录。
+
+**信封的"内部类型"也在这里转交**：harness 组装信封时会用到藏在字段里的领域类型
+（`TraceKind` / `Source` / `ModelCall` / `ModelCallLog`…），那些类型的家各自在自己的
+包（`trace` / `providers`），或者在某个信封自己的模块里（`ModelCallLog`——它只
+服务于 `FromHarnessToTraceToolAppendModelCallsReq`，就定义在那个文件里），
+但 **harness 从本文件拿**——"harness 只认 schemas"这条边界因此没有例外。
 
 **`HumanDecision` 不在这里**：原来放在 `domain/human_decision.py`，现在跟着
 "协议物理挨着它自己的实现"这条原则搬到了 `pokemon_agent.harness.interface`
@@ -28,11 +34,6 @@ __all__ = [
     "FromHarnessToBrainToolReflectResp",
     "FromHarnessToBrainToolVerifyAndSummarizeReq",
     "FromHarnessToBrainToolVerifyAndSummarizeResp",
-    "FromHarnessToCheckpointToolLoadReq",
-    "FromHarnessToCheckpointToolLoadResp",
-    "FromHarnessToCheckpointToolSaveReq",
-    "FromHarnessToCheckpointToolVoidReq",
-    "FromHarnessToCheckpointToolVoidResp",
     "FromHarnessToGameToolEvolveReq",
     "FromHarnessToGameToolExecuteReq",
     "FromHarnessToGameToolGetActionSpaceReq",
@@ -63,13 +64,17 @@ __all__ = [
     "FromHarnessToMemoryToolVoidMemoryAfterResp",
     "FromHarnessToReviewerReviewReq",
     "FromHarnessToReviewerReviewResp",
+    "FromHarnessToTraceToolAppendModelCallsReq",
     "FromHarnessToTraceToolAppendReq",
     "FromHarnessToTraceToolReadDiskEventsReq",
     "FromHarnessToTraceToolReadDiskEventsResp",
+    "FromHarnessToTraceToolVoidAfterReq",
     "FromRunHarnessToEpisodeHarnessRunReq",
     "FromRunHarnessToEpisodeHarnessRunResp",
+    "ModelCallLog",
     "RunResp",
 ]
+
 from .communication.FromHarnessToBrainToolChooseOnceReq import FromHarnessToBrainToolChooseOnceReq
 from .communication.FromHarnessToBrainToolChooseOnceResp import FromHarnessToBrainToolChooseOnceResp
 from .communication.FromHarnessToBrainToolJudgeReq import FromHarnessToBrainToolJudgeReq
@@ -84,11 +89,6 @@ from .communication.FromHarnessToBrainToolVerifyAndSummarizeReq import (
 from .communication.FromHarnessToBrainToolVerifyAndSummarizeResp import (
     FromHarnessToBrainToolVerifyAndSummarizeResp,
 )
-from .communication.FromHarnessToCheckpointToolLoadReq import FromHarnessToCheckpointToolLoadReq
-from .communication.FromHarnessToCheckpointToolLoadResp import FromHarnessToCheckpointToolLoadResp
-from .communication.FromHarnessToCheckpointToolSaveReq import FromHarnessToCheckpointToolSaveReq
-from .communication.FromHarnessToCheckpointToolVoidReq import FromHarnessToCheckpointToolVoidReq
-from .communication.FromHarnessToCheckpointToolVoidResp import FromHarnessToCheckpointToolVoidResp
 from .communication.FromHarnessToGameToolEvolveReq import FromHarnessToGameToolEvolveReq
 from .communication.FromHarnessToGameToolExecuteReq import FromHarnessToGameToolExecuteReq
 from .communication.FromHarnessToGameToolGetActionSpaceReq import (
@@ -165,12 +165,19 @@ from .communication.FromHarnessToMemoryToolVoidMemoryAfterResp import (
 )
 from .communication.FromHarnessToReviewerReviewReq import FromHarnessToReviewerReviewReq
 from .communication.FromHarnessToReviewerReviewResp import FromHarnessToReviewerReviewResp
+from .communication.FromHarnessToTraceToolAppendModelCallsReq import (
+    FromHarnessToTraceToolAppendModelCallsReq,
+    ModelCallLog,
+)
 from .communication.FromHarnessToTraceToolAppendReq import FromHarnessToTraceToolAppendReq
 from .communication.FromHarnessToTraceToolReadDiskEventsReq import (
     FromHarnessToTraceToolReadDiskEventsReq,
 )
 from .communication.FromHarnessToTraceToolReadDiskEventsResp import (
     FromHarnessToTraceToolReadDiskEventsResp,
+)
+from .communication.FromHarnessToTraceToolVoidAfterReq import (
+    FromHarnessToTraceToolVoidAfterReq,
 )
 from .communication.FromRunHarnessToEpisodeHarnessRunReq import FromRunHarnessToEpisodeHarnessRunReq
 from .communication.FromRunHarnessToEpisodeHarnessRunResp import (

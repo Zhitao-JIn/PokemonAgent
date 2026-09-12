@@ -94,19 +94,19 @@
   \texttt{episode\_id}: str\\
   \texttt{task}: TaskForHarness\\
   \texttt{step}: int \quad \textbf{全项目唯一}\\
-  \texttt{goals}: list[GoalForBrain] \quad 只读投影\\[1mm]
+  \texttt{goals}: list[Goal] \quad 只读投影\\[1mm]
   {\color{statelabel}\bfseries 流转（单步）}\\[-2pt]
   \texttt{observation}: ObservationFromWorld\\
   \texttt{action\_space}: ActionSpaceForBrain\\
   \texttt{memories}: list[StepMemory]\\
-  \texttt{action}: ActionFromBrain\\
+  \texttt{action}: Action\\
   \texttt{pending\_observation}: ObservationFromWorld
 };
 
 % ============ Episode 区六节点 + END ============
 \node[nodebox] (look) at (6.8, -8.0) {look\\[-1pt]{\scriptsize 接帧·盖章\\判成败→OBSERVE}};
 \node[nodebox] (retrieve) at (10.3, -8.0) {retrieve\_memory\\[-1pt]{\scriptsize 四类查询\\本局/object/知识/摘要}};
-\node[nodebox] (think) at (13.8, -8.0) {think\\[-1pt]{\scriptsize choose()\\$\rightarrow$ActionFromBrain}};
+\node[nodebox] (think) at (13.8, -8.0) {think\\[-1pt]{\scriptsize choose()\\$\rightarrow$Action}};
 \node[nodebox] (press) at (17.3, -8.0) {press\\[-1pt]{\scriptsize execute()\\推进世界→新观测}};
 \node[nodebox] (summarize) at (6.8, -10.5) {summarize\\[-1pt]{\scriptsize 蒸馏→摘要\\EPISODE\_MEMORY\_WRITE}};
 \node[nodebox, fill=gray!10] (endep) at (10.3, -10.5) {END};

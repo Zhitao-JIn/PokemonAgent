@@ -17,7 +17,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain import TaskForBrain
+from pokemon_agent.brain import Task
 
 
 class FromFrontendToRunHarnessSubmitEditReq(BaseModel):
@@ -28,7 +28,7 @@ class FromFrontendToRunHarnessSubmitEditReq(BaseModel):
     """
 
     kind: Literal["push"] = "push"
-    goals: list[TaskForBrain] = Field(
+    goals: list[Task] = Field(
         default_factory=list,
         description="完整新目标栈（栈顶=最后一项），原子整体替换 state.goals，不受栈顶锁定",
     )

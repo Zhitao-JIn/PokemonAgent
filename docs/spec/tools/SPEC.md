@@ -14,7 +14,7 @@
 > **本文件有两层滞后，成因不同，都不是靠重写本文档来修的。**
 >
 > **① 协议住址（2026-09-12 的改动，本文档未同步）**：上面那段的
-> `interfaces/tools.py` **今天不存在**。五张工具协议搬过两次：
+> `interfaces/tools.py` **今天不存在**。五张工具协议搬过两次（**今为四张**——`CheckpointToolPort` 已于步 5b 解散，见下）：
 > 顶层 `pokemon_agent/interfaces/tools/` → `tools/ports.py`（协议与实现同住
 > 一层）→ **`tools/interface/ports.py`**（协议与实现分家）。**全篇凡指
 > `interfaces/tools.py` 处，读作 `tools/interface/ports.py`**，出口是

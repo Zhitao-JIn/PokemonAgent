@@ -1,0 +1,226 @@
+"""episode 图：一局的 21 个节点按 7 个功能域展开。
+
+**步 3 起"图长什么样"与"节点怎么实现"分居两个文件**：本模块只负责"把哪些节点按什么
+顺序接起来"——21 个节点全部从七个域包里 import，**节点文件名 = 这里 `add_node` 的字面量**
+（命名规则见 `PLAN_graph_composition.md` §5.3-5；此前那张 `nodes[...]` 传参表在步 3 收尾
+时去掉，因为域包本身就是节点表）。
+
+`add_node` **逐行写字面量**（不用循环）：顶层即流程，一眼看出这张图有哪些节点、按什么
+顺序；`scripts/check_graph_phases.py` 正是 `ast` 抽这些字面量与观测台的相位表逐条比对，
+并核对"每个节点名恰好对应一个实现文件"。
+
+**三个节点数常量住这里**：它们算的是 `recursion_limit`，而 limit 是"这张图长什么样"的
+函数——跟 `add_node` 的字面量放在一起，改节点集时改一处就够。内层的 limit 由
+`entry.episode_budget()` 用，外层的总预算由 `run/run_entry.py` 用（D6：两处必须同一条公式）。
+
+**`EpisodeInput` / `EpisodeOutput` 也住这里**（D2 的"交界契约"，产出地归档）：run 给这一局
+什么、这一局还 run 什么，从散在代码里的约定变成两个**读得出来的模型**，
+`scripts/check_graph_phases.py` 机械核对"表里的每个键都真的存在于两侧 state"（§5.3-②）。
+
+**它们不进 `compile(input_schema=…/output_schema=…)`——步 4 的决定**：那两个参数是
+**形态 A**（把编译好的子图直接当 `add_node` 的函数，父图按 schema 做键映射/裁剪）的机制；
+本仓是**形态 B**（`run/episode.py` 那一格里 `graph.invoke(state, …, context=deps)`，交界由
+`episode_entry` 的两个入口手工完成，探针 X5 已证父子各算各的）。接上去只会改变
+`invoke` 的校验/裁剪行为（比如 `output_schema` 会把子图终态裁成只剩 `outcome`，
+`episode_entry.close()` 那份完整 state 就没了），**收益为零、风险全在真机**。
+所以这两个模型是**给人读、给脚本核**的契约，不是给图引擎的实参。
+"""
+
+from __future__ import annotations
+
+from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from pydantic import BaseModel, Field
+
+from pokemon_agent.brain import Goal, Task
+from pokemon_agent.schemas.harness import FromRunHarnessToEpisodeHarnessRunResp
+
+from ..deps import HarnessDeps
+from .close import (
+    close_episode,
+    retrieve_verify_knowledge,
+    retrieve_verify_step_memory,
+    verify_and_summarize,
+)
+from .decide import think_action
+from .episode_state import EpisodeRunState
+from .gate import get_action_space, judge
+from .open import record_observation, save_checkpoint
+from .press import act, apply_stop, close_step, detect_stall, perceive_after_action
+from .retrieve import (
+    merge_retrieval,
+    retrieve_global_episode_memory,
+    retrieve_knowledge_semantic_memory,
+    retrieve_object_semantic_memory,
+    retrieve_step_episode_memory,
+)
+from .store import store_object_semantic_memory, store_step_episode_memory
+
+NODES_PER_DECISION = 10
+"""一次决策在**链首**烧掉的节点数：
+
+    save_checkpoint → record_observation → judge → get_action_space
+    → 四路 retrieve → merge_retrieval → think_action
+"""
+
+NODES_PER_PRESS = 7
+"""链内**每按一个键**走完一圈的节点数：
+
+    act → perceive_after_action → apply_stop → detect_stall
+    → store_step_episode_memory → store_object_semantic_memory → close_step
+
+`close_step` 出口的分叉（回 `act` / 回 `save_checkpoint`）两条路都算得进来：
+队列空时下一圈从 `save_checkpoint` 起头，那一圈的开销由 `NODES_PER_DECISION`
+出。"""
+
+RECURSION_MARGIN = 20
+"""图引擎自身开销 + 收尾分支（最多 5 个节点）的余量。"""
+
+
+class EpisodeInput(BaseModel):
+    """**run 图交给这一局的键**——父子交界那张键表的上半张（D2）。
+
+    三个键，逐字对应 `RunState` 里的同名键（F1：传递靠**键名交集**，没有别名机制）：
+
+    | 键 | 父侧谁写 | 子侧谁读 |
+    |---|---|---|
+    | `episode_id` | `run/dispatch.py` | `episode_state.episode_id`（每个节点的账） |
+    | `task` | `run/dispatch.py`（栈顶那层） | `episode_state.task`（`judge` 的判据） |
+    | `episode_goals` | `run/dispatch.py`（**整栈投影**，D2-②） | `episode_state.episode_goals` |
+
+    **`run_state`（run 级状态）不在表里**：它走 `deps.run_state_snapshot`（D11-(3)），
+    不进图状态——它是"搭车进存档"的货，不是子图的输入。
+
+    **它不是 `compile(input_schema=…)` 的实参**（步 4 的决定，理由见模块文档末段）：
+    本仓是形态 B（节点里 `graph.invoke`），交界由 `episode/episode_entry.py` 的两个
+    入口手工完成——这张表的价值在"读得出来 + 可机械核对"，不在于给图引擎看。
+    """
+
+    episode_id: str = Field(description="这一局的标识（`{run_id}-ep{n}`）")
+    task: Task = Field(description="栈顶目标：这一局要解决的那一层")
+    episode_goals: list[Goal] = Field(
+        description="整个目标栈的投影（判只判栈顶 `episode_goals[-1]`）"
+    )
+
+
+class EpisodeOutput(BaseModel):
+    """**这一局交回 run 图的键**——下半张（D2-④）。
+
+    只有一个键：`outcome`（本局结算）。由 `close/close_episode.py` 写进子图 state，
+    父图 `reflect` 读——**必须由子图自己写出**：F1 的反作用是"子图不输出的键，父侧
+    保持旧值"，不写就会让 `reflect` 读到**上一次派发的陈旧结算**，而且不报错。
+
+    `resume_episode` 是父侧自己的键（`episode` 节点清空它），不属于这张表。
+    """
+
+    outcome: FromRunHarnessToEpisodeHarnessRunResp = Field(
+        description="本局结算（失败/成功、步数、原因）——`reflect` 弹栈或重试的依据"
+    )
+
+
+def compile_episode_graph() -> CompiledStateGraph:
+    """把 21 个节点与它们之间的边装配成图，返回编译好的对象。
+
+    **两个出口分叉**：`judge` 出口的 done 分支决定进收尾链还是继续循环；
+    `close_step` 出口按 `pending_presses` 是否为空决定回 `act`（链还没按完）
+    还是回 `save_checkpoint`（该重新决策了）。后一条就是"链内小循环"，它只加
+    一条边、不加节点。
+
+    `save_checkpoint` 因此是**链边界**（不是每一步的边界）：每一条链的首
+    （含 step0）都在同一节点写 checkpoint（PLAN_checkpoint §2）——每键一份含
+    模拟器快照的存档会让存档量乘上链长，而链内执行是纯 RAM 确定的，从链首存档
+    重放能逐帧复现，链内不必存。
+
+    终止分支在 `judge` 出口——四类终止来源（世界结束/步数用尽/停摆/目标
+    达成）全在 `judge` 一格里判完，`record_observation` 只记账，不掺和
+    "该不该停"。
+
+    四个 `retrieve_*` 节点按边排成一条直线（图引擎要求边有先后），但彼此
+    没有数据依赖——都只读 `observation`，各写各的字段，顺序是图形状要求
+    的，不是因果依赖。
+
+    **收尾链的每一条分支都汇到 `close_episode`**（D2-④）：没有 step 记忆时
+    `retrieve_verify_step_memory` 直接跳它，有记忆时 `verify_and_summarize` 接它
+    ——两条路都要经过它，因为"本局结算（`outcome`）"必须由子图自己写出，
+    否则父侧读到的是上一轮的陈旧值（F1 的反作用，且不报错）。
+
+    **`context_schema` 声明成 `HarnessDeps`**：F10 实测子图的这句声明
+    **不被校验**（穿过去的永远是父图那个对象）——所以这里声明成**同一个类型**
+    是唯一诚实的选择：声明成别的会变成一颗静默地雷。写下来也给
+    `scripts/check_graph_phases.py` 一条可机械核对的依据（`Runtime[...]` 的
+    类型参数只能是它）。
+    """
+    # 步骤 1：注册 21 个节点——书写顺序 = 执行顺序。
+    graph = StateGraph(EpisodeRunState, context_schema=HarnessDeps)
+    graph.add_node("save_checkpoint", save_checkpoint)
+    graph.add_node("record_observation", record_observation)
+    graph.add_node("judge", judge)
+    graph.add_node("get_action_space", get_action_space)
+    graph.add_node("retrieve_step_episode_memory", retrieve_step_episode_memory)
+    graph.add_node("retrieve_global_episode_memory", retrieve_global_episode_memory)
+    graph.add_node("retrieve_knowledge_semantic_memory", retrieve_knowledge_semantic_memory)
+    graph.add_node("retrieve_object_semantic_memory", retrieve_object_semantic_memory)
+    graph.add_node("merge_retrieval", merge_retrieval)
+    graph.add_node("think_action", think_action)
+    graph.add_node("act", act)
+    graph.add_node("perceive_after_action", perceive_after_action)
+    graph.add_node("apply_stop", apply_stop)
+    graph.add_node("detect_stall", detect_stall)
+    graph.add_node("store_step_episode_memory", store_step_episode_memory)
+    graph.add_node("store_object_semantic_memory", store_object_semantic_memory)
+    graph.add_node("close_step", close_step)
+    graph.add_node("retrieve_verify_step_memory", retrieve_verify_step_memory)
+    graph.add_node("retrieve_verify_knowledge", retrieve_verify_knowledge)
+    graph.add_node("verify_and_summarize", verify_and_summarize)
+    graph.add_node("close_episode", close_episode)
+
+    # 步骤 2：接边——judge 出口按 done 分叉，其余是直线。
+    graph.set_entry_point("save_checkpoint")
+    graph.add_edge("save_checkpoint", "record_observation")
+    graph.add_edge("record_observation", "judge")
+    graph.add_conditional_edges(
+        "judge",
+        lambda state: "retrieve_verify_step_memory" if state.done else "get_action_space",
+        {
+            "get_action_space": "get_action_space",
+            "retrieve_verify_step_memory": "retrieve_verify_step_memory",
+        },
+    )
+    graph.add_edge("get_action_space", "retrieve_step_episode_memory")
+    graph.add_edge("retrieve_step_episode_memory", "retrieve_global_episode_memory")
+    graph.add_edge("retrieve_global_episode_memory", "retrieve_knowledge_semantic_memory")
+    graph.add_edge("retrieve_knowledge_semantic_memory", "retrieve_object_semantic_memory")
+    graph.add_edge("retrieve_object_semantic_memory", "merge_retrieval")
+    graph.add_edge("merge_retrieval", "think_action")
+    graph.add_edge("think_action", "act")
+    graph.add_edge("act", "perceive_after_action")
+    graph.add_edge("perceive_after_action", "apply_stop")
+    graph.add_edge("apply_stop", "detect_stall")
+    graph.add_edge("detect_stall", "store_step_episode_memory")
+    graph.add_edge("store_step_episode_memory", "store_object_semantic_memory")
+    graph.add_edge("store_object_semantic_memory", "close_step")
+    # 决策内小循环：队列还有键就回 `act` 再按一个（不再检索、不再决策），
+    # 空了才回链首写 checkpoint / `record_observation` / `judge`。**这正是
+    # "一次决策摊薄成 N 步"的落点**——决策调用与四路检索一回合一付，而
+    # `detect_stall`/两个 store/`close_step` 每键各跑一次。分叉在 `close_step`
+    # 出口而不是 `store_object` 出口：**扶正当前帧是"这一步关上"的一部分**，
+    # 它必须发生在两个 store 读完 `before`/`after` 之后。
+    graph.add_conditional_edges(
+        "close_step",
+        lambda s: "act" if s.pending_presses else "save_checkpoint",
+        {"act": "act", "save_checkpoint": "save_checkpoint"},
+    )
+    # 收尾分支：没有 step 记忆（entries 为空）时直接进 `close_episode`——没有东西可
+    # 校验/可蒸馏，不问模型（取舍见 `CHANGELOG.md` 2026-09-06 条目），但**结算照写**。
+    graph.add_conditional_edges(
+        "retrieve_verify_step_memory",
+        lambda s: "retrieve_verify_knowledge" if s.verify_step_entries else "close_episode",
+        {
+            "retrieve_verify_knowledge": "retrieve_verify_knowledge",
+            "close_episode": "close_episode",
+        },
+    )
+    graph.add_edge("retrieve_verify_knowledge", "verify_and_summarize")
+    graph.add_edge("verify_and_summarize", "close_episode")
+    graph.add_edge("close_episode", END)
+    return graph.compile()

@@ -68,7 +68,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain import TaskForBrain
+from pokemon_agent.brain import Task
 from pokemon_agent.build import build_real
 from pokemon_agent.harness import (
     DataCenterReviewer,
@@ -102,9 +102,8 @@ FRAME_POLL_INTERVAL = 1 / 30
 """
 
 REVIEW_TIMEOUT = float(os.environ.get("POKEMON_REVIEW_TIMEOUT", "60"))
-"""`RunHarness.review()` 阻塞等前端答复的超时（秒）。**默认 60**——`review`
-是人工加目标的主要入口，要给人留够看完 episode 结果、想清楚要不要压新目标
-的时间；真的阻塞等一
+"""run 图的 `review` 节点阻塞等前端答复的超时（秒）。**默认 60**——`review`
+是人工介入的主要入口，要给人留够看完 episode 结果、想清楚下一步的时间；真的阻塞等一
 个人来答，**没人答则 `STOP`**——沉默不等于同意，没人在，run 停下来等下一
 次明确指令，不假设"继续"是安全的默认值。
 截止时间戳（`RunDataCenter.review_deadline()`）随 `/runs/{id}/review` 响应
@@ -119,10 +118,10 @@ AUTO_PUSH_GOALS = os.environ.get("POKEMON_AUTO_PUSH_GOALS", "false").strip().low
 )
 """`plan()` 要不要自动压栈（**默认关**）。关掉后，
 `plan()` 仍然照常问模型，只是不再采纳模型给的 `push_goals`——新目标改走
-人工两条通道：`review()` 的 `PUSH` 决策（配合上面调大的 `REVIEW_TIMEOUT`），
-或 `POST /runs/{id}/goals`。想改回自动压栈，设 `POKEMON_AUTO_PUSH_GOALS=true`
-即可，不用改代码。见 `RunHarness.__init__`/`build_real()` 的 `auto_push_goals`
-参数说明。"""
+人工通道 `POST /runs/{id}/goals`（整栈原子替换，不受这个开关影响）。
+想改回自动压栈，设 `POKEMON_AUTO_PUSH_GOALS=true` 即可，不用改代码。
+见 `HarnessDeps.auto_push_goals`（`harness/deps.py`）与 `build_real()`
+的同名参数。"""
 
 AUTO_DECIDE_DONE = os.environ.get("POKEMON_AUTO_DECIDE_DONE", "false").strip().lower() not in (
     "0",
@@ -131,11 +130,11 @@ AUTO_DECIDE_DONE = os.environ.get("POKEMON_AUTO_DECIDE_DONE", "false").strip().l
     "off",
 )
 """`plan()` 要不要自己判 run 该不该结束（**默认关**）。关掉后 `resp.done`
-被忽略，`plan()` 不直接判 `done` 收尾，而是路由去 `review()` 问人——
+被忽略，`plan()` 不直接判 `done` 收尾，而是路由去 `review` 节点问人——
 没人应答时超时直接 `STOP`，run 会结束，不无限绕回去重问（沉默不等于
 "继续"）。想改回自动结束，
-设 `POKEMON_AUTO_DECIDE_DONE=true`。见 `RunHarness.__init__`/`build_real()`
-的 `auto_decide_done` 参数说明。"""
+设 `POKEMON_AUTO_DECIDE_DONE=true`。见 `HarnessDeps.auto_decide_done`
+（`harness/deps.py`）与 `build_real()` 的同名参数。"""
 
 
 # =====================================================================
@@ -193,7 +192,7 @@ class _RunHandle:
         return "running" if (self.thread is not None and self.thread.is_alive()) else "stopped"
 
 
-def _execute(handle: _RunHandle, harness: RunHarness, goals: list[TaskForBrain]) -> None:
+def _execute(handle: _RunHandle, harness: RunHarness, goals: list[Task]) -> None:
     """run 线程体：跑完存终态（SSE 端点轮询可见），最后关掉进程级资源。"""
     try:
         outcomes, total, succeeded, success_rate = harness.run(run_id=handle.run_id, goals=goals)
@@ -348,12 +347,12 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    def goal_to_task(g: Goal, run_id: str, index: int, prefix: str = "api") -> TaskForBrain:
-        """GoalIn → TaskForBrain；task_id 缺省生成（`{prefix}-{run_id}-{n}`，从 1 起）。
+    def goal_to_task(g: Goal, run_id: str, index: int, prefix: str = "api") -> Task:
+        """GoalIn → Task；task_id 缺省生成（`{prefix}-{run_id}-{n}`，从 1 起）。
 
         `prefix` 区分来源：初始栈 `api-`、观测台 push 编辑 `edit-`——不同来源
         都从 1 编号，不区分会撞 task_id（remove/replace 靠它定位）。"""
-        return TaskForBrain(
+        return Task(
             task_id=g.task_id or f"{prefix}-{run_id}-{index + 1}",
             goal=g.goal,
             success_criteria=g.success_criteria,
@@ -487,7 +486,7 @@ def create_app(
     @app.post("/runs/{run_id}/review")
     def submit_review(run_id: str, body: ReviewDecisionReq) -> dict[str, bool]:
         """提交这一轮审查的决策——写进 `RunDataCenter` 的决策槽，
-        `RunHarness.review()` 阻塞轮询会读到它（见 `docs/ROADMAP.md`
+        run 图的 `review` 节点阻塞轮询会读到它（见 `docs/ROADMAP.md`
         "前后端交互统一"）。没有待处理请求时 409（来晚了或本来就没什么好答的）。
         """
         handle = _runs.get(run_id)

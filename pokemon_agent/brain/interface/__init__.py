@@ -1,6 +1,6 @@
 """brain/interface 包统一出口：大脑的港口（`BrainPort`）+ 它内嵌的数据形状
-（`ActionFromBrain`/`EpisodeSummary`/`GoalForBrain`/`RunPlan`/
-`StepVerifyVerdict`/`TaskForBrain`，以及 `MAX_RATIONALE`/`MAX_TIMES`/
+（`Action`/`EpisodeSummary`/`Goal`/`RunPlan`/
+`StepVerifyVerdict`/`Task`，以及 `MAX_RATIONALE`/`MAX_TIMES`/
 `MAX_SEGMENTS` 三个常量）。
 
 `BrainPort` 原来放在顶层 `pokemon_agent/interfaces/brain/`；六个数据形状原来
@@ -11,7 +11,7 @@
 `WorldPort`/`Facts` 同一个道理——`brain_port.py` 要 `import
 pokemon_agent.schemas.brain`（拿 `ChooseOnceReq` 等通信协议），而
 `schemas/brain/communication/*.py` 里这些通信协议的字段又要从这里拿回
-`GoalForBrain`/`ActionFromBrain` 等数据形状。两条依赖在初始化顺序上正面
+`Goal`/`Action` 等数据形状。两条依赖在初始化顺序上正面
 相撞：`schemas.brain` 聚合 `__init__` 走到某个 communication 文件那一行时，
 如果这里连 `BrainPort` 一起立即导入，就会在 `schemas.brain` 自己还没跑完的
 时候被回头要 `ChooseOnceReq` 之类还没绑定的名字，直接炸成
@@ -28,13 +28,13 @@ from .domain import (
     MAX_RATIONALE,
     MAX_SEGMENTS,
     MAX_TIMES,
-    ActionFromBrain,
-    ActionSegmentFromBrain,
+    Action,
+    ActionSegment,
     EpisodeSummary,
-    GoalForBrain,
+    Goal,
     RunPlan,
     StepVerifyVerdict,
-    TaskForBrain,
+    Task,
 )
 
 if TYPE_CHECKING:
@@ -44,14 +44,14 @@ __all__ = [
     "MAX_RATIONALE",
     "MAX_SEGMENTS",
     "MAX_TIMES",
-    "ActionFromBrain",
-    "ActionSegmentFromBrain",
+    "Action",
+    "ActionSegment",
     "BrainPort",
     "EpisodeSummary",
-    "GoalForBrain",
+    "Goal",
     "RunPlan",
     "StepVerifyVerdict",
-    "TaskForBrain",
+    "Task",
 ]
 
 

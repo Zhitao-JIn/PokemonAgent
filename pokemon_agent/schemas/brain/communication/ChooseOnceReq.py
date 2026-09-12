@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from pokemon_agent.brain.interface import GoalForBrain
+from pokemon_agent.brain.interface import Goal
 from pokemon_agent.schemas.memory import StepMemory
 from pokemon_agent.world import ActionSpace, Observation
 
@@ -35,7 +35,7 @@ class ChooseOnceReq(BaseModel):
     要分开介绍、分开提醒"这条能信到什么程度"，混在一起模型没法区分对待。
     """
 
-    goals: list[GoalForBrain]
+    goals: list[Goal]
     obs: Observation
     space: ActionSpace
     memories: list[StepMemory]

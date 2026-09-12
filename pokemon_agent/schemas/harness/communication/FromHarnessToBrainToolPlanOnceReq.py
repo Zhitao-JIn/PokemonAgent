@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from pokemon_agent.brain.interface import TaskForBrain
+from pokemon_agent.brain.interface import Task
 from pokemon_agent.trace import TraceEvent
 
 
@@ -16,7 +16,7 @@ class FromHarnessToBrainToolPlanOnceReq(BaseModel):
     """harness 侧组装、交给 `BrainTool` 的规划请求，字段同 `PlanOnceReq`。"""
 
     run_id: str
-    goals: list[TaskForBrain]
+    goals: list[Task]
     events: list[TraceEvent]
     max_push: int
     prompt: str = ""

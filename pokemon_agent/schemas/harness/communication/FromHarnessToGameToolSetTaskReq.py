@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain.interface import TaskForBrain
+from pokemon_agent.brain.interface import Task
 
 
 class FromHarnessToGameToolSetTaskReq(BaseModel):
     """**不重置世界、只把任务换掉**（checkpoint 恢复后补挂任务用）。"""
 
-    task: TaskForBrain = Field(description="要挂上的任务")
+    task: Task = Field(description="要挂上的任务")

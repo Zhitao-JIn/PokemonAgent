@@ -254,7 +254,7 @@ def retry_note(attempt, reason, raw):
     （即 `ActionSpace.note` 里的 `REPEAT_HINT`）。
 
 > **订正 2026-09-12**：上面「输出格式」与 `rationale`/`sequence` 那几行已经落后于代码，两处。
-> (1) **`rationale` 不在顶层，而在每一段里**（(14) 起 `ActionSegmentFromBrain.rationale`，
+> (1) **`rationale` 不在顶层，而在每一段里**（(14) 起 `ActionSegment.rationale`，
 > 1..`MAX_RATIONALE` 条、必填；写在顶层直接判 `ParseFailure`），段形状是
 > `{"action": 键, "times": N, "rationale": [...]}`——「一段 = 一个意图 × 连按次数」，
 > 理由属于段，不属于单次按键、也不属于整条链（链级的总打算进 `thought`）；

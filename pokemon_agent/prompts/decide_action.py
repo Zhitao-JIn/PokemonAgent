@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pokemon_agent.brain import MAX_RATIONALE, MAX_SEGMENTS, GoalForBrain
+from pokemon_agent.brain import MAX_RATIONALE, MAX_SEGMENTS, Goal
 from pokemon_agent.schemas.brain import ChooseOnceReq
 from pokemon_agent.schemas.memory import render_decisions
 from pokemon_agent.world import terrain_legend
@@ -125,7 +125,7 @@ _TEMPLATE = load("decide_action")
 _HUMAN_NOTE_TEMPLATE = load("human_note")
 
 
-def _render_goals(goals: list[GoalForBrain]) -> str:
+def _render_goals(goals: list[Goal]) -> str:
     """把目标栈画出来，栈顶在最上面——模型是从上往下读 prompt 的。"""
     lines = []
     for depth, g in reversed(list(enumerate(goals))):

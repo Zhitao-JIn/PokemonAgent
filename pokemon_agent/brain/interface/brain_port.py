@@ -74,7 +74,7 @@ class BrainPort(Protocol):
 
     def plan_once(self, req: PlanOnceReq) -> PlanOnceResp:
         """一次 run 级规划尝试：问一次模型、解析。**不重试**——重试循环在 Harness
-        手里（`harness/run_plan_utils.py::ask_planner_with_retry`），跟
+        手里（`harness/run/plan.py::ask_planner_with_retry`），跟
         `choose_once()` 是同一个分工在 run 级图上的落地——`plan` 本质上是
         "另一种要问模型的问题"，不是要接触的另一个外部模块，所以跟
         `choose_once`/`judge` 同层放进 `BrainPort`，不单独开一个 tool。

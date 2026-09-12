@@ -9,7 +9,7 @@ harness 只负责组装——从这一步手头的领域对象里挑出本笔账
 （verdicts），`StepMemory` 有读（一批）有写（单条）；类型名决定不了格式，
 "这是哪笔账"只有调用方知道。
 
-各 kind 必填的字段见 `tools/trace_render.py` 每个渲染函数入口的 assert；
+各 kind 必填的字段见 `tools/trace/render.py` 每个渲染函数入口的 assert；
 payload 字段格式是跨模块契约（观测台前端按字段名渲染），变更权在 tool 层。
 """
 
@@ -18,11 +18,11 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import (
-    ActionFromBrain,
-    ActionSegmentFromBrain,
-    GoalForBrain,
+    Action,
+    ActionSegment,
+    Goal,
     StepVerifyVerdict,
-    TaskForBrain,
+    Task,
 )
 from pokemon_agent.providers.interface import ModelCall
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, StepMemory
@@ -62,17 +62,17 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     # "这张图是第几步的开局画面"由调用方自己在 harness 侧记 event_id 对账。
 
     # ---- 边界 / 结算 ----
-    task: TaskForBrain | None = None
-    run_goals: list[TaskForBrain] | None = None
-    """run 级边界的初始目标栈（`observe` 的 goals 是 GoalForBrain，
+    task: Task | None = None
+    run_goals: list[Task] | None = None
+    """run 级边界的初始目标栈（`observe` 的 goals 是 Goal，
     两处词表不同，各用各的字段）。"""
     outcome_run: RunResp | None = None
     outcome_episode: FromRunHarnessToEpisodeHarnessRunResp | None = None
 
     # ---- 决策 / 观测 ----
     obs: Observation | None = None
-    goals: list[GoalForBrain] | None = None
-    action: ActionFromBrain | None = None
+    goals: list[Goal] | None = None
+    action: Action | None = None
     names: list[str] | None = None
 
     # ---- 记忆 ----
@@ -110,7 +110,7 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     """这一键的结局（`StopReason.value`）：**只在 `ACTION_TRUNCATED` 上**，
     答"为什么截断"。观察账 `AFTER_ACTION` 不带它——"看到什么"与"据此处置了什么"
     是两笔账（前者每键一条、后者只在真丢键时一条）。"""
-    dropped: list[ActionSegmentFromBrain] | None = None
+    dropped: list[ActionSegment] | None = None
     """`ACTION_TRUNCATED` 上被丢掉的那几段（`apply_stop` 截断队列时移除的键）。
     **非空才是"真的截断了"**——`blocked` 可能一个键都不用丢，那时不写这条账。"""
     # ---- CHECKPOINT_RESTORE / CHECKPOINT_SAVE 专用 ----

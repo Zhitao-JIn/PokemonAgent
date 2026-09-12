@@ -21,7 +21,7 @@ from enum import StrEnum
 
 
 class TraceKind(StrEnum):
-    """一笔 trace 账的种类。命名与渲染函数一致，见 `tools/trace_render.py`。"""
+    """一笔 trace 账的种类。命名与渲染函数一致，见 `tools/trace/render.py`。"""
 
     # run 边界（episode_id 位放 run_id、step 恒 0）
     RUN_START = "run_start"

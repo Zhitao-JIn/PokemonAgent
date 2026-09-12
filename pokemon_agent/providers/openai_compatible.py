@@ -392,7 +392,7 @@ class QwenProvider(_MultimodalMixin, _OpenAICompatibleBase):
     ) -> None:
         """**max_tokens 比基类的默认值大得多，这是有实测依据的。**
 
-        `ActionFromBrain.thought` 刻意不设上限（它的长度就是模型这一步的算力）。1024 时
+        `Action.thought` 刻意不设上限（它的长度就是模型这一步的算力）。1024 时
         实测出现过一次 `completion_tokens` 正好 1024 的 `ParseFailure`——
         JSON 是被切断的，不是写错的。那一次调用烧了 23 秒和一整笔 token，
         产出为零，而错误信息指向的是"模型不会写 JSON"这个错误的方向。

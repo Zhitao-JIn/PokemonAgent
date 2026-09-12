@@ -78,7 +78,7 @@ REVIEW_TIMEOUT = float(os.environ.get("POKEMON_REVIEW_TIMEOUT", "60"))
 def make_review_pair() -> tuple[RunDataCenter, DataCenterReviewer]:
     """造一对共占同一个 `RunDataCenter` 的 (数据中心, 审查者)——直接给
     `build_real(reviewer=..., data_center=...)` 用。同一个实例传两处，
-    `DataCenterReviewer` 才等得到 `RunHarness.review()` 发布的请求（与
+    `DataCenterReviewer` 才等得到 run 图 `review` 节点发布的请求（与
     `api.py` 的装配完全同构）。延迟 import：让纯路径/纯函数的使用方
     （维度 2/3/4）不必拖起 harness 依赖。
     """
@@ -90,7 +90,7 @@ def make_review_pair() -> tuple[RunDataCenter, DataCenterReviewer]:
 
 TRACE_ROOT = ROOT / "trace_data"
 CHECKPOINT_ROOT = ROOT / "checkpoints"
-"""0909 起 checkpoint 根目录独立于 trace_data（见 `CheckpointTool` 类
+"""0909 起 checkpoint 根目录独立于 trace_data（见 `EpisodeCheckpoint` 类
 docstring）——`checkpoints/<run_id>/`，不再是 `trace_data/<run_id>/checkpoints/`。"""
 LAST_RUN = TRACE_ROOT / ".last_realcheck.json"
 

@@ -110,18 +110,18 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain import TaskForBrain
+from pokemon_agent.brain import Task
 
 
 class TaskChain(BaseModel):
     """按顺序执行的一组任务；链内任务共享同一个已装配的游戏世界。"""
 
     chain_id: str = Field(description="实验任务链标识")
-    tasks: list[TaskForBrain] = Field(min_length=1, description="按执行顺序排列的子任务")
+    tasks: list[Task] = Field(min_length=1, description="按执行顺序排列的子任务")
     initial_state_hint: str = Field(default="", description="任务链起始状态说明")
 
     @property
-    def initial_task(self) -> TaskForBrain:
+    def initial_task(self) -> Task:
         """返回决定任务链初始存档的第一个子任务。"""
         assert self.tasks, "task chain must contain at least one task"
         return self.tasks[0]
@@ -306,7 +306,7 @@ def knowledge_recall_tasks(max_steps: int = 15) -> list[TaskChain]:
         "knowledge_pokemon_center_heal",
     }
     tasks = [
-        TaskForBrain(
+        Task(
             task_id=f"knowledge_{name}",
             goal=goal,
             success_criteria=criteria,
