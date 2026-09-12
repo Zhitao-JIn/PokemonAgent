@@ -18,7 +18,7 @@ class AgentError(Exception):
 
 
 class ParseFailure(AgentError):
-    """LLM 输出无法解析成 ActionFromBrain。
+    """LLM 输出无法解析成 Action。
 
     这是**最常见**的一类，且是可重试的。带上原始文本，因为 replay 时要看模型到底吐了什么。
     """

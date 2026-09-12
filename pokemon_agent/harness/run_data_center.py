@@ -26,7 +26,7 @@ from __future__ import annotations
 import threading
 import time
 
-from pokemon_agent.brain import TaskForBrain
+from pokemon_agent.brain import Task
 from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
 from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerReviewReq,
@@ -56,7 +56,7 @@ class RunDataCenter:
         SSE 与实时数字都读这里；checkpoint 恢复时由
         `rebuild()` 单点重建（主前缀 + goals），观测台历史完整可恢复。"""
         self._goals_edit: FromFrontendToRunHarnessSubmitEditReq | None = None
-        self._latest_goals: list[TaskForBrain] = []
+        self._latest_goals: list[Task] = []
         self._review_request: FromHarnessToReviewerReviewReq | None = None
         self._review_response: FromHarnessToReviewerReviewResp | None = None
         self._review_timeout = review_timeout
@@ -85,7 +85,7 @@ class RunDataCenter:
             return snapshot
         return [e for e in snapshot if e.type in event_types]
 
-    def rebuild(self, prefix_events: list[TraceEvent], goals: list[TaskForBrain]) -> None:
+    def rebuild(self, prefix_events: list[TraceEvent], goals: list[Task]) -> None:
         """checkpoint 恢复的单点重建：事件主前缀整体换入 + goals 槽对齐。
 
         前置条件：`prefix_events` 是截断后的主前缀（event_id 升序）。
@@ -97,12 +97,12 @@ class RunDataCenter:
 
     # ---- goals 槽：harness 发布快照 / 消费编辑；api 读快照 / 写编辑 ----
 
-    def publish_goals(self, goals: list[TaskForBrain]) -> None:
+    def publish_goals(self, goals: list[Task]) -> None:
         """harness 在 `plan` 入口发布最新目标栈快照（观测台读用）。"""
         with self._lock:
             self._latest_goals = list(goals)
 
-    def latest_goals(self) -> list[TaskForBrain]:
+    def latest_goals(self) -> list[Task]:
         """观测台读最近一次快照；run 未开始过为空。"""
         with self._lock:
             return list(self._latest_goals)

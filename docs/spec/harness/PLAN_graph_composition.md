@@ -5,12 +5,37 @@
 > **当真子图挂进去**（不再 `episode.run(req)` 显式调用），节点实现一人一个文件，
 > 装配文件只 import。
 >
-> **状态：v7 方案稿。D1（拼接方式）与 D8-③（`trace_write` 去向）已拍板；D9/D10 为 v3 新增、
+> **状态：v15（步 5b 已落地——**本 PLAN 的待决项与待做项双清零**；v13 = trace 收成独立模块 + `ActionFromBrain` → `Action`，v14 = `*ForBrain` 族改裸名，v15 = 解散 `tools/checkpoint_tool.py`）。D1（拼接方式）与 D8-③（`trace_write` 去向）已拍板；D9/D10 为 v3 新增、
 > D11（deps 形状 + `world_reset_done` 归位）为 v4 新增；v5 撤掉了 v4 的 deps 分组；
 > **v6 又撤掉了 v3 给 checkpoint 的落点**——`harness/checkpoint/` 这个包不存在了；
 > **v7 订正了 v6 里一处判断错的理由**（`world_reset_done` 为什么可以不落盘），
-> 并补了一节把 `resume` 的两条路径讲全（见下）。
-> 余下待拍板项见 §7。按既定做法，拍板前不动代码。**
+> 并补了一节把 `resume` 的两条路径讲全（见下）；v8 只动命名，v9 收敛为"文件名 = 节点名"；
+> **v10 是步 4 收尾**——run 侧拆完、两张 Port 删除、`interface/` 只剩真端口，§5.3 的 ②③④ 首次挂上；
+> **v11 把 run 级的 limit 公式收成一个可调常量**（X5 拍板落地，见下）。
+> **v12 是步 5a**——`trace_write.py` 下沉 `tools/trace/`，§5.3 的 **⑥"端口签名只用信封"首次挂上**、
+> **③ 销账**（`harness/` 根清单成终态）。~~`ModelCallLog` 落 trace 领域~~ **这一条的落点已被 v13 推翻。**
+> **v13 把 trace 收成独立模块**——`ModelCallLog` 从 trace 搬进信封自己的模块
+> （trace 对 `pokemon_agent` 其余部分**零 import**），新增 §5.3 的 **⑦"trace 自持"**；
+> 同时 `ActionFromBrain` → `Action`（纯改名，非设计变更）。
+> **v14 把 `*ForBrain` 族一并改裸名**——`GoalForBrain` → `Goal`、`TaskForBrain` → `Task`，
+> 判据与 v13 那条同源（类型名不编码来源），纯改名、不动机制。
+> §7 已无待决项；§6 的**步 5b**（解散 `tools/checkpoint_tool.py`）**已落地**（见下"v14 → v15"），真机验收 `check_restore.py` 留给用户跑。**
+>
+> **v8 只动命名，不动任何机制。** 触发是用户的一句话："文件命名上点心啊，要有区分度
+> 一眼就能看出是定位在哪里，比如 `graph.py` 我怎么区分是 run 级还是 episode 级"。
+> **核下来这话是对的**：`graph.py` 与 `state.py` 此刻就是两份同名文件；而且本 PLAN 的
+> §3.1 目录树里 `run/entry.py` 与 `episode/entry.py` **也早已并存**——所以第 7 条那条
+> "固定名"在拆成两个包之后，**必然产生同名文件**。
+>
+> **v8 的改动一句话**：两个包下的**结构性文件一律带层级前缀**——
+> `run_graph.py` / `run_state.py` / `run_entry.py` / `episode_graph.py` /
+> `episode_state.py` / `episode_entry.py` / `episode_frames.py`；
+> **节点文件仍用节点名**（21 个节点名全局唯一，`gate/judge.py` 无歧义）。
+> 判据一句话：**一个 `.py` 的 basename 要能单独回答"我是哪张图的什么"**——
+> 读者不必先看它在哪个目录。已作为 §5.3 的**第五条机械保证**挂进核对脚本。
+>
+> 本 PLAN 里**指路性质**的路径写法已全部同步改（29 处）；
+> **唯独 §7 第 4/7 条是决策记录，保留原文、就地标注**——不重写历史论证。
 >
 > **v4 的特别说明**：这一轮**不是照意见改**，而是你的一个问题（"其他字段我都不理解，要不删了"）
 > 逼出了两条**没验证过的机制**。实测 F10/F11 推翻了 v3"两个 runtime"的结构设想——
@@ -117,7 +142,7 @@
 
 | # | v5 怎么写的 | v6 改成 | 为什么 |
 |---|---|---|---|
-| 1 | `harness/checkpoint/`（`__init__` + `store.py` + `void.py`，出口 `save` / `load` / `void_archives`） | **没有这个目录**。格式 = `episode/state.py` 的 `EpisodeCheckpoint`（内嵌 `EpisodeRunState`）；写 = `open/save_checkpoint.py` 节点；读 + 废弃编排 = `entry.py`；trace 打标 = `TraceToolPort.void_after` | 你的原话是"不该单独存在"。**只要还给它一个模块 + 一套出口，它就还在单独存在** |
+| 1 | `harness/checkpoint/`（`__init__` + `store.py` + `void.py`，出口 `save` / `load` / `void_archives`） | **没有这个目录**。格式 = `episode/episode_state.py` 的 `EpisodeCheckpoint`（内嵌 `EpisodeRunState`）；写 = `open/save_checkpoint.py` 节点；读 + 废弃编排 = `episode_entry.py`；trace 打标 = `TraceToolPort.void_after` | 你的原话是"不该单独存在"。**只要还给它一个模块 + 一套出口，它就还在单独存在** |
 | 2 | `HarnessDeps.checkpoint: CheckpointStore \| None` | **`HarnessDeps.checkpoint_root: Path`** | checkpoint 不再是"外部能力"，只是一条**路径**——依赖清单里少一根 Port（4 根而非 5 根） |
 | 3 | `void_after` 的 trace 打标留在 checkpoint 侧 | **`TraceToolPort.void_after(cursor)`** | 原来那个写法**按文件路径读写 trace 目录**，是 `trace/store.py` 边界宣言之外的第三个读者 |
 
@@ -151,6 +176,241 @@
 > **凡是不经过 `_begin` 就进了恢复路径的场合，都必须自己把这个记号补上。**
 > （`_begin` 是唯一读点——这条是从代码里数出来的，不是推出来的。）
 
+## v14 → v15 改了什么（步 5b 落地：checkpoint 解散进 harness 自己的状态模型）
+
+**本 PLAN 的最后一个待做项落地。** D9-v6 的三条附带全部兑现：
+
+- **格式与读写**归 `episode/episode_state.py::EpisodeCheckpoint`——**字段内嵌**
+  `EpisodeRunState`（键名 `episode_state`），自带 `write()` / `read()`；**写点**
+  `open/save_checkpoint.py`，**读点** `episode_entry.py::prepare_resume` 与
+  `run/run_entry.py::resume_run`。v6 设想的 `harness/checkpoint/` 包**最终没建**——
+  连包都不需要，一个模型够（"checkpoint 不该单独存在，应该和 harness 严格绑定"）。
+- **删** `CheckpointToolPort` + 5 个 `FromHarnessToCheckpointTool*` 信封 +
+  `tools/checkpoint_tool.py`（264 行）；`HarnessDeps` 由 **6 根变 5 根**
+  （`checkpoint` 那根去掉，只留 `checkpoint_root`），`build.py` 不再 new 任何 tool。
+- **trace 打标还给 trace**：新端口方法 `TracePort.void_after()` /
+  `TraceToolPort.void_after()`（`event_id > cursor` 原地 `valid=false`，返回"只活在
+  游标之后的局"）；**那四步编排**搬到 `episode_entry.py::void_timeline()`——
+  原实现持 `trace_dir` 按文件路径读写事件，那是越层。
+- **json 键 `state_dump` → `episode_state`**，**旧存档不可读**（不写迁移：安静降级成
+  "没有存档"比当场炸更糟）。
+
+两条判据（都写进了代码 docstring，这里只记结论）：
+
+1. **谁解读谁内嵌**：`episode_state` 内嵌 `EpisodeRunState`（本层要解读、要进图）；
+   `run_state_dump` 仍是 dump——episode 层零读者，变模型会往本文件引进一条
+   `episode → run` 依赖（今天 episode 包对 run 包零引用）。
+2. **v6 那条"checkpoint 不是模块"往下推一格**：它连「一根 Port」也不是——存档读写
+   没有第二种后端、没有换 mock 的需求，所以它是**状态模型的落盘能力**，与状态同住。
+
+**§7 至此清零**：本 PLAN 无待决项、无待做项。
+
+
+## v13 → v14 改了什么（`*ForBrain` 族改裸名）
+
+**纯改名，不动任何机制。** 把 v13 那条命名原则（类型名不编码来源）往下推一格：
+
+- `GoalForBrain` → **`Goal`**、`TaskForBrain` → **`Task`**；文件
+  `brain/interface/domain/goal_for_brain.py` → `goal.py`、`task_for_brain.py` → `task.py`。
+- 38 个仓内 `.py` + 8 份仓内文档 + 技能 3 个文件同步；**前端零引用**。
+- **未动**：`api.py:226` 那个 API 请求 schema `Goal`（与 brain 的 `Goal` 同名不同物，
+  两者不在同一命名空间、无 import 冲突）——已报给用户待定。
+
+判据与 v13 的 `ActionFromBrain` → `Action` 同一条：`brain/interface/domain/` 的路径
+已经表达了来源，名字里不该再编码一次。
+
+
+## v12 → v13 改了什么（trace 收成独立模块；`ActionFromBrain` → `Action`）
+
+**这一版推翻 v12 第二条的落点，并立一条新边界；另外带一件与 trace 无关的纯改名。**
+触发是你这一轮的定义：
+
+> "你要把 trace 模块认为是一个独立的第三方模块，他不该依赖 `ModelCall`，内部不应该
+> 对任何一种特定存储类型有一种特定的类。特定的类只应该出现在 tool 层。trace 只应该
+> 有内部自己管理组织的类，大部分情况下用 dict 裸字段才是正确的，用 tool 转换为
+> trace 能接受的裸字段。"
+
+**第一条（口径修订：`ModelCallLog` 搬出 trace）**：v12 说它"是 trace 的领域类型、
+家搬 trace"——**错了**。它 `import pokemon_agent.providers.interface.ModelCall`，
+一条 import 就把 trace 重新绑回业务侧，trace 从此不能单独替换。现在它定义在
+信封自己的模块里（`schemas/harness/communication/FromHarnessToTraceToolAppendModelCallsReq.py`），
+作为**该信封的内部件**；`trace/__init__` / `trace/interface/__init__` /
+`trace/interface/domain/__init__` 三层 re-export 全部摘除。
+**v12 的另两条成果保留不变**：枚举出这个类型、让 harness 只从 `schemas` 拿。
+
+**第二条（新边界，§5.3-⑦）**：`pokemon_agent/trace/**` 对 `pokemon_agent` 其余部分
+**零 import**——只认自己的词表（`TraceKind` / `Source` / `EventType`）与
+`payload: dict[str, str]` 裸字段；"业务对象 → 裸字段"的转换归 tool 层
+（`tools/trace/render.py` 早就在做）。挂成 `check_trace_self_contained()`
+（`ast` 解析，只看 import 语句不看 docstring）。
+
+**这一条不是新形态，是补断言**：`TracePort.append()` 的签名本来就全是裸字段，
+`TraceEvent.payload` 本来就是 `dict[str, str]`。本轮做的是摘掉唯一那条越界 import
+（`trace/interface/domain/model_call_log.py` → `providers.interface`），并让这条边界
+**从约定变成机械保证**。
+
+**第三条（纯改名，与 trace 无关）**：`ActionFromBrain` → `Action`、
+`ActionSegmentFromBrain` → `ActionSegment`，文件 `action_from_brain.py` → `action.py`。
+理由：类型名不该编码来源——`brain/interface/domain/` 的路径已经说清来源，焊进名字
+会让机制二那类复用（skill / 动作重放）换来源时别扭。全仓 27 个 `.py` + 11 份文档 +
+技能里 2 个核验脚本同步改名；`CHANGELOG.md` 与日期格式的 memory 日志按惯例保留旧名。
+
+**落地形态**：见 §4.8.1（`ModelCallLog` 的新家）；§5.3 状态表补 ⑦。
+
+
+## v11 → v12 改了什么（步 5a 落地：D8-③ 下沉 + 一条新边界）
+
+**没有改任何"设计"——改的是 D8-③ 的落点细节，外加一条你新钉的边界。** 触发是你连着两轮的收紧：
+
+> ① "端口文件签名不应该有 `ModelCallLog` 吧？这个 `ModelCallLog` 明显是 trace 的内部类。
+>     tool 和 harness 的交互不应该涉及模块的内部类。"
+> ② "这个类变成 trace 的内部类和其他一样。**harness 所有这种包裹语义的类应该只从 `schemas`
+>     里获取，即使是信封的内部类。**"
+
+**第一条（D8-③ 的形态订正）**：v11 的 §4.8.1 写的是
+`append_model_calls(self, *, episode_id, step, source, log: ModelCallLog)`。
+**这个签名是错的**——`tools/interface/ports.py` 会因此反向 import `pokemon_agent.trace`，
+而那个文件今天只认 `pokemon_agent.schemas`（`tools/interface/` 上次拆分就是为了这个）。
+**改成收一个信封**：
+
+```python
+def append_model_calls(
+    self, req: FromHarnessToTraceToolAppendModelCallsReq
+) -> None: ...
+```
+
+**第二条（新边界，§5.3-⑥）**：`ModelCallLog` 的家搬进 trace
+（`trace/interface/domain/model_call_log.py`），**由 `schemas/harness` 转交** harness。
+它不是 harness 的自造件——跟 `TraceKind` / `Source` 同性质，是 trace 自己的词表。
+由此得到 §5.3 的第六条机械保证：**端口里每张协议的方法注解，出现的名字只要能在 import 表里
+找到来源，来源就必须是 `pokemon_agent.schemas`**。
+
+**第三条（D8-③ 的理由订正，不动结论）**：原理由"它是账→事件的翻译、渲染在 tool 层"**只对了
+一半**——它不渲染（渲染在 `render.py::model_call`）。真正属于 tool 的是那个**"一拆多"**：
+一次交互的 N 次尝试 → N 条 `MODEL_CALL`，正是 `AppendReq` docstring 说的"必要时一拆多"。
+**下沉结论不变，理由换这一条。**
+
+**第四条（范围只做一半）**：步 5 原是"跨层件归位"两件（D8-③ + D9-v6）。本轮只做 D8-③，
+D9-v6（解散 `tools/checkpoint_tool.py`）**独立成步 5b**——因为它**动存档格式**
+（json 键 `state_dump` → `episode_state`，旧存档不可读），必须真机跑 `check_restore.py` 才算验收，
+与 5a"不碰存档、纯离线可判定"分属两个风险档。
+
+**落地形态**：见 §4.8.1（两个旧文件收成 `tools/trace/` 包：`__init__.py` + `render.py` +
+`model_calls.py`）；③ 销账（`HARNESS_ROOT_ALLOWED` 剩 4 项，成终态）见 §5.3 状态表。
+
+
+## v10 → v11 改了什么（一条：run 级的 `recursion_limit` 由公式收成一个常量）
+
+> 起因是你那句"**run 级本来就不该有上限，只对 episode 级设上限**"，随后的订正是：
+> "run 级保持一个大数、episode 小数（现在也可以是个大数），**保证有个之后可以修改的常量**就行。"
+> **零机制变更**：图的形状、节点划分、`episode_budget` 一字未动，只动 run 级 limit 的**写法**。
+
+**改了什么**：删 `run_recursion_limit(state)` 与 `RUN_NODES_PER_ROUND` / `RUN_RECURSION_MARGIN`
+两个常量，落成 `run/run_entry.py::RUN_RECURSION_LIMIT = 200_000`（`_invoke()` 直接递它）。
+
+**为什么**：旧公式是三项之和（run 自己的节点 + Σ episode 内部步数 + `MAX_PLAN_PUSH` 给的压栈
+余量），那是 **F5** 时代的保守产物——而 F5 只对**形态 A**（编译好的子图当 `add_node` 的函数直挂、
+共用一个 counter）成立。**探针 X5** 实测本仓是**形态 B**（`run/episode.py` 调 `episode_entry`，由后者 `graph.invoke`）：
+父子**各算各的**计数（父 `limit=3` 时子图照跑完），Σ 那一笔是**纯余量**。既然 run 图只是调度壳
+（6 格、每轮个位数 superstep），它该跑多少**没有业务语义可算**——那就别装作算得出来：
+给一个大数当**闸门**，把"可调"这件事留成一个旋钮。
+
+**两层分工（定稿）**：
+
+| 层 | 常量 / 公式 | 性质 |
+|---|---|---|
+| episode | `episode_entry.episode_budget()` = 剩余步数 × `(NODES_PER_DECISION + NODES_PER_PRESS)` + `RECURSION_MARGIN` | **贴身预算**，逐局算；配 `close()` 的事后断言 |
+| run | `run_entry.RUN_RECURSION_LIMIT = 200_000` | **闸门**，一个大数、不按公式算；想收紧/放宽就改这一个数 |
+
+**代价（接受）**：run 图万一不收敛，会烧掉很多轮 `plan` 的模型调用才撞限——但这一点**与改前
+完全一样**（旧公式给的同样是 20 万量级）。收紧闸门只是让它早点炸，不是新引入的风险。
+
+**被取代的旧说法**（能就地改的就地改正；属于历史推演的保留并标注）：D6 关于 **run 级**的结论
+（节首加了 v11 订正块，其余论证保留）、`episode_budget` docstring 上那句"内层 limit 与外层预算
+共用这一个数"（已改写成"这是贴身的那道限"）。
+
+## v9 → v10 改了什么（步 4 收尾：run 侧拆完 + 两张 Port 删除）
+
+> 步 4 是同一件事的另一半：episode 侧在步 3 已经拆成"一人一个文件"，run 侧还是**一个 756 行的
+> 类揣着 6 个方法**——**同一张图的两个层级用两套写法**，读者得先猜"这个节点在哪"。
+> 这一步把 run 侧补齐，顺手落 §3.4 的裁定（两张 Port 删掉、`interface/` 收到只剩真端口）。
+> **零设计变更**：六个域、节点划分、边界、`deps` 形态、图拓扑一字不改。
+
+一、**run 侧 6 格平铺在包根**（`run/` 不分域——只有 6 格，分域是空的）：
+
+| 文件 | 行 | 里面有什么 |
+|---|---|---|
+| `run/begin.py` | 31 | `begin`（只校验 `goals` 非空 / `attempts` 平行） |
+| `run/plan.py` | 261 | `plan` + `MAX_PLAN_PUSH` / `PLAN_MAX_ATTEMPTS` / `RUN_TRACE_MASK` + `to_tasks` / `apply_goals_edit` / `ask_planner_with_retry` |
+| `run/dispatch.py` | 113 | `dispatch`（写 `run_state_snapshot`）+ `project_goals` + **`episode_error_handler`** |
+| `run/episode.py` | 94 | `episode`（**懒取**编译好的子图 + 调 `episode_entry`） |
+| `run/reflect.py` | 68 | `reflect` + `MAX_GOAL_RETRIES` + `goal_retries_exhausted` |
+| `run/review.py` | 91 | `review` + `episode_trace_events` |
+
+加上 `run_entry.py`（245，图外编排：`new_run` / `resume_run` / `close` / `exc_snapshot` /
+`RUN_RECURSION_LIMIT`——v11 把原来的公式与两个常量收成这一个）、`harness.py`（128，`RunHarness` 薄类）、
+`run_graph.py`（127，`compile_run_graph()` **去参**）、`run_state.py`（107）、`__init__.py`（29）。
+
+**函数名与 episode 侧刻意区分**：`run_entry.new_run`（起一个 run）vs
+`episode_entry.run_new`（run 起一局）——两个名字反过来读都成立，所以特意选成不同词序。
+
+二、**两张 Port 删除**（D5，§3.4 的裁定）：`interface/harness_port.py`（115 行）+
+`interface/episode_harness_port.py`（326 行）。同一次收口里 `interface/` 只剩
+`HumanDecision`（立即加载，零依赖）+ `HumanReviewer`（懒加载——它与 `schemas.harness`
+在初始化顺序上正面相撞，理由写在模块 docstring）。
+
+三、**常量与状态归位**（D8-② / §3.4）：三个常量（`MAX_GOAL_RETRIES` / `MAX_PLAN_PUSH` /
+`PLAN_MAX_ATTEMPTS`）+ `RUN_TRACE_MASK` / `RUN_RECURSION_LIMIT`（**v11 收成这一个**——
+原来是 `RUN_NODES_PER_ROUND` / `RUN_RECURSION_MARGIN` 两个常量）
+进各自服务的节点文件；`RunState`/`ResumeEpisode` → `run/run_state.py`、
+`EpisodeRunState` → `episode/episode_state.py`。**包出口只再导出**（双层 re-export），
+`api.py` / `build.py` / `experiment` 的既有 import 形状一字不变。
+
+四、**`EpisodeInput` / `EpisodeOutput` 落地**（D2 的交界键表）：住 `episode/episode_graph.py`，
+每个键声明"父侧谁写、子侧谁读"。**不接 `compile(input_schema=…)`**——本仓是形态 B，
+那是形态 A 的机制（理由见 §D2 与那一节的模块 docstring）。
+
+五、**§5.3 的 ②③④ 首次挂上**：`check_graph_phases.py` 扩成**两图六件**（图序 + episode 21
+文件 + run 6 文件 + 4 个交界键 + `harness/` 根清单 + `context` 类型）；③ 的清单里
+`trace_write.py` 是**待步 5 销账**的一项。
+
+六、**目录与表照实订正**：§3.1 树补 `run/episode.py`、§3.2 行数表按实测、§3.4 表标落地、
+§5.3 落地状态表翻牌、§6 步 4 行。
+
+---
+
+## v8 → v9 改了什么（步 3 收尾：节点搬完 + 命名收敛为"文件名 = 节点名"）
+
+> 起因：步 3 把 episode 的 21 个节点按七域搬完，`EpisodeHarness` 类随之删除。搬运过程中被
+> `check_graph_phases.py` 当场抓到一处**真实撞名**（`retrieve/step_episode_memory.py` 与
+> `store/step_episode_memory.py`）——§5.3-5 那条"basename 不得重复"是对的，但 **§3.1 的树
+> 自己违了它**。所以 v9 把命名规则**收敛成一句可机械核对的话**，并把 §3.1/§3.5 的文件名照实
+> 订正。**零设计变更**：七个域、节点划分、边界、`deps` 形态一字不改。
+
+一、**命名规则定形**：*节点文件名 = 图里 `add_node` 的字面量*。域目录已提供分组，文件名不再
+去掉域前缀——`retrieve/retrieve_step_episode_memory.py` 看着"重复"，但它让 basename **单独**
+回答"我是哪张图的哪一格"，而这正是 §5.3-5 要的东西（v8 的短名方案做不到：`step_episode_memory.py`
+在两个域各一份）。拆成包的节点（`store_object_semantic_memory/`）用**包名**当节点名，包内辅助件
+（`rules.py`）不算节点。核对落在两处：`scripts/check_graph_phases.py` 第二步（输出两行 OK）、
+核验脚本 H 块 ③/④（独立再算一遍，不共用同一个来源）。
+
+二、**`episode_harness.py` 删除**（步 3 的验收项）。连带三处装配改动：`compile_episode_graph()`
+不再收 `nodes[...]` 表（七个域包自己交出节点表）、`RunHarness.__init__` 收 `deps` 而不再收
+"episode 子 agent"（`EpisodeHarnessPort` 至此**零消费者**，等步 4 删）、`build.py` 先建
+`HarnessDeps` 再交给 `RunHarness`。**链路形态不变**：`episode` 那一格仍是"节点里嵌套 invoke"
+（形态 B），父子各算各的 `recursion_limit`——这一步只搬文件，不碰拼接。
+
+三、**四个 episode 散件随宿主消失**：`brain_utils.py`（→`decide/think_action.py`）、
+`game_utils.py`（→`press/perceive_after_action.py`，含 `perceive_once`：图外那一份与图内那一份
+**合并成同一个宿主**）、`episode_utils.py`（→`press/detect_stall.py`、
+`press/perceive_after_action.py`、`close/close_episode.py`）、`memory_query_utils.py`
+（→`retrieve/*` 与 `close/retrieve_verify_knowledge.py`）。
+
+四、**目录与表照实订正**：§3.1 的树、§3.5 的归位表、§5.3 五条的落地状态（新增一张状态表）、
+§6 步 3 行；核验脚本新增 `EpisodeHarness` 夹具（生产侧的那个类已删）。
+
+---
+
 ## v7 → v8 改了什么（零方案变更：§7 的 10 项待拍板全部定稿）
 
 > 你的原话是"**全按你的决定来**"。所以 v8 不动任何设计，只做一件事：
@@ -162,16 +422,16 @@
 | 1 | 子侧改 `episode_goals`；父侧 `goals` 不动，**新增** `episode_goals` 键由 `dispatch` 投影写入 | 两者是不同的东西（领域概念 vs 投影视图），本就该两个键（D2 补注） |
 | 2 | `chain` → **`decision`**；`action_chain` → `action_presses` | 每处读出来即中文原话，不需要翻译（D7） |
 | 3 | `append_model_calls` **进端口**（`TraceToolPort`） | 让 harness 直接 import 具体模块，会把上次 `tools/interface/` 拆分的成果还回去（D8-③） |
-| 4 | 域① 叫 **`open/`** | `entry/` 与 `entry.py` 撞词；`head/` 语义弱于"一条决策的开场"（D10） |
+| 4 | 域① 叫 **`open/`** | `entry/` 与 `entry.py` 撞词（**v8 标注**：该文件已改名 `episode_entry.py`，这条"撞词"理由不再成立；域名 `open/` 保留不变）；`head/` 语义弱于"一条决策的开场"（D10） |
 | 5 | D9-v6 三条附带**全接受**：删 `CheckpointToolPort` + 5 信封 / `void_after` 打标还给 trace 端口 / json 键 `state_dump` → `episode_state` | 三条是同一次拆除的三个面，拆开做等于拆三次（D9） |
 | 6 | `RunHarness` **留薄类**；`EpisodeHarness` **删** | 前者有外部调用面（`api.py` 持 `handle.harness`），后者没有（D1 落地形态） |
-| 7 | `run/` + `episode/`；七域 `open gate retrieve decide press store close`；固定名 `graph.py`/`entry.py`/`state.py`；**`deps.py` 放 `harness/` 根下** | context 全图只有一个类型、且不属于任何一张图（§5.3-3 的例外清单因此变三个顶层文件） |
+| 7 | `run/` + `episode/`；七域 `open gate retrieve decide press store close`；固定名带**层级前缀**（**v8 订正**：原为 `graph.py`/`entry.py`/`state.py`，见文首 v8 说明与 §5.3-5）；**`deps.py` 放 `harness/` 根下** | context 全图只有一个类型、且不属于任何一张图（§5.3-3 的例外清单因此变三个顶层文件） |
 | 8 | `world_reset_done` **搬到 deps**，且 **`resume` 入口必须显式置 `True`** | `_begin` 是唯一读点，恢复路径不经过它（§5.2-8） |
 | 9 | `run_state_dump` **留**，改名 **`run_state_snapshot`**，写入点从"入口"搬到 **`dispatch` 节点** | 内置子图后没有"方法入口"了（D11-(3)、§4.0(a3) 丙被实测否决） |
 | 10 | **节奏：步 0 + 步 1 做完停下看一眼** | 步 0 动的是"最危险的改名 + 新增键"，步 1 是纯改名——**两步都为"后面换拼接"清障，且各自可独立回滚**；此时还没碰"两张图怎么连"，停下来复核成本最低 |
 
 **唯一被这次拍板"顺带定死"的形（原先只是推荐）**：`EpisodeCheckpoint` 的类型内嵌
-（`episode/state.py` 里持有 `EpisodeRunState` 而不是 `dump: dict`）——它是第 5 条"json 键改名"
+（`episode/episode_state.py` 里持有 `EpisodeRunState` 而不是 `dump: dict`）——它是第 5 条"json 键改名"
 的另一半，两处必须同一版落地。
 
 ---
@@ -183,7 +443,7 @@
 | 严格执行上层到下层多 graph 迭代，用 langgraph 内置的父子图拼接 | run 图 `add_node("episode", ep_graph, error_handler=…)`；`dispatch` 不再是"调一个对象的方法"，而是"父图里的一个子图节点" |
 | 第一层：宏观两级图，一级 run，一级 episode | `harness/run/` + `harness/episode/` |
 | 第二层：子图分别表示 run 和 episode 的一级展开；run 完全展开，episode 按功能区分 | run 的 5 个节点平铺（`run/` 根下）；episode 的 21 个节点按 **7 个功能域**分文件夹（§3.3） |
-| 第三层：完全展开的节点，一个节点的功能用一个文件，graph 只 import | 26 个节点文件 + 2 个 `graph.py`（只有装配与边） |
+| 第三层：完全展开的节点，一个节点的功能用一个文件，graph 只 import | 26 个节点文件 + 2 个装配文件（`run_graph.py` / `episode_graph.py`，只有装配与边） |
 | 善用文件夹做层级隔离 | §3 目录树；`run/` 与 `episode/` 两棵不相交的树，只有 `dispatch` 一处相交 |
 
 **四件事**：① 拼起来（换拼接方式 + 异常兜底 + limit 重标定）；② 分家（节点一人一文件、散件解散）；
@@ -222,7 +482,7 @@
 | # | 测什么 | 实测结论 | 对本次的意义 |
 |---|---|---|---|
 | **F1** | 父 state 与子图 schema **不同**时，能不能直接 `add_node(compiled_subgraph)` | **能。** 传递模型是**键名交集**：父 state 的同名键喂给子图当年初值；子图输出的同名键合并回父 state；父图没有的键**丢弃** | 拼接可行，但"交界"是**键名**，不是显式调用——所以 D2 那张表是必需的；F1 还有一条**反作用**：子图不输出的键，父侧保持旧值（陈旧陷阱，D2-④） |
-| **F2** | 父子**同名但不同型** | **`ValidationError` 当场炸**（`list[TaskForBrain]` 喂给 `list[GoalForBrain]`） | 现成的雷：两张 state 都有 `goals`，类型不同。**不先解掉，直挂就崩**（D2-①） |
+| **F2** | 父子**同名但不同型** | **`ValidationError` 当场炸**（`list[Task]` 喂给 `list[Goal]`） | 现成的雷：两张 state 都有 `goals`，类型不同。**不先解掉，直挂就崩**（D2-①） |
 | **F3** | 直挂的子图内部抛异常 | **一路冒到 `graph.invoke()` 调用方**，父图任何节点都接不住 | 现在"单局异常不崩 run"的落点消失——**必须另找兜底**（D1/F4） |
 | **F4** | `add_node(..., error_handler=fn)` 挂子图节点 | **能兜住子图内部异常。** handler 签名 `(state, error: NodeError) -> Command \| dict`，**拿到的 state 是父 state**（不是子图的）；返回 `Command(goto="reflect", update={...})` 时**流程正常继续**；只返回 dict 时**图停在该节点**（后续不跑） | 这是"纯内置拼接"能不能成立的**决定性一条**：异常兜底有官方落点，且写在 run 图一侧 |
 | **F5** | 子图步数算不算进父图 `recursion_limit` | **算。** 父 1 步 + 子 3 步 = 需要 `limit ≥ 4`（`limit=3` 抛 `GraphRecursionError`） | **run 级公式必须重标定**：从"只管 run 自己那 5×N 个节点"变成"要覆盖全部 episode 内部步数"（D6） |
@@ -239,6 +499,13 @@
 
 ### 3.1 目录树
 
+> **步 3 / 步 4 已落地（v9/v10）**：下面这棵树就是**当前真实形态**——episode 的 21 个节点全部搬进七域目录、
+> run 的 6 格平铺在包根，**节点文件名 = `<level>_graph.py` 里 `add_node` 的字面量**
+> （`retrieve/retrieve_*` 这种"看着重复"的名字是刻意的：basename 要能**单独**说清"我是哪张图的哪一格"，
+> 理由见 §5.3-5）；`episode_harness.py`、四个 episode 散件、`object_interactions.py`、**run 侧三个散件
+> 与两张 Port**（步 4）已按本树消失，`EpisodeHarness` 类不再存在（`RunHarness` 直接持 `deps` + 子图）。
+> **`interface/` 现在只有两个真端口**（`HumanDecision` + `HumanReviewer`）。
+
 ```
 pokemon_agent/harness/
 ├── __init__.py                    统一出口（懒加载表跟着更新）
@@ -249,25 +516,26 @@ pokemon_agent/harness/
 │                                    住根下的理由：**它不属于任何一张图**（两图共用的唯一对象）。
 │                                    生命周期由 `run/harness.py` 规定：**一次 run 新建一个**（F11 的代价）。
 │
-├── run/                           ← run 级图：5 个节点，完全展开（节点直接平铺在根下）
+├── run/                           ← run 级图：5 个自研节点 + 1 个子图格（共 6 格），平铺在包根
 │   ├── __init__.py                域出口
-│   ├── graph.py                   装配：5 个 add_node + 挂 episode 子图 + 3 条条件边（只 import，不写实现）
-│   ├── state.py                   RunState + ResumeEpisode
-│   ├── entry.py                   图外侧门：run_new() / resume_run()
+│   ├── run_graph.py               装配：6 个 add_node + 挂 episode 子图 + 3 条条件边（只 import，不写实现）
+│   ├── run_state.py               RunState + ResumeEpisode
+│   ├── run_entry.py               图外侧门：new_run() / resume_run() / close()（+ 两个 limit 常量）
 │   ├── begin.py                   begin 节点
 │   ├── plan.py                    plan 节点 + PLAN_MAX_PUSH / PLAN_MAX_ATTEMPTS / RUN_TRACE_MASK
-│   │                              + to_tasks() / apply_goals_edit()
+│   │                              + to_tasks() / apply_goals_edit() / ask_planner_with_retry()
 │   ├── dispatch.py                dispatch 节点（只做前置：episode_id + attempts+1 + 备好 EpisodeInput）
-│   │                              + episode_error_handler()（F4 的兜底，挂子图节点）
+│   │                              + project_goals() + episode_error_handler()（F4 的兜底，挂子图节点）
+│   ├── episode.py                 episode 格（**懒取**编译好的子图 + 调 episode_entry；形态 B）
 │   ├── reflect.py                 reflect 节点 + MAX_GOAL_RETRIES + goal_retries_exhausted()
 │   ├── review.py                  review 节点 + episode_trace_events()
 │   └── harness.py                 RunHarness 薄类（外部调用面，见 D1-落地形态）
 │
 ├── episode/                       ← episode 级图：21 个节点，按 7 个功能域分文件夹
 │   ├── __init__.py                域出口
-│   ├── graph.py                   装配 + EpisodeInput/EpisodeOutput + 那张 21 行职责表
-│   ├── state.py                   EpisodeRunState + **EpisodeCheckpoint**（D9-v6：checkpoint 的格式就是它）
-│   ├── entry.py                   图外侧门：run_new(_begin) / run_resume(resume 七步)
+│   ├── episode_graph.py           装配 + EpisodeInput/EpisodeOutput + 那张 21 行职责表
+│   ├── episode_state.py           EpisodeRunState + **EpisodeCheckpoint**（D9-v6：checkpoint 的格式就是它）
+│   ├── episode_entry.py           图外侧门：run_new(_begin) / run_resume(resume 七步)
 │   ├── open/                      ① 一条决策的开场：存上一环 → 记这一环的输入
 │   │   │                             （`open` 是**每决策一次**的段落；`close/` 是整局收尾，两者不同层级）
 │   │   ├── save_checkpoint.py
@@ -276,10 +544,11 @@ pokemon_agent/harness/
 │   │   ├── judge.py
 │   │   └── get_action_space.py
 │   ├── retrieve/                  ③ 四路检索 + 汇聚
-│   │   ├── step_episode_memory.py
-│   │   ├── global_episode_memory.py        + build_scene_key()
-│   │   ├── knowledge_semantic_memory.py    + build_knowledge_query()
-│   │   ├── object_semantic_memory.py
+│   │   ├── retrieve_step_episode_memory.py
+│   │   ├── retrieve_global_episode_memory.py    + build_scene_key()
+│   │   ├── retrieve_knowledge_semantic_memory.py  + build_knowledge_query()
+│   │   │                                           + MEMORY_RECALL_LIMIT（两个读者）
+│   │   ├── retrieve_object_semantic_memory.py
 │   │   └── merge_retrieval.py
 │   ├── decide/                    ④ 决策
 │   │   └── think_action.py                 + DECISION_MAX_RETRIES + choose_with_retry()
@@ -291,8 +560,8 @@ pokemon_agent/harness/
 │   │   ├── detect_stall.py                 + STALL_LIMIT + compute_stall()
 │   │   └── close_step.py
 │   ├── store/                     ⑥ 落库
-│   │   ├── step_episode_memory.py
-│   │   └── object_semantic_memory/          ← 270 行判定层会被搬进来，所以拆成包
+│   │   ├── store_step_episode_memory.py
+│   │   └── store_object_semantic_memory/    ← 270 行判定层会被搬进来，所以拆成包
 │   │       ├── __init__.py                 节点本体
 │   │       └── rules.py                    ← 现 object_interactions.py 的判定规则
 │   └── close/                     ⑦ 收尾
@@ -310,31 +579,41 @@ pokemon_agent/harness/
 └── auto_reviewer.py               AutoContinueReviewer（HumanReviewer 的一个实现，保留原地）
 ```
 
-**消失的东西**：`episode_harness.py`（1749 行）、两张 Port 文件（653 行）、
-7 个散件里的 **7 个**（`trace_write` 也已随 D8-③ 下沉 tool 层）、
-`object_interactions.py`（搬进 `store/object_semantic_memory/rules.py`）、
-**`tools/checkpoint_tool.py`（264 行，D9-v6：**解散**进 harness，不建 `harness/checkpoint/` 包）**、
-**`CheckpointToolPort` + 5 个 `FromHarnessToCheckpointTool*` 信封 schema**。
+**消失的东西**（**v12 标注**：步 3 / 步 4 / 步 5a 的都已消失，只剩步 5b 两项——`tools/checkpoint_tool.py` 与它的端口 + 5 个信封）：
+`episode_harness.py`（**已删**——`EpisodeHarness` 类随之消失）、
+四个 episode 散件（**已删**：`brain_utils.py` / `game_utils.py` / `episode_utils.py` /
+`memory_query_utils.py`，函数归了各自的宿主节点）、
+`object_interactions.py`（**已搬**进 `store/store_object_semantic_memory/rules.py`，git 记 rename）、
+**run 侧三个散件（已删，步 4）**：`run_harness.py`（756 行）/ `run_plan_utils.py`（85 行）/
+`run_utils.py`（56 行）——函数进了 `run/` 的六个节点文件与 `run_entry.py`、
+**两张 Port 文件（已删，步 4；实测 441 行**：`harness_port.py` 115 + `episode_harness_port.py` 326；
+`EpisodeHarnessPort` 自步 3 起零消费者，`HarnessPort` 的实现方就是隔壁的 `RunHarness`——按 §3.4 的判据都不是港口）、
+`harness/trace_write.py`（**已删，步 5a**——随 D8-③ 下沉 `tools/trace/model_calls.py`）、
+`tools/trace_tool.py`（108 行）/ `tools/trace_render.py`（790 行）（**已删，步 5a**——收进
+`tools/trace/` 包，见 §4.8.1）、
+**`tools/checkpoint_tool.py`（264 行，D9-v6：**解散**进 harness，不建 `harness/checkpoint/` 包；步 5）**、
+**`CheckpointToolPort` + 5 个 `FromHarnessToCheckpointTool*` 信封 schema**（步 5）。
 
-**checkpoint 在目录树上没有自己的位置——这是 D9-v6 的要点**：它的**格式**住 `episode/state.py`
+**checkpoint 在目录树上没有自己的位置——这是 D9-v6 的要点**：它的**格式**住 `episode/episode_state.py`
 （`EpisodeCheckpoint`），**写**住 `episode/open/save_checkpoint.py`，**读与废弃编排**住
-`episode/entry.py`。三处都是本来就存在的地方。
+`episode/episode_entry.py`。三处都是本来就存在的地方。
 
 **留下的两个顶层文件**：`run_data_center.py`（前后端交互层，本来就不是图的一部分）、
 `auto_reviewer.py`（`HumanReviewer` 的一个默认实现）。
 
 ### 3.2 行数逐层递减（编码范式的硬要求）
 
-| 层 | 文件 | 量级 |
+| 层 | 文件 | 量级（**v10 实测**） |
 |---|---|---|
-| 顶层：装配 | `run/graph.py`、`episode/graph.py` | **各 ~45–70 行**（只有 `add_node`/`add_edge`/两个 schema） |
-| 次层：域出口 | `episode/<域>/__init__.py` × 7 | **~8 行**（re-export 本域节点） |
-| 末层：节点实现 | 26 个文件 | **~15–90 行**（一个节点的全部：契约、记账、状态增量） |
-| 图外上下水 | `run/entry.py` / `episode/entry.py` | 各 **~120–200 行**（`resume` 的七步准备占大头） |
-| 外部调用面 | `run/harness.py` | **~100 行**（`__init__` 装 runtime + 四个委托） |
-| 图的持久化 | `episode/state.py` 的 `EpisodeCheckpoint` + `open/save_checkpoint.py` | **~15 + ~35 行**（原 264 行减去五个信封、再减去越层的 trace 打标与 memory 委托——那两件各归其主） |
+| 顶层：装配 | `run/run_graph.py` 127 / `episode/episode_graph.py` 226 | **~130–230 行**（只有 `add_node`/`add_edge`；后者多出那张 21 行职责表与两个交界 schema） |
+| 次层：域出口 | `episode/<域>/__init__.py` × 7 | **~16–39 行**（re-export 本域节点） |
+| 末层：节点实现 | 27 个文件（episode 21 + run 6） | **~31–266 行**（一个节点的全部：契约、记账、状态增量；最胖是 `press/perceive_after_action.py`） |
+| 图外上下水 | `run/run_entry.py` 277 / `episode/episode_entry.py` 364 | 各 **~280–360 行**（`resume` 的七步准备占大头） |
+| 外部调用面 | `run/harness.py` | **128 行**（`__init__` 装 `deps` + 两个入口 + 三个薄委托） |
+| 图的持久化 | `episode/episode_state.py`（223 行的文件，含 `EpisodeCheckpoint`）+ `open/save_checkpoint.py` 76 | **两处加起来 ~90 行**（原 264 行减去五个信封、再减去越层的 trace 打标与 memory 委托——那两件各归其主；**步 5** 才真正落地） |
 
-现状是"1749 行单体"，改造后顶层 70 行 + 26 个末层文件——**顶层即流程，细节按需下钻**。
+改造前是"1749 行 + 677 行两个类"；步 4 之后 **`harness/` 下已没有任何 >400 行的文件**
+（最大 364 = `episode_entry.py`，其中 `resume` 的七步准备占大头）。**顶层即流程，细节按需下钻。**
 
 ### 3.3 七个功能域怎么切出来的（不是拍脑袋）
 
@@ -366,11 +645,16 @@ pokemon_agent/harness/
 | `HarnessPort` | 隔壁文件的 `RunHarness` | **不是**（镜子） | **删**（D5） |
 | `EpisodeHarnessPort` | 隔壁文件的 `EpisodeHarness` | **不是** | **删**（D5） |
 | `CheckpointToolPort` | 隔壁文件的 `CheckpointTool`——而它描述的是 **harness 自己的 state** | **不是**（错放的抽屉） | **连实现一起解散进 harness，端口随之消失**（D9-v6） |
-| `RunState` / `ResumeEpisode` | ——（是状态，不是能力） | **不是** | 搬 `run/state.py` |
-| `EpisodeRunState` | —— | **不是** | 搬 `episode/state.py` |
+| `RunState` / `ResumeEpisode` | ——（是状态，不是能力） | **不是** | 搬 `run/run_state.py` |
+| `EpisodeRunState` | —— | **不是** | 搬 `episode/episode_state.py` |
 | 三个常量 | —— | **不是** | 归各自服务的节点文件（D8-②） |
 
 **一句话**：`interface/` 从此只回答"harness 需要外面给什么"，不再回答"harness 自己长什么样"。
+
+> **v10 状态：这张表已全部落地（步 4）。** `interface/` 现在只剩三个文件——`__init__.py`
+> （`HumanDecision` 立即 + `HumanReviewer` 懒加载）、`human_reviewer.py`、`domain/human_decision.py`；
+> `HarnessPort` / `EpisodeHarnessPort`（441 行）与三个常量、两个 state 均已按上表处置。
+> 唯一留到**步 5** 的是 `CheckpointToolPort` + 5 个信封。
 
 ### 3.5 散件解散映射表（每个函数归它唯一的服务者）
 
@@ -378,8 +662,8 @@ pokemon_agent/harness/
 |---|---|---|
 | `brain_utils.py` | `choose_with_retry` + `DECISION_MAX_RETRIES` | `episode/decide/think_action.py` |
 | `game_utils.py` | `perceive_with_retry` + `PERCEPTION_MAX_RETRIES` | `episode/press/perceive_after_action.py` |
-| `memory_query_utils.py` | `build_knowledge_query` | `episode/retrieve/knowledge_semantic_memory.py` |
-| | `build_scene_key` | `episode/retrieve/global_episode_memory.py` |
+| `memory_query_utils.py` | `build_knowledge_query` | `episode/retrieve/retrieve_knowledge_semantic_memory.py` |
+| | `build_scene_key` | `episode/retrieve/retrieve_global_episode_memory.py` |
 | | `build_verify_knowledge_query` | `episode/close/retrieve_verify_knowledge.py` |
 | `episode_utils.py` | `compute_stop` | `episode/press/perceive_after_action.py` |
 | | `compute_stall` | `episode/press/detect_stall.py` |
@@ -390,7 +674,7 @@ pokemon_agent/harness/
 | | `apply_goals_edit` | `run/plan.py`（与 `plan` 同族：都是"改目标栈"） |
 | `episode_harness.py` 里的常量 | `STALL_LIMIT` | `episode/press/detect_stall.py` |
 | | `JUDGE_CHAIN_HISTORY` / `JUDGE_HISTORY_KEY_CAP` | `episode/gate/judge.py` |
-| | `NODES_PER_DECISION` / `NODES_PER_PRESS` | `episode/graph.py`（它算的是 limit，属装配） |
+| | `NODES_PER_DECISION` / `NODES_PER_PRESS` | `episode/episode_graph.py`（它算的是 limit，属装配） |
 
 **归位判据**：**"这个函数/常量，删掉它唯一的调用者之后还有没有人要？"** 答案是否 → 跟着调用者走。
 7 个文件里只有 `trace_write.py` 的答案是"是"（4 个宿主），单独处置（D8-③）。
@@ -444,7 +728,7 @@ pokemon_agent/harness/
 ├── _frame_event_ids / _pending_frames           → HarnessDeps（两张账，整 run 累积）
 ├── _run_state_dump                              → HarnessDeps（run 侧递进来的原料）
 ├── _world_reset_done                            → HarnessDeps（★D11：语义本是 run 级）
-├── _graph                                       → episode/graph.py 模块级（编译一次）
+├── _graph                                       → episode/episode_graph.py 模块级（编译一次）
 └── 20 个节点方法                                 → 21 个自由函数 (state, runtime) -> dict
 ```
 
@@ -519,7 +803,7 @@ pokemon_agent/harness/
 
 | 字段 | 是什么 | 谁读它 | 搬走后 | 裁决 |
 |---|---|---|---|---|
-| `_graph` | 编译好的图对象 | 图外的 `invoke` | 编译一次的东西，本来就该是**模块级常量** | **搬** → `episode/graph.py` 模块级（D3 已定） |
+| `_graph` | 编译好的图对象 | 图外的 `invoke` | 编译一次的东西，本来就该是**模块级常量** | **搬** → `episode/episode_graph.py` 模块级（D3 已定） |
 | `_world_reset_done` | "世界起点存档已经读过了"这个记号 | `_begin`（读）/ `_begin`+`resume()`（写，2 处） | **语义本来就是 run 级**：`reset()` 只在 run 的第一个 episode 跑，之后每局**接着上一局的世界继续**（本局起点 = 上一局终点，见 `episode_harness.py:581-587`） | **搬** → `HarnessDeps`（**D11，v4 从"可选"升级为"推荐"**） |
 
 **B 组：不能删、但也不是"账"的（7 个）——它们是外部递进来的依赖**
@@ -600,7 +884,7 @@ episode 不解读它、只是把它跟自己的状态一起打包，因为**存�
 3. **`load_state_bytes` 是世界层动作。** 做成节点就等于承认"图的一个节点可以基于磁盘/模拟器
    任意改世界"——那 **replay 的可重放性就断了**（replay 靠"同 state + 同输入 → 同输出"）。
 
-**所以 `resume` 与 `_begin` 是同一族的"图入口装配器"**，重构后住一起（`episode/entry.py`）：
+**所以 `resume` 与 `_begin` 是同一族的"图入口装配器"**，重构后住一起（`episode/episode_entry.py`）：
 
 ```python
 def run_new(runtime, episode_id, task, stack, run_state) -> Outcome:   # 新跑
@@ -648,8 +932,8 @@ def run_resume(runtime, episode_id, task, stack, step, run_state) -> Outcome:
 `outcomes` 有 n 条，就只能恢复到第 n+1 局，**不能跳回中间某一局**。这不是缺陷（run 语义
 本来就是线性推进），但**别在重构时把它误当成"随便挑一局的恢复"**。
 
-**重构后（D1 内置子图）这套时序一个字不改**，只是换住处：左列 → `run/entry.py` 的
-`resume_run()`；右列 → `episode/entry.py` 的 `run_resume()`；`resume_episode` 的消费点仍是
+**重构后（D1 内置子图）这套时序一个字不改**，只是换住处：左列 → `run/run_entry.py` 的
+`resume_run()`；右列 → `episode/episode_entry.py` 的 `run_resume()`；`resume_episode` 的消费点仍是
 `dispatch`；`run_state` 透传从方法参数变成 `deps.run_state_snapshot`（写入点搬 `dispatch`，
 D11-(3)）；第 5 步的 `model_validate(state_dump)` 变成直接读 `checkpoint.episode_state`
 （D9-v6 的类型内嵌）。
@@ -664,7 +948,7 @@ D11-(3)）；第 5 步的 `model_validate(state_dump)` 变成直接读 `checkpoi
 | | ① 纯内置（推荐） | ② 薄壳桥接（= 现状换个名字） | ③ 混合 |
 |---|---|---|---|
 | run 图怎么写 | `add_node("episode", ep_graph, error_handler=…)` | `add_node("dispatch", bridge)`，bridge 里 `episode.run(req)` | 循环体直挂，上下水在桥接节点里 |
-| episode 图边界 | `[20 节点] → close_episode → END`，`_begin` 在 `entry.py` | 无独立边界（就是那 20 个节点） | 无独立边界 |
+| episode 图边界 | `[20 节点] → close_episode → END`，`_begin` 在 `episode_entry.py` | 无独立边界（就是那 20 个节点） | 无独立边界 |
 | 是不是"内置父子图" | **是** | **不是**（只是两张图各自 invoke） | 一半 |
 | 异常兜底 | F4 的 `error_handler`，写在**父图一侧** | 现状的 try/except，原样 | 同 ② |
 | `recursion_limit` | **必须重标定**（F5：子图步数计入父图） | 不变（两层各算各的） | 必须重标定 |
@@ -681,7 +965,7 @@ D11-(3)）；第 5 步的 `model_validate(state_dump)` 变成直接读 `checkpoi
 
 **① 的两个真实代价（明账，不藏）**：
 
-1. **`resume()` 进不了图**（§4.0(b) 三条理由）。所以 episode 侧保留 `entry.py` 的两个入口函数；
+1. **`resume()` 进不了图**（§4.0(b) 三条理由）。所以 episode 侧保留 `episode_entry.py` 的两个入口函数；
    run 侧对称地保留 `resume_run()`（它同样有 `DataCenter.rebuild` 与 `void_after` 的时序契约）。
 2. **`recursion_limit` 从"两层各自精确"退化成"一个总上限"**。对策见 D6。
 
@@ -689,7 +973,7 @@ D11-(3)）；第 5 步的 `model_validate(state_dump)` 变成直接读 `checkpoi
 
 | 现在的类 | 改完 |
 |---|---|
-| `EpisodeHarness`（1749 行） | **消失**。它没有外部调用面（只被 `RunHarness` 用），五个依赖进 `HarnessDeps`、节点进文件、`run()`/`resume()` 变 `entry.py` 的两个函数 |
+| `EpisodeHarness`（1749 行） | **消失**。它没有外部调用面（只被 `RunHarness` 用），五个依赖进 `HarnessDeps`、节点进文件、`run()`/`resume()` 变 `episode_entry.py` 的两个函数 |
 | `RunHarness`（677 行） | **留一个 ~100 行的薄类**（`run/harness.py`）。理由是**它有外部调用面**：`api.py` 持有 `handle.harness` 并调 `submit_edit()`/`review()`/`run()`，这些是"长命对象 + 前后端交互"的职责，不是图节点的职责。它内部只剩"装 runtime + 四个委托" |
 
 ### D2 —— 父子交界：一张必须存在的键表
@@ -701,13 +985,13 @@ F1 说"传递模型是键名交集"，F2 说"同名不同型当场炸"。所以*
 
 | # | 键 | 父 `RunState` | 子 `EpisodeRunState` | 处置 |
 |---|---|---|---|---|
-| ① | `goals` | `list[TaskForBrain]` | `list[GoalForBrain]` | **子侧改名 `episode_goals`**（推荐）：父侧的 `goals` 是"目标栈"这个领域概念（全仓一提 `goals` 都指它，`api.py`/`run_harness.py` 共 20 处）；子侧那份是**投影**出来给大脑看的视图。改子侧只动 3 处（`episode_harness.py:750/791/1134`），改父侧要动 20 处 |
+| ① | `goals` | `list[Task]` | `list[Goal]` | **子侧改名 `episode_goals`**（推荐）：父侧的 `goals` 是"目标栈"这个领域概念（全仓一提 `goals` 都指它，`api.py`/`run_harness.py` 共 20 处）；子侧那份是**投影**出来给大脑看的视图。改子侧只动 3 处（`episode_harness.py:750/791/1134`），改父侧要动 20 处 |
 | ② | `episode_id` | `str \| None` | `str` | 同名同型（`None` 只在 run 未派发时出现）→ **直接传**，子图入口 assert 非空 |
-| ③ | 任务 | `last_task: TaskForBrain \| None` | `task: TaskForBrain` | 对齐：父侧 **`last_task` → `task`**（"刚派发的那一层目标"就是它，名字更短且与子侧一致）。父侧那 20 处 `goals` 引用不受影响 |
+| ③ | 任务 | `last_task: Task \| None` | `task: Task` | 对齐：父侧 **`last_task` → `task`**（"刚派发的那一层目标"就是它，名字更短且与子侧一致）。父侧那 20 处 `goals` 引用不受影响 |
 | ④ | 结算（**v2 新增，v1 漏了**） | `outcome: …RunResp \| None`（已有） | 无 | **子侧新增 `outcome` 字段 + 新增 `close_episode` 节点写它**。注意 F1 的反作用：**子图不输出的键，父侧保持旧值**——如果子图不写 `outcome`，`reflect` 会读到**上一次派发的陈旧结算**（而且不报错）。所以这一条不是"锦上添花"，是**防静默错误的必需项** |
 
 **交界契约的形式**（F7）：episode 图 `compile(input_schema=EpisodeInput, output_schema=EpisodeOutput)`，
-两个模型放 `episode/graph.py`（**产出地归档**）。好处是"run 给 episode 什么、episode 还 run 什么"
+两个模型放 `episode/episode_graph.py`（**产出地归档**）。好处是"run 给 episode 什么、episode 还 run 什么"
 从散在代码里的约定变成两个**读得出来的模型**。
 
 #### D2 补注（v4）——**"改名"只是必要条件，还需要一个"投影写入者"**
@@ -721,7 +1005,7 @@ F1/F8 说清楚子图初值的来路：**父 state 的同名键**。所以 `Epis
 |---|---|---|
 | `episode_id` | 已有 | `dispatch` 生成 |
 | `task` | 父侧 `last_task` **改名**（D2-③） | `dispatch` 写 |
-| `episode_goals: list[GoalForBrain]` | **父侧新增这个键**（`goals` 保留不动） | **`dispatch` 做投影写入**：把目标栈 `goals: list[TaskForBrain]` 映射成 `list[GoalForBrain]` 写进这个**新键** |
+| `episode_goals: list[Goal]` | **父侧新增这个键**（`goals` 保留不动） | **`dispatch` 做投影写入**：把目标栈 `goals: list[Task]` 映射成 `list[Goal]` 写进这个**新键** |
 | `outcome` | 已有（子图**输出**合并回来） | `close_episode`（第 21 个节点） |
 | （run 级状态） | **不进交界** | 走 `deps.run_state_snapshot`（D11-(3)） |
 
@@ -851,7 +1135,7 @@ v6 这里原写"重启后 `_begin` 再 reset 一次即可"，**只覆盖了全�
 | `world_reset_done` | run 记号 | **D11：从 episode 那堆字段里搬来**（"世界起点存档读过了没有"，不落盘） |
 | `frame_event_ids` / `pending_frames` | 账 | 键是 `(episode_id, step)`——**整 run 累积，按局天然分居**，没有"每局要清"的东西 |
 | `run_state_snapshot` | 账 | run 侧递进来的原料（搭 episode 存档的车，§4.0(a3) C 组）；`dispatch` 每局刷新 |
-| 不住 deps | — | `_graph` → `*/graph.py` 模块级常量；20 个节点方法 → 21 个自由函数 `(state, runtime) -> dict` |
+| 不住 deps | — | `_graph` → `*/<level>_graph.py` 模块级常量；20 个节点方法 → 21 个自由函数 `(state, runtime) -> dict` |
 
 ### D5 —— 删掉两张 Port（你已拍板；下面是现场核出来的证据）
 
@@ -869,8 +1153,8 @@ v6 这里原写"重启后 `_begin` 再 reset 一次即可"，**只覆盖了全�
 
 | Port 想说的 | 谁在说（更强） |
 |---|---|
-| 图有哪些节点 | `graph.py` 的 `add_node` 列表——**可执行**，且 `check_graph_phases.py` 机械核对 |
-| 每个节点改哪一处 state / 写哪条账 | 那张 21 行职责表（挪进 `episode/graph.py` 的模块 docstring，**图的全貌挨着图的装配**） |
+| 图有哪些节点 | `episode_graph.py` 的 `add_node` 列表——**可执行**，且 `check_graph_phases.py` 机械核对 |
+| 每个节点改哪一处 state / 写哪条账 | 那张 21 行职责表（挪进 `episode/episode_graph.py` 的模块 docstring，**图的全貌挨着图的装配**） |
 | 父子交界给什么、还什么 | `EpisodeInput` / `EpisodeOutput` 两个 Pydantic 模型（**可校验、可序列化、能进 checkpoint**） |
 | 节点的输入输出形状 | `(state, runtime) -> dict` 这个**统一签名本身** |
 
@@ -880,7 +1164,13 @@ v6 这里原写"重启后 `_begin` 再 reset 一次即可"，**只覆盖了全�
 
 ### D6 —— `recursion_limit` 重标定：精确预算 → 上界 + 事后断言
 
-**现状**（两层各算各的）：
+> **v11 订正（2026-09-12）**：本节对 **run 级**的结论**已作废**——X5 实测本仓是形态 B
+> （父子计数独立），run 级没有可算的预算，最终形态是**一个可调常量**
+> `RUN_RECURSION_LIMIT`（见 v10 → v11）。**对 episode 级仍然成立**：逐局按剩余步数算，
+> 配上 `close()` 的事后断言——那才是贴身的那道限。本节其余论证（"靠 limit 兜底 → 靠断言报警"）
+> 作为当时的推演保留。
+
+**当时的现状**（两层各算各的；run 级那一行见上面的 v11 订正）：
 
 ```
 episode: (task.max_steps - state.step) * (NODES_PER_DECISION + NODES_PER_PRESS) + RECURSION_MARGIN
@@ -897,7 +1187,7 @@ run_total = run 图自身节点数（5 × 轮数，轮数由 goals/重试次数�
 
 **保护性下降的补偿**：公式里的每一项**都是已知上界**（`max_steps`、`goals` 数、
 `MAX_GOAL_RETRIES`、链长上限 `MAX_SEGMENTS × MAX_TIMES`），所以能算出真上界；
-再在 `entry.py` 里加一条 assert：**实际消耗步数 ≤ 预算**——把"靠 limit 兜底"
+再在 `episode_entry.py` 里加一条 assert：**实际消耗步数 ≤ 预算**——把"靠 limit 兜底"
 换成"靠断言报警"。这比现在更诚实：现在撞限是**无声截断**（CHANGELOG 里那次事故），
 断言至少会在开发期就地炸。
 
@@ -913,7 +1203,7 @@ run_total = run 图自身节点数（5 × 轮数，轮数由 goals/重试次数�
 | `group_chains()` / `last_chains()` / `render_chains()` | chain | 按"那次决策"分组 / 取窗 / 渲染 |
 | `JUDGE_CHAIN_HISTORY` | chain | 判定器看最近几次决策 |
 | `is_chain_tail`（局部变量 ×2） | chain | 这是这次决策的最后一个键吗 |
-| `trace_render.action_chain()` | chain | **另一件事**（把 `ActionFromBrain` 渲成 dict） |
+| `trace_render.action_chain()` | chain | **另一件事**（把 `Action` 渲成 dict） |
 | `web/src/App.tsx` 的 `CHAIN_PHASES` | chain | **又一件**（图的节点序列） |
 | `render_chains()` 输出的文本 | —— | **"一次决策按的 N 个键"** ← 它已经在说"决策"了 |
 
@@ -923,7 +1213,7 @@ run_total = run 图自身节点数（5 × 轮数，轮数由 goals/重试次数�
 2. **同词异义已经发生**：`action_chain` / `CHAIN_PHASES` 与它无关，读者会以为有关。
 3. **两套词让读者做翻译**：读 `chain_key` 的人得自己连上"这就是 `plan_step_start`"。
 
-**推荐：统一到 `decision`**（与 `plan_step_start`、`ActionFromBrain.thought`、
+**推荐：统一到 `decision`**（与 `plan_step_start`、`Action.thought`、
 以及那段渲染文本同根）：
 
 | 现在 | 改成 |
@@ -971,6 +1261,11 @@ run_total = run 图自身节点数（5 × 轮数，轮数由 goals/重试次数�
 而**同一个族**的活（`_tag_attempt`、事件渲染）今天已经在 tool 层——`tools/trace_render.py`。
 按"schema 按产出地归类"的同一精神，"把账翻译成事件"的能力属于 trace tool。
 （另两个选项：甲=留在 harness 并写明"唯一例外"；丙=每个宿主自带一份，**已否决**——违反
+
+> **（v12 订正）**：上面这条理由**只对了一半**——`append_model_calls` 其实**不渲染**（渲染在
+> `render.py::model_call`）。真正属于 tool 层的是那个**"一拆多"**：一次交互的 N 次尝试 →
+> N 条 `MODEL_CALL`（`AppendReq` docstring 的"必要时一拆多"）。**下沉的结论不变**，理由换成这一条；
+> 另外 `tools/trace_render.py` 这个路径在步 5a 之后是 `tools/trace/render.py`。
 §3.7.4 的"账写在宿主里"，回到崩溃窗口。）
 
 #### 4.8.1 落地形态：`append_model_calls` 放哪、以及"为啥 trace 有好几个文件"
@@ -994,31 +1289,52 @@ run_total = run 图自身节点数（5 × 轮数，轮数由 goals/重试次数�
    改字段必须同步前端），`trace_tool.py` 动一次只是"多一种 kind"。合在一个文件会让
    "我这次改的是不是契约"变模糊——而这件事恰恰是本仓吃过亏的地方。
 
-**但 v3 收拢一次**：`trace_write.py` 下沉之后，tools 里会有**三个** trace 相关文件
+**但 v3 收拢一次（v12 已落地）**：`trace_write.py` 下沉之后，tools 里会有**三个** trace 相关文件
 （`trace_tool.py` / `trace_render.py` / 新的 `model_calls.py`），与"一个 tool 一个文件"的
-视觉格局不符 → **收进一个包**（与 `harness/episode/` 同款手法）：
+视觉格局不符 → **收进一个包**（与 `harness/episode/` 同款手法）——两个旧文件已删，
+`__init__.py` 承接 `TraceTool` + 分派表、`render.py` 承接 30 个纯函数：
 
 ```
 tools/trace/
 ├── __init__.py        TraceTool（端口实现 + `_RENDERERS` 分派表）
 ├── render.py          ← trace_render.py 改名搬入（30 个纯函数）
-└── model_calls.py     ← harness/trace_write.py 搬入：append_model_calls + ModelCallLog
+└── model_calls.py     ← harness/trace_write.py 搬入：append_model_calls（`ModelCallLog` 住信封自己的模块，见下）
 ```
 
-**`append_model_calls` 进端口，不做自由函数。** 即 `TraceToolPort` 新增一个方法：
+**`append_model_calls` 进端口，不做自由函数。** `TraceToolPort` 新增一个方法——**v12 订正**：
+方法**收信封、不收裸的领域类型**（原稿写的是 `log: ModelCallLog`，那会让 `ports.py`
+反向 import `pokemon_agent.trace`，破掉"端口只认 `schemas`"这条边界）：
 
 ```python
-def append_model_calls(self, *, episode_id: str, step: int, source: Source, log: ModelCallLog) -> None: ...
+def append_model_calls(
+    self, req: FromHarnessToTraceToolAppendModelCallsReq
+) -> None: ...
 ```
+
+信封（`schemas/harness/communication/`）带 `episode_id` / `step` / `source` / `log` 四个字段，
+**`kind` 不在里面**（这个信封只有 `MODEL_CALL` 一种语义，由 tool 自己声明）；
+`ModelCallLog` **就定义在这个信封自己的模块里**（v13 订正 v12 的落点，见下），
+来源仍是 `schemas`（由 `schemas/harness/__init__` 转交，见 §5.3-⑥）。
 
 理由是你上一轮定下的那条：**"harness 依赖 toolport，tool 只需要实现 port"**。若让 harness
 直接 `from pokemon_agent.tools.trace.model_calls import append_model_calls`，harness 就多了一条
 "认识具体模块"的 import——而它今天只认 `tools.interface`（这正是上次 `tools/interface/` 拆分的
 成果，不该在这里还回去）。
 
-**代价**：端口多一个方法；签名里出现 `ModelCallLog`（`providers.ModelCall` 本来就已经在
-`FromHarnessToTraceToolAppendReq` 里，不算新增依赖）。**备选**：保持自由函数、让 harness
-import 那个模块——可行，但破你自己定的那条边界，所以列为次选。
+**代价**：端口多一个方法、多一个信封（`ModelCallLog` 不再直接进签名；`providers.ModelCall`
+本来就已经在 `FromHarnessToTraceToolAppendReq` 里，不算新增依赖）。**备选**：保持自由函数、
+让 harness import 那个模块——可行，但破你自己定的那条边界，所以列为次选。
+
+**`ModelCallLog` 的家（v13 订正 v12）**：**不住 trace**。它定义在
+`schemas/harness/communication/FromHarnessToTraceToolAppendModelCallsReq.py` 里，
+作为**那个信封的内部件**（不单独出文件、不再有第二条 re-export 链）；
+由 `schemas/harness/__init__` 转交给 harness（见 §5.3-⑥）。
+
+**v12 原稿写的是"住 `trace/interface/domain/model_call_log.py`、是 trace 的领域类型"——那是错的**：
+它 `import pokemon_agent.providers.interface.ModelCall`，一条 import 就把 trace 绑回业务侧，
+违反 §5.3-⑦"trace 自持"。**v12 的另两条成果保留**：枚举出这个类型、让 harness 只从 `schemas` 拿。
+
+harness 侧一个 trace 深处的名字都不 import（这一条 v12 / v13 一致）。
 
 ### D9 —— checkpoint 不单独存在：它是 harness 自己的持久化形态（v3 新增，**v6 重写落点**）
 
@@ -1048,20 +1364,20 @@ import 那个模块——可行，但破你自己定的那条边界，所以列�
 
 | 现在的 264 行 | v6 去哪 | 形态 |
 |---|---|---|
-| **格式**（json 的键、目录布局、原子写、配对与签名校验） | **`episode/state.py` 的 `EpisodeCheckpoint` 模型** | 字段直接内嵌 `EpisodeRunState`（**不是 dump**）；自带 `write()` / `read()` 两个方法 |
+| **格式**（json 的键、目录布局、原子写、配对与签名校验） | **`episode/episode_state.py` 的 `EpisodeCheckpoint` 模型** | 字段直接内嵌 `EpisodeRunState`（**不是 dump**）；自带 `write()` / `read()` 两个方法 |
 | **写** | **`episode/open/save_checkpoint.py`**（本来就有的那个节点） | 节点里三行：建模型 → `write(root, bytes)` |
-| **读** | **`episode/entry.py` 的 `run_resume()`**、**`run/entry.py` 的 `resume_run()`** | `EpisodeCheckpoint.read(...)` |
+| **读** | **`episode/episode_entry.py` 的 `run_resume()`**、**`run/run_entry.py` 的 `resume_run()`** | `EpisodeCheckpoint.read(...)` |
 | **废弃 ①：trace 打标** | **`TraceToolPort.void_after(cursor)`**（新端口方法） | 谁的盘谁自己截 |
-| **废弃 ②：memory 归档** | 调用点从 tool 内部挪到 `entry.py`（能力早已在 `MemoryTool.void_memory_after`） | 换调用者 |
-| **废弃 ③：存档目录归档** | **`entry.py` 里约 8 行**（`shutil.move` 进 `voided-<ts>/`） | 编排属于恢复管线，不属于"存储" |
+| **废弃 ②：memory 归档** | 调用点从 tool 内部挪到 `episode_entry.py`（能力早已在 `MemoryTool.void_memory_after`） | 换调用者 |
+| **废弃 ③：存档目录归档** | **`episode_entry.py` 里约 8 行**（`shutil.move` 进 `voided-<ts>/`） | 编排属于恢复管线，不属于"存储" |
 
 ```python
-# episode/state.py —— 与 EpisodeRunState 同住一个文件，这就是「严格绑定」
+# episode/episode_state.py —— 与 EpisodeRunState 同住一个文件，这就是「严格绑定」
 class EpisodeCheckpoint(BaseModel):
     """本局第 step 步开局的完整快照：磁盘上就是这一份 json（+ 同名 .state）。
 
     写者：open/save_checkpoint.py（图边界节点，每圈一份）
-    读者：entry.py 的 run_resume()；run/entry.py 的 resume_run()（只取 run 级那份）
+    读者：episode_entry.py 的 run_resume()；run/run_entry.py 的 resume_run()（只取 run 级那份）
     """
     run_id: str
     episode_id: str
@@ -1089,7 +1405,7 @@ class EpisodeCheckpoint(BaseModel):
 1. **越层**：`void_after()` 今天**直接 glob `trace_data/<run>/events/*.json`、原地改写 `valid=false`**
    （`checkpoint_tool.py:137–156`）——它是 `trace/store.py` 那条边界宣言（"写者只有 harness 走端口、
    读者是 api"）之外的**第三个读者**，还是按文件路径读的。修法：`TraceToolPort.void_after(cursor)`
-   返回"哪些局被废弃"，编排留在 `entry.py`。
+   返回"哪些局被废弃"，编排留在 `episode_entry.py`。
 2. **一个没人接的回执**：`resume()` 里那句 `void_after(...)` **没有接返回值**
    （`episode_harness.py:417`）——5 个信封里的 `VoidResp` 是纯装饰，删掉正好。
 
@@ -1099,9 +1415,9 @@ class EpisodeCheckpoint(BaseModel):
   **目录与文件名布局一字不变**，但**旧存档不再可读**——不写迁移代码，`checkpoints/` 下的
   都是可再生的核对产物。`experiment/real_check/check_checkpoint.py` 认的是 `run_state_dump`
   这个键（名字没变），它只需订正 docstring 里那句 `CheckpointTool.load()`。
-- **磁盘布局知识从"一个 store 模块"挪进了 `episode/state.py` 的模型方法**。
+- **磁盘布局知识从"一个 store 模块"挪进了 `episode/episode_state.py` 的模型方法**。
   为什么仍然这么放：因为你要的是"**不单独存在**"——给它一个 `store.py` 就是**又造一个模块**；
-  而"格式"的性质本来就是**数据自身的形状**，`state.py` 正是放这个的地方。两个方法一共约 15 行
+  而"格式"的性质本来就是**数据自身的形状**，`episode_state.py` 正是放这个的地方。两个方法一共约 15 行
   （`json.dumps` + tmp + `os.replace`；`model_validate_json` + 配对校验）。
 
 **顺带一提**：`_frame_ledger()`（摊平本局帧账）**唯一的调用者就是 `save_checkpoint`**，
@@ -1124,7 +1440,7 @@ class EpisodeCheckpoint(BaseModel):
 | **`open/`（推荐）** | "这次决策**开场**的两格" | 与六域同为段落名；`open` / `close` 是英语里最不需要翻译的一对 |
 | `head/` | "**链首**两格" | 位置语言，与 `press/`（链内一圈）成"首 vs 内"对照；**备选** |
 | `seal/` | "把上一环**封存**" | 只盖一半（`record_observation` 不是封存） |
-| `entry/` | —— | **不可用**：同层已有 `episode/entry.py`（图外入口），同词会误读 |
+| `entry/` | —— | **不可用**：同层已有 `episode/episode_entry.py`（图外入口），同词会误读 |
 
 **一处要同时说清的**：`close/` 是**整局收尾**，而 `open/` 是**一条决策的开场**，两者不同层级。
 为避免误读，`episode/open/__init__.py` 的模块 docstring 第一句要写：
@@ -1161,7 +1477,7 @@ v3 写的是"`RunRuntime` + `EpisodeRuntime`"。**F10 实测证明这条路走�
 （本局起点 = 上一局终点，`episode_harness.py:581-587` 记着这个取舍）。它跟"哪一局"无关。
 
 **搬法**：`HarnessDeps.world_reset_done`（它那一带里唯一**会被写**的记号）。
-读它的是 `_begin`（图外，`episode/entry.py`），而 entry 的签名本来就收 `deps`，**不用多传参数**。
+读它的是 `_begin`（图外，`episode/episode_entry.py`），而 entry 的签名本来就收 `deps`，**不用多传参数**。
 
 **不落盘**（与 `run_id` 一致）——但**"不落盘"不等于"没人写它"**（v7 订正）：
 ① 全新 run：第一局的 `_begin` 在 `reset()` 之后置 `True`；
@@ -1215,14 +1531,15 @@ run state 由 `dispatch` 当**参数**递进来（`run_harness.py:472` 的 `run_
 1. **`goals` 改名（D2-①）只动子侧**，但**子侧的 `state.goals` 有 3 处、docstring 有 2 处**；
    **父侧还要"新增"一个 `episode_goals` 键 + `dispatch` 里的投影写入**（D2 补注）——
    漏了这一步的表现是**子图拿默认空列表、不报错**；另有一处**不在 harness 里的悬空引用**：
-   `brain/interface/domain/goal_for_brain.py:15` 的 docstring 还在指向
-   `interfaces/harness/episode_harness_port.py`（**这个路径今天已经不存在**）——搬完顺手订正。
+   `brain/interface/domain/goal.py:15` 的 docstring 还在指向
+   `interfaces/harness/episode_harness_port.py`（**这个路径今天已经不存在**）——搬完顺手订正。**（已订正：该 docstring 现指
+   `harness/episode/episode_state.py`；文件原名 `goal_for_brain.py`，v14 改 `goal.py`。）**
 2. **D7 的改名要连出口一起**：`schemas/memory/datastore/__init__.py` 与
    `schemas/memory/__init__.py` 的 `__all__` + import 各 4 处。
 3. **`NODES_PER_DECISION` / `NODES_PER_PRESS` 的 docstring** 里逐字列了节点名，节点搬家之后
    立刻过期——按惯例**搬完就改**，别等。
 4. **`scripts/check_graph_phases.py` 的抽取路径**写死 `episode_harness.py` 的 `_compile()`。
-   节点搬进 `episode/` 之后它必须改（改成抽 `episode/graph.py` 的装配函数）。
+   节点搬进 `episode/` 之后它必须改（改成抽 `episode/episode_graph.py` 的装配函数）。
    **顺手扩到 run 图**——现在 run 图的 5 个节点**没有任何核对**，`web/src/App.tsx` 也只画 episode 链。
 5. **D9-v6 的拆除面比 v5 更大**：删 5 个信封 schema 会牵动 `schemas/harness/communication/`
    的出口（`__init__` + `__all__`），还要改 `build.py` 的两处注入、`tools/__init__.py`
@@ -1247,9 +1564,9 @@ run state 由 `dispatch` 当**参数**递进来（`run_harness.py:472` 的 `run_
    **判据**：`_begin` 是**唯一读点**（代码里数出来的）→ **凡是不经过 `_begin` 就进了恢复路径的
    场合，都必须自己把这个记号补上**。
 
-### 5.3 新增四条机械保证（防它长回去）
+### 5.3 新增六条机械保证（防它长回去）
 
-1. **"一节点一文件"**：从 `*/graph.py` 抽 `add_node` 的名字，每个名字必须存在
+1. **"一节点一文件"**：从 `<level>_graph.py` 抽 `add_node` 的名字，每个名字必须存在
    `<域>/<name>.py`（同名文件即节点）。挂在 `check_graph_phases.py` 里一并跑，
    或新开 `check_node_files.py`。
 2. **"交界键表是真的"**：`EpisodeInput`/`EpisodeOutput` 声明的每个键，必须真的存在于
@@ -1264,23 +1581,66 @@ run state 由 `dispatch` 当**参数**递进来（`run_harness.py:472` 的 `run_
    `grep` 一次即可——**这条防的是"哪天有人给子图单独声明一个 context_schema"**，
    而那不会报错，只会让子图节点静默读到不存在的属性。
 
-**这四条是把"结构"变成可执行断言**——和 §1.1 那次"web 表与图漂移两个月没人发现"是同一个病。
+5. **"节点文件名 = 图里的节点名"**（v8 新增、**v9 定形**；防的正是"看见 `graph.py` 分不清
+   是哪张图"）：`harness/` 下任何两个 `.py` 的 **basename 不得相同**（`__init__.py` 除外），
+   且**节点文件名 = `<level>_graph.py` 里 `add_node` 的字面量**。结构性文件带层级前缀
+   （`run_graph.py` / `episode_graph.py` / `run_state.py` / `episode_state.py` /
+   `run_entry.py` / `episode_entry.py` / `episode_frames.py`），节点文件用节点名（21 个
+   节点名全局唯一）。**v9 的订正**：v8 的规则文本是对的，但 §3.1 的树当时把四个 `retrieve_*`
+   与两个 `store_*` 写成短名（`step_episode_memory.py` 之类）——**那条树自己违反了这条规则**，
+   步 3 收尾时被 `scripts/check_graph_phases.py` 当场抓到（`step_episode_memory.py` 在
+   `retrieve/` 与 `store/` 各一份）。所以文件名取完整节点名；拆成包的节点
+   （`store_object_semantic_memory/`）用**包名**当节点名，包内辅助件（`rules.py`）不算节点。
+   挂两处：`scripts/check_graph_phases.py` 的第二步（图序 + 文件名两次核对，输出两行 OK）、
+   核验脚本 H 块 ③/④（独立再算一遍，不共用同一个来源）。
+
+6. **"端口签名只用信封"**（v12 新增，本 PLAN 里唯一一条管**工具层协议**的保证）：遍历
+   `tools/interface/ports.py` 每张 `Protocol` 的**方法注解**，把注解里出现的 `Name` 拿去查
+   该文件的 import 表——**只要查得到来源，来源就必须是 `pokemon_agent.schemas`**。
+   挂进 `check_graph_phases.py`（`ast` 解析，不 import 任何东西）。**这条防的是「端口签名里
+   混进某个模块的领域类型」**——`ModelCallLog` 那次就是这样混进去的：它当时住在 harness 里，
+   一旦写进签名，`ports.py` 就得反向 import `pokemon_agent.trace`，而"harness/tool 的交互
+   不涉及模块内部类"这条边界会当场破掉。
+
+7. **"trace 自持"**（v13 新增）：`pokemon_agent/trace/**` 下**不许出现指向本仓其它部分的
+   import**——只看 `import` / `from ... import` 语句（相对 import 是包内自家，放过）；
+   绝对路径的模块名只要以 `pokemon_agent` 开头，就必须也以 `pokemon_agent.trace` 开头。
+   挂进 `check_graph_phases.py`（`ast` 解析，**这里不能用 `grep`**——本包 docstring 里
+   到处写着"消费方写 `from pokemon_agent.trace import X`"，`grep` 会把它们全算成越界）。
+   **这条防的是「trace 又长出业务依赖」**：`ModelCallLog` 那次正是实例——它
+   `import` 了 `providers.interface.ModelCall`，一条 import 就把 trace 绑回业务侧，
+   于是 trace 不再能单独替换、单独复用。
+
+**这七条是把"结构"变成可执行断言**——和 §1.1 那次"web 表与图漂移两个月没人发现"是同一个病。
+
+**七条的落地状态（v13 标注：步 4 核过 ②③④，步 5a 核过 ③ 的销账与 ⑥ 的首次挂上，本轮核过 ⑦）**：
+
+| # | 状态 | 依据 |
+|---|---|---|
+| ①"一节点一文件" | **已挂** | `scripts/check_graph_phases.py` 第二步（两张图各一次：episode 21 + run 6） |
+| ②"交界键表是真的" | **已挂**（步 4） | `EpisodeInput`/`EpisodeOutput` 已住 `episode/episode_graph.py`；核对输出 `OK 4 个交界键都存在于两岸 state` |
+| ③"散件已清零" | **已挂（终态，步 5a 销账）** | `HARNESS_ROOT_ALLOWED` = `__init__` / `deps` / `auto_reviewer` / `run_data_center`——`trace_write.py` 已下沉 `tools/trace/model_calls.py`，清单里再没有"待销账"项 |
+| ④"context 只有一个类型" | **已挂**（步 4） | 与 ③ 共用同一次遍历：`Runtime[...]` 与 `context_schema=` 的实参都只能是 `HarnessDeps` |
+| ⑤"文件名 = 节点名" | **已挂** | 同 ① 那次遍历 + 核验脚本 H 块 ③/④ |
+| ⑥"端口签名只用信封" | **已挂**（步 5a） | `check_graph_phases.py` 第六步 `check_port_signatures()`；**含反向测试**（喂一份含裸 `ModelCallLog` 的假 `ports.py`，正确报 Drift） |
+| ⑦"trace 自持" | **已挂**（v13） | `check_graph_phases.py` 第七步 `check_trace_self_contained()`；**含反向测试**（喂 `trace/_tmp_bad.py` 含 `from pokemon_agent.providers.interface import ModelCall`，正确报 Drift 并给出文件与行号） |
 
 ---
 
-## 6. 迁移顺序（六步，每步可独立验收、可独立停）
+## 6. 迁移顺序（步 0–步 4 已落地；步 5 拆成 **5a ✅ / 5b**，各自可独立验收、可独立停）
 
 > 原则：**先立骨架不改行为 → 再改术语 → 再换拼接 → 再拆文件 → 最后收口**。
 > 每一步结束后，**离线核验 + 三个 check 脚本必须全绿**；真机命令由你跑。
 
 | 步 | 做什么 | 为什么排这里 | 验收 |
 |---|---|---|---|
-| **步 0** | 建 `run/` `episode/` 骨架 + **`harness/deps.py`**（一个 `HarnessDeps`，v5 单层）：各自 `state.py` + 两个 `graph.py`（节点**以方法引用**接进去）；解 D2 的四件事（`goals`→`episode_goals`、父侧新增该键 + `dispatch` 投影写入、`last_task`→`task`、加 `close_episode`+`outcome`）；**调用关系仍是 `episode.run(req)` 不动** | 把"最危险的改名"与"拼接方式切换"**分开做**——混在一起出问题分不清是谁的锅 | 全绿；**行为零变化**（这一步行数几乎不变） |
+| **步 0** | 建 `run/` `episode/` 骨架 + **`harness/deps.py`**（一个 `HarnessDeps`，v5 单层）：各自 `<level>_state.py` + 两个 `<level>_graph.py`（v8 命名）（节点**以方法引用**接进去）；解 D2 的四件事（`goals`→`episode_goals`、父侧新增该键 + `dispatch` 投影写入、`last_task`→`task`、加 `close_episode`+`outcome`）；**调用关系仍是 `episode.run(req)` 不动** | 把"最危险的改名"与"拼接方式切换"**分开做**——混在一起出问题分不清是谁的锅 | 全绿；**行为零变化**（这一步行数几乎不变） |
 | **步 1** | **D7 术语改名**（`chain` → `decision`，含两个出口文件的 `__all__`）+ D8 的**情况①②**解散（并入节点前先原地改自由函数，不动文件位置） | 纯改名，不碰结构；此时散件还在原位，改了也容易复核 | 全绿 + `grep -rn "chain" pokemon_agent/` 只剩 `action_presses` 与无关项 |
-| **步 2** | 换拼接：`dispatch` → `add_node("episode", ep_graph, error_handler=…)`；`_begin`/`resume` 进 `entry.py`；`close_episode` 进图；**D6 的 limit 重标定** | 这一步唯一改变的是"两张图怎么连"，节点实现一字未动——回滚成本最低 | 全绿 + 新增"两图 limit 不撞限"的离线用例；真机 |
-| **步 3** | 拆 episode 的 21 个节点，**按功能域一批一批搬**（`open` → `gate` → `retrieve` → `decide` → `press` → `store` → `close`，D10 的域名从这一批起用），每搬一批跑一次核验 | 分批让"搬错了一个节点"能定位到那一批；七个域之间本来就低耦合 | 每批全绿；搬完 `episode_harness.py` 删除 |
-| **步 4** | 拆 run 的 5 个节点（含 `resume_run` 进 `entry.py`、`RunHarness` 收成薄类）；**D5 删两张 Port**；`interface/` 瘦身；`check_graph_phases.py` 扩到两张图 + §5.3 三条核对；`harness/__init__.py` 懒加载表；SPEC / CHANGELOG | 收口 | 全绿；`check_graph_phases.py` 输出两行 OK（run 5 + episode 21） |
-| **步 5** | **跨层件归位**（v3 新增，v6 改范围）：D9-v6 **解散** `tools/checkpoint_tool.py`（格式→`episode/state.py`、写→`open/save_checkpoint.py`、读→`entry.py`、trace 打标→`TraceToolPort.void_after`）、删端口与 5 个信封；D8-③ 把 `harness/trace_write.py` → `tools/trace/model_calls.py`、`TraceToolPort` 加 `append_model_calls`、4 个调用点改掉 | 放在最后，因为它是**唯一同时动两个层**的一步——前面都绿了再动它，出问题一眼能定位到"搬错了" | 全绿（**`MODEL_CALL` 三类条数必须一条不差**）；`check_imports.py` 复跑；跑一次 `check_restore.py`（**新存档**） |
+| **步 2** | 换拼接：`dispatch` → `add_node("episode", ep_graph, error_handler=…)`；`_begin`/`resume` 进 `episode_entry.py`；`close_episode` 进图；**D6 的 limit 重标定** | 这一步唯一改变的是"两张图怎么连"，节点实现一字未动——回滚成本最低 | 全绿 + 新增"两图 limit 不撞限"的离线用例；真机 |
+| **步 3** ✅ | 拆 episode 的 21 个节点，**按功能域一批一批搬**（`open` → `gate` → `retrieve` → `decide` → `press` → `store` → `close`，D10 的域名从这一批起用），每搬一批跑一次核验 | 分批让"搬错了一个节点"能定位到那一批；七个域之间本来就低耦合 | **2026-09-12 完成**：每批全绿；`episode_harness.py` + 四个 episode 散件删除、`object_interactions.py` 搬成 `store/store_object_semantic_memory/rules.py`；`compile_episode_graph()` 去参；`check_graph_phases.py` 输出两行 OK；核验脚本 ALL PASS |
+| **步 4** ✅ | 拆 run 的 5 个自研节点（含 `resume_run` 进 `run_entry.py`、`RunHarness` 收成薄类）；**D5 删两张 Port**；`interface/` 瘦身；`check_graph_phases.py` 扩到两张图 + §5.3 三条核对；`harness/__init__.py` 懒加载表；SPEC / CHANGELOG | 收口 | **2026-09-12 完成**：`check_imports` **574 条 OK**；`check_graph_phases.py` **6 行 OK**（21 图序 + episode 21 + run 6 + 4 个交界键 + 根清单 + `context` 类型）；离线核验 **134 PASS / ALL PASS**；`probe_nested_invoke` **7/7**；`ruff` 零新增 |
+| **步 5a** ✅ | **D8-③ 下沉**（v12 完成）：`harness/trace_write.py` → `tools/trace/model_calls.py`、`tools/trace_tool.py` + `tools/trace_render.py` 收进 `tools/trace/` 包、`ModelCallLog` ~~落 trace 领域~~ 由 `schemas` 转交（**v13 订正**：改为住信封自己的模块）、`TraceToolPort` 加 `append_model_calls(FromHarnessToTraceToolAppendModelCallsReq)`、**3 个调用点**改掉 | 先做它：**不碰存档、纯离线可判定**，做完就能单独验收 | **2026-09-12 完成**：`check_imports` **572 条 OK**；`check_graph_phases` **7 行 OK**（③ 销账 + ⑥ 首次挂上）；离线核验 **134 PASS / ALL PASS**；`probe_nested_invoke` **7/7**；`probe_langgraph_subgraph` **29/29**；`ruff` 零新增。**当日续做 v13**：`ModelCallLog` 移出 trace + ⑦"trace 自持"挂上（8 行 OK）+ `ActionFromBrain` → `Action` |
+| **步 5b**（**已落地 2026-09-12**，真机验收待用户） | **D9-v6 解散 `tools/checkpoint_tool.py`**（264 行）：格式→`episode/episode_state.py`、写→`open/save_checkpoint.py`、读→`episode_entry.py` 与 `run/run_entry.py`、trace 打标→`TraceToolPort.void_after`；删 `CheckpointToolPort` + 5 个 `FromHarnessToCheckpointTool*` 信封 | 它**动存档格式**（json 键 `state_dump` → `episode_state`，**旧存档不可读**），验收要真机——与 5a 分属两个风险档 | 全绿（**`MODEL_CALL` 三类条数一条不差**）；`check_imports.py` 复跑；**你跑一次** `check_restore.py`（**新存档**） |
 
 **每步一个 commit + 一条 CHANGELOG**（四段式），与既有做法一致。
 
@@ -1308,14 +1668,36 @@ run state 由 `dispatch` 当**参数**递进来（`run_harness.py:472` 的 `run_
 | 2 | **D7 术语** | **`chain` → `decision`**；`action_chain` → `action_presses`（`macro`/`plan` 两个备选均不采用） |
 | 3 | **D8-③ 的形态** | **进端口**：`TraceToolPort.append_model_calls`（自由函数方案不采用） |
 | 4 | **D10 域① 的名字** | **`open/`** |
-| 5 | **D9-v6 附带的三条** | ① 删 `CheckpointToolPort` + 5 个信封 ② `void_after` 的 trace 打标还给 trace 端口（三存储各截各的，编排在 `entry.py`）③ **json 键 `state_dump` → `episode_state`**（旧存档不可读，不写迁移） |
+| 5 | **D9-v6 附带的三条** | ① 删 `CheckpointToolPort` + 5 个信封 ② `void_after` 的 trace 打标还给 trace 端口（三存储各截各的，编排在 `episode_entry.py`）③ **json 键 `state_dump` → `episode_state`**（旧存档不可读，不写迁移） |
 | 6 | **`RunHarness` 薄类** | **留**（`api.py` 的 `handle.harness` 是外部调用面）；`EpisodeHarness` **删** |
-| 7 | **目录名 + deps 落点** | `run/` `episode/`（**没有 `checkpoint/`**，D9-v6）+ 七域 `open gate retrieve decide press store close`；固定名 `graph.py`/`entry.py`/`state.py`；**`deps.py` 放 `harness/` 根下** |
+| 7 | **目录名 + deps 落点** | `run/` `episode/`（**没有 `checkpoint/`**，D9-v6）+ 七域 `open gate retrieve decide press store close`；固定名带**层级前缀**（**v8 订正**，同行 7）；**`deps.py` 放 `harness/` 根下** |
 | 8 | **D11-(2) `world_reset_done` 上移** | **搬**到 `HarnessDeps`；**`resume` 入口要显式置 `True`**（§5.2-8） |
 | 9 | **D11-(3) `run_state_dump` 的处置** | **留，改名 `run_state_snapshot` + 写入点搬到 `dispatch` 节点** |
 | 10 | **节奏** | **步 0 + 步 1 做完停下**，交你复核后再进步 2 |
 
+**已拍板（2026-09-12，v11——X5 那笔 limit 余量的最终形态）**
+
+| # | 事项 | 定论 |
+|---|---|---|
+| X5 | **run 级的 `recursion_limit`** | **不删限，改成一个常量**：run 级保持一个大数
+（`RUN_RECURSION_LIMIT = 200_000`，闸门）、episode 级保持按局算（也可以是大数），
+**两层各留一个能改的常量**——原话："run 级本来就不该有上限，只对 episode 级设上限"
+＋"保证有个之后可以修改的常量就行" |
+
 ---
+
+**已拍板（2026-09-12，v12——步 5a 的两条边界）**
+
+| # | 事项 | 定论 |
+|---|---|---|
+| 11 | **`append_model_calls` 的端口签名** | **收信封**（`FromHarnessToTraceToolAppendModelCallsReq`），**不出现裸的 `ModelCallLog`**——原话"端口文件签名不应该有 `ModelCallLog`" |
+| 12 | **`ModelCallLog` 的落点** | ~~trace 的领域类型~~ **v13 订正**：**住信封自己的模块**（`FromHarnessToTraceToolAppendModelCallsReq.py` 内）；**仍由 `schemas` 转交**给 harness——原话"harness 所有这种包裹语义的类应该只从 `schemas` 里获取，即使是信封的内部类"**依然成立**，被推翻的只是"它住 trace" |
+| 13 | **步 5 的节奏** | **拆两步**：5a（`trace_write` 下沉，本轮完成）/ 5b（解散 `checkpoint_tool.py`，动存档格式、需真机） |
+| 14 | **trace 的模块性质** | **当作独立的第三方模块**：不许 import 本仓其它部分、不许对特定业务类型持有专门的类；只收裸字段（`payload: dict[str, str]`），"业务对象 → 裸字段"的转换归 tool 层——原话"trace 只应该有内部自己管理组织的类，大部分情况下用 dict 裸字段才是正确的，用 tool 转换为 trace 能接受的裸字段" |
+| 15 | **`ActionFromBrain` 类名** | **删掉 `FromBrain` 后缀** → `Action`（连带 `ActionSegmentFromBrain` → `ActionSegment`、文件 `action_from_brain.py` → `action.py`）——原话"ActionFromBrain 你怎么还没把 frombrain 删掉？" |
+
+---
+
 
 ## 8. 附：探针脚本
 

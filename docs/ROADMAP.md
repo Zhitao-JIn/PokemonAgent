@@ -2,12 +2,31 @@
 
 > 单一权威版本。别处（`docs/EXPERIENCE_DOCS.md`）只做链接，
 > 不再各自维护一份路线图表格。
-> 最后更新：2026-09-10。
+> 最后更新：2026-09-12。
 >
 > **一条全局作废声明（0910）**：`evaluation/` 已整体删除（连同 eval_report.py、
 > evaluation/SPEC.md、evaluation/tests/），它唯一的活消费方 `GET /runs/{id}/metrics`
 > 与前端 MetricsPanel 一并退役——见第 27 条。本文件正文里所有对 `evaluation/*`、
 > `eval_report.py` 的引用都是**历史记载**，不再是现状。
+>
+> **一条全局作废声明（0912，harness 步 3 / 步 4 重构后）**：`harness/` 现在是"两张图 +
+> **节点一人一个文件**"（run 级 `run/` 6 格平铺在包根、episode 级 `episode/` 21 格按七域
+> `open gate retrieve decide press store close` 分目录；命名规则 = **节点文件名就是
+> `add_node` 的字面量**）。入口一律是**函数**：`run/run_entry.py` 的 `new_run`/`run_resume`、
+> `episode/episode_entry.py` 的 `run_new`/`run_resume`；`RunHarness` 只剩薄类。
+> 本文件正文里下列旧名字都是**历史记载**，不再是现状——
+> **已删**：`episode_harness.py` 与 `EpisodeHarness` 类、`interface/episode_harness_port.py`
+> 与 `EpisodeHarnessPort`（步 3、步 4）、`run_harness.py`、`interface/harness_port.py` 与
+> `HarnessPort`、`run_plan_utils.py`、`run_utils.py`、`harness/utils.py`（步 4）；
+> **已解散**：`brain_utils.py`/`game_utils.py`/`episode_utils.py`/`memory_query_utils.py`/
+> `object_interactions.py`（步 3，函数各自归了宿主节点）。
+> 另有两处**结论被取代**（不只是改个名）：第 1101 条的 `recursion_limit` 公式
+> （当时写 `max_steps × 16 + 20`，现行是**两层各一个常量**：episode 级
+> `episode_entry.episode_budget()` 按剩余步数逐局算，run 级是闸门常量
+> `run/run_entry.py::RUN_RECURSION_LIMIT`（不再按公式换算，见其 docstring））、第 1104 条"拆出
+> `run_utils.py`"（最终形态是 run 侧整体拆成 6 个节点文件 + `run_entry.py`，`run_utils.py`
+> 已不存在）。现状以 `CLAUDE.md` 的目录树与
+> `docs/spec/harness/PLAN_graph_composition.md` 的 v8→v9 / v9→v10 两节为准。
 
 ## 状态图例
 
@@ -435,7 +454,7 @@ ground truth，这正是"这个校验器到底有没有用"的答案来源，跟
    `IDLE_FRAMES_PER_POLL` 一并删掉。
 
 **还没查清楚的**：两处修完之后 decision 本身的 LLM 调用延迟（p90 45.7s
-这个数字）没变——两个已知线索都指向"token 偏多"：`ActionFromBrain.thought`
+这个数字）没变——两个已知线索都指向"token 偏多"：`Action.thought`
 没有长度上限，`max_tokens=25600` 只是留了余量，实测单步 `thought` 冲到过
 2235 token；judge/verify_steps 链路上同类输入膨胀问题修过一次（`walk_map`
 字段占记忆渲染 62%，去掉后审计延迟 77s→11.4s，见
@@ -497,8 +516,8 @@ trace `Source` / schema 类名）各起了一个名字，读代码时得靠"这�
 
 用户想法：给"这一步/这一局"加一层**实时**识别 agent 当前意图（在做什么、
 是不是偏离了目标），而不是只靠事后蒸馏的摘要或人工看 trace 回放去判断。现在
-最接近"意图"的信号是 `ActionFromBrain.thought`/`rationale`（模型自述的推理，
-只进 trace，不参与决策，见 `schemas/domain/action_from_brain.py`）——是**事后
+最接近"意图"的信号是 `Action.thought`/`rationale`（模型自述的推理，
+只进 trace，不参与决策，见 `schemas/domain/action.py`）——是**事后
 记录**，没有专门的识别/判定环节，也不会实时反馈进循环本身。
 
 还没定的地方（先立项，不下方案）：
