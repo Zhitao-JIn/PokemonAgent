@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from pokemon_agent.brain.interface import ActionFromBrain
+from pokemon_agent.brain.interface import Action
 from pokemon_agent.world import Observation
 
 
@@ -16,5 +16,5 @@ class FromHarnessToBrainToolReflectReq(BaseModel):
     """harness 侧组装、交给 `BrainTool` 的反思请求，字段同 `ReflectReq`。"""
 
     before: Observation
-    action: ActionFromBrain
+    action: Action
     after: Observation

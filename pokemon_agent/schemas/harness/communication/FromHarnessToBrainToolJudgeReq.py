@@ -10,14 +10,14 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel
 
-from pokemon_agent.brain.interface import GoalForBrain
+from pokemon_agent.brain.interface import Goal
 from pokemon_agent.schemas.memory import StepMemory
 
 
 class FromHarnessToBrainToolJudgeReq(BaseModel):
     """harness 侧组装、交给 `BrainTool` 的判定请求，字段同 `JudgeReq`。"""
 
-    goal: GoalForBrain
+    goal: Goal
     history: Sequence[StepMemory] = ()
     images: Sequence[bytes] = ()
     prompt: str = ""

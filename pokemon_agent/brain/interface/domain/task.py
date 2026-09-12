@@ -8,7 +8,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class TaskForBrain(BaseModel):
+class Task(BaseModel):
     """一个有明确成败判据的任务。**episode 的边界就是任务的边界。**
 
     为什么不用"通关"做 episode：通关是几千步、只产出一个 0/1 结果，

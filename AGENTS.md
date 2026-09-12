@@ -262,7 +262,7 @@ pyproject.toml
 **分包形态**：七个产出模块各自一个包、各自一个统一出口（`frontend` / `harness` /
 `brain` / `world` / `memory` / `trace` / `providers`），包内按种类落到
 `communication/` `domain/` `datastore/`。schemas 侧**不给 tool 门面单开子包**——
-`tools/` 代码层的五个门面保留，harness 经门面调模块的架构不变。
+`tools/` 代码层的四个门面保留（`CheckpointTool` 于步 5b 解散——存档归 harness 自己的状态模型），harness 经门面调模块的架构不变。
 
 1. **信封 = 我们自己的模块间契约**，命名 `From[模块A]To[模块B][函数名][Req/Resp]`，
    **两半都放 A 处（发起方）**。强制适用范围是 **Harness ↔ 各门面**这一跳。
@@ -276,7 +276,7 @@ pyproject.toml
    第一跳（调用方 → 模块门面）永远是信封，**门面上的每个方法都算**——
    `game_tool` 与 `memory_tool` 已于 0910 补齐（此前只有 `query_knowledge` 一条）。
    有入参就有 Req，返回结构化载荷就有 Resp；返回 None 的没有 Resp
-   （`FromHarnessToCheckpointToolSaveReq` 是先例）。
+   （`FromHarnessToGameToolResetReq` 是先例——`reset()` 返回 `None`）。
 2. **模块对外的接口模型用裸名**，不带 From/To（providers 的 `LlmCompleteReq`、
    brain 的 `ChooseOnceReq`、world 的 `PerceiveOnceResp`、harness 的 `RunResp`）——因为发起方可能换人
    （今天 harness，明天第三方），From/To 前缀是赌一个注定被换掉的名字。

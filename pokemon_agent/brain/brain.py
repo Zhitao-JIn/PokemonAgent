@@ -8,7 +8,8 @@
     reflect  把这一步整理成一条可检索的经验            （本版无模型调用）
     verify_and_summarize  校验本局 step 记忆 + 只用可信的蒸馏摘要（一次调用）  verify_llm（缺省同 judge_llm）
     plan_once  看 run 级历史 + 目标栈，问一次模型该压什么/该不该收尾  plan_llm（缺省同 judge_llm）
-                 （重试循环在 RunHarness，同步调用，跟 choose_once 同一个分工——
+                 （重试循环在 `harness/run/plan.py::ask_planner_with_retry`，同步调用，
+                 跟 choose_once 同一个分工——
                  run 级规划是"另一种要问模型的问题"，不是要接触的另一个外部
                  模块，所以不单独开一个 tool，见 `pokemon_agent/tools/__init__.py`）
 
@@ -60,8 +61,8 @@ from .interface import (
     MAX_RATIONALE,
     MAX_SEGMENTS,
     MAX_TIMES,
-    ActionFromBrain,
-    ActionSegmentFromBrain,
+    Action,
+    ActionSegment,
     EpisodeSummary,
     RunPlan,
     StepVerifyVerdict,
@@ -200,7 +201,7 @@ class Brain:
         completion = self._decide.complete(LlmCompleteReq(prompt=req.prompt))
 
         # 步骤 2：解析。
-        parsed: ActionFromBrain | None = None
+        parsed: Action | None = None
         kind = reason = ""
         try:
             # 截断要**先于**解析检查，否则它会伪装成"少了个右括号"的 ParseFailure。
@@ -213,7 +214,7 @@ class Brain:
             # `ValidationError` **不是** `AgentError` 的子类，不带上会让这次
             # 尝试之外的异常穿透。正常走不到（`_parse` 已经验过），但那套校验
             # 写了两遍且没有机制保证同步——兜住，退化成一次可统计的解析失败。
-            kind, reason = "ParseFailure", f"ActionFromBrain 字段不合法：{exc.errors()[:1]}"
+            kind, reason = "ParseFailure", f"Action 字段不合法：{exc.errors()[:1]}"
 
         # 一次模型调用 = 一条账，成功失败都留：失败的那次同样烧了 token，
         # 而 `raw` 让改进解析器之后能离线重算，不必再花钱重跑。
@@ -676,8 +677,8 @@ class Brain:
         except ValidationError as exc:
             raise ParseFailure(text, f"RunPlan 字段不合法：{exc.errors()[:1]}") from exc
 
-    def _parse(self, text: str, space: ActionSpace) -> ActionFromBrain:
-        """把 LLM 输出解析成 `ActionFromBrain`，不合法就抛 `ParseFailure` / `IllegalAction`。"""
+    def _parse(self, text: str, space: ActionSpace) -> Action:
+        """把 LLM 输出解析成 `Action`，不合法就抛 `ParseFailure` / `IllegalAction`。"""
         # 步骤 1：剥 ```json 围栏。
         stripped = _strip_json_fence(text)
 
@@ -727,7 +728,7 @@ class Brain:
             # 交给 world 的链**就是真正会发生的那条链**。
             if name == INTERACT_KEY:
                 times = 1
-            sequence.append(ActionSegmentFromBrain(name=name, times=times, rationale=rationale))
+            sequence.append(ActionSegment(name=name, times=times, rationale=rationale))
         # **多段链：中间只能是方向键，结尾允许一个 `a`。**
         #
         # 中间帧看不到，所以链体里只放"闭眼也不丢信息"的移动键。链尾不一样：
@@ -750,7 +751,7 @@ class Brain:
             if not space.contains(segment.name):
                 raise IllegalAction(segment.name, space.names)
 
-        return ActionFromBrain(
+        return Action(
             thought=self._parse_thought(text, raw),
             sequence=sequence,
         )
