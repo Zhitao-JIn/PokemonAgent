@@ -12,7 +12,7 @@
     checkpoints/<run_id>/                     （0909 起独立于 trace_data）
     ├── step/<episode_id>/<step>.state      （模拟器世界快照，二进制）
     ├── step/<episode_id>/<step>.json       （EpisodeRunState + RunState 双重
-    │                                          dump + 游标，唯一提交点）
+    │                                          dump + 游标 + 本局帧账，唯一提交点）
     └── voided-<ts>/                        （废弃局的 step checkpoint 归档）
 
 memory 侧的归档落 `memory/voided-<ts>/<kind>/`（时间戳由 MemoryTool 定），
@@ -202,7 +202,13 @@ class CheckpointTool:
     # ---- 内部 ----
 
     def _meta(self, req: FromHarnessToCheckpointToolSaveReq) -> dict:
-        """json 提交点的内容：签名三元组 + 两层快照 + 游标 + 时间。"""
+        """json 提交点的内容：签名三元组 + 两层快照 + 游标 + 本局帧账 + 时间。
+
+        帧账（`frame_event_ids`/`pending_frames`）是 v6 加的：两张表都是 harness 的
+        内存态，不带进存档，`resume()` 就查不到"哪条事件承载这一步这一帧"，恢复后
+        链首 `OBSERVE` 与第一个 store 步的 `before_frame` 一起丢图。整数键由
+        `json.dumps` 自动写成 `"<step>"`，读回时由 Pydantic 还原成整数键。
+        """
         return {
             "run_id": req.run_id,
             "episode_id": req.episode_id,
@@ -210,6 +216,8 @@ class CheckpointTool:
             "state_dump": req.state_dump,
             "run_state_dump": req.run_state_dump,
             "last_event_id": req.last_event_id,
+            "frame_event_ids": req.frame_event_ids,
+            "pending_frames": req.pending_frames,
             "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
 
@@ -250,4 +258,7 @@ class CheckpointTool:
             last_event_id=meta["last_event_id"],
             emulator_state=state_path.read_bytes(),
             saved_at=meta.get("saved_at", ""),
+            # v6 前写的档没有这两个键：空表就是"这份存档没带帧账"的准确语义。
+            frame_event_ids=meta.get("frame_event_ids", {}),
+            pending_frames=meta.get("pending_frames", {}),
         )

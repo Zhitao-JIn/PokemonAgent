@@ -1,3 +1,101 @@
+## 2026-09-11（14）—— `step` 缩成一次小 action：链内小循环 + 逐键 RAM 感知 + `stop` 分情况留痕
+
+**背景**：`harness/object_interactions.py` 的判定层只处理得了单键——判"这一键碰上了
+哪一格"要拿 `before`/`after` 两份快照加**这一个键**，而"一次决策 = 一条链"的模型下
+链的两头对不上中间是哪一按键撞的门，于是多段链一律不产出事件（判定层整段让位）。
+粒度定义、归属规则、中止范围的完整论证在
+`docs/spec/harness/PLAN_action_step_granularity.md`（v3）；本条目只记落地，以及
+落地过程中暴露出来的三处问题。
+
+**改了什么**：
+
+1. **`step` = 一个小 action（一个键）**。`EpisodeRunState` 新增
+   `plan`/`pending_presses`/`pending_stop` 三个链字段（随 checkpoint dump，恢复后
+   接着把剩下的键按完）；`think_action` 把 `plan.sequence` 按 `times` 展开成
+   "一键一段"的队列，`act` 每圈弹队首、派生一个单键 `ActionFromBrain` 交给世界。
+   一次决策的**决策调用与四路检索按链摊薄**，而 `detect_stall`/`advance_step`/
+   两个 store 每键各跑一次。
+2. **链内小循环只加一条边**：`store_object_semantic_memory` 出口按
+   `pending_presses` 是否为空分叉（回 `act` / 回 `save_checkpoint`）。节点集合不变，
+   `save_checkpoint` 仍只落在链边界——每键一份含模拟器快照的存档会让存档量乘链长，
+   而链内执行是纯 RAM 确定的，从链首存档重放能逐帧复现。
+3. **感知分两档**：链内键走 `perceive_once(ram_only=True)`（免费、确定、无模型调用、
+   不会失败），链尾那一键与**中止的那一键**做完整视觉感知。
+   `MODEL_CALL(PERCEPTION)` 条数与改动前相等（§9 验收不变量）。
+4. **`stop`：这一键的结局，分情况作废**。新枚举 `StopReason`
+   （`blocked`/`warp`/`episode_over`）+ 纯函数 `episode_utils.compute_stop()`
+   （中止范围的**唯一**出处）：撞墙只丢掉本段剩余同名键（`up×4 -> down×2` 里第 2 个
+   `up` 撞墙 → 后面的 `down` 照按），`warp`/`episode_over` 清空整条链。判定顺序是
+   `after.done`（世界没了，读数不再可信）→ `blocked` → `warp` → 步数用尽。
+   `stop` 进 `StepMemory`、进 `LOOK_AFTER` payload，并由 `STOP_NOTE` 渲染进记忆文本。
+5. **`rationale` 下沉到段**：`ActionFromBrain.rationale` 删除，
+   `ActionSegmentFromBrain` 新增 `rationale: list[str]`（1..`MAX_RATIONALE`）；链级的
+   "为什么"由 `thought` 承担（只进 trace）。`Brain._parse` 对顶层 `rationale` 报
+   `ParseFailure`（不许两个位置都能写）；新增 `MAX_SEGMENTS` 段数上限（原来无上限）。
+6. **`perceived: bool`**：RAM-only 观测显式声明"这一帧没有人看过"，
+   `StepMemory.Observation.render()` 在 `False` 时顶一行 `BLIND_NOTE`——
+   "没读过"和"读过、是空的"必须能分开。`Brain._blind()` 原样透传这个标记。
+7. **帧脱离感知**：不再挂 `MODEL_CALL`，改成**挂在产出它的那次感知所在的事件上**
+   （开局那一帧 → `OBSERVE`，之后每一帧 → 那一键的 `LOOK_AFTER`）；
+   `_frame_event_ids` 仍是"步号 → 截图"的唯一对账表。
+8. **`world.step(segments, *, settle=)`**：链中间的键不等 10 秒过场，只有链尾等
+   （那一帧要交给 `judge` 看）。
+9. **prompt 跟上**：`decide_action.md` 重写"链怎么按、什么会打断、中间帧看不到
+   什么"；`repeat_hint.md` 的成本口径从"每步一次感知调用"改成"每链一次决策 +
+   一次视觉，方向键本身不要钱"，并写明撞墙只废掉那个方向。
+
+**为什么这么改**：判定层、记忆层、停摆检测全都只认"一个键 + 前后两帧"，而
+"一次决策 = 一条链"让它们的输入对不上；把 `step` 缩到键粒度，这些现成逻辑一个都
+不用改就能覆盖链的每一步。完整论证见 `PLAN_action_step_granularity.md`。
+
+**取舍**：
+- **checkpoint 只落链边界**（§7.3）：链内不存，靠"同存档 + 同链 → 同一状态"重放。
+  代价是链内那几步的重放必须逐帧确定——这正是"链内只读 RAM"的第二个理由。
+- **`act` 从"改两处"变成"改三处"**（多扶正 `observation`）：见下面的第 1 处问题的
+  修复位置选择。不新增节点（新节点得占一条 trace 事件、要新 TraceKind），不重排图上
+  现有节点（`advance_step` 挪到 store 之后会让两个 store 拿到被扶正过的 `before`）。
+- **`stop` 渲染不受 `reason` 约束**：它是执行层机械判出来的事实，不是决策者自己的
+  说辞，所以判定器看的那一版（`reason=False`）也照摆。
+
+**落地时暴露的三处问题**（都不是设计取舍，是实现的坑）：
+
+1. **当前帧必须在链内前进。** `observation` 在每一圈里的语义是"这次按键**之前**的
+   那一帧"（两个 store 拿它当 `before`），而链内小循环不经过 `look`（只在链边界
+   扶正它）——不补这一步，链里第二个键读到的还是链首那一帧，
+   `(episode_id, step)` 从第 2 步起全错。落点定在 `act`（每一圈的开头），
+   链首那一圈幂等。**假端口核验第一次跑就抓到了它：`step 号 [0, 0, 0, 3, 4]`。**
+2. **帧只挂 `OBSERVE` 会漏掉链内键。** `look` 只在链边界跑，`OBSERVE` 因此是
+   "每条链一条"；帧要是只挂它，链中间那些步的 `before_frame`/`after_frame` 全是
+   `None`——而 §3 明确要求逐键都有，否则 `judge`/`verify` 的多模态输入成片缺图。
+   改成"帧由产出它的那次感知所在的事件承载"，`_pending_frames` 从"每一帧都过一手"
+   缩到只服务开局那一帧。
+3. **`stop` 进了字段却没进渲染。** §5 要求大脑下一步能推出"在第 3 键撞墙了"，而
+   `StepMemory.render()` 原来不带 `stop`——记忆里就只是"按了 up、画面没变"，会被
+   读成"我本来就只打算按一下"。补 `STOP_NOTE` 表 + 渲染那一行。
+
+**已知遗留**：
+- `JUDGE_HISTORY = 2` 的语义从"最近 2 步"变成"最近 2 键"，判定器时间视野缩到
+  1/链长；`max_steps` 从"决策轮数"变成"小步数"，任务定义要重标定。
+  **两条都还没做**（§7.2 / §7.4 / §8 步骤 5）。
+- "逐键存、按链读"（把一条链合并成一条渲染给大脑，压
+  `retrieve_step_episode_memory` 的 prompt 膨胀，§7.6 建议与主改动分开落地）
+  尚未做。
+- `web/` 观测台的"一条 OBSERVE 一页"变成"一条链一页"，页面语义变了，尚未跟着改。
+
+**验证**：离线假端口核验（`FakeGame`/`FakeMemory`/`FakeBrain` + 真 `TraceTool`、
+真 `Brain.reflect`、真 `compute_stop`）50 条全绿——解析契约 9 条、`compute_stop`
+8 条、整局链内小循环 33 条，含"决策只发生 3 次而按了 5 个键"、"`blocked` 只作废
+本段剩余 / `warp` 作废整条"、`settle` 只落链尾、"逐键都有截图且帧落在正确的步上
+（链内键是 RAM 帧）"、"`MODEL_CALL(PERCEPTION)` = 5"。`ruff check`/`ruff format`
+对本轮改动文件无新增问题（`brain/brain.py` 的 `I001`/`E501` 等 HEAD 就存在）。
+**真机链路核验（`experiment.real_check.*`）由用户执行，尚未跑。**
+
+**影响面**：`harness/`（`episode_harness`/`episode_utils`/`game_utils`/
+`object_interactions`/`interface`）、`brain/`（`brain`/`interface/domain/
+action_from_brain`）、`schemas/`（`memory/datastore/step_memory`、
+`harness/communication/` 两个信封）、`tools/`（`trace_render`/`game_tools`/`ports`）、
+`world/`（`pyboy_world`/`interface`）、`prompts/calls/decide_action/`。
+**既有记忆文件不用迁移**（`rationale` 形状不变，`stop`/`perceived` 都有默认值）。
 ## 2026-09-11（13）—— 修正（12）的错误：`StepMemory`/`EpisodeMemory`/`ObjectFactEvent` 搬回 `schemas/memory/`，`Observation`/`PlaceInWorld` 引用改内部类
 
 **背景**：（12）条把 `schemas/memory/datastore/*.py` 当作"数据形状归它自己模块"

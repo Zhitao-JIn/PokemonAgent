@@ -1,23 +1,25 @@
 """`EpisodeHarness` 与 `GameToolPort`（世界）交互专用的工具函数。
 
-**只放这一根依赖会用到的重试循环与记账**——跟 `brain_utils.py`/
-`memory_query_utils.py` 是同一个原则在 harness 各根依赖上各自的落地：
-互不依赖，谁的循环谁记账。
+**只放这一根依赖会用到的重试循环**——跟 `brain_utils.py`/`memory_query_utils.py` 是同一个
+原则在 harness 各根依赖上各自的落地：互不依赖，谁的循环谁重试。
+
+**账不在这里写。** 本模块只交回"每一次尝试的原始材料"（`ModelCallLog`）与观测／画面，
+落账由宿主做（`EpisodeHarness._perceive` 调 `trace_write.append_model_calls`）。规则是
+"账写在它的宿主里"，取舍与代价见 `docs/spec/harness/PLAN_graph_readability.md` §3.7.4。
 
 依赖注入的编排函数：端口是**参数**、不是 `self` 属性——调用方（`EpisodeHarness`
-的节点方法）传自己的 `self._game`/`self._trace` 进来，这里就能用假端口
-独立测试，不用起一个真的 `EpisodeHarness`。
+的节点方法）传自己的 `self._game` 进来，这里就能用假端口独立测试，不用起一个真的
+`EpisodeHarness`。
 """
 
 from __future__ import annotations
 
-from pokemon_agent.errors import PerceptionAttemptFailed, PerceptionFailure
+from pokemon_agent.errors import PerceptionAttemptFailed
 from pokemon_agent.providers import ModelCall
-from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq
-from pokemon_agent.trace import Source
+from pokemon_agent.tools.interface import GameToolPort
 from pokemon_agent.world import Observation
-from pokemon_agent.tools import GameToolPort, TraceToolPort
-from pokemon_agent.trace import TraceKind
+
+from .trace_write import ModelCallLog
 
 PERCEPTION_MAX_RETRIES = 2
 """感知重试预算：一帧最多问几次视觉模型。循环在这里不在 World。"""
@@ -25,70 +27,51 @@ PERCEPTION_MAX_RETRIES = 2
 
 def perceive_with_retry(
     game: GameToolPort,
-    trace: TraceToolPort,
-    episode_id: str,
-    step: int,
-) -> tuple[Observation, int]:
-    """反复问一次感知，直到成功或预算耗尽——**循环、端口调用、记账都在这里**，
+    *,
+    ram_only: bool = False,
+) -> tuple[Observation | None, str | None, ModelCallLog]:
+    """反复问一次感知，直到成功或预算耗尽——**循环与端口调用在这里**，
     `perceive_once()` 只负责单次尝试（见 `docs/ROADMAP.md`）。
 
-    步骤 1：问一次，失败就记一条账（`attempt` 由这里传给 req，盖章在 tool），
-    继续下一次尝试。
-    步骤 2：成功就记账，把这一帧原始画面（PNG 字节）随成功的那条 `MODEL_CALL`
-    **最后一条事件**一起落盘（一条感知一个截图文件，文件名 = 该事件的
-    event_id——截图与 trace 事件共享 id，永远递增零撞名），返回
-    `(观测, 该事件的 event_id)`——调用方用 event_id 定位截图
-    （`trace.read_screenshot`），登记"这张图是第几步的开局画面"是调用方自己的账。
-    步骤 3：预算耗尽仍没成功，升级成 `PerceptionFailure`——这一步彻底完了。
+    `ram_only=True` 时不问模型：交回的观测只有内存那半，`log` 是空的
+    （没有 `MODEL_CALL` 要记），因而**不会失败、也不会重试**。
 
-    `frame_png` 直接挂在这条 perception 的 `MODEL_CALL` 事件上：这次调用
-    实际喂给视觉模型的东西（文字 prompt + 这张截图）就该记在它真正发生的
-    地方，在这里放进 req，不绕道 `EpisodeRunState`/`look()`。调用方不用关心
-    帧字节，只要观测。**同一次感知的多条 call 事件里只有最后一条携带
-    frame_png**——它们是同一次视觉调用的拆分，画面相同，逐条内嵌只会把
-    事件文件体积翻倍。
+    步骤 1：问一次感知，失败就把这次的账收进 `log`（`attempt` 由这里定，盖章在
+    渲染层），继续下一次尝试。
+    步骤 2：成功返回 `(观测, base64 PNG, log)`——一次感知可能有多条 call，
+    逐条收进 `log`（同一个 `attempt`）。
+    步骤 3：预算耗尽返回 `(None, None, log)`——**收场归调用方**（抛
+    `PerceptionFailure`），因为账要由宿主写。
+
+    **截图从这条路径上摘下来了。** 帧和"这次模型调用"是两件事：`MODEL_CALL`
+    记的是喂给模型的东西，而链中间的键只读内存、压根没有这次调用——图要是挂在
+    它上面，那些步就永远没有图。帧改由调用方挂到产出它的那一步的事件上
+    （`perceive_after_action` 的 `AFTER_ACTION`），
+    **帧的可得性从此与"有没有人看过它"无关**。
     """
-    last_raw = ""
+    log: ModelCallLog = []
     for attempt in range(1, PERCEPTION_MAX_RETRIES + 1):
         # 步骤 1：问一次感知。
         try:
-            result = game.perceive_once()
+            result = game.perceive_once(ram_only=ram_only)
         except PerceptionAttemptFailed as exc:
-            # 步骤 2：失败，记账，进入下一次尝试。
-            last_raw = exc.call.get("raw", "")
-            trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.MODEL_CALL,
-                    episode_id=episode_id,
-                    step=step,
-                    source=Source.PERCEPTION,
-                    call=ModelCall(
+            # 步骤 2：失败，把账收进 log，进入下一次尝试。
+            raw = exc.call.get("raw", "")
+            log.append(
+                (
+                    attempt,
+                    ModelCall(
                         payload=exc.call,
                         error_kind="PerceptionParseFailure",
-                        error=last_raw,
+                        error=raw,
                     ),
-                    attempt=attempt,
                 )
             )
             continue
 
-        # 步骤 3：成功，记账（最后一条 call 事件连带这一帧原始画面一起落盘），
-        # 交回观测 + 帧事件的 event_id。
-        event_id = 0
-        calls = result.calls
-        for index, call in enumerate(calls):
-            event_id = trace.append(
-                FromHarnessToTraceToolAppendReq(
-                    kind=TraceKind.MODEL_CALL,
-                    episode_id=episode_id,
-                    step=step,
-                    source=Source.PERCEPTION,
-                    call=ModelCall(payload=call),
-                    attempt=attempt,
-                    frame_png=result.frame_png if index == len(calls) - 1 else None,
-                )
-            )
-        return result.observation, event_id
+        # 步骤 3：成功——逐条收账，交回观测 + 这一帧的画面。
+        log.extend((attempt, ModelCall(payload=call)) for call in result.calls)
+        return result.observation, result.frame_png, log
 
-    # 步骤 4：预算耗尽，升级成 PerceptionFailure。
-    raise PerceptionFailure(PERCEPTION_MAX_RETRIES, f"unparsable output: {last_raw!r}")
+    # 步骤 4：预算耗尽——材料交回调用方，由它决定怎么收场。
+    return None, None, log

@@ -20,37 +20,49 @@ import type { DraftGoal, GoalView, HumanDecision, PendingReview, SseEvent, Trace
 
 /** 主循环节点数：链上 [0, MAIN_END) 是每步必经的主循环，之后是局尾收尾链。
  *  0903 拍板给原本零事件的节点补了轻量"活动"事件（judge/action_space/retrieve/
- *  step_advance/look_after/verify_result，见 `schemas/datastore` 的 EventType），
- *  所以现在链上几乎每个节点都有自己的内容；里程碑推断只兜底 store_object
- *  （只在写了新对象时才发事件）这类条件性缺失。 */
-const MAIN_END = 15;
+ *  step/after_action/verify_result，见 `schemas/datastore` 的 EventType），
+ *  所以现在链上几乎每个节点都有自己的内容；里程碑推断只兜底
+ *  `store_object_semantic_memory`（只在写了新对象时才发事件）这类条件性缺失。
+ *  v7 之后主循环占 index 0..16（首位是 `save_checkpoint`），收尾链从 17 起。 */
+const MAIN_END = 17;
 
 /**
- * 链的相位表——与 episode harness 图（`episode_harness._compile`）的 19 个节点
- * 一一对应、顺序照抄。内容归属：四个 retrieve_* 不各自记事件，检索结果按约定
- * 在 enrich_observation 合并成一条 memory_read（`fromKey` 指向它）；store_object
- * 只在真写了对象时才发 OBJECT_MEMORY_WRITE；`note` 给无事件节点一句说明。
+ * 链的相位表——**与 episode harness 图（`episode_harness._compile`）逐条对齐**：
+ * 条数 = 21，`key` 就是 `add_node` 的字符串字面量，顺序就是 `add_node` 的书写顺序
+ * （= 执行顺序）。
+ *
+ * 这条"逐条对齐"不是约定，是断言：`scripts/check_graph_phases.py` 用 `ast` 从
+ * `_compile()` 抽出 `add_node` 的字面量列表，与本表的 `key` 列表逐条比对，不一致
+ * 就非零退出。这张表曾经停在更早的形状上两个月没人发现（`ROADMAP.md:1136` 那次
+ * `verify_and_summarize` 取代 `verify_steps`+`summarize` 只改了代码、没改前端），
+ * 所以补了这条机械核对。
+ *
+ * 内容归属（有事件 ≠ 每格一条）：四个 `retrieve_*` 不各自记事件，检索结果按约定在
+ * `merge_retrieval` 汇聚成一条 `memory_read`；`store_object_semantic_memory` 只在真
+ * 写了对象时才发 `OBJECT_MEMORY_WRITE`；`note` 给无事件节点一句说明。
  */
 const CHAIN_PHASES: { key: string; label: string; note?: string; fromKey?: string }[] = [
-  { key: "look", label: "look" },
+  { key: "save_checkpoint", label: "save_checkpoint", note: "链边界存一份（世界快照 + state + 游标）并写 CHECKPOINT_SAVE；未接 checkpoint 时空转、不写账" },
+  { key: "record_observation", label: "record_observation", note: "本链开局帧登记成 OBSERVE（带帧）；它不感知" },
   { key: "judge", label: "judge" },
   { key: "get_action_space", label: "get_action_space", note: "零成本事件：这一步允许的动作名" },
-  { key: "retrieve_step_episode_memory", label: "retrieve_step_episode_memory", note: "命中摘要（全文在 enrich_observation 的合并读）" },
-  { key: "retrieve_global_episode_memory", label: "retrieve_global_episode_memory", note: "命中摘要（全文在 enrich_observation 的合并读）" },
-  { key: "retrieve_knowledge_semantic_memory", label: "retrieve_knowledge_semantic_memory", note: "命中摘要（全文在 enrich_observation 的合并读）" },
-  { key: "retrieve_object_semantic_memory", label: "retrieve_object_semantic_memory", note: "命中摘要（全文在 enrich_observation 的合并读）" },
-  { key: "enrich", label: "enrich_observation" },
+  { key: "retrieve_step_episode_memory", label: "retrieve_step_episode_memory", note: "命中摘要（全文在 merge_retrieval 的合并读）" },
+  { key: "retrieve_global_episode_memory", label: "retrieve_global_episode_memory", note: "命中摘要（全文在 merge_retrieval 的合并读）" },
+  { key: "retrieve_knowledge_semantic_memory", label: "retrieve_knowledge_semantic_memory", note: "命中摘要（全文在 merge_retrieval 的合并读）" },
+  { key: "retrieve_object_semantic_memory", label: "retrieve_object_semantic_memory", note: "命中摘要（全文在 merge_retrieval 的合并读）" },
+  { key: "merge_retrieval", label: "merge_retrieval", note: "四路汇聚：折 object 进 facts + 记一条合并读 MEMORY_READ" },
   { key: "think_action", label: "think_action" },
   { key: "act", label: "act" },
-  { key: "look_after_action", label: "look_after_action" },
+  { key: "perceive_after_action", label: "perceive_after_action", note: "取帧 + 判读；写 AFTER_ACTION（带帧）；链尾/中止键另有 MODEL_CALL(PERCEPTION)" },
+  { key: "apply_stop", label: "apply_stop", note: "按 stop 的作废范围截队；只在真的丢了键时写 ACTION_TRUNCATED" },
   { key: "detect_stall", label: "detect_stall" },
-  { key: "advance_step", label: "advance_step", note: "纯步数自增，无 trace 事件" },
-  { key: "store_step", label: "store_step_episode_memory" },
-  { key: "store_object", label: "store_object_semantic_memory", note: "只在写了新对象时发 OBJECT_MEMORY_WRITE" },
-  { key: "rv_step_memory", label: "retrieve_verify_step_memory", note: "取本局 step 记忆；无 entries 时直接跳 summarize" },
-  { key: "rv_knowledge", label: "retrieve_verify_knowledge", note: "校验用知识检索——仅 judge 判 done 的窗口出现" },
-  { key: "verify_steps", label: "verify_steps" },
-  { key: "summarize", label: "summarize" },
+  { key: "store_step_episode_memory", label: "store_step_episode_memory" },
+  { key: "store_object_semantic_memory", label: "store_object_semantic_memory", note: "只在写了新对象时发 OBJECT_MEMORY_WRITE" },
+  { key: "close_step", label: "close_step", note: "扶正当前帧 + 步号加一；链内小循环的分叉出口" },
+  { key: "retrieve_verify_step_memory", label: "retrieve_verify_step_memory", note: "取本局 step 记忆；无 entries 时直接跳 verify_and_summarize" },
+  { key: "retrieve_verify_knowledge", label: "retrieve_verify_knowledge", note: "校验用知识检索——仅 judge 判 done 的窗口出现" },
+  { key: "verify_and_summarize", label: "verify_and_summarize", note: "一次调用问完两件事：先逐条判可信、再只用可信的蒸馏跨局摘要" },
+  { key: "close_episode", label: "close_episode", note: "本局收尾：算 outcome（success / steps / reason）并写 EPISODE_END" },
 ];
 
 /**
@@ -68,14 +80,18 @@ function phaseKeyOf(t: TraceEvent): string | null {
   const kind = String(t.payload.kind ?? "");
   switch (t.type) {
     case "lifecycle":
-      return kind === "step" ? "advance_step" : null;
+      if (kind === "step") return "close_step";
+      if (kind === "checkpoint_save") return "save_checkpoint";
+      // 本局结算由 `close_episode` 写（v8 之前这一步在图外、没有节点可归）。
+      if (kind === "episode_end") return "close_episode";
+      return null;
     case "view":
-      return kind === "frame" ? "look" : kind === "after" ? "look_after_action" : null;
+      return kind === "frame" ? "record_observation" : kind === "after" ? "perceive_after_action" : null;
     case "llm_outcome":
       return (
         (kind === "intent" && "think_action") ||
         (kind === "verdict" && "judge") ||
-        (kind === "audit" && "verify_steps") ||
+        (kind === "audit" && "verify_and_summarize") ||
         null
       );
     case "act":
@@ -83,12 +99,13 @@ function phaseKeyOf(t: TraceEvent): string | null {
         (kind === "space" && "get_action_space") ||
         (kind === "executed" && "act") ||
         (kind === "stall" && "detect_stall") ||
+        (kind === "truncated" && "apply_stop") ||
         null
       );
     case "memory_io":
       switch (kind) {
         case "read_merge":
-          return "enrich";
+          return "merge_retrieval";
         case "read_step":
           return "retrieve_step_episode_memory";
         case "read_global":
@@ -98,15 +115,15 @@ function phaseKeyOf(t: TraceEvent): string | null {
         case "read_object":
           return "retrieve_object_semantic_memory";
         case "read_verify_steps":
-          return "rv_step_memory";
+          return "retrieve_verify_step_memory";
         case "read_verify_knowledge":
-          return "rv_knowledge";
+          return "retrieve_verify_knowledge";
         case "write_step":
-          return "store_step";
+          return "store_step_episode_memory";
         case "write_object":
-          return "store_object";
+          return "store_object_semantic_memory";
         case "write_episode":
-          return "summarize";
+          return "verify_and_summarize";
         default:
           return null;
       }
@@ -119,11 +136,11 @@ function phaseKeyOf(t: TraceEvent): string | null {
         case "decision":
           return "think_action";
         case "perception":
-          return "look_after_action";
+          return "perceive_after_action";
         case "verify":
-          return "verify_steps";
+          return "verify_and_summarize";
         case "memory":
-          return "summarize";
+          return "verify_and_summarize";
         default:
           return null;
       }
@@ -132,7 +149,7 @@ function phaseKeyOf(t: TraceEvent): string | null {
   }
 }
 
-/** 链窗口：一次 look（view/frame）起、到下一次 look 前的事件，归到各节点。 */
+/** 链窗口：一条 OBSERVE（view/frame）起、到下一条前的事件，归到各节点。 */
 interface ChainWindow {
   /** 第几局——SSE 的 trace 不带 episode_id，只能数窗口前的 lifecycle/episode_start 事件。 */
   episodeNumber: number;
@@ -142,10 +159,10 @@ interface ChainWindow {
   /** 主循环里最远走到哪：有事件的节点的最大主循环下标（里程碑推断的基准）。 */
   furthestMain: number;
   /** 局尾节点点亮情况（链上每节点现在都有自己的事件，靠 presence 即可）。 */
-  endSeen: { rv_step: boolean; rv_knowledge: boolean; verify: boolean; summarize: boolean };
+  endSeen: { rv_step: boolean; rv_knowledge: boolean; verify: boolean };
 }
 
-/** 把一段 trace 事件（一次 look 的窗口）归到各节点，算元信息。 */
+/** 把一段 trace 事件（一条 OBSERVE 的窗口）归到各节点，算元信息。 */
 function assembleWindow(
   segment: TraceEvent[],
   episodeNumber: number,
@@ -167,20 +184,19 @@ function assembleWindow(
     phases,
     furthestMain,
     endSeen: {
-      rv_step: (phases.rv_step_memory?.length ?? 0) > 0,
-      rv_knowledge: (phases.rv_knowledge?.length ?? 0) > 0,
-      verify: (phases.verify_steps?.length ?? 0) > 0,
-      summarize: (phases.summarize?.length ?? 0) > 0,
+      rv_step: (phases.retrieve_verify_step_memory?.length ?? 0) > 0,
+      rv_knowledge: (phases.retrieve_verify_knowledge?.length ?? 0) > 0,
+      verify: (phases.verify_and_summarize?.length ?? 0) > 0,
     },
   };
 }
 
 /**
- * 把事件流切成**每步一页**的链窗口数组：每个 look（view/frame）开一页，收
- * 到下一次 look 前。全部保留、不丢弃——用户可翻回任意历史步看它当时走过
- * 图的哪些节点（0903 拍板：不再"每新 look 清空"，改步历史翻页）。
+ * 把事件流切成**每链一页**的链窗口数组：每条 OBSERVE（view/frame）开一页，收
+ * 到下一条前。全部保留、不丢弃——用户可翻回任意历史链看它当时走过
+ * 图的哪些节点（0903 拍板：不再"每新 OBSERVE 清空"，改历史翻页）。
  *
- * 一次扫描完成切分：只在 look 边界断开，事件本身不复制进多个窗口。
+ * 一次扫描完成切分：只在 OBSERVE 边界断开，事件本身不复制进多个窗口。
  */
 function buildChainWindows(events: SseEvent[]): ChainWindow[] {
   const traces: TraceEvent[] = [];
@@ -190,7 +206,7 @@ function buildChainWindows(events: SseEvent[]): ChainWindow[] {
     if (ev.data.type === "view" && ev.data.payload.kind === "frame") lookIdx.push(traces.length);
     traces.push(ev.data);
   }
-  if (lookIdx.length === 0) return []; // 还没有任何 look，链无从画起
+  if (lookIdx.length === 0) return []; // 还没有任何 OBSERVE，链无从画起
   const wins: ChainWindow[] = [];
   let epStart = 0; // 当前窗口起点前有几个 episode_start（窗口序号 = 局号 - 1 的累计）
   let epCount = 0;
@@ -203,8 +219,8 @@ function buildChainWindows(events: SseEvent[]): ChainWindow[] {
       if (t.type === "lifecycle" && t.payload.kind === "episode_start") epCount++;
     }
     // 每局的 episode_start 事件（`kind === "episode_start"`）在该局第一次
-    // look 之前就已经写进 trace（`EpisodeHarness._begin` 先发 episode_start
-    // 再进 look 节点）——所以扫到这一步时 epCount 已经把"当前正在跑的这一
+    // OBSERVE 之前就已经写进 trace（`EpisodeHarness._begin` 先发 episode_start
+    // 再进 record_observation 节点）——所以扫到这一步时 epCount 已经把"当前正在跑的这一
     // 局"算进去了，是正确的 1-based 局号，不需要再 +1。原来的 `epCount + 1`
     // 让所有局号整体多算一个：第 1 局的第一步显示成"第 2 局"（0903 引入，
     // 用户复现报告"直接从第2局开始"，实测确认）。
@@ -630,7 +646,7 @@ function HumanNotePanel(props: { runId: string | null }) {
 }
 
 /**
- * 当前步轨迹链（步历史翻页）：每步一页，页 = 该步 look 起的事件归到 19 个节点。
+ * 当前链轨迹链（历史翻页）：每条链一页，页 = 该条 OBSERVE 起的事件归到 20 个节点。
  * 页标签栏列出全部历史步（局·step），点标签切到那一页；没有手动翻页时自动
  * 跟随最新页。链节点点击钉住看内容、再点取消；翻页时清空钉住。
  */
@@ -638,7 +654,7 @@ function ChainPanel(props: { events: SseEvent[] }) {
   const { events } = props;
   const wins = useMemo(() => buildChainWindows(events), [events]);
   // page = 用户翻到第几页（wins 下标）；null = 自动跟随最新页。手动翻页后停
-  // 在那一页（新 look 不打断阅读），按 End 或点"回到最新"跳回。
+  // 在那一页（新 OBSERVE 不打断阅读），按 End 或点"回到最新"跳回。
   const [page, setPage] = useState<number | null>(null);
   // pinned = 用户点过哪个节点；null = 自动跟随。翻页时清空。
   const [pinned, setPinned] = useState<string | null>(null);
@@ -675,7 +691,7 @@ function ChainPanel(props: { events: SseEvent[] }) {
     return (
       <div style={styles.subPanel}>
         <h2 style={styles.section}>当前步轨迹</h2>
-        <div style={styles.placeholder}>等第一个 look…</div>
+        <div style={styles.placeholder}>等第一条观测…</div>
       </div>
     );
   }
@@ -703,10 +719,9 @@ function ChainPanel(props: { events: SseEvent[] }) {
   const litOf = (key: string, idx: number): boolean => {
     if (idx < MAIN_END) return idx <= win.furthestMain;
     return (
-      (key === "rv_step_memory" && win.endSeen.rv_step) ||
-      (key === "rv_knowledge" && win.endSeen.rv_knowledge) ||
-      (key === "verify_steps" && win.endSeen.verify) ||
-      (key === "summarize" && win.endSeen.summarize)
+      (key === "retrieve_verify_step_memory" && win.endSeen.rv_step) ||
+      (key === "retrieve_verify_knowledge" && win.endSeen.rv_knowledge) ||
+      (key === "verify_and_summarize" && win.endSeen.verify)
     );
   };
 
@@ -800,7 +815,7 @@ function ChainPanel(props: { events: SseEvent[] }) {
           {shownEvents.length > 0 ? (
             <pre style={styles.rawBlock}>{raw}</pre>
           ) : (
-            <div style={styles.placeholder}>该节点无独立 trace 事件（纯本地计算 / 合并读见 enrich_observation）</div>
+            <div style={styles.placeholder}>该节点无独立 trace 事件（纯本地计算 / 合并读见 merge_retrieval）</div>
           )}
         </div>
       )}

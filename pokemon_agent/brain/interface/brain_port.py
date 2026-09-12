@@ -32,9 +32,7 @@ from pokemon_agent.schemas.memory import StepMemory
 class BrainPort(Protocol):
     """Harness 认识的大脑。"""
 
-    def choose_once(
-        self, req: ChooseOnceReq
-    ) -> ChooseOnceResp:
+    def choose_once(self, req: ChooseOnceReq) -> ChooseOnceResp:
         """一次决策尝试：问一次模型、解析。**不重试**——重试循环在 Harness 手里
         （见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"）。
 
@@ -68,7 +66,8 @@ class BrainPort(Protocol):
         """把这一步整理成一条可检索的经验。
 
         req：打包前后两帧观测和这次的动作——同其余三个方法，只收一个 req。
-        前置条件：req.action.rationale 非空。
+        前置条件：req.action 是单键动作（一段、times=1，连按已在执行层展开），
+            该段的 rationale 非空。
         后置条件：返回的 entry 内容完整；episode_id 留空由 Harness 盖章；本方法不写库。
         """
         ...
@@ -92,9 +91,7 @@ class BrainPort(Protocol):
         """
         ...
 
-    def verify_and_summarize(
-        self, req: VerifyAndSummarizeReq
-    ) -> VerifyAndSummarizeResp:
+    def verify_and_summarize(self, req: VerifyAndSummarizeReq) -> VerifyAndSummarizeResp:
         """校验本局 step 记忆哪些可信，只用可信的蒸馏成一条跨局摘要——一次
         调用问完两件事（见
         `docs/ROADMAP.md`"verify_steps 与 summarize 合并"一条）。

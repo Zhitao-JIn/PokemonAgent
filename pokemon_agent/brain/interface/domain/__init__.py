@@ -7,7 +7,13 @@ pydantic），可以放心立即加载。
 
 from __future__ import annotations
 
-from .action_from_brain import MAX_RATIONALE, MAX_TIMES, ActionFromBrain, ActionSegmentFromBrain
+from .action_from_brain import (
+    MAX_RATIONALE,
+    MAX_SEGMENTS,
+    MAX_TIMES,
+    ActionFromBrain,
+    ActionSegmentFromBrain,
+)
 from .episode_summary import EpisodeSummary
 from .goal_for_brain import GoalForBrain
 from .run_plan import RunPlan
@@ -16,6 +22,7 @@ from .task_for_brain import TaskForBrain
 
 __all__ = [
     "MAX_RATIONALE",
+    "MAX_SEGMENTS",
     "MAX_TIMES",
     "ActionFromBrain",
     "ActionSegmentFromBrain",

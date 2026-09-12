@@ -30,7 +30,7 @@ from pokemon_agent.providers import VisionProvider
 from pokemon_agent.schemas.providers import VisionDescribeReq
 
 from .frame_slot import FrameSlot
-from .interface import OVERLAY_ACTIONS, Facts, Observation, Perceived, ScreenState
+from .interface import OVERLAY_ACTIONS, Facts, Observation, Perceived, ScreenState, TerrainMap
 from .interface.domain import terrain_legend
 from .ram import read_terrain
 
@@ -48,6 +48,7 @@ class _Task:
     success_criteria: str
     max_steps: int
     initial_state_hint: str = ""
+
 
 ALL_BUTTONS: tuple[str, ...] = ("a", "b", "up", "down", "left", "right", "start", "select")
 """世界支持的全部动作，**与状态无关**（`WorldPort.all_actions()` 的契约）。
@@ -116,6 +117,18 @@ def _status_line(s: ScreenState, cursor: str = "") -> str:
         cur = f"，光标在 {cursor}" if cursor else "，光标读不出"
         bits.append(f"可选项：{'/ '.join(s.options)}{cur}")
     return "".join(bits)
+
+
+def _ram_status(terrain: TerrainMap) -> str:
+    """纯 RAM 观测的状态行。
+
+    **不写"你在野外"这类场景词**：那是视觉模型的判断，这一档没读过它——
+    编一句出来就是在假观测上做决策。
+
+    给纯内存的那一帧压出一句话。
+    """
+    facing = f"，朝向 {terrain.facing}" if terrain.facing else ""
+    return f"（这一帧只读了内存）{terrain.place().render()}{facing}"
 
 
 class PyBoyWorld:
@@ -267,21 +280,24 @@ class PyBoyWorld:
         """
         return list(ALL_BUTTONS)
 
-    def step(self, segments: list[tuple[str, int]]) -> None:
-        """按完整条动作链，推进固定帧数。**不感知**——链尾那一帧由 Harness
-        调 `perceive_once()` 拿。
+    def step(self, segments: list[tuple[str, int]], *, settle: bool = True) -> None:
+        """按下去，推进固定帧数。**不感知**——之后那一帧由 Harness 调
+        `perceive_once()` 拿（链中间的键走 `ram_only` 那一档）。
 
         segments：`(按键名, 连按次数)` 的列表——`ActionFromBrain.sequence`
             拆开的裸字段，world 不关心 `thought`/`rationale` 这些字段。
+            执行层恒传单键（一段、一次）：连按已经在 Harness 那边展开。
+        settle：按完要不要给世界一段无输入演化时间（见步骤 3）。
         前置条件：每一段的按键都在 all_actions() 中。
 
-        **一次决策 = 一次感知。** 段与段之间不感知：每次感知是一次视觉模型调用，
-        `up×4 -> down×2` 要是每按一次感知一次，一步就是六次调用、十几秒，
-        而中间那五帧没有任何会被用到的信息——多段链按规则只能是移动键。
+        **谁决定感知频率，谁承担代价。** 这里只负责"按到位 + 可选地等世界自己
+        走完"，一次调几个键由调用方决定；`up×4 -> down×2` 拆成 6 次调用时，
+        中间那 5 次调用方只读内存、不烧视觉模型——那个取舍在 Harness 的循环
+        结构里，不在这。
 
         步骤 1：校验每一段按键都合法。
         步骤 2：逐段按下、推进。
-        步骤 3：整条链按完，给世界一段无输入演化时间，再交回控制权。
+        步骤 3：`settle` 为真时给世界一段无输入演化时间，再交回控制权。
         """
         assert self._task is not None, "step() before reset()"
         assert not self._closed, "step() called after the window was closed"
@@ -298,7 +314,8 @@ class PyBoyWorld:
                 self._pyboy.button(name, delay=PRESS_FRAMES)
                 self._tick(WITHIN_ACTION_FRAMES)
 
-        # 步骤 3。**按完之后给世界 10 秒自己演化，再交回控制权。**
+        # 步骤 3。**按完之后给世界 10 秒自己演化，再交回控制权——`settle=False`
+        # 就不等。**
         #
         # 这一段里不按任何键，纯 tick。它等的是**按键按下去之后才开始、
         # 而且不需要再按键就会自己走完**的那些过程：换图的淡入淡出、
@@ -307,12 +324,19 @@ class PyBoyWorld:
         # 填 scene 和 fields，而**那一帧对应的状态在下一步已经不存在了**，
         # 决策和判定都建立在一个不再为真的世界上。
         #
+        # **链中间的键不等。** 它们只读内存判"位置动没动、换没换图"，而那两件事
+        # 只取决于按键自己推进了多少帧，不取决于过场走完没有；等它反而是白等。
+        # 链尾（和单键动作）必须等——那一帧要交给 `judge` 看。
+        #
         # watch 模式下按真实速度演化：过场动画值得被看到，而不是
         # 瞬间跳变；无头模式不限速，这 10 秒游戏时间的 tick 本身是瞬间的。
-        self._tick(AFTER_ACTION_FRAMES)
+        if settle:
+            self._tick(AFTER_ACTION_FRAMES)
 
-    def perceive_once(self) -> Perceived:
-        """感知当前这一帧，**只问一次视觉模型，不重试**。
+    def perceive_once(self, *, ram_only: bool = False) -> Perceived:
+        """感知当前这一帧。
+
+        `ram_only=False`（缺省）：**只问一次视觉模型，不重试**。
 
         调用方（`EpisodeHarness`）在 `reset()`/`step()` 之后调它拿观测；
         重试预算与循环归调用方管（见 `docs/ROADMAP.md` "重试循环该不该从
@@ -331,18 +355,27 @@ class PyBoyWorld:
         的账）。**不返回一个「空白状态」兜底**——那会让大脑基于假观测决策，
         而且这类失败在 replay 里必须能被统计到。
 
+        `ram_only=True`：**压根不问模型**，只读内存里确定的那几样，返回一份
+        `perceived=False` 的观测。链中间的键用这一档——它们只需要判"位置动没动、
+        换没换图"，而那两件事内存直接答得出；为此烧一次视觉调用买的全是用不上的
+        信息（场景、对话）。
+
         步骤 1：截当前画面、读地形（确定性，不是模型读出来的）。
-        步骤 2：问一次视觉模型，解析不出来就把账封进异常抛出去。
-        步骤 3：解析出来了，拼成完整观测交回去。
+        步骤 2：只读档位到此为止；否则问一次视觉模型，解析不出来就把账封进异常。
+        步骤 3：拼成观测交回去。
         """
         assert self._task is not None, "perceive_once() before reset()"
 
         # 步骤 1。
         png = self._frame_png()
         terrain = read_terrain(self._pyboy.memory)
-        prompt = self._prompt.render(known_map=terrain.render(), terrain_legend=terrain_legend())
 
-        # 步骤 2。
+        # 步骤 2：纯内存档位。
+        if ram_only:
+            return self._ram_observe(terrain, png)
+
+        # 步骤 3：问一次视觉模型。
+        prompt = self._prompt.render(known_map=terrain.render(), terrain_legend=terrain_legend())
         # images 存 base64 字符串（与 `StepMemory.before_frame`/`after_frame`
         # 统一格式，见该字段文档）；这里是唯一产出原始字节的地方，编码就在这
         # 做——下游不用关心谁该编码。
@@ -362,7 +395,7 @@ class PyBoyWorld:
         if screen is None:
             raise PerceptionAttemptFailed(call)
 
-        # 步骤 3。
+        # 步骤 4：把"内存读出来的地形"和"模型读出来的屏幕"拼成一份观测。
         overlay, text = screen.overlay, screen.dialog_text.strip()
 
         # **说有对话框却一个字都没抄出来 = 它把别的东西看成对话框了。**
@@ -431,9 +464,43 @@ class PyBoyWorld:
             # "这一局该不该结束"/"任务完不完成"归 `EpisodeRunState.done`/`.success`
             # ——世界压根不知道目标是什么，不给恒为 False 的占位值。
             done=self._closed,
+            # 这一档问过视觉模型了，走的是"看"。
+            perceived=True,
+        )
+        return Perceived(observation=obs, calls=[call], frame_png=base64.b64encode(png).decode())
+
+    def _ram_observe(self, terrain: TerrainMap, png: bytes) -> Perceived:
+        """只读内存的观测——**这一档不调视觉模型**。
+
+        内存答得出的：坐标、朝向、地标、通行图、地图编号（读错地址会给出结构
+        可疑的值，但不存在"看错"）。内存答不出的：场景、叠加层、对话、概况——
+        那几样**留空并标 `perceived=False`**，它们不是"读出来是空的"。
+
+        **截图照截**：帧的可得性与"有没有人看过它"无关。链中间的键也要有图，
+        否则判定器/校验器拿到的历史会成片缺帧——换图不该改帧的可得性。
+
+        交回一份只有内存那半的观测。
+        """
+        facts = Facts(
+            where=terrain.place().render(),
+            facing=terrain.facing or "",
+            neighbors=terrain.render_neighbors(),
+            landmarks=terrain.landmarks(),
+            walk_map=terrain.render(),
+            map_id=terrain.map_id,
         )
         return Perceived(
-            observation=obs, calls=[call], frame_png=base64.b64encode(png).decode()
+            observation=Observation(
+                # step 由 Harness 盖章，这里只给占位值（同完整感知那一档）。
+                step=0,
+                place=terrain.place(),
+                status=_ram_status(terrain),
+                facts=facts,
+                done=self._closed,
+                perceived=False,
+            ),
+            calls=[],
+            frame_png=base64.b64encode(png).decode(),
         )
 
     # ---- 内部 ----
@@ -507,7 +574,7 @@ class PyBoyWorld:
         """无输入推进 N 帧——世界自己演化（音乐、动画、NPC 走动），不感知。
 
         决策等待期间的 evolve 已经从 harness 里去掉了（决策改成同步调用，
-        见 `harness/utils.py` 的 `choose_with_retry`）——无头模式下世界不
+        见 `harness/brain_utils.py` 的 `choose_with_retry`）——无头模式下世界不
         限速，演化填充空闲省不出时间，异步等待反而是多余的复杂度。这个方法
         仍是 `WorldPort` 契约的一部分，只是暂时没有调用方；world 只负责按
         `speed`（watch 时才限速，无头不限速）演化，不管调用方是谁。

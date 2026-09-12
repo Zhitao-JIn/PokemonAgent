@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from .interface import (
     MAX_RATIONALE,
+    MAX_SEGMENTS,
     MAX_TIMES,
     ActionFromBrain,
     ActionSegmentFromBrain,
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "MAX_RATIONALE",
+    "MAX_SEGMENTS",
     "MAX_TIMES",
     "ActionFromBrain",
     "ActionSegmentFromBrain",

@@ -43,7 +43,7 @@ def main() -> None:
         FromHarnessToMemoryToolVoidMemoryAfterReq,
     )
     from pokemon_agent.schemas.memory import EpisodeMemory, StepMemory
-    from pokemon_agent.schemas.world import ObservationFromWorld, PlaceInWorld
+    from pokemon_agent.world import PlaceInWorld
     from pokemon_agent.tools import MemoryTool
 
     eid = f"memcheck-{time.strftime('%m%d-%H%M%S')}"
@@ -59,11 +59,25 @@ def main() -> None:
     print(f"[1/7] MemoryTool 就绪（eid={eid}，临时目录 {tmp}）", flush=True)
 
     def place(x: int, y: int) -> PlaceInWorld:
+        """世界侧的格子真身——按格查事件、void 这些消费方要的就是 `world.PlaceInWorld`。"""
         return PlaceInWorld(map_id=40, x=x, y=y)
 
-    def obs(step: int, x: int, y: int) -> ObservationFromWorld:
-        return ObservationFromWorld(
-            step=step, place=place(x, y), status="测试桩：站在道路上", facts={}, done=False
+    def snapshot(x: int, y: int) -> dict[str, int]:
+        """`PlaceInWorld` 拍平成裸字段，喂给记忆侧各自声明的快照 `Place` 类。
+
+        记忆模型**不引用** `world.PlaceInWorld`（模块间零依赖），只声明形状一致的
+        内部类型；桥梁就是这一下 `model_dump()`——生产路径同款（`Brain._snapshot()`）。
+        直接把 `PlaceInWorld` 实例丢进去会被 pydantic 拒收。
+        """
+        return place(x, y).model_dump()
+
+    def obs(step: int, x: int, y: int) -> StepMemory.Observation:
+        return StepMemory.Observation(
+            step=step,
+            place=snapshot(x, y),
+            status="测试桩：站在道路上",
+            facts={},
+            done=False,
         )
 
     # ---- 路径 1：episodic 写读回环 ----
@@ -101,8 +115,8 @@ def main() -> None:
             episode_id=eid,
             run_id=run_id,
             step=step,
-            actor_place=place(10, 10),
-            place=place(11, 10),
+            actor_place=snapshot(10, 10),
+            place=snapshot(11, 10),
             kind="sign",
             button="a",
         )
@@ -118,7 +132,9 @@ def main() -> None:
         FromHarnessToMemoryToolQueryObjectEventsAtReq(place=place(11, 10))
     ).events
     assert len(by_place) == 3, f"按格读回应得 3 条，实为 {len(by_place)}"
-    assert memory.query(place(99, 99)) == [], "空格不应返回事件"
+    assert not memory.query_object_events_at(
+        FromHarnessToMemoryToolQueryObjectEventsAtReq(place=place(99, 99))
+    ).events, "空格不应返回事件"
     print("[3/7] 路径 2 object：3 条追加 → 按图/按格读回 PASS", flush=True)
 
     # ---- 路径 3：知识库混合检索（真实知识库 + 真实 reranker）----

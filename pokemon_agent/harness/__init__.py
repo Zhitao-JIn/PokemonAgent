@@ -8,10 +8,14 @@
 - `episode_harness.py`：`EpisodeHarness`——子 agent，解栈顶一个 goal
 - `run_data_center.py`：`RunDataCenter` / `DataCenterReviewer`——前后端交互中间层
 - `auto_reviewer.py`：`AutoContinueReviewer`——不注入 reviewer 时的默认放行者
-- `episode_utils.py`/`run_utils.py`：图控制本身用到的纯函数，不绑定任何一根依赖
-- `game_utils.py`/`brain_utils.py`/`memory_query_utils.py`/`run_plan_utils.py`：
-  episode/run 两级图分别与 game/brain/memory/plan 各根依赖交互专用的重试与
-  记账工具——一根依赖一个文件，都不进出口
+- `game_utils.py`/`brain_utils.py`/`run_plan_utils.py`：各为一根依赖跑重试循环，
+  只交回 `ModelCallLog`、**不写账**（"账写在它的宿主里"）
+- `episode_utils.py`/`run_utils.py`/`memory_query_utils.py`：图算法与检索 query
+  串，不绑任何端口
+- `trace_write.py`：写账共用件，上面三个重试循环的宿主都走它，两层图共用
+- `object_interactions.py`：按键 → 物体交互事件的判定层（只有 episode 图用）
+- 上面那些散件的归属（哪一层图 × 绑不绑端口）见
+  `docs/spec/harness/SPEC.md` §1.8；都不进出口
 
 本文件是统一出口：对外只从这里 import；包内模块之间走相对 import。
 

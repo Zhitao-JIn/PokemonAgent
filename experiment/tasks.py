@@ -6,7 +6,7 @@
 稳定之后应该挪进 `docs/spec/`。
 
 下面每一条都是撞出来的，不是推演的。judge 的处境要先记住：它只看得到
-**当前这一帧** + 本局最近 3 步的快照，看不到 `walk_map`/`landmarks`/跨局记忆，
+**当前这一帧** + 本局最近 2 次决策（链）的快照，看不到 `walk_map`/`landmarks`/跨局记忆，
 拿不到决策者的任何说辞，而且**默认判 false**（判错成"完成"的代价远大于判错成
 "没完成"）。所有规则都是这个处境的推论。
 
@@ -42,7 +42,7 @@ goal 里一旦有 criteria 覆盖不到的东西，judge 就会去找它的证�
 ## 4. 分清判据问的是**事件**还是**状态**
 
 - **事件**（说过话、看过招牌、打出过招式）：问的是发生过没有，证据可能在前几步
-  的快照里，judge 有 3 步历史可查。
+  的快照里，judge 有最近 2 次决策（链）的历史可查。
 - **状态**（在哪张地图、室内还是野外、身上有什么）：只看当前这一帧，历史不算数。
 
 同一条 criteria 里混着两类，judge 会拿错的那套规则去核对。
@@ -57,7 +57,7 @@ criteria 要"仍停留在商店菜单"）。这类任务**无论 agent 做什么
 
 ## 6. 别把计数写进判据
 
-「逐句推进**至少三段**对话」「浏览**至少两个**商品」——judge 只有 3 步历史，
+「逐句推进**至少三段**对话」「浏览**至少两个**商品」——judge 只有最近 2 次决策的历史，
 数不了，只能猜。要计数就换成一个终局状态：对话推完的样子是
 「历史里出现过对话文字，且这一帧 overlay 不再是 dialog」。
 
@@ -110,7 +110,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.brain import TaskForBrain
+from pokemon_agent.brain import TaskForBrain
 
 
 class TaskChain(BaseModel):
@@ -128,7 +128,21 @@ class TaskChain(BaseModel):
 
 
 def knowledge_recall_tasks(max_steps: int = 15) -> list[TaskChain]:
-    """返回 knowledge 召回实验任务链；单任务统一表示为单节点链。"""
+    """返回 knowledge 召回实验任务链；单任务统一表示为单节点链。
+
+    ## `max_steps` 现在数的是**键**（2026-09-11 重标定）
+
+    粒度下沉之后 `step` = 一次小 action（一个键），而它以前是"一次决策"：老口径
+    15 意味着最多 15 轮决策，新口径 15 意味着**最多在游戏里按 15 个键**。
+
+    **数字没动，动的是它是什么，理由是实测**——09-11 四次真机 run 里每一次决策
+    交出的 `press_count` **全是 1**（模型还没用起连按），所以同一个 15 在这批任务上
+    与老口径等价；把"按了多少键"当计价单位，换来的是它不随链长波动（引擎里
+    模型调用与感知都摊在链首，键本身几乎不花钱，真正贵的是决策轮数）。
+
+    **什么时候要按倍数上调**：真机上量到平均链长 ≥ 2（同一批任务、同一份
+    `repeat_hint`）之后，按 `15 × 平均链长` 调，否则链一长、同一条任务能走的格子数
+    就按链长缩水。判据留在 `PLAN_action_step_granularity.md` §7.2。"""
     cases = (
         (
             "wild_encounter",

@@ -1,8 +1,26 @@
 # Harness 技术规格说明
 
-源文件：`pokemon_agent/harness/harness.py`
+> **现状（2026-09-11）**：
+>
+> - **源文件**：`pokemon_agent/harness/episode_harness.py`（`EpisodeHarness` 类），
+>   同目录还有 run 级的 `run_harness.py` 与 `brain_utils.py` / `game_utils.py` /
+>   `memory_query_utils.py` / `run_plan_utils.py` / `trace_write.py`。
+>   **0902 版本文档写的那份 `harness.py` 已经不存在。**
+> - **图**：一局 **20** 个节点，状态载体 `EpisodeRunState`，LangGraph `StateGraph`；
+>   两条分叉边 + 一条链内小循环。**权威描述在
+>   `pokemon_agent/harness/interface/episode_harness_port.py` 的模块 docstring**
+>   ——那里与代码同文件、离 `add_node` 最近，并且被 `scripts/check_graph_phases.py`
+>   与观测台相位表（`web/src/App.tsx` 的 `CHAIN_PHASES`）机械核对。
+> - **状态类**：`EpisodeRunState`，不再是 `LoopState`。
+> - **逐节点对照表**（改哪处 state / 写哪条事件 / 一句话）：
+>   `docs/spec/harness/PLAN_graph_readability.md` §4。
+> - **本文档怎么读**：§2/§3 已按现状重写；§1/§4/§5/§6/§7/§8 保留 0902 原文并在节首
+>   标注——那些节里"为什么这样设计"的论证（唯一性规则、`outcome` 为什么不进 state、
+>   记账为什么跟着返回值走）与图有 6 个还是 20 个节点无关，重写等于把历史论证丢掉。
+>   订正范围与依据见 `docs/spec/harness/PLAN_graph_readability.md` §1.2。
 
-本规格基于源文件的实现与模块内嵌的设计说明整理，目标是"仅凭本文档即可复现出与源码一致的图结构与事件流"。
+本规格基于源文件的实现与模块内嵌的设计说明整理，目标是让读者不用逐行读代码就能看懂
+这一层的结构与事件流。
 
 > **不再标注行号。** 上一版每个小节都挂着 `harness.py:295-334` 这样的坐标，
 > 一次重构之后全部失效，而失效的坐标比没有坐标更糟——它会把人带到错误的地方。
@@ -11,6 +29,8 @@
 ---
 
 ## 1. 模块定位与设计哲学
+
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
 
 ### 1.1 为什么叫 Harness——一次改名的历史
 
@@ -64,9 +84,85 @@ Harness 这一侧只承担一件事：**权限失败不能让这一局从 trace 
 
 六件套目前有 trace 和权限确认（后者只到"装饰器 + 控制台审批"这一步）；缺沙箱、成本上限、checkpoint、replay。
 
+> **订正 2026-09-12**：这句里的 **checkpoint 早已落地**（`EpisodeHarness.save_checkpoint()` /
+> `resume()` + `tools/checkpoint_tool.py`，真机 `check_restore` 跑通）。当次写的时候确实缺。
+> 现在实际缺的是**沙箱 / 成本上限 / replay** 三件（replay 的底座 trace 已在）。
+
+### 1.8 `harness/` 里那些散件：边界是四列，不是文件名
+
+> **本节写于 2026-09-12**，起因是"这些 `*_utils` 到底谁管什么"反复被问。
+> 规则本身早就在各文件的模块 docstring 里、并且互不矛盾；散的是**它没有一个
+> 统一入口说清楚**。本节就是那个入口。
+
+harness 包 = 两张图（`episode_harness.py` / `run_harness.py`）+ 两张 Port
+（`interface/`）+ 一层散件。**散件的归属由四件事决定，跟它叫 `*_utils` 还是别的没关系：**
+
+| 文件 | 类型 | 绑哪张 Port | 属于哪层图 | 谁调它 |
+|---|---|---|---|---|
+| `brain_utils.py` | 依赖循环 | `BrainToolPort` | episode | `EpisodeHarness.think_action`（唯一） |
+| `game_utils.py` | 依赖循环 | `GameToolPort` | episode | `EpisodeHarness` 感知三处（`_begin` 在图外） |
+| `run_plan_utils.py` | 依赖循环 | `BrainToolPort` | run | `RunHarness.plan`（唯一） |
+| `episode_utils.py` | 图算法 | — | episode | `EpisodeHarness`（终局结论 / 停摆 / 中止范围） |
+| `run_utils.py` | 图算法 | — | run | `RunHarness`（目标栈 / trace 挑局） |
+| `memory_query_utils.py` | 图算法 | — | episode | `EpisodeHarness`（检索 query 串三处） |
+| `trace_write.py` | 写账共用件 | `TraceToolPort` | **跨两层** | 上面三个依赖循环的宿主 |
+
+三条判据（都可机械核对，§1.8.2）：
+
+1. **"依赖循环"与"图算法"的分界是 `import` 里有没有 `*ToolPort`。** 有 = 这个文件在
+   替某一根依赖跑重试循环、只交回 `ModelCallLog`，**不写账**（"账写在它的宿主里"，
+   `PLAN_graph_readability.md` §3.7.4）；没有 = 纯算状态，谁都不碰。
+2. **episode 层与 run 层互不依赖。** run 层不越过 `EpisodeHarnessPort` 去拿 episode 的件，
+   episode 层不知道 run 层存在。所以同名后缀的两个文件（`episode_utils`/`run_utils`）
+   是**平行**的，不是上下游。
+3. **`trace_write.py` 是唯一的第三类**，也几乎是全部困惑的来源：它绑了 `TraceToolPort`
+   （所以不是"图算法"），但不属于任何一层图（所以也不是"某根依赖的循环"）——
+   它服务的是**三个依赖循环的宿主**。第三类今天只有它一个成员。
+
+**剩下三个文件不在这张表里，因为它们本来就不是 util。** 把它们往上面四列里塞，
+塞不进去是正常的：
+
+| 文件 | 正职 |
+|---|---|
+| `object_interactions.py` | **判定层**：按键 → 物体交互事件（"发生了什么、影响了谁"）。AGENTS.md §四那条分层原则的落地处 |
+| `run_data_center.py` | **有状态的中间层**：一个 run 一个实例，前后端槽位。它不是函数集合，是个对象 |
+| `auto_reviewer.py` | 默认放行者，装配点注入用 |
+
+#### 1.8.1 已知的命名缺口（不是 bug，是会被误读的地方）
+
+**命名只编码了"属于哪层图"，没有编码"是不是依赖循环"。** `game_utils` 与 `episode_utils`
+从名字看不出一个是前者、一个是后者。所以**判断一个件该放哪，问的是"它绑不绑端口、
+属于哪层图"，不是"它叫什么"。**
+
+活证据是 `memory_query_utils.py`：名字暗示它绑 `MemoryToolPort`，实际它**一个端口都不
+import**（它只从 `Observation`/`StepMemory` 拼检索串，端口调用在宿主那里），结构上跟
+`episode_utils` 同类。它的 docstring 自己也这么写（"**不碰 `MemoryToolPort` 本身**"）——
+即名字描述的是**它服务哪根依赖**，不是它绑了哪根。
+
+#### 1.8.2 怎么机械核对
+
+```bash
+# 1. 六个 util 互不 import：每个的包内 import 里不该出现另一个 util 的名字
+for f in brain_utils episode_utils game_utils memory_query_utils run_plan_utils run_utils; do
+  grep -n "^from \." pokemon_agent/harness/$f.py
+done                       # 期望：只有 .trace_write / .interface，没有平级的 util
+
+# 2. 两层图各 import 自己那组，且 trace_write 是共用件
+grep -n "^from \. import" pokemon_agent/harness/episode_harness.py pokemon_agent/harness/run_harness.py
+
+# 3. 判定层只有 episode 层用（run 层不该出现）
+grep -rn "object_interactions" pokemon_agent/harness/run_harness.py   # 期望 0 行
+```
+
 ---
 
-## 2. `LoopState`
+## 2. `EpisodeRunState`
+
+> **本节是现状版（2026-09-11）**：随 `LoopState` → `EpisodeRunState` 一并重写。
+> 字段的**权威定义**在同名文件的 `episode_harness_port.py`（状态类与接口同文件）。
+> 本节只讲分组、形状与几个关键判据，不抄字段表——抄本会漂移，而字段表恰恰是漂移代价
+> 最高的那种文档（0902 版这份抄本把 `succeeded`/`why`/`space`/`memories` 四个早已不存在
+> 的字段名写了很久）。
 
 `pydantic.BaseModel`，"一局的**全部**可序列化状态"。
 
@@ -74,153 +170,168 @@ Harness 这一侧只承担一件事：**权限失败不能让这一局从 trace 
 
 | 分组 | 字段 | 特点 |
 |---|---|---|
-| 身份 | `episode_id` / `task` / `step` / `goals` / `succeeded` / `why` | 跨步存活，是 checkpoint 要恢复的那部分 |
-| 流转 | `observation` / `space` / `memories` / `action` / `pending_observation` | 单步内，从一个图节点传到下一个 |
+| 身份 | `episode_id` / `task` / `step` / `goals` | 跨步存活，是 checkpoint 要恢复的那部分 |
+| 流转 | `observation` / `action_space` / `action` / `pending_observation` / `step_episode_memories` / `global_episode_memories` / `knowledge_semantic_memory` / `object_semantic_memory` | 单步内，从一个图节点传到下一个 |
+| 链 | `plan` / `pending_presses` / `pending_stop` | 链内小循环，跨 1..N 步（随 checkpoint dump，恢复后接着把链按完） |
+| 判定 | `done` / `success` / `stall_key` / `stall_count` | 由 `judge` / `detect_stall` 写，其余格子只读 |
+| 收尾 | `verify_step_entries` / `verify_knowledge` / `verified_steps` | 只在判完成的收尾链上有意义 |
+| 结果（图外） | （不在 state 里）`FromRunHarnessToEpisodeHarnessRunResp` | 由 `run()` 在图跑完之后算出，见 2.3 |
 
-### 2.2 完整字段表
+### 2.2 字段的权威定义在哪
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `episode_id` | `str` | 必填 | 这一局的标识，全局唯一。trace 按它分组 |
-| `task` | `Task` | 必填 | 目标、判据、步数上限都在里面 |
-| `step` | `int` | `0` | 跑到第几步。**全项目只有这一个 step** |
-| `goals` | `list[Goal]` | `[]` | 目标栈。**当前目标恒为栈顶 `goals[-1]`**；这一版栈恒为一层，见第 5 节 |
-| `succeeded` | `bool` | `False` | 判定器说过达成了没有。一旦为真就不再问——结论不会反悔 |
-| `why` | `str` | `""` | 判成功时的依据。成功率是要报的数字，每个 `True` 都得说得出依据 |
-| `observation` | `Observation \| None` | `None` | 当前这一步 `look` 拿到的观测 |
-| `space` | `ActionSpace \| None` | `None` | 本步可用按键 |
-| `memories` | `list[StepMemory]` | `[]` | `retrieve_memory` 查出来、给这一步 `think` 用的情景记忆 |
-| `action` | `Action \| None` | `None` | `think` 选出的动作 |
-| `pending_observation` | `Observation \| None` | `None` | **还没盖章的新观测**。开局那份来自 `reset()`，之后每份来自 `execute()`；`remember` 拿它当 after，`look` 拿它盖章 |
+`pokemon_agent/harness/interface/episode_harness_port.py::EpisodeRunState`——每个字段都带
+docstring，写清了"谁写它、什么时候写、别的格子怎么读"。**本规格不再抄一份**：
+字段表是接口契约，只有一份能是对的。
 
 ### 2.3 这里**没有** `outcome`
 
-`EpisodeOutcome` 不在 `LoopState` 里。它是这一局的最终结论，由 `run()` 在图跑完之后从 `observation` 直接算出来。
+与 0902 版结论一致：`outcome` 不在 state 里。它是这一局的最终结论，由 `run()` 在图跑完
+之后从 `observation` 直接算出来。
 
-放进 state 就得有个节点负责填它，而"下结论"不该是任何一个循环节点的副业——它曾经是 `_look`（一个叫"看一眼"的节点）顺手做的。更硬的理由见 6.4：`EpisodeOutcome` 和 `EPISODE_END` 的 payload 是同一份信息的两个形态，算在两个地方会静默漂移。
+放进 state 就得有个节点负责填它，而"下结论"不该是任何一个循环节点的副业——它曾经是
+`_look`（一个叫"看一眼"的节点）顺手做的。更硬的理由见 6.4：`EpisodeOutcome` 和
+`EPISODE_END` 的 payload 是同一份信息的两个形态，算在两个地方会静默漂移。
 
-顺带，这也消掉了一个形状问题：`space` 和 `outcome` 曾经互斥填充，`LoopState` 里任何时刻都有一个是上一轮的陈值，靠调用图保证下游不读错——不是靠类型。
+（0902 版这一节还讲过 `space` 与 `outcome` 互斥填充那个形状问题。现行版没有这一对：
+`action_space` 只在没终止的分支上写，`outcome` 根本不在 state 里。）
 
 ### 2.4 `pending_observation` 的生命周期
 
-**它是观测进入这一层的唯一入口。** 由 `_begin`（开局那一帧，来自 `reset()`）或
-`press`（来自 `execute()`）写入，`remember` 读一次当作动作后的快照（`after`），
-下一轮 `look` 读一次、盖上 `step` 与 `done` 之后写进 `observation`。
-字段本身不显式清空，下一次 `press` 覆盖它。
+**每一帧都由 `perceive_after_action` 从按键后的那次感知收下**，写进
+`pending_observation`；本圈末尾的 `close_step` 把它扶正成 `observation`，当作下一圈的
+`before`（两个 store 与 `detect_stall` 都在扶正之前读它，那是它们能看到 `after` 的唯一
+窗口）。
 
-它曾经叫 `press_result`，是个"专用信使"——只在 `press → remember` 之间有意义，
-因为那时 `look` 会自己 `perceive()` 一遍拿新观测。删掉那次感知之后，同一个值
-多了一个消费方（`look`），名字也就不准了：它不只来自 press，开局那份来自 reset。
+开局那一帧不走这条路径——它由 `_begin` 直接产出成 `observation`（没有"上一步"，
+不需要那道接力）。
 
-**`after` 和下一步的观测现在是同一个对象**，不是"相等"。以前它们靠 world 的帧
-缓存碰巧相等（前提是 `press` 和 `look` 之间没人推进世界），没有任何断言守着——
-插一个会 tick 的节点就会静默不一致。现在没有什么需要守。
+0902 版的写入者是 `press`、扶正者是 `look`，字段名还叫 `press_result`。接力没变，
+两端换了格子。
+
+**观测的写入者是唯一的**：全项目只有 `perceive_after_action`（链内）与 `_begin`（图外，
+第 0 步）会产出观测，harness 自己从不主动感知。
+
+### 2.5 这里也**没有**帧账——但它跟着存档走
+
+帧（base64 PNG）进不了 `Observation`，也进不了 state。harness 用两张实例字段记它：
+`_frame_event_ids`（步号 → 承载这一帧那条事件的 `event_id`，截图文件名就是它）与
+`_pending_frames`（还没挂上任何事件的那一帧的原图，只有第 0 步会非空）。
+
+它们**不是 state**（进 `state_dump` 等于给每份存档都塞一张 PNG），但**必须跟着存档走**
+（v6）：两张表都是纯内存态，`resume()` 是在新进程里构造的 harness，拿到的表是空的——
+于是恢复后第一条 `OBSERVE`（链首要自带"大脑决策时看到的世界"）与恢复后第一个 store 步的
+`before_frame` 会一起丢图。截图本来就在磁盘上（`screenshot/<event_id>.png`），缺的只是
+"哪条事件承载这一步这一帧"这张对账。
+
+所以 `save_checkpoint` 把**本局切片**（`_frame_ledger`）打进存档 json 自己的两个键，
+`resume()` 原样回载。代价只有第 0 步那一份存档多背一张 PNG——真机实测一张 GBA 截图
+2.7 KB、编成 base64 约 3.7 KB，而同目录的 `.state` 是 167 KB。v6 之前写的档没有这两个键，
+读回时按空表处理，那正是"这份存档没带帧账"的准确语义。
 
 ---
 
 ## 3. 图结构
 
+> **本节是现状版（2026-09-11）**：0902 版描述的是 `harness.py` 的 6 节点直线图，
+> 那个文件已不存在。现行是 `episode_harness.py` 的 **20** 节点图。
+> **拓扑的权威版本在 `episode_harness_port.py` 的模块 docstring**（接口即图：20 个节点
+> 方法就是 20 个节点），并被 `scripts/check_graph_phases.py` 与
+> `web/src/App.tsx` 的相位表逐条机械核对。
+
 ### 3.1 顶层形状
 
 ```
-look → retrieve_memory → think → press → remember → look
-  └─(obs.done)→ summarize → END
+save_checkpoint → record_observation → judge ─(done)→ 收尾链(3 节点) → END
+                                        └─(否)→ get_action_space
+  → 四路 retrieve → merge_retrieval → think_action
+  → act → perceive_after_action → apply_stop → detect_stall
+  → store_step_episode_memory → store_object_semantic_memory → close_step
+       ├─(pending_presses 非空)→ act          ← 链内小循环：一个小 action 一步
+       └─(队列空)→ save_checkpoint
 （回到 run()）EPISODE_END
 ```
 
-**一条直线，没有分派。** 以前 `think` 出口按 `Action.intent` 分三岔（press / push_goal / inspect），现在只剩按键一类动作——`Intent` 枚举连同 `Action.intent`、`ActionSpace.intents`、`push_goal` 节点、`GOAL_PUSH` 事件一起删了。拆子目标的机制会在别处重写。
+三条与 0902 版的结构性差别，每条都是"**一次决策摊薄成 N 步**"这条设计的结果：
 
-**这里曾经有一条"细看"（inspect）链路**：`WorldPort.inspect()` 单独再问一次视觉模型，
-结果落进 `facts["inspected"]`，并由 `trace.inspect()` 记成一条 `INSPECT` 事件。
-它整条被删了——它烧的是一次和 `perceive()` 同源的感知调用，看的还是同一帧，
-换来的只是"再描述一遍"；而且它自成一步（算进 `max_steps`），
-于是模型学会了用"再看一眼"来拖时间，那一步既不推进世界也不写记忆。
-真正要补的是感知本身讲得够不够清楚，不是在循环里多开一个只看不动的出口。
-
-**更正（0902 全项目可观测扫描发现）**：这段原来写"`EventType.INSPECT` 这个
-枚举值留着"，跟 `docs/spec/DATAFLOW.md`（"没有兼容成员……旧数据文件无法再被
-`TraceEvent` 解析，删兼容时的明确决定"）互相矛盾，而且**两边都跟实际代码不符**
-——`pokemon_agent/schemas/datastore/__init__.py` 的 `EventType` 枚举、
-`trace/store.py` 都没有 `INSPECT` 这个成员，没有任何显示分支。以
-`DATAFLOW.md` 为准：`inspect` 连同其他几个旧值（`memory_write`/`object_note`/
-`goal_pop`）在拆分记忆事件类型、删 inspect 链路那次改动里被彻底删掉，不保留
-兼容成员；带这类旧事件的历史 trace 文件目前确实无法被当前 `TraceEvent`
-解析（这是当时的明确取舍，不是本次新决定）。"枚举值只增不改"这条原则本身
-没错，只是当时 `INSPECT` 没有被当作"要保留兼容"的枚举值处理。
+1. **`step` 是一个小 action。** 一次决策交出的链被展开成 `pending_presses`，链内每按一个
+   键走完一圈、各写一条 `StepMemory`、各判一次中止；队列空了才回链首重新决策。
+   链内小循环只加一条条件边、**不加节点**——`save_checkpoint` 因此仍只落在链边界上。
+2. **账写在它的宿主里。** 每个节点写自己那条账；三个 `*_utils`（`brain_utils` /
+   `game_utils` / `run_plan_utils`）只跑重试循环、只交回尝试材料（`ModelCallLog`），
+   不碰 trace。规则来自 v7（`PLAN_graph_readability.md` §3.7.4）。
+3. **"世界层的信号"与"harness 的终止裁决"拆成两个字段。** 0902 版只有一个
+   `obs.done`，`judge` 一跑就用 `model_copy` 把世界信号覆写成自己的结论，事后分不清
+   哪个是哪个。现在 `Observation.done` 只读（世界窗口关没关），
+   `EpisodeRunState.done` / `success` 由 `judge` 独占写入。
 
 ### 3.2 节点表
 
-| 节点名 | 方法 | 花不花钱 |
-|---|---|---|
-| `look` | `_look` | 判定一次调用。**不感知**——观测是上一步交下来的 |
-| `retrieve_memory` | `_retrieve_memory` | 不调模型（检索走本地 embedding/reranker） |
-| `think` | `_think` | 决策调用 ×N（N 含重试） |
-| `press` | `_press` | 执行后感知一次。**这是一步之内唯一的感知** |
-| `remember` | `_remember` | 反思调用 ×1 |
-| `summarize` | `_summarize` | 蒸馏调用 ×1 |
+见 `PLAN_graph_readability.md` §4 的**节点职责对照表**——20 行，"改哪处 state / 写哪条
+事件 / 一句话"三列，第 9 行已按现状用 `merge_retrieval`。
 
-没有 `_nodes()` 映射表了——那是给 intent 分派用的，直线图上 `add_node` 逐个写反而更直白。
+（0902 版这里那张六行表写的是 `look` / `retrieve_memory` / `think` / `press` /
+`remember` / `summarize`——这六个节点名现在一个都不在图上。）
 
 ### 3.3 边
 
-- **入口**：`set_entry_point("look")`
-- **`look` 的条件边**（判据见 4.3）：`obs.done` → `"summarize"`；否则 → `"retrieve_memory"`。
-  **这是图上唯一的终止分支**：看完才知道这一局还要不要继续。放在动作节点出口的话，"步数用尽"和"目标达成"要在两个地方各判一次。
-- `retrieve_memory` → `think` → `press` → `remember` → `look`，全是固定边。
-- `summarize` → `END`。
+**只有两条分叉边 + 一条收尾链内部的条件边，其余全是固定边。**
+
+- **入口**：`set_entry_point("save_checkpoint")`。
+- **`judge` 出口**：`state.done` → `retrieve_verify_step_memory`；否则 →
+  `get_action_space`。这是**终止分支**，也是图上唯一决定"这一局还继续不继续"的地方。
+- **`close_step` 出口**：`state.pending_presses` 非空 → `act`；否则 →
+  `save_checkpoint`。这是**链内小循环**的分叉口。
+- **`retrieve_verify_step_memory` 出口**：`verify_step_entries` 非空 →
+  `retrieve_verify_knowledge`；为空 → **直接 `END`**。没有 step 记忆就没有可校验、
+  可蒸馏的东西，不问模型——**不存在"不经校验的全量蒸馏"那条兜底路径**
+  （见 §5 的两条"明确不做"与 `ROADMAP.md:1136` 的就地订正）。
+- 其余相邻节点之间全是固定边。
 
 ### 3.4 ASCII 图
 
-```
-                    ┌──────────────────────────────────┐
-                    │                                  │
-                    ▼                                  │
-                ┌────────┐  obs.done?                  │
-   entry ──────▶│  look  │──── True ──▶ ┌───────────┐  │
-                └────┬───┘              │ summarize │  │
-                     │ False            └─────┬─────┘  │
-                     ▼                        ▼        │
-            ┌────────────────┐               END       │
-            │ retrieve_memory│                         │
-            └────────┬───────┘                         │
-                     ▼                                 │
-                ┌─────────┐                            │
-                │  think  │                            │
-                └────┬────┘                            │
-                     ▼                                 │
-                ┌─────────┐                            │
-                │  press  │                            │
-                └────┬────┘                            │
-                     ▼                                 │
-               ┌───────────┐                           │
-               │ remember  │───────────────────────────┘
-               └───────────┘
-```
+以 `episode_harness_port.py` 模块 docstring 里的那张图为权威版本——它与代码同文件、
+离 `add_node` 最近，改图的人先看到它。0902 版这里那张六节点 ASCII 图不再保留。
 
-### 3.5 为什么 `retrieve_memory` / `remember` / `summarize` 是独立节点
+### 3.5 为什么 `merge_retrieval` / 两个 store / `verify_and_summarize` 是独立节点
 
-**图结构本身要能一眼看出三条规则**，不用读代码：
+**图结构本身要能一眼看出三条规则**，不用读代码（0902 版那三条的现状版）：
 
 | 规则 | 图上的体现 |
 |---|---|
-| 每一步先查记忆再决策 | `retrieve_memory` 固定挂在 `look` 与 `think` 之间 |
-| 只有推进世界那一步才写记忆 | `remember` 只跟在 `press` 后面 |
-| 一局只在结束时蒸馏一次经验 | `summarize` 只在 `look` 的终止分支上 |
+| 每一步先查记忆再决策 | 四个 `retrieve_*` 固定挂在 `judge` 与 `think_action` 之间；`merge_retrieval` 只做汇聚 |
+| 只有推进世界的那一步才写记忆 | 两个 store 只跟在 `apply_stop` 后面 |
+| 一局只在结束时蒸馏一次经验 | `verify_and_summarize` 只在 `judge` 的终止分支上 |
 
-`summarize` 独立成节点还有一条单独的理由：**它要调一次模型**。藏在收尾逻辑里的时候，图上看不到"这一局结束时还额外烧了一次调用"，读图的人会以为一局的开销就是 `steps × (感知 + 决策 + 判定)`。**图上看得见的东西才会被算进成本。**
+四个 `retrieve_*` **不各自记账**：四路的结果要齐了才能写那一条合并读
+（`merge_retrieval` 的 `MEMORY_READ`），拆成四条会让人以为它们发生在循环的不同位置。
 
-反过来，构造 `EpisodeOutcome` **不是**节点：图上的格子代表"发生了一件事"（调模型、推世界、写库），而它不花钱、不改世界、不写记忆，给它一格会稀释"读图 = 看这一局做了哪些真事"这个读法。
+`verify_and_summarize` 独立成节点还有一条单独的理由：**它要调一次模型**。藏在收尾逻辑里
+的时候，图上看不到"这一局结束时还额外烧了一次调用"，读图的人会以为一局的开销就是
+`steps × (感知 + 决策 + 判定)`。**图上看得见的东西才会被算进成本。**
+
+（0902 版这一节讲的是 `retrieve_memory` / `remember` / `summarize` 三个节点、
+以及"`summarize` 独立成节点"。`summarize` 在 0906 已被合并进 `verify_and_summarize`，
+"一进一出、净数不变"那句也随之作废。）
 
 ### 3.6 收尾为什么不在图里
 
-`EPISODE_END` 写在 `run()`，不在任何节点里。两条理由：
+与 0902 版结论一致，理由不变：`EPISODE_END` 写在 `run()` 里，正常结束与异常终止**都**得
+写这条事件——写在 `run()` 里两条路径才共用同一个出口；分散到图内图外各写一次，迟早有
+一条路径漏掉，而那些局会直接从成功率的分母上消失。
 
-1. `END` 是 LangGraph 的哨兵，不是节点，挂不上动作。
-2. 更要紧的是——正常结束和异常终止**都**得写这条事件。写在 `run()` 里两条路径才共用同一个出口；分散到图内图外各写一次，迟早有一条路径漏掉，而漏掉的那些局会直接从成功率的分母上消失。
+现状多了两个"图外的记账点"，同一条理由：
+
+- `resume()` 写 `CHECKPOINT_RESTORE`（恢复接缝）。
+- `run()`/`resume()` 的异常路径写 `EPISODE_ERROR`。
+- 与 `CHECKPOINT_RESTORE` 对称的存档端接缝是 **`save_checkpoint` 节点**里的
+  `CHECKPOINT_SAVE`（v7 新增）——存档点在事件流里也要可见，否则 replay 只能反推存档
+  文件的 step 来切段。
 
 ---
 
 ## 4. 逐节点方法详解
+
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
 
 ### 4.1 `_begin(episode_id, task) -> LoopState`
 
@@ -400,7 +511,7 @@ world 在 `reset()` / `step()` 的结尾产出、沿 `pending_observation` 传�
 **算法**：
 
 1. **早退分支**：若 `state.succeeded` 已为真，直接返回 `(obs.model_copy(done=True, success=True), state.goals, True, state.why)`。当前图内走不到（判成成功的那一步同时置了 `obs.done`），但 resume 会：从一个 `succeeded=True` 的 checkpoint 恢复时，不打标记的话 `look` 的条件边不去 summarize、转而进 `think`，而那时 `goals` 已是空的，`brain.choose` 的 `assert goals` 会当场崩掉。
-2. `history = self._memory.query_recent_steps(episode_id, JUDGE_HISTORY)`。
+2. `history = self._memory.query_recent_steps(episode_id, JUDGE_HISTORY)`。**订正 2026-09-12**：粒度下沉到单键后这里改成「按键数上限取回 → `last_chains(recent, JUDGE_CHAIN_HISTORY)` 按链裁到最近 2 条」，常量也从 `JUDGE_HISTORY`（步）改名成分 `JUDGE_CHAIN_HISTORY` / `JUDGE_HISTORY_KEY_CAP`。
 3. `verdict = self._brain.judge(goals[-1], obs, history)`。
 4. 写判定的账（`Source.JUDGE`），`depth = len(goals) - 1` 塞进 payload。
 5. 未完成 → `return obs, goals, False, ""`。
@@ -426,6 +537,8 @@ world 在 `reset()` / `step()` 的结尾产出、沿 `pending_observation` 传�
 
 ## 5. 目标栈
 
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
+
 `goals` 这个栈的形状留着，但**这一版它恒为一层**：栈底是任务目标，而压栈的唯一途径 `push_goal` 已经删了。**当前目标永远是栈顶**（`goals[-1]`），判定只判它，完成就出栈；栈空 = 任务完成，只有这一条路径写 `success`。
 
 `if not remaining` 在只有一层时永远成立。留着它不是为了当下分支，而是把"只有任务目标本身完成才算成功"写成代码——子目标回来之后，agent 自己压的那些完成了只该弹栈，不该给自己发奖状。
@@ -447,11 +560,13 @@ world 在 `reset()` / `step()` 的结尾产出、沿 `pending_observation` 传�
 
 ### 5.2 常量
 
-- `JUDGE_HISTORY = 3` —— 判定器能看到本局最近几步。不是 0：证据可能在三步以前那一帧的对话框里。也不是"全部"：判定是每步一次，条数一多成本就跟着步数增长。历史里**不含 `rationale`**（`StepMemory.render(reason=False)`）——发生过的事给判定器看，决策者对那件事的主张不给。
+- `JUDGE_HISTORY = 3` —— 判定器能看到本局最近几步。**订正 2026-09-12**：代码里从来不是 3（是 2），且 0905 之后语义再次变过——现在叫 `JUDGE_CHAIN_HISTORY = 2`，单位是**链**（一次决策），另有键数帽 `JUDGE_HISTORY_KEY_CAP = 8`。不是 0：证据可能在三步以前那一帧的对话框里。也不是"全部"：判定是每步一次，条数一多成本就跟着步数增长。历史里**不含 `rationale`**（`StepMemory.render(reason=False)`）——发生过的事给判定器看，决策者对那件事的主张不给。
 
 ---
 
 ## 6. `run()` 整体流程
+
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
 
 `run(self, episode_id: str, task: Task) -> EpisodeOutcome`，`Harness` **对外唯一的入口**，挂着 `@initialize`（每局重载权限配置）。
 
@@ -510,6 +625,8 @@ return outcome
 
 ## 7. 模型调用记账机制
 
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
+
 账跟着 `PerceptionResult`/`ToolResult` 的返回值走，**不再靠 `drain_calls()`**：
 
 | 来源 | 在哪记 | Source |
@@ -535,6 +652,8 @@ return outcome
 ---
 
 ## 8. 一轮循环的事件时间线
+
+> 本节写于 0902 版（6 节点 / `LoopState` / `harness.py`）。结论多数仍成立，涉及图结构、字段名、方法名的表述以 §2/§3 与 `episode_harness_port.py` 的模块 docstring 为准。
 
 以"某一步、模型一次决策成功、执行后记忆库检测到语义记忆条目"为例（`n` 为本轮开始时的 `state.step`）：
 

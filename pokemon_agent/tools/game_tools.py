@@ -31,7 +31,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolSetTaskReq,
 )
 from pokemon_agent.world import (
-    INTERACT_KEY,
     OVERLAY_ACTIONS,
     ActionSpace,
     Facts,
@@ -101,13 +100,13 @@ class GameTools:
             initial_state_hint=task.initial_state_hint,
         )
 
-    def perceive_once(self) -> FromHarnessToGameToolPerceiveOnceResp:
-        """感知当前这一帧，只问一次视觉模型，不重试。
+    def perceive_once(self, *, ram_only: bool = False) -> FromHarnessToGameToolPerceiveOnceResp:
+        """感知当前这一帧，只问一次（`ram_only` 时连模型都不问）。
 
         转发给 world；重试循环在 Harness。world 吐出来的是它自己的
         `Perceived`（不是信封），这里原样摊开进 harness 认识的 Resp。
         """
-        perceived = self._world.perceive_once()
+        perceived = self._world.perceive_once(ram_only=ram_only)
         return FromHarnessToGameToolPerceiveOnceResp(
             observation=perceived.observation,
             calls=perceived.calls,
@@ -159,9 +158,10 @@ class GameTools:
         )
 
     def execute(self, req: FromHarnessToGameToolExecuteReq) -> None:
-        """执行动作，推进世界。**不感知**——调用方另调 `perceive_once()` 拿新观测。
+        """执行**一个键**，推进世界。**不感知**——调用方另调 `perceive_once()` 拿新观测。
 
-        前置条件：`req.observation` 是这个动作**据以选出**的那份观测。
+        前置条件：`req.observation` 是这个动作**据以选出**的那份观测；
+            `req.action` 是单键（连按已在 Harness 的循环里展开成多步）。
 
         **依据由调用方交出来，不由本对象攒着**——调用方本来就知道自己按的是
         哪份观测，让它说出来即可。
@@ -169,25 +169,18 @@ class GameTools:
         校验动作合法后按下去，推进世界。
         """
         action = req.action
+        # **执行粒度是一个键。** 收到多段说明调用方没展开——那等于把"一次决策
+        # 按多少键"从循环里偷了回来，就地拦下好过替它展开：展开出来的每一步
+        # 都要各写一条记忆、各判一次中止，那只能是循环的事。
+        assert len(action.sequence) == 1, (
+            "execute() 只接受单键动作；连按应由 Harness 的循环展开成多步"
+        )
+        segment = action.sequence[0]
         space = _mask(req.observation, self._world.all_actions())
-        for segment in action.segments():
-            assert space.contains(segment.name), (
-                f"execute() got {segment.name!r} outside {space.names}"
-            )
-        if action.sequence and len(action.sequence) > 1:
-            body, tail = action.sequence[:-1], action.sequence[-1]
-            directions = {"up", "down", "left", "right"}
-            assert all(segment.name in directions for segment in body) and (
-                tail.name in directions or (tail.name == INTERACT_KEY and tail.times == 1)
-            ), (
-                "multi-step action sequence may contain only directional keys, "
-                "plus at most one trailing 'a'"
-            )
-        # **整条链交给 world 一次执行完**，这里不自己展开——一次决策就是一次
-        # 感知（中间帧没有会被用到的信息，展开成逐次调用会成倍烧感知 token，
-        # 实测数据见 `CHANGELOG.md` 2026-09-03 条目）。world 不认识
-        # `ActionFromBrain`，这里拆成 `(按键名, 连按次数)` 的裸列表交给它。
-        self._world.step([(segment.name, segment.times) for segment in action.segments()])
+        assert space.contains(segment.name), f"execute() got {segment.name!r} outside {space.names}"
+        # world 不认识 `ActionFromBrain`，这里拆成 `(按键名, 连按次数)` 的裸列表交给它。
+        # `settle` 原样转达：链中间的键不等过场走完（理由见 `ExecuteReq.settle`）。
+        self._world.step([(segment.name, segment.times)], settle=req.settle)
 
     def evolve(self, req: FromHarnessToGameToolEvolveReq) -> None:
         """无输入推进 N 帧（世界自己演化）——harness 等决策 LLM 时的空闲填充。"""

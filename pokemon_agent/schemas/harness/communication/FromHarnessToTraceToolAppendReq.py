@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import (
     ActionFromBrain,
+    ActionSegmentFromBrain,
     GoalForBrain,
     StepVerifyVerdict,
     TaskForBrain,
@@ -102,10 +103,18 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     stall_count: int | None = None
     text: str | None = None
     next_step: int | None = None
-    scene: str | None = None
-    overlay: str | None = None
     status: str | None = None
-    # ---- CHECKPOINT_RESTORE 专用 ----
+    """这一键之后世界的状态摘要（RAM 档读得出）。链内每按一个键都有一条
+    `AFTER_ACTION`，它比 `ACT` 晚一格——`ACT` 写在按键那一刻，那时世界还没动。"""
+    stop: str | None = None
+    """这一键的结局（`StopReason.value`）：**只在 `ACTION_TRUNCATED` 上**，
+    答"为什么截断"。观察账 `AFTER_ACTION` 不带它——"看到什么"与"据此处置了什么"
+    是两笔账（前者每键一条、后者只在真丢键时一条）。"""
+    dropped: list[ActionSegmentFromBrain] | None = None
+    """`ACTION_TRUNCATED` 上被丢掉的那几段（`apply_stop` 截断队列时移除的键）。
+    **非空才是"真的截断了"**——`blocked` 可能一个键都不用丢，那时不写这条账。"""
+    # ---- CHECKPOINT_RESTORE / CHECKPOINT_SAVE 专用 ----
     restored_episode_id: str | None = None
     restored_step: int | None = None
     cursor: int | None = None
+    saved_step: int | None = None

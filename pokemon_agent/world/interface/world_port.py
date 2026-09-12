@@ -102,25 +102,38 @@ class WorldPort(Protocol):
         """
         ...
 
-    def step(self, segments: list[tuple[str, int]]) -> None:
-        """执行整条动作链，推进世界。**不感知**——链尾那一帧由调用方另调
+    def step(self, segments: list[tuple[str, int]], *, settle: bool = True) -> None:
+        """执行动作，推进世界。**不感知**——之后那一帧由调用方另调
         `perceive_once()` 拿。
 
         segments：按序执行的按键段，每段是 `(按键名, 连按次数)`——
             `ActionFromBrain.sequence` 拆开的裸字段，world 不需要知道
-            `thought`/`rationale` 这些字段。
+            `thought`/`rationale` 这些字段。执行层恒传单键（一段、一次）。
+        settle：按完之后要不要给世界一段**无输入演化时间**再交回控制权。
+            `True` = 等（换图的淡入淡出、战斗开场动画、对话逐字打出、菜单弹出
+            这些"按下去之后自己会走完"的过程都在这一段里走完）；
+            `False` = 按完即返回——链中间的键用这一档，后面还有键要按。
+            **它不改变按键本身的效果**，只改变调用方什么时候拿到控制权；
+            代价是 `False` 那一档可能抄到过场的中间帧。
         前置条件：每一段的按键都在 all_actions() 中；当前 episode 未结束。
         失败：按键不在 all_actions() 是调用方 bug，assert 拦下。
         """
         ...
 
-    def perceive_once(self) -> Perceived:
-        """感知当前这一帧，**只问一次视觉模型，不重试**。
+    def perceive_once(self, *, ram_only: bool = False) -> Perceived:
+        """感知当前这一帧。
 
-        调用方在 `reset()`/`step()` 之后调它拿观测；重试预算与循环归调用方
-        管（见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"）。
-        后置条件：返回时 observation 非空，且是这次真调用产生的新观测。
+        `ram_only=False`（缺省）：**只问一次视觉模型，不重试**。调用方在
+        `reset()`/`step()` 之后调它拿观测；重试预算与循环归调用方管
+        （见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"）。
         失败：解析不出结构化状态时抛 `PerceptionAttemptFailed`（附这次的账）——
             要不要再问一次是调用方的判断。
+
+        `ram_only=True`：**不调视觉模型**，只读内存里确定的那几样——坐标、朝向、
+        地标、通行图、地图编号。返回的观测 `perceived=False`：场景与对话
+        **不是空的，是没读过**。`calls` 为空，也不会失败。链中间的键用这一档，
+        它们只需要判"位置动没动、换没换图"，为此烧一次视觉调用买的是用不上的信息。
+
+        后置条件：返回时 observation 非空，且是这次真调用产生的新观测。
         """
         ...

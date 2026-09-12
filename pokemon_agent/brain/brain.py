@@ -58,6 +58,7 @@ from pokemon_agent.schemas.brain import (
 
 from .interface import (
     MAX_RATIONALE,
+    MAX_SEGMENTS,
     MAX_TIMES,
     ActionFromBrain,
     ActionSegmentFromBrain,
@@ -173,9 +174,7 @@ class Brain:
 
     # ---- 决策 ----
 
-    def choose_once(
-        self, req: ChooseOnceReq
-    ) -> ChooseOnceResp:
+    def choose_once(self, req: ChooseOnceReq) -> ChooseOnceResp:
         """一次决策尝试：问一次模型、解析。**不重试**——重试是 Harness 的循环。
 
         **只有一个输入参数**：`req.prompt` 由调用方经
@@ -185,7 +184,7 @@ class Brain:
         `req.space` 用来校验解析出的动作。
         后置条件：成功时返回的 `ChooseOnceResp.action` 属于 `req.space`，
         `calls` 恰好这一次尝试的一条账（多次尝试的累积由 Harness 那层的
-        `episode_utils.choose_with_retry` 做），`recalled` 是 `req.memories`
+        `brain_utils.choose_with_retry` 做），`recalled` 是 `req.memories`
         投影成的 `(episode_id, step)` 列表——**全部产物**打包一起交回去，
         不是散的元组。
         失败：解析不出来 / 选了不存在的键 / 被截断，抛 `DecisionAttemptFailed`
@@ -403,9 +402,7 @@ class Brain:
 
     # ---- step 记忆校验 + 蒸馏（独立判定器，一次调用问完两件事） ----
 
-    def verify_and_summarize(
-        self, req: VerifyAndSummarizeReq
-    ) -> VerifyAndSummarizeResp:
+    def verify_and_summarize(self, req: VerifyAndSummarizeReq) -> VerifyAndSummarizeResp:
         """校验本局 step 记忆哪些可信，只用可信的那些蒸馏成一条跨局摘要。
         **永远返回 VerifyAndSummarizeResp，不抛异常。**
 
@@ -596,12 +593,20 @@ class Brain:
 
         把前后两帧和这次动作拼成一条可检索的记忆条目返回。
         """
-        assert req.action.rationale, "reflect() got an action without a rationale"
+        # **只接受单键动作。** 连按在执行层已经展开成一步一步，`reflect` 是给
+        # "哪一步"写记忆的——收到多段链说明调用方没展开，那是 harness 的 bug，
+        # 就地拦下好过悄悄只取第一段的论据。
+        assert len(req.action.sequence) == 1, "reflect() 只接受单键动作（连按应在执行层展开）"
+        segment = req.action.sequence[0]
+        assert segment.rationale, "reflect() got an action without a rationale"
 
         return ReflectResp(
             entry=StepMemory(
                 before=self._snapshot(self._blind(req.before)),
-                rationale=list(req.action.rationale),
+                # 论据来自**这一步所属的那一段**：它是对"这一下为什么按"成立的
+                # 适用条件。链级的那句"为什么要交出这串动作"对单个键不成立，
+                # 归 `thought`（只进 trace）。
+                rationale=list(segment.rationale),
                 action=req.action.describe(),
                 after=self._snapshot(self._blind(req.after)),
                 step=req.before.step,
@@ -630,6 +635,12 @@ class Brain:
         记忆里每一项都必须跨步骤成立，`known_objects`/`knowledge`
         不成立——前者是跨 episode 流水，后者本就不是"这一帧看到了什么"。
         过滤只发生在写记忆这一步，大脑决策时看到的仍是完整观测。
+
+        **`perceived` 必须原样带过去**（它不是被滤掉的字段，是"这一帧有没有
+        被看过"这个事实本身）：链内按键只做纯 RAM 观测，那些帧的
+        `scene`/`overlay`/`dialog_text` **不是空的，是没读过**——丢掉这个标记，
+        记忆渲染出来就跟"读过、只是这些字段为空"长得一模一样，读记忆的
+        大脑/判定器会被引到错误的结论上。
         """
         return Observation(
             step=obs.step,
@@ -640,6 +651,7 @@ class Brain:
             # 动态字段。
             facts=obs.facts.exclude(SNAPSHOT_BLIND),
             done=obs.done,
+            perceived=obs.perceived,
         )
 
     # ---- 内部 ----
@@ -678,29 +690,44 @@ class Brain:
             raise ParseFailure(text, "top level is not an object")
 
         # 只剩按键一类动作，所以没有"先取 intent 再分叉"那一段。
+        # **论据在段上，不在顶层。** 顶层出现 rationale 是旧格式（整条链共用一条
+        # 论据），静默忽略它等于替模型做了一个没留痕的决定：它以为自己写对了，
+        # 而记忆里一条论据都不会有。
+        if "rationale" in raw:
+            raise ParseFailure(
+                text,
+                "'rationale' must be inside each sequence segment, not at the top level",
+            )
+
         raw_sequence = raw.get("sequence")
         if not isinstance(raw_sequence, list) or not raw_sequence:
             raise ParseFailure(text, "'sequence' must be a non-empty array")
+        # **段数有上限**（理由见 `MAX_SEGMENTS`）：段级论据让输出量随段数增长，
+        # 而一次决策按多少个键直接决定这一圈烧掉多少执行力。
+        if len(raw_sequence) > MAX_SEGMENTS:
+            raise ParseFailure(text, f"too many segments ({len(raw_sequence)} > {MAX_SEGMENTS})")
+
         sequence = []
-        for segment in raw_sequence:
+        for index, segment in enumerate(raw_sequence, start=1):
+            where = f"segment {index}"
             if not isinstance(segment, dict) or not isinstance(segment.get("action"), str):
-                raise ParseFailure(text, "each sequence item needs an action")
+                raise ParseFailure(text, f"each sequence item needs an action ({where})")
             name = segment["action"]
             times = self._parse_times(text, segment)
+            rationale = self._parse_rationale(text, segment, where)
             # **`a` 只按一次，在这里就定死。**
             #
-            # 一条链只在结尾感知一次，所以连按会把中间那几帧整个吃掉；而 `a` 产出的
-            # 恰恰是全项目最要紧的证据——对话框文字。连按三次推完整段对话，那几句
-            # 一帧都没被看到，最后一次还会把对话框关掉，判定器看到一个没有对话框的
-            # 画面，**一局本该成功的 episode 被静默记成失败**。`a` 的收益全在中间帧上，
-            # **连按对它从来没有意义**。
+            # 链内按键只做**纯 RAM 观测**，而对话文字只有视觉模型读得出来——连按三次
+            # 推完整段对话，那几句一帧都没被看到，最后一次还会把对话框关掉，判定器
+            # 看到一个没有对话框的画面，**一局本该成功的 episode 被静默记成失败**。
+            # `a` 的收益全在中间帧上，**连按对它从来没有意义**。
             #
             # 夹在这里而不是 world 里：动作合法性是解析期的事，让非法的东西一路
             # 走到执行层再被悄悄改写，大脑就会以为自己按了三次。写死成 1 之后，
             # 交给 world 的链**就是真正会发生的那条链**。
             if name == INTERACT_KEY:
                 times = 1
-            sequence.append(ActionSegmentFromBrain(name=name, times=times))
+            sequence.append(ActionSegmentFromBrain(name=name, times=times, rationale=rationale))
         # **多段链：中间只能是方向键，结尾允许一个 `a`。**
         #
         # 中间帧看不到，所以链体里只放"闭眼也不丢信息"的移动键。链尾不一样：
@@ -725,7 +752,6 @@ class Brain:
 
         return ActionFromBrain(
             thought=self._parse_thought(text, raw),
-            rationale=self._parse_rationale(text, raw),
             sequence=sequence,
         )
 
@@ -754,23 +780,28 @@ class Brain:
         return thought.strip()
 
     @staticmethod
-    def _parse_rationale(text: str, raw: dict[str, object]) -> list[str]:
-        """取出论据。
+    def _parse_rationale(text: str, values: dict[str, object], where: str) -> list[str]:
+        """取出**这一段**的论据。
 
         超过 `MAX_RATIONALE` 条走 `ParseFailure` 而不是静默截断：模型认为需要
-        4 条是有分量的，悄悄丢掉第 4 条等于替它做了一个没有留痕的决定。
+        3 条是有分量的，悄悄丢掉第 3 条等于替它做了一个没有留痕的决定。
+
+        `where` 是错误信息里的位置（"segment 2"）——论据挂在每一段上，只报
+        "missing 'rationale'" 的话，一条 4 段的链出错时定位不到是哪一段。
 
         容忍裸字符串写法，校验条数，返回论据列表。
         """
-        rationale = raw.get("rationale")
+        rationale = values.get("rationale")
         if isinstance(rationale, str):
             rationale = [rationale]
         if not isinstance(rationale, list):
-            raise ParseFailure(text, "missing 'rationale' field")
+            raise ParseFailure(text, f"missing 'rationale' in {where}")
 
         items = [str(r).strip() for r in rationale if str(r).strip()]
         if not items:
-            raise ParseFailure(text, "missing 'rationale' field")
+            raise ParseFailure(text, f"missing 'rationale' in {where}")
         if len(items) > MAX_RATIONALE:
-            raise ParseFailure(text, f"too many rationale items ({len(items)} > {MAX_RATIONALE})")
+            raise ParseFailure(
+                text, f"too many rationale items in {where} ({len(items)} > {MAX_RATIONALE})"
+            )
         return items

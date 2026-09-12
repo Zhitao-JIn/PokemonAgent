@@ -39,8 +39,9 @@ class TracePort(Protocol):
         payload：该类型的结构化内容。
         frame_png（关键字参数）：这一步
             感知到的原始画面（PNG 字节），直接存进这一条 `TraceEvent.frame_png`。
-            由 `episode_utils.perceive_with_retry()` 在给这次感知的 MODEL_CALL 调
-            `trace.append(*args, frame_png=...)` 时一并传入。多数事件
+            由**感知的宿主**（`_begin` / `record_observation` / `perceive_after_action`）
+            在写这条事件时调 `trace.append(..., frame_png=...)` 一并传入——
+            `game_utils.perceive_with_retry()` 只把帧交回宿主，不再自己记账。多数事件
             没有对应的帧，留 `None`。**非 None 时实现方还应另存一份人眼可读的
             PNG 副本**（`LocalTrace` 存到这个 run 自己的
             `trace_data/<run_id>/screenshot/`，文件名 = 这条事件自己的

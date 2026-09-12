@@ -40,7 +40,12 @@ __all__ = [
     "ObjectStillEvent",
     "ObjectWarpEvent",
     "StepMemory",
+    "StopReason",
+    "decision_key",
     "dedup_snapshots",
+    "group_by_decision",
+    "last_decisions",
+    "render_decisions",
     "render_sequence",
 ]
 
@@ -52,4 +57,14 @@ from .object_memory import (
     ObjectStillEvent,
     ObjectWarpEvent,
 )
-from .step_memory import SNAPSHOT_BLIND, StepMemory, dedup_snapshots, render_sequence
+from .step_memory import (
+    SNAPSHOT_BLIND,
+    StepMemory,
+    StopReason,
+    decision_key,
+    dedup_snapshots,
+    group_by_decision,
+    last_decisions,
+    render_decisions,
+    render_sequence,
+)
