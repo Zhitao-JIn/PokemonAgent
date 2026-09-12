@@ -2,7 +2,8 @@
 
 从 `harness/interface/episode_harness_port.py` 搬来（`PLAN_graph_composition.md` §6 步 0）——
 **状态不是能力**，`interface/` 只回答"harness 需要外面给什么"，不再回答"harness 自己长什么样"。
-旧路径 `episode_harness_port.py` 仍 re-export 这个名字，既有 import 不用改。
+那个 Port 文件已在步 4 删除（D5：它是"镜子"不是"港口"），所以旧的
+`episode_harness_port` 路径不再存在——唯一的家就是这里。
 
 步 0 的两处内容变更（其余一字未动）：
 
@@ -16,13 +17,19 @@
 
 from __future__ import annotations
 
+import os
+import re
+import time
+from pathlib import Path
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from pokemon_agent.brain import (
-    ActionFromBrain,
-    ActionSegmentFromBrain,
-    GoalForBrain,
-    TaskForBrain,
+    Action,
+    ActionSegment,
+    Goal,
+    Task,
 )
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryKnowledgeResp,
@@ -60,7 +67,7 @@ class EpisodeRunState(BaseModel):
     """
 
     episode_id: str = Field(description="这一局的标识，全局唯一。trace 按它分组")
-    task: TaskForBrain = Field(description="在跑哪个任务。目标、判据、步数上限都在里面")
+    task: Task = Field(description="在跑哪个任务。目标、判据、步数上限都在里面")
     step: int = Field(
         default=0,
         description="跑到第几步。**全项目只有这一个 step，单位是一次小 action（一个键）**"
@@ -70,7 +77,7 @@ class EpisodeRunState(BaseModel):
         "变小——这个换算是 2026-09-11 重标定的，算术与实测见 "
         "`experiment/tasks.py` 里 `knowledge_recall_tasks()` 的说明",
     )
-    episode_goals: list[GoalForBrain] = Field(
+    episode_goals: list[Goal] = Field(
         default_factory=list,
         description="目标栈在**本层的投影**（run 级 `RunState.goals` 由 `dispatch` 投影而来）。"
         "**判只判栈顶 `episode_goals[-1]`**，其余层是给大脑的全局信息——知道最终目标是什么、"
@@ -115,13 +122,13 @@ class EpisodeRunState(BaseModel):
     它跟 `walk_map`/`landmarks` 一样坐标锚定在这张地图上，可信度同级，
     不像 `knowledge`/`global_episode_memories` 那样是跨场景/跨局的检索结果。"""
 
-    action: ActionFromBrain | None = None
+    action: Action | None = None
     """本圈真正交给世界的那一个动作。**恒为单键**（单段、`times=1`）——
     它由 `act` 从 `pending_presses` 队首派生，带的是 `plan` 的 thought 与
     所在段的 rationale。`reflect`/trace/停摆检测都只认它，所以它们全都不用
     知道"决策"这个概念存在。"""
 
-    plan: ActionFromBrain | None = None
+    plan: Action | None = None
     """**这一次决策交出的整条动作序列**（`think_action` 产出）。
 
     它是**循环状态，不是记忆字段**——`StepMemory` 一律不含决策归属
@@ -132,7 +139,7 @@ class EpisodeRunState(BaseModel):
     是执行期要用的那一份，不做任何对外承诺；恢复 checkpoint 时它随 dump 回来，
     于是"按到一半被杀"能接着把剩下的键按完。
     """
-    pending_presses: list[ActionSegmentFromBrain] = Field(
+    pending_presses: list[ActionSegment] = Field(
         default_factory=list,
         description="把 `plan.sequence` 按 `times` **展开成「一键一段」的待按队列**"
         "（每段 `times=1`、带着它所属那一段的 rationale）。`act` 每圈弹队首；"
@@ -220,3 +227,121 @@ class EpisodeRunState(BaseModel):
     结束收尾链，没有任何全量喂的蒸馏；空列表 `[]` = 校验过但全不可靠——
     蒸馏什么都不喂。两者语义不同，不能互相替代
     （见 `MemoryToolPort.store_episode_summary`）。"""
+
+
+def safe_dirname(episode_id: str) -> str:
+    """`episode_id` 压成文件名安全的一段（与记忆层同一规则）。
+
+    checkpoint 归档（`episode_entry.void_timeline`）也要用它拼目录名，所以是
+    模块级公开函数，不是类里的私有件。
+    """
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", episode_id).strip("_-") or "unknown"
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """临时文件 + rename 的原子写：写完即完整，崩溃最多少一个未 rename 的 tmp。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+class EpisodeCheckpoint(BaseModel):
+    """**一份存档的全部内容**，也是它自己的读写器（原 `tools/checkpoint_tool.py` 的存/取两半）。
+
+    ## 为什么它不再是"一根 Port"
+
+    D9-v6：存档的读写不是一个**能力**——没有第二种存档后端、也没有"把它换成 mock"
+    的需求。它是"harness 自己的状态怎么落盘"这件事，所以跟状态模型住一起（本文件），
+    而不是作为外来的 Port 被注入。`HarnessDeps` 里只剩 `checkpoint_root` 一条路径的
+    身份；`save`/`load` 变成模型自己的 `write`/`read`。
+
+    ## 落盘布局（与 `checkpoint_tool.py` 时代一致，只有 json 键名变了）
+
+        <checkpoint_root>/step/<safe_dirname>/<step>.state   模拟器世界快照（二进制）
+        <checkpoint_root>/step/<safe_dirname>/<step>.json    这份模型（**提交点**）
+        <checkpoint_root>/voided-<ts>/                       废弃局的存档归档
+
+    `checkpoint_root` 是**整个 run 的目录**（`checkpoints/<run_id>/`），独立于
+    `trace_data/<run_id>/`：后者是"这个 run 的可观测事件流"（一条事件一个文件、
+    只写不删），前者是**可变的恢复状态**（会被覆盖、会被整目录搬走归档）。两者
+    语义不同，不该是同一棵树下的兄弟目录。
+
+    ## 世界快照为什么不进 json
+
+    `emulator_state` 是 `bytes`，进 json 要走 base64（体积 +33%、且人不可读）；
+    它又是**唯一不可从事件重建的东西**，单独一个 `.state` 二进制更直白。它标了
+    `exclude=True`——`model_dump_json()` 天然不含它，两个文件各装各的，`read()`
+    读回来时再配对。
+
+    **提交点是 `.json`**：先写 `.state`、后原子写 `.json`。中途 crash 留下的是
+    上一号有效存档（两个文件都齐的那一份），`read()` 按"成对存在 + 签名匹配"识别。
+
+    ## 为什么 run 级那一半是 dump，不是模型
+
+    判据是**谁解读谁内嵌**：`episode_state` 直接内嵌 `EpisodeRunState`（本层要解读
+    它、拿它进图、核对签名）；而 `run_state_dump` 是**纯透传**——episode 层一个字段
+    都不读，只是把它跟自己的状态打包进同一份文件，好让 `resume` 读一次就同时重建
+    两层状态（`CHANGELOG` 2026-09-09：run 级状态单独存 `run.json` 实测必炸）。
+    把它变成 `RunState` 会往本文件引进一条 `episode → run` 的依赖，而它今天
+    **一个读者都没有**——episode 包对 run 包现在零引用，不该为它开这个口子。
+    """
+
+    run_id: str = Field(description="签名三元组之一；防跨 run 串档的显式字段")
+    episode_id: str = Field(description="签名三元组之一")
+    step: int = Field(ge=0, description="签名三元组之一：该步开局前")
+
+    episode_state: EpisodeRunState = Field(
+        description="这一局的状态（**直接内嵌**，不 dump）：恢复管线拿它进图"
+    )
+    run_state_dump: dict[str, Any] = Field(
+        default_factory=dict,
+        description="这一步所属局的 `RunState.model_dump()`（纯透传，episode 层不解读）",
+    )
+    last_event_id: int = Field(ge=-1, description="trace 游标：主前缀的最后一条 event_id")
+    emulator_state: bytes = Field(
+        default=b"",
+        exclude=True,
+        description="模拟器世界快照（唯一不可从事件重建的东西）；不进 json，单独落 `.state`",
+    )
+    frame_event_ids: dict[int, int] = Field(
+        default_factory=dict,
+        description="本局帧账之一：步号 → 承载该帧那条事件的 event_id（截图文件名）",
+    )
+    pending_frames: dict[int, str] = Field(
+        default_factory=dict,
+        description="本局帧账之二：步号 → 尚未挂上事件的帧的 base64 PNG（通常为空）",
+    )
+    saved_at: str = Field(default="", description="ISO 保存时间（审计用，恢复逻辑不依赖）")
+
+    def write(self, root: Path) -> None:
+        """写一份存档：先把世界快照落盘，再原子写 json（**json 才是提交点**）。
+
+        `root` 是这个 run 的存档根（`HarnessDeps.checkpoint_root`）。
+        """
+        target_dir = root / "step" / safe_dirname(self.episode_id)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / f"{self.step}.state").write_bytes(self.emulator_state)
+        self.saved_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        _atomic_write_text(target_dir / f"{self.step}.json", self.model_dump_json())
+
+    @classmethod
+    def read(cls, root: Path, episode_id: str, step: int) -> EpisodeCheckpoint | None:
+        """取一份存档；`.json`/`.state` 不成对、或签名对不上时返回 `None`。
+
+        **坏档（解析不了）不吞**：那是与"没有这份存档"不同的故障，静默返回 `None`
+        会让调用方报出误导性的"找不到存档"。这里只对"文件不在"返回 `None`。
+
+        **旧档（`state_dump` 时代的 json）读不了**：键名改成了 `episode_state`，
+        pydantic 会因为缺字段直接抛——这正是我们要的（安静降级成"没有存档"更糟）。
+        """
+        step_dir = root / "step" / safe_dirname(episode_id)
+        json_path = step_dir / f"{step}.json"
+        state_path = step_dir / f"{step}.state"
+        if not json_path.is_file() or not state_path.is_file():
+            return None
+        checkpoint = cls.model_validate_json(json_path.read_text(encoding="utf-8"))
+        if checkpoint.episode_id != episode_id or checkpoint.step != step:
+            return None  # 签名不匹配 = 这不是你要的那份（不靠目录位置推断）
+        checkpoint.emulator_state = state_path.read_bytes()
+        return checkpoint

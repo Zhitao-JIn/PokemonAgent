@@ -1,51 +1,55 @@
-"""run 图的装配：6 个节点 + 3 条条件边。
+"""run 图的装配：6 个节点 + 3 条条件边 + 挂在 `episode` 那格上的 `error_handler`。
 
 拓扑（步 2 起 `dispatch` 与 `reflect` 之间多了一个 `episode` 节点）：
 
     begin ──→ plan ──→ dispatch ──→ episode ──→ reflect ──┬─(失败且重试未耗尽)─→ dispatch
-                  ↑                                        │        （直接重试，不经 episode？是——
-                  │                                        │         重试就是再派发一次 episode）
+                  ↑                                        │        （重试就是再派发一次 episode）
                   │                                        └─(否则：弹出)─→ review
-                  └────── continue / retry / push ────────────────────────┤
+                  └────── continue / retry ────────────────────────────────┤
                     (done / plan 连续失败)                                └─ stop → END
 
 **`episode` 是"两张图怎么连"的落点**（`PLAN_graph_composition.md` §6 步 2 / D1-①）：
 `dispatch` 退成**纯前置**（生成 `episode_id`、`attempts+1`、把父侧的 `task` /
 `episode_goals` 写进 state、刷 `run_state_snapshot`），派发本身由 `episode` 节点做。
+
 - `error_handler` 挂在这一格上（F4 实测：handler 拿到的是**父 state**，返回
   `Command(goto="reflect", update=…)` 时流程正常继续）——这就是原先 `dispatch` 里
   那句 `except AgentError` 的官方落点，"单局异常不崩掉整个 run" 的契约没有丢。
-- 子图步数**计入父图 `recursion_limit`**（F5；节点里嵌套 invoke 也一样，探针 X1），
-  所以 run 级的预算覆盖了 episode 的全部内部步数——见 `run_harness.py` 的
-  `run_recursion_limit()`。
+- 子图步数**是否**计入父 limit：F5 说"计"，但那只对形态 A（子图当 `add_node` 的函数直挂）
+  成立；本仓是形态 B（节点里 `graph.invoke`），探针 X5 实测父子各算各的。所以 run 级
+  不再去算 episode 那一笔——只给一个可调的**闸门常量**（`run_entry.RUN_RECURSION_LIMIT`），
+  贴身的限归内层 `episode_entry.episode_budget()`。
 - 观测台零影响（F9）：它吃 trace 事件，不吃 graph stream。
 
-**步 2 的形态**：节点仍是 `RunHarness` 的方法（`nodes[...]` 里传进来），本模块只负责
-"把哪些节点按什么顺序接起来"；episode 那只子图在步 3 逐域展开、run 这 6 个在步 4
-搬成自由函数（见 `PLAN_graph_composition.md` §6）。
+**步 4 起本模块是"只有 import 与装配"**：6 个节点各自住在同级的 `<节点名>.py`
+（命名规则 §5.3-5：节点文件名 = 这里 `add_node` 的字面量），本模块只负责
+"把哪些节点按什么顺序接起来"。
 
 `add_node` **逐行写字面量**：顶层即流程，且 `scripts/check_graph_phases.py` 靠
-`ast` 抽这些字面量做机械核对。
+`ast` 抽这些字面量做机械核对（图序 + "每个节点名恰好一个实现文件"）。
 """
 
 from __future__ import annotations
-
-from collections.abc import Callable, Mapping
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from ..deps import HarnessDeps
-from .state import RunState
+from .begin import begin
+from .dispatch import dispatch, episode_error_handler
+from .episode import episode
+from .plan import plan
+from .reflect import reflect
+from .review import review
+from .run_state import RunState
 
-NodeFn = Callable[[RunState], dict]
-"""一个节点的形状：读 state 全量，只回**状态增量**。"""
 
-
-def compile_run_graph(nodes: Mapping[str, NodeFn]) -> CompiledStateGraph:
+def compile_run_graph() -> CompiledStateGraph:
     """把 6 个节点与它们之间的边装配成图，返回编译好的对象。
 
-    `nodes` 的键就是节点名（与 `add_node` 的字面量逐字相同），值是节点函数。
+    **不带参数**（步 4 起）：节点名 → 节点函数那张表就是同级的 6 个模块，
+    本模块 import 它们即可——装配与实现分居两层，一张表两处维护的窗口关掉了。
+
     `episode_error_handler` 是本图唯一一个"只在出错时才跑"的节点——它不当顶点用，
     只交给 `add_node(..., error_handler=)`（F4）。
 
@@ -56,18 +60,18 @@ def compile_run_graph(nodes: Mapping[str, NodeFn]) -> CompiledStateGraph:
     （它们的产物早已在存档里，重问一遍既多花一次调用又可能与存档不一致）。
 
     **`context_schema` 声明成 `HarnessDeps`**（全图唯一的 context，F10）：
-    `RunHarness.run()` 用 `invoke(..., context=deps)` 递进来，episode 那只子图
+    `run_entry.new_run()` 用 `invoke(..., context=deps)` 递进来，episode 那只子图
     通过它拿到同一份依赖与账。类型参数只能填它——`scripts/check_graph_phases.py`
     有机械核对。
     """
     graph = StateGraph(RunState, context_schema=HarnessDeps)
-    graph.add_node("begin", nodes["begin"])
-    graph.add_node("plan", nodes["plan"])
-    graph.add_node("dispatch", nodes["dispatch"])
+    graph.add_node("begin", begin)
+    graph.add_node("plan", plan)
+    graph.add_node("dispatch", dispatch)
     # `episode`：派发这一局（内部是 episode 那只子图），异常由 handler 兜成失败结算。
-    graph.add_node("episode", nodes["episode"], error_handler=nodes["episode_error_handler"])
-    graph.add_node("reflect", nodes["reflect"])
-    graph.add_node("review", nodes["review"])
+    graph.add_node("episode", episode, error_handler=episode_error_handler)
+    graph.add_node("reflect", reflect)
+    graph.add_node("review", review)
     graph.add_conditional_edges(
         START,
         lambda state: "dispatch" if state.resume_episode is not None else "begin",
@@ -119,3 +123,6 @@ def _should_retry(state: RunState) -> bool:
         and bool(state.goals)
         and state.goals[-1] == state.task
     )
+
+
+__all__ = ["compile_run_graph"]
