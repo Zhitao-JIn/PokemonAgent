@@ -968,7 +968,28 @@ voided 目录，不做静默删除）、`WorldPort.load_state`、`RunDataCenter`
   （比如恢复并发判定，或并行跑多个 episode）要记得回头看这两条。
 
 
-### 18. 💬 检索按质量分加权——`quality_score` 现在只写不读
+### 18. ✅ 检索按质量分加权——已落地（质量分粗筛 + 加权求和）；剩下的只有消融验证
+
+> **0911 现状（本条的前提"只写不读"已经不成立，实现早已接上）**：
+> - **质量分真的进了排序**，`pokemon_agent/tools/memory_tool.py` 里三段都在用：
+>   ① **粗筛**：场景匹配后若候选超过 `EPISODE_CANDIDATE_CAP = 20`，先按
+>   `quality_score` 砍到前 20 再进混合检索（理由写在常量 docstring 里：
+>   避免对几十上百条候选做 BM25+向量+reranker，质量分是现成的粗筛信号）；
+>   ② **加权**：`EPISODE_RELEVANCE_WEIGHT = 10.0` / `EPISODE_QUALITY_WEIGHT = 3.0`
+>   / `EPISODE_SUCCESS_WEIGHT = 1.5`，相关性主导、质量与成败用于在相关性接近时
+>   分高下；③ reranker 原始分先 min-max 归一化到 [0,1] 再叠加（`_normalize()`，
+>   并列时统一给 1.0 避免除零把权重抹平）。
+> - **所以"没定的地方"里那个"加权公式"已经有答案了**：线性加权求和 **+**
+>   阈值式粗筛（两者结合），不是二选一。
+> - **类位置也变了**：`EpisodeMemory` 现在在
+>   `pokemon_agent/schemas/memory/datastore/episode_memory.py`
+>   （原 `memory/episode/episode_memory.py` 已随 0910 重构搬家）；
+>   `quality_score` 仍然只在 `EpisodeMemory` 上，`StepMemory` 没有这个字段——
+>   这一条**没变**，要不要给单步情景也打分仍然没讨论过。
+> - **唯一还开着的：消融验证（方向 2）**——"开关质量分加权各跑一遍对比成功率"
+>   没有做过，因为要等一个能稳定复现的基线（第 3 条），而第 3 条现在连基建
+>   都没有。**两个前置条件里，第 8 条那条已经在 0911 解决了**（跨 run 检索
+>   已强制隔离），所以现在的唯一前置就是基线本身。
 
 `episode_memory.py::EpisodeMemory.quality_score`（judge 生成跨局摘要时打分，
 0.0–1.0，附 `quality_rationale`）现在只在摘要写入时产生，`memory/retrieval.py::
@@ -998,6 +1019,21 @@ query_episode_summaries()` 检索排序目前只看 BM25+向量融合+reranker �
 
 ### 19. 📋 数据导出接口：按质量分导出高质量记忆样本
 
+> **0911 现状：需求不变，但"没定的地方"减少了一条，且实现落点变了。**
+> - **落点**：`FileEpisodeMemoryStore` 已退役（第 27 条），现在的存储形态是
+>   仓库根级 `memory/episode_memory/<uuid>.md`（frontmatter 是结构化字段）
+>   + `index.json` 倒排索引。所以"产出 `.md + frontmatter`（现有存储格式原样
+>   导出，不用转换）"这句**反而更容易做到了**——原样拷贝记录文件即可，
+>   顺带可以拷 `index.json` 的子集。
+> - **阈值不再是"没有依据"**：`quality_score` 现在真的参与检索排序
+>   （第 18 条，粗筛 + 3.0 权重），所以"阈值怎么定"有了一条现成参照——
+>   与 `EPISODE_CANDIDATE_CAP` 的粗筛口径对齐。
+> - **"高质量 ≠ 已验证"这个提醒现在更该写清楚**：`verify_and_summarize`
+>   已经在同一份 prompt 里产出**结构化 `verdicts`**（每条 `reliable`/`why`），
+>   所以"摘要写得好不好"（`quality_score`）与"内容可信不可信"（`verdicts`）
+>   在数据里已经是**两个并列字段**，导出接口不该把它们揉成一个"高质量"。
+> - 仍没定：导出粒度（单条 vs 整局打包）、导出前要不要额外校验、走端点还是 CLI。
+
 现在 `FileEpisodeMemoryStore` 落盘的跨局摘要记忆已经带 `quality_score`/
 `quality_rationale`（判定时打的分+理由），但只用于本地检索，没有对外的导出
 通道——想要一批"高质量样本"（比如做进一步分析，或作为下游候选数据）得手工
@@ -1015,6 +1051,18 @@ query_episode_summaries()` 检索排序目前只看 BM25+向量融合+reranker �
 文档需要把这个区分说清楚，避免"高质量"被误读成"已验证为真"。
 
 ### 20. ❓ episode 打分聚类——只是个想法，还没方案
+
+> **0911 现状：仍是 ❓，一字未动。但跟第 18 条的关系现在清楚了，"不能假设是
+> 同一件事"这个警示可以升级成结论：**
+> - **第 18 条已经落地**（质量分接入检索排序，是"用已有的分数做排序"），
+>   所以本条剩下的独有部分就是**"聚类"这一半**——即"把一批 episode 按某种
+>   维度分组，然后拿来干什么"。
+> - **"打分"那一半也不用新造**：单条质量分（`quality_score`）有，
+>   逐条可信性（`verdicts`）也有，按错误类型/步数打分的原始数据在 trace 里
+>   （`error` 事件的 `kind`、`STALL_CHECK` 事件、`MODEL_CALL` 的 token/延迟）。
+>   所以本条真正待定的是**"聚出来干嘛"**：喂第 3 点的 prompt 自动更新
+>   （聚类结果当输入），还是只做数据分析报表。
+> - 优先级信号仍在（0904 用户要求"早点放上日程"），但**方案讨论一次都没进行过**。
 
 0904 用户提出的新想法，跟第 3 点"prompt 自动更新"一起被要求"早点放上日程"，但
 连雏形都没有，跟第 14 条"task 级实时意图识别"是同一个成熟度（❓，只有一句话）。
@@ -1034,7 +1082,30 @@ query_episode_summaries()` 检索排序目前只看 BM25+向量融合+reranker �
 设计留到下次讨论。
 
 
-### 21. ❓ criteria 太松 + VLM 感知可靠性——两个可能同时存在的问题，都还没方案
+### 21. ❓ criteria 太松 + VLM 感知可靠性——两个问题都没方案，但 0911 排查条件比当时好得多
+
+> **0911 现状：诊断结论不变（两个问题可能同时存在、都还没修），但这条的
+> "前提"和"排查手段"都变了，按老描述往下查会得出错的结论。**
+>
+> - **前提变了：模型换过两轮。** 当时的观察是在旧模型下做出的；现在
+>   **感知走 `qwen3.8-max`**（从 `qwen3-vl-plus` 升上来），**判定链也换过**
+>   （`judge` 走 `qwen3.8-max`、`verify`/`plan` 走豆包旗舰，见第 23 条）。
+>   所以"VLM 把宝可梦中心里的 NPC 标成大木博士"这个个例**属于旧模型的观察**，
+>   新模型下还成不成立**没有重测过**——这条要做的第一件事是复现，不是设计修法。
+> - **判定方的证据来源变了：`judge` 现在带图。** `judge()` 用
+>   `frame_sequence(history)` 去重后送图问模型，`ModelCall.payload.n_images`
+>   记录带了几张。也就是说 judge 判"scene 是 indoor 且 map_id 变了"时**理论上
+>   能看到画面**——"criteria 太松"和"judge 看不到画面所以只能照字面判"这两种
+>   解释的权重跟当时不一样了，要重新核对。
+> - **排查手段齐了（这是最大的好消息）**：① 截图绑 trace `event_id`、落在
+>   `trace_data/<run_id>/screenshot/`；② `StepMemory` 里直接存 base64 帧；
+>   ③ `n_images` 能查出判定时到底带了几张图；④ `MEMORY_READ` 账能查出检索
+>   到了什么知识（第 12 条那次"以为是模型编的、其实是检索到的"教训）。
+>   所以"同一帧多次感知看方差"或"人工标注一批帧对照"这两个方案**现在都做得动**。
+> - **仍未动**：`experiment/tasks.py::pokemon_center_enter` 的 `success_criteria`
+>   一个字没改（判据依旧只要求"换了张图"）。**暂不动手**，等跟用户对齐排查方式
+>   ——但要注意这条现在不只是"criteria 收紧到什么程度"的问题，还得先回答
+>   "新模型下 VLM 到底还错不错"。
 
 见"已完成"表里对应的诊断行。同一次 run 里连续暴露两条：**a)** `tasks.py` 里
 `pokemon_center_enter` 的 `success_criteria`（"scene 是 indoor，且 map_id 和历史里
@@ -1052,7 +1123,23 @@ query_episode_summaries()` 检索排序目前只看 BM25+向量融合+reranker �
 
 | ✅ 目标栈编辑也跟着 review 状态门控，跟 review 合并进同一个框；顺带修好这台 device VM 的 `vite build` | 用户在上一条前端改版基础上追加两点：**a)** 目标栈的编辑能力（追加目标表单、非栈顶目标的行内改/删）也改成只有真有待审查请求时才能用；**b)** 这部分跟"人工审查"放进同一个带边框的框里，不是两个各自独立的框。**改动**：`App.tsx` 新增派生量 `reviewActive = review !== null && runId !== null`；"追加目标"表单从原来紧跟目标栈列表的位置挪进一个新的 `<section style={styles.reviewPanel}>`（标题按 `reviewActive` 显示"人工审查"/"无待审查"，跟原 `ReviewPanel` 组件用的是同一个视觉语言但只在这一层出现一次），表单三个输入框和提交按钮都加 `disabled={!reviewActive}`；`ReviewPanel` 组件本身**去掉了自带的边框和标题**（改版前它自己也套一层 `styles.reviewPanel` + 标题，跟外层新框嵌在一起会变成"框中框、标题写两遍"），现在只吐内容，边框/标题交给调用方；`GoalRow` 新增 `disabled` prop，栈顶只读行不受影响，非栈顶的行内编辑表单（目标/判据/步数三个输入框 + 保存/删除两个按钮）现在也一起禁用。**顺带修的环境问题**：验证这批改动时被用户指出"没有缺失啊，发我指令"——上一条记录里"`vite build` 因为原生依赖缺失跑不了，是环境问题"这个结论是错的，实际是这台 Linux device VM 的 `node_modules/@rollup/` 只装了 Windows 平台的二进制（`rollup-win32-x64-gnu`/`msvc`），因为 `npm install` 本来是在用户的 Windows 机器上跑的——`npm install @rollup/rollup-linux-x64-gnu --no-save` 补装对应平台包（`--no-save` 不改 `package.json`/`package-lock.json`，`git status` 确认 Windows 那边的锁文件没受影响），`vite build` 之后就能跑通。**验证**：`tsc --noEmit` 全干净；`vite build`（这次是真的跑通，不是"环境限制跳过"）成功产出 `dist/`，为避免撞上一次构建残留的 `dist/` 目录权限问题，改用 `--outDir /tmp/dist-check` 验证，构建日志确认 37 个模块正常转换、产物大小合理。**没做**：没有真实启动前端肉眼看一遍布局（这台 device VM 起不了可交互的 vite dev server 供人眼观察，只能验证类型正确 + 构建成功）；构建残留的 `web/dist/`、`web/vite.config.ts.timestamp-*.mjs` 两个文件这台 device VM 默认无删除权限，留给用户自己清理或后续申请权限处理。|
 
-### 22. 💬 token 预算/上限机制——账本齐全但没有预算，超支时没人拦
+### 22. 💬 token 预算/上限机制——账本更全了，预算仍然没有；0911 还多了"看不见"这一层
+
+> **0911 现状：结论不变（只有会计没有风控），但两头都有变化。**
+> - **账本又加了一列**：`MODEL_CALL.payload` 现在除 `input_tokens`/
+>   `output_tokens` 外还带 `cached_tokens`（六个调用点全补，取不到记 `"0"`）
+>   ——缓存命中那部分按 20% 计价，所以**"花了多少钱"比按原始 token 算更准了**，
+>   预算阈值将来最好按折算后的口径定。
+> - **账单结构变了**：`plan()` 在两个开关都关时**真跳过模型调用**（零 token）；
+>   而 `judge`/`verify` 改成**带图多模态**后单次 input token 明显变大
+>   （实测图数 1→2 约涨 1800 token）。也就是说预算的大头从"多链路摊薄"
+>   变成"决策 + 带图的判定链"。
+> - **多缺了一层**："在哪拦"之前还缺"怎么看见"——第 2 条的按链路聚合报表
+>   随 `evaluation/` 一起退役了。当时是"账本和报表都在，缺预算"，
+>   现在是"**账本更全，报表和预算都不在**"。
+> - **a/b 两个落点候选仍未拍板**（harness 每步检查 vs experiment 跑批后归因），
+>   阈值怎么定也仍无基线（第 3 条）。
+> - 先例仍然成立：2026-08-31 那次 77 秒 input 膨胀，事后能从账单看出、当时没人拦。
 
 现状：token 用量已经**逐调用**落盘——`MODEL_CALL` 事件的 payload 带了
 `input_tokens` / `output_tokens` / `cached_tokens`（外加延迟、尝试次数、`raw`、
