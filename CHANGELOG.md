@@ -1,3 +1,61 @@
+## 2026-09-12（28）—— harness 图组合重构·步 1：`chain` → `decision` 术语收敛
+
+**改了什么**
+
+一个词在本仓指了四件事（那次决策的步号 / 按那次决策分组 / 取最近几次 / 图的节点序列），
+而且**函数名与它渲染出的文本互相矛盾**——`render_chains()` 输出的句子早就写着
+"一次决策按的 N 个键"。本步把它收敛到**决策**这一个词：
+
+| 现在 | 改成 | 处 |
+|---|---|---|
+| `chain_key(entry)` | `decision_key(entry)` | — |
+| `group_chains(entries)` | `group_by_decision(entries)` | — |
+| `last_chains(entries, n)` | `last_decisions(entries, n)` | — |
+| `render_chains(entries, *, reason)` | `render_decisions(entries, *, reason)` | — |
+| `JUDGE_CHAIN_HISTORY` | `JUDGE_DECISION_HISTORY` | — |
+| `is_chain_tail`（两个局部变量） | `is_decision_tail` | — |
+| `trace_render.action_chain(action)` | `trace_render.action_presses(action)` | 它有另一件事（把 `ActionFromBrain` 渲成 dict），**单列** |
+
+仓库 6 个文件共 **48 处**（含 `schemas/memory` 两层 `__init__` 的 `__all__` 与 import），
+连带技能核验脚本 3 个文件 **37 处**；四个纯函数的 docstring 措辞同步
+（"链号" → "决策标识"、"整条链" → "整次决策"、"按链长线性放大" → "按决策长度"）。
+
+**为什么这么改**
+
+1. **它描述的是形态，不是归属。** "链"说的是"这些键串在一起"，真正的语义是"它们出自
+   **同一次决策**"——`plan_step_start`（= `decision_key`）才是那个归属键。
+   **判据在决策，不在连续。**
+2. **同词异义已经发生**：`action_chain`（渲染一个动作）与 `CHAIN_PHASES`（前端相位链）
+   跟它毫无关系，读者会以为有关。
+3. **两套词让读者做翻译**：读 `chain_key` 的人得自己连上"这就是 `plan_step_start`"。
+   改完之后每处读出来都是中文原话——"这一步是哪次决策按的"/"最近 2 次决策"。
+
+**取舍**
+
+1. **`last_chains` → `last_decisions`，不改成 `last_decision_entries`。** PLAN D7 的
+   "顺带发现"指出"返回的是平铺的键、不是 N 个元素"，名实略有不符——但
+   `last_decisions(recent, 2)` 读作"最近 2 次决策（的全部键）"是通的，而
+   `last_decision_entries` 更长且丢掉了"取最近"这半句。**代价写进 docstring**：
+   第一行点明返回的是"最近 `count` 次决策的**全部键**"。
+2. **`macro` / `plan` 两个备选不采用**：`plan` 会与 run 层"LLM 规划"那个节点撞词，
+   比现状更糟；`macro` 是游戏圈术语，读代码的人不一定是玩家。
+3. **中文的"链尾"/"链内"保留**（指"一次决策内部的位置"），只改会与标识符打架的那几处
+   （`judge` 取窗注释、`decide_action` 的渲染说明、`JUDGE_DECISION_HISTORY` 的 docstring）。
+   一刀切会把"链内小循环"这类已经稳定的说法一起搅动，收益不抵风险。
+4. **`StepMemory.plan_step_start` 不动**——它本来就是对的那半（记忆侧按它分组），
+   记忆文件不用迁移。
+
+**影响面**
+
+- **代码**：6 个本仓文件改名（无新增/删除文件）；技能侧 3 个脚本同步。
+- **行为**：零变化。三项验收全绿——`check_imports.py`（422 条）、
+  `check_graph_phases.py`（21 节点），离线核验 `verify_chain_inner_loop.py`
+  （**116 条 ALL PASS**，其中块 F 断言的四个函数名已同步）。
+- **未动**：`web/src/App.tsx` 的 `CHAIN_PHASES`（那是"相位链"，UI 局部命名）；
+  JSON/存档里的任何字段名（`plan_step_start` 等一律不动，**旧存档照读**）。
+
+---
+
 ## 2026-09-12（27）—— harness 图组合重构·步 0：立骨架、解父子交界四件事，行为零变化
 
 **改了什么**
