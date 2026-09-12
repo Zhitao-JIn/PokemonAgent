@@ -1,3 +1,80 @@
+## 2026-09-12（25）—— tool 层协议搬家：`tools/interface/` + 出口分家 + 实现懒加载
+
+**改了什么**
+1. **五张工具协议换房**：`tools/ports.py` → `tools/interface/ports.py`（`git mv`，
+   内容零改动；只把那段"为什么不需要 `interface/`"的 docstring **就地标注为过期**，
+   论证不删）。新增 `tools/interface/__init__.py` 作协议的统一出口。
+2. **`tools/__init__.py` 出口分家 + 五个实现懒加载**：不再导出任何协议；五个实现
+   改走 `_LAZY` + `__getattr__`（与 `world`/`brain` 的 `__init__.py` 同一手法）。
+3. **6 个 harness 消费点改 import**：`from pokemon_agent.tools import XToolPort` →
+   `from pokemon_agent.tools.interface import XToolPort`（`brain_utils`/`game_utils`/
+   `run_plan_utils`/`trace_write`/`episode_harness`/`run_harness`）。
+4. **`tools/trace_tool.py` 的子模块 import 显式化**：
+   `from pokemon_agent.tools import trace_render` →
+   `import pokemon_agent.tools.trace_render as trace_render`。
+5. **文档**：`docs/spec/tools/SPEC.md` 加文首**现状块** + 就地把 4 处旧地址标注
+   （`interfaces/tools.py`/`interfaces/world.py`）；`PLAN_tool_interface.md` 升 **v3**，
+   新增 §7 记落地实测。
+
+**为什么这么改**
+`tools/` 是六个领域层里**唯一**一个"统一出口把抽象和实现一起导出来"的层。后果可测：
+只要从 `pokemon_agent.tools` 拿一张协议，Python 就得先把 `__init__.py` 跑完，
+五个插件全部落进 `sys.modules`——"换 mock 不改 harness"这句在**类型上**早就成立
+（注解里只有 Protocol），在 **import 这一层**没成立：它确实不知道自己拿的是谁，
+但代价是"必须把五个人全请来才知道"。
+
+**① 一个落地时才被实测推翻的判断（本条最该记住的）**
+原方案（PLAN v2）认为"协议搬出去 + 出口不再导出协议"就够了，并把懒加载判成
+"只是把账藏起来，不建议"。**这个判断错了**，错在一个容易漏的机制上：
+`tools/interface` 是 `tools` 的**子模块**，而 **import 子模块必先跑完父包的
+`__init__`**。所以只要 `tools/__init__.py` 还急切导入五个插件，
+`from pokemon_agent.tools.interface import GameToolPort` **照样付满价**——
+那份方案自带的验收（"146 → ≈113"）按它自己的步骤表**永远不可能通过**。
+补上实现懒加载后才真正兑现：
+
+| 做法 | 拿 `GameToolPort` 时累计加载的 `pokemon_agent` 模块 | `tools.*` |
+|---|---|---|
+| 基线（协议在 `tools/ports.py`） | 146（信封 113 + 33） | 8 个，含 5 个插件 |
+| 只搬协议、出口照旧 | 146 | 插件一个不少 |
+| **本次（三层都动）** | **116**（113 + 3） | 只有 `tools`/`tools.interface`/`tools.interface.ports` |
+
+**② 顺带修掉一个"靠字母序侥幸通过"的隐患**
+`trace_tool.py` 原来写 `from pokemon_agent.tools import trace_render`。出口改懒之后
+这行**运行期仍然能跑**（`from 包 import 子模块` 有子模块回退），但
+`scripts/check_imports.py` 只用 `hasattr` 判别、**不触发**那个回退，会判它失效；
+它今天不报错纯属脚本按路径字母序**先**走到 `trace_render.py`、把该子模块绑成了
+包属性。改成 `import pokemon_agent.tools.trace_render as trace_render` 后 AST 上是
+纯 `Import` 节点，静态检查器只验"模块导得到"，不再依赖顺序。
+
+**取舍**
+- **懒加载 vs 保持急切**：选懒加载。理由不是风格——是"import 子模块必先跑完父包"
+  这条语言规则让急切导入与本次目标**直接冲突**。机制与 `world`/`brain` 的
+  `__init__.py` 同源（那两处被循环 import 逼、这里被子模块规则逼），写法完全一致。
+- **不留转发文件**：`tools/ports.py` 不保留 re-export 薄壳，否则"协议住哪"永远有
+  两个答案（与早先 `schemas` 内部那次搬家一致）。
+- **不预建 `interface/domain/`**：五张协议签名完全由信封类型 + 标量构成，今天没有
+  一张属于自己的形状；沿用 `world`/`trace` 的判据"有专属形状才开子包"。
+- **实现只能在这一个装配点 new，这条没动**（`build.py`）；
+  `from pokemon_agent.tools import GameTools` 的写法一行不变。
+- **接受 `ruff check` 54 → 55**：唯一新增是 `tools/__init__.py` 的 `ANN202`
+  （`__getattr__` 缺返回注解）。仓里**已有五个**懒加载出口各贡献一条同款，新加第六个
+  必然多一条，属**结构性增量**；把六个 `__getattr__` 一起加注解能降到 49，但那超出
+  本任务范围，本次不改，在此留痕免得下次被当成回归。
+- **不碰**：`memory/ports.py`（无此毛病——拿 `MemoryStorePort` 只付 5 个模块）、
+  五个门面的方法签名、`schemas/`（不改名的决定见 PLAN §4）。
+
+**影响面**
+- 新增 `tools/interface/`（2 个文件）；`tools/ports.py` **移动**（非复制）；改 7 个
+  import 点 + 2 个 `__init__` + 2 份文档。
+- **不改行为**：`check_graph_phases` OK 20 nodes（图拓扑未动）；全包 171 个模块逐个
+  import 失败 0；`check_imports` OK 404 条（**条数不变**——只换目标，没增删 import）。
+- **对后续**：ROADMAP 25（A2A / 拆包）少了一处硬耦合——拿协议不再拖实现。
+- **未做（留档）**：`AGENTS.md` §四 目录树、`docs/spec/interfaces/SPEC.md` 两份
+  **指向不存在的顶层 `interfaces/`** 的过期文档，本次只列未动（改 `AGENTS.md`
+  按规矩要先讨论）。
+
+---
+
 ## 2026-09-12（24）—— harness 散件边界写进 SPEC；抠掉一处指向已删文件的活 docstring；tool 接口 PLAN 升 v2
 
 **改了什么**
