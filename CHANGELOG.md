@@ -1,3 +1,74 @@
+## 2026-09-11（21）—— 帧账随存档走（v6）：恢复后的链首 `OBSERVE` 与首个 store 步不再丢图
+
+**改了什么**
+
+1. `FromHarnessToCheckpointToolSaveReq` / `...LoadResp` 各加两个字段：
+   `frame_event_ids: dict[int, int]`（步号 → 承载这一帧那条事件的 `event_id`）与
+   `pending_frames: dict[int, str]`（还没挂上任何事件的那一帧的 base64 PNG）。
+2. `CheckpointTool._meta()` 把两者写进存档 json、`_read_checkpoint()` 读回——**旧档缺
+   这两个键按空表处理**（`meta.get(key, {})`）。
+3. `EpisodeHarness` 新增 `_frame_ledger(episode_id)`（摊平**本局切片**）；`save_checkpoint`
+   先摊平再存档；`resume()` 新增「步骤 5：帧账回载」（原步骤 5/6 顺延为 6/7）。
+4. 文档：`SPEC.md` 新增 §2.5；`PLAN_checkpoint.md` 加 v6 变更头 + §3.1/§5 两处；
+   `pokemon-agent-offline-verify` 技能里那条「恢复后的链首 `OBSERVE` 不带帧（已知缺口）」
+   改写成 v6 已修，并标注旧档仍会假失败。
+5. 离线核验脚本加 **E 块**：真 `CheckpointTool` + `resume()` + 反向对照 + 第 0 步恢复。
+
+**为什么这么改**：这是 0911 真机 `check_restore` 观察到的事实——恢复段时间线的**第一条
+`OBSERVE` 只有 payload、没有帧**。根因不是磁盘缺图：截图按 `event_id` 好好躺在
+`screenshot/` 里；缺的是**"哪条事件承载这一步这一帧"这张对账**——它在
+`_frame_event_ids`/`_pending_frames` 两张**纯内存**表里，而 `resume()` 是在新进程里构造的
+harness，两张表都是空的。同一条根因还压着第二处：恢复后第一个 store 步的
+`before_frame`（`store_step_episode_memory` 要 `_frame_b64(ep, before.step)`）会一起变
+`None`——上一版只是因为恢复点恰好落在收尾链（收尾链不落 step 记忆）才没暴露。一句话：
+**`StepMemory` 的 `before_frame`/`after_frame` 是逐键都要的、链首那一帧是"大脑决策时看到
+的世界"的副本，两者都不该因为"进程重启过"而消失。**
+
+**取舍**
+
+- **不进 `state_dump`，而是作为存档 json 自己的键。** 进 state 等于给每份存档都塞一张
+  PNG（`EpisodeRunState` 是"一局的全部可序列化状态"，每圈边界 dump 一次）；而帧账只有
+  第 0 步那一份会带 PNG——真机实测：GBA 截图 2.7 KB、base64 后 3596 字符，同目录 `.state`
+  是 167 KB，`<step>.json` 自己已经 2.6→42 KB。为这点体积去动状态模型不划算。
+- **只带本局切片。** 存档是"这一局第 `step` 步"的存档，别的局的帧账与它无关；
+  `_frame_event_ids` 在整个 run 里**不清理**（跨局累积），全量落盘等于让每份存档为前面
+  每一局背书。
+- **整数键。** 落盘时 `json.dumps` 把 `int` 键写成 `"<step>"`，读回时 Pydantic 按
+  `dict[int, int]` 把 `"1"` 收成 `1`——`resume()` 直接灌回两张内存表，调用点不用写
+  `int(k)`。代价是这份契约依赖 Pydantic 的键强制转换，已用断言钉住（E 块「读回时整数键
+  还原」）。
+- **不加版本号/迁移。** 缺字段 = 空表，正是"这份存档没带帧账"（v6 之前写的档）的准确语义。
+  老的 `checkpoints/restorecheck-0911-22*` 照样读得动。
+- **没有改用"扫 trace 反推帧事件的 event_id"。** 反推法（"游标之前最近一条带帧的事件就是
+  这一步的帧"）在当前图顺序下**确实**成立，但有两个毛病：**(a)** 第 0 步无解——那时帧还
+  没挂上任何事件（在 `_pending_frames` 里），存档不带它就只能丢；**(b)** 它把
+  "`save_checkpoint` 排在 `record_observation` 之前"这个**图顺序**变成隐式契约，以后谁调
+  一下顺序就会静默丢帧。显式带上两张表是唯一同时覆盖两种来源的写法。
+
+**影响面**：checkpoint json 多两个键——第 0 步那份多 3596 字符（约 3.6 KB），其余步只多
+几个整数；**旧档向后兼容**（读回空表）。`save_checkpoint` 的语义从"三件套"变"三件套 +
+本局帧账"，`resume()` 从 6 步变 7 步。全仓 `ruff` **54 → 54**（净增 0）；`check_imports`
+403 条全解析、`check_graph_phases` 20 节点全对齐；**离线核验 66 → 81 条全绿**。
+
+**离线核验**（E 块，用**真的** `CheckpointTool`：真落盘 json + 真读回 + 真 `void_after`）：
+跑一局 → 新 harness 从第 4 步恢复 → 断言恢复后链首 `OBSERVE` 与首个 store 步的
+`before_frame` 都拿得到图、且与恢复前同一步**逐字节同图**；**反向对照**把存档里的帧账抹掉
+再恢复，断言两者**一起丢**（这条要是不丢，说明上面几条断言恒真、什么都没测到）；再加
+**第 0 步恢复**覆盖暂存表那条路径。
+
+**真机核验（经用户授权由 AI 执行）**：`check_restore` **PASS**（run `restorecheck-0911-222937`，
+阶段 A 一步达成目标、存档步 `[0,1]` → 自 **step 1（中间步）** 恢复、游标 22 → 恢复后跑到
+step 3、`reason='success'`）。这一局的恢复点落在中间步，所以**两处丢图都被真机压到**：
+
+| 核的是什么 | 真机数字 |
+|---|---|
+| step 0 存档的暂存表 | `pending_frames={'0': <3596 字符 base64>}`（在 `voided-*/` 归档里，说明归档也带着它） |
+| step 1/2/3 存档的登记表 | `{'0':5, '1':19}` → `{... '2':53}` → `{... '3':73}`，每个边界加一条 |
+| **恢复段的链首 `OBSERVE`** | `#36`（step 1）**带帧**——上一版同一个位置（`#76`/step 3）是**没有帧**的 |
+| 那一帧的出处 | `#36` 内字节 sha `69700ee8…` == 登记表指的 `screenshot/19.png` == 它自己那份 `36.png`，也 == 恢复前 `#24` 的 base64（3700 字符逐字符相同） |
+| 接缝账 vs 链首帧 | 有效 `checkpoint_save` **4** == 有效链首 `OBSERVE` **4**（全带帧）；上一版这里是 **4 vs 3** |
+| 恢复后首个 store 步 | step 1 的记忆 `before_frame`/`after_frame` 都在；该局 step 0/1/2 三条全 YES |
+
 ## 2026-09-11（20）—— 收口 4 处走丢引用 + 新增 import 解析机械核对；真机六维核对首次跑通
 
 **改了什么**
