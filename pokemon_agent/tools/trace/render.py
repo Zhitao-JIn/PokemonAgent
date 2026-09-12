@@ -21,11 +21,11 @@ from __future__ import annotations
 import json
 
 from pokemon_agent.brain import (
-    ActionFromBrain,
-    ActionSegmentFromBrain,
-    GoalForBrain,
+    Action,
+    ActionSegment,
+    Goal,
     StepVerifyVerdict,
-    TaskForBrain,
+    Task,
 )
 from pokemon_agent.providers import ModelCall
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, RunResp
@@ -63,7 +63,7 @@ def run_start(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 
     前置条件：req.task 列表非空语义由调用方保证（goals 可以为空列表）。
     """
-    goals: list[TaskForBrain] = req.run_goals or []
+    goals: list[Task] = req.run_goals or []
     return (
         EventType.LIFECYCLE,
         Source.HARNESS,
@@ -133,7 +133,7 @@ def episode_start(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 
     前置条件：req.task 非 None。
     """
-    task: TaskForBrain = req.task
+    task: Task = req.task
     return (
         EventType.LIFECYCLE,
         Source.HARNESS,
@@ -289,7 +289,7 @@ def observe(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     前置条件：req.obs 非 None。
     """
     obs: Observation = req.obs
-    goals: list[GoalForBrain] = req.goals or []
+    goals: list[Goal] = req.goals or []
     return (
         EventType.VIEW,
         Source.PERCEPTION,
@@ -346,7 +346,7 @@ def memory_read(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     return (EventType.MEMORY_IO, Source.MEMORY, payload)
 
 
-def action_presses(action: ActionFromBrain) -> dict[str, str]:
+def action_presses(action: Action) -> dict[str, str]:
     """动作在 payload 里的形状。**`think` 和 `act` 共用这一个函数**——
     两者的关系是 **1:N**（`think` 一次决策一条、记整条链；`act` 每按一个键一条、
     记那一个键），形状一致才比对得上：`act` 记下来的那个键，是不是 `think`
@@ -405,7 +405,7 @@ def think(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 
     前置条件：req.action、req.attempt 非 None。
     """
-    action: ActionFromBrain = req.action
+    action: Action = req.action
     return (
         EventType.LLM_OUTCOME,
         Source.DECISION,
@@ -431,7 +431,7 @@ def act(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 
     前置条件：req.action 非 None。
     """
-    action: ActionFromBrain = req.action
+    action: Action = req.action
     return (
         EventType.ACT,
         Source.WORLD,
@@ -671,7 +671,7 @@ def action_truncated(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 
     前置条件：req.stop 非空（中止原因）、req.dropped 非空（真丢了键）。
     """
-    dropped: list[ActionSegmentFromBrain] = req.dropped
+    dropped: list[ActionSegment] = req.dropped
     return (
         EventType.ACT,
         Source.HARNESS,
@@ -684,10 +684,10 @@ def action_truncated(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     )
 
 
-def _segments_text(segments: list[ActionSegmentFromBrain]) -> str:
+def _segments_text(segments: list[ActionSegment]) -> str:
     """把一串按键段压成 `up×3 -> left` 一行。
 
-    **格式与 `ActionFromBrain.describe()` 刻意一致**（那里吃整条链、这里吃被丢掉的
+    **格式与 `Action.describe()` 刻意一致**（那里吃整条链、这里吃被丢掉的
     那几段，两处都是给人读的同一件事，长一样才比对得上）。`times == 1` 省掉 `×1`。
     """
     return " -> ".join(f"{s.name}×{s.times}" if s.times > 1 else s.name for s in segments)
@@ -744,7 +744,7 @@ def plan_verdict(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 # ---- 纯格式化，不单独对外暴露，供 observe() 用 ----
 
 
-def _render_goal_stack(goals: list[GoalForBrain]) -> str:
+def _render_goal_stack(goals: list[Goal]) -> str:
     """把目标栈压成一行，塞进 `observe` 的 payload。**栈顶（当前要做的）在最后。**
 
     跟 `Brain._render_goals`（多行、给模型读、栈顶在最上面）刻意不同：

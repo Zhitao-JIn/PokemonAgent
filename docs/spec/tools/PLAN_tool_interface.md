@@ -18,6 +18,13 @@
 
 ### 1.1 `tools/` 的协议和它的实现住在同一个出口里
 
+> **2026-09-12 现状（步 5b 后，权威）**：下面那段 `__all__` 是**当时**的快照，
+> 只当历史论据读。今天 `tools/` 是**四个**门面（`BrainTool` / `GameTools` /
+> `MemoryTool` / `TraceTool`）：`CheckpointTool` 与 `CheckpointToolPort` 已在
+> **步 5b 解散**（D9-v6：存档读写不是一个「能力」），`trace_tool.py` /
+> `trace_render.py` 在步 5a 收成了 `tools/trace/` 包。本节论证的「出口问题」
+> 与结论（`interface/` 只放抽象）不受影响。
+
 `tools/` 是六个领域层里**唯一**一个"统一出口把抽象和实现一起导出来"的层：
 
 ```python
