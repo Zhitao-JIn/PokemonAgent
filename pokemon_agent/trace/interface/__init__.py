@@ -1,11 +1,13 @@
-"""trace/interface 包统一出口：`TracePort` 协议 + `TraceKind` 账目词表。
+"""trace/interface 包统一出口：`TracePort` 协议 + `TraceKind` 记账词表。
 
-两者都不依赖任何重实现（`TracePort` 只依赖 `schemas.trace` 的 `EventType`/
-`Source`，`TraceKind` 零依赖），可以放心立即加载——不需要像 `world/interface`
-里的 `WorldPort` 那样懒加载。
+`TraceKind` 是 trace 自己的词表（零依赖）；`TracePort` 的签名只收**裸字段**
+（`str` / `int` / `dict[str, str]` / `None`）——这是 trace 被当作**独立模块**
+对待的那条边界：它不认识 `ModelCall` 之类的业务类型，"业务对象 → 裸字段"的
+转换整个留给调用方的 tool 层（`tools/trace/render.py`）。
 
-`schemas/trace/__init__.py` 因此保持它 docstring 里说的"依赖叶子，不引用任何
-其他产出模块"——`TraceKind` 不再由它 re-export，需要的地方直接从这里拿。
+两者都可以放心立即加载（不需要像 `world/interface` 里的 `WorldPort` 那样懒加载）：
+本包只从 `..datastore` 拿自己的 `EventType`/`Source`，与 `pokemon_agent` 其余
+部分**互不 import**。
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""从大脑吐出的动作（`ActionFromBrain`）及其连按段（`ActionSegmentFromBrain`）。"""
+"""从大脑吐出的动作（`Action`）及其连按段（`ActionSegment`）。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ MAX_RATIONALE = 2
 上限必须跟着收紧（见 `docs/spec/harness/PLAN_action_step_granularity.md` §4b）。
 段是单一意图，通常一条依据就够，第二条的位置留给"确实还有一条独立依据"。
 
-抽成常量是因为它有两个执行点——`ActionSegmentFromBrain` 的字段约束（数据契约）
+抽成常量是因为它有两个执行点——`ActionSegment` 的字段约束（数据契约）
 和 `Brain._parse`（外部输入校验）。两处必须同源，否则模型给 3 条时会得到一个
 自相矛盾的系统：解析器放行、构造时炸。
 """
@@ -32,7 +32,7 @@ MAX_TIMES = 8
 MAX_SEGMENTS = 4
 """一条链最多几段。
 
-同一个数有两个执行点——`ActionFromBrain.sequence` 的字段约束和 `Brain._parse`
+同一个数有两个执行点——`Action.sequence` 的字段约束和 `Brain._parse`
 （外部输入校验），必须同源，理由同上。
 
 上限存在的理由：**段级论据让输出量随段数增长**（段数 × `MAX_RATIONALE`），
@@ -42,7 +42,7 @@ MAX_SEGMENTS = 4
 """
 
 
-class ActionSegmentFromBrain(BaseModel):
+class ActionSegment(BaseModel):
     """动作链中的一个连续按键段（大脑产、世界执行）。
 
     **一段 = 一个意图 × 连按次数，论据挂在这一层。**
@@ -63,7 +63,7 @@ class ActionSegmentFromBrain(BaseModel):
     )
 
 
-class ActionFromBrain(BaseModel):
+class Action(BaseModel):
     """**从大脑吐出的动作**，交给世界执行。
 
     它带着两样东西过来，服务于两个不同的消费方，**不要合并**：
@@ -77,7 +77,7 @@ class ActionFromBrain(BaseModel):
 
     **链上没有论据，这是有意的。** "为什么要交出这串动作"是链级的，对其中任何
     单个键都不成立，所以它由 `thought` 承担（本来就只进 trace）；进记忆的论据
-    活在段上（`ActionSegmentFromBrain.rationale`）——详见该类与
+    活在段上（`ActionSegment.rationale`）——详见该类与
     `docs/spec/harness/PLAN_action_step_granularity.md` §4b。
 
     **为什么进记忆的是论据而不是结论**：结论（"所以该捡药水"）可以从动作名反推，
@@ -94,13 +94,13 @@ class ActionFromBrain(BaseModel):
         min_length=1,
         description="选择该动作的完整推理。只进 trace，不进 memory，不影响后续决策",
     )
-    sequence: list[ActionSegmentFromBrain] = Field(
+    sequence: list[ActionSegment] = Field(
         min_length=1,
         max_length=MAX_SEGMENTS,
         description=f"按顺序执行的按键链，1-{MAX_SEGMENTS} 段，每段自带一个论据",
     )
 
-    def segments(self) -> list[ActionSegmentFromBrain]:
+    def segments(self) -> list[ActionSegment]:
         """返回规范化后的动作链。"""
         return list(self.sequence)
 

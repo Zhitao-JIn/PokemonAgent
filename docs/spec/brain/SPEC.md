@@ -81,11 +81,15 @@ def __init__(
 
 ## 3. `choose_once()`：一次决策尝试
 
-> **本节部分示例代码仍用旧类名（`Goal`/`Observation`/`ActionSpace`/`Decision`），
+> **本节部分示例代码仍用旧类名（`Observation`/`ActionSpace`/`Decision`），
 > 是本文档更早一版遗留的过时之处，不是本次改动引入的——当前代码里对应的类型是
-> `GoalForBrain`/`ObservationFromWorld`/`ActionSpaceForBrain`，返回值是
-> `tuple[ActionFromBrain, ModelCall]` 而不是 `Decision`。这条留作已知的文档
+> `Goal`/`ObservationFromWorld`/`ActionSpaceForBrain`，返回值是
+> `tuple[Action, ModelCall]` 而不是 `Decision`。这条留作已知的文档
 > 债务，本次只修正"重试循环在哪一层"这个会误导人的部分（见下）。
+>
+> **2026-09-12 补注**：`Goal` 已从上面那个"旧类名"列表里移除——`GoalForBrain` /
+> `ActionFromBrain` 改回了裸名 `Goal` / `Action`（`CHANGELOG.md` (35)(36)），
+> 这个名字绕了一圈又成了当前名，留在"旧类名"里就是自相矛盾。
 >
 > **2026-09-01 改动**：重试循环从 `Brain.choose()` 挪到了 `EpisodeHarness.think()`
 > （见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"）。`Brain` 只剩

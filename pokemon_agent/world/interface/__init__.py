@@ -7,7 +7,7 @@
 整个撤销，消费方直接 `from pokemon_agent.world import WorldPort`。
 
 **`WorldPort` 现在是零依赖的，不再需要懒加载。** 之前 `world_port.py` 要
-`import pokemon_agent.brain`（`ActionFromBrain`/`TaskForBrain` 做参数类型）、
+`import pokemon_agent.brain`（`Action`/`Task` 做参数类型）、
 `import pokemon_agent.schemas.world.communication.PerceiveOnceResp`（做返回类型），
 这两条依赖分别撞过初始化顺序的坑。按"模块间零依赖，只靠裸函数和 tool 层交互"
 这条原则（brain/world/memory/trace 互相都不能依赖），`WorldPort` 的方法签名

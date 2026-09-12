@@ -7,8 +7,11 @@
     store.py    `TracePort` 的实现：一条事件一个 json 文件 + 截图便利副本
 
 事件 payload 的格式规则（原 `utils.py`）按"harness 解耦"方案迁去了
-`tools/trace_render.py`——payload 组装是 tool 层的处理职责，本模块只做
-存储：只依赖 schemas，不依赖任何调用方的领域逻辑。
+`tools/trace/render.py`——payload 组装是 tool 层的处理职责，本模块只做
+存储：**对 `pokemon_agent` 其余部分零 import**（连 `schemas` 都不依赖，
+`TracePort` 只从自己的 `datastore/` 拿 `EventType`/`Source`）。这是 trace 被
+当作**独立模块**对待的那条边界，机械核对见 `scripts/check_graph_phases.py`
+的"trace 自持"一项。
 
 本文件同时是统一出口：`TraceKind`/`TracePort`/`LocalTrace` 与截图读取，外加
 落盘的事件记录形状（`datastore/`，原来放在 `schemas/trace/datastore/`，物理上

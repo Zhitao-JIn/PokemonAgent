@@ -39,7 +39,7 @@ from .ram import read_terrain
 class _Task:
     """`reset()`/`set_task()` 收到的裸字段，攒成一个内部记账用的小结构。
 
-    **不是模块间的信封**——只在这个文件里用，字段就是 `TaskForBrain`
+    **不是模块间的信封**——只在这个文件里用，字段就是 `Task`
     （brain 的类型，world 不依赖它）里 world 真正用得到的那几个。
     """
 
@@ -225,7 +225,7 @@ class PyBoyWorld:
         不同步数上限的任务，"走了几步"就只能是循环的账。
 
         **参数只用于断言和将来按任务选起始存档**——world 不需要知道任务目标是
-        什么，这几个裸字段是 `TaskForBrain`（brain 的类型，world 不依赖它）
+        什么，这几个裸字段是 `Task`（brain 的类型，world 不依赖它）
         拆开后 world 真正用得到的那一份。"现在要完成的是哪条"由 Harness 的
         目标栈保管：任务目标只是栈底那一条，而 agent 当下在做的是栈顶那条，
         两者常常不同。
@@ -284,7 +284,7 @@ class PyBoyWorld:
         """按下去，推进固定帧数。**不感知**——之后那一帧由 Harness 调
         `perceive_once()` 拿（链中间的键走 `ram_only` 那一档）。
 
-        segments：`(按键名, 连按次数)` 的列表——`ActionFromBrain.sequence`
+        segments：`(按键名, 连按次数)` 的列表——`Action.sequence`
             拆开的裸字段，world 不关心 `thought`/`rationale` 这些字段。
             执行层恒传单键（一段、一次）：连按已经在 Harness 那边展开。
         settle：按完要不要给世界一段无输入演化时间（见步骤 3）。
