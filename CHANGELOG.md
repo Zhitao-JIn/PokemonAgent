@@ -1,3 +1,74 @@
+## 2026-09-11（20）—— 收口 4 处走丢引用 + 新增 import 解析机械核对；真机六维核对首次跑通
+
+**改了什么**
+
+1. `experiment/tasks.py`、`experiment/real_check/check_harness.py`、
+   `experiment/real_check/check_restore.py`：`from pokemon_agent.schemas.brain import
+   TaskForBrain` → `from pokemon_agent.brain import TaskForBrain`。（9）把
+   `TaskForBrain`/`GoalForBrain`/`RunPlan`/`StepVerifyVerdict` 等六个数据形状搬到
+   `brain/interface/domain/` 时列了消费方清单，`experiment/` 侧漏了这三处；而
+   `experiment/__init__.py` 是**立即** `from .tasks import ...`，于是一处失效让整个
+   `experiment` 包连带**六个 real_check 脚本全部 import 失败**——`python -m` 直接死在
+   包初始化，连 `main()` 都进不去。
+2. `experiment/real_check/check_memory_roundtrip.py` 迁到现行契约：
+   - `pokemon_agent.schemas.world` 整个子包已删 → `pokemon_agent.world`；
+   - `ObservationFromWorld` → `Observation`（同一次搬家里的改名）；
+   - `StepMemory.before/after` 现在要的是 **`StepMemory.Observation`**（它自己的快照类，
+     不引用 `world.Observation`），`ObjectStillEvent.place/actor_place` 同理要
+     `ObjectFactEventBase.Place`——新增 `snapshot()` 助手做 `PlaceInWorld.model_dump()`
+     那一下桥（生产路径同款，见 `Brain._snapshot()`），`obs()` 改收 `StepMemory.Observation`；
+   - `MemoryTool.query()` **这个方法已不存在**了 → 空格断言改走 `query_object_events_at()`。
+3. **新增 `scripts/check_imports.py`**：静态爬全仓 import——**含函数体里的懒加载**——
+   把每条绝对/相对 import 解析到真实模块与真实名字，任一条失败即非零退出。
+
+**为什么这么改**：模块级 import 冒烟（`importlib.import_module(<每个模块>)`）能抓顶层失效，
+但抓不到函数内的懒加载：`check_memory_roundtrip.py` 那条旧 import 正藏在 `main()` 里，
+**181 个模块全绿而脚本一跑就 `ModuleNotFoundError`**。而这一族失效已经反复出现——（9）之后
+先查 5 处、（19）后又是 4 处——靠"人肉记得改"显然不行，得让机器在**跑真机之前**拦住。
+（`check_graph_phases.py` 是同一思路：把"文档/前端/图是否对齐"压成一条命令。）
+
+**取舍**
+
+- `check_imports.py` 是**有副作用的**静态检查：判定"名字在不在"要用 `hasattr`，
+  而模块级 `__getattr__` 的懒加载出口一碰就真导入。所以它必须用**装齐依赖**的解释器跑，
+  否则会把"缺第三方依赖"误报成"本仓引用失效"。也正因如此它放 `scripts/` 而不是 pytest：
+  它要在真机之前跑，失败信息是给人看的逐条 `文件:行号`。
+- `snapshot()` **没有**把 `place()` 整个换成快照类：同一个 `place()` 助手还喂着
+  `query_object_events_at(place=...)`，那里要的恰恰是真身 `world.PlaceInWorld`。
+  一个助手服务两种坐标类型，靠这一下 `model_dump()` 分流——而不是写两个助手。
+- 没顺手修 `check_memory_roundtrip.py` 的 `I001`：那是 HEAD 就有的，与本轮无关，
+  修了只会污染 diff。
+- 没把"真机 trace 形状核查"落成第 7 个维度：它会硬编码渲染层的 kind 字面值（`after`/
+  `frame`/`checkpoint_save`/`truncated`）而随渲染层漂移，而它验的三件事离线核验脚本
+  已用假端口覆盖。真机只做一次性确认，不进套件。
+
+**影响面**：`experiment/` 包恢复可导入，`experiment.real_check.*` 六个脚本全活；
+`check_memory_roundtrip` 五条读写路径**首次真正跑通**。`scripts/` 多一条可在 CI 前跑的
+护栏。全仓 `ruff` **54 → 54**——新增文件零告警；`check_harness`/`check_restore` 因我改的
+import 顺序触发 `I001`，已用 `ruff --fix --select I001` 修正，净增 0。
+
+**真机核验（经用户明确授权由 AI 执行，六维度首次全套跑通）**
+
+- 口径：`py -3.12`（全机唯一装了 pyboy 的解释器）+ 从**主仓** `.env` 注入密钥
+  （**不往 worktree 写密钥**，走 `setdefault` 同语义的外部变量优先）+ `PYTHONPATH=<worktree>`；
+  ROM/state 用 worktree 自带的 `assets/rom[.state]`。
+- 六维全过：`check_harness` **PASS**（2m36s、3 步、`reason='success'`）→
+  `check_trace` **PASS**（70 条有效事件，盘上 `[0..69]` 连续无缺号无重号）→
+  `check_checkpoint` **PASS**（step 0/1/2/3 成对且带 `run_state_dump`）→
+  `check_memory` **PASS** → `check_memory_roundtrip` **PASS**（七段全过）→
+  `check_restore` **PASS**（自 step 3 恢复，游标 62 后续写至 76 条连续，归档 1 个 voided）。
+- **（19）的三条形状在真机产物上复核通过**（此前只有假端口验证）：
+  `after` 的 payload 字段**恰好** `{kind, status, done}`（无 `scene`/`overlay`/`stop`）；
+  `checkpoint_save` 4 条 == 带帧的链首 `frame` 4 条；**链尾 `after` 的帧与下一条链 `frame`
+  的帧磁盘同字节、事件内同 base64**（step 1/2/3 三处逐一比对 sha 相同）；
+  真机 `StepMemory` 记录的 `before_frame`/`after_frame` 均在。
+- 顺带观察两件事（都不是 bug，记下备查）：
+  ① 真机抓到 `ParseFailure` 错误事件后紧跟重试、最终成功（两次 run 分别 1 次和 3 次）
+  ——「解析失败要重试并计数」这条在真实模型上确实生效；
+  ② **恢复后的链首 `frame` 不带帧**：`_frame_event_ids` 是内存态、不随 checkpoint 走，
+  恢复后无从查起，而 `_frame_b64` 回读需要那个登记。本例里它是收尾链（不落 step 记忆），
+  所以无影响；要修就得把帧登记表一起存进 checkpoint——留待拍板，本轮不动。
+
 ## 2026-09-11（19）—— 把「账」搬回它的宿主：`apply_stop` / `AFTER_ACTION` / `CHECKPOINT_SAVE`，20 格零哑格
 
 **改了什么**
