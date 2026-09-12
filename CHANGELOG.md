@@ -1,3 +1,130 @@
+## 2026-09-12（22）—— 按链读落地：`StepMemory.plan_step_start` + `render_chains`，判定器窗口换单位，`max_steps` 改口径
+
+**背景**：`PLAN_action_step_granularity.md` §8 步骤 5 的两项收尾，也是（14）留下的
+「已知遗留」——（一）本局**全量**步骤都进决策 prompt，粒度下沉到单键后按链长线性放大；
+（二）`JUDGE_HISTORY = 2` 的单位从"步"变成"键"，判定器的时间视野被静默除以链长。
+两条的完整论证、实测数字与三个决定写在 `PLAN_action_step_granularity.md` §11。
+
+**改了什么**：
+
+1. **`StepMemory.plan_step_start: int | None`**（默认 `None`）——**这一键属于哪一次决策**
+   （那次决策落在第几步）。`None` ⇒ 按 `step` 算，**老记录天然正确**：粒度下沉之前
+   一步就是一次决策，两者本来就相等。**它不是链字段**：`chain_index`/`chain_length`
+   的读者问的是"这条链长什么样"，它的读者问的是"这一步是哪次决策按的"（§4 的判据）。
+   它是 §4 早就预留的那句"将来真要分组时只加一个 `plan_step_start: int`"。
+2. **`EpisodeRunState.plan_step_start`**：`think_action` 决策一次盖一次 → 随 state dump
+   进 checkpoint → `store_step_episode_memory` 抄进那条记忆。`None` 只在"从旧 dump
+   恢复"时出现，记忆侧按 `step` 兜底。
+3. **`step_memory.py` 新增四个纯函数**：`chain_key()`（`None` 兜底）、`group_chains()`
+   （按链号切组：不重排、不补洞，链号没变就算同一条链）、`last_chains()`（取最近 N 条链
+   的全部键，**不把链砍成半截**）、`render_chains()`（**给决策者看的按链合并渲染**：
+   一次决策一段，两端两帧 + 逐键的动作/步号/`stop` + 每段理由，段一换才再打一次理由）。
+4. **`decide_action.build_prompt` 的 `memories` 块改用 `render_chains()`**；
+   `decide_action.md` 的「相关记忆（怎么读）」改成讲新形状，并点明两件必须说的事——
+   "中间那些键的画面不在里面（链内只读内存）"、"「然后停了」是执行层机械判出来的、
+   跟「因为」的可信度不一样"。
+5. **判定器窗口换单位**：`JUDGE_HISTORY = 2`（步）→ `JUDGE_CHAIN_HISTORY = 2`（链）
+   + `JUDGE_HISTORY_KEY_CAP = 8`（键帽）。取窗改成"按键数上限取回 → `last_chains()` 按链裁"。
+6. **`max_steps` 口径重写**：它是**以"游戏里按了多少键"计价的闸**（数字不动）。
+   `EpisodeRunState.step` 的字段说明、`experiment/tasks.py` 模块头里的 judge 视野、
+   `knowledge_recall_tasks()` 的 docstring 一并改对。
+7. **顺手修四处文档漂移**：`DATAFLOW.md`、`harness/SPEC.md`（两处）、`tools/SPEC.md`
+   都把判定窗口写成 `query_recent_steps(ep, 3)` / `JUDGE_HISTORY = 3`——**代码里从来不是 3**
+   （是 2），而且 0905 之后语义又变过一次。按"就地标注过期、不重写历史论证"的办法，
+   在原句上补「订正 2026-09-12」。
+
+**为什么这么改**：
+
+- **先量后改**（§7.6 自己要求的"单独量 prompt 长度"）：真机 `model_call` 事件里存着完整
+  prompt，量出来「相关记忆」一节占 0.1% → 6.8%（step 0/1/2），一条记忆约 **490 字符**
+  ——它**按链长线性放大**（链长 4 就是 4 倍）。同一批数据里 `press_count` **全是 1**，
+  所以今天还没有真实的膨胀，但那是"模型还没用起连按"，不是"链不会变长"。
+- **分组键取 int，而不是"从 trace 取 step 区间"**（v1 当初的想法）：harness 手里只有 trace
+  的**写口**、没有读口；为取一个区间去加一条"harness 读自己的 trace"的契约，比加一个 int
+  重得多，而且第 0 步那条链根本没有 THINK 可查。
+- **判定器换的只是单位**："最近 2 步"在旧粒度下就等于"最近 2 次决策" = "最近 2 条链"，
+  数字 2 不动；键帽防的是"链一长就静默膨胀"。
+
+**取舍**：
+
+- **合并渲染只给决策者看的那一版**：判定器/校验器继续用逐条的 `render_sequence()`
+  ——"省的是渲染，不是存储"。**中间帧不是"从它眼里拿掉"的**：粒度下沉之前一次决策只感知
+  一次、只留两端两帧，中间帧从来不存在；合并渲染是恢复到那个粒度，**多给**的是逐键的
+  动作、步号、`stop` 与段级理由。**不按"动作连按"再压成 `up×4`**——那会在两段同名
+  动作处跨段合并、把"第 3 键撞墙"这种结局抹平，逐键一行才 14 字符，省不了多少。
+- **`max_steps` 数字不预调**：跟 `experiment/tasks.py` 自己那句"每一条都是撞出来的，
+  不是推演的"保持一致——等真机上量到平均链长 ≥ 2（同一批任务、同一份 `repeat_hint`）
+  再按 `15 × 平均链长` 调。
+- **键帽 8**：链长上限是 `MAX_SEGMENTS × MAX_TIMES = 32`，两条长链能把判定 prompt 顶穿；
+  8 = 一条打满 `MAX_TIMES` 的单段链，实测 `press_count = 1` 时根本碰不到。
+
+**影响面**：`schemas/memory/datastore/step_memory.py`（一个字段 + 四个函数，都从
+`schemas/memory` 出口 re-export）、`schemas/memory/{,datastore/}__init__.py`、
+`harness/interface/episode_harness_port.py`（state 加一个链字段 + 节点表行）、
+`harness/episode_harness.py`（`think_action` 盖章、store 抄号、两个常量 + judge 取窗）、
+`prompts/decide_action.py` + `prompts/calls/decide_action/decide_action.md`、
+`experiment/tasks.py`、四份 spec 文档。
+**既有记忆文件不用迁移**（`plan_step_start` 默认 `None`，语义等价于"一链一键"）；
+**旧 checkpoint dump 也能恢复**（同一个 `None` 兜底）。
+
+**核验**：
+
+- **离线核验 110 条断言全绿**（`verify_chain_inner_loop.py`，从 81 条扩到 110 条）。
+  新加的两处：C 块验**链号真的逐键盖下去**（`[0, 0, 0, 3, 4]`——同一链共享起点步号、
+  换链才变）与整局按链渲成 3 段；F 块是新的一整块，验四个纯函数的契约——
+  老记录 `None` 兜底（退化成"一链一键"）、**链中间缺一步仍算同一条链**（缺的是记录
+  不是归属）、**`last_chains` 只按整条链裁**（取 1 条链拿到 2 个键、不是最后那一键）、
+  `render_chains` 的段头/逐键行/段级理由只打一次/跨链首尾帧去重/`reason=False` 不去
+  `stop`，外加一条**反向对照**：按链渲染必须比逐键渲染短（否则"合并"是假的），
+  而 `render_sequence()` 仍逐键 6 段一步不少。
+- **真实模型契约核验 3 个探针全绿**（`probe_real_llm_contract.py`，真 qwen-plus@0.3 /
+  doubao@0）：
+  - **C（决策者读按链合并的记忆）** —— 这是本次唯一动到"模型输入形状"的地方，也是最该
+    验的。记忆块真的渲成了一段 `(probe, step=0..2) 一次决策按的 3 个键：`，中间帧不铺、
+    逐键动作与步号都在；模型交出的 `sequence` 仍可解析（`right×4 -> up×4`），
+    且 `thought` 明确引用了记忆里的撞墙（`北 G`/`#`）。探针里补了两条**防空转断言**
+    （"记忆块真的是按链合并的"、"三个键的动作与步号仍逐条在 prompt 里"）——
+    不盖 `plan_step_start` 的话三条记忆会各成一链、退化成逐键渲染，这个探针就白跑了。
+  - **A（决策输出契约 ×6）**：契约违规 **0**。1/6 出现"丢最外层 `}`"——已归档的采样
+    缺陷（`Expecting ',' delimiter` 落在**末字符**，补一个 `}` 即可解析），重试救回；
+    0905 基线是 2/6，同一模式，**不是本次回归**。
+  - **B（校验器读记忆）**：三条 verdict 全 reliable。证据那条路走的是逐条的
+    `render_sequence()`，加字段没有扰动它。
+- **机械预检**：`check_imports.py` **404 OK**（原 403）、`check_graph_phases.py`
+  **OK 20 nodes**（图拓扑没动）、全仓 ruff 仍 **54**、`ruff format --check` 7 个文件全过。
+- **真机 `check_harness` PASS**（用户授权 AI 执行，run `realcheck-0912-062841`，
+  3 步、`reason='success'`）。**这一局第一次产出了链长 > 1 的真实决策**——
+  之前四次真机 run 的 `press_count` 全是 1，所以"按链读"一直是纸面上的。
+  读盘核对（不是看断言，是读 `memory/step_memory/*.json` 的真字节）：
+  - `plan_step_start` **真的落了盘**（payload 键里多出这一个），值 `[0, 0, 2]`
+    ——第一条链占第 0/1 步、第二条链落在第 2 步，与 trace 里两条
+    `llm_outcome intent` 的 `press_count`（2 与 1）逐一对上。
+  - 拿**盘上真记录**喂真函数：`group_chains` → `[2, 1]` 两条链；
+    `render_chains` → **2 段**（一次决策一段），`render_sequence` → **3 段**（逐键）
+    ——两条渲染路径真的并存在跑，决策者看 2 段、拿证据的看 3 段。
+  - 链内那一键（step 1）在 trace 里**没有 `view frame`**、只有 `view after`
+    ——"链内只读内存"这条设计在真机上成立，不是只有假端口成立。
+  - 第 2 次决策的真实 prompt（14398 字符）里「相关记忆」一节确为一段
+    `(…ep1, step=0..1) 一次决策按的 2 个键：`，占 **5.40%**。
+  - 同一局 step 0 有 **2 次 `ParseFailure` 后第 3 次成功**——既有的重试救回行为，
+    与本次改动无关（那一次决策的记忆是空的）。
+- **真机另外三个只读维度也 PASS**（都不起 PyBoy）：`check_trace`（59 条有效事件、
+  盘上全量 `[0..58]` 连续无缺号无重号）、`check_memory`（本局 3 条 `StepMemory`
+  全部非空可解析——**带新字段的记录被真 `MemoryTool` 读得回来**）、
+  `check_checkpoint`（step 存档 `['0','2','3']` 成对、`run_state_dump` 的 `run_id` 核对通过）。
+  存档步号 `0/2/3` 正是两条链的接缝，与 `plan_step_start = [0, 0, 2]` 一致。
+  （`check_restore` **没跑**：它另起一局并改写指针，是另一件事。）
+
+**真机顺带发现（与本次改动无关，但值得记）**：那一局模型把**自我纠错的过程写进了
+`rationale` 字段**——第 1 键的论据是正常依据，第 2 键的论据却是
+"……但此步依据仅限当前帧——然而当前帧尚未移动，故此条无效；错误：第二段无独立依据。
+修正：只保留一段……"。这是已知失败模式（`thought` 里出现"等一下重数"式自我纠错，
+见技能 §1.2 表）**泄漏到了 `rationale`**：`rationale` 不是自由文本，它会被
+`render_chains()`/`render_sequence()` 原样打进 prompt，而它是**按段**计的——
+一段写得越长、这一段里每个键都跟着贵。同一份 prompt 里「相关记忆」占 5.40%，
+大头就是这两条长论据。**修法是 prompt 层的事**（约束 `rationale` 只写"这一段的依据"、
+不写修正过程），不属于本次改动，留待单独处理。
+
 ## 2026-09-11（21）—— 帧账随存档走（v6）：恢复后的链首 `OBSERVE` 与首个 store 步不再丢图
 
 **改了什么**
