@@ -1,3 +1,89 @@
+## 2026-09-12（30）—— 步 2：run 图接上 episode 子图（两张图拼成一张）
+
+**改了什么**
+
+八处，改的全是"两张图怎么连"，**图内 21 个节点的方法体一行未动**：
+
+1. **新建 `harness/episode/entry.py`**（约 330 行）——单局的两个**图外**入口搬到这里：
+   `begin_episode`（写 `EPISODE_START` → 世界起点 reset → 开局感知 → 帧暂存）、
+   `prepare_resume`（`load` → `void_after` → `load_state_bytes` → 帧账回载 → 写
+   `CHECKPOINT_RESTORE`；含"`world_reset_done = True` 这条强制令"）、`run_new` /
+   `run_resume`（图外编排 + 异常补 `EPISODE_ERROR`）、`_invoke`（**唯一一处**递
+   `recursion_limit` 的地方）、`close()`、`episode_budget()`、`exc_snapshot()`、
+   `_perceive_first_frame()`。
+2. **`harness/deps.py`**：加 `checkpoint: CheckpointToolPort | None`（**步 5 删**——
+   本步 `prepare_resume()` 还要它的 `load()` / `void_after()`）；docstring 补"步 2
+   落地了什么 / 还没做的（步 3 / 步 5）/ 生命周期暂未收口"三节。
+3. **`harness/episode/graph.py`**：收下 `NODES_PER_DECISION` / `NODES_PER_PRESS` /
+   `RECURSION_MARGIN` 三个常量（它们算的是 limit，属装配）；`StateGraph` 加
+   `context_schema=HarnessDeps`。
+4. **`harness/episode_harness.py`**（1711 → 1572 行）：删三个常量、`_begin`、`_invoke`、
+   `_close`（四条搬家）；`__init__` 收下 `deps`（不传则现建一份），八个 `_xxx` 字段改成
+   读 `self.deps` 的 `@property`，两张帧表取 `deps` 同名表的**别名**；`run()` / `resume()`
+   收成薄委托。
+5. **`harness/run/graph.py`**：`add_node("episode", nodes["episode"], error_handler=…)`，
+   两条新边 `dispatch → episode → reflect`；`context_schema=HarnessDeps`。
+6. **`harness/run_harness.py`**：新增 `RUN_NODES_PER_ROUND` / `RUN_RECURSION_MARGIN` /
+   `run_recursion_limit(state)`；`dispatch` 退成**纯前置**（算 `episode_id`、`attempts+1`、
+   写 `task`/`episode_goals`、刷 `run_state_snapshot`，不再调子 agent）；新增 `episode`
+   与 `episode_error_handler` 两个节点；`invoke(..., context=self.deps)`。
+7. **`harness/interface/episode_harness_port.py`**：补 `deps` property 与 **`resume()`**
+   ——协议里原先**根本没有** `resume`，是个缺口（实现有、契约没有）。
+8. **技能侧**：新增探针 `probe_nested_invoke.py`（X1–X5）；`verify_chain_inner_loop.py`
+   加 G 块（9 条）。
+
+**为什么这么改**
+
+`PLAN_graph_composition.md` §6 步 2 原文是"换拼接：`dispatch` → `add_node("episode", …)`；
+`_begin`/`resume` 进 `entry.py`；**D6 的 limit 重标定**"。三条支撑理由：
+
+- **单调迁出**：步 2 只把**图外入口**搬进 `entry.py`，图内节点/边一根手指都不碰——这正是
+  该步"回滚成本最低"的兑现方式。步 3 才把 21 个节点逐域展开。
+- **deps 真源唯一**：`self.deps` 是唯一真源，`_game`/`_memory`/… 八个句柄改成 property，
+  两张帧表取**别名而非拷贝**。别名不是省事——`prepare_resume` 在图外回载帧账后，图内节点
+  必须看见同一份；拷贝会让"某几步的 `before_frame` 静默为空"，是个不炸的错。
+- **异常处理点平移而非改写**：原先 `dispatch` 里的 `except AgentError` 换成 `add_node`
+  的 `error_handler`（F4 实测：handler 拿到**父 state**、返回 `Command(goto=…)` 流程继续）。
+
+**取舍**
+
+- **D6 的公式前提被探针 X5 推翻，本步仍按 PLAN 原文实现（保守侧），收紧与否留拍板。**
+  X5 是一组对照：同一个父图（`limit=3`）里嵌套 `sub.invoke(...)` 3 步子图——
+  **不传 config** 时子图拿父 limit 当自己的上限、自己撞限（＝X1 复现）；**传
+  `{"recursion_limit": 100}`** 时子图跑完、且**父图后续照常跑完**（X5-c）。
+  结论：**F5 不能外推到形态 B**。F5 测的是形态 A（编译好的子图直接当 `add_node` 的函数，
+  langgraph 把它内联进父图、同一个 counter）；本仓用的是形态 B + 显式 limit，**父子各算各的**。
+  于是 `run_recursion_limit()` 里"Σ 全部 episode 内部步数"那一笔**是余量、不是必需**，
+  副作用是把 run 层撞限阈值抬到 **210036**，而只数 run 自己需要的是 **120**
+  —— run 图自己失控要转 21 万步才报警，D6 想"把 limit 兜底换成断言报警"，
+  结果 run 层的兜底先被废掉了。**建议**（待拍板）：run 侧只留
+  `own + MAX_PLAN_PUSH 余量 + margin`（量级 ~百），把"覆盖 episode"删掉；
+  守护改由内层 `episode_budget()` + `entry.close()` 的事后断言承担。
+- 三个 limit 常量搬进 `episode/graph.py`：它们算的是**预算**，属装配，不属某只图。
+- `checkpoint` 字段**暂留**（步 5 删）：`prepare_resume()` 现在还要 `load()`/`void_after()`。
+- `deps` 生命周期**暂未收口**（仍与 `EpisodeHarness` 同生同死）——与现状行为一致，收口放步 3。
+- `entry._perceive_first_frame` 与图内 `_perceive` 有 8 行重复，**有意留**（步 3 合并）；
+  先按现状复制，免得本步顺手动到图内代码。
+- `episode_error_handler` **只吞 `AgentError`**，非 `AgentError` 原样 `raise exc`——
+  不趁机扩大吞错范围。
+- `run_harness._compile() -> Any`（`ANN401`）HEAD 就在，按"零行为变化"不动。
+
+**影响面**
+
+- 验收全绿：`check_imports.py` **439** 条（原 422）、`check_graph_phases.py`
+  `OK 21 nodes; graph order == web CHAIN_PHASES order`、离线核验 **124 PASS**
+  （含本步新增的 G 块 9 条）、探针 **7/7**。
+- **行为差异只有一处**：单局异常的处理点从 `dispatch` 的 try/except 变成 `episode` 格的
+  `error_handler`；语义一致（都转成失败结算、继续 `reflect`）。
+- 接口面：`EpisodeHarnessPort` 多 `deps` 与 `resume` 两项；`EpisodeHarness.run/resume`
+  签名不变（`api.py` / 测试 / 脚本不受影响）。
+- **未跑真机**：六维核对（`check_harness` / `check_trace` / `check_memory` /
+  `check_checkpoint` / `check_memory_roundtrip` / `check_restore`）需用户在真 PyBoy 上跑
+  —— `run_recursion_limit()` 的实际值只有真机能验（本步只做了离线量级核对）。
+
+---
+
+
 ## 2026-09-12（29）—— 步 1 收尾：扫掉 lint 与措辞的尾巴，行为零变化
 
 **改了什么**
