@@ -1,3 +1,66 @@
+## 2026-09-12（27）—— harness 图组合重构·步 0：立骨架、解父子交界四件事，行为零变化
+
+**改了什么**
+
+1. **新增 `harness/deps.py`（`HarnessDeps`，14 字段四带）**：全图唯一的 context（依赖 7 /
+   开关 2 / 记号 2 / 账 3）。**本步只声明**——节点还是类方法，接入点（步 2 的
+   `invoke(..., context=deps)`、步 3 的 `Runtime[HarnessDeps]`）写在模块 docstring 里。
+2. **状态与图装配各自分家**（"状态不是能力"）：
+   - `harness/episode/state.py`（`EpisodeRunState`）与 `harness/run/state.py`
+     （`RunState` / `ResumeEpisode`）——从 `harness/interface/` 的两个 port 文件搬出，
+     旧路径 re-export，既有 import 一字不用改；
+   - `harness/episode/graph.py`（`compile_episode_graph`）与 `harness/run/graph.py`
+     （`compile_run_graph`）——`add_node` 逐行写字面量；两个 `_compile()` 退化成
+     "交出节点名 → 节点函数"这张表，`RunHarness._route_after_reflect` 随之搬成
+     `run/graph.py` 的模块级 `_should_retry`。
+3. **D2 的四件交界事**：子侧 `goals` → **`episode_goals`**（父侧 `goals` 是领域概念，不动）；
+   父侧 `RunState` **新增 `episode_goals` 键**、由 `dispatch` 每局投影写入
+   （`_project_goals()`）；父侧 `last_task` → **`task`**（键名必须与子侧逐字对上）；
+   新增**第 21 个节点 `close_episode`** 写 `state.outcome` 与 `EPISODE_END`，
+   `retrieve_verify_step_memory` 的两条分支都汇到它。
+4. **跟着改的三处**：`scripts/check_graph_phases.py` 的抽取路径改到 `episode/graph.py`；
+   `web/src/App.tsx` 的 `CHAIN_PHASES` 加第 21 格（`EPISODE_END` 映射到它）；
+   离线核验脚本补 6 条断言（**110 → 116 条**，含一条反向对照）。
+
+**为什么这么改**
+
+- **图的装配要能一眼读完。** 1749 行的 `episode_harness.py` 里，"图长什么样"（21 行
+  `add_node` + 边）与"节点怎么实现"（20 个方法）缠在一个类里；分手之后
+  `episode/graph.py` 只有 130 行、顶层即流程。
+- **交界键必须逐字对上，而且要有"投影写入者"。** 内置子图按**键名交集**传递：
+  子图不输出的键，父侧**保持旧值且不报错**。所以 `outcome` 不能留在图外算
+  （`reflect` 会读到**上一次派发的陈旧结算**），父侧也不能只有 `goals` 而没有
+  `episode_goals`（子图会拿到默认空列表）。这两条都是**不炸的错**，只能靠结构防。
+- **必须先做这一步再换拼接。** "最危险的改名"与"两张图怎么连"混在一起做，出问题
+  分不清是谁的锅——这是 PLAN §6 把它排在步 0 的全部理由。
+
+**取舍**
+
+1. **`HarnessDeps` 本步是"只声明不接线"**：接入它要把节点从方法改成自由函数（步 3），
+   现在硬接只会把"改名"与"换依赖通道"两件事绑在一起。代价是它暂时没有读者，
+   所以同时在技能侧给探针留了位置（改图的组合方式必跑 `probe_langgraph_subgraph.py`）。
+2. **`EpisodeHarness._close()` 保留两个不再使用的参数**（`episode_id` / `task`）——
+   结算改由图内写之后它们只是"让两个调用点形状不变"，改签名会把 `run()`/`resume()`
+   的返回路径一起搅动，收益为零。
+3. **`EPISODE_END` 换了写入者（图外 → 图内）但顺序不变**：它仍是这一局的最后一条账
+   （收尾链之后），`void_after` 的游标语义不受影响。
+4. **旧存档不再可读，不写迁移**：`EpisodeRunState.goals` 改名之后，旧 dump 里的
+   `goals` 会被 Pydantic 忽略、`episode_goals` 取默认空列表（`judge` 会断言失败）。
+   `checkpoints/` 下都是可再生的核对产物，与 D9-v6 那条"旧存档不读"同一条口径。
+
+**影响面**
+
+- **代码**：新增 6 个文件（`deps.py` + 两个域包各 2 个文件）；改动 8 个
+  （两个 harness 文件、两个 port 文件、`interface/__init__.py`、`check_graph_phases.py`、
+  `App.tsx`、CHANGELOG）。`episode_harness.py` 1749 → 1711 行。
+- **行为**：零变化。三项验收全绿——`check_imports.py`（422 条）、
+  `check_graph_phases.py`（21 节点，与相位表逐条一致）、离线核验
+  `verify_chain_inner_loop.py`（**116 条 ALL PASS**）。
+- **未动**：checkpoint（仍是 `CheckpointToolPort`）、tools 层、memory 层、
+  `episode_harness_port.py` 的 Protocol 声明（步 4 才瘦身）。
+
+---
+
 ## 2026-09-12（26）—— harness 图组合重构方案（PLAN v1）：九条实测把"内置父子图拼接"从想法变成有边界的工程
 
 **改了什么**
