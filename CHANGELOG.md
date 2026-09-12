@@ -1,3 +1,44 @@
+## 2026-09-12（24）—— harness 散件边界写进 SPEC；抠掉一处指向已删文件的活 docstring；tool 接口 PLAN 升 v2
+
+**改了什么**
+1. `docs/spec/harness/SPEC.md` 新增 **§1.8「`harness/` 里那些散件：边界是四列，不是文件名」**
+   ——一张 7 行的表（文件 / 类型 / 绑哪张 Port / 属于哪层图 / 谁调它）+ 三条判据 + 三个
+   "本来就不是 util" 的文件 + 一段**命名缺口**说明 + 三条可执行的核对命令。插入位置在
+   §1.7 与 §2 之间（§1 是"模块定位"，边界属于定位）。
+2. `pokemon_agent/harness/episode_utils.py` 的模块 docstring 里那句
+   「跨 episode/run 两层图的 `tag_attempt` 在 `tag_attempt.py`」**是错的**——那个文件
+   早已退役（随 trace 渲染搬进 `tools/trace_render.py` 的 `_tag_attempt`，由 `TraceTool`
+   在 `req.attempt` 非空时盖章）。改成现状，并说明"放哪层都反向依赖"这个划界问题在本包内
+   已经不成立。
+3. `pokemon_agent/harness/__init__.py` 的目录说明书**补全并纠偏**：原先把
+   `memory_query_utils` 跟三个重试循环并列成"重试与记账工具"（它其实一个端口都不 import），
+   且漏了 `trace_write.py` / `object_interactions.py` 两个文件。改成按真相分四类 + 指向 SPEC §1.8。
+4. `docs/spec/tools/PLAN_tool_interface.md` **升 v2**：删掉"schemas 改名"（已拍板不改）、
+   把 §3 从"四张策略表的选择题"降级成"已排除存档"、新增 §6 记录**"interface 指哪个
+   interface"**这道真正待确认的题（两份权威文档都指向一个今天不存在的顶层 `interfaces/`）。
+
+**为什么这么改**
+- 起因是"harness 里那些 `*_utils` 到底谁管什么"。查下来**规则本身没有矛盾**——六个文件的
+  模块 docstring 各说各的、互相引用，说的是同一件事。**散的是它没有一个统一入口**：
+  读者要读六个 docstring + `__init__.py` + SPEC 两处 + 一份 PLAN 才能拼出全貌。
+  所以补的不是规则，是**入口**。
+- 那两处代码 docstring 是**活引用失效**，跟 (20) 条修掉的 5 处同类。特别之处在于它指向的是
+  "以后会有的文件"（那份解耦计划曾规划 `harness/tag_attempt.py`），而该文件最终**改道去了
+  tool 层**——向后走丢的引用有 grep 能兜，向前走丢的没有，只能靠人读出来。
+
+**取舍**
+- §1.8 写成"四列 + 三类"而不是"一条判据"，因为**判据真的只有一条**（import 里有没有
+  `*ToolPort`），但 `trace_write.py` 不服从它：它绑了 `TraceToolPort` 却不是"某根依赖的循环"，
+  因为它服务的是**三个循环的宿主**、且跨两层图。硬塞成两类会逼出一个例外条款，
+  不如把它单列为第三类，并写明"今天只有它一个成员"。**层数多一层，例外少一个。**
+- 没有改 `AGENTS.md` §四、没有改 `docs/spec/interfaces/SPEC.md`——那两份都指向不存在的顶层
+  `interfaces/`，但按规矩改 `AGENTS.md` 要先与用户讨论。只在 PLAN §6 里列成待确认项。
+
+**影响面**
+- 纯文档 + docstring，**零行为变化**。`ruff` 仍 54、`check_imports` 404 OK、两个改动文件
+  AST 干净且无超 100 列行。
+- 未动代码逻辑、未动任何接口签名、未新增文件（PLAN/SPEC 都是既有文件）。
+
 ## 2026-09-12（23）—— rationale 的 prompt 层约束（第 4 条硬规则）+ tool 层接口方案稿 + prompts SPEC 订正
 
 **改了什么**
