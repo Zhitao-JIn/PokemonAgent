@@ -1,3 +1,84 @@
+## 2026-09-11（19）—— 把「账」搬回它的宿主：`apply_stop` / `AFTER_ACTION` / `CHECKPOINT_SAVE`，20 格零哑格
+
+**改了什么**
+
+1. `episode_harness.py`（26 处补丁）：
+   - `record_action_result` → **`apply_stop`**——职责收窄成"**只落实**"：按 `stop` 的作废
+     范围截队，**不再写帧**（帧是 `perceive_after_action` 的事）；只在**真的丢了键**时写一条
+     `ACTION_TRUNCATED`（条件写，payload 带 `stop` / `dropped_count` / `dropped`）；
+   - 观察账搬回**产出它的那一格**：`perceive_after_action` 自己写 `AFTER_ACTION`（链内每键一条），
+     字段从"模型感知才有的 `scene`/`overlay`/`status`/`done`/`stop`"**收敛到 RAM 档读得出的
+     `status`/`done`**，`stop` 归处置账——"看到什么"与"据此处置了什么"从此是两笔账；
+   - **链尾帧不再走暂存表中转**：`_pending_frames` 缩到只剩**第 0 步**那一条路径
+     （那一帧在图外产、没有事件可挂）；链尾键的帧由下一条链的 `record_observation` 按
+     `event_id` 读回（`_frame_b64` + `read_screenshot`），v6 承诺的"两处都带、逐字节相同"不变；
+   - 新增 `save_checkpoint` 的 **`CHECKPOINT_SAVE`**——`save_checkpoint` 从哑格变成有账的格子。
+2. **账搬回宿主**（规则改写）：`brain_utils.py` / `game_utils.py` / `episode_utils.py` 三个
+   util **去掉 trace 依赖**，只交回材料（`(action | None, log)` / `(observation | None,
+   frame_png | None, log)`），写账由调用它的宿主做。规则从「**谁的循环谁记账**」改成
+   「**账写在它的宿主里**」。新增 `harness/trace_write.py::append_model_calls()`，
+   把 5 个写点的 `AppendReq` 样板收成一行。
+3. 命名：`enrich_observation` → **`merge_retrieval`**（活代码 + 接口 + web + 活文档共 25 处）。
+4. 契约与观测台同步：`episode_harness_port.py`（7 处补丁 + **20 行"节点 / 改哪处 / 写哪条 /
+   一句话"对照表**进模块 docstring，行序 = 执行顺序）；`web/src/App.tsx`（20 处补丁：
+   `CHAIN_PHASES` 20 条且 `key` 改用**节点全名**、`MAIN_END` 16、尾链三条、
+   `phaseKeyOf`/`endSeen`/`litOf` 跟着改）。
+5. **新增 `scripts/check_graph_phases.py`**：用 `ast` 从 `_compile()` 抽 `add_node` 的字面量、
+   用正则从 `App.tsx` 抽 `CHAIN_PHASES.key`，**逐条比对有序列表**（不是比集合），不一致即非零退出。
+6. 四处文档订正（§1.1–§1.5）：`DATAFLOW.md` 的 `view(frame/after)` 一行改成"链尾帧按 event_id
+   读回"；`ROADMAP.md:1136` 就地加「订正 2026-09-11」；`CHECKPOINT_handoff_2026-09-07.md`
+   顶部加一行现状指引（正文不动，它是 0907 的事实快照）；`SPEC.md` 换头部"现状"块 +
+   **§2（`LoopState` → `EpisodeRunState`）/§3（图结构）整节重写**、其余各节加"本节写于 0902 版"
+   标记。顺带修掉 **5 处走丢的引用**（`brain.py` / `ChooseOnceResp.py` / `trace_port.py` /
+   `pyboy_world.py` / `ROADMAP.md:163` 仍指着早已不存在的 `episode_utils.*` 与 `harness/utils.py`）。
+7. 离线核验脚本改写：**56 → 66 条**（新增"`AFTER_ACTION` 每键带帧且字段恰好
+   `{kind,status,done}`、不带 `stop`"、"`ACTION_TRUNCATED` 只在真丢键时写、位置与 payload 对得上"、
+   "**中止 ≠ 截断**"、"跑完 `_pending_frames` 为空"、"`CHECKPOINT_SAVE` 条数 == 链边界数 ==
+   `OBSERVE` 数、步号 `[0, 3]` 与真存档一致"等）。
+
+**为什么这么改**：用户的判据是「要不放回节点？其他类似的也都放回节点？要不然太散了，
+trace 就在 harness 里记吧」，外加一句更早的「**只有真的截断了记一条截断 process trace**」。
+「散」的具体形态是：**想知道一条事件是谁写的，得同时打开 4 个文件**——事件在 util 里产出，
+util 又只被节点调用，于是"这条账属于哪个节点"这件事在任何单个文件里都读不出来。
+搬回宿主之后，每个节点自己那段 docstring 就说完"我改哪一处 state、我写哪条账"，
+`interfaces/` 单层自足这条设计承诺才真正兑现（§4 那张表也因此能进模块 docstring 而不是外挂一份文档）。
+
+**取舍**
+
+- **明账：崩溃窗口变大了。** `LocalTrace.append` 是**逐条原子落盘**——今天 `MODEL_CALL`
+  边重试边写，"重试到第 2 次时进程被杀"仍留有前一次的账；搬完之后要等 util 返回才落盘，
+  **进程死在模型调用里就全丢**。窗口 ≤ 一次决策的重试条数（decision 3 / perception 2），
+  且那时本来也不会有 `EPISODE_END`。**事件顺序不变**（循环期间没有别的写账点）。
+- **「中止 ≠ 截断」**：`blocked` 可能一个键都不丢（`up×1 -> down×2`），所以截断账是**条件**写的。
+  代价：那一类键的 `stop` 不进 trace（仍进 `StepMemory.stop`，大脑那侧不受影响）；
+  换来的是「这一局被截断了几次」= `ACTION_TRUNCATED` 的条数，是一句可以直接数出来的话。
+- **`_pending_frames` 不整个删**：第 0 步那一帧在图外产出、没有事件可挂，删不掉；
+  能删的是"链内/链尾帧中转"那一半。
+- **`dropped` 的展开逻辑不塞进节点**：`AppendReq` + 渲染层已经承担"按 kind 拼 payload"，
+  节点只该交回 `list[ActionSegmentFromBrain]`。
+- **`CHAIN_PHASES.key` 用节点全名（放弃短别名 `enrich`/`store_step`/`rv_knowledge` …）**：
+  换来机械核对退化成一次直接的列表相等判断；代价是 `phaseKeyOf`/`endSeen`/`litOf` 要在同一批里改完。
+- **`SPEC.md` 不抄第二份字段表**：抄本会漂移，只指 `episode_harness_port.py` 这个唯一权威。
+  结构与论证分离——**结构描述重写、0902 的设计论证原文保留**（那些论证与节点数是 6 还是 20 无关）。
+- **明账（本轮唯一新增 lint）**：`episode_harness_port.py` 模块 docstring 里那张 20 行 × 5 列的
+  对照表，**行宽超 100 列**（最长 189）——markdown 表不能折行，"要么丢列、要么超宽"，
+  选了保信息量。本轮全仓 `ruff` **50 → 54**：`+7` 条 E501 全部来自这张表，另有 `step_memory`
+  `−1`（早前会话改 docstring 顺带消掉）与 I001 `−2`（本轮触碰的文件 import 排顺）。
+  **`E501-in-docstring` 在本仓是既有类别**（HEAD 那 14 条 E501 全在 docstring 里），
+  所以这次是"同类追加"而非新病种；要不要把这张表挪到 `docs/` 换个干净数字，留待下一轮拍板。
+
+**影响面**：`MODEL_CALL(DECISION)`/`(PERCEPTION)`/`(PLAN)` 的**条数与相对位置不变**（只换了写入者）；
+`event_id` 单调递增不变；**节点数 20、`NODES_PER_PRESS` 7 不变**（本次只改名 + 挪账）。
+每键的账从 4 条变 **5 条**（`ACT` / `AFTER_ACTION` / `STALL_CHECK` / `MEMORY_WRITE` /
+`STEP_ADVANCE`），**真的丢了键的那一键 +1**（`ACTION_TRUNCATED`）；每个链边界 +1（`CHECKPOINT_SAVE`）。
+验证：离线核验脚本 **66 条全绿**（exit 0）；`scripts/check_graph_phases.py`
+`OK  20 nodes; graph order == web CHAIN_PHASES order`；`npx tsc --noEmit` exit 0；
+`ruff format --check` 对改动文件"already formatted"。真机六条命令仍待用户跑（AI 不碰 PyBoy）。
+另（仓库外，一并记）：离线核验技能的 `SKILL.md` 同步到 v7——断言数 56 → 66，
+§1.1/§4 里 `LOOK_AFTER` / `record_action_result` / "链尾帧两处都带（帧先落 `_pending_frames`）"
+三处描述改成 `AFTER_ACTION` / `apply_stop` / "按 event_id 读回"，并修掉一条断言标签与它
+实际断的数据不符的笔误（写"warp 丢 1 个 down"，实际断的是"warp 丢整条展开后的剩余队列"）。
+
 ## 2026-09-11（18）—— 把 `look_after_action` 一分为二：感知归感知，留痕归留痕
 
 **改了什么**
