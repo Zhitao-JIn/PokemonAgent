@@ -15,7 +15,7 @@ class ChooseOnceResp(BaseModel):
     只在成功路径上用——失败（解析不出来 / 选了不存在的键 / 被截断）时
     `choose_once()` 抛 `DecisionAttemptFailed`（附这次的账），不走这个 resp，
     所以 `action` 不会是 `None`；`calls` 也恰好一条（这次尝试自己的账），
-    多次尝试的累积在 Harness 那层的 `episode_utils.choose_with_retry` 做，
+    多次尝试的累积在 Harness 那层的 `brain_utils.choose_with_retry` 做，
     不在这里滚存。
     """
 

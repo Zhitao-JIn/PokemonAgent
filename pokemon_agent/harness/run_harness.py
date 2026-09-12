@@ -2,13 +2,13 @@
 
 拓扑（接口定死，见 `interfaces/harness/harness_port.py`）：
 
-    begin ──→ plan ──→ dispatch ──→ reflect ──┬─(失败且重试未耗尽)─→ dispatch（直接重试）
-                  ↑                           │
-                  │                           └─(否则：弹出)─→ review
-                  │                                            │
-                  └────── continue / retry / push ─────────────┤
-                    (done / plan 连续失败)                     └─ stop → END
-                                                               → END
+    begin ──→ plan ──→ dispatch ──→ episode ──→ reflect ──┬─(失败且重试未耗尽)─→ dispatch
+                  ↑                                       │   （重试 = 再派发一次 episode）
+                  │                                       └─(否则：弹出)─→ review
+                  │                                                       │
+                  └────── continue / retry / push ────────────────────────┤
+                    (done / plan 连续失败)                                └─ stop → END
+                                                                          → END
 
 - `plan`     **LLM 决策器**：读 trace 历史 + 目标栈 → 渲染 `run_plan` prompt →
              调 LLM → 解析决策（压栈 ≤ `MAX_PLAN_PUSH` / 置 done）。连续
@@ -17,9 +17,16 @@
              和 episode 内的决策是两条不同的模型链，不挂 `Source.HARNESS`：
              那本该是零成本的记账事件，混进一次真实模型调用会让"harness 花了
              多少 token"这个聚合数字失真）。
-- `dispatch` 栈顶交给子 agent（`EpisodeHarnessPort.run(episode_id, 栈顶, 全栈)`），
-             `AgentError` 捕获包装成失败结算——单局异常不崩掉整个 run；
-             栈顶派发计数 +1（`attempts[-1]`）。
+- `dispatch` **纯前置**（步 2 起）：生成 `episode_id`、栈顶派发计数 +1
+             （`attempts[-1]`）、把父子交界的两个键（`task` / `episode_goals`）
+             写进 state、把这一局的 run 级快照刷进 `deps.run_state_snapshot`。
+             **它不再"调用子 agent"**——派发由 `episode` 那格做（`§0`：
+             "`dispatch` 不再是'调一个对象的方法'，而是父图里的一个子图节点"）。
+- `episode`  **派发这一局**：调子 agent（`EpisodeHarnessPort.run/episode.resume`），
+             把 `outcome` 交回父 state 给 `reflect`。内置子图之后"单局异常不崩掉
+             整个 run"的落点在 `episode_error_handler`（F4 的 `error_handler`，
+             `AgentError` 包装成失败结算后 `goto="reflect"`）——不再是这里的
+             `try/except`。
 - `reflect`  看结算：**成功才弹栈**；失败且重试预算（`MAX_GOAL_RETRIES`）未耗尽
              → 栈顶保留、**直连 dispatch 重试（不经 review）**；预算耗尽 → 强制
              弹出（放弃该目标）、交人工。
@@ -27,15 +34,16 @@
              后调 `HumanReviewer`，人类决定继续（→ plan）/ 停止（→ END）/
              重试刚弹出的目标（→ plan）/ 压新目标（→ plan）。
 
-**三条通道**：① 调用（dispatch → episode.run）；② Trace（同一个实例，
+**三条通道**：① 派发（dispatch → episode 节点 → 子 agent）；② Trace（同一个实例，
 episode 写、run 读——plan 的思考依据）；③ Memory（共享实例，
 run 级不直接查，跨局连续性由子 agent 的蒸馏/检索天然保证）。
 
-**这个文件只放图控制**：五个节点方法该问哪个依赖、该走哪条边、该合并出什么
+**这个文件只放图控制**：六个节点方法该问哪个依赖、该走哪条边、该合并出什么
 状态增量。图控制本身用到的纯计算（编辑指令怎么应用到目标栈、重试预算算
 没算完、trace 里怎么挑出一局的完整记录）在 `run_utils.py`；"问规划模型"
-这一根依赖会用到的重试循环、记账在 `run_plan_utils.py`——跟
-`episode_utils.py`/`game_utils.py`/`brain_utils.py`/`memory_query_utils.py`
+这一根依赖会用到的重试循环、记账在 `run_plan_utils.py`；**预算换算**在
+`run_recursion_limit()`（与 `episode/entry.py::episode_budget` 共用同一条公式，
+D6）——跟 `episode_utils.py`/`game_utils.py`/`brain_utils.py`/`memory_query_utils.py`
 是同一个原则在两层图上各自的落地。
 """
 
@@ -43,8 +51,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from langgraph.graph import END, START, StateGraph
-from pokemon_agent.brain import TaskForBrain
+from langgraph.errors import NodeError
+from langgraph.types import Command
+
+from pokemon_agent.brain import GoalForBrain, TaskForBrain
 from pokemon_agent.errors import AgentError
 from pokemon_agent.prompts import run_plan as run_plan_prompt
 from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
@@ -59,11 +69,13 @@ from pokemon_agent.schemas.harness import (
     FromRunHarnessToEpisodeHarnessRunResp,
     RunResp,
 )
-from pokemon_agent.tools import BrainToolPort, CheckpointToolPort, TraceToolPort
-from pokemon_agent.trace import TraceKind
+from pokemon_agent.tools.interface import BrainToolPort, CheckpointToolPort, TraceToolPort
+from pokemon_agent.trace import Source, TraceKind
 
-from . import run_plan_utils, run_utils
+from . import run_plan_utils, run_utils, trace_write
 from .auto_reviewer import AutoContinueReviewer
+from .deps import HarnessDeps
+from .episode import entry
 from .interface import (
     MAX_GOAL_RETRIES,
     MAX_PLAN_PUSH,
@@ -74,7 +86,62 @@ from .interface import (
     ResumeEpisode,
     RunState,
 )
+from .run import compile_run_graph
 from .run_data_center import RunDataCenter
+
+RUN_NODES_PER_ROUND = 6
+"""run 图**每一轮派发**烧掉的 superstep 数上界：
+
+    plan → dispatch → episode → reflect
+
+（`review` 不是每轮都跑；`begin` 与 `START` 是一次性的——那几个由
+`RUN_RECURSION_MARGIN` 出。）
+
+**它只数 run 自己的节点**：`episode` 那一格内部的步数由
+`entry.episode_budget()` 单独算，两笔加起来才是总预算（见 `run_recursion_limit`）。
+"子图步数计入父 limit"是 F5 的实测结论，节点里嵌套 invoke 也一样（探针 X1）。
+"""
+
+RUN_RECURSION_MARGIN = 60
+"""图引擎自身开销 + `begin` / `START` / 收尾那些一次性节点的余量。"""
+
+
+def run_recursion_limit(state: RunState) -> int:
+    """run 图 + 它内部**所有** episode 的 superstep 总预算（D6 / F5 / 探针 X1）。
+
+    三项之和：
+
+      ① run 自己的节点：`RUN_NODES_PER_ROUND × 轮数`，轮数上界 = 栈长 ×(1+重试)；
+      ② 每个 episode 的全部步数：`entry.episode_budget(task, 0)`，每个目标最多
+         派发 `1 + MAX_GOAL_RETRIES` 次；
+      ③ `plan` 压栈带来的新目标：**这一项没有真上界**——每轮最多压
+         `MAX_PLAN_PUSH` 个，而新压的目标自己又要跑（几何级数）。所以这里按
+         "每个新目标留一整份当前预算"给一次性的宽松余量，真守护交给
+         `entry.close()` 的事后断言。这正是 D6 说的那件事：**把"靠 limit 兜底"
+         换成"靠断言报警"**——撞 limit 是无声截断，断言会在开发期就地炸。
+
+    **旧公式（`len(goals) * (MAX_GOAL_RETRIES + 1) * 4 + 60`）在 F5 之后是错的**：
+    它只管 run 自己那几十个节点，而 episode 一局的内部步数就上万个 superstep
+    ——两张图各 invoke 各的时它够用，拼成一张之后会当场撞限。
+    """
+    episodes = sum(entry.episode_budget(t, 0) for t in state.goals)
+    own = len(state.goals) * (MAX_GOAL_RETRIES + 1) * RUN_NODES_PER_ROUND
+    push_slack = MAX_PLAN_PUSH * (episodes + own)
+    return own + episodes * (MAX_GOAL_RETRIES + 1) + push_slack + RUN_RECURSION_MARGIN
+
+
+def _project_goals(goals: list[TaskForBrain]) -> list[GoalForBrain]:
+    """把目标栈投影成子图要的形状（D2-②）。
+
+    `goals`（`list[TaskForBrain]`）是**"目标栈"这个领域概念**，父侧不动；
+    `episode_goals`（`list[GoalForBrain]`）是**同一次派发算出来的投影视图**——
+    两者是不同的东西，所以是两个键。这一笔原先只发生在 `dispatch` 传参
+    （`stack=state.goals`），现在**同时写进 state**：内置子图之后，子图的初值
+    只能从父 state 的**同名键**来（F1/F8），而子侧的名字是 `episode_goals`。
+
+    步 4 拆 `run/dispatch.py` 时本函数跟着 `dispatch` 走。
+    """
+    return [GoalForBrain(goal=t.goal, criteria=t.success_criteria) for t in goals]
 
 
 def _exc_snapshot(exc: Exception) -> str:
@@ -97,6 +164,7 @@ class RunHarness:
         auto_push_goals: bool = True,
         auto_decide_done: bool = True,
         checkpoint: CheckpointToolPort | None = None,
+        deps: HarnessDeps | None = None,
     ) -> None:
         """前置条件：`episode`/`trace`/`brain` 非空——缺了说明装配出 bug。
 
@@ -136,6 +204,11 @@ class RunHarness:
         self.data_center = data_center or RunDataCenter()
         self._auto_push_goals = auto_push_goals
         self._auto_decide_done = auto_decide_done
+        self.deps = deps if deps is not None else episode.deps
+        """**全图唯一的 context**（步 2 新增，D3/F10）——两侧必须共用**同一个对象**：
+        `dispatch` 往 `deps.run_state_snapshot` 写、子图的 `save_checkpoint` 从同一份读；
+        `run()` 还把它当 `invoke(context=…)` 的入参递给图。不传就取子 agent 那一份
+        （它一定有一份），别在这里另建——那会造出两个各看各的真源，而且不报错。"""
         self._checkpoint = checkpoint
         """checkpoint 手（PLAN_checkpoint）；None = 不做 checkpoint，run 级锚点
         与 resume 不可用。"""
@@ -176,9 +249,11 @@ class RunHarness:
         )
 
         state = RunState(run_id=run_id, goals=list(goals), attempts=[0] * len(goals))
-        limit = len(goals) * (MAX_GOAL_RETRIES + 1) * 4 + 60
+        # `deps.run_id` 与这一局的 trace/截图路径同生同死：子侧的 `_run_id` 读的就是它。
+        self.deps.run_id = run_id
+        limit = run_recursion_limit(state)
         try:
-            final = self._graph.invoke(state, {"recursion_limit": limit})
+            final = self._graph.invoke(state, {"recursion_limit": limit}, context=self.deps)
         except Exception as exc:
             # 步骤 2：异常路径——补 RUN_END（error 变体）再原样抛出，不吞。
             self._trace.append(
@@ -226,9 +301,10 @@ class RunHarness:
         state = state.model_copy(
             update={"resume_episode": ResumeEpisode(episode_id=episode_id, step=step)}
         )
-        limit = len(state.goals) * (MAX_GOAL_RETRIES + 1) * 4 + 60
+        self.deps.run_id = run_id
+        limit = run_recursion_limit(state)
         try:
-            final = self._graph.invoke(state, {"recursion_limit": limit})
+            final = self._graph.invoke(state, {"recursion_limit": limit}, context=self.deps)
         except Exception as exc:
             self._trace.append(
                 FromHarnessToTraceToolAppendReq(
@@ -304,16 +380,18 @@ class RunHarness:
         - `done`（或栈空且不压）→ 置 done，run 结束
         - 连续 `PLAN_MAX_ATTEMPTS` 次调用/解析失败 → 置 `plan_failed`，路由 review
 
-        每次调用的账（`MODEL_CALL`，`Source.PLAN`）写 trace——"每一步都产出
-        trace 事件"，run 级思考也不例外；mask 不读 MODEL_CALL，不会产生递归噪声。
-        **不用 `Source.HARNESS`**：那是零成本记账事件的桶，`plan` 是一次真实
-        模型调用，跟 episode 内的 `DECISION` 平级，该有自己的链路。三条非
-        `plan_failed` 的出口都额外补一条 `PLAN_VERDICT` 账（tool 按 kind 渲染）
-        ——账单只答"花了多少钱"，这条答"这一格给了什么结论"，复盘
-        "planner 这次为什么压了这个目标"靠它。
+        每次调用的账（`MODEL_CALL`，`Source.PLAN`）**由本节点写**——重试循环在
+        `run_plan_utils.ask_planner_with_retry`，它只交回每次尝试的原始材料
+        （"账写在它的宿主里"，见 `PLAN_graph_readability.md` §3.7.4）。
+        "每一步都产出 trace 事件"，run 级思考也不例外；mask 不读 MODEL_CALL，
+        不会产生递归噪声。**不用 `Source.HARNESS`**：那是零成本记账事件的桶，
+        `plan` 是一次真实模型调用，跟 episode 内的 `DECISION` 平级，该有自己的
+        链路。三条非 `plan_failed` 的出口都额外补一条 `PLAN_VERDICT` 账
+        （tool 按 kind 渲染）——账单只答"花了多少钱"，这条答"这一格给了什么结论"，
+        复盘"planner 这次为什么压了这个目标"靠它。
 
-        重试循环、记账、prompt 拼装、解析、编辑应用都在 `run_utils`——这里只
-        决定"问完之后走哪条路"。
+        重试循环、prompt 拼装、解析、编辑应用都在 `run_plan_utils`/`run_utils`
+        ——这里只决定"问完之后走哪条路"。
 
         **入栈顺序：`state.goals + pushes` 原序 append，栈顶 = `goals[-1]`**
         ——这是纯 LIFO：`push_goals` 列表里**最后**一项会变成新栈顶、最先被
@@ -368,10 +446,13 @@ class RunHarness:
         prompt = run_plan_prompt.build_prompt(req)
         req = req.model_copy(update={"prompt": prompt})
 
-        resp, ok = run_plan_utils.ask_planner_with_retry(
-            self._brain_tool, self._trace, state.run_id, req
+        resp, log = run_plan_utils.ask_planner_with_retry(self._brain_tool, req)
+        # 步骤：把这次规划的每一次尝试落成账（失败的那几次也要——它们同样烧了
+        # token）。run 级事件不挂在任何一局上，`episode_id` 位放 run_id、step 用 0。
+        trace_write.append_model_calls(
+            self._trace, episode_id=state.run_id, step=0, source=Source.PLAN, log=log
         )
-        if not ok:
+        if resp is None:
             self.data_center.publish_goals(state.goals)
             note = f"plan 连续 {PLAN_MAX_ATTEMPTS} 次失败，交人工审查\n\n{prompt}"
             return {"plan_note": note, "plan_failed": True}
@@ -385,7 +466,7 @@ class RunHarness:
         )
         # `auto_decide_done=False` 时同理：`resp.done` 不算数，栈空也不算数——
         # 两种情形都不在这里判 `done`，直接落到最后的"什么都不做"分支，
-        # 交给 `_compile()` 的路由（`not s.goals` → `review`）去问人。
+        # 交给 `run/graph.py` 的路由（`not s.goals` → `review`）去问人。
         # `auto_decide_done=True`（缺省）时：这两种情形都直接判
         # `done`，不经 `review()`。
         if self._auto_decide_done and (resp.done or (not state.goals and not pushes)):
@@ -437,69 +518,113 @@ class RunHarness:
         return {"plan_note": prompt, "plan_failed": False}
 
     def dispatch(self, state: RunState) -> dict[str, Any]:
-        """栈顶交给子 agent，异常包装成失败结算，栈顶派发计数 +1。
+        """**纯前置**（步 2）：备好这一局的标识与初值，派发本身归 `episode` 节点。
 
-        生成 `episode_id`（`{run_id}-ep{序号}`，run 内唯一）；把**整个目标栈**
-        传给子 agent（它的 `goals` 投影 = 全栈，判只判栈顶）。`AgentError`
-        捕获后包装成 `success=False` 的结算——单局异常不崩掉整个 run。
+        它准备四样：
+
+        - `episode_id`（`{run_id}-ep{序号}`，run 内唯一）；
+        - 父子交界的两个键（D2-③ + v4 补注）：`task` = 栈顶那一层，
+          `episode_goals` = **整个目标栈的投影**（子图判只判栈顶
+          `episode_goals[-1]`，其余层是给大脑的全局视野）。父侧的 `goals`
+          是"目标栈"这个领域概念，不动——两者是不同的东西，所以是两个键；
+        - `attempts[-1] + 1`：栈顶派发计数；
+        - `deps.run_state_snapshot`：这一局存档要搭车带的 run 级状态（D11-(3)）。
+          写入点从"episode 方法入口"搬到这里——**每局都刷新**，多局时每一局的
+          存档携带的都是**那一局派发时**的 run state，不会串。
+
+        `resume_episode` **不在这里清**：它是"这一局从哪一步恢复"的记号，
+        由 `episode` 节点读完才清（它得知道该走哪条路）。
+
+        不在这里捕获 `AgentError`——那件事归 `episode_error_handler`（F4）。
         """
         assert state.goals, "dispatch() called with an empty goal stack"
         assert len(state.attempts) == len(state.goals), "attempts must parallel goals"
         top = state.goals[-1]
         episode_id = f"{state.run_id}-ep{len(state.outcomes) + 1}"
-
-        # run 级状态不再单独落盘：`state.model_dump()` 直接透传给 episode 层，
-        # 由它在每一步的 checkpoint 里原样打包（PLAN_checkpoint §3/§4 v5 改法，
-        # 见 `checkpoint_tool.py` 落盘布局说明）——进程死在本局任何时刻，
-        # 恢复时读那一步的 checkpoint 就能同时拿回两层状态，不用再猜"该读
-        # run 锚点还是 episode 锚点"。
         if state.resume_episode is not None:
             assert state.resume_episode.episode_id == episode_id, (
                 f"resume target mismatch: {state.resume_episode.episode_id} != {episode_id}"
             )
-            step = state.resume_episode.step
-            try:
-                outcome = self._episode.resume(
-                    episode_id, top, state.goals, step, run_state=state.model_dump()
-                )
-            except AgentError as exc:
-                outcome = FromRunHarnessToEpisodeHarnessRunResp(
-                    episode_id=episode_id,
+
+        # 存档里的 run 级状态**必须跟这一局一起落盘**（PLAN_checkpoint §3/§4 v5）：
+        # 进程死在本局任何时刻，恢复时读那一步的 checkpoint 就能同时拿回两层状态。
+        self.deps.run_state_snapshot = state.model_dump()
+        return {
+            "episode_id": episode_id,
+            "task": top,
+            "episode_goals": _project_goals(state.goals),
+            "attempts": state.attempts[:-1] + [state.attempts[-1] + 1],
+        }
+
+    def episode(self, state: RunState) -> dict[str, Any]:
+        """**派发这一局**：run 图里那格"接上 episode 子图"的地方（步 2 / D1-①）。
+
+        两条路，都由 `episode/entry.py` 的图外入口编排（开局的 reset + 首帧感知、
+        恢复的七步准备，都在图外）：
+
+        - 普通派发 → `EpisodeHarnessPort.run`（`entry.run_new`：EPISODE_START →
+          `begin_episode` → 进图 → 取结算）；
+        - 恢复（`resume_episode` 非空）→ `EpisodeHarnessPort.resume`
+          （`entry.run_resume`：`prepare_resume` 七步 → 进图 → 取结算）。
+
+        返回的状态增量就是**父子交界那张键表**（D2）：`outcome` 交给 `reflect`；
+        `resume_episode` 清空——这一局的恢复记号用掉了（重试时下一轮派发走普通路径）。
+        `task`/`episode_goals` 已在 `dispatch` 里写过，这里不重复写（F1 的反作用：
+        子图不输出的键，父侧保持旧值——所以也不需要"清空"它们）。
+
+        **异常不在这里兜**：直挂的子图异常会一路冒穿到 `invoke()` 的调用方（F3），
+        兜底是挂在同一格上的 `episode_error_handler`（F4）。
+        """
+        assert state.episode_id, "episode() without an episode_id"
+        assert state.task is not None, "episode() without a task"
+
+        if state.resume_episode is not None:
+            outcome = self._episode.resume(
+                state.episode_id,
+                state.task,
+                state.goals,
+                state.resume_episode.step,
+                run_state=self.deps.run_state_snapshot,
+            )
+            return {"outcome": outcome, "resume_episode": None}
+
+        outcome = self._episode.run(
+            FromRunHarnessToEpisodeHarnessRunReq(
+                episode_id=state.episode_id,
+                task=state.task,
+                stack=state.goals,
+                run_state=self.deps.run_state_snapshot,
+            )
+        )
+        return {"outcome": outcome}
+
+    def episode_error_handler(self, state: RunState, error: NodeError) -> Command:
+        """**单局异常不崩掉整个 run** 的落点（F4 的 `error_handler`）。
+
+        原先这段逻辑是 `dispatch` 里的 `except AgentError`；内置子图之后"父图调用
+        那一格"没了，异常由 LangGraph 交给 handler。实测（F4）：handler 拿到的是
+        **父 state**，返回 `Command(goto="reflect", update=…)` 时流程正常继续；
+        只返回 dict 的话图会停在这一格（所以必须用 `Command`）。
+
+        **只吞 `AgentError`**：那才是"单局失败"这一类预期内的失败（有名字、后面
+        replay 要按失败类型归类统计）；别的异常仍然是 bug，原样抛出去——这条守的是
+        `except AgentError` 时代的语义，不许趁机扩大吞错范围。
+        """
+        exc = error.error
+        if not isinstance(exc, AgentError):
+            raise exc
+        assert state.episode_id, "episode_error_handler() without an episode_id"
+        return Command(
+            goto="reflect",
+            update={
+                "outcome": FromRunHarnessToEpisodeHarnessRunResp(
+                    episode_id=state.episode_id,
                     success=False,
                     steps=0,
                     reason=f"error: {type(exc).__name__}",
                 )
-            return {
-                "episode_id": episode_id,
-                "outcome": outcome,
-                "last_task": top,
-                "attempts": state.attempts[:-1] + [state.attempts[-1] + 1],
-                "resume_episode": None,
-            }
-
-        try:
-            outcome = self._episode.run(
-                FromRunHarnessToEpisodeHarnessRunReq(
-                    episode_id=episode_id,
-                    task=top,
-                    stack=state.goals,
-                    run_state=state.model_dump(),
-                )
-            )
-        except AgentError as exc:
-            outcome = FromRunHarnessToEpisodeHarnessRunResp(
-                episode_id=episode_id,
-                success=False,
-                steps=0,
-                reason=f"error: {type(exc).__name__}",
-            )
-
-        return {
-            "episode_id": episode_id,
-            "outcome": outcome,
-            "last_task": top,
-            "attempts": state.attempts[:-1] + [state.attempts[-1] + 1],
-        }
+            },
+        )
 
     def reflect(self, state: RunState) -> dict[str, Any]:
         """看结算：**成功才弹栈**；失败按重试预算分流（路由见 `_route_after_reflect`）。
@@ -551,7 +676,7 @@ class RunHarness:
             run_id=state.run_id,
             outcomes=state.outcomes,
             goals=state.goals,
-            last_task=state.last_task,
+            last_task=state.task,
             episode_trace=episode_trace,
         )
         self.data_center.publish_review_request(req)
@@ -563,11 +688,11 @@ class RunHarness:
         if resp.decision is HumanDecision.STOP:
             return {"done": True, "why": "human stopped"}
         if resp.decision is HumanDecision.RETRY:
-            assert state.last_task is not None, "RETRY without a last task"
-            if state.goals and state.goals[-1] == state.last_task:
+            assert state.task is not None, "RETRY without a last task"
+            if state.goals and state.goals[-1] == state.task:
                 return {}
             return {
-                "goals": state.goals + [state.last_task],
+                "goals": state.goals + [state.task],
                 "attempts": state.attempts + [0],
             }
         raise AssertionError(f"unknown human decision: {resp.decision!r}")
@@ -607,66 +732,25 @@ class RunHarness:
 
     # ---- 路由与组装 ----
 
-    def _route_after_reflect(self, state: RunState) -> str:
-        """reflect 的出口路由：失败且栈顶还是刚失败的那个目标 → 直连 dispatch
-        重试（不经 review）；否则（成功弹出 / 重试耗尽弹出）→ review。
-
-        用 `goals[-1] == last_task`（字段相等）判断"没弹"：相邻两层内容完全
-        相同的目标会把"耗尽弹出"误判成"可重试"，多打一轮后仍会走到 review，
-        代价可接受，不值得为它引入额外的路由字段。
-        """
-        if (
-            state.outcome is not None
-            and not state.outcome.success
-            and state.goals
-            and state.goals[-1] == state.last_task
-        ):
-            return "dispatch"
-        return "review"
-
     # ---- 图组装 ----
 
     def _compile(self) -> Any:
-        """把五个节点编译成 LangGraph：`begin → plan → dispatch ⇄ reflect`，
-        `plan` 出口三路（dispatch / done→END / plan 连续失败→review），
-        `reflect` 弹出后接 `review`（human-in-the-loop）。"""
-        graph = StateGraph(RunState)
-        graph.add_node("begin", self.begin)
-        graph.add_node("plan", self.plan)
-        graph.add_node("dispatch", self.dispatch)
-        graph.add_node("reflect", self.reflect)
-        graph.add_node("review", self.review)
-        graph.add_conditional_edges(
-            START,
-            lambda state: "dispatch" if state.resume_episode is not None else "begin",
-            {"begin": "begin", "dispatch": "dispatch"},
+        """把 6 个节点交给 `run/graph.py` 接起来（第 6 个是"只在出错时跑"的 handler）。
+
+        **步 0 起"图长什么样"与"节点怎么实现"分居两个文件**：本方法只交出
+        "节点名 → 节点函数"这张表；拓扑（`dispatch → episode → reflect`，
+        含 `reflect` 出口的重试判据 `_should_retry`、`plan` 出口三路、
+        `START` 的恢复分流，以及挂在 `episode` 那格上的 `error_handler`）
+        全在 `run/graph.py`。
+        """
+        return compile_run_graph(
+            {
+                "begin": self.begin,
+                "plan": self.plan,
+                "dispatch": self.dispatch,
+                "episode": self.episode,
+                "episode_error_handler": self.episode_error_handler,
+                "reflect": self.reflect,
+                "review": self.review,
+            }
         )
-        graph.add_edge("begin", "plan")
-        graph.add_conditional_edges(
-            "plan",
-            lambda s: (
-                "review"
-                if s.plan_failed
-                else END
-                if s.done
-                # 栈空到这里还没被判 done，只会是 `auto_decide_done=False`——
-                # `dispatch` 断言非空栈，这种情形改路由去 `review` 问人（要不要
-                # `PUSH` 新目标、还是 `STOP`），不会撞断言。
-                else "review"
-                if not s.goals
-                else "dispatch"
-            ),
-            {"dispatch": "dispatch", "review": "review", END: END},
-        )
-        graph.add_edge("dispatch", "reflect")
-        graph.add_conditional_edges(
-            "reflect",
-            self._route_after_reflect,
-            {"dispatch": "dispatch", "review": "review"},
-        )
-        graph.add_conditional_edges(
-            "review",
-            lambda s: END if s.done else "plan",
-            {"plan": "plan", END: END},
-        )
-        return graph.compile()

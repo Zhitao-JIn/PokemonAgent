@@ -87,8 +87,8 @@ def main() -> None:
         safe,
         write_last_run,
     )
+    from pokemon_agent.brain import TaskForBrain
     from pokemon_agent.build import build_real
-    from pokemon_agent.schemas.brain import TaskForBrain
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(

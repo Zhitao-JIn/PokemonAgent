@@ -9,6 +9,45 @@
 
 ---
 
+> ## 现状（2026-09-12）—— 读之前先看这段
+>
+> **本文件有两层滞后，成因不同，都不是靠重写本文档来修的。**
+>
+> **① 协议住址（2026-09-12 的改动，本文档未同步）**：上面那段的
+> `interfaces/tools.py` **今天不存在**。五张工具协议搬过两次：
+> 顶层 `pokemon_agent/interfaces/tools/` → `tools/ports.py`（协议与实现同住
+> 一层）→ **`tools/interface/ports.py`**（协议与实现分家）。**全篇凡指
+> `interfaces/tools.py` 处，读作 `tools/interface/ports.py`**，出口是
+> `tools/interface/__init__.py`；同理 `interfaces/world.py` 读作
+> `world/interface/world_port.py`。
+>
+> 第三次搬家的理由**不是"文件该放哪一级"**（前两次都是这么理解的，都不够）：问题在
+> **出口**——`tools/__init__.py` 一旦同时导出协议与实现，Python 的包初始化就决定了
+> "只想拿一张协议"也会把五个插件全加载（实测累计 146 个 `pokemon_agent` 模块）。
+> 分家后降到 116，且 `tools.*` 只剩 `tools` / `tools.interface` /
+> `tools.interface.ports` 三个。理由、验收与迁移顺序见
+> [`PLAN_tool_interface.md`](PLAN_tool_interface.md)。
+>
+> **② 更早的、与本次无关的滞后（只标注，未修）**：本文档写于 envelope 化之前，
+> 所以 §2/§3/§5 的**方法签名还是裸参时代**的（如 `reset(task: Task) ->
+> PerceptionResult`）——今天门面收发的是 `FromHarnessTo*Req`/`Resp` 信封，
+> **权威签名以 `tools/interface/ports.py` 的 docstring 为准**（迁移见
+> [`PLAN_harness_decoupling.md`](PLAN_harness_decoupling.md)）。另外这几处引用的
+> 文件今天也都不存在：
+>
+> | 本文档写的 | 今天实际是 |
+> |---|---|
+> | `memory/port.py` | `memory/ports.py`（`MemoryStorePort`） |
+> | `memory/semantic/semantic_store.py`、`SemanticObjectStore` | 已收敛进 `memory/store.py` 的 `MemoryStore`（四类记忆各一个实例） |
+> | §5 说的 `self._episodes: list[StepMemory]` | 不成立：`MemoryTool` 今天持有四个 `MemoryStore`（`_steps`/`_objects`/`_summaries`/`_knowledge`） |
+> | `MemoryTool` 构造参数 `objects: SemanticObjectStore \| None` | 改为 `embedding_provider` + `reranker_provider` + `memory_root`/`max_summaries`/`knowledge_root` |
+>
+> **为什么不重写本文档**：它记录的是**设计论证**（为什么拆两个 Port、为什么掩码归
+> `GameTools`、为什么大脑不持有任何工具实例），那些论证**没有过期**，是本文档最值钱
+> 的部分。按本仓惯例**只加现状块、就地标注过期，不动历史论证**。
+
+---
+
 ## 1. 模块定位：Harness 伸向环境和记忆的两只手
 
 `tools/` 目录下只有两个类，各自实现一个协议：
@@ -18,7 +57,7 @@
 | `GameTools` | `GameToolPort` | 只碰 `WorldPort`（环境），**不碰任何记忆** |
 | `MemoryTool` | `MemoryToolPort` | 只碰 `memory/` 包（记忆），**不碰世界** |
 
-`interfaces/tools.py` 的模块 docstring 把这个拆分讲得很直接：以前只有一个
+`interfaces/tools.py`（**现 `tools/interface/ports.py`**）的模块 docstring 把这个拆分讲得很直接：以前只有一个
 `ToolHost`（另外还有一个更小的 `ToolPort` 给大脑用），"感知世界"和"记忆"混在
 同一个协议、同一个实现类（`GameTools`）里。现在大脑不再持有任何工具实例——
 `Brain.choose()` 需要的情景记忆由 Harness 先查好、当参数传进去，大脑不再有机会
@@ -324,7 +363,7 @@ return sorted((m for m in self._episodes if m.episode_id == episode_id),
 
 #### 3.2.2 `query_recent_steps(episode_id: str, limit: int) -> list[StepMemory]`
 
-最近 `limit` 步，按 `step` 升序返回。判定器的历史用它（`JUDGE_HISTORY` 条）——
+最近 `limit` 步，按 `step` 升序返回。判定器的历史用它（**订正 2026-09-12**：不再是 `JUDGE_HISTORY` 条，而是按 `JUDGE_HISTORY_KEY_CAP` 取回、再由 harness 侧 `last_chains()` 按链裁到 `JUDGE_CHAIN_HISTORY` 条）——
 判定要的是"最近发生了什么"，而且**必须有界**：无界的历史会让判定器在第 0 步
 就拿着上一局的证据判完成。
 
@@ -677,7 +716,9 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
 | `query_knowledge` | `(query: str, limit: int = 5) -> KnowledgeQueryResult` | 和坐标无关的通用先验；混合检索（BM25 + 向量 + rerank），按目录 mtime 增量重建索引；返回 `contents` 和 `sources`（trace 只记后者）|
 | `store_objects_interactions` | `(before: Observation, action: Action, after: Observation) -> list[ObjectFact]` | 前置：`before`/`after` 都有 `place`；算不出确定格子时不记（**多段链**、连按、原地转身、两个候选同时存在），宁可漏记不可记错 |
 
-（以上签名与前置/后置条件汇总自 `interfaces/tools.py`；因为这是 `GameTools`/
+（以上签名与前置/后置条件汇总自 `interfaces/tools.py`——**现
+`tools/interface/ports.py`**，且**这批签名本身也已过期**（裸参时代，见文首现状块②）；
+因为这是 `GameTools`/
 `MemoryTool` 两个类的对外契约，本文件重复列出以便与上文的实现细节对照阅读。）
 
 ---
@@ -688,7 +729,7 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
   （`self._world`），是纯粹的组合关系——`GameTools` 不了解 `world/` 包内部
   实现（当前唯一实现是 `PyBoyWorld`），只通过 `WorldPort` 协议交互
   （`reset`/`observe`/`all_actions`/`step`；`last_frame_sha` 与 `inspect` 都已删除，前者见 2.7）。
-  `interfaces/world.py` 明确指出：`GameToolPort` 是"Harness 能拿世界做什么"，
+  `interfaces/world.py`（**现 `world/interface/world_port.py`**）明确指出：`GameToolPort` 是"Harness 能拿世界做什么"，
   `WorldPort` 是"世界本身能做什么"，两者职责不同且变化速度不同；换模拟器时
   **`GameToolPort` 和大脑一行都不用改**——这就是分层的收益。掩码这类策略
   不在 `WorldPort` 里：世界只回答"全部动作是什么"和"执行这个动作会怎样"，
@@ -699,7 +740,7 @@ def query_knowledge(self, query: str, limit: int = 5) -> KnowledgeQueryResult:
   可注入其他实现），是通过协议类型标注实现的组合，`memory/port.py` 明确这是
   "底层协议，不是大脑看到的接口"：大脑连"语义记忆"这个词都不该知道；
   `MemoryTool` 组合这个协议、翻译成 Harness 能用的方法，
-  `interfaces/tools.py` 的 `MemoryToolPort` 才是 Harness 真正认识的那一层。
+  `interfaces/tools.py`（**现 `tools/interface/ports.py`**）的 `MemoryToolPort` 才是 Harness 真正认识的那一层。
   情景记忆（`self._episodes: list[StepMemory]`）则没有额外协议层，直接是
   `MemoryTool` 自己管理的列表。
 

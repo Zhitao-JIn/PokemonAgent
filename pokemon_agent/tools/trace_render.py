@@ -22,6 +22,7 @@ import json
 
 from pokemon_agent.brain import (
     ActionFromBrain,
+    ActionSegmentFromBrain,
     GoalForBrain,
     StepVerifyVerdict,
     TaskForBrain,
@@ -310,7 +311,7 @@ def memory_read(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     别的局蒸馏出的经验）。
 
     四种读现在分散在四个 `retrieve_*` 节点里查，但事件仍然**共用一条**——
-    在 `enrich_observation` 那格合并着写，拆成多条事件反而会让人以为它们
+    在 `merge_retrieval` 那格合并着写，拆成多条事件反而会让人以为它们
     发生在循环的不同位置。`known_objects`/`knowledge`/`episode_memories`
     只在非空时才进 payload：大多数步的知识库内容不会变，留一条空字符串
     没有信息量；场景过滤命中为空也是正常情况，不是错误。
@@ -345,14 +346,20 @@ def memory_read(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     return (EventType.MEMORY_IO, Source.MEMORY, payload)
 
 
-def action_chain(action: ActionFromBrain) -> dict[str, str]:
-    """动作链在 payload 里的形状。**`think` 和 `act` 共用这一个函数**——
-    记的是同一条链，形状不一致的话"想按的"和"按下去的"就没法直接比对。
+def action_presses(action: ActionFromBrain) -> dict[str, str]:
+    """动作在 payload 里的形状。**`think` 和 `act` 共用这一个函数**——
+    两者的关系是 **1:N**（`think` 一次决策一条、记整条链；`act` 每按一个键一条、
+    记那一个键），形状一致才比对得上：`act` 记下来的那个键，是不是 `think`
+    那条链里排在当前位置的那一个（执行层悄悄改写动作，diff 立刻看得见）。
 
     **结构化的 `sequence` 必须记，不能只记 `action` 那行渲染文本。**
     渲染文本（`up×4 -> down×2`）是给人读的；"链平均多长、多少步用到了链"
     这类聚合如果去解析它，就得反向分词，而分词一旦和 `describe()` 的措辞
     漂移，统计会**静默地**错。
+
+    **段级 rationale 跟着 `sequence` 一起记**（`model_dump()` 带它）——
+    它没有第二个落点：`think` 的 payload 不再有顶层 rationale，而无记忆基线组
+    不写记忆，那时它就只剩这一处。
 
     **payload 里没有顶层 `name` / `args`**：格式只有 `sequence` 一种；
     恒为空的 `args` 会让读日志的人误读成"模型这次没给参数"。
@@ -387,6 +394,15 @@ def human_note_injected(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 def think(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     """把这一步选出的动作拼成事件（`LLM_OUTCOME`，kind=intent）。
 
+    **链原文在这里，一次决策一份**：`sequence` 记的就是整条链（每段自带
+    rationale），这条事件占用的 step 区间由后面 N 条 `ACT`/`MEMORY_WRITE` 的
+    step 号标出——将来"按链读"要分组时，join 键是 `(episode_id, step)`，
+    记忆侧一个字段都不用加（见 `PLAN_action_step_granularity.md` §4）。
+
+    **payload 里没有顶层 `rationale`**（v3 起）：理由的粒度是段，就写在
+    段里——`sequence` 的每一段都带着它。顶层再摊一份是同一件事的第二份拷贝，
+    两份就有不一致的可能。
+
     前置条件：req.action、req.attempt 非 None。
     """
     action: ActionFromBrain = req.action
@@ -395,11 +411,8 @@ def think(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
         Source.DECISION,
         {
             "kind": "intent",
-            **action_chain(action),
+            **action_presses(action),
             "thought": action.thought,
-            # rationale 也记在这里，不只依赖 MEMORY_WRITE——
-            # **无记忆基线组不写记忆**，那时 rationale 只剩这一处落点。
-            "rationale": json.dumps(action.rationale, ensure_ascii=False),
             "attempt": str(req.attempt),
         },
     )
@@ -408,12 +421,13 @@ def think(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 def act(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     """把这一次按键拼成事件。
 
-    **和 `think` 记的是同一条链**（同一个 `action_chain`），差别只在来源：
-    `think` 是大脑打算按的，`act` 是世界真的按了的。两条形状一致，正是为了
-    能直接比对——一旦哪天执行层又开始改写动作，diff 立刻看得见。
+    **和 `think` 共用 `action_presses`，但关系是 1:N**：`think` 落在链首那一步、
+    记整条链；这里**每按一个键记一条**、记的就是那一个键（单段、`times=1`）。
+    形状一致正是为了能直接比对——一旦哪天执行层又开始改写动作，diff 立刻看得见。
 
     **不记"结果"。** 按完之后世界变成什么样，答案是下一条 OBSERVE 事件里
-    那份完整观测，不是一句转述。
+    那份完整观测，不是一句转述。这一键的结局（`stop`）也不在这里——
+    它按下去的那一刻还不存在，落在同一步的 `AFTER_ACTION` 上（原 `LOOK_AFTER`）。
 
     前置条件：req.action 非 None。
     """
@@ -421,7 +435,7 @@ def act(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     return (
         EventType.ACT,
         Source.WORLD,
-        {"kind": "executed", **action_chain(action)},
+        {"kind": "executed", **action_presses(action)},
     )
 
 
@@ -580,7 +594,7 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     """一次检索的命中摘要（不带全文）。read_kind ∈
     step/global/knowledge/object/verify_step。
 
-    **全文不重复**：主循环四路的检索内容只存在于 enrich_observation 合并出
+    **全文不重复**：主循环四路的检索内容只存在于 merge_retrieval 合并出
     的那一条读（MEMORY_IO，kind=read_merge）；这里每节点一条 count+refs，
     用于链上定位"这一路读到了什么量级"。`Source.MEMORY`——检索不花模型的
     钱。信封 kind = read_<原 read_kind>（verify_step → read_verify_steps）。
@@ -602,7 +616,7 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 
 
 def step_advance(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
-    """advance_step 节点：步数推进的结果。`Source.HARNESS`——图控制的记账。
+    """close_step 节点：步数推进的结果。`Source.HARNESS`——图控制的记账。
 
     前置条件：req.next_step 非 None。
     """
@@ -613,26 +627,70 @@ def step_advance(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
     )
 
 
-def look_after(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
-    """look_after_action 的观察摘要（非账单）。
+def after_action(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
+    """`perceive_after_action` 的观察摘要（非账单）——**这一键之后世界长什么样**。
 
-    该节点的痕迹除感知 MODEL_CALL 外只有这条；完整 facts 紧跟其后由下一步
-    look 的 OBSERVE 携带，这里只记轻量摘要。`Source.PERCEPTION`——它也是
+    该节点的痕迹除感知 `MODEL_CALL(PERCEPTION)` 外就是这条；完整 facts 由链首的
+    `OBSERVE` 携带（每条链一条），这里只记轻量摘要。`Source.PERCEPTION`——它也是
     "看"的一种，只是不比账单。
 
-    前置条件：req.scene/overlay/status/done 非 None。
+    **字段只留 RAM 档读得出的两项**（`status`/`done`）：链中间的键走 `ram_only`，
+    那一档本来就没有 `scene`/`overlay`（`_ram_status`：不写"你在野外"这类场景词）。
+    v6 的处理是"留着键、值为空串，靠一条约定解释"——账挪到产出格之后那条约定不再需要：
+    字段直接来自它刚产出的那份 `Observation`，没有的东西就根本不出现。
+
+    `stop` 也不在这里：它答的是"为什么截断"，那是**处置**的一部分，归 `apply_stop`
+    的 `ACTION_TRUNCATED`。于是"这一键有没有被截断"就等于"有没有那条处置账"，
+    不必在恒有值的字段里判空。
+
+    前置条件：req.status、req.done 非 None。
     """
     return (
         EventType.VIEW,
         Source.PERCEPTION,
         {
             "kind": "after",
-            "scene": req.scene,
-            "overlay": req.overlay,
             "status": req.status,
             "done": str(req.done).lower(),
         },
     )
+
+
+def action_truncated(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
+    """`apply_stop` 的处置账：这一键把链**真的截短了**，丢了哪些键。
+
+    **只在真的丢了键时写**（`req.dropped` 非空）。正常键不写——包括"中止了但队列里
+    没有同向键可丢"的那一类（`blocked` 只丢本段剩余，`up×1 -> down×2` 里第一下撞墙
+    时下一段是 `down`，什么都不用丢，链照常往下走）。于是"这一局被截断了几次"可以
+    直接数事件条数。
+
+    挂 `ACT` + `HARNESS`：`ACT` 的定义就是"动作域记录——不限定执行方，因此跨 source"，
+    已经同时住着 `space`(harness)/`executed`(world)/`stall`(harness)，截断是第 4 个
+    kind，与 `stall_check` 完全同构；`HARNESS` 因为这是执行层处置自己的动作，
+    不花模型的钱。
+
+    前置条件：req.stop 非空（中止原因）、req.dropped 非空（真丢了键）。
+    """
+    dropped: list[ActionSegmentFromBrain] = req.dropped
+    return (
+        EventType.ACT,
+        Source.HARNESS,
+        {
+            "kind": "truncated",
+            "stop": req.stop,
+            "dropped_count": str(len(dropped)),
+            "dropped": _segments_text(dropped),
+        },
+    )
+
+
+def _segments_text(segments: list[ActionSegmentFromBrain]) -> str:
+    """把一串按键段压成 `up×3 -> left` 一行。
+
+    **格式与 `ActionFromBrain.describe()` 刻意一致**（那里吃整条链、这里吃被丢掉的
+    那几段，两处都是给人读的同一件事，长一样才比对得上）。`times == 1` 省掉 `×1`。
+    """
+    return " -> ".join(f"{s.name}×{s.times}" if s.times > 1 else s.name for s in segments)
 
 
 def verify_result(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
@@ -694,6 +752,26 @@ def _render_goal_stack(goals: list[GoalForBrain]) -> str:
     两者的读者和用途都不一样，没必要共用一份格式。
     """
     return " > ".join(f"[{depth}]{g.goal}" for depth, g in enumerate(goals))
+
+
+def checkpoint_save(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
+    """存档发生的接缝标记——**与 `checkpoint_restore` 对称**。
+
+    没有它，存档端在事件流里是不可见的：`resume()` 有 `CHECKPOINT_RESTORE`、
+    存档端一条没有，恢复点可见、存档点不可见；而 replay/统计要按存档切段，
+    只能去反推存档文件的 step。挂 `LIFECYCLE` + `HARNESS`，与
+    `checkpoint_restore`/`step`/`episode_start` 同族，量级是**链边界一条**（不是每键）。
+
+    **不重复存游标**：存档的 `(run_id, episode_id, step)` 就是它的坐标，全在信封里；
+    那条事件自己的 `event_id` 也已经说明了它落在时间线的哪一格。
+
+    前置条件：req.saved_step 非 None。
+    """
+    return (
+        EventType.LIFECYCLE,
+        Source.HARNESS,
+        {"kind": "checkpoint_save", "step": str(req.saved_step)},
+    )
 
 
 def checkpoint_restore(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:

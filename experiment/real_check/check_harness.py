@@ -31,8 +31,8 @@ def main() -> None:
         make_review_pair,
         write_last_run,
     )
+    from pokemon_agent.brain import TaskForBrain
     from pokemon_agent.build import build_real
-    from pokemon_agent.schemas.brain import TaskForBrain
 
     run_id = f"realcheck-{time.strftime('%m%d-%H%M%S')}"
     print(f"[1/6] build_real 装配中（run_id={run_id}）...", flush=True)

@@ -1,5 +1,11 @@
 # Checkpoint / Resume 交接文档（2026-09-07，供实现会话使用）
 
+> **本文档描述 0907 当天的事实快照**（当时是十七节点图、`look`/`look_after_action`/
+> `advance_step` 等名字、图里还没有链内小循环）。文件名带日期戳，是历史记录，**就地
+> 不改写**。当前图见 `pokemon_agent/harness/interface/episode_harness_port.py` 的模块
+> docstring（那里是现下唯一的权威图，且与 `web/src/App.tsx` 的相位表由
+> `scripts/check_graph_phases.py` 机械核对）。
+
 > 目标：为两级 harness 补上 checkpoint/resume（Agent 工程清单第 6 项，当前
 > 最高优先级缺项）。本文档是实现的唯一输入——架构事实、设计决策、契约草案、
 > 改动触点、验收标准全部在内，不需要考古旧会话。

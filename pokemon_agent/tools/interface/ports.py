@@ -1,4 +1,4 @@
-"""tools 包的五个对外契约：`BrainToolPort`/`CheckpointToolPort`/`GameToolPort`/
+"""tools 层的五张对外契约：`BrainToolPort`/`CheckpointToolPort`/`GameToolPort`/
 `MemoryToolPort`/`TraceToolPort`——harness 认识的五张工具门面。
 
 原来分别放在顶层 `pokemon_agent/interfaces/tools/`，跟 `memory/ports.py`
@@ -10,6 +10,21 @@
 
 零循环依赖风险：`schemas.harness` 对 `tools/` 没有反向依赖，这五个 Port
 可以放心立即加载，不需要懒加载。
+
+**上面那段的后半截已经过期（2026-09-12）。** 事实部分今天依然成立——只依赖
+信封、没有专属 domain schema、仍然不预建 `interface/domain/`；过期的是**结论**：
+当时把"扁平"当成了"协议与实现平级、同一个出口一起导出"，而问题从来不在文件
+放在哪一级，在**出口**。`tools/__init__.py` 是"进这一层的门"，出口同时导出
+协议和实现，就意味着拿一张协议也会把五个插件全带上（实测 146 个
+`pokemon_agent` 模块）。所以本文件搬进了 `tools/interface/`——**内容零改动，
+只换了住址和出口**：协议改由 `tools/interface/__init__.py` 单独导出，实现改由
+收窄且懒加载的 `tools/__init__.py` 导出。
+
+那句"零循环依赖、不需要懒加载"今天**仍然有效**，而且正是这次搬家的安全保证
+——`schemas.harness` 不会回头要 `tools/` 的任何东西，所以本包仍然全部立即
+导入，不做 `__getattr__`（对照 `harness/interface` 与 `world/interface`
+为什么必须懒加载：那两个都有真的回环）。迁移理由与验收见
+`docs/spec/tools/PLAN_tool_interface.md`。
 """
 
 from __future__ import annotations
@@ -191,9 +206,11 @@ class GameToolPort(Protocol):
     def execute(self, req: FromHarnessToGameToolExecuteReq) -> None:
         """执行一个动作，推进世界。**不感知**——调用方另调 `perceive_once()` 拿新观测。
 
-        req.action：要执行的动作（可能是动作链）。
+        req.action：要执行的动作。**执行粒度是一个键**（单段、`times=1`）——
+            连按已经在 Harness 的循环里展开成一步一步。
         req.observation：这个动作据以选出的那份观测。
-        前置条件：动作每一段的按键属于 get_action_space(req.observation) 的结果（实现方 assert）。
+        req.settle：按完要不要等世界把过场走完（链中间的键不等，见该字段说明）。
+        前置条件：动作的按键属于 get_action_space(req.observation) 的结果（实现方 assert）。
         """
         ...
 
@@ -213,13 +230,20 @@ class GameToolPort(Protocol):
         """
         ...
 
-    def perceive_once(self) -> FromHarnessToGameToolPerceiveOnceResp:
-        """感知当前这一帧，**只问一次视觉模型，不重试**。
+    def perceive_once(self, *, ram_only: bool = False) -> FromHarnessToGameToolPerceiveOnceResp:
+        """感知当前这一帧。
 
+        `ram_only=False`：**只问一次视觉模型，不重试**。
         调用方在 `reset()`/`execute()` 之后调它拿观测；重试预算与循环归
         调用方（Harness）管，见 `docs/ROADMAP.md`。
-        后置条件：resp.observation 非空；step 未盖章（Harness 的事）。
         失败：解析不出结构化状态时抛 `PerceptionAttemptFailed`（附这次的账）。
+
+        `ram_only=True`：**不调视觉模型**，只读内存里确定的那几样（坐标、朝向、
+        地标、通行图、地图编号）——链中间的键用这一档，它们只需要判"位置动没动、
+        换没换图"。返回的观测 `perceived=False`：场景与对话**不是空的，是没读过**；
+        `calls` 为空，也不会失败。
+
+        后置条件：resp.observation 非空；step 未盖章（Harness 的事）。
         """
         ...
 

@@ -17,6 +17,13 @@
 > 本来想兜这个窗口但从来没被恢复逻辑读过（死代码），这次一并放弃，需要时再补。
 > §3.1/§4/§7.1 的 `run.json`/`save_run`/`latest_run` 相关描述已按此更新，仅保留
 > 历史小节说明当时的设计考虑；实现以 `checkpoint_tool.py`/`SPEC.md` 为准。
+> v6 变更（0911，用户拍板）：**帧账随存档走**——`_frame_event_ids`（步号 → 承载这一帧
+> 那条事件的 event_id，截图文件名就是它）与 `_pending_frames`（还没挂上任何事件的那一帧的
+> 原图，只有第 0 步会非空）都是 harness 的**内存态**，原先不进存档，于是 `resume()` 后第一条
+> `OBSERVE` 与第一个 store 步的 `before_frame` 一起丢图（真机 `check_restore` 观察到的现象：
+> 恢复段链首事件只有 payload、没有帧）。改法：`SaveReq`/`LoadResp` 各加两个字段（**本局
+> 切片**，整数步号键，落盘写成 `"<step>"`），`CheckpointTool` 落盘读回，`resume()` 灌回两张表；
+> 旧档缺字段 = 空表（向后兼容）。§3.1/§5 已按此更新，实现以 `checkpoint_tool.py` 为准。
 > 基线：commit `c8b9ab7`。事实清单见同目录 `CHECKPOINT_handoff_2026-09-07.md` §1-2。
 
 ## 1. 三级恢复的精确定义
@@ -36,12 +43,14 @@
 
 ## 2. 总体机制：显式图节点 `save_checkpoint` + 自研 CheckpointTool
 
+> **现状指引（2026-09-11）**：下面这段图素描写于 0907，节点名与顺序此后变过（`look` → `record_observation`、`advance_step` → `close_step`、`look_after_action` → `perceive_after_action` + `record_action_result`）。当前图见 `pokemon_agent/harness/interface/episode_harness_port.py` 的模块 docstring。
+
 **episode 图新增第 18 个节点 `save_checkpoint`**（用户拍板：加节点在 look 之前）：
 
 ```
 START → save_checkpoint → look → judge ─(done)→ 收尾链 → END
                               └(否)→ get_action_space → 四路 retrieve
-                                    → enrich_observation → think_action → act
+                                    → merge_retrieval → think_action → act
                                     → look_after_action → detect_stall → advance_step
                                     → store_step → store_object → save_checkpoint（回到 look）
 ```
@@ -90,7 +99,8 @@ trace_data/<run_id>/
 │   └── step/<episode_id>/
 │       ├── <step>.state                        （模拟器存档，二进制）
 │       └── <step>.json                         （EpisodeRunState dump ＋ 当时的
-│                                                  RunState dump ＋ 游标，唯一提交点）
+│                                                  RunState dump ＋ 游标 ＋ 本局
+│                                                  帧账，唯一提交点）
 ```
 
 - 写入顺序：**先模拟器存档，再 json（json = 提交点）**；中间 crash = 该号
@@ -134,7 +144,9 @@ trace_data/<run_id>/
    `EventObjectStore.truncate`（**已存在**，semantic_store.py:113）；StepMemory
    落盘化后同构调用（见 §7.0 前置改造）；
 6. state = 快照 `model_validate()`（全量 dump，**pending_observation 在位，
-   不重调视觉模型**）；
+   不重调视觉模型**）；**帧账回载**（v6：`frame_event_ids`/`pending_frames` 灌回
+   harness 的两张表——纯内存态，不灌的话恢复后第一条 `OBSERVE` 与第一个 store
+   步的 `before_frame` 丢图）；
 7. DataCenter 单点重建（v4：事件流槽迁入 DataCenter，见 §7.2）：
    `rebuild(事件前缀, RunState.goals)` 一次调用——观测台/SSE/实时数字的全部
    数据源就位，前端恢复 = 重连 DataCenter，不用分别从 trace 与各槽拼；

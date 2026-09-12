@@ -17,12 +17,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+import pokemon_agent.tools.trace_render as trace_render
 from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     FromHarnessToTraceToolReadDiskEventsReq,
     FromHarnessToTraceToolReadDiskEventsResp,
 )
-from pokemon_agent.tools import trace_render
 from pokemon_agent.trace import TraceKind, TracePort
 
 _RENDERERS = {
@@ -50,10 +50,12 @@ _RENDERERS = {
     TraceKind.ACTION_SPACE: trace_render.action_space,
     TraceKind.RETRIEVE_NODE: trace_render.retrieve_node,
     TraceKind.STEP_ADVANCE: trace_render.step_advance,
-    TraceKind.LOOK_AFTER: trace_render.look_after,
+    TraceKind.AFTER_ACTION: trace_render.after_action,
+    TraceKind.ACTION_TRUNCATED: trace_render.action_truncated,
     TraceKind.VERIFY_RESULT: trace_render.verify_result,
     TraceKind.PLAN_VERDICT: trace_render.plan_verdict,
     TraceKind.CHECKPOINT_RESTORE: trace_render.checkpoint_restore,
+    TraceKind.CHECKPOINT_SAVE: trace_render.checkpoint_save,
 }
 
 

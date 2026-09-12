@@ -196,7 +196,7 @@ episode： goals = [GoalForBrain(goal=t3.goal, criteria=t3.criteria),   ← 全�
 | `model_call` | 一次模型交互的账：tokens/延迟/attempt/ok/raw（六链共用，`depth`/`why`/`verdicts` 等随 payload） | perception/decision/judge/verify/memory/plan |
 | `error` | 一个失败；`kind` 给模式、`reason` 给细节 | 各自链 |
 | `llm_outcome`（intent/verdict/audit） | LLM 产物：intent=think 的动作意图（action/thought/rationale）；verdict=judge 成败结论（done/success/stalled/depth/why）；audit=verify 校验汇总（checked/unreliable，逐条 verdicts 在对应 model_call） | decision/judge/verify |
-| `view`（frame/after） | frame=每步 look 的全量观测（facts 全文）；after=look_after_action 轻量摘要 | perception |
+| `view`（frame/after） | frame=每条链首一条 `OBSERVE`（完整 facts + goals + **这一链开局的帧**）；after=`perceive_after_action` 的 `AFTER_ACTION` 轻量摘要（只含 RAM 档读得出的 status/done，链内每键一条）；链尾键的帧挂在它自己的 `AFTER_ACTION` 上，下一条链的 `OBSERVE` 按 event_id 读回同一张图（§1.5 订正） | perception |
 | `act`（space/executed/stall） | space=get_action_space 掩码（count/names）；executed=世界真按的动作链；stall=停摆护栏快照（stall_key/count） | harness/world |
 | `memory_io`（read_merge/read_step/read_global/read_knowledge/read_object/read_verify_steps/read_verify_knowledge/write_step/write_object/write_episode） | read_merge=主循环四路合并读全文（含 known_objects_text 等）；read_*=各检索命中摘要（count/refs）；write_*=三类记忆写入（content/完整副本） | memory |
 | `lifecycle`（run_start/run_end/episode_start/episode_end/step） | run 与 episode 边界（run 级 `episode_id` 放 run_id、step=0）+ step 刻度推进 | harness |
@@ -284,7 +284,7 @@ trace.events(RUN_TRACE_MASK)   # 只读高层决策信号，噪声读取时就�
 | 2 | 同上 | `query_objects(obs)` | 语义 object（按当前地图） | `obs.facts["known_objects"]` |
 | 3 | 同上 | `query_knowledge(task.goal)` | 知识库（按目标相关性） | `obs.facts["knowledge"]` |
 | 4 | 同上（条件：`obs.place` 非空） | `query_episode_summaries(scene, goal)` | 跨局摘要（场景过滤 + 目标检索） | `obs.facts["episode_memories"]` |
-| 5 | 判定时（`_judge` 内部） | `query_recent_steps(ep, 3)` | 本局最近 3 步（`JUDGE_HISTORY`） | 判定模型的 history（**不走 retrieve 节点**——两条独立检索链） |
+| 5 | 判定时（`_judge` 内部） | `query_recent_steps(ep, JUDGE_HISTORY_KEY_CAP)` 再按链裁 | 本局**最近 2 条链**（`JUDGE_CHAIN_HISTORY`；`JUDGE_HISTORY` 是 0905 的旧名，单位是步） | 判定模型的 history（**不走 retrieve 节点**——两条独立检索链）。**订正 2026-09-12**：粒度下沉到单键后按步取会把视野除以链长，改为按链取 |
 | 6 | 蒸馏时（`summarize`） | `query_episode_steps(ep)` | 本局全量 | 蒸馏器输入（读，不算检索） |
 
 ### 3.3 三层存储（EpisodeMemory）

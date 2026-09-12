@@ -25,8 +25,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pokemon_agent.brain import MAX_RATIONALE, GoalForBrain
+from pokemon_agent.brain import MAX_RATIONALE, MAX_SEGMENTS, GoalForBrain
 from pokemon_agent.schemas.brain import ChooseOnceReq
+from pokemon_agent.schemas.memory import render_decisions
 from pokemon_agent.world import terrain_legend
 from pokemon_agent.world.interface import Facts
 
@@ -167,6 +168,10 @@ def build_prompt(req: ChooseOnceReq) -> str:
     只信任这个前置条件。`knowledge`/`episode_memories` 走各自的占位符，
     跟 `memories` 一样分开渲染、分开给可信度说明。
 
+    `memories` 那一段**按决策合并**（`render_decisions()`）：一次决策一段，只摆两端两帧
+    ——决策者当时就是按串键想的，回看也该是那个粒度；逐条渲染的版本（带相邻帧去重）
+    留给拿证据的判定器/校验器。
+
     拼出这一步的完整 prompt。
     """
     goals, obs, space = req.goals, req.obs, req.space
@@ -174,7 +179,10 @@ def build_prompt(req: ChooseOnceReq) -> str:
     assert not obs.done, "build_prompt() called on a finished episode"
     assert goals, "build_prompt() got an empty goal stack"
     facts = "\n".join(f"- {k}: {v}" for k, v in obs.facts.items()) or "（无）"
-    recalled = "\n\n".join(m.render() for m in req.memories) or "（无相关记忆）"
+    # **按决策合并渲染**（不是逐条 `render()`）：`req.memories` 是本局全量、一键一条，
+    # 逐条渲会让同一次决策的中间帧各占一段，按决策长度线性放大决策 prompt。理由与实测见
+    # `schemas/memory/datastore/step_memory.py::render_decisions()`。
+    recalled = "\n\n".join(render_decisions(req.memories)) or "（无相关记忆）"
     human_note_block = _render_human_note(req.human_note)
     actions = "\n".join(
         f"- {name}: {space.descriptions.get(name, '（无说明）')}" for name in space.names
@@ -197,6 +205,7 @@ def build_prompt(req: ChooseOnceReq) -> str:
         episode_memories=req.episode_memories or "（无跨局摘要）",
         actions=actions,
         max_rationale=MAX_RATIONALE,
+        max_segments=MAX_SEGMENTS,
         human_note_block=human_note_block,
     )
 

@@ -1,3 +1,1137 @@
+## 2026-09-12（30）—— 步 2：run 图接上 episode 子图（两张图拼成一张）
+
+**改了什么**
+
+八处，改的全是"两张图怎么连"，**图内 21 个节点的方法体一行未动**：
+
+1. **新建 `harness/episode/entry.py`**（约 330 行）——单局的两个**图外**入口搬到这里：
+   `begin_episode`（写 `EPISODE_START` → 世界起点 reset → 开局感知 → 帧暂存）、
+   `prepare_resume`（`load` → `void_after` → `load_state_bytes` → 帧账回载 → 写
+   `CHECKPOINT_RESTORE`；含"`world_reset_done = True` 这条强制令"）、`run_new` /
+   `run_resume`（图外编排 + 异常补 `EPISODE_ERROR`）、`_invoke`（**唯一一处**递
+   `recursion_limit` 的地方）、`close()`、`episode_budget()`、`exc_snapshot()`、
+   `_perceive_first_frame()`。
+2. **`harness/deps.py`**：加 `checkpoint: CheckpointToolPort | None`（**步 5 删**——
+   本步 `prepare_resume()` 还要它的 `load()` / `void_after()`）；docstring 补"步 2
+   落地了什么 / 还没做的（步 3 / 步 5）/ 生命周期暂未收口"三节。
+3. **`harness/episode/graph.py`**：收下 `NODES_PER_DECISION` / `NODES_PER_PRESS` /
+   `RECURSION_MARGIN` 三个常量（它们算的是 limit，属装配）；`StateGraph` 加
+   `context_schema=HarnessDeps`。
+4. **`harness/episode_harness.py`**（1711 → 1572 行）：删三个常量、`_begin`、`_invoke`、
+   `_close`（四条搬家）；`__init__` 收下 `deps`（不传则现建一份），八个 `_xxx` 字段改成
+   读 `self.deps` 的 `@property`，两张帧表取 `deps` 同名表的**别名**；`run()` / `resume()`
+   收成薄委托。
+5. **`harness/run/graph.py`**：`add_node("episode", nodes["episode"], error_handler=…)`，
+   两条新边 `dispatch → episode → reflect`；`context_schema=HarnessDeps`。
+6. **`harness/run_harness.py`**：新增 `RUN_NODES_PER_ROUND` / `RUN_RECURSION_MARGIN` /
+   `run_recursion_limit(state)`；`dispatch` 退成**纯前置**（算 `episode_id`、`attempts+1`、
+   写 `task`/`episode_goals`、刷 `run_state_snapshot`，不再调子 agent）；新增 `episode`
+   与 `episode_error_handler` 两个节点；`invoke(..., context=self.deps)`。
+7. **`harness/interface/episode_harness_port.py`**：补 `deps` property 与 **`resume()`**
+   ——协议里原先**根本没有** `resume`，是个缺口（实现有、契约没有）。
+8. **技能侧**：新增探针 `probe_nested_invoke.py`（X1–X5）；`verify_chain_inner_loop.py`
+   加 G 块（9 条）。
+
+**为什么这么改**
+
+`PLAN_graph_composition.md` §6 步 2 原文是"换拼接：`dispatch` → `add_node("episode", …)`；
+`_begin`/`resume` 进 `entry.py`；**D6 的 limit 重标定**"。三条支撑理由：
+
+- **单调迁出**：步 2 只把**图外入口**搬进 `entry.py`，图内节点/边一根手指都不碰——这正是
+  该步"回滚成本最低"的兑现方式。步 3 才把 21 个节点逐域展开。
+- **deps 真源唯一**：`self.deps` 是唯一真源，`_game`/`_memory`/… 八个句柄改成 property，
+  两张帧表取**别名而非拷贝**。别名不是省事——`prepare_resume` 在图外回载帧账后，图内节点
+  必须看见同一份；拷贝会让"某几步的 `before_frame` 静默为空"，是个不炸的错。
+- **异常处理点平移而非改写**：原先 `dispatch` 里的 `except AgentError` 换成 `add_node`
+  的 `error_handler`（F4 实测：handler 拿到**父 state**、返回 `Command(goto=…)` 流程继续）。
+
+**取舍**
+
+- **D6 的公式前提被探针 X5 推翻，本步仍按 PLAN 原文实现（保守侧），收紧与否留拍板。**
+  X5 是一组对照：同一个父图（`limit=3`）里嵌套 `sub.invoke(...)` 3 步子图——
+  **不传 config** 时子图拿父 limit 当自己的上限、自己撞限（＝X1 复现）；**传
+  `{"recursion_limit": 100}`** 时子图跑完、且**父图后续照常跑完**（X5-c）。
+  结论：**F5 不能外推到形态 B**。F5 测的是形态 A（编译好的子图直接当 `add_node` 的函数，
+  langgraph 把它内联进父图、同一个 counter）；本仓用的是形态 B + 显式 limit，**父子各算各的**。
+  于是 `run_recursion_limit()` 里"Σ 全部 episode 内部步数"那一笔**是余量、不是必需**，
+  副作用是把 run 层撞限阈值抬到 **210036**，而只数 run 自己需要的是 **120**
+  —— run 图自己失控要转 21 万步才报警，D6 想"把 limit 兜底换成断言报警"，
+  结果 run 层的兜底先被废掉了。**建议**（待拍板）：run 侧只留
+  `own + MAX_PLAN_PUSH 余量 + margin`（量级 ~百），把"覆盖 episode"删掉；
+  守护改由内层 `episode_budget()` + `entry.close()` 的事后断言承担。
+- 三个 limit 常量搬进 `episode/graph.py`：它们算的是**预算**，属装配，不属某只图。
+- `checkpoint` 字段**暂留**（步 5 删）：`prepare_resume()` 现在还要 `load()`/`void_after()`。
+- `deps` 生命周期**暂未收口**（仍与 `EpisodeHarness` 同生同死）——与现状行为一致，收口放步 3。
+- `entry._perceive_first_frame` 与图内 `_perceive` 有 8 行重复，**有意留**（步 3 合并）；
+  先按现状复制，免得本步顺手动到图内代码。
+- `episode_error_handler` **只吞 `AgentError`**，非 `AgentError` 原样 `raise exc`——
+  不趁机扩大吞错范围。
+- `run_harness._compile() -> Any`（`ANN401`）HEAD 就在，按"零行为变化"不动。
+
+**影响面**
+
+- 验收全绿：`check_imports.py` **439** 条（原 422）、`check_graph_phases.py`
+  `OK 21 nodes; graph order == web CHAIN_PHASES order`、离线核验 **124 PASS**
+  （含本步新增的 G 块 9 条）、探针 **7/7**。
+- **行为差异只有一处**：单局异常的处理点从 `dispatch` 的 try/except 变成 `episode` 格的
+  `error_handler`；语义一致（都转成失败结算、继续 `reflect`）。
+- 接口面：`EpisodeHarnessPort` 多 `deps` 与 `resume` 两项；`EpisodeHarness.run/resume`
+  签名不变（`api.py` / 测试 / 脚本不受影响）。
+- **未跑真机**：六维核对（`check_harness` / `check_trace` / `check_memory` /
+  `check_checkpoint` / `check_memory_roundtrip` / `check_restore`）需用户在真 PyBoy 上跑
+  —— `run_recursion_limit()` 的实际值只有真机能验（本步只做了离线量级核对）。
+
+---
+
+
+## 2026-09-12（29）—— 步 1 收尾：扫掉 lint 与措辞的尾巴，行为零变化
+
+**改了什么**
+
+四处，全是文档与排序，无一行逻辑：
+
+1. `StepMemory.plan_step_start` 的三条 description 措辞对齐（"自成一链" / "它不是链字段" /
+   "按链分组" → 决策口径）——上一版只扫了四个纯函数的 docstring，这一条 Field 说明漏了，
+   于是同一份文档里出现"`group_by_decision` 的唯一用途是按**链**分组"这种自相矛盾。
+2. `harness_port.py` 的 import 块排序（上一版在那一段中间插了 re-export 注释，破了 `I001`）。
+3. `episode_harness_port.py` 职责表第 21 行压进 100 显示宽度（`E501`）。
+4. 技能侧 `probe_langgraph_subgraph.py` 的 docstring 订正：D2 已把子侧改名 `episode_goals`，
+   而探针里那句"项目里 `goals` 正是这样一对"已经过期。探针的**示例类刻意保持同名**——
+   F2 要证明的就是"同名不同型当场炸"，只是把"项目现状"与"探针造的形状"分开说清。
+
+**为什么这么改**
+
+`AGENTS.md` §七 要求提交前 `ruff check .` 干净，步 1 的验收也写着"全绿"。这四处是上一版
+留下的尾巴，不是新方案——**新方案一个没加**。
+
+`STOP_NOTE` 的三个值**一字未动**：它是渲染给大脑读的句子（"换到了另一张地图，整条链剩下的
+键全部作废"），改它就是改 prompt 输入，不属"零行为变化"。
+
+**取舍**
+
+- **`E501` 量的是显示宽度（CJK 计 2），不是字符数**——第 21 行 99 字符仍报 119 宽度。
+  同表另有 **8 行超宽（81–189 宽度）一行未动**：那是前面几步的成文表述，动它就是改内容，
+  留给复核时定（重排表格 / 容忍超宽）。
+- 全仓 `ruff check .` 有 **55 条**，含 ruff 0.16.6 新引入的 `UP042 replace-str-enum`、
+  若干 `ANN2xx`，分布在 `world/`、`api.py` 等本步未碰的文件。**不在本步范围内**，
+  本步只保证"我碰过的文件不新增"。
+
+**影响面**
+
+- **行为零变化**；三项验收全绿：`check_imports.py` 422 条、`check_graph_phases.py`
+  21 节点、离线核验 **116 PASS**；技能侧探针 29/29。
+- **未动**：`STOP_NOTE` 值、职责表其余 8 行、`run_harness.py` 的 `_compile() -> Any`
+  （`ANN401`，HEAD 就在，按"零行为变化"不动）。
+
+---
+
+## 2026-09-12（28）—— harness 图组合重构·步 1：`chain` → `decision` 术语收敛
+
+**改了什么**
+
+一个词在本仓指了四件事（那次决策的步号 / 按那次决策分组 / 取最近几次 / 图的节点序列），
+而且**函数名与它渲染出的文本互相矛盾**——`render_chains()` 输出的句子早就写着
+"一次决策按的 N 个键"。本步把它收敛到**决策**这一个词：
+
+| 现在 | 改成 | 处 |
+|---|---|---|
+| `chain_key(entry)` | `decision_key(entry)` | — |
+| `group_chains(entries)` | `group_by_decision(entries)` | — |
+| `last_chains(entries, n)` | `last_decisions(entries, n)` | — |
+| `render_chains(entries, *, reason)` | `render_decisions(entries, *, reason)` | — |
+| `JUDGE_CHAIN_HISTORY` | `JUDGE_DECISION_HISTORY` | — |
+| `is_chain_tail`（两个局部变量） | `is_decision_tail` | — |
+| `trace_render.action_chain(action)` | `trace_render.action_presses(action)` | 它有另一件事（把 `ActionFromBrain` 渲成 dict），**单列** |
+
+仓库 6 个文件共 **48 处**（含 `schemas/memory` 两层 `__init__` 的 `__all__` 与 import），
+连带技能核验脚本 3 个文件 **37 处**；四个纯函数的 docstring 措辞同步
+（"链号" → "决策标识"、"整条链" → "整次决策"、"按链长线性放大" → "按决策长度"）。
+
+**为什么这么改**
+
+1. **它描述的是形态，不是归属。** "链"说的是"这些键串在一起"，真正的语义是"它们出自
+   **同一次决策**"——`plan_step_start`（= `decision_key`）才是那个归属键。
+   **判据在决策，不在连续。**
+2. **同词异义已经发生**：`action_chain`（渲染一个动作）与 `CHAIN_PHASES`（前端相位链）
+   跟它毫无关系，读者会以为有关。
+3. **两套词让读者做翻译**：读 `chain_key` 的人得自己连上"这就是 `plan_step_start`"。
+   改完之后每处读出来都是中文原话——"这一步是哪次决策按的"/"最近 2 次决策"。
+
+**取舍**
+
+1. **`last_chains` → `last_decisions`，不改成 `last_decision_entries`。** PLAN D7 的
+   "顺带发现"指出"返回的是平铺的键、不是 N 个元素"，名实略有不符——但
+   `last_decisions(recent, 2)` 读作"最近 2 次决策（的全部键）"是通的，而
+   `last_decision_entries` 更长且丢掉了"取最近"这半句。**代价写进 docstring**：
+   第一行点明返回的是"最近 `count` 次决策的**全部键**"。
+2. **`macro` / `plan` 两个备选不采用**：`plan` 会与 run 层"LLM 规划"那个节点撞词，
+   比现状更糟；`macro` 是游戏圈术语，读代码的人不一定是玩家。
+3. **中文的"链尾"/"链内"保留**（指"一次决策内部的位置"），只改会与标识符打架的那几处
+   （`judge` 取窗注释、`decide_action` 的渲染说明、`JUDGE_DECISION_HISTORY` 的 docstring）。
+   一刀切会把"链内小循环"这类已经稳定的说法一起搅动，收益不抵风险。
+4. **`StepMemory.plan_step_start` 不动**——它本来就是对的那半（记忆侧按它分组），
+   记忆文件不用迁移。
+
+**影响面**
+
+- **代码**：6 个本仓文件改名（无新增/删除文件）；技能侧 3 个脚本同步。
+- **行为**：零变化。三项验收全绿——`check_imports.py`（422 条）、
+  `check_graph_phases.py`（21 节点），离线核验 `verify_chain_inner_loop.py`
+  （**116 条 ALL PASS**，其中块 F 断言的四个函数名已同步）。
+- **未动**：`web/src/App.tsx` 的 `CHAIN_PHASES`（那是"相位链"，UI 局部命名）；
+  JSON/存档里的任何字段名（`plan_step_start` 等一律不动，**旧存档照读**）。
+
+---
+
+## 2026-09-12（27）—— harness 图组合重构·步 0：立骨架、解父子交界四件事，行为零变化
+
+**改了什么**
+
+1. **新增 `harness/deps.py`（`HarnessDeps`，14 字段四带）**：全图唯一的 context（依赖 7 /
+   开关 2 / 记号 2 / 账 3）。**本步只声明**——节点还是类方法，接入点（步 2 的
+   `invoke(..., context=deps)`、步 3 的 `Runtime[HarnessDeps]`）写在模块 docstring 里。
+2. **状态与图装配各自分家**（"状态不是能力"）：
+   - `harness/episode/state.py`（`EpisodeRunState`）与 `harness/run/state.py`
+     （`RunState` / `ResumeEpisode`）——从 `harness/interface/` 的两个 port 文件搬出，
+     旧路径 re-export，既有 import 一字不用改；
+   - `harness/episode/graph.py`（`compile_episode_graph`）与 `harness/run/graph.py`
+     （`compile_run_graph`）——`add_node` 逐行写字面量；两个 `_compile()` 退化成
+     "交出节点名 → 节点函数"这张表，`RunHarness._route_after_reflect` 随之搬成
+     `run/graph.py` 的模块级 `_should_retry`。
+3. **D2 的四件交界事**：子侧 `goals` → **`episode_goals`**（父侧 `goals` 是领域概念，不动）；
+   父侧 `RunState` **新增 `episode_goals` 键**、由 `dispatch` 每局投影写入
+   （`_project_goals()`）；父侧 `last_task` → **`task`**（键名必须与子侧逐字对上）；
+   新增**第 21 个节点 `close_episode`** 写 `state.outcome` 与 `EPISODE_END`，
+   `retrieve_verify_step_memory` 的两条分支都汇到它。
+4. **跟着改的三处**：`scripts/check_graph_phases.py` 的抽取路径改到 `episode/graph.py`；
+   `web/src/App.tsx` 的 `CHAIN_PHASES` 加第 21 格（`EPISODE_END` 映射到它）；
+   离线核验脚本补 6 条断言（**110 → 116 条**，含一条反向对照）。
+
+**为什么这么改**
+
+- **图的装配要能一眼读完。** 1749 行的 `episode_harness.py` 里，"图长什么样"（21 行
+  `add_node` + 边）与"节点怎么实现"（20 个方法）缠在一个类里；分手之后
+  `episode/graph.py` 只有 130 行、顶层即流程。
+- **交界键必须逐字对上，而且要有"投影写入者"。** 内置子图按**键名交集**传递：
+  子图不输出的键，父侧**保持旧值且不报错**。所以 `outcome` 不能留在图外算
+  （`reflect` 会读到**上一次派发的陈旧结算**），父侧也不能只有 `goals` 而没有
+  `episode_goals`（子图会拿到默认空列表）。这两条都是**不炸的错**，只能靠结构防。
+- **必须先做这一步再换拼接。** "最危险的改名"与"两张图怎么连"混在一起做，出问题
+  分不清是谁的锅——这是 PLAN §6 把它排在步 0 的全部理由。
+
+**取舍**
+
+1. **`HarnessDeps` 本步是"只声明不接线"**：接入它要把节点从方法改成自由函数（步 3），
+   现在硬接只会把"改名"与"换依赖通道"两件事绑在一起。代价是它暂时没有读者，
+   所以同时在技能侧给探针留了位置（改图的组合方式必跑 `probe_langgraph_subgraph.py`）。
+2. **`EpisodeHarness._close()` 保留两个不再使用的参数**（`episode_id` / `task`）——
+   结算改由图内写之后它们只是"让两个调用点形状不变"，改签名会把 `run()`/`resume()`
+   的返回路径一起搅动，收益为零。
+3. **`EPISODE_END` 换了写入者（图外 → 图内）但顺序不变**：它仍是这一局的最后一条账
+   （收尾链之后），`void_after` 的游标语义不受影响。
+4. **旧存档不再可读，不写迁移**：`EpisodeRunState.goals` 改名之后，旧 dump 里的
+   `goals` 会被 Pydantic 忽略、`episode_goals` 取默认空列表（`judge` 会断言失败）。
+   `checkpoints/` 下都是可再生的核对产物，与 D9-v6 那条"旧存档不读"同一条口径。
+
+**影响面**
+
+- **代码**：新增 6 个文件（`deps.py` + 两个域包各 2 个文件）；改动 8 个
+  （两个 harness 文件、两个 port 文件、`interface/__init__.py`、`check_graph_phases.py`、
+  `App.tsx`、CHANGELOG）。`episode_harness.py` 1749 → 1711 行。
+- **行为**：零变化。三项验收全绿——`check_imports.py`（422 条）、
+  `check_graph_phases.py`（21 节点，与相位表逐条一致）、离线核验
+  `verify_chain_inner_loop.py`（**116 条 ALL PASS**）。
+- **未动**：checkpoint（仍是 `CheckpointToolPort`）、tools 层、memory 层、
+  `episode_harness_port.py` 的 Protocol 声明（步 4 才瘦身）。
+
+---
+
+## 2026-09-12（26）—— harness 图组合重构方案（PLAN v1）：九条实测把"内置父子图拼接"从想法变成有边界的工程
+
+**改了什么**
+1. **新增 `docs/spec/harness/PLAN_graph_composition.md`（v1 方案稿，未动任何代码）**：
+   把"两级图 + 一节点一文件"拆成四件事（拼起来 / 分家 / 立契约 / 立机械保证），
+   含目标目录树（`graph/{run,episode}/` + 25 个节点文件 + 6 个功能域）、六个设计决策、
+   四步迁移顺序（每步可独立验收、可独立停）。
+2. **沉淀图引擎语义探针**：新增技能脚本
+   `~/.workbuddy/skills/pokemon-agent-offline-verify/scripts/probe_langgraph_subgraph.py`
+   （**23 条断言，全绿**，纯 langgraph、不碰 PyBoy 也不碰项目代码）。技能 SKILL.md 的
+   铁律加第 ⑤ 条（改图的组合方式 / 升级 langgraph 必跑）、§4 加四条语义要点、§5 加脚本条目。
+
+**为什么这么改**
+用户提出用 langgraph 内置父子图把 harness 重构成"两级图 + 一节点一文件"。**"内置拼接"听起来
+是个小改动，实测却发现三处否决性问题**——不先解决，照着改会当场炸：
+① 父子 state **同名不同型**会 `ValidationError`（本项目现成的一对：run 的
+`goals: list[TaskForBrain]` vs episode 的 `goals: list[GoalForBrain]`）；
+② 直挂子图的内部异常**一路冒到 `invoke()` 调用方**，父图节点接不住——现在"单局异常不崩掉
+整个 run"这条契约（`dispatch` 的 try/except）**会失去落点**；
+③ 子图步数**计入父图 `recursion_limit`**（父 1 + 子 3 需要 `limit ≥ 4`），两层各自标定 limit
+的做法必须重算成一个总上界。
+另有两条正面发现把它从"理想"变成"可行"：`add_node(..., error_handler=fn)` **能兜住子图
+异常**、handler 拿到的是**父 state**、返回 `Command(goto=…)` 流程照常继续（正好是现在
+`dispatch` 返回状态增量的等价物）；`context_schema` + `Runtime[Deps]` 的 context **自动穿透
+父子图**，节点保持纯函数形态——依赖注入的官方落点，**不需要**闭包/偏函数/节点工厂。
+
+**取舍**
+1. **拼接方式推荐"纯内置"**（`add_node("episode", ep_graph, error_handler=…)`）而非"薄壳桥接"
+   （= 现状换个名字，不是内置拼接）。两个代价列明账：**`resume()` 必须保留图外侧门**（它的
+   七步准备里 `void_after`/`load_state_bytes` 是"进图之前截断世界"，不是图状态，图表达不了）；
+   **`recursion_limit` 从"两层各自精确"退化为"一个总上界"**——补偿办法是用已知上界算
+   （`max_steps`/`goals` 数/重试次数都是已知的）再加一条"实际步数 ≤ 预算"的 assert，
+   把"无声截断"换成"开发期就地炸"。
+2. **提出收窄两张 Port**：节点变成自由函数后签名统一是 `(state, runtime) -> dict`，
+   用 Protocol 声明 20 个同签名方法 = 零信息量。主张 Protocol 只留 `run()`/`resume()` 入口，
+   节点级契约交给那张"改哪处/写哪条账"的表（它**已有** `check_graph_phases.py` 机械核对）。
+   **这是本方案唯一"减少现有契约载体"的决策，单独列进待拍板**。
+3. **`goals` 改名方向**：推荐子侧 `EpisodeRunState.goals` → `episode_goals`（父侧 `goals` 是
+   领域概念"目标栈"，全仓一提 `goals` 都指它；子侧那份是投影出来的视图）。
+4. **探针不落仓、落技能**：它是"langgraph 怎么解释父子图"的复跑工具，不是项目产物。
+5. **未动任何代码**，按既定做法等拍板。
+
+**影响面**
+新增一份文档 + 一条技能脚本（技能侧）。**代码与运行时行为零改动**；
+`docs/spec/harness/` 下与 `PLAN_graph_readability.md`（管"图里有什么"，已收口）、
+`PLAN_action_step_granularity.md`（管"步的粒度"）并列不冲突，本份管"图怎么拼、节点住哪"。
+另发现一处文档漂移：`docs/spec/harness/SPEC.md` §1.7 还写着"缺沙箱、成本上限、**checkpoint**、
+replay"——checkpoint 早已落地（2026-09-11（21）），属待订正的滞后项（本次未动）。
+
+## 2026-09-12（25）—— tool 层协议搬家：`tools/interface/` + 出口分家 + 实现懒加载
+
+**改了什么**
+1. **五张工具协议换房**：`tools/ports.py` → `tools/interface/ports.py`（`git mv`，
+   内容零改动；只把那段"为什么不需要 `interface/`"的 docstring **就地标注为过期**，
+   论证不删）。新增 `tools/interface/__init__.py` 作协议的统一出口。
+2. **`tools/__init__.py` 出口分家 + 五个实现懒加载**：不再导出任何协议；五个实现
+   改走 `_LAZY` + `__getattr__`（与 `world`/`brain` 的 `__init__.py` 同一手法）。
+3. **6 个 harness 消费点改 import**：`from pokemon_agent.tools import XToolPort` →
+   `from pokemon_agent.tools.interface import XToolPort`（`brain_utils`/`game_utils`/
+   `run_plan_utils`/`trace_write`/`episode_harness`/`run_harness`）。
+4. **`tools/trace_tool.py` 的子模块 import 显式化**：
+   `from pokemon_agent.tools import trace_render` →
+   `import pokemon_agent.tools.trace_render as trace_render`。
+5. **文档**：`docs/spec/tools/SPEC.md` 加文首**现状块** + 就地把 4 处旧地址标注
+   （`interfaces/tools.py`/`interfaces/world.py`）；`PLAN_tool_interface.md` 升 **v3**，
+   新增 §7 记落地实测。
+
+**为什么这么改**
+`tools/` 是六个领域层里**唯一**一个"统一出口把抽象和实现一起导出来"的层。后果可测：
+只要从 `pokemon_agent.tools` 拿一张协议，Python 就得先把 `__init__.py` 跑完，
+五个插件全部落进 `sys.modules`——"换 mock 不改 harness"这句在**类型上**早就成立
+（注解里只有 Protocol），在 **import 这一层**没成立：它确实不知道自己拿的是谁，
+但代价是"必须把五个人全请来才知道"。
+
+**① 一个落地时才被实测推翻的判断（本条最该记住的）**
+原方案（PLAN v2）认为"协议搬出去 + 出口不再导出协议"就够了，并把懒加载判成
+"只是把账藏起来，不建议"。**这个判断错了**，错在一个容易漏的机制上：
+`tools/interface` 是 `tools` 的**子模块**，而 **import 子模块必先跑完父包的
+`__init__`**。所以只要 `tools/__init__.py` 还急切导入五个插件，
+`from pokemon_agent.tools.interface import GameToolPort` **照样付满价**——
+那份方案自带的验收（"146 → ≈113"）按它自己的步骤表**永远不可能通过**。
+补上实现懒加载后才真正兑现：
+
+| 做法 | 拿 `GameToolPort` 时累计加载的 `pokemon_agent` 模块 | `tools.*` |
+|---|---|---|
+| 基线（协议在 `tools/ports.py`） | 146（信封 113 + 33） | 8 个，含 5 个插件 |
+| 只搬协议、出口照旧 | 146 | 插件一个不少 |
+| **本次（三层都动）** | **116**（113 + 3） | 只有 `tools`/`tools.interface`/`tools.interface.ports` |
+
+**② 顺带修掉一个"靠字母序侥幸通过"的隐患**
+`trace_tool.py` 原来写 `from pokemon_agent.tools import trace_render`。出口改懒之后
+这行**运行期仍然能跑**（`from 包 import 子模块` 有子模块回退），但
+`scripts/check_imports.py` 只用 `hasattr` 判别、**不触发**那个回退，会判它失效；
+它今天不报错纯属脚本按路径字母序**先**走到 `trace_render.py`、把该子模块绑成了
+包属性。改成 `import pokemon_agent.tools.trace_render as trace_render` 后 AST 上是
+纯 `Import` 节点，静态检查器只验"模块导得到"，不再依赖顺序。
+
+**取舍**
+- **懒加载 vs 保持急切**：选懒加载。理由不是风格——是"import 子模块必先跑完父包"
+  这条语言规则让急切导入与本次目标**直接冲突**。机制与 `world`/`brain` 的
+  `__init__.py` 同源（那两处被循环 import 逼、这里被子模块规则逼），写法完全一致。
+- **不留转发文件**：`tools/ports.py` 不保留 re-export 薄壳，否则"协议住哪"永远有
+  两个答案（与早先 `schemas` 内部那次搬家一致）。
+- **不预建 `interface/domain/`**：五张协议签名完全由信封类型 + 标量构成，今天没有
+  一张属于自己的形状；沿用 `world`/`trace` 的判据"有专属形状才开子包"。
+- **实现只能在这一个装配点 new，这条没动**（`build.py`）；
+  `from pokemon_agent.tools import GameTools` 的写法一行不变。
+- **接受 `ruff check` 54 → 55**：唯一新增是 `tools/__init__.py` 的 `ANN202`
+  （`__getattr__` 缺返回注解）。仓里**已有五个**懒加载出口各贡献一条同款，新加第六个
+  必然多一条，属**结构性增量**；把六个 `__getattr__` 一起加注解能降到 49，但那超出
+  本任务范围，本次不改，在此留痕免得下次被当成回归。
+- **不碰**：`memory/ports.py`（无此毛病——拿 `MemoryStorePort` 只付 5 个模块）、
+  五个门面的方法签名、`schemas/`（不改名的决定见 PLAN §4）。
+
+**影响面**
+- 新增 `tools/interface/`（2 个文件）；`tools/ports.py` **移动**（非复制）；改 7 个
+  import 点 + 2 个 `__init__` + 2 份文档。
+- **不改行为**：`check_graph_phases` OK 20 nodes（图拓扑未动）；全包 171 个模块逐个
+  import 失败 0；`check_imports` OK 404 条（**条数不变**——只换目标，没增删 import）。
+- **对后续**：ROADMAP 25（A2A / 拆包）少了一处硬耦合——拿协议不再拖实现。
+- **未做（留档）**：`AGENTS.md` §四 目录树、`docs/spec/interfaces/SPEC.md` 两份
+  **指向不存在的顶层 `interfaces/`** 的过期文档，本次只列未动（改 `AGENTS.md`
+  按规矩要先讨论）。
+
+---
+
+## 2026-09-12（24）—— harness 散件边界写进 SPEC；抠掉一处指向已删文件的活 docstring；tool 接口 PLAN 升 v2
+
+**改了什么**
+1. `docs/spec/harness/SPEC.md` 新增 **§1.8「`harness/` 里那些散件：边界是四列，不是文件名」**
+   ——一张 7 行的表（文件 / 类型 / 绑哪张 Port / 属于哪层图 / 谁调它）+ 三条判据 + 三个
+   "本来就不是 util" 的文件 + 一段**命名缺口**说明 + 三条可执行的核对命令。插入位置在
+   §1.7 与 §2 之间（§1 是"模块定位"，边界属于定位）。
+2. `pokemon_agent/harness/episode_utils.py` 的模块 docstring 里那句
+   「跨 episode/run 两层图的 `tag_attempt` 在 `tag_attempt.py`」**是错的**——那个文件
+   早已退役（随 trace 渲染搬进 `tools/trace_render.py` 的 `_tag_attempt`，由 `TraceTool`
+   在 `req.attempt` 非空时盖章）。改成现状，并说明"放哪层都反向依赖"这个划界问题在本包内
+   已经不成立。
+3. `pokemon_agent/harness/__init__.py` 的目录说明书**补全并纠偏**：原先把
+   `memory_query_utils` 跟三个重试循环并列成"重试与记账工具"（它其实一个端口都不 import），
+   且漏了 `trace_write.py` / `object_interactions.py` 两个文件。改成按真相分四类 + 指向 SPEC §1.8。
+4. `docs/spec/tools/PLAN_tool_interface.md` **升 v2**：删掉"schemas 改名"（已拍板不改）、
+   把 §3 从"四张策略表的选择题"降级成"已排除存档"、新增 §6 记录**"interface 指哪个
+   interface"**这道真正待确认的题（两份权威文档都指向一个今天不存在的顶层 `interfaces/`）。
+
+**为什么这么改**
+- 起因是"harness 里那些 `*_utils` 到底谁管什么"。查下来**规则本身没有矛盾**——六个文件的
+  模块 docstring 各说各的、互相引用，说的是同一件事。**散的是它没有一个统一入口**：
+  读者要读六个 docstring + `__init__.py` + SPEC 两处 + 一份 PLAN 才能拼出全貌。
+  所以补的不是规则，是**入口**。
+- 那两处代码 docstring 是**活引用失效**，跟 (20) 条修掉的 5 处同类。特别之处在于它指向的是
+  "以后会有的文件"（那份解耦计划曾规划 `harness/tag_attempt.py`），而该文件最终**改道去了
+  tool 层**——向后走丢的引用有 grep 能兜，向前走丢的没有，只能靠人读出来。
+
+**取舍**
+- §1.8 写成"四列 + 三类"而不是"一条判据"，因为**判据真的只有一条**（import 里有没有
+  `*ToolPort`），但 `trace_write.py` 不服从它：它绑了 `TraceToolPort` 却不是"某根依赖的循环"，
+  因为它服务的是**三个循环的宿主**、且跨两层图。硬塞成两类会逼出一个例外条款，
+  不如把它单列为第三类，并写明"今天只有它一个成员"。**层数多一层，例外少一个。**
+- 没有改 `AGENTS.md` §四、没有改 `docs/spec/interfaces/SPEC.md`——那两份都指向不存在的顶层
+  `interfaces/`，但按规矩改 `AGENTS.md` 要先与用户讨论。只在 PLAN §6 里列成待确认项。
+
+**影响面**
+- 纯文档 + docstring，**零行为变化**。`ruff` 仍 54、`check_imports` 404 OK、两个改动文件
+  AST 干净且无超 100 列行。
+- 未动代码逻辑、未动任何接口签名、未新增文件（PLAN/SPEC 都是既有文件）。
+
+## 2026-09-12（23）—— rationale 的 prompt 层约束（第 4 条硬规则）+ tool 层接口方案稿 + prompts SPEC 订正
+
+**改了什么**
+1. `prompts/calls/decide_action/decide_action.md` 新增**第 4 条硬规则**（本条约 896 字符）：
+   一条论据只写「最后要留下的那一句」，**不写写出它的过程**——三族禁写项（①改主意/自我
+   纠错 ②写给自己的指令 ③不确定的旁白与出处考据）+ 一条判据（单独拎出来读，它是在说
+   「这个动作为什么对」还是「这条论据自己合不合格」）+ 一条真机 ❌ / 一条 ✅。同处把
+   「先满足下面**两条**硬规则」改成「**这几条**」（那个数字在 (14) 加第 3 条时就已过期）。
+   模板 4333 → 6586 字符（**896 是本次，其余 1357 是 (14)~(21) 那批**）。
+2. `docs/spec/prompts/SPEC.md` §4.3 加「订正 2026-09-12」块：`rationale` 的位置（在段里、
+   不在顶层）、`sequence` 链尾允许 `a`、以及新增的第 4 条规则。**只加现状块，不改写原论证。**
+3. `docs/spec/tools/PLAN_tool_interface.md`（新增）：tool 层抽象接口的**方案稿 v1，等拍板，
+   代码未动**。含实测证据（见下）与两道选择题。
+4. 探针 `probe_real_llm_contract.py`：新增 `RATIONALE_FORBIDDEN` + `lint_rationale()`，
+   探针 A 把它作为**独立指标**打印——单列计数，**不并进契约违规**（契约数字要能跨月份比，
+   别被内容质量稀释）。
+
+**为什么这么改**
+- 起因是一条**真实落盘的记忆**（`realcheck-0912-062841-ep1` step 1，181 字符）：
+  「……然而当前帧尚未移动，**故此条无效**；因此必须仅用第一段完成全部意图。
+  **错误：第二段无独立依据。修正：只保留一段**，且 rationale 仅写两条合法依据，不跨帧。」
+  模型的直觉是对的（那一段确实立不住），**处置方式错了**：该改 `sequence`，却写进了
+  `rationale`。分量在于 `StepMemory` **写入后不再被核对**——这段过程会当作"该段的论据"
+  永久留下，并被 `render_chains()` 送进下一次决策的 prompt。
+- **为什么在 prompt 层而不是渲染层截断**：截断是**静默改写**模型写过的东西，而"哪几个字
+  是过程"只有写的人知道；prompt 层管"不要产生"，渲染层管不了"产生了但删掉"（前者让模型
+  少犯，后者让证据失真）。
+
+**取舍**
+- 896 字符进的是**每一次**决策的 prompt（实测 `in=7096` token），换来记忆里不再出现"当时
+  在犹豫"。代价明确：静态模板 +5.7%（按 15.6k 字符的决策 prompt 估）。**否决**的替代方案
+  是在渲染层过滤元话语——那会让 trace / 记忆 / prompt 三者不一致。
+- 写成「三族 + 判据」而不是给**字符上限**：上限会逼模型把论据压成电报，(14) 那次已确认
+  「改 rationale 不是为了减字段，是为了给更有用的论据」；**过程性文字才是真正的膨胀源**
+  （合规的论据 60~132 字符，出问题那条 181 字符，多出来的全是过程）。
+- **只加 prompt 约束，不加校验器**：把过程写进 rationale 不是"格式错误"，判定器不该管
+  这件事（它判的是可靠不可靠）。
+
+**影响面**
+- 只有决策 prompt 的内容变了。解析契约、`StepMemory` 形状、`render_chains()`、判定器窗口
+  **都不动**，既有记忆与旧 checkpoint 不用迁移。
+
+**核验**
+- 离线：模板渲染通过（`load('decide_action').render()`，11 个占位符全替换、无 `$` 残留）；
+  `verify_chain_inner_loop.py` **110 条断言全过**；`check_imports.py` **404 OK**；
+  `check_graph_phases.py` **OK 20 nodes**；ruff **54**。
+- 真实模型（探针 A，`qwen-plus@0.3` × 6）：**契约违规 0**；首轮合规 4/6，2 次失败都是
+  **已知的"丢最外层 `}`"**模式（错误位置 `pos == len(s)`、末尾不是 `}`、重试全救回）——
+  与 0905（2/6）/ 0911（1/6）同一模式，**不是回归**。
+- **新规则的 lint 用全量语料标定**（关键一步：lint 有误报的话，探针就是在骗人）：
+  盘上 12 条 step 记忆 / 20 条论据 → lint 命中 **1 条**，正是那条 181 字符的；
+  今天 6 次真实输出的 15 条论据 → **0 命中**。即 **误报 0/19**。
+
+**未做（明说，别当成漏做）**
+- `docs/spec/prompts/SPEC.md` 引用的 `tests/test_prompts.py` **全项目已不存在**（顶层无
+  `tests/`）——同一次顺手发现的文档滞后，**本次未动**，留作单独一件事。
+- tool 层接口：只到方案稿，代码一行未动（等 `PLAN_tool_interface.md` §3/§4 拍板）。
+
+## 2026-09-12（22）—— 按链读落地：`StepMemory.plan_step_start` + `render_chains`，判定器窗口换单位，`max_steps` 改口径
+
+**背景**：`PLAN_action_step_granularity.md` §8 步骤 5 的两项收尾，也是（14）留下的
+「已知遗留」——（一）本局**全量**步骤都进决策 prompt，粒度下沉到单键后按链长线性放大；
+（二）`JUDGE_HISTORY = 2` 的单位从"步"变成"键"，判定器的时间视野被静默除以链长。
+两条的完整论证、实测数字与三个决定写在 `PLAN_action_step_granularity.md` §11。
+
+**改了什么**：
+
+1. **`StepMemory.plan_step_start: int | None`**（默认 `None`）——**这一键属于哪一次决策**
+   （那次决策落在第几步）。`None` ⇒ 按 `step` 算，**老记录天然正确**：粒度下沉之前
+   一步就是一次决策，两者本来就相等。**它不是链字段**：`chain_index`/`chain_length`
+   的读者问的是"这条链长什么样"，它的读者问的是"这一步是哪次决策按的"（§4 的判据）。
+   它是 §4 早就预留的那句"将来真要分组时只加一个 `plan_step_start: int`"。
+2. **`EpisodeRunState.plan_step_start`**：`think_action` 决策一次盖一次 → 随 state dump
+   进 checkpoint → `store_step_episode_memory` 抄进那条记忆。`None` 只在"从旧 dump
+   恢复"时出现，记忆侧按 `step` 兜底。
+3. **`step_memory.py` 新增四个纯函数**：`chain_key()`（`None` 兜底）、`group_chains()`
+   （按链号切组：不重排、不补洞，链号没变就算同一条链）、`last_chains()`（取最近 N 条链
+   的全部键，**不把链砍成半截**）、`render_chains()`（**给决策者看的按链合并渲染**：
+   一次决策一段，两端两帧 + 逐键的动作/步号/`stop` + 每段理由，段一换才再打一次理由）。
+4. **`decide_action.build_prompt` 的 `memories` 块改用 `render_chains()`**；
+   `decide_action.md` 的「相关记忆（怎么读）」改成讲新形状，并点明两件必须说的事——
+   "中间那些键的画面不在里面（链内只读内存）"、"「然后停了」是执行层机械判出来的、
+   跟「因为」的可信度不一样"。
+5. **判定器窗口换单位**：`JUDGE_HISTORY = 2`（步）→ `JUDGE_CHAIN_HISTORY = 2`（链）
+   + `JUDGE_HISTORY_KEY_CAP = 8`（键帽）。取窗改成"按键数上限取回 → `last_chains()` 按链裁"。
+6. **`max_steps` 口径重写**：它是**以"游戏里按了多少键"计价的闸**（数字不动）。
+   `EpisodeRunState.step` 的字段说明、`experiment/tasks.py` 模块头里的 judge 视野、
+   `knowledge_recall_tasks()` 的 docstring 一并改对。
+7. **顺手修四处文档漂移**：`DATAFLOW.md`、`harness/SPEC.md`（两处）、`tools/SPEC.md`
+   都把判定窗口写成 `query_recent_steps(ep, 3)` / `JUDGE_HISTORY = 3`——**代码里从来不是 3**
+   （是 2），而且 0905 之后语义又变过一次。按"就地标注过期、不重写历史论证"的办法，
+   在原句上补「订正 2026-09-12」。
+
+**为什么这么改**：
+
+- **先量后改**（§7.6 自己要求的"单独量 prompt 长度"）：真机 `model_call` 事件里存着完整
+  prompt，量出来「相关记忆」一节占 0.1% → 6.8%（step 0/1/2），一条记忆约 **490 字符**
+  ——它**按链长线性放大**（链长 4 就是 4 倍）。同一批数据里 `press_count` **全是 1**，
+  所以今天还没有真实的膨胀，但那是"模型还没用起连按"，不是"链不会变长"。
+- **分组键取 int，而不是"从 trace 取 step 区间"**（v1 当初的想法）：harness 手里只有 trace
+  的**写口**、没有读口；为取一个区间去加一条"harness 读自己的 trace"的契约，比加一个 int
+  重得多，而且第 0 步那条链根本没有 THINK 可查。
+- **判定器换的只是单位**："最近 2 步"在旧粒度下就等于"最近 2 次决策" = "最近 2 条链"，
+  数字 2 不动；键帽防的是"链一长就静默膨胀"。
+
+**取舍**：
+
+- **合并渲染只给决策者看的那一版**：判定器/校验器继续用逐条的 `render_sequence()`
+  ——"省的是渲染，不是存储"。**中间帧不是"从它眼里拿掉"的**：粒度下沉之前一次决策只感知
+  一次、只留两端两帧，中间帧从来不存在；合并渲染是恢复到那个粒度，**多给**的是逐键的
+  动作、步号、`stop` 与段级理由。**不按"动作连按"再压成 `up×4`**——那会在两段同名
+  动作处跨段合并、把"第 3 键撞墙"这种结局抹平，逐键一行才 14 字符，省不了多少。
+- **`max_steps` 数字不预调**：跟 `experiment/tasks.py` 自己那句"每一条都是撞出来的，
+  不是推演的"保持一致——等真机上量到平均链长 ≥ 2（同一批任务、同一份 `repeat_hint`）
+  再按 `15 × 平均链长` 调。
+- **键帽 8**：链长上限是 `MAX_SEGMENTS × MAX_TIMES = 32`，两条长链能把判定 prompt 顶穿；
+  8 = 一条打满 `MAX_TIMES` 的单段链，实测 `press_count = 1` 时根本碰不到。
+
+**影响面**：`schemas/memory/datastore/step_memory.py`（一个字段 + 四个函数，都从
+`schemas/memory` 出口 re-export）、`schemas/memory/{,datastore/}__init__.py`、
+`harness/interface/episode_harness_port.py`（state 加一个链字段 + 节点表行）、
+`harness/episode_harness.py`（`think_action` 盖章、store 抄号、两个常量 + judge 取窗）、
+`prompts/decide_action.py` + `prompts/calls/decide_action/decide_action.md`、
+`experiment/tasks.py`、四份 spec 文档。
+**既有记忆文件不用迁移**（`plan_step_start` 默认 `None`，语义等价于"一链一键"）；
+**旧 checkpoint dump 也能恢复**（同一个 `None` 兜底）。
+
+**核验**：
+
+- **离线核验 110 条断言全绿**（`verify_chain_inner_loop.py`，从 81 条扩到 110 条）。
+  新加的两处：C 块验**链号真的逐键盖下去**（`[0, 0, 0, 3, 4]`——同一链共享起点步号、
+  换链才变）与整局按链渲成 3 段；F 块是新的一整块，验四个纯函数的契约——
+  老记录 `None` 兜底（退化成"一链一键"）、**链中间缺一步仍算同一条链**（缺的是记录
+  不是归属）、**`last_chains` 只按整条链裁**（取 1 条链拿到 2 个键、不是最后那一键）、
+  `render_chains` 的段头/逐键行/段级理由只打一次/跨链首尾帧去重/`reason=False` 不去
+  `stop`，外加一条**反向对照**：按链渲染必须比逐键渲染短（否则"合并"是假的），
+  而 `render_sequence()` 仍逐键 6 段一步不少。
+- **真实模型契约核验 3 个探针全绿**（`probe_real_llm_contract.py`，真 qwen-plus@0.3 /
+  doubao@0）：
+  - **C（决策者读按链合并的记忆）** —— 这是本次唯一动到"模型输入形状"的地方，也是最该
+    验的。记忆块真的渲成了一段 `(probe, step=0..2) 一次决策按的 3 个键：`，中间帧不铺、
+    逐键动作与步号都在；模型交出的 `sequence` 仍可解析（`right×4 -> up×4`），
+    且 `thought` 明确引用了记忆里的撞墙（`北 G`/`#`）。探针里补了两条**防空转断言**
+    （"记忆块真的是按链合并的"、"三个键的动作与步号仍逐条在 prompt 里"）——
+    不盖 `plan_step_start` 的话三条记忆会各成一链、退化成逐键渲染，这个探针就白跑了。
+  - **A（决策输出契约 ×6）**：契约违规 **0**。1/6 出现"丢最外层 `}`"——已归档的采样
+    缺陷（`Expecting ',' delimiter` 落在**末字符**，补一个 `}` 即可解析），重试救回；
+    0905 基线是 2/6，同一模式，**不是本次回归**。
+  - **B（校验器读记忆）**：三条 verdict 全 reliable。证据那条路走的是逐条的
+    `render_sequence()`，加字段没有扰动它。
+- **机械预检**：`check_imports.py` **404 OK**（原 403）、`check_graph_phases.py`
+  **OK 20 nodes**（图拓扑没动）、全仓 ruff 仍 **54**、`ruff format --check` 7 个文件全过。
+- **真机 `check_harness` PASS**（用户授权 AI 执行，run `realcheck-0912-062841`，
+  3 步、`reason='success'`）。**这一局第一次产出了链长 > 1 的真实决策**——
+  之前四次真机 run 的 `press_count` 全是 1，所以"按链读"一直是纸面上的。
+  读盘核对（不是看断言，是读 `memory/step_memory/*.json` 的真字节）：
+  - `plan_step_start` **真的落了盘**（payload 键里多出这一个），值 `[0, 0, 2]`
+    ——第一条链占第 0/1 步、第二条链落在第 2 步，与 trace 里两条
+    `llm_outcome intent` 的 `press_count`（2 与 1）逐一对上。
+  - 拿**盘上真记录**喂真函数：`group_chains` → `[2, 1]` 两条链；
+    `render_chains` → **2 段**（一次决策一段），`render_sequence` → **3 段**（逐键）
+    ——两条渲染路径真的并存在跑，决策者看 2 段、拿证据的看 3 段。
+  - 链内那一键（step 1）在 trace 里**没有 `view frame`**、只有 `view after`
+    ——"链内只读内存"这条设计在真机上成立，不是只有假端口成立。
+  - 第 2 次决策的真实 prompt（14398 字符）里「相关记忆」一节确为一段
+    `(…ep1, step=0..1) 一次决策按的 2 个键：`，占 **5.40%**。
+  - 同一局 step 0 有 **2 次 `ParseFailure` 后第 3 次成功**——既有的重试救回行为，
+    与本次改动无关（那一次决策的记忆是空的）。
+- **真机另外三个只读维度也 PASS**（都不起 PyBoy）：`check_trace`（59 条有效事件、
+  盘上全量 `[0..58]` 连续无缺号无重号）、`check_memory`（本局 3 条 `StepMemory`
+  全部非空可解析——**带新字段的记录被真 `MemoryTool` 读得回来**）、
+  `check_checkpoint`（step 存档 `['0','2','3']` 成对、`run_state_dump` 的 `run_id` 核对通过）。
+  存档步号 `0/2/3` 正是两条链的接缝，与 `plan_step_start = [0, 0, 2]` 一致。
+  （`check_restore` **没跑**：它另起一局并改写指针，是另一件事。）
+
+**真机顺带发现（与本次改动无关，但值得记）**：那一局模型把**自我纠错的过程写进了
+`rationale` 字段**——第 1 键的论据是正常依据，第 2 键的论据却是
+"……但此步依据仅限当前帧——然而当前帧尚未移动，故此条无效；错误：第二段无独立依据。
+修正：只保留一段……"。这是已知失败模式（`thought` 里出现"等一下重数"式自我纠错，
+见技能 §1.2 表）**泄漏到了 `rationale`**：`rationale` 不是自由文本，它会被
+`render_chains()`/`render_sequence()` 原样打进 prompt，而它是**按段**计的——
+一段写得越长、这一段里每个键都跟着贵。同一份 prompt 里「相关记忆」占 5.40%，
+大头就是这两条长论据。**修法是 prompt 层的事**（约束 `rationale` 只写"这一段的依据"、
+不写修正过程），不属于本次改动，留待单独处理。
+
+## 2026-09-11（21）—— 帧账随存档走（v6）：恢复后的链首 `OBSERVE` 与首个 store 步不再丢图
+
+**改了什么**
+
+1. `FromHarnessToCheckpointToolSaveReq` / `...LoadResp` 各加两个字段：
+   `frame_event_ids: dict[int, int]`（步号 → 承载这一帧那条事件的 `event_id`）与
+   `pending_frames: dict[int, str]`（还没挂上任何事件的那一帧的 base64 PNG）。
+2. `CheckpointTool._meta()` 把两者写进存档 json、`_read_checkpoint()` 读回——**旧档缺
+   这两个键按空表处理**（`meta.get(key, {})`）。
+3. `EpisodeHarness` 新增 `_frame_ledger(episode_id)`（摊平**本局切片**）；`save_checkpoint`
+   先摊平再存档；`resume()` 新增「步骤 5：帧账回载」（原步骤 5/6 顺延为 6/7）。
+4. 文档：`SPEC.md` 新增 §2.5；`PLAN_checkpoint.md` 加 v6 变更头 + §3.1/§5 两处；
+   `pokemon-agent-offline-verify` 技能里那条「恢复后的链首 `OBSERVE` 不带帧（已知缺口）」
+   改写成 v6 已修，并标注旧档仍会假失败。
+5. 离线核验脚本加 **E 块**：真 `CheckpointTool` + `resume()` + 反向对照 + 第 0 步恢复。
+
+**为什么这么改**：这是 0911 真机 `check_restore` 观察到的事实——恢复段时间线的**第一条
+`OBSERVE` 只有 payload、没有帧**。根因不是磁盘缺图：截图按 `event_id` 好好躺在
+`screenshot/` 里；缺的是**"哪条事件承载这一步这一帧"这张对账**——它在
+`_frame_event_ids`/`_pending_frames` 两张**纯内存**表里，而 `resume()` 是在新进程里构造的
+harness，两张表都是空的。同一条根因还压着第二处：恢复后第一个 store 步的
+`before_frame`（`store_step_episode_memory` 要 `_frame_b64(ep, before.step)`）会一起变
+`None`——上一版只是因为恢复点恰好落在收尾链（收尾链不落 step 记忆）才没暴露。一句话：
+**`StepMemory` 的 `before_frame`/`after_frame` 是逐键都要的、链首那一帧是"大脑决策时看到
+的世界"的副本，两者都不该因为"进程重启过"而消失。**
+
+**取舍**
+
+- **不进 `state_dump`，而是作为存档 json 自己的键。** 进 state 等于给每份存档都塞一张
+  PNG（`EpisodeRunState` 是"一局的全部可序列化状态"，每圈边界 dump 一次）；而帧账只有
+  第 0 步那一份会带 PNG——真机实测：GBA 截图 2.7 KB、base64 后 3596 字符，同目录 `.state`
+  是 167 KB，`<step>.json` 自己已经 2.6→42 KB。为这点体积去动状态模型不划算。
+- **只带本局切片。** 存档是"这一局第 `step` 步"的存档，别的局的帧账与它无关；
+  `_frame_event_ids` 在整个 run 里**不清理**（跨局累积），全量落盘等于让每份存档为前面
+  每一局背书。
+- **整数键。** 落盘时 `json.dumps` 把 `int` 键写成 `"<step>"`，读回时 Pydantic 按
+  `dict[int, int]` 把 `"1"` 收成 `1`——`resume()` 直接灌回两张内存表，调用点不用写
+  `int(k)`。代价是这份契约依赖 Pydantic 的键强制转换，已用断言钉住（E 块「读回时整数键
+  还原」）。
+- **不加版本号/迁移。** 缺字段 = 空表，正是"这份存档没带帧账"（v6 之前写的档）的准确语义。
+  老的 `checkpoints/restorecheck-0911-22*` 照样读得动。
+- **没有改用"扫 trace 反推帧事件的 event_id"。** 反推法（"游标之前最近一条带帧的事件就是
+  这一步的帧"）在当前图顺序下**确实**成立，但有两个毛病：**(a)** 第 0 步无解——那时帧还
+  没挂上任何事件（在 `_pending_frames` 里），存档不带它就只能丢；**(b)** 它把
+  "`save_checkpoint` 排在 `record_observation` 之前"这个**图顺序**变成隐式契约，以后谁调
+  一下顺序就会静默丢帧。显式带上两张表是唯一同时覆盖两种来源的写法。
+
+**影响面**：checkpoint json 多两个键——第 0 步那份多 3596 字符（约 3.6 KB），其余步只多
+几个整数；**旧档向后兼容**（读回空表）。`save_checkpoint` 的语义从"三件套"变"三件套 +
+本局帧账"，`resume()` 从 6 步变 7 步。全仓 `ruff` **54 → 54**（净增 0）；`check_imports`
+403 条全解析、`check_graph_phases` 20 节点全对齐；**离线核验 66 → 81 条全绿**。
+
+**离线核验**（E 块，用**真的** `CheckpointTool`：真落盘 json + 真读回 + 真 `void_after`）：
+跑一局 → 新 harness 从第 4 步恢复 → 断言恢复后链首 `OBSERVE` 与首个 store 步的
+`before_frame` 都拿得到图、且与恢复前同一步**逐字节同图**；**反向对照**把存档里的帧账抹掉
+再恢复，断言两者**一起丢**（这条要是不丢，说明上面几条断言恒真、什么都没测到）；再加
+**第 0 步恢复**覆盖暂存表那条路径。
+
+**真机核验（经用户授权由 AI 执行）**：`check_restore` **PASS**（run `restorecheck-0911-222937`，
+阶段 A 一步达成目标、存档步 `[0,1]` → 自 **step 1（中间步）** 恢复、游标 22 → 恢复后跑到
+step 3、`reason='success'`）。这一局的恢复点落在中间步，所以**两处丢图都被真机压到**：
+
+| 核的是什么 | 真机数字 |
+|---|---|
+| step 0 存档的暂存表 | `pending_frames={'0': <3596 字符 base64>}`（在 `voided-*/` 归档里，说明归档也带着它） |
+| step 1/2/3 存档的登记表 | `{'0':5, '1':19}` → `{... '2':53}` → `{... '3':73}`，每个边界加一条 |
+| **恢复段的链首 `OBSERVE`** | `#36`（step 1）**带帧**——上一版同一个位置（`#76`/step 3）是**没有帧**的 |
+| 那一帧的出处 | `#36` 内字节 sha `69700ee8…` == 登记表指的 `screenshot/19.png` == 它自己那份 `36.png`，也 == 恢复前 `#24` 的 base64（3700 字符逐字符相同） |
+| 接缝账 vs 链首帧 | 有效 `checkpoint_save` **4** == 有效链首 `OBSERVE` **4**（全带帧）；上一版这里是 **4 vs 3** |
+| 恢复后首个 store 步 | step 1 的记忆 `before_frame`/`after_frame` 都在；该局 step 0/1/2 三条全 YES |
+
+## 2026-09-11（20）—— 收口 4 处走丢引用 + 新增 import 解析机械核对；真机六维核对首次跑通
+
+**改了什么**
+
+1. `experiment/tasks.py`、`experiment/real_check/check_harness.py`、
+   `experiment/real_check/check_restore.py`：`from pokemon_agent.schemas.brain import
+   TaskForBrain` → `from pokemon_agent.brain import TaskForBrain`。（9）把
+   `TaskForBrain`/`GoalForBrain`/`RunPlan`/`StepVerifyVerdict` 等六个数据形状搬到
+   `brain/interface/domain/` 时列了消费方清单，`experiment/` 侧漏了这三处；而
+   `experiment/__init__.py` 是**立即** `from .tasks import ...`，于是一处失效让整个
+   `experiment` 包连带**六个 real_check 脚本全部 import 失败**——`python -m` 直接死在
+   包初始化，连 `main()` 都进不去。
+2. `experiment/real_check/check_memory_roundtrip.py` 迁到现行契约：
+   - `pokemon_agent.schemas.world` 整个子包已删 → `pokemon_agent.world`；
+   - `ObservationFromWorld` → `Observation`（同一次搬家里的改名）；
+   - `StepMemory.before/after` 现在要的是 **`StepMemory.Observation`**（它自己的快照类，
+     不引用 `world.Observation`），`ObjectStillEvent.place/actor_place` 同理要
+     `ObjectFactEventBase.Place`——新增 `snapshot()` 助手做 `PlaceInWorld.model_dump()`
+     那一下桥（生产路径同款，见 `Brain._snapshot()`），`obs()` 改收 `StepMemory.Observation`；
+   - `MemoryTool.query()` **这个方法已不存在**了 → 空格断言改走 `query_object_events_at()`。
+3. **新增 `scripts/check_imports.py`**：静态爬全仓 import——**含函数体里的懒加载**——
+   把每条绝对/相对 import 解析到真实模块与真实名字，任一条失败即非零退出。
+
+**为什么这么改**：模块级 import 冒烟（`importlib.import_module(<每个模块>)`）能抓顶层失效，
+但抓不到函数内的懒加载：`check_memory_roundtrip.py` 那条旧 import 正藏在 `main()` 里，
+**181 个模块全绿而脚本一跑就 `ModuleNotFoundError`**。而这一族失效已经反复出现——（9）之后
+先查 5 处、（19）后又是 4 处——靠"人肉记得改"显然不行，得让机器在**跑真机之前**拦住。
+（`check_graph_phases.py` 是同一思路：把"文档/前端/图是否对齐"压成一条命令。）
+
+**取舍**
+
+- `check_imports.py` 是**有副作用的**静态检查：判定"名字在不在"要用 `hasattr`，
+  而模块级 `__getattr__` 的懒加载出口一碰就真导入。所以它必须用**装齐依赖**的解释器跑，
+  否则会把"缺第三方依赖"误报成"本仓引用失效"。也正因如此它放 `scripts/` 而不是 pytest：
+  它要在真机之前跑，失败信息是给人看的逐条 `文件:行号`。
+- `snapshot()` **没有**把 `place()` 整个换成快照类：同一个 `place()` 助手还喂着
+  `query_object_events_at(place=...)`，那里要的恰恰是真身 `world.PlaceInWorld`。
+  一个助手服务两种坐标类型，靠这一下 `model_dump()` 分流——而不是写两个助手。
+- 没顺手修 `check_memory_roundtrip.py` 的 `I001`：那是 HEAD 就有的，与本轮无关，
+  修了只会污染 diff。
+- 没把"真机 trace 形状核查"落成第 7 个维度：它会硬编码渲染层的 kind 字面值（`after`/
+  `frame`/`checkpoint_save`/`truncated`）而随渲染层漂移，而它验的三件事离线核验脚本
+  已用假端口覆盖。真机只做一次性确认，不进套件。
+
+**影响面**：`experiment/` 包恢复可导入，`experiment.real_check.*` 六个脚本全活；
+`check_memory_roundtrip` 五条读写路径**首次真正跑通**。`scripts/` 多一条可在 CI 前跑的
+护栏。全仓 `ruff` **54 → 54**——新增文件零告警；`check_harness`/`check_restore` 因我改的
+import 顺序触发 `I001`，已用 `ruff --fix --select I001` 修正，净增 0。
+
+**真机核验（经用户明确授权由 AI 执行，六维度首次全套跑通）**
+
+- 口径：`py -3.12`（全机唯一装了 pyboy 的解释器）+ 从**主仓** `.env` 注入密钥
+  （**不往 worktree 写密钥**，走 `setdefault` 同语义的外部变量优先）+ `PYTHONPATH=<worktree>`；
+  ROM/state 用 worktree 自带的 `assets/rom[.state]`。
+- 六维全过：`check_harness` **PASS**（2m36s、3 步、`reason='success'`）→
+  `check_trace` **PASS**（70 条有效事件，盘上 `[0..69]` 连续无缺号无重号）→
+  `check_checkpoint` **PASS**（step 0/1/2/3 成对且带 `run_state_dump`）→
+  `check_memory` **PASS** → `check_memory_roundtrip` **PASS**（七段全过）→
+  `check_restore` **PASS**（自 step 3 恢复，游标 62 后续写至 76 条连续，归档 1 个 voided）。
+- **（19）的三条形状在真机产物上复核通过**（此前只有假端口验证）：
+  `after` 的 payload 字段**恰好** `{kind, status, done}`（无 `scene`/`overlay`/`stop`）；
+  `checkpoint_save` 4 条 == 带帧的链首 `frame` 4 条；**链尾 `after` 的帧与下一条链 `frame`
+  的帧磁盘同字节、事件内同 base64**（step 1/2/3 三处逐一比对 sha 相同）；
+  真机 `StepMemory` 记录的 `before_frame`/`after_frame` 均在。
+- 顺带观察两件事（都不是 bug，记下备查）：
+  ① 真机抓到 `ParseFailure` 错误事件后紧跟重试、最终成功（两次 run 分别 1 次和 3 次）
+  ——「解析失败要重试并计数」这条在真实模型上确实生效；
+  ② **恢复后的链首 `frame` 不带帧**：`_frame_event_ids` 是内存态、不随 checkpoint 走，
+  恢复后无从查起，而 `_frame_b64` 回读需要那个登记。本例里它是收尾链（不落 step 记忆），
+  所以无影响；要修就得把帧登记表一起存进 checkpoint——留待拍板，本轮不动。
+
+## 2026-09-11（19）—— 把「账」搬回它的宿主：`apply_stop` / `AFTER_ACTION` / `CHECKPOINT_SAVE`，20 格零哑格
+
+**改了什么**
+
+1. `episode_harness.py`（26 处补丁）：
+   - `record_action_result` → **`apply_stop`**——职责收窄成"**只落实**"：按 `stop` 的作废
+     范围截队，**不再写帧**（帧是 `perceive_after_action` 的事）；只在**真的丢了键**时写一条
+     `ACTION_TRUNCATED`（条件写，payload 带 `stop` / `dropped_count` / `dropped`）；
+   - 观察账搬回**产出它的那一格**：`perceive_after_action` 自己写 `AFTER_ACTION`（链内每键一条），
+     字段从"模型感知才有的 `scene`/`overlay`/`status`/`done`/`stop`"**收敛到 RAM 档读得出的
+     `status`/`done`**，`stop` 归处置账——"看到什么"与"据此处置了什么"从此是两笔账；
+   - **链尾帧不再走暂存表中转**：`_pending_frames` 缩到只剩**第 0 步**那一条路径
+     （那一帧在图外产、没有事件可挂）；链尾键的帧由下一条链的 `record_observation` 按
+     `event_id` 读回（`_frame_b64` + `read_screenshot`），v6 承诺的"两处都带、逐字节相同"不变；
+   - 新增 `save_checkpoint` 的 **`CHECKPOINT_SAVE`**——`save_checkpoint` 从哑格变成有账的格子。
+2. **账搬回宿主**（规则改写）：`brain_utils.py` / `game_utils.py` / `episode_utils.py` 三个
+   util **去掉 trace 依赖**，只交回材料（`(action | None, log)` / `(observation | None,
+   frame_png | None, log)`），写账由调用它的宿主做。规则从「**谁的循环谁记账**」改成
+   「**账写在它的宿主里**」。新增 `harness/trace_write.py::append_model_calls()`，
+   把 5 个写点的 `AppendReq` 样板收成一行。
+3. 命名：`enrich_observation` → **`merge_retrieval`**（活代码 + 接口 + web + 活文档共 25 处）。
+4. 契约与观测台同步：`episode_harness_port.py`（7 处补丁 + **20 行"节点 / 改哪处 / 写哪条 /
+   一句话"对照表**进模块 docstring，行序 = 执行顺序）；`web/src/App.tsx`（20 处补丁：
+   `CHAIN_PHASES` 20 条且 `key` 改用**节点全名**、`MAIN_END` 16、尾链三条、
+   `phaseKeyOf`/`endSeen`/`litOf` 跟着改）。
+5. **新增 `scripts/check_graph_phases.py`**：用 `ast` 从 `_compile()` 抽 `add_node` 的字面量、
+   用正则从 `App.tsx` 抽 `CHAIN_PHASES.key`，**逐条比对有序列表**（不是比集合），不一致即非零退出。
+6. 四处文档订正（§1.1–§1.5）：`DATAFLOW.md` 的 `view(frame/after)` 一行改成"链尾帧按 event_id
+   读回"；`ROADMAP.md:1136` 就地加「订正 2026-09-11」；`CHECKPOINT_handoff_2026-09-07.md`
+   顶部加一行现状指引（正文不动，它是 0907 的事实快照）；`SPEC.md` 换头部"现状"块 +
+   **§2（`LoopState` → `EpisodeRunState`）/§3（图结构）整节重写**、其余各节加"本节写于 0902 版"
+   标记。顺带修掉 **5 处走丢的引用**（`brain.py` / `ChooseOnceResp.py` / `trace_port.py` /
+   `pyboy_world.py` / `ROADMAP.md:163` 仍指着早已不存在的 `episode_utils.*` 与 `harness/utils.py`）。
+7. 离线核验脚本改写：**56 → 66 条**（新增"`AFTER_ACTION` 每键带帧且字段恰好
+   `{kind,status,done}`、不带 `stop`"、"`ACTION_TRUNCATED` 只在真丢键时写、位置与 payload 对得上"、
+   "**中止 ≠ 截断**"、"跑完 `_pending_frames` 为空"、"`CHECKPOINT_SAVE` 条数 == 链边界数 ==
+   `OBSERVE` 数、步号 `[0, 3]` 与真存档一致"等）。
+
+**为什么这么改**：用户的判据是「要不放回节点？其他类似的也都放回节点？要不然太散了，
+trace 就在 harness 里记吧」，外加一句更早的「**只有真的截断了记一条截断 process trace**」。
+「散」的具体形态是：**想知道一条事件是谁写的，得同时打开 4 个文件**——事件在 util 里产出，
+util 又只被节点调用，于是"这条账属于哪个节点"这件事在任何单个文件里都读不出来。
+搬回宿主之后，每个节点自己那段 docstring 就说完"我改哪一处 state、我写哪条账"，
+`interfaces/` 单层自足这条设计承诺才真正兑现（§4 那张表也因此能进模块 docstring 而不是外挂一份文档）。
+
+**取舍**
+
+- **明账：崩溃窗口变大了。** `LocalTrace.append` 是**逐条原子落盘**——今天 `MODEL_CALL`
+  边重试边写，"重试到第 2 次时进程被杀"仍留有前一次的账；搬完之后要等 util 返回才落盘，
+  **进程死在模型调用里就全丢**。窗口 ≤ 一次决策的重试条数（decision 3 / perception 2），
+  且那时本来也不会有 `EPISODE_END`。**事件顺序不变**（循环期间没有别的写账点）。
+- **「中止 ≠ 截断」**：`blocked` 可能一个键都不丢（`up×1 -> down×2`），所以截断账是**条件**写的。
+  代价：那一类键的 `stop` 不进 trace（仍进 `StepMemory.stop`，大脑那侧不受影响）；
+  换来的是「这一局被截断了几次」= `ACTION_TRUNCATED` 的条数，是一句可以直接数出来的话。
+- **`_pending_frames` 不整个删**：第 0 步那一帧在图外产出、没有事件可挂，删不掉；
+  能删的是"链内/链尾帧中转"那一半。
+- **`dropped` 的展开逻辑不塞进节点**：`AppendReq` + 渲染层已经承担"按 kind 拼 payload"，
+  节点只该交回 `list[ActionSegmentFromBrain]`。
+- **`CHAIN_PHASES.key` 用节点全名（放弃短别名 `enrich`/`store_step`/`rv_knowledge` …）**：
+  换来机械核对退化成一次直接的列表相等判断；代价是 `phaseKeyOf`/`endSeen`/`litOf` 要在同一批里改完。
+- **`SPEC.md` 不抄第二份字段表**：抄本会漂移，只指 `episode_harness_port.py` 这个唯一权威。
+  结构与论证分离——**结构描述重写、0902 的设计论证原文保留**（那些论证与节点数是 6 还是 20 无关）。
+- **明账（本轮唯一新增 lint）**：`episode_harness_port.py` 模块 docstring 里那张 20 行 × 5 列的
+  对照表，**行宽超 100 列**（最长 189）——markdown 表不能折行，"要么丢列、要么超宽"，
+  选了保信息量。本轮全仓 `ruff` **50 → 54**：`+7` 条 E501 全部来自这张表，另有 `step_memory`
+  `−1`（早前会话改 docstring 顺带消掉）与 I001 `−2`（本轮触碰的文件 import 排顺）。
+  **`E501-in-docstring` 在本仓是既有类别**（HEAD 那 14 条 E501 全在 docstring 里），
+  所以这次是"同类追加"而非新病种；要不要把这张表挪到 `docs/` 换个干净数字，留待下一轮拍板。
+
+**影响面**：`MODEL_CALL(DECISION)`/`(PERCEPTION)`/`(PLAN)` 的**条数与相对位置不变**（只换了写入者）；
+`event_id` 单调递增不变；**节点数 20、`NODES_PER_PRESS` 7 不变**（本次只改名 + 挪账）。
+每键的账从 4 条变 **5 条**（`ACT` / `AFTER_ACTION` / `STALL_CHECK` / `MEMORY_WRITE` /
+`STEP_ADVANCE`），**真的丢了键的那一键 +1**（`ACTION_TRUNCATED`）；每个链边界 +1（`CHECKPOINT_SAVE`）。
+验证：离线核验脚本 **66 条全绿**（exit 0）；`scripts/check_graph_phases.py`
+`OK  20 nodes; graph order == web CHAIN_PHASES order`；`npx tsc --noEmit` exit 0；
+`ruff format --check` 对改动文件"already formatted"。真机六条命令仍待用户跑（AI 不碰 PyBoy）。
+另（仓库外，一并记）：离线核验技能的 `SKILL.md` 同步到 v7——断言数 56 → 66，
+§1.1/§4 里 `LOOK_AFTER` / `record_action_result` / "链尾帧两处都带（帧先落 `_pending_frames`）"
+三处描述改成 `AFTER_ACTION` / `apply_stop` / "按 event_id 读回"，并修掉一条断言标签与它
+实际断的数据不符的笔误（写"warp 丢 1 个 down"，实际断的是"warp 丢整条展开后的剩余队列"）。
+
+## 2026-09-11（18）—— 把 `look_after_action` 一分为二：感知归感知，留痕归留痕
+
+**改了什么**
+
+1. `episode_harness.py`：`look_after_action`（8 件事）拆成两格——
+   - `perceive_after_action`（改 `pending_observation`/`pending_stop`）：分档感知 → 判 `stop`
+     →（中止时）补完整感知 → 盖步号 → 帧进暂存表；**不写任何观测账**；
+   - `record_action_result`（改 `pending_presses`）：按 `stop` 的作废范围截队 → 认领这一帧
+     → 写 `LOOK_AFTER`。
+   边改为 `act → perceive_after_action → record_action_result → detect_stall`；节点数
+   19 → **20**；`NODES_PER_PRESS` 6 → **7**（`recursion_limit` 公式自动跟随）。
+2. `episode_harness.py`：**链尾键的帧两处都带**——既留在这键自己的 `LOOK_AFTER` 上，又留在
+   `_pending_frames` 里由下一条链链首的 `record_observation` 挂给 `OBSERVE`；`_frame_event_ids`
+   改成"谁先产出这一帧谁登记"（不再被 `OBSERVE` 覆盖，指向必须稳定）。
+3. 同步面：`episode_harness_port.py`（"二十个节点"、图、"帧的归属"一段、`pending_*` 的 docstring、
+   两个新方法声明）、`episode_utils.py`/`trace_render.py` 的引用、`web/src/App.tsx` 的相位表
+   （补两格、`MAIN_END` 15→**16**、`phaseKeyOf` 的 `view/after` 与 `model_call/perception` 改指）、
+   `docs/spec/DATAFLOW.md` 一行；收尾时又补齐四句仍写"**十九**个节点"的旧文案——`_compile` 的
+   docstring 与"步骤 1"注释、`EpisodeHarnessPort` 类 docstring、`App.tsx` 页签注释（漏网的原因：
+   前一轮只扫了模块 docstring 那一处）。
+4. `PLAN_graph_readability.md` 升 **v5**：§3.3 撤回、新增 §3.6（接缝的唯一性 + 帧的承载规则）、
+   §4 对照表 19 → 20 行；两份旧 PLAN 顶部加现状指引（不改历史论证）。随后按用户拍板升 **v6**：
+   帧定为"两处都带"（§3.6 帧一节整段改写，含"体积不再不变"的明账和上面那个截断判据的坑）、
+   第二格定名、§5 一行翻转、§6 步骤 0c 标已落地、§7 勾掉第 8/9 条；并补上 v5 漏改的 §4 引言
+   （"19 个格子" → **20**，同步口径由 v3 改成 v6）、§1.2 的节点数、§1.1 的 v6 进度（#1 只落地了
+   "补两格"那一半、#2 已落地、#4/#5/#1 另一半仍缺，所以 #6 的"一一对应"仍不成立——表头改成
+   "如实标注这两处漂移"）、§3 顶部的现状指引（本节写于 v1、19 节点口径，并把"`look_after_action`
+   拆不动"那半句当场标掉）。
+5. 顺手校准两处数字文案（都是这次没扫到的）：`_invoke()` 的 docstring 里 `recursion_limit` 的
+   上界算式还写着 `10 + 6K ≤ 16K`——`NODES_PER_PRESS` 已是 7，而这段文字本身就在解释那两个常量
+   → 改成 `10 + 7K ≤ 17K`（`K ≥ 1` 时仍成立，与 `per_press = 10 + 7` 一致）；
+   `PLAN_graph_readability.md` §6 的验收结论也从"`ruff` 干净"改成本轮那句口径。
+
+**为什么这么改**：用户的判据是「拆开吧，不然和 observation 功能太像了」。`look_after_action`
+是全图唯一从头到尾在**产出观测**的格子，而 `record_observation` 在**登记观测**——两个名字都带
+observation 的格子做的是**频率差 N:1** 的两种事（§3.5 已论证），名字却像同一件事的两种说法。
+拆完"感知"与"记账"彻底分家：第一格只改状态，第二格才写账。
+
+**取舍**
+
+- **接缝不是挑的，是被依赖逼出来的**：`中止补感知` 的触发条件就是 `stop is not None`，而 `stop`
+  是 `compute_stop(...)` 的输出——**纯感知节点根本不可能存在**。能拆的只有"感知+判读 | 落实+留痕"。
+- **推翻了自己 v4 的结论（§3.3），并在原文上方写明撤回**：当时列的四条代价里，① "链内每键
+  6→7、链越长代价越大"（涨的是**图跳数**，不是模型/视觉调用，成本口径用错）、③ "`LOOK_AFTER`
+  要拆成两条"（**拆节点 ≠ 拆事件**）、④ 原子性退化（按本接缝只残留一半）**均不成立**，只有
+  ② `recursion_limit` 重算成立——而那只是改一个常量。这是同一类错的第二次（v1 也把 `act` 的
+  扶正判成"不拆"），所以把"别把拆节点/拆事件/图跳数当同一件事"写进了 §3.3 顶部。
+- **残留取舍**：`pending_stop`（第一格）与 `pending_presses`（第二格）跨格。缓解三点：两格之间
+  没有别的节点、也没有条件边；第二格唯一会失败的地方是 trace 落盘（失败即整局失败、状态不保留，
+  不存在"半成品被消费"的窗口）；截断判据与 `compute_stop` 一样是纯函数，不存在两处规则各算各的。
+- **链尾帧选了两处都带**（用户拍板：「都保留，重复是为了语义清晰」）：代价是链尾那一步的图落两份
+  （`LOOK_AFTER` 一份、`OBSERVE` 一份，逐字节相同），量级约"每链多一张图"；换来 `OBSERVE` 自足
+  ——replay 到链首就能同时看到"画面 + `goals` + 完整 `facts`"，不必翻上一条链的末尾。
+- **链尾判据用"截断之后队列空"**，不是"截断之前"：`blocked` 只丢本段剩余（链可能接着走，这一帧
+  就还是链内的帧），而 `warp`/`episode_over` 清空整条链时那一键事实上就是链尾，帧要留给下一链的
+  `OBSERVE`。这一处第一版写错过，离线核验的"每条链首的 `OBSERVE` 都带帧"抓出来了。
+
+**影响面**：`MODEL_CALL(PERCEPTION)` 条数与视觉成本**不变**（分档感知只是换了宿主）；离线核验脚本
+**56 条全绿**（52 → 56：新增"两格之间的三条边 + 旧名彻底消失"、"每条链首的 `OBSERVE` 都带帧"、
+"登记表指向先产出的那条 `LOOK_AFTER`"、"链尾帧两处是同一张图"）；`ruff check` 对**本轮改过的两个
+文件**只剩 1 条——`episode_harness_port.py` 的 E501（127 字符），逐字比对过 HEAD 同位置同长度，
+属历史遗留、只是被插行挤到 48 行；`ruff format --check` 两文件均"already formatted"。
+**顺带把一句过宽的话纠正掉**（此前写成"ruff 干净"，口径太窄）：全仓 `ruff check` 现在是 **49 条**
+（E501 13 / I001 11 / ANN202 9 / ANN401 5 / UP042 5 / ANN001 2 / F401 2 / SIM105 1 / B905 1），
+用 `git archive HEAD` 到临时目录取出基线是 **50 条**（E501 14）——本次会话净减 1，**没有一条是本轮
+引入的**。这些历史项不在本次范围，留给"什么时候顺手清"另议。`web` 的 `tsc --noEmit`
+通过（本 worktree 没有 `node_modules`，临时链接主仓依赖跑的，跑完已删除链接、主仓完好）。
+**§1.1 的形状级漂移还剩两项**（`save_checkpoint` 补位、尾链 `verify_steps`+`summarize` 合一）
+本轮未动，但 `MAIN_END` 15→16 是被这次插入**强制**跟着改的（否则 `close_step` 会被误判成收尾链
+节点）；剩余两项已在相位表表头写明。另：`uv run` 顺手把 `uv.lock` 与 `pyproject.toml` 对齐了
+（`agent-permission` 的 lock 条目是接入移除后留下的陈旧项）。真机六条命令仍待用户跑（AI 不碰 PyBoy）。
+另（仓库外，一并记）：离线核验技能的 `SKILL.md` 补齐了这次的两处漂移——断言数 **50 → 56**，
+§1.1 新增"`look_after_action` 已拆成两格 + 帧两处都带 + 链尾判据要用截断之后"这条（含踩坑提醒），
+并把 §1 里那个仍指向主仓的 `PYTHONPATH` 改成"用当前工作区路径"（原与 §0 自相矛盾）。
+
+## 2026-09-11（17）—— 顺序口径统一：`close_step` 的字面位置对齐执行顺序
+
+**改了什么**
+
+1. `episode_harness.py` 的 `_compile()`：`add_node("close_step", ...)` 从 `detect_stall`
+   之后挪到 `store_object_semantic_memory` 之后——`add_node` 的**字面顺序现在 = 执行顺序**。
+2. `episode_harness_port.py`：`close_step` 的方法**声明**同样后移（`detect_stall` →
+   `store_step_episode_memory` → `store_object_semantic_memory` → `close_step`），
+   让"接口即图"的宣布顺序与执行顺序一致。
+3. 文档：`PLAN_graph_readability.md` 升到 **v3**——§3.4 记录 B 已采纳并落地；§2.1 定名
+   `record_observation`（v1 提的 `stamp_observation` 随扶正挪走而失效）并回写"`look` 的工作
+   还需要吗"；§4 对照表 13-16 行按执行顺序重排；§6 补落地记录；§7 勾掉两条已拍板项。
+
+**为什么这么改**：`web/src/App.tsx` 的表头写着"与 `_compile` 的 19 个节点一一对应、**顺序照抄**"，
+而表里 `close_step` 排在两个 store **之后**（这是执行顺序，也是观测台该展示的顺序）。
+`add_node` 的字面顺序不影响 LangGraph 的拓扑（拓扑由边定义），所以两边"都对"——
+但两种口径并存会让 §6 那条机械核对永远只能比集合，"顺序照抄"也就永远是一句没法验证的话。
+把字面位置挪到与执行顺序一致，是把一句口头约定变成**可断言的形状**。这正是本 PLAN 针对的
+病根：漂移能藏两个月，靠的是没有断言守着。
+
+**取舍**：没有反过来改前端去迁就 `add_node` 的旧字面顺序——那会让观测台上"关步"排在
+"两个 store"之前，与刚刚挪走的那种错位同形（读图的人会以为先扶正、再落库）。宁动一句
+`add_node` 的位置，不动"链按执行顺序展示"这条观测台的语义。
+
+**影响面**：`add_node` 的方法注册顺序对图引擎无语义，Protocol 方法声明顺序同理 →
+**运行时行为零变化**。离线核验脚本 52 条仍全绿；`ruff check`/`format` 干净
+（`port.py:43` 的 E501 是改动前就有的历史遗留）。web 相位表的形状级漂移
+（`save_checkpoint` 缺位、`MAIN_END` 15→16、尾链 `verify_steps`+`summarize` 4→3）
+**本轮仍未动**，见 PLAN §1.1 的 #1/#2/#4/#5/#6。
+
+## 2026-09-11（16）—— 步的边界收进一个节点：`look`+`advance_step` → `record_observation`+`close_step`
+
+**改了什么**
+
+1. **`advance_step` → `close_step`**：职责从"步号 +1"扩成"**扶正当前帧 + 步号 +1**"
+   （改 `observation`/`step` 两处——"一步结束了"这一个判定的两面），位置从
+   `detect_stall` 之后挪到两个 store **之后**；链内小循环的条件边出口随之从
+   `store_object_semantic_memory` 挪到 `close_step`。
+2. **`look` → `record_observation`**：摘掉扶正与盖步号，只剩"把当前帧记成一条
+   `OBSERVE`"——**只记账、不改状态、返回空增量**。
+3. **`act` 从"改三处"缩回"改两处"**（不再扶正），断言基准换成 `state.observation`。
+4. **`_begin` 直接产出已扶正的 `observation`**（第 0 步）——开局没有"上一步"，
+   不需要 `pending_observation` 那道接力。
+5. 契约与外围同步：`episode_harness_port.py`（模块图 + `record_observation`/`act`/
+   `close_step` 三个节点契约 + `observation`/`pending_observation` 两个字段说明 +
+   `stall_count` 那句写错的"强制终止判断在 `look`"）、`web/src/App.tsx`
+   （相位表、`phaseKeyOf`、若干注释与一句占位文案）、`trace_render.step_advance` 的
+   docstring、`step_memory` 两处去重论证、`trace_event` 的 `VIEW` 说明、
+   `episode_utils` 的预算注释。核验脚本补了 3 条拓扑断言（52 条全绿）。
+
+**为什么这么改**：`act` 的第三处（扶正）**不是"刻意的原子性"，是宿主消失**。
+扶正本来是 `look` 的活（它的 docstring 自己写着"只改 `observation` 一处"）；
+`step == decision` 时代 `look` 每步都跑，扶正从不缺宿主，链内小循环把 `look` 降到
+链边界，它就没了着落。而扶正**必须落在两个 store 之后**——那三格要 `before`
+（`observation`）与 `after`（`pending_observation`）两帧同时在场，谁先扶正都会把
+`before` 冲掉——那个位置的下游只有一条条件边、没有节点体。于是它只能寄居在下一圈
+第一个节点 = `act`。**根在 `look` 的混合粒度**（扶正=步级、`OBSERVE`=链级），不在
+`act`。把扶正还给"这一步的终点"（`close_step`）之后，三格各归其位：`close_step` 扶正、
+`act` 只读不算、`record_observation` 只记。诊断与两个方案的对比见
+`docs/spec/harness/PLAN_graph_readability.md` §3.4。
+
+**`look` 的工作没有全部消失——它只是不能再兼任扶正**：`OBSERVE` 必须**每链一条**
+（链内每个键要么只读 RAM、本来就没有 `MODEL_CALL` 可挂，要么只有 `LOOK_AFTER` 的
+轻量摘要，不含完整 `facts` 也不承载 `goals`）；这一格没了，replay 与观测台就没有
+"大脑当时看到的世界"的结构化原件。所以它保留为**单一职责节点**并因此改名——它不
+"看"，只记账。
+
+**取舍**
+
+- **不新增节点**（方案 A 会 19→20、`NODES_PER_PRESS` 6→7，链越长越贵），也**不拆**
+  `look`（链内每步都要跑扶正 = 再 +1 节点/键，`judge` 入口与两条边都得挪）。
+- **checkpoint 内容变了**：B 之后存档里的 `observation` 与 `pending_observation` 同值
+  （之前落后一帧）。逐项核对过：`save_checkpoint` 写在 `record_observation` 之前，
+  **`resume()` 六步一字不改**，链内没有任何节点读 `state.step`。
+- **把 `look` 这个名字留给真正在看的那个**（`look_after_action`）。
+
+**影响面**
+
+- 图的**节点集合不变**（19 个）；边改 3 条：`save_checkpoint→record_observation`、
+  `record_observation→judge`、`store_object_semantic_memory→close_step`，条件边出口
+  从 `store_object` 挪到 `close_step`。`NODES_PER_DECISION`/`NODES_PER_PRESS` 与
+  `recursion_limit` 的量级都不变。
+- `MODEL_CALL` 条数、`step` 语义、记忆的键 `(episode_id, step)` 全不变；离线核验
+  **52 条全绿**。
+- **web 相位表的既有漂移这轮没动**（缺 `save_checkpoint`、`verify_steps`+`summarize`
+  仍画成两格、`MAIN_END=15` 应为 16）——它和本次改动无关，按 `PLAN_graph_readability.md`
+  §6 单独落；本轮只保证 `close_step` 落在主循环区间内、事件能归到正确的格。
+- 真机六条脚本仍未跑（worktree 分支没有 `.env`）。
+
+## 2026-09-11（15）—— 首次接真实模型核验：段论据的条数规则缺失（已补）+ 两个既有失败模式的实测
+
+**背景**：`（14）` 的验收全部走假端口，它证明实现自洽，**证明不了模型会按新格式输出**。
+这次把决策/校验两条链路接到真实模型上（`qwen-plus@0.3` / `doubao-seed-2-1-pro@0`
+——口径抄 `build_real`），输入帧与记忆**取自主仓真实 run 的 trace 产物**
+（`trace_data/realcheck-0910-180502`，含一次真实的撞墙），**全程不碰 PyBoy**。
+六次采样、同一帧同一目标。
+
+**改了什么**：只改一处 prompt。
+
+1. **`decide_action.md` 补"一条论据覆盖整段"的规则**（写在 `sequence` 那一节）：
+   `times: 4` 要的是**一条**「这条线上 4 格都能走」，不是 4 条「第 1 格…第 2 格…」；
+   想让依据具体到格子，就在**同一条**里连着写。
+   **实测**：改前 4 次采样里 **3 次**给 `up×4` 那段写了 4 条论据（每个格子一条）→
+   撞 `MAX_RATIONALE=2` → 整次输出作废走重试，且**重试 3 次有 2 次仍然这么写**
+   （是系统性的，不是手气）；改后 6 次采样**每段都是 1 条，契约违规 0**。
+2. **未改，但记下有意的"不改"**：`verify_and_summarize.md`/`judge_success.md` 把记忆
+   形状描述成三段（「当时看到 → 做了什么 → 之后变成」），没提 `（14）` 新增的
+   `然后停了` 与 `BLIND_NOTE`。**实测不需要改**：校验器拿到撞墙那条（链内盲帧 +
+   `然后停了  这个方向上剩下的连按不必再按了（原地不动 = 撞墙）`）后原话判
+   「位置仍为(13,6)未移动，北侧邻格为#阻挡，符合撞墙后原地不动的规则」，
+   三条全判 reliable；决策者下一步的 `thought` 也主动引用它（"step=2 明确记录
+   '原地不动 = 撞墙'"，随后交出 `right -> up` 而不是再按 `up`）。
+   **描述不全 ≠ 读不懂**，静态前缀一个 token 不加。
+
+**为什么这么改**：段论据会被**原样复制进这一段每一下的记忆**（`（14）` 的归属规则），
+所以"第 1 格…第 4 格…"这种写法本身就不成立——第 1 下的记忆里会出现"第 4 格可走"，
+而那一格那一下还没走到。`MAX_RATIONALE` 不是随手定的档位，是这条归属规则的直接后果。
+prompt 讲了"一段一份"，没讲"一份覆盖整段"；模型按自己对**每一个键**的承诺去写，
+是合理误读，不是乱写。
+
+**取舍**：
+- **没把 `MAX_RATIONALE` 从 2 抬到 4**（那样那批输出能直接过）。上限的语义单位是
+  "段"，抬高只会让每键记忆里的冗余断言更多、更长，把写法问题掩盖成配置问题。
+- **没给解析器加"补一个 `}`"的兜底**。实测第二个失败模式是模型丢掉**最外层 `}`**
+  （2/6；`Expecting ',' delimiter` 落在末字符，补一个 `}` 即完全可解析），
+  重试**两次都救回**。`_strip_json_fence` 的既有决定是"内容坏了走重试，不在解析器里
+  猜着改"——补括号不算内容修复，是可讨论的例外，**留给用户定，这次不动**。
+- 只验到"能解析 + 三条可靠"，**没做**判定器/校验器的准确率标定（那要真图）。
+  校验器那条是 `temperature=0` 的**单次**采样，不是分布。
+
+**影响面**：只动 `decide_action.md` 一份模板，`$max_rationale` 是原有占位符
+（同文件别处已在用），`build_prompt`/`Brain` 零改动。核验脚本落在仓库外
+（`%TEMP%\pa_llm_probe\`），可复核但未加进仓库。顺带量到两件事，**本次不处理**：
+一次决策输出 1.0k–1.7k token，其中 `thought` 占大头且**大半花在 `walk_map` 的
+逐字符列号换算上**（含"等一下重数"式的自我纠错），输入侧缓存命中很高
+（`in=6379 / cached=6272`）——而列号算错在新粒度下的代价被放大了：链内盲走，
+错一格 = 该段剩余键全作废。要收紧得动 `map_hint` 的读图格式，不属于本次范围。
+
+## 2026-09-11（14）—— `step` 缩成一次小 action：链内小循环 + 逐键 RAM 感知 + `stop` 分情况留痕
+
+**背景**：`harness/object_interactions.py` 的判定层只处理得了单键——判"这一键碰上了
+哪一格"要拿 `before`/`after` 两份快照加**这一个键**，而"一次决策 = 一条链"的模型下
+链的两头对不上中间是哪一按键撞的门，于是多段链一律不产出事件（判定层整段让位）。
+粒度定义、归属规则、中止范围的完整论证在
+`docs/spec/harness/PLAN_action_step_granularity.md`（v3）；本条目只记落地，以及
+落地过程中暴露出来的三处问题。
+
+**改了什么**：
+
+1. **`step` = 一个小 action（一个键）**。`EpisodeRunState` 新增
+   `plan`/`pending_presses`/`pending_stop` 三个链字段（随 checkpoint dump，恢复后
+   接着把剩下的键按完）；`think_action` 把 `plan.sequence` 按 `times` 展开成
+   "一键一段"的队列，`act` 每圈弹队首、派生一个单键 `ActionFromBrain` 交给世界。
+   一次决策的**决策调用与四路检索按链摊薄**，而 `detect_stall`/`advance_step`/
+   两个 store 每键各跑一次。
+2. **链内小循环只加一条边**：`store_object_semantic_memory` 出口按
+   `pending_presses` 是否为空分叉（回 `act` / 回 `save_checkpoint`）。节点集合不变，
+   `save_checkpoint` 仍只落在链边界——每键一份含模拟器快照的存档会让存档量乘链长，
+   而链内执行是纯 RAM 确定的，从链首存档重放能逐帧复现。
+3. **感知分两档**：链内键走 `perceive_once(ram_only=True)`（免费、确定、无模型调用、
+   不会失败），链尾那一键与**中止的那一键**做完整视觉感知。
+   `MODEL_CALL(PERCEPTION)` 条数与改动前相等（§9 验收不变量）。
+4. **`stop`：这一键的结局，分情况作废**。新枚举 `StopReason`
+   （`blocked`/`warp`/`episode_over`）+ 纯函数 `episode_utils.compute_stop()`
+   （中止范围的**唯一**出处）：撞墙只丢掉本段剩余同名键（`up×4 -> down×2` 里第 2 个
+   `up` 撞墙 → 后面的 `down` 照按），`warp`/`episode_over` 清空整条链。判定顺序是
+   `after.done`（世界没了，读数不再可信）→ `blocked` → `warp` → 步数用尽。
+   `stop` 进 `StepMemory`、进 `LOOK_AFTER` payload，并由 `STOP_NOTE` 渲染进记忆文本。
+5. **`rationale` 下沉到段**：`ActionFromBrain.rationale` 删除，
+   `ActionSegmentFromBrain` 新增 `rationale: list[str]`（1..`MAX_RATIONALE`）；链级的
+   "为什么"由 `thought` 承担（只进 trace）。`Brain._parse` 对顶层 `rationale` 报
+   `ParseFailure`（不许两个位置都能写）；新增 `MAX_SEGMENTS` 段数上限（原来无上限）。
+6. **`perceived: bool`**：RAM-only 观测显式声明"这一帧没有人看过"，
+   `StepMemory.Observation.render()` 在 `False` 时顶一行 `BLIND_NOTE`——
+   "没读过"和"读过、是空的"必须能分开。`Brain._blind()` 原样透传这个标记。
+7. **帧脱离感知**：不再挂 `MODEL_CALL`，改成**挂在产出它的那次感知所在的事件上**
+   （开局那一帧 → `OBSERVE`，之后每一帧 → 那一键的 `LOOK_AFTER`）；
+   `_frame_event_ids` 仍是"步号 → 截图"的唯一对账表。
+8. **`world.step(segments, *, settle=)`**：链中间的键不等 10 秒过场，只有链尾等
+   （那一帧要交给 `judge` 看）。
+9. **prompt 跟上**：`decide_action.md` 重写"链怎么按、什么会打断、中间帧看不到
+   什么"；`repeat_hint.md` 的成本口径从"每步一次感知调用"改成"每链一次决策 +
+   一次视觉，方向键本身不要钱"，并写明撞墙只废掉那个方向。
+
+**为什么这么改**：判定层、记忆层、停摆检测全都只认"一个键 + 前后两帧"，而
+"一次决策 = 一条链"让它们的输入对不上；把 `step` 缩到键粒度，这些现成逻辑一个都
+不用改就能覆盖链的每一步。完整论证见 `PLAN_action_step_granularity.md`。
+
+**取舍**：
+- **checkpoint 只落链边界**（§7.3）：链内不存，靠"同存档 + 同链 → 同一状态"重放。
+  代价是链内那几步的重放必须逐帧确定——这正是"链内只读 RAM"的第二个理由。
+- **`act` 从"改两处"变成"改三处"**（多扶正 `observation`）：见下面的第 1 处问题的
+  修复位置选择。不新增节点（新节点得占一条 trace 事件、要新 TraceKind），不重排图上
+  现有节点（`advance_step` 挪到 store 之后会让两个 store 拿到被扶正过的 `before`）。
+- **`stop` 渲染不受 `reason` 约束**：它是执行层机械判出来的事实，不是决策者自己的
+  说辞，所以判定器看的那一版（`reason=False`）也照摆。
+
+**落地时暴露的三处问题**（都不是设计取舍，是实现的坑）：
+
+1. **当前帧必须在链内前进。** `observation` 在每一圈里的语义是"这次按键**之前**的
+   那一帧"（两个 store 拿它当 `before`），而链内小循环不经过 `look`（只在链边界
+   扶正它）——不补这一步，链里第二个键读到的还是链首那一帧，
+   `(episode_id, step)` 从第 2 步起全错。落点定在 `act`（每一圈的开头），
+   链首那一圈幂等。**假端口核验第一次跑就抓到了它：`step 号 [0, 0, 0, 3, 4]`。**
+2. **帧只挂 `OBSERVE` 会漏掉链内键。** `look` 只在链边界跑，`OBSERVE` 因此是
+   "每条链一条"；帧要是只挂它，链中间那些步的 `before_frame`/`after_frame` 全是
+   `None`——而 §3 明确要求逐键都有，否则 `judge`/`verify` 的多模态输入成片缺图。
+   改成"帧由产出它的那次感知所在的事件承载"，`_pending_frames` 从"每一帧都过一手"
+   缩到只服务开局那一帧。
+3. **`stop` 进了字段却没进渲染。** §5 要求大脑下一步能推出"在第 3 键撞墙了"，而
+   `StepMemory.render()` 原来不带 `stop`——记忆里就只是"按了 up、画面没变"，会被
+   读成"我本来就只打算按一下"。补 `STOP_NOTE` 表 + 渲染那一行。
+
+**已知遗留**：
+- `JUDGE_HISTORY = 2` 的语义从"最近 2 步"变成"最近 2 键"，判定器时间视野缩到
+  1/链长；`max_steps` 从"决策轮数"变成"小步数"，任务定义要重标定。
+  **两条都还没做**（§7.2 / §7.4 / §8 步骤 5）。
+- "逐键存、按链读"（把一条链合并成一条渲染给大脑，压
+  `retrieve_step_episode_memory` 的 prompt 膨胀，§7.6 建议与主改动分开落地）
+  尚未做。
+- `web/` 观测台的"一条 OBSERVE 一页"变成"一条链一页"，页面语义变了，尚未跟着改。
+
+**验证**：离线假端口核验（`FakeGame`/`FakeMemory`/`FakeBrain` + 真 `TraceTool`、
+真 `Brain.reflect`、真 `compute_stop`）50 条全绿——解析契约 9 条、`compute_stop`
+8 条、整局链内小循环 33 条，含"决策只发生 3 次而按了 5 个键"、"`blocked` 只作废
+本段剩余 / `warp` 作废整条"、`settle` 只落链尾、"逐键都有截图且帧落在正确的步上
+（链内键是 RAM 帧）"、"`MODEL_CALL(PERCEPTION)` = 5"。`ruff check`/`ruff format`
+对本轮改动文件无新增问题（`brain/brain.py` 的 `I001`/`E501` 等 HEAD 就存在）。
+**真机链路核验（`experiment.real_check.*`）由用户执行，尚未跑。**
+
+**影响面**：`harness/`（`episode_harness`/`episode_utils`/`game_utils`/
+`object_interactions`/`interface`）、`brain/`（`brain`/`interface/domain/
+action_from_brain`）、`schemas/`（`memory/datastore/step_memory`、
+`harness/communication/` 两个信封）、`tools/`（`trace_render`/`game_tools`/`ports`）、
+`world/`（`pyboy_world`/`interface`）、`prompts/calls/decide_action/`。
+**既有记忆文件不用迁移**（`rationale` 形状不变，`stop`/`perceived` 都有默认值）。
 ## 2026-09-11（13）—— 修正（12）的错误：`StepMemory`/`EpisodeMemory`/`ObjectFactEvent` 搬回 `schemas/memory/`，`Observation`/`PlaceInWorld` 引用改内部类
 
 **背景**：（12）条把 `schemas/memory/datastore/*.py` 当作"数据形状归它自己模块"

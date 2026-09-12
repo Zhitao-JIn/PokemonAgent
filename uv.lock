@@ -9,11 +9,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "agent-permission"
-version = "0.1.0"
-source = { git = "https://github.com/Zhitao-JIn/AgentPermission.git#0592fe57be0f0008a8eaf1781429003f6fce916e" }
-
-[[package]]
 name = "annotated-doc"
 version = "0.0.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1294,7 +1289,6 @@ name = "pokemon-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agent-permission" },
     { name = "fastembed" },
     { name = "langgraph" },
     { name = "pydantic" },
@@ -1315,7 +1309,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-permission", git = "https://github.com/Zhitao-JIn/AgentPermission.git" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115" },
     { name = "fastembed", specifier = ">=0.8" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },

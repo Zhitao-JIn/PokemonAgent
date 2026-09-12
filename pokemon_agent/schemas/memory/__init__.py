@@ -24,7 +24,12 @@ __all__ = [
     "ObjectStillEvent",
     "ObjectWarpEvent",
     "StepMemory",
+    "StopReason",
+    "decision_key",
     "dedup_snapshots",
+    "group_by_decision",
+    "last_decisions",
+    "render_decisions",
     "render_sequence",
 ]
 
@@ -37,6 +42,11 @@ from .datastore import (
     ObjectStillEvent,
     ObjectWarpEvent,
     StepMemory,
+    StopReason,
+    decision_key,
     dedup_snapshots,
+    group_by_decision,
+    last_decisions,
+    render_decisions,
     render_sequence,
 )

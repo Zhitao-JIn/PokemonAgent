@@ -30,15 +30,11 @@ from typing import TYPE_CHECKING
 from .domain import HumanDecision
 
 if TYPE_CHECKING:
-    from .episode_harness_port import EpisodeHarnessPort, EpisodeRunState
-    from .harness_port import (
-        MAX_GOAL_RETRIES,
-        MAX_PLAN_PUSH,
-        PLAN_MAX_ATTEMPTS,
-        HarnessPort,
-        ResumeEpisode,
-        RunState,
-    )
+    from pokemon_agent.harness.episode.state import EpisodeRunState
+    from pokemon_agent.harness.run.state import ResumeEpisode, RunState
+
+    from .episode_harness_port import EpisodeHarnessPort
+    from .harness_port import MAX_GOAL_RETRIES, MAX_PLAN_PUSH, PLAN_MAX_ATTEMPTS, HarnessPort
     from .human_reviewer import HumanReviewer
 
 __all__ = [
@@ -56,13 +52,13 @@ __all__ = [
 
 _LAZY: dict[str, tuple[str, str]] = {
     "EpisodeHarnessPort": (".episode_harness_port", "EpisodeHarnessPort"),
-    "EpisodeRunState": (".episode_harness_port", "EpisodeRunState"),
+    "EpisodeRunState": ("pokemon_agent.harness.episode.state", "EpisodeRunState"),
     "MAX_GOAL_RETRIES": (".harness_port", "MAX_GOAL_RETRIES"),
     "MAX_PLAN_PUSH": (".harness_port", "MAX_PLAN_PUSH"),
     "PLAN_MAX_ATTEMPTS": (".harness_port", "PLAN_MAX_ATTEMPTS"),
     "HarnessPort": (".harness_port", "HarnessPort"),
-    "ResumeEpisode": (".harness_port", "ResumeEpisode"),
-    "RunState": (".harness_port", "RunState"),
+    "ResumeEpisode": ("pokemon_agent.harness.run.state", "ResumeEpisode"),
+    "RunState": ("pokemon_agent.harness.run.state", "RunState"),
     "HumanReviewer": (".human_reviewer", "HumanReviewer"),
 }
 

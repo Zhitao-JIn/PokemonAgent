@@ -73,8 +73,8 @@ class EventType(str, Enum):
     audit(verify_steps 的校验汇总)}——三者都是"模型交回内容的再加工"。
     """
     VIEW = "view"
-    """世界帧（视觉）的记录。payload.kind ∈ {frame(每步 look 的全量观测),
-    after(动作后 look_after 的轻量摘要)}。
+    """世界帧（视觉）的记录。payload.kind ∈ {frame(每条链 OBSERVE 的全量观测),
+    after(动作后 after_action 的轻量摘要)}。
     """
     ACT = "act"
     """动作域记录——不限定执行方，因此跨 source：payload.kind ∈ {space
@@ -127,7 +127,7 @@ class TraceEvent(BaseModel):
     frame_png: str | None = Field(
         default=None,
         description="这一步感知到的原始画面，只有 `VIEW` 类事件"
-        "（`observe()`/`look_after()` 拼出来的那两种）才会非空——`payload` 保持"
+        "（`observe()`/`after_action()` 拼出来的那两种）才会非空——`payload` 保持"
         "`dict[str, str]` 纯文本不变，二进制单独开一个字段，JSONL 其余内容"
         "仍然是人可以直接读的文本。`None` = 这条事件没有对应的落盘帧"
         "（非视觉世界、或这条根本不是感知事件）。",

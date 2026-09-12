@@ -27,6 +27,17 @@ memory 层只存事件、不做语义判定（分层原则见 AGENTS.md 四）�
 `before` / `after` 是整条链的两头——中间哪一次按键才是撞在门上的那次，这里看不到。
 把 `up×4 -> down×2` 记成"在起点按了一次 up"，写进去的是一条假事件；少记一条
 只是慢一点，记错一条会让它以后永远不再试那个正确的碰法。
+
+**这条限制现在被执行粒度消掉了**：`step` 就是一个键（连按已经在 Harness 的
+链内小循环里展开），所以本模块收到的恒是单键动作、`len(segments) == 1` 恒成立，
+判定层不用改就覆盖了链的每一步（见 `PLAN_action_step_granularity.md`）。
+下面那条多段即返回空的过滤保留着当**前置条件**——它是这一层的输入契约，
+不是它要处理的情况。
+
+**没有视觉证据时不判对话**：对话文字只有视觉模型读得出，而链内按键的帧是
+`perceived=False`（只读了内存）。这时 `dialog_text` 为空**不是"没弹出对话"，
+是"没读过"**——照旧记 `still` 会记出一条假事件（"这个碰法没用"，而事实是
+"这次没看见"），比漏记一条贵得多。见 `_dialog_or_still`。
 """
 
 from __future__ import annotations
@@ -119,8 +130,16 @@ def _common_fields(press: _Press, place: PlaceInWorld, kind: str) -> dict:
     }
 
 
-def _dialog_or_still(press: _Press, place: PlaceInWorld, kind: str) -> ObjectFactEvent:
-    """a 键互动的两种结局：弹出对话记正文，什么都没有记 still。"""
+def _dialog_or_still(press: _Press, place: PlaceInWorld, kind: str) -> ObjectFactEvent | None:
+    """a 键互动的两种结局：弹出对话记正文，什么都没有记 still。
+
+    **这一帧没做过视觉感知就直接让位**（返回 `None`，不产出事件）：链内按键
+    的 `after` 是 RAM-only 快照，`dialog_text` 恒为空——那是"没读过"，
+    不是"读出来什么都没有"。硬判成 `still` 会把"这次没看见"写成
+    "这个碰法没用"，而被写错的记忆会被以后每一步当真。
+    """
+    if not press.after.perceived:
+        return None
     text = press.after.facts.dialog_text
     common = _common_fields(press, place, kind)
     if text.strip():
