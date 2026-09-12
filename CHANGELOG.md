@@ -1,3 +1,78 @@
+## 2026-09-11（18）—— 把 `look_after_action` 一分为二：感知归感知，留痕归留痕
+
+**改了什么**
+
+1. `episode_harness.py`：`look_after_action`（8 件事）拆成两格——
+   - `perceive_after_action`（改 `pending_observation`/`pending_stop`）：分档感知 → 判 `stop`
+     →（中止时）补完整感知 → 盖步号 → 帧进暂存表；**不写任何观测账**；
+   - `record_action_result`（改 `pending_presses`）：按 `stop` 的作废范围截队 → 认领这一帧
+     → 写 `LOOK_AFTER`。
+   边改为 `act → perceive_after_action → record_action_result → detect_stall`；节点数
+   19 → **20**；`NODES_PER_PRESS` 6 → **7**（`recursion_limit` 公式自动跟随）。
+2. `episode_harness.py`：**链尾键的帧两处都带**——既留在这键自己的 `LOOK_AFTER` 上，又留在
+   `_pending_frames` 里由下一条链链首的 `record_observation` 挂给 `OBSERVE`；`_frame_event_ids`
+   改成"谁先产出这一帧谁登记"（不再被 `OBSERVE` 覆盖，指向必须稳定）。
+3. 同步面：`episode_harness_port.py`（"二十个节点"、图、"帧的归属"一段、`pending_*` 的 docstring、
+   两个新方法声明）、`episode_utils.py`/`trace_render.py` 的引用、`web/src/App.tsx` 的相位表
+   （补两格、`MAIN_END` 15→**16**、`phaseKeyOf` 的 `view/after` 与 `model_call/perception` 改指）、
+   `docs/spec/DATAFLOW.md` 一行；收尾时又补齐四句仍写"**十九**个节点"的旧文案——`_compile` 的
+   docstring 与"步骤 1"注释、`EpisodeHarnessPort` 类 docstring、`App.tsx` 页签注释（漏网的原因：
+   前一轮只扫了模块 docstring 那一处）。
+4. `PLAN_graph_readability.md` 升 **v5**：§3.3 撤回、新增 §3.6（接缝的唯一性 + 帧的承载规则）、
+   §4 对照表 19 → 20 行；两份旧 PLAN 顶部加现状指引（不改历史论证）。随后按用户拍板升 **v6**：
+   帧定为"两处都带"（§3.6 帧一节整段改写，含"体积不再不变"的明账和上面那个截断判据的坑）、
+   第二格定名、§5 一行翻转、§6 步骤 0c 标已落地、§7 勾掉第 8/9 条；并补上 v5 漏改的 §4 引言
+   （"19 个格子" → **20**，同步口径由 v3 改成 v6）、§1.2 的节点数、§1.1 的 v6 进度（#1 只落地了
+   "补两格"那一半、#2 已落地、#4/#5/#1 另一半仍缺，所以 #6 的"一一对应"仍不成立——表头改成
+   "如实标注这两处漂移"）、§3 顶部的现状指引（本节写于 v1、19 节点口径，并把"`look_after_action`
+   拆不动"那半句当场标掉）。
+5. 顺手校准两处数字文案（都是这次没扫到的）：`_invoke()` 的 docstring 里 `recursion_limit` 的
+   上界算式还写着 `10 + 6K ≤ 16K`——`NODES_PER_PRESS` 已是 7，而这段文字本身就在解释那两个常量
+   → 改成 `10 + 7K ≤ 17K`（`K ≥ 1` 时仍成立，与 `per_press = 10 + 7` 一致）；
+   `PLAN_graph_readability.md` §6 的验收结论也从"`ruff` 干净"改成本轮那句口径。
+
+**为什么这么改**：用户的判据是「拆开吧，不然和 observation 功能太像了」。`look_after_action`
+是全图唯一从头到尾在**产出观测**的格子，而 `record_observation` 在**登记观测**——两个名字都带
+observation 的格子做的是**频率差 N:1** 的两种事（§3.5 已论证），名字却像同一件事的两种说法。
+拆完"感知"与"记账"彻底分家：第一格只改状态，第二格才写账。
+
+**取舍**
+
+- **接缝不是挑的，是被依赖逼出来的**：`中止补感知` 的触发条件就是 `stop is not None`，而 `stop`
+  是 `compute_stop(...)` 的输出——**纯感知节点根本不可能存在**。能拆的只有"感知+判读 | 落实+留痕"。
+- **推翻了自己 v4 的结论（§3.3），并在原文上方写明撤回**：当时列的四条代价里，① "链内每键
+  6→7、链越长代价越大"（涨的是**图跳数**，不是模型/视觉调用，成本口径用错）、③ "`LOOK_AFTER`
+  要拆成两条"（**拆节点 ≠ 拆事件**）、④ 原子性退化（按本接缝只残留一半）**均不成立**，只有
+  ② `recursion_limit` 重算成立——而那只是改一个常量。这是同一类错的第二次（v1 也把 `act` 的
+  扶正判成"不拆"），所以把"别把拆节点/拆事件/图跳数当同一件事"写进了 §3.3 顶部。
+- **残留取舍**：`pending_stop`（第一格）与 `pending_presses`（第二格）跨格。缓解三点：两格之间
+  没有别的节点、也没有条件边；第二格唯一会失败的地方是 trace 落盘（失败即整局失败、状态不保留，
+  不存在"半成品被消费"的窗口）；截断判据与 `compute_stop` 一样是纯函数，不存在两处规则各算各的。
+- **链尾帧选了两处都带**（用户拍板：「都保留，重复是为了语义清晰」）：代价是链尾那一步的图落两份
+  （`LOOK_AFTER` 一份、`OBSERVE` 一份，逐字节相同），量级约"每链多一张图"；换来 `OBSERVE` 自足
+  ——replay 到链首就能同时看到"画面 + `goals` + 完整 `facts`"，不必翻上一条链的末尾。
+- **链尾判据用"截断之后队列空"**，不是"截断之前"：`blocked` 只丢本段剩余（链可能接着走，这一帧
+  就还是链内的帧），而 `warp`/`episode_over` 清空整条链时那一键事实上就是链尾，帧要留给下一链的
+  `OBSERVE`。这一处第一版写错过，离线核验的"每条链首的 `OBSERVE` 都带帧"抓出来了。
+
+**影响面**：`MODEL_CALL(PERCEPTION)` 条数与视觉成本**不变**（分档感知只是换了宿主）；离线核验脚本
+**56 条全绿**（52 → 56：新增"两格之间的三条边 + 旧名彻底消失"、"每条链首的 `OBSERVE` 都带帧"、
+"登记表指向先产出的那条 `LOOK_AFTER`"、"链尾帧两处是同一张图"）；`ruff check` 对**本轮改过的两个
+文件**只剩 1 条——`episode_harness_port.py` 的 E501（127 字符），逐字比对过 HEAD 同位置同长度，
+属历史遗留、只是被插行挤到 48 行；`ruff format --check` 两文件均"already formatted"。
+**顺带把一句过宽的话纠正掉**（此前写成"ruff 干净"，口径太窄）：全仓 `ruff check` 现在是 **49 条**
+（E501 13 / I001 11 / ANN202 9 / ANN401 5 / UP042 5 / ANN001 2 / F401 2 / SIM105 1 / B905 1），
+用 `git archive HEAD` 到临时目录取出基线是 **50 条**（E501 14）——本次会话净减 1，**没有一条是本轮
+引入的**。这些历史项不在本次范围，留给"什么时候顺手清"另议。`web` 的 `tsc --noEmit`
+通过（本 worktree 没有 `node_modules`，临时链接主仓依赖跑的，跑完已删除链接、主仓完好）。
+**§1.1 的形状级漂移还剩两项**（`save_checkpoint` 补位、尾链 `verify_steps`+`summarize` 合一）
+本轮未动，但 `MAIN_END` 15→16 是被这次插入**强制**跟着改的（否则 `close_step` 会被误判成收尾链
+节点）；剩余两项已在相位表表头写明。另：`uv run` 顺手把 `uv.lock` 与 `pyproject.toml` 对齐了
+（`agent-permission` 的 lock 条目是接入移除后留下的陈旧项）。真机六条命令仍待用户跑（AI 不碰 PyBoy）。
+另（仓库外，一并记）：离线核验技能的 `SKILL.md` 补齐了这次的两处漂移——断言数 **50 → 56**，
+§1.1 新增"`look_after_action` 已拆成两格 + 帧两处都带 + 链尾判据要用截断之后"这条（含踩坑提醒），
+并把 §1 里那个仍指向主仓的 `PYTHONPATH` 改成"用当前工作区路径"（原与 §0 自相矛盾）。
+
 ## 2026-09-11（17）—— 顺序口径统一：`close_step` 的字面位置对齐执行顺序
 
 **改了什么**
