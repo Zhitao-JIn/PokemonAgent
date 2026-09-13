@@ -16,9 +16,9 @@ from __future__ import annotations
 from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
+    TraceKind,
 )
 from pokemon_agent.tools.interface import TraceToolPort
-from pokemon_agent.trace import TraceKind
 
 
 def append_model_calls(
@@ -37,7 +37,7 @@ def append_model_calls(
                 episode_id=req.episode_id,
                 step=req.step,
                 source=req.source,
-                call=call,
+                calls=[call],
                 attempt=attempt,
             )
         )
