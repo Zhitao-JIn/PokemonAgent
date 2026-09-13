@@ -52,9 +52,8 @@ class RunDataCenter:
         self._lock = threading.Lock()
         self._events_lock = threading.Lock()
         self._events: list[TraceEvent] = []
-        """事件流槽（PLAN_checkpoint §7.2）：前端可见状态的唯一聚合点——
-        SSE 与实时数字都读这里；checkpoint 恢复时由
-        `rebuild()` 单点重建（主前缀 + goals），观测台历史完整可恢复。"""
+        """事件流槽：前端可见状态的唯一聚合点——SSE 与实时数字都读这里。
+        `TraceTool` 落盘后 `publish_event` 双写进来。"""
         self._goals_edit: FromFrontendToRunHarnessSubmitEditReq | None = None
         self._latest_goals: list[Task] = []
         self._review_request: FromHarnessToReviewerReviewReq | None = None
@@ -77,23 +76,18 @@ class RunDataCenter:
         with self._events_lock:
             self._events.append(event)
 
-    def events(self, event_types: frozenset | None = None) -> list[TraceEvent]:
-        """读事件流（追加序，event_id 严格单调），按类型 mask（读取即过滤）。"""
+    def events(self, event_types: frozenset[str] | None = None) -> list[TraceEvent]:
+        """读事件流（追加序，event_id 严格单调），按类型 mask（读取即过滤）。
+
+        `event_types` 是**字符串集合**（0913 降级前是 `EventType` 枚举集）——
+        `TraceEvent.type` 现在是裸 str，mask 里的 `EventType.X` 常量也是 str，
+        `in` 照样成立。
+        """
         with self._events_lock:
             snapshot = list(self._events)
         if event_types is None:
             return snapshot
         return [e for e in snapshot if e.type in event_types]
-
-    def rebuild(self, prefix_events: list[TraceEvent], goals: list[Task]) -> None:
-        """checkpoint 恢复的单点重建：事件主前缀整体换入 + goals 槽对齐。
-
-        前置条件：`prefix_events` 是截断后的主前缀（event_id 升序）。
-        后置条件：事件流槽与 goals 槽同时就位——前端恢复 = 重连 DataCenter。
-        """
-        with self._events_lock:
-            self._events = sorted(prefix_events, key=lambda e: e.event_id)
-        self.publish_goals(goals)
 
     # ---- goals 槽：harness 发布快照 / 消费编辑；api 读快照 / 写编辑 ----
 

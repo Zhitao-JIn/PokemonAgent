@@ -41,28 +41,6 @@ from .domain import Perceived
 class WorldPort(Protocol):
     """一个可推进、可观测的世界。"""
 
-    def save_state(self, path: str) -> None:
-        """把世界当前状态存到 path。
-
-        path：存档文件路径。
-        """
-        ...
-
-    def save_state_bytes(self) -> bytes:
-        """把世界当前状态存成字节串（checkpoint 每步世界快照用）。
-
-        后置条件：返回的字节串能被 `load_state_bytes` 原样恢复。
-        """
-        ...
-
-    def load_state_bytes(self, data: bytes) -> None:
-        """从字节串恢复世界状态（checkpoint 恢复用）。
-
-        前置条件：`data` 来自同一 ROM 的 `save_state_bytes()`。
-        后置条件：模拟器回到快照那一刻的状态（画面恢复由下一次 tick 完成）。
-        """
-        ...
-
     def reset(
         self,
         *,
@@ -76,22 +54,6 @@ class WorldPort(Protocol):
 
         参数是 `Task` 拆开的裸字段——world 只用得到这几个原始值。
         前置条件：max_steps > 0。
-        """
-        ...
-
-    def set_task(
-        self,
-        *,
-        task_id: str,
-        goal: str,
-        success_criteria: str,
-        max_steps: int,
-        initial_state_hint: str = "",
-    ) -> None:
-        """只挂任务标记，**不动模拟器状态**（checkpoint 恢复后配 `load_state_bytes` 用）。
-
-        前置条件：max_steps > 0；`load_state_bytes()` 已经把模拟器摆到了正确的帧。
-        后置条件：`_task`/`_closed` 就位，`step()`/`perceive_once()` 的前置断言不再拦它。
         """
         ...
 

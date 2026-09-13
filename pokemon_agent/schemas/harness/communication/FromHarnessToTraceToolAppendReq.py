@@ -24,13 +24,12 @@ from pokemon_agent.brain.interface import (
     StepVerifyVerdict,
     Task,
 )
-from pokemon_agent.providers.interface import ModelCall
+from pokemon_agent.schemas.harness.domain import TraceKind
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, StepMemory
-from pokemon_agent.trace import Source
 from pokemon_agent.world import Observation
-from pokemon_agent.trace.interface import TraceKind
 
 from .FromRunHarnessToEpisodeHarnessRunResp import FromRunHarnessToEpisodeHarnessRunResp
+from .ModelCall import ModelCall
 from .RunResp import RunResp
 
 
@@ -50,8 +49,16 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     kind: TraceKind
 
     # ---- 通用账目字段 ----
-    source: Source | None = None
-    call: ModelCall | None = None
+    source: str | None = None
+    """这条账由哪一层产生（`Source.X` 常量）。**裸 str**（0913 降级）：
+    trace 不认识它的值域，只保证按时间记账。"""
+    calls: list[ModelCall] | None = None
+    """这条账涉及的**全部模型调用**，按发生顺序（重试链就是每次尝试一条）。
+
+    **为什么是列表而不是单条**：写账的节点拿到的是"整条重试链"（`resp.calls` /
+    `exc.calls`），tool 渲染时逐条落成 `MODEL_CALL`——账在语义上从来不是一条，
+    只是此前恰好只有一条值得记。列表化之后"重试了 3 次"这件事不必再靠
+    `attempt` 字段反推。"""
     attempt: int | None = None
     why: str | None = None
     depth: int | None = None
@@ -113,8 +120,3 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     dropped: list[ActionSegment] | None = None
     """`ACTION_TRUNCATED` 上被丢掉的那几段（`apply_stop` 截断队列时移除的键）。
     **非空才是"真的截断了"**——`blocked` 可能一个键都不用丢，那时不写这条账。"""
-    # ---- CHECKPOINT_RESTORE / CHECKPOINT_SAVE 专用 ----
-    restored_episode_id: str | None = None
-    restored_step: int | None = None
-    cursor: int | None = None
-    saved_step: int | None = None

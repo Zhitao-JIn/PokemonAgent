@@ -89,9 +89,6 @@ def make_review_pair() -> tuple[RunDataCenter, DataCenterReviewer]:
 
 
 TRACE_ROOT = ROOT / "trace_data"
-CHECKPOINT_ROOT = ROOT / "checkpoints"
-"""0909 起 checkpoint 根目录独立于 trace_data（见 `EpisodeCheckpoint` 类
-docstring）——`checkpoints/<run_id>/`，不再是 `trace_data/<run_id>/checkpoints/`。"""
 LAST_RUN = TRACE_ROOT / ".last_realcheck.json"
 
 MEMORY_ROOT = ROOT / "memory"
@@ -100,7 +97,7 @@ MEMORY_ROOT = ROOT / "memory"
 
 
 def safe(episode_id: str) -> str:
-    """episode_id 压成文件名安全的一段（与 checkpoint/memory 层同一规则）。"""
+    """episode_id 压成文件名安全的一段（与 memory 层同一规则）。"""
     return re.sub(r"[^A-Za-z0-9_-]+", "_", episode_id).strip("_-") or "unknown"
 
 

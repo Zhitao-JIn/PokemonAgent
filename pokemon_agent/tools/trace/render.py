@@ -27,8 +27,10 @@ from pokemon_agent.brain import (
     StepVerifyVerdict,
     Task,
 )
-from pokemon_agent.providers import ModelCall
-from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, RunResp
+from pokemon_agent.schemas.harness import (
+    FromHarnessToTraceToolAppendReq,
+    RunResp,
+)
 from pokemon_agent.schemas.memory import (
     EpisodeMemory,
     ObjectDialogEvent,
@@ -39,7 +41,7 @@ from pokemon_agent.schemas.memory import (
 from pokemon_agent.trace import EventType, Source
 from pokemon_agent.world import Observation
 
-RenderedEvent = tuple[EventType, Source, dict[str, str]]
+RenderedEvent = tuple[str, str, dict[str, str]]
 """`append(episode_id, step, type, source, payload)` 的后三个位置参数。"""
 
 
@@ -192,34 +194,38 @@ def episode_error(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
 
 
 def model_call(req: FromHarnessToTraceToolAppendReq) -> list[RenderedEvent]:
-    """一次模型调用 → 一条 `MODEL_CALL`，失败的再补一条 `ERROR`。
+    """一笔账里的**每一条**模型调用 → 一条 `MODEL_CALL`，失败的再补一条 `ERROR`。
 
     **账单和失败模式是两件事**：前者回答"花了多少钱"，后者回答"为什么没
     拿到东西"。混进一条里，按失败类型聚合的时候就得去解析 payload 里的
     字符串。
 
-    `req.attempt` 非 None 时给 payload 盖尝试号（重试记账，原 `tag_attempt`
-    的职责收进 tool）。
+    `req.calls` 是整条重试链（每次尝试一条）——重试过的调用在这里展开成多条
+    `MODEL_CALL`，`attempt` 已由 `BrainTool` 的循环盖在各自的 payload 上，
+    本层不重盖。`req.attempt` 只服务于**没有 `calls` 的旧式单条账**
+    （`THINK` 那条链原文用它记"这是第几次成功"），与 `req.calls` 互斥使用。
 
-    前置条件：req.source、req.call 非 None。
+    前置条件：req.source 非 None 且 req.calls 非空。
     """
-    call: ModelCall = req.call
-    payload = dict(call.payload)
-    if req.attempt is not None:
-        payload = _tag_attempt(payload, req.attempt)
-    events = [(EventType.MODEL_CALL, req.source, payload)]
-    if call.error_kind:
-        events.append(
-            (
-                EventType.ERROR,
-                req.source,
-                {
-                    "kind": call.error_kind,
-                    "reason": call.error,
-                    "attempt": payload.get("attempt", ""),
-                },
+    assert req.calls, "model_call rendered without any calls"
+    events: list[RenderedEvent] = []
+    for call in req.calls:
+        payload = dict(call.payload)
+        if req.attempt is not None:
+            payload = _tag_attempt(payload, req.attempt)
+        events.append((EventType.MODEL_CALL, req.source, payload))
+        if call.error_kind:
+            events.append(
+                (
+                    EventType.ERROR,
+                    req.source,
+                    {
+                        "kind": call.error_kind,
+                        "reason": call.error,
+                        "attempt": payload.get("attempt", ""),
+                    },
+                )
             )
-        )
     return events
 
 
@@ -230,7 +236,7 @@ def judge_call(req: FromHarnessToTraceToolAppendReq) -> list[RenderedEvent]:
     **判定依据（`why`）在这里留档**：成功率是要报的数字，每一个 True
     都得说得出依据。依据跟着账单走，EPISODE_END 不再重复存。
 
-    前置条件：req.call、req.depth、req.why 非 None。
+    前置条件：req.calls、req.depth、req.why 非 None。
     """
     events = model_call(req)
     return [
@@ -240,11 +246,11 @@ def judge_call(req: FromHarnessToTraceToolAppendReq) -> list[RenderedEvent]:
 
 
 def verify_call(req: FromHarnessToTraceToolAppendReq) -> list[RenderedEvent]:
-    """校验器（`Brain.verify_and_summarize`）的账单，多记一份结构化
+    """校验器（`Brain.verify()`）的账单，多记一份结构化
     `verdicts`——每条 step 记忆判没判、为什么，结构化落 trace 免去对
     `raw` 文本的反解析（背景见 `CHANGELOG.md` 2026-09-02 条目）。
 
-    前置条件：req.call、req.verdicts 非 None。
+    前置条件：req.calls、req.verdicts 非 None。
     """
     verdicts: list[StepVerifyVerdict] = req.verdicts
     rendered = json.dumps([v.model_dump() for v in verdicts], ensure_ascii=False)
@@ -255,21 +261,93 @@ def verify_call(req: FromHarnessToTraceToolAppendReq) -> list[RenderedEvent]:
     ]
 
 
-def decision_failed(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
-    """重试用尽时的那条错误事件。
+def summary_call(req: FromHarnessToTraceToolAppendReq) -> list[RenderedEvent]:
+    """蒸馏器（`Brain.summarize()`）的账单。
 
-    前置条件：req.call 非 None（最后一次失败的账）。
+    **归 `Source.MEMORY` 而不是 `Source.VERIFY`**：拆成两跳之后校验器和蒸馏器
+    是两次独立调用，蒸馏属于"记忆子系统在做什么"（跨局摘要这条模型调用），
+    跟校验是两个关注点。混进 VERIFY 的话"校验器平均成本/失效率"这个数字
+    会再被写摘要的 token 污染——这正是拆分的理由。
+
+    前置条件：req.calls 非 None。
     """
-    last: ModelCall = req.call
+    events = model_call(req)
+    return [(event_type, Source.MEMORY, payload) for event_type, _source, payload in events]
+
+
+_LINK_NAME: dict[str, str] = {
+    Source.DECISION: "decide",
+    Source.PLAN: "plan",
+    Source.JUDGE: "judge",
+    Source.VERIFY: "verify",
+    Source.MEMORY: "summarize",
+}
+"""`Source` → 链路名，**payload 的 `source` 字段的唯一真源**。
+
+链路名必须与 `BrainTool._attempt_loop("…")` 的实参、以及
+`*AttemptFailed` 的默认 `source` 逐字相同——它们是同一个东西
+（`MaxRetriesExceeded.source`），**分两处写就会静默漂移**。
+
+这里从 `Source` 派生而不是各处硬编码，是因为 `Source` 已经是"这条链路归哪一层"
+的既有真源，链路名只是它的另一个拼法（注意唯独 `MEMORY` → `summarize` 不同名，
+跨局摘要归记忆层）。
+"""
+
+
+def _link_failed(
+    req: FromHarnessToTraceToolAppendReq, source: str
+) -> RenderedEvent:
+    """节点失败（重试预算耗尽）的**统一渲染**：五条链路共用这一个形状。
+
+    **只回答"这个节点完了、为什么"，不带账。**（0913 拍板）
+
+    账（`MODEL_CALL`）与失败态是两件不同的事：前者回答"花了多少钱、每次模型
+    吐了什么"，重试几次就有几条；后者回答"这个节点放弃了"。以前
+    `decision_failed` 用 `calls=[last]` 把账的尾巴塞进失败事件里，只为渲染出
+    `last: "ParseFailure: ..."` 一行——而那句话本就从异常上取得到
+    （`exc.last_reason`），绕道又搬一条账进来，是同一份信息记两遍。
+
+    现在 `why` 由调用方从 `exc.last_reason` 填（不带账）。`source` 既是事件信封
+    的归属，也经 `_LINK_NAME` 派生 payload 里的链路名——**两者同一个入参**，
+    不给"信封归 A、payload 说 B"留出错的空间。
+
+    前置条件：req.why 非 None（`MaxRetriesExceeded.last_reason` 的原文）。
+    """
     return (
         EventType.ERROR,
-        Source.DECISION,
+        source,
         {
             "kind": "MaxRetriesExceeded",
             "reason": "max_retries_exceeded",
-            "last": f"{last.error_kind}: {last.error}",
+            "source": _LINK_NAME[source],
+            "last": req.why or "",
         },
     )
+
+
+def decision_failed(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
+    """决策节点重试预算耗尽。见 `_link_failed`。"""
+    return _link_failed(req, Source.DECISION)
+
+
+def plan_failed(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
+    """规划节点重试预算耗尽。见 `_link_failed`。"""
+    return _link_failed(req, Source.PLAN)
+
+
+def judge_failed(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
+    """判定节点重试预算耗尽。见 `_link_failed`。"""
+    return _link_failed(req, Source.JUDGE)
+
+
+def verify_failed(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
+    """校验节点重试预算耗尽。见 `_link_failed`。"""
+    return _link_failed(req, Source.VERIFY)
+
+
+def summarize_failed(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
+    """蒸馏节点重试预算耗尽。见 `_link_failed`（`Source` 归 `MEMORY`，链路名仍 `summarize`）。"""
+    return _link_failed(req, Source.MEMORY)
 
 
 # ---- 一步之内的各类事件 ----
@@ -752,39 +830,3 @@ def _render_goal_stack(goals: list[Goal]) -> str:
     两者的读者和用途都不一样，没必要共用一份格式。
     """
     return " > ".join(f"[{depth}]{g.goal}" for depth, g in enumerate(goals))
-
-
-def checkpoint_save(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
-    """存档发生的接缝标记——**与 `checkpoint_restore` 对称**。
-
-    没有它，存档端在事件流里是不可见的：`resume()` 有 `CHECKPOINT_RESTORE`、
-    存档端一条没有，恢复点可见、存档点不可见；而 replay/统计要按存档切段，
-    只能去反推存档文件的 step。挂 `LIFECYCLE` + `HARNESS`，与
-    `checkpoint_restore`/`step`/`episode_start` 同族，量级是**链边界一条**（不是每键）。
-
-    **不重复存游标**：存档的 `(run_id, episode_id, step)` 就是它的坐标，全在信封里；
-    那条事件自己的 `event_id` 也已经说明了它落在时间线的哪一格。
-
-    前置条件：req.saved_step 非 None。
-    """
-    return (
-        EventType.LIFECYCLE,
-        Source.HARNESS,
-        {"kind": "checkpoint_save", "step": str(req.saved_step)},
-    )
-
-
-def checkpoint_restore(req: FromHarnessToTraceToolAppendReq) -> RenderedEvent:
-    """恢复发生的接缝标记（PLAN_checkpoint §5 步骤 9）——replay/统计据此
-    识别时间线在此处接续，此前同号的废弃数据已在 voided 归档。
-    """
-    return (
-        EventType.LIFECYCLE,
-        Source.HARNESS,
-        {
-            "kind": "checkpoint_restore",
-            "restored_episode_id": req.restored_episode_id or "",
-            "restored_step": str(req.restored_step if req.restored_step is not None else -1),
-            "cursor": str(req.cursor if req.cursor is not None else -1),
-        },
-    )

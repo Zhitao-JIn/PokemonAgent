@@ -19,16 +19,14 @@ from __future__ import annotations
 
 import base64
 import pathlib
+from dataclasses import dataclass
 
 from pyboy import PyBoy
 
-from dataclasses import dataclass
+from pokemon_agent.tools.prompts import load as load_prompt
+from pokemon_agent.world import VisionDescribeReq, VisionProvider
 
-from pokemon_agent.errors import PerceptionAttemptFailed
-from pokemon_agent.prompts import load as load_prompt
-from pokemon_agent.providers import VisionProvider
-from pokemon_agent.schemas.providers import VisionDescribeReq
-
+from .errors import PerceptionAttemptFailed
 from .frame_slot import FrameSlot
 from .interface import OVERLAY_ACTIONS, Facts, Observation, Perceived, ScreenState, TerrainMap
 from .interface.domain import terrain_legend
@@ -250,29 +248,6 @@ class PyBoyWorld:
         self._task = _Task(task_id, goal, success_criteria, max_steps, initial_state_hint)
         self._closed = False
 
-    def set_task(
-        self,
-        *,
-        task_id: str,
-        goal: str,
-        success_criteria: str,
-        max_steps: int,
-        initial_state_hint: str = "",
-    ) -> None:
-        """只挂任务标记，**不动模拟器状态**——`reset()` 步骤 2 单独拎出来。
-
-        用于 checkpoint 恢复：`load_state_bytes()` 已经把模拟器摆到了正确的
-        那一帧，这里不需要（也不能）再走 `reset()` 的步骤 1（重新读档/空转），
-        只需要把 `_task`/`_closed` 补上——它们是纯 Python 记账，不在存档字节里，
-        `load_state_bytes()` 管不到（见 `episode_harness.resume()` 的调用点）。
-
-        前置条件：max_steps > 0；调用前模拟器已经处于正确帧（`load_state_bytes()`
-        或紧随其后的一次 `reset()`）。
-        """
-        assert max_steps > 0, f"max_steps must be > 0, got {max_steps}"
-        self._task = _Task(task_id, goal, success_criteria, max_steps, initial_state_hint)
-        self._closed = False
-
     def all_actions(self) -> list[str]:
         """全部动作名，与状态无关。掩码是 harness 的事，不在这里做。
 
@@ -379,9 +354,32 @@ class PyBoyWorld:
         # images 存 base64 字符串（与 `StepMemory.before_frame`/`after_frame`
         # 统一格式，见该字段文档）；这里是唯一产出原始字节的地方，编码就在这
         # 做——下游不用关心谁该编码。
-        r = self._vision.describe(
-            VisionDescribeReq(images=[base64.b64encode(png).decode()], prompt=prompt)
-        )
+        #
+        # **把 `describe()` 的失败收编成本层的一次尝试失败**（0913 深夜十一）：
+        # 实现（`brain/providers.py` 的 `_MultimodalMixin`）在"图片没真送到"时抛
+        # `ImageNotDelivered`；本层的契约只认 `PerceptionAttemptFailed`
+        # （见 `world/interface/world_port.py` 的失败段）。**world 不 import brain
+        # 那个类**——它不关心上游抛的是什么名字，只知道"这一次没拿到描述"，
+        # 于是就地包装成自己的词汇，把原因文本带过去。
+        # 这样做的收益：`ImageNotDelivered` 可以安心归 brain（brain 才拷得走），
+        # 而 world 这条链的失败出口始终只有 `PerceptionAttemptFailed` /
+        # `PerceptionFailure` 两个（harness 的 `perceive_with_retry` 只接前者）。
+        try:
+            r = self._vision.describe(
+                VisionDescribeReq(images=[base64.b64encode(png).decode()], prompt=prompt)
+            )
+        except PerceptionAttemptFailed:
+            raise
+        except Exception as exc:  # noqa: BLE001  上游网关/实现的任何失败都是"这次没读出来"
+            raise PerceptionAttemptFailed(
+                {
+                    "ok": "False",
+                    "raw": "",
+                    "prompt": prompt,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            ) from exc
+
         screen = parse_screen(r.text)
         call = {
             "input_tokens": str(r.input_tokens),
@@ -546,29 +544,6 @@ class PyBoyWorld:
     def stop(self) -> None:
         """关掉模拟器。"""
         self._pyboy.stop()
-
-    def save_state(self, path: str) -> None:
-        """把模拟器状态存成一个文件。"""
-        target = pathlib.Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("wb") as handle:
-            self._pyboy.save_state(handle)
-        assert target.is_file(), f"save_state() did not create {target}"
-
-    def save_state_bytes(self) -> bytes:
-        """把模拟器状态存成字节串（checkpoint 每步世界快照用，
-        见 PLAN_checkpoint §2 三件套）。"""
-        import io as _io
-
-        buffer = _io.BytesIO()
-        self._pyboy.save_state(buffer)
-        return buffer.getvalue()
-
-    def load_state_bytes(self, data: bytes) -> None:
-        """从字节串恢复模拟器状态（checkpoint 恢复用）。"""
-        import io as _io
-
-        self._pyboy.load_state(_io.BytesIO(data))
 
     def evolve(self, frames: int) -> None:
         """无输入推进 N 帧——世界自己演化（音乐、动画、NPC 走动），不感知。

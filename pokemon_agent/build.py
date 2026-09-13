@@ -13,9 +13,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from pokemon_agent.brain import Brain
 from pokemon_agent.harness import (
     AutoContinueReviewer,
     HarnessDeps,
@@ -23,8 +20,14 @@ from pokemon_agent.harness import (
     RunDataCenter,
     RunHarness,
 )
-from pokemon_agent.providers import FastEmbedReranker, FastEmbedText
-from pokemon_agent.tools import BrainTool, GameTools, MemoryTool, TraceTool
+from pokemon_agent.memory import FastEmbedReranker, FastEmbedText
+from pokemon_agent.tools import (
+    BrainTool,
+    GameTools,
+    MemoryTool,
+    TraceTool,
+    build_vision_provider,
+)
 from pokemon_agent.trace import LocalTrace
 from pokemon_agent.world import PyBoyWorld
 
@@ -68,12 +71,16 @@ def build_real(
     这里和 `reviewer`——两边才是在读写同一份状态，不传就各自新建一个，
     互不相干。
     """
-    from pokemon_agent.providers import ArkProvider, QwenProvider
-
+    # **world 的视觉 provider 也不在这里造**（0913 深夜九）：它由 tool 层的
+    # `build_vision_provider()` 造——"世界的感知要一个 Qwen 实现、temperature
+    # 钉死在 0"是接线知识，跟 brain 那四个 provider 的接线同属一类，
+    # 收在 tool 层离消费者近。装配点只递型号名，**不再 import
+    # `pokemon_agent.brain.providers`**（那是"只有 tool 层依赖 brain"这条命题
+    # 此前唯一漏掉的一处）。
+    #
     # temperature 钉死在 0：感知是抽取不是创作，同一张图两次读出不同结果是
-    # 纯噪声（`QwenProvider` 不自带默认值，每次构造都要显式给，见该类
-    # `__init__` 的 docstring）。
-    vision = QwenProvider(model=vision_model, temperature=0.0)
+    # 纯噪声（默认值已保证，这里显式写出来是给读代码的人看）。
+    vision = build_vision_provider(model=vision_model, temperature=0.0)
 
     # PyBoy 模拟器 + 视觉感知的粘合层
     world = PyBoyWorld(rom, vision, state_path=state_file, watch=watch)
@@ -83,7 +90,6 @@ def build_real(
     data_center = data_center or RunDataCenter()
     trace = LocalTrace(
         run_id=run_id,
-        resume_after_event_id=resume_cursor,
         event_sink=data_center.publish_event,
     )
     # harness 的记账通道：组装 req → tool 按 kind 渲染 payload → 落盘
@@ -98,44 +104,35 @@ def build_real(
         reranker_provider=FastEmbedReranker(),
     )
 
-    # 存档根目录（PLAN_checkpoint）：独立于 trace 的落盘目录（0909 起不再是
-    # trace_data 下的子目录）。**步 5b 起它只是「一条路径」**——存档读写归
-    # `episode/episode_state.py` 的 `EpisodeCheckpoint`（自己拼这个根下的
-    # `step/<episode_id>/<step>.{state,json}`），不再有一根 checkpoint Port。
-    checkpoint_root = Path("checkpoints") / run_id
-
-    # 决策走 DashScope（Qwen），判定/校验走火山方舟（豆包）——两条链路
-    # 不同供应商。
+    # **brain 的四个 provider 不在这里造**（2026-09-13，S6）：哪个技能接哪家
+    # 厂商、哪个位置必须是豆包型号名、temperature 分几层，都是 brain 那条链路的
+    # 接线知识，收在 `brain/build_llm_providers.py` + `BrainTool.build()`。
+    # 本装配点只递**型号名**这几个裸字段（0913 深夜九：此前递的是
+    # `BrainLlmConfig`，需要 `from pokemon_agent.brain import BrainLlmConfig`
+    # ——一行非 tool 层的 brain import；改成裸字段后本文件对 brain 零 import）。
+    #
+    # 供应商与模型按"图费结构"分岗（0908 实测，见 CHANGELOG）：
+    # - decide/judge 走 qwen3.8-max（DashScope）：图像按分辨率计费，
+    #   原生 160×144 每张仅 74 tok（judge 每步带 2-3 张历史帧）；
+    # - verify/plan 留在火山方舟（豆包）：豆包图像按张计费
+    #   （实测恒定 1294 tok/张，与分辨率无关），verify 的多帧拼接成一张后
+    #   图费与帧数解耦（0909 去掉 2x 上采样：不省图费、省模型显存压力）；
+    #   plan 将来带跨局历史图片时同理受益。verify/plan 的型号名**必须是豆包名**
+    #   （带日期后缀），传 Qwen 型号名会直接 404，不是"退化成纯文本"这种优雅失败。
     #
     # temperature 分层（0907 实测依据，见 CHANGELOG）：judge/verify/plan 是
     # 判定与结构化输出任务，确定性优先 → 0；decision 保留 0.3 的少量随机
     # （完全归零会让同一局面反复交出同一动作，探索多样性靠它兜底，
-    # 死循环另有 stall 检测与 judge 兜底）。doubao 实测理睬 temperature
-    # （temp=0 三次输出全同、temp=1 出现变化），不是被服务端强制覆盖的摆设。
-    brain = Brain(
-        decide_llm=QwenProvider(model=text_model, temperature=0.3, max_tokens=max_tokens),
-        judge_llm=QwenProvider(model=judge_model, temperature=0.0, max_tokens=max_tokens),
-        # verify（step 校验）单独一个 provider 实例（豆包 + 多帧拼接，见
-        # `prompts/verify_and_summarize.py` 的 `stitch_frames`）——回退链只落
-        # 豆包默认型号：judge_model 已换成 Qwen 型号名，传给 `ArkProvider`
-        # 会 404，不能再作 verify/plan 的回退。
-        verify_llm=ArkProvider(
-            model=verify_model or "doubao-seed-2-1-pro-260628",
-            temperature=0.0,
-            max_tokens=max_tokens,
-        ),
-        # run 级规划器（plan_once）同样单独一个 provider 实例——回退链落
-        # judge_model（跟 verify 同理）。这是同一个 `Brain` 实例的第四个技能，
-        # 不是另开一条依赖：episode 内的决策和 run 级规划共享这一个大脑。
-        plan_llm=ArkProvider(
-            model=plan_model or "doubao-seed-2-1-pro-260628",
-            temperature=0.0,
-            max_tokens=max_tokens,
-        ),
+    # 死循环另有 stall 检测与 judge 兜底）。这三个值住在
+    # `brain/build_llm_providers.py` 的构造语句里（常量不是旋钮），
+    # 选型的入口收敛到本方法的关键字参数。
+    brain_tool = BrainTool.build(
+        text=text_model,
+        judge=judge_model,
+        verify=verify_model or "doubao-seed-2-1-pro-260628",
+        plan=plan_model or "doubao-seed-2-1-pro-260628",
+        max_tokens=max_tokens,
     )
-
-    # harness 与大脑之间那层翻译壳：两跳契约独立维护，Brain 只在这里出现
-    brain_tool = BrainTool(brain)
 
     # `data_center` 在这里先落实成一个真实例（不传就自己建一个）——
     # episode 的 `decide/think_action`（human_note 槽）和 run 图的 `plan`/`review`
@@ -144,13 +141,12 @@ def build_real(
     # 出来的实例不会是节点手里这份，两边就断开了）。
 
     # **全图唯一的 context**（D3/F10）：episode 子图的 21 个节点、run 图的 6 个节点、
-    # 图外两个入口（`episode_entry.run_new`/`run_resume` 与 `run_entry.new_run`/
-    # `resume_run`）共用它一份。同一个 trace 实例注入两端——episode 写事件、run 级按
-    # 类型 mask 读；同一个 data_center 实例注入两端——episode 消费 human_note 槽、
-    # run 级消费 goals/review 两槽。
+    # 图外两个入口（`episode_entry.run_new` 与 `run_entry.new_run`）共用它一份。同一个
+    # trace 实例注入两端——episode 写事件、run 级按类型 mask 读；同一个 data_center
+    # 实例注入两端——episode 消费 human_note 槽、run 级消费 goals/review 两槽。
     #
     # **两个行为开关也住这里**（步 4 归位）：它们是"这次 run 怎么跑"的构造期决定，
-    # 读它的是 `run/plan.py`。此前它们是 `RunHarness.__init__` 的参数、与 deps 各存
+    # 读它的是 `run/nodes/plan.py`。此前它们是 `RunHarness.__init__` 的参数、与 deps 各存
     # 一份——现在只有一个来源。
     deps = HarnessDeps(
         game=game,
@@ -159,7 +155,6 @@ def build_real(
         trace=trace_tool,
         reviewer=reviewer or AutoContinueReviewer(),
         data_center=data_center,
-        checkpoint_root=checkpoint_root,
         run_id=run_id,
         # `False`：plan 不自动压栈，新目标改走人工通道 `POST /runs/{id}/goals`。
         auto_push_goals=auto_push_goals,

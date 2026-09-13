@@ -19,8 +19,7 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq
-from pokemon_agent.trace import TraceKind
+from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
 
 from ...deps import HarnessDeps
 from ..episode_frames import frame_b64
@@ -38,8 +37,7 @@ def record_observation(
       `deps.pending_frames` 取，取走即删；
     - **上一条链链尾那一帧**：链尾键自己那份挂在它的 `AFTER_ACTION` 上，这一份由
       `frames.frame_b64` **按 event_id 读回**（v7 取代 v5 的"多带一份"）——好让链首
-      这一页自带"大脑决策时看到的世界"。恢复后的链首同理（v6：登记表由
-      `entry.prepare_resume` 从存档回载，不再有"表是空的"这个缺口）。
+      这一页自带"大脑决策时看到的世界"。
 
     PNG 进不了领域模型 `Observation`，所以两者都要在挂账这一刻现取现用。
 

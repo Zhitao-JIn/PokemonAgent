@@ -42,7 +42,7 @@ const MAIN_END = 17;
  * 写了对象时才发 `OBJECT_MEMORY_WRITE`；`note` 给无事件节点一句说明。
  */
 const CHAIN_PHASES: { key: string; label: string; note?: string; fromKey?: string }[] = [
-  { key: "save_checkpoint", label: "save_checkpoint", note: "链边界存一份（世界快照 + state + 游标）并写 CHECKPOINT_SAVE；未接 checkpoint 时空转、不写账" },
+  { key: "save_checkpoint", label: "save_checkpoint", note: "链边界占位：存档链已删，此格空转、不写账（保留位置与名字）" },
   { key: "record_observation", label: "record_observation", note: "本链开局帧登记成 OBSERVE（带帧）；它不感知" },
   { key: "judge", label: "judge" },
   { key: "get_action_space", label: "get_action_space", note: "零成本事件：这一步允许的动作名" },
@@ -81,7 +81,6 @@ function phaseKeyOf(t: TraceEvent): string | null {
   switch (t.type) {
     case "lifecycle":
       if (kind === "step") return "close_step";
-      if (kind === "checkpoint_save") return "save_checkpoint";
       // 本局结算由 `close_episode` 写（v8 之前这一步在图外、没有节点可归）。
       if (kind === "episode_end") return "close_episode";
       return null;

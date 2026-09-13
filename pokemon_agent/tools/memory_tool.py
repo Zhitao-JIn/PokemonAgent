@@ -35,8 +35,7 @@ from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
-from pokemon_agent.memory import MemoryStore
-from pokemon_agent.providers import EmbeddingProvider, RerankerProvider
+from pokemon_agent.memory import EmbeddingProvider, MemoryStore, RerankerProvider
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolAppendObjectEventsReq,
     FromHarnessToMemoryToolQueryEpisodeStepsReq,
@@ -54,8 +53,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolStoreEpisodeStepReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryResp,
-    FromHarnessToMemoryToolVoidMemoryAfterReq,
-    FromHarnessToMemoryToolVoidMemoryAfterResp,
 )
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, StepMemory
 
@@ -95,11 +92,6 @@ def _normalize(scores: list[float]) -> list[float]:
     if hi == lo:
         return [1.0 for _ in scores]
     return [(s - lo) / (hi - lo) for s in scores]
-
-
-def _step_within(step: int, keep_step: int) -> bool:
-    """一条记录是否落在 void 的保留区间内（`step <= keep_step`；-1 = 整局废弃）。"""
-    return step <= keep_step
 
 
 class MemoryTool:
@@ -305,6 +297,14 @@ class MemoryTool:
         worst = min(pool, key=lambda uq: uq[1])[0]
         self._summaries.archive_many([worst], self._voided_dir() / "episode_memory")
 
+    def _voided_dir(self) -> Path:
+        """归档根：`memory/voided-<ts>/`——`_trim_summaries` 淘汰最差的摘要时用它。
+
+        独立于任何恢复语义：本仓已无 checkpoint 恢复（见 `CHANGELOG.md` 本次
+        条目），这个目录现在只服务"容量淘汰时留档"这一条路径。
+        """
+        return self._memory_root / f"voided-{time.strftime('%Y%m%d-%H%M%S')}"
+
     # ---- 语义记忆：object（交互事件流的透传，判定在 harness） ----
 
     def query_object_events(
@@ -368,98 +368,7 @@ class MemoryTool:
                 continue
         return sorted(events, key=lambda e: e.step)
 
-    # ---- checkpoint 恢复：废弃记忆归档（PLAN_memory_trace_layout §7 步骤 3） ----
-
-    def void_memory_after(
-        self, req: FromHarnessToMemoryToolVoidMemoryAfterReq
-    ) -> FromHarnessToMemoryToolVoidMemoryAfterResp:
-        """把一局 `req.step` 之后不再成立的记忆**归档**（checkpoint 恢复）。
-
-        圈定集合是 tool 层的职责：等值筛（`episode_id`，索引层）+ 数值收尾
-        （`step > keep_step`，领域知识——索引不理解"大于"），再交给 store 搬走。
-        搬进 `memory/voided-<ts>/<kind>/`，不 unlink：被 resume 废弃的分支也留档可查。
-        归档即摘索引，所以盘上索引始终对得上账、不需要额外重建。
-
-        三类进作废范围，筛法各不相同：
-
-        - `step_memory` / `object_memory`：`episode_id` 等值 + `step > keep_step`。
-        - `episode_memory`：只按 `episode_id`，**不做 step 筛**——局摘要由局收尾
-          （verify → `write_episode`）蒸馏产生，而局收尾发生在本局最后一个
-          checkpoint **之后**，所以只要在做本局的恢复（`keep_step` 恒 ≤ 末步），
-          这份摘要描述的就是"废弃时间线跑出来的那一局结果"，必须跟着归档。
-          漏掉它，重跑会落下第二条同 `episode_id` 的摘要，而 `query_episode_summaries`
-          按 `run_id` 等值筛时两条都进候选（0909 曾以"废弃窗口内没有新摘要"为由
-          排除本类，0910 真机恢复实测 4/4 复现该前提不成立）。
-        - `knowledge` 不进：全局先验、不属任何一局，没有 `episode_id`。
-
-        返回各类被归档的条数。整局废弃时传 `req.step=-1`。
-        """
-        episode_id, keep_step = req.episode_id, req.step
-        # 归档目录一次算好：三类记录必须落在**同一个** voided-<ts>/ 里，逐类调
-        # `_voided_dir()` 会在跨秒时切成两个目录（读端按目录 diff 判断"本次归档了
-        # 什么"的脚本会因此漏看）。
-        voided_dir = self._voided_dir()
-        step_memories_voided = self._void_kind(
-            self._steps, episode_id, keep_step, self._step_max, voided_dir
-        )
-        object_events_voided = self._void_kind(
-            self._objects, episode_id, keep_step, self._object_max, voided_dir
-        )
-        episode_memories_voided = self._void_episode_summaries(episode_id, voided_dir)
-        return FromHarnessToMemoryToolVoidMemoryAfterResp(
-            removed={
-                "step_memories": step_memories_voided,
-                "object_events": object_events_voided,
-                "episode_memories": episode_memories_voided,
-            }
-        )
-
-    def _void_kind(
-        self,
-        store: MemoryStore,
-        episode_id: str,
-        keep_step: int,
-        max_cache: dict[str, int],
-        voided_dir: Path,
-    ) -> int:
-        """等值筛（episode_id）→ 数值筛（step > keep_step）→ 归档。
-
-        前置条件由调用方保证：episode_id 是目标局或废弃局，voided_dir 是同一次
-        `void_memory_after` 算好的归档根。归档后把该局的 max 缓存退回保留区间的
-        最大 step——恢复后同局重跑的 step 号自然过闸。
-        """
-        doomed: list[str] = []
-        survivors_max = 0
-        for record_id, _meta, payload, _text in store.get_many(
-            store.filter({"episode_id": episode_id})
-        ):
-            step = int(payload.get("step", 0))
-            if _step_within(step, keep_step):
-                survivors_max = max(survivors_max, step)
-            else:
-                doomed.append(record_id)
-        moved = store.archive_many(doomed, voided_dir / store.kind)
-        max_cache[episode_id] = survivors_max
-        return moved
-
-    def _void_episode_summaries(self, episode_id: str, voided_dir: Path) -> int:
-        """归档该局的跨局摘要——**整条搬走，不做 step 筛**（摘要没有 step 概念）。
-
-        局摘要在局的收尾蒸馏，而收尾永远晚于该局最后一个 checkpoint：恢复任意
-        一步都意味着废弃分支里那次收尾作废，它写下的摘要必须跟着走。不搬的话
-        重跑会落下第二条同 `episode_id` 的记录，同一局在检索口就有了两份互相
-        矛盾的账。这里不过 `_void_kind`，因为没有 step 可筛、也没有 max 缓存
-        要维护（摘要不参与 step 单调性前置）。
-        """
-        doomed = self._summaries.filter({"episode_id": episode_id})
-        return self._summaries.archive_many(doomed, voided_dir / self._summaries.kind)
-
-    def _voided_dir(self) -> Path:
-        """废弃归档根：`memory/voided-<ts>/`（每次 void 一个新目录，先归档后继续）。"""
-        return self._memory_root / f"voided-{time.strftime('%Y%m%d-%H%M%S')}"
-
     # ---- 语义记忆：知识库（和坐标无关的通用先验，混合检索） ----
-
     def query_knowledge(
         self, req: FromHarnessToMemoryToolQueryKnowledgeReq
     ) -> FromHarnessToMemoryToolQueryKnowledgeResp:

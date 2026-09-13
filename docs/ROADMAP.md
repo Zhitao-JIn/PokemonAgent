@@ -31,6 +31,39 @@
 >    `POKEMON_AUTO_PUSH_GOALS` / `POKEMON_AUTO_DECIDE_DONE` 默认 **false**
 >    （plan 不再自主压栈、也不再自主收尾），`POKEMON_REVIEW_TIMEOUT` 默认
 >    **60s**。凡正文里写"默认 0 / 默认 5 / plan 会自动压栈"的都是当时值。
+> 6. **0913：`pokemon_agent/providers/` 代码层整包解散**——协议的搬迁
+>    （0911～0913）走完之后，实现这次跟着协议走。判据仍是**谁消费**：
+>    `QwenProvider`/`ArkProvider`/`DeepSeekProvider` → `brain/providers.py`
+>    （brain 是主要消费者，四链路接线的知识装在 `brain/build_llm_providers.py`）；
+>    `FastEmbedText`/`FastEmbedReranker` → `memory/fastembed_text.py` /
+>    `fastembed_reranker.py`（只被 memory 检索链路消费）。
+>    **凡正文里写"全部住 `providers/`""直连只发生在 `providers/` 这一层"
+>    "`providers` 是底层公共库"的，都是当时口径。** `schemas/providers/`
+>    那四个信封（`LlmComplete*`/`VisionDescribe*`）也随之一并解散（0913 深夜十一，
+>    见下条）。
+>    连带：`world → brain` 的横向依赖**没有因此产生**（`world/` 零 import，
+>    实现实例由装配点 `build.py` 递进去），循环导入随之消失（详见 CHANGELOG
+>    0913（54））。
+> 7. **0913：`brain` 的依赖边界收窄到可机械核对**——`brain/interface/` 零重依赖
+>    （`BrainLlmConfig` 从工厂模块搬来），`build.py` 对 brain **零 import**
+>    （`BrainTool.build(text=…)` 与 `tools/vision_factory.build_vision_provider()`
+>    两个接线工厂收进 tool 层）。**可核对的那条是：对 brain 的实现依赖只出现在
+>    `tools/`。** 凡正文里写"装配点 import `brain.providers` / `QwenProvider`"
+>    的都是当时口径。
+> 8. **0913 深夜十一：`brain` 的对外依赖归零——"可作第三方整体拷走"字面成立**。
+>    上一条当时说"`brain` 仍依赖 `errors` 与 `schemas.providers`、且不能搬进
+>    brain"，**已被推翻**：判据从"谁消费"改成"brain 能否整体拷走"。
+>    (a) 异常自成一根 `BrainError(Exception)`，**不再继承 `AgentError`**——
+>    实测那些异常全被 `BrainTool._attempt_loop` 接住、翻译成 `MaxRetriesExceeded`
+>    才上抛，**走不到 harness 的捕获点**，继承只是仪式；`ImageNotDelivered`
+>    随之从顶层搬进 `brain/errors.py`。world 侧的感知链改用就地
+>    `except Exception` 包成自己的 `PerceptionAttemptFailed`。
+>    (b) 四封补全信封搬进 `brain/schemas/`（provider 已全搬进来，它们就是
+>    **brain 的内部协议**）；world 复制一份自己的 `VisionDescribe*`
+>    （`world/interface/domain/vision_describe.py`），两份保持同构。
+>    结果：**brain 的 `pokemon_agent.*` 外部 import 为零**，只剩标准库 +
+>    `pydantic` + `PIL`（AST 审计）。"继承 `AgentError`"的新判据：**只有真的
+>    会走到 harness 捕获点的模块异常才继承它**——world 的继承，brain 的不继承。
 
 ## 状态图例
 
@@ -854,7 +887,13 @@ trace `Source` / schema 类名）各起了一个名字，读代码时得靠"这�
 `docs/ROADMAP.md` 状态本条之前一直停在"📋 未开始"没跟着代码更新，这次一并
 修正。
 
-### 16. ✅ 存档/checkpoint 机制——run/episode/step 三级恢复，PLAN_checkpoint.md v4 已实施
+### 16. ↩️ 存档/checkpoint 机制——**已于 2026-09-13 整体删除**（原为 run/episode/step 三级恢复）
+
+> **状态修正（2026-09-13）**：本条描述的存档/恢复机制已**整体删除**——`EpisodeCheckpoint`、
+> `save_checkpoint` 节点的存档实现、`prepare_resume`/`void_timeline`/`resume_run` 恢复链、
+> tool/Port 层的存档方法与 9 个专属信封、memory 归档与 trace 打标能力，全部清掉；
+> `save_checkpoint` 节点保留图上的位置与名字但内部空转。缘由与边界见 `CHANGELOG.md`
+> 2026-09-13 条目。下面正文是**历史留档**，不再代表现状。
 
 **0908 文档对齐**：本条曾长期停在"📋 0906 方案拍板，待实施"，但 0907 会话已
 经把完整方案（v4）落地并接线（详见 `docs/spec/harness/PLAN_checkpoint.md`——
@@ -1331,7 +1370,7 @@ JSONL 落盘格式怎么迁移到这套“uuid + 元数据字典 + payload”的
 | 缺口 | 影响 | 优先级 |
 |---|---|---|
 | ~~无依赖锁定（无 lock file）~~ → **已有 `uv.lock`**（0911 核对） | 依赖漂移风险缓解；待确认 CI/跑批是否真按 lock 安装 | **已闭合** |
-| prompt sha 没接进 trace（第 25⑥a） | 人要手工对照版本；且 `prompts/__init__.py` 的 docstring 声称"`PromptTemplate.sha` 进 trace"**是空头承诺**（0911 核实搜不到 `prompt_sha`） | 低 |
+| ~~prompt sha 没接进 trace（第 25⑥a）~~ | **0913 用户拍板取消**：不用 sha。`PromptTemplate.sha` 字段与"sha 进 trace"的 docstring 承诺一并删除——半成品比空头承诺诚实。归因需求改由"改 prompt 看 git diff"承担 | 已关闭 |
 | CI 到不了真实集成 | ROM 不进 git，CI 只能跑 mock 路径；**且 `tests/` 0910 已清空，CI 的 test 步骤现在是空跑** | 中（原"低"——空跑比跑 mock 更糟） |
 | **跑批入口不存在**（原"批次实验严格串行"） | 0910 删掉了 `manifest.py`/`run_all_tasks.py`/`run_episode.py`/`run_experiment.py`，`experiment/` 现在只有 `tasks.py` + 19 个钉死存档 + `real_check/`。**"一批要跑数小时"这个问题已经没有载体——连"跑一批"的入口都没有** | **高**（原"中，等 P0 做完再考虑"；性质从"慢"变成"没有"，第 3 条要重建的就是它） |
 | 没有跨批次回归对比 | 原 `eval_report.py` 只产出单批次报表，该工具已随 `evaluation/` 退役（第 27 条）；缺口本身依旧 | 低 |
@@ -1357,12 +1396,14 @@ JSONL 落盘格式怎么迁移到这套“uuid + 元数据字典 + payload”的
 >   已经和 0909 写作时不同——review 槽的 `PUSH` 决策已删、goals 只剩
 >   `push` + `read` 两个通道、还多了 human_note 槽。**对外暴露哪些端点，
 >   要以 0911 的实际槽位为准，不是以本段文字为准。**
-> - **⑥a（sha 进 trace）仍未做——0911 核实**：全项目搜不到 `prompt_sha`，
->   `PromptTemplate.sha` 只用在离线 `experiment/manifest.py`。
->   顺带登记一条**代码里的空头承诺**：`pokemon_agent/prompts/__init__.py`
->   的模块 docstring 写着"**可归因**：`PromptTemplate.sha` 进 trace。
->   跑出来的准确率是哪一版 prompt 的结果"——**这句话目前没有兑现**。
->   本次不动项目文件，只在此登记。
+> - **⑥a（sha 进 trace）已取消——0913 用户拍板**：0911 核实时发现全项目搜不到
+>   `prompt_sha`，`PromptTemplate.sha` 只用在离线 `experiment/manifest.py`，
+>   而 `pokemon_agent/tools/prompts/__init__.py` 的模块 docstring 却写着
+>   "**可归因**：`PromptTemplate.sha` 进 trace"——是**空头承诺**。
+>   0913 用户的决定是**不用 sha**：字段（`PromptTemplate.sha`）、
+>   `hashlib` 导入、`load()` 里的计算、docstring 那条承诺**全部删除**。
+>   prompt 的版本归因改由"改 prompt 就是一次 git diff"承担，
+>   不在运行时另记一份哈希。本条自此关闭。
 > - **①主框架瘦身要搬的不止两个方法**：正文写"`RunHarness.plan()` /
 >   `EpisodeHarness.judge()` 两个节点退化成调端口方法"，实际随着
 >   `verify_and_summarize` 的出现，至少还有第三处（校验+摘要那条链）。
@@ -1374,10 +1415,10 @@ a. 元数据查询、b. 相似度查询、c. wiki 类知识库（用户指定参
 agent 自动蒸馏成结构化互链 wiki 词条+知识图谱、自维护不用人工整理）；
 ③ plan 系统，独立出来、支持背景信息组装 + human review；④ judge 系统，
 同样独立、同样支持背景信息 + human review；⑤ A2A 系统，把现在的
-`RunDataCenter`（第 1 条）拆出来；⑥ prompt 管理与优化系统（0909 追加）——
-现在 `prompts/` 包只做到"版本化模板 + `PromptTemplate.sha`"，sha 没有进
-线上单次调用的 trace（只有离线 `experiment/manifest.py` 记一次性快照），
-也没有任何自动调优，这次要补这两块。**这次只定大方向和建议顺序，每一块
+`RunDataCenter`（第 1 条）拆出来；⑥ prompt 管理与优化系统（0909 追加）。
+**（0913 修订：原记载的"版本化模板 + sha 归因，sha 要进线上 trace"已被用户
+取消——`PromptTemplate.sha` 字段连同那条 docstring 承诺已删。⑥ 现在只剩
+"自动调优"一块。）** **这次只定大方向和建议顺序，每一块
 具体怎么改留到分别动手时再定**，写这条只是把方向和顺序记下来，不是开工。
 
 **跟现有条目的关系**（拆分不是从零开始，是把已经存在的接口边界拉开）：
@@ -1404,21 +1445,20 @@ agent 自动蒸馏成结构化互链 wiki 词条+知识图谱、自维护不用�
   先让它变成一个能被多个 client（`RunHarness`、`api.py`、以后可能的 plan/
   judge 独立服务）共同访问的边界（哪怕先只是本地 HTTP），协议细节等真的
   需要接第二个独立 agent 时再补。
-- ⑥prompt管理与优化：不是新起炉灶——`prompts/`包（版本化模板文件 + sha
-  归因）已经是"Agent 工程清单"里"三根缰绳"之一，这次是把它从"写代码时的
+- ⑥prompt管理与优化：不是新起炉灶——`prompts/`包（版本化模板文件）
+  已经是"Agent 工程清单"里"三根缰绳"之一，这次是把它从"写代码时的
   约定"补成"运行时可观测、可迭代"的独立系统。跟①③④都有交点：①③④拆分后
   各自新增的模型调用（PlanSystem/JudgeSystem 的端口方法）一样要走这套
-  sha 归因，不是各写各的。
+  约定，不是各写各的。**（0913 注：原设想的"sha 归因"这一半已取消，
+  见上表与下方 ⑥a——prompt 版本靠 git diff 追踪，不再在运行时记哈希。）**
 
-**建议顺序**：⑥（sha 进 trace 这一半）随时可以插队 → ② memory 补 wiki 腿
-→ ③+④ plan/judge 同批拆（背景信息组装+review 槽位公共骨架抽一次，两边套用）
-→ ① 主框架瘦身收尾 → ⑤ A2A 对外拆分 → ⑥（自动调优那一半）最后收尾。
+**建议顺序**：② memory 补 wiki 腿 → ③+④ plan/judge 同批拆（背景信息组装+review
+槽位公共骨架抽一次，两边套用）→ ① 主框架瘦身收尾 → ⑤ A2A 对外拆分 →
+⑥（自动调优那一半）最后收尾。
 理由：②是③④的地基（plan/judge 的背景信息组装要吃 memory 检索）；①天然是
 ③④做完之后的收尾动作；⑤涉及进程边界，最该等前四块内部形状稳定了再动；
-⑥拆成两半是因为两半的前置条件完全不同——"sha 进 trace"是个跟其他模块
-没有依赖关系的小改动，随时能做且越早做越早开始积累可比数据；"自动调优"
-依赖一个能打分的 eval 集（下面"怎么实现"细说），做起来意义不大，等前面
-几块都稳定、有真实数据可评估时再上最后收尾最合理。
+⑥只剩"自动调优"一半，它依赖一个能打分的 eval 集（下面"怎么实现"细说），
+等前面几块都稳定、有真实数据可评估时再上最合理。
 
 **怎么实现（简单描述，接口/schema 等真动手时再细化）**：
 
@@ -1448,12 +1488,8 @@ agent 自动蒸馏成结构化互链 wiki 词条+知识图谱、自维护不用�
   的 `/goals`/`/review`/`/note` 端点形状不用大改，只是背后从"直接调 Python
   对象"变成"`api.py` 和 `RunHarness` 都通过 HTTP 调同一个服务"，为以后接
   第二个独立 agent（比如独立部署的 plan 系统）铺路。
-- **⑥prompt 管理与优化**：分两半，前置条件完全不同。**a) sha 进 trace**——
-  `trace_render.model_call()` 的 payload 加一个 `prompt_sha` 字段（`Brain`
-  的四个方法调 `PromptTemplate` 时本来就拿得到 `.sha`，跟着 `ModelCall` 一起
-  交给 harness 记账即可，不用新读一次盘）；离线 `experiment/manifest.py`
-  现在做的"整份实验记一次 sha+text 快照"不变，两边共用同一份
-  `PromptTemplate.sha` 计算逻辑，不重复实现。**b) 自动调优**——前提是先有
+- **⑥prompt 管理与优化**：只剩"自动调优"一半（原 a) "sha 进 trace"已取消，
+  见上表与上方 ⑥a 注）。**b) 自动调优**——前提是先有
   一个能打分的 eval 集：Pokemon 对局的"赢没赢""拿到徽章没"这类信号本来就
   稀疏、延迟高，直接拿它当优化目标不现实，先要塑造成密集代理指标（比如
   借用现在 `real_check`/`knowledge_*` 短任务集的二元成败，或者对 `judge`/

@@ -17,12 +17,6 @@
 
 from __future__ import annotations
 
-import os
-import re
-import time
-from pathlib import Path
-from typing import Any
-
 from pydantic import BaseModel, Field
 
 from pokemon_agent.brain import (
@@ -44,13 +38,13 @@ class EpisodeRunState(BaseModel):
 
     分两组，但两组都在这里——分组只是为了读的人知道哪些跨步、哪些不跨：
 
-        身份    episode_id / task / step / episode_goals   跨步，checkpoint 要的就是它
+        身份    episode_id / task / step / episode_goals   跨步
         流转    observation / action_space / action / pending_observation /
                 step_episode_memories / global_episode_memories /
                 knowledge_semantic_memory / object_semantic_memory
                 单步内，从一个节点传到下一个
         决策    plan / pending_presses / pending_stop / plan_step_start   决策内小循环，
-                跨 1..N 步（随 checkpoint dump，恢复后接着把剩下的键按完）
+                跨 1..N 步（一次决策摊平成一串键，按完为止）
         结论    outcome   整局收尾，由 `close_episode` 写
 
     **`outcome` 在这里**（D2-④）：它是这一局的最终结论（success/steps/reason），
@@ -136,8 +130,8 @@ class EpisodeRunState(BaseModel):
     只有一个：`act` 每圈要拿它的 `thought` 去派生单键动作。
 
     **序列原文的权威位置仍是 trace**（`THINK` payload 的 `sequence`），这里存的
-    是执行期要用的那一份，不做任何对外承诺；恢复 checkpoint 时它随 dump 回来，
-    于是"按到一半被杀"能接着把剩下的键按完。
+    是执行期要用的那一份，不做任何对外承诺；它的生命周期就是"这一次决策"——
+    `close_step` 把队列按空后的下一圈会重新决策、覆盖它。
     """
     pending_presses: list[ActionSegment] = Field(
         default_factory=list,
@@ -160,7 +154,7 @@ class EpisodeRunState(BaseModel):
     给渲染/取窗用）。归属判据、以及"它为什么不是决策字段"，写在
     `StepMemory.plan_step_start` 上。
 
-    `None` 只在"从旧 checkpoint dump 恢复"时出现（那时还没有这个字段）；记忆侧
+    `None` 只在"从旧数据读回"时出现（那时还没有这个字段）；记忆侧
     按 `step` 兜底（一次决策一个键），执行不受影响。
     """
 
@@ -228,120 +222,3 @@ class EpisodeRunState(BaseModel):
     蒸馏什么都不喂。两者语义不同，不能互相替代
     （见 `MemoryToolPort.store_episode_summary`）。"""
 
-
-def safe_dirname(episode_id: str) -> str:
-    """`episode_id` 压成文件名安全的一段（与记忆层同一规则）。
-
-    checkpoint 归档（`episode_entry.void_timeline`）也要用它拼目录名，所以是
-    模块级公开函数，不是类里的私有件。
-    """
-    return re.sub(r"[^A-Za-z0-9_-]+", "_", episode_id).strip("_-") or "unknown"
-
-
-def _atomic_write_text(path: Path, text: str) -> None:
-    """临时文件 + rename 的原子写：写完即完整，崩溃最多少一个未 rename 的 tmp。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
-
-
-class EpisodeCheckpoint(BaseModel):
-    """**一份存档的全部内容**，也是它自己的读写器（原 `tools/checkpoint_tool.py` 的存/取两半）。
-
-    ## 为什么它不再是"一根 Port"
-
-    D9-v6：存档的读写不是一个**能力**——没有第二种存档后端、也没有"把它换成 mock"
-    的需求。它是"harness 自己的状态怎么落盘"这件事，所以跟状态模型住一起（本文件），
-    而不是作为外来的 Port 被注入。`HarnessDeps` 里只剩 `checkpoint_root` 一条路径的
-    身份；`save`/`load` 变成模型自己的 `write`/`read`。
-
-    ## 落盘布局（与 `checkpoint_tool.py` 时代一致，只有 json 键名变了）
-
-        <checkpoint_root>/step/<safe_dirname>/<step>.state   模拟器世界快照（二进制）
-        <checkpoint_root>/step/<safe_dirname>/<step>.json    这份模型（**提交点**）
-        <checkpoint_root>/voided-<ts>/                       废弃局的存档归档
-
-    `checkpoint_root` 是**整个 run 的目录**（`checkpoints/<run_id>/`），独立于
-    `trace_data/<run_id>/`：后者是"这个 run 的可观测事件流"（一条事件一个文件、
-    只写不删），前者是**可变的恢复状态**（会被覆盖、会被整目录搬走归档）。两者
-    语义不同，不该是同一棵树下的兄弟目录。
-
-    ## 世界快照为什么不进 json
-
-    `emulator_state` 是 `bytes`，进 json 要走 base64（体积 +33%、且人不可读）；
-    它又是**唯一不可从事件重建的东西**，单独一个 `.state` 二进制更直白。它标了
-    `exclude=True`——`model_dump_json()` 天然不含它，两个文件各装各的，`read()`
-    读回来时再配对。
-
-    **提交点是 `.json`**：先写 `.state`、后原子写 `.json`。中途 crash 留下的是
-    上一号有效存档（两个文件都齐的那一份），`read()` 按"成对存在 + 签名匹配"识别。
-
-    ## 为什么 run 级那一半是 dump，不是模型
-
-    判据是**谁解读谁内嵌**：`episode_state` 直接内嵌 `EpisodeRunState`（本层要解读
-    它、拿它进图、核对签名）；而 `run_state_dump` 是**纯透传**——episode 层一个字段
-    都不读，只是把它跟自己的状态打包进同一份文件，好让 `resume` 读一次就同时重建
-    两层状态（`CHANGELOG` 2026-09-09：run 级状态单独存 `run.json` 实测必炸）。
-    把它变成 `RunState` 会往本文件引进一条 `episode → run` 的依赖，而它今天
-    **一个读者都没有**——episode 包对 run 包现在零引用，不该为它开这个口子。
-    """
-
-    run_id: str = Field(description="签名三元组之一；防跨 run 串档的显式字段")
-    episode_id: str = Field(description="签名三元组之一")
-    step: int = Field(ge=0, description="签名三元组之一：该步开局前")
-
-    episode_state: EpisodeRunState = Field(
-        description="这一局的状态（**直接内嵌**，不 dump）：恢复管线拿它进图"
-    )
-    run_state_dump: dict[str, Any] = Field(
-        default_factory=dict,
-        description="这一步所属局的 `RunState.model_dump()`（纯透传，episode 层不解读）",
-    )
-    last_event_id: int = Field(ge=-1, description="trace 游标：主前缀的最后一条 event_id")
-    emulator_state: bytes = Field(
-        default=b"",
-        exclude=True,
-        description="模拟器世界快照（唯一不可从事件重建的东西）；不进 json，单独落 `.state`",
-    )
-    frame_event_ids: dict[int, int] = Field(
-        default_factory=dict,
-        description="本局帧账之一：步号 → 承载该帧那条事件的 event_id（截图文件名）",
-    )
-    pending_frames: dict[int, str] = Field(
-        default_factory=dict,
-        description="本局帧账之二：步号 → 尚未挂上事件的帧的 base64 PNG（通常为空）",
-    )
-    saved_at: str = Field(default="", description="ISO 保存时间（审计用，恢复逻辑不依赖）")
-
-    def write(self, root: Path) -> None:
-        """写一份存档：先把世界快照落盘，再原子写 json（**json 才是提交点**）。
-
-        `root` 是这个 run 的存档根（`HarnessDeps.checkpoint_root`）。
-        """
-        target_dir = root / "step" / safe_dirname(self.episode_id)
-        target_dir.mkdir(parents=True, exist_ok=True)
-        (target_dir / f"{self.step}.state").write_bytes(self.emulator_state)
-        self.saved_at = time.strftime("%Y-%m-%dT%H:%M:%S")
-        _atomic_write_text(target_dir / f"{self.step}.json", self.model_dump_json())
-
-    @classmethod
-    def read(cls, root: Path, episode_id: str, step: int) -> EpisodeCheckpoint | None:
-        """取一份存档；`.json`/`.state` 不成对、或签名对不上时返回 `None`。
-
-        **坏档（解析不了）不吞**：那是与"没有这份存档"不同的故障，静默返回 `None`
-        会让调用方报出误导性的"找不到存档"。这里只对"文件不在"返回 `None`。
-
-        **旧档（`state_dump` 时代的 json）读不了**：键名改成了 `episode_state`，
-        pydantic 会因为缺字段直接抛——这正是我们要的（安静降级成"没有存档"更糟）。
-        """
-        step_dir = root / "step" / safe_dirname(episode_id)
-        json_path = step_dir / f"{step}.json"
-        state_path = step_dir / f"{step}.state"
-        if not json_path.is_file() or not state_path.is_file():
-            return None
-        checkpoint = cls.model_validate_json(json_path.read_text(encoding="utf-8"))
-        if checkpoint.episode_id != episode_id or checkpoint.step != step:
-            return None  # 签名不匹配 = 这不是你要的那份（不靠目录位置推断）
-        checkpoint.emulator_state = state_path.read_bytes()
-        return checkpoint

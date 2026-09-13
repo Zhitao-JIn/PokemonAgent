@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from pokemon_agent.prompts import BUTTON_HELP, MAP_HINT, REPEAT_HINT
 from pokemon_agent.schemas.frontend import (
     FromFrontendToGameToolLatestFrameReq,
     FromFrontendToGameToolLatestFrameResp,
@@ -23,13 +22,10 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolExecuteReq,
     FromHarnessToGameToolGetActionSpaceReq,
     FromHarnessToGameToolGetActionSpaceResp,
-    FromHarnessToGameToolLoadStateBytesReq,
     FromHarnessToGameToolPerceiveOnceResp,
     FromHarnessToGameToolResetReq,
-    FromHarnessToGameToolSaveStateBytesResp,
-    FromHarnessToGameToolSaveStateReq,
-    FromHarnessToGameToolSetTaskReq,
 )
+from pokemon_agent.tools.prompts import BUTTON_HELP, MAP_HINT, REPEAT_HINT
 from pokemon_agent.world import (
     OVERLAY_ACTIONS,
     ActionSpace,
@@ -113,30 +109,7 @@ class GameTools:
             frame_png=perceived.frame_png,
         )
 
-    def save_state(self, req: FromHarnessToGameToolSaveStateReq) -> None:
-        """把当前世界状态存成一个文件。"""
-        self._world.save_state(req.path)
 
-    def save_state_bytes(self) -> FromHarnessToGameToolSaveStateBytesResp:
-        """把当前世界状态存成字节串（checkpoint 每步世界快照用）。"""
-        return FromHarnessToGameToolSaveStateBytesResp(
-            emulator_state=self._world.save_state_bytes()
-        )
-
-    def load_state_bytes(self, req: FromHarnessToGameToolLoadStateBytesReq) -> None:
-        """从字节串恢复世界状态（checkpoint 恢复用）。"""
-        self._world.load_state_bytes(req.emulator_state)
-
-    def set_task(self, req: FromHarnessToGameToolSetTaskReq) -> None:
-        """只挂任务标记，不动模拟器状态（checkpoint 恢复后配 load_state_bytes 用）。"""
-        task = req.task
-        self._world.set_task(
-            task_id=task.task_id,
-            goal=task.goal,
-            success_criteria=task.success_criteria,
-            max_steps=task.max_steps,
-            initial_state_hint=task.initial_state_hint,
-        )
 
     def get_action_space(
         self, req: FromHarnessToGameToolGetActionSpaceReq
