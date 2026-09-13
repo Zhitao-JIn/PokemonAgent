@@ -4,22 +4,25 @@
 
 `EpisodeHarness` 在步 3 消失了（没有外部调用面：只被 `RunHarness` 用），而
 `RunHarness` 留着——**它有外部调用面**：`api.py` 持有 `handle.harness` 并调
-`run()` / `latest_goals()` / `submit_edit()` / `submit_human_note()`，`experiment/real_check/*`
-调 `run()` / `resume_run()`。这些是"长命对象 + 前后端交互"的职责，不是图节点的职责：
+`run()` / `latest_goals()` / `submit_edit()` / `submit_human_note()`。这些是
+"长命对象 + 前后端交互"的职责，不是图节点的职责：
 节点是纯函数（`(state, runtime) -> dict`），而前后端需要一个**跨请求活着**的句柄。
 
 ## 它里面只有四件事
 
 1. `__init__`：收下 `HarnessDeps`（**全图唯一的 context**，D3/F10）、编译一次图；
-2. 两个图外入口的转调：`run()` → `run_entry.new_run`，`resume_run()` → `run_entry.resume_run`
-   （**图外的开局/恢复编排在那两个函数里**，本类一行逻辑都不加）；
+2. 图外入口的转调：`run()` → `run_entry.new_run`
+   （**图外的开局编排在那个函数里**，本类一行逻辑都不加）；
 3. 三个薄委托给 `data_center`（观测台用：`latest_goals` / `submit_human_note` / `submit_edit`）；
 4. `_compile()`：把"图长什么样"交给 `run/run_graph.py`。
 
+**`resume_run()` 已删**：它是图外第二个入口，随 checkpoint 恢复链一起删掉了
+（见 `CHANGELOG.md` 2026-09-13 第 57 条）。
+
 **依赖只有一个入口：`deps`**（步 4 收口）：原先构造参数里那些 `trace` / `brain_tool` /
-`reviewer` / `checkpoint` / 两个开关，全都已经是 `HarnessDeps` 的字段——再收一遍
-就有两份真源，而"两边指的不是同一个对象"这类错**不报错**（step 4 之前
-`build.py` 必须手工保证两边一致，正是这条的代价）。
+`reviewer` / 两个开关，全都已经是 `HarnessDeps` 的字段——再收一遍就有两份真源，
+而"两边指的不是同一个对象"这类错**不报错**（step 4 之前 `build.py` 必须手工保证
+两边一致，正是这条的代价）。
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ from pokemon_agent.schemas.harness import FromRunHarnessToEpisodeHarnessRunResp
 
 from ..deps import HarnessDeps
 from ..run_data_center import RunDataCenter
-from .run_entry import new_run, resume_run
+from .run_entry import new_run
 from .run_graph import compile_run_graph
 
 
@@ -71,16 +74,6 @@ class RunHarness:
         """
         return new_run(self.deps, self._graph, run_id=run_id, goals=goals)
 
-    def resume_run(
-        self, run_id: str, episode_id: str, step: int
-    ) -> tuple[list[FromRunHarnessToEpisodeHarnessRunResp], int, int, float]:
-        """从 `(run_id, episode_id, step)` 定位的 checkpoint 恢复并跑完。
-
-        编排（锚点读取 → DataCenter 重建 → 进图 → CHECKPOINT_RESTORE → 取结算）在
-        `run_entry.resume_run`。
-        """
-        return resume_run(self.deps, self._graph, run_id=run_id, episode_id=episode_id, step=step)
-
     # ---- 运行时观测/编辑（观测台用；都是对 data_center 的薄委托）----
 
     def latest_goals(self) -> list[Task]:
@@ -107,7 +100,7 @@ class RunHarness:
         """收一条目标栈编辑指令进单槽（最新覆盖），plan 轮消费生效。
 
         `FromFrontendToRunHarnessSubmitEditReq`（只剩一种：整栈原子替换，不锁栈顶）
-        在消费时才真正应用（`run/plan.py::apply_goals_edit`）。同上，薄委托
+        在消费时才真正应用（`run/nodes/plan.py::apply_goals_edit`）。同上，薄委托
         给 `self.data_center`。
         """
         self.data_center.submit_goals_edit(edit)
@@ -120,7 +113,7 @@ class RunHarness:
         拓扑（`dispatch → episode → reflect`，含 `reflect` 出口的重试判据、
         `plan` 出口三路、`START` 的恢复分流，以及挂在 `episode` 那格上的
         `error_handler`）全在 `run/run_graph.py`；**步 4 起它不再收 nodes 参数**
-        （节点就是同级的 6 个模块）。
+        （节点就是 `nodes/` 下的 6 个模块）。
         """
         return compile_run_graph()
 

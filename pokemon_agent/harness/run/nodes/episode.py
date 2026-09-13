@@ -1,16 +1,17 @@
 """`episode`：**派发这一局**——run 图里那格"接上 episode 子图"的地方（步 2 / D1-①）。
 
-两条路，都由 `episode/episode_entry.py` 的图外入口编排（开局的 reset + 首帧感知、
-恢复的七步准备，都在图外——为什么必须如此见该文件的模块文档）：
+派发由 `episode/episode_entry.py` 的图外入口编排（开局的 reset + 首帧感知在图外
+——为什么必须如此见该文件的模块文档）：
 
-- 普通派发 → `episode_entry.run_new`（EPISODE_START → `begin_episode` → 进图 → 取结算）；
-- 恢复（`resume_episode` 非空）→ `episode_entry.run_resume`（`prepare_resume`
-  七步 → 进图 → 取结算）。
+- 普通派发 → `episode_entry.run_new`（EPISODE_START → `begin_episode` → 进图 → 取结算）。
 
-返回的状态增量就是**父子交界那张键表的回程**（D2）：`outcome` 交给 `reflect`；
-`resume_episode` 清空——这一局的恢复记号用掉了（重试时下一轮派发走普通路径）。
+返回的状态增量就是**父子交界那张键表的回程**（D2）：`outcome` 交给 `reflect`。
 `task`/`episode_goals` 已在 `dispatch` 里写过，这里不重复写（F1 的反作用：
 子图不输出的键，父侧保持旧值——所以也不需要"清空"它们）。
+
+**恢复分支已删**（见 `CHANGELOG.md` 2026-09-13 第 57 条）：原先这里还有一条
+`resume_episode` 非空 → `episode_entry.run_resume` 的路径，随 checkpoint 恢复链
+一起删掉了。
 
 **异常不在这里兜**：异常会一路冒穿到 `invoke()` 的调用方（F3），兜底是挂在同一格上的
 `dispatch.episode_error_handler`（F4）。
@@ -35,9 +36,9 @@ from typing import Any
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 
-from ..deps import HarnessDeps
-from ..episode import compile_episode_graph, episode_entry
-from .run_state import RunState
+from ...deps import HarnessDeps
+from ...episode import compile_episode_graph, episode_entry
+from ..run_state import RunState
 
 _episode_graph: CompiledStateGraph | None = None
 
@@ -54,31 +55,17 @@ def episode_graph() -> CompiledStateGraph:
 
 
 def episode(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
-    """跑完这一局：把图外入口的结算取回来，清掉恢复记号。
+    """跑完这一局：把图外入口的结算取回来。
 
-    前置条件：`state.episode_id` 非空、`state.task` 非空（都是 `dispatch` 写的）；
-    恢复路径额外要求目标栈非空（`run_resume` 的断言语义）。
+    前置条件：`state.episode_id` 非空、`state.task` 非空（都是 `dispatch` 写的）。
 
     后置条件：trace 里恰好多一条 EPISODE_START 与一条 EPISODE_END（图外入口的契约）；
-    返回 `{outcome, resume_episode}` 两个键——前者是 `reflect` 的唯一输入，
-    后者清空是"这一局的恢复记号用掉了"。
+    返回 `{outcome}`——它是 `reflect` 的唯一输入。
     """
     deps = runtime.context
     assert state.episode_id, "episode() without an episode_id"
     assert state.task is not None, "episode() without a task"
     graph = episode_graph()
-
-    if state.resume_episode is not None:
-        assert state.goals, "episode() resume path needs a non-empty goal stack"
-        outcome = episode_entry.run_resume(
-            deps,
-            graph,
-            episode_id=state.episode_id,
-            task=state.task,
-            step=state.resume_episode.step,
-            run_state=deps.run_state_snapshot,
-        )
-        return {"outcome": outcome, "resume_episode": None}
 
     outcome = episode_entry.run_new(
         deps,
@@ -86,7 +73,6 @@ def episode(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
         episode_id=state.episode_id,
         task=state.task,
         stack=state.goals,
-        run_state=deps.run_state_snapshot,
     )
     return {"outcome": outcome}
 

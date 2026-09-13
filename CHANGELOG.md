@@ -1,3 +1,1388 @@
+## 2026-09-13（59）—— 补删 `run_state_snapshot` 五处漏网点：一个"不炸的错"被清掉
+
+**改了什么**
+
+(57) 那次删 `HarnessDeps.run_state_snapshot` 字段时**只删了定义、漏了 5 处消费点**，
+本次补齐：
+
+1. `harness/run/nodes/dispatch.py`：删 `runtime.context.run_state_snapshot =
+   state.model_dump()`（唯一的写点）与 docstring 里的字段描述；
+2. `harness/run/nodes/episode.py`：删 `run_state=deps.run_state_snapshot` 实参；
+3. `harness/episode/episode_entry.py`：`run_new()` 删 `run_state: dict[str, Any] | None`
+   形参、删 `deps.run_state_snapshot = run_state` 赋值、改模块 docstring 的"读哪些 deps"清单；
+4. `harness/run/run_graph.py`、`harness/episode/episode_graph.py`、`harness/deps.py`：
+   删三处文档里的字段引用（`episode_graph.py` 那段"run_state 走 run_state_snapshot
+   搭车进存档"整段删掉——它描述的机制已不存在）。
+
+**为什么这么改**
+
+**这是一个"不炸的错"**：`HarnessDeps` 是普通 `@dataclass`（无 `__slots__`），
+对不存在的字段赋值**不报错、静默生效**——`dispatch` 往对象上挂一个新属性、
+`episode` 再把它读出来，整条链跑得通、断言全过、只是那个 dict 再没人消费。
+正是 AGENTS.md 铁律反复强调的那种"不炸但错"的形态，**必须靠 grep 而非测试发现**。
+
+此链的**唯一用途是存档打包**（run 级 dump 与 episode 状态装进同一份文件，
+见 `CHANGELOG` 2026-09-09），存档删了它整条就是死代码。
+
+**取舍**
+
+- 顺带删掉 `EpisodeOutput`/`EpisodeInput` 里关于 `run_state` 的交界说明——
+  它描述的是"搭车进存档"这一用途，不是子图输入（那张三键表本来就把它排除在外）；
+- `run_new()` 签名少一个参数，调用点只有 `episode.py` 一处，无外部影响。
+
+**影响面**
+
+- `run_new()` 签名：`(deps, graph, *, episode_id, task, stack)`——少一个 keyword-only 参数；
+- 全包 import 冒烟 = 0 失败；`compile_run_graph()` / `compile_episode_graph()` 通过；
+- 全项目 `run_state_snapshot` 残留 = **0**（此前 5 处）；
+- 无行为改动——被删的读写从未影响任何判定或落账。
+
+## 2026-09-13（58）—— checkpoint 残留字样复核：12 处"已删记录"措辞收口，无一处代码残留
+
+**改了什么**
+
+用户提出"字符串 checkpoint 仍出现在 27 个文件里（已排除 `__pycache__`）"，点名 10 个文件
+要求逐个判定。**结论：无一处需要继续删——27 处全是 2026-09-13（57）那次删除的
+"已删记录"式文档**（AGENTS.md 三-1 要求每次改动留痕，故把 CHANGELOG 决策摘进了
+模块 docstring）。但其中 12 处措辞该收：
+
+1. **过期事实**（2 处）——`tools/interface/ports.py:13` 与
+   `tools/interface/__init__.py:19` 原文都写"checkpoint 那一个已在步 5b 解散**进 harness**"，
+   而步 5b 说的是"存档能力归 harness 自己的状态模型"——**现在连那道能力都删了**，
+   留着会让读者以为 harness 里还住着存档实现。改为"已在步 5b 解散，随后存档链整体删除，
+   本层已无任何存档相关的 Port 与实现"。
+2. **指代不明**（11 处）——所有 `见 CHANGELOG.md 本次条目`（`episode_entry.py` /
+   `save_checkpoint.py` / `run/nodes/episode.py` / `run_graph.py` / `run_state.py` /
+   `ports.py` ×3 / `tools/trace/__init__.py` / `tools/__init__.py` / `trace_port.py`）
+   改为 `见 CHANGELOG.md 2026-09-13 第 57 条`。**"本次条目"在写那一刻成立、隔一天就失效**——
+   读者无法知道是哪一条。这是本次改动的主要收益。
+3. **冗余压缩**（2 处）——`harness/run/harness.py` 与 `harness/run/run_entry.py` 的留档段
+   压掉重复的调用链描述（保留"删了什么、为什么删"）。
+
+**为什么这么改**
+
+判据是"**字符串是不是在描述一个还存在的东西**"：
+- `config.py` 的 `save_checkpoint`（4 处）：节点**仍在图上、仍占一格**，
+  `NODES_PER_DECISION`/`NODES_PER_PRESS` 的顺序清单必须写它，删了清单与图不符 → **留**；
+- `run_graph.py` 的"恢复分流已随 checkpoint 恢复链删除"：**它解释 `add_edge(START, "begin")`
+  为何是直连**——删掉这句，读者会问"START 为什么不走条件边" → **留**；
+- `ports.py` 的"存档一族已删"/"读方法已删"：**它们解释 Port 为何比 world 窄**
+  （`world` 仍保留能力面，只是不向 harness 暴露）——这是有效契约说明，不是历史八卦 → **留**；
+- `run_state.py`/`episode.py`/`episode_entry.py`/`store.py`/`trace_port.py` 的留档段同理 → **留**。
+
+**取舍**
+
+- **不做"删光所有 checkpoint 字样"**：那会把"曾经有什么、为什么删"这段决策记录一并抹掉，
+  而 AGENTS.md 三-1 明确要求留痕。字符串存在 ≠ 代码残留。
+- **不逐个改写措辞**：只收"过期事实"与"指代不明"两类真问题，其余留原样——
+  文档改动也该有判据，不是审美活动。
+- **`config.py:100` 那句"现在是空转 stub"保留**：它正是防止下一个人把 `save_checkpoint`
+  从图上拆掉的关键提示（该节点是 episode 图**入口点**，拆它要动三处拓扑）。
+
+**影响面**
+
+- **零代码行为改动**：全程只动 docstring；
+- 全包 import 冒烟 = 0 失败；`compile_run_graph()` 通过；
+- 全项目 `本次条目` 残留 = **0**；
+- `checkpoint` 字样仍存在于 27 个文件——**这是预期结果**，其中约 22 处是节点名/文件名
+  （`save_checkpoint.py`、`episode_graph.py` 的 `add_node("save_checkpoint", ...)` 等），
+  5 处是上述已删记录。**唯一"活的"引用是那个保留的空转节点本身。**
+
+## 2026-09-13（57）—— 存档 / checkpoint 恢复机制**整体删除**：存档端与恢复链成对清掉，`save_checkpoint` 节点留位空转
+
+**用户的原话**："**先全删掉，我感觉写的不行。**" → "**产物和实现都删掉**" →
+"**删，清，保留但跳过具体执行。请你重新检查项目定一版新方案**"。
+三个拍板（AskUserQuestion）：① "全清，只要和 checkpoint 有关就清"；
+② "对的，memory 里的归档和 trace 里的 valid 都删"；③ "整个 trace_data 全删"。
+
+**改了什么**
+
+*产物（磁盘）*
+1. `checkpoints/`（9.9 MB / 106 文件）整棵删除；
+2. `trace_data/`（3.0 MB / 524 文件 / 11 个目录）整棵删除——含 memcheck-*/itest-*/stub；
+3. 因 git 仓库已损坏（`bad tree object HEAD`，无版本控制兜底），**先**手工打快照
+   `.workbuddy/backup/checkpoint-removal-20260913-144948.tar.gz`（3.0 MB，含
+   checkpoints + trace_data + pokemon_agent + experiment）再动刀。
+
+*存档实现（节点侧）*
+4. `harness/episode/open/save_checkpoint.py` 整文件重写为**空转 stub**——保留函数名与
+   `(state, runtime)` 签名（与其余 20 格同形，供节点名=文件名机械核对），`return {}`；
+5. `harness/episode/episode_state.py`：删 `EpisodeCheckpoint` 类、`_atomic_write_text`、
+   `safe_dirname`，清 `os`/`re`/`time`/`Path`/`Any` 五个 import，改 4 处 docstring 措辞。
+
+*恢复链（入口侧）*
+6. `harness/episode/episode_entry.py`：删 `prepare_resume` / `void_timeline` / `run_resume`
+   三函数，清 6 个 import，`__all__` 缩为 `["begin_episode", "close", "episode_budget",
+   "exc_snapshot", "run_new"]`；
+7. `harness/run/run_entry.py`：删 `resume_run`，清 3 个 import，`__all__` 去掉它；
+8. `harness/run/run_state.py`：删 `ResumeEpisode` 类与 `RunState.resume_episode` 字段；
+9. `harness/run/run_graph.py`：START 条件边改直连 `graph.add_edge(START, "begin")`；
+10. `harness/run/nodes/episode.py`：删 `resume_episode` 分支，只留 `run_new` 路径；
+11. `harness/run/nodes/dispatch.py`：删 resume 断言分支；
+12. `harness/run/harness.py`：删 `resume_run()` 方法；`harness/run/__init__.py` 与
+    `harness/__init__.py` 去掉 `ResumeEpisode` 的全部出口条目（含 `_LAZY`/`TYPE_CHECKING`）。
+
+*Port 与 tool 层（死方法全清）*
+13. `tools/interface/ports.py`：删 `MemoryToolPort.void_memory_after`、
+    `TraceToolPort.cursor/read_disk_events/void_after`、
+    `GameToolPort.save_state/save_state_bytes/load_state_bytes/set_task`，清 9 个信封 import；
+14. `tools/game_tools.py`：删 4 个存档方法；`tools/memory_tool.py`：删
+    `void_memory_after` / `_void_kind` / `_void_episode_summaries` / `_step_within`
+    （**保留** `_trim_summaries` 与它依赖的 `_voided_dir`——那是容量淘汰，与恢复无关）；
+15. `trace/store.py`：删 `cursor` / `read_disk_events` / `void_after` / `_iter_event_files`
+    与**遗留参数** `resume_after_event_id`；`trace/interface/trace_port.py` 整文件重写只留
+    `append`；`tools/trace/__init__.py` 删 3 个转发方法；`tools/trace/render.py` 删
+    `checkpoint_save` / `checkpoint_restore` 两个渲染函数。
+
+*跨层数据形状*
+16. `schemas/harness/domain/trace_kind.py`：删 `CHECKPOINT_SAVE` / `CHECKPOINT_RESTORE`；
+17. `schemas/harness/communication/FromHarnessToTraceToolAppendReq.py`：删
+    `restored_episode_id`/`restored_step`/`cursor`/`saved_step` 四字段；
+18. **删 9 个 checkpoint 专属信封文件**（确认全无引用）：`FromHarnessToTraceToolVoidAfterReq`、
+    `FromHarnessToTraceToolReadDiskEventsReq`/`Resp`、`FromHarnessToGameToolSaveStateReq`/
+    `SaveStateBytesResp`/`LoadStateBytesReq`/`SetTaskReq`、
+    `FromHarnessToMemoryToolVoidMemoryAfterReq`/`Resp`，并清 `schemas/harness/__init__.py`
+    的对应 `__all__` 与 import。
+
+*world 侧（只清存档快照家族，不动 ROM 加载）*
+19. `world/interface/world_port.py`：删 `save_state` / `save_state_bytes` / `load_state_bytes`
+    / `set_task`；`world/pyboy_world.py`：删同名 4 方法。**`reset()` 内部的
+    `self._pyboy.load_state(f)` 保留**——那是启动时加载 ROM 起点存档，不是 checkpoint。
+
+*依赖包与装配*
+20. `harness/deps.py`：删 `HarnessDeps.checkpoint_root` 与 `run_state_snapshot` 两字段
+    （连同 `pathlib.Path`/`typing.Any` import），改"四带"表与步笔记；
+21. `build.py`：删 `checkpoint_root` 局部量与它的注入、删 `resume_cursor` 参数与
+    `LocalTrace(resume_after_event_id=...)`、删 `pathlib.Path` import；
+22. `harness/run_data_center.py`：删 `RunDataCenter.rebuild()`（checkpoint 恢复的单点重建，
+    已无调用方）；
+23. `harness/episode/episode_frames.py`：删 `frame_ledger()`（存档打包专用，已无调用方）。
+
+*核对脚本与前端*
+24. 删 `experiment/real_check/` 三个脚本：`check_checkpoint.py`（维度 3）、
+    `check_restore.py`（维度 5）、`resume_only.py`；`check_memory_roundtrip.py` 删路径 5/5b
+    （约 60 行），标签改 `[5/5]`；`check_trace.py` 删"废弃块形状"整段校验；
+    `common.py` 删 `CHECKPOINT_ROOT`；`__init__.py` 文档改"四条路径"；
+25. `web/src/App.tsx`：`save_checkpoint` 那条 `note` 改为"占位空转"，删 `phaseKeyOf` 里
+    的 `checkpoint_save` 死分支（链表条数/顺序不变——节点仍在图上的同一位置）。
+
+*留档不删*
+26. `TraceEvent.valid` 字段**保留**（兼容 0910–0913 的历史落盘数据），docstring 改写为
+    "新事件恒 true，字段留作历史兼容"；`config.py` 的 `NODES_PER_DECISION = 10` **不变**
+    （节点仍占一格、每链首仍多一个 superstep），只补一句说明。
+
+**为什么这么改**
+
+判据是"**只要和 checkpoint 有关就清**"：存档与恢复是**成对**的机制——只删一半会留下
+"能存不能读"或"能读无源"的半截链路，比全留更危险。清掉恢复链之后，本仓**只有"新开
+一 run"一条路径**，进程死掉就从 ROM 起点重来；这是明确接受的取舍（[104] 没有版本控制
+兜底，故用 tar 快照而不是 git revert）。
+
+**`save_checkpoint` 节点为什么留位而不是拆掉**：① 它是 episode 图的**入口点**——拆掉要改
+入口点、`record_observation` 入边、`close_step` 出口条件边三处图拓扑，风险集中在真机；
+② "链边界"这个位置语义本身有价值（链内是纯 RAM 确定的，从链首重放能逐帧复现），将来
+重做存档时不必重新推导；③ 空转代价是每链首多一个 superstep，`NODES_PER_DECISION` 早已
+把它算在内，量级可忽略。
+
+**`world` 为什么只清一半**：`load_state(path)`（不是 `load_state_bytes`）是 `reset()`
+内部加载 ROM 起点存档用的，属"启动世界"，与 checkpoint 无关——**保留**。拍板是
+"只清 tool/Port 层的存档方法，不裁剪 `world` 这个独立模块的启动能力面"。
+
+**取舍**
+
+- 不做"保留接口、实现空转"的中间态——用户明确要"全清"，留半截接口只会让下一个人
+  误以为链路还在；
+- 不删 `TraceEvent.valid`：删字段会让历史 json 静默读错（Pydantic 少字段当默认），
+  留着是**只读兼容**，没有任何写入方；
+- `check_graph_phases.py` / `check_imports.py` / `scripts/` 目录本就是空的（未随仓库成型），
+  本次不新建——机械核对靠"全包 import 冒烟 + 两张图编译"手工代偿；
+- `docs/ROADMAP.md` 第 16 条**不改写正文**（那是历史留档），只在标题加 ↩️ 与状态修正前言。
+
+**影响面**
+
+- **对外接口面**：`api.py` 本就不暴露恢复入口，`RunHarness.resume_run` 从未被 `api.py`
+  调用——对外零破坏；
+- **TraceKind 词表**：少两个值，前端 `phaseKeyOf` 的 switch 相应收窄，链表 21 条不变；
+- **HarnessDeps 字段**：`checkpoint_root` / `run_state_snapshot` 消失，装配点少两处注入；
+- **全包 import 冒烟 = 0 失败**（`pkgutil.walk_packages` 遍历，跳过 providers）；
+  两张图编译通过：episode 23 节点（含 `__start__`/`__end__`，实 21）、run 9 节点（实 6）；
+- **历史数据**：`checkpoints/` 与 `trace_data/` 已删，仅存于 tar 快照；`memory/` 里
+  0910–0913 的 `voided-<ts>/` 归档未动（属历史产物，不在本次删除范围）。
+
+## 2026-09-13（56）—— `brain` 对外依赖归零：异常自成一根、四封补全信封搬进 brain，"可作第三方整体拷走"字面成立
+
+**用户的原话**："**你一直没有理解，我要的是 brain 可以作为第三方替换。**
+1. `errors.AgentError`，brain 需要 agenterror 吗？不需要，brain 只需要管好自己的
+内部 error 就好了，本来就不该有这一层依赖
+2. `schemas.providers` 四信封。我已经把 provider 完全移到 brain 内部了，这就是
+内部协议，你为什么还要在外面呢？至于 world，你复制一份进 world 就好了。"
+
+这一条**推翻（53）/（55）两轮的判据**。那两轮我用的是"**谁消费**"——
+`AgentError` 被 world/harness/tools 共用、`schemas.providers` 被 world 也消费，
+于是判定"多消费者 ⇒ 留在共用层，搬进 brain 是净损失"，还把这个结论写进了
+`brain/__init__.py` 的 docstring 与 `ROADMAP.md` 第 7 条。**错了。**
+正确判据是**"brain 能否整体拷走当第三方模块"**——任何它需要、但从外面拿的东西
+都是它逃不掉的债。"多消费者"只对**跨模块共用的数据形状**成立（比如 `Action`/
+`Goal` 这类 brain 自己的方言），对**内部协议**和**内部词汇**不成立。
+
+**改了什么**
+
+1. **异常脱钩 `AgentError`**（`brain/errors.py`）：新增家族根
+   `class BrainError(Exception)`，六个类（`ParseFailure`/`IllegalAction`/
+   `OutputTruncated`/`ToolTimeout`/`AttemptFailed` + 五个 `*AttemptFailed`）
+   全部从 `(AgentError)` 改 `(BrainError)`，删掉
+   `from pokemon_agent.errors import AgentError`。
+   **判据（本轮确立，比"谁消费"精确）**：**只有真的会走到 harness 捕获点的
+   模块异常才需要继承 `AgentError`。** 实测 brain 的全部异常都被
+   `BrainTool._attempt_loop` 的 `except AttemptFailed` 接住、翻译成
+   `MaxRetriesExceeded` 才上抛——**走不到 harness 面前**，继承是**纯仪式**。
+   harness 只捕 `AgentError`（`dispatch` 一处），brain 的异常在 tool 层就被吃掉，
+   所以不继承；world 的 `PerceptionAttemptFailed` 被
+   `perceive_after_action.py` **直接捕获**，所以要继承。**继承与否 = 这条异常
+   有没有跨过 tool 层这座桥。**
+2. **`ImageNotDelivered` 从顶层搬进 `brain/errors.py`**：它由
+   `brain/providers.py::describe()` 抛出，即 **brain 的词汇**。连带风险是它原先
+   靠 `AgentError` 被 dispatch 兜住，脱钩后会打穿整个 run——按用户拍板
+   （AskUserQuestion）**world 侧就地包成 `PerceptionAttemptFailed`**：
+   `PyBoyWorld.perceive_once()` 里 `except PerceptionAttemptFailed: raise`
+   先放行自己的、再 `except Exception` 把上游网关/实现的任何失败翻译成
+   world 自己的感知失败（`{"ok": "False", ...}`）。**world 不再认识
+   `ImageNotDelivered`。**
+3. **四封补全信封搬进 `brain/schemas/`**：新建 `brain/schemas/` 包，
+   `LlmCompleteReq/Resp`（合并 `completion.py`）+ `VisionDescribeReq/Resp`
+   （`vision.py`）——provider 已全搬进来，它们就是 **brain 的内部协议**。
+   **world 复制一份自己的**：`world/interface/domain/vision_describe.py`
+   只复制 `VisionDescribe*` 两封（world 不需要补全那两封）。
+4. **两份信封靠"同一份原始定义复制 + 字段名核对"守同构**，不靠 import 同一个类。
+   实测逐字段同构（annotation + `is_required()` 全同）；`title` 差异只是类所在
+   模块，不影响校验。
+5. **桥在 tool 层**：`tools/brain_tool.py` 的 `except AttemptFailed`（brain 的）
+   → 重试 → 耗尽抛 `MaxRetriesExceeded`（顶层的）。翻译点唯一，**两个模块谁都不
+   认识对方的异常根**。`tools/vision_factory.build_vision_provider()` 造出的
+   `QwenProvider` 实例**同时** `isinstance` 于 `world.VisionProvider` 与
+   `brain.interface.JudgeProvider`——**鸭子类型**打通"同形不同约"（字段结构对得上
+   即可，不共享类）。
+6. **顶层 `errors.py` 删掉残留的 `ImageNotDelivered` 类**（含 `__all__` 条目，
+   现为 `["AgentError", "MaxRetriesExceeded"]`）；docstring 重写为"继承
+   `AgentError` 的判据" + "`ImageNotDelivered` 回 brain 了"。
+7. **文档同步**：`brain/__init__.py` / `AGENTS.md`（目录树 brain 条目、第十二节
+   分包形态 + 跨包登记）/ `CLAUDE.md`（brain 树条目、第十二节）/
+   `docs/ROADMAP.md`（新增第 8 条，明确推翻第 7 条）/
+   `docs/PLAN_bare_boundary_refactor.md`（第 84 行加"已搬走"注）。
+
+**验证**
+- **AST 依赖审计**：brain 的全部外部 import = 标准库（`__future__`/`base64`/
+  `collections.abc`/`dataclasses`/`importlib`/`io`/`json`/`math`/`os`/`pathlib`/
+  `time`/`typing`/`urllib.*`）+ 第三方（`pydantic`/`PIL`）。
+  **`pokemon_agent.*` 依赖只剩自己的三个子包**（`brain.errors` /
+  `brain.interface` / `brain.schemas`）——**对外零依赖**。
+- **逐模块独立解释器导入**：197 个模块，**0 失败**。
+- `ImageNotDelivered` 已从顶层消失、在 `brain.errors` 里；
+  `ParseFailure.__mro__ == [ParseFailure, BrainError, Exception, BaseException,
+  object]`，`issubclass(ParseFailure, AgentError) == False`。
+- `QwenProvider` 对两个协议类 `issubclass` 均为真；两封信封逐字段同构为真。
+- **对 brain 的实现依赖只有 `tools/`**：`brain_tool.py`（45/52/130 三行）+
+  `vision_factory.py:55`。其余 33 处全在 harness/schemas/prompts/render，
+  **都是数据形状引用**（`Action`/`Goal`/`Task`/结果袋等），不是实现依赖。
+- ruff：本轮改动文件**零新增告警**（现存 20 条全在 `world/ram.py`、
+  `world/interface/domain/facts.py`、`api.py` 等，与本轮无关）。
+
+**没做**：真实 harness 跑局（按约定由用户运行，AI 不自跑）；真实 API 调用。
+
+**教训**：判据错了，做过的事就要整个推翻重做。我前两轮把"多消费者 ⇒ 留共用层"
+这条只适用于**数据形状**的经验，错误外推到了**内部协议/内部词汇**上，于是把
+"brain 欠外面的债"论证成了"brain 该有的依赖"。**"谁消费"回答的是"这东西归谁
+维护"，回答不了"这东西能不能跟着模块走"。** 后者只有一条判据：**拷走它，跑得起来
+吗。** 补丁是：`ROADMAP.md` 第 7 条 → 第 8 条。
+
+---
+
+## 2026-09-13（54）—— 解散 `pokemon_agent/providers/`：实现跟着协议走，循环导入消失
+
+**用户的原话**："你是不理解 providers 搬进 brain 的意思吗？以后外层就没有 providers 了。"
+这一条是（53）之后那轮的收尾：协议在前几轮各归其位，但**实现还留在顶层
+`providers/`**，于是 `providers/openai_compatible.py` 要 `import
+pokemon_agent.brain.errors`，而 `brain/__init__.py` 又 `import
+brain.build_llm_providers` → `import pokemon_agent.providers`（还没加载完）
+→ **真正的循环导入**。用户指出的正解就是这一条：**把 providers 整个搬进去**。
+
+**判据**：跟（53）搬到协议身上的是同一条——**谁消费，归谁**。
+
+| 实现 | 新家 | 主要消费者 |
+|---|---|---|
+| `QwenProvider` / `ArkProvider` / `DeepSeekProvider`（+`_OpenAICompatibleBase` / `_MultimodalMixin` / `image_grid_dims` / `pack_images_grid`） | `brain/providers.py` | `Brain` 的四个 provider（全由它们 new 出来）；`world` 的感知也拿一个 `QwenProvider`，但那是**装配点**递进去的 |
+| `FastEmbedText` | `memory/fastembed_text.py` | memory 检索链路（`retrieval.py::embedding_rank`） |
+| `FastEmbedReranker` | `memory/fastembed_reranker.py` | memory 检索链路（reranker 精排） |
+
+**改了什么**
+
+1. `git mv`（实际用 `mv`，`.git/index.lock` 陈旧）三个文件到目标位置，删掉
+   `pokemon_agent/providers/` 整包（含 `__init__.py` 的分工表 docstring）。
+2. `brain/providers.py` 的模块 docstring 重写：**为什么它住 brain**（三个类全是
+   `build_llm_providers()` 的产物）、**它不只服务 brain**（world 也拿一个，
+   但走自己声明的 `VisionProvider` 协议）、**"直连层"从"一个物理包"变成"一份文件"**
+   （CLAUDE.md 第六节的铁律本身没变）。import 改成同包相对：
+   `from .errors import ParseFailure, ToolTimeout`（**环在这一刻消失**）。
+3. `memory/fastembed_text.py` / `fastembed_reranker.py`：docstring 补"家在 memory"
+   的理由（协议 + 实现同住一包，**拷走 `memory/` 就拿到完整可复用的一块**）；
+   顺手删掉一处指向已不存在的 `providers/dashscope.py` 的过时引用。
+4. `memory/__init__.py`：`__all__` 与 import 补上 `FastEmbedText` / `FastEmbedReranker`
+   ——memory 的"统一出口"现在连实现一起给。
+5. 消费者 import 改写（4 处）：`brain/build_llm_providers.py` 改 `from .providers import …`；
+   `build.py` 的 `FastEmbed*` 改 `from pokemon_agent.memory import …`、
+   `QwenProvider` 改 `from pokemon_agent.brain.providers import …`；
+   `experiment/real_check/check_memory_roundtrip.py` 改
+   `from pokemon_agent.memory import FastEmbedReranker, FastEmbedText, MemoryStore`。
+6. 顶层 `errors.py`：删掉 `TYPE_CHECKING` 里那段 `ModelCall` import **和**
+   那条"为避免 `providers.openai_compatible → brain.errors → …` 环"的注释
+   ——环已经不存在了，注释指向的路径也不存在了。`ImageNotDelivered` 的
+   "为什么留顶层"补上新理由：实现搬进 brain 后，world 若从 `brain.errors` 拿它
+   就是一条 `world → brain`；留顶层两个模块谁都不欠谁。
+7. `brain/errors.py` 的 `ToolTimeout` docstring、顶层 `errors.py` 的
+   `ImageNotDelivered` docstring、`world/interface/vision_provider.py`、
+   `brain/interface/llm_provider.py`：所有指向 `providers/openai_compatible.py`
+   的路径改成 `brain/providers.py`。
+8. `brain/__init__.py`：包 docstring 补 `providers.py` / `errors.py` 两条，
+   并写明"**brain 现在零外部领域依赖**——只剩 `errors` + `schemas.*` + 第三方库"。
+9. 文档同步：`AGENTS.md`（铁律 2 的 `providers` 例外句删除、目录树、第六节、
+   第七节分包形态、`schemas` 跨包引用登记 4 处）、`CLAUDE.md`（铁律 2、
+   `world/` 树注、`providers/` 树条目、第六节 4 处）、`docs/ROADMAP.md`
+   （头部阅读说明新增第 6 条）。
+
+**为什么 `world` 不违反"绝不横向"**：`world/interface/vision_provider.py` 零
+import（纯 `Protocol`）；`pyboy_world.py` 拿到的那个 provider 实例是装配点
+`build.py::build_real()` 从 `brain.providers` import 出来、**当参数递进去**的。
+`world/` 全包 `grep` 确认不出现 `brain`。这跟"world 依赖 brain"是两回事——
+后者会让 world 整体拷走时拖上 brain，前者只是"这次装配选了哪个实现"。
+
+**验证**（**逐模块独立解释器导入**，这才抓得到环——同解释器里别的 import
+顺序会把环掩盖掉）：
+- 197 个 `pokemon_agent` 模块逐个在**新子进程**里 `import`，**0 失败**。
+  这一轮之前，同样的检查会抓到 4 处 `providers` 失败。
+- `import pokemon_agent.providers` → `ModuleNotFoundError`（**模块不存在**，
+  而不是循环导入报错），符合"外层不再有 providers"。
+- `MemoryTool(embedding_provider=FastEmbedText(), reranker_provider=FastEmbedReranker())`
+  真实构造，`isinstance` 对 `EmbeddingProvider`/`RerankerProvider` 两个
+  `runtime_checkable` 协议均为真。
+- `Brain(*build_llm_providers(BrainLlmConfig()))` 真实构造（`DASHSCOPE_API_KEY` /
+  `ARK_API_KEY` 设假值），四个 provider 互不相同、类型与 `Brain.__init__`
+  四个形参逐一匹配。
+
+**没做**：真实 harness 跑局（按约定由用户运行，AI 不自跑）；真实 API 调用
+（没有真 key、也没有网络）。`docs/spec/providers/SPEC.md` 是 0911 前的历史
+spec 目录，本次未动。
+
+**教训**："协议归谁"和"实现归谁"是**同一个判据的两半**，分两轮做完必然是
+中间态：协议搬走了、实现还在原地，于是原本靠"同住一包"天然消解的循环导入
+立刻显形。（53）那次我说"brain 的外部依赖只剩 `errors` + `schemas.providers` +
+`providers`（装配工厂）"——把 `providers` 当成一个"可接受的横向依赖"接受了，
+而正确做法是**它根本不该在外面**。
+
+---
+
+## 2026-09-13（55）—— 依赖审计：`BrainLlmConfig` 搬进 `interface/`、两个接线工厂收进 tool 层，"只有 tool 依赖 brain"落地
+
+**用户的原话**：
+1. "命题1可以全挪到brain内部吗？"
+2. "请你修改，保证只有tool层依赖brain。"
+
+**背景**：（54）之后我做了 AST 依赖审计（`ast.walk` 全树，能收到函数内 import），
+结论是两条命题**一真一假**：
+
+- **命题 ①（brain 无对外依赖）成立**：外部 import 只剩两条——
+  `pokemon_agent.errors`（`AgentError` / `ImageNotDelivered`）与
+  `pokemon_agent.schemas.providers`（四个补全信封）。横向依赖为零。
+- **命题 ②（只有 tool 依赖 brain）不成立**，抓到两处真问题：
+  `build.py:18` `from pokemon_agent.brain import BrainLlmConfig`
+  （**实测连带拉进 25 个 brain 模块 + PIL**）、
+  `build.py:71` `from pokemon_agent.brain.providers import QwenProvider`。
+
+**先说命题 ① 的答案：不能全挪，挪了是净损失。** 这两条不是"没搬干净"，
+是**真的属于共用层**——判据仍是"谁消费"：
+
+| 依赖 | 消费者 | 为什么不能进 brain |
+|---|---|---|
+| `pokemon_agent.errors.AgentError` | `brain/errors.py` + `world/errors.py` **继承**；`harness/run/nodes/dispatch.py` **捕获**（`except AgentError`，run 级"单局不炸整 run"的策略点）；`harness/episode/{decide,gate,close}/*`、`tools/brain_tool.py` 捕获 `MaxRetriesExceeded` | 归 brain 后，`world`/`harness`/`tools` 都要 import brain 才能继承/捕获——**把纵向依赖换成横向依赖**，正是（53）（54）两轮在消灭的东西 |
+| `pokemon_agent.schemas.providers`（`LlmComplete*`/`VisionDescribe*`） | `brain/{brain,interface/llm_provider,providers}.py` **和** `world/interface/vision_provider.py` + `world/pyboy_world.py` | 归 brain 后 `world → brain`，同样是横向边 |
+
+**多消费者 ⇒ 留在共用层**，跟 `ImageNotDelivered` 留在顶层是同一条判据。
+所以命题 ① 的正确读法不是"把这两条也搬走"，而是——**"brain 无对外依赖"
+应该换成一条更精确、且可机械核对的命题：`brain/interface/` 零重依赖**。
+这一条本轮做到了（见下）。
+
+**命题 ② 的两处真问题，修法**
+
+1. **`BrainLlmConfig` 从 `brain/build_llm_providers.py` 搬到
+   `brain/interface/llm_config.py`**。它是 frozen dataclass **纯数据**
+   （四个型号名 + `max_tokens`），但住在工厂模块里，而那个模块顶部
+   `from .providers import ArkProvider, QwenProvider` → 任何
+   `from pokemon_agent.brain import BrainLlmConfig` 都连带进口整个厂商实现面。
+   **实测：25 个 brain 模块 + PIL → 14 个模块 + 零 PIL。**
+   同时 `build_llm_providers` 改成懒加载（它才是拖着 `providers.py` 的那个名字）。
+   *温度分层留在工厂里*：`temperature` 是**常量不是旋钮**（judge/verify/plan 恒 0、
+   decide 恒 0.3），不属于"选型纯数据"。
+2. **`build.py` 对 brain 零 import**——两处都改走 tool 层工厂：
+   - **新增 `tools/vision_factory.py::build_vision_provider(model=…)`**：
+     造 world 感知要的那个 `VisionProvider`（实现是 `QwenProvider`）。
+     `build.py:71` 原先在函数体内直接 import `brain.providers`——那是
+     "世界的感知要一个 Qwen 实现、temperature 钉 0"这条**接线知识**，
+     跟 `BrainTool.build()` 那条同类，该收在 tool 层。
+     *实现的物理位置没错*（`QwenProvider` 服务 brain 的 judge/verify），
+     错的是装配知识的位置。
+   - **`BrainTool.build()` 签名收裸字段**（`text`/`judge`/`verify`/`plan`/
+     `max_tokens`），`BrainLlmConfig` 在方法内部构造。原先签名收 config，
+     于是 `build.py` 得先 import 这个类型——改成裸字段后，
+     `build.py` 那一侧只剩 `BrainTool.build(text=...)`，**对 brain 零 import**。
+     内部仍是 `BrainLlmConfig(...)` + `build_llm_providers(config)` + `Brain(...)`
+     ——"谁 new 具体实现"仍只有一个答案，不是第二套装配逻辑。
+
+**验证**
+
+- **依赖审计（AST，全树含函数内 import）**：对 brain 的**实现依赖从 4 处降到 5 处
+  但全部收在 `tools/`**——`tools/brain_tool.py` 4 处（`BrainPort` /
+  `Brain` / `BrainLlmConfig` / `build_llm_providers`）+ `tools/vision_factory.py`
+  1 处（`QwenProvider`）；`build.py` 归零。**命题 ② 字面成立。**
+- 形状依赖 54 处（`harness/**` 21、`schemas/harness/communication/**` 17、
+  `schemas/frontend/**` 1、`tools/prompts` + `tools/trace/render` 6、
+  `tools/brain_tool` 4、`api.py` 1），全是 `Action`/`Goal`/`Task`/`RunPlan` 等
+  **数据形状**，不是实现依赖（第十二节第 4 条已登记）。
+- **逐模块独立解释器导入：199/199 通过、0 失败**（无循环导入）。
+- `from pokemon_agent.brain import BrainLlmConfig` 后
+  `brain.providers in sys.modules == False`、`PIL in sys.modules == False`。
+- `build_vision_provider()` 返回实例对 `runtime_checkable` 的 `VisionProvider`
+  `isinstance` 为真；`BrainTool.build(text=..., judge=...)` 假 key 真实构造成功、
+  四 provider 实例互异、全默认参数也可用。
+- 触碰文件 `ruff` 全绿。
+
+**教训**
+
+- **"没有对外依赖"是个不精确的命题，会诱导人做错的搬迁。** 我看到"brain 无外部
+  依赖"时，第一反应是"那就把这俩也搬进去"——但 `AgentError` 和补全信封都是
+  **多模块共用**的东西，搬进去就把纵向依赖换成横向依赖。正确的做法是**把命题
+  收紧到可核对的那个**（`interface/` 零重依赖），而不是硬凑字面。
+- **"纯数据的类型"和"它所在的模块"是两件事。** `BrainLlmConfig` 是 dataclass，
+  住在工厂里却让调用方背上网关客户端——**一个 import 的代价不是它自己，
+  是它所在模块的顶部。** 推论：把"只为数据而来"的类型放进零重依赖的那一层。
+- **装配点不是免死金牌。** `build.py` 是"唯一允许 new 实现处"，这豁免的是
+  *new 的权限*，不是 *import 的来源*。它能 new 实现，但仍该经 tool 层工厂拿——
+  "接线知识"和"装配动作"是两件事，前者归 tool 层。
+
+---
+
+## 2026-09-13（53）—— `JudgeProvider` 不再借 `world` 的协议名：brain 自己持有视觉能力
+
+**背景（我上一轮的错误）**：我核对"五层分割原则"时，看到
+`brain/interface/llm_provider.py` 的 docstring 写着"**它横跨两个模块**……
+`brain` 认识 `world.interface` 的协议不算违反铁律 2"，**没验证就采信了**，
+并在汇报里说成"`JudgeProvider` 用到 `world` 的 `VisionProvider`，所以 brain
+严格意义上无法零依赖整体拷走"。**用户指出：brain 是独立持有一个 vision 的。**
+
+**事实**：`build_llm_providers()` 造的四个 provider 是 `QwenProvider`/`ArkProvider`，
+两者都继承 `_MultimodalMixin`——**`complete()` 与 `describe()` 在同一条继承链里**。
+brain 的视觉能力来自**它自己持有的实例**，跟 `world` 的 `VisionProvider` 协议
+**没有任何实际关系**。旧写法 `class JudgeProvider(LLMProvider, VisionProvider, Protocol)`
+只是**借了 world 的协议名**来表达"还会 `describe()`"——用一个别的模块的协议
+描述自己的能力，是错的。
+
+**改了什么**
+
+1. `brain/interface/llm_provider.py`：
+   - `class JudgeProvider(LLMProvider, VisionProvider, Protocol)`
+     → `class JudgeProvider(LLMProvider, Protocol)`，**`describe()` 自己声明**
+     （形参/返回类型仍用 `schemas.providers` 的公共信封——那是两模块共享的
+     数据形状，不是 world 的私有物）；
+   - 删 `from pokemon_agent.world.interface import VisionProvider`；
+   - 模块 docstring 改写：**brain 自己持有带视觉能力的 provider，本模块不 import
+     `world.interface`**；删掉"它横跨两个模块是有意的……不算违反铁律 2"整段。
+
+2. `world/interface/vision_provider.py`：那句"`JudgeProvider`（合并）不在这里"
+   改写为"**不在 world 的谱系里**——brain 有自己的实例，不借 world 任何东西；
+   两个协议长得像只因为描述的是同一个物理能力，**同形不同约，各自声明自己的**"。
+
+3. `brain/brain.py` 的 `__init__` docstring：`judge_llm`/`verify_llm` 的类型说明
+   改为"brain 自己的协议（`complete()` + `describe()`）"，并补一句视觉能力来自
+   自己持有的实例。
+
+**核验**：`JudgeProvider.__protocol_attrs__ == ['complete', 'describe']`（形状未变）；
+MRO 为 `[JudgeProvider, LLMProvider, Protocol, Generic, object]`——**已无
+`VisionProvider`**；`brain/` 全包 `grep` 确认**零 `world`/`harness`/`tools`/
+`trace`/`memory` 依赖**，外部依赖只剩 `errors` + `schemas.providers` +
+`providers`（装配工厂）；全项目 **196/196** 导入通过。
+
+**教训**：**注释不是证据。** 上一轮的结论是从 docstring 反推的，而 docstring
+描述的可能是**设计意图**或**已经过期的说法**，不是当前代码事实。判断依赖关系
+要看 import 语句与实际持有对象，不能看别人怎么自我描述。
+
+**影响面**：`brain/interface/llm_provider.py`、`world/interface/vision_provider.py`、
+`brain/brain.py`。**未跑真实 harness**（按约定由你运行）。
+
+---
+
+## 2026-09-13（52）—— 删 `PromptTemplate.sha`：不做"记了没人读"的版本追踪
+
+**改了什么**
+
+**背景**：0911 核实过 `prompt_sha` 全项目搜不到——`tools/prompts/__init__.py`
+的模块 docstring 却写着"**可归因**：`PromptTemplate.sha` 进 trace。跑出来的
+准确率是哪一版 prompt 的结果，必须说得清"，是**对未实现功能的承诺**。
+0913 用户拍板：**不用 sha。**
+
+1. `tools/prompts/__init__.py`：
+   - `PromptTemplate` 删掉 `sha: str` 字段（现在只剩 `name` / `text`）；
+   - `load()` 删掉 `hashlib.sha256(...)` 计算与传参；
+   - 删掉 `import hashlib`；
+   - docstring 删掉"**可归因**：`PromptTemplate.sha` 进 trace"整条，
+     并删掉类 docstring 里"`sha` 是内容哈希而不是手工维护的版本号"那段；
+   - 模块 docstring 的两条好处"可 review / 无花括号冲突"保留不动。
+
+2. **为什么不真接进 trace，而是删掉**：留着字段等于留着一个**永远不兑现的
+   承诺**——下次读代码的人仍会以为"prompt 版本是可归因的"。prompt 的版本
+   追踪由"**改 prompt 就是一次 git diff**"承担，不在运行时另记一份哈希。
+
+3. `docs/ROADMAP.md` 同步：第 25⑥a 条目（"prompt sha 没接进 trace"）
+   从"低优先级待办"关闭为"**已取消**"；引文中的 ⑥a 说明、⑥ 的方向描述、
+   建议顺序、以及"怎么实现"里的 a) 段落全部标注取消。
+
+**影响面**：`pokemon_agent/tools/prompts/__init__.py`、`docs/ROADMAP.md`。
+`CHANGELOG.md` 历史条目里提到的 prompt sha（如 0905 那条 `sha=f5a1d5b5e448`）
+是**当时的事实记录**，不回改。
+
+**验证**：`grep` 确认 `tools/prompts/` 下 `sha`/`hashlib` 零残留；
+`load('decide_action')` 返回的对象 `hasattr('.sha') == False`；
+全项目 **196/196 模块导入通过**。**未跑真实 harness**（按约定由你运行）。
+
+---
+
+## 2026-09-13（51）—— `EventType` / `Source` 降为裸 `str`：trace 的契约只有"按时间记账"
+
+**改了什么**
+
+**判据**：**trace 不可能只服务这一个项目。** 它对外唯一的契约是"按时间记账"——
+`event_id` 全局单调递增、`ts` 单调非降。谁产出事件、产出什么种类的事件，是**声明方
+（harness 与各子系统）的事**；trace 不认识值域。既然它不认，就没理由在它怀里揣一个枚举。
+
+1. **`trace/datastore/trace_event.py`**：
+   - `class Source(str, Enum)` → `class Source:`（纯字符串常量容器），
+     `class EventType(str, Enum)` → `class EventType:`；
+   - 新增 `SourceName` / `EventTypeName` 两个 `Literal[...]` 别名——**合法值域的类型级表达
+     只此一处**，写错仍能被静态检查捉住；
+   - 删 `from enum import Enum`，加 `from typing import Literal`；
+   - `TraceEvent.type` / `.source` 注解 `EventType` / `Source` → `str`（docstring 指向常量类）。
+
+2. **`trace/interface/trace_port.py`**：删掉 `from ..datastore import EventType, Source`——
+   `TracePort` 现在**对 `pokemon_agent` 其余部分零 import**。`append(..., type: str, source: str, ...)`。
+   docstring 补一句：**合法值域是声明方的事，trace 不认识它**。
+
+3. **行为差异只有两处**（`StrEnum` 成员是单例、裸 `str` 同值不同对象）：
+   - 三处 `x is EventType.LIFECYCLE` → `==`（`trace/store.py` 两处、`tools/prompts/run_plan.py` 两处，
+     共四处；`store.py` 内是 `type is ...`）；
+   - `store.py` 里 `phase=type.value` → `phase=type`（唯一的"真读枚举"点）。
+   - `e.type in event_types`（`frozenset[str]` 掩码）照常工作——掩码元素本来就一直是字符串。
+
+4. **类型注解随之下沉为 `str`**：`tools/trace/render.py`（`RenderedEvent`、`_LINK_NAME`、
+   `_link_failed` 的 `source` 形参）、`harness/run_data_center.py` 的
+   `events(event_types: frozenset[str] | None)`、`FromHarnessToTraceToolAppendReq.source`、
+   `...AppendModelCallsReq.source`、`harness/episode/close/verify_and_summarize.py::_report_link_failed`。
+
+**为什么不动 `schema_version`**：**磁盘格式一字未变。** 落盘本来就是 pydantic 对 `StrEnum`
+的序列化结果——裸字符串 `{"type":"lifecycle","source":"harness"}`；HTTP 响应、前端
+`web/src/App.tsx` 的 `switch (t.type)` 比的也都是字面量。枚举**只是内存里一层没人认的包装**，
+拆掉它不改任何一个字节的落盘数据。仍是 **v4**。
+
+**影响面**：`trace/datastore/trace_event.py`、`trace/store.py`、`trace/interface/{trace_port,__init__}.py`、
+`tools/trace/render.py`、`tools/prompts/run_plan.py`、`harness/run_data_center.py`、
+`schemas/harness/communication/FromHarnessToTraceToolAppend{,ModelCalls}Req.py`、
+`harness/episode/close/verify_and_summarize.py`、`docs/spec/harness/SPEC_brain_link.md`（§8 定案 + §12 欠账表）。
+
+**验证**：195/195 模块导入通过；`TracePort.append` 签名确认裸 `str`；`TracePort` 源码确认零 import；
+端到端落账三条事件 `event_id` 严格单调（`[0,1,2]`）、读回类型全为 `str`、
+`frozenset[str]` 掩码过滤正确（2/3 条）、落盘 json `type='lifecycle'`/`source='harness'`、
+**`ts` 单调非降 = True（"按时间记账"契约完好）**、`void_after` 正常；ruff 触碰文件全绿
+（剩 23 条为既存项）。**未跑真实 harness**（按约定由你运行）。
+
+---
+
+## 2026-09-13（50）—— 修复硬关机留下的文件损坏 + 拼 prompt 归 tool、`TraceKind` 归 harness、删 `plan_note`
+
+**改了什么**
+
+**0. 修复一处文件损坏**（优先）：`harness/episode/close/verify_and_summarize.py` 第 145 行
+`raise` 与下一行 `deps.trace.append(` 挤在同一行、括号不配对——语法错误，整个文件不可导入。
+与机器的 Event 41 硬关机记录吻合。已修复，全项目 195 个模块语法+导入扫描通过。
+（同时发现 `scripts/` 与 `tests/` 两个目录已空，疑似同一次事故丢失，**需要你确认是否要重建**。）
+
+1. **拼 prompt 从 harness 移到 `BrainTool`**（消除"两个碰 prompt 的地方"）：
+   - 五个 Req（`Choose`/`Judge`/`Plan`/`Verify`/`Summarize`）**删掉 `prompt: str = ""` 字段**；
+   - `BrainTool` 五方法**入口各调一次** `build_prompt(req)`，产物是局部变量；
+   - 删 harness 五处 `req.model_copy(update={"prompt": ...})`
+     （`think_action.py:93`、`judge.py:119`、`verify_and_summarize.py:138/198`、`plan.py:171`）；
+   - `choose` 的 `base_prompt` 从 `req.prompt` 改成入口局部变量（`_retry_prompt` 基座不变）；
+   - 删三个 harness 节点里已无用的 `tools.prompts` 导入。
+
+2. **`TraceKind` 归 harness**：从 `pokemon_agent/trace/interface/domain/` 迁到
+   `pokemon_agent/schemas/harness/domain/trace_kind.py`，由 `schemas/harness/__init__.py`
+   统一 re-export。27 个 importer 改写（22 个 harness 节点 + `AppendReq` + `tools/trace` 两处 + batch）。
+   - **归属依据修正**：旧 docstring 拿 `Facts`/`WorldPort` 类比，但那两者的消费者是**自己那层的实现**，
+     `TraceKind` 的消费者是 harness——类比用错。
+   - `trace/interface/` 只剩 `TracePort`，`pokemon_agent.trace` 不再导出 `TraceKind`。
+   - 包内 import 走 `.domain` 具体模块（`AppendReq` 从 `schemas.harness` 拿会循环导入）。
+
+3. **删 `RunState.plan_note`**（连带）：`plan` 节点曾在失败时把 prompt 复制进它供人工审查。
+   拼 prompt 移走后 state 不再拿得到 prompt——0913 定案**不再记**：耗尽现场的两笔 trace
+   （`PLAN_FAILED` 带 reason + `MODEL_CALL` 带每次请求 payload）比 prompt 副本更完整。
+   **人工审查直接看 trace。** 五处 `{"plan_note": ...}` 返回一并清理。
+
+**影响面**：`schemas/harness/communication/FromHarnessToBrainTool{Choose,Judge,Plan,Verify,Summarize}Req.py`、
+`schemas/harness/domain/`（新建）、`schemas/harness/__init__.py`、`trace/interface/`、
+`tools/brain_tool.py`、`tools/prompts/{decide_action,judge_success,verify_and_summarize}.py`、
+`harness/run/run_state.py`、`harness/run/nodes/plan.py`、`harness/episode/{decide/think_action,gate/judge,close/verify_and_summarize}.py`、
+`docs/spec/harness/SPEC_brain_link.md`（§2 流程图重画、§4.1/4.3/4.4/4.5/4.6 签名、§6 整节重写、§8 补归属、§10 一图流重编号、§11/§12）。
+
+**验证**：195/195 模块导入通过；五个 Req 确认无 `prompt` 字段；`RunState` 确认无 `plan_note`；
+`BrainTool` 五方法源码确认各含对应 `build_prompt` 调用；旧 import 路径确认已死；
+ruff 触碰文件全绿（剩 3 条为 `trace/` 既存项）。**未跑真实 harness**（按约定由你运行）。
+
+---
+
+## 2026-09-13（49）—— 六方法约定块补全：`plan`/`verify`/`summarize` 的素材全部立进签名
+
+**改了什么**
+
+1. **`plan` 签名**（`goal` 一个空壳 → 三块实名约定）：
+   ```python
+   plan(*, prompt, goal_stack: Sequence[str], history: Sequence[str],
+        max_push: int, images=())
+   ```
+2. **`verify` 签名**（补 `goal`/`knowledge`，**新增 `include_rationale`**）：
+   ```python
+   verify(*, prompt, entries, goal: str, knowledge: str,
+          include_rationale: bool, images=())
+   ```
+3. **`summarize` 签名**（补 `goal`/`history`/结局）：
+   ```python
+   summarize(*, prompt, goal: str, history: Sequence[str], success: bool,
+             steps: int, max_steps: int, images=())
+   ```
+4. **`BrainTool` 三个调用点同步**：从 req 素材推出这些块传下去。
+   `verify` 传 `include_rationale=False`、`summarize` 渲 `history` 用 `reason=True`
+   ——这个**方向相反的差异第一次在接口上可见**。
+5. **`tools/prompts/run_plan.py` 的 `_history_lines`/`_goals_lines` 公开改名**
+   （`history_lines`/`goals_lines`），**返回行列表而不是拼好的串**：
+   `build_prompt()` 与 `BrainTool.plan()` **共用同一份渲染**。
+
+**为什么这么改**
+
+上一轮只修了 `judge` 这一个症状，**没修根因**——根因是"素材已渲进 prompt"
+被当成了删参数的理由，而正确规则是：**brain 的表达是"必须有哪几块"，
+签名是那个约定的具象**。同一份文件里的 `reflect(before, after, …)` 是现成判例。
+
+补全之后，每个方法的"约定块"一眼可见：
+
+| 方法 | 约定块 |
+|---|---|
+| `choose` | `keys`（动作空间）+ prompt 携带的其余 |
+| `reflect` | `before` / `after` / `action_text` / `rationale` |
+| `judge` | `goal` / `history` |
+| `plan` | `goal_stack` / `history` / `max_push` |
+| `verify` | `entries` / `goal` / `knowledge` / **`include_rationale`** |
+| `summarize` | `goal` / `history` / `success` / `steps` / `max_steps` |
+
+**`include_rationale` 是这轮最有价值的一处**：`verify` 用 `reason=False`（不给论据
+——那是**被校验的对象**，先看到就自带偏向）、`summarize` 用 `reason=True`
+（蒸馏要总结"为什么这么做"，说辞是有用素材）。这个**方向相反的语义选择**
+此前完全藏在 `tools/prompts/` 的渲染调用里，接口上看不见；现在它是 `verify` 的
+显式约定块。
+
+**取舍**
+
+- **`plan` 的 `goal` 改成 `goal_stack`**：规划看的是**整栈**（要决定压几个、压在哪），
+  单个 `goal` 表达不了；且原 `goal` 恒传空串（"收下不消费"），本就是空壳。
+- **`verify`/`summarize` 的 `entries`/`history` 不强求同名**：前者要 `index` 对齐
+  （逐条判决），后者是整体素材（蒸馏），结构不同就不该同名——
+  但两者在 `brain_tool` 里**同源于 `entries`**（`StepMemory` 列表）。
+- **`run_plan` 的渲染函数公开**：`prompt` 层与 `tool` 层共用一份，避免"事件里的历史"
+  和"prompt 里的历史"分两份实现后措辞漂移。
+
+**影响面**
+
+- **改动**：`brain/interface/brain_port.py`（三方法签名+docstring）、
+  `brain/brain.py`（三方法实现）、`tools/brain_tool.py`（三调用点 + 导入）、
+  `tools/prompts/run_plan.py`（两个渲染函数公开化、改返回行列表）、
+  `docs/spec/harness/SPEC_brain_link.md`（速查表全量更新）
+- **harness 侧零改动**：新增的块全部由 tool 从 req 现有字段推出
+  （`req.goal`/`req.knowledge`/`req.success`/`req.steps`/`req.goals`/`req.events` 本来就在）
+- **验证**：六方法 `BrainPort` ⇄ `Brain` 签名 `str()` 全等；195/195 模块导入通过；
+  假 `Brain` 端到端跑通三条链路——`plan` 收到 `['→ 抓皮卡丘']`/`max_push=2`、
+  `verify` 收到 `include_rationale=False` 且 `entries` **不含**论据、
+  `summarize` 收到 `success/steps/max_steps` 且 `history` **含**论据；
+  ruff 全部触碰文件干净
+
+## 2026-09-13（48）—— 链路名收敛到单一真源：`_LINK_NAME` 派生，消掉硬编码漂移面
+
+**改了什么**
+
+1. **`render.py` 新增 `_LINK_NAME: dict[Source, str]`**——`Source` → 链路名的唯一映射，
+   五个失败事件渲染从它派生 payload 的 `source` 字段。
+2. **`_link_failed(req, source)` 的 `link: str` 形参删除**：签名从
+   `(req, link, source)` 收成 `(req, source)`——**一个入参同时决定信封归属与
+   payload 的链路名**，不给"信封归 A、payload 说 B"留出错空间。
+3. **四个 `*_failed` 渲染函数去掉硬编码字符串**，改为只传 `Source`。
+
+**为什么这么改**
+
+链路名（`"decide"`/`"plan"`/`"judge"`/`"verify"`/`"summarize"`）在渲染层硬编码时，
+是 `MaxRetriesExceeded.source` 的**第二真源**——同一个字符串在三处独立写着：
+`BrainTool._attempt_loop("…")` 的实参、`*AttemptFailed` 的默认 `source`、渲染的 `link`。
+任何一处漂移都不会报错，只会让"事件里说的链路"和"异常里说的链路"静默对不上。
+
+改成从 `Source` 派生后，链路名是 `Source` 的函数（唯独 `Source.MEMORY` → `"summarize"`
+不同名，因为跨局摘要归记忆层），单一真源。
+
+**取舍**
+
+- **没有把 `Source` 本身改名为链路名**：`Source` 是"事件由哪一层产生"的分组维度
+  （`DECISION`/`JUDGE`/`VERIFY`/`PLAN`/`MEMORY`），与链路名是两个概念
+  （`MEMORY` ↔ `summarize` 就是证据）。要保留分组的独立性，就不能让链路名的拼法
+  反向绑架它。
+- **没有为此新增测试目录**：`tests/` 仍是空目录。用一次性脚本核对了三源一致
+  （见下"验证"）。
+
+**影响面**
+
+- **改动**：`pokemon_agent/tools/trace/render.py`（新增 `_LINK_NAME`、改 `_link_failed`
+  签名、四个渲染函数去硬编码）
+- **行为零变化**：五个事件的 `信封 Source` 与 `payload.source` 逐字节与改动前相同
+- **验证**：`_attempt_loop` 五个实参 ⇄ `_LINK_NAME` 五个 value **集合全等**；
+  五个 `*AttemptFailed` 的默认 `source` 全落在 `_LINK_NAME.values()` 内；
+  五个失败事件渲染的 `(信封, payload.source)` 组合逐一正确
+  （`memory`↔`summarize` 是刻意不同名的唯一一处）；195/195 模块导入通过；
+  ruff 对 `render.py` 干净
+
+## 2026-09-13（47）—— `judge` 补回 `goal`/`history` 约定；失败事件五链路统一、不再带账
+
+**改了什么**
+
+1. **`Brain.judge()` / `BrainPort.judge()` 补上 `goal` + `history`**：
+   ```python
+   judge(*, prompt: str, goal: str, history: Sequence[str],
+         images: Sequence[bytes] = ()) -> JudgeResult
+   ```
+   `history` 收渲染好的文本序列（不是 `StepMemory`）。`BrainTool.judge()` 从
+   `req.goal.goal` 与 `req.history` 渲染后传入（`render(reason=False)`，与
+   `judge_success.build_prompt()` 同一取舍：发生过的事给判定器看、决策者的说辞不给）。
+2. **新增 4 个 `TraceKind`**：`PLAN_FAILED` / `JUDGE_FAILED` / `VERIFY_FAILED` /
+   `SUMMARIZE_FAILED`（连同已有的 `DECISION_FAILED`，五条链路各一种）。
+3. **失败事件统一形状**：`render._link_failed()` 一个函数渲五个 kind，
+   payload = `{kind: "MaxRetriesExceeded", reason, source, last}`，**不读 `calls`**。
+   `last` 由调用方从 `exc.last_reason` 填。
+4. **`think_action.py` 的 `calls=[last]` 删除**：`DECISION_FAILED` 改传 `why=exc.last_reason`。
+5. **`judge.py` / `verify_and_summarize.py` 补 `except MaxRetriesExceeded`**：
+   先落整条账（`MODEL_CALL`）再补失败事件，然后原样上抛（不吞）。
+   `verify_and_summarize.py` 新增 `_report_link_failed()` 消掉两跳的重复。
+6. **`plan.py` 的 `resp is None` 分支补一条 `PLAN_FAILED`**
+   （`ask_planner_with_retry` 仍把异常吞成 `None`，`why` 从最后一条账就地取）。
+
+**为什么这么改**
+
+两件事，都是用户拍板。
+
+其一：**`judge` 缺 `goal`/`history` 是错的**。上一轮以"素材一律进 prompt"为由把它们
+从签名删掉，但同一个文件里的 `reflect(before, after, ...)` 就是反例——`before`/`after`
+必然也在 prompt 里，签名照样留着。**签名是 brain 的约定的具象**（"判定必须有这三块"），
+prompt 渲染是调用方怎么把它们拼成文本的策略，两件事不冲突。
+
+其二：**"记最后一次失败的账"是多余的一层**。整条账已由 `append_model_calls` 逐条落成
+`MODEL_CALL`，而 `DECISION_FAILED` 的 `calls=[last]` 只为让渲染拼出
+`last: "ParseFailure: ..."` 一行——那句话本来就挂在异常的 `last_reason` 上。
+账（`MODEL_CALL`）与失败态（`*_FAILED`）是两个关注点，分开记。
+
+顺带补齐：此前**只有 `decide` 写失败事件**，`judge`/`verify`/`summarize` 耗尽时
+一条都不写，"哪个节点失败了"要等 `EPISODE_ERROR` 才看得出（那条 step 写死 0、
+只有一个 message 串）。现在五条链路一致。
+
+**取舍**
+
+- **没有删 `EPISODE_ERROR`/`RUN_ERROR`**：`*_FAILED` 是节点级（带真实 `step`、
+  定位到第几步的哪条链路），边界事件是兜底（任何异常逃出都补一条，不预设来源）。
+  粒度不同，都留。
+- **`summarize` 的失败事件 `Source` 归 `MEMORY`**（不是新开 `SUMMARIZE`）：
+  跟 `SUMMARY_CALL` 同一个理由——跨局摘要是"记忆子系统在做什么"。
+  payload 里的 `source` 字段仍是 `"summarize"`，两者不冲突。
+- **`ask_planner_with_retry` 保持"吞成 `None`"**：它返回 `None` 让 `plan()` 走
+  "交人工审查"分支是既有行为，没改；只是在其后补一条失败事件。
+
+**影响面**
+
+- **改动**：`brain/interface/brain_port.py`、`brain/brain.py`、`tools/brain_tool.py`（judge）、
+  `tools/trace/render.py`（`_link_failed` + 4 新函数，删 `ModelCall` 导入）、
+  `tools/trace/__init__.py`（渲染表）、`trace/interface/domain/trace_kind.py`、
+  `harness/episode/decide/think_action.py`、`harness/episode/gate/judge.py`、
+  `harness/episode/close/verify_and_summarize.py`、`harness/run/nodes/plan.py`、
+  `docs/spec/harness/SPEC_brain_link.md`（§8 落账表 + 流程图 + 速查签名 + 第 7 条约束）
+- **行为变化**：`judge`/`verify`/`summarize` 耗尽时多写 1 条失败事件 + 1 组 `MODEL_CALL`
+  （此前一条不写）；`decision_failed` 的 payload 少一个 `last` 字符串的构造路径、
+  多一个 `source` 字段
+- **验证**：195/195 模块导入通过；`BrainPort.judge` ⇄ `Brain.judge` 签名 `str()` 相等；
+  五个失败 kind 渲染产出形状一致的 `ERROR` 事件且不依赖 `calls`；
+  假 `Brain` 端到端跑通 `BrainTool.judge`（`goal` 传到、`history` 渲成文本且
+  `reason=False` 生效）；ruff 对全部触碰文件干净（剩 1 条 `_as_list` 为既存项）
+
+## 2026-09-13（46）—— 删掉 `ChooseOnceResp.normalized`：规范化是等价改写，不留痕
+
+**改了什么**
+
+1. **`FromHarnessToBrainToolChooseOnceResp` 删掉 `normalized: str` 字段**，现在只剩
+   `action` + `calls`。
+2. **`BrainTool._normalize()` 归位为纯粹的世界语义施加器**：签名 `-> tuple[Action, str]`
+   改回 `-> Action`，删掉 `notes` 列表累积与 `"; ".join(notes)`，直接
+   `return Action(thought=action.thought, sequence=segments)`。
+3. **`BrainTool.choose()`** 改为 `ChooseOnceResp(action=self._normalize(result.action), calls=calls)`。
+4. **`think_action.py` 步骤 3 注释**改为"规范化不留痕"版本，说明原动作不另存一份。
+5. **spec §4.1** 删表格 `normalized` 行、加"规范化不留痕"引用块、代码块与流程图同步
+   （`⑩ return ChooseOnceResp(action, calls)`）；§7 未接上清单删掉 `_normalize 的 notes` 一行。
+
+**为什么这么改**
+
+`normalized` 是"`_normalize()` 改了什么"的说明性文本，**没有任何消费者**：trace 的 THINK
+事件记的是 `action`（已是规范化之后的那一条链），判定/校验链路不读它，replay 也不读。
+而 `_normalize()` 做的改写（"连按 a"→"按一次"、多段链中间只能方向键、链尾允许一个 a）
+全是**等价改写**——改写后的动作就是 `action` 本身，语义上不存在"原始动作"这个需要被
+记住的实体。生产一个字段却无人消费，只会让后来者误以为"规范化这件事需要被追踪"。
+
+**取舍**
+
+- **不是"改成结构化再留着"，是直接删**：留结构化版本仍然是留一个没有消费者的字段。
+  真要看规范化动了什么，改 `_normalize()` 让它记 log 更直接，不必占协议字段。
+- **校验失败仍然抛 `ParseFailure`**：等价改写不留痕，但"规则被违反到无法改写"仍是硬错误，
+  这条路径一个字没动。
+
+**影响面**
+
+- **改动**：`schemas/harness/communication/FromHarnessToBrainToolChooseOnceResp.py`、
+  `tools/brain_tool.py`（`choose()` + `_normalize()`）、
+  `harness/episode/decide/think_action.py`（注释）、
+  `docs/spec/harness/SPEC_brain_link.md`（§4.1 + §7）
+- **行为零变化**：`action` 的取值逐字相同，只是不再多产出一个没人读的字符串
+- **验证**：全仓 `grep normalized` 只剩两处说明性注释与 spec 的"已删"记录
+
+## 2026-09-13（45）—— brain 厂商接线收回 brain：`BrainTool.build(config)`、`build.py` 只做注入
+
+**改了什么**
+
+1. **新增 `pokemon_agent/brain/build_llm_providers.py`**：
+   - `BrainLlmConfig`（frozen dataclass）：四个 provider 的选型与超参，全是纯数据
+     （`text` / `judge` / `verify` / `plan` / `max_tokens`，默认值即历史真实链路值）。
+   - `build_llm_providers(config) -> tuple[LLMProvider, JudgeProvider, JudgeProvider, LLMProvider]`：
+     按"供应商分岗"规则造四个 provider（decide/judge → DashScope `QwenProvider`；
+     verify/plan → 火山方舟 `ArkProvider`），带出口断言保证四个是不同实例。
+2. **`BrainTool.build(config)` 类方法**：内部 `build_llm_providers(config)` + `Brain(...)` + `cls(brain)`。
+   它是 `__init__` 的糖，不是第二套装配逻辑。
+3. **`build.py` 不再 import `ArkProvider`**（`QwenProvider` 只留 perception 那个，那是 world 的依赖）：
+   原 24 行的四 provider 构造 + 分岗注释，收缩成 `BrainTool.build(BrainLlmConfig(...))` 一行；
+   论证性注释搬进 `BrainLlmConfig` 的字段 docstring 与工厂模块 docstring。
+4. **`brain/__init__.py`** 导出 `BrainLlmConfig` / `build_llm_providers`。
+
+**为什么这么改**
+
+"brain 的四个技能分别该接哪家厂商、哪个位置必须用豆包型号名"是**这条链路的接线知识**，
+不是"全项目怎么拼"的知识。放在 `build.py` 里时，装配点要认识 `QwenProvider`/`ArkProvider`
+两个具体类，还要记得一条只对 brain 成立的规则（verify/plan 的 model 缺省值必须是豆包后缀名，
+传 Qwen 型号名会 404）。把接线收回 brain 之后：**协议归属（`brain.interface`）与实现归属
+（`brain.build_llm_providers`）对齐了**，两样都离消费者最近。
+
+**取舍**
+
+- **没有把 `vision_model` 一起收进来**：感知是 `world` 的依赖（`PyBoyWorld(rom, vision, ...)`），
+  不是 brain 的。收进来会让"brain 的配置"里混着一个买给别人的东西。
+- **`BrainLlmConfig` 允许"不算配置"**：它不做任何选型决策，只把调用方给的值打包。
+  真正的选型入口是 `build.py` 的 `build_real(...)` 形参——这层不引入第二个决策点。
+- **保留了 `build_real` 的六个模型形参**：它们是 API 层与命令行能够覆盖的接口，
+  改成"直接收 config"会把 `BrainLlmConfig` 泄漏到装配点的签名上。当前是
+  `build_real` 的形参 → 打包成 `BrainLlmConfig` → 递进去。
+- **`ArkProvider` 的 `or "doubao-seed-2-1-pro-260628"` 兜底留在 `build.py`**：那是
+  "app 没配时用什么"的部署语义，不是 brain 链路的选型语义。
+
+**影响面**
+
+- **新增**：`pokemon_agent/brain/build_llm_providers.py`
+- **改动**：`pokemon_agent/build.py`（删 1 个 import、删 24 行构造、加 1 行调用）、
+  `pokemon_agent/tools/brain_tool.py`（加 `build` 类方法 + `TYPE_CHECKING` 导入）、
+  `pokemon_agent/brain/__init__.py`（导出两个新名字）
+- **行为零变化**：四个 provider 的类、型号、温度、max_tokens 逐项对齐原构造
+- **验证**：占位 key 实测 `BrainTool.build(BrainLlmConfig())` 产出四个**不同**实例，
+  类型逐一满足 `LLMProvider`/`JudgeProvider`；`tests/` 为空目录（无测试）；
+  ruff 对 S6 涉及文件全绿（全仓 28 个 E501/ANN 系问题均为未触碰文件的既存项）
+
+## 2026-09-13（44）—— `providers` 拆解：五个协议各归其位，`providers/` 只剩实现
+
+**改了什么**
+
+1. **五个协议按"谁消费"搬家**：
+   | 协议 | 原位置 | 新家 | 消费者 |
+   |---|---|---|---|
+   | `LLMProvider` / `JudgeProvider` | `providers/interface/` | `brain/interface/llm_provider.py` | `Brain` |
+   | `VisionProvider` | `world/interface/`（与 `providers/interface/` 两处并存） | `world/interface/vision_provider.py` | `PyBoyWorld` |
+   | `EmbeddingProvider` | `providers/interface/` | `memory/embedding_provider.py` | 检索链路 |
+   | `RerankerProvider` | `providers/interface/` | `memory/reranker_provider.py` | 检索链路 |
+2. **`providers/interface/` 整个目录删除**（含 `ports.py` / `domain/model_call.py` / `__init__.py`）。
+3. **`providers/__init__.py` 重写**：`__all__` 只剩五个实现类，模块 docstring 用表格
+   记录五协议的新家与判据。
+4. **`JudgeProvider` 结构合并**（`LLMProvider` + `VisionProvider`）：`judge`/`verify` 两条链路
+   在"带得到图走多模态、凑不齐退化纯文本"上是同一套行为，合并后 `Brain.__init__` 的类型
+   一眼能看出这两个位置比 `decide_llm` 多担一个职责。
+5. **消费者批量改 import**：`brain/brain.py`、`world/pyboy_world.py`、
+   `tools/memory_tool.py`、`build.py`、`schemas/harness/communication/ModelCall.py`、
+   `memory/retrieval.py` 等。
+
+**为什么这么改**
+
+**协议的归属看"谁消费"，不看"谁实现"。** `QwenProvider` 同时实现 `LLMProvider`、
+`JudgeProvider`、`VisionProvider` 三个协议——但这不等于这三个协议属于 `QwenProvider`
+所在的 `providers` 包。放在那里时它们看起来像"某个供应商的协议"，读者的第一反应是
+"要换供应商就得改这些协议"，而实际上换供应商只该改实现。
+
+拆解之后依赖方向变干净：`providers/` 对协议**零依赖**；各领域模块对**实现零依赖**
+（`brain` 只 import `brain.interface`，不知道 `QwenProvider` 存在）。这跟 `BrainPort`
+走的路一样——协议物理上挨着它的实现。
+
+**取舍**
+
+- **`JudgeProvider` 横跨 brain 与 world 两个模块**，这是有意的，且**不违反铁律 2**：
+  铁律管的是"大脑不许 import 具体实现"，而 `world/interface` 是纯协议层，跟
+  `brain/interface` 同性质。代价是 `world` 想独立拷走时这条依赖要重新评估——已记进
+  `SPEC_brain_link.md` §12 的未完成项。
+- **没有为 `ModelCall` 建 `providers/interface/domain/`**（虽然它历史上住那儿）：
+  见下一条（43）的循环导入实测。
+- **`world` 侧的感知账仍是裸 `dict[str, str]`**，没有统一成 `ModelCall`：感知链路自己记账、
+  不跨层，统一形状的收益还不明确。已记进 SPEC §12 待评估。
+
+**影响面**
+
+- **删除**：`providers/interface/` 整个目录（3 个文件）
+- **新增**：`brain/interface/llm_provider.py`、`world/interface/vision_provider.py`、
+  `memory/embedding_provider.py`、`memory/reranker_provider.py`
+- **改写**：`providers/__init__.py`（只剩实现）
+- **改 import**：约 12 个文件
+- **验证**：194 个模块导入全通过；ruff 干净
+
+## 2026-09-13（43）—— `ModelCall` 三分：跨层信封 / brain 方言 / world 裸字典
+
+**改了什么**
+
+1. **`schemas/harness/communication/ModelCall.py` 新建**：跨层信封用的 `ModelCall`
+   （含 `with_attempt(attempt) -> ModelCall`），`*Resp.calls` 与 `MaxRetriesExceeded.calls`
+   都用它。docstring 记录三次搬家的完整理由与 `tools.interface` 回环的实测教训。
+2. **`brain/interface/domain/model_call.py` 新建**：brain 方言的 `ModelCall`，
+   **无 `with_attempt`**（"这是第几次"只有循环控制者知道）。docstring 用表格对照两份的归属差异。
+3. **`providers/interface/domain/model_call.py` 删除**（随该目录一并删）。
+4. **`FromHarnessToTraceToolAppendReq.call: ModelCall | None` → `calls: list[ModelCall] | None`**，
+   附"为什么是列表"的长 docstring（一次完整调用 = 整条账，含失败尝试）。
+5. **`tools/trace/render.py`**：`model_call()` 改为 `for call in req.calls:` 循环展开多条；
+   `judge_call` / `verify_call` / `summary_call` / `decision_failed` 的 `req.call`
+   改成 `req.calls` / `req.calls[-1]`。
+6. **`tools/trace/model_calls.py`**：`call=call` → `calls=[call]`。
+7. **五个 `FromHarnessToBrainTool*Resp.py`** 的 `from pokemon_agent.providers.interface import ModelCall`
+   → `from .ModelCall import ModelCall`。
+
+**为什么这么改**
+
+`ModelCall` 在 0902 那次重构里被**三处各定义一份形状**：brain 吐一份、world 吐一份、
+trace 收一份。三份字段恰好一样（`payload` / `error_kind` / `error`），于是"隐式共享类型"
+把三层绑在一起——brain 想换实现就得动 trace 的类。
+
+**这跟"允许冗余类对象"的原则矛盾**：`Reflection`/`StepMemory` 那对之所以能各自定义，
+是因为两边**字段会独立演化**；`ModelCall` 三份**从定义那天起就必须同步**，那是纯粹的重复，
+不是巧合。收拢之后每份的归属由**它跨过哪道边界**决定：
+
+- **跨层信封那份**（`schemas/harness/communication/`）：过了 harness↔tool 边界，
+  且**循环控制者要给它盖章**，所以只有它有 `with_attempt`。
+- **brain 方言那份**（`brain/interface/domain/`）：`Brain` 吐出的原样账，
+  不带 `attempt`，也不该带。
+- **world 那份**：不定义类，用裸 `dict[str, str]`——感知链路自己记账、不跨层。
+
+**取舍**
+
+- **搬运点只有一个**：`tools/brain_tool.py::_adopt()`，三个字段的显式 `dict()` 拷贝。
+  "不是白搬"的理由写进了 `_adopt` 的 docstring——类型边界划在这里，
+  "brain 能换实现"才不被一条隐式共享类型绑死。
+- **`attempt` 是 `str` 不是 `int`**：沿用原 payload 字典里"值一律是字符串"的约定，
+  trace 渲染与离线分析都按字符串处理。保持不动，避免为这一个字段引入类型混装。
+- **账字段名统一为 `calls`**：`choose`/`plan` 曾叫 `attempts`、`judge`/`verify`/`summarize`
+  曾叫 `call`（单条）。取消降级后六条链路的重试都在 tool 层，账都是列表，
+  名字与语义一起统一。
+
+**影响面**
+
+- **新增**：2 个（`schemas/harness/communication/ModelCall.py`、`brain/interface/domain/model_call.py`）
+- **删除**：`providers/interface/domain/`（含 `model_call.py`）
+- **改动**：信封 schema 6 个、trace 渲染 2 个、`brain_tool.py`、`errors.py`
+- **验证**：195 个模块导入全通过；ruff 干净
+
+> **实测教训（值得记住）**：`ModelCall` 曾放在 `tools/interface/domain/`，
+> 引发 `ImportError: cannot import name 'FromHarnessToBrainToolChooseOnceResp' from
+> partially initialized module 'pokemon_agent.schemas.harness'`
+> ——`tools/interface/ports.py` 要 `schemas.harness`，而 `schemas.harness` 的信封要
+> `ModelCall`。**"放哪个包"不能只看语义，还要看 import 图。**
+
+## 2026-09-13（42）—— brain 六方法一律上抛：取消全部降级，`AttemptFailed` 家族 + `MaxRetriesExceeded.source`
+
+**改了什么**
+
+1. **`errors.py` 重构出 `AttemptFailed` 家族**：
+   - 基类 `AttemptFailed(call, source)`，五个子类各带默认 `source`：
+     `DecisionAttemptFailed` / `PlanAttemptFailed` / `JudgeAttemptFailed` /
+     `VerifyAttemptFailed` / `SummarizeAttemptFailed`。
+   - `MaxRetriesExceeded` 加 `source` 字段（`"decide"` / `"plan"` / `"judge"` /
+     `"verify"` / `"summarize"`），`calls` 的类型明确为 tool 层那份 `ModelCall`。
+2. **`brain/brain.py` 六方法失败路径统一**：调不通、解析不出、截断、幻觉按键——
+   一律包进对应 `AttemptFailed` 抛出，**带这一次的账**。
+   - 删掉 `judge` 的 `done=False` 降级、`verify` 的"全部标不可靠"降级、
+     `summarize` 的 `summary=None` 降级。
+   - `_parse_verify` / `_parse_summary` 仍返回补齐的保守列表/None，
+     但**由 `brain` 封进异常**，不再自己消费。
+3. **`brain/interface/brain_port.py` 契约重写**：docstring 明确"六方法都是"问一次"的语义，
+   没有一个内部重试；失败一律抛 `AttemptFailed` 家族"。
+4. **`tools/brain_tool.py` 重写重试循环**：五条调模型的链路走**同一个** `_attempt_loop()`，
+   `BRAIN_MAX_ATTEMPTS` 次；`_adopt()` 把 brain 方言账转成 tool 层形状并 `.with_attempt(...)`；
+   耗尽抛 `MaxRetriesExceeded(..., source=...)`。
+5. **取消 harness 两处就近降级**：
+   - `harness/episode/gate/judge.py`：删 `try/except Exception` 造兜底 `ModelCall` 的块，
+     直接 `deps.brain_tool.judge(req)`。
+   - `harness/episode/close/verify_and_summarize.py`：删两跳的就近降级，
+     `result = deps.brain_tool.verify(req); verdicts = result.verdicts`。
+6. **常量合并**：`DECISION_MAX_RETRIES` + `PLAN_MAX_ATTEMPTS` → `BRAIN_MAX_ATTEMPTS = 3`。
+
+**为什么这么改**
+
+**"降级"把"链路坏了"伪装成"业务结论就是如此"。** `judge` 调用失败吞成 `done=False`、
+`verify` 吞成"全部标不可靠"、`summarize` 吞成 `summary=None`——三者在数据里与
+"判定器确实认为没完成 / 这一局记忆确实都不可信 / 这一局确实没经验可蒸馏"**完全无法区分**。
+表现是成功率悄悄变 0，而"模型调不通"这个事实一次都没有出现在 trace 里。
+**那是把可观测性换成了"一局不崩"的假安全感。**
+
+**关键认识：降级没有被取消，它只是搬到了能被观测的地方。** 同一个降级动作，
+写在 brain 的 `except` 里就看不见，写在 harness 的 `except MaxRetriesExceeded` 里就看得见
+（trace 里有一条 `error` 事件 + 一条明确的路由）。所以这轮改的是**降级的位置**，
+不是它的存在与否。
+
+分工落成三段式：
+
+```
+brain  ──抛 AttemptFailed（带这一次的账）──▶  tool
+tool   ──重试 BRAIN_MAX_ATTEMPTS 次──────▶  成功：resp 带整条账
+                                            耗尽：抛 MaxRetriesExceeded（整条账 + source）
+harness ──except MaxRetriesExceeded──────▶  决定怎么收场
+```
+
+**为什么循环在 tool 而不是 brain**：失败之后该怎么办依赖调用方的处境——决策失败让这一局
+失败、规划失败交人工、校验失败**可以**给保守结果继续。brain 是第三方模块，不知道这些；
+它只回答"这一次成没成"。
+
+**取舍**
+
+- **保留 `AttemptFailed` 家族，不合并成一个类加 `source` 字段**：每链路一个类，
+  `except JudgeAttemptFailed` 是编译期就到位的分流；共用基类保证 `except AttemptFailed`
+  一刀兜住全部。`source` 管**整条链路**、异常类管**单次尝试**，两者粒度不同，都要。
+- **五条链路共用一个重试预算**（`BRAIN_MAX_ATTEMPTS`）：失败形态是同一个（调不通 /
+  解析不出），"要不要再问一次"的答案在同一层。分开配只会让人以为它们可以独立调，
+  实际上没有证据支持任何一条链路该多试或少试。真需要分化时再加字段。
+  **唯一的分化是 `choose` 的重试会叠加纠正说明**——那是重试的**内容**不同，不是**次数**不同。
+- **`reflect` 不进循环**：它不调模型，没有"失败"这种中间态可重试。
+- **`_parse_verify` 的保守列表保留**：调用方拿到异常后若决定降级，要的正是这份补齐的列表；
+  交给它比让它在异常里自己造一份更省事。但 `brain` 自己**不消费**它。
+
+**影响面**
+
+- **改动**：`errors.py`、`brain/brain.py`、`brain/interface/brain_port.py`、
+  `brain/interface/domain/results.py`、`brain/interface/domain/model_call.py`、
+  `tools/brain_tool.py`、`tools/interface/ports.py`、`config.py`、
+  `harness/episode/gate/judge.py`、`harness/episode/close/verify_and_summarize.py`、
+  `harness/episode/decide/think_action.py`、`harness/run/nodes/plan.py`、
+  `harness/interface/*`、`harness/run/run_state.py`
+- **行为变化**（有意的）：`judge`/`verify`/`summarize` 从"永不抛"变成"失败抛
+  `MaxRetriesExceeded`"——调用方必须处理，这正是想要的效果
+- **验证**：ruff 全绿；模块导入通过；两处就近降级删除后调用链完整
+
+## 2026-09-13（41）—— 策略常量收进顶层 `config.py` 的后续：重试预算合并为 `BRAIN_MAX_ATTEMPTS`
+
+**改了什么**
+
+`DECISION_MAX_RETRIES`（`brain_tool.py` 循环用）与 `PLAN_MAX_ATTEMPTS`
+（`brain_tool.py` 循环用 + `harness/run/nodes/plan.py` 措辞用）**合并为一个常量**
+`BRAIN_MAX_ATTEMPTS = 3`，住顶层 `pokemon_agent/config.py`；四处消费者改 import：
+`tools/brain_tool.py`、`harness/run/nodes/plan.py`、`harness/run/run_state.py`、
+`brain/brain.py` 的 docstring 引用。
+
+**为什么这么改**
+
+条目（40）收常量时只做了搬家，把两处重复原样带了过来，并在"未做"里记了这笔账。
+本轮取消降级（42）之后，五条链路走同一个重试循环，"决策"与"规划"用两个名字指同一个数
+就完全站不住了——**同一个循环里的同一个预算，只能有一个名字**。
+
+**取舍**
+
+- **名字选 `BRAIN_MAX_ATTEMPTS` 而不是 `BRAIN_MAX_RETRIES`**：`attempts` 含首次，
+  `retries` 不含——代码里 `for nth in range(1, N + 1)` 说明这个数是**总次数**，
+  用 `retries` 会让读到的人以为实际会问 `N + 1` 遍。名字跟着语义走。
+- **值保持 3**：两个旧常量同值，合并是纯改名，没有引入行为变化。
+
+**影响面**
+
+- **改动**：`pokemon_agent/config.py`、`tools/brain_tool.py`、`harness/run/nodes/plan.py`、
+  `harness/run/run_state.py`、`harness/interface/__init__.py`、`brain/brain.py`（docstring）
+- **行为零变化**：数值不变，纯收敛真源
+- **验证**：`ImportError: cannot import name 'PLAN_MAX_ATTEMPTS'` 由批量改 import 消掉；
+  ruff 全绿
+
+## 2026-09-13（40）—— 策略常量收进顶层 `config.py`：`harness/limits.py` 撤销、全项目改向
+
+**改了什么**
+
+1. **`pokemon_agent/config.py` 新建**（顶层，与 `errors.py` 同级）：全项目**唯一的策略常量
+   集中地**，分四组——重试预算（`BRAIN_MAX_ATTEMPTS` / `PERCEPTION_MAX_RETRIES` /
+   `MAX_GOAL_RETRIES`）、动作输出上限（`MAX_RATIONALE` / `MAX_SEGMENTS` / `MAX_TIMES`）、
+   循环控制（`STALL_LIMIT` / `MAX_PLAN_PUSH` / `NODES_PER_DECISION` / `NODES_PER_PRESS` /
+   `RECURSION_MARGIN` / `RUN_RECURSION_LIMIT`）、召回与判定（`MEMORY_RECALL_LIMIT` /
+   `EPISODE_MEMORY_RECALL_LIMIT` / `JUDGE_DECISION_HISTORY` / `JUDGE_HISTORY_KEY_CAP`）。
+   （原文如此记的 `DECISION_MAX_RETRIES` / `PLAN_MAX_ATTEMPTS` 两个名字，已在条目（41）
+   合并为 `BRAIN_MAX_ATTEMPTS`。）
+2. **`harness/limits.py` 删除**，三个上限并入 config；各文件的常量 docstring（含取舍论证、
+   历史事件编号）**整段搬进 config 对应项**，不是删掉重写。
+3. **消费者全部改 import**（14 个文件）：
+   - `tools/brain_tool.py`（4 个）、`tools/prompts/decide_action.py`（2 个）
+   - `harness/episode/gate/judge.py`（3 个，含 `STALL_LIMIT`）
+   - `harness/episode/press/{detect_stall,perceive_after_action}.py`
+   - `harness/episode/retrieve/{retrieve_knowledge_semantic_memory,retrieve_global_episode_memory}.py`
+   - `harness/episode/close/{close_episode,retrieve_verify_knowledge}.py`
+   - `harness/episode/episode_entry.py`（`episode_budget()` 用的三个）
+   - `harness/run/run_entry.py`、`harness/run/nodes/{plan,reflect}.py`
+4. **包出口不再中转常量**：`harness/__init__.py`、`harness/run/__init__.py`、
+   `harness/run/nodes/__init__.py`、`harness/episode/__init__.py`、
+   `harness/episode/press/__init__.py`、以及 `plan.py`/`reflect.py` 的 `__all__` 里
+   常量名全部摘除（已核对全仓无外部调用方从这些出口取常量）。
+5. **顺带修正两处导入错位**（写代码时先放错、ruff 抓出来的）：
+   `episode_graph.py` 其实不用 `NODES_PER_*`（真正用它们的是 `episode_entry.episode_budget()`），
+   `detect_stall.py` 也不读 `STALL_LIMIT`（它只算 `stall_count`）——两处 import 删掉。
+
+**为什么这么改**
+
+一句话：**这些常量的消费者跨三层，住在任何一层都会逼其余层反向 import。**
+
+`MAX_RATIONALE` 的消费者是 `tools/prompts/decide_action.py`（渲染上限）和
+`tools/brain_tool.py`（校验上限）——两个都在 tool 层，当时放 `harness/limits.py` 就已经
+逼 tool 反向依赖 harness 了；`STALL_LIMIT` 的消费者在 `episode/gate` 与 `episode/close`
+两个域；`MAX_GOAL_RETRIES` 在 run 层。此前它们靠"住叶子模块"勉强维持方向，而
+`harness/limits.py` 恰恰不是叶子。放顶层 config 之后，**所有消费者都只依赖 config**，
+方向永远向下，且调实验参数只改一个文件。
+
+另一个动因是**可复现性**：这些数字是"这一轮实验想试什么"，不是"这台机器怎么配"。
+散在各节点里时，"这次实验用了什么参数"要从十几个文件里抄；集中之后，一份 config 就是
+一份实验配置。这也是**不读环境变量**的理由——env 是部署配置（与机器/服务绑定），
+和实验配置的生命周期不同，混一起会让实验参数无法从代码里复现。
+
+**取舍**
+
+- **"策略旋钮"的判据是主观的，所以写进了 config 的模块 docstring**：判据定为
+  "改这个数是为了做实验还是为了让代码正确"——前者来 config，后者留原地。据此**明确不收**
+  `world/pyboy_world.py` 的 `PRESS_FRAMES`/`GB_FPS`、`world/ram.py` 的内存地址表、
+  `providers/openai_compatible.py` 的 `IMAGE_TOKEN_FLOOR`、`memory/store.py` 的 `_KINDS`、
+  `tools/memory_tool.py` 的融合权重、`api.py` 的轮询间隔。把这些也收进来会让 config 变成
+  "所有常量的垃圾桶"，反而看不出哪些是实验变量。
+- **包出口不再 re-export**：代价是原来 `from pokemon_agent.harness import STALL_LIMIT`
+  这种写法失效（已核对无人使用）；换来的是同一件事只有一个来源，不会再出现"包出口的
+  常量和 config 的值不一致"。
+- **`RUN_RECURSION_LIMIT` 那段 F5/X5 的历史论证整段搬走**（含探针编号），不压缩——
+  它是"为什么这里是个大数而不是公式"的唯一记录，压缩就等于丢掉。
+
+**影响面**
+
+- **新增**：`pokemon_agent/config.py`（1 个文件）
+- **删除**：`pokemon_agent/harness/limits.py`
+- **改 import**：14 个文件（见上）；**改 `__all__`/出口**：7 个文件
+- **行为零变化**：所有常量数值一字未改，纯搬家 + 纠正依赖方向
+- **验证**：ruff 全绿（触碰的 21 个文件）；20 个模块导入通过；9 个装配链模块导入通过；
+  `harness/limits.py` 全仓零引用
+- **未做**：`PLAN_MAX_ATTEMPTS` 此前在 `brain_tool.py` 与 `plan.py` 各定义一份（值相同），
+  本次合并为一处——这正是收进 config 顺带消掉的重复。
+  **→ 已在条目（41）还清**：两处合并为 `BRAIN_MAX_ATTEMPTS`。
+
+## 2026-09-12（39）—— brain 彻底模块化：六方法裸字段契约、`verify`/`summarize` 拆开、重试下沉 tool
+
+**改了什么**
+
+1. **`BrainPort` 重写成"第三方模块视角"**（`brain/interface/brain_port.py` 整份重写）：
+   六个方法 `choose` / `reflect` / `judge` / `plan` / `verify` / `summarize`，**收裸字段、
+   不收本项目任何信封**。加了 `goal`/`history` 这类"素材"位置的取舍：素材一律渲染进
+   `prompt`，方法签名只留"参与逻辑运算或索引对齐的关键字段"——`plan` 的 `goal` 收下不消费
+   （形状统一），`judge`/`summarize` 的 `history` 参数**直接删掉**（已在 prompt 里，
+   两处传同一个东西违反"prompt 是规则、入参是素材"）。
+2. **`Observation`/`ActionSpace` 不进 brain**：大脑的输入是"现在看到什么"和"现在能按什么"
+   的**渲染文本**，喂进来之前就已经转成字符串了。单独声明这两个类型会让它不够泛用
+   （换个世界就没有 `Observation` 这个概念）。
+3. **`verify` 与 `summarize` 拆成两个方法**：以前是一次合并调用
+   （`Brain.verify_and_summarize()`），一份 prompt 问两件事。拆开后校验器的 token 账不再
+   混着写摘要那部分，`Source.VERIFY` 终于是纯校验成本。`VerifyAndSummarizeReq/Resp`
+   删除，换成 `FromHarnessToBrainToolVerifyReq/VerifyResp/SummarizeReq/SummarizeResp`
+   四个（新建）。prompt 侧同步拆成 `calls/verify.md` + `calls/summarize.md` 与
+   `build_verify_prompt()` / `build_summarize_prompt()`。
+4. **`Reflection` 移进 brain 自己的方言**（`brain/interface/domain/reflection.py` 新建）：
+   `before`/`rationale`/`action_text`/`after`，**无 `step`/`episode_id`**——坐标由 tool 盖章，
+   大脑不知道自己在哪一局第几步。与 `StepMemory` **不共用同一个类**（memory 不该依赖
+   brain：brain 只说"一个正常的 brain 大概有这个功能、大概需要这些字段"，不是强制两边一致）。
+5. **返回值统一"硬性字段 + 软性 `extra: dict`"**（`brain/interface/domain/results.py`
+   新建）：`ChooseResult` / `JudgeResult` / `PlanResult` / `VerifyResult` / `SummarizeResult`
+   五个结果袋，都继承 `_ResultBase`（带 `extra`）。契约稳定的部分是硬字段，可扩展部分是
+   `extra`——prompt 提的额外要求可以塞这里，不用改类型。
+6. **世界语义归 tool**（`tools/brain_tool.py` 整份重写）：
+   - `a` 只按一次、多段链中间只能方向键（链尾允许一个 `a`）、`MAX_RATIONALE`/`MAX_TIMES`/
+     `MAX_SEGMENTS` 上限校验——全搬到 `_normalize()`。这些是**这个世界**对动作的要求
+     （换个世界就不成立），不是大脑的规则。`INTERACT_KEY`/`DIRECTION_KEYS` 因此定义在
+     `world/`。
+   - `SNAPSHOT_BLIND` 过滤搬到 `reflect()`（**tool 用，不是 brain 自己 pop**）——
+     那是存储策略，memory 的常量。
+   - `reflect()` 把 `Reflection` + 坐标 + 前后帧组装成 `StepMemory`；`summarize()` 把
+     `EpisodeSummary` + harness 元信息组装成 `EpisodeMemory`。**brain 与 memory 互不认识，
+     两边形状的搬运只有这里做。**
+7. **重试循环下沉到 tool（a+c 方案）**：`choose()` / `plan()` 里的循环承载重试，
+   成功时整条账走 `resp.attempts`，耗尽时走异常携带的 `exc.calls`。为此给
+   `MaxRetriesExceeded` 加了 `calls: Sequence[ModelCall] = ()` 字段（`errors.py`）。
+   harness 侧因此删掉两个循环函数：`think_action.choose_with_retry`、
+   `plan.ask_planner_with_retry` 的循环体——后者保留函数名但退化成"交一次 + 打包账"。
+8. **方法名去掉 `once` 后缀**：`BrainTool.choose_once` → `choose`、`plan_once` → `plan`。
+   重试已经在这层，"一次"是调用方的循环术语，模块层的方法天然就是"做一次"。
+9. **harness 与 brain 解耦到机械可验证**：`brain/brain.py` 的 import 从 6 条降到 3 条
+   （只剩 `errors` / `providers` / `schemas.providers`），**`world` 与 `schemas.memory`
+   两条彻底删掉**。
+10. **`harness/limits.py` 新建**：`MAX_RATIONALE` / `MAX_SEGMENTS` / `MAX_TIMES` 三个上限
+    归 harness——prompt 渲染与 tool 校验读同一个常量，不会自相矛盾。
+11. **`${PROJECT}/prompts/` 整体移进 `tools/prompts/`**：prompt 是 tool 的素材，
+    谁渲染谁拥有。调用方一律 `from pokemon_agent.tools.prompts import X`。
+12. **新增 `TraceKind.SUMMARY_CALL`**：蒸馏那次模型调用独立记账（归 `Source.MEMORY`——
+    "记忆子系统在做什么"，跟校验是两个关注点）。`summary_call` 渲染函数进
+    `tools/trace/render.py`。
+
+**为什么这么改**
+
+一句话：**让 brain 真的能整体拷走复用**。此前 brain 的 import 里躺着 `world` 和
+`schemas.memory`——它知道"这个世界有 Observation"、知道"记忆存成 StepMemory"，于是
+"换一个世界/换一种记忆存储"都要改大脑代码，第三方模块的意义就没了。这次清干净之后，
+`brain/` 只依赖两件事：**prompt 文本**（规则）和**少量关键数据结构**（`keys`/`entries`/
+`images`——参与逻辑运算或索引对齐的）。渲染、规范化、盖章、组装、重试——这些"本项目怎么
+用大脑"的事，全部收在 `tools/brain_tool.py` 这一个文件里。
+
+拆 `verify`/`summarize` 的直接动机是**成本归因**：合并调用时校验器的账单里混着写摘要的
+token，"校验失效率"这个数字说不清。拆开后两条链各记各的账。
+
+**取舍**
+
+- **允许冗余类对象**：同一数据结构在两边各声明一份（如 `Reflection` 与 `StepMemory` 的
+  前四字段同构），字段同名同义但**互不引用**。代价是改一处要记得改两处；换来的是两边
+  可以独立演进——memory 想加字段不用动 brain，brain 想改形状不用动 memory。这个交换是
+  刻意的。
+- **`plan` 的 `goal` 收下不消费**：为了六个方法形状统一（`prompt` + 素材 + 可选 `images`）。
+  代价是签名里有个死参数；权衡是不统一的形状更难记、更容易在新增方法时漏参数。
+- **`extra` 的字段没有类型约束**：`dict[str, Any]` 会放过拼错的键名。接受——它的定位就是
+  "prompt 提的、本项目还不知道的额外要求"，先跑起来、shape 稳定了再提升为硬字段。
+- **重试账走异常携带**（c 半）在 `except` 里落账，比 a 半的 `resp.attempts` 多一层间接。
+  接受——两条路都"调用方一步落账"，省掉了"回头找中间状态"。
+
+**影响面**
+
+改动文件 25+ 个，包级接口面变化如下：
+
+- **新增**：`brain/interface/domain/reflection.py`、`brain/interface/domain/results.py`、
+  `harness/limits.py`、`tools/prompts/`（整包）、`tools/prompts/calls/verify.md`、
+  `calls/summarize.md`、`FromHarnessToBrainTool{VerifyReq,VerifyResp,SummarizeReq,SummarizeResp}.py`
+- **重写**：`brain/interface/brain_port.py`、`brain/brain.py`、`tools/brain_tool.py`、
+  `tools/prompts/verify_and_summarize.py`、`harness/episode/close/verify_and_summarize.py`
+- **删除**：`pokemon_agent/schemas/brain/`（整个包，10 个信封 + `domain/`）、
+  `FromHarnessToBrainToolVerifyAndSummarizeReq/Resp.py`、`pokemon_agent/prompts/`（移走）
+- **改签名**：`errors.MaxRetriesExceeded`（+`calls`）、`BrainPort` 六方法、
+  `BrainToolPort.choose`/`plan`、`FromHarnessToBrainTool{VerifyReq,SummarizeReq,ReflectReq}`
+- **行为零变化的搬家**：`prompts/` → `tools/prompts/`（12 个文件的 import 路径）
+
+**验证**：`ruff check` 本次改动文件全通过；`brain`/`tools.brain_tool`/`harness.*`/
+`build` 全链路导入通过；用 fake `BrainPort` 跑通 `verify`（`verdicts.index` 正确落回
+`entries` 下标）→ 过滤 → `summarize`（组装出 `EpisodeMemory`）的端到端链路。
+
+
+
+**改了什么**
+
+1. **搬家，内容零变更**：`git mv` 把 `run/` 的 6 个节点文件移进 `run/nodes/`
+   （`begin.py` / `plan.py` / `dispatch.py` / `episode.py` / `reflect.py` / `review.py`）。
+   搬后每个文件的相对 import 各升一级（`..deps` → `...deps`、`.run_state` → `..run_state`、
+   `..episode` → `...episode`、`..interface` → `...interface`），**函数体一行没动**
+   （`git status` 是 6 条 `R`，不是「删 + 增」）。
+2. **新增 `run/nodes/__init__.py`**：这一层的统一出口，照 `episode/<功能域>/__init__.py`
+   的写法——6 个节点 + 它们携带的常量与辅助函数（`MAX_PLAN_PUSH` / `PLAN_MAX_ATTEMPTS` /
+   `RUN_TRACE_MASK` / `ask_planner_with_retry` / `to_tasks` / `apply_goals_edit` /
+   `project_goals` / `episode_error_handler` / `MAX_GOAL_RETRIES` /
+   `goal_retries_exhausted` / `episode_trace_events` / `episode_graph`）。
+3. **`run_graph.py` 的 6 条 import 改成 `from .nodes.<节点名> import <节点名>`**；
+   `run/__init__.py`、`run/harness.py`、`harness/__init__.py`（**懒加载表 `.run.plan` →
+   `.run.nodes.plan`**、`.run.reflect` → `.run.nodes.reflect`）同步改指路文案。
+4. **`scripts/check_graph_phases.py`**：`node_impl_owners()` 的 run 分支从"扫包根非 `run_`
+   前缀的 `.py`"改成"扫 `nodes/*.py`"；`RUN_FACADE` 的判据重写、新增 `RUN_NODES_DIRNAME`；
+   **新增 `check_run_root()`**（第 ④ 组第三条机械核对）——`run/` 包根只许
+   ① 带 `run_` 前缀的结构性 `.py`、② `harness.py`、③ 一个 `nodes/` 目录，
+   防 6 个节点文件以"就近"为由重新平铺回包根。
+5. **指路文案同步**（7 个代码文件 + 3 份文档）：`brain/brain.py`、
+   `brain/interface/brain_port.py`、`brain/interface/domain/run_plan.py`、`build.py`、
+   `harness/episode/episode_graph.py`、`harness/run/run_entry.py`、
+   `schemas/brain/communication/{PlanOnceReq,PlanOnceResp}.py` 里的 `run/<节点>.py` 一律改
+   `run/nodes/<节点>.py`；`CLAUDE.md` 目录树、`docs/spec/harness/SPEC.md`、
+   `docs/spec/harness/PLAN_graph_composition.md`（**升 v16**：§3.1 目录树照实改，
+   §0 / §3.3 那几处**决策记录保留原文 + 就地标注过期**）。
+
+**为什么这么改**
+
+触发是用户的一句话："run 文件夹下应该分两层，用 nodes 包裹"。核下来它修掉的是一个具体的
+**读感问题**：`run/` 包根同时住着三种东西（结构性文件 / 6 个节点 / 外部调用面），
+**没有一种一眼可辨的形态**——看到 `plan.py` 得先回忆"这是骨架还是节点"；而同为节点文件的
+`episode/` 侧早在步 3 就按域隔了一层。两边**深度对齐**后，两棵树的读法收敛成同一条：
+**进包先看骨架，要看某格实现再进一层。**
+
+**取舍**
+
+- **不为 run 造七个空域目录**：episode 的域来自真实的功能切分，run 的 6 格之间没有这层划分
+  （v10 已拍板"分域是空的"）。所以用一层**不分域的 `nodes/`** 包裹——保住"包根只放骨架"，
+  又不凭空引入七个假域。代价是两棵树第一层的含义不同（episode 是"域"，run 是"节点层"）。
+- **多一跳 import**（`from .begin` → `from .nodes.begin`）：这正是 v10 当初拒绝分层的理由，
+  现在接受——因为"包根一眼可辨"的收益落在**每个读图的人**身上，而那一跳只落在**六行 import** 上。
+- **不设兼容期**：不留 `run/plan.py` 这类旧路径的转发模块。旧路径零外部消费者
+  （`brain`/`schemas` 只在 docstring 里指路，`harness/__init__.py` 是唯一跨包出口），
+  留转发只会把"两个真源"引进目录结构里。
+
+**影响面**
+
+- **行为零变化**：节点划分、父子交界键表、`HarnessDeps`、图拓扑一字未动。
+- **新增一处机械核对**：`check_graph_phases.py` 由 8 行 OK 变 **9 行 OK**。
+- **外部无感**：`harness/__init__.py` 对外名字不变（`MAX_GOAL_RETRIES` / `MAX_PLAN_PUSH` /
+  `PLAN_MAX_ATTEMPTS` / `RunHarness` / `RunState` …），`api.py` / `build.py` / `providers`
+  无需改动。唯一可观察的差异是模块路径：`pokemon_agent.harness.run.plan` →
+  `pokemon_agent.harness.run.nodes.plan`（`run/` 包外无人 import 它）。
+- **核验（离线，本轮实测）**：
+
+  | 检查 | 结果 |
+  |---|---|
+  | `scripts/check_graph_phases.py` | **9 行 OK**（新增 `run/ 包根只有骨架 + harness.py，节点全在 nodes/ 里`）；`run 每个节点都有同名实现文件` 走 `nodes/` |
+  | `scripts/check_imports.py` | **OK 568 条**（HEAD 562；多出的正是 `nodes/` 这一层的新 import 边） |
+  | 离线全链核验（技能自带 `verify_chain_inner_loop.py`，假端口 + 真仓库件） | **139 PASS / ALL PASS**（`A9 B8 C54 D7 E15 F26 G9 H11`；**H 块 9 → 11**——每个层级各加一条"包根目录恰好是 …"，run 的"实现文件"判定改指 `nodes/`。该脚本住在**仓外**，同一轮已同步改：`run/episode.py` → `run/nodes/episode.py`、run 的 owner 扫描改 `nodes/`） |
+  | 建图烟测 | `compile_run_graph()` → 节点恰为 `begin/dispatch/episode/plan/reflect/review`；`harness/__init__.py` 懒加载表、`build` / `api` 导入全绿 |
+  | `ruff` | 动过的文件**零新增**（残留 3 条逐条对 HEAD 归因后全部既有：`brain.py` 的 E501/I001、`harness/__init__.py` 的 `ANN202 __getattr__`）；自查中发现并修掉自己引入的 2 条 E501 |
+
+- **⚠️ 本轮出过一次仓库事故，已完整修复**：19:58–19:59 之间 `.git/objects`（1568 个松散对象 +
+  1 个 3.1 MB pack）与 `.git/refs` 被整体删除、**移入 Windows 回收站**，`git` 一度报
+  `not a git repository`。对象**已从回收站原样拷回**（1557 文件 + 391 目录，0 失败），
+  `git fsck` 只剩 dangling，`git log` 与两条分支 tip（`main` = `fea91ab`、
+  `workbuddy/main-4bd669a5` = `37c5d1b`）与事故前完全一致。触发点疑似一条 `git stash`
+  ——本机已知的"沙箱静默回滚 git 写入"老问题（用户级 skill
+  `windows-git-sandbox-ref-rollback`）。**后续对本仓不再执行任何 git 写操作**；
+  另建议尽快 `git push`：(26)–(38) 十几个提交全在本地，`origin/main` 仍停在 `54f9f69`。
+
+---
+
 ## 2026-09-12（37）—— 步 5b 落地：解散 `tools/checkpoint_tool.py`（存档归 harness 自己的状态模型）
 
 **改了什么**

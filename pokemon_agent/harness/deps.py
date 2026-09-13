@@ -6,7 +6,7 @@
 **`self` 减去 state 之后剩下的那一半**：外部递进来的依赖（Port / 策略对象）、
 构造时定下的开关、整 run 的记号、跨 episode 要活着的可变账。
 
-判据（一句话）：**节点需要它、但它跨不过 checkpoint 的 JSON 边界** → 进这里；
+判据（一句话）：**节点需要它、但它跨不过 JSON 边界** → 进这里；
 **能 JSON 化且图上要读** → 进 state。
 
 ## 为什么只能有一个（F10）
@@ -31,7 +31,7 @@ run 带着上一次的帧账残留（`pending_frames` 里塞着已经不存在�
 | **依赖** | 5 根 Port + 2 个策略对象 + `checkpoint_root` | 装配时注入，整 run 不变 |
 | **开关** | `auto_push_goals` / `auto_decide_done` | 构造时定，`plan` 读它决定"模型能否自主改栈" |
 | **记号** | `run_id` / `world_reset_done` | 整 run 的 |
-| **账** | `frame_event_ids` / `pending_frames` / `run_state_snapshot` | 键带 `episode_id`，累积 |
+| **账** | `frame_event_ids` / `pending_frames` | 键带 `episode_id`，累积 |
 
 （步 5b 之前是 6 根：多出来那根 `checkpoint` 已随 `tools/checkpoint_tool.py` 的解散
 销账——`checkpoint_root` 只是「一条路径」，不是一根 Port。）
@@ -46,9 +46,7 @@ run 带着上一次的帧账残留（`pending_frames` 里塞着已经不存在�
 **这两步都已落地（2026-09-12 注）**：
 
 - ~~**步 3**~~：节点已搬成自由函数（签名 `(state, runtime: Runtime[HarnessDeps])`），
-  依赖从 `runtime.context` 读，`self.deps` 这层别名已消掉；
-- ~~**步 5**~~：**步 5b 已完成**——`checkpoint_root` 取代了 `checkpoint`：存档读写
-  归 `episode/episode_state.py` 的 `EpisodeCheckpoint.write()` / `.read()`。
+  依赖从 `runtime.context` 读，`self.deps` 这层别名已消掉。
 
 **生命周期（F11 的代价）已收口（2026-09-12 注）**：`deps` 由 `build.py` 装配、
 一次 run 一份（`RunHarness.__init__(deps)`），不再是随 `EpisodeHarness` 走的构建期
@@ -92,14 +90,6 @@ class HarnessDeps:
     """人类审查者（`AutoContinueReviewer` 是没接前端时的默认实现）。"""
     data_center: RunDataCenter | None = None
     """前后端交互的中间层（goals 槽 + review 槽 + human_note 槽）。`None` = 没接前端。"""
-    checkpoint_root: Path | None = None
-    """**存档根目录**（`checkpoints/<run_id>/`）——步 5b 之后它是 checkpoint 唯一的身份。
-
-    此前这里还有一根 `CheckpointToolPort`（"存档手"），D9-v6 把它解散了：存档读写
-    不是能力，是 harness 自己状态模型的落盘（`episode/episode_state.py` 的
-    `EpisodeCheckpoint.write()` / `.read()`），没有"换实现"的需求。`None` = 这个 run
-    不落存档（测试、单局直跑）——`save_checkpoint` 节点据此空转，恢复入口据此断言
-    失败（`PLAN_graph_composition.md` §4 D9）。"""
 
     # ---- 开关：构造时定，整 run 不变 ----
 
@@ -115,10 +105,10 @@ class HarnessDeps:
     world_reset_done: bool = False
     """世界起点存档读过了没有（`_begin` 是唯一读点）。
 
-    **不落盘**，但**两处都要显式写**：`_begin`（首局 reset 后）与 `resume` 入口
-    （恢复后）——后者不能省：恢复路径不经过 `_begin`，而本局跑完后**下一局的
-    `_begin` 会读它**，少写一处的症状是"能恢复、能跑完本局，但下一局世界回退到
-    ROM 起点"（`PLAN_graph_composition.md` §5.2-8）。
+    **不落盘**，但**两处都要显式写**：`_begin`（首局 reset 后）与未来的恢复入口
+    ——后者不能省：恢复路径不经过 `_begin`，而本局跑完后**下一局的 `_begin` 会读它**，
+    少写一处的症状是"能恢复、能跑完本局，但下一局世界回退到 ROM 起点"
+    （`PLAN_graph_composition.md` §5.2-8）。
     """
 
     # ---- 账：键里带 episode_id，整 run 累积（没有"每局要清"的东西） ----
@@ -137,14 +127,6 @@ class HarnessDeps:
     ——那一帧由 `_begin` 产出，而 `_begin` 在图外、没有"自己那条账"可挂，于是先
     存进这里，等链首 `record_observation` 记 `OBSERVE` 时取走（`pop`）。所以它
     **只在第 0 步非空**。
-    """
-    run_state_snapshot: dict[str, Any] | None = None
-    """当前这一局对应的 `RunState.model_dump()`（D11-(3)）。
-
-    原 `_run_state_dump`：episode 层不解读它、只是把它跟自己的状态一起打包进存档
-    ——因为**存档格式决定了"两层状态必须在一份文件里"**（`CHANGELOG` 2026-09-09：
-    run 级状态单独存 `run.json` 的做法实测必炸）。写入点从"方法入口"搬到 `dispatch`
-    节点（内置子图后没有方法入口了）。
     """
 
 

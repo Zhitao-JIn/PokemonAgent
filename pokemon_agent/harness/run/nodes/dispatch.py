@@ -6,12 +6,7 @@
 - `task` = 栈顶那一层，`episode_goals` = **整个目标栈的投影**（子图判只判栈顶
   `episode_goals[-1]`，其余层是给大脑的全局视野）。父侧的 `goals` 是"目标栈"这个
   领域概念，不动——两者是不同的东西，所以是两个键；
-- `attempts[-1] + 1`：栈顶派发计数；
-- `deps.run_state_snapshot`：这一局存档要搭车带的 run 级状态（D11-(3)）。**每局都刷新**，
-  多局时每一局的存档携带的都是**那一局派发时**的 run state，不会串。
-
-`resume_episode` **不在这里清**：它是"这一局从哪一步恢复"的记号，由 `episode`
-节点读完才清（它得知道该走哪条路）。
+- `attempts[-1] + 1`：栈顶派发计数。
 
 不在这里捕获 `AgentError`——那件事归本文件里的 `episode_error_handler`（F4）。
 
@@ -33,8 +28,8 @@ from pokemon_agent.brain import Goal, Task
 from pokemon_agent.errors import AgentError
 from pokemon_agent.schemas.harness import FromRunHarnessToEpisodeHarnessRunResp
 
-from ..deps import HarnessDeps
-from .run_state import RunState
+from ...deps import HarnessDeps
+from ..run_state import RunState
 
 
 def project_goals(goals: list[Task]) -> list[Goal]:
@@ -50,25 +45,15 @@ def project_goals(goals: list[Task]) -> list[Goal]:
 
 
 def dispatch(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
-    """备好这一局：`episode_id` / `task` / `episode_goals` / `attempts+1` / run 级快照。
+    """备好这一局：`episode_id` / `task` / `episode_goals` / `attempts+1`。
 
-    后置条件：`episode_id` 非空且与 `resume_episode` 指向一致（恢复路径）；
-    `deps.run_state_snapshot` 是**本局派发时**的 `RunState.model_dump()`。
-
-    `deps.run_state_snapshot` 的写入点从"方法与节点入口"搬到这里（D11-(3)）：
-    存档里的 run 级状态**必须跟这一局一起落盘**（PLAN_checkpoint §3/§4 v5）——
-    进程死在本局任何时刻，恢复时读那一步的 checkpoint 就能同时拿回两层状态。
+    后置条件：`episode_id` 非空，且 `state.task` 是栈顶那一层。
     """
     assert state.goals, "dispatch() called with an empty goal stack"
     assert len(state.attempts) == len(state.goals), "attempts must parallel goals"
     top = state.goals[-1]
     episode_id = f"{state.run_id}-ep{len(state.outcomes) + 1}"
-    if state.resume_episode is not None:
-        assert state.resume_episode.episode_id == episode_id, (
-            f"resume target mismatch: {state.resume_episode.episode_id} != {episode_id}"
-        )
 
-    runtime.context.run_state_snapshot = state.model_dump()
     return {
         "episode_id": episode_id,
         "task": top,

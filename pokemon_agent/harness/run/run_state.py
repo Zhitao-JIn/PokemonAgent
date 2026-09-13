@@ -1,4 +1,4 @@
-"""run 图的唯一状态载体：`RunState` + 恢复分派的定位 `ResumeEpisode`。
+"""run 图的唯一状态载体：`RunState`。
 
 从 `harness/interface/harness_port.py` 搬来（`PLAN_graph_composition.md` §6 步 0）——
 **状态不是能力**，`interface/` 只回答"harness 需要外面给什么"。那个 Port 文件已在
@@ -16,6 +16,9 @@
    所以两者必须分开。
 3. `outcome` 的**读者**多了一个：子图从 `close_episode` 写出同名键合并回来（D2-④），
    不是父子两张图各写一次。
+
+**原 `ResumeEpisode` 已删**（见 `CHANGELOG.md` 2026-09-13 第 57 条）：它是"恢复分派的定位"
+（`dispatch` 据此走恢复路径），随 checkpoint 恢复链一起删掉了。
 """
 
 from __future__ import annotations
@@ -26,22 +29,13 @@ from pokemon_agent.brain import Goal, Task
 from pokemon_agent.schemas.harness import FromRunHarnessToEpisodeHarnessRunResp
 
 
-class ResumeEpisode(BaseModel):
-    """恢复分派的定位：`dispatch` 据此走 `episode.resume(step)` 而不是 `run`
-    （PLAN_checkpoint §4）。由 `RunHarness.resume_run()` 置入，分派完成后清空。
-    """
-
-    episode_id: str = Field(description="要恢复的局")
-    step: int = Field(ge=0, description="恢复到该局第几步开局（0 = 本局从头重跑）")
-
-
 class RunState(BaseModel):
     """一个 run 的**全部**可序列化状态。
 
-        身份    run_id / goals / attempts / outcomes   跨轮，checkpoint 要的就是它
+        身份    run_id / goals / attempts / outcomes   跨轮
         交接    episode_goals / task                    每次派发前由 `dispatch` 写，
                                                         **键名与 episode 图逐字对上**
-        流转    episode_id / outcome / plan_note        单轮内，节点间传递
+        流转    episode_id / outcome                    单轮内，节点间传递
 
     **`goals` 是目标栈，栈顶 = `goals[-1]`**——每次派发给子 agent 的栈顶目标；
     其余层是全局信息（子 agent 的 `episode_goals` 投影看到全栈，判只判栈顶）。
@@ -88,20 +82,11 @@ class RunState(BaseModel):
     outcome: FromRunHarnessToEpisodeHarnessRunResp | None = Field(
         default=None, description="本轮刚收的结算（`reflect` 弹栈/重试的依据）"
     )
-    plan_note: str = Field(
-        default="",
-        description="plan 本轮组装的决策上下文（trace 历史 + 目标栈渲染成 prompt）——"
-        "LLM 决策器的完整输入；进 state 是为了可观测",
-    )
     plan_failed: bool = Field(
         default=False,
-        description="plan 的 LLM 决策连续 `PLAN_MAX_ATTEMPTS` 次失败——路由到 review "
+        description="plan 的 LLM 决策连续 `BRAIN_MAX_ATTEMPTS` 次失败——路由到 review "
         "交人工（机器没主意了，问人）；review 后回到 plan 会重新尝试",
     )
 
-    resume_episode: ResumeEpisode | None = Field(
-        default=None,
-        description="恢复分派定位；仅 `resume_run()` 置入，dispatch 消费后清空。None = 正常流程",
-    )
     done: bool = Field(default=False, description="run 是否结束（栈空且无新目标 / 人类停止）")
     why: str = Field(default="", description="结束原因（全部目标解决 / 重试耗尽 / 人类停止）")

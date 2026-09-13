@@ -19,7 +19,7 @@
 
 **它们不进 `compile(input_schema=…/output_schema=…)`——步 4 的决定**：那两个参数是
 **形态 A**（把编译好的子图直接当 `add_node` 的函数，父图按 schema 做键映射/裁剪）的机制；
-本仓是**形态 B**（`run/episode.py` 那一格里 `graph.invoke(state, …, context=deps)`，交界由
+本仓是**形态 B**（`run/nodes/episode.py` 那一格里 `graph.invoke(state, …, context=deps)`，交界由
 `episode_entry` 的两个入口手工完成，探针 X5 已证父子各算各的）。接上去只会改变
 `invoke` 的校验/裁剪行为（比如 `output_schema` 会把子图终态裁成只剩 `outcome`，
 `episode_entry.close()` 那份完整 state 就没了），**收益为零、风险全在真机**。
@@ -56,26 +56,6 @@ from .retrieve import (
 )
 from .store import store_object_semantic_memory, store_step_episode_memory
 
-NODES_PER_DECISION = 10
-"""一次决策在**链首**烧掉的节点数：
-
-    save_checkpoint → record_observation → judge → get_action_space
-    → 四路 retrieve → merge_retrieval → think_action
-"""
-
-NODES_PER_PRESS = 7
-"""链内**每按一个键**走完一圈的节点数：
-
-    act → perceive_after_action → apply_stop → detect_stall
-    → store_step_episode_memory → store_object_semantic_memory → close_step
-
-`close_step` 出口的分叉（回 `act` / 回 `save_checkpoint`）两条路都算得进来：
-队列空时下一圈从 `save_checkpoint` 起头，那一圈的开销由 `NODES_PER_DECISION`
-出。"""
-
-RECURSION_MARGIN = 20
-"""图引擎自身开销 + 收尾分支（最多 5 个节点）的余量。"""
-
 
 class EpisodeInput(BaseModel):
     """**run 图交给这一局的键**——父子交界那张键表的上半张（D2）。
@@ -84,16 +64,13 @@ class EpisodeInput(BaseModel):
 
     | 键 | 父侧谁写 | 子侧谁读 |
     |---|---|---|
-    | `episode_id` | `run/dispatch.py` | `episode_state.episode_id`（每个节点的账） |
-    | `task` | `run/dispatch.py`（栈顶那层） | `episode_state.task`（`judge` 的判据） |
-    | `episode_goals` | `run/dispatch.py`（**整栈投影**，D2-②） | `episode_state.episode_goals` |
-
-    **`run_state`（run 级状态）不在表里**：它走 `deps.run_state_snapshot`（D11-(3)），
-    不进图状态——它是"搭车进存档"的货，不是子图的输入。
+    | `episode_id` | `run/nodes/dispatch.py` | `episode_state.episode_id`（每个节点的账） |
+    | `task` | `run/nodes/dispatch.py`（栈顶那层） | `episode_state.task`（`judge` 的判据） |
+    | `episode_goals` | `run/nodes/dispatch.py`（整栈投影，D2-②） | `episode_state.episode_goals` |
 
     **它不是 `compile(input_schema=…)` 的实参**（步 4 的决定，理由见模块文档末段）：
-    本仓是形态 B（节点里 `graph.invoke`），交界由 `episode/episode_entry.py` 的两个
-    入口手工完成——这张表的价值在"读得出来 + 可机械核对"，不在于给图引擎看。
+    本仓是形态 B（节点里 `graph.invoke`），交界由 `episode/episode_entry.py` 的
+    `run_new` 入口手工完成——这张表的价值在"读得出来 + 可机械核对"，不在于给图引擎看。
     """
 
     episode_id: str = Field(description="这一局的标识（`{run_id}-ep{n}`）")
@@ -109,8 +86,6 @@ class EpisodeOutput(BaseModel):
     只有一个键：`outcome`（本局结算）。由 `close/close_episode.py` 写进子图 state，
     父图 `reflect` 读——**必须由子图自己写出**：F1 的反作用是"子图不输出的键，父侧
     保持旧值"，不写就会让 `reflect` 读到**上一次派发的陈旧结算**，而且不报错。
-
-    `resume_episode` 是父侧自己的键（`episode` 节点清空它），不属于这张表。
     """
 
     outcome: FromRunHarnessToEpisodeHarnessRunResp = Field(
@@ -126,10 +101,10 @@ def compile_episode_graph() -> CompiledStateGraph:
     还是回 `save_checkpoint`（该重新决策了）。后一条就是"链内小循环"，它只加
     一条边、不加节点。
 
-    `save_checkpoint` 因此是**链边界**（不是每一步的边界）：每一条链的首
-    （含 step0）都在同一节点写 checkpoint（PLAN_checkpoint §2）——每键一份含
-    模拟器快照的存档会让存档量乘上链长，而链内执行是纯 RAM 确定的，从链首存档
-    重放能逐帧复现，链内不必存。
+    `save_checkpoint` 是**链边界**（不是每一步的边界）：每一条链的首（含 step0）
+    都经过这一格。**存档实现已删、这一格现在空转**（保留位置与名字的理由见
+    `open/save_checkpoint.py`）——但"链边界在这里"这个位置语义仍然成立：链内
+    执行是纯 RAM 确定的，从链首能逐帧重放。
 
     终止分支在 `judge` 出口——四类终止来源（世界结束/步数用尽/停摆/目标
     达成）全在 `judge` 一格里判完，`record_observation` 只记账，不掺和
@@ -200,7 +175,7 @@ def compile_episode_graph() -> CompiledStateGraph:
     graph.add_edge("store_step_episode_memory", "store_object_semantic_memory")
     graph.add_edge("store_object_semantic_memory", "close_step")
     # 决策内小循环：队列还有键就回 `act` 再按一个（不再检索、不再决策），
-    # 空了才回链首写 checkpoint / `record_observation` / `judge`。**这正是
+    # 空了才回链首 `save_checkpoint` / `record_observation` / `judge`。**这正是
     # "一次决策摊薄成 N 步"的落点**——决策调用与四路检索一回合一付，而
     # `detect_stall`/两个 store/`close_step` 每键各跑一次。分叉在 `close_step`
     # 出口而不是 `store_object` 出口：**扶正当前帧是"这一步关上"的一部分**，
