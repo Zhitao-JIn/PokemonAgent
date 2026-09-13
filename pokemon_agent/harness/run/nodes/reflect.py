@@ -4,8 +4,8 @@
 → 直连 `dispatch` 重试）在 `run_graph.py` 的 `_should_retry`，因为"哪条边"属于
 "图长什么样"。
 
-`MAX_GOAL_RETRIES` 住这里（不是住某个常量模块）：它的唯一读者就是本节点
-（D8-②：常量跟着它服务的节点走）。
+`MAX_GOAL_RETRIES` 是"同一个目标自动重试几次"的实验旋钮，住顶层
+`pokemon_agent/config.py`；它的唯一读者就是本节点。
 """
 
 from __future__ import annotations
@@ -14,13 +14,10 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from ..deps import HarnessDeps
-from .run_state import RunState
+from pokemon_agent.config import MAX_GOAL_RETRIES
 
-MAX_GOAL_RETRIES = 2
-"""同一个目标最多自动重试几次（不含首次派发）——即最多被派发
-`1 + MAX_GOAL_RETRIES` 次。耗尽后 `reflect` 强制弹出该目标、交人工处置；
-没有这条硬上限，"失败保留栈顶 + 自动继续的 reviewer"就是一个死循环。"""
+from ...deps import HarnessDeps
+from ..run_state import RunState
 
 
 def goal_retries_exhausted(attempts_used: int) -> bool:
@@ -65,4 +62,4 @@ def reflect(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
     return {"outcomes": outcomes}
 
 
-__all__ = ["MAX_GOAL_RETRIES", "goal_retries_exhausted", "reflect"]
+__all__ = ["goal_retries_exhausted", "reflect"]
