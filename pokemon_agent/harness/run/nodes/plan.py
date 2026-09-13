@@ -4,18 +4,19 @@
 
 - 压栈（`push_goals`，截断到 `MAX_PLAN_PUSH`）→ 追加 goals/attempts，继续；
 - `done`（或栈空且不压）→ 置 done，run 结束；
-- 连续 `PLAN_MAX_ATTEMPTS` 次调用/解析失败 → 置 `plan_failed`，路由 review。
+- 连续 `BRAIN_MAX_ATTEMPTS` 次调用/解析失败 → 置 `plan_failed`，路由 review。
 
-**账写在它的宿主里**（v7）：每次调用的账（`MODEL_CALL`，`Source.PLAN`）由本节点写
-——重试循环在 `ask_planner_with_retry`，它只交回每次尝试的原始材料
-（见 `PLAN_graph_readability.md` §3.7.4）。**不用 `Source.HARNESS`**：那是零成本记账
-事件的桶，`plan` 是一次真实模型调用，跟 episode 内的 `DECISION` 平级，该有自己的链路。
-三条非 `plan_failed` 的出口都额外补一条 `PLAN_VERDICT` 账（tool 按 kind 渲染）——账单
-只答"花了多少钱"，这条答"这一格给了什么结论"，复盘"planner 这次为什么压了这个目标"靠它。
+**账写在它的宿主里**：每次调用的账（`MODEL_CALL`，`Source.PLAN`）由本节点写。
+**重试循环在 `BrainTool.plan()` 那一层**（跟 `choose` 同一手法）
+——本节点退化成"组装 → 交一次 → 落账"；成功走 `resp.calls`，耗尽走异常携带的
+`exc.calls`。**不用 `Source.HARNESS`**：那是
+零成本记账事件的桶，`plan` 是一次真实模型调用，跟 episode 内的 `DECISION` 平级，
+该有自己的链路。三条非 `plan_failed` 的出口都额外补一条 `PLAN_VERDICT` 账（tool 按
+kind 渲染）——账单只答"花了多少钱"，这条答"这一格给了什么结论"，复盘"planner 这次
+为什么压了这个目标"靠它。
 
 三个同族件住本文件（D8-②：跟着唯一的调用者走）：
 
-- `ask_planner_with_retry`（原 `run_plan_utils.py` 的主体）——一根依赖的重试循环；
 - `to_tasks` / `apply_goals_edit`——都只服务本节点：前者把模型压的目标转成
   `Task`，后者把观测台的编辑指令应用到目标栈（与 `plan` 同族：都是"改目标栈"）；
 - `RUN_TRACE_MASK`——本节点读 trace 的历史口径。
@@ -28,28 +29,21 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import RunPlan, Task
-from pokemon_agent.errors import PlanAttemptFailed
-from pokemon_agent.prompts import run_plan as run_plan_prompt
+from pokemon_agent.config import MAX_PLAN_PUSH
+from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceReq,
     FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
     ModelCallLog,
+    TraceKind,
 )
 from pokemon_agent.tools.interface import BrainToolPort
-from pokemon_agent.trace import EventType, Source, TraceKind
+from pokemon_agent.trace import EventType, Source
 
-from ..deps import HarnessDeps
-from .run_state import RunState
-
-MAX_PLAN_PUSH = 5
-"""`plan` 一次最多压几个新目标——LLM 决策器的硬上限，解析后截断。
-没有它，一次读歪了的历史能让栈瞬间膨胀。"""
-
-PLAN_MAX_ATTEMPTS = 3
-"""`plan` 的 LLM 调用/解析最多试几次。连续失败说明规划器当前不可用——
-机器没主意了，置 `plan_failed` 路由到 review 交人工，而不是崩掉整个 run。"""
+from ...deps import HarnessDeps
+from ..run_state import RunState
 
 RUN_TRACE_MASK = frozenset({EventType.LIFECYCLE, EventType.ERROR})
 """run 级 plan 读 trace 时的 type 粗 mask——只取流程边界 + 失败两种家族，
@@ -91,41 +85,33 @@ def ask_planner_with_retry(
     brain_tool: BrainToolPort,
     req: FromHarnessToBrainToolPlanOnceReq,
 ) -> tuple[RunPlan | None, ModelCallLog]:
-    """反复问一次规划，最多 `PLAN_MAX_ATTEMPTS` 次——**循环与端口调用在这里**，
-    `brain_tool.plan_once()` 只负责单次尝试（问模型 + 解析）。
+    """问一次规划（重试在 `BrainTool.plan()` 里），把整条账交回来。
 
-    `req.prompt` 是调用方已经拼好回填过的完整 prompt；**重试原样重问**——
-    不像 `choose_with_retry` 那样叠加纠正说明（`run_plan` 的重试策略跟
-    `decide_action` 不是一回事），所以每次尝试都传同一个 `req`，不改写它。
+    调用方只传素材；prompt 由 `BrainTool.plan()` 入口拼。**重试原样重问**——
+    不像 `decide_action` 那样叠加纠正说明（`run_plan` 的重试策略跟
+    `decide_action` 不是一回事），所以循环里每次尝试都传同一个 `req`。
 
-    每一步都把这次的账收进 `log`（成功失败都算，`Source.PLAN`；run 级事件不挂在
-    任何一局上，所以调用方写账时 `episode_id` 位放 run_id、`step` 用 0）。
-    失败：全部尝试耗尽返回 `(None, log)`；成功返回 `(resp.plan, log)`。
+    账（`Source.PLAN`；run 级事件不挂在任何一局上，所以调用方写账时
+    `episode_id` 位放 run_id、`step` 用 0）：成功走 `resp.calls`，
+    耗尽走异常携带的 `exc.calls`——两条路都返回 `(None 或 plan, log)`，
+    调用方不用 catch。
 
-    `BrainToolPort` 是**参数**而不是从 `runtime` 里取：这样能用假端口独立测这一根
-    依赖的重试语义（依赖注入的编排函数，D3 的取舍见本文件 `plan()` 的调用点）。
+    `BrainToolPort` 是**参数**而不是从 `runtime` 里取（本函数不依赖 `runtime`）：
+    这样能用假端口独立测，不依赖装配。
     """
-    log: ModelCallLog = []
-    for attempt in range(1, PLAN_MAX_ATTEMPTS + 1):
-        # 步骤 1：问一次，把账收进 log；失败就进入下一次尝试。
-        try:
-            resp = brain_tool.plan_once(req)
-        except PlanAttemptFailed as exc:
-            log.append((attempt, exc.call))
-            continue
+    try:
+        resp = brain_tool.plan(req)
+    except MaxRetriesExceeded as exc:
+        return None, [(i, call) for i, call in enumerate(exc.calls, start=1)]
 
-        # 步骤 2：成功，收账，交回解析好的计划。
-        log.append((attempt, resp.calls[0]))
-        return resp.plan, log
-
-    # 步骤 3：预算耗尽，交给调用方决定怎么收场（`plan()` 路由去 review）。
-    return None, log
+    return resp.plan, [(i, call) for i, call in enumerate(resp.calls, start=1)]
 
 
 def plan(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
     """**LLM 决策器**：读历史 + 目标栈 → 问规划模型 → 应用决策。
 
-    重试循环、prompt 拼装、解析、编辑应用都在本文件——这里只决定"问完之后走哪条路"。
+    重试循环、解析、编辑应用都在本文件，**prompt 拼装在 `BrainTool.plan()`**
+    ——这里只决定"问完之后走哪条路"。
 
     **入栈顺序：`state.goals + pushes` 原序 append，栈顶 = `goals[-1]`**
     ——这是纯 LIFO：`push_goals` 列表里**最后**一项会变成新栈顶、最先被
@@ -174,7 +160,7 @@ def plan(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
                 why=why,
             )
         )
-        return {"plan_note": f"（{why}）", "plan_failed": False}
+        return {"plan_failed": False}
 
     events = data_center.events(RUN_TRACE_MASK)
     req = FromHarnessToBrainToolPlanOnceReq(
@@ -183,8 +169,8 @@ def plan(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
         events=events,
         max_push=MAX_PLAN_PUSH,
     )
-    prompt = run_plan_prompt.build_prompt(req)
-    req = req.model_copy(update={"prompt": prompt})
+    # prompt **不在这里拼**（0913 定案）：本节点只装素材，`BrainTool.plan()`
+    # 入口拼（`prompts.run_plan.build_prompt()`）。
 
     resp, log = ask_planner_with_retry(deps.brain_tool, req)
     # 步骤：把这次规划的每一次尝试落成账（失败的那几次也要——它们同样烧了
@@ -195,9 +181,25 @@ def plan(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
         )
     )
     if resp is None:
+        # 预算耗尽：账（上面那条 append_model_calls）之外，再补一条只说明
+        # "这个节点完了、为什么"的 `PLAN_FAILED`（0913 定案：失败事件不带账）。
+        # `last_reason` 从最后一条账的错误里取——`ask_planner_with_retry` 把
+        # 异常吞成 `None` 了，异常上的 `last_reason` 没带出来，这里就地取。
+        last = log[-1][1] if log else None
+        deps.trace.append(
+            FromHarnessToTraceToolAppendReq(
+                kind=TraceKind.PLAN_FAILED,
+                episode_id=state.run_id,
+                step=0,
+                why=f"{last.error_kind}: {last.error}" if last else "no attempts recorded",
+            )
+        )
         data_center.publish_goals(state.goals)
-        note = f"plan 连续 {PLAN_MAX_ATTEMPTS} 次失败，交人工审查\n\n{prompt}"
-        return {"plan_note": note, "plan_failed": True}
+        # `plan_note` 不再记（0913 定案）：人工审查**直接看 trace**
+        # ——耗尽现场的那条 `PLAN_FAILED`（含 reason）与整条失败账
+        # （`MODEL_CALL`，含每次的请求 payload）都在事件流里，比一份
+        # 复制到 state 的 prompt 副本更完整，也少一处要同步维护的状态。
+        return {"plan_failed": True}
 
     # `auto_push_goals=False` 时强制清空——模型的 `push_goals` 照常问、
     # 照常解析（省事，`run_plan.md` 不用跟着改），只是这里不采纳。
@@ -221,7 +223,7 @@ def plan(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
                 why=why,
             )
         )
-        return {"plan_note": prompt, "plan_failed": False, "done": True, "why": why}
+        return {"plan_failed": False, "done": True, "why": why}
     if pushes:
         new_goals = state.goals + pushes
         data_center.publish_goals(new_goals)
@@ -236,7 +238,6 @@ def plan(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
             )
         )
         return {
-            "plan_note": prompt,
             "plan_failed": False,
             "goals": new_goals,
             "attempts": state.attempts + [0] * len(pushes),
@@ -252,12 +253,10 @@ def plan(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
             why=resp.why,
         )
     )
-    return {"plan_note": prompt, "plan_failed": False}
+    return {"plan_failed": False}
 
 
 __all__ = [
-    "MAX_PLAN_PUSH",
-    "PLAN_MAX_ATTEMPTS",
     "RUN_TRACE_MASK",
     "apply_goals_edit",
     "ask_planner_with_retry",
