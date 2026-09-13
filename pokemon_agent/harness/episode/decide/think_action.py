@@ -1,15 +1,15 @@
-"""`think_action` 与它的重试循环 `choose_with_retry` + 预算 `DECISION_MAX_RETRIES`。
+"""`think_action`：大脑推理，然后**把它交回来的账翻译成事件**。
 
-**重试循环为什么在这里而不是在 Brain**：`choose_once()` 只负责单次尝试，"谁控制
-循环，谁重试"——见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"。
-循环直接 import `pokemon_agent.prompts.decide_action` 自己拼重试纠正说明：拼 prompt 是
-harness 的事，`Brain` 只认现成的字符串（`choose_once(req)`），它不提供、也不该提供
-`retry_prompt()` 这类方法。
+**重试循环不在这里了**——搬到 `BrainTool.choose()` 那一层。
+理由：重试要拼重试纠正说明，而拼 prompt 是"谁问模型"的事——0913 定案后
+**拼 prompt 整体归 `BrainTool`**（`tools.prompts` 那条渲染链的调用点唯一在
+tool 入口），循环放它那儿不用跨层回传中间状态。harness 这格因此退化成
+"组装素材 → 交一次 → 落账"，成功/失败的账都由 tool 打包好：
+成功在 `resp.calls`，耗尽在抛出的 `MaxRetriesExceeded` 上（同样带整条账）。
 
-**账不写在循环里**：`choose_with_retry` 只交回"每一次尝试的原始材料"（`ModelCallLog`）
-与结局，落账由宿主节点做（本文件的 `think_action` 调 `deps.trace.append_model_calls`，
-把账装成 `FromHarnessToTraceToolAppendModelCallsReq` 交上去）。
-规则是"账写在它的宿主里"，取舍与代价见 `docs/spec/harness/PLAN_graph_readability.md` §3.7.4。
+**账不写在 tool 里**：`choose()` 只交回"每一次尝试的原始材料"与结局，
+落账仍由宿主节点做（本文件调 `deps.trace.append_model_calls`）——规则是
+"账写在它的宿主里"。
 
 **同步调用**：无头模式下世界不限速（见 `pokemon_agent/world/pyboy_world.py`），决策等待
 期间演化世界省不出时间——tick 本身就是瞬间的，异步 + 轮询反而是多余的复杂度。
@@ -22,71 +22,26 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Action, ActionSegment
-from pokemon_agent.errors import DecisionAttemptFailed, MaxRetriesExceeded
-from pokemon_agent.prompts import decide_action as decide_action_prompt
+from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
     ModelCallLog,
+    TraceKind,
 )
-from pokemon_agent.tools.interface import BrainToolPort
-from pokemon_agent.trace import Source, TraceKind
+from pokemon_agent.trace import Source
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
-
-DECISION_MAX_RETRIES = 3
-"""决策重试预算：一次决策最多问几次模型。"""
-
-
-def choose_with_retry(
-    brain_tool: BrainToolPort,
-    req: FromHarnessToBrainToolChooseOnceReq,
-) -> tuple[Action | None, ModelCallLog]:
-    """反复问一次决策，直到成功或预算耗尽——**循环与端口调用在这里**。
-
-    `req.prompt` 是首次尝试用的基础 prompt（调用方已经拼好回填过）；重试时
-    `req.model_copy(update={"prompt": ...})` 换掉这一个字段再传给 `choose_once(req)`，
-    `req` 其余字段（`space` 等）原样带着，不用再传第二个参数。
-
-    端口是**参数**、不是 `self` 属性——这样能用假端口独立测试，不用起一张真图。
-
-    步骤 1：问一次，把这次的账收进 `log`，失败就带纠正提示进入下一次尝试。
-    步骤 2：成功返回 `(动作, log)`。
-    步骤 3：预算耗尽返回 `(None, log)`——**收场归调用方**（补一条 `DECISION_FAILED`
-    事件、抛 `MaxRetriesExceeded`），因为那两件事都是记账，账要由宿主写。
-    """
-    base_prompt = req.prompt
-    log: ModelCallLog = []
-    for attempt in range(1, DECISION_MAX_RETRIES + 1):
-        # 步骤 1：问一次，把账收进 log；失败就带纠正提示重试。
-        try:
-            resp = brain_tool.choose_once(req)
-        except DecisionAttemptFailed as exc:
-            call = exc.call
-            log.append((attempt, call))
-            retry_req = decide_action_prompt.RetryPromptReq(
-                base_prompt=base_prompt,
-                attempt=attempt + 1,
-                reason=call.error,
-                raw=call.payload.get("raw", "")[:400],
-            )
-            req = req.model_copy(update={"prompt": decide_action_prompt.retry_prompt(retry_req)})
-            continue
-
-        log.append((attempt, resp.calls[0]))
-        return resp.action, log
-
-    # 步骤 3：预算耗尽——材料交回调用方，由它决定怎么收场。
-    return None, log
 
 
 def think_action(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
     """大脑推理，然后**把它交回来的账翻译成事件**。
 
-    重试用尽（`action is None`）时本格补一条 `DECISION_FAILED` 再抛
-    `MaxRetriesExceeded`（见 `docs/spec/harness/PLAN_graph_readability.md` §3.7.4）。
+    重试用尽时 `BrainTool` 抛的 `MaxRetriesExceeded` 携带整条失败账——本格先把
+    整条账逐条落成 `MODEL_CALL`，再补一条只说明"节点完了、为什么"的
+    `DECISION_FAILED`，然后原样上抛（见 `docs/spec/harness/PLAN_graph_readability.md` §3.7.4）。
 
     前置条件：`state.observation`、`state.action_space` 非空。
     后置条件：返回 `{"plan": …, "pending_presses": …, "plan_step_start": …}`——
@@ -133,43 +88,59 @@ def think_action(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[
         episode_memories=episode_memories_text,
         human_note=human_note,
     )
-    # Harness 自己经 `pokemon_agent.prompts.decide_action` 拼 prompt，再把 prompt 回填进
-    # 同一个 req——`req` 是 `build_prompt()` 和 `choose_once()` 共享的唯一输入，
-    # 不必两套参数各传一遍。
-    req = req.model_copy(update={"prompt": decide_action_prompt.build_prompt(req)})
+    # prompt **不在这里拼**（0913 定案）：本节点只装素材，拼 prompt 是
+    # `BrainTool.choose()` 入口的事——"谁问模型，谁把 req 变成 prompt"，
+    # 拼装只剩那一个调用点。
 
-    # 步骤 2：问一次决策（重试循环在 `choose_with_retry`；账由本格落——`log` 里失败与
-    # 成功两种尝试都在，逐条进 MODEL_CALL）。
-    action, log = choose_with_retry(deps.brain_tool, req)
-    deps.trace.append_model_calls(
-        FromHarnessToTraceToolAppendModelCallsReq(
-            episode_id=ep, step=step, source=Source.DECISION, log=log
+    # 步骤 2：问一次决策。重试循环在 `BrainTool.choose()` 里；成功的整条账
+    # （失败尝试 + 最后一次成功）走 `resp.calls`，本格只负责落账。
+    try:
+        resp = deps.brain_tool.choose(req)
+    except MaxRetriesExceeded as exc:
+        # 步骤 2.5：预算耗尽——异常携带整条失败账。落账 + 补一条
+        # DECISION_FAILED，再原样上抛。
+        #
+        # **两笔分开**（0913 定案）：账归 `append_model_calls`（整条链逐条落成
+        # `MODEL_CALL`）；`DECISION_FAILED` 只回答"这个节点完了、为什么"，
+        # 从异常取 `last_reason`，**不搬账**——以前传 `calls=[last]` 是为了让
+        # 渲染拼出那句 `last:`，而它本来就挂在异常上。
+        log: ModelCallLog = [(i, call) for i, call in enumerate(exc.calls, start=1)]
+        deps.trace.append_model_calls(
+            FromHarnessToTraceToolAppendModelCallsReq(
+                episode_id=ep, step=step, source=Source.DECISION, log=log
+            )
         )
-    )
-
-    # 步骤 2.5：预算耗尽——补一条 DECISION_FAILED（把最后一次失败的账带出来，报表按它
-    # 统计失效率），再抛 `MaxRetriesExceeded`。本步到此为止。
-    if action is None:
-        last = log[-1][1]
         deps.trace.append(
             FromHarnessToTraceToolAppendReq(
                 kind=TraceKind.DECISION_FAILED,
                 episode_id=ep,
                 step=step,
-                call=last,
+                why=exc.last_reason,
             )
         )
-        raise MaxRetriesExceeded(DECISION_MAX_RETRIES, f"{last.error_kind}: {last.error}")
+        raise
+
+    log = [(i, call) for i, call in enumerate(resp.calls, start=1)]
+    deps.trace.append_model_calls(
+        FromHarnessToTraceToolAppendModelCallsReq(
+            episode_id=ep, step=step, source=Source.DECISION, log=log
+        )
+    )
+    action: Action = resp.action
 
     # 步骤 3：写 THINK（记的是**整条链**），把链交回 state。`attempt` = 这条链是第几次
-    # 尝试问出来的（就是 `log` 最后一条的序号）。
+    # 尝试问出来的（最后一次尝试的序号）。
+    #
+    # **规范化不留痕**（0913 删 `normalized`）：`_normalize()` 只把"连按 a"改成
+    # "按一次"这类**等价改写**——改写后的动作就是 `action` 本身，trace 里那条链
+    # 记的已经是规范化之后的。原动作不另存一份，因为没有任何消费者需要它。
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.THINK,
             episode_id=ep,
             step=step,
             action=action,
-            attempt=log[-1][0],
+            attempt=len(resp.calls),
         )
     )
 
