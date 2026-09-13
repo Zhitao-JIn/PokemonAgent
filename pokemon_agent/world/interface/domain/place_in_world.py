@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from .action_semantics import FACING_STEP
 

@@ -23,8 +23,8 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolReflectReq,
     FromHarnessToMemoryToolStoreEpisodeStepReq,
     FromHarnessToTraceToolAppendReq,
+    TraceKind,
 )
-from pokemon_agent.trace import TraceKind
 
 from ...deps import HarnessDeps
 from ..episode_frames import frame_b64
@@ -53,10 +53,11 @@ def store_step_episode_memory(
     # `before_frame` 是第 `before.step` 步的开局画面，`after_frame` 是
     # 第 `before.step + 1` 步的开局画面（= 这一步做完动作后的画面）。
     entry = deps.brain_tool.reflect(
-        FromHarnessToBrainToolReflectReq(before=before, action=action, after=after)
+        FromHarnessToBrainToolReflectReq(
+            before=before, action=action, after=after, episode_id=ep, step=before.step
+        )
     ).entry.model_copy(
         update={
-            "episode_id": ep,
             "run_id": deps.run_id,
             # `stop` 由这里盖章，不在大脑里——"这一键之后为什么没有继续按键"是这一圈的
             # 结局，而 `reflect` 只看得见前后两帧（它算得出"撞墙了"却算不出"链被作废了"，

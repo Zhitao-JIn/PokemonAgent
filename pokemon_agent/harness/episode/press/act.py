@@ -21,8 +21,8 @@ from pokemon_agent.brain import Action
 from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolExecuteReq,
     FromHarnessToTraceToolAppendReq,
+    TraceKind,
 )
-from pokemon_agent.trace import TraceKind
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState

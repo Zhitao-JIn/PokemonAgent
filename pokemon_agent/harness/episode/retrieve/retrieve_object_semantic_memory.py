@@ -12,12 +12,12 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.prompts.object_render import render_object_events
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryObjectEventsReq,
     FromHarnessToTraceToolAppendReq,
+    TraceKind,
 )
-from pokemon_agent.trace import TraceKind
+from pokemon_agent.tools.prompts.object_render import render_object_events
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState

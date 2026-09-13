@@ -23,8 +23,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from pokemon_agent.providers.interface import ModelCall
-from pokemon_agent.trace import Source
+from .ModelCall import ModelCall
 
 ModelCallLog = list[tuple[int, ModelCall]]
 """一次模型交互的全部尝试，按 `attempt` 升序：`list[(attempt, ModelCall)]`。
@@ -41,12 +40,13 @@ ERROR 事件。重试循环交回它就是完备的：宿主不需要知道"到�
 class FromHarnessToTraceToolAppendModelCallsReq(BaseModel):
     """一次模型交互的尝试账：公共定位字段 + 这批账的出处。
 
-    `source` 必填——`MODEL_CALL` 的渲染要用它标"这笔账属于哪一层"；
+    `source` 必填（`Source.X` 常量，**裸 str**——0913 降级）——`MODEL_CALL` 的
+    渲染要用它标"这笔账属于哪一层"；
     `log` 可以为空——`ram_only=True` 的感知压根没调模型，那时什么都不写。
     `kind` 不在这里：本信封只有一种语义（`MODEL_CALL`），由 tool 自己声明。
     """
 
     episode_id: str
     step: int
-    source: Source
+    source: str
     log: ModelCallLog

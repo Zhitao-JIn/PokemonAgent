@@ -28,9 +28,8 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import ActionSegment
-from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq
+from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
 from pokemon_agent.schemas.memory import StopReason
-from pokemon_agent.trace import TraceKind
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
