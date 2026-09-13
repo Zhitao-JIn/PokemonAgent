@@ -9,8 +9,15 @@
 - `game_tools.py`（`GameToolPort`）对接 world；
 - `memory_tool.py`（`MemoryToolPort`）对接 memory。
 
-（`checkpoint_tool.py` 已在步 5b 解散：存档不再是外面递进来的一根 Port，
-而是 `harness/episode/episode_state.py` 的 `EpisodeCheckpoint` 自己落盘。）
+**两个接线工厂（0913 深夜九）**：`BrainTool.build(config)` 与
+`vision_factory.build_vision_provider(model)`——"这个技能接哪家厂商"的接线
+知识收在 tool 层，装配点（`build.py`）只递选型参数，不 import 任何具体
+provider 类。**这是"只有 tool 层依赖 brain"这条命题的落点**：`build.py` 原先
+在函数体内 `from pokemon_agent.brain.providers import QwenProvider`（给 world
+的感知造 provider），现在改走 `build_vision_provider()`。
+
+（`checkpoint_tool.py` 已在步 5b 解散；存档链整体删除后不再有任何存档相关的
+tool——见 `CHANGELOG.md` 2026-09-13 第 57 条。）
 
 分工约定：harness 只负责组装 req（挑字段、声明 kind），tool 对 req 做处理
 （不用改就原样转发），模块只返回自己该返回的，tool 把返回处理成新的 resp
@@ -47,12 +54,14 @@ if TYPE_CHECKING:
     from .game_tools import GameTools
     from .memory_tool import MemoryTool
     from .trace import TraceTool
+    from .vision_factory import build_vision_provider
 
 __all__ = [
     "BrainTool",
     "GameTools",
     "MemoryTool",
     "TraceTool",
+    "build_vision_provider",
 ]
 
 _LAZY: dict[str, tuple[str, str]] = {
@@ -60,10 +69,11 @@ _LAZY: dict[str, tuple[str, str]] = {
     "GameTools": (".game_tools", "GameTools"),
     "MemoryTool": (".memory_tool", "MemoryTool"),
     "TraceTool": (".trace", "TraceTool"),
+    "build_vision_provider": (".vision_factory", "build_vision_provider"),
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     target = _LAZY.get(name)
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

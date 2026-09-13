@@ -4,29 +4,32 @@
 `world/interface/` 是同一个道理——协议物理上挨着它自己的实现（`trace/store.py`
 的 `LocalTrace`）走，`pokemon_agent/interfaces/` 这个集中注册表这次整个撤销，
 消费方直接 `from pokemon_agent.trace import TracePort`。
+
+**签名里的 `type`/`source` 是裸 `str`**（0913 降级）：trace 不可能只服务这一个
+项目，它只保证"按时间记账"——**合法值域是声明方的事，trace 不认识它**。
+调用方（harness/tool）用 `EventType.X`/`Source.Y` 这些字符串常量填，
+但这些常量定义在声明方的模块里，本协议不 import。
+
+**原 `cursor()` / `read_disk_events()` / `void_after()` 已删**：它们只服务
+checkpoint 存档（游标）、恢复（主前缀回读）与废弃打标，随恢复链一起删掉了
+（见 `CHANGELOG.md` 2026-09-13 第 57 条）。本协议现在只剩"追加写"一件能力。
 """
 
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from ..datastore import EventType, Source
-
 
 @runtime_checkable
 class TracePort(Protocol):
-    """事件的追加与读取。"""
-
-    def cursor(self) -> int:
-        """当前游标：最后一条已分配的 event_id（没有事件时 -1）。"""
-        ...
+    """事件的追加。"""
 
     def append(
         self,
         episode_id: str,
         step: int,
-        type: EventType,
-        source: Source,
+        type: str,
+        source: str,
         payload: dict[str, str] | None = None,
         frame_png: str | None = None,
     ) -> int:
@@ -34,8 +37,8 @@ class TracePort(Protocol):
 
         episode_id：所属 episode。
         step：发生在第几步。
-        type：事件类型。
-        source：由哪一层产生。
+        type：事件类型（字符串，取值由声明方定义）。
+        source：由哪一层产生（字符串，取值由声明方定义）。
         payload：该类型的结构化内容。
         frame_png（关键字参数）：这一步
             感知到的原始画面（PNG 字节），直接存进这一条 `TraceEvent.frame_png`。
@@ -51,24 +54,5 @@ class TracePort(Protocol):
         前置条件：step >= 0。
         后置条件：返回的 event_id 严格大于此前任何一次 append 的值（实现方 assert）；
             事件已落盘。
-        """
-        ...
-
-    def void_after(self, cursor: int) -> list[str]:
-        """把 `event_id > cursor` 的事件**原地**打上 `valid=false`，不搬走、不删除。
-
-        返回**只出现在游标之后的局**（升序）——它们在废弃时间线里整局作废。
-        "哪些局只活在游标之后"是**纯存储知识**（只依赖事件的 `event_id` 与
-        `episode_id`，不需要任何业务语义），所以它在这里算；"拿这份名单去作废
-        哪些记忆、哪些存档"是恢复语义，归调用方（harness 的 `void_timeline`）。
-
-        为什么原地打标而不是搬走：废弃分支也是"发生过什么"的审计记录，而读端
-        （`read_disk_events` 只返回 `valid=true`）靠这一个字段就能得到干净时间线，
-        不需要任何"跳区间"逻辑（0910 拍板③）。
-
-        前置条件：cursor ≥ -1。
-        后置条件：游标之后的事件全部 `valid=false`（已废弃的不重复写）；
-            **截图不参与**——event_id 永远递增，resume 重跑零撞名，废弃事件的
-            截图原地保留（拍板⑨）。
         """
         ...

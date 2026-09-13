@@ -16,14 +16,22 @@ harness 认识的工具门面。（曾是五张；`CheckpointToolPort` 步 5b �
 初始化顺序回环。所以这里不做 `__getattr__`，全部立即导入。
 
 **本包只装抽象，不装实现**：四个插件住在上一层的 `brain_tool.py`/
-`game_tools.py`/`memory_tool.py`/`trace/`（checkpoint 那一个已在步 5b 解散
-进 harness，不再有插件），由
+`game_tools.py`/`memory_tool.py`/`trace/`（checkpoint 那一个已在步 5b 解散，
+随后存档链整体删除——本层已无任何存档相关的 Port 与实现），由
 收窄后的 `pokemon_agent.tools` 按需懒加载。本包**不**顺手 re-export 它们，
 否则这次拆分就白做了。
 
 **不预建 `domain/`**：这四张协议的签名完全由信封类型和标量构成，今天没有
 任何一张属于自己的数据形状；沿用 `world`/`trace` 的判据——有专属形状才开
 子包。理由与迁移顺序见 `docs/spec/tools/PLAN_tool_interface.md`。
+
+**`ModelCall` 为什么不在这里**：它的家在 `schemas/harness`（跟 `ModelCallLog`
+同一个理由，见 `FromHarnessToTraceToolAppendModelCallsReq` 的模块 docstring）
+——`schemas.harness` 是"harness 唯一认识的那一层"，`ModelCall` 必须以信封
+字段的形式从这里出去。放进本包会立刻回环：本包的 `ports.py` 要
+`from pokemon_agent.schemas.harness import …`，而 `schemas.harness` 的
+信封要 `ModelCall`——两条依赖正面相撞。2026-09-13 试过一轮，实测炸在
+`ImportError: partially initialized module`。
 """
 
 from __future__ import annotations

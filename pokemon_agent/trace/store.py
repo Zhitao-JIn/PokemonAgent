@@ -3,26 +3,20 @@
 `event_id` 由这里分配，**严格单调**——replay 与断线补发依赖它，重号或回退会让
 读取端静默丢事件。落盘从旧版"按局 JSONL 追加"改为一条事件一个
 `events/<uuid>.json`（0910 重构，见 `PLAN_memory_trace_layout.md` §6）：单文件
-写完即完整（临时文件 + `os.replace` 原子写），truncate/void 从"读整份 jsonl →
-过滤 → 临时文件重写 → rename"简化成对文件直接操作；废弃分支不搬不删，原地打
-`valid=false`（拍板③）。
+写完即完整（临时文件 + `os.replace` 原子写）。
 
 （`TracePort` 只负责追加写——分配 event_id、落盘、截图副本；**读端不在这里**：
 事件流槽在 `harness/run_data_center.py` 的 `RunDataCenter`（前端可见状态的
-唯一聚合点），`LocalTrace` 落盘成功后经 `event_sink` 双写过去。checkpoint
-恢复的续写（`_next_id` 从盘上最大 event_id + 1 起算）、磁盘读取
-（`read_disk_events`，只返回 valid=true）与**废弃打标**（`void_after`，把游标
-之后的事件原地改 `valid=false`，顺路算出一份"整局废弃"的名单）也在这层。）
+唯一聚合点），`LocalTrace` 落盘成功后经 `event_sink` 双写过去。）
 
-**`_next_id` 从盘上算，不从游标算**：resume 后废弃分支的事件还留在盘上占着
-id（valid=false），游标只当"有效/废弃分界"，不再决定起点——构造时扫一遍
-events/ 取 max(event_id) + 1，游标参数仅作前置断言（盘上 max ≥ cursor，
-否则说明 void 没做完，就地爆炸）。
+**磁盘读取与废弃打标已删**（原 `read_disk_events` / `void_after` / `cursor` 三件）：
+它们只服务 checkpoint 存档与恢复，随恢复链一起删掉了（见 `CHANGELOG.md` 本次
+条目）。`event_id` 仍然从盘上算（`_next_id` 扫一次 events/ 取 max + 1），
+所以同一个 run 重启进程续写时不会与已落盘的事件撞号。
 
 **截图与 trace 事件共享 event_id**（拍板⑦）：`frame_png` 非空时另存一份
 `screenshot/<event_id>.png`——event_id 永远递增，天然不撞名，撞名 `(n)` 后缀
-逻辑随之消灭；截图不参与 void（拍板⑨），废弃事件的截图原地保留，与
-valid=false 的事件一起构成废弃分支的审计记录。
+逻辑随之消灭。
 """
 
 # pokemon_agent/trace/store.py
@@ -33,7 +27,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .datastore import TRACE_SCHEMA_VERSION, EventType, Source, TraceEvent
+from .datastore import TRACE_SCHEMA_VERSION, EventType, TraceEvent
 
 # 项目根目录（通过 __file__ 回溯三级）
 project_root = Path(__file__).parent.parent.parent
@@ -55,15 +49,12 @@ class LocalTrace:
     def __init__(
         self,
         run_id: str = "local",
-        resume_after_event_id: int | None = None,
         event_sink: Any = None,
     ) -> None:
         """接好 run 目录与事件槽（读端在 `RunDataCenter`，见模块 docstring）。
 
         构造时**扫一遍 events/ 目录**：`_next_id` 从盘上最大 event_id + 1 起算
-        （废弃分支的事件还占着 id，不能从游标续）；顺路记下已完整收尾的局
-        （episode_end 判定用）。`resume_after_event_id`（checkpoint 恢复传入
-        的游标）只作前置断言：盘上 max ≥ cursor，否则 void 没做完，就地爆炸。
+        （同 run 重启进程续写时不撞号）；顺路记下已完整收尾的局（episode_end 判定用）。
         `event_sink`：落盘成功后的双写目标（`RunDataCenter.publish_event`），
         注入不构成 import 依赖。
         """
@@ -80,23 +71,17 @@ class LocalTrace:
         # 扫盘：_next_id 与"已完整收尾的局"集合都从这里来。
         self._next_id = 0
         self._completed_episodes: set[str] = set()
-        for event in self._scan_events(valid_only=False):
+        for event in self._scan_events():
             self._next_id = max(self._next_id, event.event_id + 1)
-            if event.type is EventType.LIFECYCLE and event.payload.get("kind") == "episode_end":
+            if event.type == EventType.LIFECYCLE and event.payload.get("kind") == "episode_end":
                 self._completed_episodes.add(event.episode_id)
-
-        if resume_after_event_id is not None:
-            assert self._next_id > resume_after_event_id, (
-                f"disk max event_id {self._next_id - 1} <= resume cursor "
-                f"{resume_after_event_id}: void_after() 没做完或游标给错了"
-            )
 
     def append(
         self,
         episode_id: str,
         step: int,
-        type: EventType,
-        source: Source,
+        type: str,
+        source: str,
         payload: dict[str, str] | None = None,
         frame_png: str | None = None,
     ) -> int:
@@ -125,7 +110,7 @@ class LocalTrace:
             episode_id=episode_id,
             step=step,
             type=type,
-            phase=type.value,
+            phase=type,
             source=source,
             payload=payload or {},
             frame_png=frame_png,
@@ -148,7 +133,7 @@ class LocalTrace:
             self._save_screenshot(event)
 
         # 完整收尾标记同步维护（episode_end 判定的内存副本）
-        if type is EventType.LIFECYCLE and (payload or {}).get("kind") == "episode_end":
+        if type == EventType.LIFECYCLE and (payload or {}).get("kind") == "episode_end":
             self._completed_episodes.add(episode_id)
 
         # 双写：事件槽（前端可见状态，RunDataCenter.publish_event）。
@@ -160,7 +145,7 @@ class LocalTrace:
     def _event_filename(self, event: TraceEvent) -> str:
         """事件文件主名：`<run_id>-<event_id>`——run 前缀给人肉眼对账，
         event_id 是排序与截图共享的那个数；文件名的语义不参与任何程序内
-        查找（读端一律扫目录解析 event_id，见 `read_disk_events`）。"""
+        查找（读端一律扫目录解析 event_id）。"""
         return f"{self._run_id}-{event.event_id:012d}"
 
     def _save_screenshot(self, event: TraceEvent) -> None:
@@ -178,57 +163,13 @@ class LocalTrace:
         # 入参是 base64 文本（`TraceEvent.frame_png` 的统一形态），落盘前解码。
         path.write_bytes(base64.b64decode(event.frame_png or ""))
 
-    def cursor(self) -> int:
-        """当前游标：最后一条已分配的 event_id（没有事件时 -1）。
+    def _scan_events(self) -> list[TraceEvent]:
+        """盘上的全部事件，按 event_id 升序。
 
-        checkpoint 保存（`save_checkpoint` 节点）用它当快照游标——恢复时它是
-        "有效/废弃分界"：void_after 把 `event_id > cursor` 的事件打 valid=false，
-        之后续写的 id 从盘上 max + 1 起算（`__init__` 的扫盘保证），严格单调
-        不断链。
+        构造时用它算 `_next_id` 与"已完整收尾的局"集合。残文件/旧格式文件解析
+        失败是预期内的运行期情况，跳过不报错。
         """
-        return self._next_id - 1
-
-    def read_disk_events(self) -> list[TraceEvent]:
-        """读盘上**有效**事件（valid=true，event_id 升序）——checkpoint 恢复的
-        主前缀来源：恢复管线把它交给 `RunDataCenter.rebuild()` 做前端单点重建。
-
-        废弃分支的事件（valid=false）**不返回**——读端永远只见一条干净时间线，
-        不需要任何"跳区间"逻辑（拍板③的读端形态）。崩溃残文件（解析失败）
-        按预期内情况跳过。
-        """
-        return self._scan_events(valid_only=True)
-
-    def void_after(self, cursor: int) -> list[str]:
-        """打废弃标：`event_id > cursor` 的事件**原地** `valid=false`（见 `TracePort`）。
-
-        返回**只出现在游标之后的局**（升序）——它们在废弃时间线里整局作废。
-        **边扫边打**：同一次遍历既完成打标，又顺手把"游标前见过谁 / 游标后才见谁"
-        两个集合建起来，两者之差就是整局废弃的名单（不需要第二遍扫盘）。
-        """
-        kept_episodes: set[str] = set()
-        voided_episodes: set[str] = set()
-        for path, event in self._iter_event_files():
-            if event.event_id <= cursor:
-                kept_episodes.add(event.episode_id)
-                continue
-            voided_episodes.add(event.episode_id)
-            if not event.valid:
-                continue  # 已经是废弃标记，不重复写
-            voided = event.model_copy(update={"valid": False})
-            tmp = path.with_suffix(".json.tmp")
-            tmp.write_text(voided.model_dump_json(), encoding="utf-8")
-            os.replace(tmp, path)
-        return sorted(voided_episodes - kept_episodes)
-
-    def _iter_event_files(self) -> list[tuple[Path, TraceEvent]]:
-        """扫 events/ 目录：逐文件解析 TraceEvent，返回 `(路径, 事件)`、按 event_id 升序。
-
-        **打标（`void_after`）要路径，读端只要事件**——所以这一层吐配对，
-        两个调用方各取自己那一半。
-
-        残文件/旧格式文件解析失败是预期内的运行期情况，跳过不报错。
-        """
-        pairs: list[tuple[Path, TraceEvent]] = []
+        events: list[TraceEvent] = []
         for path in sorted(self._events_dir.glob("*.json")):
             if path.suffix != ".json" or path.name.endswith(".tmp"):
                 continue
@@ -236,17 +177,9 @@ class LocalTrace:
                 event = TraceEvent.model_validate_json(path.read_text(encoding="utf-8"))
             except Exception:
                 continue
-            pairs.append((path, event))
-        pairs.sort(key=lambda pair: pair[1].event_id)
-        return pairs
-
-    def _scan_events(self, valid_only: bool) -> list[TraceEvent]:
-        """盘上的事件，按 event_id 升序；`valid_only` 时滤掉 `valid=false` 的。"""
-        return [
-            event
-            for _path, event in self._iter_event_files()
-            if not (valid_only and not event.valid)
-        ]
+            events.append(event)
+        events.sort(key=lambda e: e.event_id)
+        return events
 
     def _episode_is_complete(self, episode_id: str) -> bool:
         """这一局是不是已经完整收尾（盘上有 lifecycle/episode_end）。

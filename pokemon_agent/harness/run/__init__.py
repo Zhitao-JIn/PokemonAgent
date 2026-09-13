@@ -4,23 +4,27 @@
 `dispatch` 拆出"接子图"的 `episode` 节点；步 4 把 6 个节点搬成自由函数、`RunHarness`
 收成薄类（`harness.py`）、图外侧门落 `run_entry.py`。
 
-**节点平铺在包根**（不像 `episode/` 那样分域目录）：run 图只有 6 格、一眼看得完，
-再分一层目录只是多一跳 import（`PLAN_graph_composition.md` §3.1）。因此包根下三种
-文件各有各的命名：结构性文件带 `run_` 前缀（`run_graph.py` / `run_state.py` /
-`run_entry.py`），节点文件用节点名（`begin.py` / `plan.py` / `dispatch.py` /
-`episode.py` / `reflect.py` / `review.py`），外部调用面是 `harness.py`。
+**包根只放骨架，节点统一住 `nodes/`**（v16 订正，`PLAN_graph_composition.md` §3.1）：
+run 图只有 6 格、没有 episode 那种"七个功能域"可分，所以不按域切，而是用一层不分域的
+`nodes/` 包住——**run 下两层**（骨架 / 节点），与 `episode/<功能域>/<节点>.py` 同深，
+包根一眼看去全是骨架：
+
+- 结构性文件带 `run_` 前缀（`run_graph.py` / `run_state.py` / `run_entry.py`）；
+- 外部调用面 `harness.py`（`RunHarness` 薄类）；
+- 节点在 `nodes/`，**文件名 = 节点名**（§5.3-⑤）：`begin.py` / `plan.py` /
+  `dispatch.py` / `episode.py` / `reflect.py` / `review.py`。
+
+（原取舍"节点平铺在包根、只多一跳 import"已被这一层目录取代：跳的那一跳换成
+"包根从此不必先分辨某个名字是骨架还是节点"。）
 """
 
 from __future__ import annotations
 
 from . import run_entry
-from .run_entry import RUN_RECURSION_LIMIT
 from .run_graph import compile_run_graph
-from .run_state import ResumeEpisode, RunState
+from .run_state import RunState
 
 __all__ = [
-    "RUN_RECURSION_LIMIT",
-    "ResumeEpisode",
     "RunState",
     "compile_run_graph",
     "run_entry",

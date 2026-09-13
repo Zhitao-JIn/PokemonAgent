@@ -47,7 +47,7 @@ from pokemon_agent.memory.retrieval import hybrid_retrieve
 if TYPE_CHECKING:
     # 仅类型检查期依赖：运行期不 import interfaces（否则会连带拖进整层
     # schemas）。注入进来的 embedder/reranker 只需结构上满足 Protocol。
-    from pokemon_agent.providers import EmbeddingProvider, RerankerProvider
+    from pokemon_agent.memory import EmbeddingProvider, RerankerProvider
 
 # md 类 kind：记录是 frontmatter + 正文的 markdown；其余 kind 是整文件 JSON。
 _MD_KINDS = frozenset({"episode_memory", "knowledge_memory"})
@@ -135,7 +135,7 @@ class MemoryStore:
     def archive_many(self, uuids: Sequence[str], dest_dir: str | pathlib.Path) -> int:
         """把一批记录搬进 `dest_dir` 并摘出索引——**"让记录消失"的唯一路径**。
 
-        `MemoryTool.void_memory_after()` 走的就是它（checkpoint 恢复把作废分支搬进
+        `MemoryTool._trim_summaries()` 走的就是它（摘要超容量时按质量淘汰，搬进
         `memory/voided-<ts>/<kind>/`）。0910 拍板的"退出检索必须伴随物理移动"在这里
         兑现：不再有"摘索引但文件原地留"的中间态——那个状态在索引重建时无法还原，
         被丢弃的记录会复活。

@@ -1,9 +1,8 @@
 """tools 层的四张对外契约：`BrainToolPort`/`GameToolPort`/`MemoryToolPort`/
 `TraceToolPort`——harness 认识的工具门面。
 
-（曾是五张：`CheckpointToolPort` 已在步 5b 解散——存档不再是「外面递进来的一根 Port」，
-而是 harness 自己的状态模型 `EpisodeCheckpoint` 的落盘能力，只剩
-`HarnessDeps.checkpoint_root` 一条路径的身份。）
+（曾是五张：`CheckpointToolPort` 已在步 5b 解散；遗留的存档相关方法与信封
+也随后整体删除——见 `CHANGELOG.md` 2026-09-13 第 57 条。）
 
 原来分别放在顶层 `pokemon_agent/interfaces/tools/`，跟 `memory/ports.py`
 同一个道理搬到了这里：这四张 Port 全部只依赖 `schemas.harness` 的信封类型，
@@ -11,7 +10,7 @@
 不需要开一个 `interface/` 子包分协议和数据形状），所以走扁平的 `ports.py`，
 跟实现文件（`brain_tool.py`/`game_tools.py`/`memory_tool.py`）同住 `tools/`
 包顶层（trace 那一个已收成 `tools/trace/` 包，分派器 + `render.py` +
-`model_calls.py`，见 D8-③；checkpoint 那一个已在步 5b 解散进 harness，不再有实现文件）。
+`model_calls.py`，见 D8-③）。
 
 零循环依赖风险：`schemas.harness` 对 `tools/` 没有反向依赖，这四张 Port
 可以放心立即加载，不需要懒加载。
@@ -45,18 +44,16 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceResp,
     FromHarnessToBrainToolReflectReq,
     FromHarnessToBrainToolReflectResp,
-    FromHarnessToBrainToolVerifyAndSummarizeReq,
-    FromHarnessToBrainToolVerifyAndSummarizeResp,
+    FromHarnessToBrainToolSummarizeReq,
+    FromHarnessToBrainToolSummarizeResp,
+    FromHarnessToBrainToolVerifyReq,
+    FromHarnessToBrainToolVerifyResp,
     FromHarnessToGameToolEvolveReq,
     FromHarnessToGameToolExecuteReq,
     FromHarnessToGameToolGetActionSpaceReq,
     FromHarnessToGameToolGetActionSpaceResp,
-    FromHarnessToGameToolLoadStateBytesReq,
     FromHarnessToGameToolPerceiveOnceResp,
     FromHarnessToGameToolResetReq,
-    FromHarnessToGameToolSaveStateBytesResp,
-    FromHarnessToGameToolSaveStateReq,
-    FromHarnessToGameToolSetTaskReq,
     FromHarnessToMemoryToolAppendObjectEventsReq,
     FromHarnessToMemoryToolQueryEpisodeStepsReq,
     FromHarnessToMemoryToolQueryEpisodeStepsResp,
@@ -73,86 +70,75 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolStoreEpisodeStepReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryResp,
-    FromHarnessToMemoryToolVoidMemoryAfterReq,
-    FromHarnessToMemoryToolVoidMemoryAfterResp,
     FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
-    FromHarnessToTraceToolReadDiskEventsReq,
-    FromHarnessToTraceToolReadDiskEventsResp,
-    FromHarnessToTraceToolVoidAfterReq,
 )
 
 
 @runtime_checkable
 class BrainToolPort(Protocol):
-    """harness 认识的"大脑工具"——跟 `Brain` 之间的翻译门面。
+    """harness 认识的"大脑工具"——跟 `Brain` 之间那层翻译壳的契约。
 
-    跟 `GameToolPort`/`MemoryToolPort` 同一类——harness 的三根依赖(brain/trace/
-    tools)之一（tools 集合的成员）；不同的是它不做"外部系统原始结构→契约"的
-    转换，因为 `Brain` 自己已经吃干净了跟 LLM provider 之间的转换。它做的是
-    **另一件事**：把 harness 自己的契约(`BrainTool*Req`/`Resp`)跟 `Brain` 的
-    原生契约(`ChooseOnceReq` 等)显式互转——两跳各自独立的形状，即使今天
-    翻译就是原样转发，也不能让 harness 直接拿 `BrainPort` 用，那样两边的契约
-    会被绑死成同一份。
+    **它守的是两个互不认识的世界的边界**：harness 侧是装满了
+    `Observation`/`ActionSpace`/`StepMemory` 的信封；brain 侧只认 prompt 文本
+    与一撮裸字段。这一层负责渲染、世界语义规范化、盖章坐标、重试循环与
+    组装存储形状——**这些没有一件是 brain 该知道的**。
 
-    方法名跟 `BrainPort` 一一对应(choose_once/judge/reflect/verify_and_summarize/
-    plan_once)，故意不改名——方便对照哪个 tool 方法在转发哪个 brain 方法；
-    真正不同的是每个方法收发的类型，全部换成 `schemas/communication/brain_tool_*.py`
-    里定义的这一跳专属 Req/Resp。
+    跟 `GameToolPort`/`MemoryToolPort` 同一类——harness 的三根依赖之一。
+    方法名刻意**不加 `once` 后缀**（`choose` 而不是 `choose_once`）：重试循环
+    已经下沉到这一层，harness 调的就是"一次完整决策（含重试）"，
+    加 `once` 名不副实。
     """
 
-    def choose_once(
+    def choose(
         self, req: FromHarnessToBrainToolChooseOnceReq
     ) -> FromHarnessToBrainToolChooseOnceResp:
-        """转发一次决策尝试。失败：抛 `DecisionAttemptFailed`（同 `BrainPort`）。"""
+        """一次完整决策：渲染 → 重试 → 规范化。
+
+        失败：重试用尽时抛 `MaxRetriesExceeded`（账在异常里）。
+        """
         ...
 
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
-        """转发一次判定。永远返回 resp，不抛异常（同 `BrainPort`）。"""
+        """转发一次判定。永远返回 resp，不抛异常。"""
         ...
 
     def reflect(self, req: FromHarnessToBrainToolReflectReq) -> FromHarnessToBrainToolReflectResp:
-        """转发一次反思。"""
+        """一次反思：渲染两帧 → 调大脑 → 盖章坐标、组装 `StepMemory`。"""
         ...
 
-    def verify_and_summarize(
-        self, req: FromHarnessToBrainToolVerifyAndSummarizeReq
-    ) -> FromHarnessToBrainToolVerifyAndSummarizeResp:
-        """转发一次校验+蒸馏。永远返回 resp，不抛异常（同 `BrainPort`）。"""
+    def verify(self, req: FromHarnessToBrainToolVerifyReq) -> FromHarnessToBrainToolVerifyResp:
+        """校验本局 step 记忆哪些可信。永远返回 resp，不抛异常。
+
+        **不过滤**——`verdicts.index` 对应 `req.entries` 的下标，调用方自己筛。
+        """
         ...
 
-    def plan_once(
-        self, req: FromHarnessToBrainToolPlanOnceReq
-    ) -> FromHarnessToBrainToolPlanOnceResp:
-        """转发一次 run 级规划尝试。失败：抛 `PlanAttemptFailed`（同 `BrainPort`）。"""
+    def summarize(
+        self, req: FromHarnessToBrainToolSummarizeReq
+    ) -> FromHarnessToBrainToolSummarizeResp:
+        """把过滤后的可信记录蒸馏成一条跨局摘要，并组装 `EpisodeMemory`。
+        永远返回 resp，不抛异常。"""
+        ...
+
+    def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
+        """一次完整规划（含重试）。失败：重试用尽时抛 `MaxRetriesExceeded`（账在异常里）。"""
         ...
 
 
 @runtime_checkable
 class GameToolPort(Protocol):
-    """Harness 操作世界的接口：执行、开局、存档。
+    """Harness 操作世界的接口：执行、开局、感知。
 
     这是第一跳（harness → 门面），入参与返回一律是信封；门面往里调 world
     走裸参数，那一跳不造信封。
+
+    **存档一族已删**（`save_state` / `save_state_bytes` / `load_state_bytes` /
+    `set_task`）：它们只服务 checkpoint 与它的恢复链，随恢复链一起删掉了
+    （见 `CHANGELOG.md` 2026-09-13 第 57 条）。`world` 层自己仍保留这些能力面，本 Port
+    只是不再向 harness 暴露——"这个 run 用什么存档"是 harness 的取舍，
+    不该裁剪 `world` 这个独立第三方模块的能力。
     """
-
-    def save_state(self, req: FromHarnessToGameToolSaveStateReq) -> None:
-        """把世界当前状态存成文件。
-
-        req.path：存档文件路径。
-        """
-        ...
-
-    def save_state_bytes(self) -> FromHarnessToGameToolSaveStateBytesResp:
-        """把世界当前状态存成字节串（checkpoint 每步世界快照用）。"""
-        ...
-
-    def load_state_bytes(self, req: FromHarnessToGameToolLoadStateBytesReq) -> None:
-        """从字节串恢复世界状态（checkpoint 恢复用）。
-
-        req.emulator_state：要回载的世界快照字节。
-        """
-        ...
 
     def get_action_space(
         self, req: FromHarnessToGameToolGetActionSpaceReq
@@ -180,14 +166,6 @@ class GameToolPort(Protocol):
 
         req.task：要跑的任务。
         前置条件：req.task.max_steps > 0。
-        """
-        ...
-
-    def set_task(self, req: FromHarnessToGameToolSetTaskReq) -> None:
-        """只挂任务标记，**不动模拟器状态**（checkpoint 恢复后配 `load_state_bytes` 用）。
-
-        req.task：要接上跑的任务。
-        前置条件：req.task.max_steps > 0；`load_state_bytes()` 已经把模拟器摆到了正确的帧。
         """
         ...
 
@@ -342,23 +320,6 @@ class MemoryToolPort(Protocol):
         """
         ...
 
-    def void_memory_after(
-        self, req: FromHarnessToMemoryToolVoidMemoryAfterReq
-    ) -> FromHarnessToMemoryToolVoidMemoryAfterResp:
-        """把一局 `req.step` 之后不再成立的单步记忆与 object 事件**归档**（checkpoint 恢复）。
-
-        圈定哪些记录作废由本层（tool）算：harness 只给游标语义（`episode_id` +
-        `step`），"哪些记录落在游标之后"是 tool 的领域知识。该局的跨局摘要也
-        一并归档——它是局收尾的产物，而收尾总在该局最后一个 checkpoint 之后
-        （漏了它重跑会落下第二条同 `episode_id` 的摘要）。
-
-        前置条件：req.step ≥ -1（-1 = 整局废弃）；req.episode_id 已存在或为空局。
-        后置条件：该局内 step > req.step 的单步记忆与 object 事件、以及该局全部
-            跨局摘要，全部不可再查（文件搬进 `memory/voided-<ts>/` 留档，不删除）；
-            resp.removed 是各类被归档的条数。
-        """
-        ...
-
 
 @runtime_checkable
 class TraceToolPort(Protocol):
@@ -369,8 +330,9 @@ class TraceToolPort(Protocol):
     - `append`：一笔账 → 按 `kind` 渲染 payload，必要时一拆多；
     - `append_model_calls`：一次模型交互的 N 次尝试 → N 条 `MODEL_CALL`。
 
-    读方法跟 `TracePort` 一一对应：`cursor` / `read_disk_events` 原样转发
-    （调用方拿存储形状 `TraceEvent`）。
+    **读方法已删**（`cursor` / `read_disk_events` / `void_after`）：它们只服务
+    checkpoint 存档与恢复，随恢复链一起删掉了（见 `CHANGELOG.md` 2026-09-13 第 57 条）。
+    运维侧读事件流仍直读 `TracePort`/`LocalTrace`，不进 tool 层。
 
     **签名只用信封，不用任何模块的领域类型**：这是本文件所有端口共守的边界
     （见模块 docstring 与 `docs/PLAN_tool_interface.md`）。所以"一次交互的尝试账"
@@ -400,28 +362,5 @@ class TraceToolPort(Protocol):
         前置条件：`req.log` 按 `attempt` 升序（重试循环保证）。
         后置条件：`req.log` 里每一条都已落盘；空 log 合法且不写任何事件
             （`ram_only=True` 的感知压根没调模型）。
-        """
-        ...
-
-    def cursor(self) -> int:
-        """当前游标：最后一条已分配的 event_id（checkpoint 快照用）。"""
-        ...
-
-    def read_disk_events(
-        self, req: FromHarnessToTraceToolReadDiskEventsReq
-    ) -> FromHarnessToTraceToolReadDiskEventsResp:
-        """读盘上全部事件（checkpoint 恢复的主前缀来源，event_id 升序）。"""
-        ...
-
-    def void_after(self, req: FromHarnessToTraceToolVoidAfterReq) -> list[str]:
-        """把游标之后的事件作废（原地打 `valid=false`），返回**整局废弃**的局列表。
-
-        打标与「哪些局只活在游标之后」都是存储层的知识（见 `TracePort.void_after`），
-        本层原样转发；"拿这份名单去作废哪些记忆、哪些存档"是恢复语义，归调用方
-        （`episode_entry.void_timeline`）。
-
-        前置条件：`req.cursor` ≥ -1（调用方已完成对账）。
-        后置条件：游标之后的事件全部 `valid=false`（已废弃的不重复写）；返回的局
-            在废弃时间线里整局作废。
         """
         ...

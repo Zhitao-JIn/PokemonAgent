@@ -105,9 +105,9 @@ class MemoryStorePort(Protocol):
         """把一批记录搬进 `dest_dir` 并摘出索引——**"让记录消失"的唯一路径**，
         不 unlink："落盘了就不丢"贯彻到退出检索的每一条记录，归档文件仍在盘上可查。
 
-        当前唯一调用方是 `MemoryTool.void_memory_after()`（checkpoint 恢复把游标
-        之后不再成立的分支搬进 `memory/voided-<ts>/<kind>/`）。局正常收尾不搬任何
-        记录——step 记忆按 `episode_id` 查询天然隔离，没有清场的必要。
+        当前唯一调用方是 `MemoryTool._trim_summaries()`（跨局摘要超容量时按质量
+        淘汰，搬进 `memory/voided-<ts>/<kind>/`）。局正常收尾不搬任何记录——
+        step 记忆按 `episode_id` 查询天然隔离，没有清场的必要。
 
         后置条件：返回实际归档的条数；不存在的 uuid 跳过。
         """

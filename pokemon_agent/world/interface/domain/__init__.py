@@ -7,6 +7,11 @@
   （`GRID_COLS` 等）——原来放在 `schemas/world/domain/`，那是"interfaces/schemas
   集中制"还没撤销时的位置。它们都是 world 子系统自己对外承诺的数据形状，物理上
   归回这里，`schemas/` 不再保留 `world` 子包（它已经没有信封需要放）。
+- `VisionDescribeReq` / `VisionDescribeResp`（`vision_describe.py`）——**0913
+  深夜十一新增的副本**：world 的 `VisionProvider` 协议要声明这两个形状，
+  而它们的原始定义已随"补全协议是 brain 内部协议"搬进 `brain/schemas/`。
+  world 不 import brain，于是复制一份自己用；**两份必须保持同构**
+  （见该文件 docstring）。
 
 **改名**：`ObservationFromWorld` → `Observation`、`ActionSpaceForBrain` →
 `ActionSpace`、`TerrainMapFromRam` → `TerrainMap`——domain 类型不需要 From/To
@@ -20,6 +25,7 @@ __all__ = [
     "ActionSpace",
     "BOULDER",
     "BUTTON_FACING",
+    "DIRECTION_KEYS",
     "DOOR",
     "FACING_STEP",
     "Facts",
@@ -40,10 +46,12 @@ __all__ = [
     "ScreenState",
     "TERRAIN_MEANING",
     "TerrainMap",
+    "VisionDescribeReq",
+    "VisionDescribeResp",
     "terrain_legend",
 ]
 
-from .action_semantics import BUTTON_FACING, FACING_STEP, INTERACT_KEY
+from .action_semantics import BUTTON_FACING, DIRECTION_KEYS, FACING_STEP, INTERACT_KEY
 from .action_space import ActionSpace
 from .facts import OVERLAY_ACTIONS, Facts
 from .observation import Observation
@@ -66,3 +74,4 @@ from .screen_model import (
 )
 from .screen_state import ScreenState
 from .terrain_map import TerrainMap
+from .vision_describe import VisionDescribeReq, VisionDescribeResp

@@ -15,9 +15,8 @@ from __future__ import annotations
 from .act import act
 from .apply_stop import apply_stop
 from .close_step import close_step
-from .detect_stall import STALL_LIMIT, compute_stall, detect_stall
+from .detect_stall import compute_stall, detect_stall
 from .perceive_after_action import (
-    PERCEPTION_MAX_RETRIES,
     compute_stop,
     perceive_after_action,
     perceive_once,
@@ -25,8 +24,6 @@ from .perceive_after_action import (
 )
 
 __all__ = [
-    "PERCEPTION_MAX_RETRIES",
-    "STALL_LIMIT",
     "act",
     "apply_stop",
     "close_step",

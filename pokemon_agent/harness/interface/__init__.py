@@ -7,10 +7,11 @@
 `...`，而"图有哪些节点"由 `episode_graph.py` 的 `add_node` 说、"节点改哪一处"由那张
 21 行职责表说，都**可执行/可核对**）。同一次收口里搬走的还有：
 
-- `RunState`/`ResumeEpisode` → `run/run_state.py`（状态不是能力）；
+- `RunState` → `run/run_state.py`（状态不是能力）；
 - `EpisodeRunState` → `episode/episode_state.py`；
-- 三个常量（`MAX_GOAL_RETRIES`/`MAX_PLAN_PUSH`/`PLAN_MAX_ATTEMPTS`）→ 各自服务的
-  节点文件（D8-②），包出口只是**再导出**它们（`harness/__init__.py`）。
+- 三个常量（`MAX_GOAL_RETRIES`/`MAX_PLAN_PUSH`/`BRAIN_MAX_ATTEMPTS`）→ 顶层
+  `pokemon_agent/config.py`（它们与其余策略常量同族，集中一处才好调实验参数）；
+  包出口**不再**再导出常量——需要的人直接 `from pokemon_agent.config import X`。
 
 一句话：`interface/` 从此只回答"harness 需要外面给什么"，不再回答"harness 自己长
 什么样"。
@@ -45,7 +46,7 @@ _LAZY: dict[str, tuple[str, str]] = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     target = _LAZY.get(name)
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

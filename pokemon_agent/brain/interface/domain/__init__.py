@@ -7,28 +7,35 @@ pydantic），可以放心立即加载。
 
 from __future__ import annotations
 
-from .action import (
-    MAX_RATIONALE,
-    MAX_SEGMENTS,
-    MAX_TIMES,
-    Action,
-    ActionSegment,
-)
+from .action import Action, ActionSegment
 from .episode_summary import EpisodeSummary
 from .goal import Goal
+from .model_call import ModelCall
+from .reflection import Reflection
+from .results import (
+    ChooseResult,
+    JudgeResult,
+    PlanResult,
+    SummarizeResult,
+    VerifyResult,
+)
 from .run_plan import RunPlan
 from .step_verify import StepVerifyVerdict
 from .task import Task
 
 __all__ = [
-    "MAX_RATIONALE",
-    "MAX_SEGMENTS",
-    "MAX_TIMES",
     "Action",
     "ActionSegment",
+    "ChooseResult",
     "EpisodeSummary",
     "Goal",
+    "JudgeResult",
+    "ModelCall",
+    "PlanResult",
+    "Reflection",
     "RunPlan",
     "StepVerifyVerdict",
+    "SummarizeResult",
     "Task",
+    "VerifyResult",
 ]

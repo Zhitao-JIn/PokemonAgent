@@ -15,9 +15,9 @@
 零依赖的纯协议 + pydantic schema，不碰 PyBoy，可以放心立即加载——`WorldPort`
 的方法签名已经改成裸字段，不再 `import pokemon_agent.brain`、也不再依赖
 `schemas.*`（详见 `world/interface/world_port.py` 的模块 docstring）。
-`pyboy_world.py` 一整条链还拖着 `from pyboy import PyBoy` 这个重依赖，且要
-`from pokemon_agent.providers import VisionProvider`——这跟 `interface/` 无关，
-继续懒加载，不需要为了一个重依赖拖慢整个包的 import。
+`pyboy_world.py` 一整条链还拖着 `from pyboy import PyBoy` 这个重依赖，继续
+懒加载，不需要为了一个重依赖拖慢整个包的 import。（`VisionProvider` 曾经也要
+从 `providers` 拿，2026-09-13 已搬进 `interface/`——这一条不再是懒加载的理由。）
 """
 
 from __future__ import annotations
@@ -26,30 +26,34 @@ import importlib
 from typing import TYPE_CHECKING
 
 from .interface import (
-    ActionSpace,
     BOULDER,
     BUTTON_FACING,
+    DIRECTION_KEYS,
     DOOR,
     FACING_STEP,
-    Facts,
     GRASS,
     GRID_COLS,
     GRID_ROWS,
     INTERACT_KEY,
     ITEM,
     MAP_CHARS,
-    Memory,
-    Observation,
     OVERLAY_ACTIONS,
     PERSON,
     PLAYER_CELL,
     PLAYER_MARK,
+    SIGN,
+    TERRAIN_MEANING,
+    ActionSpace,
+    Facts,
+    Memory,
+    Observation,
     Perceived,
     PlaceInWorld,
-    SIGN,
     ScreenState,
-    TERRAIN_MEANING,
     TerrainMap,
+    VisionDescribeReq,
+    VisionDescribeResp,
+    VisionProvider,
     WorldPort,
     terrain_legend,
 )
@@ -63,6 +67,7 @@ __all__ = [
     "ActionSpace",
     "BOULDER",
     "BUTTON_FACING",
+    "DIRECTION_KEYS",
     "DOOR",
     "FACING_STEP",
     "Facts",
@@ -86,6 +91,9 @@ __all__ = [
     "ScreenState",
     "TERRAIN_MEANING",
     "TerrainMap",
+    "VisionDescribeReq",
+    "VisionDescribeResp",
+    "VisionProvider",
     "WorldPort",
     "parse_screen",
     "read_facing",

@@ -12,9 +12,9 @@
 `schemas/`（本项目自己的跨层契约层）该管的事，不是 `memory/` 自己的数据形状。
 
 对比：`trace/datastore/trace_event.py`（`TraceEvent`）留在 `trace/` 自己包
-里——因为 `TracePort.append()`/`LocalTrace.read_disk_events()` 这两个真实
-实现确实要在**内部**构造/解析 `TraceEvent`，不透明的是它的输入（裸字段），
-不是它的存储格式；而 `MemoryStorePort` 连存储格式都不关心。
+里——因为 `TracePort.append()`/`LocalTrace` 这些真实实现确实要在**内部**构造/
+解析 `TraceEvent`，不透明的是它的输入（裸字段），不是它的存储格式；而
+`MemoryStorePort` 连存储格式都不关心。
 
 **`StepMemory`/`ObjectFactEvent` 内部对 `Observation`/`PlaceInWorld`
 "形状像但类不同"的字段（`StepMemory.Observation`、

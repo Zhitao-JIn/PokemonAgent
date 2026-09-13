@@ -8,9 +8,9 @@
 - `append_model_calls()`：一次模型交互的 N 次尝试 → N 条 `MODEL_CALL`，拆解规则在
   `model_calls.py`。
 
-`read_disk_events()` / `cursor()` / `void_after()` 原样转发——读侧与废弃打标都没有
-要转换的数据（调用方拿的是存储形状 `TraceEvent`，跟 `MemoryToolPort` 返回领域对象
-同一个模式；`void_after` 返回的"整局废弃名单"也是存储层的直接产物）。
+**原 `read_disk_events()` / `cursor()` / `void_after()` 已删**：它们只服务
+checkpoint 存档与恢复（读侧主前缀、游标、废弃打标），随恢复链一起删掉了
+（见 `CHANGELOG.md` 2026-09-13 第 57 条）。本层现在只有两个写方法。
 
 **payload 字段格式是跨模块契约**：观测台前端按字段名渲染，格式变更权在本层（见
 `render.py` 模块 docstring）。
@@ -31,11 +31,9 @@ from collections.abc import Iterable
 from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
-    FromHarnessToTraceToolReadDiskEventsReq,
-    FromHarnessToTraceToolReadDiskEventsResp,
-    FromHarnessToTraceToolVoidAfterReq,
+    TraceKind,
 )
-from pokemon_agent.trace import TraceKind, TracePort
+from pokemon_agent.trace import TracePort
 
 from . import model_calls, render
 
@@ -49,7 +47,12 @@ _RENDERERS = {
     TraceKind.MODEL_CALL: render.model_call,
     TraceKind.JUDGE_CALL: render.judge_call,
     TraceKind.VERIFY_CALL: render.verify_call,
+    TraceKind.SUMMARY_CALL: render.summary_call,
     TraceKind.DECISION_FAILED: render.decision_failed,
+    TraceKind.PLAN_FAILED: render.plan_failed,
+    TraceKind.JUDGE_FAILED: render.judge_failed,
+    TraceKind.VERIFY_FAILED: render.verify_failed,
+    TraceKind.SUMMARIZE_FAILED: render.summarize_failed,
     TraceKind.OBSERVE: render.observe,
     TraceKind.MEMORY_READ: render.memory_read,
     TraceKind.MEMORY_WRITE: render.memory_write,
@@ -68,8 +71,6 @@ _RENDERERS = {
     TraceKind.ACTION_TRUNCATED: render.action_truncated,
     TraceKind.VERIFY_RESULT: render.verify_result,
     TraceKind.PLAN_VERDICT: render.plan_verdict,
-    TraceKind.CHECKPOINT_RESTORE: render.checkpoint_restore,
-    TraceKind.CHECKPOINT_SAVE: render.checkpoint_save,
 }
 
 
@@ -114,25 +115,6 @@ class TraceTool:
         后置条件：`req.log` 里每一条都已落盘；空 log 合法且不写任何事件。
         """
         model_calls.append_model_calls(self, req)
-
-    def read_disk_events(
-        self, req: FromHarnessToTraceToolReadDiskEventsReq
-    ) -> FromHarnessToTraceToolReadDiskEventsResp:
-        """读盘上全部事件（原样转发 `TracePort.read_disk_events`，checkpoint 恢复用）。"""
-        return FromHarnessToTraceToolReadDiskEventsResp(events=self._trace.read_disk_events())
-
-    def cursor(self) -> int:
-        """当前游标：最后一条已分配的 event_id（原样转发 `TracePort.cursor`）。"""
-        return self._trace.cursor()
-
-    def void_after(self, req: FromHarnessToTraceToolVoidAfterReq) -> list[str]:
-        """把游标之后的事件作废，返回**整局废弃**的局列表（原样转发 `TracePort.void_after`）。
-
-        打标规则与"哪些局只活在游标之后"都是存储层的知识（见 `TracePort.void_after`），
-        本层没有要转换的东西——调用方（`episode_entry.void_timeline`）拿到名单后去作废
-        对应的记忆与存档，那是恢复语义。
-        """
-        return self._trace.void_after(req.cursor)
 
 
 def _as_list(rendered) -> Iterable:

@@ -2,12 +2,15 @@
 
 **两张图 + 一个共用 context**（`docs/spec/harness/PLAN_graph_composition.md` §3.1）：
 
-- `run/`：**run 级图**（一个 run = 完整一局游戏），6 个节点平铺在包根——
-  节点是 `begin.py`/`plan.py`/`dispatch.py`/`episode.py`/`reflect.py`/`review.py`
+- `run/`：**run 级图**（一个 run = 完整一局游戏），**包根只放骨架、6 个节点住
+  `nodes/`**（v16：与 `episode/<功能域>/<节点>.py` 同深）——
+  节点是 `nodes/begin.py`/`nodes/plan.py`/`nodes/dispatch.py`/`nodes/episode.py`/
+  `nodes/reflect.py`/`nodes/review.py`
   （**文件名 = `run_graph.py` 里 `add_node` 的字面量**，§5.3-⑤），装配在
-  `run/run_graph.py`，图外侧门（`new_run`/`resume_run`，以及 `recursion_limit` 那个常量）
-  在 `run/run_entry.py`，唯一的状态载体是 `run/run_state.py`，**外部调用面**是
-  `run/harness.py` 的薄类 `RunHarness`
+  `run/run_graph.py`，图外侧门（`new_run`）在 `run/run_entry.py`，
+  唯一的状态载体是 `run/run_state.py`，**外部调用面**是
+  `run/harness.py` 的薄类 `RunHarness`（策略常量已全部收进顶层
+  `pokemon_agent/config.py`，包内各节点直接 import config）
 - `episode/`：**episode 级图**（run 图的子图），21 个节点按七个功能域
   （`open/ gate/ retrieve/ decide/ press/ store/ close/`）分文件夹，装配在
   `episode/episode_graph.py`，图外侧门在 `episode/episode_entry.py`，
@@ -47,26 +50,18 @@ if TYPE_CHECKING:
     from .auto_reviewer import AutoContinueReviewer
     from .deps import HarnessDeps
     from .episode.episode_state import EpisodeRunState
-    from .episode.press import STALL_LIMIT
     from .interface import HumanReviewer
     from .run.harness import RunHarness
-    from .run.plan import MAX_PLAN_PUSH, PLAN_MAX_ATTEMPTS
-    from .run.reflect import MAX_GOAL_RETRIES
-    from .run.run_state import ResumeEpisode, RunState
+    from .run.run_state import RunState
     from .run_data_center import DataCenterReviewer, RunDataCenter
 
 __all__ = [
-    "MAX_GOAL_RETRIES",
-    "MAX_PLAN_PUSH",
-    "PLAN_MAX_ATTEMPTS",
-    "STALL_LIMIT",
     "AutoContinueReviewer",
     "DataCenterReviewer",
     "EpisodeRunState",
     "HarnessDeps",
     "HumanDecision",
     "HumanReviewer",
-    "ResumeEpisode",
     "RunDataCenter",
     "RunHarness",
     "RunState",
@@ -74,22 +69,17 @@ __all__ = [
 
 _LAZY: dict[str, tuple[str, str]] = {
     "AutoContinueReviewer": (".auto_reviewer", "AutoContinueReviewer"),
-    "STALL_LIMIT": (".episode.press", "STALL_LIMIT"),
     "HarnessDeps": (".deps", "HarnessDeps"),
     "DataCenterReviewer": (".run_data_center", "DataCenterReviewer"),
     "RunDataCenter": (".run_data_center", "RunDataCenter"),
     "RunHarness": (".run.harness", "RunHarness"),
-    "MAX_GOAL_RETRIES": (".run.reflect", "MAX_GOAL_RETRIES"),
-    "MAX_PLAN_PUSH": (".run.plan", "MAX_PLAN_PUSH"),
-    "PLAN_MAX_ATTEMPTS": (".run.plan", "PLAN_MAX_ATTEMPTS"),
     "EpisodeRunState": (".episode.episode_state", "EpisodeRunState"),
     "HumanReviewer": (".interface", "HumanReviewer"),
-    "ResumeEpisode": (".run.run_state", "ResumeEpisode"),
     "RunState": (".run.run_state", "RunState"),
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     target = _LAZY.get(name)
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

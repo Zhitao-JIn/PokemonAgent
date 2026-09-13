@@ -10,6 +10,14 @@
   是 metadata 里的普通过滤字段（0910 重构，见 `PLAN_memory_trace_layout.md`）。
 - `retrieval.py`：语义检索用的混合检索纯函数（BM25 bigram + embedding
   余弦 + RRF + reranker 精排），只认字符串，不认任何记忆类型。
+- `embedding_provider.py` / `reranker_provider.py`：本层依赖的两个模型协议
+  （`EmbeddingProvider` / `RerankerProvider`），2026-09-13 从
+  `providers/interface/` 搬来——它们只被本层的检索链路消费。协议挨着实现，
+  跟 `MemoryStorePort` 同住一包；**拷走 `memory/` 就拿到完整可复用的一块**。
+- `fastembed_text.py` / `fastembed_reranker.py`：上面两个协议的**本地实现**
+  （`FastEmbedText` / `FastEmbedReranker`），同批从顶层 `providers/` 搬来
+  ——那个包 0913 整个解散（`openai_compatible.py` 去了 `brain/providers.py`）。
+  **协议 + 实现都在本包**，拷走即得，不再需要外挂一个 `providers/`。
 
 **`MemoryStorePort` 完全不透明**：`put`/`get_many`/`filter`/`archive_many`
 这一整套协议只认 `metadata: dict[str, str]` + `payload: dict` 两个裸字段，
@@ -29,15 +37,23 @@ object 的交互判定在 harness（`harness/object_interactions.py`）。
 """
 
 __all__ = [
+    "EmbeddingProvider",
+    "FastEmbedReranker",
+    "FastEmbedText",
     "MemoryStore",
     "MemoryStorePort",
+    "RerankerProvider",
     "bm25_rank",
     "embedding_rank",
     "hybrid_retrieve",
     "reciprocal_rank_fusion",
     "tokenize",
 ]
+from .embedding_provider import EmbeddingProvider
+from .fastembed_reranker import FastEmbedReranker
+from .fastembed_text import FastEmbedText
 from .ports import MemoryStorePort
+from .reranker_provider import RerankerProvider
 from .retrieval import (
     bm25_rank,
     embedding_rank,

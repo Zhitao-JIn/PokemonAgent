@@ -16,43 +16,53 @@
 `list[tuple[str, int]]` 的按键段列表），返回值也换成了 world 自己的
 `Perceived`（`domain/perceived.py`，不是 schemas 里的信封）。`WorldPort` 因此
 可以放心立即导入，不再需要 `__getattr__` 懒加载这层机制。
+
+**`VisionProvider` 也在这里（2026-09-13）**：从 `providers/interface/` 搬来
+——`world` 是唯一真正调 `describe()` 的模块，"把图片变成文字"就是 world 对外
+要的那个能力。协议的归属看**谁消费**，不看谁实现（供应商实现只是恰好两个方法
+都实现了）。
 """
 
 from __future__ import annotations
 
 from .domain import (
-    ActionSpace,
     BOULDER,
     BUTTON_FACING,
+    DIRECTION_KEYS,
     DOOR,
     FACING_STEP,
-    Facts,
     GRASS,
     GRID_COLS,
     GRID_ROWS,
     INTERACT_KEY,
     ITEM,
     MAP_CHARS,
-    Observation,
     OVERLAY_ACTIONS,
     PERSON,
     PLAYER_CELL,
     PLAYER_MARK,
+    SIGN,
+    TERRAIN_MEANING,
+    ActionSpace,
+    Facts,
+    Observation,
     Perceived,
     PlaceInWorld,
-    SIGN,
     ScreenState,
-    TERRAIN_MEANING,
     TerrainMap,
+    VisionDescribeReq,
+    VisionDescribeResp,
     terrain_legend,
 )
 from .memory import Memory
+from .vision_provider import VisionProvider
 from .world_port import WorldPort
 
 __all__ = [
     "ActionSpace",
     "BOULDER",
     "BUTTON_FACING",
+    "DIRECTION_KEYS",
     "DOOR",
     "FACING_STEP",
     "Facts",
@@ -74,6 +84,9 @@ __all__ = [
     "ScreenState",
     "TERRAIN_MEANING",
     "TerrainMap",
+    "VisionDescribeReq",
+    "VisionDescribeResp",
+    "VisionProvider",
     "WorldPort",
     "terrain_legend",
 ]
