@@ -21,15 +21,15 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
+from pokemon_agent.config import STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     FromRunHarnessToEpisodeHarnessRunResp,
+    TraceKind,
 )
-from pokemon_agent.trace import TraceKind
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
-from ..press.detect_stall import STALL_LIMIT
 
 
 def derive_episode_reason(success: bool, step: int, max_steps: int, *, stalled: bool) -> str:

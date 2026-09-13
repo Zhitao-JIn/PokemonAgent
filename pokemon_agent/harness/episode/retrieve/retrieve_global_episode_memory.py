@@ -14,18 +14,16 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
+from pokemon_agent.config import EPISODE_MEMORY_RECALL_LIMIT
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryEpisodeSummariesReq,
     FromHarnessToTraceToolAppendReq,
+    TraceKind,
 )
-from pokemon_agent.trace import TraceKind
 from pokemon_agent.world import Observation
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
-
-EPISODE_MEMORY_RECALL_LIMIT = 3
-"""每次决策检索几条跨局摘要记忆。"""
 
 
 def build_scene_key(obs: Observation) -> str | None:

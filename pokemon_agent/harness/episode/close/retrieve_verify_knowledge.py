@@ -16,16 +16,16 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
+from pokemon_agent.config import MEMORY_RECALL_LIMIT
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryKnowledgeReq,
     FromHarnessToTraceToolAppendReq,
+    TraceKind,
 )
 from pokemon_agent.schemas.memory import StepMemory
-from pokemon_agent.trace import TraceKind
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
-from ..retrieve.retrieve_knowledge_semantic_memory import MEMORY_RECALL_LIMIT
 
 
 def build_verify_knowledge_query(entries: list[StepMemory], goal: str) -> str:

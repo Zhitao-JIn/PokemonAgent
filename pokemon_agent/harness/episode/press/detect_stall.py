@@ -1,10 +1,10 @@
-"""`detect_stall` 与它的阈值 `STALL_LIMIT`、判定纯函数 `compute_stall`。
+"""`detect_stall` 与判定纯函数 `compute_stall`。
 
 **算数与判断分离**：本格只算"这一步的停摆键与连续计数"并记一条快照，
 **达到 `STALL_LIMIT` 时的强制终止判断在下一轮 `gate/judge`**（它是图上唯一的终止判定
-节点）。所以 `STALL_LIMIT` 有两个读者——本文件与 `gate/judge`——它住这里而不是住
-`judge`：放在 `judge` 那边会让 `detect_stall` 反过来依赖 `judge`，放在
-`episode_harness` 里则会让 `episode/gate` 反向依赖上层模块（循环 import）。
+节点）。所以 `STALL_LIMIT` 的两个读者都不是本文件（是 `gate/judge` 与
+`close/close_episode`），它住顶层 `pokemon_agent/config.py`——本格只负责把
+`stall_count` 算出来，阈值多少与本格无关。
 
 STALL_CHECK 快照的动机（每一步的构成过程可回看，不用重放整局）见 `CHANGELOG.md`
 2026-09-03 条目。
@@ -17,20 +17,11 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Action
-from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq
-from pokemon_agent.trace import TraceKind
+from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
 from pokemon_agent.world import Observation
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
-
-STALL_LIMIT = 5
-"""L2 护栏：连续多少步"动作与画面机械状态都没有变化"就强制结束本局。
-
-阈值取 5（与 run 级 `MAX_PLAN_PUSH` 同为 5）：一两次重复可能是模型没看清，连续五次
-原地打转才断定它陷入循环。它上面还有更硬的一层——run 级 `MAX_GOAL_RETRIES`，本局
-结束不是终点。
-"""
 
 
 def compute_stall(

@@ -12,24 +12,16 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
+from pokemon_agent.config import MEMORY_RECALL_LIMIT
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryKnowledgeReq,
     FromHarnessToTraceToolAppendReq,
+    TraceKind,
 )
-from pokemon_agent.trace import TraceKind
 from pokemon_agent.world import Observation
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
-
-MEMORY_RECALL_LIMIT = 5
-"""每次知识库检索取几条。
-
-**两个读者**（本节点与 `close/retrieve_verify_knowledge`），所以它是本域里唯一一个
-读者跨域的常量：住这里的理由是它按语义属于"知识库召回上限"，而收尾那次检索是同一件
-事在收尾路径上的落地——两者共用一个数字，改一处就够（`PLAN_graph_composition.md`
-§3.5 的归位判据在这条上是"两个服务者"，取更靠前的那个当宿主）。
-"""
 
 
 def build_knowledge_query(obs: Observation, goal: str) -> str:
