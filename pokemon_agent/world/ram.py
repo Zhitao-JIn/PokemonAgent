@@ -17,7 +17,7 @@ schema）——都搬到了 `interface/`（`memory.py` + `domain/terrain_map.py`
 
 from __future__ import annotations
 
-from .interface import Facts, Memory, TerrainMap
+from .interface import Memory, TerrainMap
 from .interface.domain import (
     BOULDER,
     DOOR,

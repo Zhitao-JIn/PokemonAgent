@@ -81,7 +81,10 @@ schemas/memory/datastore/
     episode_memory.py     EpisodeSummaryRecord 之类 —— 要搬进 memory/
     object_memory.py      ObjectFactEvent —— 要搬进 memory/
     step_memory.py        StepMemory —— 要搬进 memory/（依赖 schemas.world.ObservationFromWorld）
-schemas/providers/communication/*    LlmCompleteReq/Resp、VisionDescribeReq/Resp —— 纯信封，不用动
+schemas/providers/communication/*    LlmCompleteReq/Resp、VisionDescribeReq/Resp
+    —— 0913 深夜十一已随 provider 搬进 brain/schemas/（brain 内部协议）；
+    world 自己复制了一份 VisionDescribe*（world/interface/domain/vision_describe.py）。
+    本行是当时规划，勿再据此认为它还在顶层。
 schemas/trace/
     __init__.py
     datastore/trace_event.py         TraceEvent —— 要搬进 trace/

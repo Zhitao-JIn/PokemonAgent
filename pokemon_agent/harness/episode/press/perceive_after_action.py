@@ -37,23 +37,22 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Action
-from pokemon_agent.errors import PerceptionAttemptFailed, PerceptionFailure
-from pokemon_agent.providers import ModelCall
+from pokemon_agent.config import PERCEPTION_MAX_RETRIES
 from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
+    ModelCall,
     ModelCallLog,
+    TraceKind,
 )
 from pokemon_agent.schemas.memory import StopReason
 from pokemon_agent.tools.interface import GameToolPort
-from pokemon_agent.trace import Source, TraceKind
+from pokemon_agent.trace import Source
 from pokemon_agent.world import BUTTON_FACING, Observation
+from pokemon_agent.world.errors import PerceptionAttemptFailed, PerceptionFailure
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
-
-PERCEPTION_MAX_RETRIES = 2
-"""感知重试预算：一帧最多问几次视觉模型。循环在这里不在 World。"""
 
 
 def perceive_with_retry(

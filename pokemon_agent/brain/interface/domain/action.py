@@ -1,45 +1,15 @@
-"""从大脑吐出的动作（`Action`）及其连按段（`ActionSegment`）。"""
+"""从大脑吐出的动作（`Action`）及其连按段（`ActionSegment`）。
+
+**这里没有任何上限常量。** "最多几段 / 每段最多按几次 / 每段最多几条论据"
+是**调用方的校验策略**（tool/harness 决定），不是大脑对自己产物的承诺——
+大脑只保证"形状对"（键名字符串、次数正整数、论据非空）。上限写在这里会
+把校验固化成两处（字段约束一处、调用方一处），一旦不同步就会出现
+"解析器放行、构造时炸"的自相矛盾系统。
+"""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-
-MAX_RATIONALE = 2
-"""**一段**动作最多带几条论据。
-
-**从 3 降到 2**：论据的粒度从"整条链"下沉到"段"之后，总量变成"段数 × 条数"，
-上限必须跟着收紧（见 `docs/spec/harness/PLAN_action_step_granularity.md` §4b）。
-段是单一意图，通常一条依据就够，第二条的位置留给"确实还有一条独立依据"。
-
-抽成常量是因为它有两个执行点——`ActionSegment` 的字段约束（数据契约）
-和 `Brain._parse`（外部输入校验）。两处必须同源，否则模型给 3 条时会得到一个
-自相矛盾的系统：解析器放行、构造时炸。
-"""
-
-MAX_TIMES = 8
-"""一段最多连按几次。
-
-**同一个数有两个执行点**——这里的字段约束（数据契约）和 `Brain._parse`
-（外部输入校验），所以必须同源，理由同 `MAX_RATIONALE`。
-
-上限存在的理由：模型会写 `"times": "100"`。连按期间 agent 看不见中间状态，
-撞墙了也会把剩下几次按完——这是时序抽象的经典取舍，次数是宏动作（机制二）的原始形态。
-
-收益是**省感知调用**：走 5 格从 5 次 VLM 调用变成 1 次。
-感知是每步都花钱的那一项，这一下把成本和延迟都砍到五分之一。
-"""
-
-MAX_SEGMENTS = 4
-"""一条链最多几段。
-
-同一个数有两个执行点——`Action.sequence` 的字段约束和 `Brain._parse`
-（外部输入校验），必须同源，理由同上。
-
-上限存在的理由：**段级论据让输出量随段数增长**（段数 × `MAX_RATIONALE`），
-而"一次决策按多少个键"直接决定这一圈烧掉多少执行力。不设上限时模型可以写几十段，
-一次决策吃光整局的步数预算；中途撞墙时还要把没按的键整段作废。
-4 段足够表达"拐几个弯、末尾按一下"。
-"""
 
 
 class ActionSegment(BaseModel):
@@ -54,11 +24,10 @@ class ActionSegment(BaseModel):
     """
 
     name: str = Field(min_length=1, description="按键名")
-    times: int = Field(default=1, ge=1, le=MAX_TIMES, description=f"连续按键次数，1-{MAX_TIMES}")
+    times: int = Field(default=1, ge=1, description="连续按键次数")
     rationale: list[str] = Field(
         min_length=1,
-        max_length=MAX_RATIONALE,
-        description=f"最能支持**这一段**的论据，1-{MAX_RATIONALE} 条。"
+        description="最能支持**这一段**的论据。"
         "进情景记忆；经验能否迁移全看它",
     )
 
@@ -88,6 +57,9 @@ class Action(BaseModel):
 
     论据一律按**有时效**处理，不区分持久与否。持久知识（"馆主是火属性"）的
     跨 episode 复用属于 skill library（机制二），本阶段不做。
+
+    **本类不校验上限**（段数上限、次数上限、论据条数上限）——那是调用方的
+    校验策略，见本模块 docstring。
     """
 
     thought: str = Field(
@@ -96,8 +68,7 @@ class Action(BaseModel):
     )
     sequence: list[ActionSegment] = Field(
         min_length=1,
-        max_length=MAX_SEGMENTS,
-        description=f"按顺序执行的按键链，1-{MAX_SEGMENTS} 段，每段自带一个论据",
+        description="按顺序执行的按键链，每段自带一个论据",
     )
 
     def segments(self) -> list[ActionSegment]:

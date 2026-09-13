@@ -23,15 +23,23 @@
    只许 import 各模块自己的 `interface/`（Protocol 定义，原来集中在顶层 `interfaces/`，
    现在物理挨着各自的实现——`world/interface/`、`brain/interface/` 等，见 CHANGELOG）。
    **`brain`/`world`/`memory`/`trace` 这几个领域模块之间、以及它们与 `schemas.*`
-   之间，原则是完全没有相互依赖**（`providers` 例外，当作底层公共库，各模块都能
-   直接依赖）——模块间只靠**裸函数**和 **tool 层**交互，不造信封；tool 层是
-   唯一被允许同时认识多个领域模块、做信封拆装的地方（`world` 已经按这条原则
-   完成裸字段化，其余模块正在推进，见 `docs/PLAN_bare_boundary_refactor.md` 与
-   CHANGELOG 对应条目）。依赖方向永远是 `brain → 各模块 interface/ ← harness`，
-   **绝不反向，绝不横向**。
+   之间，原则是完全没有相互依赖**——模块间只靠**裸函数**和 **tool 层**交互，
+   不造信封；tool 层是唯一被允许同时认识多个领域模块、做信封拆装的地方
+   （`world` 已经按这条原则完成裸字段化，其余模块正在推进，见
+   `docs/PLAN_bare_boundary_refactor.md` 与 CHANGELOG 对应条目）。依赖方向永远是
+   `brain → 各模块 interface/ ← harness`，**绝不反向，绝不横向**。
    *为什么*：这条一旦破，mock 换真实实现就要改大脑代码，原型的意义就没了；
    模块间零依赖是这一版重构消灭循环导入的根本手段——信封天然容易牵扯到别的
    模块的类型，形成隐蔽的双向依赖。
+   *0913 更新*：原来"`providers` 例外，当作底层公共库"那句话已失效——代码层的
+   `pokemon_agent/providers/` 整个解散，实现按"谁消费"回了 `brain/providers.py`
+   与 `memory/fastembed_*.py`，**不再有横向的公共实现包**。
+   *0913 深夜九补充*：**"谁依赖 brain"的唯一答案是 tool 层**。全仓库对 brain 的
+   实现依赖只剩 `tools/brain_tool.py`（4 处）与 `tools/vision_factory.py`（1 处）；
+   装配点 `build.py` 对 brain **零 import**——它要的两种东西都经 tool 层工厂拿
+   （`BrainTool.build(text=…)`、`build_vision_provider(model=…)`），只递型号名。
+   其余包对 brain 的引用一律是**数据形状**（`Action`/`Goal`/`Task`/`RunPlan` 等），
+   不是实现依赖。
 
 3. **mock 与真实实现必须实现同一个 Protocol。** 不许出现"mock 多一个方法"或"mock 签名不一样"。
    *为什么*：mock 的唯一价值是能被无痛替换。
@@ -175,15 +183,25 @@ pokemon_agent/
 │                     `.model_dump(mode="json")` → `.model_validate()` 转换。
 │                     `world`/`trace` 不再有子包（`Observation`/`ActionSpace`/
 │                     `TerrainMap`/`TraceEvent` 等已物理归回各自的模块，见下）
-├── brain/            纯决策层。无状态。只依赖各模块自己的 interface/ + schemas。
+├── brain/            纯决策层。无状态。**`pokemon_agent.*` 外部依赖为零**——
+│                     只剩标准库 + `pydantic` + `PIL`，**可作为第三方模块整体拷走**
+│                     （0913 深夜十一审计）。异常自成一根 `BrainError`、四封补全信封
+│                     （`LlmComplete*`/`VisionDescribe*`）已随 provider 搬进
+│                     `brain/schemas/`——都是"拷走不欠外面"的必需品。
 │                     `interface/`
 │                     是这个子系统自己的港口 + 数据 schema 出口：`brain_port.py`
 │                     （`BrainPort`）+ 六个数据形状（`Action`/
 │                     `EpisodeSummary`/`Goal`/`RunPlan`/
 │                     `StepVerifyVerdict`/`Task`，原来在
-│                     `schemas/brain/domain/`）。`brain/__init__.py` 对六个
-│                     数据形状是立即加载，对 `Brain`（`brain.py`）/`BrainPort`
-│                     都是**懒加载**——原因跟 `world/__init__.py` 对 `WorldPort`
+│                     `schemas/brain/domain/`）+ **`llm_config.py` 的
+│                     `BrainLlmConfig`**（选型纯数据，0913 深夜九从
+│                     `build_llm_providers.py` 搬来——它零重依赖，住在工厂模块里
+│                     会让"只想声明型号"的调用方连带进口厂商实现面（含 PIL），
+│                     实测从 25 个 brain 模块降到 14 个）。`brain/__init__.py` 对六个
+│                     数据形状 + `BrainLlmConfig` 是立即加载，对 `Brain`（`brain.py`）/
+│                     `BrainPort`/`build_llm_providers`（厂商接线工厂，拖着
+│                     `providers.py` 整个实现面）都是**懒加载**——原因跟
+│                     `world/__init__.py` 对 `WorldPort`
 │                     的处理一样：`brain_port.py`/`brain.py` 都要
 │                     `import pokemon_agent.schemas.brain`，而
 │                     `schemas/brain/communication/*.py` 里的协议字段又要从
@@ -191,8 +209,9 @@ pokemon_agent/
 │                     取舍见 `CHANGELOG.md` 对应条目
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方。
 │                     **两张图、节点一人一个文件**：run 级 `run/`（`run_graph.py` +
-│                     6 格**平铺在包根**：`begin`/`plan`/`dispatch`/`episode`/`reflect`/
-│                     `review`）、episode 级 `episode/`（`episode_graph.py` + 21 格按
+│                     6 格在 `nodes/` 下：`begin`/`plan`/`dispatch`/`episode`/`reflect`/
+│                     `review`——**包根只放骨架**，节点一律下沉一层）、
+│                     episode 级 `episode/`（`episode_graph.py` + 21 格按
 │                     七域 `open gate retrieve decide press store close` 分目录）。
 │                     **规则：节点文件名 = 对应 `<level>_graph.py` 里 `add_node` 的
 │                     字面量**（所以有 `retrieve/retrieve_step_episode_memory.py` 这种
@@ -209,8 +228,8 @@ pokemon_agent/
 │                     三个 `data_center` 委托 + `_compile`），唯一的构造参数是 `deps.py` 的
 │                     `HarnessDeps`（缺省 `data_center` 在 `__init__` 里落实并**写回 deps**，
 │                     保证节点与外部调用面拿到同一个对象）。常量各自跟着宿主节点住
-│                     （`MAX_GOAL_RETRIES` 在 `run/reflect.py`；`MAX_PLAN_PUSH`/
-│                     `PLAN_MAX_ATTEMPTS`/`RUN_TRACE_MASK` 在 `run/plan.py`；两个节点数常量
+│                     （`MAX_GOAL_RETRIES` 在 `run/nodes/reflect.py`；`MAX_PLAN_PUSH`/
+│                     `PLAN_MAX_ATTEMPTS`/`RUN_TRACE_MASK` 在 `run/nodes/plan.py`；两个节点数常量
 │                     在 `episode/episode_graph.py`；两层的 `recursion_limit` **各一个常量**——
 │                     run 级是**闸门** `RUN_RECURSION_LIMIT`（`run/run_entry.py`，一个大数，
 │                     不按公式算），episode 级是**贴身预算**，由 `episode_entry.episode_budget()`
@@ -255,9 +274,13 @@ pokemon_agent/
 │                       原则物理搬回了这里
 │                     - `pyboy_world.py` / `ram.py` / `frame_slot.py`：三份"怎么
 │                       读/怎么算"的实现，各自 `from .interface import ...` 拿协议
-│                       和数据形状来用，不重复定义；仍然依赖 `providers`
-│                       （`VisionProvider`），`providers` 当作底层公共库，不算
-│                       模块间耦合
+│                       和数据形状来用，**不 import 任何 provider 实现**——它拿到的
+│                       那个 `VisionProvider` 实例是**tool 层工厂**
+│                       （`tools/vision_factory.build_vision_provider()`）造出来、
+│                       由装配点 `build.py` 递进来的（0913 深夜九起：此前是
+│                       `build.py` 直接从 `brain.providers` import，那是装配点
+│                       伸进 brain 实现面的唯一一处），`world/` 自己一行
+│                       都没提过 brain，不构成横向依赖
 │                     `world/__init__.py` 对 `interface/`（含 `WorldPort`）是
 │                     立即加载——零依赖之后不再需要懒加载；对
 │                     `pyboy_world.py`/`ram.py`/`frame_slot.py` 这几个重实现文件
@@ -271,6 +294,11 @@ pokemon_agent/
 │                     零循环依赖风险，立即加载；`brain_tool.py`/
 │                     `game_tools.py`/`memory_tool.py`/`trace/`（**步 5a 收成包**）：四个 Port 各自
 │                     唯一的实现，harness 伸向 brain/环境/记忆/trace 的四只手。
+│                     **两个接线工厂（0913 深夜九）**：`BrainTool.build(text=…)` 造
+│                     大脑 + 四个 provider、`vision_factory.build_vision_provider
+│                     (model=…)` 造 world 的感知 provider。**"谁依赖 brain"的唯一
+│                     答案就是本层**——装配点 `build.py` 只递型号名，对 brain 零
+│                     import。
 │                     **步 5b 销账**：`CheckpointToolPort` + `checkpoint_tool.py` 已解散
 │                     ——存档不是「能力」（没有第二种后端），它是 harness 自己状态模型的
 │                     落盘能力，现住 `harness/episode/episode_state.py::EpisodeCheckpoint`
@@ -285,13 +313,18 @@ pokemon_agent/
 │                     （见该目录说明）——`StepMemory`/`ObjectFactEvent` 曾经短暂搬
 │                     进来过，但 `MemoryStorePort` 从头到尾不需要知道它们的具体
 │                     形状，只有 tool 层/组装方才需要，因此物理上搬回 `schemas/`
-├── providers/        `interface/`：五个提供方协议（`LLMProvider`/`VisionProvider`/
-│                     `JudgeProvider`/`EmbeddingProvider`/`RerankerProvider`，原来在
-│                     顶层 `interfaces/providers/`）+ `ModelCall`（原来在
-│                     `schemas/providers/domain/`，信封数据形状），现在同住一包，
-│                     立即加载（都只依赖 `schemas.providers`，无重实现依赖，不需要
-│                     `world/interface` 那种懒加载）；具体 LLM/视觉模型接入实现
-│                     （DashScope/Qwen/DeepSeek/FastEmbed）在同目录下的实现文件里
+├── providers/        **0913 已解散（此目录不存在）**。协议更早各归其位
+│                     （`LLMProvider`/`JudgeProvider` → `brain/interface/`、
+│                     `VisionProvider` → `world/interface/`、
+│                     `EmbeddingProvider`/`RerankerProvider` → `memory/`）；
+│                     实现这次跟着协议走：`QwenProvider`/`ArkProvider`/
+│                     `DeepSeekProvider` → `brain/providers.py`（`brain` 是主要
+│                     消费者，四链路接线的知识本来就在 `brain/build_llm_providers.py`），
+│                     `FastEmbedText`/`FastEmbedReranker` → `memory/fastembed_text.py`
+│                     / `fastembed_reranker.py`（只被 memory 检索链路消费）。
+│                     信封 `LlmComplete*`/`VisionDescribe*` 随 provider 进了
+│                     `brain/schemas/`（大脑内部协议）；world 用自己的同名副本
+│                     （`world/interface/domain/vision_describe.py`）
 ├── vision/           图像预处理（网格叠加、放大）
 ├── trace/            事件流：`interface/`（`TracePort` 协议 + `TraceKind` 账目
 │                     词表，原来分别在顶层 `interfaces/trace/` 和
@@ -325,9 +358,13 @@ pyproject.toml
 
 ## 六、LLM 与输出格式
 
-- 本阶段已有真实 provider（`providers/dashscope.py` 的 `QwenText` / `QwenVision`），
-  通过 `LLMProvider` / `VisionProvider` Protocol 接入；`FakeLLM` 已随 `mocks/` 删除。
-  代码里**不许出现任何直连模型 SDK 的调用**——直连只发生在 `providers/` 这一层。
+- 本阶段已有真实 provider：`brain/providers.py` 的 `QwenProvider`（DashScope、
+  语言+视觉两用）/ `ArkProvider`（火山方舟、豆包）/ `DeepSeekProvider`，
+  `memory/fastembed_text.py` 与 `memory/fastembed_reranker.py`（本地向量化与重排）；
+  通过 `LLMProvider`/`JudgeProvider`（`brain/interface/`）、`VisionProvider`
+  （`world/interface/`）、`EmbeddingProvider`/`RerankerProvider`（`memory/`）接入。
+  （0913 前它们都住顶层 `providers/`，那个包已解散。）
+  代码里**不许出现任何直连模型 SDK 的调用**——直连只发生在这几个实现文件里。
 - 动作选择输出用 **Pydantic schema**（`Thought` / `Action` / `Args`）解析。
 - **解析失败要重试并计数**，重试次数与失败计数进 trace。不许静默吞掉解析错误。
 - 约束解码（constrained decoding）留到接真实模型时再上，现在不做。
