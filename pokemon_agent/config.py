@@ -18,7 +18,8 @@
 
 **为什么不读环境变量**：env 是**部署配置**（端口、超时、开关），改它是因为机器/服务变了；
 这里是**实验配置**，改它是因为这一轮实验想试别的参数。两者生命周期不同，混在一起
-会让"这次实验的配置"无法从代码里复现。env 读取留在各自模块（如 `api.py`）。
+会让"这次实验的配置"无法从代码里复现。env 读取留在各自模块
+（`brain/providers.py` 读密钥、`experiment/real_check/common.py` 读核对参数）。
 """
 
 from __future__ import annotations
@@ -36,17 +37,35 @@ BRAIN_MAX_ATTEMPTS = 3
 可以独立调，实际上没有证据支持任何一个链路该多试或少试。
 真需要分化时再加字段，那时也有数据支撑。
 
-`decide_action` 的重试会**叠加纠正说明**（每次把上次错在哪拼进 prompt），
-所以它那条链路的重试携带信息增量；其余四条是**原样重问**。
+`decide_action` 的重试**只在解析类失败时叠加纠正说明**（把上次错在哪拼进
+prompt，0915 起按 `error_kind` 分叉）；传输失败（`ToolTimeout`）是**原样重问**
+——模型根本没收到题，没有什么可"纠正"的；4xx（`ProviderRejected`）**不重试**。
 """
 
-PERCEPTION_MAX_RETRIES = 2
-"""视觉感知重试预算：一帧最多读几次。world 侧的循环用它。"""
+PERCEPTION_MAX_RETRIES = 3
+"""视觉感知重试预算：一帧最多读几次。world 侧的循环用它。
 
-MAX_GOAL_RETRIES = 2
-"""同一个目标最多自动重试几次（不含首次派发）——即最多被派发
-`1 + MAX_GOAL_RETRIES` 次。耗尽后 `reflect` 强制弹出该目标、交人工处置；
-没有这条硬上限，"失败保留栈顶 + 自动继续的 reviewer"就是一个死循环。"""
+0915 起 2→3：provider 层的重试同日删掉，感知这条链的总尝试次数原为
+provider 3 × 循环 2 = 6，砍完只剩循环自己——而它扛的恰好是"带图的大请求"
+（跨境 TLS 断连高发，见 `providers._post` docstring），提到 3 对齐 brain 的预算。
+"""
+
+MODEL_RETRY_BACKOFF_SECONDS = 0.5
+"""两个重试循环（`brain_tool` / `game_tools`）失败后到下一次尝试的**固定**间隔。
+
+只对"值得重试"的失败生效（`ProviderRejected` 快败不睡）；最后一轮失败后
+不睡——后面是上抛，没人等这个间隔。不用指数退避（0915 用户定）：重试预算
+一共 3 轮，0.5/1/2s 的拉开收益兜不住多写的两行。"""
+
+CONSOLE_REVIEW_TIMEOUT = 30.0
+"""控制台提问的等待秒数——超时按"人没意见"处理。
+
+**两个消费者**（同一个数，两种机制）：`ConsoleReviewer.inject()`（插话：超时→空串，
+即不重问）与 `ConsoleReviewer.audit()`（审：超时→认账）。
+取 30 秒：够人看清一屏上下文并打字，又不至于让无人值守的 run 每步白等。
+**它取代了旧的 `MAX_GOAL_RETRIES`**——那条硬上限删掉后，"重试几次"改由 plan
+读历史后决策（见 `docs/PLAN_console_reviewer.md` §3.1），run 级不再有自动重试预算。
+"""
 
 
 # ---- 动作输出上限：模型一次决策能写多大 ----
@@ -82,14 +101,22 @@ STALL_LIMIT = 5
 """L2 护栏：连续多少步"动作与画面机械状态都没有变化"就强制结束本局。
 
 阈值取 5：一两次重复可能是模型没看清，连续五次原地打转才断定它陷入循环。
-它上面还有更硬的一层——run 级 `MAX_GOAL_RETRIES`，本局结束不是终点。
+本局结束不是终点——run 级由 `review` 节点看结果、`plan` 决定要不要重开。
 **两个读者**：`episode/gate/judge.py`（判停）与 `episode/close/close_episode.py`
 （记 `stalled`）；算 `stall_count` 的 `press/detect_stall.py` 反而**不读它**——
 算数与判断分离，阈值多少跟算数那一格无关。
 """
 
-MAX_PLAN_PUSH = 5
-"""一次 run 最多往目标栈里压几个目标——防止 planning 无限膨胀。"""
+PLAN_MAX_NEW_GOALS = 3
+"""一次规划最多**建议**模型给几个新目标。
+
+**这是给模型的建议上限，不是截断**（0914 S2，取代旧的 `MAX_PLAN_PUSH`）：
+旧常量是 plan 节点的硬护栏——模型给多了就裁掉，而裁剪就是**静默丢目标**。
+现在目标表的增长由 planner 自己负责，`plan` 节点不替它裁；这个数只渲进
+`run_plan.md` 的"一次最多给 $max_push 个"，是个提示。
+
+取 3：规划是"拆下一步"，一次能想清楚并写对 3 条以上递进目标的场合很少；
+写多了质量反而降（模型会把同一条拆成几个近义目标凑数）。"""
 
 NODES_PER_DECISION = 10
 """一次决策在**链首**烧掉的节点数：
@@ -104,7 +131,7 @@ NODES_PER_DECISION = 10
 NODES_PER_PRESS = 7
 """链内**每按一个键**走完一圈的节点数：
 
-    act → perceive_after_action → apply_stop → detect_stall
+    act → perceive_after_action → detect_stall
     → store_step_episode_memory → store_object_semantic_memory → close_step
 
 `close_step` 出口的分叉（回 `act` / 回 `save_checkpoint`）两条路都算得进来：
@@ -145,24 +172,23 @@ MEMORY_RECALL_LIMIT = 5
 共用一个数字，改一处就够。两个读者正是它该住 config 的判据。
 """
 
-EPISODE_MEMORY_RECALL_LIMIT = 3
-"""每次决策检索几条跨局摘要记忆。"""
+JUDGE_HISTORY_STEPS = 3
+"""`judge` 判定时能看到的本局最近几条 **step memory**（`render(reason=False)`，
+不含决策者主张）。
 
-JUDGE_DECISION_HISTORY = 2
-"""`judge` 判定时能看到的本局最近几条**链**（`render(reason=False)`，不含决策者主张）。
+**单位是 step memory 条数，按条取，不按决策分组。** 一次决策展开成 L 个键就是
+L 条 step memory，取"最近 3 条"就是字面意思——不再乘 L。
 
-**单位是决策，不是步**：一次决策 = 一串键，所以"最近 2 次决策"就是换粒度之前的
-"最近 2 步"。粒度下沉到单键之后若还按步取，判定器的时间视野会被**静默除以决策长度**
-（一次决策能按 8 键），而它判的"事件"类判据前提就是"证据可能在前几次决策的快照里"
-——所以换的是**单位**，数字 2 没动。窗口大小的取舍（含已知风险）见 `CHANGELOG.md`
-2026-09-05 条目。
+**为什么改回条数**（2026-09-14 定案）：0913 粒度下沉（步 → 键）时，这个窗口曾被
+换算成"最近 2 次决策"，理由是"保持时间视野不被静默除以决策长度"。但那个换算把
+**窗口大小**和**单位**绑在了一起——判定器要看的是"最近发生了什么"这个**事件窗口**，
+事件就是逐个键发生的，窗口本来就该按事件条数说。按决策取的结果是窗口随 L 浮动
+（L=1 取 2 条、L=4 取 8 条），同一句"最近 2 次"在不同链长下看到的事件量差 4 倍，
+判据前提反而不可控。改回条数后窗口恒定，链长怎么变都不影响判定器的证据量。
 """
 
-JUDGE_HISTORY_KEY_CAP = 8
-"""上面那个窗口一次**最多取几个键**（查询上限，也是渲染上限）。
-
-**为什么要有帽**：链长没有上限（`MAX_SEGMENTS × MAX_TIMES` = 32 键），两条长链能把
-判定器的 prompt 顶到十几条记忆。8 = 一条打满 `MAX_TIMES` 的单段链：实测一条记忆
-渲成文本约 490 字符、判定 prompt 本体约 4 千字符，8 条就是它的量级上限。真机实测
-`press_count` 全是 1，这个帽现在根本碰不到——它防的是链一长就静默膨胀。
-"""
+# 历史：`JUDGE_HISTORY_KEY_CAP = 8` 已删（2026-09-14）。
+# 它原本是"按决策取窗口"的配套查询上限（防两条长链把 prompt 顶爆）。改成按条数
+# 取之后，`JUDGE_HISTORY_STEPS` 本身就是条数上限，查询上限与渲染上限同源，
+# 再留一个帽就是两个数字描述同一件事、还能互相矛盾（cap < steps 时截断静默发生）。
+# 链长膨胀的风险也一并消除：取的是固定 3 条，与 L 无关。
