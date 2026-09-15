@@ -32,7 +32,8 @@ def retrieve_verify_step_memory(
     蒸馏）时这条正好说明"查了，没有可校验的 step 记忆"。
 
     前置条件：`state.observation` 非空且 `state.done`（本局已判完成）。
-    后置条件：返回 `{"verify_step_entries": …}`。
+    后置条件：返回 `{"verify_step_entries": …}`，并记一条 `read_verify_step`
+    （与主循环那条 `read_step` 同形：同一个条件、同一种清单）。
     """
     deps = runtime.context
     assert state.observation is not None and state.done, (
@@ -42,14 +43,12 @@ def retrieve_verify_step_memory(
     entries = deps.memory.query_episode_steps(
         FromHarnessToMemoryToolQueryEpisodeStepsReq(episode_id=ep)
     ).steps
-    refs = " ".join(f"({m.episode_id}, {m.step})" for m in entries)
+    refs = [f"({m.episode_id}, {m.step})" for m in entries]
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.RETRIEVE_NODE,
-            episode_id=ep,
-            step=step,
-            read_kind="verify_step",
-            count=len(entries),
+            kind=TraceKind.READ_VERIFY_STEP,
+            meta={"source": "retrieve_verify_step_memory", "episode_id": ep, "step": step},
+            query=f"episode_id={ep}",
             refs=refs,
         )
     )
