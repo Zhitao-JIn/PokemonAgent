@@ -1,12 +1,12 @@
 """校验判定的最小值对象：`StepVerifyVerdict`。
 
-verify_steps 与 summarize 的调用链已合并为
-`VerifyAndSummarizeReq`/`VerifyAndSummarizeResp`
-（`schemas/communication/verify_and_summarize.py`）——见
-`docs/ROADMAP.md`“verify_steps 与 summarize 合并”一条。`StepVerifyVerdict`
-仍被两处复用：合并后的响应用它表示“对一条 step 记忆的
-判定”（`VerifyAndSummarizeResp.verdicts`），`trace/utils.py::verify_call()`
-落 trace 时也按这个形状序列化。
+它是校验那一次调用（`Brain.verify()`）的响应元素：
+`FromHarnessToBrainToolVerifyResp.verdicts` 用它表示"对一条 step 记忆的判定"。
+
+**它只服务校验，与蒸馏无关。** `verify`/`summarize` 原本合并成
+`Brain.verify_and_summarize()` 的一次调用，那一族的 `VerifyAndSummarizeReq/Resp`
+信封随拆分一起删除（CHANGELOG 第 39 条），现在是两次独立调用、两套信封：
+`FromHarnessToBrainToolVerify{,Resp}` 与 `...Summarize{,Resp}`。
 """
 
 from __future__ import annotations

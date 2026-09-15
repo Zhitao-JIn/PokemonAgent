@@ -3,7 +3,7 @@
 **`entries` 只装过滤过的可信记录**——调用方拿 `verify()` 的 `verdicts`
 自己筛完再传进来（"过滤归 harness"，这样想怎么用就怎么用）。
 **`prompt` 不在这里**：`BrainTool.summarize()` 入口处自己拼
-（`prompts.verify_and_summarize.build_summarize_prompt(req)`）。
+（`prompts.summarize.build_prompt(req)`）。
 """
 
 from __future__ import annotations
