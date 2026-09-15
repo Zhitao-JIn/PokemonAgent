@@ -29,13 +29,13 @@ from ..episode_state import EpisodeRunState
 
 
 def act(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
-    """弹队首一键，执行，写 `ACT`。**只改 `action`/`pending_presses` 两处。**
+    """弹队首一键，执行，写 `do_action`。**只改 `action`/`pending_presses` 两处。**
 
     **`settle` 由"这是不是队列里的最后一个键"决定**：链中间的键后面还有键要按，等世界
     把 10 秒过场走完不但慢，而且那几帧对它没用（它只读内存判位移、换图）；链尾那一帧要
     交给 `judge` 看，必须等。
 
-    `step` 不在这里加（在 `close_step` 里加，`ACT` 与 `MEMORY_WRITE` 落在同一步上）。
+    `step` 不在这里加（在 `close_step` 里加，`do_action` 与 `write_step` 落在同一步上）。
     感知在下一格 `perceive_after_action`——一帧只在产出处感知一次，这里不盖。
 
     前置条件：`state.observation`/`state.plan` 非空、`pending_presses` 非空。
@@ -58,12 +58,12 @@ def act(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]
         FromHarnessToGameToolExecuteReq(action=action, observation=before, settle=is_decision_tail)
     )
 
-    # 步骤 3：写 ACT，交给下一格 perceive_after_action 去感知。
+    # 步骤 3：写 do_action，交给下一格 perceive_after_action 去感知。
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.ACT,
-            episode_id=ep,
-            step=before.step,
+            kind=TraceKind.DO_ACTION,
+            meta={"source": "act", "episode_id": ep, "step": before.step},
+            # 封套上的 `source` = 发这条账的节点名（`kind` 只说"哪本账"）。
             action=action,
         )
     )
