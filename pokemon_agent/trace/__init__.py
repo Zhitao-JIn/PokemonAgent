@@ -1,39 +1,43 @@
-"""trace 包：事件流的存储实现 + 自己的港口协议。
+"""trace 包：事件流的存储实现 + 自己的港口协议 + 形状协议。
 
-    interface/  `TracePort`（协议）——原来放在顶层 `interfaces/trace/`，这次
-                搬进来跟实现同住一包（`pokemon_agent/interfaces/` 这次整个
-                撤销，不再保留 re-export 薄壳）
-    store.py    `TracePort` 的实现：一条事件一个 json 文件 + 截图便利副本
+    interface/  `TracePort`（协议）与 `Event`（形状协议）
+    store.py    `TracePort` 的实现：一条事件一个 json 文件（文件名是时间递增 uuid）
+    datastore/  `_Event`（私有实现）与 `EventType`（粗类词表）
 
-**`TraceKind` 不再住在这一包**（0913 定案）：它是 harness 的账目词表，
-消费者是 harness（22 个节点）而不是 trace 的实现，所以搬去了
-`pokemon_agent.schemas.harness`。本包不再 re-export 它——需要它的地方写
-`from pokemon_agent.schemas.harness import TraceKind`。
+**本包对 `pokemon_agent` 其余部分零 import**——这是 trace 被当作**独立第三方
+模块**对待的那条边界的字面含义："拷走即可复用"。
 
-事件 payload 的格式规则（原 `utils.py`）按"harness 解耦"方案迁去了
-`tools/trace/render.py`——payload 组装是 tool 层的处理职责，本模块只做
-存储：**对 `pokemon_agent` 其余部分零 import**（连 `schemas` 都不依赖，
-`TracePort` 只从自己的 `datastore/` 拿 `EventType`/`Source`）。这是 trace 被
-当作**独立模块**对待的那条边界，机械核对见 `scripts/check_graph_phases.py`
-的"trace 自持"一项。
+0913–0914 期间陆续搬走/下线的几件（判据都是"归属看谁消费"）：
 
-本文件同时是统一出口：`TracePort`/`LocalTrace` 与截图读取，外加
-落盘的事件记录形状（`datastore/`，原来放在 `schemas/trace/datastore/`，物理上
-归回自己的包）都从这里 re-export，消费方只写 `from pokemon_agent.trace import
-LocalTrace, TraceEvent, TracePort`。
+- `TraceKind` → `schemas.harness`：harness 的账目词表，消费者是 harness 的节点；
+- `TraceEvent` → `schemas.harness.domain`：跨层数据形状（出现在信封里），
+  契约层不许反向依赖实现包；
+- ~~`Source` + `SourceName`~~ → **已删**：生产者维度整体下线；
+- ~~`PersistedEvent` / `project` 钩子 / `event_sink` / 截图副本 / `read_screenshot`~~
+  → **已删**：落盘形状不再需要项目侧投影；
+- ~~`TRACE_SCHEMA_VERSION`~~ → **已删**（0914）：恒 `5`、零读方、要人工同步两份；
+- ~~`event_id` / `read_event()` / `frame_png`~~ → **已删**（0914 封套改造）：
+  前两个的唯一读方是"取那一帧"，而画面的落盘真源搬到了 `memory/step_memory/`
+  的 `before_frame`/`after_frame`。
+
+留在这里的是**真的被 `store.py` 消费**的一件：`EventType`（粗类词表）。
+
+事件 `kind`/`type`/`content` 的格式规则按"harness 解耦"方案住在
+`tools/trace/render.py`——组装是 tool 层的处理职责，本模块只做存储。
+
+本文件同时是统一出口：`TracePort`/`LocalTrace`/`Event` 都从这里 re-export，
+消费方只写 `from pokemon_agent.trace import LocalTrace, TracePort`。
 """
 
-from .datastore import TRACE_SCHEMA_VERSION, EventType, Source, TraceEvent
-from .interface import TracePort
-from .store import LocalTrace, read_screenshot, screenshot_filename
+from .datastore import EventType
+from .interface import Event, TracePort
+from .store import STORAGE_ROOT, LocalTrace, new_event_uuid
 
 __all__ = [
-    "TRACE_SCHEMA_VERSION",
+    "Event",
     "EventType",
     "LocalTrace",
-    "Source",
-    "TraceEvent",
+    "STORAGE_ROOT",
     "TracePort",
-    "read_screenshot",
-    "screenshot_filename",
+    "new_event_uuid",
 ]

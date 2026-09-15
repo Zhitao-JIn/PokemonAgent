@@ -12,9 +12,10 @@
    **这个世界**对动作的要求（换一个世界就不成立），不是大脑的规则。
    `INTERACT_KEY` 因此定义在这一层。
 3. **盖章坐标**：`episode_id`/`step` 由 harness 给、在这里装进 `StepMemory`
-   ——大脑不知道自己在哪一局、第几步。`attempt`（第几次尝试）同理盖在账上。
-4. **重试循环 + 记账**：五条调模型的链路（`choose`/`plan`/`judge`/`verify`/
-   `summarize`）走**同一个** `_attempt_loop()`。`reflect` 不调模型，不走循环。
+   ——大脑不知道自己在哪一局、第几步；账上也不替它记尝试序号——"第几次"由账在链上的
+   位置回答（0914 跟进删 `attempt`）。
+4. **重试循环 + 记账**：六条调模型的链路（`choose`/`plan`/`judge`/`verify`/
+   `summarize`/`extract`）走**同一个** `_attempt_loop()`。`reflect` 不调模型，不走循环。
 
 **重试的分工**（2026-09-13 定稿，取代此前的"a+c 方案"）：
 
@@ -30,15 +31,17 @@ brain 是第三方模块，不知道这些。它只回答"这一次成没成"。
 **这里没有降级，只有重试**：`judge`/`verify`/`summarize` 曾在 brain 里把调用失败
 吞成"看起来正常的业务结果"（`done=False` / 全标不可靠 / `summary=None`）。那个
 兜底已整个取消——它让"链路坏了"与"业务结论就是如此"在数据里分不开。
-现在五条链路一致：重试耗尽就抛，由 harness 决定要不要给保守结果
+现在六条链路一致：重试耗尽就抛，由 harness 决定要不要给保守结果
 （要给的话也发生在 `except` 里，trace 上看得见）。
 
-**并组装存储形状**：`reflect` 的 `StepMemory`、`summarize` 的 `EpisodeMemory`
-都在这层装配——`brain` 与 `memory` 互不认识，两边形状的搬运只有这里做。
+**并组装存储形状**：`reflect` 的 `StepMemory`、`summarize` 的 `EpisodeMemory`、
+`extract` 的 `KnowledgeRecord` 都在这层装配——`brain` 与 `memory` 互不认识，
+两边形状的搬运只有这里做。
 """
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from typing import TypeVar
 
@@ -47,14 +50,23 @@ from pokemon_agent.brain import (
     ActionSegment,
     BrainPort,
     EpisodeSummary,
+    LearnedKnowledge,
     Reflection,
 )
-from pokemon_agent.brain.errors import AttemptFailed, ParseFailure
-from pokemon_agent.config import BRAIN_MAX_ATTEMPTS, MAX_RATIONALE, MAX_SEGMENTS, MAX_TIMES
+from pokemon_agent.brain.errors import AttemptFailed, ParseFailure, ProviderRejected
+from pokemon_agent.config import (
+    BRAIN_MAX_ATTEMPTS,
+    MAX_RATIONALE,
+    MAX_SEGMENTS,
+    MAX_TIMES,
+    MODEL_RETRY_BACKOFF_SECONDS,
+)
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
+    FromHarnessToBrainToolExtractReq,
+    FromHarnessToBrainToolExtractResp,
     FromHarnessToBrainToolJudgeReq,
     FromHarnessToBrainToolJudgeResp,
     FromHarnessToBrainToolPlanOnceReq,
@@ -67,9 +79,16 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolVerifyResp,
     ModelCall,
 )
-from pokemon_agent.schemas.memory import SNAPSHOT_BLIND, EpisodeMemory, StepMemory
+from pokemon_agent.schemas.memory import (
+    SNAPSHOT_BLIND,
+    EpisodeMemory,
+    KnowledgeRecord,
+    StepMemory,
+)
+from pokemon_agent.tools.prompts import extract as extract_prompt
 from pokemon_agent.tools.prompts import run_plan as run_plan_prompt
-from pokemon_agent.tools.prompts import verify_and_summarize as verify_summarize_prompt
+from pokemon_agent.tools.prompts import summarize as summarize_prompt
+from pokemon_agent.tools.prompts import verify as verify_prompt
 from pokemon_agent.world import DIRECTION_KEYS, INTERACT_KEY
 
 from .prompts import decide_action as decide_action_prompt
@@ -145,7 +164,7 @@ class BrainTool:
         )
         return cls(brain)
 
-    # ---- 重试循环（五条链路共用）----
+    # ---- 重试循环（六条链路共用：choose / plan / judge / verify / summarize / extract）----
 
     def _attempt_loop(
         self,
@@ -161,8 +180,17 @@ class BrainTool:
             让 harness 分辨是谁完了。
         `attempt`：第 `n` 次尝试的函数，收 `(第几次, 目前累积的账)` 返回结果。
             它内部调 brain，失败时 brain 抛 `AttemptFailed`（带这次的账）。
-        `retry_prompt`/`base_prompt`：可选——只有 `decide` 这条链路会**叠加纠正
-            说明**（把上次错在哪拼进 prompt），其余四条原样重问。
+        `retry_prompt`/`base_prompt`：可选——只有 `decide` 这条链路会传。
+            **叠不叠纠正说明由账上的 `error_kind` 决定**（0915 分叉，见
+            `_retry_prompt`）：解析类失败叠加说明；传输失败原样重问。
+
+        **`ProviderRejected` 立即耗尽**：4xx 是服务端的明确拒绝（密钥/配额/型号），
+        重试注定无用——第一轮就抛 `MaxRetriesExceeded`（`attempts=1`），
+        不烧预算、不给模型叠"你上一次的输出不合法"那种张冠李戴的纠正。
+
+        **退避是固定的**（`MODEL_RETRY_BACKOFF_SECONDS`，config）：失败后、
+        且还有下一轮预算时睡 0.5s 再试——重试预算只有 3 轮，指数拉开兜不住
+        多写的两行；最后一轮失败后不睡（后面是上抛，没人等这个间隔）。
 
         为什么收 `(第几次, 账)` 两个参数：`decide` 要用 "第几次" 渲染纠正说明的
         文案（"第 2 次尝试"），也要用 "账" 取上次的失败原因；其余链路两个都不用。
@@ -171,18 +199,26 @@ class BrainTool:
         **两种"账"的翻译在这里**：brain 吐的是 `brain.interface.ModelCall`
         （它自己的方言），本循环收进来的一律转成 `tools.interface.ModelCall`
         （tool 层的工作形状）——"字段恰好一样"是巧合，语义边界是真的。
-        **盖章也在这里**（`str(第几次)`）：只有循环控制者知道"这是第几次"。
+        **账按序排列**：第 `n` 次尝试的账落在第 `n` 位——"第几次"由位置回答，
+        不另盖一枚 `attempt` 戳（0914 跟进删）。
         """
         calls: list[ModelCall] = []
         for nth in range(1, BRAIN_MAX_ATTEMPTS + 1):
             try:
                 result = attempt(nth, calls)
             except AttemptFailed as exc:
-                # 单次失败：把这次的账收进来，继续下一次。**账在盖 attempt 时补**。
-                calls.append(_adopt(exc.call).with_attempt(str(nth)))
+                call = _adopt(exc.call)
+                calls.append(call)
+                if call.error_kind == ProviderRejected.__name__:
+                    # 4xx：重试注定无用，立即耗尽（attempts=1）。
+                    raise MaxRetriesExceeded(
+                        len(calls), _last_error(calls), calls, source=source
+                    ) from exc
+                if nth < BRAIN_MAX_ATTEMPTS:
+                    time.sleep(MODEL_RETRY_BACKOFF_SECONDS)
                 continue
 
-            calls.extend(_adopt(call).with_attempt(str(nth)) for call in result.calls)
+            calls.extend(_adopt(call) for call in result.calls)
             return result, calls
 
         raise MaxRetriesExceeded(BRAIN_MAX_ATTEMPTS, _last_error(calls), calls, source=source)
@@ -198,8 +234,10 @@ class BrainTool:
         `decide_action.build_prompt(req)`——"谁问模型，谁把 req 变成 prompt"，
         拼装只剩这一个调用点，harness 不再有"拼好回填"那一半。
 
-        **唯一会叠加纠正说明的链路**：下一次尝试把上次的失败原因与原始输出
-        拼进 prompt（`retry_prompt`），所以重试携带信息增量。
+        **唯一会带"上一次失败"信息的链路**：解析类失败（`ParseFailure` 族）的
+        下一次尝试把上次的失败原因与原始输出拼进 prompt（`retry_prompt`），
+        重试携带信息增量；**传输失败原样重问**——模型根本没收到题，没什么可
+        "纠正"的（0915 分叉，取代无条件叠加）。
         """
         base_prompt = decide_action_prompt.build_prompt(req)
 
@@ -297,9 +335,7 @@ class BrainTool:
             ),
             rationale=list(reflection.rationale),
             action=req.action.describe(),
-            after=StepMemory.Observation.model_validate(
-                _blind(req.after).model_dump(mode="json")
-            ),
+            after=StepMemory.Observation.model_validate(_blind(req.after).model_dump(mode="json")),
             step=req.step,
             episode_id=req.episode_id,
         )
@@ -342,8 +378,7 @@ class BrainTool:
         这里把 `entries` 投影成"可对齐的素材"（`StepMemory.render()` 的文本）——
         `verdicts.index` 因此能落回 `req.entries` 的下标。
 
-        **prompt 在这里拼**（0913 定案）：
-        `verify_and_summarize.build_verify_prompt(req)`。
+        **prompt 在这里拼**（0913 定案）：`verify.build_prompt(req)`。
 
         **`include_rationale=False`**：校验看"发生了什么"，**不给决策者的论据**
         ——那是要被校验的对象，先看到就自带偏向。这个选择**显式传给 brain**
@@ -351,9 +386,16 @@ class BrainTool:
 
         **过滤仍归 harness**：本层只把裁决原样带出去。
         """
-        prompt = verify_summarize_prompt.build_verify_prompt(req)
+        prompt = verify_prompt.build_prompt(req)
         rendered = [entry.render(reason=False) for entry in req.entries]
-        images = [_decode(image) for image in req.images]
+        # **原样透传，不解码**：`req.images` 已是 base64 字符串，而 brain 那边
+        # `VisionDescribeReq.images` 要的正是这个（见 `brain/schemas/vision.py`）
+        # ——`judge()`/`summarize()` 一直这么传。此前这里多写了一次
+        # `_decode()`（base64 → 原始 bytes，"截图直存 base64"迁移前的化石），
+        # 结果是**每局结束的校验必炸**：`VisionDescribeReq` 的 `list[str]`
+        # 拒收 bytes，校验三次重试全在构造请求时就 ValidationError 掉，
+        # 一整局以 `MaxRetriesExceeded[verify]` 收场（0913 真机核对实测）。
+        images = list(req.images)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.verify(
@@ -376,15 +418,20 @@ class BrainTool:
         """蒸馏：拼 prompt + 重试循环调 `Brain.summarize()` → 用 `EpisodeSummary`
         + harness 元信息组装 `EpisodeMemory`（存储形状的装配在 tool 层）。
 
-        **prompt 在这里拼**（0913 定案）：
-        `verify_and_summarize.build_summarize_prompt(req)`。
+        **这里是 `EpisodeMemory` 两个来源的分界**：`result.summary`
+        （`EpisodeSummary`）是**派生正文**——LLM 从 `req.entries` 蒸出来的；
+        `req` 上那五个字段（`episode_id` / `run_id` / `goal` / `success` / `steps`）
+        是**来源章**——harness 从 run state 给的。大脑不知道自己在哪一局，
+        也没资格判定自己成没成，所以这五个字段只能在这里照抄、不能由它产出。
+
+        **prompt 在这里拼**（0913 定案）：`summarize.build_prompt(req)`。
 
         `history` 由 `req.entries`（**已过滤的可信记录**）渲成文本传下去，
         **含决策者的论据**（`reason=True`）——蒸馏要总结"为什么这么做"，
         跟 `verify()` 的方向相反。结局（`success`/`steps`/`max_steps`）也一并传：
         蒸馏要评价"这做法值不值得复用"，没有基准就没法评。
         """
-        prompt = verify_summarize_prompt.build_summarize_prompt(req)
+        prompt = summarize_prompt.build_prompt(req)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.summarize(
@@ -413,31 +460,84 @@ class BrainTool:
             quality_rationale=summary.quality_rationale,
             applicable_scenes=summary.applicable_scenes,
             tags=summary.tags,
-            filename=summary.filename,
             markdown=summary.markdown,
         )
         return FromHarnessToBrainToolSummarizeResp(
             summary=summary, episode_memory=episode_memory, calls=calls
         )
 
+    # ---- 世界知识抽取 ----
+
+    def extract(self, req: FromHarnessToBrainToolExtractReq) -> FromHarnessToBrainToolExtractResp:
+        """抽取：拼 prompt + 重试循环调 `Brain.extract()` → 组装 `KnowledgeRecord`。
+
+        **和 `summarize()` 逐字同形、产物不同**：那边把 `EpisodeSummary` 装成
+        `EpisodeMemory`（属于那一局），这边把 `LearnedKnowledge` 装成
+        `KnowledgeRecord`（属于世界）。**来源章都是在这一层盖的**——大脑不知道
+        自己在哪一局，`run_id`/`episode_id` 只有这里两边都认。
+
+        **`source` 拼成 `{run_id}/{episode_id}`**：知识库那个家族里已经有手工
+        写的先验（metadata 的 `source` 是文件名），两种来源必须在 metadata 上
+        分得开——将来要"只保留 run 产出的"或"只看人工先验"时才读得出来。
+        正文里不带来源（`KnowledgeRecord.render()` 只回 `text`）：读者关心
+        这个世界的规则，不关心它是哪一局读到的。
+
+        **prompt 在这里拼**（同其余五条链路）：`extract.build_prompt(req)`。
+
+        `history` 由 `req.entries`（**已过滤的可信记录**）渲成文本传下去，
+        含决策者的论据（`reason=True`）——跟 `summarize()` 同一个选择：
+        "为什么这么做"里常藏着"这个世界怎么回事"，裁掉会让抽取漏掉一部分。
+
+        **零条也是成功**：`resp.records == []` 是常态，不是失败。失败只有
+        重试耗尽抛 `MaxRetriesExceeded`（`source="extract"`）。
+        """
+        prompt = extract_prompt.build_prompt(req)
+
+        def attempt(nth: int, calls: list[ModelCall]) -> object:
+            return self._brain.extract(
+                prompt=prompt,
+                goal=req.goal,
+                history=[entry.render(reason=True) for entry in req.entries],
+                images=list(req.images),
+            )
+
+        result, calls = self._attempt_loop("extract", attempt)
+        knowledge: LearnedKnowledge = result.knowledge
+        source = f"{req.run_id}/{req.episode_id}"
+        records = [
+            KnowledgeRecord(
+                topic=item.topic,
+                text=item.content,
+                source=source,
+                run_id=req.run_id,
+                episode_id=req.episode_id,
+            )
+            for item in knowledge.items
+        ]
+        return FromHarnessToBrainToolExtractResp(records=records, calls=calls)
+
     # ---- 规划 ----
 
-    def plan(
-        self, req: FromHarnessToBrainToolPlanOnceReq
-    ) -> FromHarnessToBrainToolPlanOnceResp:
+    def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
         """run 级规划：拼 prompt + 重试循环（**原样重问**，无纠正说明）→ 打包整条账。
 
         **prompt 在这里拼**（0913 定案）：`run_plan.build_prompt(req)`。
 
         `goal_stack` / `history` 从 req 的素材渲成文本传下去——
-        **共用 `tools.prompts.run_plan` 的渲染函数**（`goals_lines` / `history_lines`），
+        **共用 `tools.prompts.run_plan` 的渲染函数**（`goals_lines` / `history_blocks`），
         不另写一份：`run_plan.build_prompt()` 把行拼成整段塞进 prompt，
         这里把同样的行原样交给 `Brain.plan(history=…)`（brain 的约定要求
         "发生过什么"独立成块）。**分两份实现迟早漂移**，所以那层是唯一真源。
+
+        **两个参数名是 brain 的契约，装的东西已经换过**（0914 S2）：`goal_stack`
+        现在装的是**目标表的行**（表序 = 派发顺序，带状态），`history` 装的是
+        **记忆折出来的块**（局索引 + 详情 + 地图事实），不再是 trace 折的"每局一行"。
+        brain 侧签名一字未动——它收下的就是"已经渲染好的文本序列"，
+        渲染从哪来是调用方的事（这正是铁律 2 要的形状）。
         """
         prompt = run_plan_prompt.build_prompt(req)
-        goal_stack = run_plan_prompt.goals_lines(req.goals)
-        history = run_plan_prompt.history_lines(req.events)
+        goal_stack = run_plan_prompt.goals_lines(req.plan)
+        history = run_plan_prompt.history_blocks(req)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.plan(
@@ -475,12 +575,21 @@ def _illegal(why: str) -> Exception:
 
 
 def _retry_prompt(base_prompt: str, attempts: list[ModelCall]) -> str:
-    """在基础 prompt 后追加纠正说明，用于失败重试的下一次尝试。
+    """按**上一次失败的类型**决定重问的 prompt（0915 分叉，取代"无条件叠加"）。
+
+    - **解析类失败**（`ParseFailure`/`IllegalAction`/`OutputTruncated`）→ 追加
+      纠正说明：模型调通了、也看到了题，是它的输出不能用——告诉它上次错在哪。
+    - **传输失败**（`ToolTimeout` 等）→ **原样重问**：模型根本没收到题，
+      "你上一次的输出不合法 / 别再输出同样的东西"是张冠李戴——传输失败时
+      `$raw` 是空的，却劝模型改掉本来的答案。
+    - `ProviderRejected` 不会走到这里（循环在第一轮就耗尽了）。
 
     **追加、不重新渲染**：`base_prompt` 前缀一个字节不变，多次重试尝试才能
     共享同一段 prompt 缓存。
     """
     last = attempts[-1]
+    if last.error_kind not in _PARSE_ERROR_KINDS:
+        return base_prompt
     return decide_action_prompt.retry_prompt(
         decide_action_prompt.RetryPromptReq(
             base_prompt=base_prompt,
@@ -489,6 +598,12 @@ def _retry_prompt(base_prompt: str, attempts: list[ModelCall]) -> str:
             raw=last.payload.get("raw", "")[:400],
         )
     )
+
+
+# 会叠加纠正说明的 `error_kind` 集合：模型看到了题、但输出不能用。
+# `ValidationError` 在 brain.choose 里已折算成 `ParseFailure`；`ProviderRejected`
+# 到不了重试的第二轮；其余（`ToolTimeout` 等）都是"模型没收到题"，原样重问。
+_PARSE_ERROR_KINDS = {"ParseFailure", "IllegalAction", "OutputTruncated"}
 
 
 def _last_error(attempts: list[ModelCall]) -> str:
@@ -510,10 +625,3 @@ def _blind(obs):  # noqa: ANN001, ANN202
 def _render_observation(obs) -> str:  # noqa: ANN001
     """把一帧观测渲成文本——brain 的 `Reflection` 要的就是文本。"""
     return obs.render()
-
-
-def _decode(image: str) -> bytes:
-    """把 base64 字符串还原成字节（harness 侧的截图是这个格式）。"""
-    import base64
-
-    return base64.b64decode(image)

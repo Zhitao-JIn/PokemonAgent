@@ -17,7 +17,8 @@
   `build_llm_providers()` 造的这四个 provider，"谁消费归谁"。
   **`pokemon_agent/providers/` 这个包自此不存在。**
 - `errors.py`：brain 的内部词汇（`ParseFailure`/`IllegalAction`/`OutputTruncated`/
-  `ToolTimeout` + `AttemptFailed` 家族 + `ImageNotDelivered`），**自成一根
+  `ToolTimeout`（传输失败·可重试）/`ProviderRejected`（4xx·不可重试）+
+  `AttemptFailed` 家族 + `ImageNotDelivered`），**自成一根
   `BrainError(Exception)`**——brain 要能被整体拷走，词汇得跟着走，且不能欠外面
   一个基类。这些异常全被 `BrainTool._attempt_loop` 接住、翻译成 `MaxRetriesExceeded`
   才上抛，**走不到 harness 的捕获点**，所以不必继承 `AgentError`
@@ -60,8 +61,11 @@ from .interface import (
     BrainLlmConfig,
     ChooseResult,
     EpisodeSummary,
+    ExtractResult,
     Goal,
     JudgeResult,
+    KnowledgeItem,
+    LearnedKnowledge,
     ModelCall,
     PlanResult,
     Reflection,
@@ -85,8 +89,11 @@ __all__ = [
     "BrainPort",
     "ChooseResult",
     "EpisodeSummary",
+    "ExtractResult",
     "Goal",
     "JudgeResult",
+    "KnowledgeItem",
+    "LearnedKnowledge",
     "ModelCall",
     "PlanResult",
     "Reflection",

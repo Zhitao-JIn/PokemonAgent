@@ -1,36 +1,61 @@
-"""跨局摘要记忆：一整局蒸馏出来的一条经验。"""
+"""跨局摘要记忆：**一整局 step 记忆的总结**（一局一条）。
+
+名字里的"跨局"说的是**它会被别的局读到**（检索回来当参考），**不是"它总结了
+多个局"**——一条 `EpisodeMemory` 只对应一局，正文全部来自那一局通过校验的
+step 记忆。它也不是"跨 run 的经验"：run 只决定它落在哪个批次，不决定它是什么。
+"""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-SCENE_ANY = "*"
-""""不限场景"的通配值。
-
-场景过滤答的是"这条经验在当前地图有没有用"，但很多经验天生和站在哪张地图无关
-（"进草丛要连按而不是试探一次"）。这类经验如果被要求精确匹配当前 `map_id`
-才能命中，会被场景过滤误杀——它们不属于任何一张具体地图，但属于所有地图。
-`applicable_scenes` 留空，或者显式含这个通配值，都当作"任何场景都命中"处理，
-而不是强迫每条通用经验去列举它适用的每一张地图。
-"""
-
 
 class EpisodeMemory(BaseModel):
-    """一条跨局摘要记忆：**这一局（`episode_id`）打完之后，蒸馏出的可复用经验。**
+    """一条跨局摘要记忆——**本局 step memory 的派生视图**，不是第二份事实。
 
-    前半段字段是这条摘要的**来源信息**——它是从哪一局、为了什么目标、打得成不成功
-    蒸馏出来的，检索排序（场景匹配 + 质量/成功加权）要用到它们；后半段（`summary`
-    到 `tags`）是 LLM 蒸馏出的**经验本体**，它们本身才是"经验"。
+    ## 它是派的，不是记的
+
+    **正文**（`summary` 起）由 LLM 从**本局通过校验的那些 step memory** 蒸馏而来，
+    原料一直在 `memory/step_memory/`（以及 trace 里）。"只喂可信的那些"是这条记忆
+    **定义的一部分**，不是省 token 的优化——过滤点在
+    `harness/episode/close/verify_and_summarize.py`。
+
+    **来源章**（`episode_id` / `run_id` / `goal` / `success` / `steps`）与 step memory
+    **毫无关系**：它是 harness 从 run state 盖的。装配点 `tools/brain_tool.py::summarize()`
+    把 `EpisodeSummary`（brain 的产物）与 `req` 上这五个字段拼在一起，才有本类。
+
+    ## 三条推论（改这里之前先读）
+
+    1. **可重建**——同一批 step memory + 同样的章，重跑蒸馏得**等价**的一条
+       （LLM 非确定，不逐字节相同）。所以"换 prompt / 换模型重蒸"是合法操作，
+       不是危险操作。
+    2. **可丢弃**——`rm memory/episode_memory/*.md` 只损失算力，不损失事实。
+       这是它作为派生物的定义性质，也是"什么时候可以放心重来"的判据。
+    3. **成败只认章，不认正文**——`success` 是 harness 的机械判定；LLM 被**告知**了
+       本局结果，所以它可能把"成功"写进叙述里。**读的人必须以字段为准**，不许从
+       `summary` 正文反推成败（`render()` 把章摆在第一行，就是这个意思）。
+
+    ## "一局一条"是硬约束
+
+    每一局跑完都恰好留一条本类记录——**包括正文产不出来的那些**（整局异常、
+    收尾时没有可信 step 记忆）：那时落一条**只有来源章、正文全空**的记录，
+    写入点是 `harness/run/nodes/review.py::_leave_chapter()`（唯一每局必过的
+    地方）。所以"这局我试过没有"永远能从记忆里读出来，`plan` 不会对同一个
+    目标反复做同一件蠢事。
+
+    **空不空看正文自己**（0914 99）：早先另设过一枚 `chapter_only` 标记，
+    已连字段一起删掉——"这条记录有没有正文"从 `markdown` / `summary` 为空
+    就读得出来，多一枚标记就是同一件事的第二个真相来源。
     """
 
-    # —— 来源信息（harness 盖章，不是 LLM 生成）——
+    # —— 来源章（harness 盖的，取自 run state；与 step memory 无关）——
     episode_id: str = Field(description="蒸馏自哪一局")
     run_id: str = Field(description="所属 run 的标识符")
     goal: str = Field(description="那一局的任务目标")
     success: bool = Field(description="那一局是否成功完成")
     steps: int = Field(ge=0, description="那一局实际用了多少步")
 
-    # —— 经验本体（LLM 蒸馏出的内容）——
+    # —— 派生正文（本局可信 step memory 的蒸馏结果，可重建可丢弃）——
     summary: str = Field(description="Episode的简明总结")
     reusable_patterns: list[str] = Field(
         default_factory=list, description="可重复利用的游戏策略和经验模式"
@@ -45,37 +70,33 @@ class EpisodeMemory(BaseModel):
     tags: list[str] = Field(default_factory=list, description="记忆标签（导航/战斗/物品收集等）")
 
     # —— 落盘（md 是主内容，以上字段是它的元数据）——
-    filename: str = Field(
-        default="episode_memory", description="落盘用的文件名（不含 .md，LLM 给的可读名）"
-    )
+    #
+    # 这里**没有 `filename`**（0914 98 全退）：早期落盘真拿 LLM 给的可读名命名，
+    # 改用 uuid 之后它就成了"只被写、从没被读"的一格——`store_episode_summary`
+    # 自己的 docstring 写着「uuid 文件名天然不撞」。删的是字段本身，
+    # 不是账上少抄一份。
     markdown: str = Field(default="", description="LLM 生成的完整记忆正文（.md 主内容）")
-
-    def matches_scene(self, scene: str) -> bool:
-        """这条摘要在给定场景下是否适用。
-
-        前置条件：`scene` 非空——空场景没有"匹配"这个概念，调用方（`MemoryTool`）
-            要保证传进来的是一个具体场景标识（当前实现下是 `map_id` 的字符串形式）。
-        后置条件：`applicable_scenes` 为空、或显式含 `SCENE_ANY`，
-            视为"任何场景都命中"（见 `SCENE_ANY` 的说明）；否则要求精确命中列表中的一项。
-
-        看这条摘要在给定场景下适不适用。
-        """
-        assert scene, "matches_scene() got an empty scene"
-        if not self.applicable_scenes or SCENE_ANY in self.applicable_scenes:
-            return True
-        current = set(scene.split("|"))
-        return any(label in current or label == f"map:{scene}" for label in self.applicable_scenes)
 
     def render(self) -> str:
         """渲染成进 prompt 的样子，**检索打分也用它**——理由同
         `StepMemory.render`（`schemas/memory/step_memory.py`）：两处用同一份文本，
         避免"按 A 的内容选中，却把 B 的内容喂进去"这种不报错的错位。
 
+        **第一行是来源章，往下才是派生正文，顺序不能反**——章是 harness 的机械判定，
+        正文是 LLM 的叙述。读者要判断"这局成没成"只看第一行；正文里出现的"成功"
+        只是叙述，不是判据（见类 docstring 的第 3 条推论）。
+
         渲染成进 prompt、也用于检索打分的那段文本。
         """
         lines = [
-            f"({self.episode_id}) 目标：{self.goal}（{'成功' if self.success else '未成功'}，{self.steps} 步）"
+            f"({self.episode_id}) 目标：{self.goal}"
+            f"（{'成功' if self.success else '未成功'}，{self.steps} 步）"
         ]
+        if not self.summary.strip():
+            # 正文不存在（整局异常，或收尾时一条可信的 step 记忆都没有）：
+            # **不要**往 prompt 里塞一排空字段冒充正文，说明为什么没有就够了。
+            lines.append(f"  （本局无正文：{self.quality_rationale}）")
+            return "\n".join(lines)
         lines.append(f"  总结  {self.summary}")
         if self.reusable_patterns:
             lines.append("  可复用经验  " + "；".join(self.reusable_patterns))

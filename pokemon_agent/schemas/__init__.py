@@ -1,22 +1,28 @@
 """schemas 包：跨层信封。**先按产出地分包，每个产出模块内部再按种类分子目录。**
 
-四个产出模块各自一个包、各自一个统一出口：
+**磁盘上的现况**（2026-09-15 以磁盘为准）：
 
-- `frontend`：前端产出——前端发起的第一跳信封（启动 run、提交目标编辑、取帧）
-- `harness`：编排层产出——harness 发起的全部第一跳信封（brain_tool /
-  game_tool / memory_tool / reviewer / trace_tool 五个门面，外加 run → episode）与人工复核实体
-- `brain`：决策层产出——对外接口模型（`ChooseOnceReq` 等裸名）
-- `providers`：模型接入层产出——文本与视觉补全的接口模型、一次调用的账
+正在动的只有 `harness/` 与 `memory/` 两个子包：
 
-**`world`/`memory`/`trace` 不在这里**——它们原来各有一个 `schemas/<模块>/`
-子包，装着"跨层领域实体"（`domain/`）或"被持久化的形状"（`datastore/`）；
-按"模块间零依赖，只靠裸函数和 tool 层交互"这条原则，这些数据物理上归回了
-产出它们的模块自己（`pokemon_agent.world`/`pokemon_agent.memory`/
-`pokemon_agent.trace`），`schemas/` 只留真正的信封。
+- `harness/`：编排层产出——harness 发起的全部第一跳信封（brain_tool / game_tool /
+  memory_tool / reviewer / trace_tool 五个门面，外加 run → episode），
+  外加 `domain/` 里三个实体：`GoalEntry` / `TraceEvent` / `TraceKind`
+- `memory/`：记忆层产出的**契约形状**（`datastore/` 下四个记录模型）。它们**不在**
+  `pokemon_agent/memory/` 里，理由见 `schemas/memory/__init__.py`
+
+**`trace` / `world` / `brain` / `providers` / `frontend` 五个子包都已不在**：
+
+- `trace/`、`world/`：这两个的数据按"模块间零依赖、数据形状归产出它的模块自己"这条
+  原则物理归回了各自的模块，目录一度只剩空骨架，**2026-09-15 空目录也清掉了**
+  （移进 `_to_delete/0915-empty-schemas-skeleton/`）。**新代码不要往这两个目录放东西。**
+- `brain/`：补全协议是 brain 的内部协议，随之搬进了 `brain/schemas/`
+- `providers/`：厂商实现不再有独立 schema 包
+- `frontend/`：观测台已移出仓库，整包随之消失
 
 **信封只覆盖第一跳**（外壳 → 编排层、编排层 → 各门面），命名带 From/To、归发起方；
 门面再往里调具体模块走裸参数、返回模块自己的类型，那一跳不造信封。模块对外的接口
-模型一律裸名、归产出方（`ChooseOnceReq` / `LlmCompleteReq`）。
+模型一律裸名、归产出方（如 brain 的 `Action` / `RunPlan`，住
+`pokemon_agent/brain/interface/domain/`）。
 
 每包内部按种类落到 `communication/`（协议信封 Req / Resp）子目录，子目录不对外。
 

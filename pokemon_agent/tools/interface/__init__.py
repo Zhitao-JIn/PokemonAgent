@@ -23,7 +23,7 @@ harness 认识的工具门面。（曾是五张；`CheckpointToolPort` 步 5b �
 
 **不预建 `domain/`**：这四张协议的签名完全由信封类型和标量构成，今天没有
 任何一张属于自己的数据形状；沿用 `world`/`trace` 的判据——有专属形状才开
-子包。理由与迁移顺序见 `docs/spec/tools/PLAN_tool_interface.md`。
+子包。现状见 `docs/spec/tools/SPEC.md` 一、二节。
 
 **`ModelCall` 为什么不在这里**：它的家在 `schemas/harness`（跟 `ModelCallLog`
 同一个理由，见 `FromHarnessToTraceToolAppendModelCallsReq` 的模块 docstring）

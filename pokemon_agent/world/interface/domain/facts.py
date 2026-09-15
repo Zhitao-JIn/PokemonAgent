@@ -20,23 +20,17 @@
 from __future__ import annotations
 
 import unicodedata
-from enum import Enum
+from enum import StrEnum
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# **模块顶层不导入 `PlaceInWorld`，哪怕是叶子路径也不行。** `Facts` 被
-# `schemas/world/domain/observation_from_world.py` 引用，而那个文件本身就是
-# `pokemon_agent.schemas.world` 聚合 `__init__` 正在装配的其中一员——只要这里在
-# 模块顶层 `import pokemon_agent.schemas.world` 的任何一层（哪怕是
-# `schemas.world.domain.place_in_world` 这样的叶子路径），Python 也必须先把
-# `pokemon_agent/schemas/world/__init__.py` 整个跑一遍才能往下走到叶子模块，
-# 而那一遍会执行到 `observation_from_world` 那一行，回头找这里的 `Facts`——
-# 这里却还卡在"正在导入 `PlaceInWorld`"这一步，两边循环等待，直接炸成
-# `ImportError: cannot import name ... from partially initialized module`。
-# `Facts.Landmark` 因此不直接存 `PlaceInWorld`，改存 `map_id`/`x`/`y` 三个原始字段，
-# 用得到 `PlaceInWorld` 的地方（`.place` 属性）才现场 `import`——那时所有模块
-# 早就装配完了，不会再撞见这扇门。
+# **本模块在包内零依赖**：顶层只有标准库与 pydantic，`domain/__init__.py` 这个
+# 聚合出口（被 `world/interface/__init__.py` 立即加载）因此可以按任意顺序装配它
+# ——`observation.py` / `terrain_map.py` 都只是**单向**地从它这里拿 `Facts`。
+# 所以 `Facts.Landmark` 不直接嵌 `PlaceInWorld`（那会在顶层多出一条指向同包
+# `place_in_world.py` 的依赖），改存 `map_id`/`x`/`y` 三个原始字段；用得到
+# `PlaceInWorld` 的地方（`.place` 属性）才在方法体里现场 `import`。
 
 
 def _display_width(text: str) -> int:
@@ -68,7 +62,7 @@ class Facts(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    class Scene(str, Enum):
+    class Scene(StrEnum):
         """你在什么场合。决定**要读哪些字段**。"""
 
         FIELD = "field"  # 野外：城镇、路线，可自由走动
@@ -78,7 +72,7 @@ class Facts(BaseModel):
         SHOP = "shop"  # 商店买卖界面
         TRANSITION = "transition"  # 过场：黑屏、进出门、白闪
 
-    class Overlay(str, Enum):
+    class Overlay(StrEnum):
         """屏幕上盖着什么等你操作。决定**可以按什么键**。"""
 
         NONE = "none"  # 没有弹出层，直接操作角色
@@ -93,10 +87,10 @@ class Facts(BaseModel):
         名字，见 `harness/object_interactions.py::_pickup_or_still`）。
 
         **存 `map_id`/`x`/`y` 三个原始字段，不直接嵌 `PlaceInWorld`。** 不是不想用
-        `PlaceInWorld`（`.place` 属性就是现拼一个给调用方）——是这个类所在的模块
-        不能在**顶层**依赖 `schemas.world`（见本文件顶部的导入顺序说明），
-        而 Pydantic 字段的类型在类定义那一刻就要能解析，做不到"引用一个还没导入
-        的类型，等以后再补"。
+        `PlaceInWorld`（`.place` 属性就是现拼一个给调用方）——这个模块要保持
+        **包内零依赖**（见本文件顶部的说明），嵌真身会在顶层多出一条指向同包
+        `place_in_world.py` 的依赖；而 Pydantic 字段的类型在类定义那一刻就要能解析，
+        做不到"引用一个还没导入的类型，等以后再补"。
         """
 
         KIND_DOOR: ClassVar[str] = "门"
@@ -111,7 +105,7 @@ class Facts(BaseModel):
         y: int
 
         @property
-        def place(self) -> Any:
+        def place(self) -> Any:  # noqa: ANN401
             """现拼一个 `PlaceInWorld`——**运行时才 `import`**，模块顶层不导入。
             返回类型标 `Any` 而不是 `PlaceInWorld`：同一个理由，这个注解如果写实名，
             `from __future__ import annotations` 关闭字符串化的地方（比如运行时
@@ -127,8 +121,12 @@ class Facts(BaseModel):
 
     scene: Scene | None = Field(default=None, description="这一帧在什么场合")
     overlay: Overlay | None = Field(default=None, description="这一帧屏幕上盖着什么")
-    where: str = Field(default="", description="主角位置渲染成的文本（结构化的那份在 `Observation.place`）")
-    facing: str = Field(default="", description="朝向（up/down/left/right），来自精灵表，不是按键推断")
+    where: str = Field(
+        default="", description="主角位置渲染成的文本（结构化的那份在 `Observation.place`）"
+    )
+    facing: str = Field(
+        default="", description="朝向（up/down/left/right），来自精灵表，不是按键推断"
+    )
     neighbors: str = Field(default="", description="四邻通行性，相对'我'的地形描述")
     landmarks: list[Landmark] = Field(
         default_factory=list,
@@ -137,10 +135,16 @@ class Facts(BaseModel):
         "渲染出去的文本反解一遍。空列表就是这一帧没有地标，不是漏填",
     )
     dialog_text: str = Field(default="", description="对话框里的文字，overlay=DIALOG 时才有")
-    options: list[str] = Field(default_factory=list, description="选择框的选项列表，overlay=CHOICE 时才有")
-    cursor: str | None = Field(default=None, description="选择框光标指向的那一项原文；读不出为 None")
+    options: list[str] = Field(
+        default_factory=list, description="选择框的选项列表，overlay=CHOICE 时才有"
+    )
+    cursor: str | None = Field(
+        default=None, description="选择框光标指向的那一项原文；读不出为 None"
+    )
     overview: str = Field(default="", description="视觉模型对整幅画面布局的一句话描述")
-    walk_map: str = Field(default="", description="这一帧的地形网格渲染文本，来自模拟器内存，不是模型读出来的")
+    walk_map: str = Field(
+        default="", description="这一帧的地形网格渲染文本，来自模拟器内存，不是模型读出来的"
+    )
     map_id: int | None = Field(default=None, description="当前地图编号")
 
     @property

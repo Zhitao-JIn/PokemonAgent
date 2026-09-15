@@ -6,7 +6,7 @@
 `voided-<ts>/<kind>/`，走的就是这一条路径）。不理解 metadata/payload/text 是
 什么、不理解 text 说的是什么——分层原则见 AGENTS.md 四。
 
-## 落盘布局（每个 kind 一个实例、一个文件夹，见 PLAN_memory_trace_layout.md §2）
+## 落盘布局（每个 kind 一个实例、一个文件夹）
 
     memory/<kind>/
     ├── <uuid>.json        # json 类记录（step_memory / object_memory）：

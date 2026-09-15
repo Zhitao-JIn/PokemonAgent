@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import unicodedata
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -45,53 +44,6 @@ BLIND_NOTE = "（本帧没做视觉感知：场景 / 叠加层 / 对话 / 概况
 **必须显式写出来，不能靠字段为空来暗示。** "没读过"和"读过、是空的/没变"是
 两件完全不同的事——静默省略会被读者（大脑、判定器）当成后者。同一条理由见
 `world/interface/domain/facts.py` 里"光标读不出要明写"那条。
-"""
-
-
-class StopReason(StrEnum):
-    """这一键之后**为什么没有继续按键**。
-
-    记的是**本步的结局**，不是链的状态——链还剩多少，从记忆序列本身看得出
-    （后面还有没有记录），不需要写进每一条。
-
-    `None`（不用这个枚举）表示没有异常：要么还有待按的键，要么这一键本来
-    就是最后一个。单键链的每一步都是 `None`。
-    """
-
-    BLOCKED = "blocked"
-    """方向键按下去，位置和朝向都没变、且朝向本来就等于这个方向——原地空转。
-
-    **只有方向键会有这个值**：`a` 不改变位置与朝向，"按了没反应"是它的合法
-    结局（对话框本来就没弹），不是撞墙。
-    """
-
-    WARP = "warp"
-    """`map_id` 变了——这一键把主角送进了另一张地图。
-
-    剩下的键是在**一张没被规划过的地图上**按的，全部作废。
-    """
-
-    EPISODE_OVER = "episode_over"
-    """本局到此为止——世界没了（模拟器窗口关闭，此时内存读数不再可信），
-    或者这一键用掉了最后一步预算。链的剩余部分无从执行。
-    """
-
-
-STOP_NOTE: dict[StopReason, str] = {
-    StopReason.BLOCKED: "这个方向上剩下的连按不必再按了（原地不动 = 撞墙）",
-    StopReason.WARP: "换到了另一张地图，整条链剩下的键全部作废",
-    StopReason.EPISODE_OVER: "本局到此为止，链剩下的键不再执行",
-}
-"""`stop` 在记忆里渲染成的那句话——**这一键的结局必须让下一步的大脑读得到**。
-
-判据：`stop` 不是决策者自己的说辞，是执行层机械判出来的事实（纯 RAM 比较），
-所以它跟着 `做了`/`之后变成` 一起摆，`reason=False` 的那一版（判定器看的
-那版）也照摆。
-
-**为什么非写不可**：不写的话，大脑读到的记忆就只是"按了 up、画面没变"，
-它会当成"我本来就只打算按一下"——而"链被截了"是它下一步推理的前提
-（§5：执行层不许悄悄改写大脑交出来的动作，改了就必须让它知道自己被改了，
-`stop` + 落点一起给出，它自己就能推出"在第 3 键撞墙了"）。
 """
 
 
@@ -269,27 +221,9 @@ class StepMemory(BaseModel):
         "所以它归 `thought`（只进 trace）。这里落的是 `ActionSegment.rationale`"
     )
     action: str = Field(description="**一个键**，如 `up`。连按已经展开成多步，这里不再是链")
-    stop: StopReason | None = Field(
-        default=None,
-        description="这一键之后为什么没有继续按键（`None` = 没有异常）。"
-        "**是本步的结局，不是链的状态**——链还剩多少，从记忆序列本身看得出，"
-        "不需要重复写进每一条",
-    )
     after: Observation = Field(description="执行之后的画面。**结果也是一次观察**")
 
     step: int = Field(description="写入时所处的步数")
-    plan_step_start: int | None = Field(
-        default=None,
-        description="**这一键属于哪一次决策**——那次决策落在第几步。"
-        "`None` = 按 `step` 算（这一键自成一链），**老记录天然正确**：粒度下沉之前"
-        "一步就是一次决策，两者本来就相等。"
-        "**它不是链字段**：`chain_index`/`chain_length` 的读者问的是"
-        "「这条链长什么样」，它的读者问的是「这一步是哪次决策按的」——判据见 "
-        "`docs/spec/harness/PLAN_action_step_granularity.md` §4/§11。"
-        "唯一用途是**按决策分组**（给大脑看的 `render_decisions()`、给判定器取窗的 "
-        "`last_decisions()`），存储与检索都不依赖它；`state` 那份由 `think_action` 设、"
-        "`store_step_episode_memory` 抄进来",
-    )
     episode_id: str = Field(description="这条经验来自哪次尝试")
     run_id: str = Field(
         default="",
@@ -356,10 +290,6 @@ class StepMemory(BaseModel):
         if reason:
             lines.append(f"  因为  {because}")
         lines += [f"  做了  {self.action}", "  之后变成：\n" + self._render_obs(self.after)]
-        # `stop` **不受 `reason` 约束**：它是执行层机械判出来的事实，不是
-        # 决策者自己的说辞（见 `STOP_NOTE`）。
-        if self.stop is not None:
-            lines.append(f"  然后停了  {STOP_NOTE[self.stop]}")
         return "\n".join(lines)
 
     @staticmethod
@@ -431,108 +361,8 @@ def render_sequence(entries: list[StepMemory], *, reason: bool = True) -> list[s
             f"  做了  {entry.action}",
             "  之后变成：\n" + StepMemory._render_obs(entry.after),
         ]
-        # 同 `StepMemory.render()`：`stop` 是机械事实，不看 `reason`。
-        if entry.stop is not None:
-            lines.append(f"  然后停了  {STOP_NOTE[entry.stop]}")
         rendered.append("\n".join(lines))
         prev = entry
-    return rendered
-
-
-def decision_key(entry: StepMemory) -> int:
-    """这条记忆属于**哪一次决策**——标识就是那次决策落在第几步。
-
-    `plan_step_start` 为空（粒度下沉之前写的老记录）时退化成 `step`——那时候
-    一步就是一次决策，一条记忆自成一个决策组，**那正是当时的事实**。
-    """
-    return entry.step if entry.plan_step_start is None else entry.plan_step_start
-
-
-def group_by_decision(entries: list[StepMemory]) -> list[list[StepMemory]]:
-    """把**按步号升序**的一串记忆按决策切开：同一次决策的键连续成组，顺序不变。
-
-    **切组只看决策标识是否与上一条相同**（`decision_key`），不重排、不补洞：一次决策
-    中间缺了一步（那一步因为权限被拒之类没落库）仍然算同一次决策——**缺的是记录，
-    不是归属**；只有标识本身变了才切。标识相同却不相邻的两段（同一局里回不到同一次
-    决策，实际不会出现）也会各自成组，因为上一条的标识不同。
-    这跟 `render_sequence()`「不连续就各自完整渲染、不猜测省略」是同一条纪律：
-    **宁可少合并，也不猜。**
-    """
-    groups: list[list[StepMemory]] = []
-    for entry in entries:
-        if groups and decision_key(groups[-1][-1]) == decision_key(entry):
-            groups[-1].append(entry)
-        else:
-            groups.append([entry])
-    return groups
-
-
-def last_decisions(entries: list[StepMemory], count: int) -> list[StepMemory]:
-    """取**最近 `count` 次决策**的全部键（保持原来的升序）。
-
-    **为什么需要它**：记忆的检索面只认步号（`limit` 是"几条记忆"），而判定器要的是
-    "最近几次决策"。粒度下沉到单键之后两者不再等价（一次决策能按 8 个键），所以
-    取回来还要按决策裁一刀——裁掉的**整次**去掉，不把某次决策砍成半截：半截里
-    "这一键之后为什么停"是读不出来的。
-
-    `entries` 不够 `count` 次决策时，有几次给几次（不补、不报错）。
-    """
-    assert count > 0, f"last_decisions() count must be > 0, got {count}"
-    groups = group_by_decision(entries)
-    return [entry for group in groups[-count:] for entry in group]
-
-
-def render_decisions(entries: list[StepMemory], *, reason: bool = True) -> list[str]:
-    """按**决策**把本局走过的事渲成 prompt 文本：一次决策一段，返回与决策一一对应的列表。
-
-    **它渲的不是每条记忆，是每次决策。** `render_sequence()` 是逐条（一键一条、
-    带相邻帧去重），那是给拿证据的判定器/校验器看的；给**决策者**看的那一版要按
-    决策合并——它决策时的粒度就是一次决策（写 `up×4 -> down×2`），回看时也该是
-    "这一次按了哪几个键、在哪一脚下停的、最后落在哪"。
-
-    **为什么必须合并（实测）**：一条记忆渲成文本约 490 字符，而本局的**全部**步骤
-    都要进决策 prompt（`retrieve_step_episode_memory` 是全量）。粒度下沉到单键之后，
-    同一次决策的每个键各占一段——2026-09-11 实测决策 prompt 里「相关记忆」一节已占
-    6.8%（971 / 14316 字符），而它按决策长度线性放大（一次决策按 4 个键就是 4 倍）。
-    合并之后一次决策只留**两端两帧**（第一次「当时看到」与最后一次「之后变成」）；中间帧的
-    内容一条不删地留在记忆里，判定/校验/审计那条路（`render_sequence()`）照旧全看得到。
-
-    **中间帧不是"从它眼里拿掉"的**：粒度下沉之前一次决策只感知一次、只留两端两帧，
-    链内中间帧**从来不存在**。合并渲染给决策者的信息量就是恢复到那个水平，**多给的
-    是每个键的动作、步号与结局**（`stop`）以及每一段的理由。
-
-    去重规则跟 `render_sequence()` 同一条：上一次决策的「之后变成」与这一次决策的「当时看到」
-    本来就是同一帧（`close_step()` 扶正的就是它）时，换成一句指回去的提示。
-
-    `reason=False` 去掉「因为」那一行，只留发生过的事；某个键开始换段时打一次
-    （同一段里的键共享理由。两段理由写得一模一样时第二次不重复打——丢掉的是重复文本）。
-    """
-    rendered: list[str] = []
-    prev_tail: StepMemory | None = None
-    for group in group_by_decision(entries):
-        head, tail = group[0], group[-1]
-        span = f"step={head.step}" if head is tail else f"step={head.step}..{tail.step}"
-        lines = [f"({head.episode_id}, {span}) 一次决策按的 {len(group)} 个键："]
-        if (
-            prev_tail is not None
-            and prev_tail.step + 1 == head.step
-            and StepMemory._snapshot_equal(prev_tail.after, head.before)
-        ):
-            lines.append("  当时看到：（同上一条「之后变成」，同一帧，不重复贴）")
-        else:
-            lines.append("  当时看到：\n" + StepMemory._render_obs(head.before))
-        shown: list[str] | None = None
-        for entry in group:
-            if reason and entry.rationale != shown:
-                lines.append(f"  因为  {'；'.join(entry.rationale) or '（未给出理由）'}")
-            shown = entry.rationale
-            line = f"  按了  {entry.action}（第 {entry.step} 步）"
-            if entry.stop is not None:
-                line += f"  然后停了  {STOP_NOTE[entry.stop]}"
-            lines.append(line)
-        lines.append("  之后变成：\n" + StepMemory._render_obs(tail.after))
-        rendered.append("\n".join(lines))
-        prev_tail = tail
     return rendered
 
 

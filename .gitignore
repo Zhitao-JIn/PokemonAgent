@@ -3,12 +3,17 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.pytest_tmp/
 .ruff_cache/
 .idea/
 traces/
 *.log
 screenshots/
 tests/
+# 真机核对脚本（`experiment/real_check/**`）跟 `tests/` 同一性质：只在本地跑，
+# 不进版本库。⚠ 注意 `experiment/` **已经被跟踪过**（history 里在库），单独加这一行
+# 不会让已入库的文件离开仓库——要真正脱开得再跑一次 `git rm --cached -r experiment/`。
+experiment/
 _to_delete/
 .claude/
 .env

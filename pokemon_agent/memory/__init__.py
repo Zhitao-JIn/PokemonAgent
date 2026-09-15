@@ -7,7 +7,7 @@
   文件 + 每文件夹倒排索引（`index.json`，派生物、写穿、可自愈重建）+ 向量
   sidecar。四类记忆（step_memory / object_memory / episode_memory /
   knowledge_memory）各一个文件夹、各一个实例；全项目不按 run 分层，`run_id`
-  是 metadata 里的普通过滤字段（0910 重构，见 `PLAN_memory_trace_layout.md`）。
+  是 metadata 里的普通过滤字段（0910 重构）。
 - `retrieval.py`：语义检索用的混合检索纯函数（BM25 bigram + embedding
   余弦 + RRF + reranker 精排），只认字符串，不认任何记忆类型。
 - `embedding_provider.py` / `reranker_provider.py`：本层依赖的两个模型协议

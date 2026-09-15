@@ -34,8 +34,8 @@ from pokemon_agent.tools import GameTools                # 装配点（build.py�
 `import pokemon_agent.tools.interface` 都会先跑完它。出口一旦同时导出协议和
 实现，harness 只想拿一张协议，也得把五个插件全请来——"换 mock 不改 harness"
 这句承诺在类型上早就成立（类型注解里只有 Protocol），在 **import 这一层**没成立。
-搬完实测：拿协议从 146 个 `pokemon_agent` 模块降到与信封侧同量级。理由、
-验收与迁移顺序见 `docs/spec/tools/PLAN_tool_interface.md`。
+搬完实测：拿协议从 146 个 `pokemon_agent` 模块降到与信封侧同量级。现状见
+`docs/spec/tools/SPEC.md` 一、二节。
 
 **四个实现全部懒加载。** 跟 `world/__init__.py` 对 `PyBoyWorld`、
 `brain/__init__.py` 对 `Brain` 同一个道理，只是这里的重依赖不是 PyBoy，而是

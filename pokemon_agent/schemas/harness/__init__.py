@@ -2,7 +2,9 @@
 game_tool / memory_tool / reviewer / trace_tool 五个门面，外加 run → episode 这条内部边）
 与人工复核实体。
 
-Frontend 发起的信封（提交目标编辑、取帧）归 `schemas/frontend/`。
+Frontend 发起的信封已在 0914 控制台改造中**整个删除**（`schemas/frontend/` 一并没了）
+——"整栈原子替换"是观测台概念，控制台里人就在图的调用栈上，不存在脱离图的草稿面板。
+见 `docs/PLAN_console_reviewer.md` §1.2。
 `run()` 这条边**入参与返回值都走裸字段、不包装**：`run(run_id, goals)` 返回
 `(outcomes, total, succeeded, success_rate)`，要 JSON 的调用方自己拼。`RunResp`
 （裸名，无 From/To）只是 `_close()` 内部组装、供 RUN_END 事件内嵌的产出模型——
@@ -12,23 +14,38 @@ Frontend 发起的信封（提交目标编辑、取帧）归 `schemas/frontend/`
 消费方只写 `from pokemon_agent.schemas.harness import X`，不深到 communication/ 等子目录。
 
 **信封的"内部类型"也在这里转交**：harness 组装信封时会用到藏在字段里的领域类型
-（`TraceKind` / `Source` / `ModelCall` / `ModelCallLog`…），那些类型的家各自在自己的
-包（`tools.interface` / `trace`），或者在某个信封自己的模块里（`ModelCall`——
+（`TraceKind` / `TraceEvent` / `GoalEntry` / `ModelCall` / `ModelCallLog`…），
+那些类型的家各自在自己的包，或者在某个信封自己的模块里（`ModelCall`——
 它跟 `ModelCallLog` 同理，主读者是带 `calls` 字段的信封；`ModelCallLog`——它只
 服务于 `FromHarnessToTraceToolAppendModelCallsReq`，就定义在那个文件里），
 但 **harness 从本文件拿**——"harness 只认 schemas"这条边界因此没有例外。
-`TraceKind` 例外地**就住在 `domain/` 下**（不在别的包）：它是 harness 自己的
-账目词表，消费者是 harness（读者见该模块文档），所以它属于这里而不属于 `trace`。
 
-**`HumanDecision` 不在这里**：原来放在 `domain/human_decision.py`，现在跟着
-"协议物理挨着它自己的实现"这条原则搬到了 `pokemon_agent.harness.interface`
-——消费方改写 `from pokemon_agent.harness import HumanDecision` 这样各自
-认模块，详见 CHANGELOG 对应条目。
+`TraceKind` / `TraceEvent` / `GoalEntry` / `GoalStatus` 几件**就住在 `domain/` 下**：
+它们是 harness 自己声明的东西（"我记哪一笔账" / "一条事件长什么样" /
+"一个目标在 run 内的状态表长什么样"），消费者是 harness 与本层读取方
+（读者见各自模块的文档）。0913 下午 `TraceEvent` 从 `pokemon_agent.trace`
+搬过来、0914 凌晨 `GoalEntry` 从"裸 `Task` 列表 + `attempts` 平行数组"改成
+状态表，两者都在 `domain/`。**全仓对 `pokemon_agent.trace` 的 import 只剩
+`tools/` 一层**——trace 是独立第三方模块，只有 tool 层（桥）认识它。
+
+**`Source` 已删**（0913 晚）：生产者维度整体下线，"这条事件由哪条链产出"
+改由 `kind` 回答（`*_call` 各占一个、失败类落 `content.link`），那个字段与
+`domain/source.py` 一起没了。**"谁发的"**那条维度 0914 由封套 `meta.source`
+回答——那是"发送位置"，与"链路"不是一回事。
+
+**`HumanDecision` 已删**（0914 控制台改造）：三值（continue/stop/retry）随槽机制
+一起下线。人的表态现在是两处：**插话**（`Reviewer.inject()` 收一句自然语言，
+回车即收）与**审**（`AuditVerdict`——认 / 推翻，住 reviewer 的 audit 信封里）。
+"继续/停止"不再是人的选项，改由目标表的表末检机械回答；"重试"改成 `GoalStatus`
+上的一次状态迁移（`PENDING` ← `FAILED`/`ABANDONED`，`attempts += 1`）。
 """
 
 __all__ = [
+    "AuditVerdict",
     "FromHarnessToBrainToolChooseOnceReq",
     "FromHarnessToBrainToolChooseOnceResp",
+    "FromHarnessToBrainToolExtractReq",
+    "FromHarnessToBrainToolExtractResp",
     "FromHarnessToBrainToolJudgeReq",
     "FromHarnessToBrainToolJudgeResp",
     "FromHarnessToBrainToolPlanOnceReq",
@@ -61,20 +78,28 @@ __all__ = [
     "FromHarnessToMemoryToolStoreEpisodeStepReq",
     "FromHarnessToMemoryToolStoreEpisodeSummaryReq",
     "FromHarnessToMemoryToolStoreEpisodeSummaryResp",
-    "FromHarnessToReviewerReviewReq",
-    "FromHarnessToReviewerReviewResp",
+    "FromHarnessToMemoryToolStoreKnowledgeReq",
+    "FromHarnessToMemoryToolStoreKnowledgeResp",
+    "FromHarnessToReviewerAuditReq",
+    "FromHarnessToReviewerAuditResp",
+    "FromHarnessToReviewerInjectReq",
     "FromHarnessToTraceToolAppendModelCallsReq",
     "FromHarnessToTraceToolAppendReq",
     "FromRunHarnessToEpisodeHarnessRunReq",
     "FromRunHarnessToEpisodeHarnessRunResp",
+    "GoalEntry",
+    "GoalStatus",
     "ModelCall",
     "ModelCallLog",
     "RunResp",
+    "TraceEvent",
     "TraceKind",
 ]
 
 from .communication.FromHarnessToBrainToolChooseOnceReq import FromHarnessToBrainToolChooseOnceReq
 from .communication.FromHarnessToBrainToolChooseOnceResp import FromHarnessToBrainToolChooseOnceResp
+from .communication.FromHarnessToBrainToolExtractReq import FromHarnessToBrainToolExtractReq
+from .communication.FromHarnessToBrainToolExtractResp import FromHarnessToBrainToolExtractResp
 from .communication.FromHarnessToBrainToolJudgeReq import FromHarnessToBrainToolJudgeReq
 from .communication.FromHarnessToBrainToolJudgeResp import FromHarnessToBrainToolJudgeResp
 from .communication.FromHarnessToBrainToolPlanOnceReq import FromHarnessToBrainToolPlanOnceReq
@@ -145,8 +170,18 @@ from .communication.FromHarnessToMemoryToolStoreEpisodeSummaryReq import (
 from .communication.FromHarnessToMemoryToolStoreEpisodeSummaryResp import (
     FromHarnessToMemoryToolStoreEpisodeSummaryResp,
 )
-from .communication.FromHarnessToReviewerReviewReq import FromHarnessToReviewerReviewReq
-from .communication.FromHarnessToReviewerReviewResp import FromHarnessToReviewerReviewResp
+from .communication.FromHarnessToMemoryToolStoreKnowledgeReq import (
+    FromHarnessToMemoryToolStoreKnowledgeReq,
+)
+from .communication.FromHarnessToMemoryToolStoreKnowledgeResp import (
+    FromHarnessToMemoryToolStoreKnowledgeResp,
+)
+from .communication.FromHarnessToReviewerAuditReq import (
+    AuditVerdict,
+    FromHarnessToReviewerAuditReq,
+    FromHarnessToReviewerAuditResp,
+)
+from .communication.FromHarnessToReviewerInjectReq import FromHarnessToReviewerInjectReq
 from .communication.FromHarnessToTraceToolAppendModelCallsReq import (
     FromHarnessToTraceToolAppendModelCallsReq,
     ModelCallLog,
@@ -158,4 +193,4 @@ from .communication.FromRunHarnessToEpisodeHarnessRunResp import (
 )
 from .communication.ModelCall import ModelCall
 from .communication.RunResp import RunResp
-from .domain import TraceKind
+from .domain import GoalEntry, GoalStatus, TraceEvent, TraceKind

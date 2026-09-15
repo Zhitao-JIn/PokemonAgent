@@ -55,6 +55,7 @@ from pydantic import ValidationError
 
 from pokemon_agent.brain.errors import (
     DecisionAttemptFailed,
+    ExtractAttemptFailed,
     IllegalAction,
     JudgeAttemptFailed,
     OutputTruncated,
@@ -71,7 +72,10 @@ from .interface import (
     ActionSegment,
     ChooseResult,
     EpisodeSummary,
+    ExtractResult,
     JudgeResult,
+    KnowledgeItem,
+    LearnedKnowledge,
     ModelCall,
     PlanResult,
     Reflection,
@@ -153,7 +157,7 @@ class Brain:
         *,
         prompt: str,
         keys: Sequence[str],
-        images: Sequence[bytes] = (),
+        images: Sequence[str] = (),
     ) -> ChooseResult:
         """一次决策尝试：问一次模型、解析。**不重试**——重试是调用方的循环。
 
@@ -178,7 +182,7 @@ class Brain:
             completion = self._decide.complete(LlmCompleteReq(prompt=prompt))
         except Exception as exc:  # noqa: BLE001
             call = ModelCall(
-                payload={"ok": "False", "prompt": prompt},
+                payload={"ok": "false", "prompt": prompt},
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -208,7 +212,7 @@ class Brain:
                 "output_tokens": str(completion.completion_tokens),
                 "cached_tokens": str(completion.cached_tokens),
                 "reasoning_tokens": str(completion.reasoning_tokens),
-                "ok": str(parsed is not None),
+                "ok": str(parsed is not None).lower(),
                 "raw": completion.text,
                 "prompt": prompt,
             },
@@ -235,7 +239,7 @@ class Brain:
         goal_stack: Sequence[str],
         history: Sequence[str],
         max_push: int,
-        images: Sequence[bytes] = (),
+        images: Sequence[str] = (),
     ) -> PlanResult:
         """一次 run 级规划尝试：问一次模型、解析。**不重试**——重试是调用方
         的循环，跟 `choose()` 同一个分工。
@@ -258,7 +262,7 @@ class Brain:
             completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt))
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "False", "prompt": prompt},
+                payload={"ok": "false", "prompt": prompt},
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -279,7 +283,7 @@ class Brain:
                 "output_tokens": str(completion.completion_tokens),
                 "cached_tokens": str(completion.cached_tokens),
                 "reasoning_tokens": str(completion.reasoning_tokens),
-                "ok": str(parsed is not None),
+                "ok": str(parsed is not None).lower(),
                 "raw": completion.text,
                 "prompt": prompt,
             },
@@ -299,7 +303,7 @@ class Brain:
         prompt: str,
         goal: str,
         history: Sequence[str],
-        images: Sequence[bytes] = (),
+        images: Sequence[str] = (),
     ) -> JudgeResult:
         """一次判定尝试：问一次模型、解析裁决。**不重试**——重试是调用方的循环。
 
@@ -321,13 +325,11 @@ class Brain:
         text = n_in = n_out = n_cached = n_reason = ""
         kind = ""
         try:
-            text, n_in, n_out, n_cached, n_reason = self._ask(
-                self._judge_llm, prompt, images
-            )
+            text, n_in, n_out, n_cached, n_reason = self._ask(self._judge_llm, prompt, images)
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"，转成 AttemptFailed
             kind = type(exc).__name__
             call = ModelCall(
-                payload={"ok": "False", "prompt": prompt, "n_images": str(len(images))},
+                payload={"ok": "false", "prompt": prompt, "n_images": str(len(images))},
                 error_kind=kind,
                 error=f"{exc}",
             )
@@ -343,7 +345,7 @@ class Brain:
                 "cached_tokens": str(n_cached),
                 "reasoning_tokens": str(n_reason),
                 "raw": text,
-                "ok": str(not kind),
+                "ok": str(not kind).lower(),
                 "prompt": prompt,
                 # 带没带图直接影响这次判定看到了什么——没有这一项，回头分不清
                 # "这次判错是因为没带图"还是"带了图还是判错了"。
@@ -359,11 +361,18 @@ class Brain:
 
     @staticmethod
     def _ask(
-        provider: JudgeProvider, prompt: str, images: Sequence[bytes]
+        provider: JudgeProvider, prompt: str, images: Sequence[str]
     ) -> tuple[str, int, int, int, int]:
         """问一次判定器：`images` 非空就带图问（`describe()`），空的话退化成
         纯文本（`complete()`）——一张便利副本缺失不该让整条判定链路直接失败，
         降级成纯文本判定总比抛异常/硬编一个失败结果强。
+
+        **`images` 是 base64 字符串不是原始 bytes**：直接进
+        `VisionDescribeReq.images`（`list[str]`，见
+        `brain/schemas/vision.py`）——调用方（`tools/brain_tool.py`）从
+        harness 的截图拿到什么就传什么，不做编解码。类型写成 `bytes` 曾是
+        一处**说谎的注解**：运行时值是字符串，谁照着注解去 `b64decode`
+        一步就会在构造请求时炸（0913 真机核对实测，见 CHANGELOG）。
 
         两种 provider 返回的字段名不一样（`LlmCompleteResp.prompt_tokens`/
         `completion_tokens` vs `VisionDescribeResp.input_tokens`/
@@ -414,7 +423,7 @@ class Brain:
         goal: str,
         knowledge: str,
         include_rationale: bool,
-        images: Sequence[bytes] = (),
+        images: Sequence[str] = (),
     ) -> VerifyResult:
         """一次校验尝试：问一次模型、解析逐条裁决。**不重试**——重试是调用方的循环。
 
@@ -443,12 +452,10 @@ class Brain:
 
         # 步骤 1：调模型。
         try:
-            text, n_in, n_out, n_cached, n_reason = self._ask(
-                self._verify_llm, prompt, images
-            )
+            text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "False", "prompt": prompt, "n_images": str(len(images))},
+                payload={"ok": "false", "prompt": prompt, "n_images": str(len(images))},
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -465,7 +472,7 @@ class Brain:
                 "cached_tokens": str(n_cached),
                 "reasoning_tokens": str(n_reason),
                 "raw": text,
-                "ok": str(not parse_kind),
+                "ok": str(not parse_kind).lower(),
                 "prompt": prompt,
                 "n_images": str(len(images)),
             },
@@ -537,7 +544,7 @@ class Brain:
         success: bool,
         steps: int,
         max_steps: int,
-        images: Sequence[bytes] = (),
+        images: Sequence[str] = (),
     ) -> SummarizeResult:
         """一次蒸馏尝试：问一次模型、解析摘要。**不重试**——重试是调用方的循环。
 
@@ -557,12 +564,10 @@ class Brain:
         """
         # 步骤 1：调模型。
         try:
-            text, n_in, n_out, n_cached, n_reason = self._ask(
-                self._verify_llm, prompt, images
-            )
+            text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "False", "prompt": prompt, "n_images": str(len(images))},
+                payload={"ok": "false", "prompt": prompt, "n_images": str(len(images))},
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -578,7 +583,7 @@ class Brain:
                 "cached_tokens": str(n_cached),
                 "reasoning_tokens": str(n_reason),
                 "raw": text,
-                "ok": str(summary is not None),
+                "ok": str(summary is not None).lower(),
                 "prompt": prompt,
                 "n_images": str(len(images)),
             },
@@ -606,8 +611,10 @@ class Brain:
 
         data = raw.get("summary") if isinstance(raw.get("summary"), dict) else raw
         data = dict(data)
-        filename = str(data.pop("filename", "episode_memory"))
         markdown = str(data.pop("markdown", ""))
+        # `filename` 从输出里**丢掉**（0914 98 全退）：模型可能还在给，
+        # 但字段已经不存在了——落盘用 uuid 命名，那一格从来没有读方。
+        data.pop("filename", None)
         try:
             return EpisodeSummary(
                 summary=data["summary"],
@@ -618,11 +625,99 @@ class Brain:
                 quality_rationale=data["quality_rationale"],
                 applicable_scenes=data.get("applicable_scenes", []),
                 tags=data.get("tags", []),
-                filename=filename,
                 markdown=markdown,
             )
         except Exception:  # noqa: BLE001  字段不全，留 None
             return None
+
+    # ---- 世界知识抽取 ----
+
+    def extract(
+        self,
+        *,
+        prompt: str,
+        goal: str,
+        history: Sequence[str],
+        images: Sequence[str] = (),
+    ) -> ExtractResult:
+        """一次世界知识抽取尝试：问一次模型、解析知识条目。**不重试**——重试是调用方的循环。
+
+        **三块素材：`goal` / `history` / `prompt`**（见 `BrainPort.extract`）。
+        跟 `summarize` 一样，本方法**全部收下、全部不读**：素材已由调用方过滤并
+        渲进 `prompt`，签名立的是约定——"抽取必须有这几块"。
+
+        与 `summarize` 的分工是**产物归属**：摘要属于那一局（`episode_id` 是它的
+        身份），知识属于世界（和哪一局读到的无关）。**因此这里绝不产出带局身份的
+        东西**——`episode_id`/`run_id` 由 tool 层盖章（同 `summarize` 的五个来源章）。
+
+        走的是 `_verify_llm`：抽取和校验/蒸馏同为"读一局记录写内存"的链路，
+        共用豆包那一路（provider 分岗的知识在 `build_llm_providers.py`）。
+
+        后置条件：成功时 `calls` 恰好一条；`knowledge.items` **可以为空**
+            （大多数局什么都没读到，那不是失败）。
+        失败：模型调不通、输出解析不出，都抛 `ExtractAttemptFailed`（附这次的账）。
+        """
+        # 步骤 1：调模型。
+        try:
+            text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
+        except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
+            call = ModelCall(
+                payload={"ok": "false", "prompt": prompt, "n_images": str(len(images))},
+                error_kind=type(exc).__name__,
+                error=f"{exc}",
+            )
+            raise ExtractAttemptFailed(call) from exc
+
+        # 步骤 2：解析知识条目。
+        knowledge = self._parse_knowledge(text)
+
+        call = ModelCall(
+            payload={
+                "input_tokens": str(n_in),
+                "output_tokens": str(n_out),
+                "cached_tokens": str(n_cached),
+                "reasoning_tokens": str(n_reason),
+                "raw": text,
+                "ok": str(knowledge is not None).lower(),
+                "prompt": prompt,
+                "n_images": str(len(images)),
+            },
+            error_kind="" if knowledge is not None else "ParseFailure",
+            error="" if knowledge is not None else "抽取输出无法解析成 LearnedKnowledge",
+        )
+        if knowledge is None:
+            raise ExtractAttemptFailed(call)
+
+        return ExtractResult(knowledge=knowledge, calls=[call])
+
+    @staticmethod
+    def _parse_knowledge(text: str) -> LearnedKnowledge | None:
+        """把抽取输出解析成 `LearnedKnowledge`；解析不出来返回 `None`。
+
+        **空列表是合法结果**（`{"knowledge": []}`）——"这一局什么都没读到"与
+        "输出坏了"必须分得开，所以空列表返回**成功**、畸形输出返回 `None`
+        （由调用方抛 `ExtractAttemptFailed`）。
+
+        整段输出可以是「带 `knowledge` 数组的对象」，也可以是**裸数组**——prompt
+        约束一种，但解析器宽容一点不会更贵（跟 `_parse_summary` 同一条取舍）。
+        """
+        try:
+            raw = json.loads(_strip_json_fence(text))
+        except Exception:  # noqa: BLE001  输出畸形，留 None
+            return None
+        items = raw.get("knowledge") if isinstance(raw, dict) else raw
+        if not isinstance(items, list):
+            return None
+
+        parsed: list[KnowledgeItem] = []
+        for item in items:
+            if not isinstance(item, dict):
+                return None
+            try:
+                parsed.append(KnowledgeItem(topic=str(item["topic"]), content=str(item["content"])))
+            except Exception:  # noqa: BLE001  条目缺字段 = 这次输出不合格
+                return None
+        return LearnedKnowledge(items=parsed)
 
     # ---- 记忆整理 ----
 

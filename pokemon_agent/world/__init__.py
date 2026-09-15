@@ -7,7 +7,10 @@
 - `pyboy_world.py`：`PyBoyWorld`——模拟器生命周期、按键链、感知调度
 - `ram.py`：从模拟器内存直接读地形/朝向/地标（`read_terrain` 等），产出
   `interface` 里定义的 `TerrainMap`
-- `frame_slot.py`：`FrameSlot`——实时画面管道的槽位
+- `prompts/`：world 自己的 prompt 素材（`perceive_screen.md` + 一份自持的
+  `load()`/`PromptTemplate`）——这条 LLM 调用不经过 `Brain` 也不经过任何
+  Harness 节点，是 `PyBoyWorld` 自己 `load()` 并渲染的，素材因此跟着 world 走
+  （0913 从 `tools/prompts/` 搬来，理由见该包 docstring）
 
 本文件是统一出口：消费方只写 `from pokemon_agent.world import X`，不深到模块文件。
 
@@ -18,12 +21,18 @@
 `pyboy_world.py` 一整条链还拖着 `from pyboy import PyBoy` 这个重依赖，继续
 懒加载，不需要为了一个重依赖拖慢整个包的 import。（`VisionProvider` 曾经也要
 从 `providers` 拿，2026-09-13 已搬进 `interface/`——这一条不再是懒加载的理由。）
+
+**实时画面管道 0913 夜已删**：`world/frame_slot.py`（`FrameSlot`）连同
+`PyBoyWorld.latest_frame()`、`GameTools.latest_frame()`、两个
+`FromFrontendToGameToolLatestFrame*` 信封一起移除——唯一消费者是 `api.py`
+的 SSE 端点，而 `api.py` 0913 晚已删，整条链从此零调用，生产端却仍每帧
+`image.copy()`。服务端重建时按需重写，不预留"现成件"。
 """
 
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .interface import (
     BOULDER,
@@ -59,7 +68,6 @@ from .interface import (
 )
 
 if TYPE_CHECKING:
-    from .frame_slot import FrameSlot
     from .pyboy_world import PyBoyWorld, parse_screen
     from .ram import read_facing, read_passable, read_screen_tiles, read_terrain
 
@@ -71,7 +79,6 @@ __all__ = [
     "DOOR",
     "FACING_STEP",
     "Facts",
-    "FrameSlot",
     "GRASS",
     "GRID_COLS",
     "GRID_ROWS",
@@ -104,7 +111,6 @@ __all__ = [
 ]
 
 _LAZY: dict[str, tuple[str, str]] = {
-    "FrameSlot": (".frame_slot", "FrameSlot"),
     "PyBoyWorld": (".pyboy_world", "PyBoyWorld"),
     "parse_screen": (".pyboy_world", "parse_screen"),
     "read_facing": (".ram", "read_facing"),
@@ -114,7 +120,7 @@ _LAZY: dict[str, tuple[str, str]] = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:  # noqa: ANN401 —— 惰性出口，名字对应哪个类型由 _LAZY 决定
     target = _LAZY.get(name)
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

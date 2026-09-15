@@ -3,8 +3,7 @@
 **不改状态字段，只落库记账。** 判定规则不在这里——它在本包的 `rules.py`
 （`object_fact_events`），本文件只做"取三件套 → 判定 → 逐事件落库与记账"。
 
-本包是七个域里唯一拆成包的：判定层 270 行，塞进节点文件会让"一节点一文件"的体积失衡
-（`PLAN_graph_composition.md` §3.1）。
+本包是七个域里唯一拆成包的：判定层 270 行，塞进节点文件会让"一节点一文件"的体积失衡。
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ __all__ = [
 def store_object_semantic_memory(
     state: EpisodeRunState, runtime: Runtime[HarnessDeps]
 ) -> dict[str, Any]:
-    """判定这一步碰到的事件并落库，逐事件记 `OBJECT_NOTE`。**不改状态字段，返回空增量。**
+    """判定这一步碰到的事件并落库，逐事件记 `write_object`。**不改状态字段，返回空增量。**
 
     落库前盖 `run_id` 章（落盘签名三元组之一），同 `store_step_episode_memory` 盖
     `episode_id`。
@@ -40,9 +39,7 @@ def store_object_semantic_memory(
     前置条件：`observation`/`action`/`pending_observation` 非空（本圈前三格已跑过）。
     """
     deps = runtime.context
-    assert state.observation is not None, (
-        "store_object_semantic_memory before record_observation"
-    )
+    assert state.observation is not None, "store_object_semantic_memory before record_observation"
     assert state.action is not None, "store_object_semantic_memory without an action"
     assert state.pending_observation is not None, "store_object_semantic_memory before act"
     ep, before, action, after = (
@@ -52,7 +49,7 @@ def store_object_semantic_memory(
         state.pending_observation,
     )
 
-    # 步骤 1：判定（kind 方法表）+ 落库，逐事件记 OBJECT_NOTE。
+    # 步骤 1：判定（kind 方法表）+ 落库，逐事件记 write_object。
     events = object_fact_events(before, action, after, ep, before.step)
     if events:
         deps.memory.append_object_events(
@@ -63,9 +60,12 @@ def store_object_semantic_memory(
     for event in events:
         deps.trace.append(
             FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.OBJECT_NOTE,
-                episode_id=ep,
-                step=before.step,
+                kind=TraceKind.WRITE_OBJECT,
+                meta={
+                    "source": "store_object_semantic_memory",
+                    "episode_id": ep,
+                    "step": before.step,
+                },
                 event=event,
             )
         )

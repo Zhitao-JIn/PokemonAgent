@@ -31,25 +31,21 @@ harness/brain（构造这些记录的地方）才直接打交道，这里存的�
 """
 
 __all__ = [
-    "SCENE_ANY",
     "SNAPSHOT_BLIND",
     "EpisodeMemory",
+    "KnowledgeRecord",
     "ObjectDialogEvent",
     "ObjectFactEvent",
     "ObjectFactEventBase",
     "ObjectStillEvent",
     "ObjectWarpEvent",
     "StepMemory",
-    "StopReason",
-    "decision_key",
     "dedup_snapshots",
-    "group_by_decision",
-    "last_decisions",
-    "render_decisions",
     "render_sequence",
 ]
 
-from .episode_memory import SCENE_ANY, EpisodeMemory
+from .episode_memory import EpisodeMemory
+from .knowledge import KnowledgeRecord
 from .object_memory import (
     ObjectDialogEvent,
     ObjectFactEvent,
@@ -60,11 +56,6 @@ from .object_memory import (
 from .step_memory import (
     SNAPSHOT_BLIND,
     StepMemory,
-    StopReason,
-    decision_key,
     dedup_snapshots,
-    group_by_decision,
-    last_decisions,
-    render_decisions,
     render_sequence,
 )

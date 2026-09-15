@@ -59,9 +59,9 @@ import json
 import math
 import os
 import pathlib
-import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image
 
@@ -72,12 +72,19 @@ from pokemon_agent.brain.schemas import (
     VisionDescribeResp,
 )
 
-from .errors import ImageNotDelivered, ParseFailure, ToolTimeout
+from .errors import ImageNotDelivered, ParseFailure, ProviderRejected, ToolTimeout
 
 # 一张 160x144 的 GB 截图真被当图处理时，输入至少是这个量级。
 # 实测静默丢图时输入会塌到 30 上下（纯提示词的量），两者差着一个数量级，
 # 所以这个阈值取在哪都行，不需要精调。
 IMAGE_TOKEN_FLOOR = 100
+
+_POST_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="llm-post")
+"""`_post` 的单请求总时长硬闸共用的工作线程池（见 `_post` 内注释）。
+
+挂起的那个请求会变成孤儿线程留在池里（占一个 worker，直到它自己被网关
+吐回来或进程退出）——`max_workers=8` 按"远大于并发链路数"给：整张图同时
+只有一个节点在调模型，8 个挂起槽位足够撑完一整局。"""
 
 
 class _OpenAICompatibleBase:
@@ -98,8 +105,7 @@ class _OpenAICompatibleBase:
         *,
         temperature: float,
         max_tokens: int = 1024,
-        timeout: int = 90,
-        max_attempts: int = 3,
+        timeout: int = 45,
     ) -> None:
         """`temperature` 没有默认值，**必须由调用方显式给出**。
 
@@ -111,11 +117,15 @@ class _OpenAICompatibleBase:
 
         记下型号与温度，此后不再变。base_url/api_key 从子类的类属性拿，
         不接受调用方覆盖——见模块 docstring 第 2 条设计决定。
+
+        **没有 `max_attempts`**（0915 起）：provider 一次都不重发——一次调用
+        就是一次 HTTP 请求，重试的循环与预算全在调用方（`BrainTool._attempt_loop` /
+        `GameTools.perceive_with_retry`）。provider 层偷偷重试会让账上一条
+        `ModelCall` 藏最多 3 次真实请求，耗费与失败计数全部失真。
         """
         assert model, "model must not be empty"
         assert self.BASE_URL, f"{type(self).__name__} 没有设置 BASE_URL 类属性"
         assert self.API_KEY_ENVS, f"{type(self).__name__} 没有设置 API_KEY_ENVS 类属性"
-        assert max_attempts >= 1, f"max_attempts must be >= 1, got {max_attempts}"
         assert 0.0 <= temperature <= 2.0, f"temperature out of range: {temperature}"
 
         self._model = model
@@ -123,7 +133,6 @@ class _OpenAICompatibleBase:
         self._max_tokens = max_tokens
         self._base = self.BASE_URL.rstrip("/")
         self._timeout = timeout
-        self._max_attempts = max_attempts
         self._key = next(
             (os.environ[name] for name in self.API_KEY_ENVS if os.environ.get(name)),
             None,
@@ -143,16 +152,25 @@ class _OpenAICompatibleBase:
         raise NotImplementedError(f"{type(self).__name__} 必须覆盖 _disable_thinking_payload()")
 
     def _post(self, content: list[dict] | str) -> dict:
-        """POST 一次，网络层失败按退避重试。
+        """POST **一次**，失败按类别立即上抛。**不重试**——重试的循环与预算
+        全在调用方（`BrainTool._attempt_loop` / `GameTools.perceive_with_retry`），
+        见 `__init__` docstring 里"没有 `max_attempts`"那段。
 
-        为什么要重试：这个端点在国内，用户在德国。跨境 TLS 偶发断连
-        （`UNEXPECTED_EOF_WHILE_READING`）是常态，尤其是带图的大请求。
-        不重试的话，一次抖动就让整个 episode 崩掉，几小时的实验白跑。
+        **本层只负责把失败分类**，三类三种抛法：
 
-        **只重试网络层错误，不重试 HTTP 错误。** 4xx/5xx 是服务端的明确答复
-        （型号不对、没权限、超限），重试改变不了任何东西，只是把钱和时间烧两遍。
+        - **4xx → `ProviderRejected`**：服务端读了请求并明确拒绝（401 密钥、
+          403 配额、400 格式、404 型号），重试改变不了任何东西，让循环
+          **立即耗尽**而不是烧满预算。
+        - **5xx / 网络层 → `ToolTimeout`**：传输侧没调通，调用方值得再试。
+        - **单请求总时长超闸 → 同样 `ToolTimeout`**：慢滴网关被硬闸掐掉，
+          也算"没调通"。
 
-        POST 一次，网络层失败按退避重试。
+        **为什么保留总时长硬闸**（0914 真机实测：过载网关把一个 16-token
+        请求拖了 900s 才返回空正文——`urlopen(timeout=…)` 是 socket 级单次
+        recv 计时，挡不住"连着但慢滴不发数据"的服务器。把调用挪进工作线程、
+        `result(timeout=…)` 封**总时长**：任何挂起在 deadline 处变成一次
+        `ToolTimeout`——最坏情况是干净地失败，不是卡死。deadline 取
+        timeout+15：正常完成（健康时实测 max 8.2s）不受影响，慢滴 60s 内被弃。
         """
         body = {
             "model": self._model,
@@ -171,32 +189,24 @@ class _OpenAICompatibleBase:
             },
         )
 
-        last: Exception | None = None
-        for attempt in range(1, self._max_attempts + 1):
-            try:
-                with urllib.request.urlopen(req, timeout=self._timeout) as r:
-                    return json.loads(r.read())
-            except urllib.error.HTTPError as e:
-                error_body = e.read().decode("utf-8", "ignore")
-                if 400 <= e.code < 500:
-                    # 4xx 是配置/请求错误（401 密钥、403 配额、400 请求格式）——
-                    # 重试多少次都一样，当场崩，装配期就该暴露。
-                    raise RuntimeError(f"{type(self).__name__} HTTP {e.code}: {error_body}") from e
-                # 5xx 是服务端抖动：记下来重试，重试耗尽转 ToolTimeout。
-                last = e
-                if attempt < self._max_attempts:
-                    time.sleep(0.5 * 2 ** (attempt - 1))  # 0.5s, 1s, 2s...
-            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
-                last = e
-                if attempt < self._max_attempts:
-                    time.sleep(0.5 * 2 ** (attempt - 1))  # 0.5s, 1s, 2s...
+        def _do_post() -> dict:
+            with urllib.request.urlopen(req, timeout=self._timeout) as r:
+                return json.loads(r.read())
 
-        # 网络层/5xx 重试耗尽：归 AgentError 家族——调用方（RunHarness.dispatch）
-        # 捕到它让这一局失败，而不是让整个 run 崩掉。
-        raise ToolTimeout(
-            f"{type(self).__name__} 调用不通，{self._max_attempts} 次重试后放弃："
-            f"{type(last).__name__}: {last}"
-        ) from last
+        try:
+            # **单请求总时长硬闸**（见 docstring）。挂起的请求变成孤儿线程留在
+            # `_POST_POOL` 里占一个 worker，直到它自己被网关吐回来或进程退出。
+            return _POST_POOL.submit(_do_post).result(timeout=self._timeout + 15)
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8", "ignore")
+            if 400 <= e.code < 500:
+                # 4xx 是配置/请求错误——重试注定无用，当场崩（装配期就该暴露）。
+                raise ProviderRejected(f"{type(self).__name__} HTTP {e.code}: {error_body}") from e
+            # 5xx 是服务端抖动：一次即抛，重试与否归调用方。
+            raise ToolTimeout(f"{type(self).__name__} HTTP {e.code}: {error_body}") from e
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            # 网络层（含总时长闸的 TimeoutError）：一次即抛，重试与否归调用方。
+            raise ToolTimeout(f"{type(self).__name__} 调用不通：{type(e).__name__}: {e}") from e
 
     def config(self) -> dict[str, str]:
         """自报配置，进 run manifest。
@@ -326,7 +336,7 @@ class _MultimodalMixin:
     def describe(self, req: VisionDescribeReq) -> VisionDescribeResp:
         """见 `VisionProvider.describe` 的契约，尤其是关于静默丢图的那一段。
 
-        图片是一组（`judge`/`verify_and_summarize` 会带 `StepMemory` 历史里的
+        图片是一组（`judge`/`verify`/`summarize` 会带 `StepMemory` 历史里的
         截图一起问），按 `req.images` 的顺序排列。
 
         **文字块在最前面，图片在最后面**——
@@ -440,7 +450,7 @@ def image_grid_dims(n: int) -> tuple[int, int]:
     """N 张帧拼图用的网格 `(rows, cols)`——**列数固定 3**，行数 `ceil(n/3)`。
 
     3 列是布局契约：`pack_images_grid`（实际打包）按它算画布尺寸；
-    prompt 文案（`prompts/calls/verify_and_summarize.md` 截图一节）静态写死
+    prompt 文案（`prompts/calls/verify.md` 与 `summarize.md` 的截图一节）静态写死
     3 列，行数由模型看图自己数——两边描述的是同一张图。
     """
     cols = 3
@@ -515,6 +525,7 @@ class ArkProvider(_MultimodalMixin, _OpenAICompatibleBase):
         """
         return {"thinking": {"type": "disabled"}}
 
+
 class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
     """DeepSeek 官方 API——默认模型 `deepseek-flash`（即 DeepSeek-V4.1-Flash，
     原生多模态，文本+视觉两用），换模型只改 `model=`。
@@ -537,13 +548,23 @@ class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
     `deepseek-v4-pro` 仍可传（走的是同一个类，只是最终会被官方路由到同一个
     模型），只是不再是构造函数的默认。
 
-    **`token_floor` 沿用基类默认值（`IMAGE_TOKEN_FLOOR = 100`），未针对
-    DeepSeek 单独实测过。** 官方文档给出的是图片消耗 token 的量级（每张
-    上限约 1024，按尺寸折算），不是"图片真被处理时的下界"——`QwenVision`/
-    `ArkProvider` 的 100 是从各自实测的"丢图 vs 正常"两种场景的数量级差异
-    里定出来的，DeepSeek 还没有等价的实测数据。这个默认值先借用同一套判据
-    （"差一个数量级就够用，不需要精调"），真机跑出数据后应按 3.4 节同样的
-    方法重新标定，而不是假设它天然适用。
+    **`token_floor` 沿用基类默认值（`IMAGE_TOKEN_FLOOR = 100`）——0914 一次
+    单帧实测证明这个借用值在**本项目实际的分辨率上**够用，但多帧场景仍未标定。**
+
+    实测（0914 10:2x，真实 GB 帧 160×144 RGBA，prompt 是一句中文提问）：
+    `input_tokens = 211`，其中图约占 196、纯文字 prompt 约 15——**丢图时会塌到
+    十几的量级，floor 100 拦得住**，这条判据在"单帧 + 短 prompt"下不是空转。
+    官方文档给的"每张上限约 1024、按尺寸折算"是图片**消耗**的量级，不是
+    "图片真被处理时的下界"，两者的角色不同，别混用。
+
+    **多帧那一侧已按 3.4 节的方法用真机账标定（0915）**：`judge` 带最近 3 条
+    step 的图（去重后实测 4 张）、`verify`/`summarize` 带全量 entries 的图（29 步
+    那局去重后 30 张）。拿**无图**的 `decide_call` 当纯文本基线（≈0.57 tok/字），
+    从 `input_tokens` 里扣掉文字成本后每帧落在 **185~198 tok**——与上面单帧实测的
+    196 一致、且**不随帧数变**（4 / 7 / 30 张都是这个量级）。floor 判的是**总
+    input** 没错，但每帧都远超 100 的门槛（约 2× 余量），"丢图会塌到十几"在多帧 +
+    长 prompt 下依然成立：长 prompt 抬高的地板是**纯文本成本**，与"图有没有送到"
+    是两笔账，收窄的只是这两者的**比**，不是判据本身。
     """
 
     BASE_URL = "https://api.deepseek.com"
@@ -577,3 +598,73 @@ class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
         的扁平布尔字段不同——同一个理由：这正是不能把这个字段塞进共享
         `_post()` 的原因，见模块 docstring。"""
         return {"thinking": {"type": "disabled"}}
+
+
+# ---- 选型表：型号名 → 厂商类（0914 起） ----
+#
+# **为什么需要它**：在它之前，"这个型号名该走哪个类"这条知识被**写死**在两处——
+# `brain/build_llm_providers.py` 里 decide/judge 恒为 `QwenProvider`、verify/plan 恒为
+# `ArkProvider`，`tools/vision_factory.py` 里恒为 `QwenProvider`。三处（加上装配点传的
+# 型号名）各说各话：想把某条链路换一家厂商，得改两个文件里的 new 语句，而"哪个型号名
+# 属于哪家"从来没有一处能一眼看全。上面那段模块文档的第 2 条说"换供应商 = 换类"，
+# 但**"换成哪个类"此前没有落点**——本表就是那个落点。
+#
+# **它不新增 new 实现的地方**：全项目能 new 具体实现的口子仍然只有贴着消费者的
+# 那几个工厂（`BrainTool.build` / `GameTools.build` / `MemoryTool.build` /
+# `TraceTool.build`）与 `build_llm_providers`/`build_vision_provider` 两个接线工厂；
+# 本函数是那两个工厂**共用的一张表**，不是第三个口子。
+#
+# **判据按前缀而不是全名**：型号名带版本（`qwen3.8-max`）与日期（`doubao-seed-2-1-pro-260628`）
+# 后缀，全名表写完就过期。"前缀"取的是**厂商名**那一维，它不随版本漂。
+_PROVIDER_PREFIXES: tuple[tuple[str, type[_OpenAICompatibleBase]], ...] = (
+    ("deepseek", DeepSeekProvider),
+    ("doubao", ArkProvider),
+    ("qwen", QwenProvider),
+)
+"""**前缀 → 厂商类**，按顺序匹配第一个命中的。加一家供应商 = 这里加一行（顺序即优先级）。"""
+
+
+def provider_for(
+    model: str,
+    *,
+    temperature: float,
+    max_tokens: int | None = None,
+    timeout: int = 45,
+) -> _OpenAICompatibleBase:
+    """按型号名造一个 provider 实例——**"哪条链路接哪家厂商"的唯一判据**。
+
+    与 `_PROVIDER_PREFIXES` 的分工：那张表回答"这个型号名属于谁"，本函数把它变成
+    一个实例。`QwenProvider`/`ArkProvider`/`DeepSeekProvider` 三个类都实现
+    `complete()`（当 LLM）与 `describe()`（当视觉），所以同一个返回值既能喂给
+    brain 的四条链路，也能喂给 world 的感知——**返回类型只有基类，用途由调用方决定**
+    （模块 docstring 第 1 条：一个供应商一个类，不按用途分）。
+
+    **`max_tokens=None` 时不传这个参数**，让各厂商类用自己的默认值——这一手是有意的：
+    三个类的默认值（都是 25600）各自带着实测依据（见 `QwenProvider.__init__` 那段
+    "1024/3072 均不够"），抄一份到这里就是第二处真源，改一处不改另一处不会报错。
+
+    前置条件：`model` 非空，且其前缀在 `_PROVIDER_PREFIXES` 里。
+    后置条件：返回实例的 `BASE_URL`/`API_KEY_ENVS` 来自命中那个类——**厂商名与
+    接入点永远配套**，不存在"传了豆包的类、打的是 DashScope 的 URL"。
+    `timeout`：单请求超时秒数（转发给 Provider 构造，最终是 `_post` 的 socket
+    超时与总时长硬闸的基准）。**视觉调用方给 20、文本链用缺省 45**——trace 实测
+    （PASS 局 `realcheck-0914-202735`）：视觉单次 max 1.16s、决策 max 8.24s，
+    两者差 7 倍，一个阈值套两头要么放文本的松、要么给视觉白等。
+
+    失败：型号名前缀不认识时抛 `ValueError`。**刻意不用 `assert`**：型号名来自
+    装配点的配置，不是"调用方"，配置写错是预期内的运行时情况（AGENTS.md 第三节
+    第 4 条：assert 不校验外部输入）——而且它要在**装配期**就炸，不是等第一次
+    调用 404（那时错误信息只有一个 HTTP 状态码，指不回型号名）。
+    """
+    assert model, "provider_for() got an empty model name"
+    head = model.strip().lower()
+    for prefix, provider_cls in _PROVIDER_PREFIXES:
+        if head.startswith(prefix):
+            kwargs: dict[str, int] = {} if max_tokens is None else {"max_tokens": max_tokens}
+            kwargs["timeout"] = timeout
+            return provider_cls(model, temperature=temperature, **kwargs)
+    known = " / ".join(f"{prefix}*" for prefix, _ in _PROVIDER_PREFIXES)
+    raise ValueError(
+        f"型号名 {model!r} 的前缀不在选型表里（认得的是 {known}）——"
+        "加一家供应商要同时改 _PROVIDER_PREFIXES 与它的 Provider 类"
+    )

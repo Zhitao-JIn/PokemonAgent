@@ -5,16 +5,11 @@
 `render()` 格式写），"数据形状"和"怎么从内存读出这份数据"分开放，跟
 `Facts`/`WorldPort` 是同一个道理，所以搬到这里而不是留在 `ram.py`。
 
-**为什么类定义顶层不 `import pokemon_agent.schemas.world`**：`world/interface/`
-是包初始化时**立即加载**的（见 `world/interface/__init__.py`），而
-`pokemon_agent.schemas.world`（聚合出口）反过来要经 `observation_from_world.py`
-拿 `world.interface.Facts`——如果这个文件顶层也去导 `schemas.world` 的东西
-（哪怕只是几个字符常量），就会在某些包初始化顺序下撞上 `Facts.Landmark.place`
-当初遇到的同一种真循环导入：`ImportError: cannot import name 'Facts' from
-partially initialized module`。所以这里跟 `Facts.Landmark.place` 用的是同一个
-办法——地形网格的行列数（10×9）等字符常量只在**方法体内部**现导（真正调用时
-`schemas.world` 早已加载完毕，不会再遇到初始化顺序问题），模块顶层只留
-同一个 `domain/` 包里零依赖的 `Facts`。
+**顶层的 import 只有零依赖的 `Facts`**：`world/interface/__init__.py` 是聚合出口、
+包初始化时**立即加载**，所以这一层每个模块的顶层 import 都参与那一次装配；
+`domain/` 里被它顶层引用的只有零依赖的 `facts.py`。地形网格的行列数（`GRID_COLS`/
+`GRID_ROWS`）与字符表（`MAP_CHARS`）住同包的 `screen_model.py`，只在**方法体内部**
+现取——`TerrainMap` 需要它们的地方只有校验那一刻。
 """
 
 from __future__ import annotations
@@ -227,7 +222,7 @@ class TerrainMap(BaseModel):
             if ch in kind
         ]
 
-    def place(self) -> Any:  # 返回 PlaceInWorld；标 Any 避免顶层依赖，见模块 docstring
+    def place(self) -> Any:  # noqa: ANN401 —— 返回 PlaceInWorld；标 Any 避免顶层依赖，见模块 docstring
         """主角所在的格子。"""
         from .place_in_world import PlaceInWorld
 

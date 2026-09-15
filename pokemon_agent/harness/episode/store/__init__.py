@@ -5,7 +5,7 @@
 两格读的是与 `press/detect_stall`/`press/close_step` 完全同一份三件套，互不影响谁先跑。
 
 `store_object_semantic_memory` 是**包**不是文件：它的判定规则（270 行）单独住 `rules.py`，
-理由见 `PLAN_graph_composition.md` §3.1 与那个包的 `rules.py` 文件文档。
+理由见那个包的 `rules.py` 文件文档。
 """
 
 from __future__ import annotations

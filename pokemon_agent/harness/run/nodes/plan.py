@@ -1,25 +1,31 @@
-"""`plan`：**LLM 决策器**——读 trace 历史 + 目标栈 → 问规划模型 → 应用决策（run 图的入口下一格）。
+"""`plan`：**目标表的唯一写入点**——问 `Planner` 要一版规划，给人看一眼（插话），落表。
 
-决策三条路：
+四件事，顺序固定：
 
-- 压栈（`push_goals`，截断到 `MAX_PLAN_PUSH`）→ 追加 goals/attempts，继续；
-- `done`（或栈空且不压）→ 置 done，run 结束；
-- 连续 `BRAIN_MAX_ATTEMPTS` 次调用/解析失败 → 置 `plan_failed`，路由 review。
+1. **取素材**：从**记忆**里取本 run 的局索引与预取详情（`episode_memory`）、
+   地图交互事实（`object_memory`），连同当前目标表装成 `PlannerContext`。
+2. **要一版**：`Planner.plan(ctx)` 给出**未落表**的 `PlannerOutcome`——新增条目、
+   对已有条目的定点更新、收手判定。默认实现是模型（`BrainPlanner`），
+   也可以是人（`ConsolePlanner`）或什么都不做（`NullPlanner`）。
+3. **给人看这一版**（**插话**）：`Reviewer.inject()` 亮出刚拿到的那一版 + 当前表；
+   人若说了什么，**带着那句话再要一版**（重问 `Planner`，次数不限），
+   直到人说"没意见"（空串）为止。
+4. **落表**：先把 `updates` 逐条盖到对应条目上，再把 `entries` append 进表尾。
 
-**账写在它的宿主里**：每次调用的账（`MODEL_CALL`，`Source.PLAN`）由本节点写。
-**重试循环在 `BrainTool.plan()` 那一层**（跟 `choose` 同一手法）
-——本节点退化成"组装 → 交一次 → 落账"；成功走 `resp.calls`，耗尽走异常携带的
-`exc.calls`。**不用 `Source.HARNESS`**：那是
-零成本记账事件的桶，`plan` 是一次真实模型调用，跟 episode 内的 `DECISION` 平级，
-该有自己的链路。三条非 `plan_failed` 的出口都额外补一条 `PLAN_VERDICT` 账（tool 按
-kind 渲染）——账单只答"花了多少钱"，这条答"这一格给了什么结论"，复盘"planner 这次
-为什么压了这个目标"靠它。
+**为什么"插话"落在这里而不是落成一格**：加图节点要付 `recursion_limit` 的代价
+（见 `docs/PLAN_console_reviewer.md` §3.2），所以插话一律是**节点内的同步函数调用**。
 
-三个同族件住本文件（D8-②：跟着唯一的调用者走）：
+**0914 S2：素材从 trace 换成 memory。** 原先第 1 步读的是
+`deps.trace.read_events()` 的全量事件流，`run_plan.py::history_lines` 再从里面折出
+"每局一行"。那条路的毛病有二：与"存下来的东西只有 memory"相矛盾；trace 大半是
+prompt/raw 噪声。现在读的是记忆——**trace 与 plan 之间不再有数据通路**。
 
-- `to_tasks` / `apply_goals_edit`——都只服务本节点：前者把模型压的目标转成
-  `Task`，后者把观测台的编辑指令应用到目标栈（与 `plan` 同族：都是"改目标栈"）；
-- `RUN_TRACE_MASK`——本节点读 trace 的历史口径。
+**`auto_push_goals=False` 时根本不问 planner**：这一版注定不加新目标、也不改已有
+条目，花一次模型调用是纯浪费。无头核对脚本（`check_harness.py`）走的就是这条路。
+
+**`auto_decide_done=False` 时模型不能提前喊停**：模型说 `done` 只在那条开关为真时
+生效；表末检（表里没有活跃条目 + 这一版不新增）**无条件生效**——它是这张图能停机的
+前提，不能由开关关掉（关掉它就会路由到一条没有 `PENDING` 的表上，`dispatch` 当场断言失败）。
 """
 
 from __future__ import annotations
@@ -28,238 +34,206 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.brain import RunPlan, Task
-from pokemon_agent.config import MAX_PLAN_PUSH
-from pokemon_agent.errors import MaxRetriesExceeded
-from pokemon_agent.schemas.frontend import FromFrontendToRunHarnessSubmitEditReq
 from pokemon_agent.schemas.harness import (
-    FromHarnessToBrainToolPlanOnceReq,
-    FromHarnessToTraceToolAppendModelCallsReq,
+    FromHarnessToMemoryToolQueryEpisodeSummariesReq,
+    FromHarnessToMemoryToolQueryObjectEventsReq,
+    FromHarnessToReviewerInjectReq,
     FromHarnessToTraceToolAppendReq,
-    ModelCallLog,
     TraceKind,
 )
-from pokemon_agent.tools.interface import BrainToolPort
-from pokemon_agent.trace import EventType, Source
+from pokemon_agent.schemas.harness.domain import GoalEntry
+from pokemon_agent.schemas.memory import EpisodeMemory
 
 from ...deps import HarnessDeps
+from ...interface.planner_context import PlannerContext
+from ...interface.planner_outcome import ALLOWED_UPDATE_STATUSES, GoalUpdate, PlannerOutcome
 from ..run_state import RunState
-
-RUN_TRACE_MASK = frozenset({EventType.LIFECYCLE, EventType.ERROR})
-"""run 级 plan 读 trace 时的 type 粗 mask——只取流程边界 + 失败两种家族，
-单步噪声（VIEW/ACT/MEMORY_IO/LLM_OUTCOME/MODEL_CALL）整族滤掉；LIFECYCLE
-里 run/episode 边界与 step 刻度混在同一 type，靠 `prompts.run_plan` 里的
-折算逻辑按 payload kind 再筛一层（type 只到家族粒度，语义在 kind）。"""
-
-
-def to_tasks(goals: list[RunPlan.PlanGoal], run_id: str) -> list[Task]:
-    """把 LLM 的新目标转成可派发的任务——`task_id` 由 harness 生成
-    （`plan-{run_id}-{序号}`），run 级自主拆解的目标没有实验分组键。"""
-    return [
-        Task(
-            task_id=f"plan-{run_id}-{i + 1}",
-            goal=g.goal,
-            success_criteria=g.success_criteria,
-            max_steps=g.max_steps,
-        )
-        for i, g in enumerate(goals)
-    ]
-
-
-def apply_goals_edit(state: RunState, edit: FromFrontendToRunHarnessSubmitEditReq) -> None:
-    """把观测台的编辑指令应用到当前目标栈（原地改 `state`）：整栈原子替换、
-    不锁栈顶——前端把目标栈变成纯本地草稿（含栈顶），只在 review 阶段可
-    编辑，点 push 时一次性把整份草稿同步过来。
-
-    `attempts` 按 `task_id` 找回旧计数，新目标（`task_id` 没出现过）记 0。
-
-    `strict=False`：这是**原样搬来**的那一行（此前住 `run_utils.py`），保持行为不变
-    ——两边长度为 0 的短表在 `.get(..., 0)` 那里等价于"新目标记 0"，不在这里改语义。
-    """
-    old_attempts = dict(zip((g.task_id for g in state.goals), state.attempts, strict=False))
-    state.goals = list(edit.goals)
-    state.attempts = [old_attempts.get(g.task_id, 0) for g in edit.goals]
-
-
-def ask_planner_with_retry(
-    brain_tool: BrainToolPort,
-    req: FromHarnessToBrainToolPlanOnceReq,
-) -> tuple[RunPlan | None, ModelCallLog]:
-    """问一次规划（重试在 `BrainTool.plan()` 里），把整条账交回来。
-
-    调用方只传素材；prompt 由 `BrainTool.plan()` 入口拼。**重试原样重问**——
-    不像 `decide_action` 那样叠加纠正说明（`run_plan` 的重试策略跟
-    `decide_action` 不是一回事），所以循环里每次尝试都传同一个 `req`。
-
-    账（`Source.PLAN`；run 级事件不挂在任何一局上，所以调用方写账时
-    `episode_id` 位放 run_id、`step` 用 0）：成功走 `resp.calls`，
-    耗尽走异常携带的 `exc.calls`——两条路都返回 `(None 或 plan, log)`，
-    调用方不用 catch。
-
-    `BrainToolPort` 是**参数**而不是从 `runtime` 里取（本函数不依赖 `runtime`）：
-    这样能用假端口独立测，不依赖装配。
-    """
-    try:
-        resp = brain_tool.plan(req)
-    except MaxRetriesExceeded as exc:
-        return None, [(i, call) for i, call in enumerate(exc.calls, start=1)]
-
-    return resp.plan, [(i, call) for i, call in enumerate(resp.calls, start=1)]
 
 
 def plan(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
-    """**LLM 决策器**：读历史 + 目标栈 → 问规划模型 → 应用决策。
+    """要一版规划 → 给人插话（不满意就带话重问）→ 应用更新 + 落表 → 表末检。
 
-    重试循环、解析、编辑应用都在本文件，**prompt 拼装在 `BrainTool.plan()`**
-    ——这里只决定"问完之后走哪条路"。
+    前置条件：无（首次进图时表里只有初始条目；后续每轮进来是"上一局刚审完"）。
+    后置条件：`state.plan` 是**原表 + 这一版的定点更新 + 这一版采纳的新条目**；
+        没被点名的条目逐条不改；新条目一律 `PENDING`。
 
-    **入栈顺序：`state.goals + pushes` 原序 append，栈顶 = `goals[-1]`**
-    ——这是纯 LIFO：`push_goals` 列表里**最后**一项会变成新栈顶、最先被
-    派发。不是"列表第一项优先级最高、最先执行"，而是"后压的先做"——
-    列表本身就该按"先出现的先入栈（压得更深），后出现的后入栈（压在
-    最上面、最先执行）"这个顺序给，模型自己要清楚这一点，harness 不该
-    替它倒转顺序（顺序曾被反转过一次又纠正，事故记录见 `CHANGELOG.md`
-    2026-09-04 条目）。这里只负责按 LIFO 老实 append。`review()` 的
-    `PUSH` 分支是同一个约定；`apply_goals_edit`（`POST /runs/{id}/goals`）
-    是整栈同步，不走按 `push` 分支单独 append。
-
-    两个行为开关从 `deps` 读（构造时定，整 run 不变）：`auto_push_goals` 决定
-    模型能不能自主压栈，`auto_decide_done` 决定它能不能判整个 run 结束。
+    后置条件（记账）：恰好多一条 `PLAN_VERDICT`。若判 done，`done=True` 且
+        `why` 有值——"没有活可干"或"模型判定该收手"。
     """
     deps = runtime.context
-    data_center = deps.data_center
-    assert data_center is not None, "plan() needs a data_center (装配时注入)"
 
-    # 先消费观测台的编辑指令（单槽，最新一条），再问 LLM——编辑后的
-    # 目标栈要进本次决策的 prompt。栈顶锁定在 `apply_goals_edit` 内校验。
-    # 快照**不在入口记录**：LLM 压栈发生在出口（state 合并前），
-    # 入口快照会漏掉本轮的 push_goals——观测台将看不到 plan 自主拆的目标。
-    # 这一步无论下面跳不跳模型调用都要做——人工编辑通道
-    # （`POST /runs/{id}/goals`）不受这两个开关影响。
-    edit = data_center.take_goals_edit()
-    if edit is not None:
-        apply_goals_edit(state, edit)
+    # 步骤 1–3：要一版（含插话循环）。`auto_push_goals=False` 时跳过——见模块 docstring。
+    outcome = _elicit(deps, state) if deps.auto_push_goals else PlannerOutcome()
 
-    # 两个开关都关掉时**真的跳过这次调用**：`resp.push_goals` 会被强制
-    # 清空、`resp.done` 不会被采信——不管模型这次说了什么，落到 state 里的
-    # 效果都跟"没问"完全一样（对照下面走完整条链路时最后的兜底分支：
-    # `pushed=[]`、`done=False`）。既然结果注定被扔，这次真实调用（一整笔
-    # token）就是纯浪费，直接跳过，图路由不变（走跟"问完但没压栈/没判 done"
-    # 完全一样的返回形状，`run_graph.py` 的条件边照旧看
-    # `plan_failed`/`done`/`goals` 判走 dispatch 还是 review）。
-    if not deps.auto_push_goals and not deps.auto_decide_done:
-        data_center.publish_goals(state.goals)
-        why = "auto_push_goals / auto_decide_done 均关闭，plan 跳过模型调用"
+    # 步骤 4：应用定点更新 → 追加新条目。
+    accepted = outcome.entries
+    table = _apply_updates(state.plan, outcome.updates) + accepted
+
+    # 表末检（`docs/PLAN_console_reviewer.md` §4.3）：
+    #   表里没有任何 `PENDING`/`RUNNING` 条目 **且** 这一版不新增 → 判 done；
+    # 外加**模型提前喊停**：`done=True` 且开关允许——"我判断剩下的不值得做"。
+    #
+    # `PENDING`/`RUNNING` 是"后面还要做的"；`COMPLETED`/`FAILED`/`ABANDONED` 都已出局
+    # （留在表里当上下文与教训）。所以"表非空"不等于"还有活干"——一局跑成之后表是
+    # "非空但没活"，这时要判 done，否则 `review → plan → review` 会转圈。
+    has_work = any(entry.status.is_active for entry in table)
+    model_done = outcome.done is True and deps.auto_decide_done
+    if (not has_work and not accepted) or model_done:
+        why = outcome.why or "表里没有待做目标，planner 也没有给出新的"
         deps.trace.append(
             FromHarnessToTraceToolAppendReq(
                 kind=TraceKind.PLAN_VERDICT,
-                step=0,
-                episode_id=state.run_id,
-                done=False,
-                pushed=[],
-                why=why,
-            )
-        )
-        return {"plan_failed": False}
-
-    events = data_center.events(RUN_TRACE_MASK)
-    req = FromHarnessToBrainToolPlanOnceReq(
-        run_id=state.run_id,
-        goals=state.goals,
-        events=events,
-        max_push=MAX_PLAN_PUSH,
-    )
-    # prompt **不在这里拼**（0913 定案）：本节点只装素材，`BrainTool.plan()`
-    # 入口拼（`prompts.run_plan.build_prompt()`）。
-
-    resp, log = ask_planner_with_retry(deps.brain_tool, req)
-    # 步骤：把这次规划的每一次尝试落成账（失败的那几次也要——它们同样烧了
-    # token）。run 级事件不挂在任何一局上，`episode_id` 位放 run_id、step 用 0。
-    deps.trace.append_model_calls(
-        FromHarnessToTraceToolAppendModelCallsReq(
-            episode_id=state.run_id, step=0, source=Source.PLAN, log=log
-        )
-    )
-    if resp is None:
-        # 预算耗尽：账（上面那条 append_model_calls）之外，再补一条只说明
-        # "这个节点完了、为什么"的 `PLAN_FAILED`（0913 定案：失败事件不带账）。
-        # `last_reason` 从最后一条账的错误里取——`ask_planner_with_retry` 把
-        # 异常吞成 `None` 了，异常上的 `last_reason` 没带出来，这里就地取。
-        last = log[-1][1] if log else None
-        deps.trace.append(
-            FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.PLAN_FAILED,
-                episode_id=state.run_id,
-                step=0,
-                why=f"{last.error_kind}: {last.error}" if last else "no attempts recorded",
-            )
-        )
-        data_center.publish_goals(state.goals)
-        # `plan_note` 不再记（0913 定案）：人工审查**直接看 trace**
-        # ——耗尽现场的那条 `PLAN_FAILED`（含 reason）与整条失败账
-        # （`MODEL_CALL`，含每次的请求 payload）都在事件流里，比一份
-        # 复制到 state 的 prompt 副本更完整，也少一处要同步维护的状态。
-        return {"plan_failed": True}
-
-    # `auto_push_goals=False` 时强制清空——模型的 `push_goals` 照常问、
-    # 照常解析（省事，`run_plan.md` 不用跟着改），只是这里不采纳。
-    pushes = to_tasks(resp.push_goals[:MAX_PLAN_PUSH], state.run_id) if deps.auto_push_goals else []
-    # `auto_decide_done=False` 时同理：`resp.done` 不算数，栈空也不算数——
-    # 两种情形都不在这里判 `done`，直接落到最后的"什么都不做"分支，
-    # 交给 `run_graph.py` 的路由（`not s.goals` → `review`）去问人。
-    # `auto_decide_done=True`（缺省）时：这两种情形都直接判 `done`，不经 `review()`。
-    if deps.auto_decide_done and (resp.done or (not state.goals and not pushes)):
-        data_center.publish_goals(state.goals)
-        why = resp.why or (
-            "全部目标解决" if all(o.success for o in state.outcomes) else "存在重试耗尽的目标"
-        )
-        deps.trace.append(
-            FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.PLAN_VERDICT,
-                step=0,
-                episode_id=state.run_id,
+                meta={"source": "plan", "episode_id": state.run_id, "step": 0},
                 done=True,
                 pushed=[],
                 why=why,
+                input=outcome.input,
+                output=outcome.output,
             )
         )
-        return {"plan_failed": False, "done": True, "why": why}
-    if pushes:
-        new_goals = state.goals + pushes
-        data_center.publish_goals(new_goals)
-        deps.trace.append(
-            FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.PLAN_VERDICT,
-                step=0,
-                episode_id=state.run_id,
-                done=False,
-                pushed=[p.goal for p in pushes],
-                why=resp.why,
-            )
-        )
-        return {
-            "plan_failed": False,
-            "goals": new_goals,
-            "attempts": state.attempts + [0] * len(pushes),
-        }
-    data_center.publish_goals(state.goals)
+        return {"plan": table, "done": True, "why": why}
+
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.PLAN_VERDICT,
-            step=0,
-            episode_id=state.run_id,
+            meta={"source": "plan", "episode_id": state.run_id, "step": 0},
             done=False,
-            pushed=[],
-            why=resp.why,
+            pushed=[entry.task.goal for entry in accepted],
+            why=outcome.why or "planner 给出的这一版没有新目标",
+            input=outcome.input,
+            output=outcome.output,
         )
     )
-    return {"plan_failed": False}
+    return {"plan": table}
 
 
-__all__ = [
-    "RUN_TRACE_MASK",
-    "apply_goals_edit",
-    "ask_planner_with_retry",
-    "plan",
-    "to_tasks",
-]
+def _elicit(deps: HarnessDeps, state: RunState) -> PlannerOutcome:
+    """问 `Planner` 要一版，把人不满意的部分通过**插话**反馈回去，直到人满意。
+
+    **为什么是循环而不是一次**：插话的语义是"我对这一版有意见"，人不满意就
+    再说一句——`Planner` 带着累积的反馈重新出一版。次数不设上限（用户定调：
+    不设）。人的"没意见"由 `inject()` 返回空串表达，循环就此结束。
+    """
+    feedback = ""
+    while True:
+        proposed = deps.planner.plan(_context(deps, state))
+        note = deps.reviewer.inject(
+            FromHarnessToReviewerInjectReq(
+                prompt=_prompt_for(proposed, feedback),
+                form=proposed,
+                form_kind="PlannerOutcome",
+            )
+        )
+        if not note:
+            return proposed
+        feedback = note
+
+
+def _context(deps: HarnessDeps, state: RunState) -> PlannerContext:
+    """从**记忆**里取这一版的规划素材。
+
+    三段：本 run 的局索引（`episode_memory` 全量，**按执行顺序**）、
+    其中几局的正文（一期规则见 `_pick_details`）、地图交互事实（`object_memory`）。
+
+    **排序用 `state.outcomes` 而不是 `episode_id`**（0914 S2 的一个坑）：
+    读口返回的顺序是 `episode_id` 字典序，而 `episode_id` 是 `{run_id}-ep{n}`
+    ——`ep10 < ep2`，第 10 局之后顺序就乱了。`outcomes` 是按执行序 append 的
+    机械记录，本来就准，不必从字符串里反解执行序。
+    """
+    summaries = deps.memory.query_episode_summaries(
+        FromHarnessToMemoryToolQueryEpisodeSummariesReq(conditions={"run_id": state.run_id})
+    ).summaries
+    index = _in_execution_order(summaries, state.outcomes)
+    objects = deps.memory.query_object_events(FromHarnessToMemoryToolQueryObjectEventsReq()).events
+    return PlannerContext(
+        run_id=state.run_id,
+        plan=state.plan,
+        index=index,
+        details=_pick_details(index),
+        objects=objects,
+    )
+
+
+def _in_execution_order(summaries: list[EpisodeMemory], outcomes: list) -> list[EpisodeMemory]:
+    """按**执行顺序**排好局索引。
+
+    排序键取 `state.outcomes` 里的下标（执行序 append 的机械记录）；没有对应
+    outcome 的摘要（理论上不该有——记忆是这一局的产物）排在最后，按 `episode_id`
+    兜底，保证顺序仍然确定（两次读拿到同一个序）。
+    """
+    order = {outcome.episode_id: i for i, outcome in enumerate(outcomes)}
+    return sorted(
+        summaries,
+        key=lambda memory: (order.get(memory.episode_id, len(order)), memory.episode_id),
+    )
+
+
+def _pick_details(index: list[EpisodeMemory]) -> list[EpisodeMemory]:
+    """一期详情预取规则：**最近 1 局 + 全部失败局**。
+
+    这是渐进披露的最小可用形态——上下文里装"全部局的骨架 + 少数几局的肉"，
+    而不是"把所有局的正文都倒进去"。三条依据：
+
+    - **最近 1 局**：刚发生的事最相关，模型规划下一步时最先要看它；
+    - **全部失败局**：失败是最该被看见的原料，"这个做法不行"必须能传到下一版规划里；
+    - 其余（更早的成功局）：只给索引行——它们的内容多半已经被后续局覆盖。
+
+    二期上工具环（模型自己请求要哪几局的正文）之后，这个函数退休，
+    `details` 由模型的请求决定（信封不用改）。
+    """
+    chosen = {memory.episode_id for memory in index if not memory.success}
+    if index:
+        chosen.add(index[-1].episode_id)
+    return [memory for memory in index if memory.episode_id in chosen]
+
+
+def _apply_updates(plan: list[GoalEntry], updates: list[GoalUpdate]) -> list[GoalEntry]:
+    """把模型对已有条目的表态逐条盖到表上（**定点更新**，不重写整表）。
+
+    前置条件（`Planner` 实现保证）：每条 `update.status` 都在
+        `ALLOWED_UPDATE_STATUSES` 里——只有"重开"（`PENDING`）与"放弃"（`ABANDONED`）
+        两个值。`COMPLETED`/`FAILED` 是机械事实，只能由 harness 从这一局的结算推导
+        （`review._stamp`），任何 planner 实现都不许代笔。
+    后置条件：返回新表；点不到的表内条目（`task_id` 不存在）**跳过**——模型数错
+        不是异常，只是那条表态作废；未被点名的条目逐字不动。
+    """
+    if not updates:
+        return plan
+    index_of = {entry.task.task_id: i for i, entry in enumerate(plan)}
+    table = list(plan)
+    for update in updates:
+        assert update.status in ALLOWED_UPDATE_STATUSES, (
+            f"planner 想写机械事实 {update.status!r}——那是 harness 的盖章地盘"
+        )
+        position = index_of.get(update.task_id)
+        if position is None:
+            continue
+        entry = table[position]
+        table[position] = entry.model_copy(
+            update={
+                "status": update.status,
+                # 新理由优先；模型没给就留着上一条（上次失败/放弃的原因也是信息）。
+                "note": update.note or entry.note,
+            }
+        )
+    return table
+
+
+def _prompt_for(proposed: PlannerOutcome, feedback: str) -> str:
+    """给插话那一屏写说明文本。
+
+    `feedback` 非空 = **这是重问**，把那句话原样再亮一次——人写的话在控制台上
+    得看得见，否则"我说过什么"要靠记忆。
+    """
+    parts = []
+    if proposed.entries:
+        parts.append(f"planner 给出 {len(proposed.entries)} 条新目标")
+    if proposed.updates:
+        parts.append(f"并改动 {len(proposed.updates)} 条已有目标的状态")
+    base = "；".join(parts) if parts else "planner 这一版没有新目标、也没改任何条目"
+    if feedback:
+        return f"{base}；上一轮你的意见：{feedback}"
+    return base
+
+
+__all__ = ["plan"]

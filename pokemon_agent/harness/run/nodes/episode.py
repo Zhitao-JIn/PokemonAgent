@@ -5,9 +5,13 @@
 
 - 普通派发 → `episode_entry.run_new`（EPISODE_START → `begin_episode` → 进图 → 取结算）。
 
-返回的状态增量就是**父子交界那张键表的回程**（D2）：`outcome` 交给 `reflect`。
+返回的状态增量就是**父子交界那张键表的回程**（D2）：`outcome` 交给 `review`。
 `task`/`episode_goals` 已在 `dispatch` 里写过，这里不重复写（F1 的反作用：
 子图不输出的键，父侧保持旧值——所以也不需要"清空"它们）。
+
+**但 `run_new` 要的目标栈在这里现搭**：它收的是 `list[Task]`，而 state 上那份
+`episode_goals` 是投影后的 `list[Goal]`——同一份 `active_stack()` 的两种形态，
+顺序（正在跑的那条在最后）由那个函数保证，本文件不自己排序。
 
 **恢复分支已删**（见 `CHANGELOG.md` 2026-09-13 第 57 条）：原先这里还有一条
 `resume_episode` 非空 → `episode_entry.run_resume` 的路径，随 checkpoint 恢复链
@@ -22,11 +26,11 @@
 不是依赖（D3 只把 `HarnessDeps` 塞进 `Runtime`：一个**全图唯一**的对象，塞一张图进去会
 让"依赖从哪来"多出第二个答案）。所以子图挂在模块全局上、首次用到时编译一次：
 
-- 不在 import 期编译：`check_imports.py` 会 import 每个模块，import 期建图是白费的副作用；
+- 不在 import 期编译：全仓 import 守卫会 import 每个模块，import 期建图是白费的副作用；
 - 不每次调用都编译：那一格每派发一局跑一次，重编译纯属浪费。
 
 `_EPISODE_GRAPH` 是**缓存**，不是第二份真源——它由 `compile_episode_graph()` 产出，
-和 `check_graph_phases.py` 核的那张图逐字同一份。
+与图定义**逐字同一份**。
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ from langgraph.runtime import Runtime
 from ...deps import HarnessDeps
 from ...episode import compile_episode_graph, episode_entry
 from ..run_state import RunState
+from .dispatch import active_stack
 
 _episode_graph: CompiledStateGraph | None = None
 
@@ -67,12 +72,21 @@ def episode(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
     assert state.task is not None, "episode() without a task"
     graph = episode_graph()
 
+    # 目标栈**从目标表现场重建**（`dispatch.active_stack()`，与 `dispatch` 写
+    # `episode_goals` 用的是同一个函数）——`run_new` 要的是 `list[Task]`，而
+    # `state.episode_goals` 是投影后的 `list[Goal]`（`Goal` 上没有 `task_id`/
+    # `max_steps`，信息已经在投影那一步丢了，不还原）。
+    #
+    # **不是"照表序取活跃条目"**：子图把列表最后一位当"你现在要完成的"，
+    # 顺序错了会拿兄弟目标当靶子。理由与那次事故见 `active_stack()` 的 docstring。
+    stack = [entry.task for entry in active_stack(state.plan, state.task.task_id)]
+
     outcome = episode_entry.run_new(
         deps,
         graph,
         episode_id=state.episode_id,
         task=state.task,
-        stack=state.goals,
+        stack=stack,
     )
     return {"outcome": outcome}
 

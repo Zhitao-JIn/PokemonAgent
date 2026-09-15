@@ -19,16 +19,14 @@ class ActionSegment(BaseModel):
 
     `times=4` 这个写法本身就在声明"这 4 下是同一个动作"——所以理由属于段，
     不属于单次按键（为 4 下各写一条理由，等于承认它们该拆成 4 段），
-    也不属于整条链（"为什么要交出这串动作"对单个键不成立）。见
-    `docs/spec/harness/PLAN_action_step_granularity.md` §4b。
+    也不属于整条链（"为什么要交出这串动作"对单个键不成立）。
     """
 
     name: str = Field(min_length=1, description="按键名")
     times: int = Field(default=1, ge=1, description="连续按键次数")
     rationale: list[str] = Field(
         min_length=1,
-        description="最能支持**这一段**的论据。"
-        "进情景记忆；经验能否迁移全看它",
+        description="最能支持**这一段**的论据。进情景记忆；经验能否迁移全看它",
     )
 
 
@@ -46,8 +44,7 @@ class Action(BaseModel):
 
     **链上没有论据，这是有意的。** "为什么要交出这串动作"是链级的，对其中任何
     单个键都不成立，所以它由 `thought` 承担（本来就只进 trace）；进记忆的论据
-    活在段上（`ActionSegment.rationale`）——详见该类与
-    `docs/spec/harness/PLAN_action_step_granularity.md` §4b。
+    活在段上（`ActionSegment.rationale`）——详见该类。
 
     **为什么进记忆的是论据而不是结论**：结论（"所以该捡药水"）可以从动作名反推，
     存进去等于把同一件事存两遍；论据（"地上有药水而我手上没有"）才是动作名

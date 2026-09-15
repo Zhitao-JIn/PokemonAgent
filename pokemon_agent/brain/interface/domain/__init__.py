@@ -10,10 +10,12 @@ from __future__ import annotations
 from .action import Action, ActionSegment
 from .episode_summary import EpisodeSummary
 from .goal import Goal
+from .learned_knowledge import KnowledgeItem, LearnedKnowledge
 from .model_call import ModelCall
 from .reflection import Reflection
 from .results import (
     ChooseResult,
+    ExtractResult,
     JudgeResult,
     PlanResult,
     SummarizeResult,
@@ -28,8 +30,11 @@ __all__ = [
     "ActionSegment",
     "ChooseResult",
     "EpisodeSummary",
+    "ExtractResult",
     "Goal",
     "JudgeResult",
+    "KnowledgeItem",
+    "LearnedKnowledge",
     "ModelCall",
     "PlanResult",
     "Reflection",

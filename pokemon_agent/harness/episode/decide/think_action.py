@@ -13,6 +13,16 @@ tool 入口），循环放它那儿不用跨层回传中间状态。harness 这�
 
 **同步调用**：无头模式下世界不限速（见 `pokemon_agent/world/pyboy_world.py`），决策等待
 期间演化世界省不出时间——tick 本身就是瞬间的，异步 + 轮询反而是多余的复杂度。
+
+**这里也是"act 位置"的插话点**（0914 控制台改造）：`act` 节点自己**没有** LLM 调用
+（它只是弹 `pending_presses` 的队首），决策的产物 `Action` 是在**这一格**产生并展开
+的。所以人若对"要按的这条链"有意见，插话只能落在这里的出口——**一条链要么整条重出，
+要么就照原样跑完**，不存在"按了两个键再改后面那几个"（要改就得从决策这一格重来）。
+
+插话的循环也住在这里：`Reviewer.inject()` 拿到一句话，就带着它**重问一次**
+`BrainTool.choose()`，直到人没意见（空串）为止。**次数不设上限**（用户定调）。
+人的那句话拼在 prompt **最末尾**（见 `tools/prompts/decide_action.py` 的
+`_render_human_note`）——它是一条临时覆盖指令，压过上面所有规则。
 """
 
 from __future__ import annotations
@@ -21,31 +31,34 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.brain import Action, ActionSegment
+from pokemon_agent.brain import ActionSegment
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
+    FromHarnessToBrainToolChooseOnceResp,
+    FromHarnessToReviewerInjectReq,
     FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
-    ModelCallLog,
     TraceKind,
 )
-from pokemon_agent.trace import Source
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
 
 
 def think_action(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
-    """大脑推理，然后**把它交回来的账翻译成事件**。
+    """大脑推理 → 人的插话 → 把最后采纳的那条链展开成待按队列。
 
     重试用尽时 `BrainTool` 抛的 `MaxRetriesExceeded` 携带整条失败账——本格先把
     整条账逐条落成 `MODEL_CALL`，再补一条只说明"节点完了、为什么"的
-    `DECISION_FAILED`，然后原样上抛（见 `docs/spec/harness/PLAN_graph_readability.md` §3.7.4）。
+    `CALL_EXHAUSTED`（`link="decide"`），然后原样上抛——**账写在它的宿主格
+    里**，成功走返回值，耗尽走异常。
+
+    插话循环的代价：**每被插一次话就多一次完整的 `choose()` 调用**（重试预算
+    也重来一遍）。这是用户明确接受的——人不会闲着没事每步插话。
 
     前置条件：`state.observation`、`state.action_space` 非空。
-    后置条件：返回 `{"plan": …, "pending_presses": …, "plan_step_start": …}`——
-    链原文、展开后的逐键队列、以及这条链从第几步开始。
+    后置条件：返回 `{"plan": …, "pending_presses": …}`——链原文与展开后的逐键队列。
     """
     deps = runtime.context
     assert state.observation is not None, "think_action before record_observation"
@@ -65,71 +78,23 @@ def think_action(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[
         if state.global_episode_memories
         else ""
     )
-    # 步骤 1.5：取一次人类实时插话（`RunDataCenter` 的 human_note 槽，取到即清空，
-    # 只对这一次决策生效）。没接前端（`deps.data_center` 为 `None`）时恒为空串。
-    # 取到非空才留痕——没人插话是常态，不该每步都记一条空事件。
-    human_note = deps.data_center.take_human_note() if deps.data_center else ""
-    if human_note:
-        deps.trace.append(
-            FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.HUMAN_NOTE_INJECTED,
-                episode_id=ep,
-                step=step,
-                text=human_note,
+
+    # 步骤 2：问决策 → 亮给人（插话）→ 人若说了什么就带着它重问。**循环不设上限**。
+    human_note = ""
+    while True:
+        resp = _choose(deps, state, knowledge_text, episode_memories_text, human_note, ep, step)
+        note = deps.reviewer.inject(
+            FromHarnessToReviewerInjectReq(
+                prompt=f"请审这条链（第 {step} 步，{len(resp.action.sequence)} 段）",
+                form=resp.action,
+                form_kind="Action",
             )
         )
+        if not note:
+            break
+        human_note = note
 
-    req = FromHarnessToBrainToolChooseOnceReq(
-        goals=state.episode_goals,
-        obs=state.observation,
-        space=state.action_space,
-        memories=state.step_episode_memories,
-        knowledge=knowledge_text,
-        episode_memories=episode_memories_text,
-        human_note=human_note,
-    )
-    # prompt **不在这里拼**（0913 定案）：本节点只装素材，拼 prompt 是
-    # `BrainTool.choose()` 入口的事——"谁问模型，谁把 req 变成 prompt"，
-    # 拼装只剩那一个调用点。
-
-    # 步骤 2：问一次决策。重试循环在 `BrainTool.choose()` 里；成功的整条账
-    # （失败尝试 + 最后一次成功）走 `resp.calls`，本格只负责落账。
-    try:
-        resp = deps.brain_tool.choose(req)
-    except MaxRetriesExceeded as exc:
-        # 步骤 2.5：预算耗尽——异常携带整条失败账。落账 + 补一条
-        # DECISION_FAILED，再原样上抛。
-        #
-        # **两笔分开**（0913 定案）：账归 `append_model_calls`（整条链逐条落成
-        # `MODEL_CALL`）；`DECISION_FAILED` 只回答"这个节点完了、为什么"，
-        # 从异常取 `last_reason`，**不搬账**——以前传 `calls=[last]` 是为了让
-        # 渲染拼出那句 `last:`，而它本来就挂在异常上。
-        log: ModelCallLog = [(i, call) for i, call in enumerate(exc.calls, start=1)]
-        deps.trace.append_model_calls(
-            FromHarnessToTraceToolAppendModelCallsReq(
-                episode_id=ep, step=step, source=Source.DECISION, log=log
-            )
-        )
-        deps.trace.append(
-            FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.DECISION_FAILED,
-                episode_id=ep,
-                step=step,
-                why=exc.last_reason,
-            )
-        )
-        raise
-
-    log = [(i, call) for i, call in enumerate(resp.calls, start=1)]
-    deps.trace.append_model_calls(
-        FromHarnessToTraceToolAppendModelCallsReq(
-            episode_id=ep, step=step, source=Source.DECISION, log=log
-        )
-    )
-    action: Action = resp.action
-
-    # 步骤 3：写 THINK（记的是**整条链**），把链交回 state。`attempt` = 这条链是第几次
-    # 尝试问出来的（最后一次尝试的序号）。
+    # 步骤 3：写 THINK（记的是**整条链**，附带那次成功的请求与原文），把链交回 state。
     #
     # **规范化不留痕**（0913 删 `normalized`）：`_normalize()` 只把"连按 a"改成
     # "按一次"这类**等价改写**——改写后的动作就是 `action` 本身，trace 里那条链
@@ -137,10 +102,12 @@ def think_action(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.THINK,
-            episode_id=ep,
-            step=step,
-            action=action,
-            attempt=len(resp.calls),
+            meta={"source": "think_action", "episode_id": ep, "step": step},
+            # 封套上的 `source` = 发这条账的节点名（`kind` 只说"哪本账"）。
+            action=resp.action,
+            input=resp.calls[-1].payload.get("prompt", ""),
+            output=resp.calls[-1].payload.get("raw", ""),
+            human_note=human_note,
         )
     )
 
@@ -153,10 +120,76 @@ def think_action(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[
     # 不改变任何语义。
     presses = [
         ActionSegment(name=segment.name, times=1, rationale=list(segment.rationale))
-        for segment in action.sequence
+        for segment in resp.action.sequence
         for _ in range(segment.times)
     ]
-    # 顺带记下**这条链从第几步开始**（`plan_step_start`）：链内的键要能被认领回这一次
-    # 决策（记忆侧按它分组，见 `schemas/memory/datastore/step_memory.py::render_decisions()`）。
-    # 它是执行期的记账，`StepMemory` 那一份由 `store/step_episode_memory` 从这里抄。
-    return {"plan": action, "pending_presses": presses, "plan_step_start": step}
+    return {"plan": resp.action, "pending_presses": presses}
+
+
+def _choose(
+    deps: HarnessDeps,
+    state: EpisodeRunState,
+    knowledge_text: str,
+    episode_memories_text: str,
+    human_note: str,
+    ep: str,
+    step: int,
+) -> FromHarnessToBrainToolChooseOnceResp:
+    """问一次决策、落这一次的账，返回 choose 的整份 resp（动作 + 整条账）。
+
+    `human_note` 非空时它就进 req，由 `decide_action.build_prompt()` 渲染到
+    prompt 的**最末尾**。
+
+    失败路径：`MaxRetriesExceeded` 的整条账先落成 `MODEL_CALL`、再补一条
+    `CALL_EXHAUSTED`（`link="decide"`），然后原样上抛——**插话循环不吞它**，
+    人说的话救不了一次调不通的模型。
+    """
+    req = FromHarnessToBrainToolChooseOnceReq(
+        goals=state.episode_goals,
+        obs=state.observation,
+        space=state.action_space,
+        memories=state.step_episode_memories,
+        knowledge=knowledge_text,
+        episode_memories=episode_memories_text,
+        human_note=human_note,
+    )
+    # prompt **不在这里拼**（0913 定案）：本节点只装素材，拼 prompt 是
+    # `BrainTool.choose()` 入口的事——"谁问模型，谁把 req 变成 prompt"，
+    # 拼装只剩那一个调用点。
+    try:
+        resp = deps.brain_tool.choose(req)
+    except MaxRetriesExceeded as exc:
+        # 预算耗尽——异常携带整条失败账。落账 + 补一条 CALL_EXHAUSTED，再原样上抛。
+        #
+        # **两笔分开**（0913 定案）：账归 `append_model_calls`（整条链逐条落成
+        # `MODEL_CALL`）；`CALL_EXHAUSTED` 只回答"这个节点完了、为什么"，
+        # 从异常取 `last_reason`，**不搬账**。
+        log = list(exc.calls)
+        deps.trace.append_model_calls(
+            FromHarnessToTraceToolAppendModelCallsReq(
+                meta={"source": "think_action", "episode_id": ep, "step": step},
+                kind=TraceKind.DECIDE_CALL,
+                log=log,
+            )
+        )
+        deps.trace.append(
+            FromHarnessToTraceToolAppendReq(
+                kind=TraceKind.CALL_EXHAUSTED,
+                meta={"source": "think_action", "episode_id": ep, "step": step},
+                link="decide",
+            )
+        )
+        raise
+
+    log = list(resp.calls)
+    deps.trace.append_model_calls(
+        FromHarnessToTraceToolAppendModelCallsReq(
+            meta={"source": "think_action", "episode_id": ep, "step": step},
+            kind=TraceKind.DECIDE_CALL,
+            log=log,
+        )
+    )
+    return resp
+
+
+__all__ = ["think_action"]
