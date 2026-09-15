@@ -54,8 +54,12 @@ def detect_stall(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.STALL_CHECK,
-            episode_id=state.episode_id,
-            step=state.observation.step,
+            meta={
+                "source": "detect_stall",
+                "episode_id": state.episode_id,
+                "step": state.observation.step,
+            },
+            # 封套上的 `source` = 发这条账的节点名（`kind` 只说"哪本账"）。
             stall_key=key,
             stall_count=count,
         )

@@ -1,4 +1,4 @@
-"""episode 图的**图外侧门**：开局的装配器（`PLAN_graph_composition.md` §6 步 2）。
+"""episode 图的**图外侧门**：开局的装配器。
 
 ## 为什么装配必须在图外（不是取舍，是逻辑上的先后）
 
@@ -46,6 +46,7 @@ from pokemon_agent.schemas.harness import (
 )
 
 from ..deps import HarnessDeps
+from .episode_frames import remember_frame
 from .episode_state import EpisodeRunState
 from .press.perceive_after_action import perceive_once
 
@@ -75,8 +76,8 @@ def begin_episode(
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.EPISODE_START,
-            step=0,
-            episode_id=episode_id,
+            meta={"source": "episode_entry.begin_episode", "episode_id": episode_id, "step": 0},
+            # 图外入口名也算一个真发送位置（`FromHarnessToTraceToolAppendReq.source`）。
             task=task,
         )
     )
@@ -95,11 +96,11 @@ def begin_episode(
     # 步骤 3：感知第一帧（重试循环与记账都在 `press/perceive_after_action.py` 的
     # `perceive_once`——图内那一格用的是**同一个宿主**，所以"这一帧的账"只有一处实现，
     # 步 3 之前这里与 `EpisodeHarness._perceive` 各有一份**同样 8 行**的重复）；
-    # 原始画面不随感知调用落盘，而是先暂存进 `deps.pending_frames`——这一帧是第 0 步的
-    # 开局画面，等链首的 `record_observation` 记 `OBSERVE` 时，由它把图挂上去并登记登记表。
-    obs, frame_png = perceive_once(deps, episode_id, 0)
-    if frame_png is not None:
-        deps.pending_frames[(episode_id, 0)] = frame_png
+    # 原始画面落进**覆盖式帧槽**——这一帧是第 0 步的开局画面，步尾的
+    # `store_step_episode_memory` 要它当 `before_frame`（所以槽是"覆盖式留存"，
+    # 不是"取走即清"）。
+    obs, frame_png = perceive_once(deps, episode_id, 0, source="episode_entry.begin_episode")
+    remember_frame(deps, episode_id, 0, frame_png)
     assert not obs.done, "reset() must return a fresh observation"
 
     # 步骤 4：组装初始状态。**开局这一帧直接就是 `observation`**（第 0 步）：
@@ -151,8 +152,7 @@ def run_new(
         deps.trace.append(
             FromHarnessToTraceToolAppendReq(
                 kind=TraceKind.EPISODE_ERROR,
-                episode_id=episode_id,
-                step=0,
+                meta={"source": "episode_entry.run_new", "episode_id": episode_id, "step": 0},
                 error=exc_snapshot(exc),
             )
         )
@@ -214,9 +214,7 @@ def episode_budget(task: Task, step: int) -> int:
     return (task.max_steps - step) * per_press + RECURSION_MARGIN
 
 
-def close(
-    final: dict[str, Any], task: Task
-) -> FromRunHarnessToEpisodeHarnessRunResp:
+def close(final: dict[str, Any], task: Task) -> FromRunHarnessToEpisodeHarnessRunResp:
     """收尾：取出图内 `close_episode` 已经写好并落账的结算。
 
     **图跑完之后这里不再算任何东西**（D2-④）：结算由 `close_episode` 节点
@@ -226,7 +224,7 @@ def close(
     顺带在这里落**D6 的事后断言**：一局的步数不可能超过 `task.max_steps`
     （`judge` 就是按 `state.step >= task.max_steps` 判停的）。把"靠 limit 兜底"
     换成"靠断言报警"——真撞上 recursion_limit 是**无声截断**，而这条会在开发期
-    就地炸（`PLAN_graph_composition.md` §4 D6）。
+    就地炸。
     """
     final_state = EpisodeRunState.model_validate(final)
     assert final_state.outcome is not None, "close_episode must have written the outcome"

@@ -10,8 +10,15 @@
 
 调用方（harness 判定层）保证：
 
+**两个名字为什么不是 `type` / `kind`**（0914 跟进）：封套上 `type` 是事件粗类、
+`kind` 是账名——这两个名字已经是 trace 的保留字。本记录**整份 dump 进
+`write_object` 账的正文**，正文键与封套键撞名的话，判据
+（`node_io._WRITE_FORBIDDEN_KEYS`）就没法把"记录自己的字段"和"把封套的东西抄进
+正文"分开。所以判别键叫 **`outcome`**（这次按键造成了哪种结局：dialog / warp /
+still），物体类别叫 **`object_kind`**（那格是什么类别的东西）。
+
 - 同一 `episode_id` 的事件 `step` 单调不减（恢复时先截断，见 ROADMAP 16）；
-- `kind` 是能建档的交互类别（门/人/招牌/物/石…），`place` 是**物体格**——
+- `object_kind` 是能建档的交互类别（门/人/招牌/物/石…），`place` 是**物体格**——
   不是角色站的格子，角色位置在 `actor_place`。
 
 事件一旦落库不可变：修正只能靠新事件（同姿势后写覆盖先读）或恢复时的截断。
@@ -26,6 +33,14 @@ from pydantic import BaseModel, Field
 
 class ObjectFactEventBase(BaseModel):
     """三种交互事件的公共字段：什么时候、在哪、对什么、按了什么。
+
+    **判别键叫 `outcome`**（`dialog`/`warp`/`still`）——它答"这一键造成了哪种
+    结局"，与 `ObjectFactEvent` 的三个子类一一对应；不叫 `type`，那是 trace
+    封套保留的名字。
+
+    **判别键叫 `outcome`**（`dialog`/`warp`/`still`）——它答"这一键造成了哪种
+    结局"，与 `ObjectFactEvent` 的三个子类一一对应；不叫 `type`，那是 trace
+    封套保留的名字。
 
     前置条件（构造方保证）：`episode_id` 非空；同局 `step` 单调不减；
     `place` 是被影响的物体格，`actor_place` 是按键那一刻角色所在的格——
@@ -66,7 +81,7 @@ class ObjectFactEventBase(BaseModel):
     )
     actor_place: Place = Field(description="按键那一刻角色所在的格")
     place: Place = Field(description="被影响的物体格")
-    kind: str = Field(description="物体类别（门/人/招牌/物/石…）；建档与渲染抬头用")
+    object_kind: str = Field(description="物体类别（门/人/招牌/物/石…）；建档与渲染抬头用")
     button: str = Field(
         description="按了哪个键（a/up/down/left/right）；不设值域，把关在姿势方法表"
     )
@@ -75,25 +90,25 @@ class ObjectFactEventBase(BaseModel):
 class ObjectDialogEvent(ObjectFactEventBase):
     """按下去弹出了对话——`text` 是按键后那一帧抄到的对话正文。"""
 
-    type: Literal["dialog"] = "dialog"
+    outcome: Literal["dialog"] = "dialog"
     text: str = Field(description="对话正文（VLM 抄回的当帧文字，可能只是一句的一部分）")
 
 
 class ObjectWarpEvent(ObjectFactEventBase):
     """按键后穿过这格进入了另一张地图——`map_id` 是通往的地图号。"""
 
-    type: Literal["warp"] = "warp"
+    outcome: Literal["warp"] = "warp"
     map_id: int = Field(description="进入的新地图编号")
 
 
 class ObjectStillEvent(ObjectFactEventBase):
     """按下去什么都没发生（没动、没换图、没出话）。没有额外载荷。"""
 
-    type: Literal["still"] = "still"
+    outcome: Literal["still"] = "still"
 
 
 ObjectFactEvent = Annotated[
     ObjectDialogEvent | ObjectWarpEvent | ObjectStillEvent,
-    Field(discriminator="type"),
+    Field(discriminator="outcome"),
 ]
-"""一格物体的一次交互记录。三个子类按 `type` 判别，消费方按类型分发。"""
+"""一格物体的一次交互记录。三个子类按 `outcome` 判别，消费方按类型分发。"""

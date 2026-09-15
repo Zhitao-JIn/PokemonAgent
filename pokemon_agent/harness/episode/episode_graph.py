@@ -2,20 +2,22 @@
 
 **步 3 起"图长什么样"与"节点怎么实现"分居两个文件**：本模块只负责"把哪些节点按什么
 顺序接起来"——21 个节点全部从七个域包里 import，**节点文件名 = 这里 `add_node` 的字面量**
-（命名规则见 `PLAN_graph_composition.md` §5.3-5；此前那张 `nodes[...]` 传参表在步 3 收尾
-时去掉，因为域包本身就是节点表）。
+（此前那张 `nodes[...]` 传参表在步 3 收尾时去掉，因为域包本身就是节点表）。
 
 `add_node` **逐行写字面量**（不用循环）：顶层即流程，一眼看出这张图有哪些节点、按什么
-顺序；`scripts/check_graph_phases.py` 正是 `ast` 抽这些字面量与观测台的相位表逐条比对，
-并核对"每个节点名恰好对应一个实现文件"。
+顺序，也让"节点集"这件事能被 `ast` 机械读出来。**曾经有一条
+`scripts/check_graph_phases.py` 就是干这个的**——抽 `add_node` 的字面量、与观测台的
+相位表逐条比对、核对"每个节点名恰好对应一个实现文件"；**它已不在仓库里**，那几条核对
+现在没有可执行的守卫，只剩这条书写纪律（见 `docs/spec/harness/SPEC.md` 已知缺口）。
 
 **三个节点数常量住这里**：它们算的是 `recursion_limit`，而 limit 是"这张图长什么样"的
 函数——跟 `add_node` 的字面量放在一起，改节点集时改一处就够。内层的 limit 由
 `entry.episode_budget()` 用，外层的总预算由 `run/run_entry.py` 用（D6：两处必须同一条公式）。
 
 **`EpisodeInput` / `EpisodeOutput` 也住这里**（D2 的"交界契约"，产出地归档）：run 给这一局
-什么、这一局还 run 什么，从散在代码里的约定变成两个**读得出来的模型**，
-`scripts/check_graph_phases.py` 机械核对"表里的每个键都真的存在于两侧 state"（§5.3-②）。
+什么、这一局还 run 什么，从散在代码里的约定变成两个**读得出来的模型**——"表里的每个键
+都真的存在于两侧 state"这件事原先由 `scripts/check_graph_phases.py` 机械核对，**该脚本
+已删**，现在只能人眼比（§5.3-②）。
 
 **它们不进 `compile(input_schema=…/output_schema=…)`——步 4 的决定**：那两个参数是
 **形态 A**（把编译好的子图直接当 `add_node` 的函数，父图按 schema 做键映射/裁剪）的机制；
@@ -46,7 +48,7 @@ from .decide import think_action
 from .episode_state import EpisodeRunState
 from .gate import get_action_space, judge
 from .open import record_observation, save_checkpoint
-from .press import act, apply_stop, close_step, detect_stall, perceive_after_action
+from .press import act, close_step, detect_stall, perceive_after_action
 from .retrieve import (
     merge_retrieval,
     retrieve_global_episode_memory,
@@ -115,15 +117,24 @@ def compile_episode_graph() -> CompiledStateGraph:
     的，不是因果依赖。
 
     **收尾链的每一条分支都汇到 `close_episode`**（D2-④）：没有 step 记忆时
-    `retrieve_verify_step_memory` 直接跳它，有记忆时 `verify_and_summarize` 接它
-    ——两条路都要经过它，因为"本局结算（`outcome`）"必须由子图自己写出，
+    `retrieve_verify_step_memory` 直接跳它，有记忆时经 `verify_and_summarize`
+    接它——两条路都要经过它，因为"本局结算（`outcome`）"必须由子图自己写出，
     否则父侧读到的是上一轮的陈旧值（F1 的反作用，且不报错）。
+
+    **`extract_knowledge` 已摘出这张图**（0914 98）：它 0914 S4 曾是收尾链的
+    第五格（`verify_and_summarize` 出口按 `verified_steps` 分叉出去抽世界知识），
+    用户 0914 定「knowledge 由人管理」——节点不再跑，`verify_and_summarize`
+    直接接 `close_episode`。**代码与账都没删**（`Brain.extract()` 第七链路 /
+    prompt / `store_knowledge` 都在原位；`write_knowledge` 那本账已整账删除），
+    **接回去只要三行**：这里 import + `add_node` + 把下面那条 `add_edge` 换回
+    `add_conditional_edges`（形状见 `CHANGELOG.md` 第 98 条）。
+    ⚠ 唯一悬空物：`state.verified_steps` 现在只有写方、没有读方——
+    要么一起摘，要么接回去，别让它长期悬着。
 
     **`context_schema` 声明成 `HarnessDeps`**：F10 实测子图的这句声明
     **不被校验**（穿过去的永远是父图那个对象）——所以这里声明成**同一个类型**
-    是唯一诚实的选择：声明成别的会变成一颗静默地雷。写下来也给
-    `scripts/check_graph_phases.py` 一条可机械核对的依据（`Runtime[...]` 的
-    类型参数只能是它）。
+    是唯一诚实的选择：声明成别的会变成一颗静默地雷。写下来同时也是一条可核对的
+    依据（`Runtime[...]` 的类型参数只能是它）。
     """
     # 步骤 1：注册 21 个节点——书写顺序 = 执行顺序。
     graph = StateGraph(EpisodeRunState, context_schema=HarnessDeps)
@@ -139,7 +150,6 @@ def compile_episode_graph() -> CompiledStateGraph:
     graph.add_node("think_action", think_action)
     graph.add_node("act", act)
     graph.add_node("perceive_after_action", perceive_after_action)
-    graph.add_node("apply_stop", apply_stop)
     graph.add_node("detect_stall", detect_stall)
     graph.add_node("store_step_episode_memory", store_step_episode_memory)
     graph.add_node("store_object_semantic_memory", store_object_semantic_memory)
@@ -169,8 +179,7 @@ def compile_episode_graph() -> CompiledStateGraph:
     graph.add_edge("merge_retrieval", "think_action")
     graph.add_edge("think_action", "act")
     graph.add_edge("act", "perceive_after_action")
-    graph.add_edge("perceive_after_action", "apply_stop")
-    graph.add_edge("apply_stop", "detect_stall")
+    graph.add_edge("perceive_after_action", "detect_stall")
     graph.add_edge("detect_stall", "store_step_episode_memory")
     graph.add_edge("store_step_episode_memory", "store_object_semantic_memory")
     graph.add_edge("store_object_semantic_memory", "close_step")
@@ -196,6 +205,11 @@ def compile_episode_graph() -> CompiledStateGraph:
         },
     )
     graph.add_edge("retrieve_verify_knowledge", "verify_and_summarize")
+    # **这里原先是收尾链的第二个分叉**（0914 S4 → 98 摘除）：`verify_and_summarize`
+    # 出口按 `verified_steps` 分叉，非空才去 `extract_knowledge` 抽世界知识。
+    # 用户定「knowledge 由人管理」，那一格不再跑——**不抽知识成为唯一的路**，
+    # 于是分叉退化成一条直边。接回去的形状见上面那条 docstring 与
+    # `close/extract_knowledge.py`。
     graph.add_edge("verify_and_summarize", "close_episode")
     graph.add_edge("close_episode", END)
     return graph.compile()

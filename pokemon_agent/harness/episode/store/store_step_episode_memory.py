@@ -8,9 +8,11 @@
 
 **盖三样章**（都是 harness 自己的事，跟"盖 `episode_id`"同一个道理）：`episode_id`
 （大脑不知道自己在哪一局）、`run_id`（大脑不知道磁盘上的存储约定）、
-`before_frame`/`after_frame` 两张截图的 base64（两次感知的 event_id 都登记在
-`deps.frame_event_ids`，见 `episode_frames.frame_b64`）。直接存 base64 的取舍见
-`CHANGELOG.md` 2026-09-05 条目。
+`before_frame`/`after_frame` 两张截图的 base64。两张图从**覆盖式帧槽**取
+（`episode_frames.frame_b64`）：本格在每个键的步尾（**链内每个键都过这一格**，不只
+链尾那一键），那一刻槽里正好留着"这一步的开局画面"与"本格刚产出的下一步画面"两张，
+**零盘 IO**（0914 封套改造后帧槽是画面唯一的取用通道，不再有回盘那级）。
+直接存 base64 的取舍见 `CHANGELOG.md` 2026-09-05 条目。
 """
 
 from __future__ import annotations
@@ -59,13 +61,6 @@ def store_step_episode_memory(
     ).entry.model_copy(
         update={
             "run_id": deps.run_id,
-            # `stop` 由这里盖章，不在大脑里——"这一键之后为什么没有继续按键"是这一圈的
-            # 结局，而 `reflect` 只看得见前后两帧（它算得出"撞墙了"却算不出"链被作废了"，
-            # 那件事在 `press/perceive_after_action` 判完才成立）。
-            "stop": state.pending_stop,
-            # 同 `stop`：`reflect` 只看得见前后两帧，它不知道"这一键属于哪次决策"。
-            # 归属是执行期的事（`decide/think_action` 盖的 `plan_step_start`）。
-            "plan_step_start": state.plan_step_start,
             "before_frame": frame_b64(deps, ep, before.step),
             "after_frame": frame_b64(deps, ep, before.step + 1),
         }
@@ -75,9 +70,9 @@ def store_step_episode_memory(
     deps.memory.store_episode_step(FromHarnessToMemoryToolStoreEpisodeStepReq(entry=entry))
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.MEMORY_WRITE,
-            episode_id=ep,
-            step=before.step,
+            kind=TraceKind.WRITE_STEP,
+            meta={"source": "store_step_episode_memory", "episode_id": ep, "step": before.step},
+            # 封套上的 `source` = 发这条账的节点名（`kind` 只说"哪本账"，说不了"谁写的"）。
             entry=entry,
         )
     )

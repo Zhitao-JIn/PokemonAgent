@@ -52,5 +52,5 @@ def _render_line(event: ObjectFactEvent) -> str:
     return (
         f"{event.episode_id} step{event.step} "
         f"站在 x={actor.x} y={actor.y} 按 {event.button} → "
-        f"地图{cell.map_id} x={cell.x} y={cell.y} 的{event.kind}：{outcome}"
+        f"地图{cell.map_id} x={cell.x} y={cell.y} 的{event.object_kind}：{outcome}"
     )

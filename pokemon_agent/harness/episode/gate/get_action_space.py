@@ -20,12 +20,10 @@ from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
 
 
-def get_action_space(
-    state: EpisodeRunState, runtime: Runtime[HarnessDeps]
-) -> dict[str, Any]:
+def get_action_space(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
     """把这一步的合法动作边界抄下来。**只改 `action_space` 一处。**
 
-    留一条 `ACTION_SPACE` 账不是冗余——"这一步允许了哪些动作"是大脑决策的**合法
+    留一条 `get_action_space` 账不是冗余——"这一步允许了哪些动作"是大脑决策的**合法
     边界**：事后要解释"为什么它没按某个键"，得先能证明那个键当时不在空间里。
 
     前置条件：`state.observation` 非空（`judge` 之前必有 `record_observation`）。
@@ -38,9 +36,13 @@ def get_action_space(
     ).action_space
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.ACTION_SPACE,
-            episode_id=state.episode_id,
-            step=state.observation.step,
+            kind=TraceKind.GET_ACTION_SPACE,
+            meta={
+                "source": "get_action_space",
+                "episode_id": state.episode_id,
+                "step": state.observation.step,
+            },
+            # 封套上的 `source` = 发这条账的节点名（`kind` 只说"哪本账"）。
             names=space.names,
         )
     )

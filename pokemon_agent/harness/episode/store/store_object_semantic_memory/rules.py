@@ -2,7 +2,7 @@
 
 **它为什么住在 store 域**：这 200 多行是"这一步碰到了什么"的判定规则，唯一的消费者是
 `store/object_semantic_memory` 那个节点——按"删掉它唯一的调用者之后还有没有人要"这条
-判据（`PLAN_graph_composition.md` §3.5），它跟着节点走；而 270 行的判定层塞进节点文件
+判据，它跟着节点走；而 270 行的判定层塞进节点文件
 会让"一节点一文件"的体积失衡，所以那个域拆成包（节点本体在 `__init__.py`，规则在这里）。
 
 memory 层只存事件、不做语义判定（分层原则见 AGENTS.md 四），"发生了什么、
@@ -35,7 +35,7 @@ memory 层只存事件、不做语义判定（分层原则见 AGENTS.md 四）�
 
 **这条限制现在被执行粒度消掉了**：`step` 就是一个键（连按已经在 Harness 的
 链内小循环里展开），所以本模块收到的恒是单键动作、`len(segments) == 1` 恒成立，
-判定层不用改就覆盖了链的每一步（见 `PLAN_action_step_granularity.md`）。
+判定层不用改就覆盖了链的每一步。
 下面那条多段即返回空的过滤保留着当**前置条件**——它是这一层的输入契约，
 不是它要处理的情况。
 
@@ -130,7 +130,7 @@ def _common_fields(press: _Press, place: PlaceInWorld, kind: str) -> dict:
         "step": press.step,
         "actor_place": press.actor_place.model_dump(),
         "place": place.model_dump(),
-        "kind": kind,
+        "object_kind": kind,
         "button": press.button,
     }
 

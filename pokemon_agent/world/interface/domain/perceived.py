@@ -38,6 +38,4 @@ class Perceived(BaseModel):
         description="这次调用（可能是重试了好几次）产生的每一条模型调用记录，"
         "按发生顺序排列。空列表表示命中缓存，没有产生新调用，**不是 None**",
     )
-    frame_png: str = Field(
-        description="这一次感知实际截下来、喂给视觉模型的那张原始 PNG（base64）"
-    )
+    frame_png: str = Field(description="这一次感知实际截下来、喂给视觉模型的那张原始 PNG（base64）")

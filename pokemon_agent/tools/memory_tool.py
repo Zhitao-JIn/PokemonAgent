@@ -5,20 +5,20 @@
     单步情景记忆    这一局做过什么      等值筛（episode_id）+ step 数值收尾
     语义记忆 object  那一格上有什么东西  等值筛（map/place）+ step 数值收尾
     知识库          和坐标无关的先验    纯语义检索（BM25 + 向量 + reranker）
-    跨局摘要        别的局蒸馏的经验    run_id 等值 + 场景通配匹配 + 混合检索
+                    （手工先验 + run 学到的，两种来源一种形状）
+    跨局摘要        一局的 step 总结    等值筛（conditions），**读口不做领域规则**
 
 **存储全部落在统一索引层**（`memory/store.py`，一条记录一个
-uuid 文件 + 每文件夹倒排索引，0910 重构，见 `PLAN_memory_trace_layout.md`）：
+uuid 文件 + 每文件夹倒排索引，0910 重构）：
 本类不再持有任何私有存储实现——它负责的只有两件事：
 
 1. **组装 metadata**（ROADMAP 24 写入侧对称：harness 递进来的领域对象里
    提取过滤字段——`run_id/episode_id/step/map/place/...`——拼成字段字典，
    memory 层不理解其含义）；
-2. **tool 层的领域知识**：step/区间比较（"step 只有同一局内才能比大小"）、
-   场景通配匹配（`EpisodeMemory.matches_scene`）、摘要的质量/成功加权混排。
+2. **tool 层的领域知识**：step/区间比较（"step 只有同一局内才能比大小"）。
 
-**混合检索的两路分数要先各自归一化再加权**：BM25 的分无上界，向量余弦在 [-1,1]，
-直接相加等于让 BM25 独裁。
+**跨局摘要的读口是纯等值过滤**（0914 定案）：场景通配匹配、相关性排序、
+候选上限、条数截断全删——那些是消费方的判断，读口只把符合条件的记录全量交出来。
 
 **"让记录消失"只有一个语义、也只有一个时机——归档**（0910 拍板）：
 checkpoint 恢复时把游标之后不再成立的那批 step 记忆与 object 事件搬进
@@ -53,45 +53,17 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolStoreEpisodeStepReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryResp,
+    FromHarnessToMemoryToolStoreKnowledgeReq,
+    FromHarnessToMemoryToolStoreKnowledgeResp,
 )
-from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, StepMemory
+from pokemon_agent.schemas.memory import (
+    EpisodeMemory,
+    KnowledgeRecord,
+    ObjectFactEvent,
+    StepMemory,
+)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-# 跨局摘要记忆排序：混合检索（关键词 BM25 + 向量 + reranker 精排，见
-# `memory/retrieval.py`）给出的 reranker 分数是"文本相关性"这一项，值域没有
-# 自然的上下界（cross-encoder 输出的是未经归一化的 logits），所以每次查询后
-# 现算 min-max 归一化到 [0, 1] 再叠加权重——不能直接拿 reranker 的原始分数
-# 和质量分/成败这些本来就在 [0, 1] 或布尔量级的信号相加，量纲对不上。
-# 权重比例：相关性最重要（"这条经验到底切不切题"），
-# 质量/成功用来在相关性接近时挑更可信的那条，不该反过来压过相关性。
-EPISODE_RELEVANCE_WEIGHT = 10.0
-EPISODE_QUALITY_WEIGHT = 3.0
-EPISODE_SUCCESS_WEIGHT = 1.5
-
-EPISODE_FUSE_TOP_K = 10
-KNOWLEDGE_FUSE_TOP_K = 10
-
-EPISODE_CANDIDATE_CAP = 20
-"""跨局摘要检索的**候选上限**：场景匹配后超过这个数，先按质量分粗筛到前
-`EPISODE_CANDIDATE_CAP` 条再进混合检索。
-
-经验库有上限（`max_summaries`）但仍可能攒到几十上百条——候选全量进检索的话，
-每步决策都要对全部候选做 BM25 + 向量 + reranker，纯属浪费。质量分是现成的
-粗筛信号（`quality_score`），先砍掉最差的再精排。"""
-
-
-def _normalize(scores: list[float]) -> list[float]:
-    """min-max 归一化到 [0, 1]。全部并列（`max == min`）时统一给 1.0——
-    这种情况下没有相关性上的高低之分，不该被除零判成全部是 0（那样会让
-    质量/成功权重在"文本同样相关"的场景里反而失去区分度）。
-
-    把一组分数压到 [0, 1]。
-    """
-    lo, hi = min(scores), max(scores)
-    if hi == lo:
-        return [1.0 for _ in scores]
-    return [(s - lo) / (hi - lo) for s in scores]
 
 
 class MemoryTool:
@@ -134,6 +106,53 @@ class MemoryTool:
         进程内缓存，首次写某局时从索引现查填满——比旧实现"启动全量读回"便宜。"""
         self._object_max: dict[str, int] = {}
         """同上，object 事件专用。"""
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        memory_root: str | Path | None = None,
+        knowledge_root: str | Path | None = None,
+        max_summaries: int = 50,
+    ) -> MemoryTool:
+        """造一个**接了本地检索 provider** 的 tool——装配点唯一的入口。
+
+        **为什么把"造 `FastEmbedText` / `FastEmbedReranker`"收在这一处**
+        （0913 深夜十二）：与 `BrainTool.build()` / `build_vision_provider()`
+        同一条判据——"这条链路要接哪个实现"是接线知识，装配点
+        （`build.py`）不该知道、也不该
+        `from pokemon_agent.memory import FastEmbedReranker, FastEmbedText`。
+        收进类方法之后 `build.py` 那一侧只剩一行 `MemoryTool.build()`，
+        **协议归属（`memory/ports.py`）、实现归属（`memory/store.py`）、
+        接线归属（本方法）三者对齐**，与 brain 那条链同形。
+
+        **它是 `__init__` 的糖，不是第二套装配逻辑**：内部只有两个 provider
+        的构造 + 转发给 `cls(...)`，没有任何额外判断——"谁 new 具体实现"
+        仍然只有一个答案（`memory/` 包自己），不是又多了一个真源。
+
+        **签名收裸字段而不是收 provider 实例**：那样装配点就得先
+        `from pokemon_agent.memory import FastEmbed*` —— 正是本方法要消灭的
+        那一行。收 `memory_root`/`knowledge_root`/`max_summaries` 这几个
+        "装配知识"字段，跟 `BrainTool.build(text=…, judge=…)` 对齐。
+
+        前置条件：`memory_root`/`knowledge_root` 是存在的目录或其父目录
+            （不存在时 `MemoryStore` 构造期会 `mkdir(parents=True)` 自己建）。
+        后置条件：返回的 tool 持有的四个 `MemoryStore` 用**同一对**
+            provider 实例（四个 kind 共用一次模型加载，不重复初始化）。
+        """
+        # 导入放函数内：`memory` 包顶部拖着 `rank_bm25`，本模块被
+        # `tools/__init__.py` 懒加载链带进来时不该顺带把它拉起来。
+        from pokemon_agent.memory import FastEmbedReranker, FastEmbedText
+
+        embedding_provider = FastEmbedText()
+        reranker_provider = FastEmbedReranker()
+        return cls(
+            embedding_provider=embedding_provider,
+            reranker_provider=reranker_provider,
+            memory_root=memory_root,
+            max_summaries=max_summaries,
+            knowledge_root=knowledge_root,
+        )
 
     # ---- 情景记忆：episodic（单步，全量，不检索） ----
 
@@ -187,82 +206,67 @@ class MemoryTool:
                 continue
         return sorted(entries, key=lambda m: m.step)
 
-    # ---- 跨局摘要记忆：episode memory（混合检索） ----
+    # ---- 跨局摘要记忆：episode memory（按元数据过滤） ----
 
     def query_episode_summaries(
         self, req: FromHarnessToMemoryToolQueryEpisodeSummariesReq
     ) -> FromHarnessToMemoryToolQueryEpisodeSummariesResp:
-        """run_id 等值筛（索引层）→ 场景通配匹配（领域规则，`matches_scene`）→
-        质量粗筛（候选上限）→ 混合检索排出"文本相关性"（`rank`）→ 叠加质量分
-        和是否成功两个信号，取前 `limit` 条。
+        """按 `req.conditions` 等值过滤取跨局摘要——**不做任何领域规则**（0914 定案）。
 
-        `run_id` 非空时只检索该 run 沉淀的摘要——禁止跨 run 检索，失败局
-        蒸馏出的"已验证"经验一旦被当真就污染决策（取舍见 `CHANGELOG.md`
-        2026-09-03 条目；`episode_harness` 传 `self._run_id`）。
+        原先这一跳自带四件套：场景通配匹配（`EpisodeMemory.matches_scene`）、
+        混合检索排相关性（`rank` + 质量/成败加权归一化）、候选上限、`limit` 截断，
+        外加"必须传 run_id"的跨 run 禁令。**全部删除**——它们都是消费方的领域
+        判断，住在读口上等于把"取哪些、取几条"从消费方手里拿走。现在这一跳只剩
+        metadata 交集 + 反序列化。
+
+        顺序：按 `episode_id` 字典序落定——**这不是相关性排序**，只是让同一个库
+        读两次拿到同一个顺序（`MemoryStore.filter` 的交集走 `set`，本身无序）。
         """
-        scene, query, limit, run_id = req.scene, req.query, req.limit, req.run_id
-        assert scene, "query_episode_summaries() needs a non-empty scene"
-        assert limit > 0, f"limit must be > 0, got {limit}"
-
-        conditions = {"run_id": run_id} if run_id else {}
-        candidates: list[tuple[str, EpisodeMemory]] = []
-        for record_id, _meta, payload, text in self._summaries.get_many(
-            self._summaries.filter(conditions)
+        out: list[EpisodeMemory] = []
+        for _record_id, _meta, payload, text in self._summaries.get_many(
+            self._summaries.filter(req.conditions)
         ):
             try:
-                memory = EpisodeMemory(**payload, markdown=text)
+                out.append(EpisodeMemory(**payload, markdown=text))
             except ValidationError:
                 continue
-            if memory.matches_scene(scene):
-                candidates.append((record_id, memory))
-        if not candidates:
-            return FromHarnessToMemoryToolQueryEpisodeSummariesResp(summaries=[])
-
-        # 候选上限：超过就按质量分粗筛（经验库的价值是高质量可复用经验，
-        # 质量最低的先出局——精排本来也会把低质量排后面，粗筛只是省掉白做）。
-        if len(candidates) > EPISODE_CANDIDATE_CAP:
-            candidates.sort(key=lambda im: im[1].quality_score, reverse=True)
-            candidates = candidates[:EPISODE_CANDIDATE_CAP]
-
-        fuse_top_k = max(limit * 3, EPISODE_FUSE_TOP_K)
-        results = self._summaries.rank([u for u, _ in candidates], query, fuse_top_k)
-        relevance = _normalize([score for _, score in results])
-        by_uuid = dict(candidates)
-
-        scored = []
-        for (record_id, _), rel in zip(results, relevance, strict=True):
-            memory = by_uuid[record_id]
-            quality = memory.quality_score * EPISODE_QUALITY_WEIGHT
-            success = EPISODE_SUCCESS_WEIGHT if memory.success else 0.0
-            scored.append((rel * EPISODE_RELEVANCE_WEIGHT + quality + success, memory))
-        scored.sort(key=lambda p: p[0], reverse=True)
-
-        hits = [memory for _, memory in scored[:limit]]
-        assert len(hits) <= limit, "query_episode_summaries must respect the limit"
-        return FromHarnessToMemoryToolQueryEpisodeSummariesResp(summaries=hits)
+        out.sort(key=lambda memory: memory.episode_id)
+        return FromHarnessToMemoryToolQueryEpisodeSummariesResp(summaries=out)
 
     def store_episode_summary(
         self, req: FromHarnessToMemoryToolStoreEpisodeSummaryReq
     ) -> FromHarnessToMemoryToolStoreEpisodeSummaryResp:
         """落库一条**已经组装好**的跨局摘要，不调模型。
 
-        蒸馏与组装都在 `Brain.verify_and_summarize()` 那次合并调用里完成
-        （resp.episode_memory，组装函数在 brain——见 ROADMAP 16）——这个方法
-        只负责落一个 md 记录文件、进索引，不调模型。**这是这个类上唯一的跨局
-        摘要写入口**：只保留"先校验、再只用可信记录蒸馏"这一条路径，没有独立
-        判定器就直接全量蒸馏的兜底写法不存在。
+        蒸馏与组装都在 `BrainTool.summarize()` 里完成（resp.episode_memory——
+        见 ROADMAP 16）——这个方法只负责落一个 md 记录文件、进索引，不调模型。
+        **这是这个类上唯一的跨局摘要写入口**：只保留"先校验、再只用可信记录
+        蒸馏"这一条路径，没有独立判定器就直接全量蒸馏的兜底写法不存在。
+
+        **两种合法形态**（0914 S3）：
+
+        - 常规——`markdown` 是蒸馏出的正文；
+        - **正文全空**——"这一局压根没有可蒸馏的正文"（整局异常，或收尾时没有
+          一条可信的 step 记忆）。它不是"蒸馏的降级"，而是那种局在记忆里唯一的
+          痕迹；写入点是 `harness/run/nodes/review.py::_leave_chapter()`，它保证
+          **每局恰好留一条**。**没有标记位**（0914 99 删了 `chapter_only`）——
+          空不空看 `markdown` / `summary` 自己。
 
         落盘形态：`memory/episode_memory/<uuid>.md`——frontmatter 是结构化
-        元数据，正文是蒸馏出的 markdown（LLM 给的 `filename` 字段退役，
-        uuid 文件名天然不撞）。写完按 `max_summaries` 裁剪：超限淘汰质量最差的，
+        元数据，正文是蒸馏出的 markdown。**文件用 uuid 命名**（`filename`
+        这个模型字段 0914 98 已整个删掉——它在 uuid 命名落地那天就没有读方了）。
+        写完按 `max_summaries` 裁剪：超限淘汰质量最差的，
         **归档**进 `memory/voided-<ts>/episode_memory/`（淘汰是容量机制不是销毁）。
 
-        前置条件：`req.memory.episode_id` 非空。
+        前置条件：`req.memory.episode_id` 非空；**正文与章自洽**——正文要么整条
+            完整、要么整条为空（半截的正文是写入方在伪造内容）。
         后置条件：resp.memory 是原对象。
         """
         memory = req.memory
         assert memory.episode_id, "store_episode_summary() needs a non-empty episode_id"
-        assert memory.markdown.strip(), "store_episode_summary() got an empty markdown"
+        assert bool(memory.markdown.strip()) == bool(memory.summary.strip()), (
+            "正文要么整条完整、要么整条为空——markdown 与 summary 必须同真同假"
+        )
         self._summaries.put(
             metadata={
                 "run_id": memory.run_id,
@@ -310,12 +314,15 @@ class MemoryTool:
     def query_object_events(
         self, req: FromHarnessToMemoryToolQueryObjectEventsReq
     ) -> FromHarnessToMemoryToolQueryObjectEventsResp:
-        """取这张地图上的全部交互事件，按 step 升序，直接返回不做折叠。
+        """取交互事件，按 step 升序，直接返回不做折叠。
 
-        `before_step` 是**区间条件**，不进索引交集（索引层不认识"大于"）：
-        先按 map_id 等值筛小，再在这里数值收尾——"检索不读未来"。
+        `map_id` 为 None = **不按地图筛**（0914 S2 放开）：run 级消费方（`plan`）
+        没有"当前地图"，要的是本 run 涉及过的地图上的全部事实。`before_step` 是
+        **区间条件**，不进索引交集（索引层不认识"大于"）——等值条件先筛小，
+        再在这里数值收尾"检索不读未来"。
         """
-        events = self._object_events({"map_id": str(req.map_id)})
+        conditions = {"map_id": str(req.map_id)} if req.map_id is not None else {}
+        events = self._object_events(conditions)
         if req.before_step is not None:
             events = [e for e in events if e.step < req.before_step]
         return FromHarnessToMemoryToolQueryObjectEventsResp(events=events)
@@ -345,8 +352,8 @@ class MemoryTool:
                     "step": str(event.step),
                     "map_id": str(event.place.map_id),
                     "place": event.place.key,
-                    "kind": event.kind,
-                    "type": event.type,
+                    "object_kind": event.object_kind,
+                    "outcome": event.outcome,
                 },
                 payload=event.model_dump(),
                 text="",
@@ -368,11 +375,11 @@ class MemoryTool:
                 continue
         return sorted(events, key=lambda e: e.step)
 
-    # ---- 语义记忆：知识库（和坐标无关的通用先验，混合检索） ----
+    # ---- 语义记忆：知识库（和坐标无关的先验 + run 期间学到的，混合检索） ----
     def query_knowledge(
         self, req: FromHarnessToMemoryToolQueryKnowledgeReq
     ) -> FromHarnessToMemoryToolQueryKnowledgeResp:
-        """从通用游戏先验里检索出这一步用得上的那几条。纯语义检索，无等值条件。
+        """从知识库里检索出这一步用得上的那几条。纯语义检索，无等值条件。
 
         查前先做一次 mtime 增量刷新——运营直接编辑 `memory/knowledge_memory/*.md`
         不用重启进程就生效（原 KnowledgeStore 的性质，等价物见 index 层
@@ -393,6 +400,51 @@ class MemoryTool:
             contents.append(text)
             sources.append(metadata.get("source", ""))
         return FromHarnessToMemoryToolQueryKnowledgeResp(contents=contents, sources=sources)
+
+    def store_knowledge(
+        self, req: FromHarnessToMemoryToolStoreKnowledgeReq
+    ) -> FromHarnessToMemoryToolStoreKnowledgeResp:
+        """落库一批**已经组装好**的世界知识，不调模型（0914 S4）。
+
+        组装在 `BrainTool.extract()` 里完成（`resp.records`），本方法只做三件事：
+        **判重 → 落一个 md 记录文件 → 更新检索向量缓存**。
+
+        **落盘形态与这个家族的手工先验逐字一致**（`metadata={"source","topic"}`、
+        `payload={}`、`text=record.text`）：`query_knowledge` 因此不需要区分"这条是
+        人手写的还是 run 学到的"——两种来源在检索时平权，只有 metadata 里的
+        `source` 值不同（文件名 vs `{run_id}/{episode_id}`）。
+
+        **判重按 `(topic, 正文逐字)`**：同一件事被两局分别学到时不该堆第二份。
+        判据刻意只认"完全一样"——相近但不完全相同是**该留下**的（措辞差异常常
+        带着新信息），合并是人的判断，不是存储层的。判重前先 `refresh_changed()`
+        跟读口对齐：运营刚手抄进库的同一条也要认得出来。
+
+        前置条件：`req.records` 里每条都通过了 `KnowledgeRecord` 自己的字段校验
+            （`topic`/`content`/`source` 非空由模型约束保证，这里不重复断言）。
+        后置条件：`stored` 是 `req.records` 的子序列、顺序一致；空输入返回空
+            `stored` 且一个文件都不写——那一跳什么都不做是合法结果。
+        """
+        if not req.records:
+            return FromHarnessToMemoryToolStoreKnowledgeResp()
+
+        self._knowledge.refresh_changed()
+        stored: list[KnowledgeRecord] = []
+        for record in req.records:
+            known = {
+                text
+                for _record_id, _meta, _payload, text in self._knowledge.get_many(
+                    self._knowledge.filter({"topic": record.topic})
+                )
+            }
+            if record.text in known:
+                continue
+            self._knowledge.put(
+                metadata={"source": record.source, "topic": record.topic},
+                payload={},
+                text=record.text,
+            )
+            stored.append(record)
+        return FromHarnessToMemoryToolStoreKnowledgeResp(stored=stored)
 
     # ---- 内部 ----
 
