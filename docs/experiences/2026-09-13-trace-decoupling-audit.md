@@ -7,6 +7,28 @@
 
 ---
 
+> ## ⚠️ v3 前向修正（用户 16:30 定调，本节之后的正文未同步）
+>
+> **目标已收紧**：从"harness 只剩 4 处形状引用、登记即可"改成
+> **"非 tool 引用一律为 0"** —— 全仓库只允许 `tools/` import `pokemon_agent.trace`。
+>
+> 因此本文件下面有 **3 处已被推翻**，**以 `docs/PLAN_trace_decoupling.md`（v2）为准**：
+>
+> | 本文件说 | 现在 | 依据 |
+> |---|---|---|
+> | §6.4「`Source`/`EventType` 都是 P2 第二类，**原住地就是 `trace/datastore/`**」 | **`Source` 搬去 `schemas/harness/domain/source.py`**；`EventType` 仍留 trace | 实测 trace 全包对 `Source` **零实现引用**（只 1 处 docstring）；且其取值全是本项目层名（`PLAN` 的注释里直接写 `RunHarness.plan`） |
+> | §598「`EventType`/`Source` 一行不改」 | 只剩 `EventType` 一行不改 | 同上 |
+> | §599「`render.py` 的 `Source.X` 建议不改」 | **仍不改**，但 import 来源改指 `schemas.harness` | `_LINK_NAME` 的防漂移靠"从类派生"，与类住哪无关 |
+>
+> 另外本文件没覆盖、v2 方案新增处理的：`RUN_TRACE_MASK`（实测**下游从不读 `ERROR` 半**，
+> 是死配置，删）、`api.py:85` 的 `TracePort`（死码，删）、`build.py` 的 `LocalTrace`
+> （走 `TraceTool.build()` 工厂）、`build_real` 返回值里的 `trace`（零消费者，去掉）。
+>
+> **计数修正**：要清的边是 **12 条**（入边 15 − tools 3），本文件 §一 写的"8 个读点"
+> 是只数了 harness 那一栏。
+
+---
+
 ## 一、结论先行（v2）
 
 > **v2 修正说明**：用户 15:25 指出三处，全部证实、已改：
@@ -517,6 +539,12 @@ trace 拿它要的 6 个，项目拿全部 12 个。
 > "待拍板"项；实际上**它们从 0913 降级起就已经是裸 `str`**，
 > `Source`/`EventType` 常量类只是值域声明的便利，住在 `trace/datastore/`
 > 是**正确且已完成的终态**。
+>
+> ⚠️⚠️ **v3 再修正（用户 16:30）：上面这句对 `EventType` 成立，对 `Source` 不成立。**
+> 实测 `trace/` 全包对 `Source` **零实现引用**（只有 `trace_port.py:10` 一处 docstring），
+> 而它的取值逐条写着本项目的层名（`PLAN` 那条注释直接写 `RunHarness.plan`）——
+> 按"归属看谁消费"它不是 trace 的，**搬去 `schemas/harness/domain/source.py`**。
+> 详见 `docs/PLAN_trace_decoupling.md`（v2）§1.2 与 §2.3。
 
 #### 对 P2 三类账（用户 15:25 澄清）——trace 是项目无关的，不参与项目的语言
 
@@ -595,8 +623,8 @@ v1 建议把 `render.py` 里 49 处 `Source.X` / 27 处 `EventType.X` 改成裸�
 
 | 项 | 结论 |
 |---|---|
-| `EventType` / `Source` | **第二类，原住地就是 `trace/datastore/`**，一行不改（§6.4） |
-| `tools/trace/render.py` 的 `Source.X` / `EventType.X` | **建议不改**——`_LINK_NAME` 的从 `Source` 派生是防漂移机制；要解耦应双坐 replicate 而非写字面量（§6.4） |
+| `EventType` / `Source` | `EventType` **留 trace**（`store.py` 真消费）；`Source` **已改判：搬去 `schemas/harness/domain/`**——v2 的"一行不改"对 `Source` 作废，见文首 v3 提示（§6.4） |
+| `tools/trace/render.py` 的 `Source.X` / `EventType.X` | **字面量用法不改**——`_LINK_NAME` 从 `Source` 派生是防漂移机制；v3 只改 import 来源（`Source` 指 `schemas.harness`），派生方式不动（§6.4） |
 | `harness/` 4 处 + `plan.py` 的 `Source`/`EventType` 引用 | **登记即可**（第三类形状引用）。`Source` 横跨 harness 与 tool（render 用 49 次），不像 `TraceKind` 那样单消费者——**别顺手搬** |
 | `trace/` 的异常面 | **P3 不成立**（§4），不加异常家族、不在 docstring 承诺异常 |
 

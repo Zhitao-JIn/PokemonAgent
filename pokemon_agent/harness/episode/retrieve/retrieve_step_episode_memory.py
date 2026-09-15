@@ -29,7 +29,10 @@ def retrieve_step_episode_memory(
 
     前置条件：`state.observation` 非空（`gate/judge` 之前必有
     `open/record_observation`）。
-    后置条件：返回 `{"step_episode_memories": …}`；条数与引用进一条 `RETRIEVE_NODE`。
+    后置条件：返回 `{"step_episode_memories": …}`；检索条件与命中清单进一条
+    `read_step`（**清单本身就是条数**——`refs` 是数组，长度自己数得出来）。
+    这一路**只按 `episode_id` 等值过滤、没有任何打分**——
+    `query` 记的就是这个条件本身。
     """
     deps = runtime.context
     assert state.observation is not None, "retrieve_step_episode_memory before judge"
@@ -37,15 +40,12 @@ def retrieve_step_episode_memory(
     memories = deps.memory.query_episode_steps(
         FromHarnessToMemoryToolQueryEpisodeStepsReq(episode_id=ep)
     ).steps
-    refs = " ".join(f"({m.episode_id}, {m.step})" for m in memories)
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.RETRIEVE_NODE,
-            episode_id=ep,
-            step=step,
-            read_kind="step",
-            count=len(memories),
-            refs=refs,
+            kind=TraceKind.READ_STEP,
+            meta={"source": "retrieve_step_episode_memory", "episode_id": ep, "step": step},
+            query=f"episode_id={ep}",
+            refs=[f"({m.episode_id}, {m.step})" for m in memories],
         )
     )
     return {"step_episode_memories": memories}

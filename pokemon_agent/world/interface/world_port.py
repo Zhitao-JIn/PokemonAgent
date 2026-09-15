@@ -87,7 +87,8 @@ class WorldPort(Protocol):
 
         `ram_only=False`（缺省）：**只问一次视觉模型，不重试**。调用方在
         `reset()`/`step()` 之后调它拿观测；重试预算与循环归调用方管
-        （见 `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"）。
+        （`tools/game_tools.py::GameTools.perceive_with_retry`——0913 夜从
+        harness 节点搬回 tool 层，与 `BrainTool._attempt_loop` 同形）。
         失败：解析不出结构化状态时抛 `PerceptionAttemptFailed`（附这次的账）——
             要不要再问一次是调用方的判断。
 

@@ -19,9 +19,7 @@ class FromHarnessToGameToolExecuteReq(BaseModel):
     `plan`，那是循环状态，不该走到执行层。
     """
 
-    action: Action = Field(
-        description="大脑选出的动作；执行层收到的恒为单键（单段、times=1）"
-    )
+    action: Action = Field(description="大脑选出的动作；执行层收到的恒为单键（单段、times=1）")
     observation: Observation = Field(description="这个动作所依据的观测")
     settle: bool = Field(
         default=True,

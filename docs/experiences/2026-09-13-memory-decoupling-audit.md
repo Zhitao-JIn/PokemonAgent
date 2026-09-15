@@ -8,6 +8,87 @@
   （managed 3.13 与仓库内 `.venv` linux 均无依赖，见 §5 附录）
 - **未跑真实 harness**（按项目规矩由用户自行运行）
 
+## 零、两个断言的结论（2026-09-13 复核，第 15:49 轮）
+
+用户追问「memory 是否仅被 tool 依赖且无对外依赖」。用阻断式实验复核后，
+**两半的答案精度不一样，必须分开说**：
+
+| 断言 | 结论 | 精度 |
+|---|---|---|
+| memory **无对外依赖** | ✅ **成立，零例外** | 8/8 文件无 `pokemon_agent.*` 外部 import；运行期实测不拉起 schemas/brain/harness/tools |
+| memory **仅被 tool 依赖** | ✅ **成立**（第 16:20 轮修复后） | 实现依赖 2 处全在 `tools/memory_tool.py`；`build.py` 顶层 import = 0 |
+
+**因果**：正因为"仅被 tool 依赖"这句话字面上不成立（`build.py` 也依赖它），
+才有 §7 那条待改项。**前者已成，后者已修。**
+
+**修复动作（第 16:20 轮，CHANGELOG 0913（60)）**：新增
+`MemoryTool.build(*, memory_root, knowledge_root, max_summaries)` 接线工厂
+（与 `BrainTool.build()` / `build_vision_provider()` 同形，内部函数导入
+`FastEmbedText`/`FastEmbedReranker`），`build.py` 改一行 `MemoryTool.build()`，
+删掉那行 `from pokemon_agent.memory import FastEmbed*`。
+
+**阻断式实验（最硬的证据）**：用 `MetaPathFinder` 拦截
+`pokemon_agent.memory*` 的导入（模拟"memory 被整体拷走"），然后逐个 import：
+
+```
+pokemon_agent.schemas              OK（不依赖 memory）
+pokemon_agent.harness              OK（不依赖 memory）
+pokemon_agent.world                OK（不依赖 memory）
+pokemon_agent.trace                OK（不依赖 memory）
+pokemon_agent.tools                OK（不依赖 memory）   ← 懒加载，未触 memory_tool
+pokemon_agent.tools.memory_tool    ✗ 需要 memory          ← 唯一该有的依赖
+pokemon_agent.build                ✗ 需要 memory          ← ⚠️ 见下方"传递依赖"
+对照：pokemon_agent.build（不阻断）  OK
+```
+
+**`build.py` 那行仍显示"需要 memory"，但这是传递依赖、不是直接依赖——修复后
+该行不该再被理解为违规。** 追栈结果：
+
+```
+pokemon_agent/build.py:23   from pokemon_agent.tools import (…)
+pokemon_agent/tools/__init__.py:81   __getattr__ → importlib.import_module
+pokemon_agent/tools/memory_tool.py:38   from pokemon_agent.memory import MemoryStore
+```
+
+`build.py → tools → memory`，跟 `build.py → …… → brain` 的结构性路径**同款**
+（阻断 `pokemon_agent.brain` 时同样会炸）。**"零 import"指直接 import 面
+（AST 可测），不是"import 期不拉起"**——后者由 `tools/__init__.py` /
+`harness/__init__.py` 的懒加载链决定。用一个"阻断就判违规"的判据去测传递依赖
+会得到假阳性——正确判据是 §2 的 **AST import 点清点**。
+
+**brain 那条链的精确形态（2026-09-13 16:40 追栈，修正上一轮的粗略表述）**：
+
+```
+pokemon_agent/build.py:16          from pokemon_agent.harness import (
+pokemon_agent/harness/__init__.py:83   __getattr__("AutoContinueReviewer")
+pokemon_agent/harness/auto_reviewer.py:9   from pokemon_agent.schemas.harness import (
+pokemon_agent/schemas/harness/__init__.py:76   from .communication.FromHarnessToBrainToolChooseOnceReq import …
+pokemon_agent/schemas/harness/communication/FromHarnessToBrainToolChooseOnceReq.py:12
+                                   from pokemon_agent.brain.interface import Goal   ← 真正的触发点
+```
+
+三点必须分清（否则会误把账算到 harness 头上）：
+
+1. **harness 只是"先到"，不是"必经"。** `build.py` L16（harness）早于 L23（tools）；
+   真正对 brain 有**实现依赖**的是 tools（`brain_tool.py:130`
+   `from pokemon_agent.brain import Brain, BrainLlmConfig, build_llm_providers`）。
+   换掉 import 顺序，第一条到 brain 的路就是 tools 那条合法路径。
+2. **harness 自己的 brain 引用是纯数据形状。** `harness/` 下 20 处 import 的名字
+   全集 = `{Action, ActionSegment, Goal, RunPlan, Task}`，**实现名零处**——
+   正是 `AGENTS.md` 第十二节第 4 条允许的形态。
+3. **真正的触发点在 `schemas/harness/communication/` 的 13 封信封**，每封都有一句
+   `from pokemon_agent.brain.interface import <数据形状>`。而
+   `schemas/harness/__init__.py` **是 eager 全量导入**（顶层 42 行
+   `from .communication …`，**没有 `__getattr__` 懒加载**——全项目唯一一个
+   不带懒加载的信封聚合包，对比 `harness/__init__`、`brain/__init__`、
+   `tools/__init__` 三处都有）。于是"拿一格信封"的实测代价 = **46 个
+   `schemas.harness.*` 子模块 + 17 个 `brain.*` 子模块**。
+
+**注意代价止步于形状面**：17 个 brain 子模块里**不含** `brain.brain`（`Brain` 实现）、
+`brain.providers`（厂商 SDK / `PIL`）、`brain.build_llm_providers`——三者都懒加载。
+即 `brain/__init__.py` "数据形状立即加载、实现面懒加载"的设计**是生效的**，
+harness 顺带进来也只吃到形状。
+
 ---
 
 ## 一、总判据（P1）落地：memory 拷得走吗
@@ -24,6 +105,28 @@ P1 的唯一判据是「**把目录整个拷进另一个项目，欠不欠同项
 
 **结论：memory 对外依赖归零。** 3 处 import 全部指向 `memory` 包自己，
 没有一处指向 `brain` / `harness` / `schemas` / `tools` / `world`。
+**逐文件核对（8 个文件，2026-09-13 复核）**：
+
+| 文件 | 对 `pokemon_agent.*` 的 import |
+|---|---|
+| `__init__.py` | 无（7 个全是相对导入 `.xxx`） |
+| `ports.py` | **无**（只有 `__future__` / `collections.abc` / `pathlib` / `typing`） |
+| `embedding_provider.py` | 无（只有 `__future__` / `typing`） |
+| `reranker_provider.py` | 无（只有 `__future__` / `typing`） |
+| `fastembed_text.py` | 无（`fastembed` 在**函数内** import） |
+| `fastembed_reranker.py` | 无（`fastembed.rerank` 在**函数内** import） |
+| `retrieval.py` | `pokemon_agent.memory`（TYPE_CHECKING，自指） |
+| `store.py` | `pokemon_agent.memory.retrieval`（运行期）+ `pokemon_agent.memory`（TYPE_CHECKING） |
+
+**包外依赖总数 = 0。** 运行期实测（`sys.modules` 增量）也证实：
+`import pokemon_agent.memory` 后**没有**拉起 schemas / brain / harness / tools
+任何一个——拉起的 8 个 `pokemon_agent.*` 全是 `pokemon_agent.memory.*` 自己，
+第三方只有 `rank_bm25` / `fastembed` / 标准库。
+
+**两处 `TYPE_CHECKING` 自指无害**：它们是 `if TYPE_CHECKING:` 块内的
+类型标注用导入（给 `embedder`/`reranker` 参数标类型），**运行期不执行**，
+所以不构成运行期环。实测 `store.hybrid_retrieve is retrieval.hybrid_retrieve`
+为 `True`，两个子模块可各自独立导入。
 
 对照 P1 判据逐条核对：
 
@@ -55,21 +158,36 @@ memory 本来就不需要它们。**
 
 ### 第一类 实现依赖（会 `new` / 调具体函数）——只允许出现在 tool 层
 
-全项目对 memory 的**实现依赖**：
+**修复后（2026-09-13 16:20，CHANGELOG 0913（60)）**，全项目对 memory 的
+实现依赖只剩 **2 处，全在 `tools/memory_tool.py`**：
 
 ```
-tools/memory_tool.py:38   from pokemon_agent.memory import EmbeddingProvider, MemoryStore, RerankerProvider
-                          ↑ MemoryStore() 在这里被 new（第 127/128/129/133 行，四个 kind 各一个实例）
-experiment/real_check/check_memory_roundtrip.py:31   ← 实验脚本，非生产链路
+tools/memory_tool.py:38    from pokemon_agent.memory import EmbeddingProvider, MemoryStore, RerankerProvider
+                           ↑ 协议 3 个（标注用）+ MemoryStore 实现 1 个
+tools/memory_tool.py:173   from pokemon_agent.memory import FastEmbedReranker, FastEmbedText
+                           ↑ 在 MemoryTool.build() 函数体内（懒加载），不在顶部
 ```
 
-`MemoryStore` 只在 `tools/memory_tool.py` 被 new，**恰好一次**。
-`EmbeddingProvider`/`RerankerProvider` 是注入进来的协议（类型标注用途），
-不算实现依赖。
+**判定：✅ 符合 P2 第一类。** 与 brain 那条链真正对齐——
 
-**判定：符合 P2 第一类。** 可以更严格一点说——memory 的"实现依赖"比 brain
-还干净：brain 的实现依赖是 `tools/brain_tool.py` 3 处 + `vision_factory.py` 1 处
-（含工厂），memory 是 1 处且没有工厂。
+| | brain | memory |
+|---|---|---|
+| 实现依赖落点 | `tools/brain_tool.py` L130 + `tools/vision_factory.py` L55 | `tools/memory_tool.py` L38 + L173 |
+| 装配点直接 import | **0 处** | **0 处** |
+| 工厂位置 | tool 层（两个） | tool 层（`MemoryTool.build()`） |
+
+**修复前的违规（已消除）**：
+
+```
+build.py:25    from pokemon_agent.memory import FastEmbedReranker, FastEmbedText   ← 已删
+build.py:103   FastEmbedText()        ← 已删，改为 MemoryTool.build()
+build.py:104   FastEmbedReranker()    ← 同上
+```
+
+**实测代价的消除**：修复前 `import pokemon_agent.build` 顶层会拉起 memory
+整包 8 个子模块；修复后 `build.py` 顶层 import 清单从 5 项降到 4 项
+（`harness` / `tools` / `trace` / `world`），**AST 全树对
+`pokemon_agent.memory` 的 import 点 = 0**。
 
 ### 第二类 内部协议 / 内部词汇——跟着模块走
 
@@ -191,7 +309,11 @@ ModuleNotFoundError: No module named 'rank_bm25'    # ← 无依赖的解释器�
 
 ---
 
-## 七、唯一待改项：装配点 `build.py:25` 的造型 import
+## 七、唯一待改项：装配点 `build.py:25` 的造型 import —— **✅ 已修复（0913（60)）**
+
+> **状态**：本节记录的是**修复前**的诊断与建议方案。已于 2026-09-13 16:20
+> 按"建议改法"落地（CHANGELOG 0913（60)），`build.py` 对 `pokemon_agent.memory`
+> 的 AST import 点 = 0。**下面的诊断保留作决策记录**，验收结果见本节末。
 
 按 P2 的分类，`build.py:25` 对 memory 的 import 是**第一类（实现依赖）**：
 
@@ -284,6 +406,37 @@ memory = MemoryTool.build()      # 原先 4 行的 MemoryTool(embedding_provider
   **如果你更看重"少一层间接"，保持现状也说得过去**：memory 的 provider 没有
   型号选型、没有厂商分派，`build.py` 那两行本身就是"型号名"级别的信息量。
 
+### 修复后的验收结果（2026-09-13 16:20）
+
+| 判据 | 修复前 | 修复后 |
+|---|---|---|
+| `build.py` 对 `pokemon_agent.memory` 的 AST import 点 | 1 处 | **0 处** ✅ |
+| `build.py` 顶层 import 项数 | 5（harness/tools/trace/world/memory） | **4** ✅ |
+| memory 实现依赖落点 | `tools/memory_tool.py` + `build.py` | **只在 `tools/memory_tool.py`** ✅ |
+| `MemoryTool.build()` 功能 | — | 造出对象，四个 kind 正确，四个 store 共享同一对 provider ✅ |
+| 全模块独立导入 | 7/7 | **7/7** ✅ |
+
+**实际落地的最小改动**（比本节最初建议的方案更小——只加工厂、不改 `__init__`）：
+
+```python
+# tools/memory_tool.py —— 新增类方法
+@classmethod
+def build(cls, *, memory_root=None, knowledge_root=None, max_summaries=50) -> MemoryTool:
+    from pokemon_agent.memory import FastEmbedReranker, FastEmbedText
+    embedding_provider = FastEmbedText()
+    reranker_provider = FastEmbedReranker()
+    return cls(embedding_provider=..., reranker_provider=...,
+               memory_root=..., max_summaries=..., knowledge_root=...)
+
+# build.py —— 删 import，改一行
+memory = MemoryTool.build()
+```
+
+**关键认识（留给下一轮）**：`import pokemon_agent.build` 依然会在
+`tools/memory_tool.py:38` 处拉起 memory——那是**传递依赖**，与 brain 的
+结构性路径同款，**不是违规**。用"阻断就判违规"的判据去测会得到假阳性；
+正确判据是 AST import 点清点。详见 §0。
+
 ---
 
 ## 八、可复现的核对方法（含本项目特有的坑）
@@ -305,10 +458,11 @@ done
 #    输出 memory 的 pokemon_agent.* 依赖应只剩 memory 自己 → 见附 A
 
 # ③ 实现依赖清点：全项目对 memory 的 import 位置
-#    → tools/memory_tool.py:38（唯一生产依赖）+ experiment/ 脚本
+#    → 修复后：只在 tools/memory_tool.py:38（协议）+ L173（builder 内供应商）
 
 # ④ 装配面实测：import pokemon_agent.build 后统计 sys.modules 增量
-#    → 顶层拖进 memory 8 个子模块（本轮唯一不达标项，见 §7）
+#    → 修复前顶层拖进 memory 8 个子模块；修复后 build.py 的 AST import 点 = 0
+#    （注意：import 期仍会因传递依赖拉起 memory —— 那是 tools → memory，非 build → memory）
 ```
 
 ### 本轮踩到的环境坑（值得记下）
@@ -324,6 +478,24 @@ done
 `pokemon_agent.brain`（只有一段）会 **IndexError**——必须先判
 `m.count('.')>=1`，或统一用 `startswith` 判断。
 
+**第三个坑（本轮最重要）**：写导入拦截 hook 必须用
+`importlib.abc.MetaPathFinder.find_spec(fullname, path, target)`。
+用旧版 `find_module`/`load_module` 在 Python 3.12 **不报错也不拦截**，
+会给出假阳性的"OK"结论——我第一版就中了这个招，一度以为 `build.py` 不依赖
+memory。
+
+**第四个坑（判据本身）**：拦截实验测的是"**import 期是否需要**"，
+它**包含传递依赖**；而"实现依赖只在 tool 层"讲的是"**直接 import 点**"。
+两者不同：`build.py → tools → memory` 是传递，`build.py → harness → auto_reviewer
+→ schemas.harness → 信封 → brain` 也是传递，用拦截法测两者会得到同样的"炸"，
+**不能据此判违规**。正确判据是 AST import 点清点（§2）。
+
+**第五个坑（归因）**：传递链一旦跨了三跳以上，**首触模块 ≠ 责任模块**。
+`build.py` 的 brain 首触点是 L16 的 harness 那行，但责任全在
+`schemas/harness/communication/*` 那 13 封信封（以及 `schemas/harness/__init__.py`
+的 eager 全量导入）——harness 自己的 brain 引用全是数据形状、实现名零处。
+**追栈必须追到最后一个项目内帧才停**，否则会把账算错人。
+
 ---
 
 ## 九、结论表：memory 逐条对账
@@ -331,18 +503,18 @@ done
 | 原则 | memory 实测 | 判定 | 动作 |
 |---|---|---|---|
 | **P1** 拷得走 | `pokemon_agent.*` 外部依赖为 0（3 处皆包内自指） | ✅ | 无 |
-| **P2** 依赖三分类 | 实现依赖仅 `memory_tool.py:38` 一处；协议三件同住包内；第三类 0 处 | ✅ | 无 |
+| **P2** 依赖三分类 | 实现依赖只在 `tools/memory_tool.py`（L38 协议 + L173 供应商）；协议三件同住包内；第三类 0 处 | ✅ | 无 |
 | **P3** 异常继承 | 无自定义异常家族，失败路径原样上抛 | ✅ | 无 |
 | **P4** 桥只建在 tool 层 | 桥唯一（`memory_tool.py`），信封不穿透到 memory，裸字段契约 | ✅ | 无 |
 | **P5** 同形不同约 | 暂无第二个同形协议 | — | 备用判据 |
 | **P6** 信封本地化 | memory 侧无信封（留在 `schemas/` 是对的） | ✅ | 无 |
 | **P7** 包初始化分层 | 不背包网关客户端；`rank_bm25` 在顶部但代价可忽略 | ✅ | 无 |
-| **装配点造型 import** | `build.py:25` `from pokemon_agent.memory import FastEmbed*` | ⚠️ | **唯一待改**，见 §7 |
+| **装配点造型 import** | `build.py` 对 memory 的 AST import 点 = 0（`MemoryTool.build()` 收口） | ✅ | **已修（0913（60)）** |
 
-**一句话结论**：memory 的脱钩程度已经**与 brain 同级**——P1～P7 八条里七条
-直接通过，剩下一条是装配点 `build.py:25` 还在直接 new 两个 provider，
-和 brain 收进 `BrainTool.build()` 之前的状态同形。改法就是照抄那一步，
-加 `MemoryTool.build()`,让"谁依赖 memory"也收敛到 tool 层唯一一处。
+**一句话结论**：memory 的脱钩程度**已与 brain 同级——P1～P7 八条全部通过**。
+曾有的那一处例外（装配点 `build.py` 直接 new 两个 provider）已于 0913（60)
+按与 brain 完全相同的方式收口：加 `MemoryTool.build()`，让"谁依赖 memory"
+收敛到 tool 层唯一一处。
 
 ---
 
@@ -363,11 +535,50 @@ done
   store.py:50       pokemon_agent.memory.{EmbeddingProvider, RerankerProvider}
   ↑ 都是为了给注入参数做类型标注；运行期不 import（注释已写明理由）
 
-### 全项目对 pokemon_agent.memory（=memory 包）的 import
-  memory/retrieval.py:26          ← 包内
-  memory/store.py:45,50           ← 包内
-  build.py:25                     ← ⚠️ 装配点（§7 唯一待改项）
-  tools/memory_tool.py:38         ← ✅ 唯一的生产实现依赖
-  experiment/real_check/check_memory_roundtrip.py:31   ← 实验脚本
+### 全项目对 pokemon_agent.memory（=memory 包）的 import —— 修复后
+  memory/retrieval.py:26          ← 包内自指（TYPE_CHECKING）
+  memory/store.py:45,50           ← 包内自指
+  tools/memory_tool.py:38         ← ✅ 生产：协议 3 个 + MemoryStore
+  tools/memory_tool.py:173        ← ✅ 生产：builder 函数体内的 FastEmbed*
   schemas/__init__.py:14          ← 注释文字，非 import
+
+### build.py 对 pokemon_agent.* 的顶层 import（修复后 = 4 项，memory 已消失）
+  from pokemon_agent.harness      ['AutoContinueReviewer','HarnessDeps','HumanReviewer','RunDataCenter','RunHarness']
+  from pokemon_agent.tools        ['BrainTool','GameTools','MemoryTool','TraceTool','build_vision_provider']
+  from pokemon_agent.trace        ['LocalTrace']
+  from pokemon_agent.world        ['PyBoyWorld']
+  ↑ 此前还有 `from pokemon_agent.memory import FastEmbedReranker, FastEmbedText`（第 25 行），已删
 ```
+
+---
+
+## 十、附：四模块「工厂化」覆盖现状（2026-09-13 16:43 核对）
+
+按「实现依赖只允许落在 tool 层」这条，四个独立模块的收口程度**并不一致**：
+
+| 模块 | Port 声明在（模块自己） | 实现类 `new` 在哪 | 装配点 import | 状态 |
+|---|---|---|---|---|
+| brain | `brain/interface/brain_port.py:70` | `tools/brain_tool.py:140`（`Brain()`）＋厂商 provider 在 **brain 内部** `brain/build_llm_providers.py:54/57/64/67` | **0** | ✅ 已收口 |
+| memory | `memory/ports.py:37` | `tools/memory_tool.py:120-126`（`MemoryStore()`×4）＋`:175/176`（`FastEmbed*()`） | **0** | ✅ 已收口 |
+| trace | `trace/interface/trace_port.py:24` | **`build.py:90`（`LocalTrace()` 直接 new）** | **1** | ⚠️ 未收口 |
+| world | `world/interface/world_port.py:41` | **`build.py:85`（`PyBoyWorld()` 直接 new）** | **1** | ⚠️ 未收口 |
+
+三点必须说清：
+
+1. **Port 不是 tool 声明的。** `tools/interface/ports.py` 里那套
+   （`BrainToolPort`:79 / `GameToolPort`:130 / `MemoryToolPort`:204 /
+   `TraceToolPort`:325）是**另一层协议**——harness 面向 tool 的**信封契约**。
+   模块自己的 Port（裸字段）由模块自己声明，tool 只是消费方。
+   **"tool 声明 Port"这个说法不成立。**
+2. **brain 是两段工厂，memory 是一段。** `BrainTool.build()` 在 tool 层只造
+   `BrainLlmConfig` 并调 `build_llm_providers(config)`；**厂商 provider 的 `new`
+   发生在 brain 内部**（"哪个技能接哪家厂商"是 brain 自己的接线知识，tool 只递型号名）。
+   memory 没有 config、没有厂商分派，`MemoryTool.build()` 直接 `new` 两个 provider。
+3. **`GameTools` / `TraceTool` 没有 `build()` 工厂**（grep `def build` = 0），
+   二者都是 `__init__` 收注入的 Port（`WorldPort` / `TracePort`）。
+   所以 world / trace 要收口，得各补一个 `build()` 类方法，与 brain / memory 同形；
+   这样 `build.py` 顶部那两行 `from pokemon_agent.trace import LocalTrace` /
+   `from pokemon_agent.world import PyBoyWorld` 才能删掉。
+
+**判据（可执行）**：`build.py` 对 `pokemon_agent.{trace,world}` 的 AST import 点
+各 **1 → 0**，且两模块实现依赖落点收敛到 `tools/`。

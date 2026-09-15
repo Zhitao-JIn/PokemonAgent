@@ -1,7 +1,7 @@
 """`FromHarnessToBrainToolVerifyReq`：harness → `BrainTool` 的校验请求。
 
 **只装素材**——`BrainTool.verify()` 入口处自己拼 prompt
-（`prompts.verify_and_summarize.build_verify_prompt(req)`）。harness 不碰 prompt。
+（`prompts.verify.build_prompt(req)`）。harness 不碰 prompt。
 """
 
 from __future__ import annotations

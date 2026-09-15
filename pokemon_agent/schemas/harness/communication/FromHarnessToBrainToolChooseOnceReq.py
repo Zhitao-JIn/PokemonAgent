@@ -26,6 +26,11 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     knowledge/episode_memories/human_note：分开放，各自在 prompt 里有独立
         占位符与可信度说明（混在一起模型没法区分对待）。
 
+    `human_note` 由 `build_prompt()` 拼在**整个 prompt 的最末尾**（0914 控制台
+    改造：它是覆盖指令，不是又一节背景说明——理由见
+    `tools/prompts/__init__.py::append_human_note`）。**模板里没有它的占位符**
+    ——它是"渲染完之后再追加"，所以不在 `decide_action.md` 的那些 `$` 变量里。
+
     **`prompt` 不是本模型的字段**（0913 删）：`BrainTool.choose()` 入口处调
     `prompts.decide_action.build_prompt(req)` 拼它，只活在那一次调用的局部
     ——"先拼 prompt 再回填进同一个 req"那个中间态不再外露。
