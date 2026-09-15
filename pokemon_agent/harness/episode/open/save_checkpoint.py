@@ -39,7 +39,7 @@ def save_checkpoint(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> di
     前置条件：无（本节点不读 state 也不读 deps）。
     后置条件：返回空增量（本节点不改任何 state 字段）。
 
-    保留 `(state, runtime)` 签名是为了跟同一张图上其余 20 个节点同形——
-    `check_graph_phases.py` 按"节点名 = 实现文件名"核对，签名不同形会被它挑出来。
+    保留 `(state, runtime)` 签名是为了跟同一张图上其余 20 个节点同形——**全图统一
+    签名**是这一层的书写纪律，签名不同形一眼就能看出来。
     """
     return {}
