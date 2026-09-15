@@ -20,15 +20,26 @@
    拷走复用**，跟 `memory/` 同一个规格。
 
 方法名与"一个方法一件事"对应：`choose`/`reflect`/`judge`/`plan`/`verify`/
-`summarize`。**没有 `*_once` 后缀**——"一次"是调用方的循环术语，模块层的方法
+`summarize`/`extract`。**没有 `*_once` 后缀**——"一次"是调用方的循环术语，模块层的方法
 天然就是"做一次"。
 
-**六个方法的形状统一**：`prompt`（规则）+ 素材 + 可选 `images`。每个方法都
+**七个方法的形状统一**：`prompt`（规则）+ 素材 + 可选 `images`。每个方法都
 接受 `images`——多模态素材物理上塞不进文本 prompt，只能独立传；默认空序列
-表示这次纯文本（`judge`/`verify`/`summarize` 会据此从 `describe()` 降级到
-`complete()`）。
+表示这次纯文本（`judge`/`verify`/`summarize`/`extract` 会据此从 `describe()`
+降级到 `complete()`）。
 
-**六个方法的失败语义也统一：一律抛 `AttemptFailed` 家族，一律不重试。**
+**`verify`/`summarize`/`extract` 三条链路共用同一类素材**（这一局的
+`history`），但产物归属不同：裁决属于判定、摘要属于那一局、知识属于世界。
+**拆成三个方法而不是一个**，是因为"哪条链路花了多少钱、坏在哪"要在账上分得开
+（0913 拆 `verify`/`summarize` 的同一条理由）。
+
+**`images` 的元素一律是 base64 编码的 PNG 字符串（`Sequence[str]`），
+不是原始 `bytes`**——与 `VisionDescribeReq.images`（`list[str]`，
+`brain/schemas/vision.py`）同一格式，brain 这一层不做任何编解码：
+harness 的截图本来就是以 base64 存的（"截图直存 base64"），谁进了这一层
+再 `b64decode` 一次，就会在构造请求时直接 ValidationError。
+
+**七个方法的失败语义也统一：一律抛 `AttemptFailed` 家族，一律不重试。**
 这是本契约里最容易被写歪的一条，所以写在这里：
 
 | 方法 | 失败时抛 | 携带 |
@@ -38,6 +49,7 @@
 | `judge` | `JudgeAttemptFailed` | 同上 |
 | `verify` | `VerifyAttemptFailed` | 同上 |
 | `summarize` | `SummarizeAttemptFailed` | 同上 |
+| `extract` | `ExtractAttemptFailed` | 同上 |
 | `reflect` | 不调模型，只在调用方违约时 assert | — |
 
 **为什么失败必须抛、不许降级**：判定/校验/蒸馏曾经把失败吞成"一个看起来
@@ -58,6 +70,7 @@ from typing import Protocol, runtime_checkable
 
 from .domain import (
     ChooseResult,
+    ExtractResult,
     JudgeResult,
     PlanResult,
     Reflection,
@@ -77,7 +90,7 @@ class BrainPort(Protocol):
         *,
         prompt: str,
         keys: Sequence[str],
-        images: Sequence[bytes] = (),
+        images: Sequence[str] = (),
     ) -> ChooseResult:
         """选一个动作，连同理由。
 
@@ -137,7 +150,7 @@ class BrainPort(Protocol):
         prompt: str,
         goal: str,
         history: Sequence[str],
-        images: Sequence[bytes] = (),
+        images: Sequence[str] = (),
     ) -> JudgeResult:
         """判断这个目标达成了没有。
 
@@ -179,18 +192,22 @@ class BrainPort(Protocol):
         goal_stack: Sequence[str],
         history: Sequence[str],
         max_push: int,
-        images: Sequence[bytes] = (),
+        images: Sequence[str] = (),
     ) -> PlanResult:
-        """run 级规划：根据历史决定目标栈怎么变。
+        """run 级规划：根据历史决定目标表怎么变。
 
         **规划必须的四块：`goal_stack` / `history` / `max_push` / `prompt`。**
 
-        - `goal_stack`：当前目标栈（**栈顶在最后**，调用方按 LIFO 原序给）。
+        - `goal_stack`：当前**目标表**（已渲染好的行，**表序 = 派发顺序**——
+          第一条待做的先做）。名字里的 "stack" 是历史称呼：这张表曾经是纯 LIFO
+          栈，0914 起改成了带状态的表（见 `schemas/harness/domain/goal_entry.py`），
+          **签名刻意不动**——它收下的本来就是"一排已经渲染好的文本"。
         - `history`：run 级的"发生过什么"——**已渲染好的文本序列**，
-          本项目按"每局一行"折（`- ep1: 目标 → 成功（12 步，reason）`）。
-          不是 `TraceEvent`——事件流是 harness 的存储形状，渲染成文本是调用方的事。
-        - `max_push`：这一次最多允许压几个子目标（**硬约束，不是素材**——
-          模型可能压超，harness 侧要按它裁）。
+          本项目把它折成"局索引 + 详情 + 地图交互事实"（`plan` 节点从
+          `episode_memory` / `object_memory` 取，见 `docs/PLAN_planner_v2.md` S2）。
+          **不是 `TraceEvent`**——事件流是 harness 的过程账，渲染成文本是调用方的事。
+        - `max_push`：这一次最多新增几个目标。**是给模型的建议上限**——
+          本项目不在 harness 侧截断（截掉就是静默丢目标，见 `PlanOnceReq.max_push`）。
         - `prompt`：怎么规划、输出什么格式的规则。
 
         images：可选截图。本版 `plan_llm` 是纯 `LLMProvider`，收下但不用。
@@ -214,7 +231,7 @@ class BrainPort(Protocol):
         goal: str,
         knowledge: str,
         include_rationale: bool,
-        images: Sequence[bytes] = (),
+        images: Sequence[str] = (),
     ) -> VerifyResult:
         """逐条判定这一局的 step 记录哪些可信。
 
@@ -256,9 +273,9 @@ class BrainPort(Protocol):
         success: bool,
         steps: int,
         max_steps: int,
-        images: Sequence[bytes] = (),
+        images: Sequence[str] = (),
     ) -> SummarizeResult:
-        """把这一局蒸馏成一条跨局经验。
+        """把**这一局**的步骤记录蒸馏成一条摘要（一条只对应一局）。
 
         **蒸馏必须的六块：`goal` / `history` / `success` / `steps` / `max_steps`
         / `prompt`。**
@@ -280,5 +297,40 @@ class BrainPort(Protocol):
         后置条件：`result.summary` 非 `None`；`calls` 恰好一条。
         失败：抛 `SummarizeAttemptFailed`（附这次的账）——"这次没蒸出东西"
             不是一种正常返回，而是一次失败。
+        """
+        ...
+
+    # ---- 世界知识抽取 ----
+
+    def extract(
+        self,
+        *,
+        prompt: str,
+        goal: str,
+        history: Sequence[str],
+        images: Sequence[str] = (),
+    ) -> ExtractResult:
+        """从这一局的步骤记录里抽出**这一局读到的世界知识**。
+
+        跟 `summarize` 收的是同一类素材（已过滤的可信记录），但回答的是另一个
+        问题：`summarize` 问"**这一局**打得怎么样"，`extract` 问"**这个世界**
+        有什么我之前不知道的"。产物归属也随之不同——摘要属于那一局，
+        知识属于世界（见 `LearnedKnowledge` 的说明）。
+
+        **三块素材：`goal` / `history` / `prompt`。**
+
+        - `goal`：这一局打的是什么目标——抽取要看"这条信息对做任务有没有用"，
+          纯风景描写不是知识。
+        - `history`：这一局的**可信步骤记录**（含决策者的论据，与 `summarize`
+          同一份渲染）——知识就藏在这些记录的画面文字里（对话、菜单、战斗提示）。
+        - `prompt`：抽什么、不抽什么、输出什么格式的规则。
+
+        images：可选截图。
+
+        前置条件：`history` 只装**已过滤的可信记录**——从没验证过的自述里抽知识
+          等于把幻觉固化成"世界规则"，比不抽更糟。
+        后置条件：`result.knowledge.items` **可以为空**（大多数局什么都没读到，
+            那不是失败）；`calls` 恰好一条。
+        失败：抛 `ExtractAttemptFailed`（附这次的账）——模型调不通 / 输出解析不出。
         """
         ...

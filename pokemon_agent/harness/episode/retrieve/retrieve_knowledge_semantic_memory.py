@@ -48,20 +48,24 @@ def retrieve_knowledge_semantic_memory(
     deps = runtime.context
     assert state.observation is not None, "retrieve_knowledge_semantic_memory before judge"
     obs, ep, step = state.observation, state.episode_id, state.observation.step
+    query = build_knowledge_query(obs, state.task.goal)
     result = deps.memory.query_knowledge(
         FromHarnessToMemoryToolQueryKnowledgeReq(
-            query=build_knowledge_query(obs, state.task.goal),
+            query=query,
             limit=MEMORY_RECALL_LIMIT,
         )
     )
+    # `refs` 列的是 `sources`（命中记录的文件名）——`contents` 与 `sources` 由
+    # `memory_tool.query_knowledge` 在同一个循环里成对 append、**恒等长**，
+    # 所以"命中几条"就是 `refs` 的长度，不必再单记一个数（0914 跟进）。
+    # 收尾链那条 `read_verify_knowledge` 与这里同口径。
+    # `query` 记**送给 BM25 的那串原文**（不是等值条件，它本来就带空格）。
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.RETRIEVE_NODE,
-            episode_id=ep,
-            step=step,
-            read_kind="knowledge",
-            count=len(result.contents),
-            refs=" ".join(result.sources),
+            kind=TraceKind.READ_KNOWLEDGE,
+            meta={"source": "retrieve_knowledge_semantic_memory", "episode_id": ep, "step": step},
+            query=query,
+            refs=list(result.sources),
         )
     )
     return {"knowledge_semantic_memory": result}
