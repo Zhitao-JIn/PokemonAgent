@@ -168,6 +168,20 @@ def choose(self, obs: Observation, space: ActionSpace) -> Action:
 - **不追覆盖率、不测私有函数、不写 mock 套 mock 的测试。**
   测试难写说明依赖注入没做好，回去改设计而不是加 mock。
 
+### 6. git commit 规范 —— 对应 CHANGELOG.md 条目，分步提交
+
+- **一条 CHANGELOG.md 编号条目 = 一个（或一组）commit**。不要把多条改动揉进一个 commit，
+  也不要把一条改动拆得比 CHANGELOG 条目还碎。
+- **有对应编号条目的 commit**：标题**逐字复用**该条目的标题文字（去掉 `**`、反引号等 Markdown 修饰符），
+  **不写 commit body**——理由已经写在 CHANGELOG.md 里，不必在 git log 里重复一份。
+  例：CHANGELOG 标题是 `## 2026-09-13（61）—— trace 脱钩落地：非 tool 层对 pokemon_agent.trace 的 import 清零`，
+  对应 commit message 就是 `2026-09-13（61）—— trace 脱钩落地：非 tool 层对 pokemon_agent.trace 的 import 清零`。
+- **没有对应编号条目的 commit**（零散收尾、格式修正、文档同步等日常维护）：用 Conventional Commits 前缀
+  （`chore:` / `docs(scope):` / `fix:` 等），可以带简短 body 说明范围。
+- **一次性追提多条积压的编号条目时，按编号从小到大依次提交**，保持 commit 顺序与 CHANGELOG 顺序一致。
+- CHANGELOG.md 本身的 diff（追加新条目）只随**最后一个**相关 commit 一起提交，不要在中途逐段拆分它
+  ——历史上尝试过按行区间手工拼接，撞过 CRLF/LF 混用导致整份文件误判为全量替换的坑。
+
 ## 四、目录结构
 
 ```
