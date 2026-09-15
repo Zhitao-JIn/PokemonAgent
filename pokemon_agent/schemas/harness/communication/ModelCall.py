@@ -42,15 +42,11 @@ from pydantic import BaseModel, Field
 
 
 class ModelCall(BaseModel):
-    """一次模型调用留下的账，外加它成没成。
-
-    **不可变值语义**：`with_attempt()` 返回新对象（`model_copy`），不改自己
-    ——重试循环里每一条账都要独立留档，共享可变状态会让"第几次尝试"互相覆盖。
-    """
+    """一次模型调用留下的账，外加它成没成。"""
 
     payload: dict[str, str] = Field(
         default_factory=dict,
-        description="token、延迟、第几次尝试、原始输出（`raw`）、实际发给模型的文本输入"
+        description="token、延迟、原始输出（`raw`）、实际发给模型的文本输入"
         "（`prompt`，方便观测台/复盘直接看这次调用问了什么，不用去翻拼装代码）。"
         "**失败的调用也要有**——它同样烧了钱，而 `raw`/`prompt` 让你改进解析器之后能离线"
         "重算，不必再花 token 重跑",
@@ -61,16 +57,6 @@ class ModelCall(BaseModel):
         "空串表示这次成功了。**单独一列**：聚合失败模式时不必去解析 error 字符串",
     )
     error: str = Field(default="", description="失败详情，一句话")
-
-    def with_attempt(self, attempt: str) -> ModelCall:
-        """盖上一次尝试的序号，返回**新对象**（本类是不可变值语义，不改自己）。
-
-        **为什么 attempt 由循环控制者盖**：只有它知道"这是第几次"。
-        brain 不重试，所以它产出的账里没有这一项；`BrainTool` 收到账之后
-        在收进重试账那一刻统一盖上——这样无论成功还是失败路径，
-        账上的 attempt 都完整。
-        """
-        return self.model_copy(update={"payload": {**self.payload, "attempt": attempt}})
 
 
 __all__ = ["ModelCall"]

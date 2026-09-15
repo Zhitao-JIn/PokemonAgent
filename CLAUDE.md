@@ -1,4 +1,7 @@
 # Pokemon_Agent —— 开发规范
+> **本文件是 `AGENTS.md` 的镜像副本**（Claude Code 读这一份）。
+> **有冲突时以 `AGENTS.md` 为准**；要改规范请改 `AGENTS.md`，再把内容同步到这里
+> （除本句外两份应逐字一致；本仓库历史上这份曾是分叉的旧副本，2026-09-15 已同步并加此声明）。
 
 > 本文件是项目的硬约束。写代码前先读这里，规范与代码冲突时改代码，不改规范（要改规范先讨论）。
 
@@ -19,35 +22,38 @@
    每一步的全部输入都来自参数，全部记忆都来自工具调用。
    *为什么*：大脑无状态是整个架构的地基，一旦漏了状态，harness 的 trace / replay / checkpoint 全部失真。
 
-2. **大脑只能通过接口层与外界交互。** `brain/` 不许 import `harness/` 的任何具体实现，
-   只许 import 各模块自己的 `interface/`（Protocol 定义，原来集中在顶层 `interfaces/`，
-   现在物理挨着各自的实现——`world/interface/`、`brain/interface/` 等，见 CHANGELOG）。
-   **`brain`/`world`/`memory`/`trace` 这几个领域模块之间、以及它们与 `schemas.*`
-   之间，原则是完全没有相互依赖**——模块间只靠**裸函数**和 **tool 层**交互，
-   不造信封；tool 层是唯一被允许同时认识多个领域模块、做信封拆装的地方
-   （`world` 已经按这条原则完成裸字段化，其余模块正在推进，见
-   `docs/PLAN_bare_boundary_refactor.md` 与 CHANGELOG 对应条目）。依赖方向永远是
-   `brain → 各模块 interface/ ← harness`，**绝不反向，绝不横向**。
-   *为什么*：这条一旦破，mock 换真实实现就要改大脑代码，原型的意义就没了；
-   模块间零依赖是这一版重构消灭循环导入的根本手段——信封天然容易牵扯到别的
-   模块的类型，形成隐蔽的双向依赖。
-   *0913 更新*：原来"`providers` 例外，当作底层公共库"那句话已失效——代码层的
-   `pokemon_agent/providers/` 整个解散，实现按"谁消费"回了 `brain/providers.py`
-   与 `memory/fastembed_*.py`，**不再有横向的公共实现包**。
-   *0913 深夜九补充*：**"谁依赖 brain"的唯一答案是 tool 层**。全仓库对 brain 的
-   实现依赖只剩 `tools/brain_tool.py`（4 处）与 `tools/vision_factory.py`（1 处）；
-   装配点 `build.py` 对 brain **零 import**——它要的两种东西都经 tool 层工厂拿
-   （`BrainTool.build(text=…)`、`build_vision_provider(model=…)`），只递型号名。
-   其余包对 brain 的引用一律是**数据形状**（`Action`/`Goal`/`Task`/`RunPlan` 等），
-   不是实现依赖。
+2. **`brain` / `memory` / `trace` / `world` 是四个独立第三方模块，各自只暴露一个 Port。**
+   `brain/` 不许 import `harness/`、`world/`、`memory/` 的任何东西——它只依赖**自己声明的
+   provider 契约**（`brain/interface/llm_provider.py` 的 `LLMProvider` / `JudgeProvider`）
+   与 `errors/`。跨模块的数据交换**只能发生在 tool 层**。
+   依赖方向永远是：模块只认自己的 Port，`tools/*_tool.py` 认识两边的形状并做转换。
+   **协议的归属看"谁消费"不看"谁实现"，实现也跟着协议走**——`providers/` 这个包 0913
+   已解散：`QwenProvider`/`ArkProvider`/`DeepSeekProvider` 进 `brain/providers.py`，
+   `FastEmbedText`/`FastEmbedReranker` 进 `memory/`。
+   **"谁依赖 brain"只有唯一答案：tool 层（0913 深夜九审计定案）。** 全仓库对
+   `brain` 的**实现依赖**（`Brain`/`BrainPort`/`BrainLlmConfig`/`build_llm_providers`/
+   厂商类）现在只剩 `tools/` 五处；装配点 `build.py` 对 brain **零 import**——
+   它要的两样东西都经 tool 层的接线工厂拿：`BrainTool.build(text=…)` 造大脑、
+   `build_vision_provider(model=…)` 造 world 的感知 provider。装配只递型号名，
+   `BrainLlmConfig` 由 `BrainTool.build()` 内部构造。
+   （`harness`/`schemas`/`world` 对 brain 的引用一律是**数据形状**
+   （`Action`/`Goal`/`Task`/`RunPlan`/`Reflection`/`EpisodeSummary`/
+   `StepVerifyVerdict`/五个结果袋），不是实现依赖，见第十二节第 4 条。）
+   *为什么*：这条一旦破，"换一个世界 / 换一种记忆存储"就要改大脑代码，模块能整体拷走
+   复用的意义就没了。
 
-3. **mock 与真实实现必须实现同一个 Protocol。** 不许出现"mock 多一个方法"或"mock 签名不一样"。
+3. **模块层的 Port 收裸字段，不认识本项目的 `*Req` 信封。** 信封是"某一跳"的概念
+   （harness → tool 那一跳有自己的信封），不属于模块层。参照 `MemoryStorePort`：
+   入参是 `str` / `Sequence[str]` / 少数参与逻辑运算的关键结构（`keys` / `entries` / `images`）。
+   *为什么*：信封一旦进模块层，模块就被这个项目的编排方式绑死了。
+
+4. **mock 与真实实现必须实现同一个 Protocol。** 不许出现"mock 多一个方法"或"mock 签名不一样"。
    *为什么*：mock 的唯一价值是能被无痛替换。
 
-4. **跨层传递的数据一律是 Pydantic 模型，不用裸 dict。**
+5. **跨层传递的数据一律是 Pydantic 模型，不用裸 dict。**
    *为什么*：接口边界靠类型说话；后面接约束解码时 schema 直接复用。
 
-5. **每一步都必须产出 trace 事件。** 没有 trace 的执行路径视为未完成。
+6. **每一步都必须产出 trace 事件。** 没有 trace 的执行路径视为未完成。
    *为什么*：trace 是 replay、checkpoint、成本统计的共同底座，后补代价极高。
 
 ## 三、可读性与可维护性（和铁律同等强制）
@@ -71,11 +77,8 @@
 
 ### 2. 接口先行 —— 先写接口类，再写实现
 
-- 每个模块的对外能力**先在它自己的 `interface/`（或没有专属数据形状的模块走扁平
-  `ports.py`，见 `memory/`/`tools/`）里写成 `Protocol`（或 ABC）**，带完整类型注解和
-  docstring，再去写实现。接口文件本身就应该是可读的设计文档：**光读各模块的
-  `interface/`/`ports.py` 就能看懂整个系统怎么运转。**（历史上这些接口曾集中放在
-  顶层 `interfaces/`，2026-09-11 逐个模块搬完后该目录已删除，见 CHANGELOG。）
+- 每个模块的对外能力**先在 `interfaces/` 里写成 `Protocol`（或 ABC）**，带完整类型注解和 docstring，
+  再去写实现。接口文件本身就应该是可读的设计文档：**光读 `interfaces/` 就能看懂整个系统怎么运转。**
 - 接口的 docstring 要写清楚三件事：**这个方法承诺什么、什么情况下会失败、调用方要保证什么前置条件。**
 - 用 `Protocol` 而不是继承基类，除非需要共享实现。
   *为什么*：Protocol 是结构化类型，mock 不需要显式继承就能替换，测试里最省事。
@@ -147,9 +150,11 @@ def choose(self, obs: Observation, space: ActionSpace) -> Action:
 一旦 assert 里混进输入校验，读者就无法从 assert 判断哪些是我承诺的约束、
 哪些只是防御性代码，它作为文档的价值就没了。
 
-本项目的典型契约：`execute()` 入口断言动作在 action_space 内（pre）；
-`choose()` 出口断言返回动作在 space 内（post）；写 trace 时断言 `event_id` 大于上一条（invariant）；
-恢复 checkpoint 后断言 step 与事件序列长度一致（post）。
+本项目的典型契约：`GameTools.execute()` 入口断言每个段的按键名在动作空间内（pre）；
+`Brain.choose()` 出口断言返回的动作段非空、且每个段名都在本步的按键表里（post）；
+`TraceTool.append()` 入口断言 `req.meta` 带齐 `source`/`episode_id`/`step` 且**不带** `run_id`（pre），
+出口断言落盘事件的 `kind` 只许是请求点的那本账、或一条连带产出的错误账（post）；
+核对器对**盘上历史**事件断言 `set(meta) == set(node_io.META_KEYS)`（invariant）。
 
 ### 5. 测试是用法示范，不是覆盖率任务
 
@@ -167,190 +172,112 @@ def choose(self, obs: Observation, space: ActionSpace) -> Action:
 
 ```
 pokemon_agent/
-├── schemas/          Pydantic 数据模型（跨层契约 + 本项目自己的记录形状）。
-│                     `memory/`：记忆一族按**检索单元**命名——step_memory（一条=
-│                     一步，`StepMemory`）/ episode_memory（一条=一整局，
-│                     `EpisodeMemory`）/ object_fact（一条=一格，`ObjectFactEvent`）/
-│                     knowledge（不挂坐标的先验）/ episode_summary_io（蒸馏那次
-│                     调用的请求+响应，不是记忆）——这三类记录形状物理归这里而不是
-│                     `memory/` 自己的包：`MemoryStorePort` 完全不透明（只收发裸
-│                     字段/dict），从不需要知道它们具体长什么样，只有 tool 层/
-│                     组装方（`brain.brain.py::reflect()`、
-│                     `harness/object_interactions.py`、`tools/memory_tool.py`）
-│                     才认识；`StepMemory.Observation`/`ObjectFactEventBase.Place`
-│                     是各自的内部类，跟 `pokemon_agent.world` 的 `Observation`/
-│                     `PlaceInWorld` 字段一致但类不互相引用，组装方用
-│                     `.model_dump(mode="json")` → `.model_validate()` 转换。
-│                     `world`/`trace` 不再有子包（`Observation`/`ActionSpace`/
-│                     `TerrainMap`/`TraceEvent` 等已物理归回各自的模块，见下）
-├── brain/            纯决策层。无状态。**`pokemon_agent.*` 外部依赖为零**——
-│                     只剩标准库 + `pydantic` + `PIL`，**可作为第三方模块整体拷走**
-│                     （0913 深夜十一审计）。异常自成一根 `BrainError`、四封补全信封
-│                     （`LlmComplete*`/`VisionDescribe*`）已随 provider 搬进
-│                     `brain/schemas/`——都是"拷走不欠外面"的必需品。
-│                     `interface/`
-│                     是这个子系统自己的港口 + 数据 schema 出口：`brain_port.py`
-│                     （`BrainPort`）+ 六个数据形状（`Action`/
-│                     `EpisodeSummary`/`Goal`/`RunPlan`/
-│                     `StepVerifyVerdict`/`Task`，原来在
-│                     `schemas/brain/domain/`）+ **`llm_config.py` 的
-│                     `BrainLlmConfig`**（选型纯数据，0913 深夜九从
-│                     `build_llm_providers.py` 搬来——它零重依赖，住在工厂模块里
-│                     会让"只想声明型号"的调用方连带进口厂商实现面（含 PIL），
-│                     实测从 25 个 brain 模块降到 14 个）。`brain/__init__.py` 对六个
-│                     数据形状 + `BrainLlmConfig` 是立即加载，对 `Brain`（`brain.py`）/
-│                     `BrainPort`/`build_llm_providers`（厂商接线工厂，拖着
-│                     `providers.py` 整个实现面）都是**懒加载**——原因跟
-│                     `world/__init__.py` 对 `WorldPort`
-│                     的处理一样：`brain_port.py`/`brain.py` 都要
-│                     `import pokemon_agent.schemas.brain`，而
-│                     `schemas/brain/communication/*.py` 里的协议字段又要从
-│                     这里拿回数据形状，两条依赖在初始化顺序上会正面相撞，
-│                     取舍见 `CHANGELOG.md` 对应条目
+├── schemas/          Pydantic 数据模型（跨层契约）。记忆一族按**检索单元**命名：
+│                     step_memory（一条=一步，**源记录**）/
+│                     episode_memory（一条=一整局，**该局可信 step memory 的蒸馏视图**
+│                     ——派生物，可重建、可丢弃）/
+│                     object_fact（一条=一格）/ knowledge（不挂坐标的先验）/
+│                     episode_summary_io（蒸馏那次调用的请求+响应，不是记忆）
+│                     其余：Observation / Action / ActionSpace / TraceEvent / Completion。
+│                     `harness/communication/ModelCall.py` 是**跨层信封**那份账
+│                     （brain 方言另有一份，两份**字段同构、按"谁产出谁消费"分家**，
+│                     都不是"第几次尝试"的载体，见第十二节第 4 条）
+├── brain/            纯决策层。**可整体拷走复用的第三方模块**——只依赖自己声明的
+│                     两个 provider 契约与 errors，**不知道 harness / world / memory
+│                     的存在**。对外只有 `interface/brain_port.py`（六方法裸字段契约）
+│                     与 `interface/domain/`（brain 自己的方言：Action/Goal/Task/
+│                     RunPlan/Reflection/EpisodeSummary/StepVerifyVerdict + 五个结果袋
+│                     + `model_call.py` 那份 **brain 方言**的账，归属见第十二节第 4 条）
+│                     + `interface/llm_config.py`（`BrainLlmConfig` 选型纯数据，
+│                     0913 深夜九从工厂模块搬来——**只为数据而来的调用方不该连带进口
+│                     厂商实现面**）。`providers.py` 是厂商实现本体、
+│                     `build_llm_providers.py` 是接线工厂、`errors.py` 是内部词汇
+│                     （自成一根 `BrainError`，不继承 `AgentError`——那些异常在
+│                     tool 层的重试循环里就被吃掉、翻译了，走不到 harness）、
+│                     `schemas/` 是 brain 自己的四封补全信封（0913 深夜十一从顶层
+│                     `schemas/providers/` 搬来，provider 已全搬进来，这就是内部协议）。
+│                     **`pokemon_agent.*` 外部依赖为零**：只剩标准库 + `pydantic` + `PIL`。
+│                     这就是"可作为第三方整体拷走"的字面含义
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方。
-│                     **两张图、节点一人一个文件**：run 级 `run/`（`run_graph.py` +
-│                     6 格在 `nodes/` 下：`begin`/`plan`/`dispatch`/`episode`/`reflect`/
-│                     `review`——**包根只放骨架**，节点一律下沉一层）、
-│                     episode 级 `episode/`（`episode_graph.py` + 21 格按
-│                     七域 `open gate retrieve decide press store close` 分目录）。
-│                     **规则：节点文件名 = 对应 `<level>_graph.py` 里 `add_node` 的
-│                     字面量**（所以有 `retrieve/retrieve_step_episode_memory.py` 这种
-│                     "看着冗余"的全名——basename 要能**单独**说清"我是哪张图的哪一格"）；
-│                     结构性文件带层级前缀（`run_graph.py`/`run_entry.py`/`run_state.py`、
-│                     `episode_graph.py`/`episode_entry.py`/`episode_state.py`）。
-│                     `harness/` 根下只许**四个** `.py`（`__init__.py`/`deps.py`/
-│                     `auto_reviewer.py`/`run_data_center.py`——**步 5a 起这是终态**，
-│                     原先第五个 `trace_write.py` 已下沉 `tools/trace/model_calls.py`）
-│                     + `run/`/`episode/`/`interface/` 三个目录。
-│                     **入口是函数、不是类**：`run/run_entry.py` 的 `new_run`/`resume_run`
-│                     （+`close`）、`episode/episode_entry.py` 的 `run_new`/`run_resume`；
-│                     `RunHarness` 只剩 128 行薄类（`__init__(deps)` + 两个入口转调 +
-│                     三个 `data_center` 委托 + `_compile`），唯一的构造参数是 `deps.py` 的
-│                     `HarnessDeps`（缺省 `data_center` 在 `__init__` 里落实并**写回 deps**，
-│                     保证节点与外部调用面拿到同一个对象）。常量各自跟着宿主节点住
-│                     （`MAX_GOAL_RETRIES` 在 `run/nodes/reflect.py`；`MAX_PLAN_PUSH`/
-│                     `PLAN_MAX_ATTEMPTS`/`RUN_TRACE_MASK` 在 `run/nodes/plan.py`；两个节点数常量
-│                     在 `episode/episode_graph.py`；两层的 `recursion_limit` **各一个常量**——
-│                     run 级是**闸门** `RUN_RECURSION_LIMIT`（`run/run_entry.py`，一个大数，
-│                     不按公式算），episode 级是**贴身预算**，由 `episode_entry.episode_budget()`
-│                     按剩余步数逐局算）。
-│                     两张图的**交界键表**写在 `episode_graph.py` 的 `EpisodeInput`/
-│                     `EpisodeOutput` 两个模型里（run 给一局什么、一局还 run 什么），
-│                     `scripts/check_graph_phases.py` 机械核对"每个键都真的存在于两侧 state"。
-│                     `interface/`：**只剩两个真端口**——`human_reviewer.py` 的
-│                     `HumanReviewer` + 数据形状 `domain/human_decision.py` 的
-│                     `HumanDecision`（原来在 `schemas/harness/domain/`）。判据是"实现方
-│                     在不在系统之外"：`HumanReviewer` 的真实现是**人**；其余协作方都在
-│                     系统内（靠 `HarnessDeps` 递），不该有 Port——原 `harness_port.py` 的
-│                     `HarnessPort` 与 `episode_harness_port.py` 的 `EpisodeHarnessPort`
-│                     两张 Port 因此已删（D5，见 `docs/spec/harness/PLAN_graph_composition.md`）。
-│                     `harness/__init__.py` 对 `HumanDecision` 是立即加载，对
-│                     其余全部（`HumanReviewer` + 状态模型 + 常量 + 全部实现类）都是
-│                     **懒加载**——原因跟 `brain/__init__.py` 对 `Brain`/`BrainPort`
-│                     的处理一样：这些文件都要 `import pokemon_agent.schemas.harness`，
-│                     而 `schemas/harness/communication/FromHarnessToReviewerReviewResp.py`
-│                     的字段又要从这里拿回 `HumanDecision`，两条依赖在初始化顺序上
-│                     会正面相撞，取舍见 `CHANGELOG.md` 对应条目
-├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层。`world/interface/`
-│                     是这个子系统自己的港口 + 全部数据 schema 出口，跟"怎么读/
-│                     怎么算"的实现文件物理分开，且**零依赖**（不 import
-│                     `pokemon_agent.brain`、不 import `schemas.*`）：
-│                     - `world/interface/`：协议——`world_port.py`（`WorldPort`，
-│                       方法签名全部裸字段化：`reset`/`set_task` 收
-│                       `task_id`/`goal`/`success_criteria`/`max_steps`/
-│                       `initial_state_hint`，`step` 收
-│                       `list[tuple[str, int]]`，`perceive_once` 返回
-│                       `Perceived`，都不是别的模块的类型）+ `memory.py`
-│                       （`Memory`，只要求"能按地址取字节"）；数据——
-│                       `domain/facts.py`（`Facts`）、`domain/screen_state.py`
-│                       （`ScreenState`）、`domain/terrain_map.py`（`TerrainMap`，
-│                       `read_terrain` 的产出 schema）、`domain/observation.py`
-│                       （`Observation`）、`domain/action_space.py`
-│                       （`ActionSpace`）、`domain/place_in_world.py`
-│                       （`PlaceInWorld`）、`domain/perceived.py`（`Perceived`，
-│                       `perceive_once()` 的返回形状）、`domain/action_semantics.py`
-│                       / `domain/screen_model.py`（跨模块常量）——后面这几个
-│                       原来放在 `schemas/world/domain/`，按"模块间零依赖"这条
-│                       原则物理搬回了这里
-│                     - `pyboy_world.py` / `ram.py` / `frame_slot.py`：三份"怎么
-│                       读/怎么算"的实现，各自 `from .interface import ...` 拿协议
-│                       和数据形状来用，**不 import 任何 provider 实现**——它拿到的
-│                       那个 `VisionProvider` 实例是**tool 层工厂**
-│                       （`tools/vision_factory.build_vision_provider()`）造出来、
-│                       由装配点 `build.py` 递进来的（0913 深夜九起：此前是
-│                       `build.py` 直接从 `brain.providers` import，那是装配点
-│                       伸进 brain 实现面的唯一一处），`world/` 自己一行
-│                       都没提过 brain，不构成横向依赖
-│                     `world/__init__.py` 对 `interface/`（含 `WorldPort`）是
-│                     立即加载——零依赖之后不再需要懒加载；对
-│                     `pyboy_world.py`/`ram.py`/`frame_slot.py` 这几个重实现文件
-│                     仍是**懒加载**（`__getattr__` 按需导入），单纯是为了不让
-│                     只要类型定义的调用方被迫连带拖着 PyBoy 一起 import，跟
-│                     循环导入无关
-├── tools/            `ports.py`：四个对外契约（`BrainToolPort`/
-│                     `GameToolPort`/`MemoryToolPort`/`TraceToolPort`，原来在顶层
-│                     `interfaces/tools/`）——扁平文件，
-│                     没有自己专属的 domain schema，跟 `memory/ports.py` 同一个道理，
-│                     零循环依赖风险，立即加载；`brain_tool.py`/
-│                     `game_tools.py`/`memory_tool.py`/`trace/`（**步 5a 收成包**）：四个 Port 各自
-│                     唯一的实现，harness 伸向 brain/环境/记忆/trace 的四只手。
-│                     **两个接线工厂（0913 深夜九）**：`BrainTool.build(text=…)` 造
-│                     大脑 + 四个 provider、`vision_factory.build_vision_provider
-│                     (model=…)` 造 world 的感知 provider。**"谁依赖 brain"的唯一
-│                     答案就是本层**——装配点 `build.py` 只递型号名，对 brain 零
-│                     import。
-│                     **步 5b 销账**：`CheckpointToolPort` + `checkpoint_tool.py` 已解散
-│                     ——存档不是「能力」（没有第二种后端），它是 harness 自己状态模型的
-│                     落盘能力，现住 `harness/episode/episode_state.py::EpisodeCheckpoint`
-├── memory/           记忆子系统整块，**完全不认识** `StepMemory`/`EpisodeMemory`/
-│                     `ObjectFactEvent` 这几个类——ports.py 对外契约
-│                     （MemoryStorePort：只收发 `metadata: dict[str, str]` +
-│                     `payload: dict` 两个裸字段，零依赖）+ store.py 统一记录存储
-│                     （MemoryStore：一个 kind 一个文件夹 step_memory / object_memory /
-│                     episode_memory / knowledge_memory，一条记录一个 uuid 文件 +
-│                     每文件夹一份写穿倒排索引 index.json，可自愈重建）+ retrieval.py
-│                     混合检索纯函数。三类被持久化的记录形状归 `schemas/memory/`
-│                     （见该目录说明）——`StepMemory`/`ObjectFactEvent` 曾经短暂搬
-│                     进来过，但 `MemoryStorePort` 从头到尾不需要知道它们的具体
-│                     形状，只有 tool 层/组装方才需要，因此物理上搬回 `schemas/`
-├── providers/        **0913 已解散（此目录不存在）**。协议更早各归其位
-│                     （`LLMProvider`/`JudgeProvider` → `brain/interface/`、
-│                     `VisionProvider` → `world/interface/`、
-│                     `EmbeddingProvider`/`RerankerProvider` → `memory/`）；
-│                     实现这次跟着协议走：`QwenProvider`/`ArkProvider`/
-│                     `DeepSeekProvider` → `brain/providers.py`（`brain` 是主要
-│                     消费者，四链路接线的知识本来就在 `brain/build_llm_providers.py`），
-│                     `FastEmbedText`/`FastEmbedReranker` → `memory/fastembed_text.py`
-│                     / `fastembed_reranker.py`（只被 memory 检索链路消费）。
-│                     信封 `LlmComplete*`/`VisionDescribe*` 随 provider 进了
-│                     `brain/schemas/`（大脑内部协议）；world 用自己的同名副本
-│                     （`world/interface/domain/vision_describe.py`）
-├── vision/           图像预处理（网格叠加、放大）
-├── trace/            事件流：`interface/`（`TracePort` 协议 + `TraceKind` 账目
-│                     词表，原来分别在顶层 `interfaces/trace/` 和
-│                     `schemas/trace/domain/`，现在同住一包）+ `datastore/`
-│                     （`TraceEvent`/`EventType`/`Source`/`TRACE_SCHEMA_VERSION`，
-│                     原来在 `schemas/trace/datastore/`，物理搬回自己的包，
-│                     `store.py`/`interface/trace_port.py` 改成相对导入）+
-│                     `store.py`（`LocalTrace`：一条事件一个 json 落盘
-│                     trace_data/<run_id>/events/）+ 事件 payload 组装
+│                     **只依赖 tools / schemas / prompts 三层，不依赖 trace 的实现**
+│                     （trace 也是独立模块，只通过 Port 说话）
+├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层 + 世界语义常量
+│                     （INTERACT_KEY / DIRECTION_KEYS——"这个世界怎么按键"的知识）
+├── tools/            Harness 伸向各模块的手：`game_tools.py` / `memory_tool.py` /
+│                     `brain_tool.py` / `trace/`。**跨模块的双向转换一律在这一层**
+│                     ——tool 认识两边的形状，是唯一的桥。prompts/ 也住这里
+│                     （prompt 是 tool 的素材）
+│                     **五个接线工厂也住这里**：`BrainTool.build(text=…, judge=…,
+│                     verify=…, plan=…, max_tokens=…)` 造大脑 + 四个 provider、
+│                     `GameTools.build(rom, …)` 造 world 实现并挂感知 provider、
+│                     `MemoryTool.build(memory_root=…, knowledge_root=…,
+│                     max_summaries=…)` 造检索 provider、`TraceTool.build(run_id=…)`
+│                     造 `LocalTrace`、`vision_factory.build_vision_provider(model=…)`。
+│                     **"谁依赖 brain"的唯一答案就是本层**——
+│                     装配点 `build.py` 只递型号名 / 路径这类裸字段
+├── memory/           memory 子系统整块（契约 + 实现 + 算法，可整体拷走复用）：
+│                     ports.py 是对外契约（MemoryStorePort）；store.py 是统一记录
+│                     存储（MemoryStore：一条记录一个 <uuid>.json/.md + 每文件夹
+│                     倒排索引 index.json + 向量 sidecar vectors.jsonl）；
+│                     retrieval.py 是混合检索纯函数（BM25 + embedding + RRF +
+│                     reranker，只认字符串，不认记忆类型）；
+│                     embedding_provider.py / reranker_provider.py 是本模块消费的
+│                     两个协议。
+│                     只做读写与索引，不做语义判定（见下方分层原则）
+├── providers/        **0913 已解散**——实现按"谁消费"回了各自模块：
+│                     `QwenProvider`/`ArkProvider`/`DeepSeekProvider` →
+│                     `brain/providers.py`；`FastEmbedText`/`FastEmbedReranker`
+│                     → `memory/fastembed_text.py` / `fastembed_reranker.py`。
+│                     协议则更早各归其位：LLMProvider/JudgeProvider → brain.interface；
+│                     VisionProvider → world.interface；
+│                     Embedding/RerankerProvider → memory。
+│                     **本目录不再存在。**
+├── trace/            独立模块：TracePort 契约 + LocalTrace（落盘）+ 事件类型词表。
+│                     它不是 harness 的内部件——harness 只经 TraceToolPort 说话
 ├── experiment/       实验任务定义（tasks.py）、experiment_states/（钉死存档）、
-│                     real_check/（六维度真实链路核对）——仓库根级，不在包内
-├── prompts/          所有 prompt 模板 + 组装辅助函数
+│                     real_check/（真实链路核对：维度 1 harness / 2 trace /
+│                     4 memory / 6 memory roundtrip；编号 3、5 随 checkpoint
+│                     维度一起删了）——仓库根级，不在包内
+├── config.py         **全项目唯一的策略常量集中地**：重试预算 / 动作输出上限 /
+│                     循环控制 / 召回与判定四组。判据——"改这个数是为了做实验还是
+│                     为了让代码正确"：前者来 config，后者（帧数、内存地址、
+│                     网关下界等模块私有物理量）留在各自模块
 └── build.py          唯一的装配点（全项目唯一 new 具体实现的地方）
 
 tests/
-CLAUDE.md          开发规范（本文件）
+AGENTS.md          开发规范（本文件）
 CHANGELOG.md       变更日志，每次改动追加
 pyproject.toml
 ```
+
+**分层原则（三条）：**
+
+1. **memory 只保管 harness 交给它的数据结构与索引、按键原样读写**；"发生了什么、影响了谁"
+   这类语义判定（交互判定、受影响对象计算）由 harness 完成后以数据的形式交给它
+   ——memory 不理解游戏，只理解键和记录。
+2. **`brain` / `memory` / `trace` / `world` 一律按"独立第三方模块"对待**：各自只对外暴露
+   一个 Port（`BrainPort` / `MemoryStorePort` / `TracePort` / `WorldPort`），契约收裸字段，
+   不认识本项目任何 `*Req` 信封（信封是"某一跳"的概念，只存在于 `schemas/harness/`）。
+   模块之间**只经 tool 层交换数据**——`tools/*_tool.py` 认识两边的形状，双向转换只在那里做。
+   允许**冗余类对象**（同一结构两边各声明一份、字段同构但互不引用），换来两边独立演进。
+   *为什么*：这是"mock 能无痛换真实实现"和"模块能整体拷走复用"的机械保证。
+
+3. **`episode_memory` 是派生物，不是第二份事实。** 它的**正文**是本局「通过校验的
+   step memory」的蒸馏结果（可重建、可丢弃）；**来源章**（`episode_id` / `run_id` /
+   `goal` / `success` / `steps`）由 harness 从 run state 盖上，与 step memory 无关。
+   涉及"必须为真"的判断（成没成、走了几步）一律读来源章或更原始的记录，
+   **不许从正文叙述里反推**。
+   *为什么*：派生视图一旦被当成事实来源，蒸馏时的任何失真会静默跨局传播；反过来
+   定清楚了，"重蒸"才是安全操作——原料一直在，产物随时可换。
 
 一个模块超过 300 行就拆。一个函数超过 50 行就拆。
 
 ## 五、编排：LangGraph
 
 - 循环用 `StateGraph` 承载，**不手写 while 循环**。
-- `LoopState` 是唯一的图状态载体，必须是 Pydantic 模型或 TypedDict，字段有明确类型。
+- **两张图各有一个状态载体**（都是 Pydantic 模型，字段有明确类型）：run 图用
+  `harness/run/run_state.py::RunState`，episode 图用
+  `harness/episode/episode_state.py::EpisodeRunState`。没有第三种、没有共用的"总状态"。
 - 节点函数是纯函数形态：`(state) -> state 增量`，副作用只允许发生在工具调用节点。
 - **LangGraph 只管循环调度与状态传递。** 记忆层、状态表、值回填一律自己实现，
   不用 LangChain 的 Memory / Agent / Tool 封装。
@@ -358,24 +285,49 @@ pyproject.toml
 
 ## 六、LLM 与输出格式
 
-- 本阶段已有真实 provider：`brain/providers.py` 的 `QwenProvider`（DashScope、
-  语言+视觉两用）/ `ArkProvider`（火山方舟、豆包）/ `DeepSeekProvider`，
-  `memory/fastembed_text.py` 与 `memory/fastembed_reranker.py`（本地向量化与重排）；
-  通过 `LLMProvider`/`JudgeProvider`（`brain/interface/`）、`VisionProvider`
-  （`world/interface/`）、`EmbeddingProvider`/`RerankerProvider`（`memory/`）接入。
-  （0913 前它们都住顶层 `providers/`，那个包已解散。）
-  代码里**不许出现任何直连模型 SDK 的调用**——直连只发生在这几个实现文件里。
-- 动作选择输出用 **Pydantic schema**（`Thought` / `Action` / `Args`）解析。
+- 本阶段已有真实 provider，**各自住在消费它的模块里**（`providers/` 包已解散）：
+  `QwenProvider`（DashScope，语言+视觉两用）、`ArkProvider`（火山方舟/豆包，
+  型号名必须带日期后缀）、`DeepSeekProvider`（DeepSeek 官方 API）住
+  `brain/providers.py`；`FastEmbedText` / `FastEmbedReranker`（本地向量化与重排）
+  住 `memory/fastembed_text.py` / `memory/fastembed_reranker.py`。
+  它们通过**五个 Protocol** 接入：`LLMProvider` / `JudgeProvider`
+  （`brain/interface`）、`VisionProvider`（`world/interface`）、
+  `EmbeddingProvider` / `RerankerProvider`（`memory/`）。**brain 的四个 provider 由
+  `brain/build_llm_providers.py` 的 `build_llm_providers(config)` +
+  `BrainTool.build(text=…, judge=…, verify=…, plan=…, max_tokens=…)` 组装**
+  ——哪个技能接哪家厂商是 brain 的接线知识；`BrainLlmConfig` 由
+  `BrainTool.build()` 内部构造（签名收裸字段，装配点因此不必
+  import 任何 brain 名字）。world 的感知 provider 同理走 tool 层的
+  `build_vision_provider(model=…)`；**memory 的检索 provider 同理走
+  `MemoryTool.build(memory_root=…, knowledge_root=…, max_summaries=…)`**；
+  另两个同形工厂是 `GameTools.build(rom, …)` 与 `TraceTool.build(run_id=…)`。
+  **五个工厂全在 tool 层，装配点一个都不越过**——它只递型号名 / 路径这类裸字段。
+  代码里**不许出现任何直连模型 SDK 的调用**——直连只发生在
+  `brain/providers.py` 和 `memory/fastembed_*.py` 这几个实现文件里。
+- **prompt 是规则，入参是素材——不互相替代，同一东西绝不两处传。** "怎么判、怎么想、
+  怎么规划"全在 prompt 里（调用方组装、模块原样拿去问模型）；"判什么、想什么"才是入参。
+  所以一个方法要么在 prompt 里给、要么当参数传，**不许两边都放**（论据、`history` 这些
+  就是这样去掉的）。**模板跟着"拥有这次调用的那一方"走**：harness 发起的六条链路在
+  `tools/prompts/`（组装函数 + `calls/*.md`）；`PyBoyWorld` 自己发起的感知那一条在
+  `world/prompts/perceive_screen.md`——两份读取器各自声明、互不 import。
+- 动作选择输出用 **Pydantic schema**（`Action` / `ActionSegment`）解析。
 - **解析失败要重试并计数**，重试次数与失败计数进 trace。不许静默吞掉解析错误。
+  重试循环住在 **tool 层**（`BrainTool.choose` / `BrainTool.plan`）——拼重试纠正说明是
+  "拥有这次调用"的那层的事；账走 `resp.calls`（成功）或异常携带的 `exc.calls`（耗尽）。
+  **每次尝试各落一条账**，所以"试了几次"= `len(calls)`，账里不另设"第几次"字段（0914 撤）。
 - 约束解码（constrained decoding）留到接真实模型时再上，现在不做。
 
 ## 七、代码风格
 
-- Python 3.11（不是 3.10——`enum.StrEnum` 要 3.11 才有，`schemas/trace/domain/trace_kind.py` 等用到）。所有公开函数、方法、Pydantic 字段**必须有类型注解**。
+- Python 3.11（`requires-python = ">=3.11"`；不是 3.10——`enum.StrEnum` 要 3.11 才有，
+  `schemas/harness/domain/trace_kind.py`、`schemas/memory/datastore/step_memory.py` 用到）。
+  所有公开函数、方法、Pydantic 字段**必须有类型注解**。
 - `ruff` 管 lint + format，行宽 100。提交前跑 `ruff check . && ruff format .`。
 - 命名用完整英文单词，不用缩写（`action_space` 不是 `act_sp`）。
-- 注释只写**为什么**，不写做了什么。代码讲不清的取舍才写注释。
-- 不写 README 除非明确要求；说明写在 CLAUDE.md 或 docstring。
+- 注释仅三处：**文件顶层 docstring、函数顶层 docstring、函数内步骤进度**（`# 步骤 N：`）。
+  注释只写契约与进度；取舍论证与历史叙事一律进 `CHANGELOG.md`（变更类）或
+  `docs/spec/<模块>/SPEC.md`（设计类），不留在代码里。分节线（`# ---- x ----`）保留。
+- 不写 README 除非明确要求；说明写在 AGENTS.md 或 docstring。
 
 ## 八、错误处理
 
@@ -385,24 +337,39 @@ pyproject.toml
 - 每类失败要有名字（`ParseFailure` / `IllegalAction` / `ToolTimeout`），
   因为后面 replay 要按失败类型归类统计。
 
-## 九、trace 约定（后面 checkpoint / replay 全靠它）
+## 九、trace 约定（后面 replay / 成本统计全靠它）
 
-每条事件至少含：
+**一条事件一个 json 文件**：`trace_data/<run_id>/events/<uuid>.json`。文件名是
+**时间递增的 uuid**（前 48 位是毫秒时间戳），但**顺序不认文件名**——排序的真源是
+内容里的 `(ts, uuid)`（同毫秒靠 uuid 兜底；文件名只保证不撞名、让 `ls` 大致按时间排）。
+**没有内存事件镜像**：磁盘账本（`TraceToolPort.read_events`）是唯一真相，
+节点直接读它（`plan` 节点的历史摘要就走这里）。
+
+每条事件六个字段（`schemas/harness/domain/trace_event.py::TraceEvent`，与
+`trace/datastore/event.py::_Event` 逐字段对齐——**没有编译器保护，改一处必须同步另一处**）：
 
 | 字段 | 说明 |
 |---|---|
-| `event_id` | **单调递增整数**，replay 排序与断线补发靠它 |
-| `episode_id` | 一次 episode 的标识 |
-| `step` | 第几步 |
-| `type` | 7 类（`pokemon_agent/schemas/datastore/__init__.py::EventType`，见 `docs/spec/DATAFLOW.md` 2.2）：`model_call` / `error` / `llm_outcome` / `view` / `act` / `memory_io` / `lifecycle`。**0903 收敛原则**：type 与生产者（source）正交、数量极小；原 20 类里"哪个节点/哪类产物"的语义全部降级为 `payload.kind`（如 llm_outcome=intent/verdict/audit、memory_io=read_*/write_*、lifecycle=run/episode 边界 + step） |
-| `valid` | 废弃分支标记，默认 `true`。checkpoint 的 `void_after` 把游标之后的事件**原地**打 `valid=false`（不删不挪）；读端只收 `valid=true`。resume 写新 event_id、从不重用旧号 |
-| `payload` | 该类型的结构化内容 |
-| `ts` | 时间戳 |
+| `uuid` | 本次事件的唯一标识，**与文件名同值**。落盘那一刻由存储方盖上 |
+| `kind` | **账名**（`schemas/harness/domain/trace_kind.py::TraceKind` 的值）。由 tool 层给，**渲染层不做任何翻译**——`req.kind` 一路落到这里 |
+| `type` | 粗类，7 类（`trace/datastore/trace_event.py::EventType`，见 `docs/spec/DATAFLOW.md` 第四节「事件总表」）：`model_call` / `error` / `llm_outcome` / `view` / `act` / `memory_io` / `lifecycle`。**0903 收敛原则**：type 与"哪条产物"正交、数量极小；"哪个节点产出了什么"全部由 `kind` 回答（如 `think`/`judge_verdict`/`verify_verdict`、`read_*`/`write_*`、`do_action`/`get_action_space`） |
+| `ts` | Unix 时间戳（秒）。**排序的唯一依据**（`(ts, uuid)` 升序），算延迟与对齐外部日志也用它 |
+| `meta` | **标签面的 JSON 字符串**：`{run_id, source, episode_id, step}` 四件，**不多不少**。`run_id` 由落盘层（`trace/store.py::_stamp_run_id`）盖，另外三件由 harness 在 `req.meta` 里**一次交齐**，`TraceTool.append` 只核不拼。`source` = **这条账从哪个位置发出**（图上节点名，或图外入口名如 `run_entry.new_run`）。run 级账沿用约定：`episode_id` 位放 run_id、`step` 恒 0 |
+| `content` | **正文面的 JSON 字符串**。判据是"存在反函数"——能从这串字符无损还原出源记录的字段。**标量一律 `str()`、布尔一律小写 `true`/`false`**；本来就是结构化数据的那几处（`facts` / `sequence` / `verdicts` / 四本写账的正文）**直接放对象，不再 `json.dumps` 一次**（那是双重编码） |
 
-- trace 是**追加写的事件序列**，不是可变状态快照。checkpoint 存事件序列而非最终状态。
-- 落盘形状（0910 起）：一条事件一个 json，`trace_data/<run_id>/events/<run_id>-<event_id>.json`；
-  截图与事件共用 event_id，落 `trace_data/<run_id>/screenshot/<event_id>.png`（resume 不作废截图）。
-  `LocalTrace._next_id` 从盘上 max(event_id)+1 现算，接口按"能落盘、能重放"设计。
+- **0914 封套改造**：形状从九个字段收成上面六个，删了 `event_id`（唯一读方随
+  `frame_png` 一起下线；排序改看 `ts`）、`schema_version`（零读方、两份副本要人工
+  同步）、`frame_png`（**画面真源改成 `memory/step_memory/*.json` 的
+  `before_frame`/`after_frame`**，事件不再自带图；`read_event(id)` 随之下线）、
+  以及顶层 `run_id`/`episode_id`/`step`（搬进 `meta`）。
+  **`kind` 与落盘的账名现在是同一个词**：此前 harness 那套派发键（`MEMORY_WRITE`…）
+  与落盘账名（`write_step`…）两套名字靠一张翻译表连着，已整个删掉。
+- **0913 晚结构体瘦身**：更早还删过 `phase`（值恒等于 `type`）、`source`
+  （生产者维度下线；**"谁发的"这一维 0914 改由 `meta.source` 回答**——那是
+  "发送位置"，与"链路"不是一回事）、`valid`（恢复链已删，新写入恒真）。
+- trace 是**追加写的事件序列**，不是可变状态快照——但这说的是 trace 自身的写入
+  方式，不是 checkpoint 的存储形态。详见 `docs/ROADMAP.md` 第 16 条。
+- 本阶段 `LocalTrace`（一条事件一个 json）就够，但接口按"能落盘、能重放"设计。
 
 ## 十、测试
 
@@ -413,9 +380,124 @@ pyproject.toml
   **大脑在给定观测下选出预期动作**。
 - 测试不许连网、不许调真实模型、不许依赖时间戳精确值。
 
+> ⚠ **现状（2026-09-15 核实）**：`tests/` 下 13 个文件、104 个测试函数，**"必须存在的两个"一条都还没有**——
+> 现有全是单元/契约级（渲染、落盘、prompt、状态访问器、图终止），没有 `FakeLLM + MockWorld`
+> 跑完整 episode 的那一篇。这是**已登记的技术债**，不是规范改动；端到端那条目前靠
+> `experiment/real_check/` 的四个真机维度顶着（见 `docs/spec/experiment/SPEC.md`）。
+
+> ⚠ **现状（2026-09-15 核实）**：`scripts/` 下两个机械核对脚本**已不在仓库**——
+> `check_graph_phases.py`（抽 `add_node` 的字面量与观测台相位表逐条比对、核对"节点名 = 实现
+> 文件名"、`Runtime[...]` 的类型参数、`EpisodeInput`/`EpisodeOutput` 两侧键）与
+> `check_imports.py`（全仓 import 守卫）。**前者守的那几条现在没有可执行的守卫**，只能靠
+> `harness/` 的书写纪律（相关 docstring 已改成"曾经有"的措辞）。`scripts/` 下现存的自包含
+> 检查只有 `check_trace_self_contained.py` 与 `check_world_self_contained.py`（两个都还在）。
+
 ## 十一、这个阶段明确不做
 
 状态表在线归并（机制一）、MC 回填（机制三）、skill library（机制二）、沙箱。
 
 **别提前做。** 但接口要留得住：设计任何抽象时问一句"机制一接进来时这里要改吗"，
 要改就说明抽象错了。
+
+## 十二、schemas：信封与接口模型命名（2026-09-10 定稿）
+
+**分包形态**：产出的模块各自一个包、各自一个统一出口（`harness` /
+`world` / `memory` / `trace`）。**`schemas/frontend/` 已于 0914 控制台改造整个删除**
+——那套信封是给观测台前端用的（`FromFrontendToRunHarnessSubmitEditReq` 的整栈
+原子替换）；观测台已移出仓库、控制台交互不走前端信封。**schemas 侧不再有 `providers` 子包**——它 0913 深夜十一
+随代码层 `pokemon_agent/providers/` 一起解散：四封信（`LlmComplete*`/`VisionDescribe*`）
+已是 **brain 的内部协议**，随 provider 搬进 `brain/schemas/`；world 另有一份自己的
+`VisionDescribe*` 副本（`world/interface/domain/vision_describe.py`）。包内按种类落到
+`communication/` `domain/` `datastore/`。schemas 侧**不给 tool 门面单开子包**——
+`tools/` 代码层保留四张门面（`GameToolPort` / `MemoryToolPort` / `BrainToolPort` /
+`TraceToolPort`；存档那一张 `CheckpointToolPort` 已解散——存档归 harness 自己的状态模型），
+harness 经门面调模块的架构不变。
+
+1. **信封 = 我们自己的模块间契约**，命名 `From[模块A]To[模块B][函数名][Req/Resp]`，
+   **两半都放 A 处（发起方）**。强制适用范围是 **Harness ↔ 各门面**这一跳。
+   **外壳（experiment）→ Harness 这条边不包装**：外壳不是我们的模块，
+   入参与返回值都走裸字段——`run(run_id, goals)` 返回
+   `(outcomes, total, succeeded, success_rate)`，同款。
+   注意别把这条推到记账层：**信封该内嵌模型就内嵌模型**——RUN_END 里的
+   `RunResp` 由 `close()` 内部组装，跟 `run()` 返回什么无关（第 5 条）。
+   第一跳（调用方 → 模块门面）永远是信封，**门面上的每个方法都算**——
+   `GameToolPort` / `MemoryToolPort` / `BrainToolPort` / `TraceToolPort` 四张门面
+   （代码在 `tools/game_tools.py` / `memory_tool.py` / `brain_tool.py` / `trace/`）。
+   有入参就有 Req，返回结构化载荷就有 Resp；返回 None 的没有 Resp
+   （`FromHarnessToGameToolResetReq` 是先例——`reset()` 返回 `None`）。
+2. **模块对外的接口模型用裸名**，不带 From/To（brain 的 `Action` / `RunPlan`、
+   `brain/schemas/completion.py` 的 `LlmCompleteReq`、world 的 `Perceived`、
+   harness 的 `RunResp`）——因为发起方可能换人
+   （今天 harness，明天第三方），From/To 前缀是赌一个注定被换掉的名字。
+   **第二跳（门面 → 具体模块）走裸参数、返回模块自己的类型**，不造信封也不新建模型。
+3. **豁免登记**：**当前为空**。
+   - 原第一条豁免（`RunInteraction` 直读——三槽共享观察面）**已随控制台改造整个删除**
+     （0914）：槽机制是观测台的配套件（写入方与读取方不在同一调用栈），
+     控制台里人就在图的调用栈上，取而代之的是 `harness/interface/reviewer.py`
+     的 `Reviewer`（插话 + 审）与 `planner.py` 的 `Planner`，两个都由装配点
+     `build.py` 注入 `HarnessDeps`——走的是正常的依赖注入，不是"直读共享面"。
+   - 原第二条豁免（`TracePort.cursor` 的零参标量读取）随恢复链一起删了。
+4. **domain 实体按产出方归属**；**跨包引用只允许向下**，登记如下：
+   - **`schemas` 侧的真实出边只有两处**（0915 用 AST 核过）：`schemas.harness.domain.goal_entry`
+     → `brain`（`GoalEntry` 要内嵌 brain 的 `Task`），以及 `schemas.harness.communication/**`
+     → `world` / `brain.interface`（跨层信封要内嵌两边的形状）。
+     方向永远是"向下取形状"，反向不许；**`memory` 在这张图里出边为零**。
+   - `trace` 是**最底层共用层**，任何包可引用（`TraceEvent` 进 plan 上下文），
+     它自己零跨包引用。`providers`（代码层实现包）0913 已解散——
+     实现按"谁消费"回了 `brain/providers.py` 与 `memory/fastembed_*.py`。
+     `schemas/providers/` 也随之一并解散（0913 深夜十一）：四封信是 brain 的
+     内部协议、随 provider 进了 `brain/schemas/`，world 用自己的同名副本。
+     账（`ModelCall`）的归属见下一行。
+   - **代码层 `brain` 的引用面（0915 用 AST 重算）**：**实现依赖只有 `tools/`**，
+     共 5 处 import：`brain_tool.py` 3（`Brain`/`BrainPort`/`BrainLlmConfig`/
+     `build_llm_providers` 一族，加 `brain.errors` 的 `AttemptFailed`/`ParseFailure`/
+     `ProviderRejected`）、`game_tools.py` 1（`brain.errors.ProviderRejected`）、
+     `vision_factory.py` 1（`brain.providers.provider_for`）。`build.py` 对 brain
+     **零 import**（工厂全收在 tool 层）。其余包对 brain 的引用**一律是数据形状**
+     （`Action`/`ActionSegment`/`Goal`/`Task`/`RunPlan`/`Reflection`/
+     `EpisodeSummary`/`StepVerifyVerdict`/六个结果袋），按 import 语句数共 **28 处**：
+     `harness/**` 14、`schemas/**` 12、`tools/prompts` + `tools/trace/render` 2。
+     **形状引用不是实现依赖**，不违反本铁律（跨层信封必须能内嵌这些形状，见第 1 条）。
+     *计数口径*：一条 `import` 语句算一处，不按导入的符号个数拆开——
+     换口径要整段重算，别两处混用。
+   - **代码层 `world` 的引用面（0913 夜审计）**：**实现依赖只有 `tools/`**
+     （`game_tools.py` 的 `GameTools.build()` 造 `PyBoyWorld` 并挂感知 provider、
+     `vision_factory.py` 造零件）。`build.py` 对 world **零 import**（0913 夜才收平
+     ——它是四模块里最后一个补上工厂的）。其余包对 world 的引用**一律是数据形状**
+     （`Observation`/`ActionSpace`/`Facts`/`PlaceInWorld` + 世界语义常量
+     `BUTTON_FACING`/`FACING_STEP`/`INTERACT_KEY`/`DIRECTION_KEYS`），共 **12 处**
+     （0915 复核，**以脚本输出为准**）：`harness/episode/**` 4、
+     `schemas/harness/communication/**` 8。
+     **形状引用不是实现依赖**，不违反本铁律——`rules.py` 里 `PlaceInWorld(...)`
+     的**真构造**与 `harness` 构造 brain 的 `Goal`/`Task`/`Action`（6 处）同属这一类：
+     **非 tool 侧可以持有、也可以构造模块的数据形状，但不许碰它的实现**。
+     world 自己的出边为 **0**（`world → pokemon_agent.*` 外部 import 零；
+     `perceive_screen.md` 与异常根 `WorldError` 都已回到模块内）。
+     **不做双坐副本**：world 的形状里没有项目专属字段（对照 trace 的
+     `TraceEvent`——里面寄居了 7 个项目字段，那才是必须拆的归属错位），
+     按 P2 第三类"登记即可"。可执行核对：
+     `python scripts/check_world_self_contained.py`（A 出边为零 / B 实现面只在
+     `tools/` / C 装配点零 import + 打印本注册表）。
+   - **`ModelCall` 有三份归属、按"跨过哪道边界"分**：跨层信封那份住
+     `schemas/harness/communication/ModelCall.py`（只有循环控制者产出，`BrainTool._adopt()`
+     把 brain 交出来的账收编成这一份）；brain 方言那份住
+     `brain/interface/domain/model_call.py`（`Brain` 七个方法自己产出、`BrainTool` 消费）；
+     world 侧用裸 `dict[str, str]`（感知链路自记账、不跨层）。
+     **三份字段同构是巧合不是契约**；两份 `ModelCall` 也**都没有"第几次尝试"字段**
+     （0914 跟进删——`with_attempt()` 盖章连同 provider 侧 `max_attempts` 一起撤了，
+     **尝试次数 = `len(calls)`**，由账在重试链上的位置回答）——
+     **搬运点唯一**（`tools/brain_tool.py::_adopt()`）。
+   - 叶子包之间零引用、**永不反向**：被调方不许 import 发起方的包。
+5. **反向依赖的正解是改归属，不是摊字段。** 0910 的现场教训：
+   `FromHarnessToTraceToolAppendReq` 内嵌 run 结算，而结算当时叫
+   `FromFrontendToRunHarnessRunResp`、归在 frontend 包——记账层要内嵌它就得反向
+   import 前端包（实测还成了 `schemas.frontend ↔ schemas.harness` 的循环 import）。
+   正解是认出**这个模型本来就不属于那条边**：五个字段全是
+   `harness/run/run_entry.py::close()` 自己数出来的，跟谁发起这次 run 无关，
+   所以按第 2 条改成裸名 `RunResp`
+   归 harness（入参那半直接摊成裸字段，见第 1 条），trace 内嵌它就是同包引用。
+   （`schemas/frontend/` 已于 0914 整个删除，那个循环 import 的来源不复存在；
+   这条留作**判据的示范**——下次再遇到"记账层要内嵌某边的东西"，
+   先问它到底属于哪条边。）
+   **不要为了断依赖把结算摊成 `run_total`/`run_succeeded`/`run_success_rate` 这类裸字段**
+   ——信封该内嵌模型就内嵌模型，摊平只是把归属错误藏进字段列表里。

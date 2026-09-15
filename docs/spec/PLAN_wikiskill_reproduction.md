@@ -364,9 +364,22 @@ WikiSkill 的 skill 层会**自动改规则**——这是个会自己进化的�
 `EventType` 现有 7 类（0903 收敛原则：type 与生产者正交、数量极小）。
 进化图的动作**归入现有类型**，不新增 type：
 
-- `maintain_wiki` / `propose_skill` 的 LLM 调用 → `model_call` + `llm_outcome`（`payload.kind = "wiki_induce"` / `"skill_proposal"`）；
-- 写 wiki / 写 skill → `memory_io`（`payload.kind = "write_wiki"`）/ 新增 skill 的 io kind；
-- 门控结果 → `lifecycle`（`payload.kind = "evolution_gate"`）。
+- `maintain_wiki` / `propose_skill` 的 LLM 调用 → `model_call` + `llm_outcome`（`kind = "wiki_call"` / `"wiki_induce"`）；
+- 写 wiki / 写 skill → `memory_io`（`kind = "write_wiki"`）/ 新增 skill 的 io kind；
+  **形状照 0914 封套改造定的那一套**——**封套对每一笔账都一样**，不只是写类：
+
+  ```
+  {uuid, kind, type, ts, meta, content}          ← 封套四件 + 标签 + 正文
+  meta    = {run_id, source, episode_id, step}   ← JSON 字符串，由 tool 层拼、落盘层盖 run_id
+  content = 这笔账的本体                          ← JSON 字符串
+  ```
+
+  （`uuid` 由落盘那一层从文件名盖**并插到最前**、不要自己编；`kind` = 哪本账，
+  取值就是 `TraceKind` 的值，渲染层不再翻译；`source` = 这条账**从哪个位置发出**
+  （图上节点名或图外入口名，每笔账必填——同一个 kind 可能有多个生产者）；
+  坐标一律住 `meta`，**正文里不许再抄一遍**；`content` 的键名跟记录库对齐），
+  见 `CHANGELOG.md` 2026-09-14 第 96 / 97 / 100 条。
+- 门控结果 → `lifecycle`（`kind = "evolution_gate"`）。
 
 > **设计决定 D8**：**严格遵守 0903 收敛原则，不新增 `EventType` 枚举值。**
 > 新语义全部降级为 `payload.kind`。理由：进化循环是新的 source，但
