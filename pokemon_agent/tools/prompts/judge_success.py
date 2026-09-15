@@ -30,7 +30,7 @@ judge 第 0 步不问模型（`episode_harness.py::judge()` 的硬编码分支�
 `landmarks`），删掉这份重复的"当前观测"不会让 `landmarks` 新增暴露给判定器，
 只是让这份不一致自己消失。**如果以后要真的不让判定器看到 `landmarks`**，
 正确的地方是改 `StepMemory._render_obs()`/`render_sequence()`——但那是
-`judge`/`verify_and_summarize` 共用的渲染路径，改了会同时影响校验链，这次
+`judge`/`verify`/`summarize` 共用的渲染路径，改了会同时影响校验与蒸馏两条链，这次
 不在改动范围内。
 """
 
@@ -39,7 +39,7 @@ from __future__ import annotations
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolJudgeReq
 from pokemon_agent.schemas.memory import render_sequence
 
-from . import load
+from . import append_human_note, load
 
 _TEMPLATE = load("judge_success")
 
@@ -62,17 +62,27 @@ def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
     **没有单独的"当前观测"**：`history` 最后一条的"之后变成"就是当前这一帧
     （judge 第 0 步不问模型，走到这里 `history` 保证非空），模板里也不再有
     独立的 `$observation` 占位符——理由见模块文档。
+
+    **插话拼在最末尾**（0914 控制台改造）：`req.human_note` 非空时它由
+    `append_human_note()` 追加在模板渲染结果之后——"带话重问"就是同一条
+    prompt 加一句覆盖指令。
     """
     goal, history = req.goal, req.history
     steps = render_sequence(list(history), reason=False)
-    # 包装头用**真实步号**（history[i].step），不用窗口序号——判据里
-    # "看到 step=N 就停"指的是轨迹坐标，窗口从 0 重编号会让模型在两套
-    # 数字之间对不上号（0909 维度 1 卡 step 3 的事故之一）。
+    # 包装头用**真实步号**（history[i].step），不用窗口序号——步号在这里只是
+    # **坐标**（跟 trace / 记忆里的 step 对得上号），窗口从 0 重编号会让模型在两套
+    # 数字之间对不上号（0909 维度 1 卡 step 3 的事故之一）。**判据里已经没有任何
+    # 步数条件**（0915 撤：模型只有"达成没有"这一个位，预算用尽由 harness 自己判
+    # ——见 `experiment/real_check/common.py` 的注释），所以这个数字只是参考信息，
+    # 别让模板把它写成规则。
     past = "\n\n".join(
         f"## 第 {entry.step} 步\n{rendered}" for entry, rendered in zip(history, steps, strict=True)
     )
-    return _TEMPLATE.render(
-        goal=goal.goal,
-        criteria=goal.criteria,
-        history=past or "（这是第一步，之前什么都没发生）",
+    return append_human_note(
+        _TEMPLATE.render(
+            goal=goal.goal,
+            criteria=goal.criteria,
+            history=past or "（这是第一步，之前什么都没发生）",
+        ),
+        req.human_note,
     )

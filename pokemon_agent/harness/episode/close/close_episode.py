@@ -1,6 +1,6 @@
 """`close_episode`：**本局收尾**——算结算写进 `state.outcome`，并落一条 `EPISODE_END`。
 
-这是**第 21 个节点**（v1 想让它留在图外，见下）。收尾链的每一条分支都汇到这一格：
+这是**收尾链的最后一格**（v1 想让它留在图外，见下）。收尾链的每一条分支都汇到这一格：
 没有 step 记忆时从 `retrieve_verify_step_memory` 直接跳过来，有记忆时跟在
 `verify_and_summarize` 后面。
 
@@ -12,7 +12,7 @@
 它只算账：`done`/`success` 是 `gate/judge` 的产物，`obs.step` 是画面维度的坐标，
 `stall_count` 是停摆护栏——本格一个都不改。
 
-`derive_episode_reason` 跟着本节点（判据见 `PLAN_graph_composition.md` §3.5）。
+`derive_episode_reason` 跟着本节点。
 """
 
 from __future__ import annotations
@@ -73,8 +73,7 @@ def close_episode(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.EPISODE_END,
-            step=outcome.steps,
-            episode_id=state.episode_id,
+            meta={"source": "close_episode", "episode_id": state.episode_id, "step": outcome.steps},
             outcome_episode=outcome,
         )
     )
