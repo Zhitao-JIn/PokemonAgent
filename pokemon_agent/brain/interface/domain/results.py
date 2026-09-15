@@ -1,5 +1,5 @@
 """大脑各方法一次调用的产物：`ChooseResult`/`JudgeResult`/`PlanResult`/
-`VerifyResult`/`SummarizeResult`。
+`VerifyResult`/`SummarizeResult`/`ExtractResult`。
 
 **每个结果袋都是"硬性字段 + 软性字典"这个形状**——硬性字段是调用方一定要的
 （少一个就没法继续），`extra` 吸收其余一切：模型多给的字段、实现临时加的
@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from .action import Action
 from .episode_summary import EpisodeSummary
+from .learned_knowledge import LearnedKnowledge
 from .model_call import ModelCall
 from .run_plan import RunPlan
 from .step_verify import StepVerifyVerdict
@@ -66,18 +67,14 @@ class JudgeResult(_ResultBase):
         description="看到了什么证据（或为什么证据不足）。"
         "每一个 True 都得说得出依据，否则成功率就是一个无法证伪的数字"
     )
-    calls: list[ModelCall] = Field(
-        default_factory=list, description="这次判定的账，恰好一条"
-    )
+    calls: list[ModelCall] = Field(default_factory=list, description="这次判定的账，恰好一条")
 
 
 class PlanResult(_ResultBase):
     """**`plan()` 一次成功调用的产物**：解析出的计划 + 这次尝试的账。"""
 
     plan: RunPlan = Field(description="这次尝试解析出的计划")
-    calls: list[ModelCall] = Field(
-        default_factory=list, description="这次尝试自己的账，恰好一条"
-    )
+    calls: list[ModelCall] = Field(default_factory=list, description="这次尝试自己的账，恰好一条")
 
 
 class VerifyResult(_ResultBase):
@@ -96,11 +93,26 @@ class VerifyResult(_ResultBase):
 
 
 class SummarizeResult(_ResultBase):
-    """**`summarize()` 的产物**：蒸馏出的跨局经验 + 这次的账。
+    """**`summarize()` 的产物**：蒸馏出的本局摘要 + 这次的账。
 
     `summary` **非 Optional**：解析/调用失败时抛 `SummarizeAttemptFailed`——
     旧契约的 `None` 让"链路坏了"与"这局确实没什么可总结"分不开。
     """
 
-    summary: EpisodeSummary = Field(description="蒸馏出的跨局摘要")
+    summary: EpisodeSummary = Field(description="蒸馏出的本局摘要")
     calls: list[ModelCall] = Field(default_factory=list, description="这次蒸馏调用的账")
+
+
+class ExtractResult(_ResultBase):
+    """**`extract()` 的产物**：这一局读到的世界知识 + 这次的账。
+
+    与 `SummarizeResult` 一样是"从这一局的步骤记录里读东西"，但**读出来的东西
+    归属不同**——摘要属于那一局，知识属于世界（见 `LearnedKnowledge` 的说明）。
+    两条链路各自独立计费，所以各有各的 `calls`。
+
+    `knowledge.items` **可以为空**：大多数局什么都没读到，那不是失败。
+    真正失败（模型调不通 / 输出解析不出）抛 `ExtractAttemptFailed`。
+    """
+
+    knowledge: LearnedKnowledge = Field(description="这一局读到的世界知识（可以一条都没有）")
+    calls: list[ModelCall] = Field(default_factory=list, description="这次抽取调用的账")
