@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pokemon_agent.brain.interface import Goal
 from pokemon_agent.schemas.memory import StepMemory
@@ -21,8 +21,13 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     goal：要判的目标。
     history：本局最近几步（含 rationale，prompt 渲 `$history` 时按 `reason=False`
         滤掉——判定看"发生了什么"，不看决策者的主张）。
-    images：去重后的截图（PNG 字节），这次判定要看的画面。空列表表示退化
+    images：去重后的截图（**base64 编码的 PNG 字符串**，与
+        `VerifyReq`/`SummarizeReq` 同格式，也是 `VisionDescribeReq.images`
+        要的格式）。空列表表示退化
         成纯文本判定，不是"这次没有历史"的信号——那个信息在 `history` 里。
+    human_note：人对**上一次判定**插的一句话（空串 = 没被插话）。非空时它就是
+        "带话重问"的那一次——由 prompt 层拼在**最末尾**，压过上面所有规则
+        （0914 控制台改造：插话的落点之一）。
 
     **`prompt` 不是本模型的字段**（0913 删）：它是 `BrainTool.judge()` 入口处
     调 `build_prompt(req)` 的产物，只活在那一次调用的局部——shell 与"问模型"
@@ -31,4 +36,5 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
 
     goal: Goal
     history: Sequence[StepMemory] = ()
-    images: Sequence[bytes] = ()
+    images: list[str] = Field(default_factory=list)
+    human_note: str = ""
