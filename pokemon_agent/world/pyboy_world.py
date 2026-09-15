@@ -23,13 +23,12 @@ from dataclasses import dataclass
 
 from pyboy import PyBoy
 
-from pokemon_agent.tools.prompts import load as load_prompt
 from pokemon_agent.world import VisionDescribeReq, VisionProvider
 
 from .errors import PerceptionAttemptFailed
-from .frame_slot import FrameSlot
 from .interface import OVERLAY_ACTIONS, Facts, Observation, Perceived, ScreenState, TerrainMap
 from .interface.domain import terrain_legend
+from .prompts import load as load_prompt
 from .ram import read_terrain
 
 
@@ -66,7 +65,7 @@ assert {b for buttons in OVERLAY_ACTIONS.values() for b in buttons} <= set(ALL_B
 
 GB_FPS = 60  # Game Boy 大约每秒 60 帧；下面几个常量都按这个换算成秒
 PRESS_FRAMES = 10  # 按键按住多少帧
-WITHIN_ACTION_FRAMES = 2 * GB_FPS  # 连按时，每次按完推进多少帧（2 秒）
+WITHIN_ACTION_FRAMES = 1 * GB_FPS  # 连按时，每次按完推进多少帧（1 秒）
 AFTER_ACTION_FRAMES = 10 * GB_FPS  # 整条链按完后再推进多少帧（10 秒），然后才感知
 BOOT_FRAMES = 10 * GB_FPS  # 无存档时空转多少帧越过开机 logo
 
@@ -140,12 +139,12 @@ class PyBoyWorld:
         state_path: str | None = None,
         prompt_name: str = "perceive_screen",
         watch: bool = False,
-        speed: int = 1,
+        speed: int = 0,
     ) -> None:
         """
         感知重试预算不在这里——`perceive_once()` 只问一次，重试循环与预算
-        （`PERCEPTION_MAX_RETRIES`）在 `EpisodeHarness` 手里（见
-        `docs/ROADMAP.md` "重试循环该不该从 brain 挪到 harness"）。
+        （`PERCEPTION_MAX_RETRIES`）在 **`GameTools.perceive_with_retry()`** 手里
+        （0913 从 harness 节点搬回 tool 层，理由见 `world/errors.py` 的模块 docstring）。
 
         存档在 **`reset()`** 里载入，不是构造时——这样每个 episode 都从逐字节相同的
         起点开始跑，A/B 对比的前提才成立。构造时只检查文件在不在。
@@ -153,6 +152,15 @@ class PyBoyWorld:
         `state_path` **显式传入**，不用 PyBoy 默认的 `<rom>.state`：
         后面会有多个命名起点（真新镇出口 / 一号道馆前 / …），默认路径只有一个坑位，
         而且改 ROM 文件名就对不上。用哪个存档起跑要进 manifest。
+
+        **`watch` 与 `speed` 是两个独立的旋钮**（0914 解耦，此前是绑在一起的）：
+
+        - `watch`：开不开 SDL2 窗口。开着能看见画面（跑挂了也看得见最后停在哪一帧），
+          代价是多一条渲染路径；关着就是无头。
+        - `speed`：模拟器速度。`0` = **不限速**（PyBoy 的约定，能跑多快跑多快，
+          代价是一个核吃满）；`1` = 真实速度（过场看得清，CPU 占用大幅下降）。
+          **它与窗口无关**——开窗照样可以不限速（"看得见 + 跑得最快"是合法组合），
+          要看清过场时才动它；缺省 `0` 与解耦前的无头行为逐字相同。
 
         接好模拟器与视觉模型，备好缓存和推导状态。
         """
@@ -184,16 +192,18 @@ class PyBoyWorld:
             scale=4,
             no_input=True,
         )
-        # 无头模式（不 watch）不限速——没有人在看画面，演化按真实速度走
-        # 只是在空烧时间。只有 watch=True 时才按 `speed` 限速，让过场动画
-        # 看得清；无头批次跑得快，靠的就是这一行。
-        self._pyboy.set_emulation_speed(speed if watch else 0)
+        # **窗口与限速是两件事，各自一个参数**（0914 解耦）：
+        # `watch` 只管开不开 SDL 窗口；`speed` 只管跑多快——`0` = 不限速（PyBoy 的
+        # 约定，跑得最快），`1` = 真实速度（看得清过场）。四种组合都是一句话。
+        #
+        # 此前两者绑死成 `speed if watch else 0`：`speed` 只在 `watch=True` 时才有
+        # 意义，于是"**开窗口但不限速**"这个组合根本表达不出来；而缺省 `speed=1`
+        # 又让无头那次恒走 0——参数名义上存在、实际只有一半有效。解耦后缺省
+        # `speed=0`，无头行为与解耦前逐字相同。
+        self._pyboy.set_emulation_speed(speed)
         self._vision = vision
         self._prompt = load_prompt(prompt_name)
         self._state_path = state_path
-
-        self._frames = FrameSlot()
-        """实时画面的单槽管道：`_tick` 每帧生产，`latest_frame()` 消费（SSE）。"""
 
         self._task: _Task | None = None
         self._closed = False
@@ -215,7 +225,7 @@ class PyBoyWorld:
         max_steps: int,
         initial_state_hint: str = "",
     ) -> None:
-        """按任务重置。**不感知**——第一帧由 Harness 调 `perceive_once()` 拿。
+        """按任务重置。**不感知**——第一帧由调用方另调 `perceive_once()` 拿。
 
         前置条件：max_steps > 0。
 
@@ -303,8 +313,8 @@ class PyBoyWorld:
         # 只取决于按键自己推进了多少帧，不取决于过场走完没有；等它反而是白等。
         # 链尾（和单键动作）必须等——那一帧要交给 `judge` 看。
         #
-        # watch 模式下按真实速度演化：过场动画值得被看到，而不是
-        # 瞬间跳变；无头模式不限速，这 10 秒游戏时间的 tick 本身是瞬间的。
+        # `speed=1`（要看清画面时）按真实速度演化：过场动画值得被看到，而不是
+        # 瞬间跳变；缺省 `speed=0` 不限速，这 10 秒游戏时间的 tick 本身是瞬间的。
         if settle:
             self._tick(AFTER_ACTION_FRAMES)
 
@@ -313,9 +323,9 @@ class PyBoyWorld:
 
         `ram_only=False`（缺省）：**只问一次视觉模型，不重试**。
 
-        调用方（`EpisodeHarness`）在 `reset()`/`step()` 之后调它拿观测；
-        重试预算与循环归调用方管（见 `docs/ROADMAP.md` "重试循环该不该从
-        brain 挪到 harness"）——这里失败就抛，不自己再问一次。
+        调用方（`GameTools.perceive_with_retry`，0913 起在 tool 层）在
+        `reset()`/`step()` 之后调它拿观测；重试预算与循环归调用方管
+        ——这里失败就抛，不自己再问一次。
 
         `perceive_screen.md` 里硬写了"战斗指令框是 2×2"这条领域知识，是
         "领域知识该被检索、不该被硬编码进常驻 prompt"这条规则的**唯一例外**
@@ -362,8 +372,9 @@ class PyBoyWorld:
         # 那个类**——它不关心上游抛的是什么名字，只知道"这一次没拿到描述"，
         # 于是就地包装成自己的词汇，把原因文本带过去。
         # 这样做的收益：`ImageNotDelivered` 可以安心归 brain（brain 才拷得走），
-        # 而 world 这条链的失败出口始终只有 `PerceptionAttemptFailed` /
-        # `PerceptionFailure` 两个（harness 的 `perceive_with_retry` 只接前者）。
+        # 而 world 这条链的失败出口始终只有 `PerceptionAttemptFailed` 一个
+        # （`GameTools.perceive_with_retry` 只接它，耗尽后翻译成 tool 层的
+        # `MaxRetriesExceeded`——world 的词汇跨不过 tool 层这座桥，见 `world/errors.py`）。
         try:
             r = self._vision.describe(
                 VisionDescribeReq(images=[base64.b64encode(png).decode()], prompt=prompt)
@@ -373,7 +384,7 @@ class PyBoyWorld:
         except Exception as exc:  # noqa: BLE001  上游网关/实现的任何失败都是"这次没读出来"
             raise PerceptionAttemptFailed(
                 {
-                    "ok": "False",
+                    "ok": "false",
                     "raw": "",
                     "prompt": prompt,
                     "error": f"{type(exc).__name__}: {exc}",
@@ -386,7 +397,7 @@ class PyBoyWorld:
             "output_tokens": str(r.output_tokens),
             "cached_tokens": str(r.cached_tokens),
             "reasoning_tokens": str(r.reasoning_tokens),
-            "ok": str(screen is not None),
+            "ok": str(screen is not None).lower(),
             "raw": r.text,
             "prompt": prompt,
         }
@@ -506,32 +517,13 @@ class PyBoyWorld:
     def _tick(self, frames: int) -> None:
         """推进 N 帧。**逐帧 tick**——`tick(n)` 只在最后限速一次，
 
-        批量调用在 watch 模式下会让画面一跳一跳，逐帧才是平滑的实时。
-        无头模式不限速，逐帧的额外开销可以忽略。
-
-        每帧把画面副本塞进帧槽（`_frames`，O(1) 只换引用）——这是实时
-        画面的生产端：任何推进（按键后演化、决策期演化、开局）都会让
-        前端看到最新帧，不再依赖感知时点。
-
-        逐帧推进 N 帧。
+        批量调用在 `speed=1`（要看清画面时）会让画面一跳一跳，逐帧才是平滑的实时。
+        不限速（`speed=0`，缺省）时逐帧的额外开销可以忽略。
         """
         for _ in range(frames):
             if not self._pyboy.tick(1):
                 self._closed = True  # 窗口被关，世界没了——这是 world 唯一的终止权
                 return
-            # `screen.image` 是 `frombuffer` 共享渲染缓冲的视图，下一帧 tick
-            # 会覆盖底层数据——必须 copy() 出这一帧独有的像素副本再塞。
-            image = self._pyboy.screen.image
-            if image is not None:
-                self._frames.push(image.copy())
-
-    def latest_frame(self) -> bytes | None:
-        """取最新一帧的 PNG 字节（消费者接口）；还没 tick 过返回 `None`。
-
-        编码是惰性的——只在这被调用时才发生（SSE 端按自己的节奏取），
-        生产者每帧只付出一次 `copy()` 的成本。
-        """
-        return self._frames.latest()
 
     def _frame_png(self) -> bytes:
         """把当前画面截成 PNG 字节。"""
@@ -549,10 +541,10 @@ class PyBoyWorld:
         """无输入推进 N 帧——世界自己演化（音乐、动画、NPC 走动），不感知。
 
         决策等待期间的 evolve 已经从 harness 里去掉了（决策改成同步调用，
-        见 `harness/brain_utils.py` 的 `choose_with_retry`）——无头模式下世界不
-        限速，演化填充空闲省不出时间，异步等待反而是多余的复杂度。这个方法
-        仍是 `WorldPort` 契约的一部分，只是暂时没有调用方；world 只负责按
-        `speed`（watch 时才限速，无头不限速）演化，不管调用方是谁。
+        见 `harness/brain_utils.py` 的 `choose_with_retry`）——缺省 `speed=0`
+        （不限速）时世界跑得比等待快，演化填充空闲省不出时间，异步等待反而是多余
+        的复杂度。这个方法仍是 `WorldPort` 契约的一部分，只是暂时没有调用方；
+        world 只负责按 `speed` 演化（与开不开窗口无关），不管调用方是谁。
         窗口被关时 `_tick` 会置 `_closed`，下次感知自然看到 done——这里不用管。
         """
         assert frames >= 0, f"evolve() got negative frames: {frames}"

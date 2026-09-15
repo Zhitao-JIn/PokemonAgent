@@ -28,11 +28,11 @@ from dataclasses import dataclass
 from pokemon_agent.brain import Goal
 from pokemon_agent.config import MAX_RATIONALE, MAX_SEGMENTS
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
-from pokemon_agent.schemas.memory import render_decisions
+from pokemon_agent.schemas.memory import render_sequence
 from pokemon_agent.world import terrain_legend
 from pokemon_agent.world.interface import Facts
 
-from . import load, load_nested_sections
+from . import append_human_note, load, load_nested_sections
 
 # ---- 按 overlay 分流的按键说明（给 game_tools.py 构造动作空间用）----
 
@@ -123,31 +123,23 @@ REPEAT_HINT = load("repeat_hint").text
 # ---- decide_action.md 本体：加载 + 拼装 + 渲染（给 Brain 用）----
 
 _TEMPLATE = load("decide_action")
-_HUMAN_NOTE_TEMPLATE = load("human_note")
 
 
 def _render_goals(goals: list[Goal]) -> str:
-    """把目标栈画出来，栈顶在最上面——模型是从上往下读 prompt 的。"""
-    lines = []
-    for depth, g in reversed(list(enumerate(goals))):
-        mark = "← 你现在要完成的" if depth == len(goals) - 1 else ""
-        role = "任务目标" if depth == 0 else f"子目标（第 {depth} 层）"
-        lines.append(f"{depth}. [{role}] {g.goal}\n   判据：{g.criteria} {mark}".rstrip())
-    return "\n".join(lines)
+    """把这一局的**活跃目标**列出来，**当前要完成的那条排在最上面**——
+    模型从上往下读 prompt，靶子先摆出来。
 
-
-def _render_human_note(note: str) -> str:
-    """把这一步的人类实时插话（`RunDataCenter` 的 human_note 槽，取一次即清空）
-    渲染成一个独立小节。**空串时不留痕迹**——没人插话是常态，硬塞一句
-    "这一步没有人插话"每步都要发一遍，纯噪音；具体这段小节怎么措辞、为什么要
-    写"最高优先级"压过其余规则，全部在 `human_note.md` 里（跟 `retry_note.md`
-    同一种模式），这里只做"空则不渲染"这一件事（理由见
-    `pokemon_agent/prompts/__init__.py` 模块 docstring：prompt
-    渲染的内容问题都交给 prompt 文件，Python 只管数据和简单的开关逻辑）。
+    **这不是"层级栈"**：`goals` 是 `dispatch.active_stack()` 那份投影
+    （活跃条目 + 正在跑的那条搬到末位），这里只是把末位翻到最前。条目之间
+    **没有父子关系可说、位次也不代表深浅**——所以行首既不加序号、
+    也不加"第 N 层"这类前缀（0914：那两样都是把**投影位次**说成**层级**，
+    而真层级只由 `parent_id` 链表达，在 `run_plan` 的 `goals_lines()` 那份
+    **目标表**上，不在这张投影上）。靶子认「← 你现在要完成的」这一句，不认序号。
     """
-    if not note:
-        return ""
-    return _HUMAN_NOTE_TEMPLATE.render(note=note)
+    return "\n".join(
+        f"- {g.goal}{'  ← 你现在要完成的' if i == 0 else ''}\n  判据：{g.criteria}"
+        for i, g in enumerate(reversed(goals))
+    )
 
 
 def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
@@ -175,45 +167,50 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     只信任这个前置条件。`knowledge`/`episode_memories` 走各自的占位符，
     跟 `memories` 一样分开渲染、分开给可信度说明。
 
-    `memories` 那一段**按决策合并**（`render_decisions()`）：一次决策一段，只摆两端两帧
-    ——决策者当时就是按串键想的，回看也该是那个粒度；逐条渲染的版本（带相邻帧去重）
-    留给拿证据的判定器/校验器。
+    `memories` 那一段**逐条渲染、相邻帧去重**（`render_sequence()`）——跟判定器/校验器
+    同一套（0914 99 收口）：一链 N 键就是 N 条都摆出来，只在"上一条的『之后变成』与
+    这一条的『当时看到』确认是同一帧"时把那块换成一句指回去的提示，**条目一条不删**。
+    早先这里另有一套"按决策合并"（`render_decisions()`，链内中间帧整段不贴），已随
+    `plan_step_start` 一起拆掉——决策者回看的粒度就是它当时想的那个粒度，中间帧该在。
 
-    拼出这一步的完整 prompt。
+    拼出这一步的完整 prompt。人是插话的产物**拼在最末尾**——
+    `req.human_note` 非空时由 `append_human_note()` 追加（0914 控制台改造：
+    它是覆盖指令，紧贴"现在输出 JSON"，压过上面所有规则）。
     """
     goals, obs, space = req.goals, req.obs, req.space
     assert space.names, "build_prompt() got an empty action space"
     assert not obs.done, "build_prompt() called on a finished episode"
     assert goals, "build_prompt() got an empty goal stack"
     facts = "\n".join(f"- {k}: {v}" for k, v in obs.facts.items()) or "（无）"
-    # **按决策合并渲染**（不是逐条 `render()`）：`req.memories` 是本局全量、一键一条，
-    # 逐条渲会让同一次决策的中间帧各占一段，按决策长度线性放大决策 prompt。理由与实测见
-    # `schemas/memory/datastore/step_memory.py::render_decisions()`。
-    recalled = "\n\n".join(render_decisions(req.memories)) or "（无相关记忆）"
-    human_note_block = _render_human_note(req.human_note)
+    # `req.memories` 是本局全量、一键一条；逐条 `render()` 会把相邻两帧各贴一遍
+    # （上一条的「之后变成」就是下一条的「当时看到」）。`render_sequence()` 逐条渲、
+    # 只在确认首尾相接时把重复的那一帧换成提示——条目一条不删，画面不重复贴。
+    recalled = "\n\n".join(render_sequence(req.memories)) or "（无相关记忆）"
     actions = "\n".join(
         f"- {name}: {space.descriptions.get(name, '（无说明）')}" for name in space.names
     )
     if space.note:
         actions += f"\n\n{space.note}"
-    return _TEMPLATE.render(
-        goals=_render_goals(goals),
-        status=obs.status,
-        facts=facts,
-        # 模板里 $map_guide 在静态说明区（$goals 之前），不在 $facts 后面——
-        # 2026-09-08 重排：静态说明全部前移进 prompt 前缀（命中上下文缓存），
-        # 动态数据（goals/facts/knowledge/memories/…）集中靠后。旧安排
-        # （map_guide 挨着 facts，"规则贴着数据读"）的收益被行尾 x 范围
-        # （数据自解释，见 `world/ram.py` 的 `render()`）替代：模型不再需要
-        # 读完一大段规则才知道括号是什么，数据自己带着说明。
-        map_guide=space.map_note,
-        knowledge=req.knowledge or "（没有检索到相关知识）",
-        memories=recalled,
-        episode_memories=req.episode_memories or "（无跨局摘要）",
-        actions=actions,
-        max_rationale=MAX_RATIONALE,
-        max_segments=MAX_SEGMENTS,
-        human_note_block=human_note_block,
+    return append_human_note(
+        _TEMPLATE.render(
+            goals=_render_goals(goals),
+            status=obs.status,
+            facts=facts,
+            # 模板里 $map_guide 在静态说明区（$goals 之前），不在 $facts 后面——
+            # 2026-09-08 重排：静态说明全部前移进 prompt 前缀（命中上下文缓存），
+            # 动态数据（goals/facts/knowledge/memories/…）集中靠后。旧安排
+            # （map_guide 挨着 facts，"规则贴着数据读"）的收益被行尾 x 范围
+            # （数据自解释，见 `world/ram.py` 的 `render()`）替代：模型不再需要
+            # 读完一大段规则才知道括号是什么，数据自己带着说明。
+            map_guide=space.map_note,
+            knowledge=req.knowledge or "（没有检索到相关知识）",
+            memories=recalled,
+            episode_memories=req.episode_memories or "（无跨局摘要）",
+            actions=actions,
+            max_rationale=MAX_RATIONALE,
+            max_segments=MAX_SEGMENTS,
+        ),
+        req.human_note,
     )
 
 

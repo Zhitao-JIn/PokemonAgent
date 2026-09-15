@@ -27,8 +27,7 @@
 那句"零循环依赖、不需要懒加载"今天**仍然有效**，而且正是这次搬家的安全保证
 ——`schemas.harness` 不会回头要 `tools/` 的任何东西，所以本包仍然全部立即
 导入，不做 `__getattr__`（对照 `harness/interface` 与 `world/interface`
-为什么必须懒加载：那两个都有真的回环）。迁移理由与验收见
-`docs/spec/tools/PLAN_tool_interface.md`。
+为什么必须懒加载：那两个都有真的回环）。现状见 `docs/spec/tools/SPEC.md` 一、二节。
 """
 
 from __future__ import annotations
@@ -38,6 +37,8 @@ from typing import Protocol, runtime_checkable
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
+    FromHarnessToBrainToolExtractReq,
+    FromHarnessToBrainToolExtractResp,
     FromHarnessToBrainToolJudgeReq,
     FromHarnessToBrainToolJudgeResp,
     FromHarnessToBrainToolPlanOnceReq,
@@ -70,8 +71,12 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolStoreEpisodeStepReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryResp,
+    FromHarnessToMemoryToolStoreKnowledgeReq,
+    FromHarnessToMemoryToolStoreKnowledgeResp,
     FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
+    ModelCallLog,
+    TraceEvent,
 )
 
 
@@ -117,12 +122,27 @@ class BrainToolPort(Protocol):
     def summarize(
         self, req: FromHarnessToBrainToolSummarizeReq
     ) -> FromHarnessToBrainToolSummarizeResp:
-        """把过滤后的可信记录蒸馏成一条跨局摘要，并组装 `EpisodeMemory`。
+        """把本局过滤后的可信 step 记忆蒸馏成一条摘要，并组装 `EpisodeMemory`。
         永远返回 resp，不抛异常。"""
         ...
 
     def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
         """一次完整规划（含重试）。失败：重试用尽时抛 `MaxRetriesExceeded`（账在异常里）。"""
+        ...
+
+    def extract(self, req: FromHarnessToBrainToolExtractReq) -> FromHarnessToBrainToolExtractResp:
+        """一次世界知识抽取：渲染这一局的记录 → 调大脑 → **组装存储形状**。
+
+        跟 `summarize` 是同一分工的两半——`extract` 在这里干的活和
+        `summarize` 逐字同形（渲染、重试、盖来源章），只是产物不同：那边装
+        `EpisodeMemory`（属于那一局），这边装 `KnowledgeRecord`（属于世界，
+        `req.run_id`/`req.episode_id` 只是来源）。所以两个方法**不共用实现**，
+        但共用同一份素材形状（`req.entries`）——那是两条链路的输入契约。
+
+        **空列表不是失败**：`resp.records == []` 表示"这一局什么都没读到"，
+        那是常态。失败只有一种——重试用尽抛 `MaxRetriesExceeded`
+        （`source="extract"`，账在异常里），由调用方决定这一局的收场。
+        """
         ...
 
 
@@ -151,7 +171,7 @@ class GameToolPort(Protocol):
         ...
 
     def execute(self, req: FromHarnessToGameToolExecuteReq) -> None:
-        """执行一个动作，推进世界。**不感知**——调用方另调 `perceive_once()` 拿新观测。
+        """执行一个动作，推进世界。**不感知**——调用方另调 `perceive_with_retry()` 拿新观测。
 
         req.action：要执行的动作。**执行粒度是一个键**（单段、`times=1`）——
             连按已经在 Harness 的循环里展开成一步一步。
@@ -162,25 +182,29 @@ class GameToolPort(Protocol):
         ...
 
     def reset(self, req: FromHarnessToGameToolResetReq) -> None:
-        """按任务重置到初始状态。**不感知**——调用方另调 `perceive_once()` 拿第一帧。
+        """按任务重置到初始状态。**不感知**——调用方另调 `perceive_with_retry()` 拿第一帧。
 
         req.task：要跑的任务。
         前置条件：req.task.max_steps > 0。
         """
         ...
 
-    def perceive_once(self, *, ram_only: bool = False) -> FromHarnessToGameToolPerceiveOnceResp:
-        """感知当前这一帧。
+    def perceive_with_retry(
+        self, *, ram_only: bool = False
+    ) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]:
+        """感知当前这一帧——**重试循环与异常翻译都在实现方**（0913 夜定案）。
 
-        `ram_only=False`：**只问一次视觉模型，不重试**。
-        调用方在 `reset()`/`execute()` 之后调它拿观测；重试预算与循环归
-        调用方（Harness）管，见 `docs/ROADMAP.md`。
-        失败：解析不出结构化状态时抛 `PerceptionAttemptFailed`（附这次的账）。
+        `ram_only=False`（缺省）：反复问视觉模型，直到成功或预算耗尽。
+        harness 只负责**落账**：成功用返回的 `log`，耗尽用异常携带的 `calls`
+        ——两侧分工与 `BrainToolPort` 那六条链路逐字相同（见 `think_action`）。
+        失败：预算耗尽抛 `MaxRetriesExceeded`（`source="perception"`）。
+            **`PerceptionAttemptFailed` 不是本协议的词汇**——那是 world 的内部
+            细节，被实现方在桥上接住、翻译掉了，跨不过这层。
 
         `ram_only=True`：**不调视觉模型**，只读内存里确定的那几样（坐标、朝向、
         地标、通行图、地图编号）——链中间的键用这一档，它们只需要判"位置动没动、
         换没换图"。返回的观测 `perceived=False`：场景与对话**不是空的，是没读过**；
-        `calls` 为空，也不会失败。
+        `log` 为空，也不会失败、不会重试。
 
         后置条件：resp.observation 非空；step 未盖章（Harness 的事）。
         """
@@ -246,16 +270,18 @@ class MemoryToolPort(Protocol):
     def query_episode_summaries(
         self, req: FromHarnessToMemoryToolQueryEpisodeSummariesReq
     ) -> FromHarnessToMemoryToolQueryEpisodeSummariesResp:
-        """检索和当前场景相关的跨局摘要记忆。
+        """按元数据等值过滤取跨局摘要——**这一跳不做任何领域规则**（0914 定案）。
 
-        req.scene：当前场景，非空。
-        req.query：检索文本，非空。
-        req.limit：条数上限。
-        req.run_id：只检索**这一个 run** 里沉淀的摘要；空串 = 不限 run（仅测试用，
-            生产调用方必须传——跨 run 的经验对当前 run 是"别人家的答案"，
-            可能把失败局蒸馏出的"已验证"当真（跨 run 检索一律禁止）。
-        前置条件：req.scene、req.query 非空；req.limit > 0。
-        后置条件：条数 <= req.limit；按场景匹配 + 相关性 + 质量/成功排序。
+        req.conditions：字段→值，AND 取交集；空字典 = 全取。字段名与取值都由
+            调用方定，这一层不解释（store 只支持等值/成员匹配，不支持范围比较）。
+        前置条件：无——不过滤是合法用法，不是错误输入。
+        后置条件：返回**全部**命中记录的完整 `EpisodeMemory`，**不排序、不截断、
+            不限 run**；顺序只保证"同一个库读两次一样"（按 `episode_id` 字典序），
+            不含相关性含义。
+
+        **原先的四件套已删**（场景通配匹配 / 相关性排序 / 条数截断 / 跨 run 禁令）：
+        它们都是消费方的判断，住在读口上等于把"取哪些、取几条"从消费方手里拿走。
+        现在的分工是——读口给全集，消费方自己决定相关性与裁剪。
         """
         ...
 
@@ -264,13 +290,16 @@ class MemoryToolPort(Protocol):
     ) -> FromHarnessToMemoryToolStoreEpisodeSummaryResp:
         """落库一条**已经组装好**的跨局摘要，不调模型。
 
-        蒸馏与组装都在 `Brain.verify_and_summarize()` 里完成（resp.episode_memory，
+        蒸馏与组装都在 `BrainTool.summarize()` 里完成（resp.episode_memory，
         见 ROADMAP 16），这个方法只做落盘 + 更新检索向量缓存。
-        **这是这个 Port 上唯一的跨局摘要写入口**——只保留"先校验、
-        再只用可信记录蒸馏"这一条路径，没有"不经校验全量蒸馏"的兜底入口。
+        **这是这个 Port 上唯一的跨局摘要写入口**——它接两种形态：常规的
+        "蒸馏正文"，以及"正文全空"（这一局没有可蒸馏的正文，落一条只有来源章
+        的记录——`harness/run/nodes/review.py::_leave_chapter()`）。
+        **没有"不经校验全量蒸馏"的兜底入口**。
 
         req.memory：组装好的摘要记忆。
-        前置条件：req.memory.episode_id 非空。
+        前置条件：req.memory.episode_id 非空；正文与章自洽（要么整条完整、
+            要么整条为空）。
         后置条件：resp.memory 是原对象（落库后检索索引同步更新）。
         """
         ...
@@ -280,9 +309,9 @@ class MemoryToolPort(Protocol):
     def query_object_events(
         self, req: FromHarnessToMemoryToolQueryObjectEventsReq
     ) -> FromHarnessToMemoryToolQueryObjectEventsResp:
-        """取这张地图上的全部交互事件，按 step 升序。
+        """取交互事件，按 step 升序。
 
-        req.map_id：地图编号。
+        req.map_id：地图编号；**None = 不按地图筛**（run 级消费方没有"当前地图"）。
         req.before_step：只取 step 严格小于它的事件；None = 不过滤（"检索不读未来"）。
         后置条件：没有记录返回空列表。
         """
@@ -307,12 +336,18 @@ class MemoryToolPort(Protocol):
         """
         ...
 
-    # ---- 语义记忆（知识库，和坐标无关的通用先验） ----
+    # ---- 语义记忆（知识库：离线先验 + run 期间学到的，和坐标无关） ----
 
     def query_knowledge(
         self, req: FromHarnessToMemoryToolQueryKnowledgeReq
     ) -> FromHarnessToMemoryToolQueryKnowledgeResp:
-        """从通用游戏先验里检索出和 req.query 相关的那几条。
+        """从知识库里检索出和 req.query 相关的那几条。
+
+        **库里住着两种来源、一种形状**：离线灌入的手写先验（metadata 里
+        `source` 是文件名）与 run 期间由 `store_knowledge` 写进去的
+        （`source` 是 `{run_id}/{episode_id}`）。读口不区分它们——检索时
+        两边平权，谁更相关谁排前面；要分是分得开的（`resp.sources` 带了
+        `source`），但那是调用方的判断，不是这一跳该做的事。
 
         req：一次检索请求（检索文本 + 条数上限）。
         前置条件：req.query 非空；req.limit > 0。
@@ -320,47 +355,87 @@ class MemoryToolPort(Protocol):
         """
         ...
 
+    def store_knowledge(
+        self, req: FromHarnessToMemoryToolStoreKnowledgeReq
+    ) -> FromHarnessToMemoryToolStoreKnowledgeResp:
+        """落库一批**已经组装好**的世界知识，不调模型。
+
+        组装在 `BrainTool.extract()` 里完成（`resp.records`，来源章同
+        `summarize` 的五个字段那一套——`source`/`run_id`/`episode_id` 由 tool
+        层盖）。本方法只做**判重 + 落盘 + 更新检索向量缓存**。
+
+        **判重在这一跳做**：同 `topic` 且正文逐字相同的条目跳过——同一件事被
+        两局分别学到时不该在库里堆第二份。判据只看"完全一样"，不做语义去重：
+        相近但不完全相同是**该留下**的（世界知识的措辞差异常常带着新信息），
+        要不要合并是人的判断，不是存储层的。
+
+        req.records：**空列表是合法输入**（这一局什么都没读到）——那一跳
+            什么都不做，不是错误。
+        前置条件：每条 record 的 `topic`/`content`/`source` 非空。
+        后置条件：`resp.stored` 是**真的落库了的那几条**，是 `req.records`
+            的子序列（判重跳过的那些不在里面）；顺序与 `req.records` 一致。
+        """
+        ...
+
 
 @runtime_checkable
 class TraceToolPort(Protocol):
-    """事件流的记账与读取。
+    """事件流的记账与读取——**harness 认识 trace 的唯一入口**。
 
-    两个写方法是同一条分工——**harness 只组装信封（挑字段、声明来源），拆解
-    规则全在 tool 层**：
-    - `append`：一笔账 → 按 `kind` 渲染 payload，必要时一拆多；
-    - `append_model_calls`：一次模型交互的 N 次尝试 → N 条 `MODEL_CALL`。
+    两个写方法是同一条分工——**harness 只组装信封（挑字段、声明账名与来源），
+    拆解规则全在 tool 层**：
+    - `append`：一笔账 → 按 `kind` 渲染正文，必要时一拆多；
+    - `append_model_calls`：一次模型交互的 N 次尝试 → N 条调用账。
 
-    **读方法已删**（`cursor` / `read_disk_events` / `void_after`）：它们只服务
-    checkpoint 存档与恢复，随恢复链一起删掉了（见 `CHANGELOG.md` 2026-09-13 第 57 条）。
-    运维侧读事件流仍直读 `TracePort`/`LocalTrace`，不进 tool 层。
+    **读方法也在这张端口上**：`read_events`。**边界从此对称**——
+    写者与读者都只有 tool 层，harness / api 一律不 import `pokemon_agent.trace`。
+    原 `cursor` / `read_disk_events` / `void_after` 三件是 checkpoint 存档与恢复
+    专用，随恢复链一起删掉了（见 `CHANGELOG.md` 2026-09-13 第 57 条）；
+    `read_screenshot` 随截图副本删（0913 晚）；`read_event(id)` 随
+    `frame_png` 一起删（0914 封套改造——画面真源已是 `memory/step_memory/`）。
+    剩下的一条是**通用读**，不做掩码、不做游标、不打标。
 
-    **签名只用信封，不用任何模块的领域类型**：这是本文件所有端口共守的边界
-    （见模块 docstring 与 `docs/PLAN_tool_interface.md`）。所以"一次交互的尝试账"
-    在签名里是 `FromHarnessToTraceToolAppendModelCallsReq`，而不是那个裸的
-    `ModelCallLog`。
+    **磁盘账本是唯一真相**（0913 晚）：`RunDataCenter` 的内存事件槽已删，
+    run 内的节点（`plan`/`review`）现在读这里的 `read_events`，不再有
+    "内存一份、盘上一份"的双写（另一个读者 SSE 端点随 `api.py` 一起删了）。
 
-    **边界不对称**：写者只有 harness（走本端口）；读者是 api
-    （运维侧，直读 `TracePort`/`LocalTrace`，不进 tool 层）。
+    **签名只用信封与契约层类型，不用任何模块的领域类型**：这是本文件所有
+    端口共守的边界（见模块 docstring 与 `docs/spec/tools/SPEC.md`）。
+    所以"一次交互的尝试账"在签名里是
+    `FromHarnessToTraceToolAppendModelCallsReq`，而不是那个裸的 `ModelCallLog`；
+    返回的事件是 `TraceEvent`（契约层），而不是 trace 自己的 `Event`。
     """
 
-    def append(self, req: FromHarnessToTraceToolAppendReq) -> int:
-        """记一笔账，返回最后一条事件分到的 event_id。
+    def append(self, req: FromHarnessToTraceToolAppendReq) -> None:
+        """记一笔账，落盘（一笔 req 可能展开成多条事件）。
 
-        前置条件：req.kind 对应渲染所需字段非空（tool 入口 assert）。
-        后置条件：渲染出的全部事件已落盘；返回的 event_id 严格大于此前
-            任何一次 append 的值（一次 req 可能展开成多条事件，如
-            `model_call` 的账单 + 失败补 ERROR）。
+        前置条件：`req.meta` 带 `source`/`episode_id`/`step` 三件（签名信息由
+            harness 一次交齐）、`req.kind` 对应渲染所需
+            字段非空（tool 入口 assert）。
+        后置条件：渲染出的全部事件已落盘；每条的封套 `kind` 就是 `req.kind`
+            ——**例外是连带产出的错误账**（某个调用失败的尝试会补一条
+            `call_failed`，`type=error`）。
         """
         ...
 
     def append_model_calls(self, req: FromHarnessToTraceToolAppendModelCallsReq) -> None:
-        """记一次模型交互的**全部尝试**：一笔交互 → N 条 `MODEL_CALL`。
+        """记一次模型交互的**全部尝试**：一笔交互 → N 条调用账。
 
-        跟 `append` 同一分工——调用方只组装信封（定位字段 + `source` + 原始尝试账），
-        "每条带什么 `attempt`、怎么落"是 tool 的处理。
+        跟 `append` 同一分工——调用方只组装信封（定位字段 + `kind` 代表的链路 +
+        原始尝试账），"每条带什么 `attempt`、怎么落"是 tool 的处理。
 
-        前置条件：`req.log` 按 `attempt` 升序（重试循环保证）。
+        前置条件：`req.log` 按 `attempt` 升序（重试循环保证）、`req.meta` 带齐三件。
         后置条件：`req.log` 里每一条都已落盘；空 log 合法且不写任何事件
             （`ram_only=True` 的感知压根没调模型）。
+        """
+        ...
+
+    def read_events(self, episode_id: str | None = None) -> list[TraceEvent]:
+        """读**磁盘账本**上的全部事件，按 `(ts, uuid)` 升序；可按局切片。
+
+        episode_id：`None` = 不过滤，返回这个 run 的全部事件；给了就只返回
+            `meta.episode_id` 与它相等的那批。
+        后置条件：按 `(ts, uuid)` 严格升序；无匹配时返回空列表（不抛异常）。
+        失败：磁盘读取失败原样抛出——本方法不吞这一类错。
         """
         ...

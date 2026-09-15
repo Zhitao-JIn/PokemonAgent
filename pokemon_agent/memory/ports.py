@@ -23,7 +23,7 @@ memory 子系统要能被整体拷到别的项目里用，所以它的契约不�
 **实现方约定（`memory/store.py`）**：一个实例绑定一个 kind（=
 `memory/` 下的一个子文件夹）；每文件夹一份倒排索引 `index.json` 随记录写穿，
 真相永远是记录文件（一条记录一个 `<uuid>.json/.md`），索引是可自愈重建的
-派生物——见 `PLAN_memory_trace_layout.md` §5.1。
+派生物。
 """
 
 from __future__ import annotations

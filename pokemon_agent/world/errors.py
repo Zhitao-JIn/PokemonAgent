@@ -1,35 +1,50 @@
 """world 的内部失败：感知链路读不出画面。
 
+**它们自成一根 `WorldError`，不继承顶层的 `AgentError`**（0913 夜定案）——
+判据是 P3 那句「**这条异常有没有跨过 tool 层这座桥**」：
+
+    world 抛 PerceptionAttemptFailed ──► GameTools.perceive_with_retry 捕获、重试
+                                     ──► 耗尽抛 MaxRetriesExceeded ──► harness 的 except AgentError
+
+重试循环 0913 从 harness 节点搬回了 tool 层（对齐 `BrainTool._attempt_loop`），
+于是 world 的词汇**在桥上就被翻译掉了**，走不到 `RunHarness.dispatch` 的
+捕获点——继承 `AgentError` 就成了纯仪式，而仪式有实价：**world 拷走后还得带上
+`pokemon_agent/errors.py` 才能跑**，P1「能不能整个拷走」当场不成立。
+**brain 的情况与此完全同构**（`BrainError` 自成一根），两边现在同一规格。
+
 **为什么这些异常住在 `world/` 而不是顶层 `errors.py`**（0913 定案）：
-它们是 **world 的内部词汇**——`PerceptionAttemptFailed` 是感知链路的"这次没读出来"，
-`PerceptionFailure` 是重试耗尽后的升级态。world 是要能**被整体拷走复用**的模块
-（跟 `memory/`/`brain/` 同一规格），它的词汇得跟着它走。
+它们是 **world 的内部词汇**——`PerceptionAttemptFailed` 是感知链路的
+"这一次没读出来"。world 是要能**被整体拷走复用**的模块（跟 `memory/`/`brain/`
+同一规格），它的词汇得跟着它走。
 
 **`ImageNotDelivered` 不在这里**（虽然它也是"图的事"）：它由
-`brain/providers.py::describe()` 抛出（那个文件 0913 从顶层
-`providers/openai_compatible.py` 搬进 brain），而 `describe()` 是 brain 与
-world **共用的实现**——两个模块的契约（`world/interface/vision_provider.py` 与
-`brain/interface/llm_provider.py`）都声明"图片未送达时必须抛它"。既然它横跨两个
-模块、且由共享实现抛出，就**留在顶层 `errors.py`**（跟 `AgentError` 同理）。
-**而且留下更必要了**：world 若从 `brain.errors` 拿它，就是一条
-`world → brain` 的横向依赖；从 `pokemon_agent.errors` 拿，两个模块谁都不欠谁。
-
-跟 `AgentError` 的关系：这些异常**仍继承顶层的 `AgentError`**——
-"单局异常不崩掉整个 run"这条 run 级策略靠的正是这个共同祖先。
-**子类在这里、根在顶层**，两边各取所需。
+`brain/providers.py::describe()` 抛出，而 `describe()` 是 brain 与 world
+**共用的实现**——既然抛出者归 brain（0913 深夜十一"谁抛的归谁"），它就住在
+`brain/errors.py`（**不再是顶层 `errors.py`**，那份旧叙述已过时）。
+world 自己**不认识它**——`PyBoyWorld.perceive_once` 就地
+`except Exception` 把它收编成自己的 `PerceptionAttemptFailed`。
 """
 
 from __future__ import annotations
 
-from pokemon_agent.errors import AgentError
+
+class WorldError(Exception):
+    """world 的内部失败根。**不继承 `AgentError`**。
+
+    理由见模块 docstring：world 的异常在 `GameTools.perceive_with_retry` 里就被
+    翻译成 tool 层的 `MaxRetriesExceeded`，**走不到 harness 的捕获点**。
+    判据同 brain 的 `BrainError`——继承与否反映的是"这条异常有没有跨过
+    tool 层这座桥"，不是含糊的"共同祖先"。
+    """
 
 
-class PerceptionAttemptFailed(AgentError):
+class PerceptionAttemptFailed(WorldError):
     """一次感知尝试失败（视觉模型输出解析不出 `ScreenState`）。
 
     **世界侧的同类模式**（不在 brain 的 `AttemptFailed` 家族里——那个家族是
     brain 的六条链路，这是 `world` 的唯一链路）。账随异常带出来：
-    `PerceptionFailure` 是重试预算耗尽后的升级态，这里只是"问一次没读出来"。
+    "要不要再问一次"由调用方（`GameTools.perceive_with_retry`）决定，
+    重试预算与升级态都在那一层。
 
     与 brain 的 `AttemptFailed` 家族**刻意不合并**：两者都属于不同模块的契约面，
     合并会让 `world` 与 `brain` 共享一个异常类，等于两者之间多一条隐式耦合。
@@ -41,22 +56,4 @@ class PerceptionAttemptFailed(AgentError):
         self.call = call
 
 
-class PerceptionFailure(AgentError):
-    """反复调用视觉模型仍拿不到能解析的 `ScreenState`。
-
-    和 brain 的 `ParseFailure` 分开：那是**大脑**的输出格式问题（改 prompt 或上约束解码），
-    这是**感知层**的（换模型、改预处理、或者这一帧本来就没法读）。
-    在 replay 里它们指向完全不同的修法，合并就丢了诊断信息。
-
-    与 `ImageNotDelivered` 也分开：那是图没送到（网关问题），
-    这是图送到了但读不出结构（能力问题）。
-    """
-
-    def __init__(self, attempts: int, last_reason: str) -> None:
-        """记下试了几次、最后一次为什么失败。"""
-        super().__init__(f"perception failed after {attempts} attempts: {last_reason}")
-        self.attempts = attempts
-        self.last_reason = last_reason
-
-
-__all__ = ["PerceptionAttemptFailed", "PerceptionFailure"]
+__all__ = ["PerceptionAttemptFailed", "WorldError"]

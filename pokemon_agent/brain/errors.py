@@ -90,21 +90,42 @@ class OutputTruncated(BrainError):
 
 
 class ToolTimeout(BrainError):
-    """外部提供者（模型网关/API）调用不通——网络层或服务端 5xx，重试后仍失败。
+    """外部提供者（模型网关/API）这一次**没有调通**——网络层失败、5xx、或单请求超总时长闸。
 
     和 `ParseFailure` 分开：那是"调通了但输出没法用"，这是"根本没调通"。
     replay 里它们指向不同修法：前者改 prompt/解析，后者查网关/配额。
 
-    **它服务的是 brain 的链路**：抛它的是 `brain/providers.py` 的
-    `complete()`/`describe()`（那个文件 0913 从顶层 `providers/` 搬来）。
-    放在 brain 内部是因为"模型调不通"这条语义对 brain 六条链路成立。
+    **可重试**：传输抖动下一次可能就通（0915 真机实测 405 连挂两次第三次成功）。
+    重试的循环与预算都在调用方（`BrainTool._attempt_loop` /
+    `GameTools.perceive_with_retry`）——provider 自己**一次都不重发**（0915 起：
+    一次调用 = 一次 HTTP 请求，provider 层重试已删，账的可信度靠它）。
 
-    **4xx（401/403/400）不在这里**：那是配置/请求错误，不是抖动，重试多少次
-    都一样，必须当场崩（装配期就该暴露）。
+    **4xx（401/403/400）不在这里**：那是服务端的**明确拒绝**，不是抖动，
+    重试多少次都一样——归 `ProviderRejected`，当场崩（装配期就该暴露）。
 
     **进 brain 的错误家族就不必再挂 `AgentError`**：它永远在
     `BrainTool._attempt_loop` 里被接住、翻译成 `MaxRetriesExceeded` 再上抛，
     走不到 harness 的捕获点。
+    """
+
+
+class ProviderRejected(BrainError):
+    """服务端**明确拒绝**了这次请求——4xx（401 密钥、403 配额、400 格式、404 型号）。
+
+    **和 `ToolTimeout` 分开**：那边是"没调通，下次可能通"；这边是"服务端读了
+    请求并给了否定答复，重试多少次都一样"。混成一类，统计里就分不出
+    "网关抖动"和"配置错了"——前者该重试，后者该当场崩。
+
+    **为什么是它取代裸 `RuntimeError`**（0915，删 provider 层重试时）：此前 4xx
+    抛 `RuntimeError`，重试循环没法分辨"重试注定无用"，照单重试满预算，
+    还每轮给模型叠一句"你上一次的输出不合法"——配置错误被当成模型错误纠了一遍。
+    成类之后 `brain.choose` 封账时 `error_kind` 自动得到这个名字（它写的是
+    `type(exc).__name__`），重试循环据此**立即耗尽**（`attempts=1`），
+    replay 统计里也第一次看得见"配置错误"这个失败模式。
+
+    **同样不继承 `AgentError`**：跟 `ToolTimeout` 同一条路——在
+    `BrainTool._attempt_loop` 被翻译成 `MaxRetriesExceeded` 才上抛，
+    走不到 harness 的捕获点，brain 拷走不欠外部任何东西。
     """
 
 
@@ -174,8 +195,7 @@ class AttemptFailed(BrainError):
     def __init__(self, call: ModelCall, source: str = "") -> None:
         """记下这次失败的账单与它属于哪条链路。"""
         super().__init__(
-            f"[{source or type(self).__name__}] attempt failed: "
-            f"{call.error_kind}: {call.error}"
+            f"[{source or type(self).__name__}] attempt failed: {call.error_kind}: {call.error}"
         )
         self.call = call
         self.source = source
@@ -253,16 +273,31 @@ class SummarizeAttemptFailed(AttemptFailed):
         super().__init__(call, source)
 
 
+class ExtractAttemptFailed(AttemptFailed):
+    """一次**世界知识抽取**尝试失败（模型调不通 / 输出解析不出）。
+
+    跟 `summarize` 同形：抽取也是"从这一局的步骤记录里读东西"，失败不降级——
+    "这次什么都没抽到"（合法的空结果）与"抽取器坏了"必须分得开，
+    所以解析不出就抛，由 `BrainTool` 的重试预算接手。
+    """
+
+    def __init__(self, call: ModelCall, source: str = "extract") -> None:
+        """记下这次失败的账单。"""
+        super().__init__(call, source)
+
+
 __all__ = [
     "AttemptFailed",
     "BrainError",
     "DecisionAttemptFailed",
+    "ExtractAttemptFailed",
     "IllegalAction",
     "ImageNotDelivered",
     "JudgeAttemptFailed",
     "OutputTruncated",
     "ParseFailure",
     "PlanAttemptFailed",
+    "ProviderRejected",
     "SummarizeAttemptFailed",
     "ToolTimeout",
     "VerifyAttemptFailed",
