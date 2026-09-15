@@ -1,6 +1,6 @@
 """episode 图的唯一状态载体：`EpisodeRunState`。
 
-从 `harness/interface/episode_harness_port.py` 搬来（`PLAN_graph_composition.md` §6 步 0）——
+从 `harness/interface/episode_harness_port.py` 搬来——
 **状态不是能力**，`interface/` 只回答"harness 需要外面给什么"，不再回答"harness 自己长什么样"。
 那个 Port 文件已在步 4 删除（D5：它是"镜子"不是"港口"），所以旧的
 `episode_harness_port` 路径不再存在——唯一的家就是这里。
@@ -29,7 +29,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryKnowledgeResp,
     FromRunHarnessToEpisodeHarnessRunResp,
 )
-from pokemon_agent.schemas.memory import EpisodeMemory, StepMemory, StopReason
+from pokemon_agent.schemas.memory import EpisodeMemory, StepMemory
 from pokemon_agent.world import ActionSpace, Observation
 
 
@@ -43,7 +43,7 @@ class EpisodeRunState(BaseModel):
                 step_episode_memories / global_episode_memories /
                 knowledge_semantic_memory / object_semantic_memory
                 单步内，从一个节点传到下一个
-        决策    plan / pending_presses / pending_stop / plan_step_start   决策内小循环，
+        决策    plan / pending_presses                    决策内小循环，
                 跨 1..N 步（一次决策摊平成一串键，按完为止）
         结论    outcome   整局收尾，由 `close_episode` 写
 
@@ -107,9 +107,10 @@ class EpisodeRunState(BaseModel):
     knowledge_semantic_memory: FromHarnessToMemoryToolQueryKnowledgeResp | None = None
     """`retrieve_knowledge_semantic_memory` 查出来的知识库结果（内容 + 来源）。
     **不折进 `observation.facts`**——`think_action` 直接拿 `.contents` 拼
-    `ChooseOnceReq.knowledge`（prompt 里单独一节）；`merge_retrieval` 仍会用它
-    算 `knowledge_text` 记一条 `MEMORY_READ`。`None` = 这一步还没查（图上未终止分支
-    必经，只在没走到这一格时才是 None，比如刚开局那一帧）。"""
+    `ChooseOnceReq.knowledge`（prompt 里单独一节）；检索的账在那只读口自己那格
+    （`read_knowledge`，**只记 `count` 与命中的文件名，不记全文**）。
+    `None` = 这一步还没查（图上未终止分支必经，只在没走到这一格时才是 None，
+    比如刚开局那一帧）。"""
     object_semantic_memory: str = ""
     """`retrieve_object_semantic_memory` 查出来的语义记忆（object：这张地图上
     互动过的东西）。**仍然**由 `merge_retrieval` 折进 `observation.facts`——
@@ -125,8 +126,8 @@ class EpisodeRunState(BaseModel):
     plan: Action | None = None
     """**这一次决策交出的整条动作序列**（`think_action` 产出）。
 
-    它是**循环状态，不是记忆字段**——`StepMemory` 一律不含决策归属
-    （归属规则见 `docs/spec/harness/PLAN_action_step_granularity.md` §4）。留在这里的理由
+    它是**循环状态，不是记忆字段**——`StepMemory` 一律不含决策归属：它是
+    "一个键一步"的源记录，不记"这一键属于哪次决策"。留在这里的理由
     只有一个：`act` 每圈要拿它的 `thought` 去派生单键动作。
 
     **序列原文的权威位置仍是 trace**（`THINK` payload 的 `sequence`），这里存的
@@ -137,26 +138,10 @@ class EpisodeRunState(BaseModel):
         default_factory=list,
         description="把 `plan.sequence` 按 `times` **展开成「一键一段」的待按队列**"
         "（每段 `times=1`、带着它所属那一段的 rationale）。`act` 每圈弹队首；"
-        "队列空 = 这一次决策的键全按完了，回到链首重新决策。`apply_stop` 判出中止时"
-        "按作废范围截断它（`blocked` 丢掉本段剩余同名键/`warp`、`episode_over` 清空）",
+        "队列空 = 这一次决策的键全按完了，回到链首重新决策。**截断已删**（0914 "
+        "用户定调：撞墙/换图判不准）；唯一的队列干预是 `close_step` 的预算闸——"
+        "步号到上限时把剩余队列清空，纯步数、零判断",
     )
-    pending_stop: StopReason | None = None
-    """**刚按下的这一键的结局**——`perceive_after_action` 判出、`store_step_episode_memory`
-    盖进那条记忆。跟 `pending_observation` 一样是"还没被消费的新鲜结果"：
-    它活不过 `store_object_semantic_memory`（下一个 `act` 之前就被用掉了）。
-    `None` = 没有异常（要么背后还有待按的键，要么它本来就是链尾）"""
-
-    plan_step_start: int | None = None
-    """**这一键属于哪一次决策**——那次决策落在第几步（`think_action` 设）。
-
-    这里是它的**权威来源**：决策一次盖一次，`store_step_episode_memory` 从它抄进
-    那条记忆的 `plan_step_start`（同一个字段的两半——state 这份给执行期用，记忆那份
-    给渲染/取窗用）。归属判据、以及"它为什么不是决策字段"，写在
-    `StepMemory.plan_step_start` 上。
-
-    `None` 只在"从旧数据读回"时出现（那时还没有这个字段）；记忆侧
-    按 `step` 兜底（一次决策一个键），执行不受影响。
-    """
 
     pending_observation: Observation | None = None
     """**刚感知到、还没扶正的那一帧**——本圈的 `after`。等 `close_step` 把当前帧
@@ -221,4 +206,3 @@ class EpisodeRunState(BaseModel):
     结束收尾链，没有任何全量喂的蒸馏；空列表 `[]` = 校验过但全不可靠——
     蒸馏什么都不喂。两者语义不同，不能互相替代
     （见 `MemoryToolPort.store_episode_summary`）。"""
-
