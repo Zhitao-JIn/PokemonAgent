@@ -10,17 +10,19 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.config import JUDGE_DECISION_HISTORY, JUDGE_HISTORY_KEY_CAP, STALL_LIMIT
+from pokemon_agent.brain import Goal
+from pokemon_agent.config import JUDGE_HISTORY_STEPS, STALL_LIMIT
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolJudgeReq,
+    FromHarnessToBrainToolJudgeResp,
     FromHarnessToMemoryToolQueryRecentStepsReq,
+    FromHarnessToReviewerInjectReq,
     FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.memory import dedup_snapshots, last_decisions
-from pokemon_agent.trace import Source
+from pokemon_agent.schemas.memory import StepMemory, dedup_snapshots
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
@@ -76,99 +78,132 @@ def judge(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> dict[str, An
     # 步骤 1.5：第 0 步不问模型（原因见上面的节点文档），非模型结论（stall/世界
     # 结束/步数用尽——第 0 步这三样必然都是 False）直接就是最终结论，不用拼
     # history/images/prompt，也不留 MODEL_CALL 账单（没问模型就没有账要记）。
-    depth = len(goals) - 1
     if obs.step == 0:
         deps.trace.append(
             FromHarnessToTraceToolAppendReq(
                 kind=TraceKind.JUDGE_VERDICT,
-                episode_id=state.episode_id,
-                step=obs.step,
+                meta={"source": "judge", "episode_id": state.episode_id, "step": obs.step},
                 done=done,
                 success=success,
                 stalled=stalled,
-                depth=depth,
                 why="第 0 步不问模型",
             )
         )
         return {"done": done, "success": success}
 
-    # 步骤 2：取最近几条**链**当证据（换算见本文件的两个常量）。prompt **不在这里拼**
-    # （0913 定案）：本节点只装素材，`BrainTool.judge()` 入口拼
+    # 步骤 2：取最近 `JUDGE_HISTORY_STEPS` 条 step memory 当证据。**按条取**，
+    # 不按决策分组——判定器要看的是"最近发生了什么"，事件逐个键发生，窗口就该按
+    # 事件条数说（2026-09-14 定案，原先按决策取会让窗口随链长浮动，见 config 注释）。
+    # prompt **不在这里拼**（0913 定案）：本节点只装素材，`BrainTool.judge()` 入口拼
     # （`prompts.judge_success.build_prompt()`）。
-    # 检索面只认步号（`limit` 是"几条记忆"），所以要分两步取窗：先按键数上限取回
-    # 尾部，再按决策裁到最近 `JUDGE_DECISION_HISTORY` 次。`last_decisions` 不把一次
-    # 决策砍成半截——半截里"这一键之后为什么停"读不出来。
-    recent = deps.memory.query_recent_steps(
+    history = deps.memory.query_recent_steps(
         FromHarnessToMemoryToolQueryRecentStepsReq(
-            episode_id=state.episode_id, limit=JUDGE_HISTORY_KEY_CAP
+            episode_id=state.episode_id, limit=JUDGE_HISTORY_STEPS
         )
     ).steps
-    history = last_decisions(recent, JUDGE_DECISION_HISTORY)
 
     # 步骤 2.5：这次问模型要带的截图，去重后一并拿到（不再单独取 `snapshots`
     # ——"当前观测"改由 `judge_success.build_prompt()` 直接复用 `history`
     # 最后一条的"之后变成"，见 0909 CHANGELOG 条目）。
     images, _ = dedup_snapshots(list(history))
 
-    verdict_req = FromHarnessToBrainToolJudgeReq(
-        goal=goals[-1],
-        history=history,
-        images=images,
-    )
-    # 步骤 2.9：判定节点失败要**在逃出去之前留痕**（0913 定案）——判定耗尽
+    # 步骤 3：问一次判定。**失败要在逃出去之前留痕**（0913 定案）——判定耗尽
     # 原样上抛，最终由 episode 边界补 `EPISODE_ERROR`，但那条只有边界
     # （step 写死 0、一个 message 串），看不出"是第几步的判定节点完了"。
-    # 这里先落整条账（`MODEL_CALL`），再补一条只说明"节点完了、为什么"的
-    # `JUDGE_FAILED`，然后原样上抛。
-    try:
-        verdict = deps.brain_tool.judge(verdict_req)
-    except MaxRetriesExceeded as exc:
-        deps.trace.append_model_calls(
-            FromHarnessToTraceToolAppendModelCallsReq(
-                episode_id=state.episode_id,
-                step=obs.step,
-                source=Source.JUDGE,
-                log=[(i, call) for i, call in enumerate(exc.calls, start=1)],
-            )
-        )
-        deps.trace.append(
-            FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.JUDGE_FAILED,
-                episode_id=state.episode_id,
-                step=obs.step,
-                why=exc.last_reason,
-            )
-        )
-        raise
-
-    # 步骤 3：判定账单（MODEL_CALL，JUDGE）——账单与失败补 ERROR 由 tool 处理。
-    deps.trace.append(
-        FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.JUDGE_CALL,
-            episode_id=state.episode_id,
-            step=obs.step,
-            depth=depth,
-            calls=verdict.calls,
-            why=verdict.why,
-        )
-    )
+    # 那段逻辑（落整条账 + 补 `CALL_EXHAUSTED`（`link="judge"`）+ 上抛）在
+    # `_ask_judge` 里，第一次与后面的插话重问共用同一条路。`human_note=""` = 没被插话。
+    verdict = _ask_judge(deps, goals[-1], history, images, state.episode_id, obs.step, "")
 
     # 步骤 4：判成才改——覆盖停摆/超时的结论，最后一帧仍可能真的达成。
     if verdict.done:
         done, success = True, True
+
+    # 步骤 4.5：**插话**（0914 控制台改造）——把这次裁决亮给人。
+    #
+    # `judge` 的产物是"这一局该不该停"这**一个结论**（不是多字段结构体），
+    # 但人的反馈在这里仍然走 `inject`（一句话）而不是 `audit`（认/推翻）：
+    # `audit` 是**run 级**的概念（那一局算成算败、盖章进目标表），而这里是
+    # **局内**的一步判断——它不盖章，只是本条链要不要换个方式。
+    #
+    # 人说了话就**带着它重问一次**（不设上限，与 `think_action` 同一契约）。
+    # 重问的账照记：每次 `deps.brain_tool.judge()` 一笔 `JUDGE_CALL`。
+    note = deps.reviewer.inject(
+        FromHarnessToReviewerInjectReq(
+            prompt=f"请审这次判定（第 {obs.step} 步：{'判成' if success else '判未成'}）",
+            form=verdict,
+            form_kind="JudgeVerdict",
+        )
+    )
+    while note:
+        verdict = _ask_judge(deps, goals[-1], history, images, state.episode_id, obs.step, note)
+        if verdict.done:
+            done, success = True, True
+        note = deps.reviewer.inject(
+            FromHarnessToReviewerInjectReq(
+                prompt=f"再审这次判定（第 {obs.step} 步：{'判成' if success else '判未成'}）",
+                form=verdict,
+                form_kind="JudgeVerdict",
+            )
+        )
 
     # 步骤 5：判定结论留一条轻量事件（`EventType.JUDGE`）——账单（MODEL_CALL）归
     # model_call 列后，观测台上 judge 节点的内容靠这条。
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.JUDGE_VERDICT,
-            episode_id=state.episode_id,
-            step=obs.step,
+            meta={"source": "judge", "episode_id": state.episode_id, "step": obs.step},
             done=done,
             success=success,
             stalled=stalled,
-            depth=depth,
             why=verdict.why,
+            input=verdict.calls[-1].payload.get("prompt", ""),
+            output=verdict.calls[-1].payload.get("raw", ""),
         )
     )
     return {"done": done, "success": success}
+
+
+def _ask_judge(
+    deps: HarnessDeps,
+    goal: Goal,
+    history: list[StepMemory],
+    images: list[str],
+    episode_id: str,
+    step: int,
+    human_note: str,
+) -> FromHarnessToBrainToolJudgeResp:
+    """问一次判定、落一次账。**插话重问走这条路**（`human_note` 非空）。
+
+    与第一次问的唯一区别是那个 `human_note` —— 它由 prompt 层拼在**最末尾**，
+    压过上面所有规则。失败路径与第一次完全一致（落账 + `CALL_EXHAUSTED` + 上抛）。
+    """
+    verdict_req = FromHarnessToBrainToolJudgeReq(
+        goal=goal, history=history, images=images, human_note=human_note
+    )
+    try:
+        verdict = deps.brain_tool.judge(verdict_req)
+    except MaxRetriesExceeded as exc:
+        deps.trace.append_model_calls(
+            FromHarnessToTraceToolAppendModelCallsReq(
+                meta={"source": "judge", "episode_id": episode_id, "step": step},
+                kind=TraceKind.JUDGE_CALL,
+                log=list(exc.calls),
+            )
+        )
+        deps.trace.append(
+            FromHarnessToTraceToolAppendReq(
+                kind=TraceKind.CALL_EXHAUSTED,
+                meta={"source": "judge", "episode_id": episode_id, "step": step},
+                link="judge",
+            )
+        )
+        raise
+    deps.trace.append(
+        FromHarnessToTraceToolAppendReq(
+            kind=TraceKind.JUDGE_CALL,
+            meta={"source": "judge", "episode_id": episode_id, "step": step},
+            calls=verdict.calls,
+            why=verdict.why,
+        )
+    )
+    return verdict

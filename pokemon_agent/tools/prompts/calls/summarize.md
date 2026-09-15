@@ -1,5 +1,6 @@
 你是一个资深宝可梦玩家，负责从一整局游戏经历中蒸馏出可复用的经验。
-产出的是一条**跨局摘要记忆**：以后在别的局里，遇到相似场景时会被检索回来。
+产出的是一条**跨局摘要记忆**——**这一局 step 记忆的总结**（一条只对应一局）。
+名字里"跨局"说的是它以后会被别的局检索回来当参考，不是它总结了多个局。
 
 **下面给你的记录都已经通过核对**——它们是这一局真实发生过的事，可以当作
 事实来总结。不需要再质疑它们的真实性，也不要提"这些记录可能不准"。
@@ -29,7 +30,6 @@
     "quality_rationale": "这局的教训具体、可复用，但样本只有一次，尚未在别的地图验证过",
     "applicable_scenes": ["interaction:door", "interaction:pokemon_center"],
     "tags": ["door", "pokemon_center", "navigation"],
-    "filename": "door_navigation_pokemon_center",
     "markdown": "# 宝可梦中心门口导航\n\n站在 D 格上时，先核对 known_objects 里门的坐标，不要凭画面观感猜方向。"
   }
 }
@@ -38,7 +38,6 @@
 注意:
 - `summary` 内所有字段都必须提供，不能省略
 - `summary.quality_score` 必须是0.0-1.0之间的浮点数
-- `summary.filename` 只能包含小写英文字母、数字、下划线和连字符，不要包含路径或 `.md`
 - `summary.markdown` 必须是完整的 Markdown 记忆正文，不能包含 JSON 代码围栏
 - `summary.applicable_scenes` 只能使用以下稳定标签：`*`、`map:<数字>`、`scene:field`、`scene:indoor`、`scene:battle`、`scene:menu`、`scene:shop`、`overlay:dialog`、`overlay:choice`、`terrain:grass`、`interaction:npc`、`interaction:door`、`interaction:shop`、`interaction:pokemon_center`
 - `summary.applicable_scenes` 只填写这条经验实际适用的标签；通用经验使用 `*`，不要写自然语言长句
