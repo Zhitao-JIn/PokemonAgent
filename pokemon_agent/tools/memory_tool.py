@@ -20,22 +20,26 @@ uuid 文件 + 每文件夹倒排索引，0910 重构）：
 **跨局摘要的读口是纯等值过滤**（0914 定案）：场景通配匹配、相关性排序、
 候选上限、条数截断全删——那些是消费方的判断，读口只把符合条件的记录全量交出来。
 
-**"让记录消失"只有一个语义、也只有一个时机——归档**（0910 拍板）：
-checkpoint 恢复时把游标之后不再成立的那批 step 记忆与 object 事件搬进
-`voided-<ts>/`（不 unlink，留档可查）。**局正常收尾什么都不做**——step 记忆
-按 `episode_id` 查询天然隔离，没有查询方会跨局取到它，不需要清场。所以既没有
-"摘索引但文件原地留"的中间态（它在索引重建时无法还原，会让丢弃的记录复活），
-也没有"例行清理"这第二个归档动机。
+**容量淘汰**（0910 起，0916 改法）：跨局摘要超 `max_summaries` 时按质量淘汰最差的
+一条——**直接删**（`LocalMemoryStore.delete_many`）。0916 之前是"搬进
+`voided-<ts>/<kind>/` 留档"，那套归档已删：要留档就在淘汰之前拍一张快照
+（`snapshot()` 打整个根成 zip、`restore()` 以 zip 为准还原回来）。
+
+**局正常收尾什么都不做**——step 记忆按 `episode_id` 查询天然隔离，没有查询方会
+跨局取到它，不需要清场。
+
+**快照由 memory 自己管**（0916）：`snapshot(name)` 把整个记忆根打成
+`memory/snapshots/<name>.zip` 并返回路径；`restore(archive)` 用一个 zip 覆盖回来。
+harness 只给 zip 的名字——"快照放哪、怎么打包"不是它该知道的事。
 """
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
-from pokemon_agent.memory import EmbeddingProvider, MemoryStore, RerankerProvider
+from pokemon_agent.memory import EmbeddingProviderPort, LocalMemoryStore, RerankerProviderPort
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolAppendObjectEventsReq,
     FromHarnessToMemoryToolQueryEpisodeStepsReq,
@@ -50,6 +54,10 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryObjectEventsResp,
     FromHarnessToMemoryToolQueryRecentStepsReq,
     FromHarnessToMemoryToolQueryRecentStepsResp,
+    FromHarnessToMemoryToolRestoreMemoryReq,
+    FromHarnessToMemoryToolRestoreMemoryResp,
+    FromHarnessToMemoryToolSnapshotMemoryReq,
+    FromHarnessToMemoryToolSnapshotMemoryResp,
     FromHarnessToMemoryToolStoreEpisodeStepReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryResp,
@@ -63,43 +71,46 @@ from pokemon_agent.schemas.memory import (
     StepMemory,
 )
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+def _default_root() -> Path:
+    """缺省落盘根：**进程启动目录**下的 `memory/`（0916 起）。
+
+    与 `memory/store.py` 同一条规矩。四族记忆**一视同仁**地住在它下面各自的
+    `<kind>/` 子文件夹里——"哪一族住哪"不是一个需要逐个指定的问题。
+    """
+    return Path.cwd() / "memory"
 
 
 class MemoryTool:
     """`MemoryToolPort` 的唯一实现。持有四个统一索引层实例（四类记忆各一个
-    文件夹），不持有任何记录状态——记录在盘上，索引在各自文件夹里。"""
+    子文件夹），不持有任何记录状态——记录在盘上，索引在各自文件夹里。"""
 
     def __init__(
         self,
-        embedding_provider: EmbeddingProvider,
-        reranker_provider: RerankerProvider,
+        embedding_provider: EmbeddingProviderPort,
+        reranker_provider: RerankerProviderPort,
         memory_root: str | Path | None = None,
         max_summaries: int = 50,
-        knowledge_root: str | Path | None = None,
     ) -> None:
-        """接好检索用的两个模型 provider 与 `memory/` 根目录（缺省仓库根级）。
+        """接好检索用的两个模型 provider，以及**整个记忆库的落盘根**。
 
-        测试换隔离目录只动 `memory_root`；存储形状（一条一文件 + index.json）
-        对所有调用方一致，不再需要为每类记忆注入各自的 mock store。
+        `memory_root` 是**父目录**（`LocalMemoryStore` 会在它下面建 `<kind>/`），
+        缺省为**进程启动目录**下的 `memory/`（0916 起，不再写死仓库根）。
+        四族一视同仁——只指定这一个位置，四族各占一个子文件夹。测试换隔离
+        目录就传 `tmp_path`。
 
-        知识库是全局共享的先验、不随 run/测试隔离（0908 拍板⑩）——
-        `knowledge_root` 只在确要另指知识库位置时才传，缺省始终落在
-        仓库根级 `memory/knowledge_memory/`，与 `memory_root` 无关。
+        **0916 的两次口径变更**：① 落盘根从"代码住在哪"改成"启动时指定"；
+        ② 一度改成"四族各一个 root"（`step_root` / `object_root` / `episode_root`
+        / `knowledge_root`），同日回退——四族没有哪一族是特殊的，为它们各开
+        一个开关只是把"一个位置"说成四遍。现在只是一个 `memory_root`。
         """
-        root = Path(memory_root) if memory_root is not None else _PROJECT_ROOT / "memory"
-        self._memory_root = root
-        self._steps = MemoryStore(embedding_provider, reranker_provider, "step_memory", root)
-        self._objects = MemoryStore(embedding_provider, reranker_provider, "object_memory", root)
-        self._summaries = MemoryStore(embedding_provider, reranker_provider, "episode_memory", root)
-        knowledge_dir = (
-            Path(knowledge_root) if knowledge_root is not None else _PROJECT_ROOT / "memory"
-        )
-        self._knowledge = MemoryStore(
-            embedding_provider, reranker_provider, "knowledge_memory", knowledge_dir
-        )
+        self._root = Path(memory_root) if memory_root is not None else _default_root()
+        self._steps = self._store(embedding_provider, reranker_provider, "step_memory")
+        self._objects = self._store(embedding_provider, reranker_provider, "object_memory")
+        self._summaries = self._store(embedding_provider, reranker_provider, "episode_memory")
+        self._knowledge = self._store(embedding_provider, reranker_provider, "knowledge_memory")
         self._max_summaries = max_summaries
-        """跨局摘要的上限：超过就按质量淘汰最差的（平手淘汰最旧），归档不删。
+        """跨局摘要的上限：超过就按质量淘汰最差的（平手淘汰最旧），**删掉**。
         防止经验库无限膨胀——检索候选越多越慢、越杂。"""
         self._step_max: dict[str, int] = {}
         """`episode_id → 该局 step 记忆的最大 step`（append 单调前置的依据）。
@@ -107,21 +118,37 @@ class MemoryTool:
         self._object_max: dict[str, int] = {}
         """同上，object 事件专用。"""
 
+    def _store(
+        self,
+        embedding_provider: EmbeddingProviderPort,
+        reranker_provider: RerankerProviderPort,
+        kind: str,
+    ) -> LocalMemoryStore:
+        """按 kind 造一个绑在**同一个根**下面的 `LocalMemoryStore`（各占 `<kind>/`）。"""
+        return LocalMemoryStore(embedding_provider, reranker_provider, kind, self._root)
+
+    def _sync_max_caches(self) -> None:
+        """清掉 append 单调缓存——恢复（覆盖）之后盘上换了内容，这两个缓存不
+        再可信。不清的后果是"恢复回来的那一局，step 号被旧缓存挡住"（写不进去），
+        而它只会在下一次 `store_episode_step` 的 assert 上炸，很难回溯到这里。
+        """
+        self._step_max.clear()
+        self._object_max.clear()
+
     @classmethod
     def build(
         cls,
         *,
         memory_root: str | Path | None = None,
-        knowledge_root: str | Path | None = None,
         max_summaries: int = 50,
     ) -> MemoryTool:
         """造一个**接了本地检索 provider** 的 tool——装配点唯一的入口。
 
-        **为什么把"造 `FastEmbedText` / `FastEmbedReranker`"收在这一处**
+        **为什么把"造 `LocalEmbeddingProvider` / `LocalRerankerProvider`"收在这一处**
         （0913 深夜十二）：与 `BrainTool.build()` / `build_vision_provider()`
         同一条判据——"这条链路要接哪个实现"是接线知识，装配点
         （`build.py`）不该知道、也不该
-        `from pokemon_agent.memory import FastEmbedReranker, FastEmbedText`。
+        `from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider`。
         收进类方法之后 `build.py` 那一侧只剩一行 `MemoryTool.build()`，
         **协议归属（`memory/ports.py`）、实现归属（`memory/store.py`）、
         接线归属（本方法）三者对齐**，与 brain 那条链同形。
@@ -131,28 +158,72 @@ class MemoryTool:
         仍然只有一个答案（`memory/` 包自己），不是又多了一个真源。
 
         **签名收裸字段而不是收 provider 实例**：那样装配点就得先
-        `from pokemon_agent.memory import FastEmbed*` —— 正是本方法要消灭的
-        那一行。收 `memory_root`/`knowledge_root`/`max_summaries` 这几个
-        "装配知识"字段，跟 `BrainTool.build(text=…, judge=…)` 对齐。
+        `from pokemon_agent.memory import FastEmbed*` ——正是本方法要消灭的
+        那一行。收 `memory_root` + `max_summaries` 这两个"装配知识"字段，
+        跟 `BrainTool.build(text=…, judge=…)` 对齐。
 
-        前置条件：`memory_root`/`knowledge_root` 是存在的目录或其父目录
-            （不存在时 `MemoryStore` 构造期会 `mkdir(parents=True)` 自己建）。
-        后置条件：返回的 tool 持有的四个 `MemoryStore` 用**同一对**
+        前置条件：`memory_root` 是存在的目录或其父目录
+            （不存在时 `LocalMemoryStore` 构造期会 `mkdir(parents=True)` 自己建）。
+        后置条件：返回的 tool 持有的四个 `LocalMemoryStore` 用**同一对**
             provider 实例（四个 kind 共用一次模型加载，不重复初始化）。
         """
         # 导入放函数内：`memory` 包顶部拖着 `rank_bm25`，本模块被
         # `tools/__init__.py` 懒加载链带进来时不该顺带把它拉起来。
-        from pokemon_agent.memory import FastEmbedReranker, FastEmbedText
+        from pokemon_agent.memory import LocalEmbeddingProvider, LocalRerankerProvider
 
-        embedding_provider = FastEmbedText()
-        reranker_provider = FastEmbedReranker()
+        embedding_provider = LocalEmbeddingProvider()
+        reranker_provider = LocalRerankerProvider()
         return cls(
             embedding_provider=embedding_provider,
             reranker_provider=reranker_provider,
             memory_root=memory_root,
             max_summaries=max_summaries,
-            knowledge_root=knowledge_root,
         )
+
+    # ---- 快照 / 恢复（0916：zip 由 memory 自己管，harness 只给名字） ----
+
+    def snapshot_memory(
+        self, req: FromHarnessToMemoryToolSnapshotMemoryReq
+    ) -> FromHarnessToMemoryToolSnapshotMemoryResp:
+        """把整个记忆库打成一个 zip，返回它的路径。
+
+        **走 `step_memory` 那个实例去拍**：快照打的是整个根（四族的记录文件 +
+        各自的 `index.json`），不是某一个 kind——所以四个实例里任一个拿到的结果
+        都一样（`LocalMemoryStore.snapshot` 的 docstring 有说明）。这里挑第一个纯粹是
+        为了有个确定的入口。
+
+        zip 落在 `<memory_root>/snapshots/<req.name>.zip`，同名覆盖。**路径由
+        memory 层决定**（`SNAPSHOTS_DIRNAME`），harness 只给名字。
+
+        前置条件：`req.name` 非空、不含路径分隔符。
+        后置条件：返回的 `archive` 是盘上存在的 zip。
+        """
+        archive = self._steps.snapshot(req.name)
+        return FromHarnessToMemoryToolSnapshotMemoryResp(archive=str(archive))
+
+    def restore_memory(
+        self, req: FromHarnessToMemoryToolRestoreMemoryReq
+    ) -> FromHarnessToMemoryToolRestoreMemoryResp:
+        """用一个 zip 把记忆库**还原到那一刻**——以 zip 为准。
+
+        **库里多出来的会被删掉**：zip 里有的记录文件按 zip 写（同名直接盖），
+        zip 里没有的记录文件从库里消失。语义单位是**整个库**，不是"往库上叠一层"
+        ——后者做不到"恢复到某个存档"（越恢复越多）。
+
+        四个 store 的内存态随后各重读一次（对账通过就直接用
+        zip 里的 `index.json`），append 单调缓存也清掉——恢复回来的局应该能
+        接着写。
+
+        前置条件：`req.archive` 是存在的 zip。
+        后置条件：resp.unpacked 是解出的文件数；四族索引与盘上一致。
+        """
+        unpacked = self._steps.restore(req.archive)
+        # 另外三个实例也各重读一次：`restore()` 内部只刷新了它自己那一个的
+        # 内存态（`_load_or_rebuild` 是实例方法），覆盖是四个族一起发生的。
+        for store in (self._objects, self._summaries, self._knowledge):
+            store.reload()
+        self._sync_max_caches()
+        return FromHarnessToMemoryToolRestoreMemoryResp(unpacked=unpacked)
 
     # ---- 情景记忆：episodic（单步，全量，不检索） ----
 
@@ -174,8 +245,7 @@ class MemoryTool:
     def store_episode_step(self, req: FromHarnessToMemoryToolStoreEpisodeStepReq) -> None:
         """写入一条情景记忆：tool 层组装 metadata → 索引层落一个 uuid 文件。
 
-        前置条件：`req.entry.rationale` 非空；`entry.step` ≥ 该局已有最大 step
-        （恢复后同局重跑，void 归档把缓存退回保留区间，重跑的 step 号自然过闸）。
+        前置条件：`req.entry.rationale` 非空；`entry.step` ≥ 该局已有最大 step。
         """
         entry = req.entry
         assert entry.rationale, "store_episode_step() got an entry without a rationale"
@@ -220,7 +290,7 @@ class MemoryTool:
         metadata 交集 + 反序列化。
 
         顺序：按 `episode_id` 字典序落定——**这不是相关性排序**，只是让同一个库
-        读两次拿到同一个顺序（`MemoryStore.filter` 的交集走 `set`，本身无序）。
+        读两次拿到同一个顺序（`LocalMemoryStore.filter` 的交集走 `set`，本身无序）。
         """
         out: list[EpisodeMemory] = []
         for _record_id, _meta, payload, text in self._summaries.get_many(
@@ -256,7 +326,7 @@ class MemoryTool:
         元数据，正文是蒸馏出的 markdown。**文件用 uuid 命名**（`filename`
         这个模型字段 0914 98 已整个删掉——它在 uuid 命名落地那天就没有读方了）。
         写完按 `max_summaries` 裁剪：超限淘汰质量最差的，
-        **归档**进 `memory/voided-<ts>/episode_memory/`（淘汰是容量机制不是销毁）。
+        **删掉**（`delete_many`；0916 之前是搬进 voided 归档）。
 
         前置条件：`req.memory.episode_id` 非空；**正文与章自洽**——正文要么整条
             完整、要么整条为空（半截的正文是写入方在伪造内容）。
@@ -285,7 +355,8 @@ class MemoryTool:
         """超过 `max_summaries` 时淘汰质量最差的（平手淘汰先入库的）。
 
         按**质量**淘汰而不是 FIFO——FIFO 会保留一堆早期低质量经验；质量最低的
-        先走。淘汰 = 归档（搬进 voided），不删除。"""
+        先走。淘汰 = 直接删（0916；此前是搬进 `voided-<ts>/` 归档，那套已废
+        ——要留档请先 `snapshot()`）。"""
         if self._summaries.count() <= self._max_summaries:
             return
         pool: list[tuple[str, float]] = []
@@ -299,15 +370,7 @@ class MemoryTool:
         if not pool:
             return
         worst = min(pool, key=lambda uq: uq[1])[0]
-        self._summaries.archive_many([worst], self._voided_dir() / "episode_memory")
-
-    def _voided_dir(self) -> Path:
-        """归档根：`memory/voided-<ts>/`——`_trim_summaries` 淘汰最差的摘要时用它。
-
-        独立于任何恢复语义：本仓已无 checkpoint 恢复（见 `CHANGELOG.md` 本次
-        条目），这个目录现在只服务"容量淘汰时留档"这一条路径。
-        """
-        return self._memory_root / f"voided-{time.strftime('%Y%m%d-%H%M%S')}"
+        self._summaries.delete_many([worst])
 
     # ---- 语义记忆：object（交互事件流的透传，判定在 harness） ----
 
@@ -338,8 +401,7 @@ class MemoryTool:
     def append_object_events(self, req: FromHarnessToMemoryToolAppendObjectEventsReq) -> None:
         """追加一批交互事件（harness 判定层构造好；逐条落一个 uuid 文件，写穿）。
 
-        前置条件：每个事件的 step ≥ 其所在局已有最大 step（等于容忍崩溃窗口的
-        重复，恢复时的 void 归档负责清理）。
+        前置条件：每个事件的 step ≥ 其所在局已有最大 step。
         """
         for event in req.events:
             self._check_step_monotonic(

@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pokemon_agent.harness import (
     BrainPlanner,
     HarnessDeps,
@@ -46,6 +48,8 @@ def build_real(
     watch: bool = False,
     speed: int = 0,
     run_id: str = "local",
+    trace_root: str | Path | None = None,
+    memory_root: str | Path | None = None,
     # 供应商由**型号名前缀**决定（0914 起，表在 `brain/providers.py::_PROVIDER_PREFIXES`）：
     # `qwen*` → DashScope、`doubao*` → 火山方舟、`deepseek*` → DeepSeek 官方 API。
     # 下面这几个缺省值因此不只是"型号名"，它们同时**选定了厂商**。
@@ -58,6 +62,16 @@ def build_real(
     # ——"传 Qwen 型号名给 verify 会 404"那种事现在在装配期就变成 `ValueError`，
     # 因为型号名前缀与厂商类必须配套这件事已经由表保证。
     # state_file: None = 从开机起跑；API 装配默认传 `rom + ".state"`（存在时）。
+    #
+    # `trace_root` 与 `memory_root`：两份数据的落盘根（0916 起，启动时指定）。
+    # 缺省 None = **进程启动目录**下的 `tracelog/` 与 `memory/`——不再写死
+    # 仓库根。起跑脚本经 `--trace-root` / `--memory-root` 传进来，不传时从哪个
+    # 目录启动、数据就落在哪个目录。
+    #
+    # **memory 只有一个根**（0916 同日定案）：四族记忆（step / object / episode /
+    # knowledge）一视同仁地住在它下面各自的 `<kind>/` 子文件夹里。一度改成"四族
+    # 各一个 root"，随即回退——四族没有哪一族特殊，为它们各开一个开关只是把
+    # "一个位置"说成四遍。
     reviewer: Reviewer | None = None,
     planner: Planner | None = None,
     auto_push_goals: bool = True,
@@ -74,8 +88,9 @@ def build_real(
 
     **事件流不在返回值里**（0913 下午）：harness 侧全部读点走
     `HarnessDeps.trace`（`TraceToolPort`），装配点把 `LocalTrace` 交出去只会
-    逼调用方去认一个 trace 类型。`trace_data/` 落盘的路径由 tool 层持有，
-    外部要读账一律经 `deps.trace`。
+    逼调用方去认一个 trace 类型。`tracelog/` 落盘的路径由 tool 层持有
+    （缺省 = 启动目录下的 `tracelog/`，`trace_root` 可改），外部要读账一律经
+    `deps.trace`。
 
     `reviewer` / `planner`：人与图之间的那扇门、与 plan 位置的 input 来源
     （**两个同步接口**，控制台实现会阻塞读 stdin）。**两者的缺省不一样**：
@@ -131,16 +146,16 @@ def build_real(
     # 接线工厂——落盘记录的完整形状在它内部接好，本装配点只递裸字段。与
     # `BrainTool.build()` / `MemoryTool.build()` / `GameTools.build()` 同形。
     # **本文件对 `pokemon_agent.trace` 零 import**。
-    trace_tool = TraceTool.build(run_id=run_id)
+    trace_tool = TraceTool.build(run_id=run_id, trace_root=trace_root)
 
     # EpisodeHarness 伸向记忆的唯一通道
     # **memory 的两个检索 provider 不在这里造**（2026-09-13，深夜十二）：
     # "这条链路要接哪个实现"是接线知识，收在 `MemoryTool.build()`——与
     # `BrainTool.build()` / `GameTools.build()` 同形。本装配点对
     # `pokemon_agent.memory` **零 import**（此前第 25 行有一行
-    # `from pokemon_agent.memory import FastEmbedReranker, FastEmbedText`，
+    # `from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider`，
     # 并在此处直接 new 两个实现）。
-    memory = MemoryTool.build()
+    memory = MemoryTool.build(memory_root=memory_root)
 
     # **brain 的四个 provider 不在这里造**（2026-09-13，S6）：哪个技能接哪家
     # 厂商、temperature 分几层，都是 brain 那条链路的接线知识，收在

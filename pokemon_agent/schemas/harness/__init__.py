@@ -15,9 +15,8 @@ Frontend 发起的信封已在 0914 控制台改造中**整个删除**（`schema
 
 **信封的"内部类型"也在这里转交**：harness 组装信封时会用到藏在字段里的领域类型
 （`TraceKind` / `TraceEvent` / `GoalEntry` / `ModelCall` / `ModelCallLog`…），
-那些类型的家各自在自己的包，或者在某个信封自己的模块里（`ModelCall`——
-它跟 `ModelCallLog` 同理，主读者是带 `calls` 字段的信封；`ModelCallLog`——它只
-服务于 `FromHarnessToTraceToolAppendModelCallsReq`，就定义在那个文件里），
+那些类型的家各自在自己的包（`ModelCall` / `ModelCallLog`——主读者是带 `calls`
+字段的信封与攒账的重试循环，就住在 `communication/ModelCall.py`），
 但 **harness 从本文件拿**——"harness 只认 schemas"这条边界因此没有例外。
 
 `TraceKind` / `TraceEvent` / `GoalEntry` / `GoalStatus` 几件**就住在 `domain/` 下**：
@@ -75,6 +74,10 @@ __all__ = [
     "FromHarnessToMemoryToolQueryObjectEventsResp",
     "FromHarnessToMemoryToolQueryRecentStepsReq",
     "FromHarnessToMemoryToolQueryRecentStepsResp",
+    "FromHarnessToMemoryToolRestoreMemoryReq",
+    "FromHarnessToMemoryToolRestoreMemoryResp",
+    "FromHarnessToMemoryToolSnapshotMemoryReq",
+    "FromHarnessToMemoryToolSnapshotMemoryResp",
     "FromHarnessToMemoryToolStoreEpisodeStepReq",
     "FromHarnessToMemoryToolStoreEpisodeSummaryReq",
     "FromHarnessToMemoryToolStoreEpisodeSummaryResp",
@@ -83,7 +86,6 @@ __all__ = [
     "FromHarnessToReviewerAuditReq",
     "FromHarnessToReviewerAuditResp",
     "FromHarnessToReviewerInjectReq",
-    "FromHarnessToTraceToolAppendModelCallsReq",
     "FromHarnessToTraceToolAppendReq",
     "FromRunHarnessToEpisodeHarnessRunReq",
     "FromRunHarnessToEpisodeHarnessRunResp",
@@ -161,6 +163,18 @@ from .communication.FromHarnessToMemoryToolQueryRecentStepsReq import (
 from .communication.FromHarnessToMemoryToolQueryRecentStepsResp import (
     FromHarnessToMemoryToolQueryRecentStepsResp,
 )
+from .communication.FromHarnessToMemoryToolRestoreMemoryReq import (
+    FromHarnessToMemoryToolRestoreMemoryReq,
+)
+from .communication.FromHarnessToMemoryToolRestoreMemoryResp import (
+    FromHarnessToMemoryToolRestoreMemoryResp,
+)
+from .communication.FromHarnessToMemoryToolSnapshotMemoryReq import (
+    FromHarnessToMemoryToolSnapshotMemoryReq,
+)
+from .communication.FromHarnessToMemoryToolSnapshotMemoryResp import (
+    FromHarnessToMemoryToolSnapshotMemoryResp,
+)
 from .communication.FromHarnessToMemoryToolStoreEpisodeStepReq import (
     FromHarnessToMemoryToolStoreEpisodeStepReq,
 )
@@ -182,15 +196,11 @@ from .communication.FromHarnessToReviewerAuditReq import (
     FromHarnessToReviewerAuditResp,
 )
 from .communication.FromHarnessToReviewerInjectReq import FromHarnessToReviewerInjectReq
-from .communication.FromHarnessToTraceToolAppendModelCallsReq import (
-    FromHarnessToTraceToolAppendModelCallsReq,
-    ModelCallLog,
-)
 from .communication.FromHarnessToTraceToolAppendReq import FromHarnessToTraceToolAppendReq
 from .communication.FromRunHarnessToEpisodeHarnessRunReq import FromRunHarnessToEpisodeHarnessRunReq
 from .communication.FromRunHarnessToEpisodeHarnessRunResp import (
     FromRunHarnessToEpisodeHarnessRunResp,
 )
-from .communication.ModelCall import ModelCall
+from .communication.ModelCall import ModelCall, ModelCallLog
 from .communication.RunResp import RunResp
 from .domain import GoalEntry, GoalStatus, TraceEvent, TraceKind
