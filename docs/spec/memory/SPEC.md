@@ -1,19 +1,19 @@
 # memory —— 模块规格
 
-> 最后更新：2026-09-15 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
+> 最后更新：2026-09-16 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
 > Port 契约签名见同目录 `PORTS.md`（那份讲契约，这份讲全貌）
 
 ## 一、职责与边界
 
 memory 的能力只有三块：**按 uuid 落盘记录**、**维护倒排索引**、**在给定候选集上做混合检索排序**
-（`store.py` 按方法粒度拆成写入 / 点查 / 过滤检索 / 语义检索 / 归档五件事）。
+（`store.py` 按方法粒度拆成写入 / 点查 / 过滤检索 / 语义检索 / 删除 / 快照六件事）。
 
 - 不做语义判定。"这一键是对门说话还是换图"由 harness 判定
   （`harness/episode/store/store_object_semantic_memory/rules.py`），摘要蒸馏由 brain 做
   （`tools/brain_tool.py::BrainTool.summarize()`），成没成由 harness 盖章——memory 只保管交进来的
   数据结构与索引，按键原样读写（`AGENTS.md` 四·分层原则 1）。
 - 字段叫什么、值怎么序列化、`payload` 里装什么，对本层**完全不透明**：
-  `MemoryStore.put(metadata, payload, text)` 只认 `dict[str, str]` + `dict` + `str` 裸字段；
+  `LocalMemoryStore.put(metadata, payload, text)` 只认 `dict[str, str]` + `dict` + `str` 裸字段；
   包内不 import `world` / `brain` / `harness` / `schemas` / `tools`（`TYPE_CHECKING` 也没有外部的）。
   因此四类记录的具体形状**不在本包**，住 `pokemon_agent/schemas/memory/datastore/`（见第五节）。
 
@@ -21,21 +21,22 @@ memory 的能力只有三块：**按 uuid 落盘记录**、**维护倒排索引*
 
 ```
 pokemon_agent/memory/
-├── __init__.py            统一出口：11 个名字 re-export，消费方不深到子模块文件
+├── __init__.py            统一出口：6 个名字 re-export（0916 收窄），消费方不深到子模块文件
 ├── ports.py               MemoryStorePort（9 方法）
-├── store.py               MemoryStore：MemoryStorePort 的默认实现
+├── store.py               LocalMemoryStore：MemoryStorePort 的默认实现
 ├── retrieval.py           混合检索纯函数（5 个 + RRF_K）
-├── embedding_provider.py  EmbeddingProvider 协议
-├── reranker_provider.py   RerankerProvider 协议
-├── fastembed_text.py      FastEmbedText：EmbeddingProvider 的本地实现
-└── fastembed_reranker.py  FastEmbedReranker：RerankerProvider 的本地实现
+├── embedding_provider.py  EmbeddingProviderPort 协议
+├── reranker_provider.py   RerankerProviderPort 协议
+├── fastembed_text.py      LocalEmbeddingProvider：EmbeddingProviderPort 的本地实现
+└── fastembed_reranker.py  LocalRerankerProvider：RerankerProviderPort 的本地实现
 ```
 
-消费方一律 `from pokemon_agent.memory import X`，`__all__` 的 11 个名字见 `PORTS.md`。
+消费方一律 `from pokemon_agent.memory import X`，`__all__` 的 6 个名字见 `PORTS.md`，
+逐名字用途见 [`API.md`](./API.md) 第一节。
 
 ## 三、存储布局
 
-一个 kind = `memory/` 下一个子文件夹 = 一个 `MemoryStore` 实例。`MemoryTool.__init__`
+一个 kind = `memory/` 下一个子文件夹 = 一个 `LocalMemoryStore` 实例。`MemoryTool.__init__`
 （`tools/memory_tool.py`）一次造四个：`step_memory` / `object_memory` / `episode_memory` / `knowledge_memory`。
 
 ```
@@ -47,7 +48,11 @@ memory/<kind>/
 ```
 
 - kind 白名单是模块级 `_KINDS`（md 类子集 `_MD_KINDS`），构造期 `assert kind in _KINDS`，传错即炸；
-  `root` 缺省为 `_PROJECT_ROOT / "memory"`，`MemoryTool` 可注入 `memory_root`，知识库另有 `knowledge_root`。
+  `root` 缺省为**进程启动目录**下的 `memory/`（`Path.cwd()`，0916 起——不再从 `__file__`
+  推仓库根）。`MemoryTool` 收**一个 `memory_root`**（父目录），四族**一视同仁**地住在
+  它下面各自的 `<kind>/` 子文件夹里——"哪一族住哪"不是一个需要逐个指定的问题
+  （0916 中途一度拆成 `step_root` / `object_root` / `episode_root` / `knowledge_root`
+  四个独立开关，同日回退）。
 
 **记录文件（真相层）**
 
@@ -59,7 +64,7 @@ memory/<kind>/
 
 - 结构 `{"kind", "count", "inverted", "mtimes"}`；`inverted` 为 `field → value → [uuid, ...]`，
   `mtimes` 为 `uuid → 记录文件 mtime`（`refresh_changed` 用）。
-- **全量重写**而非增量：put / archive_many / 重建之后各重写一次，排序后写出以保证同内容同字节。
+- **全量重写**而非增量：put / delete_many / 重建之后各重写一次，排序后写出以保证同内容同字节。
 - 启动走 `_load_or_rebuild`：读索引 → 廉价对账（文件夹里 `*.json`/`*.md` 的 stem 集合 vs 索引 uuid 集合）
   → 不一致或 JSON 损坏就地全量扫描重建并重写。自愈，不需要 WAL。对账通过时**不读任何记录文件**：
   `filter` 走内存态 `_inverted`，`get` / `get_many` / `rank` 按 uuid 惰性读盘。
@@ -81,7 +86,7 @@ memory/<kind>/
 
 ## 四、检索算法
 
-三段流水线，实现全在 `retrieval.py`：纯函数、只认字符串、不碰库也不碰模型（向量与精排分数由调用方算好传进来）。
+三段流水线，实现全在 `retrieval.py`：纯函数、只认字符串、不碰库也不碰模型（向量与精排分数由调用方算好传进来）。**这五个函数不在包出口上**（0916 收窄：全仓零仓外消费方，`LocalMemoryStore.search` / `rank` 已覆盖全部需求；单测就地 `from pokemon_agent.memory.retrieval import …`）。
 BM25 认得死词（技能名、地名），向量认得改写，cross-encoder 读得懂"答不答得上"但太贵，所以只对前几条跑。
 
 | 阶段 | 函数 | 做什么 |
@@ -96,10 +101,10 @@ BM25 认得死词（技能名、地名），向量认得改写，cross-encoder �
 
 - `RRF_K = 60`——平滑常数，文献经验值，不需要针对本项目调。RRF 只看排名不看绝对分，
   BM25（无上界）与余弦（[-1,1]）因此**不需要归一化**就能融合。
-- `fuse_top_k`——进 reranker 的候选数，是精排成本的唯一旋钮：`MemoryStore.search` 取
+- `fuse_top_k`——进 reranker 的候选数，是精排成本的唯一旋钮：`LocalMemoryStore.search` 取
   `fuse_top_k=max(limit * 3, 10)`，再截前 `limit` 个；`rank` 由调用方直给。分词固定字符 bigram，无参数。
 
-`MemoryStore` 这一侧的实际入口：
+`LocalMemoryStore` 这一侧的实际入口：
 
 - `rank(uuids, query, fuse_top_k)`：跳过不在索引里的 uuid 与原 `text` 为空的记录（语义检索看不见它），
   正文从盘上读、向量从 sidecar 取（缺了现算并补写），交给 `hybrid_retrieve` 后把下标映回 uuid。
@@ -142,18 +147,18 @@ memory 只把它们当 `metadata` / `payload` / `text` 三块收发，字段含�
 
 ## 六、provider 与选型
 
-两个协议是 memory **要求调用方注入**的东西（`MemoryStore.__init__` 收实例，不自己 new）：
+两个协议是 memory **要求调用方注入**的东西（`LocalMemoryStore.__init__` 收实例，不自己 new）：
 
 | 协议 | 文件 | 唯一方法 |
 |---|---|---|
-| `EmbeddingProvider` | `embedding_provider.py` | `embed(texts: list[str]) -> list[list[float]]` |
-| `RerankerProvider` | `reranker_provider.py` | `rerank(query: str, documents: list[str]) -> list[float]` |
+| `EmbeddingProviderPort` | `embedding_provider.py` | `embed(texts: list[str]) -> list[list[float]]` |
+| `RerankerProviderPort` | `reranker_provider.py` | `rerank(query: str, documents: list[str]) -> list[float]` |
 
 两个本地实现与协议同住本包：
 
-- `FastEmbedText(model_name="BAAI/bge-small-zh-v1.5")`——中文优化小模型，`fastembed` 的 `TextEmbedding`；
+- `LocalEmbeddingProvider(model_name="BAAI/bge-small-zh-v1.5")`——中文优化小模型，`fastembed` 的 `TextEmbedding`；
   模型**首次 `embed()` 才加载**（懒加载），另有 `config() -> dict[str, str]` 自报模型与运行时。
-- `FastEmbedReranker(model_name="BAAI/bge-reranker-base")`——`fastembed` 的
+- `LocalRerankerProvider(model_name="BAAI/bge-reranker-base")`——`fastembed` 的
   `TextCrossEncoder`，同样懒加载，同样有 `config()`。
 
 依赖：`rank-bm25>=0.2`（`retrieval.py` 顶部 import，做 BM25 那一段）与 `fastembed>=0.8`（ONNX runtime，
@@ -169,8 +174,8 @@ API：检索发生在 episode 内的 retrieve 节点里（`harness/episode/retri
 
 **入边（谁依赖 memory）**：
 
-- `tools/memory_tool.py` 是唯一调用方：模块顶部 `from pokemon_agent.memory import EmbeddingProvider, MemoryStore, RerankerProvider`
-  造四个 store；`MemoryTool.build()` 内 `from pokemon_agent.memory import FastEmbedReranker, FastEmbedText`
+- `tools/memory_tool.py` 是唯一调用方：模块顶部 `from pokemon_agent.memory import EmbeddingProviderPort, LocalMemoryStore, RerankerProviderPort`
+  造四个 store；`MemoryTool.build()` 内 `from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider`
   造两个 provider（接线知识收在 tool 层，装配点不越过）。`build.py` 对 memory **零 import**，
   只调 `MemoryTool.build(...)` 递裸字段。
 - `harness/**`、`brain/**`、`schemas/**`、`world/**` 均不 import memory 包；`schemas.memory` 的四个形状由
@@ -183,8 +188,8 @@ API：检索发生在 episode 内的 retrieve 节点里（`harness/episode/retri
   `experiment/real_check/check_memory*.py`。
 - **索引全量重写**：单文件夹千级记录、索引几百 KB 时可忽略，但没有针对更大规模做过测量，也没有增量路径。
 - **无并发保护**：index.json 由内存态全量重写，代码里没有文件锁或并发检测——两个进程同时写同一 kind 文件夹，后写的会用自己那份索引覆盖前者的。当前用法是单进程。
-- **vectors.jsonl 只加不减**：`archive_many` 与 `_unindex` 都不动 sidecar，归档记录的向量行留在
-  文件里（读时按 uuid 取，无功能性影响，只是体积随历史累积）。
-- **`MemoryStorePort` 9 个方法 > 6**：靠"写入/归档"与"点查/检索"两层职责划界，暂未拆，见 `PORTS.md`
-  的边界核对表。另外 `import pokemon_agent.memory` 会连带拉起 `rank_bm25`（`retrieval.py` 顶部 import），
+- **vectors.jsonl 只加不减**：`delete_many` 与 `_unindex` 都不动 sidecar，被删记录的向量行留在
+  文件里（`_load_vectors` 读时按活着的 uuid 过滤，无功能性影响，只是体积随历史累积）。
+- **`MemoryStorePort` 11 个方法 > 6**：靠"写入/删除/快照"与"点查/检索"两层职责划界，暂未拆，
+  见 `PORTS.md` 的边界核对表。另外 `import pokemon_agent.memory` 会连带拉起 `rank_bm25`（`retrieval.py` 顶部 import），
   纯 Python 小包，代价可忽略。

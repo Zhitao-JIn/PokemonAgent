@@ -1,4 +1,4 @@
-"""`MemoryStorePort`：memory 包的对外契约——写入 + 过滤检索 + 语义检索 + 归档。
+"""`MemoryStorePort`：memory 包的对外契约——写入 + 过滤检索 + 语义检索 + 删除 + 快照。
 
 **这个文件随 `memory/` 包一起走。** 0910 拍板（`docs/ROADMAP.md` 第 24 条）：
 memory 子系统要能被整体拷到别的项目里用，所以它的契约不住在 `interfaces/`
@@ -23,7 +23,7 @@ memory 子系统要能被整体拷到别的项目里用，所以它的契约不�
 **实现方约定（`memory/store.py`）**：一个实例绑定一个 kind（=
 `memory/` 下的一个子文件夹）；每文件夹一份倒排索引 `index.json` 随记录写穿，
 真相永远是记录文件（一条记录一个 `<uuid>.json/.md`），索引是可自愈重建的
-派生物。
+派生物。**快照打的是整个记忆根**（四族一起），不是本实例的 kind。
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class MemoryStorePort(Protocol):
-    """记忆的读写端：写入、点查、过滤检索、语义检索、归档。
+    """记忆的读写端：写入、点查、过滤检索、语义检索、删除、快照。
 
     名字里的 Store 是**角色**而不是"只写"：这一层既是记录的落点，也是
     过滤检索与语义检索的入口，读和写都从它走。
@@ -51,7 +51,7 @@ class MemoryStorePort(Protocol):
             检索（仍然能被 filter() 命中，只是 search() 搜不出来）。写入时
             就把 text 的向量算好缓存，search() 不用每次现算。
 
-        前置条件：text 非空时会调用注入的 EmbeddingProvider，失败原样抛出
+        前置条件：text 非空时会调用注入的 EmbeddingProviderPort，失败原样抛出
             （不静默降级成"这条没有向量"）。
         后置条件：返回的 uuid 全局唯一，不带任何语义，调用方不能从
             metadata 反推出它。
@@ -101,20 +101,55 @@ class MemoryStorePort(Protocol):
         """
         ...
 
-    def archive_many(self, uuids: Sequence[str], dest_dir: Path) -> int:
-        """把一批记录搬进 `dest_dir` 并摘出索引——**"让记录消失"的唯一路径**，
-        不 unlink："落盘了就不丢"贯彻到退出检索的每一条记录，归档文件仍在盘上可查。
+    def delete_many(self, uuids: Sequence[str]) -> int:
+        """把一批记录删掉（摘出索引 + unlink 记录文件）——**"让记录消失"的唯一路径**。
 
         当前唯一调用方是 `MemoryTool._trim_summaries()`（跨局摘要超容量时按质量
-        淘汰，搬进 `memory/voided-<ts>/<kind>/`）。局正常收尾不搬任何记录——
-        step 记忆按 `episode_id` 查询天然隔离，没有清场的必要。
+        淘汰）。局正常收尾不删任何记录——step 记忆按 `episode_id` 查询天然隔离，
+        没有清场的必要。
 
-        后置条件：返回实际归档的条数；不存在的 uuid 跳过。
+        **0916 起不再有"归档"**：原先这条叫 `archive_many`，把文件搬进
+        `voided-<ts>/<kind>/` 留档；有了 `snapshot()` 之后那套中间态就没有意义了
+        ——要留档就在淘汰之前先拍张快照，淘汰本身该是干脆的。
+
+        后置条件：返回实际删掉的条数；不存在的 uuid 跳过。
+        """
+        ...
+
+    def snapshot(self, name: str) -> Path:
+        """把**整个记忆根**打包成一个 zip，返回 zip 路径（同名覆盖）。
+
+        **打的是整个根、不是本实例的 kind**：四个 store 共享一个 `memory/` 根，
+        "这一族"和"整个库"在快照这个语义下不是一回事——调用方要的是一份能整体
+        还原的存档。
+
+        **zip 落在哪由实现方决定**，调用方只给 `name`（一个不带路径分隔符的
+        文件名）——"快照放哪、叫什么后缀、要不要单独一个目录"都是存储层自己的
+        事，harness 不该知道（所以签名里没有 dest）。
+
+        前置条件：`name` 非空、不含路径分隔符。
+        后置条件：返回的路径存在且是个 zip；里面装着各 kind 子目录的记录文件与
+            `index.json`。
+        """
+        ...
+
+    def restore(self, archive: str | Path) -> int:
+        """用一个 zip 把记忆根**还原到那一刻**，返回解出的文件数。
+
+        **以 zip 为准**：zip 里有的记录文件按 zip 写（同名直接盖），**zip 里没有的
+        记录文件从库里删掉**。"删掉库里多出来的那些"不是额外选项——它就是"恢复到
+        某个存档"的定义（否则越恢复越多，快照也就不叫存档了）。实现上不必先清空
+        整根：先删多出来的、再写 zip 里的即可，`index.json` 这类派生文件随 zip
+        一起回来直接被覆盖。
+
+        后置条件：各 kind 子目录的内容与 zip 逐条对应；实现方必须**重读索引**，
+            让内存态与盘上重新一致（否则被删掉的记录会从旧索引里冒出来）。
+        失败：`archive` 不存在或不是合法 zip 时原样抛出，不静默吞掉。
         """
         ...
 
     def count(self) -> int:
-        """当前在索引里的记录条数（不含已归档的）。"""
+        """当前在索引里的记录条数（不含已删的）。"""
         ...
 
     def refresh_changed(self) -> None:

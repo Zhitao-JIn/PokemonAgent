@@ -26,7 +26,7 @@
    依赖方向永远是：模块只认自己的 Port，`tools/*_tool.py` 认识两边的形状并做转换。
    **协议的归属看"谁消费"不看"谁实现"，实现也跟着协议走**——`providers/` 这个包 0913
    已解散：`QwenProvider`/`ArkProvider`/`DeepSeekProvider` 进 `brain/providers.py`，
-   `FastEmbedText`/`FastEmbedReranker` 进 `memory/`。
+   `LocalEmbeddingProvider`/`LocalRerankerProvider` 进 `memory/`。
    **"谁依赖 brain"只有唯一答案：tool 层（0913 深夜九审计定案）。** 全仓库对
    `brain` 的**实现依赖**（`Brain`/`BrainPort`/`BrainLlmConfig`/`build_llm_providers`/
    厂商类）现在只剩 `tools/` 五处；装配点 `build.py` 对 brain **零 import**——
@@ -221,14 +221,14 @@ pokemon_agent/
 │                     **五个接线工厂也住这里**：`BrainTool.build(text=…, judge=…,
 │                     verify=…, plan=…, max_tokens=…)` 造大脑 + 四个 provider、
 │                     `GameTools.build(rom, …)` 造 world 实现并挂感知 provider、
-│                     `MemoryTool.build(memory_root=…, knowledge_root=…,
-│                     max_summaries=…)` 造检索 provider、`TraceTool.build(run_id=…)`
+│                     `MemoryTool.build(memory_root=…, max_summaries=…)` 造检索
+│                     provider、`TraceTool.build(run_id=…, trace_root=…)`
 │                     造 `LocalTrace`、`vision_factory.build_vision_provider(model=…)`。
 │                     **"谁依赖 brain"的唯一答案就是本层**——
 │                     装配点 `build.py` 只递型号名 / 路径这类裸字段
 ├── memory/           memory 子系统整块（契约 + 实现 + 算法，可整体拷走复用）：
 │                     ports.py 是对外契约（MemoryStorePort）；store.py 是统一记录
-│                     存储（MemoryStore：一条记录一个 <uuid>.json/.md + 每文件夹
+│                     存储（LocalMemoryStore：一条记录一个 <uuid>.json/.md + 每文件夹
 │                     倒排索引 index.json + 向量 sidecar vectors.jsonl）；
 │                     retrieval.py 是混合检索纯函数（BM25 + embedding + RRF +
 │                     reranker，只认字符串，不认记忆类型）；
@@ -237,11 +237,11 @@ pokemon_agent/
 │                     只做读写与索引，不做语义判定（见下方分层原则）
 ├── providers/        **0913 已解散**——实现按"谁消费"回了各自模块：
 │                     `QwenProvider`/`ArkProvider`/`DeepSeekProvider` →
-│                     `brain/providers.py`；`FastEmbedText`/`FastEmbedReranker`
+│                     `brain/providers.py`；`LocalEmbeddingProvider`/`LocalRerankerProvider`
 │                     → `memory/fastembed_text.py` / `fastembed_reranker.py`。
 │                     协议则更早各归其位：LLMProvider/JudgeProvider → brain.interface；
 │                     VisionProvider → world.interface；
-│                     Embedding/RerankerProvider → memory。
+│                     Embedding/RerankerProviderPort → memory。
 │                     **本目录不再存在。**
 ├── trace/            独立模块：TracePort 契约 + LocalTrace（落盘）+ 事件类型词表。
 │                     它不是 harness 的内部件——harness 只经 TraceToolPort 说话
@@ -299,19 +299,21 @@ pyproject.toml
 - 本阶段已有真实 provider，**各自住在消费它的模块里**（`providers/` 包已解散）：
   `QwenProvider`（DashScope，语言+视觉两用）、`ArkProvider`（火山方舟/豆包，
   型号名必须带日期后缀）、`DeepSeekProvider`（DeepSeek 官方 API）住
-  `brain/providers.py`；`FastEmbedText` / `FastEmbedReranker`（本地向量化与重排）
+  `brain/providers.py`；`LocalEmbeddingProvider` / `LocalRerankerProvider`（本地向量化与重排）
   住 `memory/fastembed_text.py` / `memory/fastembed_reranker.py`。
   它们通过**五个 Protocol** 接入：`LLMProvider` / `JudgeProvider`
   （`brain/interface`）、`VisionProvider`（`world/interface`）、
-  `EmbeddingProvider` / `RerankerProvider`（`memory/`）。**brain 的四个 provider 由
+  `EmbeddingProviderPort` / `RerankerProviderPort`（`memory/`）。**brain 的四个 provider 由
   `brain/build_llm_providers.py` 的 `build_llm_providers(config)` +
   `BrainTool.build(text=…, judge=…, verify=…, plan=…, max_tokens=…)` 组装**
   ——哪个技能接哪家厂商是 brain 的接线知识；`BrainLlmConfig` 由
   `BrainTool.build()` 内部构造（签名收裸字段，装配点因此不必
   import 任何 brain 名字）。world 的感知 provider 同理走 tool 层的
   `build_vision_provider(model=…)`；**memory 的检索 provider 同理走
-  `MemoryTool.build(memory_root=…, knowledge_root=…, max_summaries=…)`**；
-  另两个同形工厂是 `GameTools.build(rom, …)` 与 `TraceTool.build(run_id=…)`。
+  `MemoryTool.build(step_root=…, object_root=…, episode_root=…,
+  knowledge_root=…, max_summaries=…)`**；
+  另两个同形工厂是 `GameTools.build(rom, …)` 与
+  `TraceTool.build(run_id=…, trace_root=…)`。
   **五个工厂全在 tool 层，装配点一个都不越过**——它只递型号名 / 路径这类裸字段。
   代码里**不许出现任何直连模型 SDK 的调用**——直连只发生在
   `brain/providers.py` 和 `memory/fastembed_*.py` 这几个实现文件里。
@@ -350,11 +352,18 @@ pyproject.toml
 
 ## 九、trace 约定（后面 replay / 成本统计全靠它）
 
-**一条事件一个 json 文件**：`trace_data/<run_id>/events/<uuid>.json`。文件名是
+**一条事件一个 json 文件、全平铺在落盘根下**：`tracelog/<uuid>.json`（缺省落盘根
+= **进程启动目录**，`--trace-root` 可改）。**不按 run 分层、也没有 `events/` 这一层**
+（0916 起）——run 的区分靠 `meta.run_id`。文件名是
 **时间递增的 uuid**（前 48 位是毫秒时间戳），但**顺序不认文件名**——排序的真源是
 内容里的 `(ts, uuid)`（同毫秒靠 uuid 兜底；文件名只保证不撞名、让 `ls` 大致按时间排）。
 **没有内存事件镜像**：磁盘账本（`TraceToolPort.read_events`）是唯一真相，
-节点直接读它（`plan` 节点的历史摘要就走这里）。
+读的人直接读它（`review` 节点的审核材料就走这里）。
+
+**读哪一批由 `meta` 的交集匹配回答**：`read_events(meta={…})`——给的每个键都要
+**相等**（AND-of-equalities，与 `MemoryStorePort.filter` 同一条语义，不支持 OR、
+不支持大小比较）；`None` / 空 dict = 整个落盘根。落盘不按 run 分层之后，
+`{"run_id": …}` 是切片的主键，`{"run_id": …, "episode_id": …}` 就是"这一局"。
 
 每条事件六个字段（`schemas/harness/domain/trace_event.py::TraceEvent`，与
 `trace/datastore/event.py::_Event` 逐字段对齐——**没有编译器保护，改一处必须同步另一处**）：

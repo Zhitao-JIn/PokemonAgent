@@ -1,7 +1,7 @@
 """本地 embedding provider：`fastembed`（ONNX runtime 推理，不需要 torch）。
 
 **它在 memory 包里的位置**（0913 定案）：这个类和 `fastembed_reranker.py` 是
-`EmbeddingProvider`/`RerankerProvider` 两个协议的**唯一实现**，而这两个协议的
+`EmbeddingProviderPort`/`RerankerProviderPort` 两个协议的**唯一实现**，而这两个协议的
 消费者只有 memory 的检索链路（`retrieval.py::embedding_rank` 与 reranker 精排）。
 协议挨着实现——跟 `MemoryStorePort` 同住一包，**拷走 `memory/` 就拿到完整可复用的
 一块**。它们原来住在顶层 `pokemon_agent/providers/`（那个包 0913 整个解散：
@@ -23,8 +23,8 @@
 from __future__ import annotations
 
 
-class FastEmbedText:
-    """`EmbeddingProvider` 的实现，模型固定用 `BAAI/bge-small-zh-v1.5`
+class LocalEmbeddingProvider:
+    """`EmbeddingProviderPort` 的实现，模型固定用 `BAAI/bge-small-zh-v1.5`
     （中文优化、约 95MB，`fastembed` 内置支持的模型列表之一）。
 
     模型在**首次调用 `embed()` 时才加载**（懒加载，不在 `__init__` 里就下载/

@@ -9,7 +9,7 @@ from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
-class RerankerProvider(Protocol):
+class RerankerProviderPort(Protocol):
     """给一个 query 和一批候选文档打相关性分。"""
 
     def rerank(self, query: str, documents: list[str]) -> list[float]:

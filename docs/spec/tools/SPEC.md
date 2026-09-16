@@ -50,7 +50,6 @@ pokemon_agent/tools/
 │       └── decide_action/  button_help.md  decide_action.md  map_hint.md  repeat_hint.md  retry_note.md
 └── trace/
     ├── __init__.py            TraceTool + _RENDERERS 分派表 + _to_trace_event
-    ├── model_calls.py         append_model_calls()
     └── render.py              每种账的正文渲染（纯函数）+ _body/_CALL_LINK
 ```
 
@@ -74,18 +73,22 @@ pokemon_agent/tools/
 | `perceive_with_retry` | `(*, ram_only: bool = False) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]` | 只有 Resp，**无 Req** |
 | `evolve` | `(req: FromHarnessToGameToolEvolveReq) -> None` | 只有 Req |
 
-**`MemoryToolPort`（实现 `MemoryTool`，`memory_tool.py`）**——十个方法，各自
+**`MemoryToolPort`（实现 `MemoryTool`，`memory_tool.py`）**——十二个方法，各自
 一对一：`query_episode_steps` / `query_recent_steps`（Req+Resp）、
 `store_episode_step`（只有 Req）、`query_episode_summaries` /
 `store_episode_summary`（Req+Resp）、`query_object_events` /
 `query_object_events_at`（Req+Resp）、`append_object_events`（只有 Req）、
-`query_knowledge` / `store_knowledge`（Req+Resp）。
+`query_knowledge` / `store_knowledge`（Req+Resp）、
+`snapshot_memory` / `restore_memory`（Req+Resp，0916——快照打整个记忆根成 zip /
+还原时**以 zip 为准**，库里多出来的记录删掉；`snapshot` 的 Req 只带 `name`、Resp 带 `archive` 路径；
+`restore` 的 Req 带 `archive`、Resp 带 `unpacked` 条数）。
 
 **`TraceToolPort`（实现 `TraceTool`，`trace/__init__.py`）**：`append(req:
-FromHarnessToTraceToolAppendReq) -> None`、`append_model_calls(req:
-FromHarnessToTraceToolAppendModelCallsReq) -> None`、
-`read_events(episode_id: str | None = None) -> list[TraceEvent]`（读口无信封，
-返回契约层类型 `TraceEvent`，不是 trace 自己的 `Event`）。
+FromHarnessToTraceToolAppendReq) -> None`（写口只有这一个，0916 统一——
+调用账的 `calls` 交整条重试链，渲染时逐条落成 `*_call` 账）、
+`read_events(meta: dict[str, Any] | None = None) -> list[TraceEvent]`（读口无信封，
+按 `meta` 做交集筛选——`None`/`{}` = 整个落盘根；返回契约层类型 `TraceEvent`，
+不是 trace 自己的 `Event`）。
 
 **信封清单**（`pokemon_agent/schemas/harness/communication/`，一个类一个文件）：
 
@@ -93,13 +96,14 @@ FromHarnessToTraceToolAppendModelCallsReq) -> None`、
 |---|---|---|
 | brain | `FromHarnessToBrainTool{ChooseOnce,Judge,Reflect,Verify,Summarize,PlanOnce,Extract}Req.py` | 同前缀的七个 `…Resp.py` |
 | game | `FromHarnessToGameTool{GetActionSpace,Execute,Reset,Evolve}Req.py` | 只有 `…GetActionSpaceResp.py`、`…PerceiveOnceResp.py` |
-| memory | `FromHarnessToMemoryTool{QueryEpisodeSteps,QueryRecentSteps,QueryEpisodeSummaries,StoreEpisodeStep,StoreEpisodeSummary,QueryObjectEvents,QueryObjectEventsAt,AppendObjectEvents,QueryKnowledge,StoreKnowledge}Req.py` | 除 `…StoreEpisodeStep`、`…AppendObjectEvents` 外各有一个 `…Resp.py` |
-| trace | `FromHarnessToTraceToolAppendReq.py`、`FromHarnessToTraceToolAppendModelCallsReq.py` | 无（返回 None） |
+| memory | `FromHarnessToMemoryTool{QueryEpisodeSteps,QueryRecentSteps,QueryEpisodeSummaries,StoreEpisodeStep,StoreEpisodeSummary,QueryObjectEvents,QueryObjectEventsAt,AppendObjectEvents,QueryKnowledge,StoreKnowledge,SnapshotMemory,RestoreMemory}Req.py` | 除 `…StoreEpisodeStep`、`…AppendObjectEvents` 外各有一个 `…Resp.py` |
+| trace | `FromHarnessToTraceToolAppendReq.py` | 无（返回 None） |
 
 两件住在这个目录、但不属于上面四张门面：`ModelCall.py`（一次模型调用的账，
-`payload`/`error_kind`/`error`；brain 侧另有一份方言，由 `_adopt()` 转过来）、
-`ModelCallLog`（**不是文件**——`ModelCallLog = list[ModelCall]`，定义在
-`FromHarnessToTraceToolAppendModelCallsReq.py` 内）。同样不由 tools 层消费的还有
+`payload`/`error_kind`/`error`，同文件还定义 `ModelCallLog = list[ModelCall]`；
+brain 侧另有一份方言，由 `_adopt()` 转过来——批量记账信封
+`FromHarnessToTraceToolAppendModelCallsReq.py` 0916 已随写口统一删除）。同样不由
+tools 层消费的还有
 `FromHarnessToReviewerAuditReq.py`（内含 `…AuditReq`/`…AuditResp`/`AuditVerdict`）、
 `FromHarnessToReviewerInjectReq.py`、`FromRunHarnessToEpisodeHarnessRunReq.py`、
 `FromRunHarnessToEpisodeHarnessRunResp.py`、`RunResp.py`。
@@ -114,12 +118,13 @@ FromHarnessToTraceToolAppendModelCallsReq) -> None`、
 |---|---|---|
 | `BrainTool.build(*, text="qwen-plus", judge="qwen3.8-max", verify="doubao-seed-2-1-pro-260628", plan="doubao-seed-2-1-pro-260628", max_tokens=25600)` | `BrainLlmConfig` + `build_llm_providers()` + `Brain` | `brain_tool.py` |
 | `GameTools.build(rom: str, *, state_path=None, watch=False, vision_model="qwen3.8-max", speed=0)` | `PyBoyWorld` + 感知 provider | `game_tools.py` |
-| `MemoryTool.build(*, memory_root=None, knowledge_root=None, max_summaries=50)` | `FastEmbedText` + `FastEmbedReranker` + 四个 `MemoryStore` | `memory_tool.py` |
-| `TraceTool.build(*, run_id="local")` | `LocalTrace` | `trace/__init__.py` |
+| `MemoryTool.build(*, memory_root=None, max_summaries=50)` | `LocalEmbeddingProvider` + `LocalRerankerProvider` + 四个 `LocalMemoryStore` | `memory_tool.py` |
+| `TraceTool.build(*, run_id="local", trace_root=None)` | `LocalTrace` | `trace/__init__.py` |
 | `build_vision_provider(model="qwen3.8-max", temperature=0.0)` | world 的 `VisionProvider`（`provider_for(model, temperature=…, timeout=20)`） | `vision_factory.py` |
 
 装配点的用法（`build.py:119-168`）：`GameTools.build(rom, state_path=…, watch=…,
-vision_model=…, speed=…)`、`TraceTool.build(run_id=run_id)`、`MemoryTool.build()`、
+vision_model=…, speed=…)`、`TraceTool.build(run_id=run_id, trace_root=trace_root)`、
+`MemoryTool.build(memory_root=…, max_summaries=…)`、
 `BrainTool.build(text=…, judge=…, verify=…, plan=…, max_tokens=…)`，返回值直接进
 `HarnessDeps`。四个工厂都是 `__init__` 的糖（内部只构造 + `cls(...)`）。
 
@@ -145,8 +150,10 @@ tool 层是唯一同时认识两边形状的地方，实际存在的转换点：
   吐 `Rendered`（`type`/`kind`/`content`）；写账正文走 `render.py:520 _body()` + 三份
   drop 名单（`_STEP_BODY_DROP`/`_OBJECT_BODY_DROP`/`_EPISODE_BODY_DROP`），链路名由
   `render.py:248 _CALL_LINK` 给，账名 → 渲染函数的表是 `_RENDERERS`
-  （`trace/__init__.py:52`）。一次交互的 N 次尝试在这里一拆多：
-  `model_calls.py:27 append_model_calls()` 逐条再组一个 `…AppendReq` 交回去。
+  （`trace/__init__.py:52`）。一次交互的 N 次尝试由调用账的 `calls`
+  （整条重试链）在 `render.model_call` 里一拆多：每条尝试一条
+  `*_call` 账、失败的那次再补一条 `call_failed`（0916 统一写口后
+  批量入口 `append_model_calls` 已删）。
 - **文字化**：`prompts/object_render.py:27 render_object_events()`（事件 → 行）、
   `prompts/run_plan.py:75 history_blocks()` 与 `:91 goals_lines()`（记忆/目标表 →
   行列表）——`build_prompt()` 与 `BrainTool` 的入参共用同一份实现，分两份会漂移。
@@ -196,11 +203,11 @@ prompt，"判什么、想什么"才当参数传，同一件东西绝不两处给
    `TraceTool.append` 按信封公共字段拼"。代码里 `TraceTool.append` **不拼**：
    `trace/__init__.py:142` 反过来 assert `"run_id" not in req.meta`，并要求
    `source`/`episode_id`/`step` 由 harness 一次交齐（`run_id` 仍由落盘层盖）。
-2. **接线工厂的数量**。AGENTS.md 二.2/四只说**两个**（`BrainTool.build` +
-   `build_vision_provider`），六说三个（再加 `MemoryTool.build`）；
-   `docs/spec/memory/PORTS.md` 的附表也是三个。代码里是**五个**：另有
-   `GameTools.build()`（`game_tools.py:107`）与 `TraceTool.build()`
-   （`trace/__init__.py:120`），`build.py:119/134` 都在用。
+2. **接线工厂的数量**。AGENTS.md 二.2 与第四节已改口径为**五个**（`BrainTool.build`
+   / `GameTools.build` / `MemoryTool.build` / `TraceTool.build` /
+   `build_vision_provider`）；曾有一段时间 AGENTS.md 只说两个、六说三个。
+   代码里就是五个（`game_tools.py:107`、`trace/__init__.py:120`），
+   `build.py:119/134` 都在用。`docs/spec/memory/PORTS.md` 的附表仍按旧数写"三个"。
 3. **brain 实现依赖的分布**。AGENTS.md 十二.4 的枚举是"`brain_tool.py` 4 处 +
    `vision_factory.py` 1 处"。代码里 `tools/` 指向 brain 实现面的 import 语句共
    5 条，但构成不同：`brain_tool.py:47`/`:55`/`:148`（3 条）、

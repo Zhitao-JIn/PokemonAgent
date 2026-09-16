@@ -9,8 +9,8 @@
 没有自己专属的 domain schema（跟 `world`/`trace`/`providers`/`brain` 不同，
 不需要开一个 `interface/` 子包分协议和数据形状），所以走扁平的 `ports.py`，
 跟实现文件（`brain_tool.py`/`game_tools.py`/`memory_tool.py`）同住 `tools/`
-包顶层（trace 那一个已收成 `tools/trace/` 包，分派器 + `render.py` +
-`model_calls.py`，见 D8-③）。
+包顶层（trace 那一个已收成 `tools/trace/` 包，分派器 + `render.py`，
+见 D8-③；批量账文件 `model_calls.py` 0916 随写口统一删除）。
 
 零循环依赖风险：`schemas.harness` 对 `tools/` 没有反向依赖，这四张 Port
 可以放心立即加载，不需要懒加载。
@@ -32,7 +32,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
@@ -68,12 +68,15 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryObjectEventsResp,
     FromHarnessToMemoryToolQueryRecentStepsReq,
     FromHarnessToMemoryToolQueryRecentStepsResp,
+    FromHarnessToMemoryToolRestoreMemoryReq,
+    FromHarnessToMemoryToolRestoreMemoryResp,
+    FromHarnessToMemoryToolSnapshotMemoryReq,
+    FromHarnessToMemoryToolSnapshotMemoryResp,
     FromHarnessToMemoryToolStoreEpisodeStepReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryResp,
     FromHarnessToMemoryToolStoreKnowledgeReq,
     FromHarnessToMemoryToolStoreKnowledgeResp,
-    FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
     ModelCallLog,
     TraceEvent,
@@ -377,15 +380,61 @@ class MemoryToolPort(Protocol):
         """
         ...
 
+    # ---- 快照（0916：整库存档 + 覆盖恢复） ----
+
+    def snapshot_memory(
+        self, req: FromHarnessToMemoryToolSnapshotMemoryReq
+    ) -> FromHarnessToMemoryToolSnapshotMemoryResp:
+        """把**整个记忆库**打成一个 zip，返回它的路径。
+
+        取代了原先的"归档"（`archive_many` 把记录搬进 `voided-<ts>/<kind>/`）：
+        那套要的是"淘汰时留个档"，而这个要的是"能把整个库整体还原回去"——后者
+        才真的有用（前者只是不删而已，且散成一堆文件）。
+
+        **打的是整个库、不是某一族**：四族共用一个 `memory/` 根，存档的语义单位
+        就是那个根。
+
+        **zip 落在哪由实现方决定**：签名只有 `req.name`——"快照放哪个目录、叫
+        什么后缀"不是 harness 该知道的事（此前那套归档让 harness 拼
+        `voided-<ts>/<kind>/` 的路径，是把存储布局漏了出去）。
+
+        req.name：快照名（文件名，不含路径分隔符）；同名覆盖。
+        前置条件：req.name 非空且不含路径分隔符。
+        后置条件：resp.archive 是盘上存在的 zip，里面装着各 kind 子目录的
+            记录文件与 `index.json`。
+        """
+        ...
+
+    def restore_memory(
+        self, req: FromHarnessToMemoryToolRestoreMemoryReq
+    ) -> FromHarnessToMemoryToolRestoreMemoryResp:
+        """用一个 zip 把记忆库**还原到那一刻**——以 zip 为准。
+
+        **库里多出来的记录会被删掉**：zip 里有的按 zip 写（同名直接盖），zip 里
+        没有的记录文件从库里消失。语义单位是**整个库**，不是"往库上叠一层"
+        ——后者做不到"恢复到某个存档"（越恢复越多）。
+
+        **签名收路径而不是名字**（与 `snapshot_memory` 不对称）：恢复要能接受
+        任意 zip——"拿更早的一份、或者别人给的档灌回来"正是它的价值所在。
+
+        req.archive：要恢复的 zip 路径。
+        前置条件：req.archive 是盘上存在的文件。
+        后置条件：resp.unpacked 是解出的文件数；实现方必须让四族的内存索引与盘上
+            重新一致（否则被删掉的记录会从旧索引里冒出来）。
+        失败：文件不存在、不是合法 zip 时原样抛出，不静默吞掉。
+        """
+        ...
+
 
 @runtime_checkable
 class TraceToolPort(Protocol):
     """事件流的记账与读取——**harness 认识 trace 的唯一入口**。
 
-    两个写方法是同一条分工——**harness 只组装信封（挑字段、声明账名与来源），
-    拆解规则全在 tool 层**：
-    - `append`：一笔账 → 按 `kind` 渲染正文，必要时一拆多；
-    - `append_model_calls`：一次模型交互的 N 次尝试 → N 条调用账。
+    写只有 `append` 一个口——**harness 只组装信封（挑字段、声明账名与来源），
+    拆解规则全在 tool 层**：一笔账 → 按 `kind` 渲染正文，必要时一拆多；
+    调用账的 `calls` 交**整条重试链**（每次尝试一条），渲染时逐条落成
+    `*_call` 账。批量口 `append_model_calls` 0916 删了：它与 `append`
+    落盘效果相同，两套并存只是写法漂移。
 
     **读方法也在这张端口上**：`read_events`。**边界从此对称**——
     写者与读者都只有 tool 层，harness / api 一律不 import `pokemon_agent.trace`。
@@ -401,9 +450,9 @@ class TraceToolPort(Protocol):
 
     **签名只用信封与契约层类型，不用任何模块的领域类型**：这是本文件所有
     端口共守的边界（见模块 docstring 与 `docs/spec/tools/SPEC.md`）。
-    所以"一次交互的尝试账"在签名里是
-    `FromHarnessToTraceToolAppendModelCallsReq`，而不是那个裸的 `ModelCallLog`；
-    返回的事件是 `TraceEvent`（契约层），而不是 trace 自己的 `Event`。
+    调用账在签名里就是 `FromHarnessToTraceToolAppendReq`（`calls` 字段交
+    `list[ModelCall]`，裸类型只作为它出现在签名里）；返回的事件是
+    `TraceEvent`（契约层），而不是 trace 自己的 `Event`。
     """
 
     def append(self, req: FromHarnessToTraceToolAppendReq) -> None:
@@ -418,23 +467,15 @@ class TraceToolPort(Protocol):
         """
         ...
 
-    def append_model_calls(self, req: FromHarnessToTraceToolAppendModelCallsReq) -> None:
-        """记一次模型交互的**全部尝试**：一笔交互 → N 条调用账。
+    def read_events(self, meta: dict[str, Any] | None = None) -> list[TraceEvent]:
+        """读**磁盘账本**上的全部事件，按 `(ts, uuid)` 升序；可按签名做交集筛选。
 
-        跟 `append` 同一分工——调用方只组装信封（定位字段 + `kind` 代表的链路 +
-        原始尝试账），"每条带什么 `attempt`、怎么落"是 tool 的处理。
-
-        前置条件：`req.log` 按 `attempt` 升序（重试循环保证）、`req.meta` 带齐三件。
-        后置条件：`req.log` 里每一条都已落盘；空 log 合法且不写任何事件
-            （`ram_only=True` 的感知压根没调模型）。
-        """
-        ...
-
-    def read_events(self, episode_id: str | None = None) -> list[TraceEvent]:
-        """读**磁盘账本**上的全部事件，按 `(ts, uuid)` 升序；可按局切片。
-
-        episode_id：`None` = 不过滤，返回这个 run 的全部事件；给了就只返回
-            `meta.episode_id` 与它相等的那批。
+        meta：`None`（或空 dict）= 不过滤，返回落盘根下的全部事件；给了就只返回
+            **每个键都相等**的那批（键取 `run_id` / `source` / `episode_id` /
+            `step`）。语义是 **AND-of-equalities**（各条件的候选集取交集），
+            **不支持 OR、不支持大小比较**。
+            落盘**不按 run 分层**（0916），所以 `run_id` 是切片的主键——
+            `{"run_id": …, "episode_id": …}` 就是"这一局"。
         后置条件：按 `(ts, uuid)` 严格升序；无匹配时返回空列表（不抛异常）。
         失败：磁盘读取失败原样抛出——本方法不吞这一类错。
         """

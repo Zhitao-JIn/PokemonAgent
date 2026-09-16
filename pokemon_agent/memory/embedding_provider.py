@@ -9,7 +9,7 @@ from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
-class EmbeddingProvider(Protocol):
+class EmbeddingProviderPort(Protocol):
     """把一批文本变成向量。"""
 
     def embed(self, texts: list[str]) -> list[list[float]]:

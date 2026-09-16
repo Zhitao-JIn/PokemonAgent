@@ -1,11 +1,11 @@
-"""`RerankerProvider` 的本地实现：fastembed 跑一个交叉编码器给候选精排。
+"""`RerankerProviderPort` 的本地实现：fastembed 跑一个交叉编码器给候选精排。
 
 混合检索的最后一段。前两段（BM25 + 向量）各自便宜但都只看"像不像"，
 交叉编码器把查询和候选拼在一起真读一遍，贵得多，所以**只对前几条跑**。
 
 **家在 memory**（0913 从顶层 `pokemon_agent/providers/local_reranker.py` 搬来）：
-`RerankerProvider` 协议的消费者只有本层的检索链路，协议挨着实现。
-同批搬来的还有 `fastembed_text.py`（`EmbeddingProvider` 的实现）。
+`RerankerProviderPort` 协议的消费者只有本层的检索链路，协议挨着实现。
+同批搬来的还有 `fastembed_text.py`（`EmbeddingProviderPort` 的实现）。
 
 **模型延迟加载**：构造时只记下名字，第一次真要用才把权重拉下来。
 装配发生在进程启动时，而很多次运行（跑测试、看帮助、跑不带检索的路径）
@@ -15,11 +15,11 @@
 from __future__ import annotations
 
 
-class FastEmbedReranker:
-    """`RerankerProvider` 的实现，模型固定用 `BAAI/bge-reranker-base`
+class LocalRerankerProvider:
+    """`RerankerProviderPort` 的实现，模型固定用 `BAAI/bge-reranker-base`
     （`fastembed` 内置支持、对中文效果不错的 cross-encoder 精排模型）。
 
-    懒加载，理由同 `FastEmbedText`。
+    懒加载，理由同 `LocalEmbeddingProvider`。
     """
 
     def __init__(self, model_name: str = "BAAI/bge-reranker-base") -> None:

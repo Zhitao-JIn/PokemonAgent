@@ -24,7 +24,6 @@ __all__ = [
     "ObjectStillEvent",
     "ObjectWarpEvent",
     "StepMemory",
-    "dedup_snapshots",
     "render_sequence",
 ]
 
@@ -37,6 +36,5 @@ from .datastore import (
     ObjectStillEvent,
     ObjectWarpEvent,
     StepMemory,
-    dedup_snapshots,
     render_sequence,
 )

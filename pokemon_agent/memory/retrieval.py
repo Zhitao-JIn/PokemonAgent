@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 from rank_bm25 import BM25Okapi
 
 if TYPE_CHECKING:
-    from pokemon_agent.memory import EmbeddingProvider, RerankerProvider
+    from pokemon_agent.memory import EmbeddingProviderPort, RerankerProviderPort
 
 
 def tokenize(text: str) -> list[str]:
@@ -58,7 +58,7 @@ def bm25_rank(query: str, documents: list[str]) -> list[int]:
 def embedding_rank(
     query: str,
     documents: list[str],
-    embedder: EmbeddingProvider,
+    embedder: EmbeddingProviderPort,
     document_vectors: list[list[float]] | None = None,
 ) -> list[int]:
     """向量余弦相似度打分，返回按相似度降序排列的文档下标。
@@ -114,8 +114,8 @@ def reciprocal_rank_fusion(rankings: list[list[int]], k: int = RRF_K) -> dict[in
 def hybrid_retrieve(
     query: str,
     documents: list[str],
-    embedder: EmbeddingProvider,
-    reranker: RerankerProvider,
+    embedder: EmbeddingProviderPort,
+    reranker: RerankerProviderPort,
     fuse_top_k: int = 10,
     document_vectors: list[list[float]] | None = None,
 ) -> list[tuple[int, float]]:
