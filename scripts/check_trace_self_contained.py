@@ -10,9 +10,14 @@
 - **B〔入边只在 tools/〕**：`trace/` 与 `tools/` 之外的文件**不许** import
   `pokemon_agent.trace`。⇒ trace 是独立模块，只有"桥"（tool 层）认识它；
   harness / schemas / api / build 一律经 `TraceToolPort` 或契约层说话。
-- **C〔契约层不成环〕**：`schemas/harness/domain/` **不许** import
-  `pokemon_agent.trace`——一旦 import 就成环（`schemas.harness` → `trace` →
-  `trace.store` → `schemas.harness.domain` 半加载 → `ImportError`）。
+- **C〔契约层不依赖实现包〕**：`schemas/harness/domain/` **不许** import
+  `pokemon_agent.trace`。⚠ **这一项不是"防环"**——trace 出边为零（A 项），
+  任何 `X → trace` 的边都构不成回环：0916 实测四种加载顺序（契约层先进 /
+  trace 先进 / `build` / `harness`）**全都不炸**。它守的是**分层方向**：
+  `schemas/` 是形状的契约层、`trace/` 是实现包。
+  （0913 脱钩**之前**这里确实是真环：那时 `trace.store` 反向 import
+  `schemas.harness.domain`，`ImportError: partially initialized module`
+  实测复现过——见 `docs/PLAN_trace_decoupling.md` §3。脱钩切掉了那条边。）
   B 已经涵盖 C，这里单列是为了让失败信息直接指向"哪条硬约束"。
 
 **只看 import 语句，不看 docstring 散文**：注释里提到 `pokemon_agent.trace`
@@ -105,7 +110,7 @@ def _check_b() -> list[str]:
 
 
 def _check_c() -> list[str]:
-    """契约层不成环：`schemas/harness/domain/` 不许 import pokemon_agent.trace。"""
+    """契约层不依赖实现包：`schemas/harness/domain/` 不许 import pokemon_agent.trace。"""
     bad: list[str] = []
     for path in _py_files(PKG_ROOT / "schemas" / "harness" / "domain"):
         for lineno, mod in _imports_of(path):
@@ -117,7 +122,7 @@ def _check_c() -> list[str]:
 CHECKS: list[tuple[str, str, Callable[[], list[str]]]] = [
     ("A", "trace 出边为零（可整体拷走）", _check_a),
     ("B", "入口只在 tools/（其余层不认 trace）", _check_b),
-    ("C", "schemas/harness/domain 不成环（不 import trace）", _check_c),
+    ("C", "契约层不依赖实现包（schemas/harness/domain 不 import trace）", _check_c),
 ]
 
 

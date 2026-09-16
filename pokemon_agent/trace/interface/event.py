@@ -34,7 +34,7 @@ class Event(Protocol):
     | `ts` | 排序（`(ts, uuid)` 升序）、落盘 |
     | `kind` | 落盘（本类**不解释**它的取值——那是声明方的事） |
     | `type` | 落盘（同上） |
-    | `meta` | 落盘随行；**按局切片时读它里面的 `episode_id`** |
+    | `meta` | 落盘随行；**按交集筛选时读它**（`read_events` 的 `meta` 参数） |
     | `content` | 落盘随行 |
     """
 

@@ -8,9 +8,14 @@
 **与 `trace.interface.Event` 的关系是"结构化满足"，不是继承**：本模块
 **不 import `pokemon_agent.trace` 的任何东西**——只是字段结构对得上，
 鸭子类型自洽（实测 `isinstance(TraceEvent(...), Event) is True`）。
-一旦这里 import 了 trace，`schemas.harness` → `trace` → `trace.store` →
-`schemas.harness.domain` 就成了一个真回环，import 时直接炸
-（`ImportError: partially initialized module`）。
+这条"不 import"**今天不是防环**：trace 出边为零（`trace/` 包内不 import
+`pokemon_agent` 的其余部分），所以任何 `X → trace` 的边都构不成回环
+——0916 实测四种加载顺序（契约层先进 / trace 先进 / `build` / `harness`）
+**全都不炸**。它守的是**分层方向**：`schemas/` 是形状的契约层、`trace/` 是
+实现包，反向依赖会把"形状的唯一真源"绑死在某一个实现上。
+（0913 脱钩**之前**这里确实是真环：那时 `trace.store` 反向 import 本包，
+`ImportError: partially initialized module` 实测复现过——见
+`docs/PLAN_trace_decoupling.md` §3。脱钩把那条边切掉了。）
 
 **六个字段分三组**（0914 封套改造）：
 

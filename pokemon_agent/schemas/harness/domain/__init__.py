@@ -11,12 +11,14 @@
 （`goals` + `attempts`），把"状态"贴到目标自己身上。见
 `docs/PLAN_console_reviewer.md` §4。
 
-**这里不许 import `pokemon_agent.trace`——一个 int 也不行**：一 import 就成环
-（`schemas.harness` → `trace` → `trace.store` → `schemas.harness.domain`（半加载）
-→ `ImportError`）。唯一为此而"本地声明一份"的东西（`TRACE_SCHEMA_VERSION`）
-0914 已随封套改造整个删掉——落盘格式版本号零读方、且两份同值副本要人工同步；
-形状变到缺 `uuid`/`kind`/`meta`/`content` 就会解析失败，不再需要一枚版本章
-（见 `trace/datastore/trace_event.py` 的说明）。
+**这里不许 import `pokemon_agent.trace`——一个 int 也不行**：守的是**分层方向**
+（`schemas/` 是形状的契约层、`trace/` 是实现包，契约层不许反向依赖实现包）。
+⚠ **不是"防环"**：trace 出边为零，这里 import 它**也不会成环**——0916 实测四种
+加载顺序全不炸。0913 脱钩**之前**才是真环（那时 `trace.store` 反向 import
+本包，`ImportError` 实测复现过），那条边已被切掉。曾经为此而"本地声明一份"的
+`TRACE_SCHEMA_VERSION` 0914 也随封套改造整个删掉——落盘格式版本号零读方、
+且两份同值副本要人工同步；形状变到缺 `uuid`/`kind`/`meta`/`content` 就会解析
+失败，不再需要一枚版本章（见 `trace/datastore/trace_event.py` 的说明）。
 
 `Source` 曾在同一处，已**整个删除**（0913 晚）：生产者维度（"这条事件由哪条链
 产出"）与 `kind` 记的是同一件事，顶层再挂一个字段是第二份真相。链路名现在由

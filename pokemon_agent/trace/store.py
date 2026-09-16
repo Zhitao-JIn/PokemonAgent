@@ -1,12 +1,16 @@
 """`TracePort` 的实现：**一条事件一个 json 文件，文件名是时间递增的 uuid**。
 
+**全平铺**：所有事件都躺在落盘根那一个目录里，**不按 run 分层、也没有
+`events/` 这一层**（0916）。"读哪一批"由 `read_events(meta=…)` 的交集匹配回答，
+`run_id` 只是 `meta` 里的一个键——与 `memory/` 同一条规矩。
+
 落盘记录就是 trace 自己的 `_Event`，六个字段：
 `{uuid, kind, type, ts, meta, content}`（0914 封套改造）。
 
 **谁盖什么**：`uuid`（= 文件名）与 `ts`（写入那一刻）归本类；`run_id` 由本类
-**注入 `meta`**（它是 run 目录名，落盘这一层自己知道，`_stamp_run_id`）；
-`kind` / `type` / `content` 与 `meta` 的其余键全部由调用方（tool 层）给，
-本类**不解释**它们的取值。
+**注入 `meta`**（它是本实例的标识、构造时给的，落盘这一层自己知道，
+`_stamp_run_id`）；`kind` / `type` / `content` 与 `meta` 的其余键全部由调用方
+（tool 层）给，本类**不解释**它们的取值。
 
 **排序看 `(ts, uuid)`**（原 `event_id` 的活，0914 起）：`ts` 从死字段变成排序键，
 同毫秒靠 uuid 兜底——于是"第几条"这件事不再需要一层全局计数器、也不需要
@@ -40,10 +44,15 @@ from typing import Any
 from .datastore.event import _Event
 from .interface.event import Event
 
-# 项目根目录（通过 __file__ 回溯三级）
-project_root = Path(__file__).parent.parent.parent
-# 数据存储目录（在项目根目录下）
-STORAGE_ROOT = project_root / "trace_data"
+
+# 缺省落盘根：**进程启动目录**下的 `tracelog/`（0916 起，原名 `trace_data/`）。
+# 一条事件一个文件、**全平铺**在这个目录里——不按 run 分层（run_id 在 `meta`
+# 里，读侧靠 `read_events({"run_id": …})` 切片），与 `memory/` 同一条规矩。
+# trace 是独立第三方模块，"项目仓库根在哪"不是它该知道的事——曾经的
+# `Path(__file__)` 回溯三层已删，缺省改为启动时问一次 `cwd`。
+def _default_root() -> Path:
+    """缺省落盘根：启动目录下的 `tracelog/`（构造时取值，即进程启动那一刻）。"""
+    return Path.cwd() / "tracelog"
 
 
 def new_event_uuid() -> str:
@@ -70,9 +79,10 @@ def new_event_uuid() -> str:
 def _stamp_run_id(meta: dict[str, Any], run_id: str) -> dict[str, Any]:
     """把 `run_id` 盖进 `meta`——**排在头一个**。
 
-    **盖章的人只能是这里**：run_id 就是本实例的 run 目录名，落盘这一层自己知道；
-    让调用方再带一份等于同一个事实存两处。于是"这条账属于哪个 run"在盘上有两份
-    互为对账：目录名与 `meta.run_id`。
+    **盖章的人只能是这里**：run_id 是本实例的标识（构造时给的），落盘这一层
+    自己知道；让调用方再带一份等于同一个事实存两处。**平铺之后它是唯一能回答
+    "这条账属于哪个 run"的字段**——0916 之前还有"目录名"那份对账，随按 run
+    分层一起没了。
 
     前置条件：调用方交上来的 `meta` 不带 `run_id` 键。
     """
@@ -88,33 +98,50 @@ def _atomic_write_text(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def _episode_id(event: Event) -> str:
-    """从 `meta` 这串 JSON 里取 `episode_id`；读不动就给空串（残文件是预期内的）。"""
+def _meta_of(event: Event) -> dict[str, Any]:
+    """从 `meta` 那串 JSON 里取回 dict；读不动就给空 dict（残文件是预期内的）。
+
+    给空 dict 的后果是**任何筛选条件都对不上**——正是想要的：读不动的文件
+    不该混进任何一次查询的结果里。
+    """
     try:
         meta = json.loads(event.meta)
     except (json.JSONDecodeError, TypeError):
-        return ""
-    return str(meta.get("episode_id", "")) if isinstance(meta, dict) else ""
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def _matches(event_meta: dict[str, Any], wanted: dict[str, Any]) -> bool:
+    """交集匹配：`wanted` 的**每个键都要等于** `event_meta` 里对应的值。
+
+    AND-of-equalities，与 `MemoryStorePort.filter` 同一条语义（不支持 OR、
+    不支持大小比较）。事件缺这个键时算不匹配——不是"当作空值相等"。
+    """
+    return all(event_meta.get(key) == value for key, value in wanted.items())
 
 
 class LocalTrace:
     def __init__(self, run_id: str = "local", root: Path | None = None) -> None:
-        """接好 run 目录。
+        """接好落盘目录（一个，不再有 run 层与 events 层）。
 
-        `root`：**`trace_data/` 那一层**（不是 run 目录），缺省用仓库根的
-        `STORAGE_ROOT`。做成形参是为了让调用方能换落盘位置（测试用 `tmp_path`，
-        不往仓库里写）——**不是把存储位置变成配置项**：生产路径上唯一的调用方
-        （`TraceTool.build()`）不传它，仍然落在 `trace_data/<run_id>/`。
+        `root`：**落盘根**——一条事件一个文件的那个目录，不是它下面的某一层。
+        缺省用启动目录下的 `_default_root()`（0916 起——不再从 `__file__` 推
+        仓库根）。做成形参是为了让调用方能换落盘位置：生产路径是启动参数
+        `--trace-root` → `build_real(trace_root=…)` → `TraceTool.build(trace_root=…)`
+        逐级递进来，测试用 `tmp_path`，不往启动目录写。
 
-        构造时**不再扫盘**（0914）：`event_id` 计数器与 `id → 文件` 索引都随
+        `run_id`：**只用于盖进 `meta`，不参与路径**（0916 起）。同一个落盘根下
+        的多个 run 平铺在一起，读侧靠 `read_events({"run_id": …})` 区分——
+        与 `memory/` 同一条规矩（一条记录一个文件，run_id 在记录里）。
+
+        构造时**不扫盘**（0914）：`event_id` 计数器与 `id → 文件` 索引都随
         `event_id` 一起下线，落盘只需要目录在。
         """
         self._run_id = run_id
-        self._run_dir = (root or STORAGE_ROOT) / run_id
-        self._events_dir = self._run_dir / "events"
-
-        self._run_dir.mkdir(parents=True, exist_ok=True)
-        self._events_dir.mkdir(exist_ok=True)
+        # str 与 Path 都收（与 `LocalMemoryStore` 的 root 同一条归一规矩）——
+        # 覆盖链上 `build_real(trace_root=…)` 的形参就是 `str | Path`。
+        self._dir = Path(root) if root is not None else _default_root()
+        self._dir.mkdir(parents=True, exist_ok=True)
 
         self._last_ts = 0.0
         """本实例最近一次落账的 ts。**append 是单线程顺序调用**（trace 实例全图共享、
@@ -160,30 +187,31 @@ class LocalTrace:
             content=json.dumps(content, ensure_ascii=False),
         )
 
-        path = self._events_dir / f"{event_uuid}.json"
+        path = self._dir / f"{event_uuid}.json"
         _atomic_write_text(path, event.model_dump_json())
         return event_uuid
 
     # ---- 读：只回答"盘上有什么"，不掩码、不游标、不打标 ----
 
-    def read_events(self, episode_id: str | None = None) -> list[Event]:
-        """（契约见 `TracePort.read_events`）全量扫盘、按 `(ts, uuid)` 升序、按局切片。
+    def read_events(self, meta: dict[str, Any] | None = None) -> list[Event]:
+        """（契约见 `TracePort.read_events`）全量扫盘、按 `(ts, uuid)` 升序、按 `meta` 交集筛。
 
-        每次调用重扫 `events/`——trace 不做内存缓存（内存镜像那套已删，
+        每次调用重扫落盘目录——trace 不做内存缓存（内存镜像那套已删，
         需要"盘上有什么"就直接问盘）。
 
-        `episode_id` 那一维住在 `meta` 里（封套只认 `uuid`/`kind`/`type`/`ts`），
-        所以切片要先把那串 JSON 解回来——`_episode_id` 读不动就给空串。
+        筛选那几维住在 `meta` 里（封套只认 `uuid`/`kind`/`type`/`ts`），所以要先
+        把那串 JSON 解回来——`_meta_of` 读不动给空 dict，于是读不动的文件
+        **不匹配任何条件**（残文件是预期内的，它不该混进任何一次查询）。
         """
         events = [event for event, _path in self._scan_events()]
-        if episode_id is None:
+        if not meta:
             return events
-        return [e for e in events if _episode_id(e) == episode_id]
+        return [e for e in events if _matches(_meta_of(e), meta)]
 
     # ---- 内部辅助 ----
 
     def _scan_events(self) -> list[tuple[_Event, Path]]:
-        """盘上的全部事件（连同它们的文件路径），按 `(ts, uuid)` 升序。
+        """落盘根下的全部事件（连同它们的文件路径），按 `(ts, uuid)` 升序。
 
         残文件/旧格式文件解析失败是预期内的运行期情况，跳过不报错。返回的
         `_Event` 带 `extra="allow"`，所以旧数据（`event_id`/`payload` 那套）
@@ -191,7 +219,7 @@ class LocalTrace:
         于是解析当场失败被跳过**，不会静默混进结果。
         """
         found: list[tuple[_Event, Path]] = []
-        for path in sorted(self._events_dir.glob("*.json")):
+        for path in sorted(self._dir.glob("*.json")):
             if path.name.endswith(".tmp"):
                 continue
             try:
@@ -203,4 +231,4 @@ class LocalTrace:
         return found
 
 
-__all__ = ["LocalTrace", "STORAGE_ROOT", "new_event_uuid"]
+__all__ = ["LocalTrace", "new_event_uuid"]

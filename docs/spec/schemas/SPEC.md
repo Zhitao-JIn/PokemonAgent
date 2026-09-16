@@ -9,7 +9,7 @@
 - **不做根出口**：`schemas/__init__.py` **不 re-export 任何名字**，只留 docstring。出口做在每个产出模块一级——消费方写 `from pokemon_agent.schemas.harness import X` 或 `from pokemon_agent.schemas.memory import X`，**不深到 `communication/` / `datastore/` 子目录**。这样 import 行本身就说明"这个文件跟哪几个协作者的契约打交道"，也避免同一名字有两条 import 路径。
 - **只留真正的信封**：`schemas/` 下现存**只有 `harness/` 与 `memory/` 两个子包**。`frontend/`（0914 控制台改造整个删除）、`providers/`（0913 深夜十一随代码层 `pokemon_agent/providers/` 一起解散）都不在了；`brain` / `world` / `trace` 也没有自己的 `schemas/` 子包——它们的数据形状物理上归回产出它们的模块自己（`brain/interface/domain/`、`world/interface/domain/`、`trace/datastore/`）。
 - **不给 tool 门面单开子包**：harness 经门面调模块的架构不变，信封仍在 `harness/communication/` 下按"往哪个门面"分。
-- **`schemas/harness/domain/` 不许 import `pokemon_agent.trace`**——一 import 就成环（`schemas.harness` → `trace` → `trace.store` → `schemas.harness.domain` 半加载 → `ImportError`）。可执行核对：`scripts/check_trace_self_contained.py` 的 C 项。
+- **`schemas/harness/domain/` 不许 import `pokemon_agent.trace`**——守的是**分层方向**（契约层不反向依赖实现包）。⚠ **不是"防环"**：trace 出边为零，这里 import 它也不会成环（0916 实测四种加载顺序全不炸）；0913 脱钩**之前**才是真环（那时 `trace.store` 反向 import 本包）。可执行核对：`scripts/check_trace_self_contained.py` 的 C 项。
 
 ## 二、目录结构
 
@@ -17,8 +17,9 @@
 schemas/
 ├── __init__.py                       不是出口，不 re-export 任何名字
 ├── harness/
-│   ├── __init__.py                   出口：44 个信封 + domain 四件 + AuditVerdict / ModelCall / ModelCallLog / RunResp
-│   ├── communication/                46 个模块 + __init__.py（44 个信封 + ModelCall / RunResp）
+│   ├── __init__.py                   出口：48 个信封名 + domain 四件 + AuditVerdict / ModelCall / ModelCallLog / RunResp
+│   ├── communication/                49 个模块 + __init__.py（47 个信封模块——`FromHarnessToReviewerAuditReq.py` 一文件两信封；
+│   │                                 ModelCall.py 里另有 `ModelCallLog = list[ModelCall]` 别名）
 │   └── domain/
 │       ├── __init__.py               出口：GoalEntry / GoalStatus / TraceEvent / TraceKind
 │       ├── goal_entry.py             GoalEntry / GoalStatus
@@ -27,10 +28,10 @@ schemas/
 └── memory/
     ├── __init__.py                   出口：SNAPSHOT_BLIND / EpisodeMemory / KnowledgeRecord /
     │                                 ObjectDialogEvent / ObjectFactEvent / ObjectStillEvent /
-    │                                 ObjectWarpEvent / StepMemory / dedup_snapshots / render_sequence
+    │                                 ObjectWarpEvent / StepMemory / render_sequence
     └── datastore/
-        ├── __init__.py               出口：上列 10 个 + ObjectFactEventBase
-        ├── step_memory.py            StepMemory / SNAPSHOT_BLIND / render_sequence / dedup_snapshots
+        ├── __init__.py               出口：上列 9 个 + ObjectFactEventBase
+        ├── step_memory.py            StepMemory / SNAPSHOT_BLIND / render_sequence
         ├── episode_memory.py         EpisodeMemory
         ├── object_memory.py          ObjectFactEventBase / ObjectDialogEvent / ObjectWarpEvent /
         │                             ObjectStillEvent / ObjectFactEvent
@@ -91,12 +92,11 @@ schemas/
 | `FromHarnessToReviewerInjectReq` | **插话**请求：人收一句自然语言（`inject()` 返回字符串之外无结构化载荷，无 Resp） |
 | `FromHarnessToReviewerAuditReq` | **审**：文件里定义三个类——`AuditVerdict`（`accept` / `overturn`）、`FromHarnessToReviewerAuditReq`（一局的机械结算 + 完整 trace）、`FromHarnessToReviewerAuditResp`（人的表态）。**Resp 与 Req 同文件，没有独立的 `…AuditResp.py`** |
 
-### 往 `trace_tool`（2）
+### 往 `trace_tool`（1）
 
 | 模块 | 干什么 |
 |---|---|
-| `FromHarnessToTraceToolAppendReq` | 单笔记账请求：`kind`（`TraceKind`）+ `meta`（签名信息）+ 各 kind 取用的可选领域字段（`calls` / `obs` / `entry` / `verdicts`…） |
-| `FromHarnessToTraceToolAppendModelCallsReq` | 批量记账请求：一笔模型交互的全部尝试；同文件定义 `ModelCallLog` |
+| `FromHarnessToTraceToolAppendReq` | 单笔记账请求：`kind`（`TraceKind`）+ `meta`（签名信息）+ 各 kind 取用的可选领域字段（`calls` / `obs` / `entry` / `verdicts`…）。调用账的 `calls` 交整条重试链（0916 起唯一的写口——批量信封已删） |
 
 ### run → episode 内部边（2）
 
@@ -109,7 +109,7 @@ schemas/
 
 | 模块 | 干什么 |
 |---|---|
-| `ModelCall.py` | `ModelCall`：一次模型调用留下的账（`payload` / `error_kind` / `error`），由 `FromHarnessToTraceToolAppendReq.calls` 内嵌 |
+| `ModelCall.py` | `ModelCall`：一次模型调用留下的账（`payload` / `error_kind` / `error`），由 `FromHarnessToTraceToolAppendReq.calls` 内嵌；同文件定义 `ModelCallLog = list[ModelCall]`（重试链的形状，`perceive_with_retry` 的返回类型） |
 | `RunResp.py` | `RunResp`：RunHarness 对外的 run 结算（裸名），由 `harness/run/run_entry.py::close()` 内部组装、供 `run_end` 事件内嵌 |
 
 ## 四、命名规则
@@ -122,7 +122,7 @@ schemas/
 
 **规则二（裸名）**：模块对外的接口模型用裸名、不带 From/To——因为发起方可能换人（今天 harness，明天第三方），From/To 前缀是赌一个注定被换掉的名字。**适用范围到此为止**：
 
-- 在 `schemas/` 里落地的裸名只有 `RunResp` 与 `ModelCall`（加上 `domain/` 的实体 `TraceKind` / `TraceEvent` / `GoalEntry` / `GoalStatus`，以及只服务一个信封的 `ModelCallLog`、只服务审的 `AuditVerdict`）。
+- 在 `schemas/` 里落地的裸名只有 `RunResp` 与 `ModelCall`（加上 `domain/` 的实体 `TraceKind` / `TraceEvent` / `GoalEntry` / `GoalStatus`，以及 `ModelCall.py` 里的 `ModelCallLog` 别名、只服务审的 `AuditVerdict`）。
 - 其余裸名住在各自模块内，**不在 `schemas/`**：brain 的 `LlmCompleteReq` 在 `pokemon_agent/brain/schemas/completion.py`，world 的 `Perceived` 在 `pokemon_agent/world/interface/domain/perceived.py`。
 - **第二跳（门面 → 具体模块）走裸参数、返回模块自己的类型**，不造信封也不新建模型。
 
@@ -132,7 +132,7 @@ schemas/
 
 | 实体 | 家 | 声明 / 产出方 | 谁引用它 |
 |---|---|---|---|
-| `TraceKind` | `harness/domain/trace_kind.py` | harness（各节点声明"我记哪笔账"） | `FromHarnessToTraceToolAppendReq`、`…AppendModelCallsReq`；消费方是 `TraceTool` 渲染层 |
+| `TraceKind` | `harness/domain/trace_kind.py` | harness（各节点声明"我记哪笔账"） | `FromHarnessToTraceToolAppendReq`；消费方是 `TraceTool` 渲染层 |
 | `TraceEvent` | `harness/domain/trace_event.py` | 项目侧对 trace 事件的形状声明 | `FromHarnessToReviewerAuditReq.episode_trace` |
 | `GoalEntry` / `GoalStatus` | `harness/domain/goal_entry.py` | harness（run 级目标表的一行） | `FromHarnessToBrainToolPlanOnceReq` |
 | `StepMemory` | `memory/datastore/step_memory.py` | 本项目（tool 层与组装方认识它的字段） | `FromHarnessToBrainTool*` 6 个信封、`FromHarnessToMemoryTool*` 3 个信封 |
@@ -164,7 +164,7 @@ schemas/
 | `ObjectFactEvent` | **一格的一次交互** | `ObjectFactEventBase.Place.key` = `"{map_id}:{x}:{y}"`，跨 episode 稳定 |
 | `KnowledgeRecord` | **一条不挂坐标的世界知识** | `topic`；`run_id` / `episode_id` 只是来源，不是身份 |
 
-**`StepMemory`（源）**：字段分三段——观察前 / 后（`before` / `after`，各是内部类 `StepMemory.Observation`，唯二的快照副本）、`rationale`（`ActionSegment.rationale` 的论据）、`action`（**一个键**）；签名三元组 `step` / `episode_id` / `run_id`；截图 `before_frame` / `after_frame`（**base64 编码的 PNG 字符串**，可能是 `None`）。`render(reason=True)` 同时服务 prompt 与检索打分；`reason=False` 去掉「因为」那一行，判定器用这一版——**绝不能读到决策者的理由**。模块级常量 `SNAPSHOT_BLIND = frozenset({"known_objects", "knowledge"})`（不进记忆的字段，**排除表而不是白名单**）、`BLIND_NOTE`（没做过视觉感知时必须顶的那一行）。两个纯函数：`render_sequence()`（相邻两条首尾相接时只渲一次边界）、`dedup_snapshots()`（摊平成 `(before, after, …)` 去重，返回严格等长的 `(frames, snapshots)`）。
+**`StepMemory`（源）**：字段分三段——观察前 / 后（`before` / `after`，各是内部类 `StepMemory.Observation`，唯二的快照副本）、`rationale`（`ActionSegment.rationale` 的论据）、`action`（**一个键**）；签名三元组 `step` / `episode_id` / `run_id`；截图 `before_frame` / `after_frame`（**base64 编码的 PNG 字符串**，可能是 `None`）。`render(reason=True)` 同时服务 prompt 与检索打分；`reason=False` 去掉「因为」那一行，判定器用这一版——**绝不能读到决策者的理由**。模块级常量 `SNAPSHOT_BLIND = frozenset({"known_objects", "knowledge"})`（不进记忆的字段，**排除表而不是白名单**）、`BLIND_NOTE`（没做过视觉感知时必须顶的那一行）。两个纯函数：`render_sequence()`（相邻两条首尾相接时只渲一次边界）与 `dedup_snapshots()`（摊平成 `(before, after, …)` 去重，返回严格等长的 `(frames, snapshots)`）——后者 0915 起**已搬去 `tools/brain_tool.py`**（"怎么拼发模型的图"是发请求的组装逻辑，不是记忆的数据形状）。
 
 **派生关系**：`EpisodeMemory` 的**正文**（`summary` 起）由 LLM 从**本局通过校验的那些 `StepMemory`** 蒸馏而来（过滤点在 `harness/episode/close/verify_and_summarize.py`），所以它是 `StepMemory` 的**派生视图**——**可重建、可丢弃**，`rm memory/episode_memory/*.md` 只损失算力不损失事实。它的**来源章**（`episode_id` / `run_id` / `goal` / `success` / `steps`）与 step memory 无关，是 harness 从 run state 盖的。三条推论：可重建、可丢弃、**成败只认章不认正文**（`render()` 把章摆在第一行）。
 
