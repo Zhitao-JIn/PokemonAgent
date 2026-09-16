@@ -180,7 +180,8 @@ read_events()                                                            # 整�
 ```
 
 上面是盘上真实的 `run_start`（取自 0916 平铺**之前**的产物
-`trace_data/realcheck-0915-214315/events/`，`content` 中间省略）——
+`trace_data/realcheck-0915-214315/events/`——该 run 已归档到
+`_to_delete/trace_data_legacy_0916/`，`content` 中间省略）——
 **字段与现在逐字相同，只有路径两层没了**：平铺之后同一个文件直接躺在落盘根下。
 **注意 `meta` / `content` 是带转义的 JSON 字符串**，读端要 `json.loads` 回来。
 
