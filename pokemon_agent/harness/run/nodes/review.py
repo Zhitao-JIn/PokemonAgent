@@ -75,9 +75,10 @@ def episode_trace_events(events: list[TraceEvent], episode_id: str) -> list[Trac
     **`episode_id` 住在 `meta` 里**（0914 封套改造后顶层不再有那个字段），
     所以筛选要先把 `meta` 那串 JSON 解回来；解不动的事件跳过（残文件是预期内的）。
 
-    `read_events()` 自己就支持按局切片，但本节点要的是"**先把完整 trace 装进
-    请求**、再按局筛出来"这份语义（同一个 `req.episode_trace` 字段，将来若改
-    成带别局上下文时改这一处即可），所以筛选留在这里而不是传参给读口。
+    `read_events()` 自己就支持按签名筛选，但本节点要的是"**先把整 run 的 trace
+    装进请求**、再按局筛出来"这份语义（同一个 `req.episode_trace` 字段，将来若改
+    成带别局上下文时改这一处即可），所以筛选留在这里而不是传参给读口——
+    调用点传给读口的是 `{"run_id": …}`（落盘不按 run 分层，得自己把范围圈到本 run）。
     """
     return [ev for ev in events if _meta_episode_id(ev) == episode_id]
 
@@ -85,7 +86,7 @@ def episode_trace_events(events: list[TraceEvent], episode_id: str) -> list[Trac
 def _meta_episode_id(event: TraceEvent) -> str:
     """从事件的 `meta` JSON 里取 `episode_id`；读不动给空串。
 
-    与 `trace.store._episode_id` 同形但**不共用**：那个在 trace 内部（harness 不
+    与 `trace.store._meta_of` 同形但**不共用**：那个在 trace 内部（harness 不
     import `pokemon_agent.trace` 的实现），各写各的。`meta` 里的键是 harness 自己
     装进去的，所以由 harness 解回来是它分内的事。
     """
@@ -109,8 +110,8 @@ def review(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
     依赖从 `runtime.context` 取：`reviewer` 是"人和图之间的那扇门"，必须是
     **装配时注入的那个实例**。
 
-    历史读的是**磁盘账本**（`deps.trace.read_events()`）——0913 晚 `RunDataCenter`
-    的内存事件镜像删除后，盘上那份就是唯一真相。
+    历史读的是**磁盘账本**（`deps.trace.read_events({"run_id": …})`）——0913 晚
+    `RunDataCenter` 的内存事件镜像删除后，盘上那份就是唯一真相。
     """
     deps = runtime.context
     assert state.outcome is not None, "review() without a fresh outcome"
@@ -125,7 +126,9 @@ def review(state: RunState, runtime: Runtime[HarnessDeps]) -> dict[str, Any]:
 
     # 步骤 3：把这份裁定亮给人。
     episode_trace = (
-        episode_trace_events(deps.trace.read_events(), state.episode_id) if state.episode_id else []
+        episode_trace_events(deps.trace.read_events({"run_id": deps.run_id}), state.episode_id)
+        if state.episode_id
+        else []
     )
     resp = deps.reviewer.audit(
         FromHarnessToReviewerAuditReq(

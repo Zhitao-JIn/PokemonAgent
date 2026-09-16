@@ -91,8 +91,8 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     - **`episode_id` / `step`**：这条账发在哪一局、哪一步。判据侧
       （`node_io._check_meta`）核"恰好四件"——多签的东西要先进判据，不是自由槽。
 
-    **`run_id` 不在这里**：它是 run 目录名，只有落盘那一层知道（`store._stamp_run_id`
-    盖，调用方带了就当场炸）。
+    **`run_id` 不在这里**：它是落盘实例的标识（构造 `LocalTrace` 时给的），只有
+    落盘那一层知道（`store._stamp_run_id` 盖，调用方带了就当场炸）。
 
     **为什么由 harness 交齐、而不是 tool 拿三个公共字段拼**（0914 跟进）：`meta`
     是封套的语义成分，内容归 harness；拆成三个公共字段再由 tool 现拼，等于把

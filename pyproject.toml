@@ -35,7 +35,7 @@ api = [
 
 # **必须显式声明包范围**——不加这一段，setuptools 的 flat-layout 自动发现
 # 会把仓库根目录下所有"看起来像包"的目录都当成候选（`log`/`web`/`assets`/
-# `trace_data` 全部命中），报 "Multiple top-level
+# `tracelog` 全部命中），报 "Multiple top-level
 # packages discovered" 直接拒绝构建。`pip install -e .` 曾经就没有
 # 真的跑通过（那也是为什么前些年的独立子目录一冒出来就把这个坑炸开了）。
 # 只声明 `pokemon_agent`：这是唯一要被安装、被其他项目 import 的分发内容；

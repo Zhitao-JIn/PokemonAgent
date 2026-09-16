@@ -6,7 +6,8 @@
 >
 > 阅读说明：
 >
-> - 落盘时**一条事件一个 json 文件**（`trace_data/<run_id>/events/<uuid>.json`），
+> - 落盘时**一条事件一个 json 文件**（`<落盘根>/<uuid>.json`，全平铺；
+>   缺省落盘根是启动目录下的 `tracelog/`），
 >   `meta` 与 `content` 落盘时是 **JSON 字符串（一层转义）**；
 >   下文为了可读，把这两个字段**展开**显示。
 > - `run` 级账（run_* / plan_*）沿用项目约定：`meta.episode_id` 位放 `run_id`、`step` 恒 0。

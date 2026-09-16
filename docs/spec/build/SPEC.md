@@ -1,6 +1,6 @@
 # build —— 装配规格
 
-> 最后更新：2026-09-15 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
+> 最后更新：2026-09-16 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
 > 覆盖 `pokemon_agent/build.py`、`pokemon_agent/config.py`、`pokemon_agent/errors.py`
 
 ## 一、职责与边界
@@ -23,8 +23,8 @@
 | 对象 | 类型（协议） | 唯一来源 | 装配点递的裸字段 |
 |---|---|---|---|
 | `game` | `GameTools`（`GameToolPort`） | `GameTools.build(rom, state_path=…, watch=…, vision_model=…, speed=…)` | ROM 路径、存档、两个旋钮、感知型号名 |
-| `trace_tool` | `TraceTool`（`TraceToolPort`） | `TraceTool.build(run_id=…)` | `run_id` |
-| `memory` | `MemoryTool`（`MemoryToolPort`） | `MemoryTool.build()` | 无（缺省落仓库根 `memory/`） |
+| `trace_tool` | `TraceTool`（`TraceToolPort`） | `TraceTool.build(run_id=…, trace_root=…)` | `run_id`、`trace_root` |
+| `memory` | `MemoryTool`（`MemoryToolPort`） | `MemoryTool.build(memory_root=…, max_summaries=…)` | 一个记忆根（四族一视同仁地住在它下面各自的 `<kind>/`） |
 | `brain_tool` | `BrainTool`（`BrainToolPort`） | `BrainTool.build(text=…, judge=…, verify=…, plan=…, max_tokens=…)` | 四个型号名 + 输出上限 |
 | `reviewer` | `Reviewer`（Protocol） | 参数；不传 → `NullReviewer()` | 一个策略对象 |
 | `planner` | `Planner`（Protocol） | 参数；不传 → `BrainPlanner(brain_tool)` | 一个策略对象 |
@@ -39,7 +39,10 @@
 `build_real` 的参数（缺省值即工厂缺省）：`rom`、`state_file=None`、`vision_model="qwen3.8-max"`、
 `text_model="qwen-plus"`、`judge_model="qwen3.8-max"`、`verify_model="doubao-seed-2-1-pro-260628"`、
 `plan_model="doubao-seed-2-1-pro-260628"`、`max_tokens=25600`、`watch=False`、`speed=0`、
-`run_id="local"`、`reviewer=None`、`planner=None`、`auto_push_goals=True`、`auto_decide_done=True`。
+`run_id="local"`、`trace_root=None`、`memory_root=None`（两个落盘根：缺省 = **进程启动目录**
+下的 `tracelog/` 与 `memory/`，0916 起——数据跟着启动走，不再锚在仓库根；
+memory 只有一个根，四族各占其下 `<kind>/`）、
+`reviewer=None`、`planner=None`、`auto_push_goals=True`、`auto_decide_done=True`。
 
 **tool 层的接线工厂共五个**：`BrainTool.build` / `GameTools.build` / `MemoryTool.build` /
 `TraceTool.build`（四个 classmethod）+ `vision_factory.build_vision_provider(model, temperature=0.0)`

@@ -4,6 +4,10 @@
     store.py    `TracePort` 的实现：一条事件一个 json 文件（文件名是时间递增 uuid）
     datastore/  `_Event`（私有实现）与 `EventType`（粗类词表）
 
+**一条事件一个 json、全平铺在落盘根下**（0916）：不按 run 分层、也没有
+`events/` 这一层，缺省根是启动目录下的 `tracelog/`。"读哪一批"由
+`read_events(meta=…)` 的交集匹配回答。
+
 **本包对 `pokemon_agent` 其余部分零 import**——这是 trace 被当作**独立第三方
 模块**对待的那条边界的字面含义："拷走即可复用"。
 
@@ -31,13 +35,12 @@
 
 from .datastore import EventType
 from .interface import Event, TracePort
-from .store import STORAGE_ROOT, LocalTrace, new_event_uuid
+from .store import LocalTrace, new_event_uuid
 
 __all__ = [
     "Event",
     "EventType",
     "LocalTrace",
-    "STORAGE_ROOT",
     "TracePort",
     "new_event_uuid",
 ]

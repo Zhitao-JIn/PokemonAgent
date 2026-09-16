@@ -20,6 +20,7 @@ _to_delete/
 
 # 运行产物与数据（不该进版本库）
 trace_data/
+tracelog/
 screenshot/
 experiment_results/
 vision_dump/

@@ -1,12 +1,12 @@
 """`TraceToolPort` 的唯一实现：harness 和事件流之间那层"记账处理"。
 
-持有 `TracePort`（事件流存储）。两个写方法分工一致——**调用方只组装信封，拆解规则
-在本层**：
-
-- `append()`：一笔账 → 按 `req.kind` 分派到 `render.py` 的渲染函数（正文格式、
-  条件字段全在这层），一 req 可能渲成多条事件（账单 + 失败补 `call_failed`）；
-- `append_model_calls()`：一次模型交互的 N 次尝试 → N 条调用账，拆解规则在
-  `model_calls.py`。
+持有 `TracePort`（事件流存储）。写只有 `append()` 一个口——**调用方只组装信封，
+拆解规则在本层**：一笔账 → 按 `req.kind` 分派到 `render.py` 的渲染函数
+（正文格式、条件字段全在这层），一 req 可能渲成多条事件——调用账的
+`calls` 交的是**整条重试链**，渲染时逐条落成 `*_call` 账、失败的尝试
+各自再补一条 `call_failed`（0916 统一：批量口 `append_model_calls` 已删，
+此前七处调用点里成功路径走 `append(calls=…)`、失败路径走批量口，两套形状
+落盘效果相同，只留一套）。
 
 **`meta` 由 harness 交齐、本层原样转发**（0914 跟进）：封套上的 `meta` 是一个
 语义成分（harness 的签名信息），内容由调用方在 `req.meta` 里一次给全
@@ -30,23 +30,24 @@ trace 是独立第三方模块，只有"桥"认识它。
 **正文的字段格式是跨模块契约**：观测台前端按字段名渲染，格式变更权在本层
 （见 `render.py` 模块 docstring）。链路名也在其中——错误账的 `content.link`。
 
-**本包收拢三个 trace 相关文件**：`__init__.py`（分派器 + 端口实现）、
-`render.py`（每种账的正文，纯函数）、`model_calls.py`（批量账）。
+**本包收拢两个 trace 相关文件**：`__init__.py`（分派器 + 端口实现）、
+`render.py`（每种账的正文，纯函数）。
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
 from pokemon_agent.schemas.harness import (
-    FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
     TraceEvent,
     TraceKind,
 )
 from pokemon_agent.trace import Event, EventType, LocalTrace, TracePort
 
-from . import model_calls, render
+from . import render
 
 _RENDERERS = {
     TraceKind.RUN_START: render.run_start,
@@ -116,14 +117,18 @@ class TraceTool:
         self._trace = trace
 
     @classmethod
-    def build(cls, *, run_id: str = "local") -> TraceTool:
+    def build(cls, *, run_id: str = "local", trace_root: str | Path | None = None) -> TraceTool:
         """接线工厂：造 `LocalTrace` 并包成 `TraceTool`。
 
         **全项目唯一 `new LocalTrace` 的地方**——装配点（`build.py`）只递裸字段，
         与 `BrainTool.build()` / `MemoryTool.build()` / `build_vision_provider()`
         同形（那三件是"选型知识收在 tool 层"的同一条定案）。
+
+        `trace_root`：落盘根（一条事件一个文件那个目录），缺省为**进程启动目录**
+        下的 `tracelog/`（0916 起）。启动参数 `--trace-root` →
+        `build_real(trace_root=…)` → 这里 → `LocalTrace(root=…)`。
         """
-        return cls(LocalTrace(run_id=run_id))
+        return cls(LocalTrace(run_id=run_id, root=trace_root))
 
     def append(self, req: FromHarnessToTraceToolAppendReq) -> None:
         """记一笔账：按 `req.kind` 渲染正文，逐条落盘。
@@ -161,24 +166,15 @@ class TraceTool:
             )
             self._trace.append(rendered.type, rendered.kind, dict(req.meta), rendered.content)
 
-    def append_model_calls(self, req: FromHarnessToTraceToolAppendModelCallsReq) -> None:
-        """记一次模型交互的**全部尝试**：一笔交互 → N 条调用账。
-
-        与 `append` 同一分工——调用方只组装信封（签名信息 + `kind` 代表的链路 +
-        原始尝试账），"怎么逐条摊开落账"是本层的事
-        （`model_calls.append_model_calls`）。
-
-        前置条件：`req.log` 按尝试顺序排列（重试循环保证）、`req.meta` 带齐
-        三件签名（同 `append`）。
-        后置条件：`req.log` 里每一条都已落盘；空 log 合法且不写任何事件。
-        """
-        model_calls.append_model_calls(self, req)
-
     # ---- 读：磁盘账本（唯一真相） ----
 
-    def read_events(self, episode_id: str | None = None) -> list[TraceEvent]:
-        """（契约见 `TraceToolPort.read_events`）读盘 + 还原成项目事件形状。"""
-        return [_to_trace_event(e) for e in self._trace.read_events(episode_id)]
+    def read_events(self, meta: dict[str, Any] | None = None) -> list[TraceEvent]:
+        """（契约见 `TraceToolPort.read_events`）读盘 + 还原成项目事件形状。
+
+        `meta` 原样转给 `TracePort.read_events`——交集匹配怎么做是存储层的事，
+        本层只做形状还原（`Event` 协议 → `TraceEvent`）。
+        """
+        return [_to_trace_event(e) for e in self._trace.read_events(meta)]
 
 
 def _as_list(rendered: render.RenderedEvent) -> Iterable[render.Rendered]:
