@@ -50,8 +50,9 @@ class PerceptionAttemptFailed(WorldError):
     合并会让 `world` 与 `brain` 共享一个异常类，等于两者之间多一条隐式耦合。
     """
 
-    def __init__(self, call: dict[str, str]) -> None:
-        """记下这次失败的账单（普通 dict，字段同 brain 的 `ModelCall.payload`）。"""
+    def __init__(self, call: dict[str, str | list[str]]) -> None:
+        """记下这次失败的账单（普通 dict，字段同 brain 的 `ModelCall.payload`，
+        值可为标量字符串或字符串列表——如感知账里的 `images`）。"""
         super().__init__(f"perception attempt failed: {call.get('raw', '')[:200]!r}")
         self.call = call
 

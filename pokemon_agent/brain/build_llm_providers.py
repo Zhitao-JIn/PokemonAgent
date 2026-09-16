@@ -58,7 +58,9 @@ def build_llm_providers(
     `Brain(*build_llm_providers(config))`。
 
     后置条件：四个返回值的类型与 `Brain.__init__` 的四个形参逐一匹配——
-    `decide`/`plan` 是纯 `LLMProvider`（这两条链路本来就不该看图），
+    `decide`/`plan` 是 `LLMProvider`（纯文本；`decide` 的带图路由由
+    `Brain.choose` 查 provider 的 `multimodal` 标志分派，0915 129——
+    当前在用型号全为多模态、标志默认真），
     `judge`/`verify` 是 `JudgeProvider`（带得到图时走多模态）。
     **四个是不同的实例**：哪怕四个位置填的是同一个型号名，共用实例也会让 manifest
     里看不出"这四个位置其实可以分别选型"。

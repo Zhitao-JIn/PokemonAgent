@@ -97,6 +97,54 @@ from .prompts import judge_success as judge_success_prompt
 _Result = TypeVar("_Result")
 
 
+def dedup_snapshots(
+    entries: list[StepMemory],
+) -> tuple[list[str], list[StepMemory.Observation]]:
+    """把一串 `StepMemory` 摊平成 `(before, after, before, after, ...)` 的观测
+    序列，去重后**一次遍历、一口气**返回两条严格对齐的列表：截图（base64
+    字符串，喂 `VisionDescribeReq.images`）和它们各自对应的 `StepMemory.
+    Observation` 快照（给调用方转文字，比如"当前观测"要渲成 `$observation`）。
+    **两条列表长度、顺序永远一一对应**——`frames[i]` 就是 `snapshots[i]`
+    这份观测的那张截图。
+
+    两条列表由构造保证一一对应，调用方不必自己论证"这个索引对应那份观测"
+    （靠"最后一条的 after 就是当前观测"去猜索引，只在 history 非空且连续时
+    成立，猜错了没人报错、只是悄悄喂错内容）。不需要 `snapshots` 的调用方
+    用 `_` 丢弃第二个返回值。
+
+    去重规则（跟 `render_sequence()` 是同一件事的图片版）：相邻两条之间
+    `entries[i].after_frame` 和 `entries[i+1].before_frame` 本来就是同一帧
+    画面（`store_step_episode_memory()` 是同一份观测先存成上一条的 after，
+    `close_step()` 再把它扶正成下一条的 before，编码结果自然相等），
+    图片不该重复发一遍——每多发一张图，多模态请求就多花一份 token。去重只看
+    **字符串是否等于上一张已经收进来的**：同一帧画面编出来的 base64 永远
+    逐字节相等，不会出现"内容相同但字符串不同"需要额外判断的情况；反过来，
+    不连续的两条（比如中间有一步权限被拒没能落库）编码结果天然不同，不会
+    被误判成重复。
+
+    **没有截图的观测不进这两条列表**（`before_frame`/`after_frame` 为
+    `None`，比如那一步感知失败没能落盘）——它们既进不了图片列表，就没有
+    "这张图对应哪份观测"这件事，两条列表必须永远等长，宁可这份观测彻底不
+    出现，也不能让长度对不上。
+
+    **为什么在 tool 层**（0915 起，从 `schemas/memory/step_memory.py` 搬来）：
+    "怎么把记忆拼成发给模型的图"是**发请求的组装逻辑**，不是记忆的数据形状
+    ——schemas 层只描述记录长什么样，怎么消费它们归 tool（与 prompt 渲染同
+    一个归属：五条带图链路的 `images` 都在各 `BrainTool.*()` 入口用本函数拼出）。
+    """
+    frames: list[str] = []
+    snapshots: list[StepMemory.Observation] = []
+    for entry in entries:
+        for obs, frame in ((entry.before, entry.before_frame), (entry.after, entry.after_frame)):
+            if frame is None:
+                continue
+            if frames and frames[-1] == frame:
+                continue
+            frames.append(frame)
+            snapshots.append(obs)
+    return frames, snapshots
+
+
 class BrainTool:
     """`BrainToolPort` 的唯一实现。持有真正的 `Brain`（或任何 `BrainPort` 实现）。"""
 
@@ -240,10 +288,16 @@ class BrainTool:
         "纠正"的（0915 分叉，取代无条件叠加）。
         """
         base_prompt = decide_action_prompt.build_prompt(req)
+        # **images 在这里拼**（与 prompt 同一个归属："谁问模型，谁把 req 变成
+        # 请求"），素材**不另开通道**：就是 `$memories` 段落拼装出来的那批帧
+        # ——`dedup_snapshots()` 与 `render_sequence()` 是同一件事的图片版/
+        # 文字版（相邻去重、逐帧对应），prompt 里读到的每一步和模型看到的
+        # 画面严格同源。第一步没有记忆 → 空列表 → 纯文本。
+        images, _snapshots = dedup_snapshots(req.memories)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             prompt = base_prompt if not calls else _retry_prompt(base_prompt, calls)
-            return self._brain.choose(prompt=prompt, keys=list(req.space.names))
+            return self._brain.choose(prompt=prompt, keys=list(req.space.names), images=images)
 
         result, calls = self._attempt_loop("decide", attempt)
         return FromHarnessToBrainToolChooseOnceResp(
@@ -355,17 +409,21 @@ class BrainTool:
         里的 `$goal`/`$history` 就是这两样渲的），但**语义不同**：prompt 是
         "怎么判"的规则成品，这两样是"判什么"的素材。
 
+        **images 也在这里拼**（0915 130 收权，与 choose 同一个归属："谁问模型，
+        谁把 req 变成请求"）：harness 只装素材（history），`dedup_snapshots(req.history)`
+        与 `$history` 段的 `render_sequence()` 是同一件事的图片版/文字版——
+        prompt 里读到的每一步和模型看到的画面逐帧同源。
+
         **重试是原样重问**——判定不像决策那样有"上次错在哪"可用来纠正。
         重试耗尽抛 `MaxRetriesExceeded`，由 harness 的调用点决定怎么收场。
         """
         prompt = judge_success_prompt.build_prompt(req)
         goal = req.goal.goal
         history = [entry.render(reason=False) for entry in req.history]
+        images, _snapshots = dedup_snapshots(list(req.history))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.judge(
-                prompt=prompt, goal=goal, history=history, images=list(req.images)
-            )
+            return self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
 
         result, calls = self._attempt_loop("judge", attempt)
         return FromHarnessToBrainToolJudgeResp(done=result.done, why=result.why, calls=calls)
@@ -388,14 +446,12 @@ class BrainTool:
         """
         prompt = verify_prompt.build_prompt(req)
         rendered = [entry.render(reason=False) for entry in req.entries]
-        # **原样透传，不解码**：`req.images` 已是 base64 字符串，而 brain 那边
-        # `VisionDescribeReq.images` 要的正是这个（见 `brain/schemas/vision.py`）
-        # ——`judge()`/`summarize()` 一直这么传。此前这里多写了一次
-        # `_decode()`（base64 → 原始 bytes，"截图直存 base64"迁移前的化石），
-        # 结果是**每局结束的校验必炸**：`VisionDescribeReq` 的 `list[str]`
-        # 拒收 bytes，校验三次重试全在构造请求时就 ValidationError 掉，
-        # 一整局以 `MaxRetriesExceeded[verify]` 收场（0913 真机核对实测）。
-        images = list(req.images)
+        # **images 在这里拼**（0915 130 收权，与 judge/choose 同归属）：
+        # harness 只装素材（entries），去重帧由本层对同一批 entries 取——
+        # 与 prompt 的 `$entries` 渲染同源。此前 `req.images` 由 harness 节点
+        # 拼好递进来（外加一段"原样透传不解码"的 0913 化石注释，那是一次
+        # base64/bytes 迁移留下的坑，已随字段删除）。
+        images, _snapshots = dedup_snapshots(list(req.entries))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.verify(
@@ -432,6 +488,8 @@ class BrainTool:
         蒸馏要评价"这做法值不值得复用"，没有基准就没法评。
         """
         prompt = summarize_prompt.build_prompt(req)
+        # **images 在这里拼**（0915 130 收权，与 verify 同一批 entries、同一套去重）
+        images, _snapshots = dedup_snapshots(list(req.entries))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.summarize(
@@ -441,7 +499,7 @@ class BrainTool:
                 success=req.success,
                 steps=req.steps,
                 max_steps=req.max_steps,
-                images=list(req.images),
+                images=images,
             )
 
         result, calls = self._attempt_loop("summarize", attempt)
@@ -492,13 +550,15 @@ class BrainTool:
         重试耗尽抛 `MaxRetriesExceeded`（`source="extract"`）。
         """
         prompt = extract_prompt.build_prompt(req)
+        # **images 在这里拼**（0915 130 收权，与 verify/summarize 同一批 entries）
+        images, _snapshots = dedup_snapshots(list(req.entries))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.extract(
                 prompt=prompt,
                 goal=req.goal,
                 history=[entry.render(reason=True) for entry in req.entries],
-                images=list(req.images),
+                images=images,
             )
 
         result, calls = self._attempt_loop("extract", attempt)

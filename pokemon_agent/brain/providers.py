@@ -106,6 +106,7 @@ class _OpenAICompatibleBase:
         temperature: float,
         max_tokens: int = 1024,
         timeout: int = 45,
+        multimodal: bool = True,
     ) -> None:
         """`temperature` 没有默认值，**必须由调用方显式给出**。
 
@@ -114,6 +115,12 @@ class _OpenAICompatibleBase:
         两种用途都要服务，同一个类的两个实例温度经常不一样（决策要 0.7，
         感知要 0），默认值定在类这一级反而会悄悄用错，所以收紧成"每次构造
         都必须传"。
+
+        `multimodal`：**这个型号看不看得见图**——`Brain` 分派 describe/complete
+        的转发表就查它（0915 129）。默认 `True`：当前在用的全部型号
+        （`qwen3.8-max`/`doubao-seed-2-*`/`deepseek-flash`）都原生多模态；
+        哪天接纯文本型号（`qwen-plus` 那类），装配处要显式传 `False`，
+        否则带图的链路会把图发进一个不认图的端点。
 
         记下型号与温度，此后不再变。base_url/api_key 从子类的类属性拿，
         不接受调用方覆盖——见模块 docstring 第 2 条设计决定。
@@ -131,6 +138,7 @@ class _OpenAICompatibleBase:
         self._model = model
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self.multimodal = multimodal
         self._base = self.BASE_URL.rstrip("/")
         self._timeout = timeout
         self._key = next(
@@ -271,10 +279,24 @@ _DUMP_DIR = os.environ.get("VISION_DUMP_DIR", "")
 _dump_seq = 0
 
 
+def _png_bytes(image: str) -> bytes:
+    """帧字符串 → PNG 原始字节。
+
+    前置条件：`image` 是完整 data URI（`data:image/png;base64,…`）——
+    0915 起这是**唯一**的帧格式（`world/pyboy_world._png_data_uri` 产出），
+    裸 base64 不再被认。需要字节的只有两处：拼网格图（PIL 只吃像素）和
+    排查落盘（写 .png 文件）——这两处绕不开"文本 → 字节"这一跳。
+    """
+    assert image.startswith("data:image/png;base64,"), (
+        f"帧不是 data URI 格式（0915 起唯一格式）：{image[:40]!r}…"
+    )
+    return base64.b64decode(image.removeprefix("data:image/png;base64,"))
+
+
 def _dump(image_b64: str) -> None:
     """写一张图，文件名按序号递增。**出错就算了，不能影响这一局。**
 
-    入参是 base64 字符串（跟 `VisionDescribeReq.images` 类型一致），落盘前
+    入参是帧字符串（跟 `VisionDescribeReq.images` 类型一致），落盘前
     先解码回字节——这个函数存在的意义就是让人肉眼能直接打开看，存 base64
     文本没有这个用处。
     """
@@ -283,7 +305,7 @@ def _dump(image_b64: str) -> None:
         _dump_seq += 1
         d = pathlib.Path(_DUMP_DIR)
         d.mkdir(parents=True, exist_ok=True)
-        (d / f"{_dump_seq:04d}.png").write_bytes(base64.b64decode(image_b64))
+        (d / f"{_dump_seq:04d}.png").write_bytes(_png_bytes(image_b64))
     except Exception:  # noqa: BLE001  排查工具不该让实验挂掉
         pass
 
@@ -310,7 +332,12 @@ class _MultimodalMixin:
         return list(images)
 
     def complete(self, req: LlmCompleteReq) -> LlmCompleteResp:
-        """见 `LLMProvider.complete` 的契约。本方法不为输出格式负责。"""
+        """见 `LLMProvider.complete` 的契约。本方法不为输出格式负责。
+
+        **纯文本**（0915 129 定案）：本方法不收图、也不在内部判断走不走多模态
+        ——那个分叉在调用方（`Brain` 查 `multimodal` 标志后直接走 `describe()`），
+        "怎么发图"只有 `_send_multimodal()` 一份实现。
+        """
         prompt = req.prompt
         assert prompt, "complete() got an empty prompt"
 
@@ -321,7 +348,7 @@ class _MultimodalMixin:
             # 类型归类，错误信息要能直接指向"模型没给正文"而不是"模型不会写 JSON"。
             raise ParseFailure(
                 text,
-                f"模型返回空正文（completion_tokens={n_out}，truncated={cut}）——"
+                f"模型返回空正文（completion_tokens={n_out}，prompt_tokens={n_in}）——"
                 "已请求关闭思考模式；若仍复现，检查该模型是否真的支持这个关闭参数",
             )
         return LlmCompleteResp(
@@ -332,6 +359,57 @@ class _MultimodalMixin:
             reasoning_tokens=n_reason,
             truncated=cut,
         )
+
+    def _send_multimodal(
+        self, prompt: str, images: list[str]
+    ) -> tuple[str, int, int, int, int, bool]:
+        """带图发一次：发送前处理（拼网格/落盘）→ 组多模态 content → POST → 解包。
+
+        `describe()` 与 `complete()`（带图时）的**共同下半段**——"图怎么发"
+        只写这一份，返回 `_unpack` 的六元组。
+
+        **floor 校验也在这里**：任何一条真带了图的请求都过"静默丢图"检测
+        （`ImageNotDelivered`）——图是花钱发的，发了等于没发比不发更糟，
+        这条判据不该只属于感知链路。
+        """
+        # 发送前最后一道处理（`ArkProvider` 在这里把多帧拼成一张，见
+        # `_prepare_images`）——后续的落盘、floor 校验、content 组装全部
+        # 基于**实际发出去**的图片组。
+        images = self._prepare_images(list(images))
+
+        # **把真正送出去的图落盘。** 感知出错时，唯一没被任何日志覆盖的东西
+        # 就是模型实际看到的像素——人盯着模拟器窗口看到的是 `scale=4` 的 SDL 窗口，
+        # 和这里送出去的是两条不同的路径，肉眼比对不能当证据。
+        # 实测卡过一整轮：人看得清光标在 RUN，模型始终报 FIGHT，而当时没有任何办法
+        # 分辨是"图里没有"还是"模型没看"。
+        #
+        # 靠环境变量开，默认不写：这是排查用的，不该在正常实验里生成上千张图。
+        if _DUMP_DIR:
+            for image_b64 in images:
+                _dump(image_b64)
+
+        content: list[dict[str, object]] = [{"type": "text", "text": prompt}]
+        # 帧本身就是完整 data URI（0915 起唯一格式）——`image_url.url` 要的
+        # 正是这个形状，**直接透传**，这里没有任何拼接。
+        content.extend(
+            {
+                "type": "image_url",
+                "image_url": {"url": image_b64},
+            }
+            for image_b64 in images
+        )
+        text, n_in, n_out, n_cached, n_reason, cut = self._unpack(self._post(content))
+
+        # 这一行是整个感知链路最重要的一行：没有它，丢图会表现为"一切正常"。
+        # 多图按张数等比放大阈值——`_floor` 本来就是"一张图真被处理时至少这么
+        # 多 token"的经验值，N 张图理应至少是它的 N 倍，不然大概率是漏发了。
+        # 这只是量级判断，不是精确会计：真实 token 数还跟每张图内容有关，
+        # 阈值定得宽松（`_floor` 本身已经留了余量），不要求恰好等比。
+        floor = self._floor * len(images)
+        if n_in < floor:
+            raise ImageNotDelivered(n_in, floor)
+
+        return text, n_in, n_out, n_cached, n_reason, cut
 
     def describe(self, req: VisionDescribeReq) -> VisionDescribeResp:
         """见 `VisionProvider.describe` 的契约，尤其是关于静默丢图的那一段。
@@ -356,40 +434,9 @@ class _MultimodalMixin:
         assert req.images, "describe() got no images"
         assert req.prompt, "describe() got an empty prompt"
 
-        # 发送前最后一道处理（`ArkProvider` 在这里把多帧拼成一张，见
-        # `_prepare_images`）——后续的落盘、floor 校验、content 组装全部
-        # 基于**实际发出去**的图片组。
-        images = self._prepare_images(list(req.images))
-
-        # **把真正送出去的图落盘。** 感知出错时，唯一没被任何日志覆盖的东西
-        # 就是模型实际看到的像素——人盯着模拟器窗口看到的是 `scale=4` 的 SDL 窗口，
-        # 和这里送出去的是两条不同的路径，肉眼比对不能当证据。
-        # 实测卡过一整轮：人看得清光标在 RUN，模型始终报 FIGHT，而当时没有任何办法
-        # 分辨是"图里没有"还是"模型没看"。
-        #
-        # 靠环境变量开，默认不写：这是排查用的，不该在正常实验里生成上千张图。
-        if _DUMP_DIR:
-            for image_b64 in images:
-                _dump(image_b64)
-
-        content: list[dict[str, object]] = [{"type": "text", "text": req.prompt}]
-        content.extend(
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{image_b64}"},
-            }
-            for image_b64 in images
+        text, n_in, n_out, n_cached, n_reason, _cut = self._send_multimodal(
+            req.prompt, list(req.images)
         )
-        text, n_in, n_out, n_cached, n_reason, _cut = self._unpack(self._post(content))
-
-        # 这一行是整个感知链路最重要的一行：没有它，丢图会表现为"一切正常"。
-        # 多图按张数等比放大阈值——`_floor` 本来就是"一张图真被处理时至少这么
-        # 多 token"的经验值，N 张图理应至少是它的 N 倍，不然大概率是漏发了。
-        # 这只是量级判断，不是精确会计：真实 token 数还跟每张图内容有关，
-        # 阈值定得宽松（`_floor` 本身已经留了余量），不要求恰好等比。
-        floor = self._floor * len(images)
-        if n_in < floor:
-            raise ImageNotDelivered(n_in, floor)
 
         return VisionDescribeResp(
             text=text,
@@ -458,7 +505,7 @@ def image_grid_dims(n: int) -> tuple[int, int]:
 
 
 def pack_images_grid(images: list[str]) -> str:
-    """把 N 张 base64 PNG 帧拼成一张网格图，返回拼接图的 base64。
+    """把 N 张 PNG data URI 帧拼成一张网格图，返回拼接图的 data URI。
 
     每帧保持**原始分辨率**（160×144，不做上采样——0909 拍板去掉，豆包按张
     计费与分辨率无关，上采样白付显存不省一分钱图费）、帧间 4px 黑线分隔、
@@ -468,7 +515,7 @@ def pack_images_grid(images: list[str]) -> str:
     assert images, "pack_images_grid() got no images"
     if len(images) == 1:
         return images[0]
-    frames = [Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB") for b64 in images]
+    frames = [Image.open(io.BytesIO(_png_bytes(b64))).convert("RGB") for b64 in images]
     w, h = frames[0].size
     rows, cols = image_grid_dims(len(frames))
     sep = 4
@@ -477,7 +524,9 @@ def pack_images_grid(images: list[str]) -> str:
         canvas.paste(f, ((i % cols) * (w + sep), (i // cols) * (h + sep)))
     buf = io.BytesIO()
     canvas.save(buf, "PNG")
-    return base64.b64encode(buf.getvalue()).decode()
+    # 产出与前缀纪律一致（`world/pyboy_world._png_data_uri`）：网格图离开本层
+    # 之后与普通帧无异（进模型 / 落盘 / 进账），格式必须还是完整 data URI。
+    return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"
 
 
 class ArkProvider(_MultimodalMixin, _OpenAICompatibleBase):

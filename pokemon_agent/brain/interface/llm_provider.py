@@ -28,10 +28,16 @@ from pokemon_agent.brain.schemas import (
 
 @runtime_checkable
 class LLMProvider(Protocol):
-    """纯文本模型的出口。"""
+    """纯文本补全的出口（0915 129 定案：`complete()` 不收图）。
+
+    带图的路由在调用方：实现类会带一个 `multimodal: bool` 实例属性
+    （"这个型号看不看得见图"），`Brain` 查它决定走 `describe()`
+    （`JudgeProvider` 的方法）还是本协议的 `complete()`——
+    本协议不为图保留第二格式，`LlmCompleteReq` 是纯文本信封。
+    """
 
     def complete(self, req: LlmCompleteReq) -> LlmCompleteResp:
-        """调用文本模型，返回一次补全。
+        """调用模型，返回一次纯文本补全。
 
         前置条件：req.prompt 非空。
         后置条件：返回的 text 可能是任意字符串（含不合法 JSON），格式由调用方负责。
@@ -57,8 +63,10 @@ class JudgeProvider(LLMProvider, Protocol):
     两份同构是刻意的，见 `brain/schemas/__init__.py`）。
 
     `Brain.__init__` 用这个类型标 `judge_llm`/`verify_llm`，一眼能看出
-    "这两个位置的 provider 比 `decide_llm`（只标 `LLMProvider`）多担一个职责"。
-    `QwenProvider`/`ArkProvider` 本来就两个方法都实现，不用改动就满足这个协议。
+    "这两个位置的 provider 比 `decide_llm`（只标 `LLMProvider`，带图与否由
+    其 `multimodal` 标志决定，`choose()` 查表分派——0915 129）
+    多担一个职责"。`QwenProvider`/`ArkProvider` 本来就两个方法都实现，
+    不用改动就满足这个协议。
     """
 
     def describe(self, req: VisionDescribeReq) -> VisionDescribeResp:

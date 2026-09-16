@@ -43,7 +43,7 @@ brain/
 
 **统一约定（改前必读）：**
 
-- `images` 元素一律是 **base64 编码的 PNG 字符串**，brain 这层不做编解码；空序列表示纯文本，`judge` / `verify` / `summarize` / `extract` 据此从 `describe()` 降级到 `complete()`。
+- `images` 元素一律是 **base64 编码的 PNG 字符串**，brain 这层不做编解码；空序列表示纯文本，`choose` / `judge` / `verify` / `summarize` / `extract` 带图且模型多模态可用时走 `describe()`，否则 `complete()`；`plan` 当前不接图（0915 129）。
 - **失败必抛、不许降级**：`done=False` / "全部标不可靠" / `summary=None` 这三种吞法会让"链路坏了"与"业务结论就是如此"在数据里分不开（trace 里只看到成功率悄悄变 0）。
 - **模块层不重试**：重试是循环控制，"失败之后怎么办"取决于调用方的处境。
 - 签名里被收下但不读的素材（`goal` / `history` / `max_push` / `knowledge` / `include_rationale` / `goal_stack` / `success` / `steps` / `max_steps`）立的是"这件事必须有这几块"这个约定——本项目已把它们渲进 `prompt`，不两处传。
@@ -61,9 +61,9 @@ class JudgeProvider(LLMProvider, Protocol):
     def describe(self, req: VisionDescribeReq) -> VisionDescribeResp: ...
 ```
 
-- `complete`：前置 `req.prompt` 非空；后置 `text` 可以是任意字符串（含不合法 JSON），格式由调用方负责；失败抛异常，不返回空的 `LlmCompleteResp`。
+- `complete`：前置 `req.prompt` 非空；后置 `text` 可以是任意字符串（含不合法 JSON），格式由调用方负责；失败抛异常，不返回空的 `LlmCompleteResp`。**`LlmCompleteReq` 是纯文本信封、不收图**（0915 129 定案）——带图与否的路由不在 provider 内部。
 - `describe`：前置 `req.images` 至少一张且 `req.prompt` 非空；失败抛异常，**图静默未送达时必须抛 `ImageNotDelivered`**（判据 `input_tokens < floor`，`floor = IMAGE_TOKEN_FLOOR * len(images)`，`IMAGE_TOKEN_FLOOR = 100`）。
-- `JudgeProvider` 是 **brain 自己的协议**，不借 `world` 的 `VisionProvider`；`Brain.__init__` 用它标 `judge_llm` / `verify_llm`，纯 `LLMProvider` 标 `decide_llm` / `plan_llm`（这两条链路不带图）。
+- **带图路由是一张转发表，在 `Brain` 这一层**（0915 129）：provider 实例带 `multimodal: bool`（"这个型号看不看得见图"，`_OpenAICompatibleBase` 构造参数，默认真；接纯文本型号时装配处显式传假）。`choose`/`judge`/`verify`/`summarize`/`extract` 带图且 `multimodal` 为真 → `describe()`；否则 `complete()`。`plan` 是纯文本链，不接图。
 
 ## 四、数据形状
 

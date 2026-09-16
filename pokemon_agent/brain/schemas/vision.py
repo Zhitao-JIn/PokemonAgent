@@ -20,15 +20,13 @@ from pydantic import BaseModel, Field
 class VisionDescribeReq(BaseModel):
     """一次视觉补全的请求：一张或多张图加上要问的问题。
 
-    images：待识别的图片，**base64 编码后的 PNG 字符串**（不是原始字节）——
-        直接是 REST API `image_url` 那个字段要拼的内容
-        （`f"data:image/png;base64,{img}"`），**按要出现在 prompt 里的顺序
-        排列**，至少一张。`StepMemory`
-        直接存 base64（省掉“存文件名→用的时候再读盘+编码”这一趟），
+    images：待识别的图片，**完整的 PNG data URI 字符串**（不是原始字节）——
+        `data:image/png;base64,…`，0915 起这是**唯一**格式（自描述、grep 可寻，
+        裸 base64 已废；产出点唯一：`world/pyboy_world._png_data_uri`）。
+        **按要出现在 prompt 里的顺序排列**，至少一张。`StepMemory`
+        直接存 data URI（省掉“存文件名→用的时候再读盘+编码”这一趟），
         `judge`/`verify_steps` 用的图片天然就是已经编好的字符串，
-        这里用 `str` 才不用来回编解码；感知（`PyBoyWorld`）产出的是
-        原始字节，调用方在构造这个请求之前自己 `base64.b64encode(...).decode()`
-        一次。
+        这里用 `str` 才不用来回编解码。
     prompt：要问这些图的问题。
     """
 

@@ -233,26 +233,28 @@ class StepMemory(BaseModel):
 
     before_frame: str | None = Field(
         default=None,
-        description="`before` 对应的截图，**base64 编码后的 PNG 字符串**——"
-        "直接是 VLM REST API `image_url` 要拼的那个格式"
-        '（`f"data:image/png;base64,{before_frame}"`），不是文件名，也不是'
-        "原始字节。存 base64 不存文件名引用——**这条记忆的"
+        description="`before` 对应的截图，**完整的 PNG data URI 字符串**"
+        "（`data:image/png;base64,…`，0915 起唯一格式：产出点直接带前缀、"
+        "自描述、grep 可寻，裸 base64 已废）。不是文件名，也不是"
+        "原始字节。存 data URI 不存文件名引用——**这条记忆的"
         "`before`/`after` 本来就有跟相邻条目重复的问题**（上一条的 after =="
         "下一条的 before），文字字段重复是接受的成本，这条也一并接受：换来的是"
         "`judge`/`verify_steps` 用的时候不用再去读盘、不用再关心截图文件是否"
         "存在/是否被撞名改了后缀——`store_step_episode_memory()` 写这条记忆时"
-        "已经从 `trace_data/<run_id>/screenshot/` 读过一次盘、编码好了，后面全是内存里的字符串。"
+        "已经从盘上读过一次图、编码好了，后面全是内存里的字符串。"
         "**可能是 `None`**（那一步感知失败、截图确实没能落盘）——调用方"
         "（`judge`/`verify_steps` 拼请求）按跳过这张图处理，不能因为一步缺图"
         "让整条判定链路失败",
     )
     after_frame: str | None = Field(
         default=None,
-        description="`after` 对应的截图，格式同 `before_frame`（base64 编码的"
-        "PNG 字符串）。跟 `before_frame` 之间的关系正是 `render_sequence()`"
+        description="`after` 对应的截图，格式同 `before_frame`（完整 PNG data URI）。"
+        "跟 `before_frame` 之间的关系正是 `render_sequence()`"
         "已经在处理的那种重复——相邻两条 `entries[i].after_frame ==`"
         "`entries[i+1].before_frame`（同一帧画面，编码结果自然相等），拼多模态"
-        "请求时应该按这一点去重，不要同一张图发两遍，见 `dedup_snapshots()`",
+        "请求时应该按这一点去重，不要同一张图发两遍——去重的实现在"
+        "`tools/brain_tool.py::dedup_snapshots()`（0915 起归 tool 层，那是"
+        "发请求的组装逻辑，不是记忆的数据形状）",
     )
 
     # `(episode_id, step)` 就是这条记忆的坐标 —— 一步一条，唯一且语义稳定。
@@ -364,46 +366,3 @@ def render_sequence(entries: list[StepMemory], *, reason: bool = True) -> list[s
         rendered.append("\n".join(lines))
         prev = entry
     return rendered
-
-
-def dedup_snapshots(
-    entries: list[StepMemory],
-) -> tuple[list[str], list[StepMemory.Observation]]:
-    """把一串 `StepMemory` 摊平成 `(before, after, before, after, ...)` 的观测
-    序列，去重后**一次遍历、一口气**返回两条严格对齐的列表：截图（base64
-    字符串，喂 `VisionDescribeReq.images`）和它们各自对应的 `StepMemory.
-    Observation` 快照（给调用方转文字，比如"当前观测"要渲成 `$observation`）。
-    **两条列表长度、顺序永远一一对应**——`frames[i]` 就是 `snapshots[i]`
-    这份观测的那张截图。
-
-    两条列表由构造保证一一对应，调用方不必自己论证“这个索引对应那份观测”
-    （靠“最后一条的 after 就是当前观测”去猜索引，只在 history 非空且连续时
-    成立，猜错了没人报错、只是悄悄喂错内容）。不需要 `snapshots` 的调用方
-    用 `_` 丢弃第二个返回值。
-
-    去重规则不变（跟 `render_sequence()` 是同一件事的图片版）：相邻两条之间
-    `entries[i].after_frame` 和 `entries[i+1].before_frame` 本来就是同一帧
-    画面（`store_step_episode_memory()` 是同一份观测先存成上一条的 after，
-    `close_step()` 再把它扶正成下一条的 before，编码结果自然相等），
-    图片不该重复发一遍——每多发一张图，多模态请求就多花一份 token。去重只看
-    **字符串是否等于上一张已经收进来的**：同一帧画面编出来的 base64 永远
-    逐字节相等，不会出现"内容相同但字符串不同"需要额外判断的情况；反过来，
-    不连续的两条（比如中间有一步权限被拒没能落库）编码结果天然不同，不会
-    被误判成重复。
-
-    **没有截图的观测不进这两条列表**（`before_frame`/`after_frame` 为
-    `None`，比如那一步感知失败没能落盘）——它们既进不了图片列表，就没有
-    "这张图对应哪份观测"这件事，两条列表必须永远等长，宁可这份观测彻底不
-    出现，也不能让长度对不上。
-    """
-    frames: list[str] = []
-    snapshots: list[StepMemory.Observation] = []
-    for entry in entries:
-        for obs, frame in ((entry.before, entry.before_frame), (entry.after, entry.after_frame)):
-            if frame is None:
-                continue
-            if frames and frames[-1] == frame:
-                continue
-            frames.append(frame)
-            snapshots.append(obs)
-    return frames, snapshots

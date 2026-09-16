@@ -40,7 +40,6 @@ __all__ = [
     "ObjectStillEvent",
     "ObjectWarpEvent",
     "StepMemory",
-    "dedup_snapshots",
     "render_sequence",
 ]
 
@@ -56,6 +55,5 @@ from .object_memory import (
 from .step_memory import (
     SNAPSHOT_BLIND,
     StepMemory,
-    dedup_snapshots,
     render_sequence,
 )

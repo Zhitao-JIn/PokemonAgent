@@ -16,7 +16,9 @@ class FromHarnessToGameToolPerceiveOnceResp(BaseModel):
     """
 
     observation: Observation = Field(description="这一帧的观测")
-    calls: list[dict[str, str]] = Field(
-        default_factory=list, description="这次调用产生的每一条模型调用记录"
+    calls: list[dict[str, str | list[str]]] = Field(
+        default_factory=list,
+        description="这次调用产生的每一条模型调用记录（值可为标量字符串或字符串列表，"
+        "如感知账里的 `images`）",
     )
     frame_png: str = Field(description="这一次感知实际截下来、喂给视觉模型的原始 PNG（base64）")

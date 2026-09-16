@@ -23,10 +23,12 @@
 `summarize`/`extract`。**没有 `*_once` 后缀**——"一次"是调用方的循环术语，模块层的方法
 天然就是"做一次"。
 
-**七个方法的形状统一**：`prompt`（规则）+ 素材 + 可选 `images`。每个方法都
-接受 `images`——多模态素材物理上塞不进文本 prompt，只能独立传；默认空序列
-表示这次纯文本（`judge`/`verify`/`summarize`/`extract` 会据此从 `describe()`
-降级到 `complete()`）。
+**带图方法的形状统一**：`prompt`（规则）+ 素材 + 可选 `images`。
+`choose`/`judge`/`verify`/`summarize`/`extract` 五个调模型的方法都接受
+`images`——多模态素材物理上塞不进文本 prompt，只能独立传；默认空序列表示
+这次纯文本（模型多模态可用时走 `describe()`，否则 `complete()`）。
+**`plan` 是例外**（0915 129 定案）：规划是 run 级纯文本判断，不接图；
+`reflect` 不调模型，天然没有图。
 
 **`verify`/`summarize`/`extract` 三条链路共用同一类素材**（这一局的
 `history`），但产物归属不同：裁决属于判定、摘要属于那一局、知识属于世界。
@@ -100,7 +102,10 @@ class BrainPort(Protocol):
             `prompt`。
         keys：此刻可用的按键名。**唯一的用途是校验动作合法性**——说明文字
             不在这里（它们只进 prompt，且不参与逻辑运算）。
-        images：可选的多模态素材。空序列 = 这次纯文本。
+        images：可选的多模态素材（完整 PNG data URI）。空序列 = 这次纯文本；
+            非空且模型多模态可用（provider 的 `multimodal` 标志为真）时走
+            `describe()`，否则退化纯文本 `complete()`（转发表在实现层的
+            `choose()` 里，0915 129）。
 
         前置条件：`keys` 非空（空动作空间是调用方的 bug——那种情况该在
             调用方就被判成"这一步没法走"，不该问模型）。
@@ -192,7 +197,6 @@ class BrainPort(Protocol):
         goal_stack: Sequence[str],
         history: Sequence[str],
         max_push: int,
-        images: Sequence[str] = (),
     ) -> PlanResult:
         """run 级规划：根据历史决定目标表怎么变。
 
@@ -210,7 +214,8 @@ class BrainPort(Protocol):
           本项目不在 harness 侧截断（截掉就是静默丢目标，见 `PlanOnceReq.max_push`）。
         - `prompt`：怎么规划、输出什么格式的规则。
 
-        images：可选截图。本版 `plan_llm` 是纯 `LLMProvider`，收下但不用。
+        **本方法不接图**（0915 129）：规划是 run 级纯文本判断，依据是局索引、
+        详情正文与目标表——一帧"现在屏幕在哪"帮不上忙，只会白烧图费。
 
         **与 `prompt` 不重复**：本项目把这四块都渲进了 `run_plan.md` 的对应占位符，
         但签名立的是"规划必须有这几块"这个约定——谁整体拷走 brain 复用时，

@@ -34,11 +34,10 @@ class VisionDescribeReq(BaseModel):
     （`images: list[str]` + `prompt: str`）——实现同时服务两个协议，
     字段漂移就是运行时错误。
 
-    images：待识别的图片，**base64 编码后的 PNG 字符串**（不是原始字节）——
-        直接是 REST API `image_url` 那个字段要拼的内容
-        （`f"data:image/png;base64,{img}"`），**按要出现在 prompt 里的顺序
-        排列**，至少一张。`PyBoyWorld` 产出的是原始字节，构造这个请求之前
-        自己 `base64.b64encode(...).decode()` 一次。
+    images：待识别的图片，**完整的 PNG data URI 字符串**（不是原始字节）——
+        `data:image/png;base64,…`，0915 起这是**唯一**格式（自描述、grep 可寻，
+        裸 base64 已废）。**按要出现在 prompt 里的顺序排列**，至少一张。
+        产出点唯一：`PyBoyWorld._png_data_uri`。
     prompt：要问这些图的问题。
     """
 

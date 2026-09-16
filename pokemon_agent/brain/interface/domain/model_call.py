@@ -42,10 +42,12 @@ class ModelCall(BaseModel):
     重试循环里每一条账都要独立留档。
     """
 
-    payload: dict[str, str] = Field(
+    payload: dict[str, str | list[str]] = Field(
         default_factory=dict,
         description="token 四件套、`ok`（这次调用成没成）、原始输出（`raw`）、"
-        "实际发给模型的文本输入（`prompt`）。**失败的调用也要有**——它同样烧了钱，"
+        "实际发给模型的文本输入（`prompt`）、**实际发给模型的图**"
+        "（`images`，PNG data URI 列表——发给什么存什么，原样留档）。"
+        "**失败的调用也要有**——它同样烧了钱，"
         "而 `raw`/`prompt` 让你改进解析器之后能离线重算，不必再花 token 重跑。"
         '**`ok` 一律小写（`"true"`/`"false"`）**：这份 payload 是被 tool 层原样'
         "摊平进 trace 的，而账本只有一套布尔字面量——生产者写大写会在核对处当场炸"

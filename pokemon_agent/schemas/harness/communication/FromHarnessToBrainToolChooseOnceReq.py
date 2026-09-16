@@ -34,6 +34,12 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     **`prompt` 不是本模型的字段**（0913 删）：`BrainTool.choose()` 入口处调
     `prompts.decide_action.build_prompt(req)` 拼它，只活在那一次调用的局部
     ——"先拼 prompt 再回填进同一个 req"那个中间态不再外露。
+
+    **决策的截图也不进信封**（0915 129）：`memories` 里每条 `StepMemory` 自带
+    `before_frame`/`after_frame`，`BrainTool.choose()` 用 `dedup_snapshots()`
+    把它们拼装成随请求发出的 images——与 prompt 的 `$memories` 段落
+    （`render_sequence()` 的文字版）**同一批帧、逐帧对应**。不另开素材通道的
+    理由：两条通道迟早漂移，"模型读到的文字步骤"和"看到的画面"必须严格同源。
     """
 
     goals: list[Goal]

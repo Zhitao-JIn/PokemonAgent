@@ -36,10 +36,12 @@ class FromHarnessToBrainToolPlanOnceReq(BaseModel):
         `run/nodes/plan.py::_pick_details`）。二期上工具环后这个字段可以为空，
         模型自己请求要哪几局的正文，**信封不用改**（这就是留的那条缝）。
     objects：本 run 涉及的地图交互事实（`object_memory`，锚在 `(map_id,x,y)` 上，
-        跨局共池）。plan 是 run 级、没有当前观测也就没有"这一张图"，所以按
-        **可选条件**取（`query_object_events(map_id=None)`）。
+        跨局共池）。plan 是 run 级、没有当前观测，所以按**可选条件**取
+        （`query_object_events(map_id=None)`）。
     max_push：这一次最多新增几个目标。**提示模型的建议上限，不是截断**——
         `plan` 节点不再替模型裁剪（裁掉就是静默丢目标）。
+
+    **没有 images 字段**（0915 129 定案）：规划是 run 级纯文本判断，不带图。
     """
 
     run_id: str

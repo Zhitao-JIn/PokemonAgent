@@ -11,13 +11,23 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class LlmCompleteReq(BaseModel):
-    """一次纯文本补全请求。"""
+    """一次纯文本补全请求。
 
-    prompt: str = Field(description="完整 prompt 文本")
+    **不带图**（0915 129 定案）：带图与否是"这个模型看不看得见图"的判断，
+    这个判断归调用方（`Brain` 查 provider 的 `multimodal` 标志）——为真的链路
+    直接走 `describe()`（`VisionDescribeReq`），不为图保留一条双格式信封。
+    """
+
+    prompt: str
+    """完整 prompt 文本。**别删这个字段**——129 收编 images 时曾把整个字段
+    一起删掉，Pydantic 对未声明字段默认忽略，`LlmCompleteReq(prompt=…)` 构造
+    "成功"但 prompt 静默丢失，直到真机 `req.prompt` 才炸 AttributeError
+    （127~129 一路 108 个测试全绿都没拦住：FakeProvider 不摸 `req.prompt`）。
+    """
 
 
 class LlmCompleteResp(BaseModel):

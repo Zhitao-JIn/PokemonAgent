@@ -33,9 +33,11 @@ class Perceived(BaseModel):
     observation: Observation = Field(
         description="这一帧的观测。对 reset 是当前帧；对 step 是推进后**链尾那一次感知**的帧"
     )
-    calls: list[dict[str, str]] = Field(
+    calls: list[dict[str, str | list[str]]] = Field(
         default_factory=list,
         description="这次调用（可能是重试了好几次）产生的每一条模型调用记录，"
-        "按发生顺序排列。空列表表示命中缓存，没有产生新调用，**不是 None**",
+        "按发生顺序排列。值是标量字符串或字符串列表（`images` 一项是完整 PNG "
+        "data URI 列表——发给什么存什么）。空列表表示命中缓存，没有产生新调用，"
+        "**不是 None**",
     )
     frame_png: str = Field(description="这一次感知实际截下来、喂给视觉模型的那张原始 PNG（base64）")

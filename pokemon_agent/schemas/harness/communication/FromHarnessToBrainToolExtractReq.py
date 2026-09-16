@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from pokemon_agent.schemas.memory import StepMemory
 
@@ -25,14 +25,14 @@ class FromHarnessToBrainToolExtractReq(BaseModel):
         身份（知识跨局成立）。`BrainTool` 组装 `KnowledgeRecord` 时用它填
         `source` / `run_id` / `episode_id`。
     goal：本局目标——抽取要看"这条信息对做任务有没有用"，纯风景描写不是知识。
-    images：要带的截图（base64 编码的 PNG 字符串，按 entries 去重后的顺序）。
+        截图（`dedup_snapshots(entries)`，0915 130 收权）同样由 `BrainTool.extract()`
+        从 entries 取，信封不另开 images 通道。
     """
 
     entries: list[StepMemory]
     episode_id: str
     run_id: str
     goal: str
-    images: list[str] = Field(default_factory=list)
 
 
 __all__ = ["FromHarnessToBrainToolExtractReq"]

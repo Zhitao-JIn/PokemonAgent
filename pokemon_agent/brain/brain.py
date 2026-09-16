@@ -123,15 +123,17 @@ class Brain:
         缺省回退到 `judge_llm`——跟 `verify_llm` 同理：规划和判定都不是"决策"，
         分组更接近，装配处（`build.py`）实际也一直把这条链路的模型跟
         judge/verify 放在同一个供应商（火山方舟）下。类型是纯 `LLMProvider`
-        （不是 `JudgeProvider`）：`plan` 只读历史文字和目标栈，
-        不带图，不需要 `describe()`。
+        （不是 `JudgeProvider`）：`plan` 是纯文本链，只用 `complete()` 一个方法
+        （0915 129 定案：规划不带图）。
 
         `judge_llm`/`verify_llm` 的类型是 `JudgeProvider`（brain 自己的协议：
         `complete()` + `describe()`），不是纯 `LLMProvider`——`judge()`/`verify()`/
         `summarize()` 带得到截图时会走 `describe()` 问一次多模态，一张图都
-        凑不齐时才退化成 `complete()`；`decide_llm`/`plan_llm` 不受影响，这两条
-        链路本来就不该看图（见模块文档"choose 和 judge 必须分开"那段，这里不是
-        同一件事，但同理不该无端扩大它们的职责）。
+        凑不齐时才退化成 `complete()`。`decide_llm` 也一样：类型虽是纯
+        `LLMProvider`，`choose()` 会查 provider 实例上的 `multimodal` 布尔
+        （`_OpenAICompatibleBase` 都带）——为真且有图走 `describe()`，
+        否则纯文本。**转发表在 brain 这一层**，provider 的 `complete()`
+        不收图、不内部分叉。
         **这份视觉能力来自 brain 自己持有的实例**（`QwenProvider`/`ArkProvider`
         都继承 `_MultimodalMixin`），不借 `world` 的任何协议。
 
@@ -161,10 +163,15 @@ class Brain:
     ) -> ChooseResult:
         """一次决策尝试：问一次模型、解析。**不重试**——重试是调用方的循环。
 
-        **只认 `prompt`**：动作空间说明、目标栈、已知事实、记忆、领域知识、
-        人类插话，以及"怎么选"的全部规则，全部由调用方拼好
-        （`pokemon_agent.tools.prompts.decide_action.build_prompt()`）——
-        `Brain` 只管拿 `prompt` 问模型，不知道、也不需要知道它是怎么拼出来的。
+        **只认 `prompt` + `images`**：动作空间说明、目标栈、已知事实、记忆、
+        领域知识、人类插话，以及"怎么选"的全部规则，全部由调用方拼好
+        （`pokemon_agent.tools.prompts.decide_action.build_prompt()`）；图也由
+        调用方（tool 层）拼好递进来。
+
+        **转发表在这里、不在 provider 里**（0915 129）：入参带了图、且当前
+        决策模型的 `multimodal` 标志为真 → 走 `describe()`（与 judge 同一条
+        多模态发送路，floor 丢图检测照过）；两者缺一 → 退化纯文本
+        `complete()`。`LlmCompleteReq` 是纯文本信封，provider 不内部分叉。
 
         后置条件：成功时返回的 `ChooseResult.action` 的每个 `name` 都在
         `keys` 内；`calls` 恰好这一次尝试的一条账（多次尝试的累积由调用方的
@@ -178,11 +185,29 @@ class Brain:
         """
         # 步骤 1：调模型。**调不通也是"这一次失败"**，转成 AttemptFailed
         # 跟解析失败走同一个出口——调用方只需要 `except DecisionAttemptFailed` 一处。
+        with_vision = bool(images) and bool(getattr(self._decide, "multimodal", False))
+        # `sent_images` = **真发给模型的图**（发给什么存什么）：转发表退化成
+        # 纯文本时为空列表，账上的 `images` 因此如实反映模型收到的东西。
+        sent_images = list(images) if with_vision else []
         try:
-            completion = self._decide.complete(LlmCompleteReq(prompt=prompt))
+            if sent_images:
+                text, n_in, n_out, n_cached, n_reason = self._ask(self._decide, prompt, sent_images)
+                # `describe()` 的响应不带截断标记——按未截断处理（该链路的
+                # 截断风险在纯文本补全那条路上，多模态描述输出很短）。
+                truncated = False
+            else:
+                completion = self._decide.complete(LlmCompleteReq(prompt=prompt))
+                text, n_in, n_out, n_cached, n_reason = (
+                    completion.text,
+                    completion.prompt_tokens,
+                    completion.completion_tokens,
+                    completion.cached_tokens,
+                    completion.reasoning_tokens,
+                )
+                truncated = completion.truncated
         except Exception as exc:  # noqa: BLE001
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt},
+                payload={"ok": "false", "prompt": prompt, "images": sent_images},
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -193,9 +218,9 @@ class Brain:
         kind = reason = ""
         try:
             # 截断要**先于**解析检查，否则它会伪装成"少了个右括号"的 ParseFailure。
-            if completion.truncated:
-                raise OutputTruncated(completion.completion_tokens)
-            parsed = self._parse(completion.text, keys)
+            if truncated:
+                raise OutputTruncated(n_out)
+            parsed = self._parse(text, keys)
         except (ParseFailure, IllegalAction, OutputTruncated) as exc:
             kind, reason = type(exc).__name__, str(exc)
         except ValidationError as exc:
@@ -208,13 +233,16 @@ class Brain:
         # 而 `raw` 让改进解析器之后能离线重算，不必再花钱重跑。
         call = ModelCall(
             payload={
-                "input_tokens": str(completion.prompt_tokens),
-                "output_tokens": str(completion.completion_tokens),
-                "cached_tokens": str(completion.cached_tokens),
-                "reasoning_tokens": str(completion.reasoning_tokens),
+                "input_tokens": str(n_in),
+                "output_tokens": str(n_out),
+                "cached_tokens": str(n_cached),
+                "reasoning_tokens": str(n_reason),
                 "ok": str(parsed is not None).lower(),
-                "raw": completion.text,
+                "raw": text,
                 "prompt": prompt,
+                # 发给什么存什么：模型真收到图的账里才有图（转发表退化成
+                # 纯文本时为空列表——"带了图但没发出去"在这条账上看得见）
+                "images": sent_images,
             },
             error_kind=kind,
             error=reason,
@@ -239,7 +267,6 @@ class Brain:
         goal_stack: Sequence[str],
         history: Sequence[str],
         max_push: int,
-        images: Sequence[str] = (),
     ) -> PlanResult:
         """一次 run 级规划尝试：问一次模型、解析。**不重试**——重试是调用方
         的循环，跟 `choose()` 同一个分工。
@@ -249,8 +276,9 @@ class Brain:
         本方法**不消费**前三块：它们已经由调用方渲进 `prompt` 了，
         这里收下只为让"规划要什么"在接口上立得住。
 
-        **不带图的链路**：`plan_llm` 是纯 `LLMProvider`，`images` 收下但不用
-        （形状统一而已——将来若要带图，只需换 provider 类型，签名不动）。
+        **纯文本链**（0915 129 定案）：规划不带图——run 级判断的依据是局索引、
+        详情正文与目标表，一帧"现在屏幕在哪"帮不上忙，只会白烧图费。
+        账上的 `images` 恒为空列表（账形与其余链路统一）。
 
         失败：模型调不通 / 解析不出 `RunPlan`，都抛 `PlanAttemptFailed`（附这次的账）。
 
@@ -262,7 +290,7 @@ class Brain:
             completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt))
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt},
+                payload={"ok": "false", "prompt": prompt, "images": []},
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -286,6 +314,8 @@ class Brain:
                 "ok": str(parsed is not None).lower(),
                 "raw": completion.text,
                 "prompt": prompt,
+                # 规划链纯文本（见 docstring），账形与其余链路统一
+                "images": [],
             },
             error_kind=kind,
             error=reason,
@@ -329,7 +359,7 @@ class Brain:
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"，转成 AttemptFailed
             kind = type(exc).__name__
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "n_images": str(len(images))},
+                payload={"ok": "false", "prompt": prompt, "images": list(images)},
                 error_kind=kind,
                 error=f"{exc}",
             )
@@ -347,9 +377,9 @@ class Brain:
                 "raw": text,
                 "ok": str(not kind).lower(),
                 "prompt": prompt,
-                # 带没带图直接影响这次判定看到了什么——没有这一项，回头分不清
-                # "这次判错是因为没带图"还是"带了图还是判错了"。
-                "n_images": str(len(images)),
+                # 带没带图、带了哪几张，直接看 `images`——发给什么存什么，
+                # "这次判错是没带图还是带了图也判错"从此可分。
+                "images": list(images),
             },
             error_kind=kind,
             error=why if kind else "",
@@ -361,11 +391,16 @@ class Brain:
 
     @staticmethod
     def _ask(
-        provider: JudgeProvider, prompt: str, images: Sequence[str]
+        provider: JudgeProvider | LLMProvider, prompt: str, images: Sequence[str]
     ) -> tuple[str, int, int, int, int]:
-        """问一次判定器：`images` 非空就带图问（`describe()`），空的话退化成
+        """问一次：`images` 非空就带图问（`describe()`），空的话退化成
         纯文本（`complete()`）——一张便利副本缺失不该让整条判定链路直接失败，
         降级成纯文本判定总比抛异常/硬编一个失败结果强。
+
+        **调用方要保证**：`images` 非空时 `provider` 真的有 `describe()`——
+        `judge`/`verify`/`summarize`/`extract` 的 provider 类型就带；`choose`
+        的 `decide_llm` 只有 `multimodal` 标志为真才会带图进来（0915 129）。
+        类型联合只是把"两个位置都可能传"写出来，运行时分派靠的是这条前置条件。
 
         **`images` 是 base64 字符串不是原始 bytes**：直接进
         `VisionDescribeReq.images`（`list[str]`，见
@@ -378,7 +413,7 @@ class Brain:
         `completion_tokens` vs `VisionDescribeResp.input_tokens`/
         `output_tokens`，`cached_tokens` 字段名倒是两边一致）——这里统一抹平成
         `(text, 输入 token, 输出 token, 命中缓存 token, 思考 token)` 五元组，
-        `judge()`/`verify()`/`summarize()` 都不用关心这次走的是哪条路。
+        `judge()`/`verify()`/`summarize()`/`choose()` 都不用关心这次走的是哪条路。
         """
         if images:
             resp = provider.describe(VisionDescribeReq(images=list(images), prompt=prompt))
@@ -455,7 +490,7 @@ class Brain:
             text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "n_images": str(len(images))},
+                payload={"ok": "false", "prompt": prompt, "images": list(images)},
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -474,7 +509,7 @@ class Brain:
                 "raw": text,
                 "ok": str(not parse_kind).lower(),
                 "prompt": prompt,
-                "n_images": str(len(images)),
+                "images": list(images),
             },
             error_kind=parse_kind,
             error=parse_reason,
@@ -567,7 +602,7 @@ class Brain:
             text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "n_images": str(len(images))},
+                payload={"ok": "false", "prompt": prompt, "images": list(images)},
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -585,7 +620,7 @@ class Brain:
                 "raw": text,
                 "ok": str(summary is not None).lower(),
                 "prompt": prompt,
-                "n_images": str(len(images)),
+                "images": list(images),
             },
             error_kind="" if summary is not None else "ParseFailure",
             error="" if summary is not None else "摘要输出无法解析成 EpisodeSummary",
@@ -662,7 +697,7 @@ class Brain:
             text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "n_images": str(len(images))},
+                payload={"ok": "false", "prompt": prompt, "images": list(images)},
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -680,7 +715,7 @@ class Brain:
                 "raw": text,
                 "ok": str(knowledge is not None).lower(),
                 "prompt": prompt,
-                "n_images": str(len(images)),
+                "images": list(images),
             },
             error_kind="" if knowledge is not None else "ParseFailure",
             error="" if knowledge is not None else "抽取输出无法解析成 LearnedKnowledge",

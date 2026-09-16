@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from pokemon_agent.schemas.memory import StepMemory
 
@@ -23,8 +23,8 @@ class FromHarnessToBrainToolSummarizeReq(BaseModel):
     goal：本局目标（写摘要要用）。
     success：这一局是否成功完成。
     steps：实际完成步数。
-    max_steps：最大允许步数。
-    images：要带的截图（base64 编码的 PNG 字符串，按 entries 去重后的顺序）。
+    max_steps：最大允许步数。截图（`dedup_snapshots(entries)`，0915 130 收权）
+        同样由 `BrainTool.summarize()` 从 entries 取，信封不另开 images 通道。
 
     **`prompt` 不是本模型的字段**（0913 删）。
     """
@@ -36,4 +36,3 @@ class FromHarnessToBrainToolSummarizeReq(BaseModel):
     success: bool
     steps: int
     max_steps: int
-    images: list[str] = Field(default_factory=list)

@@ -128,6 +128,20 @@ def _ram_status(terrain: TerrainMap) -> str:
     return f"（这一帧只读了内存）{terrain.place().render()}{facing}"
 
 
+def _png_data_uri(png: bytes) -> str:
+    """截图原始字节 → **完整 data URI**（`data:image/png;base64,…`）。
+
+    **本函数是全仓唯一的帧编码点（0915 定）**：帧离开本层之后只有两个去处——
+    落盘（trace 事件的 `frame`、`memory/step_memory/*.json` 的
+    `before_frame`/`after_frame`、`*_call` 账的 `images`）和进模型——拿到的
+    都是本函数的产出，**格式只有这一种**。为什么带前缀：裸 base64 无法与
+    普通字符串区分，离线找图连 grep "base64" 都搜不到（前缀本身才含这个词）；
+    带上 data URI 前缀后格式说话，离线分析（benchmark 导帧、FileReviewer
+    看图）见串即知是图。
+    """
+    return f"data:image/png;base64,{base64.b64encode(png).decode()}"
+
+
 class PyBoyWorld:
     """真实的宝可梦红世界。"""
 
@@ -361,9 +375,9 @@ class PyBoyWorld:
 
         # 步骤 3：问一次视觉模型。
         prompt = self._prompt.render(known_map=terrain.render(), terrain_legend=terrain_legend())
-        # images 存 base64 字符串（与 `StepMemory.before_frame`/`after_frame`
-        # 统一格式，见该字段文档）；这里是唯一产出原始字节的地方，编码就在这
-        # 做——下游不用关心谁该编码。
+        # 帧在本层只编码一次（`_png_data_uri`，完整 data URI）——进模型、
+        # 落盘（trace / step_memory）拿的都是**同一份字符串**，下游不存在
+        # 第二种格式（0915 定，裸 base64 已废）。
         #
         # **把 `describe()` 的失败收编成本层的一次尝试失败**（0913 深夜十一）：
         # 实现（`brain/providers.py` 的 `_MultimodalMixin`）在"图片没真送到"时抛
@@ -376,9 +390,7 @@ class PyBoyWorld:
         # （`GameTools.perceive_with_retry` 只接它，耗尽后翻译成 tool 层的
         # `MaxRetriesExceeded`——world 的词汇跨不过 tool 层这座桥，见 `world/errors.py`）。
         try:
-            r = self._vision.describe(
-                VisionDescribeReq(images=[base64.b64encode(png).decode()], prompt=prompt)
-            )
+            r = self._vision.describe(VisionDescribeReq(images=[_png_data_uri(png)], prompt=prompt))
         except PerceptionAttemptFailed:
             raise
         except Exception as exc:  # noqa: BLE001  上游网关/实现的任何失败都是"这次没读出来"
@@ -387,6 +399,7 @@ class PyBoyWorld:
                     "ok": "false",
                     "raw": "",
                     "prompt": prompt,
+                    "images": [_png_data_uri(png)],
                     "error": f"{type(exc).__name__}: {exc}",
                 }
             ) from exc
@@ -400,6 +413,7 @@ class PyBoyWorld:
             "ok": str(screen is not None).lower(),
             "raw": r.text,
             "prompt": prompt,
+            "images": [_png_data_uri(png)],
         }
         if screen is None:
             raise PerceptionAttemptFailed(call)
@@ -476,7 +490,7 @@ class PyBoyWorld:
             # 这一档问过视觉模型了，走的是"看"。
             perceived=True,
         )
-        return Perceived(observation=obs, calls=[call], frame_png=base64.b64encode(png).decode())
+        return Perceived(observation=obs, calls=[call], frame_png=_png_data_uri(png))
 
     def _ram_observe(self, terrain: TerrainMap, png: bytes) -> Perceived:
         """只读内存的观测——**这一档不调视觉模型**。
@@ -509,7 +523,7 @@ class PyBoyWorld:
                 perceived=False,
             ),
             calls=[],
-            frame_png=base64.b64encode(png).decode(),
+            frame_png=_png_data_uri(png),
         )
 
     # ---- 内部 ----
