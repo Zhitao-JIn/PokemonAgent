@@ -32,6 +32,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from langgraph.graph.state import CompiledStateGraph
 
 from pokemon_agent.brain import Task
@@ -81,16 +83,17 @@ class RunHarness:
 
     # ---- 读账（薄委托给 deps.trace）----
 
-    def read_events(self, episode_id: str | None = None) -> list[TraceEvent]:
+    def read_events(self, meta: dict[str, Any] | None = None) -> list[TraceEvent]:
         """读**磁盘账本**——0913 晚起事件流的唯一真相。
 
-        `episode_id` 给了就只返回那一局（`TraceToolPort.read_events` 的切片）。
-        **薄委托**：本层不认识 `pokemon_agent.trace`，只认识 tool 层的
-        `TraceToolPort`。
+        `meta` 给了就只返回**每个键都相等**的那批（`TraceToolPort.read_events`
+        的交集筛选）：整 run 用 `{"run_id": deps.run_id}`，某一局再加上
+        `episode_id`。**薄委托**：本层不认识 `pokemon_agent.trace`，只认识
+        tool 层的 `TraceToolPort`。
 
         后置条件：按 `(ts, uuid)` 升序；无匹配时返回空列表（不抛）。
         """
-        return self.deps.trace.read_events(episode_id)
+        return self.deps.trace.read_events(meta)
 
     # ---- 图组装 ----
 
