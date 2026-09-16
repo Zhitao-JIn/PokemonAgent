@@ -8,7 +8,7 @@ tool 入口），循环放它那儿不用跨层回传中间状态。harness 这�
 成功在 `resp.calls`，耗尽在抛出的 `MaxRetriesExceeded` 上（同样带整条账）。
 
 **账不写在 tool 里**：`choose()` 只交回"每一次尝试的原始材料"与结局，
-落账仍由宿主节点做（本文件调 `deps.trace.append_model_calls`）——规则是
+落账仍由宿主节点做（本文件调 `deps.trace.append`，`calls` 交整条链）——规则是
 "账写在它的宿主里"。
 
 **同步调用**：无头模式下世界不限速（见 `pokemon_agent/world/pyboy_world.py`），决策等待
@@ -37,7 +37,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
     FromHarnessToReviewerInjectReq,
-    FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
@@ -152,6 +151,9 @@ def _choose(
         knowledge=knowledge_text,
         episode_memories=episode_memories_text,
         human_note=human_note,
+        # 决策的截图**不进信封**（0915 129）：`memories` 里每条 StepMemory 自带
+        # before/after 帧，`BrainTool.choose()` 用 `dedup_snapshots()` 从同一批
+        # 记忆拼装 images——与 prompt 的 `$memories` 段严格同源，没有第二通道。
     )
     # prompt **不在这里拼**（0913 定案）：本节点只装素材，拼 prompt 是
     # `BrainTool.choose()` 入口的事——"谁问模型，谁把 req 变成 prompt"，
@@ -161,15 +163,15 @@ def _choose(
     except MaxRetriesExceeded as exc:
         # 预算耗尽——异常携带整条失败账。落账 + 补一条 CALL_EXHAUSTED，再原样上抛。
         #
-        # **两笔分开**（0913 定案）：账归 `append_model_calls`（整条链逐条落成
-        # `MODEL_CALL`）；`CALL_EXHAUSTED` 只回答"这个节点完了、为什么"，
+        # **两笔分开**（0913 定案）：账归 `append`（`calls` 交整条链，渲染层
+        # 逐条落成 `MODEL_CALL`）；`CALL_EXHAUSTED` 只回答"这个节点完了、为什么"，
         # 从异常取 `last_reason`，**不搬账**。
         log = list(exc.calls)
-        deps.trace.append_model_calls(
-            FromHarnessToTraceToolAppendModelCallsReq(
+        deps.trace.append(
+            FromHarnessToTraceToolAppendReq(
                 meta={"source": "think_action", "episode_id": ep, "step": step},
                 kind=TraceKind.DECIDE_CALL,
-                log=log,
+                calls=log,
             )
         )
         deps.trace.append(
@@ -182,11 +184,11 @@ def _choose(
         raise
 
     log = list(resp.calls)
-    deps.trace.append_model_calls(
-        FromHarnessToTraceToolAppendModelCallsReq(
+    deps.trace.append(
+        FromHarnessToTraceToolAppendReq(
             meta={"source": "think_action", "episode_id": ep, "step": step},
             kind=TraceKind.DECIDE_CALL,
-            log=log,
+            calls=log,
         )
     )
     return resp

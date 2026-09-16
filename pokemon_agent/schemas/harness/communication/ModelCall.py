@@ -8,11 +8,10 @@
 | 2026-09-12 | `providers/interface/domain/` | "它是 providers 的"——但**五个协议从不返回它** |
 | 2026-09-13 | **这里** | `schemas/harness` 才是"harness 唯一认识的那一层" |
 
-**为什么最终落在这里**——它跟 `ModelCallLog` 是同一个理由，见
-`FromHarnessToTraceToolAppendModelCallsReq` 的模块 docstring：`harness` 侧
-（`think_action`/`judge`/`verify_and_summarize`/`perceive_after_action`）
-拿到账之后要**原样装进 `FromHarnessToTraceToolAppendReq.calls`** 交给 trace
-渲染，而这个信封是 `schemas.harness` 的类型。**装得进去的前提是同一个类型**。
+**为什么最终落在这里**——它跟 `ModelCallLog`（本文件下方，`list[ModelCall]`
+的别名）是同一批读者：`harness` 侧（`think_action`/`judge`/`verify_and_summarize`/
+`perceive_after_action`）拿到账之后要**原样装进 `FromHarnessToTraceToolAppendReq.calls`**
+交给 trace 渲染，而这个信封是 `schemas.harness` 的类型。**装得进去的前提是同一个类型**。
 
 试过放 `tools.interface`（它看起来更像"账的家"），立刻回环：
 `tools/interface/ports.py` 要 `from pokemon_agent.schemas.harness import …`，
@@ -44,10 +43,11 @@ from pydantic import BaseModel, Field
 class ModelCall(BaseModel):
     """一次模型调用留下的账，外加它成没成。"""
 
-    payload: dict[str, str] = Field(
+    payload: dict[str, str | list[str]] = Field(
         default_factory=dict,
         description="token、延迟、原始输出（`raw`）、实际发给模型的文本输入"
-        "（`prompt`，方便观测台/复盘直接看这次调用问了什么，不用去翻拼装代码）。"
+        "（`prompt`，方便观测台/复盘直接看这次调用问了什么，不用去翻拼装代码）、"
+        "实际发给模型的图（`images`，PNG data URI 列表）。"
         "**失败的调用也要有**——它同样烧了钱，而 `raw`/`prompt` 让你改进解析器之后能离线"
         "重算，不必再花 token 重跑",
     )
@@ -59,4 +59,18 @@ class ModelCall(BaseModel):
     error: str = Field(default="", description="失败详情，一句话")
 
 
-__all__ = ["ModelCall"]
+ModelCallLog = list[ModelCall]
+"""一次模型交互的全部尝试，按尝试先后排列：`list[ModelCall]`。
+
+**失败的尝试也在里面**——它同样烧了 token，`error_kind` 会让渲染层为它补一条
+`call_failed` 账。重试循环交回它就是完备的：宿主不需要知道"到底试了几次"。
+
+**它住在这里而不是 trace 里**：`trace` 不认识 `ModelCall`（独立模块，只认
+自己的词表与"不透明的 meta/content"），`harness` 又不该直接依赖 `providers`
+拿它——所以家就在它的唯一读者旁边（带 `calls` 字段的信封、攒账的两个重试循环
+的签名），再由 `schemas.harness` 的出口转交出去。批量记账信封
+（`FromHarnessToTraceToolAppendModelCallsReq`）0916 删除之前它住在那个文件里。
+"""
+
+
+__all__ = ["ModelCall", "ModelCallLog"]

@@ -8,7 +8,7 @@
 与其中的每个 episode（一局），也是**全项目唯一写 trace 的地方**（`AGENTS.md` 铁律 6）。
 
 - **分层边界**：harness 只依赖 `tools` / `schemas` / `prompts` 三层，**不依赖 trace 的实现**。
-  写账只经 `TraceToolPort.append` / `append_model_calls`，读账只经 `TraceToolPort.read_events`
+  写账只经 `TraceToolPort.append`（调用账也是它——`calls` 交整条重试链），读账只经 `TraceToolPort.read_events`
   （`run/harness.py::RunHarness.read_events` 是它的薄委托）。
 - **两张图 + 一个 context**：`run/` 是 run 级图，`episode/` 是它的子图；`deps.py` 的
   `HarnessDeps` 不属于任何一张图，两图与两个图外入口共用同一份。
@@ -180,7 +180,9 @@ close:    retrieve_verify_step_memory, retrieve_verify_knowledge, verify_and_sum
 
 ## 七、trace 写入
 
-- **写入面**：`TraceToolPort`（`tools/interface/ports.py`）的 `append` / `append_model_calls` / `read_events`。
+- **写入面**：`TraceToolPort`（`tools/interface/ports.py`）的 `append` / `read_events`
+  （0916 起写口只有 `append`——批量口 `append_model_calls` 已删，调用账的 `calls`
+  交整条重试链）。
 - **`kind` 与 `type` 的关系**：`kind` 是**账名**，唯一词表是 `schemas/harness/domain/trace_kind.py::TraceKind`
   （`StrEnum`，值就是落盘封套上的 `kind`，tool 层无翻译表）；`type` 是**粗类**，7 个常量住
   `trace/datastore/trace_event.py::EventType`：`model_call` / `error` / `llm_outcome` / `view` /

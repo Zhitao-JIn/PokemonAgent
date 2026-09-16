@@ -40,7 +40,6 @@ from langgraph.runtime import Runtime
 
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
-    FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
@@ -74,30 +73,31 @@ def perceive_once(
     `MaxRetriesExceeded`（`source="perception"`）——**账已经写完**，重试期间
     烧掉的 token 一条不少。"耗尽之后这一局怎么收场"不在这里决定：那是
     `episode_error_handler` 的事（它捕的是同一个 `AgentError` 家族）。
-    `ram_only=True` 时压根不问模型（`log` 为空，`append_model_calls` 对空账
-    合法且不写事件），因此不会走到失败分支。
+    `ram_only=True` 时压根不问模型（`log` 为空——**没发送就没账**，
+    这条 `PERCEPTION_CALL` 不写），因此不会走到失败分支。
     """
     try:
         resp, log = deps.game.perceive_with_retry(ram_only=ram_only)
     except MaxRetriesExceeded as exc:
         # 预算耗尽——整条失败账挂在异常上。落账后**原样上抛**（怎么收场归
         # `episode_error_handler`；本格的职责只是保证账不缺）。
-        deps.trace.append_model_calls(
-            FromHarnessToTraceToolAppendModelCallsReq(
+        deps.trace.append(
+            FromHarnessToTraceToolAppendReq(
                 meta={"source": source, "episode_id": episode_id, "step": step},
                 kind=TraceKind.PERCEPTION_CALL,
-                log=list(exc.calls),
+                calls=list(exc.calls),
             )
         )
         raise
 
-    deps.trace.append_model_calls(
-        FromHarnessToTraceToolAppendModelCallsReq(
-            meta={"source": source, "episode_id": episode_id, "step": step},
-            kind=TraceKind.PERCEPTION_CALL,
-            log=list(log),
+    if log:
+        deps.trace.append(
+            FromHarnessToTraceToolAppendReq(
+                meta={"source": source, "episode_id": episode_id, "step": step},
+                kind=TraceKind.PERCEPTION_CALL,
+                calls=list(log),
+            )
         )
-    )
     return resp.observation, resp.frame_png
 
 

@@ -25,8 +25,8 @@
 - `brain_planner.py`：`BrainPlanner`——**模型侧**的 `Planner`（默认装配，0914 S2）
 - `null_reviewer.py`：`NullReviewer` / `NullPlanner`——不接策略对象时的默认实现
   （取代了旧的 `AutoContinueReviewer` / `RunInteraction` 那一套）
-- **写账共用件已不在根下（步 5 销账）**：D8-③ 把它下沉到 `tools/trace/model_calls.py`，
-  端口那边多了 `append_model_calls(req)`。所以根下只剩五个 `.py`。
+- **写账共用件已不在根下（步 5 销账）**：D8-③ 把它下沉到 tool 层；0916 统一
+  写口之后连那个批量入口也删了（账统一走 `append(calls=…)`），根下只剩五个 `.py`。
 
 本文件是统一出口：对外只从这里 import；包内模块之间走相对 import。
 

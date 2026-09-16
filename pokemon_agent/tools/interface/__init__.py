@@ -26,7 +26,7 @@ harness 认识的工具门面。（曾是五张；`CheckpointToolPort` 步 5b �
 子包。现状见 `docs/spec/tools/SPEC.md` 一、二节。
 
 **`ModelCall` 为什么不在这里**：它的家在 `schemas/harness`（跟 `ModelCallLog`
-同一个理由，见 `FromHarnessToTraceToolAppendModelCallsReq` 的模块 docstring）
+一起，住在 `communication/ModelCall.py`——主读者是带 `calls` 字段的信封）
 ——`schemas.harness` 是"harness 唯一认识的那一层"，`ModelCall` 必须以信封
 字段的形式从这里出去。放进本包会立刻回环：本包的 `ports.py` 要
 `from pokemon_agent.schemas.harness import …`，而 `schemas.harness` 的

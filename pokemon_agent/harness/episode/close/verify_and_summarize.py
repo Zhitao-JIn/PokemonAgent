@@ -40,11 +40,9 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolSummarizeReq,
     FromHarnessToBrainToolVerifyReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryReq,
-    FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.memory import dedup_snapshots
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
@@ -71,11 +69,11 @@ def _report_link_failed(
     之后由 `link` 顶替它承担"是哪条链出的错"。
     """
     source = "verify_and_summarize"
-    deps.trace.append_model_calls(
-        FromHarnessToTraceToolAppendModelCallsReq(
+    deps.trace.append(
+        FromHarnessToTraceToolAppendReq(
             meta={"source": source, "episode_id": ep, "step": step},
             kind=call_kind,
-            log=list(exc.calls),
+            calls=list(exc.calls),
         )
     )
     deps.trace.append(
@@ -108,13 +106,9 @@ def verify_and_summarize(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) 
     # 步骤 1：校验。prompt **不在这里拼**（0913 定案）：本节点只装素材，
     # `BrainTool.verify()` 入口拼（`prompts.verify.build_prompt()`）。
     # 真正问模型那步（`deps.brain_tool.verify`）的 `MaxRetriesExceeded` 原样上抛。
-    #
-    # 全量历史对应的截图（`StepMemory` 自带 base64，不用读盘），去重后一起交给校验器——跟
-    # `judge` 同一套 `dedup_snapshots()`，区别只是这里没有"当前帧"要额外拼进来（校验的是
-    # 已经结束的一局，没有正在进行的"当前"这一说）。
-    images, _ = dedup_snapshots(entries)
-
-    verified = _verify(deps, ep, step, entries, knowledge_text, images, state.task.goal)
+    # 要带的截图同样由 `BrainTool.verify()` 对 entries 跑 `dedup_snapshots()` 取
+    # （0915 130 收权）——本节点只装 entries 素材。
+    verified = _verify(deps, ep, step, entries, knowledge_text, state.task.goal)
 
     # 步骤 2：蒸馏。**过滤在这一跳之前**——只把可信的记录交给 summarizer。
     # 一条可信的都没有时不往下走（prompt 里"至少有一步"的承诺在这里守住）。
@@ -136,7 +130,6 @@ def verify_and_summarize(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) 
         success=state.success,
         steps=obs.step,
         max_steps=state.task.max_steps,
-        images=images,
     )
     # prompt 由 `BrainTool.summarize()` 入口拼（0913 定案）。
 
@@ -175,7 +168,6 @@ def _verify(
     step: int,
     entries: list,
     knowledge_text: str,
-    images: list[str],
     goal: str,
 ) -> list:
     """跑校验这一跳，落两条 trace（调用账 + 汇总），返回**可信的 entries**。
@@ -195,7 +187,6 @@ def _verify(
         entries=entries,
         goal=goal,
         knowledge=knowledge_text,
-        images=images,
     )
     # prompt 由 `BrainTool.verify()` 入口拼（0913 定案）。
     try:

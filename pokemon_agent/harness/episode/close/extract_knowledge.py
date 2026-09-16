@@ -67,11 +67,9 @@ from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolExtractReq,
     FromHarnessToMemoryToolStoreKnowledgeReq,
-    FromHarnessToTraceToolAppendModelCallsReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.memory import dedup_snapshots
 
 from ...deps import HarnessDeps
 from ..episode_state import EpisodeRunState
@@ -94,16 +92,14 @@ def extract_knowledge(state: EpisodeRunState, runtime: Runtime[HarnessDeps]) -> 
 
     ep, step = state.episode_id, state.observation.step
     entries = state.verified_steps
-    # 跟校验/蒸馏同一套去重（`StepMemory` 自带 base64，不用读盘）：抽知识看的是
-    # 同一批画面，没有理由少看几张。prompt 由 `BrainTool.extract()` 入口拼（同其余
-    # 五条链路），这里只装素材。
-    images, _ = dedup_snapshots(entries)
+    # 只装素材（0915 130 收权）：要带的截图由 `BrainTool.extract()` 对同一批
+    # entries 跑 `dedup_snapshots()` 取——与校验/蒸馏同源，prompt 由 tool 入口拼
+    # （同其余五条链路）。
     req = FromHarnessToBrainToolExtractReq(
         entries=entries,
         episode_id=ep,
         run_id=deps.run_id,
         goal=state.task.goal,
-        images=images,
     )
 
     try:
@@ -144,11 +140,11 @@ def _report_link_failed(deps: HarnessDeps, ep: str, step: int, exc: MaxRetriesEx
     `CALL_EXHAUSTED`（`link="extract"`）记失败态（"这一格放弃了"），后者**不带账**
     ——账在上面那笔里。
     """
-    deps.trace.append_model_calls(
-        FromHarnessToTraceToolAppendModelCallsReq(
+    deps.trace.append(
+        FromHarnessToTraceToolAppendReq(
             meta={"source": "extract_knowledge", "episode_id": ep, "step": step},
             kind=TraceKind.EXTRACT_CALL,
-            log=list(exc.calls),
+            calls=list(exc.calls),
         )
     )
     deps.trace.append(

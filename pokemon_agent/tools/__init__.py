@@ -4,8 +4,8 @@
 - `brain_tool.py`（`BrainToolPort`）对接 brain——req 翻译成 brain 原生输入；
 - `trace/`（`TraceToolPort`）对接 trace——按 `TraceKind` 渲染 payload 再落盘。
   收成一个包（D8-③）：`__init__.py` 分派器 + `render.py` 每种账的 payload
-  （payload 字段格式是跨模块契约，观测台前端按字段名渲染，变更权在本层）
-  + `model_calls.py` 一次交互的批量账；
+  （payload 字段格式是跨模块契约，观测台前端按字段名渲染，变更权在本层；
+  批量账 `model_calls.py` 0916 随写口统一一起删了）；
 - `game_tools.py`（`GameToolPort`）对接 world；
 - `memory_tool.py`（`MemoryToolPort`）对接 memory。
 

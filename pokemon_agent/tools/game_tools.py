@@ -187,10 +187,10 @@ class GameTools:
 
         **账随结果走，落账仍在宿主**：成功返回 `(resp, log)`——`resp.calls` 是
         world 原样的账（`list[dict]`），`log` 是**整条重试链**的账（失败尝试 +
-        最后一次成功，每条盖着 `attempt`，因为只有循环控制者知道这是第几次）。
+        最后一次成功；"第几次"由账在链上的位置回答，没有 `attempt` 戳）。
         耗尽时整条账随 `MaxRetriesExceeded.calls` 带出。**"账写在它的宿主里"
-        这条规则不变**：本层只把账打包好，`deps.trace.append_model_calls` 仍是
-        harness 节点调的（与 `think_action` 的分工逐字相同）。
+        这条规则不变**：本层只把账打包好，`deps.trace.append` 收下整条链
+        （`calls=…`）由 harness 节点调（与 `think_action` 的分工逐字相同）。
 
         前置条件：世界已 `reset()`（`world.perceive_once()` 会 assert）。
         后置条件：成功时 `resp.observation` 非空；失败时抛 `MaxRetriesExceeded`
