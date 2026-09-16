@@ -14,7 +14,7 @@
 它以后会在别的 run 里被检索到）。
 
 落盘形态与这个家族的既有记录**逐字一致**：metadata 放过滤字段、payload 空、
-正文是 `text`（`MemoryStore.put(metadata, {}, text=text)`）——
+正文是 `text`（`LocalMemoryStore.put(metadata, {}, text=text)`）——
 手工写的先验与 run 产出的知识因此长同一样子，读口（`query_knowledge`）
 不需要区分它们。
 """
