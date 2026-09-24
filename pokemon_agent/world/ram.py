@@ -100,7 +100,8 @@ _STILL_SPRITE_KIND: dict[int, str] = {
 **0x40/0x41/0x42 三个是不确定项**——它们各自绑在某一张地图的具体剧情脚本上
 （图鉴只在大木研究所开局出现一次；写字板只在撒法瑞乐园入口），红版反汇编里
 没有查到"走上去/按 A 之后到底是消失还是留着"这类脚本细节，先按"物"记，
-真遇到那一格时按 `harness/object_interactions.py::kind_in_frame` 判出来的实测结果校正
+真遇到那一格时按 `harness/episode/store/store_object_semantic_memory/rules.py::kind_in_frame`
+判出来的实测结果校正
 （同 `SUB_TILE` 定下来的方法）。
 
 保底策略写在 `_sprite_kind` 里，不在这张表：不认识的 id 归 `PERSON` 而不是

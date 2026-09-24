@@ -18,7 +18,7 @@
   读的 `goal` 怎么措辞）它从来不关心。
 - `step()` 不再收 `Action` 这个 brain 的类型，改收
   `list[tuple[str, int]]`（按键名 + 连按次数的按键段列表）——world 只关心
-  "按哪个键、按几次"，不关心 `Action.thought`/`rationale` 这些只有
+  "按哪个键、按几次"，不关心 `Action.thought` 这些只有
   brain/trace/memory 关心的字段。
 - `perceive_once()` 不再返回 `schemas` 里的信封，改返回 `Perceived`
   （`domain/perceived.py`）——world 自己的数据形状，不是"两个模块协商出的
@@ -70,7 +70,7 @@ class WorldPort(Protocol):
 
         segments：按序执行的按键段，每段是 `(按键名, 连按次数)`——
             `Action.sequence` 拆开的裸字段，world 不需要知道
-            `thought`/`rationale` 这些字段。执行层恒传单键（一段、一次）。
+            `thought` 这些字段。执行层恒传单键（一段、一次）。
         settle：按完之后要不要给世界一段**无输入演化时间**再交回控制权。
             `True` = 等（换图的淡入淡出、战斗开场动画、对话逐字打出、菜单弹出
             这些"按下去之后自己会走完"的过程都在这一段里走完）；

@@ -177,7 +177,8 @@ class TerrainMap(BaseModel):
         名字（这是谁家、招牌上写什么）在总览画面里**没有可观测的证据**：
         招牌的文字根本没渲染，要按 A 弹对话框才有；所有的门都是同一个深色矩形。
         所以名字只有三个可能来源（"物"是例外——拾取瞬间弹出的对话文字本身就是
-        名字，见 `harness/object_interactions.py::_pickup_or_still` 复用的
+        名字，见 `harness/episode/store/store_object_semantic_memory/rules.py::_pickup_or_still`
+        复用的
         `_dialog_or_still`，不需要再等语义记忆去沉淀）——
 
         - **内存**：warp 表里就带着目标地图编号，精确。但那是"世界怎么连起来"，

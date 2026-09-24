@@ -10,7 +10,7 @@ from .place_in_world import PlaceInWorld
 BLIND_NOTE = "（本帧没做视觉感知：场景 / 叠加层 / 对话 / 概况等字段不在这一帧里）"
 """没做过视觉感知的那一帧渲染时顶上的那一行。
 
-同 `schemas.memory.datastore.step_memory.BLIND_NOTE`——**两处文本必须逐字一致**，
+同 `schemas.memory.datastore.act_memory.BLIND_NOTE`——**两处文本必须逐字一致**，
 大脑才能拿旧记忆和当前观测直接逐行比对；各自留一份常量，同 `_display_width`
 的理由（"对齐一段中英混排文本"是同一件事，不是两个互相依赖的模块）。
 """

@@ -44,6 +44,7 @@ __all__ = [
     "PlaceInWorld",
     "SIGN",
     "ScreenState",
+    "ScreenText",
     "TERRAIN_MEANING",
     "TerrainMap",
     "VisionDescribeReq",
@@ -73,5 +74,6 @@ from .screen_model import (
     terrain_legend,
 )
 from .screen_state import ScreenState
+from .screen_text import ScreenText
 from .terrain_map import TerrainMap
 from .vision_describe import VisionDescribeReq, VisionDescribeResp

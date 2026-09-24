@@ -9,7 +9,8 @@
 
 **stringify 是 prompt 层的事**：`render()`/`items()` 是这里唯一做"结构化 → 文本"
 转换的地方，且只在渲染给大脑读、或者拼检索 query 的那一刻才发生；判定层
-（`harness/object_interactions.py`）拿到的永远是 `Facts.landmarks` 这份
+（`harness/episode/store/store_object_semantic_memory/rules.py`）拿到的永远是
+`Facts.landmarks` 这份
 `list[Facts.Landmark]` 原件，不用反解任何文本。
 
 **物理位置**：这个文件放在 `world/interface/domain/` 而不是 `schemas/world/domain/`——
@@ -70,7 +71,9 @@ class Facts(BaseModel):
         BATTLE = "battle"  # 战斗中
         MENU = "menu"  # 系统菜单：START 菜单 / 背包 / 精灵列表 / 状态页
         SHOP = "shop"  # 商店买卖界面
-        TRANSITION = "transition"  # 过场：黑屏、进出门、白闪
+        TRANSITION = "transition"  # 过场：黑屏、进出门、白闪、精灵进化动画
+        NAMING = "naming"  # 起名字母键盘：给主角/对手/精灵起名字
+        MAP_VIEW = "map_view"  # 区域总览地图：TOWN MAP 弹出的静态大地图，按 B 关闭，不能走动
 
     class Overlay(StrEnum):
         """屏幕上盖着什么等你操作。决定**可以按什么键**。"""
@@ -84,7 +87,8 @@ class Facts(BaseModel):
 
         **没有名字。** 名字在总览画面里没有可观测的证据，只能靠走过去交互再记住——
         那正是语义记忆（object）的活（"物"除外——拾取瞬间弹出的对话文字本身就是
-        名字，见 `harness/object_interactions.py::_pickup_or_still`）。
+        名字，见
+        `harness/episode/store/store_object_semantic_memory/rules.py::_pickup_or_still`）。
 
         **存 `map_id`/`x`/`y` 三个原始字段，不直接嵌 `PlaceInWorld`。** 不是不想用
         `PlaceInWorld`（`.place` 属性就是现拼一个给调用方）——这个模块要保持
@@ -131,7 +135,8 @@ class Facts(BaseModel):
     landmarks: list[Landmark] = Field(
         default_factory=list,
         description="这一帧屏幕上的地标（门/招牌/人/物/石），来自 `TerrainMap.landmarks()`。"
-        "**结构化原件**——判定层（`harness/object_interactions.py`）直接用，不用再从"
+        "**结构化原件**——判定层（`harness/episode/store/store_object_semantic_memory/"
+        "rules.py`）直接用，不用再从"
         "渲染出去的文本反解一遍。空列表就是这一帧没有地标，不是漏填",
     )
     dialog_text: str = Field(default="", description="对话框里的文字，overlay=DIALOG 时才有")

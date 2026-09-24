@@ -26,10 +26,19 @@ from pyboy import PyBoy
 from pokemon_agent.world import VisionDescribeReq, VisionProvider
 
 from .errors import PerceptionAttemptFailed
-from .interface import OVERLAY_ACTIONS, Facts, Observation, Perceived, ScreenState, TerrainMap
+from .interface import (
+    OVERLAY_ACTIONS,
+    Facts,
+    Observation,
+    Perceived,
+    ScreenState,
+    ScreenText,
+    TerrainMap,
+)
 from .interface.domain import terrain_legend
 from .prompts import load as load_prompt
 from .ram import read_terrain
+from .screen_text import read_screen_text
 
 
 @dataclass
@@ -103,6 +112,8 @@ def _status_line(s: ScreenState, cursor: str = "") -> str:
         Facts.Scene.MENU: "你在菜单里",
         Facts.Scene.SHOP: "你在商店",
         Facts.Scene.TRANSITION: "画面正在切换",
+        Facts.Scene.NAMING: "你在起名字",
+        Facts.Scene.MAP_VIEW: "你在看地区总览地图",
     }[s.scene]
     bits = [where + "。"]
     if s.overlay is Facts.Overlay.DIALOG and s.dialog_text:
@@ -116,16 +127,30 @@ def _status_line(s: ScreenState, cursor: str = "") -> str:
     return "".join(bits)
 
 
-def _ram_status(terrain: TerrainMap) -> str:
-    """纯 RAM 观测的状态行。
+def _ram_status(terrain: TerrainMap, text: ScreenText) -> str:
+    """纯 RAM 观测的状态行：位置、朝向，加上屏幕文字能确定的对话 / 选项 / 光标。
 
-    **不写"你在野外"这类场景词**：那是视觉模型的判断，这一档没读过它——
-    编一句出来就是在假观测上做决策。
-
-    给纯内存的那一帧压出一句话。
+    **不写"你在野外"这类场景词**（只有战斗能从内存确定）：编一句出来就是在假观测上做决策。
     """
     facing = f"，朝向 {terrain.facing}" if terrain.facing else ""
-    return f"（这一帧只读了内存）{terrain.place().render()}{facing}"
+    bits = [f"（这一帧只读了内存）{terrain.place().render()}{facing}"]
+    if text.in_battle:
+        bits.append("战斗中")
+    if text.dialog_text:
+        bits.append(f"对话框：「{text.dialog_text}」")
+    if text.options:
+        bits.append(f"可选项：{'/ '.join(text.options)}，光标在 {text.cursor}")
+    return "。".join(bits)
+
+
+def _layout_field(text: ScreenText) -> dict[str, str]:
+    """选单排布作为 `Facts` 的动态字段 `option_layout`（没有选单时不放）。
+
+    走动态字段而不是具名字段：`ActMemory` 里的 `Facts` 快照副本按同一规则渲染动态字段，
+    两份不必各加一个具名字段也不会漂。
+    """
+    layout = text.render_layout()
+    return {"option_layout": layout} if layout else {}
 
 
 def _png_data_uri(png: bytes) -> str:
@@ -284,7 +309,7 @@ class PyBoyWorld:
         `perceive_once()` 拿（链中间的键走 `ram_only` 那一档）。
 
         segments：`(按键名, 连按次数)` 的列表——`Action.sequence`
-            拆开的裸字段，world 不关心 `thought`/`rationale` 这些字段。
+            拆开的裸字段，world 不关心 `thought` 这些字段。
             执行层恒传单键（一段、一次）：连按已经在 Harness 那边展开。
         settle：按完要不要给世界一段无输入演化时间（见步骤 3）。
         前置条件：每一段的按键都在 all_actions() 中。
@@ -354,10 +379,9 @@ class PyBoyWorld:
         的账）。**不返回一个「空白状态」兜底**——那会让大脑基于假观测决策，
         而且这类失败在 replay 里必须能被统计到。
 
-        `ram_only=True`：**压根不问模型**，只读内存里确定的那几样，返回一份
-        `perceived=False` 的观测。链中间的键用这一档——它们只需要判"位置动没动、
-        换没换图"，而那两件事内存直接答得出；为此烧一次视觉调用买的全是用不上的
-        信息（场景、对话）。
+        `ram_only=True`：**压根不问模型**，只读内存：坐标/地形之外，还从屏幕 tile
+        缓冲解码出对话、选项、光标与战斗标志（`screen_text.read_screen_text`），
+        返回一份 `perceived=False` 的观测。task 层每键都走这一档。
 
         步骤 1：截当前画面、读地形（确定性，不是模型读出来的）。
         步骤 2：只读档位到此为止；否则问一次视觉模型，解析不出来就把账封进异常。
@@ -371,7 +395,7 @@ class PyBoyWorld:
 
         # 步骤 2：纯内存档位。
         if ram_only:
-            return self._ram_observe(terrain, png)
+            return self._ram_observe(terrain, read_screen_text(self._pyboy.memory), png)
 
         # 步骤 3：问一次视觉模型。
         prompt = self._prompt.render(known_map=terrain.render(), terrain_legend=terrain_legend())
@@ -419,6 +443,12 @@ class PyBoyWorld:
             raise PerceptionAttemptFailed(call)
 
         # 步骤 4：把"内存读出来的地形"和"模型读出来的屏幕"拼成一份观测。
+        # 选项与光标内存读得出时以内存为准（确定性），并附上排布。
+        ram_text = read_screen_text(self._pyboy.memory)
+        if ram_text.cursor:
+            screen = screen.model_copy(
+                update={"options": ram_text.options, "cursor": ram_text.cursor, "option_lines": []}
+            )
         overlay, text = screen.overlay, screen.dialog_text.strip()
 
         # **说有对话框却一个字都没抄出来 = 它把别的东西看成对话框了。**
@@ -440,7 +470,8 @@ class PyBoyWorld:
 
         # **`Facts` 是结构化模型，字段该是什么类型就是什么类型。** 不再需要先把
         # `scene`/`overlay`/`landmarks` 渲染成文本塞进一个 `dict[str, str]`——
-        # 判定层（`harness/object_interactions.py`）和记忆检索直接拿 `facts.scene`/
+        # 判定层（`harness/episode/store/store_object_semantic_memory/rules.py`）
+        # 和记忆检索直接拿 `facts.scene`/
         # `facts.landmarks` 这些结构化字段用，`render()`/`items()` 才做"转文本"，
         # 且只在真的要喂给大脑读、或者拼检索 query 的那一刻才发生。
         #
@@ -471,6 +502,7 @@ class PyBoyWorld:
             # 视觉模型按当前 scene 自由给的字段（my_hp/foe_level/…）——`Facts` 的
             # `extra="allow"` 接住它们，不需要为每个 scene 各开一个具名字段。
             **screen.fields,
+            **_layout_field(ram_text),
         )
 
         obs = Observation(
@@ -492,32 +524,41 @@ class PyBoyWorld:
         )
         return Perceived(observation=obs, calls=[call], frame_png=_png_data_uri(png))
 
-    def _ram_observe(self, terrain: TerrainMap, png: bytes) -> Perceived:
+    def _ram_observe(self, terrain: TerrainMap, text: ScreenText, png: bytes) -> Perceived:
         """只读内存的观测——**这一档不调视觉模型**。
 
-        内存答得出的：坐标、朝向、地标、通行图、地图编号（读错地址会给出结构
-        可疑的值，但不存在"看错"）。内存答不出的：场景、叠加层、对话、概况——
-        那几样**留空并标 `perceived=False`**，它们不是"读出来是空的"。
+        内存答得出的：坐标、朝向、地标、通行图、地图编号，以及从屏幕 tile 缓冲
+        解码出的对话、选项、光标（`screen_text.read_screen_text`）和战斗标志。
+        叠加层由这几样确定性推出：有光标 = CHOICE，否则有对话 = DIALOG，否则 NONE。
+        场景只在战斗时能确定（BATTLE），其余留空；概况留空。标 `perceived=False`。
 
-        **截图照截**：帧的可得性与"有没有人看过它"无关。链中间的键也要有图，
-        否则判定器/校验器拿到的历史会成片缺帧——换图不该改帧的可得性。
-
-        交回一份只有内存那半的观测。
+        截图照截：帧的可得性与"有没有人看过它"无关。
         """
+        if text.cursor:
+            overlay = Facts.Overlay.CHOICE
+        elif text.dialog_text:
+            overlay = Facts.Overlay.DIALOG
+        else:
+            overlay = Facts.Overlay.NONE
         facts = Facts(
+            scene=Facts.Scene.BATTLE if text.in_battle else None,
+            overlay=overlay,
             where=terrain.place().render(),
             facing=terrain.facing or "",
             neighbors=terrain.render_neighbors(),
             landmarks=terrain.landmarks(),
+            dialog_text=text.dialog_text,
+            options=text.options,
+            cursor=text.cursor or None,
             walk_map=terrain.render(),
             map_id=terrain.map_id,
+            **_layout_field(text),
         )
         return Perceived(
             observation=Observation(
-                # step 由 Harness 盖章，这里只给占位值（同完整感知那一档）。
                 step=0,
                 place=terrain.place(),
-                status=_ram_status(terrain),
+                status=_ram_status(terrain, text),
                 facts=facts,
                 done=self._closed,
                 perceived=False,
@@ -555,7 +596,7 @@ class PyBoyWorld:
         """无输入推进 N 帧——世界自己演化（音乐、动画、NPC 走动），不感知。
 
         决策等待期间的 evolve 已经从 harness 里去掉了（决策改成同步调用，
-        见 `harness/brain_utils.py` 的 `choose_with_retry`）——缺省 `speed=0`
+        重试循环在 `BrainTool.choose()`）——缺省 `speed=0`
         （不限速）时世界跑得比等待快，演化填充空闲省不出时间，异步等待反而是多余
         的复杂度。这个方法仍是 `WorldPort` 契约的一部分，只是暂时没有调用方；
         world 只负责按 `speed` 演化（与开不开窗口无关），不管调用方是谁。
