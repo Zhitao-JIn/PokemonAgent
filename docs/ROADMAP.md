@@ -1,2177 +1,523 @@
 # 项目路线图（ROADMAP）
 
-> 单一权威版本。别处（`docs/EXPERIENCE_DOCS.md`）只做链接，
-> 不再各自维护一份路线图表格。
-> 最后更新：**2026-09-15**（本轮按 CHANGELOG 100～116 补/订正；此前一次是 0914）。
-> 读法不变：**旧论证保留当历史**，与现况冲突的句子就地标过期，新现状写进各条的
-> 「091X 现状」块或头部这份全局声明里。**要判断"现在是什么样"，先看全局声明
-> 再看该条的现状块，正文一律按历史读。**
+> 最后核实：**2026-09-24**
+> 历史版本：[`docs/roadmap/ROADMAP_2026-09-15_archive.md`](roadmap/ROADMAP_2026-09-15_archive.md)
+> ——原样冻结，**旧条目编号 1～28 与全部旧论证以该文件为准**；新旧编号对照见第六节。
 >
-> **全局作废/变更声明**
->
-> 本次（0911）只做一件事：**按现目前真实情况逐条重述**，不动任何代码。
-> 做法是给每条加一段「0911 现状」并把**已经说错**的句子就地标注过期，
-> 历史论证一律保留不重写（这个文件的旧论证本身是有价值的决策留痕）。
->
-> 下面五条是跨条目的既成事实，正文里与之冲突的描述都按**历史记载**读：
->
-> 1. **0910：`evaluation/` 整体删除**（连同 `eval_report.py`、`evaluation/SPEC.md`、
->    `evaluation/tests/`），它唯一的活消费方 `GET /runs/{id}/metrics` 与前端
->    `MetricsPanel` 一并退役——见第 27 条。正文里所有对 `evaluation/*` /
->    `eval_report.py` 的引用都已是历史记载。
-> 2. **0910：`agent_permission` 整条移除**——`@initialize` 守卫、权限快照链、
->    `config/` 目录、`permission_skipped` 记账、`log/audit.jsonl` 全部不存在了
->    （CHANGELOG 0910（5）（7））。凡以"权限层存在"为前提的条目
->    （第 2 条后半、基础设施缺口表的 audit.jsonl 行）都已随它失效。
-> 3. **0910：`tests/` 清空**——三个旧测试对不上新 API，整目录清空、待从零重建
->    （第 27 条）。凡"等测试解冻信号再改某个测试"的备注（第 1 条、第 17 条等），
->    所指文件已经不在，备注本身过期。
-> 4. **0911：`pokemon_agent/interfaces/` 整包删除**——五步迁移（trace → providers
->    → brain → tools → harness）已完成，"跨模块集中港口注册表"不再存在，契约
->    改为"各模块自己的 `interface/` 子包"（CHANGELOG 0911（7）～（11））。
->    第 13 条"命名一致性"表里的挂靠点需按新层级重新对照。
-> 5. **0911：`RunHarness` 的三个行为开关默认值已改**——
->    `POKEMON_AUTO_PUSH_GOALS` / `POKEMON_AUTO_DECIDE_DONE` 默认 **false**
->    （plan 不再自主压栈、也不再自主收尾），`POKEMON_REVIEW_TIMEOUT` 默认
->    **60s**。凡正文里写"默认 0 / 默认 5 / plan 会自动压栈"的都是当时值。
-> 6. **0913：`pokemon_agent/providers/` 代码层整包解散**——协议的搬迁
->    （0911～0913）走完之后，实现这次跟着协议走。判据仍是**谁消费**：
->    `QwenProvider`/`ArkProvider`/`DeepSeekProvider` → `brain/providers.py`
->    （brain 是主要消费者，四链路接线的知识装在 `brain/build_llm_providers.py`）；
->    `FastEmbedText`/`FastEmbedReranker` → `memory/fastembed_text.py` /
->    `fastembed_reranker.py`（只被 memory 检索链路消费）。
->    **凡正文里写"全部住 `providers/`""直连只发生在 `providers/` 这一层"
->    "`providers` 是底层公共库"的，都是当时口径。** `schemas/providers/`
->    那四个信封（`LlmComplete*`/`VisionDescribe*`）也随之一并解散（0913 深夜十一，
->    见下条）。
->    连带：`world → brain` 的横向依赖**没有因此产生**（`world/` 零 import，
->    实现实例由装配点 `build.py` 递进去），循环导入随之消失（详见 CHANGELOG
->    0913（54））。
-> 7. **0913：`brain` 的依赖边界收窄到可机械核对**——`brain/interface/` 零重依赖
->    （`BrainLlmConfig` 从工厂模块搬来），`build.py` 对 brain **零 import**
->    （`BrainTool.build(text=…)` 与 `tools/vision_factory.build_vision_provider()`
->    两个接线工厂收进 tool 层）。**可核对的那条是：对 brain 的实现依赖只出现在
->    `tools/`。** 凡正文里写"装配点 import `brain.providers` / `QwenProvider`"
->    的都是当时口径。
-> 8. **0913 深夜十一：`brain` 的对外依赖归零——"可作第三方整体拷走"字面成立**。
->    上一条当时说"`brain` 仍依赖 `errors` 与 `schemas.providers`、且不能搬进
->    brain"，**已被推翻**：判据从"谁消费"改成"brain 能否整体拷走"。
->    (a) 异常自成一根 `BrainError(Exception)`，**不再继承 `AgentError`**——
->    实测那些异常全被 `BrainTool._attempt_loop` 接住、翻译成 `MaxRetriesExceeded`
->    才上抛，**走不到 harness 的捕获点**，继承只是仪式；`ImageNotDelivered`
->    随之从顶层搬进 `brain/errors.py`。world 侧的感知链改用就地
->    `except Exception` 包成自己的 `PerceptionAttemptFailed`。
->    (b) 四封补全信封搬进 `brain/schemas/`（provider 已全搬进来，它们就是
->    **brain 的内部协议**）；world 复制一份自己的 `VisionDescribe*`
->    （`world/interface/domain/vision_describe.py`），两份保持同构。
->    结果：**brain 的 `pokemon_agent.*` 外部 import 为零**，只剩标准库 +
->    `pydantic` + `PIL`（AST 审计）。"继承 `AgentError`"的新判据：**只有真的
->    会走到 harness 捕获点的模块异常才继承它**——world 的继承，brain 的不继承。
-> 9. **0915：真机跑法整体换血——trace 封套六字段、人在环走文件信箱、判据只认达成。**
->    这一批是 0914 深夜～0915 一天的连续改动（CHANGELOG 100～116），正文里与之冲突的
->    描述都按**历史记载**读：
->    - **trace 落盘形状变了**（CHANGELOG 100）：九字段收成**六字段
->      `{uuid, kind, type, ts, meta, content}`**（`meta`/`content` 是 JSON 字符串）；
->      `event_id` / `schema_version` / `frame_png` / 顶层 `run_id`·`episode_id`·`step`
->      四件全删（坐标搬进 `meta`，`run_id` 由落盘层盖）。`TraceKind` 从"派发键"
->      变成**唯一账名词表**——**35 个成员，枚举值就是落盘 `kind`**，18 处"派发键 ≠ 账名"
->      的差异与那张翻译表一起消失。事件文件名改成**时间递增 uuid**
->      （`trace_data/<run_id>/events/<uuid>.json`），排序真源是 `(ts, uuid)`；
->      `check_trace` 的"按 id 连续"判据换成**残文件对账**（文件数 == 条数、
->      文件名 stem == uuid）。
->      **凡正文写"九字段""按 `event_id` 取单条""`frame_png` 挂事件""`MEMORY_READ` 事件"
->      的都是当时口径**——`MEMORY_READ` 现在叫 `READ_*`（六条读口各一个），
->      `memory_read`/`step_memory_write` 一族同理改名为 `read_*`/`write_step`。
->      **画面真源改成 `memory/step_memory` 的帧字段**（`before_frame`/`after_frame`，
->      base64），**trace 不再存图**。
->    - **人在环有了第二条传输层，且驱动方可以是 AI**（CHANGELOG 101 → 103 撤回 → 105 回归）：
->      `harness/file_reviewer.py`（文件信箱 `review_request.json` ↔ `review_answer.txt`；
->      mtime 判新鲜、零删除、原子覆盖写）**回来了**，`DEFAULT_TIMEOUT` **45 → 300s**；
->      `check_harness` 新增 **`--review`** 开关把它接回来（不传照旧 `NullReviewer`，
->      review 模式看门狗 12 → 30 分钟）。`review_sentry.py` 与 console 入口**不恢复**
->      ——盯盘由 AI 的工具调用轮询直接做。**"撤回又加回"的根因是等待窗（45s）比驱动方
->      节奏（每轮工具调用 15~60s）短，不是文件协议本身不能用**；101/102/103 三条
->      条目描述的中间装置已全部退役，但原文保留当决策史。
->    - **判据只认达成**（CHANGELOG 108）：`criteria` 里**不许出现步数/预算条件**
->      （0915 13:01 用户口径），模型在 judge 里只有一个布尔位 `JudgeResult.done`；
->      "这一局该不该停"由 harness 机械合成（`judge.py:73-74` 三类终止
->      `done=True, success=False`）。`realcheck-0915-123410` 那条
->      `success=true / reason='success'` 是**在环插话掰出来的坏样本，不是基线**。
->    - **provider 层的重试整个删掉**（CHANGELOG 104）：一次调用 = 一次 HTTP，
->      "试了几次" = `len(calls)`；4xx 成类 **`ProviderRejected`**（配置错，
->      **第一轮秒级暴露**，`call_failed.error_kind` 见到它就别当抖动排查）。
->      文本最坏耗时 **9.1 分钟 → 3 分钟**，不再必撞看门狗。
->    - **真机跑法**：`WATCH = False`（SDL 窗口在本机黑屏，用户定"不用显式了"；帧缓冲
->      内容由视觉模型证实无误，问题在上屏那一步）、**`SPEED = 10` 保留当节流器**；
->      任务可由 **`--goal / --criteria / --steps`** 注入（CHANGELOG 109）；
->      链中按键间隔 **2s → 1s**（链尾 10s 不动，CHANGELOG 113）。
->      真机入口**只有** `python -m experiment.real_check.check_harness` 一个。
->    - **多帧视觉不是"未验"了**（CHANGELOG 110）：真机账已经把每帧成本标出来
->      ——**≈185~198 tok/帧，从 4 张到 30 张不变**；`n 条 memory = n+1 张图`。
->      第 22 条那句"账本更全、预算仍然没有"里的**"看不见"这一层部分闭合**：
->      每帧单价有了，仍没有报表与阈值。
->    - **一条独立的文档债**：`CLAUDE.md` 是 `AGENTS.md` 的**分叉旧镜像**
->      （少 25 行、缺整个"ModelCall 两份归属"段、铁律 2 与三.2 还是 `interfaces/`
->      集中时期的旧版）。**改规范只改 `AGENTS.md`**，动 `CLAUDE.md` 前先问。
+> **写法约定**
+> 1. 本文件**只写现状**。条目发生变化时，改对应字段并更新该条的"最后核实"日期；
+>    变化的原因写进 `changelog/`，不在本文件叠加"091X 现状"块。
+> 2. 第三节是**全部条目的总览**；只有讨论定稿的条目才在第四节展开成完整模板。
+>    总览里标"待重写"的条目，内容仍以归档文件的对应旧条目为准。
 
-## 状态图例
+---
 
-`✅ 完成` `🚧 进行中` `📋 排好序、没开始` `💬 有方案但没拍板` `❓ 连方案草稿都没有`
+## 一、读法
 
-## 当前优先级（0911 重述：这一节已与下面的条目顺序脱钩）
+### 1.1 状态图例
 
-**先说结论：下面 0902 那套排序之后再也没有正式重排过，它消费掉了一半、另一半
-的前提已经不存在。** 把它当历史口径读，别当现行排序用。
+`✅ 完成` `🚧 进行中` `📋 排好序、没开始` `💬 有方案但没拍板` `❓ 连方案草稿都没有` `↩️ 已撤销`
 
-历史口径（**0902 用户拍板**，之后未再重排）：前后端交互统一（第 1 条）排第一，
-可观测（第 2 条）第二，测评体系（第 3 条）第三——排第一的理由是当时发现的
-最大缺口：人工审查（`HumanReviewer`）协议齐全但完全没有传输层，"人机协作"
-是假的；P0 护栏（第 5 条）排在三者之后。
+### 1.2 两个维度
 
-此后有五次信号进过这一节，**但一次都没有落成正式重排**：
+**功能维度**：第三节的 A～J 十类，回答"这是系统的哪一部分"。
 
-- **0904**：用户要求把"prompt 自动更新和版本管理"（第 3 条第 3 点）、以及新想法
-  "episode 打分聚类"（第 20 条）提前——具体插到哪一直没定。
-- **0909**：第 25 条（项目拆分六块）、第 26 条（RAM→纯 VLM 感知）两条大方向
-  一起进来，第 25 条自带一份"建议顺序"，但没有和 0902 这份合并过。
-- **0910**：第 27 条完成；第 24 条被收窄（tool 半边放弃）；第 2 条的权限那半失效。
-- **0911**：`interfaces/` 整包删除；`plan()` 的自动压栈/自动收尾默认关闭，
-  加目标与结束 run 都只剩人工通道。
-- **0915**：**不再是"排哪条"的信号，是"怎么跑"的信号**——真机核对 harness
-  （`experiment/real_check/check_harness`）成了事实上**唯一能跑起来的东西**
-  （第 3 条要重建的"跑批入口"仍然不存在），且它已经能**自己判成/判不成**
-  （CHANGELOG 108/109：`--goal/--criteria/--steps` 注入 + 判据只认达成，
-  无人在环也真达成过一次）。**它一条待办都没消费掉，但它改变了"哪条先做"
-  的答案**：以前卡在"没有数字"，现在卡在"有一个能自动判定单局的通道、
-  但没有批次报表把数字攒起来"（第 2、3 条）。
+**叙事维度**：回答"这条拿出来讲的是什么故事"。
 
-**现状（0911 的真实情况，不是建议）**：
+| 标签 | 含义 |
+|---|---|
+| 【科研】 | 针对公开记录过的失败模式提出机制，用对照实验证明有效 |
+| 【工业】 | 生产级 agent 平台必须具备的能力：权限、成本、可观测、可靠性、协议 |
+| 【底座】 | 两条叙事都依赖、本身不单独作为卖点：测试、跑批、CI |
+| 【共】 | 对两条叙事同时起定义作用：定位、边界 |
 
-1. **第 1 条已完成**（且后续又被简化两轮：review 只剩 3 个决策、goals 只剩
-   push + read 两个通道）——0902 口径里"排第一"这件事已经消费掉了。
-2. **第 2 条的两半现在都不成立**：前半（按链路 token/延迟聚合 + 观测台）的
-   落地物随 `evaluation/` 一起退役，能力**空缺**；后半（权限校验 + 降级告警）
-   随 `agent_permission` 移除**失去对象**。
-3. **第 3 条（测评体系）不但没开始，它当时依赖的基础设施也已经被删掉了**
-   （`eval_report.py` 的聚合、`audit_verdicts.py` 的机械复核），`tests/` 同时清空。
-4. **下面有一批条目卡在同一个空位上，不是互相独立的事**：
-   - **等一个基线数字**：第 9（verify 有效性核对）、第 10（延迟长尾定位）、
-     第 18（质量分加权的消融，**实现本身已落地**）、第 23（模型分级的对照实验）、
-     第 25⑥b（prompt 自动调优的 eval 集）；
-   - **等一次真实核对**（不需要基线，但同样没做）：第 21（VLM 身份识别是否还错）、
-     第 26①（VLM 坐标一致率的第一批量化数据）。
-5. **第 25 条自带一份"建议顺序"**（⑥a 随时插队 → ② → ③④ → ① → ⑤ → ⑥b），
-   这是文件里目前唯一写下来的顺序建议，但从未与 0902 那份对账。
-
-**0915 增补（这一节的"现状 1～5"是 0911 快照，下面这四条是它之后变了的）：**
-
-6. **"没有数字"这件事松了一道口**：真机账现在**逐帧成本可标定**（≈190 tok/帧，
-   CHANGELOG 110）、**一局的时间构成可拆**（279s/30 步里 188.9s 花在一次掉线的
-   决策上，CHANGELOG 109 那一局）、**单局成败可机械判定**（判据只认达成，
-   无人在环也判对过）。**缺的仍然是"把多局攒成一张表"**——第 2 条要聚合、第 3 条
-   要有跑批入口，两件事描述的是同一个空缺。
-7. **第 4 条（trace 生命周期）的 a) 之外多了一件已完成的事**：trace 封套六字段
-   + ts 严格递增（CHANGELOG 100/107），"读侧排序 = 执行顺序"这条不变式现在真成立；
-   b)（进程层 `INTERRUPTED` 兜底）**依旧没做，而且现在更没理由做**——真机入口
-   单局跑完就退、没有常驻服务进程可兜。
-8. **第 21 条的"前提"又变了一次**：判据侧撤掉了停止子句（CHANGELOG 108），
-   所以"criteria 太松"现在**只剩"证据强度不够"这一半**，"拿达成位表达预算用尽"
-   那一半已被结构性堵死。VLM 可靠性那一半仍未复现过。
-9. **排序仍未被替代**：0915 这一批全是"跑法/形状/纪律"的改动，**没有一条是
-   在推进路线图上的待办**。要不要按上面第 6 条的现状重排（把"第 2 条聚合"与
-   "第 3 条跑批入口"合并成一件事先做），仍要跟用户对齐。
-
-**0911 这次没有替用户排序。** 要不要按上面现状重排一次、以及第 3 条重建成
-什么形态，都需要先跟用户对齐（见第 3 条与第 25 条的"待定"）。
-
-## 路线图
-
-### 1. ✅ 前后端交互统一：`RunDataCenter`（意图/审查/插话三槽位 + trace/frame 转发）
-
-> **0911 现状（权威；以下的拍板论证与两轮实现记录都是历史，保留不改）**
->
-> - **落地物在**：`pokemon_agent/harness/run_data_center.py`（`RunDataCenter` +
->   `DataCenterReviewer`）。**三个槽**：goals（非阻塞覆盖式，`plan()` 读到就应用）、
->   review（阻塞轮询带超时兜底）、human_note（一次性，取走即清空）。`RunHarness`
->   与 `api.py` 各持引用，双方只对它读写。
-> - **后续又被简化两轮，正文没跟上**：
->   ① `HumanDecision` 的 **`PUSH` 决策已删除**、`HumanReviewRespFromFrontend.push_goals`
->   字段一并删掉，前端 `ReviewPanel` 现在只有 **continue / stop / retry 三个按钮**
->   ——正文里的"四个按钮对应 continue/stop/retry/push"是当时值；
->   ② 目标栈收成"**goal 的 push + goals 的 read** 两个通道"：写侧
->   `POST /runs/{id}/goals`（`GoalsEdit` 只剩 `kind="push"`，整栈原子替换、不锁栈顶），
->   读侧**单开了 `GET /runs/{id}/goals`**（不再混在 `GET /runs/{id}` 那个大而全接口里），
->   前端目标栈改成**纯前端草稿**，刷新时机从"review 变 pending"改成"监听到
->   `Source.PLAN` 的 plan verdict trace 事件"。
-> - **行为默认值已改**（正文里的数字过期）：`REVIEW_TIMEOUT` 默认 **60**（不是 0→5）；
->   `POKEMON_AUTO_PUSH_GOALS` / `POKEMON_AUTO_DECIDE_DONE` 默认 **false**——
->   `plan()` 不再自主压栈、也不再自主收尾，加目标与结束 run 都只剩人工通道
->   （`plan()` 在两个开关都关时**真跳过模型调用**，不是"问了再丢弃"）。
-> - **第三槽已落地**：episode 内"人类实时插话"（`POST /runs/{id}/note` +
->   `HumanNotePanel`），注入 `decide_action` 的最高优先级小节，一次性语义。
-> - **本条结尾那条"已知连带回归"已失效**：`tests/` 0910 已清空，
->   `tests/test_api.py::test_review_endpoint_removed` 这个文件不存在了。
-> - **本条是第 25 条⑤（A2A 对外拆分）的地基**——`RunDataCenter` 现在仍是
->   `RunHarness`/`api.py` 共享的**进程内 Python 对象**，还没有自己的进程边界。
->
-> **0915 补：本条正文抱怨的那句"人工审查协议齐全但没有传输层"已经有了第二个反例，
-> 但走的是另一条路，别把两者混成一件事。**
-> - **前端那条通道（`RunDataCenter` 三槽）没变**，仍是进程内对象、仍由 API 端点驱动。
-> - **真机那条通道（`experiment/real_check/check_harness`）走的是文件信箱**：
->   `harness/file_reviewer.py` 把 `Reviewer.inject()` 的"等"从进程里搬到盘上
->   ——写 `.workbuddy/review_request.json`（只有 `{form_kind, prompt, ts}`，
->   **表单本体故意不进文件**，要看本体读 trace）→ 轮询 `review_answer.txt`
->   最多 `DEFAULT_TIMEOUT=300s`。**这样"裁决者"可以是另一个 agent**
->   （0915 起实际就是 AI 在当 FileReviewer 的驱动方），
->   正好落在本条正文最后那段"review 的决策来源不必是真人"的扩展点上——
->   **但复用协议、不复用传输层**：文件信箱不是 `RunDataCenter` 的一个槽位。
-> - **两处接口口径**：① 只有三处插话点（`plan` 位置 / `judge` / `think_action`），
->   **一局实测 6~7 问**（不是曾经以为的"每步都问"）；② **漏答 = 该问降级"没意见"**，
->   run 不卡死，代价是分不清"真没意见"与"AI 掉线"。
-> - **反复的历史一并留在这里**（CHANGELOG 101 建 → 102 收窄 → 103 撤回 → 105 回归）：
->   撤掉的根因**不是文件协议**，是等待窗 45s 短于驱动方每轮工具调用的 15~60s；
->   `review_sentry.py` / console 入口**不恢复**，盯盘由 AI 的轮询直接做。
-> - **一条踩出来的教训（给插话方）**：`brain_tool._normalize` 规定 **`a` 在一个
->   决策链里只出现一次**（连按会把对话框关掉、判定器看到一张没有对话框的画面、
->   把本该成功的 episode 静默记成失败）。**⇒ 提议"连按 a"是 harness 结构性做不到的
->   动作，插话前先过一遍归一化规则**（CHANGELOG 113 附带发现）。
-
-现在前后端交互是三条各自为政的通道，形状不统一：trace/frame 走 SSE 单向推送
-（后端→前端，纯转发，`GET /runs/{id}/events`/`GET /runs/{id}/frames`）；GoalsEdit 是
-塞在 `RunHarness` 内部的单槽+锁（`self._edit`/`self._edit_lock`/`self._latest_goals`，
-`plan()` 节点每轮消费）；**人工审查协议齐全但没有传输层**——`HumanReviewer` 是
-`Protocol`，`RunHarness.review()` 节点确实会调它，但默认实现 `AutoContinueReviewer`
-不看任何上下文、永远返回 `CONTINUE`，`api.py` 没有任何端点接收
-`HumanReviewRespFromFrontend`，前端 `types.ts`/`api.ts` 的注释也明确写着"harness 阶段性
-自动 CONTINUE，前端无交互，做审查面板时再接"。
-
-**拍板方向**：做一个 `RunDataCenter`——每个 run 一个实例，`api.py` 和 `RunHarness`
-各持一个引用，双方都只对它读写，不互相直接调对方的方法：
-
-- **goals 槽位**：把 `RunHarness._edit`/`_edit_lock`/`_latest_goals` 原样搬过来，
-  语义不变——非阻塞，`plan()` 读到就应用、没读到跳过，最新一条覆盖旧的。
-- **review 槽位（新）**：两个子槽。请求槽由 harness 在 `review()` 节点写入，带上
-  `HumanReviewReqFromHarness`——这个 schema 要新增 `episode_trace: list[TraceEvent]`
-  字段，装刚跑完那一局的**完整** trace（不是全量 run trace，一次请求自带审查所需
-  的全部依据，前端不用自己维护跨会话的历史缓存）；决策槽由前端 `POST
-  /runs/{id}/review` 写入 `HumanReviewRespFromFrontend`。**harness 侧读决策槽必须是
-  阻塞轮询（配超时兜底），不能读一次没有就当默认**——那样等于没有真的问人，跟现在
-  的自动放行桩没区别。前端发现"有请求待处理"复用现在已经在跑的 `GET /runs/{id}`
-  2 秒轮询，不新开推送通道。
-- **trace/frame**：不新增状态，方法直接转发给已有的 `TracePort`/`FrameSlot`——纯
-  粹是让前后端交互统一收口到同一个对象上，读写口子一致。
-
-**这次设计顺带打开的口子**：review 槽位统一之后，`HumanReviewer` 的决策来源不必是
-真人——接一个 LLM 驱动的 reviewer（模型读 `HumanReviewReqFromHarness`，尤其是新加
-的 `episode_trace`，自己判断 continue/stop/retry/push）可以复用同一套协议和传输层，
-只是决策槽的生产者从"人在前端点按钮"换成"另一个模型调用"。这是这次设计特意留的
-扩展点，不是这次实现范围。
-
-改动面：新模块 `RunDataCenter`；`RunHarness` 构造函数接收它而不是自己持有三个内部
-字段，`plan()`/`review()` 节点改成读写它；`api.py` 的 `/runs/{id}/goals` 改写
-datacenter，新增 `POST /runs/{id}/review`，`GET /runs/{id}` 响应体加"有没有待审查
-请求"字段（前端 `types.ts` 里提到的 `review_pending` 坑位正好补上）；
-`HumanReviewReqFromHarness` 加 `episode_trace` 字段，构造时从 `TracePort.events(None)`
-按 `outcomes[-1].episode_id` 过滤出这一局事件（新增一个纯函数放 `run_utils.py`）；
-前端 `api.ts` 加 `submitReview()`，`types.ts` 把之前故意留白的 review 类型补上，
-新增审查面板 UI。
-
-**实现现状（0902）**：上面改动面里除"新增审查面板 UI"外全部完成——`RunDataCenter`
-（goals 槽 + review 槽，`await_review_response` 真阻塞轮询带超时兜底）、
-`DataCenterReviewer`、`RunHarness`/`api.py` 接线、`GET/POST /runs/{id}/review`
-端点、`HumanReviewReqFromHarness.episode_trace` 字段 + `run_utils.episode_trace_events`
-过滤函数，见已完成表。`REVIEW_TIMEOUT` 默认设成 0（`POKEMON_REVIEW_TIMEOUT`
-环境变量可调）——面板没做之前阻塞等一个不存在的人没有意义，0 秒退化成跟以前
-`AutoContinueReviewer` 一样的行为，传输层接好但先不启用真阻塞；等面板做完把这个
-值调大（或设环境变量）即可，不用再改代码。前端只做了数据层（`types.ts`/`api.ts`/
-`useReview.ts` 轮询 hook），可视化的审查面板组件本身是剩下的唯一缺口。
-
-**审查面板 UI 补完（0902 第二轮）**：唯一缺口也做完了。`REVIEW_TIMEOUT`
-默认值 0 → 5（用户拍板"先设成5吧"），真正启用阻塞式人工审查；
-`RunDataCenter` 新增 `review_timeout`/`_review_deadline`/`review_deadline()`，
-`GET /runs/{id}/review` 响应体多一个 `deadline_ts` 字段，前端拿它渲染倒计时
-（不用自己猜后端超时秒数是多少）。`web/src/App.tsx` 新增 `ReviewPanel` 组件：
-展示 outcomes/last_task，四个按钮对应 continue/stop/retry/push（push 复用
-`readGoalForm`），倒计时 + 一条"上一轮审查已超时，自动按 continue 处理"的
-4 秒自动消失提示（本地靠"outcomes 长度识别是不是同一轮"+"有没有手动提交过"
-两个信号推断是不是被后端超时兜底的，不是后端主动推送的事件）。另外发现
-`useReview.ts` 原来 2s 的轮询间隔配 5s 超时太粗——最坏情况下审查请求要
-接近 2s 才会在面板里冒出来，5s 窗口被吃掉快一半，改成专用的
-`REVIEW_POLL_INTERVAL_MS = 500`（只影响这一个 hook，`useRunGoals` 那种非
-时间敏感的轮询没动）。
-
-**已知连带回归（留到解冻信号）——0911 已失效，留作历史**：`tests/test_api.py::test_review_endpoint_removed`
-断言"审查端点不存在"，现在端点真实存在了（无待处理请求时返回 409 而不是 404），
-这个测试需要跟着改，按约定等"等我信号统一更新"再动。
-> 0911 注：`tests/` 已整体清空（第 27 条），这个测试文件不存在了；"解冻信号"
-> 这件事随之作废，改成 `tests/` 从零重建时按新 API 重新写。
-
-### 2. 📋 可观测：按链路 token/延迟聚合——0910 已随 `evaluation/` 退役，能力空缺待重新落地
-
-> **0911 现状（这一条实际上已经整体失效，需要重新定义，不是"还没做"）**
->
-> - **前半（token/延迟按 `Source` 聚合 + 实时观测台）：曾经的落地物是
->   `GET /runs/{id}/metrics` 端点 + 前端 `MetricsPanel` + 复用
->   `evaluation/eval_report.py::aggregate_events` 的聚合核心。**0910 的三件套
->   全没了**：`evaluation/` 整包删除、端点与面板退役（第 27 条取舍③明确写了
->   "以后要看这些数字得从 trace 事件离线自己算"）。所以第 2 条现在**没有
->   任何落地物**，`由已完成退回空缺`。
-> - **后半（权限配置完整性校验 + 降级告警）：对象已消失**。这两个缺口都以
->   `agent_permission` 存在为前提，而它在 0910 被整条移除（`permission_skipped`
->   记账、`config/`、`@initialize` 守卫全删）。**不是"未做"，是需求不存在了**——
->   除非以后重新引入权限层，这条不该再当成待办。
-> - **唯一还成立的部分**：`Source` 精细化本身（`PLAN` 从 `HARNESS` 分出来、
->   记忆事件统一到 `MEMORY`、独立 `Source.VERIFY`）是既成事实，且 `MODEL_CALL`
->   的 payload 现在逐调用带 `input_tokens`/`output_tokens`/`cached_tokens`/延迟/
->   `attempt`/`raw`/`prompt`/`n_images`——**账本比当时更全，缺的只是"读账本
->   并聚合"这一层**。
-> - **重做时的形态待定**：是恢复一个离线脚本、重开一个端点、还是重开观测台
->   面板，以及要不要顺带补 rotation（见基础设施缺口表），都要先跟用户对齐。
->   这条与第 3 条（测评体系）高度重合——第 3 条要的报表就是这里的聚合能力。
->
-> **0915 补（结论不变：**聚合层仍然没有**；但"账本"这一侧的可用性上了一个台阶，
-> 而且第一次出现了"离线聚合一次就够用"的实证）**
-> - **账不再虚增**（CHANGELOG 104）：provider 层的重试删掉后
->   **一条 `ModelCall` 账 = 一次真实 HTTP 请求**。此前一条账背后可能藏 3 次请求，
->   "按 `source` 数调用次数"这类聚合**口径本身是错的**；现在可以直接数。
->   新值 `error_kind = ProviderRejected` 也让"配置错"第一次在账面上可分辨。
-> - **每帧成本已标定**（CHANGELOG 110，纯离线读 trace）：拿**无图**的 `decide_call`
->   当纯文本基线（0.572 tok/字），`input_tokens − 0.57×prompt字数` 再 ÷ `n_images`
->   → **185~198 tok/帧，4 张到 30 张不变**。**这是本条第一次有非零的"聚合产物"**，
->   但它是我手工算的、没有脚本——**等于"聚合能力"这条待办一个字没动，
->   只是证明了数据足够**。
-> - **一张现成的、可复算的报表口径**：`call_failed.error_kind` 分族
->   （`ToolTimeout` / `ProviderRejected` / 解析族）、`n_images`、
->   `cached_tokens`（六点全补，取不到记 `"0"`）——**三者都逐调用落盘**，
->   按 `source` 分组求和就是本条要的那张表，缺的只是那个脚本/端点。
-> - **一条口径警示**：`*_call` 账的 `ts` 是**"落账时刻"不是调用时刻**——
->   账在 tool 层攒着、等整条重试链跑完才由 harness 节点一次性 `append_model_calls`，
->   同一步的 2~3 条尝试账**挤在同一时刻**。**条数可信、耗时不可分解**；
->   要真延迟得在循环里 per-attempt 打点（第 10 条要做 latency 归因时必须先解决它）。
-> - **front 侧没变**：`MetricsPanel` 仍不存在，观测台仍只有 trace/frame 两路流。
-
-现在 trace 已经把事件记下来了，但没有聚合视图——想知道"这一局 token/延迟花在哪条
-链路"得手工过 trace 事件。这次已经把 `Source`/`EventType` 精细化过（`Source.PLAN`
-从 `HARNESS` 分出来、记忆相关事件统一到 `Source.MEMORY`、补了 `EventType.STALL_CHECK`，
-见已完成），这是可观测的地基，但地基上还没盖东西，至少要有：
-
-- **token/延迟按 `Source` 聚合的报表或轻量观测台**——能直接回答"decision/judge/memory/
-  plan 各占多少 token、多长时间"，不用每次手工翻 trace。第 10 条"决策延迟长尾"卡在
-  "还没有一份 latency 对 output_tokens 相关性的数据"，本质就是缺这一层聚合能力；
-- **⏪ 权限配置完整性校验（0911：需求已消失）**——`agent_permission` 的降级路径
-  （`permission_skipped`）曾经能正常记账，但没有校验"配置本身是不是完整、一致"的
-  机制。0910 `agent_permission` 整条移除后，这个缺口连同它的前提一起不存在了。
-- **⏪ 降级告警（0911：同上）**——降级事件曾经只进 trace、不会主动冒出来。随权限层
-  移除失效。
-
-跟第 4 条（trace 生命周期不闭合：无 `RUN_START`/`RUN_END`、进程中断不留痕）是同一个
-方向但不同层——那一条是"trace 记没记全"，这一条是"记全了之后怎么聚合着看"。第 4 条
-更基础，建议先做那部分小修，再在完整的 trace 之上建聚合视图。
-
-**观测台实时数字——0902 当晚完成（⏪ 0910 已随 `evaluation/` 退役，见本条 0911 现状）。** 新增 `GET /runs/{id}/metrics`：run 还在
-跑的时候调用，看到的就是到目前为止的数字，不用等结束——数据源是
-`handle.trace.events()`（跟 SSE 事件流读的同一份内存表），不读磁盘。复用
-`evaluation/eval_report.py::aggregate_events` 这个核心，而不是重新写一份聚合
-逻辑：`evaluation/SPEC.md` 10.7 早就记下"包内 import 会破坏装包"这个顾虑，
-这次的解法是**惰性 import**（放函数体内，不放模块顶部）——`evaluation/`
-缺失时只有这一个端点会炸，`pokemon_agent.api` 本体的可导入性不受影响，算是
-10.7 提的两个方案（挪核心 / API 侧包一层）之外的第三条路，成本最低。踩了一个
-坑：`TraceEvent.source` 字段类型是 `Source`（`str, Enum`），直接 `str(source)`
-当 JSON key 会得到 `"Source.VERIFY"` 这种 repr 而不是 `"verify"`——`str, Enum`
-混入类默认继承的是 `Enum.__str__`，不是 `str.__str__`；改成
-`getattr(source, "value", source)` 才是真正的字符串值，顺带兼容
-`eval_report.py` CLI 路径读 JSONL 拿到的纯字符串。前端 `useMetrics.ts`（2s
-轮询，同 `useRunGoals` 节奏）+ `App.tsx` 的 `MetricsPanel`（按链路一行的原始
-表格：调用/成功/失败/重试/tokens/p50/p90，外加降级/错误/审计失效率的文字
-明细，run 级汇总一行），没有做图表——用户对这块的要求是"能用就行"。
-验证方式：这台 device VM 装不上 `agent_permission`（同前几轮的环境限制），
-没能跑 `TestClient` 端到端；改用真实的 pydantic `TraceEvent` 构造一批合成
-事件，直接喂 `aggregate_events` 并复现端点里的字典拼装逻辑，断言
-`by_source` 的 key 是 `"verify"` 不是 `"Source.VERIFY"`、`verify_total`/
-`verify_unreliable`/`duration` 等数字都对得上，`json.dumps` 能序列化。
-`tsc --noEmit` 前端侧无报错。
-
-**0904 补一条：`ModelCall.payload` 新增 `prompt` 字段，`frame_png` 挂载点从
-OBSERVE 挪到感知的 MODEL_CALL。** 起因是复盘时想看"这次调用到底问了模型
-什么"，得去翻拼装代码才知道，没有直接落在 trace 里。6 个模型调用来源
-（`Source.DECISION`/`JUDGE`/`VERIFY`/`PERCEPTION`/`PLAN`/`MEMORY`，对应
-`brain.py::choose_once/judge/verify_steps`、`pyboy_world.py::perceive_once`、
-`harness/run_utils.py::ask_planner_with_retry`、
-`memory/episode/episode_store.py` 的摘要蒸馏）各自的 `ModelCall(payload={...})`
-都补上 `"prompt": <实际发给模型的文本>`——包括失败路径，理由跟 `raw` 字段
-一样：失败的调用也烧了 token，得留痕方便离线复盘/改解析器。顺带解决一个
-架构上的别扭：原来 `TraceEvent.frame_png`（这一帧的原始画面）是从
-`WorldPerceptionResp` 经 `EpisodeRunState.pending_frame_png` 这个专门开的
-"跨节点暂存槽"转手一轮，最后由 `look()` 挂到 OBSERVE 事件上——纯粹是为了
-把感知节点产出的字节搬到下一个节点用。既然现在 MODEL_CALL 本来就要记
-"这次调用的输入"，画面本身就是感知那次调用最直接的输入，没道理再绕一圈：
-**「订正 2026-09-11」** 下面这句里的模块名是 0904 当时的真名，别照着抄：`episode_utils.py` 此后按「重试循环归大脑侧还是归感知侧」拆成了 `harness/brain_utils.py` + `harness/game_utils.py`（现行感知重试入口是 `game_utils.perceive_with_retry()`）；且 v7 起**写账的宿主已从 util 挪回节点**——util 只交回 `(观测, 帧)`，`trace.append(..., frame_png=...)` 由 `_begin` / `record_observation` / `perceive_after_action` 那三处宿主调。
-改成 `episode_utils.perceive_with_retry()` 在给感知 MODEL_CALL 调
-`trace.append(*args, frame_png=result.frame_png)` 时直接带上，函数签名从
-返回 `tuple[ObservationFromWorld, bytes]` 简化成只返回 `ObservationFromWorld`。
-`EpisodeRunState.pending_frame_png` 字段整个删除，`episode_harness.py` 里
-`_begin()`/`look()`/`look_after_action()` 三处相应去掉这个字段的传递。
-验证方式同前几轮的环境限制：`ast.parse` 语法检查全部通过，未跑真实
-import/pytest。
-
-### 3. 📋 测评体系搭建（judge 权威性 / 可审计 / prompt 自动更新三块；0911 补回丢失的标题）
-
-> **0911 现状**：这一条的**标题行在某个时点被误删了**，从第 171 行起的正文一直
-> 孤零零挂在第 2 条底下（本次补回）。除标题外，本条内容与状态基本未失真：
-> 仍是"先只记进 roadmap、暂不开工"，0903 拆的三块（权威 judge / 可审计 /
-> prompt 自动更新）范围和当时定的产出形状都还成立。
->
-> **但这二件事变了、原正文没跟**：
-> 1. **它要依赖的基础设施已经不在**——`eval_report.py` 的 `error_kinds`/`degraded`
->    聚合、`audit_verdicts.py` 的机械复核都随 `evaluation/` 删除（第 27 条），
->    `tests/` 也清空。所以"可审计"那一块不是"在现成基建上加东西"，而是
->    **要从零重建一份聚合实现**（与第 2 条是同一件事）。
-> 2. **"权威 judge"的现状比当时好**：judge/verify 链已经改成**带图多模态调用**
->    （`judge()` 用 `frame_sequence(history)` 去重送图），判定链换过供应商与型号
->    （见第 23 条），并且 `ModelCall.payload` 记了 `n_images`——"judge 到底看到了
->    什么"现在可回溯。但**假阳性率 13.9% 这个历史数字从来没有重测过**。
->
-> **待定（0911 仍待用户拍板）**：第 1 点（judge 权威性做到什么程度——单模型优化 /
-> 多轮多模型交叉验证 / judge + 机械规则双保险）用户仍未选；第 3 点（prompt 自动
-> 更新）0904 要求提前、具体位置未定；本条与第 25 条⑥b 是同一件事的两处记载。
->
-> **0915 补：三块里"可审计"这一块事实上已经有了一个能跑的替身，但它长在真机核对
-> harness 上、不在本条的产出形状里。**
-> - **替身是什么**：`experiment/real_check/` 一次 run 跑完之后自己核三件
->   （`check_trace` / `check_memory` / `check_restore`），外加 `node_io` 对**每一个
->   节点的输入输出**逐条对形状与内容，打印 `[N/6] PASS/FAIL` 与零痕迹清单。
->   这是"可审计"想要的东西的一个**窄版本**：只覆盖一次 run、不产出跨批次报表。
-> - **跑批入口仍然不存在**（缺口表那条"高"优先级未变），所以它**攒不出成功率的
->   时间序列**——这句是本条与第 2 条共同的真缺口。
-> - **"机械复核"的判据口径换了一轮**（CHANGELOG 100）：`check_trace` 不再靠
->   `event_id` 连续性，改成**残文件对账**（文件数 == 条数、文件名 stem == uuid）
->   + 六字段不多不少；`node_io` 换成 `kind_of`/`content_of`/`meta_of` 三读法
->   + 白名单式正文键校验。**要重建 `audit_verdicts.py` 那套规则时，这些是现成的
->   判据写法范例。**
-> - **"权威 judge"多了一条现成证据**：无人在环时 judge 自己判对过一次
->   （`realcheck-0915-131133`：`why` 逐字段对上、轨迹可复算），
->   对照的是 `123410` 那次**被插话掰出来的假成功**。**同一个字段两种来源现在能分辨**
->   ——这是"假阳性率 13.9% 从没重测过"这个欠账的第一块可用的对照料。**但没重测。**
-> - **第 3 点（prompt 自动更新）多了一条纪律性输入**：判据里不许出现步数条件
->   （CHANGELOG 108）——这是 prompt 修改第一次有"什么算改坏了"的结构性依据。
-
-机械复核（曾经是 `evaluation/audit_verdicts.py`，19 条任务规则，2026-09-02
-已按用户决定删除——见 `evaluation/SPEC.md` 五节）现在已经不存在，只剩
-`verify_steps` 这类零散校验，还没有一份"要测哪些指标、每个指标怎么打分"的
-统一规范。至少要覆盖：success rate（已有）、cost per run、每链路 token；
-无效步占比先按"已知是下界"接受（见第 7 条），不等它解决。落地的报表脚本
-原来是 `evaluation/eval_report.py`——**该工具已随 `evaluation/` 整体删除
-（第 27 条），这条要落地得有一份新的聚合实现**。**排在可观测之后的第二
-优先级**：报表要用的"每链路 token/延迟"聚合就是第 2 条要建的东西，两条
-高度相关，可以共用。
-
-**0903 用户重新表述了范围**（起因：trace#20 出现"正上方即为宝可梦中心入口门"这类无
-依据结论，见下方已完成表的 `map_hint.md` 修复）——用户要求先只做 prompt 层修复，
-不做代码层机械检测器，同时把测评体系拆成三块：
-
-1. **权威的"任务是否完成"LLM-as-judge**——现有 `judge_success.md`（独立判定员，
-   默认"没完成"、要求证据在历史帧里真的出现过）已经是这个角色的雏形，但历史上有
-   13.9% 假阳性率（`docs/experiences/` 里有记录），"权威"要到什么程度、要不要
-   多轮/多模型交叉验证——还没定义，需要跟用户对齐。
-2. **可审计和测评**——`eval_report.py` 的 `error_kinds`/`degraded`/审计失效率
-   聚合是现成的基础设施；`verify_steps`（`Source.VERIFY`）是现成的步骤可靠性
-   校验通道。这条与已删除的 `evaluation/audit_verdicts.py`（19 条任务规则的机械
-   复核器，0902 因用户"不清楚这个工具在做什么"而删除，见已完成表）在主题上高度
-   相关，但用户当时否决的理由是不理解工具用途，不是否决"审计"这个目标本身——
-   重建前需要先跟用户对齐这次要的是什么形态，不能假设就是把旧工具原样找回来。
-3. **基于 1、2 的自动更新管理**（prompt 改动的自动更新和版本管理）——**用户已明确
-   说这条可以往后放**，不是本次范围。
-
-**0903 用户确认范围（先只记进 roadmap，暂不开工）**：
-
-- 第 1 点（judge 权威性要做到什么程度——单模型优化 / 多轮多模型交叉验证 /
-  judge+机械规则双保险）**用户还没选，先把 1/2/3 三点整体记进 roadmap，具体
-  往哪个方向做留到之后再定**。
-- 第 2 点（可审计和测评）用户明确要看到两样产出：
-  1. **judge 判定的可追溯性**——每次 `done=true/false` 都能回溯到具体是哪一帧
-     `observation`、`history` 里的哪句话被当成证据，事后能复查，而不是只留一个
-     布尔值和一句 `why`。
-  2. **错误分类统计报表**——在现有 `eval_report.py` 的 `error_kinds`/`degraded`
-     基础上，把 judge 误判、`verify_steps` 不可信这些也按类型分类计数出报表，
-     不是本次现场决定怎么改代码，只是先把要看到的产出形状记下来。
-- 第 3 点（prompt 自动更新和版本管理）0903 用户曾明确说往后放；**0904 用户改口，
-  要求提前优先级**（见文件开头"当前优先级"一节）——具体要提前到什么位置、要不要
-  先给这条本身补一份方案（现在还是"以后要做"级别的一句话，没有设计），还没跟用户
-  对齐，留到下次接着定。
-
-**prompt 更新注意事项**（0903 对全部 `pokemon_agent/prompts/*.md` 做了一轮
-逐文件复核并按"一个一个改"改完，沉淀下来的坑，供以后手改 prompt 或做上面
-第 3 点"自动更新和版本管理"时参考）：
-
-1. **引号风格全项目统一用 `「」`，不要用中文弯引号 `""`。** 老文件基本都是
-   `「」`；这次复核发现两类问题都出在"新加的内容"上——要么是我自己新写的段落
-   习惯性用了 `""`（`decide_action.md`、`map_hint.md` 都犯过），要么是同一句话
-   里前半用 `""` 后半用 `「」`（`perceive_screen.md` 第 12 行）。改完 prompt 后
-   搜一下自己新加的段落有没有 `"` 字符，比通读全文更可靠。
-2. **JSON 输出指令统一说"不要有其他文字"，不要额外禁止 ```json 围栏。**
-   `decide_action.md`/`judge_success.md`/`run_plan.md` 都用带围栏的例子演示格式，
-   说明项目约定是"照例子抄，围栏可以有"——下游 `strip_json_fence()` 两种都能处理。
-   `perceive_screen.md` 曾经在结尾单独写"不要有```json包裹"，跟它自己第七节
-   的所有例子都带围栏是**直接自相矛盾**；`episode_summary.md` 则是完全没给
-   任何例子、字段全是 `"str"`/`"float"` 这种类型占位符——两种问题都改成了
-   "统一说明 + 一份完整的、内容具体的带围栏例子"。以后新写/改 JSON 输出类
-   prompt，例子必须是能直接 `json.loads` 的具体内容，不能留类型占位符。
-3. **共享内容只留一个源头，其他地方用变量拼进去，不要手抄一份。**
-   地形图例（`.`/`G`/`D`/`S`/`N`/`#`/`@` 各是什么）原来在 `map_hint.md` 用
-   `terrain_legend()` 生成，`perceive_screen.md` 却手写了一份措辞不同的副本
-   （尤其 `@` 那一行两边写法都不一样）——改成 `perceive_screen.md` 也用
-   `$terrain_legend` 占位符、`pyboy_world.py::perceive_once()` 传参数进去，
-   只在自己文件里补一句它需要的额外说明（这里是"两套坐标系不能混进 overview"）。
-   **改公共来源（比如 `TERRAIN_MEANING`）之前一定要 `grep` 一遍它还被谁用**：
-   这次曾经考虑过把 `@` 从 `TERRAIN_MEANING` 里删掉来去重，查出来
-   `pokemon_agent/world/ram.py` 拿它派生的 `MAP_CHARS` 做每帧 `walk_map` 的
-   合法字符校验（`bad = set(row) - MAP_CHARS`），删掉会导致每一帧校验都报错——
-   属于"看起来是无害的措辞去重，实际是运行时校验会挂"的坑，改之前一定要查引用。
-4. **增量改 prompt 时，加新规则之后要回头看有没有跟旧内容重复或矛盾。**
-   `decide_action.md` 这次改了三拍，`rationale` 字段的要求每次都加新的硬规则，
-   到第三拍时发现"最后再叮嘱一遍"式的旧段落其实在用不同措辞重复前面刚加的
-   硬规则——改完新内容之后，通读一遍受影响的那个字段/小节的**全部**要求，
-   别只看自己新加的那几行。
-5. **"固定存在的规则" vs "按需检索的知识"要在总 prompt 里分开成独立小节，
-   各自说明"这是什么、可信度多高、覆盖不到的时候怎么办"。** 这是这次结构性
-   重写的核心原则：`decide_action.md` 现在有"已知事实"（RAM 直读，100% 准）、
-   "检索到的相关知识"（跨地图规律，覆盖不保证，不能替代当前帧证据）、
-   "相关记忆"（本局内，未经复核的当时判断）、"跨局摘要记忆"（跨局自己写的，
-   可能带偏差）四个独立小节，顺序按可信度从高到低排列。以后往总 prompt 里加
-   新的数据来源，先想清楚它属于哪一档可信度，给它单独一节而不是塞进"已知事实"。
-
-### 4. 📋 trace 生命周期不闭合：进程中断不留痕（P0，a 已完成，b/c 还开着）
-
-> **0911 现状**：a) 收尾事件闭环**已在真机验证**（`RUN_START`/`RUN_END` 首尾、
-> 异常路径带 `why` 都跑过），b)、c) 仍开着，**没有新进展**。
-> - **b) 进程层兜底**：状态与理由不变（uvicorn `lifespan` shutdown hook 补
->    `INTERRUPTED`），"是否做取决于测评要不要统计被中断的 run"这个判据也还成立——
->   但第 3 条（测评体系）比当时更远，所以这条实际上也不会被触发。
-> - **c) plan 调用次数复核**：复查结论（代码走查、没找到独立漏记）不变；
->   等待条件"等第 3 条跑批次数据时顺带核对"**依然没满足，且更远了**。
->   顺带一条新事实：`plan()` 在两个开关都关时**真跳过模型调用**（0911），
->   所以"plan 调用次数 == 实际 dispatch 次数"这个等式现在还要额外考虑
->   "整局一次 plan 调用都没有"这种正常情形。
->
-> **0915 补（a) 之外又完成两件，b) 更没理由做了；本条标题的状态标记可以更新为
-> "a 完成 + 封套/时序两件完成，b/c 开着"）**
-> - **封套改造（CHANGELOG 100）**：落盘形状定型为
->   **`{uuid, kind, type, ts, meta, content}` 六字段**，`event_id` /
->   `schema_version` / `frame_png` / 顶层坐标四件全删；`TraceKind` 成为**唯一账名
->   词表**（35 成员），"派发键 ≠ 账名"的翻译表整张删除；文件名是时间递增 uuid
->   （`events/<uuid>.json`）。**"一句话能不能查证这条账"这件事从"靠约定"变成"靠位置"**：
->   封套（谁/哪种/何时，机器生成）/ `meta`（harness 想传的签名）/ `content`（本体）。
-> - **ts 严格递增（CHANGELOG 107）——这条直接治的是"生命周期不可信"**：
->   真机 `114740` 里第 17 步 `write_step` 与 `step_advance` 的 `ts` **逐字节相同**，
->   读侧按 `(ts, uuid)` 排序时平局落到随机 uuid，把执行序翻了、核对器误报。
->   治本是落库侧撞刻时人为推进 1µs，**"读侧排序 = 执行顺序"这条不变式现在真成立**；
->   已落盘的旧数据改不了，核对器增加"相邻同刻簇按模板位置归位"作兼容读法。
-> - **b) 进程层 `INTERRUPTED` 兜底**：状态与理由不变，但**触发场景进一步收窄**——
->   真机入口现在只有 `python -m experiment.real_check.check_harness`（单局跑完即退），
->   常驻服务进程只有 `api.py` 那条观测台路线，而观测台路线本轮没有任何改动。
->   **结论：还是"取决于测评要不要统计被中断的 run"，而测评仍然没开始。**
-> - **c) 仍缺那次反证**：`plan` 调用次数 == 实际 dispatch 次数，还是只能等第 3 条
->   跑批次数据时顺带核对。**新增一条相关事实**：RUN 级三个账的 `source` 现在逐条
->   落成节点名（`run_entry.new_run` / `run_entry.close` / `run_entry.close` 异常路径），
->   要核对"哪些入口发过账"不用再翻代码。
-
-同一次 run 的实锤：ep3 执行中被杀（中断后端），最后一条事件停在 step2 的
-`memory_read`（正要调 decision）——**没有 EPISODE_END、没有 ERROR 事件**；那次 run 级
-trace 全 run 也只有 1 条 plan 的 MODEL_CALL，从头到尾没有 RUN_START/RUN_END。后果：
-
-1. **中断与卡死无法区分**：replay/统计拿到"进行中"状态的 run，不知道它其实已经死了，
-   中断局会被当成进行中/超时，成本与成功率统计失真；
-2. **run 生命周期不可观测**：观测台/报表无法判断一个 run 是正常收尾还是中途被杀。
-
-修复方向三块，进度分开记：
-
-- **a) 收尾事件闭环——已完成。** `RunHarness.run()` 现在开局写 `RUN_START`
-  （`EventType.RUN_START`，`trace_utils.run_start`），正常收尾写 `RUN_END`
-  （`trace_utils.run_end`，带 `total`/`succeeded`/`success_rate`），异常路径
-  （图内部抛出未捕获异常）也补 `RUN_END`（`trace_utils.run_error`，带
-  `why`）后原样抛出——跟 `EpisodeHarness.run()` 对 `EPISODE_START`/
-  `EPISODE_END` 的处理是同一个模式。冒烟验证过正常/异常两条路径都补上了
-  首尾事件。
-- **b) 进程层兜底——还没做。** uvicorn `lifespan` shutdown hook 里对未收尾的
-  run 补一条 `INTERRUPTED` 事件，处理"进程被杀、graph.invoke 本身没有机会
-  抛异常"这类 a) 补不到的情形。是否做取决于测评要不要统计"被中断的 run"。
-- **c) run 级 trace 记全每次 plan 调用——复查代码没找到独立漏记的 bug，暂
-  当已解决，留个尾巴。** 当时那次真实 run（3 个 episode 只记了 1 条 plan
-  的 MODEL_CALL）跟"图撞 `GraphRecursionError` 无声截断"是同一批数据（那个
-  bug 已经在别处修过，见已完成表的 `recursion_limit` 撞限修复）。复查现在
-  的 `run_utils.ask_planner_with_retry`：`plan()` 节点每被图访问一次就完整
-  跑一遍这个函数，每次调用（成功失败都算）都会 `trace.append`，没有旁路能
-  绕开记账。所以"只记 1 次"更像是那次撞限截断的症状，不是这里的独立漏记——
-  但这是代码走查的结论，还没有一次真正跑完的多目标 run 反过来验证"plan
-  调用次数 == 实际 dispatch 次数"，等测评体系（第 3 条）真正跑批次数据时
-  顺带核对一次，核对通过就可以把这条从待办里划掉。
-
-### 5. 📋 P0 护栏（往后排）
-
-> **0911 现状**：一件都没做，**理由也没变**——原本"本该最先做、但等测评跑出数字
-> 再补，用来验证加了护栏之后数字是不是变好"。现状是这条被**卡了两次**：
-> 一次是优先级（排在三者之后），一次是它要用来验证效果的基线数字本身不存在了
-> （第 2、3 条）。目前只有 `detect_stall` 这一个 L2 护栏在真实生效。
-> 另有一条相邻事实：`recursion_limit` 撞限那个 bug 已修（见已完成表），
-> 所以"图被静默截断"不再是护栏缺失的表现形式。
-
-run 级总目标数/总步数/总时长上限、无效动作拦截、STALL 阈值相对 max_steps
-动态化。本该最先做（是测评能收敛的物理前提），现在按上面的优先级调整往后
-排，等测评体系能跑出数字之后再补，用来验证"加了护栏之后数字是不是变好了"。
-
-### 6. ✅ 内存环境框架重构（0910 落盘重构已达成；`MemoryEnvironment` 工厂没有造，改成了单根 + 子目录）
-
-> **0911 现状：本条的两个问题在 0910 都以"别的形式"解决了，正文里的 store 表已整体失效。**
->
-> - **旧表里那四个类只剩一个**：`FileEpisodeMemoryStore` / `KnowledgeStore` /
->   `InMemoryObjectStore` 全部退役，`pokemon_agent/memory/` 现在只有
->   `ports.py` + `store.py`（统一 `MemoryStore`）+ `retrieval.py`（第 27 条）。
-> - **"四类记忆存储方式不统一"不存在了**：`MemoryTool` 现在持四个
->   **同一个类**的实例，只是 kind 不同——
->   `MemoryStore(..., "step_memory" | "object_memory" | "episode_memory", memory_root)`
->   与 `MemoryStore(..., "knowledge_memory", knowledge_dir)`。
-> - **"一个根目录接管、各自一个子目录"已经达成**：磁盘上就是
->   `memory/{step,object,episode,knowledge}_memory/`，每个 kind 一份
->   `index.json` 倒排索引 + 一条记录一个 `<uuid>.json`/`.md`。
-> - **入口不是 `MemoryEnvironment` 工厂，而是 `MemoryTool(memory_root=...)` 一个参数**
->   ——测试换隔离目录只动它。**唯一的例外是知识库**：
->   `knowledge_root` 刻意独立于 `memory_root`（默认仓库根级
->   `memory/knowledge_memory/`），因为知识库是全局共享的单一副本，
->   不该被"给这次跑一个干净环境"重定向。
-> - **"单步情景要不要真落盘"已拍板：落盘**。`step_memory/` 是四个 kind 目录之一，
->   还额外挂了 `void_memory_after`/`archive_many` 的作废语义（废弃一律移动归档、
->   不删文件）。所以正文里"现在是刻意不落盘（持久化靠 trace）"已是历史。
-> - **剩下的开口（很小）**：`MemoryStore` 与 `retrieval.py` 的接口形状还有
->   第 24 条末尾那几条尾巴（`get_many()` 裸元组未升级成 `MemoryRecord`、
->   `refresh_changed()` 只刷向量不刷倒排表），见第 24 条。
-
-~~四类记忆（跨局摘要 / 单步情景 / 知识先验 / 物件语义）现在存储方式不统一：~~
-
-| 记忆类型 | 现在的类（0910 前的历史记载） | 能不能指定目录 |
-|---|---|---|
-| 跨局摘要（global episode） | `FileEpisodeMemoryStore` | 能 |
-| 单步情景（step episode） | 同上，`_steps` 字典 | 不能，纯进程内 |
-| 知识先验（knowledge semantic） | `KnowledgeStore` | 能，形状最干净 |
-| 物件语义（object semantic） | `InMemoryObjectStore` | 不能，纯进程内 |
-
-批次测评需要给每次跑一个干净、隔离的"环境"（类比 `pytest` 的 `tmp_path`），
-四类记忆应该都能被同一个根目录接管、各自落一个子目录。提议：照着
-`KnowledgeStore` 的形状统一其余三个，再造一个 `MemoryEnvironment` 工厂拼装
-四个 store。**没定的地方**：单步情景要不要真的落盘——现在是刻意不落盘
-（持久化靠 trace），给它一个目录是否意味着要重新引入磁盘持久化，这个要先
-讨论清楚。**这一条不实现，等下一轮确认方案。**
-
-### 7. ❓ "无效步"怎么定义——现有 STALL 检测站不住，没有满意的替代方案
-
-> **0911 现状**：问题本身一字没变，也仍然没有方案。两处事实更新：
-> 1. 正文引用的"`evaluation/SPEC.md` 里'无效步占比'这个指标"——那份 spec
->    随 `evaluation/` 删除（第 27 条），**这个指标现在连定义它的文档都没有了**，
->    不是"只能算下界"，是"没人算得出来"。
-> 2. `STALL_LIMIT=5` 对短任务形同虚设这件事没改过；`detect_stall` 仍是唯一的
->    无效步信号（唯一变化是它现在会写 `STALL_CHECK` trace 事件）。
-> 结论：本条与第 14 条是"目标推进度量"这同一个问题的两个问法，且都要等
-> 一个能打分的基线（第 3 条）才有意义。
-
-唯一的无效步信号是 L2 护栏（`detect_stall`）：比较这一步和上一步的
-`action + obs.stall_key()` 是否完全相同，连续 5 次相同才判定停摆。这检测的
-是"动作和画面机械状态都没变"，不是"这一步有没有价值"——来回试探、绕远路、
-reroll 同一个决策换个措辞，这些"在变但没推进"的情况完全抓不到。而且
-`STALL_LIMIT=5` 在 `max_steps=15` 这种短任务里基本形同虚设，很多局在真正
-触发停摆前就已经因为步数用尽结束了——`evaluation/SPEC.md` 里"无效步占比"
-这个指标现在只能算出真实值的下界。**这是需要深入解析的任务，不是顺手能
-改的小修**：怎么定义"这一步有没有朝目标推进"本身就不平凡（要不要引入某种
-进度度量？要靠 judge 每步都判一次会有额外模型调用成本；要不要用记忆检索
-命中率反推"是不是在重复同一个错"？）——现有方案和几个候选方向目前都没有
-一个让人满意的，先立项、不下方案。
-
-### 8. ✅ episode_memory 的跨 run 检索——已由 tool 层强制隔离解决（0911 核实，解法与当时设想不同）
-
-> **0914 现状：下面这条"必传 run_id / 跨 run 检索一律禁止"的口径已经取消了。**
-> `query_episode_summaries` 的读口改成**纯元数据等值过滤**（`req.conditions`），
-> 不再强制限 run、不再按场景匹配、不再排序/截断（见 `CHANGELOG.md` 0914 条目）。
-> "跨 run 的经验是别人家的答案"这条判断**没有消失，只是从读口搬到了调用方**：
-> `harness/episode/retrieve/retrieve_global_episode_memory.py` 显式传
-> `conditions={"run_id": …}`，所以本条的结论（历史 run 不污染基线）**依然成立**，
-> 只是执行点从 Port 变成了那一个节点。要查"现在是谁在限 run"，看那个文件的传参。
-
-> **0911 现状：本条已经解决了——记下来免得以后又按老描述去"找这个问题"。**
->
-> - **隔离执行在 tool 层，不在 memory 层**：`MemoryToolPort.query_episode_summaries`
->   的 `req.run_id` 现在是**必传**参数，docstring 原话是"只检索**这一个 run**
->   里沉淀的摘要；空串 = 不限 run（仅测试用，生产调用方必须传——跨 run 的经验
->   对当前 run 是'别人家的答案'，可能把失败局蒸馏出的'已验证'当真
->   （**跨 run 检索一律禁止**）"。
-> - **为什么不在 memory 层做**：0910 的分层定案是"memory 只认字段、不做语义
->   判定"，所以 `run_id` 在存储/索引层降级成一个**普通过滤字段**、
->   `episode_memory` 在磁盘上是一个共享池（第 27 条）。"哪些 run 的摘要可以
->   给当前 run 看"属于**领域判断**，因此落在 tool 层（宝可梦适配器）执行——
->   这正是 `PLAN_memory_query_convergence.md` §8.1 第 1 条"tool 层保留专用
->   方法、不收敛成通用 filter/search"的直接后果。
-> - **别被第 27 条那句话误导**："memory 不按 run 分层 / 天然跨 run 共池"说的是
->   **存储层**的事实，**不代表检索允许跨 run**。两层分开看。
-> - **对第 12 条的影响**："历史 run 的摘要污染基线"这条风险路径**已被堵上**；
->   第 12 条现在剩下的只是"同一批次内 + 知识库层面"的泄题面，比当时窄。
-
-`MemoryTool.query_episode_summaries()` 读的是全部落盘的跨局摘要，不按
-`run_id` 过滤，只按场景和相关性排序。一次新实验跑起来，会检索到**所有
-历史 run** 写下的摘要，不只是本次 run 内的——跟"批次记忆隔离"不是同一个
-问题（那个是同一 run 内，后面的 episode 能看到前面 episode 的经验；这个是
-跨 run，上周跑的实验这周还在被检索到）。~~要不要按 run 隔离没有定~~，
-跟第 6 条内存环境框架是同一个方向的问题。这是之前就知道的老问题。
-
-> **0904 那段优先级依据（含"至少要有个临时手段"的建议）——0911 已落地，留作历史。**
-> `run_id` 现在是 `query_episode_summaries` 的**必传参数**、跨 run 检索被明确禁止，
-> 所以"基线被更早 run 的摘要污染"这条路径不需要再等一个临时方案了。
-> 剩下的口径问题只有一个：**基线实验该不该整批共用一个 `run_id`**
-> （同批次内后面的 episode 仍能看到前面 episode 的经验——这是刻意的，
-> 但如果做消融对比，对照组之间要不要各自独立 `run_id` 得先定）。
-
-### 9. 🚧 verify 链路：已改检索增强验证 → 随后与 summarize 合并成一次调用；唯一开口仍是真实数据核对
-
-> **0911 现状（本条在正文写完之后又发生过一次大改，"独立 verify_steps 节点"已经不是现状）**
->
-> - **0902 那次改造全部落地且有真机验证**：`StepVerifyReq.knowledge`、
->   `episode_utils.build_verify_knowledge_query`、`step_verify.md` 领域规则全删改走检索、
->   独立 `Source.VERIFY`、结构化 `verdicts` 落 trace（`trace_utils.verify_call`）
->   ——正文列的"两个 trace 欠账"**都已还清**。
-> - **但紧接着又改了一次，正文没跟**：`verify_steps` 与 `summarize`
->   **合并成一次模型调用**——`Brain.verify_and_summarize()` 取代
->   `Brain.verify_steps()`，`VerifyAndSummarizeReq/Resp` 取代
->   `StepVerifyReq/Resp`（`StepVerifyVerdict` 留用），新模板
->   `verify_and_summarize.md` 把两份 prompt 拼成一份，"先判可信、再只用可信的
->   记录写摘要"这条安全性质保留在 prompt 里。图仍是 19 节点
->   （`verify_steps`+`summarize` 两格换成 `verify_and_summarize` 一格）。
->   没有 step 记忆的分支仍走原 `summarize` 节点（全量喂，没有可信过滤这回事）。
-> - **这次合并的已知代价（用户明确拍板要的取舍，不是遗漏）**：合并前两次调用
->   能各自失败，`verify` 挂了仍能拿到一份未校验的全量摘要；合并后**这次调用一旦
->   失败/解析不出来，可信过滤和跨局摘要都拿不到**，只退化成"这一局不写摘要 +
->   一条错误事件"。
-> - **`Source.VERIFY` 的口径随之变脏**：合并调用的账仍记 `Source.VERIFY`
->   （为了沿用校验器失效率报表的旧口径），代价是这条账单**现在也混进了写摘要
->   那部分的 token**。所以正文那句"算不出校验器自己的失效率"的欠账，
->   从"和 judge 混"变成了"和 summarize 混"——性质相同，对象换了。
-> - **唯一开口没变、且更远**：真实数据 ground truth 核对（人工标定一批 step 记忆），
->   原计划"跟第 3 条测评体系一起跑"，而第 3 条现在连基建都没有（见第 3 条）。
-> - **一条新能力**：`judge`/`verify` 现在都是**带图多模态**调用
->   （`frame_sequence(entries)` 去重送图、`ModelCall.payload` 记 `n_images`），
->   所以"校验器看到了什么"比以前可追溯——这也意味着人工标定 ground truth 时
->   可以参考"当时带了哪几张图"。
-> - 顺带：`StepMemory` 里的帧从"文件名引用"改成**直接存 base64**，
->   组装请求不再碰磁盘。
->
-> **0915 补（唯一开口还是那个 ground truth 核对，但"成本"这一侧第一次有了数字）**
-> - **verify 的图费第一次被标出来**（CHANGELOG 110）：`verify` 走**全量**送图，
->   29 条 memory → **30 张**，每帧 ≈185~198 tok ⇒ 一局 **≈5700 tok 的图费**。
->   这是"校验器该不该限流"这个悬了很久的问题的**第一份定价依据**
->   （此前只知道"随局长线性增长"，不知道单价）。**仍没有限流**。
-> - **"判定带图"这件事现在可核算**：`ModelCall.payload.n_images` 逐调用落盘，
->   `judge` 是 4 张（窗口 3 条 + 当前帧）、`verify`/`summarize` 是全量。
->   **prompt 里那句"history 在前、当前帧殿后"的图序与去重规则与文字一致**，
->   也已写进 `judge_success.md`/`step_verify.md`。
-> - **一次真机跑挂暴露了本链路的一个真空洞**（CHANGELOG 114）：`143903` 那局
->   `merge_retrieval` 里 `{**obs.facts}` 直接 `TypeError: 'Facts' object is not a
->   mapping` → `run_error`，整局断在那一格。**它藏在 `if state.object_semantic_memory:`
->   里面，此前每局目标都是"走到某格"、object 语义记忆一次都没非空过，门从没开过。**
->   改成 `obs.facts.model_copy(update={...})`，3 条测试钉住。**真机未验**——
->   下一局目标涉及可交互对象时才是它的第一次真机验证。
-> - **ground truth 核对的"料"更全了**：整局画面可离线还原（帧在
->   `memory/step_memory` 的 `before_frame`/`after_frame`，**trace 里那份 `frame_png`
->   已在 CHANGELOG 100 删掉**），不用重跑就能人工标注。
-> - **仍未动**：`verify` 的 `Source` 口径问题（成本混着 summarize）、
->   真实数据 ground truth 核对、`StepVerifyVerdict` 的人工标定。
-
-step 记忆是模型自述、不验证，错误的自我描述会被固化进摘要、跨局传播（真实
-例子：战斗菜单 `down×3` 被自己记成"逃跑"，实际是打开了道具袋）。所以已经从
-`summarize()` 拆出独立节点（`judge → verify_steps → summarize`），用独立判定器
-逐条把关，只把可信子集喂给蒸馏。
-
-**0902 拍板：领域规则从 prompt 写死改成检索召回。** 原来判据是 `step_verify.md`
-里写死的领域规则（battle 2×2、方向键/交互键语义那几条）——用户指出这覆盖不了
-场景全集：现在只有 battle/menu 导向，后续加商店/门/更多场景就得持续往 prompt 堆
-规则，静态领域知识不全时校验器会判错。定稿方案：
+### 1.3 条目模板（第四节使用）
 
 ```
-judge done → 取本局 step memory → 由 entries 构造检索 query（每局一次）
-  → 召回 knowledge → StepVerifyReq(goal, entries, knowledge=召回文本)
-  → Brain.verify_steps：方法论判自洽 + 对照召回知识判领域合理性
-  → 兜底：召回覆盖不到 → reliable=false，why="无相关领域知识，无法确认"
+### <编号> <一句话问题陈述>
+状态：<图例> ｜ 叙事：<标签> ｜ 归属：<项目> ｜ 依赖：<编号> ｜ 最后核实：<日期>
+问题：<现象，一两句>
+证据：<失败案例 / 实测数据 / 代码位置>
+方案：<机制，或"无方案">
+验收：<可度量的指标与阈值>
+非目标：<明确不做的>
+参照：<文献 / 先例>
 ```
 
-三个已拍板的点：a) **整局一次检索**（不逐条），一次 LLM 调用内逐条判，成本不变；
-b) **空召回/覆盖不到 → 判不可靠**（宁少喂，不可把错的当对的）——空召回也照常跑
-一次：方法论层（前后快照矛盾、声称有效但无变化）不依赖知识仍能抓一部分；
-c) **prompt 分层**——写死的领域规则全删，单一事实源 = `knowledge/`（battle 2×2
-本来就在 `battle_actions.md`，`step_verify.md` 是同源重复，正好借这次去掉）；
-保留不依赖场景的通用自洽判据作为方法论层。
+### 1.4 项目边界
 
-改动面：`StepVerifyReq` 加 `knowledge` 字段；`episode_utils` 新增
-`build_verify_knowledge_query(entries)`（参照 `build_knowledge_query` 的教训——
-只按 goal 检索时战斗/菜单先验在 BM25 匹配不上，query 必须拼观察特征；这里用整局
-entries 的 scene/overlay/动作并集）；`episode_harness.py::verify_steps` 节点加一次
-`query_knowledge` + 检索记账（`memory_read`，收尾路径没有 `enrich_observation`，
-节点自己记，否则 trace 看不出"校验器看到了什么知识"）；`step_verify.md` 重写。
-
-**改造后的测量问题没消失，反而更该做**：检索增强后校验器抓没抓到真的坏记忆、
-有没有误伤好记忆，依旧没有真实数据核对——需要一批人工标定的 step 记忆当
-ground truth，这正是"这个校验器到底有没有用"的答案来源，跟第 3 条测评体系
-一起跑。
-
-**trace 两处欠账的等待条件更新**：原来写"等第 3 条跑出结论再动"——现在校验器
-确认要改（这次改造动 `StepVerifyReq`/prompt/记账，本来就碰这两处），不再无限期
-等测量结论，随本次改造一起定：
-1. **和 `judge()` 共用 `Source.JUDGE`**——两条链的 token/延迟混在一条聚合里
-   分不开，算不出校验器自己的失效率（`docs/spec` 早就写了这句期望）。改造时
-   顺便拆独立 `Source`（比如 `VERIFY`）。
-2. **结构化 `verdicts`（每条 `index`/`reliable`/`why`）现在直接扔了**——只把
-   `reliable` 集合算出来筛记忆，trace 里只留一条 `MODEL_CALL` 的 `raw`。改造时
-   一并把 verdicts 结构化落 trace，否则事后反解析才能知道"这局判了几条不可信、
-   为什么"。
-
-**实现现状（0902）**：上面改动面全部落地——`StepVerifyReq.knowledge`、
-`episode_utils.build_verify_knowledge_query`、`step_verify.md` 重写（领域规则全删，
-单一事实源改成检索）、独立 `Source.VERIFY`、结构化 `verdicts` 落 trace
-（`trace_utils.verify_call`），见已完成表。
-
-**落地时按用户要求做了一次架构修正，没有偏离"每个节点只改一处状态"的约束**：
-最初实现把 step 记忆检索、知识检索、校验三件事揉进一个 `verify_steps` 节点，
-用户指出这违反 `EpisodeHarnessPort` 文档里明确写的接口约束——已改成三个独立节点
-`retrieve_verify_step_memory`（只改 `verify_step_entries`）→
-`retrieve_verify_knowledge`（只改 `verify_knowledge`）→ `verify_steps`（只改
-`verified_steps`，读 state 里已经查好的两项，不自己查库），路由在
-`retrieve_verify_step_memory` 之后按"有没有 step 记忆"分流，没有就直接跳
-`summarize`。图从 17 节点变成 19 节点，`recursion_limit` 公式（`max_steps*16+20`）
-的 `+20` 余量还够，没改。顺带把 `Brain.verify_steps` 的模型从强制共享 `judge_llm`
-改成独立可配置的 `verify_llm`（缺省仍等于 `judge_llm`，向后兼容）。
-
-**还没做**：改造后校验器抓没抓到真坏记忆、有没有误伤好记忆，仍然没有真实数据
-核对——需要一批人工标定的 step 记忆当 ground truth，跟第 3 条测评体系一起跑，
-是这一条唯一剩下的开口。
-
-### 10. 💬 单局内决策延迟偏高——两处已修；长尾原因仍未查清，但 0911 多了几条硬数据
-
-> **0911 现状：正文的结论（决策链是瓶颈、两处已修、长尾原因未定）不变，**
-> **但"没有任何输入/输出膨胀数据"这个前提已经不成立——现在有几条真机实测数字。**
->
-> - **perception 的 input token 大不是 bug，是静态 prompt 体量**：`perceive_screen.md`
->   是 399 行、含硬编码场景判定规则与地形图例（文档里写明这是"领域知识不该硬编码
->   进常驻 prompt"这条规则**唯一的结构性例外**——不先判断出 `scene` 就没法按场景
->   检索知识）。5300+ input token 由这份静态体量 + 一张截图构成。
-> - **judge 的 input token 随图片数线性涨**：实测 1→2 张图约涨 1800 token。
->   GB 原生分辨率只有 160×144，涨这么多说明供应商侧按固定 tile/patch 网格算 token、
->   不因原图小而打折——**这条直接解释了第 9 条"judge 带图后成本上升"的量级**。
-> - **`cached_tokens` 已经逐调用记账**（`MODEL_CALL.payload`，六个调用点全补，
->   取不到记 `"0"`；两家供应商的字段名一致）。所以"按链路缓存命中率"现在可以
->   离线按 `source` 分组 `sum(cached_tokens)/sum(input_tokens)` 算出来，**但还没人算**。
-> - **一个待验证的优化方向（没做）**：`_MultimodalMixin.describe()` 现在的顺序是
->   "图片在前、静态文字在后"，对"图每次不同、静态文字每次相同"的场景恰恰**不利于
->   隐式缓存命中**（前缀被易变内容占住）。火山方舟的隐式缓存本身就"不保证命中、
->   不保证命中最长前缀"。改顺序是候选方向之一，本次只记账、没动。
-> - **delta：`plan()` 在两个开关都关时真跳过模型调用**，所以 run 级规划这条链
->   现在默认**零 token**——正文里"plan 也会烧 token"这部分口径要按此更新。
-> - **仍缺的还是那一份数据**："latency 对 output_tokens 的相关性"没有测过；
->   `ActionFromBrain.thought` 没有长度上限、`max_tokens=25600` 只是余量、
->   单步 thought 实测冲到过 2235 token。诊断口径不变，**但"排在测评体系之后"
->   这个前提现在更远**（第 2、3 条都没落地物）。
->
-> **0915 补（本条终于有一份"按链路分段"的真机数据了，而且长尾的第一大来源已经被
-> 结构性封顶）**
-> - **一局的时间构成实测（279s / 30 步）**：**单次 decide 掉线那段 188.9s = 68%**
->   （同一次调用 HTTP 405 连挂两次、第三次成功）；其余：成功调用 ~40s、
->   知识检索 23.4s / 6 次、按键 12.4s / 30 次、写账 14.3s。
->   **去掉掉线，一局 ≈ 90s。** 这是本条第一次有"链路口径"的墙钟拆分。
-> - **掉线长尾的结构性封顶**（CHANGELOG 104）：provider 层的重试删掉后，
->   **文本最坏 3×60s+1s ≈ 3 分钟**（原 9.1 分钟，必撞 12 分钟看门狗）,
->   视觉最坏 3×35s ≈ 105s；**4xx 这类配置错第一轮秒级暴露**（原 9 分钟）。
->   退避固定 0.5s，`ProviderRejected` 立即耗尽不烧预算。
-> - **三条口径修正（要算延迟必须先接受它们）**：
->   ① **"掉线检测"其实没有检测**——唯一检测点是"调用真失败"。
->      `_POST_POOL.submit().result(timeout=timeout+15)` 的 60s 是**上限不是固定等待**：
->      DNS/拒连/4xx **立刻**抛，只有"收下不回话"才等满 45s。
->   ② **超时后孤儿线程不取消**（占 worker，池 `max_workers=8`）——真实抖动会累积占位。
->   ③ **`*_call` 账的 `ts` 是"落账时刻"**（整条重试链跑完才由节点一次性落），
->      同一步的 2~3 条尝试账挤在同一时刻 ⇒ **条数可信、耗时不可分解**。
->      **要拿账算 latency，先得在循环里 per-attempt 打点**——这是本条下一步的前置。
-> - **"按键等 10 秒过场"这个旧解释被改写**：链中每键之间推进 **1s** 游戏时间
->   （0915 从 2s 砍半，CHANGELOG 113）、链尾额外 10s；墙钟 = 游戏秒 ÷ `SPEED`，
->   所以 `SPEED=10` 下 4 键链约 0.4s 墙钟——**过场等待在实测里已不是大头**，
->   大头是"等模型时不 tick"那段真空。
-> - **仍未动**：`thought` 软上限、decision 记忆渲染精简、换更快模型。
-
-0827 批次实测（`docs/experiments/0827-knowledge-baseline.md`）：decision 中位
-延迟 10.6s，p90 **45.7s**；感知（3.4s/4.4s）、判定（1.5s/2.0s）都很紧凑，
-优化空间几乎全在 decision 这条链路。
-
-**已经修的两处（无头模式排队等待偏长的根因，跟 decision 本身的模型延迟是
-两回事）**：
-
-1. `pokemon_agent/world/pyboy_world.py` 里发现一份未提交、半途而废的重构
-   ——无头模式（不 watch）本该不限速（`set_emulation_speed(0)`），被意外
-   改成不分 watch 一律按 `speed`（默认 1，等于实时）演化，`step()` 按完键
-   后纯演化 10 秒游戏时间、决策等待期间的 `evolve()` 也按实时推进——批次跑
-   的时候这些全按真实秒数在等。改动还顺带删掉了 `_tick`/`_frame_png`/
-   `latest_frame` 三个方法的定义、只留调用点，跑起来会直接崩溃。**已恢复**：
-   无头不限速、三个方法补回。
-2. **决策的 async 等待机制已移除**：原来 `choose_with_retry` 把决策请求丢进
-   线程池、等待期间靠 `game.evolve()` 空转填充——这是在无头模式意外限速的
-   前提下才有意义的设计（演化能看见"世界在等待期间继续走"）。现在无头不
-   限速，evolve 填充等待省不出时间，异步+轮询反而是多余的复杂度。已改成
-   `choose_once` 同步调用；`Brain.choose_once_async`、`_executor`、
-   `IDLE_FRAMES_PER_POLL` 一并删掉。
-
-**还没查清楚的**：两处修完之后 decision 本身的 LLM 调用延迟（p90 45.7s
-这个数字）没变——两个已知线索都指向"token 偏多"：`ActionFromBrain.thought`
-没有长度上限，`max_tokens=25600` 只是留了余量，实测单步 `thought` 冲到过
-2235 token；judge/verify_steps 链路上同类输入膨胀问题修过一次（`walk_map`
-字段占记忆渲染 62%，去掉后审计延迟 77s→11.4s，见
-`docs/experiences/2026-08-31-audit-77s-input-bloat.md`），但 decision 的
-记忆渲染（`MEMORY_RECALL_LIMIT=5`，每条全量 `render()` 含 reason）还没同样
-查过。还没有一份"latency 对 output_tokens 相关性"的数据来确认长尾是不是
-输出 token 拖的；候选方向（给 `thought` 定软上限 / 精简 decision 记忆渲染 /
-换更快模型）都还没验证优先级。**排在测评体系之后**——先把测评跑起来，能
-看到"改了之后数字/耗时是不是真的变好"再动。
-
-### 11. 💬 `TaskForHarness.task_id` 要不要改名 `goal_id`——暂不改（但 0911 两个暂缓理由都弱化了）
-
-> **0911 观察（不是拍板，只是把理由的变化记下来）**：当时"这次不改"的两个
-> 支撑理由，现在都不太成立了——
-> 1. **"前端目标编辑功能还在开发中"**：前端那条线已经稳定下来了，目标栈
->    只剩"goal 的 push + goals 的 read"两个通道、`GoalsEdit` 也简化到只剩
->    `kind="push"`（见第 1 条）。
-> 2. **"要动若干测试"**：`tests/` 已经整体清空（第 27 条），这份改名成本归零。
->
-> 剩下的是"动 schema + 后端 + 前端 TS + 十来处文档"。**改名本身仍未拍板**，
-> 本条状态维持"暂不改"，只是提醒：下次提到它时别再引用上面那两条已经过期的理由。
-
-`task_id` 是活跃、有实际功能的标识符：run 级目标编辑 API、前端目标列表
-（React key）、`GoalsEdit` 处理逻辑都直接依赖它；批次实验里 `task_id` 就是
-任务类别（这个用法本身没问题）。改名要同时动 schema、后端、前端 TS、若干
-测试、十来处文档，影响面大，而且前端目标编辑功能看起来还在开发中，这时候
-大范围改一个依赖字段风险偏高。"task_id 不该进 trace"这个问题已经解决，字段
-名本身目前没有制造真实理解混乱。**这次不改**，等前端那条线稳定下来再提。
-
-### 12. 🚧 记忆库"泄题"——两条大路径已堵（具名文件已清、跨 run 检索已禁），剩同批次内 + 知识库面
-
-> **0911 现状：这条的风险面已经比当时窄很多，别按老描述估它的严重性。**
-> **0914 补**：下面"跨 run 这条路径也已经堵上"的**结论不变、执行点变了**——
-> 读口已不再强制限 run（第 8 条的 0914 补注），限 run 由
-> `retrieve_global_episode_memory` 这个调用方显式传 `conditions={"run_id": …}` 完成。
-> **所以现在"跨 run 泄题"的防线是一行调用方传参，不再是读口的硬规则**——
-> 以后有别的消费方（比如 run 级规划）用同一个读口时，要自己决定限不限 run。
-> - **原最直白的形态在结构上不可能再出现**：0910 之后落盘是"一条记录一个
->   `<uuid>.json`/`<uuid>.md`"，**文件名是随机 uuid、不带语义**——
->   `battle_choice_cursor_to_run.md` 这种"文件名就是解法"的情况不会再产生。
-> - **跨 run 这条路径也已经堵上**：`query_episode_summaries` 的 `run_id`
->   现在必传、跨 run 检索一律禁止（第 8 条）。所以"上周跑的实验这周还在被
->   检索到"这件事不会发生。
-> - **剩下的是"同一批次内 + 知识库层面"**：① 同一批次后面的 episode 仍能检索到
->   本批次前面 episode 的摘要（刻意的，但做消融对比时要决定对照组是否各自
->   独立 `run_id`）；② 知识库是全局共享的单一副本、改动**即时生效**
->   （0910 取消了 run 快照隔离），运营往库里加"答案式"词条会立刻影响所有
->   在跑的 run——**这是当前唯一没有硬隔离的泄题面**。
-> - **多了一条审计手段**：~~`MEMORY_READ`~~ trace 账可以事后反查"这一局到底检索
->   到了哪些记录"，比靠人眼翻目录强。**「0915 订正」账名已改**：CHANGELOG 100 把
->   `MEMORY_READ` 拆成了**六条读口各自的账**——`read_step` / `read_global` /
->   `read_knowledge` / `read_object` / `read_verify_step` / `read_verify_knowledge`
->   （原 `read_kind` 字段作废，账名自己说明读了哪一族）。**反查能力不变、粒度更细。**
->
-> **0915 补（风险面没有扩大，但"防线在哪"这件事再确认了一遍）**
-> - **跨 run 的防线仍然只是"一行调用方传参"**（`conditions={"run_id": …}`），
->   **不是读口的硬规则**（0911/0914 已记）。0915 没有任何改动触碰这条。
-> - **画面这一侧的风险面反而缩小了**：CHANGELOG 100 把 `frame_png` 从 trace 里删掉，
->   画面真源只剩 `memory/step_memory` 的帧字段——**"trace 目录里有没有藏着答案式
->   画面"这个问题现在只有一个目录要查**。
-> - **一个反向的观察（值得记）**：0915 那次"每局换一件没做过的事"（第 28 条）
->   直接踩出了 `merge_retrieval` 里埋着的崩溃（CHANGELOG 114）——**说明"换任务"
->   同时也在扩大"哪些路径真的被走到过"的覆盖面**。这对泄题是中性偏好的：
->   任务越不重复，越难靠"同一批任务的历史记忆"拿分。
-> - **仍未做**：知识库那个"唯一没有硬隔离的泄题面"（全局单副本、改动即时生效）
->   一个字没动。
-
-对照业界测评方法论时发现：`pokemon_agent/memory/episode/memory/` 下已经
-提交了大量形如 `battle_choice_cursor_to_run.md` 的记忆文件，文件名本身
-几乎就是任务的解法。如果这些记忆在跑 19 条 `knowledge_*` 短任务时会被检索
-到（检索不分批次、不分任务来源，见第 8 条），那"这条任务的成功率"测的可能
-是"agent 会不会读记忆库里已经写好的答案"，不是"agent 会不会做"——这比批次
-内记忆污染更严重。
-
-**0904 更新**：这一批具名文件本身已经从磁盘和版本库里删掉（"运行产出退出
-版本库"那次清理，`FileEpisodeMemoryStore` 是纯 `glob("*.md")` 读盘、没有
-独立索引，文件不在了就检索不到，这批具体实例的风险已经解除）。**但一般性
-问题没有解决**：往后新 run 蒸馏出的摘要一样会不分批次地被下一批任务检索
-到，只是现在没有"文件名本身就是答案"这么直白的具体案例——本质上是第 8 条
-（跨局摘要不分 run 检索）没解决的必然后果，两条应该按同一个优先级一起看，
-不必再单独核实"这批文件会不会被命中"（已经没有这批文件了）。
-
-### 13. 💬 全项目命名一致性——多处用不同的词描述同一件事
-
-> **0911 现状：结论（这次不改）不变，但这张表的"挂靠点"要重新对一遍。**
-> - **层级本身变了**：`pokemon_agent/interfaces/` 整包删除（0911），
->   "该挂哪个 `Source`/哪个 Port 文件"的判断依据已经从"顶层集中港口注册表"
->   改成"各模块自己的 `interface/` 子包 + `tools/ports.py`"。
-> - **表里那条 `task_id` vs `goal` 依然活在第 11 条**，本次不重复决策。
-> - **有两条 0910 刚落地的改名可作为"新命名长什么样"的参考**：
->   `MemoryIndexPort` → `MemoryStorePort`、`MemoryIndexStore` → `MemoryStore`
->   （`Index` 是 0908 三套存储并列时的限定词，合并后对照物消失、名字留在旧出身里
->   —— 这是"名字该跟着结构走"的一个正面例子）。
-> - 判断不变：没有哪一组当下会读错数据，优先级最高的大概率仍是"选动作"那组
->   （`think_action` / `choose_once` / `decide_action.md` / `Source.DECISION`
->   四个词指同一件事）。
-
-没有统一规范，同一个概念在不同层（graph 节点名 / 方法名 / prompt 文件名 /
-trace `Source` / schema 类名）各起了一个名字，读代码时得靠"这几个词其实是
-一回事"的隐性知识对齐，容易在扩展时选错挂靠点（比如给一个新事件该配哪个
-`Source`）。已发现的几组：
-
-| 概念 | 用到的不同名字 |
-|---|---|
-| "选动作"这一步 | 图节点 `think_action`、`Brain.choose_once`/`choose_with_retry`、prompt 文件 `decide_action.md`、trace `Source.DECISION` —— think / choose / decide 三个动词都在指同一件事 |
-| "看画面拿观测" | 图节点 `look`/`look_after_action`、`World.perceive_once`（`GameToolPort` 接口）、`trace_utils.observe()`/`EventType.OBSERVE` —— look / perceive / observe 三个词 |
-| 物件语义记忆里"格子上的东西" | 存储层 `ObjectMemory`（`OBJECT_MEMORY_WRITE`、`memory/semantic/object_*`）包着领域层的 `LandmarkInWorld` —— 一个叫 object，一个叫 landmark，指的是同一个东西 |
-| 任务标识符 | `task_id`（活跃字段）vs 概念上其实是"目标"（`goal` 字段、`GoalsEdit`）——已经单独在第 11 条讨论过要不要改名，这里不重复决策，只并入这张总表 |
-
-**这次不改**：这四组名字目前都各自"活"在自己的层里，没有哪个当下会读错
-数据（跟第 11 条 `task_id` 的判断一样），批次改名跨 schema/trace/prompt/
-前端 TS 好几层，风险和收益不对称。先记下，等有专门做命名规范梳理的时机，
-或者哪一组名字开始造成真实理解成本（比如新人反复问错）时再动手；到时候
-优先级最高的大概率是"选动作"那组，因为 `Source.DECISION` 这个词已经跟另外
-两个动词脱节，新增 trace 触发点时最容易选错。
-
-### 14. ❓ task 级实时意图识别——只是个想法，还没方案
-
-> **0911 现状：本条一字未动，仍是 ❓。但周边落地了两样东西，"实时"这件事的
-> 地基比当时厚了**（都不是"识别 agent 自己的意图"，别混为一谈）：
-> - **人类侧的实时意图注入已经能用**：episode 内"人类实时插话"
->   （`POST /runs/{id}/note` + `HumanNotePanel`）——边看 watch 边打字，
->   下一次 `think_action` 就读到，且带最高优先级小节。这是"人告诉 agent
->   该干什么"，不是"agent 自己识别在干什么"。
-> - **模型自述已经结构化落 trace**：`Source.PLAN` 的 plan verdict 事件
->   （`done` / `pushed_goals` / `why`）已补上，加上原本就有的
->   `ActionFromBrain.thought`/`rationale`，"事后判断这局在做什么"比当时容易。
-> - 没变的两点：① 跟第 7 条"无效步定义"是不是重复立项**还没想清楚**；
->   ② "识别出跑偏之后干什么"（只记账 vs 反馈进循环）会跟第 5 条 P0 护栏
->   职责重叠，**仍未划界**。
-
-用户想法：给"这一步/这一局"加一层**实时**识别 agent 当前意图（在做什么、
-是不是偏离了目标），而不是只靠事后蒸馏的摘要或人工看 trace 回放去判断。现在
-最接近"意图"的信号是 `ActionFromBrain.thought`/`rationale`（模型自述的推理，
-只进 trace，不参与决策，见 `schemas/domain/action_from_brain.py`）——是**事后
-记录**，没有专门的识别/判定环节，也不会实时反馈进循环本身。
-
-还没定的地方（先立项，不下方案）：
-
-- **"意图"具体指什么**——是跟目标（`goal`/`success_criteria`）的对齐度？
-  跟第 7 条"无效步"定义（这一步有没有朝目标推进）像是同一个问题从另一个
-  角度问，要先想清楚这是不是重复立项。
-- **"实时"到什么粒度**——每一步都判一次（多一次模型调用，成本顾虑同第 9
-  条 `verify_steps`）？还是攒几步判一次？
-- **识别出"意图跑偏"之后干什么**——只记进 trace 供事后分析，还是要反馈进
-  循环本身（比如触发纠偏提示、提前终止）？后者会跟 P0 护栏（第 5 条）的
-  职责有重叠，需要先分清楚谁管什么、别做出两套互相打架的机制。
-
-跟第 5 条、第 7 条都有交叠，具体往哪个方向投入要等测评体系（第 3 条）先
-跑出数字，看清楚"现在哪类错误最值得优先解决"再决定，不是现在就动手设计。
-
-### 15. ✅ 观测台把 think / act / observe 单独展示——四栏已做；但观测台整体少了一块（第 2 条）
-
-> **0911 现状**：
-> - **四栏展示本身还在**（`thinkLine`/`actLine`/`observeLine` + `EventColumn`，
->   2×2 网格 + "其他"兜底栏），断线提示与 `useMemo` 优化也还在。
-> - **但观测台的整体形状变了**：`MetricsPanel` + `useMetrics` 随
->   `evaluation/` 一起退役（第 2 条），所以观测台现在**只有事件流、没有聚合视图**。
->   第 2 条要重做时，落点大概率还是这里。
-> - **一处前端死代码要清理**：`web/src/useRunGoals.ts` 已经没有任何地方 import
->   （目标栈改成纯前端草稿 + 监听 plan verdict 事件之后被摇树排除，
->   `vite build` 模块数 37→36 已证实），文件本身还在磁盘上。
->   属于"看起来还在用"的假信号，清理它顺手归到第 17 条那类随手修。
-
-（用户 0902 提出：前端为 think / act / observe 做单独展示。事件名以 trace 的
-`EventType` 规范名为准——`think` / `act` / `observe`，不另起新词，跟第 13 条
-命名一致性是同一纪律。）
-
-现状：观测台右栏事件流是一列不分类的日志（`web/src/App.tsx` 顶部注释就写着
-"右栏事件流（一列，不分类）"）——每条 trace 事件经 `eventLine()` 统一压成一行
-`#id [type] source {JSON}`，payload 完整平铺（注释写明"不截断，排查时截断会丢掉
-第一手证据"）。一局看下来，"agent 想了什么 / 按了什么键 / 看到了什么"混在同一列
-里，只能逐行从 JSON 里抠；而且 `think` / `act` / `observe` 三种 payload 形状差别
-很大（thought 文本 vs 按键动作 vs 观测状态），压成同一种文本格式本来就不互相衬。
-
-方向（📋 阶段，方案细节没拍板）：把三类核心事件拆开做分区展示——比如三栏各渲染
-一种：`think` 栏显示 thought 文本、`act` 栏显示动作名与参数、`observe` 栏显示观测
-状态。分类目前只发生在 `eventLine()` 这一个渲染函数里，是纯前端改动，不动后端
-接口和 trace 形状。
-
-没定的地方：
-- 展示形态：三栏并排 vs 一条时间线上三种卡片；
-- 其余事件（`memory_read` / `memory_write` / `error` / `cost` / `EPISODE_*`）摆在哪
-  ——归入某一栏，还是保留一行日志列作第四栏兜底；
-- `observe` 要不要配该步画面帧——帧流已有，但 trace 事件和帧是两条独立流，要对齐
-  得靠 step 配对或事件带帧引用，这层成本要先想清楚。
-
-跟第 2 条的关系：第 2 条是"记全了之后怎么**聚合**着看"（token/延迟按 `Source`
-聚合报表 + 降级告警），这条是"单步**明细**的展示形态"——同一观测台的两层，
-互不阻塞；做的时候是纯前端迭代，不新增 `Source`/事件名（不跟第 9 条那两处
-`verify_steps` 的 trace 粒度欠账搅在一起）。
-
-**0902 已完成**：上面"没定的地方"三点按最简单的方向拍了板——四栏并排（2x2
-网格）而不是一条时间线上三种卡片；其余事件（`memory_read`/`error`/`done`/
-`EPISODE_*`/`RUN_*` 等）落一个"其他"兜底栏，不逐类细分；`observe` 暂不配
-该步画面帧，帧流和事件流仍是两条独立通道，对齐成本先不付。`web/src/App.tsx`
-的 `thinkLine`/`actLine`/`observeLine` 三个渲染函数 + `EventColumn` 组件，
-`docs/ROADMAP.md` 状态本条之前一直停在"📋 未开始"没跟着代码更新，这次一并
-修正。
-
-### 16. ↩️ 存档/checkpoint 机制——**已于 2026-09-13 整体删除**（原为 run/episode/step 三级恢复）
-
-> **状态修正（2026-09-13）**：本条描述的存档/恢复机制已**整体删除**——`EpisodeCheckpoint`、
-> `save_checkpoint` 节点的存档实现、`prepare_resume`/`void_timeline`/`resume_run` 恢复链、
-> tool/Port 层的存档方法与 9 个专属信封、memory 归档与 trace 打标能力，全部清掉；
-> `save_checkpoint` 节点保留图上的位置与名字但内部空转。缘由与边界见 `CHANGELOG.md`
-> 2026-09-13 条目。下面正文是**历史留档**，不再代表现状。
-
-**0908 文档对齐**：本条曾长期停在"📋 0906 方案拍板，待实施"，但 0907 会话已
-经把完整方案（v4）落地并接线（详见 `docs/spec/harness/PLAN_checkpoint.md`——
-三级恢复语义、落盘签名三元组、废弃归档、判断点拍板记录，`CHECKPOINT_handoff_2026-09-07.md`
-是同一次工作的架构现状盘点/契约草案/改动触点清单）。**这两份文档才是权威
-来源**，本条不再重复方案细节，只记结论、现状与本次核对发现的问题。
-
-**0908 git 对象丢失事件**：`.git/objects` 松散对象一度整体丢失（`00`-`d7`
-前缀），checkpoint 相关的 4 次逐条提交（`c288b3fa57` 前置改造 /
-`6d154ae3ed` CheckpointTool 实现 / `98ff1e5499` 图接线 / `414760c32f`
-DataCenter+测试）连同其余 61 次提交的对象一并不可找回，git 历史里已看不到
-这些 commit——但**工作区源码文件本身完好**，损坏只发生在 `.git` 内部
-（详见 `docs/spec/GIT_RECOVERY_2026-09-08.md`），代码是真实存在且已实施的，
-不是"计划了但没写"。修复时两分支指针改指向各自最后一个有效祖先，当前
-工作区状态整体提交为一个恢复快照 `6573b1f`。
-
-**已落地范围**（对照 PLAN v4 §7/§9 逐项核对）：run/episode/step 三级恢复
-入口、`save_checkpoint` 图节点（18 节点，episode 图入口）、显式签名三元组
-`(run_id, episode_id, step)`（StepMemory/ObjectMemory 落盘记录、模拟器快照
-配对 json 均已补 `run_id` 字段）、`CheckpointToolPort`/`CheckpointTool`
-（save_step/save_run/load/latest_run/void_after）、废弃时间线归档（截断+搬
-voided 目录，不做静默删除）、`WorldPort.load_state`、`RunDataCenter` 事件流
-槽（`LocalTrace` 内存表迁移，前端恢复单点重建）、`StepMemory` 落盘写穿
-（同构 `EventObjectStore`）。object_fact 事件流本身（`ObjectFactEventBase`/
-`ObjectDialogEvent`/`ObjectWarpEvent`/`ObjectStillEvent` + `EventObjectStore`
-的 `append`/`query`/`query_range`/`query_map`/`truncate`）已经是这套方案的
-地基，跟 `PLAN_checkpoint.md` v3 起的设定完全一致。
-
-**验证（0908 本次核对，非首次实施时的验证）**：
-- `pytest tests/` 全绿（8 例：`test_checkpoint_resume.py` 4 例 + 既有 2 个
-  测试文件），环境为临时搭建的 Python 3.12 venv（`pydantic`/`langgraph`/
-  `rank-bm25`/`agent-permission`，跳过 `fastembed`——本次验证范围不需要它）。
-- `ruff check pokemon_agent` 发现一个**真实 bug 并已修复**：
-  `run_harness.py::resume_run()` 用到 `ResumeEpisode`（`interfaces` 包已导出
-  这个类）但导入块里漏加，是会在恢复路径炸 `NameError` 的死代码，此前没
-  测试覆盖到这一行（`test_checkpoint_resume.py` 覆盖的是 `CheckpointTool`
-  本身与存储层截断语义，不含 `RunHarness.resume_run()` 的调用路径）——已
-  补上 `ResumeEpisode` 导入，`ruff` 与全部测试确认修复后无回归。
-- ruff 其余 53 条是既有格式/类型标注类债务（`E501`/`ANN2xx`/`UP042` 等），
-  跟 checkpoint 本身无关，不在本次范围内处理。
-
-**还没定的**（PLAN v4 §9 判断点已回答大部分，原来的两条现在**只剩一条**）：
-- ✅ **AGENTS.md 已同步（0911 核对确认）**：AGENTS.md 九现在写的已经是
-  "trace 是追加写的事件序列（说的是 trace 自身的写入方式），**这不是 checkpoint
-  的存储形态**；checkpoint 存的是状态快照 + 事件游标（`event_id`/`step` 用于对账），
-  不是靠重放事件序列重建状态"——与 `PLAN_checkpoint.md` §3.2 一致，这条已关闭。
-- 档位 B（LangGraph `SqliteSaver` 步级 checkpointer）在 handoff 文档里标为
-  "选做，只留接口不做实现"——现状用的是自管 `save_checkpoint` 节点方案
-  （handoff §3.1 已拍板 A 方案为必做），档位 B 未做且没有排期信号，暂不
-  视为缺口。
-
-> **0911 与第 27 条的交界（checkpoint 的落盘形态在 0910 变了，本条正文没跟）**：
-> - `TraceEvent` 升到 schema **v4**，新增 `valid: bool`；事件落盘改成
->   `trace_data/<run_id>/events/<run_id>-<event_id>.json`（一条事件一个文件、
->   tmp + `os.replace` 原子写）；`LocalTrace._next_id` 改成扫盘
->   `max(event_id)+1`（废弃分支仍占着 id）。
-> - **`void_after` 的语义变了**：不再搬事件，改成**原地打 `valid=false`** +
->   补一条 `lifecycle/payload.kind=resume`；读端只需多一道 `valid=false` 过滤，
->   不需要学"跳区间"。
-> - **void 收成四步**（trace 打标 → 圈 memory 作废集 → memory 归档
->   `memory/voided-<ts>/<kind>/` → checkpoint 归档），**文件一律不删**。
-> - 真机验证过：`check_restore.py` PASS（自 step 3 恢复、游标 53 后续写 66 条
->   连续、归档 1 个 voided）。
-
-### 17. ✅ 可观测/审计全项目扫描的发现——多为文档滞后，随手修掉；两条明确暂不处理
-
-> **0911 补充一轮核对（同主题，结论直接追加，不改上面的历史记录）**：
-> - ✅ **AGENTS.md 的 trace 事件类型表已同步**：现在是"**7 类**
->   （`model_call`/`error`/`llm_outcome`/`view`/`act`/`memory_io`/`lifecycle`）
->   + 0903 收敛原则"，与 `EventType` 一致。正文里"还写着旧版七类"那段的
->   描述已不适用（当时那七类和现在这七类不是同一套）。
->   **「0915 订正」**：`EventType` 这 7 类**仍是"粗类"这一层、没变**，
->   但 CHANGELOG 100 之后**"账名"那一层换人了**——`kind` 不再来自
->   `EventType`/`TraceKind` 的"派发键"，而是 `TraceKind`（**35 成员**）本身，
->   渲染层的翻译表已删。所以正文/本节凡说"trace 事件类型"的，要分清在说
->   **`type`（7 类粗类，AGENTS.md 第九节）**还是 **`kind`（35 个账名）**。
-> - ✅ **`EventType` 的路径问题已自己解决**：这条当初记的"AGENTS.md 路径写错"
->   在 CHANGELOG 100 那次文档同步里被顺带修好了——现在 AGENTS.md 写的是
->   `schemas/harness/domain/trace_kind.py` 与
->   `schemas/harness/domain/trace_event.py`（与磁盘一致）。**登记项可关闭。**
-> - ⏪ **"权限审计日志（`log/audit.jsonl`）纯写无读——先放着"这条自动消失**：
->   `agent_permission` 0910 已整条移除，这个文件不再产生。不是解决了，是不存在了。
-> - 🆕 **前端死代码**：`web/src/useRunGoals.ts` 已无任何 import
->   （目标栈改纯前端草稿后摇树排除，`vite build` 模块数 37→36 已证实）。
-> - 🆕 **`tests/` 清空待重建**（第 27 条）——这是一条独立的缺口，不只是
->   "若干测试要改签名"。
-> - **仍然开着的两条没变**：~~`schema_version` 字段有写无读~~、`LocalTrace.append()`
->   无锁（隐式依赖"单线程顺序跑 episode"）——改并发模型时要回头看。顺带一条
->   0910 新增的同类风险：`trace_data/` 无 rotation/归档。
->   **「0915 订正」**：① `schema_version` **已被删除**（CHANGELOG 100，
->   连同 `TRACE_SCHEMA_VERSION` 常量、"恒为 5、零读方、两份副本要人工同步"），
->   **这条待办消失**；② 事件文件名从 `events/<run_id>-<event_id>.json` 变成
->   **`events/<uuid>.json`**（`event_id` 也已删），**"文件数爆炸"这条风险不变、
->   路径描述要按上面改**。
->
-> **0915 补（本轮正好做了一次本条主题的复查：全项目扫描"改了字段类型、没改用它的
-> 习惯"这一族，结果 0 处新 bug）**
-> - **扫描范围与结论**（CHANGELOG 115）：查了五种形态——把 dict 习惯用在 Pydantic
->   模型上（`{**m}` / `.get` / `[]` / `in` / 迭代）、`model_copy(update={越界键})`
->   （**注意：它不校验**——普通模型静默丢弃、`extra="allow"` 会永久变动态字段、
->   类型写错不拦）、`extra="allow"` 动态字段当具名用、v1 遗留 API、
->   以及**四个已删的封套名字**（`event_id`/`schema_version`/`frame_png`/顶层 `payload`）。
->   **除刻意保留的 `known_objects` 外零命中。**
-> - **顺手补的守卫**：`tests/test_facts_dual_copy_parity.py` **4 条**
->   ——两份 `Facts`（真身 `world/interface/domain/facts.py` ↔ 快照
->   `step_memory.StepMemory.Observation.Facts`，**刻意的双副本，铁律 2**）
->   字段名+顺序全等、过 `model_dump(mode="json")` 后**渲染逐字符相等**、
->   动态字段不掉、`_render_obs` 只抹 `walk_map`。
->   ⚠ **别用不带 `mode="json"` 的 `model_dump()` 喂快照**：真身 `scene` 是 Enum、
->   快照是裸 `str`，枚举实例 `isinstance(str)` 为真**所以不报错**，
->   但会渲染出 `Scene.FIELD` 而不是 `field`。
-> - **一条明确的暂不处理**：`.github/workflows/ci.yml` **只有 ruff + pytest，
->   没有类型检查器**；实测 mypy 能报出上面那族三种写法（`Unpacked dict entry` /
->   `has no attribute "get"` / `is not indexable`）。**装不装是待讨论项，
->   不是已定案**（CHANGELOG 115 待办①，0915 那轮按用户口径"改 agent md 就够了"
->   没有装）。
-> - **本条新登记的一笔文档债**：`CLAUDE.md` 是 `AGENTS.md` 的**分叉旧镜像**
->   （少 25 行、缺整个"ModelCall 两份归属"段、铁律 2 与三.2 还是 `interfaces/`
->   集中时期的旧版）。**改规范只改 AGENTS.md**；比这两份时必须用
->   `diff --strip-trailing-cr`（裸 `diff` 会因 CRLF/LF 把整文件报成差异）。
->   CHANGELOG 116 又把 `AGENTS.md` 里四处 `ModelCall` 的过期叙述订正了
->   （`with_attempt` / `resp.attempts` → `resp.calls`；两份 `ModelCall` 现在
->   **字段全等、按"谁产出谁消费"分家**，"试了几次" = `len(calls)`）。
-
-0902 应用户要求做了一次全项目扫描（可观测 + 审计两个主题），除了上面已经
-展开处理的几条（审查面板 UI、`eval_report.py` 审计失效率统计、
-`test_step_audit.py` 删除、前端断线提示/性能、第 16 条 LocalTrace 澄清），
-还发现几处纯文档滞后，已顺手修正，以及两条用户明确决定暂不处理的：
-
-- **`docs/spec/harness/SPEC.md` 与 `docs/spec/DATAFLOW.md` 关于
-  `EventType.INSPECT` 互相矛盾，且都跟代码不符**：前者说"这个枚举值留着，
-  `trace/store.py` 里也仍有它的显示分支"，后者说"没有兼容成员……不再保留"，
-  实际代码（`EventType` 枚举、`trace/store.py`）两边都没有 `INSPECT` 这个
-  成员。已修正 `harness/SPEC.md`，对齐"确实删了、不保留"这个事实。
-- **`CLAUDE.md`/`AGENTS.md` 的 trace 事件类型表已过时**：还写着旧版
-  `observe`/`think`/`act`/`memory_read`/`memory_write`/`error`/`cost`
-  七类，实际 `EventType` 早就是 14 个成员（`memory_write` 拆成
-  `STEP_MEMORY_WRITE`/`OBJECT_MEMORY_WRITE`/`EPISODE_MEMORY_WRITE` 三类，
-  新增 `RUN_START`/`RUN_END`/`STALL_CHECK`，`cost` 从来不是独立事件类型，
-  成本信息挂在 `MODEL_CALL.payload` 里）。两份文档内容完全同步（同一段文字
-  被复制维护），已同步修正。`docs/spec/DATAFLOW.md` 的事件总表/`Source` 表
-  同理落后（缺 `VERIFY`/`PLAN`/`RUN_START`/`RUN_END`/`STALL_CHECK`），一并
-  补上缺的行。
-- **权限审计日志（`log/audit.jsonl`，`agent_permission` 库自动写）纯写无读
-  ——明确暂不处理**：用户 0902 拍板"先放着"。已记入"工程基础设施缺口"表，
-  不是遗漏，是主动决定的优先级。
-- **`schema_version` 字段有写无读、`LocalTrace.append()` 无锁**（隐式依赖
-  "单线程顺序跑 episode"这个当前成立但没有断言保护的假设）：扫描时发现，
-  暂未处理，不阻塞任何当前工作，留在这里当一条记录，以后改并发模型时
-  （比如恢复并发判定，或并行跑多个 episode）要记得回头看这两条。
-
-
-### 18. ✅ 检索按质量分加权——已落地（质量分粗筛 + 加权求和）；剩下的只有消融验证
-
-> **0914 现状：下面这套"质量分进排序"的实现整个删掉了（本条结论作废，回到"只写不读"）。**
-> `MemoryTool.query_episode_summaries` 的读口改成纯元数据等值过滤后，粗筛
-> （`EPISODE_CANDIDATE_CAP`）、三档权重（`EPISODE_RELEVANCE_WEIGHT` /
-> `EPISODE_QUALITY_WEIGHT` / `EPISODE_SUCCESS_WEIGHT`）、`_normalize()` 归一化
-> **全不存在了**——`quality_score` 现在又回到"写下来、没人按它排序"的状态
-> （`EpisodeMemory.quality_score` 字段本身还在，trace 里也照旧渲染）。
-> 所以"方向 2：消融验证"这件事**先不用讨论了**：没有排序接口，就没有加权可消融。
-> 要恢复排序，得先在某个**消费方**（不是读口）里重新写一遍——理由与取舍见
-> `CHANGELOG.md` 0914 条目。
-
-> **0911 现状（历史，已被 0914 取代；保留是为了记住当时判断）**：
-> - **质量分真的进了排序**，`pokemon_agent/tools/memory_tool.py` 里三段都在用：
->   ① **粗筛**：场景匹配后若候选超过 `EPISODE_CANDIDATE_CAP = 20`，先按
->   `quality_score` 砍到前 20 再进混合检索（理由写在常量 docstring 里：
->   避免对几十上百条候选做 BM25+向量+reranker，质量分是现成的粗筛信号）；
->   ② **加权**：`EPISODE_RELEVANCE_WEIGHT = 10.0` / `EPISODE_QUALITY_WEIGHT = 3.0`
->   / `EPISODE_SUCCESS_WEIGHT = 1.5`，相关性主导、质量与成败用于在相关性接近时
->   分高下；③ reranker 原始分先 min-max 归一化到 [0,1] 再叠加（`_normalize()`，
->   并列时统一给 1.0 避免除零把权重抹平）。
-> - **所以"没定的地方"里那个"加权公式"已经有答案了**：线性加权求和 **+**
->   阈值式粗筛（两者结合），不是二选一。
-> - **类位置也变了**：`EpisodeMemory` 现在在
->   `pokemon_agent/schemas/memory/datastore/episode_memory.py`
->   （原 `memory/episode/episode_memory.py` 已随 0910 重构搬家）；
->   `quality_score` 仍然只在 `EpisodeMemory` 上，`StepMemory` 没有这个字段——
->   这一条**没变**，要不要给单步情景也打分仍然没讨论过。
-> - **唯一还开着的：消融验证（方向 2）**——"开关质量分加权各跑一遍对比成功率"
->   没有做过，因为要等一个能稳定复现的基线（第 3 条），而第 3 条现在连基建
->   都没有。**两个前置条件里，第 8 条那条已经在 0911 解决了**（跨 run 检索
->   已强制隔离），所以现在的唯一前置就是基线本身。
-
-`episode_memory.py::EpisodeMemory.quality_score`（judge 生成跨局摘要时打分，
-0.0–1.0，附 `quality_rationale`）现在只在摘要写入时产生，`memory/retrieval.py::
-hybrid_retrieve()` 的 docstring 里提前留了话（"这个分数之上再叠加别的排序信号，
-比如质量分、成败，不用重新计算一遍"），但从没真正接上——`MemoryTool.
-query_episode_summaries()` 检索排序目前只看 BM25+向量融合+reranker 分数，
-质量分完全不参与排序，是个只写不读的字段。
-
-跟第 3 条"测评体系"、第 9 条"`verify_steps` 真实数据核对"是同一个方向：现在
-连"质量分能不能提升检索到的记忆有效性"这个假设本身都没有数字支撑。
-
-方向（📋 未拍板）：
-
-1. 把 `quality_score` 接入 `hybrid_retrieve()` 之后的排序（比如 rerank 分数
-   与质量分加权求和，或质量分低于某阈值直接过滤）——这是"回写"这半件事；
-2. 消融验证：同一批任务，开/关质量分加权各跑一遍，对比成功率——这是能拿出来
-   的量化数据，跟第 9 条"人工标定 ground truth"共用一批任务集合，不用重新
-   设计实验。
-
-**没定的地方**：加权公式（线性叠加 vs 阈值过滤 vs 两者结合）、要不要区分
-"跨局摘要"和"单步情景"两类记忆分别调权（现在 `quality_score` 只在
-`EpisodeMemory` 上，`StepMemory` 没有这个字段）。**排在测评体系（第 3 条）
-之后**——先有能稳定复现的批次成功率基线，再看加权前后的 delta 才有意义，
-现在直接跑消融会因为基线本身不稳定而数字不可信。**0904 补充**：同样要
-先看第 8 条（跨局摘要不分 run 检索）——基线本身如果混进了不相关历史 run
-的摘要，"稳定复现"这个前提也立不住，两个前置条件缺一不可。
-
-### 19. 📋 数据导出接口：按质量分导出高质量记忆样本
-
-> **0911 现状：需求不变，但"没定的地方"减少了一条，且实现落点变了。**
-> - **落点**：`FileEpisodeMemoryStore` 已退役（第 27 条），现在的存储形态是
->   仓库根级 `memory/episode_memory/<uuid>.md`（frontmatter 是结构化字段）
->   + `index.json` 倒排索引。所以"产出 `.md + frontmatter`（现有存储格式原样
->   导出，不用转换）"这句**反而更容易做到了**——原样拷贝记录文件即可，
->   顺带可以拷 `index.json` 的子集。
-> - **阈值不再是"没有依据"**：~~`quality_score` 现在真的参与检索排序（第 18 条，
->   粗筛 + 3.0 权重）~~——**0914 起这句不成立**（第 18 条：排序与粗筛全删），
->   所以"阈值怎么定"又回到没有现成参照的状态。
-> - **"高质量 ≠ 已验证"这个提醒现在更该写清楚**：`verify_and_summarize`
->   已经在同一份 prompt 里产出**结构化 `verdicts`**（每条 `reliable`/`why`），
->   所以"摘要写得好不好"（`quality_score`）与"内容可信不可信"（`verdicts`）
->   在数据里已经是**两个并列字段**，导出接口不该把它们揉成一个"高质量"。
-> - 仍没定：导出粒度（单条 vs 整局打包）、导出前要不要额外校验、走端点还是 CLI。
-
-现在 `FileEpisodeMemoryStore` 落盘的跨局摘要记忆已经带 `quality_score`/
-`quality_rationale`（判定时打的分+理由），但只用于本地检索，没有对外的导出
-通道——想要一批"高质量样本"（比如做进一步分析，或作为下游候选数据）得手工
-翻文件。
-
-方向（📋 未拍板）：`api.py` 加一个只读导出端点（或独立 CLI 脚本，两者都能配
-`quality_score >= 阈值` 筛选），产出 `.md + frontmatter`（现有存储格式原样
-导出，不用转换）按分层分级打包。`api.py` 已经是 FastAPI，这条只是新增一个
-端点，不涉及框架选型，可以搭其他服务化改动的顺风车一起做。
-
-**没定的地方**：导出粒度（单条记忆 vs 整局打包）、阈值怎么定（固定值还是按
-分布分位数）、导出前要不要额外加校验——`quality_score` 现在评的是"摘要写得
-好不好"，不是"内容本身可信"（可信性校验是第 9 条 `verify_steps` 在管的事，
-两者现在完全独立），这两者容易被下游误当成同一件事，导出接口的字段命名和
-文档需要把这个区分说清楚，避免"高质量"被误读成"已验证为真"。
-
-### 20. ❓ episode 打分聚类——只是个想法，还没方案
-
-> **0911 现状：仍是 ❓，一字未动。但跟第 18 条的关系现在清楚了，"不能假设是
-> 同一件事"这个警示可以升级成结论：**
-> - **第 18 条已经落地**（质量分接入检索排序，是"用已有的分数做排序"），
->   所以本条剩下的独有部分就是**"聚类"这一半**——即"把一批 episode 按某种
->   维度分组，然后拿来干什么"。
-> - **"打分"那一半也不用新造**：单条质量分（`quality_score`）有，
->   逐条可信性（`verdicts`）也有，按错误类型/步数打分的原始数据在 trace 里
->   （`error` 事件的 `kind`、`STALL_CHECK` 事件、`MODEL_CALL` 的 token/延迟）。
->   所以本条真正待定的是**"聚出来干嘛"**：喂第 3 点的 prompt 自动更新
->   （聚类结果当输入），还是只做数据分析报表。
-> - 优先级信号仍在（0904 用户要求"早点放上日程"），但**方案讨论一次都没进行过**。
-
-0904 用户提出的新想法，跟第 3 点"prompt 自动更新"一起被要求"早点放上日程"，但
-连雏形都没有，跟第 14 条"task 级实时意图识别"是同一个成熟度（❓，只有一句话）。
-
-**跟第 18 条的关系，需要跟用户对齐清楚，不能假设是同一件事**：第 18 条是把
-`EpisodeMemory.quality_score`（judge 生成摘要时打的单条质量分）接入检索排序，
-是"用已有的分数做排序"；这条听起来是"按分数（或别的什么维度）把一批 episode
-分组/聚类"，是"给 episode 打分+聚类"两件事，具体是：
-
-- "打分"打的是什么分？复用 `quality_score`，还是需要一个新的评分维度（比如
-  按 `judge`/`verify_steps` 的结论、按 trace 里的错误类型、按用了几步）？
-- "聚类"聚出来干什么用？是为了发现"这一类失败模式该改哪条 prompt"（那就该跟
-  第 3 点的"自动更新"直接挂钩，聚类结果是自动更新的输入）、还是单纯做数据分析
-  报表（那就该挂第 3 条"测评体系"下面）、还是别的用途？
-
-这些都还没跟用户对齐，本条先占位记下这个想法存在、且已被要求提高优先级，具体
-设计留到下次讨论。
-
-
-### 21. ❓ criteria 太松 + VLM 感知可靠性——两个问题都没方案，但 0911 排查条件比当时好得多
-
-> **0911 现状：诊断结论不变（两个问题可能同时存在、都还没修），但这条的
-> "前提"和"排查手段"都变了，按老描述往下查会得出错的结论。**
->
-> - **前提变了：模型换过两轮。** 当时的观察是在旧模型下做出的；现在
->   **感知走 `qwen3.8-max`**（从 `qwen3-vl-plus` 升上来），**判定链也换过**
->   （`judge` 走 `qwen3.8-max`、`verify`/`plan` 走豆包旗舰，见第 23 条）。
->   所以"VLM 把宝可梦中心里的 NPC 标成大木博士"这个个例**属于旧模型的观察**，
->   新模型下还成不成立**没有重测过**——这条要做的第一件事是复现，不是设计修法。
-> - **判定方的证据来源变了：`judge` 现在带图。** `judge()` 用
->   `frame_sequence(history)` 去重后送图问模型，`ModelCall.payload.n_images`
->   记录带了几张。也就是说 judge 判"scene 是 indoor 且 map_id 变了"时**理论上
->   能看到画面**——"criteria 太松"和"judge 看不到画面所以只能照字面判"这两种
->   解释的权重跟当时不一样了，要重新核对。
-> - **排查手段齐了（这是最大的好消息）**：① ~~截图绑 trace `event_id`、落在
->   `trace_data/<run_id>/screenshot/`~~；② `StepMemory` 里直接存 base64 帧；
->   ③ `n_images` 能查出判定时到底带了几张图；④ ~~`MEMORY_READ`~~ 账能查出检索
->   到了什么知识（第 12 条那次"以为是模型编的、其实是检索到的"教训）。
->   所以"同一帧多次感知看方差"或"人工标注一批帧对照"这两个方案**现在都做得动**。
->   **「0915 订正」**：① 里的 `event_id` 已在 CHANGELOG 100 删除，**画面现在只有
->   一个真源**——`memory/step_memory` 的 `before_frame`/`after_frame`（base64），
->   `trace_data/<run_id>/screenshot/` 那条路随 `frame_png` 一起下线；
->   ④ 的账名改成 **六条 `read_*`**（见第 12 条订正）。
->   手段①的替代是**更强了**：帧随 `StepMemory` 走、`dedup_snapshots()` 能去重，
->   所以"整局画面可离线还原、不用重跑"。
-> - **仍未动**：`experiment/tasks.py::pokemon_center_enter` 的 `success_criteria`
->   一个字没改（判据依旧只要求"换了张图"）。**暂不动手**，等跟用户对齐排查方式
->   ——但要注意这条现在不只是"criteria 收紧到什么程度"的问题，还得先回答
->   "新模型下 VLM 到底还错不错"。
->
-> **0915 补（"criteria 太松"这一半被结构性收窄了；VLM 那一半仍未复现）**
-> - **判据侧的范畴错误已被堵死**（CHANGELOG 108）：`criteria` 里**撤掉了停止子句**，
->   现在**不许出现步数/预算条件**（0915 13:01 用户口径：步数只作"参考信息"，
->   可进题头/局索引行/汇报行，**不进 `goal`/`criteria`、不当判定条件**）。
->   后果：**"把预算用尽伪装成达成"这条路径在结构上不存在了**——这一半不再是
->   "criteria 松不松"的问题，是"证据强度够不够"的问题。
->   **注意**：判据文本变了 ⇒ **与 0915 之前各次 realcheck 的成功率不可直接比**
->   （判据是实验输入的一部分）。
-> - **一个已确认的坏样本**：`realcheck-0915-123410` 那条
->   `success=true / reason='success'` 是**在环插话掰出来的**（目标实际没达成，
->   停在 (14,14)、差最后一格 `up`）。**别当基线用。**
-> - **对照的正样本**：`realcheck-0915-131133` 无人在环、judge 在 step 6 自己判
->   `done=true`，`why` 逐字段对上（map12、y=10、x=17），轨迹可复算。
->   **"同一字段两种来源现在能分开"**——这正是本条判断"criteria 松"时最缺的东西。
-> - **VLM 那一半的判定成本第一次有数字**：`judge` 4 张图 / `verify` 30 张图、
->   **≈190 tok/帧**（CHANGELOG 110）。"同一帧多次感知看方差"这个方案的**成本
->   现在可以估**（一次感知 ≈ 一张图 + 399 行静态 prompt）。
-> - **一条新证据（任务换新会踩出新洞）**：CHANGELOG 114 那局换成"跟野外 NPC
->   说话"之后，`merge_retrieval` 里埋了很久的崩溃当场炸出来——**说明
->   "每局换一件没做过的事"（第 28 条）本身也是本条要的排查手段**：
->   同一类任务反复跑，永远不会碰到只在该场景下才走到的代码。
-> - **仍未动**：`pokemon_center_enter` 的 `success_criteria` 一个字没改；
->   "新模型下 VLM 还错不错"**没有复现过**。
-
-见"已完成"表里对应的诊断行。同一次 run 里连续暴露两条：**a)** `tasks.py` 里
-`pokemon_center_enter` 的 `success_criteria`（"scene 是 indoor，且 map_id 和历史里
-门外那几步不同"）只要求"换了张图"，任何建筑入口都满足，不是宝可梦中心的专属证据；
-**b)** 用户指出同一局里 VLM 把某个房间的 NPC/对话来源误标成"大木博士"，而那个房间
-"根本就是宝可梦中心"——如果属实，说明 VLM 对室内场景/NPC 身份的识别本身不可靠，
-不只是 criteria 松就能完全解释的。两者可能同时成立、也可能只有一个是真正原因，
-现在还分不清楚——需要先回放同一段 trace 的原始画面（帧已经落盘，见"trace 落盘感知帧"
-那条）核对 VLM 当时的 `overview`/对话来源判断到底对不对，再决定：criteria 要收紧到
-什么程度、VLM 感知这条要不要单独立一个可靠性排查任务（比如同一帧多次感知看方差，
-或者引入更强的视觉模型对照一批 trace 帧人工标注）。**暂不动手**，等下一步跟用户对齐
-排查方式。
-
-| ✅ 前端重新布局：review + human_note 挪到目标栈旁，review 无待审查时置灰而非隐藏 | 用户要求两点：**a)** `human_note` 和 review 面板放在目标栈现在的位置；**b)** review 的输入（四个决策按钮 + push 的目标表单）只在真有待审查请求时可操作，其余时候按钮置灰而不是整块消失，`human_note` 不受这条门控——任何时候都能发。**改动**：`App.tsx` 把原来浮在页面顶部、`review !== null` 才渲染的 `ReviewPanel` 挪进左栏 `目标栈` 区块内（追加目标表单下方）；`ReviewPanel` 签名从 `review: PendingReview` 改成 `review: PendingReview | null`，内部按 `disabled = review === null || runId === null` 给四个按钮和展开的 push 表单加 `disabled`（`review === null` 时标题也从"待审查"变成"无待审查"，整块面板降低透明度），不再是"没有就不渲染"。新增 `HumanNotePanel` 组件（文本框 + 发送按钮），紧挨着 `ReviewPanel` 下面，只受 `runId === null` 门控，不看 review 状态——一次性语义（发送后清空输入框，不展示"上次插了什么"，避免误以为还在持续生效）。**数据层**：`types.ts` 新增 `HumanNoteReq`/`HumanNoteResp`；`api.ts` 新增 `submitHumanNote()`（`POST /runs/{id}/note`）。**验证**：`node_modules/.bin/tsc --noEmit` 全干净（这台 device VM 有 node 环境，比后端那几轮的 `ast.parse` 验证更实——是真的类型检查，不只是语法检查）；`vite build` 因为这台 device VM 的 `node_modules`（`@rollup/rollup-linux-x64-gnu` 原生依赖缺失，npm 已知的可选依赖 bug）跑不起来，但这是环境问题，跟本次改动无关，`tsc` 通过已经覆盖了类型层面的正确性。**没做**：没有真实启动前端跑一遍看视觉效果（这台 device VM 装不出可运行的 vite dev server）。|
-
-| ✅ 目标栈编辑也跟着 review 状态门控，跟 review 合并进同一个框；顺带修好这台 device VM 的 `vite build` | 用户在上一条前端改版基础上追加两点：**a)** 目标栈的编辑能力（追加目标表单、非栈顶目标的行内改/删）也改成只有真有待审查请求时才能用；**b)** 这部分跟"人工审查"放进同一个带边框的框里，不是两个各自独立的框。**改动**：`App.tsx` 新增派生量 `reviewActive = review !== null && runId !== null`；"追加目标"表单从原来紧跟目标栈列表的位置挪进一个新的 `<section style={styles.reviewPanel}>`（标题按 `reviewActive` 显示"人工审查"/"无待审查"，跟原 `ReviewPanel` 组件用的是同一个视觉语言但只在这一层出现一次），表单三个输入框和提交按钮都加 `disabled={!reviewActive}`；`ReviewPanel` 组件本身**去掉了自带的边框和标题**（改版前它自己也套一层 `styles.reviewPanel` + 标题，跟外层新框嵌在一起会变成"框中框、标题写两遍"），现在只吐内容，边框/标题交给调用方；`GoalRow` 新增 `disabled` prop，栈顶只读行不受影响，非栈顶的行内编辑表单（目标/判据/步数三个输入框 + 保存/删除两个按钮）现在也一起禁用。**顺带修的环境问题**：验证这批改动时被用户指出"没有缺失啊，发我指令"——上一条记录里"`vite build` 因为原生依赖缺失跑不了，是环境问题"这个结论是错的，实际是这台 Linux device VM 的 `node_modules/@rollup/` 只装了 Windows 平台的二进制（`rollup-win32-x64-gnu`/`msvc`），因为 `npm install` 本来是在用户的 Windows 机器上跑的——`npm install @rollup/rollup-linux-x64-gnu --no-save` 补装对应平台包（`--no-save` 不改 `package.json`/`package-lock.json`，`git status` 确认 Windows 那边的锁文件没受影响），`vite build` 之后就能跑通。**验证**：`tsc --noEmit` 全干净；`vite build`（这次是真的跑通，不是"环境限制跳过"）成功产出 `dist/`，为避免撞上一次构建残留的 `dist/` 目录权限问题，改用 `--outDir /tmp/dist-check` 验证，构建日志确认 37 个模块正常转换、产物大小合理。**没做**：没有真实启动前端肉眼看一遍布局（这台 device VM 起不了可交互的 vite dev server 供人眼观察，只能验证类型正确 + 构建成功）；构建残留的 `web/dist/`、`web/vite.config.ts.timestamp-*.mjs` 两个文件这台 device VM 默认无删除权限，留给用户自己清理或后续申请权限处理。|
-
-### 22. 💬 token 预算/上限机制——账本更全了，预算仍然没有；0911 还多了"看不见"这一层
-
-> **0911 现状：结论不变（只有会计没有风控），但两头都有变化。**
-> - **账本又加了一列**：`MODEL_CALL.payload` 现在除 `input_tokens`/
->   `output_tokens` 外还带 `cached_tokens`（六个调用点全补，取不到记 `"0"`）
->   ——缓存命中那部分按 20% 计价，所以**"花了多少钱"比按原始 token 算更准了**，
->   预算阈值将来最好按折算后的口径定。
-> - **账单结构变了**：`plan()` 在两个开关都关时**真跳过模型调用**（零 token）；
->   而 `judge`/`verify` 改成**带图多模态**后单次 input token 明显变大
->   （实测图数 1→2 约涨 1800 token）。也就是说预算的大头从"多链路摊薄"
->   变成"决策 + 带图的判定链"。
-> - **多缺了一层**："在哪拦"之前还缺"怎么看见"——第 2 条的按链路聚合报表
->   随 `evaluation/` 一起退役了。当时是"账本和报表都在，缺预算"，
->   现在是"**账本更全，报表和预算都不在**"。
-> - **a/b 两个落点候选仍未拍板**（harness 每步检查 vs experiment 跑批后归因），
->   阈值怎么定也仍无基线（第 3 条）。
-> - 先例仍然成立：2026-08-31 那次 77 秒 input 膨胀，事后能从账单看出、当时没人拦。
->
-> **0915 补（"看不见"那一层部分消掉了：图的单价有了；**预算仍然没有**）**
-> - **带图链路的成本第一次被定价**（CHANGELOG 110）：`describe()` 的
->   `floor = self._floor * len(images)` 是**按帧乘**的，实测 **≈185~198 tok/帧、
->   4 张到 30 张不变**（`n 条 memory = n+1 张图`）。所以：
->   `judge` ≈ 4 帧 ≈ 780 tok 的图费；**`verify`/`summarize` 一局 30 帧 ≈ 5700 tok**
->   ——这是"全量截图"的真实代价，**要定阈值按它算**。
-> - **一局的总账第一次能拆**：279s / 30 步那局里，**一次掉线的决策独占 68% 的墙钟**；
->   token 侧的成功调用 ~40s。**"预算被谁烧掉"现在指得出来**（decision + 带图的判定链，
->   与正文的猜测一致，但这是实测）。
-> - **账的口径变准了**（CHANGELOG 104）：provider 重试删除后**一条账 = 一次 HTTP**，
->   所以按 `source` 求和**可以直接当预算基数用**（此前会虚增）；4xx 成类
->   `ProviderRejected`、立即耗尽不烧预算——**"配置错"不会伪装成"预算被正常花掉"**。
-> - **`cached_tokens` 的记账口径有一条要注意**：两家供应商的隐式缓存**默认开、不可关、
->   不保证命中**；而我们现在的多模态请求顺序是"图片在前、静态文字在后"，
->   对"图每次都变、静态文字每次都一样"的场景**恰恰不利于命中**（前缀被易变内容占住）。
->   **改顺序是一个待验证的优化方向、本轮只记账没动**——这条直接影响"折算后的钱"。
-> - **仍然没有的**：① 报表（第 2 条，没有脚本、没有端点、没有面板）；
->   ② 任何拦（a/b 两个落点候选仍未拍板）；③ 阈值（没有基线）。
->   **新增一条前置**：账的 `ts` 是"落账时刻"不是调用时刻（见第 2 条那条警示），
->   **要按时间做预算归因之前必须先修它**。
-
-现状：token 用量已经**逐调用**落盘——`MODEL_CALL` 事件的 payload 带了
-`input_tokens` / `output_tokens` / `cached_tokens`（外加延迟、尝试次数、`raw`、
-`prompt`），失败的调用也记账（`schemas/domain/model_call.py` 的"谁控制循环谁记账"），
-第 2 条"按链路聚合"也做完了。也就是说**账本和报表都在，缺的是预算**：没有任何
-机制在用量超阈值时干预。直接先例是 2026-08-31 那次 77 秒 input 膨胀
-（`docs/experiences/2026-08-31-audit-77s-input-bloat.md`）——账单事后能看出膨胀，
-但当时没有任何东西拦它，等于只有会计没有风控。
-
-方向（💬 两个落点候选，没拍板）：
-
-- **a) harness 每步检查（倾向）**：累计本 run/本局的 token 消耗，超阈值时走
-  已有的 review 槽位问人（`RunDataCenter` 的传输层现成），或配置成自动降级/停。
-  优点是实时拦截，缺点是控制流里多一块预算判断逻辑。
-- **b) experiment 层跑批后归因**：只在局/run 结束时算账报警，零运行时侵入，
-  但单局烧穿时拦不住，只能事后止损。
-
-**没定的地方**：a 还是 b（或两者都要）；阈值怎么定（固定值还是按任务基线 /
-历史分位数）；超限的默认动作（停 / 降级 / 只告警）。`MODEL_CALL` 的 payload
-里 step、episode_id、source 都齐，聚合口径不是问题，纯粹是"在哪拦、拦了干什么"
-两个决策没做。
-
-### 23. 📋 模型分级——分档已经在跑（且现在跨两个供应商），但原则没成文、分配没验证过
-
-> **0911 现状：正文那段"现状"已经不准了——分档比当时更细，而且是跨供应商的。**
-> 以 `pokemon_agent/build.py::build_real()` 的实际参数为准（0911 核对）：
->
-> | 槽位（`Brain` 构造参数） | 型号 | 供应商 |
-> |---|---|---|
-> | `decide_llm` | `text_model = "qwen-plus"` | DashScope（`QwenProvider`） |
-> | `judge_llm` | `judge_model = "qwen3.8-max"` | DashScope（`QwenProvider`） |
-> | `verify_llm` | `verify_model = "doubao-seed-2-1-pro-260628"` | 火山方舟（`ArkProvider`） |
-> | `plan_llm` | `plan_model = "doubao-seed-2-1-pro-260628"` | 火山方舟（`ArkProvider`） |
-> | 视觉（`vision`） | `vision_model = "qwen3.8-max"` | DashScope（`QwenProvider`） |
->
-> - **`Brain` 现在是四个独立 LLM 槽位**（正文说的"两个槽位"是当时值）：
->   `decide_llm`/`judge_llm`/`verify_llm`/`plan_llm`，`verify_llm` 缺省回退
->   `judge_llm`，`plan_llm` 回退链落 `judge_model`。
-> - **"决策便宜、判定贵"这个原判断现在要改口径**：`judge` 用的是
->   `qwen3.8-max`（多模态旗舰，**不算便宜档**），真正走"便宜档"的只有
->   `decide_llm`（`qwen-plus`）；`verify`/`plan` 走的是**另一家的旗舰**
->   （豆包 pro）。所以真正成文的规律只有一句"决策最便宜，其余都上旗舰"。
-> - **注意回退链有意收窄过**：`verify_model` 的回退从三级
->   `verify_model or judge_model or text_model` 收成两级，**必须这么改**——
->   `text_model`/`judge_model` 是 Qwen 型号名，传给 `ArkProvider` 会在火山方舟
->   接入点直接 404，不是优雅降级。这条约束**没有任何文档记录**，属于本次
->   顺带捞出来的隐性规则。
-> - **两个供应商意味着两把密钥**：`DASHSCOPE_API_KEY` 与 `ARK_API_KEY` 都得设，
->   缺任一个会在装配阶段直接抛（`RuntimeError`）。`docs/spec/providers/SPEC.md`
->   里只写了前者——**文档缺口，本次登记不动项目文件**。
-> - **缺的仍是那两条**（没变）：① 成文——分级原则写进 AGENTS.md 还是装配注释；
->   ② 验证——"决策链升档/判定链降档"的对照实验，仍等当前分配的基线。
-
-现状：模型分级**已经在实践里发生**——`build.py` 装配时决策走便宜档
-（`text_model = "qwen-plus"`），判定/校验/run 级规划走贵档
-（`judge_model` / `verify_model` / `plan_model` 默认豆包 pro），视觉单独一路
-（`vision_model = "qwen3.8-max"`）。`Brain` 的 `decide_llm` / `judge_llm`
-两个独立槽位就是为这个设计的。**缺的不是机制，是两条**：
-
-- **成文**：AGENTS.md（或 `build.py` 装配注释）里没有"贵模型只放必要步骤"的
-  分级原则——现在这个分配（决策便宜、判定贵）是拍脑袋还是验证过，代码里看不出来，
-  下次有人动 `build.py` 也没有依据可循。
-- **验证**：当前分配是不是最优没测过。决策链（ReAct 循环里每次都调、量最大）
-  用便宜档是省钱的正确方向，但降档对成功率的影响没有对照数据；反过来判定链
-  用 pro 档的收益也没量化。
-
-**没定的地方**：分级原则写进 AGENTS.md 还是只写装配注释；要不要补一组
-"决策链升档/判定链降档"的对照实验——这条跟第 21 条（VLM 感知可靠性）耦合：
-先有当前模型的正确率基线，降档实验才有可比的对照组。
-
-### 24. 🚧 memory 检索接口重做——0910 分层定案后**收窄**：tool 层不收敛（保留六个专用方法），成果只落在 memory 层
-
-> **0911 现状（重要：本条正文写的"目标"已经被 0910 的评审推翻了，别再照它施工）**
->
-> **权威来源已换**：`docs/spec/memory/PLAN_memory_query_convergence.md`（已到七稿）。
-> 本条正文以下部分只能当"0908 的原始意图"读。
->
-> **0910 用户拍板的分层定案**（PLAN §8.1）：
-> 1. **tool 层不收敛**——`MemoryToolPort` **保留现有六个专用读方法**，
->    **不**改成 `filter`/`search`。→ 本条说"六个专用方法要收敛成两个通用方法"
->    的目标**正式放弃**；正文里的"影响面"那段（专用方法下沉到 tool 层）
->    整个作废。理由：`MemoryToolPort` 本来就是宝可梦适配器，"按 run 隔离"
->    （第 8 条）这类**领域判断**就该住在这里，不该往 memory 推。
-> 2. **memory 层做通用能力**：元数据检索 + 文本相似检索 + 存储
->    ——由 `MemoryStorePort`（`memory/ports.py`）声明。
-> 3. **tool → memory 那一跳走裸字段、不造信封**（**已是现状，无需改动**）；
->    信封只存在于 harness ↔ tool 这一跳。
->
-> **实际落地情况**：
-> - ✅ **"存储形状"那半**：第 27 条已落地（uuid 记录名 + 每 kind 倒排索引
->   `index.json` + 记录内 metadata 字段全对等）。
-> - ✅ **"memory 层通用检索"已落地**：`MemoryStorePort` 现为 **9 个方法**——
->   `put` / `get` / `get_many` / `filter` / `search` / `rank` / `archive_many` /
->   `count` / `refresh_changed`（0911 逐个核对）。契约从 11 个降到 9 个：
->   `forget_many`、`delete_many`、`discard_episode_steps` 三个都已撤除，
->   理由是"生产路径从不需要真删，'让记录消失'只剩'移动归档'一个语义"。
-> - ✅ **接口归位 + import 卫生已实施**：契约从 `interfaces/` 搬进
->   `memory/ports.py`（契约随包走，拷 `memory/` 即得契约+实现+算法）；
->   `import pokemon_agent.memory` 不再传递加载 `schemas.*`（实测 103 → 0）。
->   **改名同时定案**：`MemoryIndexPort` → **`MemoryStorePort`**、
->   `MemoryIndexStore` → **`MemoryStore`**、模块 `memory/index/index_store.py` →
->   **`memory/store.py`**。
->
-> **剩下的三条尾巴（都还没做）**：
-> 1. **`get_many()` 返回裸四元组** `[(uuid, metadata, payload, text)]`，
->    没升级成 `MemoryRecord`——**这条直接顶着 `AGENTS.md` 铁律 4
->    "跨层传递的数据一律是 Pydantic 模型、不用裸 dict"**。用户未拍板。
-> 2. **`refresh_changed()` 只刷向量、不重建 metadata 倒排表**——评审时查出来的
->    **真缺陷**，倾向单独开一条（本次没修）。
-> 3. **`AGENTS.md` 三·2「一个接口方法数量超过 6 个就该拆」的例外**：
->    `MemoryStorePort` 现 9 个方法，与那条规则直接冲突；加例外（"只有跨层边界
->    才强制"）还是认定 memory 不适用，**挂起待议——改规范要先讨论**。
->
-> **真机验证**：`check_memory_roundtrip` 七条路径 PASS（含"归档后删 `index.json`
-> 强制重建、被归档的记录不复活"）。
->
-> **0915 补（本条的目标仍然没动，但"读写两侧的形状"又收了一轮，并踩出一条
-> 折入路径的崩溃）**
-> - **写侧形状定型**（CHANGELOG 93/94/96～99，0914 下午）：四本写账统一成
->   `{kind, ref, content}` → 再改成 `{uuid, kind, source, meta, content}`，
->   `uuid` 由**落盘那一层**从文件名盖；`filename` 字段全退（连模型字段一起删）、
->   `markdown` → `text`、`chapter_only` 连字段删除、`plan_step_start` 与
->   "按决策合并"整套拆掉。**这是第 27 条那条"一条记录一个 uuid 文件"在写口上的
->   对称收尾**，不是本条（读口）的进展。
-> - **读口这一侧本条没进展**：`query_episode_summaries` 仍是 0914 那次收敛后的
->   `conditions` 纯等值过滤（见下面的 0914 补），**step ×2 / object ×2 四个专用
->   方法原样保留**，`MemoryStorePort` 那三条尾巴（`get_many` 裸四元组 /
->   `refresh_changed` 只刷向量不重建倒排 / AGENTS.md 方法数例外）**一条没动**。
-> - **一条真机踩出来的崩溃，落点就在"检索结果折回观测"这一步**（CHANGELOG 114）：
->   `merge_retrieval`（**全项目唯一折 `object_semantic_memory` 的地方**）
->   写的 `{**obs.facts, "known_objects": …}` 在 `facts` 从 `dict` 改成 Pydantic
->   模型之后一直是雷——`143903` 那局 object 语义记忆**第一次非空**，
->   `TypeError: 'Facts' object is not a mapping` → `run_error`，整局断掉。
->   改成 `obs.facts.model_copy(update={"known_objects": …})`，3 条测试钉住。
->   **这条恰好印证了本条的判断**：读口的返回值最终要"折进一个结构化的观测"，
->   **`get_many` 返回裸四元组那条尾巴（尾巴 1）与它是同一类问题的两面**。
-> - **真机未验**：这条路径要等"下一局目标涉及可交互对象"才第一次真的跑通。
-
-**现状**：`MemoryToolPort` 上的读方法是按各自的消费方专门定制的，形状互不相同——
-`query_episode_steps(episode_id)` / `query_recent_steps(episode_id, limit)` 按局查，
-`query_object_events(map_id, before_step)` / `query_object_events_at(place)` 按图/按格
-查（且刻意不按 `episode_id` 过滤，是跨局的“这张图的共有知识”，服务
-`decide`/`think_action`），`query_episode_summaries(scene, query, limit, run_id)` 按场景
-做语义检索、单独收了一个 `run_id` 参数。每加一种新的检索维度就要新开一个方法，
-接口没法直接挪给别的项目用。
-
-> **0914 补（本条的第一个落点）**：`query_episode_summaries` 已经收敛成
-> `conditions: dict[str, str]` 的**纯等值过滤**——`scene`/`query`/`limit`/`run_id`
-> 四个参数全删，方法名没改（还是"取跨局摘要"这个语义，不是通用 filter 的别名）。
-> 剩下三个专用方法（step ×2 / object ×2）**本次没动**，本条的目标（全部收敛成
-> filter + search）**仍未完成**。见 `CHANGELOG.md` 0914 条目。
-
-**目标（0908 会话拍板）**：memory 只对外提供两种能力——元数据过滤检索、语义
-相似度检索——不再为每种检索维度各开一个专用方法。
-
-- **记录标识**：每条记录写入时由 memory 生成一个内部 uuid，不带语义，调用方
-  不能也不需要从 `project`/`run_id`/`episode_id`/`step` 反推出它。
-- **元数据过滤检索（倒排索引）**：memory 为每个 (字段, 值) 组合维护一份反向表
-  （值本身怎么序列化由调用方决定，memory 不理解字段含义）：`(字段,值) → 记录
-  uuid 集合`。查询时传一个“字段→值”的过滤条件字典，各字段各查各的候选集合、
-  取交集。**所有字段地位完全对等**——`project`/`run_id`/`episode_id`/`step`/
-  `map`/`scene`/`kind`……都是同一种字段，没有谁是“主键”、没有谁被结构性标记
-  为必选，查询可以任意组合、任意增减字段，不需要为不同字段组合预建索引。
-- **语义相似度检索**：向量检索，跟过滤检索是并列、独立的另一条路径，取代现在
-  `query_episode_summaries` 这类专用实现。
-- **过滤检索只支持等值/成员匹配，不支持大小比较**——这是索引支持的**操作类型**
-  的限制，不是字段身份的限制：`step` 能像别的字段一样做等值查询，在过滤检索
-  里跟 `map`/`scene` 完全对等；出不去的是“大不大于”这种区间比较，不管作用在
-  哪个字段上都一样（不止 `step`）。`step` 的区间查询（“最近 N 步”、`before_step`）
-  由 tool 层自己先用其余字段（比如 `episode_id`）把候选集筛到足够小，再对候选
-  集里的数值字段做一次普通比较——这是 tool 层的领域知识（“`step` 只有同一局
-  内才能比大小”），不是 memory 该内置的规则；tool 层漏传该带的过滤字段，是
-  调用方把查询写错了，跟别的查询漏加一个条件是同一类错误，不该也不能靠
-  memory 内部强制某个字段必选来兜底。
-- **写入侧对称**：harness 把它知道的全部上下文（`project`/`run_id`/`episode_id`/
-  `step`，以及 `map`/`scene`/`kind` 这类游戏语义字段）交给 tool 层；tool 层负责
-  组装成写入时要带的字段集合、或者查询时要用的过滤条件字典，memory 只机械执行，
-  不做任何折叠、派生或语义判定（沿用 `AGENTS.md` 第四节的分层原则）。
-
-**影响面**：`MemoryToolPort` 现有的 `query_episode_steps`/`query_recent_steps`/
-`query_object_events`/`query_object_events_at`/`query_episode_summaries` 这批专用
-方法要收敛成“过滤检索 + 语义检索”两个通用方法，原来每个方法各自的查询逻辑
-（按局、按图、按窗口……）下沉到 tool 层用通用方法自己拼过滤条件字典实现；
-`EventObjectStore`/`KnowledgeStore` 等现有存储实现要重新落在这套统一索引结构上。
-
-**没定的地方**：索引数据结构的具体落地（内存字典 / 落盘 B-tree 等）、现有
-JSONL 落盘格式怎么迁移到这套“uuid + 元数据字典 + payload”的记录形状、这次
-要不要顺带把 memory 拆成独立可复用的包（服务“以后别的项目也用”这个目标）
-还是先在本仓库内把接口收敛掉——这几点留到实施前再定，这一条先只定接口设计
-本身。
-
-**0910 补充（0911 已结案，留作过程记录）**：这一条拆成的两半——**存储形状那半
-已落地**（第 27 条）；**接口形状这半 0910 用户拍板"先出设计稿评审、通过后再实施"**，
-设计稿在 `docs/spec/memory/PLAN_memory_query_convergence.md`，把原文
-"查询逻辑下沉到 tool 层"那句的歧义摊开成 A/B 两个方案、并列出待拍板点。
-**评审的结果见本条开头的 0911 现状：A/B 两案都作废，tool 层不收敛**，
-定案的是"分层"（memory 通用 / tool 专用 / 裸字段无信封），落地物是接口归位 +
-`MemoryStorePort` 改名，剩下三条尾巴（`get_many` 裸元组、`refresh_changed`
-缺陷、AGENTS.md 方法数例外）都还开着。
-
-## 后续阶段（P1 起，依赖 P0 完成）
-
-| 阶段 | 内容 | 依赖 | 状态 |
-|---|---|---|---|
-| P2 可审计 | ⏪ 审计器失效率统计——原实现在 `eval_report.py`（见 `evaluation/SPEC.md` 10.4a），已随 `evaluation/` 删除退役（第 27 条）；judge/verify 人工标定样本仍未做 | 第 2 条可观测 | 📋 **退回"未开始"**（0911：原实现已删，不是"进行中"）。**0915 补**：有了一个**窄替身**——真机核对 harness 的 `node_io` 逐节点核输入输出形状与内容（第 28 条），但**只覆盖单局、不产跨批次报表**，"退回未开始"这个判定不变 |
-| P4 文档体系 | 目录建好、每篇新问题有经验文档、索引持续更新 | 无 | ✅ 运转中 |
-
-（原 P1 可观测已提升为路线图第 2 条，不在这张表里重复列出。）
-
-**0911 附注**：这张表的"依赖"列现在**指不到任何能开工的东西**——P2 的依赖
-（第 2 条）退回了空缺，P2 自己的原实现也已经被删。它和第 3 条（测评体系）
-描述的是同一件事，建议以后合并成一条看。
-
-**0915 附注**：这个判断没变，但**"合并之前先要有一个'批次'概念"**这件事被
-第 28 条说清楚了——现在能跑一局、能自动判一局，**跑不了一批、也没人把多局攒起来**。
-所以 P2 与第 3 条该合并成的形态，很可能是"单局核对（已有）→ 批次执行 → 汇总报表"
-这一条链，而不是一张新报表。
-
-## 工程基础设施缺口（0911 逐行核对，改动的行都标了原因）
-
-| 缺口 | 影响 | 优先级 |
+| 项目 | 内容 | 状态 |
 |---|---|---|
-| ~~无依赖锁定（无 lock file）~~ → **已有 `uv.lock`**（0911 核对） | 依赖漂移风险缓解；待确认 CI/跑批是否真按 lock 安装 | **已闭合** |
-| ~~prompt sha 没接进 trace（第 25⑥a）~~ | **0913 用户拍板取消**：不用 sha。`PromptTemplate.sha` 字段与"sha 进 trace"的 docstring 承诺一并删除——半成品比空头承诺诚实。归因需求改由"改 prompt 看 git diff"承担 | 已关闭 |
-| CI 到不了真实集成 | ROM 不进 git，CI 只能跑 mock 路径；**且 `tests/` 0910 已清空，CI 的 test 步骤现在是空跑** | 中（原"低"——空跑比跑 mock 更糟） |
-| **跑批入口不存在**（原"批次实验严格串行"） | 0910 删掉了 `manifest.py`/`run_all_tasks.py`/`run_episode.py`/`run_experiment.py`，`experiment/` 现在只有 `tasks.py` + 19 个钉死存档 + `real_check/`。**"一批要跑数小时"这个问题已经没有载体——连"跑一批"的入口都没有**。**0915 补**：`real_check/check_harness` **一次只跑一局**（可 `--goal/--criteria/--steps` 注入任务、可自己判成/判不成），**它是"能跑一局"的入口，不是"跑一批"的入口**——所以这条缺口的性质从"没有入口"精确成"**有单局入口、没有批次入口、也没有汇总层**"（第 2、3、28 条） | **高**（原"中，等 P0 做完再考虑"；性质从"慢"变成"没有"，第 3 条要重建的就是它） |
-| 没有跨批次回归对比 | 原 `eval_report.py` 只产出单批次报表，该工具已随 `evaluation/` 退役（第 27 条）；缺口本身依旧 | 低 |
-| `trace_data/` 无 rotation/归档 | 0910 改成**一条事件一个文件** + `screenshot/` 目录，**文件数增长比原来更快**，磁盘占用不可控。**0915 订正两处**：① `screenshot/` 目录随 `frame_png` 一并下线（CHANGELOG 100，画面真源改成 `memory/step_memory` 的帧字段，**但那是 base64 存在 json 里，单文件更大了**，总盘占用不一定变小）；② 事件路径改成 **`trace_data/<run_id>/events/<uuid>.json`**（`event_id` 已删） | 中（理由比原记载更硬：从"单目录读取变慢"升级为"文件数爆炸"；**0915 起还得算上"base64 帧进 json"这一层**） |
-| ~~`log/audit.jsonl` 纯写无读~~ ⏪ | `agent_permission` 0910 整条移除（第 27 条），这个文件不再产生——不是解决了，是不存在了 | 已消失 |
-| **规范文件有两份、其中一份是分叉旧镜像**（0915 新登记） | `CLAUDE.md` 相对 `AGENTS.md` 少 25 行、缺整个"`ModelCall` 两份归属"段、铁律 2 与三.2 还是 `interfaces/` 集中时期的旧版。**两条并行的"权威"必然继续分叉**，而且 0915 的 116 号改动只刷了 `AGENTS.md` | 中（口径已是"只改 `AGENTS.md`"，但没有任何机制阻止有人去改 `CLAUDE.md`；比对时还得记得 `diff --strip-trailing-cr`） |
-| **没有类型检查器**（0915 新登记） | `.github/workflows/ci.yml` 只有 ruff + pytest。实测 mypy 能报出"改了字段类型、没改用它的习惯"那一族三种写法（`Unpacked dict entry` / `has no attribute "get"` / `is not indexable`）——**这一族是真的漏到过真机**（CHANGELOG 114） | 待讨论（**不是已定案**：装不装用户未拍板，见 CHANGELOG 115 待办①） |
+| **项目 1** | 本仓库：面向长程游戏的通用 Agent Harness | 进行中 |
+| **项目 3** | Obsidian + Git 知识库 RAG 系统。承载 Belief 层与 Wiki 层（B3、B5a、B5b），为项目 1 提供知识服务 | 已定方向，无代码 |
+| **项目 2** | Agent 治理网关（在 `agent_Permission` 基础上扩展）。候选迁入：H7、H8、G3、G1 的强制执行、E5 的审批钩子 | **💬 待确认** |
 
-### 25. 📋 项目拆分六块：主框架 / memory / plan 系统 / judge 系统 / A2A / prompt 管理与优化（0909 定方向，细节未定）
+> 编号沿用讨论时的"项目 1 / 2 / 3"，不代表优先级。
 
-> **0911 现状：方向本身没变、一块都没动；但四处"现状前提"需要按新情况读。**
->
-> - **②memory 的 a/b 两条腿不是"待实施"了**：它们对应的能力已经在
->   **memory 层**落地（`MemoryStorePort` 的 `filter`/`search`/`rank`，
->   见第 24 条）。注意第 24 条的 tool 层收敛**已经放弃**，所以 a/b 的落点是
->   "memory 层提供通用检索 + tool 层保留专用方法"，不是"统一成两个方法"。
->   **c 条 wiki 腿未动**（`memory/wiki/` 不存在）。
-> - **③④的"judge 系统"边界比当时复杂**：`Brain` 现在有 **5 个**能力方法
->   （`choose_once` / `judge` / `reflect` / `verify_and_summarize` / `plan_once`），
->   其中 `verify_steps` 已经和 `summarize` **合并成 `verify_and_summarize`**
->   （第 9 条），而且 `judge` 现在是**带图多模态**调用。所以"judge 系统"拆出去时
->   要一并决定 `verify_and_summarize` 归谁——它既是校验器又是摘要生成器。
-> - **⑤A2A 的方法集变了**：`RunDataCenter` 仍是"`RunHarness`/`api.py` 共享的
->   进程内 Python 对象"（这点没变，正是要拆出去的理由），但它的对外方法集
->   已经和 0909 写作时不同——review 槽的 `PUSH` 决策已删、goals 只剩
->   `push` + `read` 两个通道、还多了 human_note 槽。**对外暴露哪些端点，
->   要以 0911 的实际槽位为准，不是以本段文字为准。**
-> - **⑥a（sha 进 trace）已取消——0913 用户拍板**：0911 核实时发现全项目搜不到
->   `prompt_sha`，`PromptTemplate.sha` 只用在离线 `experiment/manifest.py`，
->   而 `pokemon_agent/tools/prompts/__init__.py` 的模块 docstring 却写着
->   "**可归因**：`PromptTemplate.sha` 进 trace"——是**空头承诺**。
->   0913 用户的决定是**不用 sha**：字段（`PromptTemplate.sha`）、
->   `hashlib` 导入、`load()` 里的计算、docstring 那条承诺**全部删除**。
->   prompt 的版本归因改由"改 prompt 就是一次 git diff"承担，
->   不在运行时另记一份哈希。本条自此关闭。
-> - **①主框架瘦身要搬的不止两个方法**：正文写"`RunHarness.plan()` /
->   `EpisodeHarness.judge()` 两个节点退化成调端口方法"，实际随着
->   `verify_and_summarize` 的出现，至少还有第三处（校验+摘要那条链）。
+---
 
-**用户 0909 提出的拆分方向**：把现在这个单体项目拆成五块——① 现在的主框架
-（harness 靠 tools 跟各外部系统打交道那一套）；② memory 系统，细分三条腿：
-a. 元数据查询、b. 相似度查询、c. wiki 类知识库（用户指定参照
-[Tencent/WeKnora](https://github.com/Tencent/WeKnora)——文档→可查询 RAG→
-agent 自动蒸馏成结构化互链 wiki 词条+知识图谱、自维护不用人工整理）；
-③ plan 系统，独立出来、支持背景信息组装 + human review；④ judge 系统，
-同样独立、同样支持背景信息 + human review；⑤ A2A 系统，把现在的
-`RunDataCenter`（第 1 条）拆出来；⑥ prompt 管理与优化系统（0909 追加）。
-**（0913 修订：原记载的"版本化模板 + sha 归因，sha 要进线上 trace"已被用户
-取消——`PromptTemplate.sha` 字段连同那条 docstring 承诺已删。⑥ 现在只剩
-"自动调优"一块。）** **这次只定大方向和建议顺序，每一块
-具体怎么改留到分别动手时再定**，写这条只是把方向和顺序记下来，不是开工。
+## 二、设计原则
 
-**跟现有条目的关系**（拆分不是从零开始，是把已经存在的接口边界拉开）：
+### P-1 可信度判定原则
 
-- ①主框架：不是新增职责，是②③④拆完之后的收尾——`RunHarness.plan()`/
-  `EpisodeHarness.judge()` 两个节点退化成"调一次独立系统的端口方法"，
-  跟现在调 `BrainToolPort.choose_once()` 一个形状。
-- ②memory：a/b 两条腿本质上就是**第 24 条**（元数据倒排索引 + 语义检索——
-  ~~0908 已拍板待实施~~ **0911：已在 memory 层落地，见第 24 条 0911 现状；
-  tool 层不收敛**）——c 条 wiki 腿是这次新加的第三条，建立在 24 条的
-  通用检索能力之上：wiki 词条本身也是"一条记录"，一样吃 24 条的存储/检索
-  设计，不需要另起一套存储层。
-- ③④plan/judge：现在分别是 `RunHarness.plan()`/`Brain.plan_once()` 和
-  `EpisodeHarness.judge()`/`Brain.judge()`，骨架已经对——两个系统形状高度
-  相似（问模型 → 背景信息组装 → 可选人工审查 → 写回结果），建议**同批做**，
-  不要先做一个再回头改另一个。human review 复用 `RunDataCenter`
-  已经跑通的槽位传输层（第 1 条），给 plan/judge 各开一个独立槽位，不是
-  重新发明一套协议——现在 `RunHarness.review()` 只有 episode 结算后一个
-  时机，这次要拆出"计划生成后""判定给出后"两个更早、更细粒度的介入点。
-- ⑤A2A：`RunDataCenter`（第 1 条）现在是 `RunHarness`/`api.py` 共享的
-  进程内对象，本质已经是 Task（goals/review 槽=待处理请求，前端轮询）的
-  雏形，跟 [Google A2A 协议](https://a2a-protocol.org/latest/specification/)
-  的 Task/Message/Agent Card 概念比想象中接近。**不建议一步到位换协议**：
-  先让它变成一个能被多个 client（`RunHarness`、`api.py`、以后可能的 plan/
-  judge 独立服务）共同访问的边界（哪怕先只是本地 HTTP），协议细节等真的
-  需要接第二个独立 agent 时再补。
-- ⑥prompt管理与优化：不是新起炉灶——`prompts/`包（版本化模板文件）
-  已经是"Agent 工程清单"里"三根缰绳"之一，这次是把它从"写代码时的
-  约定"补成"运行时可观测、可迭代"的独立系统。跟①③④都有交点：①③④拆分后
-  各自新增的模型调用（PlanSystem/JudgeSystem 的端口方法）一样要走这套
-  约定，不是各写各的。**（0913 注：原设想的"sha 归因"这一半已取消，
-  见上表与下方 ⑥a——prompt 版本靠 git diff 追踪，不再在运行时记哈希。）**
+**LLM 对记忆可信度的判断，不能单独作为采信依据。** 一条记忆要进入"可采信"状态，
+至少要通过一项**效果核验**：该记忆被复用时，它声称的效果是否在环境中实际出现。
 
-**建议顺序**：② memory 补 wiki 腿 → ③+④ plan/judge 同批拆（背景信息组装+review
-槽位公共骨架抽一次，两边套用）→ ① 主框架瘦身收尾 → ⑤ A2A 对外拆分 →
-⑥（自动调优那一半）最后收尾。
-理由：②是③④的地基（plan/judge 的背景信息组装要吃 memory 检索）；①天然是
-③④做完之后的收尾动作；⑤涉及进程边界，最该等前四块内部形状稳定了再动；
-⑥只剩"自动调优"一半，它依赖一个能打分的 eval 集（下面"怎么实现"细说），
-等前面几块都稳定、有真实数据可评估时再上最合理。
+- **依据**：arXiv 2601.05504 实测，Gemini-2.0-Flash 以满分可信度接受了 82 条候选记忆，
+  其中 54 条是恶意的；GPT-4o-mini 走向另一个极端，23 条全部拒绝（平均可信分 0.28）。
+  作者结论：这类可信分只是"置信过滤器"，不是"安全过滤器"，建议改用对照不可变真值的效果核验。
+- **补充依据**：arXiv 2606.22030 实测，从文本措辞推断可信度时，一句语气肯定的假话可得 0.96；
+  按来源定可信度才能挡住批量投毒。
+- **落地方式**：证据强度按**来源类型查表**决定，不由 LLM 给数值（见 B5a）。
 
-**怎么实现（简单描述，接口/schema 等真动手时再细化）**：
+---
 
-- **①主框架**：不新写代码，是②③④拆完后的摘除动作——`RunHarness.plan()`/
-  `EpisodeHarness.judge()` 节点体里现在直接调 `Brain.plan_once()`/
-  `Brain.judge()` 的部分，换成调新拆出去的 PlanSystem/JudgeSystem 的端口
-  方法（形状照抄现在 `BrainToolPort.choose_once()` 那种"harness 只管调、
-  不管怎么问模型"的样子），`Brain` 瘦身、两个方法搬家。
-- **②memory（补 c 条）**：新开 `memory/wiki/` 包，存储层直接复用第 24 条
-  要建的通用倒排索引（词条也是一条"记录"，带 `kind=wiki_entry` 元数据，
-  走同一套过滤检索，不用另起存储层）。新增一条"蒸馏成词条"的生成流程，
-  形状类似现有 `episode_store.py` 的摘要蒸馏链——定期/按需把一批 episode
-  摘要+知识库检索命中喂给模型，产出"新增/更新哪条词条"，词条之间交叉引用
-  先用字符串 id 互指（不用真图数据库）；可追溯来源靠现有 trace 的
-  `event_id` 反查，不用另建审计表。
-- **③④plan/judge（同批做，形状一样）**：各开一个新模块（如
-  `plan_system/`、`judge_system/`），每个里面三样东西——① 一个"背景信息
-  组装"函数（显式列清楚这次喂模型的上下文：目标栈/历史摘要/知识检索命中，
-  不隐式拼字符串）；② 复用 `Brain` 现有的 `plan_once`/`judge` 方法问模型
-  （原样保留，只是调用方换了）；③ `RunDataCenter` 里新增两组 review 槽
-  （如 `plan_review`/`judge_review`），字段形状和阻塞轮询逻辑照抄现在的
-  review 槽，不重新设计协议。`RunHarness.plan()`/`EpisodeHarness.judge()`
-  节点问完模型后多一步"发布到对应槽、等（或不等）人工确认"。
-- **⑤A2A**：先不换协议，把 `RunDataCenter` 从"`RunHarness`/`api.py` 各持
-  一个引用的 Python 对象"改成"自己起一个小 HTTP 服务（进程内嵌或独立进程
-  都行，先选简单的），暴露现在那几个方法对应的 REST 端点"——`api.py` 现有
-  的 `/goals`/`/review`/`/note` 端点形状不用大改，只是背后从"直接调 Python
-  对象"变成"`api.py` 和 `RunHarness` 都通过 HTTP 调同一个服务"，为以后接
-  第二个独立 agent（比如独立部署的 plan 系统）铺路。
-- **⑥prompt 管理与优化**：只剩"自动调优"一半（原 a) "sha 进 trace"已取消，
-  见上表与上方 ⑥a 注）。**b) 自动调优**——前提是先有
-  一个能打分的 eval 集：Pokemon 对局的"赢没赢""拿到徽章没"这类信号本来就
-  稀疏、延迟高，直接拿它当优化目标不现实，先要塑造成密集代理指标（比如
-  借用现在 `real_check`/`knowledge_*` 短任务集的二元成败，或者对 `judge`/
-  `verify_and_summarize` 的历史判定结果打分）；有了这个 eval 集之后，先走
-  人工回环"改一版 prompt→跑分→对比"，观察出稳定可信的分数后再考虑接
-  OPRO 风格的自动化（给模型看"历史 prompt+对应分数"的轨迹，让它自己提议
-  下一版更好的 prompt），不是一步到位上自动化。
+## 三、全部条目总览
 
-参考案例（讨论时查的，不是照搬）：[Voyager](https://arxiv.org/abs/2305.16291)
-（经验→蒸馏→入库→检索复用的自动化闭环，对应②c 和 Agent 清单第 9 条）、
-[HiPlan](https://arxiv.org/pdf/2508.19076)（全局里程碑+每步局部提示的双层
-规划，对应③的背景信息组装）、[Architecting Resilient LLM Agents:
-Plan-then-Execute](https://arxiv.org/abs/2509.08646)（规划与执行分离、
-阶段边界天然是审查点，对应③④的 review 槽位设计）、[OPRO](
-https://arxiv.org/abs/2309.03409)（给模型看"历史 prompt+分数"轨迹、
-让它自己提议更好的 prompt，对应⑥b 的自动调优思路）、[DSPy](
-https://github.com/stanfordnlp/dspy)（把 prompt 优化当成对一个带 metric
-的小程序做编译，同样需要能打分的 eval 集，对应⑥b 的前置条件）。
+"来源"一列：**原 N** 指归档文件第 N 条；**新** 后写明具体内容。
+"详述"一列：**§4** 表示第四节有完整条目；**待重写** 表示尚未讨论，内容以归档为准。
 
-### 26. 📋 长期方向：RAM 读取逐步换成纯 VLM 感知，用"特权教师→学生"框架讲清楚"自进化"（0909 定方向，细节未定）
+### A. 立项与范围
 
-> **0911 现状：方向与三阶段框架都没变，一脚没动。两处前提更新：**
-> - **①阶段（并行验证期：让 VLM"顺便"猜坐标、只记 trace、与 RAM 真值自动比对）**
->   的实现条件比当时好——多模态链路、`StepMemory` 存帧、`ModelCall.payload`
->   记 `n_images` 都已经现成，"多问一次顺带猜坐标"不需要新造轮子。
->   代价也要按新情况算：**判定链带图之后单次 token 已经明显变大**
->   （图数 1→2 约 +1800 token，见第 10 / 22 条），再加一路猜坐标得单独记账，
->   不能顺手挂在现有调用里白嫖。
-> - **前置（第 21 条 VLM 可靠性）不但没解决，还多了一层**：感知模型已从
->   `qwen3-vl-plus` 升到 `qwen3.8-max`，历史那些"VLM 读错"个案属于旧模型观察，
->   要在新模型下重新确认——这正好也是①阶段本来要产出的量化数据。
-> - **与第 25⑥b 共用一个 eval 信号这件事没变**（RAM 当免费自动裁判），
->   而 ⑥b 同样没开始。
+| 编号 | 条目 | 状态 | 叙事 | 归属 | 来源 | 详述 |
+|---|---|---|---|---|---|---|
+| A1 | 项目定位与命名 | 💬 | 共 | 1 | 新：定位从"玩通神奇宝贝"改为"通用长程游戏 agent"；名字候选"面向长程游戏的通用 Agent Harness" | 待讨论 |
+| A2 | 立足点：七类公开失败 | 💬 | 科研 | 1 | 新：Opus 4.5/4.7 公开报告（LessWrong 三篇）中的七类失败——笔记污染、探索绕圈、注意力盲区、谜题因果推断失败、多步依赖、上下文重置失忆、对战资源管理 | 待讨论 |
+| A3 | 前沿模型参考线 | 📋 | 科研 | 1 | 新：引用公开数字（Fable 5 纯视觉通关火红；Opus 4.5 约 23 万步拿齐 8 个徽章），E6 完成后在同一环境跑对照 | 待讨论 |
+| A4 | 非目标 | 💬 | 共 | 1 | 新：否决 VICT 式反事实回填（从存档逐步 leave-one-out 算信用）；整局级长距离依赖不在 MC 回填范围内；判定原子不提供给决策侧 | 待讨论 |
 
-**用户 0909 提出的方向**：现在 `world/ram.py` 直接读模拟器内存拿坐标/地图
-编号/地形通行图/门与招牌位置——`pyboy_world.py` 模块 docstring 里写得很
-明确，这是故意的："RAM 说得准，视觉模型看得懂但说不准在哪一格"。但这一层
-**跟游戏版本强绑定**（`ram.py` 自己的 docstring：换版本要重来一遍，地址常量
-全是《宝可梦 红》专属的），长期看限制了这套 harness 能不能套到别的游戏上。
-用户要求把这条路径也放进 roadmap：**逐步把 RAM 读取换成纯 VLM 感知**，并且
-借这个方向把项目里"自进化"这个说法讲得更具体——不是一句"agent 会自己变强"
-的空话，而是一套可衡量、有明确触发条件的机制。
+### B. 学习与记忆
 
-**跟现有条目的关系**：
+| 编号 | 条目 | 状态 | 叙事 | 归属 | 来源 | 详述 |
+|---|---|---|---|---|---|---|
+| B0 | 五层记忆架构 | 💬 | 科研 | 1 定义，3 承载 Belief/Wiki | 新 | §4 |
+| B1 | Raw 层：唯一不可变证据源 | 🚧 | 底座 | 1 | 原 6 ✅ ＋ 原 27 ✅ ＋ 新：trace 与 step memory 定为其他各层的唯一派生来源；现状：step memory 已重整为 ActMemory → TaskMemory → EpisodeMemory 三级阶梯（189，盘上集合名仍叫 `step_memory`） | 待重写 |
+| B2 | 价值记忆：JitRL 复现 | 💬 | 科研 | 1 | 新：存（状态, 动作, 回报），回报即原机制三的 MC 回填；检索近邻算 advantage，加到枚举动作的 logit 上 | §4 |
+| B3 | Wiki 层 | 📋 | 科研 | 3 | 原 25②c（删除 WeKnora 参照）＋ `docs/spec/PLAN_wikiskill_reproduction.md` 草案（待订正）＋ 新：前提字段与状态字段 | §4 |
+| B4 | Skill 层与门控 | 📋 | 科研 | 1 | 新：WikiSkill 的提案 → 验证集门控（严格更优才接受）→ 回滚 → impact 记录；推理侧只注入 Skill，不读 Wiki | 待讨论 |
+| B5a | Belief 层 | 💬 | 科研 | 3 | 新：以 BeliefMem 为唯一参照 | §4 |
+| B5b | 前提失效传播 | 💬 | 科研 | 3 → 1 | 新：Belief 概率跌破阈值后，wiki 标记待复核、追加修订、下游 Skill 重新门控 | §4 |
+| B6 | 跨层聚类与归并 | 💬 | 科研 | 1、3 | 原 20（episode 打分聚类）＋ 新：扩展到价值记忆状态归并（原机制一）、Belief 属性归并（同一假设按 BeliefMem 式 9 合并）、Wiki 条目合并、Skill 去重；WikiSkill 与 JitRL 均无去重机制 | 待讨论 |
+| B7 | 推进度定义 | ❓ | 科研 | 1 | 原 7（无效步定义）＋ 新：改用 B6 归并后的地点访问计数与新地点覆盖 | 待讨论 |
+| B8 | 经验形态路由 | 💬 | 科研 | 1 | 原 24 🚧（检索接口）＋ 原 18 ✅（质量分加权）＋ 新 | §4 |
+| B9 | 记忆泄题 | 🚧 | 科研 | 1 | 原 12 | 待重写 |
+| B10 | episode_memory 跨 run 检索隔离 | ✅ | 科研 | 1 | 原 8 | 待重写 |
+| B11 | 高质量记忆样本导出 | 📋 | 工业 | 1 | 原 19 | 待重写 |
 
-- 这条不是孤立的——**第 21 条**已经诊断出 VLM 对室内场景/NPC 身份的识别
-  不可靠（把宝可梦中心误标成大木博士的实例），说明"直接让 VLM 替代 RAM"
-  今天就换根本站不住：VLM 现在连"这是不是宝可梦中心"都能读错，遑论精确到
-  格子的坐标。这条排在第 21 条排查清楚"VLM 感知可靠性到底多差、差在哪类
-  场景"**之后**才有意义。
-- 跟**第 25 条的 ⑥prompt 管理与优化**（0909 刚加）的 b) 自动调优共用同一个
-  前置条件——都需要一个"能自动打分、不用人工标注"的 eval 信号。这条刚好
-  能提供这样一个信号，而且是免费的：见下面"怎么实现"。
+### C. 失败模式专项机制
 
-**怎么实现（简单描述，核心是把"自进化"落成一个具体机制，不是留一句口号）**：
+| 编号 | 条目 | 状态 | 叙事 | 归属 | 来源 | 详述 |
+|---|---|---|---|---|---|---|
+| C1 | 多步依赖：经验修正的前置条件图 | 💬 | 科研 | 1（图存于项目 3 的 Belief 层） | 新 | §4 |
+| C2 | 注意力盲区：固着重扫 | 💬 | 科研 | 1 | 新：子目标长时间无原子变化即判为固着，拉起上下文干净的感知重扫 subagent，配放大/裁剪工具（Opus 4.7 通关时的 harness 改动） | 待讨论 |
+| C3 | 谜题因果：存档干预实验 | 💬 | 科研 | 1 | 新：从存档出发控制变量干预，归纳出的规则存为带竞争假设的 Belief 属性；针对 Opus 4.5 在 Cinnabar 宝可梦屋耗 11.2 万步的案例 | 待讨论 |
 
-这条路径的关键类比是自动驾驶里"特权教师→无特权学生"这个成熟框架
-（[Learning by Cheating](https://arxiv.org/abs/1912.12294)，CoRL 2019）：
-先用能看到"上帝视角"真值（游戏里没有摄像头遮挡、不用推断的鸟瞰地图）的
-特权教师把"该怎么做"学明白，再训练一个只能用真实传感器（这里对应纯屏幕
-画面）的学生模仿教师，把"怎么做"和"怎么感知"这两个问题解耦，不用一步到
-位让感知很差的模型同时学会两件事。映射到这个项目：
+### D. 感知与通用化
 
-- **RAM 就是那个"特权教师"**——它拿到的坐标/地图编号/地形通行图从定义上
-  就不会错，等于免费、无限、自动的标注真值，不需要人工标一份"这一帧的
-  正确坐标是什么"的数据集。
-- **分三个阶段递进，不是一步切换**：
-  ① **并行验证期**——VLM 照常只负责它现在负责的那部分（场景类别/对话/
-    物体），但额外让它"顺便"也猜一下坐标/地图编号，猜的结果不参与决策、
-    只记进 trace，跟同一帧 RAM 读出的真值自动比对打分（一致率、误差
-    分布）——这一步零风险，纯观察，还顺带把第 21 条"VLM 感知可靠性差在
-    哪类场景"的排查坐实成量化数据，而不是停在个例诊断上。
-  ② **混合期**——一致率稳定过某个阈值之后，把 RAM 真值喂给 prompt 优化
-    环节（⑥b 的 OPRO/DSPy 那条路，或者更直接的 few-shot 示例挑选）去改
-    VLM 的坐标识别 prompt/示例，用"这次猜得对不对"当自动反馈迭代，RAM
-    全程还在跑、当裁判，不下线。
-  ③ **纯 VLM 期**——某类场景（比如室外、无遮挡）的一致率长期稳定达标后，
-    那类场景可以尝试关掉 RAM 依赖、只用 VLM 坐标，RAM 继续跑但降级成审计
-    /抽查角色（不是每帧都必须对得上，出现的分歧记录下来当持续监控信号）；
-    没达标的场景类型（比如室内、有遮挡）继续用 RAM，不强求一刀切。
-- **这就是"自进化"的具体含义**：不是模型自己凭空变强，而是**项目里已有
-  的确定性子系统（RAM）持续给不确定的子系统（VLM）当自动裁判**，用一致
-  率这个可以画成曲线、能看出退步的量化指标决定"该不该、什么时候把权力
-  从教师移交给学生"——跟②c 的 wiki 自蒸馏、⑥b 的 prompt 自动调优是同一个
-  母题的三个具体实例：**都是拿系统里已经存在的可信信号自动生成训练/评估
-  数据，而不是等人工标注**。
+| 编号 | 条目 | 状态 | 叙事 | 归属 | 来源 | 详述 |
+|---|---|---|---|---|---|---|
+| D1 | 游戏适配器契约 | 📋 | 共 | 1 | 新：观测（截图＋放大）、动作空间枚举、存档/读档、可选判定原子（只有评测侧可读）；世界语义常量按游戏分离 | 待讨论 |
+| D2 | RAM → 纯 VLM 感知 | 📋 | 科研 | 1 | 原 26；现状：task 层 RAM 档（197/198 起含屏幕文字与选单排布解码）、episode 层完整档，去 RAM 未动 | 待重写 |
+| D3 | VLM 感知可靠性 | 🚧 | 科研 | 1 | 原 21 后半；现状：`experiment/observation_check/` 已有 406 帧人工标注集与 prompt v0–v2 × 模型的逐字段准确率对比（141–183），弱字段准确率仍低（如 foe_hp 约 11%，见该目录 EXPERIMENT_LOG.md） | 待重写 |
+| D4 | 第二个游戏 | 📋 | 科研 | 1 | 新：Crafter（SGA-ACR 的基准，对照 C1）或 Jericho（JitRL 的基准，对照 B2），二选一 | 待讨论 |
 
-**已知风险/暂不处理的部分**：①阶段本身要不要真的实现（多问一次模型猜坐标
-是额外的 token 成本，且这次只是记账不影响决策，值不值得现在就加，还是先
-把第 21 条的人工排查做完再决定）；③阶段"关掉 RAM 换 VLM"这个决定本身要
-多稳的一致率、观察多长时间的窗口，都还没有方案，留到真正推进到那一步时
-再定。这条目前只是把方向和参照框架记下来，不是要立刻动手。
+### E. 编排与协议
 
-### 27. ✅ memory/trace 落盘布局重构 + `TraceEvent.valid` + 实验资产边界收敛（0910 完成）
+| 编号 | 条目 | 状态 | 叙事 | 归属 | 来源 | 详述 |
+|---|---|---|---|---|---|---|
+| E1 | 编排重构：固定图 → 编排器加 subagent | 🚧 | 工业 | 1 | 新；三层同构图已落地（187–196：run ⊃ episode ⊃ task，每层 5 格），编排器＋subagent 未做 | §4 |
+| E2 | 意图识别与路由 | ❓ | 工业 | 1 | 原 14 ＋ 新：作为 E1 的路由器，同时决定 B8 的经验形态 | 待讨论 |
+| E3 | Subagent 契约 | 🚧 | 工业 | 1 | 新：角色集合（导航、对战、感知重扫、干预实验）；结构化返回（状态、原子变化、成本、trace 关联）；独立的预算、权限范围与模型档位。现状：task 层已有结构化交界（`TaskInput` / `TaskOutput`，195）；角色集合、独立权限与模型档位未做 | 待讨论 |
+| E4 | plan / judge 系统拆分 | 🚧 | 工业 | 1 | 原 25③④；新架构下 plan 并入编排器，judge 成为独立判定器。现状：judge 已独立成共享层 `harness/judging.py`，三层各有 `review_and_judge`（196）；plan 已分 `plan_run` / `plan_episode`（拆解）/ `plan_task`，并入编排器待 E1 | 待讨论 |
+| E5 | 人在环分级介入 | 🚧 | 工业 | 1（审批钩子候选迁入项目 2） | 原 1 ✅（基础交互）＋ 现有 `Reviewer`（插话 / 审，阻塞式）＋ 新：subagent 边界介入（否决派发、改子目标、改前置条件图）、非阻塞旁路观察、高风险动作审批。现状：`Reviewer` 已泛化到 task / episode 两级，可推翻定案（202），每个 task 结束都会停下等人 | 待讨论 |
+| E6 | MCP 适配器 | 📋 | 工业 | 1 | 新：通过 MCP 暴露 D1 契约，作为另一个 `WorldPort` 实现（符合铁律 2、4） | 待讨论 |
+| E7 | A2A 对外暴露范围 | 📋 | 工业 | 1、3 | 原 25⑤（其前提 `RunDataCenter` 已于 0914 删除）＋ 新 | §4 |
 
-> **0911 现状：本条内容与代码一致，无需修改**——它是本文件里少数几条
-> "写完就没被后续改动推翻"的。0911 唯一相关的增量是 `interfaces/` 五步
-> 迁移完成（全局声明第 4 条）：`memory` 包早在五稿就已"运行期零依赖
-> `interfaces/`/`schemas`"，这一步对它没有影响。
-> 本条需要**被其它条引用**的地方：第 6 条（内存环境）、第 8 条（跨 run 隔离）、
-> 第 16 条（void 语义）、第 24 条（存储形状那半）都在引用它。
+### F. 测评与实验
 
-**改了什么**（一个 session 内三块一起做完，真机四脚本全 PASS）：
+| 编号 | 条目 | 状态 | 叙事 | 归属 | 来源 | 详述 |
+|---|---|---|---|---|---|---|
+| F1 | 批次入口与汇总报表 | 📋 | 底座 | 1 | 原 2 前半 ＋ 原 3 ＋ 缺口表"跑批入口不存在" ＋"对照业界"一节 ＋ 新：指标维度为完成率、工具调用成功率、`pass^k`、延迟、成本、安全，判据用里程碑 | 待讨论 |
+| F2 | judge / verify 权威性与可审计 | 🚧 | 科研 | 1 | 原 3 ＋ 原 9 ＋ 归档"后续阶段"表的 P2 可审计；现状：verify 已回归为两级正/负样本标记（192），判定依据 `judge_reason` 与结论 `reason` 已分开（203） | 待重写 |
+| F3 | criteria 证据强度 | ❓ | 科研 | 1 | 原 21 前半 | 待重写 |
+| F4 | 真机核对 harness | 🚧 | 底座 | 1 | 原 28；现状：`real_check/node_io.py` 已按三层切流重写（201）；三层改写后的拆解 / 蒸馏 / 判定 prompt 尚未经真机与真模型验证 | 待重写 |
+| F5 | 存档片段回归门禁 | 📋 | 工业 | 1 | 新：难点存档片段组成回归集；改动后 CI 自动跑，指标退化则拒绝合入；失败片段自动回流进回归集 | 待讨论 |
 
-- **落盘布局（记忆侧）**：四类产物搬出包、落在仓库根级
-  `memory/{step,object,episode,knowledge}_memory/`；**一条记录一个文件**
-  （`<uuid>.json` / `<uuid>.md`），uuid 不带语义——`run_id`/`episode_id`/
-  `step`/`seq` 全部降级成记录内**彼此对等**的 metadata 字段（对齐第 24 条）。
-  每个 kind 文件夹一份倒排索引 `index.json`（随记录写穿落盘 + 启动对账
-  自愈），`records.jsonl` 取消、记录文件即存储。**memory 不按 run 分层**——
-  `run_id` 只是普通过滤字段，`episode_memory` 天然跨 run 共池（说的是**存储池**
-  不按 run 分区——不是说一条记录跨 run：一条只对应一局，是那一局 step 记忆的总结）。
-  知识库取消 run 快照（共享源即唯一副本，审计走 trace 的 MEMORY_READ 账）。
-- **落盘布局（trace 侧）**：`TraceEvent` 升到 schema **v4**、新增
-  `valid: bool`；落盘改 `trace_data/<run_id>/events/<run_id>-<event_id>.json`
-  （一条事件一个文件、tmp + `os.replace` 原子写）；`void_after` 不再搬事件，
-  改成**原地打 `valid=false`** + 补一条 `lifecycle/payload.kind=resume`；
-  `LocalTrace._next_id` 改扫盘 `max(event_id)+1`（废弃分支还占着 id）。
-  截图绑 trace 事件的 `event_id`、放 `trace_data/<run_id>/screenshot/`，
-  **不参与 void**（event_id 递增天然不撞名）。void 收成四步：trace 打标 →
-  圈 memory 作废集 → memory 归档 `memory/voided-<ts>/<kind>/` → checkpoint
-  归档——**文件一律不删**，"落盘了就不丢"贯彻到废弃分支。
-- **实验资产边界**：`experiment/` 从包内上移到**仓库根级**，只留
-  `tasks.py` / `experiment_states/`（19 个钉死存档）/ `real_check/`；
-  `manifest.py` / `run_all_tasks.py` / `run_episode.py` / `run_experiment.py`
-  删除；包外代码对 `agent_permission` 的依赖清到零（`@initialize` 守卫、
-  权限快照链、`config/` 目录全删）。`tests/` 清空（三个陈旧测试对不上新
-  API）待从零重建。`evaluation/` **整体删除**——它的数据源
-  `episodes/*.jsonl` 已随本次 trace 重构消失，属于同一批死资产。
+### G. 模型、prompt 与成本治理
 
-**为什么这么改**：设计与拍板记录在
-`docs/spec/memory/PLAN_memory_trace_layout.md`（①-⑩），变更决策记录在
-`CHANGELOG.md` 2026-09-10 条目（6）（7）（8）。三条主线：记录标识不带语义
-（第 24 条）、索引落盘换 filter 零扫描、废弃分支只归档不销毁。
+| 编号 | 条目 | 状态 | 叙事 | 归属 | 来源 | 详述 |
+|---|---|---|---|---|---|---|
+| G1 | token 预算与熔断 | 💬 | 工业 | 1（强制执行候选迁入项目 2） | 原 22 ＋ 新：harness 每步检查预算，超阈值告警并熔断；阈值按实测单价（约 190 tok/帧）定 | 待重写 |
+| G2 | 模型分级 | 📋 | 工业 | 1 | 原 23 ＋ 新：增加本地开源模型档位（B2 需要读 logit） | 待重写 |
+| G3 | 模型网关 | 📋 | 工业 | 候选迁入项目 2 | 新：多供应商路由与降级、限流、带退避的重试、熔断；供应商与型号兼容性写成配置校验（原 23 记录的隐性约束：Qwen 型号传给火山方舟会 404） | 待讨论 |
+| G4 | prompt 版本管理与自动调优 | 📋 | 工业 | 1 | 原 25⑥（0913 已取消模板 sha，归因靠 git diff）＋ 新提案：RUN_START 记录仓库 commit 与工作区是否干净，报表按 commit 分组 | 待讨论 |
+| G5 | 单局决策延迟 | 💬 | 工业 | 1 | 原 10 | 待重写 |
+| G6 | "不更新权重"的选型论证 | 📋 | 科研 | 1 | 新：写明为什么不微调；对照 JitRL（KL 约束下的闭式解）与 Memory-R2（梯度训练路线） | 待讨论 |
 
-**取舍**：① 旧数据不写迁移脚本（开发期数据，旧目录原地不动、新代码不读）；
-② 截图不 void、知识库源改动**即时生效**（取消"下一个 run 生效"的快照隔离，
-运营中途改库会影响进行中的 run——拍板⑩的已知代价）；③ `evaluation/` 的按
-链路 token/延迟聚合能力**随删除一起没了**，以后要看这些数字得从 trace 事件
-离线自己算；④ 本条的落盘重构**不含**第 24 条的另一半——`MemoryToolPort`
-的专用查询方法（`query_episode_steps`/`query_object_events`/
-`query_episode_summaries`……）**对外签名本次一个没动**，收敛成 filter+search
-仍待做（0910 拍板：先出设计稿评审，通过后再实施）。
+### H. 可观测、可靠性与安全
 
-**影响面**：`pokemon_agent/memory/` 包内只剩 index 层 + `retrieval.py`
-（`FileEpisodeMemoryStore`/`EventObjectStore`/`KnowledgeStore` 三个旧 store
-退役）；`MemoryTool` 新增 `knowledge_root` 参数（知识库全局共享，不被测试的
-`memory_root` 重定向）；`real_check/common.py` 的 `ROOT` 从写死 `parents[3]`
-改成向上找 `pyproject.toml` 的界标（目录层级一变就静默指错）；读端（API/观测
-台）只多一道 `valid=false` 过滤，不需要学"跳区间"逻辑。
+| 编号 | 条目 | 状态 | 叙事 | 归属 | 来源 | 详述 |
+|---|---|---|---|---|---|---|
+| H1 | trace 账本 | 🚧 | 工业 | 1 | 原 4 | 待重写 |
+| H2 | 可观测审计扫描 | ✅ | 工业 | 1 | 原 17 | 待重写 |
+| H3 | 观测台四栏展示 | ✅ | 工业 | 1 | 原 15（观测台 0914 移出仓库，需核实现状） | 待重写 |
+| H4 | subagent 调用链关联 | ❓ | 工业 | 1 | 新：trace 挂成父子树；`meta` 现为五件（含 `task_id`，199），账已可按 run / episode / task 三层切片；subagent 级父子关联仍未定 | 待讨论 |
+| H5 | 运行护栏 | 🚧 | 工业 | 1 | 原 5；现状：三层机械判停（停摆 / 预算耗尽等）已落地（195/196，`harness/judging.py`，阈值见 `config.py`）；原条目余项以归档为准 | 待重写 |
+| H6 | 告警与自动处置 | 📋 | 工业 | 1 | 新：告警源为卡住（B7 访问计数）、固着（C2）、记忆条目异常增长、advantage 方差突增、成本燃烧率、模拟器挂死；处置为拉起 subagent、熔断、冻结记忆写入、从存档重启 | 待讨论 |
+| H7 | 权限系统 | 📋 | 工业 | 候选迁入项目 2 | 新（取代 0910 移除的 `agent_permission`）：工具与 MCP 调用鉴权、按 subagent 划分权限、记忆写入与归并权限、判定原子只读隔离、审计日志 | 待讨论 |
+| H8 | 沙箱 | 📋 | 工业 | 候选迁入项目 2（模拟器进程隔离留在 1） | 新 | 待讨论 |
+| H9 | 状态恢复 | 📋 | 工业 | 1 | 原 16（0913 删除三级 checkpoint，状态为 ↩️）＋ 新：**重开**，在 E1 之后以 subagent 边界为存档点重做；`save_checkpoint` 空转节点已于 187 删除，链边界由"队列空回 perceive"承担 | 待讨论 |
 
-**验证**（改动当天真机跑，`py -3.12 -m experiment.real_check.<脚本>`，
-key 从仓库根 `.env` 读）：
-`check_memory_roundtrip` 五路径 PASS ｜ `check_trace` PASS（66 条有效事件、
-盘上全量 `[0..75]` 连续、废弃块 `[54..63]` 10 条 `valid=false`）｜
-`check_memory` PASS（本局 3 条 StepMemory、对象记忆无记录属正常）｜
-`check_restore` PASS（自 step 3 恢复、游标 53 后续写 66 条连续、归档 1 个 voided）。
+### I. 工程基础设施
 
-### 28. 🚧 真机核对 harness（`experiment/real_check/`）的方法学与纪律——**事实上是现在唯一能"跑起来并自动判定"的通道**
+| 编号 | 条目 | 状态 | 叙事 | 归属 | 来源 | 详述 |
+|---|---|---|---|---|---|---|
+| I1 | 依赖锁定 | ✅ | 底座 | 1 | 归档缺口表（`uv.lock`） | — |
+| I2 | 文档体系 | ✅ | 底座 | 1 | 归档"后续阶段"表的 P4 | — |
+| I3 | 端到端测试与 CI | 🚧 | 底座 | 1 | AGENTS.md 第十节技术债（FakeLLM＋MockWorld 整局用例为 0）＋ 归档缺口表"CI 空跑"；现状：`tests/_fake_run.py`（假大脑 / 假世界 / 假记忆跑真的三张图）已有，`test_node_io` 用它跑三种整局样本（201）；CI 配置写了 ruff ＋ pytest，但 `tests/` 被 `.gitignore` 忽略、不在库里，CI 上实际没有测试可跑（"CI 空跑"仍成立）；本地有 17 个测试文件；AGENTS.md 第十节"整局用例为 0"已过时（见 I7） | 待重写 |
+| I4 | 类型检查器 | 💬 | 底座 | 1 | 归档缺口表（mypy 装不装，未拍板） | 待重写 |
+| I5 | 数据轮转与归档 | 📋 | 底座 | 1 | 归档缺口表（trace 平铺落盘、base64 帧存进 json） | 待重写 |
+| I6 | 命名一致性 | 💬 | 底座 | 1 | 原 13 ＋ 原 11（`task_id` → `goal_id`）；原 11 现状：目标 id 为 `goal_id`、task id 为 `{goal_id}-t{n}`（195/196），随三层重构落地 | 待重写 |
+| I7 | 规范同步 | 🚧 | 底座 | 1 | 新：AGENTS.md 第一节（定位）、第五节（状态载体数量）、第十一节（阶段声明）、分层原则第 1 条（归并逻辑归属）随各条决定改写；CLAUDE.md 镜像同步。现状：第五节已改为三张图（200–202）；第一节定位、第十节测试现状（仍写"整局用例为 0""13 个文件、104 个测试"）尚未改 | 待讨论 |
 
-> **0915 新立。** 这一条此前只以"`experiment/` 现在只有 `tasks.py` + 19 个钉死存档 +
-> `real_check/`"这一句出现在缺口表里，**它自己承载的方法学一条都没登记**。
-> 0915 这一批改动（CHANGELOG 108～113）绝大部分落在它身上，够开一条。
->
-> **它是什么**：一次真机 run 跑完之后自己核四件——`check_trace`（封套六字段、
-> 残文件对账）、`check_memory` / `check_restore`（维度 3/4）、以及 `node_io`
-> 对**每一个节点的输入输出**逐条对形状与内容，最后打印 `[N/6] PASS/FAIL` +
-> 零痕迹清单。入口**只有** `python -m experiment.real_check.check_harness`
-> （`reviewer` 不传 = `NullReviewer`，无人插话、自己跑）。
->
-> **已经定下来的四条纪律（都不在代码里强制，靠口径）**：
-> 1. **任务怎么选**：**读历史挑一件"没做过的行为"**，由 AI 挑、**不是脚本抽签**
->    （CHANGELOG 111 收回 109 的 `random_task.py`——抽签只会反复产出同一类
->    "走到某格"，换汤不换药）。盘点维度＝历次 goal／用过的按键／出现过的
->    `dialog_text`／走过的 `map_id`；起点固定 (13,8)。
-> 2. **判据只认达成**：`criteria` 里**不许出现步数/预算条件**（CHANGELOG 108）。
->    步数只作"参考信息"，可进题头/局索引行/汇报行。理由：预算与收场是 harness 的
->    机械事实（`judge.py:73-74` 三类终止），写进判据就把"该怎么停"混进了
->    "算不算达成"。
-> 3. **任务可从命令行注入**：`--goal TEXT / --criteria TEXT / --steps N`
->    （CHANGELOG 109）——换任务不用改代码。**`--steps N` 的 N 是"按键次数"不是
->    "决策链数"**：链里每个键落一次 `step_advance`，"走过去 + 按 A"类任务光路
->    就 8~10 键，**预算给 30 起**（给 20 那局到 s19 才刚站到位）。
-> 4. **人在环是可选的一层**：`--review` 才接 `FileReviewer`（文件信箱，
->    `DEFAULT_TIMEOUT=300s`、看门狗 12→30 分钟）；不传 = `NullReviewer`。
->    **无人在环也能真达成**（`realcheck-0915-131133` 是硬证据）。
->
-> **跑法（写死在该脚本里的常量）**：`WATCH = False`（SDL 窗口在本机黑屏，
-> 用户定"不用显式了"）+ `SPEED = 10`（窗口没了仍当节流器）；起跑前
-> **先列进程再杀**（两个模拟器实例并存 = 唯一剩下的已知硬重启触发器）、
-> **一次只跑一个**、长跑输出一律落盘。
->
-> **已标定/已量出的数字（都是真机账）**：每帧图费 ≈185~198 tok（4→30 张不变）；
-> 一局 30 步 279s 里 68% 花在一次掉线的决策上；无人在环一局 ≈ 90s（去掉掉线）。
->
-> **缺的（本条真正的待办）**：
-> - **不能跑批**——它一次只跑一局，"N 局攒一张表"没有入口（缺口表那条"高"）。
->   所以它产出的数字**没有时间序列**，第 2、3 条要的正是这一层。
-> - **没有跨批次回归对比**——改一条 prompt 之后"上一版和这一版比一比"做不到；
->   而且**判据文本一变，历史成功率就不可比**（CHANGELOG 108 明写），
->   这使"留一份可比的基线"这件事比想象的更紧要。
-> - **`--steps` 语义容易踩**（按键次数 vs 链数）、**漏答的 review 会静默降级**为
->   "没意见"（分不清真没意见与 AI 掉线）。
->
-> **关系**：本条是第 3 条（测评体系）的**实际替身**、第 21 条（criteria/VLM 排查）
-> 的**载体**、第 10 条（延迟归因）的**数据来源**。**它一条待办都不解决，
-> 但它决定了其余几条"凭什么判断做完了"**。
+### J. 跨项目依赖
 
-## 对照业界：现在的测评覆盖了什么
+| 编号 | 条目 | 状态 | 叙事 | 归属 | 来源 | 详述 |
+|---|---|---|---|---|---|---|
+| J1 | 知识服务接口（项目 3 → 项目 1） | 💬 | 工业 | 1、3 | 新 | §4 |
+| J2 | 混合检索抽成共享库 | 💬 | 底座 | 1、3 | 新：`memory/retrieval.py`（BM25＋向量＋RRF＋reranker，纯函数）抽出，项目 1 与项目 3 共用 | 待讨论 |
+| J3 | 接入治理网关（项目 2） | 💬 | 工业 | 1、2 | 新：鉴权、模型网关、预算强制执行经 tool 层接入；取决于项目 2 是否确认 | 待讨论 |
 
-现在 19 条 `knowledge_*` 短任务（≤15 步、单目标、二元成败）大致对应
-BALROG 里 BabyAI 那一档，测的是"认不认识菜单、按不按得对键"，不是"能不能
-打通一段有真实策略深度的内容"。
+---
 
-> **0911 附注：这一节的"我们现在有没有"列要按新现实读。**
-> - **任务集本身没丢**：19 条任务的定义在 `experiment/tasks.py`，19 个钉死存档
->   在 `experiment/experiment_states/`。
-> - **但"跑这些任务的入口"和"出报表的工具"都在 0910 删掉了**
->   （`run_all_tasks.py`/`run_experiment.py`/`manifest.py`/`eval_report.py`），
->   所以表里"部分有"的那一格（`--repeat` 能跑 N 次）**已经没有对应的命令行了**。
-> - **"部分解法已提交进仓库"这句已不成立**：那批具名记忆文件 0904 就清了，
->   且 0910 之后记忆文件名是 uuid（第 12 条）。
-> - **"核实第 12 条的记忆泄题风险（优先级最高）"已部分完成**：跨 run 那条路径
->   被 tool 层禁掉了（第 8 条），剩下知识库与同批次两个面。
+## 四、已定稿条目
 
-| 类别 | 代表 | 测的是什么 | 我们现在有没有 |
-|---|---|---|---|
-| 长程里程碑 | Claude Plays Pokemon；`PufferAI/pokegym` | 数千步连续决策一致性，用里程碑而非固定步数二元判定 | 没有——最长任务链只有 3 个子任务 |
-| 对战策略深度 | `PokéChamp`（ICML 2025）、`PokeLLMon` | 招式克制、换宝可梦时机等策略决策 | 没有——现在只测操作正确性 |
-| 试验一致性 | `tau-bench` 的 `pass^k` | 同一任务独立跑 k 次，是否每次都成功 | 部分有——`--repeat` 能跑 N 次，但没单独拆出"是否每次都成功" |
-| 通用长程智能体 | GAIA、SWE-bench、OSWorld | 分难度层级、任务集大部分不公开防止针对性记忆 | 没有——19 条任务判据全公开，且部分解法已提交进仓库（见第 12 条） |
+### B0 记忆没有分层时，"谁读、谁写、能否回滚"无法回答
 
-建议吸收但不是现在做：批次报表加"是否 k 次都成功"一列；给长程目标定义
-里程碑判据；对战任务加"招式选择质量"判据；核实第 12 条的记忆泄题风险
-（优先级最高，可能让现有数字从一开始就不可信）。
+状态：💬 ｜ 叙事：科研 ｜ 归属：项目 1 定义，项目 3 承载 Belief 与 Wiki ｜ 依赖：J1 ｜ 最后核实：2026-09-24
 
-Sources: [PokéChamp (ICML 2025)](https://arxiv.org/abs/2503.04094) ·
-[BALROG](https://balrog-ai.github.io/docs/index.html) ·
-[Claude Plays Pokemon 评测方法（ZenML 摘要）](https://www.zenml.io/llmops-database/building-and-deploying-a-pokemon-playing-llm-agent-at-anthropic) ·
-[PufferAI/pokegym](https://github.com/PufferAI/pokegym) ·
-[PWhiddy/PokemonRedExperiments](https://github.com/PWhiddy/PokemonRedExperiments) ·
-[PokeRL (2026)](https://arxiv.org/abs/2604.10812) ·
-[LLM Pokémon League](https://www.emergentmind.com/topics/llm-pokemon-league) ·
-[PTCG-Bench (2026)](https://arxiv.org/abs/2605.29653)
+**问题**：现有记忆（act → task → episode 三级阶梯、object_fact、人工维护的 knowledge）按检索单元划分，
+没有规定哪一层可以进决策 prompt、哪一层可以被改写、哪一层必须不可变。
 
-## 已完成
+**证据**：WikiSkill（arXiv 2608.27454）消融显示，在进化过程中让推理 agent 读 Wiki
+会降低最终技能质量；BeliefMem（arXiv 2605.05583）的设计则是把假设分布直接交给决策。
+两者对"决策侧读什么"的要求不同，必须分层才能同时成立。
 
-> **0911 阅读说明**：这张表是**历史流水**，记的是"当时做完了什么"，
-> 状态标记保留当时的判定、不逐行回改。其中若干行的**落地物已经随后续重构
-> 消失**——例如所有提到 `evaluation/*`、`eval_report.py`、`agent_permission`、
-> `permission_skipped`、`tests/*` 的行（第 27 条与全局作废声明）。
-> **要判断"现在还剩什么"，以正文各条的「0911 现状」为准，不要以这张表为准。**
-> 特别提醒三行容易误读的：`✅ eval_report.py 补充审计失效率统计`（工具已删）、
-> `✅ RunDataCenter`（已落地但后续被简化两轮）、
-> `✅ trace 落盘感知帧`（0904 的决定，0910 又改成了"一条事件一个文件 + 截图目录"）。
->
-> **0915 追加阅读说明**：这张表**只到 0914 为止**，**0914 深夜～0915 这一整批
-> （CHANGELOG 93～116）没有补进表里**——那批改动以"形状/纪律/跑法"为主，
-> 登记在各条正文的「091X 补」块与头部第 9 条全局声明里，**按"已完成表停在
-> 0914"读**。另外下面几行的落地物已经又变过一轮，别照字面理解：
-> `✅ trace 落盘感知帧`／任何提 `frame_png` 的行（CHANGELOG 100 删了
-> `frame_png`，**画面真源改成 `memory/step_memory` 的帧字段**）、
-> `✅ StepMemory 挂截图引用 / 直接存 base64`（帧字段名从
-> `before_frame`/`after_frame` 到 base64 的两轮演变都在表里，**序列化方式
-> 那轮之后又随封套改造换过读法**）、`✅ 补 RUN_START/RUN_END`（账名与 `meta`
-> 都随封套改造改了名/搬了家）、以及所有用
-> `MEMORY_READ`/`MEMORY_WRITE`/`OBJECT_NOTE` 一类**旧账名**的行
-> （现名见头部第 9 条）。
+**方案**：五层，层级关系为 Raw → Belief；Raw ＋ Belief → Wiki → Skill；价值记忆独立从 Raw 派生。
 
-| 内容 | 说明 |
+| 层 | 内容 | 写入方 | 读取方 | 可改性 |
+|---|---|---|---|---|
+| Raw | 发生过什么 | harness（每步追加） | 所有下游 | 不可变 |
+| Belief | 世界现在是什么样（带概率的竞争假设） | 触发时生成，证据到来时在线更新（B5a） | 决策 agent、Wiki 维护者 | 概率可变，假设不删 |
+| 价值记忆 | （状态, 动作, 回报） | harness（局末回填） | 对战等短程 subagent | 可重建 |
+| Wiki | 失败模式、有效策略 | 离线维护者 | **只有** Skill 提案者 | 只追加修订，永不回滚 |
+| Skill | 程序性指令 | 提案者，经门控 | 所有 subagent（全量注入） | 可回滚 |
+
+**验收**：每一类现有记忆在五层中都有唯一归属；AGENTS.md 分层原则按此改写（I7）。
+
+**非目标**：不引入第六层；不让决策侧读取 Wiki。
+
+**参照**：WikiSkill（arXiv 2608.27454）；BeliefMem（arXiv 2605.05583）；JitRL（arXiv 2601.18510）。
+
+---
+
+### B2 对战等短程离散决策没有利用过往回报
+
+状态：💬 ｜ 叙事：科研 ｜ 归属：项目 1 ｜ 依赖：G2、B6 ｜ 最后核实：2026-09-16
+
+**问题**：动作选择只看当前观测与检索文本，过往同类状态下各动作的实际回报没有进入决策。
+
+**证据**：Opus 4.5 报告记录了对战资源管理失败（回复药使用混乱、不保留 PP、硬仗前不补给）。
+
+**方案**：复现 JitRL。记忆存（状态, 动作, 回报），回报沿轨迹 MC 回填（原机制三）；
+推理时检索近邻状态，按回报计算各动作的 advantage，以加法形式修正枚举动作的 logit。
+论文证明该修正是 KL 约束策略优化的闭式解。
+
+**验收**：同一对战片段重复运行，对战失败率随重复次数下降；与"不修正 logit"组对照。
+
+**非目标**：不更新模型权重；不用于大地图导航等长程决策（由 C1 负责）。
+
+**参照**：JitRL（arXiv 2601.18510，NUS，2026-01；基准为 WebArena 与 Jericho）。
+
+**前置约束**：现决策档为 qwen-plus（DashScope API），无法读取 logit，须先有 G2 的本地开源模型档。
+
+---
+
+### B3 Wiki 条目无法表达"它依赖的前提已经动摇"
+
+状态：📋 ｜ 叙事：科研 ｜ 归属：项目 3 ｜ 依赖：B5a、J1 ｜ 最后核实：2026-09-16
+
+**问题**：WikiSkill 的 Wiki 层只追加、永不回滚，但它归纳出的规律可能建立在后来被推翻的观察之上，
+原设计没有把"前提"显式记录下来。
+
+**证据**：① WikiSkill 原文**没有**为 Wiki 条目设置可信度分数或支持/反驳计数，
+唯一的可信度判断是 Skill 在验证集上的门控；
+② `docs/spec/PLAN_wikiskill_reproduction.md` 草案有两处与现状不符：
+其一，写入了论文中不存在的"战绩字段、revision＋1、evidence 追加 refute"；
+其二，trace 描述仍是 0914 之前的形状（`event_id`、`valid=false`、`events/<run_id>-<id>.json`）。
+
+**方案**：
+- 每条 Wiki 条目增加**前提**字段（引用的 Belief id 列表）与**状态**字段（有效 / 前提失效待复核）；
+- 条目不复制 Belief 的概率，只引用 id；
+- 订正草案的上述两处；
+- 删除原 25②c 对 WeKnora 的参照。
+
+**验收**：任意 Wiki 条目可追溯到其前提 Belief 与 Raw 证据；草案与论文、与现行 trace 形状一致。
+
+**非目标**：不对 Wiki 条目做回滚；Wiki 不进决策 prompt。
+
+**参照**：WikiSkill（arXiv 2608.27454，Google，2026-08）。
+
+---
+
+### B5a 关于环境状态的陈述没有可信度，也不支持竞争假设
+
+状态：💬 ｜ 叙事：科研 ｜ 归属：项目 3 ｜ 依赖：J1、B1、F2、D3 ｜ 最后核实：2026-09-16
+
+**问题**：Wiki 与记忆中大量内容不是动作模式，而是对世界的陈述（门通往哪里、道馆需要什么、
+上次为什么失败）。这类内容需要判断的是**是否为真**，而工具性效用分（如 MemRL 的 Q、
+JitRL 的 advantage）衡量的是**能否换来奖励**，不适用。
+
+**证据**：Opus 4.5 报告："一条写进笔记的错误假设能让进度停滞好几天"；
+另有执着寻找电梯时把灰墙认成电梯的案例，属于部分可观测下过早认定单一结论。
+
+**方案**：以 BeliefMem 为唯一参照。
+
+1. **存储**（式 6）：按属性 c 组织，每个属性下并存多个候选假设 h，各带概率 b(h) ∈ [0,1]。
+2. **触发与生成**：只在 Raw trace 出现"预期与实际不符"时建立属性。
+   - 规则触发（不调模型）：移动被挡（按方向键后 `map_id`/`x`/`y` 未变）、
+     地图切换（`map_id` 变化）、子目标卡住或 judge 判定未达成、感知结果出现对话文本；
+   - 触发后调用一次 LLM，为该属性提出至少两个互斥假设外加"其他原因"；
+   - 新属性初始概率取 [p_min, p_max]（式 8）。
+   LLM 只负责**列出可能性**，不负责判定真假。
+3. **更新**（式 9，noisy-OR）：
+   p_{t+1}(h) = min( 1 − (1 − p_t(h)) · (1 − Δ(o_{t+1}, h)), 0.99 )；
+   观测支持同一属性下的竞争假设时，被反驳的假设降为 0.25（原文附录 A.2），不删除。
+4. **Δ 按证据来源查表**（本项目扩展，依据 P-1；原文 Δ 由模型判定）：
+
+   | 证据来源 | Δ | 强度 |
+   |---|---|---|
+   | RAM 空间读数与假设直接对应（坐标、地图编号） | 高 | 强 |
+   | 再次到达时的 VLM 感知 | 中 | 中 |
+   | 按假设行动后结果相符 | 中 | 中 |
+   | LLM 从文本推断或摘要 | 低；仅靠此类证据累积的概率封顶于采信阈值以下 | 弱 |
+
+5. **检索**（式 10）：α(c) = sim(o_t, c) · λ^{τ(c)}，τ 为距上次更新的时间；衰减只作用于排序，不改动存储概率。
+6. **输出**（式 11）：返回前 K 个属性及其**完整假设分布**。
+
+**验收**：
+- 注入错误 Belief（伪造前置条件、错误地点信息）的对照实验：错误假设被采信次数、
+  从注入到进度恢复的步数，开启与关闭 Belief 层对比；
+- 在线更新的模型调用只发生于触发事件，按局统计调用次数与 token。
+
+**非目标**：不让 LLM 给出 Δ 数值；不删除被反驳的假设；不用于动作模式（由 B2、B4 负责）。
+
+**参照**：BeliefMem（arXiv 2605.05583，MBZUAI / RIKEN AIP / UT Austin / 武汉大学，2026-05；
+ALFWorld 已见 63.57%、未见 38.19%，训练免）。P-1 依据见第二节。
+
+**待办**：p_min、p_max、λ、K 的取值需精读原文附录 A.3；原文 Δ 与属性抽取的具体实现在附录 A.1，需精读确认。
+
+---
+
+### B5b Belief 概率回落后，依赖它的 Wiki 与 Skill 不会随之变化
+
+状态：💬 ｜ 叙事：科研 ｜ 归属：项目 3（传播）→ 项目 1（Skill 重新门控） ｜ 依赖：B3、B4、B5a ｜ 最后核实：2026-09-16
+
+**问题**：WikiSkill 规定 Wiki 永不回滚，但前提被推翻后，Wiki 条目与由它派生的 Skill 仍会继续生效。
+
+**证据**：WikiSkill 与 BeliefMem 均未定义跨层失效传播。
+
+**方案**（本项目扩展）：
+1. 区分**回滚**（恢复旧状态、抹去之后的变化，Wiki 禁止）与**修订**（追加新版本、旧版保留，允许）；
+2. 被引用的 Belief 假设概率跌破 θ_low 时，引用它的 Wiki 条目状态改为"前提失效，待复核"，
+   条目内容不变，提案者暂不读取；
+3. 下一轮维护时，维护者结合新 Raw 证据追加修订版，或确认原判断成立并解除标记；
+4. 由该条目派生的 Skill 标记为"需要重新门控"，门控不通过则按 WikiSkill 规则回滚 Skill；
+5. 双阈值防抖：跌破 θ_low 才标记失效，回升超过 θ_high 才恢复。
+
+**验收**：人为推翻一条被引用的 Belief 后，标记、复核、Skill 重新门控三步均在 trace 中可见；
+阈值附近波动不产生反复标记。
+
+**非目标**：不自动删除或改写 Wiki 正文。
+
+**参照**：WikiSkill（arXiv 2608.27454）的回滚规则；BeliefMem（arXiv 2605.05583）的概率表示。
+
+---
+
+### B8 所有情境都用同一种方式调用过往经验
+
+状态：💬 ｜ 叙事：科研 ｜ 归属：项目 1 ｜ 依赖：B6、E2、B5a、B4 ｜ 最后核实：2026-09-24
+
+**问题**：三层各自在 perceive 格读记忆（task 读本 task 的 ActMemory、episode 读本局 TaskMemory，另读世界事实，202；knowledge 由人管理，抽取链已删，201），每圈固定读取，不区分情境是否见过。
+
+**证据**：
+- SkillEvolBench（arXiv 2605.24117，2026-05）：原始轨迹常比由其蒸馏的技能更有效（"有损抽象瓶颈"）；技能库越大，冻结评测表现越差；
+- NTU 经验复用研究（arXiv 2604.27003，2026-04）：同一任务分布内原始轨迹占优；跨任务时原始轨迹负迁移（ALFWorld A→B −9.5%），抽象洞察正迁移（＋6.5%）；步级重复检索在分阶段任务上有益、在同质任务上有害。
+- WikiSkill 的消融针对的是**进化期**读取 Wiki，不能推出"部署时不应使用原始经验"。
+
+**方案**：按情境相似度选择经验形态。
+
+| 情境 | 使用的经验 |
 |---|---|
-| ✅ 经验文档体系 | `docs/experiences/` + 四段式模板，见 `EXPERIENCE_DOCS.md` |
-| ⏪ 测评：judge 机械复核（已移除） | `evaluation/audit_verdicts.py` 曾实现（19 条任务规则 + 32 个回归测试），2026-09-02 用户决定不需要、已删除，见 `evaluation/SPEC.md` 五节 |
-| ✅ CI/CD 骨架 | `.github/workflows/ci.yml`：lint（ruff）+ test（pytest，3.11/3.12 矩阵） |
-| ✅ 打包 bug 修复 | `pyproject.toml` 补显式包声明，`pip install -e .` 之前从未真正跑通过 |
-| ⏪ `memory_carried` 可观测（已移除） | `EPISODE_START` 曾记录开局时跨局摘要池大小。0910 判定该快照没有诊断价值——每一局都会重新检索一次，开局那个数不代表这一局实际能用到什么；字段与 `episode_summary_count` 一并删除 |
-| ✅ 重试循环从 brain 挪到 harness | `Brain.choose_once`/`_perceive_once` 只负责单次尝试，重试驱动移到 `harness_utils.choose_with_retry`/`perceive_with_retry`；trace 里每次 attempt 现在是独立调用，时间戳分得清 |
-| ✅ 无头模式限速回归修复 + 决策 async 移除 | `pyboy_world.py` 恢复无头不限速（并补回被误删的 `_tick`/`_frame_png`/`latest_frame`）；`choose_with_retry` 改同步调用，`Brain.choose_once_async`/`_executor`/`IDLE_FRAMES_PER_POLL` 删掉——decision 本身的模型延迟长尾原因仍未查清，见第 10 条 |
-| ✅ `Source` 精细化 + 补 `STALL_CHECK` 事件 | 新增 `Source.PLAN`（`RunHarness.plan` 的模型调用从 `Source.HARNESS` 移出，不再和零成本记账事件混算 token）；`MEMORY_READ`/`STEP_MEMORY_WRITE`/`OBJECT_MEMORY_WRITE`/多数记忆相关 `permission_skipped` 统一改 `Source.MEMORY`（以前分散在 `DECISION`/`HARNESS`）；新增 `EventType.STALL_CHECK`，`detect_stall` 每一步把 `stall_key`/`stall_count` 写进 trace，不再只活在内存里。`verify_steps` 的两处 `Source`/事件粒度问题特意没动，见第 9 条 |
-| ✅ `recursion_limit` 撞限修复 | `episode_harness.py::run()` 撞过 `GraphRecursionError`——图之前从 5 节点/步拆成现在的 17 节点（continue 分支 15 节点/步），但 `recursion_limit = max_steps * 6 + 20` 是拆图前留的老公式，一直没跟着改，导致 `max_steps` 稍微大一点就会在没跑完步数时被无声打断。改成 `max_steps * 16 + 20`（15 节点 +1 余量），并在代码里加注释警告这个数字要跟 `_compile()` 的节点数同步改。用一个跟真图形状一样（15 节点/步的环）的最小 LangGraph 复现验证：旧公式在 `max_steps=15` 时确实撞 `GraphRecursionError`，新公式跑完整局、`step` 数对得上。`docs/spec/harness/SPEC.md` 里旧的"×6"公式说明还没同步改，等测试/spec 解冻信号一起处理。**0902 已在真实 run 验证**（`run-20260901-195813-c9dd14`，重启后新代码进程）：ep1/ep2 均跑满 `max_steps=3` 正常终止（`max_steps_exceeded`），不再撞限；此前 19:15 那次撞 `recursion limit 38`（= 旧公式 `3×6+20`）确认为改动前旧进程所跑 |
-| ✅ 观测台一键启动 `dev.ps1` | PowerShell 5.1 兼容脚本：选 Python（py -3.12 优先）→ 起 `python -m pokemon_agent.api`（:8000）+ vite（:5173，代理 `/health`、`/runs`）→ `Wait-Process` 一个退出即全杀。0901 执行验证通过（前后端均正常、`/health` 返回 ok）；注意：后端慢启动约 8–15s、uvicorn 日志走 stderr（`dev-api.err.log`）、中文 `Write-Host` 在重定向场景乱码（交互终端不受影响），详见 `docs/devrun-2026-09-01.md` |
-| ✅ 摘要蒸馏字段长度上限整条拒绝响应 | `MemoryEpisodeSummaryResp.summary`/`EpisodeMemory.summary` 的 `max_length=200` 已删除——0901 真实 run（`run-20260901-195813-c9dd14`）复现过一条字段超长导致 `EpisodeSummaryParseFailure`、整条摘要（含质量很高的 reusable_patterns）被丢弃、本 run 摘要零写入、重试从零开始的问题。**注意**：prompt 模板（`episode_summary.md`）目前没有对应的软性字数要求，字段本身描述里"100字以内"的说法也一并删掉了（那句话本来就没传给模型，是摆设）；要不要在 prompt 里补软约束还没决定 |
-| ✅ `run_harness.py` 只留控制流，拆出 `run_utils.py` | 跟之前 `episode_harness.py`/`utils.py` 是同一次重构的第二半：`RunHarness` 只留五个图节点该问哪个依赖、该走哪条边；`_ask_planner`/`_parse_plan`/`_to_tasks`/`_apply_edit`/`_history_lines`/`_goals_lines` 这些重试循环、LLM 调用记账、纯计算全部搬进新文件 `harness/run_utils.py`（对应函数改自由函数：`ask_planner_with_retry`/`parse_plan_response`/`to_tasks`/`apply_goals_edit`/`history_lines`/`goals_lines`，外加从 `reflect()` 里顺带抽出的 `goal_retries_exhausted`）。原来给 episode 用的 `harness/utils.py` 顺带改名成 `episode_utils.py`（`episode_harness.py` 里的 `harness_utils` 别名同步改成 `episode_utils`，22 处调用点），两个工具文件按局内图/run 级图分清楚、互不依赖。冒烟验证：`run_utils` 纯函数/`ask_planner_with_retry` 独立测过一遍，外加一次假端口跑通整张图（`begin→plan→dispatch→reflect→review→plan→END`）确认拆分后行为不变；`ruff --select F401,F821,F841` 干净（`run_harness.py` 里那个 `HarnessPort` 未用导入是拆之前就有的老债，按约定没动） |
-| ✅ 补 `RUN_START`/`RUN_END`，judge/verify_steps 的 `attempt` 字段 | 对应第 4 条 a) 和原第 4 条：新增 `EventType.RUN_START`/`RUN_END` + `trace_utils.run_start`/`run_end`/`run_error`（`episode_id` 位置放 `run_id`、`step` 恒为 0，跟 `Source.PLAN` 是同一个约定），`RunHarness.run()` 现在开局写 `RUN_START`，正常/异常收尾都写 `RUN_END`（异常带 `why`），模式照抄 `EpisodeHarness.run()` 的 `episode_start`/`episode_end`/`episode_error` 三段式。另外 `Brain.judge()`/`Brain.verify_steps()` 四处 `ModelCall` 构造（各自的成功/异常路径）都补上了 `"attempt": "1"`——两条链目前都不重试，以前是漏记不是没有第二次。冒烟验证：假端口把 `RunHarness.run()` 正常路径和异常路径各跑一遍，确认首尾事件分别是 `RUN_START`/`RUN_END` 且异常路径带 `why`；`@initialize` 包一层后真调一次 `Brain.judge()`，确认返回的 `ModelCall.payload` 带 `attempt`。第 4 条 b)（进程层 INTERRUPTED 兜底）和 c)（plan 调用次数复核）还没做，见第 4 条 |
-| ✅ `RunDataCenter`：前后端交互统一（goals 槽 + review 槽，含真阻塞轮询） | 对应第 1 条：新模块 `pokemon_agent/harness/run_data_center.py`（`RunDataCenter` + `DataCenterReviewer`），goals 槽原样搬自 `RunHarness` 的旧内部字段，review 槽新增（`publish_review_request`/`pending_review`/`submit_review_response`/`await_review_response(timeout, poll_interval)`——`timeout<=0` 立即返回 `None`，`>0` 真阻塞轮询直到超时或有答复）。`RunHarness.review()` 现在把 `episode_trace`（`run_utils.episode_trace_events` 按 `episode_id` 过滤出的单局完整 trace）塞进`HumanReviewReqFromHarness` 一起发布。`api.py` 新增 `GET/POST /runs/{id}/review`，`GET /runs/{id}` 响应体补 `review_pending` 字段；`REVIEW_TIMEOUT` 默认 0（审查面板还没做，先不真阻塞，等价于原来的 `AutoContinueReviewer`）。前端补数据层：`types.ts`（`HumanDecision`/`PendingReview`/`ReviewSubmitReq`/`ReviewSubmitResp`）、`api.ts`（`getPendingReview`/`submitReview`）、新文件 `useReview.ts`（2s 轮询，同 `useRunGoals` 模式）；审查面板 UI 组件本身留作后续任务。冒烟验证覆盖 goals/review 槽单测、`DataCenterReviewer` 超时与真答复两条路径、`RunHarness` 全链路集成（`episode_trace` 非空且只含当局事件、槽位生命周期对）、`api.py` 端点全流程（`TestClient` 走一次 202→review_pending=True→GET 详情→POST 决策→409 复查）；既有测试套件跑过一遍无回归。**已知连带回归**：`tests/test_api.py::test_review_endpoint_removed` 断言端点不存在，现在端点真实存在，等测试解冻信号再改 |
-| ✅ `verify_steps` 改检索增强验证 + 节点拆分 + `verify_llm` 独立可配置 | 对应第 9 条：`step_verify.md` 重写（写死的领域规则全删，改成读 `$knowledge` 占位符，覆盖不到时兜底 `reliable=false`）；`StepVerifyReq` 加 `knowledge` 字段；新增 `episode_utils.build_verify_knowledge_query`（整局 entries 的 scene/overlay/action 并集 + goal 拼查询，同 `build_knowledge_query` 的教训）；新增独立 `Source.VERIFY`（原来跟 `judge` 共用 `Source.JUDGE`，token/延迟分不开）；新增 `trace_utils.verify_call`，结构化 `verdicts`（`index`/`reliable`/`why`）落 trace 而不是只留 `reliable` 集合。**落地时按用户要求做了架构修正**：初版实现把检索+校验揉进一个节点，违反 `EpisodeHarnessPort` 的"每个节点只改状态里一处"接口约束——改成三个独立节点 `retrieve_verify_step_memory`（只改 `verify_step_entries`）→ `retrieve_verify_knowledge`（只改 `verify_knowledge`）→ `verify_steps`（只改 `verified_steps`，读 state 已查好的两项，不自己查库），`retrieve_verify_step_memory` 后按有无 step 记忆路由分流，空则直接跳 `summarize`；图从 17 节点变 19 节点，`EpisodeHarnessPort` 文档/ASCII 图同步更新。`Brain.__init__` 加 `verify_llm`（缺省回退 `judge_llm`，向后兼容），`build.py` 的 `build_real()` 加 `verify_model` 参数。冒烟验证：7 段测试覆盖三个节点各自只改一处状态、query 带 entries 的场景/动作特征、空 entries 时路由结果、`verify_steps` 读 state 而不重新查库、`verify_llm` 真的独立于 `judge_llm`（含不传时回退、传了用自己两条路径）；既有测试套件 53/53 相关用例通过，无回归。**还没做**：真实数据 ground truth 核对，跟第 3 条测评体系一起做，见第 9 条 |
-| ✅ 审查面板 UI + `REVIEW_TIMEOUT` 真启用 | 对应第 1 条：`REVIEW_TIMEOUT` 默认 0→5，`RunDataCenter` 补 `review_deadline()`，`GET /runs/{id}/review` 响应体加 `deadline_ts`；`web/src/App.tsx` 新增 `ReviewPanel`（outcomes/last_task 展示 + continue/stop/retry/push 四按钮 + 倒计时 + 超时自动兜底提示）；`useReview.ts` 轮询间隔 2000ms→500ms（配 5s 超时，原间隔太粗会吃掉近一半的可反应窗口）。`tsc --noEmit` 无报错；后端 `RunDataCenter`/`DataCenterReviewer` 的 deadline 逻辑单独脚本验证过（5s/0.2s 超时、清空归零、超时兜底成 CONTINUE 三种场景）；`tests/test_api.py` 端到端跑不了（这个精简 device VM 环境装不上 `agent_permission`，同 evaluation 那次 ruff/pytest 限制），只到单元级别 |
-| ✅ `eval_report.py` 补充审计失效率统计 | 对应本次可观测/审计全项目扫描：`Source.VERIFY` 的 `payload.verdicts` 之前只落 trace 没人解析，`SourceMetrics` 新增 `verify_total`/`verify_unreliable`/`verify_unreliable_rate`/`verify_parse_errors`，报表按链路多一行"审计失效率"明细，见 `evaluation/SPEC.md` 10.4a；3 个新测试（可信/不可信混合、`verdicts` 解析失败、无 `verdicts` 字段的普通链路不受影响），`evaluation/tests/` 共 17 个用例全过。对应 P2 可审计从 📋 推进到 🚧 |
-| ⏪ 删除死代码 `tests/test_step_audit.py` | 这个测试文件引用的 `Brain.audit_steps`/`Brain._parse_audit`/`pokemon_agent.schemas.communication.step_audit`（`StepAuditReq`/`StepAuditResp`/`StepAuditVerdict`）在当前代码里根本不存在——某次重构把这套机制改名成 `verify_steps`/`step_verify.py`（`StepVerifyReq`/`StepVerifyVerdict`），测试文件没跟着改名，`import` 那行直接 `ModuleNotFoundError`，整个文件在 collection 阶段就挂了，从未真正跑起来验证过"审计器永远返回不抛异常""解析失败全部标不可靠"这两条核心契约。0902 全项目扫描发现，用户确认"删掉test"，已删除；真实机制（`Brain.verify_steps`）继续由 `EpisodeHarness` 的图节点覆盖，没有独立单测这件事本身是个遗留缺口，但不在本次范围内 |
-| ✅ 观测台事件流断线提示 + 四栏性能优化 | 对应本次可观测扫描发现：`useRunStream.ts` 之前只监听 `trace`/`done`/`error` 三个具名 SSE 消息，从没注册 `onerror`（对比 `useFrameStream.ts` 有），断线时前端没有任何视觉提示，只能靠"事件列表很久没变"猜。改成返回 `{events, connected}`，`onerror` 时 `connected=false`，`App.tsx` 加一条"事件流已断开，浏览器正在自动重连…"的提示条（不影响浏览器自身的自动重连，纯展示）。顺带给 think/act/observe/其他 四个 `filter` 加 `useMemo`（原来每次渲染都全量重新过滤+反转，长 run 几千条事件会有实打实的性能问题）。用户对前端这块要求是"能用就行，你想干嘛干嘛"，按最低成本方案做，没上虚拟滚动/rotation |
-| ✅ `map_hint.md` + `decide_action.md` 修正 trace#20 归因 | **0903 用户指出我最初诊断错了**：以为"已知地图41是初心镇宝可梦中心"是模型训练时记住的攻略，实际重新查了 `read_knowledge` 的 `refs` 才发现——这条是**如实检索到的项目知识**（`pokemon_agent/memory/semantic/knowledge/pokemon_center.md`，运营维护、只读，内容属实），不是模型编的。真正的问题在下游：模型把"知识说这个方向最终能到宝可梦中心"（跨地图关系，长期为真）和"屏幕边缘的下一格就是门"（这一帧还没加载出来，`walk_map`/`neighbors` 里根本没有）混成了一件事，并且把这个预测提前写成"因为……满足'站在门前台阶上'判据"存进 `StepMemory.rationale`——而 `rationale` 是决策时的原始说法，写入后不会再核对（`step_memory.py` 文档本身就写明"不是已经验证过的结论"），执行后的 `after` 状态其实四邻全是 `.`，没有任何门的证据，但已经晚了。改了两处 prompt：`map_hint.md` 把"训练时地图攻略不是证据"改成准确的说法（检索知识说的是"地图之间的关系"，不是"这一屏此刻有什么"）；`decide_action.md` 的 `rationale` 要求里加两条硬规则——只写"现在已经看到的"不写"这么走了之后会看到什么"，以及 rationale 不许对目标判据下结论（那是 judge 的职责）。`load(...)` 渲染验证过两个文件都正常；**效果仍要等下一次真实 run 观察**
-| ✅ prompt 装配架构重排：统一入口 + 按用途分目录 + 组装逻辑收进单文件 + Brain 全部改收单一 req | 0904 一次连续重构，起因是"prompt 该怎么组织"的讨论。**目录**：`pokemon_agent/prompts/` 下按"谁只服务谁"分区——`calls/` 平铺五个没有复用片段的独立模板（`judge_success`/`run_plan`/`step_verify`/`episode_summary`/`perceive_screen`），`decide_action` 带四个只服务它自己的片段（`button_help`/`map_hint`/`repeat_hint`/`retry_note`），单独挪进子目录 `calls/decide_action/`——查过这四份没有任何一份被别的模板复用。**读取**：`load(name)` 改成整棵 `prompts/` 目录树递归找 `<name>.md`，调用方不用关心某份 prompt 在哪层子目录，两处重名当场 `assert`。**组装**：以前分散在 `game_hints.py`/`brain_hints.py`/`Brain._build_prompt()` 三处的 `decide_action` 拼装逻辑收进一个新文件 `prompts/decide_action.py`，`game_hints.py`/`brain_hints.py` 已删除；`judge_success.py`/`step_verify.py` 同理新增，把原来分别嵌在 `Brain.judge()`/`Brain.verify_steps()` 方法体里的渲染逻辑搬出来。**Brain 边界**：`Brain` 现在完全不认识 `pokemon_agent.prompts` 这个包——`choose_once`/`judge`/`verify_steps`/`reflect` 四个方法全部只收一个 req 参数，不再有"prompt 字符串"和"其余参数"分开传的情况；`judge`/`verify_steps` 原来"渲染也在 try 里"以维持"永不抛异常"契约的写法，改成渲染搬到调用方（`EpisodeHarness`）后，由调用方自己包一层等价 try/except 接住 `build_prompt()` 可能抛的 `KeyError`，`Brain` 内部 try/except 收窄到只包模型调用这一步。**req 复用**：`BrainDecisionReq`/`BrainVerdictReq`/`StepVerifyReq` 都加了 `prompt: str = ""` 字段，跟对应的 `build_prompt()` 共享同一个对象——先拿其余字段拼 prompt，`req.model_copy(update={"prompt": ...})` 回填，再整个交给 `Brain`，`EpisodeHarness` 里原来同一批字段构造两遍（一遍给 req、一遍给 `build_prompt` 位置参数）的重复消掉了；新增 `ReflectReq`（`before`/`action`/`after`）同理收进 `Brain.reflect()`，统一"模块间调用只认一个 req"这条规则。**验证方式的限制**：这个 device VM 的 `python3` 装不上 `pydantic`/`agent_permission`（长期已知的环境限制，见下方基础设施缺口），没法跑真实 import/pytest，验证靠 `ast.parse`（语法）+ 手写的 unused-import 扫描——11 个改动文件全部通过，代码里搜不到任何残留的旧签名调用点，但**没有一次真正跑起来的端到端验证**，跟下面 `tests/test_episode_stall.py` 的遗留问题是同一类风险。**已知遗留**：`tests/test_episode_stall.py` 的 `FakeBrain.build_decision_prompt`/`choose_once_async` 等桩方法现在对不上新签名，按约定等测试解冻信号再改；`button_help.md` 与 `knowledge/battle_actions.md` 重复写"战斗菜单是 2×2"这条（0903 审计发现）还没修，同样等信号 |
-| ✅ 修掉 `button_help.md` 与 `knowledge/battle_actions.md` 重复写"战斗菜单是 2×2"这条 | 0903 审计发现的遗留项：`button_help.md` 的 choice/left、choice/right 两行硬写死了"只有 2×2 排布的选择框（战斗行动菜单）用得上"，跟 `knowledge/battle_actions.md` 的内容完全重复，且两者在 battle 场景下的同一次 `decide_action.md` 调用里会同时被渲染进去。改成泛指"只在选择框是横向多列排布时才有效果"，把"具体哪些场合是"这个领域知识留给 `$knowledge` 占位符检索，不再硬编码进这份常驻加载的模板。`perceive_screen.md` 里同一条知识（指令框是 2×2）**没有改**——那是结构性例外：这份 prompt 的职责就是从像素判断 `scene` 本身，判断出来之前无法先按 `scene=battle` 去检索"战斗知识"再喂给它，检索的前提在这一步还不成立；在 `pyboy_world.py::perceive_once()` 的方法文档里补了这条例外的书面说明，供以后审计时对照。|
-| ✅ `_render_human_note()` 硬编码提示词搬进 `human_note.md` | 用户 0905 明确要求"所有关于 prompt 渲染的问题全部交给 prompt"，全项目扫描后发现的唯一违规点：`decide_action.py::_render_human_note()` 把"人类刚刚插的话（最高优先级）"这整段指令性文字（标题+最高优先级声明+格式要求）硬编码成 Python 字符串字面量，只有 `note` 本身是变量，跟 `button_help.md`/`map_hint.md`/`repeat_hint.md`/`retry_note.md` 那套"内容在 `.md`、Python 只管数据/开关逻辑"的既定模式不一致，也就绕开了 `PromptTemplate.sha` 的版本追踪。改法完全照 `retry_note.md`/`_RETRY_TEMPLATE` 的先例：新建 `calls/decide_action/human_note.md`（原文一字不改，只把 `f"> {note}"` 换成占位符 `$note`），模块顶部加 `_HUMAN_NOTE_TEMPLATE = load("human_note")`，`_render_human_note()` 收缩成"空串不渲染，否则 `_HUMAN_NOTE_TEMPLATE.render(note=note)`"两行。**验证比前几轮更扎实**：`pokemon_agent.prompts` 这个子包本身不依赖 `pydantic`，这台 device VM 上真的能直接 `import`/`load()`/`.render()` 跑通（不只是 `ast.parse`），拿一句测试插话跑了一遍，逐字节比对渲染结果和原硬编码版本完全一致（含空行位置——`.md` 文件末尾多余的换行符一度会在 `$human_note_block` 和后面 `## 目标` 之间多插一个空行，已 `rstrip` 掉），`sha=f5a1d5b5e448`。|
-| ✅ trace 落盘感知帧：每一次感知的原始画面挂到对应的 OBSERVE/VIEW 事件上 | 用户提出的新需求：想在回看 trace 时能看到模型当时实际看到的那张画面，不只是解析出来的 `facts`。**第一版做法（同一天内被用户否决）**：`WorldPerceptionResp` 新增 `frame_png: bytes`，`TracePort.save_frame()` 另存成独立 PNG 文件、`payload` 里塞一个 `frame_path` 字符串引用——用户明确要求改掉："请保存到现有的 trace 类型里，只是多保存一个字段，并且我希望保存的是二进制字段，能直接读的"。**改后的做法**：`TraceEvent` 直接新增 `frame_png: bytes | None` 字段（不再是路径），配 `model_config = ConfigDict(ser_json_bytes="base64", val_json_bytes="base64")`——pydantic v2 对 `bytes` 字段的默认 JSON 序列化按 UTF-8 解码，PNG 字节不是合法 UTF-8，不显式声明 base64 编解码会导致 `model_dump_json()` 落盘时报错/损坏。`TracePort.append()`/`LocalTrace.append()` 新增关键字参数 `frame_png`，直接传给 `TraceEvent` 构造；`payload: dict[str, str]` 的形状完全不动。`TracePort.save_frame()`/`LocalTrace._frames_dir` 整个删掉，`WorldPerceptionResp.frame_png`（`pyboy_world.py::perceive_once()` 里截好的 PNG）改为原样一路传：`episode_utils.perceive_with_retry()` 返回 `(观测, 帧字节)`（不再落盘），经 `EpisodeRunState.pending_frame_png: bytes | None`（新字段，跟 `pending_observation` 同生共死）传到下一轮 `look()`，那里调 `trace.append(*trace_utils.observe(...), frame_png=state.pending_frame_png)` 直接落进那一条事件；`trace_utils.observe()` 恢复成不认识帧这件事——二进制字段完全绕开它，由调用方在 `append()` 时另传。`look_after_action` 的轻量摘要事件仍不挂帧，理由不变：同一帧马上在下一轮 `look()` 里连着完整 `facts` 一起记一次。**已知取舍**：`trace_data/` 本来就没有 rotation/归档（工程基础设施缺口表已经记了这条），帧字节现在直接嵌进 JSONL 每一行，比独立文件更省一次目录管理，但也让单条 JSONL 行本身变大、`episodes/*.jsonl` 从纯文本变成夹带 base64 大字符串，行内容不再适合直接人眼扫读；长期高频跑量时这条缺口的优先级应该提前，这次没有顺带做 rotation。**验证方式的限制**：同上几轮，这台 device VM 装不上 pydantic/agent_permission，靠 ast.parse + unused-import 扫描验证，没有端到端真实跑过一局确认 `model_dump_json()`/`model_validate_json()` 真的能在这个 bytes 字段上正确来回转换。|
+| 命中 B6 已有簇（见过的地点、谜题、训练师） | 原始经验：step / episode memory 直接检索（原 18 质量分加权保留） |
+| 未命中任何簇（新情境） | Skill ＋ 相关 Belief 分布 |
+| 短程离散决策（对战） | 价值记忆（B2） |
 
-| ✅ trace#20 修复第二拍：`map_note`/`map_guide` 结构性拆分 + prompt 精简 | 用户明确要求"结构性重写"，不只是加规则。改了三处代码 + 两份 prompt：**a) `ActionSpaceForBrain` 新增 `map_note` 字段**，跟原来的 `note`（连按用法）分开——以前 `MAP_HINT`（怎么读地图/判断证据）和 `REPEAT_HINT`（按键链用法）拼在一起塞进 `note`，被挂在 prompt 的"可用按键"标题下面，语义和位置对不上。**b) `game_tools.py::_mask()`** 把两者分开赋值（`note=REPEAT_HINT`, `map_note=MAP_HINT`）。**c) `Brain._build_prompt()`** 新增 `map_guide=space.map_note` 参数，紧跟在 `facts` 后面渲染。**d) `decide_action.md`** 新增 `## 怎么读这些事实、判断证据够不够` 一节，`$map_guide` 紧接在 `已知事实` 之后（模型刚看完这一帧数据就读到判断证据的规则，不用等读完一大段按键说明），`rationale` 字段要求重排：两条硬规则（只写"现在已经看到的"+ 不许对判据下结论）提到最前面，并新增"自证"要求——断言某格是门/某个 landmark 必须写得出具体坐标，写不出就是在猜。**e) `map_hint.md`** 合并三处重复的"都来自模拟器内存/都不会错"表述成一处，新增"`neighbors` 没有旧缓存"规则（直接对应模型真实用过的托辞"neighbors可能是错误或旧缓存"），"检索知识说的是地图关系"一节挪到文件最前面，跟地图/坐标基本规则放在一起。验证：`ast.parse` 三个改动的 `.py` 文件干净；`ActionSpaceForBrain` 新旧字段默认值/赋值单测过；完整 render 一遍新版 `decide_action.md`（含真实 trace 数据）确认 `$map_guide` 落在 `已知事实` 正下方、`note`/`map_note` 分流正确；`evaluation/tests/` 17 个用例无回归。`tests/test_episode_stall.py` 等依赖 `agent_permission` 的用例这台 device VM 仍然装不上，老问题，非本次引入
+检索触发由"每一步"改为"情境切换时"（E2 意图变化或进入新簇）。
 
-| ✅ trace#20 修复第三拍：`knowledge`/`episode_memories` 从 `obs.facts` 里独立出来 | 用户进一步指出结构问题：总 prompt 要分清楚"固定存在的规则描述"和"按需检索的内容"，检索出来的东西要标明怎么塞、怎么信。查代码发现 `enrich_observation` 一直把知识库检索结果（`knowledge`）和跨局摘要（`episode_memories`）跟 `known_objects` 一起折进 `obs.facts`——三者混在"已知事实"里对模型来说长得一模一样，没有可信度区分（`known_objects` 坐标锚定、跟 `walk_map` 同级可信，另外两个是检索结果，可信度低得多）。改动：**a) `BrainDecisionReq`** 新增 `knowledge`/`episode_memories` 两个字符串字段。**b) `episode_harness.py`**：`enrich_observation` 不再把这两项折进 `obs.facts`（`known_objects` 因为坐标锚定、可信度同级，继续留着），`think_action` 直接从 `state.knowledge_semantic_memory`/`state.global_episode_memories` 现算文本拼进 `BrainDecisionReq`。**c) `Brain._build_prompt`** 新增两个参数，`decide_action.md` 新增"## 检索到的相关知识"（`$knowledge`，说明"检索覆盖不到当前场景是常态，不代表没有先例；检索到的是跨地图/跨局规律，不能替代已知事实"）和"## 跨局摘要记忆"（`$episode_memories`，说明"是之前几局自己总结的，可能带偏差，可信度低于本局内相关记忆"）两节，各自独立于"已知事实"和"相关记忆"。**d) `map_hint.md`** 里"站在D上怎么按"、"隔着柜台怎么和NPC互动"这两段操作细节挪进了知识库（`doors_and_warps.md`/`dialogue_interaction.md`，按场景检索，不用每次都塞进总 prompt），`map_hint.md` 留一句指针"这类细节按需检索时看'检索到的相关知识'"。`step_memory.py::SNAPSHOT_BLIND` 和 `episode_harness_port.py` 里对应的过时文档一并同步。验证：7 个改动文件 `ast.parse` 干净；完整 render 一遍新版 `decide_action.md`（`$knowledge` 用真实的 `pokemon_center.md` 内容）确认三类数据（已知事实/检索知识/相关记忆/跨局摘要）四节各自独立、顺序符合可信度从高到低；`evaluation/tests/` 17 个用例无回归。**这一拍改的是"总 prompt 的骨架"，不是某一句话的措辞**——效果仍要等真实 run 观察
-| ✅ 全部 prompt 文件逐个复核并按"一个一个改"改完（quote 风格/JSON 围栏/共享内容去重/自相矛盾） | 用户要求"每个看看，格式是否有冲突，是否有改进的地方，是否清晰"，逐份读完 `pokemon_agent/prompts/*.md` 后按用户"一个一个改"的要求依次修：**1) `decide_action.md`**——统一引号为 `「」`、删掉 `rationale` 要求里和新加硬规则重复的旧段落、修正"已知事实"引言里把 `known_objects`（检索结果但同级可信）误描述成"不含任何检索结果"的自相矛盾。**2) `map_hint.md`**——统一引号，把嵌在别处、读起来突兀的"站在D上/隔着柜台"过渡句独立成一节 `## 有些操作细节按需检索，不是每次都写在这里`。**3) `perceive_screen.md`**——地形图例改用 `$terrain_legend`（原来手抄一份跟 `map_hint.md` 用的 `terrain_legend()` 措辞不一致，`@` 那行两边写法都不同），对应改了 `pyboy_world.py::perceive_once()` 传参和 import；修掉结尾"不要有```json包裹"跟第七节例子全带围栏的自相矛盾，统一成"不要有其他文字"；顺手修了一处引号混用（`"主角正上方"「左下角」`）和一处标题重复渲染（`## 七、每一类的输出样例` 打印了两遍）。**4) `episode_summary.md`**——输出格式补上 ```json``` 围栏，字段示例从类型占位符（`"str"`/`"float"`）换成具体内容（能直接 `json.loads`）。改 `TERRAIN_MEANING`/`MAP_CHARS` 之前 `grep` 过 `pokemon_agent/world/ram.py` 确认它被用来做每帧 `walk_map` 字符合法性校验，**没有**动这个共享源头，只改了消费方怎么引用它。验证：`ast.parse` 检查 `pyboy_world.py`；`load()`/`render()` 逐份跑通 `decide_action`/`map_hint`(`MAP_HINT`)/`perceive_screen`/`episode_summary`；`episode_summary.md` 新例子额外过了 `json.loads` 确认合法；`evaluation/tests/` 17 个用例无回归。复核沉淀的通用注意事项写进了第 3 条"prompt 更新注意事项"，供以后改 prompt 参考 |
-| ✅ run 级 plan 入栈顺序诊断（第一版判断错了，已撤回）+ `run_plan.md` 措辞修正 + 补 plan 决策的 trace 缺口 | 用户贴了一张观测台截图：栈顶（当前正在执行）是"与宝可梦中心前台护士对话"，栈里更深处躺着还没做过的"走到宝可梦中心，画面中出现宝可梦中心"——**后者明显应该先做**，用户怀疑"planner 不理解子目标该怎么分解，反而给了一个更难实现的目标"。**第一版诊断（错的，已撤回）**：以为 `run_plan.md` 里"先压的先做"是"`push_goals` 列表第一项该最先执行"的意思，而代码 `state.goals + pushes` 原序 append 让列表最后一项变栈顶最先派发，跟这条承诺相反，于是把三处入栈代码（`plan()`/`review()`/`apply_goals_edit`）都改成了 `list(reversed(pushes))`。**用户当场纠正**：目标栈的真实规则是纯 LIFO——"不是先压的先做，是……压到栈顶，然后就会直接执行栈顶任务"，也就是**后压的先做**（列表最后一项变新栈顶、最先派发）——这正是撤回前的原始代码行为，代码从来没有 bug，是我误读了"先压的先做"这句话反而把正确的行为改错了。**撤回**：三处入栈代码改回原序 append，三处字段文档（`RunPlanResp`/`GoalsEdit`/`HumanReviewRespFromFrontend` 的 `push_goals`）也改回准确描述 LIFO 的说法。**真正需要改的是 `run_plan.md` 本身的措辞**：原文"按优先级从前到后（先压的先做）"确实是在误导模型——如果模型真信了这句话、按"先做的排前面"给列表，实际执行顺序会被系统倒过来，这次案例很可能就是这么发生的。改成明确告诉模型这是一个栈、列表最后一项最先执行，且用户补充了一条独立要求："任务之间应该有递进关系"——排在后面（更晚执行）的目标要建立在前面目标已经达成的基础上，一步步接近最终目的，不能跳过前置条件直接给更难更远的目标，这条也写进了 `run_plan.md` 的规则里。**顺带补的可观测缺口**（用户追问"trace 里到底有没有记 plan 给出新 plan 的时候"，答案是没有——一并修，这部分不受上述诊断反复影响）：`Source.PLAN` 的 `MODEL_CALL` 之前只有 token 账单，没有任何字段记 `push_goals` 具体内容或 `why`，新增 `trace_utils.plan_verdict()`（`EventType.LLM_OUTCOME`，`Source.PLAN`，`kind=verdict`，记 `done`/`pushed_goals`/`why`），跟 `judge_verdict`/`verify_result` 是同一个"账单记花费、LLM_OUTCOME 记结论"模式，`RunHarness.plan()` 三条非 `plan_failed` 出口（done / 压栈 / 都不做）各补一次调用。**验证方式的限制**：同上几轮，这台 device VM 装不上 pydantic/agent_permission，靠 ast.parse + unused-import 扫描验证改动的 `.py` 文件，没有真实跑一次 run 确认 `run_plan.md` 措辞修正后模型给出的 `push_goals` 顺序确实符合预期。 |
-| ✅ `run_plan.md` 补"目标粒度"约束——之前压出来的目标细到单格移动 | 上一条 LIFO 顺序修正落地、用户重新跑了一段之后又贴了一张截图：栈顶（执行中）是"向上走一格"（判据"玩家角色 Y 坐标减少 1"），下面压着"向右走一格"——两个都是**单次移动**级别的原子动作，不是任务级目标。用户明确指出"目标有点太细了，应该是那种任务导向的，如果没有必要提供新 goal 可以直接 skip"。`run_plan.md` 原来只要求"具体、可判定"，没有下限约束，模型把"具体"理解成了"精确到每一格怎么走"。改了两条规则：**a)** 明确要求目标"任务导向"——是一段有实际意义的任务片段（通常要好几步到十几步），不是单次按键/单格移动这种原子动作，具体往哪个方向摸索、按几次键留给 episode 内决策代理自己处理；**b)** 新增一条独立规则，明确"如果栈顶目标已经足够明确、能直接让 episode 自己摸索完成，`push_goals` 应该留空"——这个 skip 选项代码层面（`resp.push_goals` 允许空列表）本来就支持，缺的是 prompt 没有明确鼓励模型用它，导致模型倾向于"每次都压点什么"而不是判断"这次到底需不需要压"。**跟上一条 LIFO 顺序修正是独立的两个问题**：顺序修正解决的是"给出的目标谁先谁后"，这条解决的是"给出的目标本身粒度对不对"——同一个 `run_plan.md`，同一次用户观察 run 的过程里连着发现了两处，按发现顺序分开记。**验证方式的限制**：这是纯 prompt 文案改动，没有代码变更，靠 `load()`/render 一遍确认模板本身语法没问题；措辞是否真的让模型输出更合适粒度的目标，要等下一次真实 run 观察。 |
-| ✅ 诊断"judge 判不出成功"：根因是 `pokemon_center_enter` 的 `success_criteria` 写得太松（已发现未修） | 用户观察同一个 run：ep2 判 `done=true` 进了宝可梦中心之后，ep3~ep5 用几乎一样的目标反而连续 8 次判 `false`，问"为何现在的 judge 判断不出来成功了"。查 trace 逐步核对后发现根因不在 judge 本身，而在**判据写得太松**：ep2 的目标来自 `tasks.py` 固定任务 `pokemon_center_enter`，其 `success_criteria` 是"scene 是 indoor，且 map_id 和历史里门外那几步不同（已经换过一次图）"——这条只要求"进了随便一栋建筑"，没有要求任何宝可梦中心特有证据，`map_id=41` 那个小房间（一桌一椅一人）满足字面判据，judge 照判据"正确地"判了成功；而 `plan()` 看到这条成功记录后又 push 了一个同名新目标，这次 `plan()` 自己生成的 `success_criteria` 明显更严格（要求护士乔伊/治疗台等证据），ep3~ep5 连续判 `false` 因此也是"正确"的——因为按这条更严的判据，agent 确实还没到真正的宝可梦中心。**用户随后纠正了这个诊断的前提**：指出 ep2 进的那个房间"根本就不是大木博士，就是宝可梦中心"——也就是说 `map_id=41` 那个房间本身可能真的是宝可梦中心，而后续几步 VLM 把里面的 NPC / 对话来源误标成"大木博士"是**感知（VLM）本身的幻觉**，不是"criteria 太松导致的巧合误判"这一个原因就能完全解释的；真实情况更可能是两个问题**同时存在**——criteria 确实写得过松（不该只靠"换了张图"就判定宝可梦中心），VLM 对室内场景/NPC 身份的识别也不可靠（`overview`/对话来源标注可能张冠李戴）。**这条目前只是诊断，没有修**：`tasks.py::pokemon_center_enter` 的 criteria 没有改紧，VLM 感知可靠性问题也还没有独立排查方案，都记在这里等下一步决定怎么改（criteria 往严格改到什么程度、VLM 那边要不要单独起一个"感知可靠性"排查任务，见新增的第 21 条）。|
-| ✅ episode 内新增"人类实时插话"通道，`decide_action.md` 里最高优先级注入 | 用户新需求："human in view 中我们可以输入我们的观测和指令，这个是最高优先级"，追问澄清后确认要插的位置是 **episode 内实时**（`decide_action`，而不是 run 级 episode 之间的 `review()`）——人类边看 watch 画面边打字，下一次决策就要读到。**复用现成的 `RunDataCenter` 模式**（前后端交互统一层，见第 1 条），新增第三个槽——human_note 槽：非阻塞、单槽、覆盖式、**一次性**（`take_human_note()` 取走即清空，只对下一次 `think_action` 生效，没人写过恒为空串），跟 goals 槽同一套约定，不同于 review 槽（那个是阻塞轮询）。**改动**：`RunDataCenter` 新增 `submit_human_note`/`take_human_note`；`EpisodeHarness.__init__` 新增 `data_center` 参数（`None` 时行为完全不变，等价于没接前端）；`think_action()` 每步开头取一次，取到非空才记一条 `LIFECYCLE`/`kind=human_note` 的轻量 trace 事件（`trace_utils.human_note_injected`，没插话不留痕迹）；`BrainDecisionReq` 新增 `human_note` 字段；`decide_action.py::build_prompt()` 新增 `_render_human_note()`，空串时整段不渲染（不是每步都塞一句"没人插话"的噪音），非空时渲染成独立小节 `## 人类刚刚插的话（最高优先级）`，插在 `decide_action.md` 开头引言之后、`## 目标` 之前——**放在最前面**，模型先读到这条"压过下面所有规则"的声明，再读目标/已知事实/rationale 硬规则，冲突时按提示改听人类的并在 `rationale` 里如实写"人类指示：……，因此改为……"。`RunHarness` 补一个薄委托 `submit_human_note()`；`build.py` 改成先落实一个共享 `RunDataCenter` 实例（不传就自己建一个），同时注入 `EpisodeHarness`（human_note 槽）和 `RunHarness`（goals/review 两槽），不再各自新建互不相干的两份；`api.py` 新增 `POST /runs/{id}/note`（`HumanNoteReq`，run 已结束 409，同 `edit_goals` 的约定）。**验证**：`ast.parse` 8 个改动文件全干净；`string.Template` 真实渲染过 `decide_action.md`（空 `human_note_block` 和非空两种情形），确认空时无残留占位符、非空时新小节正确插在目标前面；unused-import 扫描两处误报（`HarnessPort`/`TraceEvent`）经核对是改动前就有的旧债，非本次引入。**还没做**：前端 UI（输入框 + 调用 `POST /runs/{id}/note`）留给后续，这次只做了后端通道；一次性 vs 持续粘着的语义选了"一次性"（更贴近"实时纠偏"），如果用户实际用起来发现想要的是"持续到我明确取消/goal 变化"那种粘性语义，需要另开一次改。|
-| ✅ `plan` 自动压栈临时关闭开关 + `REVIEW_TIMEOUT` 默认拉长到 60s | 用户"暂时有个想法"：把 `plan()` 自动压栈关掉，改用人工审查（`review()` 的 `PUSH`）手动加目标，同时把 review 超时从 5s 延到 60s 给人足够时间看完结果再决定。**没有删代码，做成开关**：`RunHarness.__init__` 新增 `auto_push_goals: bool = True`，`plan()` 里 `resp.done` 照常生效（run 该不该整体结束不受影响），只是 `auto_push_goals=False` 时强制丢弃 `resp.push_goals`（改成 `[]`）——模型的 prompt/schema 完全没动，仍然照常被问、照常解析，只是这里不采纳，最省事也最容易改回去。`build.py::build_real()` 透传同名参数给 `RunHarness`；`api.py` 新增环境变量 `POKEMON_AUTO_PUSH_GOALS`（**默认 `false`**——这是本次唯一一处新开关默认改变行为而不是默认兼容旧行为，因为用户明确要求"现在就关掉"，想改回自动压栈设 `POKEMON_AUTO_PUSH_GOALS=true` 即可）。`REVIEW_TIMEOUT`（`POKEMON_REVIEW_TIMEOUT`）默认从 `"5"` 改成 `"60"`。**没受影响的两条人工加目标通道**：`review()` 的 `PUSH` 决策、`POST /runs/{id}/goals`（`apply_goals_edit`）——两者的压栈逻辑（LIFO append）各自独立于 `plan()`，这个开关只管 `plan()` 那一条自动通道。**验证**：`ast.parse` 三个改动文件干净；手动过一遍 `plan()` 的三条出口（done / push / 都不做）确认 `pushes=[]` 时 `if pushes:` 分支正确跳过、`if resp.done or (not state.goals and not pushes)` 逻辑不受影响。**没做**：没有验证过真实 run（这台 device VM 装不上 pydantic，跟以前几轮同样的限制）；用户同一轮追问的"human_note 置信度能不能保证最高"单独在对话里如实答复（结论：不能，见对话记录），没有对应的代码改动。| 用户紧接着追问一句"同时也不会自己结束，现在 plan 的工作全部交给 review"——追加了第二个开关 `auto_decide_done`（同样默认 `false`，同样走环境变量 `POKEMON_AUTO_DECIDE_DONE`）：关掉后 `plan()` 完全不能自主让 run 结束——`resp.done` 被忽略，**目标栈自然清空**这个原来会让 `plan()` 直接判 `done`（栈空还不算模型自己拍板，但原代码把这个"没活干了"跟"模型主动喊停"揉在同一个条件里判 `done`）的情形，现在也不再直接判——改成落到"什么都不做"分支，让 `_compile()` 的图路由处理：`plan` 的条件边新增一条 `else "review" if not s.goals`（在 `dispatch`/`END` 之前判），栈空时改路由去 `review()`，只有人类的 `STOP` 决策才能真的结束 run（`CONTINUE`/超时兜底成 `CONTINUE` 时，栈还空的话会再绕回来问一次，不会不问人就自己停，但也因此**不会自己终止**——长时间没人应答、栈又空，会一直在 `plan⇄review` 之间用 60s 周期空转）。两个开关（`auto_push_goals`/`auto_decide_done`）各自独立，互不依赖。**验证**：`ast.parse` 三个改动文件干净；手动过一遍新增的路由分支——`plan_failed`/`done`/`not s.goals`/其余 四种情形对应的目标节点都对得上，`dispatch` 的"非空栈"前置断言不会再被空栈撞到。**没做**：真实 run 验证（同上，环境限制）；也没有另外提醒用户"长时间无人应答时 run 会空转不停"这件事在代码里落成告警/超时上限，只在这条记录和对话里提了。|
-| ✅ 观测台前端：目标栈改造成纯前端草稿，`push` 时整栈原子同步到后端（`sync` 边） | 用户提出新设计（"goals 自己本身变成纯前端操作。plan 的时候从后端获取数据更新前端，push 的时候才会把栈推到后端"），澄清后确认三条：整栈同步（不是增量）；前端正在编辑时后端目标栈变了就以后端为准覆盖本地（用户当前只在人工 review 阶段编辑，这个冲突窗口基本不会撞上）；可以完整编辑所有栈**包括栈顶**，只有 review/plan 两个时间点前端栈会变。**动机**：原来的 `GoalsEditReq`（push/remove/replace）是单槽覆盖式——前端如果为了同步一次多处编辑连发好几个增量请求，早发的会在下一次 `plan()` 消费前被后发的悄悄覆盖丢掉，不适合"整栈一次性同步"这种用法。**后端**：`GoalsEdit`/`GoalsEditReq` 新增 `kind="sync"`，携带完整新目标栈 `goals`（栈顶=最后一项），`apply_goals_edit` 新增分支——不锁栈顶（用户已确认接受这个风险），原子整体替换 `state.goals`，`attempts` 按 `task_id` 找回旧计数、新目标记 0；`api.py::edit_goals` 透传 `goals` 字段（`goal_to_task`前缀 `sync-`，已有 `task_id` 的项保留原样）。**前端**：`App.tsx` 里目标栈从"`useRunGoals` 直接渲染的只读列表 + 逐条 `editGoals` 调用"改成本地 `draft` 状态（新增/编辑/删除全部只改 `draft`，不打后端）；用 `wasReviewActiveRef` 识别"review 刚从不 pending 变成 pending"这个瞬间，只在这个时刻用 `backendGoals` 整体覆盖 `draft`（避免例行 2s 轮询把正在编辑的东西冲掉）；`GoalRow` 去掉了"栈顶只读"分支，栈顶现在跟其他行一样可编辑/删除，只保留一个"执行中"标记；原来的"追加目标"表单改成只 append 进本地 `draft`；新增"同步目标栈到后端"按钮调用新的 `syncGoals()`（一次 POST，`kind: "sync"`）。`types.ts`/`api.ts` 同步新增 `DraftGoal`/`syncGoals`。**验证**：后端三个改动文件 `ast.parse` 干净；前端 `tsc --noEmit` 无错、`vite build`（因这台 device VM 对挂载目录默认没有删除权限，`web/dist/` 有历史残留文件导致 `EPERM`，改用 `--outDir /tmp/dist-check2` 验证）构建成功。**没做**：真实 run 端到端验证（这台 device VM 装不上 pydantic/agent_permission，同上几轮的环境限制）；`review()` 自身的 `PUSH` 决策（另一条独立通道，直接原子 append 且会解决当前 review 请求）跟这条新的 `sync` 通道是否要进一步统一/简化，用户在上一轮"追加目标表单还有什么用"的追问里提出过、还没最终拍板，留待下次。|
-| ✅ `GoalsEdit` 删掉 `push`/`remove`/`replace`，只留 `sync` | 用户确认"我们已经不需要 remove 和 push 和 replace"——上一条把目标栈改造成纯前端草稿之后，这三个按 `task_id` 定位的增量 kind 在前端已经没有调用点了（`editGoals()` 整个函数都没人调），只有 `sync` 在用。**改动**：`GoalsEdit`（`goals_edit.py`）简化成只有 `kind: Literal["sync"] = "sync"` + `goals` 一个字段；`apply_goals_edit`（`run_utils.py`）去掉按 `kind` 分支判断，只剩整栈替换那一段逻辑；`api.py` 的 `GoalsEditReq` 同步简化成只有 `goals` 字段，`edit_goals()` 端点相应精简。前端 `types.ts` 的 `GoalsEditReq`/`GoalsEditKind` 同步简化，`DraftGoal` 保留；`api.ts` 删掉整个 `editGoals()` 函数，只留 `syncGoals()`。**没受影响**：review 决策里那个同名但完全独立的 `push`（`HumanDecision` 的 `continue`/`stop`/`retry`/`push`，走 `POST /runs/{id}/review`，`ReviewPanel` 还在用）——这是不同的机制，不在这次清理范围内。**验证**：后端三个改动文件 `ast.parse` 干净；前端 `tsc --noEmit` 无错、`vite build`（`--outDir /tmp` 规避这台 device VM 对 `web/dist/` 历史残留文件的 `EPERM` 删除限制）构建成功；全项目 `grep` 确认 `push`/`remove`/`replace` 三个 kind 字符串在 `GoalsEdit` 相关文件里已无残留（唯一命中的 `"push"` 是上面说的 `HumanDecision`，不相关）。|
-| ✅ 删掉 review 的 `PUSH` 决策，加目标只保留"goal 的 push + goals 的 read"两个通道 | 用户进一步简化："只保留两个，一个是 goal 的 push，一个是 goals 的 read，去掉 review 的 push"。**"goal 的 push"= 上一条的 `sync` 改名**：`GoalsEdit.kind` 从 `"sync"` 改成 `"push"`（行为完全不变，仍是整栈原子替换、不锁栈顶），前端 `syncGoals()` 同步改名 `pushGoals()`。**"goals 的 read"= 沿用现成 `GET /runs/{id}`**（已经带 `goals` 字段，`useRunGoals` 一直在用），没有新开端点。**删 review 的 `PUSH`**：`HumanDecision` 枚举去掉 `PUSH`，`HumanReviewRespFromFrontend` 去掉 `push_goals` 字段；`RunHarness.review()` 去掉 `PUSH` 分支；`api.py` 的 `ReviewDecisionReq` 的 `decision` 收窄成 `continue`/`stop`/`retry`，去掉 `push_goals` 字段，`submit_review()` 端点相应精简。前端 `types.ts` 的 `HumanDecision`/`ReviewSubmitReq` 同步收窄；`ReviewPanel` 去掉"插入新目标"按钮 + 展开表单（`pushOpen` 状态、`handlePushSubmit`），现在只剩继续/停止/重试上一层三个按钮——加/改/删目标统一走目标栈那个框（本地草稿 + 推送到后端），不再跟"这一轮 episode 怎么办"混在一个决策里。顺带清理了 `run_harness.py`/`build.py`/`human_reviewer.py` 里几处提到"review 的 PUSH 决策"的过时注释/文档。**验证**：8 个改动的后端文件 `ast.parse` 全干净；全项目 `grep HumanDecision\.`/`push_goals`/`PUSH` 确认无残留引用（`RunPlanResp.push_goals`/`auto_push_goals` 是 plan 自己的字段，跟这次删的 review PUSH 是两回事，不受影响）；前端 `tsc --noEmit` 无错、`vite build` 构建成功。|
-| ✅ 目标栈"读"单独拿出一个后端接口 + 前端刷新时机改成监听 plan verdict trace 事件（不再靠 review 状态猜） | 用户对"现在 goals 是怎么同步的"追问后进一步要求："这个 goals 还是单独拿出来吧"——澄清后确认两点：① 不是要解除 review 门控（编辑仍然只在 review 激活时开放），而是要**给 goals 的读单独开一个后端接口**，不再complain 混在 `GET /runs/{id}` 那个大而全的状态接口里；② "plan 编辑完 goals 的时候"里的 "plan" 指后端 `plan()` 节点（模型自动规划），不是前端用户编辑——也就是要求把"本地草稿刷新的时机"从"review 变 pending"这个粗糙信号，改成"plan() 刚跑完一轮"这个精确信号（两者之间隔着一整个 episode 的 dispatch/reflect 循环，用 review 当信号会晚一整个 episode 才刷新）。**后端**：`api.py` 新增独立端点 `GET /runs/{id}/goals`（跟 `POST /runs/{id}/goals` 的 push 配对），把原来内嵌在 `get_run()` 里的目标栈视图逻辑抽成共享 helper `goals_view()`，两个端点共用，避免两处分叉。**前端**：`api.ts` 新增 `getGoals()`；`App.tsx` 去掉 `useRunGoals` 轮询 hook 和"review 从不激活变激活"这个刷新触发条件，改成用 `useMemo` 从 `useRunStream` 已经在订阅的 SSE trace 事件里找最新一条 `Source.PLAN`/`kind="verdict"` 的事件（`trace_utils.plan_verdict()`，已有的既存事件，这次没新增），用一个 ref 记上次处理过的 `event_id`，出现新的就调 `getGoals()` 整份覆盖本地 `draft`；另加一个"进入/换 run 时先拉一次打底"的初始化 effect，覆盖"页面刚打开、还没出现过 plan 事件"这个冷启动窗口。`useRunGoals.ts` 文件本身没删（这台 device VM 默认没有删除权限），但已经没有任何地方 import 它，`vite build` 的模块数从 37 降到 36 确认它已经被摇树排除。**验证**：`ast.parse` 干净；前端 `tsc --noEmit` 无错、`vite build` 构建成功。**没做**：真实 run 端到端验证（这台 device VM 装不上 pydantic/agent_permission，同上几轮的环境限制），没有真实观察过"push 之后下一次 plan verdict 事件到达时草稿确实被正确刷新"这条链路。|
-| ✅ `facts` 里删掉 `stalled`/`cursor_said`/`perception_warning` 三个纯诊断字段 | 用户逐条审过 `observation.facts` 里的四个候选删除项后拍板：**`stalled`/`cursor_said`/`perception_warning` 直接删，`neighbors` 保留**（`neighbors` 是唯一以主角为原点、能跨步骤直接比较可通行性的地形字段，`walk_map` 原点跟人走没法这么用，删了会让 `StepMemory` 失去这类判断依据）。**`stalled`**：`episode_harness.py::judge()` 不再往 `facts` 写这一项——它原来只在 `obs.done=True` 时才出现，而 `decide_action.py` 送 prompt 前先 `assert not obs.done`，从没被模型读到过，纯粹是摆设。**顺带发现一个真依赖**：`episode_utils.py::derive_episode_reason()` 原来靠 `obs.facts.get("stalled")` 判 `EPISODE_END` 的 `reason` 是不是 `"stalled"`，删字段会顺带打断这条——改成 `derive_episode_reason(obs, max_steps, *, stalled: bool)`，调用方直接传 `state.stall_count >= STALL_LIMIT`（`trace_utils.judge_verdict()` 已经在记这个同一个布尔值，行为完全不变，只是不再绕道 `facts`）。**`cursor_said`/`perception_warning`**：两者的文档/注释都写着"不是给大脑读的，只进 trace/观测台"，但 `decide_action.py::build_prompt()` 对 `facts` 是全量转发、没有像 judge 那样的 `JUDGE_BLIND`，两者一旦出现分歧/警告就会真的漏进决策 prompt——属于设计意图和实现不一致，删掉顺带堵上这个漏洞。连带清理：`ScreenState.cursor_said` 字段（原本只有 `facts["cursor_said"]` 一个消费者，没人读了就是死代码，一并删除，`_derive_cursor_from_lines()` 的赋值也删掉）、`SNAPSHOT_BLIND` 去掉 `cursor_said`（已经从源头不产生，不用再单独挡）、`brain.py`/`trace/utils.py` 几处过时注释同步改。**验证**：改动的 7 个文件 `ast.parse` 全干净；全项目 `grep` 确认三个字段名在 `.py` 里已无残留引用（`step_memory.py` 里一处提到 `cursor_said` 的是新加的说明性注释，非残留代码）。这台 device VM 仍装不上 pydantic/agent_permission，没有真实跑一局验证。|
-| ⏪ 讨论过给 `ObservationFromWorld` 加一份截图字段，最终否决 | 用户问"截图现在放到哪个数据结构里了"，追问到"observation 里应不应该也带一份截图 base64"。查代码后指出两个冲突点：**a)** `ObservationFromWorld` 的 class docstring 明确写着"原始画面…不进这里，那些属于 harness，大脑看不到也不该看到"——现在图片唯一的落点是 `TraceEvent.frame_png`，只挂在感知那次的 `MODEL_CALL` 事件上，`decide_action`/`judge`全程只读文字 `facts`；真要让大脑"看图"决策，两个 prompt 模板得从 `.complete()` 换成 `.describe()` 那套多模态路径，不是加个字段这么简单。**b)** 即使只是想让 `obs` 带着图走（不进 prompt），也绕不开 `StepMemory` 每一步都把 `obs` 存两份（`before`/`after`）落进 `episode_store`——截图字段如果不进 `SNAPSHOT_BLIND`，等于每步在情景记忆库里多存两份完整 PNG，而且跟 trace 里 `MODEL_CALL.frame_png` 那份完全重复。用户确认这正是顾虑所在（"存 observation 的 trace 就不用落盘了"），拍板**不加**——现状（截图只挂 `TraceEvent.frame_png`，`obs` 不带图）维持不变，这条只是把讨论过程和否决理由记下来，避免以后又有人重新提这个方案时要从头查一遍。|
-| ✅ `done`/`success` 从 `ObservationFromWorld` 搬到 `EpisodeRunState` | 用户追问"为什么 done 和 success 要放进 observation？直接 look 的时候 judge 完了就结束了"，查代码确认这个批评站得住：`ObservationFromWorld.done` 原本身兼两职——**世界层自己的信号**（唯一来源是 `pyboy_world.py` 模拟器窗口被关闭）和 **harness 的终止裁决**（`judge()` 综合三类机械条件+模型判定后的结论）共用同一个字段名，`judge()` 一跑就用 `obs.model_copy()` 把前者覆写成后者，事后没法分清"这次是世界说的还是我们判的"；`success` 更彻底——世界压根没有"任务完不完成"这个概念，这个字段唯一的写入者一直是 `judge()`自己。**改法**：`ObservationFromWorld` 删掉 `success` 字段，`done` 缩窄成"世界层只读信号"（docstring 明确写"这里只读不写"）；`EpisodeRunState`照 `stall_key`/`stall_count` 的先例新增顶层 `done: bool`/`success: bool`两个字段，专门给 harness 的终止裁决用。`judge()` 不再对 `obs` 做任何`model_copy`（观测全程不被这一格改动），本地算出 `done`/`success` 两个局部变量，返回 `{"done": done, "success": success}` 作为独立状态增量。**连带改的调用点**：`_compile()` 的路由 lambda（`state.observation.done` → `state.done`）；`run()` 收尾的 outcome 组装（`obs.success` → `final_state.success`）；`retrieve_verify_step_memory`/`verify_steps`/`summarize` 三处前置断言（同样的替换）；`summarize()` 里喂给蒸馏器的 outcome 字典；`episode_utils.py::derive_episode_reason()` 签名从 `(obs, max_steps, *, stalled)` 简化成 `(success, step, max_steps, *, stalled)`，不再假装自己需要一份完整观测；`brain.py::Brain._blind()` 去掉 `success=obs.success`（字段已经不存在）；`pyboy_world.py` 构造 `obs` 时去掉占位的 `success=False`。**没动的地方**：`decide_action.py` 的 `assert not obs.done` 保留原样——它检查的是世界层的原始信号（现在语义更干净了：单纯"世界还在不在"，不是"这一局该不该结束"），graph 的路由结构本来就保证走到这里时 `state.done` 必为 False，这条断言继续有效，不用改成读 `state`。**验证**：这次这台 device VM 的 `python3` 突然能 `import pydantic` 了（环境变化，原因不明），`ObservationFromWorld`/`EpisodeRunState` 两个 schema 真实构造过一遍确认 `success` 字段已经从 `model_dump()` 里消失、`done`/`success` 已经在 `EpisodeRunState.model_fields` 里；`derive_episode_reason()` 新签名靠 `ast.parse` 验证（`episode_utils.py` 仍然卡在 `agent_permission` 缺失，没法真 import）；全项目 `grep obs\.success\b`/`observation\.success` 确认零残留，`grep obs\.done\b` 逐条核对过，剩下的引用全部是世界层原始信号的合法用法（`_begin()`/`look_after_action()`/`decide_action.py` 的断言、`judge()` 内部读取），没有遗漏该改成 `state.done` 的地方。`tests/`（`conftest.py`/`test_episode_stall.py`/`test_memory_tool.py`）里搜到的几处 `success=` 都是 `EpisodeMemory(...)` 的字段，跟这次改的 `ObservationFromWorld`/`EpisodeRunState` 无关，不受影响。|
-| ✅ `StepMemory` 挂截图引用，`judge`/`verify_steps` 改成多模态调用（带图问，凑不齐图退化成纯文本） | 用户在"截图放到哪个数据结构里"（上一条否决方案）之后回来重提，明确要求"存引用不存字节"+"judge 也按 episode 一样去重"+"修掉截图编号 bug"+"prompt 里加图片说明"。**a) 先修了一个真实 bug**：`screenshot/` 文件名 `{run_id}_{episode_id}_{step}.png` 里的 `step` 号，`_begin()` 和第 0 轮 `look_after_action()` 都用 `before.step=0`，两次写同一个文件名——不是覆盖（`_save_screenshot` 撞名会追加 `(1)` 后缀，不覆盖），但会让"按 step 号算文件名"这个公式在这两帧上失真（算出来是 `_0.png`，实际这一步的画面在 `_0(1).png`）。改法：`LocalTrace.append()`/`episode_utils.perceive_with_retry()` 新增 `screenshot_step` 参数，把"截图该编几号"和"这条 `MODEL_CALL` 该记在哪个 step 的账上"解耦——`look_after_action()` 感知到的其实是下一步的开局画面，传 `screenshot_step=before.step+1`，`_begin()` 不变（缺省等于 `step=0`）。改完之后 `_{n}.png` 对任意 `n`（含 0）都唯一对应"第 n 步的开局画面"，不再有正常运行下的撞名。**b) `StepMemory` 新增 `before_frame`/`after_frame: str | None`**——只存 `screenshot_filename()` 算出来的文件名（不是字节），由 `store_step_episode_memory()` 在盖 `episode_id` 的同一次 `model_copy` 里顺带盖上，跟 `Brain.reflect()` 本身不知道 run_id/存储约定的原则一致。新增 `frame_sequence(entries)`——跟 `render_sequence()` 同一件事的图片版，按文件名字符串去重相邻重复（`entries[i].after_frame == entries[i+1].before_frame` 本来就是同一个物理文件）。**c) `VisionCompletionReq.image_png: bytes` 泛化成 `images: list[bytes]`**（`min_length=1`），`_MultimodalMixin.describe()` 相应改成拼多张 `image_url` block（图在前、文字 prompt 固定殿后），`ImageNotDelivered` 的判定阈值按张数等比放大（`self._floor * len(images)`）——`QwenProvider` 本来就"语言+视觉两用"，`.complete()`/`.describe()` 都有，不用新增供应商类。**d) `judge_llm`/`verify_llm` 类型从 `LLMProvider` 改成新增的 `JudgeProvider`**（`LLMProvider`+`VisionProvider` 的合并 Protocol，`QwenProvider` 不改代码就满足）。`Brain.judge()`/`verify_steps()` 新增私有 `_ask()`：`images` 非空走 `describe()` 多模态问一次，空的话退化成 `complete()` 纯文本——一张便利副本缺失（`StepMemory` 没留下文件名，或文件确实不在磁盘上）不该让"永远不抛异常"的判定链路直接失败。`ModelCall.payload` 新增 `n_images` 字段（带没带图直接影响判定看到了什么，回头分不清"没带图判错"还是"带了图还判错"）。**e) Harness 侧组装**：`judge()` 用 `frame_sequence(history)` 去重 + 当前帧自己的文件名（跟 history 最后一条去重）拼成 `images`；`verify_steps()` 同理用 `frame_sequence(entries)`（全量，没有"当前帧"这一说，校验的是已结束的一局）。两处都用 `read_screenshot()` 读，读不到的文件（`None`）直接跳过，不让一张缺失的便利副本拖垮整条链路。**f) `judge_success.py::build_prompt()` 改用 `render_sequence`**（原来是手写 `"\n\n".join(m.render(...))`，没有跟 `step_verify` 一样去重——`JUDGE_HISTORY` 虽然只是小窗口，但只要窗口里有连续两步，重复就存在，这次一并对齐两条链路）。**g) 两份 prompt（`judge_success.md`/`step_verify.md`）新增"除了文字，你还会看到几张截图"一节**：讲清楚顺序（history 在前、当前帧殿后，去重规则跟文字一致）、用途（核对文字有没有抽错，不是用来重新推算坐标——位置证据仍然只认 `where`，这条规矩跟"你手里没有地图"是同一条，不受这次改动影响）、冲突时的优先级（截图上实际看到的文字为准，文字是抽取结果可能有误）。**验证**：这台 device VM 这次全程能 `import pydantic`（延续上一条的环境变化），做了比之前几轮更扎实的真实验证——`frame_sequence`/`render_sequence` 对含 gap 的真实 `StepMemory` 序列跑过一遍确认去重正确；`VisionCompletionReq` 空列表正确触发 `ValidationError`；`judge_success.build_prompt()`/`step_verify.build_prompt()` 真实渲染过（含新截图说明段落），无 `KeyError`；`QwenProvider.describe()` 打桩 `_post`/`_unpack` 验证过多图 content block 顺序（N 张图+1 段文字）和按张数等比放大的 `ImageNotDelivered` 阈值（正常/触发两条路径都走过）；`Brain.judge()`/`Brain.verify_steps()` 用假 `agent_permission` 桩模块 + 假 provider，真实跑过"有图→`describe()`"和"无图→`complete()`兜底"两条分支，`ModelCall.payload["n_images"]` 数值也对上了。**没做/已知缺口**：`episode_harness.py` 本身仍卡在 `agent_permission`/`langgraph` 缺失，没法端到端真实 import 一次（`judge()`/`verify_steps()` 节点里新加的 `frame_sequence`+`read_screenshot()` 组装代码只过了 `ast.parse`，逻辑靠人工核对，没有真实跑一局验证）；没有真实调过一次 DashScope API 确认多图请求真的按预期送达（这台设备网络出不去，同以前几轮）；`verify_steps` 的图片数量跟局长线性增长这件事本身（用户之前已经提过"history 存的 stepmemory 太多了"）这次没有额外限流，是个已知的、跟这次改动同源的风险点，留给以后决定要不要在 `frame_sequence` 之外再加一层"最多带 N 张"的截断。|
-| ✅ 上一条改主意：`StepMemory` 直接存 base64（不再是文件名引用），配套四处跟着改 | 用户看完上一条后追问"这个 token 数是你刚刚测的吗"（答案：不是，是按 `IMAGE_TOKEN_FLOOR=100` 这个项目已有的实测阈值 + 查到的 Qwen3-VL 缩放规则推出来的，没有真实调过 API），紧接着改主意："StepMemory 你完全可以直接存字节，但是按 base64，即 vlm 模型要求的 rest api 格式存"——推翻了上一条"只存引用不存像素"的设计。**改动**：`StepMemory.before_frame`/`after_frame` 语义从"`screenshot/` 下的文件名"改成"base64 编码后的 PNG 字符串"（直接是 `image_url` 要拼的那段内容），`store_step_episode_memory()` 从"算文件名"改成"读盘一次、编码一次"（新增私有方法 `EpisodeHarness._frame_b64()`）。**顺带把整条链路都改成了 base64 字符串，不再有 bytes↔base64 的来回转换**：`VisionCompletionReq.images` 从 `list[bytes]` 改成 `list[str]`（四次改版，紧接着上一条的三次改版），`_MultimodalMixin.describe()` 不再自己 `base64.b64encode`，直接拼 `req.images[i]` 进 URL；`PyBoyWorld` 感知那条路径（唯一还产出原始字节的地方）在构造请求前自己编码一次；`_dump()`（调试落盘工具）改成先解码再写文件，不然存下来的就是纯文本不是图。**连带简化**：`verify_steps()` 组装 `images` 不再需要 `read_screenshot()`——`frame_sequence(entries)` 直接返回的就是可以塞进 `VisionCompletionReq` 的字符串；`judge()` 里 history 部分同理简化，只有"当前这一帧"（还没被反思成 `StepMemory`）仍然需要 `_frame_b64()` 现读现编。`frame_sequence()` 的去重逻辑完全不变（原来比较文件名字符串，现在比较 base64 字符串，两种情况下"同一帧→字符串相等"这个前提都成立）。**这次拿掉的东西**：`StepMemory` 不再"只存引用不重复存像素"，`before`/`after` 图片字节现在跟文字字段一样有相邻重叠——用户明确认识到这个代价并选择接受，换来的是 `judge`/`verify_steps` 组装请求时完全不用碰磁盘、不用担心截图文件是否存在/被撞名改后缀。**验证**：延续上一条的实测方式重新跑了一遍——`frame_sequence` 对含 `None`（缺图）条目的序列去重正确；`VisionCompletionReq` 空列表校验、多字符串顺序正确；`QwenProvider.describe()` 打桩验证 base64 字符串直接进 URL、没有二次编码；`Brain.judge()` 用假 provider 验证 `req.images` 原样透传到 `describe()` 调用；额外新增了 `_frame_b64()`/`read_screenshot()`/`screenshot_filename()` 三者拼起来的真实读盘+编码回环测试（写一个假 PNG 到 `screenshot/`，读出来编码、再删除确认缺图返回 `None`）。**已知缺口不变**：`episode_harness.py` 仍然装不上 `agent_permission`，`judge()`/`verify_steps()`/`store_step_episode_memory()` 里这次改的组装代码只过了语法检查，没有端到端真实跑一局。|
-| ✅ judge/verify 换供应商到火山方舟豆包旗舰，感知升级到 qwen3.8-max | 用户拍板"之前可能是模型不行，现在我们换最强的豆包模型"。**先纠了一个我自己的错**：中途把"observation 用 qwen3max"理解成 `qwen3-vl-max`，查了 DashScope 官方文档才发现**没有这个型号**——VL 专用系列（`qwen3-vl-plus`/`qwen3-vl-flash`）plus 已经是最高档，没有更高的 max；`qwen3.8-max` 才是通用多模态旗舰（本来就是 `QwenProvider` 类自己的默认型号）。当场用 `AskUserQuestion` 核实，用户确认是 `qwen3.8-max`，没有沿着错的猜测往下改。**改动**：`build_real()` 的 `judge_llm`/`verify_llm` 构造从 `QwenProvider` 换成 `ArkProvider`（该类之前已经实现好、只是从没被真正用起来），`model` 默认值改成 `doubao-seed-2-1-pro-260628`（查证：这是 2026-06 发布的豆包 Seed 2.1 Pro 旗舰，火山方舟原生多模态，日期后缀是接入点强制要求，缺了会 404）；`verify_llm` 的 fallback 链从三级 `verify_model or judge_model or text_model` 收窄成两级 `verify_model or judge_model`——**这不是随手删的，是必须删**：`text_model` 是 Qwen 型号名，一旦 `judge_model`/`verify_model` 都留空，旧代码会把 Qwen 的型号字符串传给 `ArkProvider`，直接在火山方舟接入点上 404，不是"退化成纯文本"那种优雅失败。`vision_model` 默认值从 `qwen3-vl-plus` 升到 `qwen3.8-max`，两个独立的实验入口（`run_episode.py::build_session()` 硬编码的 `vision_model="qwen3-vl-plus"`/`judge_model="qwen-plus"`，后者整行删除、改用 `build_real()` 的新默认值；`run_experiment.py` 手写 manifest 里的 `vision`/`judge` 两行）同步跟着改，没有漏掉旁路入口。`judge_llm`/`verify_llm` 换成 `JudgeProvider` 类型后本来就要求 `.describe()`/`.complete()` 都有，`ArkProvider` 跟 `QwenProvider` 一样是 `_MultimodalMixin` 子类，两个方法都有，类型上不用再改。**已知需要用户自己做的事**：`ARK_API_KEY` 环境变量——`ArkProvider.API_KEY_ENVS = ("ARK_API_KEY",)`，跟 `DASHSCOPE_API_KEY` 是两个不同的密钥，没设的话 `ArkProvider.__init__` 会在装配阶段直接抛 `RuntimeError`（同 `QwenProvider` 没设 key 时的行为），这一步我没法替用户做，只能提醒。**验证**：`ArkProvider(model="doubao-seed-2-1-pro-260628", ...)` 真实构造过一遍（设 `ARK_API_KEY=fake`），`isinstance(p, JudgeProvider)` 为真，`.config()` 输出的 `base_url` 确认指向火山方舟接入点而不是 DashScope；三个改动的 `.py` 文件 `ast.parse` 全干净。**没做**：真实调用（这台设备没有真的 `ARK_API_KEY`，也没网络，没法验证豆包那边真的按预期收图/出结果）；`docs/spec/providers/SPEC.md` 里只写了 `DASHSCOPE_API_KEY` 的鉴权说明，没同步补 `ARK_API_KEY`，按"spec 等解冻信号再改"的既定约定没有动它，只在这条记录里写清楚。|
-| ✅ `verify_steps` 与 `summarize` 合并成一次调用 + `decide_action.md` 的 rationale 补"依据→结论"硬规则 | 用户要求"直接融合verify和summary"，但先要求说清楚之前 memory 遇到过什么情况、StepMemory 中间步骤被当正确步骤的问题怎么办、rationale 有没有更好的模板——这条把三件事一起记。**历史问题回顾（用户要求先说清楚的部分）**：a) `verify_steps` 当初从 `summarize` 里独立出来，直接原因是战斗菜单里 `down×3` 被模型自己记成"逃跑"、实际是打开了道具袋这次事故（第 9 条）——step 记忆是模型自述、没有验证，直接喂蒸馏会把错误操作固化成经验、跨局传播；b) "把中间步骤当成已验证事实"这条更精确的说法是 trace#20 系列三次事故（`map_hint.md`/`decide_action.md` 两次改版那几条）——模型把"知识说这个方向最终能到宝可梦中心"（跨地图关系，长期为真）和"屏幕边缘的下一格就是门"（这一帧根本没加载出来）混成一件事，写进 `StepMemory.rationale` 之后不会再被核对（`step_memory.py` 文档原话："写入后不会再被核对"），执行后四邻全是 `.`，没有任何门的证据，但已经晚了；c) 这两类问题的共同根子是"自述先被信、后被查"——`verify_steps` 是"后被查"那一半，`decide_action.md` 的硬规则是"少让它先被错信"那一半，两者本来就不是同一层防线，合并调用改的是"后被查"怎么问，不动"少让它先被错信"。**合并方案（用户拍板"合并成一次调用、两段结构化输出"）**：新 `VerifyAndSummarizeReq`/`VerifyAndSummarizeResp`（`schemas/communication/verify_and_summarize.py`）取代原 `StepVerifyReq`/`StepVerifyResp`（`StepVerifyVerdict` 留用，两处复用：合并响应的 `verdicts` 字段、`trace_utils.verify_call()` 落 trace）；新模板 `verify_and_summarize.md` 把 `step_verify.md` 的判定规则和 `episode_summary.md` 的摘要要求拼进一份 prompt，**"先判可信、再只用可信的写摘要"这条安全性质原样保留在 prompt 里**（明确要求 `reliable: false` 的记录不能在 `summary`/`reusable_patterns`/`critical_decisions` 里被当成事实引用）；`Brain.verify_and_summarize()` 取代 `Brain.verify_steps()`，一次 `_ask()` 问完，解析成 `(verdicts, summary)` 两段，`summary` 段解析失败不影响 `verdicts` 段（互不连坐）；`EpisodeMemoryGenerator` 新增 `build_from_response()` 静态方法（`_create_episode_memory` 的字段搬运逻辑复用，不重写一份）；`MemoryTool` 新增 `store_precomputed_episode_summary()`，跳过 `generate_summary()` 那次会重新问模型的调用，只做落盘 + 更新检索向量缓存；`EpisodeHarness` 新节点 `verify_and_summarize` 取代原 `verify_steps`+`summarize` 两格串联（图仍是 19 个节点，`verify_steps` 一进一出、`verify_and_summarize` 一进一出，净数不变），没有 step 记忆的边缘分支仍走原 `summarize` 节点（全量喂、没有可信过滤这回事，谈不上合并收益，也没有理由动它）。**【订正 2026-09-11】** 这一句已过期：`summarize` 节点在 0906 被删掉，收尾链现在**只有 `verify_and_summarize` 一条路径**——`retrieve_verify_step_memory` 出口在 `verify_step_entries` 为空时**直接连 `END`**，图里不存在"不经校验的全量蒸馏"兜底分支（见 `episode_harness._compile()` 的那条条件边，以及 `docs/spec/harness/PLAN_graph_readability.md` §1.3）。**用户明确要的取舍，不是遗漏**：原来两次独立调用能各自失败——`verify_steps` 调用坏了，`summarize` 仍能单独把全量记忆蒸馏一遍；合并成一次之后，这次调用一旦失败/解析不出来，可信过滤和跨局摘要**都**拿不到，只退化成"这一局不写摘要、多一条错误事件"，不再有"至少还能拿到一份未经校验的摘要"这条后备路径。合并调用的账仍记 `Source.VERIFY`（校验器失效率报表沿用旧口径），代价是这条账单现在也混进了写摘要那部分的 token，不再是纯校验成本。**`decide_action.md` 的 rationale 改法**：用户明确"这次修改rationale的目的不是为了减字段，而是为了给出更有用的论据"——没有拆 `StepMemory.rationale` 的 schema（仍是 `list[str]`），改的是这个字段里每一条字符串必须满足的形状：新增第三条硬规则，要求每条 rationale 必须是「依据 → 结论」两半都在，只有结论没依据（"这样比较好"）或只有依据没结论（复述已知事实、不说支持了什么）都不合格；配了一条正例和一条直接取自 trace#20 事故的反例，反例里重申"任何跨地图/跨局知识只能指导怎么做，不能替代已知事实里这一帧真正看到的依据"。**验证**：这台 device VM 这次装上了 `pydantic`/`rank_bm25`/`langgraph`（之前几轮的环境限制这次解除了一部分，`agent_permission` 仍要靠 stub），做了比前几轮更扎实的真实验证——`Brain._parse_verify_and_summarize()` 三种场景（正常解析、外层 JSON 畸形整体兜底、`summary` 段畸形但 `verdicts` 段不受影响）、`EpisodeMemoryGenerator.build_from_response()`/`MemoryTool.store_precomputed_episode_summary()` 端到端落盘+重启重建索引、`prompts.verify_and_summarize.build_prompt()` 真实渲染、`decide_action.md` 补丁后仍能正常渲染（新示例没有引入 `$` 占位符冲突），以及**图真的编译成功**（`EpisodeHarness._compile()` 用假协作者跑通，确认 `verify_and_summarize` 在节点里、`verify_steps` 不在、`summarize` 仍在、总节点数 19 不变）。**已知遗留（沿用本项目一贯做法，等信号再改）**：`tests/test_episode_stall.py` 的 `FakeBrain` 仍引用旧 `StepVerifyResp`，这个文件本来就因为 `agent_permission` 装不上而跑不起来，非本次引入、不在本次范围内；`schemas/datastore/__init__.py`/`providers/openai_compatible.py`/`vision_completion.py`/`trace/store.py`/`schemas/datastore/step_memory.py`/`judge_success.py` 里若干处提到"`verify_steps`"的注释/文档字符串是泛指这条校验链路，字面没有跟着改名，留着不算错但不够精确，同样等下次touch这些文件时顺手改。 |
-| ✅ 真机验证发现并修复三处回归：`LocalTrace` 两个方法被误缝进 `read_screenshot()`、`run_episode.py` 丢了入口守卫、`build_session()` 解包还停在旧的 3 元组 | 用户配好 `DASHSCOPE_API_KEY`/`ARK_API_KEY` 后要求"全部过一遍"——这台 device VM 这次用 `uv` 装了 Python 3.11 + 真实 `agent-permission`/`pyboy` 全套依赖，第一次能真的跑 `python -m pokemon_agent.experiment.run_episode` 而不是靠 stub。跑的过程中连续暴露三个此前从没被真实执行验证过的回归，全部在真机上修复：**a) `trace/store.py`——`screenshot_filename()`/`read_screenshot()` 这两个"0905 新增的模块级函数"当初被插进了 `LocalTrace` 类体中间（`_save_screenshot` 方法之后），Python 因为它们是顶格 `def`，会终止类体；紧跟着的 `events()`/`_episode_is_complete()` 虽然缩进仍是 4 格，实际已经变成嵌套在 `read_screenshot()` 函数体内的死代码，既不是 `LocalTrace` 的方法也从未被调用——第一次真实 `LocalTrace.append()` 调用（`RunHarness.run()` 开局写 `RUN_START`）就用 `self._episode_is_complete(...)` 撞上 `AttributeError`。这是本 session 更早"0905 二次改版：trace 落盘感知帧"那次改动引入的，之前所有验证都是 `ast.parse` + 手工 unused-import 扫描，扫不出"缩进对、但作用域不对"这类问题，只有真的实例化+调用才能测出来。修法：把两个模块级函数整体移到类定义之后，`events()`/`_episode_is_complete()` 恢复成 `LocalTrace` 的真方法（纯挪位置，`git diff` 确认零内容改动）。**b) `run_episode.py` 缺 `if __name__ == "__main__": main()` 入口守卫**——`git log -p` 能看到更早版本有过这段，不知道哪次改动弄丢的；模块自己的 docstring 明明白白写着 `python -m pokemon_agent.experiment.run_episode 12 "..."` 的用法，但 `python -m` 运行时 `main()` 从未被调用，import 成功、静默 exit 0，表现为"什么都没发生"而不是报错——比前两处更隐蔽，靠读代码根本发现不了，只有真的按文档说的方式跑一次才会注意到"怎么什么输出都没有"。**c) `build_session()`/`main()` 还在按旧的 `harness, trace, world = build_real(...)` 三元组解包**——`build_real()` 早些时候（更早一次会话，API 层接 `RunDataCenter`/`GameTools` 那次重构）已经改成返回四元组 `(harness, trace, world, tools)`，`api.py` 当时同步改了，但单发入口 `run_episode.py`（以及它间接调用的 `run_experiment.py`）没有跟着改——`ValueError: too many values to unpack`。三处修复都不属于这次"合并 verify_steps/summarize"改动引入的问题，是更早几次改动遗留、从未被真实执行路径测过的债；这次因为用户主动要求"全部过一遍"、环境也第一次具备条件，才被真机验证挖出来，顺手全部修掉。**最终受限于网络**：这台 device VM 和这次会话的云端容器，出站网络都经过组织级 allowlist 代理，`dashscope.aliyuncs.com`/`ark.cn-beijing.volces.com` 都被代理拒绝（`403 Forbidden`/`connect_rejected`，连 `google.com` 都一样被拒，是整体策略不是这两个域名特有），到这一步之前的全部代码路径（图编译、`RunHarness.run()`、`plan()` 节点真的构造出 prompt 并发起 HTTP 调用）都验证通过，卡在"发真实网络请求"这一步——这是环境的出站策略限制，不是代码问题，也不应该被绕过；真正的"模型真的回答对不对"这一层验证需要用户在有出站权限的机器上自己跑。 |
-| ✅ 装配/成本一轮扫描：真跳过 `plan`、单独 `plan_model`、`cached_tokens` 记账 | 用户看完真机跑出来的第一份 trace 后追问两件事：`plan` 明明关了自动压栈/自动收尾为什么还有 token 消耗、judge/perception 的 input token 为什么这么大。查 trace 实锤：`plan` 那次调用确实花了 709 input token，但 `llm_outcome.pushed_count=0`——`auto_push_goals`/`auto_decide_done` 关闭时代码原来只是"问了但丢弃"（`resp.push_goals` 强制清空、`resp.done` 不采信），不是真跳过。**改法**：`RunHarness.plan()` 消费完观测台编辑指令后立即判断两个开关是否都关，都关就直接返回等价于"问完但没压栈/没判 done"的返回形状（图路由不变），不再实际调模型。同一轮用户还要求"给 plan 单独设置 provider"——`build_real()` 新增独立 `plan_model` 参数（默认同样是 `doubao-seed-2-1-pro-260628`），run 级规划器不再借用 `memory_model`，有自己的 `ArkProvider` 实例，回退链落 `judge_model`。**judge/perception token 大**的诊断：perception 是 399 行静态 `perceive_screen.md`（硬编码场景判定规则/地形图例，文档里写明这是"领域知识不该硬编码进常驻 prompt"这条规则唯一的例外）+ 一张截图，5300+ input token 是这份静态 prompt 体量本身决定的；judge 的 input token 随 `n_images` 线性涨（1→2 张图涨了约 1800 token），GB 原生分辨率只有 160×144，涨幅明显是供应商侧按固定 tile/patch 网格算 token、不因原图小而打折。**缓存命中率**：查证 DashScope（Qwen）和火山方舟（doubao-seed-2.x 起）都有"隐式缓存"，默认开、不可关，命中的 token 只按标准输入价的 20% 计费，字段名两家一致：`usage.prompt_tokens_details.cached_tokens`。但**火山方舟的隐式缓存明确不保证命中、不保证命中最长前缀**，而且我们现在的多模态请求是"图片在前、静态文字在后"（`_MultimodalMixin.describe()` 的既有顺序）——对我们这种"图片每次都不同、静态文字每次相同"的场景，这个顺序恰恰是不利于命中的（前缀被易变的图片占住，后面重复的静态文字够不上"前缀"），跟 Aliyun 文档"多模态内容放前面提高命中率"针对的是"图片本身会重复"的场景不是一回事——**这是一个待验证的优化方向，这次没有改内容顺序，只做了记账**：`_unpack()`/`TextCompletionResp`/`VisionCompletionResp` 新增 `cached_tokens` 字段，一路穿透 `Brain._ask()`/`choose_once()`/`judge()`/`verify_and_summarize()`/`run_utils.ask_planner_with_retry()`/`episode_store.py::generate_summary()`/`pyboy_world.py::perceive_once()` 六个 `ModelCall.payload` 构造点，全部补上 `"cached_tokens"` 键，取不到就是 `"0"`（老响应没这字段，不是异常）。前端 `ModelCallPanel` 本来就整包 dump payload 的 JSON，不用改代码就能看到这个新字段；要看聚合命中率，可以离线按 `source` 分组 `sum(cached_tokens)/sum(input_tokens)`（trace JSONL 已经落盘，`episodes/*.jsonl` 每条 `model_call` 事件的 payload 里都有）。**验证**：`source /tmp/pa_venv/bin/activate` 后跑通了 `_unpack()` 的手工回归（带/不带 `prompt_tokens_details` 两种响应体都测了取值正确）、`tests/` 全量重跑（71/73，跟改动前完全一样，两个失败仍是已知跟本次无关的 `HumanDecision.PUSH` 旧债）。**已知遗留，留给下一步**：图片/文字顺序要不要为了命中率反过来（静态文字放前面、图片放后面）没有动，这会改变 vision 模型实际读到的 token 顺序，属于会影响识别效果的改动，需要先跟用户确认再动；聚合命中率目前只能离线算，没有做成 `MetricsPanel` 里的实时数字，需要的话再加。 |
+**验收**：检索命中率、决策实际引用率（需决策输出记录所依据的记忆 id）、
+B5a 注入实验中的错误采纳率；与现行"每步四路检索"对照，比较同片段步数与 token。
+
+**非目标**：不撤销混合检索基础设施（J2）。
+
+**参照**：SkillEvolBench（arXiv 2605.24117）；Experience Reuse in LLM Agents（arXiv 2604.27003）。
+
+**待办**：质量分回写（被召回的 step/episode memory 按新一局成败更新 quality）尚未实现，归入本条。
+
+---
+
+### C1 前沿模型漏掉长距离前置条件
+
+状态：💬 ｜ 叙事：科研 ｜ 归属：项目 1（图以 Belief 属性形式存于项目 3） ｜ 依赖：B5a、E4 ｜ 最后核实：2026-09-16
+
+**问题**：目标之间的前置依赖跨越数千步，单步决策无法察觉缺失的前置条件。
+
+**证据**：Opus 4.5 第一次去狩猎地带没拿金假牙（后续换怪力秘传机所需），HM04 就在附近也未拾取。
+
+**方案**：
+- LLM 按先验生成初始前置条件图，边分 AND（全部满足）与 OR（满足其一）；
+- 每条边存为 Belief 属性"目标 G 的前置条件"下的假设；
+- 卡住后阻塞解除时，将期间新出现的状态变化作为候选前置条件，按 B5a 更新；
+  先验认为必要但实际未满足也通过时，该假设被反驳；
+- 目标达成时沿图分配信用，不沿时间平均分摊。
+
+**验收**：边的准确率（真值取自攻略整理）；花在错误前置条件上的步数；缺前置时从卡住到解除的平均步数。
+与"只用先验图"组对照。
+
+**非目标**：不做反事实回放（见 A4）。
+
+**参照**：SGA-ACR（arXiv 2511.20993，2025-11，局限为图不能从经验修正）；MiRA（arXiv 2603.19685，2026-03，训练路线）。
+
+---
+
+### E1 所有情境走同一套三层图，没有按情境路由的 subagent
+
+状态：🚧 ｜ 叙事：工业 ｜ 归属：项目 1 ｜ 依赖：E2、E3、I7 ｜ 最后核实：2026-09-24
+
+**问题**：0923 起 harness 已重构为 run ⊃ episode ⊃ task 三张同构图，每张 5 格（`perceive → review_and_judge → plan_<层> → act → <层>_done`，187–196），episode 层有真拆解器（`decompose`）派发 task。但导航、对战、菜单、谜题、卡住仍走同一套 task 图，没有按情境区分的 subagent 角色，task 层预算只按键数算（`task_budget`）。
+
+**证据**：Opus 4.5 报告中的注意力盲区与固着案例需要干净上下文的重新感知；
+Anthropic 多智能体研究系统公开的做法是编排者加并行子 agent，以拆分保护上下文。
+
+**方案**：编排器持有目标与前置条件图，经 E2 识别情境后派发到 subagent 子图；
+每个 subagent 有独立状态载体、预算、权限范围与模型档位，结束时返回结构化结果。
+
+**验收**：
+- 单 agent（现行图）与编排器＋subagent 在同一存档片段上的效果与 token 成本对照；
+- 写明退回单 agent 的条件（适用边界）。
+
+**非目标**：subagent 不经 A2A 通信（进程内子图）。
+
+**参照**：Anthropic《How we built our multi-agent research system》（2025-06：多智能体系统 token 用量约为普通对话的 15 倍，内部评测比单 agent Opus 4 高 90.2%；官方建议简单工作流能解决的不上多 agent）。
+
+**规范冲突**：AGENTS.md 第五节已改为三张图各有一个状态载体（200–202）；引入 subagent 时须再改（I7）。
+
+---
+
+### E7 A2A 的暴露对象未定义
+
+状态：📋 ｜ 叙事：工业 ｜ 归属：项目 1、项目 3 ｜ 依赖：E1、J1 ｜ 最后核实：2026-09-16
+
+**问题**：原 25⑤ 计划拆分的 `RunDataCenter` 已于 0914 控制台改造中删除，原条目前提失效。
+
+**证据**：见归档第 25 条⑤；AGENTS.md 第十二节"原第一条豁免已随控制台改造整个删除"。
+
+**方案**：只对**跨进程、独立演进**的 agent 使用 A2A：
+- 编排器（接收外部目标、汇报进度）；
+- 评测 / 参考 agent（驱动前沿模型跑 A3 参考线）；
+- 进化服务（Wiki 维护者、Skill 提案者的离线流程）。其中 Wiki 维护者随 B3 归属项目 3，
+  是否以 A2A 暴露待 J1 定稿时确认。
+
+**验收**：每个暴露对象有 Agent Card；项目 1 编排器通过 A2A 向至少一个外部 agent 派发任务并收回结果。
+
+**非目标**：进程内 subagent 不走 A2A。
+
+**参照**：Google A2A 协议规范。
+
+---
+
+### J1 项目 1 与项目 3 之间没有知识服务接口
+
+状态：💬 ｜ 叙事：工业 ｜ 归属：项目 1、项目 3 ｜ 依赖：B3、B5a、B5b ｜ 最后核实：2026-09-16
+
+**问题**：Belief 层与 Wiki 层归属项目 3，但项目 1 的决策每步需要读取 Belief，
+触发事件与 Raw 证据又只存在于项目 1。
+
+**证据**：B5a 的规则触发器依赖 `map_id`/`x`/`y` 等游戏状态（`world/interface/domain/facts.py`）；
+项目 3 目前没有代码。
+
+**方案**：
+- **职责划分**：项目 1 负责检测触发事件、产出带来源类型的证据；项目 3 负责假设生成、
+  noisy-OR 更新、Δ 查表（表由项目 1 以配置提供，项目 3 保持领域无关）、检索、Wiki 维护与失效传播。
+  Skill 门控需要运行游戏验证集，留在项目 1。
+- **存储分级**：Belief 高频更新，存快速存储，局末快照；Wiki 以 Obsidian markdown 存放，
+  修订即 Git commit，前提引用用 wikilink。
+- **协议**：项目 3 以 MCP server 暴露知识工具（建属性、加证据、检索 Belief、读 Wiki）；
+  离线维护流程是否作为 A2A agent 暴露见 E7。
+- **落地顺序**：先在项目 1 内以独立模块实现，只暴露一个 Port（符合铁律 2），跑通后整体迁出到项目 3，
+  项目 1 侧改为 MCP 客户端实现同一 Port（符合铁律 4）。
+
+**验收**：迁出前后项目 1 的调用方代码不变；每步 Belief 检索的跨进程延迟单独记账。
+
+**非目标**：不让项目 3 理解游戏语义。
+
+**参照**：AGENTS.md 铁律 2、4。
+
+---
+
+## 五、叙事维度索引
+
+- **科研**：A2 A3 · B0 B2–B7 B9 B10 · C1–C3 · D2–D4 · F2 F3 · G6
+- **工业**：B11 · E1–E7 · F5 · G1–G5 · H1–H9 · J1 J3
+- **底座**：B1 · F1 F4 · I1–I7 · J2
+- **共**：A1 A4 D1
+
+---
+
+## 六、旧编号对照
+
+仓库内仍引用旧编号的位置：`AGENTS.md`（第 16 条）、`docs/PLAN_planner_v2.md`（第 27 条）、
+`pokemon_agent/memory/ports.py` 与 `pokemon_agent/memory/__init__.py`（第 24 条）。
+
+| 旧编号 | 新编号 |
+|---|---|
+| 1 | E5 |
+| 2 | 前半 → F1；后半（权限校验与降级告警）随 `agent_permission` 移除失效，需求由 H7 重新承接 |
+| 3 | F1、F2 |
+| 4 | H1 |
+| 5 | H5 |
+| 6 | B1 |
+| 7 | B7 |
+| 8 | B10 |
+| 9 | F2 |
+| 10 | G5 |
+| 11 | I6 |
+| 12 | B9 |
+| 13 | I6 |
+| 14 | E2 |
+| 15 | H3 |
+| 16 | H9 |
+| 17 | H2 |
+| 18 | B8 |
+| 19 | B11 |
+| 20 | B6 |
+| 21 | 前半 → F3；后半 → D3 |
+| 22 | G1 |
+| 23 | G2 |
+| 24 | B8 |
+| 25 | ① → E1；②c → B3；③④ → E4；⑤ → E7；⑥ → G4 |
+| 26 | D2 |
+| 27 | B1 |
+| 28 | F4 |
+| 归档缺口表 | I1、I3、I4、I5 |
+| 归档"后续阶段"表 | P2 → F2；P4 → I2 |
