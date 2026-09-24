@@ -27,6 +27,11 @@ class TaskInput(BaseModel):
     start_step: int = Field(
         ge=0, description="本局键号基数——task 每一帧的步号 = start_step + 本层键数，跨 task 不重号"
     )
+    knowledge: list[str] = Field(
+        default_factory=list,
+        description="episode 层检索到的领域知识全文（与拆解看到的同一份，不筛），"
+        "task 内每次决策原样带上",
+    )
 
 
 class TaskOutput(Settled, BaseModel):

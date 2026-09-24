@@ -27,7 +27,7 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.harness.domain import EntryStatus, TaskEntry, Termination
 
 from ..episode_runtime import EpisodeRuntime
-from ..episode_state import EpisodeRunState, current_goal
+from ..episode_state import EpisodeRunState, current_goal, current_knowledge
 
 EXHAUSTED_REASON = "拆解耗尽重试，没有 task 可派"
 """拆解耗尽时写进 `judge_reason` 的机械说明（本局以 `Termination.ERROR` 收尾）。"""
@@ -90,6 +90,7 @@ def _elicit(
                 task_memories=state.ep_ctx.task_memories,
                 task_table=state.tasks,
                 episode_memories=state.ep_ctx.global_episode_memories,
+                knowledge=current_knowledge(state),
                 max_tasks=EPISODE_MAX_TASKS_PER_PLAN,
                 human_note=note,
             ),

@@ -24,7 +24,7 @@ from pokemon_agent.schemas.harness.domain import EntryStatus, TaskInput, TaskOut
 from ...task import compile_task_graph
 from ...task.task_entry import exc_snapshot, run_task
 from ..episode_runtime import EpisodeRuntime
-from ..episode_state import EpisodeRunState
+from ..episode_state import EpisodeRunState, current_knowledge
 
 _task_graph: CompiledStateGraph | None = None
 
@@ -55,6 +55,7 @@ def act(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str, A
         episode_id=state.episode_id,
         task=entry.task,
         start_step=state.total_acts,
+        knowledge=current_knowledge(state),
     )
 
     # 步骤 2：跑 task 子图，结算交给下一圈 perceive 吸收、review 盖章；抛错由本格接住。

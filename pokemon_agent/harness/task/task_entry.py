@@ -42,6 +42,7 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
         episode_id=task_input.episode_id,
         task=task_input.task,
         start_step=task_input.start_step,
+        knowledge=task_input.knowledge,
     )
 
 

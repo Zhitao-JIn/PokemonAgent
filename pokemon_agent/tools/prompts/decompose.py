@@ -35,7 +35,7 @@ def task_table_lines(table: Sequence[TaskEntry]) -> list[str]:
 
 
 def context_lines(req: FromHarnessToBrainToolDecomposeReq) -> list[str]:
-    """当前帧 + 本局任务表 + 本局已跑 task 的记忆 + 跨局摘要，渲成素材行。"""
+    """当前帧 + 本局任务表 + 本局已跑 task 的记忆 + 跨局摘要 + 检索到的知识，渲成素材行。"""
     lines = ["## 当前画面", req.observation.render()]
     if req.task_table:
         lines += ["", "## 本局任务表（成败以此为准）", *task_table_lines(req.task_table)]
@@ -43,6 +43,7 @@ def context_lines(req: FromHarnessToBrainToolDecomposeReq) -> list[str]:
         lines += ["", "## 本局已跑的 task", *(m.render() for m in req.task_memories)]
     if req.episode_memories:
         lines += ["", "## 本 run 的局摘要", *(m.render() for m in req.episode_memories)]
+    lines += ["", "## 检索到的相关知识", *(req.knowledge or ["（没有检索到相关知识）"])]
     return lines
 
 

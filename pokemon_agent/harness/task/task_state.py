@@ -50,6 +50,11 @@ class TaskState(Settled, BaseModel):
         ge=0, description="本局键号基数——本 task 每一帧的步号 = start_step + step（唯一来源）"
     )
 
+    knowledge: list[str] = Field(
+        default_factory=list,
+        description="episode 交下来的领域知识全文（task 内只读，每次决策原样带上）",
+    )
+
     step: int = Field(
         default=0, ge=0, description="本 task 已按键数——预算判据 `step >= task.max_steps`"
     )

@@ -47,6 +47,7 @@ def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
         obs=state.task_ctx.observation,
         space=state.task_ctx.action_space,
         memories=history,
+        knowledge="\n\n".join(state.knowledge),
     )
 
     # ========== 2. 问 chooser → 落账 → 取单键 ==========

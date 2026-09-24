@@ -28,5 +28,8 @@ class FromHarnessToBrainToolDecomposeReq(BaseModel):
     episode_memories: list[EpisodeMemory] = Field(
         default_factory=list, description="本 run 的跨局摘要"
     )
+    knowledge: list[str] = Field(
+        default_factory=list, description="episode 层检索到的领域知识全文，一篇一条（不筛）"
+    )
     max_tasks: int = Field(gt=0, description="这一版最多几个 task（给模型的建议上限）")
     human_note: str = Field(default="", description="人对上一版拆解的插话；空 = 没被插话")

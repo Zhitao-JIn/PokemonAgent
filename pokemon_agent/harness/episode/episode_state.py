@@ -114,4 +114,13 @@ def current_goal(state: EpisodeRunState) -> Goal:
     return Goal(goal=state.goal.goal, criteria=state.goal.success_criteria)
 
 
-__all__ = ["EpisodeContext", "EpisodeRunState", "current_goal"]
+def current_knowledge(state: EpisodeRunState) -> list[str]:
+    """本圈 perceive 检索到的领域知识全文，一篇一条；没查到给空列表。
+
+    拆解（`plan_episode`）与派发（`act` 带进 `TaskInput`）共用这一份，不各自再取。
+    """
+    hit = state.ep_ctx.knowledge_semantic_memory
+    return list(hit.contents) if hit is not None else []
+
+
+__all__ = ["EpisodeContext", "EpisodeRunState", "current_goal", "current_knowledge"]

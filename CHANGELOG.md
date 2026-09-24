@@ -1,3 +1,25 @@
+## 2026-09-24（224）—— 重写知识 `doors_and_warps.md`；`decide_action.md` 的 known_objects 说明对齐现行渲染
+
+**改了什么**：
+- `memory/knowledge_memory/ab83b50b….md`（`doors_and_warps.md`）正文重写，frontmatter 不动：分出两种门（走上去就切图 / 站在门格上朝 `#` 那一侧再按一次才切图），明写"进门出门一律用方向键、不用 a"；第二种门的适用范围从"室内的出口"放宽到室内出口、森林/山洞出口、门房两头；`known_objects` 一段改成现行的逐行事件格式；删掉"不要连续长按"。
+- `decide_action.md`：`known_objects` 的说明从"档案抬头写着「互动 N 次」"改成逐行事件的实际格式，第二条硬规则去掉"抬头的互动次数"。
+
+**为什么改**：0924 174203 那局两次停在门格上按 a；223 把这篇知识接到拆解与选键之前，先让它说对。旧文把"站上去朝外按"限定为室内出口，而森林南口场景是野外，模型会以为不适用；也没点明门不用 a。`known_objects` 一段引用的"已经走通 / 还剩 N 种碰法 / 8 种碰法全试过了"与"互动 N 次"是旧聚合档案的字样，`tools/prompts/object_render.py` 现在按事件逐行输出，这些字样一个都不会出现。第二种门的做法用 PyBoy 在 realcheck 起点实测：站在 (17,47)、南邻 `#`，按 down 切到地图 50。
+
+**取舍**：长期打算是让系统自己从经验里总结出这类规律（外部 wiki）；这篇在那之前仍是人工维护的知识，所以只改错与缺，不扩写别的门型细节。原文可从 git 历史取回。
+
+## 2026-09-24（223）—— episode 检索到的知识全文交给拆解，并随 TaskInput 带到每次选键
+
+**改了什么**：
+- `harness/episode/episode_state.py` 新增 `current_knowledge(state)`：本圈 perceive 检索到的知识全文（`knowledge_semantic_memory.contents`），一篇一条。
+- `FromHarnessToBrainToolDecomposeReq` 新增 `knowledge: list[str]`；`plan_episode` 传入；`tools/prompts/decompose.py::context_lines` 末尾加"## 检索到的相关知识"一段（没查到写"没有检索到相关知识"）；`decompose.md` 加一条规则说明它怎么用。
+- `TaskInput` / `TaskState` 新增 `knowledge: list[str]`；episode `act` 派发时带上同一份，`task_entry` 原样装进 state；`plan_task` 把它拼进 `ChooseOnceReq.knowledge`（该字段原本存在但一直没人传）。
+- `decide_action.md`："## 检索到的相关知识 / $knowledge"从 `$facts` 之后挪到 `$goals` 之后、`$status` 之前——task 内不变的内容排在每键都变的内容之前，前缀能命中缓存。
+
+**为什么改**：0924 174203 那局两个 task 都停在门格上反复按 a、预算耗尽，而知识库 `doors_and_warps.md` 早就写着"站在 D 上没换图时先朝地图边界方向按一次"，episode 层每圈也都检索到了它——但检索结果只喂给收尾的 verify，拆解与选键都看不到（选键 prompt 的知识段恒为"没有检索到相关知识"）。以后知识改由外部 wiki 产出，同样要走这条通路才用得上。
+
+**取舍**：选键处不再按 task 筛一遍：task 目标多是坐标，按它做语义匹配最容易漏掉真正要用的那篇；检索结果只有 5 篇、两三千 token，全带的代价小于再检索一次（约 4.6s）。知识变多、必须筛时，改由拆解器给每个 task 标注用得上的篇目，而不是在 task 层再检索。
+
 ## 2026-09-24（222）—— 重试预算回到所有失败共用 3 次，退避按上一次是否超时区分；JSON 解析只取第一个完整值
 
 **改了什么**：
