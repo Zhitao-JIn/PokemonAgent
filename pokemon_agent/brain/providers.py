@@ -72,7 +72,7 @@ from pokemon_agent.brain.schemas import (
     VisionDescribeResp,
 )
 
-from .errors import ImageNotDelivered, ParseFailure, ProviderRejected, ToolTimeout
+from .errors import EmptyCompletion, ImageNotDelivered, ProviderRejected, ToolTimeout
 
 # 一张 160x144 的 GB 截图真被当图处理时，输入至少是这个量级。
 # 实测静默丢图时输入会塌到 30 上下（纯提示词的量），两者差着一个数量级，
@@ -285,9 +285,18 @@ class _OpenAICompatibleBase:
         choices = resp.get("choices") or [{}]
         text = (choices[0].get("message") or {}).get("content") or ""
         truncated = choices[0].get("finish_reason") == "length"
+        finish = str(choices[0].get("finish_reason") or "")
         usage = resp.get("usage") or {}
         prompt_details = usage.get("prompt_tokens_details") or {}
         completion_details = usage.get("completion_tokens_details") or {}
+        if not str(text).strip():
+            # 正文为空：抛独立错误（`EmptyCompletion`），由 tool 层的重试循环原样重问。
+            # complete()/describe() 共用这里，两条链路一份检查。
+            raise EmptyCompletion(
+                int(usage.get("completion_tokens", 0)),
+                int(completion_details.get("reasoning_tokens", 0)),
+                finish,
+            )
         return (
             str(text),
             int(usage.get("prompt_tokens", 0)),
@@ -376,15 +385,6 @@ class _MultimodalMixin:
         assert prompt, "complete() got an empty prompt"
 
         text, n_in, n_out, n_cached, n_reason, cut = self._unpack(self._post(prompt))
-        if not text.strip():
-            # 有输出 token 但正文为空：思考模式把输出全占了（或安全过滤）。
-            # 抛 ParseFailure 而不是裸空串——调用方（plan/choose 的重试）按
-            # 类型归类，错误信息要能直接指向"模型没给正文"而不是"模型不会写 JSON"。
-            raise ParseFailure(
-                text,
-                f"模型返回空正文（completion_tokens={n_out}，prompt_tokens={n_in}）——"
-                "已请求关闭思考模式；若仍复现，检查该模型是否真的支持这个关闭参数",
-            )
         return LlmCompleteResp(
             text=text,
             prompt_tokens=n_in,

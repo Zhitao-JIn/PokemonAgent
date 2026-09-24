@@ -72,6 +72,26 @@ class IllegalAction(BrainError):
         self.allowed = allowed
 
 
+class EmptyCompletion(BrainError):
+    """服务端调通了，但正文（`content`）是空的。
+
+    **和 `ParseFailure` 分开**：那是"模型写了东西但不能用"，这是"模型什么正文都没给"
+    （常见于思考模式把 token 全花在 `reasoning_content` 上，或被安全过滤）。
+    修法不同，重问的方式也不同——模型没有可"纠正"的输出，**原样重问**即可，
+    不叠"你上一次的输出不合法"（`$raw` 是空的，那段说明是张冠李戴）。
+    """
+
+    def __init__(self, completion_tokens: int, reasoning_tokens: int, finish_reason: str) -> None:
+        """记下这次空手而归烧了多少 token、服务端说为什么停。"""
+        super().__init__(
+            f"empty completion body (completion_tokens={completion_tokens}, "
+            f"reasoning_tokens={reasoning_tokens}, finish_reason={finish_reason!r})"
+        )
+        self.completion_tokens = completion_tokens
+        self.reasoning_tokens = reasoning_tokens
+        self.finish_reason = finish_reason
+
+
 class OutputTruncated(BrainError):
     """模型话没说完就被 max_tokens 切断了。
 
@@ -286,6 +306,7 @@ __all__ = [
     "BrainError",
     "DecisionAttemptFailed",
     "DecomposeAttemptFailed",
+    "EmptyCompletion",
     "IllegalAction",
     "ImageNotDelivered",
     "JudgeAttemptFailed",

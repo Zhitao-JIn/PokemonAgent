@@ -1,3 +1,12 @@
+## 2026-09-24（212）— 模型返回空正文时单独归类并原样重问
+
+**改了什么**：
+- `brain/errors.py`：新增 `EmptyCompletion(BrainError)`（带 `completion_tokens`/`reasoning_tokens`/`finish_reason`）。
+- `brain/providers.py`：空正文检查从 `complete()` 挪进 `_unpack()`，`complete()` 与 `describe()` 共用一份；原先抛的 `ParseFailure` 会让 decide 重试叠上"你上一次的输出不合法"的纠正说明（`$raw` 为空，张冠李戴），现改抛 `EmptyCompletion`，不在 `_PARSE_ERROR_KINDS` 里 → 原样重问；账上 `error_kind=EmptyCompletion` 可单独统计。
+- 本地测试 `tests/test_empty_completion.py`。
+
+**为什么改**：思考模式可能把 token 花在 reasoning 上、正文为空；它跟"写坏了 JSON"是两类问题，重试方式与统计口径都不同。
+
 ## 2026-09-24（211）—— plan 位置（规划 + 拆解）打开思考模式：Provider 加 `thinking` 开关，超时随之放宽
 
 **改了什么**：
