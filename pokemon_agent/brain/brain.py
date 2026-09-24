@@ -101,6 +101,11 @@ def _strip_json_fence(text: str) -> str:
     return stripped
 
 
+def _override(thinking: bool | None) -> str:
+    """思考开关覆盖的记账写法：`None`（沿用 provider）→ `"none"`，布尔 → 小写 `"true"`/`"false"`。"""
+    return "none" if thinking is None else str(thinking).lower()
+
+
 class Brain:
     """`BrainPort` 的唯一实现。"""
 
@@ -277,6 +282,7 @@ class Brain:
         goal_stack: Sequence[str],
         history: Sequence[str],
         max_push: int,
+        thinking: bool | None = None,
     ) -> PlanResult:
         """一次 run 级规划尝试：问一次模型、解析。**不重试**——重试是调用方
         的循环，跟 `choose()` 同一个分工。
@@ -292,6 +298,8 @@ class Brain:
 
         失败：模型调不通 / 解析不出 `RunPlan`，都抛 `PlanAttemptFailed`（附这次的账）。
 
+        `thinking`：这一次的思考开关覆盖，原样进 `LlmCompleteReq`；`None` = 沿用 provider 的设置。
+
         步骤 1：调模型（`plan_llm`，纯文本）。
         步骤 2：解析，失败就把账封进异常抛出去；成功就打包成 `PlanResult` 交回去。
         """
@@ -300,10 +308,15 @@ class Brain:
         )
         # 步骤 1：调模型。
         try:
-            completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt))
+            completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt, thinking=thinking))
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "images": []},
+                payload={
+                    "ok": "false",
+                    "prompt": prompt,
+                    "images": [],
+                    "thinking_override": _override(thinking),
+                },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -324,6 +337,7 @@ class Brain:
                 "output_tokens": str(completion.completion_tokens),
                 "cached_tokens": str(completion.cached_tokens),
                 "reasoning_tokens": str(completion.reasoning_tokens),
+                "thinking_override": _override(thinking),
                 "ok": str(parsed is not None).lower(),
                 "raw": completion.text,
                 "prompt": prompt,
@@ -345,6 +359,7 @@ class Brain:
         goal: str,
         context: Sequence[str],
         max_tasks: int,
+        thinking: bool | None = None,
     ) -> DecomposeResult:
         """一次 episode 级拆解尝试：问一次模型、解析成 `Decomposition`。**不重试**。
 
@@ -352,6 +367,8 @@ class Brain:
         让"拆解要什么"在接口上立得住。纯文本链，走 `plan_llm`。
 
         失败：模型调不通 / 解析不出 `Decomposition`，都抛 `DecomposeAttemptFailed`。
+
+        `thinking`：同 `plan()`。
 
         步骤 1：调模型。
         步骤 2：解析，失败封账抛出；成功打包成 `DecomposeResult`。
@@ -362,10 +379,15 @@ class Brain:
         assert max_tasks > 0, "decompose() got a non-positive max_tasks"
         # 步骤 1：调模型。
         try:
-            completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt))
+            completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt, thinking=thinking))
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "images": []},
+                payload={
+                    "ok": "false",
+                    "prompt": prompt,
+                    "images": [],
+                    "thinking_override": _override(thinking),
+                },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -384,6 +406,7 @@ class Brain:
                 "output_tokens": str(completion.completion_tokens),
                 "cached_tokens": str(completion.cached_tokens),
                 "reasoning_tokens": str(completion.reasoning_tokens),
+                "thinking_override": _override(thinking),
                 "ok": str(parsed is not None).lower(),
                 "raw": completion.text,
                 "prompt": prompt,

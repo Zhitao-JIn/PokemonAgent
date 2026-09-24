@@ -58,12 +58,18 @@ from pokemon_agent.brain import (
     BrainPort,
     EpisodeSummary,
 )
-from pokemon_agent.brain.errors import AttemptFailed, ParseFailure, ProviderRejected
+from pokemon_agent.brain.errors import (
+    AttemptFailed,
+    EmptyCompletion,
+    ParseFailure,
+    ProviderRejected,
+)
 from pokemon_agent.config import (
     BRAIN_MAX_ATTEMPTS,
     MAX_SEGMENTS,
     MAX_TIMES,
     MODEL_RETRY_BACKOFF_SECONDS,
+    PLAN_MAX_TOKENS,
     PLAN_THINKING,
     PROVIDER_JSON_MODE,
 )
@@ -190,6 +196,7 @@ class Planner:
                 goal_stack=goal_stack,
                 history=history,
                 max_push=req.max_push,
+                thinking=_thinking_after(calls),
             )
 
         result, calls = _attempt_loop("plan", attempt)
@@ -218,7 +225,11 @@ class Decomposer:
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.decompose(
-                prompt=prompt, goal=goal, context=context, max_tasks=req.max_tasks
+                prompt=prompt,
+                goal=goal,
+                context=context,
+                max_tasks=req.max_tasks,
+                thinking=_thinking_after(calls),
             )
 
         result, calls = _attempt_loop("decompose", attempt)
@@ -638,6 +649,7 @@ class BrainTool:
         verify: str | None = None,
         plan: str | None = None,
         max_tokens: int = 25600,
+        plan_max_tokens: int = PLAN_MAX_TOKENS,
         json_mode: bool = PROVIDER_JSON_MODE,
         plan_thinking: bool = PLAN_THINKING,
     ) -> BrainTool:
@@ -673,6 +685,7 @@ class BrainTool:
             verify=verify,
             plan=plan,
             max_tokens=max_tokens,
+            plan_max_tokens=plan_max_tokens,
             json_mode=json_mode,
             plan_thinking=plan_thinking,
         )
@@ -753,6 +766,16 @@ def _attempt_loop(
         return result, calls
 
     raise MaxRetriesExceeded(BRAIN_MAX_ATTEMPTS, _last_error(calls), calls, source=source)
+
+
+def _thinking_after(calls: list[ModelCall]) -> bool | None:
+    """plan / decompose 这一次尝试的思考开关：之前有过一次 `EmptyCompletion` 就强制关，否则沿用装配。
+
+    `calls`：本次调用目前累积的账。返回 `False` = 这一次关思考；`None` = 不覆盖 provider 的设置。
+    """
+    if any(call.error_kind == EmptyCompletion.__name__ for call in calls):
+        return False
+    return None
 
 
 def _adopt(call: object) -> ModelCall:

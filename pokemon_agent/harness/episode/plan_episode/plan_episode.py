@@ -3,6 +3,8 @@
 
 `task_id` 由这里编：`{goal.task_id}-t{n}`，`n` 接着任务表已有条数往下数（被弃的也算，id 不复用）。
 decomposer 只给内容，身份归 harness。
+
+拆解耗尽重试时本格写 `termination = ERROR`，本局经图的分叉走 `episode_done` 收尾。
 """
 
 from __future__ import annotations
@@ -22,14 +24,21 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.harness.domain import EntryStatus, TaskEntry
+from pokemon_agent.schemas.harness.domain import EntryStatus, TaskEntry, Termination
 
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState, current_goal
 
+EXHAUSTED_REASON = "拆解耗尽重试，没有 task 可派"
+"""拆解耗尽时写进 `judge_reason` 的机械说明（本局以 `Termination.ERROR` 收尾）。"""
+
 
 def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str, Any]:
-    """还有 PENDING 返回空增量；否则把新一版追加进任务表（至少一条）。"""
+    """还有 PENDING 返回空增量；否则把新一版追加进任务表（至少一条）。
+
+    拆解耗尽重试（`MaxRetriesExceeded`）时不追加，返回 `{"termination": ERROR, "judge_reason"}`，
+    图的分叉据此把本局送进 `episode_done` 正常收尾，而不是让异常冒到 run 层记 `episode_error`。
+    """
     if any(entry.status is EntryStatus.PENDING for entry in state.tasks):
         return {}
     deps = runtime.context
@@ -40,7 +49,36 @@ def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
         "step": state.ep_ctx.observation.step,
     }
 
-    # 步骤 1：问 decomposer，人不满意就带话重问。
+    # 步骤 1：要一版（含插话循环）；拆解耗尽重试时本局按 ERROR 收尾，不再上抛。
+    try:
+        resp, note = _elicit(deps, state, meta)
+    except MaxRetriesExceeded:
+        return {"termination": Termination.ERROR, "judge_reason": EXHAUSTED_REASON}
+
+    # 步骤 2：编 task_id 与版次，记结论，追加进表。
+    tasks = _to_tasks(resp.decomposition, state.goal.task_id, len(state.tasks))
+    version = max((entry.round for entry in state.tasks), default=0) + 1
+    deps.trace.append(
+        FromHarnessToTraceToolAppendReq(
+            kind=TraceKind.DECOMPOSE_VERDICT,
+            meta=meta,
+            tasks=tasks,
+            why=resp.decomposition.why,
+            input=resp.calls[-1].payload.get("prompt", ""),
+            output=resp.calls[-1].payload.get("raw", ""),
+            human_note=note,
+        )
+    )
+    return {"tasks": [*state.tasks, *(TaskEntry(task=t, round=version) for t in tasks)]}
+
+
+def _elicit(
+    deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object]
+) -> tuple[FromHarnessToBrainToolDecomposeResp, str]:
+    """问 decomposer 要一版；人有意见就带着那句话重问，直到人没意见。返回 `(定稿, 定稿时的插话)`。
+
+    失败：`_ask` 耗尽时的 `MaxRetriesExceeded` 原样上抛（账已由 `_ask` 记好）。
+    """
     note = ""
     while True:
         resp = _ask(
@@ -64,24 +102,8 @@ def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
             )
         )
         if not reply:
-            break
+            return resp, note
         note = reply
-
-    # 步骤 2：编 task_id 与版次，记结论，追加进表。
-    tasks = _to_tasks(resp.decomposition, state.goal.task_id, len(state.tasks))
-    version = max((entry.round for entry in state.tasks), default=0) + 1
-    deps.trace.append(
-        FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.DECOMPOSE_VERDICT,
-            meta=meta,
-            tasks=tasks,
-            why=resp.decomposition.why,
-            input=resp.calls[-1].payload.get("prompt", ""),
-            output=resp.calls[-1].payload.get("raw", ""),
-            human_note=note,
-        )
-    )
-    return {"tasks": [*state.tasks, *(TaskEntry(task=t, round=version) for t in tasks)]}
 
 
 def _ask(

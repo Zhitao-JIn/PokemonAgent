@@ -187,10 +187,12 @@ class _OpenAICompatibleBase:
         **各家格式不同，子类必须覆盖**。返回一个要 merge 进请求体顶层的字典片段。"""
         raise NotImplementedError(f"{type(self).__name__} 必须覆盖 _enable_thinking_payload()")
 
-    def _post(self, content: list[dict] | str) -> dict:
+    def _post(self, content: list[dict] | str, thinking: bool | None = None) -> dict:
         """POST **一次**，失败按类别立即上抛。**不重试**——重试的循环与预算
         全在调用方（`BrainTool._attempt_loop` / `GameTools.perceive_with_retry`），
         见 `__init__` docstring 里"没有 `max_attempts`"那段。
+
+        `thinking`：这一次的思考开关覆盖（`LlmCompleteReq.thinking`）；`None` 沿用构造时的 `thinking`。
 
         **本层只负责把失败分类**，三类三种抛法：
 
@@ -214,9 +216,8 @@ class _OpenAICompatibleBase:
             "max_tokens": self._max_tokens,
             "messages": [{"role": "user", "content": content}],
         }
-        body.update(
-            self._enable_thinking_payload() if self._thinking else self._disable_thinking_payload()
-        )
+        think = self._thinking if thinking is None else thinking
+        body.update(self._enable_thinking_payload() if think else self._disable_thinking_payload())
         if self._json_mode:
             body["response_format"] = {"type": "json_object"}
 
@@ -384,7 +385,7 @@ class _MultimodalMixin:
         prompt = req.prompt
         assert prompt, "complete() got an empty prompt"
 
-        text, n_in, n_out, n_cached, n_reason, cut = self._unpack(self._post(prompt))
+        text, n_in, n_out, n_cached, n_reason, cut = self._unpack(self._post(prompt, req.thinking))
         return LlmCompleteResp(
             text=text,
             prompt_tokens=n_in,

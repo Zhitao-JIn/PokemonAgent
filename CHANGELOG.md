@@ -1,3 +1,24 @@
+## 2026-09-24（215）—— plan 位置单独的输出上限；正文为空后关思考重问；拆解耗尽时本局按 ERROR 收尾
+
+**改了什么**：
+- `config.py` 新增 `PLAN_MAX_TOKENS = 65536`；`BrainLlmConfig` 新增 `plan_max_tokens`（缺省 25600），`BrainTool.build()` 新增同名参数（缺省取该常量），`build_llm_providers()` 只对 plan 位置用它，其余三个位置仍用 `max_tokens`。`THINKING_TIMEOUT_SECONDS` 180 → 420。
+- `LlmCompleteReq` 新增 `thinking: bool | None = None`（这一次请求的思考开关覆盖）；`_post()` 收同名参数，`complete()` 把它递下去。
+- `Brain.plan()` / `Brain.decompose()`（与 `BrainPort` 同名方法）新增 `thinking` 参数，原样进 `LlmCompleteReq`；这两条链路的账（成功与失败两种 payload）多一个键 `thinking_override`（`"none"` / `"true"` / `"false"`）。
+- `tools/brain_tool.py`：新增 `_thinking_after(calls)`，`Planner` / `Decomposer` 的每次尝试据它取开关——本次调用的账上出现过 `EmptyCompletion` 就传 `False`，否则 `None`。重试循环 `_attempt_loop` 本身不变。
+- `harness/episode/plan_episode`：插话循环抽成 `_elicit()`（与 `plan_run` 同形）；`MaxRetriesExceeded` 不再上抛，返回 `termination = ERROR` + `judge_reason = EXHAUSTED_REASON`。`episode_graph` 在 `plan_episode` 出口加分叉：`done` 进 `episode_done`，否则去 `act`。`Termination.ERROR` 的说明同步。
+- `tests/_fake_run.py`：假 brain 的 `plan` / `decompose` 签名补 `thinking=None`。
+
+**为什么改**：0924 真机 ep1 最后一圈，decompose 三连 `EmptyCompletion`：`reasoning_tokens=25600` 正好烧满 `max_tokens`、`finish_reason='length'`、正文为空。三次输入完全相同，思考长度又不由 prompt 决定，原样重问注定同样失败，`MaxRetriesExceeded` 冒到 run 层把整局记成 `episode_error`。三处各治一段：额度放大让思考更少撞顶；撞顶后下一次关思考换条件重问，不再三次同形失败；真耗尽时这一局照常走收尾（校验、摘要、落章），失败有结算、有记忆，而不是异常。
+
+**取舍**：
+- 只放大 plan 位置——另外三个位置不开思考，放大没有用处。65536 与 420s 都是先拍的，拿到真机的 `reasoning_tokens` 与耗时账再收。
+- 降级只认 `EmptyCompletion`，关掉后本次调用余下的尝试都不再开（撞过一次顶，再开大概率再撞）；`OutputTruncated`（有正文但被截断）不在此列。
+- 关思考那一次就是 211 之前的行为，拆出墙格 task 的风险会回来——它是兜底，不是常态。
+- 拆解耗尽复用 `Termination.ERROR`，不新增枚举值；账上 `call_exhausted`（`link=decompose`）已能区分是哪条链路耗尽。
+- 与 decompose 触发条件、task 状态修改相关的改造讨论后不做：task 失败后放弃剩余条目、队列空再拆的现行做法保留，拆解器本来就能从任务表看到全部条目（含已完成）的定案。
+
+**影响面**：run 规划与拆解单次可能更慢更贵；plan / decompose 的账多一个键 `thinking_override`；episode 图多一条边。`docs/spec/` 里的 episode 流程图未改，待定是否同步。
+
 ## 2026-09-24（214）—— task 层停摆上限 `STALL_LIMIT` 改名 `ACT_STALL_LIMIT`
 
 **改了什么**：`config.py` 的 `STALL_LIMIT` → `ACT_STALL_LIMIT`（值仍 5）；读者 `harness/task/review_and_judge/__init__.py`、注释 `detect_stall.py`、现行规格 `docs/spec/DATAFLOW.md` / `OVERVIEW.md` 同步。

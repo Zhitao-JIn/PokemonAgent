@@ -29,6 +29,9 @@ class LlmCompleteReq(BaseModel):
     （127~129 一路 108 个测试全绿都没拦住：FakeProvider 不摸 `req.prompt`）。
     """
 
+    thinking: bool | None = None
+    """这一次请求的思考开关。`None` = 沿用 provider 装配时的设置；`True`/`False` = 只对这一次覆盖。"""
+
 
 class LlmCompleteResp(BaseModel):
     """一次文本补全的结果。

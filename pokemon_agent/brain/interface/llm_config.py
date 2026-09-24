@@ -70,11 +70,18 @@ class BrainLlmConfig:
     """`plan()` 的模型（火山方舟，豆包）。`None` = 这次不装配规划链。"""
 
     max_tokens: int = 25600
-    """四个 provider 共用的输出上限。
+    """decide / judge / verify 三个 provider 共用的输出上限（plan 位置见 `plan_max_tokens`）。
 
     **共用是判断不是偷懒**：上限该多大只取决于"这条链路要写多少字"
     （`Action.thought` 不设上限，一次决策的推理长度就是它的算力），
     与"打的哪家供应商"无关，四条链路没有证据支持该有不同的数。
+    """
+
+    plan_max_tokens: int = 25600
+    """`plan` 位置单独的输出上限；其余三个位置用 `max_tokens`。
+
+    默认与 `max_tokens` 相同；项目里由 tool 层的 `BrainTool.build()` 按 `config.PLAN_MAX_TOKENS` 递进来。
+    单列的理由：只有这个位置可能开思考，而思考 token 与正文共用这份额度。
     """
 
     plan_thinking: bool = False

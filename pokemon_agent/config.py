@@ -70,6 +70,15 @@ PLAN_THINKING = True
 只影响 `plan` 位置；decide / judge / verify / 感知仍关思考。关掉 = 回到从前。
 """
 
+PLAN_MAX_TOKENS = 65536
+"""`plan` 位置（`plan()` 与 `decompose()` 共用的 provider）的输出上限，**思考 token 与正文共用这一份额度**。
+
+**它是实验旋钮**：思考模式下推理长度不由 prompt 决定，推理吃满上限时正文为空（`EmptyCompletion`，
+`finish_reason='length'`）。其余三个位置不开思考，仍用 `BrainTool.build(max_tokens=…)` 的缺省。
+DeepSeek 的服务端硬上限远高于此；放大时单请求耗时同比变长，超时见
+`brain/build_llm_providers.py::THINKING_TIMEOUT_SECONDS`。
+"""
+
 MODEL_RETRY_BACKOFF_SECONDS = 0.5
 """两个重试循环（`brain_tool` / `game_tools`）失败后到下一次尝试的**固定**间隔。
 

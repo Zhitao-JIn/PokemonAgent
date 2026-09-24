@@ -25,7 +25,8 @@ class Termination(StrEnum):
     BUDGET_EXHAUSTED = "budget_exhausted"
     """本层计数撞上限：task 键数 / episode task 数 / run 局数。"""
     ERROR = "error"
-    """子图抛 `AgentError`，由父层 error handler 兜成的失败结算（只出现在 run 侧）。"""
+    """出错收尾：子图抛 `AgentError` 由父层兜成的失败结算（run 兜局、episode 兜 task），
+    或 episode 的 `plan_episode` 拆解耗尽重试、无 task 可派。"""
 
 
 class Settled:

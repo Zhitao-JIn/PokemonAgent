@@ -194,6 +194,7 @@ class BrainPort(Protocol):
         goal_stack: Sequence[str],
         history: Sequence[str],
         max_push: int,
+        thinking: bool | None = None,
     ) -> PlanResult:
         """run 级规划：根据历史决定目标表怎么变。
 
@@ -218,6 +219,9 @@ class BrainPort(Protocol):
         但签名立的是"规划必须有这几块"这个约定——谁整体拷走 brain 复用时，
         只看签名就知道喂什么。
 
+        - `thinking`：这一次的思考开关覆盖；`None` = 沿用 provider 的设置。
+          调用方在上一次尝试正文为空（`EmptyCompletion`）后传 `False`。
+
         后置条件：`result.calls` 恰好一条。
         失败：抛 `PlanAttemptFailed`（附这次的账）。
         """
@@ -232,6 +236,7 @@ class BrainPort(Protocol):
         goal: str,
         context: Sequence[str],
         max_tasks: int,
+        thinking: bool | None = None,
     ) -> DecomposeResult:
         """episode 级规划：把一个目标拆成按执行顺序排好的任务链。
 
@@ -239,6 +244,7 @@ class BrainPort(Protocol):
         - `context`：已渲染好的素材行（当前画面摘要、本局已跑 task 的结论、相关记忆）。
         - `max_tasks`：这一版最多给几个 task（给模型的建议上限，调用方不截断）。
         - `prompt`：怎么拆、输出什么格式的规则。
+        - `thinking`：同 `plan()`。
 
         后置条件：`result.decomposition.tasks` 非空；`result.calls` 恰好一条。
         失败：抛 `DecomposeAttemptFailed`（附这次的账）。

@@ -1,7 +1,8 @@
 """episode 图：**5 格**，与 run / task 逐格同形的骨架（一 task 一圈）。
 
     perceive → review_and_judge ─done→ episode_done → END
-                      └─否则→ plan_episode → act → perceive
+                      └─否则→ plan_episode ─done（拆解耗尽）→ episode_done
+                                     └─否则→ act → perceive
 
 `perceive` 先吸收上一个 task 的结算再做检索；`plan_episode` 队列空时问
 decomposer；`act` 派一个 task 子图。每格的实现住同名文件夹，格入口在文件夹的
@@ -26,7 +27,8 @@ from .review_and_judge import review_and_judge
 def compile_episode_graph() -> CompiledStateGraph:
     """把 5 个格装配成图，返回编译好的对象。
 
-    **一个分叉**：`review_and_judge` 出口的 `done` 决定进收尾还是继续循环。
+    **两个分叉**：`review_and_judge` 出口的 `done` 决定进收尾还是继续循环；
+    `plan_episode` 出口的 `done`（拆解耗尽，写了 `ERROR`）决定进收尾还是去派 task。
     `act` 出口无条件回 `perceive`（每个 task 的结算都要先吸收、再判停）；
     队列还有没有 task 由 `plan_episode` 自己看。
 
@@ -41,7 +43,7 @@ def compile_episode_graph() -> CompiledStateGraph:
     graph.add_node("act", act)
     graph.add_node("episode_done", episode_done)
 
-    # ========== 2. 接边——判停出口按 done 分叉，act 出口无条件回 perceive ==========
+    # ========== 2. 接边——判停出口与拆解出口按 done 分叉，act 出口无条件回 perceive ==========
     graph.set_entry_point("perceive")
     graph.add_edge("perceive", "review_and_judge")
     graph.add_conditional_edges(
@@ -52,7 +54,14 @@ def compile_episode_graph() -> CompiledStateGraph:
             "episode_done": "episode_done",
         },
     )
-    graph.add_edge("plan_episode", "act")
+    graph.add_conditional_edges(
+        "plan_episode",
+        lambda state: "episode_done" if state.done else "act",
+        {
+            "act": "act",
+            "episode_done": "episode_done",
+        },
+    )
     graph.add_edge("act", "perceive")
     graph.add_edge("episode_done", END)
     return graph.compile()
