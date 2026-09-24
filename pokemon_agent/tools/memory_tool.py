@@ -237,7 +237,7 @@ class MemoryTool:
     ) -> FromHarnessToMemoryToolQueryActMemoriesResp:
         """取这一局全部的单步情景记忆，按 step 升序。"""
         entries = self._episode_acts(req.episode_id)
-        return FromHarnessToMemoryToolQueryActMemoriesResp(steps=entries)
+        return FromHarnessToMemoryToolQueryActMemoriesResp(entries=entries)
 
     def query_recent_act_memories(
         self, req: FromHarnessToMemoryToolQueryRecentActMemoriesReq

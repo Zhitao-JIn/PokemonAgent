@@ -1,3 +1,15 @@
+## 2026-09-24（207）—— 修 `query_act_memories` 构造响应时字段名写错（真机第一跑暴露）
+
+**改了什么**：`tools/memory_tool.py::query_act_memories` 返回 `FromHarnessToMemoryToolQueryActMemoriesResp(steps=entries)`
+改为 `entries=entries`——该响应的字段叫 `entries`，`steps` 是 `QueryRecentActMemoriesResp` 的字段名。
+
+**为什么这么改**：202 把调用侧改成读 `.entries`，但 tool 层构造响应处仍写 `steps=`，pydantic 报 `entries` 缺失；
+task 层 `perceive` 首个单元 `retrieve_act_memories` 一进就崩。测试用的假记忆绕过了 `MemoryTool`，所以没有抓到。
+
+**取舍**：只改这一处；两个响应字段名不一致（`entries` / `steps`）是历史遗留，统一会动信封与调用点，另议。
+
+**影响面**：task 层每圈的读记忆恢复正常；无接口变化。
+
 ## 2026-09-24（206）—— git commit 规范：所有 commit 一律带 Conventional Commits 前缀
 
 **改了什么**：AGENTS.md / CLAUDE.md 第三节第 6 条：有编号条目的 commit 也要带 `feat:` / `fix:` / `refactor:` /
