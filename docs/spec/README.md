@@ -1,6 +1,6 @@
 # docs/spec —— 活文档索引
 
-> 最后更新：**2026-09-16**
+> 最后更新：**2026-09-23**
 >
 > 这里是**活文档**（Living Docs）：描述系统**现在**的样子。
 > **与代码冲突时以代码为准**——本目录的存在意义是让人不用读代码就能看懂系统怎么运转，
@@ -13,9 +13,11 @@
 
 | 文件 | 覆盖什么 | 什么时候该改它 |
 |---|---|---|
-| `DATAFLOW.md` | 端到端数据流：外壳 → run 图 → episode 图 → 一步之内 → trace 落盘；**事件总表**（`TraceKind` → `EventType` → 生产位置 → 正文） | 加/删 `TraceKind`、改节点顺序、改 `meta`/`content` 形状 |
-| `brain/SPEC.md` | 纯决策层：`BrainPort` 七方法、四个 provider 协议、brain 方言的数据形状、接线与选型 | 改 Port 签名、加减领域模型、换厂商接线 |
-| `harness/SPEC.md` | 控制循环：两张图的节点与边、两套状态模型、`HarnessDeps`、人在环四档实现、trace 写入点 | 加/删节点或边、改状态字段、加一档 Reviewer/Planner |
+| `OVERVIEW.md` | **项目思想**：核心想法、三层同构、停判表、架构表、不变量、IO 契约、已知缺口；先读这份 | 改分层、改停判口径、改核心设计 |
+| `diagrams/` | 架构图 / 流程图 / 数据流图（`.puml` 源 + `.svg`/`.png` 渲染） | 改图或层间交接时，同步改源并重新渲染 |
+| `DATAFLOW.md` | 端到端数据流：run → episode → task 三层、层间 IO 契约、记忆阶梯；**事件总表**（`TraceKind` → `EventType` → 生产位置 → 正文） | 加/删 `TraceKind`、改节点顺序、改 `meta`/`content` 形状 |
+| `brain/SPEC.md` | 纯决策层：`BrainPort` 七方法（含 decompose）、四个 provider 协议、brain 方言的数据形状、接线与选型 | 改 Port 签名、加减领域模型、换厂商接线 |
+| `harness/SPEC.md` | 控制循环：三张同构图的格与边、三套状态模型、三个 runtime（Run/Episode/Task）、人在环三档实现、trace 写入点 | 加/删节点或边、改状态字段、加一档 Reviewer/Planner |
 | `tools/SPEC.md` | 桥层：四张门面、信封清单、五个接线工厂、跨模块转换点、prompt 对照表 | 加/改门面方法、加信封、改工厂签名 |
 | `memory/SPEC.md` | 记忆子系统全貌：存储布局、混合检索算法、四类记录的派生关系、两个 provider | 改落盘形态、改检索阶段、加减记录类型 |
 | `memory/PORTS.md` | **契约层**：`MemoryStorePort` 的逐方法签名与边界核对表 | 改 Port 方法。与 `SPEC.md` 分工：这份讲契约，那份讲全貌 |
@@ -26,7 +28,7 @@
 | `schemas/SPEC.md` | 跨层契约：信封清单与命名规则、domain 实体归属、记忆一族的形状 | 加/改/删信封，改归属登记 |
 | `build/SPEC.md` | 装配点：造出哪些对象、各自从哪个工厂来、环境变量、异常族 | 加/删装配对象、加环境变量 |
 | `experiment/SPEC.md` | 真机核对：四个维度分别查什么、命令行开关、超时与看门狗、存档 | 加/删维度、改开关或超时 |
-| `TRACE_37_accounts_examples.md` | 35 种账的**逐条样例**（盘上真实事件） | 账的正文形状变了 |
+| `TRACE_37_accounts_examples.md` | 账的**逐条样例**（盘上真实事件；早于 195–199，形状以 `DATAFLOW.md` 为准） | 账的正文形状变了 |
 | `PLAN_wikiskill_reproduction.md` | **方案稿**（未落地的机制二：skill library / wiki 演化），规划文档不是现状描述 | 规划改了 |
 
 ## 二、与其它文档的分工

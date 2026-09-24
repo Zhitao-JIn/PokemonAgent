@@ -1,5 +1,10 @@
 # 35 种 trace 账的例子（由渲染函数真实产出）
 
+> ⚠ **已过时（2026-09-23）**：本文生成于 CHANGELOG 195–199 之前。此后 `meta` 多了 `task_id`（五件），
+> 新增 `task_start` / `task_end` / `decompose_call` / `decompose_verdict` / `settle_goal` / `read_task_memory` /
+> `write_task_memory` / `summarize_task_call`，`read_step`/`write_step` 改名 `read_act_memory`/`write_act_memory`，
+> `judge_verdict` / `plan_verdict` / `episode_end` / `verify_verdict` 的正文也变了。**以 `DATAFLOW.md` 第四节为准**。
+
 > 生成方式：每条都调用 `tools/trace/render.py` 里对应 kind 的渲染函数，
 > 封套（uuid / ts / meta / content 的字符串化）按 `trace/store.py` 的落盘规则拼——
 > **形状与代码逐字一致，不是手写的**。
@@ -160,12 +165,12 @@
 }
 ```
 
-## `step_advance`（type=`lifecycle`）
+## `advance_step`（type=`lifecycle`）
 
 ```json
 {
   "uuid": "01a0a4a7-0f58-7a7e-b20d-b28fbb37b2ac",
-  "kind": "step_advance",
+  "kind": "advance_step",
   "type": "lifecycle",
   "ts": 1789468807.0,
   "meta": {
@@ -180,12 +185,12 @@
 }
 ```
 
-## `perception_call`（type=`model_call`）
+## `sense_call`（type=`model_call`）
 
 ```json
 {
   "uuid": "01a0a4a7-1340-7c25-83b8-1d843a7f69c2",
-  "kind": "perception_call",
+  "kind": "sense_call",
   "type": "model_call",
   "ts": 1789468808.0,
   "meta": {
@@ -206,12 +211,12 @@
 }
 ```
 
-## `decide_call`（type=`model_call`）
+## `choose_call`（type=`model_call`）
 
 ```json
 {
   "uuid": "01a0a4a7-1728-7233-919a-38e7af46e953",
-  "kind": "decide_call",
+  "kind": "choose_call",
   "type": "model_call",
   "ts": 1789468809.0,
   "meta": {
@@ -323,12 +328,12 @@
 }
 ```
 
-## `summarize_call`（type=`model_call`）
+## `summarize_episode_call`（type=`model_call`）
 
 ```json
 {
   "uuid": "01a0a4a7-26c8-7ff0-a479-b19b8e71fc95",
-  "kind": "summarize_call",
+  "kind": "summarize_episode_call",
   "type": "model_call",
   "ts": 1789468813.0,
   "meta": {
@@ -438,12 +443,12 @@
 }
 ```
 
-## `observe`（type=`view`）
+## `sense_frame`（type=`view`）
 
 ```json
 {
   "uuid": "01a0a4a7-3a50-7f8f-958b-45ae9240a512",
-  "kind": "observe",
+  "kind": "sense_frame",
   "type": "view",
   "ts": 1789468818.0,
   "meta": {
@@ -517,12 +522,12 @@
 }
 ```
 
-## `think`（type=`llm_outcome`）
+## `choose_verdict`（type=`llm_outcome`）
 
 ```json
 {
   "uuid": "01a0a4a7-4220-72b2-98ca-d71ed26b746b",
-  "kind": "think",
+  "kind": "choose_verdict",
   "type": "llm_outcome",
   "ts": 1789468820.0,
   "meta": {
@@ -622,12 +627,12 @@
 }
 ```
 
-## `do_action`（type=`act`）
+## `press_key`（type=`act`）
 
 ```json
 {
   "uuid": "01a0a4a7-4608-73a2-ace2-c30947a60848",
-  "kind": "do_action",
+  "kind": "press_key",
   "type": "act",
   "ts": 1789468821.0,
   "meta": {
@@ -677,12 +682,12 @@
 }
 ```
 
-## `stall_check`（type=`act`）
+## `check_stall`（type=`act`）
 
 ```json
 {
   "uuid": "01a0a4a7-4dd8-7197-99f6-faa74a904a19",
-  "kind": "stall_check",
+  "kind": "check_stall",
   "type": "act",
   "ts": 1789468823.0,
   "meta": {
@@ -723,12 +728,12 @@
 }
 ```
 
-## `read_global`（type=`memory_io`）
+## `read_episode_memory`（type=`memory_io`）
 
 ```json
 {
   "uuid": "01a0a4a7-6548-7934-95ef-ef258fb4482e",
-  "kind": "read_global",
+  "kind": "read_episode_memory",
   "type": "memory_io",
   "ts": 1789468829.0,
   "meta": {
@@ -771,12 +776,12 @@
 }
 ```
 
-## `read_object`（type=`memory_io`）
+## `read_object_memory`（type=`memory_io`）
 
 ```json
 {
   "uuid": "01a0a4a7-6d18-7718-b51d-2ed6a5b9c3c4",
-  "kind": "read_object",
+  "kind": "read_object_memory",
   "type": "memory_io",
   "ts": 1789468831.0,
   "meta": {
@@ -940,12 +945,12 @@
 }
 ```
 
-## `write_object`（type=`memory_io`）
+## `write_object_memory`（type=`memory_io`）
 
 ```json
 {
   "uuid": "01a0a4a7-7cb8-797f-841f-3e15323cfb69",
-  "kind": "write_object",
+  "kind": "write_object_memory",
   "type": "memory_io",
   "ts": 1789468835.0,
   "meta": {
@@ -973,12 +978,12 @@
 }
 ```
 
-## `write_episode`（type=`memory_io`）
+## `write_episode_memory`（type=`memory_io`）
 
 ```json
 {
   "uuid": "01a0a4a7-80a0-7011-8cb9-73a2eea69d76",
-  "kind": "write_episode",
+  "kind": "write_episode_memory",
   "type": "memory_io",
   "ts": 1789468836.0,
   "meta": {

@@ -1,6 +1,6 @@
 # schemas —— 模块规格
 
-> 最后更新：2026-09-15 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
+> 最后更新：2026-09-24 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
 
 ## 一、职责与边界
 
@@ -17,107 +17,64 @@
 schemas/
 ├── __init__.py                       不是出口，不 re-export 任何名字
 ├── harness/
-│   ├── __init__.py                   出口：48 个信封名 + domain 四件 + AuditVerdict / ModelCall / ModelCallLog / RunResp
-│   ├── communication/                49 个模块 + __init__.py（47 个信封模块——`FromHarnessToReviewerAuditReq.py` 一文件两信封；
-│   │                                 ModelCall.py 里另有 `ModelCallLog = list[ModelCall]` 别名）
+│   ├── __init__.py                   出口：信封名 + domain 各件 + AuditVerdict / ModelCall / ModelCallLog / RunResp
+│   ├── communication/                信封模块（一文件一信封；`FromHarnessToReviewerAuditReq.py` 一文件两信封 + AuditVerdict）
 │   └── domain/
-│       ├── __init__.py               出口：GoalEntry / GoalStatus / TraceEvent / TraceKind
-│       ├── goal_entry.py             GoalEntry / GoalStatus
+│       ├── __init__.py               出口：EpisodeInput / EpisodeOutput / TaskInput / TaskOutput / Termination /
+│       │                             Settled / EntryStatus / GoalEntry / TaskEntry / TraceEvent / TraceKind
+│       ├── episode_io.py             EpisodeInput / EpisodeOutput（run ↔ episode）
+│       ├── task_io.py                TaskInput / TaskOutput（episode ↔ task）
+│       ├── termination.py            Termination（五类）+ Settled（done / success 两个派生属性的混入类）
+│       ├── entry_status.py           EntryStatus（目标表与任务表共用的五个状态）
+│       ├── goal_entry.py             GoalEntry（run 目标表的一行）
+│       ├── task_entry.py             TaskEntry（episode 任务表的一行）
 │       ├── trace_event.py            TraceEvent
 │       └── trace_kind.py             TraceKind
 └── memory/
-    ├── __init__.py                   出口：SNAPSHOT_BLIND / EpisodeMemory / KnowledgeRecord /
-    │                                 ObjectDialogEvent / ObjectFactEvent / ObjectStillEvent /
-    │                                 ObjectWarpEvent / StepMemory / render_sequence
+    ├── __init__.py                   出口：SNAPSHOT_BLIND / ActMemory / TaskMemory / EpisodeMemory / KnowledgeRecord /
+    │                                 ObjectDialogEvent / ObjectFactEvent / ObjectStillEvent / ObjectWarpEvent / render_sequence
     └── datastore/
-        ├── __init__.py               出口：上列 9 个 + ObjectFactEventBase
-        ├── step_memory.py            StepMemory / SNAPSHOT_BLIND / render_sequence
+        ├── act_memory.py             ActMemory / SNAPSHOT_BLIND / render_sequence
+        ├── task_memory.py            TaskMemory
         ├── episode_memory.py         EpisodeMemory
-        ├── object_memory.py          ObjectFactEventBase / ObjectDialogEvent / ObjectWarpEvent /
-        │                             ObjectStillEvent / ObjectFactEvent
+        ├── object_memory.py          ObjectFactEventBase / 三个子类 / ObjectFactEvent
         └── knowledge.py              KnowledgeRecord
 ```
 
 两个出口文件都**只做 re-export、不定义实体**。`communication/` 与 `datastore/` 子目录不对外。
-
-**这里只有这两个子包。** `schemas/trace/`、`schemas/world/`、`schemas/memory/communication/` 曾各剩一个空骨架（数据已按"归产出它的模块自己"归回，目录没清），2026-09-15 一并移进 `_to_delete/0915-empty-schemas-skeleton/`；`brain/`、`providers/`、`frontend/` 三个子包更早就整个没了（`schemas/__init__.py` 顶部有逐条去向）。
+计数以 `ls` 与 `__all__` 为准，本文不抄数字。
 
 ## 三、信封清单
 
-`harness/communication/` 下 **46 个模块**（另有 `__init__.py`，目录共 47 个 `.py`）：**44 个信封**（各门面第一跳 + run → episode 内部边）+ 2 个接口模型 / 账模块。按"往哪个门面"分组：
+按"往哪个门面"分组（文件名即信封名）：
 
-### 往 `brain_tool`（14）
+- **往 `brain_tool`**：`ChooseOnce`、`PlanOnce`、`Decompose`、`Judge`、`Reflect`、`Verify`、`Summarize`、
+  `SummarizeTask`，各一对 `Req` / `Resp`（前缀 `FromHarnessToBrainTool`）。
+  - `JudgeReq` 带 `task_memories` / `task_table` / `episode_memories`（episode / run 层判定的素材）。
+  - `DecomposeReq` 带 `task_table`（本局任务表，成败以表为准）。
+  - `SummarizeReq` / `SummarizeTaskReq` 带 `verdicts`（正负标注）、`termination`、`acts_used`；`success` 是推出的属性。
+  - `PlanOnceReq` 带 `human_note`。
+- **往 `game_tool`**：`Reset`、`Execute`、`Evolve`、`GetActionSpace`、`PerceiveOnce`。
+- **往 `memory_tool`**：ActMemory（`StoreActMemory` / `QueryActMemories` / `QueryRecentActMemories`）、
+  TaskMemory（`StoreTaskMemory` / `QueryTaskMemories`）、EpisodeMemory（`StoreEpisodeSummary` / `QueryEpisodeSummaries`）、
+  物件（`AppendObjectEvents` / `QueryObjectEvents` / `QueryObjectEventsAt`）、知识（`StoreKnowledge` / `QueryKnowledge`）、
+  快照（`SnapshotMemory` / `RestoreMemory`）。
+- **往 `reviewer`**：`InjectReq`、`AuditReq` / `AuditResp`（`AuditReq.outcome` 是 `EpisodeOutput` 或 `TaskOutput`，
+  审 task 时 `task_id` 非空，`events` 是被审对象自己的 trace）。
+- **往 `trace_tool`**：`FromHarnessToTraceToolAppendReq`——`kind` + `meta`（五件）+ 各 kind 取用的可选字段
+  （`calls` / `obs` / `entry` / `verdicts` / `outcome_task` / `goal` / `task_entry` / `abandoned` / `audit` / `tasks` /
+  `termination` / `fail_streak` / `updates` …）。
+- **非门面**：`ModelCall.py`（`ModelCall` / `ModelCallLog`）、`RunResp.py`（`RunResp`：outcomes / total / succeeded / success_rate / termination；混入 `Settled`）。
 
-| 模块 | 干什么 |
-|---|---|
-| `FromHarnessToBrainToolChooseOnceReq` / `…Resp` | 决策：要一次动作选择 / 返回选出的动作 |
-| `FromHarnessToBrainToolExtractReq` / `…Resp` | 世界知识抽取 / 返回抽出的知识记录 |
-| `FromHarnessToBrainToolJudgeReq` / `…Resp` | 判定（这一局成没成） |
-| `FromHarnessToBrainToolPlanOnceReq` / `…Resp` | run 级规划 |
-| `FromHarnessToBrainToolReflectReq` / `…Resp` | 反思：把一步固化成 `StepMemory` |
-| `FromHarnessToBrainToolSummarizeReq` / `…Resp` | 蒸馏：把一局可信 step 记忆压成跨局摘要 |
-| `FromHarnessToBrainToolVerifyReq` / `…Resp` | 校验：逐步判定 |
-
-（7 对 = 14 个模块。）
-
-### 往 `game_tool`（6）
-
-| 模块 | 干什么 |
-|---|---|
-| `FromHarnessToGameToolExecuteReq` | 动作执行请求（无 Resp） |
-| `FromHarnessToGameToolResetReq` | 开局重置请求（`reset()` 返回 `None`，无 Resp 的先例） |
-| `FromHarnessToGameToolEvolveReq` | 空转推进请求（无 Resp） |
-| `FromHarnessToGameToolGetActionSpaceReq` / `…Resp` | 取这一步允许的动作名 |
-| `FromHarnessToGameToolPerceiveOnceResp` | 单次感知响应（**没有 Req 文件**：感知由本层发起、`ram_only` 走裸参） |
-
-### 往 `memory_tool`（18）
-
-| 模块 | 干什么 |
-|---|---|
-| `FromHarnessToMemoryToolStoreEpisodeStepReq` | 写入一条单步记忆（无 Resp） |
-| `FromHarnessToMemoryToolStoreEpisodeSummaryReq` / `…Resp` | 写入一局跨局摘要 |
-| `FromHarnessToMemoryToolStoreKnowledgeReq` / `…Resp` | 写入一条世界知识 |
-| `FromHarnessToMemoryToolAppendObjectEventsReq` | 追加一批交互事件（无 Resp） |
-| `FromHarnessToMemoryToolQueryRecentStepsReq` / `…Resp` | 检索近期单步记忆 |
-| `FromHarnessToMemoryToolQueryEpisodeStepsReq` / `…Resp` | 检索整局单步记忆 |
-| `FromHarnessToMemoryToolQueryEpisodeSummariesReq` / `…Resp` | 读跨局摘要 |
-| `FromHarnessToMemoryToolQueryKnowledgeReq` / `…Resp` | 知识检索 |
-| `FromHarnessToMemoryToolQueryObjectEventsReq` / `…Resp` | 整图交互事件检索 |
-| `FromHarnessToMemoryToolQueryObjectEventsAtReq` / `…Resp` | 指定格子的交互事件检索 |
-
-### 往 `reviewer`（2 个模块 / 3 个类）
-
-| 模块 | 干什么 |
-|---|---|
-| `FromHarnessToReviewerInjectReq` | **插话**请求：人收一句自然语言（`inject()` 返回字符串之外无结构化载荷，无 Resp） |
-| `FromHarnessToReviewerAuditReq` | **审**：文件里定义三个类——`AuditVerdict`（`accept` / `overturn`）、`FromHarnessToReviewerAuditReq`（一局的机械结算 + 完整 trace）、`FromHarnessToReviewerAuditResp`（人的表态）。**Resp 与 Req 同文件，没有独立的 `…AuditResp.py`** |
-
-### 往 `trace_tool`（1）
-
-| 模块 | 干什么 |
-|---|---|
-| `FromHarnessToTraceToolAppendReq` | 单笔记账请求：`kind`（`TraceKind`）+ `meta`（签名信息）+ 各 kind 取用的可选领域字段（`calls` / `obs` / `entry` / `verdicts`…）。调用账的 `calls` 交整条重试链（0916 起唯一的写口——批量信封已删） |
-
-### run → episode 内部边（2）
-
-| 模块 | 干什么 |
-|---|---|
-| `FromRunHarnessToEpisodeHarnessRunReq` | 一局的派发请求 |
-| `FromRunHarnessToEpisodeHarnessRunResp` | 一局的结算（`RunResp.outcomes` 的元素类型） |
-
-### 非门面：接口模型 / 账（2）
-
-| 模块 | 干什么 |
-|---|---|
-| `ModelCall.py` | `ModelCall`：一次模型调用留下的账（`payload` / `error_kind` / `error`），由 `FromHarnessToTraceToolAppendReq.calls` 内嵌；同文件定义 `ModelCallLog = list[ModelCall]`（重试链的形状，`perceive_with_retry` 的返回类型） |
-| `RunResp.py` | `RunResp`：RunHarness 对外的 run 结算（裸名），由 `harness/run/run_entry.py::close()` 内部组装、供 `run_end` 事件内嵌 |
+**层间交接不走信封**：run → episode → task 的交接是 `domain/` 的 `EpisodeInput/Output`、`TaskInput/Output`
+（裸名；旧的 `FromRunHarnessToEpisodeHarnessRun{Req,Resp}` 已删）。
 
 ## 四、命名规则
 
-**规则一（信封）**：`From[模块A]To[模块B][函数名][Req/Resp]`，**两半都放 A 处（发起方）**。强制适用范围是 **Harness ↔ 各门面**这一跳（brain_tool / game_tool / memory_tool / reviewer / trace_tool），外加 run → episode 这条内部边。第一跳（调用方 → 模块门面）永远是信封，**门面上的每个方法都算**。
+**规则一（信封）**：`From[模块A]To[模块B][函数名][Req/Resp]`，**两半都放 A 处（发起方）**。强制适用范围是 **Harness ↔ 各门面**这一跳（brain_tool / game_tool / memory_tool / reviewer / trace_tool），层间交接用 domain 的 IO 模型，不造信封。第一跳（调用方 → 模块门面）永远是信封，**门面上的每个方法都算**。
 
-- **外壳（experiment）→ Harness 这条边不包装**：外壳不是我们的模块，入参与返回值都走裸字段——`run(run_id, goals)` 返回 `(outcomes, total, succeeded, success_rate)`。
-- 有入参就有 Req；返回结构化载荷就有 Resp；**返回 `None` 的没有 Resp**。现有先例：`FromHarnessToGameToolResetReq`、`FromHarnessToReviewerInjectReq`、`FromHarnessToMemoryToolAppendObjectEventsReq`、`FromHarnessToMemoryToolStoreEpisodeStepReq`。
+- **外壳（experiment）→ Harness 这条边不包装**：外壳不是我们的模块，入参与返回值都走裸字段——`run(run_id, goals, run_goal=None)` 返回 `(outcomes, total, succeeded, success_rate)`。
+- 有入参就有 Req；返回结构化载荷就有 Resp；**返回 `None` 的没有 Resp**。现有先例：`FromHarnessToGameToolResetReq`、`FromHarnessToReviewerInjectReq`、`FromHarnessToMemoryToolAppendObjectEventsReq`、`FromHarnessToMemoryToolStoreActMemoryReq`。
 - 别把这条推到记账层：**信封该内嵌模型就内嵌模型**——`run_end` 里的 `RunResp` 由 `harness/run/run_entry.py::close()` 内部组装，跟 `run()` 返回什么无关。
 
 **规则二（裸名）**：模块对外的接口模型用裸名、不带 From/To——因为发起方可能换人（今天 harness，明天第三方），From/To 前缀是赌一个注定被换掉的名字。**适用范围到此为止**：
@@ -128,63 +85,46 @@ schemas/
 
 ## 五、domain 实体与归属
 
-**按产出方归属**：谁声明这个形状、谁消费它，它就住谁的包。**跨包引用只允许向下**（聚合方 → 被聚合方），代码里实际成立的引用如下：
+**按产出方归属**：谁声明这个形状，它就住谁的包；跨包引用只允许向下。
 
 | 实体 | 家 | 声明 / 产出方 | 谁引用它 |
 |---|---|---|---|
-| `TraceKind` | `harness/domain/trace_kind.py` | harness（各节点声明"我记哪笔账"） | `FromHarnessToTraceToolAppendReq`；消费方是 `TraceTool` 渲染层 |
-| `TraceEvent` | `harness/domain/trace_event.py` | 项目侧对 trace 事件的形状声明 | `FromHarnessToReviewerAuditReq.episode_trace` |
-| `GoalEntry` / `GoalStatus` | `harness/domain/goal_entry.py` | harness（run 级目标表的一行） | `FromHarnessToBrainToolPlanOnceReq` |
-| `StepMemory` | `memory/datastore/step_memory.py` | 本项目（tool 层与组装方认识它的字段） | `FromHarnessToBrainTool*` 6 个信封、`FromHarnessToMemoryTool*` 3 个信封 |
-| `EpisodeMemory` | `memory/datastore/episode_memory.py` | 同上 | `…PlanOnceReq`、`…SummarizeResp`、`…StoreEpisodeSummaryReq/Resp`、`…QueryEpisodeSummariesResp` |
-| `ObjectFactEvent` 族 | `memory/datastore/object_memory.py` | 同上 | `…PlanOnceReq`、`…AppendObjectEventsReq`、`…QueryObjectEventsResp`、`…QueryObjectEventsAtResp` |
-| `KnowledgeRecord` | `memory/datastore/knowledge.py` | 同上 | `…ExtractResp`、`…StoreKnowledgeReq/Resp` |
+| `TraceKind` / `TraceEvent` | `harness/domain/` | harness（各格声明"我记哪笔账"） | `FromHarnessToTraceToolAppendReq`、`…AuditReq` |
+| `EntryStatus` | `harness/domain/entry_status.py` | 两张表共用的状态 | `GoalEntry`、`TaskEntry` |
+| `GoalEntry` | `harness/domain/goal_entry.py` | run 级目标表的一行（`task`/`status`/`attempts`/`last_episode_id`/`note`/`overturned`） | `…PlanOnceReq`、`RunState.goals` |
+| `TaskEntry` | `harness/domain/task_entry.py` | episode 任务表的一行（`task`/`status`/`note`/`overturned`/`round`） | `EpisodeRunState.tasks`、`…DecomposeReq`、`…JudgeReq` |
+| `EpisodeInput` / `EpisodeOutput` | `harness/domain/episode_io.py` | run.act / episode 入口 | `RunState`、`RunResp.outcomes`、`RunState.episode_outputs` |
+| `TaskInput` / `TaskOutput` | `harness/domain/task_io.py` | episode.act / task 入口 | `EpisodeRunState` |
+| `Termination` / `Settled` | `harness/domain/termination.py` | 三层 `review_and_judge` | 三层 state、两个 `*Output`、`RunResp`、两封 Summarize 请求；`TaskMemory` / `EpisodeMemory` 的章（字符串） |
+| `ActMemory` / `TaskMemory` / `EpisodeMemory` | `memory/datastore/` | 本项目（tool 层组装） | brain_tool / memory_tool 信封 |
+| `ObjectFactEvent` 族 / `KnowledgeRecord` | `memory/datastore/` | 同上 | 物件 / 知识信封 |
 
-**跨包引用登记（schemas 内实际存在的出边）**：
+`schemas/memory/**` 零外部 import（`ActMemory.Observation` 等快照类是刻意的内部声明）；
+`harness/communication/*` 向下引用 `pokemon_agent.brain.interface`（`Action` / `Goal` / `Task` / `RunPlan` /
+`Decomposition` / `EpisodeSummary` / `VerifyVerdict`）与 `pokemon_agent.world`（`ActionSpace` / `Observation` / `PlaceInWorld`）。
 
-| 引用方 | 被引用 | 说明 |
-|---|---|---|
-| `harness/domain/goal_entry.py` | `pokemon_agent.brain`（`Task`） | `GoalEntry.task` 是 brain 的领域模型，一字不改 |
-| `harness/communication/*`（多封信） | `pokemon_agent.brain.interface`（`Action` / `ActionSegment` / `Goal` / `RunPlan` / `EpisodeSummary` / `StepVerifyVerdict` / `Task`） | 跨层信封内嵌 brain 的数据形状 |
-| `harness/communication/*` | `pokemon_agent.world`（`ActionSpace` / `Observation` / `PlaceInWorld`） | 同上，world 的形状 |
-| `harness/communication/*` | `pokemon_agent.schemas.memory` | 同包内向下（harness → memory） |
-| `harness/communication/*` | `pokemon_agent.schemas.harness.domain` | 同包内 |
-| `schemas/memory/**` | 零外部 import | 那几个"形状像但类不同"的内部快照类（`StepMemory.Observation` 及其 `Facts` / `Landmark`、`StepMemory.Place`、`ObjectFactEventBase.Place`）是**刻意的内部声明**，不 import `pokemon_agent.world` |
+## 六、记忆一族的形状（记忆阶梯）
 
-**`trace` 是最底层共用层**：任何包都可引用它，它自己零跨包引用。schemas 侧对它**零 import**——`TraceEvent` 是结构化副本（字段结构对得上、不共享类型）。
+| 记录 | 一条 = 什么 | 坐标 / 身份 | 谁写 |
+|---|---|---|---|
+| `ActMemory` | **一键**——源记录 | `(episode_id, task_id, step)` | task.perceive `store_step_episode_memory` |
+| `TaskMemory` | **一个 task**——对本 task ActMemory 的蒸馏 | `task_id` | task_done `summarize_task` |
+| `EpisodeMemory` | **一局**——对本局 TaskMemory 的蒸馏 | `episode_id`；每局恰好一条 | episode_done `summarize_episode`（异常局由 run 补空章） |
+| `ObjectFactEvent` | 一格的一次交互 | `Place.key` = `"{map_id}:{x}:{y}"` | task.perceive `store_object_semantic_memory` |
+| `KnowledgeRecord` | 不挂坐标的世界知识 | `topic` | 人管理（自动抽取已删） |
 
-## 六、记忆一族的形状
+- **`ActMemory`**：`before` / `after`（内部快照类）、`rationale`、`action`（一个键）、签名 `run_id` / `episode_id` /
+  `task_id` / `step`、截图 `before_frame` / `after_frame`。`render(reason=False)` 给判定器用——**判定器读不到决策者的理由**。
+- **`TaskMemory`**：章（`task_id` / `goal` / `termination`（`success` 是由它推出的属性） / `steps_used` / `start_step`）+ LLM 正文
+  （`summary` / `reason` / `reusable_patterns` / `critical_decisions` / `failure_points` / `quality_*` / `tags` / `markdown`）+ 首末帧。
+- **`EpisodeMemory`**：章（`episode_id` / `run_id` / `goal` / `termination`（`success` 由它推出） / `steps`=task 数 / `acts_used`）+ 同形正文 + `reason`。
+- **派生关系**：上一级是下一级的派生视图（可重建、可丢弃）；**成败只认章不认正文**。verify 给每条下级记忆标正 / 负，
+  summarize 两组都读——负样本也是参考。
+- **`ObjectFactEvent` 族**：写时定型（`dialog` / `warp` / `still`，判别键 `outcome`），事件流是唯一真源。
 
-四条记录按**检索单元**命名，各有各的坐标轴：
+## 七、已知缺口
 
-| 记录 | 一条 = 什么 | 坐标 / 身份 |
-|---|---|---|
-| `StepMemory` | **一步**——源记录 | `(episode_id, step)`；一步一条，唯一且语义稳定 |
-| `EpisodeMemory` | **一整局**——派生物 | `episode_id`；每局恰好一条（**硬约束**） |
-| `ObjectFactEvent` | **一格的一次交互** | `ObjectFactEventBase.Place.key` = `"{map_id}:{x}:{y}"`，跨 episode 稳定 |
-| `KnowledgeRecord` | **一条不挂坐标的世界知识** | `topic`；`run_id` / `episode_id` 只是来源，不是身份 |
-
-**`StepMemory`（源）**：字段分三段——观察前 / 后（`before` / `after`，各是内部类 `StepMemory.Observation`，唯二的快照副本）、`rationale`（`ActionSegment.rationale` 的论据）、`action`（**一个键**）；签名三元组 `step` / `episode_id` / `run_id`；截图 `before_frame` / `after_frame`（**base64 编码的 PNG 字符串**，可能是 `None`）。`render(reason=True)` 同时服务 prompt 与检索打分；`reason=False` 去掉「因为」那一行，判定器用这一版——**绝不能读到决策者的理由**。模块级常量 `SNAPSHOT_BLIND = frozenset({"known_objects", "knowledge"})`（不进记忆的字段，**排除表而不是白名单**）、`BLIND_NOTE`（没做过视觉感知时必须顶的那一行）。两个纯函数：`render_sequence()`（相邻两条首尾相接时只渲一次边界）与 `dedup_snapshots()`（摊平成 `(before, after, …)` 去重，返回严格等长的 `(frames, snapshots)`）——后者 0915 起**已搬去 `tools/brain_tool.py`**（"怎么拼发模型的图"是发请求的组装逻辑，不是记忆的数据形状）。
-
-**派生关系**：`EpisodeMemory` 的**正文**（`summary` 起）由 LLM 从**本局通过校验的那些 `StepMemory`** 蒸馏而来（过滤点在 `harness/episode/close/verify_and_summarize.py`），所以它是 `StepMemory` 的**派生视图**——**可重建、可丢弃**，`rm memory/episode_memory/*.md` 只损失算力不损失事实。它的**来源章**（`episode_id` / `run_id` / `goal` / `success` / `steps`）与 step memory 无关，是 harness 从 run state 盖的。三条推论：可重建、可丢弃、**成败只认章不认正文**（`render()` 把章摆在第一行）。
-
-**`ObjectFactEvent` 族**：**写时定型**，三个子类各占一种结局，公共字段在 `ObjectFactEventBase`（`episode_id` / `step` / `run_id` / `actor_place` / `place` / `object_kind` / `button`）。`ObjectDialogEvent`（`outcome="dialog"` + `text`）、`ObjectWarpEvent`（`outcome="warp"` + `map_id`）、`ObjectStillEvent`（`outcome="still"`）。`ObjectFactEvent` 是 `Annotated[三个子类, Field(discriminator="outcome")]` 的联合类型，消费方**按类型分发**，不允许按 payload 内容猜语义。判别键叫 `outcome`（不是 `type`）、类别叫 `object_kind`——因为封套的 `type` / `kind` 是 trace 保留字。事件流是**唯一真源**，落盘按局分文件（`ep-{id}.jsonl`），一旦落库不可变（修正靠新事件或恢复时截断）。
-
-**`KnowledgeRecord`**：`topic` / `text` / `source` / `run_id` / `episode_id`。和 `ObjectFactEvent` 的分界是**坐标**（知识刻意不带坐标）；和 `EpisodeMemory` 的分界是**归属**（摘要属于那一局，知识属于世界）。落盘形态与手工先验**逐字一致**：metadata 放过滤字段、payload 空、正文是 `text`，所以读口 `query_knowledge` 不需要区分两种来源。`render()` 就是 `text` 本身——知识没有"成没成"可言，不需要来源章。
-
-## 七、当前状态与已知缺口
-
-- **信封覆盖完整但不对称**：有 6 个 Req 没有配对的 Resp——`FromHarnessToGameToolResetReq`、`FromHarnessToGameToolExecuteReq`、`FromHarnessToGameToolEvolveReq`、`FromHarnessToReviewerInjectReq`、`FromHarnessToMemoryToolAppendObjectEventsReq`、`FromHarnessToMemoryToolStoreEpisodeStepReq`；`FromHarnessToGameToolPerceiveOnceResp` 反过来没有配对 Req。都是调用方约定（返回 `None` 就没有 Resp；感知由本层发起），不是遗漏。
-- **`FromHarnessToReviewerAuditResp` 没有独立文件**：它与自己的 Req、`AuditVerdict` 同住 `FromHarnessToReviewerAuditReq.py`，`harness/__init__.py` 从那一个文件一起 import 三个名字。文件名比它的内容窄。
-- **`memory/__init__.py` 不导出 `ObjectFactEventBase`**，而 `datastore/__init__.py` 导出它——外部拿基类只能深到 `schemas.memory.datastore`。
-- **`schemas/harness/__init__.py` 的 `__all__` 手工维护 53 个名字**：import 与 `__all__` 各写一遍、靠人对照，加一封信要同时改两处。
-
-## 发现的不一致
-
-（以下以代码为准。）
-
-1. **`communication/` 的实际规模是 47 个 `.py`**（44 个信封 + `ModelCall.py` + `RunResp.py` + `__init__.py`），不是"48 个文件"——`ls -1` 的 48 行里含一个 `__pycache__` 目录项。
-2. `AGENTS.md` 十二、第 4 条的**跨包引用登记已失效**两处：(a) 把 `frontend → harness/brain` 列为一条有效下向引用，但同节已声明 `schemas/frontend/` 于 0914 整个删除；(b) 列了 `memory → world`，而 `schemas/memory/**` 实际对 `pokemon_agent.world` **零 import**（那三份快照是刻意的内部副本）。
-3. `AGENTS.md` 十二、第 2 条举例的裸名有两个在代码里**已不存在**：brain 的 `ChooseOnceReq`（现为 `pokemon_agent/brain/interface/domain/` 一族 + `pokemon_agent/brain/schemas/completion.py::LlmCompleteReq`；仓内只剩 `FromHarnessToBrainToolChooseOnceReq` 与 docstring 里对旧名的提及）、world 的 `PerceiveOnceResp`（现为 `pokemon_agent/world/interface/domain/perceived.py::Perceived`，该文件注明"不再嵌套一层 `PerceiveOnceResp`"）。
-4. `AGENTS.md` 十二、第 5 条与 `RunResp` 的说明都写"五个字段是 `RunHarness.close()` 自己数出来的"——但 `RunHarness`（`pokemon_agent/harness/run/harness.py`）**没有 `close` 方法**（只有 `run` / `read_events` / `_compile`）；组装点是模块级函数 `pokemon_agent/harness/run/run_entry.py::close()`，它同时把 `meta.source` 记成 `"run_entry.close"`。
-5. `AGENTS.md` 十二、第 1 条把 **`game_tool` 与 `memory_tool` 已于 0910 补齐**写成"此前只有 `query_knowledge` 一条"的历史对照——现网两家的模块计数是 game_tool 6、memory_tool 18，与本节表格一致，那句描述的旧状态早已不成立。
+- **有 Req 无 Resp 的信封**是约定（返回 `None` 就没有 Resp），不是遗漏。
+- **`FromHarnessToReviewerAuditResp` 与 `AuditVerdict` 同住 `…AuditReq.py`**：文件名比内容窄。
+- **`schemas/harness/__init__.py` 的 `__all__` 手工维护**：加一封信要同时改 import 与 `__all__`。
+- **磁盘上 ActMemory 的集合名仍叫 `step_memory`**（`tools/memory_tool.py`），类名已是 `ActMemory`。

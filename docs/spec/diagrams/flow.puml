@@ -1,0 +1,65 @@
+@startuml flow
+skinparam defaultFontName "Noto Sans CJK SC"
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #666666
+skinparam ArrowColor #555555
+title 流程图：三层同构循环（run 一圈=一局 · episode 一圈=一个 task · task 一圈=一个键）
+
+legend top right
+  <color:#B03A2E>账：</color> 这一格落的 trace（kind，按落账顺序）
+  [ ] = 条件出现：定案只在上一条刚跑完时、judge_call 只在问了模型时、
+        按键后那几条只在上一圈按过键时、收尾标蒸只在有下级记忆时
+  每条 *_call 可能连带 call_failed / summary_parse_error；
+  重试耗尽另记 call_exhausted
+  命名：<链路>_call ↔ 结论账（sense_call↔sense_frame、choose_call↔choose_verdict…）；
+  *_start 在入口/begin、*_end 在 *_done、*_error 由接住异常的上一层 act 记
+endlegend
+
+start
+:run_entry.new_run\n载入世界起点（每 run 一次）\nRunState(run_goal, goals=初始目标表 全 PENDING)\n<color:#B03A2E>账：异常逃出时 run_error（它接住，它记）</color>;
+partition "run 图" #EAF2FB {
+  :begin（断言：表非空、≤1 条 RUNNING）\n<color:#B03A2E>账：run_start</color>;
+  repeat
+    :perceive（run 不取帧）\n① absorb_episode：pending_episode → episode_outputs、fail_streak\n② read_plan_context：EpisodeMemory 局索引 · 详情 · 地图事实 → plan_ctx\n<color:#B03A2E>账：read_episode_memory · read_object_memory</color>;
+    :review_and_judge\n① 定案上一局：盖章 COMPLETED/FAILED → 人审（可推翻 · overturned）→ settle_goal（不写记忆）\n② 机械三类：世界结束 / 连续失败局 ≥ 上限 / 已派局数 ≥ 上限\n③ 问 judger：run_goal 达成没有 → 写 termination + judge_reason（不写 reason）\n<color:#B03A2E>账：[settle_goal] · [judge_call] · judge_verdict</color>;
+    if (done?) then (是)
+      break
+    endif
+    :plan_run\nplanner 出一版 ⇄ 人插话重问 → 定点更新 + 追加新目标\n没有 PENDING → 抛 NoGoalToDispatch\n<color:#B03A2E>账：plan_call（每问一次）· plan_verdict</color>;
+    :act\ndispatch：第一条 PENDING → RUNNING，拼 EpisodeInput，step+1\n接住整局抛错：补空章 → episode_error；AgentError 兜成 ERROR 结算\n<color:#B03A2E>账：[write_episode_memory（空章）· episode_error]（只在整局抛错时）</color>;
+    partition "episode 图（episode_entry.run_episode）" #EAF6EC {
+      :begin_episode（不取帧）\n<color:#B03A2E>账：episode_start</color>;
+      repeat
+        :perceive\n① absorb_task：pending_task → total_acts、fail_streak、task_outputs\n② sense：完整档取帧（带视觉）→ ep_ctx.observation\n③ 读本局 TaskMemory · 跨局摘要 · 知识 · 地图对象 → ep_ctx\n<color:#B03A2E>账：sense_call · sense_frame · read_task_memory · read_episode_memory · read_knowledge · read_object_memory</color>;
+        :review_and_judge\n① 定案上一个 task：盖章 → 人审（可推翻）→ 失败则放弃同版剩余 PENDING → settle_task\n② 机械三类：世界结束 / 连续失败 task ≥ 上限 / 已派 task 数 ≥ goal.max_steps\n③ 派过 task 后问 judger（任务表 + TaskMemory，+ 人插话）→ termination + judge_reason\n<color:#B03A2E>账：[settle_task] · [judge_call] · judge_verdict</color>;
+        if (done?) then (是)
+          break
+        endif
+        :plan_episode\n任务表没有 PENDING → decomposer 拆下一版（+ 人插话）→ 追加进任务表\n<color:#B03A2E>账：decompose_call · decompose_verdict（有 PENDING 时直通，无账）</color>;
+        :act\n第一条 PENDING → RUNNING → TaskInput(start_step=total_acts)\n接住 task 抛错：task_error；AgentError 兜成 ERROR 的 TaskOutput（这一局继续）\n<color:#B03A2E>账：[task_error]（只在 task 抛错时）</color>;
+        partition "task 图（task_entry.run_task）" #FBF3E6 {
+          :begin_task（不取帧）\n<color:#B03A2E>账：task_start</color>;
+          repeat
+            :perceive\nsense：RAM 档取帧（每圈，首圈即开局帧）→ 帧槽\n上一圈按过键才：停摆计数 → ActMemory · object 事件 → advance_step\n转正新帧 → 读本 task ActMemory → get_action_space\n<color:#B03A2E>账：sense_frame · [check_stall · write_act_memory · write_object_memory · advance_step] · read_act_memory · get_action_space</color>;
+            :review_and_judge\n① 机械三类：世界结束 / 连续同键无变化 ≥ 上限 / 键数 ≥ task.max_steps\n② 第 1 键起问 judger（本 task 最近几条 ActMemory）→ termination + judge_reason\n<color:#B03A2E>账：[judge_call] · judge_verdict</color>;
+            if (done?) then (是)
+              break
+            endif
+            :plan_task：chooser 出一个键（受限动作空间 + option_layout）\n<color:#B03A2E>账：choose_call · choose_verdict</color>;
+            :act：按键 · step+1\n<color:#B03A2E>账：press_key</color>;
+          repeat while (下一键)
+          :task_done：verify 标正负 → 蒸 TaskMemory（LLM 写 reason，参考 judge_reason）→ 结算\n<color:#B03A2E>账：[verify_call · verify_verdict · summarize_task_call · write_task_memory] · task_end</color>;
+        }
+        :task_entry.close → TaskOutput → pending_task\n<color:#B03A2E>账：无</color>;
+      repeat while (下一个 task)
+      :episode_done：verify 标正负 → 蒸 EpisodeMemory（LLM 写 reason，参考 judge_reason）→ 结算\n（没有 TaskMemory 时：leave_chapter 补空章 → 结算）\n<color:#B03A2E>账：[verify_call · verify_verdict · summarize_episode_call] · write_episode_memory · episode_end</color>;
+    }
+    :episode_entry.close → EpisodeOutput → pending_episode\n<color:#B03A2E>账：无</color>;
+  repeat while (下一局)
+  :run_done：RunResp(total · succeeded · termination · judge_reason)\n<color:#B03A2E>账：run_end</color>;
+}
+:run_entry.close：从终态拆出返回值\n<color:#B03A2E>账：无</color>;
+stop
+@enduml

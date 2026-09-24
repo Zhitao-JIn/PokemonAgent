@@ -232,11 +232,11 @@ RFC 9562 的 **v7 布局**，前 48 位是毫秒时间戳：
 |---|---|---|
 | `MODEL_CALL` | `model_call` | 七条链共用的调用账 |
 | `ERROR` | `error` | `call_failed` / `call_exhausted` / `summary_parse_error` |
-| `LLM_OUTCOME` | `llm_outcome` | `think` 与三个 `*_verdict`（与 `MODEL_CALL` 配对） |
-| `VIEW` | `view` | `observe` / `after_action` |
-| `ACT` | `act` | `do_action` / `get_action_space` / `stall_check` |
+| `LLM_OUTCOME` | `llm_outcome` | `choose_verdict` 与三个 `*_verdict`（与 `MODEL_CALL` 配对） |
+| `VIEW` | `view` | `sense_frame`（episode 完整档 / task RAM 档） |
+| `ACT` | `act` | `press_key` / `get_action_space` / `check_stall` |
 | `MEMORY_IO` | `memory_io` | 六条 `read_*` + 三条 `write_*` |
-| `LIFECYCLE` | `lifecycle` | run / episode 边界账 + `step_advance` |
+| `LIFECYCLE` | `lifecycle` | run / episode 边界账 + `advance_step` |
 
 `TraceKind`（35 个成员，`StrEnum`）与 `EventType` **不是一个概念，不能合并**——
 `type` 回答"这条记录相对世界 / 模型站在哪个位置"（数量极小、与链路正交），
@@ -342,7 +342,7 @@ tool = TraceTool(LocalTrace(run_id="my-run", root="/tmp/trace_root"))
 # 2) 记一笔账——meta 三件自己交齐，run_id 不要带
 tool.append(
     FromHarnessToTraceToolAppendReq(
-        kind=TraceKind.STEP_ADVANCE,
+        kind=TraceKind.ADVANCE_STEP,
         meta={"source": "close_step", "episode_id": "my-run-ep1", "step": 3},
         next_step=4,
     )
@@ -363,7 +363,7 @@ print(json.loads(event.content))                    # {'next_step': '4'}
 
 ```python
 store = LocalTrace(run_id="my-run", root="/tmp/trace_root")
-uuid = store.append("lifecycle", "step_advance",
+uuid = store.append("lifecycle", "advance_step",
                     {"source": "s", "episode_id": "e", "step": 0}, {"next_step": "1"})
 print(uuid, [e.uuid for e in store.read_events()])
 ```

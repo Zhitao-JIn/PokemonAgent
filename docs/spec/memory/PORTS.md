@@ -294,7 +294,7 @@ harness/**, schemas/**     ✅ 零处引用 memory 包（引用的是 schemas.me
 
 | 工厂 | 造什么 | 住哪 |
 |---|---|---|
-| `BrainTool.build(text=…, judge=…)` | brain 的四个 provider + `Brain` | `tools/brain_tool.py` |
+| `BrainTool.build(...)` | brain 的 provider（**按需**，未传为 None）+ `Brain` | `tools/brain_tool.py` |
 | `build_vision_provider(model=…)` | world 的感知 provider | `tools/vision_factory.py` |
 | **`MemoryTool.build(memory_root=…, max_summaries=…)`** | **memory 的两个检索 provider + `MemoryTool`** | **`tools/memory_tool.py`** |
 | `GameTools.build(rom, …)` | `PyBoyWorld` + 感知 provider | `tools/game_tools.py` |

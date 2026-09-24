@@ -1,6 +1,6 @@
 # memory —— 模块规格
 
-> 最后更新：2026-09-16 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
+> 最后更新：2026-09-24 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
 > Port 契约签名见同目录 `PORTS.md`（那份讲契约，这份讲全貌）
 
 ## 一、职责与边界
@@ -15,7 +15,7 @@ memory 的能力只有三块：**按 uuid 落盘记录**、**维护倒排索引*
 - 字段叫什么、值怎么序列化、`payload` 里装什么，对本层**完全不透明**：
   `LocalMemoryStore.put(metadata, payload, text)` 只认 `dict[str, str]` + `dict` + `str` 裸字段；
   包内不 import `world` / `brain` / `harness` / `schemas` / `tools`（`TYPE_CHECKING` 也没有外部的）。
-  因此四类记录的具体形状**不在本包**，住 `pokemon_agent/schemas/memory/datastore/`（见第五节）。
+  因此五类记录的具体形状**不在本包**，住 `pokemon_agent/schemas/memory/datastore/`（见第五节）。
 
 ## 二、目录结构
 
@@ -37,7 +37,7 @@ pokemon_agent/memory/
 ## 三、存储布局
 
 一个 kind = `memory/` 下一个子文件夹 = 一个 `LocalMemoryStore` 实例。`MemoryTool.__init__`
-（`tools/memory_tool.py`）一次造四个：`step_memory` / `object_memory` / `episode_memory` / `knowledge_memory`。
+（`tools/memory_tool.py`）一次造五个：`step_memory`（ActMemory）/ `task_memory` / `object_memory` / `episode_memory` / `knowledge_memory`。
 
 ```
 memory/<kind>/
@@ -113,23 +113,26 @@ BM25 认得死词（技能名、地名），向量认得改写，cross-encoder �
 
 ## 五、数据形状
 
-四类记录的形状住 `pokemon_agent/schemas/memory/datastore/`（`schemas/memory/__init__.py` 统一出口）；
+五类记录的形状住 `pokemon_agent/schemas/memory/datastore/`（`schemas/memory/__init__.py` 统一出口）；
 memory 只把它们当 `metadata` / `payload` / `text` 三块收发，字段含义由 tool 层与组装方负责。
 
 | kind | 记录类 | 一条 = 什么 | 格式 |
 |---|---|---|---|
-| `step_memory` | `StepMemory` | 一步：`before` / `rationale` / `action` / `after`（各含 `Observation` 快照） | json |
-| `episode_memory` | `EpisodeMemory` | 一整局：来源章 + 本局可信 step 记忆的蒸馏正文 | md |
+| `step_memory` | `ActMemory` | 一键：`before` / `rationale` / `action` / `after`（各含 `Observation` 快照）；集合名沿用旧名 | json |
+| `task_memory` | `TaskMemory` | 一个 task：来源章 + 本 task ActMemory（带正负标注）的蒸馏正文 | md |
+| `episode_memory` | `EpisodeMemory` | 一整局：来源章 + 本局 TaskMemory（带正负标注）的蒸馏正文 | md |
 | `object_memory` | `ObjectFactEvent` | 一次按键对一格的交互事件 | json |
 | `knowledge_memory` | `KnowledgeRecord` | 一条和坐标无关的世界知识 | md |
 
-- `StepMemory`：`before` / `after` 都是 `StepMemory.Observation`（内部类，非 `world.Observation`），
+- `ActMemory`：`before` / `after` 都是 `ActMemory.Observation`（内部类，非 `world.Observation`），
   含 `step` / `place`（`map_id,x,y`）/ `status` / `facts`（`Facts` 快照，`extra="allow"`）/
-  `done` / `perceived`；另有 `rationale: list[str]`、`action: str`、`step`、`episode_id`、`run_id`、
+  `done` / `perceived`；另有 `rationale: list[str]`、`action: str`、`step`、`episode_id`、`task_id`、`run_id`、
   `before_frame` / `after_frame`（base64 PNG 字符串，可为 `None`）。落盘 `text=""`，
-  所以它**不参与语义检索**，只按 `episode_id` 等值筛 + 调用方按 `step` 数值排。
-- `EpisodeMemory`：来源章 `episode_id` / `run_id` / `goal` / `success` / `steps`（harness 从 run state 盖的），
-  派生正文 `summary` / `reusable_patterns` / `critical_decisions` / `failure_points` / `quality_score` /
+  所以它**不参与语义检索**，只按 `episode_id` / `task_id` 等值筛 + 调用方按 `step` 数值排。
+- `TaskMemory`：来源章 `run_id` / `episode_id` / `task_id` / `goal` / `termination`（`success` 由它推出，不存） / `steps_used` / `start_step`，
+  派生正文同 `EpisodeMemory`（含 `reason`），另带首末帧。
+- `EpisodeMemory`：来源章 `episode_id` / `run_id` / `goal` / `termination`（`success` 由它推出） / `steps`（task 数）/ `acts_used`
+  （harness 盖的），派生正文 `summary` / `reason` / `reusable_patterns` / `critical_decisions` / `failure_points` / `quality_score` /
   `quality_rationale` / `applicable_scenes` / `tags` / `markdown`。落盘时 `payload` 是
   `model_dump(exclude={"markdown"})`，`markdown` 当 `text` 写进正文并参与语义检索。
 - `ObjectFactEvent`：`Annotated[ObjectDialogEvent | ObjectWarpEvent | ObjectStillEvent, Field(discriminator="outcome")]`。
@@ -139,9 +142,12 @@ memory 只把它们当 `metadata` / `payload` / `text` 三块收发，字段含�
 - `KnowledgeRecord`：`topic` / `text` / `source` / `run_id` / `episode_id`；`text` 即记录正文与检索对象，
   `topic` / `source` 进 metadata 供过滤。手工先验与 run 产出的知识落盘形态一致。
 
-**派生物与源记录的关系**：`step_memory` 是源记录（一局的事实轨迹，按 `episode_id` 天然隔离）；
-`episode_memory` 的正文是本局通过校验的 step 记忆的蒸馏视图，**可重建、可丢弃**，
-成没成一律读来源章而不从正文反推（`AGENTS.md` 铁律 3）。`object_memory` 是 harness 判定后
+**派生物与源记录的关系（记忆阶梯）**：`step_memory`（ActMemory）是源记录；`task_memory` 是一个 task 的
+ActMemory 的蒸馏视图，`episode_memory` 是一局 TaskMemory 的蒸馏视图。每级蒸馏前 verify 给下级逐条标正 / 负，
+两组都作参考。派生物**可重建、可丢弃**，
+成没成一律读来源章而不从正文反推（`AGENTS.md` 铁律 3）；来源章记的是**机器判定**，人审推翻只改
+harness 的目标表 / 任务表（`overturned`），不改写记忆。每层 perceive 只读直属下一级：task 读本 task 的
+ActMemory、episode 读本局 TaskMemory、run 读 EpisodeMemory。`object_memory` 是 harness 判定后
 事件流的原样落盘，本层不折叠不派生；`knowledge_memory` 与坐标解耦，`run_id` / `episode_id`
 只是来源不是身份。
 
@@ -175,10 +181,10 @@ API：检索发生在 episode 内的 retrieve 节点里（`harness/episode/retri
 **入边（谁依赖 memory）**：
 
 - `tools/memory_tool.py` 是唯一调用方：模块顶部 `from pokemon_agent.memory import EmbeddingProviderPort, LocalMemoryStore, RerankerProviderPort`
-  造四个 store；`MemoryTool.build()` 内 `from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider`
+  造五个 store；`MemoryTool.build()` 内 `from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider`
   造两个 provider（接线知识收在 tool 层，装配点不越过）。`build.py` 对 memory **零 import**，
   只调 `MemoryTool.build(...)` 递裸字段。
-- `harness/**`、`brain/**`、`schemas/**`、`world/**` 均不 import memory 包；`schemas.memory` 的四个形状由
+- `harness/**`、`brain/**`、`schemas/**`、`world/**` 均不 import memory 包；`schemas.memory` 的五类形状由
   `tools/memory_tool.py` 构造与解析。核对脚本 `experiment/real_check/check_memory.py`、`check_memory_roundtrip.py` 走 `MemoryTool.build()`。
 
 ## 八、当前状态与已知缺口

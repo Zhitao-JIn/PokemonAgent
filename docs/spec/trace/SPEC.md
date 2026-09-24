@@ -9,7 +9,7 @@
 - **只保证一件事**：按时间记账。`type` / `kind` / `meta` / `content` 的**合法值域是声明方的事，trace 不认识**——所以 `TracePort.append()` 的前两个参数是裸 `str`。
 - **`meta` / `content` 是不透明载荷**：trace 只负责序列化成 JSON 字符串落盘、读回时原样交还，**不解释里面装了什么**。
 - **零出边**：包内任何文件不 import `pokemon_agent` 的其余部分（可执行核对见 `scripts/check_trace_self_contained.py` 的 A 项）。
-- **入边只在 tool 层**：其余各层（`brain` / `harness` / `memory` / `world` / `schemas` / `vision` 与装配点 `build.py`）一律不 import 它——harness 只经 `HarnessDeps.trace`（`TraceToolPort`）说话（B 项）。
+- **入边只在 tool 层**：其余各层（`brain` / `harness` / `memory` / `world` / `schemas` / `vision` 与装配点 `build.py`）一律不 import 它——harness 只经 runtime 的 `trace`（`TraceToolPort`）说话（B 项）。
 - 统一出口 `trace/__init__.py` 只 re-export 五个名字：`Event`、`EventType`、`LocalTrace`、`TracePort`、`new_event_uuid`。消费方写 `from pokemon_agent.trace import LocalTrace, TracePort`。
 
 ## 二、目录结构
@@ -78,7 +78,7 @@ trace/
 - `EventType`（`trace/datastore/trace_event.py`）是**字符串常量类，不是枚举**，七个值：`MODEL_CALL` / `ERROR` / `LLM_OUTCOME` / `VIEW` / `ACT` / `MEMORY_IO` / `LIFECYCLE`；合法值域的类型级表达只有一处 `EventTypeName`（`Literal[...]`）。
 - `TraceKind`（`schemas/harness/domain/trace_kind.py`）是 `StrEnum`，**35 个成员**，是 harness 的账名词表，住 schemas 侧（消费者是 harness）。
 - **两者不是一个概念，不能合并**：`type` 回答"这条记录相对世界 / 模型站在哪个位置"，数量极小、与链路正交；`kind` 回答"这是哪笔账"。对应关系是"每个 kind 恰好落一个 type"，**由渲染层 `tools/trace/render.py` 给出**——trace 自己不持有这张映射。封套两个都留：`type` 供廉价过滤，`kind` 供精确指认。
-- 家族对应（依据 `EventType` 各常量的注释与 `render.py` 的实际用法）：`VIEW` 的 kind ∈ {`observe`, `after_action`}；`ACT` ∈ {`do_action`, `get_action_space`, `stall_check`}；`MEMORY_IO` ∈ {六条 `read_*` + 三条 `write_*`}；`LIFECYCLE` = run / episode 边界账 + `step_advance`；`MODEL_CALL` 是七条链共用的调用账；`ERROR` ∈ {`call_failed`, `call_exhausted`, `summary_parse_error`}；`LLM_OUTCOME` 与 `MODEL_CALL` 配对（`think` 与三个 `*_verdict`）。
+- 家族对应（依据 `EventType` 各常量的注释与 `render.py` 的实际用法）：`VIEW` 的 kind = `sense_frame`；`ACT` ∈ {`press_key`, `get_action_space`, `check_stall`}；`MEMORY_IO` ∈ {六条 `read_*` + 三条 `write_*`}；`LIFECYCLE` = 三层边界账 + `settle_goal` / `settle_task` + `advance_step`；`MODEL_CALL` 是七条链共用的调用账；`ERROR` ∈ {`call_failed`, `call_exhausted`, `summary_parse_error`}；`LLM_OUTCOME` 与 `MODEL_CALL` 配对（`choose_verdict` 与三个 `*_verdict`）。
 
 ## 五、落盘与读取
 

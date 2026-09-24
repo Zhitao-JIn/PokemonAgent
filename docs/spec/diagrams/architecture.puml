@@ -1,0 +1,73 @@
+@startuml architecture
+skinparam defaultFontName "Noto Sans CJK SC"
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam ArrowColor #555555
+skinparam package {
+  BorderColor #888888
+}
+title Pokemon_Agent 架构：外壳 → 编排层 → 适配层 → 四个独立模块
+
+rectangle "外壳（experiment/）\nreal_check · tasks" as shell #F2F2F2
+rectangle "装配点 build.py\n唯一 new 具体实现的地方" as build #F2F2F2
+
+package "harness（编排层：LangGraph 三层同构图，唯一写 trace 的地方）" as H #EAF2FB {
+  rectangle "run 图\n一圈 = 一局\n目标表 GoalEntry · planner · judger" as RG
+  rectangle "episode 图\n一圈 = 一个 task\n任务表 TaskEntry · decomposer · judger\nperceive 取帧：完整档" as EG
+  rectangle "task 图\n一圈 = 一个键\nchooser · judger\nperceive 取帧：RAM 档" as TG
+  rectangle "Reviewer\n插话 inject · 审 audit（局 / task）\nconsole / file / null" as REV
+  rectangle "共享件\ncompose · judging · sensing" as SH
+  RG -right-> EG : EpisodeInput ↓\nEpisodeOutput ↑
+  EG -right-> TG : TaskInput ↓\nTaskOutput ↑
+  TG -[hidden]right-> REV
+  REV -[hidden]right-> SH
+}
+
+package "tools（适配层：跨模块转换只在这里）" as T #EAF6EC {
+  rectangle "BrainTool\nPlanner · Decomposer · Chooser · Judger\nReflector · Verifier · Summarizer · TaskSummarizer" as BT
+  rectangle "prompts/\n模板 + 装配（集中管理）" as PR
+  rectangle "GameTools\n感知重试 · 动作掩码 · 执行" as GT
+  rectangle "MemoryTool\n五族记忆读写" as MT
+  rectangle "TraceTool\n渲染 kind → 落盘" as TT
+  BT -right-> PR
+}
+
+package "brain（纯决策，无状态）" as B #FBF3E6 {
+  rectangle "BrainPort\n7 方法裸字段契约" as BP
+  rectangle "providers\nQwen · Ark · DeepSeek" as LLM
+  BP -down-> LLM
+}
+package "world（WorldPort）" as W #FBF3E6 {
+  rectangle "PyBoyWorld\n模拟器 · ROM" as PB
+  rectangle "ram.py · screen_text.py\n坐标/地形 · 对话/选项/光标/排布" as RAM
+  rectangle "VisionProvider\n开局帧视觉感知" as VIS
+  PB -down-> RAM
+  PB -down-> VIS
+}
+package "memory（MemoryStorePort）" as M #FBF3E6 {
+  rectangle "LocalMemoryStore\nact · task · episode · object · knowledge" as MS
+  rectangle "retrieval\nBM25 + 向量 + RRF + rerank" as RET
+  MS -down-> RET
+}
+package "trace（TracePort）" as TR #FBF3E6 {
+  rectangle "LocalTrace\n一事件一 json · tracelog/" as LT
+}
+
+rectangle "schemas/ · config.py\n跨层契约 · 策略常量（纯库，任何层可 import）" as SC #F2F2F2
+
+shell -down-> RG : run(run_id, goals, run_goal)
+shell -[hidden]right-> build
+build -[hidden]right-> SC
+build .down.> H : 注入三级 runtime
+build .down.> T : 调五个接线工厂
+H -down-> BT
+H -down-> GT
+H -down-> MT
+H -down-> TT
+BT -down-> BP
+GT -down-> PB
+MT -down-> MS
+TT -down-> LT
+@enduml

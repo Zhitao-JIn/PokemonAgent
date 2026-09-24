@@ -1,6 +1,6 @@
 # tools —— 模块规格
 
-> 最后更新：2026-09-15 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
+> 最后更新：2026-09-24 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
 
 ## 一、职责与边界
 
@@ -15,7 +15,7 @@
   `ram_only`；`from pokemon_agent.world import …` 那一跳见各实现文件）。
 
 **跨模块的双向转换只在这一层做**：信封里的领域对象（`Observation` /
-`ActionSpace` / `StepMemory`）+ 模块的原生输入（prompt 文本 + 一撮裸字段），
+`ActionSpace` / `ActMemory`）+ 模块的原生输入（prompt 文本 + 一撮裸字段），
 只有 tool 同时认识。四个模块对 `tools/` 零 import、`schemas.harness` 对 `tools/`
 也没有反向依赖，所以本层不用懒加载规避回环。
 
@@ -29,24 +29,27 @@
 ```
 pokemon_agent/tools/
 ├── __init__.py                统一出口：BrainTool/GameTools/MemoryTool/TraceTool + build_vision_provider（懒加载）
-├── brain_tool.py              BrainTool（BrainToolPort 唯一实现）
+├── brain_tool.py              BrainTool（容器）＋ 八个能力对象 Planner/Decomposer/Chooser/Judger/
+│                              Reflector/Verifier/Summarizer/TaskSummarizer（各满足一张单方法口）
 ├── game_tools.py              GameTools（GameToolPort 唯一实现）
 ├── memory_tool.py             MemoryTool（MemoryToolPort 唯一实现）
 ├── vision_factory.py          build_vision_provider()
 ├── interface/
 │   ├── __init__.py            只导出四张协议
-│   └── ports.py               BrainToolPort / GameToolPort / MemoryToolPort / TraceToolPort
+│   └── ports.py               八张单方法大脑口（PlanPort/DecomposePort/ChoosePort/JudgePort/ReflectPort/
+│                              VerifyPort/SummarizePort/TaskSummarizePort）+ GameToolPort / MemoryToolPort / TraceToolPort
 ├── prompts/
 │   ├── __init__.py            load() / PromptTemplate / load_nested_sections / append_human_note
 │   ├── decide_action.py       常量 + build_prompt + retry_prompt
-│   ├── extract.py             build_prompt
 │   ├── judge_success.py       build_prompt
 │   ├── object_render.py       render_object_events（无模板）
 │   ├── run_plan.py            build_prompt + index_lines/detail_blocks/object_lines/history_blocks/goals_lines
-│   ├── summarize.py           build_prompt
+│   ├── decompose.py           build_prompt（episode 目标 → task 链）
+│   ├── summarize.py           build_prompt + labeled_blocks（正负两组）
+│   ├── summarize_task.py      build_prompt + history_blocks
 │   ├── verify.py              build_prompt
 │   └── calls/
-│       ├── extract.md  judge_success.md  run_plan.md  summarize.md  verify.md
+│       ├── decompose.md  judge_success.md  run_plan.md  summarize.md  summarize_task.md  verify.md
 │       └── decide_action/  button_help.md  decide_action.md  map_hint.md  repeat_hint.md  retry_note.md
 └── trace/
     ├── __init__.py            TraceTool + _RENDERERS 分派表 + _to_trace_event
@@ -58,10 +61,10 @@ pokemon_agent/tools/
 四张协议都在 `tools/interface/ports.py`（`@runtime_checkable Protocol`），
 实现在同层的四个文件里。
 
-**`BrainToolPort`（实现 `BrainTool`，`brain_tool.py`）**——七条链路，重试循环
-下沉到本层，所以方法名不带 `once`：`choose`（信封却仍叫 `…ChooseOnce…`）、
-`judge`、`reflect`、`verify`、`summarize`、`plan`（信封 `…PlanOnce…`）、`extract`。
-每条签名 `(req: FromHarnessToBrainTool<X>Req) -> …<X>Resp`，对应到同名两文件。
+**大脑能力口（实现是 `BrainTool` 的八个能力对象，`brain_tool.py`）**——一口一个方法，重试循环
+下沉到本层，所以方法名不带 `once`：`plan`（信封 `…PlanOnce…`）、`decompose`、`choose`（信封 `…ChooseOnce…`）、
+`judge`、`reflect`、`verify`、`summarize`、`summarize_task`。
+每条签名 `(req: FromHarnessToBrainTool<X>Req) -> …<X>Resp`。各层 runtime 只拿自己用得到的那几个口。
 
 **`GameToolPort`（实现 `GameTools`，`game_tools.py`）**：
 
@@ -73,9 +76,9 @@ pokemon_agent/tools/
 | `perceive_with_retry` | `(*, ram_only: bool = False) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]` | 只有 Resp，**无 Req** |
 | `evolve` | `(req: FromHarnessToGameToolEvolveReq) -> None` | 只有 Req |
 
-**`MemoryToolPort`（实现 `MemoryTool`，`memory_tool.py`）**——十二个方法，各自
-一对一：`query_episode_steps` / `query_recent_steps`（Req+Resp）、
-`store_episode_step`（只有 Req）、`query_episode_summaries` /
+**`MemoryToolPort`（实现 `MemoryTool`，`memory_tool.py`）**——各方法一对一信封：
+`query_act_memories` / `query_recent_act_memories`（Req+Resp）、`store_act_memory`（只有 Req）、
+`query_task_memories`（Req+Resp）/ `store_task_memory`（只有 Req）、`query_episode_summaries` /
 `store_episode_summary`（Req+Resp）、`query_object_events` /
 `query_object_events_at`（Req+Resp）、`append_object_events`（只有 Req）、
 `query_knowledge` / `store_knowledge`（Req+Resp）、
@@ -94,9 +97,9 @@ FromHarnessToTraceToolAppendReq) -> None`（写口只有这一个，0916 统一�
 
 | 门面 | Req 文件 | Resp 文件 |
 |---|---|---|
-| brain | `FromHarnessToBrainTool{ChooseOnce,Judge,Reflect,Verify,Summarize,PlanOnce,Extract}Req.py` | 同前缀的七个 `…Resp.py` |
+| brain | `FromHarnessToBrainTool{ChooseOnce,Judge,Reflect,Verify,Summarize,SummarizeTask,PlanOnce,Decompose}Req.py` | 同前缀的八个 `…Resp.py` |
 | game | `FromHarnessToGameTool{GetActionSpace,Execute,Reset,Evolve}Req.py` | 只有 `…GetActionSpaceResp.py`、`…PerceiveOnceResp.py` |
-| memory | `FromHarnessToMemoryTool{QueryEpisodeSteps,QueryRecentSteps,QueryEpisodeSummaries,StoreEpisodeStep,StoreEpisodeSummary,QueryObjectEvents,QueryObjectEventsAt,AppendObjectEvents,QueryKnowledge,StoreKnowledge,SnapshotMemory,RestoreMemory}Req.py` | 除 `…StoreEpisodeStep`、`…AppendObjectEvents` 外各有一个 `…Resp.py` |
+| memory | `FromHarnessToMemoryTool{QueryActMemories,QueryRecentActMemories,StoreActMemory,QueryTaskMemories,StoreTaskMemory,QueryEpisodeSummaries,StoreEpisodeSummary,QueryObjectEvents,QueryObjectEventsAt,AppendObjectEvents,QueryKnowledge,StoreKnowledge,SnapshotMemory,RestoreMemory}Req.py` | 除 `…StoreActMemory`、`…StoreTaskMemory`、`…AppendObjectEvents` 外各有一个 `…Resp.py` |
 | trace | `FromHarnessToTraceToolAppendReq.py` | 无（返回 None） |
 
 两件住在这个目录、但不属于上面四张门面：`ModelCall.py`（一次模型调用的账，
@@ -105,8 +108,8 @@ brain 侧另有一份方言，由 `_adopt()` 转过来——批量记账信封
 `FromHarnessToTraceToolAppendModelCallsReq.py` 0916 已随写口统一删除）。同样不由
 tools 层消费的还有
 `FromHarnessToReviewerAuditReq.py`（内含 `…AuditReq`/`…AuditResp`/`AuditVerdict`）、
-`FromHarnessToReviewerInjectReq.py`、`FromRunHarnessToEpisodeHarnessRunReq.py`、
-`FromRunHarnessToEpisodeHarnessRunResp.py`、`RunResp.py`。
+`FromHarnessToReviewerInjectReq.py`、`RunResp.py`。层间交接（`EpisodeInput/Output`、`TaskInput/Output`）
+在 `schemas/harness/domain/`，不是信封。
 
 ## 四、接线工厂
 
@@ -126,7 +129,7 @@ tools 层消费的还有
 vision_model=…, speed=…)`、`TraceTool.build(run_id=run_id, trace_root=trace_root)`、
 `MemoryTool.build(memory_root=…, max_summaries=…)`、
 `BrainTool.build(text=…, judge=…, verify=…, plan=…, max_tokens=…)`，返回值直接进
-`HarnessDeps`。四个工厂都是 `__init__` 的糖（内部只构造 + `cls(...)`）。
+三个 runtime（`RunRuntime` / `EpisodeRuntime` / `TaskRuntime`），大脑按层各造一份（`run_brain` / `episode_brain` / `task_brain`）。四个工厂都是 `__init__` 的糖（内部只构造 + `cls(...)`）。
 
 ## 五、跨模块转换规则
 
@@ -139,9 +142,9 @@ tool 层是唯一同时认识两边形状的地方，实际存在的转换点：
 - **世界语义 + 存储形状**：`brain_tool.py:253 _normalize()` 施加这个世界的动作
   规则（`INTERACT_KEY` 只按一次、链体只许 `DIRECTION_KEYS`、链尾至多一个交互键，
   上限 `MAX_SEGMENTS`/`MAX_TIMES`/`MAX_RATIONALE`）；`reflect()` 组装
-  `StepMemory`（`step`/`episode_id` 在这里盖章），`summarize()` 组装
-  `EpisodeMemory`，`extract()` 组装 `KnowledgeRecord` 并把 `source` 拼成
-  `{run_id}/{episode_id}`。
+  `ActMemory`（`step`/`episode_id`/`task_id` 在这里盖章），`summarize_task()` 组装 `TaskMemory`，
+  `summarize()` 组装 `EpisodeMemory`（正负两组都进 prompt），`decompose()` 把 `Decomposition` 交回
+  （`task_id` 由 harness 编）。
 - **记忆过滤**：`brain_tool.py:622 _blind()` 用 `SNAPSHOT_BLIND` 造记忆用的那份
   观测，`:630 _render_observation()` 把观测渲成 brain 要的文本。
 - **动作空间**：`game_tools.py:51 _mask()` 按 `Facts.Overlay` 把 `OVERLAY_ACTIONS` 与
@@ -169,8 +172,9 @@ tool 层是唯一同时认识两边形状的地方，实际存在的转换点：
 | `decide_action.py` | `calls/decide_action/decide_action.md`（本体）、`button_help.md`（`load_nested_sections`）、`map_hint.md`、`repeat_hint.md`、`retry_note.md` | `build_prompt()`、`retry_prompt()`、`BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT`、`RetryPromptReq` |
 | `judge_success.py` | `calls/judge_success.md` | `build_prompt()` |
 | `verify.py` | `calls/verify.md` | `build_prompt()` |
-| `summarize.py` | `calls/summarize.md` | `build_prompt()` |
-| `extract.py` | `calls/extract.md` | `build_prompt()` |
+| `summarize.py` | `calls/summarize.md` | `build_prompt()`、`labeled_blocks()`（正 / 负两组） |
+| `summarize_task.py` | `calls/summarize_task.md` | `build_prompt()`、`history_blocks()` |
+| `decompose.py` | `calls/decompose.md` | `build_prompt()` |
 | `run_plan.py` | `calls/run_plan.md` | `build_prompt()`、`index_lines()`、`detail_blocks()`、`object_lines()`、`history_blocks()`、`goals_lines()` |
 | `object_render.py` | 无模板（纯函数） | `render_object_events()` |
 
@@ -179,7 +183,7 @@ prompt，"判什么、想什么"才当参数传，同一件东西绝不两处给
 `string.Template` 的 `$var`（`PromptTemplate.render()` 用 `substitute`，漏传就炸），
 人类的插话由 `prompts/__init__.py:152 append_human_note()` 统一追加在最末尾。
 `decide_action.py` 是唯一同时提供"首次组装"与"重试追加"的模块（`retry_note.md`
-只服务 `decide_action.md`，其余四条链路原样重问）。
+只服务 `decide_action.md`，其余链路原样重问）。
 
 ## 七、当前状态与已知缺口
 
@@ -187,7 +191,7 @@ prompt，"判什么、想什么"才当参数传，同一件东西绝不两处给
   `save_state`/`load_state_bytes`/`set_task` 一族；`TraceToolPort` 只剩一个通用读口
   `read_events`（无游标、无掩码、无 `read_event(id)`），没有本层自己的测试目录。
 - **重试循环全在 tool 层**：`brain_tool.py:168 _attempt_loop()` 服务
-  choose/plan/judge/verify/summarize/extract 六条链路（`reflect` 不调模型），
+  choose/plan/decompose/judge/verify/summarize/summarize_task 七条链路（`reflect` 不调模型），
   `game_tools.py:169 perceive_with_retry()` 是 world 那条链的同构兄弟；两者都把
   `AttemptFailed`/`PerceptionAttemptFailed` 翻译成 `MaxRetriesExceeded(source=…)`，
   账随结果或异常走。

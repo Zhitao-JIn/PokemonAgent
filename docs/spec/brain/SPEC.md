@@ -1,6 +1,6 @@
 # brain —— 模块规格
 
-> 最后更新：2026-09-15 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
+> 最后更新：2026-09-23 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
 
 ## 一、职责与边界
 
@@ -10,7 +10,7 @@
 - **只认自己声明的契约**（铁律 2）：不 import `harness` / `world` / `memory` / `trace` / `tools`；唯一横向依赖是 `brain/interface/llm_provider.py` 的两个 provider 协议与 `brain/errors.py` 的 `BrainError` 家族——后者**不继承 `AgentError`**。
 - **收裸字段**（铁律 3）：入参只有 `str` / `Sequence[str]`，不认识任何 `*Req` 信封；需要结构的三处是 `keys`（校验动作合法性）、`images`（base64 PNG）、`entries`（`verdicts` 的 `index` 落回它的下标）。
 - **prompt 是规则，入参是素材**：怎么判、怎么想、怎么规划全在调用方渲染好的 `prompt` 里，`Brain` 不拼 prompt、不知道 `tools/prompts/` 存在；出参是 brain 自己的方言，唯一转换点是 `tools/brain_tool.py`。
-- **七个方法都是"问一次"**：内部不重试，失败抛 `AttemptFailed` 家族并携带这次尝试的 `ModelCall`；重试循环住 `tools/brain_tool.py::_attempt_loop`，预算住 `pokemon_agent/config.py`（`BRAIN_MAX_ATTEMPTS`）。
+- **七个方法都是"问一次"**（`reflect` 不调模型）：内部不重试，失败抛 `AttemptFailed` 家族并携带这次尝试的 `ModelCall`；重试循环住 `tools/brain_tool.py::_attempt_loop`，预算住 `pokemon_agent/config.py`（`BRAIN_MAX_ATTEMPTS`）。
 
 ## 二、目录结构
 
@@ -34,19 +34,19 @@ brain/
 | 方法 | 签名 | 前置条件 | 承诺（后置） | 失败 |
 |---|---|---|---|---|
 | `choose` | `(*, prompt, keys: Sequence[str], images=()) -> ChooseResult` | `keys` 非空 | `action.sequence` 每段 `name` 都在 `keys` 内；`calls` 恰好一条 | `DecisionAttemptFailed` |
-| `reflect` | `(*, prompt, before, after, action_text, rationale: Sequence[str]) -> Reflection` | `before` / `after` 非空、`rationale` 非空 | `Reflection` 四字段与入参一一对应 | 不调模型，只在调用方违约时 assert |
+| `reflect` | `(*, prompt, before, after, action_text) -> Reflection` | `before` / `after` 非空 | `Reflection` 四字段与入参一一对应 | 不调模型，只在调用方违约时 assert |
 | `judge` | `(*, prompt, goal, history: Sequence[str], images=()) -> JudgeResult` | — | `done` 是模型明确给出的布尔裁决；`calls` 恰好一条 | `JudgeAttemptFailed` |
-| `plan` | `(*, prompt, goal_stack: Sequence[str], history: Sequence[str], max_push: int, images=()) -> PlanResult` | — | `calls` 恰好一条 | `PlanAttemptFailed` |
-| `verify` | `(*, prompt, entries: Sequence[str], goal, knowledge, include_rationale: bool, images=()) -> VerifyResult` | — | `verdicts` 与 `entries` 等长且按 `index` 顺序；`calls` 恰好一条 | `VerifyAttemptFailed` |
+| `plan` | `(*, prompt, goal_stack: Sequence[str], history: Sequence[str], max_push: int) -> PlanResult` | — | `calls` 恰好一条 | `PlanAttemptFailed` |
+| `decompose` | `(*, prompt, goal, context: Sequence[str], max_tasks: int) -> DecomposeResult` | `max_tasks > 0` | `decomposition.tasks` 至少一条；`calls` 恰好一条；纯文本，走 plan provider | `DecomposeAttemptFailed` |
+| `verify` | `(*, prompt, entries: Sequence[str], goal, knowledge, images=()) -> VerifyResult` | — | `verdicts` 与 `entries` 等长且按 `index` 顺序；`calls` 恰好一条 | `VerifyAttemptFailed` |
 | `summarize` | `(*, prompt, goal, history: Sequence[str], success: bool, steps: int, max_steps: int, images=()) -> SummarizeResult` | `history` 只装已过滤的可信记录且至少一条 | `summary` 非 `None`；`calls` 恰好一条 | `SummarizeAttemptFailed` |
-| `extract` | `(*, prompt, goal, history: Sequence[str], images=()) -> ExtractResult` | 同上（`history` 已过滤） | `knowledge.items` 可以为空；`calls` 恰好一条 | `ExtractAttemptFailed` |
 
 **统一约定（改前必读）：**
 
-- `images` 元素一律是 **base64 编码的 PNG 字符串**，brain 这层不做编解码；空序列表示纯文本，`choose` / `judge` / `verify` / `summarize` / `extract` 带图且模型多模态可用时走 `describe()`，否则 `complete()`；`plan` 当前不接图（0915 129）。
+- `images` 元素一律是 **base64 编码的 PNG 字符串**，brain 这层不做编解码；空序列表示纯文本，`choose` / `judge` / `verify` / `summarize` 带图且模型多模态可用时走 `describe()`，否则 `complete()`；`plan` / `decompose` 不接图（0915 129）。
 - **失败必抛、不许降级**：`done=False` / "全部标不可靠" / `summary=None` 这三种吞法会让"链路坏了"与"业务结论就是如此"在数据里分不开（trace 里只看到成功率悄悄变 0）。
 - **模块层不重试**：重试是循环控制，"失败之后怎么办"取决于调用方的处境。
-- 签名里被收下但不读的素材（`goal` / `history` / `max_push` / `knowledge` / `include_rationale` / `goal_stack` / `success` / `steps` / `max_steps`）立的是"这件事必须有这几块"这个约定——本项目已把它们渲进 `prompt`，不两处传。
+- 签名里被收下但不读的素材（`goal` / `history` / `max_push` / `knowledge` / `goal_stack` / `success` / `steps` / `max_steps`）立的是"这件事必须有这几块"这个约定——本项目已把它们渲进 `prompt`，不两处传。
 - `verify` 只判不过滤，谁想用可信的那部分自己筛（`summarize` 收的就是筛完的）。
 
 ### 3.2 两个 provider 协议（`brain/interface/llm_provider.py`）
@@ -63,7 +63,7 @@ class JudgeProvider(LLMProvider, Protocol):
 
 - `complete`：前置 `req.prompt` 非空；后置 `text` 可以是任意字符串（含不合法 JSON），格式由调用方负责；失败抛异常，不返回空的 `LlmCompleteResp`。**`LlmCompleteReq` 是纯文本信封、不收图**（0915 129 定案）——带图与否的路由不在 provider 内部。
 - `describe`：前置 `req.images` 至少一张且 `req.prompt` 非空；失败抛异常，**图静默未送达时必须抛 `ImageNotDelivered`**（判据 `input_tokens < floor`，`floor = IMAGE_TOKEN_FLOOR * len(images)`，`IMAGE_TOKEN_FLOOR = 100`）。
-- **带图路由是一张转发表，在 `Brain` 这一层**（0915 129）：provider 实例带 `multimodal: bool`（"这个型号看不看得见图"，`_OpenAICompatibleBase` 构造参数，默认真；接纯文本型号时装配处显式传假）。`choose`/`judge`/`verify`/`summarize`/`extract` 带图且 `multimodal` 为真 → `describe()`；否则 `complete()`。`plan` 是纯文本链，不接图。
+- **带图路由是一张转发表，在 `Brain` 这一层**（0915 129）：provider 实例带 `multimodal: bool`（"这个型号看不看得见图"，`_OpenAICompatibleBase` 构造参数，默认真；接纯文本型号时装配处显式传假）。`choose`/`judge`/`verify`/`summarize` 带图且 `multimodal` 为真 → `describe()`；否则 `complete()`。`plan` 是纯文本链，不接图。
 
 ## 四、数据形状
 
@@ -73,13 +73,13 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 |---|---|---|---|
 | `Action` / `ActionSegment` | `thought`、`sequence: list[ActionSegment]`；段有 `name` / `times`（默认 1）/ `rationale: list[str]` | `Brain.choose` | 世界执行（经 tool/harness 转换）、trace / 记忆 |
 | `Goal` / `Task` | `goal` + `criteria`；`task_id` / `goal` / `success_criteria` / `max_steps` / `initial_state_hint` | 任务来自 `experiment/tasks.py`，经 harness 递给大脑 | harness 渲染进 prompt、`world` 的 `reset()` |
-| `RunPlan`（内嵌 `PlanGoal` / `PlanUpdate`） | `push_goals`、`updates`、`done`、`why`；`PlanGoal` 有 `goal` / `success_criteria` / `max_steps`，`PlanUpdate` 有 `index` / `status` / `note` | `Brain.plan` | harness 的目标表（`task_id` 由 harness 生成） |
+| `RunPlan`（内嵌 `PlanGoal` / `PlanUpdate`） | `push_goals`、`updates`、`why`（不再有 `done`：停判归 review_and_judge）；`PlanGoal` 有 `goal` / `success_criteria` / `max_steps`（task 数上限），`PlanUpdate` 有 `index` / `status` / `note` | `Brain.plan` | harness 的目标表（`task_id` 由 harness 生成） |
 | `Reflection` | `before`、`rationale`、`action_text`、`after` | `Brain.reflect` | tool → step 记忆 |
-| `EpisodeSummary` | `summary`、`quality_score`（0.0–1.0）、`quality_rationale`、`markdown` 等 | `Brain.summarize` | tool 配五个来源章 → `EpisodeMemory` |
-| `StepVerifyVerdict` | `index`、`reliable`、`why` | `Brain.verify` | tool / harness 的过滤 |
-| `KnowledgeItem` / `LearnedKnowledge` | `topic`（snake_case）+ `content` / `items`（可空） | `Brain.extract` | tool → knowledge 记忆 |
+| `Decomposition`（内嵌 `PlannedTask`） | `tasks`（`goal` / `success_criteria` / `max_steps`=键数上限，至少一条）、`why` | `Brain.decompose` | harness 编 `task_id` 后成为 `Task` 链 |
+| `EpisodeSummary` | `summary`、`reason`（LLM 写的结论说明）、`quality_score`（0.0–1.0）、`quality_rationale`、`markdown` 等 | `Brain.summarize` | tool 配五个来源章 → `EpisodeMemory` |
+| `VerifyVerdict` | `index`、`positive`（符合 goal = 正样本）、`why` | `Brain.verify` | 正负两组都交给 summarize 当参考，不过滤 |
 | `ModelCall` | `payload: dict[str, str]`、`error_kind`、`error` | `Brain` 七个方法 | `tools/brain_tool.py::_adopt()` |
-| 六个结果袋：`ChooseResult` / `JudgeResult` / `PlanResult` / `VerifyResult` / `SummarizeResult` / `ExtractResult` | 硬性字段（`action` / `done`+`why` / `plan` / `verdicts` / `summary` / `knowledge`）+ `calls` + `extra` | `Brain` 对应方法 | `BrainTool` 对应方法 |
+| 六个结果袋：`ChooseResult` / `JudgeResult` / `PlanResult` / `DecomposeResult` / `VerifyResult` / `SummarizeResult` | 硬性字段（`action` / `done`+`why` / `plan` / `decomposition` / `verdicts` / `summary`）+ `calls` + `extra` | `Brain` 对应方法 | `BrainTool` 对应方法 |
 
 **关键不变式：**
 
@@ -106,7 +106,7 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 | `pokemon_agent/tools/game_tools.py` | `brain.errors.ProviderRejected` |
 | `pokemon_agent/build.py` | **零 import**——只在注释里提型号名与工厂路径 |
 
-**数据形状引用（不是实现依赖）**：`harness/**`（`Action` / `ActionSegment` / `Goal` / `Task` / `RunPlan`）、`schemas/harness/communication/**`（`Goal` / `Action` / `RunPlan` / `EpisodeSummary` / `StepVerifyVerdict` / `Task`）、`pokemon_agent/tools/prompts/decide_action.py`、`pokemon_agent/tools/trace/render.py`、`tests/**`。`world/**` 对 brain **零 import**——它只在 docstring 里提 `QwenProvider` 被当 `VisionProvider` 用，那条依赖由 tool 层接线。
+**数据形状引用（不是实现依赖）**：`harness/**`（`Action` / `ActionSegment` / `Goal` / `Task` / `RunPlan`）、`schemas/harness/communication/**`（`Goal` / `Action` / `RunPlan` / `EpisodeSummary` / `VerifyVerdict` / `Task`）、`pokemon_agent/tools/prompts/decide_action.py`、`pokemon_agent/tools/trace/render.py`、`tests/**`。`world/**` 对 brain **零 import**——它只在 docstring 里提 `QwenProvider` 被当 `VisionProvider` 用，那条依赖由 tool 层接线。
 
 ## 六、接线与选型
 
@@ -118,11 +118,11 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 |---|---|---|
 | `text` | `"qwen-plus"` | `choose()` |
 | `judge` | `"qwen3.8-max"` | `judge()` |
-| `verify` | `"doubao-seed-2-1-pro-260628"` | `verify()` / `summarize()` / `extract()` |
+| `verify` | `"doubao-seed-2-1-pro-260628"` | `verify()` / `summarize()` |
 | `plan` | `"doubao-seed-2-1-pro-260628"` | `plan()` |
 | `max_tokens` | `25600` | 四个 provider 共用 |
 
-厂商名只出现在默认值里；"哪条链路该接哪家"的知识在 `brain/build_llm_providers.py`。调用方是 `tools/brain_tool.py::BrainTool.build(text=…, judge=…, verify=…, plan=…, max_tokens=…)`——它内部构造 `BrainLlmConfig`，装配点因此对 brain 零 import。
+厂商名只出现在默认值里；"哪条链路该接哪家"的知识在 `brain/build_llm_providers.py`。调用方是 `tools/brain_tool.py::BrainTool.build(...)`——**按需**：只传该层要的型号名，未传的位置 provider 为 `None`（0922 185）。它内部构造 `BrainLlmConfig`，装配点因此对 brain 零 import。
 
 `brain/providers.py` 的三个厂商类（都继承 `_MultimodalMixin` + `_OpenAICompatibleBase`，`complete()` 与 `describe()` 都有）：
 
@@ -139,8 +139,7 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 
 ## 七、当前状态与已知缺口
 
-- **文档计数落后于代码**：`AGENTS.md` 与部分 docstring 仍写"六方法""五个结果袋"，实际是**七个方法**（多 `extract()`）与**六个结果袋**（多 `ExtractResult`）；`brain/brain.py` 的模块 docstring 方法清单也没列 `extract`。
-- `reflect()` 本版**不调模型**（`prompt` 收下不消费）；`plan()` 的 `images` 收下不用（`plan_llm` 是纯 `LLMProvider`）。两者都是为形状统一预留的位置。
+- `reflect()` 本版**不调模型**（`prompt` 收下不消费），为形状统一预留位置。
 - `brain/providers.py` 有模块级可变全局 `_dump_seq`（配合环境变量 `VISION_DUMP_DIR` 的排查落盘序号）——铁律 1 说"不许有模块级可变全局"，这是全模块唯一一处，且只影响调试文件名。
 - 约束解码未上；模型给的 markdown 代码围栏由 `brain/brain.py` 的模块级私有函数 `_strip_json_fence` 剥掉，不做任何内容修复。
 - `brain/schemas/vision.py` 与 `pokemon_agent/world/interface/domain/vision_describe.py` 是同构的两份，靠"字段名人工核对"保持一致，没有机器检查。

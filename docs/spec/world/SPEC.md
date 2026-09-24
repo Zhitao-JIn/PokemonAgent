@@ -1,6 +1,6 @@
 # world —— 模块规格
 
-> 最后更新：2026-09-15 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
+> 最后更新：2026-09-24 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
 
 ## 一、职责与边界
 
@@ -26,6 +26,8 @@ world/
 ├── errors.py                    WorldError（根）/ PerceptionAttemptFailed（唯一子类）
 ├── pyboy_world.py               ALL_BUTTONS、节奏常量、parse_screen、PyBoyWorld
 ├── ram.py                       读内存：read_facing / read_passable / read_screen_tiles / read_terrain
+├── screen_text.py               读屏幕文字：wTileMap(0xC3A0) 按英文版字符表解码 → 对话 / 选项 / 光标 / 排布；
+│                                光标字节 0xED、战斗标志 wIsInBattle(0xD057)
 ├── interface/
 │   ├── __init__.py              统一出口（协议 + 数据形状 + 常量）
 │   ├── world_port.py            WorldPort 契约（4 个方法）
@@ -41,6 +43,7 @@ world/
 │       ├── place_in_world.py    PlaceInWorld
 │       ├── screen_model.py      网格常量、地形字符、TERRAIN_MEANING、terrain_legend
 │       ├── screen_state.py      ScreenState（视觉模型输出的 schema）、CURSOR_MARKS
+│       ├── screen_text.py       ScreenText（dialog_text / options / cursor / option_grid / cursor_cell + render_layout()）
 │       ├── terrain_map.py       TerrainMap
 │       └── vision_describe.py   VisionDescribeReq / VisionDescribeResp（world 自己的副本）
 └── prompts/
@@ -131,13 +134,16 @@ PyBoy 屏幕 → PNG 字节（_frame_png）→ base64 → VisionDescribeReq
            → 与 ram.read_terrain() 的地形拼装 → Facts + Observation → Perceived
 ```
 
-**两档，由 `ram_only` 选**（对照 `harness/episode/press/perceive_after_action.py`：
-链中间的键 `ram_only=True`，链尾那一键走完整档）：
+**两档，由 `ram_only` 选**。harness 只在两层 perceive 的 `sense` 单元取帧：task 层每圈走 `ram_only=True`，
+episode 层每圈走完整档（带 VLM）。**RAM 档也读文字**：`screen_text.read_screen_text()` 给出对话、选项、光标、
+选项排布（进 `Facts` 的额外字段 `option_layout`，告诉决策"几行几列、光标在哪、方向键怎么走"），
+并据此推 `overlay`（有光标 = CHOICE，有对话 = DIALOG，否则 NONE），`wIsInBattle` 非零时 `scene=battle`。
+完整档里 options / cursor 也以 RAM 读数覆盖视觉模型的抄写。
 
 | 档 | 调模型 | 读什么 | `perceived` | `calls` |
 |---|---|---|---|---|
 | `ram_only=False`（缺省） | 是，一次 | 内存 + 视觉 | `True` | 一条账 |
-| `ram_only=True` | 否 | 只有内存：坐标、朝向、地标、通行图、地图编号 | `False`——场景/对话/概况**不是空的，是没读过** | 空列表（不是 `None`） |
+| `ram_only=True` | 否 | 只有内存：坐标、朝向、地标、通行图、地图编号 + 屏幕文字（对话 / 选项 / 光标 / 排布 / overlay / 战斗） | `False`——概况等视觉字段**不是空的，是没读过** | 空列表（不是 `None`） |
 
 两档都截帧：`frame_png` 照截照传——"帧的可得性与有没有人看过它无关"。
 

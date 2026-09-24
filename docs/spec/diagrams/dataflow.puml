@@ -1,0 +1,52 @@
+@startuml dataflow
+skinparam defaultFontName "Noto Sans CJK SC"
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam ArrowColor #555555
+skinparam packageStyle rectangle
+skinparam rectangle {
+  BorderColor #777777
+}
+title 数据流图：层间交界、各层 state、记忆阶梯与世界 / 模型 / 记账
+
+rectangle "LLM（brain，经 BrainTool）\nplanner · decomposer · chooser\njudger · verifier · summarizer" as LLM #F2F2F2
+
+rectangle "编排 state（harness，三层各一个载体）" as ST {
+  rectangle "RunState\n----\nrun_goal · goals[GoalEntry]\nstep（已派局数）· fail_streak\nplan_ctx · pending_episode → episode_outputs\ntermination · judge_reason（done · success 推出）" as RS #EAF2FB
+  rectangle "EpisodeRunState\n----\ngoal（max_steps = task 数）\nstep · total_acts · fail_streak\nep_ctx（完整档帧 + TaskMemory + 检索）\ntasks[TaskEntry] · pending_task → task_outputs\ntermination · judge_reason · reason" as ES #EAF6EC
+  rectangle "TaskState\n----\ntask（max_steps = 键数）· start_step\nstep · stall_key · stall_count\ntask_ctx（RAM 档帧 + ActMemory + 动作空间）\naction · after_observation\ntermination · judge_reason · reason" as TS #FBF3E6
+}
+
+database "episode_memory\n一局一条" as EM
+database "task_memory\n一 task 一条" as TM
+database "act_memory\n一键一条（带 task_id）" as AM
+database "object_memory\n地图交互事实" as OM
+database "knowledge\n人维护" as KN
+
+rectangle "world（PyBoy，经 GameTools）\nRAM：坐标 · 地形 · 对话 · 选项 · 光标 · 排布 · 战斗\n视觉：episode 每圈一次" as WD #F2F2F2
+rectangle "tracelog/（经 TraceTool）\n一事件一 json\nmeta{run_id, source, episode_id, task_id, step}" as TR #F2F2F2
+
+RS -down-> ES : EpisodeInput ↓ / EpisodeOutput ↑
+ES -down-> TS : TaskInput ↓ / TaskOutput ↑
+
+RS -[hidden]right-> EM
+ES -[hidden]right-> TM
+TM -[hidden]right-> KN
+AM -[hidden]right-> OM
+
+AM <-left-> TS : 写 / 读：task.perceive\n（读本 task，供决策 · 判定 · 收尾）
+TS --> OM : 写：perceive（交互事件）
+TS --> TM : 写：task_done\n（正负标注 → 蒸馏）
+TM --> ES : 读：episode.perceive\n（供判定 · 拆解 · 收尾）
+OM --> ES : 读：perceive（本图）
+KN --> ES : 读：perceive
+ES --> EM : 写：episode_done\n（正负标注 → 蒸馏；没有 TaskMemory 补空章）\n整局抛错时 run.act 代补空章
+EM --> RS : 读：run.perceive（局索引 + 详情）
+
+TS -down-> WD : act：按一个键
+WD -up-> TS : task.perceive：RAM 档（每圈）
+WD -up-> ES : episode.perceive：完整档（每圈）
+
+LLM -right-> ST : 规划 / 拆解 / 选键 / 判定 / 标注 / 蒸馏\n（请求素材 → 结构化结果）
+ST .down.> TR : 每格落账
+@enduml
