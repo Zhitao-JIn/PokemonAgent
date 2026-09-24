@@ -72,7 +72,6 @@ from pokemon_agent.config import (
     PLAN_MAX_TOKENS,
     PLAN_THINKING,
     PROVIDER_JSON_MODE,
-    TRANSPORT_MAX_ATTEMPTS,
 )
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
@@ -734,10 +733,9 @@ def _attempt_loop(
     重试注定无用——第一轮就抛 `MaxRetriesExceeded`（`attempts=1`），
     不烧预算、不给模型叠"你上一次的输出不合法"那种张冠李戴的纠正。
 
-    **预算按最近一次失败的种类算**：传输失败（`ToolTimeout`）总共最多
-    `TRANSPORT_MAX_ATTEMPTS` 次，其余失败最多 `BRAIN_MAX_ATTEMPTS` 次（都含首次）。
-    **退避是指数的**（`backoff.backoff_seconds`）：第 n 次失败后睡 1/2/4/8… 秒再试；
-    耗尽那一轮不睡（后面是上抛，没人等这个间隔）。
+    **预算所有失败共用**：最多 `BRAIN_MAX_ATTEMPTS` 次（含首次）。
+    **退避看刚失败的那次**（`backoff.backoff_seconds`）：不是超时睡 1s；是超时睡 2s、
+    再超时 4s。耗尽那一轮不睡（后面是上抛，没人等这个间隔）。
 
     为什么收 `(第几次, 账)` 两个参数：`decide` 要用 "第几次" 渲染纠正说明的
     文案（"第 2 次尝试"），也要用 "账" 取上次的失败原因；其余链路两个都不用。
@@ -756,26 +754,16 @@ def _attempt_loop(
         except AttemptFailed as exc:
             call = _adopt(exc.call)
             calls.append(call)
-            if call.error_kind == ProviderRejected.__name__ or _budget_spent(calls):
+            if call.error_kind == ProviderRejected.__name__ or len(calls) >= BRAIN_MAX_ATTEMPTS:
                 raise MaxRetriesExceeded(
                     len(calls), _last_error(calls), calls, source=source
                 ) from exc
-            time.sleep(backoff_seconds(len(calls)))
+            timeouts = sum(c.error_kind == ToolTimeout.__name__ for c in calls)
+            time.sleep(backoff_seconds(call.error_kind == ToolTimeout.__name__, timeouts))
             continue
 
         calls.extend(_adopt(call) for call in result.calls)
         return result, calls
-
-
-def _budget_spent(calls: list[ModelCall]) -> bool:
-    """重试预算用完没有。
-
-    最近一次是传输失败按 `TRANSPORT_MAX_ATTEMPTS`，否则按 `BRAIN_MAX_ATTEMPTS`。
-
-    `calls`：本次调用目前累积的账（全是失败的尝试，末条是刚失败的那次）。
-    """
-    transport = calls[-1].error_kind == ToolTimeout.__name__
-    return len(calls) >= (TRANSPORT_MAX_ATTEMPTS if transport else BRAIN_MAX_ATTEMPTS)
 
 
 def _thinking_after(calls: list[ModelCall]) -> bool | None:

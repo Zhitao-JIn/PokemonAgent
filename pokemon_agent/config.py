@@ -81,23 +81,17 @@ DeepSeek 的服务端硬上限远高于此；放大时单请求耗时同比变�
 `brain/build_llm_providers.py::THINKING_TIMEOUT_SECONDS`。
 """
 
-TRANSPORT_MAX_ATTEMPTS = 5
-"""brain 各链路**传输失败**（`ToolTimeout`：超时 / 5xx / 断连）时的重试预算（含首次）。
-
-最近一次失败是传输失败时按它算，否则按 `BRAIN_MAX_ATTEMPTS`。0924 真机：服务端卡顿成簇出现
-（同一步连续 2~3 次 45s 无响应，第 3 次才通），决策超时压到 10s 之后，多给两次、配合指数退避，
-能跨过一段卡顿，而不是把 task 直接判成出错。解析类失败没有这个规律，仍是 3 次。
-"""
-
 MODEL_RETRY_BACKOFF_SECONDS = 1.0
-"""两个重试循环（`brain_tool` / `game_tools`）的退避**基数**：第 n 次失败后睡 基数 × 2^(n-1) 秒。
+"""两个重试循环（`brain_tool` / `game_tools`）里，**刚失败的那次不是超时**时，到下一次尝试的间隔。
 
 只对"值得重试"的失败生效（`ProviderRejected` 快败不睡）；最后一轮失败后
-不睡——后面是上抛，没人等这个间隔。0924 起改为指数退避（此前固定 0.5s）：
-服务端卡顿是一阵一阵的，固定短间隔的几次重试会落在同一段卡顿里。"""
+不睡——后面是上抛，没人等这个间隔。超时另走 `TIMEOUT_RETRY_BACKOFF_SECONDS`。"""
 
-MODEL_RETRY_BACKOFF_MAX_SECONDS = 8.0
-"""指数退避的封顶间隔（秒）：1 → 2 → 4 → 8 → 8 …"""
+TIMEOUT_RETRY_BACKOFF_SECONDS = 2.0
+"""**刚失败的那次是超时**（`ToolTimeout`）时的退避起点，逐次翻倍：第 1 次超时后 2s，第 2 次后 4s。
+
+0924 真机：服务端卡顿成簇出现（同一步连续 2~3 次无响应），固定短间隔的重试会落在同一段
+卡顿里；拉开间隔让下一次尽量落在卡顿之后。重试预算不单列，与其它失败共用 `BRAIN_MAX_ATTEMPTS`。"""
 
 CONSOLE_REVIEW_TIMEOUT = 30.0
 """控制台提问的等待秒数——超时按"人没意见"处理。

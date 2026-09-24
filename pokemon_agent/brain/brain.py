@@ -101,6 +101,23 @@ def _strip_json_fence(text: str) -> str:
     return stripped
 
 
+def _load_json(text: str) -> object:
+    """剥围栏后，从第一个 `{` 或 `[` 起读出**一个完整的 JSON 值**，它之后的内容一律忽略。
+
+    容忍的只是**这个值之外**的多余内容：前面的一句话、后面多出的 `}`、解释文字、第二个对象
+    （只取第一个）。值内部的语法错误（漏逗号、单引号、尾逗号、注释）与截断照样抛
+    `json.JSONDecodeError`——那些交给重试，不在这里猜着修。`[` 也算起点，是因为校验链
+    允许顶层直接是数组。
+    """
+    stripped = _strip_json_fence(text)
+    starts = [i for i in (stripped.find("{"), stripped.find("[")) if i >= 0]
+    if not starts:
+        raise json.JSONDecodeError("no JSON value found", stripped, 0)
+    start = min(starts)
+    value, _end = json.JSONDecoder().raw_decode(stripped, start)
+    return value
+
+
 def _override(thinking: bool | None) -> str:
     """思考开关覆盖的记账写法。
 
@@ -427,7 +444,7 @@ class Brain:
         """把拆解模型的原始文本解析成 `Decomposition`；失败抛 `ParseFailure`。"""
         stripped = _strip_json_fence(text)
         try:
-            raw = json.loads(stripped)
+            raw = _load_json(stripped)
         except json.JSONDecodeError as exc:
             raise ParseFailure(text, f"not valid json ({exc.msg})") from exc
         if not isinstance(raw, dict):
@@ -553,7 +570,7 @@ class Brain:
         """解析成 `(done, why, 失败类型)`，第三项为空串表示解析成功。"""
         stripped = _strip_json_fence(text)
         try:
-            raw = json.loads(stripped)
+            raw = _load_json(stripped)
         except json.JSONDecodeError:
             return False, f"判定输出不是合法 JSON：{text!r}", "ParseFailure"
 
@@ -649,7 +666,7 @@ class Brain:
         `summarize` 喂）。
         """
         try:
-            raw = json.loads(_strip_json_fence(text))
+            raw = _load_json(text)
             items = raw["verdicts"] if isinstance(raw, dict) else raw
             by_index = {
                 int(item["index"]): item
@@ -756,7 +773,7 @@ class Brain:
         ——两种写法都收（prompt 约束一种，但解析器宽容一点不会更贵）。
         """
         try:
-            raw = json.loads(_strip_json_fence(text))
+            raw = _load_json(text)
         except Exception:  # noqa: BLE001  输出畸形，留 None
             return None
         if not isinstance(raw, dict):
@@ -831,7 +848,7 @@ class Brain:
         """
         stripped = _strip_json_fence(text)
         try:
-            raw = json.loads(stripped)
+            raw = _load_json(stripped)
         except json.JSONDecodeError as exc:
             raise ParseFailure(text, f"not valid json ({exc.msg})") from exc
         if not isinstance(raw, dict):
@@ -853,7 +870,7 @@ class Brain:
         stripped = _strip_json_fence(text)
 
         try:
-            raw = json.loads(stripped)
+            raw = _load_json(stripped)
         except json.JSONDecodeError as exc:
             raise ParseFailure(text, f"not valid json ({exc.msg})") from exc
 

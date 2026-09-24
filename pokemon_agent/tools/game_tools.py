@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import time
 
-from pokemon_agent.brain.errors import ProviderRejected
+from pokemon_agent.brain.errors import ProviderRejected, ToolTimeout
 from pokemon_agent.config import PERCEPTION_MAX_RETRIES
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
@@ -224,7 +224,8 @@ class GameTools:
                         len(log), _last_error(log), log, source="sense"
                     ) from exc
                 if nth < PERCEPTION_MAX_RETRIES:
-                    time.sleep(backoff_seconds(nth))
+                    timeouts = sum(c.error_kind == ToolTimeout.__name__ for c in log)
+                    time.sleep(backoff_seconds(kind == ToolTimeout.__name__, timeouts))
                 continue
 
             # 成功：逐条收账——一次感知可能有多条 call。

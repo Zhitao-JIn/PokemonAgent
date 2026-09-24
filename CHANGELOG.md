@@ -1,3 +1,16 @@
+## 2026-09-24（222）—— 重试预算回到所有失败共用 3 次，退避按上一次是否超时区分；JSON 解析只取第一个完整值
+
+**改了什么**：
+- `config.py` 删 `TRANSPORT_MAX_ATTEMPTS` / `MODEL_RETRY_BACKOFF_MAX_SECONDS`；`MODEL_RETRY_BACKOFF_SECONDS = 1.0` 改为"上一次不是超时"时的固定间隔，新增 `TIMEOUT_RETRY_BACKOFF_SECONDS = 2.0`（上一次是超时时的起点，逐次翻倍）。
+- `tools/backoff.py::backoff_seconds(last_timed_out, timeouts)`：不是超时 → 1s；是超时 → 2s、4s。`_attempt_loop` 所有失败共用 `BRAIN_MAX_ATTEMPTS`（3 次，含首次），`_budget_spent` 删除；`GameTools.perceive_with_retry` 同一套间隔（预算仍是 `PERCEPTION_MAX_RETRIES`）。
+- `brain/brain.py` 新增 `_load_json(text)`：剥围栏后从第一个 `{` 或 `[` 起用 `JSONDecoder.raw_decode` 读出一个完整值，其后内容忽略；六处 `json.loads` 全部换成它。
+
+**为什么改**：
+- 221 给超时单独 5 次预算，最坏一次决策要等一分多钟；用户定：预算不分种类，都是 3 次，只是超时之后等得更久（2s / 4s），让下一次尽量落在服务端那段卡顿之后。
+- 0924 160317 的第一次拆解思考了 10k token、内容完整正确，只因末尾多了一个 `}` 被判 `ParseFailure`（Extra data）白烧一轮。现在前后多余的文字、多出的括号、第二个对象都不再导致失败；值内部的语法错误（漏逗号、单引号、尾逗号、注释）与截断仍然报错走重试。
+
+**取舍**：起点是第一个 `{` 或 `[`——若模型在 JSON 之前的文字里写了括号，会从错的位置读起并报错（不会误读成功）。`[` 算起点是因为校验链允许顶层直接是数组。
+
 ## 2026-09-24（221）—— 决策只交一个键；模型调用改指数退避，传输失败单独给 5 次预算
 
 **改了什么**：
