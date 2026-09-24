@@ -12,17 +12,21 @@ from collections.abc import Sequence
 from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import Goal
-from pokemon_agent.schemas.memory import StepMemory
+from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
+from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, TaskMemory
 
 
 class FromHarnessToBrainToolJudgeReq(BaseModel):
     """harness 侧组装、交给 `BrainTool` 的判定请求。
 
     goal：要判的目标。
-    history：本局最近几步（含 rationale，prompt 渲 `$history` 时按 `reason=False`
+    history：本局最近几步（prompt 渲 `$history` 时与决策记忆同一渲染
         滤掉——判定看"发生了什么"，不看决策者的主张）。**要带的截图也由
         `BrainTool.judge()` 从这同一批 history 取**（`dedup_snapshots()`，
         0915 130 收权）——信封不另开 images 通道。
+    task_memories：episode 层判定的素材（本局已跑 task 的记忆）；task 层留空。
+    task_table：episode 层判定的素材（本局任务表——成败以表为准，含人审推翻）；另两层留空。
+    episode_memories：run 层判定的素材（本 run 的局摘要）；下两层留空。
     human_note：人对**上一次判定**插的一句话（空串 = 没被插话）。非空时它就是
         "带话重问"的那一次——由 prompt 层拼在**最末尾**，压过上面所有规则
         （0914 控制台改造：插话的落点之一）。
@@ -35,5 +39,8 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     """
 
     goal: Goal
-    history: Sequence[StepMemory] = ()
+    history: Sequence[ActMemory] = ()
+    task_memories: Sequence[TaskMemory] = ()
+    task_table: Sequence[TaskEntry] = ()
+    episode_memories: Sequence[EpisodeMemory] = ()
     human_note: str = ""

@@ -1,7 +1,7 @@
 """工具层 —— harness 和其他模块之间的那一层：harness 组装 req，tool 做处理。
 
 四个 tool，各对接一个模块：
-- `brain_tool.py`（`BrainToolPort`）对接 brain——req 翻译成 brain 原生输入；
+- `brain_tool.py`（七张单方法口 + `BrainTool` 容器）对接 brain——req 翻译成 brain 原生输入；
 - `trace/`（`TraceToolPort`）对接 trace——按 `TraceKind` 渲染 payload 再落盘。
   收成一个包（D8-③）：`__init__.py` 分派器 + `render.py` 每种账的 payload
   （payload 字段格式是跨模块契约，观测台前端按字段名渲染，变更权在本层；
@@ -9,7 +9,7 @@
 - `game_tools.py`（`GameToolPort`）对接 world；
 - `memory_tool.py`（`MemoryToolPort`）对接 memory。
 
-**两个接线工厂（0913 深夜九）**：`BrainTool.build(config)` 与
+**两个接线工厂（0913 深夜九）**：`BrainTool.build(...)` 与
 `vision_factory.build_vision_provider(model)`——"这个技能接哪家厂商"的接线
 知识收在 tool 层，装配点（`build.py`）只递选型参数，不 import 任何具体
 provider 类。**这是"只有 tool 层依赖 brain"这条命题的落点**：`build.py` 原先

@@ -2,7 +2,7 @@
 
 - `interface/`：这个子系统的港口（`BrainPort`）+ 它内嵌的数据形状
   （`Action`/`EpisodeSummary`/`Goal`/`Reflection`/`RunPlan`/
-  `StepVerifyVerdict`/`Task`，以及每个方法的结果袋），跟"怎么决策"的实现
+  `VerifyVerdict`/`Task`，以及每个方法的结果袋），跟"怎么决策"的实现
   物理分开。**选型纯数据 `BrainLlmConfig` 也住这里**（0913 深夜九从
   `build_llm_providers.py` 搬来）——它是零重依赖的 dataclass，住在工厂模块里
   会让"只想声明用什么型号"的调用方连带进口厂商实现
@@ -61,19 +61,16 @@ from .interface import (
     BrainLlmConfig,
     ChooseResult,
     EpisodeSummary,
-    ExtractResult,
     Goal,
     JudgeResult,
-    KnowledgeItem,
-    LearnedKnowledge,
     ModelCall,
     PlanResult,
     Reflection,
     RunPlan,
-    StepVerifyVerdict,
     SummarizeResult,
     Task,
     VerifyResult,
+    VerifyVerdict,
 )
 
 if TYPE_CHECKING:
@@ -89,16 +86,13 @@ __all__ = [
     "BrainPort",
     "ChooseResult",
     "EpisodeSummary",
-    "ExtractResult",
     "Goal",
     "JudgeResult",
-    "KnowledgeItem",
-    "LearnedKnowledge",
     "ModelCall",
     "PlanResult",
     "Reflection",
     "RunPlan",
-    "StepVerifyVerdict",
+    "VerifyVerdict",
     "SummarizeResult",
     "Task",
     "VerifyResult",

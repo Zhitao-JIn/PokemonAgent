@@ -10,7 +10,7 @@
 
 **为什么最终落在这里**——它跟 `ModelCallLog`（本文件下方，`list[ModelCall]`
 的别名）是同一批读者：`harness` 侧（`think_action`/`judge`/`verify_and_summarize`/
-`perceive_after_action`）拿到账之后要**原样装进 `FromHarnessToTraceToolAppendReq.calls`**
+`harness/sensing.perceive_once`）拿到账之后要**原样装进 `FromHarnessToTraceToolAppendReq.calls`**
 交给 trace 渲染，而这个信封是 `schemas.harness` 的类型。**装得进去的前提是同一个类型**。
 
 试过放 `tools.interface`（它看起来更像"账的家"），立刻回环：

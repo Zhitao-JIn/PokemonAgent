@@ -1,15 +1,15 @@
 """`FromHarnessToReviewerAuditReq` / `FromHarnessToReviewerAuditResp`：**审**。
 
 **审是什么**（`docs/PLAN_console_reviewer.md` §2）：人对一个**已给的单一结论**
-不满意 → 直接表态（认 / 推翻）。全项目**只有 `review` 节点**用它——
-因为只有它面对的答案是单一结论（这一局成还是败），人能自己对它表态；
-其余落点面对的都是多字段结构体，只能插话让 LLM 重填。
+不满意 → 直接表态（认 / 推翻）。用在两处盖章前：run 的 `review_and_judge` 审上一局、
+episode 的 `review_and_judge` 审上一个 task——它们面对的都是单一结论（成还是败），
+人能自己表态；其余落点面对的是多字段结构体，只能插话让 LLM 重填。
 
 **与插话的关键区别在返回值**：插话回一句字符串（交给 LLM 当材料），
 审回一个 `AuditVerdict`（**人自己的决定**，不经过 LLM）。
 
 **人不写状态**：`AuditVerdict` 只说"认 / 推翻"，落到目标表上的状态改写
-（`COMPLETED` / `FAILED`）仍由 harness 盖章——见 `GoalStatus` 的权限表。
+（`COMPLETED` / `FAILED`）仍由 harness 盖章——见 `EntryStatus` 的权限表。
 `docs/PLAN_console_reviewer.md` §4.3。
 """
 
@@ -20,8 +20,8 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from pokemon_agent.schemas.harness.domain import TraceEvent
-
-from .FromRunHarnessToEpisodeHarnessRunResp import FromRunHarnessToEpisodeHarnessRunResp
+from pokemon_agent.schemas.harness.domain.episode_io import EpisodeOutput
+from pokemon_agent.schemas.harness.domain.task_io import TaskOutput
 
 
 class AuditVerdict(StrEnum):
@@ -34,20 +34,19 @@ class AuditVerdict(StrEnum):
 
 
 class FromHarnessToReviewerAuditReq(BaseModel):
-    """交给人的审查上下文：一局跑完了，看它算成算败。
+    """交给人的审查上下文：一局（或一个 task）跑完了，看它算成算败。
 
-    `outcome` 是这一局的机械结算（成功/失败、步数、原因）；`episode_trace`
-    是这一局的**完整** trace——一次请求自带审查所需的全部依据，人不用再额外问。
+    `outcome` 是它的机械结算（终止类别、计数、结论说明）；`events` 是它的**完整** trace
+    ——一次请求自带审查所需的全部依据，人不用再额外问。审 task 时 `task_id` 非空。
     """
 
     run_id: str = Field(description="这次 run 的标识")
-    episode_id: str = Field(description="刚跑完那一局的标识")
-    outcome: FromRunHarnessToEpisodeHarnessRunResp = Field(
-        description="本局的机械结算（判成/判败的原始依据）"
-    )
-    episode_trace: list[TraceEvent] = Field(
+    episode_id: str = Field(description="刚跑完那一局（或那个 task 所在的局）的标识")
+    task_id: str | None = Field(default=None, description="审 task 时是那个 task 的标识")
+    outcome: EpisodeOutput | TaskOutput = Field(description="机械结算（判成/判败的原始依据）")
+    events: list[TraceEvent] = Field(
         default_factory=list,
-        description="刚跑完那一局的完整 trace（单 episode，不是全量 run trace）",
+        description="被审对象自己的完整 trace（那一局或那个 task 的，不是全量 run trace）",
     )
 
 

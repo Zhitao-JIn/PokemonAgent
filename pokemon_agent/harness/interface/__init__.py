@@ -1,4 +1,4 @@
-"""harness/interface 包统一出口：harness 层**真端口**——`Planner` 与 `Reviewer`。
+"""harness/interface 包统一出口：harness 层**真端口**——`Reviewer`。
 
 **判据：港口 = 实现方在系统之外**。这里曾经住着
 两张"镜子"——`HarnessPort`/`EpisodeHarnessPort`，实现方就是隔壁文件的
@@ -15,32 +15,29 @@
 一句话：`interface/` 从此只回答"harness 需要外面给什么"，不再回答"harness 自己长
 什么样"。
 
-**0914 控制台改造后这里只剩两个真端口**：`Planner`（plan 位置的 input 来源）与
-`Reviewer`（人与图之间的门——插话 + 审）。旧的 `HumanReviewer` / `HumanDecision`
-随槽机制一起删除：那套是"前端在另一个线程里异步回话"的形状，而控制台里
-**人就在图的调用栈上**，两种机制的返回值都不一样了。
+**0914 控制台改造后这里只剩一个真端口**：`Reviewer`（人与图之间的门——插话 + 审）。
+旧的 `HumanReviewer` / `HumanDecision` 随槽机制一起删除：那套是"前端在另一个线程里
+异步回话"的形状，而控制台里**人就在图的调用栈上**，两种机制的返回值都不一样了。
+（原先与它并列的 `Planner` 端口已随 0922 第 184 条撤销——plan 位置直接走
+`brain_tool.plan`，harness 不再为它立协议。）
 
-**0914 S2 给 `Planner` 补上了产出模型**：`PlannerOutcome`（新增 + 定点更新 + 收手
-判定）与 `GoalUpdate`。它们住这一层而不是 `schemas/`——产出是 run 级**编排**词汇
+**产出模型留在这一层**：`PlannerOutcome`（新增 + 定点更新 + 收手判定）与
+`GoalUpdate`。它们住这里而不是 `schemas/`——产出是 run 级**编排**词汇
 （`GoalEntry` 的状态迁移），不是跨层的通用数据形状。
 
-**没有懒加载**：这两个 Protocol 都零依赖（只 import `schemas` 与同包的
-`planner_context`/`planner_outcome`），不会和 `schemas.harness` 形成初始化循环——
+**没有懒加载**：这个 Protocol 零依赖（只 import `schemas` 与同包的
+`planner_outcome`），不会和 `schemas.harness` 形成初始化循环——
 旧的那套 `__getattr__` 机制随 `HumanReviewer` 一起删掉了。
 """
 
 from __future__ import annotations
 
-from .planner import Planner
-from .planner_context import PlannerContext
 from .planner_outcome import ALLOWED_UPDATE_STATUSES, GoalUpdate, PlannerOutcome
 from .reviewer import Reviewer
 
 __all__ = [
     "ALLOWED_UPDATE_STATUSES",
     "GoalUpdate",
-    "Planner",
-    "PlannerContext",
     "PlannerOutcome",
     "Reviewer",
 ]

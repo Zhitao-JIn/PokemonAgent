@@ -1,5 +1,5 @@
 """brain/interface 包统一出口：大脑的港口（`BrainPort`）+ 它内嵌的数据形状
-（`Action`/`EpisodeSummary`/`Goal`/`Reflection`/`RunPlan`/`StepVerifyVerdict`/
+（`Action`/`EpisodeSummary`/`Goal`/`Reflection`/`RunPlan`/`VerifyVerdict`/
 `Task`，以及每个方法的结果袋 `ChooseResult`/`JudgeResult`/`PlanResult`/
 `SummarizeResult`/`VerifyResult`）+ 选型纯数据（`BrainLlmConfig`）。
 
@@ -35,20 +35,19 @@ from .domain import (
     Action,
     ActionSegment,
     ChooseResult,
+    DecomposeResult,
+    Decomposition,
     EpisodeSummary,
-    ExtractResult,
     Goal,
     JudgeResult,
-    KnowledgeItem,
-    LearnedKnowledge,
     ModelCall,
     PlanResult,
     Reflection,
     RunPlan,
-    StepVerifyVerdict,
     SummarizeResult,
     Task,
     VerifyResult,
+    VerifyVerdict,
 )
 from .llm_config import BrainLlmConfig
 from .llm_provider import JudgeProvider, LLMProvider
@@ -62,19 +61,18 @@ __all__ = [
     "BrainLlmConfig",
     "BrainPort",
     "ChooseResult",
+    "DecomposeResult",
+    "Decomposition",
     "EpisodeSummary",
-    "ExtractResult",
     "Goal",
     "JudgeProvider",
     "JudgeResult",
-    "KnowledgeItem",
     "LLMProvider",
-    "LearnedKnowledge",
     "ModelCall",
     "PlanResult",
     "Reflection",
     "RunPlan",
-    "StepVerifyVerdict",
+    "VerifyVerdict",
     "SummarizeResult",
     "Task",
     "VerifyResult",

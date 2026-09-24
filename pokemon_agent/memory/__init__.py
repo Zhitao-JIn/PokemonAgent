@@ -36,16 +36,16 @@
 
 **`MemoryStorePort` 完全不透明**：`put`/`get_many`/`filter`/`delete_many`/`snapshot`
 这一整套协议只认 `metadata: dict[str, str]` + `payload: dict` 两个裸字段，
-`store.py` 的实现同理，从来不 import、不需要知道 `StepMemory`/
+`store.py` 的实现同理，从来不 import、不需要知道 `ActMemory`/
 `EpisodeMemory`/`ObjectFactEvent` 这三个类具体长什么样。按"数据形状只有在
 某个模块的 Port/实现真的需要构造或消费它的具体样子时，才归那个模块自己"
 这条边界，这三个类因此**不在**这个包里——它们是 `schemas.memory` 的东西
 （本项目自己的跨层契约层），"发生了什么、影响了谁"的语义判定/组装分别在
-`brain.brain.py::reflect()`、`harness/object_interactions.py`、
+`brain.brain.py::reflect()`、`harness/episode/store/store_object_semantic_memory/rules.py`、
 tool 层（`tools/memory_tool.py`）完成，见 `pokemon_agent/schemas/memory/
 __init__.py` 的说明。
 
-object 的交互判定在 harness（`harness/object_interactions.py`）。
+object 的交互判定在 harness（`harness/episode/store/store_object_semantic_memory/rules.py`）。
 
 本文件是统一出口：**对外契约 + 实现类 + 两个注入协议**都从这里 re-export，
 消费方写 `from pokemon_agent.memory import X`，不深到子目录的模块文件。

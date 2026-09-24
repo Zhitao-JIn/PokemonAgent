@@ -42,8 +42,8 @@ from pydantic import TypeAdapter, ValidationError
 from pokemon_agent.memory import EmbeddingProviderPort, LocalMemoryStore, RerankerProviderPort
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolAppendObjectEventsReq,
-    FromHarnessToMemoryToolQueryEpisodeStepsReq,
-    FromHarnessToMemoryToolQueryEpisodeStepsResp,
+    FromHarnessToMemoryToolQueryActMemoriesReq,
+    FromHarnessToMemoryToolQueryActMemoriesResp,
     FromHarnessToMemoryToolQueryEpisodeSummariesReq,
     FromHarnessToMemoryToolQueryEpisodeSummariesResp,
     FromHarnessToMemoryToolQueryKnowledgeReq,
@@ -52,23 +52,27 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryObjectEventsAtResp,
     FromHarnessToMemoryToolQueryObjectEventsReq,
     FromHarnessToMemoryToolQueryObjectEventsResp,
-    FromHarnessToMemoryToolQueryRecentStepsReq,
-    FromHarnessToMemoryToolQueryRecentStepsResp,
+    FromHarnessToMemoryToolQueryRecentActMemoriesReq,
+    FromHarnessToMemoryToolQueryRecentActMemoriesResp,
+    FromHarnessToMemoryToolQueryTaskMemoriesReq,
+    FromHarnessToMemoryToolQueryTaskMemoriesResp,
     FromHarnessToMemoryToolRestoreMemoryReq,
     FromHarnessToMemoryToolRestoreMemoryResp,
     FromHarnessToMemoryToolSnapshotMemoryReq,
     FromHarnessToMemoryToolSnapshotMemoryResp,
-    FromHarnessToMemoryToolStoreEpisodeStepReq,
+    FromHarnessToMemoryToolStoreActMemoryReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryResp,
     FromHarnessToMemoryToolStoreKnowledgeReq,
     FromHarnessToMemoryToolStoreKnowledgeResp,
+    FromHarnessToMemoryToolStoreTaskMemoryReq,
 )
 from pokemon_agent.schemas.memory import (
+    ActMemory,
     EpisodeMemory,
     KnowledgeRecord,
     ObjectFactEvent,
-    StepMemory,
+    TaskMemory,
 )
 
 
@@ -108,6 +112,7 @@ class MemoryTool:
         self._steps = self._store(embedding_provider, reranker_provider, "step_memory")
         self._objects = self._store(embedding_provider, reranker_provider, "object_memory")
         self._summaries = self._store(embedding_provider, reranker_provider, "episode_memory")
+        self._tasks = self._store(embedding_provider, reranker_provider, "task_memory")
         self._knowledge = self._store(embedding_provider, reranker_provider, "knowledge_memory")
         self._max_summaries = max_summaries
         """跨局摘要的上限：超过就按质量淘汰最差的（平手淘汰最旧），**删掉**。
@@ -130,7 +135,7 @@ class MemoryTool:
     def _sync_max_caches(self) -> None:
         """清掉 append 单调缓存——恢复（覆盖）之后盘上换了内容，这两个缓存不
         再可信。不清的后果是"恢复回来的那一局，step 号被旧缓存挡住"（写不进去），
-        而它只会在下一次 `store_episode_step` 的 assert 上炸，很难回溯到这里。
+        而它只会在下一次 `store_act_memory` 的 assert 上炸，很难回溯到这里。
         """
         self._step_max.clear()
         self._object_max.clear()
@@ -227,28 +232,27 @@ class MemoryTool:
 
     # ---- 情景记忆：episodic（单步，全量，不检索） ----
 
-    def query_episode_steps(
-        self, req: FromHarnessToMemoryToolQueryEpisodeStepsReq
-    ) -> FromHarnessToMemoryToolQueryEpisodeStepsResp:
+    def query_act_memories(
+        self, req: FromHarnessToMemoryToolQueryActMemoriesReq
+    ) -> FromHarnessToMemoryToolQueryActMemoriesResp:
         """取这一局全部的单步情景记忆，按 step 升序。"""
-        entries = self._episode_steps(req.episode_id)
-        return FromHarnessToMemoryToolQueryEpisodeStepsResp(steps=entries)
+        entries = self._episode_acts(req.episode_id)
+        return FromHarnessToMemoryToolQueryActMemoriesResp(steps=entries)
 
-    def query_recent_steps(
-        self, req: FromHarnessToMemoryToolQueryRecentStepsReq
-    ) -> FromHarnessToMemoryToolQueryRecentStepsResp:
+    def query_recent_act_memories(
+        self, req: FromHarnessToMemoryToolQueryRecentActMemoriesReq
+    ) -> FromHarnessToMemoryToolQueryRecentActMemoriesResp:
         """取这一局最近几条情景记忆（已按 step 升序，取尾部）。"""
         assert req.limit > 0, f"limit must be > 0, got {req.limit}"
-        entries = self._episode_steps(req.episode_id)[-req.limit :]
-        return FromHarnessToMemoryToolQueryRecentStepsResp(steps=entries)
+        entries = self._episode_acts(req.episode_id)[-req.limit :]
+        return FromHarnessToMemoryToolQueryRecentActMemoriesResp(steps=entries)
 
-    def store_episode_step(self, req: FromHarnessToMemoryToolStoreEpisodeStepReq) -> None:
+    def store_act_memory(self, req: FromHarnessToMemoryToolStoreActMemoryReq) -> None:
         """写入一条情景记忆：tool 层组装 metadata → 索引层落一个 uuid 文件。
 
-        前置条件：`req.entry.rationale` 非空；`entry.step` ≥ 该局已有最大 step。
+        前置条件：`entry.step` ≥ 该局已有最大 step。
         """
         entry = req.entry
-        assert entry.rationale, "store_episode_step() got an entry without a rationale"
         self._check_step_monotonic(entry.episode_id, entry.step, self._step_max, "step_memory")
         map_id = entry.before.place.map_id if entry.before.place is not None else ""
         self._steps.put(
@@ -263,18 +267,51 @@ class MemoryTool:
         )
         self._step_max[entry.episode_id] = max(self._step_max.get(entry.episode_id, 0), entry.step)
 
-    def _episode_steps(self, episode_id: str) -> list[StepMemory]:
+    def _episode_acts(self, episode_id: str) -> list[ActMemory]:
         """等值筛（episode_id）→ 解析 payload → 按 step 数值升序。"""
         assert episode_id, "episode step query needs a non-empty episode_id"
-        entries: list[StepMemory] = []
+        entries: list[ActMemory] = []
         for _uuid, _meta, payload, _text in self._steps.get_many(
             self._steps.filter({"episode_id": episode_id})
         ):
             try:
-                entries.append(StepMemory.model_validate(payload))
+                entries.append(ActMemory.model_validate(payload))
             except ValidationError:
                 continue
         return sorted(entries, key=lambda m: m.step)
+
+    # ---- task 记忆（一层一条，介于按键记忆与跨局摘要之间） ----
+
+    def query_task_memories(
+        self, req: FromHarnessToMemoryToolQueryTaskMemoriesReq
+    ) -> FromHarnessToMemoryToolQueryTaskMemoriesResp:
+        """取这一局的全部 task 记忆，按 start_step 升序。"""
+        assert req.episode_id, "task memory query needs a non-empty episode_id"
+        memories: list[TaskMemory] = []
+        for _uuid, _meta, payload, _text in self._tasks.get_many(
+            self._tasks.filter({"episode_id": req.episode_id})
+        ):
+            try:
+                memories.append(TaskMemory.model_validate(payload))
+            except ValidationError:
+                continue
+        return FromHarnessToMemoryToolQueryTaskMemoriesResp(
+            memories=sorted(memories, key=lambda m: m.start_step)
+        )
+
+    def store_task_memory(self, req: FromHarnessToMemoryToolStoreTaskMemoryReq) -> None:
+        """落库一条 task 记忆：tool 层组装 metadata → 索引层落一个 uuid 文件。"""
+        m = req.memory
+        self._tasks.put(
+            metadata={
+                "run_id": m.run_id,
+                "episode_id": m.episode_id,
+                "task_id": m.task_id,
+                "start_step": str(m.start_step),
+            },
+            payload=m.model_dump(),
+            text=m.summary,
+        )
 
     # ---- 跨局摘要记忆：episode memory（按元数据过滤） ----
 
@@ -317,8 +354,8 @@ class MemoryTool:
 
         - 常规——`markdown` 是蒸馏出的正文；
         - **正文全空**——"这一局压根没有可蒸馏的正文"（整局异常，或收尾时没有
-          一条可信的 step 记忆）。它不是"蒸馏的降级"，而是那种局在记忆里唯一的
-          痕迹；写入点是 `harness/run/nodes/review.py::_leave_chapter()`，它保证
+          一条 task 记忆）。它不是"蒸馏的降级"，而是那种局在记忆里唯一的
+          痕迹；写入点是 `episode/episode_done/leave_chapter.py::store_empty_chapter()`，它保证
           **每局恰好留一条**。**没有标记位**（0914 99 删了 `chapter_only`）——
           空不空看 `markdown` / `summary` 自己。
 
@@ -468,7 +505,7 @@ class MemoryTool:
     ) -> FromHarnessToMemoryToolStoreKnowledgeResp:
         """落库一批**已经组装好**的世界知识，不调模型（0914 S4）。
 
-        组装在 `BrainTool.extract()` 里完成（`resp.records`），本方法只做三件事：
+        知识由人管理（自动抽取已删），记录由调用方组装好；本方法只做三件事：
         **判重 → 落一个 md 记录文件 → 更新检索向量缓存**。
 
         **落盘形态与这个家族的手工先验逐字一致**（`metadata={"source","topic"}`、

@@ -44,27 +44,30 @@ class BrainLlmConfig:
       收到 Qwen 型号名会直接 404，不是"退化成纯文本"这种优雅失败
       （`ArkProvider.__init__` 里有 assert 兜住空串，但型号名对错它验不了）。
 
-    四个字段都给默认值（跟 `build_real` 的历史默认值一致），所以
-    `BrainLlmConfig()` 就是一个能直接跑的真实链路配置。想换型号只改这里。
+    四个字段都是 `str | None`，**缺省 `None` = 这个位置这次不装配**（0922 185
+    按需实例化：每层 BrainTool 只造它要的链路，`build_llm_providers()` 对 None
+    位置返回 None、`Brain` 对应方法的入口 assert 会把"没配就调"拦下）。
+    全部给型号名时就是一个能直接跑的完整配置。想换型号只改这里。
 
     **温度分层的知识不在这里**（0913）：`temperature` 是**常量**不是旋钮
     （judge/verify/plan 恒 0、decide 恒 0.3），所以它写在
     `brain/build_llm_providers.py` 的构造语句里，本类只带"选哪个型号"。
     """
 
-    text: str = "qwen-plus"
-    """`choose()` 的模型（DashScope）。"""
+    text: str | None = None
+    """`choose()` 的模型（DashScope）。`None` = 这次不装配决策链。"""
 
-    judge: str = "qwen3.8-max"
+    judge: str | None = None
     """`judge()` 的模型（DashScope）。**跟 `text` 分开是硬要求**：判定与决策
     误差同源会让"读错画面 → 以为达成 → 判成功"这条错路越走越顺
-    （`Brain` 模块 docstring 有论证），所以哪怕同型号也不共用实例。"""
+    （`Brain` 模块 docstring 有论证），所以哪怕同型号也不共用实例。
+    `None` = 这次不装配判定链。"""
 
-    verify: str = "doubao-seed-2-1-pro-260628"
-    """`verify()`/`summarize()` 的模型（火山方舟，豆包）。"""
+    verify: str | None = None
+    """`verify()`/`summarize()` 的模型（火山方舟，豆包）。`None` = 这次不装配。"""
 
-    plan: str = "doubao-seed-2-1-pro-260628"
-    """`plan()` 的模型（火山方舟，豆包）。"""
+    plan: str | None = None
+    """`plan()` 的模型（火山方舟，豆包）。`None` = 这次不装配规划链。"""
 
     max_tokens: int = 25600
     """四个 provider 共用的输出上限。

@@ -2,7 +2,11 @@
 
 - `TraceKind` —— harness 的**账目词表**（各节点声明"我记哪一笔账"）；
 - `TraceEvent` —— 一条已落盘的事件（跨层数据形状：两个信封的字段类型）；
-- `GoalEntry` / `GoalStatus` —— run 级目标表的一行（`RunState.plan` 的元素）。
+- `EntryStatus` —— 目标表与任务表共用的五个状态；
+- `GoalEntry` —— run 级目标表的一行（`RunState.goals` 的元素）；
+- `TaskEntry` —— episode 任务表的一行（`EpisodeRunState.tasks` 的元素）；
+- `Termination` —— 三层同构的机械终止类别；
+- `TaskInput`/`TaskOutput`、`EpisodeInput`/`EpisodeOutput` —— 父子图交界契约。
 
 `TraceEvent` 是 0913 下午从 `pokemon_agent/trace/datastore/` 搬来的：它出现在
 信封里，按"契约层不许反向依赖实现包"必须住这边。判据见 `AGENTS.md` 铁律 2。
@@ -30,8 +34,25 @@
 
 from __future__ import annotations
 
-from .goal_entry import GoalEntry, GoalStatus
+from .entry_status import EntryStatus
+from .episode_io import EpisodeInput, EpisodeOutput
+from .goal_entry import GoalEntry
+from .task_entry import TaskEntry
+from .task_io import TaskInput, TaskOutput
+from .termination import Settled, Termination
 from .trace_event import TraceEvent
 from .trace_kind import TraceKind
 
-__all__ = ["GoalEntry", "GoalStatus", "TraceEvent", "TraceKind"]
+__all__ = [
+    "EpisodeInput",
+    "EpisodeOutput",
+    "EntryStatus",
+    "GoalEntry",
+    "TaskEntry",
+    "TaskInput",
+    "TaskOutput",
+    "Settled",
+    "Termination",
+    "TraceEvent",
+    "TraceKind",
+]

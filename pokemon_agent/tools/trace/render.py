@@ -39,7 +39,7 @@ content  这笔账的正文（可 JSON 化的对象；`store` 负责序列化成
 **还有一条 0914 跟进的总规矩：同笔账之内能从兄弟字段推出来的不写**——
 `goal_count`（= len(goals)）、`success_rate`（= succeeded/total）、
 `count`（= len(refs/names)）、`dropped_count`、`pushed_count`、
-`segment_count`/`press_count`（= sequence 的长度与次数和）、`observe` 顶层的
+`segment_count`/`press_count`（= sequence 的长度与次数和）、`sense_frame` 顶层的
 `scene`/`overlay`（= facts 里的同名字段）、`episode_error` 的恒定
 `success`/`steps`，全都因此退场；能推的那一维随兄弟字段一起**改成数组**，
 让"数出来"变成可靠操作而不是分词。
@@ -65,9 +65,8 @@ from pydantic import BaseModel
 
 from pokemon_agent.brain import (
     Action,
-    Goal,
-    StepVerifyVerdict,
     Task,
+    VerifyVerdict,
 )
 from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
@@ -75,9 +74,9 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 from pokemon_agent.schemas.memory import (
+    ActMemory,
     EpisodeMemory,
     ObjectFactEvent,
-    StepMemory,
 )
 from pokemon_agent.trace import EventType
 from pokemon_agent.world import Observation
@@ -107,22 +106,21 @@ def run_start(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     run 级账沿用项目约定（`meta.episode_id` 位放 run_id、`step` 恒 0）——run 级
     事件不挂在任何一局上，跟 `plan` 的模型调用账是同一个约定。
 
-    **`goals` / `success_criteria` 是两条平行的数组**（按栈序，栈顶在最后）——
-    与每帧 `observe` 的 `goals` 同一个形状（`Task` 与 `Goal` 两个类型在这一列上
-    同形，两处的差别只有"哪一份列表"）。**不另记 `goal_count`**：它是
+    **`goals` / `success_criteria` 是两条平行的数组**（初始目标表的顺序）。
+    **不另记 `goal_count`**：它是
     `len(goals)`，数组自己数得出来。
 
     前置条件：`req.meta.source` 非空（`RunHarness.new_run` 自报）。
     """
     goals: list[Task] = req.run_goals or []
-    return Rendered(
-        EventType.LIFECYCLE,
-        TraceKind.RUN_START,
-        {
-            "goals": [g.goal for g in goals],
-            "success_criteria": [g.success_criteria for g in goals],
-        },
-    )
+    content: dict[str, Any] = {
+        "goals": [g.goal for g in goals],
+        "success_criteria": [g.success_criteria for g in goals],
+    }
+    if req.run_goal is not None:
+        content["run_goal"] = req.run_goal.goal
+        content["run_criteria"] = req.run_goal.criteria
+    return Rendered(EventType.LIFECYCLE, TraceKind.RUN_START, content)
 
 
 def run_end(req: FromHarnessToTraceToolAppendReq) -> Rendered:
@@ -142,6 +140,8 @@ def run_end(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         {
             "total": str(outcome.total),
             "succeeded": str(outcome.succeeded),
+            "termination": outcome.termination.value,
+            "judge_reason": outcome.judge_reason,
         },
     )
 
@@ -193,6 +193,7 @@ def episode_start(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         EventType.LIFECYCLE,
         TraceKind.EPISODE_START,
         {
+            "goal_id": task.task_id,
             "goal": task.goal,
             "success_criteria": task.success_criteria,
             "max_steps": str(task.max_steps),
@@ -214,8 +215,10 @@ def episode_end(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         EventType.LIFECYCLE,
         TraceKind.EPISODE_END,
         {
-            "success": str(outcome.success).lower(),
-            "steps": str(outcome.steps),
+            "termination": outcome.termination.value,
+            "judge_reason": outcome.judge_reason,
+            "tasks_used": str(outcome.tasks_used),
+            "acts_used": str(outcome.acts_used),
             "reason": outcome.reason,
         },
     )
@@ -243,33 +246,44 @@ def episode_error(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 # ---- 账：每一次模型调用共用同一条翻译规则 ----
 
 _CALL_LINK: dict[str, str] = {
-    TraceKind.PERCEPTION_CALL: "perception",
-    TraceKind.DECIDE_CALL: "decide",
+    TraceKind.SENSE_CALL: "sense",
+    TraceKind.CHOOSE_CALL: "choose",
     TraceKind.PLAN_CALL: "plan",
+    TraceKind.DECOMPOSE_CALL: "decompose",
     TraceKind.JUDGE_CALL: "judge",
     TraceKind.VERIFY_CALL: "verify",
-    TraceKind.SUMMARIZE_CALL: "summarize",
-    TraceKind.EXTRACT_CALL: "extract",
+    TraceKind.SUMMARIZE_EPISODE_CALL: "summarize_episode",
+    TraceKind.SUMMARIZE_TASK_CALL: "summarize_task",
 }
-"""`TraceKind` 的七个调用类 → **链路名**，那个维度唯一的真源。
+"""`TraceKind` 的九个调用类 → **链路名**，那个维度唯一的真源。
 
 链路名必须与 `BrainTool._attempt_loop("…")` 的实参、以及 `*AttemptFailed`
 的默认 `source` 逐字相同——它们是同一个东西（`MaxRetriesExceeded.source`），
 **分两处写就会静默漂移**。落点只有一处：错误账（`call_failed` /
 `call_exhausted`）的 `content.link`。**调用账本身不带链路名**——它的 `kind`
-（`decide_call`）已经说明了是哪条链。
+（`choose_call`）已经说明了是哪条链。
 
 0913 晚之前这里从 `Source` 派生（那时链路名还另占一个顶层 `source` 字段）；
 `Source` 删除后本表就是链路名唯一的家。
 
-`extract`（0914 S4）与 `summarize` 并列而不是并入它：两条链路吃同一份素材
-（这一局的可信记录）但产出不同的东西（知识属于世界、摘要属于那一局），
-**分开记才看得出"哪条链路在烧钱、烧出了什么"**。
+`summarize` 与 `summarize_task` 分开记：同一种蒸馏、两个层级，
+**分开记才看得出"哪一层在烧钱、烧出了什么"**。
 """
 
 
+_PARSE_FAILURE = "ParseFailure"
+"""brain 封账时解析失败的 `error_kind`（`brain.errors.ParseFailure` 的类名）。"""
+
+_SUMMARY_LINKS = frozenset({"summarize_episode", "summarize_task"})
+"""两条蒸馏链：它们"答了但解析不了"单独记 `summary_parse_error`，不记 `call_failed`。"""
+
+
 def model_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
-    """一笔账里的**每一条**模型调用 → 一条调用账，失败的那次再补一条 `call_failed`。
+    """一笔账里的**每一条**模型调用 → 一条调用账，失败的那次再补一条错误账。
+
+    错误账默认是 `call_failed`；两条蒸馏链（`summarize` / `summarize_task`）的
+    **解析失败**改记 `summary_parse_error`——模型答了、钱花了、只是正文拼不成记忆，
+    和"没调通"是两种事故，分开记才能单独统计蒸馏 prompt 的解析失败率。
 
     **账单和失败模式是两件事**：前者回答"花了多少钱"，后者回答"为什么没
     拿到东西"。混进一条里，按失败类型聚合的时候就得去解析正文里的字符串。
@@ -278,14 +292,22 @@ def model_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
     调用账。**没有 `attempt` 戳**（0914 跟进删）："第几次"由账在链上的位置回答，
     再盖一枚戳就是给同一个数留第二个能对不上的地方。
 
-    前置条件：req.calls 非空，且 req.kind 是 `_CALL_LINK` 认得的七个调用类之一。
+    前置条件：req.calls 非空，且 req.kind 是 `_CALL_LINK` 认得的九个调用类之一。
     """
     assert req.calls, "model_call rendered without any calls"
     link = _CALL_LINK[req.kind]
     events: list[Rendered] = []
     for call in req.calls:
         events.append(Rendered(EventType.MODEL_CALL, req.kind, dict(call.payload)))
-        if call.error_kind:
+        if call.error_kind == _PARSE_FAILURE and link in _SUMMARY_LINKS:
+            events.append(
+                Rendered(
+                    EventType.ERROR,
+                    TraceKind.SUMMARY_PARSE_ERROR,
+                    {"link": link, "reason": call.error},
+                )
+            )
+        elif call.error_kind:
             events.append(
                 Rendered(
                     EventType.ERROR,
@@ -312,13 +334,13 @@ def judge_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
 def verify_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
     """校验器（`Brain.verify()`）的账单，多记一份结构化 `verdicts`。
 
-    `verdicts` **直接放对象**（`[{index, reliable, why}, …]`）——0914 之前它是
+    `verdicts` **直接放对象**（`[{index, positive, why}, …]`）——0914 之前它是
     `json.dumps` 出来的一串字符塞在正文里，而正文当时本身就是 JSON 串，等于
     双重编码；现在正文就是 JSON，里面的结构化数据不必再自己 encode 一次。
 
     前置条件：req.calls、req.verdicts 非 None。
     """
-    verdicts: list[StepVerifyVerdict] = req.verdicts
+    verdicts: list[VerifyVerdict] = req.verdicts
     rendered = [v.model_dump() for v in verdicts]
     return [
         event._replace(content={**event.content, "verdicts": rendered}) for event in model_call(req)
@@ -373,7 +395,7 @@ def call_exhausted(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 def plan_failed(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """**已废**（0914 控制台改造）。`plan` 位置没有"重试预算耗尽"这个事件了：
-    `Planner` 的失败契约是抛异常（原样上抛，走 `RUN_ERROR`），人不满意由插话
+    brain 规划链路的失败契约是抛异常（原样上抛，走 `RUN_ERROR`），人不满意由插话
     循环处理且不设上限。这里留一个会炸的墓碑——万一还有调用方按老路发这笔账，
     就地爆炸比静默渲染出一条假账好。
     """
@@ -385,53 +407,50 @@ def plan_failed(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 # ---- 一步之内的各类事件 ----
 
 
-def observe(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """**facts 必须进正文。** 它才是观测的实质内容。只记 summary 的话，
-    replay 出来只剩「你在野外」这种废话。**`scene` / `overlay` 不另记**——
-    它们就是 `facts` 里的两个字段，抄到顶层是同一件事说两遍。
+def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """两层 `sense` 取到的一帧（episode 完整档 / task RAM 档，按 `meta.task_id` 分层）。
 
-    **`goals` 也要跟着这一帧一起记**（数组，栈序）——读日志的人拿得到
-    "这一帧、这个决策，当时的目标栈长什么样"。
+    **facts 必须进正文**——它才是观测的实质内容；`scene` / `overlay` 就在 `facts` 里，不另抄。
+    正文：
+    - `status`：状态行；
+    - `facts`：整份事实快照，**直接放对象**（不双重编码）；
+    - `done` / `perceived`：世界还在不在、这一帧问没问过视觉模型——用 `perceived`
+      分开"没读过"和"读到是空"；
+    - `place`：主角格的结构化坐标，`None` 时省略这个键；
+    - `frame`：这一帧的原始画面（base64 PNG），没有就省略。
 
-    `facts` **直接放对象**（`obs.facts.model_dump()`）：0914 之前它是
-    `model_dump_json()` 出来的一串字符塞在正文里，等于双重编码。
-
-    这一帧的原始画面**跟着这条账走**（`req.frame`，base64 PNG；0914 曾删、同日跟进
-    请回——replay 只看 trace 就该看得到画面）。调用方从帧槽现取，槽空（跨进程）时
-    不交、正文里也就没有这个键。
+    **目标不记**：它在 `episode_start` / `task_start` 上已经逐字记着。
 
     前置条件：req.obs 非 None。
     """
     obs: Observation = req.obs
-    goals: list[Goal] = req.goals or []
     content: dict[str, Any] = {
         "status": obs.status,
         "facts": obs.facts.model_dump(),
-        "goals": [g.goal for g in goals],
+        "done": str(obs.done).lower(),
+        "perceived": str(obs.perceived).lower(),
     }
+    if obs.place is not None:
+        content["place"] = obs.place.model_dump()
     if req.frame:
         content["frame"] = req.frame
-    return Rendered(
-        EventType.VIEW,
-        TraceKind.OBSERVE,
-        content,
-    )
+    return Rendered(EventType.VIEW, TraceKind.SENSE_FRAME, content)
 
 
 def action_sequence(action: Action) -> list[dict[str, Any]]:
-    """动作在正文里的形状：**只有结构化的 `sequence`**（`think` 与 `do_action`
-    共用这一个函数——两者的关系是 **1:N**，`think` 一次决策一条、记整条链；
-    `do_action` 每按一个键一条、记那一个键，形状一致才比对得上）。
+    """动作在正文里的形状：**只有结构化的 `sequence`**（`choose_verdict` 与 `press_key`
+    共用这一个函数——两者的关系是 **1:N**，`choose_verdict` 一次决策一条、记整条链；
+    `press_key` 每按一个键一条、记那一个键，形状一致才比对得上）。
 
     **结构化的 `sequence` 必须记，不能只记 `describe()` 那行渲染文本**：
     "链平均多长、多少步用到了链"这类聚合要按段/按次统计，去解析渲染文本就得
-    反向分词，而分词一旦和措辞漂移，统计会**静默地**错。段级 rationale 跟着
-    `sequence` 一起记（`model_dump()` 带它）：它没有第二个落点——`think` 的
-    正文不再有顶层 rationale，而无记忆基线组不写记忆，那时它就只剩这一处。
+    反向分词，而分词一旦和措辞漂移，统计会**静默地**错。（0923 189 起段级 rationale
+    `sequence` 一起记（`model_dump()` 带它）：它没有第二个落点——`choose_verdict` 的
+    已随 JEV 不产出而删除；无记忆基线组不写记忆。）
 
     **`action` / `segment_count` / `press_count` 不进正文**（0914 跟进）：三个
     都能从 `sequence` 推出来（`describe()` 是它的渲染文本、两个计数是它的
-    长度与次数和）——`do_action` 那条上后两个还恒等于 1。
+    长度与次数和）——`press_key` 那条上后两个还恒等于 1。
     """
     return [segment.model_dump() for segment in action.segments()]
 
@@ -443,27 +462,27 @@ def human_note_injected(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     模型），所以它挂在 `THINK` 的 `human_note` 字段上，而不是另起一条事件。
 
     本函数保留成一个**显式的墓碑**，避免有人按旧名字回头找渲染器时以为
-    只是注册漏了——真正想找的东西在 `think()` 的正文里。
+    只是注册漏了——真正想找的东西在 `choose_verdict()` 的正文里。
     """
     raise AssertionError(
         "human_note_injected 渲染器已删——插话现在挂在 THINK 的 `human_note` 字段上"
     )
 
 
-def think(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+def choose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """把这一步选出的动作拼成事件（`LLM_OUTCOME`）。
 
     **链原文在这里，一次决策一份**：`sequence` 记的就是整条链（每段自带
-    rationale），这条事件占用的 step 区间由后面 N 条 `DO_ACTION` 的 step 号
+    链的段），这条事件占用的 step 区间由后面 N 条 `PRESS_KEY` 的 step 号
     标出——将来"按链读"要分组时，join 键是 `(episode_id, step)`。
 
-    **正文里没有顶层 `rationale`**（v3 起）：理由的粒度是段，就写在段里。
+    **正文里没有顶层 `rationale`**（v3 起；0923 189 起段级也没有了）。
 
     **`human_note` 只在非空时进正文**。
 
     **`input` / `output` 是那次成功的请求与原文**（结论账自带"问了什么、模型吐了
     什么"，不必跳到调用账对读）。**没有 `attempt`**（0914 跟进删）：这条链是第几次
-    问出来的，由同一步的 `decide_call` 账条数与顺序回答，插话轮次一混它就数不干净
+    问出来的，由同一步的 `choose_call` 账条数与顺序回答，插话轮次一混它就数不干净
     ——索性不给它一个能错的位子。
 
     前置条件：req.action、req.input、req.output 非 None。
@@ -480,13 +499,13 @@ def think(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     }
     if req.human_note:
         content["human_note"] = req.human_note
-    return Rendered(EventType.LLM_OUTCOME, TraceKind.THINK, content)
+    return Rendered(EventType.LLM_OUTCOME, TraceKind.CHOOSE_VERDICT, content)
 
 
-def do_action(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+def press_key(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """把这一次按键拼成事件。
 
-    **和 `think` 共用 `action_sequence`，但关系是 1:N**：`think` 落在链首那一步、
+    **和 `choose_verdict` 共用 `action_sequence`，但关系是 1:N**：`choose_verdict` 落在链首那一步、
     记整条链；这里**每按一个键记一条**、记的就是那一个键（单段、`times=1`）。
 
     **不记"结果"。** 按完之后世界变成什么样，答案是下一条 `OBSERVE` 事件里
@@ -496,7 +515,7 @@ def do_action(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     前置条件：req.action 非 None。
     """
     action: Action = req.action
-    return Rendered(EventType.ACT, TraceKind.DO_ACTION, {"sequence": action_sequence(action)})
+    return Rendered(EventType.ACT, TraceKind.PRESS_KEY, {"sequence": action_sequence(action)})
 
 
 # ---- 记忆写：四本账**一个形状**（content 就是记录正文）----
@@ -509,9 +528,9 @@ def do_action(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 #   content  记录本体的 JSON 对象
 #
 # ⚠️ 判据是"存在反函数"：能否从这份对象无损还原出源记录的字段。
-# `StepMemory.render()` 那种渲染文本（`… 做了 up 之后变成：…`）人能读，
+# `ActMemory.render()` 那种渲染文本（`… 做了 up 之后变成：…`）人能读，
 # 但想拿 `action` / `stop` 只能写正则去切——分词一旦和措辞漂移，统计会
-# **静默地**错。散文还有一个更硬的毛病：`write_object` 原先把 `button` /
+# **静默地**错。散文还有一个更硬的毛病：`write_object_memory` 原先把 `button` /
 # `map_id` 压进 `x=13 y=8 按 a` 里，账上那份就不再是记录的副本、而是一句
 # **转述**（真源被丢）。
 
@@ -529,8 +548,10 @@ def _body(model: BaseModel, *, drop: frozenset[str]) -> dict[str, Any]:
     return model.model_dump(mode="json", exclude=set(drop))
 
 
-_STEP_BODY_DROP = frozenset({"episode_id", "step", "run_id", "before_frame", "after_frame"})
-"""`StepMemory` 里**不进 `content`** 的字段：
+_STEP_BODY_DROP = frozenset(
+    {"episode_id", "task_id", "step", "run_id", "before_frame", "after_frame"}
+)
+"""`ActMemory` 里**不进 `content`** 的字段：
 
 - `episode_id` / `step` / `run_id`：坐标——`meta` 上有（`meta` 是这条记录的签名
   信息，由封套字段与调用方自报拼成）；
@@ -538,8 +559,26 @@ _STEP_BODY_DROP = frozenset({"episode_id", "step", "run_id", "before_frame", "af
   `memory/step_memory/*.json` 本身（0914 封套改造后 trace 里已经没有帧了），
   账里再存一份 base64 会把一条写账顶到几百 KB。
 
-其余一律照录（含 `before`/`after` 两份完整观测快照）：链内那些帧走 `ram_only`，
-`after_action` 只记 `status`/`done`，**这条账是每键观测全量唯一的落点**。"""
+其余一律照录（含 `before`/`after` 两份完整观测快照）。"""
+
+_TASK_BODY_DROP = frozenset(
+    {
+        "run_id",
+        "episode_id",
+        "task_id",
+        "goal",
+        "success",
+        "termination",
+        "steps_used",
+        "start_step",
+        "first_frame",
+        "last_frame",
+    }
+)
+"""`TaskMemory` 里不进 `content` 的字段——**坐标 + 来源章 + 代表帧**。
+
+章（`goal`/`success`/`termination`/`steps_used`/`start_step`）的真源是 `task_start` /
+`task_end`；正文只装 LLM 蒸馏出的那些字段（含 `reason`）。"""
 
 _OBJECT_BODY_DROP = frozenset({"episode_id", "step", "run_id"})
 """`ObjectFactEvent` 里不进 `content` 的字段——同 `_STEP_BODY_DROP` 的头三个。
@@ -547,10 +586,13 @@ _OBJECT_BODY_DROP = frozenset({"episode_id", "step", "run_id"})
 事件本体（`place` / `actor_place` / `kind` / `button` / `text`|`map_id`）全在；
 物体格的检索键 `place.key` 是 `place` 的派生物，读的人从 `content.place` 现算即可。"""
 
-_EPISODE_BODY_DROP = frozenset({"episode_id", "run_id", "goal", "success", "steps"})
+_EPISODE_BODY_DROP = frozenset(
+    {"episode_id", "run_id", "goal", "success", "steps", "acts_used", "termination"}
+)
 """`EpisodeMemory` 里不进 `content` 的字段——**坐标 + 来源章**。
 
-`episode_id` / `run_id` 是坐标（`meta` 上有）；`goal` / `success` / `steps` 是
+`episode_id` / `run_id` 是坐标（`meta` 上有）；`goal` / `success` / `steps` /
+`acts_used` / `termination` 是
 **机械判定的章**，真源在 `episode_start` / `episode_end` 两条边界账上，
 抄进写账就是同一件事的第三份拷贝。**正文与章分家**：`content` 装正文，
 成不成败去 join 边界账。
@@ -567,11 +609,28 @@ def memory_write(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
     前置条件：req.entry 非 None。
     """
-    entry: StepMemory = req.entry
-    return Rendered(EventType.MEMORY_IO, TraceKind.WRITE_STEP, _body(entry, drop=_STEP_BODY_DROP))
+    entry: ActMemory = req.entry
+    return Rendered(
+        EventType.MEMORY_IO, TraceKind.WRITE_ACT_MEMORY, _body(entry, drop=_STEP_BODY_DROP)
+    )
 
 
-def stall_check(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+def task_memory_write(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """把新写入的那条 task 记忆拼成事件：**正文 = 蒸馏各字段**（见 `_TASK_BODY_DROP`）。
+
+    与 `write_episode_memory` 同一条规矩：坐标在 `meta` 上，章（成败、终止类别、键数）的真源是
+    `task_end`，代表帧的真源是记忆库——三样都不进正文。`reason` 是 LLM 写的，留在正文。
+
+    前置条件：req.memory 非 None。
+    """
+    return Rendered(
+        EventType.MEMORY_IO,
+        TraceKind.WRITE_TASK_MEMORY,
+        _body(req.memory, drop=_TASK_BODY_DROP),
+    )
+
+
+def check_stall(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """`detect_stall`（L2 护栏）每一步算出的停摆键/连续计数快照。
 
     这条把每一步停摆判定的构成过程记下来：哪一步开始连续不动、涨到第几次
@@ -581,7 +640,7 @@ def stall_check(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """
     return Rendered(
         EventType.ACT,
-        TraceKind.STALL_CHECK,
+        TraceKind.CHECK_STALL,
         {"stall_key": req.stall_key, "stall_count": str(req.stall_count)},
     )
 
@@ -604,7 +663,7 @@ def object_note(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """
     event: ObjectFactEvent = req.event
     return Rendered(
-        EventType.MEMORY_IO, TraceKind.WRITE_OBJECT, _body(event, drop=_OBJECT_BODY_DROP)
+        EventType.MEMORY_IO, TraceKind.WRITE_OBJECT_MEMORY, _body(event, drop=_OBJECT_BODY_DROP)
     )
 
 
@@ -612,14 +671,15 @@ def episode_memory_write(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """跨局摘要记忆写入（蒸馏成功）拼成事件。`memory` 层——这条链的
     token 花费和决策链分开记账；**账本身在 `*_call` 里**。
 
-    **`content` 是这条记忆的正文面**：本局可信 step 记忆蒸馏出来的那些字段
+    **`content` 是这条记忆的正文面**：本局 TaskMemory（带正负标注）蒸馏出的字段
     （`summary` / `reusable_patterns` / `critical_decisions` / `failure_points` /
     `quality_score` / `quality_rationale` / `applicable_scenes` / `tags`）
     **加上 `markdown`**——就是落进 `memory/episode_memory/<uuid>.md` 的那段正文
     本身，键名跟模型字段逐字一致。留全的代价是一局一条账，换来的是"重启后能
     从 trace 重建经验、run 级读账不必查记忆库"。
 
-    **章不进 `content`**（`goal`/`success`/`steps`，见 `_EPISODE_BODY_DROP`）：
+    **章不进 `content`**（`goal`/`success`/`steps`/`acts_used`/`termination`，
+    见 `_EPISODE_BODY_DROP`）：
     成败是机械判定，真源在 `episode_start` / `episode_end` 上。**正文与章分家**
     之后，"两个产出者形状逐字相同、只能靠 `summary` 是不是空串猜"这个二义
     也一并消失——空章看 `content` 里的正文全空。
@@ -629,7 +689,7 @@ def episode_memory_write(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     memory: EpisodeMemory = req.memory
     return Rendered(
         EventType.MEMORY_IO,
-        TraceKind.WRITE_EPISODE,
+        TraceKind.WRITE_EPISODE_MEMORY,
         _body(memory, drop=_EPISODE_BODY_DROP),
     )
 
@@ -645,7 +705,7 @@ def episode_summary_error(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     return Rendered(
         EventType.ERROR,
         TraceKind.SUMMARY_PARSE_ERROR,
-        {"link": "summarize", "reason": req.reason},
+        {"link": req.link or "summarize_episode", "reason": req.reason},
     )
 
 
@@ -653,9 +713,9 @@ def episode_summary_error(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 #
 # 这批事件是零成本记账（无模型调用、正文轻量）。**它们的链路归属由
 # `(type, kind)` 自己带出来**：掩码/步进/图控制挂 ACT/LIFECYCLE 的
-# get_action_space/stall_check/step_advance，检索挂
+# get_action_space/check_stall/advance_step，检索挂
 # MEMORY_IO 的 read_*，判定与校验挂 LLM_OUTCOME 的 judge_verdict/verify_verdict，
-# 动作后观察挂 VIEW 的 after_action。**唯一的撞名是两条结论类**
+# 观察挂 VIEW 的 observe。**唯一的撞名是两条结论类**
 # （judge 与 plan 都产出 LLM_OUTCOME），所以 plan 那条的 kind 独立成
 # `plan_verdict`——见 `plan_verdict` 的说明。
 
@@ -669,20 +729,23 @@ def judge_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     **判的是哪条目标，不在这条里记**：判定对象恒为活跃投影的末位
     （`judge` 判 `goals[-1]`），而同局的 `episode_start.goal` 已经逐字记着它。
 
-    `input` / `output` 是那次成功的请求与原文（同 `think`）。
+    `input` / `output` 是那次成功的请求与原文（同 `choose_verdict`）。
 
-    前置条件：req.done/success/stalled/why/input/output 非 None。
+    `judge_reason` 是本层这一圈的判定依据（判定员的理由 / 机械判停类别），与 `*_done` 里
+    LLM 写的结论 `reason` 是两件事，名字分开。
+
+    前置条件：req.judge_reason 非 None；`termination` 未判停时为空串（停没停、成没成都由它推出）。
     """
     return Rendered(
         EventType.LLM_OUTCOME,
         TraceKind.JUDGE_VERDICT,
         {
-            "done": str(req.done).lower(),
-            "success": str(req.success).lower(),
-            "stalled": str(req.stalled).lower(),
-            "why": req.why,
+            "termination": req.termination.value if req.termination else "",
+            "fail_streak": str(req.fail_streak) if req.fail_streak is not None else "",
+            "judge_reason": req.judge_reason,
             "input": req.input,
             "output": req.output,
+            "human_note": req.human_note,
         },
     )
 
@@ -707,16 +770,16 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """**每一次检索的唯一形状**：`{query, refs}`——问了什么、命中是谁。
 
     六条读口全走这一个渲染函数，形状**逐字相同**；**账名由 `req.kind` 定**
-    （`READ_STEP` … `READ_VERIFY_KNOWLEDGE` 六个成员，0914 起各占一个 kind）：
+    （`READ_ACT_MEMORY`/`READ_EPISODE_MEMORY`/`READ_KNOWLEDGE`/`READ_OBJECT_MEMORY`/
+    `READ_TASK_MEMORY`，各占一个 kind）：
 
     | `kind` | `query` 里是什么 | `refs` 里一条是什么 |
     |---|---|---|
-    | `read_step` | `episode_id=…`（本局全量，无其他条件） | `"(episode_id, step)"` 坐标 |
-    | `read_global` | `run_id=…`（本 run 全量） | 跨局摘要的 `episode_id` |
+    | `read_act_memory` | `episode_id=…`（本局全量，无其他条件） | `"(episode_id, step)"` 坐标 |
+    | `read_episode_memory` | `run_id=…`（本 run 全量） | 跨局摘要的 `episode_id` |
     | `read_knowledge` | **BM25 检索词原文** | 命中记录的 `source` 文件名 |
-    | `read_object` | `map_id=… before_step=…` | 对象事件的 `place.key` |
-    | `read_verify_step` | `episode_id=…` | 同 `read_step` |
-    | `read_verify_knowledge` | **BM25 检索词原文** | 同 `read_knowledge` |
+    | `read_object_memory` | `map_id=… before_step=…` | 对象事件的 `place.key` |
+    | `read_task_memory` | `episode_id=…` | task 记忆坐标 |
 
     **`query` 记的是真正交给记忆读口的东西，不加包装**：四条按等值条件查的写
     `k=v`；两条 BM25 的记那串检索词原文（它本来就带空格，包一层反而失真）。
@@ -724,7 +787,7 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     **为什么只有一种形状**：`refs` 答"读到的是哪几条"、`query` 答"按什么查的"
     ——这两件事就是检索的全部产出，**正文一个字节都不落这里**：单步记忆按坐标回
     `memory/step_memory/`；对象档案与知识正文在决策账单的 `prompt` 里；跨局摘要在
-    `write_episode` 那条账上。
+    `write_episode_memory` 那条账上。
 
     **`refs` 是数组、没有 `count`**（0914 跟进）：清单压成一行字符串时，读的人要
     自己猜分词规则（`(ep, step)` 里带空格、文件名不带），判据侧还得维护一张
@@ -744,56 +807,23 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     )
 
 
-def step_advance(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+def advance_step(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """close_step 节点：步数推进的结果。`harness` 层——图控制的记账。
 
     前置条件：req.next_step 非 None。
     """
-    return Rendered(EventType.LIFECYCLE, TraceKind.STEP_ADVANCE, {"next_step": str(req.next_step)})
-
-
-def after_action(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """`perceive_after_action` 的观察摘要（非账单）——**这一键之后世界长什么样**。
-
-    **正文 = 这一帧观测里 RAM 免费的那一半，结构化地放**（0914 跟进改形；此前只有
-    `status` 一行渲染串，把"能从 RAM 拿到什么"答成了散文）：
-
-    - `place`：主角格的结构化坐标（`map_id/x/y`）——RAM 读得出，`None`（世界没了
-      等情形）时**省略这个键**，不写 `null`；
-    - `facts`：整份事实快照（RAM 档天然只有 `where`/`facing`/`neighbors`/
-      `landmarks`/`walk_map`/`map_id`；完整档才多出 `scene`/`overlay`/对话那几样）；
-    - `done` / `perceived`：世界还在不在、这一帧问没问过视觉模型——**用 `perceived`
-      分开"没读过"和"读到是空"**（与 `Facts` 的约定同一条）。
-
-    **`status` 不再记**：它是 `facts` 那几个字段渲染出来的一行串，抄一份是同一件事
-    说两遍。**结局判读已删**（0914 用户定调）：撞没撞墙不再判、也不再截队列——
-    预算由 `close_step` 的纯步数闸执行。**这一帧的原始画面跟着账走**（`req.frame`，链中间的键也
-    有——RAM 档照截帧，与"有没有人看过它"无关）；跨进程槽空时不交、键不出现。
-
-    前置条件：req.obs 非 None。
-    """
-    obs: Observation = req.obs
-    content: dict[str, Any] = {
-        "facts": obs.facts.model_dump(),
-        "done": str(obs.done).lower(),
-        "perceived": str(obs.perceived).lower(),
-    }
-    if obs.place is not None:
-        content["place"] = obs.place.model_dump()
-    if req.frame:
-        content["frame"] = req.frame
-    return Rendered(EventType.VIEW, TraceKind.AFTER_ACTION, content)
+    return Rendered(EventType.LIFECYCLE, TraceKind.ADVANCE_STEP, {"next_step": str(req.next_step)})
 
 
 def verify_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """verify_steps 的校验结论摘要。
+    """verify 链（task_done / episode_done）的校验结论摘要：共核几条、判负几条。
 
     逐条 verdicts 仍在调用账的正文里（报表按它解析失效率）；
     这里补轻量汇总当链上内容。
 
-    `input` / `output` 是那次成功的请求与原文（同 `think`）。
+    `input` / `output` 是那次成功的请求与原文（同 `choose_verdict`）。
 
-    前置条件：req.checked、req.unreliable、req.input、req.output 非 None。
+    前置条件：req.checked、req.negative、req.input、req.output 非 None。
     """
     assert req.input is not None and req.output is not None, (
         "verify_verdict 要带上那次成功的请求与原文（input/output）"
@@ -803,7 +833,7 @@ def verify_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         TraceKind.VERIFY_VERDICT,
         {
             "checked": str(req.checked),
-            "unreliable": str(req.unreliable),
+            "negative": str(req.negative),
             "input": req.input,
             "output": req.output,
         },
@@ -821,18 +851,123 @@ def plan_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     "这一步判完了"（judge）与"这一轮规划判完了"（plan）都产出 LLM_OUTCOME，
     只有 `kind` 分得开它们。
 
-    前置条件：req.done、req.pushed、req.why 非 None。
+    前置条件：req.pushed、req.why 非 None。
     """
     pushed: list[str] = req.pushed
     content: dict[str, Any] = {
-        "done": str(req.done).lower(),
         "pushed_goals": pushed,
+        "updates": list(req.updates or []),
         "why": req.why,
+        "human_note": req.human_note,
     }
-    # `input` / `output` 可选：`auto_push_goals=False` 或控制台 planner 路径
-    # 根本没有模型调用，那时交 `None`、键不出现。
+    # `input` / `output` 可选：无模型调用的路径（如空回话）交 `None`、键不出现。
     if req.input is not None:
         content["input"] = req.input
     if req.output is not None:
         content["output"] = req.output
     return Rendered(EventType.LLM_OUTCOME, TraceKind.PLAN_VERDICT, content)
+
+
+def task_start(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """task 的边界：任务本体快照 + 全局键号基数（`task_id` 在 `meta` 上，正文不重复）。
+
+    前置条件：req.task、req.start_step 非 None。
+    """
+    task: Task = req.task
+    return Rendered(
+        EventType.LIFECYCLE,
+        TraceKind.TASK_START,
+        {
+            "goal": task.goal,
+            "success_criteria": task.success_criteria,
+            "max_steps": str(task.max_steps),
+            "start_step": str(req.start_step),
+        },
+    )
+
+
+def task_end(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """task 的收尾：结算。前置条件：req.outcome_task 非 None。"""
+    out = req.outcome_task
+    return Rendered(
+        EventType.LIFECYCLE,
+        TraceKind.TASK_END,
+        {
+            "termination": out.termination.value,
+            "judge_reason": out.judge_reason,
+            "steps_used": str(out.steps_used),
+            "reason": out.reason,
+        },
+    )
+
+
+def task_error(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """task 抛错的收尾（episode 的 `act` 接住时记）：只带 `error`，与 `episode_error` 同口径。
+
+    前置条件：req.error 非 None。
+    """
+    return Rendered(EventType.LIFECYCLE, TraceKind.TASK_ERROR, {"error": req.error})
+
+
+def decompose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """episode 级拆解的结论：这一版任务链。前置条件：req.tasks、req.why 非 None。"""
+    content: dict[str, Any] = {
+        "tasks": [
+            {
+                "task_id": t.task_id,
+                "goal": t.goal,
+                "success_criteria": t.success_criteria,
+                "max_steps": str(t.max_steps),
+            }
+            for t in req.tasks
+        ],
+        "why": req.why,
+        "human_note": req.human_note,
+    }
+    if req.input is not None:
+        content["input"] = req.input
+    if req.output is not None:
+        content["output"] = req.output
+    return Rendered(EventType.LLM_OUTCOME, TraceKind.DECOMPOSE_VERDICT, content)
+
+
+def settle_goal(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """run 级盖章：目标表那一行的新状态 + 人审表态。前置条件：req.goal、req.audit 非 None。"""
+    goal = req.goal
+    return Rendered(
+        EventType.LIFECYCLE,
+        TraceKind.SETTLE_GOAL,
+        {
+            "goal_id": goal.task.task_id,
+            "status": goal.status.value,
+            "episode_id": goal.last_episode_id or "",
+            "attempts": str(goal.attempts),
+            "audit": req.audit,
+            "note": goal.note,
+            "overturned": str(goal.overturned).lower(),
+            "fail_streak": str(req.fail_streak) if req.fail_streak is not None else "",
+        },
+    )
+
+
+def settle_task(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """episode 级盖章：任务表那一行的定案 + 人审表态 + 被放弃的剩余条目。
+
+    写在 episode 层（`meta.task_id` = 本局），所以被盖章的 task 在正文里点名（`task_id`）。
+    前置条件：req.task_entry、req.audit 非 None。
+    """
+    entry = req.task_entry
+    return Rendered(
+        EventType.LIFECYCLE,
+        TraceKind.SETTLE_TASK,
+        {
+            "task_id": entry.task.task_id,
+            "status": entry.status.value,
+            "round": str(entry.round),
+            "audit": req.audit,
+            "note": entry.note,
+            "overturned": str(entry.overturned).lower(),
+            "abandoned": list(req.abandoned or []),
+            "fail_streak": str(req.fail_streak) if req.fail_streak is not None else "",
+        },
+    )

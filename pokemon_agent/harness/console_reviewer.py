@@ -7,7 +7,7 @@
 **它不做三件事**（这是它保持薄的关键）：
 
 1. **不重问 LLM**。"带着人的那句去重问"是调用方节点的事
-   （`think_action` / `judge`）——它只负责把话拿到手。
+   （`plan_episode` / `review_and_judge`）——它只负责把话拿到手。
 2. **不写状态**。`audit` 只回"认 / 推翻"，落到目标表上的状态改写由 harness 盖章。
 3. **不阻塞图的结构**。它是节点内的一个同步函数调用——"问一句"不改变图的形状
    （加图节点要付 `recursion_limit` 的代价，见
@@ -36,6 +36,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerAuditResp,
     FromHarnessToReviewerInjectReq,
 )
+from pokemon_agent.schemas.harness.domain import TaskOutput
 
 
 class ConsoleReviewer:
@@ -91,17 +92,25 @@ class ConsoleReviewer:
         return self._read_line(">>> 有意见就说（直接回车 = 没有）: ")
 
     def audit(self, req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
-        """**审**：把这一局的裁定亮给人，收一个表态。
+        """**审**：把这一局（或这个 task）的裁定亮给人，收一个表态。
 
         人答 `o`（overturn）就推翻——接着读一行当纠正理由；其余输入（含超时、
         空行）一律按**认账**处理（"没答复就算通过"，与旧 `HumanReviewer` 契约一致）。
         """
         outcome = req.outcome
         verdict_line = "成功" if outcome.success else "失败"
+        if isinstance(outcome, TaskOutput):
+            what, who = "这个 task", f"  task   {req.task_id}（局 {req.episode_id}）\n"
+            counts = f"{outcome.steps_used} 键"
+        else:
+            what, who = "这一局", f"  局号   {req.episode_id}\n"
+            counts = f"{outcome.tasks_used} 个 task / {outcome.acts_used} 键"
         header = (
-            f"\n=== 审查：这一局算成算败 ===\n"
-            f"  局号   {req.episode_id}\n"
-            f"  裁定   {verdict_line}（步数 {outcome.steps}，原因 {outcome.reason}）\n"
+            f"\n=== 审查：{what}算成算败 ===\n"
+            f"{who}"
+            f"  裁定   {verdict_line}（{outcome.termination.value}，{counts}）\n"
+            f"  依据   {outcome.judge_reason or '（无）'}\n"
+            f"  结论   {outcome.reason or '（无）'}\n"
         )
         answer = self._read_line(header + ">>> 回车 = 认账；输入 o = 推翻: ")
         if answer.lower() in {"o", "overturn"}:

@@ -5,12 +5,10 @@ prompt 由"拥有这次调用的那个 tool"自己拼），跟 `judge_success` �
 信封里**没有 `prompt` 字段**，拼出来的字符串是局部变量，`Brain` 不认识
 `pokemon_agent.tools.prompts` 这个包。
 
-**它和 `summarize.py` 曾共用一份 prompt**：`verify`/`summarize` 原本是
-`Brain.verify_and_summarize()` 的一次合并调用，模板 `calls/verify_and_summarize.md`
-一份问两件事。拆成两次独立调用后（CHANGELOG 第 39 条），prompt 侧同步拆成
-`calls/verify.md` + `calls/summarize.md`，组装也跟着拆成同名的两个 `.py`
-——一份 prompt 只服务一次调用，模板与装配模块同名，跟
-`decide_action.py`/`judge_success.py`/`run_plan.py` 一致。
+**两级校验共用这一份模板**（0923 192）：task 层标 ActMemory（对照 task
+goal）、episode 层标 TaskMemory（对照本局 goal）。渲染分家：ActMemory 走
+`render_sequence()`（相邻首尾相接的快照只渲一次），TaskMemory 一条一个
+task、各自独立渲染——一条调用只装一种素材（信封契约），按首条的类型分流。
 
 多帧截图的网格**打包**在 provider 层（`_prepare_images`，按张计费）；prompt
 里的网格读法说明是**静态文案，只写死 3 列**，行数由模型看图自己数——0909
@@ -20,7 +18,7 @@ prompt 由"拥有这次调用的那个 tool"自己拼），跟 `judge_success` �
 from __future__ import annotations
 
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolVerifyReq
-from pokemon_agent.schemas.memory import render_sequence
+from pokemon_agent.schemas.memory import ActMemory, TaskMemory, render_sequence
 
 from . import load
 
@@ -30,12 +28,16 @@ _TEMPLATE = load("verify")
 def build_prompt(req: FromHarnessToBrainToolVerifyReq) -> str:
     """拼出校验这次调用要问的完整 prompt。
 
-    `entries` 用 `render_sequence()` 去重相邻重复快照、`## 第 i 条` 编号
-    （**编号必须与 `entries` 下标一一对应**——`verdicts.index` 要按它落回
-    调用方手里的条目，错位就等于判错了对象）；`reason=False`，校验判定看
-    "发生了什么"，不该看到决策者自己的说法。
+    `entries` 逐条渲成 `## 第 i 条`（**编号必须与 `entries` 下标一一对应**
+    ——`verdicts.index` 要按它落回调用手里的条目，错位就等于判错了对象）。
+    ActMemory 用 `render_sequence()` 去重相邻重复快照；TaskMemory 各自
+    `render()`。一次调用只装一种素材（信封契约），按首条类型分流。
     """
-    rendered = render_sequence(list(req.entries), reason=False)
+    entries = list(req.entries)
+    if entries and isinstance(entries[0], TaskMemory):
+        rendered = [entry.render() for entry in entries]
+    else:
+        rendered = render_sequence([e for e in entries if isinstance(e, ActMemory)])
     steps_text = "\n\n".join(f"## 第 {i} 条\n{r}" for i, r in enumerate(rendered))
     return _TEMPLATE.render(
         goal=req.goal,

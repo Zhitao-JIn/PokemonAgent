@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from .FromRunHarnessToEpisodeHarnessRunResp import FromRunHarnessToEpisodeHarnessRunResp
+from pokemon_agent.schemas.harness.domain.episode_io import EpisodeOutput
+from pokemon_agent.schemas.harness.domain.termination import Settled, Termination
 
 
-class RunResp(BaseModel):
+class RunResp(Settled, BaseModel):
     """**一个 run（完整一局游戏）的最终结算**：run_id + 每个 episode 的结算 + 汇总。
 
     `outcomes` 是每个子 agent（episode）的结算，按执行顺序；`total`/`succeeded`/
@@ -19,9 +20,11 @@ class RunResp(BaseModel):
     """
 
     run_id: str = Field(description="这次 run 的标识（完整一局游戏会话）")
-    outcomes: list[FromRunHarnessToEpisodeHarnessRunResp] = Field(
+    outcomes: list[EpisodeOutput] = Field(
         default_factory=list, description="每个 episode 的结算，按执行顺序"
     )
     total: int = Field(ge=0, description="跑了多少个 episode")
     succeeded: int = Field(ge=0, description="其中成功几个")
     success_rate: float = Field(ge=0.0, le=1.0, description="成功率（0.0-1.0）")
+    termination: Termination = Field(description="run 的终止类别（`success` 由它推出）")
+    judge_reason: str = Field(default="", description="run 判停时的判定依据（review_and_judge 写）")

@@ -49,7 +49,7 @@ class LLMProvider(Protocol):
 @runtime_checkable
 class JudgeProvider(LLMProvider, Protocol):
     """`judge_llm`/`verify_llm` 两种调用都要用得到：带得到图时走 `describe()`
-    多模态问一次；一张图都凑不齐时（`StepMemory` 没留下可用的截图文件名，
+    多模态问一次；一张图都凑不齐时（`ActMemory` 没留下可用的截图文件名，
     或文件确实缺失）退化成纯文本，走 `LLMProvider.complete()` 兜底——
     两条链路不该因为一张便利副本缺失就直接判定失败。
 

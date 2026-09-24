@@ -1,85 +1,74 @@
-"""run 图的唯一状态载体：`RunState`。
+"""run 图的唯一状态载体：`RunState`（一局一圈）。
 
-从 `harness/interface/harness_port.py` 搬来——
-**状态不是能力**，`interface/` 只回答"harness 需要外面给什么"。那个 Port 文件已在
-步 4 删除（D5：它是"镜子"不是"港口"），所以旧的 `harness_port` 路径不再存在——
-唯一的家就是这里，包出口在 `harness/__init__.py`（懒加载表）与 `run/__init__.py`。
+    身份    run_id / run_goal / goals              new_run 写；goals 另由 plan_run/review 改
+    计数    step（已派局数）/ fail_streak          act 写 / perceive 写（人审推翻时 review 修正）
+    感知    plan_ctx（局索引 + 详情 + 地图事实）    perceive 写
+            pending_episode（刚跑完的结算）        act 写，perceive 吸收后清
+            episode_outputs（全部结算）            perceive 写
+    交界    episode_input（本局入参）              act 的 dispatch 写
+    判定    termination（done / success 由它推出）           review_and_judge 写
 
-**0914 控制台改造把 `goals` + `attempts` 两个平行列表并成了一张目标表
-（`plan: list[GoalEntry]`）**：那条 `len(attempts) == len(goals)` 的不变式从
-"要靠纪律维护的约束"变成"结构上不可能违反"。同时 `plan_failed` 整个字段删除
-——它原来是"plan 连续调不通模型 → 交人工"的路由旗，控制台改造后
-`plan` 的第一跳（要一版目标）与"人对这一版不满意"合到同一个节点里，
-**机器没主意和人不满意的出口是同一条**，不再需要一个单独的旗来分叉。
-
-**原 `ResumeEpisode` 已删**（见 `CHANGELOG.md` 2026-09-13 第 57 条）：它是"恢复分派的定位"
-（`dispatch` 据此走恢复路径），随 checkpoint 恢复链一起删掉了。
-
-**「栈」这个词已经不准了**：目标表不再是 LIFO 栈——`dispatch` 选的是
-**第一条 `PENDING`**（按表序），不是表末那条。`review` 把失败目标置回 `PENDING`
-后，下一次 `dispatch` 仍会挑到它（它还在表里、还是第一条待派的），
-效果与旧的"压回栈顶"一样，但机制是"状态迁移"而不是"重压"。
-`episode_goals` 这个**给子图的投影**因此保持"整表映射"的含义不变。
+**停机只由 `review_and_judge` 判**：机械三类（世界结束 / 连续失败局 ≥ RUN_STALL_LIMIT /
+已派局数 ≥ RUN_MAX_EPISODES）或模型判 `run_goal` 达成。`plan_run` 不再写 done。
+活对象一个都不进来，它们住 `RunRuntime`。
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain import Goal, Task
-from pokemon_agent.schemas.harness import FromRunHarnessToEpisodeHarnessRunResp
-from pokemon_agent.schemas.harness.domain import GoalEntry
+from pokemon_agent.brain import Goal
+from pokemon_agent.schemas.harness.domain import (
+    EpisodeInput,
+    EpisodeOutput,
+    GoalEntry,
+    Settled,
+    Termination,
+)
+from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
 
 
-class RunState(BaseModel):
-    """一个 run 的**全部**可序列化状态。
+class PlanContext(BaseModel):
+    """perceive 格的产物：`plan_run` 与 `review_and_judge` 这一圈的素材。"""
 
-        身份    run_id / plan / outcomes           跨轮
-        交接    episode_goals / task                每次派发前由 `dispatch` 写，
-                                                       **键名与 episode 图逐字对上**
-        流转    episode_id / outcome                单轮内，节点间传递
+    index: list[EpisodeMemory] = Field(description="本 run 的局索引（按执行顺序）")
+    details: list[EpisodeMemory] = Field(description="详情预取（最近 1 局 + 全部失败局）")
+    objects: list[ObjectFactEvent] = Field(description="地图交互事实")
 
-    **`plan` 是目标表**（不是栈）：每一行带自己的 `status` / `attempts` /
-    `parent_id`。`dispatch` 选**第一条 `PENDING`**（表序，不是表末），
-    `review` 盖章改状态，`plan` 节点 append 新条目。**至多一条 `RUNNING`**
-    是这张表的 invariant。
 
-    **`episode_goals` 是投影，不是第二份目标表**：它是 `plan` 里
-    **非终态**条目映射成 `Goal` 之后的形态（子图要的形状），每局由 `dispatch`
-    重写一次。两者是**不同的东西**，所以是两个键——领域概念一份、给子图的投影一份。
+class RunState(Settled, BaseModel):
+    """一个 run 的全部可序列化状态（分组见模块文档）。"""
 
-    **活对象一个都不进来**（episode harness / trace / memory / llm）：它们
-    序列化不了，是 `HarnessDeps` 的字段，由装配处注入。
-    """
+    run_id: str = Field(description="本 run 标识，trace 按它分组")
+    run_goal: Goal = Field(description="run 级总目标——review_and_judge 问模型的靶子")
+    goals: list[GoalEntry] = Field(description="目标表（表序 = 派发顺序；至多一条 RUNNING）")
 
-    run_id: str = Field(description="这次 run 的标识（完整一局游戏会话），trace 按它分组")
-    plan: list[GoalEntry] = Field(
-        description="目标表（表序 = 派发顺序，`dispatch` 挑第一条 `PENDING`）。"
-        "`COMPLETED`/`ABANDONED`/`FAILED` 的条目**留在表里**——它们是层次上下文与教训",
-    )
-    outcomes: list[FromRunHarnessToEpisodeHarnessRunResp] = Field(
-        default_factory=list,
-        description="已完成的 episode 结算（含失败局），按执行顺序——`RunResp` 的汇总源",
+    step: int = Field(default=0, ge=0, description="已派局数——预算判据 `step >= RUN_MAX_EPISODES`")
+    fail_streak: int = Field(
+        default=0, ge=0, description="连续失败局数——停摆判据 `>= RUN_STALL_LIMIT`"
     )
 
-    episode_goals: list[Goal] = Field(
-        default_factory=list,
-        description="**给子图的投影**：目标表里非终态条目映射成 `Goal` 的形态。"
-        "每局由 `dispatch` 重写，键名与 `EpisodeRunState.episode_goals` 逐字相同"
-        "（父子图交界按同名键传递，F1）",
-    )
-    task: Task | None = Field(
-        default=None,
-        description="刚派发的那一层目标（也是交界键 `task`）。`None` = 还没派发过",
+    plan_ctx: PlanContext | None = Field(
+        default=None, description="perceive 写；只在进图第一格时为 None"
     )
 
-    episode_id: str | None = Field(default=None, description="本轮派发的 episode 标识")
-    outcome: FromRunHarnessToEpisodeHarnessRunResp | None = Field(
-        default=None, description="本轮刚收的结算（`review` 盖章的依据）"
+    episode_input: EpisodeInput | None = Field(
+        default=None, description="本局入参；None = 还没派过"
+    )
+    pending_episode: EpisodeOutput | None = Field(
+        default=None, description="刚跑完的那局结算；perceive 吸收后清"
+    )
+    episode_outputs: list[EpisodeOutput] = Field(
+        default_factory=list, description="全部结算，按执行序——RunResp 的汇总源"
     )
 
-    done: bool = Field(default=False, description="run 是否结束（表末检判完 / 人喊停）")
-    why: str = Field(default="", description="结束原因（全部目标收束 / 人喊停 / 无新目标）")
+    termination: Termination | None = Field(
+        default=None, description="终止类别；None = 还没停（`done` / `success` 由它推出）"
+    )
+    judge_reason: str = Field(
+        default="",
+        description="review_and_judge 写的判定依据（判定员的理由 / 机械判停类别）；与 reason 分开",
+    )
 
 
-__all__ = ["RunState"]
+__all__ = ["PlanContext", "RunState"]

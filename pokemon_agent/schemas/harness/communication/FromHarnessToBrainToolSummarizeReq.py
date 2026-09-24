@@ -1,38 +1,33 @@
-"""`FromHarnessToBrainToolSummarizeReq`：harness → `BrainTool` 的蒸馏请求。
+"""`FromHarnessToBrainToolSummarizeReq`：harness → `BrainTool` 的 episode 蒸馏请求。
 
-**`entries` 只装过滤过的可信记录**——调用方拿 `verify()` 的 `verdicts`
-自己筛完再传进来（"过滤归 harness"，这样想怎么用就怎么用）。
-**`prompt` 不在这里**：`BrainTool.summarize()` 入口处自己拼
-（`prompts.summarize.build_prompt(req)`）。
+**`entries` 装本局全部 TaskMemory，`verdicts` 是与之等长的正/负标注**——
+负样本不丢，和正样本一起作参考交给蒸馏（渲染时由 tool 层打标）。
+`prompt` 不在这里：`BrainTool.summarize()` 入口处自己拼。
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.memory import StepMemory
+from pokemon_agent.brain.interface import VerifyVerdict
+from pokemon_agent.schemas.harness.domain.termination import Settled, Termination
+from pokemon_agent.schemas.memory import TaskMemory
 
 
-class FromHarnessToBrainToolSummarizeReq(BaseModel):
-    """harness 侧组装、交给 `BrainTool` 的蒸馏请求。
+class FromHarnessToBrainToolSummarizeReq(Settled, BaseModel):
+    """harness 侧组装、交给 `BrainTool` 的 episode 蒸馏请求。"""
 
-    entries：**已经过滤过**的可信 step 记忆，按 step 升序。至少要有一条
-        （一条可信的都没有时，调用方不该往下走）。
-    episode_id / run_id：坐标，`BrainTool` 组装 `EpisodeMemory` 要用——大脑
-        不知道自己在哪一局。
-    goal：本局目标（写摘要要用）。
-    success：这一局是否成功完成。
-    steps：实际完成步数。
-    max_steps：最大允许步数。截图（`dedup_snapshots(entries)`，0915 130 收权）
-        同样由 `BrainTool.summarize()` 从 entries 取，信封不另开 images 通道。
-
-    **`prompt` 不是本模型的字段**（0913 删）。
-    """
-
-    entries: list[StepMemory]
-    episode_id: str
-    run_id: str
-    goal: str
-    success: bool
-    steps: int
-    max_steps: int
+    entries: list[TaskMemory] = Field(
+        min_length=1, description="本局全部 TaskMemory，按 start_step 升序"
+    )
+    verdicts: list[VerifyVerdict] = Field(description="与 entries 等长的正/负标注")
+    episode_id: str = Field(description="来源章")
+    run_id: str = Field(description="来源章")
+    goal: str = Field(description="本局目标")
+    termination: Termination = Field(description="终止类别（`success` 由它推出）")
+    judge_reason: str = Field(
+        default="", description="判停时的判定依据——蒸馏写结论时的参考，不必复述"
+    )
+    steps: int = Field(description="本局派了几个 task")
+    acts_used: int = Field(default=0, description="本局累计按了几个键")
+    max_steps: int = Field(description="本局 task 数预算")

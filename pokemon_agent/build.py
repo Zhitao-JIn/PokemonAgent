@@ -8,12 +8,16 @@
 想知道"怎么拼起来"读这个文件；想知道"怎么互相调用"读 harness/run/harness.py。
 
 **入口是 run 级**：返回的 `RunHarness` 是主 agent（完整一局游戏），它内部编译并
-`invoke` episode 子图（21 个节点，按七个功能域分文件夹，见 `harness/episode/`）。
+`invoke` episode 子图（5 格），episode 的 `act` 再 `invoke` task 子图（5 格）。
 旧调用方拿到的 `harness.run(run_id, goals)` 是 run 级签名。
 
-**步 4 起装配只剩"造一个 `HarnessDeps`"这一件事**：全图唯一的 context 里装着
-6 根 Port + 策略对象 + 两个行为开关 + 整 run 的记号——`RunHarness(deps)` 只收它，
-不再逐个把同样的东西再递一遍（那会有两份真源，而"两边不是同一个对象"不报错）。
+**步 4 起装配只剩"造三个 runtime"这一件事**：`TaskRuntime`（task 层，v1 容器先行）
+→ `EpisodeRuntime`（`decomposer` / `judger` / `verifier` / `summarizer`，嵌套持有
+`task`）→ `RunRuntime`（`planner` / `judger`，嵌套持有 `episode`）——
+`RunHarness(run_rt)` 只收它，不再逐个把同样的东西再递一遍（那会有两份真源，而
+"两边不是同一个对象"不报错）。`trace` / `memory` / `reviewer` / `game` 三层是
+**同一实例**（复制引用）。**id 一律归 state**（186）：`run_id` 住 `RunState`，
+runtime 不再复制；brain 能力**按层各造一份**（185，见下面三个 `BrainTool.build`）。
 """
 
 from __future__ import annotations
@@ -21,11 +25,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from pokemon_agent.harness import (
-    BrainPlanner,
-    HarnessDeps,
-    Planner,
+    EpisodeRuntime,
     Reviewer,
     RunHarness,
+    RunRuntime,
+    TaskRuntime,
 )
 from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.tools import (
@@ -73,9 +77,6 @@ def build_real(
     # 各一个 root"，随即回退——四族没有哪一族特殊，为它们各开一个开关只是把
     # "一个位置"说成四遍。
     reviewer: Reviewer | None = None,
-    planner: Planner | None = None,
-    auto_push_goals: bool = True,
-    auto_decide_done: bool = True,
 ) -> tuple[RunHarness, GameTools]:
     """装配真实链路；返回 `(harness, game)`。
 
@@ -87,22 +88,19 @@ def build_real(
     与 trace 那次"`build_real` 返回值去掉零消费者的 `trace` 项"同款。
 
     **事件流不在返回值里**（0913 下午）：harness 侧全部读点走
-    `HarnessDeps.trace`（`TraceToolPort`），装配点把 `LocalTrace` 交出去只会
+    `Runtime.trace`（`TraceToolPort`），装配点把 `LocalTrace` 交出去只会
     逼调用方去认一个 trace 类型。`tracelog/` 落盘的路径由 tool 层持有
     （缺省 = 启动目录下的 `tracelog/`，`trace_root` 可改），外部要读账一律经
     `deps.trace`。
 
-    `reviewer` / `planner`：人与图之间的那扇门、与 plan 位置的 input 来源
-    （**两个同步接口**，控制台实现会阻塞读 stdin）。**两者的缺省不一样**：
+    `reviewer`：人与图之间的那扇门（**同步接口**，控制台实现会阻塞读 stdin）。
+    不传 → `NullReviewer`（没人插话、没人推翻）。不传而无头是一个正常场景
+    （测试、CI、无头批量跑），不是缺配置。
 
-    - `reviewer` 不传 → `NullReviewer`（没人插话、没人推翻）；
-    - `planner` 不传 → **`BrainPlanner`（模型自主规划）**——这是 0914 S2 起的
-      缺省（`docs/PLAN_planner_v2.md`），plan 位置的来源从"人"换成了"模型"。
-
-    所以**"无头"不等于"两个都是 Null"**：要一个"不加目标、不表态"的规划器，
-    必须**显式传 `NullPlanner()`**；或者让 `auto_push_goals=False` 使 `plan`
-    根本不去调它（那条路上"装配的是谁"不影响结果，但**也不验证任何读口**）。
-    不传 `reviewer` 而无头，是一个正常场景（测试、CI、无头批量跑），不是缺配置。
+    **plan 位置的规划来源就是 brain**（0922 第 182 条撤销 `planner` 壳）：
+    `plan_run` 格直接调注入的 `planner`（brain 的 plan 链路），没有"人不给目标就没人给"的问题——
+    开局目标由 `goals` 参数给，运行中的新目标由模型规划、人经 `reviewer`
+    插话表态。
 
     **两者必须共享同一份策略对象**：`reviewer` 被 `plan`（插话）和 `review`
     （审）两处读，传进来的必须是同一个实例——否则"人对 plan 的那一版说的话"
@@ -117,9 +115,9 @@ def build_real(
 
     **没有存档 / 恢复参数**（0913 存档链整体删除）：`resume_cursor` 这类
     "从第 N 个事件接着跑"的入口与存档端是**成对的**，恢复链删掉之后它就没有
-    消费方了——单独留一个裸游标参数，只会让下一个人以为还能接上。`save_checkpoint`
-    节点自己仍在图上占位空转（见 `config.NODES_PER_DECISION`），那是图拓扑的事，
-    与这里有没有参数无关。
+    消费方了——单独留一个裸游标参数，只会让下一个人以为还能接上。（`save_checkpoint`
+    那个占位格已随 0923 压格删除——图拓扑归 `episode_graph.py` 管，与这里
+    有没有参数无关。）
     """
     # **world 本体也不在这里造**（0913 夜）：`GameTools.build()` 是它唯一的
     # 接线工厂——"造一个 `PyBoyWorld`、给它挂哪个感知实现、temperature 钉多少"
@@ -148,7 +146,7 @@ def build_real(
     # **本文件对 `pokemon_agent.trace` 零 import**。
     trace_tool = TraceTool.build(run_id=run_id, trace_root=trace_root)
 
-    # EpisodeHarness 伸向记忆的唯一通道
+    # 图内节点伸向记忆的唯一通道
     # **memory 的两个检索 provider 不在这里造**（2026-09-13，深夜十二）：
     # "这条链路要接哪个实现"是接线知识，收在 `MemoryTool.build()`——与
     # `BrainTool.build()` / `GameTools.build()` 同形。本装配点对
@@ -174,50 +172,71 @@ def build_real(
     # 死循环另有 stall 检测与 judge 兜底）。这三个值住在
     # `brain/build_llm_providers.py` 的常量里（常量不是旋钮）。
     # 选型的入口收敛到本方法的关键字参数。
-    brain_tool = BrainTool.build(
+    # **按需实例化**（0922 185）：每层一个 BrainTool，只造它要的链路——
+    # 层间不共享 Brain/provider，task 层换策略（JEV / 小快模型）只碰自己那份。
+    run_brain = BrainTool.build(
+        plan=plan_model or "doubao-seed-2-1-pro-260628",
+        judge=judge_model,
+        max_tokens=max_tokens,
+    )
+    episode_brain = BrainTool.build(
+        plan=plan_model or "doubao-seed-2-1-pro-260628",
+        judge=judge_model,
+        verify=verify_model or "doubao-seed-2-1-pro-260628",
+        max_tokens=max_tokens,
+    )
+    task_brain = BrainTool.build(
         text=text_model,
         judge=judge_model,
         verify=verify_model or "doubao-seed-2-1-pro-260628",
-        plan=plan_model or "doubao-seed-2-1-pro-260628",
         max_tokens=max_tokens,
     )
 
     # `interaction` 那个"在这里先落实成一个真实例"的步骤已删（0914 控制台改造）：
     # 跨线程信箱整套下线，取而代之的是 `reviewer`/`planner` 两个同步接口——
-    # 无头场景由上面 `HarnessDeps` 构造处的 `Null*` 兜底，不存在"两份实例"的风险。
+    # 无头场景由上面 runtime 构造处的 `NullReviewer` 兜底，不存在"两份实例"的风险。
 
-    # **全图唯一的 context**（D3/F10）：episode 子图的 21 个节点、run 图的 5 个节点、
-    # 图外两个入口（`episode_entry.run_new` 与 `run_entry.new_run`）共用它一份。同一个
+    # **三层 runtime 嵌套成一份 context**：三张图与图外三个入口（`run_entry` /
+    # `episode_entry` / `task_entry`）共用它。同一个
     # trace 实例注入两端——episode 写事件、run 级读盘；同一个 reviewer 实例注入
     # `plan`（插话）与 `review`（审）两处——人对 plan 那一版说的话和审时的表态
     # 走的是同一扇门。
     #
-    # **两个行为开关也住这里**（步 4 归位）：它们是"这次 run 怎么跑"的构造期决定，
-    # 读它的是 `run/nodes/plan.py`。此前它们是 `RunHarness.__init__` 的参数、与 deps 各存
-    # 一份——现在只有一个来源。
-    #
-    # **`reviewer` / `planner` 不传就装配成 Null 实现**（0914 控制台改造）：
-    # 无头 run 的语义是"LLM 出什么就是什么、没人插话也没人加目标"。
-    # **`planner` 默认是模型**（0914 S2）：plan 位置的来源从"人"换成"模型"
-    # （`docs/PLAN_planner_v2.md`），所以 `BrainPlanner` 是默认实现——
-    # 它读本 run 的局索引 + 少量详情 + 地图事实，自主维护目标表。
-    # **不花多余的钱**：`auto_push_goals=False` 时 `plan` 节点根本不调 planner
-    # （那一版注定不加目标），无头核对脚本因此仍是"零规划调用"。
-    # 人手动驾驶传 `ConsolePlanner()` 即可覆盖。
-    deps = HarnessDeps(
+    # **`reviewer` 不传就装配成 Null 实现**（0914 控制台改造）：
+    # 无头 run 的语义是"LLM 出什么就是什么、没人插话也没人推翻"。
+    # plan 位置的规划来源是 brain 本身（0922 第 184 条撤销 `planner` 壳，
+    # 185 起注入的就是能力对象）：`plan_run` 格直接调注入的 `planner`。
+    # task 层容器先行（第 181 条）；routes 表已随 186 删除——按 kind 选 provider
+    # 是拆解器落地后的事，到那天在这里装配（铁律 3：组装只发生在一个地方）。
+    task_rt = TaskRuntime(
+        game=game,
+        chooser=task_brain.chooser,
+        judger=task_brain.judger,
+        memory=memory,
+        reflector=task_brain.reflector,
+        verifier=task_brain.verifier,
+        task_summarizer=task_brain.task_summarizer,
+        trace=trace_tool,
+    )
+    episode_rt = EpisodeRuntime(
         game=game,
         memory=memory,
-        brain_tool=brain_tool,
+        decomposer=episode_brain.decomposer,
+        judger=episode_brain.judger,
+        verifier=episode_brain.verifier,
+        summarizer=episode_brain.summarizer,
         trace=trace_tool,
         reviewer=reviewer or NullReviewer(),
-        planner=planner or BrainPlanner(brain_tool),
-        run_id=run_id,
-        # `False`：plan 不自动压栈，新目标改走人工通道 `POST /runs/{id}/goals`。
-        auto_push_goals=auto_push_goals,
-        # `False`：plan 也不自己判 done，栈空时改路由去 review 问人，
-        # 只有人类的 STOP 才能真的结束 run。
-        auto_decide_done=auto_decide_done,
+        task=task_rt,
     )
-    run_harness = RunHarness(deps)
+    run_rt = RunRuntime(
+        trace=trace_tool,
+        memory=memory,
+        reviewer=episode_rt.reviewer,
+        planner=run_brain.planner,
+        judger=run_brain.judger,
+        episode=episode_rt,
+    )
+    run_harness = RunHarness(run_rt)
 
     return run_harness, game

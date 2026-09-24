@@ -8,38 +8,37 @@ pydantic），可以放心立即加载。
 from __future__ import annotations
 
 from .action import Action, ActionSegment
+from .decomposition import Decomposition
 from .episode_summary import EpisodeSummary
 from .goal import Goal
-from .learned_knowledge import KnowledgeItem, LearnedKnowledge
 from .model_call import ModelCall
 from .reflection import Reflection
 from .results import (
     ChooseResult,
-    ExtractResult,
+    DecomposeResult,
     JudgeResult,
     PlanResult,
     SummarizeResult,
     VerifyResult,
 )
 from .run_plan import RunPlan
-from .step_verify import StepVerifyVerdict
 from .task import Task
+from .verify_verdict import VerifyVerdict
 
 __all__ = [
     "Action",
     "ActionSegment",
     "ChooseResult",
+    "DecomposeResult",
+    "Decomposition",
     "EpisodeSummary",
-    "ExtractResult",
     "Goal",
     "JudgeResult",
-    "KnowledgeItem",
-    "LearnedKnowledge",
     "ModelCall",
     "PlanResult",
     "Reflection",
     "RunPlan",
-    "StepVerifyVerdict",
+    "VerifyVerdict",
     "SummarizeResult",
     "Task",
     "VerifyResult",

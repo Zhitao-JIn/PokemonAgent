@@ -56,14 +56,18 @@ _RENDERERS = {
     TraceKind.EPISODE_START: render.episode_start,
     TraceKind.EPISODE_END: render.episode_end,
     TraceKind.EPISODE_ERROR: render.episode_error,
-    # 七条链路各一种调用账：判定 / 校验各自多带一两个字段，其余共用 `model_call`。
-    TraceKind.PERCEPTION_CALL: render.model_call,
-    TraceKind.DECIDE_CALL: render.model_call,
+    TraceKind.TASK_START: render.task_start,
+    TraceKind.TASK_END: render.task_end,
+    TraceKind.TASK_ERROR: render.task_error,
+    # 九条链路各一种调用账：判定 / 校验各自多带一两个字段，其余共用 `model_call`。
+    TraceKind.SENSE_CALL: render.model_call,
+    TraceKind.CHOOSE_CALL: render.model_call,
     TraceKind.PLAN_CALL: render.model_call,
+    TraceKind.DECOMPOSE_CALL: render.model_call,
     TraceKind.JUDGE_CALL: render.judge_call,
     TraceKind.VERIFY_CALL: render.verify_call,
-    TraceKind.SUMMARIZE_CALL: render.model_call,
-    TraceKind.EXTRACT_CALL: render.model_call,
+    TraceKind.SUMMARIZE_EPISODE_CALL: render.model_call,
+    TraceKind.SUMMARIZE_TASK_CALL: render.model_call,
     # 三条错误账：`call_failed` 一般由 `model_call` 连带产出，登记一个渲染器
     # 让表完整（也有调用方按老路直接发它）。
     TraceKind.CALL_FAILED: render.call_failed,
@@ -71,29 +75,40 @@ _RENDERERS = {
     # （0914 之前是五个派发键 + 五个写死链路名的渲染函数）。
     TraceKind.CALL_EXHAUSTED: render.call_exhausted,
     TraceKind.SUMMARY_PARSE_ERROR: render.episode_summary_error,
-    TraceKind.OBSERVE: render.observe,
-    TraceKind.THINK: render.think,
-    TraceKind.DO_ACTION: render.do_action,
-    TraceKind.STALL_CHECK: render.stall_check,
+    TraceKind.SENSE_FRAME: render.sense_frame,
+    TraceKind.CHOOSE_VERDICT: render.choose_verdict,
+    TraceKind.PRESS_KEY: render.press_key,
+    TraceKind.CHECK_STALL: render.check_stall,
     TraceKind.GET_ACTION_SPACE: render.action_space,
     TraceKind.JUDGE_VERDICT: render.judge_verdict,
     TraceKind.VERIFY_VERDICT: render.verify_verdict,
     # 六条读口共用 `retrieve_node` 一个渲染函数，账名由 `req.kind` 定。
-    TraceKind.READ_STEP: render.retrieve_node,
-    TraceKind.READ_GLOBAL: render.retrieve_node,
+    TraceKind.READ_ACT_MEMORY: render.retrieve_node,
+    TraceKind.READ_EPISODE_MEMORY: render.retrieve_node,
     TraceKind.READ_KNOWLEDGE: render.retrieve_node,
-    TraceKind.READ_OBJECT: render.retrieve_node,
-    TraceKind.READ_VERIFY_STEP: render.retrieve_node,
-    TraceKind.READ_VERIFY_KNOWLEDGE: render.retrieve_node,
-    TraceKind.WRITE_STEP: render.memory_write,
-    TraceKind.WRITE_OBJECT: render.object_note,
-    TraceKind.WRITE_EPISODE: render.episode_memory_write,
-    TraceKind.STEP_ADVANCE: render.step_advance,
-    TraceKind.AFTER_ACTION: render.after_action,
+    TraceKind.READ_OBJECT_MEMORY: render.retrieve_node,
+    TraceKind.READ_TASK_MEMORY: render.retrieve_node,
+    TraceKind.WRITE_ACT_MEMORY: render.memory_write,
+    TraceKind.WRITE_OBJECT_MEMORY: render.object_note,
+    TraceKind.WRITE_EPISODE_MEMORY: render.episode_memory_write,
+    TraceKind.WRITE_TASK_MEMORY: render.task_memory_write,
+    TraceKind.ADVANCE_STEP: render.advance_step,
     TraceKind.PLAN_VERDICT: render.plan_verdict,
+    TraceKind.DECOMPOSE_VERDICT: render.decompose_verdict,
+    TraceKind.SETTLE_GOAL: render.settle_goal,
+    TraceKind.SETTLE_TASK: render.settle_task,
 }
 """账名 → 渲染函数。**没有翻译表**（0914）：渲染函数不再给账换名字，
 落盘的 `kind` 就是 `req.kind`。"""
+
+
+_LEGACY_KIND_ALIASES: dict[str, str] = {
+    "read_step": "read_act_memory",
+    "write_step": "write_act_memory",
+    "read_verify_step": "read_task_memory",
+    "read_verify_knowledge": "read_knowledge",
+}
+"""历史 trace 的旧 kind 值 → 新值（0923 断代表）。只在渲染读侧兜底。"""
 
 
 def _to_trace_event(raw: Event) -> TraceEvent:
@@ -137,7 +152,7 @@ class TraceTool:
         `req.meta` 里一次交齐，本层只核"该有的在不在"，不再替它拼）。`run_id`
         由落盘那一层盖。
 
-        前置条件：`req.meta` 带 `source`/`episode_id`/`step` 三件、不带 `run_id`；
+        前置条件：`req.meta` 带 `source`/`episode_id`/`task_id`/`step` 四件、不带 `run_id`；
         `req.kind` 对应的渲染函数所需字段非空（各渲染函数入口 assert 就地爆炸）。
         后置条件：所有渲染出的事件已落盘；每条的封套 `kind` **就是 `req.kind`**
         ——**例外是账单连带补出来的 `call_failed`**（那是另一本账，
@@ -147,7 +162,9 @@ class TraceTool:
             f"{req.kind} 的 meta 带了 run_id——那个键归落盘这一层盖"
             "（`store._stamp_run_id`，调用方带了就是同一件事说两遍）"
         )
-        missing = [key for key in ("source", "episode_id", "step") if key not in req.meta]
+        missing = [
+            key for key in ("source", "episode_id", "task_id", "step") if key not in req.meta
+        ]
         assert not missing, (
             f"{req.kind} 的 meta 少了 {missing}——签名信息由 harness 在 `req.meta` 里一次交齐"
         )
@@ -158,7 +175,15 @@ class TraceTool:
             f"{req.kind} 交了一份 count——那个槽 0914 跟进起已废："
             "六条读口的命中条数恒等于 `refs` 的长度，而 `refs` 已经是数组了"
         )
-        renderer = _RENDERERS[req.kind]
+        renderer = _RENDERERS.get(req.kind)
+        if renderer is None and getattr(req.kind, "value", None) in _LEGACY_KIND_ALIASES:
+            # **断代兼容**（0923 189/190）：187–190 压格与记忆阶梯把一批 `kind`
+            # 改了名（read_step→read_act_memory、write_step→write_act_memory、read_verify_step→
+            # read_task_memory…）。新账一律用新名；读到**历史 trace** 的旧名时
+            # 按同族渲染函数兜住——只保证"能渲"，不保证逐字段语义仍在。
+            renderer = _RENDERERS[TraceKind(_LEGACY_KIND_ALIASES[req.kind.value])]
+        if renderer is None:
+            raise KeyError(req.kind)
         for rendered in _as_list(renderer(req)):
             assert rendered.kind == req.kind or rendered.type == EventType.ERROR, (
                 f"{req.kind} 的渲染函数吐出了 {rendered.kind}——"

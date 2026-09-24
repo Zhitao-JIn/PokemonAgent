@@ -19,7 +19,7 @@ Frontend 发起的信封已在 0914 控制台改造中**整个删除**（`schema
 字段的信封与攒账的重试循环，就住在 `communication/ModelCall.py`），
 但 **harness 从本文件拿**——"harness 只认 schemas"这条边界因此没有例外。
 
-`TraceKind` / `TraceEvent` / `GoalEntry` / `GoalStatus` 几件**就住在 `domain/` 下**：
+`TraceKind` / `TraceEvent` / `GoalEntry` / `EntryStatus` 几件**就住在 `domain/` 下**：
 它们是 harness 自己声明的东西（"我记哪一笔账" / "一条事件长什么样" /
 "一个目标在 run 内的状态表长什么样"），消费者是 harness 与本层读取方
 （读者见各自模块的文档）。0913 下午 `TraceEvent` 从 `pokemon_agent.trace`
@@ -35,16 +35,16 @@ Frontend 发起的信封已在 0914 控制台改造中**整个删除**（`schema
 **`HumanDecision` 已删**（0914 控制台改造）：三值（continue/stop/retry）随槽机制
 一起下线。人的表态现在是两处：**插话**（`Reviewer.inject()` 收一句自然语言，
 回车即收）与**审**（`AuditVerdict`——认 / 推翻，住 reviewer 的 audit 信封里）。
-"继续/停止"不再是人的选项，改由目标表的表末检机械回答；"重试"改成 `GoalStatus`
-上的一次状态迁移（`PENDING` ← `FAILED`/`ABANDONED`，`attempts += 1`）。
+"继续/停止"不再是人的选项，由 run 的 `review_and_judge` 判（机械三类 + 问模型）；"重试"改成
+`EntryStatus` 上的一次状态迁移（`plan_run` 把 `FAILED`/`ABANDONED` 重开成 `PENDING`）。
 """
 
 __all__ = [
     "AuditVerdict",
     "FromHarnessToBrainToolChooseOnceReq",
     "FromHarnessToBrainToolChooseOnceResp",
-    "FromHarnessToBrainToolExtractReq",
-    "FromHarnessToBrainToolExtractResp",
+    "FromHarnessToBrainToolDecomposeReq",
+    "FromHarnessToBrainToolDecomposeResp",
     "FromHarnessToBrainToolJudgeReq",
     "FromHarnessToBrainToolJudgeResp",
     "FromHarnessToBrainToolPlanOnceReq",
@@ -52,6 +52,8 @@ __all__ = [
     "FromHarnessToBrainToolReflectReq",
     "FromHarnessToBrainToolReflectResp",
     "FromHarnessToBrainToolSummarizeReq",
+    "FromHarnessToBrainToolSummarizeTaskReq",
+    "FromHarnessToBrainToolSummarizeTaskResp",
     "FromHarnessToBrainToolSummarizeResp",
     "FromHarnessToBrainToolVerifyReq",
     "FromHarnessToBrainToolVerifyResp",
@@ -62,8 +64,8 @@ __all__ = [
     "FromHarnessToGameToolPerceiveOnceResp",
     "FromHarnessToGameToolResetReq",
     "FromHarnessToMemoryToolAppendObjectEventsReq",
-    "FromHarnessToMemoryToolQueryEpisodeStepsReq",
-    "FromHarnessToMemoryToolQueryEpisodeStepsResp",
+    "FromHarnessToMemoryToolQueryActMemoriesReq",
+    "FromHarnessToMemoryToolQueryActMemoriesResp",
     "FromHarnessToMemoryToolQueryEpisodeSummariesReq",
     "FromHarnessToMemoryToolQueryEpisodeSummariesResp",
     "FromHarnessToMemoryToolQueryKnowledgeReq",
@@ -72,14 +74,17 @@ __all__ = [
     "FromHarnessToMemoryToolQueryObjectEventsAtResp",
     "FromHarnessToMemoryToolQueryObjectEventsReq",
     "FromHarnessToMemoryToolQueryObjectEventsResp",
-    "FromHarnessToMemoryToolQueryRecentStepsReq",
-    "FromHarnessToMemoryToolQueryRecentStepsResp",
+    "FromHarnessToMemoryToolQueryRecentActMemoriesReq",
+    "FromHarnessToMemoryToolQueryRecentActMemoriesResp",
     "FromHarnessToMemoryToolRestoreMemoryReq",
     "FromHarnessToMemoryToolRestoreMemoryResp",
     "FromHarnessToMemoryToolSnapshotMemoryReq",
     "FromHarnessToMemoryToolSnapshotMemoryResp",
-    "FromHarnessToMemoryToolStoreEpisodeStepReq",
+    "FromHarnessToMemoryToolStoreActMemoryReq",
     "FromHarnessToMemoryToolStoreEpisodeSummaryReq",
+    "FromHarnessToMemoryToolStoreTaskMemoryReq",
+    "FromHarnessToMemoryToolQueryTaskMemoriesReq",
+    "FromHarnessToMemoryToolQueryTaskMemoriesResp",
     "FromHarnessToMemoryToolStoreEpisodeSummaryResp",
     "FromHarnessToMemoryToolStoreKnowledgeReq",
     "FromHarnessToMemoryToolStoreKnowledgeResp",
@@ -87,10 +92,8 @@ __all__ = [
     "FromHarnessToReviewerAuditResp",
     "FromHarnessToReviewerInjectReq",
     "FromHarnessToTraceToolAppendReq",
-    "FromRunHarnessToEpisodeHarnessRunReq",
-    "FromRunHarnessToEpisodeHarnessRunResp",
     "GoalEntry",
-    "GoalStatus",
+    "EntryStatus",
     "ModelCall",
     "ModelCallLog",
     "RunResp",
@@ -100,8 +103,8 @@ __all__ = [
 
 from .communication.FromHarnessToBrainToolChooseOnceReq import FromHarnessToBrainToolChooseOnceReq
 from .communication.FromHarnessToBrainToolChooseOnceResp import FromHarnessToBrainToolChooseOnceResp
-from .communication.FromHarnessToBrainToolExtractReq import FromHarnessToBrainToolExtractReq
-from .communication.FromHarnessToBrainToolExtractResp import FromHarnessToBrainToolExtractResp
+from .communication.FromHarnessToBrainToolDecomposeReq import FromHarnessToBrainToolDecomposeReq
+from .communication.FromHarnessToBrainToolDecomposeResp import FromHarnessToBrainToolDecomposeResp
 from .communication.FromHarnessToBrainToolJudgeReq import FromHarnessToBrainToolJudgeReq
 from .communication.FromHarnessToBrainToolJudgeResp import FromHarnessToBrainToolJudgeResp
 from .communication.FromHarnessToBrainToolPlanOnceReq import FromHarnessToBrainToolPlanOnceReq
@@ -110,6 +113,12 @@ from .communication.FromHarnessToBrainToolReflectReq import FromHarnessToBrainTo
 from .communication.FromHarnessToBrainToolReflectResp import FromHarnessToBrainToolReflectResp
 from .communication.FromHarnessToBrainToolSummarizeReq import FromHarnessToBrainToolSummarizeReq
 from .communication.FromHarnessToBrainToolSummarizeResp import FromHarnessToBrainToolSummarizeResp
+from .communication.FromHarnessToBrainToolSummarizeTaskReq import (
+    FromHarnessToBrainToolSummarizeTaskReq,
+)
+from .communication.FromHarnessToBrainToolSummarizeTaskResp import (
+    FromHarnessToBrainToolSummarizeTaskResp,
+)
 from .communication.FromHarnessToBrainToolVerifyReq import FromHarnessToBrainToolVerifyReq
 from .communication.FromHarnessToBrainToolVerifyResp import FromHarnessToBrainToolVerifyResp
 from .communication.FromHarnessToGameToolEvolveReq import FromHarnessToGameToolEvolveReq
@@ -127,11 +136,11 @@ from .communication.FromHarnessToGameToolResetReq import FromHarnessToGameToolRe
 from .communication.FromHarnessToMemoryToolAppendObjectEventsReq import (
     FromHarnessToMemoryToolAppendObjectEventsReq,
 )
-from .communication.FromHarnessToMemoryToolQueryEpisodeStepsReq import (
-    FromHarnessToMemoryToolQueryEpisodeStepsReq,
+from .communication.FromHarnessToMemoryToolQueryActMemoriesReq import (
+    FromHarnessToMemoryToolQueryActMemoriesReq,
 )
-from .communication.FromHarnessToMemoryToolQueryEpisodeStepsResp import (
-    FromHarnessToMemoryToolQueryEpisodeStepsResp,
+from .communication.FromHarnessToMemoryToolQueryActMemoriesResp import (
+    FromHarnessToMemoryToolQueryActMemoriesResp,
 )
 from .communication.FromHarnessToMemoryToolQueryEpisodeSummariesReq import (
     FromHarnessToMemoryToolQueryEpisodeSummariesReq,
@@ -157,11 +166,17 @@ from .communication.FromHarnessToMemoryToolQueryObjectEventsReq import (
 from .communication.FromHarnessToMemoryToolQueryObjectEventsResp import (
     FromHarnessToMemoryToolQueryObjectEventsResp,
 )
-from .communication.FromHarnessToMemoryToolQueryRecentStepsReq import (
-    FromHarnessToMemoryToolQueryRecentStepsReq,
+from .communication.FromHarnessToMemoryToolQueryRecentActMemoriesReq import (
+    FromHarnessToMemoryToolQueryRecentActMemoriesReq,
 )
-from .communication.FromHarnessToMemoryToolQueryRecentStepsResp import (
-    FromHarnessToMemoryToolQueryRecentStepsResp,
+from .communication.FromHarnessToMemoryToolQueryRecentActMemoriesResp import (
+    FromHarnessToMemoryToolQueryRecentActMemoriesResp,
+)
+from .communication.FromHarnessToMemoryToolQueryTaskMemoriesReq import (
+    FromHarnessToMemoryToolQueryTaskMemoriesReq,
+)
+from .communication.FromHarnessToMemoryToolQueryTaskMemoriesResp import (
+    FromHarnessToMemoryToolQueryTaskMemoriesResp,
 )
 from .communication.FromHarnessToMemoryToolRestoreMemoryReq import (
     FromHarnessToMemoryToolRestoreMemoryReq,
@@ -175,8 +190,8 @@ from .communication.FromHarnessToMemoryToolSnapshotMemoryReq import (
 from .communication.FromHarnessToMemoryToolSnapshotMemoryResp import (
     FromHarnessToMemoryToolSnapshotMemoryResp,
 )
-from .communication.FromHarnessToMemoryToolStoreEpisodeStepReq import (
-    FromHarnessToMemoryToolStoreEpisodeStepReq,
+from .communication.FromHarnessToMemoryToolStoreActMemoryReq import (
+    FromHarnessToMemoryToolStoreActMemoryReq,
 )
 from .communication.FromHarnessToMemoryToolStoreEpisodeSummaryReq import (
     FromHarnessToMemoryToolStoreEpisodeSummaryReq,
@@ -190,6 +205,9 @@ from .communication.FromHarnessToMemoryToolStoreKnowledgeReq import (
 from .communication.FromHarnessToMemoryToolStoreKnowledgeResp import (
     FromHarnessToMemoryToolStoreKnowledgeResp,
 )
+from .communication.FromHarnessToMemoryToolStoreTaskMemoryReq import (
+    FromHarnessToMemoryToolStoreTaskMemoryReq,
+)
 from .communication.FromHarnessToReviewerAuditReq import (
     AuditVerdict,
     FromHarnessToReviewerAuditReq,
@@ -197,10 +215,6 @@ from .communication.FromHarnessToReviewerAuditReq import (
 )
 from .communication.FromHarnessToReviewerInjectReq import FromHarnessToReviewerInjectReq
 from .communication.FromHarnessToTraceToolAppendReq import FromHarnessToTraceToolAppendReq
-from .communication.FromRunHarnessToEpisodeHarnessRunReq import FromRunHarnessToEpisodeHarnessRunReq
-from .communication.FromRunHarnessToEpisodeHarnessRunResp import (
-    FromRunHarnessToEpisodeHarnessRunResp,
-)
 from .communication.ModelCall import ModelCall, ModelCallLog
 from .communication.RunResp import RunResp
-from .domain import GoalEntry, GoalStatus, TraceEvent, TraceKind
+from .domain import EntryStatus, GoalEntry, TraceEvent, TraceKind

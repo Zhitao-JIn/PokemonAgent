@@ -1,6 +1,7 @@
-"""tools/interface 包统一出口：`tools` 层对外的那四张端口协议
-（`BrainToolPort`/`GameToolPort`/`MemoryToolPort`/`TraceToolPort`）——
-harness 认识的工具门面。（曾是五张；`CheckpointToolPort` 步 5b 解散。）
+"""tools/interface 包统一出口：`tools` 层对外的端口协议——三张整口
+（`GameToolPort`/`MemoryToolPort`/`TraceToolPort`）＋ brain 那族的八张单方法口
+（`PlanPort`/`ChoosePort`/`DecomposePort`/`JudgePort`/`ReflectPort`/`VerifyPort`/`SummarizePort`/
+`TaskSummarizePort`，0922 185 从 `BrainToolPort` 总口拆出）——harness 认识的工具门面。
 
 它们原来跟实现平级住在 `tools/ports.py`（更早以前在顶层
 `pokemon_agent/interfaces/tools/`）。搬进 `interface/` 是因为**出口**而不是
@@ -37,15 +38,29 @@ harness 认识的工具门面。（曾是五张；`CheckpointToolPort` 步 5b �
 from __future__ import annotations
 
 from .ports import (
-    BrainToolPort,
+    ChoosePort,
+    DecomposePort,
     GameToolPort,
+    JudgePort,
     MemoryToolPort,
+    PlanPort,
+    ReflectPort,
+    SummarizePort,
+    TaskSummarizePort,
     TraceToolPort,
+    VerifyPort,
 )
 
 __all__ = [
-    "BrainToolPort",
+    "ChoosePort",
+    "DecomposePort",
     "GameToolPort",
+    "JudgePort",
     "MemoryToolPort",
+    "PlanPort",
+    "ReflectPort",
+    "SummarizePort",
+    "TaskSummarizePort",
     "TraceToolPort",
+    "VerifyPort",
 ]

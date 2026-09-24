@@ -1,8 +1,10 @@
-"""tools 层的四张对外契约：`BrainToolPort`/`GameToolPort`/`MemoryToolPort`/
-`TraceToolPort`——harness 认识的工具门面。
+"""tools 层的对外契约：`GameToolPort`/`MemoryToolPort`/`TraceToolPort` 三张整口，
+外加 brain 那族按能力拆开的**八张单方法口**（`PlanPort`/`DecomposePort`/`ChoosePort`/`JudgePort`/
+`ReflectPort`/`VerifyPort`/`SummarizePort`/`TaskSummarizePort`）——harness 认识的工具门面。
 
-（曾是五张：`CheckpointToolPort` 已在步 5b 解散；遗留的存档相关方法与信封
-也随后整体删除——见 `CHANGELOG.md` 2026-09-13 第 57 条。）
+（曾是五张整口：`CheckpointToolPort` 已在步 5b 解散；`BrainToolPort` 七方法总口
+0922 185 按能力拆开——一个接口方法超 6 个就该拆，且"按消费方切口"后，runtime 字段
+能写成 `planner: PlanPort` 这类窄类型，"不属于本层的方法"在类型上就调不出来。）
 
 原来分别放在顶层 `pokemon_agent/interfaces/tools/`，跟 `memory/ports.py`
 同一个道理搬到了这里：这四张 Port 全部只依赖 `schemas.harness` 的信封类型，
@@ -37,8 +39,8 @@ from typing import Any, Protocol, runtime_checkable
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
-    FromHarnessToBrainToolExtractReq,
-    FromHarnessToBrainToolExtractResp,
+    FromHarnessToBrainToolDecomposeReq,
+    FromHarnessToBrainToolDecomposeResp,
     FromHarnessToBrainToolJudgeReq,
     FromHarnessToBrainToolJudgeResp,
     FromHarnessToBrainToolPlanOnceReq,
@@ -47,6 +49,8 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolReflectResp,
     FromHarnessToBrainToolSummarizeReq,
     FromHarnessToBrainToolSummarizeResp,
+    FromHarnessToBrainToolSummarizeTaskReq,
+    FromHarnessToBrainToolSummarizeTaskResp,
     FromHarnessToBrainToolVerifyReq,
     FromHarnessToBrainToolVerifyResp,
     FromHarnessToGameToolEvolveReq,
@@ -56,8 +60,8 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolPerceiveOnceResp,
     FromHarnessToGameToolResetReq,
     FromHarnessToMemoryToolAppendObjectEventsReq,
-    FromHarnessToMemoryToolQueryEpisodeStepsReq,
-    FromHarnessToMemoryToolQueryEpisodeStepsResp,
+    FromHarnessToMemoryToolQueryActMemoriesReq,
+    FromHarnessToMemoryToolQueryActMemoriesResp,
     FromHarnessToMemoryToolQueryEpisodeSummariesReq,
     FromHarnessToMemoryToolQueryEpisodeSummariesResp,
     FromHarnessToMemoryToolQueryKnowledgeReq,
@@ -66,17 +70,20 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolQueryObjectEventsAtResp,
     FromHarnessToMemoryToolQueryObjectEventsReq,
     FromHarnessToMemoryToolQueryObjectEventsResp,
-    FromHarnessToMemoryToolQueryRecentStepsReq,
-    FromHarnessToMemoryToolQueryRecentStepsResp,
+    FromHarnessToMemoryToolQueryRecentActMemoriesReq,
+    FromHarnessToMemoryToolQueryRecentActMemoriesResp,
+    FromHarnessToMemoryToolQueryTaskMemoriesReq,
+    FromHarnessToMemoryToolQueryTaskMemoriesResp,
     FromHarnessToMemoryToolRestoreMemoryReq,
     FromHarnessToMemoryToolRestoreMemoryResp,
     FromHarnessToMemoryToolSnapshotMemoryReq,
     FromHarnessToMemoryToolSnapshotMemoryResp,
-    FromHarnessToMemoryToolStoreEpisodeStepReq,
+    FromHarnessToMemoryToolStoreActMemoryReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryReq,
     FromHarnessToMemoryToolStoreEpisodeSummaryResp,
     FromHarnessToMemoryToolStoreKnowledgeReq,
     FromHarnessToMemoryToolStoreKnowledgeResp,
+    FromHarnessToMemoryToolStoreTaskMemoryReq,
     FromHarnessToTraceToolAppendReq,
     ModelCallLog,
     TraceEvent,
@@ -84,19 +91,32 @@ from pokemon_agent.schemas.harness import (
 
 
 @runtime_checkable
-class BrainToolPort(Protocol):
-    """harness 认识的"大脑工具"——跟 `Brain` 之间那层翻译壳的契约。
+class PlanPort(Protocol):
+    """run 层的规划口：`BrainTool.build(plan=…)` 组装的 `Planner` 满足它。"""
 
-    **它守的是两个互不认识的世界的边界**：harness 侧是装满了
-    `Observation`/`ActionSpace`/`StepMemory` 的信封；brain 侧只认 prompt 文本
-    与一撮裸字段。这一层负责渲染、世界语义规范化、盖章坐标、重试循环与
-    组装存储形状——**这些没有一件是 brain 该知道的**。
+    def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
+        """一次完整规划（含重试）。失败：重试用尽时抛 `MaxRetriesExceeded`（账在异常里）。"""
+        ...
 
-    跟 `GameToolPort`/`MemoryToolPort` 同一类——harness 的三根依赖之一。
-    方法名刻意**不加 `once` 后缀**（`choose` 而不是 `choose_once`）：重试循环
-    已经下沉到这一层，harness 调的就是"一次完整决策（含重试）"，
-    加 `once` 名不副实。
-    """
+
+@runtime_checkable
+class DecomposePort(Protocol):
+    """拆解口：`Decomposer` 满足它。episode 层 `plan_episode` 在任务链空时问一次。"""
+
+    def decompose(
+        self, req: FromHarnessToBrainToolDecomposeReq
+    ) -> FromHarnessToBrainToolDecomposeResp:
+        """把本局目标拆成一版任务链：渲染 → 重试 → 解析。
+
+        失败：重试用尽时抛 `MaxRetriesExceeded`（账在异常里）。
+        """
+        ...
+
+
+@runtime_checkable
+class ChoosePort(Protocol):
+    """决策口：`Chooser` 满足它。episode 层用全量 space；task 层的 `plan_task`
+    是同一个方法、受限 space（`TaskRuntime.chooser` 是独立实例，可换策略）。"""
 
     def choose(
         self, req: FromHarnessToBrainToolChooseOnceReq
@@ -107,45 +127,57 @@ class BrainToolPort(Protocol):
         """
         ...
 
+
+@runtime_checkable
+class JudgePort(Protocol):
+    """判定口：`Judger` 满足它。"""
+
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         """转发一次判定。永远返回 resp，不抛异常。"""
         ...
 
+
+@runtime_checkable
+class ReflectPort(Protocol):
+    """反思口：`Reflector` 满足它。本链路不调模型、无重试。"""
+
     def reflect(self, req: FromHarnessToBrainToolReflectReq) -> FromHarnessToBrainToolReflectResp:
-        """一次反思：渲染两帧 → 调大脑 → 盖章坐标、组装 `StepMemory`。"""
+        """一次反思：渲染两帧 → 调大脑 → 用 `Reflection` + 坐标组装 `ActMemory`。"""
         ...
 
+
+@runtime_checkable
+class VerifyPort(Protocol):
+    """校验口：`Verifier` 满足它。"""
+
     def verify(self, req: FromHarnessToBrainToolVerifyReq) -> FromHarnessToBrainToolVerifyResp:
-        """校验本局 step 记忆哪些可信。永远返回 resp，不抛异常。
+        """标记 entries 的正/负样本（行为/总结符不符合 goal）。永远返回 resp，不抛异常。
 
         **不过滤**——`verdicts.index` 对应 `req.entries` 的下标，调用方自己筛。
         """
         ...
 
+
+@runtime_checkable
+class SummarizePort(Protocol):
+    """蒸馏口：`Summarizer` 满足它。"""
+
     def summarize(
         self, req: FromHarnessToBrainToolSummarizeReq
     ) -> FromHarnessToBrainToolSummarizeResp:
-        """把本局过滤后的可信 step 记忆蒸馏成一条摘要，并组装 `EpisodeMemory`。
+        """把本局过滤后的正样本 step 记忆蒸馏成一条摘要，并组装 `EpisodeMemory`。
         永远返回 resp，不抛异常。"""
         ...
 
-    def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
-        """一次完整规划（含重试）。失败：重试用尽时抛 `MaxRetriesExceeded`（账在异常里）。"""
-        ...
 
-    def extract(self, req: FromHarnessToBrainToolExtractReq) -> FromHarnessToBrainToolExtractResp:
-        """一次世界知识抽取：渲染这一局的记录 → 调大脑 → **组装存储形状**。
+@runtime_checkable
+class TaskSummarizePort(Protocol):
+    """task 蒸馏口：`TaskSummarizer` 满足它。task 层的 `task_done` 用。"""
 
-        跟 `summarize` 是同一分工的两半——`extract` 在这里干的活和
-        `summarize` 逐字同形（渲染、重试、盖来源章），只是产物不同：那边装
-        `EpisodeMemory`（属于那一局），这边装 `KnowledgeRecord`（属于世界，
-        `req.run_id`/`req.episode_id` 只是来源）。所以两个方法**不共用实现**，
-        但共用同一份素材形状（`req.entries`）——那是两条链路的输入契约。
-
-        **空列表不是失败**：`resp.records == []` 表示"这一局什么都没读到"，
-        那是常态。失败只有一种——重试用尽抛 `MaxRetriesExceeded`
-        （`source="extract"`，账在异常里），由调用方决定这一局的收场。
-        """
+    def summarize_task(
+        self, req: FromHarnessToBrainToolSummarizeTaskReq
+    ) -> FromHarnessToBrainToolSummarizeTaskResp:
+        """把本 task 过滤后的可信 ActMemory 蒸馏成一条 TaskMemory。永远返回 resp。"""
         ...
 
 
@@ -199,8 +231,8 @@ class GameToolPort(Protocol):
 
         `ram_only=False`（缺省）：反复问视觉模型，直到成功或预算耗尽。
         harness 只负责**落账**：成功用返回的 `log`，耗尽用异常携带的 `calls`
-        ——两侧分工与 `BrainToolPort` 那六条链路逐字相同（见 `think_action`）。
-        失败：预算耗尽抛 `MaxRetriesExceeded`（`source="perception"`）。
+        ——两侧分工与 brain 那六条链路逐字相同（见 `think_action`）。
+        失败：预算耗尽抛 `MaxRetriesExceeded`（`source="sense"`）。
             **`PerceptionAttemptFailed` 不是本协议的词汇**——那是 world 的内部
             细节，被实现方在桥上接住、翻译掉了，跨不过这层。
 
@@ -216,8 +248,10 @@ class GameToolPort(Protocol):
     def evolve(self, req: FromHarnessToGameToolEvolveReq) -> None:
         """**无输入**推进 N 帧——世界自己演化（音乐、动画、NPC 走动），不感知。
 
-        和按键后的演化是同一回事，只是独立于按键被调用：harness 在等决策 LLM
-        返回时用它填空闲窗口，让画面/音乐继续（见 `episode_harness.think`）。
+        和按键后的演化是同一回事，只是独立于按键被调用。**目前没有调用方**：
+        决策改成同步调用（重试循环在 `BrainTool.choose()`）之后，"等 LLM 返回时
+        填空闲窗口"这件事省不出时间——不限速时世界跑得比等待快。这一格仍是契约
+        的一部分，留给将来真需要"按时间推进而不感知"的场景。
 
         前置条件：req.frames >= 0。
         调用方要保证：这段演化不破坏"观测-决策"一致性——决策期间世界变化是
@@ -237,9 +271,9 @@ class MemoryToolPort(Protocol):
 
     # ---- 情景记忆（一条 = 一步） ----
 
-    def query_episode_steps(
-        self, req: FromHarnessToMemoryToolQueryEpisodeStepsReq
-    ) -> FromHarnessToMemoryToolQueryEpisodeStepsResp:
+    def query_act_memories(
+        self, req: FromHarnessToMemoryToolQueryActMemoriesReq
+    ) -> FromHarnessToMemoryToolQueryActMemoriesResp:
         """取这一局全部的单步情景记忆，按 step 升序。
 
         req.episode_id：这一局的标识。
@@ -248,9 +282,9 @@ class MemoryToolPort(Protocol):
         """
         ...
 
-    def query_recent_steps(
-        self, req: FromHarnessToMemoryToolQueryRecentStepsReq
-    ) -> FromHarnessToMemoryToolQueryRecentStepsResp:
+    def query_recent_act_memories(
+        self, req: FromHarnessToMemoryToolQueryRecentActMemoriesReq
+    ) -> FromHarnessToMemoryToolQueryRecentActMemoriesResp:
         """取这一局最近几条情景记忆，最新的在最后。
 
         req.episode_id：这一局的标识。
@@ -260,12 +294,21 @@ class MemoryToolPort(Protocol):
         """
         ...
 
-    def store_episode_step(self, req: FromHarnessToMemoryToolStoreEpisodeStepReq) -> None:
+    def store_act_memory(self, req: FromHarnessToMemoryToolStoreActMemoryReq) -> None:
         """写入一条情景记忆。
 
         req.entry：要写入的单步记忆。
-        前置条件：req.entry.rationale 非空。
         """
+        ...
+
+    def query_task_memories(
+        self, req: FromHarnessToMemoryToolQueryTaskMemoriesReq
+    ) -> FromHarnessToMemoryToolQueryTaskMemoriesResp:
+        """取这一局的全部 task 记忆，按 start_step 升序（episode_done 的总结原料）。"""
+        ...
+
+    def store_task_memory(self, req: FromHarnessToMemoryToolStoreTaskMemoryReq) -> None:
+        """落库一条**已经组装好**的 task 记忆（蒸馏在 `TaskSummarizer` 完成）。"""
         ...
 
     # ---- 跨局摘要记忆（一条 = 一整局） ----
@@ -297,7 +340,7 @@ class MemoryToolPort(Protocol):
         见 ROADMAP 16），这个方法只做落盘 + 更新检索向量缓存。
         **这是这个 Port 上唯一的跨局摘要写入口**——它接两种形态：常规的
         "蒸馏正文"，以及"正文全空"（这一局没有可蒸馏的正文，落一条只有来源章
-        的记录——`harness/run/nodes/review.py::_leave_chapter()`）。
+        的记录——`harness/episode/episode_done/leave_chapter.py::store_empty_chapter()`）。
         **没有"不经校验全量蒸馏"的兜底入口**。
 
         req.memory：组装好的摘要记忆。
@@ -363,9 +406,8 @@ class MemoryToolPort(Protocol):
     ) -> FromHarnessToMemoryToolStoreKnowledgeResp:
         """落库一批**已经组装好**的世界知识，不调模型。
 
-        组装在 `BrainTool.extract()` 里完成（`resp.records`，来源章同
-        `summarize` 的五个字段那一套——`source`/`run_id`/`episode_id` 由 tool
-        层盖）。本方法只做**判重 + 落盘 + 更新检索向量缓存**。
+        知识由人管理（自动抽取已删），记录由调用方组装好（`source`/`run_id`/
+        `episode_id` 由组装方盖）。本方法只做**判重 + 落盘 + 更新检索向量缓存**。
 
         **判重在这一跳做**：同 `topic` 且正文逐字相同的条目跳过——同一件事被
         两局分别学到时不该在库里堆第二份。判据只看"完全一样"，不做语义去重：

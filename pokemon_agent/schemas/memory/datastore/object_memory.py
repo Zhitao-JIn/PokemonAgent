@@ -12,7 +12,7 @@
 
 **两个名字为什么不是 `type` / `kind`**（0914 跟进）：封套上 `type` 是事件粗类、
 `kind` 是账名——这两个名字已经是 trace 的保留字。本记录**整份 dump 进
-`write_object` 账的正文**，正文键与封套键撞名的话，判据
+`write_object_memory` 账的正文**，正文键与封套键撞名的话，判据
 （`node_io._WRITE_FORBIDDEN_KEYS`）就没法把"记录自己的字段"和"把封套的东西抄进
 正文"分开。所以判别键叫 **`outcome`**（这次按键造成了哪种结局：dialog / warp /
 still），物体类别叫 **`object_kind`**（那格是什么类别的东西）。
@@ -52,10 +52,11 @@ class ObjectFactEventBase(BaseModel):
 
         事件一旦落库就不可变，这里只需要 `PlaceInWorld` 的**形状**
         （`map_id`/`x`/`y`），不需要它的行为（`step_toward()` 只有判定层
-        `harness/object_interactions.py` 拿着真身才用得到，`render()` 这类
+        `harness/episode/store/store_object_semantic_memory/rules.py` 拿着真身才用得到，
+        `render()` 这类
         文案也各自需要各自的措辞）。按"模块间零依赖，只靠裸字段交互"这条
         边界，这里独立声明一份字段一致、类不互相引用的内部类型——
-        `harness/object_interactions.py`（唯一的组装方）负责在构造事件前
+        `harness/episode/store/store_object_semantic_memory/rules.py`（唯一的组装方）负责在构造事件前
         把真身 `PlaceInWorld.model_dump()` 拍平后验证成这里的类型。
 
         `key` property 照抄真身：语义记忆按 `(map_id, x, y)` 索引，这个键

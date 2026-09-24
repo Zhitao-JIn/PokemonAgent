@@ -17,7 +17,7 @@ harness 想多签一样东西都没有地方放。
 
 **按 `kind` 分派、不按领域对象类型分派**：同一个类型产出不同事件——
 `ModelCall` 可以是决策账单（attempt）/判定账单（why）/校验账单（verdicts），
-`StepMemory` 写成一条（`entry`）或按坐标列个清单（`refs`）；
+`ActMemory` 写成一条（`entry`）或按坐标列个清单（`refs`）；
 类型名决定不了格式，"这是哪笔账"只有调用方知道。
 
 各 kind 必填的字段见 `tools/trace/render.py` 每个渲染函数入口的 assert；
@@ -33,18 +33,23 @@ from pydantic import BaseModel
 from pokemon_agent.brain.interface import (
     Action,
     Goal,
-    StepVerifyVerdict,
     Task,
+    VerifyVerdict,
 )
 from pokemon_agent.schemas.harness.domain import TraceKind
+from pokemon_agent.schemas.harness.domain.episode_io import EpisodeOutput
+from pokemon_agent.schemas.harness.domain.goal_entry import GoalEntry
+from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
+from pokemon_agent.schemas.harness.domain.task_io import TaskOutput
+from pokemon_agent.schemas.harness.domain.termination import Termination
 from pokemon_agent.schemas.memory import (
+    ActMemory,
     EpisodeMemory,
     ObjectFactEvent,
-    StepMemory,
+    TaskMemory,
 )
 from pokemon_agent.world import Observation
 
-from .FromRunHarnessToEpisodeHarnessRunResp import FromRunHarnessToEpisodeHarnessRunResp
 from .ModelCall import ModelCall
 from .RunResp import RunResp
 
@@ -59,7 +64,7 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
 
     ```
     {uuid, kind, type, ts, meta, content}          ← 封套四件 + 标签 + 正文
-    meta    = {run_id, source, episode_id, step}   ← JSON 字符串；run_id 由 store 盖
+    meta    = {run_id, source, episode_id, task_id, step}  ← JSON 字符串；run_id 由 store 盖
     content = 该账的正文                            ← JSON 字符串
     ```
 
@@ -81,11 +86,10 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     {"source": "发这条账的位置", "episode_id": "…", "step": 3}
     ```
 
-    - **`source`**：图上节点名（`store_step_episode_memory`、`verify_and_summarize`、
-      `review`…）或**图外入口名**（`run_entry.new_run` / `run_entry.close` /
-      `episode_entry.begin_episode` / `episode_entry.run_new`——run 与 episode 的
-      边界账就是它们发的）。`kind` 只回答"哪本账"，回答不了"谁写的"——
-      `write_episode` 有**两个**生产者，账上不分这两笔就只能靠猜。**别和
+    - **`source`**：图上单元名（`store_step_episode_memory`、`summarize_episode`、
+      `run.act`…）或**图外入口名**（`run_entry.new_run` / `episode_entry.begin_episode` /
+      `task_entry.begin_task`）。`kind` 只回答"哪本账"，回答不了"谁写的"——
+      `write_episode_memory` 有**三个**生产者，账上不分这几笔就只能靠猜。**别和
       `KnowledgeRecord.source` 混**：那个是"这条知识出自哪一局"，是记录自己的
       元数据；这个说的是"这条 trace 由谁写出"，两处同名不同层。
     - **`episode_id` / `step`**：这条账发在哪一局、哪一步。判据侧
@@ -107,17 +111,18 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     只是此前恰好只有一条值得记。列表化之后"重试了 3 次"这件事由**账的条数
     与顺序**直接回答（0914 跟进删 `attempt` 戳）。"""
     input: str | None = None
-    """结论账（`think` / `judge_verdict` / `verify_verdict` / `plan_verdict`）附带的
+    """结论账（`choose_verdict` / `judge_verdict` / `verify_verdict` / `plan_verdict`）附带的
     **发给模型的请求原文**——取自那次成功调用的 `payload.prompt`。结论与它是同一次
     调用的两个面，放在一起才不必跳到调用账对读。`plan` 无模型路径交 `None`，
     正文里就不出现这两个键。"""
     output: str | None = None
     """同 `input`，是模型吐回的**原文**（`payload.raw`）。"""
     why: str | None = None
+    judge_reason: str | None = None
     error: str | None = None
     link: str | None = None
-    """**这条错误账属于哪条链**（`perception` / `decide` / `plan` / `judge` /
-    `verify` / `summarize` / `extract`）——`CALL_FAILED` / `CALL_EXHAUSTED`
+    """**这条错误账属于哪条链**（`sense` / `choose` / `plan` / `decompose` /
+    `judge` / `verify` / `summarize` / `summarize_task`）——`CALL_FAILED` / `CALL_EXHAUSTED`
     两条错误账靠它分开"是哪条链出的错"。
 
     **为什么不并进 `kind`**：一个 kind 只答"这是什么账"。三条错误账
@@ -128,10 +133,15 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     # ---- 边界 / 结算 ----
     task: Task | None = None
     run_goals: list[Task] | None = None
-    """run 级边界的初始目标栈（`observe` 的 goals 是 Goal，
+    """run 级边界的初始目标栈（`sense_frame` 的 goals 是 Goal，
     两处词表不同，各用各的字段）。"""
     outcome_run: RunResp | None = None
-    outcome_episode: FromRunHarnessToEpisodeHarnessRunResp | None = None
+    outcome_episode: EpisodeOutput | None = None
+    outcome_task: TaskOutput | None = None
+    run_goal: Goal | None = None
+    """run 级总目标（`run_start` 带）。"""
+    start_step: int | None = None
+    """task 的全局键号基数（`task_start` 带）。"""
 
     # ---- 决策 / 观测 ----
     obs: Observation | None = None
@@ -145,8 +155,8 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
 
     它做过"检索器承诺命中几条"的第二个来源，与 `refs` 组成"承诺 vs 清单"的
     交叉校验。但六条读口**交上来的永远是 `len(<同一个集合>)`**——`read_step` 数
-    `memories`、`read_global` 数 `episode_memories`、两条 knowledge 数 `contents`
-    （与 `sources` 成对产出、恒等长）、`read_object` 数 `events`、
+    `memories`、`read_episode_memory` 数 `episode_memories`、两条 knowledge 数 `contents`
+    （与 `sources` 成对产出、恒等长）、`read_object_memory` 数 `events`、
     `read_verify_step` 数 `entries`。两份来源其实是同一份，于是它成了纯粹派生。
     `refs` 改成数组之后，长度直接数得出来——`retrieve_node` 不再读本字段，
     判据侧（`node_io`）也不再核它。**留着槽**是为了让还按老路传 `count=` 的调用方
@@ -169,27 +179,38 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     | 读口 | 一条 `refs` 是什么 |
     |---|---|
     | `read_step` / `read_verify_step` | `"(episode_id, step)"` 坐标 |
-    | `read_global` | 跨局摘要的 `episode_id` |
+    | `read_episode_memory` | 跨局摘要的 `episode_id` |
     | `read_knowledge` / `read_verify_knowledge` | 命中记录的 `source` 文件名 |
-    | `read_object` | 物体格键 `12:13:8`（`PlaceInWorld.key`） |
+    | `read_object_memory` | 物体格键 `12:13:8`（`PlaceInWorld.key`） |
 
     **它是数组，不是拼成一行的字符串**（0914 跟进）：`content` 已经是 JSON，
     把清单压成 `"a b c"` 只会把分词规则转嫁给每个读它的人——判据侧曾为此维护一张
     "哪条读口按什么数条数"的表，而 `read_knowledge` 的 5 个文件名一个括号都没有，
     把"一律数括号"那条判据当场打成假警。命中为空就是空数组（`[]`），不是特例。"""
-    entry: StepMemory | None = None
-    memory: EpisodeMemory | None = None
+    entry: ActMemory | None = None
+    memory: EpisodeMemory | TaskMemory | None = None
     event: ObjectFactEvent | None = None
     reason: str | None = None
 
     # ---- 判定 / 校验 / 规划结论 ----
-    verdicts: list[StepVerifyVerdict] | None = None
-    done: bool | None = None
-    success: bool | None = None
-    stalled: bool | None = None
+    verdicts: list[VerifyVerdict] | None = None
     checked: int | None = None
-    unreliable: int | None = None
+    negative: int | None = None
     pushed: list[str] | None = None
+    termination: Termination | None = None
+    """本层机械终止类别（`judge_verdict` 带；未判停为 None）。"""
+    fail_streak: int | None = None
+    """连续失败计数（episode / run 的 `judge_verdict` 与 `settle_goal` 带）。"""
+    updates: list[dict[str, str]] | None = None
+    """规划对已有目标的表态（`plan_verdict` 带）：`{task_id, status, note}`。"""
+    tasks: list[Task] | None = None
+    """拆解出的任务链（`decompose_verdict` 带），`task_id` 已由 harness 编好。"""
+    goal: GoalEntry | None = None
+    task_entry: TaskEntry | None = None
+    abandoned: list[str] | None = None
+    """刚盖完章的目标表行（`settle_goal` 带）。"""
+    audit: str | None = None
+    """人审表态：`accept` / `overturn`（`settle_goal` 带）。"""
 
     # ---- 图控制记账 ----
     stall_key: str | None = None
@@ -197,8 +218,8 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     text: str | None = None
     next_step: int | None = None
     frame: str | None = None
-    """这一帧的**原始画面**（base64 PNG），由观察类账（`observe` / `after_action`）
-    随正文一起带——调用方从帧槽或刚产出的那一帧现取，**没有就是省略这个键**
+    """这一帧的**原始画面**（base64 PNG），由观察账（`sense_frame`）
+    随正文一起带——调用方用刚取到的那一帧，**没有就是省略这个键**
     （不写 `null`：漏交写 `null` 会让判据侧把"没读"当成一个空词静默放过）。
 
     0914 曾把事件自带的图整条删掉、改由 `memory/step_memory/` 当真源；同日跟进又
@@ -210,4 +231,4 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     """这条链是在哪一句**人类插话**之下产出的（空串 = 没被插话）。
 
     0914 控制台改造后它挂在 `THINK` 上——插话的唯一落点是决策那一格
-    （`do_action` 自己没有 LLM 调用），所以"人说了什么"天然属于那条链的账。"""
+    （`press_key` 自己没有 LLM 调用），所以"人说了什么"天然属于那条链的账。"""

@@ -2,7 +2,7 @@
 name = "pokemon-agent"
 version = "0.1.0"
 description = "Harness-driven Pokemon agent — prototype"
-# 3.11：`enum.StrEnum`（schemas/trace/domain/trace_kind.py 等）需要。
+# 3.11：`enum.StrEnum`（schemas/harness/domain/trace_kind.py 等）需要。
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6",

@@ -1,7 +1,7 @@
 """`reflect()` 的产物：`Reflection`。
 
-**四段结构**：看到什么 → 为什么 → 做了什么 → 变成什么。这是大脑对"一步经历"
-自己的表达方式，跟 `memory` 的 `StepMemory` 是两个独立模块各自的方言——
+**三段结构**：看到什么 → 做了什么 → 变成什么。这是大脑对"一步经历"
+自己的表达方式，跟 `memory` 的 `ActMemory` 是两个独立模块各自的方言——
 两边字段今天恰好重合，是巧合，不是契约。谁要用谁自己转换（`tools/brain_tool.py`）。
 
 **为什么两帧是字符串**：`before`/`after` 是**素材**，不是大脑要做逻辑运算的东西。
@@ -9,7 +9,7 @@
 这类"不该进经验"的字段该不该剪、按什么顺序渲染、对齐怎么做，全是**渲染策略**，
 随世界和存储策略变。大脑只负责"把这一段文本当成本步的`当时看到`收下"，然后
 原样交出去。跨模块零依赖靠这条：`brain` 不认识 `world.Observation`，
-也不认识 `StepMemory.Observation`。
+也不认识 `ActMemory.Observation`。
 
 **没有 `episode_id`/`step`**：这两个是**轨迹坐标**，由 Harness/tool 盖章——
 大脑不知道自己在哪一局、第几步，正如它不知道自己是第几次重试。
@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 
 class Reflection(BaseModel):
-    """一条整理好的经验：**我看到这样，因为这些理由，做了这个动作，然后变成这样。**
+    """一条整理好的经验：**我看到这样，做了这个动作，然后变成这样。**
 
     ## 为什么两头都是完整文本
 
@@ -41,9 +41,5 @@ class Reflection(BaseModel):
     """
 
     before: str = Field(description="执行前那一帧观测的渲染文本")
-    rationale: list[str] = Field(
-        description="最能支持**这一步**的论据——动作名里没有的信息，"
-        "也是未来取回这条经验时可以检查的适用条件"
-    )
     action_text: str = Field(description="这一步做了什么（按键链的文本，见 `Action.describe()`）")
     after: str = Field(description="执行后那一帧观测的渲染文本")

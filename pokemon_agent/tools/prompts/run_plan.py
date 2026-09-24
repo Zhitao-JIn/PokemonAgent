@@ -9,7 +9,7 @@
 
 - `index_lines`：本 run **每一局一行**，取的是章（`episode_id`/`goal`/成败/步数）；
 - `detail_blocks`：**少数几局的正文**（一期按确定性规则选，见
-  `run/nodes/plan.py::_pick_details`）；
+  `run/perceive`（`_pick_details`））；
 - `object_lines`：本 run 涉及的地图交互事实，一条一行。
 
 `history_blocks()` 把三段拼成 brain 认的"发生过什么"
@@ -27,7 +27,7 @@ from pokemon_agent.schemas.harness.domain import GoalEntry
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
 from pokemon_agent.tools.prompts.object_render import render_object_events
 
-from . import load
+from . import append_human_note, load
 
 _TEMPLATE = load("run_plan")
 
@@ -91,25 +91,19 @@ def history_blocks(req: FromHarnessToBrainToolPlanOnceReq) -> list[str]:
 def goals_lines(plan: Sequence[GoalEntry]) -> list[str]:
     """把**目标表**渲染成每目标一行，返回行列表。
 
-    行首是**表内序号**（模型点名一条要用它）、状态、目标；`note`（失败/放弃的理由）
-    附在行尾——它就是"教训"那一栏，模型读表时最该看见的东西。父目标用缩进表达，
-    父指针解析成父的序号（解析不到就当顶层）。
+    行首是**表内序号**（模型点名一条要用它）、状态、目标；人审推翻过的定案标"（人审推翻）"；
+    `note`（失败/放弃/推翻的理由）附在行尾——它就是"教训"那一栏，模型读表时最该看见的东西。
 
     顺序**照表序**：表序 = 派发顺序（`dispatch` 取第一条 `PENDING`），
     **不是**旧栈那种"表末最先做"——`run_plan.md` 里那段"最先做的排在列表最后"
     已随 LIFO 一起退役。
     """
-    index_of = {entry.task.task_id: i for i, entry in enumerate(plan)}
     lines: list[str] = []
     for i, entry in enumerate(plan):
-        depth = 0
-        cursor = entry.parent_id
-        while cursor is not None and cursor in index_of and depth < 3:
-            depth += 1
-            cursor = plan[index_of[cursor]].parent_id
+        overturned = "（人审推翻）" if entry.overturned else ""
         tried = f" · 已试 {entry.attempts} 次" if entry.attempts else ""
         note = f" · {entry.note}" if entry.note else ""
-        lines.append(f"[{i}] {'  ' * depth}{entry.status.value:<9} {entry.task.goal}{tried}{note}")
+        lines.append(f"[{i}] {entry.status.value:<9}{overturned} {entry.task.goal}{tried}{note}")
     return lines
 
 
@@ -119,12 +113,15 @@ def build_prompt(req: FromHarnessToBrainToolPlanOnceReq) -> str:
     details = detail_blocks(req.details)
     objects = object_lines(req.objects)
     goals = goals_lines(req.plan)
-    return _TEMPLATE.render(
-        index="\n".join(index) if index else "（本 run 还没有跑完任何一局）",
-        details="\n\n".join(details) if details else "（这一版不附任何一局的正文）",
-        objects="\n".join(objects) if objects else "（还没有任何地图交互事实）",
-        goals="\n".join(goals) if goals else "（空表）",
-        max_push=req.max_push,
+    return append_human_note(
+        _TEMPLATE.render(
+            index="\n".join(index) if index else "（本 run 还没有跑完任何一局）",
+            details="\n\n".join(details) if details else "（这一版不附任何一局的正文）",
+            objects="\n".join(objects) if objects else "（还没有任何地图交互事实）",
+            goals="\n".join(goals) if goals else "（空表）",
+            max_push=req.max_push,
+        ),
+        req.human_note,
     )
 
 

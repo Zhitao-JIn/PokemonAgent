@@ -194,7 +194,7 @@ class GameTools:
 
         前置条件：世界已 `reset()`（`world.perceive_once()` 会 assert）。
         后置条件：成功时 `resp.observation` 非空；失败时抛 `MaxRetriesExceeded`
-            （`source="perception"`）。**不返回任何兜底观测**——那会让大脑基于
+            （`source="sense"`）。**不返回任何兜底观测**——那会让大脑基于
             假观测决策，而且这类失败在 replay 里必须能被统计到。
         """
         log: ModelCallLog = []
@@ -220,7 +220,7 @@ class GameTools:
                 )
                 if kind == ProviderRejected.__name__:
                     raise MaxRetriesExceeded(
-                        len(log), _last_error(log), log, source="perception"
+                        len(log), _last_error(log), log, source="sense"
                     ) from exc
                 if nth < PERCEPTION_MAX_RETRIES:
                     time.sleep(MODEL_RETRY_BACKOFF_SECONDS)
@@ -242,7 +242,7 @@ class GameTools:
             PERCEPTION_MAX_RETRIES,
             _last_error(log),
             log,
-            source="perception",
+            source="sense",
         )
 
     def get_action_space(

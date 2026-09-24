@@ -10,7 +10,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import Goal
-from pokemon_agent.schemas.memory import StepMemory
+from pokemon_agent.schemas.memory import ActMemory
 from pokemon_agent.world import ActionSpace, Observation
 
 
@@ -22,7 +22,7 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     obs：当前观测（`facts` 只装这一帧从模拟器内存读出来的东西）。
     space：当前可用动作空间——`BrainTool` 从它提取 `keys` 传给大脑，
         说明文字则渲进 prompt。
-    memories：本局内情景记忆（`StepMemory`）。
+    memories：本局内情景记忆（`ActMemory`）。
     knowledge/episode_memories/human_note：分开放，各自在 prompt 里有独立
         占位符与可信度说明（混在一起模型没法区分对待）。
 
@@ -35,7 +35,7 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     `prompts.decide_action.build_prompt(req)` 拼它，只活在那一次调用的局部
     ——"先拼 prompt 再回填进同一个 req"那个中间态不再外露。
 
-    **决策的截图也不进信封**（0915 129）：`memories` 里每条 `StepMemory` 自带
+    **决策的截图也不进信封**（0915 129）：`memories` 里每条 `ActMemory` 自带
     `before_frame`/`after_frame`，`BrainTool.choose()` 用 `dedup_snapshots()`
     把它们拼装成随请求发出的 images——与 prompt 的 `$memories` 段落
     （`render_sequence()` 的文字版）**同一批帧、逐帧对应**。不另开素材通道的
@@ -45,7 +45,7 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     goals: list[Goal]
     obs: Observation
     space: ActionSpace
-    memories: list[StepMemory]
+    memories: list[ActMemory]
     knowledge: str = ""
     episode_memories: str = ""
     human_note: str = ""

@@ -10,7 +10,7 @@
 
 | 留在这里的 | 为什么不能进模块 |
 |---|---|
-| `AgentError` | 全体根。`episode_error_handler` 只捕它——"单局异常不崩掉整个 run"
+| `AgentError` | 全体根。run / episode 的 `act` 只兜它——"单局 / 单个 task 异常不崩掉上一层"
   这条 run 级策略需要一个所有**跨模块**异常都继承的共同祖先（tool 层的
   `MaxRetriesExceeded`） |
 | `MaxRetriesExceeded` | **tool 抛、harness 接**：它描述的是"重试预算耗尽"这个
@@ -24,7 +24,7 @@ brain，0913 夜修正 world）：
 - **brain 的词汇** → `pokemon_agent/brain/errors.py`：
   `ParseFailure` / `IllegalAction` / `OutputTruncated` / `ToolTimeout` /
   `ProviderRejected` / `AttemptFailed` 家族（`Decision` / `Plan` / `Judge` /
-  `Verify` / `Summarize` / `Extract`）。
+  `Decompose` / `Verify` / `Summarize`）。
   brain 要能被整体拷走，词汇得跟着走；**且它有一根自己的根 `BrainError`**——
   此前继承这里的 `AgentError`，但实测那些异常全被 `BrainTool._attempt_loop`
   接住、翻译成 `MaxRetriesExceeded` 才上抛，**走不到 harness 的捕获点**，
@@ -32,7 +32,7 @@ brain，0913 夜修正 world）：
 - **world 的词汇** → `pokemon_agent/world/errors.py`：
   `PerceptionAttemptFailed`——它现在也**自成一根 `WorldError`**（0913 夜）。
   改动的原因是 **P4**：world 的重试循环原本建在 harness 节点
-  （`press/perceive_after_action.py` 里那个 `for attempt in ...`），
+  （当时的感知节点里那个 `for attempt in ...`），
   于是 world 的异常真的跨上了 harness；0913 夜把它搬回 tool 层
   （`GameTools.perceive_with_retry`，与 `BrainTool._attempt_loop` 同形），
   world 的词汇**在桥上就被翻译掉**——继承随之失去对象。
@@ -48,7 +48,7 @@ world 的异常在 `GameTools.perceive_with_retry` 被同样处理——**两者
 
 **所以"子类搬走、根留下"现在没有对象了**：四个独立模块（brain / world /
 memory / trace）里，**没有任何模块异常真的走到 harness 的捕获点**——桥建在
-tool 层，模块的词汇在桥上翻译。`episode_error_handler` 捕的是**tool 层宣布的
+tool 层，模块的词汇在桥上翻译。两层 `act` 兜的是**tool 层宣布的
 升级态**，不是模块的原始词汇。
 
 **`ImageNotDelivered` 回 brain 了**（0913 深夜十一）：它由 `brain/providers.py::describe()`
@@ -91,14 +91,11 @@ class MaxRetriesExceeded(AgentError):
     到这一步说明模型在当前状态下持续失败，是一条要进 trace 并被 replay 统计的失败模式，
     不是"再试试就好"。
 
-    **谁抛**：tool 层的两个循环控制者——`BrainTool._attempt_loop`（六条链路统一重试
+    **谁抛**：tool 层的两个循环控制者——`BrainTool._attempt_loop`（各条大脑链路统一重试
     `BRAIN_MAX_ATTEMPTS` 次）与 `GameTools.perceive_with_retry`（感知链重试
     `PERCEPTION_MAX_RETRIES` 次）。
     **谁接**：harness 的调用点——它决定这一局/这一轮怎么收场（`choose` 耗尽让这一局
     失败，`plan` 耗尽路由 review 交人工，感知耗尽让这一局以错误收场，等）。
-    **`extract` 那个调用点把 `except` 写成了"落账 + 继续"**（0914 S4）：知识抽取是
-    附加产物，拿不到它不该让这一局从成功率的分母上掉出去——见
-    `harness/episode/close/extract_knowledge.py`。
 
     **它为什么不进 brain**（0913）：brain 只回答"这一次成没成"（抛 `AttemptFailed`），
     不含"重试几次""耗尽之后怎么办"这些**调用方处境**的知识。循环在 tool 层，所以这个
@@ -112,8 +109,9 @@ class MaxRetriesExceeded(AgentError):
     由 `BrainTool._adopt()` 翻成这一份。**账上没有"第几次尝试"字段**：
     每条账各代表一次尝试，所以尝试次数就是 `len(calls)`。
 
-    `source`：哪条链路耗尽（`"decide"` / `"plan"` / `"judge"` / `"verify"` /
-    `"summarize"` / `"extract"` / `"perception"`）。同一个异常类被七条链路共用，
+    `source`：哪条链路耗尽（`"choose"` / `"plan"` / `"judge"` / `"verify"` /
+    `"decompose"` / `"summarize_episode"` / `"summarize_task"` / `"sense"`）。
+    同一个异常类被各条链路共用，
     `source` 是调用方分辨"是谁完了"的依据——没有它就只能靠调用点位置倒推，
     而重试循环在 tool 层，调用点与链路已不是一一对应。
     """
@@ -134,4 +132,11 @@ class MaxRetriesExceeded(AgentError):
         self.source = source
 
 
-__all__ = ["AgentError", "MaxRetriesExceeded"]
+class NoGoalToDispatch(AgentError):
+    """`plan_run` 规划完，目标表里仍没有一条 `PENDING`——run 未判停却无事可派。
+
+    fail-fast：停机只由 `review_and_judge` 判，规划给不出目标不是"该停了"的信号。
+    """
+
+
+__all__ = ["AgentError", "MaxRetriesExceeded", "NoGoalToDispatch"]

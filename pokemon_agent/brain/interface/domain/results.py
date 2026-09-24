@@ -1,5 +1,5 @@
 """大脑各方法一次调用的产物：`ChooseResult`/`JudgeResult`/`PlanResult`/
-`VerifyResult`/`SummarizeResult`/`ExtractResult`。
+`DecomposeResult`/`VerifyResult`/`SummarizeResult`。
 
 **每个结果袋都是"硬性字段 + 软性字典"这个形状**——硬性字段是调用方一定要的
 （少一个就没法继续），`extra` 吸收其余一切：模型多给的字段、实现临时加的
@@ -20,11 +20,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .action import Action
+from .decomposition import Decomposition
 from .episode_summary import EpisodeSummary
-from .learned_knowledge import LearnedKnowledge
 from .model_call import ModelCall
 from .run_plan import RunPlan
-from .step_verify import StepVerifyVerdict
+from .verify_verdict import VerifyVerdict
 
 
 class _ResultBase(BaseModel):
@@ -77,6 +77,13 @@ class PlanResult(_ResultBase):
     calls: list[ModelCall] = Field(default_factory=list, description="这次尝试自己的账，恰好一条")
 
 
+class DecomposeResult(_ResultBase):
+    """`Brain.decompose()` 的结果袋。失败抛 `DecomposeAttemptFailed`（附这次的账）。"""
+
+    decomposition: Decomposition = Field(description="这次尝试解析出的任务链")
+    calls: list[ModelCall] = Field(default_factory=list, description="这次尝试自己的账，恰好一条")
+
+
 class VerifyResult(_ResultBase):
     """**`verify()` 的产物**：逐条判定 + 这次的账。
 
@@ -88,7 +95,7 @@ class VerifyResult(_ResultBase):
     那份保守结果与"这一局记忆确实都不可信"在数据上无法区分。
     """
 
-    verdicts: list[StepVerifyVerdict] = Field(description="与 count 等长的判定列表")
+    verdicts: list[VerifyVerdict] = Field(description="与 count 等长的判定列表")
     calls: list[ModelCall] = Field(default_factory=list, description="这次校验调用的账")
 
 
@@ -102,17 +109,3 @@ class SummarizeResult(_ResultBase):
     summary: EpisodeSummary = Field(description="蒸馏出的本局摘要")
     calls: list[ModelCall] = Field(default_factory=list, description="这次蒸馏调用的账")
 
-
-class ExtractResult(_ResultBase):
-    """**`extract()` 的产物**：这一局读到的世界知识 + 这次的账。
-
-    与 `SummarizeResult` 一样是"从这一局的步骤记录里读东西"，但**读出来的东西
-    归属不同**——摘要属于那一局，知识属于世界（见 `LearnedKnowledge` 的说明）。
-    两条链路各自独立计费，所以各有各的 `calls`。
-
-    `knowledge.items` **可以为空**：大多数局什么都没读到，那不是失败。
-    真正失败（模型调不通 / 输出解析不出）抛 `ExtractAttemptFailed`。
-    """
-
-    knowledge: LearnedKnowledge = Field(description="这一局读到的世界知识（可以一条都没有）")
-    calls: list[ModelCall] = Field(default_factory=list, description="这次抽取调用的账")

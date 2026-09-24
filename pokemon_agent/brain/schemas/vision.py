@@ -23,7 +23,7 @@ class VisionDescribeReq(BaseModel):
     images：待识别的图片，**完整的 PNG data URI 字符串**（不是原始字节）——
         `data:image/png;base64,…`，0915 起这是**唯一**格式（自描述、grep 可寻，
         裸 base64 已废；产出点唯一：`world/pyboy_world._png_data_uri`）。
-        **按要出现在 prompt 里的顺序排列**，至少一张。`StepMemory`
+        **按要出现在 prompt 里的顺序排列**，至少一张。`ActMemory`
         直接存 data URI（省掉“存文件名→用的时候再读盘+编码”这一趟），
         `judge`/`verify_steps` 用的图片天然就是已经编好的字符串，
         这里用 `str` 才不用来回编解码。

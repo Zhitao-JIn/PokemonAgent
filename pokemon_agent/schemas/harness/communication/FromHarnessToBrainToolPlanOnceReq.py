@@ -26,14 +26,14 @@ class FromHarnessToBrainToolPlanOnceReq(BaseModel):
 
     run_id：这次 run 的标识（trace 记账用，大脑不需要）。
     plan：当前**目标表**，表序 = 先后顺序（第一条待做的最先被派发）。
-        每一行带自己的 `status`/`attempts`/`note`/`parent_id`——模型据此看见
+        每一行带自己的 `status`/`attempts`/`note`/`overturned`——模型据此看见
         "哪些做过了、成没成、为什么没成"。
     index：本 run 沉淀的 `episode_memory` 全量，**按执行顺序**（不是字典序——
         `episode_id` 是 `{run_id}-ep{n}`，字典序在 n≥10 时会乱）。一份
         `EpisodeMemory` = 来源章（`episode_id`/`goal`/`success`/`steps`）+
         派生正文；**索引行只取章**，正文是详情那一份的事。
     details：**这一版预取的正文**——`index` 的子集（一期规则见
-        `run/nodes/plan.py::_pick_details`）。二期上工具环后这个字段可以为空，
+        `run/perceive`（`_pick_details`））。二期上工具环后这个字段可以为空，
         模型自己请求要哪几局的正文，**信封不用改**（这就是留的那条缝）。
     objects：本 run 涉及的地图交互事实（`object_memory`，锚在 `(map_id,x,y)` 上，
         跨局共池）。plan 是 run 级、没有当前观测，所以按**可选条件**取
@@ -50,3 +50,4 @@ class FromHarnessToBrainToolPlanOnceReq(BaseModel):
     details: list[EpisodeMemory] = Field(default_factory=list)
     objects: list[ObjectFactEvent] = Field(default_factory=list)
     max_push: int
+    human_note: str = Field(default="", description="人对上一版规划的插话；空 = 没被插话")

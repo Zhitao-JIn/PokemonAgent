@@ -11,9 +11,9 @@ class Goal(BaseModel):
     两样一起给，不能只给前者：判定器的输入就是这两项，没有判据它无从判断，
     只能凭"看起来差不多了"回答——而那正是成功率会被污染的地方。
 
-    本阶段一局只有一个目标，由任务给定（`goals` 栈里恒为一层，见
-    `EpisodeRunState.episode_goals`（`harness/episode/episode_state.py`））。目标栈这个形状留着，是因为拆子目标要回来——
-    但**拆的机制会在别处重写**，不是现在这个 intent 分派。
+    本阶段一局只有一个目标，由任务给定（0922 第 186 条起交界是**单投**：run 只投
+    一个 `goal` 进 episode，见 `EpisodeRunState.goal`）。`Goal` 这个形状留着——
+    拆解器（decompose）要回来，但**拆的机制会在别处重写**，不是现在这个 intent 分派。
     """
 
     goal: str = Field(min_length=1, description="想达成什么，一句话")

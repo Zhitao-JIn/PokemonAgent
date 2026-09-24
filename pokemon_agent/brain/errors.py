@@ -6,7 +6,7 @@
 
 **为什么这些异常住在 `brain/` 而不是顶层 `errors.py`**（0913 定案）：
 它们是 **brain 的内部词汇**——`ParseFailure`/`IllegalAction`/`OutputTruncated`
-描述的是"大脑吐出来的东西为什么不能用"，`AttemptFailed` 家族是 brain 六方法的
+描述的是"大脑吐出来的东西为什么不能用"，`AttemptFailed` 家族是 brain 七方法的
 唯一失败出口。brain 是要能**被整体拷走复用**的模块（跟 `memory/` 同一规格），
 它的词汇得跟着它走，不能留在项目顶层等别人施舍。
 
@@ -173,7 +173,7 @@ class ImageNotDelivered(BrainError):
 class AttemptFailed(BrainError):
     """**一次尝试**失败——模型调不通 / 输出解析不出 / 动作幻觉 / 被截断。
 
-    家族基类，本身不直接抛。**这个家族的成员是 brain 六方法的唯一失败出口**：
+    家族基类，本身不直接抛。**这个家族的成员是 brain 七方法的唯一失败出口**：
     brain 不做重试（重试循环在 `BrainTool`），所以"这一次没成"必须作为一种
     可预期的结果交给调用方——异常携带这次的 `call`（账），tool 收进自己的
     重试账里，预算耗尽再升级成 `MaxRetriesExceeded`。
@@ -208,7 +208,7 @@ class DecisionAttemptFailed(AttemptFailed):
     所以重试本身携带信息增量。
     """
 
-    def __init__(self, call: ModelCall, source: str = "decide") -> None:
+    def __init__(self, call: ModelCall, source: str = "choose") -> None:
         """记下这次失败的账单。"""
         super().__init__(call, source)
 
@@ -221,6 +221,14 @@ class PlanAttemptFailed(AttemptFailed):
     """
 
     def __init__(self, call: ModelCall, source: str = "plan") -> None:
+        """记下这次失败的账单。"""
+        super().__init__(call, source)
+
+
+class DecomposeAttemptFailed(AttemptFailed):
+    """一次 episode 级拆解尝试失败（模型调不通 / 解析不出 `Decomposition`）。可重试，原样重问。"""
+
+    def __init__(self, call: ModelCall, source: str = "decompose") -> None:
         """记下这次失败的账单。"""
         super().__init__(call, source)
 
@@ -264,24 +272,11 @@ class SummarizeAttemptFailed(AttemptFailed):
 
     **此前这里不抛异常，而是返回 `summary=None`**。改抛之后（2026-09-13 取消降级），
     "这次没蒸出东西"不再是一种正常返回——`BrainTool` 重试耗尽就抛
-    `MaxRetriesExceeded(source="summarize")`，由 harness 的调用点决定怎么收场
+    `MaxRetriesExceeded(source="summarize_episode")`，由 harness 的调用点决定怎么收场
     （跟 `verify` 同一个处理）。
     """
 
-    def __init__(self, call: ModelCall, source: str = "summarize") -> None:
-        """记下这次失败的账单。"""
-        super().__init__(call, source)
-
-
-class ExtractAttemptFailed(AttemptFailed):
-    """一次**世界知识抽取**尝试失败（模型调不通 / 输出解析不出）。
-
-    跟 `summarize` 同形：抽取也是"从这一局的步骤记录里读东西"，失败不降级——
-    "这次什么都没抽到"（合法的空结果）与"抽取器坏了"必须分得开，
-    所以解析不出就抛，由 `BrainTool` 的重试预算接手。
-    """
-
-    def __init__(self, call: ModelCall, source: str = "extract") -> None:
+    def __init__(self, call: ModelCall, source: str = "summarize_episode") -> None:
         """记下这次失败的账单。"""
         super().__init__(call, source)
 
@@ -290,7 +285,7 @@ __all__ = [
     "AttemptFailed",
     "BrainError",
     "DecisionAttemptFailed",
-    "ExtractAttemptFailed",
+    "DecomposeAttemptFailed",
     "IllegalAction",
     "ImageNotDelivered",
     "JudgeAttemptFailed",

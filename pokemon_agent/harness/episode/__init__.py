@@ -1,25 +1,18 @@
-"""episode 图（一局）——run 图的子图，按 7 个功能域展开的 21 个节点。
+"""episode 图（一局）——run 图的子图，**5 格**（0923 压格）。
 
-步 0 建立本包时只有两件东西：`episode_state.py`（图的状态载体）与 `episode_graph.py`（图的装配）。
-步 2 补上 `episode_entry.py`（**图外侧门**：`begin_episode` 装配器与 `run_new` 入口；
-原 `prepare_resume` / `run_resume` 已随 checkpoint 恢复链删除）。步 3 起节点按域搬进来
-（`open/ gate/ retrieve/ decide/ press/ store/ close/`），形状见
-`docs/spec/harness/SPEC.md` 第二、三节。
+`perceive → review_and_judge → plan_episode → act → 回 perceive`，判停走
+`episode_done`。**格 = 文件夹，文件 = 最小语义**：五个格各住同名文件夹，
+格入口（组合单元的可调用）住文件夹的 `__init__.py`，串接语义见 `compose.py`。
+骨架（图装配 / 状态 / 图外侧门 / runtime / 帧槽）留包根。
 """
 
 from __future__ import annotations
 
 from . import episode_entry
-from .episode_graph import (
-    EpisodeInput,
-    EpisodeOutput,
-    compile_episode_graph,
-)
+from .episode_graph import compile_episode_graph
 from .episode_state import EpisodeRunState
 
 __all__ = [
-    "EpisodeInput",
-    "EpisodeOutput",
     "EpisodeRunState",
     "compile_episode_graph",
     "episode_entry",

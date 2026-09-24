@@ -13,8 +13,8 @@
 ## 目录结构（物理边界体现"谁只服务谁"）
 
 - **`calls/`**：直接拼成一次完整 LLM 请求、真的会发出去的模板——
-  `judge_success`/`run_plan`/`verify`/`summarize`/`extract`
-  五份是没有复用片段的独立文件，平铺在 `calls/` 下；`decide_action` 比较特殊，
+  `judge_success`/`run_plan`/`decompose`/`verify`/`summarize`/`summarize_task`
+  六份是没有复用片段的独立文件，平铺在 `calls/` 下；`decide_action` 比较特殊，
   自己单独一个子目录 `calls/decide_action/`：
   - `decide_action.md`——真正会发出去的模板本体；
   - `button_help.md`/`map_hint.md`/`repeat_hint.md`/`retry_note.md`——**只服务
@@ -23,17 +23,16 @@
     说明，跟 `decide_action` 的重试策略不是一回事）。物理上放进同一个目录，
     这个"只服务谁"的事实不用靠读代码才知道，打开文件夹就是答案。
 - **每个需要拼装逻辑的模板，配一个同名的同级 `.py`**：`decide_action.py`/
-  `judge_success.py`/`verify.py`/`summarize.py`/`extract.py`/`run_plan.py`——对外只提供
+  `judge_success.py`/`verify.py`/`summarize.py`/`summarize_task.py`/`decompose.py`/`run_plan.py`——对外只提供
   `build_prompt()`（`decide_action` 额外提供 `retry_prompt()`，`decide_action.md`
   独有重试纠正说明这个概念）。
   `decide_action.py` 的拼装内容（`BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT`
   三个常量 + 重试纠正说明 + 最终拼装）集中在这一个文件，三个常量仍对外暴露
   （给 `game_tools.py` 构造 `ActionSpace` 用）。`judge_success.py`
-  服务 `Brain.judge()`——渲染搬出来给调用方（`EpisodeHarness`），`Brain`
-  只收现成的 `prompt: str`；`verify.py`/`summarize.py`/`extract.py` 同理服务
-  `Brain.verify()`/`Brain.summarize()`/`Brain.extract()`（**各占一个模块**：前两个
-  原本合并成一次调用，拆开后模板与装配模块都跟着一分为二；`extract` 从一出生就是
-  独立的一条链路——它跟 `summarize` 收同一类素材，但产物归属完全不同）；`run_plan.py` 服务
+  服务 `Brain.judge()`——渲染搬出来给调用方（`BrainTool.judge()`），`Brain`
+  只收现成的 `prompt: str`；`verify.py`/`summarize.py`/`summarize_task.py`/`decompose.py` 同理服务
+  `Brain.verify()`/`Brain.summarize()`/`Brain.decompose()`（**各占一个模块**：verify 与
+  summarize 原本合并成一次调用，拆开后模板与装配模块都跟着一分为二）；`run_plan.py` 服务
   `RunHarness.plan()`——`RunHarness` 只组装结构化的 `PlanOnceReq`，
   struct→text 一律在这层做。
   `perceive_screen` **已经不在这一层了**（0913 定案，CHANGELOG 同日条目）：

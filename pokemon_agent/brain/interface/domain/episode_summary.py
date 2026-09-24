@@ -5,9 +5,9 @@
 合并成 `Brain.verify_and_summarize()` 的一次调用，拆开之后（CHANGELOG 第 39 条）
 就没有 `VerifyAndSummarizeReq/Resp` 这类合并信封了，这里只剩蒸馏侧的响应产物。
 
-`EpisodeSummary` 是蒸馏结果的直接产物，由 `BrainTool.summarize()` 配上 harness
-给的五个来源字段（`episode_id`/`run_id`/`goal`/`success`/`steps`）搬进存储形状
-`EpisodeMemory`——两段的分界见 `EpisodeMemory` 的类 docstring。"""
+`EpisodeSummary` 是蒸馏结果的直接产物，episode 与 task 两级共用：`Summarizer` 把它
+配上来源章搬进 `EpisodeMemory`，`TaskSummarizer` 搬进 `TaskMemory`。`reason` 是
+两级 Output 里那句结论说明的唯一来源。"""
 
 from __future__ import annotations
 
@@ -27,6 +27,9 @@ class EpisodeSummary(BaseModel):
     """
 
     summary: str = Field(description="Episode的简明总结")
+    reason: str = Field(
+        default="", description="结论说明：成了靠什么、没成卡在哪（进 Output.reason）"
+    )
     reusable_patterns: list[str] = Field(
         default_factory=list, description="可重复利用的游戏策略和经验模式"
     )

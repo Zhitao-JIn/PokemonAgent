@@ -3,10 +3,12 @@
 和图内节点的分工，跟 `episode/episode_entry.py` 与它那些节点的分工是同一个意思：
 **凡是"在进图之前必须先做完、且做完才有一个完整初值"的事，都住图外**。run 侧这件是
 
-- `new_run`：写 `RUN_START` → 造初始 `RunState` → 进图 → 取结算（异常路径补 `RUN_ERROR`）。
+- `new_run`：造初始 `RunState` → 载世界起点（`game.reset`，每 run 一次）
+  → 进图 → 取结算（异常路径补 `RUN_ERROR`）。
 
-异常时补一条 `RUN_ERROR` 再原样抛，**不吞**（跟 `episode_entry` 对 `EPISODE_ERROR`
-的处理是同一个模式）。
+**起止账都在图内**：`run_start` 在 `begin`、`run_end` 在 `run_done`。本入口只记它亲手
+接住的 `RUN_ERROR`，再原样抛，**不吞**（谁接住谁记账：episode 的异常由 run 的 `act`
+记 `episode_error`，task 的异常由 episode 的 `act` 记 `task_error`）。
 
 **存档/恢复已整体删除**（见 `CHANGELOG.md` 2026-09-13 第 57 条）：原先这里有第二个
 入口 `resume_run`（读存档锚点 → 重建 `RunState` → 进图 → 补 `CHECKPOINT_RESTORE`
@@ -14,12 +16,11 @@
 
 **`recursion_limit` 的常量住顶层 config**（`RUN_RECURSION_LIMIT`）：`_invoke()` 是它唯一
 的读者，它是 run 级的**闸门**而不是预算——贴身的限在内层
-`episode_entry.episode_budget()`（按剩余步数逐局算），两层的分工与来龙去脉见那个常量
+task 层的贴身限（`task_entry.task_budget`，按键数算），三层的分工见那个常量
 自己的 docstring。
 
-**函数名与 `episode_entry` 刻意不同**：那边是 `run_new`（"run 起一局"），
-这里是 `new_run`（"起一个 run"）。两个模块各有各的 `run` 语义，同名会
-让 `grep run_new` 撞出两处、而它们在不同的层级上。
+**函数名与 `episode_entry` 刻意不同**：那边是 `run_episode`（"跑一局"），
+这里是 `new_run`（"起一个 run"），两个入口名 grep 时不撞。
 
 **`goals` 进、`plan` 表的构造在这里**（0914 控制台改造）：调用方递的还是
 一个 `list[Task]`（实验层与核对脚本的口径不变——它们不该知道 `GoalEntry`），
@@ -32,18 +33,18 @@ from typing import Any
 
 from langgraph.graph.state import CompiledStateGraph
 
-from pokemon_agent.brain import Task
+from pokemon_agent.brain import Goal, Task
 from pokemon_agent.config import RUN_RECURSION_LIMIT
 from pokemon_agent.schemas.harness import (
+    FromHarnessToGameToolResetReq,
     FromHarnessToTraceToolAppendReq,
-    FromRunHarnessToEpisodeHarnessRunResp,
-    RunResp,
     TraceKind,
 )
-from pokemon_agent.schemas.harness.domain import GoalEntry, GoalStatus
+from pokemon_agent.schemas.harness.domain import EntryStatus, EpisodeOutput, GoalEntry
 
-from ..deps import HarnessDeps
+from .run_done import settle_run
 from .run_state import RunState
+from .runtime import RunRuntime
 
 
 def exc_snapshot(exc: Exception) -> str:
@@ -61,87 +62,90 @@ def initial_plan(goals: list[Task]) -> list[GoalEntry]:
 
     后置条件：返回条数与 `goals` 相等，顺序照原序（表序 = 派发顺序）。
     """
-    return [GoalEntry(task=task, status=GoalStatus.PENDING) for task in goals]
+    return [GoalEntry(task=task, status=EntryStatus.PENDING) for task in goals]
+
+
+def default_run_goal(goals: list[Task]) -> Goal:
+    """调用方没给 `run_goal` 时，用初始目标表的文字拼一个（依次完成表上全部目标）。"""
+    return Goal(
+        goal="依次完成：" + "；".join(task.goal for task in goals),
+        criteria="；".join(task.success_criteria for task in goals),
+    )
 
 
 def new_run(
-    deps: HarnessDeps, graph: CompiledStateGraph, *, run_id: str, goals: list[Task]
-) -> tuple[list[FromRunHarnessToEpisodeHarnessRunResp], int, int, float]:
-    """跑完一个 run：目标表逐个解决（每条一个 episode），返回 run 级结算。
+    deps: RunRuntime,
+    graph: CompiledStateGraph,
+    *,
+    run_id: str,
+    goals: list[Task],
+    run_goal: Goal | None = None,
+) -> tuple[list[EpisodeOutput], int, int, float]:
+    """跑完一个 run：载入世界起点，然后目标表逐个解决（每条一个 episode），返回 run 级结算。
 
     返回 `(outcomes, total, succeeded, success_rate)` 四个裸值，不打包成对象——
-    trace 里那条 RUN_END 内嵌的 `RunResp` 由 `close()` 自己组装，跟返回值无关。
+    trace 里那条 RUN_END 内嵌的 `RunResp` 由图内 `run_done` 组装。
+
+    **世界起点载入（`game.reset`）在本函数内、进图之前**：每 run 恰好一次，失败
+    视为 run 级失败（异常穿 `except` 补 RUN_ERROR 后原样抛）。
 
     `goals` 是初始目标表，按表序逐条派发（`dispatch` 取**第一条 `PENDING`**）；
     每轮 `plan` 读历史决定要不要拆新目标。**失败的目标由 `review` 盖成 `FAILED`
-    （终态，不自动重派）**——要再跑一局得由 `plan` 里的 `Planner` 显式把它重开成
-    `PENDING`（"重试是 plan 的决策，不是自动动作"）。结算累积在 `outcomes`，
+    （终态，不自动重派）**——要再跑一局得由 `plan` 里 brain 的下一版规划显式把它
+    重开成 `PENDING`（"重试是 plan 的决策，不是自动动作"）。结算累积在 `episode_outputs`，
     这里组装汇总。
 
-    后置条件：trace 里恰好多一条 RUN_START 和一条 RUN_END——异常路径也
-    补齐 RUN_END（error 变体）后原样抛出，不吞（跟 `episode_entry.run_new`
-    对 EPISODE_START/EPISODE_END 的处理是同一个模式）。
+    后置条件：正常路径 trace 里恰好多一条 RUN_START（`begin`）和一条 RUN_END（`run_done`）；
+    异常路径补一条 RUN_ERROR 后原样抛出，不吞。
     """
     assert run_id, "new_run() got an empty run_id"
     assert goals, "new_run() got an empty goal table"
 
-    # 步骤 1：开局账——RUN_START（跟 `episode_entry.begin_episode` 的 EPISODE_START
-    # 是同一个理由：没有它，replay/统计分不出一个 run 从哪开始）。
-    deps.trace.append(
-        FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.RUN_START,
-            meta={"source": "run_entry.new_run", "episode_id": run_id, "step": 0},
-            # 图外入口名也算一个真发送位置（`FromHarnessToTraceToolAppendReq.source`）。
-            run_goals=goals,
-        )
-    )
+    goal = run_goal or default_run_goal(goals)
 
-    state = RunState(run_id=run_id, plan=initial_plan(goals))
-    # `deps.run_id` 与这一次 run 的 trace/截图路径同生同死：子侧的 `run_id` 读的就是它。
-    deps.run_id = run_id
+    state = RunState(
+        run_id=run_id,
+        run_goal=goal,
+        goals=initial_plan(goals),
+    )
+    # `run_id` 的真源在 `state.run_id`（186 起 id 归 state，runtime 不再复制）；
+    # trace 事件的归属章由 `TraceTool.build(run_id=…)` 在构造期持有，与这里同值。
     try:
+        # 世界起点只在 run 开始时载一次（`load_state` 回 ROM 起点存档）；之后的每个
+        # episode **不重置**，接着上一局结束的状态继续跑——跨局累积进度全靠这一点
+        # （取舍见 `CHANGELOG.md` 2026-09-03 条目）。reset 住在这里（图外、"每 run
+        # 恰好执行一次"的位置），"只做一次"由代码位置保证——不再需要
+        # `world_reset_done` 那个跨局记号（2026-09-22 第 178 条删除）。
+        # task 取表序第一条（run 从第一个目标开局）；world 只拿它做断言与
+        # "将来按任务选起始存档"，真正的任务编排仍由 `dispatch` 逐局决定。
+        # `game` 住在 `EpisodeRuntime` 上（episode 独占），run 侧经嵌套穿透。
+        deps.episode.game.reset(FromHarnessToGameToolResetReq(task=goals[0]))
         final = _invoke(deps, graph, state)
     except Exception as exc:
-        # 步骤 2：异常路径——补 RUN_END（error 变体）再原样抛出，不吞。
+        # 异常路径：谁接住谁记账——这里接住的是整个 run 的异常，记 RUN_ERROR 再原样抛出，不吞。
         deps.trace.append(
             FromHarnessToTraceToolAppendReq(
                 kind=TraceKind.RUN_ERROR,
-                meta={"source": "run_entry.new_run", "episode_id": run_id, "step": 0},
+                meta={
+                    "source": "run_entry.new_run",
+                    "episode_id": run_id,
+                    "task_id": run_id,
+                    "step": 0,
+                },
                 error=exc_snapshot(exc),
             )
         )
         raise
-    return close(deps, final, run_id)
+    return close(final)
 
 
-def close(
-    deps: HarnessDeps, final: dict[str, Any], run_id: str
-) -> tuple[list[FromRunHarnessToEpisodeHarnessRunResp], int, int, float]:
-    """收尾：组装结算并写 RUN_END（`new_run` 用）。
-
-    结算对象只活在这个函数里：写进 RUN_END 事件，然后拆成四个裸值交出去。
-    """
-    final_state = RunState.model_validate(final)
-    outcomes = final_state.outcomes
-    succeeded = sum(1 for o in outcomes if o.success)
-    result = RunResp(
-        run_id=run_id,
-        outcomes=outcomes,
-        total=len(outcomes),
-        succeeded=succeeded,
-        success_rate=(succeeded / len(outcomes)) if outcomes else 0.0,
-    )
-    deps.trace.append(
-        FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.RUN_END,
-            meta={"source": "run_entry.close", "episode_id": run_id, "step": 0},
-            outcome_run=result,
-        )
-    )
+def close(final: dict[str, Any]) -> tuple[list[EpisodeOutput], int, int, float]:
+    """收尾：从终态拆出四个裸值（结算与 `run_end` 账已由图内 `run_done` 做完）。"""
+    result = settle_run(RunState.model_validate(final))
     return result.outcomes, result.total, result.succeeded, result.success_rate
 
 
-def _invoke(deps: HarnessDeps, graph: CompiledStateGraph, state: RunState) -> dict[str, Any]:
+def _invoke(deps: RunRuntime, graph: CompiledStateGraph, state: RunState) -> dict[str, Any]:
     """进图：递 `RUN_RECURSION_LIMIT`（闸门）与 `deps`（唯一的 context）。
 
     **`context=deps` 是必需项**（D3/F10）：run 图的节点也是自由函数，依赖只从
@@ -158,6 +162,7 @@ def _invoke(deps: HarnessDeps, graph: CompiledStateGraph, state: RunState) -> di
 __all__ = [
     "RUN_RECURSION_LIMIT",
     "close",
+    "default_run_goal",
     "exc_snapshot",
     "initial_plan",
     "new_run",

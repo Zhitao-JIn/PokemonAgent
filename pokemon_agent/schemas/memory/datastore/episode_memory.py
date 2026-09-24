@@ -1,8 +1,8 @@
-"""跨局摘要记忆：**一整局 step 记忆的总结**（一局一条）。
+"""跨局摘要记忆：**一整局各 task 记忆（TaskMemory）的总结**（一局一条）。
 
+记忆阶梯：ActMemory（一键一条）→ TaskMemory（一 task 一条）→ EpisodeMemory（一局一条）。
 名字里的"跨局"说的是**它会被别的局读到**（检索回来当参考），**不是"它总结了
-多个局"**——一条 `EpisodeMemory` 只对应一局，正文全部来自那一局通过校验的
-step 记忆。它也不是"跨 run 的经验"：run 只决定它落在哪个批次，不决定它是什么。
+多个局"**——一条 `EpisodeMemory` 只对应一局。
 """
 
 from __future__ import annotations
@@ -11,22 +11,21 @@ from pydantic import BaseModel, Field
 
 
 class EpisodeMemory(BaseModel):
-    """一条跨局摘要记忆——**本局 step memory 的派生视图**，不是第二份事实。
+    """一条跨局摘要记忆——**本局 TaskMemory 的派生视图**，不是第二份事实。
 
     ## 它是派的，不是记的
 
-    **正文**（`summary` 起）由 LLM 从**本局通过校验的那些 step memory** 蒸馏而来，
-    原料一直在 `memory/step_memory/`（以及 trace 里）。"只喂可信的那些"是这条记忆
-    **定义的一部分**，不是省 token 的优化——过滤点在
-    `harness/episode/close/verify_and_summarize.py`。
+    **正文**（`reason` 与 `summary` 起）由 LLM 从本局全部 TaskMemory 蒸馏而来；
+    每条 TaskMemory 都带 verify 的正/负标注一起送进去（负样本是 `failure_points`
+    的主要来源）。蒸馏点在 `harness/episode/episode_done/summarize_episode.py`。
 
-    **来源章**（`episode_id` / `run_id` / `goal` / `success` / `steps`）与 step memory
-    **毫无关系**：它是 harness 从 run state 盖的。装配点 `tools/brain_tool.py::summarize()`
-    把 `EpisodeSummary`（brain 的产物）与 `req` 上这五个字段拼在一起，才有本类。
+    **来源章**（`episode_id` / `run_id` / `goal` / `success` / `steps` / `acts_used` /
+    `termination`）是 harness 从 episode state 盖的，与正文无关。装配点
+    `tools/brain_tool.py::Summarizer.summarize()` 把 `EpisodeSummary` 与这些字段拼在一起。
 
     ## 三条推论（改这里之前先读）
 
-    1. **可重建**——同一批 step memory + 同样的章，重跑蒸馏得**等价**的一条
+    1. **可重建**——同一批 TaskMemory + 同样的章，重跑蒸馏得**等价**的一条
        （LLM 非确定，不逐字节相同）。所以"换 prompt / 换模型重蒸"是合法操作，
        不是危险操作。
     2. **可丢弃**——`rm memory/episode_memory/*.md` 只损失算力，不损失事实。
@@ -38,9 +37,10 @@ class EpisodeMemory(BaseModel):
     ## "一局一条"是硬约束
 
     每一局跑完都恰好留一条本类记录——**包括正文产不出来的那些**（整局异常、
-    收尾时没有可信 step 记忆）：那时落一条**只有来源章、正文全空**的记录，
-    写入点是 `harness/run/nodes/review.py::_leave_chapter()`（唯一每局必过的
-    地方）。所以"这局我试过没有"永远能从记忆里读出来，`plan` 不会对同一个
+    收尾时没有 TaskMemory 可蒸）：那时落一条**只有来源章、正文全空**的记录，
+    写入点是 `harness/episode/episode_done/leave_chapter.py::store_empty_chapter()`
+    （episode 收尾没有 TaskMemory 时由 `leave_chapter` 单元调、整局异常时由接住它的
+    run `act` 调）。所以"这局我试过没有"永远能从记忆里读出来，`plan` 不会对同一个
     目标反复做同一件蠢事。
 
     **空不空看正文自己**（0914 99）：早先另设过一枚 `chapter_only` 标记，
@@ -52,8 +52,15 @@ class EpisodeMemory(BaseModel):
     episode_id: str = Field(description="蒸馏自哪一局")
     run_id: str = Field(description="所属 run 的标识符")
     goal: str = Field(description="那一局的任务目标")
-    success: bool = Field(description="那一局是否成功完成")
-    steps: int = Field(ge=0, description="那一局实际用了多少步")
+    steps: int = Field(ge=0, description="那一局派了几个 task（本层计数单位）")
+    acts_used: int = Field(default=0, ge=0, description="那一局累计按了几个键（统计用）")
+    termination: str = Field(
+        default="",
+        description="机械终止类别：goal_done / world_ended / stalled / budget_exhausted / error",
+    )
+    reason: str = Field(
+        default="", description="episode_done 里 LLM 写的结论说明；空章版为异常摘要"
+    )
 
     # —— 派生正文（本局可信 step memory 的蒸馏结果，可重建可丢弃）——
     summary: str = Field(description="Episode的简明总结")
@@ -77,9 +84,14 @@ class EpisodeMemory(BaseModel):
     # 不是账上少抄一份。
     markdown: str = Field(default="", description="LLM 生成的完整记忆正文（.md 主内容）")
 
+    @property
+    def success(self) -> bool:
+        """成没成——由 `termination` 推出（`goal_done` 即达成），不单独存。"""
+        return self.termination == "goal_done"
+
     def render(self) -> str:
         """渲染成进 prompt 的样子，**检索打分也用它**——理由同
-        `StepMemory.render`（`schemas/memory/step_memory.py`）：两处用同一份文本，
+        `ActMemory.render`（`schemas/memory/datastore/act_memory.py`）：两处用同一份文本，
         避免"按 A 的内容选中，却把 B 的内容喂进去"这种不报错的错位。
 
         **第一行是来源章，往下才是派生正文，顺序不能反**——章是 harness 的机械判定，
@@ -90,8 +102,12 @@ class EpisodeMemory(BaseModel):
         """
         lines = [
             f"({self.episode_id}) 目标：{self.goal}"
-            f"（{'成功' if self.success else '未成功'}，{self.steps} 步）"
+            f"（{'成功' if self.success else '未成功'}"
+            f"{'，' + self.termination if self.termination else ''}，"
+            f"{self.steps} 个 task / {self.acts_used} 键）"
         ]
+        if self.reason:
+            lines.append(f"  结论  {self.reason}")
         if not self.summary.strip():
             # 正文不存在（整局异常，或收尾时一条可信的 step 记忆都没有）：
             # **不要**往 prompt 里塞一排空字段冒充正文，说明为什么没有就够了。

@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.config import MAX_RATIONALE, MAX_SEGMENTS
+from pokemon_agent.config import MAX_SEGMENTS
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.schemas.memory import render_sequence
 from pokemon_agent.world import terrain_legend
@@ -98,7 +98,7 @@ MAP_HINT = load("map_hint").render(terrain_legend=terrain_legend(), sample_map=_
 """
 
 REPEAT_HINT = load("repeat_hint").text
-"""连按提示（内容见 `calls/decide_action/repeat_hint.md`）。
+"""选键提示（内容见 `calls/decide_action/repeat_hint.md`）。
 
 随动作空间下发而不是写进 prompt 模板，因为它是**动作接口的一部分**——
 模型能不能用 `times` 取决于工具层认不认，和 prompt 怎么写无关。
@@ -126,15 +126,13 @@ _TEMPLATE = load("decide_action")
 
 
 def _render_goals(goals: list[Goal]) -> str:
-    """把这一局的**活跃目标**列出来，**当前要完成的那条排在最上面**——
+    """把这一局要解决的那**一个**目标列出来（186 单投，恒一层）——
     模型从上往下读 prompt，靶子先摆出来。
 
-    **这不是"层级栈"**：`goals` 是 `dispatch.active_stack()` 那份投影
-    （活跃条目 + 正在跑的那条搬到末位），这里只是把末位翻到最前。条目之间
-    **没有父子关系可说、位次也不代表深浅**——所以行首既不加序号、
-    也不加"第 N 层"这类前缀（0914：那两样都是把**投影位次**说成**层级**，
-    而真层级只由 `parent_id` 链表达，在 `run_plan` 的 `goals_lines()` 那份
-    **目标表**上，不在这张投影上）。靶子认「← 你现在要完成的」这一句，不认序号。
+    **这不是"层级栈"**：条目之间**没有父子关系可说、位次也不代表深浅**——
+    行首既不加序号、也不加"第 N 层"这类前缀（0914：那两样都是把**投影位次**
+    说成**层级**；目标表在 `run_plan` 的 `goals_lines()` 上，不在这里）。靶子认「← 你现在要完成的」
+    这一句，不认序号。
     """
     return "\n".join(
         f"- {g.goal}{'  ← 你现在要完成的' if i == 0 else ''}\n  判据：{g.criteria}"
@@ -162,7 +160,7 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     False——这里自己 assert，不依赖调用方先检查过：这是 decide_action.md
     拼装的唯一入口，谁调用都要满足同一组前提。
 
-    `facts` 只装 `req.obs.facts` 里的东西——调用方（`EpisodeHarness.think_action`）
+    `facts` 只装 `req.obs.facts` 里的东西——调用方（`episode/decide/think_action.py`）
     负责不把 `knowledge`/`episode_memories` 塞进 `obs.facts`，这里不做过滤，
     只信任这个前置条件。`knowledge`/`episode_memories` 走各自的占位符，
     跟 `memories` 一样分开渲染、分开给可信度说明。
@@ -207,7 +205,6 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
             memories=recalled,
             episode_memories=req.episode_memories or "（无跨局摘要）",
             actions=actions,
-            max_rationale=MAX_RATIONALE,
             max_segments=MAX_SEGMENTS,
         ),
         req.human_note,

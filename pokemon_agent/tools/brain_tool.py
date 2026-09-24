@@ -1,21 +1,27 @@
-"""`BrainToolPort` 的唯一实现：harness 和 `Brain` 之间那层翻译壳。
+"""brain 能力的 tool 层门面：**一个容器（`BrainTool`）+ 九个能力对象**。
 
-持有一个 `BrainPort`（真正的大脑）。**harness 与 brain 是两个互不认识的
-世界**——harness 侧是装满了 `Observation`/`ActionSpace`/`StepMemory` 的
-信封，brain 侧只认 prompt 文本和一撮裸字段。这个类就是两边之间唯一的桥。
-
-它做四件事（每一件都是"brain 不该知道的"）：
+**harness 与 brain 是两个互不认识的世界**——harness 侧是装满了
+`Observation`/`ActionSpace`/`ActMemory` 的信封，brain 侧只认 prompt 文本和
+一撮裸字段。这一层就是两边之间唯一的桥，做四件事（每一件都是"brain 不该知道的"）：
 
 1. **渲染**：把信封里的世界对象变成 brain 认得的文本
    （观测 → `before`/`after`、记忆 → `history`、动作空间 → prompt 里的按键说明）。
 2. **规范化的世界语义**：`a` 只按一次、多段链中间只能方向键——这些是
    **这个世界**对动作的要求（换一个世界就不成立），不是大脑的规则。
    `INTERACT_KEY` 因此定义在这一层。
-3. **盖章坐标**：`episode_id`/`step` 由 harness 给、在这里装进 `StepMemory`
+3. **盖章坐标**：`episode_id`/`step` 由 harness 给、在这里装进 `ActMemory`
    ——大脑不知道自己在哪一局、第几步；账上也不替它记尝试序号——"第几次"由账在链上的
    位置回答（0914 跟进删 `attempt`）。
-4. **重试循环 + 记账**：六条调模型的链路（`choose`/`plan`/`judge`/`verify`/
-   `summarize`/`extract`）走**同一个** `_attempt_loop()`。`reflect` 不调模型，不走循环。
+4. **重试循环 + 记账**：调模型的链路（`choose`/`plan`/`decompose`/`judge`/`verify`/
+   `summarize`/`summarize_task`）走**同一个** `_attempt_loop()`。`reflect` 不调模型，不走循环。
+
+**0922 185：函数变对象，按层分发**（用户定稿）。原先的方法是 `BrainTool`
+一个类上的兄弟，harness 三层各拿整张口——run 层能看见 `choose`、task 层能
+看见 `judge`，全靠约定不调。现在每个能力是一个**独立的对象**（`Planner`/
+`Decomposer`/`Chooser`/`Judger`/`Reflector`/`Verifier`/`Summarizer`/`TaskSummarizer`，
+都住本层、签名只吃信封），`BrainTool` 退化成**装配容器**：`build()` 造 Brain 与 provider、
+组装八个对象；`build.py` 把每层需要的对象分发给三个 runtime。于是
+"不属于本层的方法"在结构上看不见，mock 按对象换（铁律 4：一份协议一份假实现）。
 
 **重试的分工**（2026-09-13 定稿，取代此前的"a+c 方案"）：
 
@@ -31,11 +37,11 @@ brain 是第三方模块，不知道这些。它只回答"这一次成没成"。
 **这里没有降级，只有重试**：`judge`/`verify`/`summarize` 曾在 brain 里把调用失败
 吞成"看起来正常的业务结果"（`done=False` / 全标不可靠 / `summary=None`）。那个
 兜底已整个取消——它让"链路坏了"与"业务结论就是如此"在数据里分不开。
-现在六条链路一致：重试耗尽就抛，由 harness 决定要不要给保守结果
+现在各条链路一致：重试耗尽就抛，由 harness 决定要不要给保守结果
 （要给的话也发生在 `except` 里，trace 上看得见）。
 
-**并组装存储形状**：`reflect` 的 `StepMemory`、`summarize` 的 `EpisodeMemory`、
-`extract` 的 `KnowledgeRecord` 都在这层装配——`brain` 与 `memory` 互不认识，
+**并组装存储形状**：`reflect` 的 `ActMemory`、`summarize_task` 的 `TaskMemory`、
+`summarize` 的 `EpisodeMemory` 都在这层装配——`brain` 与 `memory` 互不认识，
 两边形状的搬运只有这里做。
 """
 
@@ -43,6 +49,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TypeVar
 
 from pokemon_agent.brain import (
@@ -50,13 +57,10 @@ from pokemon_agent.brain import (
     ActionSegment,
     BrainPort,
     EpisodeSummary,
-    LearnedKnowledge,
-    Reflection,
 )
 from pokemon_agent.brain.errors import AttemptFailed, ParseFailure, ProviderRejected
 from pokemon_agent.config import (
     BRAIN_MAX_ATTEMPTS,
-    MAX_RATIONALE,
     MAX_SEGMENTS,
     MAX_TIMES,
     MODEL_RETRY_BACKOFF_SECONDS,
@@ -65,8 +69,8 @@ from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
-    FromHarnessToBrainToolExtractReq,
-    FromHarnessToBrainToolExtractResp,
+    FromHarnessToBrainToolDecomposeReq,
+    FromHarnessToBrainToolDecomposeResp,
     FromHarnessToBrainToolJudgeReq,
     FromHarnessToBrainToolJudgeResp,
     FromHarnessToBrainToolPlanOnceReq,
@@ -75,19 +79,22 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolReflectResp,
     FromHarnessToBrainToolSummarizeReq,
     FromHarnessToBrainToolSummarizeResp,
+    FromHarnessToBrainToolSummarizeTaskReq,
+    FromHarnessToBrainToolSummarizeTaskResp,
     FromHarnessToBrainToolVerifyReq,
     FromHarnessToBrainToolVerifyResp,
     ModelCall,
 )
 from pokemon_agent.schemas.memory import (
     SNAPSHOT_BLIND,
+    ActMemory,
     EpisodeMemory,
-    KnowledgeRecord,
-    StepMemory,
+    TaskMemory,
 )
-from pokemon_agent.tools.prompts import extract as extract_prompt
+from pokemon_agent.tools.prompts import decompose as decompose_prompt
 from pokemon_agent.tools.prompts import run_plan as run_plan_prompt
 from pokemon_agent.tools.prompts import summarize as summarize_prompt
+from pokemon_agent.tools.prompts import summarize_task as summarize_task_prompt
 from pokemon_agent.tools.prompts import verify as verify_prompt
 from pokemon_agent.world import DIRECTION_KEYS, INTERACT_KEY
 
@@ -98,11 +105,11 @@ _Result = TypeVar("_Result")
 
 
 def dedup_snapshots(
-    entries: list[StepMemory],
-) -> tuple[list[str], list[StepMemory.Observation]]:
-    """把一串 `StepMemory` 摊平成 `(before, after, before, after, ...)` 的观测
+    entries: list[ActMemory],
+) -> tuple[list[str], list[ActMemory.Observation]]:
+    """把一串 `ActMemory` 摊平成 `(before, after, before, after, ...)` 的观测
     序列，去重后**一次遍历、一口气**返回两条严格对齐的列表：截图（base64
-    字符串，喂 `VisionDescribeReq.images`）和它们各自对应的 `StepMemory.
+    字符串，喂 `VisionDescribeReq.images`）和它们各自对应的 `ActMemory.
     Observation` 快照（给调用方转文字，比如"当前观测"要渲成 `$observation`）。
     **两条列表长度、顺序永远一一对应**——`frames[i]` 就是 `snapshots[i]`
     这份观测的那张截图。
@@ -127,13 +134,13 @@ def dedup_snapshots(
     "这张图对应哪份观测"这件事，两条列表必须永远等长，宁可这份观测彻底不
     出现，也不能让长度对不上。
 
-    **为什么在 tool 层**（0915 起，从 `schemas/memory/step_memory.py` 搬来）：
+    **为什么在 tool 层**（0915 起，从 `schemas/memory/datastore/act_memory.py` 搬来）：
     "怎么把记忆拼成发给模型的图"是**发请求的组装逻辑**，不是记忆的数据形状
     ——schemas 层只描述记录长什么样，怎么消费它们归 tool（与 prompt 渲染同
-    一个归属：五条带图链路的 `images` 都在各 `BrainTool.*()` 入口用本函数拼出）。
+    一个归属：五条带图链路的 `images` 都在各能力对象的入口用本函数拼出）。
     """
     frames: list[str] = []
-    snapshots: list[StepMemory.Observation] = []
+    snapshots: list[ActMemory.Observation] = []
     for entry in entries:
         for obs, frame in ((entry.before, entry.before_frame), (entry.after, entry.after_frame)):
             if frame is None:
@@ -145,438 +152,14 @@ def dedup_snapshots(
     return frames, snapshots
 
 
-class BrainTool:
-    """`BrainToolPort` 的唯一实现。持有真正的 `Brain`（或任何 `BrainPort` 实现）。"""
+# ---- 规划 ----
+
+
+class Planner:
+    """`PlanPort` 的实现：run 级规划的信封翻译器。run 层 runtime 持它。"""
 
     def __init__(self, brain: BrainPort) -> None:
-        """接好大脑。**本对象没有状态**，纯转发+翻译+重试。"""
         self._brain = brain
-
-    @classmethod
-    def build(
-        cls,
-        *,
-        text: str = "qwen-plus",
-        judge: str = "qwen3.8-max",
-        verify: str = "doubao-seed-2-1-pro-260628",
-        plan: str = "doubao-seed-2-1-pro-260628",
-        max_tokens: int = 25600,
-    ) -> BrainTool:
-        """按型号选型造一个**接了真大脑**的 tool——装配点唯一的入口。
-
-        **为什么把"组装 config + 造 Brain + 造四个 provider"全收在这一处**
-        （2026-09-13 起 S6，0913 深夜九收窄签名）："brain 的四个技能分别该接
-        哪家厂商、哪个位置必须是豆包型号名"是这条链路的内部接线知识，
-        装配点（`build.py`）不该知道，也不该 import `QwenProvider`/`ArkProvider`。
-        收进类方法之后，`build.py` 那一侧只剩一行
-        `BrainTool.build(text=..., judge=..., ...)`，**协议归属、实现归属、
-        接线归属三者对齐**（协议在 `brain.interface`，接线在 `BrainTool`）。
-
-        **签名收裸字段而不是收 `BrainLlmConfig`**（0913 深夜九）：此前签名是
-        `build(config: BrainLlmConfig)`，于是 `build.py` 得先
-        `from pokemon_agent.brain import BrainLlmConfig` —— 一行非 tool 层的
-        brain import。改成裸字段后 `BrainLlmConfig` 在本方法内部构造，
-        `build.py` 对 brain **零 import**，"只有 tool 层依赖 brain"这条命题
-        至此字面成立。裸字段的选择也跟 `build_vision_provider(model)` 对齐。
-
-        **它是 `__init__` 的糖，不是第二套装配逻辑**：内部就是
-        `BrainLlmConfig(...)` + `build_llm_providers(config)` + `Brain(...)` +
-        `cls(brain)`，没有任何额外判断——"谁 new 具体实现"仍然只有一个答案
-        （`brain/build_llm_providers.py`），不是又多了一个真源。
-
-        前置条件：`verify`/`plan` 的型号名是火山方舟认的豆包型号名
-        （带日期后缀）——传 Qwen 型号名会在第一次调用时 404，
-        本方法不替调用方验这个（它验不了，没有厂商型号表）。
-        后置条件：返回的 tool 持有的 `Brain` 用四个**不同**的 provider 实例，
-        `judge` 与 `decide` 不共用（判定与决策误差同源的硬约束，
-        见 `Brain` 模块 docstring）——这条由 `build_llm_providers` 的出口
-        断言保证。
-        """
-        # 导入放函数内：`brain.providers` 拖着整个厂商实现面（含 PIL），
-        # 不该在 import 本模块时就连带拉起来。
-        from pokemon_agent.brain import Brain, BrainLlmConfig, build_llm_providers
-
-        config = BrainLlmConfig(
-            text=text,
-            judge=judge,
-            verify=verify,
-            plan=plan,
-            max_tokens=max_tokens,
-        )
-        decide, judge_llm, verify_llm, plan_llm = build_llm_providers(config)
-        brain = Brain(
-            decide_llm=decide,
-            judge_llm=judge_llm,
-            verify_llm=verify_llm,
-            plan_llm=plan_llm,
-        )
-        return cls(brain)
-
-    # ---- 重试循环（六条链路共用：choose / plan / judge / verify / summarize / extract）----
-
-    def _attempt_loop(
-        self,
-        source: str,
-        attempt: Callable[[int, list[ModelCall]], _Result],
-        *,
-        retry_prompt: Callable[[str, list[ModelCall]], str] | None = None,
-        base_prompt: str = "",
-    ) -> tuple[_Result, list[ModelCall]]:
-        """brain 各链路共用的重试循环：**成功带整条账返回 / 耗尽带整条账抛异常**。
-
-        `source`：链路名（`"decide"`/`"plan"`/`"judge"`/…），进 `MaxRetriesExceeded`
-            让 harness 分辨是谁完了。
-        `attempt`：第 `n` 次尝试的函数，收 `(第几次, 目前累积的账)` 返回结果。
-            它内部调 brain，失败时 brain 抛 `AttemptFailed`（带这次的账）。
-        `retry_prompt`/`base_prompt`：可选——只有 `decide` 这条链路会传。
-            **叠不叠纠正说明由账上的 `error_kind` 决定**（0915 分叉，见
-            `_retry_prompt`）：解析类失败叠加说明；传输失败原样重问。
-
-        **`ProviderRejected` 立即耗尽**：4xx 是服务端的明确拒绝（密钥/配额/型号），
-        重试注定无用——第一轮就抛 `MaxRetriesExceeded`（`attempts=1`），
-        不烧预算、不给模型叠"你上一次的输出不合法"那种张冠李戴的纠正。
-
-        **退避是固定的**（`MODEL_RETRY_BACKOFF_SECONDS`，config）：失败后、
-        且还有下一轮预算时睡 0.5s 再试——重试预算只有 3 轮，指数拉开兜不住
-        多写的两行；最后一轮失败后不睡（后面是上抛，没人等这个间隔）。
-
-        为什么收 `(第几次, 账)` 两个参数：`decide` 要用 "第几次" 渲染纠正说明的
-        文案（"第 2 次尝试"），也要用 "账" 取上次的失败原因；其余链路两个都不用。
-        收着不用的成本只是一个签名，比给两条链路各写一个循环便宜。
-
-        **两种"账"的翻译在这里**：brain 吐的是 `brain.interface.ModelCall`
-        （它自己的方言），本循环收进来的一律转成 `tools.interface.ModelCall`
-        （tool 层的工作形状）——"字段恰好一样"是巧合，语义边界是真的。
-        **账按序排列**：第 `n` 次尝试的账落在第 `n` 位——"第几次"由位置回答，
-        不另盖一枚 `attempt` 戳（0914 跟进删）。
-        """
-        calls: list[ModelCall] = []
-        for nth in range(1, BRAIN_MAX_ATTEMPTS + 1):
-            try:
-                result = attempt(nth, calls)
-            except AttemptFailed as exc:
-                call = _adopt(exc.call)
-                calls.append(call)
-                if call.error_kind == ProviderRejected.__name__:
-                    # 4xx：重试注定无用，立即耗尽（attempts=1）。
-                    raise MaxRetriesExceeded(
-                        len(calls), _last_error(calls), calls, source=source
-                    ) from exc
-                if nth < BRAIN_MAX_ATTEMPTS:
-                    time.sleep(MODEL_RETRY_BACKOFF_SECONDS)
-                continue
-
-            calls.extend(_adopt(call) for call in result.calls)
-            return result, calls
-
-        raise MaxRetriesExceeded(BRAIN_MAX_ATTEMPTS, _last_error(calls), calls, source=source)
-
-    # ---- 决策 ----
-
-    def choose(
-        self, req: FromHarnessToBrainToolChooseOnceReq
-    ) -> FromHarnessToBrainToolChooseOnceResp:
-        """决策：拼 prompt → 重试循环调 `Brain.choose()` → 规范化 → 打包整条账。
-
-        **prompt 在这里拼**（0913 定案）：harness 只装素材，本层入口调
-        `decide_action.build_prompt(req)`——"谁问模型，谁把 req 变成 prompt"，
-        拼装只剩这一个调用点，harness 不再有"拼好回填"那一半。
-
-        **唯一会带"上一次失败"信息的链路**：解析类失败（`ParseFailure` 族）的
-        下一次尝试把上次的失败原因与原始输出拼进 prompt（`retry_prompt`），
-        重试携带信息增量；**传输失败原样重问**——模型根本没收到题，没什么可
-        "纠正"的（0915 分叉，取代无条件叠加）。
-        """
-        base_prompt = decide_action_prompt.build_prompt(req)
-        # **images 在这里拼**（与 prompt 同一个归属："谁问模型，谁把 req 变成
-        # 请求"），素材**不另开通道**：就是 `$memories` 段落拼装出来的那批帧
-        # ——`dedup_snapshots()` 与 `render_sequence()` 是同一件事的图片版/
-        # 文字版（相邻去重、逐帧对应），prompt 里读到的每一步和模型看到的
-        # 画面严格同源。第一步没有记忆 → 空列表 → 纯文本。
-        images, _snapshots = dedup_snapshots(req.memories)
-
-        def attempt(nth: int, calls: list[ModelCall]) -> object:
-            prompt = base_prompt if not calls else _retry_prompt(base_prompt, calls)
-            return self._brain.choose(prompt=prompt, keys=list(req.space.names), images=images)
-
-        result, calls = self._attempt_loop("decide", attempt)
-        return FromHarnessToBrainToolChooseOnceResp(
-            action=self._normalize(result.action),
-            calls=calls,
-        )
-
-    def _normalize(self, action: Action) -> Action:
-        """施加**这个世界的**动作语义规则，返回规范化后的动作。
-
-        三条规则（都是从 brain 搬来的——它们是世界知识，不是决策知识）：
-
-        1. **`a` 只按一次**：链内按键只做纯 RAM 观测，而对话文字只有视觉模型
-           读得出来——连按三次推完整段对话，那几句一帧都没被看到，最后一次还会
-           把对话框关掉，判定器看到一个没有对话框的画面，**一局本该成功的
-           episode 被静默记成失败**。`a` 的收益全在中间帧上，连按对它从来没有意义。
-        2. **多段链的中间只能是方向键**：中间帧看不到，所以链体里只放"闭眼也不
-           丢信息"的移动键。
-        3. **链尾允许一个 `a`**：链尾那一帧本来就会被感知，`a` 打开的对话框正好
-           出现在这一帧，证据没有丢。所以"走过去再按一下"能一次决策做完。
-
-        上限（`MAX_SEGMENTS`/`MAX_TIMES`/`MAX_RATIONALE`）也在这里校验——
-        它们住在顶层 config，prompt 与校验读同一个常量，不会自相矛盾。
-
-        **改写不留痕、也不上抛**（2026-09-13 删 `normalized`）：规则 1 施加在
-        "连按 `a`"这种**本就没有意义的写法**上，改写的结果与模型原意等价——
-        报出去只是让 trace 多一个字段、多一处要维护的状态，没有一个消费者。
-        对比：**校验失败**（超上限、链体出现非方向键）仍然抛 `ParseFailure`
-        ——那是模型真的写错了，必须让它重写。
-
-        **校验失败抛 `ParseFailure`**（本层的内部信号）：它跟"模型幻觉了按键"
-        是同一类东西（外部输入不合法），所以由同一个重试循环接住再问一次。
-        """
-        segments: list[ActionSegment] = []
-        for index, segment in enumerate(action.sequence, start=1):
-            name, times, rationale = segment.name, segment.times, list(segment.rationale)
-
-            if len(rationale) > MAX_RATIONALE:
-                raise _illegal(f"segment {index}: {len(rationale)} rationales > {MAX_RATIONALE}")
-            if times > MAX_TIMES:
-                raise _illegal(f"segment {index}: times {times} > {MAX_TIMES}")
-
-            if name == INTERACT_KEY and times != 1:
-                times = 1
-
-            segments.append(ActionSegment(name=name, times=times, rationale=rationale))
-
-        if len(segments) > MAX_SEGMENTS:
-            raise _illegal(f"{len(segments)} segments > {MAX_SEGMENTS}")
-
-        if len(segments) > 1:
-            body_bad = [s.name for s in segments[:-1] if s.name not in DIRECTION_KEYS]
-            tail = segments[-1].name
-            tail_bad = tail not in DIRECTION_KEYS and tail != INTERACT_KEY
-            if body_bad or tail_bad:
-                raise _illegal(
-                    "multi-step sequence may contain only directional keys, "
-                    f"plus at most one trailing {INTERACT_KEY!r}"
-                )
-
-        return Action(thought=action.thought, sequence=segments)
-
-    # ---- 反思 ----
-
-    def reflect(self, req: FromHarnessToBrainToolReflectReq) -> FromHarnessToBrainToolReflectResp:
-        """反思：渲染两帧 → 调 `Brain.reflect()` → 用 `Reflection` + 坐标组装 `StepMemory`。
-
-        **本链路不调模型**（`Brain.reflect` 是纯函数），所以**没有重试循环**——
-        它没有"失败"这种中间态可重试。
-
-        **`SNAPSHOT_BLIND` 的过滤在这里**（brain 不碰——那是存储策略）：
-        记忆里每一项都必须跨步骤成立，`known_objects`/`knowledge` 不成立。
-        """
-        before = _render_observation(_blind(req.before))
-        after = _render_observation(_blind(req.after))
-        segment = req.action.sequence[0]
-
-        reflection: Reflection = self._brain.reflect(
-            prompt="",
-            before=before,
-            after=after,
-            action_text=req.action.describe(),
-            rationale=list(segment.rationale),
-        )
-
-        entry = StepMemory(
-            before=StepMemory.Observation.model_validate(
-                _blind(req.before).model_dump(mode="json")
-            ),
-            rationale=list(reflection.rationale),
-            action=req.action.describe(),
-            after=StepMemory.Observation.model_validate(_blind(req.after).model_dump(mode="json")),
-            step=req.step,
-            episode_id=req.episode_id,
-        )
-        return FromHarnessToBrainToolReflectResp(entry=entry)
-
-    # ---- 判定 ----
-
-    def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
-        """判定：拼 prompt + 重试循环调 `Brain.judge()`。
-
-        **prompt 在这里拼**（0913 定案）：`judge_success.build_prompt(req)`。
-        它可能抛 `KeyError`（模板占位符对不上，编程错误）——**本层不吞**，
-        原样上抛：这里没有重试能修好一个拼错的模板。
-
-        `goal`/`history` 按 brain 的约定**独立传一份渲染文本**——判定必须有
-        这三块，`Brain.judge()` 的签名是那个约定的具象。两份内容一致（prompt
-        里的 `$goal`/`$history` 就是这两样渲的），但**语义不同**：prompt 是
-        "怎么判"的规则成品，这两样是"判什么"的素材。
-
-        **images 也在这里拼**（0915 130 收权，与 choose 同一个归属："谁问模型，
-        谁把 req 变成请求"）：harness 只装素材（history），`dedup_snapshots(req.history)`
-        与 `$history` 段的 `render_sequence()` 是同一件事的图片版/文字版——
-        prompt 里读到的每一步和模型看到的画面逐帧同源。
-
-        **重试是原样重问**——判定不像决策那样有"上次错在哪"可用来纠正。
-        重试耗尽抛 `MaxRetriesExceeded`，由 harness 的调用点决定怎么收场。
-        """
-        prompt = judge_success_prompt.build_prompt(req)
-        goal = req.goal.goal
-        history = [entry.render(reason=False) for entry in req.history]
-        images, _snapshots = dedup_snapshots(list(req.history))
-
-        def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
-
-        result, calls = self._attempt_loop("judge", attempt)
-        return FromHarnessToBrainToolJudgeResp(done=result.done, why=result.why, calls=calls)
-
-    # ---- 校验 ----
-
-    def verify(self, req: FromHarnessToBrainToolVerifyReq) -> FromHarnessToBrainToolVerifyResp:
-        """校验：拼 prompt + 重试循环调 `Brain.verify()`。
-
-        这里把 `entries` 投影成"可对齐的素材"（`StepMemory.render()` 的文本）——
-        `verdicts.index` 因此能落回 `req.entries` 的下标。
-
-        **prompt 在这里拼**（0913 定案）：`verify.build_prompt(req)`。
-
-        **`include_rationale=False`**：校验看"发生了什么"，**不给决策者的论据**
-        ——那是要被校验的对象，先看到就自带偏向。这个选择**显式传给 brain**
-        （`BrainPort.verify` 的约定之一），不再只是渲染层的隐式行为。
-
-        **过滤仍归 harness**：本层只把裁决原样带出去。
-        """
-        prompt = verify_prompt.build_prompt(req)
-        rendered = [entry.render(reason=False) for entry in req.entries]
-        # **images 在这里拼**（0915 130 收权，与 judge/choose 同归属）：
-        # harness 只装素材（entries），去重帧由本层对同一批 entries 取——
-        # 与 prompt 的 `$entries` 渲染同源。此前 `req.images` 由 harness 节点
-        # 拼好递进来（外加一段"原样透传不解码"的 0913 化石注释，那是一次
-        # base64/bytes 迁移留下的坑，已随字段删除）。
-        images, _snapshots = dedup_snapshots(list(req.entries))
-
-        def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.verify(
-                prompt=prompt,
-                entries=rendered,
-                goal=req.goal,
-                knowledge=req.knowledge,
-                include_rationale=False,
-                images=images,
-            )
-
-        result, calls = self._attempt_loop("verify", attempt)
-        return FromHarnessToBrainToolVerifyResp(verdicts=result.verdicts, calls=calls)
-
-    # ---- 蒸馏 ----
-
-    def summarize(
-        self, req: FromHarnessToBrainToolSummarizeReq
-    ) -> FromHarnessToBrainToolSummarizeResp:
-        """蒸馏：拼 prompt + 重试循环调 `Brain.summarize()` → 用 `EpisodeSummary`
-        + harness 元信息组装 `EpisodeMemory`（存储形状的装配在 tool 层）。
-
-        **这里是 `EpisodeMemory` 两个来源的分界**：`result.summary`
-        （`EpisodeSummary`）是**派生正文**——LLM 从 `req.entries` 蒸出来的；
-        `req` 上那五个字段（`episode_id` / `run_id` / `goal` / `success` / `steps`）
-        是**来源章**——harness 从 run state 给的。大脑不知道自己在哪一局，
-        也没资格判定自己成没成，所以这五个字段只能在这里照抄、不能由它产出。
-
-        **prompt 在这里拼**（0913 定案）：`summarize.build_prompt(req)`。
-
-        `history` 由 `req.entries`（**已过滤的可信记录**）渲成文本传下去，
-        **含决策者的论据**（`reason=True`）——蒸馏要总结"为什么这么做"，
-        跟 `verify()` 的方向相反。结局（`success`/`steps`/`max_steps`）也一并传：
-        蒸馏要评价"这做法值不值得复用"，没有基准就没法评。
-        """
-        prompt = summarize_prompt.build_prompt(req)
-        # **images 在这里拼**（0915 130 收权，与 verify 同一批 entries、同一套去重）
-        images, _snapshots = dedup_snapshots(list(req.entries))
-
-        def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.summarize(
-                prompt=prompt,
-                goal=req.goal,
-                history=[entry.render(reason=True) for entry in req.entries],
-                success=req.success,
-                steps=req.steps,
-                max_steps=req.max_steps,
-                images=images,
-            )
-
-        result, calls = self._attempt_loop("summarize", attempt)
-        summary: EpisodeSummary = result.summary
-        episode_memory = EpisodeMemory(
-            episode_id=req.episode_id,
-            run_id=req.run_id,
-            goal=req.goal,
-            success=req.success,
-            steps=req.steps,
-            summary=summary.summary,
-            reusable_patterns=summary.reusable_patterns,
-            critical_decisions=summary.critical_decisions,
-            failure_points=summary.failure_points,
-            quality_score=summary.quality_score,
-            quality_rationale=summary.quality_rationale,
-            applicable_scenes=summary.applicable_scenes,
-            tags=summary.tags,
-            markdown=summary.markdown,
-        )
-        return FromHarnessToBrainToolSummarizeResp(
-            summary=summary, episode_memory=episode_memory, calls=calls
-        )
-
-    # ---- 世界知识抽取 ----
-
-    def extract(self, req: FromHarnessToBrainToolExtractReq) -> FromHarnessToBrainToolExtractResp:
-        """抽取：拼 prompt + 重试循环调 `Brain.extract()` → 组装 `KnowledgeRecord`。
-
-        **和 `summarize()` 逐字同形、产物不同**：那边把 `EpisodeSummary` 装成
-        `EpisodeMemory`（属于那一局），这边把 `LearnedKnowledge` 装成
-        `KnowledgeRecord`（属于世界）。**来源章都是在这一层盖的**——大脑不知道
-        自己在哪一局，`run_id`/`episode_id` 只有这里两边都认。
-
-        **`source` 拼成 `{run_id}/{episode_id}`**：知识库那个家族里已经有手工
-        写的先验（metadata 的 `source` 是文件名），两种来源必须在 metadata 上
-        分得开——将来要"只保留 run 产出的"或"只看人工先验"时才读得出来。
-        正文里不带来源（`KnowledgeRecord.render()` 只回 `text`）：读者关心
-        这个世界的规则，不关心它是哪一局读到的。
-
-        **prompt 在这里拼**（同其余五条链路）：`extract.build_prompt(req)`。
-
-        `history` 由 `req.entries`（**已过滤的可信记录**）渲成文本传下去，
-        含决策者的论据（`reason=True`）——跟 `summarize()` 同一个选择：
-        "为什么这么做"里常藏着"这个世界怎么回事"，裁掉会让抽取漏掉一部分。
-
-        **零条也是成功**：`resp.records == []` 是常态，不是失败。失败只有
-        重试耗尽抛 `MaxRetriesExceeded`（`source="extract"`）。
-        """
-        prompt = extract_prompt.build_prompt(req)
-        # **images 在这里拼**（0915 130 收权，与 verify/summarize 同一批 entries）
-        images, _snapshots = dedup_snapshots(list(req.entries))
-
-        def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.extract(
-                prompt=prompt,
-                goal=req.goal,
-                history=[entry.render(reason=True) for entry in req.entries],
-                images=images,
-            )
-
-        result, calls = self._attempt_loop("extract", attempt)
-        knowledge: LearnedKnowledge = result.knowledge
-        source = f"{req.run_id}/{req.episode_id}"
-        records = [
-            KnowledgeRecord(
-                topic=item.topic,
-                text=item.content,
-                source=source,
-                run_id=req.run_id,
-                episode_id=req.episode_id,
-            )
-            for item in knowledge.items
-        ]
-        return FromHarnessToBrainToolExtractResp(records=records, calls=calls)
-
-    # ---- 规划 ----
 
     def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
         """run 级规划：拼 prompt + 重试循环（**原样重问**，无纠正说明）→ 打包整条账。
@@ -607,11 +190,563 @@ class BrainTool:
                 max_push=req.max_push,
             )
 
-        result, calls = self._attempt_loop("plan", attempt)
+        result, calls = _attempt_loop("plan", attempt)
         return FromHarnessToBrainToolPlanOnceResp(plan=result.plan, calls=calls)
 
 
+# ---- 拆解 ----
+
+
+class Decomposer:
+    """`DecomposePort` 的实现：episode 级拆解的信封翻译器。episode 层 runtime 持它。"""
+
+    def __init__(self, brain: BrainPort) -> None:
+        self._brain = brain
+
+    def decompose(
+        self, req: FromHarnessToBrainToolDecomposeReq
+    ) -> FromHarnessToBrainToolDecomposeResp:
+        """拼 prompt + 重试循环（原样重问）调 `Brain.decompose()` → 打包整条账。
+
+        `context` 与 prompt 里的素材段同源（`decompose.context_lines`）。
+        """
+        prompt = decompose_prompt.build_prompt(req)
+        goal = f"{req.goal.goal}（判据：{req.goal.criteria}）"
+        context = decompose_prompt.context_lines(req)
+
+        def attempt(nth: int, calls: list[ModelCall]) -> object:
+            return self._brain.decompose(
+                prompt=prompt, goal=goal, context=context, max_tasks=req.max_tasks
+            )
+
+        result, calls = _attempt_loop("decompose", attempt)
+        return FromHarnessToBrainToolDecomposeResp(decomposition=result.decomposition, calls=calls)
+
+
+# ---- 决策 ----
+
+
+class Chooser:
+    """`ChoosePort` 的实现：决策的信封翻译器。episode 层 runtime 持它；
+    task 层将来持自己的实例（受限 space / 换策略时只换这一个对象）。"""
+
+    def __init__(self, brain: BrainPort) -> None:
+        self._brain = brain
+
+    def choose(
+        self, req: FromHarnessToBrainToolChooseOnceReq
+    ) -> FromHarnessToBrainToolChooseOnceResp:
+        """决策：拼 prompt → 重试循环调 `Brain.choose()` → 规范化 → 打包整条账。
+
+        **prompt 在这里拼**（0913 定案）：harness 只装素材，本层入口调
+        `decide_action.build_prompt(req)`——"谁问模型，谁把 req 变成 prompt"，
+        拼装只剩这一个调用点，harness 不再有"拼好回填"那一半。
+
+        **唯一会带"上一次失败"信息的链路**：解析类失败（`ParseFailure` 族）的
+        下一次尝试把上次的失败原因与原始输出拼进 prompt（`retry_prompt`），
+        重试携带信息增量；**传输失败原样重问**——模型根本没收到题，没什么可
+        "纠正"的（0915 分叉，取代无条件叠加）。
+        """
+        base_prompt = decide_action_prompt.build_prompt(req)
+        # **images 在这里拼**（与 prompt 同一个归属："谁问模型，谁把 req 变成
+        # 请求"），素材**不另开通道**：就是 `$memories` 段落拼装出来的那批帧
+        # ——`dedup_snapshots()` 与 `render_sequence()` 是同一件事的图片版/
+        # 文字版（相邻去重、逐帧对应），prompt 里读到的每一步和模型看到的
+        # 画面严格同源。第一步没有记忆 → 空列表 → 纯文本。
+        images, _snapshots = dedup_snapshots(req.memories)
+
+        def attempt(nth: int, calls: list[ModelCall]) -> object:
+            prompt = base_prompt if not calls else _retry_prompt(base_prompt, calls)
+            return self._brain.choose(prompt=prompt, keys=list(req.space.names), images=images)
+
+        result, calls = _attempt_loop("choose", attempt)
+        return FromHarnessToBrainToolChooseOnceResp(
+            action=self._normalize(result.action),
+            calls=calls,
+        )
+
+    def _normalize(self, action: Action) -> Action:
+        """施加**这个世界的**动作语义规则，返回规范化后的动作。
+
+        三条规则（都是从 brain 搬来的——它们是世界知识，不是决策知识）：
+
+        1. **`a` 只按一次**：链内按键只做纯 RAM 观测，而对话文字只有视觉模型
+           读得出来——连按三次推完整段对话，那几句一帧都没被看到，最后一次还会
+           把对话框关掉，判定器看到一个没有对话框的画面，**一局本该成功的
+           episode 被静默记成失败**。`a` 的收益全在中间帧上，连按对它从来没有意义。
+        2. **多段链的中间只能是方向键**：中间帧看不到，所以链体里只放"闭眼也不
+           丢信息"的移动键。
+        3. **链尾允许一个 `a`**：链尾那一帧本来就会被感知，`a` 打开的对话框正好
+           出现在这一帧，证据没有丢。所以"走过去再按一下"能一次决策做完。
+
+        上限（`MAX_SEGMENTS`/`MAX_TIMES`/``）也在这里校验——
+        它们住在顶层 config，prompt 与校验读同一个常量，不会自相矛盾。
+
+        **改写不留痕、也不上抛**（2026-09-13 删 `normalized`）：规则 1 施加在
+        "连按 `a`"这种**本就没有意义的写法**上，改写的结果与模型原意等价——
+        报出去只是让 trace 多一个字段、多一处要维护的状态，没有一个消费者。
+        对比：**校验失败**（超上限、链体出现非方向键）仍然抛 `ParseFailure`
+        ——那是模型真的写错了，必须让它重写。
+
+        **校验失败抛 `ParseFailure`**（本层的内部信号）：它跟"模型幻觉了按键"
+        是同一类东西（外部输入不合法），所以由同一个重试循环接住再问一次。
+        """
+        segments: list[ActionSegment] = []
+        for index, segment in enumerate(action.sequence, start=1):
+            name, times = segment.name, segment.times
+
+            if times > MAX_TIMES:
+                raise _illegal(f"segment {index}: times {times} > {MAX_TIMES}")
+
+            if name == INTERACT_KEY and times != 1:
+                times = 1
+
+            segments.append(ActionSegment(name=name, times=times))
+
+        if len(segments) > MAX_SEGMENTS:
+            raise _illegal(f"{len(segments)} segments > {MAX_SEGMENTS}")
+
+        if len(segments) > 1:
+            body_bad = [s.name for s in segments[:-1] if s.name not in DIRECTION_KEYS]
+            tail = segments[-1].name
+            tail_bad = tail not in DIRECTION_KEYS and tail != INTERACT_KEY
+            if body_bad or tail_bad:
+                raise _illegal(
+                    "multi-step sequence may contain only directional keys, "
+                    f"plus at most one trailing {INTERACT_KEY!r}"
+                )
+
+        return Action(thought=action.thought, sequence=segments)
+
+
+# ---- 反思 ----
+
+
+class Reflector:
+    """`ReflectPort` 的实现：反思的信封翻译器（本链路**不调模型**，无重试循环）。"""
+
+    def __init__(self, brain: BrainPort) -> None:
+        self._brain = brain
+
+    def reflect(self, req: FromHarnessToBrainToolReflectReq) -> FromHarnessToBrainToolReflectResp:
+        """反思：渲染两帧 → 调 `Brain.reflect()` → 用 `Reflection` + 坐标组装 `ActMemory`。
+
+        **本链路不调模型**（`Brain.reflect` 是纯函数），所以**没有重试循环**——
+        它没有"失败"这种中间态可重试。
+
+        **`SNAPSHOT_BLIND` 的过滤在这里**（brain 不碰——那是存储策略）：
+        记忆里每一项都必须跨步骤成立，`known_objects`/`knowledge` 不成立。
+        """
+        before = _render_observation(_blind(req.before))
+        after = _render_observation(_blind(req.after))
+
+        self._brain.reflect(
+            prompt="",
+            before=before,
+            after=after,
+            action_text=req.action.describe(),
+        )
+
+        entry = ActMemory(
+            before=ActMemory.Observation.model_validate(_blind(req.before).model_dump(mode="json")),
+            action=req.action.describe(),
+            after=ActMemory.Observation.model_validate(_blind(req.after).model_dump(mode="json")),
+            step=req.step,
+            episode_id=req.episode_id,
+        )
+        return FromHarnessToBrainToolReflectResp(entry=entry)
+
+
+# ---- 判定 ----
+
+
+class Judger:
+    """`JudgePort` 的实现：判定的信封翻译器。episode 层 runtime 持它。"""
+
+    def __init__(self, brain: BrainPort) -> None:
+        self._brain = brain
+
+    def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
+        """判定：拼 prompt + 重试循环调 `Brain.judge()`。
+
+        **prompt 在这里拼**（0913 定案）：`judge_success.build_prompt(req)`。
+        它可能抛 `KeyError`（模板占位符对不上，编程错误）——**本层不吞**，
+        原样上抛：这里没有重试能修好一个拼错的模板。
+
+        `goal`/`history` 按 brain 的约定**独立传一份渲染文本**——判定必须有
+        这三块，`Brain.judge()` 的签名是那个约定的具象。两份内容一致（prompt
+        里的 `$goal`/`$history` 就是这两样渲的），但**语义不同**：prompt 是
+        "怎么判"的规则成品，这两样是"判什么"的素材。
+
+        **images 也在这里拼**（0915 130 收权，与 choose 同一个归属："谁问模型，
+        谁把 req 变成请求"）：harness 只装素材（history），`dedup_snapshots(req.history)`
+        与 `$history` 段的 `render_sequence()` 是同一件事的图片版/文字版——
+        prompt 里读到的每一步和模型看到的画面逐帧同源。
+
+        **重试是原样重问**——判定不像决策那样有"上次错在哪"可用来纠正。
+        重试耗尽抛 `MaxRetriesExceeded`，由 harness 的调用点决定怎么收场。
+        """
+        prompt = judge_success_prompt.build_prompt(req)
+        goal = req.goal.goal
+        history = [entry.render() for entry in req.history] + judge_success_prompt.memory_blocks(
+            req
+        )
+        images, _snapshots = dedup_snapshots(list(req.history))
+
+        def attempt(nth: int, calls: list[ModelCall]) -> object:
+            return self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
+
+        result, calls = _attempt_loop("judge", attempt)
+        return FromHarnessToBrainToolJudgeResp(done=result.done, why=result.why, calls=calls)
+
+
+# ---- 校验 ----
+
+
+class Verifier:
+    """`VerifyPort` 的实现：校验的信封翻译器。episode/task 层 runtime 持它。"""
+
+    def __init__(self, brain: BrainPort) -> None:
+        self._brain = brain
+
+    def verify(self, req: FromHarnessToBrainToolVerifyReq) -> FromHarnessToBrainToolVerifyResp:
+        """校验：拼 prompt + 重试循环调 `Brain.verify()`。
+
+        这里把 `entries` 投影成"可对齐的素材"（`render()` 的文本）——
+        `verdicts.index` 因此能落回 `req.entries` 的下标。两级素材共用一条
+        链路（0923 192）：ActMemory 用 `render_sequence()` 去重相邻快照，
+        TaskMemory 各自独立渲染（一条一个 task，没有首尾相接这回事）。
+
+        **prompt 在这里拼**（0913 定案）：`verify.build_prompt(req)`。
+
+        **过滤仍归 harness**：本层只把裁决（正/负样本标记）原样带出去。
+        """
+        prompt = verify_prompt.build_prompt(req)
+        rendered = [entry.render() for entry in req.entries]
+        # **images 在这里拼**（0915 130 收权，与 judge/choose 同归属）：
+        # harness 只装素材（entries），帧由本层对同一批 entries 取——
+        # ActMemory 取 before/after 帧，TaskMemory 取首末代表帧；
+        # 与 prompt 的 `$entries` 渲染同源。
+        images = _verify_images(req.entries)
+
+        def attempt(nth: int, calls: list[ModelCall]) -> object:
+            return self._brain.verify(
+                prompt=prompt,
+                entries=rendered,
+                goal=req.goal,
+                knowledge=req.knowledge,
+                images=images,
+            )
+
+        result, calls = _attempt_loop("verify", attempt)
+        return FromHarnessToBrainToolVerifyResp(verdicts=result.verdicts, calls=calls)
+
+
+def _verify_images(entries: list[ActMemory | TaskMemory]) -> list[str]:
+    """校验用的截图序列：相邻去重后摊平成一张网格图的原料。
+
+    ActMemory 每条贡献 `(before_frame, after_frame)`，TaskMemory 每条贡献
+    `(first_frame, last_frame)`；`None`（感知失败没落盘/没取到代表帧）不进
+    序列，与上一张逐字节相等的也不进（同一帧不重发，多模态按张计费）。
+    """
+    frames: list[str] = []
+    for entry in entries:
+        if isinstance(entry, TaskMemory):
+            candidates = (entry.first_frame, entry.last_frame)
+        else:
+            candidates = (entry.before_frame, entry.after_frame)
+        for frame in candidates:
+            if frame is None or (frames and frames[-1] == frame):
+                continue
+            frames.append(frame)
+    return frames
+
+
+# ---- 蒸馏 ----
+
+
+class Summarizer:
+    """`SummarizePort` 的实现：蒸馏的信封翻译器。episode 层 runtime 持它。"""
+
+    def __init__(self, brain: BrainPort) -> None:
+        self._brain = brain
+
+    def summarize(
+        self, req: FromHarnessToBrainToolSummarizeReq
+    ) -> FromHarnessToBrainToolSummarizeResp:
+        """蒸馏：拼 prompt + 重试循环调 `Brain.summarize()` → 用 `EpisodeSummary`
+        + harness 元信息组装 `EpisodeMemory`（存储形状的装配在 tool 层）。
+
+        **这里是 `EpisodeMemory` 两个来源的分界**：`result.summary`
+        （`EpisodeSummary`）是**派生正文**——LLM 从 `req.entries` 蒸出来的；
+        `req` 上那五个字段（`episode_id` / `run_id` / `goal` / `success` / `steps`）
+        是**来源章**——harness 从 run state 给的。大脑不知道自己在哪一局，
+        也没资格判定自己成没成，所以这五个字段只能在这里照抄、不能由它产出。
+
+        **prompt 在这里拼**（0913 定案）：`summarize.build_prompt(req)`。
+
+        `history` 由 `req.entries`（**已过滤的可信记录**）渲成文本传下去，
+        **含决策者的论据**（`reason=True`）——蒸馏要总结"为什么这么做"，
+        跟 `verify()` 的方向相反。结局（`success`/`steps`/`max_steps`）也一并传：
+        蒸馏要评价"这做法值不值得复用"，没有基准就没法评。
+        """
+        prompt = summarize_prompt.build_prompt(req)
+        # **images 在这里拼**（0923 189：原料是 TaskMemory，取各条的代表帧去重）
+        seen: set[str] = set()
+        images: list[str] = []
+        for m in req.entries:
+            for f in (m.first_frame, m.last_frame):
+                if f and f not in seen:
+                    seen.add(f)
+                    images.append(f)
+
+        def attempt(nth: int, calls: list[ModelCall]) -> object:
+            return self._brain.summarize(
+                prompt=prompt,
+                goal=req.goal,
+                history=summarize_prompt.labeled_blocks(
+                    [entry.render() for entry in req.entries], req.verdicts
+                ),
+                success=req.success,
+                steps=req.steps,
+                max_steps=req.max_steps,
+                images=images,
+            )
+
+        result, calls = _attempt_loop("summarize_episode", attempt)
+        summary: EpisodeSummary = result.summary
+        episode_memory = EpisodeMemory(
+            episode_id=req.episode_id,
+            run_id=req.run_id,
+            goal=req.goal,
+            steps=req.steps,
+            acts_used=req.acts_used,
+            termination=req.termination.value,
+            reason=summary.reason,
+            summary=summary.summary,
+            reusable_patterns=summary.reusable_patterns,
+            critical_decisions=summary.critical_decisions,
+            failure_points=summary.failure_points,
+            quality_score=summary.quality_score,
+            quality_rationale=summary.quality_rationale,
+            applicable_scenes=summary.applicable_scenes,
+            tags=summary.tags,
+            markdown=summary.markdown,
+        )
+        return FromHarnessToBrainToolSummarizeResp(
+            summary=summary, episode_memory=episode_memory, calls=calls
+        )
+
+
+# ---- 世界知识抽取 ----
+
+
+# ---- task 蒸馏 ----
+
+
+class TaskSummarizer:
+    """`TaskSummarizePort` 的实现：task 蒸馏的信封翻译器。task 层 runtime 持它。"""
+
+    def __init__(self, brain: BrainPort) -> None:
+        self._brain = brain
+
+    def summarize_task(
+        self, req: FromHarnessToBrainToolSummarizeTaskReq
+    ) -> FromHarnessToBrainToolSummarizeTaskResp:
+        """把本 task 的可信 ActMemory 蒸馏成一条 TaskMemory。
+
+        与 `Summarizer.summarize()` 同一条 brain 链路（`Brain.summarize`，
+        输出契约同是 `EpisodeSummary`——task 级的"前后变化/关键决策/失败点"
+        恰好被同一组字段承载），差别只在 prompt（task 视角）与**组装的存储形状**
+        （`TaskMemory`，来源章盖的是 task 坐标）。
+
+        **代表帧**：`first_frame` 取首条 ActMemory 的 `before_frame`、
+        `last_frame` 取末条的 `after_frame`（都可空）——上层（episode_done）
+        总结时拿它们当画面锚点，不必回查全部按键记忆。
+        """
+        prompt = summarize_task_prompt.build_prompt(req)
+        images, _snapshots = dedup_snapshots(list(req.entries))
+
+        def attempt(nth: int, calls: list[ModelCall]) -> object:
+            return self._brain.summarize(
+                prompt=prompt,
+                goal=req.goal,
+                history=summarize_task_prompt.history_blocks(req),
+                success=req.success,
+                steps=req.steps_used,
+                max_steps=req.max_steps,
+                images=images,
+            )
+
+        result, calls = _attempt_loop("summarize_task", attempt)
+        summary: EpisodeSummary = result.summary
+        first = next((e.before_frame for e in req.entries if e.before_frame), None)
+        last = next((e.after_frame for e in reversed(req.entries) if e.after_frame), None)
+        memory = TaskMemory(
+            run_id=req.run_id,
+            episode_id=req.episode_id,
+            task_id=req.task_id,
+            goal=req.goal,
+            termination=req.termination.value,
+            reason=summary.reason,
+            steps_used=req.steps_used,
+            start_step=req.entries[0].step if req.entries else 0,
+            summary=summary.summary,
+            reusable_patterns=summary.reusable_patterns,
+            critical_decisions=summary.critical_decisions,
+            failure_points=summary.failure_points,
+            quality_score=summary.quality_score,
+            quality_rationale=summary.quality_rationale,
+            tags=summary.tags,
+            first_frame=first,
+            last_frame=last,
+            markdown=summary.markdown,
+        )
+        return FromHarnessToBrainToolSummarizeTaskResp(summary=summary, memory=memory, calls=calls)
+
+
+# ---- 容器 ----
+
+
+@dataclass
+class BrainTool:
+    """九个能力对象的**装配容器**（0922 185 起——它自己不再实现任何方法）。
+
+    `build()` 是组装的唯一入口：造 Brain 与 provider（型号名只在这里落地）、
+    组装九个对象。`build.py` 把每层需要的对象**分发给三个 runtime**——
+    runtime 字段持的是能力对象（`PlanPort`/`ChoosePort`/…），不是本容器；
+    容器只在装配期活着。
+    """
+
+    planner: Planner
+    decomposer: Decomposer
+    chooser: Chooser
+    judger: Judger
+    reflector: Reflector
+    verifier: Verifier
+    summarizer: Summarizer
+    task_summarizer: TaskSummarizer
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        text: str | None = None,
+        judge: str | None = None,
+        verify: str | None = None,
+        plan: str | None = None,
+        max_tokens: int = 25600,
+    ) -> BrainTool:
+        """按需装配：**只传这一层要的型号名**，没传的位置 provider 为 `None`。
+
+        - run 层：`BrainTool.build(plan=…, judge=…)` → `planner` + `judger`；
+        - episode 层：`BrainTool.build(plan=…, judge=…, verify=…)` → `decomposer` 与其余；
+        - task 层：`BrainTool.build(text=…)` → 只用 `chooser`（接 JEV 时在这里
+          换成小快模型的型号名，或换实现——组装只发生在这一个地方，铁律 3）。
+
+        没配的链路被调用时，`Brain` 方法入口的 assert 当场拦下（构造前置弱化的
+        另一半）；容器造出来就是终态，中途改选型没有语义。
+
+        **签名收裸字段而不是收 `BrainLlmConfig`**（0913 深夜九）：`build.py`
+        对 brain **零 import**——`BrainLlmConfig` 在本方法内部构造，
+        "协议归属、实现归属、接线归属"三者对齐。
+
+        **它是 `__init__` 的糖，不是第二套装配逻辑**：内部就是
+        `BrainLlmConfig(...)` + `build_llm_providers(config)` + `Brain(...)` +
+        九个能力对象，没有任何额外判断——"谁 new 具体实现"仍然只有一个答案。
+
+        前置条件：`verify`/`plan` 的型号名是火山方舟认的豆包型号名
+        （带日期后缀）——传 Qwen 型号名会在第一次调用时 404，
+        本方法不替调用方验这个（它验不了，没有厂商型号表）。
+        后置条件：返回的容器持有的 `Brain`，造出来的 provider **互不相同**
+        （`judge` 与 `decide` 不共用是硬约束，见 `Brain` 模块 docstring）。
+        """
+        from pokemon_agent.brain import Brain, BrainLlmConfig, build_llm_providers
+
+        config = BrainLlmConfig(
+            text=text,
+            judge=judge,
+            verify=verify,
+            plan=plan,
+            max_tokens=max_tokens,
+        )
+        decide, judge_llm, verify_llm, plan_llm = build_llm_providers(config)
+        brain = Brain(
+            decide_llm=decide,
+            judge_llm=judge_llm,
+            verify_llm=verify_llm,
+            plan_llm=plan_llm,
+        )
+        return cls(
+            planner=Planner(brain),
+            decomposer=Decomposer(brain),
+            chooser=Chooser(brain),
+            judger=Judger(brain),
+            reflector=Reflector(brain),
+            verifier=Verifier(brain),
+            summarizer=Summarizer(brain),
+            task_summarizer=TaskSummarizer(brain),
+        )
+
+
 # ---- 内部辅助 ----
+
+
+def _attempt_loop(
+    source: str,
+    attempt: Callable[[int, list[ModelCall]], _Result],
+    *,
+    retry_prompt: Callable[[str, list[ModelCall]], str] | None = None,
+    base_prompt: str = "",
+) -> tuple[_Result, list[ModelCall]]:
+    """brain 各链路共用的重试循环：**成功带整条账返回 / 耗尽带整条账抛异常**。
+
+    `source`：链路名（`"choose"`/`"plan"`/`"judge"`/…），进 `MaxRetriesExceeded`
+        让 harness 分辨是谁完了。
+    `attempt`：第 `n` 次尝试的函数，收 `(第几次, 目前累积的账)` 返回结果。
+        它内部调 brain，失败时 brain 抛 `AttemptFailed`（带这次的账）。
+    `retry_prompt`/`base_prompt`：可选——只有 `decide` 这条链路会传。
+        **叠不叠纠正说明由账上的 `error_kind` 决定**（0915 分叉，见
+        `_retry_prompt`）：解析类失败叠加说明；传输失败原样重问。
+
+    **`ProviderRejected` 立即耗尽**：4xx 是服务端的明确拒绝（密钥/配额/型号），
+    重试注定无用——第一轮就抛 `MaxRetriesExceeded`（`attempts=1`），
+    不烧预算、不给模型叠"你上一次的输出不合法"那种张冠李戴的纠正。
+
+    **退避是固定的**（`MODEL_RETRY_BACKOFF_SECONDS`，config）：失败后、
+    且还有下一轮预算时睡 0.5s 再试——重试预算只有 3 轮，指数拉开兜不住
+    多写的两行；最后一轮失败后不睡（后面是上抛，没人等这个间隔）。
+
+    为什么收 `(第几次, 账)` 两个参数：`decide` 要用 "第几次" 渲染纠正说明的
+    文案（"第 2 次尝试"），也要用 "账" 取上次的失败原因；其余链路两个都不用。
+    收着不用的成本只是一个签名，比给两条链路各写一个循环便宜。
+
+    **两种"账"的翻译在这里**：brain 吐的是 `brain.interface.ModelCall`
+    （它自己的方言），本循环收进来的一律转成 `tools.interface.ModelCall`
+    （tool 层的工作形状）——"字段恰好一样"是巧合，语义边界是真的。
+    **账按序排列**：第 `n` 次尝试的账落在第 `n` 位——"第几次"由位置回答，
+    不另盖一枚 `attempt` 戳（0914 跟进删）。
+    """
+    calls: list[ModelCall] = []
+    for nth in range(1, BRAIN_MAX_ATTEMPTS + 1):
+        try:
+            result = attempt(nth, calls)
+        except AttemptFailed as exc:
+            call = _adopt(exc.call)
+            calls.append(call)
+            if call.error_kind == ProviderRejected.__name__:
+                # 4xx：重试注定无用，立即耗尽（attempts=1）。
+                raise MaxRetriesExceeded(
+                    len(calls), _last_error(calls), calls, source=source
+                ) from exc
+            if nth < BRAIN_MAX_ATTEMPTS:
+                time.sleep(MODEL_RETRY_BACKOFF_SECONDS)
+            continue
+
+        calls.extend(_adopt(call) for call in result.calls)
+        return result, calls
+
+    raise MaxRetriesExceeded(BRAIN_MAX_ATTEMPTS, _last_error(calls), calls, source=source)
 
 
 def _adopt(call: object) -> ModelCall:

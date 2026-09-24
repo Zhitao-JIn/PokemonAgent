@@ -414,7 +414,7 @@ class _MultimodalMixin:
     def describe(self, req: VisionDescribeReq) -> VisionDescribeResp:
         """见 `VisionProvider.describe` 的契约，尤其是关于静默丢图的那一段。
 
-        图片是一组（`judge`/`verify`/`summarize` 会带 `StepMemory` 历史里的
+        图片是一组（`judge`/`verify`/`summarize` 会带 `ActMemory` 历史里的
         截图一起问），按 `req.images` 的顺序排列。
 
         **文字块在最前面，图片在最后面**——
@@ -608,7 +608,7 @@ class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
 
     **多帧那一侧已按 3.4 节的方法用真机账标定（0915）**：`judge` 带最近 3 条
     step 的图（去重后实测 4 张）、`verify`/`summarize` 带全量 entries 的图（29 步
-    那局去重后 30 张）。拿**无图**的 `decide_call` 当纯文本基线（≈0.57 tok/字），
+    那局去重后 30 张）。拿**无图**的 `choose_call` 当纯文本基线（≈0.57 tok/字），
     从 `input_tokens` 里扣掉文字成本后每帧落在 **185~198 tok**——与上面单帧实测的
     196 一致、且**不随帧数变**（4 / 7 / 30 张都是这个量级）。floor 判的是**总
     input** 没错，但每帧都远超 100 的门槛（约 2× 余量），"丢图会塌到十几"在多帧 +

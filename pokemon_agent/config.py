@@ -72,7 +72,6 @@ CONSOLE_REVIEW_TIMEOUT = 30.0
 # **两个消费者必须同源**：prompt 渲染与 tool 校验读同一份，
 # 不会出现"prompt 说 4 段、校验说 3 段"的自相矛盾。
 
-MAX_RATIONALE = 2
 """**一段**动作最多带几条论据。
 
 论据的粒度是"段"而非"整条链"，所以总量是"段数 × 条数"。段是单一意图，
@@ -98,14 +97,24 @@ MAX_TIMES = 8
 # ---- 循环控制：一局/一轮允许跑多久 ----
 
 STALL_LIMIT = 5
-"""L2 护栏：连续多少步"动作与画面机械状态都没有变化"就强制结束本局。
+"""task 层停摆上限：连续多少**键**"动作与画面机械状态都没有变化"就结束本 task。
 
-阈值取 5：一两次重复可能是模型没看清，连续五次原地打转才断定它陷入循环。
-本局结束不是终点——run 级由 `review` 节点看结果、`plan` 决定要不要重开。
-**两个读者**：`episode/gate/judge.py`（判停）与 `episode/close/close_episode.py`
-（记 `stalled`）；算 `stall_count` 的 `press/detect_stall.py` 反而**不读它**——
-算数与判断分离，阈值多少跟算数那一格无关。
+三层各自独立计数、各有一道停摆上限：task 数键（本常量）、episode 数连续失败 task
+（`EPISODE_STALL_LIMIT`）、run 数连续失败局（`RUN_STALL_LIMIT`）。读者都是本层的
+`review_and_judge`；算 `stall_count` 的单元不读它。
 """
+
+EPISODE_STALL_LIMIT = 3
+"""episode 层停摆上限：连续多少个 task 失败就结束本局。"""
+
+RUN_STALL_LIMIT = 3
+"""run 层停摆上限：连续多少局失败就结束本 run。"""
+
+RUN_MAX_EPISODES = 50
+"""run 层预算：一个 run 最多派多少局（episode 与 task 的预算各在自己的 `Task.max_steps`）。"""
+
+EPISODE_MAX_TASKS_PER_PLAN = 5
+"""一次拆解最多**建议**模型给几个 task（给模型的上限，harness 不截断）。"""
 
 PLAN_MAX_NEW_GOALS = 3
 """一次规划最多**建议**模型给几个新目标。
@@ -118,36 +127,31 @@ PLAN_MAX_NEW_GOALS = 3
 取 3：规划是"拆下一步"，一次能想清楚并写对 3 条以上递进目标的场合很少；
 写多了质量反而降（模型会把同一条拆成几个近义目标凑数）。"""
 
-NODES_PER_DECISION = 10
-"""一次决策在**链首**烧掉的节点数：
+NODES_PER_DECISION = 3
+"""一圈决策烧掉的节点数：`perceive → review_and_judge → plan_*`（组合格只算一格）。"""
 
-    save_checkpoint → record_observation → judge → get_action_space
-    → 四路 retrieve → merge_retrieval → think_action
-
-`save_checkpoint` 现在是**空转 stub**（存档链已删，见 `CHANGELOG.md`），但它
-仍占图上的一格、每个链首仍多走一个 superstep——所以计数不变。
-"""
-
-NODES_PER_PRESS = 7
-"""链内**每按一个键**走完一圈的节点数：
-
-    act → perceive_after_action → detect_stall
-    → store_step_episode_memory → store_object_semantic_memory → close_step
-
-`close_step` 出口的分叉（回 `act` / 回 `save_checkpoint`）两条路都算得进来：
-队列空时下一圈从 `save_checkpoint` 起头，那一圈的开销由 `NODES_PER_DECISION` 出。
-"""
+NODES_PER_PRESS = 1
+"""一圈执行烧掉的节点数：`act`（task 层只按键；episode 层派一个 task）。"""
 
 RECURSION_MARGIN = 20
 """图引擎自身开销 + 收尾分支（最多 5 个节点）的余量。"""
 
+EPISODE_RECURSION_LIMIT = 20_000
+"""episode 图的 superstep 闸门——**大数，不是预算**（0923 188）。
+
+episode 一圈 = 一个 task（`act` 派发、task 子图内部自管键级循环），一局的圈数
+没有可算的业务上界，所以本层不再按步数换算，只防"不收敛"；**键级预算的贴身限
+在 task 层**（`task_entry.task_budget`）。同 `RUN_RECURSION_LIMIT` 一条逻辑：
+想收紧失控时长就调小，想放宽就调大。
+"""
+
 RUN_RECURSION_LIMIT = 200_000
 """run 图的 superstep 闸门——**一个大数，不是预算**。
 
-run 图只有 6 格（`begin` / `plan` / `dispatch` / `episode` / `reflect` / `review`），
-每轮派发烧掉个位数 superstep——它该跑多少**没有业务语义可算**，也不必算：真正贴身的
-限在内层，`episode_entry.episode_budget()` 按"剩余步数 × 17 + 20"**逐局**算，那才是
-"这一局能不能跑完"的守护。
+run 图只有 6 格（`begin` / `perceive` / `review_and_judge` / `plan_run` / `act` /
+`run_done`），每轮派发烧掉个位数 superstep——它该跑多少**没有业务语义可算**，也不必算：
+真正贴身的限在 task 层（`task_entry.task_budget()` 按"键预算 × 每键格数"算），
+episode 层用 `EPISODE_RECURSION_LIMIT` 大数兜底。
 
 所以这里只留一个**可调的闸门**，唯一用途是"run 图万一不收敛时，别让进程无限跑下去"。
 想收紧失控时长（少烧几次 `plan` 的模型调用）就调小，想放宽就调大——**run 级一个大数、
@@ -155,7 +159,7 @@ episode 级一个按局算的数**，两层各留一个能改的常量。
 
 **历史：为什么不再是一项公式。** 它曾是三项之和（run 自己的节点 + Σ episode 内部步数
 + `MAX_PLAN_PUSH` 给的压栈余量），那是 **F5**"子图步数计入父 limit"时代的产物。
-**探针 X5** 实测本仓是**形态 B**（`run/nodes/episode.py` 调 `episode_entry.run_new`，
+**探针 X5** 实测本仓是**形态 B**（run 图的 `act` 格调 `episode_entry.run_episode`，
 由后者 `graph.invoke` 起子图——父子各算各的计数：父 limit=3 时子图照跑完），
 Σ 那一笔是**纯余量**——留着它只会把闸门抬到 20 万量级，却对"run 图失控"毫无守护作用。
 拍板结果是把那个量级**显式写成一个常量**。几个候选的对照见 `CHANGELOG.md` (33)。
@@ -172,8 +176,14 @@ MEMORY_RECALL_LIMIT = 5
 共用一个数字，改一处就够。两个读者正是它该住 config 的判据。
 """
 
+CHOOSE_HISTORY_STEPS = 8
+"""`plan_task` 决策时带上本 task 最近几条 ActMemory（`task_ctx.act_memories` 的尾部）。
+
+只取**本 task** 的：前面几个 task 的经验已由 episode 层消化进 TaskMemory，不越层。
+"""
+
 JUDGE_HISTORY_STEPS = 3
-"""`judge` 判定时能看到的本局最近几条 **step memory**（`render(reason=False)`，
+"""task 层 `judge` 判定时能看到的本 task 最近几条 ActMemory（`render(reason=False)`，
 不含决策者主张）。
 
 **单位是 step memory 条数，按条取，不按决策分组。** 一次决策展开成 L 个键就是

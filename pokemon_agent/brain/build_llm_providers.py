@@ -51,44 +51,61 @@ state（`done`/`success`）或决定"哪些记忆可信"，同一输入两次给
 
 def build_llm_providers(
     config: BrainLlmConfig,
-) -> tuple[LLMProvider, JudgeProvider, JudgeProvider, LLMProvider]:
-    """造 `Brain` 的四个 provider，返回 `(decide, judge, verify, plan)`。
+) -> tuple[LLMProvider | None, JudgeProvider | None, JudgeProvider | None, LLMProvider | None]:
+    """造 `Brain` 的 provider，返回 `(decide, judge, verify, plan)`——**按需**。
 
     返回顺序**就是** `Brain.__init__` 的形参顺序，调用方可以
     `Brain(*build_llm_providers(config))`。
 
-    后置条件：四个返回值的类型与 `Brain.__init__` 的四个形参逐一匹配——
+    后置条件：返回值的类型与 `Brain.__init__` 的四个形参逐一匹配——
     `decide`/`plan` 是 `LLMProvider`（纯文本；`decide` 的带图路由由
     `Brain.choose` 查 provider 的 `multimodal` 标志分派，0915 129——
     当前在用型号全为多模态、标志默认真），
     `judge`/`verify` 是 `JudgeProvider`（带得到图时走多模态）。
-    **四个是不同的实例**：哪怕四个位置填的是同一个型号名，共用实例也会让 manifest
-    里看不出"这四个位置其实可以分别选型"。
+    **config 里为 None 的位置返回 None**（0922 185 按需实例化：每层 BrainTool
+    只造它要的链路；`Brain` 对应方法的入口 assert 把"没配就调"拦下）。
+    **造出来的是不同的实例**：哪怕两个位置填同一个型号名，共用实例也会让 manifest
+    里看不出"这两个位置其实可以分别选型"。
 
     失败：某个型号名的前缀不在 `provider_for()` 的选型表里时抛 `ValueError`
     ——**在装配期炸**，不是拖到第一次调用收到一个指不回型号名的 404。
     """
     # 步骤 1：决策链与判定链。温度分层见上面两个常量的说明。
-    decide: LLMProvider = provider_for(
-        config.text, temperature=DECIDE_TEMPERATURE, max_tokens=config.max_tokens
+    decide: LLMProvider | None = (
+        provider_for(config.text, temperature=DECIDE_TEMPERATURE, max_tokens=config.max_tokens)
+        if config.text
+        else None
     )
-    judge: JudgeProvider = provider_for(
-        config.judge, temperature=DETERMINISTIC_TEMPERATURE, max_tokens=config.max_tokens
+    judge: JudgeProvider | None = (
+        provider_for(
+            config.judge, temperature=DETERMINISTIC_TEMPERATURE, max_tokens=config.max_tokens
+        )
+        if config.judge
+        else None
     )
 
     # 步骤 2：verify 与 plan 各一个实例——它们走的链路、看的材料、产出的东西都不同
     # （verify 判"哪些记忆可信"、plan 维护目标表），共用一个实例会让 manifest 失真，
     # 也会让"这两个位置其实可以分别选型"这件事看不出来。
-    verify: JudgeProvider = provider_for(
-        config.verify, temperature=DETERMINISTIC_TEMPERATURE, max_tokens=config.max_tokens
+    verify: JudgeProvider | None = (
+        provider_for(
+            config.verify, temperature=DETERMINISTIC_TEMPERATURE, max_tokens=config.max_tokens
+        )
+        if config.verify
+        else None
     )
-    plan: LLMProvider = provider_for(
-        config.plan, temperature=DETERMINISTIC_TEMPERATURE, max_tokens=config.max_tokens
+    plan: LLMProvider | None = (
+        provider_for(
+            config.plan, temperature=DETERMINISTIC_TEMPERATURE, max_tokens=config.max_tokens
+        )
+        if config.plan
+        else None
     )
 
-    # 出口断言（postcondition）：四条链路没有退化成同一个对象。
-    assert len({id(p) for p in (decide, judge, verify, plan)}) == 4, (
-        "build_llm_providers() must return four distinct provider instances"
+    # 出口断言（postcondition）：造出来的链路没有退化成同一个对象。
+    built = [p for p in (decide, judge, verify, plan) if p is not None]
+    assert len({id(p) for p in built}) == len(built), (
+        "build_llm_providers() must return distinct provider instances"
     )
     return decide, judge, verify, plan
 

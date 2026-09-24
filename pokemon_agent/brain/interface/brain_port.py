@@ -19,20 +19,19 @@
    `brain` 的 `__init__` 只收 provider，不读任何本项目配置——**当作能被整体
    拷走复用**，跟 `memory/` 同一个规格。
 
-方法名与"一个方法一件事"对应：`choose`/`reflect`/`judge`/`plan`/`verify`/
-`summarize`/`extract`。**没有 `*_once` 后缀**——"一次"是调用方的循环术语，模块层的方法
+方法名与"一个方法一件事"对应：`choose`/`reflect`/`judge`/`plan`/`decompose`/`verify`/
+`summarize`。**没有 `*_once` 后缀**——"一次"是调用方的循环术语，模块层的方法
 天然就是"做一次"。
 
 **带图方法的形状统一**：`prompt`（规则）+ 素材 + 可选 `images`。
-`choose`/`judge`/`verify`/`summarize`/`extract` 五个调模型的方法都接受
+`choose`/`judge`/`verify`/`summarize` 四个方法接受
 `images`——多模态素材物理上塞不进文本 prompt，只能独立传；默认空序列表示
 这次纯文本（模型多模态可用时走 `describe()`，否则 `complete()`）。
-**`plan` 是例外**（0915 129 定案）：规划是 run 级纯文本判断，不接图；
+**`plan` / `decompose` 是例外**（0915 129 定案）：规划与拆解是纯文本判断，不接图；
 `reflect` 不调模型，天然没有图。
 
-**`verify`/`summarize`/`extract` 三条链路共用同一类素材**（这一局的
-`history`），但产物归属不同：裁决属于判定、摘要属于那一局、知识属于世界。
-**拆成三个方法而不是一个**，是因为"哪条链路花了多少钱、坏在哪"要在账上分得开
+**`verify`/`summarize` 两条链路共用同一类素材**（下级记忆），但产物归属不同：
+裁决属于判定、摘要属于上一级记忆。**拆成两个方法而不是一个**，是因为"哪条链路花了多少钱、坏在哪"要在账上分得开
 （0913 拆 `verify`/`summarize` 的同一条理由）。
 
 **`images` 的元素一律是 base64 编码的 PNG 字符串（`Sequence[str]`），
@@ -48,10 +47,10 @@ harness 的截图本来就是以 base64 存的（"截图直存 base64"），谁�
 |---|---|---|
 | `choose` | `DecisionAttemptFailed` | 这一次尝试的 `ModelCall` |
 | `plan` | `PlanAttemptFailed` | 同上 |
+| `decompose` | `DecomposeAttemptFailed` | 同上 |
 | `judge` | `JudgeAttemptFailed` | 同上 |
 | `verify` | `VerifyAttemptFailed` | 同上 |
 | `summarize` | `SummarizeAttemptFailed` | 同上 |
-| `extract` | `ExtractAttemptFailed` | 同上 |
 | `reflect` | 不调模型，只在调用方违约时 assert | — |
 
 **为什么失败必须抛、不许降级**：判定/校验/蒸馏曾经把失败吞成"一个看起来
@@ -72,7 +71,7 @@ from typing import Protocol, runtime_checkable
 
 from .domain import (
     ChooseResult,
-    ExtractResult,
+    DecomposeResult,
     JudgeResult,
     PlanResult,
     Reflection,
@@ -126,9 +125,8 @@ class BrainPort(Protocol):
         before: str,
         after: str,
         action_text: str,
-        rationale: Sequence[str],
     ) -> Reflection:
-        """把这一步整理成一条经验：**看到什么 → 为什么 → 做了什么 → 变成什么**。
+        """把这一步整理成一条经验：**看到什么 → 做了什么 → 变成什么**。
 
         prompt：这次整理的规则。**本版不消费它**（四样素材已经在参数里，
             让模型再复述一遍只会引入它自己的措辞偏差，还多烧一次调用）——
@@ -137,11 +135,10 @@ class BrainPort(Protocol):
         before/after：前后两帧观测的**渲染文本**（渲染是调用方的事——剪哪些
             字段、怎么对齐，都是渲染策略，随世界和存储策略变）。
         action_text：这一步做了什么。
-        rationale：这段动作的论据。
 
-        前置条件：`before`/`after` 非空、`rationale` 非空——调用方要保证
+        前置条件：`before`/`after` 非空——调用方要保证
             （渲染是它的事，给空串是它的 bug，本方法 assert 拦下）。
-        后置条件：返回的 `Reflection` 四个字段与入参一一对应。
+        后置条件：返回的 `Reflection` 三个字段与入参一一对应。
         **本方法不写库**（写库是状态变更，而大脑无状态），**不盖章坐标**
             （`episode_id`/`step` 由调用方加）。
         """
@@ -168,7 +165,7 @@ class BrainPort(Protocol):
         - `prompt`：**怎么**判——判定规则、输出格式、四类判据的核对方式。
 
         `history` 是**已渲染好的文本序列**（每条一个字符串），不是
-        `StepMemory`——渲染是调用方的事（剪哪些字段、怎么去重，都是渲染策略）。
+        `ActMemory`——渲染是调用方的事（剪哪些字段、怎么去重，都是渲染策略）。
 
         **和 `prompt` 不重复**：`prompt` 是规则模板，`goal`/`history` 是素材。
         调用方可以把它们也渲进 `prompt`（本项目的 `judge_success.build_prompt()`
@@ -228,6 +225,26 @@ class BrainPort(Protocol):
 
     # ---- 校验 ----
 
+    def decompose(
+        self,
+        *,
+        prompt: str,
+        goal: str,
+        context: Sequence[str],
+        max_tasks: int,
+    ) -> DecomposeResult:
+        """episode 级规划：把一个目标拆成按执行顺序排好的任务链。
+
+        - `goal`：要拆的目标（已渲染好的文本，含判据）。
+        - `context`：已渲染好的素材行（当前画面摘要、本局已跑 task 的结论、相关记忆）。
+        - `max_tasks`：这一版最多给几个 task（给模型的建议上限，调用方不截断）。
+        - `prompt`：怎么拆、输出什么格式的规则。
+
+        后置条件：`result.decomposition.tasks` 非空；`result.calls` 恰好一条。
+        失败：抛 `DecomposeAttemptFailed`（附这次的账）。
+        """
+        ...
+
     def verify(
         self,
         *,
@@ -235,13 +252,11 @@ class BrainPort(Protocol):
         entries: Sequence[str],
         goal: str,
         knowledge: str,
-        include_rationale: bool,
         images: Sequence[str] = (),
     ) -> VerifyResult:
-        """逐条判定这一局的 step 记录哪些可信。
+        """逐条判定这一局的情景记录哪些可信。
 
-        **校验必须的五块：`entries` / `goal` / `knowledge` /
-        `include_rationale` / `prompt`。**
+        **校验必须的四块：`entries` / `goal` / `knowledge` / `prompt`。**
 
         - `entries`：**要逐条判定的素材**——`result.verdicts` 里每条判定的
           `index` 就指向它的下标，所以这里必须给条目本身、不能只给条数：
@@ -249,12 +264,6 @@ class BrainPort(Protocol):
         - `goal`：这些记录是为哪个目标做的——校验要看"这一步对目标有没有用"，
           脱开目标就只剩格式检查。
         - `knowledge`：领域知识（本项目是可检索的经验条目），空串表示没有。
-        - `include_rationale`：**`entries` 里要不要包含决策者的论据**。
-          **这是一块显式约定，不藏在调用方的渲染里**：本项目 `verify()` 传
-          `False`——校验看"发生了什么"，**不该看到决策者自己的说法**
-          （那正是要被校验的对象，先看到就自带偏向）；`summarize()` 传 `True`。
-          把它摆在签名上，是因为"要不要给论据"是**校验这件事的语义选择**，
-          不是某个渲染函数的实现细节。
         - `prompt`：怎么判、输出什么格式的规则。
 
         images：可选截图。
@@ -306,36 +315,3 @@ class BrainPort(Protocol):
         ...
 
     # ---- 世界知识抽取 ----
-
-    def extract(
-        self,
-        *,
-        prompt: str,
-        goal: str,
-        history: Sequence[str],
-        images: Sequence[str] = (),
-    ) -> ExtractResult:
-        """从这一局的步骤记录里抽出**这一局读到的世界知识**。
-
-        跟 `summarize` 收的是同一类素材（已过滤的可信记录），但回答的是另一个
-        问题：`summarize` 问"**这一局**打得怎么样"，`extract` 问"**这个世界**
-        有什么我之前不知道的"。产物归属也随之不同——摘要属于那一局，
-        知识属于世界（见 `LearnedKnowledge` 的说明）。
-
-        **三块素材：`goal` / `history` / `prompt`。**
-
-        - `goal`：这一局打的是什么目标——抽取要看"这条信息对做任务有没有用"，
-          纯风景描写不是知识。
-        - `history`：这一局的**可信步骤记录**（含决策者的论据，与 `summarize`
-          同一份渲染）——知识就藏在这些记录的画面文字里（对话、菜单、战斗提示）。
-        - `prompt`：抽什么、不抽什么、输出什么格式的规则。
-
-        images：可选截图。
-
-        前置条件：`history` 只装**已过滤的可信记录**——从没验证过的自述里抽知识
-          等于把幻觉固化成"世界规则"，比不抽更糟。
-        后置条件：`result.knowledge.items` **可以为空**（大多数局什么都没读到，
-            那不是失败）；`calls` 恰好一条。
-        失败：抛 `ExtractAttemptFailed`（附这次的账）——模型调不通 / 输出解析不出。
-        """
-        ...

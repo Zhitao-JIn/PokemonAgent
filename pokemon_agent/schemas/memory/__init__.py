@@ -5,7 +5,7 @@
 完全不透明（只认 `metadata`/`payload` 两个裸字段的协议，见
 `pokemon_agent/memory/__init__.py` 顶部说明），从来不需要知道这三个类具体
 长什么样——只有 tool 层（`tools/memory_tool.py`）和各自的组装方
-（`brain.brain.py::reflect()`、`harness/object_interactions.py`）才认识
+（`brain.brain.py::reflect()`、`harness/episode/store/store_object_semantic_memory/rules.py`）才认识
 它们的字段。按"数据形状只有在某个模块的 Port/实现真的需要构造或消费它的
 具体样子时，才归那个模块自己"这条边界，它们不属于 `memory/`，物理上归回
 这里——本项目自己的跨层契约层。
@@ -23,18 +23,20 @@ __all__ = [
     "ObjectFactEvent",
     "ObjectStillEvent",
     "ObjectWarpEvent",
-    "StepMemory",
+    "ActMemory",
+    "TaskMemory",
     "render_sequence",
 ]
 
 from .datastore import (
     SNAPSHOT_BLIND,
+    ActMemory,
     EpisodeMemory,
     KnowledgeRecord,
     ObjectDialogEvent,
     ObjectFactEvent,
     ObjectStillEvent,
     ObjectWarpEvent,
-    StepMemory,
+    TaskMemory,
     render_sequence,
 )
