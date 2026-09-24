@@ -58,7 +58,7 @@
 |---|---|---|---|
 | run | 上一局 `observation.done` | `fail_streak ≥ RUN_STALL_LIMIT`(3) | `step ≥ RUN_MAX_EPISODES`(50) |
 | episode | 本圈帧 `observation.done` | `fail_streak ≥ EPISODE_STALL_LIMIT`(3) | `step ≥ goal.max_steps`（task 数） |
-| task | 本圈帧 `observation.done` | `stall_count ≥ STALL_LIMIT`(5) | `step ≥ task.max_steps`（键数） |
+| task | 本圈帧 `observation.done` | `stall_count ≥ ACT_STALL_LIMIT`(5) | `step ≥ task.max_steps`（键数） |
 
 每层**独立计数**。`fail_streak` 按机器结算先记，人审推翻时由盖章处修正。
 

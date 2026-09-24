@@ -2,7 +2,7 @@
 
 停没停、成没成都由 `termination` 推出（`Settled`）。
 
-①机械：世界结束（`obs.done`）/ 停摆（`stall_count >= STALL_LIMIT`）/ 键预算尽
+①机械：世界结束（`obs.done`）/ 停摆（`stall_count >= ACT_STALL_LIMIT`）/ 键预算尽
 （`step >= task.max_steps`）。②模型：第 1 键之后每圈问"task 目标达成没有"，
 判成即 `GOAL_DONE`，覆盖机械结论。第 0 键不问模型。判定只看**本 task** 的最近几键
 （按 ActMemory 的 `task_id` 章筛），不混进同局前面 task 的键。`reason` 不在这里写。
@@ -15,7 +15,7 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.config import JUDGE_HISTORY_STEPS, STALL_LIMIT
+from pokemon_agent.config import JUDGE_HISTORY_STEPS, ACT_STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolJudgeReq,
 )
@@ -32,7 +32,7 @@ def review_and_judge(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[st
     """两段式判停，返回 `{"termination"}`。"""
     deps = runtime.context
     ep, task_id, step = state.episode_id, state.task.task_id, state.task_ctx.observation.step
-    stalled = state.stall_count >= STALL_LIMIT
+    stalled = state.stall_count >= ACT_STALL_LIMIT
 
     # 步骤 1：机械三类；第 0 键不问模型。
     termination = mechanical_termination(

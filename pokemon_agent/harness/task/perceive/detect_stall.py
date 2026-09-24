@@ -1,6 +1,6 @@
 """`detect_stall`：比较"新帧机械状态 + 这一键"与上一键，累计 `stall_count`。
 
-算数与判断分离：阈值（`STALL_LIMIT`）只由 `review_and_judge` 读。
+算数与判断分离：阈值（`ACT_STALL_LIMIT`）只由 `review_and_judge` 读。
 """
 
 from __future__ import annotations

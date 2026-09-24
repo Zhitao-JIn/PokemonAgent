@@ -1,3 +1,22 @@
+## 2026-09-24（214）—— task 层停摆上限 `STALL_LIMIT` 改名 `ACT_STALL_LIMIT`
+
+**改了什么**：`config.py` 的 `STALL_LIMIT` → `ACT_STALL_LIMIT`（值仍 5）；读者 `harness/task/review_and_judge/__init__.py`、注释 `detect_stall.py`、现行规格 `docs/spec/DATAFLOW.md` / `OVERVIEW.md` 同步。
+
+**为什么改**：三层各有一道停摆上限（`RUN_STALL_LIMIT` / `EPISODE_STALL_LIMIT` 都带层前缀），只有 task 层这道裸叫 `STALL_LIMIT`，读起来像全局常量；它数的是连续无变化的**按键（act）**，改成 `ACT_STALL_LIMIT` 与另两个的命名对齐、单位也写进了名字。
+
+**取舍**：不留旧名别名；`changelog/`、`docs/experiences/`、archive 里的历史写法不追改。
+
+## 2026-09-24（213）—— realcheck 的 `STEPS` / `--steps` 改名 `MAX_TASKS` / `--max-tasks`，并换默认任务
+
+**改了什么**：
+- `experiment/real_check/common.py`：`STEPS` → `MAX_TASKS`（值仍 30）；默认 `GOAL`/`SUCCESS_CRITERIA` 改为"从出发点向下走，离开草丛，到达下方空地"（位移≥3 格放进判据），不再是"绕一圈回到出发点"。
+- `experiment/real_check/check_harness.py`：`--steps` → `--max-tasks`，`_STEPS_OVERRIDE` → `_MAX_TASKS_OVERRIDE`，局部变量 `steps` → `max_tasks`，起跑打印改成"一局最多 N 个 task"。
+- `docs/spec/experiment/SPEC.md`：开关表同步。
+
+**为什么改**：这个值落在 `Task.max_steps`，而 `max_steps` 在三层各有单位（episode = task 数，task = 按键数）。`--steps` 让人读成按键数——0915 的实验文档就把它写成"按键次数"，那是两层结构时的口径，现在已过期。默认任务换掉是因为 0924 一局里 run 级规划器按 `run_plan.md` "目标不是单格移动"的规则，把手写的"向下走 2 格"判成粒度太细放弃了，判据没被验证到。
+
+**取舍**：`--steps` 不留别名，旧命令会被当作未知参数忽略、静默用缺省 30，注意别沿用旧的起跑命令。`docs/experiments/`、`docs/roadmap/*_archive.md` 里的旧写法是历史记录，不追改。
+
 ## 2026-09-24（212）— 模型返回空正文时单独归类并原样重问
 
 **改了什么**：

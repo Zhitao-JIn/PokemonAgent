@@ -116,7 +116,7 @@ MAX_TIMES = 8
 
 # ---- 循环控制：一局/一轮允许跑多久 ----
 
-STALL_LIMIT = 5
+ACT_STALL_LIMIT = 5
 """task 层停摆上限：连续多少**键**"动作与画面机械状态都没有变化"就结束本 task。
 
 三层各自独立计数、各有一道停摆上限：task 数键（本常量）、episode 数连续失败 task

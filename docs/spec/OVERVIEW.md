@@ -37,7 +37,7 @@
    |---|---|---|---|
    | run | 上一局终局帧 `obs.done` | 连续失败局 ≥ `RUN_STALL_LIMIT` | 已派局数 ≥ `RUN_MAX_EPISODES` |
    | episode | 当前帧 `obs.done` | 连续失败 task ≥ `EPISODE_STALL_LIMIT` | 已派 task ≥ `goal.max_steps` |
-   | task | 当前帧 `obs.done` | 连续同键无变化 ≥ `STALL_LIMIT` | 已按键 ≥ `task.max_steps` |
+   | task | 当前帧 `obs.done` | 连续同键无变化 ≥ `ACT_STALL_LIMIT` | 已按键 ≥ `task.max_steps` |
 
    **只存 `termination`**（枚举）：停没停（`done`）、成没成（`success`）都由它推出，不存第二份。
    判停时 `review_and_judge` 另写 `judge_reason`（判定依据：判定员的理由 / 机械判停类别）；它与
