@@ -46,13 +46,15 @@ def read_plan_context(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str
         )
     )
 
-    # 步骤 2：地图交互事实（run 级不按地图筛）。
-    objects = deps.memory.query_object_events(FromHarnessToMemoryToolQueryObjectEventsReq()).events
+    # 步骤 2：本 run 的地图交互事实（run 级不按地图筛）。
+    objects = deps.memory.query_object_events(
+        FromHarnessToMemoryToolQueryObjectEventsReq(run_id=state.run_id)
+    ).events
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.READ_OBJECT_MEMORY,
             meta=meta,
-            query="map_id=None",
+            query=f"run_id={state.run_id} map_id=None",
             refs=[e.place.key for e in objects],
         )
     )

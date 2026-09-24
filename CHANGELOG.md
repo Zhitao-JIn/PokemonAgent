@@ -1,3 +1,47 @@
+## 2026-09-24（219）—— 决策位置单请求超时 45s → 10s；清空 object memory 旧记录
+
+**改了什么**：
+- `brain/build_llm_providers.py` 新增 `DECIDE_TIMEOUT_SECONDS = 10`，只递给 decide 位置的 provider；judge / verify 仍 45s，plan 仍按思考开关取 420 / 45。
+- `memory/object_memory/` 下 11 条旧记录（115125 / 143242 / 160317 三个 run，全是常青森林南出口门格的 still）连同 `index.json` 删除，索引下次构造时按空目录重建。
+
+**为什么改**：
+- 0924 160317 那局一次 choose 卡了 61s：首次尝试 `ToolTimeout`（`The read operation timed out`，网关 45s 内一个字节都没回），第二次解析失败，第三次才成。决策是每键一次的快速响应，卡住的那次该尽早作废交给重试循环，而不是白等 45s。
+- 那 11 条是 217 修掉的假 still；218 起交互事件按 run 隔离，旧 run 的记录本来也读不到了，跨 run 的地图知识改由外部 wiki 承担。
+
+**取舍**：非流式请求下超时卡的是整段生成时间。今天 105 次 choose 里，输出 1400~3900 token 的正常回复用了 9.5~19s，按 10s 会被判超时并重问——决策的 thought 本就不该写这么长，若重试耗尽变多，再考虑给 thought 设长度上限。socket 级超时之外还有 +15s 的总时长硬闸，慢滴不断流的网关最坏仍要 25s 才被掐。
+
+## 2026-09-24（218）—— 交互事件（object memory）的读取按 run 隔离
+
+**改了什么**：
+- `FromHarnessToMemoryToolQueryObjectEventsReq` 新增必填字段 `run_id`；`MemoryTool.query_object_events` 把它并进等值条件。
+- 两个读口都传本 run：`harness/run/perceive/read_plan_context.py`（run 规划的地图事实）与 `harness/episode/perceive/retrieve_object_semantic_memory.py`（局内按地图）；`read_object_memory` 账上的 `query` 串带上 `run_id=…`。
+- `experiment/real_check/check_memory_roundtrip.py` 的调用补 `run_id`。
+
+**为什么改**：局摘要、task 记忆、每键记忆都按 run / 局过滤，唯独交互事件全库读——realcheck 每次都写同一个 `memory/`，老 run 留下的"(17,47) 门 still"（217 修掉的那类假事件）被 0924 160317 那局的规划器与拆解器读到，得出"南边的门无效"。另外 `before_step` 拿本 run 的键号去比别的 run 的 step，本身没有意义。跨 run 共享的地图知识改由外部 wiki 承担，不再靠这张表。
+
+**取舍**：`run_id` 设成必填而不是可选——漏传会在构造信封时报错，而不是静默退回全库读。`query_object_events_at`（按格查）不在任何流程里被调用，这次不动。
+
+## 2026-09-24（217）—— 走上门格而地图没变时不再记 still
+
+**改了什么**：`harness/task/perceive/store_object_semantic_memory/rules.py::_door_walk_into`：朝 facing 邻格的门走过去，若走上了门格且 map_id 没变，让位不产出事件；切了图照旧记 warp，被挡住没走上去照旧记 still。
+
+**为什么改**：游戏里有两种门——室外进室内的门走上去当拍切图；室内出去、门房这类门走上去不切图，要站在门格上再朝外按一次。旧规则把"走上门格、没切图"记成 still（"这个碰法没用"），常青森林南出口 (17,47) 因此在 115125 / 143242 / 160317 三次 run 里各留下一条假事件，规划器与拆解器都引用它得出"南边的门无效"，0924 那局因此掉头往北。站上去之后那一拍朝外按由 `_door_stand_on_push` 判，用 PyBoy 在 realcheck 起点实测：(17,46)→(17,47) 不再产出事件，(17,47) 再按 down 记 warp（进地图 50）。
+
+**取舍**：`memory/object_memory` 里已写下的那几条假 still 不在这次改动里处理。
+
+## 2026-09-24（216）—— realcheck 起点钉成独立存档并换成贴合起点的任务；方向键的交互候选格缩到脚下 + 正前方
+
+**改了什么**：
+- `assets/rom.state` 复制为 `experiment/experiment_states/realcheck/viridian_forest_south_exit.state`，`experiment/real_check/common.py` 的 `STATE` 指向它。
+- 同文件 `GOAL` 改为"从森林南出口一路向下，穿过南端的门和门房，走到 2 号道路（map_id 13）的空地上"，`SUCCESS_CRITERIA` 改为"map_id 为 13，且站在 walk_map 的 '.' 格上、不在草丛、不在战斗中"。
+- `harness/task/perceive/store_object_semantic_memory/rules.py`：`surrounding_cells()`（脚下 + 四邻，5 格）换成 `press_cells(place, facing)`（脚下 + facing 邻格，2 格）；a 键的候选格（facing 一格，不是交互物再加两格）不变；模块 docstring 同步。
+
+**为什么改**：
+- 0924 那局跑偏的根子是任务与起点对不上：起点 (17,44) 在土路上、不在草丛，往下只有两格可走，y=47 一排门，旧判据的"下方空地"从画面上永远满足不了，判定员一直判 false，拆解器转去北边找路、进草丛遇敌。用 PyBoy 实测：站上门格 (17,47) 再按 down 进地图 50（南门房 x=5 y=1），沿 x=5 连按 down 在 y=8 出门房进地图 13（x=3 y=44），那里才是"下方空地"。判据换成 map_id + 通行图字符，都是观测里的机械字段。存档单独复制一份，是为了 `assets/rom.state` 以后再改时 realcheck 的起点不跟着变。
+- 方向键的四个姿势函数只认脚下（`_door_stand_on_push`）和 facing 邻格（`_door_walk_into`、`_pickup_or_still`），侧面与背后的格子圈进来也不会产出事件；候选集缩到这两格，与实际判定范围一致，读的人不用再往姿势函数里找过滤条件。事件产出不变。
+
+**取舍**：`experiment/` 整个被 `.gitignore` 忽略，存档与 `common.py` 的改动不进提交，只在这里留账。
+
 ## 2026-09-24（215）—— plan 位置单独的输出上限；正文为空后关思考重问；拆解耗尽时本局按 ERROR 收尾
 
 **改了什么**：

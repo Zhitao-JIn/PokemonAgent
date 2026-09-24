@@ -414,14 +414,16 @@ class MemoryTool:
     def query_object_events(
         self, req: FromHarnessToMemoryToolQueryObjectEventsReq
     ) -> FromHarnessToMemoryToolQueryObjectEventsResp:
-        """取交互事件，按 step 升序，直接返回不做折叠。
+        """取本 run（`req.run_id`）的交互事件，按 step 升序，直接返回不做折叠。
 
         `map_id` 为 None = **不按地图筛**（0914 S2 放开）：run 级消费方（`plan`）
         没有"当前地图"，要的是本 run 涉及过的地图上的全部事实。`before_step` 是
         **区间条件**，不进索引交集（索引层不认识"大于"）——等值条件先筛小，
         再在这里数值收尾"检索不读未来"。
         """
-        conditions = {"map_id": str(req.map_id)} if req.map_id is not None else {}
+        conditions = {"run_id": req.run_id}
+        if req.map_id is not None:
+            conditions["map_id"] = str(req.map_id)
         events = self._object_events(conditions)
         if req.before_step is not None:
             events = [e for e in events if e.step < req.before_step]

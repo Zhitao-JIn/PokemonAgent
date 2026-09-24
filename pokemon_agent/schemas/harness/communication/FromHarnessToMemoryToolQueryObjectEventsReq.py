@@ -14,8 +14,12 @@ class FromHarnessToMemoryToolQueryObjectEventsReq(BaseModel):
     让它先绕去 `step_memory` 的元数据里收集 `map_id` 再逐图查，是逼消费方自己拼索引。
 
     before_step 为 None = 不过滤；给值则只取严格早于它的事件（检索不读未来）。
+
+    `run_id` 必填：交互事件**按 run 隔离**，只取本 run 写下的——与局摘要同一口径。
+    step 是 run 内的键号，`before_step` 也只在同一个 run 里才有意义。
     """
 
+    run_id: str = Field(min_length=1, description="只取这个 run 写下的事件")
     map_id: int | None = Field(default=None, description="地图编号；None = 不按地图筛")
     before_step: int | None = Field(
         default=None, description="只取 step 严格小于它的事件；None = 不过滤"

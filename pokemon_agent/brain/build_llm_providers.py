@@ -49,6 +49,14 @@ state（`done`/`success`）或决定"哪些记忆可信"，同一输入两次给
 """
 
 
+DECIDE_TIMEOUT_SECONDS = 10
+"""决策位置（`choose`，每键一次）的单请求超时（秒；总时长硬闸是它 +15）。
+
+决策要的是快速响应：真机中位 1.4s、p90 5.4s。网关卡住时（0924 实测：45s 内一个字节
+都不回）按缺省 45s 要白等一整轮；压到 10s，卡住的那次尽早作废、交给重试循环重问。
+代价：请求是非流式的，thought 写到一千多 token 的正常回复也要十几秒，会一并被判超时。
+"""
+
 THINKING_TIMEOUT_SECONDS = 420
 """开了思考模式的位置的单请求超时（秒；总时长硬闸是它 +15）。
 
@@ -86,6 +94,7 @@ def build_llm_providers(
             temperature=DECIDE_TEMPERATURE,
             max_tokens=config.max_tokens,
             json_mode=config.json_mode,
+            timeout=DECIDE_TIMEOUT_SECONDS,
         )
         if config.text
         else None

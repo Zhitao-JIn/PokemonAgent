@@ -9,8 +9,8 @@ memory 层只存事件、不做语义判定（分层原则见 AGENTS.md 四）�
 影响了谁"全部在这里算完并构造好事件交给 memory。结构是**先圈候选格、
 再按 kind 查姿势判定函数**，不是按按键类型分分支：
 
-- 候选集：脚下这格 + 四邻（方向键）；facing 邻格 + 再往前一格（a——
-  柜台/桌子会隔一格挡着，对面的人才是一步真正碰到的对象）；
+- 候选集：脚下这格 + facing 邻格（方向键）；facing 邻格，它不是交互物时再加往前一格
+  （a——柜台/桌子会隔一格挡着，对面的人才是一步真正碰到的对象）；
 - 每个候选格按 kind 查 `_POSTURES`，姿势函数自己判断"这次按键的几何关系
   属不属于我"，不属于返回 `None` 让位；命中的产出事件。
 
@@ -21,8 +21,8 @@ memory 层只存事件、不做语义判定（分层原则见 AGENTS.md 四）�
 精灵表遍历时 0 号槽位（玩家自己）被显式跳过（见 `world/ram.py::read_terrain`），
 不会覆盖别的精灵的坐标，所以脚下这格该是什么就读得出是什么。
 
-**判定只认 `before` 这一帧自己的 `landmarks`，不查 memory。** 候选格（脚下 + 四邻，
-或 facing 方向）都在屏幕可见范围内，RAM 读取又是精确的、不存在"认错"，所以
+**判定只认 `before` 这一帧自己的 `landmarks`，不查 memory。** 候选格（脚下 + facing 邻格，
+或 facing 方向一到两格）都在屏幕可见范围内，RAM 读取又是精确的、不存在"认错"，所以
 `before.facts.landmarks` 本身就是这次判定需要的全部依据。查 memory 兜底曾经是这里的
 一个机制，但它的前提（"当帧可能因为遮挡读不到"）已经不成立——现在真要读不到，
 只可能是这一格本来就没有交互物，兜底带回来的是"以前有过、现在早就不在了"的
@@ -58,7 +58,6 @@ from pokemon_agent.schemas.memory import (
 )
 from pokemon_agent.world import (
     BUTTON_FACING,
-    FACING_STEP,
     INTERACT_KEY,
     Observation,
     PlaceInWorld,
@@ -72,19 +71,14 @@ INTERACTIVE = ("人", "招牌", "门", "物")
 # ---- 候选格与 kind 判定的纯函数（原 memory/semantic/util.py 收编） ----
 
 
-def surrounding_cells(place: PlaceInWorld) -> list[PlaceInWorld]:
-    """`place` **脚下这格 + 四个相邻格**，一共 5 格。
+def press_cells(place: PlaceInWorld, facing: str) -> list[PlaceInWorld]:
+    """一次方向键的候选格：`place` **脚下这格 + facing 邻格**，一共 2 格。
 
-    这是一次方向键按下去唯一可能影响到的范围——按键要么改变自己脚下这格
-    的状态（踩在门上朝外按），要么作用在某个相邻格上（从旁边推）。
-    叫 `surrounding_cells` 不叫 `ring`：这五格是"十"字形（含中心），
-    中心（脚下）容易被漏掉不是因为读不到——门/物这类会触发"踩上去就变"
-    （warp / 拾取）的东西，恰恰是判定脚下这格才有意义。
+    方向键只可能碰到这两格：踩在门上朝外按（脚下这格），或者朝某格走进去
+    （门 / 物，都在 facing 邻格）。侧面与背后的格子这次按键碰不到。
+    脚下这格不能漏——门这类"站在上面朝外按才切图"的东西只在这里判得出来。
     """
-    return [place] + [
-        PlaceInWorld(map_id=place.map_id, x=place.x + dx, y=place.y + dy)
-        for dx, dy in FACING_STEP.values()
-    ]
+    return [place, place.step_toward(facing)]
 
 
 def kind_in_frame(
@@ -163,8 +157,18 @@ def _warp_or_still(press: _Press, place: PlaceInWorld, kind: str) -> ObjectFactE
 
 
 def _door_walk_into(press: _Press, candidate: PlaceInWorld, kind: str) -> ObjectFactEvent | None:
-    """姿势：面向门走过去——门在 facing 邻格，角色朝它走进去。"""
+    """姿势：面向门走过去——门在 facing 邻格，角色朝它走进去。
+
+    游戏里有两种门：室外进室内的门走上去当拍切图（记 warp）；室内出去、门房这类门
+    走上去不切图，要站在门格上再朝外按一次（那一次归 `_door_stand_on_push` 判）。
+    所以**走上了门格、地图没变**不是"这个碰法没用"，只是还没到判定的那一拍——
+    让位不产出事件；只有被挡住、根本没走上去时才记 still。
+    """
     if candidate != press.actor_place.step_toward(press.facing):
+        return None
+    after = press.after.place
+    assert after is not None
+    if after.map_id == press.before.place.map_id and after.key == candidate.key:
         return None
     return _warp_or_still(press, candidate, kind)
 
@@ -247,8 +251,8 @@ def object_fact_events(
         facing=facing,
     )
 
-    # ========== 2. 按按键类型圈候选格。a 的目标在 facing 方向（可能隔一个柜台）； ==========
-    # 方向键影响脚下 + 四邻，且只认"没有先转向"的那一步——先转向再走
+    # ========== 2. 按按键类型圈候选格。a：facing 一格，不是交互物再看两格； ==========
+    # 方向键：脚下 + facing 邻格，且只认"没有先转向"的那一步——先转向再走
     # 不算一次干净的碰撞尝试。
     if segment.name == INTERACT_KEY:
         ahead = before.place.step_toward(facing)
@@ -260,7 +264,7 @@ def object_fact_events(
             return []
         if before.facts.facing != facing:
             return []
-        candidates = surrounding_cells(before.place)
+        candidates = press_cells(before.place, facing)
 
     # ========== 3. 按 kind 查姿势函数，命中的产出事件。 ==========
     events: list[ObjectFactEvent] = []

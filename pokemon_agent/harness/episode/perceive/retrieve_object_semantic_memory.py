@@ -26,7 +26,7 @@ from ..episode_state import EpisodeRunState
 def retrieve_object_semantic_memory(
     state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]
 ) -> dict[str, Any]:
-    """查这张地图上的 object 事件。**只改 `ep_ctx.object_semantic_memory` 一处。**
+    """查本 run 在这张地图上的 object 事件。**只改 `ep_ctx.object_semantic_memory` 一处。**
 
     `obs.place` 为 None 时没有地图可过滤，按空事件处理——一局刚开始、地形还没
     读出来是正常情形，不是异常。
@@ -41,7 +41,9 @@ def retrieve_object_semantic_memory(
         events: list = []
     else:
         events = deps.memory.query_object_events(
-            FromHarnessToMemoryToolQueryObjectEventsReq(map_id=place.map_id, before_step=step)
+            FromHarnessToMemoryToolQueryObjectEventsReq(
+                run_id=state.run_id, map_id=place.map_id, before_step=step
+            )
         ).events
     known = render_object_events(events)
     # `refs` 记**每条事件的物体格**（`PlaceInWorld.key`，形如 `12:13:8`）——
@@ -60,7 +62,10 @@ def retrieve_object_semantic_memory(
                 "task_id": ep,
                 "step": step,
             },
-            query=f"map_id={place.map_id if place else None} before_step={step}",
+            query=(
+                f"run_id={state.run_id} map_id={place.map_id if place else None} "
+                f"before_step={step}"
+            ),
             refs=[e.place.key for e in events],
         )
     )
