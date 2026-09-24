@@ -69,10 +69,10 @@ def judge_reason(
 ) -> str:
     """本层这一圈的**判定依据**（`judge_reason`）——与 `*_done` 里 LLM 写的结论 `reason` 分开。
 
-    判成（`goal_done`）时就是判定员给的理由；机械判停时先写机械类别，再附判定员的话
+    判成（`goal_done`）或判被打断（`interrupted`）时就是判定员给的理由；机械判停时先写机械类别，再附判定员的话
     （没问模型时附 `not_asked`）；还没停时就是判定员说"没成"的理由。
     """
-    if termination is Termination.GOAL_DONE and verdict is not None:
+    if termination in (Termination.GOAL_DONE, Termination.INTERRUPTED) and verdict is not None:
         return verdict.why
     said = verdict.why if verdict is not None else not_asked
     return f"机械判停：{termination.value}；{said}" if termination is not None else said

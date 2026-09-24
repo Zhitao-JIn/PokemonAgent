@@ -1,7 +1,8 @@
 """`review_and_judge` 格（episode 层）：**定案上一个 task + 判停**——与 run 层同构。
 
 ⓪定案（表里有 RUNNING 时）：按 `TaskOutput` 盖章（COMPLETED / FAILED）→ 亮给人审，推翻则
-盖反面、`overturned=True`、修正失败连击 → 定案为失败时，把剩下的 PENDING 条目标 ABANDONED
+盖反面、`overturned=True`、修正失败连击 → 定案为失败时（被打断的 task 也盖 FAILED，note 写
+"被打断：…"，只是不计失败连击），把剩下的 PENDING 条目标 ABANDONED
 （它们是按"上一个会成"拆的，前提已失效；`plan_episode` 会带着这张表重拆）→ 记 `settle_task`。
 TaskMemory 的章保留机器判定，任务表是最终定案。
 
@@ -129,19 +130,21 @@ def _settle(deps: EpisodeRuntime, state: EpisodeRunState, outcome: TaskOutput) -
     if overturned:
         status = EntryStatus.FAILED if status is EntryStatus.COMPLETED else EntryStatus.COMPLETED
         fail_streak = 0 if status is EntryStatus.COMPLETED else fail_streak + 1
-    stamped = entry.model_copy(
-        update={
-            "status": status,
-            "overturned": overturned,
-            "note": resp.note if overturned and resp.note else entry.note,
-        }
-    )
+    interrupted = not overturned and outcome.termination is Termination.INTERRUPTED
+    if overturned and resp.note:
+        note = resp.note
+    elif interrupted:
+        note = f"被打断：{outcome.judge_reason}"
+    else:
+        note = entry.note
+    stamped = entry.model_copy(update={"status": status, "overturned": overturned, "note": note})
 
     # 步骤 2：定案为失败 → 剩下的 PENDING 前提失效，标 ABANDONED。
     tasks = [*state.tasks[:index], stamped, *state.tasks[index + 1 :]]
     abandoned: list[str] = []
     if status is EntryStatus.FAILED:
-        note = f"{entry.task.task_id} 失败，这一版剩下的前提已失效"
+        cause = "被打断" if interrupted else "失败"
+        note = f"{entry.task.task_id} {cause}，这一版剩下的前提已失效"
         for i, other in enumerate(tasks):
             if other.status is EntryStatus.PENDING:
                 tasks[i] = other.model_copy(update={"status": EntryStatus.ABANDONED, "note": note})

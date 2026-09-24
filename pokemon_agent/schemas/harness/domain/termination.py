@@ -23,6 +23,9 @@ class Termination(StrEnum):
     STALLED = "stalled"
     """停摆：task 连续同键无变化；episode 连续失败 task；run 连续失败局——上限各在 config。"""
     BUDGET_EXHAUSTED = "budget_exhausted"
+    INTERRUPTED = "interrupted"
+    """被意外打断（只出现在 task 层）：判定员判出现了 task 目标没预料到的变化（遇敌进战斗、
+    剧情对话、被传送），目标此刻推不下去。不算达成；episode 不把它计入失败连击。"""
     """本层计数撞上限：task 键数 / episode task 数 / run 局数。"""
     ERROR = "error"
     """出错收尾：子图抛 `AgentError` 由父层兜成的失败结算（run 兜局、episode 兜 task），

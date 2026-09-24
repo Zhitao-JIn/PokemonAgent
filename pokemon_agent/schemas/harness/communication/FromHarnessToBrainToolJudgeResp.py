@@ -20,6 +20,10 @@ class FromHarnessToBrainToolJudgeResp(BaseModel):
     """
 
     done: bool = Field(description="任务达成了没有")
+    interrupted: bool = Field(
+        default=False,
+        description="task 被意外打断（只在 `allow_interrupt` 时可能为真；`done` 为真时恒为假）",
+    )
     why: str = Field(description="看到了什么证据（或为什么证据不足）")
     calls: list[ModelCall] = Field(
         min_length=1, description="整条重试链的账，按尝试顺序，最后一个是成功那次"

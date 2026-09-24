@@ -1,3 +1,30 @@
+## 2026-09-24（226）—— task 层判定员可判「被打断」：新终止类别 `interrupted`，不计失败连击
+
+**改了什么**：
+- 新增 prompt 片段 `tools/prompts/calls/judge_interrupt.md`；`judge_success.md` 在输出说明后加 `$interrupt_rule` 占位符。`FromHarnessToBrainToolJudgeReq` 新增 `allow_interrupt`（只有 task 层置真），为真时填入该片段，否则为空——episode / run 两层的判定 prompt 不变。
+- `Brain._parse_verdict` 多解析布尔 `interrupted`（缺失或非布尔按假，`done` 为真时恒为假）；`JudgeResult` / `FromHarnessToBrainToolJudgeResp` 新增 `interrupted`（默认假）。
+- `Termination` 新增 `INTERRUPTED`。task 层 `review_and_judge`：判定员判 `done` → `GOAL_DONE`，否则判 `interrupted` → `INTERRUPTED`，同样覆盖机械结论；`judge_reason` 对它也直接取判定员的话。
+- episode 层：`absorb_task` 遇到 `INTERRUPTED` 失败连击原样保留（不清零也不 +1）；`review_and_judge._settle` 仍盖 FAILED、仍放弃剩余 PENDING，note 写"被打断：<判定依据>"，放弃条目的 note 也写"被打断"。
+- `decompose.md` 第 6 条补"note 以「被打断」开头的 failed 条目：先处理打断它的事，再接上原路线"；`summarize_task.md` 终止类别列表、`TaskMemory.termination` 说明、`node_io.py` 的 `TERMINATIONS` 同步加 `interrupted`。
+
+**为什么改**：走路的 task 中途遇敌时，task 层不会停：判定员只会一直判"没走到"，按键在战斗里乱按到预算耗尽（0924 160317 的 t6 就是这样结束的）。交给判定员判"被打断"而不是写死"进战斗就中断"：判定员本来每键都跑、不多一次调用；遇敌之外的剧情对话、训练师对战、被传送也一并覆盖；它看得到 task 目标，分得清"地图变了是目标要的"还是意外。
+
+**取舍**：
+- "被打断"在 prompt 里限定得很窄：必须引用最近一步里目标没预料到的具体变化，且该变化让目标此刻推不下去；"没走到 / 按了没反应"不算，拿不准一律假。
+- 与"必须为真的判断走机械来源"有张力（战斗本可从内存直接读出）；判定员看到的 `场景` 字段就来自内存，要判的是"这个变化算不算意外"，需要理解目标。真机上若误判，再给战斗补一道机械兜底。
+- 任务表不新增状态：被打断仍盖 FAILED、放弃剩余条目重新拆，拆解器靠 note 分辨；知识检索因"有 task 未成功"会自然重查（225）。
+
+## 2026-09-24（225）—— episode 知识检索改为按需：首圈、场景变化、有 task 失败才重查
+
+**改了什么**：
+- `EpisodeContext` 新增 `knowledge_scene`（上次检索时的 `facts.scene_value`）与 `knowledge_at_tasks`（上次检索时已结算的 task 数）；`knowledge_semantic_memory` 的含义改为"沿用到下次重查"。
+- `retrieve_knowledge_semantic_memory` 新增 `_needs_refresh`：本局还没查过、场景变了、上次检索之后有 task 失败（`TaskOutput.success` 为假），三者任一才调 `query_knowledge` 并记 `read_knowledge`；否则返回空增量，不查也不记账。
+- `experiment/real_check/node_io.py` 的 episode 流程表：`read_episode_memory` 之后允许直接接 `read_object_memory`。
+
+**为什么改**：0924 182535 那局知识检索 7 次共 23s（每次约 3.2s），检索条件只有场景、状态文字、地图和目标，同一局里几乎不变，结果也几乎一样。一切顺利时换一批文档没有意义；task 失败说明手上的知识可能不够用，场景切到战斗 / 室内时需要的知识换了一类，这两种时候才值得重查。
+
+**取舍**：地图变了但场景没变（野外到野外）不重查。沿用的那一圈不记 `read_knowledge`——账本只记真正发生的检索，核对脚本随之放宽，而不是补一条"沿用"的假读账。失败判据用机器判定的 `TaskOutput.success`，人审推翻不影响是否重查。
+
 ## 2026-09-24（224）—— 重写知识 `doors_and_warps.md`；`decide_action.md` 的 known_objects 说明对齐现行渲染
 
 **改了什么**：

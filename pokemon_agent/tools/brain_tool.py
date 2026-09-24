@@ -411,7 +411,9 @@ class Judger:
             return self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
 
         result, calls = _attempt_loop("judge", attempt)
-        return FromHarnessToBrainToolJudgeResp(done=result.done, why=result.why, calls=calls)
+        return FromHarnessToBrainToolJudgeResp(
+            done=result.done, interrupted=result.interrupted, why=result.why, calls=calls
+        )
 
 
 # ---- 校验 ----

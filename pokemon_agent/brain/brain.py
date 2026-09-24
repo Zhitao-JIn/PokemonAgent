@@ -498,7 +498,7 @@ class Brain:
             raise JudgeAttemptFailed(call) from exc
 
         # 步骤 2：解析裁决。
-        done, why, kind = self._parse_verdict(text)
+        done, interrupted, why, kind = self._parse_verdict(text)
 
         call = ModelCall(
             payload={
@@ -519,7 +519,7 @@ class Brain:
         if kind:
             raise JudgeAttemptFailed(call)
 
-        return JudgeResult(done=done, why=why, calls=[call])
+        return JudgeResult(done=done, interrupted=interrupted, why=why, calls=[call])
 
     @staticmethod
     def _ask(
@@ -566,19 +566,24 @@ class Brain:
         )
 
     @staticmethod
-    def _parse_verdict(text: str) -> tuple[bool, str, str]:
-        """解析成 `(done, why, 失败类型)`，第三项为空串表示解析成功。"""
+    def _parse_verdict(text: str) -> tuple[bool, bool, str, str]:
+        """解析成 `(done, interrupted, why, 失败类型)`，第四项为空串表示解析成功。
+
+        `interrupted` 缺失或不是布尔按假处理（只有 task 层的 prompt 会要它）；`done` 为真时恒为假。
+        """
         stripped = _strip_json_fence(text)
         try:
             raw = _load_json(stripped)
         except json.JSONDecodeError:
-            return False, f"判定输出不是合法 JSON：{text!r}", "ParseFailure"
+            return False, False, f"判定输出不是合法 JSON：{text!r}", "ParseFailure"
 
         if not isinstance(raw, dict) or not isinstance(raw.get("done"), bool):
-            return False, f"判定输出缺少布尔 done：{text!r}", "ParseFailure"
+            return False, False, f"判定输出缺少布尔 done：{text!r}", "ParseFailure"
 
+        done = bool(raw["done"])
+        interrupted = raw.get("interrupted") is True and not done
         why = raw.get("why")
-        return bool(raw["done"]), str(why) if why else "（未说明）", ""
+        return done, interrupted, str(why) if why else "（未说明）", ""
 
     # ---- step 记忆校验（独立判定器）----
 

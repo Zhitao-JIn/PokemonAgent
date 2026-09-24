@@ -51,7 +51,13 @@ class EpisodeContext(BaseModel):
         default_factory=list, description="本 run 的跨局摘要"
     )
     knowledge_semantic_memory: FromHarnessToMemoryToolQueryKnowledgeResp | None = Field(
-        default=None, description="知识库检索结果；None = 本圈还没查"
+        default=None, description="知识库检索结果；None = 本局还没查过。之后沿用，到下次重查为止"
+    )
+    knowledge_scene: str = Field(
+        default="", description="上次检索知识时的场景（`facts.scene_value`）；变了就重查"
+    )
+    knowledge_at_tasks: int = Field(
+        default=0, ge=0, description="上次检索知识时已结算的 task 数；此后有 task 失败就重查"
     )
     object_semantic_memory: str = Field(
         default="", description="本图 object 语义记忆文字化（merge 折进 facts）"

@@ -39,12 +39,18 @@ def build_knowledge_query(obs: Observation, goal: str) -> str:
 def retrieve_knowledge_semantic_memory(
     state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]
 ) -> dict[str, Any]:
-    """查领域知识库。**只改 `ep_ctx.knowledge_semantic_memory` 一处。**
+    """查领域知识库。**只改 `ep_ctx` 里知识那三个字段。**
+
+    不是每圈都查：本局首圈、场景变了（野外 / 室内 / 战斗）、上次检索之后有 task 失败，
+    这三种情况才重查并记 `read_knowledge`；其余圈沿用上次的结果，不查也不记账。
 
     前置条件：`state.ep_ctx` 非空。
-    后置条件：返回 `{"knowledge_semantic_memory": …}`（整个 `QueryKnowledgeResp`，
-    `contents` 与 `sources` 都要留给 `plan_episode` 与记账）。
+    后置条件：重查时返回更新后的 `ep_ctx`（整个 `QueryKnowledgeResp`，`contents` 与
+    `sources` 都要留给 `plan_episode` 与记账，外加这次检索时的场景与已结算 task 数）；
+    沿用时返回空增量。
     """
+    if not _needs_refresh(state):
+        return {}
     deps = runtime.context
     obs, ep, step = state.ep_ctx.observation, state.episode_id, state.ep_ctx.observation.step
     query = build_knowledge_query(obs, state.goal.goal)
@@ -72,4 +78,22 @@ def retrieve_knowledge_semantic_memory(
             refs=list(result.sources),
         )
     )
-    return {"ep_ctx": state.ep_ctx.model_copy(update={"knowledge_semantic_memory": result})}
+    return {
+        "ep_ctx": state.ep_ctx.model_copy(
+            update={
+                "knowledge_semantic_memory": result,
+                "knowledge_scene": obs.facts.scene_value,
+                "knowledge_at_tasks": len(state.task_outputs),
+            }
+        )
+    }
+
+
+def _needs_refresh(state: EpisodeRunState) -> bool:
+    """这一圈要不要重查知识：本局还没查过、场景变了、上次检索之后有 task 失败，三者任一。"""
+    ctx = state.ep_ctx
+    if ctx.knowledge_semantic_memory is None:
+        return True
+    if ctx.observation.facts.scene_value != ctx.knowledge_scene:
+        return True
+    return any(not out.success for out in state.task_outputs[ctx.knowledge_at_tasks :])

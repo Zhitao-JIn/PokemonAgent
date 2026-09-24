@@ -63,6 +63,11 @@ class JudgeResult(_ResultBase):
     """
 
     done: bool = Field(description="任务达成了没有")
+    interrupted: bool = Field(
+        default=False,
+        description="模型判这件事被意外打断了"
+        "（输出里有布尔 `interrupted` 且 `done` 为假时才可能为真）",
+    )
     why: str = Field(
         description="看到了什么证据（或为什么证据不足）。"
         "每一个 True 都得说得出依据，否则成功率就是一个无法证伪的数字"

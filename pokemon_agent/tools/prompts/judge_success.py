@@ -43,6 +43,7 @@ from . import append_human_note, load
 from .decompose import task_table_lines
 
 _TEMPLATE = load("judge_success")
+_INTERRUPT_RULE = load("judge_interrupt").render()
 
 
 def memory_blocks(req: FromHarnessToBrainToolJudgeReq) -> list[str]:
@@ -99,6 +100,7 @@ def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
             goal=goal.goal,
             criteria=goal.criteria,
             history=past or "（这是第一步，之前什么都没发生）",
+            interrupt_rule=_INTERRUPT_RULE if req.allow_interrupt else "",
         ),
         req.human_note,
     )
