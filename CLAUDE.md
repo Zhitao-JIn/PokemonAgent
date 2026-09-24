@@ -82,7 +82,7 @@
 - 接口的 docstring 要写清楚三件事：**这个方法承诺什么、什么情况下会失败、调用方要保证什么前置条件。**
 - 用 `Protocol` 而不是继承基类，除非需要共享实现。
   *为什么*：Protocol 是结构化类型，mock 不需要显式继承就能替换，测试里最省事。
-- 一个接口方法数量超过 6 个就该拆——说明它承担了多个职责。
+- 接口保持简单：每个方法只做一件事、签名一眼能读懂；不按方法个数机械拆分。
 
 ### 3. 依赖注入 —— 不许自己 new 依赖
 
@@ -172,12 +172,13 @@ def choose(self, obs: Observation, space: ActionSpace) -> Action:
 
 - **一条 CHANGELOG.md 编号条目 = 一个（或一组）commit**。不要把多条改动揉进一个 commit，
   也不要把一条改动拆得比 CHANGELOG 条目还碎。
-- **有对应编号条目的 commit**：标题**逐字复用**该条目的标题文字（去掉 `**`、反引号等 Markdown 修饰符），
-  **不写 commit body**——理由已经写在 CHANGELOG.md 里，不必在 git log 里重复一份。
+- **所有 commit 一律带 Conventional Commits 前缀**（`feat:` / `fix:` / `refactor:` / `docs(scope):` / `chore:` 等），
+  可以带简短 body 说明范围。
+- **有对应编号条目的 commit**：前缀之后**逐字复用**该条目的标题文字（去掉 `**`、反引号等 Markdown 修饰符），
+  让 commit 与 CHANGELOG 条目能按编号对上；body 只写范围，理由不在 git log 里重复——已经写在 CHANGELOG.md 里。
   例：CHANGELOG 标题是 `## 2026-09-13（61）—— trace 脱钩落地：非 tool 层对 pokemon_agent.trace 的 import 清零`，
-  对应 commit message 就是 `2026-09-13（61）—— trace 脱钩落地：非 tool 层对 pokemon_agent.trace 的 import 清零`。
-- **没有对应编号条目的 commit**（零散收尾、格式修正、文档同步等日常维护）：用 Conventional Commits 前缀
-  （`chore:` / `docs(scope):` / `fix:` 等），可以带简短 body 说明范围。
+  对应 commit 标题就是 `refactor(trace): 2026-09-13（61）—— trace 脱钩落地：非 tool 层对 pokemon_agent.trace 的 import 清零`。
+- **没有对应编号条目的 commit**（零散收尾、格式修正、文档同步等日常维护）：同样用前缀，标题自拟。
 - **一次性追提多条积压的编号条目时，按编号从小到大依次提交**，保持 commit 顺序与 CHANGELOG 顺序一致。
 - CHANGELOG.md 本身的 diff（追加新条目）只随**最后一个**相关 commit 一起提交，不要在中途逐段拆分它
   ——历史上尝试过按行区间手工拼接，撞过 CRLF/LF 混用导致整份文件误判为全量替换的坑。
@@ -187,8 +188,9 @@ def choose(self, obs: Observation, space: ActionSpace) -> Action:
 ```
 pokemon_agent/
 ├── schemas/          Pydantic 数据模型（跨层契约）。记忆一族按**检索单元**命名：
-│                     step_memory（一条=一步，**源记录**）/
-│                     episode_memory（一条=一整局，**该局可信 step memory 的蒸馏视图**
+│                     act_memory（一条=一键，**源记录**）/
+│                     task_memory（一条=一个 task，该 task 全部 act 记忆带正负标注的蒸馏）/
+│                     episode_memory（一条=一整局，该局全部 task 记忆带正负标注的蒸馏
 │                     ——派生物，可重建、可丢弃）/
 │                     object_fact（一条=一格）/ knowledge（不挂坐标的先验）/
 │                     episode_summary_io（蒸馏那次调用的请求+响应，不是记忆）
@@ -198,9 +200,9 @@ pokemon_agent/
 │                     都不是"第几次尝试"的载体，见第十二节第 4 条）
 ├── brain/            纯决策层。**可整体拷走复用的第三方模块**——只依赖自己声明的
 │                     两个 provider 契约与 errors，**不知道 harness / world / memory
-│                     的存在**。对外只有 `interface/brain_port.py`（六方法裸字段契约）
+│                     的存在**。对外只有 `interface/brain_port.py`（七方法裸字段契约）
 │                     与 `interface/domain/`（brain 自己的方言：Action/Goal/Task/
-│                     RunPlan/Reflection/EpisodeSummary/StepVerifyVerdict + 五个结果袋
+│                     RunPlan/Decomposition/Reflection/EpisodeSummary/VerifyVerdict + 各方法的结果袋
 │                     + `model_call.py` 那份 **brain 方言**的账，归属见第十二节第 4 条）
 │                     + `interface/llm_config.py`（`BrainLlmConfig` 选型纯数据，
 │                     0913 深夜九从工厂模块搬来——**只为数据而来的调用方不该连带进口
@@ -276,9 +278,11 @@ pyproject.toml
    允许**冗余类对象**（同一结构两边各声明一份、字段同构但互不引用），换来两边独立演进。
    *为什么*：这是"mock 能无痛换真实实现"和"模块能整体拷走复用"的机械保证。
 
-3. **`episode_memory` 是派生物，不是第二份事实。** 它的**正文**是本局「通过校验的
-   step memory」的蒸馏结果（可重建、可丢弃）；**来源章**（`episode_id` / `run_id` /
-   `goal` / `success` / `steps`）由 harness 从 run state 盖上，与 step memory 无关。
+3. **`task_memory` / `episode_memory` 是派生物，不是第二份事实。** 记忆阶梯是
+   act（一键）→ task（一个 task）→ episode（一局）。上两级的**正文**是下一级全部记录
+   连同 verify 正/负标注的蒸馏结果（可重建、可丢弃）；**来源章**（id / `goal` /
+   步数 / `termination`，`success` 由 `termination` 推出）由 harness 从 state 盖上，与正文无关。
+   来源章记机器判定；人审推翻只改目标表 / 任务表（`overturned`），**定案以表为准**。
    涉及"必须为真"的判断（成没成、走了几步）一律读来源章或更原始的记录，
    **不许从正文叙述里反推**。
    *为什么*：派生视图一旦被当成事实来源，蒸馏时的任何失真会静默跨局传播；反过来
@@ -289,9 +293,15 @@ pyproject.toml
 ## 五、编排：LangGraph
 
 - 循环用 `StateGraph` 承载，**不手写 while 循环**。
-- **两张图各有一个状态载体**（都是 Pydantic 模型，字段有明确类型）：run 图用
+- **三张图各有一个状态载体**（都是 Pydantic 模型，字段有明确类型）：run 图用
   `harness/run/run_state.py::RunState`，episode 图用
-  `harness/episode/episode_state.py::EpisodeRunState`。没有第三种、没有共用的"总状态"。
+  `harness/episode/episode_state.py::EpisodeRunState`，task 图用
+  `harness/task/task_state.py::TaskState`。没有共用的"总状态"；层间只经交界契约
+  （`schemas/harness/domain/{episode_io,task_io}.py`）传值。
+- **每层只有 perceive 取帧、读记忆**：perceive 吸收下层结算 → 取帧（episode 完整档、task RAM 档、
+  run 不取）→ 读直属下一级的记忆与世界事实；其余各格只用 perceive 装好的上下文。入口不取帧，
+  上层不向下层传帧。
+- **只存 `termination`**：`done` / `success` 是由它推出的只读属性（`Settled`），不另存一份。
 - 节点函数是纯函数形态：`(state) -> state 增量`，副作用只允许发生在工具调用节点。
 - **LangGraph 只管循环调度与状态传递。** 记忆层、状态表、值回填一律自己实现，
   不用 LangChain 的 Memory / Agent / Tool 封装。
@@ -377,7 +387,7 @@ pyproject.toml
 | `kind` | **账名**（`schemas/harness/domain/trace_kind.py::TraceKind` 的值）。由 tool 层给，**渲染层不做任何翻译**——`req.kind` 一路落到这里 |
 | `type` | 粗类，7 类（`trace/datastore/trace_event.py::EventType`，见 `docs/spec/DATAFLOW.md` 第四节「事件总表」）：`model_call` / `error` / `llm_outcome` / `view` / `act` / `memory_io` / `lifecycle`。**0903 收敛原则**：type 与"哪条产物"正交、数量极小；"哪个节点产出了什么"全部由 `kind` 回答（如 `think`/`judge_verdict`/`verify_verdict`、`read_*`/`write_*`、`do_action`/`get_action_space`） |
 | `ts` | Unix 时间戳（秒）。**排序的唯一依据**（`(ts, uuid)` 升序），算延迟与对齐外部日志也用它 |
-| `meta` | **标签面的 JSON 字符串**：`{run_id, source, episode_id, step}` 四件，**不多不少**。`run_id` 由落盘层（`trace/store.py::_stamp_run_id`）盖，另外三件由 harness 在 `req.meta` 里**一次交齐**，`TraceTool.append` 只核不拼。`source` = **这条账从哪个位置发出**（图上节点名，或图外入口名如 `run_entry.new_run`）。run 级账沿用约定：`episode_id` 位放 run_id、`step` 恒 0 |
+| `meta` | **标签面的 JSON 字符串**：`{run_id, source, episode_id, task_id, step}` 五件，**不多不少**。`run_id` 由落盘层（`trace/store.py::_stamp_run_id`）盖，另外四件由 harness 在 `req.meta` 里**一次交齐**，`TraceTool.append` 只核不拼。`source` = **这条账从哪个位置发出**（图上节点名，或图外入口名如 `run_entry.new_run`）。上层账的空位放本层 id：run 级账 `episode_id`/`task_id` 位放 run_id、`step` = 已派局数；episode 级账 `task_id` 位放 episode_id |
 | `content` | **正文面的 JSON 字符串**。判据是"存在反函数"——能从这串字符无损还原出源记录的字段。**标量一律 `str()`、布尔一律小写 `true`/`false`**；本来就是结构化数据的那几处（`facts` / `sequence` / `verdicts` / 四本写账的正文）**直接放对象，不再 `json.dumps` 一次**（那是双重编码） |
 
 - **0914 封套改造**：形状从九个字段收成上面六个，删了 `event_id`（唯一读方随

@@ -1,3 +1,2196 @@
+## 2026-09-24（206）—— git commit 规范：所有 commit 一律带 Conventional Commits 前缀
+
+**改了什么**：AGENTS.md / CLAUDE.md 第三节第 6 条：有编号条目的 commit 也要带 `feat:` / `fix:` / `refactor:` /
+`docs(scope):` / `chore:` 等前缀，前缀之后仍逐字复用 CHANGELOG 条目标题；可以带简短 body 说明范围。
+
+**为什么这么改**：原规范只有无编号 commit 用前缀，git log 里两种格式并存，按类型过滤（如只看 `fix:`）看不全。
+
+**取舍**：保留编号与标题，使 commit 仍能与 CHANGELOG 按编号对上，代价是标题变长；body 仍不重复 CHANGELOG 里的理由。
+
+**影响面**：仅规范；此前已提交的 commit 不改写。
+
+## 2026-09-24（205）—— ROADMAP 状态对账：按 187–204 把过时条目改成现状
+
+**改了什么**：`docs/ROADMAP.md` 最后核实日期改为 0924；总览表状态变更：E1、E3、E4、D3、H5、I3、I7 由 📋/❓ 改 🚧；
+E5、B1、D2、F2、F4、H4、H9、I6 只改"现状"说明、状态不变。第四节 B0、B8、E1 的问题描述按三层图与记忆阶梯重写
+（B0 / B8 / E1 三条的"最后核实"改为 0924）。
+
+**为什么这么改**：0916 之后 187–204 把 episode 图 21 节点重构成三层同构图、记忆改成 act → task → episode 阶梯、
+知识抽取链删除、observation_check 建起 406 帧准确率对比、tests/ 补了整局样本；路线图还停在 0916 的现状，
+读它会把已做的事当成没做。
+
+**取舍**：只按 changelog 与目录 / 配置 / CI 文件核对，没有逐条重跑代码；B6、B7、B2、B4、C1–C3、G1–G3、J1–J3
+等条目与这批改动无关，原样保留。
+
+**影响面**：仅文档。
+
+## 2026-09-24（204）—— trace 落点与命名重整：谁接住谁记账、每层只写本层记忆、请求与结论成对命名
+
+**改了什么**：
+- **生命周期落点**：`run_start` 从 `run_entry.new_run` 挪到 run 图 `begin`；`run_end` 从 `run_entry.close` 挪到
+  `run_done`（`settle_run()` 组装 `RunResp`，`close()` 只拆返回值）。`new_run` 只记它亲手接住的 `run_error`。
+- **异常由接住它的那一格记**：`episode_error` 从 `episode_entry.run_episode` 挪到 run 的 `act`（删掉
+  `episode_error_handler` 与 `error_handler=` 挂法，`act` 自己 try/except）；新增 `task_error`，由 episode 的
+  `act` 接住 task 抛错时记。`AgentError` 兜成 `termination=error` 的 `TaskOutput`（`steps_used` 从账上数
+  `press_key`），**这一局照常往下走**（定案 FAILED → 放弃同版剩余 → 重拆）；别的异常记完原样上抛。
+- **每层的记忆只由本层写**：run `review_and_judge` 不再补空章（删 `_leave_chapter`）。新增
+  `episode/episode_done/leave_chapter.py`：没有 TaskMemory 的局由 `leave_chapter` 单元补空章；整局异常的局由
+  接住它的 run `act` 调同一个 `store_empty_chapter()` 代补（episode 图已经死了）。
+- **改名**（`TraceKind` 值 = 落盘 kind；链路名随之改）：
+  `perception_call`/`observe` → `sense_call`/`sense_frame`；`decide_call`/`think` → `choose_call`/`choose_verdict`；
+  `summarize_call`/`write_episode` → `summarize_episode_call`/`write_episode_memory`；
+  `read_act`/`write_act` → `read_act_memory`/`write_act_memory`；`read_global` → `read_episode_memory`；
+  `read_object`/`write_object` → `read_object_memory`/`write_object_memory`；`do_action` → `press_key`；
+  `stall_check`/`step_advance` → `check_stall`/`advance_step`；`goal_stamp`/`task_stamp` → `settle_goal`/`settle_task`。
+  链路名 `perception`/`decide`/`summarize` → `sense`/`choose`/`summarize_episode`（`MaxRetriesExceeded.source`、
+  `call_failed`/`call_exhausted`/`summary_parse_error` 的 `link` 同步）。
+- `node_io`：删 `ERROR_HANDLER_NODE`；`run.begin`/`run.act`/`run_done`/`episode.act`/`leave_chapter` 进发账位置与指纹；
+  `SILENT_NODES` 清空（两层 `act` 进 `CONDITIONAL_NODES`）；后继表去掉 run 流里的空章；以 `task_error` 结尾的 task 流、
+  以 `run.act` 空章 + `episode_error` 结尾的 episode 流按合法前缀核。
+- 测试：`_fake_run` 加 `fail_on_decompose`；新增"task 抛错后这一局继续""整局抛错由 run.act 收尾"两例；
+  `test_episode_memory_chapter` 改测 `store_empty_chapter` 并钉住"run review 不写记忆"。
+- 文档：DATAFLOW（新增命名规则表、事件总表 producer）、OVERVIEW、harness / build / experiment SPEC、
+  `trace_kind.py` 文档串；流程图"账："行与图例、数据流图重画。
+
+**为什么这么改**：原先起止账一半在图外入口、一半在图内；异常账由被抛的那一层自己在入口里记，而实际接住它的是上一层；
+run 层替 episode 写记忆；账名里请求与结论对不上（`decide_call`↔`think`、`perception_call`↔`observe`、
+`summarize_call`↔`write_episode`）。现在一眼能从名字配对，从位置找到落点。
+
+**取舍**：task 抛错不再让整局崩掉——代价是一个坏掉的 task 会触发重拆，由 episode 的停滞计数兜底。
+`store_empty_chapter` 住在 episode 层但被 run `act` 调一次（只在 episode 图已经死掉时）。旧 trace 的 kind 名不再可渲染。
+
+**影响面**：落盘 kind 与 `link` 值变化，前端 / 离线脚本按新名；测试全过，ruff 干净；未经真机验证。
+
+## 2026-09-24（203）—— 判定依据 `judge_reason` 与结论 `reason` 分开
+
+**改了什么**：
+- 三层 `review_and_judge` 除 `termination` 外另写 `judge_reason`（判定依据），由 `judging.judge_reason()` 统一生成：
+  判成时是判定员的理由；机械判停时是"机械判停：<类别>；<判定员的话 / 没问模型的说明>"；没停时是判定员说"没成"的理由。
+- 三层 state、`TaskOutput` / `EpisodeOutput` / `RunResp` 加 `judge_reason`；`task_end` / `episode_end` / `run_end`
+  落账带它；`judge_verdict` 的正文字段 `why` 改名 `judge_reason`（`judge_call` 账单上的 `why` 不变）。
+- 两封 Summarize 请求带上 `judge_reason`，蒸馏 prompt 里作为「结果」的一部分给 LLM 参考，并要求 `reason` 写自己的结论、
+  不照抄判定依据。`ConsoleReviewer` 审核时显示"依据"一行。
+- `node_io` 契约、测试、DATAFLOW / OVERVIEW / harness SPEC、流程图与数据流图同步。
+
+**为什么这么改**：判定员以后可能换成别的模型，它给的"为什么判停"与 `*_done` 里 LLM 看完记录写的"停在哪、差在哪"
+是两件事；只有账上的 `why` 一处记判定理由、state 与结算里没有，上层与人审都看不到判定依据。
+
+**取舍**：`judge_reason` 不进记忆的章（记忆正文已有 LLM 的 `reason`）；run 层仍没有 `reason`，只有 `judge_reason`。
+
+**影响面**：结算账与 `judge_verdict` 正文字段变化；测试全过。
+
+## 2026-09-24（202）—— 三层边界收紧：每层只在 perceive 取帧读记忆；只存 termination；任务表与 episode 人审
+
+**改了什么**：
+- **感知边界**：每层只有 perceive 格取帧，档位按层——episode 的 `sense` 每圈完整档（带视觉），
+  task 的 `sense` 每圈 RAM 档（首圈即开局帧），run 不取。入口（`begin_episode` / `begin_task`）不再取帧，
+  `TaskInput.initial_observation`、`TaskOutput.observation` 删除，`absorb_task` 不回写帧。
+  `perceive_once` 挪到共享件 `harness/sensing.py`。`sense_after_action` → `task.sense`，
+  `get_observation` → episode 的 `sense`；`pending_observation` → `after_observation`（格内流转）。
+  键号只有一个来源：task 帧步号 = `start_step + step`，episode 帧步号 = `total_acts`。
+  帧槽只由 task 的 `sense` 写。观察账统一为 `observe`（`status`/`facts`/`done`/`perceived`/`place?`/`frame?`，
+  不再带 `goals`），`after_action` 退役。
+- **只存 termination**：三层 state、两个 `*Output`、`RunResp`、两封 Summarize 请求混入 `Settled`，
+  `done` / `success` 成为由 `termination` 推出的只读属性；TaskMemory / EpisodeMemory 的 `success`
+  同样改为属性。`judge_verdict` / `task_end` / `episode_end` / `run_end` 不再记 `done` / `success`。
+- **记忆读取统一**：只在 perceive 读直属下一级 + 世界事实。episode.perceive 读本局 TaskMemory（不再读
+  ActMemory），判定、拆解、收尾都用 `ep_ctx.task_memories`；task.perceive 读本 task 的 ActMemory，
+  决策（`CHOOSE_HISTORY_STEPS`=8）、判定、收尾都用 `task_ctx.act_memories`。两处 `*_done` 里的查库单元删除。
+  decompose prompt 相应改为"这个 task 里已按过的键"。
+- **两张表共用 `EntryStatus`**（原 `GoalStatus`）：`GoalEntry` 删死字段 `parent_id`、加 `overturned`；
+  新增 `TaskEntry`（`task`/`status`/`note`/`overturned`/`round`）。episode 的 `tasks` 从待派队列改为任务表：
+  act 标 RUNNING；**review_and_judge 定案上一个 task**（盖章 → 人审可推翻 → 定案为失败时同版剩余 PENDING
+  标 ABANDONED → 新账 `task_stamp`）；plan_episode 在没有 PENDING 时拆下一版、追加进表（`round`+1，
+  id 接着往下数）。"失败清空剩余链"从 `absorb_task` 挪到定案之后。拆解与 episode 判定的 prompt 带上任务表
+  （成败以表为准）。run 的推翻同样标 `overturned`，`goal_stamp` 加该字段。
+- **人审泛化**：`AuditReq.outcome` 可以是 `EpisodeOutput` 或 `TaskOutput`，加 `task_id`，`episode_trace` → `events`；
+  `ConsoleReviewer` 按对象渲染。**定案以表为准，记忆的章保留机器判定**。
+- **改名**：`RunState.plan` → `goals`、`outcomes` → `episode_outputs`。
+- **核对与文档**：`node_io` 的三张后继表、契约（`task_stamp`、`observe`、结算账不许再记 success/done）与衔接判据
+  （盖章对应刚结束的 task、放弃只能是未派条目、每个派出的 task 恰好盖一次章）同步；新增测试：失败后同版剩余被弃、
+  episode 推翻 task。DATAFLOW / OVERVIEW / harness 等 SPEC、AGENTS/CLAUDE、三张图重画。
+
+**为什么这么改**：上层替下层取帧、下层交回的帧再被上层当当前帧，让"谁在看世界"说不清；拆解第一次看完整档、
+重拆只看 RAM 档，同一个决策前后信息量不同。`done`/`success` 与 `termination` 三份存储可以互相矛盾。
+episode 读 ActMemory 越过了 TaskMemory 这一级。只有 run 能定案与推翻，episode 的"失败清链"却发生在人审之前，
+推翻来不及生效。
+
+**取舍**：每派一个 task 多一次视觉调用（换来拆解与判定始终看完整档）；task 只读本 task 的 ActMemory，
+跨 task 经验只经 TaskMemory 由 episode 消化；被弃条目不复活，重拆时 decomposer 可照抄；
+`RunResp.succeeded` 仍按机器结算计数；`query_recent_act_memories` 暂无 harness 调用方，端口保留。
+
+**影响面**：trace 形状变化（`after_action` 退役、`task_stamp` 新增、结算账少 `success`/`done`、observe 少 `goals`、
+stamp 多 `overturned`）；`ConsoleReviewer` 每个 task 结束也会停下等人；测试全过。
+
+## 2026-09-24（201）—— summary_parse_error 补上写点；知识抽取整条链删除；node_io 按三层重写
+
+**改了什么**：
+- **`summary_parse_error` 有了写点**：由调用账连带产出——`summarize` / `summarize_task` 两条蒸馏链上
+  `error_kind == ParseFailure` 的那次尝试记它（`link` 为链路名、`reason` 为解析失败原因），不再记
+  `call_failed`；其余链路的解析失败仍是 `call_failed`。`render.model_call` 一处实现，测试两条。
+- **知识抽取删除**（knowledge 由人管理）：`harness/episode/extract_knowledge.py`、`Brain.extract` 与
+  `_parse_knowledge`、`ExtractResult` / `LearnedKnowledge` / `KnowledgeItem` / `ExtractAttemptFailed`、
+  `BrainPort.extract`、`Extractor` / `ExtractPort`、`EpisodeRuntime.extractor`、两封 Extract 信封、
+  `prompts/extract.py` 与 `calls/extract.md`、`TraceKind.EXTRACT_CALL`、`tests/test_extract_knowledge.py`
+  → `_to_delete/201-extract-knowledge/`。`KnowledgeRecord` / `query_knowledge` / `store_knowledge` 保留
+  （人手写入的知识照常读写）。BrainPort 由八方法变为**七方法**，tool 层单方法口为八张。
+- **`experiment/real_check/node_io.py` 重写**：
+  - 读法改为**按层切流**：按 `meta` 把账切成 run 流、episode 流、每个 task 一条 task 流，下层在上层流里
+    缩成一个记号（`EPISODE` / `TASK`）；每条流用一张**后继表**（`RUN_NEXT` / `EPISODE_NEXT` / `TASK_NEXT`，
+    就是那张图的拓扑）核执行序。旧的"按 step 分组 + HEAD/TAIL 模板 + BOUNDARY_KINDS 豁免"整套删除。
+  - 清单：`RUN_NODES` / `EPISODE_NODES` / `TASK_NODES` 与三张编译图对照（旧 `EPISODE_NODES` 误含 run 的
+    error handler）；`CELL_SOURCES`（`层.格` → 发账单元）、`KNOWN_SOURCES`、`TERMINATIONS`。
+  - 衔接判据新增：task 内键号逐键 +1、`think` 首键 = 紧跟的按键、`task_end.steps_used` = 键数、
+    `episode_end.tasks_used` / `acts_used` = 派出 task 数 / 键数、派出的 task 必出自先前的拆解、
+    `success=true` ⇔ `goal_done`、`goal_stamp` 盖的是刚结束的一局、`run_end.total` = 派出局数
+    （`check_run_invariants`）。覆盖判据：按过键的 run 里整条按键链（`KEY_CHAIN_SOURCES`）必须齐。
+  - `check_step_activity` → `check_layer_flow`；`check_node_list_matches_graph` 收三张图；
+    `check_harness.py` 同步。
+- **样本改为真图**：新增 `tests/_fake_run.py`（假大脑 / 假世界 / 假记忆跑真的三张图），
+  `tests/test_node_io.py` 重写——正例三种（正常两局 / task 失败后重拆 / 半路抛错），反例逐处改动。
+- **重写中发现并修的问题**：`write_task_memory` 正文把章（`task_id` / `success` / `termination` /
+  `steps_used` / …）一起落了，`success` 还是大写布尔 → 按 `write_episode` 的规矩只落蒸馏正文
+  （`_TASK_BODY_DROP`）；`_WRITE_FORBIDDEN_KEYS` 加上 `task_id` 与来源章各键。
+- **文档**：DATAFLOW（`summary_parse_error` 写点、episode/task 级 `meta.step` = 本局键号的真实口径、缺口）、
+  harness / brain / tools / schemas / build / experiment 各 SPEC、OVERVIEW、AGENTS/CLAUDE（七方法）、
+  架构图（BrainPort 7 方法）重新渲染；`build.py` docstring 的旧节点数。
+
+**为什么这么改**：抽取链自 98 起不在图上，却拖着一条 brain 方法、一个能力口、一本账和一堆"它还可能出现"的
+豁免；knowledge 既然由人管理，留着只有维护成本。`node_io` 仍按 194 之前的单层键流写，对三层同构后的账
+只能靠豁免放行，等于没核；按层切流后三层用同一种读法、同一种判据。
+
+**取舍**：后继表只核"谁能跟在谁后面"，不核同一格重复次数的上限（如 `write_object` 自环）；
+`perception_call` 在假样本里碰不到（样本走 RAM 档），只由账单契约核。
+
+**影响面**：旧 trace（缺 `task_id`、含 `extract_call`）过不了新核对；`write_task_memory` 正文少了章字段；
+测试全过。
+
+## 2026-09-23（200）—— 三张图 + OVERVIEW；按图对账修掉一批矛盾；docs/spec 全面同步
+
+**改了什么**：
+- **图与思想**：`docs/spec/diagrams/` 新增架构图、流程图、数据流图（`.puml` 源 + `.svg`/`.png`），
+  `docs/spec/OVERVIEW.md` 写项目思想（核心想法、三层同构、停判表、架构表、不变量、IO 契约、缺口）。
+- **行为修正**：
+  - `verify_verdict` 在词表和渲染表里、却没有写点 → task_done / episode_done 的 verify 单元补发；
+    正文 `unreliable` 改名 `negative`（验证语义已是正 / 负样本，不是"可不可靠"）。
+  - episode 在 task 失败后继续派剩余链——那些 task 是按"上一个会成"拆的 → `absorb_task`
+    在失败时清空 `tasks`，由 `plan_episode` 带着失败的 TaskMemory 重拆。
+  - `task_start` / `task_end` 正文重复了 `meta.task_id` → 从正文去掉。
+  - `node_io.SILENT_NODES` 把 `plan_episode` / `plan_task` 各登记两遍、还说它们"不落账"（两者都发账）→ 删除；
+    `plan_episode` 改记为条件格（链空才拆），`review` 键改为 `run.review_and_judge`，`summarize_episode` 的跳过条件按正负样本语义改写。
+  - console_reviewer 读不存在的 `outcome.steps`；verify 在无 knowledge 时被 prompt 逼着判负、
+    episode verify 却恒传空 knowledge；task judge 读到本局全部 ActMemory（未按 `task_id` 筛）——均已修。
+- **文档 / docstring 对齐**：`brain.py` 模块 docstring（八方法、AttemptFailed 全家）、`render.py`
+  的 write_episode / verify_verdict 说明、`node_io` 的 `run_done` 静默说明、GoalStatus / Task / RunPlan /
+  EpisodeMemory / VerifyVerdict docstring、AGENTS/CLAUDE（三张图、记忆阶梯）、harness `__init__`、
+  trace_kind "九条链路"。
+- **docs/spec**：`DATAFLOW.md`、`harness/SPEC.md` 重写；`brain` / `schemas` / `tools` / `world` / `memory`
+  的 SPEC 按现状改（八方法与 decompose、IO 模型取代 run→episode 信封、九个能力口、RAM 屏幕文字、
+  记忆阶梯与 ActMemory / TaskMemory）；README 索引加 OVERVIEW 与 diagrams；
+  `TRACE_37_accounts_examples.md` 加过时横幅。
+
+**为什么这么改**：画图时逐条对照代码，发现"文档说有、代码没发"和"语义已变、名字没变"两类矛盾；
+不修则读账的人拿不到 verify 结论，episode 会在前提失效后继续执行旧链。
+
+**取舍**：`summary_parse_error`、`extract_call` 暂留词表（前者现无写点，后者在图外），列入 DATAFLOW 缺口；
+`TRACE_37` 只加横幅不重生成；ActMemory 的盘上集合名仍叫 `step_memory`，不做数据迁移。
+
+**影响面**：trace 多一条 `verify_verdict`/收尾链；`task_start`/`task_end` 正文少 `task_id`；
+episode 失败后必重拆一次（多一次 decompose 调用）。测试全过。
+
+## 2026-09-23（199）—— trace 三层落账补齐：meta 加 task_id、run 级 step = 已派局数、四本新账；记忆值按新语义改；run 吸收挪进 perceive
+
+**改了什么**：
+- **meta** 五件：`{run_id, source, episode_id, task_id, step}`。上层账的空位放本层 id
+  （run 级 `episode_id`/`task_id` = run_id；episode 级 `task_id` = episode_id）。
+  run 级账 `step` = 已派局数（原恒 0）。`TraceTool.append`、`node_io.META_KEYS`、规范同步。
+- **新 kind**：`task_start` / `task_end`（lifecycle，task 边界）、`goal_stamp`（lifecycle，
+  run 级盖章 + 人审表态 + 失败连击）、`decompose_verdict`（llm_outcome，这一版任务链）。
+- **补发**：`plan_call`（每次问 planner 一条，耗尽另记 `call_exhausted`）；run.perceive 的
+  `read_global` / `read_object`。
+- **字段**：三层 `judge_verdict` ＋`termination`/`fail_streak`/`human_note`，−`stalled`；
+  `plan_verdict` −`done`，＋`updates`/`human_note`；`run_start` ＋`run_goal`/`run_criteria`；
+  `episode_start` ＋`goal_id`。task 收尾读 ActMemory 的账由 `read_task_memory` 改为 `read_act`。
+- **记忆**：`ActMemory` ＋`task_id`（store 时盖章；task_done 按它筛，不再按步号区间）；
+  `TaskMemory` ＋`termination`，`reason` 改为 LLM 结论、`success` 语义改为模型判达成；
+  `EpisodeMemory` ＋`acts_used`/`termination`/`reason`，`steps` 语义改为 task 数，渲染改为
+  "N 个 task / M 键"并带结论行。空章版记录同样盖这三项。
+- **run 同构**：`RunState.outcome` 改名 `pending_episode`；吸收（收进 `outcomes`、更新
+  `fail_streak`）从 `review_and_judge` 挪到 `perceive` 的新单元 `absorb_episode`，
+  `read_plan_context` 接其后（`_in_execution_order`/`_pick_details` 随之从 plan_run 搬来）；
+  error handler 改为回 `perceive`。`review_and_judge` 只定案（盖章 / 人审 / 补章）与判停。
+- **修**：plan_run 的插话从未传给 planner（`PlanOnceReq` ＋`human_note`，prompt 末尾拼接）；
+  plan_episode 定稿后 `human_note` 恒为空。
+
+**为什么这么改**：三层同构之后，trace 必须能按 run / episode / task 任一层切片、并把
+每层"判停 / 规划 / 盖章"的结论单独落下；run 级 step 恒 0 让同一 run 的账无法排出先后。
+记忆值不改则 EpisodeMemory 的 `steps` 被读成键数、TaskMemory 的 `reason` 仍是机械原因。
+
+**取舍**：`node_io` 的逐键模板仍按旧键流写，层级账（task/goal/拆解）先列入 `BOUNDARY_KINDS`
+摘出模板核对，由覆盖与正文契约核——逐键模板按三层键流重写是单独一件事。
+
+**影响面**：落盘 meta 形状变化（旧 trace 缺 `task_id`，`node_io` 会拒）；记忆 JSON 新增字段
+均有默认值，旧记录可读。测试全过。
+
+## 2026-09-23（198）—— 选单排布也从内存读：option_grid / cursor_cell / option_layout
+
+**改了什么**：`ScreenText` ＋`option_grid`（选项按屏幕行分组）与 `cursor_cell`（光标的
+行、列）以及 `render_layout()`（"竖排 7 项，光标在第 2 项" / "2 行 × 2 列，光标在第 1 行
+第 2 列；上/下 换行，左/右 换列" + 按位置逐行列出、`▶` 标光标）。两档感知都把它作为
+`Facts` 的动态字段 `option_layout` 交出；完整感知档的选项与光标也改为内存读数优先。
+`repeat_hint.md` 指引决策照 `option_layout` 算方向与次数。
+
+**为什么这么改**：只给选项列表，决策不知道 `RUN` 在 `FIGHT` 的右下还是正下——方向键
+按错一次就是一键白费。tile 缓冲里每个选项的行列位置本来就在，不必再问视觉模型。
+
+**取舍**：走 `Facts` 动态字段而非具名字段——`ActMemory` 的快照副本按同一规则渲染动态
+字段，两份不必同步加字段。
+
+**影响面**：`option_layout` 进观测文本与记忆快照；测试 135 条全过。
+
+## 2026-09-23（197）—— RAM 档读屏幕文字（对话/选项/光标）+ 拆解器与各链 prompt 按三层同构改写
+
+**改了什么**：
+- world 新增 `screen_text.py`（+ 形状 `interface/domain/screen_text.py::ScreenText`）：
+  把 `wTileMap` 20×18 tile 按英文版《红》字表解码，读出底部对话框文字、光标（▶）所在
+  选单的全部选项与光标项，以及战斗标志 `wIsInBattle`。`PyBoyWorld._ram_observe` 用它
+  填 `facts.dialog_text/options/cursor`、推出 `overlay`（有光标 = CHOICE / 有对话 =
+  DIALOG / 否则 NONE），战斗时 `scene=battle`；状态行随之带上对话与选项。
+- prompt：`calls/decompose.md` 定稿——拆出的每个 task 只能依赖执行器的 RAM 观测与固定
+  按键集，目标与判据只许写坐标 / map_id / 对话 / 选项 / 光标 / 战斗标志，看不见的先拆
+  探索性 task，`max_steps` 按距离估。`run_plan.md` 删 `done`，`max_steps` 改为"一局最多
+  几个 task"，表里无 PENDING 时必须新增或重开。`summarize.md` / `summarize_task.md`
+  改为正负样本都给、要求输出 `reason`。`judge_success.md` 说明 `场景` 可能为空、
+  task/局摘要块怎么当证据。`decide_action.md` / `repeat_hint.md` 改为一键一决策。
+- `Brain._parse_summary` 读 `reason`；`plan_task` 取首段并把 `times` 固定为 1。
+- tests：6 个旧契约测试按 196 改写（run 停机三条改为 judge 判成 / 机械停摆 /
+  单局异常结算；plan 只写表、无 PENDING fail-fast）；新增 `test_screen_text.py`。
+
+**为什么这么改**：task 层一键一圈只做 RAM 感知，原先 RAM 档读不出对话和选单，
+`overlay` 恒为空，动作掩码退回"野外"那一套，执行器在对话框和菜单里按不到对的键、
+判定器也看不到对话证据。实测 tile 缓冲在对话、开始菜单、背包、战斗 2×2 菜单、
+招式列表下都能确定地读出文字，不必为每键加一次视觉调用。拆解器是这层之上唯一
+决定"task 粒度"的地方，必须按执行器实际看得见、按得到的东西来写。
+
+**取舍**：RAM 档仍不判 `scene`（除战斗外无确定来源），留空而不猜；选项切列用
+"框内每一行都对齐"规则，罕见的两词名同长对齐可能被误切。
+
+**影响面**：`Observation.facts` 在 RAM 档多了几个字段（停摆键因此对光标/对话敏感，
+更准）；全部测试通过（135）。
+
+## 2026-09-23（196）—— 三层节点按 195 契约落地：一圈同构、真拆解器、停机归 review_and_judge
+
+**改了什么**：
+- **task**：`act` 只按键并 `step+1`；按键后的五件事（RAM 感知 `sense_after_action` →
+  `detect_stall` → ActMemory → object 事件 → `close_step` 扶正并清 `action`）从 act
+  搬进 `perceive`，末尾接 `get_action_space`。`review_and_judge` 写 `termination`，
+  不再写 `reason`。`task_done` 改为 查 → 标（正负都留）→ 蒸（LLM 出 `reason`）→
+  `close_task` 出 `TaskOutput`。`task_entry` 收成 `begin_task/run_task/close`。
+- **episode**：`act` 经 `task_entry.run_task` 派 task（不再直接 `invoke`），只写
+  `pending_task`；`perceive` 首单元 `absorb_task` 吸收结算。`plan_episode` 队列空时
+  问 decomposer（可插话），task_id = `{goal_id}-t{n}`。`review_and_judge` 合成一个
+  文件（机械三类 + 问模型 + 插话）。`episode_done` 同 task 的四步，`close_episode`
+  出 `EpisodeOutput`。图边：`act → perceive` 无条件。`episode_entry.run_new` 改名
+  `run_episode(episode_input=…)`。
+- **run**：`act` 仿 episode 写法（`dispatch` 纯函数 + `run_episode`）；
+  `episode_error_handler` 复用 `dispatch` 补出 `plan/episode_input/step`。
+  `review_and_judge` 收账后机械三类 + 问模型（`run_goal` × 局摘要），是唯一停机点；
+  图边改为 `review_and_judge ─done→ run_done / 否则 → plan_run → act → perceive`。
+  `plan_run` 删表末检，规划后无 PENDING 抛 `NoGoalToDispatch`。`new_run` ＋可选 `run_goal`。
+- 共享层 `harness/judging.py`（机械三类优先级 + 问 judger 记账）。
+- brain：`Brain.decompose()` + `DecomposeAttemptFailed`；tool 层 `Decomposer`；
+  `BrainTool` 容器 ＋`decomposer`；prompt 装配 `tools/prompts/decompose.py` +
+  占位模板 `calls/decompose.md`。
+- prompt 装配：summarize / summarize_task 素材逐条打【正样本】/【负样本】标；
+  judge 素材追加 task 记忆 / 局摘要块。模板正文未改（待议）。
+- trace：＋`DECOMPOSE_CALL`；`SUMMARIZE_TASK_CALL` 补进渲染表；`episode_end` /
+  `run_end` 正文随新结算字段改。
+- build：run 侧 BrainTool 加 `judge`，episode 侧加 `plan`（拆解用），task 侧加
+  `judge`；EpisodeRuntime −`chooser`/`reflector` ＋`decomposer`；RunRuntime ＋`judger`。
+
+**为什么这么改**：落实 195 的三层同构；同时修掉读代码时发现的错误——
+episode `act` 绕过 `begin_task/close` 直接 `invoke`（`task_ctx` 为空当场断言）；
+`perceive_after_action`/`detect_stall`/`task_entry.close` 读已不存在的
+`state.observation`；三处 `query_recent_act_memories(...).entries`（响应字段叫
+`steps`）；`SUMMARIZE_TASK_CALL` 无渲染器（`KeyError`）；`summarize_task` 按已删的
+`chain_done` 判成败；task 侧 BrainTool 没配 judge 却注入了 `judger`；run 的
+error handler 拿到的是派发前的 state，review 找不到 RUNNING 条目。
+
+**取舍**：episode/run 的判定仍复用 `JudgePort`（素材扩字段），没另开"局判定"链路；
+`extract_knowledge.py` 仍是图外死文件，未动。旧 `run/act/episode.py`、
+episode 的 `judge_task.py`/`judge_goal.py`、两个 `FromRunHarnessToEpisodeHarnessRun*`
+信封移到 `_to_delete/195/`。
+
+**影响面**：`tests/` 里 4 个文件导入旧名、2 个文件的夹具用旧 runtime 字段，
+待定是否按新契约改写；`experiment/real_check/check_harness.py` 读结算字段已跟改。
+
+## 2026-09-23（195）—— 三层 state 与交界契约重定（契约先行，节点未跟进）
+
+**改了什么**：
+- 新增 `schemas/harness/domain/`：`Termination`（机械终止类别）、`task_io.py`
+  （`TaskInput`/`TaskOutput`）、`episode_io.py`（`EpisodeInput`/`EpisodeOutput`）。
+  图文件里的同名定义删除；`RunResp.outcomes` 改为 `list[EpisodeOutput]`，
+  ＋`success`/`termination`。
+- 三层 state 同构重写：各有 `step`（本层独立计数）、`done/success/termination`
+  （`review_and_judge` 写）、`reason`（`*_done` 里 LLM 写）、`output`（`*_done` 写）。
+  `TaskState`：`pending_observation` 移为 perceive 格内流转、`action` 由 perceive 消费、
+  ＋`act_verdicts`；−`goal`/`max_steps`/`task_id`（收进 `task: Task`）。
+  `EpisodeRunState`：＋`pending_task`/`task_outputs`/`fail_streak`/`task_verdicts`；
+  −`stalled`；`goal.max_steps` 单位改为 task 数。
+  `RunState`：＋`run_goal`/`step`/`fail_streak`/`episode_input`/`success`/`termination`；
+  −`goal`/`why`。
+- brain 新增 `decompose()`（`Decomposition`/`DecomposeResult`），harness 侧信封
+  `FromHarnessToBrainToolDecomposeReq/Resp` 与 `DecomposePort`。
+- `RunPlan.done`、`PlannerOutcome.done` 删除。
+- `FromHarnessToBrainToolJudgeReq` ＋`task_memories`/`episode_memories`；
+  两个 Summarize 请求＋`verdicts`（正负都送）、`reason` 改 `termination`；
+  `EpisodeSummary` ＋`reason`（默认空串）。
+- config ＋`EPISODE_STALL_LIMIT`/`RUN_STALL_LIMIT`/`RUN_MAX_EPISODES`/
+  `EPISODE_MAX_TASKS_PER_PLAN`。
+- AGENTS.md / CLAUDE.md：删"接口方法超过 6 个就该拆"，改为"接口保持简单"。
+
+**为什么这么改**：三层骨架同构后，判停、结算、记账的字段仍各说各话（run 由
+plan 的表末检判停、episode 按剩余键数给 task 裁预算、task 的机械原因冒充
+`reason`）。按"每层独立计数、只在 `review_and_judge` 判停、`reason` 只由
+`*_done` 的 LLM 写"统一；交界从 harness 内部的 From/To 信封改回裸名接口模型。
+一键一圈之后 act 只剩按键，"按键后的新帧与 ActMemory 构造"归 perceive。
+verify 的负样本对蒸馏同样有参考价值，不再丢弃。
+
+**取舍**：run 层暂无 `reason`（没有 run 级蒸馏调用）；`plan_run` 之后若表里没有
+PENDING 将 fail-fast，而不是静默停机。`EpisodeSummary.reason` 给默认空串，
+prompt 未更新前不会让解析失败。
+
+**影响面**：契约层；实现见第 196 条。
+
+## 2026-09-23（194）—— 职责重划：episode 升目标级、task 升执行级（state 先行）
+
+**新分工**：episode 产出**任务链**（`tasks`）并判**它的**目标是否达成；task 层
+**一键一决策圈**——轻感知 + 每键问 chooser 出**单键** + 每键问 judge "task 目标
+达成没有"。链预填（`TaskInput.chain` / `plan` / `pending_presses`）整体退场。
+
+**state 变化**：
+
+- `EpisodeRunState`：＋`ep_ctx`（`EpisodeContext`：observation + 三路检索 +
+  object 语义记忆——perceive 产物收束，六摊合一）、＋`tasks`（任务链）；
+  −`plan` / `pending_presses` / `observation` / `action_space` / 四个检索摊平字段。
+- `TaskState`：＋`task_ctx`（`TaskContext`：observation + 受限 action_space——
+  `get_action_space` 从 episode 层挪来）、＋`success`（judge 写）、＋`act_memories`
+  （193）；−`plan` / `pending_presses`；`observation` 收进 `task_ctx`。
+- `TaskInput`：−`plan` / `chain`（装配只剩目标/预算/步号基数/初始帧）。
+  `TaskOutput.success` 语义变为"模型判 task 目标达成"；`reason` 增 `goal_done`、
+  删 `chain_done`。
+- episode `review_and_judge` 拆两单元：`judge_task`（机械结算 task，第 0 步落
+  初始结论 `done=false/success=false` 不问模型）+ `judge_goal`（问模型，判成覆盖
+  机械结论）。task `review_and_judge` 同口径两段（第 0 步判定键 = `state.step==0`，
+  不是世界步号）。
+- `plan_episode` v1 退路 = 零模型直通写 `tasks=[goal]`（单元素链）；终态是拆解
+  prompt。episode 的 `think`/`decide_call` 随之消失，转投 task 层
+  （`plan_task` 每键 `think`/`decide_call`）。
+- `TaskRuntime` ＋`judger`（build 注入 `task_brain.judger`）。
+- task 层感知恒轻（RAM 档）：`perceive_after_action` 不再有链尾视觉档——
+  视觉全感知只在 episode 开局帧。`act` 的 `settle` 恒 True（每键都是决策尾）。
+- `close_step` 步号口径修正：meta/next_step 用**全局步号**（`start_step+step+1`），
+  与 store/do_action 同一口径（原先写 task 局部步号，多 task 后会撞桶）。
+- 图边：episode `act` 条件边改读 `tasks`；task `act` 出口**无条件**回 `perceive`
+  （act 自环删除）。
+- node_io：`plan_episode` 转静默格、`plan_task` 指纹（think）、TASK_SOURCES ＋；
+  STEP_HEAD/TAIL 模板标注**整体过期**（决策边界步/链内步二分不再成立），
+  P6 前后随 DATAFLOW.md 重写。
+
+**验证**：pytest 129 全绿、ruff 干净、三图编译不变。
+
+## 2026-09-23（193）—— 三层结构对称化：run 撤 nodes、文件名对齐格名、task_done 拆三单元
+
+**改了什么**：
+
+- **run 撤 `nodes/` 层**：`run/nodes/*` 全部上移到 `run/*`——三层目录同构
+  （`run/`、`episode/`、`task/` 直接并列各格文件夹），`run_graph.py` 与三个
+  测试文件的 import 同步；相关相对 import 深度随之修正（三/四点 → 两/三点）。
+- **单文件格统一成"格 = 文件夹"**：`run/begin.py` 裸文件 → `run/begin/__init__.py`。
+  口径定死：单文件格 = 只有一个实现单元，代码直接住 `__init__.py`，没有第二个文件。
+- **单元文件名对齐格名**：`episode/review_and_judge/judge.py` → `review_and_judge.py`
+  （函数 `judge` → `review_and_judge`）；`episode/plan_episode/think_action.py` →
+  `plan_episode.py`（函数同步改名）。meta.source 本来就写的格名（`plan_episode` /
+  `review_and_judge`），trace 不受影响。
+- **`task_done` 拆三单元**（与 `episode_done` 逐单元同构：查 → 标 → 蒸）：
+  `retrieve_act_memories.py` / `verify_act_memories.py` / `summarize_task.py`，
+  入口 `__init__.py` 串接 + 无原料短路；三步间经 `TaskState.act_memories`
+  （新流转字段，图完即弃）传递。meta.source 相应从 `task_done` 拆成
+  `retrieve_act_memories` / `verify_act_memories` / `summarize_task`；node_io 的
+  `TASK_SOURCES` / `NODE_FINGERPRINTS` / `CONDITIONAL_NODES` 同步。
+- **state 删两处**：`EpisodeRunState.tasklist`（v1 恒空、零读零写，拆解器落地
+  时再加）与 `EpisodeRunState.action`（188 机械链下沉后零读方，`act` 返回
+  `None` 只是清场仪式）。
+- **trace 删一类误标**：`SUMMARY_PARSE_ERROR` 的"全负样本/无 ActMemory 跳过蒸馏"
+  用法全删（episode `verify_task_memories` 与 task_done 两处）——"没有正样本"不是
+  解析错误，记成 error 会污染失效率统计；跳过本身可由 `VERIFY_CALL` 全负 verdicts
+  ＋缺 `SUMMARIZE_*` 推出。该 kind 保留（历史 trace 兼容 + 将来真正的解析错误）。
+- 文档性路径引用随移（run_plan.py / episode_graph.py / episode_runtime.py /
+  harness.py / PlanOnceReq / episode_memory.py / ports.py / memory_tool.py /
+  run_plan prompt 等九处 docstring）。
+
+**验证**：pytest 129 全绿、ruff 干净、三图编译冒烟不变（run 6 / episode 5 / task 5）。
+
+## 2026-09-23（192）—— verify 回归两级：正/负样本标记器（episode 层接回标记格）
+
+**语义定案（用户口径）**：verify 不是"信不信/可不可信"的审判——act 直接从机器
+读出、是最忠实的证据，没有真假问题。verify 只回答**"这条行为符不符合 goal"**：
+符合 = 正样本（`positive=True`），不符合 = 负样本。标记完交给 summarize，正样本
+才进蒸馏。**两级同一个动作**：task 层 `task_done` 标 ActMemory（对照 task goal）、
+episode 层 `verify_task_memories` 标 TaskMemory（对照本局 goal）——每一级蒸馏
+之前都用上一级证据对一次表（忠实度沿 ActMemory→TaskMemory 递减）。
+
+**改了什么**：
+
+- **episode_done 接回标记格**：新单元 `harness/episode/episode_done/
+  verify_task_memories.py`，插在 `retrieve_task_memories` 与 `summarize_episode`
+  之间——verify 本局 TaskMemory → 只留正样本回写 `task_memories` → 蒸馏吃正样本。
+  全负样本时置空列表，入口短路掉蒸馏、结算照走。失败语义同 task_done：重试耗尽
+  留整条账 + `call_exhausted`（`link="verify"`）后原样上抛。**图上仍是 5 格**，
+  `NODES_PER_*` 不动。
+- **信封泛化**：`FromHarnessToBrainToolVerifyReq.entries` 改
+  `list[ActMemory | TaskMemory]`（一次调用只装一种素材）。`Verifier.verify` 的
+  帧提取分家：ActMemory 取 before/after、TaskMemory 取 first/last 代表帧
+  （新 `_verify_images()`，相邻去重规则不变）；prompt 装配按首条类型分流
+  （ActMemory 走 `render_sequence()`，TaskMemory 各自 `render()`）。
+- **判定值对象改名**：`StepVerifyVerdict` → `VerifyVerdict`（"step"只是它最早
+  服务的那一级；文件 `step_verify.py` → `verify_verdict.py`），字段
+  `reliable` → `positive`，解析兜底措辞"按不可靠处理"→"按负样本处理"，
+  模型输出 JSON 键同步 `reliable` → `positive`。
+- **prompt 重写**（`calls/verify.md`）：判定规则从"记录可不可信"改为"行为/总结
+  是否为推进目标的正样本"——快照一致性、领域知识兜底两条方法论保留（它们是
+  取证手段）。一份模板两级共用。
+- **账面**：`EPISODE_SOURCES` 增 `verify_task_memories`；NODE_FINGERPRINTS 增
+  （`model_call`/`verify_call` + `error`/`summary_parse_error`）；CONDITIONAL_NODES、
+  CLOSING_CHAIN_NODES（三格 → 四格）同步；顺手清掉 SILENT_NODES 里 187 遗留的
+  重复键。
+- **测试**：新增 `tests/test_verify_prompt.py` 4 条（信封收 TaskMemory、
+  `positive` 值对象、两级 prompt 渲染 + 编号对齐 + JSON 键）。pytest 129 全绿，
+  ruff 干净，三图编译冒烟不变（run 6 / episode 5 / task 5）。
+
+**待办**：`docs/spec/DATAFLOW.md` 在 187–191 时已整体过期（还画着旧图与
+`verify_and_summarize` 时代），本条不续写半截——待 P6 前后随终态一次性重写。
+
+## 2026-09-23（191）—— P5 账面收尾：SPEC 定格终态 + 历史 trace 断代兼容
+
+**改了什么**：
+
+- **断代兼容**：`tools/trace` 渲染分派加 `_LEGACY_KIND_ALIASES`——历史 trace 的旧
+  kind 值（`read_step`/`write_step`/`read_verify_step`/`read_verify_knowledge`）读到时
+  按同族新渲染函数兜底（只保证能渲，不保证逐字段语义仍在）。新账一律新名。
+- **SPEC 定格**：`docs/spec/harness/SPEC.md` 重写二、三节与状态模型段
+  （目录树 = 格文件夹、run/episode 拓扑与边表、三层 state 字段、step 三层独立计数、
+  记忆阶梯）；`docs/PLAN_task_subgraph.md` 顶部标注"已全部落码"。
+- **node_io**（188/190 期间已随手同步）：NODE_FINGERPRINTS 按新 source、
+  `EPISODE_SOURCES` / `RUN_SOURCES` / `TASK_SOURCES` 三张 source 值域表、
+  契约表增 `read_task_memory` / `write_task_memory`（禁列增两张代表帧）、
+  `MODEL_CALL_LINKS` 第八条 `summarize_task`、`RUN_NODES`/`EPISODE_NODES` 六/五格。
+
+**历史 trace 兼容口径**：旧账由旧版代码渲染仍可（各版本 CHANGELOG 在案）；新版
+渲染器对旧 kind 走别名表兜底。source 旧名（plan/review/judge/think_action/
+record_observation/…）不在新值域表里——真机核对（P6）只核新账。
+
+**影响面**：渲染读侧；文档。行为不变，pytest 125 全绿。
+
+## 2026-09-23（190）—— P4 run 侧对齐：三层逐格同形完成
+
+**改了什么**：
+
+- **`perceive` 提格**：`plan._plan_req()` 的四路记忆读（episode_memory 全量按执行序、
+  详情预取 `_pick_details`、地图事实）提为独立格，产物写 `RunState.plan_ctx`
+  （新模型 `PlanContext`），`plan_run` 从 state 读——run 层的感知段就此显式。
+- **改名**：`plan → plan_run`、`review → review_and_judge`（文件随格名搬进
+  `nodes/plan_run/`、`nodes/review_and_judge/`）；meta.source 同步。
+- **首轮空转契约**：`review_and_judge` 在 `outcome is None`（第一圈）时机械跳过
+  审与盖章——循环由本格起圈的必然代价，同 task 层 judge 第 0 步不问模型的先例。
+- **`dispatch` + `episode`（子图格）→ 合并成 `act`**：两单元各住一个文件
+  （`nodes/act/dispatch.py`、`nodes/act/episode.py`），入口经 `compose_units` 串接；
+  `error_handler` 挂到 act 格（LangGraph 名变 `__error_handler__act`），
+  `goto` 改 `review_and_judge`。
+- **新建 `run_done`**：表末检成立后的占位终态出口；`plan_run` 出口条件边
+  done → run_done / act；**act → perceive（无内环，一圈=一局）**。
+- **文件组织**：格 = 文件夹（`nodes/{begin,perceive,plan_run,act,review_and_judge,run_done}/`），
+  删 `nodes/__init__.py` 统一出口；`RunState` 增 `plan_ctx`。
+- node_io：`RUN_NODES` 六格、新增 `RUN_SOURCES`（plan_run/review_and_judge/dispatch/episode）、
+  fingerprints 键改名。
+
+**为什么这么改**：0923 定稿的三层同构骨架 `perceive → review_and_judge →
+plan_<层> → act → 回 perceive`，停 → `<层>_done`——run 是最后一层对齐的。
+
+**影响面**：run 图冒烟 6 格（+error handler）；`test_run_graph_termination`
+重接线（perceive 真格 + fake episode）、`test_plan_reads_memory`（先跑 perceive
+再 plan_run）、`test_run_state_accessors`（扫描清单）、`test_node_io`（source 名）。
+pytest 125 全绿、ruff 干净。
+
+## 2026-09-23（189）—— P3 记忆阶梯：ActMemory / TaskMemory / EpisodeMemory 三层递归
+
+**改了什么**：
+
+- **StepMemory → ActMemory**（schema 文件 `step_memory.py → act_memory.py`、类、信封
+  `QueryEpisodeSteps* → QueryActMemories*` / `QueryRecentSteps* → QueryRecentActMemories*` /
+  `StoreEpisodeStep* → StoreActMemoryReq`、MemoryTool 口
+  `store_episode_step → store_act_memory` / `query_episode_steps → query_act_memories` /
+  `query_recent_steps → query_recent_act_memories`、TraceKind `READ_STEP→READ_ACT` /
+  `WRITE_STEP→WRITE_ACT`）。**记忆盘上目录名 `step_memory/` 保持不变**（数据兼容）。
+- **rationale 全删**（JEV 不产出）：`ActionSegment.rationale`、`Reflection.rationale`、
+  `ActMemory.rationale` 三处字段；brain 解析（`_parse_rationale` 与顶层 rationale 拒收）、
+  decide prompt 的 rationale 契约段、`MAX_RATIONALE` 常量、`render(reason=)` /
+  `render_sequence(reason=)` 的 reason 维度（判定/蒸馏现在看到同一份"发生过的事"）。
+- **TaskMemory 新建**（`schemas/memory/datastore/task_memory.py`）：来源章
+  （run/episode/task/goal/success/reason/steps_used/start_step）+ 蒸馏正文 +
+  代表帧（first_frame/last_frame）。MemoryTool 新增第五族存储 `task_memory/`
+  （`store_task_memory` / `query_task_memories`）。
+- **task_done 实现**：查本 task 的 ActMemory（步号区间过滤）→ verify 筛可信 →
+  新链路 `summarize_task`（复用 `Brain.summarize` 的输出契约、task 视角 prompt）→
+  落 TaskMemory。TaskRuntime 增 `verifier` / `task_summarizer`；task_brain 改为
+  `build(text=…, verify=…)`。
+- **episode_done 改读 TaskMemory**：`retrieve_verify_step_memory/retrieve_verify_knowledge/
+  verify_and_summarize` 三格换成 `retrieve_task_memories` + `summarize_episode` 两格；
+  `SummarizeReq.entries → list[TaskMemory]`（episode 级不再自己跑校验——逐键校验前移
+  task 层）。`EpisodeRunState` 的 `verify_step_entries/verify_knowledge/verified_steps`
+  三字段换成 `task_memories`。
+- **extract_knowledge 解耦**：签名改 `(entries, runtime, *, goal="")`——不再读 state
+  （`verified_steps` 已删），接回图上时由调用方自查自滤。
+- **trace**：新增 `READ_TASK_MEMORY` / `WRITE_TASK_MEMORY` / `SUMMARIZE_TASK_CALL`
+  三个 kind（删 `READ_VERIFY_STEP` / `READ_VERIFY_KNOWLEDGE`）；`_CALL_LINK` 与
+  `MODEL_CALL_LINKS` 增第八条链路 `summarize_task`；render 新增 `task_memory_write`
+  （章与代表帧不落账）；node_io 的节点清单改"格清单 + source 清单"两层
+  （压格后 source 是单元名，不再与格名重合）。
+
+**为什么这么改**：0923 定稿的记忆阶梯——ActMemory（每键，task act 机械组装）→
+TaskMemory（每 task，task_done 读 ActMemory 后 LLM 总结）→ EpisodeMemory（每局，
+episode_done 读 TaskMemory 后 LLM 总结）；rationale 随"JEV 不产出"删除。
+
+**取舍**：① episode 层不再对 TaskMemory 二次校验（TaskMemory 已来自校验过的
+ActMemory；再验一道是同批素材验两次）——偏离"每层 done 各验一次"的口头方案，
+如需恢复是 task_done/summarize_episode 之间加一格的事；② task_done 无 ActMemory /
+全不可信时不产 TaskMemory（落 SUMMARY_PARSE_ERROR 说明），episode_done 据此短路；
+③ 拆解器落地前一个 task 恒一条链，TaskMemory 的"前后变化"语义在 P2 透传形态下
+已成立。
+
+**影响面**：信封改名 5 个文件、schema 改名 1 个；`SummarizeReq.entries` 类型变；
+`TaskRuntime` / `BrainTool` 构造面变（+task_summarizer，task_brain +verify）；
+`AppendReq.memory` 放宽为 `EpisodeMemory | TaskMemory`；测试 fixture 大面积同步
+（125 全绿）、ruff 干净。
+## 2026-09-23（188）—— P2 task 层落地：第三张图 5 格同形，机械链下沉，帧槽随链走
+
+**改了什么**：
+
+- **新建 task 层**：`task_state.py`（TaskState：身份/预算/执行/机械结论四节）、
+  `task_graph.py`（TaskInput/TaskOutput 交界契约 + `compile_task_graph()` 5 格装配）、
+  `task_entry.py`（`begin_task`/`run_task`/`task_budget`/`close`）、四个新格
+  （`perceive` v1 直通、`review_and_judge` **全机械判停**：世界信号/停摆/预算/链按完，
+  `plan_task` v1 透传、`task_done` v1 占位——P3 在此加 verify+总结产 TaskMemory）。
+- **机械链下沉**：episode `act/` 的 6 个文件（act / perceive_after_action / detect_stall /
+  store_step / store_object / close_step）整体搬进 `task/nodes…` 即 `task/act/`，
+  类型改 `TaskState`/`TaskRuntime`；**键预算读 `TaskState.max_steps`**（episode 按
+  `goal.max_steps - total_acts` 裁给）。
+- **episode 的 act 格改写**：由"6 单元组合"变为 **invoke task 子图**——组装 TaskInput
+  （链 + `start_step=total_acts` 全局步号基数 + 剩余预算）→ `context=deps.task` 进图 →
+  收 TaskOutput 回填（observation=终局帧、`step+1`（task 计数）、`total_acts += steps_used`、
+  `stalled`）。
+- **帧槽下沉**：`episode_frames.py → task/frames.py`（类型 TaskRuntime），
+  `EpisodeRuntime` 删 frame 槽；`begin_episode` 的开局帧感知/记账改经 `deps.task`。
+- **episode_state**：`step` 改 **task 计数**（每 task +1，不再累加键数）；
+  新增 `total_acts`（全局键号基数，ActMemory 步号用）与 `stalled`；
+  删 `pending_observation` / `action` / `stall_key` / `stall_count`（随链下沉）。
+- **judge（episode review_and_judge）适配**：机械判停改读 task 带回的信息——
+  `stalled=state.stalled`、全局预算 `total_acts >= goal.max_steps`；
+  **删本层 `step >= max_steps` 检查**（键预算贴身闸在 task 层）。
+- **预算三层化**：新增 `EPISODE_RECURSION_LIMIT = 20_000`（大数闸门——一圈一个 task，
+  圈数无业务上界）；`task_budget = max_steps × (3+1) + 20`（贴身限）；删
+  `episode_budget()`；`NODES_PER_*` 归 task 图公式。`compose.py` 上移 `harness/`
+  （鸭子类型，episode/task 共用）。
+
+**为什么这么改**：三层同构的执行层落地——episode 拆解、task 执行、run 规划；
+模型判停（episode 层）与机械判停（task 层）分层，键预算贴身闸随执行粒度走。
+
+**取舍**：① **v1 透传形态**：无拆解器时 `plan_episode` 仍直选一条按键链，一个 task =
+一条链（链由 episode 预填、`plan_task` 直通）——模型 judge 每链首一次的节奏不变；
+② `task_done` 是占位格（P3 加 verify+总结产 TaskMemory）；③ `steps_used` 降级为
+结算/统计字段，不回补 episode 的 step。
+
+**影响面**：`TaskRuntime` 构造签名扩（+memory/reflector/帧槽）；`EpisodeRuntime` 删
+帧槽；`EpisodeRunState` 字段变（+total_acts/stalled，-pending_observation/action/stall_*，
+step 语义改）；`episode_budget` 删除、`EPISODE_RECURSION_LIMIT` 新增；`build.py`
+task_rt 装配扩；`tests/test_frame_slot.py` 迁到 TaskRuntime、新增
+`tests/test_task_layer.py`（装配冒烟 ×2，125 全绿）；ruff 干净；双图编译冒烟通过。
+## 2026-09-23（187）—— P1 episode 压格：21 节点 → 5 格，格 = 文件夹、文件 = 最小语义
+
+**改了什么**：
+
+- **图合并**（只合并图节点，文件不合并）：`perceive` ← record_observation(→改名
+  `get_observation`) + get_action_space + retrieve×4 + merge_retrieval（7 单元）；
+  `act` ← act + perceive_after_action + detect_stall + store_step_episode_memory +
+  store_object_semantic_memory + close_step（6 单元，**顺序是契约：store 必须在扶正前读
+  before/after**）；`episode_done` ← close_episode + retrieve_verify_step_memory +
+  retrieve_verify_knowledge + verify_and_summarize（4 单元；"无记忆短路"从图上条件边变成
+  入口里的一处 `if`）；改名 `judge→review_and_judge`、`think_action→plan_episode`；
+  **删** `save_checkpoint`（空转占位）。
+- **文件夹重组**：格 = 文件夹（`episode/{perceive,review_and_judge,plan_episode,act,
+  episode_done}/`），文件按最小语义原样搬入，格入口（组合单元的可调用）住
+  `__init__.py`；原功能域文件夹（open/retrieve/gate/decide/press/store/close）废止；
+  新增 `compose.py`——`compose_units()` 按序执行单元并以
+  `state.model_copy(update=增量)` 浅拷贝串接（与图引擎逐节点合并语义一致）；带分支的
+  episode_done 在短路处自行串接。`extract_knowledge.py` 上移包根（仍摘出）。
+- **改名**：`record_observation→get_observation`（单元 + meta.source + 全部 assert/docstring
+  指针）；`judge`/`think_action` 的 `meta.source` → `review_and_judge`/`plan_episode`。
+- **分节规范**：20 个单元文件内 `# 步骤 N：` 全部转为 `# ========== N. 段名 ==========`。
+- **预算重算**：`NODES_PER_DECISION 10→3`（perceive→review_and_judge→plan_episode）、
+  `NODES_PER_PRESS 7→1`（act 组合格一个 superstep 跑完一键）——链内最坏每键 4 个
+  superstep，上界不变式保持。
+
+**为什么这么改**：0923 三层同构定稿（详见 `.workbuddy/memory/2026-09-23.md`）——三层
+骨架逐格同名 `perceive → review_and_judge → plan_<层> → act → 回 perceive`，停 →
+`<层>_done`；`dispatch` 作为格名退场（act 的内部动作）；文件按最小语义划分、文件夹
+承担总和语义、节点内部 `==========` 分节（用户定）。
+
+**取舍**：① 格入口按序组合 + 浅拷贝串接，替代图引擎的逐节点合并——语义等价、少
+15 个 superstep/圈的图引擎开销；② `save_checkpoint` 的"链边界"语义由"队列空回
+perceive"自然承担；③ 本批不动 run 侧（P4）与 task 层（P2），episode 的 act 仍是
+"task 段最小执行"的过渡形态。
+
+**影响面**：`compile_episode_graph()` 装配 5 格（冒烟已核）；`episode_entry` 的
+perceive_once 路径；`tests/test_extract_knowledge.py` / `test_merge_retrieval.py`
+import 路径；config 两常量及注释；build.py / console_reviewer.py / episode_state /
+episode_runtime 等约 15 处 docstring 指针同步。pytest 123 全绿、ruff 干净。
+
+## 2026-09-22（186）—— 单投 + id 归 state + 删 routes：父子交界收敛成 `goal` 一个键
+
+**改了什么**：
+
+- **单投**：`RunState.task → goal`（单数交界键），删 `episode_goals` 投影与
+  `dispatch.active_stack()` / `project_goals()` 两个投影函数；`EpisodeRunState.task → goal`、
+  删 `episode_goals`、新增 `tasklist`（拆解产物，v1 恒空——`think_action` 直选按键的退路
+  保留）；`episode_entry.begin_episode` / `run_new` 的 `stack` 参数删除，改收
+  `run_id` + `episode_id` + `goal`。judge 的判据对象从 `episode_goals[-1]` 改为
+  `state.goal`（`episode_state.current_goal()` 是 `Task → Goal` 的唯一翻译点）；
+  `think_action` / `record_observation` 的 `goals` 传单元素列表。
+- **id 归 state**：`RunRuntime` / `EpisodeRuntime` / `TaskRuntime` 三处 `run_id` 全删，
+  `RunState` 本就有、`EpisodeRunState` 新增 `run_id`；`run_entry` 的两行双侧同步删除
+  （trace 归属章由 `TraceTool.build(run_id=…)` 构造期持有）；episode 侧五个读
+  `deps.run_id` 的节点改读 `state.run_id`。**`RunState.episode_id` 删除**：改由
+  `dispatch.episode_id_for(state)` 现算（`{run_id}-ep{已派局数+1}`），
+  `episode` 格 / `episode_error_handler` 共用同一函数；`review` 从 `outcome.episode_id` 读。
+- **TaskRuntime 删 routes 三件**：`routes` / `DEFAULT_POLICY` / `resolve()`——无读者，
+  按 kind 选 provider 是拆解器落地后的事，到那天在 `build.py` 装配。
+- 同步：`episode_graph.EpisodeInput` 交界表（run_id / episode_id / goal）、`nodes/__init__`
+  出口、`build.py`（三处 runtime 不再传 run_id）、build / harness 两份 SPEC、
+  `goal_entry.py` / `brain goal.py` / `decide_action` prompt 注释、
+  `test_run_graph_termination`（删两个投影测试、假 episode 用 `episode_id_for`）/
+  `test_plan_reads_memory` / `test_episode_memory_chapter` / `test_extract_knowledge` /
+  `test_merge_retrieval` / `test_decide_action_prompt`。
+
+**为什么这么改**：用户定稿——"run 维护一份目标表，派发时只投一个 goal 进 episode；
+episode 拆解成 tasklist、也只投一个 task 进 task 层；id 归 state，runtime 只持口"。
+整栈投影是"子目标层级"机制的残留，机制已删而投影还在，逼着 `active_stack` 维护
+"正在跑的排最后"这种纯为读法服务的排序；单投后判据、决策、账目都只认一个目标，
+同名键交界（F1）从三个键收到两个方向各一个。episode_id 现算是同一口径的另一面：
+它是流转中的记号不是跨轮状态，state 不该为它留永久字段。
+
+**取舍**：① `tasklist` 现在恒空、无人写——它是拆解器（decompose，P3）的预留位，
+先立形状免得将来改交界；② `EpisodeRunState.run_id` 与 `episode_id` 并存是刻意的
+（记忆账按 run 归属、事件按局分组，两个粒度都要）；③ 投影测试（兄弟条目排序、
+终态不投影）随函数退役，不变式"至多一条 RUNNING"仍在 `GoalStatus` 权限与
+`begin`/`dispatch` assert 上。
+
+**影响面**：`RunState` / `EpisodeRunState` 字段变（`task→goal`、删 `episode_goals` /
+`episode_id`、加 `run_id` / `tasklist`）；`begin_episode` / `run_new` 签名变；
+`RunRuntime` / `EpisodeRuntime` / `TaskRuntime` 构造签名变（删 run_id / routes）；
+`test_run_graph_termination` 删 2 测试（125 → 123）。行为不变：dispatch 选中目标、
+episode 判停、review 盖章的语义逐字未动，只是交界从"整栈投影"收成"单投"。
+
+## 2026-09-22（185）—— 能力对象化：BrainTool 变容器，七方法拆成七个对象按层注入；总口拆七张单方法 Protocol；brain 能力按需实例化
+
+**改了什么**：`tools/brain_tool.py` 重写——原先一类的七个方法拆成七个能力对象
+（`Planner` / `Chooser` / `Judger` / `Reflector` / `Verifier` / `Summarizer` /
+`Extractor`，各持同一个 `Brain`、签名只吃信封），`BrainTool` 变成**装配容器**
+（dataclass 七字段 + `build()`）；`_attempt_loop` 从方法降为模块函数（六条链路共用）。
+`tools/interface/ports.py`：`BrainToolPort` 七方法总口删除，拆成七张单方法 Protocol
+（`PlanPort` / `ChoosePort` / `JudgePort` / `ReflectPort` / `VerifyPort` /
+`SummarizePort` / `ExtractPort`）。runtime 持能力对象：`RunRuntime.planner`（`PlanPort`）、
+`EpisodeRuntime` 的 `brain_tool` 拆成 `chooser` / `judger` / `reflector` / `verifier` /
+`summarizer` / `extractor` 六字段、`TaskRuntime.chooser`（独立实例）；episode 侧五处
+调用点与 plan 节点改读新字段。**按需实例化**：`build_real` 造三个 BrainTool——run 只传
+`plan=`、episode 传 `text/judge/verify=`、task 只传 `text=`；`BrainLlmConfig` 字段改
+`str | None`、`build_llm_providers` 只造非 None 的位置（出口断言改为"造出来的互不相同"）
+——brain 侧 184 已把四个 provider 改可选，本条落地真正的按需。同步 build / harness /
+tools / brain / memory 五份 SPEC。
+
+**为什么这么改**：用户定稿的能力对象化——"plan 的来源是 brain 的方法，不是一个叫
+planner 的 harness 抽象；七个能力各是一个对象，每层按需实例化自己的 BrainTool"。
+结构化收益：不属于本层的方法在类型上看不见（run 的 runtime 没有 choose、task 的
+runtime 没有 judge）；mock 按对象换；task 接 JEV / 小快模型时只换 `task_brain` 一个
+build 调用，节点与类型零改动。
+
+**取舍**：① 层间不再共享 Brain/provider——三个 BrainTool 各造一份（provider 是轻量
+client，成本可忽略），换来选型逐层独立；② episode 层 runtime 从 1 个 brain 字段变
+6 个，构造点变长（机械代价，换结构可见性）；③ `BrainLlmConfig()` 全 None 不再是
+"能直接跑的配置"（按需语义的必然）。
+
+**影响面**：`BrainToolPort` 符号消失（拆七张）；`RunRuntime` / `EpisodeRuntime` /
+`TaskRuntime` / `build_real` 构造签名变；`tests/test_extract_knowledge.py`（真
+`Extractor`）、`test_plan_reads_memory.py` / `test_run_graph_termination.py`（假
+planner）、`test_frame_slot.py` / `test_episode_memory_chapter.py`（六 None）同步；
+五份 SPEC 同步。行为不变：所有链路的 prompt / 重试 / 账目逻辑逐字未动，只是搬家。
+## 2026-09-22（185）—— 能力对象化：BrainTool 变容器，七方法拆成七个对象按层注入；总口拆七张单方法 Protocol；brain 能力按需实例化
+
+**改了什么**：`tools/brain_tool.py` 重写——原先一类的七个方法拆成七个能力对象
+（`Planner` / `Chooser` / `Judger` / `Reflector` / `Verifier` / `Summarizer` /
+`Extractor`，各持同一个 `Brain`、签名只吃信封），`BrainTool` 变成**装配容器**
+（dataclass 七字段 + `build()`）；`_attempt_loop` 从方法降为模块函数（六条链路共用）。
+`tools/interface/ports.py`：`BrainToolPort` 七方法总口删除，拆成七张单方法 Protocol
+（`PlanPort` / `ChoosePort` / `JudgePort` / `ReflectPort` / `VerifyPort` /
+`SummarizePort` / `ExtractPort`）。runtime 持能力对象：`RunRuntime.planner`（`PlanPort`）、
+`EpisodeRuntime` 的 `brain_tool` 拆成 `chooser` / `judger` / `reflector` / `verifier` /
+`summarizer` / `extractor` 六字段、`TaskRuntime.chooser`（独立实例）；episode 侧五处
+调用点与 plan 节点改读新字段。**按需实例化**：`build_real` 造三个 BrainTool——run 只传
+`plan=`、episode 传 `text/judge/verify=`、task 只传 `text=`；`BrainLlmConfig` 字段改
+`str | None`、`build_llm_providers` 只造非 None 的位置（出口断言改为"造出来的互不相同"）
+——brain 侧 184 已把四个 provider 改可选，本条落地真正的按需。同步 build / harness /
+tools / brain / memory 五份 SPEC。
+
+**为什么这么改**：用户定稿的能力对象化——"plan 的来源是 brain 的方法，不是一个叫
+planner 的 harness 抽象；七个能力各是一个对象，每层按需实例化自己的 BrainTool"。
+结构化收益：不属于本层的方法在类型上看不见（run 的 runtime 没有 choose、task 的
+runtime 没有 judge）；mock 按对象换；task 接 JEV / 小快模型时只换 `task_brain` 一个
+build 调用，节点与类型零改动。
+
+**取舍**：① 层间不再共享 Brain/provider——三个 BrainTool 各造一份（provider 是轻量
+client，成本可忽略），换来选型逐层独立；② episode 层 runtime 从 1 个 brain 字段变
+6 个，构造点变长（机械代价，换结构可见性）；③ `BrainLlmConfig()` 全 None 不再是
+"能直接跑的配置"（按需语义的必然）。
+
+**影响面**：`BrainToolPort` 符号消失（拆七张）；`RunRuntime` / `EpisodeRuntime` /
+`TaskRuntime` / `build_real` 构造签名变；`tests/test_extract_knowledge.py`（真
+`Extractor`）、`test_plan_reads_memory.py` / `test_run_graph_termination.py`（假
+planner）、`test_frame_slot.py` / `test_episode_memory_chapter.py`（六 None）同步；
+五份 SPEC 同步。行为不变：所有链路的 prompt / 重试 / 账目逻辑逐字未动，只是搬家。
+## 2026-09-22（184）—— 撤销 planner 壳：plan 直调 brain_tool.plan，翻译搬进节点；Brain 四 provider 改按需可选
+
+**改了什么**：删 `harness/interface/planner.py`（Planner 协议）、`planner_context.py`、
+`harness/brain_planner.py`、`harness/console_planner.py` 与 `NullPlanner`；`RunRuntime.planner`
+改为 `brain_tool`（与 episode 侧同一实例）；`plan` 节点直接组 `PlanOnceReq` 调
+`brain_tool.plan`，`RunPlan → PlannerOutcome` 的翻译（表内序号 → `task_id`、`PlanGoal` →
+`GoalEntry`、`calls[-1]` 取 input/output）搬进节点 `_to_outcome`。brain 侧：`Brain.__init__`
+四个 provider 全部可选（decide/judge/verify/plan = None），六条链路入口 assert 把"没配就调"
+当场拦下——为按需实例化（每层一个 BrainTool、只造它要的 provider）铺路。同步：`build.py`
+删 planner 参数与装配、`harness/__init__` 出口、`check_harness.py` / `common.py`
+（CONTROL_SETUP_HINT）、build / experiment / harness 三份 SPEC。
+
+**为什么这么改**：planner 是把 brain 的一个方法（`Brain.plan`）包成 harness 端口的抽象——
+`BrainPlanner` 只持 brain_tool、装配处一行派生，端口没有增加任何边界价值，反而让"plan 的
+来源是 brain"这件事多了一层名字。撤销后与能力对象化的方向对齐：brain 提供的能力一律经
+BrainTool 直达（下一步把七方法拆成 Planner / Chooser / Judger / Reflector / Verifier /
+Summarizer / Extractor 七个能力对象，按层注入三个 runtime）。
+
+**取舍**：① "零规划调用"的跑法暂缺——原 `NullPlanner` 支撑的 check_harness 无头跑法，
+现在 plan 每次真调模型，run 不再确定性第一局收尾；恢复途径是给 PlanPort 加空实现
+（能力对象化的下一步）。② `ConsolePlanner`（人写目标）删除后，人的入口只剩"开局 goals
+参数 + 运行中插话"；要恢复再给 PlanPort 加控制台实现。③ `PlannerOutcome` / `GoalUpdate`
+数据模型保留（run 级编排词汇，trace render 的 `form_kind` 引用）。④ Brain 侧 decide 可选
+暂无调用方（build 仍造全套四 provider），是给按需实例化铺路。
+
+**影响面**：`RunRuntime` 构造签名变（planner → brain_tool）；`build_real` 签名变（删 planner
+参数）；删 4 个模块 + `NullPlanner`；`tests/test_plan_reads_memory.py` 重写（假件从 `_Planner`
+换成假 brain_tool，假件直接收 `PlanOnceReq`）；`check_harness.py` 行为变化（取舍①）。
+`tools/brain_tool.py` / `ports.py` 未动——把七方法拆成能力对象是下一步（185）。
+
+## 2026-09-22（183）—— `equiv_probe` 加"手抄件"闸：`parse_screen` 两侧函数体 AST 比对；台账成本口径统一
+
+**改了什么**：`experiment/observation_check/equiv_probe.py` 新增 `_check_handcopy()` —— 比
+`run_vision_model.py` 里手抄的 `parse_screen` 与主仓库 `world/pyboy_world.py` 原件，
+**比 AST 函数体、剔除 docstring**（副本那份故意多写了"为什么抄"的说明，文档差异不算漂移，
+逻辑差异才算）。结果并入 A/B 的退出码与差异清单。`run_vision_model.py` 的 `parse_screen`
+docstring 里"没有机械同步机制、靠人眼两边一起改"改为"由 `equiv_probe.py` 钉住"（顺带去掉
+`world/pyboy_world.py:73` 这个行号指针，改成按文件名 + 函数名定位）；README 同节同步。
+
+**为什么**：`parse_screen` 是包内**唯一手抄**的一块 —— 它原件与 `PyBoyWorld` 同住
+`world/pyboy_world.py`（顶层 `from pyboy import PyBoy`），为了不欠 PyBoy 才抄了 6 行。
+于是它既没有台账（不在 `_vendor/` 的 SHA 清单里）也没有生成器（不归 `sync_vendor.py` 管），
+两边只能靠记性同步：**主仓库改了它，包会静默给出用旧逻辑的结论**。A/B 探针的意义正是堵
+这类洞，而它此前没管这块。
+
+**负向验证**（否则护栏是假的）：临时副本上试四类改动 —— 函数体改一字 ✗ 抓到、只加注释 ✓
+放行、只改 docstring ✓ 放行、只改空白 ✓ 放行。
+
+**顺带修正 `EXPERIMENT_LOG.md` 的口径矛盾**：0921 那条同时出现"合计 ≈¥5.9"（正文）与
+"六组合计 ≈¥4.9"（表下），而表内六项加法 = 4.87 → **¥5.9 无出处**。以官方价（dashscope
+中国站 3.7-plus：输入 ¥2 / 缓存输入 ¥0.4 / 输出 ¥8 per M）实算两组得 ¥1.39 / ¥1.40
+（原估 ¥1.3 / ¥2.2，后者高估约 ¥0.8），表内补齐、合计统一为 **≈¥4.2**，并列口径脚注。
+**token 四列逐组复核无误**，只动了成本一列。
+
+## 2026-09-22（182）—— observation_check 入包口径收紧：只带三个代码文件，切片/验收工具留在主仓库
+
+**改了什么**：`observation_check_打包_20260922_自足版.zip` 去掉 `sync_vendor.py` 与
+`equiv_probe.py`（30 项 → 28 项，脚本数 6 → 4，含 `__init__.py`）；README 文件表只列
+包内文件（补上 `_vendor/MANIFEST.sha256`），另起一段说明那两个工具在主仓库侧；"怎么验收"
+一节加框注"**这是主仓库侧的维护流程，不是本包的用法**"、命令块标注"全部在主仓库根目录
+执行"；`requirements.txt` 与 `run_vision_model.py`（模块 docstring、`_VENDOR` docstring、
+`parse_screen` docstring）里"由 `sync_vendor.py` 生成"的措辞统一改为"由主仓库侧的切片
+工具生成（**那个工具不在本包内**）"。**仓库里两个脚本一字未动。**
+
+**为什么**：用户口径——交付物只要"两个入口 + 一个替身模块"三个代码文件。这两个工具本来
+在独立包里就跑不起来：`sync_vendor.py` 要读主仓库源码才能切片（独立包里明确拒绝），
+`equiv_probe.py` 要拿"主仓库原生 import"与"扁平产物"对打（独立包里只能用 `--one vendor`
+打单侧指纹）。放进 zip 对收件人是两个死文件，还会让人误以为要先跑它们。
+
+**代价**：收件人自己无法重验证"替身与主仓库等价"——手上只剩 `_vendor/MANIFEST.sha256`
+（12 行源文件 SHA + 1 行产物 SHA）。可接受：本包用途是**复现结果**不是审计替身；重同步
+与重验等价是**主仓库维护者**的责任，两道闸都在主仓库里，随时可跑。
+
+**验收**：zip 解压到仓库外、清空 `PYTHONPATH`，四组全绿——① 无参数报用法 / `review_page`
+真渲染 406 条 → 3.7 MB / 假 key 走到真实 `QwenProvider HTTP 401`；② 替身命中且 `pyboy`
+未加载，`place()` 返回 `map_id=12 x=13 y=8`、`landmarks()` 2 个，裁剪面外名字
+（`PyBoyWorld`/`Brain`/`build_llm_providers`）响亮 `AttributeError`；③ 除 3 个代码文件 +
+`__init__.py` 外无多余 `.py`，两个工具确实不在包里；④ 采集/解码/标注脚本、`id_tables`、
+样例帧、总览页 `review.html` 都不在。仓库侧两道闸同步复跑：`--check` 一致、A/B 44 项差异 0。
+
+## 2026-09-22（181）—— observation_check 自足包改函数级切片：`_vendor/` 19 文件 → 1 模块，配 A/B 等价验收门
+
+**改了什么**：`experiment/observation_check/sync_vendor.py` 整体重写——从"按 import 闭包
+照抄文件 + 给纯再出口的包生成懒加载壳"改成**函数级切片 + 拍平成单个模块**：AST 解析
+`run_vision_model.py` 取 7 个 `(模块, 名字)` 种子，沿主仓库各级 `__init__.py` 的再出口表
+**下钻到真正定义它的模块**，从定义体 BFS 收集引用到的全部本仓库顶层名字（**含函数体里的
+延迟 import**），改名 → 删本仓库 import → 拓扑排序 → emit 到一个文件。产物
+`_vendor/pokemon_agent.py`：1296 行 / 74 KB / 47 个顶层名字 / 12 个源文件，每个名字上方留
+`# ---- <模块> :: <名字> ----` 来源注释。旧 `_vendor/pokemon_agent/`（19 文件）删除。
+新增 `equiv_probe.py`——A/B 等价测试（44 项指纹：`TerrainMap` 全部方法 + `Facts` +
+7 个 `ScreenState` 用例 + 406 条 prompt 渲染 sha256 + `provider_for` 选型含 `RuntimeError`
+文本 + 5 个类公开 API 面），两侧各在干净子进程里跑一遍逐项比。`run_vision_model.py` 的
+import 从 5 条深路径改一条单模块 import，docstring 同步；`requirements.txt` / `README.md`
+（`_vendor` 一节重写）同步；`sync_vendor.py` 加 `--explain`（打印"哪个名字来自哪个文件"）。
+zip 重打：47 项 → 30 项。
+
+**为什么这么改**：文件粒度不是下界。主仓库是**三级 eager 再出口**
+（`world/__init__.py` → `world/interface/__init__.py` → `world/interface/domain/__init__.py`），
+改调用方的 import 写法救不了——Python 执行子模块前必先执行父 `__init__.py`，所以按文件抄
+的闭包是 38 个文件。下钻到"真正定义它的那个模块"再只抽那一个名字，闭包就散了：
+**12 源文件 / 117 KB → 1 文件 / 74 KB**，且覆盖得**更全**——函数级切片把
+`place_in_world.py` 与 `action_semantics.py` 也带了进来（`TerrainMap.place()` /
+`.landmarks()` 需要），而文件级那版漏了这两个，调用会 `ModuleNotFoundError`（本次实测确认
+旧版确有此缺口）。
+
+**取舍**：①产物**不再有"逐字节同源"性质**（AST 改名 / 删 import / 重排序），所以
+`sync_vendor.py --check` 从"同源证明"降级为"只证字节同步"，**验收门移到 `equiv_probe.py`**
+——两者都要跑，绿灯单跑 `--check` 不算完成；②切片有两个**静默**失败模式已堵：类名是
+`ClassDef.name` 字符串属性（不是 `ast.Name` 节点，名字改写器会漏）、元组赋值目标
+（`A, B = 1, 2` 不被朴素赋值处理识别）——`sync_vendor.py` 对这两处有专门处理，改生成器时
+别退回去；③同名撞车 `VisionDescribeReq`（`brain/schemas/vision.py` 与
+`world/interface/domain/vision_describe.py` 各一份，字段同构）靠"先解析 owner 再决定谁改名"
+解决，漏了会**静默换成另一个类**，`--explain` 会打印这行；④函数体里的延迟 import 是**运行时
+依赖**必须收进闭包，但**不能提到模块顶层**（提上去循环 import 就回来了）——正确做法是名字
+收进闭包、import 语句删掉；⑤产物必须 `write_bytes` 不能 `write_text`——Windows 上
+`write_text` 把 LF 转成 CRLF，SHA 是对 LF 算的，`--check` 会立刻误报漂移；⑥`parse_screen`
+（6 行）仍是例外，抄在 `run_vision_model.py` 里——它在主仓库跟 `PyBoyWorld` 同住
+`world/pyboy_world.py`（顶层 `from pyboy import PyBoy`），进闭包会拖进 405 个模块。
+
+**影响面**：只在 `experiment/observation_check/` 内（gitignored，CI 的 `ruff check .`
+扫不到它）；`_vendor/` 内容与文件数变化，包内不再有 `pokemon_agent/` 目录；zip
+`observation_check_打包_20260922_自足版.zip` 重打（30 项 / 解压 49.0 MB / zip 15.5 MB），
+新增 `equiv_probe.py`。zip 解压验收 7 步全绿：无参数报用法、`review_page` 真渲染 406 条、
+假 key 走到 `QwenProvider HTTP 401`、替身命中且 `pyboy` 未加载、`place()`/`landmarks()` 正常、
+独立包里 `sync_vendor` 明确拒绝、`equiv_probe --one vendor` 可用。A/B 等价 44 项差异 0；
+prompt 批量渲染 sha256 `5bede2e42810a086857b`（406 条，403 条带地形）两侧一致。
+
+## 2026-09-22（181）—— TaskRuntime 容器先行：三级 runtime 嵌套收口（Run ⊃ Episode ⊃ Task）
+
+**改了什么**：新建 `harness/task/` 包（`task_runtime.py::TaskRuntime`）；`EpisodeRuntime`
+加必传嵌套字段 `task`；`build.py` 按 `TaskRuntime → EpisodeRuntime → RunRuntime`
+顺序装配（v1 `routes` 空表 = 所有 kind 落回 brain 口）；`harness/__init__.py` 出口加
+`TaskRuntime`；harness / build 两份 SPEC 同步三级嵌套表；5 个测试文件的
+`EpisodeRuntime` 构造补 `task=None`（"只关心本面"的最小化哲学不变）。
+
+**为什么这么改**：三层同构定案（run=规划器 / episode=拆解器 / task=执行器，
+`docs/PLAN_task_subgraph.md`）后，按"先构建各级 runtime、harness 只通过注入到
+runtime 的 tool 访问外界"的口径——task 图与节点尚未落地，但对外访问通道先收口，
+后续 P2 建图时不再动依赖面。共享项（`game` / `brain_tool` / `trace` / `run_id`）
+是同一实例 / 同一值的复制引用，task 层独占只有 `routes`。
+
+**取舍**：v1 `TaskRuntime` 字段刻意最小（`game` / `brain_tool` / `trace` /
+`routes` / `run_id`）——task 内圈不写 step 记忆章节、不插话，`memory` /
+`reviewer` 将来真需要时再加（dataclass 加字段是廉价改动）；`routes` 值域 v1
+只有 `"brain"`，`resolve(kind)` 是给将来分流格的查询口，当前无读者。`kind`
+字段本身未落（等枚举值拍板：collect / execute / roam 起步）。
+
+**影响面**：`EpisodeRuntime` 构造签名加必传参数（显式构造处会 `TypeError`，
+全仓 grep 核过只有 `build.py` + 5 个测试，均已同步）；运行时行为零变化
+（无节点读 `task`）；待真机 run 顺带核三级装配与实例同一性。
+
+
+## 2026-09-22（180）—— runtime 拆分：`HarnessDeps` → `RunRuntime`（嵌套持有 `EpisodeRuntime`）
+
+**改了什么**：新增 `harness/run/runtime.py::RunRuntime`（`trace`/`memory`/`reviewer`/
+`run_id`/`planner` + 必传 `episode` 字段）与 `harness/episode/episode_runtime.py::
+EpisodeRuntime`（`game`/`memory`/`brain_tool`/`trace`/`reviewer`/`run_id` + 两帧槽），
+`deps.py` 删除。装配点 `build.py` 先造 `EpisodeRuntime` 再造 `RunRuntime`（嵌套）；
+run 图 `context_schema=RunRuntime`、episode 图 `context_schema=EpisodeRuntime`；
+run 侧 5 节点签名 `Runtime[RunRuntime]`、episode 侧 19 节点签名 `Runtime[EpisodeRuntime]`；
+`run/nodes/episode.py` 那格改递 `runtime.context.episode`；`new_run` 的世界起点载入
+改经 `run_rt.episode.game` 穿透，且 `run_id` **双侧同步写**；`harness/__init__.py`
+出口换；5 个测试文件构造类型同步；六份 SPEC 同步；设计依据落
+`docs/PLAN_runtime_split.md`。粒度取**甲**（一次 run 一份，episode runtime 跨局复用）。
+
+**为什么这么改**：`HarnessDeps` 是混装袋——两级依赖住同一个对象，隔离只存在于纪律
+（"episode 不读 planner"）不存在于类型。拆开后 episode 图的节点在结构上看不见
+`planner`，run 侧看不见帧槽；"哪级依赖谁能看"从口头约定变成类型边界。嵌套持有是
+接线硬约束：episode 图的 context 由 `episode_entry._invoke` 显式传（形态 B），episode
+自己拿不到第二份 context，只能由 run 侧递下去。粒度不取乙（每局新建）的理由：
+乙的唯一动机（帧槽跨局残留）已被 `remember_frame` 的跨局清空兜住，而乙要往 run 侧
+塞工厂、破"装配只在一处"。
+
+**取舍**：①共享四项（`trace`/`memory`/`reviewer`/`run_id`）两边是**同一实例/同一值**
+——隔离的是类型可见性，不是运行期实例；②F10 依旧：子图 `context_schema` 声明不被
+框架校验，两个 runtime 的声明是契约不是保险，漏改签名 = 运行期 `AttributeError`
+炸在第一个读字段的节点上（grep 双清零 + 全量 pytest 兜底）；③`RunRuntime.episode`
+是必传字段，只测 plan/review 的测试造空壳 EpisodeRuntime（docstring 注明）。
+
+**影响面**：41 文件（32 处机械替换 + 装配/出口/测试/文档手工）；对外出口从
+`HarnessDeps` 变为 `RunRuntime`/`EpisodeRuntime`；PLAN_VERDICT 等事件形状不变；
+待真机 run 顺带核装配 + `run_id` 双侧同步 + reset 穿透。
+
+## 2026-09-22（179）—— `auto_push_goals` / `auto_decide_done` 删除：plan 每次都问 planner，模型喊停总是生效
+
+**改了什么**：`HarnessDeps` 的两个行为开关字段删除，`build_real` 签名与装配处同步；
+`plan.py` 里两条按开关分叉的支路摘除（`auto_push_goals=False` 时不问 planner 的
+跳过支、`auto_decide_done=False` 时不采信模型喊停的半句条件），跳过支以注释保留
+原代码作历史；调用方 `check_harness.py` / `common.py` 去掉对应实参并改注释；
+`NullPlanner` 接管"开读口、关决策"的全部语义（三处 docstring：`null_reviewer.py`、
+`interface/planner.py`、`render.py` 渲染注释）；`tests/test_plan_reads_memory.py`
+里钉开关行为的 2 条测试**注释保留**（未删）；三份 SPEC（harness / build /
+experiment）同步。
+
+**为什么这么改**：为 runtime 拆分铺路——run 级 runtime 的字段收窄到
+`trace` / `memory` / `reviewer` / `run_id` / `planner`，两个开关是"构造期定死、
+只有 plan 一格读"的伪配置：要等价行为已有更好的载体（`NullPlanner()` 恒空产出
+＝不问的效果；`BrainPlanner` 想收手就让它收手），开关只是第三种表达方式。
+用户定调"直接去掉，把跳过的逻辑注释掉"。
+
+**取舍**：`auto_decide_done=False` 在真机核对脚本里的语义（"不让一版产出直接
+收场"）**不受影响**——`check_harness.py` 传的是 `NullPlanner()`，其空产出
+`done=None`，`model_done = outcome.done is True` 恒假，行为逐字等价。真正变化
+的是 `BrainPlanner` / `ConsolePlanner` 路径：模型（或人）现在**总是**能让 run
+提前收手——接受此变化，停机主判据仍是表末检，模型喊停只是提前出口。
+
+**影响面**：`HarnessDeps` 少 2 字段、`build_real` 少 2 参数（显式传这两个参数的
+调用方会 `TypeError`，全仓 grep 核过只有 `check_harness.py` / `common.py` 两处，
+均已同步）；2 条测试注释注销；PLAN_VERDICT 事件的渲染形状不变。
+
+## 2026-09-22（178）—— `world_reset_done` 删除：世界起点载入归位 `run_entry.new_run`（图外、每 run 一次）
+
+**改了什么**：`HarnessDeps.world_reset_done` 字段删除；`game.reset(...)` 从
+`episode_entry.begin_episode`（每局执行）上移到 `run_entry.new_run`（每 run 执行、图外，
+与 `deps.run_id = run_id` 同址），task 取 `goals[0]`；`begin_episode` 退回纯装配
+（EPISODE_START + 首帧感知 + 组装初值），开局存活断言话术同步更正；
+`docs/spec/harness/SPEC.md` 依赖注入面表格同步。
+
+**为什么这么改**：reset 的语义是"一个 run 只做一次"（首局载 ROM 起点存档，之后各局
+接着上一局跑，否则跨局累积进度全丢），它的宿主却是每局都跑的 `begin_episode`——
+`world_reset_done` 就是这个错位逼出来的跨局记号（补丁）。把动作搬回与它的语义同级的
+位置（run 入口），"只做一次"由代码位置保证：零 flag、零条件、零新节点。
+
+**取舍**：语义从"世界起点成功载入过没有"（世界侧事实）变成"run 开局必载一次"
+（调度侧事实）。异常路径行为随之改变：旧写法 reset 抛异常时下一局会再试一次（自愈）；
+新写法 reset 失败发生在图外，异常直接穿 `new_run` 的 except（补 RUN_ERROR 后原样抛），
+**整个 run 失败**——reset 失败时世界状态未知，继续跑比崩掉更糟，选后者。
+
+**影响面**：`harness/deps.py` / `harness/run/run_entry.py` / `harness/episode/episode_entry.py`
+/ `docs/spec/harness/SPEC.md`。全仓对旧字段的引用清零；5 个测试文件构造 `HarnessDeps`
+均不传该字段（grep 核过），跑图测试走 `graph.invoke`、不经过图外 reset，测试未动。
+
+## 2026-09-22（177）—— 死指针清扫：三族“指向已删文件”的说明文字归零（`episode_harness` / `object_interactions` / `brain_utils`）
+
+**改了什么**：拿死引用探针全仓扫了一遍，修掉三族**活文件里指向已删文件的散文引用**——
+只改说明文字与路径，一行逻辑没动：
+1. **`episode_harness.py` / `EpisodeHarness`**（步 3 删的类）共 8 处：
+   `schemas/memory/datastore/step_memory.py`（`:15` 语义记忆不进 `obs.facts` 那条通道、
+   `:321` 判定器窗口条数——顺带把已改名的 `JUDGE_HISTORY` 正回
+   `JUDGE_HISTORY_STEPS` 并指到住 `config.py` 的常量）、`tools/interface/ports.py`
+   （`evolve` 的 docstring）、`tools/prompts/judge_success.py`（第 0 步硬编码分支 ×2）、
+   `tools/prompts/decide_action.py`（调用方）、`tools/prompts/__init__.py`、`build.py`（注释）。
+   指向全部换成现役的家：`harness/episode/gate/judge.py`、`episode/decide/think_action.py`、
+   `BrainTool.judge()`、`BrainTool.choose()`、`pokemon_agent/config.py`。
+2. **`harness/object_interactions.py`**（整文件已删；判定层现居
+   `harness/episode/store/store_object_semantic_memory/rules.py`）共 13 处，落在
+   `memory/__init__.py`、`schemas/memory/`（3 个文件）、`world/`（4 个文件）。
+3. **`harness/brain_utils.py`**（`choose_with_retry` 现为 `BrainTool.choose()`）1 处
+   （`world/pyboy_world.py::evolve` 的 docstring）。
+4. 零散三条同族：`schemas/memory/step_memory.py` 漏一层 `datastore/`（2 处）、
+   `pyproject.toml` 注释里的 `schemas/trace/domain/trace_kind.py`（真身是
+   `schemas/harness/domain/trace_kind.py`）、`experiment/tasks.py` 的
+   `world/screen_state.py`（真身 `world/interface/domain/screen_state.py`）。
+
+**为什么这么改**：这一族字符串**编译得过、跑得通、测试全绿**——`compileall` / `ruff` /
+`pytest` / 类型检查器四样全瞎（它们是散文里的字符串，不是 import、不是路径实参），
+只有人读到才发现。它们的共同危害是**教人用一个已经不存在的东西**："详见 `X`" 指空，
+比不写更坏。顺带修掉两条**会主动把人引向错做法**的过时叙述：`GameToolsPort.evolve`
+的 docstring 还在说"harness 在等决策 LLM 返回时用它填空闲窗口"（实情是**目前零调用方**，
+决策早已改成同步调用），`step_memory.py` 还在教人去看一个已删模块里的窗口常量。
+
+**取舍**：只动"用**现在时**指向已删物"的句子；**自述"曾经有 / 已搬走 / 已删"的说明性
+提及一律不动**（`harness/interface/__init__.py`、`episode_state.py`、`run_state.py`、
+`run/harness.py`、`close_episode.py`、`episode_entry.py`、`press/__init__.py`、
+`deps.py` 的"步 2 落地了什么"历史段、`fastembed_reranker.py`、`brain/__init__.py`、
+`world/__init__.py`（frame_slot）、`tools/__init__.py`（checkpoint_tool）、
+`AGENTS.md` 里的已删守卫脚本登记等，共 10 余处）——"守卫没了 / 这文件搬哪去了"这件事
+本身是资产，删掉才是破坏。历史档（`CHANGELOG.md`、`changelog/**`、`docs/roadmap/**`、
+`docs/experiences/**`、`docs/spec/**/PLAN_*.md`）**一字不改**。没顺手碰的还有两处
+**刻意保留**：信封名 `FromRunHarnessToEpisodeHarness*` 里的旧类名（它是现役符号，
+改名是另一个决定）、`docs/spec/tools/SPEC.md` 那条"曾引 `PLAN_tool_interface.md`"的
+墓碑（它自己就说着那个文件已经不在）。
+
+**影响面**：15 个文件、24 处说明文字 + `CHANGELOG.md`；`ruff check` 全过，无逻辑改动。
+探针是用户级 skill `dead-reference-sweep` 的 `scripts/sweep_dead_paths.py`（**不在仓库里**），
+本次另补了一层它抓不到的形态——**省略包名前缀的引用**（`harness/brain_utils.py` 这种写法
+一条都不匹配 `--tops` 只列仓库顶层目录时的 pattern），单扫出 24 处，`object_interactions`
+一家占 13。
+
+## 2026-09-21（176）—— prompt 去颜色化（覆盖 v0/v1）+ 新增 v2 防多报；统计口径原样保留
+
+**背景**：2×3 矩阵跑完发现两件事。①`type` 三模型召回一致下滑
+（39→27、53→48、61→57）——v0/v1 的 type 规则全在用"红色柜台/白大褂护士/
+白色地板"做判据，而这个画面是黑白的（同文件 foe_hp 纪律自己都写了
+"不使用颜色判断"，type 块却全在用颜色，自相矛盾）。②多报（extra）的
+构成查清：大头是 battle 收尾帧对手状态框已经没了模型还填 `foe_*`
+（违反 v1 自己的"整组不填"规则）+ transition 黑屏帧硬猜
+`type=lab`/`naming`——是"守不守纪律"的错，不是读图读不准。
+
+**改了什么**：
+1. **v0.md / v1.md 原地覆盖修正颜色判据**（用户口径：直接覆盖，不开新版）：
+   pokecenter 判据改为"柜台 + 柜台后护士外形角色 + 画面一侧的治疗机器
+   （一排球形恢复装置）"，lab 改为"靠墙一排电脑柜子 + 书桌书架"——全部
+   换成结构/形状描述，零颜色词。⚠ 代价：盘上的 v0/v1 结果文件是旧文本
+   跑出来的，review HTML 里嵌入的 prompt 原文与文件从此不同源。
+2. **新增 `prompts/v2.md`** = v1（含颜色修正）+ 四处防多报规则：
+   ①scene 判定里 transition 加"黑屏/白闪不要判成其他场景"；②fields
+   总顺序"先定 scene 再填 fields"，transition **或** scene 拿不准时
+   `fields` 留空对象；③battle 归属规则 5 展开两种常见情况——对手已倒下
+   → `foe_*` 不出现、开场状态框没画出来 → 双方整组不出现；④通用抄写
+   纪律加第 4 条"宁缺勿填：框不在了/被挡了就不填这个键，不要按惯例补值"。
+   输出样例 10 份（比 v1 多一份"battle 对手已倒下只填我方"的正例）。
+3. **review_page.py 统计口径不动**（中途误改过"extra 不进精确率"已完整
+   还原，py_compile 通过，`0921 晚` 字样零残留）——用户口径：去掉多报要
+   在 prompt 层做（v2），不是改统计。
+
+**怎么验证**：v2 用 `--prompt .../prompts/v2.md --prompt-version v2` 跑
+`run_vision_model.py`，对比同模型 v1 的 extra 数（v1：vl-flash 214 /
+3.8-flash 72 / 3.7-plus 42）与 type 召回（v1：27%/48%/57%）。
+
+## 2026-09-21（175）—— run_vision_model.py 二次定版：key/prompt 直接传参，零 .env 依赖
+
+**改了什么**：在 174 基础上继续收口——①`--api-key` 必选，API key 直接从
+命令行传，`load_env_file()`/`.env` 依赖整体拔除；key 注入哪个环境变量按
+`--model` 前缀反查 `providers._PROVIDER_PREFIXES` 命中类的
+`API_KEY_ENVS[0]`（前缀→厂商判据仍只有 providers.py 一处，不抄第二张表）；
+②`--prompt` 必选，prompt 文件**绝对路径**直接传，删掉
+`_load_prompt_for_version()` 与 `_EXPERIMENT_PROMPT_DIR` 的"按版本号找文件"
+逻辑；③`--prompt-version` 必选（`_required_flag` 缺参即退出）——它只管
+缺省 out 命名 `{prompt_version}_{model}.jsonl` 与结果记录字段；④"default"
+生产 prompt 分支随之删除（本脚本是实验专用，要用生产 prompt 就传它的路径）。
+
+**为什么这么改**：用户口径"不输入 .env，直接输入 key 和 prompt 的路径，
+version 必选——这样缺省 out 的时候可以生成正确结果"。已 `py_compile` +
+真机 1 条烟雾验证（key/prompt/version 全显式、manifest 缺省、缺省 out 命名
+正确、结果记录 prompt_version/model/scene 齐全）。改文件时四路并行跑批在途，
+在途进程用改前代码不受影响。
+
+
+
+**改了什么**：`experiment/observation_check/run_vision_model.py`——①新增
+`_ROOT` 绝对路径常量打底，`_ENV_PATH`（.env）、`DEFAULT_MANIFEST`（0918 批
+406 条）、`_RESULTS_DIR`、`_EXPERIMENT_PROMPT_DIR` 全部显式绝对路径，运行时
+cwd 无关；②manifest 位置参数变可选，缺省用 `DEFAULT_MANIFEST`；③`--out`
+缺省自动落 `_RESULTS_DIR/{prompt_version}_{model}.jsonl`，**删除"不传
+`--out` 就原地写回 manifest"的旧行为**（claude_label 覆盖事故的根源），
+并加 `out_path != manifest_path` 断言兜底；④`--batch` 开关与
+`_BATCH_CHAT_BASE_URL` 常量整体移除（cache 与 batch 官方互斥，实测输入占
+成本大头、cache 完胜，batch 无用武之地），timeout 固定 45s；⑤修一个
+可选参数化新引入的坑：`--seqs 11` 的值 `11` 不以 `--` 开头，会被位置参数
+收集误认成 manifest 路径——解析前先按 `_VALUE_FLAGS` 消费旗标值。
+
+**为什么这么改**：用户口径"相对路径全部换成绝对路径作为参数使用（api key、
+prompt 路径、输入文件、输出文件名），移除 batch 选项"。`.env` 注入原本就是
+绝对路径（`load_env_file` 默认 `ROOT/".env"`），改为显式传参写在明面；
+API key 本体与厂商 URL 由 `provider_for()` 按型号名内部决定，不属于本脚本
+管辖。已 `py_compile` + 1 条真机烟雾验证（`--seqs 11 --model qwen3.7-plus
+--prompt-version v0`，manifest 缺省解析正确）。改文件时四路并行跑批在途，
+Python 已加载进内存不受影响。
+
+
+
+**改了什么**：`review_page.py` 的判定语义从"两边对齐"改为**标注驱动**——
+① `_field_verdict()` 新增第五种判定 `extra`：标注没写这个字段（键缺）而
+模型写了 → 多报，不算对也不算错；两边都没写 → `pending`（不进分母，与
+原来一致）；标注写了、模型没写 → `mismatch`（漏报，进分母扣分）。分子
+分母只数标注有值的样本（match+mismatch）。② `_per_field_accuracy()` 返回
+从三元组扩为四元组 `(field, acc, n_judged, n_extra)`，judged 排除 `extra`。
+③ 总结页准确率表新增「多报」列（`_accuracy_table_html`），stdout 汇总行
+在有多报的字段上追加 `+N多报`。④ 比对表 `extra` 行用 ➕ 徽章 + 淡黄底色
+（`tr.extra` 样式）。
+
+**为什么这么改**：样本取值分布分析暴露了旧口径的系统性冤枉——status 类
+字段 prompt 让模型"没有缩写就填 ok"，标注惯例却是没缩写就不写，于是
+「标注缺键 vs 模型填 ok」的样本全部被判 mismatch：v1 的 foe_status 15 条
+非平凡样本 **0% 全错**，全是这种口径错位；v0→v1 的 foe_status
+88%→83% "退步"实际是 v1 模型更听话（全填 ok）撞上标注缺键。改完后
+foe_status/foe_name/foe_level 回到 100%（73 条分母），假退步消失，
+模型多报的行为本身通过「多报」列保留可见。动因是用户拍板口径：
+"分母应该和标注对应，分子记标注正确的，多标的情况单独列"。
+
+**取舍**：口径变更使新旧数字**不可直接对比**——`EXPERIMENT_LOG` 的 v1
+条目顶部加了口径变更警示，v0 对比列已按新口径重算；旧条目（v0 各轮）的
+历史数字不改写（历史档原则）。多报不计分的代价是"模型多填占位值"不再
+扣分，靠「多报」列和比对表 ➕ 行保留这个信号的可见性。
+
+**影响面**：`review_page.py` 五处（`_field_verdict` / `_VERDICT_BADGE` /
+CSS `tr.extra` / `_per_field_accuracy` / `_summary_line` +
+`_accuracy_table_html`）；`results/review.html` 已按新口径重出；
+`.workbuddy/scratch/compare_v0_v1.py`（对比脚本）同步四元组解包。
+附带发现（不改代码）：v0_qwen3.8-flash 的 foe_level 旧口径 74 match 里有
+1 条是 `model=''` vs `label=None` 的假 match（空串与 None 在 norm 后相等），
+新口径下它如实落到多报。
+
+## 2026-09-20（172）—— v0 修订：补 title/type 字段说明并重跑；overview 退出统计；准确率表加"样本不足"标
+
+**改了什么**：三件。① `prompts/v0.md` 补上 `title`（menu 菜单名，中文短语 +
+示例清单）与 `type`（indoor 五选一，带 pokecenter/mart/gym/lab/general 的
+辨识要点）两处说明，并把 indoor 样例的 `fields` 从空对象改为
+`{"type": "lab"}`——其余字段仍保持 v0"不给定义"的基线性质。首次运行的
+v0.md 与结果文件备份在 `.workbuddy/scratch/`（`v0.md.run1-backup` /
+`v0_qwen3-vl-flash-run1.jsonl`）。② `review_page.py` 把 `overview` 移出
+统计口径（`_STAT_FIELDS`，比对表仍显示该行但标"不参与统计"）。③ 准确率
+表对判定条数 <30 的字段打"样本不足"标（`_FEW_SAMPLE_N`）。
+
+**为什么这么改**：数据说话——首次运行里模型**从未输出过 type**（123 条
+indoor 标注有值，模型一侧 0 条），title 大量缺失/偏值（模型几乎只答
+"主菜单"），根因是 v0 只列了字段名、既没说 indoor 该填 type 也没给取值
+口径，indoor 样例的 `fields` 还是空的，模型无从学起；这正是用户判断的
+"prompt 没写好，没给出正确字段"。`overview` 是自由文本，逐字比对恒为
+mismatch，继续统计只会污染侧栏对错分布与聚合口径——移出后旧结果立即
+从 406 全 bad 变为 119 good / 287 bad，筛选器恢复意义。n<30 的字段
+（naming×2、money、items）翻一条就是 ±17%，不给标就是在邀请误读。
+
+**取舍**：修订走的是"改 v0 原文件重跑"，不是另开 v1——用户拍板口径：
+v0 的首次测量属于"prompt 有缺陷的废测"，修订后仍叫 v0，代价是失去
+"原始基线"对照点（已用备份保住，真要对比有据可查）。type 的五选一
+说明有意从生产 prompt 整段搬入而非改写——实验目的就是验证"这条规则
+值多少分"，搬原文才能和生产环境归因对齐。
+
+**影响面**：`v0.md` 两字段说明 + indoor 样例；重跑覆盖
+`results/v0_qwen3-vl-flash.jsonl`（本次为单次调用版，含 `model`/`usage`
+字段）；`review_page.py` 统计口径与表格样式。
+
+## 2026-09-20（171）—— 总结页：准确率改表格（弱字段在前），嵌入 prompt 原文
+
+**改了什么**：`review_page.py` 总结页两处升级——① 逐字段准确率从一行
+逗号串改成真正的表格（字段/准确率/判定条数/百分比横条，≥75% 绿、40–75%
+黄、<40% 红，**按准确率升序排**，最弱的排最前）；② 新增「本次使用的
+prompt」节：每个出现过的 prompt 版本一个折叠块（`<details>`），里面是
+prompt 文件原文，折叠标题标注来源文件路径（实验版找
+`experiment/observation_check/prompts/v{N}.md`，`default` 找生产的
+`perceive_screen.md`，找不到就明说找过哪里）。实现上把逐字段统计抽成
+`_per_field_accuracy()`，stdout 那行准确率与总结页表格共用同一实现——
+顺带的可见变化：stdout 那行的字段顺序也变成弱字段在前（数值不变）。
+
+**为什么这么改**：用户口径——总结页要能看到用的是哪份 prompt（实验的
+核心变量，光有版本号不够，回看时不想再去翻文件），准确率串成一长行
+没法扫视，表格+排序+横条直接给出"v1 该先治谁"的名单。
+
+**取舍**：prompt 原文整份嵌入页面（v0 约 4KB，多版本也只是线性叠加，
+相比 406 张帧图的体积可忽略），换来 review.html 单文件自足、不需要
+回到仓库就能看到实验条件；prompt 用折叠块默认收起，不挤占总结页首屏。
+
+**影响面**：仅 `review.html` 总结页形状变化；`--out`/`--only-mismatch`
+行为不变；stdout 准确率行字段顺序变化（数值逐字不变），往
+`EXPERIMENT_LOG.md` 里记的时候按新顺序记即可。
+
+## 2026-09-20（170）—— review 页加总结页：准确率行只在那里出现，标明使用的模型
+
+**改了什么**：① `review_page.py` 把原来常驻核对视图顶部的准确率条搬进
+独立的**总结页**：侧栏新增「📋 总结」入口，落地页默认显示总结（模型 /
+prompt 版本 / 数据源 / 状态分布 / 逐字段准确率），点具体帧切到核对视图、
+准确率不再出现。模型来源两级：优先 `model_output.model`，旧结果从结果
+文件名 `v{N}_{model}.jsonl` 反推，都拿不到就明说。② `run_vision_model.py`
+每条结果的 `model_output` 增加 `model` 字段（成功/失败两条路径合流处一处
+赋值）——总结页的权威来源，以后换模型跑不用靠文件名猜。
+
+**为什么这么改**：用户口径——准确率这种"一局一个数"的信息跟每一帧无关，
+每页都占一行纯属干扰；且总结页必须能回答"这是谁跑出来的"，模型型号是
+实验记录的第一元信息，之前结果文件里只有 `prompt_version` 没有 `model`，
+是个真实的缺口。
+
+**取舍**：总结页仍是 Python 端预渲染 HTML 内嵌进 `DATA.summary`，判定
+口径与 stdout 打的那行准确率逐字同源（`_summary_line`）；落地默认总结页
+而不是第一帧——打开 review 的第一问题通常是"这版跑得怎么样"，不是"seq 0 长什么样"。
+
+**影响面**：`review.html` 布局变化（核对视图顶部少一条，多了总结视图与
+入口按钮）；`run_vision_model.py` 今后产出的结果文件每条多一个 `model`
+键，旧文件不回填（总结页反推兼容）。
+
+## 2026-09-20（169）—— review_page 改成标注终端同款界面
+
+**改了什么**：`review_page.py` 的页面壳子整个换成 `label_tool.py` 同款——
+左侧记录列表（缩略图 + seq + 对错标签，支持按对错/按 scene 筛选 + 跳 seq），
+右侧大图 + 前后翻帧 + RAM 参考面板 + 逐字段比对表（原「RAM/模型/标注/match」
+大表原样保留，放在标注终端表单区的位置）。产出仍是单个静态 `review.html`
+（数据内联成 `const DATA`，双击打开就能用，不起服务）；旧版的整页卡片流、
+tileset 筛选、"每条一张卡片"布局删除。侧栏对错标签新算了一个
+`_record_status()`（good/bad/error/pending + mismatch 数），判定范围是全部
+字段、复用 `_field_verdict`——跟顶部准确率行同一本账，`--only-mismatch`
+改用它（旧行为只看视觉六字段）。
+
+**为什么这么改**：用户口径——核对页要跟做标注时同一个界面，肌肉记忆不换
+地方。旧版 406 张卡片从头滚到尾找一个字段非常费劲；同款界面的筛选/跳转/
+翻帧直接解决"跳到下一条有错的记录"这个核对时的核心动作。
+
+**取舍**：比对逻辑（空缺 vs 漏填、RAM 翻译、verdict 判定）全部留在
+Python 端预渲染成 HTML 再嵌进页面 JSON，JS 只做选行/筛选/翻帧——不把
+判定逻辑复制进 JS，保证侧栏标签、比对表、准确率行三处永远一致；代价是
+页面里嵌的是渲染结果而不是原始数据（想改判定规则得改 Python 重跑，但这
+本来就是流程）。`overview`/`type` 两个自由文本字段精确匹配恒为 mismatch，
+所以 v0 这份 406 条的侧栏状态全是"有错"——这是真实口径，不是新页面的 bug。
+
+**影响面**：`review.html` 产物形状变了（内容字段没变，准确率行逐字不变）；
+`--out` 与 `--only-mismatch` 两个开关保留、行为如上所述微调。
+
+## 2026-09-20（168）—— walkmap 从产物中清干净：结果文件去 `walkmap_check`，review_page 去 RAM 展示
+
+**改了什么**：① `results/v0_qwen3-vl-flash.jsonl` 全部 406 条记录删掉
+`model_output.walkmap_check`（清洗前整文件备份到
+`.workbuddy/scratch/v0_qwen3-vl-flash-with-walkmap-backup.jsonl`）；
+② `review_page.py` 删掉左栏 RAM 面板的 `walk_map` `<details>` 折叠块与
+`pre.walkmap` CSS 规则，重新生成 `review.html`。
+
+**为什么这么改**：上一条（167）把 walkmap 的生产端砍了，但用户口径是
+"不做这个"——不仅以后不产生，已有产物里也不该再看见它。167 只保证了
+"下一次跑没有"，这一条把"现在盘上的"也清掉，消除两处残留展示。
+
+**取舍**：v0 结果文件的 `walkmap_check` 曾按"历史档案不清洗"刻意保留
+（167 的口径），本条把它推翻——文件清洗前先备份，数据没丢，只是从
+工作面里退场；准确率统计行逐字段数值不变（walkmap 从来不参与 match）。
+
+**影响面**：`review_page.py` 少渲染一块折叠面板；两份产物文件变干净。
+今后所有版本的 `results/*.jsonl` 与 `review.html` 都不再含 walkmap 任何痕迹。
+
+## 2026-09-20（167）—— walkmap 诊断整体移除：每条只打一次感知 API
+
+**改了什么**：`run_vision_model.py` 删掉 walkmap 相关的全部代码——
+`_WALKMAP_PROMPT`、`_diff_grid`、`_parse_json_response`、`_run_walkmap_check`
+四个块、main 循环里的诊断调用与进度行、`--no-walkmap` 开关（它存在的意义
+就是"跳过"一个已不存在的东西），以及只被这些代码消费的四个 import
+（`GRID_COLS`/`GRID_ROWS`/`MAP_CHARS`/`TERRAIN_MEANING`）。输出里不再有
+`model_output.walkmap_check` 字段。上一条（166）刚加的 `--no-walkmap`
+随之删除——用户口径升级为"不做这个"，跳过开关失去了对象。
+
+**为什么这么改**：v0 全量跑完（406 条），诊断结论已拿到——模型裸眼重建
+9×10 地形网格均值 53.7%、34 条 parse_failed 全是网格尺寸错。这条诊断线
+回答不了"prompt 该怎么改"的主实验问题，还要多付一倍 API 调用；用户拍板
+整体砍掉。全仓 grep 确认唯一生产方就是本脚本，`review_page.py` 里的
+`walk_map` 是 manifest RAM 真值展示，不相干。
+
+**取舍**：v0 结果文件（`results/v0_qwen3-vl-flash.jsonl`）里的
+`walkmap_check` 字段**保留不清洗**——那是"含 walkmap 那一轮"的历史记录，
+事后删字段等于篡改实验档案。
+
+**影响面**：`experiment/observation_check/run_vision_model.py` 单文件；
+后续每次跑从 2 次 API/条降为 1 次。seq 0 冒烟实测通过：输出顶层键只剩
+感知字段 + `usage`（1787/57 tok）。
+
+## 2026-09-20（166）—— run_vision_model 加 `--no-walkmap` 与 `--batch`；结果文件记录 token 用量
+
+**改了什么**：
+- 新增布尔开关 `--no-walkmap`：跳过第二次 walkmap 独立诊断调用。0920 定的
+  后续口径是"cache + batch + no walkmap"——诊断是 v0 一次性问题，后续版本
+  对照只看逐字段准确率，不再为它多付一半输出 token。
+- 新增布尔开关 `--batch`：把 provider 实例的 `_base` 切到 DashScope Batch
+  Chat 端点（`https://batch.dashscope.aliyuncs.com/compatible-mode/v1`），
+  客户端超时放大到 1800s（batch 要排队，实时档 45s 会误杀排队中的请求）。
+  官方文档明确 **batch 独立计费、不支持上下文缓存——cache 与 batch 互斥**，
+  `--batch` 模式下 `usage.cached_tokens` 恒为 0（这也顺便成了 batch 生效的
+  旁证）。
+- 每次调用的 token 记账（`input_tokens`/`output_tokens`/`cached_tokens`，
+  取自 `VisionDescribeResp` 现成字段）进结果文件的 `model_output.usage`——
+  供事后核成本、验隐式缓存命中率。
+
+**为什么这么改**：用户定了后续实验的跑法口径；且查价时发现 batch 与缓存
+不可叠加（此前以为能叠），成本决策要靠 `usage` 里的真实数字而不是估算。
+
+**取舍**：batch 只切 `_base` 这一个实例属性、不新增子类——`_post()` 每次
+现取 `_base` 拼 URL，`config()` 自报的也是它，可复现性不破；brain 模块
+本体零改动。Batch Chat 暂用串行循环（并发上限 10k、QPS 1000，理论可并发
+提交，但先不引入线程复杂度，排队真痛了再说）。
+
+**影响面**：只动 `experiment/observation_check/run_vision_model.py`；
+不传新开关时行为与 v0 那轮完全一致。
+
+## 2026-09-20（165）—— run_vision_model 兼容无地形帧（walk_map 为 null 的 3 条不再炸）
+
+**改了什么**：`_terrain_from_record()` 对 `walk_map` 为 `null` 的记录返回
+`None`（不再硬造 `TerrainMap` 撞 pydantic 校验）；`_run_one()` 此时给
+`$known_map` 占位符填一句"本帧没有地形数据"的说明；`_run_walkmap_check()`
+对无地形帧直接返回 `{"skipped": True}`——逐格比对没有基准，跑了也没有
+意义。终端进度行相应多一种"walkmap 跳过（无地形数据）"。
+
+**为什么这么改**：冒烟测试（seq 0–4）实测 seq 1/2/3 三条（menu×2 +
+transition×1，都是采集开头几帧）地形字段为 `null`，原实现直接
+ValidationError 炸掉，感知调用根本发不出去——不修的话全量 406 条里有
+3 条永远拿不到 `model_output`。
+
+**取舍**：没把这 3 条从实验里剔除——剔除会改准确率分母（406→403），
+而感知调用本身不需要地形也能跑（`$known_map` 在 v0 里只是"仅供参考"
+附录），补一句说明让模型知道这栏是空的即可。walkmap 诊断对这 3 条是
+真做不了（没有 ground truth），跳过是唯一诚实的选项。
+
+**影响面**：只动 `experiment/observation_check/run_vision_model.py`；
+403 条正常帧的行为一字不变。
+
+## 2026-09-20（164）—— 修 facts.py 缩进 bug：MAP_VIEW 被 dedent 出 Scene，import 直接炸
+
+**改了什么**：`Facts.Scene` 的 `MAP_VIEW = "map_view"` 成员缩进少了两格，
+落在了 `Facts` 类体上——pydantic 2.13 建类时把它当成"无注解的非法属性"
+抛 `PydanticUserError`，`pokemon_agent.world` 整条 import 链全断。改回
+8 格缩进归位到 `Scene`（第 8 个成员，`map_view` 取值在 manifest 的
+`claude_label` 里本来就存在，注释也写明它是 scene 语义）。
+
+**为什么这么改**： observation_check 的 v0 实测（`run_vision_model.py`）
+import 时就炸，任何世界层代码都进不去。这个 bug 是纯手误级缩进错位，
+ruff/pytest 当前都看不见它（`.md` 退出 lint 范围与此无关，是缩进合法
+但 pydantic 运行期才校验——`from __future__ import annotations` 让
+类体注解延迟求值，import 期只有 pydantic 的模型构造会撞上它）。
+
+**取舍**：只把成员归位，不动 `Facts`/`Scene` 的任何结构。
+
+**影响面**：`pokemon_agent.world` 恢复可 import；`Facts.Scene` 增加
+`MAP_VIEW` 成员（本来就是设计意图，`claude_label` 的 8 种 scene 覆盖
+里 `map_view` 有 1 条在等它）。
+
+## 2026-09-20（161）—— review_page.py 准确率统计补上 scene 专属字段；建立 prompt 版本管理约定
+
+**改了什么**：
+- `_summary_line()` 原来只统计 `_VISION_FIELDS`（scene/overlay/dialog_text/
+  options/cursor/overview）六个通用字段的准确率，`foe_hp`/`title`/`money`/
+  `naming_current_text`/`type` 这些按 scene 才出现的额外字段（`_PROMPT_FIELDS`）
+  完全没被计入——现在一起统计。`_field_verdict` 本来就把"两边都没这个 key"
+  判成 pending 不是 mismatch，所以混进不适用的 scene 不会污染准确率，直接
+  加进同一个循环就行，不用额外分支。
+- `main()` 跑完之后把这行汇总也打印到终端（原来只写进 `review.html`，
+  要打开浏览器才能看到）——这样批量跑脚本、比较多个 prompt 版本时，
+  命令行输出就能直接拿到准确率数字，不用每次都开报告页面。
+- 新建 `experiment/observation_check/EXPERIMENT_LOG.md`：记录"跑了哪个
+  prompt 版本、测出来准确率多少"，跟 `CHANGELOG.md`（记代码/schema 改了
+  什么）分工。约定了文件命名规则：`prompts/v{N}.md` 是 prompt 版本文件，
+  `captures/<dir>/results/v{N}_<model>.jsonl` 是某版本某模型的推理结果，
+  **不允许 `--out` 指回原始 `manifest.jsonl`**（会覆盖 `claude_label`）。
+
+**为什么这么改**：用户要开始用 v0 prompt 实测 `qwen3-vl-flash`、后续还会
+陆续加 v1/v2，如果每次结果和 prompt 版本糊在一起写、又只能靠肉眼翻
+`review.html` 看准确率，很快就会分不清"这个数字是哪一版测出来的"。这次
+补的机制目的是让"prompt 演化 → 准确率变化"这条主线可以一直追溯。
+
+## 2026-09-20（163）—— battle 不再要求两侧状态框同时在场；review_page 把"标注认定不在画面上的一方"显示为空缺
+
+**改了什么**：
+- `perceive_screen.md` 第一节 `battle` 定义：删掉"必须同时有两只宝可梦和两个状态框，
+  少了任何一边就不是战斗"，改成按战斗画面的布局来判，并列出四种只有一侧（或两侧都没有）
+  状态框、但仍然是 `battle` 的画面：开场 `Wild XX appeared!`、放出精灵前后只出现一侧的框、
+  对手倒下后上方空了、训练师战结束换成对手训练师立绘。跟 `menu` 的区分改成看布局
+  （对手框在左上、没有数字；我方框在右下、有数字；没有属性表 / `No.xxx` / 横排队伍列表）。
+- 第二节"唯一判据：HP 数字"补一句：画面上只有一个状态框时同样按有没有数字判归属。
+- 第四节 `battle` 字段：状态框不在画面上的那一方，`my_*` 或 `foe_*` 四个字段**整组不填**，
+  不许凭立绘或对话框里的名字去补。
+- `review_page.py`：新增 `_BATTLE_SIDES` 分组和 `_battle_side_off_screen(label, field)`；
+  `_source_cell` 多收一个 `label`（这一条的 `claude_label`），标注是 `battle` 且某一方四个
+  字段一个都没有时，两列里这一方的字段都显示"（空缺）"，不再显示"漏填"。
+  `manual-20260918-143419/review.html` 已重新生成：（161）里 30 条只有一侧状态框的记录
+  产生的 150 处"漏填"没有了，剩下 2 处（seq=68 没有 `title`、seq=278 没有 `items`）
+  是真实缺口。
+
+**为什么这么改**：（161）第 3 条——这 30 条明显就是战斗画面，归到别的类更不对（用户确认
+按 `battle` 标）。原规则的本意是防止把精灵状态页、队伍列表误判成战斗，这个目的改用
+"布局"判据一样能达到，不需要要求两侧都在场。review 这边：标注是 ground truth，它说那一方
+不在画面上，模型不填就是答对了，显示成"漏填"会在后面算准确率时误计。
+
+**取舍**：只在"一整组四个字段都没有"时才算空缺；只缺一两个（比如 `foe_hp` 被挡住读不出）
+照旧显示"漏填"，免得把真正漏标的字段藏起来。模型如果给看不到的那一方填了值，
+`_field_verdict` 照旧判 `mismatch`——那是模型编出来的。
+
+**影响面**：生产 prompt 的 `battle` 判据变宽了，之前被判成 `transition`/其他类的战斗开场帧
+现在应该判 `battle`。`review_page.py` 只改了单元格的渲染，`_field_verdict` 的判定逻辑没动。
+标注本身这次没改（30 条原来就是按这个规则标的）。
+
+## 2026-09-20（162）—— 空白对话框改判 overlay=dialog；起名键盘 options 改成画面实际布局（按键之间用空格分隔）
+
+**改了什么**：
+- `perceive_screen.md` 第一节：对话框的判据从"能抄出字"改成"看得到白底 + 黑色细边框"。
+  框弹出来但这一帧还没打出字时，`overlay` 仍填 `dialog`，`dialog_text` 留空字符串；
+  删掉"`overlay=dialog` 而 `dialog_text` 为空是自相矛盾"那句。区分纯黑地图边界的
+  要求不变（没有白底和边框就不是对话框）。
+- `perceive_screen.md` 的 `naming` 样例：`options` 改成画面上实际的键盘布局，
+  每个键之间用一个空格隔开：`A B C D E F G H I` / `J K L M N O P Q R` /
+  `S T U V W X Y Z` / `× ( ) : ; [ ] PK MN` / `- ? ! ♂ ♀ / . , ED` /
+  `lower case`；并说明 `PK`、`MN`、`ED` 各算一个键。
+- `manual-20260918-143419` 标注同步：（161）里的 11 条空白对话框帧
+  （13、101、102、121、122、139、155、213、214、346、358）`overlay` 由 `none`
+  改为 `dialog`；seq=40、390 的 `options` 改成新布局；seq=40 的
+  `naming_cursor_letter` 由 `X` 改为 `×`（截图上 `▶` 指的是第 4 行第一个键 `×`，
+  不是第 3 行的 `X`）。`review.html` 已重新生成。
+
+**为什么这么改**：打字机效果刚开始时空框会反复出现，画面上确实有一个对话框，
+按原来的规则只能标 `none`，跟实际不符（用户确认按 `dialog` 标）。旧的键盘样例
+是凭印象写的，第 4、5 行跟游戏画面对不上，而且 `PK`/`MN`/`ED` 这种双字母键
+直接拼在一起会分不清边界。
+
+**取舍**：第 1~3 行原来是 `ABCDEFGHI` 这种不带空格的写法，为了整张键盘用同一种
+格式，也一并改成了空格分隔，代价是跟旧的写法不兼容（目前只有 seq=40、390 两条
+用到，已同步）。
+
+**影响面**：生产 prompt 的 `overlay` 判据和 `naming` 样例变了，之前的模型输出
+里"空框判 none"的那部分，按新标注会算错；标注里的另外 377 条没有变。（161）
+里第 1 条（开场剧情仍标 `transition`，不新增 scene）用户已确认维持现状；第 3 条
+（只有一侧状态框的战斗画面）见（163）。
+
+## 2026-09-20（161）—— manual-20260918-143419 批量补全 claude_label（388 条），列出 schema 没覆盖到的画面待讨论
+
+**改了什么**：
+- `experiment/observation_check/captures/manual-20260918-143419/manifest.jsonl`
+  除已有的 18 条外，其余 388 条全部补上 `claude_label`（406/406）。分布：
+  indoor 120 / field 110 / battle 95 / transition 41 / menu 15 / shop 6 /
+  naming 1；overlay：none 187 / dialog 161 / choice 40。
+- 方法：把 `frame_png` 按 2 倍放大拼成 3×3 的联系表逐张看图标注（没有凭 RAM/
+  地图名脑补画面）；`scene`/`overlay`/`dialog_text`/`overview`/`options`/
+  `cursor` 全部来自看图，`my_*`/`foe_name`/`foe_level`/`*_status` 按约定直接抄
+  RAM 解码字段，`foe_hp` 按 RAM 公式算挡位。
+- 额外做了一道像素级核对：直接数截图里 HP 条的填充像素（对手条 y=19、
+  x=32..79；我方条 y=75、x=96..143，满格 48px），跟 RAM 换算结果逐帧比对。
+  我方 HP 条全部与 RAM 一致（所以 `my_hp` 用 RAM 数字 = 画面数字）；对手条只有
+  两帧对不上，都是"招式结算文字已出、血条还没开始/没掉完"的动画滞后帧：
+  seq=125（RAM 9/15=过半，画面满格）→ 标 `满`；seq=132（RAM 0/15=危险，画面
+  12/48）→ 标 `较低`。这两帧按画面实际显示标，因为 ground truth 考的是
+  "看图能读出什么"；其余帧 RAM 与画面一致，照 RAM。
+- 写盘：每批（约 80~100 条）都是"整份读入 → 内存里改 → 拼成完整字符串一次写回"，
+  先验证过原文件 `json.loads`→`json.dumps(ensure_ascii=False)` 往返逐字节一致；
+  写完后对 388 条标注做了哈希比对，与本地生成的结果一致。原 18 条未改动。
+- 跑了 `review_page.py` 刷新 `review.html`：`claude_label` 列不再有"尚未产出"
+  （剩下的 8120 处"尚未产出"= 406 条 × 20 个字段，全部是 `model_output` 列——
+  这份 manifest 还没跑过模型，所以没法用"连片 ❌"反查标注）。表里 150 处
+  "漏填"来自下面第 3 条的 30 条记录，是有意不填，不是遗漏。
+
+**为什么这么改**：这份 manifest 要当视觉模型准确率的 ground truth，之前只有
+18 条样例，覆盖不了统计需要。
+
+**取舍**：`foe_hp` 原则上用 RAM 算，只有 seq=125、132 两帧按画面标——这两帧像素测量
+能确定画面跟 RAM 不一致（血条动画还没跟上），ground truth 应该跟画面走。
+
+**影响面**：只改了这份 manifest 的 `claude_label` 和它的 `review.html`，没动任何代码或 prompt。
+
+**疑难案例 / schema 没覆盖到的画面（没有私自加 scene/字段，先用近似值标，待讨论）**：
+1. **标题画面和开场剧情**（seq=1 标题画面，4~8、10 OAK 开场白，白底+立绘+对话框）：
+   不是地图也不是战斗，暂标 `transition`（有字的帧 overlay=`dialog`）。开始菜单
+   （2、3，NEW GAME/OPTION）和给对手选名字（9，NEW NAME/BLUE/GARY/JOHN）标成
+   `menu`，`title` 分别写 `开始菜单`/`名字选择`。是否需要一个 `intro`/`cutscene` 类？
+2. **白底带框、但里面还没打出字的对话框**（13、101、102、139、155、346，以及
+   战斗开场 121/122/213/214/358）：按 prompt"抄不出字就不是对话框"标
+   `overlay=none`，但画面上确实有框。打字机刚开始的帧会反复出现，规则需要明确。
+3. **只有一侧状态框的战斗画面**（30 条：`Wild XX appeared!` 开场 114/315/339/340/
+   356/357、只露出对手框的 122/214、对手倒下后上方空了的 52~55/112/118/133/
+   229~232/317/320/341、训练师战后对手立绘出场的 56~58 等）：prompt 说"少了任何
+   一边就不是战斗"，但这些明显就是战斗画面，归到别的类更不对。暂标 `battle`，
+   看不到的那一侧字段整组不填（所以 review 里显示"漏填"）。建议要么放宽 battle
+   定义，要么给 `_EXTRA_FIELD_SCENE` 的判定加上"这一侧状态框不在画面上"的空缺判断。
+4. **遇敌前的闪屏/切入过场**（78、83、119、295、299、319，RAM 已经 `is_in_battle`
+   但画面还是变暗/变白的地图或斜切黑块）：标 `transition`。
+5. **图鉴**：图鉴条目页（32，立绘+身高体重+说明文字）和图鉴目录页（186）标
+   `menu`+`title=图鉴`；条目页的说明文字按对话框抄进 `dialog_text`。目录页
+   `options` 暂写成 `["001 BULBASAUR","002",…,"004 CHARMANDER",…]`，这个抄法是临时的。
+6. **战斗中打开背包**（362）：背包盖住了我方状态框，标 `menu`+`title=背包`，没按
+   `battle` 标。**白底上的起昵称询问**（388 对话框、389 YES/NO）标 `transition`+对应 overlay。
+7. **学校黑板 2×3 选项框**（285~290，SLP/BRN/PSN/FRZ/PAR/QUIT）：标
+   `indoor`+`overlay=choice`，`options` 按"先左后右、先上后下"。
+8. **商店顶层 BUY/SELL/QUIT**（278）：`BUY` 旁是空心 ▷（上一次的选择记号，不是
+   实心光标），`cursor=null`，不显示商品所以没填 `items`。数量选择界面（273/275/
+   276）沿用 seq=274 的写法，靠 `overview` 描述 `×05`/总价。
+9. **naming 键盘布局与实际画面不一致**：seq=40 的 `options`（照抄 prompt 样例）
+   第 4、5 行是 `×():;[]♂♀`/`-?!♪.,`，但画面上实际是 `× ( ) : ; [ ] PK MN`/
+   `- ? ! ♂ ♀ / . , ED`。为了跟已核对过的 seq=40 保持一致，seq=390 沿用了同样的
+   写法；建议 prompt 样例和这两条一起改成画面实际布局。
+10. **精灵列表弹出子菜单**（181）：`options` 只写当前活动的 STATS/SWITCH/CANCEL，
+    `dialog_text` 抄被子菜单挡住半截的 `Choose a P`。
+
+**建议**：用 `label_tool.py` 重点抽查上面列出的 seq，以及所有 `dialog_text`
+是半截文字的帧（打字机效果照实抄，没有补全）。
+
+## 2026-09-20（160）—— indoor 场景新增 type 字段（宝可梦中心/商店内部/道馆/研究所/general）；修正 seq=274 标注
+
+**改了什么**：
+- 标注 seq=274（商店）时用户指出这一帧其实已经是"选购买数量"的界面
+  （右下角 `×01`/总价，不是单纯的商品列表浏览），原来的 `claude_label`
+  没体现这个状态——改到 `overview` 里说清楚。这也带出一个问题：`shop`
+  场景目前没有专门的字段记录"正在选数量"，暂时先靠 `overview` 描述，
+  没加新字段（数量选择器只在下单那一刻短暂出现，值不值得为它单开一个
+  结构化字段还没想清楚，先记录着）。
+- 借着这次讨论，用户提出 `indoor` 也应该像 `menu` 的 `title` 一样，有一个
+  字段标出"这是哪一类室内场景"，而不是所有室内场景一概不需要字段。
+  新增 `fields.type`（四选一 + 兜底）：`pokecenter`（宝可梦中心，红色柜台+
+  护士+治疗机器，辨识度高）/`mart`（商店内部楼层，货架+柜台，注意这个
+  跟 `scene=shop` 是两个维度——还没进买卖界面的商店楼层是
+  `indoor`+`type=mart`，弹出商品价目表之后才是 `scene=shop`）/`gym`（道馆）
+  /`lab`（研究所/实验室）/`general`（其余全部，包括普通民宅——这是默认值，
+  不该为了"显得识别出来了"硬凑前面几类）。
+- `perceive_screen.md` 第四节和 `indoor` 样例同步更新；`review_page.py` 的
+  `_PROMPT_FIELDS`/`_EXTRA_FIELD_SCENE` 加入 `type`→`indoor`；`v0.md`
+  （实验版最简 prompt）的字段列表也加了 `type`；`label_tool.py` 给
+  `indoor` 场景加了 `type` 下拉框（下拉而不是自由文本，控制取值范围）。
+  已标注的 3 条 indoor 记录（seq=149/146=Oak's Lab → `lab`，seq=309=
+  Viridian 宝可梦中心 → `pokecenter`）回填了这个字段。
+
+**为什么这么改**：`menu` 靠 `title` 区分"这是哪种菜单"，`indoor` 之前却是
+"不需要任何字段"——但室内场景其实也有清晰可辨的子类型（宝可梦中心的柜台+
+护士是游戏里视觉上最好认的画面之一），留空等于浪费了这部分可以从画面上
+直接读出来的信息。用受控词表（而不是自由文本）是为了避免模型/标注员各自
+造词，导致这个字段没法做统计。
+
+## 2026-09-20（159）—— naming 场景补上 options 的填法；用新标注终端修正了几处 claude_label
+
+**改了什么**：
+- 人工核对 seq=40（起名字母键盘）的 `claude_label` 时发现两处问题：光标
+  三角箭头指向的其实是 `X`（之前没看清没填），以及 `options` 不该留空——
+  跟战斗指令框 2×2 布局（先左后右、先上后下拼数组）同一个原则，键盘也该
+  照抄整个相对位置布局，一行字符拼成 `options` 数组的一个元素。
+- `perceive_screen.md` 的 `naming` 小节补上这条规则和更新后的 JSON 样例；
+  `naming_cursor_letter` 仍然是唯一的光标来源，`options` 只是"这张键盘长
+  什么样"的静态布局记录，`option_lines`/`cursor` 两个字段对 `naming` 不适用
+  （不需要理会）——这条区分写进了这次的样例注释里，避免以后跟"竖排列表配
+  纵向光标"那套机制搞混。
+- 用新写的 `label_tool.py` 标注终端把 seq=40 的 `overview`/`options`/
+  `naming_cursor_letter` 都补齐了；顺带用 RAM 真值（`battle_enemy_hp`=17/
+  `battle_enemy_max_hp`=17）把 seq=300 之前没敢填的 `foe_hp` 定成"满"。
+
+**为什么这么改**：`options` 字段的语义应该在所有 scene 上保持一致——
+"如实反映当前可选项的相对位置布局"，而不是只在有明确竖排列表时才填。
+`naming` 之前被当成特例完全留空，是设计时的疏漏，不是有意为之。
+
+## 2026-09-18（158）—— v0 prompt 改成真正的"零前置信息"版本；run_vision_model.py 加 --model 开关；调研 qwen3-vl-flash 计费/缓存/批量
+
+**改了什么**：
+- `prompts/v0.md` 推翻重写：上一版还留着 scene/overlay 的一行定义、按 scene
+  该填哪些字段的说明——用户明确要求"完全交给模型自己输出，只给要求字段，
+  不给任何前置信息"，于是这版只剩字段名和取值范围（`scene` 的 8 个字符串、
+  `overlay` 的 3 个字符串、`fields` 可选的键名列表），**没有任何一句话解释
+  这些字段/取值分别是什么意思**——完全靠模型自己看图理解。地形数据
+  （`$known_map`/`$terrain_legend`）保留，作为"参考数据"而不是"指令"喂给它
+  （标注了"仅供参考，不是指令"）。
+- `run_vision_model.py` 新增 `--model` 开关（默认 `deepseek-flash`），原来的
+  模块级常量 `MODEL` 改名 `DEFAULT_MODEL`。`provider_for()` 本来就按型号名
+  前缀（`qwen*`/`doubao*`/`deepseek*`）自动选厂商和对应的 API_KEY 环境变量，
+  这个开关只是把"测哪个模型"从硬编码常量搬到命令行参数。
+- 确认 `.env` 里的 `DASHSCOPE_API_KEY` 已经是用户这次给的新 key，没有重复写入。
+
+**qwen3-vl-flash 调研结论**（供实测前参考，均来自阿里云百炼官方文档 +
+`qianwenai.com` 的模型规格页交叉核对）：
+- 价格：输入 ¥0.15/M token，输出 ¥1.5/M token（跟同代文本 flash 档同价）；
+  图片按 `h×w/(32×32)+2` 折算 token，一张 Game Boy 截图（160×144）大约只有
+  ~25 token，几乎可以忽略——一次调用的成本几乎全在文本 prompt 和 JSON 输出上。
+  按 9 帧 × 2 次调用（正式感知 + walkmap 诊断）估算，总成本在几分钱以内。
+- 上下文缓存（Context Cache）：千问 VL 系列原生支持隐式缓存（不用改调用
+  代码，自动识别公共前缀），命中部分只算 20% 的钱；但最低缓存门槛是
+  1024 token，v0 这版极简 prompt 大概率达不到这个门槛，**这次测试用不上
+  缓存**，等以后 prompt 演化到更长的版本、或者跑更大批量时再考虑。
+- 批量推理（Batch）：官方 OpenAI 兼容 Batch 接口明确支持 `qwen3-vl-flash`，
+  也支持内联 base64 图片（`data:image/png;base64,...`，不需要图片先传到
+  公网），成本是实时调用的 50%。**这次 9 帧的量太小，不值得走 Batch 那一套
+  提交/轮询/下载流程**——等以后要跑全量 406 条甚至更多时再用。
+
+**遗留**：还是没法在这边（云端沙箱、`device_bash` 都试过）连 DashScope 的
+网关（403），实际调用只能用户自己在本机终端跑；下一步是用户跑
+`run_vision_model.py --model qwen3-vl-flash --prompt-version v0` 测这批
+9 帧，拿到结果后回头对着 `claude_label` 看逐字段准确率。
+
+## 2026-09-18（157）—— 新增 scene=map_view（TOWN MAP 区域总览地图）
+
+**改了什么**：`Facts.Scene` 新增 `MAP_VIEW = "map_view"`（`facts.py`），
+`pyboy_world.py::_status_line` 同步补上开场白（"你在看地区总览地图"）；
+`perceive_screen.md` 第一节补充 `map_view` 定义（明确跟 `field` 的区别：
+`field` 是主角能实际走动、镜头跟着走的俯视地图，`map_view` 是从背包/菜单点开
+`TOWN MAP` 弹出的缩小比例整个地区示意图，角色不能移动，按 B 关闭，纯粹是
+"查看"），第四节标注不需要 `fields`，第七节补上 JSON 样例；`prompts/v0.md`
+（实验版最简 prompt）同步加了这一条 scene 定义。
+
+**为什么这么改**：用户核对新一批采集数据时，从截图里认出 seq=175 是
+"地区总览地图"，跟 `field` 明显不是一回事——这是又一处真实存在但之前六种
+（后来七种）`scene` 没覆盖到的画面类型，处理方式跟 `naming` 一样：单独开
+一个新枚举值，而不是硬塞进 `field` 或 `menu`。
+
+**取舍**：没有把 `map_view` 加进 `NEEDS_OVERVIEW`（`screen_state.py`）——
+跟 `naming` 一样待遇，`overview` 对它是锦上添花不是强制项，这张图能看懂
+"这是哪个地区"就够了，不值得为了一个很少出现的画面加一条校验规则。
+
+**影响面**：`ScreenState.scene` 现在接受 8 个值。手上这批 406 条 manifest
+里已经用 seq=175 标了一条 `claude_label` 验证这个新枚举值能正常工作。
+
+## 2026-09-18（156）—— 修复 species 表截断 bug；decode_ids.py 原地覆写炸了一份 manifest，已修复根因；搭建 prompt 版本化实验基础设施
+
+**species 表截断 bug**：核对一条战斗帧真值时发现 `battle_enemy_species=176` 却
+解码不出名字，明明对话框文字已经写着 "Enemy CHARMANDER used SCRATCH!"。查到
+`id_tables/species.json` 只有 155 项（0~154 号），`decode_ids.py` 文档原本
+写着"155~189 是没有正式名字的保留槽位"——这个说法是错的，是当初一次性抓取
+脚本自己的截断 bug，不是游戏数据真的缺这一段。重新从权威来源
+`data/pokemon/names.asm` 的 `MonsterNames::` 表按声明顺序完整抽取全部 190 项
+（含少量 `MISSINGNO.` 占位项，游戏自己的显示文本，原样收录），验证 0~154 号
+逐字不变、155 号以后补全，`decode_ids.py` 的模块文档和 `_PROVENANCE` 也同步
+改掉了错误说法。
+
+**事故：`decode_ids.py --out` 原地覆写把一份 446 条记录的 manifest 炸成 0
+字节**。为了让新 species 表覆盖到已经采集好的旧 manifest，跑了
+`decode_ids.py <manifest> --out <manifest>`（输出路径故意传成跟输入相同，
+省得再手动搬文件）。但原来的实现是
+`with open(manifest_path) as src, open(out_path, "w") as dst:`——两个文件
+在同一条 `with` 语句里一起 `open()`，`out_path == manifest_path` 时，
+`"w"` 模式在 `open()` 那一刻就把文件截断成 0 字节，比 `for line in src:`
+真正开始读还早，读的时候数据已经没了。命令自己的输出
+`[decode] 处理 0 条记录` 当场暴露了问题，446 条记录（RAM 真值+截图+全部字段）
+全部丢失，无法恢复（同目录下 `review_page.py` 生成的 `review.html` 幸存，
+但只是渲染后的 HTML，不是结构化数据）。已跟用户确认：不做 HTML 反解析
+抢救，直接重新采集一份新 manifest（反正 schema 这段时间也改了好几版，
+旧数据本来就测不了 naming 场景）。
+
+**根因修复**（不只是不再犯，而是让这个模式以后再也不可能重演）：
+`decode_ids.py::main()` 改成"先把输入整个读完、在内存里处理完，再打开
+输出路径覆盖写"——不再用两个文件同时打开的 `with` 语句，`manifest_path ==
+out_path` 时也天然安全。
+
+**prompt 版本化实验基础设施**（用户要求：先写一版最简单的 prompt，然后
+一步步加规则，每一步测正确率变化，用数据说话决定 `perceive_screen.md` 里
+那些精心措辞的规则到底哪些真的有用）：
+- 新增 `experiment/observation_check/prompts/v0.md`——一份刻意"简陋"的
+  baseline：只给 7 个 scene/3 个 overlay 的一行定义、按 scene 该填哪些
+  `fields`、`overview`/`dialog_text`/`options`/`cursor` 各自是什么，
+  没有生产版 454 行里那些反面例子、判定顺序、"这条错得最多"式的强调、
+  五档 HP 怎么分槽位这类细则。`$known_map`/`$terrain_legend` 照样保留
+  （这是架构常量，模型必须拿到地形数据，不是"要演化"的对象）。`options`/
+  `cursor` 直接问，不走生产版 `option_lines` 逐行抄的技巧——因为
+  `ScreenState` 的 `_derive_cursor_from_lines` 校验器只在 `option_lines`
+  非空时才会覆盖 `options`/`cursor`，v0 不问 `option_lines`（留空数组）
+  时，模型直接给的 `options`/`cursor` 会原样通过校验，不需要额外解释这
+  个技巧本身。
+- `run_vision_model.py` 新增 `--prompt-version` 开关：`default`（缺省）
+  等价于原来的行为，加载生产版 `perceive_screen.md`；传别的值（如 `v0`）
+  去 `prompts/<version>.md` 找。原来硬编码的模块级 `PROMPT_VERSION = "default"`
+  常量拆掉，改成运行时从 CLI 参数传下去（`_run_one` 新增 `prompt_version`
+  参数），避免"改了个字符串常量却忘了这就是在测哪一版"这种脱节。
+- 新增 `--out` 开关：不传维持原来的"原地写回同一个 manifest"；传了就只读
+  输入、写到新文件，输入全程不碰——测好几个 prompt 版本时各自 `--out`
+  到自己的文件，`model_output` 不会互相覆盖，这也顺带避免了重蹈
+  `decode_ids.py` 那次事故的覆写模式。
+
+**遗留**：新 manifest 还没重新采集（`capture_manual_play.py` 需要在你自己
+电脑上开真实 PyBoy 窗口手玩，我这边没有 GUI，跑不了）；`v0` prompt 目前
+还没有实测数据，测之前还得再采一份覆盖全部 7 种 scene（尤其 `naming`，
+旧数据集里一帧都没有）的新素材，之后才能跑 `run_vision_model.py
+--prompt-version v0 --out ...` 拿准确率。
+
+## 2026-09-18（155）—— 新增 scene=naming（起名字母键盘），进化动画归入 transition
+
+**改了什么**：
+- `Facts.Scene` 新增枚举值 `NAMING = "naming"`（`facts.py`），`pyboy_world.py::_status_line`
+  同步补上对应的自然语言开场白（"你在起名字"）——这是这个枚举唯一的两个消费点，
+  都已确认覆盖，不会漏掉任何按 scene 分支的代码。
+- `perceive_screen.md`：
+  - `scene` 定义新增 `naming`（起名字母键盘：字母/符号网格 + 光标 + 名字预览框），
+    并明确跟 `menu` 的区别（竖排列表 vs 二维网格，且多一个预览框）。
+  - `transition` 定义补充：**精灵进化动画也算这一类**，即便变形过程本身画面稳定
+    可辨，也当过场处理，不需要模型描述细节。
+  - 第四节「按 scene 填 fields」新增 `naming` → `naming_current_text`（预览框里
+    已经打出来的名字）/`naming_cursor_letter`（光标当前指向的字母），第七节补上
+    对应的 JSON 样例。
+- `review_page.py` 的 `_PROMPT_FIELDS`/`_EXTRA_FIELD_SCENE` 加入这两个新字段，
+  比较表能正确区分"这是 naming 场景该有的字段"还是"这一帧不是 naming、空缺"。
+
+**为什么这么改**：用户要求逐渐减少对 RAM 的依赖，让视觉模型自己覆盖更多画面
+类型，于是回头核对现有 6 种 `scene` 有没有漏掉的画面。核对时用这批新采集的
+446 帧数据实锤发现了版权/标题画面（seq 2）这类真实存在的未覆盖画面，另外
+根据游戏已知机制补充提出起名字母键盘、精灵进化动画两类同样不在六种 scene
+覆盖范围内的画面。跟用户确认后：版权/标题画面优先级低，不处理；起名字母键盘
+单独开一个新 scene（因为它是需要模型主动读结构化信息——当前名字、光标位置——
+的界面，跟"只需要等它播完"的过场性质不同）；进化动画归进 `transition`（跟
+"黑屏切换"一样，模型不需要对它做任何判断，只需要知道"现在别的操作按不动，
+等着就行"）。
+
+**取舍**：
+- 起名字母键盘这次只加了两个字段（当前名字、光标字母），没有尝试把整个
+  字母网格逐格抄下来（不像 `option_lines` 那样一行一行照抄）——起名界面是
+  一次性、短暂的交互，光知道"现在打到哪个字了、光标在哪个字母上"就足够大脑
+  决定下一步按哪个方向键，没必要连网格里其余几十个没被选中的字母都抄一遍。
+- 版权/标题画面这次确认存在但不处理：这类画面只在游戏刚启动、"从头开始"时
+  出现一次，对训练/评测的实际收益低，不值得为它开一个新 scene 或写一段专门
+  的判定规则。
+- 没有改 `NEEDS_OVERVIEW`（`screen_state.py`）——`naming` 不要求 `overview`，
+  跟 `battle`/`menu`/`shop` 待遇一致：这三类场景的内容全在结构化字段和
+  `option_lines` 里，`overview` 对它们是装饰，不该强制。
+
+**影响面**：
+- `ScreenState.scene` 现在接受 7 个值而不是 6 个，任何对 `Facts.Scene` 做
+  穷举匹配（目前全项目只有 `pyboy_world.py::_status_line` 一处）的代码都已同步；
+  以后新增类似穷举匹配代码时要记得这个新枚举值。
+- 新采集的数据如果录到起名画面，会自动按新规则标注；旧 manifest 不受影响
+  （`naming_current_text`/`naming_cursor_letter` 全走跟其余分批字段一样的
+  "旧数据没有就不显示"逻辑，不会误判成漏填）。
+
+## 2026-09-17（154）—— 补上战斗技能菜单的 RAM 地址（wBattleMonMoves/PP）
+
+**改了什么**：
+- 用户指出"RAM 拿不到"这个结论没有重新核实过，质疑至少有一部分应该是能拿到
+  的——重新用编译 pret/pokered 源码的方法核实，确认 `wBattleMonMoves`
+  (0xD01C，4 字节，当前出战我方精灵已学会的招式 id) 和 `wBattleMonPP`
+  (0xD02D，4 字节，对应各招式剩余 PP) 这两个地址是真实存在、可以直接读的
+  ——之前完全没采集过。顺带核实了背包内容（`wNumBagItems`/`wBagItems`，
+  0xD31D/0xD31E）同样是 RAM 能给的，但跟用户确认后**这次先不加**（现在
+  prompt 对 `scene=menu` 只要求 `title`，压根没让模型输出背包内容，加了这个
+  字段目前没有对比意义）。
+- `capture_manual_play.py` 新增第四批地址，采集 `battle_player_moves`
+  （4 个招式 id）/`battle_player_pp`（对应剩余 PP）。
+- `decode_ids.py` 新增 `move_name()`（复用已有的 `MOVE_NAMES` 表），
+  `enrich_record()` 追加 `battle_player_move_names`。
+- `review_page.py` 的 `_battle_row()` 新增一行 `battle_moves`，展示解码后的
+  招式名 + PP，**明确标注"仅供参照，不参与比较"**。
+
+**为什么这么改**：用户直接质疑"你确定这些都 RAM 拿不到？我看别人有人能
+拿到"——这是一个合理的怀疑，之前标"RAM 拿不到"的那批字段（`options`/`items`
+等）没有像 `is_in_battle`/`wBattleMon*` 那批一样逐个用编译验证法核实过，
+是凭经验/直觉标的，直觉不总是对。重新核实之后确认至少战斗技能菜单这部分
+是真的可以拿到，及时纠正了这个结论。
+
+**取舍**：
+- **没有把这批数据接进 `options` 字段的比较逻辑**——这是刻意的，不是漏做。
+  顺着 `engine/battle/core.asm::MoveSelectionMenu` 看过：`wMoveMenuType`
+  这个"当前是不是在选招式子菜单"的候选标志位，只在真正进入选招式菜单的
+  函数里才被赋值，跟 `wTextBoxID` 是同一类"用前才设置、用完不清零"的字段
+  （见 `capture_manual_play.py` 模块文档已经踩过的坑），不能当一个可靠的
+  状态位来读。也就是说：`wBattleMonMoves` 能告诉我们"这局战斗我方精灵
+  学了哪些招式"，但不能告诉我们"现在画面上的 `options` 应该是这四个招式名
+  还是 FIGHT/PKMN/ITEM/RUN 这四个词"——这是两件事，硬凑在一起会产生看似
+  正确、实则基于错误前提的比对结果。所以只放进 RAM 面板当人工参照，比较表
+  的 `options` 字段依然靠人工标注/模型输出比对，不接 RAM。
+- 背包内容这次不加：地址真实存在，但目前的 prompt 设计根本没有要求模型
+  输出背包内容（`scene=menu` 只填 `title`），加了也没有可比对的目标字段，
+  属于"能力有但用不上"，等 prompt 真的要测这部分时再加不迟。
+
+**影响面**：
+- 新采集的 manifest 会多出 `battle_player_moves`/`battle_player_pp`/
+  `battle_player_move_names` 三个字段；旧 manifest 没有这批字段时
+  `_battle_moves_row()` 直接不渲染，行为跟其余"分批新增"的字段一致。
+- 比较表（字段/RAM/待测模型/我的标注/match）结构不变，这批数据不影响
+  现有的 match 判断逻辑。
+
+## 2026-09-17（153）—— walkmap 诊断改回两次独立调用，新增地图物件辨认
+
+**改了什么**：
+- `run_vision_model.py` 里的 walkmap 诊断从"合并进正式调用的 prompt 里"
+  （#152）改回**独立的第二次 API 调用**：第一次还是原来的正式
+  `perceive_screen` 调用（能看到 `known_map`），第二次是全新的
+  `_run_walkmap_check()`，只给同一张截图、**不给任何地图信息**，让模型
+  独立划分网格 + 猜地形。
+- 第二次调用现在**不止猜网格符号，还要辨认地图物件**：对网格里每一个不是
+  `.`/`@` 的格子（门/招牌/人/物品/巨石/墙），模型要额外用一两句话描述
+  "这一格实际看起来是什么样子"（门什么颜色形状、人朝哪边、招牌什么形状、
+  墙是树还是建筑还是水面）。输出格式从"纯网格文本"改成一个 JSON 对象
+  （`{"grid": [...], "objects": [{"row", "col", "symbol", "description"}]}`），
+  解析也从原来"扫连续行"的 `_extract_grid` 改成跟 `parse_screen` 同样尺度的
+  严格 JSON 解析（`_parse_json_response`，只容忍 ```json 包裹，其余不兜底）。
+- `objects` 里每一项的 `symbol` 会自动跟 RAM 里 `walk_map` 对应坐标的真实
+  符号比对，记一个 `symbol_match`；`description` 这部分没有 ground truth
+  可比对，原样存下来供人工翻看。
+
+**为什么这么改**：用户明确要求"还是拆成两次调用"——权衡下来，测量纯度
+（模型完全没看过正确答案时的真实识别能力）比省一次 API 调用更重要，这也是
+#152 写在"取舍"里明确提到过的备选项。同时用户要求第二次调用"返回 walkmap
+和对应的地图上物品的辨认"，即不只是分类符号，还要看模型能不能说清楚
+"这一格具体是什么"。
+
+**取舍**：
+- 恢复成两次调用意味着每条记录的 API 花费又变回原来的两倍，这是用户明确
+  接受的取舍（测量纯度优先）。
+- `objects` 里的 `description` 是自由文本，没有办法自动打分——只能人工看，
+  这跟项目里"能自动核对的字段才叫测试，不能自动核对的只能是人工审查参考"
+  的一贯做法一致，不假装这部分是量化指标。
+- 输出格式从"裸文本网格"换成 JSON 之后，解析比原来更严格（"每行必须恰好
+  10 个合法字符"这条从"扫描找一个像的窗口"变成了直接校验 `parsed["grid"]`
+  这个字段），模型格式跑偏时会直接判 `parse_failed`，不再有原来那种"从一堆
+  文字里硬找网格"的容错——按项目"解析不出来就是解析不出来，交给调用方
+  重试"的一贯尺度来的，不是疏漏。
+
+**影响面**：
+- `model_output["walkmap_check"]` 的结构变了：新增 `objects` 字段（列表，
+  每项带 `row`/`col`/`symbol`/`description`/`ground_truth_symbol`/
+  `symbol_match`），其余字段（`overall_accuracy`/`per_symbol_accuracy`/
+  `top_confusions`）不变。
+- 每条记录现在固定打两次 API 调用，跑量前预算翻倍。
+- `review_page.py` 仍然没有展示 `walkmap_check`（包括新的 `objects`），
+  如果以后要在网页报告里看，需要单独再加。
+
+## 2026-09-17（152）—— walkmap 诊断合并进 run_vision_model.py，改成一次调用
+
+**改了什么**：
+- 删除 `experiment/observation_check/check_walkmap_recognition.py`（#151 刚
+  加的独立诊断脚本），把它的逻辑（`_extract_grid`/`_diff_grid`）整体搬进
+  `run_vision_model.py`。
+- `run_vision_model.py` 的 prompt 在正式 `perceive_screen` 渲染结果后面，
+  追加一段独立的"额外任务"指令，要求模型在同一次回复里，**再单独**猜一遍
+  地形网格（不参考前面已经给出的"已知地图"）。原来是两个脚本、两次 API
+  调用（一次测正式感知、一次测 walkmap 识别），现在合并成一次调用，
+  `parse_screen()` 照常只读第一个 JSON 代码块拿正式字段，`_extract_grid()`
+  在整段回复文本里单独扫出网格猜测，两者互不干扰。
+- 诊断结果不再写独立的 `walkmap_check.jsonl`，改成塞进
+  `model_output["walkmap_check"]`，跟正式字段在同一条 manifest 记录里。
+
+**为什么这么改**：用户要求"最好还是整合在一个脚本里"，进一步明确"而且合成
+一次调用"——两个脚本各打一次 API 是重复付费+重复等待，同一张截图问两遍
+没必要。
+
+**取舍**：
+- 合并成一次调用有一个无法回避的测量纯度问题：模型在同一个上下文窗口里
+  已经先看到了"已知地图"这段正确答案，即使指令写明"不参考"，也没办法从
+  技术上保证它的独立猜测完全没被前文锚定——这跟原来两次独立调用（互不
+  共享上下文）比，诊断出来的"模型真实识别能力"数字可能偏乐观。这是用户
+  明确要的省钱省时间换来的，脚本文档里写清楚了，以后如果要测"完全没见过
+  答案时的识别能力"，还是得拆回两次调用。
+- `_extract_grid` 顺手改成了不区分代码块数量的实现（把所有 ``` 都当噪音去
+  掉后逐行扫），比原来"只看第一个代码块"的版本更鲁棒——因为现在一次回复
+  里有两段内容，网格不一定是第一个代码块。
+
+**影响面**：
+- `experiment/observation_check/` 下现在只有一个会调用视觉模型的脚本
+  （`run_vision_model.py`），不再有 `check_walkmap_recognition.py`。
+- 新采集的数据用这个脚本跑感知测试时，`model_output` 会自动多一个
+  `walkmap_check` 子字段（准确率/按符号准确率/top confusion），不需要
+  额外再跑一次命令。
+- `review_page.py` 目前还没有展示 `walkmap_check` 这个新字段——如果以后
+  想在网页报告里看，需要单独再加。
+
+## 2026-09-17（151）—— walkmap 识别诊断脚本 + 状态异常（my_status/foe_status）字段
+
+**改了什么**：
+1. 新增 `experiment/observation_check/check_walkmap_recognition.py`——独立诊断
+   脚本，只给模型一张截图（不给 known_map），让它自己猜 10x9 的地形网格，
+   逐格对比 RAM 读出的 `walk_map` ground truth，输出整体准确率、按符号分类
+   的准确率、top confusion pairs。跟正式 `perceive_screen.md` 流程完全无关，
+   结果写到独立的 `walkmap_check.jsonl`，不混进 `manifest.jsonl`。
+2. 三个文件加了状态异常（中毒/烧伤/冰冻/麻痹/睡眠）支持：
+   - `capture_manual_play.py`：新增第三批 RAM 地址 `CUR_BATTLE_PLAYER_STATUS_ADDR`
+     (0xD018 wBattleMonStatus)、`CUR_BATTLE_ENEMY_STATUS_ADDR` (0xCFE9
+     wEnemyMonStatus)、`PARTY_STATUS_ADDRS`（6 个 party slot 的
+     wPartyMon*Status，stride 44 字节），全部经编译 pret/pokered 源码验证。
+   - `decode_ids.py`：新增 `status_name()`，解析状态字节（bit0-2 睡眠回合数，
+     bit3/4/5/6 分别是中毒/烧伤/冰冻/麻痹），健康返回 `"ok"`；`enrich_record()`
+     追加 `battle_player_status_name`/`battle_enemy_status_name`/
+     `party_status_names`。
+   - `perceive_screen.md`：战斗 fields 列表加入 `my_status`/`foe_status`，
+     新增"状态异常怎么读"小节（只读画面上写的 3 字母缩写，没有就填 ok，
+     不许靠颜色/姿势推断），JSON 示例同步更新。
+   - `review_page.py`：`_PROMPT_FIELDS`/`_EXTRA_FIELD_SCENE`/
+     `_RAM_CAPABLE_FIELDS` 加入这两个字段，`_ram_ground_truth()` 从
+     `battle_player_status_name`/`battle_enemy_status_name` 取值填入 RAM 列，
+     `_battle_row()`/`_party_rows()` 在 RAM 面板里展示状态后缀。
+
+**为什么这么改**：
+- walkmap 识别测试：用户明确要求"给他一个截图，让他输出walkmap同格式的
+  字符串"——这是纯诊断，不改变正式流程"地形已经 100% 从内存读出、不需要
+  模型判断"的既有设计，只是想知道模型这项能力到底有多准，作为独立数据点。
+- 状态异常：用户指出"prompt里所有的字段都要进表"之后，进一步授权"你也可以
+  改prompt啊，两边都可以加"（RAM 采集和 prompt 都可以扩展），状态异常是
+  战斗中一个真实存在、之前完全没捕捉也没要求模型识别的信息缺口。
+
+**取舍**：
+- walkmap 诊断脚本刻意不复用 `run_vision_model.py` 的任何解析/存储逻辑——
+  两者语义不同（一个测格式遵循度，一个测正式字段准确率），共用反而会让人
+  以后分不清哪条数据是哪种测试产生的。
+- `_extract_grid()` 对模型输出的鲁棒性（多余文字、代码块变体）尚未用真实
+  模型调用验证过，只做了语法检查；如果实测发现解析失败率高，后续要调整
+  这个函数而不是怪模型格式不对。
+- status 状态目前只处理 Gen1 的 5 种异常（中毒/烧伤/冰冻/麻痹/睡眠），
+  混乱/着迷等"volatile status"不在 `wBattleMonStatus` 这个字节里（存在
+  别的地方），这次不做，只覆盖 prompt 里新加的 my_status/foe_status 需要
+  的范围。
+
+**影响面**：
+- 老数据（已删除）完全不受影响，因为是从零开始重新采集。
+- 新采集的 manifest 会多出 `battle_player_status`/`battle_enemy_status`/
+  `party_status` 等原始字段和对应 `*_name` 解码字段；`review_page.py` 对
+  没有这些字段的旧格式记录依然优雅降级（不显示这些行，不误报"拿不到"）。
+- `check_walkmap_recognition.py` 完全独立运行，不影响任何现有脚本的行为。
+
+## 2026-09-16（150）—— 编译 pret/pokered 真实源码验证新 RAM 地址；修复 opponent_levels 历史 bug
+
+**改了什么**：
+1. 用 `pret/pokered`（红/绿版官方反汇编）的真实源码，实际跑了一遍它 CI 自己用的
+   rgbds v1.0.3 汇编+链接（`ram/wram.asm` 及其全部 `constants/*.asm`/`macros/*.asm`
+   依赖，链接脚本用仓库自带的 `layout.link`，`-d` 让 WRAM0 按 DMG 规则铺满
+   C000-DFFF），直接从链接器产出的符号表读地址——不是猜的，是编译器算出来的。
+   产出的 `wPartyCount`/`wCurMap`/`wYCoord`/`wXCoord`/`wCurMapTileset` 跟本项目
+   已经用的地址逐字对上，验证了这套方法本身可信。
+2. `capture_manual_play.py` 新增第二批字段（15 个）：`is_in_battle`（0=不在战斗/
+   1=野生战/2=训练师战/0xFF=打输了，来自 `wIsInBattle`）、`active_party_slot`
+   （`wPlayerMonNumber`，当前出战是队伍第几位）、`battle_player_species/level/
+   hp/max_hp`（`wBattleMon*`，当前出战的我方精灵）、`battle_enemy_species/
+   level/hp/max_hp`（`wEnemyMon*` 不带数字后缀那组，当前对手）、
+   `menu_cursor_item/max_item/cursor_y/cursor_x/scroll_offset`（`wCurrentMenuItem`
+   等，菜单光标位置）。
+3. **修复已知 bug**：CHANGELOG 第 144 条记录过 `opponent_levels`（用
+   `wEnemyMon1Level`..`wEnemyMon6Level`，训练师完整队伍花名册）在一场野生战里
+   读出等级 5、画面上明明是 Lv.13。根因找到了——那批地址是"对方全部队伍"，
+   不是"当前正在场上打的这一只"；真正对的地址是 `wEnemyMonLevel`(0xCFF3)，
+   野生/训练师战都适用，已经作为 `battle_enemy_level` 加入。旧的
+   `opponent_levels`/`OPPONENT_LEVEL_ADDRS` 保留不删，训练师战时它仍是独立
+   有效信息（对方完整队伍），只是不能再当"当前对手"用。
+4. `decode_ids.py` 新增 `is_in_battle_name()` 和对应的 `enrich_record()` 追加字段
+   （`is_in_battle_name`/`battle_player_species_name`/`battle_enemy_species_name`）。
+5. `review_page.py` 的 `_ram_ground_truth()` 改成优先用第二批字段（`my_name`/
+   `my_level`/`my_hp`/`foe_name`/`foe_level`/`foe_hp` 现在全部可以从 RAM 给出，
+   `foe_hp` 用 `_hp_bucket()` 换算成 prompt 要求的"满/较高/过半/较低/危险"
+   五档，不直接给数字），没有第二批字段的旧 manifest 自动退回第一批的简化
+   假设，向后兼容；RAM 面板新增 `battle`/`menu_cursor` 两行（同样按字段是否
+   存在决定渲不渲染）。
+
+**为什么这么改**：用户直接要求"你再过一遍内存映射表，看看什么是能补上的"，
+点名"当前选项光标位置、对话文本、是否有对话"这几个方向。
+
+**取舍**：
+- `wTextBoxID`(0xD125) 地址也验证到了，但顺着 `engine/menus/text_box.asm` 看了
+  用法——这是"接下来要画哪种文本框"的选择键，不是"当前是否有对话框显示中"的
+  布尔位，文本框关掉后这个值不会自动清空，拿来判断"现在有没有对话"会有假
+  阳性，所以没加这个字段。
+- 对话框的**文字内容**没加——游戏把文字画成字体贴图，不是存成一段可直接读的
+  字符串，要读出来得先解出当前文本指针再查字库贴图表，工作量明显更大，这次
+  不做。
+- "让模型识别 walkmap 上的障碍物"这个新测试维度，跟用户核实过后**明确决定
+  不做**（跟当前"地形不用模型判断"的设计原则相反，且旧 858 条 manifest 已经
+  采集完成，改现有 prompt 会牵连正式流程）。
+- `battle_player_*`/`battle_enemy_*` 只在 `is_in_battle != 0` 时才是当前值，不在
+  战斗里这些地址是上一场战斗留下的陈旧值——`_read_ram_fields()` 照实读、不清空，
+  是否使用交给下游按 `is_in_battle` 判断。
+
+**影响面**：`capture_manual_play.py`/`decode_ids.py`/`review_page.py` 三个文件都改了。
+**已有的 858 条记录（`manual-20260916-173459/manifest.jsonl`）无法补上这批新字段**
+——模拟器已经不在跑，没法回头补读内存；这批新字段只对**以后新采集的数据**生效。
+`review_page.py` 对旧数据的兼容性已验证（重新跑了一遍旧 manifest，正常出结果，
+新增的 `battle`/`menu_cursor` 行在旧数据上正确地不渲染）。
+
+
+## 2026-09-16（149）—— 拆开"拿不到"和"空缺"：调用失败/空缺/漏填/合法空值四种不再混着显示
+
+**改了什么**：
+1. `_field_verdict()` 新增 `error` 判定——`model_output` 里带 `error`（调用失败）
+   的行，不再落进 `mismatch`（之前会被判成"模型答错了"，实际是根本没调通）。
+   `_VERDICT_BADGE` 加了 `error: ⚠`，CSS 加 `tr.error` 橙色样式。
+2. 新增 `_source_cell(src, field)`，替换掉「待测模型」/「我的标注」两列原来的
+   `_esc(src.get(field))` 直接取值，拆成四种互不相同的空：`src` 整体是 `None`
+   → "尚未产出"；`src` 里有 `error` → "（调用失败）"；`field` 这个 key 不在
+   `src` 里，按新增的 `_EXTRA_FIELD_SCENE` 映射表判断——当前 `scene` 用不上
+   这个字段 → "（空缺）"，用得上却没给 → "漏填"；`field` 在 `src` 里但值是
+   `None`/`""`/`[]` → "（空）"（模型明确给出的合法空答案，比如没有对话框时
+   `dialog_text=""`）。
+3. RAM 列同理拆分：`_RAM_CAPABLE_FIELDS` 标出 RAM 原则上能给的字段
+   （`my_name`/`my_level`/`my_hp`/`foe_level`/`money`），这些字段这一帧没给出
+   显示"（空缺）"；不在这个集合里的字段（`dialog_text`/`options`/`foe_name`/
+   `foe_hp`/`title`/`items` 等）固定显示"RAM 拿不到"——这是结构性的，RAM
+   没有对应地址，不管换哪一帧都读不出来，跟"这一帧凑巧用不上"是两回事。
+4. `_summary_line()` 算准确率时把 `error` 从分母里排除（跟 `pending` 一样），
+   不然一堆调用失败的记录会把"模型答错率"稀释成假的数字。
+
+**为什么这么改**：用户指出之前所有"没有值"的情况全用同一个"—"占位符糊过去，
+分不清"调用压根没打通"（`error`）、"模型/RAM 这个字段真的给不出来"（漏填/拿不到）、
+"这一帧本来就不需要这个字段"（空缺）、"给出的答案确实就是空"（合法空值）——
+四种含义完全不同的空，界面上看着一模一样。
+
+**取舍**：`_EXTRA_FIELD_SCENE` 是手动维护的字段-场景映射（跟 `_PROMPT_FIELDS`
+一样来自 prompt 第四节，不是自动解析），后续 prompt 改了要素记得同步这张表。
+
+**影响面**：只改了 `review_page.py`，manifest 数据和其余脚本没动。重新生成了
+858 条记录的 `review.html` 和 2 条记录的预览页。
+
+
+## 2026-09-16（148）—— 比较表加一列 RAM：把 RAM 能确定的字段翻译过去当参照
+
+**改了什么**：`review_page.py` 新增 `_ram_ground_truth(record)`，把 RAM 里已经读到的
+事实翻译成跟 `model_output`/`claude_label` 同名的字段：`foe_level`（取
+`opponent_levels` 里第一个非零值）、`my_name`/`my_level`/`my_hp`（取队伍第 1 位的
+`party_species_names[0]`/`party_levels[0]`/`party_hp[0]`+`party_max_hp[0]`）、
+`money`（跟采集脚本已经读的玩家金钱是同一个数，直接复用）。`_compare_table()`
+签名从 `(model_output, claude_label)` 改成 `(record, model_output, claude_label)`，
+比较表在「待测模型」列前面加一列「RAM」，RAM 拿不到的字段（`foe_name`/`foe_hp`/
+`title`/`items` 等）显示"RAM 拿不到"，不参与 match 判断——那一列只给「待测模型」
+和「我的标注」两边比。
+
+**为什么这么改**：用户直接要求"右侧可以再加一列做ram，只把ram能拿到的翻译过去"。
+
+**取舍**：`my_name`/`my_level`/`my_hp` 固定取队伍第 1 位，这是一个简化假设——RAM
+里没有单独记录"当前出战的是队伍第几位"，多精灵队伍战斗中换人上场后这里可能对不上
+真正在场的那只（单精灵队伍，也就是游戏前期最常见的情况，没有这个问题）。`foe_name`/
+`foe_hp` 目前 RAM 给不了——采集脚本目前只读了 `OPPONENT_LEVEL_ADDRS`（对方等级）
+这一组地址，没有对方精灵种类/HP 的地址，这两个字段列里固定显示"RAM 拿不到"，
+不是遗漏。
+
+**影响面**：只改了 `review_page.py`，manifest 数据和其余三个脚本没动。重新生成了
+858 条记录的 `review.html` 和 2 条记录的预览页。
+
+
+## 2026-09-16（147）—— RAM 面板也改成一行一个事实；party 拆成逐个精灵
+
+**改了什么**：`review_page.py::_ram_panel()` 原来是两个 key-value 一行（`<th>seq</th><td>..</td><th>time</th><td>..</td>`），
+`party` 那一行更是把六个精灵的名字/等级/HP 全挤进一个 `<td colspan="3">` 里的嵌套小表格，
+在整张表里看起来"只占一列"。改成跟右边比较表一致的排布：**一行一个事实**，`party`
+按实际队伍人数拆成 `party_1`/`party_2`/… 各一行（每行是"名字 Lv.等级　HP 当前/最大"），
+`opponent_lv` 也单独成行，不在战斗时显示"（不在战斗）"而不是空白。删掉了不再用的
+`_party_table()`/`table.party` 样式。
+
+**为什么这么改**：用户看到 RAM 面板里的 `party` 行视觉上像被压缩成了一列，追问这一行
+到底装的是什么——本意是"队伍状态"，但排布方式（嵌套表格塞一个单元格）跟其余字段
+不一致，看着像是漏了信息，其实是排版把它藏起来了。
+
+**取舍**：没有给 RAM 面板加"match"列——这些字段是直接从内存读出来的 ground truth，
+不存在"跟谁比对"，加一列反而暗示这里也需要判断。
+
+**影响面**：只改了 `review_page.py`，manifest 数据和其余脚本不变。重新生成了 858 条
+记录的 `review.html` 和 2 条记录的预览页。
+
+
+## 2026-09-16（146）—— 比较表固定列出 prompt 定义的全部字段；error 拆成独立提示
+
+**改了什么**：`review_page.py::_compare_table()` 里"extra 字段"那一段，从"两条记录
+实际出现了哪些 key 就展示哪些"，改成固定按 `pokemon_agent/world/prompts/perceive_screen.md`
+第四节「按 scene 填 fields」的定义，列出全部 9 个字段（`my_name`/`my_level`/`my_hp`/
+`foe_name`/`foe_level`/`foe_hp`/`title`/`money`/`items`），不管这一条记录实际有没有值
+——field/indoor 场景这些行会整行 pending，这是预期状态，不是漏行。另外单独扫一遍两边
+真实出现的 key，把 `_PROMPT_FIELDS` 之外的意外字段也兜底加进去，防止 prompt 以后
+加字段但这张表没同步。同时把 `model_output.error`（调用失败）从逐字段比较表里摘出来，
+单独渲成一条醒目的红色提示条，不再被判成"这个字段 mismatch"——之前 858 条里那两条
+调用失败的记录，`my_name`/`foe_level` 这些字段全部是 `null`，混在比较表里跟真的答错
+了看不出区别。
+
+**为什么这么改**：用户直接指出"prompt里所有的字段都要进表"——之前只在两边都出现的
+key 才占一行，等于"这个字段这次没读出来"和"这个字段压根不存在于两边"是同一种空白，
+分不清是模型没答还是这个场景本来就不需要这个字段。
+
+**取舍**：`_PROMPT_FIELDS` 是从 prompt 文本手动摘出来的固定列表，不是从 prompt 里
+自动解析的——prompt 是给人看的自然语言文档，没有机器可读的字段清单可抽取，只能手动
+维护并保持同步；接受这个维护成本换来表格的可预测性。
+
+**影响面**：只改了 `review_page.py`，manifest 数据和其余三个脚本都没动。重新生成了
+858 条记录的 `review.html` 和 2 条记录的预览页。
+
+
+## 2026-09-16（145）—— review_page.py 右栏改成大表格：行是字段，列是模型，最后一列 match
+
+**改了什么**：`experiment/observation_check/review_page.py` 右栏从三个各自独立的小块
+（"待测模型"一块、"我的标注"一块、"判断"一块）合并成一张表——每行一个视觉字段
+（scene/overlay/dialog_text/overview/...），两列分别是「待测模型」「我的标注」，
+最后一列是这一行的 match/mismatch/pending 判断。新函数 `_compare_table()` 取代
+原来的 `_fields_box()` + `_verdict_box()`；`extra` 字段（`fields` dict 里那些
+`_VISION_FIELDS` 之外的自由字段）合并展示在表格最后一行。
+
+**为什么这么改**：原布局同一个字段要在三处（模型输出块、标注块、判断块）之间来回对照，
+视线要跳三次；改成一行一个字段、两个来源并排在列里，扫一行就知道这个字段对不对不对，
+是用户直接要求的布局（"一个大表格，每行是字段，列是模型最后一列表示是否match"）。
+
+**取舍**：没有把左栏的 RAM 事实也塞进这张表——RAM 字段是 100% 确定的 ground truth，
+不需要"判断"这一列，跟需要比对的视觉字段语义不同，混进同一张表反而混淆"哪些是需要判断的"。
+
+**影响面**：只改了 `review_page.py` 一个文件，`capture_manual_play.py`/`decode_ids.py`/
+`run_vision_model.py` 三个脚本和 manifest 数据格式都没动。已重新生成 858 条记录的
+`captures/manual-20260916-173459/review.html` 和 2 条记录的预览页，肉眼核对过新表格
+渲染正常（match/mismatch/pending 三种状态颜色和图标都出来了）。
+
+
+## 2026-09-16（144）—— 新增 run_vision_model.py；随机抽 2 帧跑通全链路，卡在网络这一步
+
+**改了什么**：新增 `experiment/observation_check/run_vision_model.py`——对
+manifest 里指定的几条记录（`--seqs seq1,seq2`）跑真实视觉模型，产出
+`model_output` 写回原记录。**不是简化重写**：直接复用
+`pokemon_agent.world.pyboy_world` 里 `perceive_once()` 用的同一份
+`load_prompt("perceive_screen")`、`provider_for()`、`parse_screen()`；
+地形不用重新读内存，直接用 manifest 里已经存好的 `walk_map`/`map_id`/
+坐标/朝向重建 `TerrainMap`——这几个字段就是采集那一刻 `read_terrain()`
+读出来的原始值。密钥注入复用 `experiment/real_check/common.load_env_file`，
+不重写一份。
+
+**验证过程**：随机抽了 2 帧（seq 368：Route 1 遇野生 RATTATA 战斗中，
+BULBASAUR 使用 TACKLE；seq 476：Viridian 训练学校室内对话）实跑这个脚本。
+装了 uv 起的 Python 3.11 虚拟环境（项目要求 `>=3.11`，`enum.StrEnum` 用到），
+装齐 pydantic/pyboy/langgraph/fastembed 等全部依赖后，脚本从头跑到底——
+import 链、prompt 渲染、`TerrainMap` 重建、provider 选型全部走通，最后卡在
+真实网络请求：`DeepSeekProvider` 报 `URLError: Tunnel connection failed:
+403 Forbidden`。**这证实了此前的判断**：Cowork 隔离虚拟机的出网网关不放行
+`api.deepseek.com`（`dashscope.aliyuncs.com` 同样被拦，之前 `curl` 已经测过），
+这一步必须在用户自己的电脑上跑才能真正拿到模型输出。失败没有让脚本挂掉——
+`model_output` 照常写回，只是内容是 `{"error": "..."}`，manifest 格式没被破坏。
+
+同时人工看了这两帧的画面，写了 `claude_label`（seq 368：
+scene=battle/overlay=dialog/dialog_text="BULBASAUR used TACKLE!"/
+foe_name=RATTATA/foe_level=13；seq 476：scene=indoor/overlay=dialog/
+dialog_text="Okay!"），验证 `review_page.py` 三栏对照（RAM / 待测模型 /
+我的标注）渲染正常。
+
+**取舍**：`opponent_levels` 这个字段（跨来源交叉核对过的地址）在 seq 368
+这个真实战斗帧上读出来是 `5`，但画面里对方 RATTATA 明明是 **Lv.13**——
+说明这批地址（`PWhiddy/PokemonRedExperiments` 那份表）多半对应的是**训练师
+战斗的敌方队伍**槽位，不是野生遭遇的单只精灵，两者存的不是同一份内存。
+这个字段目前**不可信**，留着但不能拿来做"战斗中"的可靠信号，后面要么找到
+野生遭遇专用的地址、要么干脆从 `model_output`/`claude_label` 的 `scene`
+字段去判断有没有在战斗，不指望这个字段。已经在这里记一笔，省得以后忘了
+为什么这个字段的值对不上画面。
+
+**影响面**：新增脚本；随手验证顺便在两条真实记录里写了 `model_output`
+（含 error）和 `claude_label`，manifest 其余 856 条不受影响。
+
+## 2026-09-16（143）—— 新增 review_page.py：把 manifest 渲成本地 HTML 核对页
+
+**改了什么**：新增 `experiment/observation_check/review_page.py`。读一份
+`manifest.jsonl`，每条记录渲成一张左右两栏的卡片——左栏是画面
+（`frame_png`）+ RAM 事实（地图/tileset/坐标/朝向/队伍状态/徽章/金钱/
+`walk_map`）；右栏是"待测模型"（`model_output`）、"我的标注"
+（`claude_label`）、逐字段判断（两边都有值才判：相等 ✅、不等 ❌、缺一边
+⏳）。顶部有一行汇总（逐字段准确率）和一个按 tileset 筛选的下拉框。
+`--only-mismatch` 只看有分歧的记录。用真实的 858 条记录跑通过：
+`python3 experiment/observation_check/review_page.py <manifest.jsonl>`
+（不依赖项目任何第三方包，纯标准库，`pydantic`/`pyboy` 都不需要装）。
+
+**为什么这么改**：三方对照（RAM ground truth / 待测视觉模型 / 人工标注）
+摆在一张卡片上一次看全，比对着 `.jsonl` 原始文本核对快得多，也是"标注 +
+判分"这一步真正要用的界面。`model_output`/`claude_label` 两个字段现在
+manifest 里还没有（分别要接真实模型调用、要人工看图标注这两步产出），
+但脚本设计成两者缺一边甚至都缺时也能正常渲染（显示"尚未产出"），所以先于
+那两步落地也能单独验收——渲染逻辑今天就能测，不用等模型接线和标注全部
+做完。
+
+**取舍**：`model_output` 留了 `prompt_version` 字段位置——以后跑"不同
+prompt 版本下模型的变化"那组实验时，同一帧可以多次调用产出多条
+`model_output`，这个脚本目前只画得出一条（多版本横向对比留到真的有
+多版本数据时再扩，不提前做）。属性值转义单独写了 `_esc_attr`，不能用
+渲染正文用的 `_esc`（那个在空值时会插入 `<span>` 占位符，塞进 HTML
+属性里会把引号提前截断，页面结构错乱）——这是脚本内部就用真实数据测出来的
+一个坑，修了才提交。
+
+**影响面**：新增，纯渲染，不改 `capture_manual_play.py`/`decode_ids.py`
+产出的字段；只读 manifest，不写。
+
+## 2026-09-16（142）—— manifest 字段顺序调整：frame_png 挪到最后一项
+
+**改了什么**：`capture_manual_play.py` 里 `frame_png` 从"和 RAM 字段摆在一起"
+挪到整条记录最后——先拼好 RAM 字段 + 空的视觉字段占位、调
+`enrich_record()` 当场解码出 `map_name`/`tileset_name`/`party_species_names`，
+最后才 `record["frame_png"] = frame_png` 补上这一项。
+
+**为什么这么改**：`frame_png` 是整条记录里最长的字段（几千字符的 base64），
+摆在中间会把人工翻看 manifest 时的注意力切断——打开一行 json，前面一大段
+都是这张图的编码，得滚过去才能看到 RAM 字段和刚解码出来的文本。挪到最后，
+结构化字段和文本字段能连续读完。
+
+**取舍**：无——纯字段顺序调整，不改字段内容、不改文件格式（还是一行一条
+json），Python 3.7+ 字典本身保序，`json.dumps` 按插入顺序输出，不需要额外
+排序逻辑。
+
+**影响面**：只改 `capture_manual_play.py` 内部字段拼装顺序，`decode_ids.py`
+不用动（`enrich_record` 只负责加字段，不管调用方后面还要不要再塞东西）。
+
 ## 2026-09-16（141）—— 采集与解码合并成一步；截图改成内嵌 base64，不再落单独 PNG
 
 **改了什么**：`capture_manual_play.py` 不再对每帧调用
@@ -14423,3 +16616,4 @@ Harness、InMemoryTrace 和图装配。
 **为什么这么改**：权限拒绝是预期内的运行时失败，不应重试或静默吞掉；如果先拦截 `Harness.run()`，连拒绝事件都无法写入 trace。
 **取舍**：记录后继续向上抛出，让 episode 调用方决定结束或展示错误；不把权限失败伪装成模型解析失败或非法动作。
 **影响面**：只改变权限错误的记录与传播方式，不改变允许调用的执行路径。
+
