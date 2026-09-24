@@ -77,6 +77,14 @@ class BrainLlmConfig:
     与"打的哪家供应商"无关，四条链路没有证据支持该有不同的数。
     """
 
+    plan_thinking: bool = False
+    """`plan` 位置（`plan()` 与 `decompose()` 共用的那个 provider）要不要开思考模式。
+
+    默认 `False`；项目里由 tool 层的 `BrainTool.build()` 按 `config.PLAN_THINKING` 递进来。
+    开了之后 `build_llm_providers()` 会同时放宽这个位置的单请求超时（见那里的
+    `THINKING_TIMEOUT_SECONDS`）。其余三个位置（decide / judge / verify）不受影响。
+    """
+
     json_mode: bool = False
     """四个 provider 共用的 JSON 输出开关：为真时每次请求带 `response_format: json_object`。
 

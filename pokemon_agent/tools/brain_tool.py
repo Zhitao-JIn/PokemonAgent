@@ -64,6 +64,7 @@ from pokemon_agent.config import (
     MAX_SEGMENTS,
     MAX_TIMES,
     MODEL_RETRY_BACKOFF_SECONDS,
+    PLAN_THINKING,
     PROVIDER_JSON_MODE,
 )
 from pokemon_agent.errors import MaxRetriesExceeded
@@ -638,6 +639,7 @@ class BrainTool:
         plan: str | None = None,
         max_tokens: int = 25600,
         json_mode: bool = PROVIDER_JSON_MODE,
+        plan_thinking: bool = PLAN_THINKING,
     ) -> BrainTool:
         """按需装配：**只传这一层要的型号名**，没传的位置 provider 为 `None`。
 
@@ -672,6 +674,7 @@ class BrainTool:
             plan=plan,
             max_tokens=max_tokens,
             json_mode=json_mode,
+            plan_thinking=plan_thinking,
         )
         decide, judge_llm, verify_llm, plan_llm = build_llm_providers(config)
         brain = Brain(

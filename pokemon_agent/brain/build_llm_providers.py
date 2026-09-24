@@ -49,6 +49,15 @@ state（`done`/`success`）或决定"哪些记忆可信"，同一输入两次给
 """
 
 
+THINKING_TIMEOUT_SECONDS = 180
+"""开了思考模式的位置的单请求超时（秒；总时长硬闸是它 +15）。
+
+缺省 45s 是按"不思考"的实测（决策 max 8.24s）定的；思考模式的单次请求要慢一个量级，
+不放宽的话会被总时长闸当成 `ToolTimeout` 掐掉，重试预算白烧。180 是先拍的上限，
+拿到真机的 `reasoning_tokens` 与耗时账再收。
+"""
+
+
 def build_llm_providers(
     config: BrainLlmConfig,
 ) -> tuple[LLMProvider | None, JudgeProvider | None, JudgeProvider | None, LLMProvider | None]:
@@ -111,6 +120,8 @@ def build_llm_providers(
             temperature=DETERMINISTIC_TEMPERATURE,
             max_tokens=config.max_tokens,
             json_mode=config.json_mode,
+            thinking=config.plan_thinking,
+            timeout=THINKING_TIMEOUT_SECONDS if config.plan_thinking else 45,
         )
         if config.plan
         else None

@@ -108,6 +108,7 @@ class _OpenAICompatibleBase:
         timeout: int = 45,
         multimodal: bool = True,
         json_mode: bool = False,
+        thinking: bool = False,
     ) -> None:
         """`temperature` 没有默认值，**必须由调用方显式给出**。
 
@@ -133,6 +134,15 @@ class _OpenAICompatibleBase:
         请求，同一实例还兼做别的输出形状（自由文本）时不要开。Qwen / Ark 是否接受该
         字段、思考模式关闭时是否照常生效，尚未逐家验证。
 
+        `thinking`：**要不要开思考模式**。默认 `False`——请求体带各家的"关思考"字段
+        （`_disable_thinking_payload()`）；为真时改带"开思考"字段
+        （`_enable_thinking_payload()`）。**必须显式发其中一个**：DeepSeek 与 Qwen
+        商业版 `qwen3.8-max` 的服务端默认都是开，不发就等于开。开了之后注意四点：
+        思考 token 计入 `reasoning_tokens` 并可能耗掉 `max_tokens`，正文会变空；
+        单次请求明显变慢，调用方要把 `timeout` 放宽（硬闸是 `timeout+15`）；
+        DeepSeek 思考模式下 `temperature` 不生效；DeepSeek 思考模式能否与
+        `json_mode` 同用，官方文档没写，未验证。
+
         记下型号与温度，此后不再变。base_url/api_key 从子类的类属性拿，
         不接受调用方覆盖——见模块 docstring 第 2 条设计决定。
 
@@ -151,6 +161,7 @@ class _OpenAICompatibleBase:
         self._max_tokens = max_tokens
         self.multimodal = multimodal
         self._json_mode = json_mode
+        self._thinking = thinking
         self._base = self.BASE_URL.rstrip("/")
         self._timeout = timeout
         self._key = next(
@@ -170,6 +181,11 @@ class _OpenAICompatibleBase:
         返回一个要 merge 进请求体顶层的字典片段。
         """
         raise NotImplementedError(f"{type(self).__name__} 必须覆盖 _disable_thinking_payload()")
+
+    def _enable_thinking_payload(self) -> dict[str, object]:
+        """打开"思考模式"要合并进请求体的字段——与 `_disable_thinking_payload()` 成对，
+        **各家格式不同，子类必须覆盖**。返回一个要 merge 进请求体顶层的字典片段。"""
+        raise NotImplementedError(f"{type(self).__name__} 必须覆盖 _enable_thinking_payload()")
 
     def _post(self, content: list[dict] | str) -> dict:
         """POST **一次**，失败按类别立即上抛。**不重试**——重试的循环与预算
@@ -198,7 +214,9 @@ class _OpenAICompatibleBase:
             "max_tokens": self._max_tokens,
             "messages": [{"role": "user", "content": content}],
         }
-        body.update(self._disable_thinking_payload())
+        body.update(
+            self._enable_thinking_payload() if self._thinking else self._disable_thinking_payload()
+        )
         if self._json_mode:
             body["response_format"] = {"type": "json_object"}
 
@@ -242,6 +260,7 @@ class _OpenAICompatibleBase:
             "temperature": str(self._temperature),
             "max_tokens": str(self._max_tokens),
             "json_mode": str(self._json_mode).lower(),
+            "thinking": str(self._thinking).lower(),
             "base_url": self._base,
         }
 
@@ -507,6 +526,10 @@ class QwenProvider(_MultimodalMixin, _OpenAICompatibleBase):
         """DashScope（Qwen）关思考模式的写法：顶层一个布尔字段。"""
         return {"enable_thinking": False}
 
+    def _enable_thinking_payload(self) -> dict[str, object]:
+        """DashScope 开思考模式：顶层扁平布尔 `enable_thinking: true`（商业版支持非流式）。"""
+        return {"enable_thinking": True}
+
 
 def image_grid_dims(n: int) -> tuple[int, int]:
     """N 张帧拼图用的网格 `(rows, cols)`——**列数固定 3**，行数 `ceil(n/3)`。
@@ -589,6 +612,10 @@ class ArkProvider(_MultimodalMixin, _OpenAICompatibleBase):
         """
         return {"thinking": {"type": "disabled"}}
 
+    def _enable_thinking_payload(self) -> dict[str, object]:
+        """火山方舟开思考模式：嵌套对象 `thinking: {"type": "enabled"}`。"""
+        return {"thinking": {"type": "enabled"}}
+
 
 class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
     """DeepSeek 官方 API——默认模型 `deepseek-flash`（即 DeepSeek-V4.1-Flash，
@@ -663,6 +690,12 @@ class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
         `_post()` 的原因，见模块 docstring。"""
         return {"thinking": {"type": "disabled"}}
 
+    def _enable_thinking_payload(self) -> dict[str, object]:
+        """DeepSeek 开思考模式：嵌套对象 `thinking: {"type": "enabled"}`（强度用服务端默认
+        `high`）；开启后 `temperature` 不生效，思维链在响应的 `reasoning_content` 里，
+        本类只读 `content`。"""
+        return {"thinking": {"type": "enabled"}}
+
 
 # ---- 选型表：型号名 → 厂商类（0914 起） ----
 #
@@ -695,6 +728,7 @@ def provider_for(
     max_tokens: int | None = None,
     timeout: int = 45,
     json_mode: bool = False,
+    thinking: bool = False,
 ) -> _OpenAICompatibleBase:
     """按型号名造一个 provider 实例——**"哪条链路接哪家厂商"的唯一判据**。
 
@@ -716,8 +750,8 @@ def provider_for(
     （PASS 局 `realcheck-0914-202735`）：视觉单次 max 1.16s、决策 max 8.24s，
     两者差 7 倍，一个阈值套两头要么放文本的松、要么给视觉白等。
 
-    `json_mode`：转发给 Provider 构造的 JSON 输出开关，含义与前提见
-    `_OpenAICompatibleBase.__init__`；默认 `False`。
+    `json_mode` / `thinking`：转发给 Provider 构造的 JSON 输出开关与思考模式开关，
+    含义与前提见 `_OpenAICompatibleBase.__init__`；默认都是 `False`。
 
     失败：型号名前缀不认识时抛 `ValueError`。**刻意不用 `assert`**：型号名来自
     装配点的配置，不是"调用方"，配置写错是预期内的运行时情况（AGENTS.md 第三节
@@ -731,6 +765,7 @@ def provider_for(
             kwargs: dict[str, object] = {} if max_tokens is None else {"max_tokens": max_tokens}
             kwargs["timeout"] = timeout
             kwargs["json_mode"] = json_mode
+            kwargs["thinking"] = thinking
             return provider_cls(model, temperature=temperature, **kwargs)
     known = " / ".join(f"{prefix}*" for prefix, _ in _PROVIDER_PREFIXES)
     raise ValueError(

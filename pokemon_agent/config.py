@@ -60,6 +60,16 @@ PROVIDER_JSON_MODE = True
 是否接受该字段尚未验证）。关掉 = 回到"靠 prompt 要求 + 本地解析兜底"。
 """
 
+PLAN_THINKING = True
+"""`plan` 位置（run 级规划 `plan()` 与 episode 级拆解 `decompose()` 共用的那个 provider）
+要不要开**思考模式**。
+
+**它是实验旋钮**：这两条链路要在地图、目标表上做空间与依赖推理，关思考时模型只能一口气
+写出答案（真机第一跑：拆解出了目标格是墙的 task）。开了会更慢更贵——思考 token 计入
+`reasoning_tokens`，单请求超时随之放宽（`brain/build_llm_providers.py::THINKING_TIMEOUT_SECONDS`）。
+只影响 `plan` 位置；decide / judge / verify / 感知仍关思考。关掉 = 回到从前。
+"""
+
 MODEL_RETRY_BACKOFF_SECONDS = 0.5
 """两个重试循环（`brain_tool` / `game_tools`）失败后到下一次尝试的**固定**间隔。
 

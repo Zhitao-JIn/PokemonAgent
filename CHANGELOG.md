@@ -1,3 +1,25 @@
+## 2026-09-24（211）—— plan 位置（规划 + 拆解）打开思考模式：Provider 加 `thinking` 开关，超时随之放宽
+
+**改了什么**：
+- `brain/providers.py`：`_OpenAICompatibleBase.__init__` 新增 `thinking: bool = False`；`_post()` 按它二选一发"开思考"或
+  "关思考"字段（新钩子 `_enable_thinking_payload()`，与既有 `_disable_thinking_payload()` 成对；Qwen `enable_thinking: true`，
+  Ark / DeepSeek `thinking: {"type": "enabled"}`）；`config()` 自报 `thinking`；`provider_for(..., thinking=False)` 转发。
+- `BrainLlmConfig` 新增 `plan_thinking: bool = False`；`build_llm_providers()` 只对 plan 位置传 `thinking`，同时把它的
+  单请求超时放宽到 `THINKING_TIMEOUT_SECONDS = 180`（缺省 45）。
+- `config.py` 新增 `PLAN_THINKING = True`；`BrainTool.build()` 新增 `plan_thinking` 参数（缺省取该常量）。
+- 本地测试 `tests/test_provider_json_mode.py` 增两条：三个厂商类都显式发开/关字段；只有 plan 位置开思考且超时更长。
+
+**为什么这么改**：真机第一跑里，拆解链关着思考，模型一口气写出 5 个坐标 task，其中两个目标格是墙；`why` 排在 `tasks`
+之后，只是事后解释。`plan()` 与 `decompose()` 共用 `plan_llm`，所以一个位置的开关同时管这两条。
+
+**取舍**：只开 plan 位置，decide / judge / verify / 感知仍关——它们每键都调，开思考会让每键慢一个量级。
+必须**显式发"关"**：DeepSeek 与 `qwen3.8-max` 的服务端默认都是开，不发就等于开。DeepSeek 思考模式下
+`temperature` 不生效。DeepSeek 思考模式能否与 `json_mode` 同用、`max_tokens` 是否计入思考 token，官方文档没写，未验证；
+思考 token 耗光 `max_tokens` 时正文会为空，会表现为解析失败。180s 是先拍的，拿到真机耗时账再收。
+
+**影响面**：run 规划与拆解的请求变慢、变贵；`check_harness` 的 12 分钟看门狗可能不够；`config()` 多一个键 `thinking`。
+回退：`PLAN_THINKING = False`。
+
 ## 2026-09-24（210）—— json_mode 默认全开：config 旋钮 `PROVIDER_JSON_MODE` 接到四条文本链与视觉感知
 
 **改了什么**：`config.py` 新增 `PROVIDER_JSON_MODE = True`；`BrainLlmConfig` 新增 `json_mode: bool = False` 字段，
