@@ -107,6 +107,7 @@ class _OpenAICompatibleBase:
         max_tokens: int = 1024,
         timeout: int = 45,
         multimodal: bool = True,
+        json_mode: bool = False,
     ) -> None:
         """`temperature` 没有默认值，**必须由调用方显式给出**。
 
@@ -121,6 +122,16 @@ class _OpenAICompatibleBase:
         （`qwen3.8-max`/`doubao-seed-2-*`/`deepseek-flash`）都原生多模态；
         哪天接纯文本型号（`qwen-plus` 那类），装配处要显式传 `False`，
         否则带图的链路会把图发进一个不认图的端点。
+
+        `json_mode`：**要不要让服务端约束输出为合法 JSON**——为真时请求体带
+        `response_format: {"type": "json_object"}`（三家都是 OpenAI 兼容写法，
+        `_post()` 一处加，所以三个厂商类都有这个开关）。默认 `False` = 行为与从前一致，
+        靠 prompt 要求 + 本地解析兜底。打开的前提（DeepSeek 官方文档）：prompt 里必须
+        出现 `json` 字样并给出输出样例；`max_tokens` 要够大以免 JSON 被截断；服务端
+        **有概率返回空 content**，调用方的重试循环要能吃下这种情况。**只对"正文必须是
+        一个 JSON 对象"的链路打开**——一个 provider 实例上的开关管这个实例发的每一次
+        请求，同一实例还兼做别的输出形状（自由文本）时不要开。Qwen / Ark 是否接受该
+        字段、思考模式关闭时是否照常生效，尚未逐家验证。
 
         记下型号与温度，此后不再变。base_url/api_key 从子类的类属性拿，
         不接受调用方覆盖——见模块 docstring 第 2 条设计决定。
@@ -139,6 +150,7 @@ class _OpenAICompatibleBase:
         self._temperature = temperature
         self._max_tokens = max_tokens
         self.multimodal = multimodal
+        self._json_mode = json_mode
         self._base = self.BASE_URL.rstrip("/")
         self._timeout = timeout
         self._key = next(
@@ -187,6 +199,8 @@ class _OpenAICompatibleBase:
             "messages": [{"role": "user", "content": content}],
         }
         body.update(self._disable_thinking_payload())
+        if self._json_mode:
+            body["response_format"] = {"type": "json_object"}
 
         req = urllib.request.Request(
             f"{self._base}/chat/completions",
@@ -227,6 +241,7 @@ class _OpenAICompatibleBase:
             "model": self._model,
             "temperature": str(self._temperature),
             "max_tokens": str(self._max_tokens),
+            "json_mode": str(self._json_mode).lower(),
             "base_url": self._base,
         }
 
@@ -679,6 +694,7 @@ def provider_for(
     temperature: float,
     max_tokens: int | None = None,
     timeout: int = 45,
+    json_mode: bool = False,
 ) -> _OpenAICompatibleBase:
     """按型号名造一个 provider 实例——**"哪条链路接哪家厂商"的唯一判据**。
 
@@ -700,6 +716,9 @@ def provider_for(
     （PASS 局 `realcheck-0914-202735`）：视觉单次 max 1.16s、决策 max 8.24s，
     两者差 7 倍，一个阈值套两头要么放文本的松、要么给视觉白等。
 
+    `json_mode`：转发给 Provider 构造的 JSON 输出开关，含义与前提见
+    `_OpenAICompatibleBase.__init__`；默认 `False`。
+
     失败：型号名前缀不认识时抛 `ValueError`。**刻意不用 `assert`**：型号名来自
     装配点的配置，不是"调用方"，配置写错是预期内的运行时情况（AGENTS.md 第三节
     第 4 条：assert 不校验外部输入）——而且它要在**装配期**就炸，不是等第一次
@@ -709,8 +728,9 @@ def provider_for(
     head = model.strip().lower()
     for prefix, provider_cls in _PROVIDER_PREFIXES:
         if head.startswith(prefix):
-            kwargs: dict[str, int] = {} if max_tokens is None else {"max_tokens": max_tokens}
+            kwargs: dict[str, object] = {} if max_tokens is None else {"max_tokens": max_tokens}
             kwargs["timeout"] = timeout
+            kwargs["json_mode"] = json_mode
             return provider_cls(model, temperature=temperature, **kwargs)
     known = " / ".join(f"{prefix}*" for prefix, _ in _PROVIDER_PREFIXES)
     raise ValueError(

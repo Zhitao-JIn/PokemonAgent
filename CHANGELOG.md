@@ -1,3 +1,19 @@
+## 2026-09-24（209）—— Provider 加 `json_mode` 开关：打开后请求体带 `response_format: json_object`
+
+**改了什么**：`brain/providers.py` 的 `_OpenAICompatibleBase.__init__` 新增 `json_mode: bool = False`；为真时 `_post()` 在请求体
+里加 `response_format: {"type": "json_object"}`，`config()` 自报 `json_mode`。三个厂商类（Qwen / Ark / DeepSeek）经 `**kw`
+透传，所以都有这个开关；`provider_for(..., json_mode=False)` 同步转发。默认关，行为与从前一致。新增本地测试
+`tests/test_provider_json_mode.py`（7 条，假 `urlopen` 抓请求体，`tests/` 不进库）。
+
+**为什么这么改**：要能按链路试"让服务端约束输出为 JSON"是否比 prompt 约束更稳；开关放在共享的 `_post()` 一处，三家不用各写一份。
+
+**取舍**：开关在 provider 实例级，不在单次请求（`LlmCompleteReq`）上——实例上的开关管这个实例发的每一次请求，
+同一实例兼做自由文本输出时不要开。没有接到 `BrainLlmConfig` / `build_llm_providers` / `BrainTool.build`，
+装配点暂时不能从上层打开它。DeepSeek 官方文档写明该模式有概率返回空 content，且要求 prompt 含 `json` 字样与样例；
+Qwen / Ark 是否接受该字段、DeepSeek 思考模式关闭时是否生效，尚未验证。
+
+**影响面**：默认行为不变；`config()` 多一个键 `json_mode`（进 run manifest）。
+
 ## 2026-09-24（208）—— 拆解 prompt 补 walk_map 图例，并要求目标格必须走得到
 
 **改了什么**：`tools/prompts/calls/decompose.md` 新增「`walk_map` 怎么读」一节（图例、行尾 `(x=A..B)` 的读法、
