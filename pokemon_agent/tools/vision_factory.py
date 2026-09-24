@@ -33,6 +33,7 @@ provider。两个工厂都在 tool 层、都不被 `build.py` 越过——
 
 from __future__ import annotations
 
+from pokemon_agent.config import PROVIDER_JSON_MODE
 from pokemon_agent.world import VisionProvider
 
 __all__ = ["build_vision_provider"]
@@ -41,6 +42,7 @@ __all__ = ["build_vision_provider"]
 def build_vision_provider(
     model: str = "qwen3.8-max",
     temperature: float = 0.0,
+    json_mode: bool = PROVIDER_JSON_MODE,
 ) -> VisionProvider:
     """造 world 感知要的那一个 `VisionProvider`。
 
@@ -66,4 +68,4 @@ def build_vision_provider(
     # 视觉链路的超时**单独收紧到 20s**：trace 实测视觉单次 max 1.16s（决策是
     # 它的 7 倍），且感知每步必调、挂起重试路径最长——20s 是实测的 17 倍裕量，
     # 过载网关的挂起在它面前能更快失败。文本四链用 `provider_for` 缺省 45s。
-    return provider_for(model, temperature=temperature, timeout=20)
+    return provider_for(model, temperature=temperature, timeout=20, json_mode=json_mode)

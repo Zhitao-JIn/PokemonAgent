@@ -50,6 +50,16 @@ provider 3 × 循环 2 = 6，砍完只剩循环自己——而它扛的恰好是
 （跨境 TLS 断连高发，见 `providers._post` docstring），提到 3 对齐 brain 的预算。
 """
 
+PROVIDER_JSON_MODE = True
+"""**要不要让服务端约束输出为合法 JSON**（请求体带 `response_format: json_object`）。
+
+**它是实验旋钮**：五个位置（decide / judge / verify / plan 四条文本链 + world 感知）
+的每一次请求都输出一个 JSON 对象，所以统一开关，装配时递给全部 provider。
+打开的前提与已知风险见 `brain/providers.py::_OpenAICompatibleBase.__init__`
+（prompt 含 `json` 字样与样例、服务端可能返回空 content、图片请求与 Qwen / Ark
+是否接受该字段尚未验证）。关掉 = 回到"靠 prompt 要求 + 本地解析兜底"。
+"""
+
 MODEL_RETRY_BACKOFF_SECONDS = 0.5
 """两个重试循环（`brain_tool` / `game_tools`）失败后到下一次尝试的**固定**间隔。
 

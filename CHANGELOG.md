@@ -1,3 +1,21 @@
+## 2026-09-24（210）—— json_mode 默认全开：config 旋钮 `PROVIDER_JSON_MODE` 接到四条文本链与视觉感知
+
+**改了什么**：`config.py` 新增 `PROVIDER_JSON_MODE = True`；`BrainLlmConfig` 新增 `json_mode: bool = False` 字段，
+`build_llm_providers()` 把它递给 decide / judge / verify / plan 四个 `provider_for()`；`BrainTool.build()` 新增
+`json_mode` 参数（缺省取 `PROVIDER_JSON_MODE`）填进 `BrainLlmConfig`；`build_vision_provider()` 同样新增 `json_mode`
+参数（缺省取 `PROVIDER_JSON_MODE`）。于是四条文本链与 world 感知的每次请求都带 `response_format: json_object`。
+本地测试 `tests/test_provider_json_mode.py` 加一条：`build_llm_providers` 把开关递给四个位置（`tests/` 不进库）。
+
+**为什么这么改**：209 加了 provider 侧的开关，但没接到装配链；全部模型调用的输出都是一个 JSON 对象
+（choose / judge / verify / summarize / plan / decompose / 感知），统一打开，出问题时改一个常量即可回退。
+
+**取舍**：`BrainLlmConfig` 默认 `False`（brain 是纯数据、不认识项目 config），由 tool 层按 `config.py` 递进去，
+守铁律 2。一个开关管全部五个位置，不做按链路分开。带图请求与 Qwen / Ark 是否接受 `response_format` 未验证；
+DeepSeek 文档写明可能返回空 content——现有重试循环是否吃得下，要靠真机跑看。
+
+**影响面**：所有真实模型请求的请求体多一个 `response_format` 字段；`config()` 的 `json_mode` 进 manifest。
+回退：把 `PROVIDER_JSON_MODE` 改成 `False`。
+
 ## 2026-09-24（209）—— Provider 加 `json_mode` 开关：打开后请求体带 `response_format: json_object`
 
 **改了什么**：`brain/providers.py` 的 `_OpenAICompatibleBase.__init__` 新增 `json_mode: bool = False`；为真时 `_post()` 在请求体

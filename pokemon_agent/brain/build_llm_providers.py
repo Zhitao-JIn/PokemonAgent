@@ -72,13 +72,21 @@ def build_llm_providers(
     """
     # 步骤 1：决策链与判定链。温度分层见上面两个常量的说明。
     decide: LLMProvider | None = (
-        provider_for(config.text, temperature=DECIDE_TEMPERATURE, max_tokens=config.max_tokens)
+        provider_for(
+            config.text,
+            temperature=DECIDE_TEMPERATURE,
+            max_tokens=config.max_tokens,
+            json_mode=config.json_mode,
+        )
         if config.text
         else None
     )
     judge: JudgeProvider | None = (
         provider_for(
-            config.judge, temperature=DETERMINISTIC_TEMPERATURE, max_tokens=config.max_tokens
+            config.judge,
+            temperature=DETERMINISTIC_TEMPERATURE,
+            max_tokens=config.max_tokens,
+            json_mode=config.json_mode,
         )
         if config.judge
         else None
@@ -89,14 +97,20 @@ def build_llm_providers(
     # 也会让"这两个位置其实可以分别选型"这件事看不出来。
     verify: JudgeProvider | None = (
         provider_for(
-            config.verify, temperature=DETERMINISTIC_TEMPERATURE, max_tokens=config.max_tokens
+            config.verify,
+            temperature=DETERMINISTIC_TEMPERATURE,
+            max_tokens=config.max_tokens,
+            json_mode=config.json_mode,
         )
         if config.verify
         else None
     )
     plan: LLMProvider | None = (
         provider_for(
-            config.plan, temperature=DETERMINISTIC_TEMPERATURE, max_tokens=config.max_tokens
+            config.plan,
+            temperature=DETERMINISTIC_TEMPERATURE,
+            max_tokens=config.max_tokens,
+            json_mode=config.json_mode,
         )
         if config.plan
         else None

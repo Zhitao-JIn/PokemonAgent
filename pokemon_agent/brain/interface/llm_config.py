@@ -77,5 +77,12 @@ class BrainLlmConfig:
     与"打的哪家供应商"无关，四条链路没有证据支持该有不同的数。
     """
 
+    json_mode: bool = False
+    """四个 provider 共用的 JSON 输出开关：为真时每次请求带 `response_format: json_object`。
+
+    默认 `False`（本类是 brain 的纯数据，不认识项目的 `config.py`）；项目里由 tool 层的
+    `BrainTool.build()` 按 `config.PROVIDER_JSON_MODE` 递进来。
+    """
+
 
 __all__ = ["BrainLlmConfig"]
