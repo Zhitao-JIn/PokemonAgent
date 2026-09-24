@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolDecomposeReq
 from pokemon_agent.schemas.harness.domain import TaskEntry
+from pokemon_agent.world import terrain_legend
 
 from . import append_human_note, load
 
@@ -53,6 +54,7 @@ def build_prompt(req: FromHarnessToBrainToolDecomposeReq) -> str:
             criteria=req.goal.criteria,
             context="\n".join(context_lines(req)),
             max_tasks=req.max_tasks,
+            terrain_legend=terrain_legend(),
         ),
         req.human_note,
     )

@@ -1,3 +1,17 @@
+## 2026-09-24（208）—— 拆解 prompt 补 walk_map 图例，并要求目标格必须走得到
+
+**改了什么**：`tools/prompts/calls/decompose.md` 新增「`walk_map` 怎么读」一节（图例、行尾 `(x=A..B)` 的读法、
+y 向下 x 向右、图只有这一屏），并在规则 2 后追加：目标坐标必须是 `.` / `G`（进门用 `D`），`#` `S` `N` `B` 不能当目标，
+路线要绕开。图例由 `tools/prompts/decompose.py` 经 `terrain_legend()` 渲入（与 `decide_action` 同一个来源，不另写一份）。
+
+**为什么这么改**：真机第一跑里，拆解器拿到了 `walk_map`，却拆出目标格为墙的 task（x=14 y=46、x=17 y=42），
+task 2 因此撞墙。决策 prompt 有图例、拆解 prompt 没有，同一张图两处读法不对等。
+
+**取舍**：只改 prompt，不加 harness 侧的目标格校验；「只输出 JSON」原本就在模板末尾，未动，也没有开
+`response_format`（拆解输出本来就是干净 JSON，问题是语义不是格式）。
+
+**影响面**：拆解 prompt 变长约 20 行；未经真机验证。
+
 ## 2026-09-24（207）—— 修 `query_act_memories` 构造响应时字段名写错（真机第一跑暴露）
 
 **改了什么**：`tools/memory_tool.py::query_act_memories` 返回 `FromHarnessToMemoryToolQueryActMemoriesResp(steps=entries)`
