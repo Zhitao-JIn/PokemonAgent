@@ -192,7 +192,8 @@ class _OpenAICompatibleBase:
         全在调用方（`BrainTool._attempt_loop` / `GameTools.perceive_with_retry`），
         见 `__init__` docstring 里"没有 `max_attempts`"那段。
 
-        `thinking`：这一次的思考开关覆盖（`LlmCompleteReq.thinking`）；`None` 沿用构造时的 `thinking`。
+        `thinking`：这一次的思考开关覆盖（`LlmCompleteReq.thinking`）；
+        `None` 沿用构造时的 `thinking`。
 
         **本层只负责把失败分类**，三类三种抛法：
 
@@ -501,7 +502,7 @@ class QwenProvider(_MultimodalMixin, _OpenAICompatibleBase):
     ) -> None:
         """**max_tokens 比基类的默认值大得多，这是有实测依据的。**
 
-        `Action.thought` 刻意不设上限（它的长度就是模型这一步的算力）。1024 时
+        0924 之前 `Action` 带一段不设上限的 `thought`。1024 时
         实测出现过一次 `completion_tokens` 正好 1024 的 `ParseFailure`——
         JSON 是被切断的，不是写错的。那一次调用烧了 23 秒和一整笔 token，
         产出为零，而错误信息指向的是"模型不会写 JSON"这个错误的方向。
@@ -673,7 +674,7 @@ class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
     ) -> None:
         """`model` 默认 `deepseek-flash`，理由见类 docstring（官方已把
         v4-pro 路由到它，不是项目单方面替调用方拍板）。`max_tokens` 默认值
-        沿用 `QwenProvider` 的实测依据（`Action.thought` 刻意不设上限，
+        沿用 `QwenProvider` 的实测依据（0924 前 `Action.thought` 不设上限，
         1024/3072 均实测不够，见该类 `__init__` docstring）——这个理由与
         "打的是哪家供应商"无关，是"decide 这条链路本身需要多少输出余量"的
         问题，DeepSeek 侧没有理由更少。**注意 DeepSeek 官方文档给出的

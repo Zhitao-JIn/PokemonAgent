@@ -493,7 +493,6 @@ def choose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     )
     content: dict[str, Any] = {
         "sequence": action_sequence(action),
-        "thought": action.thought,
         "input": req.input,
         "output": req.output,
     }

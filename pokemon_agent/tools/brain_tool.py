@@ -63,15 +63,16 @@ from pokemon_agent.brain.errors import (
     EmptyCompletion,
     ParseFailure,
     ProviderRejected,
+    ToolTimeout,
 )
 from pokemon_agent.config import (
     BRAIN_MAX_ATTEMPTS,
     MAX_SEGMENTS,
     MAX_TIMES,
-    MODEL_RETRY_BACKOFF_SECONDS,
     PLAN_MAX_TOKENS,
     PLAN_THINKING,
     PROVIDER_JSON_MODE,
+    TRANSPORT_MAX_ATTEMPTS,
 )
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
@@ -106,6 +107,7 @@ from pokemon_agent.tools.prompts import summarize_task as summarize_task_prompt
 from pokemon_agent.tools.prompts import verify as verify_prompt
 from pokemon_agent.world import DIRECTION_KEYS, INTERACT_KEY
 
+from .backoff import backoff_seconds
 from .prompts import decide_action as decide_action_prompt
 from .prompts import judge_success as judge_success_prompt
 
@@ -329,7 +331,7 @@ class Chooser:
                     f"plus at most one trailing {INTERACT_KEY!r}"
                 )
 
-        return Action(thought=action.thought, sequence=segments)
+        return Action(sequence=segments)
 
 
 # ---- 反思 ----
@@ -732,9 +734,10 @@ def _attempt_loop(
     重试注定无用——第一轮就抛 `MaxRetriesExceeded`（`attempts=1`），
     不烧预算、不给模型叠"你上一次的输出不合法"那种张冠李戴的纠正。
 
-    **退避是固定的**（`MODEL_RETRY_BACKOFF_SECONDS`，config）：失败后、
-    且还有下一轮预算时睡 0.5s 再试——重试预算只有 3 轮，指数拉开兜不住
-    多写的两行；最后一轮失败后不睡（后面是上抛，没人等这个间隔）。
+    **预算按最近一次失败的种类算**：传输失败（`ToolTimeout`）总共最多
+    `TRANSPORT_MAX_ATTEMPTS` 次，其余失败最多 `BRAIN_MAX_ATTEMPTS` 次（都含首次）。
+    **退避是指数的**（`backoff.backoff_seconds`）：第 n 次失败后睡 1/2/4/8… 秒再试；
+    耗尽那一轮不睡（后面是上抛，没人等这个间隔）。
 
     为什么收 `(第几次, 账)` 两个参数：`decide` 要用 "第几次" 渲染纠正说明的
     文案（"第 2 次尝试"），也要用 "账" 取上次的失败原因；其余链路两个都不用。
@@ -747,29 +750,38 @@ def _attempt_loop(
     不另盖一枚 `attempt` 戳（0914 跟进删）。
     """
     calls: list[ModelCall] = []
-    for nth in range(1, BRAIN_MAX_ATTEMPTS + 1):
+    while True:
         try:
-            result = attempt(nth, calls)
+            result = attempt(len(calls) + 1, calls)
         except AttemptFailed as exc:
             call = _adopt(exc.call)
             calls.append(call)
-            if call.error_kind == ProviderRejected.__name__:
-                # 4xx：重试注定无用，立即耗尽（attempts=1）。
+            if call.error_kind == ProviderRejected.__name__ or _budget_spent(calls):
                 raise MaxRetriesExceeded(
                     len(calls), _last_error(calls), calls, source=source
                 ) from exc
-            if nth < BRAIN_MAX_ATTEMPTS:
-                time.sleep(MODEL_RETRY_BACKOFF_SECONDS)
+            time.sleep(backoff_seconds(len(calls)))
             continue
 
         calls.extend(_adopt(call) for call in result.calls)
         return result, calls
 
-    raise MaxRetriesExceeded(BRAIN_MAX_ATTEMPTS, _last_error(calls), calls, source=source)
+
+def _budget_spent(calls: list[ModelCall]) -> bool:
+    """重试预算用完没有。
+
+    最近一次是传输失败按 `TRANSPORT_MAX_ATTEMPTS`，否则按 `BRAIN_MAX_ATTEMPTS`。
+
+    `calls`：本次调用目前累积的账（全是失败的尝试，末条是刚失败的那次）。
+    """
+    transport = calls[-1].error_kind == ToolTimeout.__name__
+    return len(calls) >= (TRANSPORT_MAX_ATTEMPTS if transport else BRAIN_MAX_ATTEMPTS)
 
 
 def _thinking_after(calls: list[ModelCall]) -> bool | None:
-    """plan / decompose 这一次尝试的思考开关：之前有过一次 `EmptyCompletion` 就强制关，否则沿用装配。
+    """plan / decompose 这一次尝试的思考开关。
+
+    之前有过一次 `EmptyCompletion` 就强制关，否则沿用装配。
 
     `calls`：本次调用目前累积的账。返回 `False` = 这一次关思考；`None` = 不覆盖 provider 的设置。
     """

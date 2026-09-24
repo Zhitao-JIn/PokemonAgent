@@ -30,7 +30,10 @@ class LlmCompleteReq(BaseModel):
     """
 
     thinking: bool | None = None
-    """这一次请求的思考开关。`None` = 沿用 provider 装配时的设置；`True`/`False` = 只对这一次覆盖。"""
+    """这一次请求的思考开关。
+
+    `None` = 沿用 provider 装配时的设置；`True`/`False` = 只对这一次覆盖。
+    """
 
 
 class LlmCompleteResp(BaseModel):

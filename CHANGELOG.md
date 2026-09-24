@@ -1,3 +1,28 @@
+## 2026-09-24（221）—— 决策只交一个键；模型调用改指数退避，传输失败单独给 5 次预算
+
+**改了什么**：
+- `decide_action.md` 输出格式由 `{"sequence": [{"action": …, "times": …}]}` 改为 `{"action": "up"}`；`button_help.md` 去掉"times>1 会被改成 1"。`Brain._parse` 只认 `action` 一个字符串键，包成单段、`times=1` 的 `Action`（`Action.sequence` 这个对外形状不变，trace 与世界侧不动）；`_parse_times` 删除。
+- 新增 `tools/backoff.py::backoff_seconds(failures)`：基数 × 2^(n-1)、封顶；`config.py` 的 `MODEL_RETRY_BACKOFF_SECONDS` 0.5 → 1.0（语义由固定间隔改为基数），新增 `MODEL_RETRY_BACKOFF_MAX_SECONDS = 8.0`、`TRANSPORT_MAX_ATTEMPTS = 5`。
+- `tools/brain_tool.py::_attempt_loop`：预算按最近一次失败的种类算（`ToolTimeout` 5 次，其余 `BRAIN_MAX_ATTEMPTS` 3 次，都含首次），失败后按 `backoff_seconds` 睡；`GameTools.perceive_with_retry` 的间隔也改走 `backoff_seconds`（预算仍是 `PERCEPTION_MAX_RETRIES`）。
+
+**为什么改**：
+- 0924 六次 realcheck 里 choose 的 4 次解析失败全是同一种：模型把决定写在推理里（"决定：up"），`sequence` 没写或写空。220 删了推理段，这里再把输出收到一个键，没有"段"和"次数"可写错。
+- 同期 choose 的 9 次超时成簇出现（115125 同一步连续 3 次耗尽、122311 连续两步各 2 次后第 3 次才通），固定 0.5s 间隔的 3 次重试落在同一段服务端卡顿里。219 把单次超时压到 10s 后，多给两次、间隔 1/2/4/8s，一次卡顿最多多等约 15s 就能跨过去，不至于把 task 判成出错。
+
+**取舍**：解析类失败没有"等一等就好"的规律，预算仍是 3 次，但间隔也随之拉长（1s、2s）。最坏情况一次决策要 5×10s + 15s。`MAX_SEGMENTS` / `MAX_TIMES` 与 `BrainTool` 的多段校验现在收不到多段输入，留着不删。
+
+## 2026-09-24（220）—— 决策（choose）的输出去掉 `thought`，只交按键
+
+**改了什么**：
+- `Action` 删掉 `thought` 字段，只剩 `sequence`；`Brain` 的解析删掉 `_parse_thought`（模型多写了 `thought` 也不再要求、直接忽略）。
+- `decide_action.md`：去掉"按 ReAct 的方式思考"，输出格式改为只有 `{"sequence": [...]}`，并明说不要写推理与理由；两条要求"在 thought 里先写一句……"的硬规则改成直接要求换做法 / 必须有一样东西变了。
+- `plan_task`、`BrainTool` 构造 `Action` 处不再传 `thought`；`choose_verdict` 账去掉 `thought` 键（`experiment/real_check/node_io.py` 的字段契约同步）。
+- 若干 docstring 里"`Action.thought` 不设上限"的说法同步；本地测试三处构造 / 断言随之改。
+
+**为什么改**：决策是每键一次的快速响应，"为什么这么做"是 task 拆解（`Decomposition.why`）的职责，不归选键。`thought` 却被要求写"完整推理，约 1024 token"：真机里常写到一两千 token、最长 3900，单次 choose 因此要 10~19 秒，占全局耗时近三成，也让 219 的 10s 超时会误伤正常回复。这段文字只进 trace、不参与任何后续决策。
+
+**取舍**：没有推理段之后，模型在正文里"先想再选"的余地没了，选键质量要看下一轮真机；若明显变差，再考虑一句话的短理由，而不是回到长推理。decide 位置的 `max_tokens` 仍是共用的 25600，只是上限，不影响耗时。
+
 ## 2026-09-24（219）—— 决策位置单请求超时 45s → 10s；清空 object memory 旧记录
 
 **改了什么**：

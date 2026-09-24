@@ -19,7 +19,7 @@ class ActionSegment(BaseModel):
 
     `times=4` 这个写法本身就在声明"这 4 下是同一个动作"。（0923 189 起
     段上不再带论据——JEV 不产出 rationale，字段连同输出契约一起删了；
-    链级的总打算由 `Action.thought` 承担，只进 trace。）
+    0924 起链级的 `thought` 也删了，见 `Action`。）
     """
 
     name: str = Field(min_length=1, description="按键名")
@@ -29,31 +29,21 @@ class ActionSegment(BaseModel):
 class Action(BaseModel):
     """**从大脑吐出的动作**，交给世界执行。
 
-    它带着两样东西过来，服务于两个不同的消费方，**不要合并**：
+    只有一样东西：`sequence`，给世界执行的按序按键链（每段 = 一个键 × 连按次数）。
+    **这一版只有按键一类动作**：`intent` 分派（press / push_goal）连同它的
+    枚举一起删了，拆子目标的机制会在别处重写。
 
-    - `sequence` —— 给世界执行。按序的按键链（每段 = 一个键 × 连按次数）；
-      **这一版只有按键一类动作**：`intent` 分派（press / push_goal）连同它的
-      枚举一起删了，拆子目标的机制会在别处重写。
-    - `thought` —— 完整推理，**只进 trace**，不参与任何后续决策。
-      不设长度上限：它的长度就是模型这一步的算力，压缩它压的是思考本身，
-      不是日志体积。
-
-    **链上没有论据**（0923 189 起段级 rationale 也删了——JEV 不产出）：
-    "为什么要交出这串动作"是链级的，对其中任何单个键都不成立，
-    所以它由 `thought` 承担（本来就只进 trace）。经验记忆里因此只有
+    **没有推理字段**：决策是每键一次的快速响应，"为什么这么做"归 task 的拆解
+    （`Decomposition` 的 `why`），不归选键。经验记忆里因此只有
     "看到什么 → 做了什么 → 变成什么"，适用条件的判断交给读记忆的人。
 
     **本类不校验上限**（段数上限、次数上限）——那是调用方的
     校验策略，见本模块 docstring。
     """
 
-    thought: str = Field(
-        min_length=1,
-        description="选择该动作的完整推理。只进 trace，不进 memory，不影响后续决策",
-    )
     sequence: list[ActionSegment] = Field(
         min_length=1,
-        description="按顺序执行的按键链，每段自带一个论据",
+        description="按顺序执行的按键链",
     )
 
     def segments(self) -> list[ActionSegment]:

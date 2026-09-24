@@ -21,7 +21,7 @@ from __future__ import annotations
 import time
 
 from pokemon_agent.brain.errors import ProviderRejected
-from pokemon_agent.config import MODEL_RETRY_BACKOFF_SECONDS, PERCEPTION_MAX_RETRIES
+from pokemon_agent.config import PERCEPTION_MAX_RETRIES
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolEvolveReq,
@@ -33,6 +33,7 @@ from pokemon_agent.schemas.harness import (
     ModelCall,
     ModelCallLog,
 )
+from pokemon_agent.tools.backoff import backoff_seconds
 from pokemon_agent.tools.prompts import BUTTON_HELP, MAP_HINT, REPEAT_HINT
 from pokemon_agent.world import (
     OVERLAY_ACTIONS,
@@ -223,7 +224,7 @@ class GameTools:
                         len(log), _last_error(log), log, source="sense"
                     ) from exc
                 if nth < PERCEPTION_MAX_RETRIES:
-                    time.sleep(MODEL_RETRY_BACKOFF_SECONDS)
+                    time.sleep(backoff_seconds(nth))
                 continue
 
             # 成功：逐条收账——一次感知可能有多条 call。

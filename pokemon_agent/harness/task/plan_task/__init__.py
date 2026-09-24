@@ -91,9 +91,9 @@ def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
         )
     )
 
-    # ========== 3. 单键化：取首段（thought 沿用），写 THINK ==========
+    # ========== 3. 单键化：取首段，写 THINK ==========
     head = resp.action.sequence[0].model_copy(update={"times": 1})
-    action = Action(thought=resp.action.thought, sequence=[head])
+    action = Action(sequence=[head])
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.CHOOSE_VERDICT,

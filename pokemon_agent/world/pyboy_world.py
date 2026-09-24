@@ -309,7 +309,7 @@ class PyBoyWorld:
         `perceive_once()` 拿（链中间的键走 `ram_only` 那一档）。
 
         segments：`(按键名, 连按次数)` 的列表——`Action.sequence`
-            拆开的裸字段，world 不关心 `thought` 这些字段。
+            拆开的裸字段。
             执行层恒传单键（一段、一次）：连按已经在 Harness 那边展开。
         settle：按完要不要给世界一段无输入演化时间（见步骤 3）。
         前置条件：每一段的按键都在 all_actions() 中。

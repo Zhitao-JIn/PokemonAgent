@@ -102,7 +102,10 @@ def _strip_json_fence(text: str) -> str:
 
 
 def _override(thinking: bool | None) -> str:
-    """思考开关覆盖的记账写法：`None`（沿用 provider）→ `"none"`，布尔 → 小写 `"true"`/`"false"`。"""
+    """思考开关覆盖的记账写法。
+
+    `None`（沿用 provider）→ `"none"`；布尔 → 小写 `"true"` / `"false"`。
+    """
     return "none" if thinking is None else str(thinking).lower()
 
 
@@ -841,8 +844,9 @@ class Brain:
     def _parse(self, text: str, keys: Sequence[str]) -> Action:
         """把 LLM 输出解析成 `Action`，不合法就抛 `ParseFailure` / `IllegalAction`。
 
-        **纯结构解析**：不认识世界语义（哪个键是交互键、连按在世界里意味着
-        什么）、不认识上限（段数/次数/论据条数归调用方校验）、不认识存储。
+        **模型只交一个键**：输出形如 `{"action": "up"}`（0924 起，此前是 `sequence`
+        数组）；这里把它包成单段、`times=1` 的 `Action`——`Action.sequence` 是
+        brain 对外的形状，与模型写什么格式无关。多写的字段一律忽略。
         只做三件事：剥围栏、验形状、验"这个键在不在 `keys` 里"。
         """
         # 步骤 1：剥 ```json 围栏。
@@ -856,54 +860,13 @@ class Brain:
         if not isinstance(raw, dict):
             raise ParseFailure(text, "top level is not an object")
 
-        # 只剩按键一类动作，所以没有"先取 intent 再分叉"那一段。
-        # （0923 189 起段级 rationale 已从契约删除——模型多写的字段在这里被忽略。）
-        raw_sequence = raw.get("sequence")
-        if not isinstance(raw_sequence, list) or not raw_sequence:
-            raise ParseFailure(text, "'sequence' must be a non-empty array")
+        # 步骤 2：取那一个键，验它在可用按键里。
+        name = raw.get("action")
+        if not isinstance(name, str) or not name.strip():
+            raise ParseFailure(text, "'action' must be a non-empty string")
+        name = name.strip()
+        if name not in keys:
+            raise IllegalAction(name, list(keys))
 
-        sequence = []
-        for index, segment in enumerate(raw_sequence, start=1):
-            where = f"segment {index}"
-            if not isinstance(segment, dict) or not isinstance(segment.get("action"), str):
-                raise ParseFailure(text, f"each sequence item needs an action ({where})")
-            name = segment["action"]
-            times = self._parse_times(text, segment)
-            sequence.append(ActionSegment(name=name, times=times))
+        return Action(sequence=[ActionSegment(name=name, times=1)])
 
-        for segment in sequence:
-            if segment.name not in keys:
-                raise IllegalAction(segment.name, list(keys))
-
-        return Action(
-            thought=self._parse_thought(text, raw),
-            sequence=sequence,
-        )
-
-    @staticmethod
-    def _parse_times(text: str, values: dict[str, object]) -> int:
-        """解析按键段次数，把外部格式错误转成可重试的 ParseFailure。
-
-        **不校验上限**——上限归调用方（tool/harness），大脑只保证"这是个
-        正整数"。
-        """
-        raw_times = values.get("times", 1)
-        try:
-            times = int(raw_times)
-        except (TypeError, ValueError) as exc:
-            raise ParseFailure(text, "times must be an integer") from exc
-        if times < 1:
-            raise ParseFailure(text, "times must be a positive integer")
-        return times
-
-    @staticmethod
-    def _parse_thought(text: str, raw: dict[str, object]) -> str:
-        """缺失是一类**单独的** `ParseFailure`——"格式坏"和"不肯推理"要能分开聚合，
-        但不值得为此多开一个异常类型，用 reason 字符串区分就够。
-
-        取出推理文本，缺失或为空则抛。
-        """
-        thought = raw.get("thought")
-        if not isinstance(thought, str) or not thought.strip():
-            raise ParseFailure(text, "missing 'thought' field")
-        return thought.strip()
