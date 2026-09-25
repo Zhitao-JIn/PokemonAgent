@@ -1,4 +1,4 @@
-"""分支登记表：`<存档根>/<run_id>/branches.json`：一个 run 下每条执行线从哪来（spec §四）。"""
+"""分支登记表 `<存档根>/<run_id>/branches.json`：每条执行线从哪来（checkpoint SPEC §三）。"""
 
 from __future__ import annotations
 

@@ -79,7 +79,7 @@ class RunRuntime:
     episode: EpisodeRuntime
     """episode 侧的 runtime（`build.py` 先造它、再造本对象）。**必传、恒非空**。"""
 
-    # ---- 存档：run begin 由 `run_entry.new_run` 调用 ----
+    # ---- 存档：run 级在 `run_entry.new_run`，episode 级在 `act` 开头，本局结束在 `act` 里封存 ----
 
     checkpointer: Checkpointer | None = None
     """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""

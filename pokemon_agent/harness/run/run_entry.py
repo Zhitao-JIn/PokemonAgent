@@ -10,9 +10,10 @@
 接住的 `RUN_ERROR`，再原样抛，**不吞**（谁接住谁记账：episode 的异常由 run 的 `act`
 记 `episode_error`，task 的异常由 episode 的 `act` 记 `task_error`）。
 
-**存档/恢复已整体删除**（见 `CHANGELOG.md` 2026-09-13 第 57 条）：原先这里有第二个
-入口 `resume_run`（读存档锚点 → 重建 `RunState` → 进图 → 补 `CHECKPOINT_RESTORE`
-→ 取结算），随 `EpisodeCheckpoint` 一起删掉了。
+**存档**：`new_run` 在进图之前存 run 级存档（有存档器时）；`record_run_error` 顺带封存
+半截那一局的账。恢复不在这里：从存档恢复出新执行线的入口是
+`harness/checkpoint/restore.py::restore_run`，它复用本文件的 `invoke_run` /
+`record_run_error` / `close` / `thread_id`（`docs/spec/checkpoint/SPEC.md`）。
 
 **`recursion_limit` 的常量住顶层 config**（`RUN_RECURSION_LIMIT`）：`invoke_run()` 是它唯一
 的读者，它是 run 级的**闸门**而不是预算——贴身的限在内层
@@ -177,7 +178,7 @@ def invoke_run(
 
 
 def thread_id(run_id: str, branch: str) -> str:
-    """LangGraph thread 的名字：一条执行线一个 thread（`docs/checkpoint/spec.md` §5.4）。"""
+    """LangGraph thread 的名字：一条执行线一个 thread（`docs/spec/checkpoint/SPEC.md` §二）。"""
     assert run_id and branch, "thread_id() needs both run_id and branch"
     return f"{run_id}@{branch}"
 

@@ -241,5 +241,6 @@ L 条 step memory，取"最近 3 条"就是字面意思——不再乘 L。
 
 
 CHECKPOINT_ENABLED = True
-"""三级 begin 自动存档的总开关（`docs/checkpoint/spec.md` C1）。**实验旋钮**：
+"""自动存档的总开关（run 开局 / 每局开派前的存档、task 世界快照、封存本局的账；
+`docs/spec/checkpoint/SPEC.md`）。**实验旋钮**：
 关掉时 `build.py` 不造存档器，各入口见 None 即不存档，其余行为不变。"""

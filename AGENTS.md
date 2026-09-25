@@ -214,8 +214,9 @@ pokemon_agent/
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方。
 │                     **只依赖 tools / schemas / prompts 三层，不依赖 trace 的实现**
 │                     （trace 也是独立模块，只通过 Port 说话）
-│                     checkpoint/：三级 begin 自动存档 + 由内向外恢复
-│                     （Checkpointer / restore_run / 分支登记表，见 docs/spec/checkpoint/）
+│                     checkpoint/：两级存档（run 开局 / 每局开派前）+ task 世界快照
+│                     + 恢复与回放到任意 task（Checkpointer / restore_run / 分支登记表，
+│                     见 docs/spec/checkpoint/）；reviewing.py：问人的唯一入口（每问记一笔）
 ├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层 + 世界语义常量
 │                     （INTERACT_KEY / DIRECTION_KEYS——"这个世界怎么按键"的知识）
 ├── tools/            Harness 伸向各模块的手：`game_tools.py` / `memory_tool.py` /
@@ -228,6 +229,8 @@ pokemon_agent/
 │                     `MemoryTool.build(memory_root=…, max_summaries=…)` 造检索
 │                     provider、`TraceTool.build(run_id=…, trace_root=…)`
 │                     造 `LocalTrace`、`vision_factory.build_vision_provider(model=…)`。
+│                     `replay/`：回放的五个磁带件（装配点有磁带时把真件包成它们，
+│                     切换前取录下的账、切换后照转真件）
 │                     **"谁依赖 brain"的唯一答案就是本层**——
 │                     装配点 `build.py` 只递型号名 / 路径这类裸字段
 ├── memory/           memory 子系统整块（契约 + 实现 + 算法，可整体拷走复用）：

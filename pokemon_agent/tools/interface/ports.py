@@ -193,7 +193,7 @@ class GameToolPort(Protocol):
     这是第一跳（harness → 门面），入参与返回一律是信封；门面往里调 world
     走裸参数，那一跳不造信封。
 
-    **存读档**（`save_state` / `load_state`）只服务 checkpointer（`docs/checkpoint/spec.md` §5.2）：
+    **存读档**（`save_state` / `load_state`）只服务 checkpointer（checkpoint SPEC §一）：
     存的是模拟器完整状态，文件路径由 harness 给，读写文件在本层。
     """
 

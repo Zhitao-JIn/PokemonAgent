@@ -84,7 +84,7 @@ class TaskRuntime:
     写新帧时旧的 `after` 挪进 `before`（"为什么恰好两步"、跨局清空，都在
     `frames.remember_frame` 的 docstring 里）。唯一读者是 `after_frame`。"""
 
-    # ---- 存档：task begin 由 `task_entry.begin_task` 调用 ----
+    # ---- 存档：task 开局的世界快照由 `task_entry.begin_task` 调用 ----
 
     checkpointer: Checkpointer | None = None
     """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""

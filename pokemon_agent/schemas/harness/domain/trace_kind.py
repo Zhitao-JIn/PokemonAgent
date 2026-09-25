@@ -134,7 +134,7 @@ class TraceKind(StrEnum):
     SETTLE_TASK = "settle_task"
     """episode 级给任务表盖章（COMPLETED / FAILED）连同人审表态与被放弃的剩余条目。"""
 
-    # ---- 存档（`docs/checkpoint/spec.md` §七）----
+    # ---- 存档一族（`docs/spec/checkpoint/SPEC.md` §六）----
     # `meta.source` 为 `checkpoint.save` / `checkpoint.restore`。
     CHECKPOINT_SAVE = "checkpoint_save"
     """一份存档落好（run 开局 / 每局开派前）：世界 + 记忆 + 清单都已落盘。"""

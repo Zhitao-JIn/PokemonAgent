@@ -29,7 +29,8 @@
 | —— | 八个能力对象（`Planner`/`Decomposer`/`Chooser`/`Judger`/`Reflector`/`Verifier`/`Summarizer`/`TaskSummarizer`） | 由容器组装、按层分发（`run_brain.planner·judger` / `episode_brain.decomposer·judger·verifier·summarizer` / `task_brain.chooser·judger·reflector·verifier·task_summarizer`） | —— |
 | `reviewer` | `Reviewer`（Protocol） | 参数；不传 → `NullReviewer()` | 一个策略对象 |
 | `saver` | `SqliteSaver`（LangGraph） | `harness.checkpoint.build_saver(checkpoint_root)`：库文件 `<checkpoint_root>/langgraph.sqlite`，反序列化白名单由三种状态模型递归生成 | `checkpoint_root`（缺省 = 启动目录下 `checkpoints/`） |
-| `checkpointer` | `Checkpointer` | `harness.checkpoint.Checkpointer(root, saver, 三张图, game, memory, trace, branch, lineage, models)`；`config.CHECKPOINT_ENABLED` 关时为 None；三层 runtime 的 `checkpointer` 字段是**同一实例** | `branch`（缺省 `main`）、`lineage`（恢复出的执行线才有） |
+| `checkpointer` | `Checkpointer` | `harness.checkpoint.Checkpointer(root, run_graph, game, memory, trace, branch, lineage, models)`；`config.CHECKPOINT_ENABLED` 关时为 None；三层 runtime 的 `checkpointer` 字段是**同一实例** | `branch`（缺省 `main`）、`lineage`（恢复出的执行线才有） |
+| 磁带件 | `TapeGame` / `TapeMemory` / `TapeTrace` / `TapeReviewer`（`tools/replay`），大脑侧 `BrainTool.build(tape=…)` 包 `TapeProvider` | 仅 `tape` 非空（回放到某个 task）时：把真件包一层，切换前取录下的账、切换后照转真件；返回值里的 `game` 仍是真件 | `tape` |
 | 三张图 | `CompiledStateGraph` | `compile_task_graph()` / `compile_episode_graph()` / `compile_run_graph(checkpointer=saver)`，**只在这里编译**；只有 run 图挂 saver，内层两张图的状态经嵌套命名空间写进同一个库 | —— |
 | `task_rt` | `TaskRuntime` | 直接构造（task 层 context） | `game` / `memory` / `trace` + task_brain 的 `chooser`·`judger`·`reflector`·`verifier`·`task_summarizer` |
 | `episode_rt` | `EpisodeRuntime` | 直接构造（episode 侧 context，嵌套 `task_rt`） | `game` / `memory` / episode_brain 的 `decomposer`·`judger`·`verifier`·`summarizer` / `trace` / `reviewer` + `task_graph`（task 图）+ `task=task_rt` |
@@ -44,7 +45,7 @@
 `build_real` 的参数（缺省值即工厂缺省）：`rom`、`state_file=None`、`vision_model="qwen3.8-max"`、
 `text_model="qwen-plus"`、`judge_model="qwen3.8-max"`、`verify_model="doubao-seed-2-1-pro-260628"`、
 `plan_model="doubao-seed-2-1-pro-260628"`、`max_tokens=25600`、`watch=False`、`speed=0`、
-`run_id="local"`、`trace_root=None`、`memory_root=None`、`checkpoint_root=None`、`branch="main"`、`lineage=()`（两个落盘根：缺省 = **进程启动目录**
+`run_id="local"`、`trace_root=None`、`memory_root=None`、`checkpoint_root=None`、`branch="main"`、`lineage=()`、`tape=None`（两个落盘根：缺省 = **进程启动目录**
 下的 `tracelog/` 与 `memory/`，0916 起——数据跟着启动走，不再锚在仓库根；
 memory 只有一个根，四族各占其下 `<kind>/`）、
 `reviewer=None`。
@@ -104,7 +105,7 @@ memory 只有一个根，四族各占其下 `<kind>/`）、
   规划 `EPISODE_MAX_TASKS_PER_PLAN=5`、`PLAN_MAX_NEW_GOALS=3`；图闸门 `NODES_PER_DECISION=3`、`NODES_PER_PRESS=1`、
   `RECURSION_MARGIN=20`、`EPISODE_RECURSION_LIMIT=20_000`、`RUN_RECURSION_LIMIT=200_000`；召回与判定
   `MEMORY_RECALL_LIMIT=5`、`JUDGE_HISTORY_STEPS=3`。
-- 存档链已删：图上没有存档格，`build_real` 也**没有**存档 / 恢复参数。模块私有物理量故意不在 config：`pyboy_world.PRESS_FRAMES`、
+- 图上没有存档格：存档由图外入口与 run 的 `act` 显式调用存档器（`docs/spec/checkpoint/SPEC.md`）；`build_real` 的 `branch` / `lineage` / `tape` 只给恢复出来的执行线用。模块私有物理量故意不在 config：`pyboy_world.PRESS_FRAMES`、
   `providers.IMAGE_TOKEN_FLOOR = 100`、`memory/store.py` 的 `_KINDS` / `_MD_KINDS`。
 
 ### 发现的不一致
