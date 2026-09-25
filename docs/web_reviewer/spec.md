@@ -154,7 +154,10 @@ W2 之后，已录的 run（如 `checkpoint_check/ckptcheck-0925-131754`）在 e
 
 ## 五、通信
 
-### 5.1 后端端点（一台 `websockets` 服务器，`127.0.0.1:config.REVIEW_BACKEND_PORT`）
+### 5.1 后端端点（一台 `websockets` 服务器，缺省 `127.0.0.1:8765`）
+
+端口是部署配置，不进 `config.py`（那里只放实验旋钮，见其模块说明）：后端 `--port`，
+`WebReviewer` 的地址由 `check_harness.py` 传入。
 
 | 路径 | 类型 | 谁连 | 语义 |
 |---|---|---|---|
@@ -253,7 +256,7 @@ TraceTool.append → render → LiveFeedTrace.append ─┬─► LocalTrace.app
 |---|---|
 | 删 | `harness/file_reviewer.py`；`harness/__init__.py` 里它的导出与 docstring；`check_harness.py` 的 FileReviewer 接线（看门狗 30 分钟依据、`--review` 注释、懒 import、注入、打印）；残留 `.workbuddy/review_request.json` / `review_answer.txt`（删前问你） |
 | 改 | Protocol、Null、Console；`reviewing.py`；`ReviewMark`；`TapeReviewer`；两层 `review_and_judge`；`JudgeReq`（删 `human_note`）+ judge prompt；`last_judge`：两层 state、`DecomposeReq` / `PlanOnceReq`、`decompose.py` / `run_plan.py` 与模板；`record_verdict` 加 `audit`；`Reviewer.audit` docstring；`AuditReq/Resp` 分文件；`schemas/harness/__init__.py` 导出 |
-| 增 | `schemas/harness/domain/judge_feedback.py`、`harness/web_reviewer.py`、`harness/review_render.py`、`review_backend/`（3 文件）、跳 A 4 件、跳 B 4 件、`InjectResp`、`tools/trace/live_feed.py` + 两件 Feed 信封、`config.WEB_REVIEW_TIMEOUT` / `REVIEW_BACKEND_PORT`、测试 |
+| 增 | `schemas/harness/domain/judge_feedback.py`、`harness/web_reviewer.py`、`harness/review_render.py`、`review_backend/`（3 文件）、跳 A 4 件、跳 B 4 件、`InjectResp`、`tools/trace/live_feed.py` + 两件 Feed 信封、`config.WEB_REVIEW_TIMEOUT`、测试 |
 | 依赖 | `pyproject`：主依赖加 `websockets`；删 `api` 组（fastapi/uvicorn）与 dev 里的 `httpx`——全仓零 import（0925 grep 核过）；你本机 `uv sync` 重锁 |
 | 文档 | `docs/spec/harness/SPEC.md` §六整节；`docs/spec/experiment/SPEC.md` 的 FileReviewer 处；DATAFLOW 若提到问人链路一并；AGENTS §十二 `schemas/frontend` 那段（需你批）；CHANGELOG 两条 |
 

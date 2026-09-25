@@ -5,7 +5,8 @@
 > 分支：`web-reviewer`（checkpoint-v2 已于 09-25 并入 main）
 >
 > 进度：W1 + W2a ✅ 09-25 合并做（`answered` 必填，所有实现得一次改齐），CHANGELOG 248；
-> W2b + W2c ✅ 09-25 合并做（推翻理由要能到下一次 plan），CHANGELOG 249
+> W2b + W2c ✅ 09-25 合并做（推翻理由要能到下一次 plan），CHANGELOG 249；
+> W3 ✅ 09-25，CHANGELOG 250（`review_backend/` 实际是 4 个文件：出口、`backend.py`、`page.py`、`__main__.py`）
 
 ---
 
@@ -87,7 +88,7 @@
 - `pokemon_agent/review_backend/__init__.py`：`ReviewBackend`（seq / pending Future / history deque / feed deque）、`/harness` `/ui` handler、`process_request` 回 `GET /` `GET /health`；单 `/harness` 连接约束（第二条 1008）。
 - `review_backend/page.py`：单页 HTML/CSS/JS——待答卡片（插话 / 审两副面孔）、历史、连接状态、自动重连。
 - `review_backend/__main__.py`：`python -m pokemon_agent.review_backend [--port]`，端口被占即报错退出。
-- `config.py`：`WEB_REVIEW_TIMEOUT = 30.0`、`REVIEW_BACKEND_PORT = 8765`（docstring 写清两个消费者）。
+- `config.py`：`WEB_REVIEW_TIMEOUT = 30.0`（docstring 写清两个消费者）。端口 8765 是部署配置、不进 config：后端 `--port`，缺省值住 `review_backend/__main__.py`。
 - `pyproject.toml`：主依赖加 `websockets>=16`；删 `api` 组与 dev 的 `httpx`。**`uv.lock` 需你本机 `uv sync` 重锁。**
 
 **验收**：后端单测（asyncio 内起服务、`websockets` 客户端当两端）：正常答、超时回默认、双 `/harness` 被拒、`/ui` 重连补发、先答先得。

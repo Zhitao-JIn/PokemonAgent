@@ -1,3 +1,19 @@
+## 2026-09-25（250）—— 人在环后端与网页：一台 WebSocket 服务器，run 与网页都连它
+
+**改了什么**：
+- 新包 `pokemon_agent/review_backend/`（`python -m pokemon_agent.review_backend [--port]`，缺省 `127.0.0.1:8765`）：`backend.py` 的 `ReviewBackend` 是一台 `websockets` 服务器——`GET /` 单页、`GET /health` 状态（握手前由 `process_request` 直接回）；`/harness` 给 run（同一时刻只许一条，第二条以 1008 关掉），`/ui` 给网页。一问的生命周期：编号 → 推给所有网页 → 等人答 / 超时 / run 断开三者先到者 → 了结并广播 → 回话给 run（超时回默认值、`answered=False`）。网页答案先答先得；已了结、编号不对、与问不配都回 `ok=false`。网页重连时补发最近 50 问的历史与当前待答。
+- `page.py`：单页（插话：写意见 / 没意见；审：认账 / 推翻 + 理由；倒计时；历史；断线退避重连）。所有文本经 `textContent` 放进页面。
+- `config.WEB_REVIEW_TIMEOUT = 30.0`。`pyproject`：主依赖加 `websockets>=16.0`；删掉没有消费者的 `api` 组（fastapi / uvicorn）与 dev 的 `httpx`；`uv.lock` 已重锁（fastapi / starlette / uvicorn 一族移出）。
+- 新增 `tests/test_review_backend.py`（7 条：插话被答、审超时认账、先答先得与答案不配、第二个 run 被拒、网页重连补发、run 断开作废、页面与 health）。
+
+**为什么改**：`docs/web_reviewer/plan.md` W3。源程序与页面都走 WebSocket，一台服务器一个端口（v0 的 HTTP 服务器 + WS 服务器共用一个端口做不到）。
+
+**取舍**：
+- 端口不进 `config.py`：那里只放实验旋钮，端口是部署配置（`config.py` 模块说明）。与 spec v1 原写法不同，spec 已改。
+- 后端只依赖 `schemas` 与 `websockets`，import 它不会拉起 harness / langgraph。
+- 本机连回环地址时客户端显式不走代理（测试里已这样做，`WebReviewer` 同样要做）：`websockets` 16 默认读 `HTTP(S)_PROXY`。
+- 需要你本机 `uv sync`（新装 websockets 为直接依赖、卸掉 fastapi 一族）。`pytest` 173 条全过。
+
 ## 2026-09-25（249）—— 模型裁决改为人审；本层判定的反馈回到下一次拆解 / 规划
 
 **改了什么**：
