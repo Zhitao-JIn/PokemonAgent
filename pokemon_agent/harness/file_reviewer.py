@@ -71,6 +71,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerAuditReq,
     FromHarnessToReviewerAuditResp,
     FromHarnessToReviewerInjectReq,
+    FromHarnessToReviewerInjectResp,
 )
 
 REQUEST_NAME = "review_request.json"
@@ -147,11 +148,11 @@ class FileReviewer:
         """信箱目录（驱动方按它定位那对文件）。"""
         return self._directory
 
-    def inject(self, req: FromHarnessToReviewerInjectReq) -> str:
+    def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
         """**插话**：把请求写进信箱，阻塞等一个**比它新**的回应；空串 = 没人有意见。
 
         前置条件：`self._directory` 存在（构造时已保证）。
-        后置条件：返回回应全文（`strip()` 过）；返回空串**当且仅当**回应为空或超时。
+        后置条件：`text` 是回应全文（`strip()` 过）；超时时 `text=""`、`answered=False`。
             返回时盘上只有这一对文件（覆盖写，不产生也不删除任何文件）。
         """
         request_path = self._directory / REQUEST_NAME
@@ -187,15 +188,15 @@ class FileReviewer:
                     f"← answer 已读（第 {self._seq} 问，{len(answer)} 字，"
                     f"{'非空=插话已采纳' if answer else '空=没意见'}）：{_short(answer)}"
                 )
-                return answer
+                return FromHarnessToReviewerInjectResp(text=answer, answered=True)
             if time.monotonic() >= deadline:
                 _say(f"← {self._timeout:g}s 无回答（第 {self._seq} 问），按「没意见」继续")
-                return ""
+                return FromHarnessToReviewerInjectResp(text="", answered=False)
             time.sleep(self._poll_interval)
 
     def audit(self, req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
         """**审**：一期恒认账（不能回裸字符串——`review` 读的是 `resp.verdict`）。"""
-        return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT)
+        return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=False)
 
 
 __all__ = [

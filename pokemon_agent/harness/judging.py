@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
+    AuditVerdict,
     FromHarnessToBrainToolJudgeReq,
     FromHarnessToBrainToolJudgeResp,
     FromHarnessToTraceToolAppendReq,
@@ -66,15 +67,21 @@ def judge_reason(
     verdict: FromHarnessToBrainToolJudgeResp | None,
     *,
     not_asked: str,
+    overturn_note: str | None = None,
 ) -> str:
     """本层这一圈的**判定依据**（`judge_reason`）——与 `*_done` 里 LLM 写的结论 `reason` 分开。
 
     判成（`goal_done`）或判被打断（`interrupted`）时就是判定员给的理由；机械判停时先写机械类别，再附判定员的话
     （没问模型时附 `not_asked`）；还没停时就是判定员说"没成"的理由。
+    overturn_note：人推翻了判定员的「已达成」时给的理由（None = 没推翻）；推翻时依据写成
+    「被人推翻：理由；判定员原话」。
     """
     if termination in (Termination.GOAL_DONE, Termination.INTERRUPTED) and verdict is not None:
         return verdict.why
     said = verdict.why if verdict is not None else not_asked
+    if overturn_note is not None and verdict is not None:
+        note = overturn_note or "（未给理由）"
+        said = f"判定员判已达成，被人推翻：{note}；判定员原话：{verdict.why}"
     return f"机械判停：{termination.value}；{said}" if termination is not None else said
 
 
@@ -89,9 +96,13 @@ def record_verdict(
     judge_reason: str,
     fail_streak: int | None = None,
     verdict: FromHarnessToBrainToolJudgeResp | None = None,
+    audit: AuditVerdict | None = None,
     human_note: str = "",
 ) -> None:
-    """记一条 `judge_verdict`；问过模型时带上最后一次调用的 prompt/raw。"""
+    """记一条 `judge_verdict`；问过模型时带上最后一次调用的 prompt/raw。
+
+    audit：人对这次裁决的表态（None = 没问人）；human_note：人推翻时的理由。
+    """
     trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.JUDGE_VERDICT,
@@ -101,6 +112,7 @@ def record_verdict(
             judge_reason=judge_reason,
             input=verdict.calls[-1].payload.get("prompt", "") if verdict else None,
             output=verdict.calls[-1].payload.get("raw", "") if verdict else None,
+            audit=audit.value if audit is not None else None,
             human_note=human_note,
         )
     )

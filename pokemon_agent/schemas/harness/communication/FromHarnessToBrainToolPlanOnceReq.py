@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.schemas.harness.domain import GoalEntry
+from pokemon_agent.schemas.harness.domain import GoalEntry, JudgeFeedback
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
 
 
@@ -38,6 +38,7 @@ class FromHarnessToBrainToolPlanOnceReq(BaseModel):
     objects：本 run 涉及的地图交互事实（`object_memory`，锚在 `(map_id,x,y)` 上，
         跨局共池）。plan 是 run 级、没有当前观测，所以按**可选条件**取
         （`query_object_events(map_id=None)`）。
+    last_judge：判定员上一次对 run 目标的看法，及人是否推翻、推翻理由；还没判过为 None。
     max_push：这一次最多新增几个目标。**提示模型的建议上限，不是截断**——
         `plan` 节点不再替模型裁剪（裁掉就是静默丢目标）。
 
@@ -49,5 +50,8 @@ class FromHarnessToBrainToolPlanOnceReq(BaseModel):
     index: list[EpisodeMemory] = Field(default_factory=list)
     details: list[EpisodeMemory] = Field(default_factory=list)
     objects: list[ObjectFactEvent] = Field(default_factory=list)
+    last_judge: JudgeFeedback | None = Field(
+        default=None, description="上一次 run 判定及人的表态；还没判过为 None"
+    )
     max_push: int
     human_note: str = Field(default="", description="人对上一版规划的插话；空 = 没被插话")

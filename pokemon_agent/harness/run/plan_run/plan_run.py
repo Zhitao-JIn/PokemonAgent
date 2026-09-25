@@ -89,6 +89,7 @@ def _elicit(deps: RunRuntime, state: RunState, meta: dict[str, Any]) -> tuple[Pl
             details=ctx.details,
             objects=ctx.objects,
             max_push=PLAN_MAX_NEW_GOALS,
+            last_judge=state.last_judge,
             human_note=note,
         )
         proposed = _to_outcome(state.goals, state.run_id, _ask(deps, meta, req))

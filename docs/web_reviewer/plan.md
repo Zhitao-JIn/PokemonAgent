@@ -1,8 +1,11 @@
 # plan —— Web Reviewer（独立后端 + 网页 + 实时 trace）
 
 > 流程位置：intent（spec-v0 头部口径）→ spec.md → **plan.md** → PR → production
-> 依据：`docs/web_reviewer/spec.md` v1（09-25）｜ 起草：2026-09-25 ｜ 状态：**草稿，待你看**
-> 分支：从 `checkpoint-v2` 切 `web-reviewer`（或等 checkpoint-v2 并入 main 后从 main 切——见 §三 待定 1）
+> 依据：`docs/web_reviewer/spec.md` v1（09-25）｜ 起草：2026-09-25 ｜ 状态：**实施中**
+> 分支：`web-reviewer`（checkpoint-v2 已于 09-25 并入 main）
+>
+> 进度：W1 + W2a ✅ 09-25 合并做（`answered` 必填，所有实现得一次改齐），CHANGELOG 248；
+> W2b + W2c ✅ 09-25 合并做（推翻理由要能到下一次 plan），CHANGELOG 249
 
 ---
 
@@ -58,7 +61,7 @@
 - `tools/replay/tape_reviewer.py`：磁带上重建两个 Resp（`answered` 从账上取）。
 - 渲染（`tools/trace/render.py`）、`node_io` 契约、`docs/spec/DATAFLOW.md` 事件表同步。
 
-**验收**：fake run 的 prompt 逐字不变；`node_io` 过；回放测试过（用新录的 fake 磁带）。
+**验收**：`node_io` 过；回放测试过（用新录的 fake 磁带）。
 
 ## W2b 落点规则
 
@@ -77,7 +80,7 @@
 - `tools/prompts/decompose.py` / `run_plan.py` + 模板：`last_judge` 非空时加「上一次本层判定」一段。
 - 存档清单：`RunState` 多一个有缺省的字段，旧清单能读（不做别的兼容）。
 
-**验收**：fake run 场景 ②的下一次 decompose prompt 里出现「人推翻：…」；场景 ③出现模型的 `why`；首轮（None）prompt 与改前逐字相同。
+**验收**：fake run 场景 ②的下一次 decompose prompt 里出现「人推翻了这个判定：…」；场景 ③出现模型的 `why`；首轮（None）decompose 不出现这一段（模板多了一条规则，prompt 不再与改前逐字相同）。
 
 ## W3 后端 + 网页（问人部分）
 

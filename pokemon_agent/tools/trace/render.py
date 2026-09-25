@@ -733,6 +733,9 @@ def judge_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     `judge_reason` 是本层这一圈的判定依据（判定员的理由 / 机械判停类别），与 `*_done` 里
     LLM 写的结论 `reason` 是两件事，名字分开。
 
+    `audit` 是人对这次裁决的表态（`accept` / `overturn`；空串 = 没问人——判没成、task 层、
+    还没问模型）；推翻时 `human_note` 是人的理由。
+
     前置条件：req.judge_reason 非 None；`termination` 未判停时为空串（停没停、成没成都由它推出）。
     """
     return Rendered(
@@ -744,6 +747,7 @@ def judge_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "judge_reason": req.judge_reason,
             "input": req.input,
             "output": req.output,
+            "audit": req.audit or "",
             "human_note": req.human_note,
         },
     )
@@ -1015,24 +1019,41 @@ def checkpoint_error(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 
 def review_inject(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """插话一次：表单种类与人的回话（空串 = 没意见）。前置条件：req.review 带 `form_kind`。"""
+    """插话一次：表单种类、人的回话（空串 = 没意见）、是不是人真答的、等了多久。
+
+    前置条件：req.review 带 `form_kind`。
+    """
     mark = req.review
     assert mark is not None and mark.form_kind
     return Rendered(
         EventType.LIFECYCLE,
         TraceKind.REVIEW_INJECT,
-        {"form_kind": mark.form_kind, "reply": mark.reply},
+        {
+            "form_kind": mark.form_kind,
+            "reply": mark.reply,
+            "answered": str(mark.answered).lower(),
+            "wait_s": f"{mark.wait_s:.3f}",
+        },
     )
 
 
 def review_audit(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """审一次：认 / 推翻与理由。前置条件：req.review 带 `verdict`。"""
+    """审一次：审的是什么、认 / 推翻与理由、是不是人真答的、等了多久。
+
+    前置条件：req.review 带 `form_kind` 与 `verdict`。
+    """
     mark = req.review
-    assert mark is not None and mark.verdict
+    assert mark is not None and mark.form_kind and mark.verdict
     return Rendered(
         EventType.LIFECYCLE,
         TraceKind.REVIEW_AUDIT,
-        {"verdict": mark.verdict, "note": mark.note},
+        {
+            "form_kind": mark.form_kind,
+            "verdict": mark.verdict,
+            "note": mark.note,
+            "answered": str(mark.answered).lower(),
+            "wait_s": f"{mark.wait_s:.3f}",
+        },
     )
 
 

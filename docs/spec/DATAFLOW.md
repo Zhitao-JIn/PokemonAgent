@@ -21,8 +21,9 @@
   **读直属下一级的记忆**与世界事实，装好本圈上下文（`plan_ctx` / `ep_ctx` / `task_ctx`）。
   本层其余各格只用这份上下文，不自己查库。
 - **review_and_judge**：run / episode 先**定案上一条**（盖章 → 人审可推翻 → 记 `settle_goal` /
-  `settle_task`），再判停：机械三类（世界终局 / 停滞 / 预算）→ 问 LLM judge。共用
-  `harness/judging.py`。**唯一的停机点**，写 `termination`（`done` / `success` 由它推出）与
+  `settle_task`），再判停：机械三类（世界终局 / 停滞 / 预算）→ 问 LLM judge → judge 判「已达成」时
+  人审（认账才收工；推翻则把判定反馈写进 `last_judge`，下一次 plan 看得见）。共用
+  `harness/judging.py` / `harness/reviewing.py`。**唯一的停机点**，写 `termination`（`done` / `success` 由它推出）与
   `judge_reason`（判定依据：判定员的理由 / 机械判停类别），**不写** `reason`。
 - **plan_\***：run 排目标表（Planner），episode 在没有 PENDING 时拆下一版任务（Decomposer，
   追加进任务表），task 选下一个键（Chooser，只执行首段 `times=1`）。
@@ -68,7 +69,7 @@
 
 ```
 begin ─► perceive[absorb_episode → read_plan_context]
-      ─► review_and_judge[定案上一局（盖章 → 人审 → settle_goal） → 机械三类 → judge]
+      ─► review_and_judge[定案上一局（盖章 → 人审 → settle_goal） → 机械三类 → judge（判成则人审）]
       ─► (done → run_done) | plan_run[Planner → 目标表更新] ─► act[dispatch → run_episode] ─► perceive
 ```
 
@@ -84,7 +85,7 @@ begin ─► perceive[absorb_episode → read_plan_context]
 begin_episode ─► perceive[absorb_task → sense（完整档）→ retrieve_task_memories
                           → retrieve_global / knowledge / object → merge_retrieval]
               ─► review_and_judge[定案上一个 task（盖章 → 人审 → 失败则放弃剩余 PENDING → settle_task）
-                                  → 机械三类 → judge(goal × 任务表 × TaskMemory)]
+                                  → 机械三类 → judge(goal × 任务表 × TaskMemory)（判成则人审）]
               ─► (done → episode_done) | plan_episode[没有 PENDING 才拆 → 追加新一版] ─► act[run_task] ─► perceive
 episode_done = verify_task_memories → summarize_episode → close_episode
              （没有 TaskMemory 时：leave_chapter → close_episode）
@@ -150,8 +151,8 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 | `settle_goal` | lifecycle | `run.review_and_judge` | `goal_id`、`status`、`episode_id`、`attempts`、`audit`、`note`、`overturned`、`fail_streak` |
 | `settle_task` | lifecycle | `review_and_judge` | `task_id`、`status`、`round`、`audit`、`note`、`overturned`、`abandoned`（数组）、`fail_streak` |
 | `advance_step` | lifecycle | `close_step` | `next_step` |
-| `review_inject` | lifecycle | 插话点：`plan_run` / `plan_episode` / 两层 `review_and_judge`（`harness/reviewing.py`，每问一轮一条） | `form_kind`、`reply`（空串 = 没意见） |
-| `review_audit` | lifecycle | 审：两层 `review_and_judge` 的定案 | `verdict`、`note` |
+| `review_inject` | lifecycle | 插话点：`plan_run` / `plan_episode`（`harness/reviewing.py`，每问一轮一条） | `form_kind`、`reply`（空串 = 没意见）、`answered`（`false` = 没人答、回的是默认值）、`wait_s` |
+| `review_audit` | lifecycle | 审：两层 `review_and_judge` 的定案与 judge「已达成」的裁决 | `form_kind`（被审对象：`EpisodeOutput` / `TaskOutput` / `JudgeVerdict`）、`verdict`、`note`、`answered`、`wait_s` |
 | `checkpoint_save` | lifecycle | `checkpoint.save`（run 开局 / 每局开派前） | `checkpoint_id`、`level`、`manifest_path` |
 | `checkpoint_restore` | lifecycle | `checkpoint.restore`（新执行线第一条；回放时在目标 task 开局前） | `checkpoint_id`、`level`、`parent_branch`、`parent_last_event_uuid`、`to_task` |
 | `world_snapshot` | lifecycle | `checkpoint.save`（每个 task 开局，`meta.task_id` 为该 task） | `path` |
@@ -177,7 +178,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 | `plan_verdict` | `plan_run` | `pushed_goals`、`updates`、`why`、`human_note` |
 | `decompose_verdict` | `plan_episode` | `tasks`（`task_id`/`goal`/`success_criteria`/`max_steps`）、`why`、`human_note` |
 | `choose_verdict` | `plan_task` | `sequence`、`thought` |
-| `judge_verdict` | 三层 `review_and_judge` | `termination`、`fail_streak`、`judge_reason`、`human_note` |
+| `judge_verdict` | 三层 `review_and_judge` | `termination`、`fail_streak`、`judge_reason`、`audit`（人对「已达成」的表态；没问人为空）、`human_note`（推翻理由） |
 | `verify_verdict` | `verify_act_memories` / `verify_task_memories` | `checked`、`negative` |
 
 **观测 / 动作**

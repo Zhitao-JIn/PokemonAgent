@@ -29,6 +29,7 @@ from pokemon_agent.brain.interface import VerifyVerdict
 from pokemon_agent.schemas.harness import FromHarnessToMemoryToolQueryKnowledgeResp
 from pokemon_agent.schemas.harness.domain import (
     EpisodeOutput,
+    JudgeFeedback,
     Settled,
     TaskEntry,
     TaskOutput,
@@ -101,6 +102,11 @@ class EpisodeRunState(Settled, BaseModel):
     judge_reason: str = Field(
         default="",
         description="review_and_judge 写的判定依据（判定员的理由 / 机械判停类别）；与 reason 分开",
+    )
+    last_judge: JudgeFeedback | None = Field(
+        default=None,
+        description="本局上一次判定及人的表态——本局继续跑时由 review_and_judge 写，"
+        "下一次 plan_episode 放进拆解请求",
     )
 
     task_verdicts: list[VerifyVerdict] = Field(

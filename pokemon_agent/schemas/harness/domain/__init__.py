@@ -6,7 +6,9 @@
 - `GoalEntry` —— run 级目标表的一行（`RunState.goals` 的元素）；
 - `TaskEntry` —— episode 任务表的一行（`EpisodeRunState.tasks` 的元素）；
 - `Termination` —— 三层同构的机械终止类别；
-- `TaskInput`/`TaskOutput`、`EpisodeInput`/`EpisodeOutput` —— 父子图交界契约。
+- `TaskInput`/`TaskOutput`、`EpisodeInput`/`EpisodeOutput` —— 父子图交界契约；
+- `AuditVerdict` —— 人对一条结论的表态（认 / 推翻）；
+- `JudgeFeedback` —— 本层上一次判定的反馈，回到下一次 plan。
 
 `TraceEvent` 是 0913 下午从 `pokemon_agent/trace/datastore/` 搬来的：它出现在
 信封里，按"契约层不许反向依赖实现包"必须住这边。判据见 `AGENTS.md` 铁律 2。
@@ -34,10 +36,12 @@
 
 from __future__ import annotations
 
+from .audit_verdict import AuditVerdict
 from .checkpoint_mark import CheckpointMark
 from .entry_status import EntryStatus
 from .episode_io import EpisodeInput, EpisodeOutput
 from .goal_entry import GoalEntry
+from .judge_feedback import JudgeFeedback
 from .review_mark import ReviewMark
 from .task_entry import TaskEntry
 from .task_io import TaskInput, TaskOutput
@@ -46,12 +50,14 @@ from .trace_event import TraceEvent
 from .trace_kind import TraceKind
 
 __all__ = [
+    "AuditVerdict",
     "CheckpointMark",
     "EpisodeInput",
     "EpisodeOutput",
     "ReviewMark",
     "EntryStatus",
     "GoalEntry",
+    "JudgeFeedback",
     "TaskEntry",
     "TaskInput",
     "TaskOutput",

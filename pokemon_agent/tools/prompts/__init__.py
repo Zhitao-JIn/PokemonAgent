@@ -157,15 +157,15 @@ def append_human_note(prompt: str, note: str) -> str:
     混在一起被当成"又一个背景说明"；放在最后，它紧贴着"现在输出 JSON"那句话，
     是所有约束里最后读到的、也是唯一一条"针对这一次"的。
 
-    **为什么放这里而不是两份 prompt 各自写一遍**：`decide_action` 与
-    `judge_success` 都要它，而"插话压过一切"这条语义**必须两边一致**——
+    **为什么放这里而不是几份 prompt 各自写一遍**：`decide_action` / `decompose` /
+    `run_plan` 都要它，而"插话压过一切"这条语义**必须处处一致**——
     各自写一份，改了一处忘了另一处，症状是人说话之后有的链路听、有的不听。
 
     措辞刻意短：它是覆盖指令，不是又一节规范。写长了会被模型当成需要权衡的
     材料，而这里要的是"照做"。
 
-    **必须在下面那两个子模块 import 之前定义**：`decide_action` /
-    `judge_success` 都要 `from . import append_human_note`——本模块 import
+    **必须在下面那几个子模块 import 之前定义**：它们都要
+    `from . import append_human_note`——本模块 import
     它们时若这个名字还没绑定，会当场炸成部分初始化的 `ImportError`
     （与 `harness/interface/` 那次循环是同一类形状）。
     """

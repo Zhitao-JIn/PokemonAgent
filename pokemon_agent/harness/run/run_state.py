@@ -22,6 +22,7 @@ from pokemon_agent.schemas.harness.domain import (
     EpisodeInput,
     EpisodeOutput,
     GoalEntry,
+    JudgeFeedback,
     Settled,
     Termination,
 )
@@ -72,6 +73,11 @@ class RunState(Settled, BaseModel):
     judge_reason: str = Field(
         default="",
         description="review_and_judge 写的判定依据（判定员的理由 / 机械判停类别）；与 reason 分开",
+    )
+    last_judge: JudgeFeedback | None = Field(
+        default=None,
+        description="本 run 上一次判定及人的表态——run 继续跑时由 review_and_judge 写，"
+        "下一次 plan_run 放进规划请求",
     )
 
 

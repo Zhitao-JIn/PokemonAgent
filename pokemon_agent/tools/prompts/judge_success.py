@@ -39,7 +39,7 @@ from __future__ import annotations
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolJudgeReq
 from pokemon_agent.schemas.memory import render_sequence
 
-from . import append_human_note, load
+from . import load
 from .decompose import task_table_lines
 
 _TEMPLATE = load("judge_success")
@@ -79,9 +79,7 @@ def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
     （judge 第 0 步不问模型，走到这里 `history` 保证非空），模板里也不再有
     独立的 `$observation` 占位符——理由见模块文档。
 
-    **插话拼在最末尾**（0914 控制台改造）：`req.human_note` 非空时它由
-    `append_human_note()` 追加在模板渲染结果之后——"带话重问"就是同一条
-    prompt 加一句覆盖指令。
+    **没有插话**：判定在审格，人只对它表态（认 / 推翻），不带话重问判定员。
     """
     goal, history = req.goal, req.history
     steps = render_sequence(list(history))
@@ -95,12 +93,9 @@ def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
         f"## 第 {entry.step} 步\n{rendered}" for entry, rendered in zip(history, steps, strict=True)
     )
     past = "\n\n".join(filter(None, [past, *memory_blocks(req)]))
-    return append_human_note(
-        _TEMPLATE.render(
-            goal=goal.goal,
-            criteria=goal.criteria,
-            history=past or "（这是第一步，之前什么都没发生）",
-            interrupt_rule=_INTERRUPT_RULE if req.allow_interrupt else "",
-        ),
-        req.human_note,
+    return _TEMPLATE.render(
+        goal=goal.goal,
+        criteria=goal.criteria,
+        history=past or "（这是第一步，之前什么都没发生）",
+        interrupt_rule=_INTERRUPT_RULE if req.allow_interrupt else "",
     )

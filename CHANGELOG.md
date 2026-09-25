@@ -1,3 +1,35 @@
+## 2026-09-25（249）—— 模型裁决改为人审；本层判定的反馈回到下一次拆解 / 规划
+
+**改了什么**：
+- 落点规则收口：插话只在 plan 格（`plan_run` / `plan_episode`，带话重问不变），审只在 `review_and_judge` 格。episode 层 judge 原先是「插话 + 带话重问判定员」，改为审；run 层 judge 原先不问人，补上审。
+- 审模型裁决（`harness/reviewing.py::audit_judgement`，两层共用）：只在 judge 判「已达成」时问人，依据是本层刚记的那笔 `judge_call`。认账才 `GOAL_DONE`；推翻则本层继续跑，`judge_reason` 写成「被人推翻：理由；判定员原话」。
+- 反馈回 plan：本层继续跑时，judge 的结论、理由与人的推翻理由写进 state 的 `last_judge`（`JudgeFeedback`）；`DecomposeReq` / `PlanOnceReq` 加 `last_judge`，prompt 加「上一次本局判定」/「上一次判定」一段（渲染在 `tools/prompts/last_judge.py`，两份模板各加一条怎么用它的规则）。
+- 删 `FromHarnessToBrainToolJudgeReq.human_note` 与 `judge_success` 的插话拼接——它唯一的来源就是被删的重问循环。
+- 账：`judge_verdict` 加 `audit`（accept / overturn；空 = 没问人），推翻时 `human_note` 是人的理由；`review_audit` 在裁决审点上 `form_kind=JudgeVerdict`。
+- 文档：harness SPEC §六、DATAFLOW、schemas SPEC 同步；`node_io` 契约与 `test_trace_render` 跟随。新增 `tests/test_review_points.py`（四个用例：推翻 episode 裁决、判没成不问人、推翻 run 裁决、四个审点在账上分得开）。
+
+**为什么改**：`docs/web_reviewer/plan.md` W2b + W2c（合并做：只做 W2b 时推翻的理由只进 trace，下一次拆解不知道为什么被推翻，会拆出同样的东西、judge 又判成）。审格不重问模型——人对单一结论只表态；判定员说「没达成」时的理由此前也到不了下一次拆解，一并补上。
+
+**取舍**：
+- 行为变化：人不能再让判定员改口，只能认或推翻；拆解 / 规划的 prompt 多一段、规则多一条。已录的 run 回放到这些点会分叉，W5 之后在本机重录。
+- 判「没达成」不问人：误判没达成只是多跑几步（有机械上限兜底），提前收工才要人拦。
+- `pytest` 166 条全过（新增 4 条）。
+
+## 2026-09-25（248）—— 问人的回话成对、账上分得清「人认账」与「没人答」；跳 A / 跳 B 信封就位
+
+**改了什么**：
+- 信封：`Reviewer.inject()` 改为返回 `FromHarnessToReviewerInjectResp{text, answered}`；`FromHarnessToReviewerAuditResp` 从 AuditReq 文件拆出、加 `answered`；`AuditVerdict` 挪到 `schemas/harness/domain/`；`AuditReq.outcome` 多一个成员 `FromHarnessToBrainToolJudgeResp`（审模型裁决用，调用点下一条接）。新 domain 模型 `JudgeFeedback`（本层判定反馈，下一条接进 state）。
+- 跨进程信封：跳 A（源程序 ↔ 后端）`FromHarnessToReviewBackend{Inject,Audit}{Req,Resp}`、`FeedReq` 住 `schemas/harness/`；跳 B（后端 ↔ 网页）新包 `schemas/review_backend/`：`Ask` / `Settle` / `Feed` 三封推送与 `Answer` 的 Req / Resp。每封带 `msg` 标签，同一条 WebSocket 上据此分流。
+- 实现跟随：`NullReviewer` 标 `answered=False`；`ConsoleReviewer` 分清「回车认账」与「超时」；`FileReviewer`、`TapeReviewer` 签名跟随。渲染从 `ConsoleReviewer` 抽到 `harness/review_render.py`，网页实现将共用。
+- 账：`review_inject` / `review_audit` 加 `answered`、`wait_s`；`review_audit` 加 `form_kind`（`EpisodeOutput` / `TaskOutput` / `JudgeVerdict`）。`ask_inject` 对调用方仍返回字符串，五处调用点不动。`node_io` 契约、DATAFLOW 事件表、harness SPEC 目录树同步。
+- `Reviewer.audit` 的说明改正：推翻理由写进表里那一行（或本层 `last_judge`），不是拼在提示词末尾。
+
+**为什么改**：Web Reviewer 的第一步（`docs/web_reviewer/plan.md` W1 + W2a，两步合并做——`answered` 是必填，所有实现一次改齐才跑得起来）。没人答时回的默认值与人真的认账在账上无从区分，评测要算 judge 的误判率就只能拿脏标注；`wait_s` 用来定 30s 超时够不够。
+
+**取舍**：
+- `answered` 不给缺省值：旧记录已清，不做兼容。
+- 行为零变化：五处调用点、prompt、状态迁移都没动；`pytest` 162 条全过（`--basetemp` 放到本地盘跑，挂载盘上写临时文件极慢）。
+
 ## 2026-09-25（247）—— 存档里记的路径改为相对进程启动目录
 
 **改了什么**：

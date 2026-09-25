@@ -22,6 +22,7 @@ harness/
 ├── __init__.py  compose.py（compose_units：格内单元串接）  judging.py（三层共用的停判）
 │                sensing.py（perceive_once：向世界取一帧的唯一入口）
 │                reviewing.py（ask_inject / ask_audit：问人并记 review_inject / review_audit）
+│                review_render.py（问人时的渲染口径，控制台与网页共用）
 │                checkpoint/（两级存档、恢复与回放，见 docs/spec/checkpoint/SPEC.md）
 ├── interface/   reviewer.py（Reviewer 协议） planner_outcome.py（PlannerOutcome / GoalUpdate）
 ├── console_reviewer.py  file_reviewer.py  null_reviewer.py
@@ -108,7 +109,9 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 
 ## 六、人在环
 
-`Reviewer`（`interface/reviewer.py`）：`inject(req) -> str`（插话，空串 = 没意见）与 `audit(req)`（审，恒返回表态）。
+`Reviewer`（`interface/reviewer.py`）：`inject(req) -> InjectResp{text, answered}`（插话，空串 = 没意见）与
+`audit(req) -> AuditResp{verdict, note, answered}`（审，恒返回表态）。`answered=False` = 没人答、回的是默认值。
+问人一律经 `reviewing.py`（`ask_inject` / `ask_audit` / `audit_judgement`），问完记 `review_inject` / `review_audit`。
 
 | 实现 | 适用 |
 |---|---|
@@ -116,10 +119,16 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 | `ConsoleReviewer` | 同一终端：超时 `CONSOLE_REVIEW_TIMEOUT` |
 | `FileReviewer` | 驱动方无终端：请求 / 回应走盘上文件；`audit()` 恒认账 |
 
-- **插话点**：`plan_run`、`plan_episode`、`plan_task`、三层 `review_and_judge`。不满意就带着那句话重问，插话进 `human_note` 落账。
-- **审点**：run 与 episode 的 `review_and_judge._settle`（给上一局 / 上一个 task 盖章前）。审核请求装
-  `outcome`（`EpisodeOutput` 或 `TaskOutput`）与被审对象自己的 trace；推翻会调整 `fail_streak`、标 `overturned`，
-  结果进 `settle_goal` / `settle_task` 的 `audit`。**定案以表为准**，记忆的章保留机器判定。
+- **插话点只在 plan 格**：`plan_run`、`plan_episode`。不满意就带着那句话重问，插话进 `human_note` 落账。
+- **审点只在 `review_and_judge` 格**，run 与 episode 各两处，审格不重问模型：
+  - **审结果**（`_settle`，给上一局 / 上一个 task 盖章前）：请求装 `outcome`（`EpisodeOutput` / `TaskOutput`）与
+    被审对象自己的 trace；推翻会调整 `fail_streak`、标 `overturned`、理由写进表行 `note`，结果进
+    `settle_goal` / `settle_task` 的 `audit`。**定案以表为准**，记忆的章保留机器判定。
+  - **审模型裁决**（`audit_judgement`，只在 judge 判「已达成」时问）：请求装 judge 的裁决与那笔 `judge_call`；
+    认账才判 `GOAL_DONE`，推翻则本层继续跑。结果进 `judge_verdict` 的 `audit` / `human_note`。
+- **反馈回 plan**：本层继续跑时，judge 的结论、理由与人的推翻理由写进 state 的 `last_judge`（`JudgeFeedback`），
+  下一次 `plan_run` / `plan_episode` 放进请求，prompt 里是「上一次判定」一段。
+- task 层不问人：它的结果在 episode 层被审。
 
 ## 七、trace 写入
 

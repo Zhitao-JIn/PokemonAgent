@@ -93,6 +93,7 @@ def _elicit(
                 episode_memories=state.ep_ctx.global_episode_memories,
                 knowledge=current_knowledge(state),
                 max_tasks=EPISODE_MAX_TASKS_PER_PLAN,
+                last_judge=state.last_judge,
                 human_note=note,
             ),
         )

@@ -12,6 +12,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerAuditReq,
     FromHarnessToReviewerAuditResp,
     FromHarnessToReviewerInjectReq,
+    FromHarnessToReviewerInjectResp,
 )
 
 from .tape import Tape, event_content
@@ -24,17 +25,22 @@ class TapeReviewer:
         self._real = real
         self._tape = tape
 
-    def inject(self, req: FromHarnessToReviewerInjectReq) -> str:
+    def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
         if self._tape.switched:
             return self._real.inject(req)
-        return str(event_content(self._tape.peek({"review_inject"}))["reply"])
+        body = event_content(self._tape.peek({"review_inject"}))
+        return FromHarnessToReviewerInjectResp(
+            text=body["reply"], answered=body["answered"] == "true"
+        )
 
     def audit(self, req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
         if self._tape.switched:
             return self._real.audit(req)
         body = event_content(self._tape.peek({"review_audit"}))
         return FromHarnessToReviewerAuditResp(
-            verdict=AuditVerdict(body["verdict"]), note=body["note"]
+            verdict=AuditVerdict(body["verdict"]),
+            note=body["note"],
+            answered=body["answered"] == "true",
         )
 
 

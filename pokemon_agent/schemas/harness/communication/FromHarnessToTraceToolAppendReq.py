@@ -212,7 +212,7 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     abandoned: list[str] | None = None
     """刚盖完章的目标表行（`settle_goal` 带）。"""
     audit: str | None = None
-    """人审表态：`accept` / `overturn`（`settle_goal` 带）。"""
+    """人审表态：`accept` / `overturn`（`settle_goal` / `settle_task` / `judge_verdict` 带）。"""
 
     # ---- 图控制记账 ----
     stall_key: str | None = None
