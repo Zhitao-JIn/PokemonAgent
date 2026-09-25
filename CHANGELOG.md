@@ -1,3 +1,47 @@
+## 2026-09-25（247）—— 存档里记的路径改为相对进程启动目录
+
+**改了什么**：
+- `harness/checkpoint/manifest.py` 加 `launch_relative(path)`：路径转成相对进程启动目录、分隔符 `/`；与启动目录不在同一个盘（Windows 跨盘符）算不出相对路径时退回绝对路径。
+- 用在三处：清单的 `memory_archive`；`checkpoint_save` / `checkpoint_restore` 账上的 `manifest_path`；`world_snapshot` 账上的 `path`。读侧不用改——相对路径本来就按启动目录解析。`world_file` 仍相对清单所在目录。
+- `CheckpointMark`、`CheckpointManifest` 的字段说明与 `docs/spec/checkpoint/SPEC.md` §二同步。
+
+**为什么改**：此前记的是绝对路径（`D:\...`），工作目录搬走、换机器就恢复不了（09-25 离线复现真机回放时只能临时改写路径）。
+
+**取舍**：
+- 相对的是启动目录而不是存档目录：记忆 zip 由 memory 自己放在记忆根下，不在存档目录里；启动目录是 trace / memory / checkpoints 三个根缺省共同的锚点。代价是恢复时要从同一个相对位置启动。
+- 已经落盘的 `ckptcheck-0925-131754` 不改写：它记的绝对路径在你本机照样能用，trace 也不改历史。
+- `pytest` 全过；fake run 上核过三处都写成了 `checkpoint_check/...` 这样的相对路径。
+
+## 2026-09-25（246）—— 真机回放修正：动作空间按观测重算；核对脚本复用现成的真机 run
+
+**改了什么**：
+- `TapeGame.get_action_space` 改为照常由真件按观测算，再核按键名与录下的 `get_action_space` 账相同。此前只用账上的按键名拼 `ActionSpace`，丢了按键说明、`note` 与 `map_note`（读图提示），选键 prompt 因此与录下的不同，真机回放在第一次选键就报 `ReplayDiverged`。
+- `Tape.diverge()` 公开，磁带件发现对不上时经它记下第一次走偏的原因（`TapeMemory` 取不全记忆也改走它）。
+- `check_checkpoint.py`：
+  - 第 1 项缺省**复用现成的真机 run**（`--work-root`，不给就取 `checkpoint_check/` 下最新一个跑完 main 的），`--record` 才真跑一次；对照记忆快照从 `memory/snapshots/ref-<ep>-<task>.zip` 读。
+  - 第 3 项的记忆比对改为比记录内容（去掉 uuid，不看 `index.json` / `vectors.jsonl`）：回放把同样的记录重写一遍，文件名与索引必然不同。
+  - 第 4 项只核 main 这条线的账文件未变（复用的目录里本来就有别的执行线）。
+- `docs/spec/checkpoint/SPEC.md` 的磁带件表同步。
+
+**为什么改**：09-25 真机核对（`ckptcheck-0925-131754`）：第 1、2 项通过；第 3 项回放在 t1 第一次选键报 prompt 不同。用这次录下的账离线复现，差异正是按键说明与读图提示两段；修正后同一份录音回放到 t2 开局，切换时世界与 t2 开局快照逐字节相同、记忆记录与对照快照逐条相同（只有 uuid 不同）。
+
+**取舍**：
+- 动作空间不补记进账：它是观测的纯函数（overlay 掩码 + 静态说明），不带任何随机；按观测重算并核名字，已录下的账也能直接回放，账本不必每步多记一大段固定说明。
+- 已知问题（未改）：清单里的 `memory_archive` 与 `world_snapshot` 账上的路径是绝对路径，工作目录搬走就恢复不了；复现时是临时改写路径做的。
+- `pytest` 全过。
+
+## 2026-09-25（245）—— 清掉 checkpoint v1 留下的矛盾说明
+
+**改了什么**：
+- `AGENTS.md` / `CLAUDE.md` 第四节目录：`harness/checkpoint/` 改写为"两级存档 + task 世界快照 + 恢复与回放到任意 task"，补 `reviewing.py`；`tools/` 补 `replay/`。
+- `docs/ROADMAP.md` H9：改为 v2 的现状（两级存档、世界快照、封存本局账、回放到任意 task，限制 L2–L4）。
+- 活文档：`docs/spec/build/SPEC.md`（`Checkpointer` 构造参数按现状、加磁带件一行与 `tape` 参数；删掉"存档链已删、`build_real` 没有存档参数"的过时说法）；`docs/spec/experiment/SPEC.md` 目录行。
+- 代码 docstring / 注释：`run_entry.py` 模块说明（"存档/恢复已整体删除"改为现在的分工）、`config.CHECKPOINT_ENABLED`、三层 runtime 的存档注释、`harness/__init__.py` 共享件清单；指向 v1 spec 章节号（§5.2 / §5.4 / §七 等，v2 里已不是那些内容）的引用一律改指 `docs/spec/checkpoint/SPEC.md`；`node_io` 与 `experiment/real_check/__init__.py` 里"三级存档""四本账"的说法。
+
+**为什么改**：09-25 按 v2 重做后，这些地方还写着 v1（三级 begin、由内向外恢复、续跑段）或更早"存档链已删"的状态，与代码矛盾。
+
+**取舍**：只改说法，不动逻辑；`pytest` 全过。`docs/checkpoint/` 下的 intent / spec / plan 是流程文档，v1 原文另存为 `spec-v1.md` / `plan-v1.md`，不改写。
+
 ## 2026-09-25（244）—— 保真核对脚本按 v2 改版；活文档同步
 
 **改了什么**：

@@ -38,6 +38,7 @@ from .manifest import (
     Level,
     LineageLink,
     code_stamp,
+    launch_relative,
     write_manifest,
 )
 
@@ -106,6 +107,7 @@ class Checkpointer:
             archive = self.memory.snapshot_memory(
                 FromHarnessToMemoryToolSnapshotMemoryReq(name=checkpoint_id)
             ).archive
+            archive = launch_relative(archive)
             # 步骤 3：run 图定位（episode 级）。
             stage = "graph"
             run_ref = self._run_ref(run_id) if level == "episode" else None
@@ -148,7 +150,9 @@ class Checkpointer:
         self._note(
             TraceKind.CHECKPOINT_SAVE,
             meta,
-            CheckpointMark(checkpoint_id=checkpoint_id, level=level, manifest_path=str(path)),
+            CheckpointMark(
+                checkpoint_id=checkpoint_id, level=level, manifest_path=launch_relative(path)
+            ),
         )
         return checkpoint_id
 
@@ -174,7 +178,9 @@ class Checkpointer:
             )
             return
         self._note(
-            TraceKind.WORLD_SNAPSHOT, meta, CheckpointMark(level="task", world_path=str(path))
+            TraceKind.WORLD_SNAPSHOT,
+            meta,
+            CheckpointMark(level="task", world_path=launch_relative(path)),
         )
 
     def seal_episode(self, *, run_id: str, step: int) -> None:

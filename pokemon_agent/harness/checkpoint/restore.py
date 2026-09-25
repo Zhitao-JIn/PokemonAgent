@@ -38,7 +38,13 @@ from ..run.runtime import RunRuntime
 from .branches import BranchRecord, read_branches, register_branch
 from .checkpointer import SEALED_PREFIX, Checkpointer
 from .errors import CheckpointIncompatible, CheckpointNotFound
-from .manifest import CheckpointManifest, LineageLink, read_manifest, state_schema_hash
+from .manifest import (
+    CheckpointManifest,
+    LineageLink,
+    launch_relative,
+    read_manifest,
+    state_schema_hash,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -285,7 +291,7 @@ def _restore_mark(
     return CheckpointMark(
         checkpoint_id=manifest.checkpoint_id,
         level=manifest.level,
-        manifest_path=str(path),
+        manifest_path=launch_relative(path),
         parent_branch=parent,
         parent_last_event_uuid=fork_uuid,
         to_task=to_task,

@@ -12,8 +12,12 @@ class CheckpointMark(BaseModel):
     level: str = Field(
         min_length=1, description="存档点级别：run / episode / task（task 只有世界快照）"
     )
-    manifest_path: str = Field(default="", description="清单文件路径（save / restore）")
-    world_path: str = Field(default="", description="世界快照路径（world_snapshot）")
+    manifest_path: str = Field(
+        default="", description="清单文件路径，相对进程启动目录（save / restore）"
+    )
+    world_path: str = Field(
+        default="", description="世界快照路径，相对进程启动目录（world_snapshot）"
+    )
     count: int = Field(default=0, ge=0, description="封存了几条账（trace_sealed）")
     parent_branch: str = Field(default="", description="恢复时：存档所在的父执行线")
     parent_last_event_uuid: str = Field(default="", description="恢复时：父执行线的分叉点事件")

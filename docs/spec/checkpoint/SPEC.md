@@ -38,6 +38,10 @@ run 照跑；`AssertionError` 照常上抛。回放段里 `Checkpointer.paused` 
 <memory_root>/snapshots/<checkpoint_id>.zip
 ```
 
+清单与账里的路径（`memory_archive`、`manifest_path`、`world_snapshot.path`）一律写成**相对进程启动目录**、
+分隔符 `/`（`manifest.launch_relative`），读时按启动目录解析——从同一个相对位置启动，工作目录整体搬走、
+换机器都能恢复；与启动目录不在同一个盘（Windows 跨盘符）时退回绝对路径。`world_file` 相对清单所在目录。
+
 清单 `CheckpointManifest`（`manifest.py`）：`level`（run / episode）、`run_id`、`branch`、`lineage`、
 `episode_id`（episode 级：将派的那一局）、`run_state`（run 级）、`run_ref`（episode 级）、`world_file`、
 `memory_archive`、`last_event_uuid` / `last_event_ts`（存档时本执行线最后一条账）、`code`（git commit、
@@ -74,7 +78,7 @@ run 照跑；`AssertionError` 照常上抛。回放段里 `Checkpointer.paused` 
 | 顶替 | 回放时做什么 |
 |---|---|
 | `TapeProvider`（brain 的每个 provider） | 按序吐录下的原文 / 重抛录下的同名失败，先核 prompt 逐字相同 |
-| `TapeGame` | 观测、动作空间取自磁带；按键不动模拟器；录下的感知耗尽照样抛 |
+| `TapeGame` | 观测取自磁带；动作空间照常由真件按观测算（纯函数），再核按键名与账上相同；按键不动模拟器；录下的感知耗尽照样抛 |
 | `TapeMemory` | 读口按账上的 `refs` 经 `MemoryToolPort.fetch` 取回；写照常真写 |
 | `TapeReviewer` | 按序吐录下的插话 / 审的回话 |
 | `TapeTrace` | 不落盘；每一笔与磁带比 `kind`、正文、`meta`；读账返回已放过的 |

@@ -24,7 +24,6 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.tools.interface import MemoryToolPort
 
-from .errors import ReplayDiverged
 from .tape import Tape, event_content
 
 
@@ -100,7 +99,7 @@ class TapeMemory:
         try:
             return self._real.fetch(FromHarnessToMemoryToolFetchReq(kind=kind, keys=keys))
         except LookupError as exc:
-            raise ReplayDiverged(f"按账上的 refs 取 {kind} 记忆取不全：{exc}") from exc
+            raise self._tape.diverge(f"按账上的 refs 取 {kind} 记忆取不全：{exc}") from exc
 
 
 def _parse_ref(ref: str, width: int) -> tuple[str, ...]:

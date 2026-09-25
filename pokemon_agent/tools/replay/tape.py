@@ -168,6 +168,10 @@ class Tape:
         for hook in self.on_switch:
             hook(task_meta)
 
+    def diverge(self, message: str) -> ReplayDiverged:
+        """记下走偏的原因并返回它（调用方 `raise`）；磁带件发现对不上时用。"""
+        return self._diverge(message)
+
     def _diverge(self, message: str) -> ReplayDiverged:
         self.diverged = ReplayDiverged(message)
         return self.diverged

@@ -63,7 +63,9 @@ class CheckpointManifest(BaseModel):
         default=None, description="episode 级：run 图进 `act` 前那一条"
     )
     world_file: str
-    memory_archive: str
+    memory_archive: str = Field(
+        description="记忆 zip 的路径，相对进程启动目录（`launch_relative`）"
+    )
     last_event_uuid: str = Field(description="存档时本执行线最后一条账；run 级为空（未开账）")
     last_event_ts: float
     code: CodeStamp
@@ -78,6 +80,18 @@ class CheckpointManifest(BaseModel):
         if actual != expected:
             raise ValueError(f"{self.level} 级清单内容不符：{actual}，应为 {expected}")
         return self
+
+
+def launch_relative(path: str | Path) -> str:
+    """落进清单与账里的路径：**相对进程启动目录**，分隔符一律 `/`（读时按启动目录解析）。
+
+    工作目录整体搬走、换机器、换操作系统都还能恢复——只要从同一个相对位置启动。
+    与启动目录不在同一个盘（Windows 跨盘符）算不出相对路径时，退回绝对路径。
+    """
+    try:
+        return Path(os.path.relpath(Path(path).resolve(), Path.cwd().resolve())).as_posix()
+    except ValueError:
+        return Path(path).resolve().as_posix()
 
 
 def state_schema_hash() -> str:
@@ -149,6 +163,7 @@ __all__ = [
     "Level",
     "LineageLink",
     "code_stamp",
+    "launch_relative",
     "read_manifest",
     "state_schema_hash",
     "write_manifest",

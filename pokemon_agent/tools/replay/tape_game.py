@@ -1,7 +1,10 @@
-"""`TapeGame`：回放段里顶替游戏门面——观测与动作空间取自磁带，按键不动模拟器。
+"""`TapeGame`：回放段里顶替游戏门面——观测取自磁带，按键不动模拟器。
 
 模拟器只在切换那一刻读目标 task 的开局世界快照（由恢复路径的切换钩子做），回放段里不重演：
 世界里有随机事件，重演不可靠（intent C8）。按键对不对，由 `TapeTrace` 核 `press_key` 那笔账。
+
+动作空间照常由真件算：它是观测的纯函数（按 overlay 掩码、配上静态的按键说明与读图提示，
+不碰模拟器），账上只记了按键名——算出来之后核一遍名字与录下的相同。
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from pokemon_agent.schemas.harness import (
     ModelCallLog,
 )
 from pokemon_agent.tools.interface import GameToolPort
-from pokemon_agent.world import ActionSpace, Observation
+from pokemon_agent.world import Observation
 
 from .tape import Tape, event_content
 
@@ -63,11 +66,15 @@ class TapeGame:
     def get_action_space(
         self, req: FromHarnessToGameToolGetActionSpaceReq
     ) -> FromHarnessToGameToolGetActionSpaceResp:
-        """切换前：取下一条 `get_action_space` 账上的动作名。"""
-        if self._tape.switched:
-            return self._real.get_action_space(req)
-        names = event_content(self._tape.peek({"get_action_space"}))["names"]
-        return FromHarnessToGameToolGetActionSpaceResp(action_space=ActionSpace(names=names))
+        """由真件按观测算（纯函数），切换前再核按键名与下一条 `get_action_space` 账相同。"""
+        resp = self._real.get_action_space(req)
+        if not self._tape.switched:
+            recorded = event_content(self._tape.peek({"get_action_space"}))["names"]
+            if resp.action_space.names != recorded:
+                raise self._tape.diverge(
+                    f"回放分叉：动作空间应为 {recorded}，实为 {resp.action_space.names}"
+                )
+        return resp
 
     def execute(self, req: FromHarnessToGameToolExecuteReq) -> None:
         """切换前：不动模拟器（这一键对不对由 `press_key` 那笔账核）。"""
