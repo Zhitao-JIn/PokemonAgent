@@ -36,7 +36,7 @@ trace 是独立第三方模块，只有"桥"认识它。
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -97,6 +97,13 @@ _RENDERERS = {
     TraceKind.DECOMPOSE_VERDICT: render.decompose_verdict,
     TraceKind.SETTLE_GOAL: render.settle_goal,
     TraceKind.SETTLE_TASK: render.settle_task,
+    TraceKind.CHECKPOINT_SAVE: render.checkpoint_save,
+    TraceKind.CHECKPOINT_RESTORE: render.checkpoint_restore,
+    TraceKind.CHECKPOINT_ERROR: render.checkpoint_error,
+    TraceKind.WORLD_SNAPSHOT: render.world_snapshot,
+    TraceKind.TRACE_SEALED: render.trace_sealed,
+    TraceKind.REVIEW_INJECT: render.review_inject,
+    TraceKind.REVIEW_AUDIT: render.review_audit,
 }
 """账名 → 渲染函数。**没有翻译表**（0914）：渲染函数不再给账换名字，
 落盘的 `kind` 就是 `req.kind`。"""
@@ -120,19 +127,66 @@ def _to_trace_event(raw: Event) -> TraceEvent:
     return TraceEvent.model_validate(raw.model_dump())
 
 
+def render_request(req: FromHarnessToTraceToolAppendReq) -> list[render.Rendered]:
+    """一笔账 → 要落盘的那几条（`type`、`kind`、正文对象）。`TraceTool.append` 与回放比对共用。
+
+    后置条件：每条的 `kind` 就是 `req.kind`，**例外是账单连带补出来的错误账**（`type=error`）。
+    失败：`req.kind` 没有渲染函数 → `KeyError`。
+    """
+    renderer = _RENDERERS.get(req.kind)
+    if renderer is None and getattr(req.kind, "value", None) in _LEGACY_KIND_ALIASES:
+        # **断代兼容**（0923 189/190）：187–190 压格与记忆阶梯把一批 `kind`
+        # 改了名（read_step→read_act_memory、write_step→write_act_memory、read_verify_step→
+        # read_task_memory…）。新账一律用新名；读到**历史 trace** 的旧名时
+        # 按同族渲染函数兜住——只保证"能渲"，不保证逐字段语义仍在。
+        renderer = _RENDERERS[TraceKind(_LEGACY_KIND_ALIASES[req.kind.value])]
+    if renderer is None:
+        raise KeyError(req.kind)
+    out = _as_list(renderer(req))
+    for rendered in out:
+        assert rendered.kind == req.kind or rendered.type == EventType.ERROR, (
+            f"{req.kind} 的渲染函数吐出了 {rendered.kind}——"
+            "落盘的 kind 只许是请求的那本账，或一条连带产出的错误账"
+        )
+    return out
+
+
 class TraceTool:
     """`TraceToolPort` 的唯一实现。持有事件流存储（或任何 `TracePort` 实现）。
 
     **本对象自身的状态只有构造期常量**：它不跨步骤攒东西（读侧要的 `run_id`
-    由 `LocalTrace` 自己持有，这里不再需要一份）。
+    由 `LocalTrace` 自己持有，这里不再需要一份）。构造期常量里有本执行线的分支血缘
+    （`branch` 与 `lineage`），读侧按它拼出"这条执行线看得见的全部账"。
     """
 
-    def __init__(self, trace: TracePort) -> None:
-        """接好事件流存储。"""
+    def __init__(
+        self,
+        trace: TracePort,
+        *,
+        branch: str = "main",
+        lineage: Sequence[tuple[str, str, float]] = (),
+    ) -> None:
+        """接好事件流存储与本执行线的血缘。
+
+        branch：本执行线的分支名（与存储盖进 `meta` 的那个同值）。
+        lineage：祖先执行线，由根到父，每条 `(分支名, 分叉点事件 uuid, 分叉点事件 ts)`；
+            未经恢复的执行线为空。读侧对每个祖先只取分叉点及之前的事件。
+        """
+        assert branch, "TraceTool needs a non-empty branch"
+        assert branch not in {b for b, _u, _t in lineage}, "branch 不能出现在自己的血缘里"
         self._trace = trace
+        self._branch = branch
+        self._lineage = tuple(lineage)
 
     @classmethod
-    def build(cls, *, run_id: str = "local", trace_root: str | Path | None = None) -> TraceTool:
+    def build(
+        cls,
+        *,
+        run_id: str = "local",
+        trace_root: str | Path | None = None,
+        branch: str = "main",
+        lineage: Sequence[tuple[str, str, float]] = (),
+    ) -> TraceTool:
         """接线工厂：造 `LocalTrace` 并包成 `TraceTool`。
 
         **全项目唯一 `new LocalTrace` 的地方**——装配点（`build.py`）只递裸字段，
@@ -142,8 +196,14 @@ class TraceTool:
         `trace_root`：落盘根（一条事件一个文件那个目录），缺省为**进程启动目录**
         下的 `tracelog/`（0916 起）。启动参数 `--trace-root` →
         `build_real(trace_root=…)` → 这里 → `LocalTrace(root=…)`。
+
+        `branch` / `lineage`：本执行线的分支名与祖先血缘（见 `__init__`）；未经恢复时用缺省。
         """
-        return cls(LocalTrace(run_id=run_id, root=trace_root))
+        return cls(
+            LocalTrace(run_id=run_id, root=trace_root, branch=branch),
+            branch=branch,
+            lineage=lineage,
+        )
 
     def append(self, req: FromHarnessToTraceToolAppendReq) -> None:
         """记一笔账：按 `req.kind` 渲染正文，逐条落盘。
@@ -152,12 +212,14 @@ class TraceTool:
         `req.meta` 里一次交齐，本层只核"该有的在不在"，不再替它拼）。`run_id`
         由落盘那一层盖。
 
-        前置条件：`req.meta` 带 `source`/`episode_id`/`task_id`/`step` 四件、不带 `run_id`；
+        前置条件：`req.meta` 带 `source`/`episode_id`/`task_id`/`step` 四件、
+        不带 `run_id` / `branch`；
         `req.kind` 对应的渲染函数所需字段非空（各渲染函数入口 assert 就地爆炸）。
         后置条件：所有渲染出的事件已落盘；每条的封套 `kind` **就是 `req.kind`**
         ——**例外是账单连带补出来的 `call_failed`**（那是另一本账，
         `type=error`），所以断言写成"要么是你点的那本账、要么是一条错误账"。
         """
+        assert "branch" not in req.meta, f"{req.kind} 的 meta 带了 branch——那个键归落盘这一层盖"
         assert "run_id" not in req.meta, (
             f"{req.kind} 的 meta 带了 run_id——那个键归落盘这一层盖"
             "（`store._stamp_run_id`，调用方带了就是同一件事说两遍）"
@@ -175,20 +237,7 @@ class TraceTool:
             f"{req.kind} 交了一份 count——那个槽 0914 跟进起已废："
             "六条读口的命中条数恒等于 `refs` 的长度，而 `refs` 已经是数组了"
         )
-        renderer = _RENDERERS.get(req.kind)
-        if renderer is None and getattr(req.kind, "value", None) in _LEGACY_KIND_ALIASES:
-            # **断代兼容**（0923 189/190）：187–190 压格与记忆阶梯把一批 `kind`
-            # 改了名（read_step→read_act_memory、write_step→write_act_memory、read_verify_step→
-            # read_task_memory…）。新账一律用新名；读到**历史 trace** 的旧名时
-            # 按同族渲染函数兜住——只保证"能渲"，不保证逐字段语义仍在。
-            renderer = _RENDERERS[TraceKind(_LEGACY_KIND_ALIASES[req.kind.value])]
-        if renderer is None:
-            raise KeyError(req.kind)
-        for rendered in _as_list(renderer(req)):
-            assert rendered.kind == req.kind or rendered.type == EventType.ERROR, (
-                f"{req.kind} 的渲染函数吐出了 {rendered.kind}——"
-                "落盘的 kind 只许是请求的那本账，或一条连带产出的错误账"
-            )
+        for rendered in render_request(req):
             self._trace.append(rendered.type, rendered.kind, dict(req.meta), rendered.content)
 
     # ---- 读：磁盘账本（唯一真相） ----
@@ -197,9 +246,29 @@ class TraceTool:
         """（契约见 `TraceToolPort.read_events`）读盘 + 还原成项目事件形状。
 
         `meta` 原样转给 `TracePort.read_events`——交集匹配怎么做是存储层的事，
-        本层只做形状还原（`Event` 协议 → `TraceEvent`）。
+        本层只做形状还原（`Event` 协议 → `TraceEvent`）与**按血缘拼接**：
+
+        - `meta` 为空：不过滤，整个落盘根原样返回（与血缘无关）；
+        - `meta` 自带 `branch` 键：按调用方给的分支读，不拼血缘；
+        - 其余：对血缘里每个祖先分支取"分叉点及之前"的匹配事件，再加上本分支的全部
+          匹配事件——即这条执行线看得见的全部账（`docs/checkpoint/spec.md` §七）。
+
+        后置条件：按 `(ts, uuid)` 升序。
         """
-        return [_to_trace_event(e) for e in self._trace.read_events(meta)]
+        if not meta or "branch" in meta:
+            return [_to_trace_event(e) for e in self._trace.read_events(meta)]
+        # 步骤 1：祖先各取分叉点及之前，本分支全取。
+        picked: list[Event] = []
+        for branch, fork_uuid, fork_ts in self._lineage:
+            picked.extend(
+                e
+                for e in self._trace.read_events({**meta, "branch": branch})
+                if (e.ts, e.uuid) <= (fork_ts, fork_uuid)
+            )
+        picked.extend(self._trace.read_events({**meta, "branch": self._branch}))
+        # 步骤 2：合并后按落盘序排好。
+        picked.sort(key=lambda e: (e.ts, e.uuid))
+        return [_to_trace_event(e) for e in picked]
 
 
 def _as_list(rendered: render.RenderedEvent) -> Iterable[render.Rendered]:
@@ -209,4 +278,4 @@ def _as_list(rendered: render.RenderedEvent) -> Iterable[render.Rendered]:
     return [rendered]
 
 
-__all__ = ["TraceTool"]
+__all__ = ["TraceTool", "render_request"]

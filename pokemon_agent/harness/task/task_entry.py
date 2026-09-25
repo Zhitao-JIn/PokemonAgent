@@ -19,11 +19,13 @@ from .task_state import TaskState
 
 
 def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
-    """写 `task_start`，把 `TaskInput` 装成进图初值。
+    """写 `task_start`，存一份开局世界快照（有存档器时），把 `TaskInput` 装成进图初值。
 
-    **不取帧**——开局帧由图内 perceive 的 `sense` 取。
+    不取帧：开局帧由图内 perceive 取。
     """
     assert task_input.task.max_steps > 0, "task max_steps must be > 0"
+
+    # 步骤 1：开局账。
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.TASK_START,
@@ -37,13 +39,25 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
             start_step=task_input.start_step,
         )
     )
-    return TaskState(
+
+    # 步骤 2：开局世界快照（回放到达这个 task 时从这里读档）。
+    if deps.checkpointer is not None:
+        deps.checkpointer.snapshot_world(
+            run_id=task_input.run_id,
+            episode_id=task_input.episode_id,
+            task_id=task_input.task.task_id,
+            step=task_input.start_step,
+        )
+
+    # 步骤 3：组装初始状态。
+    state = TaskState(
         run_id=task_input.run_id,
         episode_id=task_input.episode_id,
         task=task_input.task,
         start_step=task_input.start_step,
         knowledge=task_input.knowledge,
     )
+    return state
 
 
 def task_budget(task_input: TaskInput) -> int:

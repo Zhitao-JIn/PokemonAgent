@@ -29,6 +29,7 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.harness.domain import EntryStatus, GoalEntry
 
 from ...interface.planner_outcome import ALLOWED_UPDATE_STATUSES, GoalUpdate, PlannerOutcome
+from ...reviewing import ask_inject
 from ..run_state import RunState
 from ..runtime import RunRuntime
 
@@ -91,12 +92,15 @@ def _elicit(deps: RunRuntime, state: RunState, meta: dict[str, Any]) -> tuple[Pl
             human_note=note,
         )
         proposed = _to_outcome(state.goals, state.run_id, _ask(deps, meta, req))
-        reply = deps.reviewer.inject(
+        reply = ask_inject(
+            deps.reviewer,
+            deps.trace,
             FromHarnessToReviewerInjectReq(
                 prompt=_prompt_for(proposed, note),
                 form=proposed,
                 form_kind="PlannerOutcome",
-            )
+            ),
+            meta=meta,
         )
         if not reply:
             return proposed, note

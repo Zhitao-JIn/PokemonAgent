@@ -57,9 +57,14 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolExecuteReq,
     FromHarnessToGameToolGetActionSpaceReq,
     FromHarnessToGameToolGetActionSpaceResp,
+    FromHarnessToGameToolLoadStateReq,
     FromHarnessToGameToolPerceiveOnceResp,
     FromHarnessToGameToolResetReq,
+    FromHarnessToGameToolSaveStateReq,
+    FromHarnessToGameToolSaveStateResp,
     FromHarnessToMemoryToolAppendObjectEventsReq,
+    FromHarnessToMemoryToolFetchReq,
+    FromHarnessToMemoryToolFetchResp,
     FromHarnessToMemoryToolQueryActMemoriesReq,
     FromHarnessToMemoryToolQueryActMemoriesResp,
     FromHarnessToMemoryToolQueryEpisodeSummariesReq,
@@ -183,16 +188,13 @@ class TaskSummarizePort(Protocol):
 
 @runtime_checkable
 class GameToolPort(Protocol):
-    """Harness 操作世界的接口：执行、开局、感知。
+    """Harness 操作世界的接口：执行、开局、感知、存读档。
 
     这是第一跳（harness → 门面），入参与返回一律是信封；门面往里调 world
     走裸参数，那一跳不造信封。
 
-    **存档一族已删**（`save_state` / `save_state_bytes` / `load_state_bytes` /
-    `set_task`）：它们只服务 checkpoint 与它的恢复链，随恢复链一起删掉了
-    （见 `CHANGELOG.md` 2026-09-13 第 57 条）。`world` 层自己仍保留这些能力面，本 Port
-    只是不再向 harness 暴露——"这个 run 用什么存档"是 harness 的取舍，
-    不该裁剪 `world` 这个独立第三方模块的能力。
+    **存读档**（`save_state` / `load_state`）只服务 checkpointer（`docs/checkpoint/spec.md` §5.2）：
+    存的是模拟器完整状态，文件路径由 harness 给，读写文件在本层。
     """
 
     def get_action_space(
@@ -221,6 +223,24 @@ class GameToolPort(Protocol):
 
         req.task：要跑的任务。
         前置条件：req.task.max_steps > 0。
+        """
+        ...
+
+    def save_state(
+        self, req: FromHarnessToGameToolSaveStateReq
+    ) -> FromHarnessToGameToolSaveStateResp:
+        """把模拟器完整状态写到 `req.path`。**不推进世界**。
+
+        后置条件：`resp.path` 文件存在，`resp.size` 等于写入的字节数（> 0）。
+        失败：写文件失败原样抛出。
+        """
+        ...
+
+    def load_state(self, req: FromHarnessToGameToolLoadStateReq) -> None:
+        """从 `req.path` 读回模拟器完整状态。**不推进世界**。
+
+        前置条件：`req.path` 是 `save_state` 写出的文件。
+        失败：文件不存在或读失败原样抛出。
         """
         ...
 
@@ -419,6 +439,18 @@ class MemoryToolPort(Protocol):
         前置条件：每条 record 的 `topic`/`content`/`source` 非空。
         后置条件：`resp.stored` 是**真的落库了的那几条**，是 `req.records`
             的子序列（判重跳过的那些不在里面）；顺序与 `req.records` 一致。
+        """
+        ...
+
+    # ---- 按键取（不检索：给出自然键，直接取回那几条） ----
+
+    def fetch(self, req: FromHarnessToMemoryToolFetchReq) -> FromHarnessToMemoryToolFetchResp:
+        """按自然键取回记录，顺序与 `req.keys` 相同；同一个键出现 n 次取回 n 条。
+
+        用途：回放时按账上的 `refs` 取回当初读到的那几条，不重跑检索
+        （`docs/checkpoint/intent.md` C8）。键字段见 `FromHarnessToMemoryToolFetchReq`。
+        后置条件：只填 `req.kind` 那一族的字段，条数等于 `len(req.keys)`。
+        失败：某个键在库里的条数少于它在 `req.keys` 里出现的次数 → `LookupError`。
         """
         ...
 

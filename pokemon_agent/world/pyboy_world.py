@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import pathlib
 from dataclasses import dataclass
 
@@ -296,6 +297,28 @@ class PyBoyWorld:
         # 步骤 2。
         self._task = _Task(task_id, goal, success_criteria, max_steps, initial_state_hint)
         self._closed = False
+
+    def save_state(self) -> bytes:
+        """模拟器完整状态 → 字节串（`pyboy.save_state`）。不推进世界。
+
+        后置条件：返回非空字节串。
+        """
+        buf = io.BytesIO()
+        self._pyboy.save_state(buf)
+        data = buf.getvalue()
+        assert data, "pyboy.save_state produced no bytes"
+        return data
+
+    def load_state(self, data: bytes) -> None:
+        """字节串 → 模拟器完整状态（`pyboy.load_state`）。**读档后不 tick**。
+
+        与 `reset` 读起点存档不同：那里要 tick 一次让画面进帧槽；这里 PyBoy 读档已恢复画面
+        与内存（09-25 实测：读档后画面与 0xC000–0xDFFF 内存哈希与存档时相同，再存一次逐字节
+        相同；多 tick 一帧则内存哈希变化），恢复点必须等于存档点。
+        前置条件：`data` 非空。
+        """
+        assert data, "load_state() got empty bytes"
+        self._pyboy.load_state(io.BytesIO(data))
 
     def all_actions(self) -> list[str]:
         """全部动作名，与状态无关。掩码是 harness 的事，不在这里做。

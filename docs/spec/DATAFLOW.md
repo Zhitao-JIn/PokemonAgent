@@ -150,6 +150,12 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 | `settle_goal` | lifecycle | `run.review_and_judge` | `goal_id`、`status`、`episode_id`、`attempts`、`audit`、`note`、`overturned`、`fail_streak` |
 | `settle_task` | lifecycle | `review_and_judge` | `task_id`、`status`、`round`、`audit`、`note`、`overturned`、`abandoned`（数组）、`fail_streak` |
 | `advance_step` | lifecycle | `close_step` | `next_step` |
+| `review_inject` | lifecycle | 插话点：`plan_run` / `plan_episode` / 两层 `review_and_judge`（`harness/reviewing.py`，每问一轮一条） | `form_kind`、`reply`（空串 = 没意见） |
+| `review_audit` | lifecycle | 审：两层 `review_and_judge` 的定案 | `verdict`、`note` |
+| `checkpoint_save` | lifecycle | `checkpoint.save`（run 开局 / 每局开派前） | `checkpoint_id`、`level`、`manifest_path` |
+| `checkpoint_restore` | lifecycle | `checkpoint.restore`（新执行线第一条；回放时在目标 task 开局前） | `checkpoint_id`、`level`、`parent_branch`、`parent_last_event_uuid`、`to_task` |
+| `world_snapshot` | lifecycle | `checkpoint.save`（每个 task 开局，`meta.task_id` 为该 task） | `path` |
+| `trace_sealed` | lifecycle | `checkpoint.save`（一局结束 / run 出错） | `checkpoint_id`、`count` |
 
 **模型调用账（`model_call`）**：正文是那次调用原样（`ok`/`prompt`，成功另带 token 与 `raw`）
 
@@ -187,15 +193,17 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 
 | kind | producer |
 |---|---|
-| `read_act_memory` | `retrieve_act_memories`（task.perceive） |
+| `read_act_memory` | `retrieve_act_memories`（task.perceive，按 `episode_id + task_id` 查） |
 | `read_task_memory` | `retrieve_task_memories`（episode.perceive） |
-| `read_episode_memory` | `retrieve_global_episode_memory`、`run.perceive` |
+| `read_episode_memory` | `retrieve_global_episode_memory`、`run.perceive`（`order_by=episode_id`）、`leave_chapter` / `run.act`（补空章前先查） |
 | `read_knowledge` | `retrieve_knowledge_semantic_memory` |
-| `read_object_memory` | `retrieve_object_semantic_memory`、`run.perceive` |
+| `read_object_memory` | `retrieve_object_semantic_memory`、`run.perceive`（`refs` 为唯一键 `(ep, step, place.key)`） |
 | `write_act_memory` | `store_step_episode_memory` |
 | `write_object_memory` | `store_object_semantic_memory` |
 | `write_task_memory` | `summarize_task` |
 | `write_episode_memory` | `summarize_episode`（正文版）/ `leave_chapter`、`run.act`（空章版） |
+
+存档与问人的账不进 `node_io` 的活动流（旁路；条数随存档开关、人插话几轮浮动）。`checkpoint_error`（type `error`：`checkpoint_id`/`stage`/`error`）存档失败时记。
 
 **错误**：`call_failed`（由 `model_call` 连带产出：`link`/`exception`/`reason`）、
 `call_exhausted`（各调用点：`link`）、`summary_parse_error`（`link` ∈ `summarize_episode` / `summarize_task`、`reason`；
@@ -205,7 +213,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 
 一条落盘事件六个字段（`uuid` / `kind` / `type` / `ts` / `meta` / `content`），`meta` 与 `content` 都是 JSON 字符串。
 
-- **`meta` 恰好五件**：`run_id` / `source` / `episode_id` / `task_id` / `step`。
+- **`meta` 恰好六件**：`run_id` / `branch` / `source` / `episode_id` / `task_id` / `step`（`run_id`、`branch` 由落盘层盖；`branch` 未经恢复为 `main`，见 `docs/checkpoint/spec.md`）。
   上层的空槽填本层自己的 id（run 级账 `episode_id = task_id = run_id`；episode 级账 `task_id = episode_id`）；
   run 级 `step` = 已派局数；episode 级与 task 级 = 本局当前键号（同一局里两层共用一条键号轴）。
 - **顺序只认 `(ts, uuid)`**，磁盘账本是唯一真相。

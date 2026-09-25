@@ -76,8 +76,11 @@ def new_event_uuid() -> str:
     return str(uuid.UUID(int=value))
 
 
-def _stamp_run_id(meta: dict[str, Any], run_id: str) -> dict[str, Any]:
-    """把 `run_id` 盖进 `meta`——**排在头一个**。
+def _stamp_run_id(meta: dict[str, Any], run_id: str, branch: str) -> dict[str, Any]:
+    """把 `run_id` 与 `branch` 盖进 `meta`——**排在头两个**。
+
+    `branch` 与 `run_id` 同理：它是本实例的标识（构造时给的执行线名），落盘这一层
+    自己知道，调用方不带。未经恢复的执行线是 `"main"`。
 
     **盖章的人只能是这里**：run_id 是本实例的标识（构造时给的），落盘这一层
     自己知道；让调用方再带一份等于同一个事实存两处。**平铺之后它是唯一能回答
@@ -87,7 +90,8 @@ def _stamp_run_id(meta: dict[str, Any], run_id: str) -> dict[str, Any]:
     前置条件：调用方交上来的 `meta` 不带 `run_id` 键。
     """
     assert "run_id" not in meta, "meta 不许自己带 run_id——那个键归落盘这一层盖"
-    return {"run_id": run_id, **meta}
+    assert "branch" not in meta, "meta 不许自己带 branch——那个键归落盘这一层盖"
+    return {"run_id": run_id, "branch": branch, **meta}
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
@@ -121,7 +125,9 @@ def _matches(event_meta: dict[str, Any], wanted: dict[str, Any]) -> bool:
 
 
 class LocalTrace:
-    def __init__(self, run_id: str = "local", root: Path | None = None) -> None:
+    def __init__(
+        self, run_id: str = "local", root: Path | None = None, branch: str = "main"
+    ) -> None:
         """接好落盘目录（一个，不再有 run 层与 events 层）。
 
         `root`：**落盘根**——一条事件一个文件的那个目录，不是它下面的某一层。
@@ -137,7 +143,9 @@ class LocalTrace:
         构造时**不扫盘**（0914）：`event_id` 计数器与 `id → 文件` 索引都随
         `event_id` 一起下线，落盘只需要目录在。
         """
+        assert branch, "LocalTrace needs a non-empty branch"
         self._run_id = run_id
+        self._branch = branch
         # str 与 Path 都收（与 `LocalMemoryStore` 的 root 同一条归一规矩）——
         # 覆盖链上 `build_real(trace_root=…)` 的形参就是 `str | Path`。
         self._dir = Path(root) if root is not None else _default_root()
@@ -183,7 +191,9 @@ class LocalTrace:
             kind=kind,
             type=type,
             ts=now,
-            meta=json.dumps(_stamp_run_id(dict(meta or {}), self._run_id), ensure_ascii=False),
+            meta=json.dumps(
+                _stamp_run_id(dict(meta or {}), self._run_id, self._branch), ensure_ascii=False
+            ),
             content=json.dumps(content, ensure_ascii=False),
         )
 

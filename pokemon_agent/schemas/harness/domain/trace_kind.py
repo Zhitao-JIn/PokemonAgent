@@ -134,6 +134,25 @@ class TraceKind(StrEnum):
     SETTLE_TASK = "settle_task"
     """episode 级给任务表盖章（COMPLETED / FAILED）连同人审表态与被放弃的剩余条目。"""
 
+    # ---- 存档（`docs/checkpoint/spec.md` §七）----
+    # `meta.source` 为 `checkpoint.save` / `checkpoint.restore`。
+    CHECKPOINT_SAVE = "checkpoint_save"
+    """一份存档落好（run 开局 / 每局开派前）：世界 + 记忆 + 清单都已落盘。"""
+    CHECKPOINT_RESTORE = "checkpoint_restore"
+    """从存档恢复出一条新执行线——新执行线的第一条账，正文带血缘。"""
+    WORLD_SNAPSHOT = "world_snapshot"
+    """task 开局的世界快照（按执行线分开存），回放到达该 task 时按这条账上的路径读档。"""
+    TRACE_SEALED = "trace_sealed"
+    """一局结束（或 run 出错）时，本局存档之后的账已复制进该存档的 `trace/`。"""
+    CHECKPOINT_ERROR = "checkpoint_error"
+    """存档失败：清单没写，run 照常继续（S4）。"""
+
+    # ---- 问人（`harness/reviewing.py`，每问一次记一笔；回放按序喂回每一轮回话）----
+    REVIEW_INJECT = "review_inject"
+    """插话：亮了哪种表单、人说了什么（空串 = 没意见）。"""
+    REVIEW_AUDIT = "review_audit"
+    """审：认 / 推翻，推翻时的理由。"""
+
     # ---- 记忆读：**六条读口一个形状**（`content = {count, query, refs}`）----
     #
     # 此前六条读口**共用一个派发键** `RETRIEVE_NODE`，账名由 `render.retrieve_node`

@@ -35,11 +35,17 @@ episode 图的 `context=…` 由 `episode_entry._invoke` 显式传（形态 B）
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from langgraph.graph.state import CompiledStateGraph
 
 from pokemon_agent.tools.interface import JudgePort, MemoryToolPort, PlanPort, TraceToolPort
 
 from ..episode.episode_runtime import EpisodeRuntime
 from ..interface.reviewer import Reviewer
+
+if TYPE_CHECKING:
+    from ..checkpoint import Checkpointer
 
 
 @dataclass
@@ -68,8 +74,15 @@ class RunRuntime:
 
     judger: JudgePort
     """run 层判定口：`review_and_judge` 问"run_goal 达成没有"（素材是局摘要）。"""
+    episode_graph: CompiledStateGraph
+    """episode 子图（`build.py` 编译的那一份）——`act` 格派局时经它 `invoke`。"""
     episode: EpisodeRuntime
     """episode 侧的 runtime（`build.py` 先造它、再造本对象）。**必传、恒非空**。"""
+
+    # ---- 存档：run begin 由 `run_entry.new_run` 调用 ----
+
+    checkpointer: Checkpointer | None = None
+    """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""
 
 
 __all__ = ["RunRuntime"]

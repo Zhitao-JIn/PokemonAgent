@@ -32,16 +32,17 @@ def read_plan_context(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str
         "step": state.step,
     }
 
-    # 步骤 1：局索引（按执行序）+ 详情预取。
-    summaries = deps.memory.query_episode_summaries(
-        FromHarnessToMemoryToolQueryEpisodeSummariesReq(conditions={"run_id": state.run_id})
+    # 步骤 1：局索引（记忆按 `episode_id` 自然序返回，即执行序）+ 详情预取。
+    index = deps.memory.query_episode_summaries(
+        FromHarnessToMemoryToolQueryEpisodeSummariesReq(
+            conditions={"run_id": state.run_id}, order_by="episode_id"
+        )
     ).summaries
-    index = _in_execution_order(summaries, state.episode_outputs)
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.READ_EPISODE_MEMORY,
             meta=meta,
-            query=f"run_id={state.run_id}",
+            query=f"run_id={state.run_id} order_by=episode_id",
             refs=[m.episode_id for m in index],
         )
     )
@@ -55,24 +56,10 @@ def read_plan_context(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str
             kind=TraceKind.READ_OBJECT_MEMORY,
             meta=meta,
             query=f"run_id={state.run_id} map_id=None",
-            refs=[e.place.key for e in objects],
+            refs=[f"({e.episode_id}, {e.step}, {e.place.key})" for e in objects],
         )
     )
     return {"plan_ctx": PlanContext(index=index, details=_pick_details(index), objects=objects)}
-
-
-def _in_execution_order(summaries: list[EpisodeMemory], outcomes: list) -> list[EpisodeMemory]:
-    """按**执行顺序**排好局索引。
-
-    排序键取 `state.episode_outputs` 里的下标（执行序 append 的机械记录）；没有对应
-    outcome 的摘要（理论上不该有——记忆是这一局的产物）排在最后，按 `episode_id`
-    兜底，保证顺序仍然确定（两次读拿到同一个序）。
-    """
-    order = {outcome.episode_id: i for i, outcome in enumerate(outcomes)}
-    return sorted(
-        summaries,
-        key=lambda memory: (order.get(memory.episode_id, len(order)), memory.episode_id),
-    )
 
 
 def _pick_details(index: list[EpisodeMemory]) -> list[EpisodeMemory]:

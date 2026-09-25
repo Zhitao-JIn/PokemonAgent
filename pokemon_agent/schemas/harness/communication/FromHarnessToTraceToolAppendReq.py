@@ -37,8 +37,10 @@ from pokemon_agent.brain.interface import (
     VerifyVerdict,
 )
 from pokemon_agent.schemas.harness.domain import TraceKind
+from pokemon_agent.schemas.harness.domain.checkpoint_mark import CheckpointMark
 from pokemon_agent.schemas.harness.domain.episode_io import EpisodeOutput
 from pokemon_agent.schemas.harness.domain.goal_entry import GoalEntry
+from pokemon_agent.schemas.harness.domain.review_mark import ReviewMark
 from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
 from pokemon_agent.schemas.harness.domain.task_io import TaskOutput
 from pokemon_agent.schemas.harness.domain.termination import Termination
@@ -232,3 +234,7 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
 
     0914 控制台改造后它挂在 `THINK` 上——插话的唯一落点是决策那一格
     （`press_key` 自己没有 LLM 调用），所以"人说了什么"天然属于那条链的账。"""
+    checkpoint: CheckpointMark | None = None
+    """存档三本账（`checkpoint_*`）的素材。"""
+    review: ReviewMark | None = None
+    """问人两本账（`review_inject` / `review_audit`）的素材。"""

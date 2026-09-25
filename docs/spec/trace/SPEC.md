@@ -39,12 +39,12 @@ trace/
 | `append` | `(type: str, kind: str, meta: dict[str, Any] \| None = None, content: Any = None) -> str` | 追加一条事件，返回它的 `uuid`（= 文件名） |
 | `read_events` | `(meta: dict[str, Any] \| None = None) -> list[Event]` | 读已落盘的全部事件，按 `(ts, uuid)` 升序，可按 `meta` 做交集筛选 |
 
-- `append` **前置条件**：`meta` 不带 `run_id` 键——`store._stamp_run_id` 用 assert 执行这条契约。**后置条件**：六个字段全部落盘；返回的 uuid 与文件名同值。
+- `append` **前置条件**：`meta` 不带 `run_id` / `branch` 键——`store._stamp_run_id` 用 assert 执行这条契约。**后置条件**：六个字段全部落盘；返回的 uuid 与文件名同值。
 - `read_events` **筛选语义**：`None` / 空 dict = 整个落盘根；给了就只返回**每个键都相等**的那批——AND-of-equalities，与 `MemoryStorePort.filter` 同一条（不支持 OR、不支持大小比较）。键取 `run_id` / `source` / `episode_id` / `step`；事件缺某个键时**不匹配**（不是当作空值相等）。
 - `read_events` **后置条件**：按 `(ts, uuid)` 严格升序；无匹配返回空列表（不抛异常）。磁盘读取失败（权限 / IO）**原样抛出**——本方法不吞这一类错。
 - 读能力只剩这一条通用读方法：不做掩码、不做游标、不打标，只回答"盘上有什么"。
 - 已下线的入口（现在不存在）：`read_event(event_id)`——画面真源搬到 `memory/step_memory/` 之后没有读者；`cursor()` / `read_disk_events()` / `void_after()`——随 checkpoint 恢复链删；`read_screenshot`——随截图副本删。
-- 实现 `LocalTrace(run_id: str = "local", root: Path | None = None)`：`root` 是**落盘根**
+- 实现 `LocalTrace(run_id: str = "local", root: Path | None = None, branch: str = "main")`：`root` 是**落盘根**
   （一条事件一个文件那个目录），缺省为**进程启动目录**下的 `tracelog/`（`Path.cwd()`，0916 起）；
   `run_id` **只用于盖进 `meta`，不参与路径**。生产路径的覆盖链：
   `--trace-root`（起跑脚本）→ `build_real(trace_root=…)` → `TraceTool.build(trace_root=…)` → 这里；
@@ -69,7 +69,7 @@ trace/
 | `meta` | `str` | 调用方给，落盘层盖 `run_id` | **JSON 字符串**，`{run_id, source, episode_id, step}` 恰好四件 |
 | `content` | `str` | 调用方 | **JSON 字符串**；判据是"存在反函数" |
 
-`meta` 的四个键：`run_id` 由 `store._stamp_run_id` 盖在**头一个**（前置 assert：调用方带的 `meta` 不许有 `run_id` 键）；`source` 是"这条账从哪个位置发出"（图上节点名，或图外入口名如 `run_entry.new_run`）；`episode_id` / `step` 是发在哪一局、哪一步。run 级账沿用项目约定：`episode_id` 位放 run_id、`step` 恒 0。
+`meta` 的键：`run_id`、`branch` 由 `store._stamp_run_id` 盖在**头两个**（前置 assert：调用方带的 `meta` 不许有这两个键；`branch` 是本实例的执行线名，构造时给，缺省 `main`）；`source` 是"这条账从哪个位置发出"（图上节点名，或图外入口名如 `run_entry.new_run`）；`episode_id` / `step` 是发在哪一局、哪一步。run 级账沿用项目约定：`episode_id` 位放 run_id、`step` 恒 0。
 
 `content` 的编码约定：标量一律 `str()`、布尔一律小写 `true` / `false`；本来就是结构化数据的那几处（`facts` / `sequence` / `verdicts` / 四本写账的正文）**直接放对象，不再 `json.dumps` 一次**（那是双重编码）。序列化只在 `LocalTrace.append` 做一处：`json.dumps(..., ensure_ascii=False)`。
 

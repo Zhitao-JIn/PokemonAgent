@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -28,8 +29,11 @@ from .run_state import RunState
 from .runtime import RunRuntime
 
 
-def compile_run_graph() -> CompiledStateGraph:
+def compile_run_graph(checkpointer: BaseCheckpointSaver | None = None) -> CompiledStateGraph:
     """把 6 个格与它们之间的边装配成图，返回编译好的对象。
+
+    checkpointer：图状态的持久化后端（装配点给 sqlite saver）；None = 不持久化（测试用）。
+    episode / task 图在节点函数里被 `invoke`，其状态自动写进同一个 saver（嵌套命名空间）。
 
     `context_schema` 是 `RunRuntime`：`run_entry.new_run()` 经 `invoke(..., context=deps)` 递入。
     """
@@ -54,7 +58,7 @@ def compile_run_graph() -> CompiledStateGraph:
     graph.add_edge("plan_run", "act")
     graph.add_edge("act", "perceive")
     graph.add_edge("run_done", END)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
 __all__ = ["compile_run_graph"]

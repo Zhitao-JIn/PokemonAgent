@@ -21,3 +21,8 @@ class FromHarnessToMemoryToolQueryEpisodeSummariesReq(BaseModel):
     conditions: dict[str, str] = Field(
         default_factory=dict, description="等值过滤条件（AND 取交集）；空 = 全取"
     )
+    order_by: str = Field(
+        default="episode_id",
+        description="按哪个元数据字段排序，**自然序**（数字段按数值比：`ep2` < `ep10`）。"
+        "缺省 `episode_id`：`<run_id>-ep<n>` 的自然序就是本 run 的执行序",
+    )

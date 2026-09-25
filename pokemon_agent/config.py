@@ -238,3 +238,8 @@ L 条 step memory，取"最近 3 条"就是字面意思——不再乘 L。
 # 取之后，`JUDGE_HISTORY_STEPS` 本身就是条数上限，查询上限与渲染上限同源，
 # 再留一个帽就是两个数字描述同一件事、还能互相矛盾（cap < steps 时截断静默发生）。
 # 链长膨胀的风险也一并消除：取的是固定 3 条，与 L 无关。
+
+
+CHECKPOINT_ENABLED = True
+"""三级 begin 自动存档的总开关（`docs/checkpoint/spec.md` C1）。**实验旋钮**：
+关掉时 `build.py` 不造存档器，各入口见 None 即不存档，其余行为不变。"""

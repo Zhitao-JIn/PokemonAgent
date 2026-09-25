@@ -63,6 +63,8 @@ world/
 | 2 | `all_actions` | `() -> list[str]` | 无 | 非空，且整个 episode 内不变 | 不失败 |
 | 3 | `step` | `(segments: list[tuple[str, int]], *, settle: bool = True) -> None` | 每一段的按键都在 `all_actions()` 中；当前 episode 未结束 | 按序执行按键段，推进世界，**不感知** | 按键不在 `ALL_BUTTONS` 是调用方 bug，assert 拦下；实现另断言"已 `reset()`""窗口没关" |
 | 4 | `perceive_once` | `(*, ram_only: bool = False) -> Perceived` | 已 `reset()` | 返回这次真调用产生的新观测（observation 非空） | 解析不出 `ScreenState` 时抛 `PerceptionAttemptFailed`（附这次的账）；其余异常就地收编成它 |
+| 5 | `save_state` | `() -> bytes` | 无 | 模拟器完整状态（CPU / 内存 / 画面）的字节串，非空；**不推进世界** | 不失败 |
+| 6 | `load_state` | `(data: bytes) -> None` | `data` 是 `save_state` 的产物 | 恢复到导出那一刻；**读档后不 tick**（09-25 实测读档即恢复画面与内存，多 tick 一帧内存就偏离） | 数据非法时 PyBoy 原样抛出 |
 
 两个要点：**裸字段**——`reset` 收 `Task` 拆开后的五个原始值、`step` 收 `Action.sequence` 拆开的 `(按键名, 连按次数)` 列表，world 不依赖 brain 的类型。
 **`settle` 只改调用方什么时候拿到控制权**，不改按键本身的效果：`True` 等"按下去之后自己走完"的过程（换图淡入淡出 / 战斗开场 / 对话逐字打出 / 菜单弹出）走完；`False` 按完即返回，链中间的键用这一档，代价是可能抄到过场的中间帧。

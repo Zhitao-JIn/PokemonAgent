@@ -34,9 +34,11 @@
 
 from __future__ import annotations
 
+from .checkpoint_mark import CheckpointMark
 from .entry_status import EntryStatus
 from .episode_io import EpisodeInput, EpisodeOutput
 from .goal_entry import GoalEntry
+from .review_mark import ReviewMark
 from .task_entry import TaskEntry
 from .task_io import TaskInput, TaskOutput
 from .termination import Settled, Termination
@@ -44,8 +46,10 @@ from .trace_event import TraceEvent
 from .trace_kind import TraceKind
 
 __all__ = [
+    "CheckpointMark",
     "EpisodeInput",
     "EpisodeOutput",
+    "ReviewMark",
     "EntryStatus",
     "GoalEntry",
     "TaskEntry",

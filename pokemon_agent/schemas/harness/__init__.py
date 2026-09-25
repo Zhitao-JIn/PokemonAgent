@@ -61,9 +61,14 @@ __all__ = [
     "FromHarnessToGameToolExecuteReq",
     "FromHarnessToGameToolGetActionSpaceReq",
     "FromHarnessToGameToolGetActionSpaceResp",
+    "FromHarnessToGameToolLoadStateReq",
     "FromHarnessToGameToolPerceiveOnceResp",
     "FromHarnessToGameToolResetReq",
+    "FromHarnessToGameToolSaveStateReq",
+    "FromHarnessToGameToolSaveStateResp",
     "FromHarnessToMemoryToolAppendObjectEventsReq",
+    "FromHarnessToMemoryToolFetchReq",
+    "FromHarnessToMemoryToolFetchResp",
     "FromHarnessToMemoryToolQueryActMemoriesReq",
     "FromHarnessToMemoryToolQueryActMemoriesResp",
     "FromHarnessToMemoryToolQueryEpisodeSummariesReq",
@@ -129,13 +134,18 @@ from .communication.FromHarnessToGameToolGetActionSpaceReq import (
 from .communication.FromHarnessToGameToolGetActionSpaceResp import (
     FromHarnessToGameToolGetActionSpaceResp,
 )
+from .communication.FromHarnessToGameToolLoadStateReq import FromHarnessToGameToolLoadStateReq
 from .communication.FromHarnessToGameToolPerceiveOnceResp import (
     FromHarnessToGameToolPerceiveOnceResp,
 )
 from .communication.FromHarnessToGameToolResetReq import FromHarnessToGameToolResetReq
+from .communication.FromHarnessToGameToolSaveStateReq import FromHarnessToGameToolSaveStateReq
+from .communication.FromHarnessToGameToolSaveStateResp import FromHarnessToGameToolSaveStateResp
 from .communication.FromHarnessToMemoryToolAppendObjectEventsReq import (
     FromHarnessToMemoryToolAppendObjectEventsReq,
 )
+from .communication.FromHarnessToMemoryToolFetchReq import FromHarnessToMemoryToolFetchReq
+from .communication.FromHarnessToMemoryToolFetchResp import FromHarnessToMemoryToolFetchResp
 from .communication.FromHarnessToMemoryToolQueryActMemoriesReq import (
     FromHarnessToMemoryToolQueryActMemoriesReq,
 )

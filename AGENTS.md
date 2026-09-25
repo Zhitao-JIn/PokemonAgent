@@ -214,6 +214,8 @@ pokemon_agent/
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方。
 │                     **只依赖 tools / schemas / prompts 三层，不依赖 trace 的实现**
 │                     （trace 也是独立模块，只通过 Port 说话）
+│                     checkpoint/：三级 begin 自动存档 + 由内向外恢复
+│                     （Checkpointer / restore_run / 分支登记表，见 docs/spec/checkpoint/）
 ├── world/            WorldPort 实现：PyBoy + 视觉模型的粘合层 + 世界语义常量
 │                     （INTERACT_KEY / DIRECTION_KEYS——"这个世界怎么按键"的知识）
 ├── tools/            Harness 伸向各模块的手：`game_tools.py` / `memory_tool.py` /
@@ -249,8 +251,8 @@ pokemon_agent/
 │                     它不是 harness 的内部件——harness 只经 TraceToolPort 说话
 ├── experiment/       实验任务定义（tasks.py）、experiment_states/（钉死存档）、
 │                     real_check/（真实链路核对：维度 1 harness / 2 trace /
-│                     4 memory / 6 memory roundtrip；编号 3、5 随 checkpoint
-│                     维度一起删了）——仓库根级，不在包内
+│                     3 checkpoint / 4 memory / 6 memory roundtrip；编号 5
+│                     随旧 restore 维度一起删了）——仓库根级，不在包内
 ├── config.py         **全项目唯一的策略常量集中地**：重试预算 / 动作输出上限 /
 │                     循环控制 / 召回与判定四组。判据——"改这个数是为了做实验还是
 │                     为了让代码正确"：前者来 config，后者（帧数、内存地址、
@@ -384,7 +386,7 @@ pyproject.toml
 | `kind` | **账名**（`schemas/harness/domain/trace_kind.py::TraceKind` 的值）。由 tool 层给，**渲染层不做任何翻译**——`req.kind` 一路落到这里 |
 | `type` | 粗类，7 类（`trace/datastore/trace_event.py::EventType`，见 `docs/spec/DATAFLOW.md` 第四节「事件总表」）：`model_call` / `error` / `llm_outcome` / `view` / `act` / `memory_io` / `lifecycle`。**0903 收敛原则**：type 与"哪条产物"正交、数量极小；"哪个节点产出了什么"全部由 `kind` 回答（如 `think`/`judge_verdict`/`verify_verdict`、`read_*`/`write_*`、`do_action`/`get_action_space`） |
 | `ts` | Unix 时间戳（秒）。**排序的唯一依据**（`(ts, uuid)` 升序），算延迟与对齐外部日志也用它 |
-| `meta` | **标签面的 JSON 字符串**：`{run_id, source, episode_id, task_id, step}` 五件，**不多不少**。`run_id` 由落盘层（`trace/store.py::_stamp_run_id`）盖，另外四件由 harness 在 `req.meta` 里**一次交齐**，`TraceTool.append` 只核不拼。`source` = **这条账从哪个位置发出**（图上节点名，或图外入口名如 `run_entry.new_run`）。上层账的空位放本层 id：run 级账 `episode_id`/`task_id` 位放 run_id、`step` = 已派局数；episode 级账 `task_id` 位放 episode_id |
+| `meta` | **标签面的 JSON 字符串**：`{run_id, branch, source, episode_id, task_id, step}` 六件，**不多不少**。`run_id` 与 `branch`（执行线，未经恢复为 `main`）由落盘层（`trace/store.py::_stamp_run_id`）盖，另外四件由 harness 在 `req.meta` 里**一次交齐**，`TraceTool.append` 只核不拼。`source` = **这条账从哪个位置发出**（图上节点名，或图外入口名如 `run_entry.new_run`）。上层账的空位放本层 id：run 级账 `episode_id`/`task_id` 位放 run_id、`step` = 已派局数；episode 级账 `task_id` 位放 episode_id |
 | `content` | **正文面的 JSON 字符串**。判据是"存在反函数"——能从这串字符无损还原出源记录的字段。**标量一律 `str()`、布尔一律小写 `true`/`false`**；本来就是结构化数据的那几处（`facts` / `sequence` / `verdicts` / 四本写账的正文）**直接放对象，不再 `json.dumps` 一次**（那是双重编码） |
 
 - **0914 封套改造**：形状从九个字段收成上面六个，删了 `event_id`（唯一读方随

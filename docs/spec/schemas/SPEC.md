@@ -61,7 +61,7 @@ schemas/
   快照（`SnapshotMemory` / `RestoreMemory`）。
 - **往 `reviewer`**：`InjectReq`、`AuditReq` / `AuditResp`（`AuditReq.outcome` 是 `EpisodeOutput` 或 `TaskOutput`，
   审 task 时 `task_id` 非空，`events` 是被审对象自己的 trace）。
-- **往 `trace_tool`**：`FromHarnessToTraceToolAppendReq`——`kind` + `meta`（五件）+ 各 kind 取用的可选字段
+- **往 `trace_tool`**：`FromHarnessToTraceToolAppendReq`——`kind` + `meta`（调用方交四件：`source`/`episode_id`/`task_id`/`step`；`run_id`/`branch` 由落盘层盖）+ 各 kind 取用的可选字段
   （`calls` / `obs` / `entry` / `verdicts` / `outcome_task` / `goal` / `task_entry` / `abandoned` / `audit` / `tasks` /
   `termination` / `fail_streak` / `updates` …）。
 - **非门面**：`ModelCall.py`（`ModelCall` / `ModelCallLog`）、`RunResp.py`（`RunResp`：outcomes / total / succeeded / success_rate / termination；混入 `Settled`）。

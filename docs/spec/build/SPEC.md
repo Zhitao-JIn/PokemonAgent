@@ -28,10 +28,13 @@
 | `run_brain` / `episode_brain` / `task_brain` | `BrainTool`（容器） | `BrainTool.build(...)` **按需各造一份**：run 只传 `plan=`，episode 传 `text/judge/verify=`，task 只传 `text=` | 各自的型号名 + 输出上限 |
 | —— | 八个能力对象（`Planner`/`Decomposer`/`Chooser`/`Judger`/`Reflector`/`Verifier`/`Summarizer`/`TaskSummarizer`） | 由容器组装、按层分发（`run_brain.planner·judger` / `episode_brain.decomposer·judger·verifier·summarizer` / `task_brain.chooser·judger·reflector·verifier·task_summarizer`） | —— |
 | `reviewer` | `Reviewer`（Protocol） | 参数；不传 → `NullReviewer()` | 一个策略对象 |
+| `saver` | `SqliteSaver`（LangGraph） | `harness.checkpoint.build_saver(checkpoint_root)`：库文件 `<checkpoint_root>/langgraph.sqlite`，反序列化白名单由三种状态模型递归生成 | `checkpoint_root`（缺省 = 启动目录下 `checkpoints/`） |
+| `checkpointer` | `Checkpointer` | `harness.checkpoint.Checkpointer(root, saver, 三张图, game, memory, trace, branch, lineage, models)`；`config.CHECKPOINT_ENABLED` 关时为 None；三层 runtime 的 `checkpointer` 字段是**同一实例** | `branch`（缺省 `main`）、`lineage`（恢复出的执行线才有） |
+| 三张图 | `CompiledStateGraph` | `compile_task_graph()` / `compile_episode_graph()` / `compile_run_graph(checkpointer=saver)`，**只在这里编译**；只有 run 图挂 saver，内层两张图的状态经嵌套命名空间写进同一个库 | —— |
 | `task_rt` | `TaskRuntime` | 直接构造（task 层 context） | `game` / `memory` / `trace` + task_brain 的 `chooser`·`judger`·`reflector`·`verifier`·`task_summarizer` |
-| `episode_rt` | `EpisodeRuntime` | 直接构造（episode 侧 context，嵌套 `task_rt`） | `game` / `memory` / episode_brain 的 `decomposer`·`judger`·`verifier`·`summarizer` / `trace` / `reviewer` + `task=task_rt` |
-| `run_rt` | `RunRuntime` | 直接构造（run 侧 context，嵌套 `episode_rt`） | `trace` / `memory` / `reviewer`（同一实例）/ run_brain 的 `planner`·`judger` |
-| `run_harness` | `RunHarness` | `RunHarness(run_rt)` | —— |
+| `episode_rt` | `EpisodeRuntime` | 直接构造（episode 侧 context，嵌套 `task_rt`） | `game` / `memory` / episode_brain 的 `decomposer`·`judger`·`verifier`·`summarizer` / `trace` / `reviewer` + `task_graph`（task 图）+ `task=task_rt` |
+| `run_rt` | `RunRuntime` | 直接构造（run 侧 context，嵌套 `episode_rt`） | `trace` / `memory` / `reviewer`（同一实例）/ run_brain 的 `planner`·`judger` + `episode_graph`（episode 图）+ `episode=episode_rt` |
+| `run_harness` | `RunHarness` | `RunHarness(run_rt, run_graph)` | —— |
 
 - **`reviewer` 缺省 `NullReviewer`（没人插话）**；plan 位置的规划来源就是 brain
   （185 起注入的 `planner` 能力对象），没有独立的 planner 装配。
@@ -41,7 +44,7 @@
 `build_real` 的参数（缺省值即工厂缺省）：`rom`、`state_file=None`、`vision_model="qwen3.8-max"`、
 `text_model="qwen-plus"`、`judge_model="qwen3.8-max"`、`verify_model="doubao-seed-2-1-pro-260628"`、
 `plan_model="doubao-seed-2-1-pro-260628"`、`max_tokens=25600`、`watch=False`、`speed=0`、
-`run_id="local"`、`trace_root=None`、`memory_root=None`（两个落盘根：缺省 = **进程启动目录**
+`run_id="local"`、`trace_root=None`、`memory_root=None`、`checkpoint_root=None`、`branch="main"`、`lineage=()`（两个落盘根：缺省 = **进程启动目录**
 下的 `tracelog/` 与 `memory/`，0916 起——数据跟着启动走，不再锚在仓库根；
 memory 只有一个根，四族各占其下 `<kind>/`）、
 `reviewer=None`。

@@ -7,14 +7,15 @@
 
 想知道"怎么拼起来"读这个文件；想知道"怎么互相调用"读 harness/run/harness.py。
 
-**入口是 run 级**：返回的 `RunHarness` 是主 agent（完整一局游戏），它内部编译并
-`invoke` episode 子图（5 格），episode 的 `act` 再 `invoke` task 子图（5 格）。
+**入口是 run 级**：返回的 `RunHarness` 是主 agent（完整一局游戏）。三张图（run / episode / task，
+各 5 格）都在本文件编译：run 图交给 `RunHarness`，episode 图挂 `RunRuntime.episode_graph`、
+task 图挂 `EpisodeRuntime.task_graph`，由上一层的 `act` 格取用。
 旧调用方拿到的 `harness.run(run_id, goals)` 是 run 级签名。
 
-**步 4 起装配只剩"造三个 runtime"这一件事**：`TaskRuntime`（task 层，v1 容器先行）
+**装配是"造三个 runtime + 编译三张图"**：`TaskRuntime`（task 层，v1 容器先行）
 → `EpisodeRuntime`（`decomposer` / `judger` / `verifier` / `summarizer`，嵌套持有
 `task`）→ `RunRuntime`（`planner` / `judger`，嵌套持有 `episode`）——
-`RunHarness(run_rt)` 只收它，不再逐个把同样的东西再递一遍（那会有两份真源，而
+`RunHarness(run_rt, run_graph)` 只收它与 run 图，不再逐个把同样的东西再递一遍（那会有两份真源，而
 "两边不是同一个对象"不报错）。`trace` / `memory` / `reviewer` / `game` 三层是
 **同一实例**（复制引用）。**id 一律归 state**（186）：`run_id` 住 `RunState`，
 runtime 不再复制；brain 能力**按层各造一份**（185，见下面三个 `BrainTool.build`）。
@@ -22,8 +23,10 @@ runtime 不再复制；brain 能力**按层各造一份**（185，见下面三�
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
+from pokemon_agent.config import CHECKPOINT_ENABLED
 from pokemon_agent.harness import (
     EpisodeRuntime,
     Reviewer,
@@ -31,12 +34,23 @@ from pokemon_agent.harness import (
     RunRuntime,
     TaskRuntime,
 )
+from pokemon_agent.harness.checkpoint import Checkpointer, LineageLink, build_saver
+from pokemon_agent.harness.episode import compile_episode_graph
 from pokemon_agent.harness.null_reviewer import NullReviewer
+from pokemon_agent.harness.run import compile_run_graph
+from pokemon_agent.harness.task import compile_task_graph
 from pokemon_agent.tools import (
     BrainTool,
     GameTools,
     MemoryTool,
     TraceTool,
+)
+from pokemon_agent.tools.replay import (
+    Tape,
+    TapeGame,
+    TapeMemory,
+    TapeReviewer,
+    TapeTrace,
 )
 
 
@@ -54,6 +68,10 @@ def build_real(
     run_id: str = "local",
     trace_root: str | Path | None = None,
     memory_root: str | Path | None = None,
+    checkpoint_root: str | Path | None = None,
+    branch: str = "main",
+    lineage: Sequence[LineageLink] = (),
+    tape: Tape | None = None,
     # 供应商由**型号名前缀**决定（0914 起，表在 `brain/providers.py::_PROVIDER_PREFIXES`）：
     # `qwen*` → DashScope、`doubao*` → 火山方舟、`deepseek*` → DeepSeek 官方 API。
     # 下面这几个缺省值因此不只是"型号名"，它们同时**选定了厂商**。
@@ -144,7 +162,12 @@ def build_real(
     # 接线工厂——落盘记录的完整形状在它内部接好，本装配点只递裸字段。与
     # `BrainTool.build()` / `MemoryTool.build()` / `GameTools.build()` 同形。
     # **本文件对 `pokemon_agent.trace` 零 import**。
-    trace_tool = TraceTool.build(run_id=run_id, trace_root=trace_root)
+    trace_tool = TraceTool.build(
+        run_id=run_id,
+        trace_root=trace_root,
+        branch=branch,
+        lineage=[(link.branch, link.fork_uuid, link.fork_ts) for link in lineage],
+    )
 
     # 图内节点伸向记忆的唯一通道
     # **memory 的两个检索 provider 不在这里造**（2026-09-13，深夜十二）：
@@ -178,19 +201,32 @@ def build_real(
         plan=plan_model or "doubao-seed-2-1-pro-260628",
         judge=judge_model,
         max_tokens=max_tokens,
+        tape=tape,
     )
     episode_brain = BrainTool.build(
         plan=plan_model or "doubao-seed-2-1-pro-260628",
         judge=judge_model,
         verify=verify_model or "doubao-seed-2-1-pro-260628",
         max_tokens=max_tokens,
+        tape=tape,
     )
     task_brain = BrainTool.build(
         text=text_model,
         judge=judge_model,
         verify=verify_model or "doubao-seed-2-1-pro-260628",
         max_tokens=max_tokens,
+        tape=tape,
     )
+
+    # **回放**（`tape` 非空，`docs/checkpoint/spec.md` v2 §七）：世界、记忆、记账、人各包一层
+    # 磁带件，大脑的 provider 已在 `BrainTool.build(tape=…)` 里包好。切换后照转真件。
+    reviewer = reviewer or NullReviewer()
+    real_game = game
+    if tape is not None:
+        game = TapeGame(game, tape)
+        memory = TapeMemory(memory, tape)
+        trace_tool = TapeTrace(trace_tool, tape)
+        reviewer = TapeReviewer(reviewer, tape)
 
     # `interaction` 那个"在这里先落实成一个真实例"的步骤已删（0914 控制台改造）：
     # 跨线程信箱整套下线，取而代之的是 `reviewer`/`planner` 两个同步接口——
@@ -208,6 +244,38 @@ def build_real(
     # 185 起注入的就是能力对象）：`plan_run` 格直接调注入的 `planner`。
     # task 层容器先行（第 181 条）；routes 表已随 186 删除——按 kind 选 provider
     # 是拆解器落地后的事，到那天在这里装配（铁律 3：组装只发生在一个地方）。
+    #
+    # **三张图与存档器**：图只在这里编译；只有 run 图挂 saver，内层两张图的状态经嵌套命名空间
+    # 写进同一个库。存档器拿着 run 图与三个 tool，由三层 runtime 共享同一实例；
+    # `CHECKPOINT_ENABLED` 关掉时不造它（各入口见 None 即不存档）。库与存档缺省落在
+    # 进程启动目录下的 `checkpoints/`（与 `tracelog/`、`memory/` 同一口径）。
+    checkpoint_dir = (
+        Path(checkpoint_root) if checkpoint_root is not None else Path.cwd() / "checkpoints"
+    )
+    saver = build_saver(checkpoint_dir)
+    task_graph = compile_task_graph()
+    episode_graph = compile_episode_graph()
+    run_graph = compile_run_graph(checkpointer=saver)
+    checkpointer = (
+        Checkpointer(
+            root=checkpoint_dir,
+            run_graph=run_graph,
+            game=game,
+            memory=memory,
+            trace=trace_tool,
+            branch=branch,
+            lineage=lineage,
+            models={
+                "vision": vision_model,
+                "text": text_model,
+                "judge": judge_model,
+                "verify": verify_model,
+                "plan": plan_model,
+            },
+        )
+        if CHECKPOINT_ENABLED
+        else None
+    )
     task_rt = TaskRuntime(
         game=game,
         chooser=task_brain.chooser,
@@ -217,6 +285,7 @@ def build_real(
         verifier=task_brain.verifier,
         task_summarizer=task_brain.task_summarizer,
         trace=trace_tool,
+        checkpointer=checkpointer,
     )
     episode_rt = EpisodeRuntime(
         game=game,
@@ -226,8 +295,10 @@ def build_real(
         verifier=episode_brain.verifier,
         summarizer=episode_brain.summarizer,
         trace=trace_tool,
-        reviewer=reviewer or NullReviewer(),
+        reviewer=reviewer,
+        task_graph=task_graph,
         task=task_rt,
+        checkpointer=checkpointer,
     )
     run_rt = RunRuntime(
         trace=trace_tool,
@@ -235,8 +306,10 @@ def build_real(
         reviewer=episode_rt.reviewer,
         planner=run_brain.planner,
         judger=run_brain.judger,
+        episode_graph=episode_graph,
         episode=episode_rt,
+        checkpointer=checkpointer,
     )
-    run_harness = RunHarness(run_rt)
+    run_harness = RunHarness(run_rt, run_graph)
 
-    return run_harness, game
+    return run_harness, real_game

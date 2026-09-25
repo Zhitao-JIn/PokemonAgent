@@ -774,10 +774,10 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
     | `kind` | `query` 里是什么 | `refs` 里一条是什么 |
     |---|---|---|
-    | `read_act_memory` | `episode_id=…`（本局全量，无其他条件） | `"(episode_id, step)"` 坐标 |
-    | `read_episode_memory` | `run_id=…`（本 run 全量） | 跨局摘要的 `episode_id` |
+    | `read_act_memory` | `episode_id=… task_id=…`（本 task 的全部） | `"(episode_id, step)"` 坐标 |
+    | `read_episode_memory` | `run_id=… order_by=episode_id`（等值 + 排序） | 局 `episode_id` |
     | `read_knowledge` | **BM25 检索词原文** | 命中记录的 `source` 文件名 |
-    | `read_object_memory` | `map_id=… before_step=…` | 对象事件的 `place.key` |
+    | `read_object_memory` | `map_id=… before_step=…` | 事件唯一键 `"(ep, step, place.key)"` |
     | `read_task_memory` | `episode_id=…` | task 记忆坐标 |
 
     **`query` 记的是真正交给记忆读口的东西，不加包装**：四条按等值条件查的写
@@ -946,6 +946,93 @@ def settle_goal(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "overturned": str(goal.overturned).lower(),
             "fail_streak": str(req.fail_streak) if req.fail_streak is not None else "",
         },
+    )
+
+
+def checkpoint_save(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """存下一份存档：id、级别、清单路径。前置条件：req.checkpoint 非 None 且带 id 与清单路径。"""
+    mark = req.checkpoint
+    assert mark is not None and mark.checkpoint_id and mark.manifest_path
+    return Rendered(
+        EventType.LIFECYCLE,
+        TraceKind.CHECKPOINT_SAVE,
+        {
+            "checkpoint_id": mark.checkpoint_id,
+            "level": mark.level,
+            "manifest_path": mark.manifest_path,
+        },
+    )
+
+
+def checkpoint_restore(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """从存档恢复：新执行线的第一条账，带血缘。
+
+    前置条件：req.checkpoint 非 None，带 id 与父执行线；`parent_last_event_uuid` 在 run 级恢复时为空
+    （run 级存档在 run 开账之前）。
+    """
+    mark = req.checkpoint
+    assert mark is not None and mark.checkpoint_id and mark.parent_branch
+    return Rendered(
+        EventType.LIFECYCLE,
+        TraceKind.CHECKPOINT_RESTORE,
+        {
+            "checkpoint_id": mark.checkpoint_id,
+            "level": mark.level,
+            "parent_branch": mark.parent_branch,
+            "parent_last_event_uuid": mark.parent_last_event_uuid,
+            "to_task": mark.to_task,
+        },
+    )
+
+
+def world_snapshot(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """task 开局的世界快照落在哪（`meta.task_id` 是那个 task）。前置条件：req.checkpoint 带路径。"""
+    mark = req.checkpoint
+    assert mark is not None and mark.world_path
+    return Rendered(EventType.LIFECYCLE, TraceKind.WORLD_SNAPSHOT, {"path": mark.world_path})
+
+
+def trace_sealed(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """封存本局的账：封进哪份存档、几条。前置条件：req.checkpoint 带 id。"""
+    mark = req.checkpoint
+    assert mark is not None and mark.checkpoint_id
+    return Rendered(
+        EventType.LIFECYCLE,
+        TraceKind.TRACE_SEALED,
+        {"checkpoint_id": mark.checkpoint_id, "count": str(mark.count)},
+    )
+
+
+def checkpoint_error(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """存档失败：哪一份、哪一步、异常快照。前置条件：req.checkpoint 带 stage，req.error 非 None。"""
+    mark = req.checkpoint
+    assert mark is not None and mark.stage and req.error is not None
+    return Rendered(
+        EventType.ERROR,
+        TraceKind.CHECKPOINT_ERROR,
+        {"checkpoint_id": mark.checkpoint_id, "stage": mark.stage, "error": req.error},
+    )
+
+
+def review_inject(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """插话一次：表单种类与人的回话（空串 = 没意见）。前置条件：req.review 带 `form_kind`。"""
+    mark = req.review
+    assert mark is not None and mark.form_kind
+    return Rendered(
+        EventType.LIFECYCLE,
+        TraceKind.REVIEW_INJECT,
+        {"form_kind": mark.form_kind, "reply": mark.reply},
+    )
+
+
+def review_audit(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """审一次：认 / 推翻与理由。前置条件：req.review 带 `verdict`。"""
+    mark = req.review
+    assert mark is not None and mark.verdict
+    return Rendered(
+        EventType.LIFECYCLE,
+        TraceKind.REVIEW_AUDIT,
+        {"verdict": mark.verdict, "note": mark.note},
     )
 
 

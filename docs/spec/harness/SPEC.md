@@ -21,6 +21,8 @@ episode（一个目标）、task（目标拆出的一个小任务），也是**�
 harness/
 ├── __init__.py  compose.py（compose_units：格内单元串接）  judging.py（三层共用的停判）
 │                sensing.py（perceive_once：向世界取一帧的唯一入口）
+│                reviewing.py（ask_inject / ask_audit：问人并记 review_inject / review_audit）
+│                checkpoint/（两级存档、恢复与回放，见 docs/spec/checkpoint/SPEC.md）
 ├── interface/   reviewer.py（Reviewer 协议） planner_outcome.py（PlannerOutcome / GoalUpdate）
 ├── console_reviewer.py  file_reviewer.py  null_reviewer.py
 ├── run/
@@ -83,7 +85,7 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 
 | 字段 | `RunState` | `EpisodeRunState` | `TaskState` |
 |---|---|---|---|
-| 身份 | `run_id`、`run_goal` | `run_id`、`episode_id`、`goal` | `run_id`、`episode_id`、`task`、`start_step` |
+| 身份 | `run_id`、`branch`（执行线，缺省 `main`；`<run_id>@<branch>` 即 LangGraph thread）、`run_goal` | `run_id`、`episode_id`、`goal` | `run_id`、`episode_id`、`task`、`start_step` |
 | 本层计数 | `step`（已派局数） | `step`（已派 task 数）、`total_acts` | `step`（本 task 已按键数；帧步号 = `start_step + step`） |
 | 失败计数 | `fail_streak` | `fail_streak` | `stall_key`、`stall_count` |
 | 表 | `goals`（`GoalEntry`） | `tasks`（`TaskEntry`） | — |
@@ -98,8 +100,8 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 
 | runtime | 字段 |
 |---|---|
-| `RunRuntime` | `trace`、`memory`、`reviewer`、`planner`、`judger`、`episode` |
-| `EpisodeRuntime` | `game`、`memory`、`decomposer`、`judger`、`verifier`、`summarizer`、`trace`、`reviewer`、`task` |
+| `RunRuntime` | `trace`、`memory`、`reviewer`、`planner`、`judger`、`episode_graph`（episode 图，`build.py` 编译）、`episode` |
+| `EpisodeRuntime` | `game`、`memory`、`decomposer`、`judger`、`verifier`、`summarizer`、`trace`、`reviewer`、`task_graph`（task 图，`build.py` 编译）、`task` |
 | `TaskRuntime` | `game`、`chooser`、`judger`、`memory`、`reflector`、`verifier`、`task_summarizer`、`trace`、帧槽 `frame_before`/`frame_after` |
 
 能力对象来自 `tools/brain_tool.py`，`build.py` 按层各造一份 brain（`run_brain` / `episode_brain` / `task_brain`）。
@@ -121,7 +123,7 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 
 ## 七、trace 写入
 
-- `meta` 恰好五件：`run_id` / `source` / `episode_id` / `task_id` / `step`；上层空槽填本层自己的 id。
+- `meta` 恰好六件：`run_id` / `branch` / `source` / `episode_id` / `task_id` / `step`（前两件落盘层盖）；上层空槽填本层自己的 id。
 - `kind` 词表：`schemas/harness/domain/trace_kind.py::TraceKind`；`type` 7 类：`model_call` / `error` /
   `llm_outcome` / `view` / `act` / `memory_io` / `lifecycle`。
 - 逐 kind 的 producer 与正文字段见 [`../DATAFLOW.md`](../DATAFLOW.md) 第四节。

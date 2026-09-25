@@ -30,6 +30,7 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.harness.domain import EntryStatus, EpisodeOutput, GoalEntry, Termination
 
 from ...judging import ask_judger, judge_reason, mechanical_termination, record_verdict
+from ...reviewing import ask_audit
 from ..run_state import RunState
 from ..runtime import RunRuntime
 
@@ -130,7 +131,9 @@ def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[s
     stamped = _stamp(entry, outcome.success, outcome.episode_id)
 
     # 步骤 2：亮给人审；推翻则盖反面，理由记进 note，失败连击跟着修正。
-    resp = deps.reviewer.audit(
+    resp = ask_audit(
+        deps.reviewer,
+        deps.trace,
         FromHarnessToReviewerAuditReq(
             run_id=state.run_id,
             episode_id=outcome.episode_id,
@@ -138,7 +141,13 @@ def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[s
             events=episode_trace_events(
                 deps.trace.read_events({"run_id": state.run_id}), outcome.episode_id
             ),
-        )
+        ),
+        meta={
+            "source": _SOURCE,
+            "episode_id": state.run_id,
+            "task_id": state.run_id,
+            "step": state.step,
+        },
     )
     fail_streak = state.fail_streak
     if resp.verdict is AuditVerdict.OVERTURN:

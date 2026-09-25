@@ -27,10 +27,9 @@ def retrieve_act_memories(state: TaskState, runtime: Runtime[TaskRuntime]) -> di
     """
     deps = runtime.context
     ep, task_id = state.episode_id, state.task.task_id
-    acts = deps.memory.query_act_memories(
-        FromHarnessToMemoryToolQueryActMemoriesReq(episode_id=ep)
+    mine = deps.memory.query_act_memories(
+        FromHarnessToMemoryToolQueryActMemoriesReq(episode_id=ep, task_id=task_id)
     ).entries
-    mine = [a for a in acts if a.task_id == task_id]
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.READ_ACT_MEMORY,

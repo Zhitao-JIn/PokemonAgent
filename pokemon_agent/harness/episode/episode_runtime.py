@@ -44,6 +44,9 @@ episode 节点从此**看不见** planner（原来只是"不读"，现在是"结
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from langgraph.graph.state import CompiledStateGraph
 
 from pokemon_agent.tools.interface import (
     DecomposePort,
@@ -57,6 +60,9 @@ from pokemon_agent.tools.interface import (
 
 from ..interface.reviewer import Reviewer
 from ..task.task_runtime import TaskRuntime
+
+if TYPE_CHECKING:
+    from ..checkpoint import Checkpointer
 
 
 @dataclass
@@ -88,6 +94,8 @@ class EpisodeRuntime:
     reviewer: Reviewer
     """人与图之间的门（插话 + 审）——episode 侧只有 plan_episode / review_and_judge 读它
     （与 `RunRuntime.reviewer` 是**同一实例**）。没接控制台时是 `NullReviewer`。"""
+    task_graph: CompiledStateGraph
+    """task 子图（`build.py` 编译的那一份）——`act` 格派 task 时经它 `invoke`。"""
 
     # ---- 嵌套：task 层的 context 由 episode 持有、将来经分流格递下去 ----
 
@@ -102,6 +110,11 @@ class EpisodeRuntime:
 
     # episode 层自己取的帧（完整档）不进帧槽，`sense_frame` 账直接带图；槽只服务 task 层
     # ActMemory 的前后两张图（见 `task/frames.py`）。
+
+    # ---- 存档：episode begin 由 `episode_entry.begin_episode` 调用 ----
+
+    checkpointer: Checkpointer | None = None
+    """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""
 
 
 __all__ = ["EpisodeRuntime"]

@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from pokemon_agent.brain.errors import ProviderRejected, ToolTimeout
 from pokemon_agent.config import PERCEPTION_MAX_RETRIES
@@ -28,8 +29,11 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolExecuteReq,
     FromHarnessToGameToolGetActionSpaceReq,
     FromHarnessToGameToolGetActionSpaceResp,
+    FromHarnessToGameToolLoadStateReq,
     FromHarnessToGameToolPerceiveOnceResp,
     FromHarnessToGameToolResetReq,
+    FromHarnessToGameToolSaveStateReq,
+    FromHarnessToGameToolSaveStateResp,
     ModelCall,
     ModelCallLog,
 )
@@ -166,6 +170,23 @@ class GameTools:
             max_steps=task.max_steps,
             initial_state_hint=task.initial_state_hint,
         )
+
+    def save_state(
+        self, req: FromHarnessToGameToolSaveStateReq
+    ) -> FromHarnessToGameToolSaveStateResp:
+        """模拟器完整状态 → `req.path`（先写临时文件再改名，崩溃不留半个存档）。"""
+        data = self._world.save_state()
+        path = Path(req.path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_bytes(data)
+        tmp.replace(path)
+        assert path.stat().st_size == len(data) > 0
+        return FromHarnessToGameToolSaveStateResp(path=str(path), size=len(data))
+
+    def load_state(self, req: FromHarnessToGameToolLoadStateReq) -> None:
+        """`req.path` → 模拟器完整状态。"""
+        self._world.load_state(Path(req.path).read_bytes())
 
     def perceive_with_retry(
         self, *, ram_only: bool = False

@@ -98,3 +98,20 @@ class WorldPort(Protocol):
         后置条件：返回时 observation 非空，且是这次真调用产生的新观测。
         """
         ...
+
+    def save_state(self) -> bytes:
+        """把模拟器的**完整状态**（CPU、内存、画面）导出成字节串。**不推进世界**。
+
+        给 checkpointer 用：与 `load_state` 成对，`load_state(save_state())` 之后
+        世界与导出那一刻逐字节相同。
+        后置条件：返回非空字节串。
+        """
+        ...
+
+    def load_state(self, data: bytes) -> None:
+        """用 `save_state` 导出的字节串把模拟器**原样**恢复到那一刻。**不推进世界**。
+
+        不在读档后 tick：读档本身已恢复画面与内存，多推一帧会让恢复点偏离存档点。
+        前置条件：`data` 是本世界 `save_state` 的产物（非空）。
+        """
+        ...

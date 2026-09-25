@@ -7,90 +7,52 @@
 补空章（episode 图已经死了，只能由接住它的人代写，保证一局恰好一条 EpisodeMemory）→
 记 `episode_error`；`AgentError`（预期内的单局失败）兜成一份 `ERROR` 结算，别的异常原样上抛
 （由 `run_entry.new_run` 记 `run_error`）。
-episode 子图编译一次、缓存。
+episode 子图由装配点（`build.py`）编译，经 `runtime.context.episode_graph` 递来。
+派发（`dispatch`）与异常收场（`settle_episode_error`）各住一个文件。
+**episode 级存档在本格一开始**（有存档器时）：run 图停在进 `act` 前，这一局还没动过世界与记忆。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 
-from pokemon_agent.errors import AgentError
-from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
-from pokemon_agent.schemas.harness.domain import EpisodeInput, EpisodeOutput, Termination
+from pokemon_agent.schemas.harness.domain import EpisodeInput
 
-from ...episode import compile_episode_graph, episode_entry
-from ...episode.episode_done.leave_chapter import store_empty_chapter
-from ...episode.episode_runtime import EpisodeRuntime
+from ...episode import episode_entry
 from ..run_state import RunState
 from ..runtime import RunRuntime
 from .dispatch import dispatch
-
-_episode_graph: CompiledStateGraph | None = None
-
-
-def episode_graph() -> CompiledStateGraph:
-    """episode 子图：编译一次、缓存。"""
-    global _episode_graph
-    if _episode_graph is None:
-        _episode_graph = compile_episode_graph()
-    return _episode_graph
+from .settle_episode_error import settle_episode_error
 
 
 def act(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
     """派一局，返回 `{"goals", "episode_input", "step", "pending_episode"}`。"""
-    # 步骤 1：选目标、盖 RUNNING、拼 EpisodeInput。
+    # 步骤 1：选目标、盖 RUNNING、拼 EpisodeInput（纯函数，还没动任何东西）。
     dispatched = dispatch(state)
     episode_input: EpisodeInput = dispatched["episode_input"]
 
-    # 步骤 2：跑 episode 子图，结算交给下一圈 perceive 吸收；抛错由本格接住。
+    # 步骤 2：episode 级存档——存的是进 `act` 前的状态，将派的就是这一局。
+    if runtime.context.checkpointer is not None:
+        runtime.context.checkpointer.save(
+            level="episode", state=state, episode_id=episode_input.episode_id
+        )
+
+    # 步骤 3：跑 episode 子图，结算交给下一圈 perceive 吸收；抛错由本格接住。
     try:
         outcome = episode_entry.run_episode(
-            runtime.context.episode, episode_graph(), episode_input=episode_input
+            runtime.context.episode, runtime.context.episode_graph, episode_input=episode_input
         )
     except Exception as exc:
-        outcome = _episode_error(runtime.context.episode, state.run_id, episode_input, exc)
+        outcome = settle_episode_error(
+            runtime.context.episode, state.run_id, episode_input, exc, source="run.act"
+        )
+
+    # 步骤 4：这一局的账封存进它的 episode 存档。
+    if runtime.context.checkpointer is not None:
+        runtime.context.checkpointer.seal_episode(run_id=state.run_id, step=dispatched["step"])
     return {**dispatched, "pending_episode": outcome}
 
 
-def _episode_error(
-    deps: EpisodeRuntime, run_id: str, episode_input: EpisodeInput, exc: Exception
-) -> EpisodeOutput:
-    """补空章 → 记 `episode_error`；`AgentError` 兜成 `ERROR` 结算，别的原样上抛。"""
-    episode_id = episode_input.episode_id
-    reason = f"error: {type(exc).__name__}"
-    store_empty_chapter(
-        deps,
-        run_id=run_id,
-        episode_id=episode_id,
-        goal=episode_input.goal.goal,
-        tasks_used=0,
-        acts_used=0,
-        termination=Termination.ERROR,
-        reason=reason,
-        source="run.act",
-        step=0,
-    )
-    deps.trace.append(
-        FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.EPISODE_ERROR,
-            meta={"source": "run.act", "episode_id": episode_id, "task_id": episode_id, "step": 0},
-            error=episode_entry.exc_snapshot(exc),
-        )
-    )
-    if not isinstance(exc, AgentError):
-        raise exc
-    return EpisodeOutput(
-        episode_id=episode_id,
-        goal_id=episode_input.goal.task_id,
-        termination=Termination.ERROR,
-        judge_reason="这一局抛错，未经判定",
-        reason=reason,
-        tasks_used=0,
-        acts_used=0,
-    )
-
-
-__all__ = ["act", "dispatch", "episode_graph"]
+__all__ = ["act", "dispatch", "settle_episode_error"]

@@ -50,7 +50,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from pokemon_agent.brain import (
     Action,
@@ -107,6 +107,9 @@ from pokemon_agent.tools.prompts import verify as verify_prompt
 from pokemon_agent.world import DIRECTION_KEYS, INTERACT_KEY
 
 from .backoff import backoff_seconds
+
+if TYPE_CHECKING:
+    from pokemon_agent.tools.replay import Tape
 from .prompts import decide_action as decide_action_prompt
 from .prompts import judge_success as judge_success_prompt
 
@@ -655,6 +658,7 @@ class BrainTool:
         plan_max_tokens: int = PLAN_MAX_TOKENS,
         json_mode: bool = PROVIDER_JSON_MODE,
         plan_thinking: bool = PLAN_THINKING,
+        tape: Tape | None = None,
     ) -> BrainTool:
         """按需装配：**只传这一层要的型号名**，没传的位置 provider 为 `None`。
 
@@ -679,6 +683,9 @@ class BrainTool:
         本方法不替调用方验这个（它验不了，没有厂商型号表）。
         后置条件：返回的容器持有的 `Brain`，造出来的 provider **互不相同**
         （`judge` 与 `decide` 不共用是硬约束，见 `Brain` 模块 docstring）。
+
+        `tape`：回放时给出磁带，每个 provider 包一层 `TapeProvider`（切换前按序吐录下的原文、
+        先核 prompt；切换后照转真件）。解析、重试与记账因此照常走一遍。
         """
         from pokemon_agent.brain import Brain, BrainLlmConfig, build_llm_providers
 
@@ -692,7 +699,12 @@ class BrainTool:
             json_mode=json_mode,
             plan_thinking=plan_thinking,
         )
-        decide, judge_llm, verify_llm, plan_llm = build_llm_providers(config)
+        providers = tuple(build_llm_providers(config))
+        if tape is not None:
+            from pokemon_agent.tools.replay import TapeProvider
+
+            providers = tuple(None if p is None else TapeProvider(p, tape) for p in providers)
+        decide, judge_llm, verify_llm, plan_llm = providers
         brain = Brain(
             decide_llm=decide,
             judge_llm=judge_llm,

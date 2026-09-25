@@ -33,6 +33,8 @@ pokemon_agent/tools/
 │                              Reflector/Verifier/Summarizer/TaskSummarizer（各满足一张单方法口）
 ├── game_tools.py              GameTools（GameToolPort 唯一实现）
 ├── memory_tool.py             MemoryTool（MemoryToolPort 唯一实现）
+├── replay/                    回放的五个磁带件（TapeProvider/TapeGame/TapeMemory/TapeReviewer/TapeTrace）+ Tape + ReplayDiverged
+│                              （docs/spec/checkpoint/SPEC.md §五；装配点有磁带时把真件包成它们）
 ├── vision_factory.py          build_vision_provider()
 ├── interface/
 │   ├── __init__.py            只导出四张协议
@@ -75,6 +77,8 @@ pokemon_agent/tools/
 | `reset` | `(req: FromHarnessToGameToolResetReq) -> None` | 只有 Req |
 | `perceive_with_retry` | `(*, ram_only: bool = False) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]` | 只有 Resp，**无 Req** |
 | `evolve` | `(req: FromHarnessToGameToolEvolveReq) -> None` | 只有 Req |
+| `save_state` | `(req: FromHarnessToGameToolSaveStateReq) -> FromHarnessToGameToolSaveStateResp` | Req + Resp；路径由 harness 给，本层原子写文件 |
+| `load_state` | `(req: FromHarnessToGameToolLoadStateReq) -> None` | 只有 Req；读档后不推进世界 |
 
 **`MemoryToolPort`（实现 `MemoryTool`，`memory_tool.py`）**——各方法一对一信封：
 `query_act_memories` / `query_recent_act_memories`（Req+Resp）、`store_act_memory`（只有 Req）、
@@ -82,6 +86,7 @@ pokemon_agent/tools/
 `store_episode_summary`（Req+Resp）、`query_object_events` /
 `query_object_events_at`（Req+Resp）、`append_object_events`（只有 Req）、
 `query_knowledge` / `store_knowledge`（Req+Resp）、
+`fetch`（Req+Resp：按自然键直接取回记录，回放按账上的 `refs` 取用）、
 `snapshot_memory` / `restore_memory`（Req+Resp，0916——快照打整个记忆根成 zip /
 还原时**以 zip 为准**，库里多出来的记录删掉；`snapshot` 的 Req 只带 `name`、Resp 带 `archive` 路径；
 `restore` 的 Req 带 `archive`、Resp 带 `unpacked` 条数）。
@@ -90,7 +95,8 @@ pokemon_agent/tools/
 FromHarnessToTraceToolAppendReq) -> None`（写口只有这一个，0916 统一——
 调用账的 `calls` 交整条重试链，渲染时逐条落成 `*_call` 账）、
 `read_events(meta: dict[str, Any] | None = None) -> list[TraceEvent]`（读口无信封，
-按 `meta` 做交集筛选——`None`/`{}` = 整个落盘根；返回契约层类型 `TraceEvent`，
+按 `meta` 做交集筛选——`None`/`{}` = 整个落盘根；给了 `meta`（且不带 `branch`）时按本执行线的
+分支血缘拼接：祖先各取分叉点及之前、本分支全取（`TraceTool.build(branch=…, lineage=…)`）；返回契约层类型 `TraceEvent`，
 不是 trace 自己的 `Event`）。
 
 **信封清单**（`pokemon_agent/schemas/harness/communication/`，一个类一个文件）：
@@ -187,8 +193,8 @@ prompt，"判什么、想什么"才当参数传，同一件东西绝不两处给
 
 ## 七、当前状态与已知缺口
 
-- **四张门面、零存档**：`CheckpointToolPort` 已解散，`GameToolPort` 上没有
-  `save_state`/`load_state_bytes`/`set_task` 一族；`TraceToolPort` 只剩一个通用读口
+- **四张门面**：`CheckpointToolPort` 已解散；`GameToolPort` 的存读档只有 `save_state` / `load_state` 两个方法
+  （09-25 为 checkpointer 加回）；`TraceToolPort` 只剩一个通用读口
   `read_events`（无游标、无掩码、无 `read_event(id)`），没有本层自己的测试目录。
 - **重试循环全在 tool 层**：`brain_tool.py:168 _attempt_loop()` 服务
   choose/plan/decompose/judge/verify/summarize/summarize_task 七条链路（`reflect` 不调模型），

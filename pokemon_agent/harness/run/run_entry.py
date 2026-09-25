@@ -14,7 +14,7 @@
 入口 `resume_run`（读存档锚点 → 重建 `RunState` → 进图 → 补 `CHECKPOINT_RESTORE`
 → 取结算），随 `EpisodeCheckpoint` 一起删掉了。
 
-**`recursion_limit` 的常量住顶层 config**（`RUN_RECURSION_LIMIT`）：`_invoke()` 是它唯一
+**`recursion_limit` 的常量住顶层 config**（`RUN_RECURSION_LIMIT`）：`invoke_run()` 是它唯一
 的读者，它是 run 级的**闸门**而不是预算——贴身的限在内层
 task 层的贴身限（`task_entry.task_budget`，按键数算），三层的分工见那个常量
 自己的 docstring。
@@ -120,23 +120,30 @@ def new_run(
         # "将来按任务选起始存档"，真正的任务编排仍由 `dispatch` 逐局决定。
         # `game` 住在 `EpisodeRuntime` 上（episode 独占），run 侧经嵌套穿透。
         deps.episode.game.reset(FromHarnessToGameToolResetReq(task=goals[0]))
-        final = _invoke(deps, graph, state)
+        if deps.checkpointer is not None:
+            deps.checkpointer.save(level="run", state=state)
+        final = invoke_run(deps, graph, state, thread=thread_id(run_id, state.branch))
     except Exception as exc:
         # 异常路径：谁接住谁记账——这里接住的是整个 run 的异常，记 RUN_ERROR 再原样抛出，不吞。
-        deps.trace.append(
-            FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.RUN_ERROR,
-                meta={
-                    "source": "run_entry.new_run",
-                    "episode_id": run_id,
-                    "task_id": run_id,
-                    "step": 0,
-                },
-                error=exc_snapshot(exc),
-            )
-        )
+        record_run_error(deps, run_id, exc, source="run_entry.new_run")
         raise
     return close(final)
+
+
+def record_run_error(deps: RunRuntime, run_id: str, exc: Exception, *, source: str) -> None:
+    """记一条 `run_error`（整个 run 的异常快照），再把半截那一局已写出的账封存（有存档器时）。
+
+    source：接住异常的位置——`"run_entry.new_run"`，或恢复路径 `"checkpoint.restore"`。
+    """
+    deps.trace.append(
+        FromHarnessToTraceToolAppendReq(
+            kind=TraceKind.RUN_ERROR,
+            meta={"source": source, "episode_id": run_id, "task_id": run_id, "step": 0},
+            error=exc_snapshot(exc),
+        )
+    )
+    if deps.checkpointer is not None:
+        deps.checkpointer.seal_episode(run_id=run_id, step=0)
 
 
 def close(final: dict[str, Any]) -> tuple[list[EpisodeOutput], int, int, float]:
@@ -145,18 +152,34 @@ def close(final: dict[str, Any]) -> tuple[list[EpisodeOutput], int, int, float]:
     return result.outcomes, result.total, result.succeeded, result.success_rate
 
 
-def _invoke(deps: RunRuntime, graph: CompiledStateGraph, state: RunState) -> dict[str, Any]:
+def invoke_run(
+    deps: RunRuntime, graph: CompiledStateGraph, state: RunState | None, *, thread: str
+) -> dict[str, Any]:
     """进图：递 `RUN_RECURSION_LIMIT`（闸门）与 `deps`（唯一的 context）。
+
+    state：初始状态；恢复路径传 None——从 thread 上已写好的那一条接着跑（`update_state` 之后）。
 
     **`context=deps` 是必需项**（D3/F10）：run 图的节点也是自由函数，依赖只从
     `runtime.context` 来；不给会让 `plan`/`dispatch`/`review` 读到一份空的 context
     ——炸在第一个读依赖的节点上。
+
+    **thread 与落库时机**：`thread_id = <run_id>@<branch>`，一条执行线一个 thread。有 saver 时
+    `durability="sync"`——每格的 checkpoint 写完才进下一格，存档时查外层"进 act 前"那一条才可靠；
+    episode / task 两层的 `invoke` 从 config 继承这个设置。无 saver 时不传：langgraph 1.2.11
+    在无 saver 时收到 `"sync"` 会抛 `AttributeError`。
     """
     return graph.invoke(
         state,
-        {"recursion_limit": RUN_RECURSION_LIMIT},
+        {"recursion_limit": RUN_RECURSION_LIMIT, "configurable": {"thread_id": thread}},
         context=deps,
+        durability="sync" if graph.checkpointer is not None else None,
     )
+
+
+def thread_id(run_id: str, branch: str) -> str:
+    """LangGraph thread 的名字：一条执行线一个 thread（`docs/checkpoint/spec.md` §5.4）。"""
+    assert run_id and branch, "thread_id() needs both run_id and branch"
+    return f"{run_id}@{branch}"
 
 
 __all__ = [
@@ -165,5 +188,8 @@ __all__ = [
     "default_run_goal",
     "exc_snapshot",
     "initial_plan",
+    "invoke_run",
     "new_run",
+    "record_run_error",
+    "thread_id",
 ]

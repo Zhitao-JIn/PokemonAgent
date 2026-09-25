@@ -556,14 +556,14 @@ class MemoryTool:
 | 跨局摘要 | `episode_memory` | 一局的总结 | **纯等值过滤**（读口不做领域规则） |
 | 知识库 | `knowledge_memory` | 和坐标无关的先验 | **纯语义检索** |
 
-### 7.2 `MemoryToolPort` —— 十二个方法
+### 7.2 `MemoryToolPort` —— 十三个方法
 
 | # | 方法 | 收 Req | 回 Resp |
 |---|---|---|---|
 | 1 | `query_episode_steps` | `…QueryEpisodeStepsReq{episode_id}` | `…Resp{steps: list[StepMemory]}` |
 | 2 | `query_recent_steps` | `…QueryRecentStepsReq{episode_id, limit}` | `…Resp{steps}` |
 | 3 | `store_episode_step` | `…StoreEpisodeStepReq{entry}` | —（返回 `None`） |
-| 4 | `query_episode_summaries` | `…QueryEpisodeSummariesReq{conditions}` | `…Resp{summaries: list[EpisodeMemory]}` |
+| 4 | `query_episode_summaries` | `…QueryEpisodeSummariesReq{conditions, order_by="episode_id"}`（按该元数据字段自然序返回） | `…Resp{summaries: list[EpisodeMemory]}` |
 | 5 | `store_episode_summary` | `…StoreEpisodeSummaryReq{memory}` | `…Resp{memory}` |
 | 6 | `query_object_events` | `…QueryObjectEventsReq{map_id, before_step}` | `…Resp{events: list[ObjectFactEvent]}` |
 | 7 | `query_object_events_at` | `…QueryObjectEventsAtReq{place}` | `…Resp{events}` |
@@ -572,6 +572,7 @@ class MemoryTool:
 | 10 | `store_knowledge` | `…StoreKnowledgeReq{records=[]}` | `…Resp{stored}` |
 | 11 | `snapshot_memory` | `…SnapshotMemoryReq{name}` | `…Resp{archive}` |
 | 12 | `restore_memory` | `…RestoreMemoryReq{archive}` | `…Resp{unpacked}` |
+| 13 | `fetch` | `…FetchReq{kind, keys}`（按自然键直接取，不检索；同键 n 次取 n 条，不够抛 `LookupError`） | `…FetchResp{acts / tasks / episodes / objects / knowledge_contents + knowledge_sources}` |
 
 信封全部住 `pokemon_agent/schemas/harness/communication/`，名字前缀
 `FromHarnessToMemoryTool`。**十二个 `…Req.py` + 十个 `…Resp.py`**

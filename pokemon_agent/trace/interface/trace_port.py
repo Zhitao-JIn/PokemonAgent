@@ -48,15 +48,15 @@ class TracePort(Protocol):
         type：事件种类（字符串，取值由声明方定义）。
         kind：账名（字符串，取值由声明方定义）。
         meta：harness 自报的签名信息（`source` / `episode_id` / `step`…）。
-            **实现方会往它里面盖一个 `run_id`**——那是落盘实例的标识（构造实现时
+            **实现方会往它里面盖 `run_id` 与 `branch`**——那是落盘实例的标识（构造实现时
             给的），落盘那一层自己知道（见 `store._stamp_run_id`）。调用方不要自己带
-            `run_id` 键。
+            这两个键。
         content：这笔账的本体，任何可 JSON 化的对象。
 
         `meta` / `content` 在盘上是 **JSON 字符串**（需要一层转义），
         序列化由实现方做一处，读端 `json.loads` 回来。
 
-        前置条件：`meta` 不带 `run_id` 键。
+        前置条件：`meta` 不带 `run_id` / `branch` 键。
         后置条件：六个字段（`uuid`/`kind`/`type`/`ts`/`meta`/`content`）已全部
             落盘；返回的 uuid 与文件名同值。
         """

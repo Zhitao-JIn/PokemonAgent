@@ -32,6 +32,7 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.harness.domain import EntryStatus, TaskOutput, Termination
 
 from ...judging import ask_judger, judge_reason, mechanical_termination, record_verdict
+from ...reviewing import ask_audit, ask_inject
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState, current_goal
 
@@ -71,13 +72,16 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
             verdict = ask_judger(
                 deps.judger, deps.trace, req, source=_SOURCE, episode_id=ep, task_id=ep, step=step
             )
-            reply = deps.reviewer.inject(
+            reply = ask_inject(
+                deps.reviewer,
+                deps.trace,
                 FromHarnessToReviewerInjectReq(
                     prompt=f"请审本局判定（第 {state.step} 个 task 之后："
                     f"{'判成' if verdict.done else '判未成'}）",
                     form=verdict,
                     form_kind="JudgeVerdict",
-                )
+                ),
+                meta={"source": _SOURCE, "episode_id": ep, "task_id": ep, "step": step},
             )
             if not reply:
                 break
@@ -110,7 +114,9 @@ def _settle(deps: EpisodeRuntime, state: EpisodeRunState, outcome: TaskOutput) -
 
     # 步骤 1：机械盖章；亮给人审，推翻则盖反面、失败连击跟着修正。
     status = EntryStatus.COMPLETED if outcome.success else EntryStatus.FAILED
-    resp = deps.reviewer.audit(
+    resp = ask_audit(
+        deps.reviewer,
+        deps.trace,
         FromHarnessToReviewerAuditReq(
             run_id=state.run_id,
             episode_id=state.episode_id,
@@ -123,7 +129,13 @@ def _settle(deps: EpisodeRuntime, state: EpisodeRunState, outcome: TaskOutput) -
                     "task_id": entry.task.task_id,
                 }
             ),
-        )
+        ),
+        meta={
+            "source": _SOURCE,
+            "episode_id": state.episode_id,
+            "task_id": state.episode_id,
+            "step": state.ep_ctx.observation.step,
+        },
     )
     overturned = resp.verdict is AuditVerdict.OVERTURN
     fail_streak = state.fail_streak

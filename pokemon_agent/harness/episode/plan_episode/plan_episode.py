@@ -26,6 +26,7 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.schemas.harness.domain import EntryStatus, TaskEntry, Termination
 
+from ...reviewing import ask_inject
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState, current_goal, current_knowledge
 
@@ -95,12 +96,15 @@ def _elicit(
                 human_note=note,
             ),
         )
-        reply = deps.reviewer.inject(
+        reply = ask_inject(
+            deps.reviewer,
+            deps.trace,
             FromHarnessToReviewerInjectReq(
                 prompt=f"本局目标拆成 {len(resp.decomposition.tasks)} 个 task，看对不对",
                 form=resp.decomposition,
                 form_kind="Decomposition",
-            )
+            ),
+            meta=meta,
         )
         if not reply:
             return resp, note

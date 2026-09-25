@@ -10,14 +10,13 @@
 
 ## 它里面只有三件事
 
-1. `__init__`：收下 `RunRuntime`（**run 侧的 context**，内嵌 `EpisodeRuntime`，D3/F10）、
-   编译一次图；
+1. `__init__`：收下 `RunRuntime`（**run 侧的 context**，内嵌 `EpisodeRuntime`，D3/F10）与
+   装配点编译好的 run 图；
 2. 图外入口的转调：`run()` → `run_entry.new_run`
    （**图外的开局编排在那个函数里**，本类一行逻辑都不加）；
 3. 一个薄委托给 `deps.trace`：`read_events`——读**磁盘账本**
    （0913 晚起唯一真相；本层仍然不认识 `pokemon_agent.trace`，只认识
    tool 层的 `TraceToolPort`）；
-4. `_compile()`：把"图长什么样"交给 `run/run_graph.py`。
 
 **0914 控制台改造删掉了六个对 `interaction` 的薄委托**
 （`latest_goals` / `submit_human_note` / `submit_edit` / `pending_review` /
@@ -42,7 +41,6 @@ from pokemon_agent.schemas.harness import TraceEvent
 from pokemon_agent.schemas.harness.domain import EpisodeOutput
 
 from .run_entry import new_run
-from .run_graph import compile_run_graph
 from .runtime import RunRuntime
 
 
@@ -53,7 +51,7 @@ class RunHarness:
     实现方就在隔壁文件，"港口"的定义却是"实现方在系统之外"。）
     """
 
-    def __init__(self, deps: RunRuntime) -> None:
+    def __init__(self, deps: RunRuntime, graph: CompiledStateGraph) -> None:
         """前置条件：`deps` 非空（装配点在 `build.py`，那里也是唯一的 new 处）。
 
         `deps.reviewer` / `deps.planner` / `deps.judger` **必须由装配处给全**（`build.py` 的缺省
@@ -67,7 +65,7 @@ class RunHarness:
         assert deps.planner is not None, "RunRuntime.planner 必须由装配处给全"
         assert deps.judger is not None, "RunRuntime.judger 必须由装配处给全"
         self.deps = deps
-        self._graph = self._compile()
+        self._graph = graph
 
     # ---- 入口（图外编排在 run_entry）----
 
@@ -98,15 +96,6 @@ class RunHarness:
         后置条件：按 `(ts, uuid)` 升序；无匹配时返回空列表（不抛）。
         """
         return self.deps.trace.read_events(meta)
-
-    # ---- 图组装 ----
-
-    def _compile(self) -> CompiledStateGraph:
-        """把"图长什么样"交给 `run/run_graph.py`——本方法只留一句转调。
-
-        拓扑全在 `run/run_graph.py`。
-        """
-        return compile_run_graph()
 
 
 __all__ = ["RunHarness"]

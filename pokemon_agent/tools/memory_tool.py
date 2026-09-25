@@ -35,6 +35,7 @@ harness 只给 zip 的名字——"快照放哪、怎么打包"不是它该知�
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
@@ -42,6 +43,8 @@ from pydantic import TypeAdapter, ValidationError
 from pokemon_agent.memory import EmbeddingProviderPort, LocalMemoryStore, RerankerProviderPort
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolAppendObjectEventsReq,
+    FromHarnessToMemoryToolFetchReq,
+    FromHarnessToMemoryToolFetchResp,
     FromHarnessToMemoryToolQueryActMemoriesReq,
     FromHarnessToMemoryToolQueryActMemoriesResp,
     FromHarnessToMemoryToolQueryEpisodeSummariesReq,
@@ -74,6 +77,39 @@ from pokemon_agent.schemas.memory import (
     ObjectFactEvent,
     TaskMemory,
 )
+
+
+def _natural_key(value: str | None) -> tuple:
+    """自然序的排序键：数字段按数值、其余按字面（`r1-ep2` < `r1-ep10`）；None 排最后。"""
+    if value is None:
+        return (1,)
+    parts = re.split(r"(\d+)", value)
+    return (0, *((0, int(p), "") if p.isdigit() else (1, 0, p) for p in parts if p))
+
+
+def _fetched(kind: str, rows: list[tuple[dict, dict, str]]) -> FromHarnessToMemoryToolFetchResp:
+    """把按键取回的原始行还原成对应读口返回的那种记录。"""
+    if kind == "act":
+        return FromHarnessToMemoryToolFetchResp(
+            acts=[ActMemory.model_validate(p) for _, p, _ in rows]
+        )
+    if kind == "task":
+        return FromHarnessToMemoryToolFetchResp(
+            tasks=[TaskMemory.model_validate(p) for _, p, _ in rows]
+        )
+    if kind == "episode":
+        return FromHarnessToMemoryToolFetchResp(
+            episodes=[EpisodeMemory(**p, markdown=t) for _, p, t in rows]
+        )
+    if kind == "object":
+        adapter = TypeAdapter(ObjectFactEvent)
+        return FromHarnessToMemoryToolFetchResp(
+            objects=[adapter.validate_python(p) for _, p, _ in rows]
+        )
+    return FromHarnessToMemoryToolFetchResp(
+        knowledge_contents=[t for _, _, t in rows],
+        knowledge_sources=[m.get("source", "") for m, _, _ in rows],
+    )
 
 
 def _default_root() -> Path:
@@ -235,8 +271,8 @@ class MemoryTool:
     def query_act_memories(
         self, req: FromHarnessToMemoryToolQueryActMemoriesReq
     ) -> FromHarnessToMemoryToolQueryActMemoriesResp:
-        """取这一局全部的单步情景记忆，按 step 升序。"""
-        entries = self._episode_acts(req.episode_id)
+        """取这一局的单步情景记忆（给了 `task_id` 就只取那个 task 的），按 step 升序。"""
+        entries = self._episode_acts(req.episode_id, req.task_id)
         return FromHarnessToMemoryToolQueryActMemoriesResp(entries=entries)
 
     def query_recent_act_memories(
@@ -259,6 +295,7 @@ class MemoryTool:
             metadata={
                 "run_id": entry.run_id,
                 "episode_id": entry.episode_id,
+                "task_id": entry.task_id,
                 "step": str(entry.step),
                 "map_id": str(map_id),
             },
@@ -267,13 +304,14 @@ class MemoryTool:
         )
         self._step_max[entry.episode_id] = max(self._step_max.get(entry.episode_id, 0), entry.step)
 
-    def _episode_acts(self, episode_id: str) -> list[ActMemory]:
-        """等值筛（episode_id）→ 解析 payload → 按 step 数值升序。"""
+    def _episode_acts(self, episode_id: str, task_id: str | None = None) -> list[ActMemory]:
+        """等值筛（episode_id，可加 task_id）→ 解析 payload → 按 step 数值升序。"""
         assert episode_id, "episode step query needs a non-empty episode_id"
+        conditions = {"episode_id": episode_id}
+        if task_id is not None:
+            conditions["task_id"] = task_id
         entries: list[ActMemory] = []
-        for _uuid, _meta, payload, _text in self._steps.get_many(
-            self._steps.filter({"episode_id": episode_id})
-        ):
+        for _uuid, _meta, payload, _text in self._steps.get_many(self._steps.filter(conditions)):
             try:
                 entries.append(ActMemory.model_validate(payload))
             except ValidationError:
@@ -326,19 +364,21 @@ class MemoryTool:
         判断，住在读口上等于把"取哪些、取几条"从消费方手里拿走。现在这一跳只剩
         metadata 交集 + 反序列化。
 
-        顺序：按 `episode_id` 字典序落定——**这不是相关性排序**，只是让同一个库
-        读两次拿到同一个顺序（`LocalMemoryStore.filter` 的交集走 `set`，本身无序）。
+        顺序：按 `req.order_by` 那个元数据字段的**自然序**（数字段按数值比）——**不是相关性
+        排序**；缺省 `episode_id` 的自然序就是本 run 的执行序（`LocalMemoryStore.filter` 的交集走
+        `set`，本身无序）。缺这个字段的记录排在最后。
         """
-        out: list[EpisodeMemory] = []
-        for _record_id, _meta, payload, text in self._summaries.get_many(
+        keyed: list[tuple[tuple, EpisodeMemory]] = []
+        for _record_id, meta, payload, text in self._summaries.get_many(
             self._summaries.filter(req.conditions)
         ):
             try:
-                out.append(EpisodeMemory(**payload, markdown=text))
+                memory = EpisodeMemory(**payload, markdown=text)
             except ValidationError:
                 continue
-        out.sort(key=lambda memory: memory.episode_id)
-        return FromHarnessToMemoryToolQueryEpisodeSummariesResp(summaries=out)
+            keyed.append((_natural_key(meta.get(req.order_by)), memory))
+        keyed.sort(key=lambda pair: pair[0])
+        return FromHarnessToMemoryToolQueryEpisodeSummariesResp(summaries=[m for _, m in keyed])
 
     def store_episode_summary(
         self, req: FromHarnessToMemoryToolStoreEpisodeSummaryReq
@@ -501,6 +541,32 @@ class MemoryTool:
             contents.append(text)
             sources.append(metadata.get("source", ""))
         return FromHarnessToMemoryToolQueryKnowledgeResp(contents=contents, sources=sources)
+
+    # ---- 按键取（不检索） ----
+
+    def fetch(self, req: FromHarnessToMemoryToolFetchReq) -> FromHarnessToMemoryToolFetchResp:
+        """（契约见 `MemoryToolPort.fetch`）每个键走一次等值筛；同键多条按 uuid 定序、依次取用。"""
+        store = {
+            "act": self._steps,
+            "task": self._tasks,
+            "episode": self._summaries,
+            "object": self._objects,
+            "knowledge": self._knowledge,
+        }[req.kind]
+        if req.kind == "knowledge":
+            self._knowledge.refresh_changed()
+        taken: dict[tuple[tuple[str, str], ...], int] = {}
+        rows: list[tuple[dict, dict, str]] = []
+        for key in req.keys:
+            frozen = tuple(sorted(key.items()))
+            matches = sorted(store.get_many(store.filter(dict(key))), key=lambda row: row[0])
+            index = taken.get(frozen, 0)
+            if index >= len(matches):
+                raise LookupError(f"{req.kind} 记忆里按键 {key} 只有 {len(matches)} 条")
+            taken[frozen] = index + 1
+            _uuid, meta, payload, text = matches[index]
+            rows.append((meta, payload, text))
+        return _fetched(req.kind, rows)
 
     def store_knowledge(
         self, req: FromHarnessToMemoryToolStoreKnowledgeReq

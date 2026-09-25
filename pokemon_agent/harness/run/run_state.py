@@ -40,6 +40,10 @@ class RunState(Settled, BaseModel):
     """一个 run 的全部可序列化状态（分组见模块文档）。"""
 
     run_id: str = Field(description="本 run 标识，trace 按它分组")
+    branch: str = Field(
+        default="main",
+        description="执行线：未经恢复为 main，恢复出来的是 b<n>；与 run_id 共同定 thread",
+    )
     run_goal: Goal = Field(description="run 级总目标——review_and_judge 问模型的靶子")
     goals: list[GoalEntry] = Field(description="目标表（表序 = 派发顺序；至多一条 RUNNING）")
 

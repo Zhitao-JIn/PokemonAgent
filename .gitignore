@@ -26,6 +26,7 @@ vision_dump/
 vision_dump_smoke/
 assets/
 checkpoints/
+checkpoint_check/
 # 0910 起记忆落盘在仓库根级 memory/（一条记录一个 uuid 文件）——运行期产物
 # 不进 git；唯一例外是 knowledge_memory/（运营手写的共享源，随源进 git）。
 memory/step_memory/

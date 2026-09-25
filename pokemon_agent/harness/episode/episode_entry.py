@@ -44,12 +44,13 @@ def begin_episode(deps: EpisodeRuntime, episode_input: EpisodeInput) -> EpisodeR
     )
 
     # 步骤 2：组装初始状态（不取帧：第一帧由图内 perceive 的 sense 取）。
-    return EpisodeRunState(
+    state = EpisodeRunState(
         run_id=episode_input.run_id,
         episode_id=episode_id,
         goal=episode_input.goal,
         ep_ctx=EpisodeContext(),
     )
+    return state
 
 
 def run_episode(
