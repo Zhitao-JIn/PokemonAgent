@@ -1,3 +1,32 @@
+## 2026-09-25（252）—— 实时 trace 与画面：每笔账顺手推给网页
+
+**改了什么**：
+- `tools/trace/live_feed.py`：`LiveFeedTrace` 包在 `LocalTrace` 外（`TracePort` 装饰器）。`append` 先照常落盘，再把同一条事件（`run_id` / `branch` 照盘上盖好）丢进有界队列就返回；后台 daemon 线程连后端 `/feed` 发送。队列满丢最旧的；后端不在或断开就丢弃，每 5 秒重试连接，状态变化各打一行 `[feed]` 日志。`read_events` 原样转给落盘层。
+- 接线：`TraceTool.build(live_feed_url=…)` → `build_real(live_feed_url=…)` → `check_harness.py --review` 传后端地址。回放段（磁带未切换）的事件本来就不落盘，所以不推。
+- 后端：`/feed` 收事件、原样转播给网页，保留最近 300 条（`FEED_LIMIT`），网页重连时先补发。
+- 网页：「实时」一栏——`sense_frame` 的 `content.frame` 显示为当前画面（像素风放大），其余事件进时间线（最近 80 条）；审 task / 审一局时，从已收到的事件里挑出被审对象的首帧与末帧并排显示。
+- `tests/test_review_backend.py` 加 2 条：事件写一条网页收一条（重连补发）、后端不在时落盘照常且不拖慢。
+
+**为什么改**：`docs/web_reviewer/plan.md` W4b。画面本来就在 trace 里（`sense_frame.frame`），在写账那一刻推出去，不用让后端去盯盘（那是服务端轮询，还把后端绑到盘上路径）。
+
+**取舍**：
+- 推送的 `ts` 取入队那一刻，与盘上差几微秒；网页只拿它显示时刻。
+- 网页因此认识 trace 事件的形状（`kind` / `meta` / `content.frame`）——展示层认识数据是应该的，后端仍然不解析。
+- `pytest` 178 条全过。
+
+## 2026-09-25（251）—— `WebReviewer`：run 这一端连后端，`check_harness.py --review` 改接网页
+
+**改了什么**：
+- `harness/web_reviewer.py`：`Reviewer` 的网页实现。构造时连后端 `/harness`（连不上 / 被拒抛 `OSError`）；`inject` / `audit` = 用 `review_render.py` 渲染 → 组跳 A 信封 → 发送 → 阻塞等回话（后端超时 + 5s 兜底）→ 转回进程内 Resp。后端中途断开、超时或回了看不懂的东西：本问与之后每一问都按默认值、`answered=False`，每问一行 `[review]` 日志，不重连。连回环地址显式 `proxy=None`。`close()` 断开。
+- `experiment/real_check/check_harness.py`：`--review` 从 `FileReviewer` 改接 `WebReviewer`（build 之前先连，连不上当场停；run 结束 `close()`）；新开关 `--review-url ws://host:port`；看门狗说明改写。`docs/spec/experiment/SPEC.md`、harness SPEC §六的实现表同步。
+- `tests/test_review_backend.py` 加 3 条：`WebReviewer` 经后端一问一答、没后端时构造即抛、后端没了之后降级。
+
+**为什么改**：`docs/web_reviewer/plan.md` W4。`FileReviewer` 暂留（W6 在真机于网页上答通之后再删）。
+
+**取舍**：
+- 中途断开不重连：重连会遇到后端已把那一问作废、编号对不上；降级与超时同语义，run 照跑。
+- `pytest` 176 条全过。
+
 ## 2026-09-25（250）—— 人在环后端与网页：一台 WebSocket 服务器，run 与网页都连它
 
 **改了什么**：

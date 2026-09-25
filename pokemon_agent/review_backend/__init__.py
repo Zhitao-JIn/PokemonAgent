@@ -8,6 +8,6 @@
 
 from __future__ import annotations
 
-from .backend import HISTORY_LIMIT, ReviewBackend
+from .backend import FEED_LIMIT, HISTORY_LIMIT, ReviewBackend
 
-__all__ = ["HISTORY_LIMIT", "ReviewBackend"]
+__all__ = ["FEED_LIMIT", "HISTORY_LIMIT", "ReviewBackend"]

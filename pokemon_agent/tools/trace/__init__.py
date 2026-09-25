@@ -48,6 +48,7 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.trace import Event, EventType, LocalTrace, TracePort
 
 from . import render
+from .live_feed import LiveFeedTrace
 
 _RENDERERS = {
     TraceKind.RUN_START: render.run_start,
@@ -186,6 +187,7 @@ class TraceTool:
         trace_root: str | Path | None = None,
         branch: str = "main",
         lineage: Sequence[tuple[str, str, float]] = (),
+        live_feed_url: str | None = None,
     ) -> TraceTool:
         """接线工厂：造 `LocalTrace` 并包成 `TraceTool`。
 
@@ -198,12 +200,13 @@ class TraceTool:
         `build_real(trace_root=…)` → 这里 → `LocalTrace(root=…)`。
 
         `branch` / `lineage`：本执行线的分支名与祖先血缘（见 `__init__`）；未经恢复时用缺省。
+        `live_feed_url`：人在环后端地址（`ws://host:port`）；给了就在落盘外包一层
+        `LiveFeedTrace`，每笔账顺手推给网页实时看。None = 不推。
         """
-        return cls(
-            LocalTrace(run_id=run_id, root=trace_root, branch=branch),
-            branch=branch,
-            lineage=lineage,
-        )
+        store: TracePort = LocalTrace(run_id=run_id, root=trace_root, branch=branch)
+        if live_feed_url is not None:
+            store = LiveFeedTrace(store, run_id=run_id, branch=branch, url=live_feed_url)
+        return cls(store, branch=branch, lineage=lineage)
 
     def append(self, req: FromHarnessToTraceToolAppendReq) -> None:
         """记一笔账：按 `req.kind` 渲染正文，逐条落盘。

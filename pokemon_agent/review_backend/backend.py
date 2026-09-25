@@ -3,7 +3,9 @@
 路径（`docs/web_reviewer/spec.md` §5）：
 - `GET /` 单页、`GET /health` 状态 JSON——握手前由 `process_request` 直接回，不升级；
 - `/harness`：一个 run 一条连接，发插话 / 审请求（跳 A），等回话；同一时刻只许一条；
-- `/ui`：网页；连上先补发最近的历史与当前待答的一问，此后收推送、发答案、收回执（跳 B）。
+- `/feed`：run 的实时 trace（单向，无回话），原样转播给网页；
+- `/ui`：网页；连上先补发最近的实时 trace、历史与当前待答的一问，
+  此后收推送、发答案、收回执（跳 B）。
 
 后端不懂游戏：只搬源程序渲染好的文本。状态只在内存（编号、待答、最近若干问的历史），
 定案账在 trace 里。单个 asyncio 事件循环，状态不需要锁。
@@ -27,6 +29,7 @@ from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToReviewBackendAuditReq,
     FromHarnessToReviewBackendAuditResp,
+    FromHarnessToReviewBackendFeedReq,
     FromHarnessToReviewBackendInjectReq,
     FromHarnessToReviewBackendInjectResp,
 )
@@ -34,6 +37,7 @@ from pokemon_agent.schemas.review_backend import (
     FromFrontendToReviewBackendAnswerReq,
     FromFrontendToReviewBackendAnswerResp,
     FromReviewBackendToFrontendAskReq,
+    FromReviewBackendToFrontendFeedReq,
     FromReviewBackendToFrontendSettleReq,
 )
 
@@ -41,6 +45,9 @@ from .page import PAGE_HTML
 
 HISTORY_LIMIT = 50
 """网页重连时补发的历史条数（一问一条）。"""
+
+FEED_LIMIT = 300
+"""网页重连时补发的实时 trace 条数。"""
 
 POLICY_VIOLATION = 1008
 """拒绝连接时的 WebSocket 关闭码（RFC 6455：违反策略）。"""
@@ -66,6 +73,7 @@ class ReviewBackend:
         self._history: deque[
             tuple[FromReviewBackendToFrontendAskReq, FromReviewBackendToFrontendSettleReq]
         ] = deque(maxlen=HISTORY_LIMIT)
+        self._feed: deque[str] = deque(maxlen=FEED_LIMIT)
         self._ui: set[ServerConnection] = set()
         self._harness: ServerConnection | None = None
 
@@ -86,7 +94,7 @@ class ReviewBackend:
     def _process_request(self, conn: ServerConnection, request: Request) -> Response | None:
         """`/` 与 `/health` 直接回；两条 WebSocket 路径放行去握手；其余 404。"""
         path = request.path.split("?", 1)[0]
-        if path in ("/harness", "/ui"):
+        if path in ("/harness", "/feed", "/ui"):
             return None
         if path == "/":
             return _respond(conn, PAGE_HTML, "text/html; charset=utf-8")
@@ -95,9 +103,12 @@ class ReviewBackend:
         return conn.respond(HTTPStatus.NOT_FOUND, "not found\n")
 
     async def _route(self, conn: ServerConnection) -> None:
-        """按握手路径分到两条连接的处理。"""
-        if conn.request is not None and conn.request.path.startswith("/harness"):
+        """按握手路径分到三条连接的处理。"""
+        path = conn.request.path.split("?", 1)[0] if conn.request is not None else ""
+        if path == "/harness":
             await self._serve_harness(conn)
+        elif path == "/feed":
+            await self._serve_feed(conn)
         else:
             await self._serve_ui(conn)
 
@@ -163,12 +174,32 @@ class ReviewBackend:
             return None
         return _to_resp(settle, answered=by == "human")
 
+    # ---- /feed：实时 trace ----
+
+    async def _serve_feed(self, conn: ServerConnection) -> None:
+        """收 run 推来的每条事件，记进缓冲并转播；看不懂的丢弃。"""
+        try:
+            async for raw in conn:
+                try:
+                    item = FromHarnessToReviewBackendFeedReq.model_validate_json(raw)
+                except ValidationError:
+                    continue
+                message = FromReviewBackendToFrontendFeedReq(
+                    run_id=item.run_id, event=item.event
+                ).model_dump_json()
+                self._feed.append(message)
+                broadcast(self._ui, message)
+        except ConnectionClosed:
+            pass
+
     # ---- /ui：网页 ----
 
     async def _serve_ui(self, conn: ServerConnection) -> None:
         """一个网页的整条连接：补发历史与待答，此后收答案、回回执。"""
         self._ui.add(conn)
         try:
+            for message in list(self._feed):
+                await conn.send(message)
             for ask, settle in self._history:
                 await conn.send(ask.model_dump_json())
                 await conn.send(settle.model_dump_json())
@@ -289,4 +320,4 @@ def _say(line: str) -> None:
     print(f"[review-backend] {line}", flush=True)
 
 
-__all__ = ["HISTORY_LIMIT", "ReviewBackend"]
+__all__ = ["FEED_LIMIT", "HISTORY_LIMIT", "ReviewBackend"]

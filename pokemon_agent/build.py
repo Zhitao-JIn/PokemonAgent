@@ -72,6 +72,7 @@ def build_real(
     branch: str = "main",
     lineage: Sequence[LineageLink] = (),
     tape: Tape | None = None,
+    live_feed_url: str | None = None,
     # 供应商由**型号名前缀**决定（0914 起，表在 `brain/providers.py::_PROVIDER_PREFIXES`）：
     # `qwen*` → DashScope、`doubao*` → 火山方舟、`deepseek*` → DeepSeek 官方 API。
     # 下面这几个缺省值因此不只是"型号名"，它们同时**选定了厂商**。
@@ -114,6 +115,9 @@ def build_real(
     `reviewer`：人与图之间的那扇门（**同步接口**，控制台实现会阻塞读 stdin）。
     不传 → `NullReviewer`（没人插话、没人推翻）。不传而无头是一个正常场景
     （测试、CI、无头批量跑），不是缺配置。
+
+    `live_feed_url`：人在环后端地址（`ws://host:port`）；给了就把每笔账顺手推给网页实时看
+    （`TraceTool.build` 里包一层 `LiveFeedTrace`）。None = 不推。
 
     **plan 位置的规划来源就是 brain**（0922 第 182 条撤销 `planner` 壳）：
     `plan_run` 格直接调注入的 `planner`（brain 的 plan 链路），没有"人不给目标就没人给"的问题——
@@ -167,6 +171,7 @@ def build_real(
         trace_root=trace_root,
         branch=branch,
         lineage=[(link.branch, link.fork_uuid, link.fork_ts) for link in lineage],
+        live_feed_url=live_feed_url,
     )
 
     # 图内节点伸向记忆的唯一通道

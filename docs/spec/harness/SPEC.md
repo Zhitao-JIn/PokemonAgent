@@ -25,7 +25,7 @@ harness/
 │                review_render.py（问人时的渲染口径，控制台与网页共用）
 │                checkpoint/（两级存档、恢复与回放，见 docs/spec/checkpoint/SPEC.md）
 ├── interface/   reviewer.py（Reviewer 协议） planner_outcome.py（PlannerOutcome / GoalUpdate）
-├── console_reviewer.py  file_reviewer.py  null_reviewer.py
+├── console_reviewer.py  file_reviewer.py  null_reviewer.py  web_reviewer.py
 ├── run/
 │   ├── harness.py（RunHarness） run_entry.py（new_run / close） run_graph.py run_state.py runtime.py
 │   ├── begin/  perceive/{absorb_episode, read_plan_context}  review_and_judge/
@@ -117,6 +117,7 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 |---|---|
 | `NullReviewer` | 无头：不插话、不推翻 |
 | `ConsoleReviewer` | 同一终端：超时 `CONSOLE_REVIEW_TIMEOUT` |
+| `WebReviewer` | 网页：连常驻后端 `pokemon_agent/review_backend/`（WebSocket），超时 `WEB_REVIEW_TIMEOUT`；连不上抛 `OSError`，中途断了降级为默认值 |
 | `FileReviewer` | 驱动方无终端：请求 / 回应走盘上文件；`audit()` 恒认账 |
 
 - **插话点只在 plan 格**：`plan_run`、`plan_episode`。不满意就带着那句话重问，插话进 `human_note` 落账。

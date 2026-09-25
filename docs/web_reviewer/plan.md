@@ -6,7 +6,8 @@
 >
 > 进度：W1 + W2a ✅ 09-25 合并做（`answered` 必填，所有实现得一次改齐），CHANGELOG 248；
 > W2b + W2c ✅ 09-25 合并做（推翻理由要能到下一次 plan），CHANGELOG 249；
-> W3 ✅ 09-25，CHANGELOG 250（`review_backend/` 实际是 4 个文件：出口、`backend.py`、`page.py`、`__main__.py`）
+> W3 ✅ 09-25，CHANGELOG 250（`review_backend/` 实际是 4 个文件：出口、`backend.py`、`page.py`、`__main__.py`）；
+> W4 ✅ 09-25，CHANGELOG 251（`--review-url` 换后端地址）；W4b ✅ 09-25，CHANGELOG 252
 
 ---
 

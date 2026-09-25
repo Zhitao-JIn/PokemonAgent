@@ -1,6 +1,8 @@
 """`PAGE_HTML`：后端 `GET /` 吐出的单页——人在这里答插话与审。
 
-页面只认跳 B 的几封消息（`msg` 标签分流），不懂游戏语义；所有文本都经 `textContent` 放进页面。
+页面只认跳 B 的几封消息（`msg` 标签分流）；所有文本都经 `textContent` 放进页面。
+它认得 trace 事件的形状（`kind`、`meta`、`content.frame`）——实时画面与时间线靠它，
+问人时按被审对象挑出首末帧。
 连上 `/ui` 后由后端推送，断线按退避自动重连（重连后后端补发历史与待答）。
 """
 
@@ -68,6 +70,13 @@ PAGE_HTML = """<!doctype html>
   .by-human { color: var(--ok); }
   .by-timeout { color: var(--muted); }
   .by-harness_gone { color: var(--bad); }
+  .frames, .live { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+  figure { margin: 0; }
+  figure img { width: 320px; max-width: 100%; image-rendering: pixelated;
+               border: 1px solid var(--line); border-radius: 6px; background: #000; }
+  figcaption { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  #timeline { flex: 1; min-width: 260px; max-height: 300px; overflow: auto; margin: 0;
+              padding-left: 20px; font: 12px/1.6 ui-monospace, Consolas, monospace; }
 </style>
 </head>
 <body>
@@ -79,6 +88,10 @@ PAGE_HTML = """<!doctype html>
       <div class="meta"><span id="kind" class="tag"></span><span id="where"></span></div>
       <h2 id="prompt"></h2>
       <pre id="body"></pre>
+      <div id="ask-frames" class="frames" hidden>
+        <figure><img id="first-frame" alt="首帧"><figcaption>首帧</figcaption></figure>
+        <figure><img id="last-frame" alt="末帧"><figcaption>末帧</figcaption></figure>
+      </div>
       <details id="events-box" hidden>
         <summary id="events-title"></summary><ol id="events"></ol>
       </details>
@@ -103,6 +116,16 @@ PAGE_HTML = """<!doctype html>
     </div>
   </section>
   <section class="card">
+    <h2>实时</h2>
+    <div class="live">
+      <figure>
+        <img id="live-frame" alt="当前画面" hidden>
+        <figcaption id="live-caption">还没有画面（run 带 --review 起跑后会实时推过来）</figcaption>
+      </figure>
+      <ol id="timeline" reversed></ol>
+    </div>
+  </section>
+  <section class="card">
     <h2>历史</h2>
     <ul id="history"><li class="empty" id="no-history">还没有问过。</li></ul>
   </section>
@@ -110,6 +133,8 @@ PAGE_HTML = """<!doctype html>
 <script>
 const $ = (id) => document.getElementById(id);
 const asks = new Map();
+const feed = [];
+const FEED_KEEP = 300, TIMELINE_KEEP = 80;
 let ws = null, retry = 0, current = null, ticker = null;
 
 function connect() {
@@ -124,12 +149,42 @@ function connect() {
   };
   ws.onmessage = (event) => {
     const m = JSON.parse(event.data);
-    if (m.msg === 'ask') { asks.set(m.seq, m); show(m); }
+    if (m.msg === 'feed') onFeed(m.event);
+    else if (m.msg === 'ask') { asks.set(m.seq, m); show(m); }
     else if (m.msg === 'settle') settle(m);
     else if (m.msg === 'answer_ack' && !m.ok && current && current.seq === m.seq) {
       $('error').textContent = `没被采纳：${m.reason}`; enable(false);
     }
   };
+}
+
+function parse(text) {
+  try { return JSON.parse(text) || {}; } catch (err) { return {}; }
+}
+
+function onFeed(event) {
+  const item = { kind: event.kind, ts: event.ts, meta: parse(event.meta),
+                 content: parse(event.content) };
+  feed.push(item);
+  if (feed.length > FEED_KEEP) feed.shift();
+  if (item.content.frame) {
+    const img = $('live-frame');
+    img.src = `data:image/png;base64,${item.content.frame}`; img.hidden = false;
+    const m = item.meta;
+    $('live-caption').textContent = `${m.episode_id || ''} · ${m.task_id || ''} · 第 ${m.step} 步`;
+  }
+  const li = document.createElement('li');
+  const clock = new Date(item.ts * 1000).toLocaleTimeString();
+  li.textContent = `${clock} · ${item.kind} · ${item.meta.source || '-'} · ${item.meta.step}`;
+  $('timeline').prepend(li);
+  while ($('timeline').children.length > TIMELINE_KEEP) $('timeline').lastChild.remove();
+}
+
+function framesOf(m) {
+  if (m.kind !== 'audit') return [];
+  return feed.filter((i) => i.content.frame && (m.task_id
+    ? i.meta.task_id === m.task_id
+    : m.form_kind === 'EpisodeOutput' && i.meta.episode_id === m.episode_id));
 }
 
 function setStatus(on) {
@@ -159,6 +214,12 @@ function show(m) {
   $('events').replaceChildren(...m.events.map((line) => {
     const li = document.createElement('li'); li.textContent = line; return li;
   }));
+  const frames = framesOf(m);
+  $('ask-frames').hidden = !frames.length;
+  if (frames.length) {
+    $('first-frame').src = `data:image/png;base64,${frames[0].content.frame}`;
+    $('last-frame').src = `data:image/png;base64,${frames[frames.length - 1].content.frame}`;
+  }
   $('inject-ctl').hidden = !inject; $('audit-ctl').hidden = inject;
   $('text').value = ''; $('note').value = ''; $('error').textContent = '';
   enable(true);
