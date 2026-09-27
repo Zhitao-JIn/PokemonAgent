@@ -58,7 +58,7 @@ class Observation(BaseModel):
     perceived: bool = Field(
         default=True,
         description="这一帧是**看**出来的还是只读了内存。"
-        "`perceive_once(ram_only=True)` 产出的观测是 False——"
+        "`perceive_task()` 产出的观测是 False——"
         "坐标/朝向/地标/通行图来自模拟器内存（确定、免费），"
         "而场景、对话、概况只有视觉模型读得出。"
         "False 时那几个字段**不是空的，是没读过**，渲染必须明写这一句（`BLIND_NOTE`）",

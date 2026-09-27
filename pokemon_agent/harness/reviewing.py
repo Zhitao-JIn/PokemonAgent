@@ -2,7 +2,7 @@
 
 与 `sensing.py` / `judging.py` 同级的共享层：只依赖 reviewer 接口、trace 门面与 schemas，
 不认识任何一层的 state。问完即记一笔 `review_inject` / `review_audit`——插话可以连问多轮，
-每一轮的回话都要在账上有独立一笔，回放才能按序喂回（`docs/checkpoint/intent.md` C10）。
+每一轮的回话都要在账上有独立一笔，人在环这一路才可审计。
 两本账都带 `answered`（人真答了还是默认值）与 `wait_s`（人花了多久）；
 审的账还带被审对象的种类（`form_kind`），四个审点在账上分得开。
 """

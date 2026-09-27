@@ -70,7 +70,12 @@ class RunHarness:
     # ---- 入口（图外编排在 run_entry）----
 
     def run(
-        self, run_id: str, goals: list[Task], run_goal: Goal | None = None
+        self,
+        run_id: str,
+        goals: list[Task],
+        run_goal: Goal | None = None,
+        *,
+        checkpoint_only: bool = False,
     ) -> tuple[list[EpisodeOutput], int, int, float]:
         """跑完一个 run，返回 run 级结算 `(outcomes, total, succeeded, success_rate)`。
 
@@ -80,8 +85,16 @@ class RunHarness:
         `goals` 是初始目标表（`list[Task]`）；run 内部把每条包成 `GoalEntry`
         （`run_entry.initial_plan`），调用方不必认识那张表。
         `run_goal` 不给时由目标表文字拼一个（`run_entry.default_run_goal`）。
+        `checkpoint_only`：只存 run 级存档就返回，不进图（见 `run_entry.new_run`）。
         """
-        return new_run(self.deps, self._graph, run_id=run_id, goals=goals, run_goal=run_goal)
+        return new_run(
+            self.deps,
+            self._graph,
+            run_id=run_id,
+            goals=goals,
+            run_goal=run_goal,
+            checkpoint_only=checkpoint_only,
+        )
 
     # ---- 读账（薄委托给 deps.trace）----
 

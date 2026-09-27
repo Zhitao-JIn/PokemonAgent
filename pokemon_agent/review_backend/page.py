@@ -169,7 +169,9 @@ function onFeed(event) {
   if (feed.length > FEED_KEEP) feed.shift();
   if (item.content.frame) {
     const img = $('live-frame');
-    img.src = `data:image/png;base64,${item.content.frame}`; img.hidden = false;
+    // `content.frame` 是**完整 data URI**（`data:image/png;base64,…`，0915 起全仓唯一
+    // 帧格式，编码点 `world/pyboy_world.py::_png_data_uri`）——直接上 src，别再拼前缀。
+    img.src = item.content.frame; img.hidden = false;
     const m = item.meta;
     $('live-caption').textContent = `${m.episode_id || ''} · ${m.task_id || ''} · 第 ${m.step} 步`;
   }
@@ -217,8 +219,8 @@ function show(m) {
   const frames = framesOf(m);
   $('ask-frames').hidden = !frames.length;
   if (frames.length) {
-    $('first-frame').src = `data:image/png;base64,${frames[0].content.frame}`;
-    $('last-frame').src = `data:image/png;base64,${frames[frames.length - 1].content.frame}`;
+    $('first-frame').src = frames[0].content.frame;
+    $('last-frame').src = frames[frames.length - 1].content.frame;
   }
   $('inject-ctl').hidden = !inject; $('audit-ctl').hidden = inject;
   $('text').value = ''; $('note').value = ''; $('error').textContent = '';

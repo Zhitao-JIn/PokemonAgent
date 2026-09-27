@@ -234,7 +234,7 @@ RFC 9562 的 **v7 布局**，前 48 位是毫秒时间戳：
 | `ERROR` | `error` | `call_failed` / `call_exhausted` / `summary_parse_error` |
 | `LLM_OUTCOME` | `llm_outcome` | `choose_verdict` 与三个 `*_verdict`（与 `MODEL_CALL` 配对） |
 | `VIEW` | `view` | `sense_frame`（episode 完整档 / task RAM 档） |
-| `ACT` | `act` | `press_key` / `get_action_space` / `check_stall` |
+| `ACT` | `act` | `press_key` / `run_macro` / `get_action_space` / `check_stall` |
 | `MEMORY_IO` | `memory_io` | 六条 `read_*` + 三条 `write_*` |
 | `LIFECYCLE` | `lifecycle` | run / episode 边界账 + `advance_step` |
 
@@ -304,7 +304,7 @@ class TraceTool:
 **写口只有 `append` 一个**（0916 统一）：调用账也是它——`req.calls` 交**整条
 重试链**（`list[ModelCall]`，每次尝试一条），渲染时逐条落成 `*_call` 账、失败的
 尝试各自再补一条 `call_failed`。此前的批量口 `append_model_calls` 与它落盘效果
-相同，已删。**没发送就没账**：`calls` 为空（如 `ram_only` 感知）时调用方干脆
+相同，已删。**没发送就没账**：`calls` 为空时调用方干脆
 不写这条账（`render.model_call` 对空 `calls` 有 assert）。
 
 `TraceTool.build()` 是**全项目唯一 `new LocalTrace` 的地方**，

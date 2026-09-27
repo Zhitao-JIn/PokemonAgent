@@ -79,7 +79,7 @@ from pokemon_agent.schemas.memory import (
     ObjectFactEvent,
 )
 from pokemon_agent.trace import EventType
-from pokemon_agent.world import Observation
+from pokemon_agent.world import Observation, TaskObservation
 
 
 class Rendered(NamedTuple):
@@ -408,16 +408,20 @@ def plan_failed(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 
 def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """两层 `sense` 取到的一帧（episode 完整档 / task RAM 档，按 `meta.task_id` 分层）。
+    """两层 `sense` 取到的一帧（episode 视觉档 / task 层带场合的一帧，按 `meta.task_id` 分层）。
 
-    **facts 必须进正文**——它才是观测的实质内容；`scene` / `overlay` 就在 `facts` 里，不另抄。
+    **facts 必须进正文**——它才是观测的实质内容；视觉给的 `facts.scene` / `overlay`
+    就在 `facts` 里，不另抄。
     正文：
     - `status`：状态行；
     - `facts`：整份事实快照，**直接放对象**（不双重编码）；
     - `done` / `perceived`：世界还在不在、这一帧问没问过视觉模型——用 `perceived`
       分开"没读过"和"读到是空"；
     - `place`：主角格的结构化坐标，`None` 时省略这个键；
-    - `frame`：这一帧的原始画面（base64 PNG），没有就省略。
+    - `scene`：task 层的场合（`TaskObservation.scene`），episode 层的帧省略这个键；
+    - `takeover`：接管场合的视图（**直接放对象**），没有就省略；
+    - `frame`：这一帧的原始画面（base64 PNG），没有就省略；
+    - `ram`：这一帧的内存读数（`RamReadout`，**直接放对象**），没有就省略。
 
     **目标不记**：它在 `episode_start` / `task_start` 上已经逐字记着。
 
@@ -432,8 +436,14 @@ def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     }
     if obs.place is not None:
         content["place"] = obs.place.model_dump()
+    if isinstance(obs, TaskObservation):
+        content["scene"] = obs.scene.value
+        if obs.takeover is not None:
+            content["takeover"] = obs.takeover.model_dump()
     if req.frame:
         content["frame"] = req.frame
+    if req.ram is not None:
+        content["ram"] = req.ram.model_dump()
     return Rendered(EventType.VIEW, TraceKind.SENSE_FRAME, content)
 
 
@@ -496,6 +506,8 @@ def choose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         "input": req.input,
         "output": req.output,
     }
+    if action.macro is not None:
+        content["macro"] = action.macro.model_dump()
     if req.human_note:
         content["human_note"] = req.human_note
     return Rendered(EventType.LLM_OUTCOME, TraceKind.CHOOSE_VERDICT, content)
@@ -515,6 +527,31 @@ def press_key(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """
     action: Action = req.action
     return Rendered(EventType.ACT, TraceKind.PRESS_KEY, {"sequence": action_sequence(action)})
+
+
+def run_macro(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """把一次宏执行拼成事件：调用与结果、`summary`、逐步明细 `steps`（每次都记）。
+
+    标量是字符串（`reason_code` 在 `done` 时为空串），`args` / `steps` 直接放对象。
+
+    前置条件：req.macro 非 None。
+    """
+    outcome = req.macro
+    assert outcome is not None, "run_macro 账要带宏结果"
+    return Rendered(
+        EventType.ACT,
+        TraceKind.RUN_MACRO,
+        {
+            "scene": outcome.scene.value,
+            "macro": outcome.macro,
+            "args": dict(outcome.args),
+            "status": outcome.status.value,
+            "reason_code": outcome.reason_code.value if outcome.reason_code else "",
+            "reason": outcome.reason,
+            "summary": outcome.summary,
+            "steps": [step.model_dump() for step in outcome.steps],
+        },
+    )
 
 
 # ---- 记忆写：四本账**一个形状**（content 就是记录正文）----
@@ -778,10 +815,10 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
     | `kind` | `query` 里是什么 | `refs` 里一条是什么 |
     |---|---|---|
-    | `read_act_memory` | `episode_id=… task_id=…`（本 task 的全部） | `"(episode_id, step)"` 坐标 |
-    | `read_episode_memory` | `run_id=… order_by=episode_id`（等值 + 排序） | 局 `episode_id` |
+    | `read_act_memory` | `episode_id=…`（整局） | `"(episode_id, step)"` 坐标 |
+    | `read_episode_memory` | `run_id=…`（等值） | 局 `episode_id` |
     | `read_knowledge` | **BM25 检索词原文** | 命中记录的 `source` 文件名 |
-    | `read_object_memory` | `map_id=… before_step=…` | 事件唯一键 `"(ep, step, place.key)"` |
+    | `read_object_memory` | `map_id=… before_step=…` | 物体格 `place.key` |
     | `read_task_memory` | `episode_id=…` | task 记忆坐标 |
 
     **`query` 记的是真正交给记忆读口的东西，不加包装**：四条按等值条件查的写
@@ -954,56 +991,33 @@ def settle_goal(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 
 def checkpoint_save(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """存下一份存档：id、级别、清单路径。前置条件：req.checkpoint 非 None 且带 id 与清单路径。"""
+    """存下一份存档：级别、清单路径（存档 id 在 meta 里，这条账就是从它恢复出的新线的分叉点）。
+
+    前置条件：req.checkpoint 非 None 且带清单路径；`req.meta` 带 `checkpoint_id`。
+    """
     mark = req.checkpoint
-    assert mark is not None and mark.checkpoint_id and mark.manifest_path
+    assert mark is not None and mark.manifest_path
+    assert req.meta.get("checkpoint_id"), "checkpoint_save 的 meta 必须带 checkpoint_id"
     return Rendered(
         EventType.LIFECYCLE,
         TraceKind.CHECKPOINT_SAVE,
-        {
-            "checkpoint_id": mark.checkpoint_id,
-            "level": mark.level,
-            "manifest_path": mark.manifest_path,
-        },
+        {"level": mark.level, "manifest_path": mark.manifest_path},
     )
 
 
 def checkpoint_restore(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """从存档恢复：新执行线的第一条账，带血缘。
+    """从存档恢复：新执行线的第一条账。父线与分叉点由 meta 里的 `checkpoint_id` 对上同 id 的
+    `checkpoint_save` 推出，这里不另记。
 
-    前置条件：req.checkpoint 非 None，带 id 与父执行线；`parent_last_event_uuid` 在 run 级恢复时为空
-    （run 级存档在 run 开账之前）。
+    前置条件：req.checkpoint 非 None 且带清单路径；`req.meta` 带 `checkpoint_id`。
     """
     mark = req.checkpoint
-    assert mark is not None and mark.checkpoint_id and mark.parent_branch
+    assert mark is not None and mark.manifest_path
+    assert req.meta.get("checkpoint_id"), "checkpoint_restore 的 meta 必须带 checkpoint_id"
     return Rendered(
         EventType.LIFECYCLE,
         TraceKind.CHECKPOINT_RESTORE,
-        {
-            "checkpoint_id": mark.checkpoint_id,
-            "level": mark.level,
-            "parent_branch": mark.parent_branch,
-            "parent_last_event_uuid": mark.parent_last_event_uuid,
-            "to_task": mark.to_task,
-        },
-    )
-
-
-def world_snapshot(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """task 开局的世界快照落在哪（`meta.task_id` 是那个 task）。前置条件：req.checkpoint 带路径。"""
-    mark = req.checkpoint
-    assert mark is not None and mark.world_path
-    return Rendered(EventType.LIFECYCLE, TraceKind.WORLD_SNAPSHOT, {"path": mark.world_path})
-
-
-def trace_sealed(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """封存本局的账：封进哪份存档、几条。前置条件：req.checkpoint 带 id。"""
-    mark = req.checkpoint
-    assert mark is not None and mark.checkpoint_id
-    return Rendered(
-        EventType.LIFECYCLE,
-        TraceKind.TRACE_SEALED,
-        {"checkpoint_id": mark.checkpoint_id, "count": str(mark.count)},
+        {"level": mark.level, "manifest_path": mark.manifest_path},
     )
 
 

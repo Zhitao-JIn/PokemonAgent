@@ -11,8 +11,8 @@
   返回 `*Resp`；两半都放发起方（harness），实体住在
   `pokemon_agent/schemas/harness/communication/`。
 - **第二跳（门面 → 模块）走裸参数、返回模块自己的类型**，不造第二个信封
-  （`GameToolPort.perceive_with_retry` 连 Req 都没有，入参是裸 keyword
-  `ram_only`；`from pokemon_agent.world import …` 那一跳见各实现文件）。
+  （`GameToolPort.perceive_with_retry` / `perceive_task` 连 Req 都没有；
+  `from pokemon_agent.world import …` 那一跳见各实现文件）。
 
 **跨模块的双向转换只在这一层做**：信封里的领域对象（`Observation` /
 `ActionSpace` / `ActMemory`）+ 模块的原生输入（prompt 文本 + 一撮裸字段），
@@ -33,8 +33,6 @@ pokemon_agent/tools/
 │                              Reflector/Verifier/Summarizer/TaskSummarizer（各满足一张单方法口）
 ├── game_tools.py              GameTools（GameToolPort 唯一实现）
 ├── memory_tool.py             MemoryTool（MemoryToolPort 唯一实现）
-├── replay/                    回放的五个磁带件（TapeProvider/TapeGame/TapeMemory/TapeReviewer/TapeTrace）+ Tape + ReplayDiverged
-│                              （docs/spec/checkpoint/SPEC.md §五；装配点有磁带时把真件包成它们）
 ├── vision_factory.py          build_vision_provider()
 ├── interface/
 │   ├── __init__.py            只导出四张协议
@@ -52,7 +50,7 @@ pokemon_agent/tools/
 │   ├── verify.py              build_prompt
 │   └── calls/
 │       ├── decompose.md  judge_success.md  run_plan.md  summarize.md  summarize_task.md  verify.md
-│       └── decide_action/  button_help.md  decide_action.md  map_hint.md  repeat_hint.md  retry_note.md
+│       └── decide_action/  button_help.md  decide_action.md  decide_macro.md  map_hint.md  repeat_hint.md  retry_note.md
 └── trace/
     ├── __init__.py            TraceTool + _RENDERERS 分派表 + _to_trace_event
     └── render.py              每种账的正文渲染（纯函数）+ _body/_CALL_LINK
@@ -67,15 +65,17 @@ pokemon_agent/tools/
 下沉到本层，所以方法名不带 `once`：`plan`（信封 `…PlanOnce…`）、`decompose`、`choose`（信封 `…ChooseOnce…`）、
 `judge`、`reflect`、`verify`、`summarize`、`summarize_task`。
 每条签名 `(req: FromHarnessToBrainTool<X>Req) -> …<X>Resp`。各层 runtime 只拿自己用得到的那几个口。
+`Chooser` 把动作空间里的 world `MacroSpec` 转成 brain 的 `MacroSignature`（名字、类型、是否必填）随 `keys` 一起交给 `Brain.choose`；宏调用不过 `_normalize` 的按键规则，语义校验归 world。
 
 **`GameToolPort`（实现 `GameTools`，`game_tools.py`）**：
 
 | 方法 | 签名 | 信封文件 |
 |---|---|---|
-| `get_action_space` | `(req: FromHarnessToGameToolGetActionSpaceReq) -> …GetActionSpaceResp` | Req + Resp |
-| `execute` | `(req: FromHarnessToGameToolExecuteReq) -> None` | 只有 Req |
+| `get_action_space` | `(req: FromHarnessToGameToolGetActionSpaceReq) -> …GetActionSpaceResp` | Req + Resp；常规场合按 overlay 给键，有宏的接管场合（`macro_specs(scene)` 非空）只给宏签名、不给键 |
+| `execute` | `(req: FromHarnessToGameToolExecuteReq) -> FromHarnessToGameToolExecuteResp` | Req + Resp；键 → `world.step`，`outcome` 为空；宏 → `world.run_macro`，`outcome` 是 `MacroOutcome` |
 | `reset` | `(req: FromHarnessToGameToolResetReq) -> None` | 只有 Req |
-| `perceive_with_retry` | `(*, ram_only: bool = False) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]` | 只有 Resp，**无 Req** |
+| `perceive_with_retry` | `() -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]` | episode 层视觉档；只有 Resp，**无 Req** |
+| `perceive_task` | `() -> FromHarnessToGameToolPerceiveTaskResp` | task 层，不调模型、不失败；只有 Resp |
 | `evolve` | `(req: FromHarnessToGameToolEvolveReq) -> None` | 只有 Req |
 | `save_state` | `(req: FromHarnessToGameToolSaveStateReq) -> FromHarnessToGameToolSaveStateResp` | Req + Resp；路径由 harness 给，本层原子写文件 |
 | `load_state` | `(req: FromHarnessToGameToolLoadStateReq) -> None` | 只有 Req；读档后不推进世界 |
@@ -86,7 +86,6 @@ pokemon_agent/tools/
 `store_episode_summary`（Req+Resp）、`query_object_events` /
 `query_object_events_at`（Req+Resp）、`append_object_events`（只有 Req）、
 `query_knowledge` / `store_knowledge`（Req+Resp）、
-`fetch`（Req+Resp：按自然键直接取回记录，回放按账上的 `refs` 取用）、
 `snapshot_memory` / `restore_memory`（Req+Resp，0916——快照打整个记忆根成 zip /
 还原时**以 zip 为准**，库里多出来的记录删掉；`snapshot` 的 Req 只带 `name`、Resp 带 `archive` 路径；
 `restore` 的 Req 带 `archive`、Resp 带 `unpacked` 条数）。
@@ -96,7 +95,7 @@ FromHarnessToTraceToolAppendReq) -> None`（写口只有这一个，0916 统一�
 调用账的 `calls` 交整条重试链，渲染时逐条落成 `*_call` 账）、
 `read_events(meta: dict[str, Any] | None = None) -> list[TraceEvent]`（读口无信封，
 按 `meta` 做交集筛选——`None`/`{}` = 整个落盘根；给了 `meta`（且不带 `branch`）时按本执行线的
-分支血缘拼接：祖先各取分叉点及之前、本分支全取（`TraceTool.build(branch=…, lineage=…)`）；返回契约层类型 `TraceEvent`，
+分支血缘拼接：本分支全取、祖先各取分叉点及之前（`TraceTool.build(branch=…)` 只给分支名，血缘由 `trace/lineage.py` 每次从账本现推）；返回契约层类型 `TraceEvent`，
 不是 trace 自己的 `Event`）。
 
 **信封清单**（`pokemon_agent/schemas/harness/communication/`，一个类一个文件）：
@@ -175,7 +174,7 @@ tool 层是唯一同时认识两边形状的地方，实际存在的转换点：
 
 | 组装模块 | 模板文件 | 装配函数 / 常量 |
 |---|---|---|
-| `decide_action.py` | `calls/decide_action/decide_action.md`（本体）、`button_help.md`（`load_nested_sections`）、`map_hint.md`、`repeat_hint.md`、`retry_note.md` | `build_prompt()`、`retry_prompt()`、`BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT`、`RetryPromptReq` |
+| `decide_action.py` | `calls/decide_action/decide_action.md`（本体；上一宏结果非空时在已知事实后加一节）、`decide_macro.md`（接管场合：视图、上一宏结果、宏签名与说明，只输出一个宏调用）、`button_help.md`（`load_nested_sections`）、`map_hint.md`、`repeat_hint.md`、`retry_note.md` | `build_prompt()`、`retry_prompt()`、`BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT`、`RetryPromptReq` |
 | `judge_success.py` | `calls/judge_success.md` | `build_prompt()` |
 | `verify.py` | `calls/verify.md` | `build_prompt()` |
 | `summarize.py` | `calls/summarize.md` | `build_prompt()`、`labeled_blocks()`（正 / 负两组） |

@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from .macro_call import MacroCall
 
 
 class ActionSegment(BaseModel):
@@ -29,9 +31,8 @@ class ActionSegment(BaseModel):
 class Action(BaseModel):
     """**从大脑吐出的动作**，交给世界执行。
 
-    只有一样东西：`sequence`，给世界执行的按序按键链（每段 = 一个键 × 连按次数）。
-    **这一版只有按键一类动作**：`intent` 分派（press / push_goal）连同它的
-    枚举一起删了，拆子目标的机制会在别处重写。
+    两种形状恰好取一：`sequence`（常规场合，给世界执行的按序按键链，每段 = 一个键 ×
+    连按次数）或 `macro`（接管场合，一次宏调用）。
 
     **没有推理字段**：决策是每键一次的快速响应，"为什么这么做"归 task 的拆解
     （`Decomposition` 的 `why`），不归选键。经验记忆里因此只有
@@ -42,9 +43,18 @@ class Action(BaseModel):
     """
 
     sequence: list[ActionSegment] = Field(
-        min_length=1,
-        description="按顺序执行的按键链",
+        default_factory=list,
+        description="按顺序执行的按键链；宏调用时为空",
     )
+    macro: MacroCall | None = Field(default=None, description="宏调用；按键动作时为 None")
+
+    @model_validator(mode="after")
+    def _one_shape(self) -> Action:
+        """`sequence` 与 `macro` 恰好一个非空。"""
+        assert bool(self.sequence) != (self.macro is not None), (
+            "Action 必须恰好是按键链或宏调用之一"
+        )
+        return self
 
     def segments(self) -> list[ActionSegment]:
         """返回规范化后的动作链。"""
@@ -55,7 +65,10 @@ class Action(BaseModel):
 
         `times == 1` 的段省掉 `×1` 后缀——执行粒度下沉到单键之后，绝大多数
         `describe()` 的结果就是 `up`，带上 `×1` 只会让每条记忆都多两个字符。
+        宏调用写成 `buy(POKé BALL, 5)`。
         """
+        if self.macro is not None:
+            return self.macro.describe()
         parts = [
             f"{seg.name}×{seg.times}" if seg.times > 1 else seg.name for seg in self.segments()
         ]

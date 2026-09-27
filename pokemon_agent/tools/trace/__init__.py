@@ -36,7 +36,7 @@ trace 是独立第三方模块，只有"桥"认识它。
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,9 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.trace import Event, EventType, LocalTrace, TracePort
 
 from . import render
+from .lineage import BranchEdge, Fork, branch_graph, lineage_of
 from .live_feed import LiveFeedTrace
+from .parse import CONTENT_MODELS, MODEL_CALL_KINDS, ParsedEvent, parse
 
 _RENDERERS = {
     TraceKind.RUN_START: render.run_start,
@@ -79,6 +81,7 @@ _RENDERERS = {
     TraceKind.SENSE_FRAME: render.sense_frame,
     TraceKind.CHOOSE_VERDICT: render.choose_verdict,
     TraceKind.PRESS_KEY: render.press_key,
+    TraceKind.RUN_MACRO: render.run_macro,
     TraceKind.CHECK_STALL: render.check_stall,
     TraceKind.GET_ACTION_SPACE: render.action_space,
     TraceKind.JUDGE_VERDICT: render.judge_verdict,
@@ -101,8 +104,6 @@ _RENDERERS = {
     TraceKind.CHECKPOINT_SAVE: render.checkpoint_save,
     TraceKind.CHECKPOINT_RESTORE: render.checkpoint_restore,
     TraceKind.CHECKPOINT_ERROR: render.checkpoint_error,
-    TraceKind.WORLD_SNAPSHOT: render.world_snapshot,
-    TraceKind.TRACE_SEALED: render.trace_sealed,
     TraceKind.REVIEW_INJECT: render.review_inject,
     TraceKind.REVIEW_AUDIT: render.review_audit,
 }
@@ -156,8 +157,8 @@ class TraceTool:
     """`TraceToolPort` 的唯一实现。持有事件流存储（或任何 `TracePort` 实现）。
 
     **本对象自身的状态只有构造期常量**：它不跨步骤攒东西（读侧要的 `run_id`
-    由 `LocalTrace` 自己持有，这里不再需要一份）。构造期常量里有本执行线的分支血缘
-    （`branch` 与 `lineage`），读侧按它拼出"这条执行线看得见的全部账"。
+    由 `LocalTrace` 自己持有，这里不再需要一份）。构造期常量里有本执行线的分支名；
+    血缘每次读时从账本推（`lineage.py`），读侧据此拼出"这条执行线看得见的全部账"。
     """
 
     def __init__(
@@ -165,19 +166,11 @@ class TraceTool:
         trace: TracePort,
         *,
         branch: str = "main",
-        lineage: Sequence[tuple[str, str, float]] = (),
     ) -> None:
-        """接好事件流存储与本执行线的血缘。
-
-        branch：本执行线的分支名（与存储盖进 `meta` 的那个同值）。
-        lineage：祖先执行线，由根到父，每条 `(分支名, 分叉点事件 uuid, 分叉点事件 ts)`；
-            未经恢复的执行线为空。读侧对每个祖先只取分叉点及之前的事件。
-        """
+        """接好事件流存储。branch：本执行线的分支名（与存储盖进 `meta` 的那个同值）。"""
         assert branch, "TraceTool needs a non-empty branch"
-        assert branch not in {b for b, _u, _t in lineage}, "branch 不能出现在自己的血缘里"
         self._trace = trace
         self._branch = branch
-        self._lineage = tuple(lineage)
 
     @classmethod
     def build(
@@ -186,7 +179,6 @@ class TraceTool:
         run_id: str = "local",
         trace_root: str | Path | None = None,
         branch: str = "main",
-        lineage: Sequence[tuple[str, str, float]] = (),
         live_feed_url: str | None = None,
     ) -> TraceTool:
         """接线工厂：造 `LocalTrace` 并包成 `TraceTool`。
@@ -199,14 +191,14 @@ class TraceTool:
         下的 `tracelog/`（0916 起）。启动参数 `--trace-root` →
         `build_real(trace_root=…)` → 这里 → `LocalTrace(root=…)`。
 
-        `branch` / `lineage`：本执行线的分支名与祖先血缘（见 `__init__`）；未经恢复时用缺省。
+        `branch`：本执行线的分支名；未经恢复时用缺省。
         `live_feed_url`：人在环后端地址（`ws://host:port`）；给了就在落盘外包一层
         `LiveFeedTrace`，每笔账顺手推给网页实时看。None = 不推。
         """
         store: TracePort = LocalTrace(run_id=run_id, root=trace_root, branch=branch)
         if live_feed_url is not None:
             store = LiveFeedTrace(store, run_id=run_id, branch=branch, url=live_feed_url)
-        return cls(store, branch=branch, lineage=lineage)
+        return cls(store, branch=branch)
 
     def append(self, req: FromHarnessToTraceToolAppendReq) -> None:
         """记一笔账：按 `req.kind` 渲染正文，逐条落盘。
@@ -253,22 +245,24 @@ class TraceTool:
 
         - `meta` 为空：不过滤，整个落盘根原样返回（与血缘无关）；
         - `meta` 自带 `branch` 键：按调用方给的分支读，不拼血缘；
-        - 其余：对血缘里每个祖先分支取"分叉点及之前"的匹配事件，再加上本分支的全部
-          匹配事件——即这条执行线看得见的全部账（`docs/spec/checkpoint/SPEC.md` §三）。
+        - 其余：本分支的全部匹配事件，加上血缘里每个祖先分支"分叉点及之前"的匹配事件
+          ——即这条执行线看得见的全部账。血缘每次现推（`lineage.lineage_of`），不缓存。
 
         后置条件：按 `(ts, uuid)` 升序。
         """
         if not meta or "branch" in meta:
             return [_to_trace_event(e) for e in self._trace.read_events(meta)]
-        # 步骤 1：祖先各取分叉点及之前，本分支全取。
-        picked: list[Event] = []
-        for branch, fork_uuid, fork_ts in self._lineage:
+        # 步骤 1：本分支全取；祖先各取分叉点及之前。
+        picked: list[Event] = list(self._trace.read_events({**meta, "branch": self._branch}))
+        for fork in lineage_of(self._trace.read_events(), self._branch):
+            assert meta.get("run_id", fork.run_id) == fork.run_id, "血缘不会跨 run"
             picked.extend(
                 e
-                for e in self._trace.read_events({**meta, "branch": branch})
-                if (e.ts, e.uuid) <= (fork_ts, fork_uuid)
+                for e in self._trace.read_events(
+                    {**meta, "run_id": fork.run_id, "branch": fork.branch}
+                )
+                if (e.ts, e.uuid) <= (fork.ts, fork.uuid)
             )
-        picked.extend(self._trace.read_events({**meta, "branch": self._branch}))
         # 步骤 2：合并后按落盘序排好。
         picked.sort(key=lambda e: (e.ts, e.uuid))
         return [_to_trace_event(e) for e in picked]
@@ -281,4 +275,15 @@ def _as_list(rendered: render.RenderedEvent) -> Iterable[render.Rendered]:
     return [rendered]
 
 
-__all__ = ["TraceTool", "render_request"]
+__all__ = [
+    "BranchEdge",
+    "CONTENT_MODELS",
+    "Fork",
+    "MODEL_CALL_KINDS",
+    "ParsedEvent",
+    "TraceTool",
+    "branch_graph",
+    "lineage_of",
+    "parse",
+    "render_request",
+]

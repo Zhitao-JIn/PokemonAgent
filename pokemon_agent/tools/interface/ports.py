@@ -55,16 +55,16 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolVerifyResp,
     FromHarnessToGameToolEvolveReq,
     FromHarnessToGameToolExecuteReq,
+    FromHarnessToGameToolExecuteResp,
     FromHarnessToGameToolGetActionSpaceReq,
     FromHarnessToGameToolGetActionSpaceResp,
     FromHarnessToGameToolLoadStateReq,
     FromHarnessToGameToolPerceiveOnceResp,
+    FromHarnessToGameToolPerceiveTaskResp,
     FromHarnessToGameToolResetReq,
     FromHarnessToGameToolSaveStateReq,
     FromHarnessToGameToolSaveStateResp,
     FromHarnessToMemoryToolAppendObjectEventsReq,
-    FromHarnessToMemoryToolFetchReq,
-    FromHarnessToMemoryToolFetchResp,
     FromHarnessToMemoryToolQueryActMemoriesReq,
     FromHarnessToMemoryToolQueryActMemoriesResp,
     FromHarnessToMemoryToolQueryEpisodeSummariesReq,
@@ -207,14 +207,15 @@ class GameToolPort(Protocol):
         """
         ...
 
-    def execute(self, req: FromHarnessToGameToolExecuteReq) -> None:
-        """执行一个动作，推进世界。**不感知**——调用方另调 `perceive_with_retry()` 拿新观测。
+    def execute(self, req: FromHarnessToGameToolExecuteReq) -> FromHarnessToGameToolExecuteResp:
+        """执行一个动作，推进世界。**不感知**——调用方另调 `perceive_task()` 拿新观测。
 
         req.action：要执行的动作。**执行粒度是一个键**（单段、`times=1`）——
-            连按已经在 Harness 的循环里展开成一步一步。
+            连按已经在 Harness 的循环里展开成一步一步；或**一个宏**，world 执行到底。
         req.observation：这个动作据以选出的那份观测。
         req.settle：按完要不要等世界把过场走完（链中间的键不等，见该字段说明）。
-        前置条件：动作的按键属于 get_action_space(req.observation) 的结果（实现方 assert）。
+        前置条件：动作的按键或宏名属于 get_action_space(req.observation) 的结果（实现方 assert）。
+        后置条件：宏动作时 `resp.outcome` 是宏结果，按键动作时为 None。
         """
         ...
 
@@ -244,24 +245,25 @@ class GameToolPort(Protocol):
         """
         ...
 
-    def perceive_with_retry(
-        self, *, ram_only: bool = False
-    ) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]:
-        """感知当前这一帧——**重试循环与异常翻译都在实现方**（0913 夜定案）。
+    def perceive_with_retry(self) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]:
+        """感知当前这一帧（episode 层的视觉档）——**重试循环与异常翻译都在实现方**（0913 夜定案）。
 
-        `ram_only=False`（缺省）：反复问视觉模型，直到成功或预算耗尽。
+        反复问视觉模型，直到成功或预算耗尽。
         harness 只负责**落账**：成功用返回的 `log`，耗尽用异常携带的 `calls`
         ——两侧分工与 brain 那六条链路逐字相同（见 `think_action`）。
         失败：预算耗尽抛 `MaxRetriesExceeded`（`source="sense"`）。
             **`PerceptionAttemptFailed` 不是本协议的词汇**——那是 world 的内部
             细节，被实现方在桥上接住、翻译掉了，跨不过这层。
 
-        `ram_only=True`：**不调视觉模型**，只读内存里确定的那几样（坐标、朝向、
-        地标、通行图、地图编号）——链中间的键用这一档，它们只需要判"位置动没动、
-        换没换图"。返回的观测 `perceived=False`：场景与对话**不是空的，是没读过**；
-        `log` 为空，也不会失败、不会重试。
-
         后置条件：resp.observation 非空；step 未盖章（Harness 的事）。
+        """
+        ...
+
+    def perceive_task(self) -> FromHarnessToGameToolPerceiveTaskResp:
+        """感知当前这一帧（task 层）：**不调视觉模型**，只读内存与屏幕缓冲，观测带场合（`scene`）。
+
+        不会失败、不重试、没有模型调用记录。
+        后置条件：resp.observation 非空、`perceived=False`；step 未盖章（Harness 的事）。
         """
         ...
 
@@ -439,18 +441,6 @@ class MemoryToolPort(Protocol):
         前置条件：每条 record 的 `topic`/`content`/`source` 非空。
         后置条件：`resp.stored` 是**真的落库了的那几条**，是 `req.records`
             的子序列（判重跳过的那些不在里面）；顺序与 `req.records` 一致。
-        """
-        ...
-
-    # ---- 按键取（不检索：给出自然键，直接取回那几条） ----
-
-    def fetch(self, req: FromHarnessToMemoryToolFetchReq) -> FromHarnessToMemoryToolFetchResp:
-        """按自然键取回记录，顺序与 `req.keys` 相同；同一个键出现 n 次取回 n 条。
-
-        用途：回放时按账上的 `refs` 取回当初读到的那几条，不重跑检索
-        （`docs/checkpoint/intent.md` C8）。键字段见 `FromHarnessToMemoryToolFetchReq`。
-        后置条件：只填 `req.kind` 那一族的字段，条数等于 `len(req.keys)`。
-        失败：某个键在库里的条数少于它在 `req.keys` 里出现的次数 → `LookupError`。
         """
         ...
 

@@ -46,8 +46,7 @@ def retrieve_object_semantic_memory(
             )
         ).events
     known = render_object_events(events)
-    # `refs` 记每条事件的唯一键 `(episode_id, step, 物体格)`——物体格（`PlaceInWorld.key`，
-    # 形如 `12:13:8`）单独不唯一：同一格反复互动会有多条，回放要按键取回确定的那几条。
+    # `refs` 记每条事件的物体格（`PlaceInWorld.key`，形如 `12:13:8`）。
     #
     # `query` 照实记检索条件，`place` 为 None 时写 `map_id=None`——**这一格那时
     # 压根没查**（按空事件处理），"没查"与"查了没命中"在账上必须分得开：
@@ -64,7 +63,7 @@ def retrieve_object_semantic_memory(
             query=(
                 f"run_id={state.run_id} map_id={place.map_id if place else None} before_step={step}"
             ),
-            refs=[f"({e.episode_id}, {e.step}, {e.place.key})" for e in events],
+            refs=[e.place.key for e in events],
         )
     )
     return {"ep_ctx": state.ep_ctx.model_copy(update={"object_semantic_memory": known})}

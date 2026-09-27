@@ -1,4 +1,4 @@
-"""`sense`（task 层）：**每圈**用 RAM 档取一帧 → `after_observation`，记 `sense_frame`，落帧槽。
+"""`sense`（task 层）：**每圈**取一帧（带场合） → `after_observation`，记 `sense_frame`，落帧槽。
 
 task 层唯一向世界取帧的地方。第一圈（还没按键）取的就是这个 task 的开局帧；之后每圈
 取的是上一键之后的新帧。步号 = `start_step + step`（全局键号的唯一来源）。
@@ -13,7 +13,7 @@ from langgraph.runtime import Runtime
 
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
 
-from ...sensing import perceive_once
+from ...sensing import perceive_task
 from ..frames import remember_frame
 from ..task_runtime import TaskRuntime
 from ..task_state import TaskState
@@ -22,15 +22,13 @@ _SOURCE = "task.sense"
 
 
 def sense(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
-    """取一帧（RAM 档），写 `after_observation`。"""
+    """取一帧（只读内存与屏幕缓冲，带场合），写 `after_observation`。"""
     deps = runtime.context
     episode_id, task_id = state.episode_id, state.task.task_id
     step = state.start_step + state.step
 
     # 步骤 1：取帧，步号由本层盖。
-    obs, frame_png = perceive_once(
-        deps, episode_id=episode_id, task_id=task_id, step=step, source=_SOURCE, ram_only=True
-    )
+    obs, frame_png, ram = perceive_task(deps, step=step)
 
     # 步骤 2：记观察账、落帧槽（ActMemory 的两张图从帧槽取）。
     deps.trace.append(
@@ -39,6 +37,7 @@ def sense(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
             meta={"source": _SOURCE, "episode_id": episode_id, "task_id": task_id, "step": step},
             obs=obs,
             frame=frame_png,
+            ram=ram,
         )
     )
     remember_frame(deps, episode_id, step, frame_png)

@@ -36,8 +36,8 @@ class TaskMemory(BaseModel):
     task_id: str = Field(description="本 task 的标识")
     goal: str = Field(description="本 task 的目标")
     termination: str = Field(
-        default="", description="终止类别：goal_done / world_ended / stalled / budget_exhausted / "
-        "interrupted"
+        default="",
+        description="终止类别：goal_done / world_ended / stalled / budget_exhausted / interrupted",
     )
     reason: str = Field(default="", description="task_done 里 LLM 写的结论说明")
     steps_used: int = Field(ge=0, description="本 task 消耗的键数")

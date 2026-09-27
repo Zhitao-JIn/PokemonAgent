@@ -51,14 +51,6 @@ def store_empty_chapter(
     existing = deps.memory.query_episode_summaries(
         FromHarnessToMemoryToolQueryEpisodeSummariesReq(conditions={"episode_id": episode_id})
     ).summaries
-    deps.trace.append(
-        FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.READ_EPISODE_MEMORY,
-            meta=meta,
-            query=f"episode_id={episode_id} order_by=episode_id",
-            refs=[m.episode_id for m in existing],
-        )
-    )
     if existing:
         return existing[0]
     chapter = EpisodeMemory(

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import Goal
 from pokemon_agent.schemas.memory import ActMemory
-from pokemon_agent.world import ActionSpace, Observation
+from pokemon_agent.world import ActionSpace, TaskObservation
 
 
 class FromHarnessToBrainToolChooseOnceReq(BaseModel):
@@ -23,6 +23,8 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     space：当前可用动作空间——`BrainTool` 从它提取 `keys` 传给大脑，
         说明文字则渲进 prompt。
     memories：本局内情景记忆（`ActMemory`）。
+    last_macro：上一步宏的结果一句话（`MacroOutcome.describe()`），渲染在观测之后；
+        上一步不是宏时为空。
     knowledge/episode_memories/human_note：分开放，各自在 prompt 里有独立
         占位符与可信度说明（混在一起模型没法区分对待）。
 
@@ -43,9 +45,10 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     """
 
     goals: list[Goal]
-    obs: Observation
+    obs: TaskObservation
     space: ActionSpace
     memories: list[ActMemory]
+    last_macro: str = ""
     knowledge: str = ""
     episode_memories: str = ""
     human_note: str = ""

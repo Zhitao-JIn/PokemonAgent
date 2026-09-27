@@ -65,6 +65,7 @@ __all__ = [
     "BUTTON_HELP",
     "MAP_HINT",
     "PromptTemplate",
+    "READ_SCREEN",
     "REPEAT_HINT",
     "append_human_note",
     "load",
@@ -179,6 +180,10 @@ def append_human_note(prompt: str, note: str) -> str:
         + "照这句话办。如果它和你原本的判断冲突，改听人类，并在输出里如实说明"
         + "「人类指示：{原话摘要}，因此改为……」——不要既听人类的又假装是自己原来的结论。\n"
     )
+
+
+READ_SCREEN = load("read_screen").text
+"""「屏幕怎么读」（`calls/read_screen.md`）：决策与判定两个模板共用，`$read_screen` 占位。"""
 
 
 from .decide_action import BUTTON_HELP, MAP_HINT, REPEAT_HINT  # noqa: E402

@@ -1,80 +1,79 @@
 # intent —— checkpointer：以 task 为最小单元的存档与恢复
 
 > 流程位置：**intent.md** → spec.md → plan.md → PR → production
-> 状态：**已定稿**（2026-09-24）；**09-25 修订**（见 §十）→ `docs/checkpoint/spec.md` v2
-> 起草：2026-09-24 ｜ 下游：`docs/eval/intent.md`（测评数据集的样本就是 checkpoint）、`docs/wikiskill/intent.md`（验证集）
-> 对应 ROADMAP：H9 状态恢复（现写"E1 之后以 subagent 边界重做"，本 intent 把它提前到 task 边界，需同步改 H9）
+> 状态：草稿（2026-09-26）
+> 下游：`docs/eval/intent.md`（测评数据集的样本就是 checkpoint）、`docs/wikiskill/intent.md`（验证集）
+> 对应 ROADMAP：H9 状态恢复、F5 存档片段回归集
 
 ---
 
 ## 一、一句话意图
 
-**在任意一个 task 边界，把"世界 + 三层图的状态 + 记忆"整份存下来；之后能回到存下的那一刻接着跑。
-trace 不回滚、不打作废标记，只追加一笔"从 checkpoint X 恢复"的账，新分支记下它从哪来。**
+**在任意一个 task 边界，把"世界 + 三层图的状态 + 记忆"整份存下来；之后能直接回到存下的那一刻，在图内接着跑。
+trace 不回滚、不打作废标记，也不参与恢复：它只追加账，分支关系从账本自己推出来。**
 
-## 二、为什么现在做
+## 二、为什么做
 
 1. **测评数据集需要它。** 现有 `experiment/experiment_states/*.state` 只有模拟器状态，没有图状态和记忆，
    只能从"空记忆 + 开局"起跑。要以 task / episode / run 为单位做样本（"第 3 局第 5 个 task、带着前面积累的记忆"），
    样本本身就得是一个完整 checkpoint。
-2. **失败片段可复现。** 真机跑出的一个失败 task，今天只能看 trace；有了 checkpoint，可以从它开始前那一刻反复重跑。
-   这也是 ROADMAP F5（存档片段回归集）的前提。
+2. **失败片段可复现。** 真机跑出的一个失败 task，可以从它开始前那一刻反复重跑。这也是 ROADMAP F5 的前提。
 3. **WikiSkill 的验证集**从同一批 checkpoint 里切。
 4. **Agent 工程清单第 6 项**：agent 必须能在任意 step 后持久化并恢复——"从玩具到生产线的分水岭，不可协商"。
 
-## 三、上一次为什么失败，这次怎么避开
+## 三、设计原则
 
-09-13 那版 checkpoint 被整体删除（CHANGELOG 57："先全删掉，我感觉写的不行"）。当时的恢复链靠**作废标记**：
-memory 的 `void_memory_after` 把之后的记录搬进 `voided-*` 目录，trace 的 `void_after` 给之后的事件打 `valid=false`。
-这让"盘上现在是什么"取决于一堆标记，而且每个模块都得懂恢复。
-
-这次的两条不同：
-
-| | 上次 | 这次 |
-|---|---|---|
-| 记忆 | 逐条作废 + 归档目录 | **整根快照**：`MemoryStorePort.snapshot(name)` / `restore(archive)`（0916 已有），以 zip 为准，多出来的直接删 |
-| trace | `void_after` 打 `valid=false` | **不动历史**，只追加一笔恢复账；分支靠血缘记录区分 |
-
-结果是：memory 只需要会"拍照 / 还原"，trace 只需要会"追加"，谁都不需要理解"恢复"这件事。
+| 原则 | 含义 |
+|---|---|
+| 不作废，只整体还原 | 记忆用整根快照（`snapshot` / `restore`，以 zip 为准，多出来的直接删），不逐条打作废标记、不建归档目录 |
+| trace 只追加 | 历史账一条不动；恢复只追加一笔恢复账，分支靠账上的 `branch` 与 `checkpoint_id` 区分 |
+| 各模块不懂"恢复" | memory 只会拍照 / 还原，trace 只会追加，世界只会存 / 读档；"恢复"这件事只住在 checkpointer 与各层 `act` 里 |
+| 图内恢复，不回放 | 用 LangGraph 原生的 `update_state(as_node=…)` + `invoke(None)` 把每层图放回"进 `act` 前"，已完成的 task 不重跑、不重演 |
+| checkpointer 对 trace 只写不读 | 存档与恢复都不依赖读 trace；trace 只是它记账的地方 |
 
 ## 四、一个 checkpoint 里有什么
 
-| 组成 | 内容 | 现状 |
+| 组成 | 内容 | 怎么存 |
 |---|---|---|
-| 世界 | PyBoy 模拟器完整状态 | 0913 已从 `WorldPort` 删除 `save_state` / `load_state_bytes`，需要重新加回（`reset()` 里读起点存档的那条还在） |
-| run 层状态 | `RunState`（目标表、已派局数、失败连击、已完成局的输出…） | Pydantic 模型，可序列化；尚无存取入口 |
-| episode 层状态 | `EpisodeRunState`（任务表、已完成 task 的输出、失败连击、计数…） | 同上 |
-| 记忆 | 整个记忆根的 zip（五族一起） | **已有**：`snapshot` / `restore` |
-| 元信息 | run_id、episode_id、下一个 task 在任务表里的位置、step 计数、git commit、工作区是否干净、各位置模型档、`config.py` 旋钮、父 checkpoint、存档时 trace 的最后一条事件 uuid、创建时间 | 无 |
+| 世界 | PyBoy 模拟器完整状态 | 文件，放在该存档目录里 |
+| run 层状态 | `RunState`：run 图进 `act` 前那一刻 | saver 地址 `run_ref`（run 级存档存 `RunState` 原件——此时还没进图） |
+| episode 层状态 | `EpisodeRunState`：episode 图进 `act`、派该 task 之前那一刻 | saver 地址 `episode_ref`（仅 task 级） |
+| 记忆 | 整个记忆根的 zip（各族一起） | `snapshot_memory`，清单引用其路径 |
+| 元信息 | `checkpoint_id`、级别、run_id、所在执行线、episode_id / task_id、代码版本与状态结构版本、各位置模型档、创建时间 | 清单 |
 
 **不在 checkpoint 里的**：trace（它是账本，不是状态）；模型的随机性（同一 checkpoint 跑两次结果可以不同，这正是测评要重复 k 次的原因）；
-进程内缓存（向量索引等由 `restore` 重读重建）。
-
-**存档点的精确位置**（09-25 定）：三级各在自己的图外入口末尾存——run 级 begin、episode 级 begin、task 级 begin；外层此刻都停在各自"进 `act` 前"。详见 `spec.md` §三。
+进程内缓存（向量索引等由 `restore` 重读重建）；task 图的状态（task 级存档点就是它的开局，由 `begin_task` 重新装配）。
 
 ## 五、语义
 
-**保存**：在 task 边界把 §四 的组成一起落盘，一个 checkpoint 一个目录（或一个包），带唯一 id。
-episode 边界与 run 开始是 task 边界的特例，不单独设计。
+**保存**：三级存档点各在自己那一层的 begin，一次调用把 §四 的组成一起落盘，一个 checkpoint 一个目录，记一笔 `checkpoint_save`。
 
-**恢复**：
-1. 世界、run 状态、episode 状态、记忆都回到保存那一刻；
-2. trace 追加一笔"从 checkpoint X 恢复"的账，写明 X 的 id、X 所在分支、存档时的最后一条事件 uuid；
-3. 之后的账属于**新分支**，能从 trace 追溯到它的来源；原分支的账原封不动；
-4. 从恢复点接着跑：episode 派发下一个 task，一切照常。
+**恢复到 task k**：
+1. 世界从该存档的世界文件读档，记忆从 zip 还原；
+2. run 图开新 thread `<run_id>@<新branch>`，按 `run_ref` 读出 `RunState`、写入新 `branch`，`update_state(as_node="plan_run")` → `invoke(None)`；
+3. run 的 `act` 处于恢复模式：`dispatch` 照常；不走 `begin_episode` + 全新 `invoke`，而是按 `episode_ref` 读出 `EpisodeRunState`，
+   在 `get_config()` 上 `update_state(as_node="plan_episode")` → `invoke(None)`；
+4. episode 的 `act` 与 `begin_task` 照常执行：`begin_task` 为新线写 `task_start`，并存下新线自己的 task 级存档；
+5. 新线第一笔账是 `checkpoint_restore`（meta 带 `checkpoint_id`）；之后的账都属于新线，父线的账原封不动。
 
-**保真**：保存 → 恢复 → 立即再保存，两个 checkpoint 除元信息外逐项相同（模拟器内存、两层状态、记忆文件清单与内容）。
+episode 级恢复只做第 1、2 步（run 的 `act` 照常派这一局）；run 级从开局跑。
+
+**可见历史**：一条线能看到的账 = 自己的全部 + 血缘上每个祖先在分叉点及之前的账。同一个 task 在父线与新线各有一份账，
+读侧按血缘截断筛选，不按业务键去重。
+
+**保真**：恢复后的状态 = 存下的状态（模拟器内存、两层图状态、记忆文件清单与内容逐项相同）。恢复后从目标 task 开局起是全新执行，不承诺结果一样。
 
 **版本**：checkpoint 带着生成它的代码版本与状态结构版本；结构不兼容时**拒绝加载并报出原因**，不静默尝试。
 
 ## 六、范围
 
 **做**
-- task 边界的保存与恢复（含 episode 边界、run 开始这两个特例）；
-- `WorldPort` 加回存 / 读模拟器完整状态；
-- 恢复账与分支血缘；
+- 三级存档（run / episode / task begin）与对应的图内恢复；
+- 分叉点、血缘、分支图全部从 trace 推导；
 - 保真核对（§五），作为验收脚本；
-- 列出 / 查看已有 checkpoint 的最小入口。
+- 列出 / 查看已有 checkpoint 的最小入口；
+- 删除为回放而设的机制：`tools/replay/`（五个磁带件与 `ReplayDiverged`）、`seal_episode` 与 `trace_sealed`、`world_snapshot`、`branches.py` / `branches.json`、
+  对象读 `refs` 唯一键、记忆按自然键取的读口、查询的 `order_by` 规矩与 act 记忆的 `task_id`、"所有记忆读都记读账"。问人两本账（`review_inject` / `review_audit`）保留：它们记着人是否真答、等了多久、审的是什么，是人在环的审计依据。
 
 **不做**
 - task 内部（键级）恢复；
@@ -83,54 +82,45 @@ episode 边界与 run 开始是 task 边界的特例，不单独设计。
 - 与 E1（subagent 编排）的对接——E1 落地时它的 subagent 边界若与 task 边界不同，再议；
 - 恢复后保证"结果一样"——模型是随机的，不承诺。
 
-## 七、已拍板（2026-09-24）
+## 七、已拍板
 
 | 编号 | 问题 | 结论 |
 |---|---|---|
-| C1 | 什么时候存 | **（09-25 改，见 §十）** ~~三级 begin 自动存~~：run 级 begin、episode 级 begin（还没拆解）、task 级 begin（还没按键），`config.py` 一个开关可关；旧 checkpoint 先手动清理（09-25 细化，详见 spec §三） |
-| C2 | 分支的身份 | **沿用原 run_id**，trace 封套 `meta` 新增 `branch` 字段区分分支（09-24 由"新 run_id"改定：id 与记忆隔离键耦合，换 run_id 会让恢复后的 agent 查不到存档前的记忆）；血缘写进恢复账与清单 |
-| C3 | knowledge_memory 随不随快照回滚 | **一起回滚**：沿用现有整根 `snapshot` / `restore`，不改 memory 契约；存档后手改的知识靠 git 找回 |
-| C4 | 实现路线 | **用 LangGraph 自带的 checkpointer** 持久化图状态；世界与记忆由我们在同一存档点另存，元信息把三者绑成一个 checkpoint |
-| C5 | 人在环的状态 | spec 给默认：存档点放在该 task 的审阅结束之后，信箱不入档 |
-| C6 | 存放位置 | spec 给默认：仓库根 `checkpoints/`（gitignore），记忆 zip 仍由 memory 自己放在 `memory/snapshots/`，元信息引用其名字 |
+| C1 | 什么时候存 | **三级完整存档，都在各层 begin**：run 级在 `run_entry.new_run`（reset 之后、进图之前）；episode 级在 run 的 `act` 开头；task 级在 `begin_task`。`config.py` 一个开关可关；旧 checkpoint 先手动清理 |
+| C2 | 分支的身份 | **沿用原 run_id**，trace 封套 `meta` 的 `branch` 区分执行线（换 run_id 会让恢复后的 agent 查不到存档前的记忆）；run 图一条执行线一个 thread：`<run_id>@<branch>` |
+| C3 | knowledge_memory 随不随快照回滚 | **一起回滚**：整根 `snapshot` / `restore`，不改 memory 契约；存档后手改的知识靠 git 找回 |
+| C4 | 实现路线 | **用 LangGraph 自带的 checkpointer**（sqlite saver）持久化图状态；只有 run 图编译时带 saver；episode、task 图不带，运行时继承父图 config 里的同一个 saver，嵌套状态照样落盘；恢复时读 episode 状态直接调 saver 的 `get_tuple`。世界与记忆由我们在同一存档点另存，清单把三者绑成一个 checkpoint |
+| C5 | 人在环的状态 | 存档点在上一个 task 的审阅结束之后，信箱不入档 |
+| C6 | 存放位置 | 仓库根 `checkpoints/`（gitignore）；记忆 zip 由 memory 自己放在 `memory/snapshots/`，清单引用其路径 |
+| C7 | 清单存状态还是地址 | **存 saver 地址**。task 级存档在 `begin_task` 里从执行上下文的 `checkpoint_map` 取两条：`""` → `run_ref`，episode 图的命名空间 → `episode_ref`；`run_ref` 核 `next == ("act",)`，`episode_ref` 核父指针等于 `run_ref` |
+| C8 | task 级存档存几次 | **一次**：`begin_task` 里一次 `save(level="task")`，两个地址当场取，世界与记忆当场拍。三级都记 `checkpoint_save`，不设单独的世界快照账 |
+| C9 | 恢复标记放哪 | 放 runtime context，run 的 `act` 用一次即清，不进图状态 |
+| C10 | 记忆与分支 | **不加分支概念、不加回退接口**：每个存档点一份 zip。父线最后一个存档点之后写进活库的那段尾巴，恢复分支时会被抹掉——它不对应任何存档点，接受 |
+| C11 | checkpointer 与 trace | **只写不读**：存档不读分叉点，结束一局不封存账 |
+| C12 | 分叉点、血缘与分支图 | `checkpoint_save`、`checkpoint_restore` 的 **meta** 带 `checkpoint_id`（放 meta 以便 `read_events` 筛）。分叉点 = 该 `checkpoint_save` 本身（含它）；父线 = 该 `checkpoint_save` 的 `branch`，不另记 `parent`；新线名随机：`b-<6 位 hex>`（名字要在装配新线之前定，不读账）。TraceTool 从自己的账本算血缘，装配点不递 `lineage` |
+| C13 | `checkpoint_id` | `<episode_id 或 run_id>@<branch>-<8 位随机 hex>`（`uuid4`），不靠存档目录是否存在去重。save 生成一次写进清单与 `checkpoint_save`，restore 只读清单；恢复时断言本 run 里该 id 的 `checkpoint_save` **恰好一条**，否则拒绝 |
+| C14 | `query_episode_summaries` 的排序 | 删掉 `order_by` 后，由 `query_episode_summaries` 内部固定按 `episode_id` 自然序排（`ep2 < ep10`），不开参数；调用方不再各自排序 |
 
-## 八、成功的样子（intent 层验收）
+## 八、开工前提（探测）
 
-1. 真机跑一个 run，在任意一个 task 边界存档；
-2. 从该 checkpoint 恢复，保真核对全部通过；
-3. 恢复后接着跑完，trace 里能看到恢复账，新旧两个分支都能被完整重建；
+§五第 3 步是"在正在运行的父节点里对嵌套子图 `update_state`，再用同一个 config `invoke(None)`"，这条路径未验证。先用 fake run 做最小用例，断言：
+1. 写入后 `episode_graph.get_state(cfg).next == ("act",)`；
+2. `invoke(None)` 第一个执行的就是 `act`，`perceive` / `plan_episode` 没有重跑（数调用次数）；
+3. episode 图跑完，run 的 `act` 正常拿到 `EpisodeOutput`，run 图照常回到 `perceive`。
+
+三条都过，本 intent 成立。
+
+## 九、成功的样子（intent 层验收）
+
+1. 真机跑一个 run，在任意 task 边界存档；
+2. 从该 checkpoint 直接恢复到该 task，保真核对全部通过；
+3. 恢复后接着跑完，trace 里能看到恢复账；分支图能仅从 trace 画出，每条线按血缘拼读后完整；
 4. 同一个 checkpoint 连续恢复 k 次，每次起点完全相同（为测评重复运行做准备）；
 5. 版本不兼容的 checkpoint 被拒绝加载，报错说明原因。
 
-## 九、参考
+## 十、参考
 
-- 仓库内：`pokemon_agent/memory/ports.py`（`snapshot` / `restore` 契约）、`pokemon_agent/memory/store.py`、
-  `pokemon_agent/harness/run/run_state.py`、`pokemon_agent/harness/episode/episode_state.py`、
-  `CHANGELOG.md` 2026-09-13（57）、`docs/ROADMAP.md` H9 / F5
-- `.workbuddy/backup/checkpoint-removal-20260913-144948.tar.gz`：上一版实现的快照，可对照其失败点
-
-## 十、09-25 修订：两级存档 + 回放到 task
-
-v1（三级 begin 存档）实现后发现：从 episode / task 级存档恢复时，被打断的那一局要在图外跑完再"替 `act` 交差"，
-这一段存不了档；要补就得让续跑图单独挂 saver、另开 thread。讨论后改为：
-
-| 编号 | 问题 | 结论 |
-|---|---|---|
-| C1′ | 什么时候存 | 完整存档两级：**run 级 begin**、**episode 级 = run 的 `act` 开头**（都不嵌套在任何 `act` 里）；每个 task begin 只存一份世界快照 |
-| C7 | 怎么到达某个 task | **回放**：从所属 episode 的存档恢复，按 trace 把前面的 task 原样喂回去（模型输出、观测、人的回话都取自账），到该 task 开局时读它的世界快照、切回真件 |
-| C8 | 回放靠什么 | **只靠 trace 与存档**，不依赖随机数或"同样输入得同样输出"；记忆读按账上 `refs` 直接取；trace 字段不够就补 |
-| C9 | 回放段记不记账 | 不记；新线从该 task 开局起记账，分叉点是父线里该 task 的 `task_start` 的前一条 |
-| C10 | trace 要补什么 | 四处：新账 `review_inject` / `review_audit`（每次插话、每次审各记一条回话）；`read_object_memory` 的 `refs` 改为唯一键 `(episode_id, step, place.key)`；新账 `world_snapshot`（task 世界快照落点）；删 `checkpoint_skipped` |
-| C11 | 回放怎么判"没走偏" | 回放段每一笔本该落的账都与父线逐条比 `kind` 与正文（去掉 uuid / ts / 耗时这类每次都变的字段），并逐字比每次模型调用的 prompt；对不上即"回放分叉"，恢复中止 |
-| C12 | 记忆按 `refs` 取靠什么 | memory 加通用的"按自然键取"读口（act `(ep, step)`、task `(ep, task_id)`、episode `episode_id`、object `(ep, step, place)`、knowledge `source`），不含回放概念 |
-| C13 | v1 已写的代码 | 删：图外续跑、替 `act` 交差、`resuming`、task 级完整存档；留：分支与血缘、sqlite saver、世界存读、清单骨架 |
-| C14 | 回放的账放哪才安全 | **每局结束时封存本局的账**：把"从这份 episode 存档到这一局结束"这一段（按本执行线血缘）复制进该存档的 `trace@<执行线>/`（从半路回放出来、这一局没有自己存档的执行线，封进这一局的起点存档）；run 中途出错时由 `run_error` 的收场把已写出的部分封存。每份 episode 存档自带回放所需的账，不再依赖 `tracelog/` 在盘；每条账只多复制一次 |
-| C15 | task 世界快照怎么分执行线 | 按执行线分开存：`checkpoints/<run_id>/worlds/<episode_id>/<task_id>@<branch>.state`，路径记在 `world_snapshot` 账上，回放按账取 |
-| C16 | 回放从哪起、用谁的账 | 起点 = 目标 task 所在局在**血缘上最近的那份 episode 存档**（从半路分出来的线，这一局可能用的是父线的存档）；磁带 = 目标线按血缘拼好的账。回放段内的存档点一律不存（那一份与父线已有的相同） |
-| C17 | 记忆查询的规矩 | **筛选与排序一律放进查询条件**：查询带 `conditions`（等值筛）与 `order_by`（按已有元数据的**自然序**，数字部分按数值比），harness 不再在查完之后二次过滤或排序。act 记忆的元数据加 `task_id`（`retrieve_act_memories` 改为按 task 查）；`read_plan_context` 改为 `order_by="episode_id"`（`<run_id>-ep<n>` 自然序即执行序，顺带修掉现在字典序到第 10 局就错的问题） |
-| C18 | 哪些读要记账 | **所有记忆读都记读账、回放时都按 refs 取**；`EpisodeMemory` 照旧从记忆读（同构），`leave_chapter`"先查再写"的那次查询补 `read_episode_memory` 账 |
-
-回放要求父线的 trace 完整在盘、代码版本与父线一致（代码改了 prompt 就对不上，报回放分叉）。
-
-§五"恢复"第 4 条相应变为：run 级从开局接着跑；episode 级从 run 的 `act` 重新派这一局；task 级先回放再接着跑。
-§八验收第 1 条改为"在任意 episode 边界存档、回放到任意 task"。
+- 仓库内：`pokemon_agent/memory/ports.py`（`snapshot` / `restore` 契约）、`pokemon_agent/tools/interface/ports.py`（`snapshot_memory` / `restore_memory`）、
+  `pokemon_agent/harness/checkpoint/`（`checkpointer.py` 的 `_run_ref`、`restore.py`）、`pokemon_agent/tools/trace/__init__.py`（按血缘拼读）、
+  `pokemon_agent/harness/run/run_state.py`、`pokemon_agent/harness/episode/episode_state.py`、`docs/ROADMAP.md` H9 / F5
+- LangGraph：`pregel/_algo.py`（子图命名空间 = `<ns>:<task_id>`）、`pregel/main.py`（`update_state` 从 config 取 checkpointer）

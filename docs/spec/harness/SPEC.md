@@ -23,7 +23,7 @@ harness/
 │                sensing.py（perceive_once：向世界取一帧的唯一入口）
 │                reviewing.py（ask_inject / ask_audit：问人并记 review_inject / review_audit）
 │                review_render.py（问人时的渲染口径，控制台与网页共用）
-│                checkpoint/（两级存档、恢复与回放，见 docs/spec/checkpoint/SPEC.md）
+│                checkpoint/（三级存档与图内恢复，见 docs/spec/checkpoint/SPEC.md）
 ├── interface/   reviewer.py（Reviewer 协议） planner_outcome.py（PlannerOutcome / GoalUpdate）
 ├── console_reviewer.py  file_reviewer.py  null_reviewer.py  web_reviewer.py
 ├── run/
@@ -72,7 +72,7 @@ perceive（这一局 / 这一 run 照常往下走），别的异常记完原样�
 |---|---|---|---|
 | run | `plan_run`：Planner 更新目标表（新增 / 定点改状态），没 PENDING 时抛 `NoGoalToDispatch` | `dispatch` 标 RUNNING + 造 `EpisodeInput` → `run_episode`（接住整局抛错） | `run_done`：组装 `RunResp`、写 `run_end` |
 | episode | `plan_episode`：任务表没有 PENDING 时 Decomposer 拆下一版，追加进表 | 第一条 PENDING 标 RUNNING → `run_task`（接住 task 抛错） | verify → summarize → close（素材是 `ep_ctx.task_memories`；没有时 leave_chapter 补空章 → close） |
-| task | `plan_task`：Chooser 选一段按键，只执行首段 `times=1` | 按键、`step+1` | verify → summarize → close（素材是 `task_ctx.act_memories`） |
+| task | `plan_task`：Chooser 选一段按键，只执行首段 `times=1`；接管场合选一个宏调用，原样交出；上一宏结果（`last_macro.describe()`）随请求带上 | 按键（记 `press_key`）或跑宏（记 `run_macro`、写 `last_macro`），`step+1`（一个宏算一次决策） | verify → summarize → close（素材是 `task_ctx.act_memories`） |
 
 **停判只在 `review_and_judge`**：先 `mechanical_termination`（世界终局 / 停滞 / 预算，阈值见 DATAFLOW 二），
 不中再 `ask_judger`；judge 说 done 即 `GOAL_DONE`。写 `termination`（`done` / `success` 由它推出，`Settled`）
@@ -90,7 +90,7 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 | 本层计数 | `step`（已派局数） | `step`（已派 task 数）、`total_acts` | `step`（本 task 已按键数；帧步号 = `start_step + step`） |
 | 失败计数 | `fail_streak` | `fail_streak` | `stall_key`、`stall_count` |
 | 表 | `goals`（`GoalEntry`） | `tasks`（`TaskEntry`） | — |
-| 上下文 | `plan_ctx`（局索引 / 详情 / 物件） | `ep_ctx`（帧 / TaskMemory / 跨局摘要 / 知识 / 物件） | `task_ctx`（帧 / ActMemory / 动作空间）、`action` |
+| 上下文 | `plan_ctx`（局索引 / 详情 / 物件） | `ep_ctx`（帧 / TaskMemory / 跨局摘要 / 知识 / 物件） | `task_ctx`（帧 / ActMemory / 动作空间）、`action`、`last_macro`（上一动作是宏时的 `MacroOutcome`，按键时为 None） |
 | 下层交回 | `pending_episode` → `episode_outputs` | `pending_task` → `task_outputs` | `after_observation`（格内流转） |
 | 终局 | `termination`、`judge_reason` | 同左 + `task_verdicts`、`reason`、`memory`、`output` | 同左 + `act_verdicts`、`reason`、`memory`、`output` |
 

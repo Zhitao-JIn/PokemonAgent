@@ -39,6 +39,44 @@ W_TILEMAP = 0xC3A0
 
 SCREEN_COLS, SCREEN_ROWS = 20, 18
 
+W_BATTLE_MON_NICK = 0xD009
+W_BATTLE_MON_HP = 0xD015
+W_BATTLE_MON_STATUS = 0xD018
+W_BATTLE_MON_LEVEL = 0xD022
+W_BATTLE_MON_MAX_HP = 0xD023
+W_ENEMY_MON_NICK = 0xCFDA
+W_ENEMY_MON_HP = 0xCFE6
+W_ENEMY_MON_STATUS = 0xCFE9
+W_ENEMY_MON_LEVEL = 0xCFF3
+W_ENEMY_MON_MAX_HP = 0xCFF4
+"""战斗双方状态框（`wBattleMon*` / `wEnemyMon*`）。HP 与最大 HP 各占两字节、高位在前；昵称
+`NAME_LENGTH` 字节、以 `NAME_END` 结尾。除两个昵称外均按 pret/pokered 链接符号表核过
+（`experiment/observation_check/capture_manual_play.py`）；两个昵称由源码布局
+（`wEnemyMonNick:: ds NAME_LENGTH` 紧挨 `wEnemyMon::`，我方同理）推算，
+并在 4 份战斗存档上实读与画面一致（`docs/eval/p0-findings.md` 第三节）。"""
+
+NAME_LENGTH = 11
+NAME_END = 0x50
+
+W_TOP_MENU_ITEM_X = 0xCC25
+W_CURRENT_MENU_ITEM = 0xCC26
+W_MAX_MENU_ITEM = 0xCC28
+W_PLAYER_MONEY = 0xD347
+W_NUM_BAG_ITEMS = 0xD31D
+W_BAG_ITEMS = 0xD31E
+W_PARTY_COUNT = 0xD163
+W_PARTY_SPECIES = 0xD164
+W_PARTY_MON1_HP = 0xD16C
+PARTY_MON_SIZE = 0x2C
+"""菜单光标、金钱（3 字节 BCD）、背包（`(物品 ID, 数量)` 成对、`LIST_END` 结尾）、队伍（每只结构体
+`PARTY_MON_SIZE` 字节：HP 在 +0、状态 +3、等级 +0x20、最大 HP +0x21，相对 `W_PARTY_MON1_HP`）。
+队伍、金钱、菜单三组按链接符号表核过（`capture_manual_play.py`）；背包两址对 pret/pokered
+`ram/wram.asm` 布局并在 4 份存档上实读与画面一致（`docs/eval/p0-findings.md`）。"""
+
+BAG_CAPACITY = 20
+PARTY_CAPACITY = 6
+LIST_END = 0xFF
+
 W_CUR_MAP = 0xD35E
 W_Y_COORD, W_X_COORD = 0xD361, 0xD362
 W_COLLISION_PTR = 0xD530

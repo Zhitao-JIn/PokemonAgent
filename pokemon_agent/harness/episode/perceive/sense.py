@@ -28,8 +28,8 @@ def sense(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str,
     episode_id, step = state.episode_id, state.total_acts
 
     # 步骤 1：取帧，步号由本层盖。
-    obs, frame_png = perceive_once(
-        deps, episode_id=episode_id, task_id=episode_id, step=step, source=_SOURCE, ram_only=False
+    obs, frame_png, ram = perceive_once(
+        deps, episode_id=episode_id, task_id=episode_id, step=step, source=_SOURCE
     )
 
     # 步骤 2：记观察账。
@@ -39,6 +39,7 @@ def sense(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str,
             meta={"source": _SOURCE, "episode_id": episode_id, "task_id": episode_id, "step": step},
             obs=obs,
             frame=frame_png,
+            ram=ram,
         )
     )
     return {"ep_ctx": state.ep_ctx.model_copy(update={"observation": obs})}

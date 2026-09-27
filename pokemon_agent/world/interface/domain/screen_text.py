@@ -23,6 +23,31 @@ class ScreenText(BaseModel):
     cursor_cell: tuple[int, int] | None = Field(
         default=None, description="光标在 `option_grid` 里的 (行, 列)，从 0 起；没有光标为 None"
     )
+    option_details: list[str] = Field(
+        default_factory=list,
+        description="与 `options` 一一对应的附注：数量（`× 4`）、价格（`¥200`）；"
+        "没有附注的项为空串",
+    )
+    covered: bool = Field(
+        default=True,
+        description="解码是否完整覆盖了这一帧的选单：光标框有左边界、切得出选项、框里的字都分进了"
+        "某个选项。没有光标的帧恒为 True。只进 trace 做统计，不决定调不调视觉",
+    )
+    has_cursor: bool = Field(default=False, description="屏幕上有没有 `▶`（等待输入的光标）")
+    quantity_box: bool = Field(default=False, description="屏幕上有没有数量框（`×01` 这种）")
+    strict_dialog: bool = Field(
+        default=False,
+        description="严格的对话帧：底部对话框有字、没有 `▶`、没有数量框、对话框外没有别的框",
+    )
+    screen: str = Field(
+        default="",
+        description="整屏逐行渲成的文字（`screen_text.render_screen`），与切好的字段互相校验",
+    )
+
+    def render_details(self) -> str:
+        """有附注的选项渲染成 `选项 附注`，用 ` / ` 连接；一个附注都没有时为空串。"""
+        pairs = zip(self.options, self.option_details, strict=False)
+        return " / ".join(f"{option} {detail}" for option, detail in pairs if detail)
 
     def render_layout(self) -> str:
         """把排布渲染成给决策读的一段：几行几列、光标在哪、方向键怎么走，再逐行列出选项。"""

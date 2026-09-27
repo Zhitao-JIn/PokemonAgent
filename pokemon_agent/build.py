@@ -23,7 +23,6 @@ runtime 不再复制；brain 能力**按层各造一份**（185，见下面三�
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from pathlib import Path
 
 from pokemon_agent.config import CHECKPOINT_ENABLED
@@ -34,7 +33,7 @@ from pokemon_agent.harness import (
     RunRuntime,
     TaskRuntime,
 )
-from pokemon_agent.harness.checkpoint import Checkpointer, LineageLink, build_saver
+from pokemon_agent.harness.checkpoint import Checkpointer, build_saver
 from pokemon_agent.harness.episode import compile_episode_graph
 from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.harness.run import compile_run_graph
@@ -44,13 +43,6 @@ from pokemon_agent.tools import (
     GameTools,
     MemoryTool,
     TraceTool,
-)
-from pokemon_agent.tools.replay import (
-    Tape,
-    TapeGame,
-    TapeMemory,
-    TapeReviewer,
-    TapeTrace,
 )
 
 
@@ -70,8 +62,6 @@ def build_real(
     memory_root: str | Path | None = None,
     checkpoint_root: str | Path | None = None,
     branch: str = "main",
-    lineage: Sequence[LineageLink] = (),
-    tape: Tape | None = None,
     live_feed_url: str | None = None,
     # 供应商由**型号名前缀**决定（0914 起，表在 `brain/providers.py::_PROVIDER_PREFIXES`）：
     # `qwen*` → DashScope、`doubao*` → 火山方舟、`deepseek*` → DeepSeek 官方 API。
@@ -152,7 +142,11 @@ def build_real(
     # 的半截工厂，也是四个独立模块里**唯一没做工厂的一个**。现在收平：
     # **本文件对 `pokemon_agent.world` 零 import**。
     game = GameTools.build(
-        rom, state_path=state_file, watch=watch, vision_model=vision_model, speed=speed
+        rom,
+        state_path=state_file,
+        watch=watch,
+        vision_model=vision_model,
+        speed=speed,
     )
 
     # 一条事件一个 json 文件落盘（0910 重构）；
@@ -170,7 +164,6 @@ def build_real(
         run_id=run_id,
         trace_root=trace_root,
         branch=branch,
-        lineage=[(link.branch, link.fork_uuid, link.fork_ts) for link in lineage],
         live_feed_url=live_feed_url,
     )
 
@@ -206,32 +199,21 @@ def build_real(
         plan=plan_model or "doubao-seed-2-1-pro-260628",
         judge=judge_model,
         max_tokens=max_tokens,
-        tape=tape,
     )
     episode_brain = BrainTool.build(
         plan=plan_model or "doubao-seed-2-1-pro-260628",
         judge=judge_model,
         verify=verify_model or "doubao-seed-2-1-pro-260628",
         max_tokens=max_tokens,
-        tape=tape,
     )
     task_brain = BrainTool.build(
         text=text_model,
         judge=judge_model,
         verify=verify_model or "doubao-seed-2-1-pro-260628",
         max_tokens=max_tokens,
-        tape=tape,
     )
 
-    # **回放**（`tape` 非空，`docs/checkpoint/spec.md` v2 §七）：世界、记忆、记账、人各包一层
-    # 磁带件，大脑的 provider 已在 `BrainTool.build(tape=…)` 里包好。切换后照转真件。
     reviewer = reviewer or NullReviewer()
-    real_game = game
-    if tape is not None:
-        game = TapeGame(game, tape)
-        memory = TapeMemory(memory, tape)
-        trace_tool = TapeTrace(trace_tool, tape)
-        reviewer = TapeReviewer(reviewer, tape)
 
     # `interaction` 那个"在这里先落实成一个真实例"的步骤已删（0914 控制台改造）：
     # 跨线程信箱整套下线，取而代之的是 `reviewer`/`planner` 两个同步接口——
@@ -269,7 +251,6 @@ def build_real(
             memory=memory,
             trace=trace_tool,
             branch=branch,
-            lineage=lineage,
             models={
                 "vision": vision_model,
                 "text": text_model,
@@ -317,4 +298,4 @@ def build_real(
     )
     run_harness = RunHarness(run_rt, run_graph)
 
-    return run_harness, real_game
+    return run_harness, game

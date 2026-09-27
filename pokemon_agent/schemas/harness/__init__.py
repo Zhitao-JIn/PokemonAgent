@@ -62,16 +62,16 @@ __all__ = [
     "FromHarnessToBrainToolVerifyResp",
     "FromHarnessToGameToolEvolveReq",
     "FromHarnessToGameToolExecuteReq",
+    "FromHarnessToGameToolExecuteResp",
     "FromHarnessToGameToolGetActionSpaceReq",
     "FromHarnessToGameToolGetActionSpaceResp",
     "FromHarnessToGameToolLoadStateReq",
     "FromHarnessToGameToolPerceiveOnceResp",
+    "FromHarnessToGameToolPerceiveTaskResp",
     "FromHarnessToGameToolResetReq",
     "FromHarnessToGameToolSaveStateReq",
     "FromHarnessToGameToolSaveStateResp",
     "FromHarnessToMemoryToolAppendObjectEventsReq",
-    "FromHarnessToMemoryToolFetchReq",
-    "FromHarnessToMemoryToolFetchResp",
     "FromHarnessToMemoryToolQueryActMemoriesReq",
     "FromHarnessToMemoryToolQueryActMemoriesResp",
     "FromHarnessToMemoryToolQueryEpisodeSummariesReq",
@@ -138,6 +138,7 @@ from .communication.FromHarnessToBrainToolVerifyReq import FromHarnessToBrainToo
 from .communication.FromHarnessToBrainToolVerifyResp import FromHarnessToBrainToolVerifyResp
 from .communication.FromHarnessToGameToolEvolveReq import FromHarnessToGameToolEvolveReq
 from .communication.FromHarnessToGameToolExecuteReq import FromHarnessToGameToolExecuteReq
+from .communication.FromHarnessToGameToolExecuteResp import FromHarnessToGameToolExecuteResp
 from .communication.FromHarnessToGameToolGetActionSpaceReq import (
     FromHarnessToGameToolGetActionSpaceReq,
 )
@@ -148,14 +149,15 @@ from .communication.FromHarnessToGameToolLoadStateReq import FromHarnessToGameTo
 from .communication.FromHarnessToGameToolPerceiveOnceResp import (
     FromHarnessToGameToolPerceiveOnceResp,
 )
+from .communication.FromHarnessToGameToolPerceiveTaskResp import (
+    FromHarnessToGameToolPerceiveTaskResp,
+)
 from .communication.FromHarnessToGameToolResetReq import FromHarnessToGameToolResetReq
 from .communication.FromHarnessToGameToolSaveStateReq import FromHarnessToGameToolSaveStateReq
 from .communication.FromHarnessToGameToolSaveStateResp import FromHarnessToGameToolSaveStateResp
 from .communication.FromHarnessToMemoryToolAppendObjectEventsReq import (
     FromHarnessToMemoryToolAppendObjectEventsReq,
 )
-from .communication.FromHarnessToMemoryToolFetchReq import FromHarnessToMemoryToolFetchReq
-from .communication.FromHarnessToMemoryToolFetchResp import FromHarnessToMemoryToolFetchResp
 from .communication.FromHarnessToMemoryToolQueryActMemoriesReq import (
     FromHarnessToMemoryToolQueryActMemoriesReq,
 )

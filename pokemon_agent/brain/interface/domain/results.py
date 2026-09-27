@@ -113,4 +113,3 @@ class SummarizeResult(_ResultBase):
 
     summary: EpisodeSummary = Field(description="蒸馏出的本局摘要")
     calls: list[ModelCall] = Field(default_factory=list, description="这次蒸馏调用的账")
-

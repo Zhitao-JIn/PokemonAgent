@@ -13,7 +13,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import Action
-from pokemon_agent.world import Observation
+from pokemon_agent.world import TaskObservation
 
 
 class FromHarnessToBrainToolReflectReq(BaseModel):
@@ -24,8 +24,8 @@ class FromHarnessToBrainToolReflectReq(BaseModel):
         大脑不知道自己在哪一局、第几步。
     """
 
-    before: Observation
+    before: TaskObservation
     action: Action
-    after: Observation
+    after: TaskObservation
     episode_id: str = ""
     step: int = 0

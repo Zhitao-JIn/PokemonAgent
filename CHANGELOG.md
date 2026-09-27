@@ -1,3 +1,567 @@
+## 2026-09-26（291）—— perceive P4：背包、队伍、PC、学新招的宏与视图；接管视图测评
+
+**改了什么**（契约，供事后审）：
+- world 视图：`BagView`（`bag`、`party`）、`PartyView`（`party`）、`PcView`（`items` PC 道具、`bag`、`box` 当前箱的 `BoxEntry` 昵称与等级、`box_number`、`party`）、`LearnMoveView`（`pokemon`、`new_move`、`moves`）；并入 `TakeoverView`，出口同步。八个接管场合现在都有宏与视图。
+- `world/macros/`（新增四个场合文件 + `common.py`）：
+  - `bag`：`use(item, pokemon="")`（药先按对象状态预判有没有效果；进化石、营养剂、RARE CANDY 选对象后交给游戏判；驱虫喷雾直接用；其余道具 `cannot_use`）、`toss(item, quantity)`（重要道具 `key_item`）、`close()`。
+  - `party`：`switch(a, b)`、`field_move(pokemon, move)`（FLY 拒掉；缺徽章等没用成以 `aborted` 带回原话）、`stats(pokemon)`（停在能力页）、`close()`。
+  - `pc`：`withdraw_item` / `deposit_item` / `toss_item(item, quantity)`（主角的 PC；重要道具没有数量框）、`withdraw_pokemon` / `deposit_pokemon(pokemon)`（比尔的 PC，队伍满 6 / 只剩 1 只拒掉）、`change_box(n)`、`log_off()`。
+  - `learn_move`：`forget(move)`、`skip()`。
+  - `common.py`：队伍 / 背包读数、药的分类与效果预判、选项光标、长列表光标、数量框、YES/NO——`battle.py` 改用它，行为不变。
+- `engine.MacroRun.idle_until(ok)`：不按键干等（换箱存档时画面静止几百帧）。
+- `scene.LEARN_MARKS` 加 `trying to learn` / `learn more` / `than 4 moves`：学招提示前那几句原先归 `party`，回初态时会被判成"已离开场合"。`TaskScene.LEARN_MOVE` 注释同步。
+- 测评：`evals/macros/` 加 34 例（背包 10、队伍 8、PC 11、学新招 5），共 75 例；新增 `evals/takeover_views/`（`python -m evals views run`）：八个接管场合的初态帧逐字段核对视图、并核一组屏上必现的字，8 例。新存档 `experiment/experiment_states/macros/field_two_mons.state`（`assets/rom.state` 的副本，免得它被改了测评跟着变）、`field_four_moves.state`（主角的 BULBASAUR 改成 12 级、四招，背包加 RARE CANDY）、`learn_move.state`（从前者吃 RARE CANDY 到 "Delete an older move…?"）。
+- 文档：`world/SPEC.md`（目录、视图、第七节各场合）、`DATAFLOW.md`；`docs/perceive/spec.md` 视图表、`party` 宏签名、学新招实测、未实测清单改成落地后的样子，`plan.md` 进度表。
+
+**为什么这么改**：perceive plan P4（spec 第五节其余场合、第四节第 2 小节视图）。
+
+**取舍**：`field_move` 的 `destination` 参数没做——FLY 要在城镇地图上选目的地，宏里还没有这一步，先拒掉并写进说明；招式学习器同理拒掉。野外用药后推话只认光标：换画面时整屏空白几百帧，按场合判会误以为已经离开背包。PC 的比尔 / 主角那一项按主菜单第一 / 第二项取（名字随剧情变）。
+
+**影响面**：`pytest` 226 通过；宏测评 75/75、视图测评 8/8；读屏测评 v2 场合 1037/1037（`LEARN_MARKS` 扩充后无回退）。真机跑（要调模型）未做。
+
+## 2026-09-26（290）—— perceive P3：战斗宏 `fight` / `switch` / `use_item` / `run`、倒下换人 `send_out`；自动推进战斗文字
+
+**改了什么**（契约，供事后审）：
+- world 视图：`BattleMenuView`（`mine` 在场那只带招式与剩余 PP、`foe`、`trainer`、`party`、`bag`）、`FaintSwitchView`（`party`），队员 `MonEntry`（昵称、等级、HP、状态、是否在场、招式 `MoveEntry`）；并入 `TakeoverView` 联合，出口同步。`MacroReason` 加 `unknown_move` / `no_pp` / `unknown_pokemon` / `pokemon_fainted` / `already_active` / `target_required` / `cannot_use`。
+- `world/macros/battle.py`（新增）：`battle_menu` 的 `fight(move)` / `switch(pokemon)` / `use_item(item, pokemon="")` / `run()`，`faint_switch` 的 `send_out(pokemon)`，都不回初态、以自动推进收尾；前提见 `world/SPEC.md` 第七节。行动菜单按二维格子走光标，招式按屏上选项、队伍与背包按 `wCurrentMenuItem`（+ `wListScrollOffset`）。`world/moves.py` + `tables/moves.json`（从 `experiment/observation_check/id_tables/` 搬入）。
+- `engine.MacroRun.advance(stop)`：自动推进文字，只在看到 `▼` 或画面静止满 `QUIET_PRESS_FRAMES` 帧时按 A，`stop` 给出原因即停；`ADVANCE_LIMIT` 12 → 30，新增 `ARROW_WINDOW` / `ADVANCE_WAIT_FRAMES` / `QUIET_PRESS_FRAMES`。
+- harness：`detect_stall` 的宏动作按结果比——被拒一律同一个键，其余用 `MacroOutcome.describe()`（带摘要）。
+- `decide_macro.md`：被拒原因补战斗的，写明战斗宏会推进到下一个选单 / YES/NO / 战斗结束；"目标达成就离开"只对有离开宏的场合。
+- 测评 `evals/macros/`：加 20 例战斗（出招、小写招式名、不会的招、从招式列表开跑、倒下后停在 "Use next POKéMON?"、换人、换在场的、换不存在的、从队伍列表开跑、战斗中喝药、满血喝药、不给对象、背包没有、扔球、从背包列表扔球、逃跑、倒下换人成功 / 选倒下的 / 选不存在的、商店里调战斗宏），用例可核摘要片段。新存档 `experiment/experiment_states/macros/battle_low_hp.state`（野战、在场 1 HP）、`battle_faint_switch.state`（倒下后 "Bring out which POKéMON?"），由 `knowledge_battle_pokemon_switch.state` 改内存 HP 再打出来。
+- 活文档：`world/SPEC.md`（第七节战斗宏与自动推进、原因码、视图）、`DATAFLOW.md`；`docs/perceive/spec.md` 第六节收尾与第八节停摆两处改成落地后的做法，`plan.md` 进度表。
+
+**为什么这么改**：perceive plan P3（spec 第五节第 1 小节、第六节第 2 小节收尾）。
+
+**取舍**：推进文字最初照 spec 写成"等稳定就按 A"，实测一回合的战斗文字全是自己走的，按早了落在紧接着出现的行动菜单上替 JEV 选了 FIGHT；改成只认 `▼`，再对"对队员用药后那句话"这种没有 `▼` 也等按键的，用长静止兜底；万一误按进子层，收尾按 B 退回行动菜单。球要等整个抓捕流程（含起名询问）走完才从背包扣，所以球只报抓没抓到。战斗里同一招连出原先会被停摆计数判成原地打转，改为按宏结果比。训练家对战没有存档，禁逃、禁扔球只按 `wIsInBattle` = 2 写了前提，未实测。
+
+**影响面**：`pytest` 226 通过；`python -m evals macros run` 41/41；假大脑 + 真 PyBoy（野战存档）跑完整三层图：连出三次 TACKLE 打倒对手（停摆计数每次归 1）→ 战斗结束回到野外，`node_io` 全部核对通过。真机打一场野战（要调模型）未做。
+
+## 2026-09-26（289）—— perceive P2（接线）：JEV 在接管场合出宏、`act` 跑宏、`run_macro` 账；宏测评
+
+**改了什么**（契约，供事后审）：
+- brain：新增 `MacroCall(name, args: dict[str, str | int])`（`describe()` → `buy(POKé BALL, 5)`）与签名 `MacroSignature(name, params: [MacroArg(name, type∈{str,int}, required)])`；`Action` 加 `macro`，`sequence` 改为可空，二者恰好一个非空（校验器）；`describe()` 宏时写宏调用。`BrainPort.choose` / `Brain.choose` 加 `macros`；`_parse` 读 `{"action": 名字, 参数…}`：名字在 `keys` 里成单键，在 `macros` 里按签名收参数（`int` 收整数或纯数字串；缺必填参数、类型不对抛 `ParseFailure`，名字都不在抛 `IllegalAction`）。出口同步。
+- tools：`GameTools._mask` 在 `macro_specs(obs.scene)` 非空时只给宏（`names` 为空）；`execute` 返回新信封 `FromHarnessToGameToolExecuteResp(outcome: MacroOutcome | None)`，宏 → `world.run_macro`，键 → `world.step`（`GameToolPort` 同步）。`Chooser` 把 `MacroSpec` 转成 `MacroSignature` 交给大脑，`_normalize` 放行宏。`decide_action.build_prompt` 在有宏时改用新模板 `calls/decide_action/decide_macro.md`（场合、目标、知识、视图、上一宏结果、记忆、宏签名与参数说明；只输出一个宏调用）；常规模板在已知事实后加"上一个宏的结果"一节（非空才出现）。
+- schemas：`FromHarnessToBrainToolChooseOnceReq.last_macro: str`；`FromHarnessToTraceToolAppendReq.macro: MacroOutcome | None`；`TraceKind.RUN_MACRO`。
+- harness：`TaskState.last_macro: MacroOutcome | None`（`act` 每次覆盖，按键时为 None）；`act` 宏 → 记 `run_macro`、否则记 `press_key`，都 `step+1`；`plan_task` 带上 `last_macro.describe()`，宏调用原样交出；`detect_stall` 被拒的宏不论参数都算同一个动作；`store_step_episode_memory` 宏时 ActMemory 的动作写宏结果那一句；`settle_task_error` 按 `press_key` + `run_macro` 数已用步数。
+- trace：`run_macro` 正文 `scene` / `macro` / `args`（对象）/ `status` / `reason_code`（`done` 时空串）/ `reason` / `summary` / `steps`（数组）；`choose_verdict` 宏时多一个 `macro: {name, args}`、`sequence` 为空；`sense_frame` 在接管场合多一个 `takeover`（视图对象）。`content.py`（`RunMacroContent` / `MacroStepContent` / `MacroCallContent`）、`parse.py`、渲染表同步。`experiment/real_check/node_io.py`：`act` 指纹、task 流（`choose_verdict → run_macro → sense_frame`）、`run_macro` 契约与结构化字段、键号与"跑的是刚决策的宏"两条不变式。
+- 测评 `evals/macros/`（新增，`python -m evals macros run|list`）：21 例——商店 `buy`（成功、小写名、钱不够、店里没有、数量 0、缺参数、从列表 / 数量框 / YES/NO 中途开跑）、`sell`（成功、不在背包、超持有数、从列表开跑）、`quit`（主菜单、数量框）、错场合的宏、起名 `enter_name`（成功、先打了字再调、小写、超长、空）；核结局、原因码、金钱与背包变化、收尾画面。产物落 `eval_results/macros/`。
+- 测试：`_fake_run` 的假大脑 `choose` 收 `macros`、假世界 `execute` 回 `ExecuteResp`。活文档：`world/SPEC.md`（宏执行器一节、契约与数据形状）、`tools/SPEC.md`、`brain/SPEC.md`、`harness/SPEC.md`、`schemas/SPEC.md`、`DATAFLOW.md`、`trace/API.md`、`trace/SPEC.md`；`evals/__init__.py` 登记新测评。
+
+**为什么这么改**：perceive plan P2.4–2.8；spec 第五节第 2 小节、第七至十一节。
+
+**取舍**：签名在 brain 另立一份（只留解析要用的三样），不让 brain 依赖 world，转换在 tool 层。`last_macro` 在 state 上存整个 `MacroOutcome`（停摆与记忆要读 `status`），进决策信封时才折成一句话。被拒的宏视同同一个无效动作，换参数反复被拒也会累积停摆。
+
+**影响面**：`pytest` 226 通过；`python -m evals macros run` 21/21；假大脑 + 真 PyBoy（常青市商店存档）跑完整三层图：钱不够被拒 → 买 5 个 → 离开 → 回到走路一键一决策，`node_io` 全部核对通过。`TaskState` 结构变了，此前的 checkpoint 一律拒载。真机跑"去商店买 5 个精灵球"一个 task（要调模型）未做。
+
+## 2026-09-26（288）—— perceive P2（world 侧）：宏执行器骨架；商店 `buy` / `sell` / `quit`、起名 `enter_name`；接管视图
+
+**改了什么**（契约，供事后审）：
+- `world/interface/domain/`：`MacroSpec` / `MacroParam`（宏签名，`signature()` 给出 `buy(item: str, quantity: int)`）；`MacroOutcome`（`status`：`done` / `rejected` / `aborted` / `left_scene`；`reason_code` 闭集 `MacroReason`；`reason`、`summary`、逐步明细 `steps: list[MacroStep]`；`describe()` 一句话）；接管视图 `ShopItemsView`（商品名与单价、金钱、背包）、`NamingView`（标题、已输入），判别联合 `TakeoverView`。`TaskObservation` 加 `takeover`；`ActionSpace` 加 `macros` 与 `macro(name)`。出口同步。
+- `world/macros/`（新增）：`engine.py` 通用骨架——回初态（等画面稳定、`at_start`、按 B，上限 `REWIND_LIMIT`）→ 按此刻内存校验 → 逐步执行（每步按键后等屏幕缓冲连续稳定，`▼` 闪烁不算变；`wait_for` 只在屏上没有 `▶` 与数量框时替它按 A 推文字）→ 收尾回初态；走偏抛内部 `Abort`，骨架接住回初态、返回 `aborted`。私有常量 `POLL_FRAMES` / `STABLE_POLLS` / `STEP_TIMEOUT_FRAMES` / `REWIND_LIMIT` / `ADVANCE_LIMIT` / `NAV_LIMIT`。`shop.py`：`buy` / `sell` / `quit` 与视图；`naming.py`：`enter_name` 与视图；`__init__.py` 出口 `macro_specs(scene)` / `run_macro` / `takeover_view`。
+- `world/items.py`（新增）：道具名表（`tables/items.json`，由 `experiment/observation_check/id_tables/` 搬入）、ROM `ItemPrices` 读单价。`readout.py` 的 `read_money` / `read_bag` 改为公开。
+- `WorldPort.run_macro(name, args) -> MacroOutcome`；`PyBoyWorld` 实现（`_Console` 适配），`perceive_task()` 在接管场合给视图。`world` 出口加懒加载的 `macro_specs`。
+- `screen_text._quantity_box`：数量框要求 `×` 紧贴框的左边线——背包列表的两位数持有数 `×12` 曾被误认成数量框；`test_screen_text.py` 补一行 `×12` 的断言。
+- 新存档 `experiment/experiment_states/macros/player_keyboard.state`（开机新游戏走到主角起名键盘）。
+
+**为什么这么改**：perceive plan P2.1–2.3 与 2.4 的 world 一半。
+
+**取舍**：只有 `shop_items`、`naming` 两个接管场合有宏；其余接管场合 `takeover` 为 None，照常一键一决策，到 P3 / P4 再接。卖出的校验只挡"价格为 0"（HM 等重要道具）；TM 的价格不在 `ItemPrices`，卖出时只核"钱增加、背包减少"。
+
+**影响面**：`pytest` 226 通过。真 PyBoy 上核过：常青市商店从主菜单 / 列表 / 数量框 / YES/NO / 已成交各中途开跑 `buy` 均到位；`sell`（含两位数持有数）、`quit` 到位；钱不够、店里没有、数量越界、缺参数都 `rejected` 且一个键没按；主角起名键盘上 `enter_name("ZHITAO")` 到位（先删掉已输入的字、切回大写），小写与超长被拒。
+
+## 2026-09-26（287）—— perceive P1 收尾：`perceive_task()`，task 层消费方换型为 `TaskObservation`
+
+**改了什么**：
+- world：新增 `TaskPerceived`（观测 + 原始帧 + 内存读数，无账）；`WorldPort.perceive_task()`，`perceive_once()` 去掉 `ram_only` 只剩视觉档；`PyBoyWorld._ram_observe` 改产 `TaskPerceived`。出口同步。
+- tools：新增信封 `FromHarnessToGameToolPerceiveTaskResp`；`GameToolPort.perceive_task()`，`perceive_with_retry()` 去掉 `ram_only`；`_mask` 收 `TaskObservation`。
+- harness：`sensing.py` 拆成 `perceive_once`（episode，带重试与感知账）与 `perceive_task`（task，无账）；task `sense` 改用后者。
+- 换型为 `TaskObservation`：`TaskState`（`TaskContext.observation`、`after_observation`）、`detect_stall`、对象事件 `rules.py`、`FromHarnessToBrainToolChooseOnceReq.obs`、`FromHarnessToBrainToolReflectReq.before/after`、`FromHarnessToGameToolExecuteReq.observation`、`FromHarnessToGameToolGetActionSpaceReq.observation`。
+- trace：`sense_frame` 正文在 task 层多一个 `scene`（`content.py` 可选字段、`node_io` 契约说明、`DATAFLOW.md`）。`ActMemory.Observation` 加 `scene`（空串 = 这一字段之前的记录），渲染不变。
+- 测试：`_fake_run._Game` 加 `perceive_task`；`test_decide_action_prompt.py` 的观测改成 `TaskObservation`。活文档：`world/SPEC.md`、`tools/SPEC.md`、`trace/API.md`。
+
+**为什么这么改**：perceive plan P1.3–1.5（spec 第四节第 0 小节）；checkpoint 那边已落定。
+
+**取舍**：`Perceived` 仍是 episode 层专用；`EpisodeOutput.observation` 等 episode 侧照旧 `Observation`。`TaskState` 结构变了，此前的 checkpoint 一律拒载。
+
+**影响面**：`pytest` 226 通过；真 PyBoy 上三份存档（野外、战斗、室内）`perceive_task()` 分别得到 `walk` / `battle` / `walk`，屏上有字只给 `screen`、没字只给 `walk_map`。真机跑一个 task（要调模型）未做。
+
+## 2026-09-26（286）—— perceive intent / spec / plan 去掉回放；plan 定稿
+
+**改了什么**：`docs/perceive/intent.md` 第九节第 8 条宏调用账的第一部分改叫"调用与结果"，删回放时宏不执行、`TapeTrace` 比对二选一那两段；`spec.md` 删第十节"回放"两条、第四节第 0 小节消费方里的 `tape_game.py`、范围里的"回放兼容"，第十三节第 4 条去掉 `TapeTrace`；`plan.md` 删 1.6、2.7 与两处回放验收，风险改为"旧存档读不回"，"要开发者确认的"三项按"按你的建议来"定稿（顺序 P1→P5；受换型影响的测试随期改；测评直接建；契约随代码落地、写进当期 CHANGELOG 事后审）。
+
+**为什么这么改**：回放已随 checkpoint 改为图内恢复删除（279）；开发者要求按建议继续推进 perceive。
+
+**取舍**：`run_macro` 正文仍分三部分（调用与结果 / 摘要 / 逐步明细），第一部分不再为回放比对而设，只是可审计的结论。
+
+**影响面**：只改文档。
+
+## 2026-09-26（285）—— checkpoint Q6：保真核对脚本与活文档
+
+**改了什么**：`experiment/real_check/check_checkpoint.py` 按 checkpoint spec §十 重写为五项（取产物并量 task 级存档体积与耗时 → 三级各恢复不开跑 → 从第 2 个 task 的存档恢复跑到底、核新线账序 → 仅凭 trace 画分支图、按血缘拼读后 `node_io` → 改坏结构哈希 / 缺存档账时拒绝恢复）；`docs/spec/checkpoint/SPEC.md` 改写为三级存档与图内恢复；`docs/spec/tools/SPEC.md`、`docs/spec/README.md`、`AGENTS.md` / `CLAUDE.md` 的目录说明同步；`docs/checkpoint/plan.md` 各步标完成。
+
+**为什么这么改**：checkpoint plan Q6。
+
+**取舍**：脚本要调模型、起 PyBoy，只做了导入与 lint 检查；旧的 `checkpoint_check/` 产物是旧清单格式，不能复用，需 `--record` 真跑一次。
+
+**影响面**：`pytest` 226 通过；只改核对脚本与文档。
+
+## 2026-09-26（284）—— checkpoint Q5：task 级图内恢复
+
+**改了什么**：`Checkpointer` 加恢复计划 `arm_resume` / `take_resume`（run 的 `act` 取一次即清，不进图状态），恢复后第一次 task 级存档断言开局的就是目标 task；run 的 `act` 取到计划时不存 episode 级档、改调新增的 `episode_entry.resume_episode`——在 `get_config()` 上对 episode 图 `update_state(as_node="plan_episode")`、核下一格是 `act`、`invoke(None)`；`open_branch` 对 task 级清单按 `episode_ref` 用 saver `get_tuple` 读回 `EpisodeRunState`（缺席的 channel 取缺省值）并放进计划，episode / task 两级共用"`update_state(as_node="plan_run")` → `invoke(None)`"；新增 `list_checkpoints(root, run_id)`（出口同步）。task 级存档核 `episode_ref` 父指针时，恢复后第一个 task 那条由 `update_state` 写成、没有父指针，改为有则必须等于 `run_ref`、没有只核存在（spec §四同步）。`test_checkpoint_restore.py` 新增"从 task 级存档恢复跑到底"：新线账序为 `checkpoint_restore` → `checkpoint_save` → `task_start`、第 1 局不重开、按血缘读开局账各一条、`node_io` 过、父线一字节未变。
+
+**为什么这么改**：intent C1、C7、C9——恢复到 task 在图内完成，不重跑已完成的 task，不回放。
+
+**取舍**：恢复后从目标 task 开局起是全新执行；从恢复线上再存的 task 级档（含 `update_state` 写的那一条）能照样再恢复（手测过一次嵌套恢复，未入测试）。
+
+**影响面**：`pytest` 226 通过。
+
+## 2026-09-26（283）—— checkpoint Q4：task 级完整存档
+
+**改了什么**：`Checkpointer.save(level, *, run_id, step, episode_id, task_id, state)` 支持 `task` 级：除世界与记忆整根外，从执行上下文的 `checkpoint_map` 取 run 图（`""`）与 episode 图（当前命名空间去掉最后一段）两条定位，episode 图那条用 saver `get_tuple` 核父指针等于 `run_ref`；`begin_task` 先存 task 级档、再写 `task_start`；清单 `Level` 加 `task`、加 `task_id` / `episode_ref`，不变式按三级重写；task 级 id 前缀 `<episode_id>.<task_id>`。删 `snapshot_world`、`worlds/` 布局、`world_snapshot` 账（词表、渲染、`node_io`、`DATAFLOW.md`）与 `CheckpointMark.world_path`；run 级、episode 级调用点改用新签名。`test_checkpoint_restore.py` 第一条改为核三级存档与"每个 task 的存档账紧挨在它的 `task_start` 前"；`check_checkpoint.py` 第 1 项改数 task 级存档。
+
+**为什么这么改**：intent C1、C7、C8——task 级完整存档是图内恢复到 task 的前提；存档账是分叉点，开局账必须落在它之后。
+
+**取舍**：task 级恢复在 Q5 接上，本步到 Q5 之间从 task 级清单恢复会被当成 episode 级处理（整局重派）。
+
+**影响面**：`pytest` 225 通过；每个 task 多一份世界文件与记忆 zip（体积在 Q6 真机量）。
+
+## 2026-09-26（282）—— checkpoint Q3：血缘与分支图从账本推；随机存档 id 与新线名；checkpointer 不再读 trace
+
+**改了什么**：`checkpoint_save` / `checkpoint_restore` 的 `checkpoint_id` 从正文挪进 meta，恢复账正文删 `parent_branch` / `parent_last_event_uuid`（渲染、`content.py`、`EventMeta` 加可选 `checkpoint_id`、`node_io` 契约与 meta 键核对、`DATAFLOW.md`）；新增 `tools/trace/lineage.py`（`lineage_of` 推血缘、`branch_graph` 画分支图），`TraceTool` 构造去掉 `lineage`、`read_events` 每次从账本现推；删 `harness/checkpoint/branches.py`、`LineageLink`、清单的 `lineage` / `last_event_uuid` / `last_event_ts`；`Checkpointer` 去掉 `lineage` 与存档时读分叉点那一步，`checkpoint_id` 改为 `<前缀>@<branch>-<8 位 hex>`；`open_branch` 新线名 `b-<6 位 hex>`、装配后核"该存档的 `checkpoint_save` 恰好一条"（否则 `CheckpointNotFound`）、`OpenedBranch.record` 改为 `branch`；`BuildBranch` 只收分支名，`build_real` / `_fake_run` / `evals/e2e/runner/one.py` / `check_checkpoint.py` 同步；`node_io.branch_view` 改按 meta 的 `checkpoint_id` 找分叉点。测试：重写 `test_trace_branch.py`（只给分支名，血缘从账本推，含分支图）；`test_checkpoint_restore.py` 改为按随机 id / 随机线名断言、血缘与分支图从账本核。
+
+**为什么这么改**：intent C11–C13——checkpointer 对 trace 只写不读；父线由分叉点推出，不两处记；存档 id 与新线名不依赖盘上已有什么。
+
+**取舍**：分叉点从"存档前最后一条账"改为 `checkpoint_save` 本身（含它），新线的可见历史因此多一条父线的存档账；血缘每次读时现推（多一次全量读），不缓存。
+
+**影响面**：`pytest` 225 通过；旧清单缺新字段、带旧字段，校验失败报 `CheckpointCorrupt`；`checkpointer.py` 里已没有 `read_events`。
+
+## 2026-09-26（281）—— checkpoint Q2 收尾：问人两本账保留；`TaskObservation.scene` 改为必填
+
+**改了什么**：`review_inject` / `review_audit` 不删，`harness/reviewing.py` 的说明由"回放才能按序喂回"改为"人在环可审计"；intent / spec / plan 的删除清单去掉这两本账。`world/interface/domain/task_observation.py` 的 `scene` 由 `TaskScene | None = None` 改为必填 `TaskScene`。
+
+**为什么这么改**：开发者定：问人两本账在 248–252 之后有了回放以外的读者（`answered` / `wait_s` / `form_kind`，`test_review_points.py`、`check_web_reviewer.py`、`node_io` 契约），保留。`scene` 的 None 只为"从旧磁带还原的帧"而设，回放删除后唯一的产出方 `pyboy_world` 恒给值（`classify_scene` 返回 `TaskScene`）。
+
+**取舍**：无。
+
+**影响面**：`pytest` 225 通过。
+
+## 2026-09-26（280）—— checkpoint Q2（部分）：删按键取读口、`order_by`、act 记忆的 `task_id`、对象读 refs 唯一键、`leave_chapter` 的读账
+
+**改了什么**：删 `MemoryToolPort.fetch` / `MemoryTool.fetch` 与 `FromHarnessToMemoryToolFetchReq/Resp`；`FromHarnessToMemoryToolQueryEpisodeSummariesReq` 删 `order_by`，`query_episode_summaries` 内部固定按 `episode_id` 自然序排；act 记忆元数据与 `FromHarnessToMemoryToolQueryActMemoriesReq` 删 `task_id`，`retrieve_act_memories` 改为按局查、按 `ActMemory.task_id` 筛（`read_act_memory` 的 `query` 为 `episode_id=…`，`refs` 为读口交回的整局条目）；两处对象读的 `refs` 回到 `place.key`；`leave_chapter` 不再记 `read_episode_memory`；`read_plan_context` 的 query 串去掉 `order_by`；`render.py` 读账说明表同步。测试：`test_memory_fetch.py` 删，自然序断言挪到新文件 `test_episode_summary_order.py`（12 局打乱写入、按执行序读回）；`test_plan_reads_memory.py` 去掉对 `order_by` 的断言。
+
+**为什么这么改**：intent C14、C27——这些是为回放加的，回放已删（checkpoint plan Q2）。
+
+**取舍**：问人两本账（`review_inject` / `review_audit`）暂未删，等开发者确认（它们后来有了回放以外的读者）。
+
+**影响面**：`pytest` 225 通过；fake run 的规划与拆解 prompt 与改前逐字节相同。
+
+## 2026-09-26（279）—— checkpoint Q1：删回放与封存
+
+**改了什么**：删 `tools/replay/`（五个磁带件、`Tape`、`ReplayDiverged`）与 `tests/test_checkpoint_replay.py`；`build_real`、`BrainTool.build` 去掉 `tape`；`restore_run` / `open_branch` 去掉 `to_task` / `along`、`_plan_replay` / `_switch`，`BuildBranch` 变为 `(分支名, 血缘)`；`Checkpointer` 删 `seal_episode` / `open_episode` / `paused`，run 的 `act` 与 `record_run_error` 不再封存；删 `trace_sealed` 账（词表、渲染、`node_io` 契约、`DATAFLOW.md`）；`checkpoint_restore` 正文与 `CheckpointMark` 删 `to_task`、`count`；`check_checkpoint.py` 去掉离线回放一项（五项变四项，整脚本在 Q6 重写）；`_fake_run.py`、`evals/e2e/runner/one.py` 同步。
+
+**为什么这么改**：intent 改为图内恢复（C1–C14），回放与封存本局账不再需要（checkpoint plan Q1）。
+
+**取舍**：到 Q5 之前只有 run 级、episode 级恢复可用，task 级恢复暂缺，计划内。
+
+**影响面**：`pytest` 228 通过（少了回放的 3 条）；对外签名 `restore_run(manifest, build_branch)`、`BuildBranch` 与 `build_real` 变了。
+
+## 2026-09-26（278）—— checkpoint P0 探测：嵌套子图的定位、读回、写入与续跑全部通过
+
+**改了什么**：重写 `docs/checkpoint/p0-findings.md`（K1–K5）；据此改 spec §四第 4 步（task 级存档核 `episode_ref` 改用父指针判据，`Checkpointer` 不再需要 `episode_graph`）、§五第 4 步（读回时缺席的 channel 取模型缺省值）、§五 `resume_episode`（写入后用 `get_config()` 核对）、§九（标 1–4 已过，第 5 条挪到 Q5）；plan 的 P0 标完成、Q4 去掉 `episode_graph`；intent C7 的核对判据同步。
+
+**为什么这么改**：探测发现图外对 episode 图 `get_state` 报 `No checkpointer set`，要拿到 `next` 只能往 config 塞 LangGraph 私有键 `__pregel_checkpointer`；改用 `saver.get_tuple(episode_ref).metadata["parents"][""] == run_ref.checkpoint_id` 这条公开判据（4/4 成立）。`update_state` 的返回 config 不带 checkpointer，核对只能用节点内的 `get_config()`。
+
+**取舍**："下一格是 `act`"在存档时不直接核，由位置保证（`begin_task` 只在 episode 的 `act` 里调用），恢复写入后再核一次。
+
+**影响面**：只改文档；探针脚本一次性，不进仓库。
+
+## 2026-09-26（277）—— 写 `docs/checkpoint/plan.md`（三级存档 + 图内恢复）
+
+**改了什么**：重写 `docs/checkpoint/plan.md`：P0 探测嵌套子图的定位、读回、写入与续跑 → Q1 删回放与封存 → Q2 删 intent C27 其余各项 → Q3 trace 血缘自推 → Q4 task 级完整存档 → Q5 task 级图内恢复 → Q6 保真核对与活文档；每步列改动与验收；测试写三处（`test_trace_branch.py`、`test_checkpoint_restore.py`、episode 摘要自然序）；`AGENTS.md` / `CLAUDE.md` 在 Q6 改。
+
+**为什么这么改**：spec 已无待定项，按流程出 plan。
+
+**取舍**：P0 放在一切删除之前——探测不过时回放还在、仓库未动；Q1 到 Q5 之间 task 级恢复暂不可用，接受。
+
+**影响面**：只改文档。
+
+## 2026-09-26（276）—— 重写 `docs/checkpoint/spec.md`：三级存档 + 图内恢复
+
+**改了什么**：三级存档点与"先存档、后写本层开局账"的顺序约束；清单改存 `run_ref` / `episode_ref`；task 级 `episode_ref` 从 `checkpoint_map` 推；恢复时 run 的 `act` 经 `episode_entry.resume_episode` 用 `update_state(as_node="plan_episode")` + `invoke(None)` 续跑，恢复模式下不存 episode 级档；trace 的 meta 加 `checkpoint_id`，血缘与分支图由 TraceTool 从账本推；删除清单与模块影响；探测前提；保真核对；已知限制。
+
+**为什么这么改**：intent 定为图内恢复、撤掉回放。查 LangGraph 源码确认：`get_state` / `update_state` 只在 config 带嵌套命名空间且不带 checkpointer 时转派给子图，节点内的 config 带着父图 checkpointer，所以在 run 的 `act` 里能直接写 episode 图的状态；图外读 episode 状态要用 saver 的 `get_tuple`。
+
+**取舍**：新线名随机（名字要在装配前定，不读账）；episode 图不带 saver；episode 摘要在 `query_episode_summaries` 内部固定按 `episode_id` 自然序排。
+
+**影响面**：只改文档。
+
+## 2026-09-26（275）—— 重写 `docs/checkpoint/intent.md`：图内恢复，撤掉回放
+
+**改了什么**：intent 改为只保留最终版：三级完整存档（run / episode / task 各在 begin）；恢复在 run、episode 两层图内用 LangGraph 原生 `update_state(as_node=…)` + `invoke(None)` 放回"进 `act` 前"，task 层照常 `begin_task`；checkpointer 对 trace 只写不读；分叉点、血缘、分支图从 `checkpoint_save` / `checkpoint_restore` meta 里的 `checkpoint_id` 推出，删 `branches.json`；`checkpoint_id` 与新线名随机；删回放与为回放加的全部机制（C1–C14）。
+
+**为什么这么改**：删 task 级完整存档、改走回放，原因是图结构（一局在 run 的 `act` 里）；讨论后确认用原生 `update_state` 能在 `act` 里把子图恢复到进 `act` 前，回放及其对 trace 的依赖（读分叉点、封存本局账、五个磁带件）就没有必要了。
+
+**取舍**：恢复后从目标 task 开局起是全新执行，不再逐字节复现父线；记忆不加分支概念，父线最后一个存档点之后的记忆尾巴在恢复时被抹掉；为回放加的 trace 账、对象读 refs 唯一键、按自然键取的读口、`order_by`、act 记忆的 `task_id` 全删。
+
+**影响面**：只改文档；决策编号重排为 C1–C14，此前条目引用的旧编号以 git 历史为准。
+
+## 2026-09-26（274）—— P1（部分）：task 层场合进 world；`TaskObservation`；`walk_map` / `screen` 二选一；读屏测评改测 world
+
+**改了什么**：
+- `world/interface/domain/task_scene.py`（新增）：`TaskScene`（常规 8 类 + 接管 8 类）、`TAKEOVER_SCENES`。
+- `world/interface/domain/task_observation.py`（新增）：`TaskObservation(Observation)`，多一个 `scene: TaskScene | None`。
+- `world/scene.py`（新增）：`classify_scene(text, mem)`、`at_start(text, scene)`，由测评原型迁入，内存按绝对地址读。
+- `world/pyboy_world.py::_ram_observe`：产出 `TaskObservation`（带场合）；屏上有字只给 `screen`，没字只给 `walk_map`。
+- 出口：`world/interface/domain/__init__.py`、`world/interface/__init__.py`、`world/__init__.py`（`classify_scene` / `at_start` 懒加载）。
+- `evals/screen_reading/`：`observe.scene_of` 调 world 的分类器（WRAM 快照包成按绝对地址取字节）；`NORMAL_SCENES` / `TAKEOVER_SCENES` 由 `TaskScene` 派生；原型 `classify.py` 移到 `_to_delete/screen_reading_classify_prototype.py`。
+- `docs/spec/world/SPEC.md` 同步。
+
+**为什么这么改**：spec 第十三节已定——task 层与 episode 层是两种观测；场合分类是 world 的事，测评改测 world 的实现。
+
+**取舍**：
+- `TaskObservation` 暂时继承 `Observation`，task 层的 state、信封、trace、回放都照旧按 `Observation` 收——开发者正在改 trace 与 checkpointer，plan P1.4–1.6（`perceive_task()`、消费方换型、磁带还原 `TaskObservation`）等那边落定再做。代价：`scene` 暂不进 trace（`sense_frame` 按 `Observation` 序列化），state 经 checkpoint 往返后 `scene` 丢失；P1 没有任何消费方读 `scene`，行为不变。
+- 核对：world 分类器与原型在 v2 全部 1037 帧上场合、初态逐帧相同；用 world 实现重建的 v2 数据集与原来逐字节相同。未跑 pytest（开发者要求）。
+
+**影响面**：task 层 prompt 里屏上有字的帧不再带 `walk_map`；episode 层不变。
+
+## 2026-09-26（273）—— 写 `docs/perceive/plan.md`（草案）
+
+**改了什么**：新增 `docs/perceive/plan.md`：P0 前置（v2 核对、补测）→ P1 场合与 `TaskObservation` → P2 宏骨架 + 商店 + 起名（含 `run_macro` 账与回放）→ P3 战斗 → P4 PC / 背包 / 队伍 / 学新招 → P5 收尾；每期列改动文件、验收、要同步的活文档；风险与回退；三项待确认。
+
+**为什么这么改**：spec 第十三节 1–4 已定，按流程出 plan。
+
+**取舍**：先做换型（P1）再做宏，宏的第一批选商店与起名（流程已实测最全）；学新招放最后，没有存档就只落框架。
+
+**影响面**：只加文档。
+
+## 2026-09-26（272）—— spec 第十三节 1–4 定案：两层两种观测、宏执行器放 world、决策预算、一条账
+
+**改了什么**：`docs/perceive/spec.md`：task 层用新的 `TaskObservation`（场合字段叫 `scene`，类型 `TaskScene`），`WorldPort` 新增 `perceive_task()` 取代 `perceive_once(ram_only=True)`，列出要换型的 task 层消费方；分类器文件改名 `world/scene.py`；第十三节 1–4 标为已定。
+
+**为什么这么改**：开发者定：episode 层与 task 层拿到的是两种观测，只是重名；此前 spec 假设两层共用 `Facts`、怕 `scene` 一字两义，另起 `situation` 字段，没有必要。
+
+**取舍**：episode 层的 `Observation` / `Facts` 与视觉链路不动。
+
+**影响面**：只改文档。
+
+## 2026-09-26（271）—— 写 `docs/perceive/spec.md`（草案）
+
+**改了什么**：新增 `docs/perceive/spec.md`：task 链（PlantUML 流程图 + 数据流图）、场合词表与判别 / 初态 / 画面稳定、常规与接管场合的观测（每项标来源与实测）、动作空间与宏签名、`Action.macro`、world 宏执行器骨架与各宏前提 / 成功判据、`MacroOutcome` 与结果码、harness / brain / prompt 改动、`run_macro` 账与回放、测评、分期、五项待拍板。
+
+**为什么这么改**：intent 第九节 1–10 条已定，按 intent → spec → plan 推进。
+
+**取舍**：宏执行器放 world 而非 tools 层（tools 只做转换、不做多步编排）；`Facts.situation` 另立字段、不动视觉链路的 `Facts.Scene`；task 预算建议改为决策预算——三项都列在第十三节等拍板。
+
+**影响面**：只加文档。
+
+## 2026-09-26（270）—— 定：宏参数校验放执行层；宏调用 trace 的形状
+
+**改了什么**：`docs/perceive/intent.md` 第九节加第 7–10 条（第 9 条宏原子、跑完再判；第 10 条战斗文字由执行器自动推进）。
+
+**为什么这么改**：宏开跑前要先按 B 回初态，校验应以回初态后的内存为准，只有执行层在那一刻读内存；前提条件是宏自己的契约，放执行层只写一处。trace 是唯一落盘处，逐步明细不记就永久丢失；一个宏合成一条账，总量与原先逐键记账相当。现有回放不重演按键（世界读 task 开局快照），所以回放只需核对调用与结果。
+
+**取舍**：明细回放时不核对；一条账还是拆两笔，看 `TapeTrace` 的改动量，写 spec 时定。
+
+**影响面**：只改文档。
+
+## 2026-09-26（269）—— 一切多级选择都机械接管；初态 = 主菜单 + 实心 ▶ + 无空心 ▷
+
+**改了什么**：
+- `evals/screen_reading/schemas.py`：接管场合改为 `naming` / `shop_items` / `pc` / `bag` / `battle_menu` / `faint_switch` / `party` / `learn_move`；常规场合改为 `walk` / `dialog` / `battle` / `shop` / `pokemon_info` / `start_menu` / `title` / `transition`；注释列出各场合的宏与主菜单。
+- `evals/screen_reading/classify.py` 重写：战斗里有选单（`▶` 或 `▷`，单层 YES/NO 除外）归 `battle_menu`，"Bring out which" 归 `faint_switch`；学新招按 ROM 核过的提示归 `learn_move`；PC 一打开（选哪台 PC、道具、宝可梦、换箱）都归 `pc`；在商店图块集里、没开买卖菜单归常规 `shop`；选项页先于背包判（选项页有 CANCEL，列表指针又可能残留在背包上）。`at_start` 加主菜单判断。
+- `docs/perceive/intent.md` 第九节第 2、3、6 条；`p0-findings.md` 第五节补测、第六节初态参数的内存实测。
+
+**为什么这么改**：开发者定：一切多级选择由机械接管，场合一打开（商店是买卖菜单一出来）就是初态、JEV 在这里选宏。只看三角不够：战斗的招式列表 / 背包 / 换人列表、PC 各级菜单整块盖住上一层不留 `▷`，所以初态还要求是本场合的主菜单。
+
+**取舍**：`learn_move` 屏上未见过，只按 ROM 文案判；`party` 的 `stats` 宏停在能力页、交回常规 `pokemon_info`；PC 不开放放生；商店只核过常青市的图块集。
+
+**影响面**：v2 预标重建（接管 228 帧，其中初态 63）；不改运行时代码。
+
+## 2026-09-26（268）—— 初态改为"只有实心 ▶、没有空心 ▷"；商店、PC 道具各合成一个接管场合
+
+**改了什么**：
+- `evals/screen_reading/schemas.py`：接管场合改为 `naming` / `shop` / `pc_items`（原 `shop_buy` / `shop_sell` / 常规 `shop` 合为 `shop`，原 `pc_withdraw` / `pc_deposit` / `pc_toss` 合为 `pc_items`）；注释写明初态定义。
+- `evals/screen_reading/classify.py`：MONEY 框在屏即 `shop`；道具菜单露着或道具列表压出 `│▷WI┌` 残边（且无 `:L`）即 `pc_items`；`at_start` 改为"有实心 `▶`、没有空心 `▷`"，不再读内存。
+- `docs/perceive/intent.md` 第九节第 2、3、6 条，`p0-findings.md` 第五节结论同步。
+
+**为什么这么改**：开发者定的初态是商店 `▶BUY / SELL / QUIT`、PC `▶WITHDRAW ITEM…` 这一层，JEV 在这里选做哪件事；列表开着时上层菜单必留空心 `▷`，所以列表不能当初态，买卖、存取也就不必再拆成不同场合。按 B 实测：商店、PC 各中途步骤 2–4 次都经过这一层。
+
+**取舍**：起名键盘没有空心 `▷`，按此定义静止的键盘帧都算初态，已输入的名字由 `enter_name` 自己按 B 删空；推翻 267 条的起名初态（名字长度为 0）。
+
+**影响面**：v2 预标重建：`shop` 97 帧（初态 6）、`pc_items` 5 帧（初态 1）、`naming` 29 帧（全部初态）；不改运行时代码。
+
+## 2026-09-26（267）—— 读屏测评加"是否在初态"（`at_start`）
+
+**改了什么**：
+- `evals/screen_reading/schemas.py`：`FIELDS` 加 `at_start`；`ScreenLabel` / `ScreenAnswer` 加 `at_start: bool | None`（常规场合为 None）；`TAKEOVER_SCENES` 注释写明初态定义。
+- `evals/screen_reading/classify.py`：新增 `at_start(text, ram, scene)`：列表类要实心 `▶` 在列表项上、无数量框、无 YES/NO；起名要 `wNamingScreenNameLength` 为 0。
+- `grade.py`：接管场合打 `scene` 与 `at_start`；`observe.decoded_answer`、`build.prelabel` / `_prelabel_probe` 同步给出；核对页加"初态"下拉，导出 JSON 带 `at_start`。
+- `docs/perceive/intent.md` 第九节第 6 条：写入初态定义与"先等画面稳定再判"。
+
+**为什么这么改**：宏开跑前与回退都只靠这一个判断，判错一次就会多按一次 B 退出场合，所以要单独测。
+
+**取舍**：起名的初态读内存名字长度，不从屏幕读；按键处理中被擦掉 `▶` 的帧按定义标"不在初态"，执行器靠等画面稳定规避。
+
+**影响面**：v2 接管帧 99 帧带 `at_start` 预标（初态 31 / 非初态 68），待人工核对；不改运行时代码。
+
+## 2026-09-26（266）—— 宏回初态实测；商店买卖列表判别要求列表框还在
+
+**改了什么**：
+- `evals/screen_reading/classify.py`：`shop_buy` / `shop_sell` 除上层菜单空心光标外，还要求列表框还在（第 2 行第 4 列 `┌`）。
+- `docs/perceive/p0-findings.md` 第五节：买、卖、PC 取、背包丢弃、起名在各中途步骤连按 B 的落点实测。
+- `docs/perceive/intent.md` 第九节第 6 条：宏不设子状态，开跑前按 B 回初态，初态判断由宏自带。
+
+**为什么这么改**：子状态逐个建模工作量大；实测所有中途步骤按 1–2 次 B 都会经过初态，只需每个宏自带一个初态判断、按 B 前先判。列表关掉后字还没打完的几帧，旧的空心光标残影会让"还要别的吗""谢谢"误进 `shop_buy`。
+
+**取舍**：`pc_deposit` / `pc_toss` 未单独实测，按与 `pc_withdraw` 同版面推断；起名按 B 不恢复大小写，交给 `enter_name` 自己切。
+
+**影响面**：v2 预标有 25 帧从 `shop_buy` / `shop_sell` 改回 `shop`；不改运行时代码。
+
+## 2026-09-26（265）—— 读屏数据集改按场合分类；去掉 quantity 场合；背包丢弃机械化
+
+**改了什么**：
+- `evals/screen_reading/schemas.py`：常规场合改为 `walk` / `dialog` / `battle` / `shop` / `pc` / `party` / `pokemon_info` / `bag` / `start_menu` / `title` / `transition`；接管场合 `naming` / `shop_buy` / `shop_sell` / `pc_withdraw` / `pc_deposit` / `pc_toss`；删掉 `menu` / `party_list` / `info` / `quantity`。
+- `evals/screen_reading/classify.py`：按场合重写。起名键盘按去掉光标后的整行匹配（原先 `▶` 打断匹配，误判成菜单）；PC 数量框按 `▷WI` / `▷DE` / `▷TO` 残影 + `How many?` 归到对应接管；`Use item on which` 归背包；场外 `:L` + `HP:` 与城镇地图归开始菜单；商店上层菜单光标变空心（`▷BU` / `▷SE`，列表开着）即归 `shop_buy` / `shop_sell`，数量框、确认都算宏内；PC 道具列表（`▷WI┌` 等残影）同理；背包判别在列表滚过 `CANCEL` 时改看 `×` 列 + 列表指针。
+- 分类特征一律按整词 / 固定位置匹配：原先子串匹配把 `TOWN` 里的 `OWN`、对话里的 `POKéDEX` 当成开始菜单标志，野外 / 室内对话大量误进 `start_menu`。野外队伍列表（含背包选道具对象）单列 `party`，按第 0 行 `:L`、第 1 行靠左的 `HP:` 认；能力页与图鉴条目页单列 `pokemon_info`；战斗 HUD 还在但标志已清的结算帧归 `battle`；城镇地图归 `bag`（只能从道具打开）。
+- `evals/screen_reading/build.py`：预标改用 `classify(text, ram)`；不再预标数量（数量框都在宏里）。
+- `docs/perceive/intent.md` 第九节补场合口径、`walk_map` / `screen` 互斥、起名最小观测。
+
+**为什么这么改**：按控件分时 `menu` / `info` 成了杂物桶，同一控件在不同场合要召回的知识完全不同；数量框总是某个场合流程的一步，放进宏里比单列场合更少分支。
+
+**取舍**：商店中途的残影帧（`▷` 旧列表）先标 `shop`，靠人工核对定；分类仍是规则原型，只用于预标和基线。
+
+**影响面**：v2 数据集重建，标注待人工核对；不改运行时代码。
+
+## 2026-09-26（264）—— 读屏测评数据集 v2（人工重采 + 预标）；整屏渲染只认成形的 HUD；采集脚本记缓冲与 WRAM
+
+**改了什么**：
+- `world/screen_text.render_screen`：血条、`:L`、`ID` / `No.` 只在成形时按 HUD 渲，不成形的一律渲成 `·`。成形指：血条是完整的 `HP:[…]`；`:L` 后面跟数字；`ID` 后面跟 `No.`；`No.` 后面跟 `.` 或数字。
+- `experiment/observation_check/capture_manual_play.py`：
+  - 默认改为每 1 秒一帧；
+  - 每帧加存 `tilemap_hex`（屏幕缓冲原样）、`wram_zlib_b64`（整块 WRAM）、`io`（LCDC / SCX / SCY / BGP / WY / WX）、`keys_held` / `keys_pressed`（两帧之间按过的键）；
+  - 每 60 秒存一份完整存档（`--state-every` 可调）。
+- `evals/screen_reading/`：
+  - 标注加 `scene`（界面种类）；常规类是 `walk` / `dialog` / `menu` / `party_list` / `info`，接管类是 `naming` / `shop_buy` / `shop_sell` / `pc_*` / `quantity`。
+  - 打分规则：接管类只打界面种类；模型读后一列不打种类（种类是系统给的）；接管类不调模型。
+  - `classify.py`：界面分类的规则原型，只用来预标和给基线分，world 的分类器落地后换掉。
+  - `build_v2`：采集目录 + 0926 探测 45 帧组成数据集。标注由规则预标，队伍列表的选项与光标、数量框的数量用 WRAM 补；每帧存 WRAM。
+  - 核对页可以逐帧改"界面种类"，随校对结果一起导出。
+- 数据集 v2：`dataset/v2/samples.jsonl`，1037 帧，约 6.7MB，全部 `label_checked=False`。
+
+**为什么改**：
+- 0926 真机采集（992 帧）里，城镇地图、图鉴页的图块编号和血条撞了，整屏渲出 `▍▍▌]` 这样的乱码，task 层 prompt 会被塞进假血条。
+- v1 的 406 帧只有截图，缓冲要靠还原，标注口径也是看图定的。重采之后缓冲和内存都是真的，标注可以对齐新的界面分类。
+
+**取舍**：
+- v2 的标注是预标，和被测的规则原型同源，未经人工核对前打分没有意义（种类一项必然 100%）。要你在核对页上校过，才能当测评集用。
+- 这次采集没覆盖到 PC 道具存入 / 丢弃、进化、学招式、训练家对战；PC 道具那几类只有 0926 探测的几帧。
+- `pytest` 231 条全过，`ruff check .` 全过。
+
+## 2026-09-26（263）—— 历史渲染保留整屏原样；没字的整屏置空
+
+**改了什么**：
+- `ActMemory._render_obs` 不再去掉 `screen`，只去掉 `walk_map`。judge / verify / summarize / decide_action 的历史里都能看到每一帧的整屏原样。
+- `screen_text.render_screen`：整屏既没有字也没有边框时（走路、过场，只剩 18 行 `·`）返回空串。
+
+**为什么改**：
+- 你定的"信息越多越好"。judge 在队伍列表、数量框这类解码切不全的界面上判成没成，要看到屏幕原文。
+- 没字的整屏不带任何信息。读屏数据集 451 帧里有 188 帧是这种，置空后，走路类任务的历史几乎不涨。
+
+**取舍**：
+- 有字的一帧整屏平均约 330 字符。历史按帧去重后大约每步一份，菜单、对话类任务的 verify 输入会跟着步数涨。等真机的 token 数出来再看要不要收窄。
+
+## 2026-09-26（262）—— evals 按测评分子包；新增读屏测评 `evals/screen_reading/`
+
+**改了什么**：
+- 目录：原 `evals/{schemas,dataset,checks,rubric,process,report,cases,runner,cli.py}` 整体移到 `evals/e2e/`，import 同步改成 `evals.e2e.*`。
+  - 顶层 `evals/cli.py` 只做分派：`python -m evals <e2e|screen> …`。
+  - e2e 的产物改落 `eval_results/e2e/`，样本起点路径改成 `evals/e2e/dataset/v1/states/…`（`dataset check` 通过）。
+- 新增 `evals/screen_reading/`：
+  - `schemas.py`：样本、标注、回答、逐帧结果、口径头。
+  - `glyphs.py`：截图还原屏幕缓冲。字形库从 VRAM 解；按明暗首次出现的顺序归一，抗调色板变化；网格起点 0–7 像素逐个试，抗整屏抖动。
+  - `build.py`：数据集 v1 共 451 帧，其中 observation_check 406 帧，0926 探测 45 帧。
+  - `observe.py`：观测和 task 层同一套解码与渲染。
+  - `prompt.md`、`grade.py`、`run.py`：解码直出和模型读后并排打分，模型调用并发。
+  - `report.py`：报表按字段、来源、界面桶、类别统计。
+  - `cli.py`：`build` / `run` / `report` 三个命令。
+- `dataset/v1/`：`samples.jsonl`（约 2MB）、`glyphs.json`、`probe_0926.json`（45 帧的场景与标注）。
+
+**为什么改**：
+- 按你的要求，不同类的测试分文件夹，端到端和各个过程集不混放。
+- 读屏测评验证 0926 的读数方案："task 层不调视觉、给整屏原样"到底能不能让模型读懂屏幕。
+
+**取舍**：
+- observation_check 当年没存缓冲，只能从截图还原。在 45 帧真缓冲上核过，解码字段 44/45 一致，唯一差异是截图比缓冲慢一帧，所以还原结果可以当真。
+- 标注沿用 observation_check 的 `claude_label`。它是按看图的口径标的：空对话框标 `dialog`，图鉴说明文字算对话。报表不修这些标注，看错帧时自己区分。
+- 首个基线（解码直出、未调模型）：451 帧里全对 418。纯对话 169/169；选单(解码切不全) 0/6；数量框 1/12。
+- 模型读后要真调模型，放到真机那一步跑。
+- 没给读屏测评写单测：它本身就是测评，数据集构建靠上面那组 45 帧核对兜底。
+- `pytest` 231 条全过，`ruff check .` 全过。
+
+## 2026-09-26（261）—— 读数方案改为"两层分工 + 整屏原样"，撤销 W4；DIALOG 从严、其余掩码放开
+
+**改了什么**：
+- `world/screen_text.py`：
+  - 新增 `render_screen()`：20×18 屏幕字符缓冲逐行渲成文字。边框画成 `┌─┐│└┘`（含战斗 HUD 框线），等级渲成 `:L`，血条渲成 `HP:[██████]`（按像素填充），`ID` / `No.` 只在战斗外渲染，其余非文字图块画成 `·`。
+  - `ScreenText` 加四个字段：`screen`（整屏渲染）、`has_cursor`、`quantity_box`（`×` 紧跟两位数字）、`strict_dialog`（底部对话框有字、没有 `▶`、没有数量框、对话框外没有别的框）。
+  - 覆盖判定跳过不含字母的行：等级行 `:L10` 不再让带框列表误判为未覆盖。
+- `Facts` 加具名字段 `screen`（标签"屏幕"），两层都给。`ActMemory` 快照同步加字段；历史渲染 `_render_obs` 像 `walk_map` 一样把它去掉。
+- `OVERLAY_ACTIONS`：NONE 与 CHOICE 都给 `上下左右 + a + b + start`，DIALOG 仍只给 `a`。`button_help.md` 给 none 补上 `b`，给 choice 补上 `start`。
+- `pyboy_world`：
+  - `_overlay_of`：有 `▶` 或数量框判 CHOICE，严格对话判 DIALOG，其余判 NONE。
+  - 看档路径的文字以视觉为准：删掉"解码有光标就覆盖视觉选项"那段。新增 `_checked_overlay`：视觉说是 DIALOG，还要解码认得是严格对话帧才算。
+  - 两条路径都填 `facts.screen`。
+- 撤销 W4：删掉 `config.WORLD_FIELD_SOURCES`、`GameTools.build` / `PyBoyWorld` 的 `field_sources` 参数、`parse_scene`、`SceneState`、w4 分支和商店金钱字段。`perceive_scene.md` 移到 `_to_delete/`。`RamReadout.would_be` 删除，`decoded` 改为每帧必填，`TextSource` 只剩 `decode` / `vlm` 两个值。
+- prompt：`decide_action.md`（task 层）写明整屏原样的读法和"字段对不上以 `屏幕` 为准"；`decompose.md`（episode 层）写明"字面内容听 `屏幕`，图形和场面听视觉"，并同步按键说明。
+- 测评：判据改读 `Frame.text`（即 `ram.decoded`），不再按 `text_source` 筛帧；报告口径头去掉"字段来源"一行。
+- 测试：`test_screen_text.py` 加 7 条（严格对话正例和反例、数量框、背包数量行不算数量框、队伍列表的整屏渲染、等级行不误判、DIALOG 才收窄成 `a`）；`test_evals_checks.py`、`test_trace_parse.py` 跟着字段变动更新。
+
+**为什么改**：
+- 0926 实测解码有两类洞：队伍列表（▶ 不在框里）和数量框（没有 ▶）。两者都被判成 DIALOG 或 NONE，掩码够不着上下键或 b。
+- 覆盖判定两个方向都会错（等级行误判未覆盖，数量框误判已覆盖），不能拿来决定调不调视觉。
+- 所以改成：屏幕字符原样整屏交给模型，让它和切好的字段互相校验；解码只保证尽力。叠加层只在十分确定时才收窄成 DIALOG。
+
+**取舍**：
+- 字段和整屏原样会重复（违背"同一信息不两处传"），这是有意的：字段是尽力解析的结果，整屏是原样，两者互为校验。
+- task 层完全不调视觉。起名键盘、图鉴这类要看图形布局的界面，靠模型读整屏原样尽力而为。
+- 历史里不带整屏，控制 judge / verify 的输入长度，代价是 judge 在盲区界面上只能看到切好的字段。
+- 已用 45 帧真机场景核对叠加层判定（`Claude outputs/decode_review.html` 里的同一批存档），战斗文字帧判为严格对话。
+- `pytest` 231 条全过，`ruff check .` 全过，`check_world_self_contained` 全过。
+
+## 2026-09-25（260）—— 测评包 `evals/`：数据集 v1、机械判据、红线、rubric、过程集、报告、批跑（eval plan E6–E8）
+
+**改了什么**：
+- 新增顶层包 `evals/`，入口 `python -m evals`：`dataset check` / `run` / `report` / `diff`（`run-one` 供批跑子进程用）。缺省五条链路统一 `deepseek-flash`。
+- `evals/schemas/`：`EvalSample`（四要素：`start` / `goal` / `behavior` / `rubric` + `red_lines`，起点 `run_begin | recovered_episode`）、`Rubric` 0–2 档、`SampleResult` / `CheckVerdict` / `RedLineHit` / `JudgeCell` / `RubricScore` / `Efficiency` / `SenseAgreement`、`ReportHeader`（口径头）、`BadCase`。
+- `evals/dataset/v1/`：20 条样本（由 `experiment/tasks.py` 的 20 条"钉死 `.state` + 目标"冻结而来，`.state` 拷进 `states/` 并记 sha256，全部 `split=val`）、`rubric.json`（3 条 rubric + R1–R3）、`coverage.md`。`loader.check` 核文件存在、哈希、rubric / 红线 / 判据 id 引用。
+- `evals/checks/`：`RunStream`（按 run 读已解析的账，取 `sense_frame` 帧）+ 18 条机械判据（移动、对话、商店、战斗、捕捉、回复），只读内存读数与**解码**来的文字，视觉给的文字一律不当真值；读不到证据判 `unjudgeable`。
+- `evals/report/`：红线 R1 出错 / R2 刹车失灵 / R3 谎报成功；效率（按链路的调用与 token、按键、失败 / 耗尽）；`evaluate` 纯函数判一条样本；`build_report` 出 `results.jsonl` / `report.md` / `rubric_forms.md` 并追加 `bad_cases.jsonl`（去重）；`diff` 口径不同即拒绝对比。
+- `evals/rubric/`：`redundant_path` 只给原始量（按键、回到旧格、无效按键），档位阈值待标定；人工两条出表单、读回 `rubric_scores.jsonl`。
+- `evals/process/`：judge 与机械判据的四格（TP/FP/FN/TN，run 与 task 两层）、task 收尾分布、解码 vs 视觉的逐帧一致率。
+- `evals/runner/`：`run_batch` 每条样本一个子进程（超时即杀、记无效），写口径头（git、模型、`config` 全部旋钮、数据集 / rubric 版本、知识库哈希）；`run_one` 用 `checkpoint_only` 现打包 → `restore_run` 开分支跑完 → 写 `run.json`。产物落 `eval_results/`（已加进 `.gitignore`）。
+- 新增 `tests/test_evals_checks.py`：每条判据一正一反（反例取 0827 基线里 judge 被台词骗到的样子），外加"视觉文字不算"一条。
+
+**为什么改**：intent / spec 的结果层、红线、rubric、过程集与报表落地；有了它才能跑第一份 k=1 报告（E9）。
+
+**取舍**：
+- 数据集冻结源（`.state` + 目标）而不是存档：存档带 `state_schema_hash`，`RunState` 一改就拒载；每次批跑现打包，零模型费用。
+- 判据只认内存与解码，保证它不重犯 judge 的错；因此解码覆盖不到的帧上判据可能 `unjudgeable`，报表单列、不进分母。
+- `battle_pokemon_switch` 暂无机械判据（换宠后的内存变化待真机核），只看红线、judge 与 rubric。
+- 报告只由盘上产物算出，可删可重算。离线冒烟：假报告目录（1 条批跑标无效 + 19 条没记录）出齐五个产物、`diff` 自比无翻转。真账本全链路待真机批跑。
+- `pytest` 224 条全过；`ruff check .` 全过。
+
+## 2026-09-25（259）—— trace 读侧解析层：`tools/trace/parse`（eval plan E5 / spec §八）
+
+**改了什么**：
+- 新增 `tools/trace/content.py`：31 种账的正文模型，逐字段对照 `render.py`——三层生命周期、`sense_frame`（`facts` 读成 `Facts`、`place` 读成 `PlaceInWorld`、`ram` 读成 `RamReadout`）、`choose_verdict` / `press_key` / `check_stall`、四种结论账、九条 `*_call`（`ModelCallContent`，用量字段类型化、其余键放行）、三种错误账、存档两账、`settle_goal`；另有 `EventMeta`。落盘的字符串标量读回真实类型（`"15"` → 15、`"true"` → True）。
+- 新增 `tools/trace/parse.py::parse(event) -> ParsedEvent`：按 `kind` 分派正文模型；没建模的账读成 `OtherContent`（原样保留全部键）。由 `tools/trace/__init__.py` 导出 `parse` / `ParsedEvent` / `CONTENT_MODELS` / `MODEL_CALL_KINDS`。
+- 新增 `tests/test_trace_parse.py`（2 条）：`_fake_run` 跑三种整局（正常 + 存档、task 异常、episode 异常）的全部账逐条解析，建过模的账必须落到自己的模型；一条带 `ram` 的 `sense_frame` 走真的 `TraceTool.append` → 落盘 → `parse` 回环，`ram` 逐字段相等。
+
+**为什么改**：观测 L3"结构化埋点支持自动化提取"。测评读账若自己 `json.loads` 再按字符串键摸字段，等于把渲染层的字段名复制一份，改名后静默读错。
+
+**取舍**：
+- 模型住产出方 `tools/trace/`（谁渲染谁定义），除调用账外一律 `extra="forbid"`：渲染层多一个或改一个键，回环测试当场红。
+- 还没接到 `node_io.py` / `checkpoint/restore.py` 那些手写 `json.loads` 的读点（登记为后续可选）。
+- 三个整局样本没覆盖到的 6 种账（`call_failed` / `call_exhausted` / `summary_parse_error` / `sense_call` / `run_error` / `checkpoint_restore`）模型照渲染函数写，未经回环；真机账本上再核。
+- 记忆读写、`settle_task`、`review_*` 等测评暂不读的账没建模。`pytest` 186 条全过。
+
+## 2026-09-25（258）—— `run_entry.new_run` 加 `checkpoint_only`：只存 run 级档、不进图（eval plan E4 / spec W3）
+
+**改了什么**：
+- `harness/run/run_entry.new_run(..., checkpoint_only=False)`：为真时载入世界起点、存 run 级存档（记 `checkpoint_save`）后直接返回 `([], 0, 0, 0.0)`，不进 run 图、不记 `run_start` / `run_end`。前置条件：装了存档器（assert）。
+- `RunHarness.run(..., *, checkpoint_only=False)` 透传。
+
+**为什么改**：测评把 `experiment/tasks.py` 的 20 条"钉死 `.state` + 目标"打包成可 `restore_run` 的起点（spec W3 选 a），零模型费用。
+
+**取舍**：
+- 开关走 `RunHarness.run` 的参数而不是 `build_real`：它是"这一次调用做什么"，不是装配期的接线；装配点不动。
+- 离线冒烟：从 `knowledge_shop_select_item.state` 打包，只落一条 `checkpoint_save`，存档目录有 `manifest.json` + `world.state`，`RunState` 原件里带着这条目标。
+- 已知约束：存档清单带 `state_schema_hash`，`RunState` 结构一变旧存档即拒载——所以测评数据集冻结的是**源**（钉死 `.state` + 目标），存档在每次批跑时现打包（见 evals 的 runner）。
+- `pytest` 184 条全过。
+
+## 2026-09-25（257）—— 字段来源分干净（W4）：写好、默认关，旋钮 `WORLD_FIELD_SOURCES`（eval plan E3a / E3b）
+
+**改了什么**：
+- `config.WORLD_FIELD_SOURCES`（缺省 `"legacy"`）→ `build_real` → `GameTools.build(field_sources=…)` → `PyBoyWorld(field_sources=…)`。
+- `w4` 下看档路径：先做屏幕解码；**解码已覆盖**的帧用新的瘦模板 `world/prompts/perceive_scene.md`（只要 `scene` / `overview` / `fields`），对话、选项、光标、叠加层全用解码（`parse_scene` 把两边拼成一份 `ScreenState`，叠加层由解码推出）；未覆盖的帧照旧用完整模板交给视觉。`scene=shop` 时 `money` 用内存读数（瘦模板里 `shop` 不再要 `money` / `items`）。
+- `w4` 下内存档（task 层）：解码未覆盖的帧，对话 / 选项 / 光标留空、叠加层 none（D1：task 层不补视觉）。
+- `sense_frame.ram.text_source` 按帧如实记 `decode` / `vlm` / `none`；`w4` 下不再记看档帧的 `decoded`（它只为切换前的对照存在）。
+- 新增 `interface/domain/screen_state.py::SceneState`（瘦模板的输出形状）；内存档的叠加层推断收成 `_overlay_of`，与 `parse_scene` 共用。
+
+**为什么改**：`docs/eval/spec.md` W4——内存读得出的只从内存读，视觉只管场合与概况；测评的文字类判据才有确定的真值。
+
+**取舍**：
+- **默认关**：plan 要求"先记录、后切换"，切换前要用 `legacy` 真机数据（`ram.decoded` 与视觉逐帧对照）过闸门。代码先写好，闸门过了只改 `config.py` 一个值。
+- 瘦模板由完整模板摘出（场合判定、野外 / 室内的 `overview` 要求、按 scene 的 `fields`、地形附录），去掉叠加层判定、对话框与黑边、选项框抄写与样例里的文字键；完整模板保留给未覆盖帧，不动。
+- 内存档路径的 `scene=battle` 仍按战斗标志给（task 层没有视觉可问，这是改动前就有的行为）；spec 里"scene 含 battle 归视觉"说的是看档路径。
+- `pytest` 184 条全过；`w4` 未经真机，列入最后的真机清单。
+
+## 2026-09-25（256）—— 屏幕解码修两处缺陷 + 覆盖判定 + 选项附注；`sense_frame` 记内存读数 `ram`（eval plan E2 / spec W2）
+
+**改了什么**：
+- `world/screen_text.py`：
+  - 对话框每行读到第一个边框图块为止——压在对话框上的小菜单不再混进对话（队伍子菜单：`Choose a P SWITCH CANCEL` → `Choose a P`）；
+  - 选单里的数量（`× 4`）、价格（`¥200`）行挂到上一项，`ScreenText.option_details` 与 `options` 一一对应；`render_details()` 渲染成 `选项 附注 / …`；
+  - 覆盖判定 `ScreenText.covered`：有光标时，光标框没有左边界、切不出选项、或框里有字没分进任何选项（附注行与空招式位 `-` 除外）→ 未覆盖。
+- `pyboy_world.py::_layout_field`：`option_details` 作为 `Facts` 动态字段给 agent（F1）。
+- 新增 `world/readout.py::read_readout`（+ 形状 `interface/domain/ram_readout.py::RamReadout` 等）：战斗标志、覆盖判定、文字来源 `text_source` 与按 W4 应有的来源 `would_be`、菜单光标变量、金钱、背包、队伍、战斗状态框；看档帧另记屏幕解码出的文字 `decoded`（与视觉并排）。`ram.py` 登记菜单 / 金钱 / 背包 / 队伍地址。`battle_status.py` 的 `status_abbr` / `u16` 改为公开供复用。
+- 链路：`Perceived.ram` → `FromHarnessToGameToolPerceiveOnceResp.ram` → `harness/sensing.perceive_once` 改为返回三元组 → 两层 `sense` 交给 `FromHarnessToTraceToolAppendReq.ram` → `render.sense_frame` 写 `content.ram`（直接放对象）。回放磁带 `tape_game` 按账还原 `ram`；`node_io` 的 `sense_frame` 契约说明补上 `ram`。
+- `tests/test_screen_text.py` 补 3 条：对话框被菜单压住、附注挂到上一项、光标不在框里判未覆盖。
+
+**为什么改**：测评的机械判定只读 trace，需要一份可信的真值（金钱、背包、队伍、战斗、光标）与"这一帧文字来自哪边"的标注；两处解码缺陷与覆盖判定是 W4 切换字段来源的前提（`docs/eval/p0-findings.md`）。本步**只记录、不改字段来源**：看档帧 `text_source` 如实记 `vlm`（其中选项与光标在内存读得到光标时本来就用内存），内存档帧记 `decode`；`would_be` 供切换前统计。
+
+**取舍**：
+- `ram` 只进 trace、不进 `Observation`（agent 看不到），与 `frame` 同一条路走。`Perceived.ram` 与信封里的 `ram` 缺省 None，假世界与旧磁带不受影响；`_STRUCTURED_CONTENT` 不把 `ram` 列为必有（假世界不给）。
+- 覆盖判定在 26 个界面上与期望全一致（p0-findings 第二节），实现后用同一批存档复核仍为 0 误判。
+- 测试按 D3 补了两处缺陷的用例，另多写了 1 条覆盖判定的用法示范（新能力，不写的话读者看不出 `covered` 何时为假）。
+- 活文档（`DATAFLOW.md` / `docs/spec/trace/SPEC.md` / `docs/spec/world/SPEC.md`）统一在 plan E10 同步。`pytest` 184 条全过；真机统计留到最后统一跑。
+
+## 2026-09-25（255）—— 战斗状态框改读游戏变量，视觉模型不再读（eval plan E1 / spec W1）
+
+**改了什么**：
+- 新增 `world/battle_status.py::read_battle_status`（+ 形状 `interface/domain/battle_status.py::BattleStatus` / `Combatant`）：战斗中从内存读双方名字、等级、HP、最大 HP、状态异常；`wIsInBattle` 为 0 时返回 None。状态字节按位译成画面缩写（SLP / PSN / BRN / FRZ / PAR，无异常为 `ok`）。
+- `world/ram.py` 登记 10 个地址（`wBattleMon*` / `wEnemyMon*`）与 `NAME_LENGTH` / `NAME_END`。
+- `pyboy_world.py`：看档与内存档两条路径都把状态框填进 `Facts` 动态字段 `my_name` / `my_level` / `my_hp` / `my_status` / `foe_*`（`*_hp` 为 `当前/最大`）；看档路径上内存读数覆盖视觉同名键。
+- `world/prompts/perceive_screen.md`：第二节删掉状态框读法（谁是我方、HP 五档、反面例子、状态异常怎么读），改为一句"不用你读、`fields` 里不放 `my_*` / `foe_*`"；第四节 `battle` 改为 `fields` 留空；第七节战斗样例 `fields` 清空。指令框与招式列表的抄法保留。
+- `tools/prompts/calls/judge_success.md`：`foe_hp` 的跨帧比较从"挡位"改为"当前值"。`experiment/tasks.py` 的 `catch_weaken_target` 判据同步。
+- `facts.py` 两处 docstring 更正动态字段的来源。
+
+**为什么改**：测评的机械判定需要可信的战斗真值；视觉读状态框在 `observation_check` 上 `foe_hp` 只有 10%～42%（对手没有 HP 数字，只能估挡位），名字与等级也常读反。这几项内存里都有，按"内存读得出的只从内存读"（`docs/eval/spec.md` W1 / W4）交给内存。
+
+**取舍**：
+- 沿用动态字段而不是新开 `Facts` 具名字段：字段名与原来视觉给的一致（决策、判定 prompt 与 `act_memory` 快照都按这些名字读），只换来源；`act_memory` 的 `_EXTRA_ORDER` 副本与对照测试不受影响。测评要的类型化真值另走 trace 的 `ram` 对象（plan E2），不靠这组字符串。spec W1 原写"具名字段"，以本条为准。
+- 两个昵称地址未经编译验证，由源码布局推算 + 4 份战斗存档实读互证（`docs/eval/p0-findings.md` 第三节）。
+- `foe_hp` 从五档文字变为精确数值，下游只有 `judge_success.md` 与一条任务判据用到挡位，已同步；`observation_check` 自带的 prompt 版本与评测字段未改（它评的是视觉模型本身）。
+- `pytest` 181 条全过；真机 `check_harness` 留到全部写完后统一跑。
+
+## 2026-09-25（254）—— 网页图片修复：帧是完整 data URI，别再拼前缀；`/feed` 不设收包上限
+
+**改了什么**：
+- `review_backend/page.py`：实时画面与审问首/末帧共 3 处 `img.src`，不再拼 `` `data:image/png;base64,${frame}` ``——`content.frame` 本来就是**完整 data URI**（0915 定，全仓唯一帧编码点 `world/pyboy_world.py::_png_data_uri`），再拼一次前缀就是双重前缀的坏图。改为直接上 src。
+- `review_backend/backend.py::serve()`：加 `max_size=None`。websockets 服务端缺省收包上限 1 MiB，而 `/feed` 转播的 `choose_call`/`judge_call` 等账的 `payload.images` 带整批 data URI 帧，单条轻松超限——超限后端以 1009 掐断 run 的推送连接，`LiveFeedTrace` 的 5s 重连退避期内队列事件逐条丢弃，实时画面成片缺失。
+- `tests/test_review_backend.py` 加 2 条：单页不再双重拼前缀（钉字符串）；2 MiB 的 feed 事件照样到网页（钉 `max_size=None`；测试客户端显式 `max_size=None`，浏览器本无上限）。
+
+**为什么改**：网页上"图片拿不到，显示故障"。前缀双重拼是**必然坏图**（所有帧全灭）；收包上限是**间歇性断流**（模型调用账一过线就断 5 秒、退避期事件全丢）。两条都只病在展示链路，落盘与模型链路无涉。
+
+**取舍**：
+- 页面直接信任 data URI 格式，不做"裸 base64 就补前缀"的兜底——0915 起格式只有一种，防外部输入的兜底不写。
+- `max_size=None` 对 `/harness`、`/ui` 一并生效：本机回环工具服务，不做大小设防。
+- `pytest` 181 条全过。
+
+## 2026-09-25（253）—— 表单渲染脱 JSON：`format_form` 改给人读的字段行
+
+**改了什么**：
+- `harness/review_render.py::format_form()`：pydantic 模型不再走 `model_dump_json(indent=2)`，改为一行一个字段（`字段名: 值`）——嵌套模型与模型列表缩进递归、列表项带 `[n]` 序号、字符串值里的换行**原样保留**（续行对齐到值那一列）、枚举渲染成成员值、空字段（`None`/空串/空列表）不渲染；非模型对象仍退回 `str()`。
+- 新增 `tests/test_review_render.py`（2 条：多行值不出现字面 `\n` + 嵌套缩进/枚举/空字段省略、非模型回退）。
+
+**为什么改**：网页与控制台上"正文和换行符等符号混在一起"。病灶就是这份 JSON dump——`Decomposition`/`RunPlan` 等表单的字段是 LLM 写的多行散文，`model_dump_json` 把值里的真实换行转义成字面 `\n` 两个字符，连同引号花括号一起混进正文，前端 `<pre>` 原样显示。审（audit）那一路走的 `render_outcome`/`render_events` 本来就是手拼文本，不受影响；模型侧历史拼接（`render_sequence` 一族）与这条路径无关，核对过无此病。
+
+**取舍**：
+- 只动渲染层这一处：`ConsoleReviewer` 与 `WebReviewer` 共用 `format_form`，两端同时生效；信封、后端、前端零改动。
+- 空字段不打出来：表单是"待审的提案"不是"事实快照"，可选字段没填属降噪；与观测渲染"没读过必须明写"那条红线不冲突。
+- `Brain.judge/verify/summarize` 收下不读的 `history`/`entries` 参数仍用无去重的 `entry.render()`——已有计划（改为收去重后的文本、由 brain 侧拼进 prompt），本次不动。
+- `pytest` 180 条全过。
+
 ## 2026-09-25（252）—— 实时 trace 与画面：每笔账顺手推给网页
 
 **改了什么**：
@@ -17267,4 +17831,13 @@ Harness、InMemoryTrace 和图装配。
 **为什么这么改**：权限拒绝是预期内的运行时失败，不应重试或静默吞掉；如果先拦截 `Harness.run()`，连拒绝事件都无法写入 trace。
 **取舍**：记录后继续向上抛出，让 episode 调用方决定结束或展示错误；不把权限失败伪装成模型解析失败或非法动作。
 **影响面**：只改变权限错误的记录与传播方式，不改变允许调用的执行路径。
+## 2026-09-27（292）—— perceive P5.1：抽出共用读屏说明供决策与判定 prompt 引用
+
+**改了什么**：新增 `tools/prompts/calls/read_screen.md`，集中说明 `screen` 中 `▶`、`▷`、`▼`、`-`、`·` 的含义及其与屏幕字面的优先关系；决策与成功判定 prompt 改为引用该片段，两个 prompt 构造器传入共用文本；`docs/spec/tools/SPEC.md` 登记模板与目录。
+
+**为什么这么改**：读屏规则同时服务动作决策和成功判定，集中维护可避免两处说明逐渐不一致。
+
+**取舍**：片段解释屏幕符号，不替代本次 `screen` 的实际内容；模板仍由各自调用方组装。
+
+**影响面**：只影响 `decide_action` 与 `judge_success` 的 prompt 组装和工具模块说明；模型调用验证留待开发者执行。
 

@@ -1,22 +1,22 @@
-"""`restore_run`：从一份存档恢复出一条新执行线，在图里接着跑到 run 结束（spec v2 §七）。
+"""`restore_run`：从一份存档恢复出一条新执行线，在图里接着跑到 run 结束（checkpoint spec §五）。
 
-`restore_run` = `open_branch`（登记、装配、回档、首条账）+ `resume`（进图）。
+`restore_run` = `open_branch`（起新线名、装配、核分叉点、回档、首条账）+ `resume`（进图）。
 
-两级存档都不嵌在任何 `act` 里，所以恢复全程在图里正常跑：
-run 级把 `RunState` 原件改上新 `branch`，从 `begin` 之后进图；episode 级把 run 图"进 `act` 前"
-那条的值以 `plan_run` 的名义写进新 thread（下一格即 `act`），再 `invoke(None)`——`act` 照常
-派这一局、照常存档。
+恢复全程在图里跑：run 级把 `RunState` 原件改上新 `branch`，从 `begin` 之后进图；episode / task 级
+把 run 图"进 `act` 前"那条的值以 `plan_run` 的名义写进新 thread（下一格即 `act`），
+再 `invoke(None)`。
+episode 级下 run 的 `act` 照常派这一局、照常存档；task 级另把 episode 图"进 `act` 前"那条的值放进
+存档器的恢复计划，run 的 `act` 取到后经 `episode_entry.resume_episode` 从那里接着跑，
+episode 的 `act` 与 `begin_task` 照常执行（新线在目标 task 开局存下自己的 task 级档）。
 
-**到某个 task（`to_task`）**：episode 级恢复 + 回放。磁带取自起点存档里 `along` 那条执行线封存的账
-（`trace@<along>/`，intent C14），切到目标 task 的 `task_start` 之前；装配函数据此把真件包成磁带件
-（`tools/replay`）。回放段里存档器暂停；走到目标 task 开局时切换：读它的开局世界快照、存档器恢复、
-指定这一局的起点存档、记 `checkpoint_restore`，此后一切照常。
+血缘不在这里记：新线第一条账 `checkpoint_restore` 的 meta 带 `checkpoint_id`，父线与分叉点
+由 trace 从同 id 的 `checkpoint_save` 推出来（`TraceTool.read_events`）。
 """
 
 from __future__ import annotations
 
-import json
 import logging
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,18 +29,16 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.harness.domain import CheckpointMark, EpisodeOutput, TraceEvent
-from pokemon_agent.tools.replay import ReplayDiverged, Tape, event_content, event_meta
+from pokemon_agent.schemas.harness.domain import CheckpointMark, EpisodeOutput
 
+from ..episode.episode_state import EpisodeRunState
 from ..run import run_entry
 from ..run.run_state import RunState
 from ..run.runtime import RunRuntime
-from .branches import BranchRecord, read_branches, register_branch
-from .checkpointer import SEALED_PREFIX, Checkpointer
+from .checkpointer import Checkpointer
 from .errors import CheckpointIncompatible, CheckpointNotFound
 from .manifest import (
     CheckpointManifest,
-    LineageLink,
     launch_relative,
     read_manifest,
     state_schema_hash,
@@ -48,9 +46,8 @@ from .manifest import (
 
 logger = logging.getLogger(__name__)
 
-BuildBranch = Callable[[str, list[LineageLink], Tape | None], RunRuntime]
-"""装配一条执行线：`(分支名, 血缘, 磁带) -> RunRuntime`；有磁带时把真件包成磁带件。
-真机包一层 `build_real`。"""
+BuildBranch = Callable[[str], RunRuntime]
+"""装配一条执行线：`分支名 -> RunRuntime`。真机包一层 `build_real`。"""
 
 SOURCE = "checkpoint.restore"
 
@@ -61,77 +58,41 @@ class OpenedBranch:
 
     deps: RunRuntime
     manifest: CheckpointManifest
-    record: BranchRecord
+    branch: str
     pre_run: RunState
-    """run 级：进图前的原件；episode 级：run 图进 `act` 前的状态。"""
-    tape: Tape | None = None
-    """回放到某个 task 时的磁带；首条账要等切换时才记。"""
-
-
-@dataclass(frozen=True)
-class _ReplayPlan:
-    """回放的准备：父线、血缘、磁带、目标 task 的开局世界。"""
-
-    parent: str
-    lineage: list[LineageLink]
-    tape: Tape
-    world_path: str
-    fork: TraceEvent
+    """run 级：进图前的原件；episode / task 级：run 图进 `act` 前的状态。"""
 
 
 def restore_run(
     manifest_path: str | Path,
     build_branch: BuildBranch,
-    *,
-    to_task: str | None = None,
-    along: str | None = None,
 ) -> tuple[list[EpisodeOutput], int, int, float]:
     """从 `manifest_path` 那份存档恢复出一条新执行线，跑到 run 结束，返回 run 级四元组。
 
-    to_task：回放到这一局的哪个 task 开局再接着跑（只对 episode 级存档）；None = 不回放。
-    along：沿哪条执行线的账回放（缺省 = 存档所在的执行线）。
     = `resume(open_branch(...))`。失败见两者。
     """
-    return resume(open_branch(manifest_path, build_branch, to_task=to_task, along=along))
+    return resume(open_branch(manifest_path, build_branch))
 
 
-def open_branch(
-    manifest_path: str | Path,
-    build_branch: BuildBranch,
-    *,
-    to_task: str | None = None,
-    along: str | None = None,
-) -> OpenedBranch:
-    """恢复的前半段：登记新执行线、装配、世界与记忆回档；不回放时记首条账。不开跑。
+def open_branch(manifest_path: str | Path, build_branch: BuildBranch) -> OpenedBranch:
+    """恢复的前半段：起新线名、装配、核分叉点、世界与记忆回档、记首条账。不开跑。
 
     失败：清单缺失 / 损坏 → `CheckpointNotFound` / `CheckpointCorrupt`；状态结构不兼容 →
-    `CheckpointIncompatible`；回放的账或目标 task 找不到 → `CheckpointNotFound`。都在登记分支前。
+    `CheckpointIncompatible`；trace 里这份存档的 `checkpoint_save` 不是恰好一条 →
+    `CheckpointNotFound`。
+    都在写任何一笔账之前。
     """
     # 步骤 1：读清单，核版本。
     path = Path(manifest_path)
-    run_dir = path.parent.parent
     manifest = read_manifest(path)
     if manifest.code.state_schema_hash != state_schema_hash():
         raise CheckpointIncompatible(f"{manifest.checkpoint_id} 的状态结构与当前代码不同，拒绝加载")
 
-    # 步骤 2：定父线与血缘（回放时由磁带定），登记新执行线，按它装配一套 runtime。
-    plan = None
-    if to_task is None:
-        parent = manifest.branch
-        link = LineageLink(
-            branch=manifest.branch,
-            fork_uuid=manifest.last_event_uuid,
-            fork_ts=manifest.last_event_ts,
-            checkpoint_id=manifest.checkpoint_id,
-        )
-        lineage = [*manifest.lineage, link]
-    else:
-        plan = _plan_replay(run_dir, manifest, to_task, along or manifest.branch)
-        parent, lineage = plan.parent, plan.lineage
-    record = register_branch(run_dir, parent=parent, lineage=lineage)
-    deps = build_branch(record.branch, record.lineage, plan.tape if plan else None)
+    # 步骤 2：起新线名（随机，不读账），按它装配一套 runtime。
+    branch = f"b-{uuid.uuid4().hex[:6]}"
+    deps = build_branch(branch)
     ck = deps.checkpointer
-    assert ck is not None and ck.branch == record.branch, "装配出的存档器不是这条新执行线的"
+    assert ck is not None and ck.branch == branch, "装配出的存档器不是这条新执行线的"
     if ck.code.git_commit != manifest.code.git_commit:
         logger.warning(
             "存档 %s 的代码版本 %s 与当前 %s 不同",
@@ -140,8 +101,16 @@ def open_branch(
             ck.code.git_commit,
         )
 
-    # 步骤 3：世界与记忆回到存档那一刻；不回放时记首条账，回放时挂好切换要做的事。
+    # 步骤 3：核分叉点——父线上这份存档的 `checkpoint_save` 恰好一条。
+    _check_fork(ck, manifest)
+
+    # 步骤 4：读回图状态；task 级把 episode 图的那份放进恢复计划。
     pre_run = _pre_run_state(ck, manifest)
+    if manifest.level == "task":
+        assert manifest.episode_id is not None and manifest.task_id is not None
+        ck.arm_resume(manifest.episode_id, manifest.task_id, _episode_state(ck, manifest))
+
+    # 步骤 5：世界与记忆回到存档那一刻，记首条账。
     ck.memory.restore_memory(
         FromHarnessToMemoryToolRestoreMemoryReq(archive=manifest.memory_archive)
     )
@@ -149,30 +118,29 @@ def open_branch(
     ck.game.load_state(
         FromHarnessToGameToolLoadStateReq(path=str(path.parent / manifest.world_file))
     )
-    if plan is None:
-        _note_restore(
-            ck,
-            _restore_mark(manifest, path, parent, manifest.last_event_uuid, ""),
-            {"episode_id": manifest.run_id, "task_id": manifest.run_id, "step": pre_run.step},
-        )
-    else:
-        ck.paused = True
-        mark = _restore_mark(manifest, path, parent, plan.fork.uuid, to_task or "")
-        plan.tape.on_switch.append(_switch(ck, manifest, mark, plan.world_path))
-    return OpenedBranch(deps, manifest, record, pre_run, plan.tape if plan else None)
+    _note_restore(
+        ck,
+        CheckpointMark(level=manifest.level, manifest_path=launch_relative(path)),
+        {
+            "episode_id": manifest.run_id,
+            "task_id": manifest.run_id,
+            "step": pre_run.step,
+            "checkpoint_id": manifest.checkpoint_id,
+        },
+    )
+    return OpenedBranch(deps, manifest, branch, pre_run)
 
 
 def resume(opened: OpenedBranch) -> tuple[list[EpisodeOutput], int, int, float]:
     """恢复的后半段：在新 thread 上进 run 图跑到底。
 
-    失败：回放走偏或没走到目标 task → `ReplayDiverged`（不记 `run_error`：新执行线还没开账）；
-    其余 run 级异常记 `run_error` 后原样上抛。
+    失败：run 级异常记 `run_error` 后原样上抛。
     """
-    deps, manifest, record = opened.deps, opened.manifest, opened.record
+    deps, manifest, branch = opened.deps, opened.manifest, opened.branch
     ck = deps.checkpointer
     assert ck is not None
-    thread = run_entry.thread_id(manifest.run_id, record.branch)
-    state = opened.pre_run.model_copy(update={"branch": record.branch})
+    thread = run_entry.thread_id(manifest.run_id, branch)
+    state = opened.pre_run.model_copy(update={"branch": branch})
     try:
         if manifest.level == "run":
             final = run_entry.invoke_run(deps, ck.run_graph, state, thread=thread)
@@ -182,92 +150,33 @@ def resume(opened: OpenedBranch) -> tuple[list[EpisodeOutput], int, int, float]:
             )
             assert ck.run_graph.get_state(config).next == ("act",), "写入后 run 图下一格不是 act"
             final = run_entry.invoke_run(deps, ck.run_graph, None, thread=thread)
-    except ReplayDiverged:
-        raise
     except Exception as exc:
-        if opened.tape is not None and opened.tape.diverged is not None:
-            raise opened.tape.diverged from exc
-        if opened.tape is not None and not opened.tape.switched:
-            raise ReplayDiverged(f"回放段里出了异常：{type(exc).__name__}: {exc}") from exc
         run_entry.record_run_error(deps, manifest.run_id, exc, source=SOURCE)
         raise
-    if opened.tape is not None and not opened.tape.switched:
-        raise ReplayDiverged(f"run 跑完了也没走到目标 task {opened.tape.target_task}")
     return run_entry.close(final)
 
 
-def _plan_replay(
-    run_dir: Path, manifest: CheckpointManifest, to_task: str, along: str
-) -> _ReplayPlan:
-    """读起点存档里 `along` 封存的账，切出磁带，定父线、血缘与目标 task 的开局世界。"""
-    assert manifest.level == "episode" and manifest.episode_id, "只能从 episode 级存档回放"
-    sealed = run_dir / manifest.checkpoint_id / f"{SEALED_PREFIX}{along}"
-    if not sealed.is_dir():
-        raise CheckpointNotFound(f"{manifest.checkpoint_id} 里没有执行线 {along} 封存的账")
-    events = sorted(
-        (
-            TraceEvent.model_validate_json(p.read_text(encoding="utf-8"))
-            for p in sealed.glob("*.json")
-        ),
-        key=lambda e: (e.ts, e.uuid),
-    )
-    at = next(
-        (
-            i
-            for i, e in enumerate(events)
-            if e.kind == "task_start"
-            and event_meta(e).get("episode_id") == manifest.episode_id
-            and event_meta(e).get("task_id") == to_task
-        ),
-        None,
-    )
-    if at is None or at == 0:
-        raise CheckpointNotFound(f"{along} 在 {manifest.episode_id} 里没有 task {to_task}")
-    world = next(
-        (
-            e
-            for e in events[at:]
-            if e.kind == "world_snapshot" and event_meta(e).get("task_id") == to_task
-        ),
-        None,
-    )
-    if world is None:
-        raise CheckpointNotFound(f"{along} 的 task {to_task} 没有开局世界快照")
-
-    # 分叉点是目标 task_start 的前一条；它属于哪条线，新线就从哪条线分出来。
-    fork = events[at - 1]
-    fork_branch = str(json.loads(fork.meta)["branch"])
-    along_lineage = [] if along == "main" else list(read_branches(run_dir)[along].lineage)
-    chain = [link.branch for link in along_lineage] + [along]
-    cut = chain.index(fork_branch)
-    link = LineageLink(
-        branch=fork_branch,
-        fork_uuid=fork.uuid,
-        fork_ts=fork.ts,
-        checkpoint_id=manifest.checkpoint_id,
-    )
-    tape = Tape(events[:at], target_episode=manifest.episode_id, target_task=to_task)
-    return _ReplayPlan(
-        fork_branch, [*along_lineage[:cut], link], tape, str(event_content(world)["path"]), fork
-    )
-
-
-def _switch(
-    ck: Checkpointer, manifest: CheckpointManifest, mark: CheckpointMark, world_path: str
-) -> Callable[[dict[str, Any]], None]:
-    """切换那一刻要做的事：读目标 task 的开局世界、存档器恢复、指定这一局的起点、记首条账。"""
-
-    def hook(task_meta: dict[str, Any]) -> None:
-        ck.game.load_state(FromHarnessToGameToolLoadStateReq(path=world_path))
-        ck.paused = False
-        ck.open_episode(manifest)
-        _note_restore(ck, mark, task_meta)
-
-    return hook
+def _check_fork(ck: Checkpointer, manifest: CheckpointManifest) -> None:
+    """存档所在线上 `checkpoint_id` 为清单 id 的 `checkpoint_save` 必须恰好一条（它就是分叉点）。"""
+    saves = [
+        event
+        for event in ck.trace.read_events(
+            {
+                "run_id": manifest.run_id,
+                "branch": manifest.branch,
+                "checkpoint_id": manifest.checkpoint_id,
+            }
+        )
+        if event.kind == TraceKind.CHECKPOINT_SAVE
+    ]
+    if len(saves) != 1:
+        raise CheckpointNotFound(
+            f"{manifest.checkpoint_id} 在 trace 里的 checkpoint_save 有 {len(saves)} 条，应恰好一条"
+        )
 
 
 def _pre_run_state(ck: Checkpointer, manifest: CheckpointManifest) -> RunState:
-    """run 级：清单里的原件；episode 级：saver 里 run 图进 `act` 前那一条。"""
+    """run 级：清单里的原件；episode / task 级：saver 里 run 图进 `act` 前那一条。"""
     if manifest.level == "run":
         assert manifest.run_state is not None
         return manifest.run_state
@@ -280,35 +189,34 @@ def _pre_run_state(ck: Checkpointer, manifest: CheckpointManifest) -> RunState:
     return RunState.model_validate(snapshot.values)
 
 
+def _episode_state(ck: Checkpointer, manifest: CheckpointManifest) -> EpisodeRunState:
+    """task 级：saver 里 episode 图进 `act` 前那一条的值（直接问 saver——图外按嵌套命名空间
+    `get_state` 会被转派给子图）。从没写过的 channel 不落盘，取模型缺省值。
+
+    失败：saver 里没有这一条 → `CheckpointNotFound`。
+    """
+    ref = manifest.episode_ref
+    assert ref is not None and ck.run_graph.checkpointer is not None
+    saved = ck.run_graph.checkpointer.get_tuple({"configurable": ref.model_dump()})
+    if saved is None:
+        raise CheckpointNotFound(f"{manifest.checkpoint_id} 的 episode 定位在 saver 里找不到")
+    values = saved.checkpoint["channel_values"]
+    return EpisodeRunState.model_validate(
+        {name: values[name] for name in EpisodeRunState.model_fields if name in values}
+    )
+
+
 def _fields(state: RunState) -> dict[str, object]:
     """RunState 的全部字段（按通道名），供 `update_state` 整份写入。"""
     return {name: getattr(state, name) for name in RunState.model_fields}
 
 
-def _restore_mark(
-    manifest: CheckpointManifest, path: Path, parent: str, fork_uuid: str, to_task: str
-) -> CheckpointMark:
-    return CheckpointMark(
-        checkpoint_id=manifest.checkpoint_id,
-        level=manifest.level,
-        manifest_path=launch_relative(path),
-        parent_branch=parent,
-        parent_last_event_uuid=fork_uuid,
-        to_task=to_task,
-    )
-
-
 def _note_restore(ck: Checkpointer, mark: CheckpointMark, where: dict[str, Any]) -> None:
-    """新执行线的第一条账 `checkpoint_restore`；签名取恢复落在的位置（run 层或目标 task 开局）。"""
+    """新执行线的第一条账 `checkpoint_restore`；meta 带恢复落在的位置与存档 id。"""
     ck.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.CHECKPOINT_RESTORE,
-            meta={
-                "source": SOURCE,
-                "episode_id": where["episode_id"],
-                "task_id": where["task_id"],
-                "step": where["step"],
-            },
+            meta={"source": SOURCE, **where},
             checkpoint=mark,
         )
     )

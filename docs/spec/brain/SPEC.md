@@ -71,7 +71,8 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 
 | 形状 | 关键字段 | 谁产出 | 谁消费 |
 |---|---|---|---|
-| `Action` / `ActionSegment` | `thought`、`sequence: list[ActionSegment]`；段有 `name` / `times`（默认 1）/ `rationale: list[str]` | `Brain.choose` | 世界执行（经 tool/harness 转换）、trace / 记忆 |
+| `Action` / `ActionSegment` | `sequence: list[ActionSegment]` 与 `macro: MacroCall \| None` 恰好一个非空；段有 `name` / `times`（默认 1） | `Brain.choose` | 世界执行（经 tool/harness 转换）、trace / 记忆 |
+| `MacroCall` / `MacroSignature` / `MacroArg` | 调用：`name` + `args: dict[str, str \| int]`，`describe()` 写成 `buy(POKé BALL, 5)`；签名：`name` + `params`（`name` / `type`∈{str,int} / `required`） | 调用由 `Brain.choose` 产；签名由 tool 从 world 的 `MacroSpec` 转来 | 世界执行宏、trace / 记忆 |
 | `Goal` / `Task` | `goal` + `criteria`；`task_id` / `goal` / `success_criteria` / `max_steps` / `initial_state_hint` | 任务来自 `experiment/tasks.py`，经 harness 递给大脑 | harness 渲染进 prompt、`world` 的 `reset()` |
 | `RunPlan`（内嵌 `PlanGoal` / `PlanUpdate`） | `push_goals`、`updates`、`why`（不再有 `done`：停判归 review_and_judge）；`PlanGoal` 有 `goal` / `success_criteria` / `max_steps`（task 数上限），`PlanUpdate` 有 `index` / `status` / `note` | `Brain.plan` | harness 的目标表（`task_id` 由 harness 生成） |
 | `Reflection` | `before`、`rationale`、`action_text`、`after` | `Brain.reflect` | tool → step 记忆 |
@@ -86,7 +87,8 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 - 六个结果袋同形：硬性字段 + 底座 `_ResultBase.extra`；写 `extra` 的判据是"调用方不必为了继续而读它"——一旦某字段"没有它就没法继续"，它该升格成硬性字段。
 - **一次模型调用 = 一条账**："试了几次" = `len(calls)`，账里没有 `attempt` 字段；`ModelCall.payload` 的 `ok` 一律小写 `"true"` / `"false"`，`error_kind` 空串表示这次成功。
 - `RunPlan` 用**表内序号**寻址（`PlanUpdate.index`），不认 `task_id`；`status` 只允许 `"pending"` / `"abandoned"`，`completed` / `failed` 是 harness 从结算推导的机械事实。
-- `Action` / `ActionSegment` **不带任何上限常量**：段数、次数、论据条数的上限是调用方（tool/harness）的校验策略。论据挂在**段**上；顶层出现 `rationale` 是旧格式，`_parse` 直接抛 `ParseFailure`。
+- `Action` / `ActionSegment` **不带任何上限常量**：段数、次数的上限是调用方（tool/harness）的校验策略。
+- `choose(prompt, keys, images, macros)`：模型输出 `{"action": 名字, 参数…}`；名字在 `keys` 里成单键，在 `macros` 里按签名收参数成 `MacroCall`（`int` 收整数或纯数字串，签名外字段忽略）。只查名字、参数齐全与类型，**不做语义校验**（钱够不够、道具在不在归 world 的宏）；不合法抛 `ParseFailure` / `IllegalAction`，走现有重试。
 - `EpisodeSummary` **没有 `filename`**，`Reflection` **没有 `episode_id` / `step`**——轨迹坐标由调用方盖章。
 
 ## 五、依赖边界

@@ -1,104 +1,119 @@
-# plan —— checkpointer v2（两级存档 + 回放到 task）
+# plan —— checkpointer：三级存档 + 图内恢复
 
 > 流程位置：intent.md → spec.md → **plan.md** → PR → production
-> 依据：`docs/checkpoint/spec.md` v2（09-25 定稿，intent C1′、C7–C18）｜ 起草：2026-09-25 ｜ 状态：**已定稿（09-25）**
-> v1 的 plan（P0–P8，CHANGELOG 229–237）存档在 `plan-v1.md`；v2 在其上改，不回退已保留的部分（分支、血缘、saver、世界存读、清单骨架）
+> 依据：`docs/checkpoint/spec.md`（2026-09-26）｜ 状态：已定（2026-09-26）
 
 ---
 
 ## 〇、排序原则
 
-1. **先删后加**：Q1 先把 v1 里 v2 不要的东西删干净，后面每一步都在干净的底子上加。
-2. **先改不涉及存档的基础**（Q2 记忆查询、Q3 trace），再改存档点（Q4、Q5），最后做回放（Q6、Q7）。
+1. **先探测**：P0 验证 spec §九 的前四条断言。不过就停下回 spec——此时还一行主体代码没动，回放也还在。
+2. **先删后加**：Q1 删回放与封存、Q2 删 intent C27 其余各项，之后每一步都在干净的底子上加。
 3. **每步独立可验**：结束时 `pytest` 全过、fake run 的 `node_io` 全过，不留跑不起来的中间态。
 4. **每步 = 一条 CHANGELOG 编号条目**；commit 等你说再做。
-5. 测试写三处：Q4、Q7 的用法示范，Q6 的读口单测（09-25 定）。
+5. Q1 到 Q5 之间只有 run 级、episode 级恢复可用（task 级回放已删、图内恢复还没做），这是计划内的中间态。
 
 ## 一、步骤总览
 
-| 步 | 内容 | 状态 | 依赖 |
-|---|---|---|---|
-| Q1 | 清理 v1：图外续跑、交差、`resuming`、`checkpoint_skipped`、task 级完整存档 | ✅ 09-25，与 Q4 合并，CHANGELOG 238 | — |
-| Q2 | 记忆查询规矩：act 记忆加 `task_id`、查询加 `order_by`（自然序）、harness 去掉二次筛与排 | ✅ 09-25，CHANGELOG 239 | — |
-| Q3 | 补 trace：T1 reviewer 两本账、T2 对象 refs 唯一键、T5 `leave_chapter` 读账、T7 query 写法 | ✅ 09-25，CHANGELOG 240（T7 在 239 一并做了） | Q2 |
-| Q4 | episode 级存档挪到 run `act` 开头；episode 级恢复改为图内正常跑 | ✅ 09-25，与 Q1 合并，CHANGELOG 238 | Q1 |
-| Q5 | task 世界快照（按执行线）+ 封存本局账（`trace_sealed`） | ✅ 09-25，CHANGELOG 241 | Q4 |
-| Q6 | memory 按自然键取的读口 | ✅ 09-25，CHANGELOG 242 | Q2 |
-| Q7 | 回放：`tools/replay/` 五个磁带件、磁带切片、切换点、`restore_run(to_task=…)` | ✅ 09-25，CHANGELOG 243 | Q3、Q5、Q6 |
-| Q8 | 保真核对脚本改版 + 活文档同步 | 🟡 09-25，CHANGELOG 244：脚本与文档已写；**真机未跑；AGENTS.md / CLAUDE.md / ROADMAP H9 的文字待你看** | Q7 |
+| 步 | 内容 | 依赖 |
+|---|---|---|
+| P0 | 探测：嵌套子图的定位、读回、写入与续跑 ✅ 09-26，`p0-findings.md` | — |
+| Q1 | 删回放与封存 ✅ 09-26，CHANGELOG 279 | P0 |
+| Q2 | 删 intent C27 其余各项；episode 摘要内部自然序 ✅ 09-26，CHANGELOG 280–281 | Q1 |
+| Q3 | trace 血缘自推；随机新线名与 `checkpoint_id`；checkpointer 不读 trace ✅ 09-26，CHANGELOG 282 | Q1 |
+| Q4 | task 级完整存档 ✅ 09-26，CHANGELOG 283 | Q3 |
+| Q5 | task 级图内恢复 ✅ 09-26，CHANGELOG 284 | Q4 |
+| Q6 | 保真核对脚本与活文档 ✅ 09-26，CHANGELOG 285；真机两项待跑 | Q5 |
 
----
+## 二、各步
 
-## Q1 清理 v1
+### P0 探测
+
+一次性探针，不进仓库：用 `tests/_fake_run.py` 的假大脑 / 假世界跑真实三张图，run 图挂 `SqliteSaver`（`durability="sync"`），在探针里包一层 `begin_task` 与 run 的 `act`。
+
+**核**（spec §九 1–4）：
+1. 在 `begin_task` 里用"当前命名空间去掉最后一段"从 `checkpoint_map` 推出 `episode_ref`，它指向 episode 图进 `act` 前那一条；
+2. 按 `episode_ref` 用 saver 的 `get_tuple` 读回、按 `EpisodeRunState.model_fields` 取字段，与 episode 的 `act` 入参逐字段相等；
+3. 新 thread 上 run 图 `update_state(as_node="plan_run")` → `invoke(None)`；run 的 `act` 里对 episode 图 `update_state(get_config(), 读回的状态, as_node="plan_episode")` 后 `next == ("act",)`，
+   `invoke(None)` 第一个执行的是 `act`，`perceive` / `plan_episode` 没有重跑；
+4. episode 图跑完，run 的 `act` 拿到 `EpisodeOutput`，run 图回到 `perceive`。
+
+**产出**：重写 `docs/checkpoint/p0-findings.md`（逐条结论 + 实测到的命名空间与 `checkpoint_map` 样例）。
+
+### Q1 删回放与封存
 
 **删**
-- `restore.py`：`_finish_episode`、`_finish_task`、`_hand_back_run`、`graph_values`（Q4 再按需要加回精简版）；`restore_run` 暂时只保留 run 级路径，episode 级由 Q4 重写。
-- `Checkpointer`：`resuming`、`RESUME_STRETCH`、`save(level="task")` 与 `task_input` / `outer[1]` 相关代码。
-- `TraceKind.CHECKPOINT_SKIPPED` 及其渲染、`node_io` 契约（T4）。
-- 清单：`task_state` / `task_input` / `level="task"`。
-- `task_entry.begin_task` 末尾的完整存档调用（Q5 换成世界快照）。
-- 测试：`test_checkpoint_restore.py` 中 episode / task 级恢复用例暂时去掉（Q4、Q7 重写）；`check_checkpoint.py` 暂标"待 Q8 改版"。
+- `tools/replay/` 整目录；`build.py` 里包磁带件的那段与 `build_real(tape=…)`；`tools/brain_tool.py` 的 `tape` 参数。
+- `restore.py`：`_plan_replay`、`_switch`、`_ReplayPlan`、`restore_run` / `open_branch` 的 `to_task` 与 `along`、`resume` 里对 `ReplayDiverged` 的处理、`OpenedBranch.tape`。
+- `checkpointer.py`：`seal_episode`、`open_episode`、`paused`、`_open`、`SEALED_PREFIX`；run 的 `act` 与 `run_entry.record_run_error` 里的封存调用。
+- `TraceKind.TRACE_SEALED` 及其渲染、`node_io` 契约、`DATAFLOW.md` 事件表行。
+- `tests/test_checkpoint_replay.py`；`experiment/real_check/check_checkpoint.py` 里回放那几项（整脚本在 Q6 重写）。
 
-**验收**：`pytest` 全过；fake run 三种场景 `node_io` 全过；run 级存档恢复用例照常通过。
+**验收**：`pytest` 全过；fake run `node_io` 全过；`test_checkpoint_restore.py` 里 run 级、episode 级恢复照常通过；`grep -rn "replay\|Tape\|seal" pokemon_agent/` 无残留。
 
-## Q2 记忆查询规矩（C17）
+### Q2 删 intent C27 其余各项
 
-- `MemoryTool.store_act_memory` 元数据加 `task_id`；`FromHarnessToMemoryToolQueryActMemoriesReq` 加可选 `task_id` 条件。
-- 各查询信封加可选 `order_by: str | None`；memory 侧按该元数据字段**自然序**排序（数字段按数值比），缺省维持现有确定序。
-- `task/perceive/retrieve_act_memories`：改为按 `episode_id + task_id` 查，删手动筛。
-- `run/perceive/read_plan_context`：改为 `order_by="episode_id"`，删 `_in_execution_order`。
-- `query_episode_summaries` 现有的字典序排序改为自然序（修 `ep10 < ep2`）。
+**删 / 改**
+- 问人两本账（`review_inject` / `review_audit`）保留，只把 `reviewing.py` 里"为回放"的说明改成"人在环可审计"。
+- 两处对象读的 `refs` 回到 `place.key`。
+- `MemoryToolPort.fetch`、`FromHarnessToMemoryToolFetchReq/Resp`、`MemoryTool.fetch`（及只为它存在的 store 辅助）。
+- `FromHarnessToMemoryToolQueryEpisodeSummariesReq.order_by`；`read_plan_context`、`leave_chapter` 的传参与账上 query 串；`render.py` 读账说明表的那一行。
+  `query_episode_summaries` 内部固定按 `episode_id` 自然序排（沿用 `_natural_key`）。
+- act 记忆元数据的 `task_id`、`QueryActMemories` 的 `task_id` 条件；`retrieve_act_memories` 改为按 `episode_id` 查、按 `ActMemory.task_id` 筛；`read_act_memory` 的 query 串去掉 `task_id`。
+- `leave_chapter` 的 `read_episode_memory` 账。
+- `DATAFLOW.md` 同步。
 
-**验收**：fake run 的 prompt 与改前逐字相同（只要局数 < 10）；新增的自然序在 12 局的构造样本上顺序正确（放进 Q6 的读口单测里一起测）。
+**验收**：`pytest` 全过；fake run `node_io` 全过；fake run 的规划 prompt 与改前逐字相同（局数 < 10）；12 局的构造样本上 `query_episode_summaries` 返回 `ep1 … ep12`。
 
-## Q3 补 trace（T1、T2、T5、T7）
+### Q3 trace 血缘自推
 
-- T1：`TraceKind.REVIEW_INJECT`（`form_kind`、`reply`）、`REVIEW_AUDIT`（`overturned`、`note`）；harness 五处 reviewer 调用各记一笔（提一个小函数，每处一行）。
-- T2：两处对象读的 `refs` 改为 `"(episode_id, step, place.key)"`。
-- T5：`leave_chapter` 的查询补 `read_episode_memory`。
-- T7：`read_act_memory` 的 `query` 带 `task_id`；`read_episode_memory` 带 `order_by`。
-- 渲染、`node_io` 契约、`docs/spec/DATAFLOW.md` 事件表同步。
+**改**
+- `CheckpointMark` 留 `checkpoint_id` `level` `manifest_path` `stage`；`checkpoint_save` / `checkpoint_restore` 的 `checkpoint_id` 从 content 挪进 meta（checkpointer 的 `_meta` 与 `restore._note_restore` 组装），
+  `checkpoint_restore` content 删 `parent_branch`、`parent_last_event_uuid`、`to_task`。渲染、`node_io`、`DATAFLOW.md` 同步。
+- `TraceTool`：构造去掉 `lineage`；`read_events` 按 spec §六 四步从账本推血缘、每次现算；新增只读函数"本 run 的分支图"。
+- 清单删 `lineage`、`last_event_uuid`、`last_event_ts`；删 `LineageLink`、`branches.py`、出口里的相关名字。
+- `Checkpointer`：构造去掉 `lineage`；`save()` 删读分叉点那一步；`_new_id` 改为 `<前缀>@<branch>-<8 位 hex>`，删目录去重循环。
+- `restore.open_branch`：新线名 `b-<6 位 hex>`；装配后核"该 `checkpoint_id` 的 `checkpoint_save` 恰好一条"，否则 `CheckpointNotFound`；`BuildBranch = Callable[[str], RunRuntime]`。
+- `build.py`：`build_real` 去掉 `lineage`；`evals/e2e/runner/one.py` 的 `build_branch` 只收分支名。
 
-**验收**：fake run 各场景 `node_io` 全过；带插话的 fake reviewer 场景下每次 inject / audit 各有一条账。
+**验收**：`pytest` 全过；`pokemon_agent/harness/checkpoint/checkpointer.py` 里没有 `read_events`；从 episode 级存档恢复后，新线按血缘读到的账与改前（外部传血缘）一致；删掉某条 `checkpoint_save` 后恢复被拒。
 
-## Q4 episode 级存档与恢复（D1）
+### Q4 task 级完整存档
 
-- run `act` 节点第一件事调 `checkpointer.save(level="episode", state)`；`begin_episode` 末尾的存档删掉。
-- 清单：`run_ref: GraphRef`（run 图"进 `act` 前"那条，根图）替代 `outer`；删 `episode_state` / `episode_input`。
-- 恢复：回档世界与记忆 → 读 `run_ref` 的值 → `run_graph.update_state(新 thread, 值 + branch, as_node="plan_run")`，核下一格是 `act` → `invoke(None)`。
-- 测试 `test_checkpoint_restore.py`：fake run 从 run 级、episode 级存档各恢复一次跑到底；新线首条账是 `checkpoint_restore`；父线的账逐字节不变；按血缘拼接后 `node_io` 全过；新线上 episode 存档照常产生。
+**改**
+- 清单：`Level` 加 `task`，加 `task_id`、`episode_ref`，不变式按 spec §三。
+- `Checkpointer`：`save(level, *, run_id, step, episode_id, task_id, state)`；task 级按 spec §四第 4 步推 `episode_ref` 并核父指针；task 级前缀 `<episode_id>.<task_id>`。
+- `begin_task`：第一件事 `save(level="task")`，再写 `task_start`。
+- 删 `snapshot_world`、`WORLDS_DIRNAME`、`_free`、`TraceKind.WORLD_SNAPSHOT` 及渲染、`node_io`；`checkpoint_error` 的 `stage` 取值去掉 `world_snapshot`、`seal`。
 
-**验收**：上述测试通过；`pytest` 全过。
+**验收**：fake run 跑完，每个 task 各有一个存档目录（清单 + 世界 + 记忆 zip）；每个 task 的账顺序是 `checkpoint_save` → `task_start`；`pytest` 全过。
 
-## Q5 task 世界快照 + 封存本局账（C14、C15）
+### Q5 task 级图内恢复
 
-- `Checkpointer.snapshot_world(episode_id, task_id)`：写 `checkpoints/<run_id>/worlds/<episode_id>/<task_id>@<branch>.state`，记 `world_snapshot`（T3）。`begin_task` 末尾调它。
-- `Checkpointer.seal_episode(episode_id)`：把本局 episode 存档之后、本执行线的账复制进该存档 `trace/`，记 `trace_sealed`（T6）。调用点：run `act` 拿到 `EpisodeOutput` 之后；`run_entry.record_run_error` 里。
-- 两本新账的渲染与 `node_io` 契约。
+**改**
+- `Checkpointer`：`arm_resume(episode_id, task_id, state)` / `take_resume(episode_id)`；恢复后第一次 task 级 `save` 断言 `task_id` 与计划一致。
+- run 的 `act`：`take_resume` 有值时不存 episode 级档、调 `episode_entry.resume_episode`，否则照旧。
+- `episode_entry.resume_episode(deps, graph, state)`：spec §五。
+- `restore.open_branch`：task 级按 `run_ref` 读 `RunState`、按 `episode_ref` 用 `get_tuple` 读 `EpisodeRunState`，`arm_resume`；`resume` 里 episode、task 两级共用"`update_state(as_node="plan_run")` → `invoke(None)`"。
+- `harness/checkpoint` 新增 `list_checkpoints(root, run_id)`；出口同步。
 
-**验收**：fake run 跑完后每个 episode 存档都有 `trace/`，内容与 `tracelog/` 里本局的账逐文件相同；`worlds/` 下每个 task 一份快照；中途出错的场景也封存了已写出的部分。
+**验收**：spec §九第 3–5 条；从第 2 个 task 的存档恢复跑到底，父线的账一字节未变；`pytest` 全过；按血缘拼读后 `node_io` 全过。
 
-## Q6 memory 按键取的读口（C12）
+### Q6 保真核对与活文档
 
-- `MemoryToolPort` 加按自然键取：act `(episode_id, step)`、task `(episode_id, task_id)`、episode `episode_id`、object `(episode_id, step, place)`、knowledge `source`；信封按命名规则放 harness 侧。
-- 单测：每类写几条，按键取回与查询结果逐字段相同；顺序按给定键的顺序；不存在的键报错；Q2 的自然序样本。
+- `experiment/real_check/check_checkpoint.py` 按 spec §十 重写。
+- 活文档：`docs/spec/checkpoint/`、`docs/spec/trace/`、`docs/spec/tools/`、`docs/spec/memory/`、`DATAFLOW.md` 里写到回放、封存、`branches.json`、世界快照、`fetch`、`order_by` 的地方。
 
-**验收**：单测通过。
+**验收**：脚本离线部分（第 2、4、5 条）在 fake run 上过；真机部分（第 1、3 条，要调模型）由你跑。
 
-## Q7 回放（C7–C9、C11、C16）
+## 三、测试与活文档（已定）
 
-- `tools/replay/`：`TapeProvider`、`TapeGame`、`TapeReviewer`、`TapeMemory`、`TapeTrace`，外加磁带切片（起点存档、按血缘拼账、切到目标 task）。
-- `TapeTrace` 的读账返回"起点之前的账 + 已回放到的账"。
-- 切换：`TapeTrace` 收到目标 task 的 `task_start` 时读世界快照、磁带件改走真件、先记 `checkpoint_restore` 再记 `task_start`。
-- 回放段内 `Checkpointer` 不存、不记账。
-- `build_real(..., replay=Tape | None)`；`restore_run(manifest_path, build_branch, *, to_task=None)`。
-- 测试（`test_checkpoint_replay.py`）：fake run 上回放到第 2 个 task，全程无 `ReplayDiverged`，切换后跑到底；从新线再回放出一条（分支套分支）；故意改一条录下的输出，确认报 `ReplayDiverged`。
+- **测试三处**：① Q3 重写 `tests/test_trace_branch.py`——只给分支名，血缘从账本推；② Q5 改写 `tests/test_checkpoint_restore.py`，加"从 task 级存档恢复跑到底"，含 spec §九第 5 条账序；
+  ③ Q2 episode 摘要自然序的断言（原在 `fetch` 读口单测里）挪到 memory tool 的测试里。
+- **`AGENTS.md` / `CLAUDE.md`**：写到回放或封存的段落在 Q6 一起改；ROADMAP H9 由你改。
 
-**验收**：测试通过；`pytest` 全过。
+## 四、风险与回退
 
-## Q8 保真核对与文档
-
-- `check_checkpoint.py` 按 spec v2 §十 改版（含离线回放到第 2 个 task 的比对）。
-- 活文档：`docs/spec/checkpoint/SPEC.md` 重写；`harness` / `trace` / `memory` / `DATAFLOW` / `experiment` 各 SPEC 同步；`AGENTS.md` 若有目录变化先给你看。
-
-**验收**：你在本机真机跑 `check_checkpoint` 全过（沙箱连不上模型接口）。
+- **P0 不过**：停在 P0，回 spec 重议；此时仓库未动。
+- **旧存档读不了**：清单删了字段，旧 `manifest.json` 校验失败，报 `CheckpointCorrupt`。`evals/e2e` 的 `run_begin` 样本是现打包的，不受影响；其余旧存档作废。
+- **task 级存档体积**：每个 task 一份记忆 zip，Q4 的 fake run 先量大小与耗时，真机数字在 Q6 第 1 条出来后再决定要不要限流。

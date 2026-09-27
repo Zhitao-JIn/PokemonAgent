@@ -1,6 +1,6 @@
 # trace —— 模块规格
 
-> 最后更新：2026-09-16 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
+> 最后更新：2026-09-25 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
 
 ## 一、职责与边界
 
@@ -78,7 +78,7 @@ trace/
 - `EventType`（`trace/datastore/trace_event.py`）是**字符串常量类，不是枚举**，七个值：`MODEL_CALL` / `ERROR` / `LLM_OUTCOME` / `VIEW` / `ACT` / `MEMORY_IO` / `LIFECYCLE`；合法值域的类型级表达只有一处 `EventTypeName`（`Literal[...]`）。
 - `TraceKind`（`schemas/harness/domain/trace_kind.py`）是 `StrEnum`，**35 个成员**，是 harness 的账名词表，住 schemas 侧（消费者是 harness）。
 - **两者不是一个概念，不能合并**：`type` 回答"这条记录相对世界 / 模型站在哪个位置"，数量极小、与链路正交；`kind` 回答"这是哪笔账"。对应关系是"每个 kind 恰好落一个 type"，**由渲染层 `tools/trace/render.py` 给出**——trace 自己不持有这张映射。封套两个都留：`type` 供廉价过滤，`kind` 供精确指认。
-- 家族对应（依据 `EventType` 各常量的注释与 `render.py` 的实际用法）：`VIEW` 的 kind = `sense_frame`；`ACT` ∈ {`press_key`, `get_action_space`, `check_stall`}；`MEMORY_IO` ∈ {六条 `read_*` + 三条 `write_*`}；`LIFECYCLE` = 三层边界账 + `settle_goal` / `settle_task` + `advance_step`；`MODEL_CALL` 是七条链共用的调用账；`ERROR` ∈ {`call_failed`, `call_exhausted`, `summary_parse_error`}；`LLM_OUTCOME` 与 `MODEL_CALL` 配对（`choose_verdict` 与三个 `*_verdict`）。
+- 家族对应（依据 `EventType` 各常量的注释与 `render.py` 的实际用法）：`VIEW` 的 kind = `sense_frame`；`ACT` ∈ {`press_key`, `run_macro`, `get_action_space`, `check_stall`}；`MEMORY_IO` ∈ {六条 `read_*` + 三条 `write_*`}；`LIFECYCLE` = 三层边界账 + `settle_goal` / `settle_task` + `advance_step`；`MODEL_CALL` 是七条链共用的调用账；`ERROR` ∈ {`call_failed`, `call_exhausted`, `summary_parse_error`}；`LLM_OUTCOME` 与 `MODEL_CALL` 配对（`choose_verdict` 与三个 `*_verdict`）。
 
 ## 五、落盘与读取
 
@@ -96,6 +96,12 @@ trace/
 - `append` 保证 **ts 严格递增**：墙上时钟分辨率有限（实测相邻两次 `time.time()` 可以取到逐字节相同的值），撞刻时人为推进 1µs——`if now <= self._last_ts: now = self._last_ts + 1e-6`。`_last_ts` 是**本实例**的序列基线，前提是 **append 单线程顺序调用**（trace 实例全图共享、图是同步 invoke）。
 - 写盘走 `_atomic_write_text()`：先写 `path.with_suffix(".json.tmp")` 再 `os.replace(tmp, path)`——崩溃最多少一个未 rename 的 tmp。
 - **读**：`read_events` 每次调用重扫落盘根（只扫**第一层**的 `*.json`，不递归），**不做内存缓存**。`_scan_events()` 跳过 `.tmp`，`model_validate_json` 失败的文件一律 `continue`（残文件 / 旧格式是预期内的运行期情况）。按 `meta` 筛选时用 `_meta_of(event)` 把那串 JSON 解回 dict，读不动就给空 dict——于是那条**不匹配任何条件**。
+
+**读侧解析层（0925，CHANGELOG 259）**：`trace/` 只管封套，正文是字符串化的 JSON。要按类型读正文的
+一方（测评 `evals/`）走 `pokemon_agent/tools/trace/parse.py::parse(event) -> ParsedEvent`：按 `kind` 分派
+`tools/trace/content.py` 的正文模型（与 `render.py` 逐字段对照，除调用账外 `extra="forbid"`），
+`sense_frame` 的 `facts` / `place` / `ram` 读回 `Facts` / `PlaceInWorld` / `RamReadout`；没建模的账读成
+`OtherContent`。模型住产出方（谁渲染谁定义），`tests/test_trace_parse.py` 做写 → 读回环。
 
 **`_Event` 与 `TraceEvent` 的对齐关系**：两者**六字段一一对应**，但 `TraceEvent` 是跨层契约、`_Event` 是 trace 私有实现，**没有继承、没有共享基类、也没有编译器保护**——改一处必须手工同步另一处。`_Event` 的 `extra="allow"` 让盘上改形之前的老 json（带 `event_id` / `schema_version` / `payload` / `frame_png` 那套）多出来的键挂在 `model_extra` 上随行；但它们缺 `uuid` / `ts`，**解析当场失败被跳过**，不会静默混进结果。
 

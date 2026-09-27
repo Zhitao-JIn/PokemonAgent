@@ -39,7 +39,7 @@ from __future__ import annotations
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolJudgeReq
 from pokemon_agent.schemas.memory import render_sequence
 
-from . import load
+from . import READ_SCREEN, load
 from .decompose import task_table_lines
 
 _TEMPLATE = load("judge_success")
@@ -98,4 +98,5 @@ def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
         criteria=goal.criteria,
         history=past or "（这是第一步，之前什么都没发生）",
         interrupt_rule=_INTERRUPT_RULE if req.allow_interrupt else "",
+        read_screen=READ_SCREEN,
     )

@@ -34,15 +34,13 @@ def read_plan_context(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str
 
     # 步骤 1：局索引（记忆按 `episode_id` 自然序返回，即执行序）+ 详情预取。
     index = deps.memory.query_episode_summaries(
-        FromHarnessToMemoryToolQueryEpisodeSummariesReq(
-            conditions={"run_id": state.run_id}, order_by="episode_id"
-        )
+        FromHarnessToMemoryToolQueryEpisodeSummariesReq(conditions={"run_id": state.run_id})
     ).summaries
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.READ_EPISODE_MEMORY,
             meta=meta,
-            query=f"run_id={state.run_id} order_by=episode_id",
+            query=f"run_id={state.run_id}",
             refs=[m.episode_id for m in index],
         )
     )
@@ -56,7 +54,7 @@ def read_plan_context(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str
             kind=TraceKind.READ_OBJECT_MEMORY,
             meta=meta,
             query=f"run_id={state.run_id} map_id=None",
-            refs=[f"({e.episode_id}, {e.step}, {e.place.key})" for e in objects],
+            refs=[e.place.key for e in objects],
         )
     )
     return {"plan_ctx": PlanContext(index=index, details=_pick_details(index), objects=objects)}

@@ -50,7 +50,7 @@ from pokemon_agent.schemas.memory import (
     ObjectFactEvent,
     TaskMemory,
 )
-from pokemon_agent.world import Observation
+from pokemon_agent.world import MacroOutcome, Observation, RamReadout
 
 from .ModelCall import ModelCall
 from .RunResp import RunResp
@@ -228,6 +228,9 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     请回来——**replay 只看 trace 就该看得到画面**，而 RAM 档感知本来就照截帧，
     每个键都有图可带。写口（`write_step`）的正文里仍然**不收**帧（那四本账
     一个 `frame` 都不该有，见 `node_io._WRITE_FORBIDDEN_KEYS`）。"""
+    ram: RamReadout | None = None
+    """这一帧的**内存读数**，由观察账（`sense_frame`）随正文一起带；没有就省略这个键。
+    只给测评读真值用，不进 agent 的任何输入（`docs/eval/spec.md` W2）。"""
 
     human_note: str = ""
     """这条链是在哪一句**人类插话**之下产出的（空串 = 没被插话）。
@@ -236,5 +239,7 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     （`press_key` 自己没有 LLM 调用），所以"人说了什么"天然属于那条链的账。"""
     checkpoint: CheckpointMark | None = None
     """存档三本账（`checkpoint_*`）的素材。"""
+    macro: MacroOutcome | None = None
+    """宏执行账（`run_macro`）的素材：world 返回的宏结果原样。"""
     review: ReviewMark | None = None
     """问人两本账（`review_inject` / `review_audit`）的素材。"""

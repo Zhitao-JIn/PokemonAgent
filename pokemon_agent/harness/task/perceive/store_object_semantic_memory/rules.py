@@ -59,8 +59,8 @@ from pokemon_agent.schemas.memory import (
 from pokemon_agent.world import (
     BUTTON_FACING,
     INTERACT_KEY,
-    Observation,
     PlaceInWorld,
+    TaskObservation,
 )
 
 INTERACTIVE = ("人", "招牌", "门", "物")
@@ -82,7 +82,7 @@ def press_cells(place: PlaceInWorld, facing: str) -> list[PlaceInWorld]:
 
 
 def kind_in_frame(
-    obs: Observation, place: PlaceInWorld, interactive: tuple[str, ...]
+    obs: TaskObservation, place: PlaceInWorld, interactive: tuple[str, ...]
 ) -> str | None:
     """`place` 这一格在这一帧的 `obs.facts.landmarks` 里是什么。认不出来返回 `None`。
 
@@ -105,8 +105,8 @@ class _Press:
 
     episode_id: str
     step: int
-    before: Observation
-    after: Observation
+    before: TaskObservation
+    after: TaskObservation
     actor_place: PlaceInWorld
     button: str
     facing: str
@@ -216,9 +216,9 @@ _POSTURES: dict[str, tuple] = {
 
 
 def object_fact_events(
-    before: Observation,
+    before: TaskObservation,
     action: Action,
-    after: Observation,
+    after: TaskObservation,
     episode_id: str,
     step: int,
 ) -> list[ObjectFactEvent]:

@@ -38,9 +38,7 @@ class TaskOutput(Settled, BaseModel):
     """task 交回 episode 的结算——episode 的 `perceive` 吸收、`review_and_judge` 据此判。"""
 
     task_id: str = Field(description="哪一个 task")
-    termination: Termination = Field(
-        description="终止类别（`success` 由它推出：goal_done 即达成）"
-    )
+    termination: Termination = Field(description="终止类别（`success` 由它推出：goal_done 即达成）")
     judge_reason: str = Field(
         default="", description="本 task 判停时的判定依据（review_and_judge 写）；与 reason 分开"
     )

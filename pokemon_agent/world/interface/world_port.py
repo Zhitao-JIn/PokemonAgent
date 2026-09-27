@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from .domain import Perceived
+from .domain import MacroOutcome, Perceived, TaskPerceived
 
 
 @runtime_checkable
@@ -80,22 +80,37 @@ class WorldPort(Protocol):
         """
         ...
 
-    def perceive_once(self, *, ram_only: bool = False) -> Perceived:
-        """感知当前这一帧。
+    def perceive_once(self) -> Perceived:
+        """感知当前这一帧（episode 层的视觉档）。
 
-        `ram_only=False`（缺省）：**只问一次视觉模型，不重试**。调用方在
+        **只问一次视觉模型，不重试**。调用方在
         `reset()`/`step()` 之后调它拿观测；重试预算与循环归调用方管
         （`tools/game_tools.py::GameTools.perceive_with_retry`——0913 夜从
         harness 节点搬回 tool 层，与 `BrainTool._attempt_loop` 同形）。
         失败：解析不出结构化状态时抛 `PerceptionAttemptFailed`（附这次的账）——
             要不要再问一次是调用方的判断。
 
-        `ram_only=True`：**不调视觉模型**，只读内存里确定的那几样——坐标、朝向、
-        地标、通行图、地图编号。返回的观测 `perceived=False`：场景与对话
-        **不是空的，是没读过**。`calls` 为空，也不会失败。链中间的键用这一档，
-        它们只需要判"位置动没动、换没换图"，为此烧一次视觉调用买的是用不上的信息。
-
         后置条件：返回时 observation 非空，且是这次真调用产生的新观测。
+        """
+        ...
+
+    def run_macro(self, name: str, args: dict[str, str | int]) -> MacroOutcome:
+        """在当前接管场合执行一个宏，执行到底再返回（回初态 → 校验 → 逐步执行 → 收尾）。
+
+        name / args：宏名与参数（签名见 `macro_specs(scene)`）。
+        后置条件：返回时世界停在宏的收尾处（初态或已离开场合）。
+        失败：未知宏、参数不合法、执行中途走偏都作为结果返回
+            （`rejected` / `aborted` / `left_scene`），不抛异常。
+        """
+        ...
+
+    def perceive_task(self) -> TaskPerceived:
+        """感知当前这一帧（task 层）：**不调视觉模型**，只读内存与屏幕缓冲。
+
+        返回的 `TaskObservation` 带场合（`scene`），`perceived=False`；画面字段二选一——
+        屏上有字只给 `screen`，没字只给 `walk_map`。
+        前置条件：已 `reset()`。
+        后置条件：不会失败；返回的是此刻的新观测。
         """
         ...
 

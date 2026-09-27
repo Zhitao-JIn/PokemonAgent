@@ -78,8 +78,14 @@ class ReviewBackend:
         self._harness: ServerConnection | None = None
 
     def serve(self, host: str, port: int) -> serve:
-        """起服务（`async with` 用）；`port=0` 由系统挑。端口被占时进入即抛 `OSError`。"""
-        return serve(self._route, host, port, process_request=self._process_request)
+        """起服务（`async with` 用）；`port=0` 由系统挑。端口被占时进入即抛 `OSError`。
+
+        `max_size=None`：不设收包上限。websockets 缺省 1 MiB，而 `/feed` 转播的
+        `choose_call`/`judge_call` 等账的 `payload.images` 带着整批 data URI 帧，
+        单条轻松超限——超限后端就以 1009 掐断 run 的推送连接，`LiveFeedTrace`
+        的重连退避期（5s）里队列事件逐条丢弃，实时画面成片缺失。
+        """
+        return serve(self._route, host, port, process_request=self._process_request, max_size=None)
 
     def health(self) -> dict[str, object]:
         """`GET /health` 的内容：待答的是第几问、有没有 run 连着。"""

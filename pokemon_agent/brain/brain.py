@@ -78,6 +78,9 @@ from .interface import (
     Decomposition,
     EpisodeSummary,
     JudgeResult,
+    MacroArg,
+    MacroCall,
+    MacroSignature,
     ModelCall,
     PlanResult,
     Reflection,
@@ -192,6 +195,7 @@ class Brain:
         prompt: str,
         keys: Sequence[str],
         images: Sequence[str] = (),
+        macros: Sequence[MacroSignature] = (),
     ) -> ChooseResult:
         """一次决策尝试：问一次模型、解析。**不重试**——重试是调用方的循环。
 
@@ -255,7 +259,7 @@ class Brain:
             # 截断要**先于**解析检查，否则它会伪装成"少了个右括号"的 ParseFailure。
             if truncated:
                 raise OutputTruncated(n_out)
-            parsed = self._parse(text, keys)
+            parsed = self._parse(text, keys, macros)
         except (ParseFailure, IllegalAction, OutputTruncated) as exc:
             kind, reason = type(exc).__name__, str(exc)
         except ValidationError as exc:
@@ -287,9 +291,12 @@ class Brain:
 
         # 出口断言（postcondition）：大脑不会产出空动作或调用方没给的按键。
         # `_parse` 已逐段校验过，这里是运行时全覆盖的兜底证明。
-        assert parsed.sequence, "choose() returned an action with an empty sequence"
+        assert parsed.sequence or parsed.macro is not None, "choose() returned an empty action"
         assert all(seg.name in keys for seg in parsed.sequence), (
             f"brain chose key outside {list(keys)}"
+        )
+        assert parsed.macro is None or any(m.name == parsed.macro.name for m in macros), (
+            f"brain chose macro outside {[m.name for m in macros]}"
         )
         return ChooseResult(action=parsed, calls=[call])
 
@@ -863,13 +870,15 @@ class Brain:
         except ValidationError as exc:
             raise ParseFailure(text, f"RunPlan 字段不合法：{exc.errors()[:1]}") from exc
 
-    def _parse(self, text: str, keys: Sequence[str]) -> Action:
+    def _parse(
+        self, text: str, keys: Sequence[str], macros: Sequence[MacroSignature] = ()
+    ) -> Action:
         """把 LLM 输出解析成 `Action`，不合法就抛 `ParseFailure` / `IllegalAction`。
 
-        **模型只交一个键**：输出形如 `{"action": "up"}`（0924 起，此前是 `sequence`
-        数组）；这里把它包成单段、`times=1` 的 `Action`——`Action.sequence` 是
-        brain 对外的形状，与模型写什么格式无关。多写的字段一律忽略。
-        只做三件事：剥围栏、验形状、验"这个键在不在 `keys` 里"。
+        **模型只交一个动作**：按键写 `{"action": "up"}`，包成单段、`times=1` 的 `Action`；
+        宏写 `{"action": "buy", "item": "POKé BALL", "quantity": 5}`，其余字段按签名收成
+        `MacroCall.args`。签名之外的字段一律忽略。只查名字在不在空间里、参数齐不齐、
+        类型对不对，不做语义校验。
         """
         # 步骤 1：剥 ```json 围栏。
         stripped = _strip_json_fence(text)
@@ -882,13 +891,37 @@ class Brain:
         if not isinstance(raw, dict):
             raise ParseFailure(text, "top level is not an object")
 
-        # 步骤 2：取那一个键，验它在可用按键里。
+        # 步骤 2：取动作名，按键直接成段。
         name = raw.get("action")
         if not isinstance(name, str) or not name.strip():
             raise ParseFailure(text, "'action' must be a non-empty string")
         name = name.strip()
-        if name not in keys:
-            raise IllegalAction(name, list(keys))
+        if name in keys:
+            return Action(sequence=[ActionSegment(name=name, times=1)])
 
-        return Action(sequence=[ActionSegment(name=name, times=1)])
+        # 步骤 3：宏名则按签名收参数。
+        signature = next((m for m in macros if m.name == name), None)
+        if signature is None:
+            raise IllegalAction(name, [*keys, *(m.name for m in macros)])
+        args: dict[str, str | int] = {}
+        for param in signature.params:
+            value = raw.get(param.name)
+            if value is None:
+                if param.required:
+                    raise ParseFailure(text, f"macro {name!r} missing argument {param.name!r}")
+                continue
+            args[param.name] = _macro_arg(text, name, param, value)
+        return Action(macro=MacroCall(name=name, args=args))
 
+
+def _macro_arg(text: str, macro: str, param: MacroArg, value: object) -> str | int:
+    """按参数类型收一个值：`int` 收整数或纯数字串，`str` 收非空字符串；不合就抛 `ParseFailure`。"""
+    if param.type == "int":
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
+        raise ParseFailure(text, f"macro {macro!r} argument {param.name!r} must be an integer")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    raise ParseFailure(text, f"macro {macro!r} argument {param.name!r} must be a non-empty string")

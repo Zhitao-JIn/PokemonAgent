@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.world import Observation
+from pokemon_agent.world import Observation, RamReadout
 
 
 class FromHarnessToGameToolPerceiveOnceResp(BaseModel):
@@ -22,3 +22,4 @@ class FromHarnessToGameToolPerceiveOnceResp(BaseModel):
         "如感知账里的 `images`）",
     )
     frame_png: str = Field(description="这一次感知实际截下来、喂给视觉模型的原始 PNG（base64）")
+    ram: RamReadout | None = Field(default=None, description="这一帧的内存读数（只进 trace）")

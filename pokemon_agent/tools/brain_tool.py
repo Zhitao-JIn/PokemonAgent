@@ -50,13 +50,15 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeVar
+from typing import TypeVar
 
 from pokemon_agent.brain import (
     Action,
     ActionSegment,
     BrainPort,
     EpisodeSummary,
+    MacroArg,
+    MacroSignature,
 )
 from pokemon_agent.brain.errors import (
     AttemptFailed,
@@ -104,12 +106,9 @@ from pokemon_agent.tools.prompts import run_plan as run_plan_prompt
 from pokemon_agent.tools.prompts import summarize as summarize_prompt
 from pokemon_agent.tools.prompts import summarize_task as summarize_task_prompt
 from pokemon_agent.tools.prompts import verify as verify_prompt
-from pokemon_agent.world import DIRECTION_KEYS, INTERACT_KEY
+from pokemon_agent.world import DIRECTION_KEYS, INTERACT_KEY, MacroSpec
 
 from .backoff import backoff_seconds
-
-if TYPE_CHECKING:
-    from pokemon_agent.tools.replay import Tape
 from .prompts import decide_action as decide_action_prompt
 from .prompts import judge_success as judge_success_prompt
 
@@ -271,10 +270,13 @@ class Chooser:
         # 文字版（相邻去重、逐帧对应），prompt 里读到的每一步和模型看到的
         # 画面严格同源。第一步没有记忆 → 空列表 → 纯文本。
         images, _snapshots = dedup_snapshots(req.memories)
+        macros = [_signature(m) for m in req.space.macros]
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             prompt = base_prompt if not calls else _retry_prompt(base_prompt, calls)
-            return self._brain.choose(prompt=prompt, keys=list(req.space.names), images=images)
+            return self._brain.choose(
+                prompt=prompt, keys=list(req.space.names), images=images, macros=macros
+            )
 
         result, calls = _attempt_loop("choose", attempt)
         return FromHarnessToBrainToolChooseOnceResp(
@@ -307,7 +309,11 @@ class Chooser:
 
         **校验失败抛 `ParseFailure`**（本层的内部信号）：它跟"模型幻觉了按键"
         是同一类东西（外部输入不合法），所以由同一个重试循环接住再问一次。
+
+        宏调用原样放行：参数的语义校验归 world 的宏执行器。
         """
+        if action.macro is not None:
+            return action
         segments: list[ActionSegment] = []
         for index, segment in enumerate(action.sequence, start=1):
             name, times = segment.name, segment.times
@@ -334,6 +340,16 @@ class Chooser:
                 )
 
         return Action(sequence=segments)
+
+
+def _signature(spec: MacroSpec) -> MacroSignature:
+    """world 的 `MacroSpec` → brain 的 `MacroSignature`（只留解析要用的名字、类型、是否必填）。"""
+    return MacroSignature(
+        name=spec.name,
+        params=[
+            MacroArg(name=p.name, type=p.type, required=p.default is None) for p in spec.params
+        ],
+    )
 
 
 # ---- 反思 ----
@@ -658,7 +674,6 @@ class BrainTool:
         plan_max_tokens: int = PLAN_MAX_TOKENS,
         json_mode: bool = PROVIDER_JSON_MODE,
         plan_thinking: bool = PLAN_THINKING,
-        tape: Tape | None = None,
     ) -> BrainTool:
         """按需装配：**只传这一层要的型号名**，没传的位置 provider 为 `None`。
 
@@ -683,9 +698,6 @@ class BrainTool:
         本方法不替调用方验这个（它验不了，没有厂商型号表）。
         后置条件：返回的容器持有的 `Brain`，造出来的 provider **互不相同**
         （`judge` 与 `decide` 不共用是硬约束，见 `Brain` 模块 docstring）。
-
-        `tape`：回放时给出磁带，每个 provider 包一层 `TapeProvider`（切换前按序吐录下的原文、
-        先核 prompt；切换后照转真件）。解析、重试与记账因此照常走一遍。
         """
         from pokemon_agent.brain import Brain, BrainLlmConfig, build_llm_providers
 
@@ -699,12 +711,7 @@ class BrainTool:
             json_mode=json_mode,
             plan_thinking=plan_thinking,
         )
-        providers = tuple(build_llm_providers(config))
-        if tape is not None:
-            from pokemon_agent.tools.replay import TapeProvider
-
-            providers = tuple(None if p is None else TapeProvider(p, tape) for p in providers)
-        decide, judge_llm, verify_llm, plan_llm = providers
+        decide, judge_llm, verify_llm, plan_llm = build_llm_providers(config)
         brain = Brain(
             decide_llm=decide,
             judge_llm=judge_llm,
