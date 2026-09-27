@@ -17840,4 +17840,13 @@ Harness、InMemoryTrace 和图装配。
 **取舍**：片段解释屏幕符号，不替代本次 `screen` 的实际内容；模板仍由各自调用方组装。
 
 **影响面**：只影响 `decide_action` 与 `judge_success` 的 prompt 组装和工具模块说明；模型调用验证留待开发者执行。
+## 2026-09-27（293）—— perceive P5 收尾：task 解码文字用于对话判定，登记模块与测评目录
+
+**改了什么**：`rules.py::_dialog_or_still` 不再用 episode 视觉感知标记 `perceived` 拦截 task 对话判定；同步模块与函数文档，说明 task 的 `dialog_text` 已由屏幕 tile 缓冲解码。`docs/spec/OVERVIEW.md` 和 `docs/spec/README.md` 登记场景分类、宏、道具/招式资料和相关测评目录；`docs/perceive/plan.md` 标记 P5.1–5.3 完成。
+
+**为什么这么改**：task 层 `TaskObservation` 的对话文字来自屏幕 tile 解码，即使 `perceived=False` 也已读过；该标记只表示没有调用 episode 层视觉感知。旧闸门因此漏掉所有 task 对话事件。
+
+**取舍**：`rules.py` 只接收 `TaskObservation`，所以直接信任 `facts.dialog_text`；端到端模型评测需真实模型，按交接留给开发者。
+
+**影响面**：对象交互事件判定与活文档索引；P5.4 `python -m evals e2e` 未运行。未新增单元测试。
 
