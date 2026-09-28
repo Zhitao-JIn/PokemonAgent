@@ -21,7 +21,7 @@ class _Entry(Protocol):
     """读回的一条账里本文件用到的四样。"""
 
     uuid: str
-    ts: float
+    ended_at: float
     kind: str
     meta: str
 
@@ -33,7 +33,7 @@ class Fork:
     run_id: str
     branch: str
     checkpoint_id: str
-    ts: float
+    ended_at: float
     uuid: str
 
 
@@ -44,7 +44,7 @@ class BranchEdge:
     child: str
     parent: str
     checkpoint_id: str
-    fork_ts: float
+    fork_ended_at: float
     fork_uuid: str
 
 
@@ -73,7 +73,7 @@ def lineage_of(events: Sequence[_Entry], branch: str) -> list[Fork]:
         parent = str(meta["branch"])
         if parent in seen:
             raise LookupError(f"执行线 {branch} 的血缘成环：{parent}")
-        chain.append(Fork(str(meta["run_id"]), parent, checkpoint_id, save.ts, save.uuid))
+        chain.append(Fork(str(meta["run_id"]), parent, checkpoint_id, save.ended_at, save.uuid))
         seen.add(parent)
         branch = parent
 
@@ -82,7 +82,7 @@ def branch_graph(events: Sequence[_Entry], run_id: str) -> list[BranchEdge]:
     """本 run 的分支图：每条 `checkpoint_restore` 一条边，按恢复发生的先后排。"""
     tagged = [(event, json.loads(event.meta)) for event in events]
     edges: list[BranchEdge] = []
-    for event, meta in sorted(tagged, key=lambda pair: (pair[0].ts, pair[0].uuid)):
+    for event, meta in sorted(tagged, key=lambda pair: (pair[0].ended_at, pair[0].uuid)):
         if event.kind != TraceKind.CHECKPOINT_RESTORE or meta.get("run_id") != run_id:
             continue
         checkpoint_id = str(meta["checkpoint_id"])
@@ -92,7 +92,7 @@ def branch_graph(events: Sequence[_Entry], run_id: str) -> list[BranchEdge]:
                 child=str(meta["branch"]),
                 parent=str(save_meta["branch"]),
                 checkpoint_id=checkpoint_id,
-                fork_ts=save.ts,
+                fork_ended_at=save.ended_at,
                 fork_uuid=save.uuid,
             )
         )

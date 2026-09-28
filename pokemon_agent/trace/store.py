@@ -4,21 +4,18 @@
 `events/` 这一层**（0916）。"读哪一批"由 `read_events(meta=…)` 的交集匹配回答，
 `run_id` 只是 `meta` 里的一个键——与 `memory/` 同一条规矩。
 
-落盘记录就是 trace 自己的 `_Event`，六个字段：
-`{uuid, kind, type, ts, meta, content}`（0914 封套改造）。
+落盘记录就是 trace 自己的 `_Event`，七个字段：
+`{uuid, kind, type, started_at, ended_at, meta, content}`（2026-09-27 双时刻改造）。
 
-**谁盖什么**：`uuid`（= 文件名）与 `ts`（写入那一刻）归本类；`run_id` 由本类
-**注入 `meta`**（它是本实例的标识、构造时给的，落盘这一层自己知道，
-`_stamp_run_id`）；`kind` / `type` / `content` 与 `meta` 的其余键全部由调用方
-（tool 层）给，本类**不解释**它们的取值。
+**谁盖什么**：`uuid`（= 文件名）归本类；`started_at` / `ended_at`（操作真实起止）
+调用方交了就透传、没交补记账时刻（机械账 start=end=now——它没有时长语义）；
+`meta` **整份由调用方交来、原样序列化**（0927 定案：`run_id` / `branch` 由 tool 层
+在调用时盖，本类不持有执行线身份、不解释 meta 的任何键）；`kind` / `type` /
+`content` 同样由调用方给，本类**不解释**它们的取值。
 
-**排序看 `(ts, uuid)`**（原 `event_id` 的活，0914 起）：`ts` 从死字段变成排序键，
-同毫秒靠 uuid 兜底——于是"第几条"这件事不再需要一层全局计数器、也不需要
-构造时扫盘接续。
-
-**文件名是时间递增的 uuid**（RFC 9562 的 v7 布局，前 48 位是毫秒时间戳）：
-跨毫秒按字典序排 ≈ 按时间排；同一毫秒内那两段随机，彼此之间不保序。文件名的
-用处只有"肉眼和 `ls` 看着大致有序"，**排序的真源是 `(ts, uuid)`**。
+**排序看 `(ended_at, uuid)`**（双时刻改造，原 `(ts, uuid)` 的活）：真实起止进封套
+之后，"第几条"按**操作结束时刻**排——先做完的排前面；同刻靠 uuid 兜底。
+文件名的用处只有"肉眼和 `ls` 看着大致有序"，**排序的真源是 `(ended_at, uuid)`**。
 
 **已删的三件**（0914，随封套改造）：
 
@@ -76,24 +73,6 @@ def new_event_uuid() -> str:
     return str(uuid.UUID(int=value))
 
 
-def _stamp_run_id(meta: dict[str, Any], run_id: str, branch: str) -> dict[str, Any]:
-    """把 `run_id` 与 `branch` 盖进 `meta`——**排在头两个**。
-
-    `branch` 与 `run_id` 同理：它是本实例的标识（构造时给的执行线名），落盘这一层
-    自己知道，调用方不带。未经恢复的执行线是 `"main"`。
-
-    **盖章的人只能是这里**：run_id 是本实例的标识（构造时给的），落盘这一层
-    自己知道；让调用方再带一份等于同一个事实存两处。**平铺之后它是唯一能回答
-    "这条账属于哪个 run"的字段**——0916 之前还有"目录名"那份对账，随按 run
-    分层一起没了。
-
-    前置条件：调用方交上来的 `meta` 不带 `run_id` 键。
-    """
-    assert "run_id" not in meta, "meta 不许自己带 run_id——那个键归落盘这一层盖"
-    assert "branch" not in meta, "meta 不许自己带 branch——那个键归落盘这一层盖"
-    return {"run_id": run_id, "branch": branch, **meta}
-
-
 def _atomic_write_text(path: Path, text: str) -> None:
     """临时文件 + rename 的原子写：写完即完整，崩溃最多少一个未 rename 的 tmp。"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,9 +104,7 @@ def _matches(event_meta: dict[str, Any], wanted: dict[str, Any]) -> bool:
 
 
 class LocalTrace:
-    def __init__(
-        self, run_id: str = "local", root: Path | None = None, branch: str = "main"
-    ) -> None:
+    def __init__(self, root: Path | None = None) -> None:
         """接好落盘目录（一个，不再有 run 层与 events 层）。
 
         `root`：**落盘根**——一条事件一个文件的那个目录，不是它下面的某一层。
@@ -136,24 +113,25 @@ class LocalTrace:
         `--trace-root` → `build_real(trace_root=…)` → `TraceTool.build(trace_root=…)`
         逐级递进来，测试用 `tmp_path`，不往启动目录写。
 
-        `run_id`：**只用于盖进 `meta`，不参与路径**（0916 起）。同一个落盘根下
-        的多个 run 平铺在一起，读侧靠 `read_events({"run_id": …})` 区分——
+        本类**不持有 run_id / branch**（0927 定案）：执行线标识由 tool 层在调用时
+        盖进 `meta`，本类对 meta 里的任何键不解释、只透传。同一个落盘根下的
+        多个 run 平铺在一起，读侧靠 `read_events({"run_id": …})` 区分——
         与 `memory/` 同一条规矩（一条记录一个文件，run_id 在记录里）。
 
         构造时**不扫盘**（0914）：`event_id` 计数器与 `id → 文件` 索引都随
         `event_id` 一起下线，落盘只需要目录在。
         """
-        assert branch, "LocalTrace needs a non-empty branch"
-        self._run_id = run_id
-        self._branch = branch
         # str 与 Path 都收（与 `LocalMemoryStore` 的 root 同一条归一规矩）——
         # 覆盖链上 `build_real(trace_root=…)` 的形参就是 `str | Path`。
         self._dir = Path(root) if root is not None else _default_root()
         self._dir.mkdir(parents=True, exist_ok=True)
 
-        self._last_ts = 0.0
-        """本实例最近一次落账的 ts。**append 是单线程顺序调用**（trace 实例全图共享、
-        图是同步 invoke），它当序列基线用：保证 ts 严格递增，见 `append`。"""
+        self._last_default_end = 0.0
+        """缺省双时刻的序列基线。**append 是单线程顺序调用**（trace 实例全图共享、
+        图是同步 invoke）：没带真实起止的账补 `start = end =` 记账时刻，但
+        `time.time()` 分辨率有限、密集写入会同刻——平局落到随机的 uuid 上会把
+        执行序翻掉，所以缺省路径撞刻时人为推进 1µs，保证**没记真实时间的账**
+        仍按 append 序排（带了真实起止的账不受基线影响）。"""
 
     def append(
         self,
@@ -161,39 +139,45 @@ class LocalTrace:
         kind: str,
         meta: dict[str, Any] | None = None,
         content: Any = None,  # noqa: ANN401 —— 账的本体就是任意可 JSON 化的对象
+        *,
+        started_at: float | None = None,
+        ended_at: float | None = None,
     ) -> str:
         """落一条事件（文件名是时间递增 uuid），返回这个 uuid。
 
         `type` / `kind`：由调用方（tool 层）给，本类不解释取值。
-        `meta`：调用方自报的签名信息（`source` / `episode_id` / `step`…），
-            本类**盖上 `run_id`**（`_stamp_run_id`）后原样序列化成 JSON 字符串。
-            调用方不要自己带 `run_id` 键。
+        `meta`：调用方交齐的签名信息（`run_id` / `branch` / `source` /
+            `episode_id` / `step`…），本类**原样序列化**成 JSON 字符串——
+            执行线标识由 tool 层在调用时盖好，本类不再补盖、也不解释任何键。
         `content`：这笔账的本体，任何可 JSON 化的对象。
+        `started_at` / `ended_at`：操作真实起止（TracePort 契约）；None 补记账时刻。
 
         `meta` / `content` 在盘上是 **JSON 字符串**（`json.dumps(..., ensure_ascii=False)`）
         ——需要一层转义，读端 `json.loads` 回来。序列化只在本类做一处。
 
-        后置条件：六个字段已全部落盘；返回的 uuid 与文件名同值。
-        **ts 严格递增**（0915 起）：墙上时钟的分辨率有限（实测两次相邻 append 可以
-        取到**逐字节相同**的 `time.time()`，realcheck-0915-114740 第 17 步），
-        撞刻时人为推进 1µs——读侧"按 `(ts, uuid)` 排序 = 按执行顺序排列"这条
-        不变式才真正成立，否则平局落到随机的 uuid 上会把执行序翻掉。
+        后置条件：七个字段已全部落盘；返回的 uuid 与文件名同值。
+        **排序真源是 `(ended_at, uuid)`**（2026-09-27 双时刻改造）：调用方记了真实
+        起止的账按它排（同一批账里"操作先结束的排前面"），没记的账 start=end=
+        记账时刻、退化为原来的 append 序——同刻平局靠 uuid 兜底。
         """
         event_uuid = new_event_uuid()
 
         now = time.time()
-        if now <= self._last_ts:
-            now = self._last_ts + 1e-6
-        self._last_ts = now
+        if started_at is None and ended_at is None:
+            # 缺省路径单调化：密集写入同刻会靠 uuid 随机兜底，翻掉执行序。
+            if now <= self._last_default_end:
+                now = self._last_default_end + 1e-6
+            self._last_default_end = now
+        start = float(started_at) if started_at is not None else now
+        end = float(ended_at) if ended_at is not None else now
 
         event = _Event(
             uuid=event_uuid,
             kind=kind,
             type=type,
-            ts=now,
-            meta=json.dumps(
-                _stamp_run_id(dict(meta or {}), self._run_id, self._branch), ensure_ascii=False
-            ),
+            started_at=start,
+            ended_at=end,
+            meta=json.dumps(dict(meta or {}), ensure_ascii=False),
             content=json.dumps(content, ensure_ascii=False),
         )
 
@@ -201,15 +185,21 @@ class LocalTrace:
         _atomic_write_text(path, event.model_dump_json())
         return event_uuid
 
+    def flush(self) -> None:
+        """Synchronous file writes need no explicit flush operation."""
+
+    def shutdown(self) -> None:
+        """LocalTrace holds no background resources to shut down."""
+
     # ---- 读：只回答"盘上有什么"，不掩码、不游标、不打标 ----
 
     def read_events(self, meta: dict[str, Any] | None = None) -> list[Event]:
-        """（契约见 `TracePort.read_events`）全量扫盘、按 `(ts, uuid)` 升序、按 `meta` 交集筛。
+        """（契约见 `TracePort.read_events`）全量扫盘、按 `(ended_at, uuid)` 升序、按 meta 交集筛。
 
         每次调用重扫落盘目录——trace 不做内存缓存（内存镜像那套已删，
         需要"盘上有什么"就直接问盘）。
 
-        筛选那几维住在 `meta` 里（封套只认 `uuid`/`kind`/`type`/`ts`），所以要先
+        筛选那几维住在 `meta` 里（封套只认 `uuid`/`kind`/`type`/双时刻），所以要先
         把那串 JSON 解回来——`_meta_of` 读不动给空 dict，于是读不动的文件
         **不匹配任何条件**（残文件是预期内的，它不该混进任何一次查询）。
         """
@@ -221,11 +211,11 @@ class LocalTrace:
     # ---- 内部辅助 ----
 
     def _scan_events(self) -> list[tuple[_Event, Path]]:
-        """落盘根下的全部事件（连同它们的文件路径），按 `(ts, uuid)` 升序。
+        """落盘根下的全部事件（连同它们的文件路径），按 `(ended_at, uuid)` 升序。
 
         残文件/旧格式文件解析失败是预期内的运行期情况，跳过不报错。返回的
-        `_Event` 带 `extra="allow"`，所以旧数据（`event_id`/`payload` 那套）
-        里多出来的字段原样挂在 `model_extra` 上——**它们会缺 `uuid`/`ts`，
+        `_Event` 带 `extra="allow"`，所以旧数据（`event_id`/`ts` 那套）
+        里多出来的字段原样挂在 `model_extra` 上——**它们会缺 `uuid`/`ended_at`，
         于是解析当场失败被跳过**，不会静默混进结果。
         """
         found: list[tuple[_Event, Path]] = []
@@ -237,7 +227,7 @@ class LocalTrace:
             except Exception:
                 continue
             found.append((event, path))
-        found.sort(key=lambda pair: (pair[0].ts, pair[0].uuid))
+        found.sort(key=lambda pair: (pair[0].ended_at, pair[0].uuid))
         return found
 
 

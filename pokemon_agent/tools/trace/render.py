@@ -87,11 +87,17 @@ class Rendered(NamedTuple):
 
     `content` 是**对象**（dict / list），落盘时由 `store.LocalTrace.append` 序列化
     成 JSON 字符串——序列化只在一处做。
+
+    `started_at` / `ended_at`：这笔账对应的**操作真实起止**（2026-09-27 双时刻
+    定案）。渲染函数只当搬运工——调用方记了就透传，没记交 None（落盘层补
+    记账时刻）；本文件不做任何时间测量。
     """
 
     type: str
     kind: str
     content: Any
+    started_at: float | None = None
+    ended_at: float | None = None
 
 
 RenderedEvent = Rendered | list[Rendered]
@@ -298,7 +304,15 @@ def model_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
     link = _CALL_LINK[req.kind]
     events: list[Rendered] = []
     for call in req.calls:
-        events.append(Rendered(EventType.MODEL_CALL, req.kind, dict(call.payload)))
+        events.append(
+            Rendered(
+                EventType.MODEL_CALL,
+                req.kind,
+                dict(call.payload),
+                started_at=_payload_time(call.payload, "started_at"),
+                ended_at=_payload_time(call.payload, "ended_at"),
+            )
+        )
         if call.error_kind == _PARSE_FAILURE and link in _SUMMARY_LINKS:
             events.append(
                 Rendered(
@@ -320,6 +334,16 @@ def model_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
                 )
             )
     return events
+
+
+def _payload_time(payload: dict[str, Any], key: str) -> float | None:
+    """从调用账 payload 里取双时刻（`started_at` / `ended_at`），缺键或非数退 None。
+
+    brain 侧（`brain/brain.py`）直接存 float；mock/旧路径可能没有这个键——
+    退 None 后由落盘层补记账时刻，不在这里补造假精度。
+    """
+    value = payload.get(key)
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def judge_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
@@ -490,21 +514,19 @@ def choose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
     **`human_note` 只在非空时进正文**。
 
-    **`input` / `output` 是那次成功的请求与原文**（结论账自带"问了什么、模型吐了
-    什么"，不必跳到调用账对读）。**没有 `attempt`**（0914 跟进删）：这条链是第几次
+    **不带 `input` / `output`**（2026-09-27 字段适配定案）：那次成功的请求与原文
+    在同一步的 `choose_call` 账里（Langfuse 上 generation 的 input/output 原生就是
+    它们），这里不再复制一份。
+
+    **没有 `attempt`**（0914 跟进删）：这条链是第几次
     问出来的，由同一步的 `choose_call` 账条数与顺序回答，插话轮次一混它就数不干净
     ——索性不给它一个能错的位子。
 
-    前置条件：req.action、req.input、req.output 非 None。
+    前置条件：req.action 非 None。
     """
     action: Action = req.action
-    assert req.input is not None and req.output is not None, (
-        "think 结论账要带上那次成功的请求与原文（input/output）"
-    )
     content: dict[str, Any] = {
         "sequence": action_sequence(action),
-        "input": req.input,
-        "output": req.output,
     }
     if action.macro is not None:
         content["macro"] = action.macro.model_dump()
@@ -606,14 +628,14 @@ _TASK_BODY_DROP = frozenset(
         "success",
         "termination",
         "steps_used",
-        "start_step",
+        "total_acts",
         "first_frame",
         "last_frame",
     }
 )
 """`TaskMemory` 里不进 `content` 的字段——**坐标 + 来源章 + 代表帧**。
 
-章（`goal`/`success`/`termination`/`steps_used`/`start_step`）的真源是 `task_start` /
+章（`goal`/`success`/`termination`/`steps_used`/`total_acts`）的真源是 `task_start` /
 `task_end`；正文只装 LLM 蒸馏出的那些字段（含 `reason`）。"""
 
 _OBJECT_BODY_DROP = frozenset({"episode_id", "step", "run_id"})
@@ -765,7 +787,7 @@ def judge_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     **判的是哪条目标，不在这条里记**：判定对象恒为活跃投影的末位
     （`judge` 判 `goals[-1]`），而同局的 `episode_start.goal` 已经逐字记着它。
 
-    `input` / `output` 是那次成功的请求与原文（同 `choose_verdict`）。
+    `input` / `output` 不在此账（同 `choose_verdict`：调用账原生自带，不复制）。
 
     `judge_reason` 是本层这一圈的判定依据（判定员的理由 / 机械判停类别），与 `*_done` 里
     LLM 写的结论 `reason` 是两件事，名字分开。
@@ -782,8 +804,6 @@ def judge_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "termination": req.termination.value if req.termination else "",
             "fail_streak": str(req.fail_streak) if req.fail_streak is not None else "",
             "judge_reason": req.judge_reason,
-            "input": req.input,
-            "output": req.output,
             "audit": req.audit or "",
             "human_note": req.human_note,
         },
@@ -844,6 +864,8 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         EventType.MEMORY_IO,
         req.kind,
         {"query": req.query, "refs": list(req.refs)},
+        started_at=req.started_at,
+        ended_at=req.ended_at,
     )
 
 
@@ -861,21 +883,16 @@ def verify_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     逐条 verdicts 仍在调用账的正文里（报表按它解析失效率）；
     这里补轻量汇总当链上内容。
 
-    `input` / `output` 是那次成功的请求与原文（同 `choose_verdict`）。
+    `input` / `output` 不在此账（同 `choose_verdict`：调用账原生自带，不复制）。
 
-    前置条件：req.checked、req.negative、req.input、req.output 非 None。
+    前置条件：req.checked、req.negative 非 None。
     """
-    assert req.input is not None and req.output is not None, (
-        "verify_verdict 要带上那次成功的请求与原文（input/output）"
-    )
     return Rendered(
         EventType.LLM_OUTCOME,
         TraceKind.VERIFY_VERDICT,
         {
             "checked": str(req.checked),
             "negative": str(req.negative),
-            "input": req.input,
-            "output": req.output,
         },
     )
 
@@ -900,18 +917,13 @@ def plan_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         "why": req.why,
         "human_note": req.human_note,
     }
-    # `input` / `output` 可选：无模型调用的路径（如空回话）交 `None`、键不出现。
-    if req.input is not None:
-        content["input"] = req.input
-    if req.output is not None:
-        content["output"] = req.output
     return Rendered(EventType.LLM_OUTCOME, TraceKind.PLAN_VERDICT, content)
 
 
 def task_start(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """task 的边界：任务本体快照 + 全局键号基数（`task_id` 在 `meta` 上，正文不重复）。
+    """task 的边界：任务本体快照 + 局内累计键数基数（`task_id` 在 `meta` 上，正文不重复）。
 
-    前置条件：req.task、req.start_step 非 None。
+    前置条件：req.task、req.total_acts 非 None。
     """
     task: Task = req.task
     return Rendered(
@@ -921,7 +933,7 @@ def task_start(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "goal": task.goal,
             "success_criteria": task.success_criteria,
             "max_steps": str(task.max_steps),
-            "start_step": str(req.start_step),
+            "total_acts": str(req.total_acts),
         },
     )
 
@@ -964,10 +976,6 @@ def decompose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         "why": req.why,
         "human_note": req.human_note,
     }
-    if req.input is not None:
-        content["input"] = req.input
-    if req.output is not None:
-        content["output"] = req.output
     return Rendered(EventType.LLM_OUTCOME, TraceKind.DECOMPOSE_VERDICT, content)
 
 

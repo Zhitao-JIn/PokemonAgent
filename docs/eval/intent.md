@@ -1,9 +1,9 @@
 # intent —— 测评体系：一把可信、可复用的尺子
 
 > 流程位置：**intent.md** → spec.md → plan.md → PR → production
-> 状态：**草案**；09-25 拍板 V1 / V2 / V5 / V7 / V9 / V10 / V11 / V12，V3 / V4 / V6 / V8 待定（§十一）——待定项均不卡本期起步，可进 spec.md
-> 起草：2026-09-24 ｜ 09-25 按 checkpoint v2 修订 ｜ 09-25 按测评闭环 / 成熟度矩阵重新设计
-> 前置：`docs/checkpoint/intent.md`（数据集样本 = 存档 + 回放）｜ 第一个消费方：`docs/wikiskill/intent.md`
+> 状态：**已落地，方向改定（09-28）**：spec / plan / p0-findings 已走完（本目录），E1–E8 已落码（CHANGELOG 229–260）；09-28 用户逐条拍板 V1–V12（§十一），骨架改用 inspect-ai 构建（§十一对标节），V6 暂缓
+> 起草：2026-09-24 ｜ 09-25 按 checkpoint v2 修订 ｜ 09-25 按测评闭环 / 成熟度矩阵重新设计 ｜ 09-28 按落码现状回写（restore_run、evals 定名、读侧解析层、起点冻结）
+> 前置：`docs/checkpoint/intent.md`（数据集样本 = 存档 + 图内恢复）｜ 第一个消费方：`docs/wikiskill/intent.md`
 > 范围声明：**只做离线测评**。在线测评（真实 run 上的实时监控/报警）本期不讨论，留作后续 intent。
 
 ---
@@ -15,7 +15,8 @@
 
 ## 二、为什么现在做
 
-1. **现在的成功率是模型说了算。** `Termination.GOAL_DONE` 是 `success` 的唯一来源，由 judge 模型给出；
+1. **成功率实际上是模型说了算。** `Termination.GOAL_DONE` 是 `success` 的唯一来源，由 judge 模型给出
+   （09-25 起多一道人审：人只能推翻、不能直接判成，CHANGELOG 249/251）；
    `docs/experiments/0827-knowledge-baseline.md` 机械复核 124 次 run：judge 记 115 次成功，实际 102 次（假阳 16、假阴 3）。
    当时的复核脚本已不在仓库。
 2. **没有批次入口，也没有报表。** ROADMAP F1 📋；原 `evaluation/` 已整体删除（`docs/spec/README.md` 第四节）。
@@ -79,7 +80,7 @@
 
 | 粒度 | 起点 | 终点 | 用途 |
 |---|---|---|---|
-| **task** | 这一局的 episode 存档 + **回放到该 task 开局**（`restore_run(to_task=…)`；回放段不调模型）；人工设计的样本则是钉死存档直接起一个 task | 这一个 task 结束 | 细粒度能力；成本低、可大量重复 |
+| **task** | **task 级存档**直接 `restore_run`：清单里带着"episode 图进 `act` 前"的图状态（`manifest.level == "task"`），恢复后在目标 task 开局接着跑，不重放历史（279 删回放后改此机制）；v1 的人工样本不走这级——全部从 run 入口（V1 修订） | 这一个 task 结束 | 细粒度能力；成本低、可大量重复 |
 | **episode** | 这一局开局前的 episode 存档 | 这一局结束 | 拆解与 task 串联能力；带着前几局积累的记忆 |
 | **run** | run 开局的 run 级存档 | run 结束 | 长程推进：多目标、里程碑 |
 
@@ -89,10 +90,10 @@
 ② 真机回收：从真实 run 的 task / episode 边界切出 checkpoint；
 ③ **case 回收（新增，见 §七）**：bad case 经归因确认为"覆盖度问题"后，提炼成新样本入库。
 
-**切分**：数据集可切 train / val / test，切分一经发布就冻结。
+**切分**：v1 不做 train / val / test 三分——那是 WikiSkill 论文的跨 lab 对比协议，09-28 拍板不照搬；单一数据集 + 版本冻结，发布后不改样本。将来要出对外无偏数字时再引入冻结 test 集（coverage.md 缺口清单保留此待办）。
 
 **尺子自身的规矩**（不变）：
-1. 机械判定是真值，judge 是被测对象，机械判不了的样本显式标"不可机械判定"，不拿另一个模型去猜结果
+1. 机械判定是真值的第一来源，judge 是被测对象；机械判不了的样本 09-28 拍板（V3）交**模型评分器**（model-graded scorer）判——评分器作为一种 judger 在 evaluate 启动时注入（inspect-ai 的 scorer 槽位），结果与机械判定分列，不混进机械成功率
 2. 判定只在评测侧可见，不进决策侧（ROADMAP A4、D1）
 3. 同口径才可比：每份报告钉住 git commit、工作区、模型档、`config.py` 旋钮、数据集版本、rubric 版本
 4. 盘上 trace 是唯一真相，报表是派生物，删了能重算
@@ -140,7 +141,7 @@
 
 **依赖关系**：归因依赖测评集（没有过程测评集，归因分层无从谈起）；标准依赖测评集（没有端到端种子集合，rubric 无的放矢）；门禁依赖标准和测评集都到一定成熟度才有意义接 CI（判据还在变动时接 CI 只会不停红）。五列不是并行独立推进的，测评集和观测是地基。
 
-**现状**（09-25 复核）：观测 L2→L3 之间——trace 有、回放随 checkpoint v2 落地、环境快照已经有（`sense_frame` 每步快照 + `world_snapshot` task 级 + `checkpoint_save` run/episode 级）、`read_events(meta=…)` 条件检索已经有；**唯一缺口是读侧结构化解析层**（`render.py` 只有写侧，每个 `TraceKind` 缺一个对应的 typed parser）和"自动判断 outcome"（依赖 judge 过程测评集判据）。测评集 L0→L1（种子集合还没正式建）；标准 L0（V7 刚拍板 rubric 条目，二元化和一致率校准都没做）；门禁 L0（手测都还没跑通 k=1）；归因 L0（无归因流程）。
+**现状**（09-28 复核，随落码回写）：观测 L3 已达标——trace 有、图内恢复随 checkpoint v2 落地（279 删回放，恢复全程在图里跑）、环境快照已经有（`sense_frame` 每步快照 + `world_snapshot` task 级 + `checkpoint_save` run/episode 级）、`read_events(meta=…)` 条件检索已经有、**读侧结构化解析层已落**（`tools/trace/parse.py`，CHANGELOG 259）；"自动判断 outcome"由 judge 过程测评集判据承接。测评集 L2：端到端种子集合已建（`evals/e2e/dataset/v1/`，20 样本）+ judge 过程集（`evals/e2e/process/`）；标准 L2：rubric 框架已落（`evals/e2e/rubric/`），二元化和一致率校准未做；门禁 L0→L1（批跑入口已通，第一份 k=1 报告未跑出，coverage.md 难度列待回填）；归因 L0（§七流程已定义、还没跑过 case）。
 
 **本期 intent 的目标等级（09-25 定，V12）**：
 
@@ -154,7 +155,13 @@
 
 观测冲到 L3、其余按矩阵依赖顺序停在 L1/L2，是本期 spec.md 的直接输入。
 
+**落地（09-28 回写）**：以上目标已按 plan E1–E8 落码——读侧解析层（`tools/trace/parse.py`）、种子集合 v1、judge 过程集、rubric 框架、机械判据、批跑入口（`python -m evals e2e …`，CHANGELOG 255–260）。明细与实现偏差见 `docs/eval/spec.md` 〇节"实现与本文的偏差"与 `docs/spec/evals/SPEC.md`。
+
+**09-28 修订（V12）**：目标等级改由 module-gap-audit 行动表承接（§十一对标节），五维矩阵保留作长期参照。
+
 ## 十、范围
+
+> 09-28 修订：第一版指标只做结果层（成功率 / pass@k / pass^k，V7），rubric 打分与效率层推后；骨架改用 inspect-ai 构建（V5），"做"清单的落点随 §十一对标节的重映射走。
 
 **做**
 - 数据集的版本化定义（三种粒度；第一版样本从 run 入口起跑、单目标，见 V1）、覆盖表、切分（§六）；
@@ -179,18 +186,39 @@
 
 | 编号 | 问题 | 结论 / 状态 |
 |---|---|---|
-| V1 | **第一版数据集的构成** | **09-25 定，同日修订：样本 = 钉死起点 + 单个目标，从 run 入口跑完一个 run**（原定"只做 task 级"，因 task 无独立入口、且从 run 进可一次拿到三层数据而改）。现有 `experiment/tasks.py` 20 条先各自**打包成 run_begin（run 级）存档**再迁成样本，再加真机回收的 episode 存档（world + 记忆 + 该局目标） |
-| V2 | **每样本重复次数 k 与预算上限** | **09-25 定：第一版 k=1，先把流水线跑通。** 预算上限随正式基线再定 |
-| V3 | **机械判定覆盖不到的样本**：剔除，还是保留并单列 | 待定。建议：保留并单列"不可机械判定"，不进结果层的成功率 |
-| V4 | **基线口径**：knowledge 检索开还是关；各位置用哪个模型档 | 待定。建议：与当前 `check_harness` 相同 |
-| V5 | **测评住哪** | **09-25 定：仓库根级 `eval/`**，与 `pokemon_agent/`、`experiment/` 平级，只经 `build_real` 起跑、只读 trace 与存档；要进 git |
-| V6 | **显著性方法** | 待定（k=1 时用不上）。建议：配对 bootstrap，1000 次、p<0.05 |
-| V7 | **路径层 rubric 的第一版条目** | **09-25 定四条**：① 拆解质量；② 卡住后换策略；③ 少走冗余路；④ 判定是否可靠。v1 以打分形式（0–2 三档 + 锚点）落地，标准 L3 时再拆成二元条目（见 spec §七） |
-| V8 | **trace 是否要补字段** | 部分已解决：分支血缘已随 checkpoint v2 落地；事实来源标签、局级墙钟时间仍待定，具体化为 V10 |
-| V9 | **manifest 的确切结构** | **09-25 定：直接用 checkpoint v2 现有存档，不另造结构化层** |
-| V10 | **trace 插点分级方案** | **09-25 定：现有 trace 粒度已经够，不新增分级方案**，条件检索直接基于现有字段索引 |
-| V11 | **case 回收入库的把关** | **09-25 定：入库先人工确认；但测评产出（报告/bad case 记录/trace 指针）无条件保留**，不因 case 未定案而丢弃 |
-| V12 | **本期 intent 的成熟度矩阵目标等级** | **09-25 定：观测 L3、测评集 L2、标准 L2、门禁 L1、归因 L1**（见 §九目标等级表） |
+| V1 | **第一版数据集的构成** | **09-28 定：仅由 20 个 state 组成**（`evals/e2e/dataset/v1/states/`），**预打包**成 run_begin 存档（改 spec 〇节"现打包"做法）；run_id 固定 `eval-<测试名>`（`evals/e2e/runner/one.py:52` 现状即此，升为契约）。09-25 定的"从 run 入口跑完一个 run"不变 |
+| V2 | **每样本重复次数 k 与预算上限** | **09-28 定：k 做成可调参数**（CLI 旗标，对标 inspect-ai 的 `epochs` / `eval_set`），第一版仍 k=1。预算上限随正式基线再定 |
+| V3 | **机械判定覆盖不到的样本** | **09-28 定：交模型评分器**（model-graded scorer）——评分器作为一种 judger 在 evaluate 启动时注入（inspect-ai 的 scorer 槽位）；结果与机械判定分列（§六-1 已同步修订） |
+| V4 | **基线口径** | **09-28 定：与当前 `check_harness` 相同**（knowledge 开关、各位置模型档都按现状），全部写进 manifest（V9） |
+| V5 | **测评住哪** | **09-28 定：住 `evals/`，改用 inspect-ai 构建**（模块分类映射见下节）。09-25 定的"仓库根级、只经 `build_real` 起跑、要进 git"继续有效；数据来源随 V8 改为 run 返回值 |
+| V6 | **显著性方法** | **09-28 定：暂缓**。k=1 用不上；k>1 时先报 stderr，要不要配对 bootstrap（1000 次、p<0.05）到时再议 |
+| V7 | **报表指标范围** | **09-28 定：第一版只看端到端成功指标**——成功率、pass@k、pass^k；路径 rubric 打分与效率层推后。09-25 定的四条 rubric 条目（拆解质量/卡住换策略/少走冗余路/判定可靠）保留作后续输入 |
+| V8 | **真值数据来源** | **09-28 定：eval 与 trace 解耦**——直接从 run 返回值拿数据，返回值不够就改返回值；现状 `harness/run/harness.py:72-80` 返回裸四元组且 evals 侧完全不消费（report 全靠读 trace，`evals/e2e/report/evaluate.py:26-36`），需改造成结构化返回对象。trace 降为可选对照 |
+| V9 | **manifest 的确切结构** | **09-28 定：manifest 指向所有可能变化处**——图结构、各模块版本、prompt 版本、环境因素、启动参数；在现有 ReportHeader（git/dirty、五链路模型、config 旋钮快照、数据集/知识库哈希，`batch.py:75-92`）上扩，补依赖版本与生成参数。样本起点仍直接用 checkpoint v2 存档（09-25 定不变） |
+| V10 | **trace 插点分级方案** | **已完成（09-25 定：现有 trace 粒度够用，不新增分级；条件检索基于现有字段索引）** |
+| V11 | **case 回收与归因** | **09-28 定：目前不做归因，只做测评记录**——每次批跑挂在 manifest 下留档（报告 / bad case / 参数快照），不悬空。09-25 定的"入库人工确认、产出无条件保留"继续有效 |
+| V12 | **本期测评的成熟度目标** | **09-28 定：由 module-gap-audit 行动表承接**（见下节评级与差距），§九五维矩阵保留作长期参照 |
+
+### 09-28 拍板：inspect-ai 对标（V5 的具体化，骨架重组依据）
+
+evals 现状九个子目录平铺（cases / checks / cli / dataset / process / report / rubric / runner / schemas），
+按 inspect-ai（UK AISI 评测框架）的槽位概念重组：
+
+| inspect-ai 概念 | 职责 | 本项目落点 |
+|---|---|---|
+| **Task**（@task） | dataset + solver + scorer + metrics 的组合单元，每类测评一个 | e2e / judge 过程集 / macros / screen / views 各一个 task 定义 |
+| **Dataset / Sample** | input + target + metadata，版本冻结 | 现有 `EvalSample` + 20 个 state（保留） |
+| **Solver** | 被测对象槽位（可替换） | 包住 `build_real` + `restore_run` 的桥接层（不再写死在 runner 里） |
+| **Scorer** | `(state, target) → Score`，可多挂、一个协议 | `checks/@rule` 18 条 + 红线 + rubric grader 收敛成一个协议；model-graded scorer 注入（V3） |
+| **Metric** | `list[Score] → 聚合值` | 成功率 / pass@k / pass^k（V7 第一版范围） |
+| **eval_set** | epochs / retry / resume / 并发 | 批跑入口（V2 的 k 落这） |
+| **EvalLog** | 统一日志 + header metadata | manifest（V9）+ per-sample 测评记录（V11） |
+
+**module-gap-audit 评级（09-28，21 维）**：✅7 / 🟡3 / 🔴9 / ⚪2（原 22 维含"train/val/test 切分"一维，09-28 拍板不照搬 WikiSkill 协议后移除）。最值钱差距：① 判定三套协议不统一
+（Scorer 收敛）；② epochs / 重试 / 续跑缺位（eval_set 化）；③ 真值耦合 trace（V8 改返回值）；
+④ Metric 无抽象（V7 指标层）；⑤ 边界纯净度三处违规（screen import 被测私有名、红线耦合被测
+config、macros/views 骨架复制）。达标的底座：口径头比 inspect 默认更细、diff 口径全等校验、
+判据注册表防重、真值口径钉死、依赖方向单向。
 
 ## 十二、成功的样子（intent 层验收）
 

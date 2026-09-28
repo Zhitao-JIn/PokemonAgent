@@ -1,7 +1,7 @@
-"""`LiveFeedTrace`：`TracePort` 的装饰器——每落一笔账，顺手把同一条事件推给人在环后端。
+"""`LiveFeedTrace`：`TracePort` 的装饰器——每记一笔账，顺手推给人在环后端。
 
-**盘上的账是唯一真相，这一路只供网页实时看**（`docs/web_reviewer/spec.md` §6.4）：
-`append` 先照常落盘，再把事件丢进有界队列就返回；后台 daemon 线程连后端 `/feed` 发送。
+**存储后端是唯一真相，这一路只供网页实时看**（`docs/web_reviewer/spec.md` §6.4）：
+`append` 先交给 inner trace，再把事件丢进有界队列就返回；后台 daemon 线程连后端 `/feed` 发送。
 队列满了丢最旧的；后端不在或断了就丢弃，每隔几秒重试一次连接，状态变化时各打一行日志。
 它不会让 run 变慢，也不会让 run 失败。
 """
@@ -34,14 +34,15 @@ CONNECT_TIMEOUT_S = 3.0
 class LiveFeedTrace:
     """包在落盘实现外面：写照写、读照读，另外把写出的每条事件异步推给后端。"""
 
-    def __init__(self, inner: TracePort, *, run_id: str, branch: str, url: str) -> None:
+    def __init__(self, inner: TracePort, *, run_id: str, url: str) -> None:
         """接好落盘实现与后端地址，起后台发送线程。
 
-        inner：真正落盘的 `TracePort`。
-        run_id / branch：落盘层会盖进 `meta` 的两件，推送的事件照样盖上（与盘上同形）。
+        inner：真正持久化事件的 `TracePort`。
+        run_id：推送信封（`FromHarnessToReviewBackendFeedReq`）要带的执行线标识；
+            事件 meta 里的 run_id / branch 由 tool 层盖好、这里原样透传（与盘上同形）。
         url：后端地址（`ws://host:port`），事件发往 `url + "/feed"`。
         """
-        self._inner, self._run_id, self._branch, self._url = inner, run_id, branch, url
+        self._inner, self._run_id, self._url = inner, run_id, url
         self._queue: queue.Queue[FromHarnessToReviewBackendFeedReq] = queue.Queue(QUEUE_LIMIT)
         threading.Thread(target=self._pump, name="live-feed", daemon=True).start()
 
@@ -51,18 +52,26 @@ class LiveFeedTrace:
         kind: str,
         meta: dict[str, Any] | None = None,
         content: Any = None,  # noqa: ANN401 —— 账的本体就是任意可 JSON 化的对象
+        *,
+        started_at: float | None = None,
+        ended_at: float | None = None,
     ) -> str:
-        """先落盘（契约同 `TracePort.append`），再把同一条事件放进待发队列。"""
-        event_uuid = self._inner.append(type, kind, meta, content)
+        """先写入 inner trace，再把同一条事件放进待发队列（meta 原样透传）。
+
+        双时刻缺省补推送时刻（与 inner 落盘层的缺省语义一致；不是同一时刻——
+        推送信封只供网页实时看，排序真源在 inner 落盘的封套里）。
+        """
+        event_uuid = self._inner.append(
+            type, kind, meta, content, started_at=started_at, ended_at=ended_at
+        )
+        now = time.time()
         event = TraceEvent(
             uuid=event_uuid,
             kind=kind,
             type=type,
-            ts=time.time(),
-            meta=json.dumps(
-                {**(meta or {}), "run_id": self._run_id, "branch": self._branch},
-                ensure_ascii=False,
-            ),
+            started_at=started_at if started_at is not None else now,
+            ended_at=ended_at if ended_at is not None else now,
+            meta=json.dumps(dict(meta or {}), ensure_ascii=False),
             content=json.dumps(content, ensure_ascii=False),
         )
         self._offer(FromHarnessToReviewBackendFeedReq(run_id=self._run_id, event=event))
@@ -71,6 +80,14 @@ class LiveFeedTrace:
     def read_events(self, meta: dict[str, Any] | None = None) -> list[Event]:
         """原样转给落盘实现。"""
         return self._inner.read_events(meta)
+
+    def flush(self) -> None:
+        """若 inner trace 有发送队列，则委托刷新。"""
+        self._inner.flush()
+
+    def shutdown(self) -> None:
+        """若 inner trace 持有后台资源，则委托关闭。"""
+        self._inner.shutdown()
 
     def _offer(self, item: FromHarnessToReviewBackendFeedReq) -> None:
         """入队；满了先丢最旧的一条。"""

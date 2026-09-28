@@ -1,12 +1,14 @@
-"""trace 包：事件流的存储实现 + 自己的港口协议 + 形状协议。
+"""trace 包：事件流存储实现 + 自己的港口协议 + 形状协议。
 
     interface/  `TracePort`（协议）与 `Event`（形状协议）
-    store.py    `TracePort` 的实现：一条事件一个 json 文件（文件名是时间递增 uuid）
+    store.py    `LocalTrace`：一条事件一个 json 文件（文件名是时间递增 uuid）
+    langfuse_trace.py `LangfuseTrace`：本机自托管 Langfuse SDK / API 实现
+    langfuse_support.py Langfuse SDK 配置、封套编解码与查询辅助函数
     datastore/  `_Event`（私有实现）与 `EventType`（粗类词表）
 
-**一条事件一个 json、全平铺在落盘根下**（0916）：不按 run 分层、也没有
-`events/` 这一层，缺省根是启动目录下的 `tracelog/`。"读哪一批"由
-`read_events(meta=…)` 的交集匹配回答。
+`LocalTrace` 使用一条事件一个 json、全平铺在落盘根下（0916）；`LangfuseTrace`
+则直接通过 SDK / Observations API 访问本机自托管服务。两种实现都通过
+`read_events(meta=…)` 的交集匹配回答读请求，后端可见性时序由各自实现说明。
 
 **本包对 `pokemon_agent` 其余部分零 import**——这是 trace 被当作**独立第三方
 模块**对待的那条边界的字面含义："拷走即可复用"。
@@ -29,17 +31,19 @@
 事件 `kind`/`type`/`content` 的格式规则按"harness 解耦"方案住在
 `tools/trace/render.py`——组装是 tool 层的处理职责，本模块只做存储。
 
-本文件同时是统一出口：`TracePort`/`LocalTrace`/`Event` 都从这里 re-export，
-消费方只写 `from pokemon_agent.trace import LocalTrace, TracePort`。
+本文件同时是统一出口：`TracePort`/`LocalTrace`/`LangfuseTrace`/`Event` 都从这里
+re-export，消费方只写 `from pokemon_agent.trace import LocalTrace, TracePort`。
 """
 
 from .datastore import EventType
 from .interface import Event, TracePort
+from .langfuse_trace import LangfuseTrace
 from .store import LocalTrace, new_event_uuid
 
 __all__ = [
     "Event",
     "EventType",
+    "LangfuseTrace",
     "LocalTrace",
     "TracePort",
     "new_event_uuid",

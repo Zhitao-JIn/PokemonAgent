@@ -22,7 +22,9 @@ def efficiency(stream: RunStream) -> Efficiency:
         use.cached += e.content.cached_tokens
         use.reasoning += e.content.reasoning_tokens
         calls[link] = calls.get(link, 0) + 1
-    times = [e.ts for e in stream.events]
+    # 双时刻定案（2026-09-27）：墙钟跨度 = 最晚操作结束 − 最早操作开始。
+    starts = [e.started_at for e in stream.events]
+    ends = [e.ended_at for e in stream.events]
     return Efficiency(
         tokens_by_link=tokens,
         calls_by_link=calls,
@@ -31,7 +33,7 @@ def efficiency(stream: RunStream) -> Efficiency:
         presses=len(stream.of_kind(TraceKind.PRESS_KEY)),
         episodes=len(stream.of_kind(TraceKind.EPISODE_START)),
         tasks=len(stream.of_kind(TraceKind.TASK_START)),
-        wall_seconds=round(max(times) - min(times), 3) if times else 0.0,
+        wall_seconds=round(max(ends) - min(starts), 3) if ends else 0.0,
     )
 
 

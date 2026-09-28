@@ -11,6 +11,7 @@ dependencies = [
     "fastembed>=0.8",
     "rank-bm25>=0.2",
     "websockets>=16.0",
+    "langfuse>=4.7,<5",
 ]
 # fastembed：本地跑 embedding/reranker（ONNX runtime，不需要 torch），首次用某个模型时
 # 会从 HuggingFace Hub 下一次权重、之后离线复用——这是"混合检索"（关键词 BM25 +
@@ -18,6 +19,8 @@ dependencies = [
 # rank-bm25：纯 Python 的 BM25 实现，混合检索里关键词那一段用它，不用再手写一遍。
 # websockets：人在环后端（`pokemon_agent/review_backend/`）与 `WebReviewer` 之间、
 # 后端与网页之间的 WebSocket；纯 Python，不手写帧。
+# langfuse：可选显式选择的自托管 trace backend（Python SDK v4 + Observations API v2）；
+# LocalTrace 默认仍是 JSON 文件存储。
 # agent-permission（工具/大脑调用上的权限切面）已整体移除接入——见 CHANGELOG.md
 # 2026-09-10 相关条目；不再是依赖，也不再需要 config/context.json、
 # config/permissions.json。
@@ -56,6 +59,10 @@ ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN"]
+# Langfuse 是第三方 SDK 边界：observation 的 input/output/metadata、client 注入口
+# 天然是动态形状（封套本体才是本项目的契约，它有严格类型）。同 tests 豁免 ANN 的逻辑。
+"pokemon_agent/trace/langfuse_trace.py" = ["ANN401"]
+"pokemon_agent/trace/langfuse_support.py" = ["ANN401"]
 
 [tool.pytest.ini_options]
 # `tests/`：pokemon_agent 包各模块的测试。

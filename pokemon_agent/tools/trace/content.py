@@ -61,7 +61,7 @@ class TaskStartContent(_Content):
     goal: str
     success_criteria: str
     max_steps: int
-    start_step: int
+    total_acts: int
 
 
 class TaskEndContent(_Content):
@@ -101,8 +101,6 @@ class MacroCallContent(BaseModel):
 
 class ChooseVerdictContent(_Content):
     sequence: list[Segment]
-    input: str
-    output: str
     macro: MacroCallContent | None = None
     human_note: str = ""
 
@@ -141,8 +139,6 @@ class JudgeVerdictContent(_Content):
     termination: str
     fail_streak: str
     judge_reason: str
-    input: str | None = None
-    output: str | None = None
     audit: str
     human_note: str
 
@@ -158,8 +154,6 @@ class DecomposeVerdictContent(_Content):
     tasks: list[DecomposedTask]
     why: str
     human_note: str
-    input: str | None = None
-    output: str | None = None
 
 
 class PlanVerdictContent(_Content):
@@ -167,15 +161,11 @@ class PlanVerdictContent(_Content):
     updates: list[Any]
     why: str
     human_note: str
-    input: str | None = None
-    output: str | None = None
 
 
 class VerifyVerdictContent(_Content):
     checked: int
     negative: int
-    input: str
-    output: str
 
 
 class ModelCallContent(BaseModel):

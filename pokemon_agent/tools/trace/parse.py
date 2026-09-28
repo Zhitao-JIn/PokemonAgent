@@ -88,7 +88,8 @@ class ParsedEvent(BaseModel):
     uuid: str
     kind: str
     type: str
-    ts: float
+    started_at: float
+    ended_at: float
     meta: EventMeta
     content: BaseModel
 
@@ -104,7 +105,8 @@ def parse(event: TraceEvent) -> ParsedEvent:
         uuid=event.uuid,
         kind=event.kind,
         type=event.type,
-        ts=event.ts,
+        started_at=event.started_at,
+        ended_at=event.ended_at,
         meta=EventMeta.model_validate(json.loads(event.meta)),
         content=model.model_validate(json.loads(event.content)),
     )
