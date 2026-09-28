@@ -16,6 +16,10 @@
 判定、拆解、收尾都只用 perceive 装好的 `ep_ctx`，不再自己查库。
 队列空了 `plan_episode` 才问 decomposer 拆下一串 task。
 
+**账面步号（0928 定稿）**：圈号语义——`episode_start` 落 0、圈中与收尾账一律
+`step + 1`，同圈所有账共用；与 `total_acts`（帧观测的局内累计键数，帧槽 /
+记忆坐标口径）解耦。task 层同式（`task_start` 落 0、`task 内 step + 1`）。
+
 **预算按本层单位**：`goal.max_steps` 是 **task 数**；`total_acts` 只作
 键号基数与统计。活对象一个都不进来，它们住 `EpisodeRuntime`。
 """
@@ -29,6 +33,7 @@ from pokemon_agent.brain.interface import VerifyVerdict
 from pokemon_agent.schemas.harness import FromHarnessToMemoryToolQueryKnowledgeResp
 from pokemon_agent.schemas.harness.domain import (
     EpisodeOutput,
+    JudgeFeedback,
     Settled,
     TaskEntry,
     TaskOutput,
@@ -45,7 +50,7 @@ class EpisodeContext(BaseModel):
         default=None, description="本圈 sense 取的当前帧（完整档）；进图前为 None"
     )
     task_memories: list[TaskMemory] = Field(
-        default_factory=list, description="本局全部 TaskMemory（按 start_step 升序）"
+        default_factory=list, description="本局全部 TaskMemory（按 total_acts 升序）"
     )
     global_episode_memories: list[EpisodeMemory] = Field(
         default_factory=list, description="本 run 的跨局摘要"
@@ -72,10 +77,20 @@ class EpisodeRunState(Settled, BaseModel):
     goal: Task = Field(description="本局唯一目标；`max_steps` 单位是 task 数")
 
     step: int = Field(
-        default=0, ge=0, description="已派 task 数——预算判据 `step >= goal.max_steps`"
+        default=0,
+        ge=0,
+        description=(
+            "已派 task 数——预算判据 `step >= goal.max_steps`；"
+            "账面步号（圈号）= step + 1，与 total_acts 解耦（0928 定稿）"
+        ),
     )
     total_acts: int = Field(
-        default=0, ge=0, description="累计键数：下一个 task 的 start_step，也是统计量"
+        default=0,
+        ge=0,
+        description=(
+            "累计键数：派 task 时作为快照带下去（TaskInput.total_acts），也是统计量；"
+            "帧观测的局内累计键数由它盖章（perceive 的 sense）"
+        ),
     )
     fail_streak: int = Field(
         default=0, ge=0, description="连续失败 task 数——停摆判据 `>= EPISODE_STALL_LIMIT`"
@@ -101,6 +116,11 @@ class EpisodeRunState(Settled, BaseModel):
     judge_reason: str = Field(
         default="",
         description="review_and_judge 写的判定依据（判定员的理由 / 机械判停类别）；与 reason 分开",
+    )
+    last_judge: JudgeFeedback | None = Field(
+        default=None,
+        description="本局上一次判定及人的表态——本局继续跑时由 review_and_judge 写，"
+        "下一次 plan_episode 放进拆解请求",
     )
 
     task_verdicts: list[VerifyVerdict] = Field(

@@ -8,7 +8,7 @@
 | 人不满意的是 | LLM 返回的多字段结构体 | 一个已给的单一结论 |
 | 人做什么 | 说一句"不对"（可不说） | 表态：认 / 推翻 |
 | 谁出最终结果 | **LLM 带着这句重填** | **人自己** |
-| 落点 | plan 位置 + observe / think / act / judge | **只有 `review` 节点** |
+| 落点 | **只在 plan 格**（`plan_run` / `plan_episode`） | **只在 `review_and_judge` 格** |
 
 **"接管（人自己按键）"不存在**：`act` 要处理的 `Action` 字段多，人填不了，
 所以它也是插话——人**从不手填任何字段**。
@@ -29,6 +29,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerAuditReq,
     FromHarnessToReviewerAuditResp,
     FromHarnessToReviewerInjectReq,
+    FromHarnessToReviewerInjectResp,
 )
 
 
@@ -36,15 +37,14 @@ from pokemon_agent.schemas.harness import (
 class Reviewer(Protocol):
     """人在环里的两个动作：插话（对表单提意见）与审（对结论表态）。"""
 
-    def inject(self, req: FromHarnessToReviewerInjectReq) -> str:
+    def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
         """**插话**：把一张表单亮给人，收一句反馈。
 
         req：给人看的说明 + 那个结构体本体。
-        后置条件：返回人说的话；**空串 = 人没有意见**（这是常态，不是失败）。
-            实现**不重问 LLM**——"带着这句重问"是调用方节点的事（见
-            `harness/episode/decide/think_action.py`）。
-        不抛异常：人在超时/无语时返回空串即可（超时阈值由实现自己定，
-            `ConsoleReviewer` 读 `pokemon_agent.config.CONSOLE_REVIEW_TIMEOUT`）。
+        后置条件：`resp.text` 是人说的话，**空串 = 人没有意见**（这是常态，不是失败）；
+            没人答（超时 / 断连 / 无人值守）时 `text=""`、`answered=False`。
+            实现**不重问 LLM**——"带着这句重问"是调用方节点的事（`plan_run` / `plan_episode`）。
+        不抛异常：超时阈值由实现自己定。
         """
         ...
 
@@ -52,9 +52,9 @@ class Reviewer(Protocol):
         """**审**：把一条结论亮给人，收一个表态。
 
         req：这一局的机械结算 + 该局完整 trace。
-        后置条件：永远返回一个表态（认 / 推翻）。人没答复时按**认账**处理
-            （"没答复就算通过"——与旧的 `HumanReviewer` 契约一致）。
-        推翻时 `resp.note` 是纠正理由，调用方把它拼进后续提示词的**最末尾**。
+        后置条件：永远返回一个表态（认 / 推翻）。没人答时按**认账**处理、`answered=False`。
+        推翻时 `resp.note` 是理由：审结果时 harness 把它写进表里那一行，
+            审裁决时写进本层 `last_judge`——下一次 plan 都看得见。
         """
         ...
 

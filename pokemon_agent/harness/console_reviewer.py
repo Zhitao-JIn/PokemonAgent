@@ -14,8 +14,10 @@
    `docs/PLAN_console_reviewer.md` §3.2）。
 
 **超时**（用户定调）：读 `pokemon_agent.config.CONSOLE_REVIEW_TIMEOUT`（默认 30s）。
-超时按"人没意见"处理——插话回空串、审回认账。**这是控制台实现自己的策略**，
-不是 `Reviewer` 契约的一部分（无头实现 `NullReviewer` 没有超时概念）。
+超时按"人没意见"处理——插话回空串、审回认账，并标 `answered=False`。
+**这是控制台实现自己的策略**，不是 `Reviewer` 契约的一部分。
+
+**渲染**走 `harness/review_render.py`，与 `WebReviewer` 同一份口径。
 
 **为什么这里用线程读 stdin 做超时**：`input()` 没有超时参数，而"等 30 秒没人打字
 就继续"要求可中断。用一条守护线程把 `input()` 阻塞包起来、主线程 `join(timeout)`
@@ -27,7 +29,6 @@ from __future__ import annotations
 import contextlib
 import sys
 import threading
-from typing import Any
 
 from pokemon_agent.config import CONSOLE_REVIEW_TIMEOUT
 from pokemon_agent.schemas.harness import (
@@ -35,8 +36,10 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerAuditReq,
     FromHarnessToReviewerAuditResp,
     FromHarnessToReviewerInjectReq,
+    FromHarnessToReviewerInjectResp,
 )
-from pokemon_agent.schemas.harness.domain import TaskOutput
+
+from .review_render import audit_prompt, format_form, render_outcome
 
 
 class ConsoleReviewer:
@@ -53,11 +56,11 @@ class ConsoleReviewer:
 
     # ---- 内部：带超时地读一行 ----
 
-    def _read_line(self, prompt: str) -> str:
-        """打印 prompt，等 `timeout` 秒读一行；超时返回空串。
+    def _read_line(self, prompt: str) -> str | None:
+        """打印 prompt，等 `timeout` 秒读一行；超时或 EOF 返回 None。
 
         前置条件：prompt 已是要给人看的完整文本（本方法不加工它）。
-        后置条件：返回读到的行（`strip()` 过）；超时或 EOF 返回空串。
+        后置条件：返回读到的行（`strip()` 过，空行是 `""`）；超时或 EOF 返回 None。
         """
         sys.stdout.write(prompt)
         if not prompt.endswith("\n"):
@@ -66,7 +69,7 @@ class ConsoleReviewer:
 
         if self._timeout <= 0:
             line = sys.stdin.readline()
-            return line.strip()
+            return line.strip() if line else None
 
         box: list[str] = []
 
@@ -81,42 +84,35 @@ class ConsoleReviewer:
             # 超时：守护线程继续挂着等 stdin（不阻塞进程退出，daemon 线程随主线程结束）
             sys.stdout.write(f"（{self._timeout:g}s 无答复，按「没有意见」继续）\n")
             sys.stdout.flush()
-            return ""
-        return (box[0] or "").strip()
+            return None
+        return box[0].strip() if box[0] else None
 
     # ---- Reviewer 契约的两个方法 ----
 
-    def inject(self, req: FromHarnessToReviewerInjectReq) -> str:
-        """**插话**：把表单亮给人，收一句反馈（空串 = 没意见）。"""
+    def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
+        """**插话**：把表单亮给人，收一句反馈（空串 = 没意见；超时 `answered=False`）。"""
         self._render_form(req)
-        return self._read_line(">>> 有意见就说（直接回车 = 没有）: ")
+        line = self._read_line(">>> 有意见就说（直接回车 = 没有）: ")
+        if line is None:
+            return FromHarnessToReviewerInjectResp(text="", answered=False)
+        return FromHarnessToReviewerInjectResp(text=line, answered=True)
 
     def audit(self, req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
         """**审**：把这一局（或这个 task）的裁定亮给人，收一个表态。
 
-        人答 `o`（overturn）就推翻——接着读一行当纠正理由；其余输入（含超时、
-        空行）一律按**认账**处理（"没答复就算通过"，与旧 `HumanReviewer` 契约一致）。
+        人答 `o`（overturn）就推翻——接着读一行当理由；空行或其它输入按**认账**；
+        超时按认账并标 `answered=False`。
         """
-        outcome = req.outcome
-        verdict_line = "成功" if outcome.success else "失败"
-        if isinstance(outcome, TaskOutput):
-            what, who = "这个 task", f"  task   {req.task_id}（局 {req.episode_id}）\n"
-            counts = f"{outcome.steps_used} 键"
-        else:
-            what, who = "这一局", f"  局号   {req.episode_id}\n"
-            counts = f"{outcome.tasks_used} 个 task / {outcome.acts_used} 键"
-        header = (
-            f"\n=== 审查：{what}算成算败 ===\n"
-            f"{who}"
-            f"  裁定   {verdict_line}（{outcome.termination.value}，{counts}）\n"
-            f"  依据   {outcome.judge_reason or '（无）'}\n"
-            f"  结论   {outcome.reason or '（无）'}\n"
-        )
+        header = f"\n=== {audit_prompt(req)} ===\n{render_outcome(req)}"
         answer = self._read_line(header + ">>> 回车 = 认账；输入 o = 推翻: ")
+        if answer is None:
+            return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=False)
         if answer.lower() in {"o", "overturn"}:
-            note = self._read_line(">>> 纠正理由（会拼在后续提示词最末尾）: ")
-            return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.OVERTURN, note=note)
-        return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT)
+            note = self._read_line(">>> 推翻理由（下一次 plan 会看到）: ") or ""
+            return FromHarnessToReviewerAuditResp(
+                verdict=AuditVerdict.OVERTURN, note=note, answered=True
+            )
+        return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=True)
 
     # ---- 渲染 ----
 
@@ -131,15 +127,7 @@ class ConsoleReviewer:
         print(f"\n=== 插话：{req.prompt} ===")
         if req.form_kind:
             print(f"  （表单类型：{req.form_kind}）")
-        print(f"  {_format_form(req.form)}")
-
-
-def _format_form(form: Any) -> str:  # noqa: ANN401 —— 信封的 form 本来就是任意结构体
-    """把一个结构体渲染成给人读的文本（尽力而为，不抛）。"""
-    dump = getattr(form, "model_dump_json", None)
-    if callable(dump):
-        return dump(indent=2)
-    return str(form)
+        print(f"  {format_form(req.form)}")
 
 
 __all__ = ["ConsoleReviewer"]

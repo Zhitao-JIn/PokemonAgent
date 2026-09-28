@@ -25,13 +25,13 @@ def dispatch_task(state: EpisodeRunState) -> dict[str, Any]:
     )
     entry = state.tasks[index]
 
-    # 步骤 1：标 RUNNING，装配 TaskInput（键号基数 = 本局累计键数）。
+    # 步骤 1：标 RUNNING，装配 TaskInput（快照 = 本局累计键数，task 内恒定）。
     running = entry.model_copy(update={"status": EntryStatus.RUNNING})
     task_input = TaskInput(
         run_id=state.run_id,
         episode_id=state.episode_id,
         task=entry.task,
-        start_step=state.total_acts,
+        total_acts=state.total_acts,
         knowledge=current_knowledge(state),
     )
     tasks = [*state.tasks[:index], running, *state.tasks[index + 1 :]]

@@ -15,7 +15,7 @@ def settle_task_error(
 ) -> TaskOutput:
     """记 `task_error`；`AgentError` 兜成 `ERROR` 结算，别的原样上抛。
 
-    `steps_used` 从账上数（这个 task 已落的 `press_key` 条数）：键已经按出去了，
+    `steps_used` 从账上数（这个 task 已落的 `press_key` 与 `run_macro` 条数）：键已经按出去了，
     下一个 task 的键号基数得跟着往后挪，否则帧号会重。
     source：接住异常的位置（`"episode.act"` / `"checkpoint.restore"`），
         记进 `task_error` 的 `meta.source`。
@@ -26,7 +26,7 @@ def settle_task_error(
         for ev in deps.trace.read_events(
             {"run_id": task_input.run_id, "episode_id": task_input.episode_id, "task_id": task_id}
         )
-        if ev.kind == TraceKind.PRESS_KEY
+        if ev.kind in (TraceKind.PRESS_KEY, TraceKind.RUN_MACRO)
     )
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
@@ -35,7 +35,7 @@ def settle_task_error(
                 "source": source,
                 "episode_id": task_input.episode_id,
                 "task_id": task_id,
-                "step": task_input.start_step + presses,
+                "step": presses + 1,
             },
             error=exc_snapshot(exc),
         )

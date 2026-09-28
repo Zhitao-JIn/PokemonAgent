@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from langgraph.runtime import Runtime
@@ -52,14 +53,17 @@ def retrieve_knowledge_semantic_memory(
     if not _needs_refresh(state):
         return {}
     deps = runtime.context
-    obs, ep, step = state.ep_ctx.observation, state.episode_id, state.ep_ctx.observation.step
+    obs = state.ep_ctx.observation
+    ep, step = state.episode_id, state.step + 1  # 账面步号 = 圈号（0928 定稿）
     query = build_knowledge_query(obs, state.goal.goal)
+    t0 = time.time()
     result = deps.memory.query_knowledge(
         FromHarnessToMemoryToolQueryKnowledgeReq(
             query=query,
             limit=MEMORY_RECALL_LIMIT,
         )
     )
+    t1 = time.time()
     # `refs` 列的是 `sources`（命中记录的文件名）——`contents` 与 `sources` 由
     # `memory_tool.query_knowledge` 在同一个循环里成对 append、**恒等长**，
     # 所以"命中几条"就是 `refs` 的长度，不必再单记一个数（0914 跟进）。
@@ -71,11 +75,13 @@ def retrieve_knowledge_semantic_memory(
             meta={
                 "source": "retrieve_knowledge_semantic_memory",
                 "episode_id": ep,
-                "task_id": ep,
+                "task_id": "",
                 "step": step,
             },
             query=query,
             refs=list(result.sources),
+            started_at=t0,
+            ended_at=t1,
         )
     )
     return {

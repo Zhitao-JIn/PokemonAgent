@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from .macro_spec import MacroSpec
+
 
 class ActionSpace(BaseModel):
     """**喂给大脑的**当前可用动作集合（state-dependent action masking）。
@@ -12,7 +14,7 @@ class ActionSpace(BaseModel):
     增长的是掩码之外的 skill library（本阶段不做）。
     """
 
-    names: list[str] = Field(description="可用按键名，非空")
+    names: list[str] = Field(description="可用按键名；接管场合为空（改给 `macros`）")
     descriptions: dict[str, str] = Field(
         default_factory=dict, description="动作名 -> 给 LLM 读的说明"
     )
@@ -31,6 +33,15 @@ class ActionSpace(BaseModel):
         "地图/证据规则挂在'可用按键'标题下面会位置和内容对不上。",
     )
 
+    macros: list[MacroSpec] = Field(
+        default_factory=list,
+        description="本场合可调的宏；常规场合为空。`names` 与 `macros` 至少一个非空",
+    )
+
     def contains(self, name: str) -> bool:
         """这个按键在不在当前动作空间里。"""
         return name in self.names
+
+    def macro(self, name: str) -> MacroSpec | None:
+        """按名字找本空间里的宏；没有为 None。"""
+        return next((m for m in self.macros if m.name == name), None)

@@ -63,7 +63,7 @@ def store_object_semantic_memory(state: TaskState, runtime: Runtime[TaskRuntime]
                     "source": "store_object_semantic_memory",
                     "episode_id": ep,
                     "task_id": state.task.task_id,
-                    "step": before.step,
+                    "step": state.step + 1,
                 },
                 event=event,
             )

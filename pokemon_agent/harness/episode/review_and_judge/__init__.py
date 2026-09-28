@@ -10,8 +10,9 @@ TaskMemory 的章保留机器判定，任务表是最终定案。
 
 ①机械：世界结束（`obs.done`）/ 停摆（`fail_streak >= EPISODE_STALL_LIMIT`）/
 task 数预算尽（`step >= goal.max_steps`）。②模型：派过至少一个 task 之后问
-"本局目标达成没有"（素材是 perceive 装好的本局 TaskMemory），判成即 `GOAL_DONE`；
-人可插话，带话重问直到没意见。`reason` 不在这里写。
+"本局目标达成没有"（素材是 perceive 装好的本局 TaskMemory）；判成时亮给人**审**——
+认账即 `GOAL_DONE`，推翻则本局继续。审格不重问模型：本局继续跑时，判定员的话与人的
+推翻理由写进 `last_judge`，由下一次 `plan_episode` 带给拆解。`reason` 不在这里写。
 """
 
 from __future__ import annotations
@@ -25,14 +26,13 @@ from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeReq,
     FromHarnessToReviewerAuditReq,
-    FromHarnessToReviewerInjectReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
 from pokemon_agent.schemas.harness.domain import EntryStatus, TaskOutput, Termination
 
 from ...judging import ask_judger, judge_reason, mechanical_termination, record_verdict
-from ...reviewing import ask_audit, ask_inject
+from ...reviewing import ask_audit, audit_judgement
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState, current_goal
 
@@ -42,7 +42,8 @@ _SOURCE = "review_and_judge"
 def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str, Any]:
     """定案上一个 task，再两段式判停；返回 `{"termination"}` 加定案的增量。"""
     deps = runtime.context
-    ep, step = state.episode_id, state.ep_ctx.observation.step
+    # 账面步号 = 圈号（0928 定稿）：episode_start 落 0、每圈 +1，同圈所有账共用。
+    ep, step = state.episode_id, state.step + 1
 
     # 步骤 0：刚跑完一个 task 就定案那条 RUNNING（首圈没有）。
     updates: dict[str, object] = {}
@@ -58,50 +59,44 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
         exhausted=state.step >= state.goal.max_steps,
     )
     verdict = None
-    note = ""
+    feedback = None
 
-    # 步骤 2：问模型（带插话循环），判成覆盖机械结论。
+    # 步骤 2：问模型；判成时亮给人审，认账才覆盖机械结论。
     if state.step > 0:
-        while True:
-            req = FromHarnessToBrainToolJudgeReq(
-                goal=current_goal(state),
-                task_memories=state.ep_ctx.task_memories,
-                task_table=updates.get("tasks", state.tasks),
-                human_note=note,
-            )
-            verdict = ask_judger(
-                deps.judger, deps.trace, req, source=_SOURCE, episode_id=ep, task_id=ep, step=step
-            )
-            reply = ask_inject(
-                deps.reviewer,
-                deps.trace,
-                FromHarnessToReviewerInjectReq(
-                    prompt=f"请审本局判定（第 {state.step} 个 task 之后："
-                    f"{'判成' if verdict.done else '判未成'}）",
-                    form=verdict,
-                    form_kind="JudgeVerdict",
-                ),
-                meta={"source": _SOURCE, "episode_id": ep, "task_id": ep, "step": step},
-            )
-            if not reply:
-                break
-            note = reply
-        if verdict.done:
+        meta = {"source": _SOURCE, "episode_id": ep, "task_id": "", "step": step}
+        req = FromHarnessToBrainToolJudgeReq(
+            goal=current_goal(state),
+            task_memories=state.ep_ctx.task_memories,
+            task_table=updates.get("tasks", state.tasks),
+        )
+        verdict = ask_judger(deps.judger, deps.trace, req, **meta)
+        feedback = audit_judgement(
+            deps.reviewer, deps.trace, verdict, run_id=state.run_id, meta=meta
+        )
+        if feedback.audit is AuditVerdict.ACCEPT:
             termination = Termination.GOAL_DONE
+        else:
+            updates["last_judge"] = feedback
 
     # 步骤 3：记结论。
-    reason_for_judge = judge_reason(termination, verdict, not_asked="还没派过 task，不问模型")
+    overturned = feedback is not None and feedback.audit is AuditVerdict.OVERTURN
+    reason_for_judge = judge_reason(
+        termination,
+        verdict,
+        not_asked="还没派过 task，不问模型",
+        overturn_note=feedback.note if overturned else None,
+    )
     record_verdict(
         deps.trace,
         source=_SOURCE,
         episode_id=ep,
-        task_id=ep,
+        task_id="",
         step=step,
         termination=termination,
         judge_reason=reason_for_judge,
         fail_streak=state.fail_streak,
-        verdict=verdict,
-        human_note=note,
+        audit=feedback.audit if feedback is not None else None,
+        human_note=feedback.note if overturned else "",
     )
     return {**updates, "termination": termination, "judge_reason": reason_for_judge}
 
@@ -133,8 +128,8 @@ def _settle(deps: EpisodeRuntime, state: EpisodeRunState, outcome: TaskOutput) -
         meta={
             "source": _SOURCE,
             "episode_id": state.episode_id,
-            "task_id": state.episode_id,
-            "step": state.ep_ctx.observation.step,
+            "task_id": "",
+            "step": state.step + 1,
         },
     )
     overturned = resp.verdict is AuditVerdict.OVERTURN
@@ -169,8 +164,8 @@ def _settle(deps: EpisodeRuntime, state: EpisodeRunState, outcome: TaskOutput) -
             meta={
                 "source": _SOURCE,
                 "episode_id": state.episode_id,
-                "task_id": state.episode_id,
-                "step": state.ep_ctx.observation.step,
+                "task_id": "",
+                "step": state.step + 1,
             },
             task_entry=stamped,
             audit=resp.verdict.value,

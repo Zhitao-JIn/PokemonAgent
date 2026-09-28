@@ -4,9 +4,12 @@
    都是终态、不自动重派）→ 亮给人审，推翻则盖反面、`overturned=True`、修正 `fail_streak`
    → 记 `settle_goal`。（一局一条 EpisodeMemory 由 episode 层自己保证，本格不写记忆。）
    （收结算在 perceive 的 `absorb_episode`。）
-2. 机械三类：上一局终局帧 `obs.done` / `fail_streak >= RUN_STALL_LIMIT` /
+2. 机械三类：本圈 perceive 取的帧 `obs.done`（run 层自己取帧，0928 起不再借上一局
+   结算带回的旧画面；首圈也有帧——世界起点的画面）/ `fail_streak >= RUN_STALL_LIMIT` /
    `step >= RUN_MAX_EPISODES`。
-3. 问模型"run_goal 达成没有"（素材是 `plan_ctx.index` 局摘要），判成即 `GOAL_DONE`。
+3. 问模型"run_goal 达成没有"（素材是 `plan_ctx.index` 局摘要）；判成时亮给人**审**——
+   认账即 `GOAL_DONE`，推翻则 run 继续。run 继续跑时，判定员的话与人的推翻理由写进
+   `last_judge`，由下一次 `plan_run` 带给规划。
 
 失败盖 FAILED 而非 PENDING：要不要重试是 `plan_run` 的决策（它可以把 FAILED 重开）。
 """
@@ -30,7 +33,7 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.harness.domain import EntryStatus, EpisodeOutput, GoalEntry, Termination
 
 from ...judging import ask_judger, judge_reason, mechanical_termination, record_verdict
-from ...reviewing import ask_audit
+from ...reviewing import ask_audit, audit_judgement
 from ..run_state import RunState
 from ..runtime import RunRuntime
 
@@ -82,40 +85,59 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
     last = state.episode_outputs[-1] if state.episode_outputs else None
 
     # 步骤 2：机械三类；还没跑过局时不问模型。
+    # world_ended 读本圈 perceive 刚取的帧（世界层自己的信号）——旧口径读上一局
+    # 结算带回的画面（首圈还是 None），run 层自己取帧后这里看的是当前画面。
     termination = mechanical_termination(
-        world_ended=bool(last and last.observation and last.observation.done),
+        world_ended=bool(state.observation and state.observation.done),
         stalled=fail_streak >= RUN_STALL_LIMIT,
         exhausted=state.step >= RUN_MAX_EPISODES,
     )
     verdict = None
+    feedback = None
 
-    # 步骤 3：问模型"run_goal 达成没有"（素材是本 run 的局摘要），判成覆盖机械结论。
+    # 步骤 3：问模型"run_goal 达成没有"（素材是本 run 的局摘要）；判成时亮给人审，认账才覆盖。
     if last is not None:
         index = state.plan_ctx.index if state.plan_ctx is not None else []
+        meta = {
+            "source": _SOURCE,
+            "episode_id": state.run_id,
+            "task_id": state.run_id,
+            # 圈号语义（0928 定稿，与 episode/task 两层同构）。
+            "step": state.step + 1,
+        }
         verdict = ask_judger(
             deps.judger,
             deps.trace,
             FromHarnessToBrainToolJudgeReq(goal=state.run_goal, episode_memories=index),
-            source=_SOURCE,
-            episode_id=state.run_id,
-            task_id=state.run_id,
-            step=state.step,
+            **meta,
         )
-        if verdict.done:
+        feedback = audit_judgement(
+            deps.reviewer, deps.trace, verdict, run_id=state.run_id, meta=meta
+        )
+        if feedback.audit is AuditVerdict.ACCEPT:
             termination = Termination.GOAL_DONE
+        else:
+            updates["last_judge"] = feedback
 
     # 步骤 4：记结论。
-    reason_for_judge = judge_reason(termination, verdict, not_asked="还没跑过局，不问模型")
+    overturned = feedback is not None and feedback.audit is AuditVerdict.OVERTURN
+    reason_for_judge = judge_reason(
+        termination,
+        verdict,
+        not_asked="还没跑过局，不问模型",
+        overturn_note=feedback.note if overturned else None,
+    )
     record_verdict(
         deps.trace,
         source=_SOURCE,
         episode_id=state.run_id,
         task_id=state.run_id,
-        step=state.step,
+        step=state.step + 1,
         termination=termination,
         judge_reason=reason_for_judge,
         fail_streak=fail_streak,
-        verdict=verdict,
+        audit=feedback.audit if feedback is not None else None,
+        human_note=feedback.note if overturned else "",
     )
     return {**updates, "termination": termination, "judge_reason": reason_for_judge}
 
@@ -146,7 +168,7 @@ def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[s
             "source": _SOURCE,
             "episode_id": state.run_id,
             "task_id": state.run_id,
-            "step": state.step,
+            "step": state.step + 1,
         },
     )
     fail_streak = state.fail_streak
@@ -164,7 +186,7 @@ def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[s
                 "source": _SOURCE,
                 "episode_id": state.run_id,
                 "task_id": state.run_id,
-                "step": state.step,
+                "step": state.step + 1,
             },
             goal=stamped,
             audit=resp.verdict.value,

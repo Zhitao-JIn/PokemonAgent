@@ -2,7 +2,9 @@
 
     身份    run_id / run_goal / goals              new_run 写；goals 另由 plan_run/review 改
     计数    step（已派局数）/ fail_streak          act 写 / perceive 写（人审推翻时 review 修正）
-    感知    plan_ctx（局索引 + 详情 + 地图事实）    perceive 写
+            total_acts（跨局累计键数）              perceive 的 absorb 累加
+    感知    observation（本圈取的一帧）            perceive 的 sense 写
+            plan_ctx（局索引 + 详情 + 地图事实）    perceive 写
             pending_episode（刚跑完的结算）        act 写，perceive 吸收后清
             episode_outputs（全部结算）            perceive 写
     交界    episode_input（本局入参）              act 的 dispatch 写
@@ -22,10 +24,12 @@ from pokemon_agent.schemas.harness.domain import (
     EpisodeInput,
     EpisodeOutput,
     GoalEntry,
+    JudgeFeedback,
     Settled,
     Termination,
 )
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
+from pokemon_agent.world import Observation
 
 
 class PlanContext(BaseModel):
@@ -51,6 +55,18 @@ class RunState(Settled, BaseModel):
     fail_streak: int = Field(
         default=0, ge=0, description="连续失败局数——停摆判据 `>= RUN_STALL_LIMIT`"
     )
+    total_acts: int = Field(
+        default=0,
+        ge=0,
+        description="跨局累计键数——absorb_episode 时累加各局 `acts_used`；run 层帧观测的"
+        " `step` 盖它（局外帧没有「局内键数」语义，0928 定稿）",
+    )
+
+    observation: Observation | None = Field(
+        default=None,
+        description="本圈 sense 取的一帧（run 层唯一向世界取帧的地方，perceive 的 sense 写）；"
+        "None = 还没取过。review_and_judge 的机械判停读 `observation.done`",
+    )
 
     plan_ctx: PlanContext | None = Field(
         default=None, description="perceive 写；只在进图第一格时为 None"
@@ -72,6 +88,11 @@ class RunState(Settled, BaseModel):
     judge_reason: str = Field(
         default="",
         description="review_and_judge 写的判定依据（判定员的理由 / 机械判停类别）；与 reason 分开",
+    )
+    last_judge: JudgeFeedback | None = Field(
+        default=None,
+        description="本 run 上一次判定及人的表态——run 继续跑时由 review_and_judge 写，"
+        "下一次 plan_run 放进规划请求",
     )
 
 

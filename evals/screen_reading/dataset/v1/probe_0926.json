@@ -1,0 +1,802 @@
+{
+ "scenarios": [
+  {
+   "state": "knowledge_movement_obstacle",
+   "steps": [
+    "@field_walk"
+   ]
+  },
+  {
+   "state": "knowledge_movement_obstacle",
+   "bag": true,
+   "steps": [
+    "start",
+    60,
+    "@start_menu",
+    "down",
+    "a",
+    80,
+    "@bag_p1",
+    "down",
+    "down",
+    "down",
+    "@bag_p2",
+    "down",
+    "down",
+    "down",
+    "down",
+    "@bag_p3",
+    "down",
+    "@bag_last",
+    "up",
+    "up",
+    "up",
+    "up",
+    "up",
+    "up",
+    "up",
+    "a",
+    60,
+    "@bag_use_toss",
+    "down",
+    "a",
+    60,
+    "@bag_toss_qty"
+   ]
+  },
+  {
+   "state": "knowledge_movement_obstacle",
+   "steps": [
+    "start",
+    60,
+    "a",
+    80,
+    "@field_party_list",
+    "a",
+    60,
+    "@field_party_sub",
+    "a",
+    120,
+    "@stats_page"
+   ]
+  },
+  {
+   "state": "knowledge_movement_obstacle",
+   "steps": [
+    "start",
+    60,
+    "down",
+    "down",
+    "a",
+    120,
+    "@trainer_card"
+   ]
+  },
+  {
+   "state": "knowledge_movement_obstacle",
+   "steps": [
+    "start",
+    60,
+    "down",
+    "down",
+    "down",
+    "down",
+    "a",
+    120,
+    "@option_screen"
+   ]
+  },
+  {
+   "state": "knowledge_dialogue_advance",
+   "steps": [
+    "@dialog_advance_0",
+    "a",
+    120,
+    "@dialog_advance_1"
+   ]
+  },
+  {
+   "state": "knowledge_battle_action_menu",
+   "steps": [
+    "@battle_menu",
+    "right",
+    "@battle_menu_pkmn",
+    "left",
+    "down",
+    "@battle_menu_item",
+    "left",
+    "up",
+    "a",
+    80,
+    "@move_list",
+    "down",
+    "@move_list_2"
+   ]
+  },
+  {
+   "state": "knowledge_battle_item_use",
+   "bag": true,
+   "steps": [
+    "down",
+    20,
+    "a",
+    80,
+    "@battle_bag",
+    "down",
+    "down",
+    "down",
+    "down",
+    "@battle_bag_scroll",
+    "up",
+    "up",
+    "up",
+    "up",
+    "a",
+    80,
+    "@battle_use_on_which"
+   ]
+  },
+  {
+   "state": "knowledge_battle_pokemon_switch",
+   "steps": [
+    "right",
+    20,
+    "a",
+    120,
+    "@battle_party_1",
+    "down",
+    "@battle_party_2",
+    "a",
+    60,
+    "@battle_party_sub"
+   ]
+  },
+  {
+   "state": "knowledge_shop_open_buy_menu",
+   "steps": [
+    "@shop_menu",
+    "down",
+    "@shop_menu_sell",
+    "up",
+    "a",
+    120,
+    "@shop_list_top",
+    "down",
+    "down",
+    "down",
+    "down",
+    "@shop_list_scroll"
+   ]
+  },
+  {
+   "state": "knowledge_shop_confirm_purchase",
+   "steps": [
+    "@shop_list",
+    "a",
+    120,
+    "@shop_qty_1",
+    "up",
+    "@shop_qty_2",
+    "a",
+    120,
+    "@shop_confirm",
+    "a",
+    120,
+    "@shop_after"
+   ]
+  },
+  {
+   "state": "knowledge_pc_save",
+   "steps": [
+    "@pc_bill_menu",
+    "a",
+    60,
+    "@pc_deposit_list",
+    "a",
+    30,
+    "@pc_deposit_sub"
+   ]
+  },
+  {
+   "state": "knowledge_pc_save",
+   "steps": [
+    "down",
+    "down",
+    "down",
+    "a",
+    120,
+    "@pc_top",
+    "down",
+    "a",
+    120,
+    "a",
+    120,
+    "a",
+    120,
+    "@pc_red_menu",
+    "a",
+    120,
+    "@pc_withdraw_list",
+    "a",
+    120,
+    "@pc_how_many",
+    "up",
+    "@pc_how_many_up",
+    "a",
+    120,
+    "@pc_withdrew"
+   ]
+  },
+  {
+   "state": "knowledge_pc_save",
+   "steps": [
+    "up",
+    "up",
+    "up",
+    "up",
+    "up",
+    "down",
+    "down",
+    "down",
+    "a",
+    60,
+    "a",
+    40,
+    "a",
+    60,
+    "a",
+    100,
+    "@pc_changebox_yesno"
+   ]
+  }
+ ],
+ "labels": {
+  "field_walk": {
+   "category": "D",
+   "overlay": "none",
+   "dialog_text": "",
+   "options": [],
+   "cursor": "",
+   "quantity": null,
+   "note": "走路，没有任何界面"
+  },
+  "start_menu": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "POKéMON",
+    "ITEM",
+    "RED",
+    "SAVE",
+    "OPTION",
+    "EXIT"
+   ],
+   "cursor": "POKéMON",
+   "quantity": null,
+   "note": ""
+  },
+  "bag_p1": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "POTION",
+    "POKé BALL",
+    "TOWN MAP",
+    "ANTIDOTE"
+   ],
+   "cursor": "POTION",
+   "quantity": null,
+   "note": "背包塞了 8 样（内存注入），第 1 屏"
+  },
+  "bag_p2": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "POKé BALL",
+    "TOWN MAP",
+    "ANTIDOTE",
+    "PARLYZ HEAL"
+   ],
+   "cursor": "ANTIDOTE",
+   "quantity": null,
+   "note": "下翻 3 次，列表滚了一格"
+  },
+  "bag_p3": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "FULL RESTORE",
+    "ESCAPE ROPE",
+    "SUPER POTION",
+    "CANCEL"
+   ],
+   "cursor": "SUPER POTION",
+   "quantity": null,
+   "note": ""
+  },
+  "bag_last": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "ESCAPE ROPE",
+    "SUPER POTION",
+    "CANCEL"
+   ],
+   "cursor": "CANCEL",
+   "quantity": null,
+   "note": "翻到底"
+  },
+  "bag_use_toss": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "USE",
+    "TOSS"
+   ],
+   "cursor": "USE",
+   "quantity": null,
+   "note": "背包里的 ▷POKé BALL 是上一层的空心光标，不算"
+  },
+  "bag_toss_qty": {
+   "category": "B",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [],
+   "cursor": "",
+   "quantity": 1,
+   "note": "丢弃数量框：框里只有 ×01，没有 ▶；也没有对话"
+  },
+  "field_party_list": {
+   "category": "B",
+   "overlay": "choice",
+   "dialog_text": "Choose a POKéMON.",
+   "options": [
+    "BULBASAUR"
+   ],
+   "cursor": "BULBASAUR",
+   "quantity": null,
+   "note": "野外队伍列表：▶ 在第 0 列、没有框"
+  },
+  "field_party_sub": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "Choose a P",
+   "options": [
+    "STATS",
+    "SWITCH",
+    "CANCEL"
+   ],
+   "cursor": "STATS",
+   "quantity": null,
+   "note": "对话被子菜单盖住，屏幕上只露 Choose a P"
+  },
+  "stats_page": {
+   "category": "D",
+   "overlay": "none",
+   "dialog_text": "",
+   "options": [],
+   "cursor": "",
+   "quantity": null,
+   "note": "能力页，全屏信息，没有对话和选单"
+  },
+  "trainer_card": {
+   "category": "D",
+   "overlay": "none",
+   "dialog_text": "",
+   "options": [],
+   "cursor": "",
+   "quantity": null,
+   "note": "训练家卡片"
+  },
+  "option_screen": {
+   "category": "C",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "FAST",
+    "MEDIUM",
+    "SLOW",
+    "ON",
+    "OFF",
+    "SHIFT",
+    "SET",
+    "CANCEL"
+   ],
+   "cursor": "MEDIUM",
+   "quantity": null,
+   "note": "选项设置：三组横排 + CANCEL；活动光标 ▶ 在 TEXT SPEED 的 MEDIUM"
+  },
+  "dialog_advance_0": {
+   "category": "A",
+   "overlay": "dialog",
+   "dialog_text": "Hey! You came from PALLET TOWN?",
+   "options": [],
+   "cursor": "",
+   "quantity": null,
+   "note": ""
+  },
+  "dialog_advance_1": {
+   "category": "A",
+   "overlay": "dialog",
+   "dialog_text": "You know PROF. OAK, right",
+   "options": [],
+   "cursor": "",
+   "quantity": null,
+   "note": "字还在逐个打出，屏幕上此刻就这么多；两行之间按空格拼接"
+  },
+  "battle_menu": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "FIGHT",
+    "PKMN",
+    "ITEM",
+    "RUN"
+   ],
+   "cursor": "FIGHT",
+   "quantity": null,
+   "note": "2×2"
+  },
+  "battle_menu_pkmn": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "FIGHT",
+    "PKMN",
+    "ITEM",
+    "RUN"
+   ],
+   "cursor": "PKMN",
+   "quantity": null,
+   "note": ""
+  },
+  "battle_menu_item": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "FIGHT",
+    "PKMN",
+    "ITEM",
+    "RUN"
+   ],
+   "cursor": "ITEM",
+   "quantity": null,
+   "note": ""
+  },
+  "move_list": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "TACKLE",
+    "GROWL"
+   ],
+   "cursor": "TACKLE",
+   "quantity": null,
+   "note": "两个空招式位 - 不算选项；左上 TYPE/PP 框不算"
+  },
+  "move_list_2": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "TACKLE",
+    "GROWL"
+   ],
+   "cursor": "GROWL",
+   "quantity": null,
+   "note": ""
+  },
+  "battle_bag": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "POTION",
+    "POKé BALL",
+    "TOWN MAP",
+    "ANTIDOTE"
+   ],
+   "cursor": "POTION",
+   "quantity": null,
+   "note": ""
+  },
+  "battle_bag_scroll": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "TOWN MAP",
+    "ANTIDOTE",
+    "PARLYZ HEAL",
+    "FULL RESTORE"
+   ],
+   "cursor": "PARLYZ HEAL",
+   "quantity": null,
+   "note": ""
+  },
+  "battle_use_on_which": {
+   "category": "B",
+   "overlay": "choice",
+   "dialog_text": "Use item on which POKéMON?",
+   "options": [
+    "BULBASAUR"
+   ],
+   "cursor": "BULBASAUR",
+   "quantity": null,
+   "note": "战斗中用道具选宝可梦：队伍列表格式"
+  },
+  "battle_party_1": {
+   "category": "B",
+   "overlay": "choice",
+   "dialog_text": "Choose a POKéMON.",
+   "options": [
+    "BULBASAUR",
+    "PIDGEY"
+   ],
+   "cursor": "BULBASAUR",
+   "quantity": null,
+   "note": "战斗换宝可梦的队伍列表"
+  },
+  "battle_party_2": {
+   "category": "B",
+   "overlay": "choice",
+   "dialog_text": "Choose a POKéMON.",
+   "options": [
+    "BULBASAUR",
+    "PIDGEY"
+   ],
+   "cursor": "PIDGEY",
+   "quantity": null,
+   "note": ""
+  },
+  "battle_party_sub": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "Choose a P",
+   "options": [
+    "SWITCH",
+    "STATS",
+    "CANCEL"
+   ],
+   "cursor": "SWITCH",
+   "quantity": null,
+   "note": ""
+  },
+  "shop_menu": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "Is there anything else I can do?",
+   "options": [
+    "BUY",
+    "SELL",
+    "QUIT"
+   ],
+   "cursor": "BUY",
+   "quantity": null,
+   "note": "右上 MONEY ¥3000 框不是对话也不是选项"
+  },
+  "shop_menu_sell": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "Is there anything else I can do?",
+   "options": [
+    "BUY",
+    "SELL",
+    "QUIT"
+   ],
+   "cursor": "SELL",
+   "quantity": null,
+   "note": ""
+  },
+  "shop_list_top": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "Take your time.",
+   "options": [
+    "POKé BALL",
+    "ANTIDOTE",
+    "PARLYZ HEAL",
+    "BURN HEAL"
+   ],
+   "cursor": "POKé BALL",
+   "quantity": null,
+   "note": ""
+  },
+  "shop_list_scroll": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "Take your time.",
+   "options": [
+    "PARLYZ HEAL",
+    "BURN HEAL",
+    "CANCEL"
+   ],
+   "cursor": "CANCEL",
+   "quantity": null,
+   "note": "翻到底，上面两项滚出屏幕"
+  },
+  "shop_list": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "Take your time.",
+   "options": [
+    "POKé BALL",
+    "ANTIDOTE",
+    "PARLYZ HEAL",
+    "BURN HEAL"
+   ],
+   "cursor": "POKé BALL",
+   "quantity": null,
+   "note": ""
+  },
+  "shop_qty_1": {
+   "category": "B",
+   "overlay": "choice",
+   "dialog_text": "Take your time.",
+   "options": [],
+   "cursor": "",
+   "quantity": 1,
+   "note": "商店数量框：没有 ▶，上下键调数量"
+  },
+  "shop_qty_2": {
+   "category": "B",
+   "overlay": "choice",
+   "dialog_text": "Take your time.",
+   "options": [],
+   "cursor": "",
+   "quantity": 2,
+   "note": "按了一次上"
+  },
+  "shop_confirm": {
+   "category": "A",
+   "overlay": "dialog",
+   "dialog_text": "POKé BALL? That will be",
+   "options": [],
+   "cursor": "",
+   "quantity": null,
+   "note": "确认台词第一页；数量框还留在屏幕上，但已定下、不再可调"
+  },
+  "shop_after": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "That will be ¥400. OK?",
+   "options": [
+    "YES",
+    "NO"
+   ],
+   "cursor": "YES",
+   "quantity": null,
+   "note": ""
+  },
+  "pc_bill_menu": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "What?",
+   "options": [
+    "WITHDRAW PKMN",
+    "DEPOSIT PKMN",
+    "RELEASE PKMN",
+    "CHANGE BOX",
+    "SEE YA!"
+   ],
+   "cursor": "DEPOSIT PKMN",
+   "quantity": null,
+   "note": "右下 BOX No. 1 小框不算对话"
+  },
+  "pc_deposit_list": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "What?",
+   "options": [
+    "BULBASAUR",
+    "PIDGEY",
+    "CANCEL"
+   ],
+   "cursor": "BULBASAUR",
+   "quantity": null,
+   "note": "带框的列表，每项下有等级行 :L10 / :L5（不是选项）"
+  },
+  "pc_deposit_sub": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "What?",
+   "options": [
+    "DEPOSIT",
+    "STATS",
+    "CANCEL"
+   ],
+   "cursor": "DEPOSIT",
+   "quantity": null,
+   "note": ""
+  },
+  "pc_top": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "",
+   "options": [
+    "SOMEONE's PC",
+    "RED's PC",
+    "PROF.OAK's PC",
+    "LOG OFF"
+   ],
+   "cursor": "SOMEONE's PC",
+   "quantity": null,
+   "note": ""
+  },
+  "pc_red_menu": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "What do you want to do?",
+   "options": [
+    "WITHDRAW ITEM",
+    "DEPOSIT ITEM",
+    "TOSS ITEM",
+    "LOG OFF"
+   ],
+   "cursor": "WITHDRAW ITEM",
+   "quantity": null,
+   "note": ""
+  },
+  "pc_withdraw_list": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "What do you want to withdraw?",
+   "options": [
+    "POTION",
+    "CANCEL"
+   ],
+   "cursor": "POTION",
+   "quantity": null,
+   "note": ""
+  },
+  "pc_how_many": {
+   "category": "B",
+   "overlay": "choice",
+   "dialog_text": "How many?",
+   "options": [],
+   "cursor": "",
+   "quantity": 1,
+   "note": "PC 取道具数量框"
+  },
+  "pc_how_many_up": {
+   "category": "B",
+   "overlay": "choice",
+   "dialog_text": "How many?",
+   "options": [],
+   "cursor": "",
+   "quantity": 1,
+   "note": "按了上，但 PC 里只有 1 个，数量不变"
+  },
+  "pc_withdrew": {
+   "category": "A",
+   "overlay": "dialog",
+   "dialog_text": "Withdrew POTION.",
+   "options": [],
+   "cursor": "",
+   "quantity": null,
+   "note": "数量框残留在屏幕上，已不可调"
+  },
+  "pc_changebox_yesno": {
+   "category": "A",
+   "overlay": "choice",
+   "dialog_text": "Is that okay?",
+   "options": [
+    "YES",
+    "NO"
+   ],
+   "cursor": "YES",
+   "quantity": null,
+   "note": ""
+  }
+ }
+}

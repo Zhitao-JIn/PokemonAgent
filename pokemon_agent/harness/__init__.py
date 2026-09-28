@@ -8,7 +8,7 @@
 - `task/`：一圈 = 一个键。chooser 每键出一个键；`task_entry.run_task` 是图外入口。
 - 共享件：`compose.py`（格内单元串接）、`judging.py`（机械三类 + 问 judger 记账）、
   `sensing.py`（取一帧）、`reviewing.py`（问人并记账）。
-- `checkpoint/`：两级存档、恢复与回放（`docs/spec/checkpoint/SPEC.md`）。
+- `checkpoint/`：存档与恢复（`docs/spec/checkpoint/SPEC.md`）。
 - `run/runtime.py` / `episode/episode_runtime.py` / `task/task_runtime.py`：三级 context，
   上级嵌套持有下级；`trace` / `memory` / `reviewer` 同一实例跨级共享。
 - `interface/`：harness 真正需要外面给的东西——`Reviewer`（插话 + 审）与

@@ -18,7 +18,7 @@ class FromHarnessToBrainToolSummarizeReq(Settled, BaseModel):
     """harness 侧组装、交给 `BrainTool` 的 episode 蒸馏请求。"""
 
     entries: list[TaskMemory] = Field(
-        min_length=1, description="本局全部 TaskMemory，按 start_step 升序"
+        min_length=1, description="本局全部 TaskMemory，按 total_acts 升序"
     )
     verdicts: list[VerifyVerdict] = Field(description="与 entries 等长的正/负标注")
     episode_id: str = Field(description="来源章")

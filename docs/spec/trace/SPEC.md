@@ -1,27 +1,29 @@
 # trace —— 模块规格
 
-> 最后更新：2026-09-16 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
+> 最后更新：2026-09-27 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
 
 ## 一、职责与边界
 
-`pokemon_agent/trace/` 是一个**独立的第三方模块**：事件流的落盘实现 + 它自己的港口协议 + 形状协议 + 粗类词表。项目侧把它当"拷走即可复用"的成品对待。
+`pokemon_agent/trace/` 是一个**独立的第三方模块**：事件流的存储实现 + 它自己的港口协议 + 形状协议 + 粗类词表。项目侧把它当"拷走即可复用"的成品对待。存储可选本地 JSON 文件或本机自托管 Langfuse；Langfuse 不创建 LocalTrace 副本。
 
 - **只保证一件事**：按时间记账。`type` / `kind` / `meta` / `content` 的**合法值域是声明方的事，trace 不认识**——所以 `TracePort.append()` 的前两个参数是裸 `str`。
-- **`meta` / `content` 是不透明载荷**：trace 只负责序列化成 JSON 字符串落盘、读回时原样交还，**不解释里面装了什么**。
+- **`meta` / `content` 是不透明载荷**：trace 只负责序列化成 JSON 字符串存储、读回时原样交还，**不解释里面装了什么**。
 - **零出边**：包内任何文件不 import `pokemon_agent` 的其余部分（可执行核对见 `scripts/check_trace_self_contained.py` 的 A 项）。
 - **入边只在 tool 层**：其余各层（`brain` / `harness` / `memory` / `world` / `schemas` / `vision` 与装配点 `build.py`）一律不 import 它——harness 只经 runtime 的 `trace`（`TraceToolPort`）说话（B 项）。
-- 统一出口 `trace/__init__.py` 只 re-export 五个名字：`Event`、`EventType`、`LocalTrace`、`TracePort`、`new_event_uuid`。消费方写 `from pokemon_agent.trace import LocalTrace, TracePort`。
+- 统一出口 `trace/__init__.py` re-export：`Event`、`EventType`、`LocalTrace`、`LangfuseTrace`、`TracePort`、`new_event_uuid`。消费方写 `from pokemon_agent.trace import LocalTrace, TracePort`。
 
 ## 二、目录结构
 
 ```
 trace/
 ├── __init__.py              统一出口（上面五个名字）
-├── store.py                 TracePort 的实现 LocalTrace + 缺省落盘根 + new_event_uuid
+├── store.py                 TracePort 的本地文件实现 LocalTrace + uuid
+├── langfuse_trace.py        本机自托管 Langfuse TracePort 实现
+├── langfuse_support.py      SDK 边界、封套编解码、查询与 observation 辅助函数
 ├── interface/
 │   ├── __init__.py          出口：Event / TracePort
 │   ├── event.py             Event（形状协议，六属性）
-│   └── trace_port.py        TracePort（runtime_checkable Protocol，两方法）
+│   └── trace_port.py        TracePort（runtime_checkable Protocol）
 └── datastore/
     ├── __init__.py          出口：EventType
     ├── event.py             _Event（trace 私有的具体实现，不进 __all__）
@@ -32,16 +34,18 @@ trace/
 
 ## 三、TracePort 契约
 
-`TracePort`（`trace/interface/trace_port.py`，`@runtime_checkable Protocol`）只有两个方法，签名里全是不带值域的裸类型。
+`TracePort`（`trace/interface/trace_port.py`，`@runtime_checkable Protocol`）提供事件追加、查询与后端生命周期方法，签名里全是不带值域的裸类型。
 
 | 方法 | 签名 | 承诺 |
 |---|---|---|
-| `append` | `(type: str, kind: str, meta: dict[str, Any] \| None = None, content: Any = None) -> str` | 追加一条事件，返回它的 `uuid`（= 文件名） |
-| `read_events` | `(meta: dict[str, Any] \| None = None) -> list[Event]` | 读已落盘的全部事件，按 `(ts, uuid)` 升序，可按 `meta` 做交集筛选 |
+| `append` | `(type: str, kind: str, meta: dict[str, Any] \| None = None, content: Any = None) -> str` | 追加一条事件，返回本地 `uuid` |
+| `read_events` | `(meta: dict[str, Any] \| None = None) -> list[Event]` | 读当前 backend 可见事件，按 `(ts, uuid)` 升序，可按 `meta` 做交集筛选 |
+| `flush` | `() -> None` | 刷新后端缓冲；LocalTrace 为空操作 |
+| `shutdown` | `() -> None` | 关闭后端资源；LocalTrace 为空操作 |
 
-- `append` **前置条件**：`meta` 不带 `run_id` / `branch` 键——`store._stamp_run_id` 用 assert 执行这条契约。**后置条件**：六个字段全部落盘；返回的 uuid 与文件名同值。
-- `read_events` **筛选语义**：`None` / 空 dict = 整个落盘根；给了就只返回**每个键都相等**的那批——AND-of-equalities，与 `MemoryStorePort.filter` 同一条（不支持 OR、不支持大小比较）。键取 `run_id` / `source` / `episode_id` / `step`；事件缺某个键时**不匹配**（不是当作空值相等）。
-- `read_events` **后置条件**：按 `(ts, uuid)` 严格升序；无匹配返回空列表（不抛异常）。磁盘读取失败（权限 / IO）**原样抛出**——本方法不吞这一类错。
+- `append` **前置条件**：`meta` 不带 `run_id` / `branch` 键——两种实现的盖章函数用 assert 执行。**后置条件**：事件被 backend 接受；LocalTrace 在返回前落盘，LangfuseTrace 返回仅代表 SDK 接受并异步投递。
+- `read_events` **筛选语义**：`None` / 空 dict = backend 当前可见事件；给了就只返回**每个键都相等**的那批——AND-of-equalities，不支持 OR 或大小比较。事件缺某键时不匹配。
+- `read_events` **后置条件**：按 `(ts, uuid)` 升序；无匹配返回空列表。读取失败原样抛出。
 - 读能力只剩这一条通用读方法：不做掩码、不做游标、不打标，只回答"盘上有什么"。
 - 已下线的入口（现在不存在）：`read_event(event_id)`——画面真源搬到 `memory/step_memory/` 之后没有读者；`cursor()` / `read_disk_events()` / `void_after()`——随 checkpoint 恢复链删；`read_screenshot`——随截图副本删。
 - 实现 `LocalTrace(run_id: str = "local", root: Path | None = None, branch: str = "main")`：`root` 是**落盘根**
@@ -62,14 +66,14 @@ trace/
 
 | 字段 | 类型 | 谁写 | 编码约定 |
 |---|---|---|---|
-| `uuid` | `str` | `store.py`（落盘那一刻） | 与文件名同值；`new_event_uuid()` 造的时间递增 uuid |
-| `ts` | `float` | `store.py`（写入那一刻） | Unix 秒；排序键 |
+| `uuid` | `str` | 存储实现 | LocalTrace 中与文件名同值；Langfuse 用它回链项目事件 |
+| `ts` | `float` | 存储实现 | Unix 秒；排序键 |
 | `kind` | `str` | 调用方（tool 层） | 账名；值来自 `TraceKind` |
 | `type` | `str` | 调用方（tool 层） | 粗类；值来自 `EventType` |
-| `meta` | `str` | 调用方给，落盘层盖 `run_id` | **JSON 字符串**，`{run_id, source, episode_id, step}` 恰好四件 |
+| `meta` | `str` | 调用方给，存储层盖 `run_id` / `branch` | **JSON 字符串**，包含执行线与事件位置 |
 | `content` | `str` | 调用方 | **JSON 字符串**；判据是"存在反函数" |
 
-`meta` 的键：`run_id`、`branch` 由 `store._stamp_run_id` 盖在**头两个**（前置 assert：调用方带的 `meta` 不许有这两个键；`branch` 是本实例的执行线名，构造时给，缺省 `main`）；`source` 是"这条账从哪个位置发出"（图上节点名，或图外入口名如 `run_entry.new_run`）；`episode_id` / `step` 是发在哪一局、哪一步。run 级账沿用项目约定：`episode_id` 位放 run_id、`step` 恒 0。
+`meta` 的键：`run_id`、`branch` 由存储实现盖章；`source` 是"这条账从哪个位置发出"；`episode_id` / `task_id` / `step` 描述运行位置。run 级账沿用项目约定：`episode_id` 与 `task_id` 位放 run_id、`step` 恒 0。
 
 `content` 的编码约定：标量一律 `str()`、布尔一律小写 `true` / `false`；本来就是结构化数据的那几处（`facts` / `sequence` / `verdicts` / 四本写账的正文）**直接放对象，不再 `json.dumps` 一次**（那是双重编码）。序列化只在 `LocalTrace.append` 做一处：`json.dumps(..., ensure_ascii=False)`。
 
@@ -78,7 +82,7 @@ trace/
 - `EventType`（`trace/datastore/trace_event.py`）是**字符串常量类，不是枚举**，七个值：`MODEL_CALL` / `ERROR` / `LLM_OUTCOME` / `VIEW` / `ACT` / `MEMORY_IO` / `LIFECYCLE`；合法值域的类型级表达只有一处 `EventTypeName`（`Literal[...]`）。
 - `TraceKind`（`schemas/harness/domain/trace_kind.py`）是 `StrEnum`，**35 个成员**，是 harness 的账名词表，住 schemas 侧（消费者是 harness）。
 - **两者不是一个概念，不能合并**：`type` 回答"这条记录相对世界 / 模型站在哪个位置"，数量极小、与链路正交；`kind` 回答"这是哪笔账"。对应关系是"每个 kind 恰好落一个 type"，**由渲染层 `tools/trace/render.py` 给出**——trace 自己不持有这张映射。封套两个都留：`type` 供廉价过滤，`kind` 供精确指认。
-- 家族对应（依据 `EventType` 各常量的注释与 `render.py` 的实际用法）：`VIEW` 的 kind = `sense_frame`；`ACT` ∈ {`press_key`, `get_action_space`, `check_stall`}；`MEMORY_IO` ∈ {六条 `read_*` + 三条 `write_*`}；`LIFECYCLE` = 三层边界账 + `settle_goal` / `settle_task` + `advance_step`；`MODEL_CALL` 是七条链共用的调用账；`ERROR` ∈ {`call_failed`, `call_exhausted`, `summary_parse_error`}；`LLM_OUTCOME` 与 `MODEL_CALL` 配对（`choose_verdict` 与三个 `*_verdict`）。
+- 家族对应（依据 `EventType` 各常量的注释与 `render.py` 的实际用法）：`VIEW` 的 kind = `sense_frame`；`ACT` ∈ {`press_key`, `run_macro`, `get_action_space`, `check_stall`}；`MEMORY_IO` ∈ {六条 `read_*` + 三条 `write_*`}；`LIFECYCLE` = 三层边界账 + `settle_goal` / `settle_task` + `advance_step`；`MODEL_CALL` 是七条链共用的调用账；`ERROR` ∈ {`call_failed`, `call_exhausted`, `summary_parse_error`}；`LLM_OUTCOME` 与 `MODEL_CALL` 配对（`choose_verdict` 与三个 `*_verdict`）。
 
 ## 五、落盘与读取
 
@@ -96,6 +100,12 @@ trace/
 - `append` 保证 **ts 严格递增**：墙上时钟分辨率有限（实测相邻两次 `time.time()` 可以取到逐字节相同的值），撞刻时人为推进 1µs——`if now <= self._last_ts: now = self._last_ts + 1e-6`。`_last_ts` 是**本实例**的序列基线，前提是 **append 单线程顺序调用**（trace 实例全图共享、图是同步 invoke）。
 - 写盘走 `_atomic_write_text()`：先写 `path.with_suffix(".json.tmp")` 再 `os.replace(tmp, path)`——崩溃最多少一个未 rename 的 tmp。
 - **读**：`read_events` 每次调用重扫落盘根（只扫**第一层**的 `*.json`，不递归），**不做内存缓存**。`_scan_events()` 跳过 `.tmp`，`model_validate_json` 失败的文件一律 `continue`（残文件 / 旧格式是预期内的运行期情况）。按 `meta` 筛选时用 `_meta_of(event)` 把那串 JSON 解回 dict，读不动就给空 dict——于是那条**不匹配任何条件**。
+
+**读侧解析层（0925，CHANGELOG 259）**：`trace/` 只管封套，正文是字符串化的 JSON。要按类型读正文的
+一方（测评 `evals/`）走 `pokemon_agent/tools/trace/parse.py::parse(event) -> ParsedEvent`：按 `kind` 分派
+`tools/trace/content.py` 的正文模型（与 `render.py` 逐字段对照，除调用账外 `extra="forbid"`），
+`sense_frame` 的 `facts` / `place` / `ram` 读回 `Facts` / `PlaceInWorld` / `RamReadout`；没建模的账读成
+`OtherContent`。模型住产出方（谁渲染谁定义），`tests/test_trace_parse.py` 做写 → 读回环。
 
 **`_Event` 与 `TraceEvent` 的对齐关系**：两者**六字段一一对应**，但 `TraceEvent` 是跨层契约、`_Event` 是 trace 私有实现，**没有继承、没有共享基类、也没有编译器保护**——改一处必须手工同步另一处。`_Event` 的 `extra="allow"` 让盘上改形之前的老 json（带 `event_id` / `schema_version` / `payload` / `frame_png` 那套）多出来的键挂在 `model_extra` 上随行；但它们缺 `uuid` / `ts`，**解析当场失败被跳过**，不会静默混进结果。
 
@@ -119,7 +129,7 @@ trace/
 
 **现在成立的**：
 
-- `LocalTrace` 是唯一实现，**磁盘账本就是唯一真相**——事件槽双写（`event_sink` + `RunDataCenter` 内存镜像）已删，读的人（图内节点）直接读盘；**另一个读者 SSE 端点随 `api.py` 0913 晚一起删了**（`api.py` 已不在仓库里）。
+- LocalTrace backend 使用平铺 JSON 磁盘账本；显式选择 Langfuse backend 时，本机自托管 Langfuse 是唯一持久层，事件经 SDK 异步发送并接受 API 最终一致性，不创建 LocalTrace 副本。
 - 已删且不再回来的一批：`event_id`（全局单调序号 + 构造时扫盘接续 + `id → 文件` 索引）、`schema_version`（恒 `5`、零读方、两份副本要人工同步）、`frame_png`（画面真源搬到 `memory/step_memory/` 的 `before_frame` / `after_frame`）、`Source` / `SourceName`（生产者维度整体下线）、`PersistedEvent` / `project` 钩子 / `event_sink`、`TRACE_SCHEMA_VERSION`、`read_event` / `cursor` / `read_disk_events` / `void_after` / `read_screenshot`。
 - `kind` 与落盘的账名现在是同一个词：`req.kind` 一路落到封套上，中间没有翻译表。
 

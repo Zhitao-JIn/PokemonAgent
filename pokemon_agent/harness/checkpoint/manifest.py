@@ -1,4 +1,4 @@
-"""存档清单：把世界存档、记忆快照与 run 图状态（原件或定位）绑成一个 checkpoint（spec v2 §四）。
+"""存档清单：把世界存档、记忆快照与图状态（原件或定位）绑成一个 checkpoint（checkpoint spec §三）。
 
 清单由 checkpointer 产出，schema 归本模块（按产出地归档）。读写只在本文件：原子写、读时校验。
 """
@@ -19,26 +19,20 @@ from ..run.run_state import RunState
 from ..task.task_state import TaskState
 from .errors import CheckpointCorrupt, CheckpointNotFound
 
-Level = Literal["run", "episode"]
+Level = Literal["run", "episode", "task"]
 MANIFEST_FILENAME = "manifest.json"
 WORLD_FILENAME = "world.state"
 
 
 class GraphRef(BaseModel):
-    """run 图"进 `act` 前"那一条 checkpoint 在 saver 里的定位（根图，`checkpoint_ns` 恒为空）。"""
+    """某张图"进 `act` 前"那一条 checkpoint 在 saver 里的定位。
+
+    run 图是根图，`checkpoint_ns` 为空；episode 图是它在 run 的 `act` 里被 invoke 时的命名空间。
+    """
 
     thread_id: str
     checkpoint_ns: str
     checkpoint_id: str
-
-
-class LineageLink(BaseModel):
-    """血缘的一环：某条祖先执行线，以及本线从它分叉的那一点。"""
-
-    branch: str = Field(description="祖先执行线名")
-    fork_uuid: str = Field(description="分叉点事件 uuid（祖先线在存档时的最后一条账）")
-    fork_ts: float = Field(description="分叉点事件 ts")
-    checkpoint_id: str = Field(description="从哪份存档分叉")
 
 
 class CodeStamp(BaseModel):
@@ -50,24 +44,28 @@ class CodeStamp(BaseModel):
 
 
 class CheckpointManifest(BaseModel):
-    """一份存档的清单。**不变式**：run 级带 `run_state`；episode 级带 `episode_id` 与 `run_ref`。"""
+    """一份存档的清单。**不变式**：run 级只带 `run_state`；episode 级带 `episode_id` 与 `run_ref`；
+    task 级再加 `task_id` 与 `episode_ref`。"""
 
     checkpoint_id: str
     level: Level
     run_id: str
     branch: str
-    lineage: list[LineageLink] = Field(description="存档所在执行线的祖先，由根到父；main 为空")
-    episode_id: str | None = Field(default=None, description="episode 级：这份存档之后要派的那一局")
+    episode_id: str | None = Field(
+        default=None, description="episode / task 级：这份存档之后要派的那一局 / 所在的那一局"
+    )
+    task_id: str | None = Field(default=None, description="task 级：这份存档之后开局的那个 task")
     run_state: RunState | None = Field(default=None, description="run 级：进图前的 RunState 原件")
     run_ref: GraphRef | None = Field(
-        default=None, description="episode 级：run 图进 `act` 前那一条"
+        default=None, description="episode / task 级：run 图进 `act` 前那一条"
+    )
+    episode_ref: GraphRef | None = Field(
+        default=None, description="task 级：episode 图进 `act`、派这个 task 前那一条"
     )
     world_file: str
     memory_archive: str = Field(
         description="记忆 zip 的路径，相对进程启动目录（`launch_relative`）"
     )
-    last_event_uuid: str = Field(description="存档时本执行线最后一条账；run 级为空（未开账）")
-    last_event_ts: float
     code: CodeStamp
     models: dict[str, str] = Field(default_factory=dict)
     created_at: str
@@ -75,8 +73,18 @@ class CheckpointManifest(BaseModel):
     @model_validator(mode="after")
     def _level_matches_contents(self) -> CheckpointManifest:
         """级别与内容一一对应——违反说明写清单的代码有 bug。"""
-        expected = {"run": (True, False, False), "episode": (False, True, True)}[self.level]
-        actual = (self.run_state is not None, self.run_ref is not None, self.episode_id is not None)
+        expected = {
+            "run": (True, False, False, False, False),
+            "episode": (False, True, False, True, False),
+            "task": (False, True, True, True, True),
+        }[self.level]
+        actual = (
+            self.run_state is not None,
+            self.run_ref is not None,
+            self.episode_ref is not None,
+            self.episode_id is not None,
+            self.task_id is not None,
+        )
         if actual != expected:
             raise ValueError(f"{self.level} 级清单内容不符：{actual}，应为 {expected}")
         return self
@@ -154,6 +162,20 @@ def read_manifest(path: Path) -> CheckpointManifest:
     return manifest
 
 
+def list_checkpoints(root: str | Path, run_id: str) -> list[CheckpointManifest]:
+    """`<root>/<run_id>/` 下的全部存档清单，按创建时间先后排（给人挑存档用；同一秒内的先后不保证）。
+
+    读不动的清单跳过（`CheckpointCorrupt` 由 `read_manifest` 单独给出，这里只列能用的）。
+    """
+    found: list[CheckpointManifest] = []
+    for path in sorted((Path(root) / run_id).glob(f"*/{MANIFEST_FILENAME}")):
+        try:
+            found.append(read_manifest(path))
+        except CheckpointCorrupt:
+            continue
+    return sorted(found, key=lambda m: (m.created_at, m.checkpoint_id))
+
+
 __all__ = [
     "MANIFEST_FILENAME",
     "WORLD_FILENAME",
@@ -161,9 +183,9 @@ __all__ = [
     "CodeStamp",
     "GraphRef",
     "Level",
-    "LineageLink",
     "code_stamp",
     "launch_relative",
+    "list_checkpoints",
     "read_manifest",
     "state_schema_hash",
     "write_manifest",

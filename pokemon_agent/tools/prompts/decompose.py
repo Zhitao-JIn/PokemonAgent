@@ -13,6 +13,7 @@ from pokemon_agent.schemas.harness.domain import TaskEntry
 from pokemon_agent.world import terrain_legend
 
 from . import append_human_note, load
+from .last_judge import last_judge_lines
 
 _TEMPLATE = load("decompose")
 
@@ -35,10 +36,12 @@ def task_table_lines(table: Sequence[TaskEntry]) -> list[str]:
 
 
 def context_lines(req: FromHarnessToBrainToolDecomposeReq) -> list[str]:
-    """当前帧 + 本局任务表 + 本局已跑 task 的记忆 + 跨局摘要 + 检索到的知识，渲成素材行。"""
+    """当前帧 + 本局任务表 + 上一次本局判定 + 本局已跑 task 的记忆 + 跨局摘要 + 检索到的知识。"""
     lines = ["## 当前画面", req.observation.render()]
     if req.task_table:
         lines += ["", "## 本局任务表（成败以此为准）", *task_table_lines(req.task_table)]
+    if req.last_judge is not None:
+        lines += ["", "## 上一次本局判定", *last_judge_lines(req.last_judge)]
     if req.task_memories:
         lines += ["", "## 本局已跑的 task", *(m.render() for m in req.task_memories)]
     if req.episode_memories:

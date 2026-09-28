@@ -42,11 +42,13 @@ class ModelCall(BaseModel):
     重试循环里每一条账都要独立留档。
     """
 
-    payload: dict[str, str | list[str]] = Field(
+    payload: dict[str, str | float | list[str]] = Field(
         default_factory=dict,
         description="token 四件套、`ok`（这次调用成没成）、原始输出（`raw`）、"
         "实际发给模型的文本输入（`prompt`）、**实际发给模型的图**"
-        "（`images`，PNG data URI 列表——发给什么存什么，原样留档）。"
+        "（`images`，PNG data URI 列表——发给什么存什么，原样留档）、"
+        "这次调用的真实起止 `started_at`/`ended_at`（float，2026-09-27 双时刻定案——"
+        "随渲染进 trace 封套，成为排序与延迟统计的依据）。"
         "**失败的调用也要有**——它同样烧了钱，"
         "而 `raw`/`prompt` 让你改进解析器之后能离线重算，不必再花 token 重跑。"
         '**`ok` 一律小写（`"true"`/`"false"`）**：这份 payload 是被 tool 层原样'

@@ -31,7 +31,7 @@ def close_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any
                 "source": "close_task",
                 "episode_id": state.episode_id,
                 "task_id": state.task.task_id,
-                "step": state.task_ctx.observation.step,
+                "step": state.step + 1,
             },
             outcome_task=output,
         )

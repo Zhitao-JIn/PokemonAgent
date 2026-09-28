@@ -17,11 +17,14 @@
 schemas/
 ├── __init__.py                       不是出口，不 re-export 任何名字
 ├── harness/
-│   ├── __init__.py                   出口：信封名 + domain 各件 + AuditVerdict / ModelCall / ModelCallLog / RunResp
-│   ├── communication/                信封模块（一文件一信封；`FromHarnessToReviewerAuditReq.py` 一文件两信封 + AuditVerdict）
+│   ├── __init__.py                   出口：信封名 + domain 各件 + AuditVerdict / JudgeFeedback / ModelCall / ModelCallLog / RunResp
+│   ├── communication/                信封模块（一文件一信封；含跳 A `FromHarnessToReviewBackend*`）
 │   └── domain/
 │       ├── __init__.py               出口：EpisodeInput / EpisodeOutput / TaskInput / TaskOutput / Termination /
-│       │                             Settled / EntryStatus / GoalEntry / TaskEntry / TraceEvent / TraceKind
+│       │                             Settled / EntryStatus / GoalEntry / TaskEntry / TraceEvent / TraceKind /
+│       │                             AuditVerdict / JudgeFeedback / ReviewMark / CheckpointMark
+│       ├── audit_verdict.py          AuditVerdict（人对一条结论的表态，三跳共用）
+│       ├── judge_feedback.py         JudgeFeedback（本层上一次判定 + 人的表态，回到下一次 plan）
 │       ├── episode_io.py             EpisodeInput / EpisodeOutput（run ↔ episode）
 │       ├── task_io.py                TaskInput / TaskOutput（episode ↔ task）
 │       ├── termination.py            Termination（五类）+ Settled（done / success 两个派生属性的混入类）
@@ -51,19 +54,24 @@ schemas/
 - **往 `brain_tool`**：`ChooseOnce`、`PlanOnce`、`Decompose`、`Judge`、`Reflect`、`Verify`、`Summarize`、
   `SummarizeTask`，各一对 `Req` / `Resp`（前缀 `FromHarnessToBrainTool`）。
   - `JudgeReq` 带 `task_memories` / `task_table` / `episode_memories`（episode / run 层判定的素材）。
-  - `DecomposeReq` 带 `task_table`（本局任务表，成败以表为准）。
+  - `DecomposeReq` 带 `task_table`（本局任务表，成败以表为准）与 `last_judge`（上一次本局判定及人的表态）。
   - `SummarizeReq` / `SummarizeTaskReq` 带 `verdicts`（正负标注）、`termination`、`acts_used`；`success` 是推出的属性。
-  - `PlanOnceReq` 带 `human_note`。
-- **往 `game_tool`**：`Reset`、`Execute`、`Evolve`、`GetActionSpace`、`PerceiveOnce`。
+  - `PlanOnceReq` 带 `human_note` 与 `last_judge`（上一次 run 判定及人的表态）。
+  - `JudgeReq` 没有 `human_note`：判定在审格，人只表态、不带话重问判定员。
+- **往 `game_tool`**：`Reset`、`Execute`（`ExecuteResp.outcome`：宏的 `MacroOutcome`，按键为空）、`Evolve`、`GetActionSpace`、`PerceiveOnce`、`PerceiveTask`。
+- `ChooseOnceReq.last_macro`：上一宏结果的一句话（`MacroOutcome.describe()`），prompt 渲染在观测之后；上一步不是宏时为空。
 - **往 `memory_tool`**：ActMemory（`StoreActMemory` / `QueryActMemories` / `QueryRecentActMemories`）、
   TaskMemory（`StoreTaskMemory` / `QueryTaskMemories`）、EpisodeMemory（`StoreEpisodeSummary` / `QueryEpisodeSummaries`）、
   物件（`AppendObjectEvents` / `QueryObjectEvents` / `QueryObjectEventsAt`）、知识（`StoreKnowledge` / `QueryKnowledge`）、
   快照（`SnapshotMemory` / `RestoreMemory`）。
-- **往 `reviewer`**：`InjectReq`、`AuditReq` / `AuditResp`（`AuditReq.outcome` 是 `EpisodeOutput` 或 `TaskOutput`，
-  审 task 时 `task_id` 非空，`events` 是被审对象自己的 trace）。
+- **往 `reviewer`**：`InjectReq` / `InjectResp`、`AuditReq` / `AuditResp`（`AuditReq.outcome` 是 `EpisodeOutput`、
+  `TaskOutput` 或 judge 的裁决 `FromHarnessToBrainToolJudgeResp`，审 task 时 `task_id` 非空，`events` 是被审对象
+  自己的 trace）。两个 Resp 都带 `answered`（False = 没人答、回的是默认值）。
+- **往 review 后端（跳 A，线上 JSON）**：`FromHarnessToReviewBackend{Inject,Audit}{Req,Resp}`、`FeedReq`；
+  跳 B（后端 ↔ 网页）在 `schemas/review_backend/`。见 `docs/web_reviewer/spec.md` §3。
 - **往 `trace_tool`**：`FromHarnessToTraceToolAppendReq`——`kind` + `meta`（调用方交四件：`source`/`episode_id`/`task_id`/`step`；`run_id`/`branch` 由落盘层盖）+ 各 kind 取用的可选字段
   （`calls` / `obs` / `entry` / `verdicts` / `outcome_task` / `goal` / `task_entry` / `abandoned` / `audit` / `tasks` /
-  `termination` / `fail_streak` / `updates` …）。
+  `termination` / `fail_streak` / `updates` / `macro`（`run_macro` 的 `MacroOutcome`）…）。
 - **非门面**：`ModelCall.py`（`ModelCall` / `ModelCallLog`）、`RunResp.py`（`RunResp`：outcomes / total / succeeded / success_rate / termination；混入 `Settled`）。
 
 **层间交接不走信封**：run → episode → task 的交接是 `domain/` 的 `EpisodeInput/Output`、`TaskInput/Output`
@@ -74,7 +82,7 @@ schemas/
 **规则一（信封）**：`From[模块A]To[模块B][函数名][Req/Resp]`，**两半都放 A 处（发起方）**。强制适用范围是 **Harness ↔ 各门面**这一跳（brain_tool / game_tool / memory_tool / reviewer / trace_tool），层间交接用 domain 的 IO 模型，不造信封。第一跳（调用方 → 模块门面）永远是信封，**门面上的每个方法都算**。
 
 - **外壳（experiment）→ Harness 这条边不包装**：外壳不是我们的模块，入参与返回值都走裸字段——`run(run_id, goals, run_goal=None)` 返回 `(outcomes, total, succeeded, success_rate)`。
-- 有入参就有 Req；返回结构化载荷就有 Resp；**返回 `None` 的没有 Resp**。现有先例：`FromHarnessToGameToolResetReq`、`FromHarnessToReviewerInjectReq`、`FromHarnessToMemoryToolAppendObjectEventsReq`、`FromHarnessToMemoryToolStoreActMemoryReq`。
+- 有入参就有 Req；返回结构化载荷就有 Resp；**返回 `None` 的没有 Resp**。现有先例：`FromHarnessToGameToolResetReq`、`FromHarnessToMemoryToolAppendObjectEventsReq`、`FromHarnessToMemoryToolStoreActMemoryReq`。
 - 别把这条推到记账层：**信封该内嵌模型就内嵌模型**——`run_end` 里的 `RunResp` 由 `harness/run/run_entry.py::close()` 内部组装，跟 `run()` 返回什么无关。
 
 **规则二（裸名）**：模块对外的接口模型用裸名、不带 From/To——因为发起方可能换人（今天 harness，明天第三方），From/To 前缀是赌一个注定被换掉的名字。**适用范围到此为止**：
@@ -125,6 +133,6 @@ schemas/
 ## 七、已知缺口
 
 - **有 Req 无 Resp 的信封**是约定（返回 `None` 就没有 Resp），不是遗漏。
-- **`FromHarnessToReviewerAuditResp` 与 `AuditVerdict` 同住 `…AuditReq.py`**：文件名比内容窄。
+
 - **`schemas/harness/__init__.py` 的 `__all__` 手工维护**：加一封信要同时改 import 与 `__all__`。
 - **磁盘上 ActMemory 的集合名仍叫 `step_memory`**（`tools/memory_tool.py`），类名已是 `ActMemory`。

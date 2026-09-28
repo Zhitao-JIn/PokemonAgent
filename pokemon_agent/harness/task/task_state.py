@@ -1,15 +1,18 @@
 """task 图的唯一状态载体：`TaskState`（一键一圈）。
 
-    身份    run_id / episode_id / task / start_step         begin_task 写，全程只读
+    身份    run_id / episode_id / task / total_acts        begin_task 写，全程只读
     计数    step（本 task 已按键数）                         act 写
     感知    task_ctx（当前帧 + 本 task ActMemory + 受限动作空间）  perceive 写
             after_observation（本圈 sense 取的新帧，格内流转） perceive 首单元写、close_step 清
     停摆    stall_key / stall_count                          perceive 写
-    决策    action（本圈那一个键）                            plan_task 写，perceive 消费后清
+    决策    action（本圈那一个键或一个宏）                    plan_task 写，perceive 消费后清
+            last_macro（上一动作是宏时的结果，否则 None）       act 写
     判定    termination（done / success 由它推出）                     review_and_judge 写
     收尾    act_verdicts / reason / memory / output                 task_done 写
 
-**一圈的数据流**：`perceive` 的 `sense` 取一帧落 `after_observation`（步号 = `start_step + step`）
+**一圈的数据流**：`perceive` 的 `sense` 取一帧落 `after_observation`（观测的局内累计键数 =
+`total_acts + step`；**账面步号** = `step + 1`，圈号语义：dispatch 落 0、每圈取帧 +1，
+同圈所有账共用）
 → 有 `action`（上一圈按过键）才构造 ActMemory / 停摆 / object 事件 → `close_step` 把新帧转正进
 `task_ctx.observation` 并清 `action` → `review_and_judge` → `plan_task` 出一个键 → `act` 按键、
 `step+1` → 回 `perceive`。首圈 `action` 为 None：`sense` 取的就是开局帧，直接转正。
@@ -25,13 +28,13 @@ from pokemon_agent.brain import Action, Task
 from pokemon_agent.brain.interface import VerifyVerdict
 from pokemon_agent.schemas.harness.domain import Settled, TaskOutput, Termination
 from pokemon_agent.schemas.memory import ActMemory, TaskMemory
-from pokemon_agent.world import ActionSpace, Observation
+from pokemon_agent.world import ActionSpace, MacroOutcome, TaskObservation
 
 
 class TaskContext(BaseModel):
     """perceive 格的产物束：当前帧 + 本 task 的 ActMemory + 本键受限动作空间。"""
 
-    observation: Observation | None = Field(
+    observation: TaskObservation | None = Field(
         default=None, description="当前帧（下一个键按下之前的那一帧）；首圈 perceive 前为 None"
     )
     action_space: ActionSpace | None = Field(default=None, description="本键允许的动作边界")
@@ -46,8 +49,13 @@ class TaskState(Settled, BaseModel):
     run_id: str = Field(description="所属 run（ActMemory 归属章）")
     episode_id: str = Field(description="所属 episode（记忆按局分组）")
     task: Task = Field(description="本 task：目标、判据、键预算 `max_steps`")
-    start_step: int = Field(
-        ge=0, description="本局键号基数——本 task 每一帧的步号 = start_step + step（唯一来源）"
+    total_acts: int = Field(
+        ge=0,
+        description=(
+            "进 task 时定格的局内累计键数快照（episode 派发时带下，task 内恒定）——"
+            "观测的局内累计键数 = total_acts + step（帧槽 / ActMemory 键控用）；"
+            "账面步号与它解耦（= step + 1，圈号，0928 定稿）"
+        ),
     )
 
     knowledge: list[str] = Field(
@@ -62,7 +70,7 @@ class TaskState(Settled, BaseModel):
     task_ctx: TaskContext = Field(
         default_factory=TaskContext, description="当前帧 + 动作空间；首圈 perceive 前为空"
     )
-    after_observation: Observation | None = Field(
+    after_observation: TaskObservation | None = Field(
         default=None, description="本圈 sense 刚取的新帧——perceive 格内流转，出格前恒为 None"
     )
 
@@ -72,7 +80,10 @@ class TaskState(Settled, BaseModel):
     stall_count: int = Field(default=0, ge=0, description="连续多少键画面与动作都无变化")
 
     action: Action | None = Field(
-        default=None, description="本圈那一个键；perceive 消费后清为 None"
+        default=None, description="本圈那一个键或一个宏；perceive 消费后清为 None"
+    )
+    last_macro: MacroOutcome | None = Field(
+        default=None, description="上一个动作是宏时它的结果；按键时为 None（act 每次覆盖）"
     )
 
     termination: Termination | None = Field(

@@ -3,8 +3,8 @@
 薄到几乎只是转发，但有三件事只在这里做：
 
 - **动作掩码。** `get_action_space()` 按当前 overlay（有没有对话框、菜单、选择框）
-  给出此刻能按的键。掩码**只看 overlay**，不看目标、不看历史——它回答的是
-  "这一帧按下去有意义吗"，不是"这一步该按什么"。
+  给出此刻能按的键；有宏的接管场合改给本场合的宏签名、不给键。掩码**只看 overlay**，
+  不看目标、不看历史——它回答的是"这一帧按下去有意义吗"，不是"这一步该按什么"。
 - **前置检查。** `execute()` 断言动作确实来自最近一次给出的动作空间。
   大脑幻觉出不存在的键要在这里就地爆炸，而不是变成一个语义不明的模拟器错误。
 - **感知的重试循环与翻译**（0913 夜从 harness 节点搬来）：`perceive_with_retry()`
@@ -27,10 +27,12 @@ from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolEvolveReq,
     FromHarnessToGameToolExecuteReq,
+    FromHarnessToGameToolExecuteResp,
     FromHarnessToGameToolGetActionSpaceReq,
     FromHarnessToGameToolGetActionSpaceResp,
     FromHarnessToGameToolLoadStateReq,
     FromHarnessToGameToolPerceiveOnceResp,
+    FromHarnessToGameToolPerceiveTaskResp,
     FromHarnessToGameToolResetReq,
     FromHarnessToGameToolSaveStateReq,
     FromHarnessToGameToolSaveStateResp,
@@ -43,8 +45,9 @@ from pokemon_agent.world import (
     OVERLAY_ACTIONS,
     ActionSpace,
     Facts,
-    Observation,
+    TaskObservation,
     WorldPort,
+    macro_specs,
 )
 from pokemon_agent.world.errors import PerceptionAttemptFailed
 
@@ -53,11 +56,13 @@ from pokemon_agent.world.errors import PerceptionAttemptFailed
 # 全部装配逻辑收在一处）——这里只是消费方。
 
 
-def _mask(obs: Observation, all_actions: list[str]) -> ActionSpace:
+def _mask(obs: TaskObservation, all_actions: list[str]) -> ActionSpace:
     """按这份观测的 overlay 算动作空间。**纯函数，不碰 world。**
 
-    后置条件：`names` 非空。走投无路也必须给至少一个动作——
+    后置条件：`names` 与 `macros` 恰好一个非空。走投无路也必须给至少一个动作——
         空动作空间是这一层的 bug，不能推给大脑处理。
+
+    有宏的接管场合（`macro_specs(obs.scene)` 非空）只给宏，JEV 在那里不直接按键。
 
     `get_action_space()` 和 `execute()` 共用它，而**不是让后者去调前者**——
     两个方法各自对外的语义不同（一个交出动作空间、一个校验并执行），
@@ -66,6 +71,9 @@ def _mask(obs: Observation, all_actions: list[str]) -> ActionSpace:
     # 直接拿结构化的 `facts.overlay`——不再是"文本塞回枚举"的反解，
     # `obs.facts` 本来就是 `Facts` 模型，`overlay` 该是 `Facts.Overlay` 就是
     # `Facts.Overlay`，缺失时才退回 `NONE`。
+    macros = macro_specs(obs.scene)
+    if macros:
+        return ActionSpace(names=[], macros=macros)
     overlay = obs.facts.overlay or Facts.Overlay.NONE
     names = [a for a in OVERLAY_ACTIONS[overlay] if a in all_actions]
 
@@ -188,10 +196,10 @@ class GameTools:
         """`req.path` → 模拟器完整状态。"""
         self._world.load_state(Path(req.path).read_bytes())
 
-    def perceive_with_retry(
-        self, *, ram_only: bool = False
-    ) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]:
-        """感知当前这一帧——**重试循环与异常翻译都在这里**（对齐 `BrainTool._attempt_loop`）。
+    def perceive_with_retry(self) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]:
+        """感知当前这一帧（episode 层）——**重试循环与异常翻译都在这里**。
+
+        对齐 `BrainTool._attempt_loop`。
 
         **为什么循环在这一层**（0913 夜，从 harness 节点搬来）："失败之后该怎么办"
         依赖调用方的处境——只有循环控制者知道试了几次、还剩几次预算、耗尽之后
@@ -203,9 +211,6 @@ class GameTools:
 
         搬回 tool 层之后 world 的词汇**跨不过这座桥**，所以 `world/errors.py`
         自成一根 `WorldError`（不继承 `AgentError`）——world 就此出边归零。
-
-        `ram_only=True` 时不问模型：world 那一档只读内存、**不会失败**，
-        循环第一次就返回（`log` 为空，没有 `MODEL_CALL` 要记）。
 
         **账随结果走，落账仍在宿主**：成功返回 `(resp, log)`——`resp.calls` 是
         world 原样的账（`list[dict]`），`log` 是**整条重试链**的账（失败尝试 +
@@ -222,7 +227,7 @@ class GameTools:
         log: ModelCallLog = []
         for nth in range(1, PERCEPTION_MAX_RETRIES + 1):
             try:
-                perceived = self._world.perceive_once(ram_only=ram_only)
+                perceived = self._world.perceive_once()
             except PerceptionAttemptFailed as exc:
                 # 单次失败：把这次的账收进来，继续下一次。
                 # **error_kind 尽量还原真相**：world 的包装把底层异常名留在
@@ -256,6 +261,7 @@ class GameTools:
                     observation=perceived.observation,
                     calls=perceived.calls,
                     frame_png=perceived.frame_png,
+                    ram=perceived.ram,
                 ),
                 log,
             )
@@ -268,13 +274,20 @@ class GameTools:
             source="sense",
         )
 
+    def perceive_task(self) -> FromHarnessToGameToolPerceiveTaskResp:
+        """task 层的一帧：world 的 `TaskPerceived` 原样摊平进信封（不调模型、不会失败）。"""
+        perceived = self._world.perceive_task()
+        return FromHarnessToGameToolPerceiveTaskResp(
+            observation=perceived.observation, frame_png=perceived.frame_png, ram=perceived.ram
+        )
+
     def get_action_space(
         self, req: FromHarnessToGameToolGetActionSpaceReq
     ) -> FromHarnessToGameToolGetActionSpaceResp:
         """掩码发生在这里，**只看 obs 里的 overlay**。
 
         前置条件：`req.observation` 是调用方当下正在依据的那份观测。
-        后置条件：names 非空。走投无路也必须给至少一个动作——
+        后置条件：names 与 macros 恰好一个非空。走投无路也必须给至少一个动作——
             空动作空间是这一层的 bug，不能推给大脑处理。
 
         **这是一个纯函数，不碰 world。** 掩码的依据由调用方交出来：它按哪份
@@ -287,30 +300,41 @@ class GameTools:
             action_space=_mask(req.observation, self._world.all_actions())
         )
 
-    def execute(self, req: FromHarnessToGameToolExecuteReq) -> None:
-        """执行**一个键**，推进世界。**不感知**——调用方另调 `perceive_with_retry()` 拿新观测。
+    def execute(self, req: FromHarnessToGameToolExecuteReq) -> FromHarnessToGameToolExecuteResp:
+        """执行**一个键或一个宏**，推进世界。**不感知**——调用方另调 `perceive_task()` 拿新观测。
 
         前置条件：`req.observation` 是这个动作**据以选出**的那份观测；
-            `req.action` 是单键（连按已在 Harness 的循环里展开成多步）。
+            `req.action` 是单键（连按已在 Harness 的循环里展开成多步）或一个宏调用。
+        后置条件：宏动作时 `resp.outcome` 是 world 的宏结果，按键时为 None。
 
         **依据由调用方交出来，不由本对象攒着**——调用方本来就知道自己按的是
         哪份观测，让它说出来即可。
 
-        校验动作合法后按下去，推进世界。
+        步骤 1：宏 → 校验宏名在本帧空间里，交 world 执行到底。
+        步骤 2：键 → 校验单键且在掩码里，按下去。
         """
         action = req.action
-        # **执行粒度是一个键。** 收到多段说明调用方没展开——那等于把"一次决策
-        # 按多少键"从循环里偷了回来，就地拦下好过替它展开：展开出来的每一步
-        # 都要各写一条记忆、各判一次中止，那只能是循环的事。
+        space = _mask(req.observation, self._world.all_actions())
+
+        # 步骤 1：宏。
+        if action.macro is not None:
+            assert space.macro(action.macro.name) is not None, (
+                f"execute() got macro {action.macro.name!r} outside "
+                f"{[m.name for m in space.macros]}"
+            )
+            outcome = self._world.run_macro(action.macro.name, dict(action.macro.args))
+            return FromHarnessToGameToolExecuteResp(outcome=outcome)
+
+        # 步骤 2：键。**执行粒度是一个键。** 收到多段说明调用方没展开——那等于把"一次决策
+        # 按多少键"从循环里偷了回来，就地拦下好过替它展开。
         assert len(action.sequence) == 1, (
             "execute() 只接受单键动作；连按应由 Harness 的循环展开成多步"
         )
         segment = action.sequence[0]
-        space = _mask(req.observation, self._world.all_actions())
         assert space.contains(segment.name), f"execute() got {segment.name!r} outside {space.names}"
         # world 不认识 `Action`，这里拆成 `(按键名, 连按次数)` 的裸列表交给它。
-        # `settle` 原样转达：链中间的键不等过场走完（理由见 `ExecuteReq.settle`）。
         self._world.step([(segment.name, segment.times)], settle=req.settle)
+        return FromHarnessToGameToolExecuteResp()
 
     def evolve(self, req: FromHarnessToGameToolEvolveReq) -> None:
         """无输入推进 N 帧（世界自己演化）——harness 等决策 LLM 时的空闲填充。"""

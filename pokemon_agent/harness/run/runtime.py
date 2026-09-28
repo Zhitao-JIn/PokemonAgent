@@ -39,7 +39,13 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph.state import CompiledStateGraph
 
-from pokemon_agent.tools.interface import JudgePort, MemoryToolPort, PlanPort, TraceToolPort
+from pokemon_agent.tools.interface import (
+    GameToolPort,
+    JudgePort,
+    MemoryToolPort,
+    PlanPort,
+    TraceToolPort,
+)
 
 from ..episode.episode_runtime import EpisodeRuntime
 from ..interface.reviewer import Reviewer
@@ -62,6 +68,10 @@ class RunRuntime:
     """记账 req 由 harness 组装（与 `EpisodeRuntime.trace` 是**同一实例**）。"""
     memory: MemoryToolPort
     """plan / review 读记忆（与 `EpisodeRuntime.memory` 是**同一实例**）。"""
+    game: GameToolPort
+    """世界（模拟器）端口：run 层每圈取帧（`perceive` 的 `sense`）与 `new_run` 载世界起点
+    走它。与 `EpisodeRuntime.game` 是**同一实例**（装配时复制引用）——0928 起 run 层
+    自己取帧，不再经 `episode` 穿透。"""
     reviewer: Reviewer
     """人与图之间的门：plan 位置的插话 + review 的审（与 `EpisodeRuntime.reviewer`
     是**同一实例**——"人对 plan 说的那句话"要能传到审那一格，必须同对象）。"""

@@ -46,6 +46,9 @@ class _Event(BaseModel):
     uuid: str = Field(description="本次事件的唯一标识（= 文件名），落盘那一刻由 store 盖上")
     kind: str = Field(description="账名（裸 str，取值由声明方定义）")
     type: str = Field(description="事件种类（裸 str，取值由声明方定义）")
-    ts: float = Field(description="Unix 时间戳（秒），写入那一刻由 store 盖上")
+    started_at: float = Field(
+        description="Unix 时间戳（秒）：操作真实开始时刻；调用方没记的账 = 记账时刻"
+    )
+    ended_at: float = Field(description="Unix 时间戳（秒）：操作结束时刻，**排序的唯一依据**")
     meta: str = Field(default="{}", description="签名信息的 JSON 字符串")
     content: str = Field(default="{}", description="账本体的 JSON 字符串")

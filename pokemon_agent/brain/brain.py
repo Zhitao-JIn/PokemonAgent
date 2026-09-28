@@ -52,6 +52,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Sequence
 
 from pydantic import ValidationError
@@ -78,6 +79,9 @@ from .interface import (
     Decomposition,
     EpisodeSummary,
     JudgeResult,
+    MacroArg,
+    MacroCall,
+    MacroSignature,
     ModelCall,
     PlanResult,
     Reflection,
@@ -192,6 +196,7 @@ class Brain:
         prompt: str,
         keys: Sequence[str],
         images: Sequence[str] = (),
+        macros: Sequence[MacroSignature] = (),
     ) -> ChooseResult:
         """一次决策尝试：问一次模型、解析。**不重试**——重试是调用方的循环。
 
@@ -224,6 +229,7 @@ class Brain:
         # `sent_images` = **真发给模型的图**（发给什么存什么）：转发表退化成
         # 纯文本时为空列表，账上的 `images` 因此如实反映模型收到的东西。
         sent_images = list(images) if with_vision else []
+        t0 = time.time()
         try:
             if sent_images:
                 text, n_in, n_out, n_cached, n_reason = self._ask(self._decide, prompt, sent_images)
@@ -240,9 +246,16 @@ class Brain:
                     completion.reasoning_tokens,
                 )
                 truncated = completion.truncated
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "images": sent_images},
+                payload={
+                    "ok": "false",
+                    "prompt": prompt,
+                    "images": sent_images,
+                    "started_at": t0,
+                    "ended_at": time.time(),
+                },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -255,7 +268,7 @@ class Brain:
             # 截断要**先于**解析检查，否则它会伪装成"少了个右括号"的 ParseFailure。
             if truncated:
                 raise OutputTruncated(n_out)
-            parsed = self._parse(text, keys)
+            parsed = self._parse(text, keys, macros)
         except (ParseFailure, IllegalAction, OutputTruncated) as exc:
             kind, reason = type(exc).__name__, str(exc)
         except ValidationError as exc:
@@ -278,6 +291,8 @@ class Brain:
                 # 发给什么存什么：模型真收到图的账里才有图（转发表退化成
                 # 纯文本时为空列表——"带了图但没发出去"在这条账上看得见）
                 "images": sent_images,
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind=kind,
             error=reason,
@@ -287,9 +302,12 @@ class Brain:
 
         # 出口断言（postcondition）：大脑不会产出空动作或调用方没给的按键。
         # `_parse` 已逐段校验过，这里是运行时全覆盖的兜底证明。
-        assert parsed.sequence, "choose() returned an action with an empty sequence"
+        assert parsed.sequence or parsed.macro is not None, "choose() returned an empty action"
         assert all(seg.name in keys for seg in parsed.sequence), (
             f"brain chose key outside {list(keys)}"
+        )
+        assert parsed.macro is None or any(m.name == parsed.macro.name for m in macros), (
+            f"brain chose macro outside {[m.name for m in macros]}"
         )
         return ChooseResult(action=parsed, calls=[call])
 
@@ -327,8 +345,10 @@ class Brain:
             "plan() 需要一个 plan provider——这次装配没给它（按需装配）"
         )
         # 步骤 1：调模型。
+        t0 = time.time()
         try:
             completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt, thinking=thinking))
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
@@ -336,6 +356,8 @@ class Brain:
                     "prompt": prompt,
                     "images": [],
                     "thinking_override": _override(thinking),
+                    "started_at": t0,
+                    "ended_at": time.time(),
                 },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
@@ -363,6 +385,8 @@ class Brain:
                 "prompt": prompt,
                 # 规划链纯文本（见 docstring），账形与其余链路统一
                 "images": [],
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind=kind,
             error=reason,
@@ -398,8 +422,10 @@ class Brain:
         )
         assert max_tasks > 0, "decompose() got a non-positive max_tasks"
         # 步骤 1：调模型。
+        t0 = time.time()
         try:
             completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt, thinking=thinking))
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
@@ -407,6 +433,8 @@ class Brain:
                     "prompt": prompt,
                     "images": [],
                     "thinking_override": _override(thinking),
+                    "started_at": t0,
+                    "ended_at": time.time(),
                 },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
@@ -431,6 +459,8 @@ class Brain:
                 "raw": completion.text,
                 "prompt": prompt,
                 "images": [],
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind=kind,
             error=reason,
@@ -486,12 +516,20 @@ class Brain:
         # 但"这次为什么不成立"必须是可统计的，所以补一条只有错误信息的账。
         text = n_in = n_out = n_cached = n_reason = ""
         kind = ""
+        t0 = time.time()
         try:
             text, n_in, n_out, n_cached, n_reason = self._ask(self._judge_llm, prompt, images)
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"，转成 AttemptFailed
             kind = type(exc).__name__
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "images": list(images)},
+                payload={
+                    "ok": "false",
+                    "prompt": prompt,
+                    "images": list(images),
+                    "started_at": t0,
+                    "ended_at": time.time(),
+                },
                 error_kind=kind,
                 error=f"{exc}",
             )
@@ -512,6 +550,8 @@ class Brain:
                 # 带没带图、带了哪几张，直接看 `images`——发给什么存什么，
                 # "这次判错是没带图还是带了图也判错"从此可分。
                 "images": list(images),
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind=kind,
             error=why if kind else "",
@@ -622,11 +662,19 @@ class Brain:
             "verify() 需要一个 verify provider——这次装配没给它（按需装配）"
         )
         # 步骤 1：调模型。
+        t0 = time.time()
         try:
             text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "images": list(images)},
+                payload={
+                    "ok": "false",
+                    "prompt": prompt,
+                    "images": list(images),
+                    "started_at": t0,
+                    "ended_at": time.time(),
+                },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -646,6 +694,8 @@ class Brain:
                 "ok": str(not parse_kind).lower(),
                 "prompt": prompt,
                 "images": list(images),
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind=parse_kind,
             error=parse_reason,
@@ -738,11 +788,19 @@ class Brain:
             "summarize() 需要一个 verify provider——这次装配没给它（按需装配）"
         )
         # 步骤 1：调模型。
+        t0 = time.time()
         try:
             text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "images": list(images)},
+                payload={
+                    "ok": "false",
+                    "prompt": prompt,
+                    "images": list(images),
+                    "started_at": t0,
+                    "ended_at": time.time(),
+                },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -761,6 +819,8 @@ class Brain:
                 "ok": str(summary is not None).lower(),
                 "prompt": prompt,
                 "images": list(images),
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind="" if summary is not None else "ParseFailure",
             error="" if summary is not None else "摘要输出无法解析成 EpisodeSummary",
@@ -863,13 +923,15 @@ class Brain:
         except ValidationError as exc:
             raise ParseFailure(text, f"RunPlan 字段不合法：{exc.errors()[:1]}") from exc
 
-    def _parse(self, text: str, keys: Sequence[str]) -> Action:
+    def _parse(
+        self, text: str, keys: Sequence[str], macros: Sequence[MacroSignature] = ()
+    ) -> Action:
         """把 LLM 输出解析成 `Action`，不合法就抛 `ParseFailure` / `IllegalAction`。
 
-        **模型只交一个键**：输出形如 `{"action": "up"}`（0924 起，此前是 `sequence`
-        数组）；这里把它包成单段、`times=1` 的 `Action`——`Action.sequence` 是
-        brain 对外的形状，与模型写什么格式无关。多写的字段一律忽略。
-        只做三件事：剥围栏、验形状、验"这个键在不在 `keys` 里"。
+        **模型只交一个动作**：按键写 `{"action": "up"}`，包成单段、`times=1` 的 `Action`；
+        宏写 `{"action": "buy", "item": "POKé BALL", "quantity": 5}`，其余字段按签名收成
+        `MacroCall.args`。签名之外的字段一律忽略。只查名字在不在空间里、参数齐不齐、
+        类型对不对，不做语义校验。
         """
         # 步骤 1：剥 ```json 围栏。
         stripped = _strip_json_fence(text)
@@ -882,13 +944,37 @@ class Brain:
         if not isinstance(raw, dict):
             raise ParseFailure(text, "top level is not an object")
 
-        # 步骤 2：取那一个键，验它在可用按键里。
+        # 步骤 2：取动作名，按键直接成段。
         name = raw.get("action")
         if not isinstance(name, str) or not name.strip():
             raise ParseFailure(text, "'action' must be a non-empty string")
         name = name.strip()
-        if name not in keys:
-            raise IllegalAction(name, list(keys))
+        if name in keys:
+            return Action(sequence=[ActionSegment(name=name, times=1)])
 
-        return Action(sequence=[ActionSegment(name=name, times=1)])
+        # 步骤 3：宏名则按签名收参数。
+        signature = next((m for m in macros if m.name == name), None)
+        if signature is None:
+            raise IllegalAction(name, [*keys, *(m.name for m in macros)])
+        args: dict[str, str | int] = {}
+        for param in signature.params:
+            value = raw.get(param.name)
+            if value is None:
+                if param.required:
+                    raise ParseFailure(text, f"macro {name!r} missing argument {param.name!r}")
+                continue
+            args[param.name] = _macro_arg(text, name, param, value)
+        return Action(macro=MacroCall(name=name, args=args))
 
+
+def _macro_arg(text: str, macro: str, param: MacroArg, value: object) -> str | int:
+    """按参数类型收一个值：`int` 收整数或纯数字串，`str` 收非空字符串；不合就抛 `ParseFailure`。"""
+    if param.type == "int":
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
+        raise ParseFailure(text, f"macro {macro!r} argument {param.name!r} must be an integer")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    raise ParseFailure(text, f"macro {macro!r} argument {param.name!r} must be a non-empty string")

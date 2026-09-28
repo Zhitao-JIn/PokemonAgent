@@ -28,6 +28,7 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
     """反思这一步并落一条情景记忆。**不改状态字段，返回空增量。**
 
     before = `task_ctx.observation`、after = `after_observation`；上一圈没按键（首圈）时不写。
+    上一动作是宏时，动作一栏写宏结果那一句（调用 + 结局 + 摘要或原因）。
     """
     if state.action is None:
         return {}
@@ -51,6 +52,7 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
             "task_id": state.task.task_id,
             "before_frame": frame_b64(deps, ep, before.step),
             "after_frame": frame_b64(deps, ep, before.step + 1),
+            **({"action": state.last_macro.describe()} if state.last_macro is not None else {}),
         }
     )
 
@@ -63,7 +65,7 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
                 "source": "store_step_episode_memory",
                 "episode_id": ep,
                 "task_id": state.task.task_id,
-                "step": before.step,
+                "step": state.step + 1,
             },
             entry=entry,
         )

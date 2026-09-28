@@ -20,6 +20,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from .observation import Observation
+from .ram_readout import RamReadout
 
 
 class Perceived(BaseModel):
@@ -41,3 +42,8 @@ class Perceived(BaseModel):
         "**不是 None**",
     )
     frame_png: str = Field(description="这一次感知实际截下来、喂给视觉模型的那张原始 PNG（base64）")
+    ram: RamReadout | None = Field(
+        default=None,
+        description="这一帧的内存读数，只进 trace（`sense_frame.content.ram`），"
+        "不进 `Observation`；假世界可以不给",
+    )

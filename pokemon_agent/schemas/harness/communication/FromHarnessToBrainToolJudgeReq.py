@@ -29,9 +29,7 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     episode_memories：run 层判定的素材（本 run 的局摘要）；下两层留空。
     allow_interrupt：只有 task 层置真——prompt 多一段「是不是被打断了」的判法，
         判定员多回答一个 `interrupted`。另两层不问，结果里 `interrupted` 恒为假。
-    human_note：人对**上一次判定**插的一句话（空串 = 没被插话）。非空时它就是
-        "带话重问"的那一次——由 prompt 层拼在**最末尾**，压过上面所有规则
-        （0914 控制台改造：插话的落点之一）。
+
 
     **`prompt` 不是本模型的字段**（0913 删）：它是 `BrainTool.judge()` 入口处
     调 `build_prompt(req)` 的产物，只活在那一次调用的局部——shell 与"问模型"
@@ -46,4 +44,3 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     task_table: Sequence[TaskEntry] = ()
     episode_memories: Sequence[EpisodeMemory] = ()
     allow_interrupt: bool = False
-    human_note: str = ""

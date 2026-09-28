@@ -15,7 +15,7 @@ from ..runtime import RunRuntime
 
 
 def absorb_episode(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
-    """把 `pending_episode` 折进 state，并清掉它。"""
+    """把 `pending_episode` 折进 state，并清掉它（`total_acts` 顺带累加本局键数）。"""
     out = state.pending_episode
     if out is None:
         return {}
@@ -23,6 +23,7 @@ def absorb_episode(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, A
         "episode_outputs": [*state.episode_outputs, out],
         "fail_streak": 0 if out.success else state.fail_streak + 1,
         "pending_episode": None,
+        "total_acts": state.total_acts + out.acts_used,
     }
 
 

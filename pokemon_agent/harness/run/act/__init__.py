@@ -10,6 +10,8 @@
 episode 子图由装配点（`build.py`）编译，经 `runtime.context.episode_graph` 递来。
 派发（`dispatch`）与异常收场（`settle_episode_error`）各住一个文件。
 **episode 级存档在本格一开始**（有存档器时）：run 图停在进 `act` 前，这一局还没动过世界与记忆。
+**恢复到某个 task 时**（存档器里有恢复计划）：不存档，经 `episode_entry.resume_episode` 从存下的
+episode 状态接着跑。
 """
 
 from __future__ import annotations
@@ -33,25 +35,34 @@ def act(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
     dispatched = dispatch(state)
     episode_input: EpisodeInput = dispatched["episode_input"]
 
-    # 步骤 2：episode 级存档——存的是进 `act` 前的状态，将派的就是这一局。
-    if runtime.context.checkpointer is not None:
-        runtime.context.checkpointer.save(
-            level="episode", state=state, episode_id=episode_input.episode_id
+    # 步骤 2：有恢复计划就不存档（世界与记忆已是目标 task 开局的样子，按 episode 级存会名不副实）；
+    # 否则存 episode 级档——存的是进 `act` 前的状态，将派的就是这一局。
+    ck = runtime.context.checkpointer
+    resumed = ck.take_resume(episode_input.episode_id) if ck is not None else None
+    if ck is not None and resumed is None:
+        ck.save(
+            "episode", run_id=state.run_id, step=state.step, episode_id=episode_input.episode_id
         )
 
-    # 步骤 3：跑 episode 子图，结算交给下一圈 perceive 吸收；抛错由本格接住。
+    # 步骤 3：跑 episode 子图（或从存下的状态接着跑），结算交给下一圈 perceive 吸收；
+    # 抛错由本格接住。
     try:
-        outcome = episode_entry.run_episode(
-            runtime.context.episode, runtime.context.episode_graph, episode_input=episode_input
-        )
+        if resumed is None:
+            outcome = episode_entry.run_episode(
+                runtime.context.episode, runtime.context.episode_graph, episode_input=episode_input
+            )
+        else:
+            outcome = episode_entry.resume_episode(
+                runtime.context.episode,
+                runtime.context.episode_graph,
+                resumed,
+                episode_input=episode_input,
+            )
     except Exception as exc:
         outcome = settle_episode_error(
             runtime.context.episode, state.run_id, episode_input, exc, source="run.act"
         )
 
-    # 步骤 4：这一局的账封存进它的 episode 存档。
-    if runtime.context.checkpointer is not None:
-        runtime.context.checkpointer.seal_episode(run_id=state.run_id, step=dispatched["step"])
     return {**dispatched, "pending_episode": outcome}
 
 

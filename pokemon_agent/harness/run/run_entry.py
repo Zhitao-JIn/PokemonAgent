@@ -81,8 +81,13 @@ def new_run(
     run_id: str,
     goals: list[Task],
     run_goal: Goal | None = None,
+    checkpoint_only: bool = False,
 ) -> tuple[list[EpisodeOutput], int, int, float]:
     """跑完一个 run：载入世界起点，然后目标表逐个解决（每条一个 episode），返回 run 级结算。
+
+    `checkpoint_only`：只存 run 级存档（记 `checkpoint_save`）就返回 `([], 0, 0, 0.0)`，不进图、
+    不记 `run_start` / `run_end`——用来把"钉死存档 + 目标"打包成可 `restore_run` 的起点。
+    前置条件：此时必须装了存档器。
 
     返回 `(outcomes, total, succeeded, success_rate)` 四个裸值，不打包成对象——
     trace 里那条 RUN_END 内嵌的 `RunResp` 由图内 `run_done` 组装。
@@ -101,6 +106,9 @@ def new_run(
     """
     assert run_id, "new_run() got an empty run_id"
     assert goals, "new_run() got an empty goal table"
+    assert not checkpoint_only or deps.checkpointer is not None, (
+        "checkpoint_only needs a checkpointer"
+    )
 
     goal = run_goal or default_run_goal(goals)
 
@@ -119,10 +127,12 @@ def new_run(
         # `world_reset_done` 那个跨局记号（2026-09-22 第 178 条删除）。
         # task 取表序第一条（run 从第一个目标开局）；world 只拿它做断言与
         # "将来按任务选起始存档"，真正的任务编排仍由 `dispatch` 逐局决定。
-        # `game` 住在 `EpisodeRuntime` 上（episode 独占），run 侧经嵌套穿透。
-        deps.episode.game.reset(FromHarnessToGameToolResetReq(task=goals[0]))
+        # reset 走 `deps.game`（0928 起 run 层自己持有世界端口，与 episode 层同一实例）。
+        deps.game.reset(FromHarnessToGameToolResetReq(task=goals[0]))
         if deps.checkpointer is not None:
-            deps.checkpointer.save(level="run", state=state)
+            deps.checkpointer.save("run", run_id=run_id, step=state.step, state=state)
+        if checkpoint_only:
+            return [], 0, 0, 0.0
         final = invoke_run(deps, graph, state, thread=thread_id(run_id, state.branch))
     except Exception as exc:
         # 异常路径：谁接住谁记账——这里接住的是整个 run 的异常，记 RUN_ERROR 再原样抛出，不吞。
@@ -132,7 +142,7 @@ def new_run(
 
 
 def record_run_error(deps: RunRuntime, run_id: str, exc: Exception, *, source: str) -> None:
-    """记一条 `run_error`（整个 run 的异常快照），再把半截那一局已写出的账封存（有存档器时）。
+    """记一条 `run_error`（整个 run 的异常快照）。
 
     source：接住异常的位置——`"run_entry.new_run"`，或恢复路径 `"checkpoint.restore"`。
     """
@@ -143,8 +153,6 @@ def record_run_error(deps: RunRuntime, run_id: str, exc: Exception, *, source: s
             error=exc_snapshot(exc),
         )
     )
-    if deps.checkpointer is not None:
-        deps.checkpointer.seal_episode(run_id=run_id, step=0)
 
 
 def close(final: dict[str, Any]) -> tuple[list[EpisodeOutput], int, int, float]:

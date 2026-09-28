@@ -34,7 +34,10 @@ Frontend 发起的信封已在 0914 控制台改造中**整个删除**（`schema
 
 **`HumanDecision` 已删**（0914 控制台改造）：三值（continue/stop/retry）随槽机制
 一起下线。人的表态现在是两处：**插话**（`Reviewer.inject()` 收一句自然语言，
-回车即收）与**审**（`AuditVerdict`——认 / 推翻，住 reviewer 的 audit 信封里）。
+回车即收）与**审**（`AuditVerdict`——认 / 推翻，住 `domain/`，三跳共用）。
+
+**跳 A 信封**（`FromHarnessToReviewBackend*`）：`WebReviewer` 与常驻后端之间的线上 JSON，
+由 harness 发起、住这里；跳 B（后端 ↔ 网页）在 `schemas/review_backend/`。
 "继续/停止"不再是人的选项，由 run 的 `review_and_judge` 判（机械三类 + 问模型）；"重试"改成
 `EntryStatus` 上的一次状态迁移（`plan_run` 把 `FAILED`/`ABANDONED` 重开成 `PENDING`）。
 """
@@ -59,16 +62,16 @@ __all__ = [
     "FromHarnessToBrainToolVerifyResp",
     "FromHarnessToGameToolEvolveReq",
     "FromHarnessToGameToolExecuteReq",
+    "FromHarnessToGameToolExecuteResp",
     "FromHarnessToGameToolGetActionSpaceReq",
     "FromHarnessToGameToolGetActionSpaceResp",
     "FromHarnessToGameToolLoadStateReq",
     "FromHarnessToGameToolPerceiveOnceResp",
+    "FromHarnessToGameToolPerceiveTaskResp",
     "FromHarnessToGameToolResetReq",
     "FromHarnessToGameToolSaveStateReq",
     "FromHarnessToGameToolSaveStateResp",
     "FromHarnessToMemoryToolAppendObjectEventsReq",
-    "FromHarnessToMemoryToolFetchReq",
-    "FromHarnessToMemoryToolFetchResp",
     "FromHarnessToMemoryToolQueryActMemoriesReq",
     "FromHarnessToMemoryToolQueryActMemoriesResp",
     "FromHarnessToMemoryToolQueryEpisodeSummariesReq",
@@ -93,12 +96,19 @@ __all__ = [
     "FromHarnessToMemoryToolStoreEpisodeSummaryResp",
     "FromHarnessToMemoryToolStoreKnowledgeReq",
     "FromHarnessToMemoryToolStoreKnowledgeResp",
+    "FromHarnessToReviewBackendAuditReq",
+    "FromHarnessToReviewBackendAuditResp",
+    "FromHarnessToReviewBackendFeedReq",
+    "FromHarnessToReviewBackendInjectReq",
+    "FromHarnessToReviewBackendInjectResp",
     "FromHarnessToReviewerAuditReq",
     "FromHarnessToReviewerAuditResp",
     "FromHarnessToReviewerInjectReq",
+    "FromHarnessToReviewerInjectResp",
     "FromHarnessToTraceToolAppendReq",
     "GoalEntry",
     "EntryStatus",
+    "JudgeFeedback",
     "ModelCall",
     "ModelCallLog",
     "RunResp",
@@ -128,6 +138,7 @@ from .communication.FromHarnessToBrainToolVerifyReq import FromHarnessToBrainToo
 from .communication.FromHarnessToBrainToolVerifyResp import FromHarnessToBrainToolVerifyResp
 from .communication.FromHarnessToGameToolEvolveReq import FromHarnessToGameToolEvolveReq
 from .communication.FromHarnessToGameToolExecuteReq import FromHarnessToGameToolExecuteReq
+from .communication.FromHarnessToGameToolExecuteResp import FromHarnessToGameToolExecuteResp
 from .communication.FromHarnessToGameToolGetActionSpaceReq import (
     FromHarnessToGameToolGetActionSpaceReq,
 )
@@ -138,14 +149,15 @@ from .communication.FromHarnessToGameToolLoadStateReq import FromHarnessToGameTo
 from .communication.FromHarnessToGameToolPerceiveOnceResp import (
     FromHarnessToGameToolPerceiveOnceResp,
 )
+from .communication.FromHarnessToGameToolPerceiveTaskResp import (
+    FromHarnessToGameToolPerceiveTaskResp,
+)
 from .communication.FromHarnessToGameToolResetReq import FromHarnessToGameToolResetReq
 from .communication.FromHarnessToGameToolSaveStateReq import FromHarnessToGameToolSaveStateReq
 from .communication.FromHarnessToGameToolSaveStateResp import FromHarnessToGameToolSaveStateResp
 from .communication.FromHarnessToMemoryToolAppendObjectEventsReq import (
     FromHarnessToMemoryToolAppendObjectEventsReq,
 )
-from .communication.FromHarnessToMemoryToolFetchReq import FromHarnessToMemoryToolFetchReq
-from .communication.FromHarnessToMemoryToolFetchResp import FromHarnessToMemoryToolFetchResp
 from .communication.FromHarnessToMemoryToolQueryActMemoriesReq import (
     FromHarnessToMemoryToolQueryActMemoriesReq,
 )
@@ -218,13 +230,22 @@ from .communication.FromHarnessToMemoryToolStoreKnowledgeResp import (
 from .communication.FromHarnessToMemoryToolStoreTaskMemoryReq import (
     FromHarnessToMemoryToolStoreTaskMemoryReq,
 )
-from .communication.FromHarnessToReviewerAuditReq import (
-    AuditVerdict,
-    FromHarnessToReviewerAuditReq,
-    FromHarnessToReviewerAuditResp,
+from .communication.FromHarnessToReviewBackendAuditReq import FromHarnessToReviewBackendAuditReq
+from .communication.FromHarnessToReviewBackendAuditResp import (
+    FromHarnessToReviewBackendAuditResp,
 )
+from .communication.FromHarnessToReviewBackendFeedReq import FromHarnessToReviewBackendFeedReq
+from .communication.FromHarnessToReviewBackendInjectReq import (
+    FromHarnessToReviewBackendInjectReq,
+)
+from .communication.FromHarnessToReviewBackendInjectResp import (
+    FromHarnessToReviewBackendInjectResp,
+)
+from .communication.FromHarnessToReviewerAuditReq import FromHarnessToReviewerAuditReq
+from .communication.FromHarnessToReviewerAuditResp import FromHarnessToReviewerAuditResp
 from .communication.FromHarnessToReviewerInjectReq import FromHarnessToReviewerInjectReq
+from .communication.FromHarnessToReviewerInjectResp import FromHarnessToReviewerInjectResp
 from .communication.FromHarnessToTraceToolAppendReq import FromHarnessToTraceToolAppendReq
 from .communication.ModelCall import ModelCall, ModelCallLog
 from .communication.RunResp import RunResp
-from .domain import EntryStatus, GoalEntry, TraceEvent, TraceKind
+from .domain import AuditVerdict, EntryStatus, GoalEntry, JudgeFeedback, TraceEvent, TraceKind

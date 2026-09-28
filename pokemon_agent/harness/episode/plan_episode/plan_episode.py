@@ -46,8 +46,8 @@ def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
     meta = {
         "source": "plan_episode",
         "episode_id": state.episode_id,
-        "task_id": state.episode_id,
-        "step": state.ep_ctx.observation.step,
+        "task_id": "",
+        "step": state.step + 1,  # 账面步号 = 圈号（0928 定稿）
     }
 
     # 步骤 1：要一版（含插话循环）；拆解耗尽重试时本局按 ERROR 收尾，不再上抛。
@@ -65,8 +65,6 @@ def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
             meta=meta,
             tasks=tasks,
             why=resp.decomposition.why,
-            input=resp.calls[-1].payload.get("prompt", ""),
-            output=resp.calls[-1].payload.get("raw", ""),
             human_note=note,
         )
     )
@@ -93,6 +91,7 @@ def _elicit(
                 episode_memories=state.ep_ctx.global_episode_memories,
                 knowledge=current_knowledge(state),
                 max_tasks=EPISODE_MAX_TASKS_PER_PLAN,
+                last_judge=state.last_judge,
                 human_note=note,
             ),
         )

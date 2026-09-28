@@ -8,6 +8,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from pokemon_agent.brain.interface import Goal
+from pokemon_agent.schemas.harness.domain.judge_feedback import JudgeFeedback
 from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
 from pokemon_agent.schemas.memory import EpisodeMemory, TaskMemory
 from pokemon_agent.world import Observation
@@ -30,6 +31,9 @@ class FromHarnessToBrainToolDecomposeReq(BaseModel):
     )
     knowledge: list[str] = Field(
         default_factory=list, description="episode 层检索到的领域知识全文，一篇一条（不筛）"
+    )
+    last_judge: JudgeFeedback | None = Field(
+        default=None, description="本局上一次判定及人的表态；还没判过为 None"
     )
     max_tasks: int = Field(gt=0, description="这一版最多几个 task（给模型的建议上限）")
     human_note: str = Field(default="", description="人对上一版拆解的插话；空 = 没被插话")

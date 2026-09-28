@@ -24,14 +24,15 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class Event(Protocol):
-    """一个事件的最小形状：**trace 记账真正需要的六样**。
+    """一个事件的最小形状：**trace 记账真正需要的七样**。
 
-    这六个属性是 `store.py` 全部读点与算法的输入，多一个都不需要：
+    这七个属性是 `store.py` 全部读点与算法的输入，多一个都不需要：
 
     | 属性 | trace 拿它干什么 |
     |---|---|
     | `uuid` | 落盘（就是文件名）；扫盘时按它去重 |
-    | `ts` | 排序（`(ts, uuid)` 升序）、落盘 |
+    | `started_at` | 落盘；操作真实开始时刻（机械账 = 记账时刻） |
+    | `ended_at` | 排序（`(ended_at, uuid)` 升序）、落盘 |
     | `kind` | 落盘（本类**不解释**它的取值——那是声明方的事） |
     | `type` | 落盘（同上） |
     | `meta` | 落盘随行；**按交集筛选时读它**（`read_events` 的 `meta` 参数） |
@@ -41,8 +42,16 @@ class Event(Protocol):
     uuid: str
     """本次事件的唯一标识，与文件名同值。"""
 
-    ts: float
-    """Unix 时间戳（秒）。排序依据。"""
+    started_at: float
+    """Unix 时间戳（秒）：这笔账对应的**操作真实开始**时刻。
+
+    双时刻改造（2026-09-27）：操作真实起止由调用方记（模型调用/检索在操作
+    前后取 `time.time()`），调用方没记的账（机械事实/生命周期）由落盘层补
+    `start = end =` 记账时刻——start == end 就是"这笔账本身没有时长语义"。
+    """
+
+    ended_at: float
+    """Unix 时间戳（秒）：操作结束时刻。**排序的唯一依据**（`(ended_at, uuid)`）。"""
 
     kind: str
     """账名（裸 `str`，取值由声明方定义）。"""

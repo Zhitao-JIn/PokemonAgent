@@ -4,7 +4,8 @@
 语义等价于"人从不插话、从不推翻"：
 
 - `NullReviewer.inject()` 恒返回空串（没有意见）；
-- `NullReviewer.audit()` 恒返回认账。
+- `NullReviewer.audit()` 恒返回认账；
+- 两者都标 `answered=False`——账上看得出这不是人答的。
 
 于是 run 的行为 = LLM 出什么就是什么。**这条路上没有任何自动重试预算**——
 这是删掉 `MAX_GOAL_RETRIES` 的代价（用户已接受，见 `docs/PLAN_console_reviewer.md`
@@ -23,19 +24,20 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerAuditReq,
     FromHarnessToReviewerAuditResp,
     FromHarnessToReviewerInjectReq,
+    FromHarnessToReviewerInjectResp,
 )
 
 
 class NullReviewer:
     """无头实现：不插话、不推翻。"""
 
-    def inject(self, req: FromHarnessToReviewerInjectReq) -> str:
+    def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
         """恒返回空串——人没有意见。"""
-        return ""
+        return FromHarnessToReviewerInjectResp(text="", answered=False)
 
     def audit(self, req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
         """恒认账——接受模型/判定器给的结论。"""
-        return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT)
+        return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=False)
 
 
 __all__ = ["NullReviewer"]

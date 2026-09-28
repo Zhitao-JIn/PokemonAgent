@@ -103,6 +103,13 @@ CONSOLE_REVIEW_TIMEOUT = 30.0
 读历史后决策（见 `docs/PLAN_console_reviewer.md` §3.1），run 级不再有自动重试预算。
 """
 
+WEB_REVIEW_TIMEOUT = 30.0
+"""网页问人的等待秒数——到点由后端回默认值（插话空串、审认账），标 `answered=False`。
+
+**两个消费者**：`WebReviewer` 把它放进每一问的 `timeout_s` 交给后端计时；自己等回话时
+多等 5 秒兜底。与 `CONSOLE_REVIEW_TIMEOUT` 分开：两个实现的人看的东西不一样多，各自调。
+"""
+
 
 # ---- 动作输出上限：模型一次决策能写多大 ----
 # **两个消费者必须同源**：prompt 渲染与 tool 校验读同一份，

@@ -12,11 +12,16 @@
   与纯数字行（`35/35`）不算选项。
 - 排布 = 选项按屏幕行分组（`option_grid`），光标记为 (行, 列)——决策据此知道方向键怎么走。
 - 对话 = 左下角 (12, 0) 为 `┌` 的底部框里的文字，逐行拼接。
+- 整屏渲染（`render_screen`）= 20×18 原样逐行渲成文字，交给模型与切好的字段互相校验：
+  边框画成 `┌─┐│└┘`，等级 `:L`、血条 `HP:[██████]` 按图块渲染，其余非文字图块画 `·`。
+- 叠加层判据：屏幕上有 `▶` 或数量框（`×` 紧跟两位数字）→ 有选单；
+  严格对话 = 底部对话框有字、没有 `▶`、没有数量框、对话框外没有别的框。
 """
 
 from __future__ import annotations
 
 from collections import Counter
+from typing import NamedTuple
 
 from .interface import Memory
 from .interface.domain.screen_text import ScreenText
@@ -77,6 +82,26 @@ CHARMAP: dict[int, str] = {
 }
 """tile id → 字符（英文版《红》字表）。不在表里的 tile 不是文字。"""
 
+LEVEL, HP_LABEL, BAR_LEFT = 0x6E, 0x71, 0x62
+BAR_EMPTY, BAR_FULL = 0x63, 0x6B
+BAR_RIGHT = frozenset({0x6C, 0x6D})
+QUANTITY_DIGITS = 2
+_BAR = {BAR_EMPTY + i: " ▏▎▍▌▋▊▉█"[i] for i in range(BAR_FULL - BAR_EMPTY + 1)}
+_LINES = {
+    BOX_TOP_LEFT: "┌",
+    BOX_HORIZONTAL: "─",
+    BOX_TOP_RIGHT: "┐",
+    BOX_VERTICAL: "│",
+    BOX_BOTTOM_LEFT: "└",
+    BOX_BOTTOM_RIGHT: "┘",
+    0x6F: "└",
+    0x76: "─",
+    0x77: "┘",
+    0x78: "│",
+}
+"""只在渲染整屏时用的图块：边框（含战斗 HUD 的框线 0x6F / 0x76–0x78）、等级、血条。
+0x73 / 0x74 在菜单字体里是 `ID` / `No.`，在战斗 HUD 里是框线，只在战斗外按字渲染。"""
+
 
 def read_tiles(mem: Memory) -> list[list[int]]:
     """屏幕 20×18 个 tile id，按行。"""
@@ -86,18 +111,127 @@ def read_tiles(mem: Memory) -> list[list[int]]:
     ]
 
 
+_NOTE_PREFIXES: tuple[str, ...] = ("×", "¥")
+"""选单里挂在上一项下面的附注行：数量（`× 4`）与价格（`¥200`）。"""
+
+
+class _Menu(NamedTuple):
+    """光标所在框的解码结果。"""
+
+    grid: list[list[str]]
+    cell: tuple[int, int] | None
+    details: list[str]
+    covered: bool
+
+
 def read_screen_text(mem: Memory) -> ScreenText:
-    """读这一帧的对话、选项、光标与战斗标志。"""
+    """读这一帧的对话、选项（含附注）、光标、叠加层判据、覆盖判定与整屏渲染。"""
     tiles = read_tiles(mem)
-    grid, cell = _read_menu(tiles)
+    menu = _read_menu(tiles)
+    in_battle = mem[W_IS_IN_BATTLE] != 0
+    dialog = _read_dialog(tiles)
+    has_cursor = any(CURSOR in row for row in tiles)
+    quantity = _quantity_box(tiles)
     return ScreenText(
-        dialog_text=_read_dialog(tiles),
-        options=[item for row in grid for item in row],
-        cursor=grid[cell[0]][cell[1]] if cell is not None else "",
-        option_grid=grid,
-        cursor_cell=cell,
-        in_battle=mem[W_IS_IN_BATTLE] != 0,
+        dialog_text=dialog,
+        has_cursor=has_cursor,
+        quantity_box=quantity,
+        strict_dialog=bool(dialog) and not has_cursor and not quantity and _only_dialog_box(tiles),
+        screen=render_screen(tiles, in_battle=in_battle),
+        options=[item for row in menu.grid for item in row],
+        cursor=menu.grid[menu.cell[0]][menu.cell[1]] if menu.cell is not None else "",
+        option_grid=menu.grid,
+        cursor_cell=menu.cell,
+        option_details=menu.details,
+        covered=menu.covered,
+        in_battle=in_battle,
     )
+
+
+def render_screen(tiles: list[list[int]], *, in_battle: bool) -> str:
+    """整屏逐行渲成文字；行尾空白去掉，行数不变（空行留着，保住上下位置关系）。
+
+    一个图块渲成一个字符，只有 `:L` 与 `HP:` 两个图块各占两三个字符，所在行后面的列会右移。
+    整屏既没有字也没有边框（走路、过场）时返回空串：18 行 `·` 不带任何信息，只占 prompt。
+    """
+    text = "\n".join(_render_row(row, in_battle).rstrip() for row in tiles)
+    return text if text.strip("·\n ") else ""
+
+
+def _render_row(row: list[int], in_battle: bool) -> str:
+    """一行图块渲成文字。
+
+    0x62–0x74 这批图块的样子随当时载入的图形变：在战斗 / 队伍列表 / 能力页里是血条、`:L`、
+    `ID` / `No.`，在城镇地图、图鉴页里是别的图形（0926 实采：城镇地图渲出一串 `▍▍▌]`）。
+    所以它们只在**成形**时按 HUD 渲：血条要是完整的 `HP:[…]`，`:L` 后面要跟数字，
+    `ID` 后面要跟 `No.`，`No.` 后面要跟 `.` 或数字；不成形的一律 `·`。
+    """
+    hud = _hud_positions(row, in_battle)
+    return "".join(
+        _glyph(t) if t in CHARMAP or t in _LINES or i in hud else "·" for i, t in enumerate(row)
+    )
+
+
+def _hud_positions(row: list[int], in_battle: bool) -> set[int]:
+    """这一行里成形的 HUD 图块的位置。"""
+    digits = set(range(0xF6, 0x100))
+    after = [*row[1:], SPACE]
+    ok: set[int] = set()
+    for i, (tile, nxt) in enumerate(zip(row, after, strict=True)):
+        if tile == HP_LABEL and nxt == BAR_LEFT:
+            end = i + 2
+            while end < len(row) and row[end] in _BAR:
+                end += 1
+            if end > i + 2 and end < len(row) and row[end] in BAR_RIGHT:
+                ok.update(range(i, end + 1))
+        level = tile == LEVEL and nxt in digits
+        id_no = not in_battle and (
+            (tile == 0x73 and nxt == 0x74) or (tile == 0x74 and (nxt in digits or nxt == 0xF2))
+        )
+        if level or id_no:
+            ok.add(i)
+    return ok
+
+
+def _glyph(tile: int) -> str:
+    """一个图块在整屏渲染里的样子（调用方已判过它该不该按 HUD 渲）。"""
+    if tile in CHARMAP:
+        return CHARMAP[tile]
+    if tile in _LINES:
+        return _LINES[tile]
+    if tile in _BAR:
+        return _BAR[tile]
+    if tile in BAR_RIGHT:
+        return "]"
+    return {LEVEL: ":L", HP_LABEL: "HP:", BAR_LEFT: "[", 0x73: "ID", 0x74: "No."}.get(tile, "·")
+
+
+def _quantity_box(tiles: list[list[int]]) -> bool:
+    """屏幕上有数量框：框的左边线后紧跟 `×` 与两位数字（`│×01`）。
+
+    背包列表里的数量是 `× 3` / `×12`，前面是空白而不是框线，不算。
+    """
+    digits = {0xF6 + i for i in range(10)}
+    return any(
+        row[c - 1] == BOX_VERTICAL
+        and row[c] == 0xF1
+        and all(row[c + 1 + k] in digits for k in range(QUANTITY_DIGITS))
+        for row in tiles
+        for c in range(1, SCREEN_COLS - QUANTITY_DIGITS)
+    )
+
+
+def _only_dialog_box(tiles: list[list[int]]) -> bool:
+    """屏幕上唯一的框是底部对话框：对话框自己的边之外，任何地方都没有框线图块。"""
+    top, bottom, right = 12, SCREEN_ROWS - 1, SCREEN_COLS - 1
+    for r, row in enumerate(tiles):
+        for c, tile in enumerate(row):
+            if tile not in _BORDERS:
+                continue
+            on_dialog_edge = top <= r <= bottom and (r in (top, bottom) or c in (0, right))
+            if not on_dialog_edge:
+                return False
+    return True
 
 
 def _text(tiles: list[int]) -> str:
@@ -107,26 +241,32 @@ def _text(tiles: list[int]) -> str:
 
 
 def _read_dialog(tiles: list[list[int]]) -> str:
-    """左下角 (12, 0) 为 `┌` 的底部框里的文字；没有这个框返回空串。"""
+    """左下角 (12, 0) 为 `┌` 的底部框里的文字；没有这个框返回空串。
+
+    每行读到第一个边框图块为止：压在对话框上的小菜单（队伍子菜单等）不混进对话。
+    """
     top = 12
     if tiles[top][0] != BOX_TOP_LEFT:
         return ""
-    right = next(
-        (c for c in range(1, SCREEN_COLS) if tiles[top][c] in (BOX_TOP_RIGHT, BOX_TOP_LEFT)),
-        SCREEN_COLS - 1,
-    )
-    lines = [_text(tiles[row][1:right]) for row in range(top + 1, SCREEN_ROWS - 1)]
+    lines = []
+    for row in range(top + 1, SCREEN_ROWS - 1):
+        segment = tiles[row][1 : SCREEN_COLS - 1]
+        end = next((i for i, tile in enumerate(segment) if tile in _BORDERS), len(segment))
+        lines.append(_text(segment[:end]))
     return " ".join(line for line in lines if line)
 
 
-def _read_menu(tiles: list[list[int]]) -> tuple[list[list[str]], tuple[int, int] | None]:
-    """光标所在框的选项（按屏幕行分组）与光标所在的 (行, 列)；没有 `▶` 时返回 `([], None)`。"""
+def _read_menu(tiles: list[list[int]]) -> _Menu:
+    """光标所在框的选项（按屏幕行分组）、光标所在的 (行, 列)、每项附注与覆盖判定。
+
+    没有 `▶` 时返回空选单且视为已覆盖。覆盖判定见 `_covered`。
+    """
     found = next(
         ((r, c) for r in range(SCREEN_ROWS) for c in range(SCREEN_COLS) if tiles[r][c] == CURSOR),
         None,
     )
     if found is None:
-        return [], None
+        return _Menu([], None, [], True)
     row0, col0 = found
 
     # 步骤 1：围出光标所在的框（左右最近的 │，上下沿左边界延伸）。
@@ -155,6 +295,7 @@ def _read_menu(tiles: list[list[int]]) -> tuple[list[list[str]], tuple[int, int]
 
     # 步骤 3：逐行按起点列切出选项，过滤数量行与纯数字行；记下光标落在第几行第几列。
     grid: list[list[str]] = []
+    details: list[str] = []
     cell: tuple[int, int] | None = None
     for r in rows:
         row_starts = [c for c in starts(r) if c in columns]
@@ -169,7 +310,43 @@ def _read_menu(tiles: list[list[int]]) -> tuple[list[list[str]], tuple[int, int]
             row_items.append(text)
         if row_items:
             grid.append(row_items)
-    return grid, cell
+            details.extend("" for _ in row_items)
+            continue
+
+        # 步骤 4：没切出选项的行若是附注（数量 / 价格），挂到上一项。
+        note = _box_line(tiles, r, left, right)
+        if details and note.startswith(_NOTE_PREFIXES):
+            details[-1] = f"{details[-1]} {note}".strip()
+
+    options = [item for row in grid for item in row]
+    covered = left >= 0 and bool(options) and _covered(tiles, rows, left, right, options)
+    return _Menu(grid, cell, details, covered)
+
+
+def _box_line(tiles: list[list[int]], row: int, left: int, right: int) -> str:
+    """光标所在框里一行的文字，去掉光标记号。"""
+    return _text(tiles[row][left + 1 : right]).replace("▶", " ").replace("▷", " ").strip()
+
+
+def _covered(
+    tiles: list[list[int]], rows: list[int], left: int, right: int, options: list[str]
+) -> bool:
+    """框里每一行的文字都已分进某个选项才算解码覆盖了这一帧。
+
+    不含字母的行不算（等级 `:L10` 只剩数字、空招式位 `-`、`35/35`），数量 / 价格附注行不算。
+
+    调用方已保证框有左边界且切出了选项；未覆盖的帧，文字字段交给视觉（看档路径）或留空（task 层）。
+    """
+    for r in rows:
+        line = _box_line(tiles, r, left, right)
+        if not any(ch.isalpha() for ch in line) or line.startswith(_NOTE_PREFIXES):
+            continue
+        rest = line
+        for option in sorted(set(options), key=len, reverse=True):
+            rest = rest.replace(option, " ")
+        if rest.strip():
+            return False
+    return True
 
 
 def _vertical_run(tiles: list[list[int]], col: int, anchor: int, row: int) -> bool:
@@ -178,4 +355,4 @@ def _vertical_run(tiles: list[list[int]], col: int, anchor: int, row: int) -> bo
     return all(tiles[r][col] == BOX_VERTICAL for r in range(lo, hi + 1))
 
 
-__all__ = ["CHARMAP", "W_IS_IN_BATTLE", "read_screen_text", "read_tiles"]
+__all__ = ["CHARMAP", "W_IS_IN_BATTLE", "read_screen_text", "read_tiles", "render_screen"]

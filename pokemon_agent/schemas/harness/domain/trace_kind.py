@@ -115,6 +115,8 @@ class TraceKind(StrEnum):
     词，读账像回声。补上动词（`do_`）之后，同族另有 `get_action_space` /
     `check_stall`。
     """
+    RUN_MACRO = "run_macro"
+    """**一个宏的执行**（`act` 节点，接管场合）：调用、结果、摘要与逐步明细。"""
     GET_ACTION_SPACE = "get_action_space"
     """这一步允许的动作名（掩码结果）。0914 改名：此前叫 `action_space`，缺动词。"""
     CHECK_STALL = "check_stall"
@@ -137,17 +139,13 @@ class TraceKind(StrEnum):
     # ---- 存档一族（`docs/spec/checkpoint/SPEC.md` §六）----
     # `meta.source` 为 `checkpoint.save` / `checkpoint.restore`。
     CHECKPOINT_SAVE = "checkpoint_save"
-    """一份存档落好（run 开局 / 每局开派前）：世界 + 记忆 + 清单都已落盘。"""
+    """一份存档落好（run 开局 / 每局开派前 / 每个 task 开局）：世界 + 记忆 + 清单都已落盘。"""
     CHECKPOINT_RESTORE = "checkpoint_restore"
     """从存档恢复出一条新执行线——新执行线的第一条账，正文带血缘。"""
-    WORLD_SNAPSHOT = "world_snapshot"
-    """task 开局的世界快照（按执行线分开存），回放到达该 task 时按这条账上的路径读档。"""
-    TRACE_SEALED = "trace_sealed"
-    """一局结束（或 run 出错）时，本局存档之后的账已复制进该存档的 `trace/`。"""
     CHECKPOINT_ERROR = "checkpoint_error"
     """存档失败：清单没写，run 照常继续（S4）。"""
 
-    # ---- 问人（`harness/reviewing.py`，每问一次记一笔；回放按序喂回每一轮回话）----
+    # ---- 问人（`harness/reviewing.py`，每问一次记一笔）----
     REVIEW_INJECT = "review_inject"
     """插话：亮了哪种表单、人说了什么（空串 = 没意见）。"""
     REVIEW_AUDIT = "review_audit"

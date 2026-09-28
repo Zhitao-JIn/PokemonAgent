@@ -73,6 +73,7 @@ from .domain import (
     ChooseResult,
     DecomposeResult,
     JudgeResult,
+    MacroSignature,
     PlanResult,
     Reflection,
     SummarizeResult,
@@ -92,6 +93,7 @@ class BrainPort(Protocol):
         prompt: str,
         keys: Sequence[str],
         images: Sequence[str] = (),
+        macros: Sequence[MacroSignature] = (),
     ) -> ChooseResult:
         """选一个动作，连同理由。
 
@@ -105,10 +107,12 @@ class BrainPort(Protocol):
             非空且模型多模态可用（provider 的 `multimodal` 标志为真）时走
             `describe()`，否则退化纯文本 `complete()`（转发表在实现层的
             `choose()` 里，0915 129）。
+        macros：此刻可调的宏签名（接管场合）；同 `keys`，只用来校验宏名与参数类型。
 
-        前置条件：`keys` 非空（空动作空间是调用方的 bug——那种情况该在
-            调用方就被判成"这一步没法走"，不该问模型）。
-        后置条件：`result.action.sequence` 里每个 `name` 都在 `keys` 内；
+        前置条件：`keys` 与 `macros` 至少一个非空（空动作空间是调用方的 bug——
+            那种情况该在调用方就被判成"这一步没法走"，不该问模型）。
+        后置条件：`result.action` 是按键时每个 `name` 都在 `keys` 内，是宏时宏名在
+            `macros` 里、参数齐全且类型对；
             `result.calls` 恰好一条（这次尝试自己的账，多次尝试的累积归调用方，
             不在这里滚存）。
         失败：抛 `DecisionAttemptFailed`（附这次的账）——模型调不通、解析不出、

@@ -31,9 +31,7 @@ class EpisodeOutput(Settled, BaseModel):
 
     episode_id: str = Field(description="哪一局")
     goal_id: str = Field(description="本局目标的 task_id——盖章回目标表用")
-    termination: Termination = Field(
-        description="终止类别（`success` 由它推出：goal_done 即达成）"
-    )
+    termination: Termination = Field(description="终止类别（`success` 由它推出：goal_done 即达成）")
     judge_reason: str = Field(
         default="", description="本局判停时的判定依据（review_and_judge 写）；与下面的 reason 分开"
     )

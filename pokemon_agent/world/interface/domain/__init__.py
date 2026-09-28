@@ -24,6 +24,8 @@ X`（或再经顶层 `pokemon_agent.world` 转一手），不深到这一层的�
 __all__ = [
     "ActionSpace",
     "BOULDER",
+    "BagItem",
+    "BattleStatus",
     "BUTTON_FACING",
     "DIRECTION_KEYS",
     "DOOR",
@@ -33,31 +35,65 @@ __all__ = [
     "GRID_COLS",
     "GRID_ROWS",
     "INTERACT_KEY",
+    "Combatant",
+    "DecodedText",
     "ITEM",
     "MAP_CHARS",
+    "MenuVars",
     "Observation",
     "OVERLAY_ACTIONS",
     "PERSON",
     "PLAYER_CELL",
     "PLAYER_MARK",
+    "PartyMon",
     "Perceived",
     "PlaceInWorld",
+    "RamReadout",
     "SIGN",
     "ScreenState",
     "ScreenText",
+    "TAKEOVER_SCENES",
     "TERRAIN_MEANING",
+    "TaskObservation",
+    "TaskPerceived",
+    "TaskScene",
     "TerrainMap",
+    "TextSource",
     "VisionDescribeReq",
     "VisionDescribeResp",
     "terrain_legend",
+    "BagEntry",
+    "MacroOutcome",
+    "MacroParam",
+    "MacroReason",
+    "MacroSpec",
+    "MacroStatus",
+    "MacroStep",
+    "NamingView",
+    "ShopItem",
+    "ShopItemsView",
+    "TakeoverView",
+    "BattleMenuView",
+    "FaintSwitchView",
+    "MonEntry",
+    "MoveEntry",
+    "BagView",
+    "BoxEntry",
+    "LearnMoveView",
+    "PartyView",
+    "PcView",
 ]
 
 from .action_semantics import BUTTON_FACING, DIRECTION_KEYS, FACING_STEP, INTERACT_KEY
 from .action_space import ActionSpace
+from .battle_status import BattleStatus, Combatant
 from .facts import OVERLAY_ACTIONS, Facts
+from .macro_outcome import MacroOutcome, MacroReason, MacroStatus, MacroStep
+from .macro_spec import MacroParam, MacroSpec
 from .observation import Observation
 from .perceived import Perceived
 from .place_in_world import PlaceInWorld
+from .ram_readout import BagItem, DecodedText, MenuVars, PartyMon, RamReadout, TextSource
 from .screen_model import (
     BOULDER,
     DOOR,
@@ -75,5 +111,24 @@ from .screen_model import (
 )
 from .screen_state import ScreenState
 from .screen_text import ScreenText
+from .takeover_view import (
+    BagEntry,
+    BagView,
+    BattleMenuView,
+    BoxEntry,
+    FaintSwitchView,
+    LearnMoveView,
+    MonEntry,
+    MoveEntry,
+    NamingView,
+    PartyView,
+    PcView,
+    ShopItem,
+    ShopItemsView,
+    TakeoverView,
+)
+from .task_observation import TaskObservation
+from .task_perceived import TaskPerceived
+from .task_scene import TAKEOVER_SCENES, TaskScene
 from .terrain_map import TerrainMap
 from .vision_describe import VisionDescribeReq, VisionDescribeResp

@@ -43,13 +43,14 @@ from pydantic import BaseModel, Field
 class ModelCall(BaseModel):
     """一次模型调用留下的账，外加它成没成。"""
 
-    payload: dict[str, str | list[str]] = Field(
+    payload: dict[str, str | float | list[str]] = Field(
         default_factory=dict,
-        description="token、延迟、原始输出（`raw`）、实际发给模型的文本输入"
+        description="token、起止时刻、原始输出（`raw`）、实际发给模型的文本输入"
         "（`prompt`，方便观测台/复盘直接看这次调用问了什么，不用去翻拼装代码）、"
         "实际发给模型的图（`images`，PNG data URI 列表）。"
         "**失败的调用也要有**——它同样烧了钱，而 `raw`/`prompt` 让你改进解析器之后能离线"
-        "重算，不必再花 token 重跑",
+        "重算，不必再花 token 重跑。`started_at`/`ended_at`（float，2026-09-27 双时刻"
+        "定案）记录这次调用的真实起止，随渲染进封套、成为排序与延迟统计的依据",
     )
     error_kind: str = Field(
         default="",

@@ -8,6 +8,7 @@ prompt 层的事，本节点只决定"查什么、记什么账"）。**统计口
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from langgraph.runtime import Runtime
@@ -35,19 +36,22 @@ def retrieve_object_semantic_memory(
     后置条件：返回 `{"object_semantic_memory": <渲染后的文本>}`。
     """
     deps = runtime.context
-    ep, step = state.episode_id, state.ep_ctx.observation.step
-    place = state.ep_ctx.observation.place
+    ep, place = state.episode_id, state.ep_ctx.observation.place
+    # 两个步号分家（0928 定稿）：object 事件按**局内累计键数**存坐标（与 ActMemory 同口径），
+    # 查询条件 `before_step` 必须用键数；账面步号是**圈号**（episode_start 落 0、每圈 +1）。
+    before_step, step = state.total_acts, state.step + 1
+    t0 = time.time()
     if place is None:
         events: list = []
     else:
         events = deps.memory.query_object_events(
             FromHarnessToMemoryToolQueryObjectEventsReq(
-                run_id=state.run_id, map_id=place.map_id, before_step=step
+                run_id=state.run_id, map_id=place.map_id, before_step=before_step
             )
         ).events
+    t1 = time.time()
     known = render_object_events(events)
-    # `refs` 记每条事件的唯一键 `(episode_id, step, 物体格)`——物体格（`PlaceInWorld.key`，
-    # 形如 `12:13:8`）单独不唯一：同一格反复互动会有多条，回放要按键取回确定的那几条。
+    # `refs` 记每条事件的物体格（`PlaceInWorld.key`，形如 `12:13:8`）。
     #
     # `query` 照实记检索条件，`place` 为 None 时写 `map_id=None`——**这一格那时
     # 压根没查**（按空事件处理），"没查"与"查了没命中"在账上必须分得开：
@@ -58,13 +62,16 @@ def retrieve_object_semantic_memory(
             meta={
                 "source": "retrieve_object_semantic_memory",
                 "episode_id": ep,
-                "task_id": ep,
+                "task_id": "",
                 "step": step,
             },
             query=(
-                f"run_id={state.run_id} map_id={place.map_id if place else None} before_step={step}"
+                f"run_id={state.run_id} map_id={place.map_id if place else None}"
+                f" before_step={before_step}"
             ),
-            refs=[f"({e.episode_id}, {e.step}, {e.place.key})" for e in events],
+            refs=[e.place.key for e in events],
+            started_at=t0,
+            ended_at=t1,
         )
     )
     return {"ep_ctx": state.ep_ctx.model_copy(update={"object_semantic_memory": known})}

@@ -55,8 +55,6 @@ class PlannerOutcome(BaseModel):
         default_factory=list, description="对已有条目的状态表态（重开 / 放弃）"
     )
     why: str = Field(default="", description="决策说明")
-    input: str | None = Field(default=None, description="发给模型的请求原文（无模型路径为空）")
-    output: str | None = Field(default=None, description="模型吐回的原文（无模型路径为空）")
 
 
 __all__ = ["ALLOWED_UPDATE_STATUSES", "GoalUpdate", "PlannerOutcome"]

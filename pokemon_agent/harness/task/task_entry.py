@@ -19,13 +19,26 @@ from .task_state import TaskState
 
 
 def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
-    """写 `task_start`，存一份开局世界快照（有存档器时），把 `TaskInput` 装成进图初值。
+    """存一份 task 级存档（有存档器时），写 `task_start`，把 `TaskInput` 装成进图初值。
 
+    存档先于开局账：存档账是从它恢复出的新线的分叉点，开局账要落在分叉点之后
+    （否则新线的可见历史里会有父线的这条开局账，外加它自己重写的一条）。
     不取帧：开局帧由图内 perceive 取。
     """
     assert task_input.task.max_steps > 0, "task max_steps must be > 0"
 
-    # 步骤 1：开局账。
+    # 步骤 1：task 级存档（世界 + 记忆 + run / episode 两张图的定位）。
+    if deps.checkpointer is not None:
+        deps.checkpointer.save(
+            "task",
+            run_id=task_input.run_id,
+            step=task_input.total_acts,
+            episode_id=task_input.episode_id,
+            task_id=task_input.task.task_id,
+        )
+
+    # 步骤 2：开局账。账面步号 dispatch 落 0（0928 定稿：圈号语义，每圈取帧 +1）；
+    # content.total_acts 保留局内累计键数快照（记忆 / 帧槽键控用，与账面步号解耦）。
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.TASK_START,
@@ -33,28 +46,19 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
                 "source": "task_entry.begin_task",
                 "episode_id": task_input.episode_id,
                 "task_id": task_input.task.task_id,
-                "step": task_input.start_step,
+                "step": 0,
             },
             task=task_input.task,
-            start_step=task_input.start_step,
+            total_acts=task_input.total_acts,
         )
     )
-
-    # 步骤 2：开局世界快照（回放到达这个 task 时从这里读档）。
-    if deps.checkpointer is not None:
-        deps.checkpointer.snapshot_world(
-            run_id=task_input.run_id,
-            episode_id=task_input.episode_id,
-            task_id=task_input.task.task_id,
-            step=task_input.start_step,
-        )
 
     # 步骤 3：组装初始状态。
     state = TaskState(
         run_id=task_input.run_id,
         episode_id=task_input.episode_id,
         task=task_input.task,
-        start_step=task_input.start_step,
+        total_acts=task_input.total_acts,
         knowledge=task_input.knowledge,
     )
     return state

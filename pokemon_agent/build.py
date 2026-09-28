@@ -23,7 +23,7 @@ runtime 不再复制；brain 能力**按层各造一份**（185，见下面三�
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import logging
 from pathlib import Path
 
 from pokemon_agent.config import CHECKPOINT_ENABLED
@@ -34,7 +34,7 @@ from pokemon_agent.harness import (
     RunRuntime,
     TaskRuntime,
 )
-from pokemon_agent.harness.checkpoint import Checkpointer, LineageLink, build_saver
+from pokemon_agent.harness.checkpoint import Checkpointer, build_saver
 from pokemon_agent.harness.episode import compile_episode_graph
 from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.harness.run import compile_run_graph
@@ -45,13 +45,9 @@ from pokemon_agent.tools import (
     MemoryTool,
     TraceTool,
 )
-from pokemon_agent.tools.replay import (
-    Tape,
-    TapeGame,
-    TapeMemory,
-    TapeReviewer,
-    TapeTrace,
-)
+from pokemon_agent.tools.trace import assert_server_ready
+
+logger = logging.getLogger(__name__)
 
 
 def build_real(
@@ -67,11 +63,11 @@ def build_real(
     speed: int = 0,
     run_id: str = "local",
     trace_root: str | Path | None = None,
+    trace_backend: str = "langfuse",
     memory_root: str | Path | None = None,
     checkpoint_root: str | Path | None = None,
     branch: str = "main",
-    lineage: Sequence[LineageLink] = (),
-    tape: Tape | None = None,
+    live_feed_url: str | None = None,
     # 供应商由**型号名前缀**决定（0914 起，表在 `brain/providers.py::_PROVIDER_PREFIXES`）：
     # `qwen*` → DashScope、`doubao*` → 火山方舟、`deepseek*` → DeepSeek 官方 API。
     # 下面这几个缺省值因此不只是"型号名"，它们同时**选定了厂商**。
@@ -85,7 +81,7 @@ def build_real(
     # 因为型号名前缀与厂商类必须配套这件事已经由表保证。
     # state_file: None = 从开机起跑；API 装配默认传 `rom + ".state"`（存在时）。
     #
-    # `trace_root` 与 `memory_root`：两份数据的落盘根（0916 起，启动时指定）。
+    # `trace_root`（仅 local backend）与 `memory_root`：两份数据的落盘根（0916 起，启动时指定）。
     # 缺省 None = **进程启动目录**下的 `tracelog/` 与 `memory/`——不再写死
     # 仓库根。起跑脚本经 `--trace-root` / `--memory-root` 传进来，不传时从哪个
     # 目录启动、数据就落在哪个目录。
@@ -114,6 +110,13 @@ def build_real(
     `reviewer`：人与图之间的那扇门（**同步接口**，控制台实现会阻塞读 stdin）。
     不传 → `NullReviewer`（没人插话、没人推翻）。不传而无头是一个正常场景
     （测试、CI、无头批量跑），不是缺配置。
+
+    `live_feed_url`：人在环后端地址（`ws://host:port`）；给了就把每笔账顺手推给网页实时看
+    （`TraceTool.build` 里包一层 `LiveFeedTrace`）。None = 不推。
+
+    `trace_backend`：`langfuse`（默认，0927 定案——本机自托管服务是唯一 trace 存储，
+    选它时**启动前先打健康检查探针**，服务没起当场报错不进 run）或 `local`（离线测试
+    /开发用，落本地 JSON）；langfuse 不写本地事件副本。
 
     **plan 位置的规划来源就是 brain**（0922 第 182 条撤销 `planner` 壳）：
     `plan_run` 格直接调注入的 `planner`（brain 的 plan 链路），没有"人不给目标就没人给"的问题——
@@ -148,7 +151,11 @@ def build_real(
     # 的半截工厂，也是四个独立模块里**唯一没做工厂的一个**。现在收平：
     # **本文件对 `pokemon_agent.world` 零 import**。
     game = GameTools.build(
-        rom, state_path=state_file, watch=watch, vision_model=vision_model, speed=speed
+        rom,
+        state_path=state_file,
+        watch=watch,
+        vision_model=vision_model,
+        speed=speed,
     )
 
     # 一条事件一个 json 文件落盘（0910 重构）；
@@ -158,15 +165,23 @@ def build_real(
     # 磁盘账本（`deps.trace.read_events()`）是唯一真相——图内节点直接读它
     # （原来的另一个读者 SSE 端点随 `api.py` 0913 晚一起删了）。
     #
-    # **`LocalTrace` 不在这里造**（0913 下午）：`TraceTool.build()` 是唯一的
-    # 接线工厂——落盘记录的完整形状在它内部接好，本装配点只递裸字段。与
+    # trace 后端不在这里造：`TraceTool.build()` 是唯一的接线工厂，选择 local 或 Langfuse；
+    # 本装配点只递裸字段。与
     # `BrainTool.build()` / `MemoryTool.build()` / `GameTools.build()` 同形。
-    # **本文件对 `pokemon_agent.trace` 零 import**。
+    # **本文件对 `pokemon_agent.trace` 零 import**（探针也经 tool 层的再出口拿）。
+    #
+    # **Langfuse 是真实 run 的默认后端**（0927 定案）：SDK 是异步批量发送，
+    # 服务不在场时写入侧静默丢账——所以选 langfuse 时先打健康检查探针，
+    # "服务没起"挡在 run 开始之前，不跑一半才发现。
+    if trace_backend == "langfuse":
+        langfuse_version = assert_server_ready()
+        logger.info("Langfuse 后端健康检查通过（version=%s）", langfuse_version)
     trace_tool = TraceTool.build(
         run_id=run_id,
         trace_root=trace_root,
         branch=branch,
-        lineage=[(link.branch, link.fork_uuid, link.fork_ts) for link in lineage],
+        live_feed_url=live_feed_url,
+        backend=trace_backend,
     )
 
     # 图内节点伸向记忆的唯一通道
@@ -201,32 +216,21 @@ def build_real(
         plan=plan_model or "doubao-seed-2-1-pro-260628",
         judge=judge_model,
         max_tokens=max_tokens,
-        tape=tape,
     )
     episode_brain = BrainTool.build(
         plan=plan_model or "doubao-seed-2-1-pro-260628",
         judge=judge_model,
         verify=verify_model or "doubao-seed-2-1-pro-260628",
         max_tokens=max_tokens,
-        tape=tape,
     )
     task_brain = BrainTool.build(
         text=text_model,
         judge=judge_model,
         verify=verify_model or "doubao-seed-2-1-pro-260628",
         max_tokens=max_tokens,
-        tape=tape,
     )
 
-    # **回放**（`tape` 非空，`docs/checkpoint/spec.md` v2 §七）：世界、记忆、记账、人各包一层
-    # 磁带件，大脑的 provider 已在 `BrainTool.build(tape=…)` 里包好。切换后照转真件。
     reviewer = reviewer or NullReviewer()
-    real_game = game
-    if tape is not None:
-        game = TapeGame(game, tape)
-        memory = TapeMemory(memory, tape)
-        trace_tool = TapeTrace(trace_tool, tape)
-        reviewer = TapeReviewer(reviewer, tape)
 
     # `interaction` 那个"在这里先落实成一个真实例"的步骤已删（0914 控制台改造）：
     # 跨线程信箱整套下线，取而代之的是 `reviewer`/`planner` 两个同步接口——
@@ -264,7 +268,6 @@ def build_real(
             memory=memory,
             trace=trace_tool,
             branch=branch,
-            lineage=lineage,
             models={
                 "vision": vision_model,
                 "text": text_model,
@@ -303,6 +306,7 @@ def build_real(
     run_rt = RunRuntime(
         trace=trace_tool,
         memory=memory,
+        game=game,
         reviewer=episode_rt.reviewer,
         planner=run_brain.planner,
         judger=run_brain.judger,
@@ -312,4 +316,4 @@ def build_real(
     )
     run_harness = RunHarness(run_rt, run_graph)
 
-    return run_harness, real_game
+    return run_harness, game

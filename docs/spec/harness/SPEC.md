@@ -22,9 +22,10 @@ harness/
 ├── __init__.py  compose.py（compose_units：格内单元串接）  judging.py（三层共用的停判）
 │                sensing.py（perceive_once：向世界取一帧的唯一入口）
 │                reviewing.py（ask_inject / ask_audit：问人并记 review_inject / review_audit）
-│                checkpoint/（两级存档、恢复与回放，见 docs/spec/checkpoint/SPEC.md）
+│                review_render.py（问人时的渲染口径，控制台与网页共用）
+│                checkpoint/（三级存档与图内恢复，见 docs/spec/checkpoint/SPEC.md）
 ├── interface/   reviewer.py（Reviewer 协议） planner_outcome.py（PlannerOutcome / GoalUpdate）
-├── console_reviewer.py  file_reviewer.py  null_reviewer.py
+├── console_reviewer.py  file_reviewer.py  null_reviewer.py  web_reviewer.py
 ├── run/
 │   ├── harness.py（RunHarness） run_entry.py（new_run / close） run_graph.py run_state.py runtime.py
 │   ├── begin/  perceive/{absorb_episode, read_plan_context}  review_and_judge/
@@ -71,7 +72,7 @@ perceive（这一局 / 这一 run 照常往下走），别的异常记完原样�
 |---|---|---|---|
 | run | `plan_run`：Planner 更新目标表（新增 / 定点改状态），没 PENDING 时抛 `NoGoalToDispatch` | `dispatch` 标 RUNNING + 造 `EpisodeInput` → `run_episode`（接住整局抛错） | `run_done`：组装 `RunResp`、写 `run_end` |
 | episode | `plan_episode`：任务表没有 PENDING 时 Decomposer 拆下一版，追加进表 | 第一条 PENDING 标 RUNNING → `run_task`（接住 task 抛错） | verify → summarize → close（素材是 `ep_ctx.task_memories`；没有时 leave_chapter 补空章 → close） |
-| task | `plan_task`：Chooser 选一段按键，只执行首段 `times=1` | 按键、`step+1` | verify → summarize → close（素材是 `task_ctx.act_memories`） |
+| task | `plan_task`：Chooser 选一段按键，只执行首段 `times=1`；接管场合选一个宏调用，原样交出；上一宏结果（`last_macro.describe()`）随请求带上 | 按键（记 `press_key`）或跑宏（记 `run_macro`、写 `last_macro`），`step+1`（一个宏算一次决策） | verify → summarize → close（素材是 `task_ctx.act_memories`） |
 
 **停判只在 `review_and_judge`**：先 `mechanical_termination`（世界终局 / 停滞 / 预算，阈值见 DATAFLOW 二），
 不中再 `ask_judger`；judge 说 done 即 `GOAL_DONE`。写 `termination`（`done` / `success` 由它推出，`Settled`）
@@ -89,7 +90,7 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 | 本层计数 | `step`（已派局数） | `step`（已派 task 数）、`total_acts` | `step`（本 task 已按键数；帧步号 = `start_step + step`） |
 | 失败计数 | `fail_streak` | `fail_streak` | `stall_key`、`stall_count` |
 | 表 | `goals`（`GoalEntry`） | `tasks`（`TaskEntry`） | — |
-| 上下文 | `plan_ctx`（局索引 / 详情 / 物件） | `ep_ctx`（帧 / TaskMemory / 跨局摘要 / 知识 / 物件） | `task_ctx`（帧 / ActMemory / 动作空间）、`action` |
+| 上下文 | `plan_ctx`（局索引 / 详情 / 物件） | `ep_ctx`（帧 / TaskMemory / 跨局摘要 / 知识 / 物件） | `task_ctx`（帧 / ActMemory / 动作空间）、`action`、`last_macro`（上一动作是宏时的 `MacroOutcome`，按键时为 None） |
 | 下层交回 | `pending_episode` → `episode_outputs` | `pending_task` → `task_outputs` | `after_observation`（格内流转） |
 | 终局 | `termination`、`judge_reason` | 同左 + `task_verdicts`、`reason`、`memory`、`output` | 同左 + `act_verdicts`、`reason`、`memory`、`output` |
 
@@ -108,18 +109,27 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 
 ## 六、人在环
 
-`Reviewer`（`interface/reviewer.py`）：`inject(req) -> str`（插话，空串 = 没意见）与 `audit(req)`（审，恒返回表态）。
+`Reviewer`（`interface/reviewer.py`）：`inject(req) -> InjectResp{text, answered}`（插话，空串 = 没意见）与
+`audit(req) -> AuditResp{verdict, note, answered}`（审，恒返回表态）。`answered=False` = 没人答、回的是默认值。
+问人一律经 `reviewing.py`（`ask_inject` / `ask_audit` / `audit_judgement`），问完记 `review_inject` / `review_audit`。
 
 | 实现 | 适用 |
 |---|---|
 | `NullReviewer` | 无头：不插话、不推翻 |
 | `ConsoleReviewer` | 同一终端：超时 `CONSOLE_REVIEW_TIMEOUT` |
+| `WebReviewer` | 网页：连常驻后端 `pokemon_agent/review_backend/`（WebSocket），超时 `WEB_REVIEW_TIMEOUT`；连不上抛 `OSError`，中途断了降级为默认值 |
 | `FileReviewer` | 驱动方无终端：请求 / 回应走盘上文件；`audit()` 恒认账 |
 
-- **插话点**：`plan_run`、`plan_episode`、`plan_task`、三层 `review_and_judge`。不满意就带着那句话重问，插话进 `human_note` 落账。
-- **审点**：run 与 episode 的 `review_and_judge._settle`（给上一局 / 上一个 task 盖章前）。审核请求装
-  `outcome`（`EpisodeOutput` 或 `TaskOutput`）与被审对象自己的 trace；推翻会调整 `fail_streak`、标 `overturned`，
-  结果进 `settle_goal` / `settle_task` 的 `audit`。**定案以表为准**，记忆的章保留机器判定。
+- **插话点只在 plan 格**：`plan_run`、`plan_episode`。不满意就带着那句话重问，插话进 `human_note` 落账。
+- **审点只在 `review_and_judge` 格**，run 与 episode 各两处，审格不重问模型：
+  - **审结果**（`_settle`，给上一局 / 上一个 task 盖章前）：请求装 `outcome`（`EpisodeOutput` / `TaskOutput`）与
+    被审对象自己的 trace；推翻会调整 `fail_streak`、标 `overturned`、理由写进表行 `note`，结果进
+    `settle_goal` / `settle_task` 的 `audit`。**定案以表为准**，记忆的章保留机器判定。
+  - **审模型裁决**（`audit_judgement`，只在 judge 判「已达成」时问）：请求装 judge 的裁决与那笔 `judge_call`；
+    认账才判 `GOAL_DONE`，推翻则本层继续跑。结果进 `judge_verdict` 的 `audit` / `human_note`。
+- **反馈回 plan**：本层继续跑时，judge 的结论、理由与人的推翻理由写进 state 的 `last_judge`（`JudgeFeedback`），
+  下一次 `plan_run` / `plan_episode` 放进请求，prompt 里是「上一次判定」一段。
+- task 层不问人：它的结果在 episode 层被审。
 
 ## 七、trace 写入
 

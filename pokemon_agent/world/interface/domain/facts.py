@@ -45,17 +45,17 @@ def _display_width(text: str) -> int:
 
 
 _EXTRA_ORDER: tuple[str, ...] = ("my_name", "my_level", "my_hp", "foe_name", "foe_level", "foe_hp")
-"""视觉模型按 scene 自由给的那批字段（`ScreenState.fields`）里，这几个是几乎每帧
-都出现、值得固定顺序的——其余没在这张表里的字段按字母序排在后面（原
-`FIELD_ORDER` 的兜底规则原样保留）。"""
+"""动态字段里值得固定顺序的那几个：战斗双方状态框（内存读出，`battle_status.py`）。
+其余动态字段（视觉模型按 scene 给的 `ScreenState.fields`）按字母序排在后面。"""
 
 
 class Facts(BaseModel):
     """一步里"世界事实"的结构化容器：场景、叠加层、地标、位置文本、HP……
 
-    **`extra="allow"`**：视觉模型按 scene 自由给的字段（`my_hp`/`foe_level`/`nearby`…）
-    直接挂在这个模型上，不必为每个 scene 各开一个具名字段——那些字段本来就随
-    scene 变化，强行都声明成具名字段只会让这个模型跟着每个新 scene 改一次。
+    **`extra="allow"`**：随 scene 变化的字段直接挂在这个模型上——视觉模型按 scene 给的
+    （`type`/`title`…）与战斗中内存读出的双方状态框（`my_hp`/`foe_level`…）。
+    不必为每个 scene 各开一个具名字段——那些字段本来就随 scene 变化，
+    强行都声明成具名字段只会让这个模型跟着每个新 scene 改一次。
     RAM/世界层能确定给出的那几项（`scene`/`overlay`/`landmarks`/`where`/…）才
     值得做成具名字段：它们的类型是确定的，判定层/记忆检索需要按类型访问它们，
     不是按"这份文本里有没有这个词"去猜。
@@ -151,6 +151,11 @@ class Facts(BaseModel):
         default="", description="这一帧的地形网格渲染文本，来自模拟器内存，不是模型读出来的"
     )
     map_id: int | None = Field(default=None, description="当前地图编号")
+    screen: str = Field(
+        default="",
+        description="整屏文字原样（内存里的屏幕字符缓冲逐行渲染，`screen_text.render_screen`）。"
+        "与上面切好的对话 / 选项 / 光标互相校验：字段是尽力解析，这里是原样",
+    )
 
     @property
     def scene_value(self) -> str:
@@ -223,6 +228,8 @@ class Facts(BaseModel):
             entries.append(("overview", "概况", self.overview))
         if self.walk_map:
             entries.append(("walk_map", "walk_map", self.walk_map))
+        if self.screen:
+            entries.append(("screen", "屏幕", "\n" + self.screen))
         return entries
 
     def items(self) -> list[tuple[str, str]]:
@@ -262,9 +269,12 @@ class Facts(BaseModel):
         return "\n".join(lines)
 
 
+_OPEN_KEYS: tuple[str, ...] = ("up", "down", "left", "right", "a", "b", "start")
+"""非对话帧一律给的按键：叠加层判错的代价只是多几个当帧无效的键，而不是够不着要按的键。"""
+
 OVERLAY_ACTIONS: dict[Facts.Overlay, tuple[str, ...]] = {
-    Facts.Overlay.NONE: ("up", "down", "left", "right", "a", "start"),
-    Facts.Overlay.DIALOG: ("a",),  # 方向键无效，只能推进
+    Facts.Overlay.NONE: _OPEN_KEYS,
+    Facts.Overlay.DIALOG: ("a",),  # 方向键无效，只能推进；world 只在严格的对话帧上给 DIALOG
     # 掩码取**并集**而不是交集：`choice` 底下盖着两种物理布局——商店/对话的
     # yes-no 是竖排，战斗行动菜单是 2×2（FIGHT PKMN / ITEM RUN），
     # 任取交集都会让某种布局的按键物理上够不着。
@@ -272,9 +282,13 @@ OVERLAY_ACTIONS: dict[Facts.Overlay, tuple[str, ...]] = {
     # 代价是竖排选择框里左右成了空按键（按下去画面不变，白费一步）——
     # 这个代价可见（记忆里前后两份快照摆在一起，字段一模一样），
     # 而够不着的选项不可见。
-    Facts.Overlay.CHOICE: ("up", "down", "left", "right", "a", "b"),
+    Facts.Overlay.CHOICE: _OPEN_KEYS,
 }
 """动作掩码**只看 overlay**，与 scene 无关。
+
+0926 起 NONE / CHOICE 都给同一组 `_OPEN_KEYS`：叠加层由屏幕解码判，队伍列表、数量框这类
+界面曾被判成 DIALOG / NONE 而按不到上下键或 b。两个标签仍保留——它们告诉模型
+"现在是在走路还是在选单里"（`BUTTON_HELP` 按标签给按键说明），只是不再收窄掩码。
 
 这就是拆成二元组最直接的回报：三条规则覆盖所有场合，
 而不是每个"场合 × 叠加层"的组合各写一遍。

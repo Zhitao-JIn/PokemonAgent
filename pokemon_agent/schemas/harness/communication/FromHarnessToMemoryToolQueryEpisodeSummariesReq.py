@@ -15,14 +15,9 @@ class FromHarnessToMemoryToolQueryEpisodeSummariesReq(BaseModel):
 
     **原先的 `scene`/`query`/`limit`/`run_id` 四件套已删（0914）**：场景通配匹配、
     相关性排序、候选上限、条数截断、跨 run 禁令都不再住这一层——"哪些算相关、
-    要几条"是消费方的领域规则，读口只认等值过滤。
+    要几条"是消费方的领域规则，读口只认等值过滤。返回顺序由读口定（按 `episode_id` 自然序）。
     """
 
     conditions: dict[str, str] = Field(
         default_factory=dict, description="等值过滤条件（AND 取交集）；空 = 全取"
-    )
-    order_by: str = Field(
-        default="episode_id",
-        description="按哪个元数据字段排序，**自然序**（数字段按数值比：`ep2` < `ep10`）。"
-        "缺省 `episode_id`：`<run_id>-ep<n>` 的自然序就是本 run 的执行序",
     )

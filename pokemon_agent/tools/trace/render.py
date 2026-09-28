@@ -79,7 +79,7 @@ from pokemon_agent.schemas.memory import (
     ObjectFactEvent,
 )
 from pokemon_agent.trace import EventType
-from pokemon_agent.world import Observation
+from pokemon_agent.world import Observation, TaskObservation
 
 
 class Rendered(NamedTuple):
@@ -87,11 +87,17 @@ class Rendered(NamedTuple):
 
     `content` 是**对象**（dict / list），落盘时由 `store.LocalTrace.append` 序列化
     成 JSON 字符串——序列化只在一处做。
+
+    `started_at` / `ended_at`：这笔账对应的**操作真实起止**（2026-09-27 双时刻
+    定案）。渲染函数只当搬运工——调用方记了就透传，没记交 None（落盘层补
+    记账时刻）；本文件不做任何时间测量。
     """
 
     type: str
     kind: str
     content: Any
+    started_at: float | None = None
+    ended_at: float | None = None
 
 
 RenderedEvent = Rendered | list[Rendered]
@@ -298,7 +304,15 @@ def model_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
     link = _CALL_LINK[req.kind]
     events: list[Rendered] = []
     for call in req.calls:
-        events.append(Rendered(EventType.MODEL_CALL, req.kind, dict(call.payload)))
+        events.append(
+            Rendered(
+                EventType.MODEL_CALL,
+                req.kind,
+                dict(call.payload),
+                started_at=_payload_time(call.payload, "started_at"),
+                ended_at=_payload_time(call.payload, "ended_at"),
+            )
+        )
         if call.error_kind == _PARSE_FAILURE and link in _SUMMARY_LINKS:
             events.append(
                 Rendered(
@@ -320,6 +334,16 @@ def model_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
                 )
             )
     return events
+
+
+def _payload_time(payload: dict[str, Any], key: str) -> float | None:
+    """从调用账 payload 里取双时刻（`started_at` / `ended_at`），缺键或非数退 None。
+
+    brain 侧（`brain/brain.py`）直接存 float；mock/旧路径可能没有这个键——
+    退 None 后由落盘层补记账时刻，不在这里补造假精度。
+    """
+    value = payload.get(key)
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def judge_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
@@ -408,16 +432,20 @@ def plan_failed(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 
 def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """两层 `sense` 取到的一帧（episode 完整档 / task RAM 档，按 `meta.task_id` 分层）。
+    """两层 `sense` 取到的一帧（episode 视觉档 / task 层带场合的一帧，按 `meta.task_id` 分层）。
 
-    **facts 必须进正文**——它才是观测的实质内容；`scene` / `overlay` 就在 `facts` 里，不另抄。
+    **facts 必须进正文**——它才是观测的实质内容；视觉给的 `facts.scene` / `overlay`
+    就在 `facts` 里，不另抄。
     正文：
     - `status`：状态行；
     - `facts`：整份事实快照，**直接放对象**（不双重编码）；
     - `done` / `perceived`：世界还在不在、这一帧问没问过视觉模型——用 `perceived`
       分开"没读过"和"读到是空"；
     - `place`：主角格的结构化坐标，`None` 时省略这个键；
-    - `frame`：这一帧的原始画面（base64 PNG），没有就省略。
+    - `scene`：task 层的场合（`TaskObservation.scene`），episode 层的帧省略这个键；
+    - `takeover`：接管场合的视图（**直接放对象**），没有就省略；
+    - `frame`：这一帧的原始画面（base64 PNG），没有就省略；
+    - `ram`：这一帧的内存读数（`RamReadout`，**直接放对象**），没有就省略。
 
     **目标不记**：它在 `episode_start` / `task_start` 上已经逐字记着。
 
@@ -432,8 +460,14 @@ def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     }
     if obs.place is not None:
         content["place"] = obs.place.model_dump()
+    if isinstance(obs, TaskObservation):
+        content["scene"] = obs.scene.value
+        if obs.takeover is not None:
+            content["takeover"] = obs.takeover.model_dump()
     if req.frame:
         content["frame"] = req.frame
+    if req.ram is not None:
+        content["ram"] = req.ram.model_dump()
     return Rendered(EventType.VIEW, TraceKind.SENSE_FRAME, content)
 
 
@@ -480,22 +514,22 @@ def choose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
     **`human_note` 只在非空时进正文**。
 
-    **`input` / `output` 是那次成功的请求与原文**（结论账自带"问了什么、模型吐了
-    什么"，不必跳到调用账对读）。**没有 `attempt`**（0914 跟进删）：这条链是第几次
+    **不带 `input` / `output`**（2026-09-27 字段适配定案）：那次成功的请求与原文
+    在同一步的 `choose_call` 账里（Langfuse 上 generation 的 input/output 原生就是
+    它们），这里不再复制一份。
+
+    **没有 `attempt`**（0914 跟进删）：这条链是第几次
     问出来的，由同一步的 `choose_call` 账条数与顺序回答，插话轮次一混它就数不干净
     ——索性不给它一个能错的位子。
 
-    前置条件：req.action、req.input、req.output 非 None。
+    前置条件：req.action 非 None。
     """
     action: Action = req.action
-    assert req.input is not None and req.output is not None, (
-        "think 结论账要带上那次成功的请求与原文（input/output）"
-    )
     content: dict[str, Any] = {
         "sequence": action_sequence(action),
-        "input": req.input,
-        "output": req.output,
     }
+    if action.macro is not None:
+        content["macro"] = action.macro.model_dump()
     if req.human_note:
         content["human_note"] = req.human_note
     return Rendered(EventType.LLM_OUTCOME, TraceKind.CHOOSE_VERDICT, content)
@@ -515,6 +549,31 @@ def press_key(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """
     action: Action = req.action
     return Rendered(EventType.ACT, TraceKind.PRESS_KEY, {"sequence": action_sequence(action)})
+
+
+def run_macro(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """把一次宏执行拼成事件：调用与结果、`summary`、逐步明细 `steps`（每次都记）。
+
+    标量是字符串（`reason_code` 在 `done` 时为空串），`args` / `steps` 直接放对象。
+
+    前置条件：req.macro 非 None。
+    """
+    outcome = req.macro
+    assert outcome is not None, "run_macro 账要带宏结果"
+    return Rendered(
+        EventType.ACT,
+        TraceKind.RUN_MACRO,
+        {
+            "scene": outcome.scene.value,
+            "macro": outcome.macro,
+            "args": dict(outcome.args),
+            "status": outcome.status.value,
+            "reason_code": outcome.reason_code.value if outcome.reason_code else "",
+            "reason": outcome.reason,
+            "summary": outcome.summary,
+            "steps": [step.model_dump() for step in outcome.steps],
+        },
+    )
 
 
 # ---- 记忆写：四本账**一个形状**（content 就是记录正文）----
@@ -569,14 +628,14 @@ _TASK_BODY_DROP = frozenset(
         "success",
         "termination",
         "steps_used",
-        "start_step",
+        "total_acts",
         "first_frame",
         "last_frame",
     }
 )
 """`TaskMemory` 里不进 `content` 的字段——**坐标 + 来源章 + 代表帧**。
 
-章（`goal`/`success`/`termination`/`steps_used`/`start_step`）的真源是 `task_start` /
+章（`goal`/`success`/`termination`/`steps_used`/`total_acts`）的真源是 `task_start` /
 `task_end`；正文只装 LLM 蒸馏出的那些字段（含 `reason`）。"""
 
 _OBJECT_BODY_DROP = frozenset({"episode_id", "step", "run_id"})
@@ -728,10 +787,13 @@ def judge_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     **判的是哪条目标，不在这条里记**：判定对象恒为活跃投影的末位
     （`judge` 判 `goals[-1]`），而同局的 `episode_start.goal` 已经逐字记着它。
 
-    `input` / `output` 是那次成功的请求与原文（同 `choose_verdict`）。
+    `input` / `output` 不在此账（同 `choose_verdict`：调用账原生自带，不复制）。
 
     `judge_reason` 是本层这一圈的判定依据（判定员的理由 / 机械判停类别），与 `*_done` 里
     LLM 写的结论 `reason` 是两件事，名字分开。
+
+    `audit` 是人对这次裁决的表态（`accept` / `overturn`；空串 = 没问人——判没成、task 层、
+    还没问模型）；推翻时 `human_note` 是人的理由。
 
     前置条件：req.judge_reason 非 None；`termination` 未判停时为空串（停没停、成没成都由它推出）。
     """
@@ -742,8 +804,7 @@ def judge_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "termination": req.termination.value if req.termination else "",
             "fail_streak": str(req.fail_streak) if req.fail_streak is not None else "",
             "judge_reason": req.judge_reason,
-            "input": req.input,
-            "output": req.output,
+            "audit": req.audit or "",
             "human_note": req.human_note,
         },
     )
@@ -774,10 +835,10 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
     | `kind` | `query` 里是什么 | `refs` 里一条是什么 |
     |---|---|---|
-    | `read_act_memory` | `episode_id=… task_id=…`（本 task 的全部） | `"(episode_id, step)"` 坐标 |
-    | `read_episode_memory` | `run_id=… order_by=episode_id`（等值 + 排序） | 局 `episode_id` |
+    | `read_act_memory` | `episode_id=…`（整局） | `"(episode_id, step)"` 坐标 |
+    | `read_episode_memory` | `run_id=…`（等值） | 局 `episode_id` |
     | `read_knowledge` | **BM25 检索词原文** | 命中记录的 `source` 文件名 |
-    | `read_object_memory` | `map_id=… before_step=…` | 事件唯一键 `"(ep, step, place.key)"` |
+    | `read_object_memory` | `map_id=… before_step=…` | 物体格 `place.key` |
     | `read_task_memory` | `episode_id=…` | task 记忆坐标 |
 
     **`query` 记的是真正交给记忆读口的东西，不加包装**：四条按等值条件查的写
@@ -803,6 +864,8 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         EventType.MEMORY_IO,
         req.kind,
         {"query": req.query, "refs": list(req.refs)},
+        started_at=req.started_at,
+        ended_at=req.ended_at,
     )
 
 
@@ -820,21 +883,16 @@ def verify_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     逐条 verdicts 仍在调用账的正文里（报表按它解析失效率）；
     这里补轻量汇总当链上内容。
 
-    `input` / `output` 是那次成功的请求与原文（同 `choose_verdict`）。
+    `input` / `output` 不在此账（同 `choose_verdict`：调用账原生自带，不复制）。
 
-    前置条件：req.checked、req.negative、req.input、req.output 非 None。
+    前置条件：req.checked、req.negative 非 None。
     """
-    assert req.input is not None and req.output is not None, (
-        "verify_verdict 要带上那次成功的请求与原文（input/output）"
-    )
     return Rendered(
         EventType.LLM_OUTCOME,
         TraceKind.VERIFY_VERDICT,
         {
             "checked": str(req.checked),
             "negative": str(req.negative),
-            "input": req.input,
-            "output": req.output,
         },
     )
 
@@ -859,18 +917,13 @@ def plan_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         "why": req.why,
         "human_note": req.human_note,
     }
-    # `input` / `output` 可选：无模型调用的路径（如空回话）交 `None`、键不出现。
-    if req.input is not None:
-        content["input"] = req.input
-    if req.output is not None:
-        content["output"] = req.output
     return Rendered(EventType.LLM_OUTCOME, TraceKind.PLAN_VERDICT, content)
 
 
 def task_start(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """task 的边界：任务本体快照 + 全局键号基数（`task_id` 在 `meta` 上，正文不重复）。
+    """task 的边界：任务本体快照 + 局内累计键数基数（`task_id` 在 `meta` 上，正文不重复）。
 
-    前置条件：req.task、req.start_step 非 None。
+    前置条件：req.task、req.total_acts 非 None。
     """
     task: Task = req.task
     return Rendered(
@@ -880,7 +933,7 @@ def task_start(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "goal": task.goal,
             "success_criteria": task.success_criteria,
             "max_steps": str(task.max_steps),
-            "start_step": str(req.start_step),
+            "total_acts": str(req.total_acts),
         },
     )
 
@@ -923,10 +976,6 @@ def decompose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         "why": req.why,
         "human_note": req.human_note,
     }
-    if req.input is not None:
-        content["input"] = req.input
-    if req.output is not None:
-        content["output"] = req.output
     return Rendered(EventType.LLM_OUTCOME, TraceKind.DECOMPOSE_VERDICT, content)
 
 
@@ -950,56 +999,33 @@ def settle_goal(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 
 def checkpoint_save(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """存下一份存档：id、级别、清单路径。前置条件：req.checkpoint 非 None 且带 id 与清单路径。"""
+    """存下一份存档：级别、清单路径（存档 id 在 meta 里，这条账就是从它恢复出的新线的分叉点）。
+
+    前置条件：req.checkpoint 非 None 且带清单路径；`req.meta` 带 `checkpoint_id`。
+    """
     mark = req.checkpoint
-    assert mark is not None and mark.checkpoint_id and mark.manifest_path
+    assert mark is not None and mark.manifest_path
+    assert req.meta.get("checkpoint_id"), "checkpoint_save 的 meta 必须带 checkpoint_id"
     return Rendered(
         EventType.LIFECYCLE,
         TraceKind.CHECKPOINT_SAVE,
-        {
-            "checkpoint_id": mark.checkpoint_id,
-            "level": mark.level,
-            "manifest_path": mark.manifest_path,
-        },
+        {"level": mark.level, "manifest_path": mark.manifest_path},
     )
 
 
 def checkpoint_restore(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """从存档恢复：新执行线的第一条账，带血缘。
+    """从存档恢复：新执行线的第一条账。父线与分叉点由 meta 里的 `checkpoint_id` 对上同 id 的
+    `checkpoint_save` 推出，这里不另记。
 
-    前置条件：req.checkpoint 非 None，带 id 与父执行线；`parent_last_event_uuid` 在 run 级恢复时为空
-    （run 级存档在 run 开账之前）。
+    前置条件：req.checkpoint 非 None 且带清单路径；`req.meta` 带 `checkpoint_id`。
     """
     mark = req.checkpoint
-    assert mark is not None and mark.checkpoint_id and mark.parent_branch
+    assert mark is not None and mark.manifest_path
+    assert req.meta.get("checkpoint_id"), "checkpoint_restore 的 meta 必须带 checkpoint_id"
     return Rendered(
         EventType.LIFECYCLE,
         TraceKind.CHECKPOINT_RESTORE,
-        {
-            "checkpoint_id": mark.checkpoint_id,
-            "level": mark.level,
-            "parent_branch": mark.parent_branch,
-            "parent_last_event_uuid": mark.parent_last_event_uuid,
-            "to_task": mark.to_task,
-        },
-    )
-
-
-def world_snapshot(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """task 开局的世界快照落在哪（`meta.task_id` 是那个 task）。前置条件：req.checkpoint 带路径。"""
-    mark = req.checkpoint
-    assert mark is not None and mark.world_path
-    return Rendered(EventType.LIFECYCLE, TraceKind.WORLD_SNAPSHOT, {"path": mark.world_path})
-
-
-def trace_sealed(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """封存本局的账：封进哪份存档、几条。前置条件：req.checkpoint 带 id。"""
-    mark = req.checkpoint
-    assert mark is not None and mark.checkpoint_id
-    return Rendered(
-        EventType.LIFECYCLE,
-        TraceKind.TRACE_SEALED,
-        {"checkpoint_id": mark.checkpoint_id, "count": str(mark.count)},
+        {"level": mark.level, "manifest_path": mark.manifest_path},
     )
 
 
@@ -1015,24 +1041,41 @@ def checkpoint_error(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 
 def review_inject(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """插话一次：表单种类与人的回话（空串 = 没意见）。前置条件：req.review 带 `form_kind`。"""
+    """插话一次：表单种类、人的回话（空串 = 没意见）、是不是人真答的、等了多久。
+
+    前置条件：req.review 带 `form_kind`。
+    """
     mark = req.review
     assert mark is not None and mark.form_kind
     return Rendered(
         EventType.LIFECYCLE,
         TraceKind.REVIEW_INJECT,
-        {"form_kind": mark.form_kind, "reply": mark.reply},
+        {
+            "form_kind": mark.form_kind,
+            "reply": mark.reply,
+            "answered": str(mark.answered).lower(),
+            "wait_s": f"{mark.wait_s:.3f}",
+        },
     )
 
 
 def review_audit(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """审一次：认 / 推翻与理由。前置条件：req.review 带 `verdict`。"""
+    """审一次：审的是什么、认 / 推翻与理由、是不是人真答的、等了多久。
+
+    前置条件：req.review 带 `form_kind` 与 `verdict`。
+    """
     mark = req.review
-    assert mark is not None and mark.verdict
+    assert mark is not None and mark.form_kind and mark.verdict
     return Rendered(
         EventType.LIFECYCLE,
         TraceKind.REVIEW_AUDIT,
-        {"verdict": mark.verdict, "note": mark.note},
+        {
+            "form_kind": mark.form_kind,
+            "verdict": mark.verdict,
+            "note": mark.note,
+            "answered": str(mark.answered).lower(),
+            "wait_s": f"{mark.wait_s:.3f}",
+        },
     )
 
 

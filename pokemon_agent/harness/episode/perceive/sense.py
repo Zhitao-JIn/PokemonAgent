@@ -3,7 +3,9 @@
 记 `sense_call`（视觉调用）↔ `sense_frame`（取到的这一帧）。
 
 episode 层唯一向世界取帧的地方。判定与拆解都读这一帧的文字化结果（`observation.render()`），
-所以首次拆解与失败后的重拆看到的是同一档画面。步号 = `total_acts`（本局已按键数）。
+所以首次拆解与失败后的重拆看到的是同一档画面。两个步号分家（0928 定稿）：**帧观测**的
+局内累计键数 = `total_acts`（帧槽 / 记忆坐标口径）；**账面步号** = `step + 1`（圈号，
+episode_start 落 0、每圈 +1，同圈所有账共用）。
 这一帧不进帧槽：帧槽只服务 task 层 ActMemory 的前后两张图；`sense_frame` 账直接带这张图。
 """
 
@@ -25,20 +27,27 @@ _SOURCE = "sense"
 def sense(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str, Any]:
     """取一帧（完整档），写进 `ep_ctx.observation`。"""
     deps = runtime.context
-    episode_id, step = state.episode_id, state.total_acts
+    episode_id = state.episode_id
+    frame_step, account_step = state.total_acts, state.step + 1
 
-    # 步骤 1：取帧，步号由本层盖。
-    obs, frame_png = perceive_once(
-        deps, episode_id=episode_id, task_id=episode_id, step=step, source=_SOURCE, ram_only=False
+    # 步骤 1：取帧；帧观测盖键数、sense_call 账头盖圈号（两个步号分家，0928 定稿）。
+    obs, frame_png, ram = perceive_once(
+        deps,
+        episode_id=episode_id,
+        task_id="",
+        step=frame_step,
+        account_step=account_step,
+        source=_SOURCE,
     )
 
-    # 步骤 2：记观察账。
+    # 步骤 2：记观察账（账面步号 = 圈号）。
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.SENSE_FRAME,
-            meta={"source": _SOURCE, "episode_id": episode_id, "task_id": episode_id, "step": step},
+            meta={"source": _SOURCE, "episode_id": episode_id, "task_id": "", "step": account_step},
             obs=obs,
             frame=frame_png,
+            ram=ram,
         )
     )
     return {"ep_ctx": state.ep_ctx.model_copy(update={"observation": obs})}

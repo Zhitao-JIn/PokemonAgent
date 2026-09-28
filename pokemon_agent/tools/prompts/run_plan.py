@@ -28,6 +28,7 @@ from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
 from pokemon_agent.tools.prompts.object_render import render_object_events
 
 from . import append_human_note, load
+from .last_judge import last_judge_lines
 
 _TEMPLATE = load("run_plan")
 
@@ -113,12 +114,14 @@ def build_prompt(req: FromHarnessToBrainToolPlanOnceReq) -> str:
     details = detail_blocks(req.details)
     objects = object_lines(req.objects)
     goals = goals_lines(req.plan)
+    judged = last_judge_lines(req.last_judge) if req.last_judge is not None else []
     return append_human_note(
         _TEMPLATE.render(
             index="\n".join(index) if index else "（本 run 还没有跑完任何一局）",
             details="\n\n".join(details) if details else "（这一版不附任何一局的正文）",
             objects="\n".join(objects) if objects else "（还没有任何地图交互事实）",
             goals="\n".join(goals) if goals else "（空表）",
+            last_judge="\n".join(judged) if judged else "（还没有判定过）",
             max_push=req.max_push,
         ),
         req.human_note,

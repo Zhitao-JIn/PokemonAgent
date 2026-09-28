@@ -17,11 +17,11 @@
 `ImportError: partially initialized module` 实测复现过——见
 `docs/PLAN_trace_decoupling.md` §3。脱钩把那条边切掉了。）
 
-**六个字段分三组**（0914 封套改造）：
+**七个字段分三组**（2026-09-27 双时刻改造）：
 
 | 组 | 字段 | 谁填 |
 |---|---|---|
-| 封套 | `uuid`/`kind`/`type`/`ts` | 前三个由 tool 层给；`ts` 归 `store.py` |
+| 封套 | `uuid`/`kind`/`type`/`started_at`/`ended_at` | 前三个 tool 层给；双时刻缺省归 `store.py` |
 | 标签 | `meta` | harness 自报的签名（`source`/`run_id`/`episode_id`/`step`），**JSON 字符串** |
 | 正文 | `content` | 该账的内容，**JSON 字符串** |
 
@@ -68,9 +68,13 @@ class TraceEvent(BaseModel):
         "**tool 层给的**：渲染层按 `req.kind` 原样落，中间没有翻译表"
     )
     type: str = Field(description="事件种类（见 `EventType` 的常量）。**tool 层给的**")
-    ts: float = Field(
-        description="Unix 时间戳，秒。**排序的唯一依据**（`(ts, uuid)` 升序）"
-        "——算延迟与对齐外部日志也用它"
+    started_at: float = Field(
+        description="Unix 时间戳，秒：操作真实开始时刻；调用方没记的账 = 记账时刻"
+        "（2026-09-27 双时刻改造）"
+    )
+    ended_at: float = Field(
+        description="Unix 时间戳，秒：操作结束时刻。**排序的唯一依据**"
+        "（`(ended_at, uuid)` 升序）——算延迟与对齐外部日志也用它"
     )
     meta: str = Field(
         default="{}",

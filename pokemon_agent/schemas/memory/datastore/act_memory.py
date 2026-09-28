@@ -116,6 +116,7 @@ class ActMemory(BaseModel):
             overview: str = ""
             walk_map: str = ""
             map_id: int | None = None
+            screen: str = ""
 
             @property
             def scene_value(self) -> str:
@@ -170,6 +171,8 @@ class ActMemory(BaseModel):
                     entries.append(("overview", "概况", self.overview))
                 if self.walk_map:
                     entries.append(("walk_map", "walk_map", self.walk_map))
+                if self.screen:
+                    entries.append(("screen", "屏幕", "\n" + self.screen))
                 return entries
 
             def render(self, indent: str = "  ") -> str:
@@ -195,9 +198,15 @@ class ActMemory(BaseModel):
             x: int
             y: int
 
-        step: int = Field(description="本 episode 内的第几步，从 0 开始")
+        step: int = Field(
+            description="本局累计键数，从 0 开始（同真身 `world.Observation.step` 口径："
+            "局内跨 task 连续；harness 盖章）"
+        )
         place: Place | None = Field(default=None, description="主角所在的格子（结构化坐标）")
         status: str = Field(description="这一帧的状态行")
+        scene: str = Field(
+            default="", description="task 层的场合（`TaskScene` 的值）；这一字段之前写下的记录为空"
+        )
         facts: Facts = Field(default_factory=Facts, description="结构化事实容器的快照")
         done: bool = Field(default=False, description="产生这份观测时世界层是否已经不在了")
         perceived: bool = Field(
@@ -219,7 +228,10 @@ class ActMemory(BaseModel):
     action: str = Field(description="**一个键**，如 `up`。连按已经展开成多步，这里不再是链")
     after: Observation = Field(description="执行之后的画面。**结果也是一次观察**")
 
-    step: int = Field(description="写入时所处的步数")
+    step: int = Field(
+        description="该键按下**前**那一帧的本局累计键数（跨 task 连续，harness 盖章）——"
+        "相邻记忆构成 `step+1` 链，机制三沿它回填"
+    )
     episode_id: str = Field(description="这条经验来自哪次尝试")
     task_id: str = Field(default="", description="这条经验属于哪个 task（harness 盖章）")
     run_id: str = Field(
@@ -291,7 +303,10 @@ class ActMemory(BaseModel):
         实测一条记忆 1300 字符，其中 walk_map 占 ~800（before+after 各一份），
         而 judge（3 条历史）/ 审计（整局 8 条）都要渲染它，输入就是这么膨胀的。
         「四邻」（北 G 南 G 西 G 东 G）已给出各方向可通行性，撞墙判断够用，
-        不需要整张图。"""
+        不需要整张图。
+
+        `screen`（整屏文字原样）**保留**（0926 定）：判定 / 校验要看得到解码切不出的界面
+        （队伍列表、数量框）上写了什么；没字的帧 world 已给空串，不占篇幅。"""
         facts = obs.facts.model_copy(update={"walk_map": ""})
         return obs.model_copy(update={"facts": facts}).render()
 

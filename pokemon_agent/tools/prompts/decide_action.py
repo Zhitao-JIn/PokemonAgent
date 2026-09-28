@@ -3,7 +3,8 @@
 
 - **常量** `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT`：给 `game_tools.py` 构造
   `ActionSpace` 用（按当前 overlay 选按键说明、挂地图/连按提示）。
-- **函数** `build_prompt(req: FromHarnessToBrainToolChooseOnceReq)`/
+- **函数** `build_prompt(req: FromHarnessToBrainToolChooseOnceReq)`（接管场合换用
+  同目录的 `decide_macro.md`：视图 + 宏签名 + 上一宏结果）/
   `retry_prompt(req: RetryPromptReq)`：给调用方（`BrainTool`）用，
   各自对应一次决策请求的"首次组装"和"重试追加"，**都只收一个 req 参数**
   ——`build_prompt` 收 harness 信封（素材在那里才拿得到），`retry_prompt`
@@ -32,7 +33,7 @@ from pokemon_agent.schemas.memory import render_sequence
 from pokemon_agent.world import terrain_legend
 from pokemon_agent.world.interface import Facts
 
-from . import append_human_note, load, load_nested_sections
+from . import READ_SCREEN, append_human_note, load, load_nested_sections
 
 # ---- 按 overlay 分流的按键说明（给 game_tools.py 构造动作空间用）----
 
@@ -123,6 +124,7 @@ REPEAT_HINT = load("repeat_hint").text
 # ---- decide_action.md 本体：加载 + 拼装 + 渲染（给 Brain 用）----
 
 _TEMPLATE = load("decide_action")
+_MACRO_TEMPLATE = load("decide_macro")
 
 
 def _render_goals(goals: list[Goal]) -> str:
@@ -176,9 +178,11 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     它是覆盖指令，紧贴"现在输出 JSON"，压过上面所有规则）。
     """
     goals, obs, space = req.goals, req.obs, req.space
-    assert space.names, "build_prompt() got an empty action space"
+    assert space.names or space.macros, "build_prompt() got an empty action space"
     assert not obs.done, "build_prompt() called on a finished episode"
     assert goals, "build_prompt() got an empty goal stack"
+    if space.macros:
+        return _build_macro_prompt(req)
     facts = "\n".join(f"- {k}: {v}" for k, v in obs.facts.items()) or "（无）"
     # `req.memories` 是本局全量、一键一条；逐条 `render()` 会把相邻两帧各贴一遍
     # （上一条的「之后变成」就是下一条的「当时看到」）。`render_sequence()` 逐条渲、
@@ -206,6 +210,39 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
             episode_memories=req.episode_memories or "（无跨局摘要）",
             actions=actions,
             max_segments=MAX_SEGMENTS,
+            read_screen=READ_SCREEN,
+            last_macro=f"\n## 上一个宏的结果\n\n{req.last_macro}\n" if req.last_macro else "",
+        ),
+        req.human_note,
+    )
+
+
+def _build_macro_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
+    """接管场合的决策 prompt（`decide_macro.md`）：视图、上一宏结果、宏签名与说明。
+
+    宏签名与说明原样取自 `MacroSpec`（world 定义），模板只写怎么选。
+    """
+    obs, space = req.obs, req.space
+    view = obs.takeover.render() if obs.takeover is not None else (obs.facts.screen or "（无）")
+    macros = "\n".join(f"- {m.signature()}：{m.description or '（无说明）'}" for m in space.macros)
+    params = "\n".join(
+        f"  - {m.name}.{p.name}：{p.description}"
+        for m in space.macros
+        for p in m.params
+        if p.description
+    )
+    if params:
+        macros += f"\n\n参数说明：\n{params}"
+    return append_human_note(
+        _MACRO_TEMPLATE.render(
+            scene=obs.scene.value,
+            goals=_render_goals(req.goals),
+            knowledge=req.knowledge or "（没有检索到相关知识）",
+            view=view,
+            last_macro=req.last_macro or "（这是本场合的第一个宏）",
+            memories="\n\n".join(render_sequence(req.memories)) or "（无相关记忆）",
+            episode_memories=req.episode_memories or "（无跨局摘要）",
+            macros=macros,
         ),
         req.human_note,
     )

@@ -23,7 +23,12 @@ class Observation(BaseModel):
     那些属于 harness，大脑看不到也不该看到。
     """
 
-    step: int = Field(description="本 episode 内的第几步，从 0 开始")
+    step: int = Field(
+        description="本局累计键数，从 0 开始（局内跨 task 连续不归零）：这一帧是本局"
+        "第几个键按下之后的世界状态。world 恒填 0 占位，由 harness 盖章"
+        "（task 的 total_acts 快照 + task 内键序）；帧槽 / ActMemory 按它做键。"
+        "run 层的局外帧盖全局累计键数（跨局累加——局外帧没有局内语义，0928 定稿）"
+    )
     place: PlaceInWorld | None = Field(
         default=None,
         description="主角所在的格子。**结构化的那一份**——"
@@ -58,7 +63,7 @@ class Observation(BaseModel):
     perceived: bool = Field(
         default=True,
         description="这一帧是**看**出来的还是只读了内存。"
-        "`perceive_once(ram_only=True)` 产出的观测是 False——"
+        "`perceive_task()` 产出的观测是 False——"
         "坐标/朝向/地标/通行图来自模拟器内存（确定、免费），"
         "而场景、对话、概况只有视觉模型读得出。"
         "False 时那几个字段**不是空的，是没读过**，渲染必须明写这一句（`BLIND_NOTE`）",

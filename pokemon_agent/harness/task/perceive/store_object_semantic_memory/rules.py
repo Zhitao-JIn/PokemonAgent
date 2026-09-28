@@ -39,10 +39,9 @@ memory 层只存事件、不做语义判定（分层原则见 AGENTS.md 四）�
 下面那条多段即返回空的过滤保留着当**前置条件**——它是这一层的输入契约，
 不是它要处理的情况。
 
-**没有视觉证据时不判对话**：对话文字只有视觉模型读得出，而链内按键的帧是
-`perceived=False`（只读了内存）。这时 `dialog_text` 为空**不是"没弹出对话"，
-是"没读过"**——照旧记 `still` 会记出一条假事件（"这个碰法没用"，而事实是
-"这次没看见"），比漏记一条贵得多。见 `_dialog_or_still`。
+**对话判定使用 task 帧解码出的文字**：`TaskObservation` 的 `dialog_text` 来自屏幕
+tile 缓冲解码，和 `perceived`（episode 视觉感知标记）无关。即使 `perceived=False`，
+task 帧的文字也已经读过；空文字因此可以判为没有对话。
 """
 
 from __future__ import annotations
@@ -59,8 +58,8 @@ from pokemon_agent.schemas.memory import (
 from pokemon_agent.world import (
     BUTTON_FACING,
     INTERACT_KEY,
-    Observation,
     PlaceInWorld,
+    TaskObservation,
 )
 
 INTERACTIVE = ("人", "招牌", "门", "物")
@@ -82,7 +81,7 @@ def press_cells(place: PlaceInWorld, facing: str) -> list[PlaceInWorld]:
 
 
 def kind_in_frame(
-    obs: Observation, place: PlaceInWorld, interactive: tuple[str, ...]
+    obs: TaskObservation, place: PlaceInWorld, interactive: tuple[str, ...]
 ) -> str | None:
     """`place` 这一格在这一帧的 `obs.facts.landmarks` 里是什么。认不出来返回 `None`。
 
@@ -105,8 +104,8 @@ class _Press:
 
     episode_id: str
     step: int
-    before: Observation
-    after: Observation
+    before: TaskObservation
+    after: TaskObservation
     actor_place: PlaceInWorld
     button: str
     facing: str
@@ -132,13 +131,9 @@ def _common_fields(press: _Press, place: PlaceInWorld, kind: str) -> dict:
 def _dialog_or_still(press: _Press, place: PlaceInWorld, kind: str) -> ObjectFactEvent | None:
     """a 键互动的两种结局：弹出对话记正文，什么都没有记 still。
 
-    **这一帧没做过视觉感知就直接让位**（返回 `None`，不产出事件）：链内按键
-    的 `after` 是 RAM-only 快照，`dialog_text` 恒为空——那是"没读过"，
-    不是"读出来什么都没有"。硬判成 `still` 会把"这次没看见"写成
-    "这个碰法没用"，而被写错的记忆会被以后每一步当真。
+    `TaskObservation.dialog_text` 是 task 层从屏幕 tile 缓冲解码的文字；空值表示这一帧
+    没有对话文字，不依赖 episode 层的视觉感知标记 `perceived`。
     """
-    if not press.after.perceived:
-        return None
     text = press.after.facts.dialog_text
     common = _common_fields(press, place, kind)
     if text.strip():
@@ -216,9 +211,9 @@ _POSTURES: dict[str, tuple] = {
 
 
 def object_fact_events(
-    before: Observation,
+    before: TaskObservation,
     action: Action,
-    after: Observation,
+    after: TaskObservation,
     episode_id: str,
     step: int,
 ) -> list[ObjectFactEvent]:
