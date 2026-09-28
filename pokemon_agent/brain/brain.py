@@ -52,6 +52,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Sequence
 
 from pydantic import ValidationError
@@ -228,6 +229,7 @@ class Brain:
         # `sent_images` = **真发给模型的图**（发给什么存什么）：转发表退化成
         # 纯文本时为空列表，账上的 `images` 因此如实反映模型收到的东西。
         sent_images = list(images) if with_vision else []
+        t0 = time.time()
         try:
             if sent_images:
                 text, n_in, n_out, n_cached, n_reason = self._ask(self._decide, prompt, sent_images)
@@ -244,9 +246,16 @@ class Brain:
                     completion.reasoning_tokens,
                 )
                 truncated = completion.truncated
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "images": sent_images},
+                payload={
+                    "ok": "false",
+                    "prompt": prompt,
+                    "images": sent_images,
+                    "started_at": t0,
+                    "ended_at": time.time(),
+                },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -282,6 +291,8 @@ class Brain:
                 # 发给什么存什么：模型真收到图的账里才有图（转发表退化成
                 # 纯文本时为空列表——"带了图但没发出去"在这条账上看得见）
                 "images": sent_images,
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind=kind,
             error=reason,
@@ -334,8 +345,10 @@ class Brain:
             "plan() 需要一个 plan provider——这次装配没给它（按需装配）"
         )
         # 步骤 1：调模型。
+        t0 = time.time()
         try:
             completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt, thinking=thinking))
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
@@ -343,6 +356,8 @@ class Brain:
                     "prompt": prompt,
                     "images": [],
                     "thinking_override": _override(thinking),
+                    "started_at": t0,
+                    "ended_at": time.time(),
                 },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
@@ -370,6 +385,8 @@ class Brain:
                 "prompt": prompt,
                 # 规划链纯文本（见 docstring），账形与其余链路统一
                 "images": [],
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind=kind,
             error=reason,
@@ -405,8 +422,10 @@ class Brain:
         )
         assert max_tasks > 0, "decompose() got a non-positive max_tasks"
         # 步骤 1：调模型。
+        t0 = time.time()
         try:
             completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt, thinking=thinking))
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
@@ -414,6 +433,8 @@ class Brain:
                     "prompt": prompt,
                     "images": [],
                     "thinking_override": _override(thinking),
+                    "started_at": t0,
+                    "ended_at": time.time(),
                 },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
@@ -438,6 +459,8 @@ class Brain:
                 "raw": completion.text,
                 "prompt": prompt,
                 "images": [],
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind=kind,
             error=reason,
@@ -493,12 +516,20 @@ class Brain:
         # 但"这次为什么不成立"必须是可统计的，所以补一条只有错误信息的账。
         text = n_in = n_out = n_cached = n_reason = ""
         kind = ""
+        t0 = time.time()
         try:
             text, n_in, n_out, n_cached, n_reason = self._ask(self._judge_llm, prompt, images)
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"，转成 AttemptFailed
             kind = type(exc).__name__
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "images": list(images)},
+                payload={
+                    "ok": "false",
+                    "prompt": prompt,
+                    "images": list(images),
+                    "started_at": t0,
+                    "ended_at": time.time(),
+                },
                 error_kind=kind,
                 error=f"{exc}",
             )
@@ -519,6 +550,8 @@ class Brain:
                 # 带没带图、带了哪几张，直接看 `images`——发给什么存什么，
                 # "这次判错是没带图还是带了图也判错"从此可分。
                 "images": list(images),
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind=kind,
             error=why if kind else "",
@@ -629,11 +662,19 @@ class Brain:
             "verify() 需要一个 verify provider——这次装配没给它（按需装配）"
         )
         # 步骤 1：调模型。
+        t0 = time.time()
         try:
             text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "images": list(images)},
+                payload={
+                    "ok": "false",
+                    "prompt": prompt,
+                    "images": list(images),
+                    "started_at": t0,
+                    "ended_at": time.time(),
+                },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -653,6 +694,8 @@ class Brain:
                 "ok": str(not parse_kind).lower(),
                 "prompt": prompt,
                 "images": list(images),
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind=parse_kind,
             error=parse_reason,
@@ -745,11 +788,19 @@ class Brain:
             "summarize() 需要一个 verify provider——这次装配没给它（按需装配）"
         )
         # 步骤 1：调模型。
+        t0 = time.time()
         try:
             text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
+            t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
-                payload={"ok": "false", "prompt": prompt, "images": list(images)},
+                payload={
+                    "ok": "false",
+                    "prompt": prompt,
+                    "images": list(images),
+                    "started_at": t0,
+                    "ended_at": time.time(),
+                },
                 error_kind=type(exc).__name__,
                 error=f"{exc}",
             )
@@ -768,6 +819,8 @@ class Brain:
                 "ok": str(summary is not None).lower(),
                 "prompt": prompt,
                 "images": list(images),
+                "started_at": t0,
+                "ended_at": t1,
             },
             error_kind="" if summary is not None else "ParseFailure",
             error="" if summary is not None else "摘要输出无法解析成 EpisodeSummary",

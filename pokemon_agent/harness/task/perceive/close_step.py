@@ -21,6 +21,9 @@ def close_step(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any
     after = state.after_observation
     assert after is not None, "close_step 之前 sense 必须已取帧"
     if state.action is not None:
+        # 账面步号 = 圈号（state.step + 1，0928 定稿）；next_step 同值——
+        # 刚转正的新帧就是本圈的号，node_io 契约按"next_step == 自己的步号"核对。
+        circle_step = state.step + 1
         runtime.context.trace.append(
             FromHarnessToTraceToolAppendReq(
                 kind=TraceKind.ADVANCE_STEP,
@@ -28,9 +31,9 @@ def close_step(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any
                     "source": "close_step",
                     "episode_id": state.episode_id,
                     "task_id": state.task.task_id,
-                    "step": after.step,
+                    "step": circle_step,
                 },
-                next_step=after.step,
+                next_step=circle_step,
             )
         )
     return {

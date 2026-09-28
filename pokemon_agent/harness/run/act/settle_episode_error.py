@@ -37,7 +37,7 @@ def settle_episode_error(
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.EPISODE_ERROR,
-            meta={"source": source, "episode_id": episode_id, "task_id": episode_id, "step": 0},
+            meta={"source": source, "episode_id": episode_id, "task_id": "", "step": 0},
             error=episode_entry.exc_snapshot(exc),
         )
     )

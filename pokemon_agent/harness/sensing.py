@@ -30,13 +30,16 @@ def perceive_once(
     episode_id: str,
     task_id: str,
     step: int,
+    account_step: int,
     source: str,
 ) -> tuple[Observation, str | None, RamReadout | None]:
     """episode 层取一帧（视觉档）、记感知账，返回 `(盖好步号的 observation, 原始画面, 内存读数)`。
 
+    两个步号分家（0928 定稿）：`step` 盖**帧观测**（局内累计键数，帧槽 / 记忆坐标口径）；
+    `account_step` 是**账面步号**（圈号，同圈所有账共用）——`sense_call` 账头用它。
     失败：重试耗尽时先记账、再原样抛 `MaxRetriesExceeded`。
     """
-    meta = {"source": source, "episode_id": episode_id, "task_id": task_id, "step": step}
+    meta = {"source": source, "episode_id": episode_id, "task_id": task_id, "step": account_step}
     try:
         resp, log = deps.game.perceive_with_retry()
     except MaxRetriesExceeded as exc:

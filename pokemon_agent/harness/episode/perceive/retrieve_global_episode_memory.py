@@ -16,6 +16,7 @@ run 级规划（`plan`）读的同样是**本 run** 的摘要。
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from langgraph.runtime import Runtime
@@ -41,22 +42,26 @@ def retrieve_global_episode_memory(
     （**空清单**与"没查"是两回事）。
     """
     deps = runtime.context
-    ep, step = state.episode_id, state.ep_ctx.observation.step
+    ep, step = state.episode_id, state.step + 1  # 账面步号 = 圈号（0928 定稿）
+    t0 = time.time()
     episode_memories = deps.memory.query_episode_summaries(
         FromHarnessToMemoryToolQueryEpisodeSummariesReq(conditions={"run_id": state.run_id})
     ).summaries
+    t1 = time.time()
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.READ_EPISODE_MEMORY,
             meta={
                 "source": "retrieve_global_episode_memory",
                 "episode_id": ep,
-                "task_id": ep,
+                "task_id": "",
                 "step": step,
             },
             # 检索条件就是那条 `conditions`（本格唯一的一个等值项）。
             query=f"run_id={state.run_id}",
             refs=[m.episode_id for m in episode_memories],
+            started_at=t0,
+            ended_at=t1,
         )
     )
     return {"ep_ctx": state.ep_ctx.model_copy(update={"global_episode_memories": episode_memories})}

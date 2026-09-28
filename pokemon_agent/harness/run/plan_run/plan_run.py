@@ -64,8 +64,6 @@ def plan_run(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
                 for u in outcome.updates
             ],
             why=outcome.why or "brain 这一版没有新目标",
-            input=outcome.input,
-            output=outcome.output,
             human_note=note,
         )
     )
@@ -141,7 +139,6 @@ def _to_outcome(
     `task_id`；越界（模型数错行）不是异常，只是那条表态作废。
     `entries` 的 `task_id` 由这里生成：形如 `plan-{run_id}-{n}`，接着表里已有的
     同前缀号往下数，并按条数递增 `offset`——一次推多条不会撞号。
-    `input`/`output` 取自最后一次成功调用的账（给 `PLAN_VERDICT` 那条账供人看）。
     """
     run_plan = resp.plan
     entries = [
@@ -172,8 +169,6 @@ def _to_outcome(
         entries=entries,
         updates=updates,
         why=run_plan.why,
-        input=resp.calls[-1].payload.get("prompt", ""),
-        output=resp.calls[-1].payload.get("raw", ""),
     )
 
 

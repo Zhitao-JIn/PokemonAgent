@@ -65,7 +65,7 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
                 "source": "store_step_episode_memory",
                 "episode_id": ep,
                 "task_id": state.task.task_id,
-                "step": before.step,
+                "step": state.step + 1,
             },
             entry=entry,
         )

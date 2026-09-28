@@ -28,7 +28,7 @@ def verify_act_memories(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict
         "source": "verify_act_memories",
         "episode_id": state.episode_id,
         "task_id": state.task.task_id,
-        "step": state.task_ctx.observation.step,
+        "step": state.step + 1,
     }
 
     # 步骤 1：问 verifier；耗尽时记整条账 + call_exhausted 后上抛。

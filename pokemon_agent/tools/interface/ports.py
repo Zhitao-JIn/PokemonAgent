@@ -326,7 +326,7 @@ class MemoryToolPort(Protocol):
     def query_task_memories(
         self, req: FromHarnessToMemoryToolQueryTaskMemoriesReq
     ) -> FromHarnessToMemoryToolQueryTaskMemoriesResp:
-        """取这一局的全部 task 记忆，按 start_step 升序（episode_done 的总结原料）。"""
+        """取这一局的全部 task 记忆，按 total_acts 升序（episode_done 的总结原料）。"""
         ...
 
     def store_task_memory(self, req: FromHarnessToMemoryToolStoreTaskMemoryReq) -> None:
@@ -508,9 +508,9 @@ class TraceToolPort(Protocol):
     `frame_png` 一起删（0914 封套改造——画面真源已是 `memory/step_memory/`）。
     剩下的一条是**通用读**，不做掩码、不做游标、不打标。
 
-    **磁盘账本是唯一真相**（0913 晚）：`RunDataCenter` 的内存事件槽已删，
+    **trace backend 是唯一真相**：`RunDataCenter` 的内存事件槽已删，
     run 内的节点（`plan`/`review`）现在读这里的 `read_events`，不再有
-    "内存一份、盘上一份"的双写（另一个读者 SSE 端点随 `api.py` 一起删了）。
+    "内存一份、存储一份"的双写。若 backend 最终一致，读结果可以暂时缺少新事件。
 
     **签名只用信封与契约层类型，不用任何模块的领域类型**：这是本文件所有
     端口共守的边界（见模块 docstring 与 `docs/spec/tools/SPEC.md`）。
@@ -520,27 +520,42 @@ class TraceToolPort(Protocol):
     """
 
     def append(self, req: FromHarnessToTraceToolAppendReq) -> None:
-        """记一笔账，落盘（一笔 req 可能展开成多条事件）。
+        """记一笔账（一笔 req 可能展开成多条事件）。
 
         前置条件：`req.meta` 带 `source`/`episode_id`/`step` 三件（签名信息由
             harness 一次交齐）、`req.kind` 对应渲染所需
             字段非空（tool 入口 assert）。
-        后置条件：渲染出的全部事件已落盘；每条的封套 `kind` 就是 `req.kind`
+        后置条件：渲染出的全部事件已交给所选 trace backend；每条的封套 `kind` 就是 `req.kind`
             ——**例外是连带产出的错误账**（某个调用失败的尝试会补一条
             `call_failed`，`type=error`）。
         """
         ...
 
     def read_events(self, meta: dict[str, Any] | None = None) -> list[TraceEvent]:
-        """读**磁盘账本**上的全部事件，按 `(ts, uuid)` 升序；可按签名做交集筛选。
+        """读当前 trace backend 可见的全部事件，按 `(ts, uuid)` 升序；可按签名做交集筛选。
 
-        meta：`None`（或空 dict）= 不过滤，返回落盘根下的全部事件；给了就只返回
+        meta：`None`（或空 dict）= 不过滤，返回 backend 当前可见的全部事件；给了就只返回
             **每个键都相等**的那批（键取 `run_id` / `source` / `episode_id` /
             `step`）。语义是 **AND-of-equalities**（各条件的候选集取交集），
             **不支持 OR、不支持大小比较**。
-            落盘**不按 run 分层**（0916），所以 `run_id` 是切片的主键——
-            `{"run_id": …, "episode_id": …}` 就是"这一局"。
+            LocalTrace 落盘不按 run 分层（0916）；LangfuseTrace 一实例绑定一个 run。
+            `{"run_id": …, "episode_id": …}` 是"这一局"的常见筛选。
         后置条件：按 `(ts, uuid)` 严格升序；无匹配时返回空列表（不抛异常）。
-        失败：磁盘读取失败原样抛出——本方法不吞这一类错。
+        失败：所选 backend 读取失败原样抛出——本方法不吞这一类错。
+        """
+        ...
+
+    def flush(self) -> None:
+        """等待 backend 提交当前缓冲事件（如有）。
+
+        本地同步存储可为空操作；Langfuse flush 仅保证 SDK 队列已发送，不保证查询 API 已可见。
+        backend 的刷新失败记录为诊断信息，不改变已经完成的 harness 业务结果。
+        """
+        ...
+
+    def shutdown(self) -> None:
+        """关闭 backend 持有的后台资源；重复关闭必须可安全调用。
+
+        调用方负责在 harness 生命周期结束后调用。SDK 已提供进程退出处理时，实现可以幂等委托。
         """
         ...

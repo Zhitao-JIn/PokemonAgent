@@ -1,6 +1,6 @@
 # trace —— API 接口文档
 
-> 最后更新：2026-09-16 ｜ 活文档：跟随代码更新，与代码冲突时**以代码为准**
+> 最后更新：2026-09-27 ｜ 活文档：跟随代码更新，与代码冲突时**以代码为准**
 >
 > 本文档是 **API 参考**（调什么、怎么调、出错什么样）；
 > 模块的边界与全貌（为什么这么设计、谁认识谁）见同目录 [`SPEC.md`](./SPEC.md)；
@@ -14,16 +14,17 @@
 消费方**一律**从包根进口，不深到子目录模块文件：
 
 ```python
-from pokemon_agent.trace import LocalTrace, TracePort   # 常用两个
+from pokemon_agent.trace import LangfuseTrace, LocalTrace, TracePort
 ```
 
 包根 `trace/__init__.py` 的 `__all__` 恰好五个名字：
 
 | 名字 | 是什么 | 声明位置 |
 |---|---|---|
-| `TracePort` | 港口协议（`@runtime_checkable Protocol`），两个方法 | `trace/interface/trace_port.py` |
+| `TracePort` | 港口协议（`@runtime_checkable Protocol`），append/read/flush/shutdown | `trace/interface/trace_port.py` |
 | `Event` | 形状协议（`@runtime_checkable Protocol`），六个属性 | `trace/interface/event.py` |
-| `LocalTrace` | `TracePort` 的唯一实现（文件落盘） | `trace/store.py` |
+| `LocalTrace` | `TracePort` 的本地文件实现 | `trace/store.py` |
+| `LangfuseTrace` | `TracePort` 的本机自托管 Langfuse 实现 | `trace/langfuse_trace.py` |
 | `new_event_uuid` | 造一个时间递增 uuid（v7 布局）当文件名 | `trace/store.py` |
 | `EventType` | 粗类词表的七个字符串常量（**不是枚举**） | `trace/datastore/trace_event.py` |
 
@@ -36,9 +37,9 @@ from pokemon_agent.trace import LocalTrace, TracePort   # 常用两个
 
 ---
 
-## 二、`TracePort` —— 两个方法
+## 二、`TracePort` —— 事件读写与生命周期
 
-`trace/interface/trace_port.py`。**整个模块的对外能力就是这两个方法。**
+`trace/interface/trace_port.py`。对外方法包括 `append`、`read_events`、`flush` 和 `shutdown`。
 
 ```python
 @runtime_checkable
@@ -46,6 +47,8 @@ class TracePort(Protocol):
     def append(self, type: str, kind: str,
                meta: dict[str, Any] | None = None, content: Any = None) -> str: ...
     def read_events(self, meta: dict[str, Any] | None = None) -> list[Event]: ...
+    def flush(self) -> None: ...
+    def shutdown(self) -> None: ...
 ```
 
 **签名里的 `type` / `kind` 是裸 `str`**（0913 降级）：合法值域是**声明方**的事，
@@ -60,19 +63,21 @@ trace 不认识——它只保证"按时间记账"。调用方（tool 层）用 
 | `meta` | `dict[str, Any] \| None` | ❌（缺省 `None`→`{}`） | 签名信息，**不带 `run_id`** |
 | `content` | `Any` | ❌（缺省 `None`） | 这笔账的本体，任何可 JSON 化的对象 |
 
-**返回**：`str` —— 这个事件的 `uuid`，**与落盘文件名同值**。
+**返回**：`str` —— 这个事件的本地 `uuid`。LocalTrace 中它与落盘文件名同值；Langfuse 中它与 observation ID 区分。
 
-**前置条件（实现方用 assert 执行）**：`meta` 不带 `run_id` 键
+**前置条件（实现方用 assert 执行）**：`meta` 不带 `run_id` / `branch` 键
 （`store._stamp_run_id` 第一条就是 `assert "run_id" not in meta`）。那个键归落盘这一层盖，
 调用方带了就是"同一件事说两遍"。
 
-**后置条件**：
+**LocalTrace 后置条件**：
 
 1. 六个字段（`uuid` / `kind` / `type` / `ts` / `meta` / `content`）已全部落盘；
 2. 返回的 uuid 与文件名同值；
 3. **`ts` 严格递增**（本实例内）。墙上时钟分辨率有限，撞刻时人为推进 1µs：
    `if now <= self._last_ts: now = self._last_ts + 1e-6`——读侧"按 `(ts, uuid)` 排序 = 按执行顺序排列"
    这条不变式才真正成立。
+
+**Langfuse 后置条件**：append 返回不保证 Observations API 立即可读；`flush()` 只保证 SDK 队列发送，仍接受服务端最终一致性。`read_events()` 失败向上抛出。
 
 **编码约定**：`meta` / `content` 传进去的**是 Python 对象**，trace 负责
 `json.dumps(..., ensure_ascii=False)` 序列化成**字符串**落盘；
@@ -246,7 +251,7 @@ RFC 9562 的 **v7 布局**，前 48 位是毫秒时间戳：
 
 ---
 
-## 五、`LocalTrace` —— 唯一实现
+## 五、`LocalTrace` —— 本地文件实现
 
 `trace/store.py`。
 

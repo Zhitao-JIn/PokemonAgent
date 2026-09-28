@@ -112,13 +112,6 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     `exc.calls`），tool 渲染时逐条落成 `*_call` 账——账在语义上从来不是一条，
     只是此前恰好只有一条值得记。列表化之后"重试了 3 次"这件事由**账的条数
     与顺序**直接回答（0914 跟进删 `attempt` 戳）。"""
-    input: str | None = None
-    """结论账（`choose_verdict` / `judge_verdict` / `verify_verdict` / `plan_verdict`）附带的
-    **发给模型的请求原文**——取自那次成功调用的 `payload.prompt`。结论与它是同一次
-    调用的两个面，放在一起才不必跳到调用账对读。`plan` 无模型路径交 `None`，
-    正文里就不出现这两个键。"""
-    output: str | None = None
-    """同 `input`，是模型吐回的**原文**（`payload.raw`）。"""
     why: str | None = None
     judge_reason: str | None = None
     error: str | None = None
@@ -142,8 +135,8 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     outcome_task: TaskOutput | None = None
     run_goal: Goal | None = None
     """run 级总目标（`run_start` 带）。"""
-    start_step: int | None = None
-    """task 的全局键号基数（`task_start` 带）。"""
+    total_acts: int | None = None
+    """task 的局内累计键数快照（`task_start` 带）。"""
 
     # ---- 决策 / 观测 ----
     obs: Observation | None = None
@@ -173,6 +166,15 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     为什么非记不可：命中为空时，只有它能把"**检索条件写错了**"和"**库里真没有**"
     分开——一个空清单本身只是后者的候选证据，不是结论。模型调用记了完整 prompt，
     检索这边对应的就是它。"""
+    started_at: float | None = None
+    """（2026-09-27 双时刻定案）这次**操作真实开始**的 wall clock（`time.time()`）。
+
+    只有两类账有真实操作时长、也只由它们的调用点记：模型调用（`brain.py` 在
+    provider `complete()` 前后取时，进每条 `ModelCall.payload`）与六条读口的
+    检索（检索节点在 MemoryTool 查询前后取时，进本字段）。其余账不记——
+    落盘层补 `start = end =` 记账时刻，封套里没有独立于操作时间的记账时刻。"""
+    ended_at: float | None = None
+    """操作结束时刻；**排序的唯一依据**（`(ended_at, uuid)` 升序）。见 `started_at`。"""
     refs: list[str] | None = None
     """命中的**是谁**——每一条一个字符串（`render.retrieve_node` 原样转发）。
 

@@ -98,7 +98,7 @@ episode 级恢复只做第 1、2 步（run 的 `act` 照常派这一局）；run
 | C10 | 记忆与分支 | **不加分支概念、不加回退接口**：每个存档点一份 zip。父线最后一个存档点之后写进活库的那段尾巴，恢复分支时会被抹掉——它不对应任何存档点，接受 |
 | C11 | checkpointer 与 trace | **只写不读**：存档不读分叉点，结束一局不封存账 |
 | C12 | 分叉点、血缘与分支图 | `checkpoint_save`、`checkpoint_restore` 的 **meta** 带 `checkpoint_id`（放 meta 以便 `read_events` 筛）。分叉点 = 该 `checkpoint_save` 本身（含它）；父线 = 该 `checkpoint_save` 的 `branch`，不另记 `parent`；新线名随机：`b-<6 位 hex>`（名字要在装配新线之前定，不读账）。TraceTool 从自己的账本算血缘，装配点不递 `lineage` |
-| C13 | `checkpoint_id` | `<episode_id 或 run_id>@<branch>-<8 位随机 hex>`（`uuid4`），不靠存档目录是否存在去重。save 生成一次写进清单与 `checkpoint_save`，restore 只读清单；恢复时断言本 run 里该 id 的 `checkpoint_save` **恰好一条**，否则拒绝 |
+| C13 | `checkpoint_id` | `<episode_id 或 run_id>@<branch>-<8 位随机 hex>`（`uuid4`），不靠存档目录是否存在去重。save 生成一次写进清单与 `checkpoint_save`，restore 只读清单；trace 读侧可用同 id 的存档账拼接血缘，缺账不阻止状态恢复 |
 | C14 | `query_episode_summaries` 的排序 | 删掉 `order_by` 后，由 `query_episode_summaries` 内部固定按 `episode_id` 自然序排（`ep2 < ep10`），不开参数；调用方不再各自排序 |
 
 ## 八、开工前提（探测）

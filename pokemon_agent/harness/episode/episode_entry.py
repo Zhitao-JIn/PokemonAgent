@@ -38,7 +38,7 @@ def begin_episode(deps: EpisodeRuntime, episode_input: EpisodeInput) -> EpisodeR
             meta={
                 "source": "episode_entry.begin_episode",
                 "episode_id": episode_id,
-                "task_id": episode_id,
+                "task_id": "",
                 "step": 0,
             },
             task=episode_input.goal,

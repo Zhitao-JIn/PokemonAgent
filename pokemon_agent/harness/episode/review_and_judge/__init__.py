@@ -42,7 +42,8 @@ _SOURCE = "review_and_judge"
 def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str, Any]:
     """定案上一个 task，再两段式判停；返回 `{"termination"}` 加定案的增量。"""
     deps = runtime.context
-    ep, step = state.episode_id, state.ep_ctx.observation.step
+    # 账面步号 = 圈号（0928 定稿）：episode_start 落 0、每圈 +1，同圈所有账共用。
+    ep, step = state.episode_id, state.step + 1
 
     # 步骤 0：刚跑完一个 task 就定案那条 RUNNING（首圈没有）。
     updates: dict[str, object] = {}
@@ -62,7 +63,7 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
 
     # 步骤 2：问模型；判成时亮给人审，认账才覆盖机械结论。
     if state.step > 0:
-        meta = {"source": _SOURCE, "episode_id": ep, "task_id": ep, "step": step}
+        meta = {"source": _SOURCE, "episode_id": ep, "task_id": "", "step": step}
         req = FromHarnessToBrainToolJudgeReq(
             goal=current_goal(state),
             task_memories=state.ep_ctx.task_memories,
@@ -89,12 +90,11 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
         deps.trace,
         source=_SOURCE,
         episode_id=ep,
-        task_id=ep,
+        task_id="",
         step=step,
         termination=termination,
         judge_reason=reason_for_judge,
         fail_streak=state.fail_streak,
-        verdict=verdict,
         audit=feedback.audit if feedback is not None else None,
         human_note=feedback.note if overturned else "",
     )
@@ -128,8 +128,8 @@ def _settle(deps: EpisodeRuntime, state: EpisodeRunState, outcome: TaskOutput) -
         meta={
             "source": _SOURCE,
             "episode_id": state.episode_id,
-            "task_id": state.episode_id,
-            "step": state.ep_ctx.observation.step,
+            "task_id": "",
+            "step": state.step + 1,
         },
     )
     overturned = resp.verdict is AuditVerdict.OVERTURN
@@ -164,8 +164,8 @@ def _settle(deps: EpisodeRuntime, state: EpisodeRunState, outcome: TaskOutput) -
             meta={
                 "source": _SOURCE,
                 "episode_id": state.episode_id,
-                "task_id": state.episode_id,
-                "step": state.ep_ctx.observation.step,
+                "task_id": "",
+                "step": state.step + 1,
             },
             task_entry=stamped,
             audit=resp.verdict.value,

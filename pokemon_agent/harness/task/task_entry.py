@@ -32,12 +32,13 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
         deps.checkpointer.save(
             "task",
             run_id=task_input.run_id,
-            step=task_input.start_step,
+            step=task_input.total_acts,
             episode_id=task_input.episode_id,
             task_id=task_input.task.task_id,
         )
 
-    # 步骤 2：开局账。
+    # 步骤 2：开局账。账面步号 dispatch 落 0（0928 定稿：圈号语义，每圈取帧 +1）；
+    # content.total_acts 保留局内累计键数快照（记忆 / 帧槽键控用，与账面步号解耦）。
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.TASK_START,
@@ -45,10 +46,10 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
                 "source": "task_entry.begin_task",
                 "episode_id": task_input.episode_id,
                 "task_id": task_input.task.task_id,
-                "step": task_input.start_step,
+                "step": 0,
             },
             task=task_input.task,
-            start_step=task_input.start_step,
+            total_acts=task_input.total_acts,
         )
     )
 
@@ -57,7 +58,7 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
         run_id=task_input.run_id,
         episode_id=task_input.episode_id,
         task=task_input.task,
-        start_step=task_input.start_step,
+        total_acts=task_input.total_acts,
         knowledge=task_input.knowledge,
     )
     return state

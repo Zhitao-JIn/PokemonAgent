@@ -6,7 +6,7 @@
 一句话：run 开局、每局开派前、每个 task 开局各存一份"此刻的全部现场"（世界、记忆整根、图状态的原件或定位）。
 从任意一份存档可以恢复出一条**新执行线**（同一 `run_id`、新 `branch`），run 图与 episode 图在图内回到
 "进 `act` 前"，从那一层接着跑——不回放、不重跑已完成的 task。trace 不回滚，只追加；
-分支关系从账本自己推出来，不另存登记表。
+trace 读侧的可见血缘由恢复账与存档账推导，用来拼接分支历史，不是恢复状态的输入。
 
 ## 一、存档点
 
@@ -50,9 +50,9 @@ episode 级带 `episode_id` + `run_ref`；task 级再加 `task_id` + `episode_re
 ## 三、分支与血缘
 
 - 分支名 `main`；每恢复一次开一条随机名的新线 `b-<6 位 hex>`（名字要在装配前定，不读账）。
-- trace `meta.branch` 由落盘层盖章。`checkpoint_save` / `checkpoint_restore` 的 meta 另带 `checkpoint_id`：
-  新线第一条账是 `checkpoint_restore`，同 id 的 `checkpoint_save` 在哪条线上，那条线就是父线，它本身（含它）
-  就是分叉点。
+- `CheckpointManifest.branch` 记录存档所属的父线；新线第一条账 `checkpoint_restore` 的 meta 带 `checkpoint_id`。
+  `tools/trace/lineage.py` 在 trace 读侧用恢复账与同 id 的存档账推导父线和精确分叉事件，供历史拼接与分支图展示。
+  恢复流程不查询 trace，也不要求 `checkpoint_save` 账存在。
 - `tools/trace/lineage.py`：`lineage_of(账, branch)` 由近到远推血缘，`branch_graph(账, run_id)` 画分支图
   （每条恢复账一条边）。`TraceTool.read_events` 在 meta 不带 `branch` 时按血缘拼：本线全部 + 各祖先截至各自
   分叉点；血缘每次现推，不缓存。`node_io.branch_view` 用同样的规则各推一遍，互为对照。
@@ -64,8 +64,8 @@ episode 级带 `episode_id` + `run_ref`；task 级再加 `task_id` + `episode_re
 由调用方给（真机包一层 `build_real(..., branch=)` 取 `harness.deps`）。
 
 `open_branch`：读清单、核 `state_schema_hash`（不符 → `CheckpointIncompatible`）→ 起新线名、装配 →
-核父线上这份存档的 `checkpoint_save` 恰好一条（否则 `CheckpointNotFound`）→ 读回图状态 →
-回档记忆、世界 → 记 `checkpoint_restore`。前三步失败时一笔账都没写。git commit 不同只告警。
+按清单里的 `run_state` / `GraphRef` 读回图状态 → 回档记忆、世界 → 记 `checkpoint_restore`。
+恢复不读取 trace；trace 缺少 `checkpoint_save` 不阻止从完整存档恢复。git commit 不同只告警。
 
 | 从哪恢复 | 做法 |
 |---|---|

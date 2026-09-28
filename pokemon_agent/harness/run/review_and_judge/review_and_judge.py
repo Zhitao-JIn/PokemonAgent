@@ -4,7 +4,8 @@
    都是终态、不自动重派）→ 亮给人审，推翻则盖反面、`overturned=True`、修正 `fail_streak`
    → 记 `settle_goal`。（一局一条 EpisodeMemory 由 episode 层自己保证，本格不写记忆。）
    （收结算在 perceive 的 `absorb_episode`。）
-2. 机械三类：上一局终局帧 `obs.done` / `fail_streak >= RUN_STALL_LIMIT` /
+2. 机械三类：本圈 perceive 取的帧 `obs.done`（run 层自己取帧，0928 起不再借上一局
+   结算带回的旧画面；首圈也有帧——世界起点的画面）/ `fail_streak >= RUN_STALL_LIMIT` /
    `step >= RUN_MAX_EPISODES`。
 3. 问模型"run_goal 达成没有"（素材是 `plan_ctx.index` 局摘要）；判成时亮给人**审**——
    认账即 `GOAL_DONE`，推翻则 run 继续。run 继续跑时，判定员的话与人的推翻理由写进
@@ -84,8 +85,10 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
     last = state.episode_outputs[-1] if state.episode_outputs else None
 
     # 步骤 2：机械三类；还没跑过局时不问模型。
+    # world_ended 读本圈 perceive 刚取的帧（世界层自己的信号）——旧口径读上一局
+    # 结算带回的画面（首圈还是 None），run 层自己取帧后这里看的是当前画面。
     termination = mechanical_termination(
-        world_ended=bool(last and last.observation and last.observation.done),
+        world_ended=bool(state.observation and state.observation.done),
         stalled=fail_streak >= RUN_STALL_LIMIT,
         exhausted=state.step >= RUN_MAX_EPISODES,
     )
@@ -99,7 +102,8 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
             "source": _SOURCE,
             "episode_id": state.run_id,
             "task_id": state.run_id,
-            "step": state.step,
+            # 圈号语义（0928 定稿，与 episode/task 两层同构）。
+            "step": state.step + 1,
         }
         verdict = ask_judger(
             deps.judger,
@@ -128,11 +132,10 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
         source=_SOURCE,
         episode_id=state.run_id,
         task_id=state.run_id,
-        step=state.step,
+        step=state.step + 1,
         termination=termination,
         judge_reason=reason_for_judge,
         fail_streak=fail_streak,
-        verdict=verdict,
         audit=feedback.audit if feedback is not None else None,
         human_note=feedback.note if overturned else "",
     )
@@ -165,7 +168,7 @@ def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[s
             "source": _SOURCE,
             "episode_id": state.run_id,
             "task_id": state.run_id,
-            "step": state.step,
+            "step": state.step + 1,
         },
     )
     fail_streak = state.fail_streak
@@ -183,7 +186,7 @@ def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[s
                 "source": _SOURCE,
                 "episode_id": state.run_id,
                 "task_id": state.run_id,
-                "step": state.step,
+                "step": state.step + 1,
             },
             goal=stamped,
             audit=resp.verdict.value,

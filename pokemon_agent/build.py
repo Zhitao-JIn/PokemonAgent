@@ -23,6 +23,7 @@ runtime 不再复制；brain 能力**按层各造一份**（185，见下面三�
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from pokemon_agent.config import CHECKPOINT_ENABLED
@@ -44,6 +45,9 @@ from pokemon_agent.tools import (
     MemoryTool,
     TraceTool,
 )
+from pokemon_agent.tools.trace import assert_server_ready
+
+logger = logging.getLogger(__name__)
 
 
 def build_real(
@@ -59,6 +63,7 @@ def build_real(
     speed: int = 0,
     run_id: str = "local",
     trace_root: str | Path | None = None,
+    trace_backend: str = "langfuse",
     memory_root: str | Path | None = None,
     checkpoint_root: str | Path | None = None,
     branch: str = "main",
@@ -76,7 +81,7 @@ def build_real(
     # 因为型号名前缀与厂商类必须配套这件事已经由表保证。
     # state_file: None = 从开机起跑；API 装配默认传 `rom + ".state"`（存在时）。
     #
-    # `trace_root` 与 `memory_root`：两份数据的落盘根（0916 起，启动时指定）。
+    # `trace_root`（仅 local backend）与 `memory_root`：两份数据的落盘根（0916 起，启动时指定）。
     # 缺省 None = **进程启动目录**下的 `tracelog/` 与 `memory/`——不再写死
     # 仓库根。起跑脚本经 `--trace-root` / `--memory-root` 传进来，不传时从哪个
     # 目录启动、数据就落在哪个目录。
@@ -108,6 +113,10 @@ def build_real(
 
     `live_feed_url`：人在环后端地址（`ws://host:port`）；给了就把每笔账顺手推给网页实时看
     （`TraceTool.build` 里包一层 `LiveFeedTrace`）。None = 不推。
+
+    `trace_backend`：`langfuse`（默认，0927 定案——本机自托管服务是唯一 trace 存储，
+    选它时**启动前先打健康检查探针**，服务没起当场报错不进 run）或 `local`（离线测试
+    /开发用，落本地 JSON）；langfuse 不写本地事件副本。
 
     **plan 位置的规划来源就是 brain**（0922 第 182 条撤销 `planner` 壳）：
     `plan_run` 格直接调注入的 `planner`（brain 的 plan 链路），没有"人不给目标就没人给"的问题——
@@ -156,15 +165,23 @@ def build_real(
     # 磁盘账本（`deps.trace.read_events()`）是唯一真相——图内节点直接读它
     # （原来的另一个读者 SSE 端点随 `api.py` 0913 晚一起删了）。
     #
-    # **`LocalTrace` 不在这里造**（0913 下午）：`TraceTool.build()` 是唯一的
-    # 接线工厂——落盘记录的完整形状在它内部接好，本装配点只递裸字段。与
+    # trace 后端不在这里造：`TraceTool.build()` 是唯一的接线工厂，选择 local 或 Langfuse；
+    # 本装配点只递裸字段。与
     # `BrainTool.build()` / `MemoryTool.build()` / `GameTools.build()` 同形。
-    # **本文件对 `pokemon_agent.trace` 零 import**。
+    # **本文件对 `pokemon_agent.trace` 零 import**（探针也经 tool 层的再出口拿）。
+    #
+    # **Langfuse 是真实 run 的默认后端**（0927 定案）：SDK 是异步批量发送，
+    # 服务不在场时写入侧静默丢账——所以选 langfuse 时先打健康检查探针，
+    # "服务没起"挡在 run 开始之前，不跑一半才发现。
+    if trace_backend == "langfuse":
+        langfuse_version = assert_server_ready()
+        logger.info("Langfuse 后端健康检查通过（version=%s）", langfuse_version)
     trace_tool = TraceTool.build(
         run_id=run_id,
         trace_root=trace_root,
         branch=branch,
         live_feed_url=live_feed_url,
+        backend=trace_backend,
     )
 
     # 图内节点伸向记忆的唯一通道
@@ -289,6 +306,7 @@ def build_real(
     run_rt = RunRuntime(
         trace=trace_tool,
         memory=memory,
+        game=game,
         reviewer=episode_rt.reviewer,
         planner=run_brain.planner,
         judger=run_brain.judger,

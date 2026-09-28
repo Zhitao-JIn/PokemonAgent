@@ -29,8 +29,8 @@ def verify_task_memories(
     meta = {
         "source": "verify_task_memories",
         "episode_id": state.episode_id,
-        "task_id": state.episode_id,
-        "step": state.ep_ctx.observation.step,
+        "task_id": "",
+        "step": state.step + 1,  # 收尾账同圈中式：圈号 = 已派 task 数 + 1（0928 定稿）
     }
 
     # 步骤 1：问 verifier；耗尽时记整条账 + call_exhausted 后上抛。
@@ -65,8 +65,6 @@ def verify_task_memories(
             meta=meta,
             checked=len(result.verdicts),
             negative=sum(1 for v in result.verdicts if not v.positive),
-            input=result.calls[-1].payload.get("prompt", "") if result.calls else "",
-            output=result.calls[-1].payload.get("raw", "") if result.calls else "",
         )
     )
     return {"task_verdicts": result.verdicts}

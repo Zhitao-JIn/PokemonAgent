@@ -33,8 +33,8 @@ def close_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> d
             meta={
                 "source": "close_episode",
                 "episode_id": state.episode_id,
-                "task_id": state.episode_id,
-                "step": state.ep_ctx.observation.step,
+                "task_id": "",
+                "step": state.step + 1,  # 收尾账同圈中式（0928 定稿）
             },
             outcome_episode=output,
         )

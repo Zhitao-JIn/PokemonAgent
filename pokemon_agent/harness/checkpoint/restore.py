@@ -1,6 +1,6 @@
 """`restore_run`：从一份存档恢复出一条新执行线，在图里接着跑到 run 结束（checkpoint spec §五）。
 
-`restore_run` = `open_branch`（起新线名、装配、核分叉点、回档、首条账）+ `resume`（进图）。
+`restore_run` = `open_branch`（读清单、起新线名、装配、回档、首条账）+ `resume`（进图）。
 
 恢复全程在图里跑：run 级把 `RunState` 原件改上新 `branch`，从 `begin` 之后进图；episode / task 级
 把 run 图"进 `act` 前"那条的值以 `plan_run` 的名义写进新 thread（下一格即 `act`），
@@ -9,8 +9,8 @@ episode 级下 run 的 `act` 照常派这一局、照常存档；task 级另把 
 存档器的恢复计划，run 的 `act` 取到后经 `episode_entry.resume_episode` 从那里接着跑，
 episode 的 `act` 与 `begin_task` 照常执行（新线在目标 task 开局存下自己的 task 级档）。
 
-血缘不在这里记：新线第一条账 `checkpoint_restore` 的 meta 带 `checkpoint_id`，父线与分叉点
-由 trace 从同 id 的 `checkpoint_save` 推出来（`TraceTool.read_events`）。
+父线保存在清单的 `branch` 字段；恢复本身依赖清单、LangGraph saver、世界存档与记忆快照。
+trace 血缘只用于读取时拼接可见历史，不参与恢复。
 """
 
 from __future__ import annotations
@@ -75,12 +75,10 @@ def restore_run(
 
 
 def open_branch(manifest_path: str | Path, build_branch: BuildBranch) -> OpenedBranch:
-    """恢复的前半段：起新线名、装配、核分叉点、世界与记忆回档、记首条账。不开跑。
+    """恢复的前半段：读清单、起新线名、装配、回档世界与记忆、记首条账。不开跑。
 
     失败：清单缺失 / 损坏 → `CheckpointNotFound` / `CheckpointCorrupt`；状态结构不兼容 →
-    `CheckpointIncompatible`；trace 里这份存档的 `checkpoint_save` 不是恰好一条 →
-    `CheckpointNotFound`。
-    都在写任何一笔账之前。
+    `CheckpointIncompatible`；saver 缺少所需图状态 → `CheckpointNotFound`。
     """
     # 步骤 1：读清单，核版本。
     path = Path(manifest_path)
@@ -101,16 +99,13 @@ def open_branch(manifest_path: str | Path, build_branch: BuildBranch) -> OpenedB
             ck.code.git_commit,
         )
 
-    # 步骤 3：核分叉点——父线上这份存档的 `checkpoint_save` 恰好一条。
-    _check_fork(ck, manifest)
-
-    # 步骤 4：读回图状态；task 级把 episode 图的那份放进恢复计划。
+    # 步骤 3：读回图状态；task 级把 episode 图的那份放进恢复计划。
     pre_run = _pre_run_state(ck, manifest)
     if manifest.level == "task":
         assert manifest.episode_id is not None and manifest.task_id is not None
         ck.arm_resume(manifest.episode_id, manifest.task_id, _episode_state(ck, manifest))
 
-    # 步骤 5：世界与记忆回到存档那一刻，记首条账。
+    # 步骤 4：世界与记忆回到存档那一刻，记首条账。
     ck.memory.restore_memory(
         FromHarnessToMemoryToolRestoreMemoryReq(archive=manifest.memory_archive)
     )
@@ -122,8 +117,10 @@ def open_branch(manifest_path: str | Path, build_branch: BuildBranch) -> OpenedB
         ck,
         CheckpointMark(level=manifest.level, manifest_path=launch_relative(path)),
         {
-            "episode_id": manifest.run_id,
-            "task_id": manifest.run_id,
+            # 位约定与存档侧对齐（checkpointer.save：task 级放真 episode/task 号，
+            # 其余两级两位都放 run_id）——恢复账属于恢复落点那一层。
+            "episode_id": manifest.episode_id if manifest.level == "task" else manifest.run_id,
+            "task_id": manifest.task_id if manifest.level == "task" else manifest.run_id,
             "step": pre_run.step,
             "checkpoint_id": manifest.checkpoint_id,
         },
@@ -154,25 +151,6 @@ def resume(opened: OpenedBranch) -> tuple[list[EpisodeOutput], int, int, float]:
         run_entry.record_run_error(deps, manifest.run_id, exc, source=SOURCE)
         raise
     return run_entry.close(final)
-
-
-def _check_fork(ck: Checkpointer, manifest: CheckpointManifest) -> None:
-    """存档所在线上 `checkpoint_id` 为清单 id 的 `checkpoint_save` 必须恰好一条（它就是分叉点）。"""
-    saves = [
-        event
-        for event in ck.trace.read_events(
-            {
-                "run_id": manifest.run_id,
-                "branch": manifest.branch,
-                "checkpoint_id": manifest.checkpoint_id,
-            }
-        )
-        if event.kind == TraceKind.CHECKPOINT_SAVE
-    ]
-    if len(saves) != 1:
-        raise CheckpointNotFound(
-            f"{manifest.checkpoint_id} 在 trace 里的 checkpoint_save 有 {len(saves)} 条，应恰好一条"
-        )
 
 
 def _pre_run_state(ck: Checkpointer, manifest: CheckpointManifest) -> RunState:

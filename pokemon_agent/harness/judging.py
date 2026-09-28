@@ -95,13 +95,13 @@ def record_verdict(
     termination: Termination | None,
     judge_reason: str,
     fail_streak: int | None = None,
-    verdict: FromHarnessToBrainToolJudgeResp | None = None,
     audit: AuditVerdict | None = None,
     human_note: str = "",
 ) -> None:
-    """记一条 `judge_verdict`；问过模型时带上最后一次调用的 prompt/raw。
+    """记一条 `judge_verdict`。
 
     audit：人对这次裁决的表态（None = 没问人）；human_note：人推翻时的理由。
+    那次调用的请求与原文在同一步的 `judge_call` 账里，这里不再复制（2026-09-27）。
     """
     trace.append(
         FromHarnessToTraceToolAppendReq(
@@ -110,8 +110,6 @@ def record_verdict(
             termination=termination,
             fail_streak=fail_streak,
             judge_reason=judge_reason,
-            input=verdict.calls[-1].payload.get("prompt", "") if verdict else None,
-            output=verdict.calls[-1].payload.get("raw", "") if verdict else None,
             audit=audit.value if audit is not None else None,
             human_note=human_note,
         )

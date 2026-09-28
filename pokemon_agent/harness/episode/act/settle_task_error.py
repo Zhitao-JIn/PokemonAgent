@@ -35,7 +35,7 @@ def settle_task_error(
                 "source": source,
                 "episode_id": task_input.episode_id,
                 "task_id": task_id,
-                "step": task_input.start_step + presses,
+                "step": presses + 1,
             },
             error=exc_snapshot(exc),
         )

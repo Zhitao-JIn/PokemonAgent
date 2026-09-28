@@ -24,8 +24,10 @@ class TaskInput(BaseModel):
     run_id: str = Field(description="所属 run（记忆归属章）")
     episode_id: str = Field(description="所属 episode（记忆按局分组）")
     task: Task = Field(description="本 task：目标、判据、键预算（max_steps）")
-    start_step: int = Field(
-        ge=0, description="本局键号基数——task 每一帧的步号 = start_step + 本层键数，跨 task 不重号"
+    total_acts: int = Field(
+        ge=0,
+        description="进 task 时定格的局内累计键数快照（episode 派发时从 `EpisodeRunState."
+        "total_acts` 带下，task 内恒定）——task 每一帧的步号 = total_acts + 本层键数",
     )
     knowledge: list[str] = Field(
         default_factory=list,

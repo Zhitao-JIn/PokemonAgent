@@ -75,8 +75,8 @@ class EpisodeRuntime:
     # ---- 依赖：外面递进来的，整 run 不变 ----
 
     game: GameToolPort
-    """世界（模拟器）端口：动作空间、按键、感知、reset 全走它。**episode 独占**
-    ——run 侧只有 `new_run` 的世界起点载入经 `run_rt.episode.game` 穿透。"""
+    """世界（模拟器）端口：动作空间、按键、感知、reset 全走它。与 `RunRuntime.game`
+    是**同一实例**——0928 起 run 层每圈自己取帧，run 侧不再经这里穿透。"""
     memory: MemoryToolPort
     """情景记忆 + 语义记忆（object）都走这一个端口（与 `RunRuntime.memory`
     是**同一实例**，两边存引用）。"""

@@ -42,7 +42,9 @@ def run_done(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
                 "source": "run_done",
                 "episode_id": state.run_id,
                 "task_id": state.run_id,
-                "step": state.step,
+                # 收尾账同圈中式（圈号语义 0928 定稿，与 episode_end = tasks_used + 1 同构）：
+                # 判停发生在 review_and_judge 那一圈，run_done 与它同圈。
+                "step": state.step + 1,
             },
             outcome_run=settle_run(state),
         )

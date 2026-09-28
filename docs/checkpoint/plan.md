@@ -73,10 +73,10 @@
 - `TraceTool`：构造去掉 `lineage`；`read_events` 按 spec §六 四步从账本推血缘、每次现算；新增只读函数"本 run 的分支图"。
 - 清单删 `lineage`、`last_event_uuid`、`last_event_ts`；删 `LineageLink`、`branches.py`、出口里的相关名字。
 - `Checkpointer`：构造去掉 `lineage`；`save()` 删读分叉点那一步；`_new_id` 改为 `<前缀>@<branch>-<8 位 hex>`，删目录去重循环。
-- `restore.open_branch`：新线名 `b-<6 位 hex>`；装配后核"该 `checkpoint_id` 的 `checkpoint_save` 恰好一条"，否则 `CheckpointNotFound`；`BuildBranch = Callable[[str], RunRuntime]`。
+- `restore.open_branch`：新线名 `b-<6 位 hex>`；恢复状态只从清单与 saver / 世界 / 记忆快照读取，不查询 trace；`BuildBranch = Callable[[str], RunRuntime]`。
 - `build.py`：`build_real` 去掉 `lineage`；`evals/e2e/runner/one.py` 的 `build_branch` 只收分支名。
 
-**验收**：`pytest` 全过；`pokemon_agent/harness/checkpoint/checkpointer.py` 里没有 `read_events`；从 episode 级存档恢复后，新线按血缘读到的账与改前（外部传血缘）一致；删掉某条 `checkpoint_save` 后恢复被拒。
+**验收**：`pytest` 全过；`pokemon_agent/harness/checkpoint/checkpointer.py` 里没有 `read_events`；从 episode 级存档恢复后，新线按血缘读到的账与改前（外部传血缘）一致。当前恢复不再以 `checkpoint_save` 账作为前置校验；缺账只会影响 trace 读侧的血缘拼接。
 
 ### Q4 task 级完整存档
 

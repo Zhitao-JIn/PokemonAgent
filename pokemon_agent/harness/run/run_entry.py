@@ -127,8 +127,8 @@ def new_run(
         # `world_reset_done` 那个跨局记号（2026-09-22 第 178 条删除）。
         # task 取表序第一条（run 从第一个目标开局）；world 只拿它做断言与
         # "将来按任务选起始存档"，真正的任务编排仍由 `dispatch` 逐局决定。
-        # `game` 住在 `EpisodeRuntime` 上（episode 独占），run 侧经嵌套穿透。
-        deps.episode.game.reset(FromHarnessToGameToolResetReq(task=goals[0]))
+        # reset 走 `deps.game`（0928 起 run 层自己持有世界端口，与 episode 层同一实例）。
+        deps.game.reset(FromHarnessToGameToolResetReq(task=goals[0]))
         if deps.checkpointer is not None:
             deps.checkpointer.save("run", run_id=run_id, step=state.step, state=state)
         if checkpoint_only:

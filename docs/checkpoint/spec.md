@@ -114,7 +114,7 @@ BuildBranch = Callable[[str], RunRuntime]     # 分支名 -> 一套 runtime；�
 **`open_branch`**：
 1. 读清单，核 `state_schema_hash`（不兼容 → `CheckpointIncompatible`）；
 2. 定新线名 `b-<6 位 hex>`（`uuid4`，不读账），`build_branch(新线)` 装配；git commit 不同只告警（不变）；
-3. 核分叉点：本 run 里 `checkpoint_id` 等于清单 id 的 `checkpoint_save` **恰好一条**，否则 `CheckpointNotFound`（经 `deps.trace.read_events({"run_id", "branch": 清单.branch, "checkpoint_id"})`）；
+3. 恢复状态只从清单与 saver / 世界 / 记忆快照读取，不查询 trace；
 4. 读状态：run 级取 `run_state`；episode / task 级按 `run_ref` 经 `run_graph.get_state` 读 `RunState`；task 级另按 `episode_ref` 经 saver 的 `get_tuple` 读出 channel 值，
    按 `EpisodeRunState.model_fields` 取有的字段、缺席的 channel（从没写过的，如 `memory`、`output`）取模型缺省值，校验成模型；
 5. 回档：`restore_memory(清单.memory_archive)` → `game.reset(...)` → `game.load_state(world.state)`（顺序不变）；
@@ -237,7 +237,7 @@ fake run 最小用例，断言：
 2. 三级各恢复不开跑：世界字节、记忆 zip 哈希、`RunState`（task 级再加 `EpisodeRunState`）与存档时一致；
 3. 从第 2 个 task 的存档恢复并跑到底：新线账顺序同 §九第 5 条；父线的账一字节未变；
 4. 仅凭 trace 画出的分支图与实际恢复过程一致；按血缘拼读后 `node_io` 全过；
-5. 改坏 `state_schema_hash` 被拒；删掉某份存档对应的 `checkpoint_save` 后恢复被拒。
+5. 改坏 `state_schema_hash` 被拒；trace 缺少某份存档对应的 `checkpoint_save` 不阻止从完整存档恢复，但该分支的 trace 血缘无法拼接。
 
 ## 十一、已知限制
 

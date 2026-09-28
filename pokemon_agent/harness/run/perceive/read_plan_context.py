@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from langgraph.runtime import Runtime
@@ -29,32 +30,41 @@ def read_plan_context(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str
         "source": "run.perceive",
         "episode_id": state.run_id,
         "task_id": state.run_id,
-        "step": state.step,
+        # 账面步号是圈号（0928 定稿，与 episode/task 两层同构）：首圈 perceive 落 1。
+        "step": state.step + 1,
     }
 
     # 步骤 1：局索引（记忆按 `episode_id` 自然序返回，即执行序）+ 详情预取。
+    t0 = time.time()
     index = deps.memory.query_episode_summaries(
         FromHarnessToMemoryToolQueryEpisodeSummariesReq(conditions={"run_id": state.run_id})
     ).summaries
+    t1 = time.time()
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.READ_EPISODE_MEMORY,
             meta=meta,
             query=f"run_id={state.run_id}",
             refs=[m.episode_id for m in index],
+            started_at=t0,
+            ended_at=t1,
         )
     )
 
     # 步骤 2：本 run 的地图交互事实（run 级不按地图筛）。
+    t0 = time.time()
     objects = deps.memory.query_object_events(
         FromHarnessToMemoryToolQueryObjectEventsReq(run_id=state.run_id)
     ).events
+    t1 = time.time()
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.READ_OBJECT_MEMORY,
             meta=meta,
             query=f"run_id={state.run_id} map_id=None",
             refs=[e.place.key for e in objects],
+            started_at=t0,
+            ended_at=t1,
         )
     )
     return {"plan_ctx": PlanContext(index=index, details=_pick_details(index), objects=objects)}

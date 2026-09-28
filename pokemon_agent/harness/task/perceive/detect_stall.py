@@ -51,7 +51,7 @@ def detect_stall(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, A
                 "source": "detect_stall",
                 "episode_id": state.episode_id,
                 "task_id": state.task.task_id,
-                "step": state.task_ctx.observation.step,
+                "step": state.step + 1,
             },
             stall_key=key,
             stall_count=count,

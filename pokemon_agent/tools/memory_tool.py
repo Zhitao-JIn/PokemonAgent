@@ -293,7 +293,7 @@ class MemoryTool:
     def query_task_memories(
         self, req: FromHarnessToMemoryToolQueryTaskMemoriesReq
     ) -> FromHarnessToMemoryToolQueryTaskMemoriesResp:
-        """取这一局的全部 task 记忆，按 start_step 升序。"""
+        """取这一局的全部 task 记忆，按 total_acts 升序。"""
         assert req.episode_id, "task memory query needs a non-empty episode_id"
         memories: list[TaskMemory] = []
         for _uuid, _meta, payload, _text in self._tasks.get_many(
@@ -304,18 +304,22 @@ class MemoryTool:
             except ValidationError:
                 continue
         return FromHarnessToMemoryToolQueryTaskMemoriesResp(
-            memories=sorted(memories, key=lambda m: m.start_step)
+            memories=sorted(memories, key=lambda m: m.total_acts)
         )
 
     def store_task_memory(self, req: FromHarnessToMemoryToolStoreTaskMemoryReq) -> None:
-        """落库一条 task 记忆：tool 层组装 metadata → 索引层落一个 uuid 文件。"""
+        """落库一条 task 记忆：tool 层组装 metadata → 索引层落一个 uuid 文件。
+
+        metadata 只收**实际进 filter 的等值坐标**（run_id/episode_id/task_id）——
+        步号类键（total_acts）是区间语义，索引层不认识"大于"，放进来零读方
+        （0928 定案删除；本体在 payload，排序照走模型字段）。
+        """
         m = req.memory
         self._tasks.put(
             metadata={
                 "run_id": m.run_id,
                 "episode_id": m.episode_id,
                 "task_id": m.task_id,
-                "start_step": str(m.start_step),
             },
             payload=m.model_dump(),
             text=m.summary,
@@ -463,8 +467,6 @@ class MemoryTool:
                     "step": str(event.step),
                     "map_id": str(event.place.map_id),
                     "place": event.place.key,
-                    "object_kind": event.object_kind,
-                    "outcome": event.outcome,
                 },
                 payload=event.model_dump(),
                 text="",

@@ -9,7 +9,7 @@
 **正文**（`summary` 起）由 LLM 从**本 task 通过校验的 ActMemory** 蒸馏而来
 （"这一次 task 的前后变化"）；原料一直在 `memory/step_memory/`。来源章
 （`run_id` / `episode_id` / `task_id` / `goal` / `success` / `reason` /
-`steps_used` / `start_step`）与 ActMemory 无关：它是 harness 从 TaskState 盖的
+`steps_used` / `total_acts`）与 ActMemory 无关：它是 harness 从 TaskState 盖的
 （装配点 `tools/brain_tool.py::TaskSummarizer.summarize_task()`）。
 
 三条推论与 `EpisodeMemory` 相同：**可重建**（同批原料重蒸得等价的一条）、
@@ -41,7 +41,9 @@ class TaskMemory(BaseModel):
     )
     reason: str = Field(default="", description="task_done 里 LLM 写的结论说明")
     steps_used: int = Field(ge=0, description="本 task 消耗的键数")
-    start_step: int = Field(ge=0, description="本 task 的全局键号起点（ActMemory 步号区间下界）")
+    total_acts: int = Field(
+        ge=0, description="本 task 的局内累计键数起点（ActMemory 步号区间下界，进 task 时的快照）"
+    )
 
     # —— 派生正文（本 task 正样本 ActMemory 的蒸馏结果，可重建可丢弃）——
     summary: str = Field(description="本 task 的简明总结：前后变化与结果")
@@ -76,7 +78,7 @@ class TaskMemory(BaseModel):
         mark = "成功" if self.success else f"未成功（{self.termination or '未知'}）"
         lines = [
             f"task `{self.task_id}`：{self.goal} —— {mark}"
-            f"（键 {self.start_step}–{self.start_step + self.steps_used - 1}，"
+            f"（键 {self.total_acts}–{self.total_acts + self.steps_used - 1}，"
             f"共 {self.steps_used} 键）",
         ]
         if self.reason:

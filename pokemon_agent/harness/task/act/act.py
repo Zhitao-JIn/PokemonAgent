@@ -37,11 +37,12 @@ def act(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
     )
 
     # 步骤 2：记 press_key / run_macro，决策数 +1。
+    # 账面步号 = 圈号（state.step 尚未自增，+1 即本圈帧号 = 本键序号，0928 定稿）。
     meta = {
         "source": "act",
         "episode_id": state.episode_id,
         "task_id": state.task.task_id,
-        "step": before.step,
+        "step": state.step + 1,
     }
     if resp.outcome is not None:
         deps.trace.append(

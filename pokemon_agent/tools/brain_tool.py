@@ -625,7 +625,7 @@ class TaskSummarizer:
             termination=req.termination.value,
             reason=summary.reason,
             steps_used=req.steps_used,
-            start_step=req.entries[0].step if req.entries else 0,
+            total_acts=req.entries[0].step if req.entries else 0,
             summary=summary.summary,
             reusable_patterns=summary.reusable_patterns,
             critical_decisions=summary.critical_decisions,

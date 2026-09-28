@@ -126,7 +126,7 @@ def render_events(events: list[TraceEvent]) -> list[str]:
             meta = json.loads(event.meta)
         except json.JSONDecodeError:
             continue
-        clock = datetime.fromtimestamp(event.ts).strftime("%H:%M:%S")
+        clock = datetime.fromtimestamp(event.ended_at).strftime("%H:%M:%S")
         content = " ".join(event.content.split())
         if len(content) > EVENT_CONTENT_LIMIT:
             content = content[:EVENT_CONTENT_LIMIT] + "…"

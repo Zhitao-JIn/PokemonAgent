@@ -117,7 +117,7 @@ class Checkpointer:
         run 级给 `state`（`RunState` 原件）；episode 级给 `episode_id`（将派的那一局），须在 run 的
         `act` 里调用；task 级给 `episode_id` 与 `task_id`，须在 episode 的 `act` 里调用
         （`begin_task`）。
-        `step`：账的 meta 用——run / episode 级是已派局数，task 级是该 task 的 `start_step`。
+        `step`：账的 meta 用——run / episode 级是已派局数，task 级是该 task 的 `total_acts`（快照）。
         """
         assert (state is not None) == (level == "run"), "只有 run 级给 RunState 原件"
         assert (episode_id is not None) == (level != "run"), "episode / task 级要给 episode_id"

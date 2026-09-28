@@ -32,7 +32,8 @@ _SOURCE = "task.review_and_judge"
 def review_and_judge(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
     """两段式判停，返回 `{"termination"}`。"""
     deps = runtime.context
-    ep, task_id, step = state.episode_id, state.task.task_id, state.task_ctx.observation.step
+    ep, task_id = state.episode_id, state.task.task_id
+    step = state.step + 1  # 账面步号 = 圈号（0928 定稿：dispatch 落 0、每圈取帧 +1）
     stalled = state.stall_count >= ACT_STALL_LIMIT
 
     # 步骤 1：机械三类；第 0 键不问模型。
@@ -71,7 +72,6 @@ def review_and_judge(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[st
         step=step,
         termination=termination,
         judge_reason=reason_for_judge,
-        verdict=verdict,
     )
     return {"termination": termination, "judge_reason": reason_for_judge}
 

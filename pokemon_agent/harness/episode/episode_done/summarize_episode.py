@@ -34,8 +34,8 @@ def summarize_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) 
     meta = {
         "source": "summarize_episode",
         "episode_id": state.episode_id,
-        "task_id": state.episode_id,
-        "step": state.ep_ctx.observation.step,
+        "task_id": "",
+        "step": state.step + 1,  # 收尾账同圈中式：圈号 = 已派 task 数 + 1（0928 定稿）
     }
     req = FromHarnessToBrainToolSummarizeReq(
         entries=state.ep_ctx.task_memories,

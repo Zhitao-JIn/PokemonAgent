@@ -198,7 +198,10 @@ class ActMemory(BaseModel):
             x: int
             y: int
 
-        step: int = Field(description="本 episode 内的第几步，从 0 开始")
+        step: int = Field(
+            description="本局累计键数，从 0 开始（同真身 `world.Observation.step` 口径："
+            "局内跨 task 连续；harness 盖章）"
+        )
         place: Place | None = Field(default=None, description="主角所在的格子（结构化坐标）")
         status: str = Field(description="这一帧的状态行")
         scene: str = Field(
@@ -225,7 +228,10 @@ class ActMemory(BaseModel):
     action: str = Field(description="**一个键**，如 `up`。连按已经展开成多步，这里不再是链")
     after: Observation = Field(description="执行之后的画面。**结果也是一次观察**")
 
-    step: int = Field(description="写入时所处的步数")
+    step: int = Field(
+        description="该键按下**前**那一帧的本局累计键数（跨 task 连续，harness 盖章）——"
+        "相邻记忆构成 `step+1` 链，机制三沿它回填"
+    )
     episode_id: str = Field(description="这条经验来自哪次尝试")
     task_id: str = Field(default="", description="这条经验属于哪个 task（harness 盖章）")
     run_id: str = Field(

@@ -38,7 +38,7 @@ def get_action_space(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[st
                 "source": "get_action_space",
                 "episode_id": state.episode_id,
                 "task_id": state.task.task_id,
-                "step": obs.step,
+                "step": state.step + 1,
             },
             names=space.names,
         )

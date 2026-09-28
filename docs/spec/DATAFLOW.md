@@ -160,7 +160,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 | `review_inject` | lifecycle | 插话点：`plan_run` / `plan_episode`（`harness/reviewing.py`，每问一轮一条） | `form_kind`、`reply`（空串 = 没意见）、`answered`（`false` = 没人答、回的是默认值）、`wait_s` |
 | `review_audit` | lifecycle | 审：两层 `review_and_judge` 的定案与 judge「已达成」的裁决 | `form_kind`（被审对象：`EpisodeOutput` / `TaskOutput` / `JudgeVerdict`）、`verdict`、`note`、`answered`、`wait_s` |
 | `checkpoint_save` | lifecycle | `checkpoint.save`（run 开局 / 每局开派前 / 每个 task 开局、先于 `task_start`）；meta 另带 `checkpoint_id`，这条账就是从它恢复出的新线的分叉点 | `level`、`manifest_path` |
-| `checkpoint_restore` | lifecycle | `checkpoint.restore`（新执行线第一条）；meta 另带 `checkpoint_id`，父线由同 id 的 `checkpoint_save` 推出 | `level`、`manifest_path` |
+| `checkpoint_restore` | lifecycle | `checkpoint.restore`（新执行线第一条）；meta 另带 `checkpoint_id`；trace 读侧据此与同 id 的 `checkpoint_save` 拼分支历史，恢复本身不查 trace | `level`、`manifest_path` |
 
 **模型调用账（`model_call`）**：正文是那次调用原样（`ok`/`prompt`，成功另带 token 与 `raw`）
 

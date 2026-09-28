@@ -39,7 +39,7 @@ def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
     assert state.task_ctx is not None, "plan_task before perceive"
     assert state.task_ctx.action_space is not None, "plan_task without an action space"
     ep = state.episode_id
-    step = state.start_step + state.step
+    step = state.step + 1  # 账面步号 = 圈号（0928 定稿：dispatch 落 0、每圈取帧 +1）
 
     # ========== 1. 组装 req（本 task 的目标 + 轻感知帧 + 受限空间 + 近期记忆） ==========
     history = state.task_ctx.act_memories[-CHOOSE_HISTORY_STEPS:]
@@ -110,8 +110,6 @@ def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
                 "step": step,
             },
             action=action,
-            input=resp.calls[-1].payload.get("prompt", ""),
-            output=resp.calls[-1].payload.get("raw", ""),
         )
     )
     return {"action": action}

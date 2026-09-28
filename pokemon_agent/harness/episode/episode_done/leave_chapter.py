@@ -47,7 +47,7 @@ def store_empty_chapter(
 ) -> EpisodeMemory:
     """这一局在记忆里还没有记录就补一张空章（记 `write_episode_memory`），返回那条记录。"""
     assert episode_id, "store_empty_chapter() needs a non-empty episode_id"
-    meta = {"source": source, "episode_id": episode_id, "task_id": episode_id, "step": step}
+    meta = {"source": source, "episode_id": episode_id, "task_id": "", "step": step}
     existing = deps.memory.query_episode_summaries(
         FromHarnessToMemoryToolQueryEpisodeSummariesReq(conditions={"episode_id": episode_id})
     ).summaries
@@ -91,7 +91,7 @@ def leave_chapter(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> d
         termination=state.termination,
         reason=state.reason,
         source="leave_chapter",
-        step=state.ep_ctx.observation.step,
+        step=state.step + 1,  # 收尾账同圈中式：圈号 = 已派 task 数 + 1（0928 定稿）
     )
     return {"memory": stored}
 
