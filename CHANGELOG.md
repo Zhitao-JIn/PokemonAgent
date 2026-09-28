@@ -1,3 +1,335 @@
+## 2026-09-28（323）—— memory metadata 去冗余：删 task 记忆的 total_acts 与 object 事件的 object_kind/outcome
+
+**改了什么**：`memory_tool` 两处 put 的 metadata 删三个零读方键——`store_task_memory` 删 `"total_acts"`（原 `start_step`，剩 run_id/episode_id/task_id）；`append_object_events` 删 `"object_kind"` / `"outcome"`（剩 run_id/episode_id/step/map_id/place）。`store_task_memory` docstring 补一句定案：metadata 只收**实际进 filter 的等值坐标**——步号类键是区间语义，索引层不认识"大于"（object 的 `before_step` 收尾走 payload 的 `e.step`），放进来零读方；本体在 payload（`model_dump` 全量），排序照走模型字段。
+
+**为什么这么改**：用户问"为什么会把 start_step 当 meta"→ 逐表盘点五张表的 metadata 读方：在干活的全部是等值坐标（run_id/episode_id/map_id/place/topic/source），零读方的全部是区间或描述语义的键；用户确认设计意图是存"局内 step 检索坐标"（值也确实是局内口径，没存错），点名删三个——task 的 total_acts、object 的 object_kind/outcome（act 的 step/map_id 与 episode 的 success/quality_score/scene 保留未动）。
+
+**取舍**：盘上旧文件多出的旧键无害（filter 交集按 conditions 走，多键不参与）；旧文件 metadata 键名还是 `start_step` 的成孤儿（本来也没人筛它，payload 是完整本体无损）；object 的 step 留着——万一将来加"按步号点查"读口（点查等值可行）。
+
+**影响面**：`tools/memory_tool.py` 1 文件 2 处。验证：ruff check+format 净、memory 定向 21 绿（memory_store / episode_memory_chapter / episode_summary_order / merge_retrieval）；测试零断言受影响。
+
+## 2026-09-28（322）—— run 层加取帧：每圈视觉档一帧 + RunState.observation，账头圈号化顺手收口
+
+**改了什么**：① run perceive 加 `sense` 单元（`absorb_episode → sense → read_plan_context`，与 episode/task 两层同构），复用视觉档 `perceive_once`（source `run.sense`，记 `sense_call` ↔ `sense_frame`），帧写 `RunState.observation`（新字段）；`review_and_judge` 的机械判停 `world_ended` 改读本圈新帧的 `obs.done`——原读上一局结算带回的旧画面、首圈恒 None，现在首圈也有帧（世界起点画面）。② `RunState` 加 `total_acts`（跨局累计键数，absorb_episode 时累加各局 `acts_used`）——run 层帧观测的 `step` 盖它（局外帧没有「局内键数」语义，盖它回答"这是全局第几个键之后的世界"）；`Observation.step` Field 描述补 run 层口径。③ run 层账头顺手圈号化（对齐 318/320 定稿）：`read_plan_context`、`review_and_judge` 四处 meta（judge / record_verdict / audit / settle_goal）、`run_end` 一律 `state.step + 1`；`run_start` 落 0（原状即对）、`run_error` / `settle_episode_error` 的 step=0 恒定不动（没起圈口径）。④ `RunRuntime` 加 `game: GameToolPort`（与 `EpisodeRuntime.game` **同一实例**）——run 层取帧与 `new_run` 载世界起点走自己的端口，不再经 episode 穿透；`episode_runtime` game docstring 的「episode 独占」口径撤销。⑤ node_io 契约同步：RUN_SOURCES 加 `run.sense`、NODE_FINGERPRINTS 加 `run.sense` 指纹、CELL_SOURCES `run.perceive` 挂双 source、RUN_NEXT 三处（`run_start → sense_frame`、`sense_frame → read_episode_memory`、`EPISODE_TOKEN → sense_frame`）+ docstring、sense_frame 契约「两层」改「三层」、模块 docstring 的 step 分层释义改三层圈号口径。
+
+**为什么这么改**：用户拍板"给 run 级加上取帧"——run 不该只靠 episode 结算带回旧画面看世界；三个设计点三问三答定档：视觉档（同构、未来规划可直接读画面，接受"取帧失败作废整 run"的代价）、帧观测盖全局累计键数（语义最诚实、顺带攒下 run 级统计账）、账头顺手圈号化（320 当时"刻意不动"的前提是没碰 run 层，这回碰了，差 1 的语义差该收口了）。
+
+**取舍**：视觉档的可靠性代价用户知情拍板（重试耗尽 → `MaxRetriesExceeded` 上抛 → `run_error` → 整 run 作废；episode 层同故障只作废一局）；run 层帧不进帧槽（同 episode 层——槽只服务 task 层 ActMemory 的前后两张图）；`last`（EpisodeOutput）在 review_and_judge 里仍用于问模型判定，只是 world_ended 不再看它；RunRuntime 加字段而非经 episode 穿透，是让测试替身不必被迫长出 episode 的 game（穿透口径下 test_run_graph_termination 的 SimpleNamespace 桩就是反例）。
+
+**影响面**：`harness/run/` 7 文件（perceive/__init__、sense **新建**、run_state、absorb_episode、read_plan_context、review_and_judge、run_done）+ run_entry + run/runtime + episode_runtime + build.py + node_io.py + world observation.py + 测试三件（`_fake_run` 传 game、`test_run_graph_termination` / `test_plan_reads_memory` 的 RunRuntime 装配补 game 桩、`test_node_io` 的 sense_frame nth 1→2——run/episode 各多一层 sense_frame 后 task 流第一个排到全局第 3）。验证：改动面 ruff check+format 净、定向 70 绿（node_io / run_graph_termination / run_state_accessors / trace_render / plan_reads_memory）、rehearsal 三树新基线 **main 227 / ep 220 / task 213**（旧 224 / 218 / 211，各 +2~3 条 run 层 sense_frame，与圈数自洽；伪造锚 0/1/2 不变）、全量 venv **252/252**（排除 test_screen_text＝venv 无 pyboy 的环境缺口，非回归）。
+
+## 2026-09-28（321）—— 方案一落定：start_step 全链改名 total_acts，两层帧观测盖章同读一个名字
+
+**改了什么**：`start_step` 字段与全部残留引用改名 `total_acts`，语义钉死"进 task 时定格的局内累计键数快照（episode 派发时从 `EpisodeRunState.total_acts` 带下，task 内恒定）——task 每一帧的步号 = total_acts + 本层键数"。落点：`TaskInput.start_step` → `total_acts`（`schemas/harness/domain/task_io.py`）、`TaskState.start_step`、task_entry（checkpoint 步号 / task_start 正文 / TaskState 装配）、dispatch_task 传参、task sense 的 `obs_step = state.total_acts + state.step`、`TaskMemory.start_step`（字段 + render 属性 + docstring）、brain_tool 判定入参、通信与渲染链（`FromHarnessToTraceToolAppendReq` / trace content / render 的 task_start 正文键与 `_TASK_BODY_DROP`）、memory_tool 排序键与 metadata 键、episode_state / checkpointer / ports、三个 Query/Summarize 通信 schema、`retrieve_task_memories` docstring、`world.Observation.step` Field 描述、node_io 共 8 处（CONTRACTS task_start 必填键、`_WRITE_FORBIDDEN_KEYS`、两处 docstring、注释、`_check_task_keys` 断言与报错）、测试四文件（test_task_layer / test_trace_render / test_node_io / test_verify_prompt）。
+
+**为什么这么改**：用户指出帧观测 obs.step 的盖章变量命名不一致——episode 用 `total_acts`、task 用 `start_step + step`，而两者本是**同一个量的两个时刻**（活账 vs 快照），名字上看不出关系；AskUserQuestion 三选一拍板方案一"改名统一"。
+
+**取舍**：episode 层 `EpisodeRunState.total_acts`（活账）不动——快照跟着活账同名，派发处一眼同源；盘上旧记忆文件的 metadata 键 `start_step` 读不回（TaskMemory 是派生物可重建，filter 只用 episode_id 不受影响，可接受）；`advance_step` 改名/去留仍待议（本轮不动）。
+
+**影响面**：约 20 文件 + node_io 收尾。验证：全仓 grep `start_step` 清零（pokemon_agent / tests / experiment / scripts）、test_node_io 41 绿、改动文件 ruff 净。
+
+## 2026-09-28（320）—— episode 层账头圈号化：方案二落定，帧观测保持局内累计键数
+
+**改了什么**：episode 层全部落账点的 `meta.step` 从"帧观测的局内累计键数"（原读 `ep_ctx.observation.step` / `state.total_acts`）改**圈号**，与 task 层 318 逐字同构——`episode_start` 落 0（原已对，不动）；圈中账（`sense_frame`、四路检索 `read_task_memory`/`read_episode_memory`/`read_knowledge`/`read_object_memory`、`review_and_judge` 的 judge/audit/settle 各账、`decompose_verdict` 连带 decompose_call/call_exhausted）一律 `state.step + 1`（进入节点时 = 已派 task 数，圈 1 起号 1，同圈同号）；收尾账（`verify_call`/`verify_verdict`、`summarize_episode_call`/`write_episode_memory`、`episode_end`、leave_chapter 空章）同式 `state.step + 1`（对齐 task 层 close_task 收尾口径）。两个步号分家的机械实现：`perceive_once` 拆参——`step`（帧观测盖键数）+ 新增 `account_step`（sense_call 账头圈号），唯一调用方 episode `sense.py` 传 `frame_step=state.total_acts`、`account_step=state.step+1`；`retrieve_object_semantic_memory` 拆变量——查询条件 `before_step` 保持键数（object 事件按 ActMemory 同口径坐标存取），账头另用圈号。`episode_state.py` 模块 docstring 与 `step`/`total_acts` 字段描述补圈号口径（对齐 task_state 写法）；`node_io.py` docstring 分层释义更新，`check_content_invariants` 新增两条 episode 侧机械断言（对齐 318 task 侧）：`episode_start` 落 0、`episode_end` 落 `tasks_used + 1`。
+
+**为什么这么改**：用户拍板"方案2，都改"——帧字段与账头解耦后，episode 层账头还盖着键数，与"每层单独统计步数单独做校验"的设计原则不符；圈号化后账头回答"第几个决策圈"，帧字段回答"第几个键之后的世界"，两本账各答各的。
+
+**取舍**：帧观测 `obs.step` / `content.start_step` / `acts_used` 等**键数口径零改动**（帧槽、ActMemory `(episode_id, step)` 坐标、机制三回填依赖不变）；两处刻意不动：`settle_task_error` 的 `presses + 1`（meta 带 task_id，是 task 层圈号语义，318 已定）、`settle_episode_error` 的 `step=0`（整局没起圈，语义自洽）；run 层账头不动（run 级 step = 已派局数，本就独立）；episode 流内"同圈同号"不加机械断言——同圈无显式边界标记，且异常收尾局的 run.act 空章落 0 会破坏单调性，只核开局与收尾两个锚点。
+
+**影响面**：`harness/sensing.py`（签名加 `account_step`）+ `harness/episode/` 10 文件（sense、四 retrieve、review_and_judge、plan_episode、episode_done 的 verify/summarize/close/leave_chapter——5 格全部覆盖）+ `episode_state.py` + `node_io.py`，共 13 文件。验证：定向 7 文件 75 绿（node_io/run_graph_termination/plan_reads_memory/merge_retrieval/episode_memory_chapter/episode_summary_order/memory_store）、改动文件 ruff check+format 净、rehearsal 三树基线不变（main 224 / ep 218 / task 211，伪造锚 0/1/2——纯数字语义变化，树形零漂移）、全量 venv 251/252（唯一挂 test_screen_text＝venv 无 pyboy 的环境缺口，与 318 基线一致，非回归）。
+
+## 2026-09-28（319）—— 步号术语对齐：“全局键号”改“局内累计键数” + 两处过期 Field 描述修正（纯文档）
+
+**改了什么**：① 术语统一：代码里 9 处"全局键号"一律改"局内累计键数"——该数就是 `total_acts`（`episode_state.py` 的"累计键数"）口径，**本局内跨 task 连续**，不是 run 级；落点 `sense.py`（docstring + 两注释）、`task_entry.py` 注释、`task_state.py`（模块 docstring + `start_step` 描述）、`task_memory.start_step`、`FromHarnessToTraceToolAppendReq.start_step`、`render.task_start` docstring、`node_io.py` 三处注释。② 两处过期 Field 描述修正：`world.Observation.step` 与 ActMemory 快照 `Observation.step` 原写"本 episode 内的第几步"——实际盖的是 `start_step + step`（局内累计键数）；`ActMemory.step` 原"写入时所处的步数"改为明确"该键按下**前**那一帧的本局累计键数（相邻记忆构成 `step+1` 链，机制三沿它回填）"。
+
+**为什么这么改**：用户指出不知道"全局键号"是什么——溯源发现该词既不精确（实为局内口径），又与两处 Field 描述的"本 episode 内"互相矛盾，读代码三处口径对不上。
+
+**取舍**：CHANGELOG 与日志是历史记录不改写；不重命名任何变量/字段（`start_step` / `total_acts` 名字本身无误）；`advance_step` 改名/去掉另议（当日讨论，未定），本轮不动。
+
+**影响面**：9 文件，纯描述/注释文本，零行为变化。定向 test_task_layer + test_node_io 44 条绿、改动文件 ruff check+format 净。
+
+## 2026-09-28（318）—— 账面步号定稿圈号语义：dispatch 落 0、每圈 +1，与全局键号解耦
+
+**改了什么**：task 层 14 文件 15 处落账点的 `meta.step` 统一改圈号口径——`task_start`（dispatch）落 0，此后每个圈（sense_frame 领衔的 perceive 各账、act、plan_task、review_and_judge、task_done 三账）一律 `state.step + 1`，同圈同号；`close_step.next_step` 与自身 meta.step 同值（=圈号）；episode 层 `settle_task_error` 同步 `presses + 1`。`node_io._check_task_keys` 契约重写：首条 task_start 断言 step==0、`start_step` 只断言非负（不再与 meta.step 比较）、按键断言 `offset + 1`；`check_content_invariants` docstring 同步。`task_state.py` 的 `start_step` 字段描述与 task_entry/sense docstring 更新（"观测全局键号 vs 账面步号"两本账分列）；`tests/test_task_layer.py` 的 task_start step 断言 7→0。
+
+**为什么这么改**：rehearsal 树里 task_start 圈的 sense_frame 比同组账提前一步——溯源是两套盖章法并存："state 派"（`start_step + state.step`）与"obs 派"（`before/after/observation.step`＝按压前那一帧的全局键号）在圈边界盖出两个数。用户定稿：**每次 dispatch 一个 task 记 0，每次写 sense frame 才 +1**——账面步号即圈号，同圈同号。
+
+**取舍**：只动账面 `meta.step`；观测全局键号（`observation.step`）、帧槽键（frames before/after 按全局键）、ActMemory 引用、`content.start_step`（记忆/帧槽键控要全局基数）全部保持全局——账面可读性与机械键位互不污染；episode 层 `ep_ctx.observation.step` 不在本轮范围。
+
+**影响面**：`harness/task/` 14 文件 + `harness/episode/act/settle_task_error.py` + `experiment/real_check/node_io.py` + `tests/test_task_layer.py`。验证：定向 137 绿（task 层/trace 栈 116 + build/ckpt_restore/review 21）、改动文件 ruff check+format 净（153 条存量债全在未动的 `experiment/` 旧文件）；rehearsal 复跑通过——**main 224 / ep 恢复 218 / task 恢复 211，伪造锚 0/1/2，与 316 基线一致**（新步号已上真后端；与全量套件并发跑时复现过一次 422 瞬时，单跑即过）；全量 pytest 251/252（venv，唯一挂 test_screen_text＝venv 无 pyboy 的环境缺口，非回归）。另：系统 3.12 全量实测 13 挂——2 挂系系统 Python 无 langfuse SDK（`import langfuse` 落到仓库 `langfuse/` 目录的命名空间包），11 挂涉 `read_knowledge` 落位与 `EPISODE_NEXT` 契约不符（同一份代码 venv 全绿，环境依赖，机制待定向，本轮不动）。
+
+## 2026-09-28（318）—— eval plan2 定稿：七步落码路线（R0–R5），RunResult 改造面定形
+
+**改了什么**：新增 `docs/eval/plan2.md`，把 spec2 §八的五步实现顺序展开为 R0–R5 七步（R2 拆 a 骨架搬迁 / b 协议收敛）。落码前核实的改造面：① RunResult（V8）动**三处签名**——`harness/run/harness.py:79`、`checkpoint/restore.py:69`（restore_run）、`:131`（resume），旧四元组唯一解包点 `real_check/check_harness.py:369` 同步适配；② `EpisodeOutput` 已带 termination / judge_reason / acts_used / tasks_used（`schemas/harness/domain/episode_io.py:29`），RunResult.outcomes **直接复用不另造** outcome 结构；③ usage（分链路 token）聚合放 harness 收尾侧——eval 从此不读 trace 拿统计；④ R0 前置 inspect-ai 冒烟（最小 @task + `inspect view` 本机验证），API 偏差回写 spec2，不通过则回退 fork #1；⑤ 预打包落 `data/v1/checkpoints/`、model-graded 默认关、report 渲染 R5 删净，三者列为 D5–D7 待确认。
+
+**为什么这么改**：spec2 只定方向不定步序细节；plan 把"每步动谁、验收什么、什么先什么后"钉死。R0 冒烟前置是关键排序——inspect-ai 的真签名没核过（Solver 返回形状、eval_set resume 语义），大搬迁中途发现 API 不符会整批返工。R1/R2 拆开是被测系统与 evals 的提交边界：R1 是唯一动 `pokemon_agent/` 的步。
+
+**取舍**：R2 拆 a/b 两小步各自独立可验（a 行为不变、b 协议收敛），避免"搬家 + 改判定"混在一跳里出问题分不清是谁的；usage 由 harness 聚合而非 eval 读 trace——保住"eval 不碰被测内部"的依赖方向；真机跑批验收（R3）交用户本机 PowerShell（二号条）。
+
+**影响面**：纯文档。落码从 R0 开始；每步一条 CHANGELOG 编号条目、独立 commit（commit 等用户指令）。待确认 D5（预打包产物进 git）、D6（model-graded 默认关）、D7（report.md/results.jsonl 一次删净不留过渡）。
+
+## 2026-09-28（317）—— eval spec2 定稿：inspect-ai 真依赖轻用，观测分三层（inspect view 看结果 / langfuse 看过程）
+
+**改了什么**：新增 `docs/eval/spec2.md`，承接 spec.md 的角色（spec.md 保留作 v1 记录）。核心裁决（09-28 用户拍板"inspect view 看结果，langfuse 看过程"）落成十条：① 真依赖 `inspect-ai`（钉版本），core/ 六文件（task/solver/scorer/metric/evalset/evallog）降为薄适配；② 35 种 trace kind **不做** inspect 事件 schema 映射，逐键回放归 Langfuse——`run_id=eval-<sample_id>`（one.py:52 升契约）经 `create_trace_id(seed=run_id)` 即 Langfuse 主键，sample metadata 带 run_id，结果层与过程层之间只隔一次复制粘贴；③ solver 保留每样本子进程隔离（PyBoy 崩溃不连累整批），epochs/resume 由 eval_set 在外层管；④ judge 一致性先作 e2e task 附加 scorer（对标表"每类一个 task"的一处有意偏离，v1 与机械判定消费同一 run 产物）；⑤ RunResult 字段表（V8：outcomes/steps/usage/wallclock/episode_bounds，子进程落盘 run_result.json）；⑥ scorer 三协议收敛到 inspect 的 Score（V3 model-graded 注入、红线独立 scorer、证据 uuid 进 metadata）；⑦ manifest 并入 EvalLog header（V9：ReportHeader + 依赖版本 + 生成参数）；⑧ report md/html 渲染退役、diff 口径校验保留；⑨ 迁移映射表（旧 9 子目录 → core/tasks/scorers/data）+ 边界修正两处（screen_reading 私有名、redlines 读 live config）；⑩ 实现顺序维持 315 影响面五步。
+
+**为什么这么改**：fork #1（真依赖 vs 借概念自研）由可视化问题触发裁决——真框架白拿 Inspect View（指标总览 + sample 钻取 + live view + log history），自研一个可钻取 viewer 是周级工作量；而逐键行为的富渲染 inspect 本来就给不了（机械事实只能进 metadata JSON），这部分天然归 Langfuse 已有设施（三层树 0927 定稿、rehearsal 已过）。两层分工把 bridge 的适配成本从"trace 数据搬运"缩为"ID 对应关系"。
+
+**取舍**：solver 不进 inspect 的进程内循环——batch.py 现状"每样本独立子进程、超时即杀"是被测对象（PyBoy 进程）的真实隔离需求，inspect 的 solver 内部并发本项目用不上（一次只跑一个）；judge 过程集 v1 不拆独立 task——拆了 solver 就得 no-op 重扫同一批产物，纯绕路，过程集扩充（拆解质量/卡住换策略）时再拆；不改 Langfuse 树形约定、不动 WebReviewer。
+
+**影响面**：纯文档。落码时 `pyproject.toml` 加 inspect-ai 依赖（随 ②）；实现顺序五步（315 影响面）不变。另发现 CHANGELOG 编号 316 被两条占用（rehearsal 条与本条之前的切分条），历史未动，后续从 317 顺延。
+
+## 2026-09-28（316）—— rehearsal 核对段计数口径修复（branch 取值加 event_meta 回退）；422 与 3/2/1 双疑结案
+
+**改了什么**：`scripts/langfuse_tree_rehearsal.py` 核对段新增 `_branch_of`——顶层 metadata 有 branch 用之（scope 锚），否则回退嵌套的 `event_meta.branch`（事件账）；`own` 计数与 run_end 最晚性检查改用该口径。
+
+**为什么这么改**：step scope 删除后事件账顶层 metadata 只剩 `{local_event_uuid, event_kind, event_type, event_meta}` 四键（`langfuse_trace._observation_metadata`），核对段只按顶层 branch 计数，每支线行数被压到"仅锚数"——上轮 handoff 记录的"3/2/1 vs 15/14/13 可疑"实为**计数口径 bug 而非数据丢失**（同一份 rows 渲染出的树完整、父子全对）；run_end 最晚性检查因 run_end 是事件账、恒进不了 `own` 而静默失效。15/14/13 是删除前"每步一个 scope span、顶层带 branch"的旧计数，两个数字都正确，量的东西不同。
+
+**为什么这么改（422 侧）**：同宽窗路径当日复跑**未复现** 422，判瞬时（服务端负载/后台 merge），非代码 bug；宽窗设计保留——下界用 epoch 是恢复线语义的要求（读上一实例的历史账，docstring 已钉死约束），若再现再走 handoff §二的二分时间窗探针。
+
+**取舍**：不把回退塞进 `_meta_of`（smoke 的读取口径本就是"锚在顶层、账在嵌套"两层语义，动它会糊掉这层区分）；核对段不做"行数须 ≥ N"的硬断言（合成 run 的步数会随 fake 配置漂移，不变式检查已够）。
+
+**影响面**：`scripts/langfuse_tree_rehearsal.py`。复跑绿：main **224 行** / episode 恢复 **218** / task 恢复 **211**，伪造锚 0/1/2 层全对，run_end 最晚性检查重新生效；同日 smoke **24/24**（A/B 改动后首次真后端闭环：三态 meta、event_kind 过滤、本地零写入全过）。
+
+## 2026-09-28（315）—— Langfuse 树再收敛：step scope 整层删除（补记）+ episode 级 task_id 清空 + 步号改账名前缀
+
+**改了什么**：三件事同是树形状收敛，一并记。① **step scope 整层删除**（上轮已落码，本条补记）：Langfuse 树从"run → episode → task → step 四层锚"减为三层——`langfuse_trace.py` 新增 `_ANCHOR_KINDS` 锚名排除集，step 账不再包一层 scope、直接挂 task 锚，步号只活在账名里（见③）。② **episode 级账 task_id 清空**（meta 位约定定稿三态）：run 级 `episode_id=task_id=run_id`、episode 级 `task_id=""`（新约定）、task 级真 task 号。harness 侧 13 个文件 16 处 episode 层落账点把 `"task_id": episode_id` 改为 `""`（episode_entry、close_episode、leave_chapter、verify_task_memories、summarize_episode、plan_episode、review_and_judge 四处、四个 retrieve_* 感知口、perceive/sense 的 SENSE_FRAME、settle_episode_error 的 EPISODE_ERROR）；`langfuse_trace.py` 两判据同步简化——task 层判定收为 `episode and task and task != run_id`（与 episode_id 的相等比较消失）；`node_io.py` 切层口径改按空不空——episode 流 = `task_id` 空、task 流 = `task_id` 非空，`_check_meta` 非空断言收窄到 `run_id`/`branch`/`episode_id` 三键，另加"task_id 撞 episode_id 拒收"的旧约定防呆。③ **步号改账名前缀**：非锚账名从 `{kind} (step:N)` 后缀改 `step:N {kind}` 前缀，锚账（`_ANCHOR_KINDS`）永不分步号。
+
+**为什么这么改**：① "一步一个 scope"把 Dashboard 树撑爆，步号在账名里已可读，scope 层是纯冗余。② 旧约定 `task_id=episode_id` 是"用相等表达层级"，切层判据要靠比较运算；三态位（空/占位/真值）让"这是 episode 层的账"成为机械判断 `not task_id`，检查器、渲染层、读侧同一条口径，且旧形状账能在检查器里直接拒收。③ 后缀标注在树视图混在行尾、任务内顺序难扫；动手前先查 Langfuse 前端源码定形状（`flattenTree.ts:34-38,76-80`）：兄弟排序只按 `startTime` 升序、名字从不参与——所以前缀不为排序、为肉眼从行首扫，**不补零**。
+
+**取舍**：锚名是树结构/恢复伪造的匹配键，带步号会让匹配键漂移，故 `_ANCHOR_KINDS` 永不带步标注；episode 级用空串而非占位符——空/真三态让旧约定账可被机械识别拒收，迁移期防呆；不补零（`step:07`）——排序既不靠名字，补零只是多一条要维护的格式纪律。
+
+**影响面**：`trace/langfuse_trace.py`（docstring 记三态位约定 + `_ANCHOR_KINDS` + 两判据 + `_display_name`）、`harness/episode/` 12 文件 + `harness/run/act/settle_episode_error.py`（共 16 处落账点）、`experiment/real_check/node_io.py`（docstring + 切层 + `_check_meta`）、`tests/test_langfuse_trace.py`（meta 三态 + 前缀断言 + 负断言改 `step:\d+` 全字匹配）、`tests/test_node_io.py`（"episode 形状 task_id 拒收"用例替换旧空值用例）、`scripts/langfuse_smoke.py`（三态 meta + generation 过滤改按 event_kind）。定向 pytest 72+65 全绿、ruff 干净；全量 pytest **252 条全绿（4m35s）**；smoke / rehearsal 未随本轮复跑（需用户本机 Docker 后端，smoke 脚本已同步改）。
+
+## 2026-09-28（316）—— eval intent：数据集切分不照搬 WikiSkill 协议
+
+**改了什么**：intent §六切分行改写——v1 不做 train / val / test 三分（WikiSkill 跨 lab 对比协议，09-28 拍板不照搬），单一数据集 + 版本冻结、发布后不改样本；将来要出对外无偏数字再引入冻结 test 集。§十一对标节评级 22 维 → 21 维（移除切分维，🔴10 → 9）。
+
+**为什么这么改**：用户指出 agent 测评语境下"train/val/test"易误读为模型训练切分，且该协议服务于论文的跨 lab 可比性，不是本项目需要——v1 只要"同一把尺子可比"（版本冻结已给）。
+
+**取舍**：coverage.md 的"v2 再补 test 切分"缺口注记保留不动（将来真要出对外数字再启）；§十二.7 的 val 门控与 §十三的 WikiSkill 参考描述保留——那是复现消费方的协议，不是本项目的数据集治理要求。
+
+**影响面**：纯文档。skill rubric 存档（`rubric-evals.md`）同步删该维。
+
+## 2026-09-28（315）—— eval intent 十二项拍板：inspect-ai 对标、trace 解耦、指标收窄
+
+**改了什么**：`docs/eval/intent.md` 按 12 条用户定向逐条回写，§十一 V1–V12 全部落定——V1 样本仅由 20 个 state 组成、**预打包**成 run_begin 存档（改 spec 〇节"现打包"做法）、run_id 固定 `eval-<测试名>`（现状 one.py:52 即此，升为契约）；V2 k 改可调参数（对标 inspect `epochs`）；V3 机械判不了的样本交**模型评分器**在 evaluate 启动时注入（§六-1 同步修订，旧"不拿另一个模型去猜结果"改写为"评分器兜底、结果与机械判定分列"）；V4 基线口径与 check_harness 相同；V5 住 evals/ 改用 **inspect-ai 构建**；V6 显著性暂缓（k>1 时先报 stderr）；V7 第一版只看端到端成功指标（成功率 / pass@k / pass^k），rubric 打分与效率层推后（§十加修订注记）；V8 **eval 与 trace 解耦**——真值改从 run 返回值拿，harness 裸四元组返回（harness.py:72-80，evals 侧现零消费）需结构化改造；V9 manifest 指向所有可能变化处（图结构 / 模块版本 / prompt 版本 / 环境 / 启动参数，在 ReportHeader 上扩）；V10 已完成；V11 不做归因只做测评记录；V12 成熟度目标由 module-gap-audit 行动表承接。§十一表后新增"inspect-ai 对标"节：Task / Dataset / Solver / Scorer / Metric / eval_set / EvalLog 七概念映射表 + 22 维评级（✅7 / 🟡3 / 🔴10 / ⚪2）。
+
+**为什么这么改**：用户判定现有 evals 九子目录结构"太松散"，拍板对标 inspect-ai（UK AISI 评测框架：Task/Solver/Scorer/Metric 四槽位 + eval_set 批跑管理 + EvalLog 统一日志）重组；12 条定向把 §十一待拍板项全部关闭。V3 / V8 与既有条文冲突，按新拍板改写——机械判定仍是第一真值来源，评分器只兜机械判不了的；trace 从"唯一真相"降为可选对照，run 返回值成为 eval 的数据契约。
+
+**取舍**：不重写 §五 / §六 的测评集定义（样本四要素、三类粒度不受影响）；V8 返回值改造与 inspect-ai 重组都只写 intent 不动代码——先 spec / plan 再落码；macros / screen / views 三个非模型测评保留但按 Task 槽位归位；Explore 子代理实盘证据（文件:行号）记入当日日志与 skill rubric 存档，不进 intent 正文。
+
+**影响面**：纯文档，无代码改动。后续落码顺序（下轮起）：① harness 返回值结构化（V8）；② evals 骨架按 inspect-ai 重映射 + Scorer 协议收敛（V5/V3）；③ epochs 参数化（V2）；④ manifest 扩展（V9）；⑤ 指标层 Metric 化 + pass@k/pass^k（V7）。
+
+## 2026-09-28（314）—— eval intent 按落码现状回写：restore_run、evals 定名、读侧解析层、起点冻结
+
+**改了什么**：`docs/eval/intent.md` 七处随落码回写——① 状态行"草案"→"已落地（09-28 回写）"，注明 spec / plan / p0-findings 已走完、E1–E8 已落码（CHANGELOG 229–260）；② §六 task 粒度起点：`restore_run(to_task=…)` 已随 279 删回放而消失，改为 task 级存档直接恢复（`manifest.level == "task"`，清单带"episode 图进 `act` 前"的图状态，不重放历史）；③ §九现状段按落码后重评：读侧结构化解析层已落（`tools/trace/parse.py`，259），观测 L3 达标、测评集/标准 L2、门禁与归因保守口径；④ §九目标等级表后补"落地"段（批跑入口 `python -m evals e2e …`）；⑤ V5 `eval/` → `evals/`（spec E3 定名，0926 起子包拆分 `evals/e2e/` / `evals/screen_reading/`）；⑥ V1 "打包成 run_begin 存档再迁成样本" → "冻结起点 `.state` + sha256，批跑经 `checkpoint_only=True` 现打包"（spec 〇节实现偏差）；⑦ §二.1 补人审推翻脚注（249/251），头部前置"存档 + 回放" → "存档 + 图内恢复"。
+
+**为什么这么改**：与用户逐条核对 intent 引用的仓库事实后定案——四处描述已被 0925 晚～0926 的落地推着走样（restore_run 签名、测评目录名、读侧解析层、数据集起点冻结方式），状态行还停在"草案"而下游 spec/plan 已走完整轮。intent 是 spec 的依据文档，说错话会让下一个人画出错误的系统图（与 docs/spec/README 第三节同一判据）。
+
+**取舍**：只回写与盘上事实冲突的陈述，不重写 §十"做"清单与 §十二"成功的样子"（它们是 intent 层意图，不因落地而过时）；成熟度重评按保守口径——第一份 k=1 报告未跑出（coverage.md 难度列待回填）、§七归因流程还没跑过 case，不计已达成的等级。
+
+**影响面**：纯文档，无代码改动。涉及文件：`docs/eval/intent.md`。
+
+## 2026-09-28（313）—— verdict 账删 input/output 副本；mock 加 3ms 垫
+
+**改了什么**：① **verdict 五账删 input/output 副本**（用户定向"去掉 model_call 已经覆盖的部分，只保留该保留的"）：`tools/trace/content.py` 五个 VerdictContent（`Choose`/`Judge`/`Decompose`/`Plan`/`Verify`）删两字段（`extra="forbid"`），`tools/trace/render.py` 五渲染器删传递；生产点同步——`FromHarnessToTraceToolAppendReq` 删 `input`/`output` 字段，`plan_run`/`plan_episode`/`plan_task`/`verify_task_memories` 四组账点、`PlannerOutcome`（`run/interface/planner_outcome.py`）删字段与传递；`experiment/real_check/node_io.py` choose/verify_verdict 两契约删 `"input output"` 键。verdict 账本身**保留**——termination/audit/sequence/pushed_goals/eval 评分等独有内容有四类程序读方，删的只是那次调用的请求与原文副本。② **mock 加 3ms 垫**（用户定向"mock 模块返回值加 3ms 延迟"）：`tests/_fake_run.py` 新增 `_MOCK_DELAY_SECONDS = 0.003`，六个 memory 查询口 + game perceive/execute 落账前 `time.sleep`；`_call` 帮手盖双时刻（`started_at` 起记、`ended_at = time.time()`）；`langfuse_trace.py` 逐账 span 窗口下限——append 落 span 后 end 前 sleep 3ms（`_MIN_SPAN_SECONDS`）；`langfuse_support.create_scope_observation` 同垫。③ 顺带修 312 引入的三处折行/E501（`trace_event.py` 封套行、`store.py` read_events docstring、`test_trace_store.py` 模块 docstring）+ ruff format 三文件合并残留折行。
+
+**为什么这么改**：verdict 复制 input/output 是本地账时代的做法（单文件账离线可读）；Langfuse 转正后同一步的 `*_call` 账原生就是 generation 的请求/回复面，verdict 再存一份成了纯冗余——同一信息两处存违背"一个事实一处存"，且这份副本零程序读方。3ms 垫治两件事：mock 瞬时返回让全部事件同刻（`_last_default_end` 基线只保 append 序、不管 UI 观感），Langfuse span 窗口 0ms 的行 UI 不显示时间段（真机核对已核实的机制），给 span 一个可见下限。
+
+**取舍**：verdict 删 io 副本后，读方想拿调用原文要按 meta join 同步的 `*_call` 账——join 键（`meta.step` + `source`）本来就稳定，接受。3ms 用真 sleep 而非伪造时间戳——SDK 不暴露 `start_time`，真 sleep 侵入最小。**"测试间污染"结案（00:35 复测）**：改动收尾后三组复测全绿——便宜前缀+`test_node_io`（154 条）、`build`+`checkpoint_restore`+`node_io`、**全量 252 条（8m41s，不含缺 pyboy 的 `test_screen_text`）**——此前两次"node_io token 顺序断言失序"不复现；当时那两枪全量跑在 verdict 删 io 改动**中途的半成品状态**上，判误报而非持续污染。顺带的静态结论：顺序单线程流程里 ended_at 序 ≡ append 序（每笔账的 ended ≤ 自己的 append 时刻且 ≥ 前账的 append 时刻），`_last_default_end` 基线（实例级）只护缺省补线、与盖值线互不可见的结构性窗口在当前同步图里推不出倒挂，留观不治。
+
+**影响面**：`tools/trace/{content,render}.py`、`schemas/harness/communication/FromHarnessToTraceToolAppendReq.py`、`harness/judging.py`、`harness/run/plan_run/plan_run.py`、`harness/run/interface/planner_outcome.py`、`harness/episode/plan_episode/plan_episode.py`、`harness/episode/task/plan_task/__init__.py`、`harness/episode_done/verify_task_memories.py`、`trace/{langfuse_trace,langfuse_support}.py`、`experiment/real_check/node_io.py`、`tests/{_fake_run,test_trace_render,test_trace_store}.py`、`trace/datastore/event.py`（format）、`schemas/harness/domain/trace_event.py`、`pokemon_agent/trace/store.py`。定向 58 条全绿（trace store/render/langfuse_trace）+ ruff check/format 干净（项目代码范围）；全量 pytest **252 条全绿（00:35 复测，"测试间污染"结案为改动中途的半成品误报）**；真机核对通过（05:35：smoke 24/24 + rehearsal 三树全对——verdict 删 io 与 3ms 垫在真后端闭环）。
+
+
+
+## 2026-09-27（312）—— Langfuse 字段适配：environment/version 占位、input 三分、封套双时刻（ts 下岗）
+
+**改了什么**：① environment/version 占位（2026-09-27 用户拍板 b 案 + 0.1.0）：`build_client_from_environment()` 构造 `Langfuse(environment="local")`（SDK 约束该值只许小写字母数字+连字符+下划线，`0.1.0` 带点不合规所以只用 `"local"`）；`langfuse_support` 新增 `LANGFUSE_ENVIRONMENT_NAME` / `LANGFUSE_ADAPTER_VERSION`（`"0.1.0"`）两常量，逐账 `version=` 透传（append 账、scope 锚含 fake、错误事件——SDK `create_event` 原生收 version，无需兜底分支），UI 的 environment·version 两栏不再恒空。② **input 三分**：`model_call` 保持 `generation_input_fields`（prompt/images）；六条 RAG 读口（`RETRIEVE_KINDS` 常量收 `langfuse_support`，trace 不认识 TraceKind）新增 `retrieve_input_fields` 投 `query`（检索的请求面，`refs` 不重复投）且 `as_type="retriever"`（SDK 原生 `LangfuseRetriever`，Dashboard 检索视图）；**其余账 input=None**——`{local_event_uuid}` 占位废除（该值已在 metadata，input 不再重复）。③ **封套双时刻**（22:10 用户修订：弃 elapsed_ms 单值方案）：封套 `{ts}` → `{started_at, ended_at}`（wall clock float），`TracePort.append` 加双时刻 keyword-only 形参，`Rendered` 加可选双时刻，`FromHarnessToTraceToolAppendReq` 加可选双时刻；**值的三层来源**——模型调用在 `brain.py` 六方法十二处组账点 provider 调用前后取时进 `payload`（`ModelCall.payload` 两份类型放宽收 float，brain 方言 + schemas 同步；`render.model_call` 从 payload 提升，`judge_call`/`verify_call` 的 `_replace` 链自动保留）、六条读口在 7 个检索节点 MemoryTool 查询前后取时走 req 字段（`render.retrieve_node` 透传）、其余账由落盘层补 `start = end =` 记账时刻（机械账没有时长语义）；**缺省路径保序**——`LocalTrace`/`LangfuseTrace` 各留 `_last_default_end` 单调基线（撞刻推进 1µs），没记真实时间的账仍按 append 序，带了真实起止的不受基线影响。④ **排序全切 `(ended_at, uuid)`**（22:18 用户定向"排序用 end time"）：`read_events`（两后端）、`lineage`（fork 时刻 = checkpoint_save 的 `ended_at`）、回放切分边界、`check_trace.ENVELOPE_FIELDS`（六字段→七字段）、`real_check/common` 三处、`node_io._WRITE_FORBIDDEN_KEYS`、`review_render` 时钟、前端 `page.js`、`efficiency.py` 墙钟（改 max(ended)−min(started)，语义更准）逐处切换；`ts` 的六组读方清零（grep 兜底）。⑤ **删 `run_end` 前 sleep 3ms**（309 ④ 的兜底，随排序权威移交封套而失去存在理由）。⑥ schema_version 5→6（旧账断代：Langfuse 侧旧封套 decode 失败被过滤，历史真源在 `_to_delete/tracelog_legacy_0927/`；`ModelCall` docstring 过期的"延迟"文案顺手修正——payload 实际从未有过计时键，本轮才有）。
+
+**为什么这么改**：项目所有者三轮定向（intent → b 案+档一 → 双时刻+排序用 ended）。Langfuse 转正后 UI 的 environment·version·input·时长四空位里，environment/version 是零成本标注；input 三分让 RAG 检索在 Dashboard 有了可读的请求面（对应"本地语义检索 2~9s、与 LLM 同量级"的第一热点，之前 input 只躺占位）；双时刻是"trace 无耗时字段、只能靠 ts 差分"（MEMORY-trace §十一）的根治——操作真实起止由唯一的计时位置（调用点）一次记好，排序与延迟统计不再近似。
+
+**取舍**：SDK 不暴露 `start_time`，Langfuse span 的 OTEL 时间轴仍是 append 瞬间、UI 时长条≈0（ingestion API 直打列为档二，不立项）；单值 `elapsed_ms` 方案被用户否掉——end≈封套时刻可推、start 也可推，但"两个端点都可推"的前提是把 append 时刻留在封套里，而删除 ts 后两端都必须显式记，双时刻反而是删字段后的完备形态；`ModelCall.payload` 类型放宽收 float 而不是存字符串——"字符串值一律保持字符串"的规矩针对布尔与 token 字面量，时刻是参与排序比较的数值，伪字符串会让每个读方多一层转换；旧 Langfuse 账断代不做迁移（服务启用不足一天）。
+
+**影响面**：`trace/{langfuse_support,langfuse_trace,store}.py`、`trace/interface/{event,trace_port}.py`、`trace/datastore/event.py`、`schemas/harness/domain/trace_event.py`、`schemas/harness/communication/{ModelCall,FromHarnessToTraceToolAppendReq}.py`、`brain/interface/domain/model_call.py`、`brain/brain.py`（六方法十二处）、`tools/trace/{__init__,render,parse,lineage,live_feed}.py`、harness 6 个检索节点（7 个调用点）、`harness/review_render.py`、`review_backend/page.py`、`evals/e2e/report/efficiency.py`、`experiment/real_check/{check_trace,common,node_io}.py`、`tests/`（store/langfuse/tool/parse/node_io/evals/review_backend 七文件断言同步 + 新增 version/retriever/双时刻用例）、`scripts/langfuse_smoke.py`（version/input/排序断言，run_end 树序核对改封套 ended_at，删 `_start_time`）。定向 pytest 全绿 + ruff 干净（项目代码范围）；全量 pytest 通过（`test_screen_text` 缺 pyboy 为沙箱环境性失败，与本轮无关）；真机 smoke / rehearsal 待 Docker 服务核对。
+
+## 2026-09-27（311）—— Langfuse 转正为真实 run 默认 trace 后端：启动前健康探针 + 旧本地账归档
+
+**改了什么**：① `build_real(trace_backend=…)` 缺省从 `"local"` 切到 `"langfuse"`（0927 用户拍板，P4 smoke/rehearsal 全过后执行 plan 的既定决策点）；选 langfuse 时**启动前先调 `assert_server_ready()`**——`langfuse_support` 新增探针帮手：GET `/api/public/health`（`follow_redirects=True` + `trust_env=False`，与读侧同一条 httpx 口径），非 200 / `status != "OK"` / 连不上 / 缺 `LANGFUSE_BASE_URL` 都当场 `RuntimeError`——SDK 是异步批量发送，服务不在场时写入侧**静默丢账**，这一枪把"跑到一半才发现"挡在 run 开始之前；探针经 `tools/trace` 再出口给 build.py（装配点对 `pokemon_agent.trace` 仍零 import）。② 旧本地 JSON 账归档：`tracelog/`（497 个事件文件，0914-0926 各次 local run 的历史）整体搬进 `_to_delete/tracelog_legacy_0927/`——沿用 0916 `trace_data_legacy_0916` 的同一条"删除=先进 _to_delete"惯例。③ 测试：新增 `tests/test_langfuse_preflight.py`（4 条：健康报版本 / 不可达挡在启动前 / 非 200 与 degraded 拒绝 / 缺 BASE_URL 拒绝，httpx.get 猴补全离线）；`test_build.py` 的 `test_the_default_trace_backend_stays_local` 按新决定翻转为 `test_the_default_trace_backend_is_langfuse_with_a_preflight_probe`（AST 钉默认值 + 探针调用在场），顺手补 `zip(strict=False)`。
+
+**为什么这么改**：Langfuse 从"显式 opt-in 的实验后端"转正为唯一 trace 存储（spec 头部口径"不保留 LocalTrace 双写"原是写着的方向，P4 验证全绿后落地）。真实 run 的默认路径必须是"服务确认在场才开跑"——异步发送的静默丢账是这个后端唯一的可用性边界，探针把它从运行时故障变成启动期报错。
+
+**取舍**：`TraceTool.build()` 的 `backend` 缺省**仍是 `"local"`**——那是离线测试/开发用的接线工厂（几百条测试靠它零配置跑），装配点 `build_real` 才是"真实 run 默认 langfuse"的落点；探针不做重试/等待（服务没起就是没起，重试该由起跑脚本或人做）。`LocalTrace` 不删（决定 2：离线测试仍靠它）。
+
+**影响面**：`pokemon_agent/build.py`、`pokemon_agent/trace/langfuse_support.py`（+`assert_server_ready`）、`pokemon_agent/tools/trace/__init__.py`（再出口）、`tests/test_langfuse_preflight.py`（新增）、`tests/test_build.py`、`tracelog/` → `_to_delete/tracelog_legacy_0927/`。定向 pytest 全绿 + ruff 干净。evals/e2e 的 `one.py` 经 `build_real` 透传，不受缺省翻转影响（不传即拿新默认）。
+
+## 2026-09-27（310）—— 盖章上移 tool 层：trace 后端零持有 run_id/branch；generation 的 input 投影请求面
+
+**改了什么**：① 执行线标识（`run_id` / `branch`）的盖章点从 trace 后端上移到 `TraceTool.append`（`_stamp_meta`，唯一写口一处盖、处处有）：`TraceTool` 构造期持有 `run_id` + `branch` 两个身份件，append 时盖进 meta 头两个；`LocalTrace(root)` 删 run_id/branch 形参与 `_stamp_run_id`（帮手随职责搬到 tools/trace）、对 meta 只透传；`LangfuseTrace(trace_id, *, client=None)` 删 run_id/branch 形参——构造期唯一身份件是 `trace_id`（由 tool 层 `client.create_trace_id(seed=run_id)` 造好递进来，同 seed 同 trace 是恢复线共树的根本），路由与 scope 命名改读 meta 里的 `run_id`/`branch`（位约定判据 `task != run_id` 等照旧，值源从实例属性换成 meta 键）；`LiveFeedTrace(inner, *, run_id, url)` 删 branch 形参、meta 原样透传（run_id 只留在推送信封）。② generation 的 `input` 从 content 引请求面：`generation_input_fields` 投影 `prompt`/`images` 进 SDK kwargs 的 input（Langfuse 惯例 input=请求），Dashboard 直读；output 里的无损封套仍是唯一真源，缺键退回占位。③ 契约面同步：`TracePort.append` 前置条件翻转（"不带两键"→"已带两键"）、`trace/langfuse_trace.py` 模块 docstring、`docs/eval/langfuse-spec.md` §三/§四/§五。④ 测试：`test_langfuse_trace.py` 加 `_trace(client, seed=…)` 构造帮手与 per-test `child_meta = partial(_meta, branch=…)`，"盖章"测试改写为"透传 + 缺章拒绝"（`test_meta_without_run_id_or_branch_is_refused`），generation 测试补 input 投影断言；`test_trace_tool.py` 新增 `test_the_tool_stamps_run_id_and_branch_into_meta`（钉"头两个是 run_id/branch"）；`test_trace_store.py` `_tool` 助手改 `TraceTool(LocalTrace(root), run_id=…)`。
+
+**为什么这么改**：项目所有者定向两条。其一，"run_id 和 branch 在调用的时候直接盖，trace 为什么要持有 run_id 和 branch"——执行线身份是编排事实不是存储事实，trace 是可整体拷走的第三方模块，不该认识本项目每条执行线的名字；且盖章收在唯一写口，比散在 20+ 个 harness 调用点或藏在存储构造里都更符合"一个事实一处存"。其二，模型调用账在 Langfuse 的 generation 视图里 input 是占位桩、请求与回复都要点开封套才看全——把 prompt/images 引一份进 input，Dashboard 的 generation 面板左问题右账单，离线重算与 UI 观感都受益。
+
+**取舍**：`LangfuseTrace` 仍需要一个构造期参数（`trace_id`）——恢复线与主线必须落进同一条 trace，"同 seed 同 trace_id"只能由持有 run_id 的调用方算好递进来；这是 Langfuse 数据模型的硬约束，不是盖章职责的回流。smoke / 契约测试这类直接用后端的调用方改为自盖章（生产路径只有 `TraceTool` 一个写口，不新增多处盖章）。generation input 与封套存在一份 prompt/images 重复，接受——它是展示面不是真源，且只对 `type == "model_call"` 生效。
+
+**影响面**：`trace/langfuse_trace.py`（构造签名、append 入口 assert、路由读 meta）、`trace/store.py`（删 `_stamp_run_id` 与身份形参）、`trace/langfuse_support.py`（新增 `generation_input_fields`）、`trace/interface/trace_port.py`（契约文字）、`tools/trace/__init__.py`（`_stamp_meta` + TraceTool 持身份 + build 接线：langfuse 分支两步造 trace_id）、`tools/trace/live_feed.py`（删 branch、meta 透传）、`scripts/langfuse_smoke.py`（trace_id 两步 + meta 自盖章 + 新增 generation input 树形核对）、`docs/eval/langfuse-spec.md`、`tests/test_langfuse_trace.py` / `test_trace_tool.py` / `test_trace_store.py`。harness 与 `build.py` **零改动**（20+ 调用点 meta 形状不变，`TraceTool.build` 签名不变）。定向 pytest 全绿 + ruff 干净；全量回归与真机 smoke / rehearsal 待 Docker Desktop 起来后补跑（Langfuse 容器未启动，502）。
+
+## 2026-09-27（309）—— 真树形核对（mock harness + smoke）：位约定路由修复、(fake) 命名、run_end 时序
+
+**改了什么**：① `langfuse_trace.py` 路由按 harness 的 meta 位约定修正（`run/begin` 注释：run 级账 `episode_id`/`task_id` 两位都放 `run_id`、episode 级账 `task_id` 位放 `episode_id`）：run 层账判据从 `episode_id 为空` 改为 `episode_id 为空或等于 run_id`，episode 层 step scope 判据加 `task != episode`——否则 run 层账在 main 线挂到 branch scope、在恢复线催出以 run_id 命名的假 episode 锚。② task 级恢复改"加两层再挂"：恢复账 meta 的 `episode_id`（对齐存档侧 `checkpointer.save` 的位约定后是真 episode 号）当场伪造 `episode_start (<ep>) (fake)`，`checkpoint_restore` 挂它下面；meta 缺号时退回懒伪造。③ 伪造锚名字加 `(fake)` 后缀（`run_start (fake)` / `episode_start (<ep>) (fake)`）。④ `append` 对 `run_end`/`run_error` 落 span 前停 3ms——OTEL span 的 start_time 只有毫秒精度，收尾账与前一账同毫秒时 Dashboard 兄弟序平局乱排（实测 run_end 被排到 checkpoint_restore 前面）。⑤ `harness/checkpoint/restore.py` 的 `_note_restore` meta 位约定对齐存档侧（task 级放真 episode/task 号，原来无条件放 run_id）。⑥ `tests/_fake_run.py` 的 `build_fake` 加 `run_id`/`backend` 参数；新增 `scripts/langfuse_tree_rehearsal.py`：mock 三件套 + 真三张图 + `backend="langfuse"`，main 跑完整 run 后从 episode 级与 task 级存档各恢复一条线，API 读回真实树并核对（伪造锚层数、(fake) 后缀、run_end 最晚）。
+
+**为什么这么改**：项目所有者要求 smoke 过后用 mock 模块跑真 harness 看真实树——smoke 是手拼账，测不出 harness 真实 meta 形状。真树第一次跑就暴露三处：run 层账被误路由（假 episode 锚多一层）、task 级恢复拿不到 episode 号（`_note_restore` 与存档侧位约定不一致）、run_end 平局乱排。三处全是结构性测不出、只有真形状才现形的缺陷。
+
+**取舍**：run_end 前 sleep 3ms 是时间戳精度兜底的机械解（比给 OTEL span 传自定义时间戳侵入小，SDK 不暴露该口）；run 开局那笔 run 级 `checkpoint_save` 先于 `run_start` 落账、挂 branch scope（run 锚还不存在），保持现状；task 级开局 `checkpoint_save` 会提前创建 `step:N` scope（挂 episode 锚下、出现在 `task_start` 之前），账序正确、树形如此，不额外治。
+
+**影响面**：`trace/langfuse_trace.py`、`harness/checkpoint/restore.py`、`tests/_fake_run.py`、`tests/test_langfuse_trace.py`（meta 缺省改真形状 task_id≠episode_id，新增 task 级 eager/lazy 两用例）、`scripts/langfuse_smoke.py`（restore 线补成 9 笔完整后续 + task_start 挂靠 + run_end 时序断言，21/21）、`scripts/langfuse_tree_rehearsal.py`（新增）、`docs/eval/langfuse-spec.md` §六同步。定向 pytest 全绿；rehearsal 通过（run `tree-8e32ff`，trace `34e1f91763613981bf213b192478d59a`：main 0 伪造锚、episode 级 1 层、task 级 2 层，run_end 全部最晚）。
+
+## 2026-09-27（308）—— Langfuse 树形定稿落地：branch 成根 + 恢复线伪造祖先锚，删 reconcile 链
+
+
+
+**改了什么**：按项目所有者 0927 定稿重画 LangfuseTrace 树形（`langfuse_trace.py` 整体重写）：① 撤"构造即建 run root"——每个实例首笔账时建 `branch:<branch>` 顶层 scope（恢复线不再有空壳第二根）；② start 账即 scope：`run_start`/`episode_start`/`task_start` 真账注册为各层锚，run 层账（`settle_goal`/`run_end`/run 的 perceive/plan）挂 `run_start` 锚下，`episode_start` 挂 `run_start` 下（原挂 branch scope）；③ 恢复线按 `checkpoint_restore` content 的恢复级别（`CheckpointMark.level`，现成信息）伪造缺失祖先锚：`level="episode"` 伪造一层 `run_start` scope（恢复账与后续真账都挂它下），`level="task"` 的 episode 锚等第一笔带 `episode_id` 的账懒伪造，`level="run"` 不伪造（`begin` 重记真 `run_start`）；④ 删树侧血缘查找整链：`_branch_parent_for_restore`/`_create_branch_scope` 的 save API 查询、`reconcile_pending_lineage`、`lineage_pending` 簿记、`_checkpoint_scopes`/`_checkpoint_branches`——血缘事实本来就在账本 meta 里（`tools/trace/lineage.py` 靠它推，不受影响）。`langfuse_support.py` 三个 scope 帮手归一成 `create_scope_observation`，删 `create_run_root`/`create_branch_observation`/`find_checkpoint_observation`/`event_meta`/`event_kind`/`event_envelope`。
+
+**为什么这么改**：用户看 Dashboard 发现恢复线多一个空 run root、episode 与 run 层级观感断裂；逐轮讨论定稿：branch 保留成根（main 线 `branch:main`，恢复线 `branch:<branch>`）、恢复线伪造缺失的 run_start/episode_start 使树形与主线同构、血缘靠 metadata 不靠树边。fake-client 测试结构性测不出的"树形观感"问题由 smoke 19 项树形断言钉住。
+
+**取舍**：伪造 scope 只当父锚——metadata 带 `synthetic=true`、不带事件封套、`read_events` 读不到，不污染账本语义；`task` 级的 episode 锚懒伪造是因为 `checkpoint_restore` 的 meta 里 episode_id 填的是 run_id、真 episode 号要等第一笔续跑账；顶层判定 smoke 侧用"父不在本 trace 行集"而非"parent 为空"——SDK 对无父 `start_observation` 会造随机 remote parent 并标 `AS_ROOT`（`_create_remote_parent_span`），UI 按无父渲染，这是 SDK 约定不是缺陷。
+
+**影响面**：`trace/langfuse_trace.py`、`trace/langfuse_support.py`、`tests/test_langfuse_trace.py`（重写主链树形与恢复线两组用例：34 条定向全绿，reconcile/lineage_pending 三条删除，新增 run 层锚、三种恢复级别伪造共 4 条）、`scripts/langfuse_smoke.py`（树形核对 19 项、restore 线补 run_end）、`docs/eval/langfuse-spec.md` §六同步。真机 smoke 19/19（run `handoff-5623d7`，trace `601a2e7f38e0c430b828e0c40af745d3`，save 可见 2.1s）。harness / LocalTrace / LiveFeedTrace / lineage.py 零改动。
+
+## 2026-09-27（307）—— smoke 加固定落库等待；run root 冗余结论待改
+
+**改了什么**：`scripts/langfuse_smoke.py` 在 restore 线 flush 后加 `SETTLE_WAIT_SECONDS=5.0` 固定等待（flush 只保证进 SDK 批量导出队列，OTEL span 落库另有延迟，先睡一拍再核对，别把 eventual consistency 抖动算成缺陷）；轮询兜底保留。
+
+**为什么这么改**：项目所有者要求 smoke 故意加等待时间。另：按其要求盘点了 harness 全部 trace 插入点并给出无 restore 一局的树形；结论——合成的 `run:<run_id>` root 冗余（`run_start` 可直接当顶层锚、`episode_start` 应挂它下面；`episode:xxx` 本来就不存在独立节点，episode scope 复用 `episode_start` 账自身），`step:` scope 建议保留（step 无 start/end 事件，meta.step 是唯一分组依据）、`branch:` scope 保留（restore 血缘本体）。改动待项目所有者确认后落码。
+
+**影响面**：仅 smoke 脚本两处；trace 实现未动。
+
+## 2026-09-27（306）—— 真机 smoke（Langfuse v4.46.0）14/14 全过：修 scope 不导出与代理重定向循环
+
+**改了什么**：真机 smoke 暴露并修复两处实现缺陷（`langfuse_support.py`）：① 三个 scope 帮手（run root / branch / step）的 `start_observation()` 返回的 OTEL span 从不 `.end()`——不结束的 span 永远不被导出，真机上 scope observation 全体缺席、事件成无父孤儿（fake 按创建即记录，测不出）；现在创建即 end，`_Observation` 协议与 fake 同步补 `end()`。② `build_client_from_environment()` 自建 `httpx.Client(follow_redirects=True, trust_env=False, timeout=60)`：SDK 自建 client 不跟随 308（self-hosted v4.46 对 observations v2 查询回 308 内部规范化跳转，读侧直接 ApiError），而系统代理会把带 cursor 的翻页请求 308 回同一 URL、跟随即死循环——只连本机服务，明确绕过代理。
+
+**为什么这么改**：smoke 脚本（305）接真服务后，三道问题逐一现形：读侧 308 不跟随 → 跟随后翻页死循环 → scope 缺席导致血缘挂不上。前两道是查询路径缺陷，第三道是写侧 scope 生命周期缺陷——都是 fake-client 测试结构性测不出的面，正是 smoke 的价值所在。
+
+**取舍**：scope 落库即 end（时长≈0），父子引用不受影响，换来真机树形完整；`trust_env=False` 写死而非配置化——本模块契约就是"只连本机"，代理无正当用例；OTEL 导出路径（urllib3 POST /otel/v1/traces）实测经代理 200 正常，不动它。
+
+**影响面**：`trace/langfuse_support.py`（scope end + httpx client 构造）、`tests/_fake_langfuse.py`（fake 补 end 空操作）、`scripts/langfuse_smoke.py`（修脚本自身三处：.env 引号剥离、血缘核对前 flush+限时轮询、父 ID 读真字段 `parent_observation_id`、task_id 计数 7）。定向 pytest 33 全绿；smoke 14/14 PASS（run `handoff-fb91ea`，trace `fa1c633b6fff199d2e6a1753330392ef`，save 可见 2.1s、读齐 10 笔 2.1s、tracelog 零写入）。
+
+## 2026-09-27（305）—— 新增 scripts/langfuse_smoke.py：本机 self-hosted smoke 一步到位
+
+**改了什么**：新增 `scripts/langfuse_smoke.py`，把 handoff 第四阶段整成一条命令：前置校验（三件环境变量齐、BASE_URL 必须本机、`/api/public/health` 报版本）→ 写一条独立测试 run（`handoff-<后缀>`：main 线 run_start/episode_start/task_start/同 step 两操作/model_call generation/checkpoint_save，restore 线 checkpoint_restore + episode_start，run_end）→ 限时 60s 轮询等 save 可见与读齐 10 笔封套账 → 核对 branch 筛选、(ts,uuid) 排序、generation 投影、restore branch scope 挂 checkpoint_save（lineage_pending 时自动 reconcile）→ tracelog/ 前后快照证明本地零写入 → 打印 run_id/trace_id/Dashboard 链接，退出码 0/1。
+
+**为什么这么改**：本机 `LANGFUSE_*` 与服务均未配置，smoke 只能由项目所有者在本机跑；把 handoff 第四阶段的全部写入/核对项固化成脚本，避免手敲 REPL 漏项。
+
+**取舍**：血缘核对走公开面（`read_observations` + `find_checkpoint_observation` + branch scope metadata），不戳 `LangfuseTrace` 私有属性；save 不可见时不硬等死——先 flush 后轮询，仍 pending 就走 `reconcile_pending_lineage` 并如实报告。等待上限 60s，到期按"eventual consistency 未验证"报告而非挂起。
+
+**影响面**：新增 `scripts/` 一个独立脚本（sys.path 自举，`python scripts/langfuse_smoke.py` 直接可跑）；无服务环境下前置校验按设计早退（实测）。不改变任何默认行为。后续补充（同日）：脚本自己加载仓库根 `.env`（逐行 KEY=VALUE，shell 已设的不覆盖）——`build_client_from_environment()` 只读 `os.environ`、不识别 `.env`；向仓库 `.env`（已在 `.gitignore`）追加 `LANGFUSE_BASE_URL/PUBLIC_KEY/SECRET_KEY` 占位三行，密钥由项目所有者从 UI 创建后填入。
+
+## 2026-09-27（304）—— LangfuseTrace 离线测试落地：33 条定向 + 全量/静态验证；本机 smoke 未执行
+
+**改了什么**：新增 `tests/test_langfuse_trace.py`（25 条，注入 `tests/_fake_langfuse.py` 的记录型 fake SDK client，零联网：TracePort 结构满足、确定性 trace_id、盖章与保留键拒绝、封套无损往返、本地 UUID≠observation ID、(ts,uuid) 排序、model_call→generation 含 model/usage 投影、错误账→event+ERROR level、run/episode/task/step scope 真实父子链、同 step 复用 scope、AND 交集筛选、外来 observation 跳过、查询错误传播、多页 cursor 收齐与重复/缺席 cursor 退出、恢复分支挂 checkpoint_save、缺父 fallback+lineage_pending、lookup 抛错不外溢、reconcile 补建幂等、run_end/run_error 触发 flush、flush 失败不外溢）；新增 `tests/test_trace_tool.py`（8 条：默认 local 零 Langfuse 配置依赖、显式 langfuse 选择且不写本地 JSON、trace_root 冲突拒绝、缺配置显式失败、未知 backend 拒绝、LocalTrace 生命周期空操作、生命周期委托）；新增 `tests/test_build.py`（2 条，AST 核对 `build_real` 把 `trace_backend` 透传给 `TraceTool.build` 且缺省仍为 "local"——不真跑装配点，避免拉起 PyBoy）。`pyproject.toml` 给两个 langfuse 文件加 ANN401 per-file-ignore（第三方 SDK 边界天然动态形状，与 tests 豁免同逻辑）；`ruff format` 归一 trace 包四个文件的混合行尾（store.py 240 CRLF+10 LF 等）。
+
+**为什么这么改**：执行 `langfuse-test-handoff.md` 第二、三阶段。定向 pytest（三个新/相关文件）33 条全过；`ruff check .` 全过；`ruff format --check .` 358 文件全过；`scripts/check_trace_self_contained.py` A/B/C 三条全过。全量 pytest 曾大面积 ERROR——根因是沙箱 safe-delete 护栏拦截 pytest 会话启动时对 `.pytest_tmp`（已积 9250 条目、超阈值 50）的清理，与代码无关；换全新 `--basetemp` 后两轮复跑：`test_screen_text.py` 1 条因 venv 未装 pyboy 失败（环境缺口），另有 2~3 条 `test_memory_store.py` 的 restore 用例两轮失败集合不同且单独跑全过（负载型时序 flaky，与本次改动无关）。
+
+**取舍**：build_real 的透传核对用 AST 而非真跑——装配点第一行就造 PyBoy，红线禁止。fake 分页用假 API 自管小页（真实现恒传 limit=1000），用 `stuck_cursor` 注入"服务端永远回同一 cursor"的病理场景验证不死循环。恢复 fallback 断言钉在"本实例构造时的 run root"——同 trace 会有多个实例各建一个 root，这是实现现状，spec 未禁止。
+
+**影响面**：新增三个测试文件与一个 fake 模块；`pyproject.toml` 一条 per-file-ignores；trace 包四个文件纯格式化（含行尾归一）。**本机 self-hosted smoke 未执行**：`LANGFUSE_*` 在 shell/用户级/机器级/仓库 .env 四处均未配置、Docker daemon 未运行、本机 3000/3001/3002/8080 无 Langfuse 健康响应——按交接要求明确报缺，不连接 Cloud、不起 Harness。未提交代码。
+
+## 2026-09-27（303）—— LangfuseTrace 审阅修复：restore 账 KeyError、logger 未定义、查询下界挡住跨实例历史
+
+**改了什么**：三处修复。① `LangfuseTrace.append` 对 `checkpoint_restore` 不再执行 `pop("restore_scope_id")`（该键全仓零写入者，恢复账一落就 `KeyError`）——新 branch scope 已由 `_create_branch_scope` 注册，restore 账只挂父、不建 scope；② `langfuse_trace.py` 补上 `logger = logging.getLogger(__name__)`（flush/shutdown/checkpoint 父查询三条失败路径原本会先 `NameError` 掩盖原错误）；③ `read_observations()` 撤掉"本实例构造时刻"查询下界（`observation_time_bounds()` 起点改为 API 允许的最早时间，数据集由 trace_id 限定），删掉 `_query_start_time`/`_event_times` 簿记——同一 run 恢复后是新进程新实例，原下界会把上一实例写的 `checkpoint_save` 与历史 observation 全部挡在门外，血缘 lookup 恒 fallback。`docs/eval/langfuse-spec.md` §六句子同步改为与实现一致。
+
+**为什么这么改**：按 `langfuse-test-handoff.md` 第一阶段审阅逐条对照实现与 spec，发现这三处缺陷；交接要求先修再测。③ 是 spec §六"兜底为 API 最早有效时间"那句的既定设计，实现只做了前半句（记根 metadata）没做后半句，按"删掉复杂逻辑而非打补丁"直接落到兜底分支。
+
+**取舍**：查询起点放宽到 epoch 的代价是每次读都扫该 trace 的全部 observation 页（服务端由 trace_id 过滤），换来跨实例恢复血缘可查、并少维护两份实例簿记；不做"把最早 ts 记入根 metadata 再查根"的两跳方案，那需要先无界查一次根，省不了什么。
+
+**影响面**：`trace/langfuse_trace.py`、`trace/langfuse_support.py`、`docs/eval/langfuse-spec.md`；向项目 venv 补装了 pyproject 已声明的 `langfuse==4.15.6`（测试与 smoke 需要）。SDK 4.15.6 的 `create_trace_id` / `start_as_current_observation` / `start_observation` / `create_event` / Observations v2 `get_many` 签名逐一核对，与实现用法一致。另：CHANGELOG 尾部（最老条目之后）挂着错位的 292/293 与重复的 301/302，本次未动、待项目所有者定夺。
+
+## 2026-09-27（302）—— 编写 LangfuseTrace 测试交接文档
+
+**改了什么**：新增 `docs/eval/langfuse-test-handoff.md`，为另一位 AI 列出实现审阅、fake client/API 离线测试、项目验证命令、本机 self-hosted Langfuse smoke 的步骤、检查点和最终汇报格式。
+
+**为什么这么改**：LangfuseTrace 已接入但尚未测试；开发者希望将可执行、范围明确的测试任务交给其他 AI。
+
+**取舍**：交接明确禁止连接 Langfuse Cloud、启动真实 Harness / check_harness、PyBoy、ROM 或真实模型；自动化测试不联网，本机服务 smoke 仅在安全配置的 self-hosted 环境可用时执行。
+
+**影响面**：仅新增测试交接文档并更新 CHANGELOG；未改代码、未运行测试、未连接服务、未提交代码。
+## 2026-09-27（301）—— 接入本机自托管 LangfuseTrace backend
+
+**改了什么**：新增 `LangfuseTrace` 和 SDK/API 辅助层，使用 Langfuse Python SDK v4 将项目事件封套写入本机 self-hosted Langfuse，并通过 Observations API v2 分页查询、解码与筛选；增加 run/branch/episode/task/step observation 层级、generation 映射、checkpoint save/restore 血缘映射与延迟血缘补建入口。`TracePort` 增加 `flush()` / `shutdown()`，LocalTrace 提供空操作；`TraceTool.build(backend="langfuse")` 与 `build_real(trace_backend=...)` 提供显式选择，默认仍为 LocalTrace。更新 trace API/SPEC 与 Langfuse spec/plan。
+
+**为什么这么改**：开发者确认由本机自托管 Langfuse 作为唯一 trace 存储，接受 append 后 API 最终一致性，并要求 checkpoint 状态恢复不依赖 trace 可见性。
+
+**取舍**：Langfuse backend 不双写 LocalTrace，也不建本地 outbox；SDK 排队返回不代表服务端已可查询。Langfuse 配置只在显式选择该 backend 时读取。未增加或运行测试；未连接本机 Langfuse，未启动 Harness / ROM。
+
+**影响面**：新增 trace backend 与依赖 `langfuse>=4.7,<5`；修改 TracePort 生命周期、TraceTool/build 装配与 trace 文档。静态 AST 检查通过（8 个 Python 文件）；`scripts/check_trace_self_contained.py` 的 A/B/C 三项通过。
+## 2026-09-27（300）—— 编写 LangfuseTrace 分阶段实现计划
+
+**改了什么**：新增 `docs/eval/langfuse-plan.md`，将 SDK 配置、TracePort 写入、API 查询与分支映射、tool/build 接线、自动化验证和本机自托管 smoke 拆成 P0–P4；同步把 intent 的“进入 spec 前”标题修正为 spec 已定方向。
+
+**为什么这么改**：实现涉及异步写入、API 最终一致性、跨重启分支映射与现有装配点，按阶段交付能让接口、失败边界和切换条件先可审阅。
+
+**取舍**：计划保留 LocalTrace 为默认 backend，Langfuse 显式 opt-in；本机服务 smoke 需有 self-hosted v4 与项目凭据，本计划不启动 ROM / 真机 Harness。
+
+**影响面**：新增 Langfuse 实施计划并同步 intent 标题；未改代码、依赖或运行行为，未运行测试。
+
+## 2026-09-27（299）—— LangfuseTrace 定为唯一 trace 存储并接受最终一致性
+
+**改了什么**：新增 `docs/eval/langfuse-spec.md`，定义 `LangfuseTrace` 对 `TracePort` 的实现、Langfuse SDK v4 写入与 Observations API v2 读回、run/branch/episode/task/step 层级、恢复分支 checkpoint 映射、事件封套、筛选排序、客户端生命周期和故障边界。同步修订 intent：Langfuse 本机服务是唯一 trace 存储，不双写 `LocalTrace`，append 后不要求立即可读。
+
+**为什么这么改**：开发者确认不要求写后立即读回；既然 Langfuse 服务本身部署在本机并负责持久化，就不需要为了消除查询延迟再保留第二份 LocalTrace 账本。
+
+**取舍**：SDK 队列不是磁盘 outbox；服务不可用或进程强制退出可能导致未发出的观测丢失。服务端 ingestion 延迟期间读侧可能暂时缺事件，但不影响 checkpoint 状态恢复。
+
+**影响面**：新增 Langfuse 实现规格并同步接入意图；未改代码、依赖、运行行为，未启动服务或运行测试。
+
+## 2026-09-27（298）—— Langfuse intent 明确恢复分支的 checkpoint 父节点映射
+
+**改了什么**：更新 `docs/eval/langfuse-intent.md`：恢复 branch 的父节点从 checkpoint 清单里的来源 checkpoint / branch 本地标识确定；adapter 通过稳定本地关联键找到同一 run trace 内对应的 `checkpoint_save` observation，并把新 branch 挂在其下。映射失败或 Langfuse 不可用不影响 checkpoint 状态恢复。
+
+**为什么这么改**：恢复分支需要在 Langfuse 中从保存点分叉，而不是接到父 branch 的末尾；checkpoint 状态本身已经由清单和存档确定，不应依赖 trace 查询或 Langfuse 可用性。
+
+**取舍**：本条只明确意图；本地 ID 到 Langfuse observation ID 的索引形式和持久化位置留给 spec / spike 验证。
+
+**影响面**：仅更新 Langfuse 接入意图与 CHANGELOG；未改代码、依赖或运行行为，未运行测试。
+
+## 2026-09-27（297）—— Langfuse intent 定义 run trace 与观测父子层级
+
+**改了什么**：更新 `docs/eval/langfuse-intent.md`：明确线上 Langfuse 暂不接入；一个 `run_id`（含恢复出的 branches）映射为一条 Langfuse trace；run、branch、episode、task、step/operation 通过 parent-child observations 成链，瞬时事件和 generation 分别使用 event / generation observation；不同 run 仅以 metadata 关联。
+
+**为什么这么改**：Langfuse 以共享 `trace_id` 聚合 observations，并支持 parent observation 形成树。需要将现有 run / branch / episode / task 结构映射进去，既让同一 run 的恢复分支连续可见，也避免把独立执行误连成一个运行树。
+
+**取舍**：Langfuse observation ID 由 SDK / OTel 生成，本地事件 UUID 留在 metadata；checkpoint 恢复不读 trace，但读侧的 branch 历史拼接仍依赖 checkpoint 事件。具体事件映射与父 observation ID 存放方式留给 spec 和本地 spike；线上同步不在当前阶段。
+
+**影响面**：仅更新 Langfuse 接入意图与 CHANGELOG；未启动 Langfuse、未接入 SDK、未连接线上服务，未运行测试。
+
+## 2026-09-27（296）—— Langfuse intent 定为本机自托管权威 trace 后端
+
+**改了什么**：更新 `docs/eval/langfuse-intent.md`，将本机 Docker Compose 自托管 Langfuse 定为本地持久化与观测后端，线上 Langfuse 定为可选副本；明确 SDK 适配 `TraceToolPort` 的方向、checkpoint 恢复与 trace 血缘读侧的边界，并加入“写后即读”、排序与持久性的技术 spike 门槛。
+
+**为什么这么改**：开发者决定评估权威第三方 trace 系统作为本地与线上观测基础，需要让 intent 反映已选方向，而不是沿用“本地 JSON trace 永远是真源”的旧假设。
+
+**取舍**：本条只修订意图，不新增依赖、不启动 Langfuse 服务、不连接 Cloud；保留 `LocalTrace`，直到本机 spike 证明 Langfuse 满足读写一致性和故障恢复要求。
+
+**影响面**：仅更新 Langfuse 接入设计与 CHANGELOG；实现、配置和运行行为不变，未运行测试。
+
+## 2026-09-27（295）—— checkpoint 恢复移除 trace 前置校验；Langfuse 目标改为本机权威后端
+
+**改了什么**：`open_branch()` 不再读取 trace 查找唯一 `checkpoint_save`；恢复继续使用清单里的分支、状态 / saver 定位、世界存档与记忆快照。checkpoint spec 同步说明 trace 血缘只服务读侧历史拼接与分支图。Langfuse intent 更新为本机自托管实例作为权威 trace 后端、线上实例作为可选副本。
+
+**为什么这么改**：checkpoint 恢复的状态来源是存档自身；trace 查询只是核对一条观测账是否存在，不应成为恢复前置条件。若改用 Langfuse 保存本机与线上观测，应让本机自托管服务承担持久化，而不是把 SDK 的发送队列误当作本地磁盘账本。
+
+**取舍**：保留 `TraceTool` 通过 `checkpoint_save` / `checkpoint_restore` 拼接分支历史的功能；因此缺少存档 trace 账不阻止状态恢复，但会使该分支的 trace 历史无法完整拼接。本地 Langfuse 到线上 Langfuse 的持续同步方式仍待验证。
+
+**影响面**：修改 checkpoint 恢复、Langfuse intent、checkpoint 设计文档与数据流说明；未更改 Langfuse 依赖或部署，未运行测试。
+
+## 2026-09-27（294）—— 起草 Langfuse 接入意图：本地 trace 为真源，观测与评测分工
+
+**改了什么**：新增 `docs/eval/langfuse-intent.md`，界定 Langfuse 作为可选观测副本、与本地 trace / 现有 evals / 后续 Inspect AI 的职责边界；列出数据外发原则、成功标准与进入 spec 前待定事项。
+
+**为什么这么改**：后续接入 Inspect AI 前，需要先明确 Langfuse 在评测工作流中的角色，并避免观测平台替代本地账本或评测判据。
+
+**取舍**：只写意图，不选择 Cloud / 自托管、导出时机或完整模型 I/O 上传策略；这些决定留待开发者了解 Langfuse 后讨论。
+
+**影响面**：仅新增设计文档，不改代码、依赖、模型链路或运行行为。
+
 ## 2026-09-26（291）—— perceive P4：背包、队伍、PC、学新招的宏与视图；接管视图测评
 
 **改了什么**（契约，供事后审）：
@@ -17849,4 +18181,21 @@ Harness、InMemoryTrace 和图装配。
 **取舍**：`rules.py` 只接收 `TaskObservation`，所以直接信任 `facts.dialog_text`；端到端模型评测需真实模型，按交接留给开发者。
 
 **影响面**：对象交互事件判定与活文档索引；P5.4 `python -m evals e2e` 未运行。未新增单元测试。
+## 2026-09-27（301）—— 接入本机自托管 LangfuseTrace backend
 
+**改了什么**：新增 `LangfuseTrace` 和 SDK/API 辅助层，使用 Langfuse Python SDK v4 将项目事件封套写入本机 self-hosted Langfuse，并通过 Observations API v2 分页查询、解码与筛选；增加 run/branch/episode/task/step observation 层级、generation 映射、checkpoint save/restore 血缘映射与延迟血缘补建入口。`TracePort` 增加 `flush()` / `shutdown()`，LocalTrace 提供空操作；`TraceTool.build(backend="langfuse")` 与 `build_real(trace_backend=...)` 提供显式选择，默认仍为 LocalTrace。更新 trace API/SPEC 与 Langfuse spec/plan。
+
+**为什么这么改**：开发者确认由本机自托管 Langfuse 作为唯一 trace 存储，接受 append 后 API 最终一致性，并要求 checkpoint 状态恢复不依赖 trace 可见性。
+
+**取舍**：Langfuse backend 不双写 LocalTrace，也不建本地 outbox；SDK 排队返回不代表服务端已可查询。Langfuse 配置只在显式选择该 backend 时读取。未增加或运行测试；未连接本机 Langfuse，未启动 Harness / ROM。
+
+**影响面**：新增 trace backend 与依赖 `langfuse>=4.7,<5`；修改 TracePort 生命周期、TraceTool/build 装配与 trace 文档。静态 AST 检查通过（8 个 Python 文件）；`scripts/check_trace_self_contained.py` 的 A/B/C 三项通过。
+## 2026-09-27（302）—— 编写 LangfuseTrace 测试交接文档
+
+**改了什么**：新增 `docs/eval/langfuse-test-handoff.md`，为另一位 AI 列出实现审阅、fake client/API 离线测试、项目验证命令、本机 self-hosted Langfuse smoke 的步骤、检查点和最终汇报格式。
+
+**为什么这么改**：LangfuseTrace 已接入但尚未测试；开发者希望将可执行、范围明确的测试任务交给其他 AI。
+
+**取舍**：交接明确禁止连接 Langfuse Cloud、启动真实 Harness / check_harness、PyBoy、ROM 或真实模型；自动化测试不联网，本机服务 smoke 仅在安全配置的 self-hosted 环境可用时执行。
+
+**影响面**：仅新增测试交接文档并更新 CHANGELOG；未改代码、未运行测试、未连接服务、未提交代码。

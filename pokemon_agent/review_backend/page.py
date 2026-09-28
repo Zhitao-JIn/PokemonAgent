@@ -163,7 +163,7 @@ function parse(text) {
 }
 
 function onFeed(event) {
-  const item = { kind: event.kind, ts: event.ts, meta: parse(event.meta),
+  const item = { kind: event.kind, ended_at: event.ended_at, meta: parse(event.meta),
                  content: parse(event.content) };
   feed.push(item);
   if (feed.length > FEED_KEEP) feed.shift();
@@ -176,7 +176,7 @@ function onFeed(event) {
     $('live-caption').textContent = `${m.episode_id || ''} · ${m.task_id || ''} · 第 ${m.step} 步`;
   }
   const li = document.createElement('li');
-  const clock = new Date(item.ts * 1000).toLocaleTimeString();
+  const clock = new Date(item.ended_at * 1000).toLocaleTimeString();
   li.textContent = `${clock} · ${item.kind} · ${item.meta.source || '-'} · ${item.meta.step}`;
   $('timeline').prepend(li);
   while ($('timeline').children.length > TIMELINE_KEEP) $('timeline').lastChild.remove();
