@@ -1,6 +1,6 @@
 # checkpoint —— 三级存档与图内恢复
 
-> 最后更新：2026-09-26 ｜ 代码：`pokemon_agent/harness/checkpoint/`、`pokemon_agent/tools/trace/lineage.py` ｜
+> 最后更新：2026-09-26 ｜ 代码：`pokemon_agent/harness/checkpoint/`、`pokemon_agent/direct/trace/lineage.py` ｜
 > 设计来历：`docs/checkpoint/{intent,spec,plan,p0-findings}.md`、CHANGELOG 275–285
 
 一句话：run 开局、每局开派前、每个 task 开局各存一份"此刻的全部现场"（世界、记忆整根、图状态的原件或定位）。
@@ -51,9 +51,9 @@ episode 级带 `episode_id` + `run_ref`；task 级再加 `task_id` + `episode_re
 
 - 分支名 `main`；每恢复一次开一条随机名的新线 `b-<6 位 hex>`（名字要在装配前定，不读账）。
 - `CheckpointManifest.branch` 记录存档所属的父线；新线第一条账 `checkpoint_restore` 的 meta 带 `checkpoint_id`。
-  `tools/trace/lineage.py` 在 trace 读侧用恢复账与同 id 的存档账推导父线和精确分叉事件，供历史拼接与分支图展示。
+  `direct/trace/lineage.py` 在 trace 读侧用恢复账与同 id 的存档账推导父线和精确分叉事件，供历史拼接与分支图展示。
   恢复流程不查询 trace，也不要求 `checkpoint_save` 账存在。
-- `tools/trace/lineage.py`：`lineage_of(账, branch)` 由近到远推血缘，`branch_graph(账, run_id)` 画分支图
+- `direct/trace/lineage.py`：`lineage_of(账, branch)` 由近到远推血缘，`branch_graph(账, run_id)` 画分支图
   （每条恢复账一条边）。`TraceTool.read_events` 在 meta 不带 `branch` 时按血缘拼：本线全部 + 各祖先截至各自
   分叉点；血缘每次现推，不缓存。`node_io.branch_view` 用同样的规则各推一遍，互为对照。
 - 同一个 task 在父线与新线各有一份账，读侧按分叉点截断，不按业务键去重。

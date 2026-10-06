@@ -81,8 +81,8 @@ trace/
 
 - `EventType`（`trace/datastore/trace_event.py`）是**字符串常量类，不是枚举**，七个值：`MODEL_CALL` / `ERROR` / `LLM_OUTCOME` / `VIEW` / `ACT` / `MEMORY_IO` / `LIFECYCLE`；合法值域的类型级表达只有一处 `EventTypeName`（`Literal[...]`）。
 - `TraceKind`（`schemas/harness/domain/trace_kind.py`）是 `StrEnum`，**35 个成员**，是 harness 的账名词表，住 schemas 侧（消费者是 harness）。
-- **两者不是一个概念，不能合并**：`type` 回答"这条记录相对世界 / 模型站在哪个位置"，数量极小、与链路正交；`kind` 回答"这是哪笔账"。对应关系是"每个 kind 恰好落一个 type"，**由渲染层 `tools/trace/render.py` 给出**——trace 自己不持有这张映射。封套两个都留：`type` 供廉价过滤，`kind` 供精确指认。
-- 家族对应（依据 `EventType` 各常量的注释与 `render.py` 的实际用法）：`VIEW` 的 kind = `sense_frame`；`ACT` ∈ {`press_key`, `run_macro`, `get_action_space`, `check_stall`}；`MEMORY_IO` ∈ {六条 `read_*` + 三条 `write_*`}；`LIFECYCLE` = 三层边界账 + `settle_goal` / `settle_task` + `advance_step`；`MODEL_CALL` 是七条链共用的调用账；`ERROR` ∈ {`call_failed`, `call_exhausted`, `summary_parse_error`}；`LLM_OUTCOME` 与 `MODEL_CALL` 配对（`choose_verdict` 与三个 `*_verdict`）。
+- **两者不是一个概念，不能合并**：`type` 回答"这条记录相对世界 / 模型站在哪个位置"，数量极小、与链路正交；`kind` 回答"这是哪笔账"。对应关系是"每个 kind 恰好落一个 type"，**由渲染层 `direct/trace/render.py` 给出**——trace 自己不持有这张映射。封套两个都留：`type` 供廉价过滤，`kind` 供精确指认。
+- 家族对应（依据 `EventType` 各常量的注释与 `render.py` 的实际用法）：`VIEW` 的 kind = `sense_frame`；`ACT` ∈ {`act_call`, `get_action_space`, `check_stall`}；`MEMORY_IO` ∈ {六条 `read_*` + 三条 `write_*`}；`LIFECYCLE` = 三层边界账 + `settle_goal` / `settle_task` + `advance_step`；`MODEL_CALL` 是七条链共用的调用账；`ERROR` ∈ {`call_failed`, `call_exhausted`, `summary_parse_error`}；`LLM_OUTCOME` 与 `MODEL_CALL` 配对（`choose_verdict` 与三个 `*_verdict`）。
 
 ## 五、落盘与读取
 
@@ -102,8 +102,8 @@ trace/
 - **读**：`read_events` 每次调用重扫落盘根（只扫**第一层**的 `*.json`，不递归），**不做内存缓存**。`_scan_events()` 跳过 `.tmp`，`model_validate_json` 失败的文件一律 `continue`（残文件 / 旧格式是预期内的运行期情况）。按 `meta` 筛选时用 `_meta_of(event)` 把那串 JSON 解回 dict，读不动就给空 dict——于是那条**不匹配任何条件**。
 
 **读侧解析层（0925，CHANGELOG 259）**：`trace/` 只管封套，正文是字符串化的 JSON。要按类型读正文的
-一方（测评 `evals/`）走 `pokemon_agent/tools/trace/parse.py::parse(event) -> ParsedEvent`：按 `kind` 分派
-`tools/trace/content.py` 的正文模型（与 `render.py` 逐字段对照，除调用账外 `extra="forbid"`），
+一方（测评 `evals/`）走 `pokemon_agent/direct/trace/parse.py::parse(event) -> ParsedEvent`：按 `kind` 分派
+`direct/trace/content.py` 的正文模型（与 `render.py` 逐字段对照，除调用账外 `extra="forbid"`），
 `sense_frame` 的 `facts` / `place` / `ram` 读回 `Facts` / `PlaceInWorld` / `RamReadout`；没建模的账读成
 `OtherContent`。模型住产出方（谁渲染谁定义），`tests/test_trace_parse.py` 做写 → 读回环。
 

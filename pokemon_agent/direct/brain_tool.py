@@ -52,13 +52,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar
 
+from pokemon_agent.backoff import backoff_seconds
 from pokemon_agent.brain import (
     Action,
     ActionSegment,
     BrainPort,
     EpisodeSummary,
-    MacroArg,
-    MacroSignature,
+    ScriptArg,
+    ScriptSignature,
 )
 from pokemon_agent.brain.errors import (
     AttemptFailed,
@@ -75,6 +76,11 @@ from pokemon_agent.config import (
     PLAN_THINKING,
     PROVIDER_JSON_MODE,
 )
+from pokemon_agent.direct.prompts import decompose as decompose_prompt
+from pokemon_agent.direct.prompts import run_plan as run_plan_prompt
+from pokemon_agent.direct.prompts import summarize as summarize_prompt
+from pokemon_agent.direct.prompts import summarize_task as summarize_task_prompt
+from pokemon_agent.direct.prompts import verify as verify_prompt
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
@@ -101,14 +107,12 @@ from pokemon_agent.schemas.memory import (
     EpisodeMemory,
     TaskMemory,
 )
-from pokemon_agent.tools.prompts import decompose as decompose_prompt
-from pokemon_agent.tools.prompts import run_plan as run_plan_prompt
-from pokemon_agent.tools.prompts import summarize as summarize_prompt
-from pokemon_agent.tools.prompts import summarize_task as summarize_task_prompt
-from pokemon_agent.tools.prompts import verify as verify_prompt
-from pokemon_agent.world import DIRECTION_KEYS, INTERACT_KEY, MacroSpec
+from pokemon_agent.world import (
+    DIRECTION_KEYS,
+    INTERACT_KEY,
+    ActionEntry,
+)
 
-from .backoff import backoff_seconds
 from .prompts import decide_action as decide_action_prompt
 from .prompts import judge_success as judge_success_prompt
 
@@ -270,12 +274,19 @@ class Chooser:
         # 文字版（相邻去重、逐帧对应），prompt 里读到的每一步和模型看到的
         # 画面严格同源。第一步没有记忆 → 空列表 → 纯文本。
         images, _snapshots = dedup_snapshots(req.memories)
-        macros = [_signature(m) for m in req.space.macros]
+        scripts = [
+            _signature(e)
+            for e in req.space.entries
+            if e.kind == "script" and req.space.enabled(e.name)
+        ]
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             prompt = base_prompt if not calls else _retry_prompt(base_prompt, calls)
             return self._brain.choose(
-                prompt=prompt, keys=list(req.space.names), images=images, macros=macros
+                prompt=prompt,
+                keys=list(req.space.names),
+                images=images,
+                scripts=scripts,
             )
 
         result, calls = _attempt_loop("choose", attempt)
@@ -310,9 +321,9 @@ class Chooser:
         **校验失败抛 `ParseFailure`**（本层的内部信号）：它跟"模型幻觉了按键"
         是同一类东西（外部输入不合法），所以由同一个重试循环接住再问一次。
 
-        宏调用原样放行：参数的语义校验归 world 的宏执行器。
+        脚本调用原样放行：参数的语义校验归 world 的执行器。
         """
-        if action.macro is not None:
+        if action.script is not None:
             return action
         segments: list[ActionSegment] = []
         for index, segment in enumerate(action.sequence, start=1):
@@ -342,12 +353,13 @@ class Chooser:
         return Action(sequence=segments)
 
 
-def _signature(spec: MacroSpec) -> MacroSignature:
-    """world 的 `MacroSpec` → brain 的 `MacroSignature`（只留解析要用的名字、类型、是否必填）。"""
-    return MacroSignature(
-        name=spec.name,
+def _signature(entry: ActionEntry) -> ScriptSignature:
+    """world 的脚本条目 `ActionEntry` → brain 的 `ScriptSignature`
+    （只留解析要用的名字、类型、是否必填）。"""
+    return ScriptSignature(
+        name=entry.name,
         params=[
-            MacroArg(name=p.name, type=p.type, required=p.default is None) for p in spec.params
+            ScriptArg(name=p.name, type=p.type, required=p.default is None) for p in entry.params
         ],
     )
 
@@ -386,6 +398,7 @@ class Reflector:
             after=ActMemory.Observation.model_validate(_blind(req.after).model_dump(mode="json")),
             step=req.step,
             episode_id=req.episode_id,
+            result=req.result,
         )
         return FromHarnessToBrainToolReflectResp(entry=entry)
 

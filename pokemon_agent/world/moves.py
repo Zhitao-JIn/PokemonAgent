@@ -1,6 +1,6 @@
 """招式的名字。
 
-名字表来自 `pret/pokered` 反汇编（`tables/moves.json`）。纯函数，给战斗宏与视图用。
+名字表来自 `pret/pokered` 反汇编（`tables/moves.json`）。纯函数，给战斗接管脚本与视图用。
 """
 
 from __future__ import annotations

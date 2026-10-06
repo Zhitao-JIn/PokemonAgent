@@ -304,9 +304,7 @@ class ReviewBackend:
             _say("[agent] 没有连上的 agent，discuss 丢弃")
             return
         frame = self._latest_frame()
-        await self._agent.turn(
-            req.seq, ChatTurn(role="human", text=req.text.strip()), frame
-        )
+        await self._agent.turn(req.seq, ChatTurn(role="human", text=req.text.strip()), frame)
 
     def _answer(self, raw: str | bytes) -> FromFrontendToReviewBackendAnswerResp | None:
         """收一份答案：先答先得；已了结、编号不对、与问不配都回 `ok=False`。看不懂的消息丢弃。"""

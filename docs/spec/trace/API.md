@@ -31,7 +31,7 @@ from pokemon_agent.trace import LangfuseTrace, LocalTrace, TracePort
 **不在这里的东西**：`_Event`（`trace/datastore/event.py`，trace 私有实现，**不进任何 `__all__`**）；
 `TraceKind`（住 `pokemon_agent.schemas.harness`，是 harness 的账名，不是 trace 的）。
 
-> **谁该调 trace**：只有 tool 层（`pokemon_agent/tools/trace/`）。harness / brain / memory /
+> **谁该调 trace**：只有 tool 层（`pokemon_agent/direct/trace/`）。harness / brain / memory /
 > world / schemas / `build.py` 一律不 import 本包，它们经 `TraceToolPort` 说话。
 > 这条边界是可执行核对的，见本文第六节。
 
@@ -239,14 +239,14 @@ RFC 9562 的 **v7 布局**，前 48 位是毫秒时间戳：
 | `ERROR` | `error` | `call_failed` / `call_exhausted` / `summary_parse_error` |
 | `LLM_OUTCOME` | `llm_outcome` | `choose_verdict` 与三个 `*_verdict`（与 `MODEL_CALL` 配对） |
 | `VIEW` | `view` | `sense_frame`（episode 完整档 / task RAM 档） |
-| `ACT` | `act` | `press_key` / `run_macro` / `get_action_space` / `check_stall` |
+| `ACT` | `act` | `act_call`（key/script 两形，P5 起原 `press_key` 改名；接管脚本也走 script 形） / `get_action_space` / `check_stall` |
 | `MEMORY_IO` | `memory_io` | 六条 `read_*` + 三条 `write_*` |
 | `LIFECYCLE` | `lifecycle` | run / episode 边界账 + `advance_step` |
 
 `TraceKind`（35 个成员，`StrEnum`）与 `EventType` **不是一个概念，不能合并**——
 `type` 回答"这条记录相对世界 / 模型站在哪个位置"（数量极小、与链路正交），
 `kind` 回答"这是哪笔账"。映射关系是"**每个 kind 恰好落一个 type**"，
-**由渲染层 `tools/trace/render.py` 给出，trace 自己不持有这张映射**。
+**由渲染层 `direct/trace/render.py` 给出，trace 自己不持有这张映射**。
 逐一对应见 [`../DATAFLOW.md`](../DATAFLOW.md) 第四节「事件总表」。
 
 ---
@@ -282,7 +282,7 @@ class LocalTrace:
 ```
 --trace-root PATH（起跑脚本）
   └── build_real(trace_root=…)              pokemon_agent/build.py
-        └── TraceTool.build(trace_root=…)   pokemon_agent/tools/trace/__init__.py
+        └── TraceTool.build(trace_root=…)   pokemon_agent/direct/trace/__init__.py
               └── LocalTrace(root=…)        pokemon_agent/trace/store.py
 ```
 
@@ -292,8 +292,8 @@ class LocalTrace:
 
 ## 六、tool 层（harness 认识 trace 的唯一入口）
 
-`pokemon_agent/tools/trace/__init__.py`。harness 面向的是 `TraceToolPort`
-（`pokemon_agent/tools/interface/ports.py`），拿到的是 `TraceEvent` 而不是 trace 的 `Event`。
+`pokemon_agent/direct/trace/__init__.py`。harness 面向的是 `TraceToolPort`
+（`pokemon_agent/direct/interface/ports.py`），拿到的是 `TraceEvent` 而不是 trace 的 `Event`。
 
 ```python
 class TraceTool:

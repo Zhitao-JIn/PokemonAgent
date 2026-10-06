@@ -27,6 +27,9 @@ import logging
 from pathlib import Path
 
 from pokemon_agent.config import CHECKPOINT_ENABLED
+from pokemon_agent.direct.brain_tool import BrainTool
+from pokemon_agent.direct.trace import TraceTool, assert_server_ready
+from pokemon_agent.env import env_str, load_env_file
 from pokemon_agent.harness import (
     EpisodeRuntime,
     Reviewer,
@@ -39,13 +42,9 @@ from pokemon_agent.harness.episode import compile_episode_graph
 from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.harness.run import compile_run_graph
 from pokemon_agent.harness.task import compile_task_graph
-from pokemon_agent.tools import (
-    BrainTool,
-    GameTools,
-    MemoryTool,
-    TraceTool,
-)
-from pokemon_agent.tools.trace import assert_server_ready
+from pokemon_agent.mcpclient import assert_mcp_server_ready
+from pokemon_agent.mcpclient.game_tools import GameTools
+from pokemon_agent.mcpclient.memory_local import MemoryTool
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +64,8 @@ def build_real(
     trace_root: str | Path | None = None,
     trace_backend: str = "langfuse",
     memory_root: str | Path | None = None,
+    memory_server_url: str | None = None,
+    world_server_url: str | None = None,
     checkpoint_root: str | Path | None = None,
     branch: str = "main",
     live_feed_url: str | None = None,
@@ -90,6 +91,21 @@ def build_real(
     # knowledge）一视同仁地住在它下面各自的 `<kind>/` 子文件夹里。一度改成"四族
     # 各一个 root"，随即回退——四族没有哪一族特殊，为它们各开一个开关只是把
     # "一个位置"说成四遍。
+    #
+    # `memory_server_url`：memory server 的 **base 地址**（`http://127.0.0.1:8766`）。
+    # 给了 → 记忆读写经 MCP 走 server 进程；不给 → 进程内直连（改造前的行为）。
+    # **缺省来源不是代码常量而是 env**（`MCP_MEMORY_SERVER_URL`，见 `.env`）：
+    # server 起在哪台机器哪个端口是部署事实，写死在代码里只会逼人改代码去迁服务
+    # ——与 `LANGFUSE_BASE_URL` 同一条规矩。显式传参优先于 env。
+    # **给了就必须通**：装配期先打 `/health` 探针（与 langfuse 同款先例），
+    # server 没起 / 起了但能力没注入 → 就地报错，不进 run。理由与 langfuse 一样：
+    # MCP 这条路上的失败是**静默**的（调用方只看到超时或空结果），
+    # 跑一半才发现等于白跑一局。
+    # `world_server_url`：world server 的 **base 地址**（`http://127.0.0.1:8767`）。
+    # 给了 → 世界住在独立进程（契合 0924 口径：模拟器由用户本机起跑），harness
+    # 经 mcpclient 调它；不给 → 进程内 PyBoyWorld（与改造前一致）。缺省来源同样是
+    # env（`MCP_WORLD_SERVER_URL`）。**给了就必须通**：装配期先打 `/health`，
+    # 因为 PyBoyWorld 单实例 + 强状态，连上一个半死的 server 会让整局跑在假世界上。
     reviewer: Reviewer | None = None,
 ) -> tuple[RunHarness, GameTools]:
     """装配真实链路；返回 `(harness, game)`。
@@ -114,9 +130,9 @@ def build_real(
     `live_feed_url`：人在环后端地址（`ws://host:port`）；给了就把每笔账顺手推给网页实时看
     （`TraceTool.build` 里包一层 `LiveFeedTrace`）。None = 不推。
 
-    `trace_backend`：`langfuse`（默认，0927 定案——本机自托管服务是唯一 trace 存储，
-    选它时**启动前先打健康检查探针**，服务没起当场报错不进 run）或 `local`（离线测试
-    /开发用，落本地 JSON）；langfuse 不写本地事件副本。
+    `trace_backend`：`langfuse`（本机自托管服务，选它时**启动前先打健康检查探针**，
+    服务没起当场报错不进 run）或 `local`（落本地 JSON）；langfuse 不写本地事件副本。
+    None = 取 `pokemon_agent.config.TRACE_BACKEND`（系统缺省）；显式传参优先于它。
 
     **plan 位置的规划来源就是 brain**（0922 第 182 条撤销 `planner` 壳）：
     `plan_run` 格直接调注入的 `planner`（brain 的 plan 链路），没有"人不给目标就没人给"的问题——
@@ -150,12 +166,28 @@ def build_real(
     # 与 `PyBoyWorld(...)`（本体，直接 new）——"造零件在 tool 层、装配在装配点"
     # 的半截工厂，也是四个独立模块里**唯一没做工厂的一个**。现在收平：
     # **本文件对 `pokemon_agent.world` 零 import**。
+    # **env 只在这里读一次**（`.env` → os.environ，真环境变量优先）。它必须在
+    # 任何 `env_str(...)` 之前——world / memory 两个 server 地址的缺省都来自它。
+    load_env_file()
+
+    world_server_url = (world_server_url or env_str("MCP_WORLD_SERVER_URL") or "").strip() or None
+    if world_server_url is not None:
+        health = assert_mcp_server_ready(world_server_url, "world")
+        logger.info(
+            "world MCP server 健康检查通过（%s lease_owner=%s）",
+            world_server_url,
+            health.get("lease_owner"),
+        )
+    else:
+        logger.info("world 走进程内实现（未配 MCP_WORLD_SERVER_URL）")
+
     game = GameTools.build(
         rom,
         state_path=state_file,
         watch=watch,
         vision_model=vision_model,
         speed=speed,
+        world_server_url=world_server_url,
     )
 
     # 一条事件一个 json 文件落盘（0910 重构）；
@@ -178,7 +210,8 @@ def build_real(
         logger.info("Langfuse 后端健康检查通过（version=%s）", langfuse_version)
     trace_tool = TraceTool.build(
         run_id=run_id,
-        trace_root=trace_root,
+        # trace_root 仅对 local 后端生效——langfuse 传了会被 TraceTool.build 拒收（335）。
+        trace_root=trace_root if trace_backend == "local" else None,
         branch=branch,
         live_feed_url=live_feed_url,
         backend=trace_backend,
@@ -191,7 +224,23 @@ def build_real(
     # `pokemon_agent.memory` **零 import**（此前第 25 行有一行
     # `from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider`，
     # 并在此处直接 new 两个实现）。
-    memory = MemoryTool.build(memory_root=memory_root)
+    # memory：进程内（缺省）还是经 MCP 走 server 进程，由 base 地址决定。
+    # 地址的唯一缺省来源是 env（`MCP_MEMORY_SERVER_URL`）——部署事实不写进代码。
+    memory_server_url = (
+        memory_server_url or env_str("MCP_MEMORY_SERVER_URL") or ""
+    ).strip() or None
+    if memory_server_url is not None:
+        health = assert_mcp_server_ready(memory_server_url, "memory")
+        logger.info(
+            "memory MCP server 健康检查通过（%s service=%s root=%s）",
+            memory_server_url,
+            health.get("service"),
+            health.get("root"),
+        )
+    else:
+        logger.info("memory 走进程内实现（未配 MCP_MEMORY_SERVER_URL）")
+
+    memory = MemoryTool.build(memory_root=memory_root, memory_server_url=memory_server_url)
 
     # **brain 的四个 provider 不在这里造**（2026-09-13，S6）：哪个技能接哪家
     # 厂商、temperature 分几层，都是 brain 那条链路的接线知识，收在

@@ -14,7 +14,7 @@
 交给 trace 渲染，而这个信封是 `schemas.harness` 的类型。**装得进去的前提是同一个类型**。
 
 试过放 `tools.interface`（它看起来更像"账的家"），立刻回环：
-`tools/interface/ports.py` 要 `from pokemon_agent.schemas.harness import …`，
+`direct/interface/ports.py` 要 `from pokemon_agent.schemas.harness import …`，
 而 `schemas.harness` 的信封要 `ModelCall`——两条依赖正面相撞，实测炸在
 `ImportError: cannot import name 'FromHarnessToBrainToolChooseOnceResp'
 from partially initialized module`。

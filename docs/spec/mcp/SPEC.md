@@ -222,7 +222,7 @@ class MemoryToolPort(Protocol):
 | # | tool | 入参 | data | 契约要点 |
 |---|---|---|---|---|
 | 1 | `reset` | task_id, goal, success_criteria, max_steps, initial_state_hint? | null | 载 task 存档；max_steps>0；不感知；清会话缓存 |
-| 2 | `get_action_space` | — | `{mask:{name:bool}, entries:[{kind,name,params?,desc?}], scene}` | **统一能力掩码**（用户定案）：原子键与脚本**等价**——同一 `name→enabled` 命名空间，LLM 同权选择；`entries` 带各条目载荷（脚本带 params/desc）。吸收并替代原 all_actions / macro_specs（删） |
+| 2 | `get_action_space` | — | `{mask:{name:bool}, entries:[{kind,name,params?,desc?}], scene}` | **统一能力掩码**（用户定案）：原子键与脚本**等价**——同一 `name→enabled` 命名空间，LLM 同权选择；`entries` 带各条目载荷（脚本带 params/desc）。吸收并替代原 all_actions / 宏签名表（删） |
 | 3 | `perceive_task` | — | `{scene, screen\|walk_map, pos}` | 只读内存与屏幕缓冲；不失败不重试 |
 | 4 | `perceive_once` | — | Perceived JSON | 调一次视觉模型不重试；失败 → `perception_failed`；ModelCall 记录随 Perceived 交调用方 |
 | 5 | `step` | segments:[[key,times],…], settle:bool | `{moved:bool, event:裸事件\|null}` | **唯一按键执行口**；每段键断言在动作空间；响应带本键裸事件——判定前移 server 的输出点 |
@@ -265,8 +265,8 @@ class MemoryToolPort(Protocol):
 
 ### 6.2 骨架
 
-脚本 = 骨架 + 前置校验 + 主循环 + 成功谓词。骨架与 `macros/engine.py` 同构
-（宏管场合内按键序列，脚本管跨场合任务链），复用其物理量
+脚本 = 骨架 + 前置校验 + 主循环 + 成功谓词。骨架与 `scripts/takeover/engine.py` 同构
+（接管脚本管接管场合内按键序列，常规脚本管跨场合任务链），复用其物理量
 （POLL_FRAMES / STABLE_POLLS / STEP_TIMEOUT_FRAMES=900 / NAV_LIMIT=120 /
 QUIET_PRESS_FRAMES / ARROW_WINDOW）：
 
@@ -283,7 +283,8 @@ ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已�
 
 ## 七、world server——脚本层（15 条，一脚本一 API）
 
-`run_macro` / `macro_specs` **不对外**——宏是脚本内部零件；泛型 run_script 废。
+接管场合的多步操作也是脚本（接管脚本，`scripts/takeover/`，对外名带场合前缀），与常规脚本同一种动作；
+进程内经 `GameTools.execute` 执行，MCP 面暂未注册（WorldMcpTool 就地报错）。泛型 run_script 废。
 成功谓词机械可判；终态报告统一带 `events[]` 与现状快照。
 
 ### 7.1 商店类（多地图：按当前 map_id 查 tables，白名单外 → `unsupported_map`）
@@ -292,13 +293,13 @@ ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已�
 ① 前置同上 → ② 读 money0/stock0/在售表（单价以表为准）→
 ③ 不在售 → `not_sold_here` →
 ④ count>99 → `count_limit`；count×price>money0 → `insufficient_funds` →
-⑤ run_macro(shop buy)：光标选中（NAV_LIMIT）→ 数量框调 count → 确认框**宏代答
+⑤ `console.run_script("shop_buy")`（内部接管脚本）：光标选中（NAV_LIMIT）→ 数量框调 count → 确认框**机械代答
 "是"**（机械确认非分叉）→ 等购买文本稳定 → 退出菜单 →
 ⑥ 终态校验 money0−money1==price×count 且 stock 增量==count → `verify_failed` 兜底。
 
 **`sell_item(item, count)`** → `{earned, remaining_money, stock}`
 ① 前置同上 → ② 读 money0/stock0 → `not_in_bag` / count>stock0 →
-`insufficient_stock` → ③ run_macro(shop sell)：开背包 → 选中 → "卖出" →
+`insufficient_stock` → ③ `console.run_script("shop_sell")`：开背包 → 选中 → "卖出" →
 调数量 → 确认 → ④ 校验 money 增量==实际卖价×count → `verify_failed` 兜底。
 
 ### 7.2 移动 / 导航类

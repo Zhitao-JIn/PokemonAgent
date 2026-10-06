@@ -29,7 +29,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.harness.domain import CheckpointMark, EpisodeOutput
+from pokemon_agent.schemas.harness.domain import CheckpointMark, RunResult
 
 from ..episode.episode_state import EpisodeRunState
 from ..run import run_entry
@@ -66,12 +66,14 @@ class OpenedBranch:
 def restore_run(
     manifest_path: str | Path,
     build_branch: BuildBranch,
-) -> tuple[list[EpisodeOutput], int, int, float]:
-    """从 `manifest_path` 那份存档恢复出一条新执行线，跑到 run 结束，返回 run 级四元组。
+    *,
+    sample_id: str = "",
+) -> RunResult:
+    """从 `manifest_path` 那份存档恢复出一条新执行线，跑到 run 结束，返回 `RunResult`。
 
-    = `resume(open_branch(...))`。失败见两者。
+    = `resume(open_branch(...))`。失败见两者。`sample_id` 原样带回（eval 侧样本标识）。
     """
-    return resume(open_branch(manifest_path, build_branch))
+    return resume(open_branch(manifest_path, build_branch), sample_id=sample_id)
 
 
 def open_branch(manifest_path: str | Path, build_branch: BuildBranch) -> OpenedBranch:
@@ -128,10 +130,10 @@ def open_branch(manifest_path: str | Path, build_branch: BuildBranch) -> OpenedB
     return OpenedBranch(deps, manifest, branch, pre_run)
 
 
-def resume(opened: OpenedBranch) -> tuple[list[EpisodeOutput], int, int, float]:
+def resume(opened: OpenedBranch, *, sample_id: str = "") -> RunResult:
     """恢复的后半段：在新 thread 上进 run 图跑到底。
 
-    失败：run 级异常记 `run_error` 后原样上抛。
+    失败：run 级异常记 `run_error` 后原样上抛。`sample_id` 原样带回 `RunResult`。
     """
     deps, manifest, branch = opened.deps, opened.manifest, opened.branch
     ck = deps.checkpointer
@@ -150,7 +152,7 @@ def resume(opened: OpenedBranch) -> tuple[list[EpisodeOutput], int, int, float]:
     except Exception as exc:
         run_entry.record_run_error(deps, manifest.run_id, exc, source=SOURCE)
         raise
-    return run_entry.close(final)
+    return run_entry.close(final, deps, manifest.run_id, sample_id=sample_id)
 
 
 def _pre_run_state(ck: Checkpointer, manifest: CheckpointManifest) -> RunState:

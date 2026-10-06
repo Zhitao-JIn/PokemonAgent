@@ -59,8 +59,9 @@
 7. **每格都落账，可按任一层切片。** 一事件一 json，`meta` 六件
    `{run_id, source, episode_id, task_id, step}`；上层账的空位放本层 id。
    模型调用（`*_call`）与定稿结论（`*_verdict`）分两本账。
-8. **四个独立模块，一座桥。** brain / world / memory / trace 各自只暴露一个 Port、
-   收裸字段；跨模块转换只在 `tools/`；装配只在 `build.py`。
+8. **四个独立模块，两座桥。** brain / world / memory / trace 各自只暴露一个 Port、
+   收裸字段；跨模块转换只在门面层（`direct/` 管 brain/trace、`mcpclient/` 管 memory/world）；
+   装配只在 `build.py`。
 
 ## 三、架构图
 
@@ -70,12 +71,12 @@
 |---|---|---|
 | 外壳 | `experiment/` | 起 run、真机核对；不包装信封，裸字段调 `RunHarness.run` |
 | 编排 | `pokemon_agent/harness/` | 三张 LangGraph 图、三级 state 与 runtime、Reviewer；唯一写 trace |
-| 适配 | `pokemon_agent/tools/` | BrainTool（8 个能力对象）、GameTools、MemoryTool、TraceTool、`prompts/` |
+| 适配 | `pokemon_agent/direct/` + `mcpclient/` | BrainTool（8 个能力对象）、TraceTool、`prompts/`（direct）；GameTools、MemoryTool、MCP 远程门面（mcpclient） |
 | 模块 | `brain/` `world/` `memory/` `trace/` | 各自一个 Port，可整体拷走复用 |
 | 纯库 | `schemas/` `config.py` | 跨层契约与策略常量，任何层可直接 import |
 | 装配 | `build.py` | 唯一 new 具体实现的地方；按层各造一个 BrainTool |
-| world 场景支持 | `pokemon_agent/world/scene.py` `pokemon_agent/world/macros/` `pokemon_agent/world/items.py` `pokemon_agent/world/moves.py` | task 场合分类、接管宏与游戏道具/招式资料 |
-| 测评 | `evals/macros/` `evals/takeover_views/` | 宏行为与接管视图的离线测评 |
+| world 场景支持 | `pokemon_agent/world/scene.py` `pokemon_agent/world/scripts/` `pokemon_agent/world/items.py` `pokemon_agent/world/moves.py` | task 场合分类、脚本（含接管脚本）与游戏道具/招式资料 |
+| 测评 | `evals/tasks/macros/` `evals/tasks/takeover_views/` | 接管脚本行为与接管视图的离线测评 |
 
 ## 四、流程图
 

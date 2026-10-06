@@ -352,7 +352,13 @@ def judge_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
 
     前置条件：req.calls、req.why 非 None。
     """
-    return [event._replace(content={**event.content, "why": req.why}) for event in model_call(req)]
+    # why 只标注成功渲染的调用账——CALL_FAILED 的正文（link/exception/reason）不收 why，
+    # 硬塞会 ValidationError（335 首跑实锤：judge 调用 503 失败 → 整个 run 炸）。
+    return [
+        event._replace(content={**event.content, "why": req.why})
+        for event in model_call(req)
+        if event.kind != TraceKind.CALL_FAILED
+    ]
 
 
 def verify_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
@@ -472,9 +478,9 @@ def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 
 def action_sequence(action: Action) -> list[dict[str, Any]]:
-    """动作在正文里的形状：**只有结构化的 `sequence`**（`choose_verdict` 与 `press_key`
-    共用这一个函数——两者的关系是 **1:N**，`choose_verdict` 一次决策一条、记整条链；
-    `press_key` 每按一个键一条、记那一个键，形状一致才比对得上）。
+    """动作在正文里的形状：**只有结构化的 `sequence`**（`choose_verdict` 与 `act_call`
+    的 key 形共用这一个函数——两者的关系是 **1:N**，`choose_verdict` 一次决策一条、
+    记整条链；`act_call` key 形每按一个键一条、记那一个键，形状一致才比对得上）。
 
     **结构化的 `sequence` 必须记，不能只记 `describe()` 那行渲染文本**：
     "链平均多长、多少步用到了链"这类聚合要按段/按次统计，去解析渲染文本就得
@@ -484,7 +490,7 @@ def action_sequence(action: Action) -> list[dict[str, Any]]:
 
     **`action` / `segment_count` / `press_count` 不进正文**（0914 跟进）：三个
     都能从 `sequence` 推出来（`describe()` 是它的渲染文本、两个计数是它的
-    长度与次数和）——`press_key` 那条上后两个还恒等于 1。
+    长度与次数和）——key 形那条上后两个还恒等于 1。
     """
     return [segment.model_dump() for segment in action.segments()]
 
@@ -528,52 +534,46 @@ def choose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     content: dict[str, Any] = {
         "sequence": action_sequence(action),
     }
-    if action.macro is not None:
-        content["macro"] = action.macro.model_dump()
+    if action.script is not None:
+        content["script"] = action.script.model_dump()
     if req.human_note:
         content["human_note"] = req.human_note
     return Rendered(EventType.LLM_OUTCOME, TraceKind.CHOOSE_VERDICT, content)
 
 
-def press_key(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """把这一次按键拼成事件。
+def act_call(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """把这一次动作执行拼成事件——**content 按 key / script 两形**（P5，341→342）。
 
-    **和 `choose_verdict` 共用 `action_sequence`，但关系是 1:N**：`choose_verdict` 落在链首那一步、
-    记整条链；这里**每按一个键记一条**、记的就是那一个键（单段、`times=1`）。
+    - **key 形**（原 `press_key` 原样随迁）：`{sequence:[{name,times}]}`，每按一个键
+      记一条、记那一个键（单段、`times=1`）；
+    - **script 形**：`{script, args, ok, code, data, events}`——脚本终态报告原样进
+      正文（`events[]` 是 P6 object 记忆批量摄取的原料，留在账上才算"发生过"）。
 
-    **不记"结果"。** 按完之后世界变成什么样，答案是下一条 `OBSERVE` 事件里
-    那份完整观测。这一键的结局（`stop`）也不在这里——它按下去的那一刻还不存在，
-    落在同一步的 `AFTER_ACTION` 上。
+    和 `choose_verdict` 共用 `action_sequence`，但关系是 1:N：`choose_verdict` 落在
+    链首那一步、记整条链；这里每执行一个动作记一条。
 
-    前置条件：req.action 非 None。
+    **key 形不记"结果"。** 按完之后世界变成什么样，答案是下一条 `OBSERVE` 事件里
+    那份完整观测。script 形自带终态报告（`ok`/`code` 就是结果——脚本一次调用占
+    一步，内部 N 键不展开，报告就是这一步的完整结局）。
+
+    前置条件：req.action 非 None（key 形）或 req.report 非 None（script 形）。
     """
-    action: Action = req.action
-    return Rendered(EventType.ACT, TraceKind.PRESS_KEY, {"sequence": action_sequence(action)})
-
-
-def run_macro(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """把一次宏执行拼成事件：调用与结果、`summary`、逐步明细 `steps`（每次都记）。
-
-    标量是字符串（`reason_code` 在 `done` 时为空串），`args` / `steps` 直接放对象。
-
-    前置条件：req.macro 非 None。
-    """
-    outcome = req.macro
-    assert outcome is not None, "run_macro 账要带宏结果"
-    return Rendered(
-        EventType.ACT,
-        TraceKind.RUN_MACRO,
-        {
-            "scene": outcome.scene.value,
-            "macro": outcome.macro,
-            "args": dict(outcome.args),
-            "status": outcome.status.value,
-            "reason_code": outcome.reason_code.value if outcome.reason_code else "",
-            "reason": outcome.reason,
-            "summary": outcome.summary,
-            "steps": [step.model_dump() for step in outcome.steps],
-        },
-    )
+    action: Action | None = req.action
+    if action is not None and action.script is not None:
+        report = dict(req.report or {})
+        content: dict[str, Any] = {
+            "script": action.script.name,
+            "args": dict(action.script.args),
+            "ok": str(report.get("ok", False)).lower(),
+            "code": report.get("code", ""),
+        }
+        if "data" in report:
+            content["data"] = report["data"]
+        if "events" in report:
+            content["events"] = report["events"]
+        return Rendered(EventType.ACT, TraceKind.ACT_CALL, content)
+    assert action is not None, "act_call 账要带动作（键形 action 或脚本 report）"
+    return Rendered(EventType.ACT, TraceKind.ACT_CALL, {"sequence": action_sequence(action)})
 
 
 # ---- 记忆写：四本账**一个形状**（content 就是记录正文）----
@@ -860,10 +860,15 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """
     assert req.query is not None, "retrieve_node rendered without a query"
     assert req.refs is not None, "retrieve_node rendered without refs"
+    body: dict[str, object] = {"query": req.query, "refs": list(req.refs)}
+    if req.timings is not None:
+        # 只有 read_knowledge 带（0928 324：检索返回值随带分段耗时）；必填形状
+        # 仍是 `{query, refs}`，timings 是可选附加键，判据侧"出现了就核形状"。
+        body["timings"] = req.timings
     return Rendered(
         EventType.MEMORY_IO,
         req.kind,
-        {"query": req.query, "refs": list(req.refs)},
+        body,
         started_at=req.started_at,
         ended_at=req.ended_at,
     )

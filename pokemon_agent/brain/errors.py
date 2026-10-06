@@ -23,7 +23,7 @@
 **跟 `AgentError` 的分工**（两者不再有继承关系，靠 tool 层做桥）：
 `BrainError` 是"脑子内部这次没成"，`AgentError` 是"本项目预期内的失败"
 （含 tool 层的 `MaxRetriesExceeded`、world 的感知失败）。桥在
-`tools/brain_tool.py`：它 `except AttemptFailed`（brain 的）→ 重试 →
+`direct/brain_tool.py`：它 `except AttemptFailed`（brain 的）→ 重试 →
 耗尽抛 `MaxRetriesExceeded`（顶层的）。**翻译点唯一**，
 两个模块谁都不认识对方的异常根。
 """

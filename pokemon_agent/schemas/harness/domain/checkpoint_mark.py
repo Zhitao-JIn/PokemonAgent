@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class CheckpointMark(BaseModel):
-    """一次存档相关动作的要素。各本账取用的字段见 `tools/trace/render.py` 的渲染函数。"""
+    """一次存档相关动作的要素。各本账取用的字段见 `direct/trace/render.py` 的渲染函数。"""
 
     checkpoint_id: str = Field(
         default="", description="存档 id（只进 checkpoint_error 正文；存档 / 恢复账的 id 在 meta）"

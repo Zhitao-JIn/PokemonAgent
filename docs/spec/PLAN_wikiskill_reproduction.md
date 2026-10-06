@@ -241,9 +241,9 @@ def maintain_wiki(state: EvolutionState, runtime: Runtime[EvolutionDeps]) -> dic
 
 这是一次 LLM 调用，走 `BrainTool` 同一套重试循环（`BRAIN_MAX_ATTEMPTS`）。
 **Brain 不能持有状态**，所以这个"归纳"动作要以 `BrainTool` 上的一个新方法暴露
-（`BrainTool.induce_wiki` 或类似），prompt 住在 `tools/prompts/`。
+（`BrainTool.induce_wiki` 或类似），prompt 住在 `direct/prompts/`。
 
-> **设计决定 D6**：归纳的 prompt 模板与组装函数住 `tools/prompts/maintain_wiki.py`，
+> **设计决定 D6**：归纳的 prompt 模板与组装函数住 `direct/prompts/maintain_wiki.py`，
 > 与现有 `verify_and_summarize.py` / `decide.md` 同级。理由：AGENTS.md 六
 > "prompt 是规则，入参是素材"——归纳规则的写法属于 prompt，不该硬编码进 harness 节点。
 
@@ -392,7 +392,7 @@ WikiSkill 的 skill 层会**自动改规则**——这是个会自己进化的�
 |---|---|
 | `harness/evolution/` | 进化图（§2.1） |
 | `tools/skill_tool.py` | `SkillStorePort` 的门面，跨模块转换住这里 |
-| `tools/prompts/maintain_wiki.py`、`propose_skill.py` | 归纳与提案的 prompt |
+| `direct/prompts/maintain_wiki.py`、`propose_skill.py` | 归纳与提案的 prompt |
 | `wikiskill/raw.py`（或 `harness/` 下） | Raw 层只读编译视图（D1） |
 
 ### 5.4 独立模块

@@ -12,10 +12,11 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.schemas.harness import (
-    FromHarnessToMemoryToolQueryTaskMemoriesReq,
+    FromHarnessToMemoryToolRecallReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
+from pokemon_agent.schemas.memory import TaskMemory
 
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState
@@ -28,9 +29,12 @@ def retrieve_task_memories(
     deps = runtime.context
     ep, step = state.episode_id, state.step + 1  # 账面步号 = 圈号（0928 定稿）
     t0 = time.time()
-    memories = deps.memory.query_task_memories(
-        FromHarnessToMemoryToolQueryTaskMemoriesReq(episode_id=ep)
-    ).memories
+    resp = deps.memory.recall(
+        FromHarnessToMemoryToolRecallReq(query="", conditions={"episode_id": ep}, limit=10**6)
+    )
+    memories = [
+        TaskMemory.model_validate(item.payload) for item in resp.items if item.kind == "task"
+    ]
     t1 = time.time()
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(

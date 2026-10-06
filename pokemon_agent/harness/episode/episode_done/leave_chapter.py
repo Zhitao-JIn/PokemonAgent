@@ -17,8 +17,9 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.schemas.harness import (
-    FromHarnessToMemoryToolQueryEpisodeSummariesReq,
-    FromHarnessToMemoryToolStoreEpisodeSummaryReq,
+    FromHarnessToMemoryToolMemorizeRecord,
+    FromHarnessToMemoryToolMemorizeReq,
+    FromHarnessToMemoryToolRecallReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
@@ -48,9 +49,16 @@ def store_empty_chapter(
     """这一局在记忆里还没有记录就补一张空章（记 `write_episode_memory`），返回那条记录。"""
     assert episode_id, "store_empty_chapter() needs a non-empty episode_id"
     meta = {"source": source, "episode_id": episode_id, "task_id": "", "step": step}
-    existing = deps.memory.query_episode_summaries(
-        FromHarnessToMemoryToolQueryEpisodeSummariesReq(conditions={"episode_id": episode_id})
-    ).summaries
+    resp = deps.memory.recall(
+        FromHarnessToMemoryToolRecallReq(
+            query="", conditions={"episode_id": episode_id}, limit=10**6
+        )
+    )
+    existing = [
+        EpisodeMemory(**item.payload, markdown=item.content)
+        for item in resp.items
+        if item.kind == "episode"
+    ]
     if existing:
         return existing[0]
     chapter = EpisodeMemory(
@@ -65,9 +73,14 @@ def store_empty_chapter(
         quality_score=0.0,
         quality_rationale=CHAPTER_RATIONALE,
     )
-    stored = deps.memory.store_episode_summary(
-        FromHarnessToMemoryToolStoreEpisodeSummaryReq(memory=chapter)
-    ).memory
+    deps.memory.memorize(
+        FromHarnessToMemoryToolMemorizeReq(
+            records=[
+                FromHarnessToMemoryToolMemorizeRecord(kind="episode", payload=chapter.model_dump())
+            ]
+        )
+    )
+    stored = chapter
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.WRITE_EPISODE_MEMORY,

@@ -18,12 +18,12 @@
 | `DATAFLOW.md` | 端到端数据流：run → episode → task 三层、层间 IO 契约、记忆阶梯；**事件总表**（`TraceKind` → `EventType` → 生产位置 → 正文） | 加/删 `TraceKind`、改节点顺序、改 `meta`/`content` 形状 |
 | `brain/SPEC.md` | 纯决策层：`BrainPort` 七方法（含 decompose）、四个 provider 协议、brain 方言的数据形状、接线与选型 | 改 Port 签名、加减领域模型、换厂商接线 |
 | `harness/SPEC.md` | 控制循环：三张同构图的格与边、三套状态模型、三个 runtime（Run/Episode/Task）、人在环三档实现、trace 写入点 | 加/删节点或边、改状态字段、加一档 Reviewer/Planner |
-| `tools/SPEC.md` | 桥层：四张门面、信封清单、五个接线工厂、跨模块转换点、prompt 对照表 | 加/改门面方法、加信封、改工厂签名 |
+| `tools/SPEC.md` | 门面层（P7 拆分后，文件名沿旧）：`direct/`（brain/trace 半边）+ `mcpclient/`（memory/world 半边）两节；四张门面、信封清单、接线工厂、跨模块转换点、prompt 对照表 | 加/改门面方法、加信封、改工厂签名 |
 | `memory/SPEC.md` | 记忆子系统全貌：存储布局、混合检索算法、四类记录的派生关系、两个 provider | 改落盘形态、改检索阶段、加减记录类型 |
 | `memory/PORTS.md` | **契约层**：`MemoryStorePort` 的逐方法签名与边界核对表 | 改 Port 方法。与 `SPEC.md` 分工：这份讲契约，那份讲全貌 |
 | `memory/API.md` | **接口参考**：十二个出口、`MemoryStorePort` 十一方法、落盘形态与样例、tool 层十二方法 + 信封清单、最小用法、三套核对怎么跑 | 改方法签名、改缺省值、改前置条件、改落盘形态、改核对入口 |
-| `world/SPEC.md` | `WorldPort` 唯一实现：PyBoy 粘合、场景分类（`scene.py`）、宏（`macros/`）、道具与招式表（`items.py` / `moves.py`）、感知链路、自包含核对 | 改 Port、改按键/地形语义、改感知档位或接管宏 |
-| `evals/SPEC.md` | 宏、接管视图、读屏与端到端测评目录索引 | 增删测评分组或改变运行入口 |
+| `world/SPEC.md` | `WorldPort` 唯一实现：PyBoy 粘合、场景分类（`scene.py`）、脚本（`scripts/`，含接管脚本 `scripts/takeover/`）、道具与招式表（`items.py` / `moves.py`）、感知链路、自包含核对 | 改 Port、改按键/地形语义、改感知档位或接管脚本 |
+| `evals/SPEC.md` | 接管脚本、接管视图、读屏与端到端测评目录索引 | 增删测评分组或改变运行入口 |
 | `trace/SPEC.md` | 独立记账模块：`TracePort` 契约、六字段事件、落盘与读取、自包含核对 | 改事件形状、改落盘布局、改排序约定 |
 | `trace/API.md` | **接口参考**：五个出口、两个方法的签名与前置/后置/失败模式、落盘 JSON 样例、最小用法、三套核对怎么跑。与 `SPEC.md` 分工：这份讲怎么调，那份讲为什么 | 改方法签名、改缺省值、改前置条件、改核对入口 |
 | `schemas/SPEC.md` | 跨层契约：信封清单与命名规则、domain 实体归属、记忆一族的形状 | 加/改/删信封，改归属登记 |

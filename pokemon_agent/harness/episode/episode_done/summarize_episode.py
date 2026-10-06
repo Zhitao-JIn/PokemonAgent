@@ -12,7 +12,8 @@ from langgraph.runtime import Runtime
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolSummarizeReq,
-    FromHarnessToMemoryToolStoreEpisodeSummaryReq,
+    FromHarnessToMemoryToolMemorizeRecord,
+    FromHarnessToMemoryToolMemorizeReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
@@ -72,9 +73,16 @@ def summarize_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) 
     )
 
     # 步骤 2：落库记账，交出 reason 与记忆。
-    stored = deps.memory.store_episode_summary(
-        FromHarnessToMemoryToolStoreEpisodeSummaryReq(memory=result.episode_memory)
-    ).memory
+    deps.memory.memorize(
+        FromHarnessToMemoryToolMemorizeReq(
+            records=[
+                FromHarnessToMemoryToolMemorizeRecord(
+                    kind="episode", payload=result.episode_memory.model_dump()
+                )
+            ]
+        )
+    )
+    stored = result.episode_memory
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.WRITE_EPISODE_MEMORY, meta=meta, memory=stored

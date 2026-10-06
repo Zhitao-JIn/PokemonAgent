@@ -10,7 +10,7 @@ memory 的能力只有三块：**按 uuid 落盘记录**、**维护倒排索引*
 
 - 不做语义判定。"这一键是对门说话还是换图"由 harness 判定
   （`harness/episode/store/store_object_semantic_memory/rules.py`），摘要蒸馏由 brain 做
-  （`tools/brain_tool.py::BrainTool.summarize()`），成没成由 harness 盖章——memory 只保管交进来的
+  （`direct/brain_tool.py::BrainTool.summarize()`），成没成由 harness 盖章——memory 只保管交进来的
   数据结构与索引，按键原样读写（`AGENTS.md` 四·分层原则 1）。
 - 字段叫什么、值怎么序列化、`payload` 里装什么，对本层**完全不透明**：
   `LocalMemoryStore.put(metadata, payload, text)` 只认 `dict[str, str]` + `dict` + `str` 裸字段；
@@ -37,7 +37,7 @@ pokemon_agent/memory/
 ## 三、存储布局
 
 一个 kind = `memory/` 下一个子文件夹 = 一个 `LocalMemoryStore` 实例。`MemoryTool.__init__`
-（`tools/memory_tool.py`）一次造五个：`step_memory`（ActMemory）/ `task_memory` / `object_memory` / `episode_memory` / `knowledge_memory`。
+（`mcpclient/memory_local.py`）一次造五个：`step_memory`（ActMemory）/ `task_memory` / `object_memory` / `episode_memory` / `knowledge_memory`。
 
 ```
 memory/<kind>/
@@ -180,12 +180,12 @@ API：检索发生在 episode 内的 retrieve 节点里（`harness/episode/retri
 
 **入边（谁依赖 memory）**：
 
-- `tools/memory_tool.py` 是唯一调用方：模块顶部 `from pokemon_agent.memory import EmbeddingProviderPort, LocalMemoryStore, RerankerProviderPort`
+- `mcpclient/memory_local.py` 是唯一调用方：模块顶部 `from pokemon_agent.memory import EmbeddingProviderPort, LocalMemoryStore, RerankerProviderPort`
   造五个 store；`MemoryTool.build()` 内 `from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider`
   造两个 provider（接线知识收在 tool 层，装配点不越过）。`build.py` 对 memory **零 import**，
   只调 `MemoryTool.build(...)` 递裸字段。
 - `harness/**`、`brain/**`、`schemas/**`、`world/**` 均不 import memory 包；`schemas.memory` 的五类形状由
-  `tools/memory_tool.py` 构造与解析。核对脚本 `experiment/real_check/check_memory.py`、`check_memory_roundtrip.py` 走 `MemoryTool.build()`。
+  `mcpclient/memory_local.py` 构造与解析。核对脚本 `experiment/real_check/check_memory.py`、`check_memory_roundtrip.py` 走 `MemoryTool.build()`。
 
 ## 八、当前状态与已知缺口
 

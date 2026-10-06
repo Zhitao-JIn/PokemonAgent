@@ -1,4 +1,4 @@
-"""tools/interface 包统一出口：`tools` 层对外的端口协议——三张整口
+"""direct/interface 包统一出口：`tools` 层对外的端口协议——三张整口
 （`GameToolPort`/`MemoryToolPort`/`TraceToolPort`）＋ brain 那族的八张单方法口
 （`PlanPort`/`ChoosePort`/`DecomposePort`/`JudgePort`/`ReflectPort`/`VerifyPort`/`SummarizePort`/
 `TaskSummarizePort`，0922 185 从 `BrainToolPort` 总口拆出）——harness 认识的工具门面。
@@ -6,10 +6,10 @@
 它们原来跟实现平级住在 `tools/ports.py`（更早以前在顶层
 `pokemon_agent/interfaces/tools/`）。搬进 `interface/` 是因为**出口**而不是
 因为文件放哪一级：`tools/__init__.py` 这个统一出口必须导出四个插件，而
-`pokemon_agent.tools.interface` 是 `pokemon_agent.tools` 的子模块——Python
+`pokemon_agent.direct.interface` 是 `pokemon_agent.tools` 的子模块——Python
 要 import 子模块就必先把父包的 `__init__` 跑完，于是"只要有人从
 `pokemon_agent.tools` 拿一张协议，四个插件全被请来"。分家之后
-`from pokemon_agent.tools.interface import GameToolPort` 不再拖任何实现。
+`from pokemon_agent.direct.interface import GameToolPort` 不再拖任何实现。
 
 **立即加载，不需要懒加载**：这四张协议只依赖 `schemas.harness` 的信封类型
 （实测信封侧零 `tools.*`），`schemas.harness` 对 `tools/` 没有反向依赖——

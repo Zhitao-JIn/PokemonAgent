@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pokemon_agent.tools.interface import (
+from pokemon_agent.direct.interface import (
     ChoosePort,
     GameToolPort,
     JudgePort,

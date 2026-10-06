@@ -58,8 +58,8 @@ schemas/
   - `SummarizeReq` / `SummarizeTaskReq` 带 `verdicts`（正负标注）、`termination`、`acts_used`；`success` 是推出的属性。
   - `PlanOnceReq` 带 `human_note` 与 `last_judge`（上一次 run 判定及人的表态）。
   - `JudgeReq` 没有 `human_note`：判定在审格，人只表态、不带话重问判定员。
-- **往 `game_tool`**：`Reset`、`Execute`（`ExecuteResp.outcome`：宏的 `MacroOutcome`，按键为空）、`Evolve`、`GetActionSpace`、`PerceiveOnce`、`PerceiveTask`。
-- `ChooseOnceReq.last_macro`：上一宏结果的一句话（`MacroOutcome.describe()`），prompt 渲染在观测之后；上一步不是宏时为空。
+- **往 `game_tool`**：`Reset`、`Execute`（`ExecuteResp.report`：脚本的终态报告；`event`：按键的裸事件）、`Evolve`、`GetActionSpace`、`PerceiveOnce`、`PerceiveTask`。
+- `ChooseOnceReq.last_result`：上一脚本结果的一句话（调用 → 结局码：摘要或原因，`act` 写进 `TaskState.last_result`），prompt 渲染在观测之后；上一步不是脚本时为空。
 - **往 `memory_tool`**：ActMemory（`StoreActMemory` / `QueryActMemories` / `QueryRecentActMemories`）、
   TaskMemory（`StoreTaskMemory` / `QueryTaskMemories`）、EpisodeMemory（`StoreEpisodeSummary` / `QueryEpisodeSummaries`）、
   物件（`AppendObjectEvents` / `QueryObjectEvents` / `QueryObjectEventsAt`）、知识（`StoreKnowledge` / `QueryKnowledge`）、
@@ -71,7 +71,7 @@ schemas/
   跳 B（后端 ↔ 网页）在 `schemas/review_backend/`。见 `docs/web_reviewer/spec.md` §3。
 - **往 `trace_tool`**：`FromHarnessToTraceToolAppendReq`——`kind` + `meta`（调用方交四件：`source`/`episode_id`/`task_id`/`step`；`run_id`/`branch` 由落盘层盖）+ 各 kind 取用的可选字段
   （`calls` / `obs` / `entry` / `verdicts` / `outcome_task` / `goal` / `task_entry` / `abandoned` / `audit` / `tasks` /
-  `termination` / `fail_streak` / `updates` / `macro`（`run_macro` 的 `MacroOutcome`）…）。
+  `termination` / `fail_streak` / `updates` / `report`（`act_call` script 形的终态报告）…）。
 - **非门面**：`ModelCall.py`（`ModelCall` / `ModelCallLog`）、`RunResp.py`（`RunResp`：outcomes / total / succeeded / success_rate / termination；混入 `Settled`）。
 
 **层间交接不走信封**：run → episode → task 的交接是 `domain/` 的 `EpisodeInput/Output`、`TaskInput/Output`
@@ -135,4 +135,4 @@ schemas/
 - **有 Req 无 Resp 的信封**是约定（返回 `None` 就没有 Resp），不是遗漏。
 
 - **`schemas/harness/__init__.py` 的 `__all__` 手工维护**：加一封信要同时改 import 与 `__all__`。
-- **磁盘上 ActMemory 的集合名仍叫 `step_memory`**（`tools/memory_tool.py`），类名已是 `ActMemory`。
+- **磁盘上 ActMemory 的集合名仍叫 `step_memory`**（`mcpclient/memory_local.py`），类名已是 `ActMemory`。

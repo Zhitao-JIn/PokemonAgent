@@ -5,7 +5,7 @@
 > `write_task_memory` / `summarize_task_call`，`read_step`/`write_step` 改名 `read_act_memory`/`write_act_memory`，
 > `judge_verdict` / `plan_verdict` / `episode_end` / `verify_verdict` 的正文也变了。**以 `DATAFLOW.md` 第四节为准**。
 
-> 生成方式：每条都调用 `tools/trace/render.py` 里对应 kind 的渲染函数，
+> 生成方式：每条都调用 `direct/trace/render.py` 里对应 kind 的渲染函数，
 > 封套（uuid / ts / meta / content 的字符串化）按 `trace/store.py` 的落盘规则拼——
 > **形状与代码逐字一致，不是手写的**。
 >
@@ -627,12 +627,12 @@
 }
 ```
 
-## `press_key`（type=`act`）
+## `act_call`（type=`act`；P5 前叫 `press_key`，样例为 key 形）
 
 ```json
 {
   "uuid": "01a0a4a7-4608-73a2-ace2-c30947a60848",
-  "kind": "press_key",
+  "kind": "act_call",
   "type": "act",
   "ts": 1789468821.0,
   "meta": {

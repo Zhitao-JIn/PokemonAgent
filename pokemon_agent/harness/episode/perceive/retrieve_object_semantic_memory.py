@@ -12,13 +12,15 @@ import time
 from typing import Any
 
 from langgraph.runtime import Runtime
+from pydantic import TypeAdapter
 
+from pokemon_agent.direct.prompts.object_render import render_object_events
 from pokemon_agent.schemas.harness import (
-    FromHarnessToMemoryToolQueryObjectEventsReq,
+    FromHarnessToMemoryToolRecallReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.tools.prompts.object_render import render_object_events
+from pokemon_agent.schemas.memory import ObjectFactEvent
 
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState
@@ -44,11 +46,19 @@ def retrieve_object_semantic_memory(
     if place is None:
         events: list = []
     else:
-        events = deps.memory.query_object_events(
-            FromHarnessToMemoryToolQueryObjectEventsReq(
-                run_id=state.run_id, map_id=place.map_id, before_step=before_step
+        resp = deps.memory.recall(
+            FromHarnessToMemoryToolRecallReq(
+                query="",
+                conditions={"run_id": state.run_id, "map_id": str(place.map_id)},
+                limit=10**6,
             )
-        ).events
+        )
+        _adapter = TypeAdapter(ObjectFactEvent)
+        events = [
+            _adapter.validate_python(item.payload) for item in resp.items if item.kind == "object"
+        ]
+        if before_step is not None:
+            events = [e for e in events if e.step < before_step]
     t1 = time.time()
     known = render_object_events(events)
     # `refs` 记每条事件的物体格（`PlaceInWorld.key`，形如 `12:13:8`）。

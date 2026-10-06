@@ -38,7 +38,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from pokemon_agent.brain import Goal, Task
 from pokemon_agent.schemas.harness import TraceEvent
-from pokemon_agent.schemas.harness.domain import EpisodeOutput
+from pokemon_agent.schemas.harness.domain import RunResult
 
 from .run_entry import new_run
 from .runtime import RunRuntime
@@ -76,8 +76,9 @@ class RunHarness:
         run_goal: Goal | None = None,
         *,
         checkpoint_only: bool = False,
-    ) -> tuple[list[EpisodeOutput], int, int, float]:
-        """跑完一个 run，返回 run 级结算 `(outcomes, total, succeeded, success_rate)`。
+        sample_id: str = "",
+    ) -> RunResult:
+        """跑完一个 run，返回结构化结算 `RunResult`（V8）。
 
         编排（RUN_START → 进图 → 取结算/RUN_END，异常补 RUN_ERROR）在
         `run_entry.new_run`——本方法只是一道**外部调用面**。
@@ -86,6 +87,7 @@ class RunHarness:
         （`run_entry.initial_plan`），调用方不必认识那张表。
         `run_goal` 不给时由目标表文字拼一个（`run_entry.default_run_goal`）。
         `checkpoint_only`：只存 run 级存档就返回，不进图（见 `run_entry.new_run`）。
+        `sample_id`：eval 侧样本标识，原样带回 `RunResult.sample_id`（非 eval 缺省空串）。
         """
         return new_run(
             self.deps,
@@ -94,6 +96,7 @@ class RunHarness:
             goals=goals,
             run_goal=run_goal,
             checkpoint_only=checkpoint_only,
+            sample_id=sample_id,
         )
 
     # ---- 读账（薄委托给 deps.trace）----

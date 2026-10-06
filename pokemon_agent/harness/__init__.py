@@ -13,7 +13,8 @@
   上级嵌套持有下级；`trace` / `memory` / `reviewer` 同一实例跨级共享。
 - `interface/`：harness 真正需要外面给的东西——`Reviewer`（插话 + 审）与
   plan 那一版的产出模型（`PlannerOutcome` / `GoalUpdate`）。
-- `console_reviewer.py` / `file_reviewer.py` / `null_reviewer.py`：`Reviewer` 的三种实现。
+- `console_reviewer.py` / `null_reviewer.py` / `web_reviewer.py`：`Reviewer` 的三种实现
+  （文件信箱那一版 `file_reviewer.py` 已在 Web 落地后删除）。
 
 全貌见 `docs/spec/OVERVIEW.md` 与 `docs/spec/harness/SPEC.md`。本文件是统一出口。
 """

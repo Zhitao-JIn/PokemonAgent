@@ -1,27 +1,27 @@
 """world 自己的 prompt 素材：**"拥有这次 LLM 调用的那个类"自己的东西**。
 
-**它为什么不在 `tools/prompts/`**（0913 定案）：`tools/` 是桥层——它的存在意义是
+**它为什么不在 `direct/prompts/`**（0913 定案）：`tools/` 是桥层——它的存在意义是
 "被 harness 依赖、去依赖各模块"。`perceive_screen` 这条链跟 `tools/` 的另外三份
 （`decide_action`/`judge_success`/`run_plan`/`verify`/`summarize`）不是一回事：
-那几份由 harness/brain 的链路消费，留在 `tools/prompts/` 是对的；
+那几份由 harness/brain 的链路消费，留在 `direct/prompts/` 是对的；
 **这一份的消费者是 `PyBoyWorld`**——它不经过 `Brain`、也不经过任何 Harness
 节点，是 `PyBoyWorld` 自己 `load()` 并渲染的。
 
-于是 `world → tools.prompts` 曾经是一条**真实的环**（`tools/prompts/__init__.py`
+于是 `world → tools.prompts` 曾经是一条**真实的环**（`direct/prompts/__init__.py`
 → `decide_action.py` → `pokemon_agent.world`），现在不炸只是因为
 `world/__init__.py` 的 `interface/` 是 eager、`pyboy_world` 是 lazy 恰好错开。
 按 P1「把 `world/` 拷进另一个项目，感知还跑得起来吗」这条判据，拷走之后
 `PyBoyWorld.__init__` 第一句就 `ImportError`——**跑不起来**。所以素材跟着
 world 走，这条出边就此归零。
 
-**跟 `tools/prompts/` 的关系**：两份读取器**各自声明、互不 import**——
+**跟 `direct/prompts/` 的关系**：两份读取器**各自声明、互不 import**——
 与 `world/interface/domain/vision_describe.py` 那两封副本同一条判据（P6
 "两边各持一份，漂移就是运行时错误"）。语义逐字对齐（`string.Template`
 的 `$var`、递归找 `<name>.md`、重名当场炸），但**不是同一份代码**：
 world 拷走后不该欠 `tools/` 任何东西。
 
 **为什么用 `string.Template` 而不是 `str.format`**：prompt 里必然有 JSON 示例，
-`format` 会把 `{` 当占位符（这跟 `tools/prompts/` 的取舍同源）。
+`format` 会把 `{` 当占位符（这跟 `direct/prompts/` 的取舍同源）。
 """
 
 from __future__ import annotations

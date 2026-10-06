@@ -9,8 +9,8 @@
 - **无状态**（铁律 1）：`Brain.__init__` 只存注入的四个 provider，没有跨步骤的实例变量；每个方法的全部输入都来自参数。
 - **只认自己声明的契约**（铁律 2）：不 import `harness` / `world` / `memory` / `trace` / `tools`；唯一横向依赖是 `brain/interface/llm_provider.py` 的两个 provider 协议与 `brain/errors.py` 的 `BrainError` 家族——后者**不继承 `AgentError`**。
 - **收裸字段**（铁律 3）：入参只有 `str` / `Sequence[str]`，不认识任何 `*Req` 信封；需要结构的三处是 `keys`（校验动作合法性）、`images`（base64 PNG）、`entries`（`verdicts` 的 `index` 落回它的下标）。
-- **prompt 是规则，入参是素材**：怎么判、怎么想、怎么规划全在调用方渲染好的 `prompt` 里，`Brain` 不拼 prompt、不知道 `tools/prompts/` 存在；出参是 brain 自己的方言，唯一转换点是 `tools/brain_tool.py`。
-- **七个方法都是"问一次"**（`reflect` 不调模型）：内部不重试，失败抛 `AttemptFailed` 家族并携带这次尝试的 `ModelCall`；重试循环住 `tools/brain_tool.py::_attempt_loop`，预算住 `pokemon_agent/config.py`（`BRAIN_MAX_ATTEMPTS`）。
+- **prompt 是规则，入参是素材**：怎么判、怎么想、怎么规划全在调用方渲染好的 `prompt` 里，`Brain` 不拼 prompt、不知道 `direct/prompts/` 存在；出参是 brain 自己的方言，唯一转换点是 `direct/brain_tool.py`。
+- **七个方法都是"问一次"**（`reflect` 不调模型）：内部不重试，失败抛 `AttemptFailed` 家族并携带这次尝试的 `ModelCall`；重试循环住 `direct/brain_tool.py::_attempt_loop`，预算住 `pokemon_agent/config.py`（`BRAIN_MAX_ATTEMPTS`）。
 
 ## 二、目录结构
 
@@ -71,15 +71,15 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 
 | 形状 | 关键字段 | 谁产出 | 谁消费 |
 |---|---|---|---|
-| `Action` / `ActionSegment` | `sequence: list[ActionSegment]` 与 `macro: MacroCall \| None` 恰好一个非空；段有 `name` / `times`（默认 1） | `Brain.choose` | 世界执行（经 tool/harness 转换）、trace / 记忆 |
-| `MacroCall` / `MacroSignature` / `MacroArg` | 调用：`name` + `args: dict[str, str \| int]`，`describe()` 写成 `buy(POKé BALL, 5)`；签名：`name` + `params`（`name` / `type`∈{str,int} / `required`） | 调用由 `Brain.choose` 产；签名由 tool 从 world 的 `MacroSpec` 转来 | 世界执行宏、trace / 记忆 |
+| `Action` / `ActionSegment` | `sequence: list[ActionSegment]` 与 `script: ScriptCall \| None` 恰好一个非空；段有 `name` / `times`（默认 1） | `Brain.choose` | 世界执行（经 tool/harness 转换）、trace / 记忆 |
+| `ScriptCall` / `ScriptSignature` / `ScriptArg` | 调用：`name` + `args: dict[str, str \| int]`，`Action.describe()` 写成 `script:buy_item(item=POKé BALL, count=5)`；签名：`name` + `params`（`name` / `type`∈{str,int} / `required`） | 调用由 `Brain.choose` 产；签名由 tool 从 world 的脚本条目 `ActionEntry` 转来 | 世界执行脚本、trace / 记忆 |
 | `Goal` / `Task` | `goal` + `criteria`；`task_id` / `goal` / `success_criteria` / `max_steps` / `initial_state_hint` | 任务来自 `experiment/tasks.py`，经 harness 递给大脑 | harness 渲染进 prompt、`world` 的 `reset()` |
 | `RunPlan`（内嵌 `PlanGoal` / `PlanUpdate`） | `push_goals`、`updates`、`why`（不再有 `done`：停判归 review_and_judge）；`PlanGoal` 有 `goal` / `success_criteria` / `max_steps`（task 数上限），`PlanUpdate` 有 `index` / `status` / `note` | `Brain.plan` | harness 的目标表（`task_id` 由 harness 生成） |
 | `Reflection` | `before`、`rationale`、`action_text`、`after` | `Brain.reflect` | tool → step 记忆 |
 | `Decomposition`（内嵌 `PlannedTask`） | `tasks`（`goal` / `success_criteria` / `max_steps`=键数上限，至少一条）、`why` | `Brain.decompose` | harness 编 `task_id` 后成为 `Task` 链 |
 | `EpisodeSummary` | `summary`、`reason`（LLM 写的结论说明）、`quality_score`（0.0–1.0）、`quality_rationale`、`markdown` 等 | `Brain.summarize` | tool 配五个来源章 → `EpisodeMemory` |
 | `VerifyVerdict` | `index`、`positive`（符合 goal = 正样本）、`why` | `Brain.verify` | 正负两组都交给 summarize 当参考，不过滤 |
-| `ModelCall` | `payload: dict[str, str]`、`error_kind`、`error` | `Brain` 七个方法 | `tools/brain_tool.py::_adopt()` |
+| `ModelCall` | `payload: dict[str, str]`、`error_kind`、`error` | `Brain` 七个方法 | `direct/brain_tool.py::_adopt()` |
 | 六个结果袋：`ChooseResult` / `JudgeResult` / `PlanResult` / `DecomposeResult` / `VerifyResult` / `SummarizeResult` | 硬性字段（`action` / `done`+`why` / `plan` / `decomposition` / `verdicts` / `summary`）+ `calls` + `extra` | `Brain` 对应方法 | `BrainTool` 对应方法 |
 
 **关键不变式：**
@@ -88,7 +88,7 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 - **一次模型调用 = 一条账**："试了几次" = `len(calls)`，账里没有 `attempt` 字段；`ModelCall.payload` 的 `ok` 一律小写 `"true"` / `"false"`，`error_kind` 空串表示这次成功。
 - `RunPlan` 用**表内序号**寻址（`PlanUpdate.index`），不认 `task_id`；`status` 只允许 `"pending"` / `"abandoned"`，`completed` / `failed` 是 harness 从结算推导的机械事实。
 - `Action` / `ActionSegment` **不带任何上限常量**：段数、次数的上限是调用方（tool/harness）的校验策略。
-- `choose(prompt, keys, images, macros)`：模型输出 `{"action": 名字, 参数…}`；名字在 `keys` 里成单键，在 `macros` 里按签名收参数成 `MacroCall`（`int` 收整数或纯数字串，签名外字段忽略）。只查名字、参数齐全与类型，**不做语义校验**（钱够不够、道具在不在归 world 的宏）；不合法抛 `ParseFailure` / `IllegalAction`，走现有重试。
+- `choose(prompt, keys, images, scripts)`：模型输出 `{"action": 名字, "args": {参数…}}`（参数平铺在顶层也收）；名字在 `keys` 里成单键，在 `scripts` 里按签名收参数成 `ScriptCall`（`int` 收整数或纯数字串，签名外字段忽略）。只查名字、参数齐全与类型，**不做语义校验**（钱够不够、道具在不在归 world 的脚本）；不合法抛 `ParseFailure` / `IllegalAction`，走现有重试。
 - `EpisodeSummary` **没有 `filename`**，`Reflection` **没有 `episode_id` / `step`**——轨迹坐标由调用方盖章。
 
 ## 五、依赖边界
@@ -103,12 +103,12 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 
 | 位置 | 引了什么 |
 |---|---|
-| `pokemon_agent/tools/brain_tool.py` | 顶层：`Action` / `ActionSegment` / `BrainPort` / `EpisodeSummary` / `LearnedKnowledge` / `Reflection`、`errors` 的 `AttemptFailed` / `ParseFailure` / `ProviderRejected`；函数体内：`Brain` / `BrainLlmConfig` / `build_llm_providers` |
-| `pokemon_agent/tools/vision_factory.py` | 函数体内 `brain.providers.provider_for`（给 `world` 造感知 provider） |
-| `pokemon_agent/tools/game_tools.py` | `brain.errors.ProviderRejected` |
+| `pokemon_agent/direct/brain_tool.py` | 顶层：`Action` / `ActionSegment` / `BrainPort` / `EpisodeSummary` / `LearnedKnowledge` / `Reflection`、`errors` 的 `AttemptFailed` / `ParseFailure` / `ProviderRejected`；函数体内：`Brain` / `BrainLlmConfig` / `build_llm_providers` |
+| `pokemon_agent/brain/vision_factory.py` | 函数体内 `brain.providers.provider_for`（给 `world` 造感知 provider） |
+| `pokemon_agent/mcpclient/game_tools.py` | `brain.errors.ProviderRejected` |
 | `pokemon_agent/build.py` | **零 import**——只在注释里提型号名与工厂路径 |
 
-**数据形状引用（不是实现依赖）**：`harness/**`（`Action` / `ActionSegment` / `Goal` / `Task` / `RunPlan`）、`schemas/harness/communication/**`（`Goal` / `Action` / `RunPlan` / `EpisodeSummary` / `VerifyVerdict` / `Task`）、`pokemon_agent/tools/prompts/decide_action.py`、`pokemon_agent/tools/trace/render.py`、`tests/**`。`world/**` 对 brain **零 import**——它只在 docstring 里提 `QwenProvider` 被当 `VisionProvider` 用，那条依赖由 tool 层接线。
+**数据形状引用（不是实现依赖）**：`harness/**`（`Action` / `ActionSegment` / `Goal` / `Task` / `RunPlan`）、`schemas/harness/communication/**`（`Goal` / `Action` / `RunPlan` / `EpisodeSummary` / `VerifyVerdict` / `Task`）、`pokemon_agent/direct/prompts/decide_action.py`、`pokemon_agent/direct/trace/render.py`、`tests/**`。`world/**` 对 brain **零 import**——它只在 docstring 里提 `QwenProvider` 被当 `VisionProvider` 用，那条依赖由 tool 层接线。
 
 ## 六、接线与选型
 
@@ -124,7 +124,7 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 | `plan` | `"doubao-seed-2-1-pro-260628"` | `plan()` |
 | `max_tokens` | `25600` | 四个 provider 共用 |
 
-厂商名只出现在默认值里；"哪条链路该接哪家"的知识在 `brain/build_llm_providers.py`。调用方是 `tools/brain_tool.py::BrainTool.build(...)`——**按需**：只传该层要的型号名，未传的位置 provider 为 `None`（0922 185）。它内部构造 `BrainLlmConfig`，装配点因此对 brain 零 import。
+厂商名只出现在默认值里；"哪条链路该接哪家"的知识在 `brain/build_llm_providers.py`。调用方是 `direct/brain_tool.py::BrainTool.build(...)`——**按需**：只传该层要的型号名，未传的位置 provider 为 `None`（0922 185）。它内部构造 `BrainLlmConfig`，装配点因此对 brain 零 import。
 
 `brain/providers.py` 的三个厂商类（都继承 `_MultimodalMixin` + `_OpenAICompatibleBase`，`complete()` 与 `describe()` 都有）：
 
@@ -134,7 +134,7 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 | `ArkProvider` | `https://ark.cn-beijing.volces.com/api/v3` | `("ARK_API_KEY",)` | 无（必须显式传带日期后缀的豆包型号名） |
 | `DeepSeekProvider` | `https://api.deepseek.com` | `("DEEPSEEK_API_KEY",)` | `"deepseek-flash"` |
 
-- `provider_for(model, *, temperature, max_tokens=None, timeout=45)` 按 `_PROVIDER_PREFIXES`（顺序 `deepseek` → `doubao` → `qwen`）选类，是"型号名 → 厂商类"的唯一判据；本模块的工厂与 `tools/vision_factory.build_vision_provider()` 共用它。
+- `provider_for(model, *, temperature, max_tokens=None, timeout=45)` 按 `_PROVIDER_PREFIXES`（顺序 `deepseek` → `doubao` → `qwen`）选类，是"型号名 → 厂商类"的唯一判据；本模块的工厂与 `brain/vision_factory.build_vision_provider()` 共用它。
 - `_disable_thinking_payload()` 必须被子类覆盖：Qwen 用扁平布尔 `{"enable_thinking": False}`，Ark 与 DeepSeek 用嵌套对象 `{"thinking": {"type": "disabled"}}`。
 - 一次调用 = 一次 HTTP 请求，provider **不重试、不重发**；4xx → `ProviderRejected`（调用方立即耗尽预算），5xx / 网络层 / 单请求总时长超闸 → `ToolTimeout`。
 - 密钥只从环境变量读；`config()` 自报配置进 run manifest，不含 key。

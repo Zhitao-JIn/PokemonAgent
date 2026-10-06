@@ -4,7 +4,7 @@
 - **常量** `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT`：给 `game_tools.py` 构造
   `ActionSpace` 用（按当前 overlay 选按键说明、挂地图/连按提示）。
 - **函数** `build_prompt(req: FromHarnessToBrainToolChooseOnceReq)`（接管场合换用
-  同目录的 `decide_macro.md`：视图 + 宏签名 + 上一宏结果）/
+  同目录的 `decide_takeover.md`：视图 + 脚本签名 + 上一脚本结果）/
   `retry_prompt(req: RetryPromptReq)`：给调用方（`BrainTool`）用，
   各自对应一次决策请求的"首次组装"和"重试追加"，**都只收一个 req 参数**
   ——`build_prompt` 收 harness 信封（素材在那里才拿得到），`retry_prompt`
@@ -124,7 +124,7 @@ REPEAT_HINT = load("repeat_hint").text
 # ---- decide_action.md 本体：加载 + 拼装 + 渲染（给 Brain 用）----
 
 _TEMPLATE = load("decide_action")
-_MACRO_TEMPLATE = load("decide_macro")
+_TAKEOVER_TEMPLATE = load("decide_takeover")
 
 
 def _render_goals(goals: list[Goal]) -> str:
@@ -178,11 +178,11 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     它是覆盖指令，紧贴"现在输出 JSON"，压过上面所有规则）。
     """
     goals, obs, space = req.goals, req.obs, req.space
-    assert space.names or space.macros, "build_prompt() got an empty action space"
+    assert space.names or space.entries, "build_prompt() got an empty action space"
     assert not obs.done, "build_prompt() called on a finished episode"
     assert goals, "build_prompt() got an empty goal stack"
-    if space.macros:
-        return _build_macro_prompt(req)
+    if not space.names:
+        return _build_takeover_prompt(req)
     facts = "\n".join(f"- {k}: {v}" for k, v in obs.facts.items()) or "（无）"
     # `req.memories` 是本局全量、一键一条；逐条 `render()` 会把相邻两帧各贴一遍
     # （上一条的「之后变成」就是下一条的「当时看到」）。`render_sequence()` 逐条渲、
@@ -191,6 +191,15 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     actions = "\n".join(
         f"- {name}: {space.descriptions.get(name, '（无说明）')}" for name in space.names
     )
+    # 脚本条目（P5）：与键同列在"可用动作"一节，签名 + 说明 + 适用场合。
+    # 选择方式与键完全同权：输出 {"action": "<脚本名>", "args": {...}}。
+    script_lines = [
+        f"- {e.signature()}：{e.description}"
+        for e in space.entries
+        if e.kind == "script" and space.enabled(e.name)
+    ]
+    if script_lines:
+        actions += "\n\n机械脚本（一次调用做完一串按键，占一步）：\n" + "\n".join(script_lines)
     if space.note:
         actions += f"\n\n{space.note}"
     return append_human_note(
@@ -211,38 +220,39 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
             actions=actions,
             max_segments=MAX_SEGMENTS,
             read_screen=READ_SCREEN,
-            last_macro=f"\n## 上一个宏的结果\n\n{req.last_macro}\n" if req.last_macro else "",
+            last_result=f"\n## 上一个脚本的结果\n\n{req.last_result}\n" if req.last_result else "",
         ),
         req.human_note,
     )
 
 
-def _build_macro_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
-    """接管场合的决策 prompt（`decide_macro.md`）：视图、上一宏结果、宏签名与说明。
+def _build_takeover_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
+    """接管场合的决策 prompt（`decide_takeover.md`）：视图、上一脚本结果、脚本签名与说明。
 
-    宏签名与说明原样取自 `MacroSpec`（world 定义），模板只写怎么选。
+    签名与说明原样取自脚本条目（world 定义），模板只写怎么选。
     """
     obs, space = req.obs, req.space
     view = obs.takeover.render() if obs.takeover is not None else (obs.facts.screen or "（无）")
-    macros = "\n".join(f"- {m.signature()}：{m.description or '（无说明）'}" for m in space.macros)
+    entries = [e for e in space.entries if e.kind == "script" and space.enabled(e.name)]
+    scripts = "\n".join(f"- {e.signature()}：{e.description or '（无说明）'}" for e in entries)
     params = "\n".join(
-        f"  - {m.name}.{p.name}：{p.description}"
-        for m in space.macros
-        for p in m.params
+        f"  - {e.name}.{p.name}：{p.description}"
+        for e in entries
+        for p in e.params
         if p.description
     )
     if params:
-        macros += f"\n\n参数说明：\n{params}"
+        scripts += f"\n\n参数说明：\n{params}"
     return append_human_note(
-        _MACRO_TEMPLATE.render(
+        _TAKEOVER_TEMPLATE.render(
             scene=obs.scene.value,
             goals=_render_goals(req.goals),
             knowledge=req.knowledge or "（没有检索到相关知识）",
             view=view,
-            last_macro=req.last_macro or "（这是本场合的第一个宏）",
+            last_result=req.last_result or "（这是本场合的第一条脚本）",
             memories="\n\n".join(render_sequence(req.memories)) or "（无相关记忆）",
             episode_memories=req.episode_memories or "（无跨局摘要）",
-            macros=macros,
+            scripts=scripts,
         ),
         req.human_note,
     )

@@ -43,7 +43,7 @@ experiment/
 | 6 memory roundtrip | `check_memory_roundtrip.py` | `MemoryTool` 五条读写路径（episodic / object / 知识读 / 摘要写读 / 知识写+判重） | 无（自带临时目录） |
 
 **维度 1 内部四件事，顺序是"从静态到动态、从大到小"**：① `_check_static_shape()`——跑之前
-零成本核"格清单 ↔ 三张图"、"链路名 ↔ `tools/trace/render._CALL_LINK`"、"终止类别 ↔ `Termination`"；
+零成本核"格清单 ↔ 三张图"、"链路名 ↔ `direct/trace/render._CALL_LINK`"、"终止类别 ↔ `Termination`"；
 ② 整图跑到底并拿到 run 级四元组；③ `node_io` 的 `check_run_markers` + 五条判据（`check_vocabulary` /
 `check_payloads` / `check_layer_flow` / `check_node_coverage` / `check_content_invariants`）+
 `check_run_invariants`；④ `_check_one_record_per_episode`——每局**恰好**一条 `episode_memory`。
@@ -110,7 +110,7 @@ experiment/
 `check_harness.py` 的三个模块常量：`MODEL = "deepseek-flash"`（**一个常量管全部五个位置**，
 厂商类由前缀表选）、`WATCH = False`、`SPEED = 10`。装配调用是
 `build_real(ROM, STATE, vision_model=MODEL, …, run_id=run_id,
-reviewer=FileReviewer() if _REVIEW_MODE else None,
+reviewer=WebReviewer(run_id, url=review_url) if _REVIEW_MODE else None,
 watch=WATCH, speed=SPEED)`。
 
 - **184 起 plan 每次真调 brain**（`planner` 族撤销，`build_real` 不再有 `planner` 参数）：
@@ -134,7 +134,7 @@ watch=WATCH, speed=SPEED)`。
 |---|---|---|
 | faulthandler 卡死栈打印 | `timeout=240`、`repeat=True`（每 4 分钟例行打印，健康跑完有 1–2 次噪音） | `check_harness.py` 模块级 |
 | 强退看门狗 `_arm_kill_switch` | `12` 分钟；`--review` 模式 `30` 分钟；触发即 `os._exit(70)` 并打印标记 | `check_harness.py`，`threading.Thread(daemon=True)` |
-| 文件信箱每次提问的等待 | `file_reviewer.DEFAULT_TIMEOUT = 300.0` 秒 | `harness/file_reviewer.py` |
+| 网页每问等人的时长 | `WEB_REVIEW_TIMEOUT = 30.0` 秒（由后端计时，源程序多等 5s 兜底） | `config.py` |
 
 看门狗的理由（写在它的 docstring 里）：providers 层封住了**单次请求**的总时长，但多层重试相乘的
 最坏时长仍可能超过现场的耐心——它保证"任何情况下进程都会终结"，且日志里留明确标记。

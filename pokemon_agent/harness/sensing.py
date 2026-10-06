@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from pokemon_agent.direct.interface import GameToolPort, TraceToolPort
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
-from pokemon_agent.tools.interface import GameToolPort, TraceToolPort
 from pokemon_agent.world import Observation, RamReadout, TaskObservation
 
 

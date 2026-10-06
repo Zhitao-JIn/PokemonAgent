@@ -10,14 +10,14 @@ import time
 from typing import Any
 
 from langgraph.runtime import Runtime
+from pydantic import TypeAdapter
 
 from pokemon_agent.schemas.harness import (
-    FromHarnessToMemoryToolQueryEpisodeSummariesReq,
-    FromHarnessToMemoryToolQueryObjectEventsReq,
+    FromHarnessToMemoryToolRecallReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.memory import EpisodeMemory
+from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
 
 from ..run_state import PlanContext, RunState
 from ..runtime import RunRuntime
@@ -36,9 +36,14 @@ def read_plan_context(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str
 
     # 步骤 1：局索引（记忆按 `episode_id` 自然序返回，即执行序）+ 详情预取。
     t0 = time.time()
-    index = deps.memory.query_episode_summaries(
-        FromHarnessToMemoryToolQueryEpisodeSummariesReq(conditions={"run_id": state.run_id})
-    ).summaries
+    resp = deps.memory.recall(
+        FromHarnessToMemoryToolRecallReq(query="", conditions={"run_id": state.run_id}, limit=10**6)
+    )
+    index = [
+        EpisodeMemory(**item.payload, markdown=item.content)
+        for item in resp.items
+        if item.kind == "episode"
+    ]
     t1 = time.time()
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
@@ -53,9 +58,10 @@ def read_plan_context(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str
 
     # 步骤 2：本 run 的地图交互事实（run 级不按地图筛）。
     t0 = time.time()
-    objects = deps.memory.query_object_events(
-        FromHarnessToMemoryToolQueryObjectEventsReq(run_id=state.run_id)
-    ).events
+    _adapter = TypeAdapter(ObjectFactEvent)
+    objects = [
+        _adapter.validate_python(item.payload) for item in resp.items if item.kind == "object"
+    ]
     t1 = time.time()
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(

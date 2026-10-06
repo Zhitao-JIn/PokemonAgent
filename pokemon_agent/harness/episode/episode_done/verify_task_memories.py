@@ -73,7 +73,7 @@ def verify_task_memories(
 def _knowledge_text(state: EpisodeRunState) -> str:
     """本圈 perceive 检索到的领域知识，拼成 verify 的 `knowledge` 素材；没查到给空串。"""
     hit = state.ep_ctx.knowledge_semantic_memory
-    return "\n\n".join(hit.contents) if hit is not None else ""
+    return "\n\n".join(hit) if hit is not None else ""
 
 
 __all__ = ["verify_task_memories"]

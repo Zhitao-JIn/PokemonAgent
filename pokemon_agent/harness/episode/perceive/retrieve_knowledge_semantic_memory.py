@@ -15,7 +15,7 @@ from langgraph.runtime import Runtime
 
 from pokemon_agent.config import MEMORY_RECALL_LIMIT
 from pokemon_agent.schemas.harness import (
-    FromHarnessToMemoryToolQueryKnowledgeReq,
+    FromHarnessToMemoryToolRecallReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
@@ -57,12 +57,11 @@ def retrieve_knowledge_semantic_memory(
     ep, step = state.episode_id, state.step + 1  # 账面步号 = 圈号（0928 定稿）
     query = build_knowledge_query(obs, state.goal.goal)
     t0 = time.time()
-    result = deps.memory.query_knowledge(
-        FromHarnessToMemoryToolQueryKnowledgeReq(
-            query=query,
-            limit=MEMORY_RECALL_LIMIT,
-        )
+    resp = deps.memory.recall(
+        FromHarnessToMemoryToolRecallReq(query=query, conditions={}, limit=MEMORY_RECALL_LIMIT)
     )
+    _knowledge_items = [item for item in resp.items if item.kind == "knowledge"]
+    contents = [item.content for item in _knowledge_items]
     t1 = time.time()
     # `refs` 列的是 `sources`（命中记录的文件名）——`contents` 与 `sources` 由
     # `memory_tool.query_knowledge` 在同一个循环里成对 append、**恒等长**，
@@ -79,15 +78,16 @@ def retrieve_knowledge_semantic_memory(
                 "step": step,
             },
             query=query,
-            refs=list(result.sources),
+            refs=[item.payload.get("source", "") for item in _knowledge_items],
             started_at=t0,
             ended_at=t1,
+            timings={},
         )
     )
     return {
         "ep_ctx": state.ep_ctx.model_copy(
             update={
-                "knowledge_semantic_memory": result,
+                "knowledge_semantic_memory": contents,
                 "knowledge_scene": obs.facts.scene_value,
                 "knowledge_at_tasks": len(state.task_outputs),
             }

@@ -25,7 +25,8 @@ pokemon_agent/
 ├── world/       WorldPort 的唯一实现：PyBoy + 视觉模型的粘合层 + 世界语义常量
 ├── memory/      记忆子系统整块：统一记录存储 + 混合检索（BM25 + 向量 + RRF + reranker）
 ├── trace/       独立记账模块：TracePort 契约 + LocalTrace（一条事件一个 json）+ 事件类型词表
-├── tools/       桥层：四张门面 + 五个接线工厂 + prompt 素材；跨模块转换只在这一层
+├── direct/      门面层（brain/trace 半边）：`brain_tool.py` / `trace/` / `prompts/` / `interface/` 四张 Port
+├── mcpclient/   门面层（memory/world 半边）：进程内实现 + MCP 远程门面（`memory_tool.py` / `world_tool.py` / `client.py`）
 ├── build.py     唯一的装配点（全项目唯一 new 具体实现的地方）
 ├── config.py    唯一的策略常量集中地（重试预算 / 动作输出上限 / 循环控制 / 召回与判定）
 └── errors.py    AgentError 异常族

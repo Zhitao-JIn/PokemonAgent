@@ -31,7 +31,7 @@ reranker）是给注入用的，**不是** memory 自己的对外能力。
 memory **对内要求调用方提供**的东西（依赖注入的另一侧，见铁律「依赖注入」）。
 
 **零信封**：memory 从来看不到 `FromHarnessToMemoryTool*` 那 22 个信封
-（12 个 `…Req` + 10 个 `…Resp`）。信封由 harness 组装、`tools/memory_tool.py` 拆解，
+（12 个 `…Req` + 10 个 `…Resp`）。信封由 harness 组装、`mcpclient/memory_local.py` 拆解，
 到 memory 边界只剩裸字段。
 
 ---
@@ -281,9 +281,9 @@ RRF 只看排名不看绝对分，**连归一化都省了**。
 ## 附：全项目对 memory 的消费点
 
 ```
-tools/memory_tool.py:42    from pokemon_agent.memory import EmbeddingProviderPort, LocalMemoryStore, RerankerProviderPort
+mcpclient/memory_local.py:42    from pokemon_agent.memory import EmbeddingProviderPort, LocalMemoryStore, RerankerProviderPort
                             ↑ LocalMemoryStore() 在该文件 __init__ 内 new 四次（四个 kind 各一实例）
-tools/memory_tool.py:173   from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider
+mcpclient/memory_local.py:173   from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider
                             ↑ 在 MemoryTool.build() 函数体内 —— 装配点唯一入口（0913 深夜十二）
 experiment/real_check/check_memory_roundtrip.py  实验脚本，走 MemoryTool.build()
 build.py                   ✅ 对 memory **零 import**（改走 MemoryTool.build()）
@@ -294,10 +294,10 @@ harness/**, schemas/**     ✅ 零处引用 memory 包（引用的是 schemas.me
 
 | 工厂 | 造什么 | 住哪 |
 |---|---|---|
-| `BrainTool.build(...)` | brain 的 provider（**按需**，未传为 None）+ `Brain` | `tools/brain_tool.py` |
-| `build_vision_provider(model=…)` | world 的感知 provider | `tools/vision_factory.py` |
-| **`MemoryTool.build(memory_root=…, max_summaries=…)`** | **memory 的两个检索 provider + `MemoryTool`** | **`tools/memory_tool.py`** |
-| `GameTools.build(rom, …)` | `PyBoyWorld` + 感知 provider | `tools/game_tools.py` |
-| `TraceTool.build(run_id=…, trace_root=…)` | `LocalTrace` | `tools/trace/__init__.py` |
+| `BrainTool.build(...)` | brain 的 provider（**按需**，未传为 None）+ `Brain` | `direct/brain_tool.py` |
+| `build_vision_provider(model=…)` | world 的感知 provider | `brain/vision_factory.py` |
+| **`MemoryTool.build(memory_root=…, max_summaries=…)`** | **memory 的两个检索 provider + `MemoryTool`** | **`mcpclient/memory_local.py`** |
+| `GameTools.build(rom, …)` | `PyBoyWorld` + 感知 provider | `mcpclient/game_tools.py` |
+| `TraceTool.build(run_id=…, trace_root=…)` | `LocalTrace` | `direct/trace/__init__.py` |
 
 `build.py` 只递型号名 / 路径这类裸字段，一个工厂都不越过。

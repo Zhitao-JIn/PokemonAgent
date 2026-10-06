@@ -72,6 +72,13 @@ __all__ = [
     "FromHarnessToGameToolSaveStateReq",
     "FromHarnessToGameToolSaveStateResp",
     "FromHarnessToMemoryToolAppendObjectEventsReq",
+    "FromHarnessToMemoryToolMemorizeReq",
+    "FromHarnessToMemoryToolMemorizeResp",
+    "FromHarnessToMemoryToolMemorizedRecord",
+    "FromHarnessToMemoryToolRecallItem",
+    "FromHarnessToMemoryToolMemorizeRecord",
+    "FromHarnessToMemoryToolRecallReq",
+    "FromHarnessToMemoryToolRecallResp",
     "FromHarnessToMemoryToolQueryActMemoriesReq",
     "FromHarnessToMemoryToolQueryActMemoriesResp",
     "FromHarnessToMemoryToolQueryEpisodeSummariesReq",
@@ -158,6 +165,14 @@ from .communication.FromHarnessToGameToolSaveStateResp import FromHarnessToGameT
 from .communication.FromHarnessToMemoryToolAppendObjectEventsReq import (
     FromHarnessToMemoryToolAppendObjectEventsReq,
 )
+from .communication.FromHarnessToMemoryToolMemorizeReq import (
+    FromHarnessToMemoryToolMemorizeRecord,
+    FromHarnessToMemoryToolMemorizeReq,
+)
+from .communication.FromHarnessToMemoryToolMemorizeResp import (
+    FromHarnessToMemoryToolMemorizedRecord,
+    FromHarnessToMemoryToolMemorizeResp,
+)
 from .communication.FromHarnessToMemoryToolQueryActMemoriesReq import (
     FromHarnessToMemoryToolQueryActMemoriesReq,
 )
@@ -199,6 +214,13 @@ from .communication.FromHarnessToMemoryToolQueryTaskMemoriesReq import (
 )
 from .communication.FromHarnessToMemoryToolQueryTaskMemoriesResp import (
     FromHarnessToMemoryToolQueryTaskMemoriesResp,
+)
+from .communication.FromHarnessToMemoryToolRecallReq import (
+    FromHarnessToMemoryToolRecallReq,
+)
+from .communication.FromHarnessToMemoryToolRecallResp import (
+    FromHarnessToMemoryToolRecallItem,
+    FromHarnessToMemoryToolRecallResp,
 )
 from .communication.FromHarnessToMemoryToolRestoreMemoryReq import (
     FromHarnessToMemoryToolRestoreMemoryReq,

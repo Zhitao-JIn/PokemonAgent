@@ -67,6 +67,7 @@ class LiveFeedTrace:
         now = time.time()
         event = TraceEvent(
             uuid=event_uuid,
+            seq=0,  # 占位：排序真源在 inner 落盘的封套里（seq 归 trace 自己递增）
             kind=kind,
             type=type,
             started_at=started_at if started_at is not None else now,

@@ -49,7 +49,7 @@ from pokemon_agent.memory import LocalMemoryStore, MemoryStorePort   # 常用两
   需要构造/消费它的那个模块，见 `memory/__init__.py` 的长说明）；
 - `MemoryTool` 及其信封 —— 住 `pokemon_agent.tools`，是 tool 层的东西（见本文第七节）。
 
-> **谁该调 memory**：只有 tool 层（`pokemon_agent/tools/memory_tool.py`）。
+> **谁该调 memory**：只有 tool 层（`pokemon_agent/mcpclient/memory_local.py`）。
 > harness / brain / world / schemas / `build.py` 一律不 import 本包，
 > 它们经 `MemoryToolPort` 说话。`build.py` 只调 `MemoryTool.build()` 这一个类方法。
 
@@ -524,8 +524,8 @@ RRF 只看排名不看绝对分，**连归一化都省了**。
 
 ## 七、tool 层（harness 认识 memory 的唯一入口）
 
-`pokemon_agent/tools/memory_tool.py`。harness 面向的是 `MemoryToolPort`
-（`pokemon_agent/tools/interface/ports.py`），入参与返回**一律是信封**。
+`pokemon_agent/mcpclient/memory_local.py`。harness 面向的是 `MemoryToolPort`
+（`pokemon_agent/direct/interface/ports.py`），入参与返回**一律是信封**。
 
 ```python
 class MemoryTool:
@@ -648,7 +648,7 @@ step 号被旧缓存挡住"（写不进去），而它只会在下一次 `store_
 ```
 --memory-root PATH（起跑脚本 experiment/real_check/check_harness.py）
   └── build_real(memory_root=…)             pokemon_agent/build.py
-        └── MemoryTool.build(memory_root=…)  pokemon_agent/tools/memory_tool.py
+        └── MemoryTool.build(memory_root=…)  pokemon_agent/mcpclient/memory_local.py
               └── LocalMemoryStore(root=…)        pokemon_agent/memory/store.py
                     └── <root>/<kind>/…
 ```

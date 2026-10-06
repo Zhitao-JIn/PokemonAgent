@@ -78,8 +78,8 @@ begin → plan → dispatch → episode → reflect ─┬─(失败且重试未
 | | 内容 |
 |---|---|
 | 读 | `state.goals`（目标栈）；**`deps.trace.read_events()`——该 run 全量事件流**（`plan.py:163`） |
-| 折 | `tools/prompts/run_plan.py::history_lines`（`run_plan.py:19-44`）只读 `LIFECYCLE` 的 `episode_start` 与 `episode_end`/`episode_error`，折成 `- epN: 目标 → 成功/失败（N 步，reason）` |
-| 问 | `BrainToolPort.plan(PlanOnceReq{run_id, goals, events, max_push})`（`tools/interface/ports.py:126`）→ `Brain.plan(prompt, goal_stack, history, max_push)` |
+| 折 | `direct/prompts/run_plan.py::history_lines`（`run_plan.py:19-44`）只读 `LIFECYCLE` 的 `episode_start` 与 `episode_end`/`episode_error`，折成 `- epN: 目标 → 成功/失败（N 步，reason）` |
+| 问 | `BrainToolPort.plan(PlanOnceReq{run_id, goals, events, max_push})`（`direct/interface/ports.py:126`）→ `Brain.plan(prompt, goal_stack, history, max_push)` |
 | 得 | `RunPlan{push_goals: list[PlanGoal{goal, success_criteria, max_steps}], done, why}`（`brain/interface/domain/run_plan.py:22`） |
 | 写 | `to_tasks()` → **append 到 `state.goals`**（`plan.py:225-242`）；落 `PLAN_CALL` + `PLAN_VERDICT` 两条账 |
 
@@ -349,10 +349,10 @@ plan 的索引行是"按执行顺序"读的，这个洞会让第 10 局之后的
 |---|---|
 | `harness/run/nodes/plan.py` | `events=deps.trace.read_events()` → `summaries=deps.memory.query_episode_summaries(conditions={"run_id": deps.run_id})` + 选题规则 |
 | `schemas/harness/communication/PlanOnceReq.py` | `events: list[TraceEvent]` → `index: list[EpisodeMemory]` + `details: list[EpisodeMemory]` + `object_facts: list[ObjectEvent]`（§6-3 定的那一面） |
-| `tools/prompts/run_plan.py` | `history_lines(events)` → `index_lines(summaries)` + `detail_blocks(chosen)` + `object_lines(events)` |
-| `tools/prompts/calls/run_plan.md` | `$history` → `$index` + `$details` + `$objects`；删掉 LIFO 逆序那段（§2.3） |
-| `tools/brain_tool.py::plan` | 只换渲染函数的调用，`Brain.plan(history=…)` 传的是"索引行 + 详情块 + 地图事实"拼起来的序列 |
-| `tools/interface/ports.py` + `memory_tool.py` | `query_object_events` 的 `map_id` 由必填 `int` 改成可选条件（§6-3） |
+| `direct/prompts/run_plan.py` | `history_lines(events)` → `index_lines(summaries)` + `detail_blocks(chosen)` + `object_lines(events)` |
+| `direct/prompts/calls/run_plan.md` | `$history` → `$index` + `$details` + `$objects`；删掉 LIFO 逆序那段（§2.3） |
+| `direct/brain_tool.py::plan` | 只换渲染函数的调用，`Brain.plan(history=…)` 传的是"索引行 + 详情块 + 地图事实"拼起来的序列 |
+| `direct/interface/ports.py` + `memory_tool.py` | `query_object_events` 的 `map_id` 由必填 `int` 改成可选条件（§6-3） |
 
 **`docstring` 与注释要同步改**：`plan.py` 模块 docstring 里"读历史的口径不在本文件
 …把磁盘账本的全量快照塞进 `PlanOnceReq.events`"（`plan.py:22-27`）这段整段作废；

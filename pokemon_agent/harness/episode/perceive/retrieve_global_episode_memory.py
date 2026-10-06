@@ -22,10 +22,11 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.schemas.harness import (
-    FromHarnessToMemoryToolQueryEpisodeSummariesReq,
+    FromHarnessToMemoryToolRecallReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
+from pokemon_agent.schemas.memory import EpisodeMemory
 
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState
@@ -44,9 +45,14 @@ def retrieve_global_episode_memory(
     deps = runtime.context
     ep, step = state.episode_id, state.step + 1  # 账面步号 = 圈号（0928 定稿）
     t0 = time.time()
-    episode_memories = deps.memory.query_episode_summaries(
-        FromHarnessToMemoryToolQueryEpisodeSummariesReq(conditions={"run_id": state.run_id})
-    ).summaries
+    resp = deps.memory.recall(
+        FromHarnessToMemoryToolRecallReq(query="", conditions={"run_id": state.run_id}, limit=10**6)
+    )
+    episode_memories = [
+        EpisodeMemory(**item.payload, markdown=item.content)
+        for item in resp.items
+        if item.kind == "episode"
+    ]
     t1 = time.time()
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(

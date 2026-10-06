@@ -30,7 +30,6 @@ from pydantic import BaseModel, Field
 
 from pokemon_agent.brain import Goal, Task
 from pokemon_agent.brain.interface import VerifyVerdict
-from pokemon_agent.schemas.harness import FromHarnessToMemoryToolQueryKnowledgeResp
 from pokemon_agent.schemas.harness.domain import (
     EpisodeOutput,
     JudgeFeedback,
@@ -55,7 +54,7 @@ class EpisodeContext(BaseModel):
     global_episode_memories: list[EpisodeMemory] = Field(
         default_factory=list, description="本 run 的跨局摘要"
     )
-    knowledge_semantic_memory: FromHarnessToMemoryToolQueryKnowledgeResp | None = Field(
+    knowledge_semantic_memory: list[str] | None = Field(
         default=None, description="知识库检索结果；None = 本局还没查过。之后沿用，到下次重查为止"
     )
     knowledge_scene: str = Field(
@@ -146,7 +145,7 @@ def current_knowledge(state: EpisodeRunState) -> list[str]:
     拆解（`plan_episode`）与派发（`act` 带进 `TaskInput`）共用这一份，不各自再取。
     """
     hit = state.ep_ctx.knowledge_semantic_memory
-    return list(hit.contents) if hit is not None else []
+    return list(hit) if hit is not None else []
 
 
 __all__ = ["EpisodeContext", "EpisodeRunState", "current_goal", "current_knowledge"]

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from pokemon_agent.schemas.harness import TraceEvent, TraceKind
 
 from .content import (
+    ActCallContent,
     CallExhaustedContent,
     CallFailedContent,
     CheckpointRestoreContent,
@@ -28,9 +29,7 @@ from .content import (
     ModelCallContent,
     OtherContent,
     PlanVerdictContent,
-    PressKeyContent,
     RunEndContent,
-    RunMacroContent,
     RunStartContent,
     SenseFrameContent,
     SettleGoalContent,
@@ -52,8 +51,7 @@ CONTENT_MODELS: dict[str, type[BaseModel]] = {
     TraceKind.TASK_ERROR: ErrorEndContent,
     TraceKind.SENSE_FRAME: SenseFrameContent,
     TraceKind.CHOOSE_VERDICT: ChooseVerdictContent,
-    TraceKind.PRESS_KEY: PressKeyContent,
-    TraceKind.RUN_MACRO: RunMacroContent,
+    TraceKind.ACT_CALL: ActCallContent,
     TraceKind.CHECK_STALL: CheckStallContent,
     TraceKind.JUDGE_VERDICT: JudgeVerdictContent,
     TraceKind.DECOMPOSE_VERDICT: DecomposeVerdictContent,

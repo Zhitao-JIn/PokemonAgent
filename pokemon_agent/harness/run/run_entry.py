@@ -41,9 +41,10 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.harness.domain import EntryStatus, EpisodeOutput, GoalEntry
+from pokemon_agent.schemas.harness.domain import EntryStatus, GoalEntry, RunResult
 
 from .run_done import settle_run
+from .run_result import build as build_result
 from .run_state import RunState
 from .runtime import RunRuntime
 
@@ -82,15 +83,17 @@ def new_run(
     goals: list[Task],
     run_goal: Goal | None = None,
     checkpoint_only: bool = False,
-) -> tuple[list[EpisodeOutput], int, int, float]:
-    """跑完一个 run：载入世界起点，然后目标表逐个解决（每条一个 episode），返回 run 级结算。
+    sample_id: str = "",
+) -> RunResult:
+    """跑完一个 run：载入世界起点，然后目标表逐个解决（每条一个 episode），返回 `RunResult`。
 
-    `checkpoint_only`：只存 run 级存档（记 `checkpoint_save`）就返回 `([], 0, 0, 0.0)`，不进图、
-    不记 `run_start` / `run_end`——用来把"钉死存档 + 目标"打包成可 `restore_run` 的起点。
-    前置条件：此时必须装了存档器。
+    `checkpoint_only`：只存 run 级存档（记 `checkpoint_save`）就返回**空的 `RunResult`**
+    （outcomes 空、usage 空），不进图、不记 `run_start` / `run_end`——用来把"钉死存档 + 目标"
+    打包成可 `restore_run` 的起点。前置条件：此时必须装了存档器。
 
-    返回 `(outcomes, total, succeeded, success_rate)` 四个裸值，不打包成对象——
-    trace 里那条 RUN_END 内嵌的 `RunResp` 由图内 `run_done` 组装。
+    返回结构化 `RunResult`（V8，plan2 R1）：结算 + usage（收尾侧过滤 `_call` 账）+
+    墙钟 + 逐局证据边界。trace 里那条 RUN_END 内嵌的 `RunResp` 由图内 `run_done` 组装。
+    `sample_id` 是 eval 侧的样本标识，原样带回（非 eval 调用缺省空串）。
 
     **世界起点载入（`game.reset`）在本函数内、进图之前**：每 run 恰好一次，失败
     视为 run 级失败（异常穿 `except` 补 RUN_ERROR 后原样抛）。
@@ -132,13 +135,13 @@ def new_run(
         if deps.checkpointer is not None:
             deps.checkpointer.save("run", run_id=run_id, step=state.step, state=state)
         if checkpoint_only:
-            return [], 0, 0, 0.0
+            return RunResult(run_id=run_id, sample_id=sample_id, branch=state.branch)
         final = invoke_run(deps, graph, state, thread=thread_id(run_id, state.branch))
     except Exception as exc:
         # 异常路径：谁接住谁记账——这里接住的是整个 run 的异常，记 RUN_ERROR 再原样抛出，不吞。
         record_run_error(deps, run_id, exc, source="run_entry.new_run")
         raise
-    return close(final)
+    return close(final, deps, run_id, sample_id=sample_id)
 
 
 def record_run_error(deps: RunRuntime, run_id: str, exc: Exception, *, source: str) -> None:
@@ -155,10 +158,28 @@ def record_run_error(deps: RunRuntime, run_id: str, exc: Exception, *, source: s
     )
 
 
-def close(final: dict[str, Any]) -> tuple[list[EpisodeOutput], int, int, float]:
-    """收尾：从终态拆出四个裸值（结算与 `run_end` 账已由图内 `run_done` 做完）。"""
-    result = settle_run(RunState.model_validate(final))
-    return result.outcomes, result.total, result.succeeded, result.success_rate
+def close(
+    final: dict[str, Any], deps: RunRuntime, run_id: str, *, sample_id: str = ""
+) -> RunResult:
+    """收尾：终态结算 + 本执行线账聚合 → `RunResult`（结算与 `run_end` 账已由图内组装）。
+
+    `deps.trace` 只在这里读一次（usage/墙钟/边界的聚合原料）；`state.branch` 过滤
+    本执行线——恢复线不重复计父线的账。
+    """
+    state = RunState.model_validate(final)
+    result = settle_run(state)
+    raw = deps.trace.read_events({"run_id": run_id})
+    return build_result(
+        run_id=run_id,
+        sample_id=sample_id,
+        branch=state.branch,
+        termination=result.termination,
+        outcomes=result.outcomes,
+        total=result.total,
+        succeeded=result.succeeded,
+        success_rate=result.success_rate,
+        raw_events=raw,
+    )
 
 
 def invoke_run(

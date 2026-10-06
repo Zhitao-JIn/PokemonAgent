@@ -21,6 +21,7 @@ from pathlib import Path
 from langgraph.config import get_config
 from langgraph.graph.state import CompiledStateGraph
 
+from pokemon_agent.direct.interface import GameToolPort, MemoryToolPort, TraceToolPort
 from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolSaveStateReq,
     FromHarnessToMemoryToolSnapshotMemoryReq,
@@ -28,7 +29,6 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 from pokemon_agent.schemas.harness.domain import CheckpointMark
-from pokemon_agent.tools.interface import GameToolPort, MemoryToolPort, TraceToolPort
 
 from ..episode.episode_state import EpisodeRunState
 from ..run.run_state import RunState

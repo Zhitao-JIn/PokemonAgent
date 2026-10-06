@@ -48,7 +48,7 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph.state import CompiledStateGraph
 
-from pokemon_agent.tools.interface import (
+from pokemon_agent.direct.interface import (
     DecomposePort,
     GameToolPort,
     JudgePort,

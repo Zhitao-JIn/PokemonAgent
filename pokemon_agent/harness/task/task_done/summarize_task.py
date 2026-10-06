@@ -12,7 +12,8 @@ from langgraph.runtime import Runtime
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolSummarizeTaskReq,
-    FromHarnessToMemoryToolStoreTaskMemoryReq,
+    FromHarnessToMemoryToolMemorizeRecord,
+    FromHarnessToMemoryToolMemorizeReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
@@ -70,8 +71,14 @@ def summarize_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str,
     )
 
     # 步骤 2：落库记账，交出 reason。
-    deps.memory.store_task_memory(
-        FromHarnessToMemoryToolStoreTaskMemoryReq(memory=distilled.memory)
+    deps.memory.memorize(
+        FromHarnessToMemoryToolMemorizeReq(
+            records=[
+                FromHarnessToMemoryToolMemorizeRecord(
+                    kind="task", payload=distilled.memory.model_dump()
+                )
+            ]
+        )
     )
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(

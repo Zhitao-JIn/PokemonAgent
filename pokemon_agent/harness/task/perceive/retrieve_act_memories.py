@@ -12,10 +12,11 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.schemas.harness import (
-    FromHarnessToMemoryToolQueryActMemoriesReq,
+    FromHarnessToMemoryToolRecallReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
+from pokemon_agent.schemas.memory import ActMemory
 
 from ..task_runtime import TaskRuntime
 from ..task_state import TaskState
@@ -30,9 +31,10 @@ def retrieve_act_memories(state: TaskState, runtime: Runtime[TaskRuntime]) -> di
     deps = runtime.context
     ep, task_id = state.episode_id, state.task.task_id
     t0 = time.time()
-    entries = deps.memory.query_act_memories(
-        FromHarnessToMemoryToolQueryActMemoriesReq(episode_id=ep)
-    ).entries
+    resp = deps.memory.recall(
+        FromHarnessToMemoryToolRecallReq(query="", conditions={"episode_id": ep}, limit=10**6)
+    )
+    entries = [ActMemory.model_validate(item.payload) for item in resp.items if item.kind == "act"]
     t1 = time.time()
     mine = [m for m in entries if m.task_id == task_id]
     deps.trace.append(

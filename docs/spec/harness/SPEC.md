@@ -25,7 +25,7 @@ harness/
 │                review_render.py（问人时的渲染口径，控制台与网页共用）
 │                checkpoint/（三级存档与图内恢复，见 docs/spec/checkpoint/SPEC.md）
 ├── interface/   reviewer.py（Reviewer 协议） planner_outcome.py（PlannerOutcome / GoalUpdate）
-├── console_reviewer.py  file_reviewer.py  null_reviewer.py  web_reviewer.py
+├── console_reviewer.py  null_reviewer.py  web_reviewer.py
 ├── run/
 │   ├── harness.py（RunHarness） run_entry.py（new_run / close） run_graph.py run_state.py runtime.py
 │   ├── begin/  perceive/{absorb_episode, read_plan_context}  review_and_judge/
@@ -72,7 +72,7 @@ perceive（这一局 / 这一 run 照常往下走），别的异常记完原样�
 |---|---|---|---|
 | run | `plan_run`：Planner 更新目标表（新增 / 定点改状态），没 PENDING 时抛 `NoGoalToDispatch` | `dispatch` 标 RUNNING + 造 `EpisodeInput` → `run_episode`（接住整局抛错） | `run_done`：组装 `RunResp`、写 `run_end` |
 | episode | `plan_episode`：任务表没有 PENDING 时 Decomposer 拆下一版，追加进表 | 第一条 PENDING 标 RUNNING → `run_task`（接住 task 抛错） | verify → summarize → close（素材是 `ep_ctx.task_memories`；没有时 leave_chapter 补空章 → close） |
-| task | `plan_task`：Chooser 选一段按键，只执行首段 `times=1`；接管场合选一个宏调用，原样交出；上一宏结果（`last_macro.describe()`）随请求带上 | 按键（记 `press_key`）或跑宏（记 `run_macro`、写 `last_macro`），`step+1`（一个宏算一次决策） | verify → summarize → close（素材是 `task_ctx.act_memories`） |
+| task | `plan_task`：Chooser 选一段按键，只执行首段 `times=1`；选了脚本则原样交出；上一脚本结果（`last_result`）随请求带上 | 按键或跑脚本（都记 `act_call`；脚本写 `last_report` / `last_result`），`step+1`（一条脚本算一次决策） | verify → summarize → close（素材是 `task_ctx.act_memories`） |
 
 **停判只在 `review_and_judge`**：先 `mechanical_termination`（世界终局 / 停滞 / 预算，阈值见 DATAFLOW 二），
 不中再 `ask_judger`；judge 说 done 即 `GOAL_DONE`。写 `termination`（`done` / `success` 由它推出，`Settled`）
@@ -90,7 +90,7 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 | 本层计数 | `step`（已派局数） | `step`（已派 task 数）、`total_acts` | `step`（本 task 已按键数；帧步号 = `start_step + step`） |
 | 失败计数 | `fail_streak` | `fail_streak` | `stall_key`、`stall_count` |
 | 表 | `goals`（`GoalEntry`） | `tasks`（`TaskEntry`） | — |
-| 上下文 | `plan_ctx`（局索引 / 详情 / 物件） | `ep_ctx`（帧 / TaskMemory / 跨局摘要 / 知识 / 物件） | `task_ctx`（帧 / ActMemory / 动作空间）、`action`、`last_macro`（上一动作是宏时的 `MacroOutcome`，按键时为 None） |
+| 上下文 | `plan_ctx`（局索引 / 详情 / 物件） | `ep_ctx`（帧 / TaskMemory / 跨局摘要 / 知识 / 物件） | `task_ctx`（帧 / ActMemory / 动作空间）、`action`、`last_report` / `last_result`（上一动作是脚本时的终态报告与一行结果，按键时为 None / 空串） |
 | 下层交回 | `pending_episode` → `episode_outputs` | `pending_task` → `task_outputs` | `after_observation`（格内流转） |
 | 终局 | `termination`、`judge_reason` | 同左 + `task_verdicts`、`reason`、`memory`、`output` | 同左 + `act_verdicts`、`reason`、`memory`、`output` |
 
@@ -105,7 +105,7 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 | `EpisodeRuntime` | `game`、`memory`、`decomposer`、`judger`、`verifier`、`summarizer`、`trace`、`reviewer`、`task_graph`（task 图，`build.py` 编译）、`task` |
 | `TaskRuntime` | `game`、`chooser`、`judger`、`memory`、`reflector`、`verifier`、`task_summarizer`、`trace`、帧槽 `frame_before`/`frame_after` |
 
-能力对象来自 `tools/brain_tool.py`，`build.py` 按层各造一份 brain（`run_brain` / `episode_brain` / `task_brain`）。
+能力对象来自 `direct/brain_tool.py`，`build.py` 按层各造一份 brain（`run_brain` / `episode_brain` / `task_brain`）。
 
 ## 六、人在环
 
@@ -118,7 +118,6 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 | `NullReviewer` | 无头：不插话、不推翻 |
 | `ConsoleReviewer` | 同一终端：超时 `CONSOLE_REVIEW_TIMEOUT` |
 | `WebReviewer` | 网页：连常驻后端 `pokemon_agent/review_backend/`（WebSocket），超时 `WEB_REVIEW_TIMEOUT`；连不上抛 `OSError`，中途断了降级为默认值 |
-| `FileReviewer` | 驱动方无终端：请求 / 回应走盘上文件；`audit()` 恒认账 |
 
 - **插话点只在 plan 格**：`plan_run`、`plan_episode`。不满意就带着那句话重问，插话进 `human_note` 落账。
 - **审点只在 `review_and_judge` 格**，run 与 episode 各两处，审格不重问模型：
@@ -143,7 +142,7 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 
 ## 八、已知缺口
 
-- **`FileReviewer.audit()` 恒认账**：推翻只能经 `ConsoleReviewer`；它在每局、每个 task 结束时都会停下等人
-  （最多 `CONSOLE_REVIEW_TIMEOUT` 秒，超时按认账）。
+- **`ConsoleReviewer` 的停等人**：它在每局、每个 task 结束时都会停下等人
+  （最多 `CONSOLE_REVIEW_TIMEOUT` 秒，超时按认账）——交互调试时才接它。
 - **图形状的守卫**：`experiment/real_check/node_io.py` 按层切流、用后继表核三张图的执行序；
   `tests/test_node_io.py` 用 `tests/_fake_run.py`（假大脑跑真图）做正反例。

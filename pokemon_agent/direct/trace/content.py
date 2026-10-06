@@ -92,8 +92,8 @@ class Segment(BaseModel):
     times: int = 1
 
 
-class MacroCallContent(BaseModel):
-    """宏调用（`MacroCall.model_dump()`）。"""
+class ScriptCallContent(BaseModel):
+    """脚本调用（`ScriptCall.model_dump()`）。"""
 
     name: str
     args: dict[str, str | int] = {}
@@ -101,33 +101,24 @@ class MacroCallContent(BaseModel):
 
 class ChooseVerdictContent(_Content):
     sequence: list[Segment]
-    macro: MacroCallContent | None = None
+    script: ScriptCallContent | None = None
     human_note: str = ""
 
 
-class PressKeyContent(_Content):
-    sequence: list[Segment]
+class ActCallContent(_Content):
+    """`act_call` 的正文——key / script 两形（P5）：
 
+    key 形只有 `sequence`；script 形只有 `script`/`args`/`ok`/`code`（+可选
+    `data`/`events`）。两形恰好一个非空，由解析器按字段区分。
+    """
 
-class MacroStepContent(BaseModel):
-    """宏里的一步（`MacroStep.model_dump()`）。"""
-
-    key: str
-    frames: int
-    expect: str = ""
-    actual: str = ""
-    ok: bool = True
-
-
-class RunMacroContent(_Content):
-    scene: str
-    macro: str
-    args: dict[str, str | int]
-    status: str
-    reason_code: str
-    reason: str
-    summary: str
-    steps: list[MacroStepContent]
+    sequence: list[Segment] = Field(default_factory=list)
+    script: str | None = None
+    args: dict[str, str | int] = Field(default_factory=dict)
+    ok: str | None = None
+    code: str | None = None
+    data: dict[str, Any] | None = None
+    events: list[dict[str, Any]] | None = None
 
 
 class CheckStallContent(_Content):
@@ -238,12 +229,10 @@ class EventMeta(BaseModel):
 
 
 __all__ = [
+    "ScriptCallContent",
     "CallExhaustedContent",
     "CallFailedContent",
     "CheckStallContent",
-    "MacroCallContent",
-    "MacroStepContent",
-    "RunMacroContent",
     "CheckpointRestoreContent",
     "CheckpointSaveContent",
     "ChooseVerdictContent",
@@ -257,7 +246,7 @@ __all__ = [
     "ModelCallContent",
     "OtherContent",
     "PlanVerdictContent",
-    "PressKeyContent",
+    "ActCallContent",
     "RunEndContent",
     "RunStartContent",
     "Segment",

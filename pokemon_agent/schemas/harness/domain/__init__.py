@@ -43,6 +43,7 @@ from .episode_io import EpisodeInput, EpisodeOutput
 from .goal_entry import GoalEntry
 from .judge_feedback import JudgeFeedback
 from .review_mark import ReviewMark
+from .run_io import EpisodeBound, LineCounts, LinkUse, RunResult, UsageSummary
 from .task_entry import TaskEntry
 from .task_io import TaskInput, TaskOutput
 from .termination import Settled, Termination
@@ -54,6 +55,11 @@ __all__ = [
     "CheckpointMark",
     "EpisodeInput",
     "EpisodeOutput",
+    "EpisodeBound",
+    "LineCounts",
+    "LinkUse",
+    "RunResult",
+    "UsageSummary",
     "ReviewMark",
     "EntryStatus",
     "GoalEntry",

@@ -22,10 +22,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from pokemon_agent.direct.prompts.object_render import render_object_events
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolPlanOnceReq
 from pokemon_agent.schemas.harness.domain import GoalEntry
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
-from pokemon_agent.tools.prompts.object_render import render_object_events
 
 from . import append_human_note, load
 from .last_judge import last_judge_lines

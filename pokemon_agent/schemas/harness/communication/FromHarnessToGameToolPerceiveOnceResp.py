@@ -10,7 +10,7 @@ from pokemon_agent.world import Observation, RamReadout
 class FromHarnessToGameToolPerceiveOnceResp(BaseModel):
     """**一次感知的全部产物**：观测 + 这次调用产生的模型调用记录 + 原始帧。
 
-    字段直接摊平自 world 自己的 `Perceived`（`tools/game_tools.py` 拆开转手）——
+    字段直接摊平自 world 自己的 `Perceived`（`mcpclient/game_tools.py` 拆开转手）——
     这里不再嵌套一层 `PerceiveOnceResp`，那个信封已经随着"world 不依赖 schemas"
     这条原则撤销了。
     """

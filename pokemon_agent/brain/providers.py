@@ -8,7 +8,7 @@
 **它只服务 brain 吗**：不是——`world` 的 `PyBoyWorld` 也拿一个 `QwenProvider`
 当视觉用。但 `world` 通过**自己声明的** `VisionProvider` 协议消费它，不需要
 知道这个类住哪；它由 tool 层的接线工厂
-（`tools/vision_factory.build_vision_provider()`，0913 深夜九起）造出来、
+（`brain/vision_factory.build_vision_provider()`，0913 深夜九起）造出来、
 装配点（`build.py::build_real()`）只负责递进去——**对 brain 的实现依赖
 因此只落在 tool 层**。
 两个消费者之中 brain 是主要那个，且"用哪家厂商、怎么关思考模式"这套接线知识
@@ -703,7 +703,7 @@ class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
 #
 # **为什么需要它**：在它之前，"这个型号名该走哪个类"这条知识被**写死**在两处——
 # `brain/build_llm_providers.py` 里 decide/judge 恒为 `QwenProvider`、verify/plan 恒为
-# `ArkProvider`，`tools/vision_factory.py` 里恒为 `QwenProvider`。三处（加上装配点传的
+# `ArkProvider`，`brain/vision_factory.py` 里恒为 `QwenProvider`。三处（加上装配点传的
 # 型号名）各说各话：想把某条链路换一家厂商，得改两个文件里的 new 语句，而"哪个型号名
 # 属于哪家"从来没有一处能一眼看全。上面那段模块文档的第 2 条说"换供应商 = 换类"，
 # 但**"换成哪个类"此前没有落点**——本表就是那个落点。

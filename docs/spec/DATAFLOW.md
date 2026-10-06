@@ -2,7 +2,7 @@
 
 > 2026-09-24（CHANGELOG 195–203）。图见 [`diagrams/`](diagrams/)，项目思想见 [`OVERVIEW.md`](OVERVIEW.md)。
 > **以代码为准**：格集以 `harness/*/*_graph.py` 的 `add_node` 为真源，账名以
-> `schemas/harness/domain/trace_kind.py` 为真源，正文字段以 `tools/trace/render.py` 为真源，
+> `schemas/harness/domain/trace_kind.py` 为真源，正文字段以 `direct/trace/render.py` 为真源，
 > 执行序以 `experiment/real_check/node_io.py` 的三张后继表为真源。
 
 ## 一、端到端
@@ -106,17 +106,19 @@ episode_done = verify_task_memories → summarize_episode → close_episode
 begin_task ─► perceive[sense（RAM 档）→ detect_stall → store_step_episode_memory
                        → store_object_semantic_memory → close_step → retrieve_act_memories → get_action_space]
            ─► review_and_judge[机械三类 → judge(task × 本 task 最近几条 ActMemory)]
-           ─► (done → task_done) | plan_task[Chooser → 首段 times=1 | 宏调用] ─► act[按键 | 跑宏, step+1] ─► perceive
+           ─► (done → task_done) | plan_task[Chooser → 首段 times=1 | 脚本调用] ─► act[按键 | 跑脚本, step+1] ─► perceive
 task_done = verify_act_memories → summarize_task → close_task
 ```
 
 - `sense` 每圈都取帧（步号 = `start_step + step`）；中间三个单元只在上一圈按过键时写
   （停摆、ActMemory、物件事件）；`close_step` 把新帧转正（上一圈按过键才记 `advance_step`）。
 - 帧槽只由 task 的 `sense` 写、只由 `store_step_episode_memory` 读（ActMemory 的前后两张图）。
-- **接管场合**（`shop_items` / `naming` / `battle_menu` / `faint_switch` / `bag` / `party` / `pc` / `learn_move`，八个都有宏）：动作空间只给宏签名，JEV 出一个宏调用，
-  world 执行到底（回初态 → 校验 → 逐步核对 → 收尾），`act` 记 `run_macro`、把结果写进 `last_macro`；
-  下一圈 ActMemory 的动作写宏结果那一句，停摆按宏结果比（被拒的宏不论参数都算同一个无效动作，其余带结果那一句，战斗里同一招连出、HP 在变不算停摆），
-  下一次决策的 prompt 在观测之后带上它。
+- **脚本动作**（常规脚本与接管脚本同一条路）：`act` 经 `GameTools.execute` 的脚本通道执行到底，记 `act_call`
+  script 形，终态报告写进 `last_report`、一行结果（调用 → 结局码：摘要或原因）写进 `last_result`；
+  下一圈 ActMemory 的 `result` 写结果那一句，停摆按结果比（没执行到位的脚本不论参数都按"脚本名 + 结局码"算同一个
+  无效动作，执行到位的带结果那一句，战斗里同一招连出、HP 在变不算停摆），下一次决策的 prompt 在观测之后带上 `last_result`。
+- **接管场合**（`shop_items` / `naming` / `battle_menu` / `faint_switch` / `bag` / `party` / `pc` / `learn_move`）：动作空间只给本场合的
+  接管脚本签名、不给键（决策 prompt 换用 `decide_takeover.md`），接管脚本 world 执行到底（回初态 → 校验 → 逐步核对 → 收尾）。
 
 ### 记忆阶梯
 
@@ -136,7 +138,7 @@ task 读本 task 的 ActMemory，episode 读本局的 TaskMemory，run 读 Episo
 |---|---|---|
 | 模型交互 | `<链路>_call` ↔ 它的结论账；链路名 = `link` 的值 | `sense_call`↔`sense_frame`、`choose_call`↔`choose_verdict`、`plan_call`↔`plan_verdict`、`decompose_call`↔`decompose_verdict`、`judge_call`↔`judge_verdict`、`verify_call`↔`verify_verdict`、`summarize_task_call`↔`write_task_memory`、`summarize_episode_call`↔`write_episode_memory` |
 | 记忆 | `read_<记忆全名>` / `write_<记忆全名>` | act_memory / task_memory / episode_memory / object_memory / knowledge |
-| 动作 | 动词在前 | `press_key`、`run_macro`、`check_stall`、`advance_step`、`get_action_space` |
+| 动作 | 动词在前 | `act_call`（P5，原 `press_key`）、`check_stall`、`advance_step`、`get_action_space` |
 | 生命周期 | `<层>_start` 在该层入口、`<层>_end` 在该层 `*_done`、`<层>_error` 由**接住异常的那一格**记 | task_error ← episode `act`；episode_error ← run `act`；run_error ← `new_run` |
 | 定案 | `settle_<表>` | `settle_goal`（run 目标表）、`settle_task`（episode 任务表） |
 run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不加前缀）。
@@ -181,7 +183,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 |---|---|---|
 | `plan_verdict` | `plan_run` | `pushed_goals`、`updates`、`why`、`human_note` |
 | `decompose_verdict` | `plan_episode` | `tasks`（`task_id`/`goal`/`success_criteria`/`max_steps`）、`why`、`human_note` |
-| `choose_verdict` | `plan_task` | `sequence`（宏调用时为空）、`input`、`output`、可选 `macro`（`{name, args}`）/ `human_note` |
+| `choose_verdict` | `plan_task` | `sequence`（脚本调用时为空）、`input`、`output`、可选 `script`（`{name, args}`）/ `human_note` |
 | `judge_verdict` | 三层 `review_and_judge` | `termination`、`fail_streak`、`judge_reason`、`audit`（人对「已达成」的表态；没问人为空）、`human_note`（推翻理由） |
 | `verify_verdict` | `verify_act_memories` / `verify_task_memories` | `checked`、`negative` |
 
@@ -191,8 +193,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 |---|---|---|---|
 | `sense_frame` | view | episode 的 `sense`（视觉档）/ `task.sense`（`perceive_task`，带场合） | `status`、`facts`、`done`、`perceived`、可选 `place` / `scene`（task 层的场合）/ `takeover`（接管场合的视图对象）/ `frame` / `ram`（`RamReadout`：菜单变量、金钱、背包、队伍、战斗、文字来源、每帧的解码文字 `decoded`；只进账、不进 agent 输入，测评读它）；`facts.screen` 是整屏文字原样（两层都给 agent） |
 | `get_action_space` | act | `get_action_space` | `names` |
-| `press_key` | act | `act`（task） | `sequence`（单段） |
-| `run_macro` | act | `act`（task，接管场合） | `scene`、`macro`、`args`（对象）、`status`、`reason_code`（`done` 时空串）、`reason`、`summary`、`steps`（每步 `key` / `frames` / `expect` / `actual` / `ok`） |
+| `act_call` | act | `act`（task） | 两形（P5）：key 形 = `sequence`（单段）；script 形 = `script`、`args`（对象）、`ok`（小写字符串）、`code`，可选 `data` / `events[]`（脚本终态报告；接管脚本的 `data` 带 `scene` / `status` / `reason` / `summary` / `steps`） |
 | `check_stall` | act | `detect_stall` | `stall_key`、`stall_count` |
 
 **记忆读写（`memory_io`）**：读账统一 `query` + `refs`；写账正文就是记录本体（去坐标与来源章）
@@ -234,7 +235,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 
 - **逐格核对**在 `experiment/real_check/node_io.py`：按 `meta` 把账切成 run / episode / task 三种流，
   每种流用一张后继表（就是那张图的拓扑）核执行序，再核层间计数与盖章。样本见 `tests/_fake_run.py`。
-- **按类型读正文**走 `tools/trace/parse.py::parse`（测评 `evals/` 用；见 `docs/spec/trace/SPEC.md` 第五节）。
+- **按类型读正文**走 `direct/trace/parse.py::parse`（测评 `evals/` 用；见 `docs/spec/trace/SPEC.md` 第五节）。
 - **`sense_call` 在假样本里碰不到**（假世界不产调用账），它的正文只由账单契约核。
 - **`MemoryToolPort.query_recent_act_memories` 已无 harness 调用方**（task 层改读 `task_ctx.act_memories`），
   只剩 `check_memory_roundtrip` 在用。

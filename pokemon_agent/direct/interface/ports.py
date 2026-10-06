@@ -11,7 +11,7 @@
 没有自己专属的 domain schema（跟 `world`/`trace`/`providers`/`brain` 不同，
 不需要开一个 `interface/` 子包分协议和数据形状），所以走扁平的 `ports.py`，
 跟实现文件（`brain_tool.py`/`game_tools.py`/`memory_tool.py`）同住 `tools/`
-包顶层（trace 那一个已收成 `tools/trace/` 包，分派器 + `render.py`，
+包顶层（trace 那一个已收成 `direct/trace/` 包，分派器 + `render.py`，
 见 D8-③；批量账文件 `model_calls.py` 0916 随写口统一删除）。
 
 零循环依赖风险：`schemas.harness` 对 `tools/` 没有反向依赖，这四张 Port
@@ -22,8 +22,8 @@
 当时把"扁平"当成了"协议与实现平级、同一个出口一起导出"，而问题从来不在文件
 放在哪一级，在**出口**。`tools/__init__.py` 是"进这一层的门"，出口同时导出
 协议和实现，就意味着拿一张协议也会把五个插件全带上（实测 146 个
-`pokemon_agent` 模块）。所以本文件搬进了 `tools/interface/`——**内容零改动，
-只换了住址和出口**：协议改由 `tools/interface/__init__.py` 单独导出，实现改由
+`pokemon_agent` 模块）。所以本文件搬进了 `direct/interface/`——**内容零改动，
+只换了住址和出口**：协议改由 `direct/interface/__init__.py` 单独导出，实现改由
 收窄且懒加载的 `tools/__init__.py` 导出。
 
 那句"零循环依赖、不需要懒加载"今天**仍然有效**，而且正是这次搬家的安全保证
@@ -64,31 +64,14 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolResetReq,
     FromHarnessToGameToolSaveStateReq,
     FromHarnessToGameToolSaveStateResp,
-    FromHarnessToMemoryToolAppendObjectEventsReq,
-    FromHarnessToMemoryToolQueryActMemoriesReq,
-    FromHarnessToMemoryToolQueryActMemoriesResp,
-    FromHarnessToMemoryToolQueryEpisodeSummariesReq,
-    FromHarnessToMemoryToolQueryEpisodeSummariesResp,
-    FromHarnessToMemoryToolQueryKnowledgeReq,
-    FromHarnessToMemoryToolQueryKnowledgeResp,
-    FromHarnessToMemoryToolQueryObjectEventsAtReq,
-    FromHarnessToMemoryToolQueryObjectEventsAtResp,
-    FromHarnessToMemoryToolQueryObjectEventsReq,
-    FromHarnessToMemoryToolQueryObjectEventsResp,
-    FromHarnessToMemoryToolQueryRecentActMemoriesReq,
-    FromHarnessToMemoryToolQueryRecentActMemoriesResp,
-    FromHarnessToMemoryToolQueryTaskMemoriesReq,
-    FromHarnessToMemoryToolQueryTaskMemoriesResp,
+    FromHarnessToMemoryToolMemorizeReq,
+    FromHarnessToMemoryToolMemorizeResp,
+    FromHarnessToMemoryToolRecallReq,
+    FromHarnessToMemoryToolRecallResp,
     FromHarnessToMemoryToolRestoreMemoryReq,
     FromHarnessToMemoryToolRestoreMemoryResp,
     FromHarnessToMemoryToolSnapshotMemoryReq,
     FromHarnessToMemoryToolSnapshotMemoryResp,
-    FromHarnessToMemoryToolStoreActMemoryReq,
-    FromHarnessToMemoryToolStoreEpisodeSummaryReq,
-    FromHarnessToMemoryToolStoreEpisodeSummaryResp,
-    FromHarnessToMemoryToolStoreKnowledgeReq,
-    FromHarnessToMemoryToolStoreKnowledgeResp,
-    FromHarnessToMemoryToolStoreTaskMemoryReq,
     FromHarnessToTraceToolAppendReq,
     ModelCallLog,
     TraceEvent,
@@ -211,11 +194,11 @@ class GameToolPort(Protocol):
         """执行一个动作，推进世界。**不感知**——调用方另调 `perceive_task()` 拿新观测。
 
         req.action：要执行的动作。**执行粒度是一个键**（单段、`times=1`）——
-            连按已经在 Harness 的循环里展开成一步一步；或**一个宏**，world 执行到底。
+            连按已经在 Harness 的循环里展开成一步一步；或**一条脚本**，world 执行到底。
         req.observation：这个动作据以选出的那份观测。
         req.settle：按完要不要等世界把过场走完（链中间的键不等，见该字段说明）。
-        前置条件：动作的按键或宏名属于 get_action_space(req.observation) 的结果（实现方 assert）。
-        后置条件：宏动作时 `resp.outcome` 是宏结果，按键动作时为 None。
+        前置条件：动作的按键或脚本名属于 get_action_space(req.observation) 的结果（实现方 assert）。
+        后置条件：脚本动作时 `resp.report` 是终态报告，按键动作时为 None。
         """
         ...
 
@@ -285,208 +268,57 @@ class GameToolPort(Protocol):
 
 @runtime_checkable
 class MemoryToolPort(Protocol):
-    """Harness 读写记忆的接口：情景 + 语义（object / knowledge）+ 跨局摘要。
+    """Harness 读写记忆的接口：统一回忆（recall）+ 统一记忆（memorize）+ 运维快照。
 
-    这是第一跳（harness → 门面），入参与返回一律是信封；门面往里调各个
-    store 走裸参数、返回 store 自己的类型，那一跳不造信封。
+    **MCP 化定案（2026-09-29）**：查询侧与写侧各收敛为一个口——调用方**不显式
+    指定记忆种类**，种类由产生方天然决定、由底层分族规则圈定（同 chooser 的
+    统一动作掩码：一个命名空间，调用方不选类型）。
+
+    - `recall`：统一回忆口。`conditions` 只放上下文 hint（episode_id / map_id /
+      place / run_id），**不放 kind**——hint 命中族（act/task/object 的近因序）
+      在前，语义族（episode/knowledge 的相关性）在后；
+    - `memorize`：统一记忆口。records 按 kind 判别落族（act/task/episode/
+      object/knowledge），种类由产生方天然决定（判定层产 object 事件、蒸馏产
+      summary、act 环产 act 记忆）——调用方不猜种类，只报身份；
+    - `snapshot_memory` / `restore_memory`：运维快照（checkpoint 专用），
+      **不进 MCP 注册表**——MCP 面只暴露 recall / memorize 两个能力。
+
+    前置/后置条件详见各方法与 `FromHarnessToMemoryToolRecall*` /
+    `FromHarnessToMemoryToolMemorize*` 信封定义。
     """
 
-    # ---- 情景记忆（一条 = 一步） ----
+    def recall(self, req: FromHarnessToMemoryToolRecallReq) -> FromHarnessToMemoryToolRecallResp:
+        """统一回忆口：分族检索后融合排序，返回混合条目（每条自带 kind 身份）。
 
-    def query_act_memories(
-        self, req: FromHarnessToMemoryToolQueryActMemoriesReq
-    ) -> FromHarnessToMemoryToolQueryActMemoriesResp:
-        """取这一局全部的单步情景记忆，按 step 升序。
-
-        req.episode_id：这一局的标识。
-        前置条件：req.episode_id 非空。
-        后置条件：每条 entry.episode_id == req.episode_id；按 step 升序；不打分不截断。
+        前置条件：`req.limit >= 1`；`req.conditions` 的值全是 str。
+        后置条件：`resp.items` 每条带 kind/uuid/score/content/payload；
+        hint 命中族在前（族内按 step / total_acts 升序），语义族按相关性降序；
+        总数 <= req.limit。
         """
         ...
 
-    def query_recent_act_memories(
-        self, req: FromHarnessToMemoryToolQueryRecentActMemoriesReq
-    ) -> FromHarnessToMemoryToolQueryRecentActMemoriesResp:
-        """取这一局最近几条情景记忆，最新的在最后。
+    def memorize(
+        self, req: FromHarnessToMemoryToolMemorizeReq
+    ) -> FromHarnessToMemoryToolMemorizeResp:
+        """统一记忆口：records 按 kind 判别落族，返回实际落库清单。
 
-        req.episode_id：这一局的标识。
-        req.limit：条数上限。
-        前置条件：req.limit > 0。
-        后置条件：条数 <= req.limit；全部来自该局。
+        前置条件：每条 record 的 payload 通过对应 schema 校验；act / object 的
+        step >= 该局已有最大 step（违反 = 调用方伪造时序）。
+        后置条件：`resp.stored` 是 `req.records` 的子序列（knowledge 判重跳过的
+        不在其中），顺序一致。
         """
         ...
-
-    def store_act_memory(self, req: FromHarnessToMemoryToolStoreActMemoryReq) -> None:
-        """写入一条情景记忆。
-
-        req.entry：要写入的单步记忆。
-        """
-        ...
-
-    def query_task_memories(
-        self, req: FromHarnessToMemoryToolQueryTaskMemoriesReq
-    ) -> FromHarnessToMemoryToolQueryTaskMemoriesResp:
-        """取这一局的全部 task 记忆，按 total_acts 升序（episode_done 的总结原料）。"""
-        ...
-
-    def store_task_memory(self, req: FromHarnessToMemoryToolStoreTaskMemoryReq) -> None:
-        """落库一条**已经组装好**的 task 记忆（蒸馏在 `TaskSummarizer` 完成）。"""
-        ...
-
-    # ---- 跨局摘要记忆（一条 = 一整局） ----
-
-    def query_episode_summaries(
-        self, req: FromHarnessToMemoryToolQueryEpisodeSummariesReq
-    ) -> FromHarnessToMemoryToolQueryEpisodeSummariesResp:
-        """按元数据等值过滤取跨局摘要——**这一跳不做任何领域规则**（0914 定案）。
-
-        req.conditions：字段→值，AND 取交集；空字典 = 全取。字段名与取值都由
-            调用方定，这一层不解释（store 只支持等值/成员匹配，不支持范围比较）。
-        前置条件：无——不过滤是合法用法，不是错误输入。
-        后置条件：返回**全部**命中记录的完整 `EpisodeMemory`，**不排序、不截断、
-            不限 run**；顺序只保证"同一个库读两次一样"（按 `episode_id` 字典序），
-            不含相关性含义。
-
-        **原先的四件套已删**（场景通配匹配 / 相关性排序 / 条数截断 / 跨 run 禁令）：
-        它们都是消费方的判断，住在读口上等于把"取哪些、取几条"从消费方手里拿走。
-        现在的分工是——读口给全集，消费方自己决定相关性与裁剪。
-        """
-        ...
-
-    def store_episode_summary(
-        self, req: FromHarnessToMemoryToolStoreEpisodeSummaryReq
-    ) -> FromHarnessToMemoryToolStoreEpisodeSummaryResp:
-        """落库一条**已经组装好**的跨局摘要，不调模型。
-
-        蒸馏与组装都在 `BrainTool.summarize()` 里完成（resp.episode_memory，
-        见 ROADMAP 16），这个方法只做落盘 + 更新检索向量缓存。
-        **这是这个 Port 上唯一的跨局摘要写入口**——它接两种形态：常规的
-        "蒸馏正文"，以及"正文全空"（这一局没有可蒸馏的正文，落一条只有来源章
-        的记录——`harness/episode/episode_done/leave_chapter.py::store_empty_chapter()`）。
-        **没有"不经校验全量蒸馏"的兜底入口**。
-
-        req.memory：组装好的摘要记忆。
-        前置条件：req.memory.episode_id 非空；正文与章自洽（要么整条完整、
-            要么整条为空）。
-        后置条件：resp.memory 是原对象（落库后检索索引同步更新）。
-        """
-        ...
-
-    # ---- 语义记忆（object 交互事件流） ----
-
-    def query_object_events(
-        self, req: FromHarnessToMemoryToolQueryObjectEventsReq
-    ) -> FromHarnessToMemoryToolQueryObjectEventsResp:
-        """取交互事件，按 step 升序。
-
-        req.map_id：地图编号；**None = 不按地图筛**（run 级消费方没有"当前地图"）。
-        req.before_step：只取 step 严格小于它的事件；None = 不过滤（"检索不读未来"）。
-        后置条件：没有记录返回空列表。
-        """
-        ...
-
-    def query_object_events_at(
-        self, req: FromHarnessToMemoryToolQueryObjectEventsAtReq
-    ) -> FromHarnessToMemoryToolQueryObjectEventsAtResp:
-        """取这一格的全部交互事件，按 step 升序（判定层的 kind 兜底查询）。
-
-        req.place：要查的物体格。
-        后置条件：没有记录返回空列表。
-        """
-        ...
-
-    def append_object_events(self, req: FromHarnessToMemoryToolAppendObjectEventsReq) -> None:
-        """追加一批交互事件（写穿：落盘与索引同时生效）。
-
-        req.events：harness 判定层
-        （`harness/episode/store/store_object_semantic_memory/rules.py`）构造好的事件。
-        前置条件：每个事件的 step ≥ 其所在局已有最大 step。
-        """
-        ...
-
-    # ---- 语义记忆（知识库：离线先验 + run 期间学到的，和坐标无关） ----
-
-    def query_knowledge(
-        self, req: FromHarnessToMemoryToolQueryKnowledgeReq
-    ) -> FromHarnessToMemoryToolQueryKnowledgeResp:
-        """从知识库里检索出和 req.query 相关的那几条。
-
-        **库里住着两种来源、一种形状**：离线灌入的手写先验（metadata 里
-        `source` 是文件名）与 run 期间由 `store_knowledge` 写进去的
-        （`source` 是 `{run_id}/{episode_id}`）。读口不区分它们——检索时
-        两边平权，谁更相关谁排前面；要分是分得开的（`resp.sources` 带了
-        `source`），但那是调用方的判断，不是这一跳该做的事。
-
-        req：一次检索请求（检索文本 + 条数上限）。
-        前置条件：req.query 非空；req.limit > 0。
-        后置条件：返回 contents 和 sources；无命中时都是空列表。
-        """
-        ...
-
-    def store_knowledge(
-        self, req: FromHarnessToMemoryToolStoreKnowledgeReq
-    ) -> FromHarnessToMemoryToolStoreKnowledgeResp:
-        """落库一批**已经组装好**的世界知识，不调模型。
-
-        知识由人管理（自动抽取已删），记录由调用方组装好（`source`/`run_id`/
-        `episode_id` 由组装方盖）。本方法只做**判重 + 落盘 + 更新检索向量缓存**。
-
-        **判重在这一跳做**：同 `topic` 且正文逐字相同的条目跳过——同一件事被
-        两局分别学到时不该在库里堆第二份。判据只看"完全一样"，不做语义去重：
-        相近但不完全相同是**该留下**的（世界知识的措辞差异常常带着新信息），
-        要不要合并是人的判断，不是存储层的。
-
-        req.records：**空列表是合法输入**（这一局什么都没读到）——那一跳
-            什么都不做，不是错误。
-        前置条件：每条 record 的 `topic`/`content`/`source` 非空。
-        后置条件：`resp.stored` 是**真的落库了的那几条**，是 `req.records`
-            的子序列（判重跳过的那些不在里面）；顺序与 `req.records` 一致。
-        """
-        ...
-
-    # ---- 快照（0916：整库存档 + 覆盖恢复） ----
 
     def snapshot_memory(
         self, req: FromHarnessToMemoryToolSnapshotMemoryReq
     ) -> FromHarnessToMemoryToolSnapshotMemoryResp:
-        """把**整个记忆库**打成一个 zip，返回它的路径。
-
-        取代了原先的"归档"（`archive_many` 把记录搬进 `voided-<ts>/<kind>/`）：
-        那套要的是"淘汰时留个档"，而这个要的是"能把整个库整体还原回去"——后者
-        才真的有用（前者只是不删而已，且散成一堆文件）。
-
-        **打的是整个库、不是某一族**：四族共用一个 `memory/` 根，存档的语义单位
-        就是那个根。
-
-        **zip 落在哪由实现方决定**：签名只有 `req.name`——"快照放哪个目录、叫
-        什么后缀"不是 harness 该知道的事（此前那套归档让 harness 拼
-        `voided-<ts>/<kind>/` 的路径，是把存储布局漏了出去）。
-
-        req.name：快照名（文件名，不含路径分隔符）；同名覆盖。
-        前置条件：req.name 非空且不含路径分隔符。
-        后置条件：resp.archive 是盘上存在的 zip，里面装着各 kind 子目录的
-            记录文件与 `index.json`。
-        """
+        """把整个记忆库打成一个 zip，返回它的路径（checkpoint 专用）。"""
         ...
 
     def restore_memory(
         self, req: FromHarnessToMemoryToolRestoreMemoryReq
     ) -> FromHarnessToMemoryToolRestoreMemoryResp:
-        """用一个 zip 把记忆库**还原到那一刻**——以 zip 为准。
-
-        **库里多出来的记录会被删掉**：zip 里有的按 zip 写（同名直接盖），zip 里
-        没有的记录文件从库里消失。语义单位是**整个库**，不是"往库上叠一层"
-        ——后者做不到"恢复到某个存档"（越恢复越多）。
-
-        **签名收路径而不是名字**（与 `snapshot_memory` 不对称）：恢复要能接受
-        任意 zip——"拿更早的一份、或者别人给的档灌回来"正是它的价值所在。
-
-        req.archive：要恢复的 zip 路径。
-        前置条件：req.archive 是盘上存在的文件。
-        后置条件：resp.unpacked 是解出的文件数；实现方必须让四族的内存索引与盘上
-            重新一致（否则被删掉的记录会从旧索引里冒出来）。
-        失败：文件不存在、不是合法 zip 时原样抛出，不静默吞掉。
-        """
+        """用一个 zip 把记忆库还原到那一刻——以 zip 为准（checkpoint 专用）。"""
         ...
 
 

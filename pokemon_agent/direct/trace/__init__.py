@@ -51,6 +51,7 @@ from pokemon_agent.trace import Event, EventType, LangfuseTrace, LocalTrace, Tra
 from pokemon_agent.trace.langfuse_support import (
     assert_server_ready,
     build_client_from_environment,
+    langfuse_trace_seed,
 )
 
 from . import render
@@ -86,8 +87,7 @@ _RENDERERS = {
     TraceKind.SUMMARY_PARSE_ERROR: render.episode_summary_error,
     TraceKind.SENSE_FRAME: render.sense_frame,
     TraceKind.CHOOSE_VERDICT: render.choose_verdict,
-    TraceKind.PRESS_KEY: render.press_key,
-    TraceKind.RUN_MACRO: render.run_macro,
+    TraceKind.ACT_CALL: render.act_call,
     TraceKind.CHECK_STALL: render.check_stall,
     TraceKind.GET_ACTION_SPACE: render.action_space,
     TraceKind.JUDGE_VERDICT: render.judge_verdict,
@@ -227,7 +227,10 @@ class TraceTool:
             if trace_root is not None:
                 raise ValueError("trace_root only applies to the local trace backend")
             client = build_client_from_environment()
-            store = LangfuseTrace(trace_id=client.create_trace_id(seed=run_id), client=client)
+            store = LangfuseTrace(
+                trace_id=client.create_trace_id(seed=langfuse_trace_seed(run_id, branch)),
+                client=client,
+            )
         else:
             raise ValueError(f"unknown trace backend: {backend!r}")
         if live_feed_url is not None:
@@ -298,7 +301,7 @@ class TraceTool:
         - 其余：本分支的全部匹配事件，加上血缘里每个祖先分支"分叉点及之前"的匹配事件
           ——即这条执行线看得见的全部账。血缘每次现推（`lineage.lineage_of`），不缓存。
 
-        后置条件：按 `(ended_at, uuid)` 升序（双时刻定案：按操作结束时刻排）。
+        后置条件：按 `(ended_at, seq)` 升序（0928 325：同刻决胜看 append 序）。
         """
         if not meta or "branch" in meta:
             return [_to_trace_event(e) for e in self._trace.read_events(meta)]
@@ -311,10 +314,10 @@ class TraceTool:
                 for e in self._trace.read_events(
                     {**meta, "run_id": fork.run_id, "branch": fork.branch}
                 )
-                if (e.ended_at, e.uuid) <= (fork.ended_at, fork.uuid)
+                if (e.ended_at, e.seq) <= (fork.ended_at, fork.seq)
             )
-        # 步骤 2：合并后按操作结束序排好。
-        picked.sort(key=lambda e: (e.ended_at, e.uuid))
+        # 步骤 2：合并后按操作结束序排好（同刻按 append 序决胜，0928 325）。
+        picked.sort(key=lambda e: (e.ended_at, e.seq))
         return [_to_trace_event(e) for e in picked]
 
 

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from pokemon_agent.direct.interface import JudgePort, TraceToolPort
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
@@ -14,7 +15,6 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 from pokemon_agent.schemas.harness.domain import Termination
-from pokemon_agent.tools.interface import JudgePort, TraceToolPort
 
 
 def mechanical_termination(
