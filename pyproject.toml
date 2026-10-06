@@ -10,8 +10,12 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=3.0",
     "fastembed>=0.8",
     "rank-bm25>=0.2",
+    "numpy>=1.26",
     "websockets>=16.0",
     "langfuse>=4.7,<5",
+    "inspect-ai>=0.3.271",
+    "pyboy>=2.7.0",
+    "mcp>=1.0",
 ]
 # fastembed：本地跑 embedding/reranker（ONNX runtime，不需要 torch），首次用某个模型时
 # 会从 HuggingFace Hub 下一次权重、之后离线复用——这是"混合检索"（关键词 BM25 +
@@ -41,7 +45,9 @@ dev = [
 # `tests/` 不装包，靠 `[tool.pytest.ini_options]` 的
 # `pythonpath = ["."]` 直接跑，不需要被 setuptools 发现。
 [tool.setuptools.packages.find]
-include = ["pokemon_agent*"]
+# evals 也在内：`inspect eval` 按文件路径加载 task 模块，sys.path 不含仓库根——
+# 两个顶层包都必须 editable 装进 venv（334 的部署缺口）。
+include = ["pokemon_agent*", "evals*"]
 
 [tool.ruff]
 line-length = 100
