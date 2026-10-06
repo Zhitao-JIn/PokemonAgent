@@ -40,17 +40,24 @@ uuid 集合），不一致（崩溃窗口、手工动过目录、索引损坏）
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
 import shutil
 import tempfile
+import time
 import uuid as uuid_module
 import zipfile
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from pokemon_agent.memory.retrieval import hybrid_retrieve
+from pokemon_agent.memory.retrieval import (
+    Timings,
+    build_bm25_from_corpus,
+    hybrid_retrieve,
+    tokenize,
+)
 
 if TYPE_CHECKING:
     # 仅类型检查期依赖：运行期不 import interfaces（否则会连带拖进整层
@@ -123,7 +130,24 @@ class LocalMemoryStore:
         self._vectors: dict[str, list[float]] | None = None
         """向量缓存，**惰性加载**——只有语义检索真的用到时才读 vectors.jsonl。"""
         self._mtimes: dict[str, float] = {}
-        """uuid → 记录文件 mtime（md 类的 `refresh_changed()` 用；随 index.json 持久化）。"""
+        """uuid → 记录文件 mtime（md 类的 `refresh_changed()` 用；随 index.json 持久化）。
+        mtime 只配当**免读文件的第一道预筛**——它说不了"内容变没变"（git checkout /
+        pull 重写工作区文件时 mtime 变、内容一字不变），真伪由 `_hashes` 复核。"""
+        self._hashes: dict[str, str] = {}
+        """uuid → 记录文件内容的 sha256（md 类的 `refresh_changed()` 判据；随
+        index.json 持久化）。以内容为准：动了但内容没变 → 只刷新 mtime 基线，
+        不重算向量（0928 326，治 git 重写文件触发的整库白算）。"""
+        self._bm25_cache: tuple[tuple[str, ...], Any] | None = None
+        """BM25 索引缓存：`(排序后的候选文本元组, BM25Okapi)`——集合内容没变就
+        复用，put / delete / refresh_changed 改了任何 text，指纹自然失配、下次
+        查询重建（0928 326：消灭每次查询的全库重分词）。"""
+        self._corpus: dict[str, list[str]] = {}
+        self._vector_rows = 0
+        """sidecar 当前行数（`_load_vectors` 统计，自动压实的判据输入）。"""
+        """uuid → 分好词的语料（0928 326：**随 index.json 持久化**）——跨进程也
+        免全库重分词，BM25 索引从它秒建。text 变了（put / 真编辑）就地重算；
+        缺失（旧索引）惰性补算并写穿。只收 text 非空的记录（语义检索看不见
+        空文本，给它存 token 是纯浪费）。"""
         self._load_or_rebuild()
 
     @property
@@ -142,9 +166,14 @@ class LocalMemoryStore:
         record_id = uuid_module.uuid4().hex
         self._write_record(record_id, dict(metadata), dict(payload), text)
         self._index_record(record_id, metadata)
-        # 记下写入瞬间的 mtime：`refresh_changed()` 靠它区分"自己写的"与
-        # "外部手工改的"。不记的话刚写完的记录会被判成 changed，白跑一遍 embed。
+        # 记下写入瞬间的 mtime 与内容 hash：`refresh_changed()` 靠它们区分
+        # "自己写的"与"外部真改过的"。不记的话刚写完的记录会被判成 changed，
+        # 白跑一遍 embed。
         self._mtimes[record_id] = self._record_path(record_id).stat().st_mtime
+        if text:
+            self._corpus[record_id] = tokenize(text)
+        if self._is_md:
+            self._hashes[record_id] = self._hash_of_file(record_id)
         self._save_index()
         if text and self._is_md:
             self._put_vector(record_id, text)
@@ -176,11 +205,17 @@ class LocalMemoryStore:
         return deleted
 
     def refresh_changed(self) -> None:
-        """md 类记录的文件被直接编辑过（mtime 变了）就重读整条记录——正文重算
-        向量、frontmatter 里的 metadata 重建倒排——保留"运营改 `.md` 不重启
+        """md 类记录的文件被直接编辑过（**内容真的变了**）就重读整条记录——正文
+        重算向量、frontmatter 里的 metadata 重建倒排——保留"运营改 `.md` 不重启
         进程就生效"的性质（原 KnowledgeStore 的 mtime 增量重建逻辑的等价物）。
         正文与 metadata 都要刷新：只刷正文的话，改 `source` 这类过滤字段
         `filter()` 永远查不到新值。json 类是运行期写穿产物，直接 no-op。
+
+        **判据是 hash，mtime 只配当预筛**（0928 326）：mtime 相等直接跳过（免读
+        文件）；动了才算 sha256 对比 `_hashes` 基线——内容没变只刷新 mtime 基线，
+        不重算向量。为什么：git checkout / pull 会重写工作区文件（mtime 变、
+        内容一字不变），只看 mtime 会把整库向量白算一遍（实测 vectors.jsonl
+        被喂到 697 行对 12 条记录）。
         """
         if not self._is_md or not self._uuids:
             return
@@ -192,6 +227,11 @@ class LocalMemoryStore:
             current = path.stat().st_mtime
             if current == self._mtimes.get(record_id):
                 continue
+            digest = self._hash_of_file(record_id)
+            if digest == self._hashes.get(record_id):
+                self._mtimes[record_id] = current  # 动了但内容没变：只刷新基线
+                changed = True
+                continue
             text, metadata, _payload = self._read_record(record_id)
             self._put_vector(record_id, text)
             # frontmatter 里的 metadata 也可能被外部改过：先摘旧桶、再按新
@@ -199,9 +239,15 @@ class LocalMemoryStore:
             self._unindex(record_id)
             self._index_record(record_id, metadata)
             self._mtimes[record_id] = current
+            self._hashes[record_id] = digest
+            self._corpus[record_id] = tokenize(text) if text else []
             changed = True
         if changed:
             self._save_index()
+
+    def _hash_of_file(self, record_id: str) -> str:
+        """一条记录文件内容的 sha256（`refresh_changed` 的判据，见其 docstring）。"""
+        return hashlib.sha256(self._record_path(record_id).read_bytes()).hexdigest()
 
     # ---- 读端 ----
 
@@ -237,18 +283,28 @@ class LocalMemoryStore:
             return []
         return list(set.intersection(*sets))
 
-    def search(self, query: str, limit: int, conditions: dict[str, str] | None = None) -> list[str]:
+    def search(
+        self, query: str, limit: int, conditions: dict[str, str] | None = None
+    ) -> tuple[list[str], Timings]:
         """语义检索：先 filter 圈候选，再对有 text 的候选做混合检索排序。
 
         候选的向量从 sidecar 取；缺失（历史记录/外部写入）就现算并补进
         sidecar——与旧实现 `_episode_vector` 的惰性补算同一个道理。
+        返回 `(uuids, timings)`，契约见 `MemoryStorePort.search`；
+        timings 由 `rank` 报出（等值过滤不走模型、微秒级，不占段位）。
         """
         candidate_ids = self.filter(conditions or {})
-        ranked = self.rank(candidate_ids, query, fuse_top_k=max(limit * 3, 10))
-        return [record_id for record_id, _score in ranked[:limit]]
+        ranked, timings = self.rank(candidate_ids, query, fuse_top_k=max(limit * 3, 10))
+        return [record_id for record_id, _score in ranked[:limit]], timings
 
-    def rank(self, uuids: Sequence[str], query: str, fuse_top_k: int) -> list[tuple[str, float]]:
-        """对一个**给定候选集**做混合检索排序，返回 [(uuid, 相关性分)] 降序。
+    def rank(
+        self, uuids: Sequence[str], query: str, fuse_top_k: int
+    ) -> tuple[list[tuple[str, float]], Timings]:
+        """对一个**给定候选集**做混合检索排序，返回 `([(uuid, 分)], timings)`。
+
+        timings 五段：`prepare`（读候选正文 + 惰性加载/补算文档向量）+
+        `hybrid_retrieve` 的四段（`bm25` / `vector` / `rrf` / `rerank`）；
+        五段之和 ≈ 本方法的调用时长，与记账侧的 `started_at/ended_at` 对得上。
 
         `search()` 是"filter 圈候选 + 截断"的便捷封装；`rank` 是底层原语——
         调用方（`MemoryTool` 的跨局摘要）要先把候选按自己的领域规则
@@ -257,6 +313,7 @@ class LocalMemoryStore:
         """
         assert query, "rank() needs a non-empty query"
         assert fuse_top_k > 0, f"rank() needs fuse_top_k > 0, got {fuse_top_k}"
+        t0 = time.perf_counter()
 
         texts: list[str] = []
         ids_with_text: list[str] = []
@@ -268,9 +325,13 @@ class LocalMemoryStore:
                 texts.append(text)
                 ids_with_text.append(record_id)
         if not ids_with_text:
-            return []
+            return [], {"prepare": time.perf_counter() - t0}
 
-        vectors = self._vectors or {}
+        # 必须走 _load_vectors()（触发惰性加载），不能 `self._vectors or {}`：
+        # 首次语义检索时 _vectors 还是 None，`None or {}` 给出空 dict 会让
+        # 全部候选 miss → 全量现算向量 → sidecar 被 append 一整轮（0928 324
+        # 实证：knowledge 697 行对 12 条记录的主凶就是这一行）。
+        vectors = self._load_vectors()
         document_vectors: list[list[float] | None] = []
         for record_id, text in zip(ids_with_text, texts, strict=True):
             vec = vectors.get(record_id)
@@ -279,15 +340,36 @@ class LocalMemoryStore:
                 self._put_vector(record_id, text)
             document_vectors.append(vec)
 
-        ranked = hybrid_retrieve(
+        # BM25 语料：优先吃持久化的分词结果（_corpus，随 index.json 走），
+        # 缺失就地补算并写穿；索引本体再按语料指纹缓存复用（0928 326）。
+        corpus_tokens: list[list[str]] = []
+        corpus_dirty = False
+        for record_id, text in zip(ids_with_text, texts, strict=True):
+            tokens = self._corpus.get(record_id)
+            if tokens is None:
+                tokens = tokenize(text)
+                self._corpus[record_id] = tokens
+                corpus_dirty = True
+            corpus_tokens.append(tokens)
+        if corpus_dirty:
+            self._save_index()
+
+        fingerprint = tuple(sorted(texts))
+        if self._bm25_cache is None or self._bm25_cache[0] != fingerprint:
+            self._bm25_cache = (fingerprint, build_bm25_from_corpus(corpus_tokens))
+
+        timings: Timings = {"prepare": time.perf_counter() - t0}
+        ranked, hybrid_timings = hybrid_retrieve(
             query,
             texts,
             self._embedder,
             self._reranker,
             fuse_top_k=fuse_top_k,
             document_vectors=document_vectors,
+            prebuilt_bm25=self._bm25_cache[1],
         )
-        return [(ids_with_text[idx], score) for idx, score in ranked]
+        timings.update(hybrid_timings)
+        return [(ids_with_text[idx], score) for idx, score in ranked], timings
 
     def count(self) -> int:
         """当前在索引里的记录条数（不含已删的）。"""
@@ -484,6 +566,7 @@ class LocalMemoryStore:
                 del self._inverted[field]
         self._uuids.discard(record_id)
         self._mtimes.pop(record_id, None)
+        self._corpus.pop(record_id, None)
 
     # ---- index.json：派生物，写穿 + 自愈 ----
 
@@ -497,6 +580,7 @@ class LocalMemoryStore:
                 for field, buckets in sorted(self._inverted.items())
             },
             "mtimes": {k: self._mtimes[k] for k in sorted(self._mtimes) if k in self._uuids},
+            "corpus": {k: self._corpus[k] for k in sorted(self._corpus) if k in self._uuids},
         }
         _atomic_write_text(self._index_file, json.dumps(doc, ensure_ascii=False, indent=2))
 
@@ -514,15 +598,19 @@ class LocalMemoryStore:
             }
             self._uuids = indexed
             self._mtimes = dict(doc.get("mtimes", {}))
+            self._corpus = dict(doc.get("corpus", {}))
             return
         # 对账失败：全量扫描重建（真相是记录文件，索引只是派生物）。
         self._inverted = {}
         self._uuids = set()
         self._mtimes = {}
+        self._corpus = {}
         for record_id in sorted(files):
-            _, metadata, _payload = self._read_record(record_id)
+            text, metadata, _payload = self._read_record(record_id)
             self._index_record(record_id, metadata)
             self._mtimes[record_id] = self._record_path(record_id).stat().st_mtime
+            if text:
+                self._corpus[record_id] = tokenize(text)
         self._save_index()
 
     def _load_index_file(self) -> dict[str, Any]:
@@ -544,16 +632,19 @@ class LocalMemoryStore:
 
     def _load_vectors(self) -> dict[str, list[float]]:
         """读 sidecar。**只留还活着的 uuid**（0916）：sidecar 是 append-only 的，
-        删除过的记录其向量行会一直躺在文件里——在这里按 `self._uuids` 滤掉，就不
-        必为一个派生文件设计"重写/压实"策略（删记录只损失一条向量行，下次加载
-        自然丢弃；被恢复回来的记录若 uuid 相同会连同向量一起复活，这正是想要的）。
+        删除过的记录其向量行会一直躺在文件里——在这里按 `self._uuids` 滤掉。
+        加载后顺带做一次**自动压实检查**（`_maybe_compact_vectors`，0928 327）：
+        原"不必设计压实策略"的判断只对"删记录"成立——对"同一 uuid 反复重算"
+        不成立（0928 实测 697 行对 12 条），垃圾行会无限累积，所以补上机械规则。
         """
         if self._vectors is None:
             vectors: dict[str, list[float]] = {}
+            rows = 0
             if self._vectors_file.is_file():
                 for line in self._vectors_file.read_text(encoding="utf-8").splitlines():
                     if not line.strip():
                         continue
+                    rows += 1
                     try:
                         row = json.loads(line)
                     except json.JSONDecodeError:
@@ -561,7 +652,26 @@ class LocalMemoryStore:
                     if row["uuid"] in self._uuids:
                         vectors[row["uuid"]] = row["vector"]
             self._vectors = vectors
+            self._vector_rows = rows
+            self._maybe_compact_vectors()
         return self._vectors
+
+    def _maybe_compact_vectors(self) -> None:
+        """sidecar 自动压实：活 uuid 远少于行数（垃圾行占比过高）就按每 uuid
+        最新一行重写整个 sidecar。阈值 `max(64, 活数 × 4)`——绝对下限避免小库
+        因个位数抖动频繁重写；倍数上限定住垃圾占比的天花板。12 条规模下这个
+        分支永远不触发（697 行那次的历史垃圾已手动清过），它是给库长到大之后
+        的保险，规则机械、无需人盯。"""
+        if self._vectors is None or not self._vectors_file.is_file():
+            return
+        if self._vector_rows <= max(64, len(self._vectors) * 4):
+            return
+        lines = [
+            json.dumps({"uuid": uid, "vector": vec}, ensure_ascii=False)
+            for uid, vec in sorted(self._vectors.items())
+        ]
+        _atomic_write_text(self._vectors_file, "\n".join(lines) + "\n")
+        self._vector_rows = len(lines)
 
     def _put_vector(self, record_id: str, text: str) -> None:
         """算一条向量并追加写进 sidecar（最后一行为准，重复行无害）。"""

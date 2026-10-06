@@ -18,7 +18,8 @@ memory 子系统要能被整体拷到别的项目里用，所以它的契约不�
 的规则。
 
 **语义检索内部怎么排（分词/BM25/embedding/RRF/reranker）对外完全不透明**——
-调用方只给一句话，回来的是排好序的 uuid，不需要也不能干预排序过程。
+调用方只给一句话，回来的是排好序的 uuid **加分段耗时**（0928 324，对齐
+provider"返回带 usage"的先例），不需要也不能干预排序过程。
 
 **实现方约定（`memory/store.py`）**：一个实例绑定一个 kind（=
 `memory/` 下的一个子文件夹）；每文件夹一份倒排索引 `index.json` 随记录写穿，
@@ -78,26 +79,38 @@ class MemoryStorePort(Protocol):
         """
         ...
 
-    def search(self, query: str, limit: int, conditions: dict[str, str] | None = None) -> list[str]:
+    def search(
+        self, query: str, limit: int, conditions: dict[str, str] | None = None
+    ) -> tuple[list[str], dict[str, float]]:
         """语义相似度检索：给一句话，按相关性降序返回最多 limit 个 uuid。
+
+        返回 `(uuids, timings)` 二元组——对齐模型 provider"返回带 usage"的先例：
+        **timings 是分段耗时**（段名 → 秒，`prepare` 候选准备 / `bm25` / `vector`
+        / `rrf` / `rerank`），是这次检索的产出之一，随返回值出来（0928 324）。
 
         conditions 非空时先做等值过滤圈定候选范围（同一套交集），再在候选
         范围内检索排序（只在有 text 的记录里找，没写 text 的记录搜不到）。
 
         前置条件：query 非空、limit > 0。
-        后置条件：返回长度 <= limit，候选范围为空时返回空列表（不报错）。
+        后置条件：uuids 长度 <= limit，候选范围为空时返回空列表（不报错，
+            timings 仍然带——空检索也花时间，只是几乎为零）。
         """
         ...
 
-    def rank(self, uuids: Sequence[str], query: str, fuse_top_k: int) -> list[tuple[str, float]]:
-        """对一个**给定候选集**做混合检索排序，返回 [(uuid, 相关性分)] 降序。
+    def rank(
+        self, uuids: Sequence[str], query: str, fuse_top_k: int
+    ) -> tuple[list[tuple[str, float]], dict[str, float]]:
+        """对一个**给定候选集**做混合检索排序，返回 `([(uuid, 相关性分)], timings)`。
+
+        命中列表按相关性降序；`timings` 是分段耗时（段名 → 秒，同 `search`），
+        对齐 provider"返回带 usage"的先例（0928 324）。
 
         `search()` 是"filter 圈候选 + 截断"的便捷封装；`rank` 是底层原语——
         调用方要按自己的领域规则先把候选筛过一遍（场景匹配、质量粗筛等）
         再进来，过滤逻辑不归这一层。没有 text 的候选直接跳过。
 
         前置条件：query 非空、fuse_top_k > 0。
-        后置条件：返回长度 <= len(uuids)，按相关性降序。
+        后置条件：命中长度 <= len(uuids)，按相关性降序。
         """
         ...
 

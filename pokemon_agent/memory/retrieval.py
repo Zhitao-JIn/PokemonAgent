@@ -17,13 +17,25 @@
 
 from __future__ import annotations
 
-import math
+import time
 from typing import TYPE_CHECKING
 
+import numpy as np
 from rank_bm25 import BM25Okapi
 
 if TYPE_CHECKING:
     from pokemon_agent.memory import EmbeddingProviderPort, RerankerProviderPort
+
+Timings = dict[str, float]
+"""检索分段耗时：段名 → 秒。**和结果一起从返回值出来**（0928 324）——对齐
+模型 provider 的先例：`complete()` 的返回除了正文还带 token 用量，检索的返回
+除了命中还带各段耗时。观测数据是产出的一部分，不是旁路回调，也不该逼调用方
+另开收集通道。段位见 `hybrid_retrieve` 的 docstring。
+
+**向量打分是 numpy 扁平精确索引**（0928 327）：全部候选向量组装成一个矩阵，
+一次矩阵乘法算完所有余弦——这是 ANN 索引家族里的 `IndexFlat`（精确检索）形态，
+十万条毫秒级。将来数据量真到了要 HNSW/IVF 的量级，只换这一处实现，接口不变；
+在那之前上近似索引是纯负担（建索引比查询还贵）。"""
 
 
 def tokenize(text: str) -> list[str]:
@@ -40,17 +52,33 @@ RRF_K = 60
 """
 
 
-def bm25_rank(query: str, documents: list[str]) -> list[int]:
+def build_bm25(documents: list[str]) -> BM25Okapi:
+    """对候选集**建一次** BM25 索引（`bm25_rank` 的构建半段，0928 326 拆出）。
+
+    拆出来是为了让调用方能缓存复用：语料没变就不用每次查询重新分词全库。
+    """
+    assert documents, "build_bm25() needs at least one document"
+    return BM25Okapi([tokenize(doc) for doc in documents])
+
+
+def build_bm25_from_corpus(corpus: list[list[str]]) -> BM25Okapi:
+    """从**已分好词**的语料建 BM25 索引——调用方持久化了 corpus（token 列表）
+    时走这条，连全库分词都省掉（0928 326）。"""
+    assert corpus, "build_bm25_from_corpus() needs at least one document"
+    return BM25Okapi(corpus)
+
+
+def bm25_rank(query: str, documents: list[str], prebuilt: BM25Okapi | None = None) -> list[int]:
     """BM25 关键词打分，返回按分数降序排列的文档下标（0-based，对应 `documents`）。
 
     分词用本文件的字符 bigram `tokenize`——没有分词器时，字符 bigram 是
-    中文短文本最省事的折中。
+    中文短文本最省事的折中。`prebuilt` 可选：调用方缓存了语料索引就传进来，
+    跳过重建（0928 326）；查询词本身每次现 tokenize（同一个 query 通常只用一次）。
 
     用 BM25 给候选打分，返回降序的下标。
     """
     assert documents, "bm25_rank() needs at least one document"
-    corpus = [tokenize(doc) for doc in documents]
-    bm25 = BM25Okapi(corpus)
+    bm25 = prebuilt if prebuilt is not None else build_bm25(documents)
     scores = bm25.get_scores(tokenize(query))
     return sorted(range(len(documents)), key=lambda i: scores[i], reverse=True)
 
@@ -71,29 +99,25 @@ def embedding_rank(
 
     前置条件：传了 `document_vectors` 时长度必须和 `documents` 一致。
 
-    用向量余弦给候选打分，返回降序的下标。
+    向量余弦**一次矩阵乘算完全部候选**（0928 327 numpy 化）：逐条双循环在
+    纯 Python 里是 O(N×维度) 的解释器开销，矩阵化后同一算法交给 BLAS——
+    零向量（norm = 0）得 0 分，与旧 `_cosine` 的边界行为一致。
     """
     assert documents, "embedding_rank() needs at least one document"
-    query_vec = embedder.embed([query])[0]
+    query_vec = np.asarray(embedder.embed([query])[0], dtype=np.float32)
     if document_vectors is not None:
         assert len(document_vectors) == len(documents), (
             "document_vectors must line up with documents"
         )
-        doc_vecs = document_vectors
+        doc_matrix = np.asarray(document_vectors, dtype=np.float32)
     else:
-        doc_vecs = embedder.embed(documents)
-    scores = [_cosine(query_vec, v) for v in doc_vecs]
-    return sorted(range(len(documents)), key=lambda i: scores[i], reverse=True)
+        doc_matrix = np.asarray(embedder.embed(documents), dtype=np.float32)
 
-
-def _cosine(a: list[float], b: list[float]) -> float:
-    """两个向量的余弦相似度。"""
-    dot = sum(x * y for x, y in zip(a, b, strict=True))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+    norms = np.linalg.norm(doc_matrix, axis=1) * np.linalg.norm(query_vec)
+    dots = doc_matrix @ query_vec
+    scores = np.divide(dots, norms, out=np.zeros_like(dots), where=norms > 0.0)
+    order = sorted(range(len(documents)), key=lambda i: scores[i], reverse=True)
+    return order
 
 
 def reciprocal_rank_fusion(rankings: list[list[int]], k: int = RRF_K) -> dict[int, float]:
@@ -118,31 +142,53 @@ def hybrid_retrieve(
     reranker: RerankerProviderPort,
     fuse_top_k: int = 10,
     document_vectors: list[list[float]] | None = None,
-) -> list[tuple[int, float]]:
+    prebuilt_bm25: BM25Okapi | None = None,
+) -> tuple[list[tuple[int, float]], Timings]:
     """完整两阶段检索：BM25 + 向量各自排名 → RRF 融合取前 `fuse_top_k` →
     reranker 对这一小撮精排出最终分数。
 
-    返回 `(原始下标, reranker 分数)` 的列表，**按分数降序**，长度是
-    `min(fuse_top_k, len(documents))`——原始下标是为了让调用方能把结果映回
-    `documents` 之外的其他元数据（比如 `MemoryTool` 要把它映回 `EpisodeMemory`
-    对象本身，不只是文本）；带着 reranker 分数一起返回，是为了让调用方能在
-    这个分数之上再叠加别的排序信号（比如质量分、成败），不用重新计算一遍。
+    返回 `(结果, timings)` 二元组：
+
+    - **结果**是 `(原始下标, reranker 分数)` 的列表，**按分数降序**，长度是
+      `min(fuse_top_k, len(documents))`——原始下标是为了让调用方能把结果映回
+      `documents` 之外的其他元数据（比如 `MemoryTool` 要把它映回 `EpisodeMemory`
+      对象本身，不只是文本）；带着 reranker 分数一起返回，是为了让调用方能在
+      这个分数之上再叠加别的排序信号（比如质量分、成败），不用重新计算一遍。
+    - **timings** 是各段耗时（段名 → 秒）：`bm25` / `vector`（query embed + 余弦
+      打分）/ `rrf` / `rerank`。对齐模型 provider"返回带 usage"的先例——耗时
+      是这次检索的产出之一，从返回值出来，不进签名也不搞旁路。
+      归因背景：0928 检索延迟剖析——2~9s 的主嫌疑是 rerank 段，等这里的账来证实。
+
+    `prebuilt_bm25` 可选：调用方缓存了语料索引就传进来，`bm25` 段只做打分
+    不重建（0928 326）。
 
     前置条件：`documents` 非空。
 
     关键词与向量各排一次、融合、再精排，返回前几条。
     """
     assert documents, "hybrid_retrieve() needs at least one document"
-    bm25_ranking = bm25_rank(query, documents)
+    timings: Timings = {}
+    t0 = time.perf_counter()
+    bm25_ranking = bm25_rank(query, documents, prebuilt=prebuilt_bm25)
+    timings["bm25"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
     emb_ranking = embedding_rank(query, documents, embedder, document_vectors)
+    timings["vector"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
     fused = reciprocal_rank_fusion([bm25_ranking, emb_ranking])
+    timings["rrf"] = time.perf_counter() - t0
+
     candidate_idx = sorted(fused, key=lambda i: fused[i], reverse=True)[:fuse_top_k]
 
     candidate_docs = [documents[i] for i in candidate_idx]
+    t0 = time.perf_counter()
     rerank_scores = reranker.rerank(query, candidate_docs)
+    timings["rerank"] = time.perf_counter() - t0
 
     paired = sorted(
         zip(candidate_idx, rerank_scores, strict=True), key=lambda p: p[1], reverse=True
     )
     assert len(paired) <= fuse_top_k, "hybrid_retrieve must respect fuse_top_k"
-    return paired
+    return paired, timings
