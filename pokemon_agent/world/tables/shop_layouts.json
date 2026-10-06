@@ -1,0 +1,43 @@
+{
+  "_source": "pret/pokered：店内图 id 见 constants/map_constants.asm（VIRIDIAN_MART=$2A=42, PEWTER_MART=$38=56, CERULEAN_MART=$43=67）；在售清单来自 data/items/marts.asm 原文（script_mart 逐字）；价格来自 data/items/prices.asm 原文（bcd3）；clerk 坐标来自 data/maps/objects/*.asm 原文（object_event x, y, SPRITE_CLERK, STAY, RIGHT）。",
+  "_note": "clerk (0,5) 与 NPC 坐标同属 Gen1 过图连续坐标语义（rom_fight.state 实证 wXCoord/wYCoord 非图内坐标），与项目实测 1168 次观测同系一致——不再视为超界。buy/sell 的 item 入参逐字匹配 goods（注意 POKé BALL 的 é）。白名单外 map → unsupported_map。",
+  "42": {
+    "name": "Viridian Mart",
+    "clerk": {"x": 0, "y": 5, "facing": "right"},
+    "stand": {"x": 1, "y": 5, "facing": "left"},
+    "goods": [
+      {"item": "POKé BALL", "price": 200},
+      {"item": "ANTIDOTE", "price": 100},
+      {"item": "PARLYZ HEAL", "price": 200},
+      {"item": "BURN HEAL", "price": 250}
+    ]
+  },
+  "56": {
+    "name": "Pewter Mart",
+    "clerk": {"x": 0, "y": 5, "facing": "right"},
+    "stand": {"x": 1, "y": 5, "facing": "left"},
+    "goods": [
+      {"item": "POKé BALL", "price": 200},
+      {"item": "POTION", "price": 300},
+      {"item": "ESCAPE ROPE", "price": 550},
+      {"item": "ANTIDOTE", "price": 100},
+      {"item": "BURN HEAL", "price": 250},
+      {"item": "AWAKENING", "price": 200},
+      {"item": "PARLYZ HEAL", "price": 200}
+    ]
+  },
+  "67": {
+    "name": "Cerulean Mart",
+    "clerk": {"x": 0, "y": 5, "facing": "right"},
+    "stand": {"x": 1, "y": 5, "facing": "left"},
+    "goods": [
+      {"item": "POKé BALL", "price": 200},
+      {"item": "POTION", "price": 300},
+      {"item": "REPEL", "price": 350},
+      {"item": "ANTIDOTE", "price": 100},
+      {"item": "BURN HEAL", "price": 250},
+      {"item": "AWAKENING", "price": 200},
+      {"item": "PARLYZ HEAL", "price": 200}
+    ]
+  }
+}

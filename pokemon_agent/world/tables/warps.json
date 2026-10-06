@@ -1,0 +1,14 @@
+{
+  "_source": "pret/pokered（本机 ROM sha1=ea9bcae6... 与官方 Red 一致）+ rom_fight.state 离线读档亲证（2026-09-29）：wCurMap=12 时游戏 RAM 自报 H=18/W=10、wNumWarps=0、wNumSigns=1，与官方 headers/Route1.asm（connection north ViridianCity(-5) / south PalletTown(0)、def_warp_events 空）逐字吻合。",
+  "_coords": "⚠ 坐标系语义（rom_fight.state 实证）：Gen1 的 wXCoord/wYCoord 是**过图连续坐标**（跨 connection 按官方 offset 延续、warp 时显式设置），不是图内 0..W-1 坐标——玩家在 10x18 的 Route1 上读到 (15,30)。项目感知与 pokered objects 原文坐标同属此连续系，彼此一致（NPC2 (15,13) 与 1168 次实测吻合、路牌 y=27 吻合）。edge_exits 的 y 触发值属连续系，P4 exit_map 运行时以 wCurMap 变化判定为准。",
+  "_note": "门 warp 数=0；出口全部走地图边缘 connection（走到边缘继续朝外）。此前'项目实测与官方尺寸矛盾'已结案：尺寸 10x18 是图内真尺寸，坐标越界是连续系语义，两者不冲突。",
+  "12": {
+    "name": "Route 1",
+    "size": {"w": 10, "h": 18},
+    "door_warps": [],
+    "edge_exits": [
+      {"edge": "north", "dir": "up", "trigger": "step_off_edge", "to_map": 1, "to_name": "Viridian City", "conn_offset": -5},
+      {"edge": "south", "dir": "down", "trigger": "step_off_edge", "to_map": 0, "to_name": "Pallet Town", "conn_offset": 0}
+    ]
+  }
+}
