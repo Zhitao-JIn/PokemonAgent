@@ -63,6 +63,11 @@ class TraceEvent(BaseModel):
         description="本次事件的唯一标识，**与文件名同值**。由 `store.py` 落盘那一刻盖上"
         "（名字到那时才生成，渲染层拿不到）"
     )
+    seq: int = Field(
+        description="进程内 append 的单调序号（0928 325）：**同刻 ended_at 的决胜键**，"
+        "排序看 `(ended_at, seq)`。tool 层（TraceTool.append）分配、随调用进封套；"
+        "同刻账按真实 append 序决胜，uuid 退化为纯标识"
+    )
     kind: str = Field(
         description="账名（`TraceKind` 的值）——这是哪笔账。"
         "**tool 层给的**：渲染层按 `req.kind` 原样落，中间没有翻译表"
@@ -73,8 +78,8 @@ class TraceEvent(BaseModel):
         "（2026-09-27 双时刻改造）"
     )
     ended_at: float = Field(
-        description="Unix 时间戳，秒：操作结束时刻。**排序的唯一依据**"
-        "（`(ended_at, uuid)` 升序）——算延迟与对齐外部日志也用它"
+        description="Unix 时间戳，秒：操作结束时刻。**排序键的一半**"
+        "（`(ended_at, seq)` 升序）——算延迟与对齐外部日志也用它"
     )
     meta: str = Field(
         default="{}",

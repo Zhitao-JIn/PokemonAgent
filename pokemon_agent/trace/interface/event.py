@@ -42,6 +42,15 @@ class Event(Protocol):
     uuid: str
     """本次事件的唯一标识，与文件名同值。"""
 
+    seq: int
+    """进程内 append 的单调序号（0928 325）：**同刻 `ended_at` 的决胜键**。
+
+    `time.time()` 分辨率有限，密集写入的相邻快账 `ended_at` 会同值——平局
+    曾经落到随机的 uuid 上，把执行序翻掉（node_io 流序断言概率性炸，0928 实测）。
+    seq 由 tool 层（`TraceTool.append`，双后端共用入口）分配、盖进封套，
+    排序改看 `(ended_at, seq)`：同刻账按真实 append 序决胜，uuid 退化为纯标识。
+    """
+
     started_at: float
     """Unix 时间戳（秒）：这笔账对应的**操作真实开始**时刻。
 
@@ -51,7 +60,7 @@ class Event(Protocol):
     """
 
     ended_at: float
-    """Unix 时间戳（秒）：操作结束时刻。**排序的唯一依据**（`(ended_at, uuid)`）。"""
+    """Unix 时间戳（秒）：操作结束时刻。**排序键的一半**（`(ended_at, seq)`）。"""
 
     kind: str
     """账名（裸 `str`，取值由声明方定义）。"""

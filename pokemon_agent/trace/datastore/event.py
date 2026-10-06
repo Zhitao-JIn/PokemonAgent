@@ -44,11 +44,16 @@ class _Event(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     uuid: str = Field(description="本次事件的唯一标识（= 文件名），落盘那一刻由 store 盖上")
+    seq: int = Field(
+        description="进程内 append 的单调序号（0928 325）：**同刻 ended_at 的决胜键**，"
+        "排序看 `(ended_at, seq)`；由 tool 层在 append 时分配、随调用传进封套。"
+        "旧格式账缺这个字段，解析当场失败被扫盘跳过（2026-09-28 用户拍板不兼容旧账）"
+    )
     kind: str = Field(description="账名（裸 str，取值由声明方定义）")
     type: str = Field(description="事件种类（裸 str，取值由声明方定义）")
     started_at: float = Field(
         description="Unix 时间戳（秒）：操作真实开始时刻；调用方没记的账 = 记账时刻"
     )
-    ended_at: float = Field(description="Unix 时间戳（秒）：操作结束时刻，**排序的唯一依据**")
+    ended_at: float = Field(description="Unix 时间戳（秒）：操作结束时刻，**排序键的一半**")
     meta: str = Field(default="{}", description="签名信息的 JSON 字符串")
     content: str = Field(default="{}", description="账本体的 JSON 字符串")

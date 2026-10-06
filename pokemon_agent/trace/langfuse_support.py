@@ -106,6 +106,16 @@ class LangfuseClientPort(Protocol):
     def shutdown(self) -> None: ...
 
 
+def langfuse_trace_seed(run_id: str, branch: str) -> str:
+    """Langfuse trace 的 seed：**一次执行尝试 (run_id, branch) = 一个 trace**（0929 定案）。
+
+    同 `(run_id, branch)` 重入 = 事件追加进同一 trace（预期内；branch 每次 restore 随机
+    新发，实际不重入）；不同 branch / epoch / 样本各自独立 trace。寻址规则见
+    `docs/PLAN_trace_branch_addressing.md`。
+    """
+    return f"{run_id}::{branch}"
+
+
 def build_client_from_environment() -> Any:
     """Create the SDK client for a configured local Langfuse instance."""
     public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
@@ -231,6 +241,7 @@ def retrieve_input_fields(content: Any) -> dict[str, Any]:
 
 def new_event_envelope(
     event_uuid: str,
+    seq: int,
     kind: str,
     event_type: str,
     started_at: float,
@@ -241,6 +252,7 @@ def new_event_envelope(
     """Keep the project event in one lossless, version-neutral output value."""
     return {
         "uuid": event_uuid,
+        "seq": seq,
         "kind": kind,
         "type": event_type,
         "started_at": started_at,
@@ -280,6 +292,7 @@ def decode_observation_event(observation: object) -> Event | None:
     try:
         return _Event(
             uuid=str(envelope["uuid"]),
+            seq=int(envelope["seq"]),
             kind=str(envelope["kind"]),
             type=str(envelope["type"]),
             started_at=float(envelope["started_at"]),

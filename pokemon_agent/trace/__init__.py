@@ -29,7 +29,7 @@
 留在这里的是**真的被 `store.py` 消费**的一件：`EventType`（粗类词表）。
 
 事件 `kind`/`type`/`content` 的格式规则按"harness 解耦"方案住在
-`tools/trace/render.py`——组装是 tool 层的处理职责，本模块只做存储。
+`direct/trace/render.py`——组装是 tool 层的处理职责，本模块只做存储。
 
 本文件同时是统一出口：`TracePort`/`LocalTrace`/`LangfuseTrace`/`Event` 都从这里
 re-export，消费方只写 `from pokemon_agent.trace import LocalTrace, TracePort`。

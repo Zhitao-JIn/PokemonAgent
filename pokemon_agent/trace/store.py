@@ -13,9 +13,9 @@
 在调用时盖，本类不持有执行线身份、不解释 meta 的任何键）；`kind` / `type` /
 `content` 同样由调用方给，本类**不解释**它们的取值。
 
-**排序看 `(ended_at, uuid)`**（双时刻改造，原 `(ts, uuid)` 的活）：真实起止进封套
-之后，"第几条"按**操作结束时刻**排——先做完的排前面；同刻靠 uuid 兜底。
-文件名的用处只有"肉眼和 `ls` 看着大致有序"，**排序的真源是 `(ended_at, uuid)`**。
+**排序看 `(ended_at, seq)`**（0928 325，原 `(ended_at, uuid)` 的活）：真实起止进封套
+之后，"第几条"按**操作结束时刻**排——先做完的排前面；同刻按 append 序决胜（0928 325）。
+文件名的用处只有"肉眼和 `ls` 看着大致有序"，**排序的真源是 `(ended_at, seq)`**，uuid 只当纯标识。
 
 **已删的三件**（0914，随封套改造）：
 
@@ -119,19 +119,19 @@ class LocalTrace:
         与 `memory/` 同一条规矩（一条记录一个文件，run_id 在记录里）。
 
         构造时**不扫盘**（0914）：`event_id` 计数器与 `id → 文件` 索引都随
-        `event_id` 一起下线，落盘只需要目录在。
+        `event_id` 一起下线，落盘只需要目录在。原"缺省双时刻单调化"的
+        `_last_default_end` 也删了（0928 325）：同刻决胜改由封套 `seq` 承担，
+        本类不再自己推进时刻。
         """
         # str 与 Path 都收（与 `LocalMemoryStore` 的 root 同一条归一规矩）——
         # 覆盖链上 `build_real(trace_root=…)` 的形参就是 `str | Path`。
         self._dir = Path(root) if root is not None else _default_root()
         self._dir.mkdir(parents=True, exist_ok=True)
 
-        self._last_default_end = 0.0
-        """缺省双时刻的序列基线。**append 是单线程顺序调用**（trace 实例全图共享、
-        图是同步 invoke）：没带真实起止的账补 `start = end =` 记账时刻，但
-        `time.time()` 分辨率有限、密集写入会同刻——平局落到随机的 uuid 上会把
-        执行序翻掉，所以缺省路径撞刻时人为推进 1µs，保证**没记真实时间的账**
-        仍按 append 序排（带了真实起止的账不受基线影响）。"""
+        self._seq = 0
+        """进程内 append 的单调计数器（0928 325，用户拍板：**由 trace 自己递增
+        生成**，实例内全局共享，每次重启置零、不持久化）——同刻 `ended_at` 的
+        决胜键，append 时 +1 盖进封套。"""
 
     def append(
         self,
@@ -150,29 +150,28 @@ class LocalTrace:
             `episode_id` / `step`…），本类**原样序列化**成 JSON 字符串——
             执行线标识由 tool 层在调用时盖好，本类不再补盖、也不解释任何键。
         `content`：这笔账的本体，任何可 JSON 化的对象。
+        本类**自行递增** `seq`（实例内全局共享、重启置零，0928 325 用户拍板）：
+        同刻 `ended_at` 的决胜键，调用方不传、也不许越层代管。
         `started_at` / `ended_at`：操作真实起止（TracePort 契约）；None 补记账时刻。
 
         `meta` / `content` 在盘上是 **JSON 字符串**（`json.dumps(..., ensure_ascii=False)`）
         ——需要一层转义，读端 `json.loads` 回来。序列化只在本类做一处。
 
-        后置条件：七个字段已全部落盘；返回的 uuid 与文件名同值。
-        **排序真源是 `(ended_at, uuid)`**（2026-09-27 双时刻改造）：调用方记了真实
-        起止的账按它排（同一批账里"操作先结束的排前面"），没记的账 start=end=
-        记账时刻、退化为原来的 append 序——同刻平局靠 uuid 兜底。
+        后置条件：八个字段已全部落盘；返回的 uuid 与文件名同值。
+        **排序真源是 `(ended_at, seq)`**（0928 325）：同刻账按 append 序决胜，
+        uuid 退化为纯标识——原"`time.time()` 同值靠 uuid 兜底"会把执行序
+        翻掉（随机决胜 = 每次进程洗一次牌，node_io 流序断言概率性炸）。
         """
         event_uuid = new_event_uuid()
 
         now = time.time()
-        if started_at is None and ended_at is None:
-            # 缺省路径单调化：密集写入同刻会靠 uuid 随机兜底，翻掉执行序。
-            if now <= self._last_default_end:
-                now = self._last_default_end + 1e-6
-            self._last_default_end = now
         start = float(started_at) if started_at is not None else now
         end = float(ended_at) if ended_at is not None else now
 
+        self._seq += 1
         event = _Event(
             uuid=event_uuid,
+            seq=self._seq,
             kind=kind,
             type=type,
             started_at=start,
@@ -194,7 +193,7 @@ class LocalTrace:
     # ---- 读：只回答"盘上有什么"，不掩码、不游标、不打标 ----
 
     def read_events(self, meta: dict[str, Any] | None = None) -> list[Event]:
-        """（契约见 `TracePort.read_events`）全量扫盘、按 `(ended_at, uuid)` 升序、按 meta 交集筛。
+        """（契约见 `TracePort.read_events`）全量扫盘、按 `(ended_at, seq)` 升序、按 meta 交集筛。
 
         每次调用重扫落盘目录——trace 不做内存缓存（内存镜像那套已删，
         需要"盘上有什么"就直接问盘）。
@@ -211,7 +210,7 @@ class LocalTrace:
     # ---- 内部辅助 ----
 
     def _scan_events(self) -> list[tuple[_Event, Path]]:
-        """落盘根下的全部事件（连同它们的文件路径），按 `(ended_at, uuid)` 升序。
+        """落盘根下的全部事件（连同它们的文件路径），按 `(ended_at, seq)` 升序。
 
         残文件/旧格式文件解析失败是预期内的运行期情况，跳过不报错。返回的
         `_Event` 带 `extra="allow"`，所以旧数据（`event_id`/`ts` 那套）
@@ -227,7 +226,7 @@ class LocalTrace:
             except Exception:
                 continue
             found.append((event, path))
-        found.sort(key=lambda pair: (pair[0].ended_at, pair[0].uuid))
+        found.sort(key=lambda pair: (pair[0].ended_at, pair[0].seq))
         return found
 
 

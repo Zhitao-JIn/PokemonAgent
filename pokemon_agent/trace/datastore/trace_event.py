@@ -6,7 +6,7 @@
   信封的字段类型（跨层数据形状），契约层不许反向依赖实现包；
 - ~~`Source` + `SourceName`~~ → **0913 晚删除**：生产者这一维（"这条事件由哪条
   链产出"）整体下线。链路名现在由 `kind`（`choose_call`…）与 `link` 承载，
-  映射在 `tools/trace/render.py`；
+  映射在 `direct/trace/render.py`；
 - ~~`TRACE_SCHEMA_VERSION`~~ → **0914 删除**（封套改造）：它此前是落盘格式版本号，
   但**全 run 恒 `5`、零读方**，而且两份同值副本（这里 + `schemas/harness/domain/
   trace_event.py`）要人工同步。删掉它不会让"老数据被静默读错"——形状变到这个
@@ -41,7 +41,7 @@ class EventType:
     ERROR = "error"  # 一个失败（call_failed / call_exhausted / summary_parse_error）
     LLM_OUTCOME = "llm_outcome"  # 一次 LLM 交互后结构化出的产物（与 MODEL_CALL 配对）
     VIEW = "view"  # 世界帧（视觉）的记录：kind = observe（两层 sense 各记一种）
-    ACT = "act"  # 动作域记录：kind ∈ {press_key, run_macro, get_action_space, check_stall}
+    ACT = "act"  # 动作域记录：kind ∈ {act_call, run_macro, get_action_space, check_stall}
     MEMORY_IO = "memory_io"  # 记忆子系统一次读或写：kind ∈ {read_*, write_*}
     LIFECYCLE = "lifecycle"  # 流程边界与推进（run/episode 边界 + 局内 step 刻度）
 

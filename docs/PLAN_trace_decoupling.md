@@ -187,7 +187,7 @@ if type == EventType.LIFECYCLE and (payload or {}).get("kind") == "episode_end":
 
 搬完之后：
 - harness 5 处 `from pokemon_agent.schemas.harness import Source`；
-- `tools/trace/render.py:41` 的 `Source` 改从 `schemas.harness` 拿
+- `direct/trace/render.py:41` 的 `Source` 改从 `schemas.harness` 拿
   （`EventType` 那半**不动，仍从 trace 拿**）；
 - **`_LINK_NAME: dict[Source, str]` 的防漂移机制照旧生效**（它派生自 `Source` 类，
   与 `Source` 住哪无关）——这是 v1 里我拿它当"Source 该留 trace"的理由，
@@ -206,10 +206,10 @@ RUN_TRACE_MASK = frozenset({EventType.LIFECYCLE, EventType.ERROR})
 理由是它下游的消费者自己已经筛过了。`req.events` 在本项目**只有一个消费点**：
 
 ```python
-# tools/brain_tool.py:440
+# direct/brain_tool.py:440
 history = run_plan_prompt.history_lines(req.events)
 
-# tools/prompts/run_plan.py:29-42（history_lines 内部）
+# direct/prompts/run_plan.py:29-42（history_lines 内部）
 for ev in events:
     kind = ev.payload.get("kind", "")
     if ev.type == EventType.LIFECYCLE and kind == "episode_start": ...
@@ -247,7 +247,7 @@ mask 的 `LIFECYCLE` 那半也只是提前扔掉了 `history_lines` 本来就会
 **可接受。**
 
 **保守替代**（若你想留住"显式口径"这个声明）：把 `RUN_TRACE_MASK` 搬进
-`tools/prompts/run_plan.py`，在 `history_lines` 入口先筛一遍——harness 仍传全量，
+`direct/prompts/run_plan.py`，在 `history_lines` 入口先筛一遍——harness 仍传全量，
 "口径"由渲染层持有（它本来就是"渲染历史要哪些家族"的知识）。
 **不推荐**，因为它与上面的三行代码是同一件事，只是换了个地方写死。
 
@@ -260,7 +260,7 @@ mask 的 `LIFECYCLE` 那半也只是提前扔掉了 `history_lines` 本来就会
 **改法**：`TraceToolPort` 加一个方法，`TraceTool` 转调 trace：
 
 ```python
-# tools/interface/ports.py :: TraceToolPort
+# direct/interface/ports.py :: TraceToolPort
 def read_screenshot(self, event_id: int) -> bytes | None:
     """读某条事件的截图副本（人眼可读的那份 PNG），读不到返回 `None`。
 
@@ -270,7 +270,7 @@ def read_screenshot(self, event_id: int) -> bytes | None:
     """
     ...
 
-# tools/trace/__init__.py :: TraceTool
+# direct/trace/__init__.py :: TraceTool
 def read_screenshot(self, event_id: int) -> bytes | None:
     return self._trace.read_screenshot(self._run_id, event_id)
 ```
@@ -294,7 +294,7 @@ def read_screenshot(self, event_id: int) -> bytes | None:
 **新增** `TraceTool.build()`：
 
 ```python
-# tools/trace/__init__.py
+# direct/trace/__init__.py
 @classmethod
 def build(
     cls,
@@ -552,7 +552,7 @@ class TraceEvent(BaseModel):
 **是字符串常量，不是枚举**（0913 降级）：磁盘上一直是裸字符串，
 `TracePort` 的签名收裸 `str`——本类只是"给调用方一组拼写正确的字面量"。
 
-**`_LINK_NAME` 的防漂移机制不受影响**：`tools/trace/render.py` 的
+**`_LINK_NAME` 的防漂移机制不受影响**：`direct/trace/render.py` 的
 `dict[Source, str]` 从本类派生，与它住哪无关。
 """
 
@@ -583,7 +583,7 @@ docstring 补一句"`Source`/`TraceEvent` 已搬去 `schemas.harness`"。
 - `EventType`——`store.py` **真的读**它（`event.type == EventType.LIFECYCLE`
   判"这一段收尾了吗"），所以它归 trace。**注意**它与 `TraceKind` 不是同一个
   概念：`TraceKind`（harness 声明"我记哪一笔账"）住 `schemas/harness/domain/`；
-  两者的对应关系在 `tools/trace/render.py`——那是桥上的转换。
+  两者的对应关系在 `direct/trace/render.py`——那是桥上的转换。
 - `TRACE_SCHEMA_VERSION`——事件形状的版本号，trace 自己的落盘契约。
 """
 
@@ -711,13 +711,13 @@ def read_event(self, event_id: int) -> Event | None:
 
 ### 步骤 9 —— tool 层补桥
 
-**改动** `tools/interface/ports.py` 的 `TraceToolPort`：加三个方法
+**改动** `direct/interface/ports.py` 的 `TraceToolPort`：加三个方法
 `read_events` / `read_event` / `read_screenshot`（`read_screenshot` 的契约见 §2.5）。
 docstring 里"**读方法已删**……运维侧读事件流仍直读 `TracePort`/`LocalTrace`，
 不进 tool 层"与"**边界不对称**"两段**必须删掉**——本方案正是把读侧收进工具层，
 那句话已经作废。
 
-**改动** `tools/trace/__init__.py` 的 `TraceTool`：
+**改动** `direct/trace/__init__.py` 的 `TraceTool`：
 
 ```python
 def __init__(self, trace: LocalTrace, *, run_id: str = "local") -> None:
@@ -772,12 +772,12 @@ def _decorate(event: Event) -> TraceEvent:
 | 同上 `:33` | `events: list[TraceEvent]` 不变 |
 | 同上 docstring | "按 `RUN_TRACE_MASK` 过滤过的" → "该 run 的全量事件流，渲染层自筛" |
 | `schemas/.../FromHarnessToReviewerReviewReq.py:8` | → `from pokemon_agent.schemas.harness.domain import TraceEvent` |
-| `tools/prompts/run_plan.py:12` | `from pokemon_agent.trace import EventType, TraceEvent` → 拆两行：`from pokemon_agent.schemas.harness import TraceEvent` + `from pokemon_agent.trace import EventType`（**后者合法：tool 层**） |
+| `direct/prompts/run_plan.py:12` | `from pokemon_agent.trace import EventType, TraceEvent` → 拆两行：`from pokemon_agent.schemas.harness import TraceEvent` + `from pokemon_agent.trace import EventType`（**后者合法：tool 层**） |
 
 ⚠️ **必须用 `from .domain import TraceEvent` 而不是包出口**——走包出口会触发
 `schemas.harness.__init__` 半加载。v1 实测确认这是唯一成环点。
 
-### 步骤 12 —— `tools/trace/render.py` 改一处
+### 步骤 12 —— `direct/trace/render.py` 改一处
 
 ```python
 - from pokemon_agent.trace import EventType, Source
@@ -817,10 +817,10 @@ def _decorate(event: Event) -> TraceEvent:
 | 12 | `schemas/harness/__init__.py` | 加两行 | ~3 |
 | 13 | `schemas/.../FromHarnessToBrainToolPlanOnceReq.py` | 改 import + docstring | ~3 |
 | 14 | `schemas/.../FromHarnessToReviewerReviewReq.py` | 改 import | ~1 |
-| 15 | `tools/interface/ports.py` | `TraceToolPort` 加 3 方法 + 删过期 docstring | ~35 |
-| 16 | `tools/trace/__init__.py` | `build()` + 3 读方法 + `_decorate` | ~60 |
-| 17 | `tools/trace/render.py` | 拆 import | ~2 |
-| 18 | `tools/prompts/run_plan.py` | 拆 import | ~2 |
+| 15 | `direct/interface/ports.py` | `TraceToolPort` 加 3 方法 + 删过期 docstring | ~35 |
+| 16 | `direct/trace/__init__.py` | `build()` + 3 读方法 + `_decorate` | ~60 |
+| 17 | `direct/trace/render.py` | 拆 import | ~2 |
+| 18 | `direct/prompts/run_plan.py` | 拆 import | ~2 |
 | 19 | `build.py` | `TraceTool.build()` + 去掉返回元组里的 `trace` | ~5 |
 | 20 | `harness/run_data_center.py` | 改 import | ~1 |
 | 21 | `harness/run/nodes/review.py` | 改 import | ~1 |
@@ -833,7 +833,7 @@ def _decorate(event: Event) -> TraceEvent:
 | 28 | `CHANGELOG.md` | 追加条目 | — |
 
 **不动**：`trace/store.py` 的 `project_root`/`STORAGE_ROOT`（§0.3）；
-`EventType`/`EventTypeName` 的定义；`tools/trace/render.py` 的 `Source.X`/`EventType.X`
+`EventType`/`EventTypeName` 的定义；`direct/trace/render.py` 的 `Source.X`/`EventType.X`
 字面量用法；`_LINK_NAME` 的派生方式。
 
 ---
