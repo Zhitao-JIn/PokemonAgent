@@ -24,10 +24,12 @@ class StableWait:
     stable_polls: int = STABLE_POLLS
     timeout_frames: int = STEP_TIMEOUT_FRAMES
     abort_on_timeout: bool = False
+    minimum_frames: int = 0
 
     def __post_init__(self) -> None:
         """前置条件：三个等待预算均为正数。"""
         assert min(self.poll_frames, self.stable_polls, self.timeout_frames) > 0
+        assert 0 <= self.minimum_frames <= self.timeout_frames
 
 
 @dataclass(frozen=True)

@@ -4,11 +4,65 @@
   "_note": "门 warp 数=0；出口全部走地图边缘 connection（走到边缘继续朝外）。此前'项目实测与官方尺寸矛盾'已结案：尺寸 10x18 是图内真尺寸，坐标越界是连续系语义，两者不冲突。",
   "12": {
     "name": "Route 1",
-    "size": {"w": 10, "h": 18},
+    "size": {
+      "w": 10,
+      "h": 18
+    },
     "door_warps": [],
     "edge_exits": [
-      {"edge": "north", "dir": "up", "trigger": "step_off_edge", "to_map": 1, "to_name": "Viridian City", "conn_offset": -5},
-      {"edge": "south", "dir": "down", "trigger": "step_off_edge", "to_map": 0, "to_name": "Pallet Town", "conn_offset": 0}
+      {
+        "edge": "north",
+        "dir": "up",
+        "trigger": "step_off_edge",
+        "to_map": 1,
+        "to_name": "Viridian City",
+        "conn_offset": -5
+      },
+      {
+        "edge": "south",
+        "dir": "down",
+        "trigger": "step_off_edge",
+        "to_map": 0,
+        "to_name": "Pallet Town",
+        "conn_offset": 0
+      }
     ]
-  }
+  },
+  "41": {
+    "name": "Viridian Pokecenter",
+    "door_warps": [
+      {
+        "x": 3,
+        "y": 7,
+        "dir": "down",
+        "to_map": 1
+      }
+    ],
+    "edge_exits": []
+  },
+  "42": {
+    "name": "Viridian Mart",
+    "door_warps": [
+      {
+        "x": 3,
+        "y": 7,
+        "dir": "down",
+        "to_map": 1
+      }
+    ],
+    "edge_exits": []
+  },
+  "40": {
+    "name": "Oak's Lab",
+    "door_warps": [
+      {
+        "x": 4,
+        "y": 11,
+        "dir": "down",
+        "to_map": 0
+      }
+    ],
+    "edge_exits": []
+  },
+  "_indoor_source": "pokered indoor warp definitions; existing frozen state annotations independently verified the center/mart doors (3,7) and Oak lab door (4,11)."
 }

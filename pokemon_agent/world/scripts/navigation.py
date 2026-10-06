@@ -25,7 +25,6 @@ from .engine import (
 )
 from .movement import BUTTON_OF, _run, face_direction, walk_to
 from .policies import ScriptPolicy, StableWait
-from .timing import POLL_FRAMES, STABLE_POLLS
 
 
 class _StillTalking(Exception):
@@ -40,7 +39,7 @@ def exit_map(console: WorldConsole, target_warp: int = -1) -> ScriptResult:
 
     - 门 warp：先 `walk_to` 到门口，途中被挡 → `blocked` / `not_converging`；
     - 朝触发方向反复走：踩到出口换图（`MapChanged` 钩子）→ `ok`；
-    - 反复按方向键也不换图（表过期 / 坐标错）→ `warp_failed`；
+    - 路径被挡 → `blocked`；持续可移动但预算耗尽仍不换图 → `warp_failed`；
     - map 不在白名单 → `unsupported_map`；`target_warp` 越界 → `rejected`。
     """
     layout = WARPS.get(str(console.map_id()))
@@ -59,6 +58,10 @@ def exit_map(console: WorldConsole, target_warp: int = -1) -> ScriptResult:
     # 门 warp：先走到门口
     if "x" in exit and "y" in exit:
         res = walk_to(console, int(exit["x"]), int(exit["y"]))
+        if res.code == "map_changed":
+            res.ok, res.code = True, "ok"
+            res.data["to_map"] = console.map_id()
+            return res
         if not res.ok:
             return res  # blocked / not_converging / budget_exhausted 原样透传
 
@@ -71,7 +74,12 @@ def exit_map(console: WorldConsole, target_warp: int = -1) -> ScriptResult:
     try:
         while run.budget > 0:
             run.budget -= 1
-            run.press(button)
+            if not run.press(button):
+                return run.finish(
+                    ok=False,
+                    code="blocked",
+                    extra={"dir": direction},
+                )
             # MapChanged 钩子会抛 Halt
         return run.finish(
             ok=False, code="warp_failed", extra={"dir": direction, "map_id": console.map_id()}
@@ -119,8 +127,11 @@ def heal_at_center(console: WorldConsole, max_steps: int = 60) -> ScriptResult:
     except _StillTalking:
         return run.finish(ok=False, code="still_talking", extra=_heal_extra(run, console))
     except Halt as halt:
-        if halt.code == "choice_presented" and "YES" in halt.extra.get("choice", ""):
-            _confirm_yes(console)
+        if halt.code == "choice_presented" and console.read().options in (
+            ["YES", "NO"],
+            ["HEAL", "CANCEL"],
+        ):
+            _confirm_heal(console)
             try:
                 _advance_to_walk(run, console)
             except _StillTalking:
@@ -155,20 +166,20 @@ def _advance_to_walk(run: ScriptRun, console: WorldConsole) -> None:
             return
 
 
-def _confirm_yes(console: WorldConsole) -> None:
-    """在 YES/NO 选项上机械确认 YES：光标若停在 NO 先上移一格，再按 a 选中。
+def _confirm_heal(console: WorldConsole) -> None:
+    """在 YES/NO 或 HEAL/CANCEL 上确认回血：先把光标移到第一项，再按 a。
 
-    本步骤经 ScriptRun，显式选择短等待且不启用选项中断；目标 YES 来自回血脚本。
+    本步骤经 ScriptRun，等待动画且不启用选项中断；目标第一项来自已核对的回血选项。
     """
     run = ScriptRun(
         console,
         budget=0,
         start_map_id=console.map_id(),
         start_pos=console.pos(),
-        policy=ScriptPolicy(wait=StableWait(timeout_frames=POLL_FRAMES * STABLE_POLLS)),
+        policy=ScriptPolicy(wait=StableWait(minimum_frames=64)),
     )
     text = console.read()
-    if text.cursor and text.cursor != "YES":
+    if text.cursor and text.cursor != text.options[0]:
         run.press("up")
     run.press("a")
 

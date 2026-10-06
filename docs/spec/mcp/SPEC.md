@@ -297,14 +297,16 @@ ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已�
 ① 前置同上 → ② 读 money0/stock0/在售表（单价以表为准）→
 ③ 不在售 → `not_sold_here` →
 ④ count>99 → `count_limit`；count×price>money0 → `insufficient_funds` →
-⑤ `console.run_script("shop_buy")`（内部接管脚本）：光标选中（NAV_LIMIT）→ 数量框调 count → 确认框**机械代答
+⑤ 店内尚未开菜单时，走到店员隔柜台的可互动格，面朝店员并打开菜单；已在菜单时不移动。
+`console.run_script("shop_buy")`：光标选中（NAV_LIMIT）→ 数量框调 count → 确认框**机械代答
 "是"**（机械确认非分叉）→ 等购买文本稳定 → 退出菜单 →
 ⑥ 终态校验 money0−money1==price×count 且 stock 增量==count → `verify_failed` 兜底。
 
 **`sell_item(item, count)`** → `{earned, remaining_money, stock}`
 ① 前置同上 → ② 读 money0/stock0 → `not_in_bag` / count>stock0 →
 `insufficient_stock` → ③ `console.run_script("shop_sell")`：开背包 → 选中 → "卖出" →
-调数量 → 确认 → ④ 校验 money 增量==实际卖价×count → `verify_failed` 兜底。
+调数量 → 确认 → ④ 校验 money 增量==ROM 道具单价的一半×count → `verify_failed` 兜底。
+卖出不受本店在售清单限制；店内尚未开菜单时与购买共用上述准备步骤。
 
 ### 7.2 移动 / 导航类
 
@@ -318,6 +320,7 @@ ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已�
 **`walk_to(x, y, max_steps?=200)`** → `{final_pos, steps_used}`
 固定轴序选缩短曼哈顿距离的方向 → 位移失败换另一轴试一次 → 仍失败 `blocked` →
 每 5 步校验距离收敛，不收敛 `not_converging`。不做 BFS（绕行决策交调用方）。
+相邻目标不可走时立即 `blocked`，不离开原位绕行；较远目标保留横向试探。
 
 **`face_direction(direction)`** → `{moved, facing}`
 游戏物理：前方可走即真移动。已面向 no-op；否则 step 一次，moved 如实报。
@@ -325,7 +328,8 @@ ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已�
 **`exit_map(target_warp?=-1)`** → `{dir, to_map}`
 查 `tables.warps[map_id]` 全部出口（门 warp 优先，带坐标先内联 walk_to 到门口；
 边缘出口只有方向）→ 朝触发方向反复走 → MapChanged 钩子 → `to_map`。
-按键不换图 → `warp_failed`（静态表过期——修 tables，不是脚本兜底）；
+走向门口时发生 MapChanged 也算成功；路径被挡 → `blocked`；预算内始终可移动但未触发换图 →
+`warp_failed`（静态表过期——修 tables，不是脚本兜底）；
 map 不在白名单 → `unsupported_map`；`target_warp` 越界 → `rejected`。
 
 **`bounce_in_tall_grass(steps?=30)`** → `{steps_used, encounter:bool}`
@@ -352,15 +356,15 @@ no_response`（确认无反应是合法结果）；其它场合（choice/battle 
 
 **`open_menu_to(target)`** → `{scene, cursor}`
 非 start_menu 先按 start 进菜单（仍不是 → `wrong_scene`）→ 读当前光标
-（`ScreenText.cursor` ∈ START_ORDER）算相对位移移过去 → 按 a 选中 →
+及这一帧实际 `ScreenText.options` 算相对位移移过去（允许尚未获得 POKéDEX）→ 按 a 选中 →
 校验 scene（POKéMON→party / ITEM→bag 有预期，其余只要求离开主菜单）；
 不符 → `wrong_scene`；非法 target → `rejected`。
-选项框常驻光标 → raw 按键绕钩子（与 heal 的 YES 确认同理）。
+本脚本通过 ScriptRun 明确不启用选项中断，等待界面切换后检查终态。
 
 **`heal_at_center(max_steps?=60)`** → `{healed, party_size}`
 当前 map 在 `tables.pokecenter_layouts` 白名单（否则 `unsupported_map`）→
-内联 walk_to 到站位 → 面朝护士 → 按 a 触发对话 → 遇"是否回血"YES/NO
-选项**机械确认 YES**（raw 按键绕 choice 钩子——固定流程确认非分叉）→
+内联 walk_to 到隔柜台可走站位 → 面朝护士 → 按 a 触发对话 → 遇回血 YES/NO 或 HEAL/CANCEL
+选项**机械确认第一项**（ScriptRun 明确不启用选项中断——固定流程确认）→
 推进对话回野外 → 读队伍 RAM（`readout.read_party`）校验全满，
 未满 → `verify_failed`；对话推不完 → `still_talking`。
 

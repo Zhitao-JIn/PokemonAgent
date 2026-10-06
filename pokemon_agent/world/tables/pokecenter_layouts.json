@@ -1,19 +1,43 @@
 {
   "_source": "pret/pokered：中心图 id 见 constants/map_constants.asm（VIRIDIAN_POKECENTER=$29=41, PEWTER_POKECENTER=$3A=58, CERULEAN_POKECENTER=$40=64）；nurse 坐标来自 data/maps/objects/*.asm 原文（object_event 3, 1, SPRITE_NURSE, STAY, DOWN——三家一致）。",
-  "_note": "nurse (3,1) 三家一致（pokered objects 原文，连续坐标语义）。Gen 1 回血流程：站护士面前一格、面朝护士按 A、确认框由脚本机械代答、等回血文本。白名单外 map → unsupported_map。",
+  "_note": "护士在 (3,1)，柜台占 (3,2)；隔柜台互动的可走站位为 (3,3)，面北。",
   "41": {
     "name": "Viridian Pokecenter",
-    "nurse": {"x": 3, "y": 1, "facing": "down"},
-    "stand": {"x": 3, "y": 2, "facing": "up"}
+    "nurse": {
+      "x": 3,
+      "y": 1,
+      "facing": "down"
+    },
+    "stand": {
+      "x": 3,
+      "y": 3,
+      "facing": "north"
+    }
   },
   "58": {
     "name": "Pewter Pokecenter",
-    "nurse": {"x": 3, "y": 1, "facing": "down"},
-    "stand": {"x": 3, "y": 2, "facing": "up"}
+    "nurse": {
+      "x": 3,
+      "y": 1,
+      "facing": "down"
+    },
+    "stand": {
+      "x": 3,
+      "y": 3,
+      "facing": "north"
+    }
   },
   "64": {
     "name": "Cerulean Pokecenter",
-    "nurse": {"x": 3, "y": 1, "facing": "down"},
-    "stand": {"x": 3, "y": 2, "facing": "up"}
+    "nurse": {
+      "x": 3,
+      "y": 1,
+      "facing": "down"
+    },
+    "stand": {
+      "x": 3,
+      "y": 3,
+      "facing": "north"
+    }
   }
 }

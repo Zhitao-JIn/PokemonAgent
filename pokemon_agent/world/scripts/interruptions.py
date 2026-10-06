@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from ..interface import TaskScene
 from ..scene import classify_scene
 from .control_flow import Halt
-from .policies import ScriptPolicy
+from .policies import ScriptPolicy, StableWait
 
 if TYPE_CHECKING:
     from .engine import ScriptRun
@@ -36,6 +36,7 @@ def map_changed(run: ScriptRun) -> None:
 def field_policy() -> ScriptPolicy:
     """地图脚本显式选择三种中断，并记录统一世界事件。"""
     return ScriptPolicy(
+        wait=StableWait(minimum_frames=64),
         interruptions=(battle_started, choice_presented, map_changed),
         collect_world_events=True,
     )

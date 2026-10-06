@@ -109,7 +109,8 @@ def walk_to_adjacent(console: WorldConsole, direction: str) -> ScriptResult:
 
 def walk_to(console: WorldConsole, x: int, y: int, max_steps: int = 200) -> ScriptResult:
     """走到目标格：固定轴序取缩短曼哈顿距离的方向，被挡换另一轴试一次，
-    仍不动 `blocked`；每 5 步校验距离收敛，不收敛 `not_converging`。不做 BFS
+    相邻目标被挡立即 `blocked`，较远目标换轴试探；每 5 步校验距离收敛，
+    不收敛 `not_converging`。不做 BFS
     （绕行决策交调用方——§7.2）。"""
     run = _run(console, budget=max_steps)
     start = console.pos()
@@ -139,18 +140,11 @@ def walk_to(console: WorldConsole, x: int, y: int, max_steps: int = 200) -> Scri
                 if run.press(BUTTON_OF[d]):
                     moved, last_dir = True, d
                     break
-            if not moved:
-                # 换另一轴试一次（§7.2）：cands 只含一个轴时换另一轴（该轴与目标
-                # 同位，方向不定 → 固定序两侧试：x 先 east 后 west，y 先 south 后 north）。
-                if y != here.y:
-                    alts = ["east", "west"]
-                elif x != here.x:
-                    alts = ["south", "north"]
-                else:
-                    alts = []
-                for d in alts:
-                    if run.press(BUTTON_OF[d]):
-                        moved, last_dir = True, d
+            if not moved and dist(here) > 1:
+                alternatives = ["east", "west"] if y != here.y else ["south", "north"]
+                for direction in alternatives:
+                    if run.press(BUTTON_OF[direction]):
+                        moved, last_dir = True, direction
                         break
             steps += 1
             if not moved:

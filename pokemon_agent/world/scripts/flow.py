@@ -23,6 +23,7 @@ def advance_dialog(console: WorldConsole, max_presses: int = 30) -> ScriptResult
     - 进战斗 → `battle_started`。
     """
     run = _run(console, budget=max_presses)
+    run.dialog.ingest(console.read().dialog_text)
     presses = 0
     try:
         while presses < max_presses:

@@ -1,6 +1,6 @@
 """商店类脚本（§7.1）：buy_item / sell_item。
 
-**价格真源**：`shop_layouts.goods`（表，逐字匹配）；**机械校验**：终态对账
+**价格真源**：买价与在售清单来自 `shop_layouts.goods`，卖价来自 ROM 道具价格；**机械校验**：终态对账
 （money 差额、stock 增量）→ 对不上 `verify_failed` 兜底；**接管脚本代答**：确认框
 由接管脚本 `shop_buy` / `shop_sell` 机械代答（非分叉），本脚本只看它的 `ok` 与结局码。
 卖价按 Gen1 规则 = 买价一半（`price // 2`）。
@@ -10,8 +10,40 @@ from __future__ import annotations
 
 from typing import Any
 
-from .engine import SHOP_LAYOUTS, ScriptResult, ScriptRun, WorldConsole
+from ..items import item_id, item_price
+from .engine import SHOP_LAYOUTS, Abort, ScriptResult, ScriptRun, WorldConsole
 from .interruptions import field_policy
+from .movement import face_direction, walk_to
+from .policies import ScriptPolicy, StableWait
+
+
+def _enter_shop(console: WorldConsole, layout: dict[str, Any]) -> ScriptResult | None:
+    """从店内走到可互动格并打开商店菜单；已在菜单时不移动。"""
+    if console.scene() == "shop_items":
+        return None
+    if console.scene() != "shop":
+        return ScriptResult(ok=False, code="wrong_scene", data={"scene": console.scene()})
+    stand = layout["stand"]
+    result = walk_to(console, int(stand["x"]), int(stand["y"]))
+    if not result.ok:
+        return result
+    result = face_direction(console, stand["facing"])
+    if not result.ok:
+        return result
+    run = ScriptRun(
+        console,
+        budget=0,
+        start_map_id=console.map_id(),
+        start_pos=console.pos(),
+        policy=ScriptPolicy(wait=StableWait(minimum_frames=64, abort_on_timeout=True)),
+    )
+    try:
+        run.press_screen("a")
+        run.wait_for(lambda text: console.scene() == "shop_items", expect="商店菜单")
+    except Abort as failure:
+        return run.finish(ok=False, code=failure.code.value, extra={"reason": failure.reason})
+    return None
+
 
 COUNT_LIMIT = 99
 """单次买卖的数量上限（游戏数量框上限）。"""
@@ -42,7 +74,7 @@ def buy_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
     layout = _layout(console)
     if layout is None:
         return ScriptResult(ok=False, code="unsupported_map", data={"map_id": console.map_id()})
-    if console.scene() != "shop_items":
+    if console.scene() not in {"shop", "shop_items"}:
         return ScriptResult(ok=False, code="wrong_scene", data={"scene": console.scene()})
     goods = _goods(layout)
     if item not in goods:
@@ -58,6 +90,9 @@ def buy_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
             data={"item": item, "count": count, "price": price, "money": money0},
         )
     stock0 = console.bag_count(item)
+    failed = _enter_shop(console, layout)
+    if failed is not None:
+        return failed
     inner = console.run_script("shop_buy", {"item": item, "quantity": count})
     if not inner.ok:
         return ScriptResult(
@@ -102,11 +137,10 @@ def sell_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
     layout = _layout(console)
     if layout is None:
         return ScriptResult(ok=False, code="unsupported_map", data={"map_id": console.map_id()})
-    if console.scene() != "shop_items":
+    if console.scene() not in {"shop", "shop_items"}:
         return ScriptResult(ok=False, code="wrong_scene", data={"scene": console.scene()})
-    goods = _goods(layout)
-    if item not in goods:
-        return ScriptResult(ok=False, code="not_sold_here", data={"item": item})
+    if not 1 <= count <= COUNT_LIMIT:
+        return ScriptResult(ok=False, code="count_limit", data={"count": count})
     stock0 = console.bag_count(item)
     if stock0 == 0:
         return ScriptResult(ok=False, code="not_in_bag", data={"item": item})
@@ -117,7 +151,14 @@ def sell_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
             data={"item": item, "stock": stock0, "count": count},
         )
     money0 = console.money()
-    unit = goods[item] // 2
+    identifier = item_id(item)
+    price = item_price(console.rom, identifier) if identifier is not None else None
+    if price is None:
+        return ScriptResult(ok=False, code="not_sold_here", data={"item": item})
+    unit = price // 2
+    failed = _enter_shop(console, layout)
+    if failed is not None:
+        return failed
     inner = console.run_script("shop_sell", {"item": item, "quantity": count})
     if not inner.ok:
         return ScriptResult(
