@@ -135,7 +135,7 @@ def _load_env(path: Path) -> None:
         line = raw.strip().removeprefix("export ")
         key, sep, value = line.partition("=")
         value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("\"", "'"):
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
             value = value[1:-1]
         if (
             line

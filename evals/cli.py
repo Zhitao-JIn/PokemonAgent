@@ -1,27 +1,36 @@
-"""命令行分派：`python -m evals <测评> <命令> …`，把余下参数原样交给该测评自己的 `cli.main`。"""
+"""列七个 task、交 inspect 跑测评，以及数据构建与内部 run-one 入口。"""
 
-from __future__ import annotations
-
-import importlib
+import subprocess
 import sys
 
-SUITES: dict[str, str] = {
-    "e2e": "evals.e2e.cli",
-    "macros": "evals.tasks.macros.cli",
-    "screen": "evals.tasks.screen_reading.cli",
-    "views": "evals.tasks.takeover_views.cli",
-}
-"""测评名 → 它的命令行模块。"""
+from evals.tasks.registry import TASKS
 
 
 def main(argv: list[str] | None = None) -> int:
-    """取第一个参数定测评，其余交给它。"""
+    """run 参数原样交 inspect；旧独立宏与视图测评入口不再开放。"""
     args = list(sys.argv[1:] if argv is None else argv)
-    if not args or args[0] not in SUITES:
-        print(f"用法：python -m evals <{'|'.join(SUITES)}> <命令> …", file=sys.stderr)
-        return 2
-    module = importlib.import_module(SUITES[args[0]])
-    return int(module.main(args[1:]))
+    if args == ["list"]:
+        for name, path in TASKS.items():
+            print(f"{name}\t{path}")
+        return 0
+    if len(args) >= 2 and args[0] == "run" and args[1] in TASKS:
+        return subprocess.run(
+            [sys.executable, "-m", "inspect_ai", "eval", TASKS[args[1]], *args[2:]], check=False
+        ).returncode
+    if args == ["freeze-frames"]:
+        from evals.data.frames.freeze import freeze_takeover
+        from evals.data.frames.terrain import freeze_terrain
 
+        freeze_takeover()
+        freeze_terrain()
+        return 0
+    if args[:2] == ["e2e", "run-one"]:
+        from evals.e2e.cli import main as run_one_main
 
-__all__ = ["SUITES", "main"]
+        return run_one_main(args[1:])
+    if args[:2] == ["screen", "build"]:
+        from evals.data.screen_reading.cli import main as build_main
+
+        return build_main(args[1:])
+    print("用法：python -m evals list | run <task> [inspect 参数] | freeze-frames", file=sys.stderr)
+    return 2

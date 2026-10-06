@@ -1,0 +1,53 @@
+"""同一份冻结 RAM 一次跑完文字、接管视图与地形解码，不调模型。"""
+
+from inspect_ai.solver import Generate, Solver, TaskState, solver
+from inspect_ai.util import store_as
+
+from evals.core.snapshot import has_map, snapshot_of
+from evals.core.world_case import ROM
+from evals.data.screen_reading.schemas import ScreenSample
+from pokemon_agent.world import classify_scene, read_screen_text
+from pokemon_agent.world.ram import read_terrain
+from pokemon_agent.world.scripts.takeover import takeover_view
+
+from .schemas import DecodeRecord, DecodeRun
+
+
+def decode_frame(sample: ScreenSample) -> DecodeRun:
+    """前置条件：帧有 WRAM；全部解码器读取同一时刻的只读内存。"""
+    _, memory = snapshot_of(sample)
+    text = read_screen_text(memory)
+    scene = classify_scene(text, memory)
+    view = takeover_view(scene, text, memory, ROM.read_bytes())
+    terrain: dict = {}
+    if has_map(sample):
+        decoded = read_terrain(memory)
+        terrain = {
+            "map_id": decoded.map_id,
+            "where": decoded.place().render(),
+            "facing": decoded.facing or "",
+            "walk_map": decoded.render(),
+            "neighbors": decoded.render_neighbors(),
+        }
+    return DecodeRun(
+        screen=text.model_dump(mode="json"),
+        takeover={
+            "scene": scene.value,
+            "view": view.model_dump(mode="json") if view else None,
+            "screen": text.screen,
+        },
+        terrain=terrain,
+    )
+
+
+@solver
+def decode_solver() -> Solver:
+    """每帧只解码一次；快照损坏上抛为 sample error。"""
+
+    async def solve(state: TaskState, generate: Generate) -> TaskState:
+        store_as(DecodeRecord).run = decode_frame(
+            ScreenSample.model_validate(state.metadata["frame"])
+        )
+        return state
+
+    return solve

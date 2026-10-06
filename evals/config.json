@@ -7,8 +7,12 @@
   "timeout": 3600,
   "epochs": 1,
   "log_dir": "eval_results/inspect",
-  "trace_backend": "langfuse",
+  "trace_backend": "local",
   "watch": false,
+  "evaluation_models": {
+    "screen_interpret": "openai-api/qwen/qwen3.8-max",
+    "test_text": "openai-api/deepseek/deepseek-flash"
+  },
   "models": {
     "vision_model": "deepseek-flash",
     "text_model": "deepseek-flash",

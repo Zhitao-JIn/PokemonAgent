@@ -1,0 +1,12 @@
+{
+  "records": [
+    {"record_id": "heal", "query": "宝可梦中心护士治疗全队", "expected_content": "宝可梦中心的护士可以免费治疗全队，恢复所有宝可梦的 HP。", "record": {"kind": "knowledge", "payload": {"topic": "heal", "text": "宝可梦中心的护士可以免费治疗全队，恢复所有宝可梦的 HP。", "source": "eval/frozen", "run_id": "eval", "episode_id": "eval-ep1"}}},
+    {"record_id": "shop", "query": "商店购买精灵球价格", "expected_content": "商店出售 POKé BALL，单价 200；购买后金钱减少、背包数量增加。", "record": {"kind": "knowledge", "payload": {"topic": "shop", "text": "商店出售 POKé BALL，单价 200；购买后金钱减少、背包数量增加。", "source": "eval/frozen", "run_id": "eval", "episode_id": "eval-ep1"}}},
+    {"record_id": "grass", "query": "草地遭遇野生宝可梦", "expected_content": "在高草中来回移动可能遭遇野生宝可梦；普通道路不会触发草地遭遇。", "record": {"kind": "knowledge", "payload": {"topic": "grass", "text": "在高草中来回移动可能遭遇野生宝可梦；普通道路不会触发草地遭遇。", "source": "eval/frozen", "run_id": "eval", "episode_id": "eval-ep1"}}}
+  ],
+  "queries": [
+    {"query_id": "heal_query", "text": "队伍受伤了，哪里可以免费恢复 HP？", "relevant": ["heal"]},
+    {"query_id": "shop_query", "text": "购买一个精灵球花多少钱？", "relevant": ["shop"]},
+    {"query_id": "grass_query", "text": "怎样遇到野生宝可梦？", "relevant": ["grass"]}
+  ]
+}

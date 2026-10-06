@@ -64,6 +64,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--report-dir", required=True)
     p.add_argument("--sample", required=True)
     p.add_argument("--epoch", type=int, default=1, help="重复圈号（>1 时 run_id 加 #e<n>）")
+    p.add_argument("--trace-backend", choices=["local", "langfuse"], default=None)
+    p.add_argument("--version", default=None)
     _run_flags(p)
     p.set_defaults(func=_run_one)
 
@@ -123,7 +125,7 @@ def _run_one(args: argparse.Namespace) -> int:
 
     report_dir = Path(args.report_dir)
     cfg = load_config()
-    version = str(cfg.get("version", "v1"))
+    version = args.version or str(cfg.get("version", "v1"))
     [sample] = [s for s in load_samples(version) if s.sample_id == args.sample]
     epoch = args.epoch
     work_name = sample.sample_id if epoch == 1 else f"{sample.sample_id}#e{epoch}"
@@ -134,7 +136,7 @@ def _run_one(args: argparse.Namespace) -> int:
         knowledge=not args.no_knowledge,
         speed=args.speed,
         epoch=epoch,
-        trace_backend=str(cfg.get("trace_backend", "local")),
+        trace_backend=args.trace_backend or str(cfg.get("trace_backend", "local")),
         watch=bool(cfg.get("watch", False)),
     )
     return 0

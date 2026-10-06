@@ -24,21 +24,22 @@ from inspect_ai.scorer import (
     Score,
     Scorer,
     Target,
-    accuracy,
     scorer,
-    stderr,
 )
 from inspect_ai.solver import TaskState
 
 import pokemon_agent.config as config
 from evals.bridge import samples_to_dataset
 from evals.core import mechanical_scorer, red_line_scorer
+from evals.core.judged import judged_accuracy, judged_count
 from evals.core.solver import run_one_solver, work_dir_of
 from evals.data import check, load_samples
 from evals.e2e.runner.one import run_id_for
 from evals.runconfig import load_config, resolve_models
 from evals.schema import EvalSample
 from evals.scorers import RULES, RunStream
+from evals.tasks.result_grade import result_model_scorer
+from pokemon_agent.env import load_env_file
 
 __all__ = ["e2e", "e2e_scorer"]
 
@@ -55,7 +56,7 @@ def _select(
     return chosen
 
 
-@scorer(metrics=[accuracy(), stderr()])
+@scorer(metrics=[judged_accuracy(), judged_count()])
 def e2e_scorer(
     *, report_dir: str, stall_limits: tuple[int, int], trace_backend: str = "local"
 ) -> Scorer:
@@ -128,6 +129,7 @@ def e2e(
     timeout: int | None = None,
     log_dir: str | None = None,
     trace_backend: str | None = None,
+    grader_model: str | None = "openai-api/deepseek/deepseek-flash",
 ) -> Task:
     """e2e 测评：dataset + solver + scorer（指标挂 scorer，epochs 走 `inspect eval --epochs`）。
 
@@ -139,6 +141,10 @@ def e2e(
     scorer 用它读——切换前先确认对应服务可用（langfuse 需本机服务在跑）。
     """
     cfg = load_config()
+    load_env_file()
+    import os
+
+    os.environ.setdefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     version = version or str(cfg["version"])
     split = split if split is not None else (str(cfg["split"]) if cfg["split"] else None)
     sample_ids = samples if samples is not None else [str(s) for s in cfg.get("samples", [])]
@@ -160,10 +166,19 @@ def e2e(
             knowledge=knowledge,
             speed=speed,
             timeout=timeout,
+            trace_backend=trace_backend,
+            version=version,
         ),
-        scorer=e2e_scorer(
-            report_dir=report_dir, stall_limits=stall_limits, trace_backend=trace_backend
-        ),
+        scorer=[
+            e2e_scorer(
+                report_dir=report_dir, stall_limits=stall_limits, trace_backend=trace_backend
+            ),
+            *(
+                [result_model_scorer(report_dir, trace_backend, grader_model)]
+                if grader_model
+                else []
+            ),
+        ],
         metadata={
             "dataset_version": version,
             "split": split,

@@ -33,6 +33,8 @@ def run_one_solver(
     knowledge: bool,
     speed: int,
     timeout: int,
+    trace_backend: str = "local",
+    version: str = "v1",
 ) -> Solver:
     """被测对象槽位：起 run-one 子进程跑完一条样本。
 
@@ -49,6 +51,7 @@ def run_one_solver(
             sys.executable, "-m", "evals", "e2e", "run-one",
             "--report-dir", report_dir, "--sample", sample_id, "--epoch", str(epoch),
             "--speed", str(speed), *(["--no-knowledge"] if not knowledge else []),
+            "--trace-backend", trace_backend, "--version", version,
             *[a for k, v in models.items() for a in (f"--{k.replace('_', '-')}", v)],
         ]  # fmt: skip
         try:
