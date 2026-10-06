@@ -265,14 +265,14 @@ class MemoryToolPort(Protocol):
 
 ### 6.2 骨架
 
-脚本 = 骨架 + 前置校验 + 主循环 + 成功谓词。骨架与 `scripts/takeover/engine.py` 同构
-（接管脚本管接管场合内按键序列，常规脚本管跨场合任务链），复用其物理量
-（POLL_FRAMES / STABLE_POLLS / STEP_TIMEOUT_FRAMES=900 / NAV_LIMIT=120 /
-QUIET_PRESS_FRAMES / ARROW_WINDOW）：
+脚本 = 同一个 ScriptRun + 前置校验 + 业务步骤 + 成功谓词。稳定等待、中断、初态恢复、
+失败恢复与收尾由各脚本的 ScriptPolicy 或步骤声明；不存在第二类执行器。
+私有帧预算集中在 scripts/timing.py（POLL_FRAMES / STABLE_POLLS /
+STEP_TIMEOUT_FRAMES=900 / NAV_LIMIT=120 / QUIET_PRESS_FRAMES / ARROW_WINDOW）。
 
 ```
 ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已见行集合）
-每步自动钩子（三钩子，所有脚本共享，step 与脚本内部共用）：
+地图操作脚本显式选择 field_policy，按键后核以下三种中断：
   ① scene 变 BATTLE    → BattleStarted（bounce 捕获为正常终止，其余终止）
   ② 屏幕出现选项框      → ChoicePresented（冻结；选项文本进返回 choice；绝不代选）
   ③ map_id 变化        → MapChanged（exit_map 捕获为成功；其余终止 map_changed）
@@ -280,6 +280,10 @@ ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已�
           {ok:false, code, data:现状快照(pos/scene/screen_text), events[]}
 原则：脚本只做确定性的事；分叉停并上报，决策权回调用方。
 ```
+
+菜单脚本声明 menu_policy：严格稳定等待、准备时恢复初态、失败时恢复，成功收尾可选。
+开始菜单导航与回血确认同样使用 ScriptRun，但显式不启用选项中断；目标菜单或 YES 已由
+脚本目的给定。执行器不根据脚本所在目录自动决定这些规则。
 
 ## 七、world server——脚本层（15 条，一脚本一 API）
 

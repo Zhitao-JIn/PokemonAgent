@@ -24,12 +24,8 @@ from .engine import (
     _dialog_texts,
 )
 from .movement import BUTTON_OF, _run, face_direction, walk_to
-from .takeover.engine import POLL_FRAMES, STABLE_POLLS
-
-
-def _settle(console: WorldConsole) -> None:
-    """脚本内 raw 按键后的稳定等待（绕过 `ScriptRun.press` 的钩子，用于菜单/选项导航）。"""
-    console.tick(POLL_FRAMES * STABLE_POLLS)
+from .policies import ScriptPolicy, StableWait
+from .timing import POLL_FRAMES, STABLE_POLLS
 
 
 class _StillTalking(Exception):
@@ -124,7 +120,7 @@ def heal_at_center(console: WorldConsole, max_steps: int = 60) -> ScriptResult:
         return run.finish(ok=False, code="still_talking", extra=_heal_extra(run, console))
     except Halt as halt:
         if halt.code == "choice_presented" and "YES" in halt.extra.get("choice", ""):
-            _confirm_yes(console)  # 机械选 YES（raw，避开钩子）
+            _confirm_yes(console)
             try:
                 _advance_to_walk(run, console)
             except _StillTalking:
@@ -162,15 +158,19 @@ def _advance_to_walk(run: ScriptRun, console: WorldConsole) -> None:
 def _confirm_yes(console: WorldConsole) -> None:
     """在 YES/NO 选项上机械确认 YES：光标若停在 NO 先上移一格，再按 a 选中。
 
-    raw 按键（不经 `ScriptRun.press`）——选项框常驻光标会触发钩子，这里由脚本
-    显式决定，不走钩子冻结。
+    本步骤经 ScriptRun，显式选择短等待且不启用选项中断；目标 YES 来自回血脚本。
     """
+    run = ScriptRun(
+        console,
+        budget=0,
+        start_map_id=console.map_id(),
+        start_pos=console.pos(),
+        policy=ScriptPolicy(wait=StableWait(timeout_frames=POLL_FRAMES * STABLE_POLLS)),
+    )
     text = console.read()
     if text.cursor and text.cursor != "YES":
-        console.press("up")
-        _settle(console)
-    console.press("a")
-    _settle(console)
+        run.press("up")
+    run.press("a")
 
 
 def _heal_extra(run: ScriptRun, console: WorldConsole) -> dict[str, Any]:

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pydantic import BaseModel, ConfigDict, Field
 
 from pokemon_agent.world import TaskObservation, TaskScene
-from pokemon_agent.world.scripts.takeover import TakeoverReason, TakeoverStatus
+from pokemon_agent.world.scripts.execution_types import ScriptReason, ScriptStatus
 
 Check = Callable[[TaskObservation, TaskObservation], str]
 """`(开跑前, 收尾后)` 两帧 → 不符合期望时的一句话；符合为空串。"""
@@ -37,8 +37,8 @@ class Case(BaseModel):
     state: str
     script: str
     args: dict[str, str | int]
-    status: TakeoverStatus
-    reason: TakeoverReason | None = None
+    status: ScriptStatus
+    reason: ScriptReason | None = None
     pre: tuple[str, ...] = ()
     checks: tuple[Check, ...] = Field(default_factory=tuple)
     summary: str = ""
@@ -189,4 +189,4 @@ def _knows(pokemon: str, move: str, *, yes: bool = True) -> Check:
 
 BALL, POTION, MAP = "POKé BALL", "POTION", "TOWN MAP"
 _UNCHANGED = (_money(0), _bag(BALL, 0), _bag(POTION, 0), _shop_start)
-_S, _R = TakeoverStatus, TakeoverReason
+_S, _R = ScriptStatus, ScriptReason

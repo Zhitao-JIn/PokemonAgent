@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from .engine import SHOP_LAYOUTS, ScriptResult, ScriptRun, WorldConsole
+from .interruptions import field_policy
 
 COUNT_LIMIT = 99
 """单次买卖的数量上限（游戏数量框上限）。"""
@@ -26,7 +27,13 @@ def _goods(layout: dict[str, Any]) -> dict[str, int]:
 
 
 def _new_run(console: WorldConsole) -> ScriptRun:
-    return ScriptRun(console, budget=1, start_map_id=console.map_id(), start_pos=console.pos())
+    return ScriptRun(
+        console,
+        budget=1,
+        start_map_id=console.map_id(),
+        start_pos=console.pos(),
+        policy=field_policy(),
+    )
 
 
 def buy_item(console: WorldConsole, item: str, count: int) -> ScriptResult:

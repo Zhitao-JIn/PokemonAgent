@@ -24,6 +24,9 @@ from ...interface import (
 from ...items import item_id, item_name, item_price
 from ...moves import fold
 from ...ram import NAME_LENGTH
+from ..definitions import Check, Execute, ScriptDefinition
+from ..engine import Abort, ScriptRun
+from ..execution_types import ScriptReason
 from .common import (
     MAX_QUANTITY,
     answer_yes,
@@ -39,8 +42,7 @@ from .common import (
     set_quantity,
     unknown_mon,
 )
-from .engine import Abort, Check, Execute, TakeoverDef, TakeoverRun
-from .outcome import TakeoverReason
+from .policy import menu_policy
 
 W_NUM_BOX_ITEMS = 0xD53A
 PC_ITEM_CAPACITY = 50
@@ -96,7 +98,7 @@ def _box(mem: Memory) -> list[BoxEntry]:
 # ---- 共用步骤 ----
 
 
-def _open(run: TakeoverRun, which: int, menu: tuple[str, ...]) -> None:
+def _open(run: ScriptRun, which: int, menu: tuple[str, ...]) -> None:
     """主菜单选第 `which` 台 PC，推完 "Accessed …"，等它的菜单出现。"""
     choose(run, run.screen().options[which])
     run.wait_for(
@@ -118,8 +120,8 @@ def _list_open(text: ScreenText) -> bool:
 
 
 def _check_items(
-    run: TakeoverRun, args: dict[str, str | int], source: str
-) -> tuple[TakeoverReason, str] | None:
+    run: ScriptRun, args: dict[str, str | int], source: str
+) -> tuple[ScriptReason, str] | None:
     mem, name, n = run.mem, str(args["item"]), int(args["quantity"])
     item = item_id(name)
     have = (
@@ -127,18 +129,18 @@ def _check_items(
     )
     where = "背包" if source == "bag" else "PC"
     if item is None or have == 0:
-        return TakeoverReason.NOT_IN_BAG, f"{where}里没有 {name}"
+        return ScriptReason.NOT_IN_BAG, f"{where}里没有 {name}"
     if not 1 <= n <= have:
         return (
-            TakeoverReason.QUANTITY_OUT_OF_RANGE,
+            ScriptReason.QUANTITY_OUT_OF_RANGE,
             f"{where}里 {item_name(item)} 只有 {have} 个，给的是 {n}",
         )
     return None
 
 
 def _check_withdraw_item(
-    run: TakeoverRun, args: dict[str, str | int]
-) -> tuple[TakeoverReason, str] | None:
+    run: ScriptRun, args: dict[str, str | int]
+) -> tuple[ScriptReason, str] | None:
     rejected = _check_items(run, args, "pc")
     if rejected:
         return rejected
@@ -146,38 +148,36 @@ def _check_withdraw_item(
     assert item is not None
     have = bag_count(run.mem, item)
     if have + int(args["quantity"]) > MAX_QUANTITY:
-        return TakeoverReason.BAG_FULL, f"背包里 {item_name(item)} 会超过 {MAX_QUANTITY}"
+        return ScriptReason.BAG_FULL, f"背包里 {item_name(item)} 会超过 {MAX_QUANTITY}"
     if have == 0 and len(bag(run.mem)) >= BAG_CAPACITY:
-        return TakeoverReason.BAG_FULL, f"背包 {BAG_CAPACITY} 格已满"
+        return ScriptReason.BAG_FULL, f"背包 {BAG_CAPACITY} 格已满"
     return None
 
 
 def _check_deposit_item(
-    run: TakeoverRun, args: dict[str, str | int]
-) -> tuple[TakeoverReason, str] | None:
+    run: ScriptRun, args: dict[str, str | int]
+) -> tuple[ScriptReason, str] | None:
     rejected = _check_items(run, args, "bag")
     if rejected:
         return rejected
     item = item_id(str(args["item"]))
     assert item is not None
     if _pc_count(run.mem, item) == 0 and len(_pc_items(run.mem)) >= PC_ITEM_CAPACITY:
-        return TakeoverReason.BAG_FULL, f"PC 道具 {PC_ITEM_CAPACITY} 格已满"
+        return ScriptReason.BAG_FULL, f"PC 道具 {PC_ITEM_CAPACITY} 格已满"
     return None
 
 
-def _check_toss_item(
-    run: TakeoverRun, args: dict[str, str | int]
-) -> tuple[TakeoverReason, str] | None:
+def _check_toss_item(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     rejected = _check_items(run, args, "pc")
     if rejected:
         return rejected
     item = item_id(str(args["item"]))
     if item is not None and item_price(run.console.rom, item) == 0:
-        return TakeoverReason.KEY_ITEM, f"{item_name(item)} 是重要道具，不能丢"
+        return ScriptReason.KEY_ITEM, f"{item_name(item)} 是重要道具，不能丢"
     return None
 
 
-def _move_items(run: TakeoverRun, args: dict[str, str | int], action: str) -> str:
+def _move_items(run: ScriptRun, args: dict[str, str | int], action: str) -> str:
     """道具三件事的共同流程：主角的 PC → 选动作 → 列表选道具 → 数量 →（丢要答 YES）→ 回列表。"""
     mem, n = run.mem, int(args["quantity"])
     item = item_id(str(args["item"]))
@@ -205,7 +205,7 @@ def _move_items(run: TakeoverRun, args: dict[str, str | int], action: str) -> st
     moved = {"WITHDRAW ITEM": (n, -n), "DEPOSIT ITEM": (-n, n), "TOSS ITEM": (0, -n)}[action]
     if (bag1 - bag0, pc1 - pc0) != moved:
         raise Abort(
-            TakeoverReason.UNEXPECTED_SCREEN,
+            ScriptReason.UNEXPECTED_SCREEN,
             f"{item_name(item)} 背包 {bag0}→{bag1}、PC {pc0}→{pc1}，与预期不符",
         )
     return f"{item_name(item)} ×{n}：背包 {bag0}→{bag1}，PC {pc0}→{pc1}"
@@ -215,32 +215,32 @@ def _move_items(run: TakeoverRun, args: dict[str, str | int], action: str) -> st
 
 
 def _check_withdraw_mon(
-    run: TakeoverRun, args: dict[str, str | int]
-) -> tuple[TakeoverReason, str] | None:
+    run: ScriptRun, args: dict[str, str | int]
+) -> tuple[ScriptReason, str] | None:
     name = str(args["pokemon"])
     box = _box(run.mem)
     if not any(fold(m.name) == fold(name) for m in box):
         names = "、".join(m.name for m in box) or "（空）"
-        return TakeoverReason.UNKNOWN_POKEMON, f"当前箱里没有 {name}（有：{names}）"
+        return ScriptReason.UNKNOWN_POKEMON, f"当前箱里没有 {name}（有：{names}）"
     if len(party(run.mem)) >= PARTY_CAPACITY:
-        return TakeoverReason.BAG_FULL, "队伍已经 6 只"
+        return ScriptReason.BAG_FULL, "队伍已经 6 只"
     return None
 
 
 def _check_deposit_mon(
-    run: TakeoverRun, args: dict[str, str | int]
-) -> tuple[TakeoverReason, str] | None:
+    run: ScriptRun, args: dict[str, str | int]
+) -> tuple[ScriptReason, str] | None:
     mons = party(run.mem)
     if find_mon(mons, str(args["pokemon"])) is None:
         return unknown_mon(mons, str(args["pokemon"]))
     if len(mons) < 2:
-        return TakeoverReason.CANNOT_USE, "队伍只剩一只，不能存"
+        return ScriptReason.CANNOT_USE, "队伍只剩一只，不能存"
     if len(_box(run.mem)) >= BOX_CAPACITY:
-        return TakeoverReason.BAG_FULL, "当前箱已满"
+        return ScriptReason.BAG_FULL, "当前箱已满"
     return None
 
 
-def _move_mon(run: TakeoverRun, args: dict[str, str | int], action: str) -> str:
+def _move_mon(run: ScriptRun, args: dict[str, str | int], action: str) -> str:
     """宝可梦存取：比尔的 PC → 选动作 → 列表选这只 → 子菜单 → 回菜单。"""
     mem = run.mem
     name = str(args["pokemon"])
@@ -267,7 +267,7 @@ def _move_mon(run: TakeoverRun, args: dict[str, str | int], action: str) -> str:
     step = 1 if withdraw else -1
     if (party1 - party0, box1 - box0) != (step, -step):
         raise Abort(
-            TakeoverReason.UNEXPECTED_SCREEN,
+            ScriptReason.UNEXPECTED_SCREEN,
             f"队伍 {party0}→{party1}、箱 {box0}→{box1}，与预期不符",
         )
     return f"{'取出' if withdraw else '存入'} {name}：队伍 {party0}→{party1}，箱 {box0}→{box1}"
@@ -277,15 +277,15 @@ def _move_mon(run: TakeoverRun, args: dict[str, str | int], action: str) -> str:
 
 
 def _check_change_box(
-    run: TakeoverRun, args: dict[str, str | int]
-) -> tuple[TakeoverReason, str] | None:
+    run: ScriptRun, args: dict[str, str | int]
+) -> tuple[ScriptReason, str] | None:
     n = int(args["n"])
     if not 1 <= n <= 12:
-        return TakeoverReason.QUANTITY_OUT_OF_RANGE, f"箱号要在 1–12，给的是 {n}"
+        return ScriptReason.QUANTITY_OUT_OF_RANGE, f"箱号要在 1–12，给的是 {n}"
     return None
 
 
-def _execute_change_box(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_change_box(run: ScriptRun, args: dict[str, str | int]) -> str:
     n = int(args["n"])
     before = (run.mem[W_CURRENT_BOX_NUM] & BOX_NUM_MASK) + 1
     label = f"BOX{n:2d}"
@@ -299,18 +299,18 @@ def _execute_change_box(run: TakeoverRun, args: dict[str, str | int]) -> str:
     run.idle_until(_back_to("CHANGE BOX"), expect="存完回到比尔的 PC 菜单")
     after = (run.mem[W_CURRENT_BOX_NUM] & BOX_NUM_MASK) + 1
     if after != n:
-        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"当前箱是 {after}，不是 {n}")
+        raise Abort(ScriptReason.UNEXPECTED_SCREEN, f"当前箱是 {after}，不是 {n}")
     return f"当前箱 BOX {before} → BOX {after}（换箱时游戏存了档）"
 
 
 # ---- 关机 ----
 
 
-def _check_none(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_none(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     return None
 
 
-def _execute_log_off(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_log_off(run: ScriptRun, args: dict[str, str | int]) -> str:
     choose(run, "LOG OFF")
     run.wait_for(lambda _t: run.scene_now() is not TaskScene.PC, expect="离开 PC")
     return "关上 PC"
@@ -328,17 +328,17 @@ def _def(
     check: Check,
     execute: Execute,
     rewind: bool = True,
-) -> TakeoverDef:
-    return TakeoverDef(
+) -> ScriptDefinition:
+    return ScriptDefinition(
+        policy=menu_policy(rewind_after=rewind),
         spec=ActionEntry(kind="script", name=name, params=params, description=description),
         scene=TaskScene.PC,
         check=check,
         execute=execute,
-        rewind_after=rewind,
     )
 
 
-PC_TAKEOVERS: dict[str, TakeoverDef] = {
+PC_TAKEOVERS: dict[str, ScriptDefinition] = {
     "withdraw_item": _def(
         "withdraw_item",
         [_ITEM, _QTY],

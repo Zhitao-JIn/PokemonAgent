@@ -18,9 +18,11 @@ from ...interface import (
     TaskScene,
 )
 from ...moves import fold, move_name
+from ..definitions import ScriptDefinition
+from ..engine import Abort, ScriptRun
+from ..execution_types import ScriptReason
 from .common import answer, answer_yes, cursor_index, party
-from .engine import Abort, TakeoverDef, TakeoverRun
-from .outcome import TakeoverReason
+from .policy import menu_policy
 
 W_WHICH_POKEMON = 0xCF92
 W_MOVE_NUM = 0xD0E0
@@ -32,11 +34,11 @@ def learn_view(mem: Memory) -> LearnMoveView:
     return LearnMoveView(pokemon=mon.name, new_move=move_name(mem[W_MOVE_NUM]), moves=mon.moves)
 
 
-def _moves(run: TakeoverRun, index: int) -> list[str]:
+def _moves(run: ScriptRun, index: int) -> list[str]:
     return [m.name for m in party(run.mem)[index].moves]
 
 
-def _stop(run: TakeoverRun, text: ScreenText) -> str:
+def _stop(run: ScriptRun, text: ScreenText) -> str:
     if text.has_cursor and run.scene_now() is not TaskScene.LEARN_MOVE:
         return f"停在 {run.scene_now().value}：▶{text.cursor}" if text.cursor else "停在选单"
     if not text.screen:
@@ -44,19 +46,17 @@ def _stop(run: TakeoverRun, text: ScreenText) -> str:
     return ""
 
 
-def _check_forget(
-    run: TakeoverRun, args: dict[str, str | int]
-) -> tuple[TakeoverReason, str] | None:
+def _check_forget(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     known = _moves(run, run.mem[W_WHICH_POKEMON])
     if fold(str(args["move"])) not in [fold(m) for m in known]:
         return (
-            TakeoverReason.UNKNOWN_MOVE,
+            ScriptReason.UNKNOWN_MOVE,
             f"现有的招里没有 {args['move']}（有：{'、'.join(known)}）",
         )
     return None
 
 
-def _execute_forget(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_forget(run: ScriptRun, args: dict[str, str | int]) -> str:
     new = move_name(run.mem[W_MOVE_NUM])
     old = fold(str(args["move"]))
     index = run.mem[W_WHICH_POKEMON]
@@ -66,22 +66,20 @@ def _execute_forget(run: TakeoverRun, args: dict[str, str | int]) -> str:
     # 步骤 2：光标挪到要忘的招，按 A。
     target = [fold(o) for o in run.screen().options].index(old)
     run.move_to(lambda: cursor_index(run.screen()), target, what="招式光标")
-    run.press("a", expect=f"忘掉 {args['move']}")
+    run.press_screen("a", expect=f"忘掉 {args['move']}")
     # 步骤 3：推完话，核学会了。
     stop = run.advance(lambda t: _stop(run, t))
     known = _moves(run, index)
     if new not in known:
-        raise Abort(
-            TakeoverReason.CANNOT_USE, f"没有学会 {new}（现在：{'、'.join(known)}）；{stop}"
-        )
+        raise Abort(ScriptReason.CANNOT_USE, f"没有学会 {new}（现在：{'、'.join(known)}）；{stop}")
     return f"忘掉 {args['move']}，学会 {new}；现在：{'、'.join(known)}；{stop}"
 
 
-def _check_skip(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_skip(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     return None
 
 
-def _execute_skip(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_skip(run: ScriptRun, args: dict[str, str | int]) -> str:
     new = move_name(run.mem[W_MOVE_NUM])
     # 步骤 1：答 NO，再在 "Abandon learning …?" 上答 YES。
     answer(run, "NO")
@@ -91,8 +89,8 @@ def _execute_skip(run: TakeoverRun, args: dict[str, str | int]) -> str:
     return f"不学 {new}；{stop}"
 
 
-LEARN_TAKEOVERS: dict[str, TakeoverDef] = {
-    "forget": TakeoverDef(
+LEARN_TAKEOVERS: dict[str, ScriptDefinition] = {
+    "forget": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
             name="forget",
@@ -102,14 +100,14 @@ LEARN_TAKEOVERS: dict[str, TakeoverDef] = {
         scene=TaskScene.LEARN_MOVE,
         check=_check_forget,
         execute=_execute_forget,
-        rewind_after=False,
+        policy=menu_policy(rewind_after=False),
     ),
-    "skip": TakeoverDef(
+    "skip": ScriptDefinition(
         spec=ActionEntry(kind="script", name="skip", description="不学这招"),
         scene=TaskScene.LEARN_MOVE,
         check=_check_skip,
         execute=_execute_skip,
-        rewind_after=False,
+        policy=menu_policy(rewind_after=False),
     ),
 }
 

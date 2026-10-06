@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from .engine import Halt, ScriptResult, ScriptRun, WorldConsole
+from .interruptions import field_policy
 
 DIRECTIONS = ("north", "south", "west", "east")
 """脚本方向参数的合法词表（朝向词，与 `FACING_STEP` 同套）。"""
@@ -41,7 +42,13 @@ def _reject(direction: str) -> ScriptResult:
 
 
 def _run(console: WorldConsole, budget: int) -> ScriptRun:
-    return ScriptRun(console, budget=budget, start_map_id=console.map_id(), start_pos=console.pos())
+    return ScriptRun(
+        console,
+        budget=budget,
+        start_map_id=console.map_id(),
+        start_pos=console.pos(),
+        policy=field_policy(),
+    )
 
 
 def _pos_dump(console: WorldConsole) -> dict:

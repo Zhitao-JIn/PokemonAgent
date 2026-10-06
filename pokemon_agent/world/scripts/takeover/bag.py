@@ -15,6 +15,9 @@ from ...interface import (
     TaskScene,
 )
 from ...items import item_id, item_name, item_price
+from ..definitions import ScriptDefinition
+from ..engine import Abort, ScriptRun
+from ..execution_types import ScriptReason
 from .common import (
     HEAL_ITEMS,
     answer_yes,
@@ -30,8 +33,7 @@ from .common import (
     unknown_mon,
     useless,
 )
-from .engine import Abort, TakeoverDef, TakeoverRun
-from .outcome import TakeoverReason
+from .policy import menu_policy
 
 REPELS = frozenset({0x1E, 0x38, 0x39})
 """REPEL / SUPER REPEL / MAX REPEL：直接用，不选对象。"""
@@ -58,17 +60,17 @@ def _in_list(text: ScreenText) -> bool:
 # ---- use ----
 
 
-def _check_use(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_use(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     mem, name, who = run.mem, str(args["item"]), str(args["pokemon"])
     item = item_id(name)
     if item is None or bag_count(mem, item) == 0:
-        return TakeoverReason.NOT_IN_BAG, f"背包里没有 {name}"
+        return ScriptReason.NOT_IN_BAG, f"背包里没有 {name}"
     if item in REPELS:
         return None
     if item not in TARGET_ITEMS:
-        return TakeoverReason.CANNOT_USE, f"{item_name(item)} 的用法接管脚本里还没有"
+        return ScriptReason.CANNOT_USE, f"{item_name(item)} 的用法接管脚本里还没有"
     if not who:
-        return TakeoverReason.TARGET_REQUIRED, f"{item_name(item)} 要指定用在哪只身上（pokemon）"
+        return ScriptReason.TARGET_REQUIRED, f"{item_name(item)} 要指定用在哪只身上（pokemon）"
     mons = party(mem)
     index = find_mon(mons, who)
     if index is None:
@@ -76,7 +78,7 @@ def _check_use(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverRe
     return useless(item, mons[index]) if item in HEAL_ITEMS else None
 
 
-def _execute_use(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_use(run: ScriptRun, args: dict[str, str | int]) -> str:
     mem = run.mem
     item = item_id(str(args["item"]))
     assert item is not None
@@ -99,14 +101,14 @@ def _execute_use(run: TakeoverRun, args: dict[str, str | int]) -> str:
     stop = run.advance(lambda t: _stop(run, t))
     have1 = bag_count(mem, item)
     if have1 == have0 and run.scene_now() is TaskScene.BAG:
-        raise Abort(TakeoverReason.CANNOT_USE, f"{item_name(item)} 没有用掉；{stop}")
+        raise Abort(ScriptReason.CANNOT_USE, f"{item_name(item)} 没有用掉；{stop}")
     if item in HEAL_ITEMS:
         after = party(mem)[who]
         head += f"：HP {hp0}→{after.hp}，状态 {after.status}"
     return f"{head}；{stop}"
 
 
-def _stop(run: TakeoverRun, text: ScreenText) -> str:
+def _stop(run: ScriptRun, text: ScreenText) -> str:
     """停在下一个 `▶`：回到背包列表，或别的选单（学新招的 YES / NO 等）。
 
     只认光标——换画面时会有几百帧整屏空白，按场合判会误以为已经离开。
@@ -122,20 +124,20 @@ def _stop(run: TakeoverRun, text: ScreenText) -> str:
 # ---- toss ----
 
 
-def _check_toss(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_toss(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     mem, name, n = run.mem, str(args["item"]), int(args["quantity"])
     item = item_id(name)
     have = bag_count(mem, item) if item is not None else 0
     if item is None or have == 0:
-        return TakeoverReason.NOT_IN_BAG, f"背包里没有 {name}"
+        return ScriptReason.NOT_IN_BAG, f"背包里没有 {name}"
     if not 1 <= n <= have:
-        return TakeoverReason.QUANTITY_OUT_OF_RANGE, f"{item_name(item)} 只有 {have} 个，给的是 {n}"
+        return ScriptReason.QUANTITY_OUT_OF_RANGE, f"{item_name(item)} 只有 {have} 个，给的是 {n}"
     if item_price(run.console.rom, item) == 0:
-        return TakeoverReason.KEY_ITEM, f"{item_name(item)} 是重要道具，不能丢"
+        return ScriptReason.KEY_ITEM, f"{item_name(item)} 是重要道具，不能丢"
     return None
 
 
-def _execute_toss(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_toss(run: ScriptRun, args: dict[str, str | int]) -> str:
     mem, n = run.mem, int(args["quantity"])
     item = item_id(str(args["item"]))
     assert item is not None
@@ -152,7 +154,7 @@ def _execute_toss(run: TakeoverRun, args: dict[str, str | int]) -> str:
     have1 = bag_count(mem, item)
     if have1 != have0 - n:
         raise Abort(
-            TakeoverReason.UNEXPECTED_SCREEN, f"丢完 {item_name(item)} {have0}→{have1}，与预期不符"
+            ScriptReason.UNEXPECTED_SCREEN, f"丢完 {item_name(item)} {have0}→{have1}，与预期不符"
         )
     return f"丢掉 {item_name(item)} ×{n}（{have0}→{have1}）"
 
@@ -160,12 +162,12 @@ def _execute_toss(run: TakeoverRun, args: dict[str, str | int]) -> str:
 # ---- close ----
 
 
-def _check_close(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_close(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     return None
 
 
-def _execute_close(run: TakeoverRun, args: dict[str, str | int]) -> str:
-    run.press("b", expect="关上背包")
+def _execute_close(run: ScriptRun, args: dict[str, str | int]) -> str:
+    run.press_screen("b", expect="关上背包")
     run.wait_for(lambda _t: run.scene_now() is not TaskScene.BAG, expect="离开背包")
     return f"关上背包，到了 {run.scene_now().value}"
 
@@ -179,8 +181,9 @@ _WHO = ScriptParam(
 )
 _QTY = ScriptParam(name="quantity", type="int", description="数量，不超过持有数")
 
-BAG_TAKEOVERS: dict[str, TakeoverDef] = {
-    "use": TakeoverDef(
+BAG_TAKEOVERS: dict[str, ScriptDefinition] = {
+    "use": ScriptDefinition(
+        policy=menu_policy(),
         spec=ActionEntry(
             kind="script",
             name="use",
@@ -191,7 +194,8 @@ BAG_TAKEOVERS: dict[str, TakeoverDef] = {
         check=_check_use,
         execute=_execute_use,
     ),
-    "toss": TakeoverDef(
+    "toss": ScriptDefinition(
+        policy=menu_policy(),
         spec=ActionEntry(
             kind="script", name="toss", params=[_ITEM, _QTY], description="丢道具；重要道具不能丢"
         ),
@@ -199,12 +203,12 @@ BAG_TAKEOVERS: dict[str, TakeoverDef] = {
         check=_check_toss,
         execute=_execute_toss,
     ),
-    "close": TakeoverDef(
+    "close": ScriptDefinition(
         spec=ActionEntry(kind="script", name="close", description="关上背包"),
         scene=TaskScene.BAG,
         check=_check_close,
         execute=_execute_close,
-        rewind_after=False,
+        policy=menu_policy(rewind_after=False),
     ),
 }
 

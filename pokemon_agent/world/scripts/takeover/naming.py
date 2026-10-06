@@ -19,8 +19,10 @@ from ...interface import (
     TaskScene,
 )
 from ...screen_text import CHARMAP
-from .engine import Abort, TakeoverDef, TakeoverRun
-from .outcome import TakeoverReason
+from ..definitions import ScriptDefinition
+from ..engine import Abort, ScriptRun
+from ..execution_types import ScriptReason
+from .policy import menu_policy
 
 W_STRING_BUFFER = 0xCF4B
 W_NAME_LENGTH = 0xCEE9
@@ -56,31 +58,31 @@ def _typed(mem: Memory) -> str:
     return "".join(chars)
 
 
-def _limit(run: TakeoverRun) -> int:
+def _limit(run: ScriptRun) -> int:
     return MAX_LENGTH.get(_title(run.screen()), DEFAULT_MAX_LENGTH)
 
 
-def _check_enter(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_enter(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     name, limit = str(args["name"]), _limit(run)
     if not 1 <= len(name) <= limit:
-        return TakeoverReason.INVALID_NAME, f"名字长度要在 1–{limit}，给的是 {len(name)}"
+        return ScriptReason.INVALID_NAME, f"名字长度要在 1–{limit}，给的是 {len(name)}"
     if any(ch not in string.ascii_uppercase for ch in name):
-        return TakeoverReason.INVALID_NAME, f"名字只能用大写字母，给的是 {name!r}"
+        return ScriptReason.INVALID_NAME, f"名字只能用大写字母，给的是 {name!r}"
     return None
 
 
-def _execute_enter(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_enter(run: ScriptRun, args: dict[str, str | int]) -> str:
     name = str(args["name"])
 
     # 步骤 1：切回大写，删空已输入的字。
     if run.mem[W_ALPHABET_CASE] != 0:
-        run.press("select", expect="切到大写", ok=lambda _t: run.mem[W_ALPHABET_CASE] == 0)
+        run.press_screen("select", expect="切到大写", ok=lambda _t: run.mem[W_ALPHABET_CASE] == 0)
     for _ in range(DEFAULT_MAX_LENGTH + 4):
         if run.mem[W_NAME_LENGTH] == 0:
             break
-        run.press("b", expect="删一个字")
+        run.press_screen("b", expect="删一个字")
     if run.mem[W_NAME_LENGTH] != 0:
-        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, "已输入的字删不空")
+        raise Abort(ScriptReason.UNEXPECTED_SCREEN, "已输入的字删不空")
 
     # 步骤 2：逐字移光标、按 A。
     for i, ch in enumerate(name):
@@ -88,19 +90,19 @@ def _execute_enter(run: TakeoverRun, args: dict[str, str | int]) -> str:
         col = UPPER_ROWS[row].index(ch)
         run.move_to(lambda: _cursor(run.mem)[0], row, what=f"{ch} 所在行")
         run.move_to(lambda: _cursor(run.mem)[1], col, what=f"{ch} 所在列", increase="right")
-        run.press("a", expect=f"输入 {ch}", ok=lambda _t, n=i + 1: run.mem[W_NAME_LENGTH] == n)
+        run.press_screen(
+            "a", expect=f"输入 {ch}", ok=lambda _t, n=i + 1: run.mem[W_NAME_LENGTH] == n
+        )
         if run.mem[W_NAME_LENGTH] != i + 1:
             raise Abort(
-                TakeoverReason.UNEXPECTED_SCREEN,
+                ScriptReason.UNEXPECTED_SCREEN,
                 f"按了 {ch} 但已输入长度是 {run.mem[W_NAME_LENGTH]}",
             )
     if _typed(run.mem) != name:
-        raise Abort(
-            TakeoverReason.UNEXPECTED_SCREEN, f"输入的是 {_typed(run.mem)!r}，不是 {name!r}"
-        )
+        raise Abort(ScriptReason.UNEXPECTED_SCREEN, f"输入的是 {_typed(run.mem)!r}，不是 {name!r}")
 
     # 步骤 3：START 提交，等画面离开键盘。
-    run.press("start", expect="提交名字")
+    run.press_screen("start", expect="提交名字")
     run.wait_for(lambda _t: run.scene_now() is not TaskScene.NAMING, expect="离开起名键盘")
     return f"名字 {name}"
 
@@ -112,8 +114,8 @@ def _cursor(mem: Memory) -> tuple[int, int]:
     return (row - FIRST_KEY_ROW) // 2, (col - 1) // 2
 
 
-NAMING_TAKEOVERS: dict[str, TakeoverDef] = {
-    "enter_name": TakeoverDef(
+NAMING_TAKEOVERS: dict[str, ScriptDefinition] = {
+    "enter_name": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
             name="enter_name",
@@ -129,7 +131,7 @@ NAMING_TAKEOVERS: dict[str, TakeoverDef] = {
         scene=TaskScene.NAMING,
         check=_check_enter,
         execute=_execute_enter,
-        rewind_after=False,
+        policy=menu_policy(rewind_after=False),
     ),
 }
 

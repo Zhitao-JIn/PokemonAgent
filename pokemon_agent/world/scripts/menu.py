@@ -1,18 +1,12 @@
-"""菜单类脚本（§7.6）：open_menu_to。
+"""开始菜单导航：目标选项由调用参数给定。
 
-**为什么走 raw 按键**：start 菜单本身常驻光标（`▶` + 选项），`ScriptRun.press`
-的 `choice_presented` 钩子会在"移动光标 / 选中"的每一步都冻结——菜单导航
-本来就是脚本在替调用方做决策（选哪个子菜单是任务指定的），所以这里直接
-`console.press` + `console.tick` 绕过钩子，自行判场合成败。
-
-`START_ORDER` 与 `scene.START_ITEMS` 同序（菜单项固定顺序）；`TARGET_SCENE`
-是"选中某项后该进的接管场合"——用于成败判定。
-"""
+所有按键经 ScriptRun；本脚本声明短等待且不启用选项中断，按目标导航后核对场合。"""
 
 from __future__ import annotations
 
-from .engine import ScriptResult, WorldConsole
-from .takeover.engine import POLL_FRAMES, STABLE_POLLS
+from .engine import ScriptResult, ScriptRun, WorldConsole
+from .policies import ScriptPolicy, StableWait
+from .timing import POLL_FRAMES, STABLE_POLLS
 
 # 与 scene.START_ITEMS 同序（开始菜单项的固定顺序）
 START_ORDER: tuple[str, ...] = ("POKéDEX", "POKéMON", "ITEM", "SAVE", "OPTION", "EXIT")
@@ -20,10 +14,6 @@ START_ORDER: tuple[str, ...] = ("POKéDEX", "POKéMON", "ITEM", "SAVE", "OPTION"
 
 TARGET_SCENE: dict[str, str] = {"POKéMON": "party", "ITEM": "bag"}
 """选中某项后该进入的接管场合（用于成败判定；其余项没有可判定的子菜单场合）。"""
-
-
-def _settle(console: WorldConsole) -> None:
-    console.tick(POLL_FRAMES * STABLE_POLLS)
 
 
 def open_menu_to(console: WorldConsole, target: str) -> ScriptResult:
@@ -38,10 +28,17 @@ def open_menu_to(console: WorldConsole, target: str) -> ScriptResult:
     if target not in START_ORDER:
         return ScriptResult(ok=False, code="rejected", data={"target": target})
 
+    run = ScriptRun(
+        console,
+        budget=0,
+        start_map_id=console.map_id(),
+        start_pos=console.pos(),
+        policy=ScriptPolicy(wait=StableWait(timeout_frames=POLL_FRAMES * STABLE_POLLS)),
+    )
+
     # 确保在 start 菜单
     if console.scene() != "start_menu":
-        console.press("start")
-        _settle(console)
+        run.press("start")
         if console.scene() != "start_menu":
             return ScriptResult(
                 ok=False,
@@ -61,12 +58,10 @@ def open_menu_to(console: WorldConsole, target: str) -> ScriptResult:
     if diff != 0:
         move = "down" if diff > 0 else "up"
         for _ in range(abs(diff)):
-            console.press(move)
-            _settle(console)
+            run.press(move)
 
     # 选中
-    console.press("a")
-    _settle(console)
+    run.press("a")
     scene = console.scene()
     expected = TARGET_SCENE.get(target)
     if scene != "start_menu" and (expected is None or scene == expected):

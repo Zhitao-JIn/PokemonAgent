@@ -20,8 +20,10 @@ from ...interface import (
 )
 from ...items import item_id, item_name, item_price
 from ...readout import read_bag, read_money
-from .engine import Abort, TakeoverDef, TakeoverRun
-from .outcome import TakeoverReason
+from ..definitions import ScriptDefinition
+from ..engine import Abort, ScriptRun
+from ..execution_types import ScriptReason
+from .policy import menu_policy
 
 W_ITEM_LIST = 0xCF7B
 """`wItemList`：第一个字节是件数，其后是道具 id，`0xFF` 收尾。"""
@@ -57,35 +59,35 @@ def _bag_counts(mem: Memory) -> dict[int, int]:
     return {b.item_id: b.quantity for b in read_bag(mem)}
 
 
-def _quantity(run: TakeoverRun, args: dict[str, str | int]) -> int:
+def _quantity(run: ScriptRun, args: dict[str, str | int]) -> int:
     return int(args["quantity"])
 
 
 # ---- buy ----
 
 
-def _check_buy(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_buy(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     mem, name, n = run.mem, str(args["item"]), _quantity(run, args)
     item = item_id(name)
     if item is None or item not in _goods(mem):
-        return TakeoverReason.UNKNOWN_ITEM, f"店里没有 {name}"
+        return ScriptReason.UNKNOWN_ITEM, f"店里没有 {name}"
     if not 1 <= n <= MAX_QUANTITY:
-        return TakeoverReason.QUANTITY_OUT_OF_RANGE, f"数量要在 1–{MAX_QUANTITY}，给的是 {n}"
+        return ScriptReason.QUANTITY_OUT_OF_RANGE, f"数量要在 1–{MAX_QUANTITY}，给的是 {n}"
     price = item_price(run.console.rom, item) or 0
     if price * n > read_money(mem):
-        return TakeoverReason.NOT_ENOUGH_MONEY, f"要 ¥{price * n}，只有 ¥{read_money(mem)}"
+        return ScriptReason.NOT_ENOUGH_MONEY, f"要 ¥{price * n}，只有 ¥{read_money(mem)}"
     bag = _bag_counts(mem)
     if item in bag and bag[item] + n > MAX_QUANTITY:
         return (
-            TakeoverReason.BAG_FULL,
+            ScriptReason.BAG_FULL,
             f"背包里 {name} 已有 {bag[item]}，再买 {n} 会超过 {MAX_QUANTITY}",
         )
     if item not in bag and len(bag) >= BAG_SLOTS:
-        return TakeoverReason.BAG_FULL, f"背包 {BAG_SLOTS} 格已满"
+        return ScriptReason.BAG_FULL, f"背包 {BAG_SLOTS} 格已满"
     return None
 
 
-def _execute_buy(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_buy(run: ScriptRun, args: dict[str, str | int]) -> str:
     mem, n = run.mem, _quantity(run, args)
     item = item_id(str(args["item"]))
     assert item is not None
@@ -102,7 +104,7 @@ def _execute_buy(run: TakeoverRun, args: dict[str, str | int]) -> str:
     money1, have1 = read_money(mem), _bag_counts(mem).get(item, 0)
     if money1 != money0 - price * n or have1 != have0 + n:
         raise Abort(
-            TakeoverReason.UNEXPECTED_SCREEN,
+            ScriptReason.UNEXPECTED_SCREEN,
             f"买完钱 {money0}→{money1}、{item_name(item)} {have0}→{have1}，与预期不符",
         )
     return f"钱 {money0}→{money1}，{item_name(item)} +{n}"
@@ -111,20 +113,20 @@ def _execute_buy(run: TakeoverRun, args: dict[str, str | int]) -> str:
 # ---- sell ----
 
 
-def _check_sell(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_sell(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     mem, name, n = run.mem, str(args["item"]), _quantity(run, args)
     item = item_id(name)
     bag = _bag_counts(mem)
     if item is None or item not in bag:
-        return TakeoverReason.NOT_IN_BAG, f"背包里没有 {name}"
+        return ScriptReason.NOT_IN_BAG, f"背包里没有 {name}"
     if not 1 <= n <= bag[item]:
-        return TakeoverReason.QUANTITY_OUT_OF_RANGE, f"{name} 只有 {bag[item]} 个，给的是 {n}"
+        return ScriptReason.QUANTITY_OUT_OF_RANGE, f"{name} 只有 {bag[item]} 个，给的是 {n}"
     if item_price(run.console.rom, item) == 0:
-        return TakeoverReason.KEY_ITEM, f"{name} 不能卖"
+        return ScriptReason.KEY_ITEM, f"{name} 不能卖"
     return None
 
 
-def _execute_sell(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_sell(run: ScriptRun, args: dict[str, str | int]) -> str:
     mem, n = run.mem, _quantity(run, args)
     item = item_id(str(args["item"]))
     assert item is not None
@@ -141,7 +143,7 @@ def _execute_sell(run: TakeoverRun, args: dict[str, str | int]) -> str:
     money1, have1 = read_money(mem), _bag_counts(mem).get(item, 0)
     if money1 <= money0 or have1 != have0 - n:
         raise Abort(
-            TakeoverReason.UNEXPECTED_SCREEN,
+            ScriptReason.UNEXPECTED_SCREEN,
             f"卖完钱 {money0}→{money1}、{item_name(item)} {have0}→{have1}，与预期不符",
         )
     return f"钱 {money0}→{money1}，{item_name(item)} −{n}"
@@ -150,14 +152,14 @@ def _execute_sell(run: TakeoverRun, args: dict[str, str | int]) -> str:
 # ---- quit ----
 
 
-def _check_quit(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_quit(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     return None
 
 
-def _execute_quit(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_quit(run: ScriptRun, args: dict[str, str | int]) -> str:
     # 步骤 1：主菜单选 QUIT。
     run.move_to(lambda: run.mem[W_CURRENT_MENU_ITEM], MENU.index("QUIT"), what="主菜单光标")
-    run.press("a", expect="离开买卖菜单")
+    run.press_screen("a", expect="离开买卖菜单")
     # 步骤 2：道别的话推完，直到离开本场合。
     run.wait_for(lambda _t: run.scene_now() is not TaskScene.SHOP_ITEMS, expect="离开买卖菜单")
     return "离开买卖菜单"
@@ -166,37 +168,37 @@ def _execute_quit(run: TakeoverRun, args: dict[str, str | int]) -> str:
 # ---- 共用步骤 ----
 
 
-def _open(run: TakeoverRun, option: str) -> None:
+def _open(run: ScriptRun, option: str) -> None:
     """主菜单选 `option`（BUY / SELL），等它的列表出现。"""
     run.move_to(lambda: run.mem[W_CURRENT_MENU_ITEM], MENU.index(option), what="主菜单光标")
-    run.press("a", expect=f"打开 {option} 列表")
+    run.press_screen("a", expect=f"打开 {option} 列表")
     run.wait_for(_list_open, expect=f"{option} 列表出现")
 
 
-def _pick(run: TakeoverRun, index: int, name: str) -> None:
+def _pick(run: ScriptRun, index: int, name: str) -> None:
     """列表光标挪到第 `index` 项（核光标文字是 `name`），按 A 打开数量框。"""
     run.move_to(
         lambda: run.mem[W_CURRENT_MENU_ITEM] + run.mem[W_LIST_SCROLL_OFFSET], index, what="列表光标"
     )
     cursor = run.screen().cursor
     if item_id(cursor) != item_id(name):
-        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"光标在 {cursor!r}，不是 {name}")
-    run.press("a", expect="数量框出现", ok=lambda t: t.quantity_box)
+        raise Abort(ScriptReason.UNEXPECTED_SCREEN, f"光标在 {cursor!r}，不是 {name}")
+    run.press_screen("a", expect="数量框出现", ok=lambda t: t.quantity_box)
     run.wait_for(lambda t: t.quantity_box, expect="数量框出现")
 
 
-def _confirm_quantity(run: TakeoverRun, n: int) -> None:
+def _confirm_quantity(run: ScriptRun, n: int) -> None:
     """数量调到 `n`，按 A，推完价钱的话，在 YES/NO 上选 YES。"""
     run.move_to(lambda: run.mem[W_ITEM_QUANTITY], n, what="数量", increase="up")
-    run.press("a", expect="报价")
+    run.press_screen("a", expect="报价")
     text = run.wait_for(
         lambda t: t.options == ["YES", "NO"],
         expect="YES / NO 出现",
         advance=lambda t: not t.has_cursor,
     )
     if text.cursor != "YES":
-        run.press("up", expect="光标到 YES", ok=lambda t: t.cursor == "YES")
-    run.press("a", expect="成交")
+        run.press_screen("up", expect="光标到 YES", ok=lambda t: t.cursor == "YES")
+    run.press_screen("a", expect="成交")
     run.settle()
 
 
@@ -213,8 +215,9 @@ def _list_open(text: ScreenText) -> bool:
 _ITEM = ScriptParam(name="item", type="str", description="道具名，照视图里的写")
 _QTY = ScriptParam(name="quantity", type="int", description="数量，1–99")
 
-SHOP_TAKEOVERS: dict[str, TakeoverDef] = {
-    "buy": TakeoverDef(
+SHOP_TAKEOVERS: dict[str, ScriptDefinition] = {
+    "buy": ScriptDefinition(
+        policy=menu_policy(),
         spec=ActionEntry(
             kind="script",
             name="buy",
@@ -225,7 +228,8 @@ SHOP_TAKEOVERS: dict[str, TakeoverDef] = {
         check=_check_buy,
         execute=_execute_buy,
     ),
-    "sell": TakeoverDef(
+    "sell": ScriptDefinition(
+        policy=menu_policy(),
         spec=ActionEntry(
             kind="script",
             name="sell",
@@ -236,12 +240,12 @@ SHOP_TAKEOVERS: dict[str, TakeoverDef] = {
         check=_check_sell,
         execute=_execute_sell,
     ),
-    "quit": TakeoverDef(
+    "quit": ScriptDefinition(
         spec=ActionEntry(kind="script", name="quit", description="结束买卖，离开这个菜单"),
         scene=TaskScene.SHOP_ITEMS,
         check=_check_quit,
         execute=_execute_quit,
-        rewind_after=False,
+        policy=menu_policy(rewind_after=False),
     ),
 }
 

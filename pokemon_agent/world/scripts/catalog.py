@@ -1,13 +1,7 @@
-"""脚本能力目录：**全部脚本条目、场合可用性与分发的唯一真源**。
+"""脚本能力目录：全部条目、场合可用性与按名分发的唯一真源。
 
-脚本分两类，对外是同一种动作（`ActionEntry`，`kind="script"`，一次调用占 harness 账一步）：
-- **常规脚本**（本文件逐条登记）：野外 / 对话场合的移动、交互、对话推进、换图、回血，
-  以及商店场合带白名单与终态对账的买卖（`buy_item` / `sell_item`）；
-- **接管脚本**（`takeover/` 登记，对外名 = 场合前缀 + 短名）：接管场合内的多步操作。
-
-`compute_action_space()`（world 侧）与 `mcpclient/game_tools.py::_mask`（tool 层）
-都从这里取条目与可用性——**可用性规则只写这一份**，两处消费方不许各抄一份。
-"""
+所有脚本交出控制权执行多步操作，共用 ScriptRun 与 ScriptResult。各文件按业务场合组织；
+等待、中断、准备和收尾由脚本声明。动作空间与 tool 掩码只消费这一份可用性规则。"""
 
 from __future__ import annotations
 
@@ -15,6 +9,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ..interface.domain import ActionEntry, ScriptParam, TaskScene
+from .definitions import run_definition
 from .engine import ScriptResult
 from .flow import advance_dialog, wait_until_scene
 from .interact import interact_facing, talk_to_adjacent_npc
@@ -28,7 +23,7 @@ from .movement import (
 )
 from .navigation import exit_map, heal_at_center
 from .shop import buy_item, sell_item
-from .takeover import REGISTRY, TAKEOVER_SCRIPTS, TakeoverOutcome, TakeoverStatus, run_takeover
+from .takeover import REGISTRY, TAKEOVER_SCRIPTS
 
 if TYPE_CHECKING:  # 只为标注：脚本函数签名统一是 (console, **args) -> ScriptResult
     from .engine import WorldConsole
@@ -179,28 +174,11 @@ def script_entry(name: str) -> ActionEntry | None:
 # ---- 分发：名字 → 脚本函数（`GameTools.execute` 的脚本通道、`WorldConsole.run_script` 共用）----
 
 
-def _takeover_result(outcome: TakeoverOutcome) -> ScriptResult:
-    """接管脚本的结果折成统一的终态报告：`ok` = 执行到位；结局码 = `ok` / 原因码 / 结局。"""
-    done = outcome.status is TakeoverStatus.DONE
-    code = "ok" if done else (outcome.reason_code or outcome.status).value
-    return ScriptResult(
-        ok=done,
-        code=code,
-        data={
-            "scene": outcome.scene.value,
-            "status": outcome.status.value,
-            "reason": outcome.reason,
-            "summary": outcome.summary,
-            "steps": [step.model_dump() for step in outcome.steps],
-        },
-    )
-
-
-def _takeover_func(name: str) -> Callable[..., ScriptResult]:
-    """接管脚本 `name` 的分发函数：`(console, **args) -> ScriptResult`。"""
+def _defined_func(name: str) -> Callable[..., ScriptResult]:
+    """把一个声明式脚本接到统一按名调用入口。"""
 
     def run(console: WorldConsole, **args: str | int) -> ScriptResult:
-        return _takeover_result(run_takeover(console, name, dict(args)))
+        return run_definition(console, TAKEOVER_SCRIPTS[name], dict(args))
 
     return run
 
@@ -220,7 +198,7 @@ SCRIPT_FUNCS: dict[str, Callable[..., ScriptResult]] = {
     "exit_map": exit_map,
     "heal_at_center": heal_at_center,
     "open_menu_to": open_menu_to,
-    **{name: _takeover_func(name) for name in TAKEOVER_SCRIPTS},
+    **{name: _defined_func(name) for name in TAKEOVER_SCRIPTS},
 }
 
 

@@ -1,13 +1,7 @@
-"""流程类脚本（§7.4）：advance_dialog / wait_until_scene。
+"""对话推进与场合等待。
 
-这两类都发生在**没有常驻光标**的窗口里（纯对话推进、过场等待），所以可以放心
-走 `ScriptRun.press`（它的三钩子只会在战斗 / 选项 / 换图时停——对话帧没有光标，
-不会误触 `choice_presented`）。
-
-**raw 推进 vs 钩子**：`advance_dialog` 走钩子路径——真遇到选项框照常冻结
-（`choice_presented`），绝不替调用方做分叉；`wait_until_scene` 不按键只 tick，
-逐帧判场合，超时 `timeout`。
-"""
+advance_dialog 显式选择地图操作的战斗、选项与换图中断；wait_until_scene 只推进帧，
+以指定场合与时间预算为停止条件。"""
 
 from __future__ import annotations
 
@@ -15,7 +9,7 @@ from typing import Any
 
 from .engine import Halt, ScriptResult, ScriptRun, WorldConsole, _dialog_texts
 from .movement import _run
-from .takeover.engine import POLL_FRAMES
+from .timing import POLL_FRAMES
 
 _WALK = "walk"
 

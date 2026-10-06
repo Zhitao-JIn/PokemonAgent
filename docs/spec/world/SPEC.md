@@ -37,19 +37,22 @@ world/
 ├── tables/moves.json            招式编号 → 名字
 ├── action_space.py              compute_action_space：按这一帧的 overlay / 场合算统一能力掩码（键 + 脚本）
 ├── scripts/                     脚本层（一次调用执行到底、占 harness 账一步）
-│   ├── catalog.py               能力目录唯一真源：SCRIPT_SPECS（常规 + 接管）/ SCENE_SCRIPTS（场合可用性）/
-│   │                            SCRIPT_FUNCS / run_script_by_name；接管脚本结果折成 ScriptResult
-│   ├── engine.py                WorldConsole 协议（含 run_script：脚本组合）、ScriptRun、ScriptResult、DialogCache
-│   ├── console_adapter.py       PyBoyWorld → WorldConsole 适配（零新判定）
+│   ├── catalog.py               SCRIPT_SPECS / SCENE_SCRIPTS / 按名调用；所有结果都是 ScriptResult
+│   ├── interface.py             唯一 WorldConsole 协议（含 run_script：脚本组合）
+│   ├── engine.py                唯一 ScriptRun：共用按键、等待、事件、步骤与终态报告
+│   ├── definitions.py           ScriptDefinition / run_definition：执行显式声明的生命周期
+│   ├── policies.py              ScriptPolicy / StableWait：等待、中断、准备、恢复与收尾配置
+│   ├── interruptions.py         可组合的战斗、选项、换图中断条件
+│   ├── screen_wait.py / screen_steps.py / timing.py
+│   │                            共用稳定等待、文字推进、光标导航与私有帧预算
+│   ├── control_flow.py / execution_types.py / dialog_cache.py / tables.py
+│   │                            ScriptResult、具名停止信号、步骤类型、对话增量和静态表
+│   ├── console_adapter.py       PyBoyWorld → WorldConsole
 │   ├── movement.py / interact.py / flow.py / menu.py / navigation.py / shop.py
-│   │                            常规脚本（walk / dialog 场合；buy_item / sell_item 在商店场合）
-│   └── takeover/                接管脚本（第七节）
-│       ├── __init__.py          PREFIX（场合 → 对外名前缀）/ REGISTRY / TAKEOVER_SCRIPTS；出口 takeover_entries(scene) /
-│       │                        run_takeover(console, name, args) / takeover_view(...)
-│       ├── engine.py            Console 协议、Abort、TakeoverDef、TakeoverRun（settle / press / wait_for / move_to /
-│       │                        idle_until / advance / rewind）、run_takeover；私有物理量 POLL_FRAMES / STABLE_POLLS /
-│       │                        STEP_TIMEOUT_FRAMES / REWIND_LIMIT / ADVANCE_LIMIT / QUIET_PRESS_FRAMES …
-│       ├── outcome.py           TakeoverOutcome / TakeoverStatus / TakeoverReason / TakeoverStep（包内结果形状）
+│   │                            按业务组织的脚本；不是另一类执行器
+│   └── takeover/                菜单、战斗等场合的脚本声明与视图
+│       ├── __init__.py          PREFIX / REGISTRY / TAKEOVER_SCRIPTS / takeover_view
+│       ├── policy.py            初态恢复、严格等待与可选收尾的组合配置
 │       ├── common.py            共用读数（队伍、背包、药的分类与效果预判）与操作（选项光标、列表光标、数量、YES/NO）
 │       ├── shop.py              shop_items 场合：buy / sell / quit、shop_view
 │       ├── naming.py            naming 场合：enter_name、naming_view
@@ -244,19 +247,19 @@ RAM 档产出 `TaskObservation`：另带场合 `scene`（`scene.classify_scene`�
 
 接管场合里 JEV 不按键，选一条带参数的接管脚本；world 执行到底。它与常规脚本是**同一种动作**
 （`ActionEntry`，`kind="script"`，经 `GameTools.execute` 的脚本通道执行，记 `act_call` script 形），
-差别只在可用场合与实现骨架。**对外名 = 场合前缀 + 文件内短名**（`shop_quit` = `shop` + `quit`），
+差别在可用场合和脚本选择的规则，执行现场相同。**对外名 = 场合前缀 + 文件内短名**（`shop_quit` = `shop` + `quit`），
 前缀表 `takeover.PREFIX` 是唯一规则。每个场合一个文件，每条只写**前提校验 + 执行 + 收尾**，
-骨架在 `engine.run_takeover`：
+这些脚本通过 `definitions.run_definition` 执行显式声明的 `menu_policy`：
 
 1. **认场合、找脚本、核参数类型**：场合不是接管场合或本场合没有这条 → `rejected / unknown_script`；缺参数、类型不对 → `rejected / bad_args`（一个键都不按）。
 2. **回初态**：等画面稳定（每 `POLL_FRAMES` 帧读一次、连续 `STABLE_POLLS` 次相同，忽略闪烁的 `▼`）→ `at_start` 真则进 3；场合已变 → `left_scene`；否则按 B，最多 `REWIND_LIMIT` 次（超了 `aborted / rewind_limit`）。
-3. **按此刻内存校验前提**（钱、背包、商品、持有数、名字字符与长度、招式与 PP、队员）→ 不满足 `rejected`，原因码见 `TakeoverReason`（商店与起名：`unknown_item` `not_enough_money` `bag_full` `quantity_out_of_range` `not_in_bag` `key_item` `invalid_name`；战斗：`unknown_move` `no_pp` `unknown_pokemon` `pokemon_fainted` `already_active` `target_required` `cannot_use`；通用：`unknown_script` `bad_args` `rewind_limit` `step_timeout` `unexpected_screen`）。
+3. **按此刻内存校验前提**（钱、背包、商品、持有数、名字字符与长度、招式与 PP、队员）→ 不满足 `rejected`，原因码见 `ScriptReason`（商店与起名：`unknown_item` `not_enough_money` `bag_full` `quantity_out_of_range` `not_in_bag` `key_item` `invalid_name`；战斗：`unknown_move` `no_pp` `unknown_pokemon` `pokemon_fainted` `already_active` `target_required` `cannot_use`；通用：`unknown_script` `bad_args` `rewind_limit` `step_timeout` `unexpected_screen`）。
 4. **执行**：每一步按键后等稳定、核对期望（`wait_for` 只在没有光标、没有数量框时按 A 推进文字）；没出现期望 → 回初态、`aborted`。
 5. **收尾**：回初态（离开场合的脚本不回），`done` 带一行 `summary`（如 `钱 3000→2000，POKé BALL +5`）。
 
-结果 `TakeoverOutcome` 只在包内流转，由 `scripts/catalog.py` 折成统一的 `ScriptResult`：`ok` = `done`；
-`code` = `ok` / 原因码 / 结局；`data` 带 `scene` / `status` / `reason` / `summary` / `steps`（逐步明细每次都记）。
-接管脚本只经 `Console` 协议碰模拟器（`memory` / `rom` / `press` / `tick` / `read`），`WorldConsole` 是它的超集。
+执行直接返回统一的 `ScriptResult`：`ok` = `done`；`code` = `ok` / 原因码 / 结局。
+菜单脚本的 `data` 带 `scene` / `status` / `reason` / `summary` / `steps`；逐步明细由脚本的 `record_steps` 配置启用。
+所有脚本只经同一个 `WorldConsole` 协议碰模拟器。`ScriptRun` 不默认启用三种中断；地图操作脚本选择 `field_policy`，菜单操作脚本声明严格等待、初态恢复和收尾。开始菜单导航与回血确认同样使用这个执行器，其步骤明确不启用选项中断。
 
 | 场合 | 接管脚本（对外名） | 视图 |
 |---|---|---|
@@ -269,7 +272,7 @@ RAM 档产出 `TaskObservation`：另带场合 `scene`（`scene.classify_scene`�
 | `pc` | `pc_withdraw_item` / `pc_deposit_item` / `pc_toss_item(item, quantity)`、`pc_withdraw_pokemon` / `pc_deposit_pokemon(pokemon)`、`pc_change_box(n)`、`pc_log_off()` | `PcView` |
 | `learn_move` | `learn_forget(move)`、`learn_skip()` | `LearnMoveView` |
 
-**战斗接管脚本的收尾是自动推进战斗文字**（`TakeoverRun.advance`）：只在屏上出现 `▼`（游戏在等按键）、或画面静止满
+**战斗接管脚本的收尾是自动推进战斗文字**（`ScriptRun.advance`）：只在屏上出现 `▼`（游戏在等按键）、或画面静止满
 `QUIET_PRESS_FRAMES`（300）帧时按 A——文字自己在走时按早了会落在紧接着出现的选单上；遇到任意 `▶`
 （下一个选单、单层 YES/NO 如 "Use next POKéMON?"、抓到后的起名询问）或战斗标志清零即停，按满 `ADVANCE_LIMIT` 次或
 空等满 `ADVANCE_WAIT_FRAMES` 帧也停。停在战斗选单的子层时按 B 退回行动菜单。摘要写双方 HP 变化与停在哪。
@@ -281,10 +284,10 @@ RAM 档产出 `TaskObservation`：另带场合 `scene`（`scene.classify_scene`�
 其余道具拒掉；用完推话直到下一个 `▶`（背包列表、学新招的 YES / NO……）——换画面时有几百帧整屏空白，只认光标。
 `field_move` 不支持 FLY（要再选目的地）；没用成（缺徽章、面前没有树）以 `aborted` 带回游戏的原话。
 PC 道具走主角的 PC、宝可梦与换箱走比尔的 PC；打开时 "Accessed …" 那几句话显示时主菜单光标还画着，要替它推；
-换箱时游戏会存档，画面静止几百帧（`TakeoverRun.idle_until` 不按键干等）。
+换箱时游戏会存档，画面静止几百帧（`ScriptRun.idle_until` 不按键干等）。
 学新招时忘不掉的秘传招式以"没有学会"`aborted`；学招提示前的几句（`trying to learn` / `can't learn more` /
 `than 4 moves`）也归 `learn_move`，回初态时按 B 推过去。
-测评：`python -m evals macros run`（75 例，经脚本通道调接管脚本）、`python -m evals views run`（八个接管视图初态帧逐字段核对）。
+测评：`world_actions` 共 106 例，经统一脚本入口核自报与世界真值；`decode` 从冻结帧核菜单视图。
 ## 八、依赖边界与自包含核对
 
 **出边为零**：`world/` 内唯一的绝对 import 是 `from pokemon_agent.world import …`

@@ -24,6 +24,9 @@ from ...interface import (
 from ...items import item_id, item_name
 from ...moves import fold
 from ...screen_text import W_IS_IN_BATTLE
+from ..definitions import ScriptDefinition
+from ..engine import Abort, ScriptRun
+from ..execution_types import ScriptReason
 from .common import (
     BALLS,
     HEAL_ITEMS,
@@ -40,8 +43,7 @@ from .common import (
     unknown_mon,
     useless,
 )
-from .engine import Abort, TakeoverDef, TakeoverRun
-from .outcome import TakeoverReason
+from .policy import menu_policy
 
 W_BATTLE_MON_MOVES = 0xD01C
 W_BATTLE_MON_PP = 0xD02D
@@ -95,26 +97,26 @@ def faint_view(mem: Memory) -> FaintSwitchView:
 # ---- 共用步骤 ----
 
 
-def _action(run: TakeoverRun, option: str) -> None:
+def _action(run: ScriptRun, option: str) -> None:
     """行动菜单上把光标挪到 `option`（二维格子，按行列走），按 A。"""
     for _ in range(8):
         text = run.screen()
         target = _cell(text, option)
         if target is None:
-            raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"行动菜单里没有 {option}")
+            raise Abort(ScriptReason.UNEXPECTED_SCREEN, f"行动菜单里没有 {option}")
         now = text.cursor_cell
         if now == target:
-            run.press("a", expect=f"选 {option}")
+            run.press_screen("a", expect=f"选 {option}")
             return
         if now is None:
-            raise Abort(TakeoverReason.UNEXPECTED_SCREEN, "行动菜单上没有光标")
+            raise Abort(ScriptReason.UNEXPECTED_SCREEN, "行动菜单上没有光标")
         key = (
             ("down" if target[0] > now[0] else "up")
             if target[0] != now[0]
             else ("right" if target[1] > now[1] else "left")
         )
-        run.press(key, expect=f"光标 → {option}")
-    raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"光标挪不到 {option}")
+        run.press_screen(key, expect=f"光标 → {option}")
+    raise Abort(ScriptReason.UNEXPECTED_SCREEN, f"光标挪不到 {option}")
 
 
 def _cell(text: ScreenText, option: str) -> tuple[int, int] | None:
@@ -125,8 +127,8 @@ def _cell(text: ScreenText, option: str) -> tuple[int, int] | None:
     return None
 
 
-def _advance(run: TakeoverRun) -> str:
-    """推进战斗文字，遇到 `▶`、战斗标志清零即停（`TakeoverRun.advance`），返回停在哪。
+def _advance(run: ScriptRun) -> str:
+    """推进战斗文字，遇到 `▶`、战斗标志清零即停（`ScriptRun.advance`），返回停在哪。
 
     停在战斗选单的子层（推进时误按进了招式列表等）就按 B 退回行动菜单。
     """
@@ -137,7 +139,7 @@ def _advance(run: TakeoverRun) -> str:
     return stop
 
 
-def _stop(run: TakeoverRun, text: ScreenText) -> str:
+def _stop(run: ScriptRun, text: ScreenText) -> str:
     if run.mem[W_IS_IN_BATTLE] == 0:
         return "战斗结束"
     if text.options == ["YES", "NO"]:
@@ -147,7 +149,7 @@ def _stop(run: TakeoverRun, text: ScreenText) -> str:
     return ""
 
 
-def _hp_line(run: TakeoverRun, before: tuple[int, int, str, str]) -> str:
+def _hp_line(run: ScriptRun, before: tuple[int, int, str, str]) -> str:
     """出招前后的 HP 变化（双方）。"""
     status = read_battle_status(run.mem)
     mine0, foe0, name0, foe_name0 = before
@@ -165,13 +167,13 @@ def _hp_line(run: TakeoverRun, before: tuple[int, int, str, str]) -> str:
     return "，".join(parts)
 
 
-def _snapshot(run: TakeoverRun) -> tuple[int, int, str, str]:
+def _snapshot(run: ScriptRun) -> tuple[int, int, str, str]:
     status = read_battle_status(run.mem)
     assert status is not None, "战斗接管脚本在战斗外被调"
     return status.mine.hp, status.foe.hp, status.mine.name, status.foe.name
 
 
-def _summary(head: str, run: TakeoverRun, before: tuple[int, int, str, str], stop: str) -> str:
+def _summary(head: str, run: ScriptRun, before: tuple[int, int, str, str], stop: str) -> str:
     hp = _hp_line(run, before)
     return "；".join(p for p in (head, hp, stop) if p)
 
@@ -179,18 +181,18 @@ def _summary(head: str, run: TakeoverRun, before: tuple[int, int, str, str], sto
 # ---- fight ----
 
 
-def _check_fight(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_fight(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     known = moves(run.mem, W_BATTLE_MON_MOVES, W_BATTLE_MON_PP)
     hit = next((m for m in known if fold(m.name) == fold(str(args["move"]))), None)
     if hit is None:
         names = "、".join(m.name for m in known)
-        return TakeoverReason.UNKNOWN_MOVE, f"在场的宝可梦不会 {args['move']}（会：{names}）"
+        return ScriptReason.UNKNOWN_MOVE, f"在场的宝可梦不会 {args['move']}（会：{names}）"
     if hit.pp == 0:
-        return TakeoverReason.NO_PP, f"{hit.name} 没有 PP 了"
+        return ScriptReason.NO_PP, f"{hit.name} 没有 PP 了"
     return None
 
 
-def _execute_fight(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_fight(run: ScriptRun, args: dict[str, str | int]) -> str:
     before = _snapshot(run)
     move = fold(str(args["move"]))
     # 步骤 1：行动菜单选 FIGHT，等招式列表。
@@ -201,7 +203,7 @@ def _execute_fight(run: TakeoverRun, args: dict[str, str | int]) -> str:
     # 步骤 2：光标挪到这招，按 A。
     target = [fold(o) for o in text.options].index(move)
     run.move_to(lambda: cursor_index(run.screen()), target, what="招式光标")
-    run.press("a", expect=f"出招 {args['move']}")
+    run.press_screen("a", expect=f"出招 {args['move']}")
     # 步骤 3：推进战斗文字。
     stop = _advance(run)
     return _summary(f"用 {text.options[target]}", run, before, stop)
@@ -210,13 +212,11 @@ def _execute_fight(run: TakeoverRun, args: dict[str, str | int]) -> str:
 # ---- switch ----
 
 
-def _check_switch(
-    run: TakeoverRun, args: dict[str, str | int]
-) -> tuple[TakeoverReason, str] | None:
+def _check_switch(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     return check_target(_party(run.mem), str(args["pokemon"]), need_bench=True)
 
 
-def _execute_switch(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_switch(run: ScriptRun, args: dict[str, str | int]) -> str:
     before = _snapshot(run)
     index = find_mon(_party(run.mem), str(args["pokemon"]))
     assert index is not None
@@ -227,32 +227,32 @@ def _execute_switch(run: TakeoverRun, args: dict[str, str | int]) -> str:
     # 步骤 2：选这只，子菜单选 SWITCH。
     pick_mon(run, index, name)
     run.wait_for(lambda t: t.cursor == "SWITCH", expect="SWITCH / STATS 子菜单出现")
-    run.press("a", expect=f"换上 {name}")
+    run.press_screen("a", expect=f"换上 {name}")
     # 步骤 3：推进战斗文字，核在场的是它。
     stop = _advance(run)
     if run.mem[W_IS_IN_BATTLE] and run.mem[W_PLAYER_MON_NUMBER] != index:
-        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"推进完在场的不是 {name}")
+        raise Abort(ScriptReason.UNEXPECTED_SCREEN, f"推进完在场的不是 {name}")
     return _summary(f"换上 {name}", run, before, stop)
 
 
 # ---- use_item ----
 
 
-def _check_use(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_use(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     mem, name, who = run.mem, str(args["item"]), str(args["pokemon"])
     item = item_id(name)
     if item is None or bag_count(mem, item) == 0:
-        return TakeoverReason.NOT_IN_BAG, f"背包里没有 {name}"
+        return ScriptReason.NOT_IN_BAG, f"背包里没有 {name}"
     if item in BALLS:
         if mem[W_IS_IN_BATTLE] == TRAINER_BATTLE:
-            return TakeoverReason.CANNOT_USE, "训练家对战不能扔球"
+            return ScriptReason.CANNOT_USE, "训练家对战不能扔球"
         return None
     if item in SELF_ITEMS:
         return None
     if item not in TARGET_ITEMS:
-        return TakeoverReason.CANNOT_USE, f"{item_name(item)} 不能在战斗里用"
+        return ScriptReason.CANNOT_USE, f"{item_name(item)} 不能在战斗里用"
     if not who:
-        return TakeoverReason.TARGET_REQUIRED, f"{item_name(item)} 要指定用在哪只身上（pokemon）"
+        return ScriptReason.TARGET_REQUIRED, f"{item_name(item)} 要指定用在哪只身上（pokemon）"
     mons = _party(mem)
     index = find_mon(mons, who)
     if index is None:
@@ -260,7 +260,7 @@ def _check_use(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverRe
     return useless(item, mons[index])
 
 
-def _execute_use(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_use(run: ScriptRun, args: dict[str, str | int]) -> str:
     mem = run.mem
     before = _snapshot(run)
     item = item_id(str(args["item"]))
@@ -286,20 +286,20 @@ def _execute_use(run: TakeoverRun, args: dict[str, str | int]) -> str:
         return _summary(f"{head}：{'抓到了' if caught else '没抓到'}", run, before, stop)
     have1 = bag_count(mem, item)
     if have1 != have0 - 1:
-        raise Abort(TakeoverReason.CANNOT_USE, f"{item_name(item)} 没有用掉；{stop}")
+        raise Abort(ScriptReason.CANNOT_USE, f"{item_name(item)} 没有用掉；{stop}")
     return _summary(head, run, before, stop)
 
 
 # ---- run ----
 
 
-def _check_run(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_run(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     if run.mem[W_IS_IN_BATTLE] == TRAINER_BATTLE:
-        return TakeoverReason.CANNOT_USE, "训练家对战不能逃"
+        return ScriptReason.CANNOT_USE, "训练家对战不能逃"
     return None
 
 
-def _execute_run(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_run(run: ScriptRun, args: dict[str, str | int]) -> str:
     before = _snapshot(run)
     # 步骤 1：行动菜单选 RUN。
     _action(run, "RUN")
@@ -312,11 +312,11 @@ def _execute_run(run: TakeoverRun, args: dict[str, str | int]) -> str:
 # ---- send_out ----
 
 
-def _check_send(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
+def _check_send(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
     return check_target(_party(run.mem), str(args["pokemon"]), need_bench=False)
 
 
-def _execute_send(run: TakeoverRun, args: dict[str, str | int]) -> str:
+def _execute_send(run: ScriptRun, args: dict[str, str | int]) -> str:
     index = find_mon(_party(run.mem), str(args["pokemon"]))
     assert index is not None
     name = _party(run.mem)[index].name
@@ -325,10 +325,10 @@ def _execute_send(run: TakeoverRun, args: dict[str, str | int]) -> str:
     # 步骤 2：有子菜单就选 SWITCH，然后推进文字。
     text = run.screen()
     if text.cursor == "SWITCH":
-        run.press("a", expect=f"换上 {name}")
+        run.press_screen("a", expect=f"换上 {name}")
     stop = _advance(run)
     if run.mem[W_IS_IN_BATTLE] and run.mem[W_PLAYER_MON_NUMBER] != index:
-        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"推进完在场的不是 {name}")
+        raise Abort(ScriptReason.UNEXPECTED_SCREEN, f"推进完在场的不是 {name}")
     return f"换上 {name}；{stop}"
 
 
@@ -342,8 +342,8 @@ _WHO = ScriptParam(
     description="用在哪只身上（伤药、解异常、复活要给；球与 X 系列不给）",
 )
 
-BATTLE_TAKEOVERS: dict[str, TakeoverDef] = {
-    "fight": TakeoverDef(
+BATTLE_TAKEOVERS: dict[str, ScriptDefinition] = {
+    "fight": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
             name="fight",
@@ -353,9 +353,9 @@ BATTLE_TAKEOVERS: dict[str, TakeoverDef] = {
         scene=TaskScene.BATTLE_MENU,
         check=_check_fight,
         execute=_execute_fight,
-        rewind_after=False,
+        policy=menu_policy(rewind_after=False),
     ),
-    "switch": TakeoverDef(
+    "switch": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
             name="switch",
@@ -365,9 +365,9 @@ BATTLE_TAKEOVERS: dict[str, TakeoverDef] = {
         scene=TaskScene.BATTLE_MENU,
         check=_check_switch,
         execute=_execute_switch,
-        rewind_after=False,
+        policy=menu_policy(rewind_after=False),
     ),
-    "use_item": TakeoverDef(
+    "use_item": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
             name="use_item",
@@ -377,21 +377,21 @@ BATTLE_TAKEOVERS: dict[str, TakeoverDef] = {
         scene=TaskScene.BATTLE_MENU,
         check=_check_use,
         execute=_execute_use,
-        rewind_after=False,
+        policy=menu_policy(rewind_after=False),
     ),
-    "run": TakeoverDef(
+    "run": ScriptDefinition(
         spec=ActionEntry(
             kind="script", name="run", description="逃跑（只限野生宝可梦；不一定逃得掉）"
         ),
         scene=TaskScene.BATTLE_MENU,
         check=_check_run,
         execute=_execute_run,
-        rewind_after=False,
+        policy=menu_policy(rewind_after=False),
     ),
 }
 
-FAINT_TAKEOVERS: dict[str, TakeoverDef] = {
-    "send_out": TakeoverDef(
+FAINT_TAKEOVERS: dict[str, ScriptDefinition] = {
+    "send_out": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
             name="send_out",
@@ -401,7 +401,7 @@ FAINT_TAKEOVERS: dict[str, TakeoverDef] = {
         scene=TaskScene.FAINT_SWITCH,
         check=_check_send,
         execute=_execute_send,
-        rewind_after=False,
+        policy=menu_policy(rewind_after=False),
     ),
 }
 
