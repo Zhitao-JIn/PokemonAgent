@@ -6,7 +6,7 @@ from inspect_ai.util import store_as
 from evals.core.snapshot import has_map, snapshot_of
 from evals.core.world_case import ROM
 from evals.data.screen_reading.schemas import ScreenSample
-from pokemon_agent.world import classify_scene, read_screen_text
+from pokemon_agent.world import classify_scene, overlay_of, read_screen_text
 from pokemon_agent.world.ram import read_terrain
 from pokemon_agent.world.scripts.takeover import takeover_view
 
@@ -30,7 +30,7 @@ def decode_frame(sample: ScreenSample) -> DecodeRun:
             "neighbors": decoded.render_neighbors(),
         }
     return DecodeRun(
-        screen=text.model_dump(mode="json"),
+        screen={**text.model_dump(mode="json"), "overlay": overlay_of(text).value},
         takeover={
             "scene": scene.value,
             "view": view.model_dump(mode="json") if view else None,

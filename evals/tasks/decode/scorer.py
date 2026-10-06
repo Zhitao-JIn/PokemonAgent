@@ -30,7 +30,7 @@ def truth_for(frame: ScreenSample, group: Group) -> dict[str, Any] | None:
     """明确标注优先；基础数据只有人工核过的帧可用于文字真值。"""
     truth = getattr(frame, f"{group}_truth")
     if truth is None and group == "screen" and frame.label_checked:
-        truth = frame.label.model_dump(include={"dialog_text", "options", "cursor"})
+        truth = frame.label.model_dump(include={"overlay", "dialog_text", "options", "cursor"})
     return truth
 
 
