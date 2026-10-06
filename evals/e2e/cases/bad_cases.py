@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from evals.e2e.schemas import BadCase, SampleResult
+from evals.schema import BadCase, SampleResult
 
 
 def collect(report_id: str, results: list[SampleResult]) -> list[BadCase]:

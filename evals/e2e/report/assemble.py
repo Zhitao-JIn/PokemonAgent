@@ -9,17 +9,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from evals.core.evallog import HEADER, RESULTS
+from evals.data import load_rubric, load_samples
 from evals.e2e.cases import append_new, collect
-from evals.e2e.checks import RunStream
-from evals.e2e.dataset import load_rubric, load_samples
 from evals.e2e.rubric import form_section
-from evals.e2e.schemas import ReportHeader, SampleResult
+from evals.schema import ReportHeader, SampleResult
+from evals.scorers import RunStream
 
-from .evaluate import RUN_RECORD, evaluate
+from .evaluate import RUN_RECORD, evaluate, stall_limits_of
 from .markdown import render
 
-HEADER = "header.json"
-RESULTS = "results.jsonl"
 REPORT = "report.md"
 FORMS = "rubric_forms.md"
 BAD_CASES = "bad_cases.jsonl"
@@ -31,8 +30,12 @@ def build_report(report_dir: Path) -> list[SampleResult]:
     rubric = load_rubric(header.dataset_version)
     samples = [s for s in load_samples(header.dataset_version) if s.sample_id in header.sample_ids]
 
-    # 步骤 1：逐条判。
-    results = [evaluate(s, report_dir / "runs" / s.sample_id, report_dir) for s in samples]
+    # 步骤 1：逐条判（红线阈值来自口径头快照，不读 live config）。
+    limits = stall_limits_of(header)
+    results = [
+        evaluate(s, report_dir / "runs" / s.sample_id, report_dir, stall_limits=limits)
+        for s in samples
+    ]
     (report_dir / RESULTS).write_text(
         "".join(json.dumps(r.model_dump(), ensure_ascii=False) + "\n" for r in results),
         encoding="utf-8",

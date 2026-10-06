@@ -1,0 +1,19 @@
+{
+  "version": "v1",
+  "split": "val",
+  "samples": [],
+  "knowledge": true,
+  "speed": 0,
+  "timeout": 3600,
+  "epochs": 1,
+  "log_dir": "eval_results/inspect",
+  "trace_backend": "langfuse",
+  "watch": false,
+  "models": {
+    "vision_model": "deepseek-flash",
+    "text_model": "deepseek-flash",
+    "judge_model": "deepseek-flash",
+    "verify_model": "deepseek-flash",
+    "plan_model": "deepseek-flash"
+  }
+}

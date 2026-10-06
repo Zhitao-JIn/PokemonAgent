@@ -6,10 +6,10 @@ v1 只算原始量、不折档（`score=None`）：0 / 1 / 2 档阈值要在第�
 
 from __future__ import annotations
 
-from evals.e2e.checks import RunStream
-from evals.e2e.schemas import EvalSample, RubricScore
+from evals.schema import EvalSample, RubricScore
+from evals.scorers import RunStream
+from pokemon_agent.direct.trace.content import CheckStallContent
 from pokemon_agent.schemas.harness import TraceKind
-from pokemon_agent.tools.trace.content import CheckStallContent
 
 ITEM_ID = "redundant_path"
 

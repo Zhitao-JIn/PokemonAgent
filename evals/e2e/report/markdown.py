@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
-from evals.e2e.schemas import ReportHeader, SampleResult, TokenUse
+from evals.schema import ReportHeader, SampleResult, TokenUse
 
 
 def render(header: ReportHeader, results: list[SampleResult], bad_cases: int) -> str:

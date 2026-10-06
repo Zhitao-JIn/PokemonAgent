@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from evals.e2e.checks import RunStream
-from evals.e2e.schemas import EvalSample, Rubric, RubricScore
+from evals.schema import EvalSample, Rubric, RubricScore
+from evals.scorers import RunStream
+from pokemon_agent.direct.trace.content import DecomposeVerdictContent, TaskEndContent
 from pokemon_agent.schemas.harness import TraceKind
-from pokemon_agent.tools.trace.content import DecomposeVerdictContent, TaskEndContent
 
 DECOMPOSE = "decompose_quality"
 STRATEGY = "strategy_switch"

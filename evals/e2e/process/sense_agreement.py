@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-from evals.e2e.checks import RunStream
-from evals.e2e.schemas import SenseAgreement
+from evals.schema import SenseAgreement
+from evals.scorers import RunStream
 from pokemon_agent.world import Facts
 
 

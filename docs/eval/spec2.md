@@ -2,6 +2,8 @@
 
 > 流程位置：intent.md → **spec2.md** → plan → PR → production（取代 spec.md 的角色；spec.md 保留作 v1 记录，其〇节偏差与 E1–E8 落码状态仍是有效事实）
 > 状态：**已定稿（09-28）**：fork #1 裁决「**inspect view 看结果，langfuse 看过程**」（09-28 08:0x 用户拍板）→ 真依赖轻用；下一步写 plan
+> **入口修订（0929，用户定向）**：fork #1 的入口半推翻——**不自研 CLI**，跑批统一 `inspect eval evals/tasks/e2e.py`；参数唯一来源 **`evals/config.json`**（`runconfig.load_config`，`-T` 逐项覆盖）；epochs/reducer/log-dir 用 `inspect eval` 自带旗标。R3 的自研 evaluate 命令已删（334）。
+> **R0 已过（09-28 17:0x，用户定向提前）**：inspect-ai **0.3.271** 已装进 .venv（pyproject/uv.lock 定版），最小 @task 冒烟通过（`scripts/r0_smoke.py`，2 样本 × epochs=2 + pass_at reducer，.eval 落 `eval_results/r0/logs/`，accuracy/stderr 由真库算出）。API 偏差三处已核实并回写：① pass@k **不是独立 Metric**——走 `Epochs(n, reducer=pass_at(k))` 的 ScoreReducer 机制（`pass_at`/`pass_k`，自研估计量 R5 删）；② `Score.reason` 是**失败原因字面量**（invalid_response_format/refusal/…），文字理由放 `explanation`；③ Metric 协议收 `list[SampleScore]`，指标挂在 scorer 上（`@scorer(metrics=[accuracy(), stderr()])`）。§六/§八相应条款以此为准。
 > 依据：`docs/eval/intent.md` §十一 V1–V12（09-28 拍板）+ §十一对标节（21 维评级）+ CHANGELOG 315/316
 > 范围：evals 包骨架、与 harness 的接口（V8）、观测三层分工。**不改** agent 决策侧、trace 格式、Langfuse 树形约定（0927 定稿）
 

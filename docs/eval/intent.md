@@ -198,6 +198,7 @@
 | V10 | **trace 插点分级方案** | **已完成（09-25 定：现有 trace 粒度够用，不新增分级；条件检索基于现有字段索引）** |
 | V11 | **case 回收与归因** | **09-28 定：目前不做归因，只做测评记录**——每次批跑挂在 manifest 下留档（报告 / bad case / 参数快照），不悬空。09-25 定的"入库人工确认、产出无条件保留"继续有效 |
 | V12 | **本期测评的成熟度目标** | **09-28 定：由 module-gap-audit 行动表承接**（见下节评级与差距），§九五维矩阵保留作长期参照 |
+| V13 | **差距收口的执行序（09-28 下午复检后定）** | **协议层先行，编排层按 spec2 顺序不变**：① 统一 Scorer 协议（`Score` 载体 verdict/graded 两型分列 + `Scorer` 签名 `(stream, sample) → Score`）、model-graded scorer 协议（`ModelGrader` 注入式、默认关 D6、结果分列 V3）、Metric 协议（accuracy / pass@k / pass^k / stderr）作为**纯协议 + 纯函数**提前落码（`evals/e2e/scoring/`，CHANGELOG 326）——不接消费方、不删旧三套协议（先契约、后消费，plan2 〇.2）；② **Task 抽象确认要做**（09-28 用户拍板"task抽象是要做的"）：dataset + solver + scorers + metrics 的装配单元，本项目的 inspect-ai Task（与 agent 决策侧的执行级 task 重名无关）；Task/Solver/eval_set/EvalLog 编排层仍按 spec2 §八顺序走（R0 冒烟 → R1 RunResult → R2a 骨架 → R2b 收敛删旧协议 → R3 eval_set → R4 manifest → R5 metric 消费），`scoring/` 包的形状即 R2a 上移 `core/scorer.py` + `core/metric.py` + `scorers/model_graded.py` 的目标形状 |
 
 ### 09-28 拍板：inspect-ai 对标（V5 的具体化，骨架重组依据）
 
@@ -214,11 +215,14 @@ evals 现状九个子目录平铺（cases / checks / cli / dataset / process / r
 | **eval_set** | epochs / retry / resume / 并发 | 批跑入口（V2 的 k 落这） |
 | **EvalLog** | 统一日志 + header metadata | manifest（V9）+ per-sample 测评记录（V11） |
 
-**module-gap-audit 评级（09-28，21 维）**：✅7 / 🟡3 / 🔴9 / ⚪2（原 22 维含"train/val/test 切分"一维，09-28 拍板不照搬 WikiSkill 协议后移除）。最值钱差距：① 判定三套协议不统一
+**module-gap-audit 评级（09-28，21 维）**：✅7 / 🟡3 / 🔴9 / ⚪2（原 22 维含"train/val/test 切分"一维，09-28 拍板不照搬 WikiSkill 协议后移除；同日下午复检 #12 并发调度 🟡→⚪——真机单模拟器硬约束，✅7/🟡2/🔴9/⚪3）。最值钱差距：① 判定三套协议不统一
 （Scorer 收敛）；② epochs / 重试 / 续跑缺位（eval_set 化）；③ 真值耦合 trace（V8 改返回值）；
 ④ Metric 无抽象（V7 指标层）；⑤ 边界纯净度三处违规（screen import 被测私有名、红线耦合被测
 config、macros/views 骨架复制）。达标的底座：口径头比 inspect 默认更细、diff 口径全等校验、
 判据注册表防重、真值口径钉死、依赖方向单向。
+**326 落码后**：①④ 中的协议部分已提前落（`scoring/` 包，V13）——统一 Scorer 协议、
+model-graded scorer 协议、Metric 协议 + pass@k/pass^k/stderr 从 🔴 改 🟡（协议在、消费未接、
+旧三套未删）；其余维度评级不变，编排层差距照旧由 R0–R5 收口。
 
 ## 十二、成功的样子（intent 层验收）
 

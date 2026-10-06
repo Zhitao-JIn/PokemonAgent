@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .judge_agreement import judge_cells, task_terminations
+from .judge_agreement import judge_agreement_scorer, judge_cells, task_terminations
 from .sense_agreement import sense_agreement
 
-__all__ = ["judge_cells", "sense_agreement", "task_terminations"]
+__all__ = ["judge_agreement_scorer", "judge_cells", "sense_agreement", "task_terminations"]

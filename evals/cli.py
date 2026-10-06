@@ -7,9 +7,9 @@ import sys
 
 SUITES: dict[str, str] = {
     "e2e": "evals.e2e.cli",
-    "macros": "evals.macros.cli",
-    "screen": "evals.screen_reading.cli",
-    "views": "evals.takeover_views.cli",
+    "macros": "evals.tasks.macros.cli",
+    "screen": "evals.tasks.screen_reading.cli",
+    "views": "evals.tasks.takeover_views.cli",
 }
 """测评名 → 它的命令行模块。"""
 

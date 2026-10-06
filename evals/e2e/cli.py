@@ -14,11 +14,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from evals.e2e.checks import RULES
-from evals.e2e.dataset import DatasetError, check, load_samples
-from evals.e2e.report import HEADER, build_report, diff
+from evals.data import DatasetError, check, load_samples
+from evals.e2e.report import build_report, diff
 from evals.e2e.runner import run_batch
-from evals.e2e.schemas import ReportHeader
+from evals.scorers import RULES
 
 MODEL_LINKS: tuple[str, ...] = (
     "vision_model",
@@ -53,7 +52,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--version", default="v1")
     p.set_defaults(func=_dataset)
 
-    p = sub.add_parser("run", help="批跑并出报告")
+    p = sub.add_parser("run", help="（旧路径，R5 退役）子进程批跑并出 report.md")
     p.add_argument("--version", default="v1")
     p.add_argument("--split", default="val")
     p.add_argument("--samples", default="", help="逗号分隔的样本 id；缺省跑整个切分")
@@ -64,6 +63,7 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("run-one", help="（内部）跑一条样本")
     p.add_argument("--report-dir", required=True)
     p.add_argument("--sample", required=True)
+    p.add_argument("--epoch", type=int, default=1, help="重复圈号（>1 时 run_id 加 #e<n>）")
     _run_flags(p)
     p.set_defaults(func=_run_one)
 
@@ -117,18 +117,25 @@ def _run(args: argparse.Namespace) -> int:
 
 
 def _run_one(args: argparse.Namespace) -> int:
-    """`run-one`（批跑子进程）。"""
+    """`run-one`（solver 的子进程协议，内部）。版本号/trace 后端取自 `evals/config.json`。"""
     from evals.e2e.runner import run_one
+    from evals.runconfig import load_config
 
     report_dir = Path(args.report_dir)
-    header = ReportHeader.model_validate_json((report_dir / HEADER).read_text(encoding="utf-8"))
-    [sample] = [s for s in load_samples(header.dataset_version) if s.sample_id == args.sample]
+    cfg = load_config()
+    version = str(cfg.get("version", "v1"))
+    [sample] = [s for s in load_samples(version) if s.sample_id == args.sample]
+    epoch = args.epoch
+    work_name = sample.sample_id if epoch == 1 else f"{sample.sample_id}#e{epoch}"
     run_one(
         sample,
-        report_dir / "runs" / sample.sample_id,
+        report_dir / "runs" / work_name,
         _models(args),
         knowledge=not args.no_knowledge,
         speed=args.speed,
+        epoch=epoch,
+        trace_backend=str(cfg.get("trace_backend", "local")),
+        watch=bool(cfg.get("watch", False)),
     )
     return 0
 

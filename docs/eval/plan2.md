@@ -28,7 +28,11 @@
 
 ---
 
-## R0 探测（不改 evals 代码）
+> **0929 入口修订**：R3 起跑批入口统一 `inspect eval evals/tasks/e2e.py`（不自研 CLI）；参数走 `evals/config.json`（-T 覆盖）；旧 `run`/`report`/`diff` 命令保留至真机验收，验收后随 R5 删净（D7）。
+
+## R0 探测（不改 evals 代码）—— **已完成（09-28 17:0x）**
+
+> **结果**：inspect-ai **0.3.271** 进 pyproject/uv.lock/.venv；冒烟 `scripts/r0_smoke.py` 通过（2 样本 × Epochs(2, reducer=pass_at(2))，eval_set 返回 (True, [EvalLog])，.eval 落盘，accuracy/stderr 真库算出）。三处 API 偏差已回写 spec2 头部：pass@k 走 Epochs reducer 非独立 Metric；Score.reason=失败字面量（文字进 explanation）；Metric 收 list[SampleScore] 且挂 scorer 上。R2a/R2b/R5 按回写后口径执行。`runner/view.py` 的 `inspect` CLI 自此真实可用（venv Scripts 下有 inspect.exe）。
 
 1. `pyproject.toml` 加 `inspect-ai`（先装最新，`uv lock` 定版；版本号回填进 spec2 §〇）；`uv sync` 进 `.venv`。
 2. **最小 @task 冒烟**（临时脚本，不进 evals/）：一个假 solver（返回固定结果）+ 一个 scorer + eval_set 跑两条假样本，产物落 `.eval`——核对 Task/Solver/Scorer/eval_set 的真实签名与 spec2 假设一致，不一致处回写 spec2。
@@ -58,6 +62,11 @@
 **验收**：全量 pytest 绿（只换目录不动行为）；`python -m evals e2e check` 数据集校验过；`grep -rn "pokemon_agent" evals/screen_reading evals/**/redlines*` 零私有名/零 config 命中。
 
 ## R2b Scorer 收敛（V3）
+
+> **09-28 下午注记（V13，CHANGELOG 326）**：本步的**协议部分已提前落**——`evals/e2e/scoring/`
+> 四文件（Score / Scorer / Metric / model_graded），不接消费方、不删旧三套。R2b 剩余：
+> 三套旧协议删除、judge 一致性挂附加 scorer、判定主输入换 RunResult；R2a 时 `scoring/`
+> 按目标形状上移 `core/` + `scorers/`。
 
 - `core/scorer.py`：以 inspect `Score` 为唯一判定协议。`checks/@rule` 18 条包一层适配（证据 uuid 进 Score metadata）；红线 R1–R3 独立 scorer；`rubric/forms.py`、`report/redlines.py:22`、`checks/registry.py:15` 三套旧协议删除。
 - **model-graded scorer**：`scorers/model_graded.py`，CLI 旗标注入（默认关，D6），结果分列不混机械成功率。
