@@ -15,7 +15,7 @@
 2. **prompt 是规则，入参是素材。** "怎么判、怎么想、怎么规划"全在 prompt 里
    （调用方组装、brain 原样拿去问模型的）；"判什么、想什么"才是入参。
    所以同一个东西不会既在 prompt 里又在入参里传两遍——**论据就是这样去掉的**。
-3. **返回值是 brain 自己的方言**，谁要用谁转换（`tools/brain_tool.py`）。
+3. **返回值是 brain 自己的方言**，谁要用谁转换（`direct/brain_tool.py`）。
    `brain` 的 `__init__` 只收 provider，不读任何本项目配置——**当作能被整体
    拷走复用**，跟 `memory/` 同一个规格。
 
@@ -73,9 +73,9 @@ from .domain import (
     ChooseResult,
     DecomposeResult,
     JudgeResult,
-    MacroSignature,
     PlanResult,
     Reflection,
+    ScriptSignature,
     SummarizeResult,
     VerifyResult,
 )
@@ -93,7 +93,7 @@ class BrainPort(Protocol):
         prompt: str,
         keys: Sequence[str],
         images: Sequence[str] = (),
-        macros: Sequence[MacroSignature] = (),
+        scripts: Sequence[ScriptSignature] = (),
     ) -> ChooseResult:
         """选一个动作，连同理由。
 
@@ -107,12 +107,12 @@ class BrainPort(Protocol):
             非空且模型多模态可用（provider 的 `multimodal` 标志为真）时走
             `describe()`，否则退化纯文本 `complete()`（转发表在实现层的
             `choose()` 里，0915 129）。
-        macros：此刻可调的宏签名（接管场合）；同 `keys`，只用来校验宏名与参数类型。
+        scripts：此刻可调的脚本签名；同 `keys`，只用来校验脚本名与参数类型。
 
-        前置条件：`keys` 与 `macros` 至少一个非空（空动作空间是调用方的 bug——
+        前置条件：`keys` 与 `scripts` 至少一个非空（空动作空间是调用方的 bug——
             那种情况该在调用方就被判成"这一步没法走"，不该问模型）。
-        后置条件：`result.action` 是按键时每个 `name` 都在 `keys` 内，是宏时宏名在
-            `macros` 里、参数齐全且类型对；
+        后置条件：`result.action` 是按键时每个 `name` 都在 `keys` 内；是脚本时脚本名
+            在 `scripts` 里、参数齐全且类型对；
             `result.calls` 恰好一条（这次尝试自己的账，多次尝试的累积归调用方，
             不在这里滚存）。
         失败：抛 `DecisionAttemptFailed`（附这次的账）——模型调不通、解析不出、

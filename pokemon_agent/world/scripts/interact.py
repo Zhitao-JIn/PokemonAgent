@@ -37,9 +37,7 @@ def talk_to_adjacent_npc(console: WorldConsole, direction: str | None = None) ->
         # ③ 按 a 等对话框：不出 → no_response（合法结果）。
         run.press("a")
         if console.scene() != "dialog":
-            return run.finish(
-                ok=False, code="no_response", extra={"dialog": _dialog_texts(run)}
-            )
+            return run.finish(ok=False, code="no_response", extra={"dialog": _dialog_texts(run)})
         # ④ 循环推进直至回野外；choice / battle 由钩子抛 Halt。
         while True:
             if run.budget <= 0:
@@ -95,9 +93,7 @@ def interact_facing(console: WorldConsole) -> ScriptResult:
                 extra={"final_screen_text": console.read().screen},
             )
         # 场合变了但不是 walk/dialog（钩子本应已处理 choice/battle/map；兜底）
-        return run.finish(
-            ok=True, code="ok", extra={"final_screen_text": console.read().screen}
-        )
+        return run.finish(ok=True, code="ok", extra={"final_screen_text": console.read().screen})
     except Halt as halt:
         data: dict[str, Any] = {
             "dialog": _dialog_texts(run),

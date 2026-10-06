@@ -1,8 +1,8 @@
 """脚本执行骨架（server 进程内，随 world 整体拷走）。
 
-**与 `macros/engine.py` 同构**：宏管"场合内按键序列"，脚本管"跨场合任务链"——
-两者共用同一套物理量（`POLL_FRAMES` / `STABLE_POLLS` / `STEP_TIMEOUT_FRAMES`…
-从 `macros.engine` 复用，不另起一套）。骨架只提供确定性控制流与事件采集，
+**与 `takeover/engine.py` 共用物理量**：接管脚本管"接管场合内的按键序列"，这里管
+"跨场合任务链"——`POLL_FRAMES` / `STABLE_POLLS` / `STEP_TIMEOUT_FRAMES`… 从
+`takeover.engine` 复用，不另起一套。骨架只提供确定性控制流与事件采集，
 **不替调用方做分叉决策**（§6.2 原则：分叉停并上报，决策权回调用方）。
 
 **依赖面**（刻意压到最小，便于进程内/跨进程两种形态共用）：
@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ..interface import Memory, PlaceInWorld, ScreenText, TaskScene
-from ..macros.engine import POLL_FRAMES, STABLE_POLLS, STEP_TIMEOUT_FRAMES
 from ..object_events import judge_press
 from ..scene import classify_scene
+from .takeover.engine import POLL_FRAMES, STABLE_POLLS, STEP_TIMEOUT_FRAMES
 
 _TABLES = Path(__file__).resolve().parent.parent / "tables"
 
@@ -43,9 +43,9 @@ POKECENTER_LAYOUTS: dict[str, Any] = _load_table("pokecenter_layouts.json")
 
 
 class WorldConsole(Protocol):
-    """脚本看得到的那一小块模拟器（宏 `Console` 的超集）。
+    """脚本看得到的那一小块模拟器（接管脚本 `Console` 的超集）。
 
-    比宏多三样：当前 `map_id`、当前坐标 `pos`、以及稳定的读屏 `read()`——
+    比接管脚本多三样：当前 `map_id`、当前坐标 `pos`、以及稳定的读屏 `read()`——
     脚本判定场合变化 / 换图 / 选项框都靠它们，不另调模型。
     """
 
@@ -100,13 +100,8 @@ class WorldConsole(Protocol):
         """背包里某道具的持有数（名字逐字匹配 `read_bag` 的渲染名）。"""
         ...
 
-    def run_macro(  # noqa: ANN401 —— 返回 MacroOutcome
-        self, name: str, args: dict[str, str | int]
-    ) -> Any:  # noqa: ANN401
-        """场合宏执行到底（脚本内部零件，§7：宏不对外——只经脚本间接用）。
-
-        返回 `MacroOutcome`；`status != DONE` 由脚本折成 `verify_failed` 等结局码。
-        """
+    def run_script(self, name: str, args: dict[str, str | int]) -> ScriptResult:
+        """执行另一条脚本并拿回它的终态报告（脚本组合：如 `buy_item` 调 `shop_buy`）。"""
         ...
 
 
@@ -180,7 +175,7 @@ class ScriptRun:
         self.dialog = DialogCache()
         self.calls: list[Any] = []
 
-    # ---- 稳定等待（复用宏物理量）----
+    # ---- 稳定等待（复用接管脚本的物理量）----
     def settle(self) -> None:
         """推进到屏幕缓冲连续 `STABLE_POLLS` 次不变（`▼` 闪烁不算变）。"""
         waited, same, last = 0, 0, None

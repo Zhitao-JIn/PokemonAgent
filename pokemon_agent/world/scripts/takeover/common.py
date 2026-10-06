@@ -1,4 +1,4 @@
-"""各场合宏共用的读数与操作：队伍、背包、道具分类，选项光标、列表光标、数量框、YES/NO。
+"""各场合接管脚本共用的读数与操作：队伍、背包、道具分类，选项光标、列表光标、数量框、YES/NO。
 
 地址按 `pret/pokered` 链接符号表：队伍 `wPartyMon1` 0xD16B 起每只 44 字节
 （HP +1、状态 +4、招式 +8、PP +0x1D、等级 +0x21、最大 HP +0x22），
@@ -8,14 +8,21 @@
 
 from __future__ import annotations
 
-from ..battle_status import status_abbr, u16
-from ..interface import BagEntry, MacroReason, Memory, MonEntry, MoveEntry, ScreenText
-from ..items import item_id, item_name
-from ..moves import fold, move_name
-from ..ram import NAME_END, NAME_LENGTH
-from ..readout import read_bag
-from ..screen_text import CHARMAP
-from .engine import Abort, MacroRun
+from ...battle_status import status_abbr, u16
+from ...interface import (
+    BagEntry,
+    Memory,
+    MonEntry,
+    MoveEntry,
+    ScreenText,
+)
+from ...items import item_id, item_name
+from ...moves import fold, move_name
+from ...ram import NAME_END, NAME_LENGTH
+from ...readout import read_bag
+from ...screen_text import CHARMAP
+from .engine import Abort, TakeoverRun
+from .outcome import TakeoverReason
 
 W_CURRENT_MENU_ITEM = 0xCC26
 W_LIST_SCROLL_OFFSET = 0xCC36
@@ -101,36 +108,36 @@ def find_mon(mons: list[MonEntry], name: str) -> int | None:
     return (usable or hits or [None])[0]
 
 
-def unknown_mon(mons: list[MonEntry], name: str) -> tuple[MacroReason, str]:
+def unknown_mon(mons: list[MonEntry], name: str) -> tuple[TakeoverReason, str]:
     names = "、".join(m.name for m in mons)
-    return MacroReason.UNKNOWN_POKEMON, f"队伍里没有 {name}（有：{names}）"
+    return TakeoverReason.UNKNOWN_POKEMON, f"队伍里没有 {name}（有：{names}）"
 
 
 def check_target(
     mons: list[MonEntry], name: str, *, need_bench: bool
-) -> tuple[MacroReason, str] | None:
+) -> tuple[TakeoverReason, str] | None:
     """换人 / 派出的前提：在队伍里、没倒下；`need_bench` 时还要不在场。"""
     index = find_mon(mons, name)
     if index is None:
         return unknown_mon(mons, name)
     if mons[index].hp == 0:
-        return MacroReason.POKEMON_FAINTED, f"{mons[index].name} 已经倒下"
+        return TakeoverReason.POKEMON_FAINTED, f"{mons[index].name} 已经倒下"
     if need_bench and mons[index].active:
-        return MacroReason.ALREADY_ACTIVE, f"{mons[index].name} 已经在场"
+        return TakeoverReason.ALREADY_ACTIVE, f"{mons[index].name} 已经在场"
     return None
 
 
-def useless(item: int, mon: MonEntry) -> tuple[MacroReason, str] | None:
+def useless(item: int, mon: MonEntry) -> tuple[TakeoverReason, str] | None:
     """这件药用在这只身上会不会没有效果。"""
     if item in REVIVES:
-        return None if mon.hp == 0 else (MacroReason.CANNOT_USE, f"{mon.name} 没有倒下")
+        return None if mon.hp == 0 else (TakeoverReason.CANNOT_USE, f"{mon.name} 没有倒下")
     if mon.hp == 0:
-        return MacroReason.POKEMON_FAINTED, f"{mon.name} 已经倒下"
+        return TakeoverReason.POKEMON_FAINTED, f"{mon.name} 已经倒下"
     if item in HP_ITEMS and mon.hp == mon.max_hp and (item != 0x10 or mon.status == "ok"):
-        return MacroReason.CANNOT_USE, f"{mon.name} HP 已满"
+        return TakeoverReason.CANNOT_USE, f"{mon.name} HP 已满"
     cures = STATUS_ITEMS.get(item)
     if cures is not None and (mon.status == "ok" or (cures and mon.status != cures)):
-        return MacroReason.CANNOT_USE, f"{mon.name} 没有这个异常状态（{mon.status}）"
+        return TakeoverReason.CANNOT_USE, f"{mon.name} 没有这个异常状态（{mon.status}）"
     return None
 
 
@@ -143,17 +150,17 @@ def cursor_index(text: ScreenText) -> int:
     return names.index(fold(text.cursor)) if fold(text.cursor) in names else -1
 
 
-def choose(run: MacroRun, option: str) -> None:
+def choose(run: TakeoverRun, option: str) -> None:
     """在屏上这一列选项里把光标挪到 `option`（按名字比），按 A；没有这一项抛 `Abort`。"""
     text = run.screen()
     names = [fold(o) for o in text.options]
     if fold(option) not in names:
-        raise Abort(MacroReason.UNEXPECTED_SCREEN, f"选项里没有 {option}（有：{text.options}）")
+        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"选项里没有 {option}（有：{text.options}）")
     run.move_to(lambda: cursor_index(run.screen()), names.index(fold(option)), what=f"→ {option}")
     run.press("a", expect=f"选 {option}")
 
 
-def pick_row(run: MacroRun, index: int, name: str) -> None:
+def pick_row(run: TakeoverRun, index: int, name: str) -> None:
     """长列表（会滚动）光标挪到第 `index` 项，核光标文字是 `name`，按 A。"""
     run.move_to(
         lambda: run.mem[W_CURRENT_MENU_ITEM] + run.mem[W_LIST_SCROLL_OFFSET],
@@ -162,24 +169,24 @@ def pick_row(run: MacroRun, index: int, name: str) -> None:
     )
     cursor = run.screen().cursor
     if fold(cursor) != fold(name) and item_id(cursor) != item_id(name):
-        raise Abort(MacroReason.UNEXPECTED_SCREEN, f"光标在 {cursor!r}，不是 {name}")
+        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"光标在 {cursor!r}，不是 {name}")
     run.press("a", expect=f"选 {name}")
 
 
-def pick_mon(run: MacroRun, index: int, name: str) -> None:
+def pick_mon(run: TakeoverRun, index: int, name: str) -> None:
     """队伍列表光标挪到第 `index` 只，按 A。"""
     run.move_to(lambda: run.mem[W_CURRENT_MENU_ITEM], index, what=f"队伍光标（{name}）")
     run.press("a", expect=f"选 {name}")
 
 
-def set_quantity(run: MacroRun, n: int) -> None:
+def set_quantity(run: TakeoverRun, n: int) -> None:
     """数量框调到 `n`，按 A。"""
     run.wait_for(lambda t: t.quantity_box, expect="数量框出现")
     run.move_to(lambda: run.mem[W_ITEM_QUANTITY], n, what="数量", increase="up")
     run.press("a", expect=f"数量 {n}")
 
 
-def answer_yes(run: MacroRun, expect: str) -> None:
+def answer_yes(run: TakeoverRun, expect: str) -> None:
     """等 YES / NO 出现（途中的话替它推），选 YES。"""
     text = run.wait_for(
         lambda t: t.options == ["YES", "NO"], expect=expect, advance=lambda t: not t.has_cursor
@@ -189,7 +196,7 @@ def answer_yes(run: MacroRun, expect: str) -> None:
     run.press("a", expect="选 YES")
 
 
-def answer(run: MacroRun, choice: str) -> None:
+def answer(run: TakeoverRun, choice: str) -> None:
     """当前就是 YES / NO：选 `choice`。"""
     if run.screen().cursor != choice:
         run.press("down" if choice == "NO" else "up", expect=f"光标到 {choice}")

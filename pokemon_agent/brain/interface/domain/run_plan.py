@@ -15,7 +15,7 @@
 旧文档里"最先做的要排在列表最后"那段是旧栈语义的产物，已随栈一起退役。
 
 `plan` 的素材（目标表、局索引、详情、地图事实）都保持结构化，不在这里转文字——
-按项目约定，struct→text 是 `pokemon_agent.tools.prompts.run_plan.build_prompt()`
+按项目约定，struct→text 是 `pokemon_agent.direct.prompts.run_plan.build_prompt()`
 的事，harness（`run/plan_run/plan_run.py::plan_run()`）只负责取记忆、组装请求，不自己拼
 prompt 字符串。
 """

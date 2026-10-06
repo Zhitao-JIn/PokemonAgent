@@ -5,7 +5,7 @@
 换图失败 → `warp_failed`（修表，不是脚本兜底）。
 
 **机械确认 YES**：`heal_at_center` 走到护士的"是否回血"YES/NO 选项时，按
-脚本目的（回血）机械选 YES——与 shop 宏代答确认是同性质的"固定流程确认"，
+脚本目的（回血）机械选 YES——与 `shop_buy` 代答确认是同性质的"固定流程确认"，
 不是模型分叉，故在 `choice_presented` 钩子上直接确认并继续，不冻结。
 """
 
@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..macros.engine import POLL_FRAMES, STABLE_POLLS
 from ..readout import read_party
 from .engine import (
     POKECENTER_LAYOUTS,
@@ -25,6 +24,7 @@ from .engine import (
     _dialog_texts,
 )
 from .movement import BUTTON_OF, _run, face_direction, walk_to
+from .takeover.engine import POLL_FRAMES, STABLE_POLLS
 
 
 def _settle(console: WorldConsole) -> None:
@@ -128,9 +128,7 @@ def heal_at_center(console: WorldConsole, max_steps: int = 60) -> ScriptResult:
             try:
                 _advance_to_walk(run, console)
             except _StillTalking:
-                return run.finish(
-                    ok=False, code="still_talking", extra=_heal_extra(run, console)
-                )
+                return run.finish(ok=False, code="still_talking", extra=_heal_extra(run, console))
             except Halt as halt2:
                 return run.finish(ok=halt2.ok, code=halt2.code, extra=halt2.extra)
         else:
@@ -143,9 +141,7 @@ def heal_at_center(console: WorldConsole, max_steps: int = 60) -> ScriptResult:
             ok=False,
             code="verify_failed",
             extra={
-                "party": [
-                    {"species": m.species, "hp": m.hp, "max_hp": m.max_hp} for m in party
-                ]
+                "party": [{"species": m.species, "hp": m.hp, "max_hp": m.max_hp} for m in party]
             },
         )
     return run.finish(ok=True, code="ok", extra={"healed": True, "party_size": len(party)})

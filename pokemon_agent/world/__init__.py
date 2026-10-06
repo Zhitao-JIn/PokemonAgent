@@ -10,7 +10,7 @@
 - `prompts/`：world 自己的 prompt 素材（`perceive_screen.md` + 一份自持的
   `load()`/`PromptTemplate`）——这条 LLM 调用不经过 `Brain` 也不经过任何
   Harness 节点，是 `PyBoyWorld` 自己 `load()` 并渲染的，素材因此跟着 world 走
-  （0913 从 `tools/prompts/` 搬来，理由见该包 docstring）
+  （0913 从 `direct/prompts/` 搬来，理由见该包 docstring）
 
 本文件是统一出口：消费方只写 `from pokemon_agent.world import X`，不深到模块文件。
 
@@ -53,6 +53,7 @@ from .interface import (
     SIGN,
     TAKEOVER_SCENES,
     TERRAIN_MEANING,
+    ActionEntry,
     ActionSpace,
     BagEntry,
     BagView,
@@ -61,12 +62,6 @@ from .interface import (
     Facts,
     FaintSwitchView,
     LearnMoveView,
-    MacroOutcome,
-    MacroParam,
-    MacroReason,
-    MacroSpec,
-    MacroStatus,
-    MacroStep,
     Memory,
     MonEntry,
     MoveEntry,
@@ -78,6 +73,8 @@ from .interface import (
     PlaceInWorld,
     RamReadout,
     ScreenState,
+    ScreenText,
+    ScriptParam,
     ShopItem,
     ShopItemsView,
     TakeoverView,
@@ -93,12 +90,13 @@ from .interface import (
 )
 
 if TYPE_CHECKING:
-    from .macros import macro_specs
-    from .pyboy_world import PyBoyWorld, parse_screen
+    from .perceive_frame import parse_screen
+    from .pyboy_world import PyBoyWorld
     from .ram import read_facing, read_passable, read_screen_tiles, read_terrain
     from .scene import at_start, classify_scene
 
 __all__ = [
+    "ActionEntry",
     "ActionSpace",
     "BOULDER",
     "BUTTON_FACING",
@@ -124,17 +122,13 @@ __all__ = [
     "RamReadout",
     "SIGN",
     "ScreenState",
+    "ScreenText",
+    "ScriptParam",
     "TAKEOVER_SCENES",
     "TERRAIN_MEANING",
     "TaskObservation",
     "TaskPerceived",
     "BagEntry",
-    "MacroOutcome",
-    "MacroParam",
-    "MacroReason",
-    "MacroSpec",
-    "MacroStatus",
-    "MacroStep",
     "NamingView",
     "ShopItem",
     "ShopItemsView",
@@ -156,25 +150,37 @@ __all__ = [
     "WorldPort",
     "at_start",
     "classify_scene",
-    "macro_specs",
     "parse_screen",
     "read_facing",
     "read_passable",
     "read_screen_tiles",
     "read_terrain",
     "terrain_legend",
+    "overlay_of",
+    "layout_field",
+    "W_TILEMAP",
+    "W_IS_IN_BATTLE",
+    "CHARMAP",
+    "read_tiles",
+    "read_screen_text",
 ]
 
 _LAZY: dict[str, tuple[str, str]] = {
     "PyBoyWorld": (".pyboy_world", "PyBoyWorld"),
     "at_start": (".scene", "at_start"),
     "classify_scene": (".scene", "classify_scene"),
-    "macro_specs": (".macros", "macro_specs"),
-    "parse_screen": (".pyboy_world", "parse_screen"),
+    "parse_screen": (".perceive_frame", "parse_screen"),
     "read_facing": (".ram", "read_facing"),
     "read_passable": (".ram", "read_passable"),
     "read_screen_tiles": (".ram", "read_screen_tiles"),
     "read_terrain": (".ram", "read_terrain"),
+    "overlay_of": (".screen_text", "overlay_of"),
+    "layout_field": (".screen_text", "layout_field"),
+    "W_TILEMAP": (".ram", "W_TILEMAP"),
+    "W_IS_IN_BATTLE": (".screen_text", "W_IS_IN_BATTLE"),
+    "CHARMAP": (".screen_text", "CHARMAP"),
+    "read_tiles": (".screen_text", "read_tiles"),
+    "read_screen_text": (".screen_text", "read_screen_text"),
 }
 
 

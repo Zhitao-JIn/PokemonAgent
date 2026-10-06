@@ -1,4 +1,4 @@
-"""野外背包（`bag`）的宏：`use` / `toss` / `close`，外加这个场合的视图。
+"""野外背包（`bag`）的接管脚本：`use` / `toss` / `close`，外加这个场合的视图。
 
 初态：背包列表画着、实心 `▶` 在列表里（`scene.at_start`）。
 选中道具后弹 `USE / TOSS` 子菜单；用药要在队伍列表里选对象，丢要调数量、再答 YES。
@@ -6,16 +6,15 @@
 
 from __future__ import annotations
 
-from ..interface import (
+from ...interface import (
+    ActionEntry,
     BagView,
-    MacroParam,
-    MacroReason,
-    MacroSpec,
     Memory,
     ScreenText,
+    ScriptParam,
     TaskScene,
 )
-from ..items import item_id, item_name, item_price
+from ...items import item_id, item_name, item_price
 from .common import (
     HEAL_ITEMS,
     answer_yes,
@@ -31,7 +30,8 @@ from .common import (
     unknown_mon,
     useless,
 )
-from .engine import Abort, MacroDef, MacroRun
+from .engine import Abort, TakeoverDef, TakeoverRun
+from .outcome import TakeoverReason
 
 REPELS = frozenset({0x1E, 0x38, 0x39})
 """REPEL / SUPER REPEL / MAX REPEL：直接用，不选对象。"""
@@ -58,17 +58,17 @@ def _in_list(text: ScreenText) -> bool:
 # ---- use ----
 
 
-def _check_use(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_use(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
     mem, name, who = run.mem, str(args["item"]), str(args["pokemon"])
     item = item_id(name)
     if item is None or bag_count(mem, item) == 0:
-        return MacroReason.NOT_IN_BAG, f"背包里没有 {name}"
+        return TakeoverReason.NOT_IN_BAG, f"背包里没有 {name}"
     if item in REPELS:
         return None
     if item not in TARGET_ITEMS:
-        return MacroReason.CANNOT_USE, f"{item_name(item)} 的用法宏里还没有"
+        return TakeoverReason.CANNOT_USE, f"{item_name(item)} 的用法接管脚本里还没有"
     if not who:
-        return MacroReason.TARGET_REQUIRED, f"{item_name(item)} 要指定用在哪只身上（pokemon）"
+        return TakeoverReason.TARGET_REQUIRED, f"{item_name(item)} 要指定用在哪只身上（pokemon）"
     mons = party(mem)
     index = find_mon(mons, who)
     if index is None:
@@ -76,7 +76,7 @@ def _check_use(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, 
     return useless(item, mons[index]) if item in HEAL_ITEMS else None
 
 
-def _execute_use(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_use(run: TakeoverRun, args: dict[str, str | int]) -> str:
     mem = run.mem
     item = item_id(str(args["item"]))
     assert item is not None
@@ -99,14 +99,14 @@ def _execute_use(run: MacroRun, args: dict[str, str | int]) -> str:
     stop = run.advance(lambda t: _stop(run, t))
     have1 = bag_count(mem, item)
     if have1 == have0 and run.scene_now() is TaskScene.BAG:
-        raise Abort(MacroReason.CANNOT_USE, f"{item_name(item)} 没有用掉；{stop}")
+        raise Abort(TakeoverReason.CANNOT_USE, f"{item_name(item)} 没有用掉；{stop}")
     if item in HEAL_ITEMS:
         after = party(mem)[who]
         head += f"：HP {hp0}→{after.hp}，状态 {after.status}"
     return f"{head}；{stop}"
 
 
-def _stop(run: MacroRun, text: ScreenText) -> str:
+def _stop(run: TakeoverRun, text: ScreenText) -> str:
     """停在下一个 `▶`：回到背包列表，或别的选单（学新招的 YES / NO 等）。
 
     只认光标——换画面时会有几百帧整屏空白，按场合判会误以为已经离开。
@@ -122,20 +122,20 @@ def _stop(run: MacroRun, text: ScreenText) -> str:
 # ---- toss ----
 
 
-def _check_toss(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_toss(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
     mem, name, n = run.mem, str(args["item"]), int(args["quantity"])
     item = item_id(name)
     have = bag_count(mem, item) if item is not None else 0
     if item is None or have == 0:
-        return MacroReason.NOT_IN_BAG, f"背包里没有 {name}"
+        return TakeoverReason.NOT_IN_BAG, f"背包里没有 {name}"
     if not 1 <= n <= have:
-        return MacroReason.QUANTITY_OUT_OF_RANGE, f"{item_name(item)} 只有 {have} 个，给的是 {n}"
+        return TakeoverReason.QUANTITY_OUT_OF_RANGE, f"{item_name(item)} 只有 {have} 个，给的是 {n}"
     if item_price(run.console.rom, item) == 0:
-        return MacroReason.KEY_ITEM, f"{item_name(item)} 是重要道具，不能丢"
+        return TakeoverReason.KEY_ITEM, f"{item_name(item)} 是重要道具，不能丢"
     return None
 
 
-def _execute_toss(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_toss(run: TakeoverRun, args: dict[str, str | int]) -> str:
     mem, n = run.mem, int(args["quantity"])
     item = item_id(str(args["item"]))
     assert item is not None
@@ -152,7 +152,7 @@ def _execute_toss(run: MacroRun, args: dict[str, str | int]) -> str:
     have1 = bag_count(mem, item)
     if have1 != have0 - n:
         raise Abort(
-            MacroReason.UNEXPECTED_SCREEN, f"丢完 {item_name(item)} {have0}→{have1}，与预期不符"
+            TakeoverReason.UNEXPECTED_SCREEN, f"丢完 {item_name(item)} {have0}→{have1}，与预期不符"
         )
     return f"丢掉 {item_name(item)} ×{n}（{have0}→{have1}）"
 
@@ -160,28 +160,29 @@ def _execute_toss(run: MacroRun, args: dict[str, str | int]) -> str:
 # ---- close ----
 
 
-def _check_close(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_close(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
     return None
 
 
-def _execute_close(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_close(run: TakeoverRun, args: dict[str, str | int]) -> str:
     run.press("b", expect="关上背包")
     run.wait_for(lambda _t: run.scene_now() is not TaskScene.BAG, expect="离开背包")
     return f"关上背包，到了 {run.scene_now().value}"
 
 
-_ITEM = MacroParam(name="item", type="str", description="道具名，照视图「背包」里的写")
-_WHO = MacroParam(
+_ITEM = ScriptParam(name="item", type="str", description="道具名，照视图「背包」里的写")
+_WHO = ScriptParam(
     name="pokemon",
     type="str",
     default="",
     description="用在哪只身上（药、进化石、营养剂、RARE CANDY 要给；驱虫喷雾不给）",
 )
-_QTY = MacroParam(name="quantity", type="int", description="数量，不超过持有数")
+_QTY = ScriptParam(name="quantity", type="int", description="数量，不超过持有数")
 
-BAG_MACROS: dict[str, MacroDef] = {
-    "use": MacroDef(
-        spec=MacroSpec(
+BAG_TAKEOVERS: dict[str, TakeoverDef] = {
+    "use": TakeoverDef(
+        spec=ActionEntry(
+            kind="script",
             name="use",
             params=[_ITEM, _WHO],
             description="用道具：药、进化石、营养剂、RARE CANDY 对一只队员用；驱虫喷雾直接用",
@@ -190,14 +191,16 @@ BAG_MACROS: dict[str, MacroDef] = {
         check=_check_use,
         execute=_execute_use,
     ),
-    "toss": MacroDef(
-        spec=MacroSpec(name="toss", params=[_ITEM, _QTY], description="丢道具；重要道具不能丢"),
+    "toss": TakeoverDef(
+        spec=ActionEntry(
+            kind="script", name="toss", params=[_ITEM, _QTY], description="丢道具；重要道具不能丢"
+        ),
         scene=TaskScene.BAG,
         check=_check_toss,
         execute=_execute_toss,
     ),
-    "close": MacroDef(
-        spec=MacroSpec(name="close", description="关上背包"),
+    "close": TakeoverDef(
+        spec=ActionEntry(kind="script", name="close", description="关上背包"),
         scene=TaskScene.BAG,
         check=_check_close,
         execute=_execute_close,
@@ -205,4 +208,4 @@ BAG_MACROS: dict[str, MacroDef] = {
     ),
 }
 
-__all__ = ["BAG_MACROS", "bag_view"]
+__all__ = ["BAG_TAKEOVERS", "bag_view"]

@@ -29,3 +29,5 @@ class FromHarnessToBrainToolReflectReq(BaseModel):
     after: TaskObservation
     episode_id: str = ""
     step: int = 0
+    result: str = ""
+    """脚本动作的终态报告摘要（结局码）；键动作为空串。原样进 `ActMemory.result`。"""

@@ -1,6 +1,6 @@
-"""接管场合的视图（`TakeoverView`）：按场合区分的判别联合，给 JEV 看本场合能调宏的依据。
+"""接管场合的视图（`TakeoverView`）：按场合区分的判别联合，给 JEV 看本场合调接管脚本的依据。
 
-观测里不给逐键信息（光标位置、翻页）——那是宏执行器的事。
+观测里不给逐键信息（光标位置、翻页）——那是接管脚本执行器的事。
 """
 
 from __future__ import annotations
@@ -195,7 +195,7 @@ TakeoverView = Annotated[
     | LearnMoveView,
     Field(discriminator="kind"),
 ]
-"""接管场合的视图；还没有宏的接管场合不给视图（None）。"""
+"""接管场合的视图；还没有接管脚本的接管场合不给视图（None）。"""
 
 
 __all__ = [

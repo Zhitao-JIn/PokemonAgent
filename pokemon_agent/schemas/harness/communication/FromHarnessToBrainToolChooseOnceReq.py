@@ -23,14 +23,14 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     space：当前可用动作空间——`BrainTool` 从它提取 `keys` 传给大脑，
         说明文字则渲进 prompt。
     memories：本局内情景记忆（`ActMemory`）。
-    last_macro：上一步宏的结果一句话（`MacroOutcome.describe()`），渲染在观测之后；
-        上一步不是宏时为空。
+    last_result：上一步脚本的结果一句话（调用 → 结局码：摘要或原因），渲染在观测之后；
+        上一步不是脚本时为空。
     knowledge/episode_memories/human_note：分开放，各自在 prompt 里有独立
         占位符与可信度说明（混在一起模型没法区分对待）。
 
     `human_note` 由 `build_prompt()` 拼在**整个 prompt 的最末尾**（0914 控制台
     改造：它是覆盖指令，不是又一节背景说明——理由见
-    `tools/prompts/__init__.py::append_human_note`）。**模板里没有它的占位符**
+    `direct/prompts/__init__.py::append_human_note`）。**模板里没有它的占位符**
     ——它是"渲染完之后再追加"，所以不在 `decide_action.md` 的那些 `$` 变量里。
 
     **`prompt` 不是本模型的字段**（0913 删）：`BrainTool.choose()` 入口处调
@@ -48,7 +48,7 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     obs: TaskObservation
     space: ActionSpace
     memories: list[ActMemory]
-    last_macro: str = ""
+    last_result: str = ""
     knowledge: str = ""
     episode_memories: str = ""
     human_note: str = ""

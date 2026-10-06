@@ -7,8 +7,8 @@ base64 ↔ 文件、感知的重试循环——全是原 `mcpclient/game_tools.p
 直译，一点领域判断都没有。
 
 **已知缺口**（刻意不在这里打补丁）：
-- **宏动作**：`run_macro` 按 SPEC 不进 MCP 面（宏是脚本层的内部零件），
-  所以 MCP 模式下 `execute()` 不接宏——P5 起脚本动作走同名脚本 tool；
+- **接管脚本**：server 只注册常规脚本 tool，接管场合的脚本（`TAKEOVER_SCRIPTS`）还没进
+  MCP 面，所以 MCP 模式下 `execute()` 不接接管脚本——常规脚本走同名脚本 tool；
 - **`evolve`**：无输入推进。当前全仓零调用方（只有 `GameTools.evolve` 自己），
   7 条原子里没有它，故 MCP 面不提供。
 """
@@ -38,6 +38,7 @@ from pokemon_agent.schemas.harness import (
     ModelCallLog,
 )
 from pokemon_agent.world import ActionSpace
+from pokemon_agent.world.scripts.takeover import TAKEOVER_SCRIPTS
 
 
 def _last_error(calls: list[ModelCall]) -> str:
@@ -166,13 +167,13 @@ class WorldMcpTool:
         形状就是终态报告（`{ok, code, data, events, calls}`），原样进 `resp.report`
         （与进程内 `_run_script_report` 的折法逐字段一致）。
 
-        宏动作在 MCP 模式下不支持（`run_macro` 按 SPEC 不进 MCP 面——宏是脚本层
-        的内部零件）——宁可就地报错，也不悄悄退化成按键。
+        接管脚本在 MCP 模式下不支持（server 还没注册它们的 tool）——宁可就地报错，
+        也不悄悄退化成按键。
         """
         action = req.action
-        if action.macro is not None:
+        if action.script is not None and action.script.name in TAKEOVER_SCRIPTS:
             raise McpToolError(
-                f"MCP 模式下宏动作不支持（{action.macro.name}）：宏是脚本层的内部零件，不进 MCP 面"
+                f"MCP 模式下接管脚本不支持（{action.script.name}）：server 还没注册它的 tool"
             )
         if action.script is not None:
             body = self._client.call_tool_sync(

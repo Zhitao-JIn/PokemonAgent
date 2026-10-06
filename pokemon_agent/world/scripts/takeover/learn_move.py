@@ -1,4 +1,4 @@
-"""学新招要忘旧招（`learn_move`）的宏：`forget` / `skip`，外加这个场合的视图。
+"""学新招要忘旧招（`learn_move`）的接管脚本：`forget` / `skip`，外加这个场合的视图。
 
 初态："Delete an older move to make room for …?" 的 YES / NO（`scene.at_start`）。
 忘招：YES → "Which move should be forgotten?" 招式列表选一招；
@@ -9,18 +9,18 @@
 
 from __future__ import annotations
 
-from ..interface import (
+from ...interface import (
+    ActionEntry,
     LearnMoveView,
-    MacroParam,
-    MacroReason,
-    MacroSpec,
     Memory,
     ScreenText,
+    ScriptParam,
     TaskScene,
 )
-from ..moves import fold, move_name
+from ...moves import fold, move_name
 from .common import answer, answer_yes, cursor_index, party
-from .engine import Abort, MacroDef, MacroRun
+from .engine import Abort, TakeoverDef, TakeoverRun
+from .outcome import TakeoverReason
 
 W_WHICH_POKEMON = 0xCF92
 W_MOVE_NUM = 0xD0E0
@@ -32,11 +32,11 @@ def learn_view(mem: Memory) -> LearnMoveView:
     return LearnMoveView(pokemon=mon.name, new_move=move_name(mem[W_MOVE_NUM]), moves=mon.moves)
 
 
-def _moves(run: MacroRun, index: int) -> list[str]:
+def _moves(run: TakeoverRun, index: int) -> list[str]:
     return [m.name for m in party(run.mem)[index].moves]
 
 
-def _stop(run: MacroRun, text: ScreenText) -> str:
+def _stop(run: TakeoverRun, text: ScreenText) -> str:
     if text.has_cursor and run.scene_now() is not TaskScene.LEARN_MOVE:
         return f"停在 {run.scene_now().value}：▶{text.cursor}" if text.cursor else "停在选单"
     if not text.screen:
@@ -44,14 +44,19 @@ def _stop(run: MacroRun, text: ScreenText) -> str:
     return ""
 
 
-def _check_forget(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_forget(
+    run: TakeoverRun, args: dict[str, str | int]
+) -> tuple[TakeoverReason, str] | None:
     known = _moves(run, run.mem[W_WHICH_POKEMON])
     if fold(str(args["move"])) not in [fold(m) for m in known]:
-        return MacroReason.UNKNOWN_MOVE, f"现有的招里没有 {args['move']}（有：{'、'.join(known)}）"
+        return (
+            TakeoverReason.UNKNOWN_MOVE,
+            f"现有的招里没有 {args['move']}（有：{'、'.join(known)}）",
+        )
     return None
 
 
-def _execute_forget(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_forget(run: TakeoverRun, args: dict[str, str | int]) -> str:
     new = move_name(run.mem[W_MOVE_NUM])
     old = fold(str(args["move"]))
     index = run.mem[W_WHICH_POKEMON]
@@ -66,15 +71,17 @@ def _execute_forget(run: MacroRun, args: dict[str, str | int]) -> str:
     stop = run.advance(lambda t: _stop(run, t))
     known = _moves(run, index)
     if new not in known:
-        raise Abort(MacroReason.CANNOT_USE, f"没有学会 {new}（现在：{'、'.join(known)}）；{stop}")
+        raise Abort(
+            TakeoverReason.CANNOT_USE, f"没有学会 {new}（现在：{'、'.join(known)}）；{stop}"
+        )
     return f"忘掉 {args['move']}，学会 {new}；现在：{'、'.join(known)}；{stop}"
 
 
-def _check_skip(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_skip(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
     return None
 
 
-def _execute_skip(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_skip(run: TakeoverRun, args: dict[str, str | int]) -> str:
     new = move_name(run.mem[W_MOVE_NUM])
     # 步骤 1：答 NO，再在 "Abandon learning …?" 上答 YES。
     answer(run, "NO")
@@ -84,11 +91,12 @@ def _execute_skip(run: MacroRun, args: dict[str, str | int]) -> str:
     return f"不学 {new}；{stop}"
 
 
-LEARN_MACROS: dict[str, MacroDef] = {
-    "forget": MacroDef(
-        spec=MacroSpec(
+LEARN_TAKEOVERS: dict[str, TakeoverDef] = {
+    "forget": TakeoverDef(
+        spec=ActionEntry(
+            kind="script",
             name="forget",
-            params=[MacroParam(name="move", type="str", description="要忘掉的招，照视图里的写")],
+            params=[ScriptParam(name="move", type="str", description="要忘掉的招，照视图里的写")],
             description="忘掉一招、学新招（秘传招式忘不掉）",
         ),
         scene=TaskScene.LEARN_MOVE,
@@ -96,8 +104,8 @@ LEARN_MACROS: dict[str, MacroDef] = {
         execute=_execute_forget,
         rewind_after=False,
     ),
-    "skip": MacroDef(
-        spec=MacroSpec(name="skip", description="不学这招"),
+    "skip": TakeoverDef(
+        spec=ActionEntry(kind="script", name="skip", description="不学这招"),
         scene=TaskScene.LEARN_MOVE,
         check=_check_skip,
         execute=_execute_skip,
@@ -105,4 +113,4 @@ LEARN_MACROS: dict[str, MacroDef] = {
     ),
 }
 
-__all__ = ["LEARN_MACROS", "learn_view"]
+__all__ = ["LEARN_TAKEOVERS", "learn_view"]

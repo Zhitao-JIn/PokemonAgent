@@ -1,6 +1,6 @@
-"""宏执行器的通用骨架：回初态 → 校验 → 逐步执行（按键后等画面稳定、核期望）→ 收尾。
+"""接管脚本执行器的通用骨架：回初态 → 校验 → 逐步执行（按键后等画面稳定、核期望）→ 收尾。
 
-每个场合的宏只写"前提校验 + 步骤 + 收尾"（`shop.py` 等），骨架与按键细节都在这里。
+每个场合的接管脚本只写"前提校验 + 步骤 + 收尾"（`shop.py` 等），骨架与按键细节都在这里。
 回初态、等稳定、超时这些是 world 私有物理量，不进全局 config。
 """
 
@@ -11,18 +11,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..interface import (
+from ...interface import (
     TAKEOVER_SCENES,
-    MacroOutcome,
-    MacroReason,
-    MacroSpec,
-    MacroStatus,
-    MacroStep,
+    ActionEntry,
     Memory,
     ScreenText,
     TaskScene,
 )
-from ..scene import at_start, classify_scene
+from ...scene import at_start, classify_scene
+from .outcome import TakeoverOutcome, TakeoverReason, TakeoverStatus, TakeoverStep
 
 POLL_FRAMES = 4
 """等画面稳定时每隔几帧看一次屏幕缓冲。"""
@@ -46,7 +43,7 @@ NAV_LIMIT = 120
 
 
 class Console(Protocol):
-    """宏看得到的那一小块模拟器：按键、推进、读内存与屏幕、ROM。"""
+    """接管脚本看得到的那一小块模拟器：按键、推进、读内存与屏幕、ROM。"""
 
     memory: Memory
     rom: bytes
@@ -64,36 +61,36 @@ class Console(Protocol):
         ...
 
 
-class Abort(Exception):  # noqa: N818 —— 宏内部的控制流信号，不出本包
+class Abort(Exception):  # noqa: N818 —— 接管脚本内部的控制流信号，不出本包
     """执行中途没出现期望的变化：骨架接住它，按 B 回初态，返回 `aborted`。"""
 
-    def __init__(self, code: MacroReason, reason: str) -> None:
+    def __init__(self, code: TakeoverReason, reason: str) -> None:
         super().__init__(reason)
         self.code, self.reason = code, reason
 
 
-Check = Callable[["MacroRun", dict[str, str | int]], tuple[MacroReason, str] | None]
-Execute = Callable[["MacroRun", dict[str, str | int]], str]
+Check = Callable[["TakeoverRun", dict[str, str | int]], tuple[TakeoverReason, str] | None]
+Execute = Callable[["TakeoverRun", dict[str, str | int]], str]
 
 
 @dataclass(frozen=True)
-class MacroDef:
-    """一个宏：签名、所属场合、前提校验（不合法返回原因码与原因）、执行（返回状态摘要）。"""
+class TakeoverDef:
+    """一个接管脚本：签名、所属场合、前提校验（不合法返回原因码与原因）、执行（返回状态摘要）。"""
 
-    spec: MacroSpec
+    spec: ActionEntry
     scene: TaskScene
     check: Check
     execute: Execute
     rewind_after: bool = True
-    """执行完是否按 B 回到初态（离开场合的宏为 False）。"""
+    """执行完是否按 B 回到初态（离开场合的接管脚本为 False）。"""
 
 
-class MacroRun:
-    """一次宏调用的现场：按键、等稳定、记逐步明细。"""
+class TakeoverRun:
+    """一次接管脚本调用的现场：按键、等稳定、记逐步明细。"""
 
     def __init__(self, console: Console, scene: TaskScene) -> None:
         self.console, self.scene = console, scene
-        self.steps: list[MacroStep] = []
+        self.steps: list[TakeoverStep] = []
 
     @property
     def mem(self) -> Memory:
@@ -120,7 +117,7 @@ class MacroRun:
             last = now
             if same >= STABLE_POLLS:
                 return waited
-        raise Abort(MacroReason.STEP_TIMEOUT, f"画面 {STEP_TIMEOUT_FRAMES} 帧内没有稳定下来")
+        raise Abort(TakeoverReason.STEP_TIMEOUT, f"画面 {STEP_TIMEOUT_FRAMES} 帧内没有稳定下来")
 
     def press(
         self, key: str, *, expect: str = "", ok: Callable[[ScreenText], bool] | None = None
@@ -131,7 +128,7 @@ class MacroRun:
         text = self.console.read()
         passed = ok(text) if ok is not None else True
         self.steps.append(
-            MacroStep(key=key, frames=frames, expect=expect, actual=_brief(text), ok=passed)
+            TakeoverStep(key=key, frames=frames, expect=expect, actual=_brief(text), ok=passed)
         )
         return text
 
@@ -153,7 +150,7 @@ class MacroRun:
         frames = self.settle()
         text = self.console.read()
         self.steps.append(
-            MacroStep(key="", frames=frames, expect=expect, actual=_brief(text), ok=ok(text))
+            TakeoverStep(key="", frames=frames, expect=expect, actual=_brief(text), ok=ok(text))
         )
         for _ in range(ADVANCE_LIMIT):
             if ok(text) or not safe(text):
@@ -161,7 +158,7 @@ class MacroRun:
             text = self.press("a", expect=expect, ok=ok)
         if ok(text):
             return text
-        raise Abort(MacroReason.UNEXPECTED_SCREEN, f"没等到：{expect}；屏上是：{_brief(text)}")
+        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"没等到：{expect}；屏上是：{_brief(text)}")
 
     def idle_until(self, ok: Callable[[ScreenText], bool], *, expect: str) -> ScreenText:
         """不按键干等某个画面，最多 `STEP_TIMEOUT_FRAMES` 帧（存档时画面静止、游戏在忙）。"""
@@ -172,10 +169,10 @@ class MacroRun:
             waited += POLL_FRAMES
             text = self.console.read()
         self.steps.append(
-            MacroStep(key="", frames=waited, expect=expect, actual=_brief(text), ok=ok(text))
+            TakeoverStep(key="", frames=waited, expect=expect, actual=_brief(text), ok=ok(text))
         )
         if not ok(text):
-            raise Abort(MacroReason.STEP_TIMEOUT, f"{STEP_TIMEOUT_FRAMES} 帧内没等到：{expect}")
+            raise Abort(TakeoverReason.STEP_TIMEOUT, f"{STEP_TIMEOUT_FRAMES} 帧内没等到：{expect}")
         self.settle()
         return text
 
@@ -194,7 +191,7 @@ class MacroRun:
             reason = stop(text)
             if reason:
                 self.steps.append(
-                    MacroStep(key="", frames=waited, expect="推进文字", actual=_brief(text))
+                    TakeoverStep(key="", frames=waited, expect="推进文字", actual=_brief(text))
                 )
                 return reason
             arrow = self._saw_arrow()
@@ -234,9 +231,9 @@ class MacroRun:
                 return
             self.press(increase if now < target else decrease, expect=f"{what} → {target}")
         if read() != target:
-            raise Abort(MacroReason.UNEXPECTED_SCREEN, f"{what} 停在 {read()}，挪不到 {target}")
+            raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"{what} 停在 {read()}，挪不到 {target}")
 
-    def rewind(self) -> MacroStatus | None:
+    def rewind(self) -> TakeoverStatus | None:
         """回初态：已在初态返回 None；场合变了返回 `LEFT_SCENE`。
 
         按满 `REWIND_LIMIT` 次 B 还没到返回 `ABORTED`。
@@ -246,91 +243,94 @@ class MacroRun:
             text = self.console.read()
             scene = classify_scene(text, self.console.memory)
             if scene is not self.scene:
-                return MacroStatus.LEFT_SCENE
+                return TakeoverStatus.LEFT_SCENE
             if at_start(text, scene):
                 return None
             self.press("b", expect="回初态")
-        return MacroStatus.ABORTED
+        return TakeoverStatus.ABORTED
 
 
-def run_macro(
+def run_takeover(
     console: Console,
-    macros: dict[TaskScene, dict[str, MacroDef]],
+    registry: dict[TaskScene, dict[str, TakeoverDef]],
     name: str,
     args: dict[str, str | int],
-) -> MacroOutcome:
-    """执行一个宏，返回结果。不抛异常：未知宏、参数不合法、执行中途走偏都是返回值。
+) -> TakeoverOutcome:
+    """执行一个接管脚本，返回结果。不抛异常：未知接管脚本、参数不合法、执行中途走偏都是返回值。
 
-    步骤 1：认场合、找宏、核参数类型。
+    步骤 1：认场合、找接管脚本、核参数类型。
     步骤 2：回初态。
     步骤 3：按此刻内存校验前提。
     步骤 4：执行；走偏就回初态、返回 `aborted`。
-    步骤 5：收尾回初态（离开场合的宏不回）。
+    步骤 5：收尾回初态（离开场合的接管脚本不回）。
     """
     # 步骤 1。
     text = console.read()
     scene = classify_scene(text, console.memory)
-    macro = macros.get(scene, {}).get(name)
+    defn = registry.get(scene, {}).get(name)
     outcome = _Outcome(scene, name, args)
-    if scene not in TAKEOVER_SCENES or macro is None:
+    if scene not in TAKEOVER_SCENES or defn is None:
         return outcome.make(
-            MacroStatus.REJECTED, [], MacroReason.UNKNOWN_MACRO, f"{scene.value} 场合没有宏 {name}"
+            TakeoverStatus.REJECTED,
+            [],
+            TakeoverReason.UNKNOWN_SCRIPT,
+            f"{scene.value} 场合没有接管脚本 {name}",
         )
-    bad = _bad_args(macro.spec, args)
+    bad = _bad_args(defn.spec, args)
     if bad:
-        return outcome.make(MacroStatus.REJECTED, [], MacroReason.BAD_ARGS, bad)
-    args = _with_defaults(macro.spec, args)
+        return outcome.make(TakeoverStatus.REJECTED, [], TakeoverReason.BAD_ARGS, bad)
+    args = _with_defaults(defn.spec, args)
 
     # 步骤 2。
-    run = MacroRun(console, scene)
+    run = TakeoverRun(console, scene)
     try:
         rewound = run.rewind()
     except Abort as exc:
-        return outcome.make(MacroStatus.ABORTED, run.steps, exc.code, exc.reason)
-    if rewound is MacroStatus.LEFT_SCENE:
-        return outcome.make(MacroStatus.LEFT_SCENE, run.steps, None, "回初态时已离开本场合")
-    if rewound is MacroStatus.ABORTED:
+        return outcome.make(TakeoverStatus.ABORTED, run.steps, exc.code, exc.reason)
+    if rewound is TakeoverStatus.LEFT_SCENE:
+        return outcome.make(TakeoverStatus.LEFT_SCENE, run.steps, None, "回初态时已离开本场合")
+    if rewound is TakeoverStatus.ABORTED:
         return outcome.make(
-            MacroStatus.ABORTED, run.steps, MacroReason.REWIND_LIMIT, "按 B 回不到初态"
+            TakeoverStatus.ABORTED, run.steps, TakeoverReason.REWIND_LIMIT, "按 B 回不到初态"
         )
 
     # 步骤 3。
-    rejected = macro.check(run, args)
+    rejected = defn.check(run, args)
     if rejected is not None:
-        return outcome.make(MacroStatus.REJECTED, run.steps, rejected[0], rejected[1])
+        return outcome.make(TakeoverStatus.REJECTED, run.steps, rejected[0], rejected[1])
 
     # 步骤 4。
     try:
-        summary = macro.execute(run, args)
+        summary = defn.execute(run, args)
     except Abort as exc:
         with contextlib.suppress(Abort):
             run.rewind()
-        return outcome.make(MacroStatus.ABORTED, run.steps, exc.code, exc.reason)
+        return outcome.make(TakeoverStatus.ABORTED, run.steps, exc.code, exc.reason)
 
     # 步骤 5。
-    if macro.rewind_after:
+    if defn.rewind_after:
         with contextlib.suppress(Abort):
             run.rewind()
-    return outcome.make(MacroStatus.DONE, run.steps, None, "", summary)
+    return outcome.make(TakeoverStatus.DONE, run.steps, None, "", summary)
 
 
 @dataclass(frozen=True)
 class _Outcome:
     scene: TaskScene
-    macro: str
+    name: str
     args: dict[str, str | int]
 
     def make(
         self,
-        status: MacroStatus,
-        steps: list[MacroStep],
-        code: MacroReason | None,
+        status: TakeoverStatus,
+        steps: list[TakeoverStep],
+        code: TakeoverReason | None,
         reason: str,
         summary: str = "",
-    ) -> MacroOutcome:
-        return MacroOutcome(
+    ) -> TakeoverOutcome:
+        return TakeoverOutcome(
             scene=self.scene,
-            macro=self.macro,
+            name=self.name,
             args=self.args,
             status=status,
             reason_code=code,
@@ -340,7 +340,7 @@ class _Outcome:
         )
 
 
-def _bad_args(spec: MacroSpec, args: dict[str, str | int]) -> str:
+def _bad_args(spec: ActionEntry, args: dict[str, str | int]) -> str:
     """参数与签名对不上时返回一句原因；对得上返回空串。"""
     known = {p.name for p in spec.params}
     extra = sorted(set(args) - known)
@@ -359,7 +359,7 @@ def _bad_args(spec: MacroSpec, args: dict[str, str | int]) -> str:
     return ""
 
 
-def _with_defaults(spec: MacroSpec, args: dict[str, str | int]) -> dict[str, str | int]:
+def _with_defaults(spec: ActionEntry, args: dict[str, str | int]) -> dict[str, str | int]:
     filled = dict(args)
     for p in spec.params:
         if p.name not in filled and p.default is not None:
@@ -379,4 +379,4 @@ def _brief(text: ScreenText) -> str:
     return "；".join(parts) or "（屏上没有文字）"
 
 
-__all__ = ["Abort", "Check", "Console", "Execute", "MacroDef", "MacroRun", "run_macro"]
+__all__ = ["Abort", "Check", "Console", "Execute", "TakeoverDef", "TakeoverRun", "run_takeover"]

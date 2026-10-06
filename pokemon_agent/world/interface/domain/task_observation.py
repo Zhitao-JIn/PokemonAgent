@@ -19,7 +19,7 @@ class TaskObservation(Observation):
 
     scene: TaskScene = Field(description="这一帧属于哪个场合（`world/scene.py::classify_scene`）")
     takeover: TakeoverView | None = Field(
-        default=None, description="接管场合的视图；常规场合、或还没有宏的接管场合为 None"
+        default=None, description="接管场合的视图；常规场合、或还没有接管脚本的接管场合为 None"
     )
 
 

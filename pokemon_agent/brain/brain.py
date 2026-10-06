@@ -14,7 +14,7 @@
 `AttemptFailed` 家族**（`DecisionAttemptFailed` / `PlanAttemptFailed` /
 `DecomposeAttemptFailed` / `JudgeAttemptFailed` / `VerifyAttemptFailed` /
 `SummarizeAttemptFailed`），
-异常携带这一次尝试的 `ModelCall`。重试循环住 `tools/brain_tool.py`，
+异常携带这一次尝试的 `ModelCall`。重试循环住 `direct/brain_tool.py`，
 预算住 `pokemon_agent/config.py`——**大脑不知道"问几次"这件事**。
 
 由此跟着两条推论：
@@ -79,13 +79,13 @@ from .interface import (
     Decomposition,
     EpisodeSummary,
     JudgeResult,
-    MacroArg,
-    MacroCall,
-    MacroSignature,
     ModelCall,
     PlanResult,
     Reflection,
     RunPlan,
+    ScriptArg,
+    ScriptCall,
+    ScriptSignature,
     SummarizeResult,
     VerifyResult,
     VerifyVerdict,
@@ -196,13 +196,13 @@ class Brain:
         prompt: str,
         keys: Sequence[str],
         images: Sequence[str] = (),
-        macros: Sequence[MacroSignature] = (),
+        scripts: Sequence[ScriptSignature] = (),
     ) -> ChooseResult:
         """一次决策尝试：问一次模型、解析。**不重试**——重试是调用方的循环。
 
         **只认 `prompt` + `images`**：动作空间说明、目标栈、已知事实、记忆、
         领域知识、人类插话，以及"怎么选"的全部规则，全部由调用方拼好
-        （`pokemon_agent.tools.prompts.decide_action.build_prompt()`）；图也由
+        （`pokemon_agent.direct.prompts.decide_action.build_prompt()`）；图也由
         调用方（tool 层）拼好递进来。
 
         **转发表在这里、不在 provider 里**（0915 129）：入参带了图、且当前
@@ -211,9 +211,9 @@ class Brain:
         `complete()`。`LlmCompleteReq` 是纯文本信封，provider 不内部分叉。
 
         后置条件：成功时返回的 `ChooseResult.action` 的每个 `name` 都在
-        `keys` 内；`calls` 恰好这一次尝试的一条账（多次尝试的累积由调用方的
-        重试循环做）；**动作里不含任何被调用方改写过的字段**——"这个键在
-        当前世界里连按几次才有意义"是世界语义，不归大脑管。
+        `keys` 内；脚本名都在签名表内；`calls` 恰好这一次尝试的一条账
+        （多次尝试的累积由调用方的重试循环做）；**动作里不含任何被调用方改写过的
+        字段**——"这个键在当前世界里连按几次才有意义"是世界语义，不归大脑管。
         失败：模型调不通 / 解析不出来 / 选了不存在的键 / 被截断，都抛
         `DecisionAttemptFailed`（附这次的账）——**"要不要再问一次"交给调用方**。
 
@@ -268,7 +268,7 @@ class Brain:
             # 截断要**先于**解析检查，否则它会伪装成"少了个右括号"的 ParseFailure。
             if truncated:
                 raise OutputTruncated(n_out)
-            parsed = self._parse(text, keys, macros)
+            parsed = self._parse(text, keys, scripts)
         except (ParseFailure, IllegalAction, OutputTruncated) as exc:
             kind, reason = type(exc).__name__, str(exc)
         except ValidationError as exc:
@@ -300,14 +300,14 @@ class Brain:
         if parsed is None:
             raise DecisionAttemptFailed(call)
 
-        # 出口断言（postcondition）：大脑不会产出空动作或调用方没给的按键。
+        # 出口断言（postcondition）：大脑不会产出空动作或调用方没给的动作名。
         # `_parse` 已逐段校验过，这里是运行时全覆盖的兜底证明。
-        assert parsed.sequence or parsed.macro is not None, "choose() returned an empty action"
+        assert parsed.sequence or parsed.script is not None, "choose() returned an empty action"
         assert all(seg.name in keys for seg in parsed.sequence), (
             f"brain chose key outside {list(keys)}"
         )
-        assert parsed.macro is None or any(m.name == parsed.macro.name for m in macros), (
-            f"brain chose macro outside {[m.name for m in macros]}"
+        assert parsed.script is None or any(m.name == parsed.script.name for m in scripts), (
+            f"brain chose script outside {[m.name for m in scripts]}"
         )
         return ChooseResult(action=parsed, calls=[call])
 
@@ -576,7 +576,7 @@ class Brain:
 
         **`images` 是 base64 字符串不是原始 bytes**：直接进
         `VisionDescribeReq.images`（`list[str]`，见
-        `brain/schemas/vision.py`）——调用方（`tools/brain_tool.py`）从
+        `brain/schemas/vision.py`）——调用方（`direct/brain_tool.py`）从
         harness 的截图拿到什么就传什么，不做编解码。类型写成 `bytes` 曾是
         一处**说谎的注解**：运行时值是字符串，谁照着注解去 `b64decode`
         一步就会在构造请求时炸（0913 真机核对实测，见 CHANGELOG）。
@@ -924,14 +924,17 @@ class Brain:
             raise ParseFailure(text, f"RunPlan 字段不合法：{exc.errors()[:1]}") from exc
 
     def _parse(
-        self, text: str, keys: Sequence[str], macros: Sequence[MacroSignature] = ()
+        self,
+        text: str,
+        keys: Sequence[str],
+        scripts: Sequence[ScriptSignature] = (),
     ) -> Action:
         """把 LLM 输出解析成 `Action`，不合法就抛 `ParseFailure` / `IllegalAction`。
 
         **模型只交一个动作**：按键写 `{"action": "up"}`，包成单段、`times=1` 的 `Action`；
-        宏写 `{"action": "buy", "item": "POKé BALL", "quantity": 5}`，其余字段按签名收成
-        `MacroCall.args`。签名之外的字段一律忽略。只查名字在不在空间里、参数齐不齐、
-        类型对不对，不做语义校验。
+        脚本写 `{"action": "walk_to", "args": {"x": 5, "y": 2}}`，参数按签名收成
+        `ScriptCall.args`（参数平铺在顶层 `{"action": "walk_to", "x": 5, "y": 2}` 也收）。
+        签名之外的字段一律忽略。只查名字在不在空间里、参数齐不齐、类型对不对，不做语义校验。
         """
         # 步骤 1：剥 ```json 围栏。
         stripped = _strip_json_fence(text)
@@ -952,29 +955,44 @@ class Brain:
         if name in keys:
             return Action(sequence=[ActionSegment(name=name, times=1)])
 
-        # 步骤 3：宏名则按签名收参数。
-        signature = next((m for m in macros if m.name == name), None)
-        if signature is None:
-            raise IllegalAction(name, [*keys, *(m.name for m in macros)])
-        args: dict[str, str | int] = {}
-        for param in signature.params:
-            value = raw.get(param.name)
-            if value is None:
-                if param.required:
-                    raise ParseFailure(text, f"macro {name!r} missing argument {param.name!r}")
-                continue
-            args[param.name] = _macro_arg(text, name, param, value)
-        return Action(macro=MacroCall(name=name, args=args))
+        # 步骤 3：脚本名则按签名收参数。
+        signature = next((m for m in scripts if m.name == name), None)
+        if signature is not None:
+            call = ScriptCall(name=name, args=_collect_args(text, name, signature, raw))
+            return Action(script=call)
+        raise IllegalAction(name, [*keys, *(m.name for m in scripts)])
 
 
-def _macro_arg(text: str, macro: str, param: MacroArg, value: object) -> str | int:
+def _collect_args(
+    text: str, name: str, signature: ScriptSignature, raw: dict[str, object]
+) -> dict[str, str | int]:
+    """按签名从模型输出里收参数：缺必填报错、类型不对报错、签名之外的字段忽略。
+
+    参数取自 `raw["args"]`（对象）；没有这个对象时取顶层同名字段。
+    """
+    nested = raw.get("args")
+    source = nested if isinstance(nested, dict) else raw
+    args: dict[str, str | int] = {}
+    for param in signature.params:
+        value = source.get(param.name)
+        if value is None:
+            if param.required:
+                raise ParseFailure(text, f"script {name!r} missing argument {param.name!r}")
+            continue
+        args[param.name] = _script_arg(text, name, param, value)
+    return args
+
+
+def _script_arg(text: str, script: str, param: ScriptArg, value: object) -> str | int:
     """按参数类型收一个值：`int` 收整数或纯数字串，`str` 收非空字符串；不合就抛 `ParseFailure`。"""
     if param.type == "int":
         if isinstance(value, int) and not isinstance(value, bool):
             return value
         if isinstance(value, str) and value.strip().isdigit():
             return int(value.strip())
-        raise ParseFailure(text, f"macro {macro!r} argument {param.name!r} must be an integer")
+        raise ParseFailure(text, f"script {script!r} argument {param.name!r} must be an integer")
     if isinstance(value, str) and value.strip():
         return value.strip()
-    raise ParseFailure(text, f"macro {macro!r} argument {param.name!r} must be a non-empty string")
+    raise ParseFailure(
+        text, f"script {script!r} argument {param.name!r} must be a non-empty string"
+    )

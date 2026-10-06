@@ -106,13 +106,13 @@ def _take_lease(client_id: str | None) -> dict[str, Any] | None:
 
 @mcp.tool()
 def get_action_space() -> dict[str, Any]:
-    """此刻能干什么：**统一能力掩码**（原子键与宏在同一命名空间，`名字 → 是否可用`）。
+    """此刻能干什么：**统一能力掩码**（原子键与脚本在同一命名空间，`名字 → 是否可用`）。
 
-    不需要指定类型——拿到的 `mask` 里键和宏混在一起，挑一个 enabled 的即可；
-    `entries` 给每个条目的参数签名与说明（宏有参数，键没有）。
+    不需要指定类型——拿到的 `mask` 里键和脚本混在一起，挑一个 enabled 的即可；
+    `entries` 给每个条目的参数签名与说明（脚本有参数，键没有）。
     """
     space = _w().get_action_space()
-    # 整份 dump 交出去：`names` / `macros` 是 prompt 渲染要用的形状，
+    # 整份 dump 交出去：`names` 是 prompt 渲染按键说明要用的形状，
     # `mask` / `entries` 是统一掩码的形状——它们是同一份 ActionSpace 的两个视图，
     # 只在 server 这一处产出，client 侧验回即可，不做二次组装。
     return envelope(data=space.model_dump(mode="json"))
@@ -292,9 +292,7 @@ def bounce_in_tall_grass(steps: int = 30, client_id: str | None = None) -> dict[
 
 
 @mcp.tool()
-def talk_to_adjacent_npc(
-    direction: str = "", client_id: str | None = None
-) -> dict[str, Any]:
+def talk_to_adjacent_npc(direction: str = "", client_id: str | None = None) -> dict[str, Any]:
     """脚本 talk_to_adjacent_npc：跟面前 NPC 说话；对话增量在 events[]，
     出选项 → choice_presented（绝不代选），训练家 → battle_started。"""
     from pokemon_agent.world.scripts.interact import talk_to_adjacent_npc as _fn

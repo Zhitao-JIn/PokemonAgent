@@ -1,7 +1,7 @@
 """记忆链蒸馏的解析产物：`EpisodeSummary`。
 
 只有响应协议：蒸馏是**单独一次调用**（`Brain.summarize()`，prompt 由
-`tools/prompts/summarize.py` 加载的 `calls/summarize.md` 拼出）。它此前和校验
+`direct/prompts/summarize.py` 加载的 `calls/summarize.md` 拼出）。它此前和校验
 合并成 `Brain.verify_and_summarize()` 的一次调用，拆开之后（CHANGELOG 第 39 条）
 就没有 `VerifyAndSummarizeReq/Resp` 这类合并信封了，这里只剩蒸馏侧的响应产物。
 

@@ -1,6 +1,6 @@
 """`PyBoyWorld` → `WorldConsole` 适配器：脚本层在 server 进程内看模拟器的窗口。
 
-**来源全部现成**：坐标/朝向/场合/现金/背包/宏是 `PyBoyWorld` 与 `ram.py` 已有
+**来源全部现成**：坐标/朝向/场合/现金/背包是 `PyBoyWorld` 与 `ram.py` 已有
 能力，这里只做形状对齐，不新增判定；`is_grass` 用 `read_screen_tiles` 的 tile
 直读（与 `read_terrain` 同一真源，可判玩家格——`cells` 网格里玩家格被 `@` 盖住，
 tile 层没这问题）。
@@ -33,6 +33,7 @@ from ..screen_text import read_screen_text
 
 if TYPE_CHECKING:
     from ..pyboy_world import PyBoyWorld
+    from .engine import ScriptResult
 
 from ..interface import PlaceInWorld, ScreenText
 
@@ -120,9 +121,11 @@ class WorldConsoleAdapter:
                 return b.quantity
         return 0
 
-    def run_macro(self, name: str, args: dict[str, str | int]) -> Any:  # noqa: ANN401 —— MacroOutcome
-        """场合宏执行到底（脚本内部零件）：转交 `PyBoyWorld.run_macro`。"""
-        return self._w.run_macro(name, args)
+    def run_script(self, name: str, args: dict[str, str | int]) -> ScriptResult:
+        """执行另一条脚本（脚本组合）：按名字交给能力目录的分发表。"""
+        from .catalog import run_script_by_name
+
+        return run_script_by_name(self, name, args)
 
 
 __all__ = ["WorldConsoleAdapter"]

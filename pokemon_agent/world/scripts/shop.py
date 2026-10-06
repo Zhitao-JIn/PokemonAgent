@@ -1,8 +1,8 @@
 """商店类脚本（§7.1）：buy_item / sell_item。
 
 **价格真源**：`shop_layouts.goods`（表，逐字匹配）；**机械校验**：终态对账
-（money 差额、stock 增量）→ 对不上 `verify_failed` 兜底；**宏代答**：确认框
-由 shop 宏机械代答（非分叉），脚本只看 `MacroOutcome.status`。
+（money 差额、stock 增量）→ 对不上 `verify_failed` 兜底；**接管脚本代答**：确认框
+由接管脚本 `shop_buy` / `shop_sell` 机械代答（非分叉），本脚本只看它的 `ok` 与结局码。
 卖价按 Gen1 规则 = 买价一半（`price // 2`）。
 """
 
@@ -26,13 +26,11 @@ def _goods(layout: dict[str, Any]) -> dict[str, int]:
 
 
 def _new_run(console: WorldConsole) -> ScriptRun:
-    return ScriptRun(
-        console, budget=1, start_map_id=console.map_id(), start_pos=console.pos()
-    )
+    return ScriptRun(console, budget=1, start_map_id=console.map_id(), start_pos=console.pos())
 
 
 def buy_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
-    """买：白名单店 → 在售 → 数量/预算前置 → shop 宏（光标/数量/确认代答）→
+    """买：白名单店 → 在售 → 数量/预算前置 → `shop_buy`（光标/数量/确认代答）→
     终态对账（money0−money1==price×count 且 stock 增量==count）。"""
     layout = _layout(console)
     if layout is None:
@@ -53,32 +51,46 @@ def buy_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
             data={"item": item, "count": count, "price": price, "money": money0},
         )
     stock0 = console.bag_count(item)
-    outcome = console.run_macro("buy", {"item": item, "quantity": count})
-    if outcome.status.value != "done":
+    inner = console.run_script("shop_buy", {"item": item, "quantity": count})
+    if not inner.ok:
         return ScriptResult(
             ok=False,
             code="verify_failed",
-            data={"item": item, "count": count,
-                  "macro_status": outcome.status.value, "reason": outcome.reason},
+            data={
+                "item": item,
+                "count": count,
+                "inner_code": inner.code,
+                "reason": inner.data.get("reason", ""),
+            },
         )
     money1, stock1 = console.money(), console.bag_count(item)
     if money0 - money1 != price * count or stock1 - stock0 != count:
         return ScriptResult(
             ok=False,
             code="verify_failed",
-            data={"item": item, "count": count, "spent": money0 - money1,
-                  "expected_spent": price * count, "gained": stock1 - stock0},
+            data={
+                "item": item,
+                "count": count,
+                "spent": money0 - money1,
+                "expected_spent": price * count,
+                "gained": stock1 - stock0,
+            },
         )
     return ScriptResult(
         ok=True,
         code="ok",
-        data={"item": item, "count": count, "spent": money0 - money1,
-              "remaining_money": money1, "stock": stock1},
+        data={
+            "item": item,
+            "count": count,
+            "spent": money0 - money1,
+            "remaining_money": money1,
+            "stock": stock1,
+        },
     )
 
 
 def sell_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
-    """卖：白名单店 → 背包有货/数量足 → shop 宏 → 终态对账（money 增量==卖价×count，
+    """卖：白名单店 → 背包有货/数量足 → `shop_sell` → 终态对账（money 增量==卖价×count，
     卖价 = 买价一半，Gen1 规则）。"""
     layout = _layout(console)
     if layout is None:
@@ -99,27 +111,40 @@ def sell_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
         )
     money0 = console.money()
     unit = goods[item] // 2
-    outcome = console.run_macro("sell", {"item": item, "quantity": count})
-    if outcome.status.value != "done":
+    inner = console.run_script("shop_sell", {"item": item, "quantity": count})
+    if not inner.ok:
         return ScriptResult(
             ok=False,
             code="verify_failed",
-            data={"item": item, "count": count,
-                  "macro_status": outcome.status.value, "reason": outcome.reason},
+            data={
+                "item": item,
+                "count": count,
+                "inner_code": inner.code,
+                "reason": inner.data.get("reason", ""),
+            },
         )
     money1, stock1 = console.money(), console.bag_count(item)
     if money1 - money0 != unit * count:
         return ScriptResult(
             ok=False,
             code="verify_failed",
-            data={"item": item, "count": count, "earned": money1 - money0,
-                  "expected_earned": unit * count},
+            data={
+                "item": item,
+                "count": count,
+                "earned": money1 - money0,
+                "expected_earned": unit * count,
+            },
         )
     return ScriptResult(
         ok=True,
         code="ok",
-        data={"item": item, "count": count, "earned": money1 - money0,
-              "remaining_money": money1, "stock": stock1},
+        data={
+            "item": item,
+            "count": count,
+            "earned": money1 - money0,
+            "remaining_money": money1,
+            "stock": stock1,
+        },
     )
 
 

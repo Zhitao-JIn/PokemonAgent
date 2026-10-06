@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from .domain import ActionSpace, MacroOutcome, Perceived, TaskPerceived
+from .domain import ActionSpace, Perceived, TaskPerceived
 
 
 @runtime_checkable
@@ -57,7 +57,7 @@ class WorldPort(Protocol):
         ...
 
     def get_action_space(self) -> ActionSpace:
-        """按**当前这一帧**算此刻的能力掩码：原子键与宏在同一命名空间。
+        """按**当前这一帧**算此刻的能力掩码：原子键与脚本在同一命名空间。
 
         **为什么这一条从 tool 层搬进 world**（2026-09-29）：掩码的依据是当前帧的
         overlay 与场合，而"当前帧"只有 world 有——MCP 化之后 world 住在独立
@@ -66,7 +66,7 @@ class WorldPort(Protocol):
         两边共用 `world/action_space.py::compute_action_space` 这一个纯函数。
 
         返回 `ActionSpace`：`mask`（名字 → 此刻是否可用，覆盖全部键 + 本场合
-        的宏）、`entries`（各条目的参数签名与说明）、`scene`。
+        可用的脚本）、`entries`（各条目的参数签名与说明）、`scene`。
 
         前置条件：已 `reset()`（要读当前帧）。
         后置条件：至少有一个 enabled 的动作。
@@ -109,16 +109,6 @@ class WorldPort(Protocol):
             要不要再问一次是调用方的判断。
 
         后置条件：返回时 observation 非空，且是这次真调用产生的新观测。
-        """
-        ...
-
-    def run_macro(self, name: str, args: dict[str, str | int]) -> MacroOutcome:
-        """在当前接管场合执行一个宏，执行到底再返回（回初态 → 校验 → 逐步执行 → 收尾）。
-
-        name / args：宏名与参数（签名见 `macro_specs(scene)`）。
-        后置条件：返回时世界停在宏的收尾处（初态或已离开场合）。
-        失败：未知宏、参数不合法、执行中途走偏都作为结果返回
-            （`rejected` / `aborted` / `left_scene`），不抛异常。
         """
         ...
 

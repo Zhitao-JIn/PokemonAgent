@@ -1,7 +1,8 @@
 """task 层的场合（`TaskScene`）：人在哪、在做什么——决定给 JEV 什么观测、什么动作空间。
 
 与 episode 层视觉链路的 `Facts.Scene` 是两套词表、两种观测，只是都叫"场景"，互不引用。
-判别规则在 `world/scene.py::classify_scene`，词表与宏的对应见 `docs/perceive/spec.md` 第三、五节。
+判别规则在 `world/scene.py::classify_scene`，词表与接管脚本的对应见
+`docs/perceive/spec.md` 第三、五节。
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from enum import StrEnum
 
 
 class TaskScene(StrEnum):
-    """一帧属于哪个场合。常规场合一键一决策；接管场合（`TAKEOVER_SCENES`）由宏执行到底。"""
+    """一帧属于哪个场合。常规场合一键一决策；接管场合（`TAKEOVER_SCENES`）由接管脚本执行到底。"""
 
     # ---- 常规 ----
     WALK = "walk"  # 走路，屏上没字
@@ -45,7 +46,7 @@ TAKEOVER_SCENES: frozenset[TaskScene] = frozenset(
         TaskScene.LEARN_MOVE,
     }
 )
-"""由宏执行到底的场合；其余是常规场合。"""
+"""由接管脚本执行到底的场合；其余是常规场合。"""
 
 
 __all__ = ["TAKEOVER_SCENES", "TaskScene"]

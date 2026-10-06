@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..macros.engine import POLL_FRAMES
 from .engine import Halt, ScriptResult, ScriptRun, WorldConsole, _dialog_texts
 from .movement import _run
+from .takeover.engine import POLL_FRAMES
 
 _WALK = "walk"
 
@@ -42,12 +42,8 @@ def advance_dialog(console: WorldConsole, max_presses: int = 30) -> ScriptResult
             text = console.read()
             # 对话结束：场合回野外且无对话文字、无光标（不该有光标，但兜底）
             if console.scene() == _WALK or (not text.dialog_text and not text.has_cursor):
-                return run.finish(
-                    ok=True, code="ok", extra=_adv_extra(run, console, presses)
-                )
-        return run.finish(
-            ok=False, code="still_talking", extra=_adv_extra(run, console, presses)
-        )
+                return run.finish(ok=True, code="ok", extra=_adv_extra(run, console, presses))
+        return run.finish(ok=False, code="still_talking", extra=_adv_extra(run, console, presses))
     except Halt as halt:
         extra: dict[str, Any] = _adv_extra(run, console, presses)
         extra.update(halt.extra)
@@ -65,9 +61,7 @@ def _adv_extra(run: ScriptRun, console: WorldConsole, presses: int) -> dict[str,
     }
 
 
-def wait_until_scene(
-    console: WorldConsole, scene: str, timeout_s: float = 10.0
-) -> ScriptResult:
+def wait_until_scene(console: WorldConsole, scene: str, timeout_s: float = 10.0) -> ScriptResult:
     """干等画面变成 `scene`：不按键、只 tick，逐帧判场合；超时 → `timeout`。
 
     用于过场 / 淡入 / 战斗结束这类"等它自己变"的窗口（退出地图后的新图淡入、

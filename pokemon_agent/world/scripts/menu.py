@@ -11,8 +11,8 @@
 
 from __future__ import annotations
 
-from ..macros.engine import POLL_FRAMES, STABLE_POLLS
 from .engine import ScriptResult, WorldConsole
+from .takeover.engine import POLL_FRAMES, STABLE_POLLS
 
 # 与 scene.START_ITEMS 同序（开始菜单项的固定顺序）
 START_ORDER: tuple[str, ...] = ("POKéDEX", "POKéMON", "ITEM", "SAVE", "OPTION", "EXIT")
@@ -70,12 +70,8 @@ def open_menu_to(console: WorldConsole, target: str) -> ScriptResult:
     scene = console.scene()
     expected = TARGET_SCENE.get(target)
     if scene != "start_menu" and (expected is None or scene == expected):
-        return ScriptResult(
-            ok=True, code="ok", data={"scene": scene, "target": target}
-        )
-    return ScriptResult(
-        ok=False, code="wrong_scene", data={"scene": scene, "target": target}
-    )
+        return ScriptResult(ok=True, code="ok", data={"scene": scene, "target": target})
+    return ScriptResult(ok=False, code="wrong_scene", data={"scene": scene, "target": target})
 
 
 __all__ = ["open_menu_to"]

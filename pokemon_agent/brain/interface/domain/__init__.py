@@ -11,7 +11,6 @@ from .action import Action, ActionSegment
 from .decomposition import Decomposition
 from .episode_summary import EpisodeSummary
 from .goal import Goal
-from .macro_call import MacroArg, MacroCall, MacroSignature
 from .model_call import ModelCall
 from .reflection import Reflection
 from .results import (
@@ -23,6 +22,7 @@ from .results import (
     VerifyResult,
 )
 from .run_plan import RunPlan
+from .script_call import ScriptArg, ScriptCall, ScriptSignature
 from .task import Task
 from .verify_verdict import VerifyVerdict
 
@@ -35,9 +35,9 @@ __all__ = [
     "EpisodeSummary",
     "Goal",
     "JudgeResult",
-    "MacroArg",
-    "MacroCall",
-    "MacroSignature",
+    "ScriptArg",
+    "ScriptCall",
+    "ScriptSignature",
     "ModelCall",
     "PlanResult",
     "Reflection",

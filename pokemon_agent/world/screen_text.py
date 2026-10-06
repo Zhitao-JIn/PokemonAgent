@@ -23,11 +23,41 @@ from __future__ import annotations
 from collections import Counter
 from typing import NamedTuple
 
-from .interface import Memory
+from .interface import Facts, Memory
 from .interface.domain.screen_text import ScreenText
 from .ram import SCREEN_COLS, SCREEN_ROWS, W_TILEMAP
 
 W_IS_IN_BATTLE = 0xD057
+
+
+def overlay_of(text: ScreenText) -> Facts.Overlay:
+    """由屏幕解码推出叠加层：有 `▶` 或数量框 = CHOICE，严格的对话帧 = DIALOG，其余 NONE。
+
+    DIALOG 从严：它的掩码只有 `a`，判错就按不到要按的键；判成 CHOICE / NONE 只是多给几个键。
+    """
+    if text.has_cursor or text.quantity_box:
+        return Facts.Overlay.CHOICE
+    if text.strict_dialog:
+        return Facts.Overlay.DIALOG
+    return Facts.Overlay.NONE
+
+
+def layout_field(text: ScreenText) -> dict[str, str]:
+    """选单排布与附注作为 `Facts` 的动态字段 `option_layout` / `option_details`（没有就不放）。
+
+    走动态字段而不是具名字段：`ActMemory` 里的 `Facts` 快照副本按同一规则渲染动态字段，
+    两份不必各加一个具名字段也不会漂。
+    """
+    fields: dict[str, str] = {}
+    layout = text.render_layout()
+    if layout:
+        fields["option_layout"] = layout
+    details = text.render_details()
+    if details:
+        fields["option_details"] = details
+    return fields
+
+
 """战斗标志：0 = 不在战斗；1 = 野生战；2 = 训练师战。"""
 
 CURSOR = 0xED

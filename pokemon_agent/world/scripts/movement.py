@@ -41,9 +41,7 @@ def _reject(direction: str) -> ScriptResult:
 
 
 def _run(console: WorldConsole, budget: int) -> ScriptRun:
-    return ScriptRun(
-        console, budget=budget, start_map_id=console.map_id(), start_pos=console.pos()
-    )
+    return ScriptRun(console, budget=budget, start_map_id=console.map_id(), start_pos=console.pos())
 
 
 def _pos_dump(console: WorldConsole) -> dict:
@@ -245,9 +243,7 @@ def bounce_in_tall_grass(console: WorldConsole, steps: int = 30) -> ScriptResult
         data: dict[str, Any] = {"steps_used": used, "encounter": False}
         data.update(halt.extra)
         return run.finish(ok=halt.ok, code=halt.code, extra=data)
-    return run.finish(
-        ok=True, code="no_encounter", extra={"steps_used": used, "encounter": False}
-    )
+    return run.finish(ok=True, code="no_encounter", extra={"steps_used": used, "encounter": False})
 
 
 __all__ = [

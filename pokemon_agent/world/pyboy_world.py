@@ -22,56 +22,36 @@ task 层（`perceive_task()`）只用前两条；episode 层三条都用，文�
 
 from __future__ import annotations
 
-import base64
 import io
 import pathlib
 from dataclasses import dataclass
 
 from pyboy import PyBoy
 
-from pokemon_agent.world import VisionDescribeReq, VisionProvider
+from pokemon_agent.world import VisionProvider
 
-from .battle_status import read_battle_status
-from .errors import PerceptionAttemptFailed
+from .action_space import compute_action_space
 from .interface import (
     OVERLAY_ACTIONS,
+    ActionSpace,
     Facts,
-    MacroOutcome,
-    Memory,
-    Observation,
     Perceived,
-    ScreenState,
     ScreenText,
     TaskObservation,
     TaskPerceived,
     TerrainMap,
 )
-from .interface.domain import terrain_legend
-from .macros import run_macro, takeover_view
+from .perceive_frame import (
+    _battle_fields,
+    _png_data_uri,
+    perceive_frame,
+)
 from .prompts import load as load_prompt
 from .ram import read_terrain
 from .readout import read_readout
 from .scene import classify_scene
-from .screen_text import read_screen_text
-
-
-class _Console:
-    """宏看得到的那一小块模拟器（`macros.Console`）：按键、推进、读内存与屏幕、ROM。"""
-
-    def __init__(self, world: PyBoyWorld) -> None:
-        self._world = world
-        self.memory = world._pyboy.memory
-        self.rom = world._rom
-
-    def press(self, key: str) -> None:
-        assert key in ALL_BUTTONS, f"unknown key {key!r}"
-        self._world._pyboy.button(key, delay=PRESS_FRAMES)
-
-    def tick(self, frames: int) -> None:
-        self._world._tick(frames)
-
-    def read(self) -> ScreenText:
-        return read_screen_text(self.memory)
+from .screen_text import layout_field, overlay_of, read_screen_text
+from .scripts.takeover import takeover_view
 
 
 @dataclass
@@ -112,73 +92,6 @@ AFTER_ACTION_FRAMES = 10 * GB_FPS  # 整条链按完后再推进多少帧（10 �
 BOOT_FRAMES = 10 * GB_FPS  # 无存档时空转多少帧越过开机 logo
 
 
-def parse_screen(text: str) -> ScreenState | None:
-    """把视觉模型的输出解析成 `ScreenState`。
-
-    容忍 ```json 包裹——模型最常见的格式偏差，为它多跑一轮不划算。
-    其余一律不兜底：解析不出来就是解析不出来，交给调用方重试。
-
-    把视觉模型吐的 JSON 解析成 `ScreenState`。
-    """
-    t = text.strip()
-    if t.startswith("```"):
-        t = t.split("```")[1].removeprefix("json").strip()
-    try:
-        return ScreenState.model_validate_json(t)
-    except ValueError:  # ValidationError / JSONDecodeError 都是它的子类
-        # 解析失败是预期内情况（模型输出格式问题），由调用方重试；
-        # 只捕 ValueError 家族，预期外异常（bug）照常上抛。
-        return None
-
-
-def _overlay_of(text: ScreenText) -> Facts.Overlay:
-    """由屏幕解码推出叠加层：有 `▶` 或数量框 = CHOICE，严格的对话帧 = DIALOG，其余 NONE。
-
-    DIALOG 从严：它的掩码只有 `a`，判错就按不到要按的键；判成 CHOICE / NONE 只是多给几个键。
-    """
-    if text.has_cursor or text.quantity_box:
-        return Facts.Overlay.CHOICE
-    if text.strict_dialog:
-        return Facts.Overlay.DIALOG
-    return Facts.Overlay.NONE
-
-
-def _checked_overlay(vision: Facts.Overlay, text: ScreenText) -> Facts.Overlay:
-    """看档路径的叠加层：视觉说是对话框，还得屏幕解码认得是严格的对话帧，否则按解码推。"""
-    if vision is Facts.Overlay.DIALOG and not text.strict_dialog:
-        return _overlay_of(text)
-    return vision
-
-
-def _status_line(s: ScreenState, cursor: str = "") -> str:
-    """给大脑读的自然语言状态。
-
-    有意做得简短：详细字段在 `facts` 里，这句话只是让 prompt 有个上下文开头。
-
-    把这一帧压成给大脑读的一句话。
-    """
-    where = {
-        Facts.Scene.FIELD: "你在野外",
-        Facts.Scene.INDOOR: "你在室内",
-        Facts.Scene.BATTLE: "你在战斗中",
-        Facts.Scene.MENU: "你在菜单里",
-        Facts.Scene.SHOP: "你在商店",
-        Facts.Scene.TRANSITION: "画面正在切换",
-        Facts.Scene.NAMING: "你在起名字",
-        Facts.Scene.MAP_VIEW: "你在看地区总览地图",
-    }[s.scene]
-    bits = [where + "。"]
-    if s.overlay is Facts.Overlay.DIALOG and s.dialog_text:
-        bits.append(f"对话框：「{s.dialog_text}」")
-    elif s.overlay is Facts.Overlay.CHOICE and s.options:
-        # **读不出来要明写"读不出"。** 静默省略这半句的话，
-        # 「可选项：A/ B/ C」和「可选项：A/ B/ C，光标在 A」扫过去几乎一样，
-        # 而"没读出光标"和"光标在第一项"是完全不同的两件事。
-        cur = f"，光标在 {cursor}" if cursor else "，光标读不出"
-        bits.append(f"可选项：{'/ '.join(s.options)}{cur}")
-    return "".join(bits)
-
-
 def _ram_status(terrain: TerrainMap, text: ScreenText) -> str:
     """纯 RAM 观测的状态行：位置、朝向，加上屏幕文字能确定的对话 / 选项 / 光标。
 
@@ -193,42 +106,6 @@ def _ram_status(terrain: TerrainMap, text: ScreenText) -> str:
     if text.options:
         bits.append(f"可选项：{'/ '.join(text.options)}，光标在 {text.cursor}")
     return "。".join(bits)
-
-
-def _layout_field(text: ScreenText) -> dict[str, str]:
-    """选单排布与附注作为 `Facts` 的动态字段 `option_layout` / `option_details`（没有就不放）。
-
-    走动态字段而不是具名字段：`ActMemory` 里的 `Facts` 快照副本按同一规则渲染动态字段，
-    两份不必各加一个具名字段也不会漂。
-    """
-    fields: dict[str, str] = {}
-    layout = text.render_layout()
-    if layout:
-        fields["option_layout"] = layout
-    details = text.render_details()
-    if details:
-        fields["option_details"] = details
-    return fields
-
-
-def _battle_fields(mem: Memory) -> dict[str, str]:
-    """战斗双方状态框压成 `Facts` 动态字段（`my_*` / `foe_*`）；不在战斗时为空。"""
-    battle = read_battle_status(mem)
-    return battle.facts_fields() if battle is not None else {}
-
-
-def _png_data_uri(png: bytes) -> str:
-    """截图原始字节 → **完整 data URI**（`data:image/png;base64,…`）。
-
-    **本函数是全仓唯一的帧编码点（0915 定）**：帧离开本层之后只有两个去处——
-    落盘（trace 事件的 `frame`、`memory/step_memory/*.json` 的
-    `before_frame`/`after_frame`、`*_call` 账的 `images`）和进模型——拿到的
-    都是本函数的产出，**格式只有这一种**。为什么带前缀：裸 base64 无法与
-    普通字符串区分，离线找图连 grep "base64" 都搜不到（前缀本身才含这个词）；
-    带上 data URI 前缀后格式说话，离线分析（benchmark 导帧、FileReviewer
-    看图）见串即知是图。
-    """
-    return f"data:image/png;base64,{base64.b64encode(png).decode()}"
 
 
 class PyBoyWorld:
@@ -308,7 +185,7 @@ class PyBoyWorld:
         self._prompt = load_prompt(prompt_name)
         self._state_path = state_path
         self._rom = pathlib.Path(rom).read_bytes()
-        """ROM 原样：宏与接管视图从里面读道具价格这类常量表。"""
+        """ROM 原样：接管脚本与接管视图从里面读道具价格这类常量表。"""
 
         self._task: _Task | None = None
         self._closed = False
@@ -385,6 +262,16 @@ class PyBoyWorld:
         assert data, "load_state() got empty bytes"
         self._pyboy.load_state(io.BytesIO(data))
 
+    def get_action_space(self) -> ActionSpace:
+        """按当前这一帧算能力掩码（纯函数委托，见 `world/action_space.py`）。
+
+        帧从 `perceive_task()` 拿——它是 RAM 档感知，不调模型，读一帧的代价
+        只有一个内存快照，不值得为此在 Port 上另开一个"当前帧"出口。
+        """
+        assert self._task is not None, "get_action_space() before reset()"
+        observation = self.perceive_task().observation
+        return compute_action_space(observation, list(ALL_BUTTONS))
+
     def all_actions(self) -> list[str]:
         """全部动作名，与状态无关。掩码是 harness 的事，不在这里做。
 
@@ -445,11 +332,6 @@ class PyBoyWorld:
         if settle:
             self._tick(AFTER_ACTION_FRAMES)
 
-    def run_macro(self, name: str, args: dict[str, str | int]) -> MacroOutcome:
-        """（契约见 `WorldPort.run_macro`）在当前接管场合执行一个宏，交给 `macros` 的骨架。"""
-        assert self._task is not None, "run_macro() before reset()"
-        return run_macro(_Console(self), name, args)
-
     def perceive_task(self) -> TaskPerceived:
         """task 层的一帧：**不问模型**，只读内存与屏幕缓冲（`_ram_observe`）。
 
@@ -480,138 +362,16 @@ class PyBoyWorld:
         的账）。**不返回一个「空白状态」兜底**——那会让大脑基于假观测决策，
         而且这类失败在 replay 里必须能被统计到。
 
-        步骤 1：截当前画面、读地形（确定性，不是模型读出来的）。
-        步骤 2：问一次视觉模型，解析不出来就把账封进异常。
-        步骤 3：拼成观测交回去。
+        截图在这里，其余（地形、视觉、解析、拼装）全在 `perceive_frame.py::perceive_frame`。
         """
         assert self._task is not None, "perceive_once() before reset()"
-
-        # 步骤 1。
-        png = self._frame_png()
-        terrain = read_terrain(self._pyboy.memory)
-
-        # 步骤 2：问一次视觉模型（屏幕解码也读一遍，给整屏原样与叠加层核对用）。
-        ram_text = read_screen_text(self._pyboy.memory)
-        prompt = self._prompt.render(known_map=terrain.render(), terrain_legend=terrain_legend())
-        # 帧在本层只编码一次（`_png_data_uri`，完整 data URI）——进模型、
-        # 落盘（trace / step_memory）拿的都是**同一份字符串**，下游不存在
-        # 第二种格式（0915 定，裸 base64 已废）。
-        #
-        # **把 `describe()` 的失败收编成本层的一次尝试失败**（0913 深夜十一）：
-        # 实现（`brain/providers.py` 的 `_MultimodalMixin`）在"图片没真送到"时抛
-        # `ImageNotDelivered`；本层的契约只认 `PerceptionAttemptFailed`
-        # （见 `world/interface/world_port.py` 的失败段）。**world 不 import brain
-        # 那个类**——它不关心上游抛的是什么名字，只知道"这一次没拿到描述"，
-        # 于是就地包装成自己的词汇，把原因文本带过去。
-        # 这样做的收益：`ImageNotDelivered` 可以安心归 brain（brain 才拷得走），
-        # 而 world 这条链的失败出口始终只有 `PerceptionAttemptFailed` 一个
-        # （`GameTools.perceive_with_retry` 只接它，耗尽后翻译成 tool 层的
-        # `MaxRetriesExceeded`——world 的词汇跨不过 tool 层这座桥，见 `world/errors.py`）。
-        try:
-            r = self._vision.describe(VisionDescribeReq(images=[_png_data_uri(png)], prompt=prompt))
-        except PerceptionAttemptFailed:
-            raise
-        except Exception as exc:  # noqa: BLE001  上游网关/实现的任何失败都是"这次没读出来"
-            raise PerceptionAttemptFailed(
-                {
-                    "ok": "false",
-                    "raw": "",
-                    "prompt": prompt,
-                    "images": [_png_data_uri(png)],
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-            ) from exc
-
-        screen = parse_screen(r.text)
-        call = {
-            "input_tokens": str(r.input_tokens),
-            "output_tokens": str(r.output_tokens),
-            "cached_tokens": str(r.cached_tokens),
-            "reasoning_tokens": str(r.reasoning_tokens),
-            "ok": str(screen is not None).lower(),
-            "raw": r.text,
-            "prompt": prompt,
-            "images": [_png_data_uri(png)],
-        }
-        if screen is None:
-            raise PerceptionAttemptFailed(call)
-
-        # 步骤 3：把"内存读出来的地形"和"模型读出来的屏幕"拼成一份观测。
-        # 文字字段以视觉为准（0926 定）；整屏原样另放 `screen`，叠加层的 DIALOG 要解码也认。
-        overlay, text = _checked_overlay(screen.overlay, ram_text), screen.dialog_text.strip()
-
-        # **说有对话框却一个字都没抄出来 = 它把别的东西看成对话框了。**
-        # 实测：室内地图下方的黑色边界被认成对话框，而**画面一动没动**的情况下
-        # 上一步它还判的是 none。降级成 none，并把这次误判记下来。
-        #
-        # 这条交叉检验不需要任何新的输入——**它只是拿模型自己的两个输出对账**。
-        # 而 overlay 决定动作掩码，错一次大脑就会拿到一组它按不出效果的动作。
-        if overlay is Facts.Overlay.DIALOG and not text:
-            overlay = Facts.Overlay.NONE
-
-        # **地标只有类型和位置，没有名字，而且用全局坐标。**
-        # 名字（这是谁家、招牌上写什么）在总览画面里没有可观测的证据——
-        # 招牌的字根本没渲染，所有的门都是同一个深色矩形。让视觉模型填，
-        # 它就按先验编：真新镇既没有宝可梦中心也没有商店，它照样给出了
-        # 「写着「POKéMON CENTER」的招牌」。名字要靠**走进去看见**再记住，
-        # 那是记忆层的事（见 `TerrainMap.landmarks` 的完整说明）。
-        landmarks = terrain.landmarks()
-        ram = read_readout(self._pyboy.memory, ram_text, text_source="vlm")
-
-        # **`Facts` 是结构化模型，字段该是什么类型就是什么类型。** 不再需要先把
-        # `scene`/`overlay`/`landmarks` 渲染成文本塞进一个 `dict[str, str]`——
-        # 判定层（`harness/episode/store/store_object_semantic_memory/rules.py`）
-        # 和记忆检索直接拿 `facts.scene`/
-        # `facts.landmarks` 这些结构化字段用，`render()`/`items()` 才做"转文本"，
-        # 且只在真的要喂给大脑读、或者拼检索 query 的那一刻才发生。
-        #
-        # **全项目只有一套坐标。** `walk_map` 的行列号、`where`、`landmarks` 里的
-        # `x= y=` 是同一套数，不需要任何换算（见 `TerrainMap.render` 里为
-        # 什么删掉了屏幕格）。写法统一成 `x=8 y=5` 而不是 `(8,5)`：括号对是旧屏幕
-        # 格的写法，留着它只会让"这指的是哪一套"重新变成一个问题。
-        #
-        # **对话框的文字必须进去。** 漏了这一项的代价大得离谱：判定器看不到对话
-        # 内容，「对话框里出现母亲说的话」这类判据**永远不可能成立**；而决策模型
-        # 看不到，就会按先验编一句出来当成自己读到的。
-        facts = Facts(
-            scene=screen.scene,
-            overlay=overlay,
-            where=terrain.place().render(),
-            facing=terrain.facing or "",
-            # 四邻是唯一**相对"我"**的地形描述，所以是唯一能进记忆的那份
-            # （`walk_map` 的原点跟着人走，跨步骤引用会自相矛盾）。
-            neighbors=terrain.render_neighbors(),
-            landmarks=landmarks,
-            dialog_text=text,
-            options=screen.options,
-            cursor=screen.cursor or "",
-            overview=screen.overview,
-            # walk_map 来自模拟器内存，不是模型读出来的——它是这些事实里唯一 100% 的一项。
-            walk_map=terrain.render(),
-            map_id=terrain.map_id,
-            screen=ram_text.screen,
-            **{**screen.fields, **_battle_fields(self._pyboy.memory)},
-            **_layout_field(ram_text),
+        return perceive_frame(
+            self._frame_png(),
+            self._pyboy.memory,
+            template=self._prompt,
+            vision=self._vision,
+            closed=self._closed,
         )
-
-        obs = Observation(
-            # **step 由 Harness 盖章，这里只给占位值。**
-            # world 交出来的是"世界现在什么样"，不是"这一局跑到哪了"——
-            # 后者是循环的账。
-            step=0,
-            # **结构化的位置也交出去。** `facts.where` 是给模型读的文本，
-            # 而交互记忆的键要拿 `(map_id, x, y)` 去算——反解字符串是迟早要出错的事。
-            place=terrain.place(),
-            status=_status_line(screen, facts.cursor or ""),
-            facts=facts,
-            # **`done` 是世界层自己唯一能报的信号**（窗口关没关）；
-            # "这一局该不该结束"/"任务完不完成"归 `EpisodeRunState.done`/`.success`
-            # ——世界压根不知道目标是什么，不给恒为 False 的占位值。
-            done=self._closed,
-            # 这一档问过视觉模型了，走的是"看"。
-            perceived=True,
-        )
-        return Perceived(observation=obs, calls=[call], frame_png=_png_data_uri(png), ram=ram)
 
     def _ram_observe(self, terrain: TerrainMap, text: ScreenText, png: bytes) -> TaskPerceived:
         """只读内存的观测——**这一档不调视觉模型**。
@@ -628,7 +388,7 @@ class PyBoyWorld:
         解码切不出的界面（队伍列表、数量框、起名键盘……）字段为空或不全，不补视觉：
         整屏原样在 `screen` 里，由模型自己读。
         """
-        overlay = _overlay_of(text)
+        overlay = overlay_of(text)
         mem = self._pyboy.memory
         scene = classify_scene(text, mem)
         facts = Facts(
@@ -645,7 +405,7 @@ class PyBoyWorld:
             map_id=terrain.map_id,
             screen=text.screen,
             **_battle_fields(mem),
-            **_layout_field(text),
+            **layout_field(text),
         )
         return TaskPerceived(
             observation=TaskObservation(

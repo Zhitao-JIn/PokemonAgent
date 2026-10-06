@@ -52,7 +52,7 @@ def read_readout(
         ),
         money=read_money(mem),
         bag=read_bag(mem),
-        party=_party(mem),
+        party=read_party(mem),
         battle=read_battle_status(mem),
         decoded=decoded,
     )
@@ -78,8 +78,11 @@ def read_bag(mem: Memory) -> list[BagItem]:
     return items
 
 
-def _party(mem: Memory) -> list[PartyMon]:
-    """队伍：只数 `wPartyCount` 只（封顶 `PARTY_CAPACITY`）。"""
+def read_party(mem: Memory) -> list[PartyMon]:
+    """队伍：只数 `wPartyCount` 只（封顶 `PARTY_CAPACITY`）。
+
+    公开给脚本层（heal_at_center 校验 HP 全满），不只给 `RamReadout`。
+    """
     party: list[PartyMon] = []
     for i in range(min(mem[W_PARTY_COUNT], PARTY_CAPACITY)):
         base = W_PARTY_MON1_HP + i * PARTY_MON_SIZE
@@ -95,4 +98,4 @@ def _party(mem: Memory) -> list[PartyMon]:
     return party
 
 
-__all__ = ["read_bag", "read_money", "read_readout"]
+__all__ = ["read_bag", "read_money", "read_party", "read_readout"]

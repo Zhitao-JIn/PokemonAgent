@@ -1,4 +1,4 @@
-"""起名键盘（`naming`）的宏：`enter_name`，外加这个场合的视图。
+"""起名键盘（`naming`）的接管脚本：`enter_name`，外加这个场合的视图。
 
 地址见 `docs/perceive/p0-findings.md` 第三节（开机新游戏实测）：
 已输入 `wStringBuffer` 0xCF4B（0x50 收尾）、已输入长度 `wNamingScreenNameLength` 0xCEE9、
@@ -10,17 +10,17 @@ from __future__ import annotations
 
 import string
 
-from ..interface import (
-    MacroParam,
-    MacroReason,
-    MacroSpec,
+from ...interface import (
+    ActionEntry,
     Memory,
     NamingView,
     ScreenText,
+    ScriptParam,
     TaskScene,
 )
-from ..screen_text import CHARMAP
-from .engine import Abort, MacroDef, MacroRun
+from ...screen_text import CHARMAP
+from .engine import Abort, TakeoverDef, TakeoverRun
+from .outcome import TakeoverReason
 
 W_STRING_BUFFER = 0xCF4B
 W_NAME_LENGTH = 0xCEE9
@@ -56,20 +56,20 @@ def _typed(mem: Memory) -> str:
     return "".join(chars)
 
 
-def _limit(run: MacroRun) -> int:
+def _limit(run: TakeoverRun) -> int:
     return MAX_LENGTH.get(_title(run.screen()), DEFAULT_MAX_LENGTH)
 
 
-def _check_enter(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_enter(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
     name, limit = str(args["name"]), _limit(run)
     if not 1 <= len(name) <= limit:
-        return MacroReason.INVALID_NAME, f"名字长度要在 1–{limit}，给的是 {len(name)}"
+        return TakeoverReason.INVALID_NAME, f"名字长度要在 1–{limit}，给的是 {len(name)}"
     if any(ch not in string.ascii_uppercase for ch in name):
-        return MacroReason.INVALID_NAME, f"名字只能用大写字母，给的是 {name!r}"
+        return TakeoverReason.INVALID_NAME, f"名字只能用大写字母，给的是 {name!r}"
     return None
 
 
-def _execute_enter(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_enter(run: TakeoverRun, args: dict[str, str | int]) -> str:
     name = str(args["name"])
 
     # 步骤 1：切回大写，删空已输入的字。
@@ -80,7 +80,7 @@ def _execute_enter(run: MacroRun, args: dict[str, str | int]) -> str:
             break
         run.press("b", expect="删一个字")
     if run.mem[W_NAME_LENGTH] != 0:
-        raise Abort(MacroReason.UNEXPECTED_SCREEN, "已输入的字删不空")
+        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, "已输入的字删不空")
 
     # 步骤 2：逐字移光标、按 A。
     for i, ch in enumerate(name):
@@ -91,10 +91,13 @@ def _execute_enter(run: MacroRun, args: dict[str, str | int]) -> str:
         run.press("a", expect=f"输入 {ch}", ok=lambda _t, n=i + 1: run.mem[W_NAME_LENGTH] == n)
         if run.mem[W_NAME_LENGTH] != i + 1:
             raise Abort(
-                MacroReason.UNEXPECTED_SCREEN, f"按了 {ch} 但已输入长度是 {run.mem[W_NAME_LENGTH]}"
+                TakeoverReason.UNEXPECTED_SCREEN,
+                f"按了 {ch} 但已输入长度是 {run.mem[W_NAME_LENGTH]}",
             )
     if _typed(run.mem) != name:
-        raise Abort(MacroReason.UNEXPECTED_SCREEN, f"输入的是 {_typed(run.mem)!r}，不是 {name!r}")
+        raise Abort(
+            TakeoverReason.UNEXPECTED_SCREEN, f"输入的是 {_typed(run.mem)!r}，不是 {name!r}"
+        )
 
     # 步骤 3：START 提交，等画面离开键盘。
     run.press("start", expect="提交名字")
@@ -109,12 +112,13 @@ def _cursor(mem: Memory) -> tuple[int, int]:
     return (row - FIRST_KEY_ROW) // 2, (col - 1) // 2
 
 
-NAMING_MACROS: dict[str, MacroDef] = {
-    "enter_name": MacroDef(
-        spec=MacroSpec(
+NAMING_TAKEOVERS: dict[str, TakeoverDef] = {
+    "enter_name": TakeoverDef(
+        spec=ActionEntry(
+            kind="script",
             name="enter_name",
             params=[
-                MacroParam(
+                ScriptParam(
                     name="name",
                     type="str",
                     description="只用大写字母；主角 / 对手最多 7 个字，昵称最多 10 个",
@@ -130,4 +134,4 @@ NAMING_MACROS: dict[str, MacroDef] = {
 }
 
 
-__all__ = ["NAMING_MACROS", "naming_view"]
+__all__ = ["NAMING_TAKEOVERS", "naming_view"]

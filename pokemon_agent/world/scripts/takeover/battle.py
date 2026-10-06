@@ -1,4 +1,4 @@
-"""战斗选单（`battle_menu`）与倒下换人（`faint_switch`）的宏，外加这两个场合的视图。
+"""战斗选单（`battle_menu`）与倒下换人（`faint_switch`）的接管脚本，外加这两个场合的视图。
 
 初态：行动菜单 `▶FIGHT PKMN / ITEM RUN` 画着（`battle_menu`）；队伍列表画着（`faint_switch`）。
 出招、换人、用道具、逃跑之后自动推进战斗文字，遇到任意 `▶`、战斗标志清零或推进上限即停，
@@ -10,21 +10,20 @@ PP `wBattleMonPP` 0xD02D，队伍 `wPartyMon1` 0xD16B 起每只 44 字节，
 
 from __future__ import annotations
 
-from ..battle_status import read_battle_status
-from ..interface import (
+from ...battle_status import read_battle_status
+from ...interface import (
+    ActionEntry,
     BattleMenuView,
     FaintSwitchView,
-    MacroParam,
-    MacroReason,
-    MacroSpec,
     Memory,
     MonEntry,
     ScreenText,
+    ScriptParam,
     TaskScene,
 )
-from ..items import item_id, item_name
-from ..moves import fold
-from ..screen_text import W_IS_IN_BATTLE
+from ...items import item_id, item_name
+from ...moves import fold
+from ...screen_text import W_IS_IN_BATTLE
 from .common import (
     BALLS,
     HEAL_ITEMS,
@@ -41,7 +40,8 @@ from .common import (
     unknown_mon,
     useless,
 )
-from .engine import Abort, MacroDef, MacroRun
+from .engine import Abort, TakeoverDef, TakeoverRun
+from .outcome import TakeoverReason
 
 W_BATTLE_MON_MOVES = 0xD01C
 W_BATTLE_MON_PP = 0xD02D
@@ -95,26 +95,26 @@ def faint_view(mem: Memory) -> FaintSwitchView:
 # ---- 共用步骤 ----
 
 
-def _action(run: MacroRun, option: str) -> None:
+def _action(run: TakeoverRun, option: str) -> None:
     """行动菜单上把光标挪到 `option`（二维格子，按行列走），按 A。"""
     for _ in range(8):
         text = run.screen()
         target = _cell(text, option)
         if target is None:
-            raise Abort(MacroReason.UNEXPECTED_SCREEN, f"行动菜单里没有 {option}")
+            raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"行动菜单里没有 {option}")
         now = text.cursor_cell
         if now == target:
             run.press("a", expect=f"选 {option}")
             return
         if now is None:
-            raise Abort(MacroReason.UNEXPECTED_SCREEN, "行动菜单上没有光标")
+            raise Abort(TakeoverReason.UNEXPECTED_SCREEN, "行动菜单上没有光标")
         key = (
             ("down" if target[0] > now[0] else "up")
             if target[0] != now[0]
             else ("right" if target[1] > now[1] else "left")
         )
         run.press(key, expect=f"光标 → {option}")
-    raise Abort(MacroReason.UNEXPECTED_SCREEN, f"光标挪不到 {option}")
+    raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"光标挪不到 {option}")
 
 
 def _cell(text: ScreenText, option: str) -> tuple[int, int] | None:
@@ -125,8 +125,8 @@ def _cell(text: ScreenText, option: str) -> tuple[int, int] | None:
     return None
 
 
-def _advance(run: MacroRun) -> str:
-    """推进战斗文字，遇到 `▶`、战斗标志清零即停（`MacroRun.advance`），返回停在哪。
+def _advance(run: TakeoverRun) -> str:
+    """推进战斗文字，遇到 `▶`、战斗标志清零即停（`TakeoverRun.advance`），返回停在哪。
 
     停在战斗选单的子层（推进时误按进了招式列表等）就按 B 退回行动菜单。
     """
@@ -137,7 +137,7 @@ def _advance(run: MacroRun) -> str:
     return stop
 
 
-def _stop(run: MacroRun, text: ScreenText) -> str:
+def _stop(run: TakeoverRun, text: ScreenText) -> str:
     if run.mem[W_IS_IN_BATTLE] == 0:
         return "战斗结束"
     if text.options == ["YES", "NO"]:
@@ -147,7 +147,7 @@ def _stop(run: MacroRun, text: ScreenText) -> str:
     return ""
 
 
-def _hp_line(run: MacroRun, before: tuple[int, int, str, str]) -> str:
+def _hp_line(run: TakeoverRun, before: tuple[int, int, str, str]) -> str:
     """出招前后的 HP 变化（双方）。"""
     status = read_battle_status(run.mem)
     mine0, foe0, name0, foe_name0 = before
@@ -165,13 +165,13 @@ def _hp_line(run: MacroRun, before: tuple[int, int, str, str]) -> str:
     return "，".join(parts)
 
 
-def _snapshot(run: MacroRun) -> tuple[int, int, str, str]:
+def _snapshot(run: TakeoverRun) -> tuple[int, int, str, str]:
     status = read_battle_status(run.mem)
-    assert status is not None, "战斗宏在战斗外被调"
+    assert status is not None, "战斗接管脚本在战斗外被调"
     return status.mine.hp, status.foe.hp, status.mine.name, status.foe.name
 
 
-def _summary(head: str, run: MacroRun, before: tuple[int, int, str, str], stop: str) -> str:
+def _summary(head: str, run: TakeoverRun, before: tuple[int, int, str, str], stop: str) -> str:
     hp = _hp_line(run, before)
     return "；".join(p for p in (head, hp, stop) if p)
 
@@ -179,18 +179,18 @@ def _summary(head: str, run: MacroRun, before: tuple[int, int, str, str], stop: 
 # ---- fight ----
 
 
-def _check_fight(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_fight(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
     known = moves(run.mem, W_BATTLE_MON_MOVES, W_BATTLE_MON_PP)
     hit = next((m for m in known if fold(m.name) == fold(str(args["move"]))), None)
     if hit is None:
         names = "、".join(m.name for m in known)
-        return MacroReason.UNKNOWN_MOVE, f"在场的宝可梦不会 {args['move']}（会：{names}）"
+        return TakeoverReason.UNKNOWN_MOVE, f"在场的宝可梦不会 {args['move']}（会：{names}）"
     if hit.pp == 0:
-        return MacroReason.NO_PP, f"{hit.name} 没有 PP 了"
+        return TakeoverReason.NO_PP, f"{hit.name} 没有 PP 了"
     return None
 
 
-def _execute_fight(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_fight(run: TakeoverRun, args: dict[str, str | int]) -> str:
     before = _snapshot(run)
     move = fold(str(args["move"]))
     # 步骤 1：行动菜单选 FIGHT，等招式列表。
@@ -210,11 +210,13 @@ def _execute_fight(run: MacroRun, args: dict[str, str | int]) -> str:
 # ---- switch ----
 
 
-def _check_switch(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_switch(
+    run: TakeoverRun, args: dict[str, str | int]
+) -> tuple[TakeoverReason, str] | None:
     return check_target(_party(run.mem), str(args["pokemon"]), need_bench=True)
 
 
-def _execute_switch(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_switch(run: TakeoverRun, args: dict[str, str | int]) -> str:
     before = _snapshot(run)
     index = find_mon(_party(run.mem), str(args["pokemon"]))
     assert index is not None
@@ -229,28 +231,28 @@ def _execute_switch(run: MacroRun, args: dict[str, str | int]) -> str:
     # 步骤 3：推进战斗文字，核在场的是它。
     stop = _advance(run)
     if run.mem[W_IS_IN_BATTLE] and run.mem[W_PLAYER_MON_NUMBER] != index:
-        raise Abort(MacroReason.UNEXPECTED_SCREEN, f"推进完在场的不是 {name}")
+        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"推进完在场的不是 {name}")
     return _summary(f"换上 {name}", run, before, stop)
 
 
 # ---- use_item ----
 
 
-def _check_use(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_use(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
     mem, name, who = run.mem, str(args["item"]), str(args["pokemon"])
     item = item_id(name)
     if item is None or bag_count(mem, item) == 0:
-        return MacroReason.NOT_IN_BAG, f"背包里没有 {name}"
+        return TakeoverReason.NOT_IN_BAG, f"背包里没有 {name}"
     if item in BALLS:
         if mem[W_IS_IN_BATTLE] == TRAINER_BATTLE:
-            return MacroReason.CANNOT_USE, "训练家对战不能扔球"
+            return TakeoverReason.CANNOT_USE, "训练家对战不能扔球"
         return None
     if item in SELF_ITEMS:
         return None
     if item not in TARGET_ITEMS:
-        return MacroReason.CANNOT_USE, f"{item_name(item)} 不能在战斗里用"
+        return TakeoverReason.CANNOT_USE, f"{item_name(item)} 不能在战斗里用"
     if not who:
-        return MacroReason.TARGET_REQUIRED, f"{item_name(item)} 要指定用在哪只身上（pokemon）"
+        return TakeoverReason.TARGET_REQUIRED, f"{item_name(item)} 要指定用在哪只身上（pokemon）"
     mons = _party(mem)
     index = find_mon(mons, who)
     if index is None:
@@ -258,7 +260,7 @@ def _check_use(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, 
     return useless(item, mons[index])
 
 
-def _execute_use(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_use(run: TakeoverRun, args: dict[str, str | int]) -> str:
     mem = run.mem
     before = _snapshot(run)
     item = item_id(str(args["item"]))
@@ -284,20 +286,20 @@ def _execute_use(run: MacroRun, args: dict[str, str | int]) -> str:
         return _summary(f"{head}：{'抓到了' if caught else '没抓到'}", run, before, stop)
     have1 = bag_count(mem, item)
     if have1 != have0 - 1:
-        raise Abort(MacroReason.CANNOT_USE, f"{item_name(item)} 没有用掉；{stop}")
+        raise Abort(TakeoverReason.CANNOT_USE, f"{item_name(item)} 没有用掉；{stop}")
     return _summary(head, run, before, stop)
 
 
 # ---- run ----
 
 
-def _check_run(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_run(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
     if run.mem[W_IS_IN_BATTLE] == TRAINER_BATTLE:
-        return MacroReason.CANNOT_USE, "训练家对战不能逃"
+        return TakeoverReason.CANNOT_USE, "训练家对战不能逃"
     return None
 
 
-def _execute_run(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_run(run: TakeoverRun, args: dict[str, str | int]) -> str:
     before = _snapshot(run)
     # 步骤 1：行动菜单选 RUN。
     _action(run, "RUN")
@@ -310,11 +312,11 @@ def _execute_run(run: MacroRun, args: dict[str, str | int]) -> str:
 # ---- send_out ----
 
 
-def _check_send(run: MacroRun, args: dict[str, str | int]) -> tuple[MacroReason, str] | None:
+def _check_send(run: TakeoverRun, args: dict[str, str | int]) -> tuple[TakeoverReason, str] | None:
     return check_target(_party(run.mem), str(args["pokemon"]), need_bench=False)
 
 
-def _execute_send(run: MacroRun, args: dict[str, str | int]) -> str:
+def _execute_send(run: TakeoverRun, args: dict[str, str | int]) -> str:
     index = find_mon(_party(run.mem), str(args["pokemon"]))
     assert index is not None
     name = _party(run.mem)[index].name
@@ -326,23 +328,24 @@ def _execute_send(run: MacroRun, args: dict[str, str | int]) -> str:
         run.press("a", expect=f"换上 {name}")
     stop = _advance(run)
     if run.mem[W_IS_IN_BATTLE] and run.mem[W_PLAYER_MON_NUMBER] != index:
-        raise Abort(MacroReason.UNEXPECTED_SCREEN, f"推进完在场的不是 {name}")
+        raise Abort(TakeoverReason.UNEXPECTED_SCREEN, f"推进完在场的不是 {name}")
     return f"换上 {name}；{stop}"
 
 
-_MOVE = MacroParam(name="move", type="str", description="招式名，照视图「招式」里的写")
-_MON = MacroParam(name="pokemon", type="str", description="宝可梦昵称，照视图「队伍」里的写")
-_ITEM = MacroParam(name="item", type="str", description="道具名，照视图「背包」里的写")
-_WHO = MacroParam(
+_MOVE = ScriptParam(name="move", type="str", description="招式名，照视图「招式」里的写")
+_MON = ScriptParam(name="pokemon", type="str", description="宝可梦昵称，照视图「队伍」里的写")
+_ITEM = ScriptParam(name="item", type="str", description="道具名，照视图「背包」里的写")
+_WHO = ScriptParam(
     name="pokemon",
     type="str",
     default="",
     description="用在哪只身上（伤药、解异常、复活要给；球与 X 系列不给）",
 )
 
-BATTLE_MACROS: dict[str, MacroDef] = {
-    "fight": MacroDef(
-        spec=MacroSpec(
+BATTLE_TAKEOVERS: dict[str, TakeoverDef] = {
+    "fight": TakeoverDef(
+        spec=ActionEntry(
+            kind="script",
             name="fight",
             params=[_MOVE],
             description="出招：招式必须是在场宝可梦的且还有 PP；之后自动推进到下一个选单或战斗结束",
@@ -352,8 +355,9 @@ BATTLE_MACROS: dict[str, MacroDef] = {
         execute=_execute_fight,
         rewind_after=False,
     ),
-    "switch": MacroDef(
-        spec=MacroSpec(
+    "switch": TakeoverDef(
+        spec=ActionEntry(
+            kind="script",
             name="switch",
             params=[_MON],
             description="换人：换上一只没倒下、不在场的队员；对手会趁机出招",
@@ -363,8 +367,9 @@ BATTLE_MACROS: dict[str, MacroDef] = {
         execute=_execute_switch,
         rewind_after=False,
     ),
-    "use_item": MacroDef(
-        spec=MacroSpec(
+    "use_item": TakeoverDef(
+        spec=ActionEntry(
+            kind="script",
             name="use_item",
             params=[_ITEM, _WHO],
             description="用道具：扔球、给队员喝药 / 解异常 / 复活、X 系列；用掉一回合",
@@ -374,8 +379,10 @@ BATTLE_MACROS: dict[str, MacroDef] = {
         execute=_execute_use,
         rewind_after=False,
     ),
-    "run": MacroDef(
-        spec=MacroSpec(name="run", description="逃跑（只限野生宝可梦；不一定逃得掉）"),
+    "run": TakeoverDef(
+        spec=ActionEntry(
+            kind="script", name="run", description="逃跑（只限野生宝可梦；不一定逃得掉）"
+        ),
         scene=TaskScene.BATTLE_MENU,
         check=_check_run,
         execute=_execute_run,
@@ -383,9 +390,10 @@ BATTLE_MACROS: dict[str, MacroDef] = {
     ),
 }
 
-FAINT_MACROS: dict[str, MacroDef] = {
-    "send_out": MacroDef(
-        spec=MacroSpec(
+FAINT_TAKEOVERS: dict[str, TakeoverDef] = {
+    "send_out": TakeoverDef(
+        spec=ActionEntry(
+            kind="script",
             name="send_out",
             params=[_MON],
             description="派出下一只：必须是没倒下的队员；之后自动推进到下一个选单",
@@ -397,4 +405,4 @@ FAINT_MACROS: dict[str, MacroDef] = {
     ),
 }
 
-__all__ = ["BATTLE_MACROS", "FAINT_MACROS", "battle_view", "faint_view"]
+__all__ = ["BATTLE_TAKEOVERS", "FAINT_TAKEOVERS", "battle_view", "faint_view"]
