@@ -15,16 +15,26 @@ from .communication.FromFrontendToReviewBackendAnswerReq import (
 from .communication.FromFrontendToReviewBackendAnswerResp import (
     FromFrontendToReviewBackendAnswerResp,
 )
+from .communication.FromFrontendToReviewBackendDiscussReq import (
+    FromFrontendToReviewBackendDiscussReq,
+)
 from .communication.FromReviewBackendToFrontendAskReq import FromReviewBackendToFrontendAskReq
 from .communication.FromReviewBackendToFrontendFeedReq import FromReviewBackendToFrontendFeedReq
+from .communication.FromReviewBackendToFrontendProposalReq import (
+    FromReviewBackendToFrontendProposalReq,
+)
 from .communication.FromReviewBackendToFrontendSettleReq import (
     FromReviewBackendToFrontendSettleReq,
 )
+from .communication.ProposedAnswer import ProposedAnswer
 
 __all__ = [
     "FromFrontendToReviewBackendAnswerReq",
     "FromFrontendToReviewBackendAnswerResp",
+    "FromFrontendToReviewBackendDiscussReq",
     "FromReviewBackendToFrontendAskReq",
     "FromReviewBackendToFrontendFeedReq",
+    "FromReviewBackendToFrontendProposalReq",
     "FromReviewBackendToFrontendSettleReq",
+    "ProposedAnswer",
 ]

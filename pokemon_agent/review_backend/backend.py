@@ -25,6 +25,7 @@ from websockets.asyncio.server import ServerConnection, broadcast, serve
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
 
+from pokemon_agent.schemas.agent_reviewer.communication import ChatTurn, ProposalMsg
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToReviewBackendAuditReq,
@@ -36,11 +37,14 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.review_backend import (
     FromFrontendToReviewBackendAnswerReq,
     FromFrontendToReviewBackendAnswerResp,
+    FromFrontendToReviewBackendDiscussReq,
     FromReviewBackendToFrontendAskReq,
     FromReviewBackendToFrontendFeedReq,
+    FromReviewBackendToFrontendProposalReq,
     FromReviewBackendToFrontendSettleReq,
 )
 
+from .agent_client import AgentClient
 from .page import PAGE_HTML
 
 HISTORY_LIMIT = 50
@@ -48,6 +52,9 @@ HISTORY_LIMIT = 50
 
 FEED_LIMIT = 300
 """网页重连时补发的实时 trace 条数。"""
+
+AI_COUNTDOWN = 30.0
+"""AI 模式默认倒计时（秒）：前端从首个 proposal 到达才开始计，归零自动提交。"""
 
 POLICY_VIOLATION = 1008
 """拒绝连接时的 WebSocket 关闭码（RFC 6455：违反策略）。"""
@@ -67,7 +74,7 @@ class _Pending:
 class ReviewBackend:
     """后端的全部状态与三条路由。用法：`async with backend.serve(host, port) as server: ...`。"""
 
-    def __init__(self) -> None:
+    def __init__(self, agent_client: AgentClient | None = None) -> None:
         self._seq = 0
         self._pending: _Pending | None = None
         self._history: deque[
@@ -76,6 +83,8 @@ class ReviewBackend:
         self._feed: deque[str] = deque(maxlen=FEED_LIMIT)
         self._ui: set[ServerConnection] = set()
         self._harness: ServerConnection | None = None
+        self._agent: AgentClient | None = agent_client
+        self._rounds: dict[int, int] = {}
 
     def serve(self, host: str, port: int) -> serve:
         """起服务（`async with` 用）；`port=0` 由系统挑。端口被占时进入即抛 `OSError`。
@@ -94,6 +103,41 @@ class ReviewBackend:
             "pending_seq": self._pending.ask.seq if self._pending else None,
             "harness_connected": self._harness is not None,
         }
+
+    async def start_agent(self) -> None:
+        """连 agent 进程（跳 C）；连不上降级为无 agent，不崩。须在有事件循环里调。"""
+        if self._agent is None:
+            return
+        ok = await self._agent.connect(self._receive_proposal)
+        if not ok:
+            _say("[agent] 未连上，降级为无 agent（前端退化为纯人 / 无提案）")
+            self._agent = None
+
+    def _latest_frame(self) -> str | None:
+        """逆序扫 `_feed`，取第一条含 `content.frame` 的事件（只取该字段，不碰游戏语义）。"""
+        for raw in reversed(self._feed):
+            try:
+                ev = json.loads(raw)["event"]
+                content = ev.get("content") or {}
+            except (ValueError, KeyError, TypeError):
+                continue
+            if content.get("frame"):
+                return content["frame"]
+        return None
+
+    def _receive_proposal(self, pm: ProposalMsg) -> None:
+        """agent 推回的 proposal → 套上 round 转成跳 B `ProposalReq` 广播给 `/ui`。"""
+        seq = pm.seq
+        if self._pending is None or self._pending.ask.seq != seq:
+            return  # 已了结或不是当前 pending：丢弃
+        round_ = self._rounds.get(seq, 0)
+        broadcast(
+            self._ui,
+            FromReviewBackendToFrontendProposalReq(
+                seq=seq, proposal=pm.proposal, round=round_
+            ).model_dump_json(),
+        )
+        self._rounds[seq] = round_ + 1
 
     # ---- 握手前：普通 HTTP ----
 
@@ -144,10 +188,15 @@ class ReviewBackend:
             _say("run 断开了")
 
     async def _ask(self, conn: ServerConnection, req: HarnessReq) -> HarnessResp | None:
-        """推一问、等人答 / 超时 / run 断开，了结并记进历史；run 断开时返回 None。"""
+        """推一问、等人答 / run 断开，了结并记进历史；run 断开时返回 None。
+
+        **不再自管超时**：timeout=None，后端无限等（人模式靠人答、AI 模式靠前端倒计时）。
+        """
         # 步骤 1：编号、挂起、推给网页。
         self._seq += 1
-        ask = _to_ask(self._seq, req)
+        has_agent = self._agent is not None and self._agent.connected
+        deadline = (time.time() + AI_COUNTDOWN) if has_agent else None
+        ask = _to_ask(self._seq, req, deadline)
         answer: asyncio.Future[FromFrontendToReviewBackendAnswerReq] = (
             asyncio.get_running_loop().create_future()
         )
@@ -155,30 +204,38 @@ class ReviewBackend:
         broadcast(self._ui, ask.model_dump_json())
         _say(f"第 {ask.seq} 问（{ask.kind}）：{ask.prompt}")
 
-        # 步骤 2：等三件事里先到的那件。
+        # 步骤 2：有 agent 则经跳 C 发 seed（不阻塞）；人模式无倒计时。后端无限等。
+        if has_agent:
+            frame = self._latest_frame()
+            self._rounds[ask.seq] = 0
+            await self._agent.seed(ask.seq, ask, frame)
+
         gone = asyncio.ensure_future(conn.wait_closed())
         try:
             done, _ = await asyncio.wait(
-                {answer, gone}, timeout=req.timeout_s, return_when=asyncio.FIRST_COMPLETED
+                {answer, gone}, timeout=None, return_when=asyncio.FIRST_COMPLETED
             )
         finally:
             gone.cancel()
             self._pending = None
         if answer in done:
-            by = "human"
+            by = answer_by(answer.result())
         elif gone in done:
             by = "harness_gone"
         else:
             by = "timeout"
 
-        # 步骤 3：了结、广播、记历史。
-        settle = _settle(ask, answer.result() if by == "human" else None, by)
+        # 步骤 3：了结、广播、记历史；顺手关掉 agent 侧该 seq。
+        if self._agent is not None:
+            await self._agent.close(ask.seq)
+        self._rounds.pop(ask.seq, None)
+        settle = _settle(ask, answer.result() if answer in done else None, by)
         self._history.append((ask, settle))
         broadcast(self._ui, settle.model_dump_json())
         _say(f"第 {ask.seq} 问了结：{by}")
         if by == "harness_gone":
             return None
-        return _to_resp(settle, answered=by == "human")
+        return _to_resp(settle, answered=by in ("human", "agent"))
 
     # ---- /feed：实时 trace ----
 
@@ -212,6 +269,13 @@ class ReviewBackend:
             if self._pending is not None:
                 await conn.send(self._pending.ask.model_dump_json())
             async for raw in conn:
+                try:
+                    data = json.loads(raw)
+                except (ValueError, TypeError):
+                    continue
+                if data.get("msg") == "discuss":
+                    await self._discuss(raw)
+                    continue
                 resp = self._answer(raw)
                 if resp is not None:
                     await conn.send(resp.model_dump_json())
@@ -219,6 +283,30 @@ class ReviewBackend:
             pass
         finally:
             self._ui.discard(conn)
+
+    async def _discuss(self, raw: str | bytes) -> None:
+        """收网页「发给 AI」：校验 seq + 非空 → 取最新帧 → 经跳 C 发 turn 给 agent。
+
+        agent 推回新 proposal（round+1）后由监听协程广播。agent 没连上则丢弃打日志。
+        """
+        try:
+            req = FromFrontendToReviewBackendDiscussReq.model_validate_json(raw)
+        except ValidationError as exc:
+            _say(f"网页发来看不懂的 discuss，丢弃：{exc.errors()[:1]}")
+            return
+        pending = self._pending
+        if pending is None or pending.ask.seq != req.seq:
+            _say(f"[agent] discuss 的 seq {req.seq} 不是当前 pending，丢弃")
+            return
+        if not req.text.strip():
+            return
+        if self._agent is None or not self._agent.connected:
+            _say("[agent] 没有连上的 agent，discuss 丢弃")
+            return
+        frame = self._latest_frame()
+        await self._agent.turn(
+            req.seq, ChatTurn(role="human", text=req.text.strip()), frame
+        )
 
     def _answer(self, raw: str | bytes) -> FromFrontendToReviewBackendAnswerResp | None:
         """收一份答案：先答先得；已了结、编号不对、与问不配都回 `ok=False`。看不懂的消息丢弃。"""
@@ -232,8 +320,11 @@ class ReviewBackend:
             return _ack(req.seq, "这一问已了结或不存在")
         if pending.answer.done():
             return _ack(req.seq, "已被别处答了")
-        if (pending.ask.kind == "inject" and req.text is None) or (
-            pending.ask.kind == "audit" and req.verdict is None
+        # 显式 `by="timeout"` 表示"无人决断，用默认"——即便内容为空也接受；
+        # 其余 `by`（human / agent）必须与问相配（插话有 text、审有 verdict）。
+        if req.by != "timeout" and (
+            (pending.ask.kind == "inject" and req.text is None)
+            or (pending.ask.kind == "audit" and req.verdict is None)
         ):
             return _ack(req.seq, "答案与问不配")
         pending.answer.set_result(req)
@@ -254,9 +345,8 @@ def _parse_harness(raw: str | bytes) -> HarnessReq | None:
     return None
 
 
-def _to_ask(seq: int, req: HarnessReq) -> FromReviewBackendToFrontendAskReq:
-    """把跳 A 请求摊平成推给网页的一问。"""
-    deadline = time.time() + req.timeout_s
+def _to_ask(seq: int, req: HarnessReq, deadline: float | None) -> FromReviewBackendToFrontendAskReq:
+    """把跳 A 请求摊平成推给网页的一问。`deadline` 由调用方决定（有 agent → 倒计时；否则 None）。"""
     if isinstance(req, FromHarnessToReviewBackendInjectReq):
         return FromReviewBackendToFrontendAskReq(
             seq=seq,
@@ -279,6 +369,16 @@ def _to_ask(seq: int, req: HarnessReq) -> FromReviewBackendToFrontendAskReq:
         task_id=req.task_id,
         deadline=deadline,
     )
+
+
+def answer_by(ans: FromFrontendToReviewBackendAnswerReq | None) -> str:
+    """由答案判定 settle 的 `by`：空框（没填内容）= `timeout`；否则取 `ans.by`（human / agent）。"""
+    if ans is None:
+        return "timeout"
+    filled = (ans.text not in (None, "")) or ans.verdict is not None
+    if not filled:
+        return "timeout"
+    return ans.by
 
 
 def _settle(

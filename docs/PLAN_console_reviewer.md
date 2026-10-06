@@ -305,7 +305,7 @@ outcomes: list[...]        # 不动
      （`note` 里有人/模型给的失败理由），不用去 trace 里捞。
 - **渲染层靠 `parent_id` 缩进**（`prompts/run_plan` 的目标表渲染）：`[0]` / `[1]`
   的 depth 由父子链算，不再由列表下标算。
-  **`tools/trace/render.py` 那两处 goal 渲染器改成不记层级了**（0914 定案，本条
+  **`direct/trace/render.py` 那两处 goal 渲染器改成不记层级了**（0914 定案，本条
   的"两处"作废）：trace 信封里 `Task` / `Goal` 都不带 `parent_id`，层级根本算不出来；
   而位置能从目标文字那行自己数出来，另记一份只会跟 `run_plan` prompt 的**全表序号**
   （`[i]`，含 completed/failed/abandoned 行）撞成"同一个 `[0]` 两种含义"。
@@ -381,7 +381,7 @@ outcomes: list[...]        # 不动
 | `harness/episode/open/record_observation.py` | 新增插话点（亮判读给对人） |
 | `harness/episode/gate/judge.py` | 新增插话点（亮裁决） |
 | `schemas/harness/communication/FromHarnessToReviewerReviewReq.py` | `goals: list[Task]` → 整表；响应换成 `AuditVerdict` |
-| `tools/trace/render.py` | **本条作废（0914）**：原写"两处 goal 渲染器（第 81、825 行）按 `parent_id` 算 depth"——trace 侧拿不到 `parent_id`（`Task`/`Goal` 都不带），两处 goal 渲染器（`run_start` / `observe`）收成**共用的一份、不记层级前缀**，见 §4.2 与 CHANGELOG 第 91 条 |
+| `direct/trace/render.py` | **本条作废（0914）**：原写"两处 goal 渲染器（第 81、825 行）按 `parent_id` 算 depth"——trace 侧拿不到 `parent_id`（`Task`/`Goal` 都不带），两处 goal 渲染器（`run_start` / `observe`）收成**共用的一份、不记层级前缀**，见 §4.2 与 CHANGELOG 第 91 条 |
 | `pokemon_agent/config.py` | 删 `MAX_GOAL_RETRIES`；docstring 里解释它的那段（第 47-49、86 行附近）同步清 |
 | `pokemon_agent/build.py` | 造 `ConsoleReviewer` 注入；删 `RunInteraction`/`AutoContinueReviewer` 装配 |
 | `experiment/real_check/check_harness.py` | `interaction, reviewer = make_interaction_pair()` → 直接造 reviewer |

@@ -26,7 +26,10 @@ class FromHarnessToReviewBackendAuditReq(BaseModel):
     form_kind: str = Field(description="被审对象的种类")
     outcome_text: str = Field(description="源程序渲染好的结论文本")
     events: list[str] = Field(default_factory=list, description="被审对象的事件，一条一行")
-    timeout_s: float = Field(gt=0, description="后端等人答的秒数")
+    timeout_s: float | None = Field(
+        default=None,
+        description="后端等人答的秒数；`None` 表示不自带超时（交前端 / agent 计时）。A5 起可空",
+    )
 
 
 __all__ = ["FromHarnessToReviewBackendAuditReq"]

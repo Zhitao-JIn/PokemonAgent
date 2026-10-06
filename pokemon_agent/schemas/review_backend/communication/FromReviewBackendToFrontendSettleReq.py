@@ -21,7 +21,9 @@ class FromReviewBackendToFrontendSettleReq(BaseModel):
 
     msg: Literal["settle"] = Field(default="settle", description="消息标签：`/ui` 上据此分流")
     seq: int = Field(ge=1, description="了结的是第几问")
-    by: Literal["human", "timeout", "harness_gone"] = Field(description="怎么了结的")
+    by: Literal["human", "timeout", "harness_gone", "agent"] = Field(
+        description="怎么了结的（agent = AI 复核席自动提交）"
+    )
     text: str = Field(default="", description="插话：交回的话")
     verdict: AuditVerdict | None = Field(default=None, description="审：交回的表态")
     note: str = Field(default="", description="审：推翻理由")

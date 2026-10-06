@@ -8,6 +8,13 @@
 
 from __future__ import annotations
 
-from .backend import FEED_LIMIT, HISTORY_LIMIT, ReviewBackend
+from .agent_client import AgentClient
+from .backend import AI_COUNTDOWN, FEED_LIMIT, HISTORY_LIMIT, ReviewBackend
 
-__all__ = ["FEED_LIMIT", "HISTORY_LIMIT", "ReviewBackend"]
+__all__ = [
+    "AI_COUNTDOWN",
+    "AgentClient",
+    "FEED_LIMIT",
+    "HISTORY_LIMIT",
+    "ReviewBackend",
+]

@@ -10,6 +10,12 @@
 > W4 ✅ 09-25，CHANGELOG 251（`--review-url` 换后端地址）；W4b ✅ 09-25，CHANGELOG 252；
 > W5 ✅ 09-25：`experiment/real_check/check_web_reviewer.py` 三场景全过（人在答 / 没人答 / 后端中途没了），
 > 实时事件与盘上逐条同序。下一步 ★ 在你本机。
+> W6 ✅ 09-29（**提前于 ★**：用户定向"file_reviewer.py 删掉"）——删 `harness/file_reviewer.py`
+> 与它的全部引用（`harness/__init__.py` 出口 docstring、`pyboy_world._png_data_uri` 的举例、
+> harness SPEC §二/§六/§八、experiment SPEC §四/§五）。它自 W4 起已无任何代码引用
+> （`--review` 早改接 Web），删它不影响 run 行为；★ 真机网页验证仍然欠着。
+> **Agent Reviewer 叠加（跳 C 独立进程视觉 LLM 复核席）**：本文件 W1–W7 是其前置设施，未动；
+> A1–A6 已落码（CHANGELOG 340，`docs/agent_reviewer/` 自有 spec/plan/card），A7 真机三进程跑交你本机。
 
 ---
 
@@ -34,7 +40,7 @@
 | W4b | `LiveFeedTrace` + `/feed` + 网页时间线与画面 | W3 | — |
 | W5 | 自测（脚本当源程序 / 当网页） | W4 W4b | — |
 | ★ | **你本机**：①真机 `--review` 在网页上答一次 ②`check_checkpoint.py --record` 重录 | W5 | — |
-| W6 | 删 FileReviewer 及残留；spec 文档同步 | ★ | — |
+| W6 | ~~删 FileReviewer 及残留；spec 文档同步~~ ✅ 09-29（残留文件待你确认，见下） | ~~★~~ | — |
 | W7 | AGENTS（需你批）+ 记账收尾 | W6 | — |
 
 ---
@@ -121,10 +127,13 @@
 1. `python -m pokemon_agent.review_backend` → 浏览器开页 → `check_harness.py --review`，在网页上至少答一次插话、推翻一次审；看 `wait_s` 判断 30s 够不够。
 2. `check_checkpoint.py --record` 重录，五项全过。
 
-## W6 删旧
+## W6 删旧（✅ 09-29，除残留文件）
 
-- 删 `harness/file_reviewer.py`、`harness/__init__.py` 相关导出与 docstring、`check_harness.py` 残余；`.workbuddy/` 两个残留文件与 `_to_delete/_filereviewer_retired/`（**删前问你**）。
-- `docs/spec/harness/SPEC.md` §六重写；`docs/spec/experiment/SPEC.md` FileReviewer 处；DATAFLOW。
+- ✅ 删 `harness/file_reviewer.py`、`harness/__init__.py` 的 docstring 提及、`pyboy_world.py` 的举例；
+  `check_harness.py` 早无残余（W4 已改接 Web）。
+- ✅ `docs/spec/harness/SPEC.md` §二 / §六 / §八；`docs/spec/experiment/SPEC.md` §四 / §五。
+- ⬜ 残留待你确认（**删前问你**）：`.workbuddy/review_request.json`、`.workbuddy/review_answer.txt`、
+  `_to_delete/_filereviewer_retired/`。
 
 ## W7 收尾
 

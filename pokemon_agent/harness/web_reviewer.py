@@ -35,9 +35,6 @@ from .review_render import audit_prompt, format_form, outcome_kind, render_event
 DEFAULT_URL = "ws://127.0.0.1:8765"
 """后端缺省地址（与 `python -m pokemon_agent.review_backend` 的缺省端口一致）。"""
 
-GRACE_S = 5.0
-"""等回话时比后端的超时多等的秒数：超时由后端计、由后端回默认值，这边只兜底。"""
-
 CONNECT_TIMEOUT_S = 5.0
 """构造时连后端的等待上限。"""
 
@@ -48,16 +45,16 @@ class WebReviewer:
     """网页实现：插话与审都转给常驻后端，由网页上的人答。"""
 
     def __init__(
-        self, run_id: str, url: str = DEFAULT_URL, timeout: float = WEB_REVIEW_TIMEOUT
+        self, run_id: str, url: str = DEFAULT_URL, timeout: float | None = WEB_REVIEW_TIMEOUT
     ) -> None:
         """连后端的 `/harness`。
 
         run_id：这次 run 的标识，每一问都带上。
         url：后端地址（`ws://host:port`）。
-        timeout：每一问等人的秒数，交给后端计时。
+        timeout：每一问等人的秒数；`None` 表示不自带超时——交给后端 / 前端 / agent 计时
+          （`--review` 默认走这条，AI 模式由网页倒计时提交）；纯人路径传 `WEB_REVIEW_TIMEOUT`。
         失败：连不上 / 被拒（已有别的 run 连着）时抛 `OSError`。
         """
-        assert timeout > 0, "timeout 必须为正"
         self._run_id, self._url, self._timeout = run_id, url, timeout
         try:
             self._conn: ClientConnection | None = connect(
@@ -68,7 +65,8 @@ class WebReviewer:
                 f"连不上人在环后端 {url}（{exc}）——先在本机起 "
                 "`python -m pokemon_agent.review_backend`，再开网页"
             ) from exc
-        _say(f"已连上后端 {url}（run={run_id}，每问等 {timeout:g}s）")
+        wait = f"{timeout:g}s" if timeout is not None else "∞（后端 / 前端 / agent 计时）"
+        _say(f"已连上后端 {url}（run={run_id}，每问等 {wait}）")
 
     def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
         """**插话**：表单渲染成文本交给后端，等网页上的人说一句（空串 = 没意见）。"""
@@ -119,7 +117,7 @@ class WebReviewer:
             return None
         try:
             self._conn.send(wire.model_dump_json())
-            raw = self._conn.recv(timeout=self._timeout + GRACE_S)
+            raw = self._conn.recv(timeout=self._timeout)
             return resp_type.model_validate_json(raw)
         except (ConnectionClosed, TimeoutError, OSError, ValidationError) as exc:
             _say(f"后端断开或回话异常（{type(exc).__name__}: {exc}）——本问与之后都按默认值处理")

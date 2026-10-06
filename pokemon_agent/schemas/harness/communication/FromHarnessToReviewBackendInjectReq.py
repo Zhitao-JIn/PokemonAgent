@@ -22,7 +22,10 @@ class FromHarnessToReviewBackendInjectReq(BaseModel):
     prompt: str = Field(description="给人看的说明")
     form_kind: str = Field(default="", description="表单类型标签，页面据此挑面孔")
     form_text: str = Field(description="源程序渲染好的表单文本")
-    timeout_s: float = Field(gt=0, description="后端等人答的秒数")
+    timeout_s: float | None = Field(
+        default=None,
+        description="后端等人答的秒数；`None` 表示不自带超时（交前端 / agent 计时）。A5 起可空",
+    )
 
 
 __all__ = ["FromHarnessToReviewBackendInjectReq"]

@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from pokemon_agent.direct.interface import TraceToolPort
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolJudgeResp,
     FromHarnessToReviewerAuditReq,
@@ -21,7 +22,6 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 from pokemon_agent.schemas.harness.domain import JudgeFeedback, ReviewMark
-from pokemon_agent.tools.interface import TraceToolPort
 
 from .interface.reviewer import Reviewer
 from .review_render import outcome_kind
