@@ -20,7 +20,7 @@ harness 想多签一样东西都没有地方放。
 `ActMemory` 写成一条（`entry`）或按坐标列个清单（`refs`）；
 类型名决定不了格式，"这是哪笔账"只有调用方知道。
 
-各 kind 必填的字段见 `tools/trace/render.py` 每个渲染函数入口的 assert；
+各 kind 必填的字段见 `direct/trace/render.py` 每个渲染函数入口的 assert；
 `content` 的字段名是跨模块契约（观测台前端按字段名渲染），变更权在 tool 层。
 """
 
@@ -50,7 +50,7 @@ from pokemon_agent.schemas.memory import (
     ObjectFactEvent,
     TaskMemory,
 )
-from pokemon_agent.world import MacroOutcome, Observation, RamReadout
+from pokemon_agent.world import Observation, RamReadout
 
 from .ModelCall import ModelCall
 from .RunResp import RunResp
@@ -175,6 +175,11 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     落盘层补 `start = end =` 记账时刻，封套里没有独立于操作时间的记账时刻。"""
     ended_at: float | None = None
     """操作结束时刻；**排序的唯一依据**（`(ended_at, uuid)` 升序）。见 `started_at`。"""
+    timings: dict[str, float] | None = None
+    """检索的**分段耗时**（秒，`prepare`/`bm25`/`vector`/`rrf`/`rerank`）——只有
+    `read_knowledge` 带（0928 324，随检索返回值从 memory 模块带出），其余读口
+    不计时、省略这个键（等值过滤没有分段可言）。渲染进 content 的 `timings` 键；
+    **不参与排序**——排序唯一依据是 `(ended_at, uuid)`，分段耗时只是观测数据。"""
     refs: list[str] | None = None
     """命中的**是谁**——每一条一个字符串（`render.retrieve_node` 原样转发）。
 
@@ -241,7 +246,8 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     （`press_key` 自己没有 LLM 调用），所以"人说了什么"天然属于那条链的账。"""
     checkpoint: CheckpointMark | None = None
     """存档三本账（`checkpoint_*`）的素材。"""
-    macro: MacroOutcome | None = None
-    """宏执行账（`run_macro`）的素材：world 返回的宏结果原样。"""
+    report: dict[str, Any] | None = None
+    """脚本执行账（`act_call` script 形）的素材：脚本终态报告
+    （`{ok, code, data, events, calls}` 的 JSON 形状）原样。"""
     review: ReviewMark | None = None
     """问人两本账（`review_inject` / `review_audit`）的素材。"""

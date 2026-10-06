@@ -5,8 +5,8 @@
     感知    task_ctx（当前帧 + 本 task ActMemory + 受限动作空间）  perceive 写
             after_observation（本圈 sense 取的新帧，格内流转） perceive 首单元写、close_step 清
     停摆    stall_key / stall_count                          perceive 写
-    决策    action（本圈那一个键或一个宏）                    plan_task 写，perceive 消费后清
-            last_macro（上一动作是宏时的结果，否则 None）       act 写
+    决策    action（本圈那一个键或一条脚本）                  plan_task 写，perceive 消费后清
+            last_report / last_result（上一动作是脚本时的报告与一行结果） act 写
     判定    termination（done / success 由它推出）                     review_and_judge 写
     收尾    act_verdicts / reason / memory / output                 task_done 写
 
@@ -22,13 +22,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from pokemon_agent.brain import Action, Task
 from pokemon_agent.brain.interface import VerifyVerdict
 from pokemon_agent.schemas.harness.domain import Settled, TaskOutput, Termination
 from pokemon_agent.schemas.memory import ActMemory, TaskMemory
-from pokemon_agent.world import ActionSpace, MacroOutcome, TaskObservation
+from pokemon_agent.world import ActionSpace, TaskObservation
 
 
 class TaskContext(BaseModel):
@@ -80,10 +82,22 @@ class TaskState(Settled, BaseModel):
     stall_count: int = Field(default=0, ge=0, description="连续多少键画面与动作都无变化")
 
     action: Action | None = Field(
-        default=None, description="本圈那一个键或一个宏；perceive 消费后清为 None"
+        default=None, description="本圈那一个键或一条脚本；perceive 消费后清为 None"
     )
-    last_macro: MacroOutcome | None = Field(
-        default=None, description="上一个动作是宏时它的结果；按键时为 None（act 每次覆盖）"
+    last_report: dict[str, Any] | None = Field(
+        default=None,
+        description="上一个动作是脚本时它的终态报告（{ok, code, data, events, calls}）；"
+        "其它动作时为 None（act 每次覆盖）",
+    )
+    last_result: str = Field(
+        default="",
+        description="上一个动作是脚本时的一行结果（调用 → 结局码：摘要或原因），喂下一轮决策；"
+        "其它动作时为空串（act 每次覆盖）",
+    )
+    last_event: dict[str, Any] | None = Field(
+        default=None,
+        description="上一个动作是按键时它的裸对象事件（P6 起 world 侧判定，随 step 响应带来）；"
+        "其它动作时为 None（act 每次覆盖）",
     )
 
     termination: Termination | None = Field(

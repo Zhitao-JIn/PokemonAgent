@@ -1,8 +1,8 @@
 """`plan_task` 格（task 层）：**产键**——问 chooser 要这一键，写 `state.action`。
 
 素材：RAM 档观测（含屏幕文字读出的对话 / 选项 / 光标）+ 受限动作空间 + 本 task 目标
-+ 最近 8 条 ActMemory + 上一宏结果。**只产出单键**：取首段、`times` 恒为 1（prompt 同样要求单键）；
-接管场合产出一个宏调用，原样交出。
++ 最近 8 条 ActMemory + 上一脚本结果。**只产出单键**：取首段、`times` 恒为 1
+（prompt 同样要求单键）；选了脚本则产出一个脚本调用，原样交出。
 
 失败契约同 judge：重试耗尽落整条账 + `CALL_EXHAUSTED`（`link="choose"`）后原样上抛。
 账：`choose_call`（MODEL_CALL）+ `choose_verdict`（LLM_OUTCOME）。
@@ -48,7 +48,7 @@ def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
         obs=state.task_ctx.observation,
         space=state.task_ctx.action_space,
         memories=history,
-        last_macro=state.last_macro.describe() if state.last_macro is not None else "",
+        last_result=state.last_result,
         knowledge="\n\n".join(state.knowledge),
     )
 
@@ -95,7 +95,7 @@ def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
     )
 
     # ========== 3. 单键化：取首段，写 THINK ==========
-    if resp.action.macro is not None:
+    if resp.action.script is not None:
         action = resp.action
     else:
         head = resp.action.sequence[0].model_copy(update={"times": 1})

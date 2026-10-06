@@ -1,6 +1,6 @@
-"""`detect_stall`：比较"新帧机械状态 + 这一键"与上一键，累计 `stall_count`。
-宏动作按结果比：被拒的宏不论参数一律视同同一个无效动作；
-其余带上结果那一句（战斗里同一招连出，双方 HP 在变就不算停摆）。
+"""`detect_stall`：比较"新帧机械状态 + 这一个动作"与上一个，累计 `stall_count`。
+脚本动作按结果比：没执行到位的脚本不论参数一律按"脚本名 + 结局码"算同一个无效动作；
+执行到位的带上结果那一句（战斗里同一招连出，双方 HP 在变就不算停摆）。
 
 算数与判断分离：阈值（`ACT_STALL_LIMIT`）只由 `review_and_judge` 读。
 """
@@ -13,8 +13,9 @@ from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Action
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
-from pokemon_agent.world import MacroOutcome, MacroStatus, TaskObservation
+from pokemon_agent.world import TaskObservation
 
+from ..script_report import describe_call
 from ..task_runtime import TaskRuntime
 from ..task_state import TaskState
 
@@ -24,13 +25,18 @@ def compute_stall(
     action: Action,
     prev_key: str | None,
     prev_count: int,
-    macro: MacroOutcome | None = None,
+    report: dict[str, Any] | None = None,
 ) -> tuple[str, int]:
-    """纯函数：这一键的停摆键与连续计数（与上一键相同则 +1，否则归 1）。"""
-    if macro is None:
+    """纯函数：这一个动作的停摆键与连续计数（与上一个相同则 +1，否则归 1）。
+
+    report：上一动作是脚本时的终态报告；按键为 None。
+    """
+    if report is None or action.script is None:
         tail = action.describe()
+    elif not report.get("ok"):
+        tail = f"{action.script.name} → {report.get('code', '')}"
     else:
-        tail = "rejected" if macro.status is MacroStatus.REJECTED else macro.describe()
+        tail = describe_call(action, report)
     key = f"{after.stall_key()}|{tail}"
     count = prev_count + 1 if prev_key == key else 1
     return key, count
@@ -42,7 +48,7 @@ def detect_stall(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, A
         return {}
     assert state.after_observation is not None, "sense 没有产出新帧"
     key, count = compute_stall(
-        state.after_observation, state.action, state.stall_key, state.stall_count, state.last_macro
+        state.after_observation, state.action, state.stall_key, state.stall_count, state.last_report
     )
     runtime.context.trace.append(
         FromHarnessToTraceToolAppendReq(

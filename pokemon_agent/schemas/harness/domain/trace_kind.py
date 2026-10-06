@@ -10,7 +10,7 @@
 
 **两件事分得清**：`TraceKind`（有哪几种账要记）归 harness；
 **每种账的 `content` 里有哪些字段**（这笔账长什么样）归 tool 的渲染层
-（`tools/trace/render.py`）——那是跨模块契约，观测台前端按字段名渲染。
+（`direct/trace/render.py`）——那是跨模块契约，观测台前端按字段名渲染。
 
 ## 0914 定案：它是账名词表，不是"派发键"
 
@@ -38,7 +38,8 @@
   `summarize_task_call` ↔ `write_task_memory`、`summarize_episode_call` ↔ `write_episode_memory`；
 - **记忆读写用全名**：`read_<记忆名>` / `write_<记忆名>`（act_memory / task_memory /
   episode_memory / object_memory / knowledge）；
-- **动作动词在前**：`press_key` / `check_stall` / `advance_step` / `get_action_space`；
+- **动作动词在前**：`act_call`（P5，原 `press_key`）/ `check_stall` / `advance_step`
+  / `get_action_space`；
 - **生命周期三件套**：`<层>_start` 在该层入口、`<层>_end` 在该层 `*_done`、`<层>_error` 由
   **接住异常的那一格**记（task 的由 episode `act`、episode 的由 run `act`、run 的由 `new_run`）；
 - **定案**：`settle_goal`（run 给目标表定案）/ `settle_task`（episode 给任务表定案）。
@@ -71,7 +72,7 @@ class TraceKind(StrEnum):
     # ---- 账：模型调用（**九条链路各一条**）----
     # 值带上 `_call` 后缀，与 `link` 那一维（纯链路名 `choose`）区分开：
     # "一次 choose 链的调用账"叫 `choose_call`，"这条账属于哪条链"叫 `link="choose"`。
-    # 链路名的唯一真源是 `tools/trace/render._CALL_LINK`。
+    # 链路名的唯一真源是 `direct/trace/render._CALL_LINK`。
     SENSE_CALL = "sense_call"
     CHOOSE_CALL = "choose_call"
     PLAN_CALL = "plan_call"
@@ -108,15 +109,16 @@ class TraceKind(StrEnum):
     # ---- 一步之内的各类事件（不经模型）----
     SENSE_FRAME = "sense_frame"
     CHOOSE_VERDICT = "choose_verdict"
-    PRESS_KEY = "press_key"
-    """**一个键的执行**（`act` 节点）。
+    ACT_CALL = "act_call"
+    """**一个动作的执行**（`act` 节点），content 按 key / script 两形（P5，341→342）：
 
-    0914 改名：此前叫 `act`，而它的 `type` 也是 `act`——同一本账上两个字段是同一个
-    词，读账像回声。补上动词（`do_`）之后，同族另有 `get_action_space` /
-    `check_stall`。
+    - key 形：`{sequence:[{name,times}]}`（原 `press_key` 的形状原样随迁）；
+    - script 形：`{script, args, ok, code, data, events}`（脚本终态报告）。
+
+    0914 改名史：`act` → `press_key`（补动词）；P5 再改 `act_call`——脚本动作
+    也是"一次 act 调用"，键只是它的 key 形，`press_key` 这个名字盖不住 script 形。
+    接管场合的脚本同样走 script 形（`data` 里带场合、结局、摘要与逐步明细）。
     """
-    RUN_MACRO = "run_macro"
-    """**一个宏的执行**（`act` 节点，接管场合）：调用、结果、摘要与逐步明细。"""
     GET_ACTION_SPACE = "get_action_space"
     """这一步允许的动作名（掩码结果）。0914 改名：此前叫 `action_space`，缺动词。"""
     CHECK_STALL = "check_stall"
