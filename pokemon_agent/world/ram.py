@@ -25,6 +25,9 @@ from .interface.domain import (
     GRID_COLS,
     GRID_ROWS,
     ITEM,
+    LEDGE_DOWN,
+    LEDGE_LEFT,
+    LEDGE_RIGHT,
     PERSON,
     PLAYER_CELL,
     SIGN,
@@ -81,6 +84,20 @@ W_CUR_MAP = 0xD35E
 W_Y_COORD, W_X_COORD = 0xD361, 0xD362
 W_COLLISION_PTR = 0xD530
 W_GRASS_TILE = 0xD535
+W_CUR_MAP_TILESET = 0xD367
+OVERWORLD_TILESET = 0
+"""台阶只存在于野外 tileset（pokered `HandleLedges` 开头就判 `wCurMapTileset == OVERWORLD`）。"""
+
+LEDGE_TILES: dict[int, str] = {
+    0x36: LEDGE_DOWN,
+    0x37: LEDGE_DOWN,
+    0x27: LEDGE_LEFT,
+    0x0D: LEDGE_RIGHT,
+    0x1D: LEDGE_RIGHT,
+}
+"""野外 tileset 里台阶的 tile id → 能跳的方向（pokered `data/tilesets/ledge_tiles.asm`
+的第三列；取格子左下子 tile，与 `HandleLedges` 读面前 tile 的位置一致）。
+实测：Route 1 y=13 与常青市 y=27 两排台阶读出的都是 $36/$37。"""
 
 W_NUM_WARPS = 0xD3AE
 """门的数量，后面跟着 N 条 `(y, x, 目标 warp, 目标地图)`。
@@ -250,6 +267,7 @@ def read_terrain(mem: Memory) -> TerrainMap:
     passable = read_passable(mem)
     tiles = read_screen_tiles(mem)
     grass = int(mem[W_GRASS_TILE])
+    ledges = LEDGE_TILES if int(mem[W_CUR_MAP_TILESET]) == OVERWORLD_TILESET else {}
     dc, dr = SUB_TILE
 
     rows: list[list[str]] = []
@@ -263,6 +281,8 @@ def read_terrain(mem: Memory) -> TerrainMap:
             tile = tiles[2 * r + dr][2 * c + dc]
             if tile == grass:
                 line.append(GRASS)
+            elif tile in ledges:
+                line.append(ledges[tile])
             else:
                 line.append("." if tile in passable else "#")
         rows.append(line)

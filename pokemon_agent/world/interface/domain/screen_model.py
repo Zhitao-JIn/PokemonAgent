@@ -30,6 +30,10 @@ DOOR, SIGN, PERSON, ITEM, BOULDER, GRASS = "D", "S", "N", "I", "B", "G"
 不是新读了什么内存——精灵表本来就在读，只是原来只分「人」一类，现在按
 pokered 反汇编的 `SPRITE_CONSTANTS`（$3D 起是静止精灵）再细分。"""
 
+LEDGE_DOWN, LEDGE_LEFT, LEDGE_RIGHT = "v", "<", ">"
+"""台阶，字符本身就是能跳过去的方向（Gen 1 没有朝北的台阶）。tile id 见
+`world/ram.py::LEDGE_TILES`。"""
+
 TERRAIN_MEANING: dict[str, str] = {
     ".": "能走",
     "G": "草丛，能走，走进去会遇野生宝可梦",
@@ -38,6 +42,9 @@ TERRAIN_MEANING: dict[str, str] = {
     "N": "人，走不过去；面朝它按 A 可以对话",
     "I": "地上的物品，走进去会自动拾取（不用按 A）",
     "B": "巨石，走不过去；需要学会「怪力」才能推动，这一版不做推动判定",
+    "v": "台阶，只能朝南跳下：从它北边一格按 down 会越过它、落到它南边一格；其余方向当墙",
+    "<": "台阶，只能朝西跳下：从它东边一格按 left 会越过它、落到它西边一格；其余方向当墙",
+    ">": "台阶，只能朝东跳下：从它西边一格按 right 会越过它、落到它东边一格；其余方向当墙",
     "#": "墙 / 树 / 建筑 / 水面，走不过去",
     "@": "你自己。图上标 @ 的那一格就是 `where` 那一行给的坐标",
 }
@@ -45,6 +52,7 @@ TERRAIN_MEANING: dict[str, str] = {
 
     .  #   ← tile id 查 tileset 的可通行表（游戏自己的 CheckTilePassable）
     G      ← tileset 头里的 wGrassTile
+    v < >  ← 野外 tileset 的台阶 tile id（pokered `LedgeTiles`）
     D      ← 地图头的 warp 表（还带着通往哪张地图）
     S      ← 地图头的 sign 表
     N/I/B  ← 精灵表 wSpriteStateData1，按图片 id 分「人 / 物 / 石」三类
