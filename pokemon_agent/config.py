@@ -11,8 +11,8 @@
 就换掉了，搬进来反而割裂。判据：**改这个数是为了做实验还是为了让代码正确？**
 前者来 config，后者留原地。
 
-**为什么不放 harness**：这些旋钮的消费者跨三层——`tools/brain_tool.py` 校验动作、
-`tools/prompts/*` 渲染上限、`harness/episode/**` 判定停滞、`harness/run/**` 控制重试。
+**为什么不放 harness**：这些旋钮的消费者跨三层——`direct/brain_tool.py` 校验动作、
+`direct/prompts/*` 渲染上限、`harness/episode/**` 判定停滞、`harness/run/**` 控制重试。
 常量住在任何一个消费方里，其余两方就得反向 import 那个层，依赖方向立刻破。
 放顶层则谁都只依赖 config，方向永远向下。
 
@@ -26,7 +26,7 @@ from __future__ import annotations
 
 # ---- 重试预算：一次调用最多问几遍外部模型 ----
 # brain 的六条链路（choose/plan/judge/verify/summarize 调模型，reflect 不调）
-# 在 `tools/brain_tool.py` 里走**同一个**重试循环，预算就是下面这一个数。
+# 在 `direct/brain_tool.py` 里走**同一个**重试循环，预算就是下面这一个数。
 # 感知（world）另有自己的预算——它是另一条链路、另一个重试循环。
 
 BRAIN_MAX_ATTEMPTS = 3
@@ -251,3 +251,10 @@ CHECKPOINT_ENABLED = True
 """自动存档的总开关（run 开局 / 每局开派前的存档、task 世界快照、封存本局的账；
 `docs/spec/checkpoint/SPEC.md`）。**实验旋钮**：
 关掉时 `build.py` 不造存档器，各入口见 None 即不存档，其余行为不变。"""
+
+
+TRACE_BACKEND = "langfuse"
+"""trace 后端的系统缺省：`"langfuse"`（本机自托管服务，装配期先打健康检查探针）
+或 `"local"`（一条事件一个 JSON 落盘）。**实验旋钮**：`build_real(trace_backend=…)`
+显式传参优先；没传时取这里。eval 跑批由 `evals/config.json::trace_backend` 显式传参覆盖。
+连接信息（地址、密钥）是部署事实，留在 `.env` 的 `LANGFUSE_*`。"""

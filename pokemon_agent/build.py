@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from pokemon_agent.config import CHECKPOINT_ENABLED
+from pokemon_agent.config import CHECKPOINT_ENABLED, TRACE_BACKEND
 from pokemon_agent.direct.brain_tool import BrainTool
 from pokemon_agent.direct.trace import TraceTool, assert_server_ready
 from pokemon_agent.env import env_str, load_env_file
@@ -62,7 +62,7 @@ def build_real(
     speed: int = 0,
     run_id: str = "local",
     trace_root: str | Path | None = None,
-    trace_backend: str = "langfuse",
+    trace_backend: str | None = None,
     memory_root: str | Path | None = None,
     memory_server_url: str | None = None,
     world_server_url: str | None = None,
@@ -205,6 +205,7 @@ def build_real(
     # **Langfuse 是真实 run 的默认后端**（0927 定案）：SDK 是异步批量发送，
     # 服务不在场时写入侧静默丢账——所以选 langfuse 时先打健康检查探针，
     # "服务没起"挡在 run 开始之前，不跑一半才发现。
+    trace_backend = trace_backend or TRACE_BACKEND
     if trace_backend == "langfuse":
         langfuse_version = assert_server_ready()
         logger.info("Langfuse 后端健康检查通过（version=%s）", langfuse_version)
