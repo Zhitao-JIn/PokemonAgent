@@ -1,113 +1,67 @@
-# evals —— 模块规格
+# 测评契约
 
-> 最后更新：2026-09-26 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
-> 仓库根级包，**不在 `pokemon_agent/` 内**：它读被测系统的产物，不是被 harness 依赖的一层
-> 设计来历：`docs/eval/{intent,spec,plan,p0-findings}.md`、CHANGELOG 255–260
+对外只有七个 inspect task。`python -m evals list` 列出入口，`python -m evals run <task> <inspect 参数>` 统一启动；`.eval` 记录样本、输入、输出、评分与错误。
 
-## 〇、一项测评一个子包（0926）
+| task | 被测对象与输入 | scorer | 模型 |
+|---|---|---|---|
+| decode | 同一帧冻结 WRAM，机械解码一次 | ScreenText、接管视图、地形/位置三个分组 | 无 |
+| vision_perceive | 生产视觉节点的纯视觉部分，输入截图 | scene、overlay、dialog_text、options、cursor、解析成功 | 视觉模型 |
+| screen_interpret | 生产读屏 prompt，输入人工核过的真值解码观测 | 标注的读屏字段 | 文本模型 |
+| world_actions | 常规脚本与原宏统一走脚本执行通道，真实模拟器 | 自报结局与世界真值 | 无 |
+| memory | 冻结库经真实 MemoryTool 写入、读回，再检索带相关性标签的查询 | 存储分、检索 recall@k / MRR | 无 LLM，本地 embedding/reranker |
+| judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
+| e2e | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
 
-不同类的测评不混放：各自的数据集、判定、报表、产物目录都在自己名下，命令行 `python -m evals <测评> <命令>`
-（顶层 `cli.py` 只做分派），产物落 `eval_results/<测评>/`。
+## 帧与独立真值
 
-| 子包 | 测什么 | 命令 |
-|---|---|---|
-| `e2e/` | 端到端：样本从 run 入口跑完，出结果层 / 红线 / 路径层 / 过程层 / 效率层报告（本文第一～七节） | `python -m evals e2e …` |
-| `screen_reading/` | task 层无视觉读屏：解码字段 + 整屏原样喂给文本模型，看它读不读得懂（第八节） | `python -m evals screen …` |
+`evals/data/screen_reading/dataset/v2/samples.jsonl` 是基础帧；`evals/data/frames/takeover.jsonl` 是原接管视图场合的冻结快照；`evals/data/frames/terrain.jsonl` 是带独立存档事实依据的两帧地形快照。decode、vision_perceive、screen_interpret 共用加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
 
-从 e2e 账本上顺带算的过程指标（judge 一致性、感知一致率）读的是 e2e 的产物，留在 `e2e/process/`；
-独立取样、独立判定的过程集各自开子包。
+每帧分别保存可选的 `screen_truth`、`takeover_truth`、`terrain_truth`。未标的分组是 NOANSWER，不进入该组分母；空标注也不能获得成功分。基础帧只有 `label_checked` 为真的文字标注计分；接管帧保留原手写场合、视图字段与屏幕文字期望。地形组支持 `map_id`、`where`、`facing`、`walk_map` 与 `neighbors`，`terrain.jsonl` 当前有两帧辅助标注，依据既有存档说明并复核截图，标注 map_id/where/facing/neighbors；完整 walk_map 尚未逐格核过，不参与评分。
 
-## 一、职责与边界（e2e）
+`interpret_inputs.json` 冻结人工核过的 dialog_text/options/cursor/quantity；不把待测解码器输出当成真值，也不把待判 overlay 放入输入。45 帧具备此输入。未核过的自动预标不能作为准确率分母。
 
-- **只做一件事**：把一批冻结的样本在真实链路上跑完，从盘上的账算出结果层 / 红线 / 路径层（rubric）/
-  过程层 / 效率层，出一份口径可比的报告，并登记 bad case。
-- **不改被测系统的行为**：样本从 run 入口进（`RunHarness.run(checkpoint_only=True)` 打包起点 →
-  `restore_run` 开分支跑），停止条件用 `config` 缺省；测评读的 `sense_frame.ram` 只进账、不进 agent 输入。
-- **判定只读盘**：`report` 全部由 `eval_results/<报告>/` 下的产物算出，删了能重算；不在批跑时判。
-- **真值只认游戏变量与屏幕解码**：机械判据不读视觉模型抄的文字（`text_source=vlm` 的帧不作证据）。
+同一帧只跑一次机械解码，三个 scorer 复用结果。`judged_accuracy` / `judged_count` 读取未做 epoch 数值归并的原始 C/I/N，每次重复运行作为独立观测统计，确保 N 不被转换为失败进入分母。
 
-## 二、目录结构
+## 模型与启动
 
-```
-evals/
-├── __main__.py / cli.py    python -m evals <e2e|screen> …（只做分派）
-├── e2e/
-│   ├── cli.py              python -m evals e2e：dataset check / run / report / diff（run-one 供子进程）
-├── schemas/                sample.py（EvalSample / SampleStart / Rubric / RedLine）、verdict.py（SampleResult 等）、
-│                           report.py（ReportHeader / BadCase / COMPARABLE_FIELDS）
-├── dataset/                loader.py（load_samples / load_rubric / check / samples_digest）
-│   └── v1/                 samples.jsonl（20 条）、states/*.state、rubric.json、coverage.md
-├── checks/                 stream.py（RunStream / Frame）、registry.py（RULES / @rule / judge）、utils.py、
-│   └── rules/              movement / dialog / shop / battle / catch / center：18 条机械判据
-├── rubric/                 redundant.py（代码项，只给原始量）、forms.py（人工表单与 rubric_scores.jsonl）
-├── process/                judge_agreement.py（judge 四格、task 收尾分布）、sense_agreement.py（解码 vs 视觉）
-├── report/                 redlines / efficiency / evaluate（一条样本）/ assemble（build_report）/ markdown / diff
-├── cases/                  bad_cases.py（collect / append_new，只追加、去重）
-└── runner/                 batch.py（run_batch，一条样本一个子进程）、one.py（run_one）
+正式文本读屏为 `evals/config.json` 的 `evaluation_models.screen_interpret = openai-api/qwen/qwen3.8-max`；视觉为 `models.vision_model = deepseek-flash`。五条完整系统链路仍使用配置的各自型号。文本读屏的 QWEN 密钥取现有 DASHSCOPE_API_KEY（或生产 provider 同款的 ANTHROPIC_AUTH_TOKEN），不另存密钥。
+
+真实模型测试统一覆盖 deepseek-flash；文本读屏用 `-T text_model=openai-api/deepseek/deepseek-flash`，视觉用 `-T vision_model=deepseek-flash`。本轮重构验证没有调用真实语言或视觉模型。
+
+```powershell
+python -m evals list
+python -m evals run decode --log-dir eval_results/decode
+python -m evals run world_actions --log-dir eval_results/world_actions
+python -m evals run memory --log-dir eval_results/memory
+python -m pytest tests/test_harness_integrity.py
+python -m evals run screen_interpret -T text_model=openai-api/deepseek/deepseek-flash
+python -m evals run vision_perceive -T vision_model=deepseek-flash
+python -m evals freeze-frames
 ```
 
-## 三、数据集
+harness_integrity 位于 `tests/test_harness_integrity.py`，属于集成测试，不参与 inspect 评分。默认运行 local 的正常完成与预算耗尽剧本；Langfuse 测试默认跳过，仅在显式 `TEST_LANGFUSE=1` 时核真实写入/读回。失败直接是 pytest 失败。mock 装配位于 `tests/_harness_fixtures/`，不会进入测评包。
 
-- 一条样本 = `EvalSample`：`start`（`run_begin` + `.state` 路径与 sha256；`recovered_episode` 预留）、
-  `goal` / `success_criteria` / `max_steps`、`behavior`（可行做法）、`check_id`（机械判据，可空）、
-  `rubric` / `red_lines`（引用 `rubric.json` 的 id）、`k_metric`（`pass_at_k` / `pass_hat_k`）、`split`。
-- **冻结的是源、不是存档**：存档清单带 `state_schema_hash`，`RunState` 一改旧存档就拒载，所以每次批跑现打包。
-- `python -m evals e2e dataset check` 核：文件存在、哈希一致、rubric / 红线 / 判据 id 都有定义。改样本 = 出新版本目录。
+## 当前覆盖与结果口径
 
-## 四、判定
+world_actions 共 106 例，统一按脚本的调用、结局与前后世界真值评分。31/75 只是两批历史用例来源；常规与接管都交出控制权执行多步操作，内部两套执行器不是两类对外能力。保留原用例依据与世界真值。被测脚本自报成功不是世界真值；重构不根据实际输出改写期望。
 
-| 层 | 谁算 | 规则 |
+memory 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。judge 初始四条独立真假历史；这些小型用例是运行契约示范，不能代替完整能力评估。
+
+e2e 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
+
+
+## decode 标注覆盖（2026-10-06）
+
+冻结帧 1047 个；有 RAM 与截图不等于有独立期望。未标组记 NOANSWER是数据缺口或字段不适用，不是通过。
+
+| 字段组 | 目前计分的独立标注 | 具体缺口 |
 |---|---|---|
-| 结果层 | `checks.judge` | 按 `check_id` 调判据，给 `pass` / `fail` / `unjudgeable` + 证据帧 uuid；不可判的不进分母 |
-| 红线 | `report/redlines.py` | R1 出错（`run_error` / `episode_error` / run 以 error 收尾；停摆不算）；R2 刹车失灵（连续失败达停摆上限后仍派 task / 仍开局）；R3 谎报成功（run 以 `goal_done` 收尾而判据 fail）。命中即判负 |
-| 路径层 | `rubric/` | 0–2 档；`redundant_path` 给按键 / 回到旧格 / 无效按键原始量（阈值待标定）；`decompose_quality` / `strategy_switch` 人工打分 |
-| 过程层 | `process/` | judge 与判据的 TP/FP/FN/TN（run、task 两层）；task 收尾分布；解码 vs 视觉逐帧一致率 |
-| 效率层 | `report/efficiency.py` | 按链路的调用数与 token、按键、调用失败 / 重试耗尽、局数 / task 数、墙钟 |
+| ScreenText 与 overlay | 45 帧的 overlay/dialog_text/options/cursor | 其他帧的实际叠加界面、选项/光标语义与选项排布尚需独立核对 |
+| 场合与接管视图 | 8 帧，八种场合各一个，标指定字段子集 | 场景/初态规则正负例；队伍的倒下、异常状态、在场成员等解释规则；自动预标 scene/at_start 不能当独立真值 |
+| 地形规则 | 两个 Route 1 帧的 map_id/where/facing/neighbors | 台阶、草、水、墙、门与人物遮挡的解释是否对应实际行为；按规则准备代表性验证，无需人工抄每帧完整 walk_map |
 
-## 五、批跑与产物
+标注的核心是从 RAM/图块/文字推导出的分类和解释是否符合实际，而非把直接读到的每个原始字段重新抄一遍。地址、偏移、字节序等机械读取契约由 pytest 验证；场景、overlay、队伍状态与地形解释需要独立规则真值。walk_map 是按 tile 通行表、台阶、水及对象覆盖规则从 RAM 推导的网格，不是 RAM 中现成的字符串；验证这些规则可用独立地图资料和真实模拟器行为，没必要逐帧人工标满90格。
 
-`python -m evals e2e run [--samples a,b] [--model M] [--no-knowledge] [--timeout S]`：
+0926 探测45帧只有原始文字/overlay 人工期望；build_v2 的 _prelabel_probe 另外由分类器填 scene/at_start，label_checked 不应扩张成这两个字段已有独立真值。decode 不采用这些自动场景标签作答案。
 
-1. 写口径头 `header.json`（git 提交与脏否、五条链路型号、`config` 全部大写旋钮、数据集 / rubric 版本、样本哈希、知识库哈希）。
-2. 每条样本起子进程 `run-one`：在 `runs/<sample_id>/` 下建独立 `trace/` / `memory/` / `checkpoints/`，
-   打包起点 → `restore_run` → 写 `run.json`（`run_id` / `invalid` / `error`）。超时即杀，记"没有批跑记录"。
-3. `build_report`：`results.jsonl`、`report.md`、`rubric_forms.md`，追加 `bad_cases.jsonl`。
-
-`python -m evals e2e report <目录>` 按盘上产物重算（读回人工填的 `rubric_scores.jsonl`）；
-`python -m evals e2e diff A B` 口径（`COMPARABLE_FIELDS`）不同即拒绝对比，否则列翻转样本。
-产物在 `eval_results/e2e/`，不进 git。
-
-## 六、测试
-
-`tests/test_evals_checks.py`：每条判据一正一反（`set(CASES) == set(RULES)` 守住"新判据必须带样例"），
-外加"视觉文字不算"一条。读侧解析的回环在 `tests/test_trace_parse.py`。
-
-## 七、当前状态与已知缺口
-
-- 离线已通：数据集核对、判据样例、报告在假目录上出齐产物。**真账本全链路待真机批跑（plan E9）**。
-- `battle_pokemon_switch` 无机械判据；`redundant_path` 档位阈值、样本难度待第一批数据标定。
-- 判据只读 `ram.decoded`（每帧都记）；解码切不出的界面（队伍列表、数量框）上相关判据只能靠游戏变量。
-- 只有 `k=1`；pass@k / pass^k 的多次重复与分层门禁、CI 接入在后续版本。
-
-## 八、读屏测评（`screen_reading/`）
-
-**问的是**：task 层不调视觉，只拿解码字段 + 整屏原样（`Facts.screen`）；文本模型据此能不能说对屏幕上的
-叠加层、对话、选项、光标、数量。
-
-- **数据集 v1**（`screen_reading/dataset/v1/samples.jsonl`，451 帧，一帧一条：tile 缓冲 + 截图 + 人工标注）：
-  - `observation_check` 406 帧：当年只存了截图，缓冲由 `glyphs.py` 逐块还原（字形库从 VRAM 解、按明暗首次
-    出现顺序归一以抗调色板变化、网格起点 0–7 像素逐个试以抗整屏抖动）；标注沿用 `claude_label`。
-  - `probe_0926` 45 帧：存档按键实采，缓冲是真的；标注见 `probe_0926.json`（与 `Claude outputs/decode_review.html` 同一批）。
-  - 还原在 45 帧真缓冲上核过：44 帧解码字段逐项一致，唯一差异是对话逐字打出时截图比缓冲慢一帧。
-  - `python -m evals screen build` 重造（要 ROM）；产物冻结进仓库，跑测评不再要 ROM。
-- **观测**（`observe.py`）：与 `PyBoyWorld._ram_observe` 同一套 `read_screen_text` / `_overlay_of` / `_layout_field`，
-  按 `decide_action.py` 的 `- 键: 值` 写法渲染（地形字段不在这里测）。
-- **两种读法并排打分**（`grade.py`，精确匹配、只规整空白）：**解码直出**（不调模型，字段原样）与**模型读后**
-  （`prompt.md` 问一次，JSON 回答）。`quantity` 只在标注有值的帧上打分。
-- **报表**：按字段 / 来源 / 界面桶（由解码结果分：纯对话、选单、选单(解码切不全)、数量框、无叠加……）/ 0926 类别，
-  再列出模型读错的帧。
-- **首个基线**（0926，解码直出、未调模型）：451 帧全对 418；纯对话 169/169、选单 63/65；
-  选单(解码切不全) 0/6、数量框 1/12——这两桶就是要看模型读整屏原样能补回多少。
-- **已知的标注口径差异**：`observation_check` 的标注是按"看图"标的，空对话框也标 `dialog`、图鉴条目的说明文字
-  算对话；这类帧解码直出必然判错，模型读后也可能判错——看报表"读错的帧"时区分口径问题与真读错。
-
+8/8 与 2/2 仅代表已标字段符合。扩展数据应先依据实际界面/游戏规则写真值，再跑待测解码器，不能从输出生成答案。
