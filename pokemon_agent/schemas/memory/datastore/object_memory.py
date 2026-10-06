@@ -60,7 +60,7 @@ class ObjectFactEventBase(BaseModel):
         把真身 `PlaceInWorld.model_dump()` 拍平后验证成这里的类型。
 
         `key` property 照抄真身：语义记忆按 `(map_id, x, y)` 索引，这个键
-        跟真身的算法必须一致，`tools/memory_tool.py` 落索引时两边不能算出
+        跟真身的算法必须一致，`mcpclient/memory_local.py` 落索引时两边不能算出
         两个不同的字符串。
         """
 

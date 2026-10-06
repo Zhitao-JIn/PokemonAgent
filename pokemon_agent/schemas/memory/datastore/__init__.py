@@ -6,7 +6,7 @@
 这几个类具体长什么样（`memory/store.py` 的实现同理，只做按 uuid 落盘 + 倒排
 索引，不 import 这三个类）。按"一个数据形状只有在某个模块的 Port/实现真的
 需要构造或消费它的具体样子时，才归那个模块自己"这条边界，这三个类不满足
-条件——只有 **tool 层**（`tools/memory_tool.py`，读写 payload 时要按具体
+条件——只有 **tool 层**（`mcpclient/memory_local.py`，读写 payload 时要按具体
 形状序列化/反序列化）和它们各自的组装方（`brain.reflect()`、
 `harness/episode/store/store_object_semantic_memory/rules.py`）真正认识这几个类的字段。这正是
 `schemas/`（本项目自己的跨层契约层）该管的事，不是 `memory/` 自己的数据形状。

@@ -42,7 +42,7 @@
 这条边界，这三个类因此**不在**这个包里——它们是 `schemas.memory` 的东西
 （本项目自己的跨层契约层），"发生了什么、影响了谁"的语义判定/组装分别在
 `brain.brain.py::reflect()`、`harness/episode/store/store_object_semantic_memory/rules.py`、
-tool 层（`tools/memory_tool.py`）完成，见 `pokemon_agent/schemas/memory/
+tool 层（`mcpclient/memory_local.py`）完成，见 `pokemon_agent/schemas/memory/
 __init__.py` 的说明。
 
 object 的交互判定在 harness（`harness/episode/store/store_object_semantic_memory/rules.py`）。

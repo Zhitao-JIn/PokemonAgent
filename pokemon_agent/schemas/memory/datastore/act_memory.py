@@ -225,8 +225,15 @@ class ActMemory(BaseModel):
             return text if self.perceived else f"{indent}{BLIND_NOTE}\n{text}"
 
     before: Observation = Field(description="做决定时看到的画面")
-    action: str = Field(description="**一个键**，如 `up`。连按已经展开成多步，这里不再是链")
+    action: str = Field(description="**一个动作**：键（`up`）或脚本（`script:walk_to(x=5, y=2)`）。"
+        "连按已经展开成多步，这里不再是链")
     after: Observation = Field(description="执行之后的画面。**结果也是一次观察**")
+    result: str = Field(
+        default="",
+        description="脚本动作的终态报告摘要（`ok` / `verify_failed` 这类结局码）；键动作为空串。"
+            "脚本一次调用占一步、内部 N 键不展开（P5 定案），这个字段就是那一步的机械结局"
+            "——判据只认达成的约定下，它是判停可直接采信的证据",
+    )
 
     step: int = Field(
         description="该键按下**前**那一帧的本局累计键数（跨 task 连续，harness 盖章）——"
@@ -262,7 +269,7 @@ class ActMemory(BaseModel):
         "已经在处理的那种重复——相邻两条 `entries[i].after_frame ==`"
         "`entries[i+1].before_frame`（同一帧画面，编码结果自然相等），拼多模态"
         "请求时应该按这一点去重，不要同一张图发两遍——去重的实现在"
-        "`tools/brain_tool.py::dedup_snapshots()`（0915 起归 tool 层，那是"
+        "`direct/brain_tool.py::dedup_snapshots()`（0915 起归 tool 层，那是"
         "发请求的组装逻辑，不是记忆的数据形状）",
     )
 
@@ -292,6 +299,7 @@ class ActMemory(BaseModel):
             f"({self.episode_id}, step={self.step}) 当时看到：",
             self._render_obs(self.before),
             f"  做了  {self.action}",
+            *([f"  结果  {self.result}"] if self.result else []),
             "  之后变成：\n" + self._render_obs(self.after),
         ]
         return "\n".join(lines)

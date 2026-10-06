@@ -10,7 +10,7 @@
 （"这一次 task 的前后变化"）；原料一直在 `memory/step_memory/`。来源章
 （`run_id` / `episode_id` / `task_id` / `goal` / `success` / `reason` /
 `steps_used` / `total_acts`）与 ActMemory 无关：它是 harness 从 TaskState 盖的
-（装配点 `tools/brain_tool.py::TaskSummarizer.summarize_task()`）。
+（装配点 `direct/brain_tool.py::TaskSummarizer.summarize_task()`）。
 
 三条推论与 `EpisodeMemory` 相同：**可重建**（同批原料重蒸得等价的一条）、
 **可丢弃**（rm 只损失算力）、**成败只认章不认正文**。

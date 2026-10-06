@@ -21,7 +21,7 @@ class EpisodeMemory(BaseModel):
 
     **来源章**（`episode_id` / `run_id` / `goal` / `success` / `steps` / `acts_used` /
     `termination`）是 harness 从 episode state 盖的，与正文无关。装配点
-    `tools/brain_tool.py::Summarizer.summarize()` 把 `EpisodeSummary` 与这些字段拼在一起。
+    `direct/brain_tool.py::Summarizer.summarize()` 把 `EpisodeSummary` 与这些字段拼在一起。
 
     ## 三条推论（改这里之前先读）
 
