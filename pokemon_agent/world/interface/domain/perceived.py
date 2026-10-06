@@ -5,12 +5,12 @@
 层交互"这条原则，`WorldPort` 不该再依赖 `schemas.*`——但 `perceive_once()`
 确实要一次交出三样东西（观测、模型调用记账、原始帧 PNG），拆成三个返回值
 不如一个轻量的、**world 自己拥有**的形状清楚。区别只在于：这不是"world 与
-别的模块之间的信封"，产出方和唯一的内部消费方（`tools/game_tools.py`）都
+别的模块之间的信封"，产出方和唯一的内部消费方（`mcpclient/game_tools.py`）都
 在拿它当"world 吐出来的东西"用，跟 `Facts`/`Observation` 是同一类——
 world 自己的数据形状，只是恰好被 tool 层再转手一次，不是"两个模块协商出的
 契约"。
 
-`tools/game_tools.py` 把这三个字段原样摊开进
+`mcpclient/game_tools.py` 把这三个字段原样摊开进
 `FromHarnessToGameToolPerceiveOnceResp`（harness ↔ tool 层的信封），
 不再嵌套一层 `PerceiveOnceResp`。
 """

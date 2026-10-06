@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from .action_entry import ActionEntry
 from .macro_spec import MacroSpec
 
 
@@ -12,7 +13,21 @@ class ActionSpace(BaseModel):
 
     注意语义：这不是"全部动作"，是"此刻允许的动作"。动作空间不增长，
     增长的是掩码之外的 skill library（本阶段不做）。
+
+    **统一能力掩码**（2026-09-29）：`mask` 是 `名字 → 是否可用` 的**扁平命名
+    空间**，原子键与宏（P4 起还有机械脚本）混在一起——调用方（模型）只做一次
+    选择：名字 ∈ 掩码且 enabled；`entries` 只带各自的载荷差异（宏有参数与
+    说明，键只有一个名字）。`names` / `macros` 旧字段保留给 prompt 渲染用，
+    与 `mask` 一致性由 `compute_action_space()` 一处产出保证。
     """
+
+    scene: str = Field(default="", description="这份掩码是按哪个场合算的（可追溯）")
+    mask: dict[str, bool] = Field(
+        default_factory=dict, description="名字 → 此刻是否可用（键与宏同一命名空间）"
+    )
+    entries: list[ActionEntry] = Field(
+        default_factory=list, description="掩码里各条目的载荷（参数签名、说明）"
+    )
 
     names: list[str] = Field(description="可用按键名；接管场合为空（改给 `macros`）")
     descriptions: dict[str, str] = Field(
@@ -45,3 +60,11 @@ class ActionSpace(BaseModel):
     def macro(self, name: str) -> MacroSpec | None:
         """按名字找本空间里的宏；没有为 None。"""
         return next((m for m in self.macros if m.name == name), None)
+
+    def enabled(self, name: str) -> bool:
+        """这个名字此刻是否可用（统一掩码的唯一判据，键与宏同一条规则）。"""
+        return self.mask.get(name, False)
+
+    def entry(self, name: str) -> ActionEntry | None:
+        """按名字取条目载荷；掩码里没有则为 None。"""
+        return next((e for e in self.entries if e.name == name), None)

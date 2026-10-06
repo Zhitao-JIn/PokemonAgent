@@ -23,7 +23,7 @@
   （`domain/perceived.py`）——world 自己的数据形状，不是"两个模块协商出的
   信封"。
 
-`tools/game_tools.py`（`GameToolPort` 的实现）是唯一的调用方，负责把
+`mcpclient/game_tools.py`（`GameToolPort` 的实现）是唯一的调用方，负责把
 harness 那一侧的 `Task`/`Action`/信封拆成这里要的裸字段，
 再把这里吐出来的 `Perceived` 拼回 harness 认识的信封——这正是"tool 层承接
 拆信封/拼信封"这条分工在 world 这一侧的落地。
@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from .domain import MacroOutcome, Perceived, TaskPerceived
+from .domain import ActionSpace, MacroOutcome, Perceived, TaskPerceived
 
 
 @runtime_checkable
@@ -56,10 +56,28 @@ class WorldPort(Protocol):
         """
         ...
 
-    def all_actions(self) -> list[str]:
-        """列出这个世界支持的全部动作名。
+    def get_action_space(self) -> ActionSpace:
+        """按**当前这一帧**算此刻的能力掩码：原子键与宏在同一命名空间。
 
-        后置条件：非空，且整个 episode 内不变。
+        **为什么这一条从 tool 层搬进 world**（2026-09-29）：掩码的依据是当前帧的
+        overlay 与场合，而"当前帧"只有 world 有——MCP 化之后 world 住在独立
+        进程里，tool 层在另一个进程拿不到帧，算不出来。进程内模式下
+        `mcpclient/game_tools.py` 仍可（也应当）按调用方交出的那份观测算，
+        两边共用 `world/action_space.py::compute_action_space` 这一个纯函数。
+
+        返回 `ActionSpace`：`mask`（名字 → 此刻是否可用，覆盖全部键 + 本场合
+        的宏）、`entries`（各条目的参数签名与说明）、`scene`。
+
+        前置条件：已 `reset()`（要读当前帧）。
+        后置条件：至少有一个 enabled 的动作。
+        """
+        ...
+
+    def all_actions(self) -> list[str]:
+        """列出这个世界支持的全部动作名（**与状态无关**）。
+
+        **P2 起不再是"掩码"的入口**——掩码走 `get_action_space()`。本方法只剩
+        一个用途：给调用方枚举命名空间的全体（`mask` 里 False 的那些也要有名字）。
         """
         ...
 
@@ -85,7 +103,7 @@ class WorldPort(Protocol):
 
         **只问一次视觉模型，不重试**。调用方在
         `reset()`/`step()` 之后调它拿观测；重试预算与循环归调用方管
-        （`tools/game_tools.py::GameTools.perceive_with_retry`——0913 夜从
+        （`mcpclient/game_tools.py::GameTools.perceive_with_retry`——0913 夜从
         harness 节点搬回 tool 层，与 `BrainTool._attempt_loop` 同形）。
         失败：解析不出结构化状态时抛 `PerceptionAttemptFailed`（附这次的账）——
             要不要再问一次是调用方的判断。

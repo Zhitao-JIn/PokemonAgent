@@ -44,6 +44,7 @@ from .domain import (
     SIGN,
     TAKEOVER_SCENES,
     TERRAIN_MEANING,
+    ActionEntry,
     ActionSpace,
     BagEntry,
     BagItem,
@@ -92,6 +93,7 @@ from .vision_provider import VisionProvider
 from .world_port import WorldPort
 
 __all__ = [
+    "ActionEntry",
     "ActionSpace",
     "BOULDER",
     "BagItem",

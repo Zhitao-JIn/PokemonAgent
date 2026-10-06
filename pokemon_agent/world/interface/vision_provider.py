@@ -15,7 +15,7 @@
 
 **实现住 `brain/providers.py`，这不构成 `world → brain` 依赖**：本模块只声明
 协议（零 import），`PyBoyWorld` 拿到的那个实例是 tool 层的接线工厂
-（`tools/vision_factory.build_vision_provider()`）造出来、由装配点
+（`brain/vision_factory.build_vision_provider()`）造出来、由装配点
 （`build.py::build_real()`）递进去的——`world` 自己一行都没提过 brain。
 `describe()` 出错时的**任何异常都由 world 就地收编**：`PyBoyWorld.perceive_once()`
 先放行自己的 `PerceptionAttemptFailed`，其余一律包成它——所以本协议**不声明**

@@ -22,6 +22,7 @@ X`（或再经顶层 `pokemon_agent.world` 转一手），不深到这一层的�
 """
 
 __all__ = [
+    "ActionEntry",
     "ActionSpace",
     "BOULDER",
     "BagItem",
@@ -84,6 +85,7 @@ __all__ = [
     "PcView",
 ]
 
+from .action_entry import ActionEntry
 from .action_semantics import BUTTON_FACING, DIRECTION_KEYS, FACING_STEP, INTERACT_KEY
 from .action_space import ActionSpace
 from .battle_status import BattleStatus, Combatant
