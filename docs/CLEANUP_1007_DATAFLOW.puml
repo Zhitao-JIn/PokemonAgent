@@ -1,0 +1,31 @@
+@startuml
+title Evaluation and integration-test data after cleanup
+rectangle "Frozen frames\nWRAM + image + optional independent truth" as Frames
+rectangle "decode" as Decode
+rectangle "vision_perceive" as Vision
+rectangle "screen_interpret" as Interpret
+rectangle "Three decode score groups\nunlabelled group = NOANSWER" as Scores
+rectangle "Frozen records + relevance queries" as Memories
+rectangle "memory\nstorage + retrieval scorers" as Memory
+rectangle "Frozen goals + observation history" as Histories
+rectangle "judge\nTP / FP / FN / TN" as Judge
+rectangle "Frozen emulator cases" as Cases
+rectangle "world_actions\nmechanical result scoring" as Actions
+rectangle "Goal + complete system" as System
+rectangle "e2e\nresult + redlines + model grade" as E2E
+rectangle "pytest\nharness integrity + Web Reviewer\nMCP transport + prompts" as Tests
+database "Local trace + node_io + memory files" as Disk
+Frames --> Decode: WRAM
+Decode --> Scores
+Frames --> Vision: screenshot + visual truth
+Frames --> Interpret: independent decoded observation
+Memories --> Memory
+Histories --> Judge
+Cases --> Actions
+System --> E2E
+Tests --> Disk: write / read verification
+note bottom of Tests
+Integration checks stay outside Inspect tasks.
+Old report/diff and experiment checks are removed.
+end note
+@enduml

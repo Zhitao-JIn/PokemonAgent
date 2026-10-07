@@ -555,6 +555,6 @@ harness 经门面调模块的架构不变。
 
 ## 测评任务收敛（2026-10-06）
 
-对外只保留 decode / vision_perceive / screen_interpret / world_actions / memory / judge / e2e 七个 inspect task。入口、数据、模型与评分口径见 `docs/spec/evals/SPEC.md`。
+对外只保留 decode / vision_perceive / world_actions / memory / judge / e2e 六个 inspect task。入口、数据、模型与评分口径见 `docs/spec/evals/SPEC.md`。
 
-decode 共享冻结 WRAM，文字、接管视图、地形三个 scorer 的未标分组记 NOANSWER，不进分母。vision_perceive 只给截图；screen_interpret 给人工核过的真值解码观测，用独立文本模型。正式文本读屏 qwen3.8-max，视觉 deepseek-flash；真实模型测试统一覆盖 deepseek-flash。world_actions 是全部多步脚本的统一测评；常规/接管只描述现存内部执行器来源，不是两类对外能力。memory 经真实 MemoryTool 测写入读回与相关性检索，不调 LLM。harness_integrity 属于 tests 集成测试，经真实三图核 trace/node_io/记忆落盘及后端读回，不注册 inspect task。e2e 仅按最终结果、红线与独立 model-graded 结果评分。
+decode 共享冻结 WRAM，文字、接管视图、地形三个 scorer 的未标分组记 NOANSWER，不进分母。vision_perceive 只给截图。视觉 deepseek-flash；真实模型测试统一覆盖 deepseek-flash。world_actions 是全部多步脚本的统一测评；常规/接管只描述现存内部执行器来源，不是两类对外能力。memory 经真实 MemoryTool 测写入读回与相关性检索，不调 LLM。harness_integrity 属于 tests 集成测试，经真实三图核 trace/node_io/记忆落盘及后端读回，不注册 inspect task。e2e 仅按最终结果、红线与独立 model-graded 结果评分。

@@ -1,12 +1,15 @@
 # 测评契约
 
-对外只有七个 inspect task。`python -m evals list` 列出入口，`python -m evals run <task> <inspect 参数>` 统一启动；`.eval` 记录样本、输入、输出、评分与错误。
+对外只有六个 inspect task。`python -m evals list` 列出入口，`python -m evals run <task> <inspect 参数>` 统一启动；`.eval` 记录样本、输入、输出、评分与错误。
+
+旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
+`header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
+不再提供旧口径一致性校验。`e2e run-one` 保留供现行任务执行单个目标。
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
-| decode | 同一帧冻结 WRAM，机械解码一次 | ScreenText、接管视图、地形/位置三个分组 | 无 |
+| decode | 同一帧冻结 WRAM，机械解码一次 | 场合/脚本覆盖/初态、ScreenText、接管视图、地形/位置四个分组 | 无 |
 | vision_perceive | 生产视觉节点的纯视觉部分，输入截图 | scene、overlay、dialog_text、options、cursor、解析成功 | 视觉模型 |
-| screen_interpret | 生产读屏 prompt，输入人工核过的真值解码观测 | 标注的读屏字段 | 文本模型 |
 | world_actions | 常规脚本与原宏统一走脚本执行通道，真实模拟器 | 自报结局与世界真值 | 无 |
 | memory | 冻结库经真实 MemoryTool 写入、读回，再检索带相关性标签的查询 | 存储分、检索 recall@k / MRR | 无 LLM，本地 embedding/reranker |
 | judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
@@ -14,19 +17,23 @@
 
 ## 帧与独立真值
 
-`evals/data/screen_reading/dataset/v2/samples.jsonl` 是基础帧；`evals/data/frames/takeover.jsonl` 是原接管视图场合的冻结快照；`evals/data/frames/terrain.jsonl` 是带独立存档事实依据的两帧地形快照。decode、vision_perceive、screen_interpret 共用加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
+`evals/data/frames/dataset/v2/samples.jsonl` 是唯一的 v2 帧集（1045 帧）；`source` 只记录采集来源，不决定 decode 的评分组。原基础帧、接管快照、地形快照均已合并，加载器不再拼接来源文件。采集命令按来源替换统一帧集中的对应样本，保留其余来源。decode、vision_perceive 共用加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
 
-每帧分别保存可选的 `screen_truth`、`takeover_truth`、`terrain_truth`。未标的分组是 NOANSWER，不进入该组分母；空标注也不能获得成功分。基础帧只有 `label_checked` 为真的文字标注计分；接管帧保留原手写场合、视图字段与屏幕文字期望。地形组支持 `map_id`、`where`、`facing`、`walk_map` 与 `neighbors`，`terrain.jsonl` 当前有两帧辅助标注，依据既有存档说明并复核截图，标注 map_id/where/facing/neighbors；完整 walk_map 尚未逐格核过，不参与评分。
+`evals/data/frames/truth.jsonl`是decode独立真值的唯一存储，按sample_id记录scene_truth、screen_truth、takeover_truth、terrain_truth。所有已标字段直接挂到帧上计分，删除reviewed及配套组/字段审核标记，不再按审核状态过滤。未标或空组为NOANSWER，不进入该组分母；unresolved_fields记录无法判定原因。decode不从label_checked或label回退取答案。1045帧已标全部适用字段，其中1032个地图已加载帧的地形有map_id、where、facing、walk_map、neighbors五字段，另外13帧地形不适用。网页审阅意见独立保存，不控制真值计分。视觉任务保留自身原有label_checked口径。
 
-`interpret_inputs.json` 冻结人工核过的 dialog_text/options/cursor/quantity；不把待测解码器输出当成真值，也不把待判 overlay 放入输入。45 帧具备此输入。未核过的自动预标不能作为准确率分母。
+`scene_truth` 查三个字段：`scene`、`covered_by_script`、`at_start`。`covered_by_script=true` 表示当前场合由接管脚本负责，包含未回初态的子菜单；有普通可选脚本不算接管覆盖。真值从独立标注场合和已核对的八类接管脚本对应关系补出，不读取被测分类器结果。1045 帧已标此字段；两帧重绘边界按冻结RAM当前可观察缓冲标为 transition，裁决待审。该字段只测覆盖识别是否正确；实际退回初态与执行结果由 `world_actions` 验证，模型选择目标脚本由决策 prompt 约束，本次未运行真实模型验证。
 
-同一帧只跑一次机械解码，三个 scorer 复用结果。`judged_accuracy` / `judged_count` 读取未做 epoch 数值归并的原始 C/I/N，每次重复运行作为独立观测统计，确保 N 不被转换为失败进入分母。
+同一帧只跑一次机械解码，四个 scorer 复用结果。`judged_accuracy` / `judged_count` 读取未做 epoch 数值归并的原始 C/I/N，每次重复运行作为独立观测统计，确保 N 不被转换为失败进入分母。
+
+decode默认读取全部真值，无include_unreviewed选项；任务metadata的reference_scope固定为all_truth。
+`baseline_only=true`切换为13字段通用scorer：scene、overlay、dialog_text、options、option_grid、option_details、cursor、cursor_cell、has_cursor、quantity_box、in_battle、strict_dialog、screen。
+排除at_start、covered_by_script、covered、接管视图和地形；各字段独立统计C/I/N，只有13字段都可判时整帧计分。完整四组诊断仍用默认scorer。
 
 ## 模型与启动
 
-正式文本读屏为 `evals/config.json` 的 `evaluation_models.screen_interpret = openai-api/qwen/qwen3.8-max`；视觉为 `models.vision_model = deepseek-flash`。五条完整系统链路仍使用配置的各自型号。文本读屏的 QWEN 密钥取现有 DASHSCOPE_API_KEY（或生产 provider 同款的 ANTHROPIC_AUTH_TOKEN），不另存密钥。
+视觉为 `evals/config.json` 的 `models.vision_model = deepseek-flash`；五条完整系统链路使用配置的各自型号。
 
-真实模型测试统一覆盖 deepseek-flash；文本读屏用 `-T text_model=openai-api/deepseek/deepseek-flash`，视觉用 `-T vision_model=deepseek-flash`。本轮重构验证没有调用真实语言或视觉模型。
+真实模型测试统一覆盖 deepseek-flash；视觉用 `-T vision_model=deepseek-flash`。本轮重构验证没有调用真实语言或视觉模型。
 
 ```powershell
 python -m evals list
@@ -34,7 +41,6 @@ python -m evals run decode --log-dir eval_results/decode
 python -m evals run world_actions --log-dir eval_results/world_actions
 python -m evals run memory --log-dir eval_results/memory
 python -m pytest tests/test_harness_integrity.py
-python -m evals run screen_interpret -T text_model=openai-api/deepseek/deepseek-flash
 python -m evals run vision_perceive -T vision_model=deepseek-flash
 python -m evals freeze-frames
 ```
@@ -50,18 +56,16 @@ memory 初始冻结库为三条 knowledge 与三个相关性查询，可按同�
 e2e 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
 
 
-## decode 标注覆盖（2026-10-06）
+## decode 标注覆盖（2026-10-07）
 
-冻结帧 1047 个；有 RAM 与截图不等于有独立期望。未标组记 NOANSWER是数据缺口或字段不适用，不是通过。
+冻结帧1045个，所有适用 decoder 输出字段已有独立参考标注：scene 三字段、screen 十三个字段、takeover 的 view 与非空视图全部嵌套成员，各覆盖1045帧；terrain 五字段覆盖1032帧，另13帧未加载地图，不适用。完整字段、原始证据和边界裁决见 `docs/DECODER_TRUTH_COVERAGE_1007.md`。
 
-| 字段组 | 目前计分的独立标注 | 具体缺口 |
-|---|---|---|
-| ScreenText 与 overlay | 45 帧的 overlay/dialog_text/options/cursor | 其他帧的实际叠加界面、选项/光标语义与选项排布尚需独立核对 |
-| 场合与接管视图 | 8 帧，八种场合各一个，标指定字段子集 | 场景/初态规则正负例；队伍的倒下、异常状态、在场成员等解释规则；自动预标 scene/at_start 不能当独立真值 |
-| 地形规则 | 两个 Route 1 帧的 map_id/where/facing/neighbors | 台阶、草、水、墙、门与人物遮挡的解释是否对应实际行为；按规则准备代表性验证，无需人工抄每帧完整 walk_map |
+这些是未审参考标注，不代表1045帧全部经过人工审核。默认正式 decode 仍只采用此前已审且值未变的键：53帧文字（含原接管组移来的8帧文字片段）、8帧场合、8帧接管、2帧地形；仅已有审核字段参与。字段扩标不会自动批准整组。四组分别计分，组内所有已标键均相等才为 C，任一不等为 I，无标为 N；准确率 = C/(C+I)，必须同时报告计分帧数。明确标注 null 的键必须在实际输出中存在。
 
-标注的核心是从 RAM/图块/文字推导出的分类和解释是否符合实际，而非把直接读到的每个原始字段重新抄一遍。地址、偏移、字节序等机械读取契约由 pytest 验证；场景、overlay、队伍状态与地形解释需要独立规则真值。walk_map 是按 tile 通行表、台阶、水及对象覆盖规则从 RAM 推导的网格，不是 RAM 中现成的字符串；验证这些规则可用独立地图资料和真实模拟器行为，没必要逐帧人工标满90格。
+参考标注从原始冻结 RAM/ROM、固定名称表及既有独立文字/场合标注产生，不读取待测解码输出。候选完成后才跑 decoder 作差异诊断。参考程序、逐帧字节及哈希位于 `eval_results/labeling_1007/full_truth/`；运行 `python -m evals.data.frames.coverage` 检查顶层字段与视图嵌套字段。
 
-0926 探测45帧只有原始文字/overlay 人工期望；build_v2 的 _prelabel_probe 另外由分类器填 scene/at_start，label_checked 不应扩张成这两个字段已有独立真值。decode 不采用这些自动场景标签作答案。
+此前只核代表性规则、不标机械字段的范围已按用户要求扩大为全输出覆盖。地址、字节序与物理图块规则仍需独立复核，完整参考标注不能替代人工审核和真实环境行为验证；菜单遮挡时的 walk_map 只核当前图块缓冲投影。
 
-8/8 与 2/2 仅代表已标字段符合。扩展数据应先依据实际界面/游戏规则写真值，再跑待测解码器，不能从输出生成答案。
+0926 探测45帧的自动预标 scene/at_start 不作独立答案。原8/8接管与2/2地形只代表当时已审键符合；全量标注覆盖和正式准确率分别报告，不混为一谈。
+
+接管组仅含 view；重复的 scene 和 screen 归场合与文字组。原已审 scene、screen_contains 移到所属分组并保留原审核粒度，完整 view 的旧已审点路径由加载器按路径投影，不重复存储相同字段。审阅页整屏参考只显示一次。

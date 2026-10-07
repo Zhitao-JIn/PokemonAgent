@@ -1,40 +1,16 @@
-"""evals 自产的契约：样本、判定、报告。只做 re-export。"""
+"""现行数据集、机械判据与红线契约的出口。"""
 
-from __future__ import annotations
-
-from .report import COMPARABLE_FIELDS, BadCase, ReportHeader
 from .sample import EvalSample, RedLine, Rubric, RubricItem, RubricLevel, SampleStart
-from .verdict import (
-    CheckVerdict,
-    Efficiency,
-    JudgeCell,
-    JudgeCellName,
-    Outcome,
-    RedLineHit,
-    RubricScore,
-    SampleResult,
-    SenseAgreement,
-    TokenUse,
-)
+from .verdict import CheckVerdict, Outcome, RedLineHit
 
 __all__ = [
-    "COMPARABLE_FIELDS",
-    "BadCase",
-    "CheckVerdict",
-    "Efficiency",
     "EvalSample",
-    "JudgeCell",
-    "JudgeCellName",
-    "Outcome",
     "RedLine",
-    "RedLineHit",
-    "ReportHeader",
     "Rubric",
     "RubricItem",
     "RubricLevel",
-    "RubricScore",
-    "SampleResult",
     "SampleStart",
-    "SenseAgreement",
-    "TokenUse",
+    "CheckVerdict",
+    "Outcome",
+    "RedLineHit",
 ]

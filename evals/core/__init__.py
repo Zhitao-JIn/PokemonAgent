@@ -2,7 +2,7 @@
 
 `task` / `solver` / `evalset` 是真库 re-export（R0 实测口径，0.3.271）；
 `score` / `scorer` / `metric` 是本项目判定货币（Score/Scorer/Metric，R2a 从 e2e/scoring 迁入，
-R2b 换真库 Score 时判据/红线/投影逻辑不动）；`evallog` 承载 diff 口径校验（V9 的 header 载体）。
+R2b 换真库 Score 时判据/红线/投影逻辑不动）；现行结果与证据保存在 Inspect 日志。
 """
 
 from __future__ import annotations

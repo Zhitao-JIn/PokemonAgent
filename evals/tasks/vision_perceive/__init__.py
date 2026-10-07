@@ -1,7 +1,7 @@
 """perceive 测评：episode 档感知节点（`world.perceive_frame`）产出的 `Facts` 逐字段对真值。
 
 入口 `inspect eval evals/tasks/vision_perceive/task.py`；
-不起模拟器，帧来自 screen_reading 数据集 v2。
+不起模拟器，帧来自帧数据集 v2（`evals/data/frames/`）。
 """
 
 from __future__ import annotations

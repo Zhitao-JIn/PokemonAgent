@@ -13,7 +13,7 @@ from .episode_io import EpisodeOutput
 
 
 class LinkUse(BaseModel):
-    """一条链路的 token 用量（与 evals 侧 TokenUse 字段同构，按"谁产出谁消费"分家）。"""
+    """一条链路的 token 用量。"""
 
     input: int = 0
     output: int = 0

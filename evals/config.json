@@ -10,7 +10,6 @@
   "trace_backend": "local",
   "watch": false,
   "evaluation_models": {
-    "screen_interpret": "openai-api/qwen/qwen3.8-max",
     "test_text": "openai-api/deepseek/deepseek-flash"
   },
   "models": {

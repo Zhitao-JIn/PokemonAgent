@@ -8,7 +8,7 @@ from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
 from evals.core.frames import load_frames
-from evals.data.screen_reading.schemas import ScreenSample
+from evals.data.frames.schemas import ScreenSample
 from evals.runconfig import load_config
 from evals.tasks.vision_perceive.scorer import perceive_scorer
 from evals.tasks.vision_perceive.solver import perceive_solver

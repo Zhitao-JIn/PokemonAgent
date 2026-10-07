@@ -9,7 +9,6 @@ from .loader import (
     check,
     load_rubric,
     load_samples,
-    samples_digest,
     sha256_of,
 )
 
@@ -20,6 +19,5 @@ __all__ = [
     "check",
     "load_rubric",
     "load_samples",
-    "samples_digest",
     "sha256_of",
 ]

@@ -83,7 +83,7 @@ MCP 远程门面 `mcpclient/world_tool.py::WorldMcpTool`）**：
 | 方法 | 签名 | 信封文件 |
 |---|---|---|
 | `get_action_space` | `(req: …GetActionSpaceReq) -> …GetActionSpaceResp` | 常规场合按 overlay 给键 + 按场合给脚本条目，接管场合只给本场合的接管脚本、不给键 |
-| `execute` | `(req: …ExecuteReq) -> FromHarnessToGameToolExecuteResp` | 两形分流：键 → `world/object_events.observe_step`，`event` 带本键裸事件；脚本（常规与接管同一条路）→ 掩码校验后跑脚本层，`report` 是终态报告（`{ok, code, data, events, calls}`）。MCP 门面暂不接接管脚本（server 未注册其 tool），就地报错 |
+| `execute` | `(req: …ExecuteReq) -> FromHarnessToGameToolExecuteResp` | 两形分流：键 → `world/object_events.observe_step`，`event` 带本键裸事件；脚本（常规与接管同一条路）→ 掩码校验后跑脚本层，`report` 是终态报告（`{ok, code, data, events, calls}`）。MCP 门面调用同名工具并保留报告事件 |
 | `reset` | `(req: …ResetReq) -> None` | 只有 Req |
 | `perceive_with_retry` | `() -> tuple[…PerceiveOnceResp, ModelCallLog]` | episode 层视觉档；只有 Resp |
 | `perceive_task` | `() -> …PerceiveTaskResp` | task 层，不调模型、不失败 |
@@ -166,8 +166,8 @@ decompose / run_plan / object_render）。
 ## 七、当前状态与已知缺口
 
 - **四张门面**：`CheckpointToolPort` 已解散；`TraceToolPort` 只剩通用读口
-  `read_events`；MCP 面上 world server 共 22 个 tool（原子 7 + release_lease
-  + 脚本 14），脚本一次调用占 harness 账一步。
+  `read_events`；MCP 面上 world server 共 45 个 tool（原子 7 + release_lease
+  + 脚本 37），脚本一次调用占 harness 账一步。
 - **重试循环全在门面层**：`direct/brain_tool.py::_attempt_loop()` 七条链，
   `mcpclient/game_tools.py::perceive_with_retry()` 与
   `mcpclient/world_tool.py::perceive_with_retry()`（远程同构）。

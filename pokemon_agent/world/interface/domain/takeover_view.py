@@ -104,10 +104,10 @@ class BattleMenuView(BaseModel):
         )
 
 
-class FaintSwitchView(BaseModel):
-    """倒下后选下一只：队伍。"""
+class BattleSwitchView(BaseModel):
+    """战斗换人：队伍；主动换人与倒下换人使用同一形状。"""
 
-    kind: Literal["faint_switch"] = "faint_switch"
+    kind: Literal["battle_switch"] = "battle_switch"
     party: list[MonEntry] = Field(default_factory=list, description="队伍，按队伍顺序")
 
     def render(self) -> str:
@@ -188,7 +188,7 @@ TakeoverView = Annotated[
     ShopItemsView
     | NamingView
     | BattleMenuView
-    | FaintSwitchView
+    | BattleSwitchView
     | BagView
     | PartyView
     | PcView
@@ -206,7 +206,7 @@ __all__ = [
     "PartyView",
     "PcView",
     "BattleMenuView",
-    "FaintSwitchView",
+    "BattleSwitchView",
     "MonEntry",
     "MoveEntry",
     "NamingView",

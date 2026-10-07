@@ -29,7 +29,9 @@ def compute_action_space(obs: TaskObservation, all_actions: list[str]) -> Action
     scene = str(obs.scene)
     scripts = script_entries(scene)
 
-    if takeover_entries(obs.scene):
+    covered_by_script = bool(takeover_entries(obs.scene))
+    assert obs.covered_by_script == covered_by_script, "takeover vocabulary and registry disagree"
+    if covered_by_script:
         names: list[str] = []
         entries: list[ActionEntry] = []
     else:

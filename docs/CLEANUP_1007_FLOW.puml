@@ -1,0 +1,22 @@
+@startuml
+title Unified script execution after cleanup
+participant "Harness act" as Harness
+participant "GameTools / WorldMcpTool" as Tool
+participant "MCP explicit script API" as Server
+participant "ScriptRun + script policy" as Script
+participant "WorldConsole" as Console
+participant "TraceTool (local default)" as Trace
+Harness -> Tool: ExecuteReq(script name, args)
+alt in-process
+Tool -> Script: selected script(arguments)
+else MCP
+Tool -> Server: same-named tool(arguments, client_id)
+Server -> Server: lease check
+Server -> Script: _run_script(selected script)
+end
+Script -> Console: configured preparation, steps, wait, cleanup
+Console --> Script: observations, key events, model calls
+Script --> Tool: terminal report (MCP envelope when remote)
+Tool --> Harness: ExecuteResp(report, events, calls)
+Harness -> Trace: action and model-call events
+@enduml

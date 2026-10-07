@@ -150,13 +150,15 @@ _TAKEOVER_INTERNAL = frozenset({"shop_buy", "shop_sell"})
 SCENE_SCRIPTS: dict[str, frozenset[str]] = {
     "walk": _FIELD_SCRIPTS,
     "dialog": _DIALOG_SCRIPTS,
+    "transition": frozenset({"wait_until_scene"}),
     **{
         scene.value: (frozenset(defs) - _TAKEOVER_INTERNAL)
         | (_SHOP_SCRIPTS if scene is TaskScene.SHOP_ITEMS else frozenset())
         for scene, defs in REGISTRY.items()
     },
 }
-"""场合 → 此刻可用的脚本名集合。walk 给常规脚本、dialog 只给对话推进类、各接管场合给
+"""场合 → 此刻可用的脚本名集合。walk 给常规脚本、dialog 给对话推进类、transition 给等待。
+各接管场合给
 本场合的接管脚本（商店另加 `buy_item` / `sell_item`）；不在表里的场合一律不给脚本。"""
 
 

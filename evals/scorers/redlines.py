@@ -31,7 +31,7 @@ def red_lines(
 ) -> list[RedLineHit]:
     """三条红线逐条核，返回命中的。
 
-    前置条件：两个 stall 上限来自口径头快照（`ReportHeader.config`），调用方保证 ≥1。
+    前置条件：两个 stall 上限来自装配期配置快照，调用方保证 ≥1。
     """
     hits = [
         _r1(stream),

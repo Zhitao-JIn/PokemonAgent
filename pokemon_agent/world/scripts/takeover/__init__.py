@@ -11,7 +11,7 @@ from dataclasses import replace
 from ...interface import ActionEntry, Memory, ScreenText, TakeoverView, TaskScene
 from ..definitions import ScriptDefinition
 from .bag import BAG_TAKEOVERS, bag_view
-from .battle import BATTLE_TAKEOVERS, FAINT_TAKEOVERS, battle_view, faint_view
+from .battle import BATTLE_TAKEOVERS, SWITCH_TAKEOVERS, battle_view, switch_view
 from .learn_move import LEARN_TAKEOVERS, learn_view
 from .naming import NAMING_TAKEOVERS, naming_view
 from .party import PARTY_TAKEOVERS, party_view
@@ -22,7 +22,7 @@ PREFIX: dict[TaskScene, str] = {
     TaskScene.SHOP_ITEMS: "shop",
     TaskScene.NAMING: "naming",
     TaskScene.BATTLE_MENU: "battle",
-    TaskScene.FAINT_SWITCH: "faint",
+    TaskScene.BATTLE_SWITCH: "switch",
     TaskScene.BAG: "bag",
     TaskScene.PARTY: "party",
     TaskScene.PC: "pc",
@@ -34,7 +34,7 @@ _SHORT: dict[TaskScene, dict[str, ScriptDefinition]] = {
     TaskScene.SHOP_ITEMS: SHOP_TAKEOVERS,
     TaskScene.NAMING: NAMING_TAKEOVERS,
     TaskScene.BATTLE_MENU: BATTLE_TAKEOVERS,
-    TaskScene.FAINT_SWITCH: FAINT_TAKEOVERS,
+    TaskScene.BATTLE_SWITCH: SWITCH_TAKEOVERS,
     TaskScene.BAG: BAG_TAKEOVERS,
     TaskScene.PARTY: PARTY_TAKEOVERS,
     TaskScene.PC: PC_TAKEOVERS,
@@ -76,8 +76,8 @@ def takeover_view(
         return naming_view(text, mem)
     if scene is TaskScene.BATTLE_MENU:
         return battle_view(mem)
-    if scene is TaskScene.FAINT_SWITCH:
-        return faint_view(mem)
+    if scene is TaskScene.BATTLE_SWITCH:
+        return switch_view(mem)
     if scene is TaskScene.BAG:
         return bag_view(mem)
     if scene is TaskScene.PARTY:

@@ -120,7 +120,11 @@ transport 级失败（JSON-RPC error）由 mcpclient 翻译成 Python 异常抛�
 `no_target` / `no_response` / `no_encounter` / `not_sold_here` / `not_in_bag` /
 `count_limit` / `insufficient_funds` / `insufficient_stock` / `verify_failed` /
 `warp_failed` / `wrong_scene` / `timeout` / `still_talking` / `perception_failed` /
-`unsupported_map` / `stalled`
+`unsupported_map` / `stalled` / `left_scene` / `unknown_script` / `bad_args` /
+`unknown_item` / `not_enough_money` / `bag_full` / `quantity_out_of_range` / `key_item` /
+`invalid_name` / `unknown_move` / `no_pp` / `unknown_pokemon` / `pokemon_fainted` /
+`already_active` / `target_required` / `cannot_use` / `rewind_limit` / `step_timeout` /
+`unexpected_screen`
 
 ### 3.4 裸事件（跨两 server 的协议货币）
 
@@ -285,11 +289,28 @@ ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已�
 开始菜单导航与回血确认同样使用 ScriptRun，但显式不启用选项中断；目标菜单或 YES 已由
 脚本目的给定。执行器不根据脚本所在目录自动决定这些规则。
 
-## 七、world server——脚本层（15 条，一脚本一 API）
+## 七、world server——脚本层（37 条，一脚本一 API）
 
 接管场合的多步操作也是脚本（接管脚本，`scripts/takeover/`，对外名带场合前缀），与常规脚本同一种动作；
-进程内经 `GameTools.execute` 执行，MCP 面暂未注册（WorldMcpTool 就地报错）。泛型 run_script 废。
+进程内经 `GameTools.execute` 执行，MCP 面经 `WorldMcpTool.execute` 调用同名工具。泛型 run_script 废。
 成功谓词机械可判；终态报告统一带 `events[]` 与现状快照。
+
+14 条地图/场所脚本保留原签名；23 条接管脚本按场合分文件，用显式函数签名注册，
+不在运行时生成签名。每条另收可选 `client_id`，沿用同一租约与 `_run_script` 路径。
+`shop_buy`、`shop_sell` 只由 `buy_item`、`sell_item` 组合调用，不注册独立工具。
+
+| 场合 | 接管工具与业务参数 |
+|---|---|
+| 商店、起名 | `shop_quit()`、`naming_enter_name(name)` |
+| 战斗、倒下 | `battle_fight(move)`、`battle_switch(pokemon)`、`battle_use_item(item, pokemon="")`、`battle_run()`、`faint_send_out(pokemon)` |
+| 背包 | `bag_use(item, pokemon="")`、`bag_toss(item, quantity)`、`bag_close()` |
+| 队伍 | `party_switch(a, b)`、`party_field_move(pokemon, move)`、`party_stats(pokemon)`、`party_close()` |
+| PC 物品 | `pc_withdraw_item(item, quantity)`、`pc_deposit_item(item, quantity)`、`pc_toss_item(item, quantity)` |
+| PC 精灵 | `pc_withdraw_pokemon(pokemon)`、`pc_deposit_pokemon(pokemon)`、`pc_change_box(n)`、`pc_log_off()` |
+| 学招 | `learn_forget(move)`、`learn_skip()` |
+
+报告事件从 MCP 信封的 `events` 还原到 `report.events`；具名脚本失败码也在信封词表中，
+因此错误场合、找不到物品等预期失败仍可返回脚本报告，不会被信封契约断言截断。
 
 ### 7.1 商店类（多地图：按当前 map_id 查 tables，白名单外 → `unsupported_map`）
 

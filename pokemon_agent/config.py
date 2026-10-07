@@ -19,7 +19,7 @@
 **为什么不读环境变量**：env 是**部署配置**（端口、超时、开关），改它是因为机器/服务变了；
 这里是**实验配置**，改它是因为这一轮实验想试别的参数。两者生命周期不同，混在一起
 会让"这次实验的配置"无法从代码里复现。env 读取留在各自模块
-（`brain/providers.py` 读密钥、`experiment/real_check/common.py` 读核对参数）。
+（`brain/providers.py` 读密钥）。
 """
 
 from __future__ import annotations
@@ -253,8 +253,8 @@ CHECKPOINT_ENABLED = True
 关掉时 `build.py` 不造存档器，各入口见 None 即不存档，其余行为不变。"""
 
 
-TRACE_BACKEND = "langfuse"
-"""trace 后端的系统缺省：`"langfuse"`（本机自托管服务，装配期先打健康检查探针）
-或 `"local"`（一条事件一个 JSON 落盘）。**实验旋钮**：`build_real(trace_backend=…)`
+TRACE_BACKEND = "local"
+"""trace 后端的系统缺省：`"local"`（一条事件一个 JSON 落盘）。可显式选择
+`"langfuse"`（本机自托管服务，装配期健康检查）。**实验旋钮**：`build_real(trace_backend=…)`
 显式传参优先；没传时取这里。eval 跑批由 `evals/config.json::trace_backend` 显式传参覆盖。
 连接信息（地址、密钥）是部署事实，留在 `.env` 的 `LANGFUSE_*`。"""

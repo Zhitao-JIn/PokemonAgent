@@ -1,30 +1,25 @@
-"""三项帧测评共用的冻结数据集；加载不推进模拟器、不现场生成真值。"""
+"""帧测评（decode / vision_perceive）共用的冻结数据集；加载不推进模拟器、不现场生成真值。"""
 
-import json
-from pathlib import Path
-
-from evals.data.frames.interpret import INTERPRET_INPUTS
-from evals.data.frames.terrain import TERRAIN_FRAMES
-from evals.data.screen_reading.build import load_samples
-from evals.data.screen_reading.schemas import ScreenSample
-
-EXTRA_FRAMES = Path(__file__).parents[1] / "data" / "frames" / "takeover.jsonl"
+from evals.data.frames.build import load_samples
+from evals.data.frames.schemas import FrameTruth, ScreenSample
+from evals.data.frames.truth import TRUTH_GROUPS, load_truth
 
 
 def load_frames(version: str = "v2") -> list[ScreenSample]:
-    """读取基础帧和接管冻结帧；没有标某组的帧保持 None。"""
+    """读取统一帧集，再挂上唯一真值文件；没有标某组的帧保持 None。
+
+    前置条件：同一帧的同一组真值只有一个来源（帧文件或 truth.jsonl）。
+    """
     frames = load_samples(version)
-    for path in (EXTRA_FRAMES, TERRAIN_FRAMES):
-        if path.exists():
-            frames += [
-                ScreenSample.model_validate_json(line)
-                for line in path.read_text(encoding="utf-8").splitlines()
-                if line
-            ]
-    if INTERPRET_INPUTS.exists():
-        inputs = json.loads(INTERPRET_INPUTS.read_text(encoding="utf-8"))
-        frames = [
-            frame.model_copy(update={"interpret_input": inputs.get(frame.sample_id)})
-            for frame in frames
-        ]
-    return frames
+    truth = load_truth()
+    return [_with_truth(frame, truth.get(frame.sample_id)) for frame in frames]
+
+
+def _with_truth(frame: ScreenSample, extra: FrameTruth | None) -> ScreenSample:
+    """把一行补充真值的各组挂到帧上；同组两处都有真值当场炸。"""
+    if extra is None:
+        return frame
+    update = {g: getattr(extra, g) for g in TRUTH_GROUPS if getattr(extra, g) is not None}
+    clash = [g for g in update if getattr(frame, g) is not None]
+    assert not clash, f"{frame.sample_id} 的 {clash} 在帧文件与 truth.jsonl 里都有"
+    return frame.model_copy(update=update)

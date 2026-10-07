@@ -53,7 +53,7 @@ class ModelCall(BaseModel):
         "而 `raw`/`prompt` 让你改进解析器之后能离线重算，不必再花 token 重跑。"
         '**`ok` 一律小写（`"true"`/`"false"`）**：这份 payload 是被 tool 层原样'
         "摊平进 trace 的，而账本只有一套布尔字面量——生产者写大写会在核对处当场炸"
-        "（`experiment/real_check/node_io.py::BOOLEAN_FIELDS`）",
+        "（`tests/_harness_fixtures/node_io.py::BOOLEAN_FIELDS`）",
     )
     error_kind: str = Field(
         default="",

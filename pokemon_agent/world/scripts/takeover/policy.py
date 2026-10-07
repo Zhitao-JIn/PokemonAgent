@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...scene import at_start, classify_scene
+from ...interface import ScreenText, TaskScene
+from ...scene import BATTLE_ACTIONS, at_start, classify_scene
 from ..control_flow import Abort, Halt
 from ..execution_types import ScriptReason, ScriptStatus
 from ..policies import ScriptPolicy, StableWait
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 
 
 def reset_menu(run: ScriptRun) -> ScriptStatus | None:
-    """按 B 回本场合初态；离开场合或达到预算时返回具名结局。"""
+    """退回主菜单，战斗菜单再归位到FIGHT；离开场合或达到预算时返回具名结局。"""
     for _ in range(REWIND_LIMIT + 1):
         run.settle()
         text = run.screen()
@@ -24,8 +25,21 @@ def reset_menu(run: ScriptRun) -> ScriptStatus | None:
             return ScriptStatus.LEFT_SCENE
         if at_start(text, scene):
             return None
-        run.press_screen("b", expect="回初态")
+        key = _reset_key(text, scene)
+        run.press_screen(key, expect="回初态")
     return ScriptStatus.ABORTED
+
+
+def _reset_key(text: ScreenText, scene: TaskScene) -> str:
+    """完整战斗主菜单先按行列归位；其他画面用B返回上一层。"""
+    if (
+        scene is TaskScene.BATTLE_MENU
+        and text.options == BATTLE_ACTIONS
+        and text.has_cursor
+        and text.cursor_cell in ((0, 1), (1, 0), (1, 1))
+    ):
+        return "up" if text.cursor_cell[0] else "left"
+    return "b"
 
 
 def prepare_menu(run: ScriptRun) -> None:

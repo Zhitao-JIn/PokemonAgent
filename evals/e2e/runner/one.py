@@ -15,11 +15,13 @@ import shutil
 from pathlib import Path
 
 from evals.data import DATASET_DIR, REPO_ROOT
-from evals.e2e.report import RUN_RECORD, RUN_RESULT
 from evals.schema import EvalSample
 from pokemon_agent.build import build_real
 from pokemon_agent.harness import RunRuntime
 from pokemon_agent.harness.checkpoint import CheckpointIncompatible, restore_run
+
+RUN_RECORD = "run.json"
+RUN_RESULT = "run_result.json"
 
 ROM = "assets/rom"
 """ROM 路径，相对仓库根（`assets/` 不进 git）。"""

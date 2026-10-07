@@ -12,7 +12,9 @@ from pydantic import BaseModel, Field
 class ScreenText(BaseModel):
     """一帧屏幕上的文字事实。读不出的项留空，不猜。"""
 
-    dialog_text: str = Field(default="", description="底部对话框里的文字（续页标记已去掉）")
+    dialog_text: str = Field(
+        default="", description="底部对话框里的文字（续页标记已去掉）；图鉴条目页的说明文字也算"
+    )
     options: list[str] = Field(default_factory=list, description="光标所在框里的选项，按屏幕顺序")
     cursor: str = Field(default="", description="光标（▶）指着的那一项；没有光标为空")
     option_grid: list[list[str]] = Field(
@@ -37,7 +39,8 @@ class ScreenText(BaseModel):
     quantity_box: bool = Field(default=False, description="屏幕上有没有数量框（`×01` 这种）")
     strict_dialog: bool = Field(
         default=False,
-        description="严格的对话帧：底部对话框有字、没有 `▶`、没有数量框、对话框外没有别的框",
+        description="严格的对话帧：底部对话框画着（空框也算，字可能还没打出来）、没有 `▶`、"
+        "没有数量框、对话框外没有别的框",
     )
     screen: str = Field(
         default="",

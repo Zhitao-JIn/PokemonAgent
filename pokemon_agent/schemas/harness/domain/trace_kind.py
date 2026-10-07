@@ -86,7 +86,7 @@ class TraceKind(StrEnum):
     #
     # 此前这一族是**开集**：落盘 `kind` 取 `type(exc).__name__`（网关的
     # `APIStatusError`、`OutputTruncated`……任何异常都可能落进来），于是
-    # "封套 kind 必在词表内"这条判据不得不留一个特例——`experiment/real_check/`
+    # "封套 kind 必在词表内"这条判据不得不留一个特例——`tests/_harness_fixtures/node_io.py`
     # `node_io.py` 那时按"形状"收族（"没登记过、又带一条真链路"），
     # 而不是按名字登记。开集进不了枚举，所以现在分三档：
     #

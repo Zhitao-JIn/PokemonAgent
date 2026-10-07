@@ -3,12 +3,12 @@
 import base64
 import zlib
 
-from evals.core.frames import EXTRA_FRAMES
 from evals.core.world_case import start_world, stop_world
-from evals.data.screen_reading.schemas import ScreenLabel, ScreenSample
+from evals.data.frames.schemas import ScreenLabel, ScreenSample
 from pokemon_agent.world import W_TILEMAP
 
 from .capture_cases import CASES
+from .storage import save_frames
 
 
 def freeze_takeover() -> None:
@@ -20,8 +20,6 @@ def freeze_takeover() -> None:
             perceived = world.perceive_task()
             memory = world._pyboy.memory
             truth = {
-                "scene": case.scene.value,
-                "screen_contains": list(case.on_screen),
                 **{f"view.{key}": value for key, value in case.expect.items()},
             }
             frames.append(
@@ -37,14 +35,15 @@ def freeze_takeover() -> None:
                     frame_png=perceived.frame_png,
                     label=ScreenLabel(scene=case.scene.value, overlay="none"),
                     takeover_truth=truth,
+                    scene_truth={"scene": case.scene.value},
+                    screen_truth={"screen_contains": list(case.on_screen)},
                     wram=base64.b64encode(zlib.compress(bytes(memory[0xC000:0xE000]), 9)).decode(),
-                    note="原接管视图手写期望；文字组与地形组没有标注",
+                    note="原接管视图手写期望；场合与文字片段各归所属分组，地形未标",
                 )
             )
         finally:
             stop_world(world)
-    EXTRA_FRAMES.parent.mkdir(parents=True, exist_ok=True)
-    EXTRA_FRAMES.write_text("\n".join(f.model_dump_json() for f in frames) + "\n", encoding="utf-8")
+    save_frames(frames, replace_sources=("takeover_snapshot",))
 
 
 if __name__ == "__main__":

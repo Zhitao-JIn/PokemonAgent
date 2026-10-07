@@ -84,7 +84,7 @@ CASES: list[ViewCase] = [
     ViewCase(
         "faint_switch",
         FAINT,
-        TaskScene.FAINT_SWITCH,
+        TaskScene.BATTLE_SWITCH,
         {
             "party.0.name": "BULBASAUR",
             "party.0.hp": 0,

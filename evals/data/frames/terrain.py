@@ -2,16 +2,16 @@
 
 import base64
 import zlib
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 
 from evals.core.world_case import start_world, stop_world
-from evals.data.screen_reading.schemas import ScreenLabel, ScreenSample
+from evals.data.frames.schemas import ScreenLabel, ScreenSample
 from pokemon_agent.world import W_TILEMAP
 
-TERRAIN_FRAMES = Path(__file__).with_name("terrain.jsonl")
+from .storage import save_frames
+
 BASIS = "evals/tasks/world_actions/regular_batch_1.py 文件顶层存档速记"
 
 
@@ -76,9 +76,7 @@ def freeze_terrain() -> None:
             )
         finally:
             stop_world(world)
-    TERRAIN_FRAMES.write_text(
-        "\n".join(f.model_dump_json() for f in frames) + "\n", encoding="utf-8"
-    )
+    save_frames(frames, replace_sources=("terrain_snapshot",))
 
 
 if __name__ == "__main__":

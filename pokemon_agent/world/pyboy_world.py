@@ -416,6 +416,7 @@ class PyBoyWorld:
                 done=self._closed,
                 perceived=False,
                 scene=scene,
+                menu_decode_complete=text.covered,
                 takeover=takeover_view(scene, text, mem, self._rom),
             ),
             frame_png=_png_data_uri(png),

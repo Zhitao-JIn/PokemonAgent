@@ -85,7 +85,7 @@ H --> T : press_key / run_macro
 | 接管 | `pc` | 选哪台 PC（`… 's PC` + `LOG OFF`） |
 | 接管 | `bag`（野外） | 背包列表 |
 | 接管 | `battle_menu` | `▶FIGHT / PKMN / ITEM / RUN` |
-| 接管 | `faint_switch` | "Bring out which POKéMON?" 的队伍列表 |
+| 接管 | `battle_switch` | 战斗中的队伍选择列表，包括主动换人与倒下换人 |
 | 接管 | `party`（野外） | 队伍列表 |
 | 接管 | `learn_move` | "Delete an older move…" 的 YES/NO |
 
@@ -99,7 +99,8 @@ H --> T : press_key / run_macro
 
 ### 3. 初态
 
-`at_start` = 本场合主菜单画着 **且** 有实心 `▶` **且** 屏上没有任何空心 `▷`（原型 `classify.py::at_start`）。
+`at_start` = 本场合主菜单画着 **且** 有实心 `▶` **且** 屏上没有任何空心 `▷`。
+战斗行动菜单另要求完整FIGHT/PKMN/ITEM/RUN四项且光标在FIGHT；恢复流程在主菜单用方向键归位，子菜单按B退回。
 只看三角不够：战斗的招式列表 / 背包 / 换人列表、PC 各级菜单整块盖住上一层，不留 `▷`（实测）。
 
 **画面稳定**：判 `at_start` 前先等屏幕缓冲连续 `STABLE_POLLS` 次不变（每次间隔 `POLL_FRAMES` 帧）——游戏处理按键时会擦掉
@@ -143,7 +144,7 @@ H --> T : press_key / run_macro
 | `PcView` | PC 道具、背包、当前箱宝可梦（种类、昵称）、当前箱号 | 0xD53A；0xD31D；`wBoxCount` 0xDA80 / `wBoxSpecies` 0xDA81 / `wBoxMonNicks` 0xDE06；`wCurrentBoxNum` 0xD5A0 | ✅（箱只有当前箱） |
 | `BagView` | 背包（名、数量）、队伍（昵称、HP） | `wNumBagItems` 0xD31D；`wPartyCount` 0xD163 / `wPartyMonNicks` 0xD2B5；HP 同下 | 背包、昵称 ✅；HP 未逐帧核 |
 | `BattleMenuView` | 出场宝可梦招式与 PP、队伍（昵称、HP、招式）、背包 | `wBattleMonMoves` 0xD01C / `wBattleMonPP` 0xD02D（低 6 位）；`wPartyMon1Moves` 0xD173 / `wPartyMon1PP` 0xD188，每只 +44 | ✅ 与 FIGHT 列表、能力页一致 |
-| `FaintSwitchView` | 队伍（昵称、HP、是否倒下） | 同上；HP `wPartyMon1HP` 0xD16C，每只 +44 | 昵称 ✅；HP 地址取自 pokered.sym，未逐帧核 |
+| `BattleSwitchView` | 队伍（昵称、HP、是否倒下） | 同上；HP `wPartyMon1HP` 0xD16C，每只 +44 | 昵称 ✅；HP 地址取自 pokered.sym，未逐帧核 |
 | `PartyView` | 队伍（昵称、等级、HP、招式） | 同上 | ✅ |
 | `LearnMoveView` | 谁在学、想学的招、现有四招 | 学招的是队伍第 `wWhichPokemon` 0xCF92 只；想学的招 `wMoveNum` 0xD0E0 | ✅（RARE CANDY 触发实测） |
 
@@ -164,7 +165,7 @@ H --> T : press_key / run_macro
 | `pc` | `withdraw_item` / `deposit_item` / `toss_item(item: str, quantity: int)`、`withdraw_pokemon` / `deposit_pokemon(pokemon: str)`、`change_box(n: int)`、`log_off()` |
 | `bag` | `use(item: str, pokemon: str = "")`、`toss(item: str, quantity: int)`、`close()` |
 | `battle_menu` | `fight(move: str)`、`switch(pokemon: str)`、`use_item(item: str, pokemon: str = "")`、`run()` |
-| `faint_switch` | `send_out(pokemon: str)` |
+| `battle_switch` | `send_out(pokemon: str)` |
 | `party` | `switch(a: str, b: str)`、`field_move(pokemon: str, move: str)`（FLY 要再选目的地，暂不支持）、`stats(pokemon: str)`、`close()` |
 | `learn_move` | `forget(move: str)`、`skip()` |
 
@@ -196,7 +197,7 @@ H --> T : press_key / run_macro
    每步最多等 `STEP_TIMEOUT_FRAMES`，超时 → 按 B 回初态 → 结束（`aborted`，写明停在哪一步）。
 4. **收尾**：
    - 商店、PC、背包、队伍：按 B 回到初态（`done`）；
-   - `battle_menu` / `faint_switch` / `learn_move`：出招等之后**自动推进战斗文字**——只在屏上出现 `▼`（游戏在等按键）、
+   - `battle_menu` / `battle_switch` / `learn_move`：出招等之后**自动推进战斗文字**——只在屏上出现 `▼`（游戏在等按键）、
      或画面静止满 `QUIET_PRESS_FRAMES` 帧时按 A（文字自己在走时按早了会落在紧接着出现的选单上）；
      遇到任意 `▶`（下一个选单、单层 YES/NO 如 "Use next POKéMON?"、捕获后的起名询问）、或战斗标志清零、或达到 `ADVANCE_LIMIT`，停（`done`）。
      **遇到 `▶` 必须停**：按 A 会替 JEV 选掉单层 YES/NO。停在战斗选单的子层时按 B 退回行动菜单。
@@ -276,7 +277,7 @@ H --> T : press_key / run_macro
 
 1. 场合分类器 + `at_start` 迁入 world；`TaskObservation` 与 `perceive_task()`，task 层消费方换型；`walk_map` / `screen` 互斥；读屏测评改测 world。
 2. 宏骨架（`engine`）+ `MacroOutcome` + `run_macro` 账；先落 `shop_items` 三个宏与 `naming`。
-3. 战斗：`battle_menu` / `faint_switch` 与自动推进。
+3. 战斗：`battle_menu` / `battle_switch` 与自动推进。
 4. `pc`、`bag`、`party`；`learn_move`（先补一份能触发学新招的存档实测）。
 5. prompt 分场合 + 共用读屏片段；对象事件闸门修正。
 

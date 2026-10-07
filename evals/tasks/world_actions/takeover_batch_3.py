@@ -43,7 +43,7 @@ CASES: list[Case] = [
     Case(
         case_id="send_out_ok",
         state=FAINT,
-        script="faint_send_out",
+        script="switch_send_out",
         args={"pokemon": "PIDGEY"},
         status=_S.DONE,
         checks=(_in_play("PIDGEY"), _battle_start),
@@ -51,20 +51,20 @@ CASES: list[Case] = [
     Case(
         case_id="send_out_fainted",
         state=FAINT,
-        script="faint_send_out",
+        script="switch_send_out",
         args={"pokemon": "BULBASAUR"},
         status=_S.REJECTED,
         reason=_R.POKEMON_FAINTED,
-        checks=(_scene(TaskScene.FAINT_SWITCH),),
+        checks=(_scene(TaskScene.BATTLE_SWITCH),),
     ),
     Case(
         case_id="send_out_unknown",
         state=FAINT,
-        script="faint_send_out",
+        script="switch_send_out",
         args={"pokemon": "MEW"},
         status=_S.REJECTED,
         reason=_R.UNKNOWN_POKEMON,
-        checks=(_scene(TaskScene.FAINT_SWITCH),),
+        checks=(_scene(TaskScene.BATTLE_SWITCH),),
     ),
     Case(
         case_id="battle_script_in_shop",

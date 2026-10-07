@@ -28,9 +28,10 @@ def main(argv: list[str] | None = None) -> int:
         from evals.e2e.cli import main as run_one_main
 
         return run_one_main(args[1:])
-    if args[:2] == ["screen", "build"]:
-        from evals.data.screen_reading.cli import main as build_main
+    if args[:2] == ["frames", "build"]:
+        from evals.data.frames.cli import main as build_main
 
         return build_main(args[1:])
-    print("用法：python -m evals list | run <task> [inspect 参数] | freeze-frames", file=sys.stderr)
+    usage = "用法：python -m evals list | run <task> [inspect 参数] | freeze-frames | frames build"
+    print(usage, file=sys.stderr)
     return 2

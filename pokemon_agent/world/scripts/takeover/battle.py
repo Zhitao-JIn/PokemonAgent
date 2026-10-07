@@ -1,6 +1,6 @@
-"""战斗选单（`battle_menu`）与倒下换人（`faint_switch`）的接管脚本，外加这两个场合的视图。
+"""战斗选单（`battle_menu`）与统一换人（`battle_switch`）的接管脚本及视图。
 
-初态：行动菜单 `▶FIGHT PKMN / ITEM RUN` 画着（`battle_menu`）；队伍列表画着（`faint_switch`）。
+初态：行动菜单 `▶FIGHT PKMN / ITEM RUN` 画着（`battle_menu`）；队伍列表画着（`battle_switch`）。
 出招、换人、用道具、逃跑之后自动推进战斗文字，遇到任意 `▶`、战斗标志清零或推进上限即停，
 停下的画面交还给 JEV（下一个选单、单层 YES/NO、战斗结束后的野外）。
 地址按 `pret/pokered` 链接符号表：出场宝可梦招式 `wBattleMonMoves` 0xD01C /
@@ -14,7 +14,7 @@ from ...battle_status import read_battle_status
 from ...interface import (
     ActionEntry,
     BattleMenuView,
-    FaintSwitchView,
+    BattleSwitchView,
     Memory,
     MonEntry,
     ScreenText,
@@ -89,9 +89,9 @@ def battle_view(mem: Memory) -> BattleMenuView | None:
     )
 
 
-def faint_view(mem: Memory) -> FaintSwitchView:
-    """倒下换人的视图：队伍。"""
-    return FaintSwitchView(party=_party(mem))
+def switch_view(mem: Memory) -> BattleSwitchView:
+    """战斗换人的统一视图：队伍。"""
+    return BattleSwitchView(party=_party(mem))
 
 
 # ---- 共用步骤 ----
@@ -313,7 +313,7 @@ def _execute_run(run: ScriptRun, args: dict[str, str | int]) -> str:
 
 
 def _check_send(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
-    return check_target(_party(run.mem), str(args["pokemon"]), need_bench=False)
+    return check_target(_party(run.mem), str(args["pokemon"]), need_bench=True)
 
 
 def _execute_send(run: ScriptRun, args: dict[str, str | int]) -> str:
@@ -390,19 +390,19 @@ BATTLE_TAKEOVERS: dict[str, ScriptDefinition] = {
     ),
 }
 
-FAINT_TAKEOVERS: dict[str, ScriptDefinition] = {
+SWITCH_TAKEOVERS: dict[str, ScriptDefinition] = {
     "send_out": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
             name="send_out",
             params=[_MON],
-            description="派出下一只：必须是没倒下的队员；之后自动推进到下一个选单",
+            description="换人：选择未倒下且不在场的队员；之后自动推进到下一个选单",
         ),
-        scene=TaskScene.FAINT_SWITCH,
+        scene=TaskScene.BATTLE_SWITCH,
         check=_check_send,
         execute=_execute_send,
         policy=menu_policy(rewind_after=False),
     ),
 }
 
-__all__ = ["BATTLE_TAKEOVERS", "FAINT_TAKEOVERS", "battle_view", "faint_view"]
+__all__ = ["BATTLE_TAKEOVERS", "SWITCH_TAKEOVERS", "battle_view", "switch_view"]

@@ -29,7 +29,7 @@ class TaskScene(StrEnum):
     PC = "pc"  # PC 一打开起：选哪台 PC、道具存取、宝可梦存取、换箱
     BAG = "bag"  # 野外背包一打开起：列表、用 / 丢、选对象、数量框、城镇地图
     BATTLE_MENU = "battle_menu"  # 战斗里的选单：行动菜单、招式列表、战斗背包、换人列表
-    FAINT_SWITCH = "faint_switch"  # 倒下后选下一只
+    BATTLE_SWITCH = "battle_switch"  # 战斗换人列表，不区分主动或倒下
     PARTY = "party"  # 野外队伍列表（开始菜单进的，含 STATS / SWITCH 子菜单）
     LEARN_MOVE = "learn_move"  # 学新招要忘旧招（含前面几句提示，RARE CANDY 触发实测）
 
@@ -41,7 +41,7 @@ TAKEOVER_SCENES: frozenset[TaskScene] = frozenset(
         TaskScene.PC,
         TaskScene.BAG,
         TaskScene.BATTLE_MENU,
-        TaskScene.FAINT_SWITCH,
+        TaskScene.BATTLE_SWITCH,
         TaskScene.PARTY,
         TaskScene.LEARN_MOVE,
     }

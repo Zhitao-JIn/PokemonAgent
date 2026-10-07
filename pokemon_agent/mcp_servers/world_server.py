@@ -1,4 +1,4 @@
-"""world server：MCP 注册表暴露世界的**原子层**（7 条）+ 健康检查。
+"""world server：MCP 注册表暴露 7 条原子操作、租约归还与 37 条脚本，另有健康检查。
 
 **这一层没有领域逻辑**：每条 tool = `WorldPort` 同名方法的直译（bytes 走 base64），
 信封组装归 mcpclient、脚本与判定归 server 进程内的脚本层（P4 起）。
@@ -16,7 +16,6 @@ client 拿到租约，其余人的变更调用一律 `rejected`，直到租约�
 
 from __future__ import annotations
 
-import argparse
 import base64
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -250,129 +249,22 @@ def _run_script(  # noqa: ANN401 —— 脚本入参形状各异，tool 壳逐�
     )
 
 
-@mcp.tool()
-def face_direction(direction: str, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 face_direction：转向指定方向（已面向则原地不动）。"""
-    from pokemon_agent.world.scripts.movement import face_direction as _fn
-
-    return _run_script(_fn, client_id, direction=direction)
-
-
-@mcp.tool()
-def walk_to_adjacent(direction: str, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 walk_to_adjacent：向相邻格走一步；被挡 → blocked，落草丛 → entered_grass。"""
-    from pokemon_agent.world.scripts.movement import walk_to_adjacent as _fn
-
-    return _run_script(_fn, client_id, direction=direction)
-
-
-@mcp.tool()
-def walk_to(x: int, y: int, max_steps: int = 200, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 walk_to：走到目标格（固定轴序贪心，被挡换轴，5 步收敛校验；不做 BFS）。"""
-    from pokemon_agent.world.scripts.movement import walk_to as _fn
-
-    return _run_script(_fn, client_id, x=x, y=y, max_steps=max_steps)
-
-
-@mcp.tool()
-def circle_walk(laps: int, extent: int = 1, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 circle_walk：绕圈走 laps 圈（每步断言位移、圈末回起点）。"""
-    from pokemon_agent.world.scripts.movement import circle_walk as _fn
-
-    return _run_script(_fn, client_id, laps=laps, extent=extent)
-
-
-@mcp.tool()
-def bounce_in_tall_grass(steps: int = 30, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 bounce_in_tall_grass：草丛里来回走撞怪；遇怪=battle_started（目的达成），
-    步数用完=no_encounter（合法）。"""
-    from pokemon_agent.world.scripts.movement import bounce_in_tall_grass as _fn
-
-    return _run_script(_fn, client_id, steps=steps)
-
-
-@mcp.tool()
-def talk_to_adjacent_npc(direction: str = "", client_id: str | None = None) -> dict[str, Any]:
-    """脚本 talk_to_adjacent_npc：跟面前 NPC 说话；对话增量在 events[]，
-    出选项 → choice_presented（绝不代选），训练家 → battle_started。"""
-    from pokemon_agent.world.scripts.interact import talk_to_adjacent_npc as _fn
-
-    return _run_script(_fn, client_id, direction=direction or None)
-
-
-@mcp.tool()
-def buy_item(item: str, count: int, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 buy_item：按 tables 在售表买道具；终态对账（扣款/入库）→ verify_failed 兜底。"""
-    from pokemon_agent.world.scripts.shop import buy_item as _fn
-
-    return _run_script(_fn, client_id, item=item, count=count)
-
-
-@mcp.tool()
-def sell_item(item: str, count: int, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 sell_item：把背包道具卖给店（卖价=买价一半）；终态对账 → verify_failed 兜底。"""
-    from pokemon_agent.world.scripts.shop import sell_item as _fn
-
-    return _run_script(_fn, client_id, item=item, count=count)
-
-
-@mcp.tool()
-def interact_facing(client_id: str | None = None) -> dict[str, Any]:
-    """脚本 interact_facing：跟面前物体交互（招牌/石头/NPC 通用）；有对话→ok，
-    无变化→no_response，出选项→choice_presented（绝不代选）。"""
-    from pokemon_agent.world.scripts.interact import interact_facing as _fn
-
-    return _run_script(_fn, client_id)
-
-
-@mcp.tool()
-def advance_dialog(max_presses: int = 30, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 advance_dialog：把当前对话框推进到底（反复按 a 直到回野外）；
-    推不完→still_talking，中途出选项→choice_presented（冻结）。"""
-    from pokemon_agent.world.scripts.flow import advance_dialog as _fn
-
-    return _run_script(_fn, client_id, max_presses=max_presses)
-
-
-@mcp.tool()
-def wait_until_scene(
-    scene: str, timeout_s: float = 10.0, client_id: str | None = None
-) -> dict[str, Any]:
-    """脚本 wait_until_scene：不按键只 tick，逐帧等场合变成 `scene`；超时→timeout
-    （过场/淡入/回血白闪这类"等它自己变"的窗口）。"""
-    from pokemon_agent.world.scripts.flow import wait_until_scene as _fn
-
-    return _run_script(_fn, client_id, scene=scene, timeout_s=timeout_s)
-
-
-@mcp.tool()
-def exit_map(target_warp: int = -1, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 exit_map：查 tables/warps[map_id] 的出口换图；踩到出口→ok（新图），
-    按了不换图（表过期）→warp_failed，去门口被挡→透传 blocked，map 非白名单→unsupported_map。"""
-    from pokemon_agent.world.scripts.navigation import exit_map as _fn
-
-    return _run_script(_fn, client_id, target_warp=target_warp)
-
-
-@mcp.tool()
-def heal_at_center(max_steps: int = 60, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 heal_at_center：宝可梦中心回满血（走到护士前→面朝护士→对话→机械确认
-    YES→回满校验）；map 非白名单→unsupported_map，队伍未全满→verify_failed。"""
-    from pokemon_agent.world.scripts.navigation import heal_at_center as _fn
-
-    return _run_script(_fn, client_id, max_steps=max_steps)
-
-
-@mcp.tool()
-def open_menu_to(target: str, client_id: str | None = None) -> dict[str, Any]:
-    """脚本 open_menu_to：开 start 菜单并进指定子菜单（如 POKéMON→party）；
-    target 非法→rejected，选中后仍在 start 菜单→wrong_scene。"""
-    from pokemon_agent.world.scripts.menu import open_menu_to as _fn
-
-    return _run_script(_fn, client_id, target=target)
-
-
 # ---- 运维面 ----
+
+
+def _run_named_script(
+    name: str, client_id: str | None, arguments: dict[str, str | int | float | None]
+) -> dict[str, Any]:
+    """公开脚本共用现有租约、执行和终态信封通道。"""
+    from pokemon_agent.world.scripts.catalog import SCRIPT_FUNCS
+
+    assert name in SCRIPT_FUNCS, f"unregistered script {name!r}"
+    return _run_script(SCRIPT_FUNCS[name], client_id, **arguments)
+
+
+from .world_script_tools import register as register_script_tools  # noqa: E402
+
+register_script_tools(mcp, _run_named_script)
 
 
 @mcp.custom_route(HEALTH_PATH, methods=["GET"])
@@ -390,30 +282,10 @@ async def health(_request: Request) -> JSONResponse:
 
 
 def main() -> None:
-    """命令行入口：解析参数 → 造真实世界 → 起 Streamable HTTP 服务。"""
-    parser = argparse.ArgumentParser(description="pokemon world MCP server")
-    parser.add_argument("--rom", required=True, help="ROM 路径")
-    parser.add_argument("--state-file", default=None, help="起点存档（不给 = 从开机起跑）")
-    parser.add_argument("--vision-model", default="qwen3.8-max")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8767)
-    args = parser.parse_args()
+    """委托命令行装配与服务启动。"""
+    from .world_server_cli import main as run_server
 
-    from pokemon_agent.brain.vision_factory import build_vision_provider
-    from pokemon_agent.world import PyBoyWorld
-
-    world = PyBoyWorld(
-        args.rom,
-        build_vision_provider(model=args.vision_model, temperature=0.0),
-        state_path=args.state_file,
-    )
-    start(world, rom=args.rom)
-    mcp.settings.host = args.host
-    mcp.settings.port = args.port
-    assert mcp.settings.streamable_http_path == MCP_PATH
-    print(f"{SERVICE_NAME} listening on http://{args.host}:{args.port}{MCP_PATH}")
-    print(f"health: http://{args.host}:{args.port}{HEALTH_PATH}")
-    mcp.run(transport="streamable-http")
+    run_server(mcp, start, SERVICE_NAME)
 
 
 if __name__ == "__main__":

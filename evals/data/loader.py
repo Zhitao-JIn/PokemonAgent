@@ -88,12 +88,6 @@ def check(version: str, rule_ids: set[str]) -> list[EvalSample]:
     return samples
 
 
-def samples_digest(samples: list[EvalSample]) -> str:
-    """一组样本定义的整体哈希（进口径头）。"""
-    blob = "\n".join(s.model_dump_json() for s in samples)
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
-
-
 __all__ = [
     "DATASET_DIR",
     "REPO_ROOT",
@@ -101,6 +95,5 @@ __all__ = [
     "check",
     "load_rubric",
     "load_samples",
-    "samples_digest",
     "sha256_of",
 ]

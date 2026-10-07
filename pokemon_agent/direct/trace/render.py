@@ -26,7 +26,7 @@ content  这笔账的正文（可 JSON 化的对象；`store` 负责序列化成
 （`str(x).lower()`，不要裸 `str(x)`）。生产者不止本文件：
 `brain/brain.py`（十二处）与 `world/pyboy_world.py` 的账单 `ok` 也是**直接写进
 同一份 content** 的，同样受这一条约束。核对侧由
-`experiment/real_check/node_io.py::BOOLEAN_FIELDS` 一份扁平名单统一执行。
+`tests/test_harness_integrity.py` 一份扁平名单统一执行。
 
 **例外是"本身就是结构化数据"的那几处**（`facts` / `sequence` / `verdicts` /
 `refs` / `names` / `dropped` / `goals` / `success_criteria` / `pushed_goals` /

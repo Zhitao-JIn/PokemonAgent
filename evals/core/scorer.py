@@ -3,7 +3,7 @@
 inspect-ai 的 `(state, target) -> Score` 在本项目的形状：state = `RunStream`（这条样本
 run 的类型化账本；R1 落 RunResult 后主输入换返回值，协议形状不变、只换第一参的类型），
 target = `EvalSample`。三套旧协议的收敛位：@rule 机械判据与红线在此包成 Scorer；
-rubric 的 graded 型走 `Score(kind="graded")`，model grader 见 `model_graded.py`。
+现行 e2e 的模型结果评分由独立 Inspect scorer 承载。
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def red_line_scorer(episode_stall_limit: int, run_stall_limit: int) -> Scorer:
     R3（谎报成功）需要机械结论做对照——这里内部现算一份：判据是纯函数，重算无副作用；
     将来主输入换 RunResult 时，这份对照改读 RunResult 的 outcomes。
 
-    前置条件：两个 stall 上限来自口径头快照（`ReportHeader.config`，装配侧传入），
+    前置条件：两个 stall 上限来自装配期配置快照（由 task 传入），
     不读被测 live config（spec2 §二边界修正，330）。
     """
 

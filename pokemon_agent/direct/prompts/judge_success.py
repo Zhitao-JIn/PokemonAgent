@@ -87,7 +87,7 @@ def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
     # **坐标**（跟 trace / 记忆里的 step 对得上号），窗口从 0 重编号会让模型在两套
     # 数字之间对不上号（0909 维度 1 卡 step 3 的事故之一）。**判据里已经没有任何
     # 步数条件**（0915 撤：模型只有"达成没有"这一个位，预算用尽由 harness 自己判
-    # ——见 `experiment/real_check/common.py` 的注释），所以这个数字只是参考信息，
+    # ——见 `tests/test_harness_integrity.py` 的注释），所以这个数字只是参考信息，
     # 别让模板把它写成规则。
     past = "\n\n".join(
         f"## 第 {entry.step} 步\n{rendered}" for entry, rendered in zip(history, steps, strict=True)

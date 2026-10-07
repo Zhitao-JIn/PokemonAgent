@@ -8,7 +8,7 @@ from inspect_ai.util import store_as
 
 from evals.core.judged import judged_accuracy, judged_count
 from evals.core.snapshot import SnapshotMemory, snapshot_of
-from evals.data.screen_reading.schemas import ScreenLabel, ScreenSample
+from evals.data.frames.schemas import ScreenLabel, ScreenSample
 from pokemon_agent.world import Facts
 from pokemon_agent.world.ram import OVERWORLD_TILESET, W_CUR_MAP_TILESET
 
@@ -18,7 +18,7 @@ S = Facts.Scene
 SCENE_TRUTH: dict[str, Facts.Scene] = {
     "battle": S.BATTLE,
     "battle_menu": S.BATTLE,
-    "faint_switch": S.BATTLE,
+    "battle_switch": S.BATTLE,
     "shop_items": S.SHOP,
     "shop": S.INDOOR,
     "start_menu": S.MENU,

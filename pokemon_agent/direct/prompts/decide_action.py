@@ -34,6 +34,7 @@ from pokemon_agent.world import terrain_legend
 from pokemon_agent.world.interface import Facts
 
 from . import READ_SCREEN, append_human_note, load, load_nested_sections
+from .task_frame import render_task_frame
 
 # ---- 按 overlay 分流的按键说明（给 game_tools.py 构造动作空间用）----
 
@@ -162,10 +163,9 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     False——这里自己 assert，不依赖调用方先检查过：这是 decide_action.md
     拼装的唯一入口，谁调用都要满足同一组前提。
 
-    `facts` 只装 `req.obs.facts` 里的东西——调用方（`episode/decide/think_action.py`）
-    负责不把 `knowledge`/`episode_memories` 塞进 `obs.facts`，这里不做过滤，
-    只信任这个前置条件。`knowledge`/`episode_memories` 走各自的占位符，
-    跟 `memories` 一样分开渲染、分开给可信度说明。
+    当前帧经 `render_task_frame()` 按场合与叠加层投影，只显示适用的观测字段。
+    `knowledge`/`episode_memories` 走各自的占位符，调用方不得塞进 `obs.facts`；
+    它们跟 `memories` 分开渲染、分开给可信度说明。
 
     `memories` 那一段**逐条渲染、相邻帧去重**（`render_sequence()`）——跟判定器/校验器
     同一套（0914 99 收口）：一链 N 键就是 N 条都摆出来，只在"上一条的『之后变成』与
@@ -183,7 +183,7 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     assert goals, "build_prompt() got an empty goal stack"
     if not space.names:
         return _build_takeover_prompt(req)
-    facts = "\n".join(f"- {k}: {v}" for k, v in obs.facts.items()) or "（无）"
+    facts = render_task_frame(obs)
     # `req.memories` 是本局全量、一键一条；逐条 `render()` 会把相邻两帧各贴一遍
     # （上一条的「之后变成」就是下一条的「当时看到」）。`render_sequence()` 逐条渲、
     # 只在确认首尾相接时把重复的那一帧换成提示——条目一条不删，画面不重复贴。
@@ -205,7 +205,7 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     return append_human_note(
         _TEMPLATE.render(
             goals=_render_goals(goals),
-            status=obs.status,
+            status="当前帧只读 RAM，未调用视觉模型。",
             facts=facts,
             # 模板里 $map_guide 在静态说明区（$goals 之前），不在 $facts 后面——
             # 2026-09-08 重排：静态说明全部前移进 prompt 前缀（命中上下文缓存），
@@ -232,7 +232,7 @@ def _build_takeover_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     签名与说明原样取自脚本条目（world 定义），模板只写怎么选。
     """
     obs, space = req.obs, req.space
-    view = obs.takeover.render() if obs.takeover is not None else (obs.facts.screen or "（无）")
+    view = render_task_frame(obs)
     entries = [e for e in space.entries if e.kind == "script" and space.enabled(e.name)]
     scripts = "\n".join(f"- {e.signature()}：{e.description or '（无说明）'}" for e in entries)
     params = "\n".join(

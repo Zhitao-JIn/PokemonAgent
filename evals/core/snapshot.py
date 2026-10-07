@@ -1,6 +1,6 @@
 """存下来的一帧 → `perceive_frame` 要的两样输入：截图字节 + 按绝对地址可读的内存。
 
-样本（screen_reading 数据集 v2）带着整块 WRAM（0xC000–0xDFFF）与截图；通行表在 ROM bank 0
+样本（帧数据集 v2，`evals/data/frames/`）带着整块 WRAM（0xC000–0xDFFF）与截图；通行表在 ROM bank 0
 （`ram.read_passable`），所以 WRAM 快照 + ROM 前 16KB 就够 `perceive_frame` 读出与当时
 逐字节相同的地形、屏幕文字与战斗状态——不需要起模拟器。
 """
@@ -11,7 +11,7 @@ import base64
 import zlib
 
 from evals.core.world_case import ROM
-from evals.data.screen_reading.schemas import ScreenSample
+from evals.data.frames.schemas import ScreenSample
 from pokemon_agent.world.ram import W_COLLISION_PTR
 
 WRAM_START, WRAM_END = 0xC000, 0xE000

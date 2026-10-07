@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 from .interface import TAKEOVER_SCENES, Memory, ScreenText, TaskScene
+from .scene_layout import has_battle_menu_frame, is_transition
+from .screen_text import read_tiles
 
 W_IS_IN_BATTLE = 0xD057
 W_LIST_POINTER = 0xCF8B
@@ -45,10 +47,14 @@ def classify_scene(text: ScreenText, mem: Memory) -> TaskScene:
     text：这一帧的屏幕缓冲解码（`screen_text.read_screen_text`）。
     mem：按绝对地址取字节（模拟器内存，或测评里包了一层的 WRAM 快照）。
     """
-    screen, dialog = text.screen, text.dialog_text
+    screen = text.screen
     flat = screen.replace("▶", " ").replace("▷", " ")
-    words = _words(screen)
     in_battle = text.in_battle or mem[W_IS_IN_BATTLE] != 0
+
+    # 步骤 0：用完整屏幕布局与地图载入证据识别过场。
+    tiles = read_tiles(mem)
+    if is_transition(tiles, screen, mem):
+        return TaskScene.TRANSITION
 
     # 步骤 1：不看战斗与否的接管
     if "A B C D E F G H I" in flat or "a b c d e f g h i" in flat:
@@ -58,10 +64,22 @@ def classify_scene(text: ScreenText, mem: Memory) -> TaskScene:
 
     # 步骤 2：战斗——选单接管，其余常规
     if in_battle:
-        if "Bring out which" in flat:
-            return TaskScene.FAINT_SWITCH
-        menu = text.has_cursor or "▷" in screen
+        if (
+            "Bring out which" in flat
+            or "Choose a POK" in flat
+            or (_party_list(screen) and "Use item on which" not in flat)
+        ):
+            return TaskScene.BATTLE_SWITCH
+        menu = text.has_cursor or "▷" in screen or has_battle_menu_frame(tiles)
         return TaskScene.BATTLE_MENU if menu and text.options != ["YES", "NO"] else TaskScene.BATTLE
+
+    return _field_scene(text, mem)
+
+
+def _field_scene(text: ScreenText, mem: Memory) -> TaskScene:
+    """非战斗的接管场合优先；列表指针只在对应可见菜单出现时使用。"""
+    screen = text.screen
+    flat, words = screen.replace("▶", " ").replace("▷", " "), _words(screen)
 
     # 步骤 3：野外的接管
     if "─MONEY─" in screen:
@@ -80,6 +98,14 @@ def classify_scene(text: ScreenText, mem: Memory) -> TaskScene:
         return TaskScene.BAG
     if _town_map(screen):
         return TaskScene.BAG  # 城镇地图只能从背包里的道具打开
+
+    return _ordinary_scene(text, mem)
+
+
+def _ordinary_scene(text: ScreenText, mem: Memory) -> TaskScene:
+    """非战斗普通场合按能力页、地图、HUD与对话证据确定。"""
+    screen, dialog = text.screen, text.dialog_text
+    flat, words = screen.replace("▶", " ").replace("▷", " "), _words(screen)
 
     # 步骤 4：野外的常规
     if {"STATUS/", "TYPE1/"} & words or "EXP POINTS" in flat or _dex_entry(screen):
@@ -102,6 +128,7 @@ def classify_scene(text: ScreenText, mem: Memory) -> TaskScene:
 def at_start(text: ScreenText, scene: TaskScene) -> bool:
     """接管场合是否在接管脚本的初态：本场合的主菜单画着、实心 `▶` 在上面、屏上没有任何空心 `▷`。
 
+    战斗行动菜单要求光标在FIGHT；其他主菜单允许其任一合法选项。
     只看三角不够：战斗的招式列表 / 背包 / 换人列表、PC 的各级菜单都整块盖住上一层，不留 `▷`。
     调用方要先等画面稳定——游戏处理按键时会擦掉 `▶` 重画。
     前置条件：`scene` 是接管场合。
@@ -115,8 +142,8 @@ def at_start(text: ScreenText, scene: TaskScene) -> bool:
         TaskScene.SHOP_ITEMS: {"BUY", "SELL", "QUIT"} <= set(options),
         TaskScene.PC: _pc_home(text),
         TaskScene.BAG: not _party_list(screen) and ("CANCEL" in _words(screen) or "×" in screen),
-        TaskScene.BATTLE_MENU: options[:4] == BATTLE_ACTIONS,
-        TaskScene.FAINT_SWITCH: _party_list(screen),
+        TaskScene.BATTLE_MENU: options == BATTLE_ACTIONS and text.cursor == "FIGHT",
+        TaskScene.BATTLE_SWITCH: _party_list(screen),
         TaskScene.PARTY: _party_list(screen),
         TaskScene.LEARN_MOVE: options == ["YES", "NO"] and "room" in text.dialog_text,
     }

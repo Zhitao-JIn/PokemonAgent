@@ -20,22 +20,21 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from typing import NamedTuple
-
 from .interface import Facts, Memory
 from .interface.domain.screen_text import ScreenText
 from .ram import SCREEN_COLS, SCREEN_ROWS, W_TILEMAP
+from .screen_layout import keyboard_screen
+from .screen_menu import read_menu
 
 W_IS_IN_BATTLE = 0xD057
 
 
 def overlay_of(text: ScreenText) -> Facts.Overlay:
-    """由屏幕解码推出叠加层：有 `▶` 或数量框 = CHOICE，严格的对话帧 = DIALOG，其余 NONE。
+    """按键控制模式：光标、数量框或完整价格列表为 CHOICE，严格对话为 DIALOG。
 
     DIALOG 从严：它的掩码只有 `a`，判错就按不到要按的键；判成 CHOICE / NONE 只是多给几个键。
     """
-    if text.has_cursor or text.quantity_box:
+    if text.has_cursor or text.quantity_box or (text.options and any(text.option_details)):
         return Facts.Overlay.CHOICE
     if text.strict_dialog:
         return Facts.Overlay.DIALOG
@@ -72,6 +71,12 @@ _BORDERS = {
     BOX_BOTTOM_RIGHT,
 }
 SPACE = 0x7F
+DIALOG_TOP = 12
+"""底部对话框上边所在的行。"""
+DEX_TOP = 9
+DEX_LEFT, DEX_RIGHT = 0x66, 0x67
+DEX_CORNERS = {(DEX_TOP, 0): 0x68, (DEX_TOP, 19): 0x6A, (17, 0): 0x6C, (17, 19): 0x6E}
+"""图鉴条目页说明框的边：分隔线两端、底边两角、左右竖边（图鉴专用图形，不是普通框线）。"""
 
 CHARMAP: dict[int, str] = {
     SPACE: " ",
@@ -141,32 +146,23 @@ def read_tiles(mem: Memory) -> list[list[int]]:
     ]
 
 
-_NOTE_PREFIXES: tuple[str, ...] = ("×", "¥")
-"""选单里挂在上一项下面的附注行：数量（`× 4`）与价格（`¥200`）。"""
-
-
-class _Menu(NamedTuple):
-    """光标所在框的解码结果。"""
-
-    grid: list[list[str]]
-    cell: tuple[int, int] | None
-    details: list[str]
-    covered: bool
-
-
 def read_screen_text(mem: Memory) -> ScreenText:
     """读这一帧的对话、选项（含附注）、光标、叠加层判据、覆盖判定与整屏渲染。"""
     tiles = read_tiles(mem)
-    menu = _read_menu(tiles)
+    menu = read_menu(tiles, CHARMAP, _text)
     in_battle = mem[W_IS_IN_BATTLE] != 0
     dialog = _read_dialog(tiles)
     has_cursor = any(CURSOR in row for row in tiles)
     quantity = _quantity_box(tiles)
+    dex = _read_dex_text(tiles)
+    if dex is not None:
+        dialog = dex  # 图鉴说明按对话处理（用户 1007 裁决）
+    dialog_box = tiles[DIALOG_TOP][0] == BOX_TOP_LEFT or dex is not None
     return ScreenText(
         dialog_text=dialog,
         has_cursor=has_cursor,
         quantity_box=quantity,
-        strict_dialog=bool(dialog) and not has_cursor and not quantity and _only_dialog_box(tiles),
+        strict_dialog=dialog_box and not has_cursor and not quantity and _only_dialog_box(tiles),
         screen=render_screen(tiles, in_battle=in_battle),
         options=[item for row in menu.grid for item in row],
         cursor=menu.grid[menu.cell[0]][menu.cell[1]] if menu.cell is not None else "",
@@ -185,6 +181,7 @@ def render_screen(tiles: list[list[int]], *, in_battle: bool) -> str:
     整屏既没有字也没有边框（走路、过场）时返回空串：18 行 `·` 不带任何信息，只占 prompt。
     """
     text = "\n".join(_render_row(row, in_battle).rstrip() for row in tiles)
+    text = keyboard_screen(text, tiles)
     return text if text.strip("·\n ") else ""
 
 
@@ -275,7 +272,7 @@ def _read_dialog(tiles: list[list[int]]) -> str:
 
     每行读到第一个边框图块为止：压在对话框上的小菜单（队伍子菜单等）不混进对话。
     """
-    top = 12
+    top = DIALOG_TOP
     if tiles[top][0] != BOX_TOP_LEFT:
         return ""
     lines = []
@@ -286,103 +283,16 @@ def _read_dialog(tiles: list[list[int]]) -> str:
     return " ".join(line for line in lines if line)
 
 
-def _read_menu(tiles: list[list[int]]) -> _Menu:
-    """光标所在框的选项（按屏幕行分组）、光标所在的 (行, 列)、每项附注与覆盖判定。
-
-    没有 `▶` 时返回空选单且视为已覆盖。覆盖判定见 `_covered`。
-    """
-    found = next(
-        ((r, c) for r in range(SCREEN_ROWS) for c in range(SCREEN_COLS) if tiles[r][c] == CURSOR),
-        None,
+def _read_dex_text(tiles: list[list[int]]) -> str | None:
+    """图鉴条目页下半的说明文字；不是图鉴条目页返回 None（说明还没打出来时为空串）。"""
+    framed = all(tiles[r][c] == tile for (r, c), tile in DEX_CORNERS.items()) and all(
+        tiles[r][0] == DEX_LEFT and tiles[r][SCREEN_COLS - 1] == DEX_RIGHT
+        for r in range(DEX_TOP + 1, SCREEN_ROWS - 1)
     )
-    if found is None:
-        return _Menu([], None, [], True)
-    row0, col0 = found
-
-    # 步骤 1：围出光标所在的框（左右最近的 │，上下沿左边界延伸）。
-    left = next((c for c in range(col0 - 1, -1, -1) if tiles[row0][c] == BOX_VERTICAL), -1)
-    right = next(
-        (c for c in range(col0 + 1, SCREEN_COLS) if tiles[row0][c] == BOX_VERTICAL), SCREEN_COLS
-    )
-    rows = [row0]
-    if left >= 0:
-        rows = [r for r in range(SCREEN_ROWS) if _vertical_run(tiles, left, row0, r)]
-
-    # 步骤 2：找选项起点列——光标列 +1，加上至少两行对齐的其它起点。
-    def starts(row: int) -> list[int]:
-        return [
-            c
-            for c in range(left + 1, right)
-            if tiles[row][c] in CHARMAP
-            and tiles[row][c] not in (SPACE, CURSOR)
-            and (c == left + 1 or tiles[row][c - 1] in (SPACE, CURSOR))
-        ]
-
-    text_rows = [r for r in rows if starts(r)]
-    counts = Counter(c for r in text_rows for c in starts(r))
-    aligned = {c for c, n in counts.items() if n >= 2 and n == len(text_rows)}
-    columns = sorted({col0 + 1} | aligned)
-
-    # 步骤 3：逐行按起点列切出选项，过滤数量行与纯数字行；记下光标落在第几行第几列。
-    grid: list[list[str]] = []
-    details: list[str] = []
-    cell: tuple[int, int] | None = None
-    for r in rows:
-        row_starts = [c for c in starts(r) if c in columns]
-        row_items: list[str] = []
-        for i, c in enumerate(row_starts):
-            end = row_starts[i + 1] - 1 if i + 1 < len(row_starts) else right
-            text = _text(tiles[r][c:end])
-            if not text or text.startswith("×") or not any(ch.isalpha() for ch in text):
-                continue
-            if (r, c) == (row0, col0 + 1):
-                cell = (len(grid), len(row_items))
-            row_items.append(text)
-        if row_items:
-            grid.append(row_items)
-            details.extend("" for _ in row_items)
-            continue
-
-        # 步骤 4：没切出选项的行若是附注（数量 / 价格），挂到上一项。
-        note = _box_line(tiles, r, left, right)
-        if details and note.startswith(_NOTE_PREFIXES):
-            details[-1] = f"{details[-1]} {note}".strip()
-
-    options = [item for row in grid for item in row]
-    covered = left >= 0 and bool(options) and _covered(tiles, rows, left, right, options)
-    return _Menu(grid, cell, details, covered)
-
-
-def _box_line(tiles: list[list[int]], row: int, left: int, right: int) -> str:
-    """光标所在框里一行的文字，去掉光标记号。"""
-    return _text(tiles[row][left + 1 : right]).replace("▶", " ").replace("▷", " ").strip()
-
-
-def _covered(
-    tiles: list[list[int]], rows: list[int], left: int, right: int, options: list[str]
-) -> bool:
-    """框里每一行的文字都已分进某个选项才算解码覆盖了这一帧。
-
-    不含字母的行不算（等级 `:L10` 只剩数字、空招式位 `-`、`35/35`），数量 / 价格附注行不算。
-
-    调用方已保证框有左边界且切出了选项；未覆盖的帧，文字字段交给视觉（看档路径）或留空（task 层）。
-    """
-    for r in rows:
-        line = _box_line(tiles, r, left, right)
-        if not any(ch.isalpha() for ch in line) or line.startswith(_NOTE_PREFIXES):
-            continue
-        rest = line
-        for option in sorted(set(options), key=len, reverse=True):
-            rest = rest.replace(option, " ")
-        if rest.strip():
-            return False
-    return True
-
-
-def _vertical_run(tiles: list[list[int]], col: int, anchor: int, row: int) -> bool:
-    """`row` 与 `anchor` 之间（含两端）`col` 列是否全是 `│`。"""
-    lo, hi = sorted((anchor, row))
-    return all(tiles[r][col] == BOX_VERTICAL for r in range(lo, hi + 1))
+    if not framed:
+        return None
+    lines = [_text(tiles[r][1 : SCREEN_COLS - 1]) for r in range(DEX_TOP + 1, SCREEN_ROWS - 1)]
+    return " ".join(line for line in lines if line)
 
 
 __all__ = ["CHARMAP", "W_IS_IN_BATTLE", "read_screen_text", "read_tiles", "render_screen"]

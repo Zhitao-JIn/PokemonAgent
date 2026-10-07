@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Decoder 标注审阅</title><style>/*__STYLE__*/</style></head>
+<body><header><div><span class="eyebrow">POKÉMON AGENT / 本地审核</span><h1>Decoder 标注审阅 <span id="total" class="pill"></span></h1></div>
+<div class="header-actions"><button id="import-button">导入审核记录</button><button id="export-button" class="primary">导出审核记录</button>
+<input id="import-file" type="file" accept="application/json,.json" hidden></div></header>
+<div id="message" role="status">仅审核参考标注。操作保存在此浏览器；请导出记录备份，正式 truth.jsonl 不会被直接修改。</div>
+<div class="workspace"><aside><div class="filters"><label>搜索帧号或标注内容<input id="search" placeholder="例如 c-0440 / POTION"></label>
+<div class="filter-pair"><label>场合<select id="scene-filter"><option value="">全部场合</option></select></label>
+<label>叠加层<select id="overlay-filter"><option value="">全部</option></select></label></div>
+<label>本次审核状态<select id="status-filter"><option value="">全部状态</option><option value="pending">待审</option><option value="approved">通过</option><option value="issue">有问题</option></select></label>
+<label>解码差异<select id="difference-filter"><option value="">全部帧</option><option value="any">所有有差异的帧</option><option value="scene">场合差异</option><option value="screen">文字差异</option><option value="takeover">接管差异</option><option value="terrain">地形差异</option></select></label>
+<label class="checkbox"><input id="boundary-filter" type="checkbox">只看重点核对帧</label>
+<label class="checkbox"><input id="cursor-mismatch-filter" type="checkbox">截图 / RAM 光标不一致</label><div id="list-count"></div>
+<div id="progress"></div><progress id="progress-bar" value="0" max="1045"></progress></div><nav id="frame-list" aria-label="帧列表"></nav></aside>
+<main><div class="frame-heading"><div><h2 id="frame-title"></h2><div id="frame-meta" class="muted"></div></div>
+<div class="navigation"><span id="frame-status" class="pill"></span><button id="previous" title="快捷键 ←">← 上一帧</button><button id="next" title="快捷键 →">下一帧 →</button></div></div>
+<div id="warning" class="warning" hidden></div><div class="content"><section class="visual-column"><div class="card"><h3>冻结截图</h3>
+<div class="image-wrap"><img id="screenshot" width="320" height="288" alt="冻结截图"><div id="image-cursors"></div></div><p class="caption">绿色框标出截图像素中检出的实心 ▶。截图与 RAM 不一定同步；空心 ▷ 是上一层选择，▼ 是滚动提示。</p></div>
+<div class="card" id="cursor-evidence" hidden><h3>商店光标证据 · 行列从 0 起</h3><span id="cursor-match" class="pill"></span>
+<dl><dt>截图像素中的 ▶</dt><dd id="image-cursor-value"></dd><dt>冻结 RAM 中的 ▶</dt><dd id="ram-cursor-value"></dd><dt>当前候选 cursor</dt><dd id="candidate-cursor-value"></dd></dl>
+<p class="caption">两种坐标分别来自原图与 RAM；实心箭头核心按像素精确匹配。只核光标，不保证商品、数量与对话都同步。</p></div>
+<div class="card"><h3>整屏文字参考</h3><pre id="reference-screen" class="screen-text"></pre></div>
+<details class="card"><summary>原始图块编号 · 18×20</summary><pre id="raw-tiles" class="raw-text"></pre></details>
+<details class="card"><summary>标注来源与说明</summary><pre id="source-note"></pre></details></section>
+<section class="annotation-column"><div class="card"><div class="tabs" role="group" aria-label="标注分组">
+<button data-group="scene_truth" class="active">场合</button><button data-group="screen_truth">屏幕文字</button><button data-group="takeover_truth">接管视图</button><button data-group="terrain_truth">地形与位置</button></div>
+<div class="field-toolbar"><span id="field-count" class="muted"></span><button id="approve-group">通过本组</button></div>
+<p id="not-applicable" class="empty" hidden>此帧未加载地图，地形输出为空对象，没有适用的地形字段。</p>
+<table class="fields-table"><thead><tr><th>字段与含义</th><th>当前标注</th></tr></thead><tbody id="fields"></tbody></table>
+<details id="editor-panel" class="editor"><summary>修改本组标注 JSON</summary><p class="caption">保存后撤回本组的本次通过状态，再核对并通过。改场合时也需检查视图、脚本覆盖与初态。</p>
+<textarea id="json-editor" spellcheck="false" aria-label="分组标注 JSON"></textarea><button id="save-edit" class="primary">保存修订草稿</button></details></div>
+<details class="card" open><summary id="difference-title">解码差异对照</summary><p class="caption">对照是原始候选与 decoder 的诊断快照；修订草稿不会重新运行 decoder。差异需判断是哪一方有误。</p><div id="differences"></div></details>
+<div class="card review-card"><h3>本帧审核意见</h3><textarea id="review-note" placeholder="记录依据、疑问或需修改的字段…" aria-label="审核意见"></textarea>
+<div class="review-actions"><button id="approve-frame" class="primary">整帧通过</button><button id="flag-frame">标记有问题</button><button id="reset-frame">恢复待审</button><button id="next-pending">下一待审帧 →</button></div>
+<p class="caption">整帧通过会通过所有适用组。← / → 翻帧；分组通过可逐组审核。原已审标记与本次审核进度分开显示。</p></div>
+</section></div></main></div><script id="review-data" type="application/json">/*__DATA__*/</script><script>/*__SCRIPT__*/</script></body></html>
