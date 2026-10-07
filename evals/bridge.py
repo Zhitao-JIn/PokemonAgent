@@ -13,8 +13,8 @@ from __future__ import annotations
 from inspect_ai.dataset import Sample
 
 from evals.data import REPO_ROOT  # noqa: F401 —— run-one 断言的仓库根
-from evals.e2e.runner.one import run_id_for
-from evals.schema import EvalSample
+from evals.schema.sample import EvalSample
+from evals.solvers.agent_goal_run.runner.one import run_id_for
 
 __all__ = ["run_id_for", "sample_to_inspect", "samples_to_dataset"]
 

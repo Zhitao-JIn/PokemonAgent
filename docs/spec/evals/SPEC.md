@@ -4,24 +4,24 @@
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
-不再提供旧口径一致性校验。`e2e run-one` 保留供现行任务执行单个目标。
+不再提供旧口径一致性校验。`agent_goal_run run-one` 保留供现行任务执行单个目标。
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
 | decode | 同一帧冻结 WRAM，机械解码一次 | 场合/脚本覆盖/初态、ScreenText、接管视图、地形/位置四个分组 | 无 |
-| vision_perceive | 生产视觉节点的纯视觉部分，输入截图 | scene、overlay、dialog_text、options、cursor、解析成功 | 视觉模型 |
-| world_actions | 常规脚本与原宏统一走脚本执行通道，真实模拟器 | 自报结局与世界真值 | 无 |
-| memory | 冻结库经真实 MemoryTool 写入、读回，再检索带相关性标签的查询 | 存储分、检索 recall@k / MRR | 无 LLM，本地 embedding/reranker |
-| judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
-| e2e | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
+| episode_vision_read | 生产视觉节点的纯视觉部分，输入截图 | scene、overlay、dialog_text、options、cursor、解析成功 | 视觉模型 |
+| world_script_execute | 常规脚本与原宏统一走脚本执行通道，真实模拟器 | 自报结局与世界真值 | 无 |
+| memory_store_recall | 冻结库经真实 MemoryTool 写入、读回，再检索带相关性标签的查询 | 存储分、检索 recall@k / MRR | 无 LLM，本地 embedding/reranker |
+| brain_goal_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
+| agent_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
 
 ## 帧与独立真值
 
-`evals/data/frames/dataset/v2/samples.jsonl` 是唯一的 v2 帧集（1045 帧）；`source` 只记录采集来源，不决定 decode 的评分组。原基础帧、接管快照、地形快照均已合并，加载器不再拼接来源文件。采集命令按来源替换统一帧集中的对应样本，保留其余来源。decode、vision_perceive 共用加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
+`evals/data/frames/dataset/v2/samples.jsonl` 是唯一的 v2 帧集（1045 帧）；`source` 只记录采集来源，不决定 decode 的评分组。原基础帧、接管快照、地形快照均已合并，加载器不再拼接来源文件。采集命令按来源替换统一帧集中的对应样本，保留其余来源。decode、episode_vision_read 共用加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
 
 `evals/data/frames/truth.jsonl`是decode独立真值的唯一存储，按sample_id记录scene_truth、screen_truth、takeover_truth、terrain_truth。所有已标字段直接挂到帧上计分，删除reviewed及配套组/字段审核标记，不再按审核状态过滤。未标或空组为NOANSWER，不进入该组分母；unresolved_fields记录无法判定原因。decode不从label_checked或label回退取答案。1045帧已标全部适用字段，其中1032个地图已加载帧的地形有map_id、where、facing、walk_map、neighbors五字段，另外13帧地形不适用。网页审阅意见独立保存，不控制真值计分。视觉任务保留自身原有label_checked口径。
 
-`scene_truth` 查三个字段：`scene`、`covered_by_script`、`at_start`。`covered_by_script=true` 表示当前场合由接管脚本负责，包含未回初态的子菜单；有普通可选脚本不算接管覆盖。真值从独立标注场合和已核对的八类接管脚本对应关系补出，不读取被测分类器结果。1045 帧已标此字段；两帧重绘边界按冻结RAM当前可观察缓冲标为 transition，裁决待审。该字段只测覆盖识别是否正确；实际退回初态与执行结果由 `world_actions` 验证，模型选择目标脚本由决策 prompt 约束，本次未运行真实模型验证。
+`scene_truth` 查三个字段：`scene`、`covered_by_script`、`at_start`。`covered_by_script=true` 表示当前场合由接管脚本负责，包含未回初态的子菜单；有普通可选脚本不算接管覆盖。真值从独立标注场合和已核对的八类接管脚本对应关系补出，不读取被测分类器结果。1045 帧已标此字段；两帧重绘边界按冻结RAM当前可观察缓冲标为 transition，裁决待审。该字段只测覆盖识别是否正确；实际退回初态与执行结果由 `world_script_execute` 验证，模型选择目标脚本由决策 prompt 约束，本次未运行真实模型验证。
 
 同一帧只跑一次机械解码，四个 scorer 复用结果。`judged_accuracy` / `judged_count` 读取未做 epoch 数值归并的原始 C/I/N，每次重复运行作为独立观测统计，确保 N 不被转换为失败进入分母。
 
@@ -38,10 +38,10 @@ decode默认读取全部真值，无include_unreviewed选项；任务metadata的
 ```powershell
 python -m evals list
 python -m evals run decode --log-dir eval_results/decode
-python -m evals run world_actions --log-dir eval_results/world_actions
-python -m evals run memory --log-dir eval_results/memory
+python -m evals run world_script_execute --log-dir eval_results/world_script_execute
+python -m evals run memory_store_recall --log-dir eval_results/memory_store_recall
 python -m pytest tests/test_harness_integrity.py
-python -m evals run vision_perceive -T vision_model=deepseek-flash
+python -m evals run episode_vision_read -T vision_model=deepseek-flash
 python -m evals freeze-frames
 ```
 
@@ -49,11 +49,11 @@ harness_integrity 位于 `tests/test_harness_integrity.py`，属于集成测试�
 
 ## 当前覆盖与结果口径
 
-world_actions 共 106 例，统一按脚本的调用、结局与前后世界真值评分。31/75 只是两批历史用例来源；常规与接管都交出控制权执行多步操作，现在共用同一个 ScriptRun，等待、中断、初态恢复与收尾属于脚本自己的配置或步骤。保留原用例依据与世界真值。被测脚本自报成功不是世界真值；重构不根据实际输出改写期望。
+world_script_execute 共 106 例，统一按脚本的调用、结局与前后世界真值评分。31/75 只是两批历史用例来源；常规与接管都交出控制权执行多步操作，现在共用同一个 ScriptRun，等待、中断、初态恢复与收尾属于脚本自己的配置或步骤。保留原用例依据与世界真值。被测脚本自报成功不是世界真值；重构不根据实际输出改写期望。
 
-memory 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。judge 初始四条独立真假历史；这些小型用例是运行契约示范，不能代替完整能力评估。
+memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。brain_goal_judge 初始四条独立真假历史；这些小型用例是运行契约示范，不能代替完整能力评估。
 
-e2e 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
+agent_goal_run 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
 
 
 ## decode 标注覆盖（2026-10-07）

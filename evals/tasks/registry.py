@@ -2,9 +2,9 @@
 
 TASKS: dict[str, str] = {
     "decode": "evals/tasks/decode/task.py",
-    "vision_perceive": "evals/tasks/vision_perceive/task.py",
-    "world_actions": "evals/tasks/world_actions/task.py",
-    "memory": "evals/tasks/memory/task.py",
-    "judge": "evals/tasks/judge/task.py",
-    "e2e": "evals/tasks/e2e.py",
+    "episode_vision_read": "evals/tasks/episode_vision_read/task.py",
+    "world_script_execute": "evals/tasks/world_script_execute/task.py",
+    "memory_store_recall": "evals/tasks/memory_store_recall/task.py",
+    "brain_goal_judge": "evals/tasks/brain_goal_judge/task.py",
+    "agent_goal_run": "evals/tasks/agent_goal_run/task.py",
 }

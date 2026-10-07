@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from evals.schema import CheckVerdict, EvalSample
+from evals.schema.sample import EvalSample
 from evals.scorers.registry import rule
 from evals.scorers.stream import Frame, RunStream
 from evals.scorers.utils import (
@@ -14,6 +14,7 @@ from evals.scorers.utils import (
     target_frames,
     unjudgeable,
 )
+from evals.scorers.verdict import CheckVerdict
 
 
 def _has_prices(frame: Frame) -> bool:

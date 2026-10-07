@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from evals.schema import CheckVerdict, EvalSample
+from evals.schema.sample import EvalSample
 from evals.scorers.registry import rule
 from evals.scorers.stream import Frame, RunStream
 from evals.scorers.utils import POKE_BALL, ends, first_match, target_frames, unjudgeable
+from evals.scorers.verdict import CheckVerdict
 
 
 def _foe_hp(frame: Frame) -> int | None:

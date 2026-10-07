@@ -6,13 +6,13 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from evals.core.world_case import start_world, stop_world
 from evals.data.frames.schemas import ScreenLabel, ScreenSample
+from evals.solvers.world_case import start_world, stop_world
 from pokemon_agent.world import W_TILEMAP
 
 from .storage import save_frames
 
-BASIS = "evals/tasks/world_actions/regular_batch_1.py 文件顶层存档速记"
+BASIS = "evals/tasks/world_script_execute/regular_batch_1.py 文件顶层存档速记"
 
 
 class TerrainCase(BaseModel):

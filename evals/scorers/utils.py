@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from evals.schema import CheckVerdict, EvalSample
+from evals.schema.sample import EvalSample
+from evals.scorers.verdict import CheckVerdict
 
 from .stream import Frame, RunStream
 

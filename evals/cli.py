@@ -24,8 +24,8 @@ def main(argv: list[str] | None = None) -> int:
         freeze_takeover()
         freeze_terrain()
         return 0
-    if args[:2] == ["e2e", "run-one"]:
-        from evals.e2e.cli import main as run_one_main
+    if args[:2] == ["agent_goal_run", "run-one"]:
+        from evals.solvers.agent_goal_run.cli import main as run_one_main
 
         return run_one_main(args[1:])
     if args[:2] == ["frames", "build"]:

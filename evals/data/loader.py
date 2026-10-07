@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from evals.schema import EvalSample, Rubric
+from evals.schema.sample import EvalSample, Rubric
 
 DATASET_DIR = Path(__file__).resolve().parent
 REPO_ROOT = DATASET_DIR.parents[1]

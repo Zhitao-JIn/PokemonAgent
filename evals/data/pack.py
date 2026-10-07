@@ -25,8 +25,8 @@ import tempfile
 from pathlib import Path
 
 from evals.data import DATASET_DIR, REPO_ROOT, load_samples, sha256_of
-from evals.e2e.runner.one import ROM, _load_env, run_id_for
-from evals.schema import EvalSample
+from evals.schema.sample import EvalSample
+from evals.solvers.agent_goal_run.runner.one import ROM, _load_env, run_id_for
 from pokemon_agent.brain import Task
 from pokemon_agent.build import build_real
 from pokemon_agent.direct.trace import TraceTool, parse

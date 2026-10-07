@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from evals.schema import CheckVerdict, EvalSample
+from evals.schema.sample import EvalSample
 from evals.scorers.registry import rule
 from evals.scorers.stream import RunStream
 from evals.scorers.utils import ends, failed, passed, target_frames, unjudgeable
+from evals.scorers.verdict import CheckVerdict
 
 
 @rule("map_changed")

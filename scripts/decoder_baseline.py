@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from evals.data.frames.schemas import ScreenSample
-from evals.tasks.decode.solver import decode_frame
+from evals.solvers.decode import decode_frame
 
 FIELDS = (
     "scene",

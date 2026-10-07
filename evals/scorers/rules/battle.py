@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from evals.schema import CheckVerdict, EvalSample
+from evals.schema.sample import EvalSample
 from evals.scorers.registry import rule
 from evals.scorers.stream import Frame, RunStream
 from evals.scorers.utils import (
@@ -14,6 +14,7 @@ from evals.scorers.utils import (
     unjudgeable,
     with_ram,
 )
+from evals.scorers.verdict import CheckVerdict
 
 _MOVE_RESULT_TEXT: tuple[str, ...] = (" used ", "fainted", "failed", "Critical hit", "effective")
 """招式打出去之后对话框里会出现的字样。"""

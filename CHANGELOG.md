@@ -1,3 +1,13 @@
+## 2026-10-07（406）—— 测评 S1：task 改名并按 solver 与 scorer 槽位归位
+
+**改了什么**：六个公开 task 保留 decode，其余改为 episode_vision_read、world_script_execute、memory_store_recall、brain_goal_judge、agent_goal_run；core 解散，solver / 运行记录与 scorer / metric / 判定结论按归属迁移，run-one 子进程归入 agent_goal_run solver；同步命令、测试与任务清单。
+
+**为什么这么改**：任务名要能表达被测位置，task 目录只承担装配；评分与执行分开后，后续数据集搬迁可以沿稳定的消费边界进行。
+
+**取舍**：本步不改评分口径与生产系统；样本契约和用例暂在 solver 侧，冻结 judge / memory 数据暂存 data 下，S2 再统一归入 dataset。
+
+**影响面**：evals 内部 import 与公开命令名变化；旧 task 名不兼容，run_id 命名不变。迁移前后全量回归（排除已知 test_screen_text）均为 488 passed、2 skipped；83 项测评用法测试通过，evals lint 与格式检查通过。
+
 ## 2026-10-07（405）—— 删除帧集构建里两个无引用的历史工具：glyphs.py 与 deduplicate.py
 
 **改了什么**：删 `evals/data/frames/glyphs.py`（截图 → 屏幕 tile 缓冲的还原器）与 `evals/data/frames/deduplicate.py`（把接管组里重复的 scene / screen 键归还所属真值组的一次性整理函数）。

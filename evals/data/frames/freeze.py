@@ -3,8 +3,8 @@
 import base64
 import zlib
 
-from evals.core.world_case import start_world, stop_world
 from evals.data.frames.schemas import ScreenLabel, ScreenSample
+from evals.solvers.world_case import start_world, stop_world
 from pokemon_agent.world import W_TILEMAP
 
 from .capture_cases import CASES

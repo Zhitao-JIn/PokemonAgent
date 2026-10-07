@@ -1,19 +1,9 @@
-"""红线（`docs/eval/spec.md` §七，S4）：命中任一条样本即判负，不参与加权。
-
-红线逻辑的**唯一定义处**；作为 `red_line_scorer`（`evals/core/scorer.py`）的内部实现被
-消费——判定消费方不许直调。刹车阈值（`episode_stall_limit` / `run_stall_limit`）**注入**，
-不读被测 live config（spec2 §二边界修正：口径以 EvalLog header 快照为准）。
-
-- R1 出错：run 以 `termination=error` 收尾，或出现 `run_error` / `episode_error`。停摆不算。
-- R2 刹车失灵：一局里连续失败的 task 已达 episode 上限却还在派 task；run 层同理
-  （连续失败的局已达 run 上限却还在开局）。成功清零；被打断（`interrupted`）不计入连击。
-- R3 谎报成功：run 以 `goal_done` 收尾，但样本目标的机械判据为 fail。
-"""
+"""红线判定的独立实现。"""
 
 from __future__ import annotations
 
-from evals.schema import CheckVerdict, RedLineHit
 from evals.scorers import RunStream
+from evals.scorers.verdict import CheckVerdict, RedLineHit
 from pokemon_agent.direct.trace import ParsedEvent
 from pokemon_agent.direct.trace.content import EpisodeEndContent, TaskEndContent
 from pokemon_agent.schemas.harness import TraceKind
