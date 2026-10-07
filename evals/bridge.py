@@ -1,7 +1,7 @@
 """bridge —— 项目 ↔ inspect 翻译层（spec2 §二）。
 
 v1 落两件事：
-1. `EvalSample`（`evals/schema/sample.py`）→ inspect `Sample` 的字段翻译（R3）；
+1. `EvalSample`（`evals/dataset/agent_goal_run/schemas.py`）→ inspect `Sample` 的字段翻译（R3）；
 2. run_id 命名（`run_id_for`，re-export 自 runner/one——eval/`#e<n>` 后缀的唯一真源）。
 
 RunResult → sample metadata 的翻译在 solver 内就地完成（产物落盘后 scorer 从
@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from inspect_ai.dataset import Sample
 
-from evals.data import REPO_ROOT  # noqa: F401 —— run-one 断言的仓库根
-from evals.schema.sample import EvalSample
+from evals.dataset.agent_goal_run.schemas import EvalSample
+from evals.paths import REPO_ROOT  # noqa: F401 —— run-one 断言的仓库根
 from evals.solvers.agent_goal_run.runner.one import run_id_for
 
 __all__ = ["run_id_for", "sample_to_inspect", "samples_to_dataset"]

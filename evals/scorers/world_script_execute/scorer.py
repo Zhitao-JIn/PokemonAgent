@@ -22,11 +22,9 @@ from inspect_ai.scorer import (
 from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 
-from evals.solvers.world_script_cases.takeover_samples import case_for
+from evals.dataset.world_script_execute import ScriptCase, ScriptExpect
+from evals.dataset.world_script_execute.schemas import BAG_PREFIX
 from evals.solvers.world_script_execute import (
-    BAG_PREFIX,
-    ScriptCase,
-    ScriptExpect,
     ScriptReport,
     ScriptRun,
     ScriptRunRecord,
@@ -64,6 +62,8 @@ def probe(observation: TaskObservation, ram: RamReadout, key: str) -> str | int:
 def judge_case(case: ScriptCase, run: ScriptRun) -> ScriptVerdict:
     """判一条用例：自报面看报告，真值面看前后两帧。脚本崩溃时自报面直接判负。"""
     expect = case.expect
+    if expect.status is not None:
+        return judge_takeover(expect, run)
     code = [f"脚本抛异常：{run.crash}"] if run.report is None else _judge_report(expect, run.report)
     return ScriptVerdict(code_problems=code, truth_problems=_judge_truth(expect, run))
 
@@ -122,12 +122,8 @@ def script_scorer() -> Scorer:
         del target  # 期望在 metadata 的用例里，target 只给 View 展示期望结局码
         run = store_as(ScriptRunRecord).run
         assert run is not None, "solver 没有写 ScriptRun"
-        case = case_for(state.metadata)
-        verdict = (
-            judge_takeover(str(state.metadata["takeover_id"]), run)
-            if "takeover_id" in state.metadata
-            else judge_case(case, run)
-        )
+        case = ScriptCase.model_validate(state.metadata["case"])
+        verdict = judge_case(case, run)
         mark = {True: CORRECT, False: INCORRECT}
         return Score(
             value={

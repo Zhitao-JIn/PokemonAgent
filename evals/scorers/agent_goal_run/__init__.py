@@ -1,9 +1,4 @@
-"""core —— inspect-ai 真协议的薄适配（spec2 §二）。
-
-`task` / `solver` / `evalset` 是真库 re-export（R0 实测口径，0.3.271）；
-`score` / `scorer` / `metric` 是本项目判定货币（Score/Scorer/Metric，R2a 从 e2e/scoring 迁入，
-R2b 换真库 Score 时判据/红线/投影逻辑不动）；现行结果与证据保存在 Inspect 日志。
-"""
+"""完整目标运行评分的协议、结论与指标出口。"""
 
 from __future__ import annotations
 

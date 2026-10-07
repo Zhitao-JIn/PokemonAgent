@@ -8,7 +8,7 @@ from inspect_ai.scorer import NOANSWER, Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from pydantic import BaseModel, ValidationError
 
-from evals.data import load_samples
+from evals.dataset.agent_goal_run import load as load_samples
 from evals.scorers import RunStream
 from evals.scorers.judged import judged_accuracy, judged_count
 from evals.solvers.agent_goal_run.runner.one import run_id_for

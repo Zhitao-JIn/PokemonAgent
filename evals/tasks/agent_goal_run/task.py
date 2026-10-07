@@ -8,9 +8,8 @@ from inspect_ai import Task, task
 
 import pokemon_agent.config as config
 from evals.bridge import samples_to_dataset
-from evals.data import check
+from evals.dataset.agent_goal_run import EvalSample, load
 from evals.runconfig import load_config, resolve_models
-from evals.schema.sample import EvalSample
 from evals.scorers import RULES
 from evals.scorers.agent_goal_run.result_grade import result_model_scorer
 from evals.scorers.agent_goal_run.task_scorer import e2e_scorer
@@ -69,7 +68,7 @@ def agent_goal_run(
     models = resolve_models(cfg.get("models", {}))
     Path(report_dir).mkdir(parents=True, exist_ok=True)
 
-    chosen = _select(check(version, set(RULES)), split, sample_ids)
+    chosen = _select(load(version, rule_ids=set(RULES)), split, sample_ids)
     stall_limits = (config.EPISODE_STALL_LIMIT, config.RUN_STALL_LIMIT)
     return Task(
         dataset=samples_to_dataset(chosen),

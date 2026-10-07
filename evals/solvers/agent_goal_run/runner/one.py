@@ -3,7 +3,7 @@
 只落盘、不判定。工作目录 `runs/<sample_id>[#e<n>]/` 下放本条样本独立的
 `trace/`、`memory/`、`checkpoints/`，最后写 `run.json`（`run_id`、`invalid`、`error`）
 与 `run_result.json`（`RunResult`，V8）。
-起点存档缺失或被拒载记 `invalid`（先跑 `python -m evals.data.pack` 重打），
+起点存档缺失或被拒载记 `invalid`（先跑 `python -m evals.dataset.agent_goal_run.build.pack` 重打），
 run 自己出错只记 `error`——它是被测系统的问题，由红线 R1 判。
 """
 
@@ -14,11 +14,14 @@ import os
 import shutil
 from pathlib import Path
 
-from evals.data import DATASET_DIR, REPO_ROOT
-from evals.schema.sample import EvalSample
+from evals.dataset.agent_goal_run.loader import DATASET_DIR
+from evals.dataset.agent_goal_run.schemas import EvalSample
+from evals.paths import REPO_ROOT
 from pokemon_agent.build import build_real
 from pokemon_agent.harness import RunRuntime
 from pokemon_agent.harness.checkpoint import CheckpointIncompatible, restore_run
+
+from .archive import prepare_archive
 
 RUN_RECORD = "run.json"
 RUN_RESULT = "run_result.json"
@@ -71,7 +74,10 @@ def run_one(
         _record(
             work,
             run_id,
-            invalid=f"起点存档缺失：{manifest}（python -m evals.data.pack 重打）",
+            invalid=(
+                f"起点存档缺失：{manifest}"
+                "（python -m evals.dataset.agent_goal_run.build.pack 重打）"
+            ),
         )
         return
 
@@ -100,6 +106,7 @@ def run_one(
         return harness.deps
 
     try:
+        manifest = prepare_archive(sample, work / "start")
         result = restore_run(manifest, build_branch, sample_id=sample.sample_id)
         (work / RUN_RESULT).write_text(result.model_dump_json(indent=2), encoding="utf-8")
     except CheckpointIncompatible as exc:

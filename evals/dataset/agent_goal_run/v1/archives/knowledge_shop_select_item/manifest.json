@@ -1,0 +1,60 @@
+{
+  "checkpoint_id": "eval-knowledge_shop_select_item@main-05e39b1f",
+  "level": "run",
+  "run_id": "eval-knowledge_shop_select_item",
+  "branch": "main",
+  "episode_id": null,
+  "task_id": null,
+  "run_state": {
+    "run_id": "eval-knowledge_shop_select_item",
+    "branch": "main",
+    "run_goal": {
+      "goal": "依次完成：在商品列表里选中一个商品，按 a 进入购买确认",
+      "criteria": "options 变成购买数量或 YES / NO，不再是商品名"
+    },
+    "goals": [
+      {
+        "task": {
+          "task_id": "knowledge_shop_select_item",
+          "goal": "在商品列表里选中一个商品，按 a 进入购买确认",
+          "success_criteria": "options 变成购买数量或 YES / NO，不再是商品名",
+          "max_steps": 15,
+          "initial_state_hint": "商店商品列表，scene=shop overlay=choice"
+        },
+        "status": "pending",
+        "attempts": 0,
+        "last_episode_id": null,
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "step": 0,
+    "fail_streak": 0,
+    "total_acts": 0,
+    "observation": null,
+    "plan_ctx": null,
+    "episode_input": null,
+    "pending_episode": null,
+    "episode_outputs": [],
+    "termination": null,
+    "judge_reason": "",
+    "last_judge": null
+  },
+  "run_ref": null,
+  "episode_ref": null,
+  "world_file": "world.state",
+  "memory_archive": "archives/knowledge_shop_select_item/memory/snapshots/eval-knowledge_shop_select_item@main-05e39b1f.zip",
+  "code": {
+    "git_commit": "8d2cb845b5750cb5dec456fd0434478acba0c93d",
+    "git_dirty": true,
+    "state_schema_hash": "3d347379a38354e3"
+  },
+  "models": {
+    "vision": "deepseek-flash",
+    "text": "deepseek-flash",
+    "judge": "deepseek-flash",
+    "verify": "deepseek-flash",
+    "plan": "deepseek-flash"
+  },
+  "created_at": "2026-09-29T10:56:23+0200"
+}

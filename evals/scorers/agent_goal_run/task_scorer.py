@@ -15,7 +15,7 @@ from inspect_ai.scorer import (
 )
 from inspect_ai.solver import TaskState
 
-from evals.data import load_samples
+from evals.dataset.agent_goal_run import load as load_samples
 from evals.scorers import RunStream
 from evals.scorers.agent_goal_run import mechanical_scorer, red_line_scorer
 from evals.scorers.judged import judged_accuracy, judged_count

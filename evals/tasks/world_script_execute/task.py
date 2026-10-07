@@ -10,16 +10,15 @@ from __future__ import annotations
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
+from evals.dataset.world_script_execute import ScriptCase, load
 from evals.scorers.world_script_execute.scorer import script_scorer
-from evals.solvers.world_script_cases.cases import CASES
-from evals.solvers.world_script_cases.takeover_samples import takeover_samples
-from evals.solvers.world_script_execute import ScriptCase, script_solver
+from evals.solvers.world_script_execute import script_solver
 
 SAMPLE_TIME_LIMIT = 300
 """单条用例的墙钟上限（秒）：最长的 heal / exit_map 真机几十秒，留足余量。"""
 
 
-def to_sample(case: ScriptCase) -> Sample:
+def to_sample(case: ScriptCase, version: str = "v1") -> Sample:
     """用例 → inspect Sample：input 是调用式，target 是期望结局码，用例整份进 metadata。"""
     call = ", ".join(f"{k}={v!r}" for k, v in case.args.items())
     return Sample(
@@ -27,6 +26,7 @@ def to_sample(case: ScriptCase) -> Sample:
         input=f"{case.script}({call})",
         target=case.expect.code,
         metadata={
+            "dataset_version": version,
             "script": case.script,
             "matrix_row": case.matrix_row,
             "case": case.model_dump(mode="json"),
@@ -35,13 +35,15 @@ def to_sample(case: ScriptCase) -> Sample:
 
 
 @task
-def world_script_execute(cases: list[str] | None = None, scripts: list[str] | None = None) -> Task:
+def world_script_execute(
+    cases: list[str] | None = None, scripts: list[str] | None = None, version: str = "v1"
+) -> Task:
     """scripts 测评：每条用例一次脚本调用，判自报与真值两面。
 
     `cases` / `scripts` 给了就只跑命中的用例（按 case_id / 脚本名过滤）。
     前置条件：给出的 id / 脚本名都在用例表里（拼错当场炸，不静默跑空集）。
     """
-    dataset = [to_sample(c) for c in CASES] + takeover_samples()
+    dataset = [to_sample(c, version) for c in load(version)]
     assert set(cases or []) <= {str(s.id) for s in dataset}, f"未知用例：{cases}"
     assert set(scripts or []) <= {s.metadata["script"] for s in dataset}, f"未知脚本：{scripts}"
     dataset = [s for s in dataset if cases is None or s.id in cases]

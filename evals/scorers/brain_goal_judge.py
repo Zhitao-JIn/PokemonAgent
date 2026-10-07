@@ -4,8 +4,9 @@ from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 
+from evals.dataset.brain_goal_judge import JudgeCase
 from evals.scorers.judge_metrics import confusion_count
-from evals.solvers.brain_goal_judge import JudgeCase, JudgeRecord
+from evals.solvers.brain_goal_judge import JudgeRecord
 
 
 def confusion(predicted: bool, achieved: bool) -> dict[str, int]:

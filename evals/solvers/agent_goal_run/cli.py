@@ -6,7 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from evals.data import DatasetError, load_samples
+from evals.dataset.agent_goal_run import load as load_samples
+from evals.dataset.errors import DatasetError
 
 MODEL_LINKS = ("vision_model", "text_model", "judge_model", "verify_model", "plan_model")
 DEFAULT_MODEL = "deepseek-flash"

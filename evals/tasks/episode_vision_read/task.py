@@ -7,11 +7,11 @@ from collections import Counter
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
-from evals.data.frames.schemas import ScreenSample
+from evals.dataset.frames import ScreenSample
+from evals.dataset.frames import load as load_frames
 from evals.runconfig import load_config
 from evals.scorers.episode_vision_read import perceive_scorer
 from evals.solvers.episode_vision_read import perceive_solver
-from evals.solvers.frames import load_frames
 from pokemon_agent.env import load_env_file
 
 DATASET_VERSION = "v2"

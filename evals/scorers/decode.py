@@ -6,7 +6,7 @@ from inspect_ai.scorer import NOANSWER, Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 
-from evals.data.frames.schemas import ScreenSample
+from evals.dataset.frames.schemas import ScreenSample
 from evals.scorers.judged import judged_accuracy, judged_count
 from evals.solvers.decode import DecodeRecord
 

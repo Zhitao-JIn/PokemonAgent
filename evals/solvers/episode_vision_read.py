@@ -9,7 +9,7 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.util import StoreModel, store_as
 from pydantic import BaseModel, Field, model_validator
 
-from evals.data.frames.schemas import ScreenSample
+from evals.dataset.frames.schemas import ScreenSample
 from pokemon_agent.brain.vision_factory import build_vision_provider
 from pokemon_agent.world import Facts, VisionProvider
 from pokemon_agent.world.errors import PerceptionAttemptFailed

@@ -9,10 +9,10 @@ from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 from pydantic import BaseModel
 
-from evals.data.frames.schemas import ScreenLabel, ScreenSample
+from evals.dataset.frames.schemas import ScreenLabel, ScreenSample
+from evals.dataset.frames.snapshot import SnapshotMemory, snapshot_of
 from evals.scorers.judged import judged_accuracy, judged_count
 from evals.solvers.episode_vision_read import SCORE_KEYS, PerceiveRun, PerceiveRunRecord
-from evals.solvers.snapshot import SnapshotMemory, snapshot_of
 from pokemon_agent.world import Facts
 from pokemon_agent.world.ram import OVERWORLD_TILESET, W_CUR_MAP_TILESET
 

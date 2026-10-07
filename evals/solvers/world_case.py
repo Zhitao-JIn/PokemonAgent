@@ -1,15 +1,15 @@
-"""world_actions 与冻结帧采集共用的真实模拟器装配，不接视觉模型。"""
+"""world_script_execute 与冻结帧采集共用的真实模拟器装配，不接视觉模型。"""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 
-from evals.data import REPO_ROOT
+from evals.paths import REPO_ROOT
 from pokemon_agent.world import PyBoyWorld, RamReadout, TaskObservation
 from pokemon_agent.world.interface import VisionDescribeReq, VisionDescribeResp
 
 ROM = REPO_ROOT / "assets" / "rom"
-STATES = REPO_ROOT / "experiment" / "experiment_states"
 
 
 class NoVision:
@@ -20,14 +20,14 @@ class NoVision:
         raise AssertionError("world 用例测评不该调视觉模型")
 
 
-def start_world(state: str, pre: Sequence[str], *, case_id: str) -> PyBoyWorld:
-    """从 `experiment_states/<state>` 起 world，并按完开跑前的键。
+def start_world(state: Path, pre: Sequence[str], *, case_id: str) -> PyBoyWorld:
+    """从调用方给定的完整存档路径起 world，并按完开跑前的键。
 
     前置条件：存档存在（缺了 `PyBoyWorld` 构造时当场炸——基础设施故障，交 inspect 记
     sample error，不进分母）。
     后置条件：返回的 world 已 reset，调用方用完负责 `stop()`。
     """
-    world = PyBoyWorld(str(ROM), NoVision(), state_path=str(STATES / state))
+    world = PyBoyWorld(str(ROM), NoVision(), state_path=str(state))
     world.reset(task_id=case_id, goal="world 用例测评", success_criteria="-", max_steps=1)
     for key in pre:
         world.step([(key, 1)], settle=True)
@@ -49,4 +49,4 @@ def stop_world(world: PyBoyWorld) -> None:
     world._pyboy.stop(save=False)
 
 
-__all__ = ["ROM", "STATES", "NoVision", "read_frame", "start_world"]
+__all__ = ["ROM", "NoVision", "read_frame", "start_world"]

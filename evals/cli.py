@@ -1,4 +1,4 @@
-"""列七个 task、交 inspect 跑测评，以及数据构建与内部 run-one 入口。"""
+"""列六个 task、交 inspect 跑测评，以及数据构建与内部 run-one 入口。"""
 
 import subprocess
 import sys
@@ -18,8 +18,8 @@ def main(argv: list[str] | None = None) -> int:
             [sys.executable, "-m", "inspect_ai", "eval", TASKS[args[1]], *args[2:]], check=False
         ).returncode
     if args == ["freeze-frames"]:
-        from evals.data.frames.freeze import freeze_takeover
-        from evals.data.frames.terrain import freeze_terrain
+        from evals.dataset.frames.build.freeze import freeze_takeover
+        from evals.dataset.frames.build.terrain import freeze_terrain
 
         freeze_takeover()
         freeze_terrain()
@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
 
         return run_one_main(args[1:])
     if args[:2] == ["frames", "build"]:
-        from evals.data.frames.cli import main as build_main
+        from evals.dataset.frames.build.cli import main as build_main
 
         return build_main(args[1:])
     usage = "用法：python -m evals list | run <task> [inspect 参数] | freeze-frames | frames build"

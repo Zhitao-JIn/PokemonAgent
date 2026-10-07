@@ -555,3 +555,5 @@ harness 经门面调模块的架构不变。
 对外只保留 decode / episode_vision_read / world_script_execute / memory_store_recall / brain_goal_judge / agent_goal_run 六个 inspect task。入口、数据、模型与评分口径见 `docs/spec/evals/SPEC.md`。
 
 decode 共享冻结 WRAM，文字、接管视图、地形三个 scorer 的未标分组记 NOANSWER，不进分母。episode_vision_read 只给截图。视觉 deepseek-flash；真实模型测试统一覆盖 deepseek-flash。world_script_execute 是全部多步脚本的统一测评；常规/接管只描述现存内部执行器来源，不是两类对外能力。memory_store_recall 经真实 MemoryTool 测写入读回与相关性检索，不调 LLM。harness_integrity 属于 tests 集成测试，经真实三图核 trace/node_io/记忆落盘及后端读回，不注册 inspect task。agent_goal_run 仅按最终结果、红线与独立 model-graded 结果评分。
+
+测评目录按职责归位：tasks/<task>/ 仅留 task.py 与 __init__.py，执行与交接记录归 solvers/，评分与指标归 scorers/；冻结数据和样本契约统一归 dataset/<名>/，版本目录自包含，采集/构建工具在本包 build/。task 只经数据集出口 load() 读取；evals/core、evals/data、evals/schema 已解散。

@@ -1,21 +1,12 @@
-"""独立成功判定集：真值目标、观测历史与人工标签。"""
+"""生产目标判定 solver 与交接记录，真值由独立数据集提供。"""
 
 import asyncio
 
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.util import StoreModel, store_as
-from pydantic import BaseModel
 
+from evals.dataset.brain_goal_judge import JudgeCase
 from pokemon_agent.direct.brain_tool import BrainTool
-from pokemon_agent.schemas.harness import FromHarnessToBrainToolJudgeReq
-
-
-class JudgeCase(BaseModel):
-    """标签不会传给判定器，只由 scorer 消费。"""
-
-    case_id: str
-    request: FromHarnessToBrainToolJudgeReq
-    achieved: bool
 
 
 class JudgeRecord(StoreModel):

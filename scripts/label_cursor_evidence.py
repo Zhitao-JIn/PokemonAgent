@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 from pydantic import BaseModel
 
-from evals.data.frames.schemas import ScreenSample
+from evals.dataset.frames.schemas import ScreenSample
 
 SOLID_CORE: tuple[str, ...] = ("##...", "###..", "####.", "#####", "####.", "###..", "##...")
 """已核对 p-shop_menu 的实心箭头核心5×7像素；不要求字形在8×8格内同一垂直相位。"""

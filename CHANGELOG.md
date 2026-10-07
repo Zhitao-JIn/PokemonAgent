@@ -1,3 +1,13 @@
+## 2026-10-07（407）—— 测评 S2：冻结数据与生产工具归入独立数据集包
+
+**改了什么**：frames、agent_goal_run、world_script_execute、memory_store_recall、brain_goal_judge 的样本契约与读取器统一归 evals/dataset，task 只从出口 load() 拿类型化数据；冻结物收进版本目录，frame 真值与1045帧同放 v2。106条脚本用例与8条帧采集输入转为 JSONL，12种接管核对改存声明，核对实现留在 scorer。frames 与 agent 的造数据工具归 build（D1），采集输入归 sources；所用 experiment 存档复制并核内容，原件不动，data / schema 解散。agent v1 仅重写来源与清单路径，source_sha256 不变；恢复器所需路径由 evals solver 在工作目录转换。
+
+**为什么这么改**：数据集是样本契约的产出方，task 不应知道冻结文件的位置或格式；版本自包含才能独立复现，工具与读取分离可避免运行期加载模拟器和采集依赖。声明式核对让冻结用例不再依赖可执行的 Python 用例表，同时保留原评分证据与口径。
+
+**取舍**：只落地移动相关的 S1 / S2，不进入 S3 / S4、不扩充样本或变更评分。包出口只导出读取函数与样本类型，运行记录仍归 solver、结论归 scorer，以 S1 槽位规则为准。旧采集工具重跑本来就会改变当前 v2；迁移前后副本上的重采产物逐字节相同，但不等于现有冻结物，因此不将重采结果覆盖 v2。新版本构建允许从空目录开始，版本读取遇缺失、重复、哈希或路径错误抛 DatasetError。judge / memory 的 task 参数改为版本号。
+
+**影响面**：evals 数据与内部 import、构建命令、版本路径、活规格和本地测试；生产系统代码零改动。106条真机运行记录的完整裁决逐条一致；正式帧/真值和judge/memory内容未变，全部所用存档内容不变。副本 pack 的 world.state 与现存档逐字节相同，清单差异仅生成ID、时间、代码指纹与记忆快照名。decode 1045帧、memory冻结库、world 106例的Inspect运行均零样本错误；decode四组100%，memory三个指标1.0，world105/106与迁移前一致（switch_from_party_list 的既有 unknown_script 保留）。六个task装配与数据包导入隔离已验证，31项新增数据集测试通过。首轮全量512 passed、2 skipped；最终全量518 passed、2 skipped、1个既有trace分支顺序失败（两条恢复事件ended_at相同，随机uuid使顺序逆转；trace源码未改），单独复跑同样失败。相关源码与测试lint/format通过，项目lint通过（排除临时目录及外部langfuse），另3份既有文件未通过全仓format检查，本次不改。未调用真实LLM；tests 按既有仓库策略留本地不入库。
+
 ## 2026-10-07（406）—— 测评 S1：task 改名并按 solver 与 scorer 槽位归位
 
 **改了什么**：六个公开 task 保留 decode，其余改为 episode_vision_read、world_script_execute、memory_store_recall、brain_goal_judge、agent_goal_run；core 解散，solver / 运行记录与 scorer / metric / 判定结论按归属迁移，run-one 子进程归入 agent_goal_run solver；同步命令、测试与任务清单。

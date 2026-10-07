@@ -17,7 +17,7 @@
 
 ## 帧与独立真值
 
-`evals/data/frames/dataset/v2/samples.jsonl` 是唯一的 v2 帧集（1045 帧）；`source` 只记录采集来源，不决定 decode 的评分组。原基础帧、接管快照、地形快照均已合并，加载器不再拼接来源文件。采集命令按来源替换统一帧集中的对应样本，保留其余来源。decode、episode_vision_read 共用加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
+`evals/dataset/frames/v2/samples.jsonl` 是唯一的 v2 帧集（1045 帧）；`source` 只记录采集来源，不决定 decode 的评分组。原基础帧、接管快照、地形快照均已合并，加载器不再拼接来源文件。采集命令按来源替换统一帧集中的对应样本，保留其余来源。decode、episode_vision_read 共用加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
 
 `evals/data/frames/truth.jsonl`是decode独立真值的唯一存储，按sample_id记录scene_truth、screen_truth、takeover_truth、terrain_truth。所有已标字段直接挂到帧上计分，删除reviewed及配套组/字段审核标记，不再按审核状态过滤。未标或空组为NOANSWER，不进入该组分母；unresolved_fields记录无法判定原因。decode不从label_checked或label回退取答案。1045帧已标全部适用字段，其中1032个地图已加载帧的地形有map_id、where、facing、walk_map、neighbors五字段，另外13帧地形不适用。网页审阅意见独立保存，不控制真值计分。视觉任务保留自身原有label_checked口径。
 
@@ -62,10 +62,43 @@ agent_goal_run 评分只看任务最终结果、红线和独立结果评分模�
 
 这些是未审参考标注，不代表1045帧全部经过人工审核。默认正式 decode 仍只采用此前已审且值未变的键：53帧文字（含原接管组移来的8帧文字片段）、8帧场合、8帧接管、2帧地形；仅已有审核字段参与。字段扩标不会自动批准整组。四组分别计分，组内所有已标键均相等才为 C，任一不等为 I，无标为 N；准确率 = C/(C+I)，必须同时报告计分帧数。明确标注 null 的键必须在实际输出中存在。
 
-参考标注从原始冻结 RAM/ROM、固定名称表及既有独立文字/场合标注产生，不读取待测解码输出。候选完成后才跑 decoder 作差异诊断。参考程序、逐帧字节及哈希位于 `eval_results/labeling_1007/full_truth/`；运行 `python -m evals.data.frames.coverage` 检查顶层字段与视图嵌套字段。
+参考标注从原始冻结 RAM/ROM、固定名称表及既有独立文字/场合标注产生，不读取待测解码输出。候选完成后才跑 decoder 作差异诊断。参考程序、逐帧字节及哈希位于 `eval_results/labeling_1007/full_truth/`；运行 `python -m evals.dataset.frames.build.coverage` 检查顶层字段与视图嵌套字段。
 
 此前只核代表性规则、不标机械字段的范围已按用户要求扩大为全输出覆盖。地址、字节序与物理图块规则仍需独立复核，完整参考标注不能替代人工审核和真实环境行为验证；菜单遮挡时的 walk_map 只核当前图块缓冲投影。
 
 0926 探测45帧的自动预标 scene/at_start 不作独立答案。原8/8接管与2/2地形只代表当时已审键符合；全量标注覆盖和正式准确率分别报告，不混为一谈。
 
 接管组仅含 view；重复的 scene 和 screen 归场合与文字组。原已审 scene、screen_contains 移到所属分组并保留原审核粒度，完整 view 的旧已审点路径由加载器按路径投影，不重复存储相同字段。审阅页整屏参考只显示一次。
+
+
+## 测评代码与冻结数据的归属（S1 / S2）
+
+`tasks/<task>/task.py` 只装配数据集、solver 与 scorer；执行和运行记录归 `solvers/`，
+评分、metric 与结论类型归 `scorers/`。`evals/core/`、`evals/data/`、`evals/schema/` 已解散。
+
+数据包出口只导出 `load()` 与样本类型；读取时核冻结文件、重复 id、版本内引用和来源哈希，
+失败抛 `evals.dataset.errors.DatasetError`。judge / memory 的 task 参数改为 `version=v1`。
+
+| 数据包 | 默认版本与冻结物 | 构建工具 |
+|---|---|---|
+| frames | v2，1045 帧 samples.jsonl 与独立 truth.jsonl | build/；sources/ 收采集输入与13份存档 |
+| agent_goal_run | v1，20 个起点、样本、rubric 与档案 | build/pack.py |
+| world_script_execute | v1，106 条 cases.jsonl 与所用存档 | 常规31条、接管75条统一读取；核对函数在 scorer |
+| memory_store_recall | v1，dataset.json（一份3条记录/3个查询的库） | 无 |
+| brain_goal_judge | v1，dataset.jsonl（4条） | 本次不扩容 |
+
+agent 的 source_state 与 manifest.memory_archive 均相对版本目录；恢复前由 solver 在工作目录
+生成路径适配清单，冻结原件不写回。world 用例的 state 相对版本下的 states/，
+`start_world` 接收完整 Path。experiment 原存档保留，数据包中的副本内容不变。
+
+```powershell
+python -m evals agent_goal_run run-one --help
+python -m evals.dataset.agent_goal_run.build.pack --samples knowledge_dialogue_advance
+python -m evals.dataset.frames.build.coverage
+python -m evals frames build --capture <capture_dir> --version v3
+```
+
+迁移验收：106 条真机运行记录的完整裁决逐条相同；正式冻结帧与真值不变。
+旧采集工具重跑已会改变当前 v2，迁移前后重采产物逐字节相同，但与正式冻结物不同；
+本次仅在副本验证，没有将重采结果覆盖 v2。新 pack 工具在副本打包的 world.state 与现有档案一致。
+真实 LLM 测评未重跑；三个无 LLM task 已全量运行，world 的原有 switch_from_party_list 失败保持不变。

@@ -6,8 +6,8 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.util import StoreModel, store_as
 from pydantic import BaseModel, Field
 
-from evals.data.frames.schemas import ScreenSample
-from evals.solvers.snapshot import has_map, snapshot_of
+from evals.dataset.frames.schemas import ScreenSample
+from evals.dataset.frames.snapshot import has_map, snapshot_of
 from evals.solvers.world_case import ROM
 from pokemon_agent.world import (
     TAKEOVER_SCENES,

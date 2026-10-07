@@ -14,7 +14,7 @@ from pathlib import Path
 
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
-from evals.data import REPO_ROOT
+from evals.paths import REPO_ROOT
 from evals.solvers.agent_goal_run.runner.one import run_id_for
 
 __all__ = ["Generate", "Solver", "TaskState", "run_id_for", "run_one_solver", "solver"]

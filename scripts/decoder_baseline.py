@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from evals.data.frames.schemas import ScreenSample
+from evals.dataset.frames.schemas import ScreenSample
 from evals.solvers.decode import decode_frame
 
 FIELDS = (
@@ -146,7 +146,7 @@ def main() -> None:
     if args.output.resolve() == args.previous.resolve() or args.output.exists():
         raise ValueError("output must be a new report path")
     report = evaluate(
-        Path("evals/data/frames/dataset/v2/samples.jsonl"), Path("evals/data/frames/truth.jsonl")
+        Path("evals/dataset/frames/v2/samples.jsonl"), Path("evals/dataset/frames/v2/truth.jsonl")
     )
     report["changes"] = changes(report, json.loads(args.previous.read_text(encoding="utf-8")))
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

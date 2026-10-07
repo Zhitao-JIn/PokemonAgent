@@ -3,6 +3,7 @@
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
+from evals.dataset.frames import load as load_frames
 from evals.scorers.decode import (
     generic_decoder_scorer,
     scene_scorer,
@@ -11,7 +12,6 @@ from evals.scorers.decode import (
     terrain_scorer,
 )
 from evals.solvers.decode import decode_solver
-from evals.solvers.frames import load_frames
 
 
 @task

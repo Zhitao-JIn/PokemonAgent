@@ -4,7 +4,8 @@ from inspect_ai.scorer import Score, Scorer, Target, accuracy, mean, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 
-from evals.solvers.memory_store_recall import MemoryDataset, MemoryRun
+from evals.dataset.memory_store_recall import MemoryDataset
+from evals.solvers.memory_store_recall import MemoryRun
 
 
 def retrieval_metrics(ranked: list[str], relevant: list[str], k: int) -> tuple[float, float]:

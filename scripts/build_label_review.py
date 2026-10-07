@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from evals.data.frames.schemas import FrameTruth, ScreenSample, TruthGroup
+from evals.dataset.frames.schemas import FrameTruth, ScreenSample, TruthGroup
 from scripts.label_cursor_evidence import CursorEvidence, cursor_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -118,8 +118,8 @@ def imported_review(
 
 def load_bundle() -> ReviewBundle:
     """每帧必须有对应真值；页面审阅意见独立保存，不参与评分过滤。"""
-    sample_path = ROOT / "evals/data/frames/dataset/v2/samples.jsonl"
-    truth_path = ROOT / "evals/data/frames/truth.jsonl"
+    sample_path = ROOT / "evals/dataset/frames/v2/samples.jsonl"
+    truth_path = ROOT / "evals/dataset/frames/v2/truth.jsonl"
     rows = [
         FrameTruth.model_validate_json(line) for line in truth_path.read_text("utf-8").splitlines()
     ]
@@ -154,7 +154,10 @@ def load_bundle() -> ReviewBundle:
         generated_at=datetime.now(UTC).isoformat(),
         truth_sha256=digest(truth_path),
         samples_sha256=digest(sample_path),
-        diagnostic_current=recorded_hashes.get("evals/data/frames/truth.jsonl")
+        diagnostic_current=(
+            recorded_hashes.get("evals/dataset/frames/v2/truth.jsonl")
+            or recorded_hashes.get("evals/data/frames/truth.jsonl")
+        )
         == digest(truth_path),
         frames=frames,
         revised_groups=revised_groups(),

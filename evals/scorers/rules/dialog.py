@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from evals.schema.sample import EvalSample
+from evals.dataset.agent_goal_run.schemas import EvalSample
 from evals.scorers.registry import rule
 from evals.scorers.stream import RunStream
 from evals.scorers.utils import decoded, failed, first_match, passed, target_frames, unjudgeable

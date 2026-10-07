@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from evals.dataset.world_script_execute import ScriptExpect, TakeoverCheck
 from evals.scorers.world_script_execute.verdict import ScriptVerdict
 from evals.solvers.world_script_execute import ScriptRun
 from pokemon_agent.world import TaskObservation, TaskScene
-from pokemon_agent.world.scripts.execution_types import ScriptStatus
 
 
 def _money(delta: int) -> Check:
@@ -152,32 +152,51 @@ def _knows(pokemon: str, move: str, *, yes: bool = True) -> Check:
     return check
 
 
-def judge_takeover(case_id: str, run: ScriptRun) -> ScriptVerdict:
-    """报告按原结局契约判，状态变化只读前后观测，不信脚本自述。"""
-    from evals.solvers.world_script_cases.takeover_cases import CASES
+Check = Callable[[TaskObservation, TaskObservation], str]
 
-    case = next(c for c in CASES if c.case_id == case_id)
+
+def check_declaration(check: TakeoverCheck, before: TaskObservation, after: TaskObservation) -> str:
+    """原样执行声明对应的旧核对；契约违约仍交调用方转成判负证据。"""
+    args = check.args
+    factories = {
+        "money": _money,
+        "bag": _bag,
+        "scene": _scene,
+        "left": _left,
+        "in_play": _in_play,
+        "pc": _pc,
+        "box": _box,
+        "knows": _knows,
+    }
+    direct = {"battle_start": _battle_start, "foe_hurt": _foe_hurt, "shop_start": _shop_start}
+    if check.kind in direct:
+        return direct[check.kind](before, after)
+    if check.kind == "order":
+        return _order(*args["names"])(before, after)
+    if check.kind in {"scene", "left"}:
+        return factories[check.kind](TaskScene(args["scene"]))(before, after)
+    return factories[check.kind](**args)(before, after)
+
+
+def judge_takeover(expect: ScriptExpect, run: ScriptRun) -> ScriptVerdict:
+    """按冻结的结局与声明核对前后观测，评分口径与原用例一致。"""
     problems: list[str] = []
     report = run.report
-    code = "ok" if case.status is ScriptStatus.DONE else (case.reason or case.status).value
     if report is None:
         problems.append(run.crash)
     else:
-        if report.code != code or report.data.get("status") != case.status.value:
+        if report.code != expect.code or report.data.get("status") != expect.status:
             problems.append(f"结局不符：{report.code}/{report.data.get('status')}")
-        if report.ok != (case.status is ScriptStatus.DONE):
+        if report.ok != expect.ok:
             problems.append(f"ok={report.ok}")
-        if case.summary and case.summary not in str(report.data.get("summary", "")):
-            problems.append(f"摘要缺少 {case.summary!r}")
+        if expect.summary and expect.summary not in str(report.data.get("summary", "")):
+            problems.append(f"摘要缺少 {expect.summary!r}")
     truth: list[str] = []
-    for check in case.checks:
+    for check in expect.checks:
         try:
-            problem = check(run.before_observation, run.after_observation)
+            problem = check_declaration(check, run.before_observation, run.after_observation)
         except AssertionError as exc:
             problem = str(exc)
         if problem:
             truth.append(problem)
     return ScriptVerdict(code_problems=problems, truth_problems=truth)
-
-
-Check = Callable[[TaskObservation, TaskObservation], str]
