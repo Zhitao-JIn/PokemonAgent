@@ -23,7 +23,7 @@ from __future__ import annotations
 from .interface import Facts, Memory
 from .interface.domain.screen_text import ScreenText
 from .ram import SCREEN_COLS, SCREEN_ROWS, W_TILEMAP
-from .screen_layout import keyboard_screen
+from .screen_layout import is_keyboard, keyboard_screen
 from .screen_glyphs import graphic_only, has_text_neighbor, title_logo
 from .screen_menu import read_menu
 
@@ -183,12 +183,13 @@ def render_screen(tiles: list[list[int]], *, in_battle: bool) -> str:
     """
     if title_logo(tiles) or graphic_only(tiles):
         return ""
-    text = "\n".join(_render_row(row, in_battle).rstrip() for row in tiles)
+    keyboard = is_keyboard(tiles)
+    text = "\n".join(_render_row(row, in_battle, keyboard=keyboard).rstrip() for row in tiles)
     text = keyboard_screen(text, tiles)
     return text if text.strip("·\n ") else ""
 
 
-def _render_row(row: list[int], in_battle: bool) -> str:
+def _render_row(row: list[int], in_battle: bool, *, keyboard: bool = False) -> str:
     """一行图块渲成文字。
 
     0x62–0x74 这批图块的样子随当时载入的图形变：在战斗 / 队伍列表 / 能力页里是血条、`:L`、
@@ -198,6 +199,9 @@ def _render_row(row: list[int], in_battle: bool) -> str:
     """
     hud = _hud_positions(row, in_battle)
     return "".join(
+        "_" if keyboard and t in (0x76, 0x77)
+        else "No" if t == 0x74 and i + 1 < len(row) and row[i + 1] == 0xF2
+        else
         "·" if t == 0xFF and not has_text_neighbor(row, i)
         else _glyph(t) if t in CHARMAP or t in _LINES or i in hud else "·"
         for i, t in enumerate(row)
@@ -217,7 +221,7 @@ def _hud_positions(row: list[int], in_battle: bool) -> set[int]:
             if end > i + 2 and end < len(row) and row[end] in BAR_RIGHT:
                 ok.update(range(i, end + 1))
         level = tile == LEVEL and nxt in digits
-        id_no = not in_battle and (
+        id_no = (tile == 0x74 and nxt == 0xF2) or not in_battle and (
             (tile == 0x73 and nxt == 0x74) or (tile == 0x74 and (nxt in digits or nxt == 0xF2))
         )
         if level or id_no:
