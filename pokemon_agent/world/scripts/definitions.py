@@ -18,13 +18,17 @@ Execute = Callable[[ScriptRun, dict[str, str | int]], str]
 
 @dataclass(frozen=True)
 class ScriptDefinition:
-    """签名、适用场合、前置校验、业务步骤与生命周期策略。"""
+    """签名、适用场合、前置校验、业务步骤与生命周期策略。
+
+    scene 是主入口；entry_scenes 显式声明同一业务可接受的其他入口，保留实际起始场合。
+    """
 
     spec: ActionEntry
     scene: TaskScene
     check: Check
     execute: Execute
     policy: ScriptPolicy = field(default_factory=ScriptPolicy)
+    entry_scenes: tuple[TaskScene, ...] = ()
 
 
 def bad_args(spec: ActionEntry, args: dict[str, str | int]) -> str:
@@ -74,14 +78,11 @@ def run_definition(
         policy=definition.policy,
     )
     invalid = bad_args(definition.spec, args)
-    if run.scene is not definition.scene:
+    accepted = run.scene in (definition.scene, *definition.entry_scenes)
+    if not accepted:
         invalid = f"{run.scene.value} 场合没有脚本 {definition.spec.name}"
     if invalid:
-        code = (
-            ScriptReason.UNKNOWN_SCRIPT
-            if run.scene is not definition.scene
-            else ScriptReason.BAD_ARGS
-        )
+        code = ScriptReason.UNKNOWN_SCRIPT if not accepted else ScriptReason.BAD_ARGS
         return result_for(run, ScriptStatus.REJECTED, code.value, invalid)
     filled = dict(args)
     for param in definition.spec.params:

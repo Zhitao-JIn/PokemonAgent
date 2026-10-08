@@ -222,8 +222,9 @@ def _execute_switch(run: ScriptRun, args: dict[str, str | int]) -> str:
     assert index is not None
     name = _party(run.mem)[index].name
     # 步骤 1：行动菜单选 PKMN，等队伍列表。
-    _action(run, "PKMN")
-    run.wait_for(lambda t: "Choose a POK" in t.dialog_text, expect="队伍列表出现")
+    if run.scene is not TaskScene.BATTLE_SWITCH:
+        _action(run, "PKMN")
+        run.wait_for(lambda t: "Choose a POK" in t.dialog_text, expect="队伍列表出现")
     # 步骤 2：选这只，子菜单选 SWITCH。
     pick_mon(run, index, name)
     run.wait_for(lambda t: t.cursor == "SWITCH", expect="SWITCH / STATS 子菜单出现")
@@ -366,6 +367,7 @@ BATTLE_TAKEOVERS: dict[str, ScriptDefinition] = {
         check=_check_switch,
         execute=_execute_switch,
         policy=menu_policy(rewind_after=False),
+        entry_scenes=(TaskScene.BATTLE_SWITCH,),
     ),
     "use_item": ScriptDefinition(
         spec=ActionEntry(

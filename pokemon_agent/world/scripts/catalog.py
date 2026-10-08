@@ -161,6 +161,12 @@ SCENE_SCRIPTS: dict[str, frozenset[str]] = {
 各接管场合给
 本场合的接管脚本（商店另加 `buy_item` / `sell_item`）；不在表里的场合一律不给脚本。"""
 
+for _definition in TAKEOVER_SCRIPTS.values():
+    for _entry_scene in _definition.entry_scenes:
+        SCENE_SCRIPTS[_entry_scene.value] = SCENE_SCRIPTS.get(_entry_scene.value, frozenset()) | {
+            _definition.spec.name
+        }
+
 
 def script_entries(scene: str) -> list[ActionEntry]:
     """本场合可用的脚本条目（`compute_action_space` / `game_tools._mask` 共用）。"""
