@@ -1,7 +1,7 @@
 """场景分类的图块证据：无地图空屏、开场画像及尚未显示光标的战斗菜单框。"""
 
 from .interface import Memory
-from .ram import W_COLLISION_PTR
+from .ram import map_settled
 
 
 def is_transition(tiles: list[list[int]], screen: str, memory: Memory) -> bool:
@@ -10,7 +10,7 @@ def is_transition(tiles: list[list[int]], screen: str, memory: Memory) -> bool:
         return True
     if screen:
         return False
-    if memory[W_COLLISION_PTR] == memory[W_COLLISION_PTR + 1] == 0:
+    if not map_settled(memory):
         return True
     return all(
         tile == ((column - 6) * 7 + row - 4 if 4 <= row < 11 and 6 <= column < 13 else 0x7F)

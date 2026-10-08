@@ -47,7 +47,7 @@ from .perceive_frame import (
     perceive_frame,
 )
 from .prompts import load as load_prompt
-from .ram import read_terrain
+from .ram import map_settled, read_terrain
 from .readout import read_readout
 from .scene import classify_scene
 from .screen_text import layout_field, overlay_of, read_screen_text
@@ -92,11 +92,13 @@ AFTER_ACTION_FRAMES = 10 * GB_FPS  # 整条链按完后再推进多少帧（10 �
 BOOT_FRAMES = 10 * GB_FPS  # 无存档时空转多少帧越过开机 logo
 
 
-def _ram_status(terrain: TerrainMap, text: ScreenText) -> str:
+def _ram_status(terrain: TerrainMap | None, text: ScreenText) -> str:
     """纯 RAM 观测的状态行：位置、朝向，加上屏幕文字能确定的对话 / 选项 / 光标。
 
     **不写"你在野外"这类场景词**（只有战斗能从内存确定）：编一句出来就是在假观测上做决策。
     """
+    if terrain is None:
+        return "（这一帧只读了内存）地图尚未稳定。"
     facing = f"，朝向 {terrain.facing}" if terrain.facing else ""
     bits = [f"（这一帧只读了内存）{terrain.place().render()}{facing}"]
     if text.in_battle:
@@ -339,7 +341,8 @@ class PyBoyWorld:
         """
         assert self._task is not None, "perceive_task() before reset()"
         png = self._frame_png()
-        terrain = read_terrain(self._pyboy.memory)
+        memory = self._pyboy.memory
+        terrain = read_terrain(memory) if map_settled(memory) else None
         return self._ram_observe(terrain, read_screen_text(self._pyboy.memory), png)
 
     def perceive_once(self) -> Perceived:
@@ -373,7 +376,7 @@ class PyBoyWorld:
             closed=self._closed,
         )
 
-    def _ram_observe(self, terrain: TerrainMap, text: ScreenText, png: bytes) -> TaskPerceived:
+    def _ram_observe(self, terrain: TerrainMap | None, text: ScreenText, png: bytes) -> TaskPerceived:
         """只读内存的观测——**这一档不调视觉模型**。
 
         内存答得出的：坐标、朝向、地标、通行图、地图编号，以及从屏幕 tile 缓冲
@@ -394,15 +397,15 @@ class PyBoyWorld:
         facts = Facts(
             scene=Facts.Scene.BATTLE if text.in_battle else None,
             overlay=overlay,
-            where=terrain.place().render(),
-            facing=terrain.facing or "",
-            neighbors=terrain.render_neighbors(),
-            landmarks=terrain.landmarks(),
+            where=terrain.place().render() if terrain is not None else "",
+            facing=terrain.facing or "" if terrain is not None else "",
+            neighbors=terrain.render_neighbors() if terrain is not None else "",
+            landmarks=terrain.landmarks() if terrain is not None else [],
             dialog_text=text.dialog_text,
             options=text.options,
             cursor=text.cursor or None,
-            walk_map="" if text.screen else terrain.render(),
-            map_id=terrain.map_id,
+            walk_map=terrain.render() if terrain is not None and not text.screen else "",
+            map_id=terrain.map_id if terrain is not None else None,
             screen=text.screen,
             **_battle_fields(mem),
             **layout_field(text),
@@ -410,7 +413,7 @@ class PyBoyWorld:
         return TaskPerceived(
             observation=TaskObservation(
                 step=0,
-                place=terrain.place(),
+                place=terrain.place() if terrain is not None else None,
                 status=_ram_status(terrain, text),
                 facts=facts,
                 done=self._closed,

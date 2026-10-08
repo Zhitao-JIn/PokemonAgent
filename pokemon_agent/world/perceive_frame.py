@@ -13,7 +13,7 @@ from .battle_status import read_battle_status
 from .interface import Facts, Memory, Observation, Perceived, ScreenState, ScreenText
 from .interface.domain import terrain_legend
 from .prompts import PromptTemplate
-from .ram import read_terrain
+from .ram import map_settled, read_terrain
 from .readout import read_readout
 from .screen_text import layout_field, overlay_of, read_screen_text
 from .visual_perception import _png_data_uri, parse_screen, perceive_visual
@@ -81,11 +81,11 @@ def perceive_frame(
     步骤 3：拼成观测交回去。
     """
     # 步骤 1。
-    terrain = read_terrain(memory)
+    terrain = read_terrain(memory) if map_settled(memory) else None
 
     # 步骤 2：问一次视觉模型（屏幕解码也读一遍，给整屏原样与叠加层核对用）。
     ram_text = read_screen_text(memory)
-    prompt = template.render(known_map=terrain.render(), terrain_legend=terrain_legend())
+    prompt = template.render(known_map=terrain.render() if terrain is not None else "", terrain_legend=terrain_legend())
     # 帧在本层只编码一次（`_png_data_uri`，完整 data URI）——进模型、
     # 落盘（trace / step_memory）拿的都是**同一份字符串**，下游不存在
     # 第二种格式（0915 定，裸 base64 已废）。
@@ -122,7 +122,7 @@ def perceive_frame(
     # 它就按先验编：真新镇既没有宝可梦中心也没有商店，它照样给出了
     # 「写着「POKéMON CENTER」的招牌」。名字要靠**走进去看见**再记住，
     # 那是记忆层的事（见 `TerrainMap.landmarks` 的完整说明）。
-    landmarks = terrain.landmarks()
+    landmarks = terrain.landmarks() if terrain is not None else []
     ram = read_readout(memory, ram_text, text_source="vlm")
 
     # **`Facts` 是结构化模型，字段该是什么类型就是什么类型。** 不再需要先把
@@ -143,19 +143,19 @@ def perceive_frame(
     facts = Facts(
         scene=screen.scene,
         overlay=overlay,
-        where=terrain.place().render(),
-        facing=terrain.facing or "",
+        where=terrain.place().render() if terrain is not None else "",
+        facing=terrain.facing or "" if terrain is not None else "",
         # 四邻是唯一**相对"我"**的地形描述，所以是唯一能进记忆的那份
         # （`walk_map` 的原点跟着人走，跨步骤引用会自相矛盾）。
-        neighbors=terrain.render_neighbors(),
+        neighbors=terrain.render_neighbors() if terrain is not None else "",
         landmarks=landmarks,
         dialog_text=text,
         options=screen.options,
         cursor=screen.cursor or "",
         overview=screen.overview,
         # walk_map 来自模拟器内存，不是模型读出来的——它是这些事实里唯一 100% 的一项。
-        walk_map=terrain.render(),
-        map_id=terrain.map_id,
+        walk_map=terrain.render() if terrain is not None else "",
+        map_id=terrain.map_id if terrain is not None else None,
         screen=ram_text.screen,
         **{**screen.fields, **_battle_fields(memory)},
         **layout_field(ram_text),
@@ -168,7 +168,7 @@ def perceive_frame(
         step=0,
         # **结构化的位置也交出去。** `facts.where` 是给模型读的文本，
         # 而交互记忆的键要拿 `(map_id, x, y)` 去算——反解字符串是迟早要出错的事。
-        place=terrain.place(),
+        place=terrain.place() if terrain is not None else None,
         status=_status_line(screen, facts.cursor or ""),
         facts=facts,
         # **`done` 是世界层自己唯一能报的信号**（窗口关没关）；

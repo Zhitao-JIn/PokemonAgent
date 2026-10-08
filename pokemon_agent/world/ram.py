@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .interface import Memory, TerrainMap
 from .terrain_sprites import hidden_slots, sprite_position
+from .map_tilesets import map_tilesets
 from .interface.domain import (
     BOULDER,
     DOOR,
@@ -179,6 +180,18 @@ def _terrain_cells(mem: Memory) -> tuple[list[list[str]], int]:
         rows.append(line)
 
     return rows, ambiguous
+
+
+def map_settled(mem: Memory) -> bool:
+    """地图可用当且仅当通行表非零且地图头 tileset 与 WRAM 一致。
+
+    未载入、未知地图编号或换图中间态返回 False；缺静态表时失败。
+    调用方须提供同帧可读 WRAM。
+    """
+    loaded = int(mem[W_COLLISION_PTR]) | int(mem[W_COLLISION_PTR + 1]) << 8
+    index = int(mem[W_CUR_MAP])
+    table = map_tilesets()
+    return bool(loaded) and index < len(table) and table[index] == int(mem[W_CUR_MAP_TILESET])
 
 
 def read_terrain(mem: Memory) -> TerrainMap:

@@ -12,7 +12,7 @@ import zlib
 
 from evals.dataset.frames.schemas import ScreenSample
 from evals.solvers.world_case import ROM
-from pokemon_agent.world.ram import W_COLLISION_PTR
+from pokemon_agent.world.ram import map_settled
 
 WRAM_START, WRAM_END = 0xC000, 0xE000
 BANK0_END = 0x4000
@@ -46,16 +46,11 @@ class SnapshotMemory:
 
 
 def has_map(sample: ScreenSample) -> bool:
-    """这一帧有没有载入地图（通行表指针非零）。
-
-    开机标题与读档前的几帧还没载入地图，生产里感知节点碰不到这种帧（`read_passable` 会当场
-    断言失败），不进数据集。
-    """
+    """同生产判据：通行表非零且地图头 tileset 与 WRAM 一致才适用地形。"""
     if not sample.wram:
         return False
     wram = zlib.decompress(base64.b64decode(sample.wram))
-    offset = W_COLLISION_PTR - WRAM_START
-    return (wram[offset] | wram[offset + 1] << 8) != 0
+    return map_settled(SnapshotMemory(wram, bytes(BANK0_END)))
 
 
 def snapshot_of(sample: ScreenSample) -> tuple[bytes, SnapshotMemory]:

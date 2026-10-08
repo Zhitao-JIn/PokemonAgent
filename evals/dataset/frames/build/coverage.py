@@ -10,9 +10,11 @@ from pydantic import BaseModel, TypeAdapter
 
 from pokemon_agent.world.interface.domain.screen_text import ScreenText
 from pokemon_agent.world.interface.domain.takeover_view import TakeoverView
+from pokemon_agent.world.ram import map_settled
 
 from ..loader import load, load_truth
 from ..schemas import FrameTruth, ScreenSample
+from ..snapshot import BANK0_END, SnapshotMemory
 
 
 def absent_model_keys(model: BaseModel, raw: dict[str, Any], prefix: str) -> list[str]:
@@ -36,7 +38,7 @@ def absent_model_keys(model: BaseModel, raw: dict[str, Any], prefix: str) -> lis
 def missing_fields(frame: ScreenSample, truth: FrameTruth) -> list[str]:
     """每个适用输出键须有期望或 unresolved 原因；无地图的 terrain 为不适用。"""
     raw = zlib.decompress(base64.b64decode(frame.wram))
-    map_loaded = bool(raw[0x1530] | raw[0x1531] << 8)
+    map_loaded = map_settled(SnapshotMemory(raw, bytes(BANK0_END)))
     required = {
         "scene_truth": {"scene", "covered_by_script", "at_start"},
         "screen_truth": set(ScreenText.model_fields) | {"overlay"},
