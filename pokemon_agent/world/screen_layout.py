@@ -44,21 +44,21 @@ def read_layout(
             for c in range(2, 19, 2)
             if (t := tiles[r][c]) in characters and t != SPACE
         ]
-        return _layout(positions, arrow, False, True)
+        return _layout(positions, arrow, False, True, cursor_adjacent=True)
     if arrow is None:
         return None
     r, c = arrow
     if render(tiles[1]) == "TEXT SPEED":
         positions = _settings(tiles, r, render)
         if positions:
-            return _layout(positions, arrow, False, True)
+            return _layout(positions, arrow, False, True, cursor_adjacent=True)
     if "CONTENTS" in render(tiles[1]) and c == 0:
         positions = [(r, 4, render(tiles[r][4:14])) for r in range(3, 16, 2)]
-        return _layout([p for p in positions if p[2]], arrow, False, False)
+        return _layout([p for p in positions if p[2]], arrow, False, True, cursor_adjacent=False)
     if c == 0 and r < 12:
         positions = _party(tiles, render)
         if positions and any(row == r - 1 for row, _, _ in positions):
-            return _layout(positions, arrow, True, False)
+            return _layout(positions, arrow, True, True, cursor_adjacent=False)
     return None
 
 
@@ -97,6 +97,7 @@ def _layout(
     arrow: tuple[int, int] | None,
     below_name: bool,
     covered: bool,
+    *, cursor_adjacent: bool,
 ) -> Layout:
     """按物理行列构造选项，重复名称通过坐标区分。"""
     rows: dict[int, list[tuple[int, str]]] = {}
@@ -109,7 +110,7 @@ def _layout(
         for ri, (row, items) in enumerate(rows.items()):
             for ci, (column, _) in enumerate(items):
                 if (below_name and row == ar - 1) or (
-                    not below_name and row == ar and (column == ac + 1 or not covered)
+                    not below_name and row == ar and (column == ac + 1 or not cursor_adjacent)
                 ):
                     cell = (ri, ci)
     return Layout(grid, cell, ["" for items in grid for _ in items], covered)
