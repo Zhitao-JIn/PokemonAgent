@@ -251,9 +251,7 @@ child.append(
     _meta(episode_id="ep-2", task_id="", branch=restore_branch),
     {},
 )
-child.append(
-    "lifecycle", "run_end", _meta(episode_id="", task_id="", branch=restore_branch), {}
-)
+child.append("lifecycle", "run_end", _meta(episode_id="", task_id="", branch=restore_branch), {})
 child.flush()  # 不 flush 的话 span 还在 SDK 队列里，下面的 API 树形核对会查空
 print(f"故意等待 {SETTLE_WAIT_SECONDS:.0f}s（等 OTEL 批量导出落地）…")
 time.sleep(SETTLE_WAIT_SECONDS)
@@ -370,6 +368,7 @@ check(
     and bool(child_task_start)
     and getattr(child_task_start, "parent_observation_id", None) == child_episode_start.id,
 )
+
 
 def _envelope_ended_at(obs: object) -> float:
     """observation 侧读封套 `ended_at`（双时刻定案：排序核对以封套为准）。"""

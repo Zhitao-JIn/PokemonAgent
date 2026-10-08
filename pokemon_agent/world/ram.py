@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from .interface import Memory, TerrainMap
-from .terrain_sprites import hidden_slots, sprite_position
-from .map_tilesets import map_tilesets
 from .interface.domain import (
     BOULDER,
     DOOR,
@@ -19,6 +17,8 @@ from .interface.domain import (
     PLAYER_CELL,
     SIGN,
 )
+from .map_tilesets import map_tilesets
+from .terrain_sprites import hidden_slots, sprite_position
 
 W_TILEMAP = 0xC3A0
 """屏幕上 20x18 个 tile 的 id。"""
@@ -35,7 +35,7 @@ W_ENEMY_MON_HP = 0xCFE6
 W_ENEMY_MON_STATUS = 0xCFE9
 W_ENEMY_MON_LEVEL = 0xCFF3
 W_ENEMY_MON_MAX_HP = 0xCFF4
-"""战斗双方状态框（`wBattleMon*` / `wEnemyMon*`）。HP 与最大 HP 各占两字节、高位在前；昵称 `NAME_LENGTH` 字节、以 `NAME_END` 结尾。除两个昵称外均按 pret/pokered 链接符号表核过 （`experiment/observation_check/capture_manual_play.py`）；两个昵称由源码布局 （`wEnemyMonNick:: ds NAME_LENGTH` 紧挨 `wEnemyMon::`，我方同理）推算， 并在 4 份战斗存档上实读与画面一致（`docs/eval/p0-findings.md` 第三节）。"""
+"""战斗双方状态框（`wBattleMon*` / `wEnemyMon*`）。"""
 
 NAME_LENGTH = 11
 NAME_END = 0x50
@@ -50,7 +50,7 @@ W_PARTY_COUNT = 0xD163
 W_PARTY_SPECIES = 0xD164
 W_PARTY_MON1_HP = 0xD16C
 PARTY_MON_SIZE = 0x2C
-"""菜单光标、金钱（3 字节 BCD）、背包（`(物品 ID, 数量)` 成对、`LIST_END` 结尾）、队伍（每只结构体 `PARTY_MON_SIZE` 字节：HP 在 +0、状态 +3、等级 +0x20、最大 HP +0x21，相对 `W_PARTY_MON1_HP`）。 队伍、金钱、菜单三组按链接符号表核过（`capture_manual_play.py`）；背包两址对 pret/pokered `ram/wram.asm` 布局并在 4 份存档上实读与画面一致（`docs/eval/p0-findings.md`）。"""
+"""菜单光标、BCD 金钱、背包和队伍地址。"""
 
 BAG_CAPACITY = 20
 PARTY_CAPACITY = 6
@@ -71,30 +71,23 @@ LEDGE_TILES: dict[int, str] = {
     0x0D: LEDGE_RIGHT,
     0x1D: LEDGE_RIGHT,
 }
-"""野外 tileset 里台阶的 tile id → 能跳的方向（pokered `data/tilesets/ledge_tiles.asm`
-的第三列；取格子左下子 tile，与 `HandleLedges` 读面前 tile 的位置一致）。
-实测：Route 1 y=13 与常青市 y=27 两排台阶读出的都是 $36/$37。"""
+"""野外 tileset 里台阶的 tile id → 能跳的方向（pokered `data/tilesets/ledge_tiles.asm`"""
 
 W_NUM_WARPS = 0xD3AE
 """门的数量，后面跟着 N 条 `(y, x, 目标 warp, 目标地图)`。"""
 
 W_NUM_SIGNS = 0xD4B0
-"""招牌的数量，后面跟着 N 条 `(y, x)`。
-
-**实测确认**：真新镇读出 4 条，其中 `(y=5, x=11)` 换算到屏幕正是画面里那块招牌。
-"""
+"""招牌的数量，后面跟着 N 条 `(y, x)`。"""
 
 W_SPRITES = 0xC100
 SPRITE_STRIDE = 16
 """精灵图片与朝向在 C1xx 表，地图格位由 C2xx 表读取。"""
 
 FACING_BY_BYTE: dict[int, str] = {0: "south", 4: "north", 8: "west", 12: "east"}
-"""精灵表 +9 那个字节 → 朝向。取值和 `BUTTON_FACING` 的是同一套词，
-因为工具层要拿"这一步按的方向"和"现在面朝的方向"直接比。
-"""
+"""精灵表 +9 那个字节 → 朝向。取值和 `BUTTON_FACING` 的是同一套词，"""
 
 FIRST_STILL_SPRITE = 0x3D
-"""精灵图片 id（`+0` 字节）的分界：**小于它是会走动的人形**（NPC / 训练师）， **大于等于它是静止的场景物件**（球、化石、巨石……）。数值和下面这张表都来自 pokered 反汇编的精灵常量表（`SPRITE_POKE_BALL` 排在这条线的第一个，$3D）： https://github.com/pret/pokered/blob/master/constants/sprite_constants.asm"""
+"""图片编号小于 0x3D 是人形，其余按物件表分派。"""
 
 _STILL_SPRITE_KIND: dict[int, str] = {
     0x3D: ITEM,  # SPRITE_POKE_BALL：宝可梦球图标，走进去自动拾取
@@ -183,11 +176,7 @@ def _terrain_cells(mem: Memory) -> tuple[list[list[str]], int]:
 
 
 def map_settled(mem: Memory) -> bool:
-    """地图可用当且仅当通行表非零且地图头 tileset 与 WRAM 一致。
-
-    未载入、未知地图编号或换图中间态返回 False；缺静态表时失败。
-    调用方须提供同帧可读 WRAM。
-    """
+    """地图可用当且仅当通行表非零且地图头 tileset 与 WRAM 一致。"""
     loaded = int(mem[W_COLLISION_PTR]) | int(mem[W_COLLISION_PTR + 1]) << 8
     index = int(mem[W_CUR_MAP])
     table = map_tilesets()
@@ -201,7 +190,7 @@ def read_terrain(mem: Memory) -> TerrainMap:
     pc, pr = PLAYER_CELL
 
     def place(map_x: int, map_y: int, ch: str) -> None:
-        """把地图坐标画到屏幕格子上。**越界的静默丢弃**——地图上的门和招牌         大多在屏幕外，那不是错误，只是这一帧看不到。"""
+        """将地图坐标画到屏幕格网，丢弃视野外坐标。"""
         c, r = pc + (map_x - px), pr + (map_y - py)
         if 0 <= c < GRID_COLS and 0 <= r < GRID_ROWS:
             rows[r][c] = ch

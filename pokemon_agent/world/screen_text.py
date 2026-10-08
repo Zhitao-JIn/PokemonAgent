@@ -1,40 +1,19 @@
-"""直接读屏幕文字：把 20×18 的 tile 缓冲（`wTileMap`）按《宝可梦 红》英文字表解码，
-找出对话框、光标所在的选单与光标项。
-
-**只认字表里的 tile**：其余 tile（地形、精灵、血条）一律当"非文字"，不参与拼字。
-与 `ram.py` 同一条约束：地址与字表都是《红》英文版的，换版本要重来。
-
-读法：
-- 光标 = `▶`（0xED）。它所在的框由 `│` 竖边界围出（向左、向右各找最近的 `│`，
-  上下沿左边界连续的 `│` 延伸）。框内每行的"选项起点"= 光标列 +1，外加
-  **框内每一行有字的行都对齐**的其它起点列（战斗 2×2 菜单的第二列；背包里
-  `TOWN MAP` / `POKé BALL` 这类两词名因 `CANCEL` 行不对齐而不被切开）；以 `×` 开头的数量行
-  与纯数字行（`35/35`）不算选项。
-- 排布 = 选项按屏幕行分组（`option_grid`），光标记为 (行, 列)——决策据此知道方向键怎么走。
-- 对话 = 左下角 (12, 0) 为 `┌` 的底部框里的文字，逐行拼接。
-- 整屏渲染（`render_screen`）= 20×18 原样逐行渲成文字，交给模型与切好的字段互相校验：
-  边框画成 `┌─┐│└┘`，等级 `:L`、血条 `HP:[██████]` 按图块渲染，其余非文字图块画 `·`。
-- 叠加层判据：屏幕上有 `▶` 或数量框（`×` 紧跟两位数字）→ 有选单；
-  严格对话 = 底部对话框有字、没有 `▶`、没有数量框、对话框外没有别的框。
-"""
+"""直接读屏幕文字：把 20×18 的 tile 缓冲（`wTileMap`）按《宝可梦 红》英文字表解码，"""
 
 from __future__ import annotations
 
 from .interface import Facts, Memory
 from .interface.domain.screen_text import ScreenText
 from .ram import SCREEN_COLS, SCREEN_ROWS, W_TILEMAP
-from .screen_layout import is_keyboard, keyboard_screen
 from .screen_glyphs import graphic_only, has_text_neighbor, title_logo
+from .screen_layout import is_keyboard, keyboard_screen
 from .screen_menu import read_menu
 
 W_IS_IN_BATTLE = 0xD057
 
 
 def overlay_of(text: ScreenText) -> Facts.Overlay:
-    """按键控制模式：光标、数量框或完整价格列表为 CHOICE，严格对话为 DIALOG。
-
-    DIALOG 从严：它的掩码只有 `a`，判错就按不到要按的键；判成 CHOICE / NONE 只是多给几个键。
-    """
+    """按键控制模式：光标、数量框或完整价格列表为 CHOICE，严格对话为 DIALOG。"""
     if text.has_cursor or text.quantity_box or (text.options and any(text.option_details)):
         return Facts.Overlay.CHOICE
     if text.strict_dialog:
@@ -43,11 +22,7 @@ def overlay_of(text: ScreenText) -> Facts.Overlay:
 
 
 def layout_field(text: ScreenText) -> dict[str, str]:
-    """选单排布与附注作为 `Facts` 的动态字段 `option_layout` / `option_details`（没有就不放）。
-
-    走动态字段而不是具名字段：`ActMemory` 里的 `Facts` 快照副本按同一规则渲染动态字段，
-    两份不必各加一个具名字段也不会漂。
-    """
+    """选单排布与附注作为 `Facts` 的动态字段 `option_layout` / `option_details`（没有就不放）。"""
     fields: dict[str, str] = {}
     layout = text.render_layout()
     if layout:
@@ -135,8 +110,7 @@ _LINES = {
     0x77: "┘",
     0x78: "│",
 }
-"""只在渲染整屏时用的图块：边框（含战斗 HUD 的框线 0x6F / 0x76–0x78）、等级、血条。
-0x73 / 0x74 在菜单字体里是 `ID` / `No.`，在战斗 HUD 里是框线，只在战斗外按字渲染。"""
+"""只在渲染整屏时用的图块：边框（含战斗 HUD 的框线 0x6F / 0x76–0x78）、等级、血条。"""
 
 
 def read_tiles(mem: Memory) -> list[list[int]]:
@@ -176,11 +150,7 @@ def read_screen_text(mem: Memory) -> ScreenText:
 
 
 def render_screen(tiles: list[list[int]], *, in_battle: bool) -> str:
-    """整屏逐行渲成文字；行尾空白去掉，行数不变（空行留着，保住上下位置关系）。
-
-    一个图块渲成一个字符，只有 `:L` 与 `HP:` 两个图块各占两三个字符，所在行后面的列会右移。
-    整屏既没有字也没有边框（走路、过场）时返回空串：18 行 `·` 不带任何信息，只占 prompt。
-    """
+    """整屏逐行渲成文字；行尾空白去掉，行数不变（空行留着，保住上下位置关系）。"""
     if title_logo(tiles) or graphic_only(tiles):
         return ""
     keyboard = is_keyboard(tiles)
@@ -190,20 +160,18 @@ def render_screen(tiles: list[list[int]], *, in_battle: bool) -> str:
 
 
 def _render_row(row: list[int], in_battle: bool, *, keyboard: bool = False) -> str:
-    """一行图块渲成文字。
-
-    0x62–0x74 这批图块的样子随当时载入的图形变：在战斗 / 队伍列表 / 能力页里是血条、`:L`、
-    `ID` / `No.`，在城镇地图、图鉴页里是别的图形（0926 实采：城镇地图渲出一串 `▍▍▌]`）。
-    所以它们只在**成形**时按 HUD 渲：血条要是完整的 `HP:[…]`，`:L` 后面要跟数字，
-    `ID` 后面要跟 `No.`，`No.` 后面要跟 `.` 或数字；不成形的一律 `·`。
-    """
+    """一行图块渲成文字。"""
     hud = _hud_positions(row, in_battle)
     return "".join(
-        "_" if keyboard and t in (0x76, 0x77)
-        else "No" if t == 0x74 and i + 1 < len(row) and row[i + 1] == 0xF2
-        else
-        "·" if t == 0xFF and not has_text_neighbor(row, i)
-        else _glyph(t) if t in CHARMAP or t in _LINES or i in hud else "·"
+        "_"
+        if keyboard and t in (0x76, 0x77)
+        else "No"
+        if t == 0x74 and i + 1 < len(row) and row[i + 1] == 0xF2
+        else "·"
+        if t == 0xFF and not has_text_neighbor(row, i)
+        else _glyph(t)
+        if t in CHARMAP or t in _LINES or i in hud
+        else "·"
         for i, t in enumerate(row)
     )
 
@@ -221,8 +189,12 @@ def _hud_positions(row: list[int], in_battle: bool) -> set[int]:
             if end > i + 2 and end < len(row) and row[end] in BAR_RIGHT:
                 ok.update(range(i, end + 1))
         level = tile == LEVEL and nxt in digits
-        id_no = (tile == 0x74 and nxt == 0xF2) or not in_battle and (
-            (tile == 0x73 and nxt == 0x74) or (tile == 0x74 and (nxt in digits or nxt == 0xF2))
+        id_no = (
+            (tile == 0x74 and nxt == 0xF2)
+            or not in_battle
+            and (
+                (tile == 0x73 and nxt == 0x74) or (tile == 0x74 and (nxt in digits or nxt == 0xF2))
+            )
         )
         if level or id_no:
             ok.add(i)
@@ -243,10 +215,7 @@ def _glyph(tile: int) -> str:
 
 
 def _quantity_box(tiles: list[list[int]]) -> bool:
-    """屏幕上有数量框：框的左边线后紧跟 `×` 与两位数字（`│×01`）。
-
-    背包列表里的数量是 `× 3` / `×12`，前面是空白而不是框线，不算。
-    """
+    """屏幕上有数量框：框的左边线后紧跟 `×` 与两位数字（`│×01`）。"""
     digits = {0xF6 + i for i in range(10)}
     return any(
         row[c - 1] == BOX_VERTICAL
@@ -277,10 +246,7 @@ def _text(tiles: list[int]) -> str:
 
 
 def _read_dialog(tiles: list[list[int]]) -> str:
-    """左下角 (12, 0) 为 `┌` 的底部框里的文字；没有这个框返回空串。
-
-    每行读到第一个边框图块为止：压在对话框上的小菜单（队伍子菜单等）不混进对话。
-    """
+    """左下角 (12, 0) 为 `┌` 的底部框里的文字；没有这个框返回空串。"""
     top = DIALOG_TOP
     if tiles[top][0] != BOX_TOP_LEFT:
         return ""

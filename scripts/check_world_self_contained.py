@@ -11,7 +11,7 @@ trace）的要求是**实现依赖只允许落在 tool 层**；这条此前只�
   ⇒ "整体拷走即可当第三方模块用"这条字面成立。0913 夜之前这里有两条出边：
   `pyboy_world.py` → `tools.prompts`（反向依赖，模块图上成环）与
   `errors.py` → `errors.AgentError`（P3 判据当时主动保留的例外）——都已被消掉。
-- **B〔实现面只在 tools/〕**：`world/` 与 `tools/` 之外的文件**只许** import
+- **B〔实现面只在门面层与 world MCP 适配器〕**：其他生产层**只许** import
   `pokemon_agent.world` 与 `pokemon_agent.world.interface*`（**数据形状**）。
   其余子模块（`pyboy_world` / `ram` / `errors` / `prompts`）是
   **实现与内部词汇**，只有桥认识。⇒ harness / schemas / api 一律经
@@ -122,11 +122,20 @@ def _check_a() -> list[str]:
     return bad
 
 
+def _is_bridge(path: pathlib.Path) -> bool:
+    """门面层与指定 world MCP 服务适配器可以接触实现；其他服务不放行。"""
+    relative = path.relative_to(PKG_ROOT)
+    return relative.parts[0] in {"world", "direct", "mcpclient"} or relative.as_posix() in {
+        "mcp_servers/world_server.py",
+        "mcp_servers/world_server_cli.py",
+    }
+
+
 def _check_b() -> list[str]:
-    """B 实现面只在 tools/：非 tool 侧只许 import world 包根与 interface。"""
+    """B 实现面只在门面层与 world MCP 适配器：非 tool 侧只许 import world 包根与 interface。"""
     bad: list[str] = []
     for path in _py_files(PKG_ROOT):
-        if path.relative_to(PKG_ROOT).parts[0] in {"world", "tools"}:
+        if _is_bridge(path):
             continue
         for lineno, mod, _names in _imports_of(path):
             if not _is_world(mod):
@@ -151,7 +160,7 @@ def _registry() -> list[str]:
     """账本：非 tool 侧对 world 数据形状的 import 点（B 放行的那些）。"""
     rows: list[str] = []
     for path in _py_files(PKG_ROOT):
-        if path.relative_to(PKG_ROOT).parts[0] in {"world", "tools"}:
+        if _is_bridge(path):
             continue
         for lineno, mod, names in _imports_of(path):
             if mod in ALLOWED_OUTSIDE_TOOLS or mod.startswith(WORLD + ".interface."):
@@ -161,7 +170,7 @@ def _registry() -> list[str]:
 
 CHECKS: list[tuple[str, str, Callable[[], list[str]]]] = [
     ("A", "world 出边为零（可整体拷走）", _check_a),
-    ("B", "实现面只在 tools/（非 tool 侧只拿数据形状）", _check_b),
+    ("B", "实现面只在门面层与 world MCP 适配器（非 tool 侧只拿数据形状）", _check_b),
     ("C", "装配点 build.py 对 world 零 import（工厂全在 tool 层）", _check_c),
 ]
 

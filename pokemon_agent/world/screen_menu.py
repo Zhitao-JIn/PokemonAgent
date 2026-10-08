@@ -2,6 +2,7 @@
 
 from collections import Counter
 from collections.abc import Callable
+from functools import partial
 from typing import NamedTuple
 
 from .priced_menu import read_priced_menu
@@ -22,8 +23,11 @@ class Menu(NamedTuple):
 
 
 def read_menu(
-    tiles: list[list[int]], characters: dict[int, str], render_text: Callable[[list[int]], str],
-    *, in_battle: bool = False,
+    tiles: list[list[int]],
+    characters: dict[int, str],
+    render_text: Callable[[list[int]], str],
+    *,
+    in_battle: bool = False,
 ) -> Menu:
     """光标所在框的选项（按屏幕行分组）、光标所在的 (行, 列)、每项附注与覆盖判定。
 
@@ -51,26 +55,35 @@ def read_menu(
         rows = [r for r in range(SCREEN_ROWS) if _vertical_run(tiles, left, row0, r)]
 
     # 步骤 2：找选项起点列——光标列 +1，加上至少两行对齐的其它起点。
-    def starts(row: int) -> list[int]:
-        return [
-            c
-            for c in range(left + 1, right)
-            if tiles[row][c] in characters
-            and tiles[row][c] not in (SPACE, CURSOR)
-            and (c == left + 1 or tiles[row][c - 1] in (SPACE, CURSOR))
-        ]
-
+    starts: Callable[[int], list[int]] = partial(
+        _item_starts, tiles, left=left, right=right, characters=characters
+    )
     text_rows = [r for r in rows if starts(r)]
     counts = Counter(c for r in text_rows for c in starts(r))
     aligned = {c for c, n in counts.items() if n >= 2 and n == len(text_rows)}
     columns = sorted({col0 + 1} | aligned)
 
-    empty_moves = in_battle and left == 4 and all(
-        tiles[row][4] == tiles[row][19] == BOX_VERTICAL for row in range(13, 17)
+    empty_moves = (
+        in_battle
+        and left == 4
+        and all(tiles[row][4] == tiles[row][19] == BOX_VERTICAL for row in range(13, 17))
     )
     return _extract_menu(
         tiles, rows, left, right, row0, col0, columns, starts, render_text, empty_moves
     )
+
+
+def _item_starts(
+    tiles: list[list[int]], row: int, *, left: int, right: int, characters: dict[int, str]
+) -> list[int]:
+    """返回框内字符段的起点；空格与光标只作分隔。"""
+    return [
+        column
+        for column in range(left + 1, right)
+        if tiles[row][column] in characters
+        and tiles[row][column] not in (SPACE, CURSOR)
+        and (column == left + 1 or tiles[row][column - 1] in (SPACE, CURSOR))
+    ]
 
 
 def _extract_menu(

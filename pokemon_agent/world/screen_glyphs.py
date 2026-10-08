@@ -24,8 +24,8 @@ def title_logo(tiles: list[list[int]]) -> bool:
 
 
 def graphic_only(tiles: list[list[int]]) -> bool:
-    """无字母且无完整普通框时，图形页上的 HUD/边框别名不算文字。"""
-    if any(0x80 <= tile <= 0xB9 for row in tiles for tile in row):
+    """无文字图块且无完整普通框时，图形页上的 HUD/边框别名不算文字。"""
+    if any(tile >= 0x80 for row in tiles for tile in row):
         return False
     for top, values in enumerate(tiles):
         for left, tile in enumerate(values):

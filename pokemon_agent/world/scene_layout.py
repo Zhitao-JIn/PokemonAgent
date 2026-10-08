@@ -40,13 +40,15 @@ def has_dex_entry_frame(tiles: list[list[int]]) -> bool:
 def empty_menu_frame(tiles: list[list[int]], top: int, left: int, bottom: int) -> bool:
     """右边界在第十九列的完整空菜单框；含文字、箭头或遮挡则不匹配。"""
     right = 19
-    corners = ((top, left, 0x79), (top, right, 0x7B),
-               (bottom, left, 0x7D), (bottom, right, 0x7E))
+    corners = ((top, left, 0x79), (top, right, 0x7B), (bottom, left, 0x7D), (bottom, right, 0x7E))
     return (
         all(tiles[row][column] == value for row, column, value in corners)
-        and all(tiles[row][column] == 0x7A for row in (top, bottom)
-                for column in range(left + 1, right))
-        and all(tiles[row][left] == tiles[row][right] == 0x7C
-                and all(value == 0x7F for value in tiles[row][left + 1 : right])
-                for row in range(top + 1, bottom))
+        and all(
+            tiles[row][column] == 0x7A for row in (top, bottom) for column in range(left + 1, right)
+        )
+        and all(
+            tiles[row][left] == tiles[row][right] == 0x7C
+            and all(value == 0x7F for value in tiles[row][left + 1 : right])
+            for row in range(top + 1, bottom)
+        )
     )

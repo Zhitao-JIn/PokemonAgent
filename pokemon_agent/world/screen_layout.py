@@ -97,7 +97,8 @@ def _layout(
     arrow: tuple[int, int] | None,
     below_name: bool,
     covered: bool,
-    *, cursor_adjacent: bool,
+    *,
+    cursor_adjacent: bool,
 ) -> Layout:
     """按物理行列构造选项，重复名称通过坐标区分。"""
     rows: dict[int, list[tuple[int, str]]] = {}

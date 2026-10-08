@@ -56,7 +56,7 @@ target-version = "py311"
 # 而 `docs/experiences/**` 与 `docs/PLAN_*.md` 是**历史档**（只读资产，按仓库口径
 # 不改写）——让 formatter 去动它们等于拿格式规则改写历史记录。这里一次挡掉所有
 # `.md`；`ruff check` 本来就不看 markdown，所以 lint 侧零损失。
-extend-exclude = ["*.md", "**/*.md"]
+extend-exclude = ["*.md", "**/*.md", "langfuse", ".pytest_tmp*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]

@@ -10,9 +10,14 @@
 from __future__ import annotations
 
 from .interface import TAKEOVER_SCENES, Memory, ScreenText, TaskScene
-from .scene_layout import empty_menu_frame, has_battle_menu_frame, has_dex_entry_frame, is_transition
-from .screen_text import read_tiles
+from .scene_layout import (
+    empty_menu_frame,
+    has_battle_menu_frame,
+    has_dex_entry_frame,
+    is_transition,
+)
 from .screen_glyphs import title_logo
+from .screen_text import read_tiles
 
 W_IS_IN_BATTLE = 0xD057
 W_LIST_POINTER = 0xCF8B
