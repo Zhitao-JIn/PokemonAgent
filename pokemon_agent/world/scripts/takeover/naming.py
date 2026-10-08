@@ -34,18 +34,16 @@ NAME_END = 0x50
 FIRST_KEY_ROW = 5
 """键盘第一行字母所在的屏幕行；行与行隔一行。"""
 UPPER_ROWS = ("ABCDEFGHI", "JKLMNOPQR", "STUVWXYZ")
-MAX_LENGTH = {"NICKNAME?": 10}
+W_NAMING_SCREEN_TYPE = 0xD07D
 DEFAULT_MAX_LENGTH = 7
 """主角 / 对手的名字上限；宝可梦昵称是 10。"""
 
 
 def naming_view(text: ScreenText, mem: Memory) -> NamingView:
-    """这一帧的起名视图：屏幕标题、已输入的名字。"""
-    return NamingView(target=_title(text), typed=_typed(mem))
-
-
-def _title(text: ScreenText) -> str:
-    return next((line.strip() for line in text.screen.splitlines() if line.strip()), "")
+    """这一帧的起名视图：游戏命名类型决定对象，不以昵称页的精灵名代替标题。"""
+    kind = int(mem[W_NAMING_SCREEN_TYPE])
+    target = {0: "YOUR NAME?", 1: "RIVAL's NAME?"}.get(kind, "NICKNAME?")
+    return NamingView(target=target, typed=_typed(mem))
 
 
 def _typed(mem: Memory) -> str:
@@ -59,7 +57,8 @@ def _typed(mem: Memory) -> str:
 
 
 def _limit(run: ScriptRun) -> int:
-    return MAX_LENGTH.get(_title(run.screen()), DEFAULT_MAX_LENGTH)
+    """游戏命名类型为昵称时允许十字符，其余七字符。"""
+    return 10 if run.mem[W_NAMING_SCREEN_TYPE] >= 2 else DEFAULT_MAX_LENGTH
 
 
 def _check_enter(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason, str] | None:
