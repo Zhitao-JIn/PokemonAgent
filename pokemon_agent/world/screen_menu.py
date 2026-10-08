@@ -22,7 +22,8 @@ class Menu(NamedTuple):
 
 
 def read_menu(
-    tiles: list[list[int]], characters: dict[int, str], render_text: Callable[[list[int]], str]
+    tiles: list[list[int]], characters: dict[int, str], render_text: Callable[[list[int]], str],
+    *, in_battle: bool = False,
 ) -> Menu:
     """光标所在框的选项（按屏幕行分组）、光标所在的 (行, 列)、每项附注与覆盖判定。
 
@@ -64,7 +65,12 @@ def read_menu(
     aligned = {c for c, n in counts.items() if n >= 2 and n == len(text_rows)}
     columns = sorted({col0 + 1} | aligned)
 
-    return _extract_menu(tiles, rows, left, right, row0, col0, columns, starts, render_text)
+    empty_moves = in_battle and left == 4 and all(
+        tiles[row][4] == tiles[row][19] == BOX_VERTICAL for row in range(13, 17)
+    )
+    return _extract_menu(
+        tiles, rows, left, right, row0, col0, columns, starts, render_text, empty_moves
+    )
 
 
 def _extract_menu(
@@ -77,9 +83,10 @@ def _extract_menu(
     columns: list[int],
     starts: Callable[[int], list[int]],
     render_text: Callable[[list[int]], str],
+    empty_moves: bool,
 ) -> Menu:
     """从定位完成的框中提取排布、光标和价格附注。"""
-    # 步骤 3：逐行切出选项，滤掉数量行与纯数字行（空位 `-` 留着）；记下光标落在第几行第几列。
+    # 步骤 3：逐行切出选项，滤掉数量、纯数字与战斗招式空位。
     grid: list[list[str]] = []
     details: list[str] = []
     cell: tuple[int, int] | None = None
@@ -89,6 +96,8 @@ def _extract_menu(
         for i, c in enumerate(row_starts):
             end = row_starts[i + 1] - 1 if i + 1 < len(row_starts) else right
             text = render_text(tiles[r][c:end])
+            if empty_moves and text == "-":
+                continue
             if not text or text.startswith("×") or not _is_item(text):
                 continue
             if (r, c) == (row0, col0 + 1):

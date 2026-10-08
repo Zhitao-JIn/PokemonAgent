@@ -149,8 +149,8 @@ def read_tiles(mem: Memory) -> list[list[int]]:
 def read_screen_text(mem: Memory) -> ScreenText:
     """读这一帧的对话、选项（含附注）、光标、叠加层判据、覆盖判定与整屏渲染。"""
     tiles = read_tiles(mem)
-    menu = read_menu(tiles, CHARMAP, _text)
     in_battle = mem[W_IS_IN_BATTLE] != 0
+    menu = read_menu(tiles, CHARMAP, _text, in_battle=in_battle)
     dialog = _read_dialog(tiles)
     has_cursor = any(CURSOR in row for row in tiles)
     quantity = _quantity_box(tiles)
