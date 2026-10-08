@@ -1,3 +1,6 @@
+> **历史实现覆盖快照（2026-10-08）**：分母是旧 SCRIPT_FUNCS 的 39 项实现，供回归与迁移盘点。
+> 31 项公开能力已在 world-e2e-spec.md 定案；本表不作为公开 v2 验收表，待 plan W3 重建。
+
 | 脚本 | success | failure code: count | interrupt |
 |---|---:|---|---:|
 | face_direction | 3 | battle_started: 0, choice_presented: 0, map_changed: 0, rejected: 0 | 0 |

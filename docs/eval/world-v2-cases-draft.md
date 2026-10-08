@@ -2,6 +2,8 @@
 
 > 流程位置：world-e2e-spec.md → world-e2e-plan.md W3 → **本草稿** → 用户勾选 → W4。
 > 2026-10-08：W1/W2 已落地；v1 的 106 条期望和存档未改，尚未创建 v2。
+> **口径更新**：以下是 31 项公开能力定案前的旧实现候选与实测证据，不是当前公开 v2 清单。
+> 按 world-e2e-spec.md §2.1–2.3 与 plan W5/W6/W3 重新迁移；shop_buy/shop_sell、circle_walk 等内部名不进入公开数据集。
 
 ---
 
