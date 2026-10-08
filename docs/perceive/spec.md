@@ -10,7 +10,7 @@
 
 ## 一、范围
 
-**做**：task 层（`ram_only`）每帧先分场合；常规场合一键一决策，接管场合 JEV 出带参数的宏、world 执行到底；
+**做**：task 层（`ram_only`）每帧先分场合；开放按键的场合一键一决策，仅开放脚本的场合 JEV 出带参数的宏、world 执行到底；
 宏的参数校验、回初态、逐步核对、战斗文字自动推进；宏调用一条账。
 
 **不做**：episode 层视觉链路（除第三节第 4 条的字段统一）；skill library；放生；电梯 / 奖品兑换 / 售货机 / NPC 交换
@@ -34,10 +34,10 @@ if (done?) then (是)
 endif
 :plan_task: JEV 在本场合动作空间里选;
 :brain 只做解析（动作名在空间里、字段类型对）;
-if (常规场合?) then (是)
+if (开放按键的场合?) then (是)
   :act: 按一个键（等画面稳定）;
   :记 press_key;
-else (接管场合)
+else (仅开放脚本的场合)
   :act: world.run_macro(宏, 参数);
   :宏: 等稳定 → 按 B 回初态 → 校验参数;
   if (参数合法?) then (否)
@@ -120,19 +120,19 @@ H --> T : press_key / run_macro
 
 - `WorldPort` 新增 `perceive_task() -> TaskPerceived`（不调模型、不会失败），取代 `perceive_once(ram_only=True)` 这一档；
   `perceive_once()` 只剩视觉档，给 episode 层。`pyboy_world.py::_ram_observe` 改为产出 `TaskObservation`。
-- `TaskObservation` 字段：`step`、`done`、`place`、`status`、`scene`、常规场合的画面字段（下一小节）、`takeover`（接管场合的视图）。
+- `TaskObservation` 字段：`step`、`done`、`place`、`status`、`scene`、开放按键的场合的画面字段（下一小节）、`takeover`（仅开放脚本的场合的视图）。
 - 随之改用 `TaskObservation` 的 task 层消费方（plan 里逐个落）：`harness/sensing.py` 的 task 档、`harness/task/task_state.py`、
   `harness/task/perceive/detect_stall.py`、`store_object_semantic_memory/rules.py`、`FromHarnessToBrainToolChooseOnceReq`、
   `FromHarnessToGameToolExecuteReq`、`FromHarnessToGameToolGetActionSpaceReq`、`FromHarnessToGameToolPerceiveOnceResp`（task 档另立响应）、
   `schemas/memory/datastore/act_memory.py`（ActMemory 的前后帧）、`tools/trace/render.py`。
 
-### 1. 常规场合
+### 1. 开放按键的场合
 
 与现在的 RAM 档内容相同（`pyboy_world.py::_ram_observe`），两处变化：
 - **`walk_map` 与 `screen` 互斥**：`screen` 非空只给 `screen`，否则只给 `walk_map`；`where` / `neighbors` / `landmarks` 照给；
 - `dialog_text` / `options` / `cursor` 照给（`walk` 场合为空）。
 
-### 2. 接管场合
+### 2. 仅开放脚本的场合
 
 `TaskObservation.takeover: TakeoverView | None`，按 `scene` 区分的判别联合（新增 `world/interface/domain/takeover_view.py`）。
 观测里不给 `screen` 以外的逐键信息（光标位置、翻页）——那是执行器的事。
@@ -155,8 +155,8 @@ H --> T : press_key / run_macro
 ### 1. 动作空间
 
 `ActionSpace` 新增 `macros: list[MacroSpec]`（新增 `world/interface/domain/macro_spec.py`）：宏名、参数名与类型、给 LLM 的说明。
-- 常规场合：`names` 照现在的 overlay 掩码（`tools/game_tools.py::_mask`），`macros` 为空；
-- 接管场合：`names` 为空，`macros` 是本场合的宏（下表）。`ActionSpace` 现有的"`names` 非空"后置条件改为"`names` 与 `macros` 至少一个非空"。
+- 开放按键的场合：`names` 照现在的 overlay 掩码（`tools/game_tools.py::_mask`），`macros` 为空；
+- 仅开放脚本的场合：`names` 为空，`macros` 是本场合的宏（下表）。`ActionSpace` 现有的"`names` 非空"后置条件改为"`names` 与 `macros` 至少一个非空"。
 
 | 场合 | 宏 |
 |---|---|
@@ -169,7 +169,7 @@ H --> T : press_key / run_macro
 | `party` | `switch(a: str, b: str)`、`field_move(pokemon: str, move: str)`（FLY 要再选目的地，暂不支持）、`stats(pokemon: str)`、`close()` |
 | `learn_move` | `forget(move: str)`、`skip()` |
 
-`quit` / `log_off` / `close`：离开场合也是宏（按 B 到初态后再按一下 B / 选退出项），JEV 在接管场合不直接按键。
+`quit` / `log_off` / `close`：离开场合也是宏（按 B 到初态后再按一下 B / 选退出项），JEV 在仅开放脚本的场合不直接按键。
 
 ### 2. 动作形状（brain 侧）
 
@@ -202,7 +202,7 @@ H --> T : press_key / run_macro
      遇到任意 `▶`（下一个选单、单层 YES/NO 如 "Use next POKéMON?"、捕获后的起名询问）、或战斗标志清零、或达到 `ADVANCE_LIMIT`，停（`done`）。
      **遇到 `▶` 必须停**：按 A 会替 JEV 选掉单层 YES/NO。停在战斗选单的子层时按 B 退回行动菜单。
    - `naming`：START 提交后等画面离开键盘（`done`）；
-   - `stats`：停在能力页（交给常规场合 `pokemon_info`）。
+   - `stats`：停在能力页（交给开放按键的场合 `pokemon_info`）。
 
 `STABLE_POLLS` / `POLL_FRAMES` / `REWIND_LIMIT` / `STEP_TIMEOUT_FRAMES` / `ADVANCE_LIMIT` / `QUIET_PRESS_FRAMES` 等是 world 私有物理量，放 `macros/engine.py`，不进全局 config。
 
@@ -253,7 +253,7 @@ H --> T : press_key / run_macro
 
 ## 九、brain 与 prompt
 
-- `tools/prompts/decide_action.py` 按场合组 prompt：常规场合照现在；接管场合渲染本场合视图与宏签名、"只输出一个宏调用"；
+- `tools/prompts/decide_action.py` 按场合组 prompt：开放按键的场合照现在；仅开放脚本的场合渲染本场合视图与宏签名、"只输出一个宏调用"；
 - "屏幕怎么读"（`▷` 是上一层、`-` 是空招式位、字面听屏幕）抽成一段共用片段，决策与判定两个模板都引用；
 - 宏签名的说明文字来自 `MacroSpec`（world 定义），prompt 模板只写怎么选，不重复签名（"同一信息不两处传"）。
 
@@ -270,7 +270,7 @@ H --> T : press_key / run_macro
 
 - `evals/screen_reading/`：`classify` / `at_start` 改测 world 的实现（`world/scene.py`），原型删除；数据集 v2 人工核对后冻结。
 - 新增 `evals/macros/`：从存档出发调宏，核对状态变化、结果码、是否回到初态；每个宏至少"成功 / 被拒 / 从中途步骤开跑"三例。
-- 新增 `evals/takeover_views/`：接管场合的初态帧，逐帧核对视图字段（商品表、招式与 PP、PC 箱）与屏幕一致。
+- 新增 `evals/takeover_views/`：仅开放脚本的场合的初态帧，逐帧核对视图字段（商品表、招式与 PP、PC 箱）与屏幕一致。
 - 以上都是测评，不是单元测试；单元测试按范式另问。
 
 ## 十二、分期（plan 的切法）

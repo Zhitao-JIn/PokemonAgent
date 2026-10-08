@@ -84,7 +84,7 @@ class PyBoyWorld:
         self._prompt = load_prompt(prompt_name)
         self._state_path = state_path
         self._rom = pathlib.Path(rom).read_bytes()
-        """ROM 原样：接管脚本与接管视图从里面读道具价格这类常量表。"""
+        """ROM 原样：脚本与接管视图从里面读道具价格这类常量表。"""
 
         self._task: _Task | None = None
         self._closed = False

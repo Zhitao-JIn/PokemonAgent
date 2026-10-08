@@ -291,15 +291,15 @@ ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已�
 
 ## 七、world server——脚本层（37 条，一脚本一 API）
 
-接管场合的多步操作也是脚本（接管脚本，`scripts/takeover/`，对外名带场合前缀），与常规脚本同一种动作；
+全部脚本使用同一执行通道；按业务场合分文件的实现放在 `scripts/scenes/`。
 进程内经 `GameTools.execute` 执行，MCP 面经 `WorldMcpTool.execute` 调用同名工具。泛型 run_script 废。
 成功谓词机械可判；终态报告统一带 `events[]` 与现状快照。
 
-14 条地图/场所脚本保留原签名；23 条接管脚本按场合分文件，用显式函数签名注册，
+全部 37 条脚本用显式函数签名注册，
 不在运行时生成签名。每条另收可选 `client_id`，沿用同一租约与 `_run_script` 路径。
 `shop_buy`、`shop_sell` 只由 `buy_item`、`sell_item` 组合调用，不注册独立工具。
 
-| 场合 | 接管工具与业务参数 |
+| 场合 | 脚本与业务参数 |
 |---|---|
 | 商店、起名 | `shop_quit()`、`naming_enter_name(name)` |
 | 战斗、倒下 | `battle_fight(move)`、`battle_switch(pokemon)`、`battle_use_item(item, pokemon="")`、`battle_run()`、`faint_send_out(pokemon)` |

@@ -1,11 +1,10 @@
-"""接管用例的评分核对。"""
+"""脚本用例的声明式世界真值核对。"""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
-from evals.dataset.world_script_execute import ScriptExpect, TakeoverCheck
-from evals.scorers.world_script_execute.verdict import ScriptVerdict
+from evals.dataset.world_script_execute import ScriptCheck, ScriptExpect
 from evals.solvers.world_script_execute import ScriptRun
 from pokemon_agent.world import TaskObservation, TaskScene
 
@@ -155,7 +154,7 @@ def _knows(pokemon: str, move: str, *, yes: bool = True) -> Check:
 Check = Callable[[TaskObservation, TaskObservation], str]
 
 
-def check_declaration(check: TakeoverCheck, before: TaskObservation, after: TaskObservation) -> str:
+def check_declaration(check: ScriptCheck, before: TaskObservation, after: TaskObservation) -> str:
     """原样执行声明对应的旧核对；契约违约仍交调用方转成判负证据。"""
     args = check.args
     factories = {
@@ -178,19 +177,8 @@ def check_declaration(check: TakeoverCheck, before: TaskObservation, after: Task
     return factories[check.kind](**args)(before, after)
 
 
-def judge_takeover(expect: ScriptExpect, run: ScriptRun) -> ScriptVerdict:
-    """按冻结的结局与声明核对前后观测，评分口径与原用例一致。"""
-    problems: list[str] = []
-    report = run.report
-    if report is None:
-        problems.append(run.crash)
-    else:
-        if report.code != expect.code or report.data.get("status") != expect.status:
-            problems.append(f"结局不符：{report.code}/{report.data.get('status')}")
-        if report.ok != expect.ok:
-            problems.append(f"ok={report.ok}")
-        if expect.summary and expect.summary not in str(report.data.get("summary", "")):
-            problems.append(f"摘要缺少 {expect.summary!r}")
+def judge_declared_checks(expect: ScriptExpect, run: ScriptRun) -> list[str]:
+    """按用例声明核对前后观测；返回全部真值不符的证据。"""
     truth: list[str] = []
     for check in expect.checks:
         try:
@@ -199,4 +187,4 @@ def judge_takeover(expect: ScriptExpect, run: ScriptRun) -> ScriptVerdict:
             problem = str(exc)
         if problem:
             truth.append(problem)
-    return ScriptVerdict(code_problems=problems, truth_problems=truth)
+    return truth

@@ -2,7 +2,7 @@
 
 名字表来自 `pret/pokered` 反汇编（`tables/items.json`），价格从 ROM 的 `ItemPrices` 读。
 
-纯函数与只读常量，给接管脚本的前提校验与接管视图用。
+纯函数与只读常量，给脚本的前提校验与接管视图用。
 """
 
 from __future__ import annotations

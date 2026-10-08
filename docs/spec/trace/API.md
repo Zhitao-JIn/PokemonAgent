@@ -239,7 +239,7 @@ RFC 9562 的 **v7 布局**，前 48 位是毫秒时间戳：
 | `ERROR` | `error` | `call_failed` / `call_exhausted` / `summary_parse_error` |
 | `LLM_OUTCOME` | `llm_outcome` | `choose_verdict` 与三个 `*_verdict`（与 `MODEL_CALL` 配对） |
 | `VIEW` | `view` | `sense_frame`（episode 完整档 / task RAM 档） |
-| `ACT` | `act` | `act_call`（key/script 两形，P5 起原 `press_key` 改名；接管脚本也走 script 形） / `get_action_space` / `check_stall` |
+| `ACT` | `act` | `act_call`（key/script 两形，P5 起原 `press_key` 改名；脚本也走 script 形） / `get_action_space` / `check_stall` |
 | `MEMORY_IO` | `memory_io` | 六条 `read_*` + 三条 `write_*` |
 | `LIFECYCLE` | `lifecycle` | run / episode 边界账 + `advance_step` |
 

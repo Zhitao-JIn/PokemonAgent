@@ -10,7 +10,7 @@
 - 删除旧 diff 是用户明确选择，对旧 spec2 保留口径校验的有意偏离。未新增 .eval 比较器，冻结文档不改，现行 evals SPEC 已说明。
 - 删除两个一次性脚本、三个空目录、整个 observation_check 与 real_check。旧观察数据、工具一并按用户要求删除，现有冻结 evals/data 保留。screen build 只接受显式新采集目录，不再读取旧 v1 来源。
 - Web Reviewer 三种场景迁入 tests：人工答复、无人答复、后端断开。原自测误把空白插话算作已回答，按后端已有契约修正断言，后端行为不变。node_io 核对器仍被测试消费，迁入 tests/_harness_fixtures。
-- MCP 注册表 45 项：7 原子、租约归还、14 地图/场所脚本、23 接管脚本。静态签名按场合分文件；shop_buy/shop_sell 是内部组合步骤。客户端保留 report.events，信封支持接管失败码；内存 MCP 传输验证 shop_quit 成功与错误场合拒绝。
+- MCP 注册表 45 项：7 原子、租约归还、14 地图/场所脚本、23 脚本。静态签名按场合分文件；shop_buy/shop_sell 是内部组合步骤。客户端保留 report.events，信封支持接管失败码；内存 MCP 传输验证 shop_quit 成功与错误场合拒绝。
 - config.py 的唯一系统缺省改 local；显式 Langfuse 健康检查保留。补获授权的接管 prompt 与平铺 args 用法测试。
 - 删除 11 条死代码测试：view 三条；model_graded 两条、报告投影一条；旧判定一致性、报告 evaluate、stall limit 各一条、LLMGrader 两条。保留现行 RunResult 与 run-one 测试。
 

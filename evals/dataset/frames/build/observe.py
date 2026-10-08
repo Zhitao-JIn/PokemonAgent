@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from pokemon_agent.world import (
-    TAKEOVER_SCENES,
+    SCRIPT_ONLY_SCENES,
     W_IS_IN_BATTLE,
     W_TILEMAP,
     Facts,
@@ -71,9 +71,9 @@ def decoded_answer(text: ScreenText, ram: bytes = b"") -> ScreenAnswer:
 
 
 def scene_of(text: ScreenText, ram: bytes) -> tuple[str, bool | None]:
-    """world 的场合与初态（`classify_scene` / `at_start`）；常规场合的初态为 None。"""
+    """world 的场合与初态（`classify_scene` / `at_start`）；开放按键的场合的初态为 None。"""
     scene = classify_scene(text, _Wram(ram))
-    return scene.value, (at_start(text, scene) if scene in TAKEOVER_SCENES else None)
+    return scene.value, (at_start(text, scene) if scene in SCRIPT_ONLY_SCENES else None)
 
 
 class _Wram:

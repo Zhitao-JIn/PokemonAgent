@@ -1,7 +1,7 @@
 """task 层的观测（`TaskObservation`）：只读内存与屏幕缓冲、不调模型的那一档，多一个场合。
 
 与 episode 层的 `Observation` 是两种观测。形状上沿用 `Observation` 的全部字段
-（位置、状态行、`Facts`），再加 task 层自己的 `scene`，接管场合另带视图 `takeover`；
+（位置、状态行、`Facts`），再加 task 层自己的 `scene`，仅开放脚本的场合另带视图 `takeover`；
 `perceived` 恒为假（这一档从不做视觉感知）。
 """
 
@@ -11,7 +11,7 @@ from pydantic import Field, computed_field
 
 from .observation import Observation
 from .takeover_view import TakeoverView
-from .task_scene import TAKEOVER_SCENES, TaskScene
+from .task_scene import SCRIPT_ONLY_SCENES, TaskScene
 
 
 class TaskObservation(Observation):
@@ -19,7 +19,7 @@ class TaskObservation(Observation):
 
     scene: TaskScene = Field(description="这一帧属于哪个场合（`world/scene.py::classify_scene`）")
     takeover: TakeoverView | None = Field(
-        default=None, description="接管场合的视图；常规场合、或还没有接管脚本的接管场合为 None"
+        default=None, description="当前场合的业务视图；不适用或尚无对应视图时为 None"
     )
     menu_decode_complete: bool | None = Field(
         default=None,
@@ -30,11 +30,11 @@ class TaskObservation(Observation):
     @computed_field
     @property
     def covered_by_script(self) -> bool:
-        """本场合由接管脚本操作，包含子菜单；与是否已在初态无关。
+        """本场合由脚本操作，包含子菜单；与是否已在初态无关。
 
-        从场合派生，不接受独立赋值。常规场合即使有可选脚本也返回 False。
+        从场合派生，不接受独立赋值。开放按键的场合即使有可选脚本也返回 False。
         """
-        return self.scene in TAKEOVER_SCENES
+        return self.scene in SCRIPT_ONLY_SCENES
 
     @computed_field
     @property

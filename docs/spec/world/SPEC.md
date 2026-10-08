@@ -52,7 +52,7 @@ world/
 │                                选项附注（× 数量、¥ 价格）/ 覆盖判定；光标字节 0xED、战斗标志 wIsInBattle(0xD057)
 ├── battle_status.py             read_battle_status：战斗双方名字 / 等级 / HP / 状态（游戏变量）
 ├── readout.py                   read_readout：一帧的 RamReadout（菜单变量、金钱、背包、队伍、战斗、文字来源）
-├── scene.py                     classify_scene / at_start：task 层的场合分类与接管脚本初态判断（纯函数）
+├── scene.py                     classify_scene / at_start：task 层的场合分类与脚本初态判断（纯函数）
 ├── items.py                     item_name / item_id（不分大小写、é = e）/ item_price（ROM ItemPrices 0x4608，3 字节 BCD）
 ├── moves.py                     move_name / fold（名字比对的规范形）
 ├── tables/items.json            道具编号 → 名字
@@ -73,7 +73,7 @@ world/
 │   ├── movement.py / interact.py / flow.py / menu.py / navigation.py / shop.py
 │   │                            按业务组织的脚本；不是另一类执行器
 │   └── takeover/                菜单、战斗等场合的脚本声明与视图
-│       ├── __init__.py          PREFIX / REGISTRY / TAKEOVER_SCRIPTS / takeover_view
+│       ├── __init__.py          PREFIX / REGISTRY / SCRIPT_DEFINITIONS / takeover_view
 │       ├── policy.py            初态恢复、严格等待与可选收尾的组合配置
 │       ├── common.py            共用读数（队伍、背包、药的分类与效果预判）与操作（选项光标、列表光标、数量、YES/NO）
 │       ├── shop.py              shop_items 场合：buy / sell / quit、shop_view
@@ -93,7 +93,7 @@ world/
 │   └── domain/
 │       ├── __init__.py          统一出口，__all__ 59 个名字
 │       ├── action_semantics.py  BUTTON_FACING / FACING_STEP / DIRECTION_KEYS / INTERACT_KEY
-│       ├── action_space.py      ActionSpace（mask / entries；键 names 只在常规场合非空）
+│       ├── action_space.py      ActionSpace（mask / entries；键 names 只在开放按键的场合非空）
 │       ├── action_entry.py      ActionEntry（kind ∈ key / script，签名 signature()）
 │       ├── script_param.py      ScriptParam（脚本参数：name / type / description / default）
 │       ├── takeover_view.py     八个接管视图（ShopItemsView / NamingView / BattleMenuView / BattleSwitchView /
@@ -109,7 +109,7 @@ world/
 │       ├── screen_state.py      ScreenState（视觉模型输出的 schema）、CURSOR_MARKS
 │       ├── screen_text.py       ScreenText（dialog_text / options / cursor / option_grid / cursor_cell /
 │       │                        option_details / covered + render_layout() / render_details()）
-│       ├── task_scene.py        TaskScene（task 层场合词表）、TAKEOVER_SCENES
+│       ├── task_scene.py        TaskScene（task 层场合词表）、SCRIPT_ONLY_SCENES
 │       ├── task_observation.py  TaskObservation（Observation + scene + takeover + covered_by_script）
 │       ├── terrain_map.py       TerrainMap
 │       └── vision_describe.py   VisionDescribeReq / VisionDescribeResp（world 自己的副本）
@@ -180,16 +180,16 @@ world/
 | 形状 | 谁产出 | 谁消费 | 关键字段 |
 |---|---|---|---|
 | `Observation` | `PyBoyWorld.perceive_once()` | harness（`EpisodeRunState`）、`mcpclient/game_tools.py`、trace 渲染、`schemas/harness/communication/**` | `step`（占位 0，由 Harness 盖章）、`place: PlaceInWorld \| None`、`status`、`facts: Facts`、`done`、`perceived`；方法 `stall_key()` / `render(indent="  ")` |
-| `TaskObservation` / `TaskPerceived` | `PyBoyWorld.perceive_task()`（`task_perception.observe_task`） | task 层：`GameTools.perceive_task` → `FromHarnessToGameToolPerceiveTaskResp`、`TaskState`、决策 / 反思 / 掩码 / 执行的信封、`sense_frame` 账（正文带 `scene`）、ActMemory 的前后帧（`scene` 字段） | `Observation` 的全部字段 + `scene: TaskScene`（场合，必有）+ `takeover: TakeoverView \| None`（接管场合给视图）+ `covered_by_script: bool`（从场合派生的只读接管覆盖标志）。与 episode 层的 `Observation` 是两种观测，`scene` 与 `Facts.Scene` 只是重名 |
-| `TaskScene` / `TAKEOVER_SCENES` | `scene.classify_scene()` | task 层、读屏测评 | 常规 8 类 + 接管 8 类，见 `docs/perceive/spec.md` 第三节 |
+| `TaskObservation` / `TaskPerceived` | `PyBoyWorld.perceive_task()`（`task_perception.observe_task`） | task 层：`GameTools.perceive_task` → `FromHarnessToGameToolPerceiveTaskResp`、`TaskState`、决策 / 反思 / 掩码 / 执行的信封、`sense_frame` 账（正文带 `scene`）、ActMemory 的前后帧（`scene` 字段） | `Observation` 的全部字段 + `scene: TaskScene`（场合，必有）+ `takeover: TakeoverView \| None`（仅开放脚本的场合给视图）+ `covered_by_script: bool`（从场合派生的只读接管覆盖标志）。与 episode 层的 `Observation` 是两种观测，`scene` 与 `Facts.Scene` 只是重名 |
+| `TaskScene` / `SCRIPT_ONLY_SCENES` | `scene.classify_scene()` | task 层、读屏测评 | 16 类场合，见 `docs/perceive/spec.md` 第三节 |
 | `Facts` | `PyBoyWorld` 拼装 | harness 交互判定、`direct/prompts`、记忆检索 query | 具名 `scene`/`overlay`/`where`/`facing`/`neighbors`/`landmarks`/`dialog_text`/`options`/`cursor`/`overview`/`walk_map`/`map_id`；`extra="allow"` 接住视觉模型按 scene 自由给的字段；`scene_value` / `overlay_value` / `exclude(keys)` / `items()` / `stall_key_part()` / `render()` |
 | `Facts.Scene` | 视觉模型（经 `ScreenState`） | 掩码与 prompt | `FIELD` `INDOOR` `BATTLE` `MENU` `SHOP` `TRANSITION` |
 | `Facts.Overlay` | 视觉模型 | `OVERLAY_ACTIONS` 的键 | `NONE` `DIALOG` `CHOICE` |
 | `Facts.Landmark` | `TerrainMap.landmarks()` | harness 交互判定 | `kind`（`KIND_DOOR`/`KIND_SIGN`/`KIND_PERSON`/`KIND_ITEM`/`KIND_BOULDER`）、`map_id`、`x`、`y`；属性 `place` 现场拼 `PlaceInWorld` |
 | `PlaceInWorld` | RAM 读出的坐标 | 记忆的键、交互判定 | `map_id` / `x` / `y`；`step_toward(facing)`、属性 `key` = `"{map_id}:{x}:{y}"`、`render()` |
-| `ActionSpace` | `compute_action_space()` / `mcpclient/game_tools.py::_mask()`（同一条场合规则：`scripts/catalog.SCENE_SCRIPTS`） | brain（`ChooseOnceReq`） | `mask` / `entries: list[ActionEntry]` / `names` / `descriptions` / `note` / `map_note`（接管场合 `names` 为空、只给接管脚本）；`contains(name)` / `enabled(name)` / `entry(name)` |
-| `ActionEntry` / `ScriptParam` | `scripts/catalog.py`（常规脚本）、`scripts/takeover/` 各场合文件（接管脚本） | tool 层：动作空间、prompt 的脚本签名与说明、转成 brain 的 `ScriptSignature` | `kind`（`key` / `script`）/ `name` / `params`（`name` / `type`∈{str,int} / `description` / `default`，None = 必填）/ `description`；`signature()` 写成 `buy_item(item: str, count: int)` |
-| `TakeoverView` | `scripts.takeover.takeover_view()`（`task_perception.observe_task` 里） | `TaskObservation.takeover` → 接管场合的决策 prompt、`sense_frame` 账 | `ShopItemsView`（`items` 名字与价格、`money`、`bag`）/ `NamingView`（`target` 屏幕标题、`typed` 已输入）/ `BattleMenuView`（`mine` 在场那只带招式与剩余 PP、`foe`、`trainer`、`party`、`bag`）/ `BattleSwitchView`（`party`）/ `BagView`（`bag`、`party`）/ `PartyView`（`party`）/ `PcView`（`items` PC 道具、`bag`、`box` 当前箱、`box_number`、`party`）/ `LearnMoveView`（`pokemon`、`new_move`、`moves`）；队员是 `MonEntry`（昵称、等级、HP、状态、是否在场、招式）；`render()` 给 prompt 几行 |
+| `ActionSpace` | `compute_action_space()` / `mcpclient/game_tools.py::_mask()`（同一条场合规则：`scripts/catalog.SCENE_SCRIPTS`） | brain（`ChooseOnceReq`） | `mask` / `entries: list[ActionEntry]` / `names` / `descriptions` / `note` / `map_note`（仅开放脚本的场合 `names` 为空、只给脚本）；`contains(name)` / `enabled(name)` / `entry(name)` |
+| `ActionEntry` / `ScriptParam` | `scripts/catalog.py`（脚本）、`scripts/scenes/` 各场合文件（脚本） | tool 层：动作空间、prompt 的脚本签名与说明、转成 brain 的 `ScriptSignature` | `kind`（`key` / `script`）/ `name` / `params`（`name` / `type`∈{str,int} / `description` / `default`，None = 必填）/ `description`；`signature()` 写成 `buy_item(item: str, count: int)` |
+| `TakeoverView` | `scripts.scenes.takeover_view()`（`task_perception.observe_task` 里） | `TaskObservation.takeover` → 仅开放脚本的场合的决策 prompt、`sense_frame` 账 | `ShopItemsView`（`items` 名字与价格、`money`、`bag`）/ `NamingView`（`target` 屏幕标题、`typed` 已输入）/ `BattleMenuView`（`mine` 在场那只带招式与剩余 PP、`foe`、`trainer`、`party`、`bag`）/ `BattleSwitchView`（`party`）/ `BagView`（`bag`、`party`）/ `PartyView`（`party`）/ `PcView`（`items` PC 道具、`bag`、`box` 当前箱、`box_number`、`party`）/ `LearnMoveView`（`pokemon`、`new_move`、`moves`）；队员是 `MonEntry`（昵称、等级、HP、状态、是否在场、招式）；`render()` 给 prompt 几行 |
 | `Perceived` | `PyBoyWorld.perceive_once()` | `GameTools.perceive_with_retry()` | `observation` / `calls: list[dict[str, str]]` / `frame_png`（base64 PNG）/ `ram: RamReadout` |
 | `RamReadout` | `readout.read_readout()` | 经 tool 层写进 `sense_frame` 账的 `ram`；**不进 agent 输入**，测评读它 | `in_battle` / `covered` / `text_source`（`decode`/`vlm`/`none`，这一帧文字实际来自哪）/ `would_be`（W4 下会来自哪）/ `menu: MenuVars` / `money` / `bag: [BagItem]` / `party: [PartyMon]` / `battle: BattleStatus \| None` / `decoded: DecodedText \| None`（legacy 档额外存解码结果，供逐帧对比） |
 | `BattleStatus` | `battle_status.read_battle_status()`（不在战斗时 `None`） | `Facts` 的额外字段（`facts_fields()`）、`RamReadout.battle` | `mine` / `foe: Combatant`（`name` 取 RAM 昵称字段、`level`、`hp`、`max_hp`、`status`） |
@@ -271,21 +271,21 @@ RAM 档产出 `TaskObservation`：另带场合 `scene`（`scene.classify_scene`�
 
 transition 场合开放 `wait_until_scene(scene: str, timeout_s: int=10)`，只推进帧、不按键；目标场合匹配即返回 ok，超时返回 timeout 并带当前场合，task 随后重新感知。目标匹配不保证稳定，目标应按任务上下文指定。标题菜单按用户保证不进入生产运行范围，冻结标题帧只作为历史解码样本，不要求本轮补无地图感知入口。
 
-## 七、接管脚本（`scripts/takeover/`）
+## 七、脚本（`scripts/scenes/`）
 
-`covered_by_script=true` 表示本帧属于已有接管脚本覆盖的场合；子菜单与数量框仍为 true，与 `at_start` 无关。常规场合即使提供导航等可选脚本也为 false。该字段从 `TAKEOVER_SCENES` 派生并随 task 观测序列化，动作空间核对实际接管注册表与词表一致。模型直接选择目标脚本，由脚本尝试恢复初态后执行；恢复与执行可能失败，必须读返回结局。
+`covered_by_script=true` 表示本帧属于已有脚本覆盖的场合；子菜单与数量框仍为 true，与 `at_start` 无关。开放按键的场合即使提供导航等可选脚本也为 false。该字段从 `SCRIPT_ONLY_SCENES` 派生并随 task 观测序列化，动作空间核对实际脚本注册表与词表一致。模型直接选择目标脚本，由脚本尝试恢复初态后执行；恢复与执行可能失败，必须读返回结局。
 
 TaskObservation 另带 `menu_decode_complete: bool | None`（生产取 ScreenText.covered，None=未测，仅评价选单切分）、`selected_map_location: str | None`（背包城镇地图顶行唯一地点，当前屏幕派生，非主角位置）、`observation_notes: list[str]`（空文字、切分不全、业务视图缺失、过场的限制说明，当前观测派生）。地图选中地点与 where 同时显示，替代重复的整屏图形；普通对话选单也显示 where。选单完整性只在 choice 或不完整时显示；正常走路不重复提示没有文字。单帧不产出稳定性或置信度字段。
 
-task 决策的当前帧显示由 `direct/prompts/task_frame.py` 按场合与叠加层投影，不改变完整观测、历史记忆或 decode 输出。常规帧显示 task `scene`、`covered_by_script`、`overlay`；walk/none 与 shop/none 给位置、朝向、地标与地形（网格与四邻择一），纯对话给对话文字，dialog/shop 交谈另保留地点，选单和信息页优先给整屏文字以避免切分遗漏，不重复列 options/cursor/layout。战斗文字保留双方状态。接管帧显示覆盖标志及对应业务视图，不显示地形、光标、排布和 at_start；缺业务视图时保留整屏文字，bag/none 另保留屏幕以免丢失城镇地图选中地点。整屏显示只省略空白行和行尾空格；无可显示内容时明确提示不能据此判断界面结束。目标、合法动作和上一脚本结果继续由各自段落提供。实际帧组合与静态下一步核对见 `docs/SCENE_OVERLAY_EXAMPLES_1007.md`，不代替模型选择与脚本执行验证。
+task 决策的当前帧显示由 `direct/prompts/task_frame.py` 按场合与叠加层投影，不改变完整观测、历史记忆或 decode 输出。开放按键的帧显示 task `scene`、`covered_by_script`、`overlay`；walk/none 与 shop/none 给位置、朝向、地标与地形（网格与四邻择一），纯对话给对话文字，dialog/shop 交谈另保留地点，选单和信息页优先给整屏文字以避免切分遗漏，不重复列 options/cursor/layout。战斗文字保留双方状态。仅开放脚本的帧显示覆盖标志及对应业务视图，不显示地形、光标、排布和 at_start；缺业务视图时保留整屏文字，bag/none 另保留屏幕以免丢失城镇地图选中地点。整屏显示只省略空白行和行尾空格；无可显示内容时明确提示不能据此判断界面结束。目标、合法动作和上一脚本结果继续由各自段落提供。实际帧组合与静态下一步核对见 `docs/SCENE_OVERLAY_EXAMPLES_1007.md`，不代替模型选择与脚本执行验证。
 
-接管场合里 JEV 不按键，选一条带参数的接管脚本；world 执行到底。它与常规脚本是**同一种动作**
+仅开放脚本的场合里 JEV 不按键，选一条带参数的脚本；world 执行到底。所有脚本统一使用脚本动作
 （`ActionEntry`，`kind="script"`，经 `GameTools.execute` 的脚本通道执行，记 `act_call` script 形），
 差别在可用场合和脚本选择的规则，执行现场相同。**对外名 = 场合前缀 + 文件内短名**（`shop_quit` = `shop` + `quit`），
-前缀表 `takeover.PREFIX` 是唯一规则。每个场合一个文件，每条只写**前提校验 + 执行 + 收尾**，
+前缀表 `scenes.PREFIX` 是唯一规则。每个场合一个文件，每条只写**前提校验 + 执行 + 收尾**，
 这些脚本通过 `definitions.run_definition` 执行显式声明的 `menu_policy`：
 
-1. **认场合、找脚本、核参数类型**：场合不是接管场合或本场合没有这条 → `rejected / unknown_script`；缺参数、类型不对 → `rejected / bad_args`（一个键都不按）。
+1. **认场合、找脚本、核参数类型**：场合不是仅开放脚本的场合或本场合没有这条 → `rejected / unknown_script`；缺参数、类型不对 → `rejected / bad_args`（一个键都不按）。
 2. **回初态**：等画面与玩家位置稳定（每 `POLL_FRAMES` 帧读一次、连续 `STABLE_POLLS` 次相同，忽略闪烁的 `▼`，并满足策略声明的最短等待）→ `at_start` 真则进 3；场合已变 → `left_scene`；否则按 B，最多 `REWIND_LIMIT` 次（超了 `aborted / rewind_limit`）。
 3. **按此刻内存校验前提**（钱、背包、商品、持有数、名字字符与长度、招式与 PP、队员）→ 不满足 `rejected`，原因码见 `ScriptReason`（商店与起名：`unknown_item` `not_enough_money` `bag_full` `quantity_out_of_range` `not_in_bag` `key_item` `invalid_name`；战斗：`unknown_move` `no_pp` `unknown_pokemon` `pokemon_fainted` `already_active` `target_required` `cannot_use`；通用：`unknown_script` `bad_args` `rewind_limit` `step_timeout` `unexpected_screen`）。
 4. **执行**：每一步按键后等稳定、核对期望（`wait_for` 只在没有光标、没有数量框时按 A 推进文字）；没出现期望 → 回初态、`aborted`。
@@ -295,9 +295,9 @@ task 决策的当前帧显示由 `direct/prompts/task_frame.py` 按场合与叠�
 菜单脚本的 `data` 带 `scene` / `status` / `reason` / `summary` / `steps`；逐步明细由脚本的 `record_steps` 配置启用。
 所有脚本只经同一个 `WorldConsole` 协议碰模拟器。`ScriptRun` 不默认启用三种中断；地图操作脚本选择 `field_policy`，菜单操作脚本声明严格等待、初态恢复和收尾。开始菜单导航与回血确认同样使用这个执行器，其步骤明确不启用选项中断。
 
-| 场合 | 接管脚本（对外名） | 视图 |
+| 场合 | 脚本（对外名） | 视图 |
 |---|---|---|
-| `shop_items` | `shop_quit()`；买卖走带白名单与终态对账的常规脚本 `buy_item(item, count)` / `sell_item(item, count)`，它们经 `console.run_script` 组合调用内部的 `shop_buy` / `shop_sell`（这两条不单独给模型） | `ShopItemsView` |
+| `shop_items` | `shop_quit()`；买卖走带白名单与终态对账的脚本 `buy_item(item, count)` / `sell_item(item, count)`，它们经 `console.run_script` 组合调用内部的 `shop_buy` / `shop_sell`（这两条不单独给模型） | `ShopItemsView` |
 | `naming` | `naming_enter_name(name)`（只收大写字母，长度 ≤ 7，`NICKNAME?` ≤ 10） | `NamingView` |
 | `battle_menu` | `battle_fight(move)`、`battle_switch(pokemon)`、`battle_use_item(item, pokemon="")`、`battle_run()` | `BattleMenuView` |
 | `battle_switch` | `switch_send_out(pokemon)` | `BattleSwitchView` |
@@ -306,7 +306,7 @@ task 决策的当前帧显示由 `direct/prompts/task_frame.py` 按场合与叠�
 | `pc` | `pc_withdraw_item` / `pc_deposit_item` / `pc_toss_item(item, quantity)`、`pc_withdraw_pokemon` / `pc_deposit_pokemon(pokemon)`、`pc_change_box(n)`、`pc_log_off()` | `PcView` |
 | `learn_move` | `learn_forget(move)`、`learn_skip()` | `LearnMoveView` |
 
-**战斗接管脚本的收尾是自动推进战斗文字**（`ScriptRun.advance`）：只在屏上出现 `▼`（游戏在等按键）、或画面静止满
+**战斗脚本的收尾是自动推进战斗文字**（`ScriptRun.advance`）：只在屏上出现 `▼`（游戏在等按键）、或画面静止满
 `QUIET_PRESS_FRAMES`（300）帧时按 A——文字自己在走时按早了会落在紧接着出现的选单上；遇到任意 `▶`
 （下一个选单、单层 YES/NO 如 "Use next POKéMON?"、抓到后的起名询问）或战斗标志清零即停，按满 `ADVANCE_LIMIT` 次或
 空等满 `ADVANCE_WAIT_FRAMES` 帧也停。停在战斗选单的子层时按 B 退回行动菜单。摘要写双方 HP 变化与停在哪。

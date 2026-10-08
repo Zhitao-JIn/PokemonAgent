@@ -33,11 +33,11 @@
 | 286 | perceive 文档去回放、plan 定稿 |
 | 287 | P1：`perceive_task()` / `TaskObservation`（带 `scene`） |
 | 288 | P2 world：宏骨架 `world/macros/engine.py`、商店 `buy/sell/quit`、起名 `enter_name`、接管视图 |
-| 289 | P2 接线：brain `MacroCall`/`MacroSignature`/`Action.macro`；`GameTools._mask` 接管场合只给宏；`ExecuteResp.outcome`；`decide_macro.md`；`TaskState.last_macro`；`TraceKind.RUN_MACRO`；`evals/macros/` |
+| 289 | P2 接线：brain `MacroCall`/`MacroSignature`/`Action.macro`；`GameTools._mask` 仅开放脚本的场合只给宏；`ExecuteResp.outcome`；`decide_macro.md`；`TaskState.last_macro`；`TraceKind.RUN_MACRO`；`evals/macros/` |
 | 290 | P3：战斗 `fight/switch/use_item/run`、`send_out`；`MacroRun.advance`（只在 `▼` 或静止 300 帧时按 A）；停摆按宏结果比 |
 | 291 | P4：`bag`（use/toss/close）、`party`（switch/field_move/stats/close）、`pc`（道具/宝可梦存取、change_box、log_off）、`learn_move`（forget/skip）；`macros/common.py`；`evals/takeover_views/` |
 
-八个接管场合全部有宏与视图。关键文件：`pokemon_agent/world/macros/*.py`、`world/interface/domain/{macro_spec,macro_outcome,takeover_view}.py`、`world/scene.py`、`tools/game_tools.py`、`tools/brain_tool.py`（`Chooser`、`_signature`）、`tools/prompts/decide_action.py` + `calls/decide_action/decide_macro.md`、`harness/task/{act,plan_task,perceive/detect_stall.py,perceive/store_step_episode_memory.py}`、`tools/trace/{render,content,parse}.py`、`experiment/real_check/node_io.py`。
+八个仅开放脚本的场合全部有宏与视图。关键文件：`pokemon_agent/world/macros/*.py`、`world/interface/domain/{macro_spec,macro_outcome,takeover_view}.py`、`world/scene.py`、`tools/game_tools.py`、`tools/brain_tool.py`（`Chooser`、`_signature`）、`tools/prompts/decide_action.py` + `calls/decide_action/decide_macro.md`、`harness/task/{act,plan_task,perceive/detect_stall.py,perceive/store_step_episode_memory.py}`、`tools/trace/{render,content,parse}.py`、`experiment/real_check/node_io.py`。
 新存档都在 `experiment/experiment_states/macros/`（`player_keyboard / battle_low_hp / battle_faint_switch / field_two_mons / field_four_moves / learn_move`）。
 
 ## 3. 做了一半、还没写 CHANGELOG（第一件事先补上）

@@ -1,8 +1,8 @@
 """商店类脚本（§7.1）：buy_item / sell_item。
 
 **价格真源**：买价与在售清单来自 `shop_layouts.goods`，卖价来自 ROM 道具价格；**机械校验**：终态对账
-（money 差额、stock 增量）→ 对不上 `verify_failed` 兜底；**接管脚本代答**：确认框
-由接管脚本 `shop_buy` / `shop_sell` 机械代答（非分叉），本脚本只看它的 `ok` 与结局码。
+（money 差额、stock 增量）→ 对不上 `verify_failed` 兜底；**脚本代答**：确认框
+由脚本 `shop_buy` / `shop_sell` 机械代答（非分叉），本脚本只看它的 `ok` 与结局码。
 卖价按 Gen1 规则 = 买价一半（`price // 2`）。
 """
 

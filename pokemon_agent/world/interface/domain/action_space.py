@@ -27,7 +27,7 @@ class ActionSpace(BaseModel):
         default_factory=list, description="掩码里各条目的载荷（参数签名、说明）"
     )
 
-    names: list[str] = Field(description="可用按键名；接管场合为空（只给接管脚本）")
+    names: list[str] = Field(description="可用按键名；仅开放脚本的场合为空（只给脚本）")
     descriptions: dict[str, str] = Field(
         default_factory=dict, description="动作名 -> 给 LLM 读的说明"
     )

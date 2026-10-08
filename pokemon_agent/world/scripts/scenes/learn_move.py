@@ -1,4 +1,4 @@
-"""学新招要忘旧招（`learn_move`）的接管脚本：`forget` / `skip`，外加这个场合的视图。
+"""学新招要忘旧招（`learn_move`）的脚本：`forget` / `skip`，外加这个场合的视图。
 
 初态："Delete an older move to make room for …?" 的 YES / NO（`scene.at_start`）。
 忘招：YES → "Which move should be forgotten?" 招式列表选一招；
@@ -89,7 +89,7 @@ def _execute_skip(run: ScriptRun, args: dict[str, str | int]) -> str:
     return f"不学 {new}；{stop}"
 
 
-LEARN_TAKEOVERS: dict[str, ScriptDefinition] = {
+LEARN_SCRIPTS: dict[str, ScriptDefinition] = {
     "forget": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
@@ -111,4 +111,4 @@ LEARN_TAKEOVERS: dict[str, ScriptDefinition] = {
     ),
 }
 
-__all__ = ["LEARN_TAKEOVERS", "learn_view"]
+__all__ = ["LEARN_SCRIPTS", "learn_view"]

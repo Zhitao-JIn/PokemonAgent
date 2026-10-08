@@ -6,7 +6,7 @@
 ## 1. 标什么、不标什么
 
 - **RAM 就是真值**。只标"RAM 里读不出、要靠解码规则才得出"的字段：
-  - `scene_truth`：`scene`（TaskScene 词表）与 `at_start`（只接管场合填 true/false，常规场合填 null）。
+  - `scene_truth`：`scene`（TaskScene 词表）与 `at_start`（只仅开放脚本的场合填 true/false，开放按键的场合填 null）。
   - `screen_truth`：`overlay`、`dialog_text`、`options`、`cursor`、`quantity_box` 里**定义明确**的那几个，
     拿不准的字段整个不写（scorer 只比较写了的键）。
 - 判据是 RAM 的屏幕缓冲（WRAM 0xC3A0 起 20×18 tile）。截图只作辅助：capture 帧（`c-xxxx`）的截图
@@ -24,7 +24,7 @@
 | 图鉴条目页的说明文字 | 算对话：进 `dialog_text`，`overlay=dialog`；场合仍是 `pokemon_info`（战斗中捕获后弹出的仍是 `battle`） |
 | 空招式位 `-`、图鉴未见条目 `----------` | 算选项，按屏幕顺序放进 `options` |
 | 命名键盘的结束键 | 记作 `ED`；框外 `lower case` 不算选项 |
-| 命名键盘、队伍列表（naming / party / faint_switch）的光标与选项 | 屏幕解码读不出、由接管脚本自己读，**不标** `cursor` / `options`；场合、`at_start`、对话框文字照标。其余场合解码读得出的光标、选项照标 |
+| 命名键盘、队伍列表（naming / party / faint_switch）的光标与选项 | 屏幕解码读不出、由脚本自己读，**不标** `cursor` / `options`；场合、`at_start`、对话框文字照标。其余场合解码读得出的光标、选项照标 |
 | 战斗中打开的能力页（EXP POINTS 那页） | `battle` |
 | 光标被擦掉的帧 | 只标场合 |
 | 屏上只有数量框、没有 `▶` 时的 `overlay` | `choice`：要用方向键调数量，DIALOG 的掩码只给 `a`；叠加层只决定掩码 |
@@ -74,7 +74,7 @@ for f in load_frames(include_unreviewed=True):
 
 - 图鉴列表（`start_menu` 下的 CONTENTS 页，光标在框外左侧）：解码给不出 `cursor` / `options`（试点 c-0423）。
 - 队伍列表、选项页的旧 probe 人工标注（`p-field_party_list`、`p-battle_party_*`、`p-battle_use_on_which`、
-  `p-option_screen`）与解码不一致，属于接管场合或待定，不在本轮处理。
+  `p-option_screen`）与解码不一致，属于仅开放脚本的场合或待定，不在本轮处理。
 
 ## 6. 约束
 

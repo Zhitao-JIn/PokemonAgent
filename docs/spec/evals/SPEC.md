@@ -20,7 +20,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 |---|---|---|---|
 | decode | 同一帧冻结 WRAM，机械解码一次 | 场合/脚本覆盖/初态、ScreenText、接管视图、地形/位置四个分组 | 无 |
 | episode_vision_read | 生产视觉节点的纯视觉部分，输入截图 | scene、overlay、dialog_text、options、cursor、解析成功 | 视觉模型 |
-| world_script_execute | 常规脚本与原宏统一走脚本执行通道，真实模拟器 | 自报结局与世界真值 | 无 |
+| world_script_execute | 脚本统一走执行通道，真实模拟器 | 自报结局与世界真值 | 无 |
 | memory_store_recall | 冻结库经真实 MemoryTool 写入、读回，再检索带相关性标签的查询 | 存储分、检索 recall@k / MRR | 无 LLM，本地 embedding/reranker |
 | brain_goal_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
 | agent_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
@@ -31,7 +31,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 `evals/dataset/frames/v2/truth.jsonl`是decode独立真值的唯一存储，按sample_id记录scene_truth、screen_truth、takeover_truth、terrain_truth。所有已标字段直接挂到帧上计分，删除reviewed及配套组/字段审核标记，不再按审核状态过滤。未标或空组为NOANSWER，不进入该组分母；unresolved_fields记录无法判定原因。decode不从label_checked或label回退取答案。1045帧已标全部适用字段，地图稳定的1019帧有地形标注；c-0109的walk_map与neighbors为unresolved，其余26帧地形不适用。网页审阅意见独立保存，不控制真值计分。视觉任务保留自身原有label_checked口径。
 
-`scene_truth` 查三个字段：`scene`、`covered_by_script`、`at_start`。`covered_by_script=true` 表示当前场合由接管脚本负责，包含未回初态的子菜单；有普通可选脚本不算接管覆盖。真值从独立标注场合和已核对的八类接管脚本对应关系补出，不读取被测分类器结果。1045 帧已标此字段；两帧完整空菜单重绘按2026-10-08裁决标为start_menu（c-0419）和bag（c-0440）。该字段只测覆盖识别是否正确；实际退回初态与执行结果由 `world_script_execute` 验证，模型选择目标脚本由决策 prompt 约束，本次未运行真实模型验证。
+`scene_truth` 查三个字段：`scene`、`covered_by_script`、`at_start`。`covered_by_script=true` 表示当前场合由脚本负责，包含未回初态的子菜单；有可选脚本的场合允许按键，covered_by_script 为 false。真值从独立标注场合和已核对的八类脚本对应关系补出，不读取被测分类器结果。1045 帧已标此字段；两帧完整空菜单重绘按2026-10-08裁决标为start_menu（c-0419）和bag（c-0440）。该字段只测覆盖识别是否正确；实际退回初态与执行结果由 `world_script_execute` 验证，模型选择目标脚本由决策 prompt 约束，本次未运行真实模型验证。
 
 同一帧只跑一次机械解码，四个 scorer 复用结果。`judged_accuracy` / `judged_count` 读取未做 epoch 数值归并的原始 C/I/N，每次重复运行作为独立观测统计，确保 N 不被转换为失败进入分母。
 
@@ -59,7 +59,7 @@ harness_integrity 位于 `tests/test_harness_integrity.py`，属于集成测试�
 
 ## 当前覆盖与结果口径
 
-world_script_execute 共 106 例，统一按脚本的调用、结局与前后世界真值评分。31/75 只是两批历史用例来源；常规与接管都交出控制权执行多步操作，现在共用同一个 ScriptRun，等待、中断、初态恢复与收尾属于脚本自己的配置或步骤。保留原用例依据与世界真值。被测脚本自报成功不是世界真值；重构不根据实际输出改写期望。
+world_script_execute 共 106 例，统一按脚本的调用、结局与前后世界真值评分。所有脚本共用同一个 ScriptRun 执行多步操作，等待、中断、初态恢复与收尾属于脚本自己的配置或步骤。保留原用例依据与世界真值。被测脚本自报成功不是世界真值；重构不根据实际输出改写期望。
 
 memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。brain_goal_judge 初始四条独立真假历史；这些小型用例是运行契约示范，不能代替完整能力评估。
 
@@ -113,7 +113,7 @@ datetime 的微秒精度保留；模型与工具的 completed 使用 ended_at。
 |---|---|---|
 | frames | v2，1045 帧 samples.jsonl 与独立 truth.jsonl | build/；sources/ 收采集输入与13份存档 |
 | agent_goal_run | v1，20 个起点、样本、rubric 与档案 | build/pack.py |
-| world_script_execute | v1，106 条 cases.jsonl 与所用存档 | 常规31条、接管75条统一读取；核对函数在 scorer |
+| world_script_execute | v1，106 条 cases.jsonl 与所用存档 | 106 条统一读取；核对函数在 scorer |
 | memory_store_recall | v1，dataset.json（一份3条记录/3个查询的库） | 无 |
 | brain_goal_judge | v1，dataset.jsonl（4条） | 本次不扩容 |
 

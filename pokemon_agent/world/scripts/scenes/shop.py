@@ -1,4 +1,4 @@
-"""商店买卖（`shop_items`）的接管脚本：`buy` / `sell` / `quit`，外加这个场合的视图。
+"""商店买卖（`shop_items`）的脚本：`buy` / `sell` / `quit`，外加这个场合的视图。
 
 初态：`▶BUY / SELL / QUIT` 主菜单画着（`scene.at_start`）。
 地址与流程见 `docs/perceive/p0-findings.md`（常青市商店实测）：商品表 `wItemList` 0xCF7B，
@@ -215,7 +215,7 @@ def _list_open(text: ScreenText) -> bool:
 _ITEM = ScriptParam(name="item", type="str", description="道具名，照视图里的写")
 _QTY = ScriptParam(name="quantity", type="int", description="数量，1–99")
 
-SHOP_TAKEOVERS: dict[str, ScriptDefinition] = {
+SHOP_SCRIPTS: dict[str, ScriptDefinition] = {
     "buy": ScriptDefinition(
         policy=menu_policy(),
         spec=ActionEntry(
@@ -250,4 +250,4 @@ SHOP_TAKEOVERS: dict[str, ScriptDefinition] = {
 }
 
 
-__all__ = ["SHOP_TAKEOVERS", "shop_view"]
+__all__ = ["SHOP_SCRIPTS", "shop_view"]

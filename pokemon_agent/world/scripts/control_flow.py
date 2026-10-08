@@ -27,7 +27,7 @@ class ScriptResult:
     calls: list[Any] = field(default_factory=list)
 
 
-class Abort(Exception):  # noqa: N818 —— 接管脚本内部的控制流信号，不出本包
+class Abort(Exception):  # noqa: N818 —— 脚本内部的控制流信号，不出本包
     """未出现业务期望：执行器报告中止，并执行脚本明确声明的失败恢复。"""
 
     def __init__(self, code: ScriptReason, reason: str) -> None:

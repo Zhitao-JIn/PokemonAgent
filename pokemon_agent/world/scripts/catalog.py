@@ -22,13 +22,13 @@ from .movement import (
     walk_to_adjacent,
 )
 from .navigation import exit_map, heal_at_center
+from .scenes import REGISTRY, SCRIPT_DEFINITIONS
 from .shop import buy_item, sell_item
-from .takeover import REGISTRY, TAKEOVER_SCRIPTS
 
 if TYPE_CHECKING:  # 只为标注：脚本函数签名统一是 (console, **args) -> ScriptResult
     from .engine import WorldConsole
 
-# ---- 常规脚本条目（名字 = MCP 面的 tool 名，一脚本一 API）----
+# ---- 脚本条目（名字 = MCP 面的 tool 名，一脚本一 API）----
 
 _SCRIPT_SPECS: tuple[ActionEntry, ...] = (
     ActionEntry(
@@ -135,33 +135,33 @@ _SCRIPT_SPECS: tuple[ActionEntry, ...] = (
 
 SCRIPT_SPECS: dict[str, ActionEntry] = {
     **{e.name: e for e in _SCRIPT_SPECS},
-    **{name: defn.spec for name, defn in TAKEOVER_SCRIPTS.items()},
+    **{name: defn.spec for name, defn in SCRIPT_DEFINITIONS.items()},
 }
-"""全部脚本条目（名字 → 条目），常规 + 接管。掩码按场合过滤，不直接展开这份表。"""
+"""全部脚本条目（名字 → 条目），按场合配置。掩码按场合过滤，不直接展开这份表。"""
 
 # ---- 场合可用性（唯一一份规则）----
 
 _SHOP_SCRIPTS = frozenset({"buy_item", "sell_item"})
 _FIELD_SCRIPTS: frozenset[str] = frozenset(e.name for e in _SCRIPT_SPECS) - _SHOP_SCRIPTS
 _DIALOG_SCRIPTS = frozenset({"advance_dialog", "wait_until_scene"})
-_TAKEOVER_INTERNAL = frozenset({"shop_buy", "shop_sell"})
-"""只经 `buy_item` / `sell_item` 组合调用、不单独给模型的接管脚本（外层负责白名单与对账）。"""
+_INTERNAL_SCRIPTS = frozenset({"shop_buy", "shop_sell"})
+"""只经 `buy_item` / `sell_item` 组合调用、不单独给模型的脚本（外层负责白名单与对账）。"""
 
 SCENE_SCRIPTS: dict[str, frozenset[str]] = {
     "walk": _FIELD_SCRIPTS,
     "dialog": _DIALOG_SCRIPTS,
     "transition": frozenset({"wait_until_scene"}),
     **{
-        scene.value: (frozenset(defs) - _TAKEOVER_INTERNAL)
+        scene.value: (frozenset(defs) - _INTERNAL_SCRIPTS)
         | (_SHOP_SCRIPTS if scene is TaskScene.SHOP_ITEMS else frozenset())
         for scene, defs in REGISTRY.items()
     },
 }
-"""场合 → 此刻可用的脚本名集合。walk 给常规脚本、dialog 给对话推进类、transition 给等待。
-各接管场合给
-本场合的接管脚本（商店另加 `buy_item` / `sell_item`）；不在表里的场合一律不给脚本。"""
+"""场合 → 此刻可用的脚本名集合。walk 给脚本、dialog 给对话推进类、transition 给等待。
+各仅开放脚本的场合给
+本场合的脚本（商店另加 `buy_item` / `sell_item`）；不在表里的场合一律不给脚本。"""
 
-for _definition in TAKEOVER_SCRIPTS.values():
+for _definition in SCRIPT_DEFINITIONS.values():
     for _entry_scene in _definition.entry_scenes:
         SCENE_SCRIPTS[_entry_scene.value] = SCENE_SCRIPTS.get(_entry_scene.value, frozenset()) | {
             _definition.spec.name
@@ -186,7 +186,7 @@ def _defined_func(name: str) -> Callable[..., ScriptResult]:
     """把一个声明式脚本接到统一按名调用入口。"""
 
     def run(console: WorldConsole, **args: str | int) -> ScriptResult:
-        return run_definition(console, TAKEOVER_SCRIPTS[name], dict(args))
+        return run_definition(console, SCRIPT_DEFINITIONS[name], dict(args))
 
     return run
 
@@ -206,7 +206,7 @@ SCRIPT_FUNCS: dict[str, Callable[..., ScriptResult]] = {
     "exit_map": exit_map,
     "heal_at_center": heal_at_center,
     "open_menu_to": open_menu_to,
-    **{name: _defined_func(name) for name in TAKEOVER_SCRIPTS},
+    **{name: _defined_func(name) for name in SCRIPT_DEFINITIONS},
 }
 
 

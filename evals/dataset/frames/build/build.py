@@ -62,7 +62,7 @@ def _from_capture(capture_dir: Path) -> list[ScreenSample]:
 def prelabel(sample: ScreenSample) -> ScreenLabel:
     """预标：界面种类用规则原型，字段用屏幕解码；队伍列表用内存补（解码切不出来）。
 
-    数量框都在接管脚本里（买卖、PC 存取丢、背包丢弃），不标数量。
+    数量框都在脚本里（买卖、PC 存取丢、背包丢弃），不标数量。
     """
     from .observe import scene_of, screen_text
 

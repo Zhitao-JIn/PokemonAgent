@@ -37,10 +37,10 @@
 | 2.1 | `world/interface/domain/`：`macro_spec.py`、`macro_outcome.py`、`takeover_view.py`（新增） | `MacroSpec`、`MacroOutcome`（`status` / `reason_code` 闭集 / `summary` / `steps`）、各接管视图；**契约先给开发者看** |
 | 2.2 | `world/macros/engine.py`（新增） | 回初态（等稳定、`at_start`、按 B、上限）→ 校验 → 逐步核对 → 收尾；私有常量 `STABLE_POLLS` 等 |
 | 2.3 | `world/macros/shop.py`、`naming.py`（新增）；名字表从 `experiment/observation_check/id_tables/` 搬入 world | `buy` / `sell` / `quit`、`enter_name`；`ShopItemsView`、`NamingView` |
-| 2.4 | `WorldPort.run_macro`；`ActionSpace.macros`；`GameTools.execute` 分派 + `…ExecuteResp`（新增） | 常规场合照旧键掩码，接管场合给宏签名 |
+| 2.4 | `WorldPort.run_macro`；`ActionSpace.macros`；`GameTools.execute` 分派 + `…ExecuteResp`（新增） | 开放按键的场合照旧键掩码，仅开放脚本的场合给宏签名 |
 | 2.5 | `brain/interface/domain/action.py`（`Action.macro`、新增 `MacroCall`）；`brain/brain.py::_parse` | 解析宏调用，只查名字与参数类型 |
 | 2.6 | `schemas/harness/domain/trace_kind.py`（`RUN_MACRO`）；`tools/trace/render.py`；`harness/task/act/act.py` | 宏走一次 `execute`，记 `run_macro`；决策预算 +1 |
-| 2.7 | `FromHarnessToBrainToolChooseOnceReq.last_macro`；`tools/prompts/decide_action.py` + 模板 | 接管场合渲染视图与宏签名；上一宏结果放观测之后 |
+| 2.7 | `FromHarnessToBrainToolChooseOnceReq.last_macro`；`tools/prompts/decide_action.py` + 模板 | 仅开放脚本的场合渲染视图与宏签名；上一宏结果放观测之后 |
 | 2.8 | `evals/macros/`（新增） | 从存档调 `buy` / `sell` / `enter_name`：成功、被拒（钱不够、数量越界、名字非法）、从数量框 / YES/NO / 已打字中途开跑 |
 
 **验收**：宏测评全过；真机跑"去商店买 5 个精灵球"一个 task，trace 里一条 `run_macro`。

@@ -22,8 +22,8 @@
 | `memory/SPEC.md` | 记忆子系统全貌：存储布局、混合检索算法、四类记录的派生关系、两个 provider | 改落盘形态、改检索阶段、加减记录类型 |
 | `memory/PORTS.md` | **契约层**：`MemoryStorePort` 的逐方法签名与边界核对表 | 改 Port 方法。与 `SPEC.md` 分工：这份讲契约，那份讲全貌 |
 | `memory/API.md` | **接口参考**：十二个出口、`MemoryStorePort` 十一方法、落盘形态与样例、tool 层十二方法 + 信封清单、最小用法、三套核对怎么跑 | 改方法签名、改缺省值、改前置条件、改落盘形态、改核对入口 |
-| `world/SPEC.md` | `WorldPort` 唯一实现：PyBoy 粘合、场景分类（`scene.py`）、脚本（`scripts/`，含接管脚本 `scripts/takeover/`）、道具与招式表（`items.py` / `moves.py`）、感知链路、自包含核对 | 改 Port、改按键/地形语义、改感知档位或接管脚本 |
-| `evals/SPEC.md` | 接管脚本、接管视图、读屏与端到端测评目录索引 | 增删测评分组或改变运行入口 |
+| `world/SPEC.md` | `WorldPort` 唯一实现：PyBoy 粘合、场景分类（`scene.py`）、脚本（`scripts/`，含脚本 `scripts/scenes/`）、道具与招式表（`items.py` / `moves.py`）、感知链路、自包含核对 | 改 Port、改按键/地形语义、改感知档位或脚本 |
+| `evals/SPEC.md` | 脚本、接管视图、读屏与端到端测评目录索引 | 增删测评分组或改变运行入口 |
 | `trace/SPEC.md` | 独立记账模块：`TracePort` 契约、六字段事件、落盘与读取、自包含核对 | 改事件形状、改落盘布局、改排序约定 |
 | `trace/API.md` | **接口参考**：五个出口、两个方法的签名与前置/后置/失败模式、落盘 JSON 样例、最小用法、三套核对怎么跑。与 `SPEC.md` 分工：这份讲怎么调，那份讲为什么 | 改方法签名、改缺省值、改前置条件、改核对入口 |
 | `schemas/SPEC.md` | 跨层契约：信封清单与命名规则、domain 实体归属、记忆一族的形状 | 加/改/删信封，改归属登记 |

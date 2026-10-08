@@ -12,7 +12,7 @@ START_ORDER: tuple[str, ...] = ("POKéDEX", "POKéMON", "ITEM", "SAVE", "OPTION"
 """支持的开始菜单项；光标索引取当前读屏选项的位置。"""
 
 TARGET_SCENE: dict[str, str] = {"POKéMON": "party", "ITEM": "bag"}
-"""选中某项后该进入的接管场合（用于成败判定；其余项没有可判定的子菜单场合）。"""
+"""选中某项后该进入的仅开放脚本的场合（用于成败判定；其余项没有可判定的子菜单场合）。"""
 
 
 def open_menu_to(console: WorldConsole, target: str) -> ScriptResult:

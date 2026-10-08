@@ -24,7 +24,7 @@
 |---|---|---|
 | decode | decode（不改） | world 从 RAM 机械解码场合、读屏文字、接管视图、地形 |
 | vision_perceive | `episode_vision_read` | episode / run 档取帧的纯视觉子节点 `perceive_visual` |
-| world_actions | `world_script_execute` | world 脚本（常规 + 接管）在真模拟器上执行 |
+| world_actions | `world_script_execute` | world 脚本（按场合配置）在真模拟器上执行 |
 | memory | `memory_store_recall` | 记忆写入、读回与检索 |
 | judge | `brain_goal_judge` | brain 判定目标是否达成（第五节扩容的就是它） |
 | e2e | `agent_goal_run` | 完整系统跑完一个目标 |
@@ -59,7 +59,7 @@ evals/dataset/
 │   └── v1/                        samples.jsonl、states/、archives/、coverage.md、rubric.json
 ├── world_script_execute/
 │   ├── schemas.py / loader.py     ScriptCase / ScriptExpect；读 cases.jsonl
-│   └── v1/                        cases.jsonl（106 例：常规 + 接管）+ states/（用到的存档）
+│   └── v1/                        cases.jsonl（106 例：按场合配置）+ states/（用到的存档）
 ├── memory_store_recall/
 │   ├── schemas.py / loader.py
 │   └── v1/                        dataset.json（现有 3 条记录 / 3 个查询）
@@ -75,7 +75,7 @@ evals/dataset/
 |---|---|
 | `evals/data/frames/dataset/v2/samples.jsonl` + `evals/data/frames/truth.jsonl` | `evals/dataset/frames/v2/` |
 | `evals/data/v1/*` | `evals/dataset/agent_goal_run/v1/` |
-| `evals/tasks/world_actions/` 下的用例（`cases.py`、`regular_batch_*.py`、`takeover_batch_*.py`、`takeover_cases.py`）+ 用到的 `experiment/experiment_states/*` | `evals/dataset/world_script_execute/v1/` |
+| `evals/tasks/world_actions/` 下的脚本用例+ 用到的 `experiment/experiment_states/*` | `evals/dataset/world_script_execute/v1/` |
 | `evals/tasks/memory/dataset.json` | `evals/dataset/memory_store_recall/v1/` |
 | `evals/tasks/judge/dataset.jsonl` | `evals/dataset/brain_goal_judge/v1/` |
 | 读取代码：`evals/data/loader.py`、`evals/data/frames/{schemas,truth}.py` 与 `build.py::load_samples`、`evals/core/frames.py`、各 task 里读 `dataset.json(l)` 与 import 用例的代码 | 各自数据集包的 `loader.py`；样本契约（`ScriptCase`、`JudgeCase`、`EvalSample`…）移到对应包的 `schemas.py` |
@@ -124,7 +124,7 @@ evals/dataset/
 | J2 | 决策 / 判定现场怎么采 | (a) 在 `BrainTool.choose` / `judge` 调用处加一个默认关闭的采集开关，写信封 + 存档（要改生产代码）；(b) 让 trace 的 `choose_call` / `judge_call` 账带上完整信封，再离线反解（改 trace 内容，需商定）；(c) evals 侧包一层录制用的 BrainTool，只在采集时装配 |
 | J3 | 首版规模与配比 | choose 每个场合、每个难点标签各多少条；judge 正负比例、每类难负例至少多少条 |
 | D1 | 数据**生产**工具放哪（读取代码已定：进各数据集包） | 采集 / 构建 / 打包 / 审核工具（`pack.py`、`frames/` 的 `build_v2`、`glyphs`、`observe`、`freeze`、`terrain`、`storage`、`coverage`、`deduplicate`、`cli`）：(a) 也进对应数据集包的 `tools/` 子目录，一份数据的读与造都在一处；(b) 统一收进 `evals/datatools/`，数据集包只管读 |
-| 已定 | world_script_execute 的用例格式 | 转成 `cases.jsonl`（常规与接管两类合并；接管用例在运行时的转换改为一次性转换后冻结）；`frames/capture_cases.py` 同样转成数据 |
+| 已定 | world_script_execute 的用例格式 | 转成 `cases.jsonl`（全部用例统一读取，运行时的转换改为一次性转换后冻结）；`frames/capture_cases.py` 同样转成数据 |
 | 已定 | 存档放几份 | evals 拷一份进 `evals/dataset/world_script_execute/v1/states/`；`experiment/` 保留自己那份不动 |
 
 ## 七、成功的样子

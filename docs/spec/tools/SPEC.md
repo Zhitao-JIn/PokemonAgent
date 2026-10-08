@@ -73,7 +73,7 @@ pokemon_agent/mcpclient/             memory / world 半边（原 tools/ 的下�
 一口一个方法，重试循环下沉到本层：`plan` / `decompose` / `choose` / `judge` /
 `reflect` / `verify` / `summarize` / `summarize_task`，每条签名
 `(req: FromHarnessToBrainTool<X>Req) -> …<X>Resp`。各层 runtime 只拿自己用得到的那几个口。
-`Chooser` 把动作空间里的脚本条目（world 的 `ActionEntry`，常规脚本与接管脚本同形）
+`Chooser` 把动作空间里的脚本条目（world 的 `ActionEntry`，脚本条目统一形状）
 转成 brain 的 `ScriptSignature` 随 `keys` 交给 `Brain.choose`；脚本调用
 不过 `_normalize` 的按键规则，语义校验归 world 执行器。
 
@@ -82,8 +82,8 @@ MCP 远程门面 `mcpclient/world_tool.py::WorldMcpTool`）**：
 
 | 方法 | 签名 | 信封文件 |
 |---|---|---|
-| `get_action_space` | `(req: …GetActionSpaceReq) -> …GetActionSpaceResp` | 常规场合按 overlay 给键 + 按场合给脚本条目，接管场合只给本场合的接管脚本、不给键 |
-| `execute` | `(req: …ExecuteReq) -> FromHarnessToGameToolExecuteResp` | 两形分流：键 → `world/object_events.observe_step`，`event` 带本键裸事件；脚本（常规与接管同一条路）→ 掩码校验后跑脚本层，`report` 是终态报告（`{ok, code, data, events, calls}`）。MCP 门面调用同名工具并保留报告事件 |
+| `get_action_space` | `(req: …GetActionSpaceReq) -> …GetActionSpaceResp` | 开放按键的场合按 overlay 给键 + 按场合给脚本条目，仅开放脚本的场合只给本场合的脚本、不给键 |
+| `execute` | `(req: …ExecuteReq) -> FromHarnessToGameToolExecuteResp` | 两形分流：键 → `world/object_events.observe_step`，`event` 带本键裸事件；脚本（统一调用）→ 掩码校验后跑脚本层，`report` 是终态报告（`{ok, code, data, events, calls}`）。MCP 门面调用同名工具并保留报告事件 |
 | `reset` | `(req: …ResetReq) -> None` | 只有 Req |
 | `perceive_with_retry` | `() -> tuple[…PerceiveOnceResp, ModelCallLog]` | episode 层视觉档；只有 Resp |
 | `perceive_task` | `() -> …PerceiveTaskResp` | task 层，不调模型、不失败 |

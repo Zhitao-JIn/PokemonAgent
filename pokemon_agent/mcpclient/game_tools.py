@@ -3,7 +3,7 @@
 薄到几乎只是转发，但有三件事只在这里做：
 
 - **动作掩码。** `get_action_space()` 按当前 overlay（有没有对话框、菜单、选择框）
-  给出此刻能按的键；接管场合改给本场合的接管脚本签名、不给键。掩码**只看 overlay**，
+  给出此刻能按的键；仅开放脚本的场合改给本场合的脚本签名、不给键。掩码**只看 overlay**，
   不看目标、不看历史——它回答的是"这一帧按下去有意义吗"，不是"这一步该按什么"。
 - **前置检查。** `execute()` 断言动作确实来自最近一次给出的动作空间。
   大脑幻觉出不存在的键要在这里就地爆炸，而不是变成一个语义不明的模拟器错误。
@@ -54,7 +54,7 @@ from pokemon_agent.world import (
 )
 from pokemon_agent.world.errors import PerceptionAttemptFailed
 from pokemon_agent.world.scripts.catalog import script_entries
-from pokemon_agent.world.scripts.takeover import takeover_entries
+from pokemon_agent.world.scripts.scenes import scene_script_entries
 
 # `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT` 的组装逻辑全在
 # `pokemon_agent/direct/prompts/decide_action.py`（decide_action.md 一个模板的
@@ -67,7 +67,7 @@ def _mask(obs: TaskObservation, all_actions: list[str]) -> ActionSpace:
     后置条件：至少一个动作可用。走投无路也必须给至少一个动作——
         空动作空间是这一层的 bug，不能推给大脑处理。
 
-    接管场合（有接管脚本的场合）只给脚本，JEV 在那里不直接按键。
+    仅开放脚本的场合（有脚本的场合）只给脚本，JEV 在那里不直接按键。
 
     脚本条目按场合从 `world/scripts/catalog` 取（可用性规则唯一一份）；掩码命名空间
     覆盖键 + 脚本，不可用的键显式 `False`。
@@ -80,7 +80,7 @@ def _mask(obs: TaskObservation, all_actions: list[str]) -> ActionSpace:
     # `obs.facts` 本来就是 `Facts` 模型，`overlay` 该是 `Facts.Overlay` 就是
     # `Facts.Overlay`，缺失时才退回 `NONE`。
     scripts = script_entries(str(obs.scene))
-    if takeover_entries(obs.scene):
+    if scene_script_entries(obs.scene):
         space = ActionSpace(names=[])
     else:
         overlay = obs.facts.overlay or Facts.Overlay.NONE

@@ -1,4 +1,4 @@
-"""task 层的场合分类与接管脚本初态判断：纯函数，只读屏幕缓冲解码结果与内存，不调模型。
+"""task 层的场合分类与脚本初态判断：纯函数，只读屏幕缓冲解码结果与内存，不调模型。
 
 判别以屏幕缓冲特征为主（列表类内存变量退出界面后会残留），战斗标志、列表指针、地图图块集只在能区分时作旁证；
 特征一律按**整词 / 固定位置**匹配，不做子串匹配
@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from .interface import TAKEOVER_SCENES, Memory, ScreenText, TaskScene
+from .interface import SCRIPT_ONLY_SCENES, Memory, ScreenText, TaskScene
 from .scene_layout import (
     empty_menu_frame,
     has_battle_menu_frame,
@@ -72,7 +72,7 @@ def classify_scene(text: ScreenText, mem: Memory) -> TaskScene:
     if {"STATUS/", "TYPE1/"} & _words(screen) or "EXP POINTS" in flat or has_dex_entry_frame(tiles):
         return TaskScene.POKEMON_INFO
 
-    # 步骤 2：战斗——选单接管，其余常规
+    # 步骤 2：战斗——按战斗菜单或战斗文字分类
     if in_battle:
         if (
             "Bring out which" in flat
@@ -87,7 +87,7 @@ def classify_scene(text: ScreenText, mem: Memory) -> TaskScene:
 
 
 def _field_scene(text: ScreenText, mem: Memory) -> TaskScene:
-    """非战斗的接管场合优先；列表指针只在对应可见菜单出现时使用。"""
+    """非战斗的仅开放脚本的场合优先；列表指针只在对应可见菜单出现时使用。"""
     screen = text.screen
     flat, words = screen.replace("▶", " ").replace("▷", " "), _words(screen)
     tiles = read_tiles(mem)
@@ -142,14 +142,14 @@ def _ordinary_scene(text: ScreenText, mem: Memory) -> TaskScene:
 
 
 def at_start(text: ScreenText, scene: TaskScene) -> bool:
-    """接管场合是否在接管脚本的初态：本场合的主菜单画着、实心 `▶` 在上面、屏上没有任何空心 `▷`。
+    """仅开放脚本的场合是否在脚本的初态：本场合的主菜单画着、实心 `▶` 在上面、屏上没有任何空心 `▷`。
 
     战斗行动菜单要求光标在FIGHT；其他主菜单允许其任一合法选项。
     只看三角不够：战斗的招式列表 / 背包 / 换人列表、PC 的各级菜单都整块盖住上一层，不留 `▷`。
     调用方要先等画面稳定——游戏处理按键时会擦掉 `▶` 重画。
-    前置条件：`scene` 是接管场合。
+    前置条件：`scene` 是仅开放脚本的场合。
     """
-    assert scene in TAKEOVER_SCENES, f"at_start() on a normal scene {scene!r}"
+    assert scene in SCRIPT_ONLY_SCENES, f"at_start() on a normal scene {scene!r}"
     if not text.has_cursor or "▷" in text.screen:
         return False
     options, screen = text.options, text.screen

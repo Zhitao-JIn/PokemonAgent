@@ -76,7 +76,7 @@ evals/
 | `vision_perceive/{solver,schemas}.py` / `scorer.py` | `solvers/episode_vision_read.py` / `scorers/episode_vision_read.py` |
 | `memory/{solver,schemas}.py` / `task.py` 里的 `storage_scorer`、`retrieval_scorer`、`retrieval_metrics` | `solvers/memory_store_recall.py` / `scorers/memory_store_recall.py` |
 | `judge/task.py` 里的 `judge_solver` / `judge_scorer`、`confusion` 与 `judge/metrics.py` | `solvers/brain_goal_judge.py` / `scorers/brain_goal_judge.py` |
-| `world_actions/{solver,schemas}.py` / `scorer.py`、`takeover_samples.py::judge_takeover`、`takeover_contract.py` 里的 12 个核对函数 | `solvers/world_script_execute.py` / `scorers/world_script_execute/`（子包：`scorer.py`、`takeover_checks.py`） |
+| 旧脚本执行与评分实现及 12 个世界状态核对函数 | `solvers/world_script_execute.py` / `scorers/world_script_execute/`（子包：`scorer.py`、`checks.py`） |
 | `e2e.py` 里的 `e2e_scorer`、`result_grade.py` | `scorers/agent_goal_run/` |
 | `evals/schema/verdict.py`（`CheckVerdict`，机械判据产出） | `evals/scorers/verdict.py` |
 
@@ -162,7 +162,7 @@ evals/dataset/<名>/
 |---|---|---|---|---|
 | `frames` | `ScreenSample`（+ 挂上的 `FrameTruth` 各组） | `v2/samples.jsonl`、`v2/truth.jsonl`；`sources/`（接管 8 帧与地形 2 帧的采集输入：`capture_cases.jsonl` + `states/`） | `evals/data/frames/{schemas,truth}.py`、`build.py::load_samples`、`frames.py`、`snapshot.py`（S1 后暂在 `evals/solvers/`；WRAM + ROM bank 0 的快照内存，帧读取的一部分） | `build.py`（构建部分）、`glyphs.py`、`observe.py`、`freeze.py`、`terrain.py`、`storage.py`、`coverage.py`、`deduplicate.py`、`cli.py` |
 | `agent_goal_run` | `EvalSample`、`RubricItem`、`RedLine` | `v1/samples.jsonl`、`v1/states/`、`v1/archives/`、`v1/rubric.json`、`v1/coverage.md` | `evals/data/loader.py`、`evals/schema/sample.py` | `evals/data/pack.py` |
-| `world_script_execute` | `ScriptCase`、`ScriptExpect`、`TakeoverCheck` | `v1/cases.jsonl`（106 条）、`v1/states/` | `evals/tasks/world_actions/{cases,regular_batch_*,takeover_*}.py` 里的用例与常量 | 一次性转换脚本 `build/convert_cases.py`（转换完成即可删，见 §2.3） |
+| `world_script_execute` | `ScriptCase`、`ScriptExpect`、`ScriptCheck` | `v1/cases.jsonl`（106 条）、`v1/states/` | 旧脚本用例与常量 | 一次性转换脚本 `build/convert_cases.py`（转换完成即可删，见 §2.3） |
 | `memory_store_recall` | `MemoryDataset` | `v1/dataset.json` | `evals/tasks/memory/schemas.py` 的数据集部分、task 里的读文件代码 | — |
 | `brain_goal_judge` | `JudgeCase` | `v1/dataset.jsonl`（现 4 条）；S3 出 `v2/` | `evals/tasks/judge/schemas.py::JudgeCase`、task 里的读文件代码 | S3 的标注工具 |
 
@@ -170,20 +170,18 @@ evals/dataset/<名>/
 
 ### 2.3 world_script_execute：用例转成数据
 
-**常规用例**（31 条）本来就是纯数据的 `ScriptCase`，原样 `model_dump` 成 jsonl。
-
-**接管用例**（75 条）带 Python 可调用的 `checks`，转换前先把核对改成**声明式词表**：
+全部 106 条用例存为 `ScriptCase` 的 JSONL。世界真值核对统一使用**声明式词表**：
 
 ```python
-class TakeoverCheck(BaseModel):
+class ScriptCheck(BaseModel):
     kind: Literal["money", "bag", "scene", "left", "battle_start", "in_play",
                   "foe_hurt", "shop_start", "pc", "order", "box", "knows"]
     args: dict[str, str | int | bool | list[str]] = {}
 ```
 
-- 12 个 `kind` 与 `takeover_contract.py` 现有的 12 个核对工厂一一对应（`_money` / `_bag` / `_scene` / `_left` / `_battle_start` / `_in_play` / `_foe_hurt` / `_shop_start` / `_pc` / `_order` / `_box` / `_knows`），参数照搬；`_UNCHANGED` 展开成四条。
-- 判定函数（`kind` → `(before, after, args) -> str`）是**评分逻辑**，留在 `evals/scorers/world_script_execute/takeover_checks.py`；数据集只存声明。
-- `ScriptExpect` 增加 `checks: list[TakeoverCheck] = []`、`status: str | None`、`summary: str = ""`；`takeover_samples.py` 的运行时转换删除，常规与接管走同一条 `load()` → Sample 路径，`judge_takeover` 并入统一 scorer。
+- 12 个 `kind` 与 现有的 12 个核对工厂一一对应（`_money` / `_bag` / `_scene` / `_left` / `_battle_start` / `_in_play` / `_foe_hurt` / `_shop_start` / `_pc` / `_order` / `_box` / `_knows`），参数照搬；`_UNCHANGED` 展开成四条。
+- 判定函数（`kind` → `(before, after, args) -> str`）是**评分逻辑**，留在 `evals/scorers/world_script_execute/checks.py`；数据集只存声明。
+- `ScriptExpect` 增加 `checks: list[ScriptCheck] = []`、`status: str | None`、`summary: str = ""`；运行时转换删除，所有脚本走同一条 `load()` → Sample 路径，`judge_declared_checks` 并入统一 scorer。
 - **等价性验收**：转换前后同一批用例在真模拟器上逐条判定结果相同（106/106 一致）。
 
 **存档**：`cases.jsonl` 里的 `state` 改为相对 `v1/states/`；用到的 `experiment/experiment_states/{knowledge,macros}/*.state` 拷进来（`experiment/` 那份不动）。
@@ -302,7 +300,7 @@ evals/dataset/capture/
 | 测试文件 | 内容 |
 |---|---|
 | `tests/test_evals_tasks.py` | 公开 task 恰为六个新名（S4 后七个）；`@task` 函数名 = 注册名 |
-| `tests/test_evals_datasets.py`（新） | 每个数据集包 `load()` 返回非空类型化样本；版本目录自包含（样本引用的文件都在版本目录下）；`TakeoverCheck` 每个 `kind` 一正一反 |
+| `tests/test_evals_datasets.py`（新） | 每个数据集包 `load()` 返回非空类型化样本；版本目录自包含（样本引用的文件都在版本目录下）；`ScriptCheck` 每个 `kind` 一正一反 |
 | `tests/test_evals_capture.py`（新） | 录制器包装假 chooser / judger：返回值与异常透传不变，落盘的信封可被 `ChooseCase.request` / `JudgeCase.request` 原样解析 |
 | `tests/test_evals_choose.py`（新） | `ActionMatcher` 命中规则；scorer 三列在构造的 `ChooseCase` 上的结果 |
 

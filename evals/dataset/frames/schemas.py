@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.world import TAKEOVER_SCENES as _TAKEOVER
+from pokemon_agent.world import SCRIPT_ONLY_SCENES as _TAKEOVER
 from pokemon_agent.world import TaskScene
 
 Overlay = Literal["none", "dialog", "choice"]
@@ -24,24 +24,24 @@ FIELDS: tuple[str, ...] = (
     "quantity",
 )
 """逐项打分的字段。`scene` 只打分类器（解码直出一列）；`quantity` 只在标注有值的帧上打分；
-接管类界面（`TAKEOVER_SCENES`）只打 `scene` 与 `at_start`（是否在接管脚本的初态）。"""
+接管类界面（`SCRIPT_ONLY_SCENES`）只打 `scene` 与 `at_start`（是否在脚本的初态）。"""
 
 NORMAL_SCENES: tuple[str, ...] = tuple(s.value for s in TaskScene if s not in _TAKEOVER)
-"""常规场合（world 的 `TaskScene` 里接管以外的）：JEV 一键一决策，要测读得对不对。"""
-TAKEOVER_SCENES: tuple[str, ...] = tuple(s.value for s in TaskScene if s in _TAKEOVER)
-"""机械接管的场合（world 的 `TAKEOVER_SCENES`）：只测分类对不对、是否在初态。
-场合与接管脚本、初态定义见 `docs/perceive/spec.md` 第三、五节。"""
+"""开放按键的场合（world 的 `TaskScene` 里接管以外的）：JEV 一键一决策，要测读得对不对。"""
+SCRIPT_ONLY_SCENES: tuple[str, ...] = tuple(s.value for s in TaskScene if s in _TAKEOVER)
+"""机械接管的场合（world 的 `SCRIPT_ONLY_SCENES`）：只测分类对不对、是否在初态。
+场合与脚本、初态定义见 `docs/perceive/spec.md` 第三、五节。"""
 
 
 class ScreenLabel(BaseModel):
     """一帧屏幕上真正写着什么（人工标注）。"""
 
     scene: str = Field(
-        default="", description="界面种类（`NORMAL_SCENES` / `TAKEOVER_SCENES`）；v1 没标为空"
+        default="", description="界面种类（`NORMAL_SCENES` / `SCRIPT_ONLY_SCENES`）；v1 没标为空"
     )
     at_start: bool | None = Field(
         default=None,
-        description="接管场合：是否在接管脚本的初态（见 `TAKEOVER_SCENES`）；常规场合为 None",
+        description="是否在脚本的初态（见 `SCRIPT_ONLY_SCENES`）；开放按键的场合为 None",
     )
     overlay: Overlay
     dialog_text: str = ""
@@ -74,7 +74,7 @@ class FrameTruth(BaseModel):
 
     `labeler`：谁标的（如 `claude_from_ram`）；存在的独立标注直接用于评分。
     各 `*_truth` 与帧上同名字段同形，只比对其中出现的键。
-    `scene_truth` 的 `covered_by_script` 表示接管脚本覆盖本场合，子菜单仍为 True；
+    `scene_truth` 的 `covered_by_script` 表示脚本覆盖本场合，子菜单仍为 True；
     与 `at_start` 分开，不以存在任意可选脚本作为覆盖判据。
     """
 
@@ -137,7 +137,7 @@ __all__ = [
     "FIELDS",
     "FrameTruth",
     "NORMAL_SCENES",
-    "TAKEOVER_SCENES",
+    "SCRIPT_ONLY_SCENES",
     "Overlay",
     "SampleScore",
     "ScreenAnswer",

@@ -15,7 +15,7 @@
 | B | 刚换图、精灵屏幕坐标尚未刷新（=0,0）时全部堆到 (0,0) 格 | terrain.walk_map | 13 | 两者共同错误 | 低（不在四邻，但地形图出现幽灵 NPC/物品） |
 | C | 换图中间帧：地图编号已切到目标图，坐标、图块、碰撞表仍是来源图 | terrain.map_id / where / walk_map；scene | 13 | 两者共同错误 | 中（记忆键 `map:x:y` 被写成错误地点） |
 | D | 室内 tileset 的 `wGrassTile=0xFF`（无草），但图块 0xFF（黑块、数字 `9`）被判成草 `G` | terrain.walk_map | 3 | 两者共同错误 | 低 |
-| E | 宝可梦昵称键盘的 `target` 取成第一行“种名+图标”，而非 `NICKNAME?`；连带接管脚本把昵称上限从 10 算成 7 | takeover.view.target（及脚本行为） | 12 | 两者共同错误 | **是**：8–10 字昵称会被 `naming_enter_name` 误拒 |
+| E | 宝可梦昵称键盘的 `target` 取成第一行“种名+图标”，而非 `NICKNAME?`；连带脚本把昵称上限从 10 算成 7 | takeover.view.target（及脚本行为） | 12 | 两者共同错误 | **是**：8–10 字昵称会被 `naming_enter_name` 误拒 |
 | F | 战斗招式框的空位 `-` 被列为选项，实际光标到不了 | options / option_grid | 16 | 与现行规则一致，与 ROM 行为不符，需裁决 | 中（模型可能选 `-`） |
 | G | 命名键盘第 3 行第 9 格是可输入的空格键，真值只记 8 项 | options / option_grid | 30 | 与现行规则一致，与 ROM 行为不符，需裁决 | 低 |
 | H | 无箭头、滚动到底（含 CANCEL）的完整商品价格框未给选项，与“无箭头完整价格框仍有选项”规则不一致 | options / option_grid / option_details / overlay | 2 | 两者共同错误 | 低 |
@@ -55,11 +55,11 @@ A–E 落在基线之外（terrain、takeover），但 A、E 对动作的影响�
 | 实心箭头位置 = `wMenuCursorLocation` | 169 帧有选项/光标 | 169 一致 |
 | 列表菜单（商店买/卖、背包、战斗背包、PC 取物）可见项与光标 = `wListPointer` 数据 + `wListScrollOffset` + `wCurrentMenuItem` | 38 帧 | 38 一致 |
 | `option_details`：价格 = ROM `ItemPrices`，数量 = 背包/PC RAM，重要道具不显示数量 | 143 个选项附注（含空串） | 143 一致 |
-| `covered_by_script` = 场合 ∈ 八个接管场合；`at_start` 是否为 null | 1045 帧 | 全部一致 |
+| `covered_by_script` = 场合 ∈ 八个仅开放脚本的场合；`at_start` 是否为 null | 1045 帧 | 全部一致 |
 | 业务视图：队伍（0xD16B/0xD2B5）、背包（0xD31D）、金钱（0xD347 BCD）、商品（0xCF7B）、战斗双方（0xD009/0xD014、0xCFDA/0xCFE5）、`trainer`、学招（0xCF92/0xD0E0）、PC 道具（0xD53A）、箱号（0xD5A0） | 241 帧有视图 | 数值全部一致；战斗中在场宝可梦的 HP/PP 在队伍结构与 `wBattleMon` 两处一致；`active` = `wPlayerMonNumber`(0xCC2F) 一致 |
 | terrain `map_id` / `where` / `facing`(0xC109) / `neighbors` 与 walk_map 自洽 | 1032 帧 | 全部一致（内容错误见 A–D） |
 | 地形碰撞：ROM 碰撞表（`wTilesetCollisionPtr` 0xD530，bank 0）、左下子图块、warp(0xD3AE)、sign(0xD4B0)、台阶图块 | 1032 帧 | 不考虑精灵隐藏时与真值逐格一致；精灵层问题见 A–C |
-| `at_start`：战斗主菜单须四项完整且光标在 FIGHT；其它场合按各自主菜单 | 241 帧接管场合 | 全部符合现行规则 |
+| `at_start`：战斗主菜单须四项完整且光标在 FIGHT；其它场合按各自主菜单 | 241 帧仅开放脚本的场合 | 全部符合现行规则 |
 | 子菜单不从背景借 `CANCEL`（c-0427、c-0438、c-0972、p-field_party_sub、p-battle_party_sub、p-pc_deposit_sub） | 6 组 | 正确 |
 | 队伍列表名字在箭头上一行、主动/倒下换人统一为 `battle_switch` | 26 帧 | 正确；倒下换人帧 `FNT` 与等级并存，未丢选项 |
 | 设置页只取实心箭头所在行、图鉴列表保留 `----------` 占位 | c-0942、p-option_screen；c-0423、c-0948–c-0951 | 符合裁决（光标、行列与 RAM 一致） |
@@ -129,7 +129,7 @@ A–E 落在基线之外（terrain、takeover），但 A、E 对动作的影响�
 - **正确值**：本页提示是第 3 行 `NICKNAME?`（图块 (3,1)–(3,9) = `8D 88 82 8A 8D 80 8C 84 E6`），截图确认；
   `wNamingScreenType`(0xD07D) = 2（宝可梦），而玩家/对手命名页为 0/1。
 - **ROM 证据**：命名输入例程 0x66AE 处 `ld a,[$D07D]; cp 2; jr nc …; ld a,[$CEE9]; cp $0A` —— 宝可梦昵称上限 10，人名上限 7。
-- **影响**：接管脚本 `naming_enter_name` 以 `MAX_LENGTH.get(_title(screen))` 求上限，键是 `"NICKNAME?"`，而 `_title` 取到 `"BULBASAUR ·"`，
+- **影响**：脚本 `naming_enter_name` 以 `MAX_LENGTH.get(_title(screen))` 求上限，键是 `"NICKNAME?"`，而 `_title` 取到 `"BULBASAUR ·"`，
   于是昵称上限退回 7，8–10 字母的昵称会被 `invalid_name` 误拒；模型看到的 target 也带一个无意义的 `·`。
 
 ### F. 战斗招式空位 `-` 不可选（与现行规则一致，与 ROM 行为不符，需裁决）
@@ -152,7 +152,7 @@ A–E 落在基线之外（terrain、takeover），但 A、E 对动作的影响�
   （图块 (9,18)）；输入例程 0x66AE 把光标右侧图块原样追加进名字（只对 0xE4/0xE5 做浊点特殊处理），没有过滤 0x7F。
   因此该格可停光标、按 A 会输入空格。
 - **建议值**：第 3 行为 9 项（第 9 项为空格键，可记作 `SPACE` 之类的显式名）；`lower case` 按用户裁决仍不计入。
-- **影响**：低。接管脚本按 RAM 光标坐标导航且只输入大写字母，不依赖该格。
+- **影响**：低。脚本按 RAM 光标坐标导航且只输入大写字母，不依赖该格。
 
 ### H. 无箭头的完整商品框在滚动到底时没有选项（两者共同错误）
 
@@ -163,7 +163,7 @@ A–E 落在基线之外（terrain、takeover），但 A、E 对动作的影响�
   `option_details=['¥100','¥200','¥250','']`，四行单列，`cursor=''`、`cursor_cell=null`，`overlay=choice`。
 - **证据**：`wListPointer`=0xCF7B（商品表 POKé BALL/ANTIDOTE/PARLYZ HEAL/BURN HEAL），`wListScrollOffset`=1，框完整（(2,4)┌ 至 (12,4)└，无数量框）。
   同类的 c-0492、c-0497（未滚动、无 CANCEL）真值给出了 4 个选项。差异来自“每一项都必须有价格”的识别条件把无价格的 `CANCEL` 当成残片。
-- **影响**：低（接管场合，NONE 与 CHOICE 掩码相同），但两组同类帧口径不一。
+- **影响**：低（仅开放脚本的场合，NONE 与 CHOICE 掩码相同），但两组同类帧口径不一。
 
 ### I. 0xFF 黑块被渲成 `9`，c-0467 场合错判（两者共同错误）
 
@@ -211,7 +211,7 @@ A–E 落在基线之外（terrain、takeover），但 A、E 对动作的影响�
 
 ### 附：契约层面的小问题（不计入错误）
 
-- 队伍列表还没画出实心箭头时（c-0421、c-0424、c-0945、c-0947，其中两帧有空心 `▷`），因底部只有对话框、没有别的边框，按契约成为 `strict_dialog=true`、`overlay=dialog`（只给 `a`）。语义上这是菜单而非对话；因属接管场合，对动作无实际影响。
+- 队伍列表还没画出实心箭头时（c-0421、c-0424、c-0945、c-0947，其中两帧有空心 `▷`），因底部只有对话框、没有别的边框，按契约成为 `strict_dialog=true`、`overlay=dialog`（只给 `a`）。语义上这是菜单而非对话；因属仅开放脚本的场合，对动作无实际影响。
 - 数量框残留而文字仍在打印（c-0443、c-0444、c-0581、p-pc_withdrew 等）时 `overlay=choice`，符合契约。
 
 ## 五、实际检查范围

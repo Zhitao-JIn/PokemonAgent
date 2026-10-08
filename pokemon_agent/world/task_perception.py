@@ -5,7 +5,7 @@ from .perceive_frame import _battle_fields
 from .readout import read_readout
 from .scene import classify_scene
 from .screen_text import layout_field, overlay_of
-from .scripts.takeover import takeover_view
+from .scripts.scenes import takeover_view
 from .visual_perception import _png_data_uri
 
 

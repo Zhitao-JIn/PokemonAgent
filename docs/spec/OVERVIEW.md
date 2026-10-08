@@ -75,8 +75,8 @@
 | 模块 | `brain/` `world/` `memory/` `trace/` | 各自一个 Port，可整体拷走复用 |
 | 纯库 | `schemas/` `config.py` | 跨层契约与策略常量，任何层可直接 import |
 | 装配 | `build.py` | 唯一 new 具体实现的地方；按层各造一个 BrainTool |
-| world 场景支持 | `pokemon_agent/world/scene.py` `pokemon_agent/world/scripts/` `pokemon_agent/world/items.py` `pokemon_agent/world/moves.py` | task 场合分类、脚本（含接管脚本）与游戏道具/招式资料 |
-| 测评 | `evals/tasks/macros/` `evals/tasks/takeover_views/` | 接管脚本行为与接管视图的离线测评 |
+| world 场景支持 | `pokemon_agent/world/scene.py` `pokemon_agent/world/scripts/` `pokemon_agent/world/items.py` `pokemon_agent/world/moves.py` | task 场合分类、脚本（含脚本）与游戏道具/招式资料 |
+| 测评 | `evals/tasks/macros/` `evals/tasks/takeover_views/` | 脚本行为与接管视图的离线测评 |
 
 ## 四、流程图
 

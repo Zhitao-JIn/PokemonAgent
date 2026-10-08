@@ -1,4 +1,4 @@
-"""野外背包（`bag`）的接管脚本：`use` / `toss` / `close`，外加这个场合的视图。
+"""野外背包（`bag`）的脚本：`use` / `toss` / `close`，外加这个场合的视图。
 
 初态：背包列表画着、实心 `▶` 在列表里（`scene.at_start`）。
 选中道具后弹 `USE / TOSS` 子菜单；用药要在队伍列表里选对象，丢要调数量、再答 YES。
@@ -68,7 +68,7 @@ def _check_use(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReason
     if item in REPELS:
         return None
     if item not in TARGET_ITEMS:
-        return ScriptReason.CANNOT_USE, f"{item_name(item)} 的用法接管脚本里还没有"
+        return ScriptReason.CANNOT_USE, f"{item_name(item)} 的用法脚本里还没有"
     if not who:
         return ScriptReason.TARGET_REQUIRED, f"{item_name(item)} 要指定用在哪只身上（pokemon）"
     mons = party(mem)
@@ -181,7 +181,7 @@ _WHO = ScriptParam(
 )
 _QTY = ScriptParam(name="quantity", type="int", description="数量，不超过持有数")
 
-BAG_TAKEOVERS: dict[str, ScriptDefinition] = {
+BAG_SCRIPTS: dict[str, ScriptDefinition] = {
     "use": ScriptDefinition(
         policy=menu_policy(),
         spec=ActionEntry(
@@ -212,4 +212,4 @@ BAG_TAKEOVERS: dict[str, ScriptDefinition] = {
     ),
 }
 
-__all__ = ["BAG_TAKEOVERS", "bag_view"]
+__all__ = ["BAG_SCRIPTS", "bag_view"]

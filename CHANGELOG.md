@@ -1,3 +1,10 @@
+## 2026-10-08（429）—— world 脚本统一命名、用例与评分路径
+
+**改了什么**：脚本实现目录从 scripts/takeover 改为 scripts/scenes，注册表、声明式核对类型和决策模板统一使用脚本命名；106 条用例统一采用脚本名:用例名的 ID，删除来源类别标签与按类别数量断言；评分不再按 status 分派两套判定，全部用例统一核报告和声明的世界真值；同步当前代码、测试与文档。
+**为什么这么改**：脚本都是执行完整游戏操作的同一种能力，按历史来源分类会持续误导接口、覆盖统计和文档阅读；每项判据都应由用例声明决定。
+**取舍**：保留按游戏场合分文件及场合动作限制，106 条存档、准备步骤、参数与全部期望不变；用例 ID 改名后与旧日志对照需按脚本名和用例名映射。历史 CHANGELOG 保留原记录；tests 按仓库策略只留本地。
+**影响面**：world 脚本目录及消费方、脚本测评和文档。用户指定三份 pytest 50 passed，相关脚本、模板、MCP、评分与解码回归 165 passed；全仓 Ruff check 与 format 检查通过。agent_short_goal_run 改名后的 task、transcript 和 dataset 检查通过，未调用模型。
+
 ## 2026-10-08（427）—— 删除 evals 命令行入口，测评只用 Inspect 原生命令
 
 **改了什么**：删除 `evals/cli.py` 与 `evals/__main__.py`（原 `python -m evals list / run / freeze-frames / frames build / agent_goal_run run-one`）。测评直接用 `inspect eval evals/tasks/<task>/task.py`；agent_goal_run 的 solver 子进程改调 `python -m evals.solvers.agent_goal_run.cli run-one`；帧数据构建改调 `python -m evals.dataset.frames.build.cli build`，接管/地形冻结改调 `build.freeze` / `build.terrain` 两个模块自带的入口；`docs/spec/evals/SPEC.md` 的命令同步。

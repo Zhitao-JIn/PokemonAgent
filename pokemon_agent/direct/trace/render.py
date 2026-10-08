@@ -449,7 +449,7 @@ def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
       分开"没读过"和"读到是空"；
     - `place`：主角格的结构化坐标，`None` 时省略这个键；
     - `scene`：task 层的场合（`TaskObservation.scene`），episode 层的帧省略这个键；
-    - `takeover`：接管场合的视图（**直接放对象**），没有就省略；
+    - `takeover`：仅开放脚本的场合的视图（**直接放对象**），没有就省略；
     - `frame`：这一帧的原始画面（base64 PNG），没有就省略；
     - `ram`：这一帧的内存读数（`RamReadout`，**直接放对象**），没有就省略。
 

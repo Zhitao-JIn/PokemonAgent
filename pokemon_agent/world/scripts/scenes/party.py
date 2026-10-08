@@ -1,4 +1,4 @@
-"""野外队伍列表（`party`）的接管脚本：`switch` / `field_move` / `stats` / `close`，
+"""野外队伍列表（`party`）的脚本：`switch` / `field_move` / `stats` / `close`，
 外加这个场合的视图。
 
 初态：队伍列表画着、实心 `▶` 在某一只上（`scene.at_start`）。选中一只弹子菜单：
@@ -25,7 +25,7 @@ from .policy import menu_policy
 FIELD_MOVES = ("CUT", "FLY", "SURF", "STRENGTH", "FLASH", "DIG", "TELEPORT", "SOFTBOILED")
 """能在队伍子菜单里直接用的招。"""
 UNSUPPORTED_FIELD_MOVES = ("FLY",)
-"""用了还要再选目的地的招，接管脚本里还没有。"""
+"""用了还要再选目的地的招，脚本里还没有。"""
 
 
 def party_view(mem: Memory) -> PartyView:
@@ -90,7 +90,7 @@ def _check_field(run: ScriptRun, args: dict[str, str | int]) -> tuple[ScriptReas
     if move not in FIELD_MOVES:
         return ScriptReason.CANNOT_USE, f"{args['move']} 不是能在野外用的招"
     if move in UNSUPPORTED_FIELD_MOVES:
-        return ScriptReason.CANNOT_USE, f"{move} 用了还要选目的地，接管脚本里还没有"
+        return ScriptReason.CANNOT_USE, f"{move} 用了还要选目的地，脚本里还没有"
     if move not in [fold(m.name) for m in mons[index].moves]:
         return ScriptReason.UNKNOWN_MOVE, f"{mons[index].name} 不会 {move}"
     return None
@@ -165,7 +165,7 @@ def _execute_close(run: ScriptRun, args: dict[str, str | int]) -> str:
 
 _MON = ScriptParam(name="pokemon", type="str", description="宝可梦昵称，照视图「队伍」里的写")
 
-PARTY_TAKEOVERS: dict[str, ScriptDefinition] = {
+PARTY_SCRIPTS: dict[str, ScriptDefinition] = {
     "switch": ScriptDefinition(
         policy=menu_policy(),
         spec=ActionEntry(
@@ -215,4 +215,4 @@ PARTY_TAKEOVERS: dict[str, ScriptDefinition] = {
     ),
 }
 
-__all__ = ["PARTY_TAKEOVERS", "party_view"]
+__all__ = ["PARTY_SCRIPTS", "party_view"]

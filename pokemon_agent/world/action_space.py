@@ -13,7 +13,7 @@ from __future__ import annotations
 from .interface import OVERLAY_ACTIONS
 from .interface.domain import ActionEntry, ActionSpace, Facts, TaskObservation
 from .scripts.catalog import script_entries
-from .scripts.takeover import takeover_entries
+from .scripts.scenes import scene_script_entries
 
 
 def compute_action_space(obs: TaskObservation, all_actions: list[str]) -> ActionSpace:
@@ -23,13 +23,13 @@ def compute_action_space(obs: TaskObservation, all_actions: list[str]) -> Action
     - `mask` 覆盖**整个命名空间**（全部键 + 本场合可用的脚本名），不可用的键显式
       `False`——让调用方（模型）看得见"有这个动作但此刻不能用"，而不是让它去猜；
     - 至少一个动作可用（走投无路也必须给：空动作空间是这一层的 bug，不能推给大脑）；
-    - 接管场合（有接管脚本的场合）只给脚本、不给键（那里不直接按键）；
+    - 仅开放脚本的场合（有脚本的场合）只给脚本、不给键（那里不直接按键）；
     - 脚本条目按场合给（`scripts/catalog.SCENE_SCRIPTS` 唯一规则）。
     """
     scene = str(obs.scene)
     scripts = script_entries(scene)
 
-    covered_by_script = bool(takeover_entries(obs.scene))
+    covered_by_script = bool(scene_script_entries(obs.scene))
     assert obs.covered_by_script == covered_by_script, "takeover vocabulary and registry disagree"
     if covered_by_script:
         names: list[str] = []

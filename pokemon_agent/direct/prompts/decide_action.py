@@ -3,8 +3,8 @@
 
 - **常量** `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT`：给 `game_tools.py` 构造
   `ActionSpace` 用（按当前 overlay 选按键说明、挂地图/连按提示）。
-- **函数** `build_prompt(req: FromHarnessToBrainToolChooseOnceReq)`（接管场合换用
-  同目录的 `decide_takeover.md`：视图 + 脚本签名 + 上一脚本结果）/
+- **函数** `build_prompt(req: FromHarnessToBrainToolChooseOnceReq)`（仅开放脚本的场合换用
+  同目录的 `decide_script.md`：视图 + 脚本签名 + 上一脚本结果）/
   `retry_prompt(req: RetryPromptReq)`：给调用方（`BrainTool`）用，
   各自对应一次决策请求的"首次组装"和"重试追加"，**都只收一个 req 参数**
   ——`build_prompt` 收 harness 信封（素材在那里才拿得到），`retry_prompt`
@@ -125,7 +125,7 @@ REPEAT_HINT = load("repeat_hint").text
 # ---- decide_action.md 本体：加载 + 拼装 + 渲染（给 Brain 用）----
 
 _TEMPLATE = load("decide_action")
-_TAKEOVER_TEMPLATE = load("decide_takeover")
+_SCRIPT_TEMPLATE = load("decide_script")
 
 
 def _render_goals(goals: list[Goal]) -> str:
@@ -182,7 +182,7 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     assert not obs.done, "build_prompt() called on a finished episode"
     assert goals, "build_prompt() got an empty goal stack"
     if not space.names:
-        return _build_takeover_prompt(req)
+        return _build_script_prompt(req)
     facts = render_task_frame(obs)
     # `req.memories` 是本局全量、一键一条；逐条 `render()` 会把相邻两帧各贴一遍
     # （上一条的「之后变成」就是下一条的「当时看到」）。`render_sequence()` 逐条渲、
@@ -226,8 +226,8 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     )
 
 
-def _build_takeover_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
-    """接管场合的决策 prompt（`decide_takeover.md`）：视图、上一脚本结果、脚本签名与说明。
+def _build_script_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
+    """仅开放脚本的场合的决策 prompt（`decide_script.md`）：视图、上一脚本结果、脚本签名与说明。
 
     签名与说明原样取自脚本条目（world 定义），模板只写怎么选。
     """
@@ -244,7 +244,7 @@ def _build_takeover_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     if params:
         scripts += f"\n\n参数说明：\n{params}"
     return append_human_note(
-        _TAKEOVER_TEMPLATE.render(
+        _SCRIPT_TEMPLATE.render(
             scene=obs.scene.value,
             goals=_render_goals(req.goals),
             knowledge=req.knowledge or "（没有检索到相关知识）",

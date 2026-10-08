@@ -1,4 +1,4 @@
-"""PC（`pc`）的接管脚本：道具存取与丢弃、宝可梦存取、换箱、关机，外加这个场合的视图。
+"""PC（`pc`）的脚本：道具存取与丢弃、宝可梦存取、换箱、关机，外加这个场合的视图。
 
 初态：选哪台 PC 的主菜单
 （`BILL's PC` 或 `SOMEONE's PC` / `<主角>'s PC` / `PROF.OAK's PC` / `LOG OFF`）。
@@ -338,7 +338,7 @@ def _def(
     )
 
 
-PC_TAKEOVERS: dict[str, ScriptDefinition] = {
+PC_SCRIPTS: dict[str, ScriptDefinition] = {
     "withdraw_item": _def(
         "withdraw_item",
         [_ITEM, _QTY],
@@ -384,4 +384,4 @@ PC_TAKEOVERS: dict[str, ScriptDefinition] = {
     "log_off": _def("log_off", [], "关上 PC", _check_none, _execute_log_off, rewind=False),
 }
 
-__all__ = ["PC_TAKEOVERS", "pc_view"]
+__all__ = ["PC_SCRIPTS", "pc_view"]

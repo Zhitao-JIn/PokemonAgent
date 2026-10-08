@@ -9,7 +9,7 @@
 
 ## 一、已完成的核验
 
-- 修复前 P0：105/106，仅 `takeover:switch_from_party_list` 失败。
+- 修复前 P0：105/106，仅 `switch_from_party_list` 失败。
 - 修复后 battle_switch 四条各两轮通过；v1 最终全量两轮 212/212，sample error 0，无 flaky。
 - `pass` 的 script 分组保留，新增独立 `kind_accuracy` 指标；实测两组均为 1.0。
 - 源码目录实际有 **39 个脚本**，其中 38 个出现在 v1。C1 缺成功用例的有三个：

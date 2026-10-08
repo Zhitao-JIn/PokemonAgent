@@ -113,12 +113,12 @@ task_done = verify_act_memories → summarize_task → close_task
 - `sense` 每圈都取帧（步号 = `start_step + step`）；中间三个单元只在上一圈按过键时写
   （停摆、ActMemory、物件事件）；`close_step` 把新帧转正（上一圈按过键才记 `advance_step`）。
 - 帧槽只由 task 的 `sense` 写、只由 `store_step_episode_memory` 读（ActMemory 的前后两张图）。
-- **脚本动作**（常规脚本与接管脚本同一条路）：`act` 经 `GameTools.execute` 的脚本通道执行到底，记 `act_call`
+- **脚本动作**（脚本统一执行）：`act` 经 `GameTools.execute` 的脚本通道执行到底，记 `act_call`
   script 形，终态报告写进 `last_report`、一行结果（调用 → 结局码：摘要或原因）写进 `last_result`；
   下一圈 ActMemory 的 `result` 写结果那一句，停摆按结果比（没执行到位的脚本不论参数都按"脚本名 + 结局码"算同一个
   无效动作，执行到位的带结果那一句，战斗里同一招连出、HP 在变不算停摆），下一次决策的 prompt 在观测之后带上 `last_result`。
-- **接管场合**（`shop_items` / `naming` / `battle_menu` / `faint_switch` / `bag` / `party` / `pc` / `learn_move`）：动作空间只给本场合的
-  接管脚本签名、不给键（决策 prompt 换用 `decide_takeover.md`），接管脚本 world 执行到底（回初态 → 校验 → 逐步核对 → 收尾）。
+- **仅开放脚本的场合**（`shop_items` / `naming` / `battle_menu` / `faint_switch` / `bag` / `party` / `pc` / `learn_move`）：动作空间只给本场合的
+  脚本签名、不给键（决策 prompt 换用 `decide_script.md`），脚本 world 执行到底（回初态 → 校验 → 逐步核对 → 收尾）。
 
 ### 记忆阶梯
 
@@ -191,9 +191,9 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 
 | kind | type | producer | `content` |
 |---|---|---|---|
-| `sense_frame` | view | episode 的 `sense`（视觉档）/ `task.sense`（`perceive_task`，带场合） | `status`、`facts`、`done`、`perceived`、可选 `place` / `scene`（task 层的场合）/ `takeover`（接管场合的视图对象）/ `frame` / `ram`（`RamReadout`：菜单变量、金钱、背包、队伍、战斗、文字来源、每帧的解码文字 `decoded`；只进账、不进 agent 输入，测评读它）；`facts.screen` 是整屏文字原样（两层都给 agent） |
+| `sense_frame` | view | episode 的 `sense`（视觉档）/ `task.sense`（`perceive_task`，带场合） | `status`、`facts`、`done`、`perceived`、可选 `place` / `scene`（task 层的场合）/ `takeover`（仅开放脚本的场合的视图对象）/ `frame` / `ram`（`RamReadout`：菜单变量、金钱、背包、队伍、战斗、文字来源、每帧的解码文字 `decoded`；只进账、不进 agent 输入，测评读它）；`facts.screen` 是整屏文字原样（两层都给 agent） |
 | `get_action_space` | act | `get_action_space` | `names` |
-| `act_call` | act | `act`（task） | 两形（P5）：key 形 = `sequence`（单段）；script 形 = `script`、`args`（对象）、`ok`（小写字符串）、`code`，可选 `data` / `events[]`（脚本终态报告；接管脚本的 `data` 带 `scene` / `status` / `reason` / `summary` / `steps`） |
+| `act_call` | act | `act`（task） | 两形（P5）：key 形 = `sequence`（单段）；script 形 = `script`、`args`（对象）、`ok`（小写字符串）、`code`，可选 `data` / `events[]`（脚本终态报告；脚本的 `data` 带 `scene` / `status` / `reason` / `summary` / `steps`） |
 | `check_stall` | act | `detect_stall` | `stall_key`、`stall_count` |
 
 **记忆读写（`memory_io`）**：读账统一 `query` + `refs`；写账正文就是记录本体（去坐标与来源章）

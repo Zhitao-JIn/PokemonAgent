@@ -11,7 +11,7 @@ BAG_PREFIX = "bag:"
 EventOutcome = Literal["dialog", "warp", "still"]
 
 
-class TakeoverCheck(BaseModel):
+class ScriptCheck(BaseModel):
     """一条声明式核对，kind 与原核对工厂一一对应，args 原样冻结。"""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -55,7 +55,7 @@ class ScriptExpect(BaseModel):
     dialog: list[str] = Field(default_factory=list)
     after: dict[str, str | int] = Field(default_factory=dict)
     delta: dict[str, int] = Field(default_factory=dict)
-    checks: list[TakeoverCheck] = Field(default_factory=list)
+    checks: list[ScriptCheck] = Field(default_factory=list)
     status: str | None = None
     summary: str = ""
 

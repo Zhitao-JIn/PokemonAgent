@@ -1,4 +1,4 @@
-"""起名键盘（`naming`）的接管脚本：`enter_name`，外加这个场合的视图。
+"""起名键盘（`naming`）的脚本：`enter_name`，外加这个场合的视图。
 
 地址见 `docs/perceive/p0-findings.md` 第三节（开机新游戏实测）：
 已输入 `wStringBuffer` 0xCF4B（0x50 收尾）、已输入长度 `wNamingScreenNameLength` 0xCEE9、
@@ -113,7 +113,7 @@ def _cursor(mem: Memory) -> tuple[int, int]:
     return (row - FIRST_KEY_ROW) // 2, (col - 1) // 2
 
 
-NAMING_TAKEOVERS: dict[str, ScriptDefinition] = {
+NAMING_SCRIPTS: dict[str, ScriptDefinition] = {
     "enter_name": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
@@ -135,4 +135,4 @@ NAMING_TAKEOVERS: dict[str, ScriptDefinition] = {
 }
 
 
-__all__ = ["NAMING_TAKEOVERS", "naming_view"]
+__all__ = ["NAMING_SCRIPTS", "naming_view"]

@@ -72,7 +72,7 @@
 - 受影响：c-0087、c-0091、c-0268、c-0273、c-0391、c-0472、c-0482、c-0487、c-0527、c-0534、c-0539、c-0541、c-0703。
 - 自查：生成表后核对 1032 个地图已载入的帧，除这 13 帧外表值与 0xD367 全部相等。
 
-### E：昵称键盘（`pokemon_agent/world/scripts/takeover/naming.py`）
+### E：昵称键盘（`pokemon_agent/world/scripts/scenes/naming.py`）
 
 - `target` 改由 `wNamingScreenType`(0xD07D) 决定：0 → `YOUR NAME?`，1 → `RIVAL's NAME?`，≥2 → `NICKNAME?`（屏幕第 3 行 (3,1)–(3,9) 的字，可用来核对）。
 - 长度上限同样按 0xD07D：≥2 为 10，否则 7（ROM 0x66AE 处 `cp 2 / cp $0A` 证实）。删掉按标题文字查表的 `MAX_LENGTH`。

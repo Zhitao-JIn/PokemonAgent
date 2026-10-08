@@ -273,7 +273,7 @@ G1 的报告可以先在归因结果上做第一轮系统改进；但 L3（test�
 
 | 项目 | 结论 | Inspect 墙钟 | 输入 / 输出 token | 模型调用 |
 |---|---|---|---|---|
-| world 全量 106 条 | 105/106；仅 `takeover:switch_from_party_list` 失败，`battle_switch` 3/4 | 22 秒 | 0 / 0 | 0 |
+| world 全量 106 条 | 105/106；仅 `switch_from_party_list` 失败，`battle_switch` 3/4 | 22 秒 | 0 / 0 | 0 |
 | `knowledge_door_transition` | `invalid`：旧存档状态结构不同；两评分列均 NOANSWER，`judged_count=0` | 1 秒 | 0 / 0 | 0 |
 | `knowledge_shop_open_buy_menu` | 同上，尚不能判断旧停摆是否仍在 | 1 秒 | 0 / 0 | 0 |
 

@@ -109,7 +109,7 @@
 ## 九、已定（09-26）
 
 1. **宏动作记一条账**（购买、卖出、PC 存取丢、起名同理）：一条带参数的动作账，挂展开的按键序列与逐步核对结果。
-2. **一切多级选择都机械接管**（推翻第七节第三条，数量框都在宏里）。接管场合与宏：
+2. **一切多级选择都机械接管**（推翻第七节第三条，数量框都在宏里）。仅开放脚本的场合与宏：
    - `naming` → `enter_name(name)`，只许大写字母，输完按 START 提交；
    - `shop_items`（MONEY 框在屏的一切帧）→ `buy(item, quantity)` / `sell(item, quantity)` / `quit()`；
    - `pc`（一打开起）→ `withdraw_item` / `deposit_item` / `toss_item(item, quantity)`（重要道具不弹数量框）、
@@ -118,7 +118,7 @@
    - `battle_menu`（战斗里的选单）→ `fight(move)` / `switch(pokemon)` / `use_item(item[, pokemon])` / `run()`；
    - `faint_switch`（"Bring out which POKéMON?"）→ `send_out(pokemon)`；
    - `party`（野外队伍列表）→ `switch(a, b)` / `field_move(pokemon, move[, destination])` / `stats(pokemon)`
-     （`stats` 停在能力页，交回常规场合 `pokemon_info`）；
+     （`stats` 停在能力页，交回开放按键的场合 `pokemon_info`）；
    - `learn_move` → `forget(move)` / `skip()`（提示文案从 ROM 核过，屏上未见过）。
    初态时宏要的参数都在内存里（实测见 `p0-findings.md` 第六节）。以后遇到电梯楼层、奖品兑换、售货机、NPC 交换，按同一形状加。
 3. **按场合分，不按控件分**（人在哪、在做什么决定能召回哪些知识）：
@@ -147,6 +147,6 @@
    - 状态摘要：钱、背包、PC 的前后变化，一行；
    - 逐步明细（**每次都记**，不只失败时）：每步按键、等待帧数、期望变化、实际读到的、核对结果、停在哪一步。
 9. **宏是原子的，跑完再判**：宏执行中途 judge 不打断；宏结束（成功 / 被拒 / 中途放弃 / 离开场合）后，judge 才看结果决定是否交回 episode。宏内部失败自己按 B 回初态。
-10. **战斗文字由执行器自动推进**：`battle_menu` 的宏出招 / 换人 / 用道具 / 逃跑后，执行器自动按 A 推进战斗文字，直到下一个接管场合的初态
+10. **战斗文字由执行器自动推进**：`battle_menu` 的宏出招 / 换人 / 用道具 / 逃跑后，执行器自动按 A 推进战斗文字，直到下一个仅开放脚本的场合的初态
     （行动菜单、倒下换人、学新招、起名）或战斗结束；JEV 只在选单上决策。自动推进的每一步记进这次宏调用的逐步明细。
 

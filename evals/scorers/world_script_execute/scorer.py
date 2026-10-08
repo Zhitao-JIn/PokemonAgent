@@ -32,8 +32,8 @@ from evals.solvers.world_script_execute import (
 from pokemon_agent.world import RamReadout, TaskObservation
 from pokemon_agent.world.items import item_name
 
+from .checks import judge_declared_checks
 from .metrics import kind_accuracy
-from .takeover_checks import judge_takeover
 from .verdict import ScriptVerdict
 
 
@@ -63,10 +63,9 @@ def probe(observation: TaskObservation, ram: RamReadout, key: str) -> str | int:
 def judge_case(case: ScriptCase, run: ScriptRun) -> ScriptVerdict:
     """判一条用例：自报面看报告，真值面看前后两帧。脚本崩溃时自报面直接判负。"""
     expect = case.expect
-    if expect.status is not None:
-        return judge_takeover(expect, run)
     code = [f"脚本抛异常：{run.crash}"] if run.report is None else _judge_report(expect, run.report)
-    return ScriptVerdict(code_problems=code, truth_problems=_judge_truth(expect, run))
+    truth = _judge_truth(expect, run) + judge_declared_checks(expect, run)
+    return ScriptVerdict(code_problems=code, truth_problems=truth)
 
 
 def _judge_report(expect: ScriptExpect, report: ScriptReport) -> list[str]:
@@ -76,6 +75,10 @@ def _judge_report(expect: ScriptExpect, report: ScriptReport) -> list[str]:
         problems.append(f"ok={report.ok}，期望 {expect.ok}")
     if report.code != expect.code:
         problems.append(f"code={report.code}，期望 {expect.code}")
+    if expect.status is not None and report.data.get("status") != expect.status:
+        problems.append(f"status={report.data.get('status')!r}，期望 {expect.status!r}")
+    if expect.summary and expect.summary not in str(report.data.get("summary", "")):
+        problems.append(f"摘要缺少 {expect.summary!r}")
     for key, want in expect.data.items():
         got = report.data.get(key)
         if got != want:

@@ -117,7 +117,7 @@ class TraceKind(StrEnum):
 
     0914 改名史：`act` → `press_key`（补动词）；P5 再改 `act_call`——脚本动作
     也是"一次 act 调用"，键只是它的 key 形，`press_key` 这个名字盖不住 script 形。
-    接管场合的脚本同样走 script 形（`data` 里带场合、结局、摘要与逐步明细）。
+    仅开放脚本的场合的脚本同样走 script 形（`data` 里带场合、结局、摘要与逐步明细）。
     """
     GET_ACTION_SPACE = "get_action_space"
     """这一步允许的动作名（掩码结果）。0914 改名：此前叫 `action_space`，缺动词。"""

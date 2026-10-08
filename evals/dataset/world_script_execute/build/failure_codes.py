@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pokemon_agent.world.scripts.takeover import TAKEOVER_SCRIPTS
+from pokemon_agent.world.scripts.scenes import SCRIPT_DEFINITIONS
 
 FIELD_INTERRUPTS = ("battle_started", "choice_presented", "map_changed")
 WALK_FAILURES = (*FIELD_INTERRUPTS, "blocked", "not_converging", "budget_exhausted")
@@ -83,7 +83,7 @@ FAILURE_CODES: dict[str, tuple[str, ...]] = {
     "naming_enter_name": ("invalid_name",),
 }
 
-for _name, _definition in TAKEOVER_SCRIPTS.items():
+for _name, _definition in SCRIPT_DEFINITIONS.items():
     _shared = ("unknown_script", "bad_args", "unexpected_screen", "step_timeout")
     if _definition.policy.before is not None:
         _shared += ("rewind_limit", "left_scene")

@@ -57,7 +57,7 @@ __all__ = [
     "ScreenState",
     "ScreenText",
     "ScriptParam",
-    "TAKEOVER_SCENES",
+    "SCRIPT_ONLY_SCENES",
     "TERRAIN_MEANING",
     "TaskObservation",
     "TaskPerceived",
@@ -131,6 +131,6 @@ from .takeover_view import (
 )
 from .task_observation import TaskObservation
 from .task_perceived import TaskPerceived
-from .task_scene import TAKEOVER_SCENES, TaskScene
+from .task_scene import SCRIPT_ONLY_SCENES, TaskScene
 from .terrain_map import TerrainMap
 from .vision_describe import VisionDescribeReq, VisionDescribeResp

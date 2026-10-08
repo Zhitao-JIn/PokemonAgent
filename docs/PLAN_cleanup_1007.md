@@ -63,18 +63,18 @@
 - 推荐：整个 `experiment/real_check/` 删除；`check_web_reviewer` 若要留，改写成 `tests/` 下的集成测试（属于"新写测试"，要先问）。
 - 删之前核：`pokemon_agent/config.py`、`direct/trace/render.py`、`world/ram.py` 等文件 docstring 里提到 `real_check` 的地方一并改掉；`experiment/real_check/common.py` 的 `TRACE_BACKEND` 读法（346）随目录一起消失，CHANGELOG 注明。
 
-## 3. 阶段三：MCP 面注册接管脚本 【需开发者拍板：做不做、怎么注册】
+## 3. 阶段三：MCP 面注册脚本 【需开发者拍板：做不做、怎么注册】
 
-现状：`mcp_servers/world_server.py` 22 个 tool，只注册了 14 条常规脚本；接管脚本 25 条（`shop_buy` / `shop_sell`
+现状：`mcp_servers/world_server.py` 22 个 tool，只注册了 14 条脚本；脚本 25 条（`shop_buy` / `shop_sell`
 是只经 `buy_item` / `sell_item` 组合调用的内部脚本，对外 23 条）。`mcpclient/world_tool.py::execute` 遇到
-`TAKEOVER_SCRIPTS` 里的名字就地抛 `McpToolError`——MCP 模式下在商店 / 战斗 / 背包 / 队伍 / PC / 学招 / 起名场合会卡死。
+`SCRIPT_DEFINITIONS` 里的名字就地抛 `McpToolError`——MCP 模式下在商店 / 战斗 / 背包 / 队伍 / PC / 学招 / 起名场合会卡死。
 
 选项（问开发者）：
-- A（推荐，符合 MCP SPEC "一脚本一 API"）：23 条接管脚本各写一个显式 `@mcp.tool()` 壳（签名照 `ActionEntry.params`，内部走现有 `_run_script`）。
+- A（推荐，符合 MCP SPEC "一脚本一 API"）：23 条脚本各写一个显式 `@mcp.tool()` 壳（签名照 `ActionEntry.params`，内部走现有 `_run_script`）。
 - B：从 `SCRIPT_SPECS` 动态生成 tool（少写代码，但 FastMCP 靠函数签名出 schema，动态构造可读性差）。
 
 做的话：删 `world_tool.py` 的拦截与 docstring 里的"已知缺口"；`tests/test_mcp_world_server.py::test_registry_lists_the_atomic_layer` 的精确名单、`test_mcp_world_tool.py::test_takeover_scripts_and_evolve_are_explicitly_unsupported` 同步改（evolve 那半保留）；`docs/spec/mcp/SPEC.md` 第七节、`docs/spec/tools/SPEC.md` 的 `execute` 行同步。
-**验收**：用现有 MCP 测试替身跑通一条接管脚本（如 `shop_quit`）经 `WorldMcpTool.execute` 返回 `report`。
+**验收**：用现有 MCP 测试替身跑通一条脚本（如 `shop_quit`）经 `WorldMcpTool.execute` 返回 `report`。
 
 ## 4. 阶段四：主链路 trace 后端缺省 【需开发者拍板】
 
@@ -86,9 +86,9 @@
 
 ## 5. 阶段五：决策 prompt 的覆盖 【新测试要先问】
 
-- `tests/test_decide_action_prompt.py` 只测了常规场合；接管场合走 `direct/prompts/decide_action.py::_build_takeover_prompt` + `calls/decide_action/decide_takeover.md`，没有测试。问开发者要不要补一条"接管场合 prompt 只列本场合脚本、输出格式是 `args` 对象"的用法示范。
+- `tests/test_decide_action_prompt.py` 只测了开放按键的场合；仅开放脚本的场合走 `direct/prompts/decide_action.py::_build_script_prompt` + `calls/decide_action/decide_script.md`，没有测试。问开发者要不要补一条"仅开放脚本的场合 prompt 只列本场合脚本、输出格式是 `args` 对象"的用法示范。
 - 解析器同时接受 `{"action": ..., "args": {...}}` 与参数平铺（347），平铺写法没有专门测试，同上一起问。
-- 真模型验证 `decide_takeover.md`：**不要做**，留给开发者本机。
+- 真模型验证 `decide_script.md`：**不要做**，留给开发者本机。
 
 ## 6. 阶段六：测评数据缺口（多数要人工真值，AI 只做准备）
 

@@ -1,4 +1,4 @@
-"""战斗选单（`battle_menu`）与统一换人（`battle_switch`）的接管脚本及视图。
+"""战斗选单（`battle_menu`）与统一换人（`battle_switch`）的脚本及视图。
 
 初态：行动菜单 `▶FIGHT PKMN / ITEM RUN` 画着（`battle_menu`）；队伍列表画着（`battle_switch`）。
 出招、换人、用道具、逃跑之后自动推进战斗文字，遇到任意 `▶`、战斗标志清零或推进上限即停，
@@ -169,7 +169,7 @@ def _hp_line(run: ScriptRun, before: tuple[int, int, str, str]) -> str:
 
 def _snapshot(run: ScriptRun) -> tuple[int, int, str, str]:
     status = read_battle_status(run.mem)
-    assert status is not None, "战斗接管脚本在战斗外被调"
+    assert status is not None, "战斗脚本在战斗外被调"
     return status.mine.hp, status.foe.hp, status.mine.name, status.foe.name
 
 
@@ -343,7 +343,7 @@ _WHO = ScriptParam(
     description="用在哪只身上（伤药、解异常、复活要给；球与 X 系列不给）",
 )
 
-BATTLE_TAKEOVERS: dict[str, ScriptDefinition] = {
+BATTLE_SCRIPTS: dict[str, ScriptDefinition] = {
     "fight": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
@@ -392,7 +392,7 @@ BATTLE_TAKEOVERS: dict[str, ScriptDefinition] = {
     ),
 }
 
-SWITCH_TAKEOVERS: dict[str, ScriptDefinition] = {
+SWITCH_SCRIPTS: dict[str, ScriptDefinition] = {
     "send_out": ScriptDefinition(
         spec=ActionEntry(
             kind="script",
@@ -407,4 +407,4 @@ SWITCH_TAKEOVERS: dict[str, ScriptDefinition] = {
     ),
 }
 
-__all__ = ["BATTLE_TAKEOVERS", "SWITCH_TAKEOVERS", "battle_view", "switch_view"]
+__all__ = ["BATTLE_SCRIPTS", "SWITCH_SCRIPTS", "battle_view", "switch_view"]
