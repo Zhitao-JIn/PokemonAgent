@@ -76,7 +76,7 @@ c-0109 是开场大木带路的脚本移动帧：屏幕坐标、地图坐标和�
 
 ## 四、审完之后的步骤
 
-1. 按本清单改 `truth.jsonl`（保留修改前快照），重跑 `python -m evals.data.frames.coverage` 和结构检查。
+1. 按本清单改 `truth.jsonl`（保留修改前快照），重跑 `python -m evals.dataset.frames.build.coverage` 和结构检查。
 2. 跑 decoder 基线，确认失败的正好是上面这些帧和字段。
 3. 按 A/B/B2/D → C → E → F → H → I/J → K → L → M 的顺序修 decoder，每项一条 CHANGELOG、一个 commit。
 4. 同步 `docs/spec/world/SPEC.md`、`docs/spec/evals/SPEC.md`、`DECODER_RELABEL_1007.md` 中被改动的规则，包括 F 和 G 的新口径。

@@ -8,10 +8,10 @@
 ## 最新标注规则
 
 - 战斗队伍选择统一为battle_switch，不按HP区分主动换人与倒下换人；视图只有队伍。
-- 命名键盘按冻结图块的固定物理格抄录，5行分别9、9、8、9、9项；最后的结束键记ED，框外lower case不算选项。
+- 命名键盘按冻结图块的固定物理格抄录，5行分别9、9、8、9、9项；最后的结束键记ED，框外lower case不算选项。2026-10-08 裁决维持此数量：第三行第九格是可输入的空格键，产品刻意不提供。
 - 命名光标按实际实心箭头右侧的键定位，不从旧cursor或名字输入历史推断；保持价格/数量附注的输出契约，无附注的项为空字符串。
 - 无箭头的完整商品框仍标商品、排布和价格；有遮挡时不补造完整列表，没有实心箭头时不猜光标。
-- 战斗招式空位“-”独立占一行，重复“-”按各自物理位置记录，不能定位到第一次出现的同名文本。
+- **2026-10-08 裁决替代旧规则**“重复 `-` 按各自物理位置记录”：战斗招式空位不是可选项，只保留整屏显示，从 options、option_grid、option_details 删除；命名键盘的 `-` 真键仍保留。
 - 子菜单只取实心箭头所在框，不能从背景列表取同名CANCEL；排布从上往下、从左往右。
 - battle_menu初态须有完整四选项、无空心箭头，并且实心光标在FIGHT。PKMN/ITEM/RUN光标不是归一化后的入口。
 - c-0002、c-0006、c-0007、c-0008、c-0015、c-0049保留用户明确裁决transition；其他场合从当前缓冲重新判断。
@@ -32,7 +32,7 @@
 
 ## 复核材料与结果
 
-真值：`evals/data/frames/truth.jsonl`。本地证据位于`eval_results/labeling_1007/full_truth/`：
+真值：`evals/dataset/frames/v2/truth.jsonl`。本地证据位于`eval_results/labeling_1007/full_truth/`：
 
 - `relabel_all.py`、`menu_reference.py`、`scene_reference.py`：本次重标入口、独立菜单及场合规则。
 - `raw_material.py`、`screen_reference.py`（只用字表渲染与对话抄录）、`business.py`、`terrain_reference.py`：字节、视图与地形参考。

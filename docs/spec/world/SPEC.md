@@ -1,12 +1,28 @@
 # world —— 模块规格
 
-> 最后更新：2026-10-07 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
+> 最后更新：2026-10-08 ｜ 活文档：跟随代码更新，与代码冲突时以代码为准
 
 读屏菜单先由screen_layout识别命名键盘、队伍、设置和图鉴的物理布局，再由screen_menu处理普通框选及价格列表。
 队伍箭头位于名字下一行，命名结束键ED只在该布局解释；没有实心箭头时不猜光标。
 scene_layout提供无地图空屏、独立开场画像和战斗菜单框形证据；完整战斗菜单框即使尚无箭头也可识别。
 战斗行动菜单初态另要求实心光标在FIGHT；reset_menu在主菜单用方向键归位，子菜单仍按B退出。
 固定帧基线范围、阶段修复及验证证据见docs/DECODER_FIX_1007.md；100%的参考匹配不表示未收录场景或操作流程已验证。
+
+## 2026-10-08 decoder 裁决与现行规则
+
+- 地形精灵按 `C204/C205 + 16*slot - 4` 的地图格位定位，再相对主角转成屏幕格网；移动中的 NPC 取游戏已更新的目标格。`D5CE` 的槽号/全局编号列表与 `D5A6` 的隐藏位图决定是否跳过槽位。招牌、门、精灵的覆盖顺序及图片种类规则不变。`D535=FF` 表示没有草，不生成 G。通行仍取每格左下子图块。
+- `ram.map_settled(memory)` 是生产、冻结数据集 `has_map`、coverage 共用的地图适用判据：通行表指针非零，且地图编号在静态表内、地图头 tileset 等于 `D367`。`scripts/build_map_tilesets.py` 从英文红版 ROM 的 `01AE` 地图头指针与 `C23D` 银行表生成 `world/tables/map_tilesets.json`，含 248 个地图编号；运行时只读静态表，不查 ROM 地图头。该判据识别 tileset 不一致的换图过程，不能证明所有同 tileset 换图都已稳定。
+- 无字且地图未稳定时为 transition。task 与 episode 两条生产感知路径都跳过地形，不沿用上一帧：`place=None`、`map_id=None`、where/facing/neighbors/walk_map 为空、landmarks 为空；当前截图、屏幕解码、RAM 读数及模型调用账仍照常返回。task 单帧装配在 `task_perception.observe_task`，PyBoyWorld 负责取帧与调用。
+- 起名对象由 `D07D` 决定：0 是 YOUR NAME?，1 是 RIVAL's NAME?，其余是 NICKNAME?；前两者最多 7 个字符，昵称最多 10 个。键盘维持 9/9/8/9/9，第三行第九格的空格是真正可输入的键，但产品刻意不提供它。0x76/0x77 在命名布局显示 `_`，其余布局维持 HUD 框线。
+- 战斗招式框侧边完整时，恰为 `-` 的行是不可达空位，从选项、排布和附注中去掉，但保留整屏显示；命名键盘的 `-` 仍为可选键。类型说明框可能覆盖招式框左上角，因此不以该角判定框形。
+- 无实心光标时仍读取完整商品框。只有末项 CANCEL 可以没有价格，其余商品必须具有完整价格；数量框遮挡或残框不补造选项，不猜光标。
+- 图块 FF 只有左右至少一格在 79–FE（边框、空格、文字）时才显示数字 9，否则显示非文字点；没有字表邻居的 FF 达 20 格时先判 transition，再看战斗标志。标题 Logo 第一行第二至十七列的连续 80–8F 图块判 title，整屏为空；没有 80–FF 文字图块且没有完整普通框的图形页也不输出伪 HUD 文字。这一限制保留无框纯数字和符号显示。
+- 能力页的 STATUS/、TYPE1/、EXP POINTS 与图鉴条目专用框在战斗判据前识别为 pokemon_info。野外空背包大框须同时有背景开始菜单边角和背包指针；商店 MONEY 布局优先，不误认买卖重绘。完整空开始菜单框判 start_menu；有文字或空心箭头的现有场合不变。
+- `covered` 表示已识别布局的选项切分完整，队伍和图鉴列表为 true。光标是否必须紧邻选项由独立的 `cursor_adjacent` 参数决定，图鉴列表箭头第零列、选项第四列仍能正确匹配。
+- 图块 74 紧接 F2 时显示 `No` 再加后面的点，战斗中也显示 No.；74 直接接数字时沿用原规则。
+- 依赖核对识别 direct/mcpclient 门面与指定 world MCP 服务适配器（world_server.py、world_server_cli.py）；其他服务、harness、schemas 不得依赖 world 实现，world 对其他项目模块的出边仍为零。
+
+验证限定于 1045 个冻结帧，不能替代留出集与模拟器操作测试；数据集未覆盖的小写键盘、异常状态或三只以上队伍、非空 PC 箱、忘招列表等仍未验证。
 
 ## 一、职责与边界
 
@@ -164,7 +180,7 @@ world/
 | 形状 | 谁产出 | 谁消费 | 关键字段 |
 |---|---|---|---|
 | `Observation` | `PyBoyWorld.perceive_once()` | harness（`EpisodeRunState`）、`mcpclient/game_tools.py`、trace 渲染、`schemas/harness/communication/**` | `step`（占位 0，由 Harness 盖章）、`place: PlaceInWorld \| None`、`status`、`facts: Facts`、`done`、`perceived`；方法 `stall_key()` / `render(indent="  ")` |
-| `TaskObservation` / `TaskPerceived` | `PyBoyWorld.perceive_task()`（`_ram_observe`） | task 层：`GameTools.perceive_task` → `FromHarnessToGameToolPerceiveTaskResp`、`TaskState`、决策 / 反思 / 掩码 / 执行的信封、`sense_frame` 账（正文带 `scene`）、ActMemory 的前后帧（`scene` 字段） | `Observation` 的全部字段 + `scene: TaskScene`（场合，必有）+ `takeover: TakeoverView \| None`（接管场合给视图）+ `covered_by_script: bool`（从场合派生的只读接管覆盖标志）。与 episode 层的 `Observation` 是两种观测，`scene` 与 `Facts.Scene` 只是重名 |
+| `TaskObservation` / `TaskPerceived` | `PyBoyWorld.perceive_task()`（`task_perception.observe_task`） | task 层：`GameTools.perceive_task` → `FromHarnessToGameToolPerceiveTaskResp`、`TaskState`、决策 / 反思 / 掩码 / 执行的信封、`sense_frame` 账（正文带 `scene`）、ActMemory 的前后帧（`scene` 字段） | `Observation` 的全部字段 + `scene: TaskScene`（场合，必有）+ `takeover: TakeoverView \| None`（接管场合给视图）+ `covered_by_script: bool`（从场合派生的只读接管覆盖标志）。与 episode 层的 `Observation` 是两种观测，`scene` 与 `Facts.Scene` 只是重名 |
 | `TaskScene` / `TAKEOVER_SCENES` | `scene.classify_scene()` | task 层、读屏测评 | 常规 8 类 + 接管 8 类，见 `docs/perceive/spec.md` 第三节 |
 | `Facts` | `PyBoyWorld` 拼装 | harness 交互判定、`direct/prompts`、记忆检索 query | 具名 `scene`/`overlay`/`where`/`facing`/`neighbors`/`landmarks`/`dialog_text`/`options`/`cursor`/`overview`/`walk_map`/`map_id`；`extra="allow"` 接住视觉模型按 scene 自由给的字段；`scene_value` / `overlay_value` / `exclude(keys)` / `items()` / `stall_key_part()` / `render()` |
 | `Facts.Scene` | 视觉模型（经 `ScreenState`） | 掩码与 prompt | `FIELD` `INDOOR` `BATTLE` `MENU` `SHOP` `TRANSITION` |
@@ -173,7 +189,7 @@ world/
 | `PlaceInWorld` | RAM 读出的坐标 | 记忆的键、交互判定 | `map_id` / `x` / `y`；`step_toward(facing)`、属性 `key` = `"{map_id}:{x}:{y}"`、`render()` |
 | `ActionSpace` | `compute_action_space()` / `mcpclient/game_tools.py::_mask()`（同一条场合规则：`scripts/catalog.SCENE_SCRIPTS`） | brain（`ChooseOnceReq`） | `mask` / `entries: list[ActionEntry]` / `names` / `descriptions` / `note` / `map_note`（接管场合 `names` 为空、只给接管脚本）；`contains(name)` / `enabled(name)` / `entry(name)` |
 | `ActionEntry` / `ScriptParam` | `scripts/catalog.py`（常规脚本）、`scripts/takeover/` 各场合文件（接管脚本） | tool 层：动作空间、prompt 的脚本签名与说明、转成 brain 的 `ScriptSignature` | `kind`（`key` / `script`）/ `name` / `params`（`name` / `type`∈{str,int} / `description` / `default`，None = 必填）/ `description`；`signature()` 写成 `buy_item(item: str, count: int)` |
-| `TakeoverView` | `scripts.takeover.takeover_view()`（`_ram_observe` 里） | `TaskObservation.takeover` → 接管场合的决策 prompt、`sense_frame` 账 | `ShopItemsView`（`items` 名字与价格、`money`、`bag`）/ `NamingView`（`target` 屏幕标题、`typed` 已输入）/ `BattleMenuView`（`mine` 在场那只带招式与剩余 PP、`foe`、`trainer`、`party`、`bag`）/ `BattleSwitchView`（`party`）/ `BagView`（`bag`、`party`）/ `PartyView`（`party`）/ `PcView`（`items` PC 道具、`bag`、`box` 当前箱、`box_number`、`party`）/ `LearnMoveView`（`pokemon`、`new_move`、`moves`）；队员是 `MonEntry`（昵称、等级、HP、状态、是否在场、招式）；`render()` 给 prompt 几行 |
+| `TakeoverView` | `scripts.takeover.takeover_view()`（`task_perception.observe_task` 里） | `TaskObservation.takeover` → 接管场合的决策 prompt、`sense_frame` 账 | `ShopItemsView`（`items` 名字与价格、`money`、`bag`）/ `NamingView`（`target` 屏幕标题、`typed` 已输入）/ `BattleMenuView`（`mine` 在场那只带招式与剩余 PP、`foe`、`trainer`、`party`、`bag`）/ `BattleSwitchView`（`party`）/ `BagView`（`bag`、`party`）/ `PartyView`（`party`）/ `PcView`（`items` PC 道具、`bag`、`box` 当前箱、`box_number`、`party`）/ `LearnMoveView`（`pokemon`、`new_move`、`moves`）；队员是 `MonEntry`（昵称、等级、HP、状态、是否在场、招式）；`render()` 给 prompt 几行 |
 | `Perceived` | `PyBoyWorld.perceive_once()` | `GameTools.perceive_with_retry()` | `observation` / `calls: list[dict[str, str]]` / `frame_png`（base64 PNG）/ `ram: RamReadout` |
 | `RamReadout` | `readout.read_readout()` | 经 tool 层写进 `sense_frame` 账的 `ram`；**不进 agent 输入**，测评读它 | `in_battle` / `covered` / `text_source`（`decode`/`vlm`/`none`，这一帧文字实际来自哪）/ `would_be`（W4 下会来自哪）/ `menu: MenuVars` / `money` / `bag: [BagItem]` / `party: [PartyMon]` / `battle: BattleStatus \| None` / `decoded: DecodedText \| None`（legacy 档额外存解码结果，供逐帧对比） |
 | `BattleStatus` | `battle_status.read_battle_status()`（不在战斗时 `None`） | `Facts` 的额外字段（`facts_fields()`）、`RamReadout.battle` | `mine` / `foe: Combatant`（`name` 取 RAM 昵称字段、`level`、`hp`、`max_hp`、`status`） |

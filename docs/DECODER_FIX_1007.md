@@ -94,3 +94,28 @@ at_start从任意主菜单光标收紧为完整四选项且光标在FIGHT，与�
 - 阶段二62个测试通过，阶段三扩大到81个读屏、脚本策略与执行、脚本流、动作、MCP和感知测试通过。
 - 审阅页重新生成，完整四组诊断现为零分歧；原72帧差异归档保留。
 - 不新增测试文件、不调用真实模型、不提交或推送。
+
+## 2026-10-08 真值修补后复修
+
+按用户批准的审计与补丁清单，713 条操作逐条核对后应用到 490 帧。原值备份与缺 before 的旧预检保留，补齐后通过的报告为 `eval_results/labeling_1007/patch_preflight_completed_1008.json`。没有重新标注、采集 WRAM 或调用真实模型。
+
+修复顺序为 A/B/B2/D、C、E、F、H、I、J、K、L、M，逐项编号 409–418；真值修补为 408。地形使用隐藏位与地图格位，换图适用性共用 ROM 生成的静态 tileset 表；命名、空招式、末项 CANCEL、擦除动画、标题、能力页/空菜单、covered 和槽位/编号渲染按批准判据实现。生产换图帧省略地点与地形，保留当前截图和读数；完整规则见 world SPEC。
+
+| 验收 | 真值修补后、decoder 修复前 | 修复后 |
+|---|---|---|
+| 13 字段整帧 | 962/1045 | 1045/1045 |
+| scene 错误帧 | 23 | 0 |
+| options / option_grid / option_details 错误帧 | 各 18 | 各 0 |
+| overlay 错误帧 | 2 | 0 |
+| screen 错误帧 | 50 | 0 |
+| 完整 scene/screen/takeover 诊断 | 仍有差异 | 各 1045/1045 |
+| 完整 terrain 诊断 | 地形与适用性待修复 | 1019/1019；26 帧 N |
+| 覆盖检查 | 换图中间帧被误报缺字段 | 无缺字段，仅 c-0109 两项 unresolved |
+
+83 个基线失败帧全部修复，所有字段 regressed 为空。修复前基线 `decoder_after_truth_patch_1008.json`、最终基线 `decoder_final_1008.json`、代码整理后的复验 `decoder_verified_1008.json`；四组报告 `decoder_groups_verified_1008.json`；Inspect none 模型实跑日志 `inspect_decoder_1008/*.eval`；覆盖检查 `coverage_final_1008.json`，均位于 `eval_results/labeling_1007/`。
+
+现有测试增加每项代表帧、背景商店/菜单防回退、两条生产路径省略混合地点、7/10 字符命名长度及无框数字 9 的用例。测试仍按仓库 .gitignore 保留本地；不新增测试文件。world 自持检查同步已迁移的门面目录与指定 world MCP 服务适配器，三项均通过；ruff 排除独立 langfuse 检出目录与临时 pytest 输出后全仓库 lint/format 干净。本轮按 AGENTS 编号分步提交，未推送。
+
+最终 196 个相关测试全部通过，JUnit 为 `eval_results/labeling_1007/tests_final_1008.xml`。独立重放批准操作验证修改仅限补丁字段，修补前基线的 129 个错误字段位置恰好等于清单中涉及基线的操作；冻结样本哈希不变。证据汇总为 `eval_results/labeling_1007/completion_report_1008.json`，包含基线变化、四组分母、coverage、测试与实际 Inspect 日志路径。
+
+局限：同一批帧用于定位和验收，不能作为留出集泛化结论。没有模拟器实测；后续应验证走到原幽灵格、输入十字母昵称、进出门。小写键盘、异常状态/三只以上队伍、非空 PC 箱、忘招列表等未覆盖场景仍按审计第六节保留。

@@ -1,5 +1,15 @@
 # 测评契约
 
+## 2026-10-08 真值修补与地形适用范围
+
+按 `truth_patch_1007.json` 对 490 帧应用 713 条批准操作。每条 set/delete/replace_group 核对 before；新增 unresolved 的两条额外核对键不存在。原始真值保留在 `eval_results/labeling_1007/truth_before_patch_1008.jsonl`，未修改样本、截图、WRAM、存档或补丁之外的真值字段。
+
+地图适用性统一调用 `world.ram.map_settled`：通行表指针非零且静态地图头 tileset 与 WRAM 的 D367 一致。原 1032 个地图已载入帧中，13 个 tileset 不一致的换图中间帧不再适用地形，加原 13 个无地图帧，共 26 帧地形为 N；适用帧为 1019。c-0109 的 walk_map、neighbors 无法确定，各在 unresolved_fields 保留原因、相应真值键删除；其他三项仍参与评分，不把整帧地形判 N。
+
+scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各覆盖 1019，walk_map/neighbors 各覆盖 1018，另有 c-0109 的两项 unresolved。coverage 的 unaccounted_fields 为空。完整诊断各组全为 C，地形仅不适用的 26 帧为 N。13 字段修补后基线为 962/1045，修复后为 1045/1045，regressed 为空。逐字段基线、四组 Inspect 日志、覆盖检查和原值核对报告均在 `eval_results/labeling_1007/`。
+
+这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
+
 对外只有六个 inspect task。`python -m evals list` 列出入口，`python -m evals run <task> <inspect 参数>` 统一启动；`.eval` 记录样本、输入、输出、评分与错误。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
@@ -19,9 +29,9 @@
 
 `evals/dataset/frames/v2/samples.jsonl` 是唯一的 v2 帧集（1045 帧）；`source` 只记录采集来源，不决定 decode 的评分组。原基础帧、接管快照、地形快照均已合并，加载器不再拼接来源文件。采集命令按来源替换统一帧集中的对应样本，保留其余来源。decode、episode_vision_read 共用加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
 
-`evals/data/frames/truth.jsonl`是decode独立真值的唯一存储，按sample_id记录scene_truth、screen_truth、takeover_truth、terrain_truth。所有已标字段直接挂到帧上计分，删除reviewed及配套组/字段审核标记，不再按审核状态过滤。未标或空组为NOANSWER，不进入该组分母；unresolved_fields记录无法判定原因。decode不从label_checked或label回退取答案。1045帧已标全部适用字段，其中1032个地图已加载帧的地形有map_id、where、facing、walk_map、neighbors五字段，另外13帧地形不适用。网页审阅意见独立保存，不控制真值计分。视觉任务保留自身原有label_checked口径。
+`evals/dataset/frames/v2/truth.jsonl`是decode独立真值的唯一存储，按sample_id记录scene_truth、screen_truth、takeover_truth、terrain_truth。所有已标字段直接挂到帧上计分，删除reviewed及配套组/字段审核标记，不再按审核状态过滤。未标或空组为NOANSWER，不进入该组分母；unresolved_fields记录无法判定原因。decode不从label_checked或label回退取答案。1045帧已标全部适用字段，地图稳定的1019帧有地形标注；c-0109的walk_map与neighbors为unresolved，其余26帧地形不适用。网页审阅意见独立保存，不控制真值计分。视觉任务保留自身原有label_checked口径。
 
-`scene_truth` 查三个字段：`scene`、`covered_by_script`、`at_start`。`covered_by_script=true` 表示当前场合由接管脚本负责，包含未回初态的子菜单；有普通可选脚本不算接管覆盖。真值从独立标注场合和已核对的八类接管脚本对应关系补出，不读取被测分类器结果。1045 帧已标此字段；两帧重绘边界按冻结RAM当前可观察缓冲标为 transition，裁决待审。该字段只测覆盖识别是否正确；实际退回初态与执行结果由 `world_script_execute` 验证，模型选择目标脚本由决策 prompt 约束，本次未运行真实模型验证。
+`scene_truth` 查三个字段：`scene`、`covered_by_script`、`at_start`。`covered_by_script=true` 表示当前场合由接管脚本负责，包含未回初态的子菜单；有普通可选脚本不算接管覆盖。真值从独立标注场合和已核对的八类接管脚本对应关系补出，不读取被测分类器结果。1045 帧已标此字段；两帧完整空菜单重绘按2026-10-08裁决标为start_menu（c-0419）和bag（c-0440）。该字段只测覆盖识别是否正确；实际退回初态与执行结果由 `world_script_execute` 验证，模型选择目标脚本由决策 prompt 约束，本次未运行真实模型验证。
 
 同一帧只跑一次机械解码，四个 scorer 复用结果。`judged_accuracy` / `judged_count` 读取未做 epoch 数值归并的原始 C/I/N，每次重复运行作为独立观测统计，确保 N 不被转换为失败进入分母。
 
@@ -58,9 +68,9 @@ agent_goal_run 评分只看任务最终结果、红线和独立结果评分模�
 
 ## decode 标注覆盖（2026-10-07）
 
-冻结帧1045个，所有适用 decoder 输出字段已有独立参考标注：scene 三字段、screen 十三个字段、takeover 的 view 与非空视图全部嵌套成员，各覆盖1045帧；terrain 五字段覆盖1032帧，另13帧未加载地图，不适用。完整字段、原始证据和边界裁决见 `docs/DECODER_TRUTH_COVERAGE_1007.md`。
+冻结帧1045个，所有适用 decoder 输出字段已有独立参考标注：scene 三字段、screen 十三个字段、takeover 的 view 与非空视图全部嵌套成员，各覆盖1045帧；terrain 的map_id/where/facing覆盖1019帧，walk_map/neighbors覆盖1018帧，c-0109的两项记unresolved；另26帧地形不适用。完整字段、原始证据和边界裁决见 `docs/DECODER_TRUTH_COVERAGE_1007.md`。
 
-这些是未审参考标注，不代表1045帧全部经过人工审核。默认正式 decode 仍只采用此前已审且值未变的键：53帧文字（含原接管组移来的8帧文字片段）、8帧场合、8帧接管、2帧地形；仅已有审核字段参与。字段扩标不会自动批准整组。四组分别计分，组内所有已标键均相等才为 C，任一不等为 I，无标为 N；准确率 = C/(C+I)，必须同时报告计分帧数。明确标注 null 的键必须在实际输出中存在。
+这些参考标注不代表1045帧均经人工逐帧审核。默认 decode 采用全部独立真值，404起已删除审核过滤；用户批准本次审计裁决和713条补丁不等于新增留出集验证。四组分别计分，组内所有已标键均相等才为C，任一不等为I，无标为N；准确率=C/(C+I)，同时报告计分帧数。显式null期望仍要求实际输出该键。
 
 参考标注从原始冻结 RAM/ROM、固定名称表及既有独立文字/场合标注产生，不读取待测解码输出。候选完成后才跑 decoder 作差异诊断。参考程序、逐帧字节及哈希位于 `eval_results/labeling_1007/full_truth/`；运行 `python -m evals.dataset.frames.build.coverage` 检查顶层字段与视图嵌套字段。
 
