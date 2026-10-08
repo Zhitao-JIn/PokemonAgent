@@ -27,3 +27,26 @@ def has_battle_menu_frame(tiles: list[list[int]]) -> bool:
     large = tiles[2][4] == 0x79 and tiles[2][19] == 0x7B and tiles[12][4] == 0x7D
     moves = all(tiles[row][4] == tiles[row][19] == 0x7C for row in range(13, 17))
     return large or moves
+
+
+def has_dex_entry_frame(tiles: list[list[int]]) -> bool:
+    """图鉴条目专用框四角；不依赖战斗字体下的 No. 渲染。"""
+    return all(
+        tiles[row][column] == value
+        for row, column, value in ((9, 0, 0x68), (9, 19, 0x6A), (17, 0, 0x6C), (17, 19, 0x6E))
+    )
+
+
+def empty_menu_frame(tiles: list[list[int]], top: int, left: int, bottom: int) -> bool:
+    """右边界在第十九列的完整空菜单框；含文字、箭头或遮挡则不匹配。"""
+    right = 19
+    corners = ((top, left, 0x79), (top, right, 0x7B),
+               (bottom, left, 0x7D), (bottom, right, 0x7E))
+    return (
+        all(tiles[row][column] == value for row, column, value in corners)
+        and all(tiles[row][column] == 0x7A for row in (top, bottom)
+                for column in range(left + 1, right))
+        and all(tiles[row][left] == tiles[row][right] == 0x7C
+                and all(value == 0x7F for value in tiles[row][left + 1 : right])
+                for row in range(top + 1, bottom))
+    )

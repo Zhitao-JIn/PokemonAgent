@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from .interface import TAKEOVER_SCENES, Memory, ScreenText, TaskScene
-from .scene_layout import has_battle_menu_frame, is_transition
+from .scene_layout import empty_menu_frame, has_battle_menu_frame, has_dex_entry_frame, is_transition
 from .screen_text import read_tiles
 from .screen_glyphs import title_logo
 
@@ -64,6 +64,8 @@ def classify_scene(text: ScreenText, mem: Memory) -> TaskScene:
         return TaskScene.NAMING
     if any(m in flat for m in LEARN_MARKS):
         return TaskScene.LEARN_MOVE
+    if {"STATUS/", "TYPE1/"} & _words(screen) or "EXP POINTS" in flat or has_dex_entry_frame(tiles):
+        return TaskScene.POKEMON_INFO
 
     # 步骤 2：战斗——选单接管，其余常规
     if in_battle:
@@ -83,10 +85,16 @@ def _field_scene(text: ScreenText, mem: Memory) -> TaskScene:
     """非战斗的接管场合优先；列表指针只在对应可见菜单出现时使用。"""
     screen = text.screen
     flat, words = screen.replace("▶", " ").replace("▷", " "), _words(screen)
+    tiles = read_tiles(mem)
 
     # 步骤 3：野外的接管
     if "─MONEY─" in screen:
         return TaskScene.SHOP_ITEMS
+    start_frame = tiles[0][10] == 0x79 and tiles[15][10] == 0x7D
+    if start_frame and empty_menu_frame(tiles, 2, 4, 12) and _list_pointer(mem) == BAG_ITEMS:
+        return TaskScene.BAG
+    if empty_menu_frame(tiles, 0, 10, 15):
+        return TaskScene.START_MENU
     if _pc_items(screen) or any(m in screen for m in PC_MARKS) or _pc_home(text):
         return TaskScene.PC
     if any(m in flat for m in TITLE_MARKS):
