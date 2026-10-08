@@ -2,10 +2,13 @@
 
 from .interface import Memory
 from .ram import map_settled
+from .screen_glyphs import erased_tiles
 
 
 def is_transition(tiles: list[list[int]], screen: str, memory: Memory) -> bool:
     """过场须有整屏空白、无已载入地图或独立开场画像的证据；地图黑边不算。"""
+    if erased_tiles(tiles) >= 20:
+        return True
     if all(tile == 0x7F for row in tiles for tile in row):
         return True
     if screen:

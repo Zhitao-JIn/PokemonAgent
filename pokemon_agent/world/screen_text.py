@@ -24,6 +24,7 @@ from .interface import Facts, Memory
 from .interface.domain.screen_text import ScreenText
 from .ram import SCREEN_COLS, SCREEN_ROWS, W_TILEMAP
 from .screen_layout import keyboard_screen
+from .screen_glyphs import has_text_neighbor
 from .screen_menu import read_menu
 
 W_IS_IN_BATTLE = 0xD057
@@ -195,7 +196,9 @@ def _render_row(row: list[int], in_battle: bool) -> str:
     """
     hud = _hud_positions(row, in_battle)
     return "".join(
-        _glyph(t) if t in CHARMAP or t in _LINES or i in hud else "·" for i, t in enumerate(row)
+        "·" if t == 0xFF and not has_text_neighbor(row, i)
+        else _glyph(t) if t in CHARMAP or t in _LINES or i in hud else "·"
+        for i, t in enumerate(row)
     )
 
 
