@@ -23,4 +23,13 @@ def load(version: str = DEFAULT_VERSION) -> list[ScriptCase]:
         raise DatasetError("脚本 case_id 重复")
     for case in cases:
         state_path(case.state, version)
+        if version != "v1" and case.kind is None:
+            raise DatasetError(f"{version} 用例 {case.case_id} 缺少 kind")
+    if version == "v1":
+        cases = [
+            case.model_copy(update={"kind": "success" if case.expect.ok else "failure"})
+            if case.kind is None
+            else case
+            for case in cases
+        ]
     return cases

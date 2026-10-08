@@ -32,6 +32,7 @@ from evals.solvers.world_script_execute import (
 from pokemon_agent.world import RamReadout, TaskObservation
 from pokemon_agent.world.items import item_name
 
+from .metrics import kind_accuracy
 from .takeover_checks import judge_takeover
 from .verdict import ScriptVerdict
 
@@ -107,7 +108,7 @@ def _judge_truth(expect: ScriptExpect, run: ScriptRun) -> list[str]:
 
 @scorer(
     metrics={
-        "pass": [accuracy(), stderr(), grouped(accuracy(), "script")],
+        "pass": [accuracy(), stderr(), grouped(accuracy(), "script"), kind_accuracy()],
         "code": [accuracy()],
         "truth": [accuracy()],
     }

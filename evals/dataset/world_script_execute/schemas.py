@@ -75,11 +75,13 @@ class ScriptCase(BaseModel):
 
     `state` 相对本数据集版本的 `states/`；`matrix_row` 是 PLAN_mcp_servers 附录 A
     的行号（覆盖表按它聚合）；`basis` 写期望的依据（地图 / 规则出处），给审用例的人看。
+    kind 在 v2 起必填；v1 loader 按 expect.ok 补齐，interrupt 仍以独立真值判结局。
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     case_id: str
+    kind: Literal["success", "failure", "interrupt"] | None = None
     matrix_row: int | None = Field(default=None, ge=2, le=15)
     script: str
     args: dict[str, str | int] = Field(default_factory=dict)

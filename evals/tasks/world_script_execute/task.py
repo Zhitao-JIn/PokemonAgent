@@ -28,6 +28,7 @@ def to_sample(case: ScriptCase, version: str = "v1") -> Sample:
         metadata={
             "dataset_version": version,
             "script": case.script,
+            "kind": case.kind,
             "matrix_row": case.matrix_row,
             "case": case.model_dump(mode="json"),
         },
