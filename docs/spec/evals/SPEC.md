@@ -65,6 +65,26 @@ memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询�
 
 agent_goal_run 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
 
+agent_goal_run 的过程在 Inspect View 的 Transcript 中查看，Langfuse 仍可用于定位同一执行线。
+solver 在子进程结束后经 `RunStream.load` 读取 local / langfuse 类型化账本，按原顺序与
+UTC 时间回放；`-T transcript=false` 关闭回放，缺省开启。solver 通过
+`AgentRunRecord` store 交接 run_id、branch、invalid、error、work_dir 与原始 run_result；
+两种 scorer 从该记录定位账本，不反读 transcript。无效与超时只写说明事件。
+
+| 项目账 | Inspect 事件 |
+|---|---|
+| run / episode / task 的 start | SpanBegin + 保留正文的 Info |
+| 三层 end / error | Info + 对应 SpanEnd；未配对结束不关闭外层，遗留 span 在最后账时间收口 |
+| parse.MODEL_CALL_KINDS 的调用账 | Model：真实链路型号、prompt、原图、raw、全部用量、错误、完整请求 |
+| act_call、历史 press_key / run_macro、get_action_space、read_* / write_* | Tool：完整 meta 与 JSON 正文结果 |
+| 其余账 | Info：type、meta、content |
+
+正文事件 uuid 使用原账 uuid；派生 span 的 uuid 加 begin / end 后缀以避免重复，span id
+使用 start 账 uuid。所有事件 metadata 的 kind、type、trace_uuid 对应原账。时间按 Inspect
+datetime 的微秒精度保留；模型与工具的 completed 使用 ended_at。原图交给 Inspect 自动
+附件化与去重。回放经内部 `_event` 接口追加，并临时保留全部模型 API 请求，避免默认
+只保留前几次的裁剪。Inspect 固定为 0.3.271，升级时须重跑回放与交接测试。
+
 
 ## decode 标注覆盖（2026-10-07）
 

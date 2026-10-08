@@ -12,10 +12,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+from inspect_ai.event import InfoEvent
+from inspect_ai.log._transcript import transcript as sample_transcript
 from inspect_ai.solver import Generate, Solver, TaskState, solver
+from inspect_ai.util import store_as
 
 from evals.paths import REPO_ROOT
+from evals.scorers.stream import RunStream
+from evals.solvers.agent_goal_run.record import AgentRunRecord, RunOneRecord
 from evals.solvers.agent_goal_run.runner.one import run_id_for
+from evals.solvers.agent_goal_run.transcript import replay_into_transcript
 
 __all__ = ["Generate", "Solver", "TaskState", "run_id_for", "run_one_solver", "solver"]
 
@@ -23,6 +29,44 @@ __all__ = ["Generate", "Solver", "TaskState", "run_id_for", "run_one_solver", "s
 def work_dir_of(report_dir: str | Path, sample_id: str, epoch: int) -> Path:
     """一条样本一个 epoch 的工作目录（run_one / scorer 共用同一命名）。"""
     return Path(report_dir) / "runs" / (sample_id if epoch == 1 else f"{sample_id}#e{epoch}")
+
+
+def _finish(
+    state: TaskState,
+    work: Path,
+    run_id: str,
+    backend: str,
+    replay: bool,
+    models: dict[str, str],
+    invalid: str = "",
+) -> TaskState:
+    """读取子进程交接文件并写 store；无效或超时不回放。"""
+    record_file = work / "run.json"
+    record = store_as(AgentRunRecord)
+    if record_file.is_file() and not invalid:
+        saved = RunOneRecord.model_validate_json(record_file.read_text(encoding="utf-8"))
+        record.run_id, record.branch = saved.run_id, saved.branch
+        record.invalid, record.error = saved.invalid, saved.error
+    else:
+        record.run_id = run_id
+        record.invalid = invalid or "run-one 未生成 run.json"
+    record.work_dir = str(work)
+    result_file = work / "run_result.json"
+    record.run_result = result_file.read_text(encoding="utf-8") if result_file.is_file() else ""
+    state.output.completion = "timeout" if invalid == "timeout" else record.run_result
+    if replay:
+        if record.invalid:
+            sample_transcript()._event(
+                InfoEvent(
+                    source="agent_goal_run", data={"invalid": record.invalid, "error": record.error}
+                )
+            )
+        else:
+            stream = RunStream.load(
+                work / "trace", record.run_id, branch=record.branch or None, backend=backend
+            )
+            replay_into_transcript(stream, models)
+    return state
 
 
 @solver
@@ -35,6 +79,7 @@ def run_one_solver(
     timeout: int,
     trace_backend: str = "local",
     version: str = "v1",
+    transcript: bool = True,
 ) -> Solver:
     """被测对象槽位：起 run-one 子进程跑完一条样本。
 
@@ -59,12 +104,15 @@ def run_one_solver(
                 subprocess.run, cmd, cwd=str(REPO_ROOT), timeout=timeout, check=False
             )
         except subprocess.TimeoutExpired:
-            state.output.completion = "timeout"
-            return state
-        result_file = work / "run_result.json"
-        state.output.completion = (
-            result_file.read_text(encoding="utf-8") if result_file.is_file() else ""
-        )
-        return state
+            return _finish(
+                state,
+                work,
+                run_id_for(sample_id, epoch),
+                trace_backend,
+                transcript,
+                models,
+                invalid="timeout",
+            )
+        return _finish(state, work, run_id_for(sample_id, epoch), trace_backend, transcript, models)
 
     return solve

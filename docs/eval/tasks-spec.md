@@ -2,7 +2,7 @@
 
 > 流程位置：tasks-intent.md → **tasks-spec.md** → tasks-plan.md → PR → production
 > 依据：`docs/eval/tasks-intent.md`；现状以 2026-10-07 仓库为准（CHANGELOG 392，对外六个 task）
-> 顺序：S1 改名与目录按槽位归位 → S2 数据集重整 → S3 judge 扩容 → S4 choose。每步一条（或一组）CHANGELOG 编号条目，独立 commit。
+> 顺序：S1 改名与目录按槽位归位 → S2 数据集重整 → **S1b 过程 trace 进 Inspect transcript** → S3 judge 扩容 → S4 choose。（S1、S2 已落地：406、407）每步一条（或一组）CHANGELOG 编号条目，独立 commit。
 
 ---
 
@@ -79,6 +79,59 @@ evals/
 | `world_actions/{solver,schemas}.py` / `scorer.py`、`takeover_samples.py::judge_takeover`、`takeover_contract.py` 里的 12 个核对函数 | `solvers/world_script_execute.py` / `scorers/world_script_execute/`（子包：`scorer.py`、`takeover_checks.py`） |
 | `e2e.py` 里的 `e2e_scorer`、`result_grade.py` | `scorers/agent_goal_run/` |
 | `evals/schema/verdict.py`（`CheckVerdict`，机械判据产出） | `evals/scorers/verdict.py` |
+
+
+---
+
+## 一b、S1b agent_goal_run 的过程 trace 进 Inspect transcript
+
+> **推翻 spec2 §〇-2"过程不进 Inspect View"**（用户 2026-10-08 定）：Inspect View 既看结果也看过程；Langfuse 保留，不再是看过程的唯一入口。
+> 可行性已用原型验证：`eval_results/trace_view_demo/`（真实 run `knowledge_door_transition` 的 168 条账回放成 `.eval`，`inspect view --log-dir eval_results/trace_view_demo` 可看；原型脚本 `prototype_trace_view_task.py` 在同目录，只作参照，不进代码）。
+
+### 1b.1 做什么
+
+agent_goal_run 的 solver 在 run-one 子进程跑完后，把这条样本的项目 trace 读出来，**按真实发生顺序、带原始时间戳**逐条追加进该样本的 Inspect transcript。View 的 Transcript 标签页里按 run → episode → task 嵌套显示，模型调用、动作、记忆读写、其余账各用最合适的 inspect 事件类型。
+
+其余五个 task 没有项目 trace，不涉及。
+
+### 1b.2 读账
+
+- 用现有 `evals/scorers/stream.py::RunStream.load(trace_root, run_id, branch, backend)`（local 与 langfuse 两种后端都支持，和 scorer 同一个读法），得到已按 `(ts, uuid)` 排好、只含本次恢复执行线的 `ParsedEvent` 列表。
+- 不直接读 json 文件（原型那样只是为了验证）。
+
+### 1b.3 事件映射
+
+| 账 | inspect 事件 | 字段 |
+|---|---|---|
+| `run_start` / `episode_start` / `task_start` | `SpanBeginEvent` + 一条 `InfoEvent`（该账内容） | `id` = 账 uuid；`type` = run / episode / task；`name` = `<层> <id>`；`parent_id` = 外层 span |
+| `run_end` / `episode_end` / `task_end`，以及 `run_error` / `episode_error` / `task_error` | 一条 `InfoEvent`（该账内容）+ `SpanEndEvent` | 关掉对应层（错误账同样收口，未配对的 span 在回放末尾统一关闭） |
+| `parse.MODEL_CALL_KINDS` 里的全部调用账（`sense_call`、`choose_call`、`plan_call`、`decompose_call`、`judge_call`、`verify_call`、`summarize_episode_call`、`summarize_task_call` …） | `ModelEvent` | `model` = 该链路的型号名（取自 task 装配时的 `models`，取不到写链路名）；`role` = 账名；`input` = 一条 `ChatMessageUser`：`ContentText(prompt)` + 每张图一个 `ContentImage(data URI)`；`output` = `ModelOutput.from_content(model, raw)`，`usage` 填 `input_tokens` / `output_tokens` / `input_tokens_cache_read`(=cached) / `reasoning_tokens`；`ok=false` 时填 `error`；`call` = `ModelCall(request=<该账完整内容>, response={"raw": raw})`；`timestamp` = `started_at`，`completed` = `ended_at`，`working_time` = 两者差 |
+| `act_call`（以及历史账名 `press_key` / `run_macro`）、`get_action_space`、全部 `read_*` / `write_*` 记忆账 | `ToolEvent` | `id` = 账 uuid；`function` = 账名；`arguments` = `{"meta": …}`；`result` = 该账完整内容的 JSON 文本；`timestamp` / `completed` / `working_time` 同上 |
+| 其余所有账（`*_verdict`、`sense_frame`、`settle_*`、`checkpoint_*`、`review_*`、`call_failed`、`call_exhausted`、`check_stall`、`advance_step` …） | `InfoEvent` | `source` = 账名；`data` = `{"type", "meta", "content"}` 完整内容 |
+
+**所有事件共同的规则**：
+
+- `timestamp` 取账的 `started_at`（不用"现在"）；按 `RunStream` 的顺序追加，View 显示的就是真实顺序。
+- `uuid` 用账的 uuid，`metadata` 写 `{"kind", "type", "trace_uuid"}`，能和 Langfuse / 盘上账本一一对应。
+- **字段全保留**：每条账的 `meta` 与 `content` 原样进事件（`ModelEvent` 进 `call.request`）。
+- **截图**：账里是 base64 data URI，原样进事件；inspect 写日志时自动抽成附件、按内容去重（原型 168 条账 84 KB）。
+
+### 1b.4 solver / scorer 交接改走 store
+
+- solver 跑完后读 `run.json` 与 `run_result.json`，写 `AgentRunRecord(StoreModel)`：`run_id`、`branch`、`invalid`、`error`、`work_dir`、`run_result`（原 `state.output.completion` 里的那份，仍保留在 completion 里供 View 展示）。
+- `scorers/agent_goal_run/task_scorer.py` 与 `result_grade.py` 改从 `store_as(AgentRunRecord)` 取 `run_id` / `branch` / `invalid` / `work_dir`，不再自己拼工作目录、读 `run.json`；读账仍用 `RunStream.load`（scorer 需要类型化账本，不从 transcript 反读）。
+- `invalid` 或超时的样本不回放（没有可回放的账），transcript 里写一条 `InfoEvent` 说明原因。
+
+### 1b.5 开关与依赖风险
+
+- task 参数 `-T transcript=true|false`，缺省 `true`。关掉时只写 store，行为与现在一致。
+- 追加事件要用 `transcript()._event(...)`（inspect 内部接口；`span()` 与 `info()` 这两个公开接口会把时间戳盖成"现在"）。inspect 版本已在 `pyproject.toml` 锁 `0.3.271`；升级 inspect 时必须跑 §1b.6 的测试。
+
+### 1b.6 验收
+
+1. **单元测试**（不跑游戏、不连网）：用构造的 `ParsedEvent` 列表（覆盖 span 三层、一条带图的模型调用、一条 act_call、一条记忆读、一条 verdict、一条未配对的 error）调回放函数，断言：事件类型与上表一致；时间戳等于原账 `started_at`；顺序与输入一致；span begin / end 成对且嵌套正确；图片成为 `ContentImage`；scorer 从 store 读到 `run_id` / `branch`。
+2. **离线回放**：拿 `eval_results/inspect/runs/knowledge_door_transition/trace` 这份真实账本跑回放（同原型），事件数与各类型计数和原型一致（不含原型多出的主线 `checkpoint_save`，`RunStream` 只取恢复执行线）。
+3. **真机**（用户本机，需模型 API）：`python -m evals run agent_goal_run --limit 1`，`inspect view` 打开，Transcript 里能看到三层嵌套、模型调用带截图、时间与 Langfuse 里同一 run 一致。
 
 ---
 

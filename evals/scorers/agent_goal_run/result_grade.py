@@ -6,13 +6,13 @@ from pathlib import Path
 from inspect_ai.model import get_model
 from inspect_ai.scorer import NOANSWER, Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
+from inspect_ai.util import store_as
 from pydantic import BaseModel, ValidationError
 
 from evals.dataset.agent_goal_run import load as load_samples
 from evals.scorers import RunStream
 from evals.scorers.judged import judged_accuracy, judged_count
-from evals.solvers.agent_goal_run.runner.one import run_id_for
-from evals.solvers.agent_goal_run.solver import work_dir_of
+from evals.solvers.agent_goal_run.record import AgentRunRecord
 
 
 class ResultGrade(BaseModel):
@@ -22,15 +22,16 @@ class ResultGrade(BaseModel):
     reason: str
 
 
-def final_evidence(work: Path, run_id: str, backend: str) -> str | None:
+def final_evidence(record: AgentRunRecord, backend: str) -> str | None:
     """从最终帧拿机械观测；无完整记录或无 RAM 时不可判。"""
-    record_path = work / "run.json"
-    if not record_path.exists():
+    if record.invalid:
         return None
-    record = json.loads(record_path.read_text(encoding="utf-8"))
-    if record.get("invalid"):
-        return None
-    stream = RunStream.load(work / "trace", run_id, branch=record.get("branch"), backend=backend)
+    stream = RunStream.load(
+        Path(record.work_dir) / "trace",
+        record.run_id,
+        branch=record.branch or None,
+        backend=backend,
+    )
     frames = stream.frames()
     if not frames or frames[-1].content.ram is None:
         return None
@@ -45,7 +46,7 @@ def final_evidence(work: Path, run_id: str, backend: str) -> str | None:
 
 
 @scorer(metrics=[judged_accuracy(), judged_count()])
-def result_model_scorer(report_dir: str, backend: str, grader_model: str) -> Scorer:
+def result_model_scorer(backend: str, grader_model: str) -> Scorer:
     """独立于机械评分的一列模型结果分；无法判定不进分母。"""
 
     async def score(state: TaskState, target: Target) -> Score:
@@ -55,11 +56,7 @@ def result_model_scorer(report_dir: str, backend: str, grader_model: str) -> Sco
             for s in load_samples(str(state.metadata["dataset_version"]))
             if s.sample_id == sample_id
         )
-        evidence = final_evidence(
-            work_dir_of(report_dir, sample_id, int(state.epoch)),
-            run_id_for(sample_id, int(state.epoch)),
-            backend,
-        )
+        evidence = final_evidence(store_as(AgentRunRecord), backend)
         if evidence is None:
             return Score(value=NOANSWER, explanation="没有可用的最终机械观测")
         prompt = (

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+from pathlib import Path
 
 from inspect_ai.scorer import (
     CORRECT,
@@ -14,19 +14,17 @@ from inspect_ai.scorer import (
     scorer,
 )
 from inspect_ai.solver import TaskState
+from inspect_ai.util import store_as
 
 from evals.dataset.agent_goal_run import load as load_samples
 from evals.scorers import RunStream
 from evals.scorers.agent_goal_run import mechanical_scorer, red_line_scorer
 from evals.scorers.judged import judged_accuracy, judged_count
-from evals.solvers.agent_goal_run.runner.one import run_id_for
-from evals.solvers.agent_goal_run.solver import work_dir_of
+from evals.solvers.agent_goal_run.record import AgentRunRecord
 
 
 @scorer(metrics=[judged_accuracy(), judged_count()])
-def e2e_scorer(
-    *, report_dir: str, stall_limits: tuple[int, int], trace_backend: str = "local"
-) -> Scorer:
+def e2e_scorer(*, stall_limits: tuple[int, int], trace_backend: str = "local") -> Scorer:
     """e2e 的判定 scorer：统一 Scorer（机械 + 红线）→ inspect `Score`。
 
     真值口径不变：机械判定第一真源，红线命中即判负；value 用 inspect 的
@@ -45,21 +43,20 @@ def e2e_scorer(
             for s in load_samples(str(state.metadata["dataset_version"]))
             if s.sample_id == sample_id
         )
-        run_id = run_id_for(sample_id, epoch)
-        work = work_dir_of(report_dir, sample_id, epoch)
-        branch = None
-        record_file = work / "run.json"
-        if record_file.is_file():
-            record = json.loads(record_file.read_text(encoding="utf-8"))
-            if record.get("invalid"):
-                return Score(
-                    value=NOANSWER,
-                    explanation=f"run-one 记为无效：{record['invalid']}",
-                    metadata={"run_id": run_id, "sample_id": sample_id, "epoch": epoch},
-                )
-            # langfuse 后端按 (run_id, branch) 寻址——branch 由 run-one 收尾写进 run.json。
-            branch = record.get("branch") or None
-        stream = RunStream.load(work / "trace", run_id, branch=branch, backend=trace_backend)
+        record = store_as(AgentRunRecord)
+        run_id = record.run_id
+        if record.invalid:
+            return Score(
+                value=NOANSWER,
+                explanation=f"run-one 记为无效：{record.invalid}",
+                metadata={"run_id": run_id, "sample_id": sample_id, "epoch": epoch},
+            )
+        stream = RunStream.load(
+            Path(record.work_dir) / "trace",
+            run_id,
+            branch=record.branch or None,
+            backend=trace_backend,
+        )
         mech = mechanical_scorer()(stream, sample)
         line = red_line_scorer(*stall_limits)(stream, sample)
         if line.outcome == "fail":

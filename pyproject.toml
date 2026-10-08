@@ -13,7 +13,7 @@ dependencies = [
     "numpy>=1.26",
     "websockets>=16.0",
     "langfuse>=4.7,<5",
-    "inspect-ai>=0.3.271",
+    "inspect-ai==0.3.271",
     "pyboy>=2.7.0",
     "mcp>=1.0",
 ]

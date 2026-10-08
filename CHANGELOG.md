@@ -1,3 +1,10 @@
+## 2026-10-08（421）—— agent_goal_run 过程 trace 回放进 Inspect transcript
+
+**改了什么**：按 S1b 经 RunStream 回放真实执行线，映射三层 span、模型、动作与记忆工具及信息事件，保留原时间、图片、完整正文与用量；增加默认开启的 transcript 参数。solver 写 AgentRunRecord，机械与模型结果 scorer 从 store 接收 run_id、branch 与工作目录。同步 evals SPEC 和落地计划。
+**为什么这么改**：完整系统测评需要在 Inspect View 同时查看结果和执行过程，且两种 trace 后端必须复用同一类型化读法；用 store 交接避免评分方重复猜目录、读 run.json。
+**取舍**：依赖 Inspect 内部 _event 与模型 API 日志策略，精确锁定 0.3.271 并验证全部调用请求不被默认裁剪；正文用原 uuid，派生 span 用带后缀的 uuid，时间采用 datetime 微秒精度。trace 写入格式与 Langfuse 树不变，真机验收留用户本机。
+**影响面**：仅 agent_goal_run 的诊断展示与 solver/scorer 交接，不改结果评分口径。新增 8 个本地测试通过；排除已登记的 test_screen_text.py 后全量 pytest 561 通过、2 跳过，无失败。真实 167 条恢复线账回放为 175 个事件（模型 32、工具 54、信息 81、span 各 4），生成并读回 .eval 核对原时间、完整请求与附件。ruff 全仓通过。
+
 ## 2026-10-08（420）—— 同步 decoder 裁决规格与完整验收结果
 
 **改了什么**：同步 world/evals SPEC、DECODER_RELABEL_1007、DECODER_FIX_1007，记录真值修补、现行解码判据、地形分母、测试与报告路径，并集中追加 408–420 的决策记录。将批准的机器补丁清单一并版本化，备份和运行报告仍留在本地。

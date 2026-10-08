@@ -41,6 +41,7 @@ def agent_goal_run(
     timeout: int | None = None,
     log_dir: str | None = None,
     trace_backend: str | None = None,
+    transcript: bool = True,
     grader_model: str | None = "openai-api/deepseek/deepseek-flash",
 ) -> Task:
     """e2e 测评：dataset + solver + scorer（指标挂 scorer，epochs 走 `inspect eval --epochs`）。
@@ -80,16 +81,11 @@ def agent_goal_run(
             timeout=timeout,
             trace_backend=trace_backend,
             version=version,
+            transcript=transcript,
         ),
         scorer=[
-            e2e_scorer(
-                report_dir=report_dir, stall_limits=stall_limits, trace_backend=trace_backend
-            ),
-            *(
-                [result_model_scorer(report_dir, trace_backend, grader_model)]
-                if grader_model
-                else []
-            ),
+            e2e_scorer(stall_limits=stall_limits, trace_backend=trace_backend),
+            *([result_model_scorer(trace_backend, grader_model)] if grader_model else []),
         ],
         metadata={
             "dataset_version": version,
@@ -98,6 +94,7 @@ def agent_goal_run(
             "timeout": timeout,
             "knowledge": knowledge,
             "trace_backend": trace_backend,
+            "transcript": transcript,
             "models": models,
             "stall_limits": list(stall_limits),
             "sample_ids": [s.sample_id for s in chosen],

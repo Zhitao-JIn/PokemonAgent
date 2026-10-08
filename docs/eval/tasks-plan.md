@@ -1,7 +1,7 @@
 # plan —— 测评 task 改名 + 数据集重整 + judge 扩容 + choose
 
 > 流程位置：tasks-intent.md → tasks-spec.md → **tasks-plan.md** → PR → production
-> 本文件按步追加；当前只有 **D1**（数据生产工具迁入数据集包 `build/`，spec §〇 / §二）。
+> 本文件按步追加：**D1**（已随 407 落地）、**S1b**（已随 421 落地，真机验收待用户执行）。
 
 ---
 
@@ -91,3 +91,58 @@
   106条脚本用例与8条帧采集输入转冻结数据，experiment 原存档保留。
 - 106条转换前后完整裁决一致；D1 重采产物与旧工具逐字节一致，但旧工具重跑也不等于现有v2。
   正式冻结文件保持原状；pack 验证使用副本及项目现有的进程内装配模式。
+
+---
+
+## S1b —— agent_goal_run 的过程 trace 进 Inspect transcript
+
+> 规格：`tasks-spec.md` §一b。前置：S1（406）、S2（407）已落地。一个 CHANGELOG 编号条目、一个 commit。
+> 参照：`eval_results/trace_view_demo/prototype_trace_view_task.py`（已验证可行的原型；直接读 json 文件、模型名写死，正式实现按 spec 改为 `RunStream` 与真实型号）。
+
+### 步骤
+
+| # | 动作 | 文件 |
+|---|---|---|
+| 1 | 新增 `AgentRunRecord(StoreModel)`：`run_id`、`branch`、`invalid`、`error`、`work_dir`、`run_result` | `evals/solvers/agent_goal_run/solver.py`（或同包 `record.py`） |
+| 2 | 新增回放模块：`replay_into_transcript(stream: RunStream, models: dict[str, str]) -> int`（返回追加的事件数）；按 spec §1b.3 拆成四个小函数：span、model、tool、info；span 栈处理未配对的结束 | `evals/solvers/agent_goal_run/transcript.py` |
+| 3 | solver 改造：子进程结束 → 读 `run.json` / `run_result.json` → 写 `AgentRunRecord` → 有效样本 `RunStream.load` 后调 `replay_into_transcript`；无效 / 超时写一条说明性 `InfoEvent`；`state.output.completion` 保持现状 | `evals/solvers/agent_goal_run/solver.py` |
+| 4 | task 增加参数 `transcript: bool = True`，透传给 solver；`models` 透传给回放用作型号名 | `evals/tasks/agent_goal_run/task.py` |
+| 5 | scorer 改从 store 取记录：删掉自己拼 `work_dir_of(...)`、读 `run.json` 的代码 | `evals/scorers/agent_goal_run/task_scorer.py`、`result_grade.py` |
+| 6 | 单元测试（spec §1b.6-1） | `tests/test_evals_agent_transcript.py`（新） |
+| 7 | 离线回放核对（spec §1b.6-2）：写一个一次性脚本或测试，对 `eval_results/inspect/runs/knowledge_door_transition/trace` 跑回放，打印各类事件计数与首尾时间 | 不进仓库 |
+| 8 | 文档：`docs/spec/evals/SPEC.md` 增加"agent_goal_run 的过程在 Inspect View 的 Transcript 里"一段与事件映射表；删去"过程层只在 Langfuse"的表述；CHANGELOG 一条 | 文档 |
+
+### 验证
+
+| 验证 | 通过标准 |
+|---|---|
+| 单元测试 | 新测试全过；`tests/test_evals_*` 无新增失败 |
+| 离线回放 | 事件计数：ModelEvent = 账本中模型调用账数，ToolEvent = 动作 + 记忆账数，span 成对；首尾时间等于账本最早 / 最晚 `started_at` |
+| 回归 | 全量 pytest（排除已知 `test_screen_text` 与已知 trace 分支顺序偶发失败）不多出失败；ruff 通过 |
+| 真机（交用户本机） | `python -m evals run agent_goal_run --limit 1` 后 `inspect view` 可见三层嵌套与带图的模型调用 |
+
+### 注意
+
+- 只用 `transcript()._event(...)` 追加；不要用 `transcript().info()` / `async with span()`，它们会把时间戳盖成当前时间。
+- 事件 `uuid` 用账的 uuid；同一样本重复回放会因 uuid 重复报错——回放只调用一次。
+- 不改项目 trace 的格式与写入方；不改 Langfuse 树形约定。
+
+### S1b 落地记录（2026-10-08）
+
+- 新增 `AgentRunRecord` 与 `RunOneRecord` 文件契约，solver 写 store，两个 scorer 只从
+  store 取执行线与路径；task 的 `transcript` 参数缺省 true，false 时不读回放账。
+- 回放沿用 `RunStream.load`，覆盖三层 span、全部模型链路、动作和记忆工具及其余信息账。
+  原 uuid 归正文事件，派生 span 用后缀 uuid，metadata.trace_uuid 始终指向原账。
+  未配对 error 不误关外层，遗留 span 使用最后账 ended_at 收口。
+- Inspect 0.3.271 原声明为下限，本次改为精确锁定；回放临时开启全部模型 API 请求保留，
+  避免 Inspect 默认只保留前几次完整请求。时间按 datetime 微秒精度保存。
+- 新增 8 个无模型、无游戏测试，覆盖原时间与嵌套、图片、完整字段与用量、30 次调用不丢
+  请求、重复回放拒绝、历史工具及 enabled / disabled / invalid / timeout 的 store 交接。
+- 离线真账经 RunStream 排除 main 的 checkpoint_save：167 条账 → 175 个事件，
+  Model 32、Tool 54、Info 81、SpanBegin/SpanEnd 各 4；已生成并读回
+  `eval_results/s1b_trace_view/*.eval`，完整请求和原时间通过核对。
+- 回归：排除已登记的 `test_screen_text.py` 后全量 pytest 561 通过、2 跳过，无失败；
+  `ruff check .`、`ruff format .`、git diff 空白检查通过。沙箱验证使用应用随附 Python 与
+  项目 venv 依赖，补齐 Windows DLL 搜索路径，并把 Inspect 验证日志重定向到工作区。
+- 真机验收仍由用户本机执行：`python -m evals run agent_goal_run --limit 1`，随后
+  `inspect view` 检查三层嵌套、带图模型调用与 Langfuse 同 run 的时间。
