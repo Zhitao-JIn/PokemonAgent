@@ -16,3 +16,24 @@ def erased_tiles(tiles: list[list[int]]) -> int:
         for row in tiles
         for column, tile in enumerate(row)
     )
+
+
+def title_logo(tiles: list[list[int]]) -> bool:
+    """标题 Logo 第一行固定连续十六图块，独立于战斗与地图残留变量。"""
+    return tiles[1][2:18] == list(range(0x80, 0x90))
+
+
+def graphic_only(tiles: list[list[int]]) -> bool:
+    """无字母且无完整普通框时，图形页上的 HUD/边框别名不算文字。"""
+    if any(0x80 <= tile <= 0xB9 for row in tiles for tile in row):
+        return False
+    for top, values in enumerate(tiles):
+        for left, tile in enumerate(values):
+            if tile != 0x79:
+                continue
+            for right in range(left + 1, len(values)):
+                if values[right] != 0x7B:
+                    continue
+                if any(row[left] == 0x7D and row[right] == 0x7E for row in tiles[top + 1 :]):
+                    return False
+    return True

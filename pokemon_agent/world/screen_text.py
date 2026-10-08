@@ -24,7 +24,7 @@ from .interface import Facts, Memory
 from .interface.domain.screen_text import ScreenText
 from .ram import SCREEN_COLS, SCREEN_ROWS, W_TILEMAP
 from .screen_layout import keyboard_screen
-from .screen_glyphs import has_text_neighbor
+from .screen_glyphs import graphic_only, has_text_neighbor, title_logo
 from .screen_menu import read_menu
 
 W_IS_IN_BATTLE = 0xD057
@@ -181,6 +181,8 @@ def render_screen(tiles: list[list[int]], *, in_battle: bool) -> str:
     一个图块渲成一个字符，只有 `:L` 与 `HP:` 两个图块各占两三个字符，所在行后面的列会右移。
     整屏既没有字也没有边框（走路、过场）时返回空串：18 行 `·` 不带任何信息，只占 prompt。
     """
+    if title_logo(tiles) or graphic_only(tiles):
+        return ""
     text = "\n".join(_render_row(row, in_battle).rstrip() for row in tiles)
     text = keyboard_screen(text, tiles)
     return text if text.strip("·\n ") else ""

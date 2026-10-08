@@ -12,6 +12,7 @@ from __future__ import annotations
 from .interface import TAKEOVER_SCENES, Memory, ScreenText, TaskScene
 from .scene_layout import has_battle_menu_frame, is_transition
 from .screen_text import read_tiles
+from .screen_glyphs import title_logo
 
 W_IS_IN_BATTLE = 0xD057
 W_LIST_POINTER = 0xCF8B
@@ -53,6 +54,8 @@ def classify_scene(text: ScreenText, mem: Memory) -> TaskScene:
 
     # 步骤 0：用完整屏幕布局与地图载入证据识别过场。
     tiles = read_tiles(mem)
+    if title_logo(tiles):
+        return TaskScene.TITLE
     if is_transition(tiles, screen, mem):
         return TaskScene.TRANSITION
 
