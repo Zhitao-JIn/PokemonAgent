@@ -1,3 +1,17 @@
+## 2026-10-08（427）—— 删除 evals 命令行入口，测评只用 Inspect 原生命令
+
+**改了什么**：删除 `evals/cli.py` 与 `evals/__main__.py`（原 `python -m evals list / run / freeze-frames / frames build / agent_goal_run run-one`）。测评直接用 `inspect eval evals/tasks/<task>/task.py`；agent_goal_run 的 solver 子进程改调 `python -m evals.solvers.agent_goal_run.cli run-one`；帧数据构建改调 `python -m evals.dataset.frames.build.cli build`，接管/地形冻结改调 `build.freeze` / `build.terrain` 两个模块自带的入口；`docs/spec/evals/SPEC.md` 的命令同步。
+**为什么这么改**：`run` 只是把短名翻成路径再转给 inspect，`list` 只是打印注册表；Inspect 本身就能按文件路径加载 task，这层包装没有提供任何 Inspect 没有的能力，却多一个要维护的入口。
+**取舍**：保留 `evals/tasks/registry.py`——它由 `test_evals_tasks` 核对"公开 task 恰好六个且函数名一致"，不再服务命令行。`run-one` 是 solver 起子进程的内部协议，无法删除，只改为模块直调。历史 changelog 与 `docs/` 下的旧计划/记录里的旧命令是历史档，不改写。
+**影响面**：`python -m evals ...` 全部不再存在；solver 启动子进程的命令串；SPEC 命令块。未改评分、数据与 task 本身。静态核对：被改三个文件编译通过、CRLF 保持，仓库 `.py` 内对 `evals.cli` 与 `-m evals` 的引用清零；本环境装不上 inspect-ai，未实跑，待本机跑 `inspect eval` 与 agent_goal_run 单样本确认。
+
+## 2026-10-08（427）—— 从 world 规格与计划删除集成测试安排
+
+**改了什么**：按用户要求删除 world-e2e spec/plan 的集成测试章节、流程分支、验收和前置安排，以及把旧用例转移到集成回归的任务。旧内部步骤用例改为从功能数据集排除或重构为完整操作用例。
+**为什么这么改**：用户后续自行负责集成测试，本轮文档只安排 31 个脚本的功能有效性测评，不代排其他测试工作。
+**取舍**：保留内部实现不对外暴露的架构约束、31 项功能清单与已完成的实测记录；不删除现有测试文件，不修改生产代码或冻结数据。
+**影响面**：仅当前规格和计划的工作范围。检查确认两份文档不再包含集成测试或内部回归任务，功能清单仍为 31 项。
+
 ## 2026-10-08（426）—— world 测评只验脚本功能，调用与内部回归归集成测试
 
 **改了什么**：按用户收窄范围更新 world-e2e spec/plan：功能 solver 本地调用 world 完整脚本，保留报告与独立世界效果、C1–C4 和确定性验收；外部边界及内部流程回归移到独立集成测试，移除功能验收中的 C5。
