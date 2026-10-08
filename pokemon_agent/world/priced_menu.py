@@ -39,6 +39,9 @@ def _read_box(
     pending = ""
     for row in tiles[top + 1 :]:
         if row[left] == 0x7D and row[right] == 0x7E:
+            if pending == "CANCEL":
+                items.append((pending, ""))
+                pending = ""
             return items if not pending else []
         if row[left] != 0x7C or row[right] != 0x7C:
             return []
