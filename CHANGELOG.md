@@ -1,3 +1,24 @@
+## 2026-10-08（424）—— world v2 候选与真实模拟器验收记录
+
+**改了什么**：新增 world v2 用例草稿、源码出口覆盖缺口表；同步 world-e2e spec/plan 的实测记录与三个成功覆盖缺口。保留两轮候选报告和独立 RAM 为本地产物。
+**为什么这么改**：v2 冻结前必须区分已经实测的候选和仍需采存档的方案；模型能力测试之前先把 world 的下界测清楚。
+**取舍**：不创建 v2，不切默认版本，不执行 agent；共享生命周期失败出口保守登记，可达性待核。等待已就绪用例不充当过场等待，bounce 遇怪仍以成功结局上报。
+**影响面**：文档和验收材料；8 条等待/输入拒绝候选各两轮通过，circle/bounce 中途遇怪两轮一致，walk/adjacent 候选未遇怪不计干扰覆盖。v1 冻结文件不变。
+
+## 2026-10-08（423）—— battle_switch 接受战斗队伍列表入口
+
+**改了什么**：ScriptDefinition 增加显式 entry_scenes，能力目录与执行器共用入口声明；battle_switch 接受队伍列表起点并跳过重复打开 PKMN，保留真实起始场合与菜单准备/业务校验。
+**为什么这么改**：switch_from_party_list 已进入 battle_switch 场合，原执行器在菜单恢复前按 battle_menu 的唯一入口拒绝了调用，导致合法换人失败。
+**取舍**：不改用例期望，不把 fight/use_item 等脚本一并开放到队伍列表，不改场合分类或 send_out 行为。
+**影响面**：脚本入口声明、掩码与换人实现；四条换人用例各两轮通过，最终 v1 全量两轮 212/212，sample error 0，无 flaky，零模型调用，Inspect 总耗时 45 秒。260 个 evals/脚本测试通过，Ruff 全仓和 world 自持 A/B/C 通过。
+
+## 2026-10-08（422）—— world_script_execute 声明覆盖检查与用例类别指标
+
+**改了什么**：ScriptCase 增加 kind，v1 读取推导分类且不改冻结文件，新版缺 kind 报 DatasetError；新增覆盖 CLI 和人工源码失败出口登记，输出成功/各失败码/干扰计数及 C1–C3 缺口。task 传 kind，pass 增加独立 kind_accuracy 分组指标。
+**为什么这么改**：现有 106 条用例无法机械提示漏测，新脚本和失败出口可能完全无成功或失败示范；Inspect 同名 grouped 指标会合并，类别分组需要独立注册名。
+**取舍**：覆盖统计只证明声明存在，不等于执行通过或共享错误路径可达；源码失败出口由人登记并维护，不伪称静态自动枚举完备。仍保留两套真值词表与 v1 默认版本。
+**影响面**：仅 world 测评数据读取、覆盖工具和指标；v1 不满足覆盖规则时退出 1，C1 明确列 wait_until_scene、party_field_move、pc_withdraw_pokemon 三个缺口，9 个 C3 脚本均缺 interrupt 标签。新增类别、版本与指标测试通过。
+
 ## 2026-10-08（421）—— agent_goal_run 过程 trace 回放进 Inspect transcript
 
 **改了什么**：按 S1b 经 RunStream 回放真实执行线，映射三层 span、模型、动作与记忆工具及信息事件，保留原时间、图片、完整正文与用量；增加默认开启的 transcript 参数。solver 写 AgentRunRecord，机械与模型结果 scorer 从 store 接收 run_id、branch 与工作目录。同步 evals SPEC 和落地计划。
