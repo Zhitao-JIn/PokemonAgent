@@ -1,3 +1,31 @@
+## 2026-10-13（433）—— 删除 decode Inspect 入口并同步评测口径
+
+**改了什么**：删除旧 decode task、solver、scorer 和 decoder_baseline.py；注册表改五个 Inspect task，同步本地测试、AGENTS.md、CLAUDE.md、SPEC.md 与运行产物忽略。
+**为什么这么改**：迁移完成后只保留一种公开 decode 运行方式，避免旧组级口径与新字段级口径同时存在。
+**取舍**：四组 C/(C+I) 改为逐字段通过率加帧级通过率，不再单列组级数字；其他任务及已有工作区改动保留。
+**影响面**：全量 pytest 596 passed、2 skipped；全仓 Ruff check 与 format 通过。测试环境 MCP 2.x 不兼容既有 FastMCP，恢复本地 MCP 1.30.0 后通过，未改生产依赖声明或被测代码。
+
+## 2026-10-13（432）—— decode 接入 DeepEval 原生逐字段评测
+
+**改了什么**：新增 dataset.py、scorer.py 与 __main__.py：一帧一个 LLMTestCase，真值键并集生成 FieldMatch，普通 Python 入口调用 evaluate。
+**为什么这么改**：使用 DeepEval 自身的帧级 Pass Rate 和 Aggregate Metrics，统一字段分母与原生结果存档。
+**取舍**：指标不调 LLM；缺标抛 MissingTestCaseParamsError 后跳过，空值照常计分。关闭缓存写入避免反复重写，但保留结果 JSON；标准输出使用 UTF-8 兼容 Windows 重定向。
+**影响面**：全部 24035 个 C/I/N 与 S0 一致，23 个指标 Total 等于标注数；原生命令全量 1045/1045，筛选有效，合成错误用例退出 1。
+
+## 2026-10-13（431）—— 抽出 decode 解码与逐字段纯比较契约
+
+**改了什么**：在 evals/decode/ 增加 solver.py、compare.py，搬入 DecodeRun、decode_frame、Verdict、field_verdict 与点路径读取。
+**为什么这么改**：解码与比较应能独立于评测框架复用；按单键比较才能保持未标注与显式空值的区别。
+**取舍**：保留旧解码流程及比较语义，包括 screen_contains 的逐条包含判据。
+**影响面**：仅评测适配代码，pokemon_agent/、冻结数据和真值零修改。
+
+## 2026-10-13（430）—— 固化 decode 迁移前逐字段基线
+
+**改了什么**：用旧 decode_frame 与 compare_group 逐键导出 eval_results/decode_baseline_1012.json，保存显式空值标记。
+**为什么这么改**：迁移必须有独立于新指标的逐帧逐字段对照，防止仅汇总相等掩盖判定变化。
+**取舍**：只冻结评测结果，不改真值、冻结帧或被测实现。
+**影响面**：1045 帧 × 23 字段 = 24035 判定，I=0；terrain.map_id 的 N=26，walk_map/neighbors 各 N=27，screen_contains Total=8。
+
 ## 2026-10-08（429）—— world 脚本统一命名、用例与评分路径
 
 **改了什么**：脚本实现目录从 scripts/takeover 改为 scripts/scenes，注册表、声明式核对类型和决策模板统一使用脚本命名；106 条用例统一采用脚本名:用例名的 ID，删除来源类别标签与按类别数量断言；评分不再按 status 分派两套判定，全部用例统一核报告和声明的世界真值；同步当前代码、测试与文档。

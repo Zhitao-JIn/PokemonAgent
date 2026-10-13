@@ -309,3 +309,5 @@ evals/dataset/capture/
 ## 七、不做
 
 intent 第八节所列；另外本 spec 不定 choose / judge 的样本**具体内容**（属于采集与标注工作，plan 里排），不改 agent_goal_run 的评分。
+
+> 2026-10-12 起槽位规则被 `eval-split-intent.md` 的目录规则取代，按任务逐个迁移；decode 已迁入 `evals/decode/`，其他任务保持原位。

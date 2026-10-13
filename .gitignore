@@ -41,3 +41,6 @@ docs/experiments/
 log
 *.egg-info/
 eval_results/
+
+.deepeval/
+eval_results/decode/

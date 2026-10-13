@@ -10,7 +10,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外只有六个 inspect task。`python -m evals list` 列出入口，`python -m evals run <task> <inspect 参数>` 统一启动；`.eval` 记录样本、输入、输出、评分与错误。
+对外有五个 Inspect task 和独立的 DeepEval decode 入口。`python -m evals list` 列出入口，`python -m evals run <task> <inspect 参数>` 统一启动；`.eval` 记录样本、输入、输出、评分与错误。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
@@ -18,7 +18,6 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
-| decode | 同一帧冻结 WRAM，机械解码一次 | 场合/脚本覆盖/初态、ScreenText、接管视图、地形/位置四个分组 | 无 |
 | episode_vision_read | 生产视觉节点的纯视觉部分，输入截图 | scene、overlay、dialog_text、options、cursor、解析成功 | 视觉模型 |
 | world_script_execute | 脚本统一走执行通道，真实模拟器 | 自报结局与世界真值 | 无 |
 | memory_store_recall | 冻结库经真实 MemoryTool 写入、读回，再检索带相关性标签的查询 | 存储分、检索 recall@k / MRR | 无 LLM，本地 embedding/reranker |
@@ -29,15 +28,29 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 `evals/dataset/frames/v2/samples.jsonl` 是唯一的 v2 帧集（1045 帧）；`source` 只记录采集来源，不决定 decode 的评分组。原基础帧、接管快照、地形快照均已合并，加载器不再拼接来源文件。采集命令按来源替换统一帧集中的对应样本，保留其余来源。decode、episode_vision_read 共用加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
 
-`evals/dataset/frames/v2/truth.jsonl`是decode独立真值的唯一存储，按sample_id记录scene_truth、screen_truth、takeover_truth、terrain_truth。所有已标字段直接挂到帧上计分，删除reviewed及配套组/字段审核标记，不再按审核状态过滤。未标或空组为NOANSWER，不进入该组分母；unresolved_fields记录无法判定原因。decode不从label_checked或label回退取答案。1045帧已标全部适用字段，地图稳定的1019帧有地形标注；c-0109的walk_map与neighbors为unresolved，其余26帧地形不适用。网页审阅意见独立保存，不控制真值计分。视觉任务保留自身原有label_checked口径。
+`evals/dataset/frames/v2/truth.jsonl`是decode独立真值的唯一存储，按sample_id记录scene_truth、screen_truth、takeover_truth、terrain_truth。所有已标字段直接挂到帧上计分，删除reviewed及配套组/字段审核标记，不再按审核状态过滤。未标字段跳过，不进入该字段分母；unresolved_fields记录无法判定原因。decode不从label_checked或label回退取答案。1045帧已标全部适用字段，地图稳定的1019帧有地形标注；c-0109的walk_map与neighbors为unresolved，其余26帧地形不适用。网页审阅意见独立保存，不控制真值计分。视觉任务保留自身原有label_checked口径。
 
 `scene_truth` 查三个字段：`scene`、`covered_by_script`、`at_start`。`covered_by_script=true` 表示当前场合由脚本负责，包含未回初态的子菜单；有可选脚本的场合允许按键，covered_by_script 为 false。真值从独立标注场合和已核对的八类脚本对应关系补出，不读取被测分类器结果。1045 帧已标此字段；两帧完整空菜单重绘按2026-10-08裁决标为start_menu（c-0419）和bag（c-0440）。该字段只测覆盖识别是否正确；实际退回初态与执行结果由 `world_script_execute` 验证，模型选择目标脚本由决策 prompt 约束，本次未运行真实模型验证。
 
-同一帧只跑一次机械解码，四个 scorer 复用结果。`judged_accuracy` / `judged_count` 读取未做 epoch 数值归并的原始 C/I/N，每次重复运行作为独立观测统计，确保 N 不被转换为失败进入分母。
+## B 类运行方式与目录规则
 
-decode默认读取全部真值，无include_unreviewed选项；任务metadata的reference_scope固定为all_truth。
-`baseline_only=true`切换为13字段通用scorer：scene、overlay、dialog_text、options、option_grid、option_details、cursor、cursor_cell、has_cursor、quantity_box、in_battle、strict_dialog、screen。
-排除at_start、covered_by_script、covered、接管视图和地形；各字段独立统计C/I/N，只有13字段都可判时整帧计分。完整四组诊断仍用默认scorer。
+decode 的代码全部位于 `evals/decode/`：`dataset.py` 将帧转为用例，`solver.py` 解码，
+`compare.py` 纯比较，`scorer.py` 提供 `FieldMatch`，`__main__.py` 调用 `evaluate()`。
+共用帧集保留在 `evals/dataset/frames/`；其他任务迁移前保持原目录。
+
+一帧一个 `LLMTestCase`，actual_output 与 expected_output 分别为整帧输出与真值 JSON。
+扫描真值键并集生成 23 个字段指标，名称如 `screen.options`。缺键未标注时抛
+`MissingTestCaseParamsError`，配合 `ErrorConfig(skip_on_missing_params=True)` 跳过，
+不进该字段分母。真值为 null、空字符串、空列表、false 或 0 均照常计分；
+输出必须含有对应键且值相等。`screen_contains` 要求每条文字都在屏幕文本中。
+
+默认只列失败帧，DeepEval 原生输出 Aggregate Metrics 与帧级 Pass Rate。
+各字段 Total 等于有标注帧数；帧级通过要求该帧全部计分字段通过。
+至少有一个计分字段的帧进入帧级分母；全部跳过的帧由 DeepEval 排除。
+不再单列四组 C/(C+I)，需要时可由逐字段记录推导。
+每次运行原生 JSON 保存到 `eval_results/decode/`，有失败返回 1，成功返回 0。
+`--frame ID` 可重复，`--scene NAME` 按真值场合筛选，两者取交集。
+未知 ID 或空选择返回参数错误；不通过 pytest 启动评测，不调用模型、不启动模拟器。
 
 ## 模型与启动
 
@@ -47,7 +60,9 @@ decode默认读取全部真值，无include_unreviewed选项；任务metadata的
 
 ```powershell
 python -m evals list
-python -m evals run decode --log-dir eval_results/decode
+python -m evals.decode
+python -m evals.decode --frame p-option_screen
+python -m evals.decode --scene bag
 python -m evals run world_script_execute --log-dir eval_results/world_script_execute
 python -m evals run memory_store_recall --log-dir eval_results/memory_store_recall
 python -m pytest tests/test_harness_integrity.py
@@ -90,7 +105,7 @@ datetime 的微秒精度保留；模型与工具的 completed 使用 ended_at。
 
 冻结帧1045个，所有适用 decoder 输出字段已有独立参考标注：scene 三字段、screen 十三个字段、takeover 的 view 与非空视图全部嵌套成员，各覆盖1045帧；terrain 的map_id/where/facing覆盖1019帧，walk_map/neighbors覆盖1018帧，c-0109的两项记unresolved；另26帧地形不适用。完整字段、原始证据和边界裁决见 `docs/DECODER_TRUTH_COVERAGE_1007.md`。
 
-这些参考标注不代表1045帧均经人工逐帧审核。默认 decode 采用全部独立真值，404起已删除审核过滤；用户批准本次审计裁决和713条补丁不等于新增留出集验证。四组分别计分，组内所有已标键均相等才为C，任一不等为I，无标为N；准确率=C/(C+I)，同时报告计分帧数。显式null期望仍要求实际输出该键。
+这些参考标注不代表1045帧均经人工逐帧审核。默认 decode 采用全部独立真值，404起已删除审核过滤；用户批准本次审计裁决和713条补丁不等于新增留出集验证。逐字段比较，已标键相等为 C，不等为 I，未标为 N（DeepEval 跳过）；字段通过率为 C/(C+I)，Total 为有标注帧数，帧级通过要求全部计分字段通过。显式null期望仍要求实际输出该键。
 
 参考标注从原始冻结 RAM/ROM、固定名称表及既有独立文字/场合标注产生，不读取待测解码输出。候选完成后才跑 decoder 作差异诊断。参考程序、逐帧字节及哈希位于 `eval_results/labeling_1007/full_truth/`；运行 `python -m evals.dataset.frames.build.coverage` 检查顶层字段与视图嵌套字段。
 

@@ -1,7 +1,6 @@
-"""唯一的公开测评目录：六个 inspect task。"""
+"""唯一的公开测评目录：五个 inspect task。"""
 
 TASKS: dict[str, str] = {
-    "decode": "evals/tasks/decode/task.py",
     "episode_vision_read": "evals/tasks/episode_vision_read/task.py",
     "world_script_execute": "evals/tasks/world_script_execute/task.py",
     "memory_store_recall": "evals/tasks/memory_store_recall/task.py",
