@@ -1,7 +1,7 @@
 # spec —— 第二阶段：其余任务按类迁入 `evals/<任务名>/`
 
 > 流程位置：intent.md（`docs/eval/eval-split-intent.md` 第十节）→ **spec.md（本文）** → plan.md → PR → production
-> 状态：**v7 草案，待确认**。第一阶段（decode）已完成，见 `docs/eval/eval-split-spec.md`（提交 430–434）。
+> 状态：**v7 已按用户授权实施**；验收 6 的两个新入口已执行，agent 的有效目标运行受既有冻结存档结构不兼容限制。第一阶段（decode）已完成，见 `docs/eval/eval-split-spec.md`（提交 430–434）。
 > 起草：2026-10-13
 > 范围：把 `evals/` 下其余五个 task 迁完。三个 B 类（memory_store_recall、world_script_execute、episode_vision_read）改为 DeepEval 入口；两个 C 类（brain_goal_judge、agent_short_goal_run）只换目录，仍是 Inspect task。
 > 约束：被测系统（`pokemon_agent/`）、冻结数据、真值、判定语义一律不改；只动 `evals/`、`tests/`、`scripts/` 与文档。
@@ -25,6 +25,8 @@
 ---
 
 ## 一、前置与共享件
+
+**执行记录**：用户授权代为提交积压改动，P0 已完成。S4 验收按用户明确授权改为每个已核对场景一帧（9 帧），旧基线与新入口各一次；默认 45 帧行为保留，全量视觉验收未执行。world 的纯比较包入口因重写显示删除与新增，用户确认允许；其余实际代码与数据保持重命名。串行 20.8→83.78 秒的隔离代价已获接受。
 
 **1.0 前置（P0）。** 当前工作区有 125 项未提交改动，主要是 `agent_goal_run` → `agent_short_goal_run` 改名（旧路径显示为已删除、新路径为未跟踪）以及 `evals/cli.py`、`evals/__main__.py` 的删除。这批改动必须先由用户提交（或明确保留方式），再开始本阶段。**未提交就不要动手**：本阶段会 `git mv` 整个 `agent_short_goal_run`，与未跟踪文件混在一起会丢历史。
 

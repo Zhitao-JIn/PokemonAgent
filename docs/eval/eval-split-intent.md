@@ -1,7 +1,7 @@
 # intent —— 测评分三类：tests（pytest）、evals·DeepEval（无轨迹）、evals·Inspect（有轨迹）
 
 > 流程位置：**intent.md**（本文）→ spec.md → plan.md → PR → production
-> 状态：第一阶段（decode 迁到 B 类）**已完成**（提交 430–434，见第八节）；第二阶段（其余五个 task 迁完）**v7 草案，待确认**（见第十节），spec 见 `eval-split-spec-2.md`。
+> 状态：第一阶段（decode 迁到 B 类）**已完成**（提交 430–434，见第八节）；第二阶段（其余五个 task 迁完）**已按用户授权实施**（见第十节），spec 见 `eval-split-spec-2.md`。
 > 起草：2026-10-12（v2：补上 pytest 类；v3：decode 改归 B 类；v5：B 类改为 DeepEval `evaluate()` 启动、自写逐字段指标、DeepEval 原生汇总，不再用 pytest；v6：未标注字段不参与统计、空值照常计分；evals 按任务名分目录；v7：补第二阶段，其余五个 task 全部迁入任务目录）
 > 关联：`docs/eval/eval-split-spec.md`（第一阶段）、`docs/eval/eval-split-spec-2.md`（第二阶段）、`docs/spec/evals/SPEC.md`、`docs/eval/tasks-intent.md`
 

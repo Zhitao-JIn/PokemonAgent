@@ -48,6 +48,8 @@ intent 第六节里没拍板的项，本 spec 先按推荐方案写；推翻哪�
 
 ### 1.4 目录按 inspect 槽位归位，`evals/core/` 解散
 
+> 本节保留历史方案。2026-10-13 第二阶段完成后，所有任务均归 evals/<任务名>/，公开入口在 evals/registry.py；旧 tasks/、solvers/、scorers/ 不再存在。当前布局以 docs/spec/evals/SPEC.md 为准。
+
 **规则**：
 
 ```

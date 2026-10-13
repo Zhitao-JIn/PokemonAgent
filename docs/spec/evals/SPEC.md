@@ -10,11 +10,11 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外有两个 Inspect task 和 DeepEval decode、memory_store_recall、world_script_execute、episode_vision_read 入口。入口文件登记在 `evals/tasks/registry.py`，直接用 Inspect 原生命令 `inspect eval evals/tasks/<task>/task.py [-T 参数]` 启动，不再有项目自己的命令行包装；`.eval` 记录样本、输入、输出、评分与错误。
+对外有六个任务，统一登记在 `evals/registry.py`：四个 DeepEval 模块入口、两个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
-不再提供旧口径一致性校验。单样本子进程本体是 `evals/solvers/agent_short_goal_run/worker.py`，由 solver 经 stdin 交一份 `RunOneRequest` 启动，不是对外命令。
+不再提供旧口径一致性校验。单样本子进程本体是 `evals/agent_short_goal_run/solver/worker.py`，由 solver 经 stdin 交一份 `RunOneRequest` 启动，不是对外命令。
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
@@ -25,7 +25,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 测评按三层归类：**结果层**看系统最终有没有把事办成；**工具层**看每个组件单独是否可靠；**流程层**看大脑的决策环节（规划、判定、验证、反思）。分层只是归类，不改变各 task 的评分口径；`tests/test_harness_integrity.py` 是集成测试、不是 inspect task，不在下列分层内。过程指标（重复动作、A-B-A 振荡、预算耗尽后的收尾）继续只写日志做诊断，不另立评分 task。
 
-命名为 `agent_<范围>_goal_run`：`short` 指单个冻结场景内的短目标，`long` 指从真实开局出发的多里程碑长程。标"规划中"的 task 尚无数据集、solver、scorer，也不在 `evals/tasks/registry.py` 里。
+命名为 `agent_<范围>_goal_run`：`short` 指单个冻结场景内的短目标，`long` 指从真实开局出发的多里程碑长程。标"规划中"的 task 尚无数据集、solver、scorer，也不在 `evals/registry.py` 里。
 
 ### 结果层
 
@@ -108,7 +108,7 @@ decode 的代码全部位于 `evals/decode/`：`dataset.py` 将帧转为用例�
 不进该字段分母。真值为 null、空字符串、空列表、false 或 0 均照常计分；
 输出必须含有对应键且值相等。`screen_contains` 要求每条文字都在屏幕文本中。
 
-默认只列失败帧，DeepEval 原生输出 Aggregate Metrics 与帧级 Pass Rate。
+四个 B 类共用 evals/common/run.py；默认只列失败帧，DeepEval 原生输出 Aggregate Metrics 与帧级 Pass Rate。
 各字段 Total 等于有标注帧数；帧级通过要求该帧全部计分字段通过。
 至少有一个计分字段的帧进入帧级分母；全部跳过的帧由 DeepEval 排除。
 不再单列四组 C/(C+I)，需要时可由逐字段记录推导。
@@ -120,7 +120,7 @@ decode 的代码全部位于 `evals/decode/`：`dataset.py` 将帧转为用例�
 
 视觉为 `evals/config.json` 的 `models.vision_model = deepseek-flash`；五条完整系统链路使用配置的各自型号。
 
-真实模型测试统一覆盖 deepseek-flash；视觉用 `-T vision_model=deepseek-flash`。本轮重构验证没有调用真实语言或视觉模型。
+真实模型测试使用配置型号；视觉可用 --vision-model 覆盖。第二阶段按用户授权只对每场景一帧的 9 帧执行旧基线与新入口验证；默认仍是人工核过的 45 帧。该次新入口 8/9 通过，退出 1；同批保存输出的六列判定新旧一致。
 
 ```powershell
 python -m evals.decode
@@ -180,13 +180,15 @@ datetime 的微秒精度保留；模型与工具的 completed 使用 ended_at。
 接管组仅含 view；重复的 scene 和 screen 归场合与文字组。原已审 scene、screen_contains 移到所属分组并保留原审核粒度，完整 view 的旧已审点路径由加载器按路径投影，不重复存储相同字段。审阅页整屏参考只显示一次。
 
 
-## 测评代码与冻结数据的归属（S1 / S2）
+## 测评代码与冻结数据的归属（第二阶段后）
 
-`tasks/<task>/task.py` 只装配数据集、solver 与 scorer；执行和运行记录归 `solvers/`，
-评分、metric 与结论类型归 `scorers/`。`evals/core/`、`evals/data/`、`evals/schema/` 已解散。
+每个任务集中在 `evals/<任务名>/`：B 类由 `__main__.py` 装配 dataset、solver、compare、scorer，
+C 类由 `task.py` 装配原有 Inspect 链路。文件多时使用同名子包，冻结数据版本紧邻加载代码。
+共享帧、数据工具保留在 `evals/dataset/`，共享运行器与模拟器装配位于 `evals/common/`。
+旧 `tasks/`、`solvers/`、`scorers/` 槽位已删除。
 
 数据包出口只导出 `load()` 与样本类型；读取时核冻结文件、重复 id、版本内引用和来源哈希，
-失败抛 `evals.dataset.errors.DatasetError`。judge / memory 的 task 参数改为 `version=v1`。
+失败抛 `evals.dataset.errors.DatasetError`。judge 的 task 参数与 memory 的 --version 均默认为 v1。
 
 | 数据包 | 默认版本与冻结物 | 构建工具 |
 |---|---|---|
@@ -201,10 +203,12 @@ agent 的 source_state 与 manifest.memory_archive 均相对版本目录；恢�
 `start_world` 接收完整 Path。experiment 原存档保留，数据包中的副本内容不变。
 
 ```powershell
-python -m evals.dataset.agent_short_goal_run.build.pack --samples knowledge_dialogue_advance
+python -m evals.agent_short_goal_run.dataset.build.pack --samples knowledge_dialogue_advance
 python -m evals.dataset.frames.build.coverage
 python -m evals.dataset.frames.build.cli build --capture <capture_dir> --version v3
 ```
+
+以下保留早期数据整理的历史核对记录，不代表本次第二阶段的执行结果：
 
 迁移验收：106 条真机运行记录的完整裁决逐条相同；正式冻结帧与真值不变。
 旧采集工具重跑已会改变当前 v2，迁移前后重采产物逐字节相同，但与正式冻结物不同；
