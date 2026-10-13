@@ -139,9 +139,9 @@ MCP 远程门面 `mcpclient/world_tool.py::WorldMcpTool`）**：
   `reflect()` 组装 `ActMemory`（`result` 字段 P5 起带脚本结局码）、
   `summarize_task()` / `summarize()` / `decompose()`。
 - **记忆过滤**：`_blind()` / `_render_observation()`（SNAPSHOT_BLIND）。
-- **动作空间**：`mcpclient/game_tools.py::_mask()` 按 overlay 取键 + 按场合从
-  `world/scripts/catalog.py::script_entries` 取脚本条目（可用性规则唯一一份，
-  world 侧 `compute_action_space` 同源）；挂 `BUTTON_HELP`/`REPEAT_HINT`/`MAP_HINT`。
+- **动作空间**：`mcpclient/game_tools.py::_action_space()` 调 world 的 `compute_action_space`
+  取 `names` / `mask` / `entries`（掩码只由 world 给出，本层不改），再给开放按键的场合挂
+  `BUTTON_HELP`/`REPEAT_HINT`/`MAP_HINT`。
   **已知耦合**：`mcpclient.game_tools` import `direct.prompts` 的三份文案——
   337 定案的方向是"desc 由 server 产出自带于 entries"，届时这份文案该迁去
   world 侧，耦合随之消失。

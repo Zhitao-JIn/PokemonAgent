@@ -1,3 +1,10 @@
+## 2026-10-13（442）—— 动作空间掩码只由 world 给出，删除 game_tools 的重复实现
+
+**改了什么**：删除 `mcpclient/game_tools.py::_mask`，改为 `_action_space`：`names` / `mask` / `entries` 一律取 `world/action_space.py::compute_action_space`，本层只给开放按键的场合补 `descriptions`（`BUTTON_HELP`）、`note`（`REPEAT_HINT`）、`map_note`（`MAP_HINT`）；仅开放脚本的场合原样返回 world 的结果。`get_action_space()` 与 `execute()` 都走它。同步 `scripts/catalog.py` 的注释与 `docs/spec/{world,tools}/SPEC.md`；新增本地测试 `tests/test_game_tools_action_space.py`。
+**为什么这么改**：同一份动作空间有两处产出，且内容不一致——进程内路径的 `mask` 只含脚本、不含按键，而 world（MCP 服务端用的那份）含全部按键且不可用的键显式为 False，规则分叉迟早漂移。掩码应只有 world 一个出处。
+**取舍**：prompt 文案属 `direct/prompts`，world 不依赖它，所以仍在 game_tools 这一层补，没有下沉到 world；MCP 服务端路径（`WorldMcpTool`）本来就不带这三段文案，维持现状，不在本次处理。
+**影响面**：进程内路径返回的 `ActionSpace` 变化：`mask` 多出全部按键（不可用的为 False），`entries` 多出按键条目，`scene` 有值；`names`、脚本条目与三段文案不变。已查消费方：`BrainTool.choose`、`decide_action` 渲染、`execute()` 的脚本校验都只按 `kind == "script"` 或按名字取，不受影响；按键校验仍用 `names`。本机 .venv 验证：动作空间专项 3 passed，全量 pytest 600 passed、2 skipped、1 warning；ruff check 与 ruff format --check 均通过。
+
 ## 2026-10-13（441）—— 重建 agent 短目标评测的兼容起点存档
 
 **改了什么**：按用户授权从冻结来源 .state 重打 v1 全部 20 份 run 级存档，替换 manifest 与对应记忆快照；打包工具的记忆引用统一用 POSIX 路径，避免 Windows 生成反斜杠引用。

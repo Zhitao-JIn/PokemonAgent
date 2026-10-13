@@ -46,61 +46,44 @@ from pokemon_agent.schemas.harness import (
     ModelCallLog,
 )
 from pokemon_agent.world import (
-    OVERLAY_ACTIONS,
     ActionSpace,
     Facts,
     TaskObservation,
     WorldPort,
 )
+from pokemon_agent.world.action_space import compute_action_space
 from pokemon_agent.world.errors import PerceptionAttemptFailed
-from pokemon_agent.world.scripts.catalog import script_entries
-from pokemon_agent.world.scripts.scenes import scene_script_entries
 
 # `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT` 的组装逻辑全在
 # `pokemon_agent/direct/prompts/decide_action.py`（decide_action.md 一个模板的
 # 全部装配逻辑收在一处）——这里只是消费方。
 
 
-def _mask(obs: TaskObservation, all_actions: list[str]) -> ActionSpace:
-    """按这份观测的 overlay 算动作空间。**纯函数，不碰 world。**
+def _action_space(obs: TaskObservation, all_actions: list[str]) -> ActionSpace:
+    """动作空间由 world 的 `compute_action_space` 算出（`names` / `mask` / `entries` 的唯一出处），
+    本函数不改它们，只给开放按键的场合补上 prompt 要渲染的按键说明、连按用法与地图规则。
 
-    后置条件：至少一个动作可用。走投无路也必须给至少一个动作——
-        空动作空间是这一层的 bug，不能推给大脑处理。
-
-    仅开放脚本的场合（有脚本的场合）只给脚本，JEV 在那里不直接按键。
-
-    脚本条目按场合从 `world/scripts/catalog` 取（可用性规则唯一一份）；掩码命名空间
-    覆盖键 + 脚本，不可用的键显式 `False`。
+    这三段文案属 prompt 层（`direct/prompts`），world 不依赖它，所以在这一层补；仅开放脚本的
+    场合没有按键，不补。
 
     `get_action_space()` 和 `execute()` 共用它，而**不是让后者去调前者**——
     两个方法各自对外的语义不同（一个交出动作空间、一个校验并执行），
     让后者内部调前者只会多绕一层，读代码的人还要多想一步谁依赖谁。
     """
-    # 直接拿结构化的 `facts.overlay`——不再是"文本塞回枚举"的反解，
-    # `obs.facts` 本来就是 `Facts` 模型，`overlay` 该是 `Facts.Overlay` 就是
-    # `Facts.Overlay`，缺失时才退回 `NONE`。
-    scripts = script_entries(str(obs.scene))
-    if scene_script_entries(obs.scene):
-        space = ActionSpace(names=[])
-    else:
-        overlay = obs.facts.overlay or Facts.Overlay.NONE
-        names = [a for a in OVERLAY_ACTIONS[overlay] if a in all_actions]
-
-        assert names, f"action space must never be empty (overlay={overlay})"
-        space = ActionSpace(
-            names=names,
-            descriptions=dict(BUTTON_HELP[overlay]),
-            # `note`/`map_note` 分开是有意的：地图/证据规则（`map_note`）要紧跟在已知事实
-            # 后面渲染，连按用法（`note`）留在可用按键说明这一节——见
-            # `ActionSpace.map_note` 的字段说明。
-            note=REPEAT_HINT,
-            map_note=MAP_HINT,
-        )
-    # 统一掩码收口：脚本条目并进 entries、掩码标 True（不在场的脚本名不进掩码，
-    # `enabled()` 对缺失键返回 False，与键的既有口径一致）。
-    space.entries = [*space.entries, *scripts]
-    space.mask = {**space.mask, **{e.name: True for e in scripts}}
-    return space
+    space = compute_action_space(obs, all_actions)
+    if obs.covered_by_script:
+        return space
+    overlay = obs.facts.overlay or Facts.Overlay.NONE
+    # `note`/`map_note` 分开是有意的：地图/证据规则（`map_note`）要紧跟在已知事实
+    # 后面渲染，连按用法（`note`）留在可用按键说明这一节——见
+    # `ActionSpace.map_note` 的字段说明。
+    return space.model_copy(
+        update={
+            "descriptions": dict(BUTTON_HELP[overlay]),
+            "note": REPEAT_HINT,
+            "map_note": MAP_HINT,
+        }
+    )
 
 
 def _last_error(calls: list[ModelCall]) -> str:
@@ -344,7 +327,7 @@ class GameTools:
         按这份观测的 overlay 给出能按的键。
         """
         return FromHarnessToGameToolGetActionSpaceResp(
-            action_space=_mask(req.observation, self._world.all_actions())
+            action_space=_action_space(req.observation, self._world.all_actions())
         )
 
     def execute(self, req: FromHarnessToGameToolExecuteReq) -> FromHarnessToGameToolExecuteResp:
@@ -363,7 +346,7 @@ class GameTools:
         步骤 2：键 → 校验单键且在掩码里，按下去。
         """
         action = req.action
-        space = _mask(req.observation, self._world.all_actions())
+        space = _action_space(req.observation, self._world.all_actions())
 
         # 步骤 1：脚本。一次调用占 harness 账一步——内部 N 键不展开（P5 定案）。
         if action.script is not None:

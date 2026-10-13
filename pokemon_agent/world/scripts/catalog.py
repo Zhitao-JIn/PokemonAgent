@@ -169,7 +169,7 @@ for _definition in SCRIPT_DEFINITIONS.values():
 
 
 def script_entries(scene: str) -> list[ActionEntry]:
-    """本场合可用的脚本条目（`compute_action_space` / `game_tools._mask` 共用）。"""
+    """本场合可用的脚本条目（`compute_action_space` 使用）。"""
     names = SCENE_SCRIPTS.get(scene, frozenset())
     return [SCRIPT_SPECS[name] for name in SCRIPT_SPECS if name in names]
 
