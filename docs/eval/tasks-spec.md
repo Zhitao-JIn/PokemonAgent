@@ -2,6 +2,7 @@
 
 > 流程位置：tasks-intent.md → **tasks-spec.md** → tasks-plan.md → PR → production
 > 依据：`docs/eval/tasks-intent.md`；现状以 2026-10-07 仓库为准（CHANGELOG 392，对外六个 task）
+> 2026-10-13：第四、五节（choose 与录制器）已迁到 `brain-choose-action-*.md`；其余章节为历史记录。
 > 顺序：S1 改名与目录按槽位归位 → S2 数据集重整 → **S1b 过程 trace 进 Inspect transcript** → S3 judge 扩容 → S4 choose。（S1、S2 已落地：406、407）每步一条（或一组）CHANGELOG 编号条目，独立 commit。
 
 ---
@@ -14,9 +15,9 @@ intent 第六节里没拍板的项，本 spec 先按推荐方案写；推翻哪�
 |---|---|---|
 | D1（已定） | 数据**生产**工具进对应数据集包的 `build/` 子目录（读与造在一处；不叫 `tools/`，避免和生产代码的"tool 层"同名） | §二 |
 | 槽位（已定） | 所有 solver 进 `evals/solvers/`，所有 scorer 与 metric 进 `evals/scorers/`，按 task 名分文件（文件多的开同名子包）；task 目录只留 `task.py`；`evals/core/` 解散 | §1.4 |
-| J1 | choose 可接受集合：**按键**在存档上逐个重放、按"推进谓词"自动预标，人工审；**脚本**人工标 | §4.3 |
-| J2 | 现场采集：evals 侧录制器（装饰 `ChoosePort` / `JudgePort`），只在 `run-one --capture` 时装上，不改生产代码 | §五 |
-| J3 | 首版规模：choose v1 ≈ 60 条（6 个场合 × 10，三个难点标签各 ≥ 10）；judge v2 ≈ 80 条（正负各半，每类难负例 ≥ 8） | §三、§四 |
+| J1（已改） | choose 可接受集合：规则从真值算出，人工全审；脚本人工标；不靠存档重放（2026-10-13） | §4.3 |
+| J2（已改） | 现场采集：choose 两路——冻结帧构造、`.state` 自跑加录制器；录制器放 `evals/common/recorder.py`，只在采集入口装上，不改生产代码（2026-10-13） | §五 |
+| J3（choose 已改） | choose v1 ≈ 35 条（走路、对话、选单、战斗菜单各 8–10，标签不设配额）；judge v2 ≈ 80 条（正负各半，每类难负例 ≥ 8） | §三、§四 |
 
 ---
 
@@ -32,7 +33,7 @@ intent 第六节里没拍板的项，本 spec 先按推荐方案写；推翻哪�
 | memory | memory_store_recall | `evals/tasks/memory_store_recall/` | `memory_store_recall` |
 | judge | brain_goal_judge | `evals/tasks/brain_goal_judge/` | `brain_goal_judge` |
 | e2e | agent_goal_run | `evals/tasks/agent_goal_run/`（单文件 `e2e.py` 收成包；`result_grade.py` 是 scorer，按 §1.4 进 `evals/scorers/`） | `agent_goal_run` |
-| （S4 新增） | brain_choose_action | `evals/tasks/brain_choose_action/` | `brain_choose_action` |
+| （S4 新增） | brain_choose_action | `evals/brain_choose_action/`（B 类，DeepEval） | `brain_choose_action` |
 
 ### 1.2 连带改动
 
@@ -231,69 +232,9 @@ class JudgeCase(BaseModel):
 
 ---
 
-## 四、S4 choose 节点测评（`brain_choose_action`）
+## 四、S4 choose 节点测评（`brain_choose_action`）与五、现场录制器
 
-### 4.1 样本契约（`evals/dataset/brain_choose_action/schemas.py`）
-
-```python
-class ActionMatcher(BaseModel):
-    """可接受动作的一条：按键名，或脚本名 + 参数约束。"""
-    key: str | None = None
-    script: str | None = None
-    args: dict[str, str | int] | None = None   # None = 该脚本任意参数都可接受
-    # 契约：key 与 script 恰好一个非空
-
-class ChooseCase(BaseModel):
-    case_id: str
-    request: FromHarnessToBrainToolChooseOnceReq  # 生产信封原样冻结（截图在 memories 的帧里）
-    state: str                                     # 同一时刻的存档，相对版本目录
-    acceptable: list[ActionMatcher]                # 非空
-    scene: str                                     # 该帧 TaskScene，用于分组
-    tags: list[Literal["read_screen", "answer_in_memory", "after_failure"]] = []
-    label_source: Literal["replay", "human"]
-    label_note: str
-    origin: str
-```
-
-### 4.2 solver / scorer（`evals/solvers/brain_choose_action.py`、`evals/scorers/brain_choose_action.py`）
-
-- solver：`BrainTool.build(text=<text_model>).chooser.choose(case.request)`——与生产同一条渲染、重试、规范化路径；型号缺省取 `evals/config.json` 的 `models.text_model`，`-T text_model=` 可覆盖。`MaxRetriesExceeded` 记为"解析失败"（被测结论）；网络 / 密钥失败上抛为 sample error。
-- scorer 三列（C / I / N）：`acceptable`（选中的动作命中任一 matcher）、`legal`（在掩码内；生产 `BrainPort.choose` 的后置条件已保证，出现 I 即为 bug）、`parsed`；按 `scene` 与 `tags` `grouped`。
-
-### 4.3 可接受集合的标注（J1 暂定）
-
-1. **按键自动预标**：对样本存档，把 `request.space` 里每个启用的按键各重放一次（`evals/solvers/world_case.start_world` + 单键 `step`），按**推进谓词**判这一键是否可接受：
-   - 走路类 task：执行后到 task 判据坐标的曼哈顿距离变小或已到达；
-   - 对话：对话文字推进或对话框关闭；
-   - 选单：光标移向判据要求的项，或进入目标界面；
-   - 判据不属于以上三类的样本不自动标，转人工。
-2. **脚本人工标**：掩码里的脚本由人按判据决定是否可接受、参数约束到什么程度。
-3. **人工审**：预标结果全部过一遍；`label_source` 记最终来源，改动过的标 `human`。
-
-### 4.4 难点标签的判定
-
-- `read_screen`：`request.obs` 的解码字段切不全（`ScreenText.covered=False` 或数量框、队伍列表、起名键盘），答案只在 `screen` 里；
-- `answer_in_memory`：标注人确认正确动作依赖 `memories` / `knowledge` / `episode_memories` 的内容；
-- `after_failure`：`request.last_result` 报失败。
-
----
-
-## 五、现场录制器（J2 暂定）
-
-录制器是**造数据**的代码（choose、judge 两个数据集共用），放 `evals/dataset/capture/`（不是数据集，没有版本目录）：
-
-```
-evals/dataset/capture/
-├── recorder.py     RecordingChooser / RecordingJudger：实现 ChoosePort / JudgePort，
-│                   持有被包装的生产对象 + GameToolPort + 落盘目录；
-│                   每次调用：① game.save_state(<目录>/<seq>.state) ② 写请求信封 JSON
-│                   ③ 原样转发给生产对象、把响应一并写下；不改变返回值与异常
-└── __init__.py
-```
-
-- 装配：只在 `python -m evals agent_goal_run run-one --capture <目录>` 时，由 run-one 在 `build_branch` 里把 `deps.episode.task.chooser`、`deps.episode.judger`、`deps.judger` 换成录制器；不传 `--capture` 时 run-one 行为与现在逐字节相同。
-- 生产代码零改动；录制器只经公开端口（`ChoosePort` / `JudgePort` / `GameToolPort.save_state`）工作。
-- 落盘只是**原始现场**，不是数据集：经标注工具（`evals/dataset/<名>/build/`）补真值、挑选后才冻结进 `v<n>/`。
+> 2026-10-13：这两节原有的设计已整体取代，改为独立的专用文档，见 `docs/eval/brain-choose-action-intent.md` 与 `docs/eval/brain-choose-action-spec.md`（B 类，DeepEval，目录 `evals/brain_choose_action/`；录制器放 `evals/common/recorder.py`）。此处不再保留正文，避免两处真相。
 
 ---
 
@@ -304,7 +245,7 @@ evals/dataset/capture/
 | `tests/test_evals_tasks.py` | 公开 task 恰为六个新名（S4 后七个）；`@task` 函数名 = 注册名 |
 | `tests/test_evals_datasets.py`（新） | 每个数据集包 `load()` 返回非空类型化样本；版本目录自包含（样本引用的文件都在版本目录下）；`ScriptCheck` 每个 `kind` 一正一反 |
 | `tests/test_evals_capture.py`（新） | 录制器包装假 chooser / judger：返回值与异常透传不变，落盘的信封可被 `ChooseCase.request` / `JudgeCase.request` 原样解析 |
-| `tests/test_evals_choose.py`（新） | `ActionMatcher` 命中规则；scorer 三列在构造的 `ChooseCase` 上的结果 |
+| `tests/test_evals_choose.py`（新） | `matches` 的命中规则（按键链逐段、脚本参数、形状不符）；三个指标与分组指标在构造的 `ChooseCase` 上的结果 |
 
 不连网、不调真实模型；需要 ROM 的测试在没有 ROM 时跳过（与现有约定一致）。
 

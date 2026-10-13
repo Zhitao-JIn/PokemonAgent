@@ -82,22 +82,7 @@ evals/dataset/
 
 ## 四、choose 节点测评（`brain_choose_action`）
 
-**被测对象**：`BrainTool.choose` 的**一次**决策——生产 prompt `decide_action` 的渲染 + `BrainPort.choose` 的解析与合法性校验 + 模型。不经 harness 循环、不执行动作。
-
-**样本 = 一次真实决策现场**：
-
-- 那一刻的请求信封 `FromHarnessToBrainToolChooseOnceReq`（`goals` / `obs` / `space` / `memories` / `last_result` / `knowledge` / `episode_memories` / `human_note`）冻结成 JSON。冻结的是**信封**而不是渲染好的 prompt 字符串——prompt 改了要能拿同一批样本重测。截图随 `memories` 里的帧一起冻结（`BrainTool` 从记忆里拼 `images`）。
-- 同一时刻的模拟器存档（定真值用，见 J1）。
-
-**真值 = 可接受动作集合**，不是唯一答案：同一个画面往往有几种合理的下一步（绕左绕右都行）。
-
-**评分**：选中的动作在集合里 = 对；越权动作（不在掩码里）、解析失败各单列一列；按场合（walk / dialog / battle_menu / shop …）与难点标签分组出数。难点标签至少包括：
-
-- **需读整屏原样**：解码切不全（队伍列表、数量框、起名键盘、切不全的选单），答案只在 `screen` 里——这一组替代被删掉的读屏探针；
-- **答案在记忆里**：正确动作依赖 `memories` / `knowledge` / `episode_memories` 里的信息；
-- **上一步失败后**：`last_result` 报失败、要换策略的那一步。
-
-**样本来源**：真机 run 里采集决策现场（见 J2），起点用 e2e 现有的 20 个存档；e2e 跑出来的选错动作的现场，确认后入集。
+> 2026-10-13：本节原有的设计已整体取代，改为独立的专用文档，见 `docs/eval/brain-choose-action-intent.md` 与 `docs/eval/brain-choose-action-spec.md`（B 类，DeepEval，目录 `evals/brain_choose_action/`）。此处不再保留正文，避免两处真相。
 
 ## 五、judge 扩容（`brain_goal_judge`）
 
@@ -120,9 +105,9 @@ evals/dataset/
 
 | 编号 | 问题 | 选项 |
 |---|---|---|
-| J1 | choose 的可接受集合怎么定 | (a) 人工逐条标；(b) 在存档上把掩码里的每个候选动作都重放一遍，按规则自动判"推进了没有"（离目标更近、对话推进、换图、触发期望事件），人工抽审；(c) 自动预标 + 人工全审 |
-| J2 | 决策 / 判定现场怎么采 | (a) 在 `BrainTool.choose` / `judge` 调用处加一个默认关闭的采集开关，写信封 + 存档（要改生产代码）；(b) 让 trace 的 `choose_call` / `judge_call` 账带上完整信封，再离线反解（改 trace 内容，需商定）；(c) evals 侧包一层录制用的 BrainTool，只在采集时装配 |
-| J3 | 首版规模与配比 | choose 每个场合、每个难点标签各多少条；judge 正负比例、每类难负例至少多少条 |
+| J1（已定） | choose 的可接受集合怎么定 | 规则从真值算出 + 人工全审；不靠存档重放 |
+| J2（已定） | 决策 / 判定现场怎么采 | (c) evals 侧录制用的包装对象，只在采集时装配；choose 另有冻结帧一路 |
+| J3（choose 已定） | 首版规模与配比 | choose：四类场合各约 8–10 条，共约 35 条；judge 正负比例、每类难负例至少多少条仍待定 |
 | D1 | 数据**生产**工具放哪（读取代码已定：进各数据集包） | 采集 / 构建 / 打包 / 审核工具（`pack.py`、`frames/` 的 `build_v2`、`glyphs`、`observe`、`freeze`、`terrain`、`storage`、`coverage`、`deduplicate`、`cli`）：(a) 也进对应数据集包的 `tools/` 子目录，一份数据的读与造都在一处；(b) 统一收进 `evals/datatools/`，数据集包只管读 |
 | 已定 | world_script_execute 的用例格式 | 转成 `cases.jsonl`（全部用例统一读取，运行时的转换改为一次性转换后冻结）；`frames/capture_cases.py` 同样转成数据 |
 | 已定 | 存档放几份 | evals 拷一份进 `evals/dataset/world_script_execute/v1/states/`；`experiment/` 保留自己那份不动 |

@@ -47,7 +47,7 @@
 | episode_vision_read | B | 视觉工具，单帧输入 |
 | memory_poisoning_resistance（提议） | B | 单次记忆写入判定 |
 | script_interrupt_recovery（提议） | B | 单次脚本执行的中断处理（需先核对是否已被 106 例覆盖） |
-| brain_choose_action（S4） | B | 动作空间内的单步选择，即"action space"任务 |
+| brain_choose_action（S4） | B | 动作空间内的单步选择，即"action space"任务；设计见 `brain-choose-action-intent.md` 与 `brain-choose-action-spec.md` |
 | brain_step_verify | B | 单步前后观测判断 |
 | brain_reflect_replan | B | 注入单个失败情境后的反思 |
 | brain_plan_decompose | B | 单个目标的任务分解 |
