@@ -4,9 +4,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from evals.common.world_case import ROM
 from evals.dataset.frames.schemas import ScreenSample
 from evals.dataset.frames.snapshot import has_map, snapshot_of
-from evals.solvers.world_case import ROM
 from pokemon_agent.world import (
     SCRIPT_ONLY_SCENES,
     at_start,

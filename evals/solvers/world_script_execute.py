@@ -10,10 +10,10 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.util import StoreModel, concurrency, store_as
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
+from evals.common.world_case import read_frame, start_world, stop_world
 from evals.dataset.world_script_execute import ScriptCase
 from evals.dataset.world_script_execute.loader import state_path
 from evals.dataset.world_script_execute.schemas import EventOutcome
-from evals.solvers.world_case import read_frame, start_world, stop_world
 from pokemon_agent.world import RamReadout, TaskObservation
 from pokemon_agent.world.scripts.catalog import run_script_by_name
 from pokemon_agent.world.scripts.console_adapter import WorldConsoleAdapter

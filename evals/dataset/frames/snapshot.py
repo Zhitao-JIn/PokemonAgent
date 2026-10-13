@@ -10,8 +10,8 @@ from __future__ import annotations
 import base64
 import zlib
 
+from evals.common.world_case import ROM
 from evals.dataset.frames.schemas import ScreenSample
-from evals.solvers.world_case import ROM
 from pokemon_agent.world.ram import map_settled
 
 WRAM_START, WRAM_END = 0xC000, 0xE000

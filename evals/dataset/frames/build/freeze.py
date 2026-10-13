@@ -7,9 +7,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from evals.common.world_case import start_world, stop_world
 from evals.dataset.frames.schemas import ScreenLabel, ScreenSample
 from evals.dataset.io import read_models
-from evals.solvers.world_case import start_world, stop_world
 from pokemon_agent.world import W_TILEMAP, TaskScene
 
 from .storage import save_frames
