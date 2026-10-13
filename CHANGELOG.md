@@ -1,3 +1,10 @@
+## 2026-10-13（434）—— 校正 decode 迁移验收中的旧 CLI 要求
+
+**改了什么**：更新 docs/eval/eval-split-spec.md 的修改清单、验收第 4 条和 S3 收尾要求，用 TASKS 的五项键集合与公开入口契约测试替代已删除的 python -m evals list，标明迁移已完成。
+**为什么这么改**：旧 evals CLI 在先前入口收敛工作中有意删除，decode 迁移不应为通过过期验收而恢复它。
+**取舍**：不恢复入口、不改被测代码或依赖声明；S0–S3 仍对应 430–433 四个提交，保留旧目录的残留编译缓存。
+**影响面**：仅迁移规格与变更记录；公开五任务契约测试重跑 1 passed。本地 MCP 1.30.0、DeepEval 4.2.8，FastMCP 导入正常。
+
 ## 2026-10-13（433）—— 删除 decode Inspect 入口并同步评测口径
 
 **改了什么**：删除旧 decode task、solver、scorer 和 decoder_baseline.py；注册表改五个 Inspect task，同步本地测试、AGENTS.md、CLAUDE.md、SPEC.md 与运行产物忽略。
