@@ -10,7 +10,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外有三个 Inspect task 和 DeepEval decode、memory_store_recall、world_script_execute 入口。入口文件登记在 `evals/tasks/registry.py`，直接用 Inspect 原生命令 `inspect eval evals/tasks/<task>/task.py [-T 参数]` 启动，不再有项目自己的命令行包装；`.eval` 记录样本、输入、输出、评分与错误。
+对外有两个 Inspect task 和 DeepEval decode、memory_store_recall、world_script_execute、episode_vision_read 入口。入口文件登记在 `evals/tasks/registry.py`，直接用 Inspect 原生命令 `inspect eval evals/tasks/<task>/task.py [-T 参数]` 启动，不再有项目自己的命令行包装；`.eval` 记录样本、输入、输出、评分与错误。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
@@ -18,7 +18,6 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
-| episode_vision_read | 生产视觉节点的纯视觉部分，输入截图 | scene、overlay、dialog_text、options、cursor、解析成功 | 视觉模型 |
 | brain_goal_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
 | agent_short_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
 
@@ -51,7 +50,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 不测：视觉读取与在线执行。
 
 **episode_vision_read**（已实现）
-测什么：生产视觉节点的纯视觉部分。只给截图，视觉模型能否读出场景、覆盖层、对话文字、选项、光标，以及解析是否成功。需要视觉模型，当前为 deepseek-flash。
+测什么：生产视觉节点的纯视觉部分。只给截图，视觉模型能否读出场景、覆盖层、对话文字、选项、光标，以及解析是否成功。需要视觉模型，当前为 deepseek-flash。代码在 evals/episode_vision_read/，默认四线程；支持 --vision-model、--per-scene、--all。六列指标对应原 C/I/N，无从判跳过，解析失败的适用列判负；调用不通帧不造用例，运行末尾打印一行列出原因。
 
 **world_script_execute**（已实现）
 测什么：世界侧多步脚本在真实模拟器上执行是否正确，共 106 例。代码与数据位于 evals/world_script_execute/；每例独立进程，300 秒墙钟超时后终止，已取得开跑帧的脚本记 crash=超时，装配超时则抛专名异常。原生 code/truth 的 Total 各为 106，38 个 pass.<脚本名> 的 Total 合计 106，不再单列 kind 分组。按脚本自报结局与前后世界真值比对评分，自报成功不等于世界真值。不调用 LLM。
@@ -130,7 +129,7 @@ python -m evals.decode --scene bag
 python -m evals.world_script_execute --workers 1
 python -m evals.memory_store_recall --k 5
 python -m pytest tests/test_harness_integrity.py
-inspect eval evals/tasks/episode_vision_read/task.py -T vision_model=deepseek-flash
+python -m evals.episode_vision_read --vision-model deepseek-flash --per-scene 1
 python -m evals.dataset.frames.build.freeze
 python -m evals.dataset.frames.build.terrain
 ```

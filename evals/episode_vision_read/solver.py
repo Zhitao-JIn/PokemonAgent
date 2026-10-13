@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 
-from inspect_ai.solver import Generate, Solver, TaskState, solver
-from inspect_ai.util import StoreModel, store_as
 from pydantic import BaseModel, Field, model_validator
 
 from evals.dataset.frames.schemas import ScreenSample
-from pokemon_agent.brain.vision_factory import build_vision_provider
 from pokemon_agent.world import Facts, VisionProvider
 from pokemon_agent.world.errors import PerceptionAttemptFailed
 from pokemon_agent.world.prompts import load as load_prompt
@@ -40,12 +36,6 @@ class PerceiveRun(BaseModel):
         return self
 
 
-class PerceiveRunRecord(StoreModel):
-    """solver 写、scorer 读的唯一交接面。"""
-
-    run: PerceiveRun | None = None
-
-
 class ProviderUnreachable(RuntimeError):
     """视觉调用本身没成（网络 / 密钥 / 网关）：基础设施故障，上抛成 sample error、不进分母。
 
@@ -56,24 +46,6 @@ class ProviderUnreachable(RuntimeError):
 
 PROMPT_NAME = "perceive_screen"
 """与 `PyBoyWorld` 缺省 `prompt_name` 同一份模板。"""
-
-
-@solver
-def perceive_solver(vision_model: str) -> Solver:
-    """被测对象槽位：一条样本 = 一次截图视觉感知。
-
-    前置条件：`state.metadata["sample"]` 是 `ScreenSample` 的 JSON 形状（task 装配时写入）。
-    失败：型号名不认识时构造当场炸；读出来却解析不了记进 `PerceiveRun.failure`、交 scorer 判负；
-    视觉调用不通（网络、密钥）抛 `ProviderUnreachable`，inspect 记 sample error、不进分母。
-    """
-    vision = build_vision_provider(model=vision_model, temperature=0.0)
-
-    async def solve(state: TaskState, generate: Generate) -> TaskState:
-        sample = ScreenSample.model_validate(state.metadata["sample"])
-        store_as(PerceiveRunRecord).run = await asyncio.to_thread(perceive_sample, sample, vision)
-        return state
-
-    return solve
 
 
 def perceive_sample(sample: ScreenSample, vision: VisionProvider) -> PerceiveRun:
@@ -114,4 +86,4 @@ def perceive_sample(sample: ScreenSample, vision: VisionProvider) -> PerceiveRun
     )
 
 
-__all__ = ["ProviderUnreachable", "perceive_sample", "perceive_solver"]
+__all__ = ["PerceiveRun", "ProviderUnreachable", "perceive_sample"]
