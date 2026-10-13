@@ -1,5 +1,5 @@
 {
-  "checkpoint_id": "eval-knowledge_battle_fight_menu@main-384033f7",
+  "checkpoint_id": "eval-knowledge_battle_fight_menu@main-621c9d8f",
   "level": "run",
   "run_id": "eval-knowledge_battle_fight_menu",
   "branch": "main",
@@ -43,11 +43,11 @@
   "run_ref": null,
   "episode_ref": null,
   "world_file": "world.state",
-  "memory_archive": "archives/knowledge_battle_fight_menu/memory/snapshots/eval-knowledge_battle_fight_menu@main-384033f7.zip",
+  "memory_archive": "archives/knowledge_battle_fight_menu/memory/snapshots/eval-knowledge_battle_fight_menu@main-621c9d8f.zip",
   "code": {
-    "git_commit": "8d2cb845b5750cb5dec456fd0434478acba0c93d",
+    "git_commit": "32bb1ccf2f9c91b974ec427c7d8a33223f32109d",
     "git_dirty": true,
-    "state_schema_hash": "3d347379a38354e3"
+    "state_schema_hash": "570c830a9cf52445"
   },
   "models": {
     "vision": "deepseek-flash",
@@ -56,5 +56,5 @@
     "verify": "deepseek-flash",
     "plan": "deepseek-flash"
   },
-  "created_at": "2026-09-29T10:56:09+0200"
+  "created_at": "2026-10-13T16:44:00+0200"
 }

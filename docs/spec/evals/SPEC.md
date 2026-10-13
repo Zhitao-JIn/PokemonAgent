@@ -208,6 +208,11 @@ python -m evals.dataset.frames.build.coverage
 python -m evals.dataset.frames.build.cli build --capture <capture_dir> --version v3
 ```
 
+2026-10-13 按用户授权重建 agent v1 全部 20 份起点存档，结构哈希更新为
+`570c830a9cf52445`。来源 `.state`、目标定义、rubric 与世界存档字节保持不变；
+旧存档备份和逐份真实恢复核对位于 `eval_results/archive_rebuild/`。
+恢复核对不开跑目标、不调用模型，不能作为新的 agent 评分结果。
+
 以下保留早期数据整理的历史核对记录，不代表本次第二阶段的执行结果：
 
 迁移验收：106 条真机运行记录的完整裁决逐条相同；正式冻结帧与真值不变。

@@ -89,11 +89,11 @@ def pack_one(sample: EvalSample, version: str) -> Path:
             shutil.copytree(snapshots, dst / "memory" / "snapshots", dirs_exist_ok=True)
         manifest_file = dst / "manifest.json"
         manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-        manifest["memory_archive"] = str(
+        manifest["memory_archive"] = (
             (dst / "memory" / "snapshots" / Path(manifest["memory_archive"]).name).relative_to(
                 DATASET_DIR / version
             )
-        )
+        ).as_posix()
         manifest_file.write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
         )
