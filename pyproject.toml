@@ -84,3 +84,8 @@ testpaths = ["tests"]
 addopts = "-q --basetemp=.pytest_tmp"
 # 包没 pip install 进环境，把项目根塞进 sys.path，测试里才能 import pokemon_agent。
 pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "deepeval>=4.2.8",
+]

@@ -79,7 +79,7 @@ at_start从任意主菜单光标收紧为完整四选项且光标在FIGHT，与�
 13个地图未加载帧的terrain为空，记N而不进入地形分母。新增缺标分母回归验证通过，原评测文件11个测试全部通过。
 日志：eval_results/labeling_1007/inspect_decoder/*.eval；汇总：eval_results/labeling_1007/inspect_decoder_summary_1007.json。
 上述403条三种审核范围为历史运行；404条后已删除审核过滤及include_unreviewed参数。
-现在复跑通用基线：`python -m evals run decode -T baseline_only=true --log-dir eval_results/labeling_1007/inspect_decoder`。
+现在复跑通用基线：`python -m evals run decode -T baseline_only=true --log-dir eval_results/labeling_1007/inspect_decoder`。（2026-10-12 注：decode 将迁到 B 类，通用基线由 `python -m evals.single_state.decode` 的逐字段汇总取代，`baseline_only` 开关随之取消，见 `docs/eval/eval-split-spec.md`。）
 完整诊断移除baseline_only参数，默认直接使用全部真值，均使用none模型。
 删除reviewed、reviewed_groups、reviewed_fields只改变元数据，逐项验证全部期望值不变，51条用户审阅意见保留。
 新默认运行日志位于eval_results/labeling_1007/inspect_decoder_no_reviewed，汇总为inspect_no_reviewed_summary.json。
@@ -89,7 +89,7 @@ at_start从任意主菜单光标收紧为完整四选项且光标在FIGHT，与�
 - 阶段二：eval_results/labeling_1007/decoder_stage2_scenes.json。
 - 最终复跑：eval_results/labeling_1007/decoder_final_1007.json。
 - 报告包含逐字段失败ID、按场景分母、有内容子集、实际/期望差异及fixed/regressed列表。
-- 重跑：python -m scripts.decoder_baseline --output <新的报告路径> --previous <前序报告路径>。
+- 重跑：python -m scripts.decoder_baseline --output <新的报告路径> --previous <前序报告路径>。（2026-10-12 注：该脚本将随 decode 迁移删除，逐字段统计由新入口取代，见 `docs/eval/eval-split-spec.md`。）
 - 扩充现有测试的代表帧回归，覆盖名字与HP行错位、横向设置、道具目标、开场画像及无箭头菜单。
 - 阶段二62个测试通过，阶段三扩大到81个读屏、脚本策略与执行、脚本流、动作、MCP和感知测试通过。
 - 审阅页重新生成，完整四组诊断现为零分歧；原72帧差异归档保留。

@@ -1,3 +1,10 @@
+## 2026-10-13（435）—— 提交第二阶段前置规格与既有评测依赖记录
+
+**改了什么**：按用户授权提交积压的 427、428 实现，随后保存第二阶段 intent/spec、既有 DeepEval dev 依赖与锁文件、历史解码文档说明和积压变更记录。
+**为什么这么改**：第二阶段需要 git mv 已跟踪的任务目录，先把前置改名与 CLI 删除定案，避免目录迁移与未跟踪源码混在一起。
+**取舍**：仅提交已有评测改动；无关文件保留原位，不更改当前虚拟环境或依赖声明内容。
+**影响面**：评测源码和文档的 Git 跟踪状态；Ruff 全仓检查和格式检查通过，后续迁移以此为 P0 基点。
+
 ## 2026-10-13（434）—— 校正 decode 迁移验收中的旧 CLI 要求
 
 **改了什么**：更新 docs/eval/eval-split-spec.md 的修改清单、验收第 4 条和 S3 收尾要求，用 TASKS 的五项键集合与公开入口契约测试替代已删除的 python -m evals list，标明迁移已完成。
@@ -40,11 +47,18 @@
 **取舍**：保留按游戏场合分文件及场合动作限制，106 条存档、准备步骤、参数与全部期望不变；用例 ID 改名后与旧日志对照需按脚本名和用例名映射。历史 CHANGELOG 保留原记录；tests 按仓库策略只留本地。
 **影响面**：world 脚本目录及消费方、脚本测评和文档。用户指定三份 pytest 50 passed，相关脚本、模板、MCP、评分与解码回归 165 passed；全仓 Ruff check 与 format 检查通过。agent_short_goal_run 改名后的 task、transcript 和 dataset 检查通过，未调用模型。
 
+## 2026-10-08（428）—— agent_goal_run 改名 agent_short_goal_run，SPEC 补 task 分层与描述
+
+**改了什么**：`agent_goal_run` 全部改名为 `agent_short_goal_run`：`evals/{tasks,solvers,scorers,dataset}/` 四个同名目录、`@task` 函数名、registry 键、全部 import 与字符串、`tests/` 与 `AGENTS.md` / `CLAUDE.md` / SPEC 里的引用；改名撑长的五处超长行换行。`docs/spec/evals/SPEC.md` 新增「task 分层与描述」：按结果/工具/流程三层给六个现有 task 写"测什么/不测什么"，并登记十个规划中的新 task（未实现，不进 registry）。
+**为什么这么改**：现有 20 个起点全是单场景短目标，沿用 `agent_goal_run` 会让它被误读成"完整目标"的测评；规划中的长程 task 需要用 `short` / `long` 区分范围。三层归类让缺口（长程结果、导航、步骤验证）一眼可见。
+**取舍**：冻结数据、样本 id、run_id 命名与评分口径不变；`eval_results/` 里的旧日志、`CHANGELOG.md` 历史条目与 `docs/eval/` 下的旧计划文档保留旧名，视为历史记录。规划中的 task 只写描述不写代码，是否全部实现、先做哪几个待定。
+**影响面**：命令中的 task 路径变为 `evals/tasks/agent_short_goal_run/task.py`；Inspect 日志里的 task 名与 transcript 的 `source` 随之变化，新旧日志不能按名字直接对比。静态核对：evals 与 tests 全部 `.py` 编译通过，live 代码/测试/SPEC 零残留旧名；本环境装不上 inspect-ai，未跑 pytest 与任何 task。
+
 ## 2026-10-08（427）—— 删除 evals 命令行入口，测评只用 Inspect 原生命令
 
-**改了什么**：删除 `evals/cli.py` 与 `evals/__main__.py`（原 `python -m evals list / run / freeze-frames / frames build / agent_goal_run run-one`）。测评直接用 `inspect eval evals/tasks/<task>/task.py`；agent_goal_run 的 solver 子进程改调 `python -m evals.solvers.agent_goal_run.cli run-one`；帧数据构建改调 `python -m evals.dataset.frames.build.cli build`，接管/地形冻结改调 `build.freeze` / `build.terrain` 两个模块自带的入口；`docs/spec/evals/SPEC.md` 的命令同步。
+**改了什么**：删除 `evals/cli.py` 与 `evals/__main__.py`（原 `python -m evals list / run / freeze-frames / frames build / agent_goal_run run-one`）。测评直接用 `inspect eval evals/tasks/<task>/task.py`；agent_goal_run 的 solver 子进程由同包的 `worker.py` 承担，solver 经 stdin 交一份 `RunOneRequest`（无命令行、无开关），原 `solvers/agent_goal_run/cli.py` 删除；帧数据构建改调 `python -m evals.dataset.frames.build.cli build`，接管/地形冻结改调 `build.freeze` / `build.terrain` 两个模块自带的入口；`docs/spec/evals/SPEC.md` 的命令同步。
 **为什么这么改**：`run` 只是把短名翻成路径再转给 inspect，`list` 只是打印注册表；Inspect 本身就能按文件路径加载 task，这层包装没有提供任何 Inspect 没有的能力，却多一个要维护的入口。
-**取舍**：保留 `evals/tasks/registry.py`——它由 `test_evals_tasks` 核对"公开 task 恰好六个且函数名一致"，不再服务命令行。`run-one` 是 solver 起子进程的内部协议，无法删除，只改为模块直调。历史 changelog 与 `docs/` 下的旧计划/记录里的旧命令是历史档，不改写。
+**取舍**：保留 `evals/tasks/registry.py`——它由 `test_evals_tasks` 核对"公开 task 恰好六个且函数名一致"，不再服务命令行。子进程仍保留（模拟器崩溃不连累别的样本），但请求模型与入口归 solver 包，不再是 CLI；请求用 stdin 的类型化 JSON，替代原来的一串 `--flag`。历史 changelog 与 `docs/` 下的旧计划/记录里的旧命令是历史档，不改写。
 **影响面**：`python -m evals ...` 全部不再存在；solver 启动子进程的命令串；SPEC 命令块。未改评分、数据与 task 本身。静态核对：被改三个文件编译通过、CRLF 保持，仓库 `.py` 内对 `evals.cli` 与 `-m evals` 的引用清零；本环境装不上 inspect-ai，未实跑，待本机跑 `inspect eval` 与 agent_goal_run 单样本确认。
 
 ## 2026-10-08（427）—— 从 world 规格与计划删除集成测试安排
