@@ -2,9 +2,9 @@
 
 用法（从仓库根）：
 
-    python -m evals.dataset.agent_goal_run.build.pack                     # 打 v1 全部样本
-    python -m evals.dataset.agent_goal_run.build.pack --samples id1,id2   # 只打指定样本
-    python -m evals.dataset.agent_goal_run.build.pack --version v1
+    python -m evals.dataset.agent_short_goal_run.build.pack                     # 打 v1 全部样本
+    python -m evals.dataset.agent_short_goal_run.build.pack --samples id1,id2   # 只打指定样本
+    python -m evals.dataset.agent_short_goal_run.build.pack --version v1
 
 逐条：核来源 `.state` 哈希（数据集里的 `source_sha256`）→ `build_real` 起 PyBoy 载入
 场景 → `harness.run(checkpoint_only=True)`（真 `Checkpointer.save` 产出 manifest，
@@ -24,9 +24,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from evals.dataset.agent_goal_run.schemas import EvalSample
+from evals.dataset.agent_short_goal_run.schemas import EvalSample
 from evals.paths import REPO_ROOT
-from evals.solvers.agent_goal_run.runner.one import ROM, _load_env, run_id_for
+from evals.solvers.agent_short_goal_run.runner.one import ROM, _load_env, run_id_for
 from pokemon_agent.brain import Task
 from pokemon_agent.build import build_real
 from pokemon_agent.direct.trace import TraceTool, parse
@@ -112,7 +112,7 @@ def _models() -> dict[str, str]:
 
 def main(argv: list[str] | None = None) -> int:
     """命令行入口（数据准备工具，非 eval 跑批入口）。"""
-    parser = argparse.ArgumentParser(prog="python -m evals.dataset.agent_goal_run.build.pack")
+    parser = argparse.ArgumentParser(prog="python -m evals.dataset.agent_short_goal_run.build.pack")
     parser.add_argument("--version", default="v1")
     parser.add_argument("--samples", default="", help="逗号分隔的样本 id；缺省打全部")
     args = parser.parse_args(argv)

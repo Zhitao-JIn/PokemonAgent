@@ -16,11 +16,11 @@ from inspect_ai.scorer import (
 from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 
-from evals.dataset.agent_goal_run import load as load_samples
+from evals.dataset.agent_short_goal_run import load as load_samples
 from evals.scorers import RunStream
-from evals.scorers.agent_goal_run import mechanical_scorer, red_line_scorer
+from evals.scorers.agent_short_goal_run import mechanical_scorer, red_line_scorer
 from evals.scorers.judged import judged_accuracy, judged_count
-from evals.solvers.agent_goal_run.record import AgentRunRecord
+from evals.solvers.agent_short_goal_run.record import AgentRunRecord
 
 
 @scorer(metrics=[judged_accuracy(), judged_count()])

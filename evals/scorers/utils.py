@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from evals.dataset.agent_goal_run.schemas import EvalSample
+from evals.dataset.agent_short_goal_run.schemas import EvalSample
 from evals.scorers.verdict import CheckVerdict
 
 from .stream import Frame, RunStream

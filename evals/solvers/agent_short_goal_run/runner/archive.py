@@ -3,8 +3,8 @@
 import json
 from pathlib import Path
 
-from evals.dataset.agent_goal_run import EvalSample
-from evals.dataset.agent_goal_run.loader import DATASET_DIR
+from evals.dataset.agent_short_goal_run import EvalSample
+from evals.dataset.agent_short_goal_run.loader import DATASET_DIR
 from evals.dataset.io import contained_file
 
 

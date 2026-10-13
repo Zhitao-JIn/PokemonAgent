@@ -10,11 +10,11 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外有五个 Inspect task 和独立的 DeepEval decode 入口。`python -m evals list` 列出入口，`python -m evals run <task> <inspect 参数>` 统一启动；`.eval` 记录样本、输入、输出、评分与错误。
+对外有五个 Inspect task 和独立的 DeepEval decode 入口。入口文件登记在 `evals/tasks/registry.py`，直接用 Inspect 原生命令 `inspect eval evals/tasks/<task>/task.py [-T 参数]` 启动，不再有项目自己的命令行包装；`.eval` 记录样本、输入、输出、评分与错误。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
-不再提供旧口径一致性校验。`agent_goal_run run-one` 保留供现行任务执行单个目标。
+不再提供旧口径一致性校验。单样本子进程本体是 `evals/solvers/agent_short_goal_run/worker.py`，由 solver 经 stdin 交一份 `RunOneRequest` 启动，不是对外命令。
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
@@ -22,7 +22,74 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 | world_script_execute | 脚本统一走执行通道，真实模拟器 | 自报结局与世界真值 | 无 |
 | memory_store_recall | 冻结库经真实 MemoryTool 写入、读回，再检索带相关性标签的查询 | 存储分、检索 recall@k / MRR | 无 LLM，本地 embedding/reranker |
 | brain_goal_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
-| agent_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
+| agent_short_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
+
+## task 分层与描述
+
+测评按三层归类：**结果层**看系统最终有没有把事办成；**工具层**看每个组件单独是否可靠；**流程层**看大脑的决策环节（规划、判定、验证、反思）。分层只是归类，不改变各 task 的评分口径；`tests/test_harness_integrity.py` 是集成测试、不是 inspect task，不在下列分层内。过程指标（重复动作、A-B-A 振荡、预算耗尽后的收尾）继续只写日志做诊断，不另立评分 task。
+
+命名为 `agent_<范围>_goal_run`：`short` 指单个冻结场景内的短目标，`long` 指从真实开局出发的多里程碑长程。标"规划中"的 task 尚无数据集、solver、scorer，也不在 `evals/tasks/registry.py` 里。
+
+### 结果层
+
+**agent_short_goal_run**（已实现；原名 agent_goal_run）
+测什么：完整系统（含记忆）从冻结的单场景起点出发，能否完成一个短目标。20 个起点覆盖对话推进、NPC 对话、进出门、受阻移动、宝可梦中心进入与治疗、商店（交互、开买菜单、选物、确认、取消）、战斗（行动菜单、招式菜单、选招、换人、用道具、逃跑）、遭遇野生宝可梦、抓捕（削弱、投球）。评分只看最终结果：机械结果规则、红线、独立 model-graded 结果。
+不测：跨场景的长程推进、卡住后的恢复、记忆是否带来增益。
+
+**agent_long_goal_run**（规划中，优先级高）
+测什么：从真实开局出发，系统在步数与时间预算内能推进多远。以里程碑为单位判分（如离开家、到达第一个城镇、拿到初始宝可梦、通过第一片野外区域、进入第一个道馆，清单待定），报告里程碑达成率、最远里程碑、到达每个里程碑的步数。一次运行的分母是里程碑，不是一个目标。
+不测：单个场景内的操作细节（由 short 与工具层覆盖）。
+
+**agent_stall_recovery_run**（规划中，优先级高）
+测什么：起点刻意放在容易卡住的情境（门被挡、对话循环、菜单层级错乱、重复遇敌），看系统能否发现自己没有进展并脱困。指标为脱困成功与否、卡住持续的步数、卡住期间是否反复执行同一动作。卡住的判据来自世界真值（坐标、场合、地图编号长时间不变），不靠模型自述。
+
+**agent_memory_ablation_run**（规划中，优先级中）
+测什么：同一批目标、同一模型，分别在"带结构化记忆"与"不带记忆"两种条件下成对运行，报告成功率差与步数差，回答记忆是否真的带来增益。不新增评分口径，复用 short / long 的结果评分，新增的只是对照设计与成对比较。
+
+### 工具层
+
+**decode**（已实现）
+测什么：同一帧冻结 WRAM 经机械解码后，输出是否与独立真值一致。1045 帧，用 DeepEval 按真值键逐字段计分，未标注字段跳过，显式空值照常比较。原生输出字段通过率及计分数、帧级通过率。不调用模型、不启动模拟器。
+不测：视觉读取与在线执行。
+
+**episode_vision_read**（已实现）
+测什么：生产视觉节点的纯视觉部分。只给截图，视觉模型能否读出场景、覆盖层、对话文字、选项、光标，以及解析是否成功。需要视觉模型，当前为 deepseek-flash。
+
+**world_script_execute**（已实现）
+测什么：世界侧多步脚本在真实模拟器上执行是否正确，共 106 例。按脚本自报结局与前后世界真值比对评分，自报成功不等于世界真值。不调用 LLM。
+不测：脚本被中途打断后的恢复。
+
+**memory_store_recall**（已实现）
+测什么：冻结记忆库经真实 MemoryTool 写入、读回，再对带相关性标签的查询做检索，测存储是否无损，以及 recall@k、MRR。当前只有 3 条 knowledge 与 3 个查询，是用法示范规模。不调用 LLM，使用本地 embedding 与 reranker。
+不测：地图拓扑记忆、情节记忆的蒸馏。
+
+**world_navigate_path**（规划中，优先级高）
+测什么：在冻结地图上给定起点与目标格，路径规划与逐格执行能否到达，包括门、换图、NPC 与障碍阻挡。真值来自已有地形标注，评分为是否到达与绕行步数，确定性、不调用 LLM。
+
+**memory_map_recall**（规划中，优先级中）
+测什么：探索过若干地图后，记忆能否回答"从 A 到 B 怎么走"，即地图间连接（门、换图口）的写入与检索是否正确。与 memory_store_recall 的区别：后者测知识条目，这里测空间拓扑。
+
+**memory_distill_fidelity**（规划中，优先级中）
+测什么：task 记忆与 episode 记忆这两级派生蒸馏的正文是否忠于下级 act 源记录，正负标注是否与 verify 结果对应。依据"派生物可重建、来源章不从正文反推"的约定。
+
+**brain_action_format**（规划中，优先级低）
+测什么：大脑输出的动作能否通过 `Action` 解析，统计解析失败率与按键越出动作空间的比率。可先从 trace 统计，再决定是否独立成 task。
+
+另：战斗状态数值（HP、PP、状态异常）的解码作为 decode 的新分组加入，不新建 task。
+
+### 流程层
+
+**brain_goal_judge**（已实现）
+测什么：生产判定器拿到真值目标与观测历史，能否正确判定目标是否达成，统计 TP / FP / FN / TN。目前只有 4 条用例，是运行契约示范，不能代替完整能力评估。
+
+**brain_step_verify**（规划中，优先级高）
+测什么：步骤验证（`StepVerifyVerdict`）对"这一步是否生效"的判断，重点是假阳性率。世界状态没变却判成功是卡死的主要诱因。输入前后观测与动作，对照世界真值统计 TP / FP / FN / TN。
+
+**brain_reflect_replan**（规划中，优先级中）
+测什么：注入失败情境（门没进去、对话没推进等），看反思能否指出根因，重规划是否针对该根因。以人工标注的根因为参照，由独立评分模型判定。
+
+**brain_plan_decompose**（规划中，优先级低）
+测什么：给定目标，任务分解是否包含必要的前置步骤、顺序是否合理（如治疗前先找到宝可梦中心）。以人工标注的必要步骤清单为参照。
 
 ## 帧与独立真值
 
@@ -59,15 +126,15 @@ decode 的代码全部位于 `evals/decode/`：`dataset.py` 将帧转为用例�
 真实模型测试统一覆盖 deepseek-flash；视觉用 `-T vision_model=deepseek-flash`。本轮重构验证没有调用真实语言或视觉模型。
 
 ```powershell
-python -m evals list
 python -m evals.decode
 python -m evals.decode --frame p-option_screen
 python -m evals.decode --scene bag
-python -m evals run world_script_execute --log-dir eval_results/world_script_execute
-python -m evals run memory_store_recall --log-dir eval_results/memory_store_recall
+inspect eval evals/tasks/world_script_execute/task.py --log-dir eval_results/world_script_execute
+inspect eval evals/tasks/memory_store_recall/task.py --log-dir eval_results/memory_store_recall
 python -m pytest tests/test_harness_integrity.py
-python -m evals run episode_vision_read -T vision_model=deepseek-flash
-python -m evals freeze-frames
+inspect eval evals/tasks/episode_vision_read/task.py -T vision_model=deepseek-flash
+python -m evals.dataset.frames.build.freeze
+python -m evals.dataset.frames.build.terrain
 ```
 
 harness_integrity 位于 `tests/test_harness_integrity.py`，属于集成测试，不参与 inspect 评分。默认运行 local 的正常完成与预算耗尽剧本；Langfuse 测试默认跳过，仅在显式 `TEST_LANGFUSE=1` 时核真实写入/读回。失败直接是 pytest 失败。mock 装配位于 `tests/_harness_fixtures/`，不会进入测评包。
@@ -78,9 +145,9 @@ world_script_execute 共 106 例，统一按脚本的调用、结局与前后世
 
 memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。brain_goal_judge 初始四条独立真假历史；这些小型用例是运行契约示范，不能代替完整能力评估。
 
-agent_goal_run 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
+agent_short_goal_run 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
 
-agent_goal_run 的过程在 Inspect View 的 Transcript 中查看，Langfuse 仍可用于定位同一执行线。
+agent_short_goal_run 的过程在 Inspect View 的 Transcript 中查看，Langfuse 仍可用于定位同一执行线。
 solver 在子进程结束后经 `RunStream.load` 读取 local / langfuse 类型化账本，按原顺序与
 UTC 时间回放；`-T transcript=false` 关闭回放，缺省开启。solver 通过
 `AgentRunRecord` store 交接 run_id、branch、invalid、error、work_dir 与原始 run_result；
@@ -127,7 +194,7 @@ datetime 的微秒精度保留；模型与工具的 completed 使用 ended_at。
 | 数据包 | 默认版本与冻结物 | 构建工具 |
 |---|---|---|
 | frames | v2，1045 帧 samples.jsonl 与独立 truth.jsonl | build/；sources/ 收采集输入与13份存档 |
-| agent_goal_run | v1，20 个起点、样本、rubric 与档案 | build/pack.py |
+| agent_short_goal_run | v1，20 个起点、样本、rubric 与档案 | build/pack.py |
 | world_script_execute | v1，106 条 cases.jsonl 与所用存档 | 106 条统一读取；核对函数在 scorer |
 | memory_store_recall | v1，dataset.json（一份3条记录/3个查询的库） | 无 |
 | brain_goal_judge | v1，dataset.jsonl（4条） | 本次不扩容 |
@@ -137,10 +204,9 @@ agent 的 source_state 与 manifest.memory_archive 均相对版本目录；恢�
 `start_world` 接收完整 Path。experiment 原存档保留，数据包中的副本内容不变。
 
 ```powershell
-python -m evals agent_goal_run run-one --help
-python -m evals.dataset.agent_goal_run.build.pack --samples knowledge_dialogue_advance
+python -m evals.dataset.agent_short_goal_run.build.pack --samples knowledge_dialogue_advance
 python -m evals.dataset.frames.build.coverage
-python -m evals frames build --capture <capture_dir> --version v3
+python -m evals.dataset.frames.build.cli build --capture <capture_dir> --version v3
 ```
 
 迁移验收：106 条真机运行记录的完整裁决逐条相同；正式冻结帧与真值不变。

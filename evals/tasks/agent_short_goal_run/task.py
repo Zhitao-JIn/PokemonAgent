@@ -8,15 +8,15 @@ from inspect_ai import Task, task
 
 import pokemon_agent.config as config
 from evals.bridge import samples_to_dataset
-from evals.dataset.agent_goal_run import EvalSample, load
+from evals.dataset.agent_short_goal_run import EvalSample, load
 from evals.runconfig import load_config, resolve_models
 from evals.scorers import RULES
-from evals.scorers.agent_goal_run.result_grade import result_model_scorer
-from evals.scorers.agent_goal_run.task_scorer import e2e_scorer
-from evals.solvers.agent_goal_run.solver import run_one_solver
+from evals.scorers.agent_short_goal_run.result_grade import result_model_scorer
+from evals.scorers.agent_short_goal_run.task_scorer import e2e_scorer
+from evals.solvers.agent_short_goal_run.solver import run_one_solver
 from pokemon_agent.env import load_env_file
 
-__all__ = ["agent_goal_run"]
+__all__ = ["agent_short_goal_run"]
 
 
 def _select(
@@ -32,7 +32,7 @@ def _select(
 
 
 @task
-def agent_goal_run(
+def agent_short_goal_run(
     version: str | None = None,
     split: str | None = None,
     samples: list[str] | None = None,

@@ -9,10 +9,10 @@ from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 from pydantic import BaseModel, ValidationError
 
-from evals.dataset.agent_goal_run import load as load_samples
+from evals.dataset.agent_short_goal_run import load as load_samples
 from evals.scorers import RunStream
 from evals.scorers.judged import judged_accuracy, judged_count
-from evals.solvers.agent_goal_run.record import AgentRunRecord
+from evals.solvers.agent_short_goal_run.record import AgentRunRecord
 
 
 class ResultGrade(BaseModel):

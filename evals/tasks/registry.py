@@ -5,5 +5,5 @@ TASKS: dict[str, str] = {
     "world_script_execute": "evals/tasks/world_script_execute/task.py",
     "memory_store_recall": "evals/tasks/memory_store_recall/task.py",
     "brain_goal_judge": "evals/tasks/brain_goal_judge/task.py",
-    "agent_goal_run": "evals/tasks/agent_goal_run/task.py",
+    "agent_short_goal_run": "evals/tasks/agent_short_goal_run/task.py",
 }

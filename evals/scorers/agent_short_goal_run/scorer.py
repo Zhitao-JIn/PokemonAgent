@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from evals.dataset.agent_goal_run.schemas import EvalSample
+from evals.dataset.agent_short_goal_run.schemas import EvalSample
 from evals.scorers import Check, RunStream, judge
 from evals.scorers.redlines import red_lines
 

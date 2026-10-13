@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from evals.dataset.agent_goal_run.schemas import EvalSample, Rubric
+from evals.dataset.agent_short_goal_run.schemas import EvalSample, Rubric
 from evals.dataset.errors import DatasetError
 from evals.dataset.io import contained_file, read_models, version_directory
 from evals.paths import REPO_ROOT

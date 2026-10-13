@@ -1,6 +1,6 @@
 """solver 侧薄适配：被测对象槽位（spec2 §四取舍 A）。
 
-`run_one_solver` 是真实现：拼 run-one 命令 → **子进程**跑完一条样本（模拟器崩溃不连累
+`run_one_solver` 是真实现：把请求交给 worker **子进程**跑完一条样本（模拟器崩溃不连累
 别的样本）→ 产物落 `runs/<样本[#e<n>]>` → 把 `run_result.json` 的文本放进 solver 输出，
 scorer 据此与 trace 打分。epochs 的圈号从 `state.epoch` 取。
 """
@@ -19,9 +19,9 @@ from inspect_ai.util import store_as
 
 from evals.paths import REPO_ROOT
 from evals.scorers.stream import RunStream
-from evals.solvers.agent_goal_run.record import AgentRunRecord, RunOneRecord
-from evals.solvers.agent_goal_run.runner.one import run_id_for
-from evals.solvers.agent_goal_run.transcript import replay_into_transcript
+from evals.solvers.agent_short_goal_run.record import AgentRunRecord, RunOneRecord, RunOneRequest
+from evals.solvers.agent_short_goal_run.runner.one import run_id_for
+from evals.solvers.agent_short_goal_run.transcript import replay_into_transcript
 
 __all__ = ["Generate", "Solver", "TaskState", "run_id_for", "run_one_solver", "solver"]
 
@@ -58,7 +58,8 @@ def _finish(
         if record.invalid:
             sample_transcript()._event(
                 InfoEvent(
-                    source="agent_goal_run", data={"invalid": record.invalid, "error": record.error}
+                    source="agent_short_goal_run",
+                    data={"invalid": record.invalid, "error": record.error},
                 )
             )
         else:
@@ -81,7 +82,7 @@ def run_one_solver(
     version: str = "v1",
     transcript: bool = True,
 ) -> Solver:
-    """被测对象槽位：起 run-one 子进程跑完一条样本。
+    """被测对象槽位：起 worker 子进程跑完一条样本。
 
     前置条件：`state.metadata["sample_id"]` 已由 bridge 写入；子进程从仓库根起跑
     （run_one 的断言）。失败：单样本超时 → `completion="timeout"`（记 unjudgeable 的形状，
@@ -92,16 +93,25 @@ def run_one_solver(
         sample_id = str(state.metadata["sample_id"])
         epoch = int(state.epoch)
         work = work_dir_of(report_dir, sample_id, epoch)
-        cmd = [
-            sys.executable, "-m", "evals", "agent_goal_run", "run-one",
-            "--report-dir", report_dir, "--sample", sample_id, "--epoch", str(epoch),
-            "--speed", str(speed), *(["--no-knowledge"] if not knowledge else []),
-            "--trace-backend", trace_backend, "--version", version,
-            *[a for k, v in models.items() for a in (f"--{k.replace('_', '-')}", v)],
-        ]  # fmt: skip
+        request = RunOneRequest(
+            work_dir=str(work),
+            sample_id=sample_id,
+            epoch=epoch,
+            models=models,
+            knowledge=knowledge,
+            speed=speed,
+            trace_backend=trace_backend,
+            version=version,
+        )
+        cmd = [sys.executable, "-m", "evals.solvers.agent_short_goal_run.worker"]
         try:
             await asyncio.to_thread(
-                subprocess.run, cmd, cwd=str(REPO_ROOT), timeout=timeout, check=False
+                subprocess.run,
+                cmd,
+                input=request.model_dump_json().encode(),
+                cwd=str(REPO_ROOT),
+                timeout=timeout,
+                check=False,
             )
         except subprocess.TimeoutExpired:
             return _finish(

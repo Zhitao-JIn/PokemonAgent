@@ -13,6 +13,19 @@ class RunOneRecord(BaseModel):
     error: str = ""
 
 
+class RunOneRequest(BaseModel):
+    """solver 交给 worker 子进程的单样本请求（经 stdin 的 JSON）；两侧共用本模型，没有命令行。"""
+
+    work_dir: str
+    sample_id: str
+    epoch: int = 1
+    models: dict[str, str]
+    knowledge: bool
+    speed: int
+    trace_backend: str
+    version: str
+
+
 class AgentRunRecord(StoreModel):
     """保存 run-one 的定位信息与原始结果；无效样本不读账。"""
 
