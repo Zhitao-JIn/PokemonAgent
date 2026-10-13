@@ -1,14 +1,10 @@
 """真实记忆存储与检索 solver，运行记录供 scorer 读取。"""
 
-import asyncio
 import tempfile
 from pathlib import Path
 
-from inspect_ai.solver import Generate, Solver, TaskState, solver
-from inspect_ai.util import StoreModel, store_as
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from evals.dataset.memory_store_recall import MemoryDataset
 from pokemon_agent.direct.interface.ports import MemoryToolPort
 from pokemon_agent.mcpclient.memory_local import MemoryTool
 from pokemon_agent.schemas.harness import (
@@ -16,8 +12,10 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolRecallReq,
 )
 
+from .dataset import MemoryDataset
 
-class MemoryRun(StoreModel):
+
+class MemoryRun(BaseModel):
     """一次写入、逐条读回、全部检索的交接面。"""
 
     storage_problems: list[str] = Field(default_factory=list)
@@ -59,17 +57,10 @@ def evaluate_memory(dataset: MemoryDataset, tool: MemoryToolPort, k: int) -> Mem
     return result
 
 
-@solver
-def memory_solver(k: int) -> Solver:
-    """每样本一个隔离库，真实本地 embedding 与 reranker。"""
-
-    async def solve(state: TaskState, generate: Generate) -> TaskState:
-        dataset = MemoryDataset.model_validate(state.metadata["dataset"])
-        with tempfile.TemporaryDirectory(dir=Path.cwd(), prefix=".eval-memory-") as root:
-            tool = MemoryTool.build(memory_root=root, max_summaries=len(dataset.records))
-            result = await asyncio.to_thread(evaluate_memory, dataset, tool, k)
-            record = store_as(MemoryRun)
-            record.storage_problems, record.retrieved = result.storage_problems, result.retrieved
-        return state
-
-    return solve
+def run_memory(dataset: MemoryDataset, k: int) -> MemoryRun:
+    """每次一个隔离库，真实本地 embedding 与 reranker。"""
+    root_directory = Path.cwd() / "eval_results"
+    root_directory.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=root_directory, prefix="memory-") as root:
+        tool = MemoryTool.build(memory_root=root, max_summaries=len(dataset.records))
+        return evaluate_memory(dataset, tool, k)

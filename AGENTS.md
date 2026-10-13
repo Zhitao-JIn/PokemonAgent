@@ -552,7 +552,7 @@ harness 经门面调模块的架构不变。
 
 ## 测评任务收敛（2026-10-06）
 
-对外保留 episode_vision_read / world_script_execute / memory_store_recall / brain_goal_judge / agent_short_goal_run 五个 inspect task。decode 由普通 Python 入口 `python -m evals.decode` 调用 DeepEval `evaluate()`。入口、数据、模型与评分口径见 `docs/spec/evals/SPEC.md`。
+对外保留 episode_vision_read / world_script_execute / brain_goal_judge / agent_short_goal_run 四个 inspect task。decode 由普通 Python 入口 `python -m evals.decode` 调用 DeepEval `evaluate()`。memory_store_recall 已迁入 evals/memory_store_recall/，由普通 Python 入口启动 DeepEval，逐记录计存储、逐查询计 Recall@k 与 MRR。入口、数据、模型与评分口径见 `docs/spec/evals/SPEC.md`。
 
 decode 共享冻结 WRAM，一帧一个用例，真值键并集生成逐字段指标；未标字段跳过，显式空值照常计分。DeepEval 原生输出帧级通过率与逐字段通过率及 Total，默认只列失败帧，有失败退出码为 1。episode_vision_read 只给截图。视觉 deepseek-flash；真实模型测试统一覆盖 deepseek-flash。world_script_execute 是全部多步脚本的统一测评；常规/接管只描述现存内部执行器来源，不是两类对外能力。memory_store_recall 经真实 MemoryTool 测写入读回与相关性检索，不调 LLM。harness_integrity 属于 tests 集成测试，经真实三图核 trace/node_io/记忆落盘及后端读回，不注册 inspect task。agent_short_goal_run 仅按最终结果、红线与独立 model-graded 结果评分。
 

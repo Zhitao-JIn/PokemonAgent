@@ -1,3 +1,10 @@
+## 2026-10-13（437）—— memory_store_recall 迁入 DeepEval 逐记录与逐查询评测
+
+**改了什么**：新建任务目录，合并冻结库加载与契约，移动 v1 数据，保留真实 evaluate_memory；三个确定性指标按用例种类跳过，普通 Python 入口调用共享运行器，删除旧 Inspect 适配。
+**为什么这么改**：一份库一个样本无法直接展示哪条记录或查询出错，逐状态用例能由 DeepEval 原生统计各指标。
+**取舍**：数据和记忆实现不动；StorageMatch 看逐记录通过率，Recall@k/MRR 看查询平均分，指标阈值 1 的通过率只表示满分比例。
+**影响面**：S0 的三个问题清单、三条排序、Recall@5 与 MRR 逐项一致；原生三个指标 Total 均为 3，数据文件在 Git 中识别为 100% 重命名。
+
 ## 2026-10-13（436）—— 抽出共享 DeepEval 运行器与 world 装配
 
 **改了什么**：新增 evals/common/run.py，decode 入口改用 run_evaluation；git mv world_case.py 到 common，更新消费方 import。

@@ -10,7 +10,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外有五个 Inspect task 和独立的 DeepEval decode 入口。入口文件登记在 `evals/tasks/registry.py`，直接用 Inspect 原生命令 `inspect eval evals/tasks/<task>/task.py [-T 参数]` 启动，不再有项目自己的命令行包装；`.eval` 记录样本、输入、输出、评分与错误。
+对外有四个 Inspect task 和 DeepEval decode、memory_store_recall 入口。入口文件登记在 `evals/tasks/registry.py`，直接用 Inspect 原生命令 `inspect eval evals/tasks/<task>/task.py [-T 参数]` 启动，不再有项目自己的命令行包装；`.eval` 记录样本、输入、输出、评分与错误。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
@@ -20,7 +20,6 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 |---|---|---|---|
 | episode_vision_read | 生产视觉节点的纯视觉部分，输入截图 | scene、overlay、dialog_text、options、cursor、解析成功 | 视觉模型 |
 | world_script_execute | 脚本统一走执行通道，真实模拟器 | 自报结局与世界真值 | 无 |
-| memory_store_recall | 冻结库经真实 MemoryTool 写入、读回，再检索带相关性标签的查询 | 存储分、检索 recall@k / MRR | 无 LLM，本地 embedding/reranker |
 | brain_goal_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
 | agent_short_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
 
@@ -60,7 +59,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 不测：脚本被中途打断后的恢复。
 
 **memory_store_recall**（已实现）
-测什么：冻结记忆库经真实 MemoryTool 写入、读回，再对带相关性标签的查询做检索，测存储是否无损，以及 recall@k、MRR。当前只有 3 条 knowledge 与 3 个查询，是用法示范规模。不调用 LLM，使用本地 embedding 与 reranker。
+测什么：冻结记忆库经真实 MemoryTool 写入、读回，再对带相关性标签的查询做检索，测存储是否无损，以及 recall@k、MRR。代码与 v1 数据在 evals/memory_store_recall/，每条记录与查询各一个 DeepEval 用例；storage 看通过率，recall_at_k/mrr 看平均分，满分阈值为 1。当前只有 3 条 knowledge 与 3 个查询，是用法示范规模。不调用 LLM，使用本地 embedding 与 reranker。
 不测：地图拓扑记忆、情节记忆的蒸馏。
 
 **world_navigate_path**（规划中，优先级高）
@@ -130,7 +129,7 @@ python -m evals.decode
 python -m evals.decode --frame p-option_screen
 python -m evals.decode --scene bag
 inspect eval evals/tasks/world_script_execute/task.py --log-dir eval_results/world_script_execute
-inspect eval evals/tasks/memory_store_recall/task.py --log-dir eval_results/memory_store_recall
+python -m evals.memory_store_recall --k 5
 python -m pytest tests/test_harness_integrity.py
 inspect eval evals/tasks/episode_vision_read/task.py -T vision_model=deepseek-flash
 python -m evals.dataset.frames.build.freeze
