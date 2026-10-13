@@ -1,4 +1,4 @@
-"""帧数据集的命令行：`python -m evals frames build`，从仓库根运行。
+"""帧数据集的命令行：`python -m evals.dataset.frames.build.cli build`，从仓库根运行。
 
 build --capture 目录 [--version v2]     从新采集记录重造数据集（产物冻结进仓库）
 
@@ -8,6 +8,7 @@ build --capture 目录 [--version v2]     从新采集记录重造数据集（�
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from .build import build_v2
@@ -15,7 +16,7 @@ from .build import build_v2
 
 def main(argv: list[str] | None = None) -> int:
     """解析命令并执行，返回退出码。"""
-    parser = argparse.ArgumentParser(prog="python -m evals frames")
+    parser = argparse.ArgumentParser(prog="python -m evals.dataset.frames.build.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("build")
     p.add_argument("--version", default="v2")
@@ -27,3 +28,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 __all__ = ["main"]
+
+
+if __name__ == "__main__":
+    sys.exit(main())
