@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from evals.dataset.world_script_execute import ScriptCheck, ScriptExpect
-from evals.solvers.world_script_execute import ScriptRun
+from evals.world_script_execute.dataset import ScriptCheck, ScriptExpect
+from evals.world_script_execute.solver import ScriptRun
 from pokemon_agent.world import TaskObservation, TaskScene
 
 

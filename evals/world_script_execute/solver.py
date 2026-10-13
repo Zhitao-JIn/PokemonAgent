@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
+from pathlib import Path
 from typing import Any
 
-from inspect_ai.solver import Generate, Solver, TaskState, solver
-from inspect_ai.util import StoreModel, concurrency, store_as
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from evals.common.world_case import read_frame, start_world, stop_world
-from evals.dataset.world_script_execute import ScriptCase
-from evals.dataset.world_script_execute.loader import state_path
-from evals.dataset.world_script_execute.schemas import EventOutcome
+from evals.world_script_execute.dataset import ScriptCase
+from evals.world_script_execute.dataset.loader import state_path
+from evals.world_script_execute.dataset.schemas import EventOutcome
 from pokemon_agent.world import RamReadout, TaskObservation
 from pokemon_agent.world.scripts.catalog import run_script_by_name
 from pokemon_agent.world.scripts.console_adapter import WorldConsoleAdapter
@@ -60,40 +58,10 @@ class ScriptRun(BaseModel):
         return self
 
 
-class ScriptRunRecord(StoreModel):
-    """solver 写、scorer 读的唯一交接面（inspect 的 sample store）。"""
-
-    run: ScriptRun | None = None
-
-
 _JSON = TypeAdapter(dict)
-PYBOY_SLOT = "pyboy"
-"""进程内模拟器的并发槽名（与其它 world 用例测评共用同一个槽）。"""
 
 
-@solver
-def script_solver() -> Solver:
-    """被测对象槽位：一条样本 = 一次脚本调用。
-
-    前置条件：`state.metadata["case"]` 是 `ScriptCase` 的 JSON 形状（task 装配时写入）。
-    失败：存档起不来 / world 崩溃直接上抛（inspect 记 sample error、可重试、不进分母）；
-    脚本自己抛异常不上抛——记进 `ScriptRun.crash`，交 scorer 判负。
-    同一进程里同一时刻只跑一个模拟器（`concurrency("pyboy", 1)`）：并行起多个 PyBoy
-    实测会读空内存（`PyBoyAssertException: No data`）。
-    """
-
-    async def solve(state: TaskState, generate: Generate) -> TaskState:
-        case = ScriptCase.model_validate(state.metadata["case"])
-        async with concurrency(PYBOY_SLOT, 1):
-            version = str(state.metadata.get("dataset_version", "v1"))
-            run = await asyncio.to_thread(run_case, case, version)
-        store_as(ScriptRunRecord).run = run
-        return state
-
-    return solve
-
-
-def run_case(case: ScriptCase, version: str = "v1") -> ScriptRun:
+def run_case(case: ScriptCase, version: str = "v1", *, checkpoint: Path | None = None) -> ScriptRun:
     """在真模拟器上跑一条用例（同步，solver 放进线程里调）。
 
     步骤 1：起 world、按开跑前的键、读开跑帧。
@@ -104,6 +72,8 @@ def run_case(case: ScriptCase, version: str = "v1") -> ScriptRun:
     world = start_world(state_path(case.state, version), case.pre, case_id=case.case_id)
     try:
         before_observation, before_ram = read_frame(world)
+        if checkpoint is not None:
+            _save_before(checkpoint, before_observation, before_ram)
 
         # 步骤 2。
         report, crash = None, ""
@@ -135,4 +105,19 @@ def run_case(case: ScriptCase, version: str = "v1") -> ScriptRun:
     )
 
 
-__all__ = ["run_case", "script_solver"]
+def _save_before(path: Path, observation: TaskObservation, ram: RamReadout) -> None:
+    """原子保存开跑帧；超时未取到收尾帧时只保留最后已知观测。"""
+    provisional = ScriptRun(
+        crash="超时",
+        before_observation=observation,
+        before_ram=ram,
+        after_observation=observation,
+        after_ram=ram,
+        seconds=300.0,
+    )
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(provisional.model_dump_json(), encoding="utf-8")
+    temporary.replace(path)
+
+
+__all__ = ["ScriptRun", "ScriptReport", "run_case"]

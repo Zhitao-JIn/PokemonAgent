@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, Field
 
-from evals.dataset.world_script_execute import ScriptCase, load
+from evals.world_script_execute.dataset import ScriptCase, load
 from pokemon_agent.world.scripts.catalog import SCRIPT_FUNCS
 
 from .failure_codes import FAILURE_CODES

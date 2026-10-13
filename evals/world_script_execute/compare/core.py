@@ -1,6 +1,6 @@
-"""scripts 测评的 scorer：`judge_case` 纯函数判两面，`script_scorer` 把结论翻成 inspect Score。
+"""脚本自报与世界真值的纯比较，沿用旧 judge_case 判据。
 
-两面分列（Score 的 value 是 dict，各出一列指标）：
+两面分别返回问题清单：
 - `code`：脚本自报的 ok / code / data / events 是否符合期望；
 - `truth`：前后两帧 RAM 档观测的取值与差值是否符合期望（独立真值，不信自述）；
 - `pass`：两面都过。
@@ -8,32 +8,16 @@
 
 from __future__ import annotations
 
-from inspect_ai.scorer import (
-    CORRECT,
-    INCORRECT,
-    Score,
-    Scorer,
-    Target,
-    accuracy,
-    grouped,
-    scorer,
-    stderr,
-)
-from inspect_ai.solver import TaskState
-from inspect_ai.util import store_as
-
-from evals.dataset.world_script_execute import ScriptCase, ScriptExpect
-from evals.dataset.world_script_execute.schemas import BAG_PREFIX
-from evals.solvers.world_script_execute import (
+from evals.world_script_execute.dataset import ScriptCase, ScriptExpect
+from evals.world_script_execute.dataset.schemas import BAG_PREFIX
+from evals.world_script_execute.solver import (
     ScriptReport,
     ScriptRun,
-    ScriptRunRecord,
 )
 from pokemon_agent.world import RamReadout, TaskObservation
 from pokemon_agent.world.items import item_name
 
 from .checks import judge_declared_checks
-from .metrics import kind_accuracy
 from .verdict import ScriptVerdict
 
 
@@ -107,45 +91,3 @@ def _judge_truth(expect: ScriptExpect, run: ScriptRun) -> list[str]:
         if end - start != want:
             problems.append(f"{key} 变化 {end - start}（{start}→{end}），期望 {want}")
     return problems
-
-
-@scorer(
-    metrics={
-        "pass": [accuracy(), stderr(), grouped(accuracy(), "script"), kind_accuracy()],
-        "code": [accuracy()],
-        "truth": [accuracy()],
-    }
-)
-def script_scorer() -> Scorer:
-    """把 `judge_case` 的结论翻成 inspect Score（三列：pass / code / truth）。
-
-    前置条件：solver 已把 `ScriptRun` 写进 store（没写说明 solver 没跑完，是 bug）。
-    """
-
-    async def score(state: TaskState, target: Target) -> Score:
-        del target  # 期望在 metadata 的用例里，target 只给 View 展示期望结局码
-        run = store_as(ScriptRunRecord).run
-        assert run is not None, "solver 没有写 ScriptRun"
-        case = ScriptCase.model_validate(state.metadata["case"])
-        verdict = judge_case(case, run)
-        mark = {True: CORRECT, False: INCORRECT}
-        return Score(
-            value={
-                "pass": mark[verdict.passed],
-                "code": mark[not verdict.code_problems],
-                "truth": mark[not verdict.truth_problems],
-            },
-            answer=run.report.code if run.report else "crash",
-            explanation="；".join([*verdict.code_problems, *verdict.truth_problems]) or "全部符合",
-            metadata={
-                "verdict": verdict.model_dump(),
-                "report": run.report.model_dump(mode="json") if run.report else None,
-                "crash": run.crash,
-                "seconds": run.seconds,
-            },
-        )
-
-    return score
-
-
-__all__ = ["judge_case", "probe", "script_scorer"]
