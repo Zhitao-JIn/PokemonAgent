@@ -72,3 +72,9 @@ P0 提交 442 ──► S0 基线 ──► S1 切换取帧 ──► S2 删调�
 - 是否给 run/episode 的观测渲染补一行"场合"。
 - MCP memory 的 snapshot / restore 缺口已由 `docs/mcp/memory-admin-spec.md` 解决（服务端需 --enable-admin，付费端到端验收待用户执行）；视觉删除的基线与对比跑仍使用同一套配置，不因本项自动切换模式。
 - Windows 上 Inspect 评分阶段会按 GBK 读自带的 UTF-8 YAML 元数据（`UnicodeDecodeError`）；`PYTHONIOENCODING` 无效，需在启动进程的环境里设 `PYTHONUTF8=1`。基线与对比跑都按此设置，且不写进 `.env` 或仓库。
+
+## 2026-10-14 基线口径变更（S0 重跑前）
+
+- 提交 `bcd4cc9`（`RUN_MAX_EPISODES` 50→3、评测 timeout 600）与 `4d38f48`（所有场合开放方向键）发生在 spec 与 S1 之间；旧的 `c2ded1d` 基线作废。
+- 前置检查发现数据集第 8、10 例要求在战斗菜单按 a 打开列表，而脚本接管场合 a 关闭。裁决（用户确认）：**基础按键（方向键、a、b）在所有场合开放**（见 `docs/world/basic-keys-all-scenes.md`，提交编号 450）；基线改在该提交之后的 HEAD 上跑**全部 10 例**，不裁样本。
+- 遗留（另案）：`RUN_MAX_EPISODES=3` 是全局生产常量，长任务前须重估；脚本接管帧新增 overlay/光标/整屏文字的显示变化；`brain_choose_action` 评测的可接受集合须按"所有场合有方向键、a、b"复核。
