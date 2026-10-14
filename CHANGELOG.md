@@ -1,3 +1,10 @@
+## 2026-10-14（458）—— brain/reflect 单元测试
+
+**改了什么**：新增 `tests/brain/reflect/test_reflect.py`，钉住 `reflect` 的三段原样透传与两个空串入口断言。
+**为什么这么改**：`reflect` 是本版唯一不调模型的公开方法，此前它的契约（原样装进 `Reflection`、空串被拦、`prompt` 不读、关键字专用、无副作用）没有任何直接测试。
+**取舍**：不用任何 LLM 替身——`Brain()` 不给 provider 就能调；「返回对象可变」是现状不是契约，不钉；pydantic 校验细节不测。
+**影响面**：只增测试，不动 `pokemon_agent/`；新增用例 12 条（参数化展开后），`tests/brain/reflect` 全绿；全量 pytest 866→878 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
+
 ## 2026-10-14（457）—— brain/wiring 单元测试
 
 **改了什么**：新增 `tests/brain/wiring/test_provider_wiring.py`，钉住四个 provider 槽位对六个方法的可用性矩阵，以及四个都给时各走各的。
