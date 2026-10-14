@@ -1,3 +1,10 @@
+## 2026-10-14（459）—— brain/errors 单元测试
+
+**改了什么**：新增 `tests/brain/errors/test_brain_errors.py`，钉住 15 个异常类的继承树、`AttemptFailed` 六子类的默认 `source`、各异常字段、与 `AgentError` 的分工、`__all__` 导出一致性。
+**为什么这么改**：外部代码靠 `except BrainError` / `except AttemptFailed` 接异常，replay 靠类名统计失败类型；继承关系错一处，`except` 与统计就静默失配，此前没有任何测试守它。
+**取舍**：provider 产出 `EmptyCompletion` 的测试留在 `providers/`，不搬；包根不导出异常（O8）是现状不钉；消息只断关键片段、不钉完整字面量。
+**影响面**：只增测试，不动 `pokemon_agent/`；新增用例 59 条（参数化展开后），`tests/brain/errors` 全绿；全量 pytest 878→937 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
+
 ## 2026-10-14（458）—— brain/reflect 单元测试
 
 **改了什么**：新增 `tests/brain/reflect/test_reflect.py`，钉住 `reflect` 的三段原样透传与两个空串入口断言。
