@@ -1,3 +1,10 @@
+## 2026-10-14（445）—— memory 的 object 回忆条目 content 改为字符串
+
+**改了什么**：_recall_objects 的 content 改为无损的 Unicode JSON 字符串，payload、其他记忆族与 Port 字段保持不变；新增进程内和 MCP 完整 MemoryTool.recall 的 object 与混合回忆回归测试。
+**为什么这么改**：recall 收敛时把 object 的 content 填成 dict，违反 FromHarnessToMemoryToolRecallItem.content: str，库里已有 object 事件后两种传输都会在信封组装时失败；此前测试只核能力返回或其他记忆族，未覆盖完整门面命中 object 的路径，P4 第三个样本才暴露。
+**取舍**：不新增事件文本渲染，JSON 字符串可读且可反解；现有 object 消费方读取 payload，所以不改变它们的输入形状，也不放宽契约。
+**影响面**：仅改 memory/recall.py 的 object content 产出与必要 import。本地回归覆盖 place、map_id 和 act/task/object/knowledge 混合命中，两种实现的内容与 payload 一致；检查与 P4 重跑证据保存在 eval_results/object_recall_* 和 memory_admin_p4_mcp_rerun/，旧 P4 目录保留。
+
 ## 2026-10-14（444）—— memory MCP 服务补齐 snapshot / restore
 
 **改了什么**：服务端按 --enable-admin 条件注册快照与恢复工具，health 增加 admin；门面以 base64 zip 内容与 sha256 跨根传输，客户端快照原子落盘，装配传入客户端 snapshot_root；新增双端 256 MiB 上限与共享写锁，MemoryCapability.restore 按 v1.1 的 D8 在任何删除前拒绝不安全条目；同步契约、开发规范与遗留说明。

@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import zipfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -224,7 +225,7 @@ class MemoryCapability:
                     "kind": "object",
                     "uuid": uuid_,
                     "score": None,
-                    "content": event.model_dump(mode="json"),
+                    "content": json.dumps(event.model_dump(mode="json"), ensure_ascii=False),
                     "payload": payload,
                 }
             )
