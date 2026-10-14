@@ -1,3 +1,10 @@
+## 2026-10-14（457）—— brain/wiring 单元测试
+
+**改了什么**：新增 `tests/brain/wiring/test_provider_wiring.py`，钉住四个 provider 槽位对六个方法的可用性矩阵，以及四个都给时各走各的。
+**为什么这么改**：「谁回退、谁不回退」是 `Brain.__init__` 的装配规则本身，此前各方法目录只各自验证了「缺了会报错」，没有任何用例防止回退关系被改乱。
+**取舍**：缺 provider 的 assert 文案与回退的单项验证已在 judge_verify / plan 目录，不重复；本文件只测矩阵与不串线。
+**影响面**：只增测试，不动 `pokemon_agent/`；新增用例 25 条（参数化展开后），`tests/brain/wiring` 全绿；全量 pytest 841→866 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
+
 ## 2026-10-14（456）—— brain/json_utils 单元测试
 
 **改了什么**：新增 `tests/brain/json_utils/test_load_json.py`，直接钉 `_load_json` 的容忍边界。
