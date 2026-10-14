@@ -620,10 +620,24 @@ resp = tool.restore_memory(FromHarnessToMemoryToolRestoreMemoryReq(archive=resp.
 ```
 
 `snapshot_memory` 走 `step_memory` 那个实例去拍（结果与用哪个实例无关，见 2.4）。
-`restore_memory` 覆盖之后多做两件事：**另三个 store 各 `reload()` 一次**，
+`MemoryCapability.restore` 覆盖之后多做两件事：**另四个 store 各 `reload()` 一次**，
 以及 **清掉 `_step_max` / `_object_max`**——不清的后果是"恢复回来的那一局，
-step 号被旧缓存挡住"（写不进去），而它只会在下一次 `store_episode_step` 的 assert 上炸，
+step 号被旧缓存挡住"（写不进去），而它只会在下一次 `memorize` 的 assert 上炸，
 很难回溯到这里。
+
+2026-10-14 管理面补齐：`MemoryTool` 的进程内和 MCP 模式都提供
+`snapshot_memory` / `restore_memory`，Port 信封不变。服务端仅在
+`python -m pokemon_agent.mcp_servers.memory_server --enable-admin --memory-root <服务端根>`
+启动时注册这两个管理工具，默认注册表仍只有 `recall`、`memorize`；`/health.admin`
+报告是否开放，门面未发现管理工具时抛 `MemoryAdminDisabled`，提示 `--enable-admin`。
+
+传输的是完整 zip 的 base64 内容与 sha256，原始 zip 上限 256 MiB。
+客户端 `memory_root` 只决定 `<客户端根>/snapshots/<name>.zip` 的原子落盘位置，
+不改变服务端根；恢复可从任意客户端路径读取快照，服务端从根外临时文件恢复并清理。
+`MemoryCapability.restore` 在删除前统一拒绝绝对路径、`..`、反斜杠和盘符条目，
+两种模式均不改变库；本层快照中的无害杂散文件仍跳过。服务端 snapshot、restore、
+memorize 共用一把锁，recall 不加锁；count 不进入 MCP 面。
+完整契约与测试见 `docs/mcp/memory-admin-spec.md`。
 
 ### 7.5 知识库的两种来源、一种形状
 

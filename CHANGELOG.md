@@ -1,3 +1,10 @@
+## 2026-10-14（444）—— memory MCP 服务补齐 snapshot / restore
+
+**改了什么**：服务端按 --enable-admin 条件注册快照与恢复工具，health 增加 admin；门面以 base64 zip 内容与 sha256 跨根传输，客户端快照原子落盘，装配传入客户端 snapshot_root；新增双端 256 MiB 上限与共享写锁，MemoryCapability.restore 按 v1.1 的 D8 在任何删除前拒绝不安全条目；同步契约、开发规范与遗留说明。
+**为什么这么改**：MemoryToolPort 包含快照与恢复，但 MCP 委托未实现，Port 契约在该模式下不成立，2026-10-13 agent 基线首跑因此中止；恢复能力应与传输方式无关。现有 store 对危险条目跳过后仍清库，校验必须在两模式共用的能力层完成。
+**取舍**：管理面默认关闭，count 仍不开放；不共享路径、不分块、不改 Port 信封、store.py、checkpoint 或 agent 评测代码。服务端快照保留，恢复暂存于根外并清理；无害的杂散文件继续跳过，自己的快照保持可恢复。P1 zip 1,941,141 字节、base64 2,588,188 字节、完整调用 0.616 秒，未触及阈值。
+**影响面**：本地专项 70 passed；修复独立的 trace seq 缺陷后，在保留本项全部代码的工作区全量 638 passed、2 skipped，Ruff 全绿，无测试例外。新增测试留在被忽略的 tests/；运行证据在 eval_results/memory_admin_*。真实模型端到端验证留给用户在 M2 后确认费用并执行，未在本项自行调用。
+
 ## 2026-10-14（443）—— trace 的 seq 改为进程内全局单调
 
 **改了什么**：新增 trace/seq.py 的共享取号器，本地与 Langfuse 后端改用 next_seq()，删除各实例计数器，更新两份 trace 契约的序号说明；新增本地双后端同刻交错写入回归测试。

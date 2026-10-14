@@ -115,6 +115,15 @@ class MemoryStorePort(Protocol):
 > **签名不对称是故意的**：`snapshot` 收**名字**（放哪由 memory 决定，harness 不该知道），
 > `restore` 收**路径**（必须能接受任意来源的 zip，那正是"覆盖读取"的价值）。
 
+**MCP 管理面（2026-10-14）**：以上快照契约在 `MemoryTool` 的进程内与 MCP
+模式均成立。服务端 `--enable-admin` 才注册 `snapshot_memory` / `restore_memory`，
+默认只有 recall / memorize，count 仍不开放。快照经 base64 内容与 sha256 传输，
+原始 zip 上限 256 MiB；Port 的 archive 仍是调用方本地路径，客户端 memory_root
+只管本地 snapshots，服务端根由 --memory-root 决定，两端可以完全不同。
+`MemoryCapability.restore` 在删除前拒绝不安全路径条目，进程内抛 AssertionError，
+服务端转 rejected；无害的多余条目仍沿用现有跳过语义，不拒绝自身生成的快照。
+服务端用同一把锁串行化 snapshot / restore / memorize。见 `docs/mcp/memory-admin-spec.md`。
+
 **`reload`** — 把内存态（倒排索引 / uuid 集合 / mtime / 向量缓存）从盘上重读一遍。
 **不是 Port 契约方法**，是实现方公开的辅助口；唯一调用方是
 `MemoryTool.restore_memory()`（恢复是整根覆盖，而每个实例只刷新自己那一族）。

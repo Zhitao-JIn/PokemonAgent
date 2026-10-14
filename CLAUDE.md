@@ -281,6 +281,12 @@ CHANGELOG.md       变更日志，每次改动追加
 pyproject.toml
 ```
 
+memory MCP 默认只注册 recall / memorize；checkpoint 需要的 snapshot_memory /
+restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 MemoryAdminDisabled。
+快照传 zip 内容与 sha256，不共享文件路径；客户端 memory_root 只管本地 snapshots，
+服务端根由 --memory-root 指定。原始 zip 上限 256 MiB，不安全条目由 MemoryCapability
+在删除前统一拒绝，两种模式一致。管理面契约见 docs/mcp/memory-admin-spec.md。
+
 **分层原则（三条）：**
 
 1. **memory 只保管 harness 交给它的数据结构与索引、按键原样读写**；"发生了什么、影响了谁"

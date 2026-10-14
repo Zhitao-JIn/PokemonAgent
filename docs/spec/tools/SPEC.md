@@ -91,10 +91,15 @@ MCP 远程门面 `mcpclient/world_tool.py::WorldMcpTool`）**：
 | `save_state` / `load_state` | Req（+Resp） | 路径由 harness 给，本层原子写文件 |
 
 **`MemoryToolPort`（进程内实现 `mcpclient/memory_local.py::MemoryTool`；
-远程门面 `mcpclient/memory_tool.py::MemoryMcpTool`）**——方法清单不变：
-`query_*` / `store_*` / `append_object_events` / `snapshot_memory` / `restore_memory`
-（逐方法信封见 `schemas/harness/communication/`；MCP 面收敛为 `recall` /
-`memorize` / `registry` 三口，详见 `docs/spec/memory/API.md`）。
+远程委托 `mcpclient/memory_tool.py::MemoryMcpTool`）**——四个方法：
+`recall` / `memorize` / `snapshot_memory` / `restore_memory`，Port 信封不变。
+服务端默认只注册 recall / memorize，带 `--enable-admin` 才注册 snapshot_memory /
+restore_memory；`/health.admin` 报告开关，未开放时门面抛 MemoryAdminDisabled。
+管理面传 base64 zip 内容、sha256 与大小，原始 zip 上限 256 MiB；客户端 memory_root
+只管本地 snapshots，服务端根由 --memory-root 指定，不依赖共享路径。
+服务端 snapshot / restore / memorize 共用一把锁；共用的 MemoryCapability.restore
+在删除前拒绝不安全路径，库保持不变，无害杂散条目仍跳过。
+详见 `docs/mcp/memory-admin-spec.md` 与 `docs/spec/memory/API.md`。
 
 **`TraceToolPort`（实现 `direct/trace/__init__.py::TraceTool`）**：
 `append(req: FromHarnessToTraceToolAppendReq) -> None`（写口唯一）+

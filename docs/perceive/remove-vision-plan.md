@@ -70,5 +70,5 @@ P0 提交 442 ──► S0 基线 ──► S1 切换取帧 ──► S2 删调�
 - `Facts.scene` 在内存档下只有战斗/空，应与 `TaskObservation.scene` 统一。
 - 解码覆盖盘点：从对比跑的失败样本里找信息缺口。
 - 是否给 run/episode 的观测渲染补一行"场合"。
-- 经 MCP memory 服务时 `agent_short_goal_run` 无法恢复存档（MCP 面当前未实现 restore，属实现缺口而非设计要求，另案修复，见 `docs/mcp/memory-admin-intent.md`），本项的基线与对比跑先用进程内 memory；基线与对比跑都按此配置（2026-10-13 基线首跑因此中止）。
+- MCP memory 的 snapshot / restore 缺口已由 `docs/mcp/memory-admin-spec.md` 解决（服务端需 --enable-admin，付费端到端验收待用户执行）；视觉删除的基线与对比跑仍使用同一套配置，不因本项自动切换模式。
 - Windows 上 Inspect 评分阶段会按 GBK 读自带的 UTF-8 YAML 元数据（`UnicodeDecodeError`）；`PYTHONIOENCODING` 无效，需在启动进程的环境里设 `PYTHONUTF8=1`。基线与对比跑都按此设置，且不写进 `.env` 或仓库。
