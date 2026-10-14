@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
+MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
+"""管理面传输的原始 zip 字节上限，与客户端的独立常量由测试钉等值。"""
+
 HEALTH_PATH = "/health"
 """健康检查路由（普通 HTTP，**不是 MCP tool**）。
 

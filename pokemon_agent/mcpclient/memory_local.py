@@ -2,7 +2,7 @@
 
 **MCP 化收敛（2026-09-29 定案）**：本类收敛为四个方法——`recall` / `memorize`
 （能力面，MCP 注册表同款）+ `snapshot_memory` / `restore_memory`（checkpoint 运维，
-不进 MCP 面）。原 15+ 个按种类分方法的查询/写入全部删除：调用方**不显式指定
+经 --enable-admin 开放）。原 15+ 个按种类分方法的查询/写入全部删除：调用方**不显式指定
 记忆种类**，种类由产生方天然决定、由分族规则圈定（同 chooser 的统一动作掩码）。
 
 **实现全在 `memory/recall.py` 的 `MemoryCapability`**（一份实现两模式共用：
@@ -91,7 +91,8 @@ class MemoryTool:
 
             client = McpClient(mcp_endpoint(memory_server_url))
             client.start()
-            return cls._from_delegate(MemoryMcpTool(client))
+            snapshot_root = Path(memory_root) if memory_root is not None else _default_root()
+            return cls._from_delegate(MemoryMcpTool(client, snapshot_root=snapshot_root))
 
         from pokemon_agent.memory import LocalEmbeddingProvider, LocalRerankerProvider
 
@@ -127,7 +128,7 @@ class MemoryTool:
             stored=[FromHarnessToMemoryToolMemorizedRecord(**s) for s in stored]
         )
 
-    # ---- 运维：快照 / 恢复（checkpoint 专用，不进 MCP 面） ----
+    # ---- 运维：快照 / 恢复（checkpoint 专用，MCP 需 --enable-admin） ----
 
     def snapshot_memory(
         self, req: FromHarnessToMemoryToolSnapshotMemoryReq

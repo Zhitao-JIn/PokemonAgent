@@ -20,7 +20,8 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
@@ -430,14 +431,28 @@ class MemoryCapability:
             text=record.text,
         )
 
-    # ---- 运维（不进 MCP 注册表；server 本地管理用） ----
+    # ---- 运维（MCP 管理面需 --enable-admin） ----
 
     def snapshot(self, name: str) -> Path:
         """整个记忆根打包成 zip（打的是整个根，不是某一族）。"""
         return self._store("act").snapshot(name)
 
     def restore(self, archive: str | Path) -> int:
-        """以 zip 为准还原整个根；五族内存态重读、单调缓存清空。"""
+        """以 zip 为准还原整个根；五族内存态重读、单调缓存清空。
+
+        不安全条目在删除前抛 AssertionError，库保持不变。
+        """
+        with zipfile.ZipFile(archive) as snapshot:
+            for entry in snapshot.infolist():
+                filename = entry.orig_filename
+                path = PurePosixPath(filename)
+                if (
+                    path.is_absolute()
+                    or ".." in path.parts
+                    or "\\" in filename
+                    or any(PureWindowsPath(part).drive for part in path.parts)
+                ):
+                    raise AssertionError(f"restore() 拒绝不安全的归档条目：{filename!r}")
         unpacked = self._store("act").restore(archive)
         for kind in ("task", "episode", "object", "knowledge"):
             self._store(kind).reload()
