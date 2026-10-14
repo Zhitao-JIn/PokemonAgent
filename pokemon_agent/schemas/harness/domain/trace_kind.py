@@ -177,3 +177,5 @@ class TraceKind(StrEnum):
     WRITE_TASK_MEMORY = "write_task_memory"
     WRITE_OBJECT_MEMORY = "write_object_memory"
     WRITE_EPISODE_MEMORY = "write_episode_memory"
+    BUDGET_CLAMPED = "budget_clamped"
+    BUDGET_SKIPPED = "budget_skipped"

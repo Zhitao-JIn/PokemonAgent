@@ -28,9 +28,16 @@ class Deadline:
         self._min_request_s = min_request_s
         self.start()
 
-    def start(self) -> None:
+    def start(self, remaining_s: float | None = None) -> None:
         """在 run 真正进图时重新设截止点，装配与加载存档不消耗执行预算。"""
-        self._end = self._clock() + self._wall_clock_s
+        self._end = self._clock() + (
+            self._wall_clock_s if remaining_s is None else min(self._wall_clock_s, remaining_s)
+        )
+
+    def cap_remaining(self, remaining_s: float | None) -> None:
+        """恢复内层检查点时只收紧截止点，不能把上层旧快照当作新增时间。"""
+        if remaining_s is not None:
+            self._end = min(self._end, self._clock() + remaining_s)
 
     def remaining(self) -> float:
         """返回非负剩余秒数；不使用系统墙钟。"""

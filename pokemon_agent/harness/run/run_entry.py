@@ -199,7 +199,12 @@ def invoke_run(
     在无 saver 时收到 `"sync"` 会抛 `AttributeError`。
     """
     if deps.deadline is not None:
-        deps.deadline.start()
+        saved = state
+        if saved is None:
+            saved = RunState.model_validate(
+                graph.get_state({"configurable": {"thread_id": thread}}).values
+            )
+        deps.deadline.start(saved.remaining_s)
     return graph.invoke(
         state,
         {"recursion_limit": RUN_RECURSION_LIMIT, "configurable": {"thread_id": thread}},

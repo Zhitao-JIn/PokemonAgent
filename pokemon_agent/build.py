@@ -354,6 +354,8 @@ def build_real(
         else None
     )
     task_rt = TaskRuntime(
+        budget=budget,
+        deadline=deadline,
         game=game,
         chooser=task_brain.chooser,
         judger=task_brain.judger,
@@ -365,6 +367,8 @@ def build_real(
         checkpointer=checkpointer,
     )
     episode_rt = EpisodeRuntime(
+        budget=budget,
+        deadline=deadline,
         game=game,
         memory=memory,
         decomposer=episode_brain.decomposer,

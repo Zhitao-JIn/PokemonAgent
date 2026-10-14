@@ -15,6 +15,7 @@ from __future__ import annotations
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from ..budget_nodes import guarded
 from .act import act
 from .perceive import perceive
 from .plan_task import plan_task
@@ -28,11 +29,11 @@ def compile_task_graph() -> CompiledStateGraph:
     """把 5 个格装配成 task 图。书写纪律与 episode 图相同（`add_node` 逐行字面量）。"""
     # ========== 1. 注册 5 个格 ==========
     graph = StateGraph(TaskState, context_schema=TaskRuntime)
-    graph.add_node("perceive", perceive)
-    graph.add_node("review_and_judge", review_and_judge)
-    graph.add_node("plan_task", plan_task)
-    graph.add_node("act", act)
-    graph.add_node("task_done", task_done)
+    graph.add_node("perceive", guarded(perceive, "task", "perceive"))
+    graph.add_node("review_and_judge", guarded(review_and_judge, "task", "review_and_judge"))
+    graph.add_node("plan_task", guarded(plan_task, "task", "plan_task"))
+    graph.add_node("act", guarded(act, "task", "act"))
+    graph.add_node("task_done", guarded(task_done, "task", "task_done"))
 
     # ========== 2. 接边——判停出口按 done 分叉，act 出口无条件回 perceive ==========
     graph.set_entry_point("perceive")
@@ -42,7 +43,11 @@ def compile_task_graph() -> CompiledStateGraph:
         lambda state: "task_done" if state.done else "plan_task",
         {"plan_task": "plan_task", "task_done": "task_done"},
     )
-    graph.add_edge("plan_task", "act")
+    graph.add_conditional_edges(
+        "plan_task",
+        lambda state: "task_done" if state.done else "act",
+        {"act": "act", "task_done": "task_done"},
+    )
     graph.add_edge("act", "perceive")
     graph.add_edge("task_done", END)
     return graph.compile()

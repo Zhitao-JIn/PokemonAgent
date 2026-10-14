@@ -26,8 +26,7 @@ def test_default_and_evaluation_share_all_layer_values(tmp_path):
         6,
         2,
     )
-    assert (production.task_default_steps, production.task_max_steps, production.min_request_s) == (
-        8,
+    assert (production.task_max_steps, production.min_request_s) == (
         12,
         3,
     )
@@ -46,7 +45,8 @@ def test_default_and_evaluation_share_all_layer_values(tmp_path):
         {"budget": {"unknown": 1}},
         {"budget": {"max_episodes": "3"}},
         {"budget": {"max_episodes": True}},
-        {"budget": {"task_max_steps": 2}},
+        {"budget": {"task_max_steps": 0}},
+        {"budget": {"task_default_steps": 8}},
         {"budget": {"wall_clock_s": 60}},
         {"budget": {"max_total_actions": 0}},
     ],

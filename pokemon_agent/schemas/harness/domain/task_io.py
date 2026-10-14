@@ -29,6 +29,12 @@ class TaskInput(BaseModel):
         description="进 task 时定格的局内累计键数快照（episode 派发时从 `EpisodeRunState."
         "total_acts` 带下，task 内恒定）——task 每一帧的步号 = total_acts + 本层键数",
     )
+    actions_budget: int | None = Field(
+        default=None, ge=0, description="开任务剩余的跨局动作额度；None 不限"
+    )
+    remaining_s: float | None = Field(
+        default=None, ge=0, description="派发时剩余运行秒数；None 不限"
+    )
     knowledge: list[str] = Field(
         default_factory=list,
         description="episode 层检索到的领域知识全文（与拆解看到的同一份，不筛），"

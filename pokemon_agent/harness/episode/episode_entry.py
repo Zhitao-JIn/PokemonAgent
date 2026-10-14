@@ -51,6 +51,8 @@ def begin_episode(deps: EpisodeRuntime, episode_input: EpisodeInput) -> EpisodeR
         episode_id=episode_id,
         goal=episode_input.goal,
         ep_ctx=EpisodeContext(),
+        actions_budget=episode_input.actions_budget,
+        remaining_s=episode_input.remaining_s,
     )
     return state
 

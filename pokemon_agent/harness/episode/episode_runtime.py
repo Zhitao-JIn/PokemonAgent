@@ -48,6 +48,8 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph.state import CompiledStateGraph
 
+from pokemon_agent.config import DEFAULT_RUN_BUDGET
+from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.interface import (
     DecomposePort,
     GameToolPort,
@@ -57,6 +59,7 @@ from pokemon_agent.direct.interface import (
     TraceToolPort,
     VerifyPort,
 )
+from pokemon_agent.run_budget import RunBudget
 
 from ..interface.reviewer import Reviewer
 from ..task.task_runtime import TaskRuntime
@@ -114,6 +117,8 @@ class EpisodeRuntime:
     # ---- 存档：episode 层自己不存（episode 级存档在 run 的 `act` 开头）；三层同形持有 ----
 
     checkpointer: Checkpointer | None = None
+    budget: RunBudget = DEFAULT_RUN_BUDGET
+    deadline: Deadline | None = None
     """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""
 
 

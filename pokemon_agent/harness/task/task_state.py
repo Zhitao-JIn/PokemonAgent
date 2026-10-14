@@ -60,6 +60,13 @@ class TaskState(Settled, BaseModel):
         ),
     )
 
+    actions_budget: int | None = Field(
+        default=None, ge=0, description="开任务时剩余的跨局动作额度；None 不限"
+    )
+    remaining_s: float | None = Field(
+        default=None, ge=0, description="检查点处剩余运行秒数；None 不限"
+    )
+
     knowledge: list[str] = Field(
         default_factory=list,
         description="episode 交下来的领域知识全文（task 内只读，每次决策原样带上）",

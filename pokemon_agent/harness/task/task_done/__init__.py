@@ -12,10 +12,12 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
+from ...budget_nodes import BUDGET_TERMINATIONS
 from ...compose import compose_units
 from ..task_runtime import TaskRuntime
 from ..task_state import TaskState
 from .close_task import close_task
+from .mechanical import mechanical_summary
 from .summarize_task import summarize_task
 from .verify_act_memories import verify_act_memories
 
@@ -24,6 +26,10 @@ def task_done(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
     """按序跑收尾单元，返回全部增量的合并。"""
     updates: dict[str, Any] = {}
     current = state
+    if state.termination in BUDGET_TERMINATIONS:
+        inc = mechanical_summary(state, runtime)
+        current = state.model_copy(update=inc)
+        return {**inc, **close_task(current, runtime)}
 
     # 步骤 1：有记忆才标、才蒸。
     if current.task_ctx.act_memories:

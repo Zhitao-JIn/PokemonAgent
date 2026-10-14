@@ -24,6 +24,12 @@ class EpisodeInput(BaseModel):
     run_id: str = Field(description="所属 run")
     episode_id: str = Field(description="本局标识 `{run_id}-ep{n}`")
     goal: Task = Field(description="本局唯一目标（task_id 即目标表条目的 task_id）")
+    actions_budget: int | None = Field(
+        default=None, ge=0, description="开局剩余的跨局动作额度；None 不限"
+    )
+    remaining_s: float | None = Field(
+        default=None, ge=0, description="派发时剩余运行秒数；None 不限"
+    )
 
 
 class EpisodeOutput(Settled, BaseModel):

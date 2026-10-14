@@ -33,6 +33,12 @@ def dispatch_task(state: EpisodeRunState) -> dict[str, Any]:
         task=entry.task,
         total_acts=state.total_acts,
         knowledge=current_knowledge(state),
+        actions_budget=(
+            None
+            if state.actions_budget is None
+            else max(0, state.actions_budget - state.total_acts)
+        ),
+        remaining_s=state.remaining_s,
     )
     tasks = [*state.tasks[:index], running, *state.tasks[index + 1 :]]
     assert tasks[index].task == task_input.task

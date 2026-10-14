@@ -9,7 +9,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from pokemon_agent.brain import Task
-from pokemon_agent.config import NODES_PER_DECISION, NODES_PER_PRESS, RECURSION_MARGIN
+from pokemon_agent.config import (
+    DEFAULT_RUN_BUDGET,
+    NODES_PER_DECISION,
+    NODES_PER_PRESS,
+    RECURSION_MARGIN,
+)
 from pokemon_agent.harness.task import compile_task_graph
 from pokemon_agent.harness.task.task_entry import begin_task, task_budget
 from pokemon_agent.schemas.harness import TraceKind
@@ -56,7 +61,9 @@ class _Trace:
 def test_begin_task_takes_no_frame() -> None:
     """入口只落一条 `task_start`、装初值，**不取帧**——开局帧由图内 perceive 的 `sense` 取。"""
     trace = _Trace()
-    state = begin_task(SimpleNamespace(trace=trace, checkpointer=None), _input())
+    state = begin_task(
+        SimpleNamespace(trace=trace, checkpointer=None, budget=DEFAULT_RUN_BUDGET), _input()
+    )
 
     assert state.task_ctx.observation is None
     assert state.after_observation is None and state.action is None

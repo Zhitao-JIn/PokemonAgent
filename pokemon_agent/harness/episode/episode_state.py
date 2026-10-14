@@ -91,6 +91,17 @@ class EpisodeRunState(Settled, BaseModel):
             "帧观测的局内累计键数由它盖章（perceive 的 sense）"
         ),
     )
+    decompositions_used: int = Field(
+        default=0,
+        ge=0,
+        description="本局已启动拆解轮数（含人审要求重拆，不含同轮内部的模型重试）",
+    )
+    actions_budget: int | None = Field(
+        default=None, ge=0, description="开局时剩余的跨局动作额度；None 不限"
+    )
+    remaining_s: float | None = Field(
+        default=None, ge=0, description="检查点处剩余运行秒数；None 不限"
+    )
     fail_streak: int = Field(
         default=0, ge=0, description="连续失败 task 数——停摆判据 `>= EPISODE_STALL_LIMIT`"
     )
