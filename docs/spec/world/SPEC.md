@@ -8,12 +8,12 @@ scene_layout提供无地图空屏、独立开场画像和战斗菜单框形证�
 战斗行动菜单初态另要求实心光标在FIGHT；reset_menu在主菜单用方向键归位，子菜单仍按B退出。
 固定帧基线范围、阶段修复及验证证据见docs/DECODER_FIX_1007.md；100%的参考匹配不表示未收录场景或操作流程已验证。
 
-## 2026-10-14 全场合方向键
+## 2026-10-14 全场合基础按键
 
-`compute_action_space` 在所有 TaskScene 和 overlay 上开放后端支持的 up/down/left/right，
-包括脚本接管场合；脚本继续按场合提供。接管场合的 a/b/start/select 仍关闭，非接管
-其他键继续按 overlay 给出。covered_by_script 表示可调用业务脚本，不表示禁止方向键。
-键和脚本共享 mask/entries，门面只补 prompt 文案，不改掩码。方向键可用不保证画面会响应，
+`compute_action_space` 在所有 TaskScene 和 overlay 上开放后端支持的 up/down/left/right/a/b，
+包括脚本接管场合；脚本继续按场合提供。接管场合的 start/select 仍关闭，非接管
+其他键继续按 overlay 给出。covered_by_script 表示可调用业务脚本，不表示禁止基础按键。
+键和脚本共享 mask/entries，门面只补 prompt 文案，不改掩码。基础按键可用不保证画面会响应，
 严格对话帧可能无效；变化由下一帧证据判断。字段和 Port 形状、解码器、脚本实现不变。
 
 ## 2026-10-08 decoder 裁决与现行规则
@@ -161,7 +161,7 @@ world/
 | `BUTTON_FACING` | `up→north`、`down→south`、`left→west`、`right→east` |
 | `FACING_STEP` | `north (0,-1)`、`south (0,1)`、`west (-1,0)`、`east (1,0)`（y 向下增大） |
 
-`OVERLAY_ACTIONS`（`facts.py`，非接管按键的基础集合）：`NONE` / `CHOICE` → `("up", "down", "left", "right", "a", "b", "start")`；`DIALOG` → `("a",)`。`compute_action_space` 再把后端支持的四个方向键并入所有场合和叠加层；脚本接管场合保留方向键和本场合脚本、关闭其他按键。
+`OVERLAY_ACTIONS`（`facts.py`，非接管按键的基础集合）：`NONE` / `CHOICE` → `("up", "down", "left", "right", "a", "b", "start")`；`DIALOG` → `("a",)`。`compute_action_space` 再把后端支持的基础按键（四个方向键、a、b）并入所有场合和叠加层；脚本接管场合保留基础按键和本场合脚本、关闭 start/select。
 `pyboy_world.py` 在**导入时**断言 `OVERLAY_ACTIONS` 里出现的每个键都属于 `ALL_BUTTONS`。
 
 **地形与网格**（`screen_model.py`）：`GRID_COLS = 10`、`GRID_ROWS = 9`（注释：160/16 = 10，144/16 = 9）、`PLAYER_CELL = (4, 4)`（镜头锁在主角身上，是常量）、`PLAYER_MARK = "@"`、`DOOR, SIGN, PERSON, ITEM, BOULDER, GRASS = "D", "S", "N", "I", "B", "G"`、`MAP_CHARS = frozenset(TERRAIN_MEANING)`。
@@ -195,7 +195,7 @@ world/
 | `Facts.Overlay` | 视觉模型 | `OVERLAY_ACTIONS` 的键 | `NONE` `DIALOG` `CHOICE` |
 | `Facts.Landmark` | `TerrainMap.landmarks()` | harness 交互判定 | `kind`（`KIND_DOOR`/`KIND_SIGN`/`KIND_PERSON`/`KIND_ITEM`/`KIND_BOULDER`）、`map_id`、`x`、`y`；属性 `place` 现场拼 `PlaceInWorld` |
 | `PlaceInWorld` | RAM 读出的坐标 | 记忆的键、交互判定 | `map_id` / `x` / `y`；`step_toward(facing)`、属性 `key` = `"{map_id}:{x}:{y}"`、`render()` |
-| `ActionSpace` | `compute_action_space()`（掩码的唯一出处；`mcpclient/game_tools.py::_action_space()` 只在其上补 prompt 文案） | brain（`ChooseOnceReq`） | `mask` / `entries: list[ActionEntry]` / `names` / `descriptions` / `note` / `map_note`（所有场合开放方向键，脚本接管场合另外开放业务脚本，其他键仍关闭）；`contains(name)` / `enabled(name)` / `entry(name)` |
+| `ActionSpace` | `compute_action_space()`（掩码的唯一出处；`mcpclient/game_tools.py::_action_space()` 只在其上补 prompt 文案） | brain（`ChooseOnceReq`） | `mask` / `entries: list[ActionEntry]` / `names` / `descriptions` / `note` / `map_note`（所有场合开放基础按键，脚本接管场合另外开放业务脚本，start/select 仍关闭）；`contains(name)` / `enabled(name)` / `entry(name)` |
 | `ActionEntry` / `ScriptParam` | `scripts/catalog.py`（脚本）、`scripts/scenes/` 各场合文件（脚本） | tool 层：动作空间、prompt 的脚本签名与说明、转成 brain 的 `ScriptSignature` | `kind`（`key` / `script`）/ `name` / `params`（`name` / `type`∈{str,int} / `description` / `default`，None = 必填）/ `description`；`signature()` 写成 `buy_item(item: str, count: int)` |
 | `TakeoverView` | `scripts.scenes.takeover_view()`（`task_perception.observe_task` 里） | `TaskObservation.takeover` → 脚本接管场合的决策 prompt、`sense_frame` 账 | `ShopItemsView`（`items` 名字与价格、`money`、`bag`）/ `NamingView`（`target` 屏幕标题、`typed` 已输入）/ `BattleMenuView`（`mine` 在场那只带招式与剩余 PP、`foe`、`trainer`、`party`、`bag`）/ `BattleSwitchView`（`party`）/ `BagView`（`bag`、`party`）/ `PartyView`（`party`）/ `PcView`（`items` PC 道具、`bag`、`box` 当前箱、`box_number`、`party`）/ `LearnMoveView`（`pokemon`、`new_move`、`moves`）；队员是 `MonEntry`（昵称、等级、HP、状态、是否在场、招式）；`render()` 给 prompt 几行 |
 | `Perceived` | `PyBoyWorld.perceive_once()` | `GameTools.perceive_with_retry()` | `observation` / `calls: list[dict[str, str]]` / `frame_png`（base64 PNG）/ `ram: RamReadout` |
@@ -256,7 +256,7 @@ RAM 档产出 `TaskObservation`：另带场合 `scene`（`scene.classify_scene`�
   菜单定位与提取在 `screen_menu.py`，无箭头的完整商品框由 `priced_menu.py` 读取商品、排布与价格；
   数量框遮挡、边框不完整或价格不齐时不补造完整列表，无箭头时 cursor 为空、cursor_cell 为 null。
   战斗中的队伍选择统一为 battle_switch，主动换人与倒下换人不按HP区分场合；两者只提供同一个换人脚本和队伍视图。野外队伍列表仍是 party，战斗用道具选对象仍属于 battle_menu。
-- **掩码**：所有场合开放后端支持的上下左右；非接管 DIALOG 另外给 `a`，NONE 与 CHOICE 另外给 `a + b + start`（`_OPEN_KEYS`），接管场合不给这些其他键——
+- **掩码**：所有场合开放后端支持的上下左右、a、b；非接管 NONE 与 CHOICE 另外给 `start`，DIALOG 和接管场合不给 start；所有场合不给 select——
   叠加层判错的代价只是多几个当帧无效的键。
 - **测评**：`RamReadout.decoded` 每帧都记（两层），机械判据只读它；`covered` 只做统计。
 
@@ -287,7 +287,7 @@ TaskObservation 另带 `menu_decode_complete: bool | None`（生产取 ScreenTex
 
 task 决策的当前帧显示由 `direct/prompts/task_frame.py` 按场合与叠加层投影，不改变完整观测、历史记忆或 decode 输出。开放按键的帧显示 task `scene`、`covered_by_script`、`overlay`；walk/none 与 shop/none 给位置、朝向、地标与地形（网格与四邻择一），纯对话给对话文字，dialog/shop 交谈另保留地点，选单和信息页优先给整屏文字以避免切分遗漏，不重复列 options/cursor/layout。战斗文字保留双方状态。脚本接管帧显示覆盖标志、业务视图、overlay、已解码光标及整屏文字以支持方向键导航；缺业务视图时用整屏文字兜底，不显示地形或 at_start。整屏显示只省略空白行和行尾空格；无可显示内容时明确提示不能据此判断界面结束。目标、合法动作和上一脚本结果继续由各自段落提供。实际帧组合与静态下一步核对见 `docs/SCENE_OVERLAY_EXAMPLES_1007.md`，不代替模型选择与脚本执行验证。
 
-脚本接管场合里 JEV 可以用方向键导航，或选一条带参数的业务脚本；选择脚本时由 world 执行到底。所有脚本统一使用脚本动作
+脚本接管场合里 JEV 可以用基础按键导航，或选一条带参数的业务脚本；选择脚本时由 world 执行到底。所有脚本统一使用脚本动作
 （`ActionEntry`，`kind="script"`，经 `GameTools.execute` 的脚本通道执行，记 `act_call` script 形），
 差别在可用场合和脚本选择的规则，执行现场相同。**对外名 = 场合前缀 + 文件内短名**（`shop_quit` = `shop` + `quit`），
 前缀表 `scenes.PREFIX` 是唯一规则。每个场合一个文件，每条只写**前提校验 + 执行 + 收尾**，

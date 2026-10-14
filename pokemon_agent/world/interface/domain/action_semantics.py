@@ -35,6 +35,9 @@ DIRECTION_KEYS: frozenset[str] = frozenset(BUTTON_FACING)
 依据。跟 `INTERACT_KEY` 同理，它属于世界的按键语义，不是任何一层的策略。
 """
 
+BASIC_KEYS: frozenset[str] = DIRECTION_KEYS | {"a", "b"}
+"""所有场合开放的基础按键；实际提供哪些键仍受后端能力限制。"""
+
 INTERACT_KEY = "a"
 """哪个键算"互动"。`a` 作用在**面朝的那一格**上：对着人说话、对着招牌看字、
 对着门进去。这是游戏的规则，不是策略。

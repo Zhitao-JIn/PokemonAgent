@@ -82,7 +82,7 @@ MCP 远程门面 `mcpclient/world_tool.py::WorldMcpTool`）**：
 
 | 方法 | 签名 | 信封文件 |
 |---|---|---|
-| `get_action_space` | `(req: …GetActionSpaceReq) -> …GetActionSpaceResp` | 开放按键的场合按 overlay 给键 + 按场合给脚本条目，所有场合开放方向键，脚本接管场合另给本场合脚本、关闭其他按键 |
+| `get_action_space` | `(req: …GetActionSpaceReq) -> …GetActionSpaceResp` | 开放按键的场合按 overlay 给键 + 按场合给脚本条目，所有场合开放方向键、a、b；脚本接管场合另给本场合脚本、关闭 start/select |
 | `execute` | `(req: …ExecuteReq) -> FromHarnessToGameToolExecuteResp` | 两形分流：键 → `world/object_events.observe_step`，`event` 带本键裸事件；脚本（统一调用）→ 掩码校验后跑脚本层，`report` 是终态报告（`{ok, code, data, events, calls}`）。MCP 门面调用同名工具并保留报告事件 |
 | `reset` | `(req: …ResetReq) -> None` | 只有 Req |
 | `perceive_with_retry` | `() -> tuple[…PerceiveOnceResp, ModelCallLog]` | episode 层视觉档；只有 Resp |

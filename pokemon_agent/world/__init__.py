@@ -35,6 +35,7 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 from .interface import (
+    BASIC_KEYS,
     BOULDER,
     BUTTON_FACING,
     DIRECTION_KEYS,
@@ -99,6 +100,7 @@ __all__ = [
     "ActionEntry",
     "ActionSpace",
     "BOULDER",
+    "BASIC_KEYS",
     "BUTTON_FACING",
     "DIRECTION_KEYS",
     "DOOR",

@@ -27,6 +27,7 @@ __all__ = [
     "BOULDER",
     "BagItem",
     "BattleStatus",
+    "BASIC_KEYS",
     "BUTTON_FACING",
     "DIRECTION_KEYS",
     "DOOR",
@@ -84,7 +85,7 @@ __all__ = [
 ]
 
 from .action_entry import ActionEntry
-from .action_semantics import BUTTON_FACING, DIRECTION_KEYS, FACING_STEP, INTERACT_KEY
+from .action_semantics import BASIC_KEYS, BUTTON_FACING, DIRECTION_KEYS, FACING_STEP, INTERACT_KEY
 from .action_space import ActionSpace
 from .battle_status import BattleStatus, Combatant
 from .facts import OVERLAY_ACTIONS, Facts

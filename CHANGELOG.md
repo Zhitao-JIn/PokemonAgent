@@ -1,3 +1,10 @@
+## 2026-10-14（450）—— 基础按键在所有场合开放
+
+**改了什么**：world/interface/domain/action_semantics.py 定义 BASIC_KEYS（方向键、a、b），compute_action_space 在所有场合与 overlay 开放后端支持的基础按键；接管场合仍给业务脚本，start 仅在非接管 NONE/CHOICE 开放，select 始终关闭。统一出口导出常量，更新按键/脚本选择文案及 world/tools SPEC；本地回归覆盖所有场合的基本键和 start/select 边界。
+**为什么这么改**：视觉删除 S0 前置检查发现第八、十例要求按 a 只打开列表，而旧接管掩码屏蔽 a，脚本又会直接出招或换人，目标与能力不相容。用户裁决基础按键应全场合开放，脚本是快捷方式，掩码不替模型判断该不该确认。
+**取舍**：仅 compute_action_space 决定掩码，门面仍只补文案；a 可能确认执行选项，b 可能退出菜单，提示要求只打开列表或移动光标的目标达成后停手，实际效果看下一帧。保持脚本、解码器、模型、数据集、真值与存档不变；不开放 start/select 到接管或对话场合。
+**影响面**：进程内与 MCP 共用 world 的同一掩码；BASIC_KEYS 只增加常量出口，不改 Port/Pydantic 字段，state_schema_hash 保持 570c830a9cf52445；全量 693 passed、2 skipped、1 SDL warning，Ruff 两项全绿。无模型验证及新 HEAD 的十样本视觉删除 S0 基线独立记录在 eval_results/，不进入 S1 或后续视觉删除代码步骤。
+
 ## 2026-10-14（449）—— 所有场合开放方向键并保留脚本能力
 
 **改了什么**：world 的统一掩码在所有场合和叠加层开放后端支持的上下左右，接管场合保留业务脚本并继续关闭 a/b/start/select；GameTools 只补按键文案，方向键与脚本共同进入已有 choose 解析器。接管观测显示 overlay、光标及整屏文字，动作提示说明导航不能替换成逃跑等执行脚本。同步 world/tools SPEC。

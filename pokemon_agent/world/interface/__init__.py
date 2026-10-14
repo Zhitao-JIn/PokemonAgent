@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 from .domain import (
+    BASIC_KEYS,
     BOULDER,
     BUTTON_FACING,
     DIRECTION_KEYS,
@@ -96,6 +97,7 @@ __all__ = [
     "BOULDER",
     "BagItem",
     "BattleStatus",
+    "BASIC_KEYS",
     "BUTTON_FACING",
     "DIRECTION_KEYS",
     "DOOR",
