@@ -12,14 +12,16 @@ def render_task_frame(observation: TaskObservation) -> str:
             if observation.takeover is not None
             else _compact_screen(observation.facts.screen) or "（未读出业务视图）"
         )
+        body += f"\n- overlay: {observation.facts.overlay_value or 'none'}"
+        if observation.facts.cursor:
+            body += f"\n- cursor: {observation.facts.cursor}"
+        screen = _compact_screen(observation.facts.screen)
+        if observation.takeover is not None and screen:
+            body += f"\nscreen:\n{screen}"
         if observation.selected_map_location is not None:
             body += f"\nselected_map_location: {observation.selected_map_location}"
             if observation.facts.where:
                 body += f"\nwhere: {observation.facts.where}"
-        elif observation.scene is TaskScene.BAG and observation.facts.overlay is Facts.Overlay.NONE:
-            screen = _compact_screen(observation.facts.screen)
-            if screen:
-                body += f"\nscreen:\n{screen}"
         return _with_notes(f"{header}\n{body}", observation)
     facts = dict(observation.facts.items())
     fields = _visible_fields(observation, facts)
