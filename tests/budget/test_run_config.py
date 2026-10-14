@@ -111,6 +111,7 @@ def test_build_real_injects_the_budget_and_model_settings(tmp_path, monkeypatch)
 
     assert actual_game is game
     assert harness.deps.budget.max_episodes == 3
+    assert harness.deps.deadline is None
     assert all(
         b["plan_max_tokens"] == 4096
         and b["plan_thinking"] is False

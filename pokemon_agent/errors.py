@@ -85,6 +85,19 @@ class AgentError(Exception):
     """
 
 
+class BudgetExhausted(AgentError):
+    """剩余时间不足以启动一次有用请求；由 harness 机械结算，不作为模型重试。"""
+
+    def __init__(
+        self, source: str, calls: Sequence[ModelCall] = (), reason: str = "time_exhausted"
+    ) -> None:
+        """保留耗尽原因和此前完成的调用账；未发出的请求不虚构调用账。"""
+        super().__init__(f"[{source}] {reason}")
+        self.source = source
+        self.reason = reason
+        self.calls = list(calls)
+
+
 class MaxRetriesExceeded(AgentError):
     """连续重试仍拿不到可用结果。
 
@@ -139,4 +152,4 @@ class NoGoalToDispatch(AgentError):
     """
 
 
-__all__ = ["AgentError", "MaxRetriesExceeded", "NoGoalToDispatch"]
+__all__ = ["BudgetExhausted", "AgentError", "MaxRetriesExceeded", "NoGoalToDispatch"]

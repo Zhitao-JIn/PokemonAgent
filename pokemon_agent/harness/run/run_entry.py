@@ -198,6 +198,8 @@ def invoke_run(
     episode / task 两层的 `invoke` 从 config 继承这个设置。无 saver 时不传：langgraph 1.2.11
     在无 saver 时收到 `"sync"` 会抛 `AttributeError`。
     """
+    if deps.deadline is not None:
+        deps.deadline.start()
     return graph.invoke(
         state,
         {"recursion_limit": RUN_RECURSION_LIMIT, "configurable": {"thread_id": thread}},

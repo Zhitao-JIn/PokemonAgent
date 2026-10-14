@@ -27,6 +27,7 @@ import logging
 from pathlib import Path
 
 from pokemon_agent.config import CHECKPOINT_ENABLED, TRACE_BACKEND
+from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.brain_tool import BrainTool
 from pokemon_agent.direct.trace import TraceTool, assert_server_ready
 from pokemon_agent.env import env_str, load_env_file
@@ -171,6 +172,11 @@ def build_real(
     # **env 只在这里读一次**（`.env` → os.environ，真环境变量优先）。它必须在
     # 任何 `env_str(...)` 之前——world / memory 两个 server 地址的缺省都来自它。
     budget = load_run_config(config).budget
+    deadline = (
+        Deadline(budget.wall_clock_s, budget.reserve_s, budget.min_request_s)
+        if budget.wall_clock_s is not None
+        else None
+    )
     load_env_file()
 
     world_server_url = (world_server_url or env_str("MCP_WORLD_SERVER_URL") or "").strip() or None
@@ -273,6 +279,7 @@ def build_real(
         plan_thinking=budget.plan_thinking,
         plan_timeout_s=budget.plan_timeout_s,
         max_attempts=budget.brain_max_attempts,
+        deadline=deadline,
     )
     episode_brain = BrainTool.build(
         plan=plan_model or "doubao-seed-2-1-pro-260628",
@@ -283,6 +290,7 @@ def build_real(
         plan_thinking=budget.plan_thinking,
         plan_timeout_s=budget.plan_timeout_s,
         max_attempts=budget.brain_max_attempts,
+        deadline=deadline,
     )
     task_brain = BrainTool.build(
         text=text_model,
@@ -293,6 +301,7 @@ def build_real(
         plan_thinking=budget.plan_thinking,
         plan_timeout_s=budget.plan_timeout_s,
         max_attempts=budget.brain_max_attempts,
+        deadline=deadline,
     )
 
     reviewer = reviewer or NullReviewer()
@@ -369,6 +378,7 @@ def build_real(
         checkpointer=checkpointer,
     )
     run_rt = RunRuntime(
+        deadline=deadline,
         budget=budget,
         trace=trace_tool,
         memory=memory,

@@ -50,7 +50,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from pokemon_agent.backoff import backoff_seconds
 from pokemon_agent.brain import (
@@ -76,12 +76,14 @@ from pokemon_agent.config import (
     PLAN_THINKING,
     PROVIDER_JSON_MODE,
 )
+from pokemon_agent.deadline import Deadline
+from pokemon_agent.direct.budget_provider import BudgetProvider, TimeoutProvider
 from pokemon_agent.direct.prompts import decompose as decompose_prompt
 from pokemon_agent.direct.prompts import run_plan as run_plan_prompt
 from pokemon_agent.direct.prompts import summarize as summarize_prompt
 from pokemon_agent.direct.prompts import summarize_task as summarize_task_prompt
 from pokemon_agent.direct.prompts import verify as verify_prompt
-from pokemon_agent.errors import MaxRetriesExceeded
+from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
@@ -173,9 +175,18 @@ def dedup_snapshots(
 class Planner:
     """`PlanPort` 的实现：run 级规划的信封翻译器。run 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
+    def __init__(
+        self,
+        brain: BrainPort,
+        *,
+        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        deadline: Deadline | None = None,
+        request_timeout_s: float = 45,
+    ) -> None:
         self._brain = brain
         self._max_attempts = max_attempts
+        self._deadline = deadline
+        self._request_timeout_s = request_timeout_s
 
     def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
         """run 级规划：拼 prompt + 重试循环（**原样重问**，无纠正说明）→ 打包整条账。
@@ -207,7 +218,13 @@ class Planner:
                 thinking=_thinking_after(calls),
             )
 
-        result, calls = _attempt_loop("plan", attempt, max_attempts=self._max_attempts)
+        result, calls = _attempt_loop(
+            "plan",
+            attempt,
+            max_attempts=self._max_attempts,
+            deadline=self._deadline,
+            request_timeout_s=self._request_timeout_s,
+        )
         return FromHarnessToBrainToolPlanOnceResp(plan=result.plan, calls=calls)
 
 
@@ -217,9 +234,18 @@ class Planner:
 class Decomposer:
     """`DecomposePort` 的实现：episode 级拆解的信封翻译器。episode 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
+    def __init__(
+        self,
+        brain: BrainPort,
+        *,
+        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        deadline: Deadline | None = None,
+        request_timeout_s: float = 45,
+    ) -> None:
         self._brain = brain
         self._max_attempts = max_attempts
+        self._deadline = deadline
+        self._request_timeout_s = request_timeout_s
 
     def decompose(
         self, req: FromHarnessToBrainToolDecomposeReq
@@ -241,7 +267,13 @@ class Decomposer:
                 thinking=_thinking_after(calls),
             )
 
-        result, calls = _attempt_loop("decompose", attempt, max_attempts=self._max_attempts)
+        result, calls = _attempt_loop(
+            "decompose",
+            attempt,
+            max_attempts=self._max_attempts,
+            deadline=self._deadline,
+            request_timeout_s=self._request_timeout_s,
+        )
         return FromHarnessToBrainToolDecomposeResp(decomposition=result.decomposition, calls=calls)
 
 
@@ -252,9 +284,18 @@ class Chooser:
     """`ChoosePort` 的实现：决策的信封翻译器。episode 层 runtime 持它；
     task 层将来持自己的实例（受限 space / 换策略时只换这一个对象）。"""
 
-    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
+    def __init__(
+        self,
+        brain: BrainPort,
+        *,
+        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        deadline: Deadline | None = None,
+        request_timeout_s: float = 25,
+    ) -> None:
         self._brain = brain
         self._max_attempts = max_attempts
+        self._deadline = deadline
+        self._request_timeout_s = request_timeout_s
 
     def choose(
         self, req: FromHarnessToBrainToolChooseOnceReq
@@ -292,7 +333,13 @@ class Chooser:
                 scripts=scripts,
             )
 
-        result, calls = _attempt_loop("choose", attempt, max_attempts=self._max_attempts)
+        result, calls = _attempt_loop(
+            "choose",
+            attempt,
+            max_attempts=self._max_attempts,
+            deadline=self._deadline,
+            request_timeout_s=self._request_timeout_s,
+        )
         return FromHarnessToBrainToolChooseOnceResp(
             action=self._normalize(result.action),
             calls=calls,
@@ -413,9 +460,18 @@ class Reflector:
 class Judger:
     """`JudgePort` 的实现：判定的信封翻译器。episode 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
+    def __init__(
+        self,
+        brain: BrainPort,
+        *,
+        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        deadline: Deadline | None = None,
+        request_timeout_s: float = 60,
+    ) -> None:
         self._brain = brain
         self._max_attempts = max_attempts
+        self._deadline = deadline
+        self._request_timeout_s = request_timeout_s
 
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         """判定：拼 prompt + 重试循环调 `Brain.judge()`。
@@ -447,7 +503,13 @@ class Judger:
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
 
-        result, calls = _attempt_loop("judge", attempt, max_attempts=self._max_attempts)
+        result, calls = _attempt_loop(
+            "judge",
+            attempt,
+            max_attempts=self._max_attempts,
+            deadline=self._deadline,
+            request_timeout_s=self._request_timeout_s,
+        )
         return FromHarnessToBrainToolJudgeResp(
             done=result.done, interrupted=result.interrupted, why=result.why, calls=calls
         )
@@ -459,9 +521,18 @@ class Judger:
 class Verifier:
     """`VerifyPort` 的实现：校验的信封翻译器。episode/task 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
+    def __init__(
+        self,
+        brain: BrainPort,
+        *,
+        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        deadline: Deadline | None = None,
+        request_timeout_s: float = 60,
+    ) -> None:
         self._brain = brain
         self._max_attempts = max_attempts
+        self._deadline = deadline
+        self._request_timeout_s = request_timeout_s
 
     def verify(self, req: FromHarnessToBrainToolVerifyReq) -> FromHarnessToBrainToolVerifyResp:
         """校验：拼 prompt + 重试循环调 `Brain.verify()`。
@@ -492,7 +563,13 @@ class Verifier:
                 images=images,
             )
 
-        result, calls = _attempt_loop("verify", attempt, max_attempts=self._max_attempts)
+        result, calls = _attempt_loop(
+            "verify",
+            attempt,
+            max_attempts=self._max_attempts,
+            deadline=self._deadline,
+            request_timeout_s=self._request_timeout_s,
+        )
         return FromHarnessToBrainToolVerifyResp(verdicts=result.verdicts, calls=calls)
 
 
@@ -522,9 +599,18 @@ def _verify_images(entries: list[ActMemory | TaskMemory]) -> list[str]:
 class Summarizer:
     """`SummarizePort` 的实现：蒸馏的信封翻译器。episode 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
+    def __init__(
+        self,
+        brain: BrainPort,
+        *,
+        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        deadline: Deadline | None = None,
+        request_timeout_s: float = 60,
+    ) -> None:
         self._brain = brain
         self._max_attempts = max_attempts
+        self._deadline = deadline
+        self._request_timeout_s = request_timeout_s
 
     def summarize(
         self, req: FromHarnessToBrainToolSummarizeReq
@@ -568,7 +654,13 @@ class Summarizer:
                 images=images,
             )
 
-        result, calls = _attempt_loop("summarize_episode", attempt, max_attempts=self._max_attempts)
+        result, calls = _attempt_loop(
+            "summarize_episode",
+            attempt,
+            max_attempts=self._max_attempts,
+            deadline=self._deadline,
+            request_timeout_s=self._request_timeout_s,
+        )
         summary: EpisodeSummary = result.summary
         episode_memory = EpisodeMemory(
             episode_id=req.episode_id,
@@ -602,9 +694,18 @@ class Summarizer:
 class TaskSummarizer:
     """`TaskSummarizePort` 的实现：task 蒸馏的信封翻译器。task 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
+    def __init__(
+        self,
+        brain: BrainPort,
+        *,
+        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        deadline: Deadline | None = None,
+        request_timeout_s: float = 60,
+    ) -> None:
         self._brain = brain
         self._max_attempts = max_attempts
+        self._deadline = deadline
+        self._request_timeout_s = request_timeout_s
 
     def summarize_task(
         self, req: FromHarnessToBrainToolSummarizeTaskReq
@@ -634,7 +735,13 @@ class TaskSummarizer:
                 images=images,
             )
 
-        result, calls = _attempt_loop("summarize_task", attempt, max_attempts=self._max_attempts)
+        result, calls = _attempt_loop(
+            "summarize_task",
+            attempt,
+            max_attempts=self._max_attempts,
+            deadline=self._deadline,
+            request_timeout_s=self._request_timeout_s,
+        )
         summary: EpisodeSummary = result.summary
         first = next((e.before_frame for e in req.entries if e.before_frame), None)
         last = next((e.after_frame for e in reversed(req.entries) if e.after_frame), None)
@@ -697,6 +804,7 @@ class BrainTool:
         plan_thinking: bool = PLAN_THINKING,
         plan_timeout_s: float = 45,
         max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        deadline: Deadline | None = None,
     ) -> BrainTool:
         """按需装配：**只传这一层要的型号名**，没传的位置 provider 为 `None`。
 
@@ -737,6 +845,18 @@ class BrainTool:
         decide, judge_llm, verify_llm, plan_llm = build_llm_providers(
             config, plan_timeout_s=plan_timeout_s
         )
+        bounded = [
+            BudgetProvider(cast(TimeoutProvider, provider), deadline, limit, source)
+            if provider is not None
+            else None
+            for provider, limit, source in (
+                (decide, 25, "choose"),
+                (judge_llm, 60, "judge"),
+                (verify_llm, 60, "verify"),
+                (plan_llm, plan_timeout_s, "plan"),
+            )
+        ]
+        decide, judge_llm, verify_llm, plan_llm = bounded
         brain = Brain(
             decide_llm=decide,
             judge_llm=judge_llm,
@@ -744,14 +864,34 @@ class BrainTool:
             plan_llm=plan_llm,
         )
         return cls(
-            planner=Planner(brain, max_attempts=max_attempts),
-            decomposer=Decomposer(brain, max_attempts=max_attempts),
-            chooser=Chooser(brain, max_attempts=max_attempts),
-            judger=Judger(brain, max_attempts=max_attempts),
+            planner=Planner(
+                brain,
+                max_attempts=max_attempts,
+                deadline=deadline,
+                request_timeout_s=plan_timeout_s,
+            ),
+            decomposer=Decomposer(
+                brain,
+                max_attempts=max_attempts,
+                deadline=deadline,
+                request_timeout_s=plan_timeout_s,
+            ),
+            chooser=Chooser(
+                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=25
+            ),
+            judger=Judger(
+                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+            ),
             reflector=Reflector(brain, max_attempts=max_attempts),
-            verifier=Verifier(brain, max_attempts=max_attempts),
-            summarizer=Summarizer(brain, max_attempts=max_attempts),
-            task_summarizer=TaskSummarizer(brain, max_attempts=max_attempts),
+            verifier=Verifier(
+                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+            ),
+            summarizer=Summarizer(
+                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+            ),
+            task_summarizer=TaskSummarizer(
+                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+            ),
         )
 
 
@@ -765,6 +905,8 @@ def _attempt_loop(
     retry_prompt: Callable[[str, list[ModelCall]], str] | None = None,
     base_prompt: str = "",
     max_attempts: int = BRAIN_MAX_ATTEMPTS,
+    deadline: Deadline | None = None,
+    request_timeout_s: float = 45,
 ) -> tuple[_Result, list[ModelCall]]:
     """brain 各链路共用的重试循环：**成功带整条账返回 / 耗尽带整条账抛异常**。
 
@@ -796,8 +938,12 @@ def _attempt_loop(
     """
     calls: list[ModelCall] = []
     while True:
+        if deadline is not None:
+            deadline.allowed(request_timeout_s, source, calls)
         try:
             result = attempt(len(calls) + 1, calls)
+        except BudgetExhausted as exc:
+            raise BudgetExhausted(source, [*calls, *exc.calls], exc.reason) from exc
         except AttemptFailed as exc:
             call = _adopt(exc.call)
             calls.append(call)
@@ -806,7 +952,10 @@ def _attempt_loop(
                     len(calls), _last_error(calls), calls, source=source
                 ) from exc
             timeouts = sum(c.error_kind == ToolTimeout.__name__ for c in calls)
-            time.sleep(backoff_seconds(call.error_kind == ToolTimeout.__name__, timeouts))
+            delay = backoff_seconds(call.error_kind == ToolTimeout.__name__, timeouts)
+            if deadline is not None:
+                deadline.allowed(request_timeout_s, source, calls, delay_s=delay)
+            time.sleep(delay)
             continue
 
         calls.extend(_adopt(call) for call in result.calls)
