@@ -17,6 +17,7 @@ class RunOneRequest(BaseModel):
     """solver 交给 worker 子进程的单样本请求（经 stdin 的 JSON）；两侧共用本模型，没有命令行。"""
 
     work_dir: str
+    run_config_path: str
     sample_id: str
     epoch: int = 1
     models: dict[str, str]

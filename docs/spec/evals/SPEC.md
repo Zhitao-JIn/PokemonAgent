@@ -33,9 +33,11 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 测什么：完整系统（含记忆）从冻结的单场景起点出发，能否完成一个短目标。20 个起点覆盖对话推进、NPC 对话、进出门、受阻移动、宝可梦中心进入与治疗、商店（交互、开买菜单、选物、确认、取消）、战斗（行动菜单、招式菜单、选招、换人、用道具、逃跑）、遭遇野生宝可梦、抓捕（削弱、投球）。评分只看最终结果：机械结果规则、红线、独立 model-graded 结果。
 不测：跨场景的长程推进、卡住后的恢复、记忆是否带来增益。
 
-单样本 worker 的墙钟超时为 `evals/config.json` 的 600 秒；全局
-`pokemon_agent/config.py::RUN_MAX_EPISODES = 3` 限制每个 run 最多派三局，
-也影响评测之外的 run。连续失败护栏不能替代总局数预算：局部成功会重置失败计数。
+单样本 worker 的硬超时仍为 `evals/config.json` 的 600 秒。评测只在该文件的
+`budget` 段覆盖总量：运行时长 600 秒、最多三局、累计动作 60 次；task 把这段写成
+报告目录下的 `run_config.json`，在 `baseline_context.json` 记录路径与 SHA256，worker
+将文件路径交给 `build_real(config=…)`。分层预算与生产共用，生产默认最多 50 局、
+总时长和累计动作不限；连续失败护栏不能替代总量预算。
 `knowledge_battle_action_menu` 只要求在当前战斗菜单移动光标并停在 RUN，禁止确认、
 逃跑、重新遇敌和逃跑收尾。任务描述同时保存在样本与冻结存档的 run_goal、pending task 中，
 修改时须同步；机械真值仍是 battle/choice/RUN。2026-10-14 的旧配置十样本基线在第七例

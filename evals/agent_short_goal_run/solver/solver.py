@@ -74,6 +74,7 @@ def _finish(
 def run_one_solver(
     *,
     report_dir: str,
+    run_config_path: str,
     models: dict[str, str],
     knowledge: bool,
     speed: int,
@@ -95,6 +96,7 @@ def run_one_solver(
         work = work_dir_of(report_dir, sample_id, epoch)
         request = RunOneRequest(
             work_dir=str(work),
+            run_config_path=run_config_path,
             sample_id=sample_id,
             epoch=epoch,
             models=models,

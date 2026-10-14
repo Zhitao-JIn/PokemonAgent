@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from inspect_ai import Task, task
@@ -15,8 +18,21 @@ from evals.agent_short_goal_run.scorer.task_scorer import e2e_scorer
 from evals.agent_short_goal_run.solver.solver import run_one_solver
 from evals.runconfig import load_config, resolve_models
 from pokemon_agent.env import load_env_file
+from pokemon_agent.run_config import load_run_config
 
-__all__ = ["agent_short_goal_run"]
+__all__ = ["agent_short_goal_run", "write_run_config"]
+
+
+def write_run_config(report_dir: str | Path, budget: Mapping[str, object]) -> tuple[Path, str]:
+    """将本次预算覆盖落成唯一配置文件，并在派 worker 前验证它。"""
+    path = Path(report_dir).resolve() / "run_config.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = (json.dumps({"budget": dict(budget)}, ensure_ascii=False, indent=2) + "\n").encode(
+        "utf-8"
+    )
+    path.write_bytes(content)
+    load_run_config(path)
+    return path, hashlib.sha256(content).hexdigest()
 
 
 def _select(
@@ -67,14 +83,32 @@ def agent_short_goal_run(
     report_dir = log_dir or str(cfg["log_dir"])
     trace_backend = trace_backend or str(cfg.get("trace_backend", "local"))
     models = resolve_models(cfg.get("models", {}))
-    Path(report_dir).mkdir(parents=True, exist_ok=True)
-
     chosen = _select(load(version, rule_ids=set(RULES)), split, sample_ids)
+    run_config_path, run_config_sha256 = write_run_config(report_dir, cfg["budget"])
+    (run_config_path.parent / "baseline_context.json").write_text(
+        json.dumps(
+            {
+                "run_config_path": str(run_config_path),
+                "run_config_sha256": run_config_sha256,
+                "models": models,
+                "sample_ids": [s.sample_id for s in chosen],
+                "timeout": timeout,
+                "knowledge": knowledge,
+                "speed": speed,
+                "trace_backend": trace_backend,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     stall_limits = (config.EPISODE_STALL_LIMIT, config.RUN_STALL_LIMIT)
     return Task(
         dataset=samples_to_dataset(chosen),
         solver=run_one_solver(
             report_dir=report_dir,
+            run_config_path=str(run_config_path),
             models=models,
             knowledge=knowledge,
             speed=speed,
@@ -98,5 +132,7 @@ def agent_short_goal_run(
             "models": models,
             "stall_limits": list(stall_limits),
             "sample_ids": [s.sample_id for s in chosen],
+            "run_config_path": str(run_config_path),
+            "run_config_sha256": run_config_sha256,
         },
     )

@@ -39,6 +39,7 @@ def run_one(
     work: Path,
     models: dict[str, str],
     *,
+    run_config_path: str,
     knowledge: bool,
     speed: int,
     epoch: int = 1,
@@ -50,6 +51,7 @@ def run_one(
     `epoch`：第几次重复（V2）。>1 时 run_id 加 `#e{n}` 后缀、调用方给独立工作目录——
     同一样本的各 epoch 互不残留（R3 的 eval_set 按 epoch 起子进程）。
     `trace_backend`：与 scorer 的读账后端同源（langfuse 需本机服务在跑）。
+    `run_config_path`：task 落盘的预算配置；子进程原路径传给唯一装配点。
     `watch`：开 SDL 窗口人看模拟器（默认无头批量）。
     """
     assert Path.cwd().resolve() == REPO_ROOT.resolve(), "run_one 要从仓库根起跑"
@@ -101,6 +103,7 @@ def run_one(
             speed=speed,
             trace_backend=trace_backend,
             watch=watch,
+            config=run_config_path,
             **models,
             **roots_kw,
         )
