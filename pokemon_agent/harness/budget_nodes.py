@@ -42,7 +42,12 @@ _CALL_KINDS = {
 }
 
 
-def budget_reason(state: Any, deps: Any, layer: str, source: str) -> Termination | None:  # noqa: ANN401
+def budget_reason(
+    state: RunState | EpisodeRunState | TaskState,
+    deps: RunRuntime | EpisodeRuntime | TaskRuntime,
+    layer: str,
+    source: str,
+) -> Termination | None:
     """总量停止优先于继续请求；本局任务数和拆解次数只限制本局。"""
     if source == "begin":
         return None
@@ -106,7 +111,10 @@ def guarded(
 ) -> Callable[..., dict[str, Any]]:
     """包装普通节点；活对象只从 runtime 取，所有可恢复额度都在 state 里。"""
 
-    def invoke(state: Any, runtime: Runtime[Any]) -> dict[str, Any]:  # noqa: ANN401
+    def invoke(
+        state: RunState | EpisodeRunState | TaskState,
+        runtime: Runtime[RunRuntime | EpisodeRuntime | TaskRuntime],
+    ) -> dict[str, Any]:
         deps = runtime.context
         updates = absorb(state, runtime) if absorb is not None else {}
         current = state.model_copy(update=updates)
