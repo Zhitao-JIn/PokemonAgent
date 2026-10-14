@@ -1,3 +1,10 @@
+## 2026-10-14（460）—— brain/domain 单元测试
+
+**改了什么**：新增 `tests/brain/domain/` 下四个测试文件（test_action / test_script_call / test_planning_models / test_results），钉住对外数据模型的约束与默认值。
+**为什么这么改**：这些模型是 harness 与 schemas 内嵌的"数据形状"，字段约束变动会静默改变"模型输出解析得过不过"，此前没有任何测试守项目自己声明的约束与默认值。
+**取舍**：只测项目声明的约束与默认值，不测 pydantic 框架本身；Task.max_steps 的 >0（O9）、ModelCall 不可变、布尔转 int（O10）、python -O 下 assert 失效（O11）是待裁决项，不钉；Reflection 已在 reflect 目录覆盖。
+**影响面**：只增测试，不动 `pokemon_agent/`；新增用例 53 条（参数化展开后），`tests/brain/domain` 全绿；全量 pytest 937→990 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
+
 ## 2026-10-14（459）—— brain/errors 单元测试
 
 **改了什么**：新增 `tests/brain/errors/test_brain_errors.py`，钉住 15 个异常类的继承树、`AttemptFailed` 六子类的默认 `source`、各异常字段、与 `AgentError` 的分工、`__all__` 导出一致性。
