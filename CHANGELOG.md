@@ -1,3 +1,10 @@
+## 2026-10-14（461）—— brain/factory 单元测试
+
+**改了什么**：新增 `tests/brain/factory/` 下两个测试文件（test_build_llm_providers / test_build_vision_provider），钉住两个厂商接线工厂的温度/输出上限/超时分层与厂商按前缀选型。
+**为什么这么改**：这些分层写在代码常量里，改错了不报错、只会悄悄改变模型行为；按前缀选厂商的位置混搭和"四个位置各一个实例"此前没有测试守。
+**取舍**：只经 `config()` 与手写假 `urlopen` 观察，不碰私有属性；json_mode/thinking 的传递已有测试不重复；build_vision_provider 的缺省 json_mode 随项目配置、超时常量本身不进 __all__，均不测。
+**影响面**：只增测试，不动 `pokemon_agent/`；新增用例 27 条（参数化展开后），`tests/brain/factory` 全绿；全量 pytest 990→1017 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
+
 ## 2026-10-14（460）—— brain/domain 单元测试
 
 **改了什么**：新增 `tests/brain/domain/` 下四个测试文件（test_action / test_script_call / test_planning_models / test_results），钉住对外数据模型的约束与默认值。
