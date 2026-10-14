@@ -40,6 +40,7 @@ from typing import Any
 
 from .datastore.event import _Event
 from .interface.event import Event
+from .seq import next_seq
 
 
 # 缺省落盘根：**进程启动目录**下的 `tracelog/`（0916 起，原名 `trace_data/`）。
@@ -128,11 +129,6 @@ class LocalTrace:
         self._dir = Path(root) if root is not None else _default_root()
         self._dir.mkdir(parents=True, exist_ok=True)
 
-        self._seq = 0
-        """进程内 append 的单调计数器（0928 325，用户拍板：**由 trace 自己递增
-        生成**，实例内全局共享，每次重启置零、不持久化）——同刻 `ended_at` 的
-        决胜键，append 时 +1 盖进封套。"""
-
     def append(
         self,
         type: str,
@@ -150,7 +146,7 @@ class LocalTrace:
             `episode_id` / `step`…），本类**原样序列化**成 JSON 字符串——
             执行线标识由 tool 层在调用时盖好，本类不再补盖、也不解释任何键。
         `content`：这笔账的本体，任何可 JSON 化的对象。
-        本类**自行递增** `seq`（实例内全局共享、重启置零，0928 325 用户拍板）：
+        本类取进程内全局递增的 `seq`（双后端共享、重启置零、不持久化）：
         同刻 `ended_at` 的决胜键，调用方不传、也不许越层代管。
         `started_at` / `ended_at`：操作真实起止（TracePort 契约）；None 补记账时刻。
 
@@ -168,10 +164,9 @@ class LocalTrace:
         start = float(started_at) if started_at is not None else now
         end = float(ended_at) if ended_at is not None else now
 
-        self._seq += 1
         event = _Event(
             uuid=event_uuid,
-            seq=self._seq,
+            seq=next_seq(),
             kind=kind,
             type=type,
             started_at=start,

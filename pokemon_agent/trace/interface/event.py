@@ -24,15 +24,16 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class Event(Protocol):
-    """一个事件的最小形状：**trace 记账真正需要的七样**。
+    """一个事件的最小形状：**trace 记账真正需要的八样**。
 
-    这七个属性是 `store.py` 全部读点与算法的输入，多一个都不需要：
+    这八个属性是 `store.py` 全部读点与算法的输入，多一个都不需要：
 
     | 属性 | trace 拿它干什么 |
     |---|---|
     | `uuid` | 落盘（就是文件名）；扫盘时按它去重 |
+    | `seq` | 进程内全局 append 序；同刻 `ended_at` 的决胜键 |
     | `started_at` | 落盘；操作真实开始时刻（机械账 = 记账时刻） |
-    | `ended_at` | 排序（`(ended_at, uuid)` 升序）、落盘 |
+    | `ended_at` | 排序（`(ended_at, seq)` 升序）、落盘 |
     | `kind` | 落盘（本类**不解释**它的取值——那是声明方的事） |
     | `type` | 落盘（同上） |
     | `meta` | 落盘随行；**按交集筛选时读它**（`read_events` 的 `meta` 参数） |
@@ -43,12 +44,13 @@ class Event(Protocol):
     """本次事件的唯一标识，与文件名同值。"""
 
     seq: int
-    """进程内 append 的单调序号（0928 325）：**同刻 `ended_at` 的决胜键**。
+    """进程内全局 append 的单调序号：**同刻 `ended_at` 的决胜键**。
 
     `time.time()` 分辨率有限，密集写入的相邻快账 `ended_at` 会同值——平局
     曾经落到随机的 uuid 上，把执行序翻掉（node_io 流序断言概率性炸，0928 实测）。
-    seq 由 tool 层（`TraceTool.append`，双后端共用入口）分配、盖进封套，
+    seq 由 trace 双后端共享的 `next_seq()` 分配、盖进封套，
     排序改看 `(ended_at, seq)`：同刻账按真实 append 序决胜，uuid 退化为纯标识。
+    重启后计数重置；跨进程不保证单调，同刻仍可能平局。
     """
 
     started_at: float

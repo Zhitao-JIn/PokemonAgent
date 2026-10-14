@@ -55,6 +55,7 @@ from .langfuse_support import (
     retrieve_input_fields,
     stamp_generation_fields,
 )
+from .seq import next_seq
 from .store import new_event_uuid
 
 logger = logging.getLogger(__name__)
@@ -104,9 +105,6 @@ class LangfuseTrace:
             raise ValueError("LangfuseTrace needs a non-empty trace_id")
         self._trace_id = trace_id
         self._client = client if client is not None else build_client_from_environment()
-        self._seq = 0
-        """进程内 append 的单调计数器（0928 325，与 LocalTrace 同一条规矩：trace
-        自己递增、实例内全局共享、重启置零）——同刻 ended_at 的决胜键。"""
         self._scopes: dict[tuple[str, ...], str] = {}
         self._branch_scope_id: str | None = None
         self._faked_run_scope = False
@@ -125,7 +123,7 @@ class LangfuseTrace:
 
         前置条件：`meta` 已由 tool 层盖好 `run_id` / `branch`（本模块零持有，
         缺了当场拒绝）；`branch` 参与路由与 scope 命名。
-        本类**自行递增** `seq`（0928 325，与 LocalTrace 同一条规矩）——进封套与
+        本类取双后端共享的进程内全局递增 `seq`（重启置零）——进封套与
         observation metadata，观测侧对账用；不参与 Langfuse 的 OTEL 排序
         （span 时间轴由 3ms 垫错开，那是另一回事）。
         `started_at` / `ended_at`：操作真实起止（None 补记账时刻）——双时刻
@@ -135,12 +133,12 @@ class LangfuseTrace:
         assert "run_id" in stamped_meta and "branch" in stamped_meta, (
             "meta 必须已盖 run_id / branch——盖章在 tool 层（TraceTool.append），本模块只透传"
         )
-        self._seq += 1
+        seq = next_seq()
         event_uuid = new_event_uuid()
         now = time.time()
         envelope = new_event_envelope(
             event_uuid,
-            self._seq,
+            seq,
             kind,
             type,
             float(started_at) if started_at is not None else now,
@@ -150,7 +148,7 @@ class LangfuseTrace:
         )
         parent_id = self._parent_for(kind, stamped_meta, content)
         metadata = self._observation_metadata(event_uuid, kind, type, stamped_meta)
-        metadata["seq"] = self._seq  # 0928 325：append 序随 metadata 上行，观测侧对账用
+        metadata["seq"] = seq
         context = {"trace_id": self._trace_id}
         if parent_id:
             context["parent_span_id"] = parent_id

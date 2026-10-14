@@ -1,3 +1,10 @@
+## 2026-10-14（443）—— trace 的 seq 改为进程内全局单调
+
+**改了什么**：新增 trace/seq.py 的共享取号器，本地与 Langfuse 后端改用 next_seq()，删除各实例计数器，更新两份 trace 契约的序号说明；新增本地双后端同刻交错写入回归测试。
+**为什么这么改**：每条执行线各自从 1 计数，跨实例的 seq 无法裁决同刻 ended_at，分支图顺序和分叉点边界因此取决于读盘顺序；进程内共享序号才符合原有契约。
+**取舍**：计数器用一把线程锁保护，只保证单进程内取号单调，重启重置、跨进程仍可能同刻平局；不改落盘格式、排序键、branch_graph 或血缘读取逻辑，不修改原分支图测试，也不加入 sleep。
+**影响面**：两个 trace 后端共用同一取号器；memory MCP 的五个未提交生产文件保持原样。固定相同 ended_at 的回归在原实现下两种后端均失败；修复后 trace 专项 49 passed，原失败项连跑 30/30 通过，全量 638 passed、2 skipped，Ruff 全绿。验证输出保存在 eval_results/trace_seq_*。
+
 ## 2026-10-13（442）—— 动作空间掩码只由 world 给出，删除 game_tools 的重复实现
 
 **改了什么**：删除 `mcpclient/game_tools.py::_mask`，改为 `_action_space`：`names` / `mask` / `entries` 一律取 `world/action_space.py::compute_action_space`，本层只给开放按键的场合补 `descriptions`（`BUTTON_HELP`）、`note`（`REPEAT_HINT`）、`map_note`（`MAP_HINT`）；仅开放脚本的场合原样返回 world 的结果。`get_action_space()` 与 `execute()` 都走它。同步 `scripts/catalog.py` 的注释与 `docs/spec/{world,tools}/SPEC.md`；新增本地测试 `tests/test_game_tools_action_space.py`。
