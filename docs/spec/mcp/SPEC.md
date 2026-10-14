@@ -76,7 +76,7 @@ memory/（模块内新增）
     └── recall.py                   （新）recall/memorize 能力实现：分族分流、
                                     融合排序、kind 判别落族（一份实现两模式共用；
                                     MemoryStorePort 11 条降级为其内部接口）
-tests/test_mcp_memory_e2e.py        端到端：in-memory transport，与进程内逐字段一致
+tests/mcp_servers/test_mcp_memory_e2e.py        端到端：in-memory transport，与进程内逐字段一致
 ```
 
 

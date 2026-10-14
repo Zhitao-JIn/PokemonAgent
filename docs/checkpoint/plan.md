@@ -108,7 +108,7 @@
 
 ## 三、测试与活文档（已定）
 
-- **测试三处**：① Q3 重写 `tests/test_trace_branch.py`——只给分支名，血缘从账本推；② Q5 改写 `tests/test_checkpoint_restore.py`，加"从 task 级存档恢复跑到底"，含 spec §九第 5 条账序；
+- **测试三处**：① Q3 重写 `tests/direct/trace/test_trace_branch.py`——只给分支名，血缘从账本推；② Q5 改写 `tests/harness/checkpoint/test_checkpoint_restore.py`，加"从 task 级存档恢复跑到底"，含 spec §九第 5 条账序；
   ③ Q2 episode 摘要自然序的断言（原在 `fetch` 读口单测里）挪到 memory tool 的测试里。
 - **`AGENTS.md` / `CLAUDE.md`**：写到回放或封存的段落在 Q6 一起改；ROADMAP H9 由你改。
 

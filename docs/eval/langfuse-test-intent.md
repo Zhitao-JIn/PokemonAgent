@@ -18,7 +18,7 @@
 ## 二、为什么现在做
 
 1. plan P0–P3 代码已落（`langfuse_trace.py` / `langfuse_support.py`），但**零测试**：
-   `tests/test_langfuse_trace.py` 尚不存在，P1–P3 全部标着"未测试"。
+   `tests/trace/langfuse/test_langfuse_trace.py` 尚不存在，P1–P3 全部标着"未测试"。
 2. Langfuse 路径 touches 封套编码、树形血缘、分页读回、恢复分支 fallback 等一串
    最终一致性行为，没有离线测试兜底，任何后续改动都在盲改。
 3. 真机 P6 验证（三层装配）排在 Langfuse 之后；先把 trace 后端可选性钉稳，
@@ -28,9 +28,9 @@
 
 **是**：
 - 实现审阅：交接口 10 条事实逐条对照代码，缺陷先修（修要写 CHANGELOG）再测；
-- 新增 `tests/test_langfuse_trace.py`（fake client / fake observations API，零联网），
+- 新增 `tests/trace/langfuse/test_langfuse_trace.py`（fake client / fake observations API，零联网），
   覆盖面以交接口第二阶段清单为准；
-- 按需小幅更新 `tests/test_trace_tool.py`、`tests/test_build.py`；
+- 按需小幅更新 `tests/direct/trace/test_trace_tool.py`、`tests/assembly/test_build.py`；
 - 跑定向测试 + 全量 pytest + ruff + trace 自包含检查，记录真实数字；
 - 本机 self-hosted Langfuse smoke：独立脚本直构 `LangfuseTrace`，写一条
   `handoff-<后缀>` 测试 run，flush 后限时等待 API 可读，核对封套还原、
@@ -56,7 +56,7 @@
 ## 五、成功标准
 
 1. 交接口第一阶段 10 条审阅事实全部"相符"或"已修复并有 CHANGELOG 条目"；
-2. `tests/test_langfuse_trace.py` 覆盖交接口第二阶段全部条目，定向 + 全量 pytest、
+2. `tests/trace/langfuse/test_langfuse_trace.py` 覆盖交接口第二阶段全部条目，定向 + 全量 pytest、
    ruff check / format、trace 自包含检查全绿（已有失败须与基线区分、注明是否触及本次改动）；
 3. smoke 有明确结论：执行了（附 run_id/trace_id、observation 数、visibility 延迟、
    不写 `tracelog/` 的证据）或未执行（附原因）；等待设总超时，不无限等待；

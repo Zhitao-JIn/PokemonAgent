@@ -2,7 +2,7 @@
 
 > 性质：缺陷修复（生产代码，trace 模块）。独立于"memory MCP 管理面"与"删除视觉感知档"，单独提交。
 > 起草：2026-10-14
-> 触发：`tests/test_trace_branch.py::test_a_restored_branch_sees_its_ancestors_up_to_each_fork` 间歇失败（`branch_graph` 两条边顺序为 b2,b1，应为 b1,b2）。2026-10-13 P0 时全绿，2026-10-14 在干净 `b268a68` 之前的实现下也复现过。
+> 触发：`tests/direct/trace/test_trace_branch.py::test_a_restored_branch_sees_its_ancestors_up_to_each_fork` 间歇失败（`branch_graph` 两条边顺序为 b2,b1，应为 b1,b2）。2026-10-13 P0 时全绿，2026-10-14 在干净 `b268a68` 之前的实现下也复现过。
 
 ## 一、根因
 
@@ -27,12 +27,12 @@
 ## 三、测试
 
 1. 现有的 `test_trace_branch.py` 失败项应转为稳定通过：连跑 30 次全过。
-2. 新增回归测试（`tests/test_trace_seq.py`，本地）：创建两个 `TraceTool` 实例，**强制两条账 `ended_at` 相等**（传同一个 `ended_at`），交错 append；断言读出顺序等于真实 append 顺序，且 `seq` 严格递增、跨实例不重复。对本地后端与 Langfuse 后端的离线替身各测一遍（Langfuse 用现有测试里的 stub 方式，不联网）。
+2. 新增回归测试（`tests/direct/trace/test_trace_seq.py`，本地）：创建两个 `TraceTool` 实例，**强制两条账 `ended_at` 相等**（传同一个 `ended_at`），交错 append；断言读出顺序等于真实 append 顺序，且 `seq` 严格递增、跨实例不重复。对本地后端与 Langfuse 后端的离线替身各测一遍（Langfuse 用现有测试里的 stub 方式，不联网）。
 3. 全量 `python -m pytest`、`ruff check`、`ruff format --check` 全绿。
 
 ## 四、不做
 
-- 不改 `tests/test_trace_branch.py`，不加 `sleep`。测试是对的，缺陷在实现。
+- 不改 `tests/direct/trace/test_trace_branch.py`，不加 `sleep`。测试是对的，缺陷在实现。
 - 不做跨进程的全局序号（需要共享存储，另案）。
 - 不顺手整理 trace 其他代码。
 

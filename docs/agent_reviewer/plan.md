@@ -56,7 +56,7 @@ deepseek-flash V4.1 原生视觉）。harness 照旧发 `ask`、收 `answer`，�
   - 新增包 `schemas/agent_reviewer/communication/`：`ChatTurn.py`（`role`/`text`）、`FromBackendToAgentReviewerSeedReq.py`（`seed`,`seq`,`ask: FromReviewBackendToFrontendAskReq`,`frame: str | None`）、`FromBackendToAgentReviewerTurnReq.py`（`turn`,`seq`,`delta: ChatTurn`,`frame: str | None`）、`FromBackendToAgentReviewerCloseReq.py`（`close`,`seq`）、`FromAgentReviewerToBackendProposalMsg.py`（`proposal`,`seq`,`proposal: ProposedAnswer`,`round: int`）、`__init__.py`（导出 + `MSG_*` 常量）
 - **具体动作**：`AskReq` 直接作为跳 C `seed` 的 `ask` 字段（不另造）；`ChatTurn` 是跳 C `turn` 的 delta 类型；`ProposedAnswer` 仅在 `review_backend/communication` 定义一次，跳 C 的 `ProposalMsg` import 复用。
 - **验收**：六个信封 `model_validate` ↔ `model_dump_json` 往返通过；`by`/`deadline` 取值正确；`ruff` 净。
-- **测试**：`tests/test_agent_reviewer_envelopes.py` —— 每个信封构造 + 往返 + `msg` 取值断言。
+- **测试**：`tests/agent_reviewer/test_agent_reviewer_envelopes.py` —— 每个信封构造 + 往返 + `msg` 取值断言。
 - **依赖**：无。
 
 ### A2 — `agent_reviewer` 进程（provider + agent + server + 入口）`[依赖 A1]` ✅ 已落码
@@ -70,8 +70,8 @@ deepseek-flash V4.1 原生视觉）。harness 照旧发 `ask`、收 `answer`，�
   - `__init__.py`：导出 `AgentReviewer`。
 - **验收**：`python -m pokemon_agent.agent_reviewer` 能起；用 `websockets` 客户端发一条 `seed`（带测试 `frame`），能收回 `proposal`；`DEEPSEEK_API_KEY` 缺失时报错退出；`ruff` 净；**零 `import brain`**。
 - **测试**：
-  - `tests/test_agent_reviewer_provider.py`：fake provider（不联网）确认 `describe` 接收 `(prompt, [frame])`、`complete` 接收 `prompt`；异常被吞、返回空。
-  - `tests/test_agent_reviewer_agent.py`：`seed` 建对话并返回 `ProposedAnswer`；`turn` 追加 delta 后内容不同；`close` 释放；`_parse` 审「推翻+理由」「认账」、插话恒空。
+  - `tests/agent_reviewer/test_agent_reviewer_provider.py`：fake provider（不联网）确认 `describe` 接收 `(prompt, [frame])`、`complete` 接收 `prompt`；异常被吞、返回空。
+  - `tests/agent_reviewer/test_agent_reviewer_agent.py`：`seed` 建对话并返回 `ProposedAnswer`；`turn` 追加 delta 后内容不同；`close` 释放；`_parse` 审「推翻+理由」「认账」、插话恒空。
 - **依赖**：A1（信封）。
 
 ### A3 — 后端 `AgentClient` + `ReviewBackend` 改动 `[依赖 A1, A2]` ✅ 已落码
@@ -88,7 +88,7 @@ deepseek-flash V4.1 原生视觉）。harness 照旧发 `ask`、收 `answer`，�
     - `_to_ask(seq, req, deadline)` 把 `deadline` 直写 `AskReq.deadline`。
   - `__main__.py`：读 `.env` 构造 `AgentClient`；`ReviewBackend(agent_client=...)`；`--no-agent` 跳过（保留原 30s 行为）。
 - **验收**：后端带 agent 起、收到 `ask` 后能看到跳 C `seed` 发出、`proposal` 被广播为跳 B `ProposalReq`；`answer.by=="agent"` 时 `settle.by=="agent"`、`by=="human"` 时 `=="human"`、空框 → `"timeout"`；`timeout=None` 时人模式无限等；`.env` 缺失/agent 没起时后端不崩、以无 agent 运行；`ruff` 净。
-- **测试**：`tests/test_review_backend_agent.py`：起一个 **fake WS agent server**（回固定 `proposal`），`ReviewBackend` 收到 `ask` 后断言：跳 C `seed` 被调、`ProposalReq` 被广播、`discuss` 触发跳 C `turn`、settle `by` 三种分支、`close` 在 settle 后发出。
+- **测试**：`tests/review_backend/test_review_backend_agent.py`：起一个 **fake WS agent server**（回固定 `proposal`），`ReviewBackend` 收到 `ask` 后断言：跳 C `seed` 被调、`ProposalReq` 被广播、`discuss` 触发跳 C `turn`、settle `by` 三种分支、`close` 在 settle 后发出。
 - **依赖**：A1（信封），A2（agent 进程；测试用 fake 不必真起）。
 
 ### A4 — 前端 `page.py` `[依赖 A1]` ✅ 已落码
@@ -113,7 +113,7 @@ deepseek-flash V4.1 原生视觉）。harness 照旧发 `ask`、收 `answer`，�
   - `web_reviewer.py`：`__init__(timeout: float | None = WEB_REVIEW_TIMEOUT)`（去 `assert timeout > 0`）；`_exchange` 的 `recv(self._timeout + GRACE_S)` 改 `recv(self._timeout)`（`None` 即阻塞，GRACE 无意义）；组跳 A 信封仍带 `timeout_s=self._timeout`（`None` 照传，后端忽略）。
   - `check_harness.py`：`--review` → `WebReviewer(timeout=None)`；`--no-agent`（或后端无 agent）路径 → `WebReviewer(timeout=WEB_REVIEW_TIMEOUT)`。
 - **验收**：`WebReviewer(timeout=None)` 能构造、`recv(None)` 阻塞到后端 settle；`--review` 时 harness 不自带超时；`ruff` 净。
-- **测试**：`tests/test_web_reviewer_timeout_none.py`：构造 `WebReviewer(timeout=None)`、mock conn 断言 `recv(None)` 被调用、不叠加 GRACE。
+- **测试**：`tests/harness/review/test_web_reviewer_timeout_none.py`：构造 `WebReviewer(timeout=None)`、mock conn 断言 `recv(None)` 被调用、不叠加 GRACE。
 - **依赖**：A3（后端不再自管超时）、A4（前端接管计时）。
 
 ### A6 — 测试与 `ruff` `[依赖 A2, A3, A4, A5]` ✅ 已落码（45 测试绿，ruff 改动文件净）
@@ -143,11 +143,11 @@ deepseek-flash V4.1 原生视觉）。harness 照旧发 `ask`、收 `answer`，�
 
 | 测试文件（新增） | 覆盖 | 类型 |
 |---|---|---|
-| `tests/test_agent_reviewer_envelopes.py` | A1 六件信封构造/往返/`msg`/`by`/`deadline` | 单元 |
-| `tests/test_agent_reviewer_provider.py` | A2 provider 收裸字段、异常吞空、零 brain import | 单元（fake） |
-| `tests/test_agent_reviewer_agent.py` | A2 seed/turn/close 状态、`_parse` 审/插话 | 单元（fake） |
-| `tests/test_review_backend_agent.py` | A3 后端经跳 C seed→proposal 广播、discuss→turn、settle by 三分支、close | 集成（fake WS agent） |
-| `tests/test_web_reviewer_timeout_none.py` | A5 `WebReviewer(timeout=None)` 构造/recv(None)/无 GRACE | 单元 |
+| `tests/agent_reviewer/test_agent_reviewer_envelopes.py` | A1 六件信封构造/往返/`msg`/`by`/`deadline` | 单元 |
+| `tests/agent_reviewer/test_agent_reviewer_provider.py` | A2 provider 收裸字段、异常吞空、零 brain import | 单元（fake） |
+| `tests/agent_reviewer/test_agent_reviewer_agent.py` | A2 seed/turn/close 状态、`_parse` 审/插话 | 单元（fake） |
+| `tests/review_backend/test_review_backend_agent.py` | A3 后端经跳 C seed→proposal 广播、discuss→turn、settle by 三分支、close | 集成（fake WS agent） |
+| `tests/harness/review/test_web_reviewer_timeout_none.py` | A5 `WebReviewer(timeout=None)` 构造/recv(None)/无 GRACE | 单元 |
 | 前端 `page.py` 手测 | A4 模式切换/结论框/倒计时/发给 AI/settle 标签 | 手测 |
 
 > 既有定向（review_backend / review_points / review_render / build / node_io / web_reviewer）在 A6 须无回归。

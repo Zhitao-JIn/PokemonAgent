@@ -155,7 +155,7 @@ read_events()                                                            # 整�
 | 项目侧 | `schemas/harness/domain/trace_event.py::TraceEvent` | 跨层数据形状（出现在信封里），**结构化满足** `Event`，不继承、不 import trace |
 
 改一处**必须手工同步另外两处**——结构化满足是隐式的，字段对不上时不会报错、只会静默丢字段。
-`tests/test_trace_store.py::test_event_has_exactly_the_six_contract_fields` 是这件事唯一的机械保障。
+`tests/trace/test_trace_store.py::test_event_has_exactly_the_six_contract_fields` 是这件事唯一的机械保障。
 
 ---
 
@@ -332,7 +332,7 @@ class TraceTool:
 
 ## 七、最小用法示例
 
-照 `tests/test_trace_store.py` 的三步：造工具 → 记几笔账 → 读回来。
+照 `tests/trace/test_trace_store.py` 的三步：造工具 → 记几笔账 → 读回来。
 
 ```python
 import json
@@ -400,7 +400,7 @@ python scripts/check_trace_self_contained.py
 ### 8.2 落盘契约（单元测试）
 
 ```bash
-pytest tests/test_trace_store.py
+pytest tests/trace/test_trace_store.py
 ```
 
 16 条（`grep -c '^def test_'` 口径），覆盖：一条事件一个文件 / 文件名是 v7 uuid 且
@@ -447,7 +447,7 @@ python -m experiment.real_check.check_trace --trace-root <落盘根>
 ## 九、约束与已知缺口
 
 - **两份六字段形状靠人工同步**：`_Event` 与 `TraceEvent` 之间没有共享基类、没有编译器保护，
-  改一处必须同步另一处。唯一机械保障是 `tests/test_trace_store.py`。
+  改一处必须同步另一处。唯一机械保障是 `tests/trace/test_trace_store.py`。
 - **旧格式数据没有迁移路径**（两种都不可见）：① 封套改造之前的老 json 缺 `uuid` / `ts`，
   `_scan_events` 解析当场失败、跳过；② 分层时代（`<run_id>/events/`）的文件根本不在
   扫描范围内——只扫第一层、不递归。两种都是"被静默丢弃"而不是"被读成空值"，

@@ -88,13 +88,13 @@
 
 ### S2 测试清单
 
-新增 `tests/test_langfuse_seed.py`（纯函数，不联网）：
+新增 `tests/trace/langfuse/test_langfuse_seed.py`（纯函数，不联网）：
 
 1. `test_seed_combines_run_id_and_branch`——`langfuse_trace_seed("r1", "b-aa") == "r1::b-aa"`
 2. `test_seed_differs_across_branches`——同 run_id 不同 branch → seed 不同
 3. `test_seed_stable_for_same_attempt`——同 (run_id, branch) → seed 相同（幂等）
 
-修改 `tests/test_build.py`：
+修改 `tests/assembly/test_build.py`：
 
 4. AST 断言扩展——langfuse 分支的 `create_trace_id` 调用必须 `seed=langfuse_trace_seed(run_id, branch)` 形状（防回退成裸 run_id）
 

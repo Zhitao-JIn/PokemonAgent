@@ -38,7 +38,7 @@ step scope 整层删除（0928 定稿：task_start 直挂 episode_start 子级�
   - 新增 `_is_task_step_account`（判据：`episode and task and task != run_id
     and task != episode`）+ `_display_name`（非锚的 task 层账名加
     ` (step:N)` 后缀）；append 处 `"name": self._display_name(...)`。
-- `tests/test_langfuse_trace.py`：5 用例改按 uuid 取账 / 断言新账名 /
+- `tests/trace/langfuse/test_langfuse_trace.py`：5 用例改按 uuid 取账 / 断言新账名 /
   删 step_scope 查找 / 负断言无 `step:` scope——修后 **29 条全绿**。
 - smoke **24/24**（run `handoff-6d8905`，trace `385b5537...`）。
 
@@ -134,7 +134,7 @@ During task with name 'review_and_judge' ... During task with name 'act'
 - Langfuse Docker 用户本机起（v4.46.0；observations v2 会 308 重定向，
   `langfuse_support.py:139` 自建 httpx client `follow_redirects=True` 已治）；
 - smoke：`scripts/langfuse_smoke.py`；rehearsal：`scripts/langfuse_tree_rehearsal.py`；
-- 定向测试：`tests/test_langfuse_trace.py`（29 条）；**pytest 一律传全新
+- 定向测试：`tests/trace/langfuse/test_langfuse_trace.py`（29 条）；**pytest 一律传全新
   `--basetemp`**（用户级 memory 三号条）；
 - 真机 harness 起跑仍归用户本机（用户级 memory 二号条），Langfuse 探针类
   轻量 HTTP 请求 AI 沙箱可跑。

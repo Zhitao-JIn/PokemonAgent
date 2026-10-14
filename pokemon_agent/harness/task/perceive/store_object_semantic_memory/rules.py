@@ -13,7 +13,7 @@ object_kind）由 `world/object_events.py::judge_press` 在 server 侧判定—�
 **两路径在 `store_object_semantic_memory` 节点汇合**：先取本步的裸事件
 （脚本动作取报告 `events[]` 批量、按键动作取 step 响应单条），再交这里统一
 补章，最后经 `memorize(kind=object)` 落库——「两路径逐字段一致」由
-`tests/test_p6_event_alignment.py` 的钉子测试守住。
+`tests/harness/task/test_p6_event_alignment.py` 的钉子测试守住。
 """
 
 from __future__ import annotations

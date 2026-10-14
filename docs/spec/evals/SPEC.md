@@ -23,7 +23,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 ## task 分层与描述
 
-测评按三层归类：**结果层**看系统最终有没有把事办成；**工具层**看每个组件单独是否可靠；**流程层**看大脑的决策环节（规划、判定、验证、反思）。分层只是归类，不改变各 task 的评分口径；`tests/test_harness_integrity.py` 是集成测试、不是 inspect task，不在下列分层内。过程指标（重复动作、A-B-A 振荡、预算耗尽后的收尾）继续只写日志做诊断，不另立评分 task。
+测评按三层归类：**结果层**看系统最终有没有把事办成；**工具层**看每个组件单独是否可靠；**流程层**看大脑的决策环节（规划、判定、验证、反思）。分层只是归类，不改变各 task 的评分口径；`tests/integration/test_harness_integrity.py` 是集成测试、不是 inspect task，不在下列分层内。过程指标（重复动作、A-B-A 振荡、预算耗尽后的收尾）继续只写日志做诊断，不另立评分 task。
 
 命名为 `agent_<范围>_goal_run`：`short` 指单个冻结场景内的短目标，`long` 指从真实开局出发的多里程碑长程。标"规划中"的 task 尚无数据集、solver、scorer，也不在 `evals/registry.py` 里。
 
@@ -128,13 +128,13 @@ python -m evals.decode --frame p-option_screen
 python -m evals.decode --scene bag
 python -m evals.world_script_execute --workers 1
 python -m evals.memory_store_recall --k 5
-python -m pytest tests/test_harness_integrity.py
+python -m pytest tests/integration/test_harness_integrity.py
 python -m evals.episode_vision_read --vision-model deepseek-flash --per-scene 1
 python -m evals.dataset.frames.build.freeze
 python -m evals.dataset.frames.build.terrain
 ```
 
-harness_integrity 位于 `tests/test_harness_integrity.py`，属于集成测试，不参与 inspect 评分。默认运行 local 的正常完成与预算耗尽剧本；Langfuse 测试默认跳过，仅在显式 `TEST_LANGFUSE=1` 时核真实写入/读回。失败直接是 pytest 失败。mock 装配位于 `tests/_harness_fixtures/`，不会进入测评包。
+harness_integrity 位于 `tests/integration/test_harness_integrity.py`，属于集成测试，不参与 inspect 评分。默认运行 local 的正常完成与预算耗尽剧本；Langfuse 测试默认跳过，仅在显式 `TEST_LANGFUSE=1` 时核真实写入/读回。失败直接是 pytest 失败。mock 装配位于 `tests/_harness_fixtures/`，不会进入测评包。
 
 ## 当前覆盖与结果口径
 

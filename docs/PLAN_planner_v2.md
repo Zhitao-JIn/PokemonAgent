@@ -15,7 +15,7 @@
 | 步 | 落地形态 | 记账 |
 |---|---|---|
 | **S1** 状态化任务表（§2） | ✅ `schemas/harness/domain/goal_entry.py` 的 `GoalStatus`（五态，类 docstring 就是权限表）+ `GoalEntry`（另加 `parent_id`）；`dispatch` 取第一条 `PENDING`；`plan` 的表末检判 done；`reflect` 并入 `review` | `CHANGELOG.md` 第 76/77 条 |
-| **S2** plan 换读口（§3.1–3.2、3.4、3.5） | ✅ `plan._context()` 读 `query_episode_summaries(conditions={"run_id": …})` + `query_object_events()`（`map_id` 已改为可选）；`PlannerContext` 收 `index`/`details`/`objects`；`tests/test_plan_reads_memory.py` | `CHANGELOG.md` 第 79 条 |
+| **S2** plan 换读口（§3.1–3.2、3.4、3.5） | ✅ `plan._context()` 读 `query_episode_summaries(conditions={"run_id": …})` + `query_object_events()`（`map_id` 已改为可选）；`PlannerContext` 收 `index`/`details`/`objects`；`tests/harness/run/test_plan_reads_memory.py` | `CHANGELOG.md` 第 79 条 |
 | **S5** `Planner.updates`（§2.2 末） | ✅ `PlannerOutcome.updates` + `ALLOWED_UPDATE_STATUSES`；`RunPlan.PlanUpdate`（序号寻址）；`ConsolePlanner` 的 `@序号 放弃\|重开 理由` | `CHANGELOG.md` 第 80 条 |
 | **S3** 失败局的 memory 出口（§4 末） | ✅ 正文全空的记录；写入点 `review._leave_chapter()`；"一局恰好一条"（那枚 `chapter_only` 标记 0914 99 连字段一起删了——空不空看正文自己） | `CHANGELOG.md` 第 81 条 / 第 99 条 |
 | **S4** 语义抽取（§3.6） | ⏸ **已摘出运行路径**（0914 98）：`extract_knowledge` 曾是收尾链第五格（第 22 个节点）、`Brain.extract()` 第七条链路 → `knowledge_memory/`；用户定「knowledge 由人管理」，节点不再跑，**模块与账都留着**（接回去见第 98 条） | `CHANGELOG.md` 第 82 条（落地）/ 第 98 条（摘出） |
@@ -253,7 +253,7 @@ docstring 都指认它是"唯一人能直接写的状态"，**但全仓没有一
 > **第一条 `PENDING`**：表里有同层兄弟时，"照表序"会让子图拿兄弟 A 去判兄弟 B。
 > ② 失败由 `review` 盖 **`FAILED`**（终态），不是表里写的"RETRY 置回 `PENDING`"
 > ——置回 `PENDING` 会让"无活跃条目 + planner 不新增"这条表末检永不成立、
-> `review → plan → dispatch` 无限派发（`tests/test_run_graph_termination.py` 钉着它）。
+> `review → plan → dispatch` 无限派发（`tests/harness/run/test_run_graph_termination.py` 钉着它）。
 >
 > 这张表是**当时的计划**，不改写；上面两条是"照它实现会错"的地方。
 
@@ -423,7 +423,7 @@ plan 的索引行是"按执行顺序"读的，这个洞会让第 10 局之后的
 
 | 步 | 内容 | 依赖 | 可独立验证 | 落地 |
 |---|---|---|---|---|
-| **S1** | 状态化任务表（§2 全部改动点） | — | `tests/test_run_graph_termination.py` | ✅ 第 76/77 条 |
+| **S1** | 状态化任务表（§2 全部改动点） | — | `tests/harness/run/test_run_graph_termination.py` | ✅ 第 76/77 条 |
 | **S2** | plan 换读口（§3.1–3.2、3.4、3.5，含 docstring 清理）；`query_object_events` 的 `map_id` 改可选条件（§6-4）；`PlannerContext.events` → 索引 + 详情 | 无（S1 已完成） | 假 memory + 假 planner 跑节点，断材料与排序 | ✅ 第 79 条 |
 | **S3** | 失败局的 memory 出口（§4 末、§6-3） | 无（可与 S2 并行） | 真 `MemoryTool` + `tmp_path`，断"一局一条" | ✅ 第 81 条 |
 | **S4** | 语义抽取（§3.6） | S2 | 假 `BrainPort` + 真 `BrainTool`/`MemoryTool`，断落族与失败不带走这一局 | ✅ 第 82 条 |

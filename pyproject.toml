@@ -83,7 +83,7 @@ testpaths = ["tests"]
 # 注意 `--basetemp` 的相对路径是**相对当前工作目录**解析的——从仓库根跑即落在仓库根。
 addopts = "-q --basetemp=.pytest_tmp"
 # 包没 pip install 进环境，把项目根塞进 sys.path，测试里才能 import pokemon_agent。
-pythonpath = ["."]
+pythonpath = [".", "tests"]
 
 [dependency-groups]
 dev = [

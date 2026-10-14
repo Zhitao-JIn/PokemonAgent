@@ -151,7 +151,7 @@ W5/W6 允许分步接线，但不把尚未实现的能力发布给模型；本�
 | shop_cancelled | 末帧是列表且钱没变 | final | |
 
 - 补 `knowledge_battle_pokemon_switch` 的规则 `party_list_opened_in_battle`（event：task 场合为 `battle_switch`）；样本的 `check_id` 在 v2 里填上（v1 文件不改）。
-- **验收**：`tests/test_evals_checks.py` 按新签名更新、全过；用 09-29 的 5 条旧 run 账本（`eval_results/inspect/runs/`）回放判定，结论与当时一致，有出入的逐条说明。
+- **验收**：`tests/evals/agent_short_goal_run/test_evals_checks.py` 按新签名更新、全过；用 09-29 的 5 条旧 run 账本（`eval_results/inspect/runs/`）回放判定，结论与当时一致，有出入的逐条说明。
 
 ### E2 失败归因 + 诊断列
 

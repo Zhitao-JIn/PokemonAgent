@@ -101,7 +101,7 @@
 | `tools/trace/lineage.py` / `tools/trace/__init__.py` | 排序与 fork 边界改 `ended_at` |
 | `harness/{task,run,episode}/…` 7 个检索节点 | 查询前后取时 → req 双时刻 |
 | `tests/_fake_langfuse.py` | Fake client 收 `version`、记录 `input`/`as_type` |
-| `tests/test_langfuse_trace.py` + render/parse 相关 | input 三分、version、retriever、双时刻与排序断言 |
+| `tests/trace/langfuse/test_langfuse_trace.py` + render/parse 相关 | input 三分、version、retriever、双时刻与排序断言 |
 | `scripts/langfuse_smoke.py` / `langfuse_tree_rehearsal.py` | 排序断言改 `ended_at`；input/version 抽查 |
 
 ## 五、验证

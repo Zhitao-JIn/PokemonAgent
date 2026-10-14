@@ -189,7 +189,7 @@ evals/common/recorder.py
 ```
 
 - 新增公开任务：`evals/registry.py` 加 `"brain_choose_action": TaskEntry(kind="deepeval", entry="evals.brain_choose_action")`，公开任务由六个变七个。
-- 修改：`tests/test_evals_tasks.py` 的"公开任务"断言改为七项；`AGENTS.md` 与 `CLAUDE.md`（保持同步）、`docs/spec/evals/SPEC.md` 的任务清单；`docs/eval/tasks-intent.md` 第四节、`tasks-spec.md` 第四、五节改为指向本文；`CHANGELOG.md` 每个提交一条新条目。
+- 修改：`tests/evals/test_evals_tasks.py` 的"公开任务"断言改为七项；`AGENTS.md` 与 `CLAUDE.md`（保持同步）、`docs/spec/evals/SPEC.md` 的任务清单；`docs/eval/tasks-intent.md` 第四节、`tasks-spec.md` 第四、五节改为指向本文；`CHANGELOG.md` 每个提交一条新条目。
 - 复用（不改）：`evals/common/run.py`、`evals/dataset/{io,errors}.py`、`evals/dataset/frames/`、`evals/runconfig.py`。
 - 数据读取沿用 `evals/dataset/io.py` 的 `read_models`、`version_directory`；loader 的形状同 `evals/world_script_execute/dataset/loader.py`。
 
@@ -202,7 +202,7 @@ evals/common/recorder.py
 | `tests/test_evals_choose.py`（新） | `matches` 的命中规则（按键链逐段、`max_times`、脚本参数子集、形状不符）；`is_legal`；三个指标与分组指标在构造的 `ChooseCase` 与 `ChooseRun` 上的结果；解析失败时 `legal` 跳过 |
 | `tests/test_evals_choose_data.py`（新） | `v1/cases.jsonl` 每条可解析；`acceptable` 非空；`label_source` 都已审；`request` 里的动作空间非空；场合集合恰好是 v1 的四类 |
 | `tests/test_evals_capture.py`（新） | `RecordingChooser` 包装假 chooser：返回值与异常透传不变；落盘的请求信封可被 `FromHarnessToBrainToolChooseOnceReq` 原样解析 |
-| `tests/test_evals_tasks.py` | 公开任务七项 |
+| `tests/evals/test_evals_tasks.py` | 公开任务七项 |
 
 不连网、不调真实模型；用假 chooser（按预设返回动作）跑完整流程，覆盖命中、未命中、解析失败、越权四种结果。
 
@@ -272,7 +272,7 @@ evals/common/recorder.py
 3. 把采集命令交给用户，由其在本机运行并反馈采集目录。
 
 **S4 注册与收尾**
-1. `registry.py` 加一项；`tests/test_evals_tasks.py` 改七项；
+1. `registry.py` 加一项；`tests/evals/test_evals_tasks.py` 改七项；
 2. 同步 `AGENTS.md`、`CLAUDE.md`、`SPEC.md`；`tasks-intent.md`、`tasks-spec.md` 里对应章节改为指向本文；
 3. 假 chooser 全流程跑一遍，并（**经用户确认调用费用后**）用真实 text_model 跑一次 v1，保存输出到 `eval_results/`；
 4. 全量 `pytest`、`ruff` 通过。

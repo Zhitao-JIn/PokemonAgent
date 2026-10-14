@@ -146,8 +146,8 @@
 
 | 测什么 | 放哪 | 为什么要 |
 |---|---|---|
-| 落点规则三场景 + 反馈回 plan | `tests/test_review_points.py`（fake run + 脚本化假 reviewer） | 行为变化点，是 W2b/W2c 的用法示范 |
-| 后端协议 | `tests/test_review_backend.py` | 跨进程协议最容易悄悄坏 |
+| 落点规则三场景 + 反馈回 plan | `tests/harness/review/test_review_points.py`（fake run + 脚本化假 reviewer） | 行为变化点，是 W2b/W2c 的用法示范 |
+| 后端协议 | `tests/review_backend/test_review_backend.py` | 跨进程协议最容易悄悄坏 |
 | feed 不拖累 run | 并进上一个文件 | 一条断言 |
 
 W5 的端到端脚本放 `experiment/real_check/check_web_reviewer.py`（与其它核对脚本同处，gitignored）。

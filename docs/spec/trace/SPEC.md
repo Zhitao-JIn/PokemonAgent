@@ -105,7 +105,7 @@ trace/
 一方（测评 `evals/`）走 `pokemon_agent/direct/trace/parse.py::parse(event) -> ParsedEvent`：按 `kind` 分派
 `direct/trace/content.py` 的正文模型（与 `render.py` 逐字段对照，除调用账外 `extra="forbid"`），
 `sense_frame` 的 `facts` / `place` / `ram` 读回 `Facts` / `PlaceInWorld` / `RamReadout`；没建模的账读成
-`OtherContent`。模型住产出方（谁渲染谁定义），`tests/test_trace_parse.py` 做写 → 读回环。
+`OtherContent`。模型住产出方（谁渲染谁定义），`tests/direct/trace/test_trace_parse.py` 做写 → 读回环。
 
 **`_Event` 与 `TraceEvent` 的对齐关系**：两者**六字段一一对应**，但 `TraceEvent` 是跨层契约、`_Event` 是 trace 私有实现，**没有继承、没有共享基类、也没有编译器保护**——改一处必须手工同步另一处。`_Event` 的 `extra="allow"` 让盘上改形之前的老 json（带 `event_id` / `schema_version` / `payload` / `frame_png` 那套）多出来的键挂在 `model_extra` 上随行；但它们缺 `uuid` / `ts`，**解析当场失败被跳过**，不会静默混进结果。
 

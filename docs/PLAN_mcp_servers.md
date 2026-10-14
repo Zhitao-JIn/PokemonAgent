@@ -52,7 +52,7 @@
   缓存、call 转发、JSON-RPC error → Python 异常翻译）
 - `mcpclient/memory_tool.py`：实现收敛后的 `MemoryToolPort`（recall/memorize
   薄转发 server）
-- `tests/test_mcp_memory_e2e.py`
+- `tests/mcp_servers/test_mcp_memory_e2e.py`
 
 **测试策略**：e2e 用 **in-memory transport**（client 直连 server 实例，不起端口）；
 真机 HTTP 冒烟另做手跑验证，不进 CI。

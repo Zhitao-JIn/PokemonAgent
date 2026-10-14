@@ -87,9 +87,9 @@ evals/decode/
 |---|---|
 | `evals/tasks/registry.py` | 去掉 decode；docstring "六个"→"五个" |
 | `evals/cli.py`、`evals/__main__.py` | 已于独立的入口收敛工作中有意删除；本次不恢复，不要求修改措辞或执行 `python -m evals list` |
-| `tests/test_evals_tasks.py` | 改 import；`test_generic_decoder_metrics_…` 原依赖 inspect 运行，改为直接测 `field_verdict`（含缺键为 N、真值为空照常比较、`None` 值要求键存在）；`test_only_the_six_…` 改为五个 |
-| `tests/test_evals_datasets.py` | `test_all_six_tasks_assemble_…` 参数表去掉 decode，改名为 five |
-| `tests/test_evals_perceive.py` | `decode_frame` 的 import 路径；用到 `compare_group` 处改为 `field_verdict` |
+| `tests/evals/test_evals_tasks.py` | 改 import；`test_generic_decoder_metrics_…` 原依赖 inspect 运行，改为直接测 `field_verdict`（含缺键为 N、真值为空照常比较、`None` 值要求键存在）；`test_only_the_six_…` 改为五个 |
+| `tests/evals/world_script_execute/test_evals_datasets.py` | `test_all_six_tasks_assemble_…` 参数表去掉 decode，改名为 five |
+| `tests/evals/episode_vision_read/test_evals_perceive.py` | `decode_frame` 的 import 路径；用到 `compare_group` 处改为 `field_verdict` |
 | `.gitignore` | 加 `.deepeval/` 与 `eval_results/decode/` |
 
 **修改（文档与引用）**

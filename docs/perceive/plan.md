@@ -26,7 +26,7 @@
 | 1.5 | spec 第四节第 0 小节列出的 task 层消费方 | 换型为 `TaskObservation`；`ActMemory` 前后帧换型、历史渲染照旧保留 `screen` |
 | 1.7 | `evals/screen_reading/` | `classify` / `at_start` 改用 `world/scene.py`；删原型 |
 
-**验收**：读屏测评在 v2 上场合与初态的分数与原型一致；`tests/test_task_layer.py` 等现有测试过（受换型影响的测试要改，**改测试前先问**）；
+**验收**：读屏测评在 v2 上场合与初态的分数与原型一致；`tests/harness/task/test_task_layer.py` 等现有测试过（受换型影响的测试要改，**改测试前先问**）；
 真机短跑一个 task（走路 + 对话），trace 里 `sense_frame` 带 `scene`。
 **活文档**：`docs/spec/world/SPEC.md`、`tools/SPEC.md`、`DATAFLOW.md`。
 

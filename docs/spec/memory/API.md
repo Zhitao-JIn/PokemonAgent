@@ -741,7 +741,7 @@ tool = MemoryTool.build(memory_root=tmp_path)     # 四族都落 tmp_path 下
 ### 10.1 契约（单元测试）
 
 ```bash
-pytest tests/test_memory_store.py
+pytest tests/memory/test_memory_store.py
 ```
 
 十二条（`grep -c '^def test_'` 口径），覆盖：缺省根跟**启动目录** / 显式

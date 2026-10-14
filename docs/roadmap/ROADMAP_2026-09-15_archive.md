@@ -1230,7 +1230,7 @@ voided 目录，不做静默删除）、`WorldPort.load_state`、`RunDataCenter`
 >   类型写错不拦）、`extra="allow"` 动态字段当具名用、v1 遗留 API、
 >   以及**四个已删的封套名字**（`event_id`/`schema_version`/`frame_png`/顶层 `payload`）。
 >   **除刻意保留的 `known_objects` 外零命中。**
-> - **顺手补的守卫**：`tests/test_facts_dual_copy_parity.py` **4 条**
+> - **顺手补的守卫**：`tests/world/test_facts_dual_copy_parity.py` **4 条**
 >   ——两份 `Facts`（真身 `world/interface/domain/facts.py` ↔ 快照
 >   `step_memory.StepMemory.Observation.Facts`，**刻意的双副本，铁律 2**）
 >   字段名+顺序全等、过 `model_dump(mode="json")` 后**渲染逐字符相等**、

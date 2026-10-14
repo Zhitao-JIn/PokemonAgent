@@ -101,7 +101,7 @@ episode 级带 `episode_id` + `run_ref`；task 级再加 `task_id` + `episode_re
 
 ## 七、怎么验
 
-- `tests/test_checkpoint_restore.py`：三级存档的形状与账序；run / episode 级各恢复一次跑到底；分支套分支；
+- `tests/harness/checkpoint/test_checkpoint_restore.py`：三级存档的形状与账序；run / episode 级各恢复一次跑到底；分支套分支；
   从 task 级存档恢复直达该 task（账序、不重开这一局、开局账各一条）；按血缘 `node_io` 全过。
-- `tests/test_trace_branch.py`：只给分支名，血缘与分支图从账本推。
+- `tests/direct/trace/test_trace_branch.py`：只给分支名，血缘与分支图从账本推。
 - 真机：`python -m experiment.real_check.check_checkpoint`（维度 3，见 `docs/spec/experiment/SPEC.md`）。

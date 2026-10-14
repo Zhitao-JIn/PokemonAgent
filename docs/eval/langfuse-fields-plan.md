@@ -42,7 +42,7 @@ client 构造参数带 `environment="local"`；不连网。
   `retrieve_node` 渲染的 MEMORY_IO 账）投 query 且 `as_type="retriever"`；其余 `None`。
   判定不逐 kind 硬编码：以"渲染层已知的请求面"为准，kind 清单收在
   `langfuse_support.py` 一个常量里（与 `MODEL_CALL_KINDS` 同风格，测试各钉一条）。
-- `tests/test_langfuse_trace.py` 补三分断言；smoke 相应更新。
+- `tests/trace/langfuse/test_langfuse_trace.py` 补三分断言；smoke 相应更新。
 
 **完成判据**：fake 测试覆盖三类各至少一账：generation input=prompt/images、
 读口 input={"query": …} 且 as_type=retriever、机械账 input 为空；读侧

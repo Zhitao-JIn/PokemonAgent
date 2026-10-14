@@ -4,7 +4,7 @@
 本来就是结构化数据的（`facts` / `sequence` / `tasks` / `ram` …）直接是对象。
 除调用账（正文由 brain / world 各自拼，键随链路变）外，一律 `extra="forbid"`：
 渲染层多出或改名一个键，读侧当场报错，而不是静默漏读
-（`tests/test_trace_parse.py` 逐种账做"渲染 → 解析"回环）。
+（`tests/direct/trace/test_trace_parse.py` 逐种账做"渲染 → 解析"回环）。
 """
 
 from __future__ import annotations

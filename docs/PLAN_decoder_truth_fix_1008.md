@@ -133,7 +133,7 @@
 
 1. 重跑 13 字段基线，输出 `eval_results/labeling_1007/decoder_final_1008.json`（`--previous` 用第二节第 4 步的文件），确认 fixed 列表覆盖全部受影响帧、regressed 为空。（2026-10-12 注：基线脚本将被取代，见 `docs/eval/eval-split-spec.md`。）
 2. 跑完整四组诊断（`python -m evals run decode --log-dir eval_results/labeling_1007/inspect_decoder_1008`，none 模型）。（2026-10-12 注：该命令将被 `python -m evals.single_state.decode` 取代，见 `docs/eval/eval-split-spec.md`。）
-3. 跑相关测试：读屏、场合、地形、接管视图、命名脚本、`tests/test_evals_perceive.py` 等现有文件；把本次修正的代表帧加进**现有**测试文件的回归用例（每项至少一帧），不新建测试文件。
+3. 跑相关测试：读屏、场合、地形、接管视图、命名脚本、`tests/evals/episode_vision_read/test_evals_perceive.py` 等现有文件；把本次修正的代表帧加进**现有**测试文件的回归用例（每项至少一帧），不新建测试文件。
 4. `python scripts/check_world_self_contained.py`。
 5. 最后向用户报告：每项改了什么、前后数字、未能满足的验收项（如有）及原因。
 

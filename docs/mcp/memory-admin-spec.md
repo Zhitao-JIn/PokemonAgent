@@ -58,7 +58,7 @@ Port 信封（`FromHarnessToMemoryTool{Snapshot,Restore}MemoryReq/Resp`）**不�
 
 ## 四、测试（本地 `tests/`，gitignore，需全绿）
 
-1. **对照测试**（新增 `tests/test_memory_admin_parity.py`）：对"进程内 `MemoryTool`"与"经 MCP 的 `MemoryTool`"各跑同一串操作——memorize 若干条 → `snapshot_memory("a")` → 再 memorize 若干条 → `restore_memory(a)` → `recall` 与计数；两种实现的 `unpacked`、`recall` 结果、记忆根下文件集合逐项相等。
+1. **对照测试**（新增 `tests/mcpclient/memory_tool/test_memory_admin_parity.py`）：对"进程内 `MemoryTool`"与"经 MCP 的 `MemoryTool`"各跑同一串操作——memorize 若干条 → `snapshot_memory("a")` → 再 memorize 若干条 → `restore_memory(a)` → `recall` 与计数；两种实现的 `unpacked`、`recall` 结果、记忆根下文件集合逐项相等。
 2. **跨根测试**：服务端 `--memory-root` 与客户端 `snapshot_root` 是**两个不同的临时目录**；快照落在客户端目录，服务端目录下也有一份；用客户端那份恢复成功。（证明不依赖共享路径。）
 3. **任意路径恢复**：把快照拷到一个随意目录再用它恢复，成功。
 4. **完整性**：篡改 `sha256`、篡改 base64、传入非 zip、zip 内含不安全条目（`../x`、绝对路径、反斜杠、盘符；包括"只含不安全条目"的 zip）：均拒绝，且库不被破坏（恢复前后记录数与 `recall` 不变）。**进程内与 MCP 两种模式都要测**，结果一致。再测一条反例：本层自己打的快照在根目录有杂散文件时仍能恢复。
@@ -66,7 +66,7 @@ Port 信封（`FromHarnessToMemoryTool{Snapshot,Restore}MemoryReq/Resp`）**不�
 6. **默认不暴露**：不带 `--enable-admin` 启动，`registry == ["recall", "memorize"]`；门面调用 `snapshot` / `restore` 抛 `MemoryAdminDisabled`，消息含 `--enable-admin`。带开关则注册表含四项，`/health.admin` 为真。
 7. **互斥**：恢复进行中并发 `memorize` 不得交错（用慢 `restore` 的 stub 或事件同步验证）。
 8. **常量等值**：`MAX_ARCHIVE_BYTES` 两处字面量相等。
-9. 沿用并扩充 `tests/test_mcp_memory_e2e.py`、`tests/test_mcp_health.py`，不得因 `/health` 新字段而红。
+9. 沿用并扩充 `tests/mcp_servers/test_mcp_memory_e2e.py`、`tests/mcp_servers/test_mcp_health.py`，不得因 `/health` 新字段而红。
 
 ## 五、验证（需要真实运行）
 

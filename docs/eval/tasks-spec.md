@@ -39,13 +39,13 @@ intent 第六节里没拍板的项，本 spec 先按推荐方案写；推翻哪�
 
 - `evals/tasks/registry.py`：键与路径按上表；`python -m evals run <新名>`。
 - `evals/e2e/`（`runner/one.py`、`cli.py`）是 run-one 子进程的本体，属于 agent_goal_run 的 solver，并入 `evals/solvers/agent_goal_run/`；子进程入口 `python -m evals e2e run-one` 改为 `python -m evals agent_goal_run run-one`（`evals/cli.py` 同步）。`run_id = eval-<sample_id>[#e<n>]` 不变（Langfuse 对应关系不断）。
-- 测试：`tests/test_evals_tasks.py`（公开 task 集合、各 task import 路径）、`test_evals_scripts.py`、`test_evals_perceive.py`、`test_evals_checks.py`、`test_evals_scoring.py` 的 import 路径。
+- 测试：`tests/evals/test_evals_tasks.py`（公开 task 集合、各 task import 路径）、`test_evals_scripts.py`、`test_evals_perceive.py`、`test_evals_checks.py`、`test_evals_scoring.py` 的 import 路径。
 - 文档：`docs/spec/evals/SPEC.md` 总表与命令；AGENTS.md / CLAUDE.md 的 task 清单（两份逐字同步）。
 - **不改**：被测系统代码；各 task 的 solver / scorer 的逻辑与评分口径（§1.4 只搬位置）。
 
 ### 1.3 验收
 
-`python -m evals list` 恰好列出六个新名；`tests/test_evals_tasks.py` 断言集合与"`@task` 函数名 = 注册名"；`evals/tasks/*/` 下除 `task.py`（与 `__init__.py`）外没有别的文件；`evals/core/` 不存在；全量 pytest 与 ruff 不比改名前多出失败。
+`python -m evals list` 恰好列出六个新名；`tests/evals/test_evals_tasks.py` 断言集合与"`@task` 函数名 = 注册名"；`evals/tasks/*/` 下除 `task.py`（与 `__init__.py`）外没有别的文件；`evals/core/` 不存在；全量 pytest 与 ruff 不比改名前多出失败。
 
 ### 1.4 目录按 inspect 槽位归位，`evals/core/` 解散
 
@@ -242,8 +242,8 @@ class JudgeCase(BaseModel):
 
 | 测试文件 | 内容 |
 |---|---|
-| `tests/test_evals_tasks.py` | 公开 task 恰为六个新名（S4 后七个）；`@task` 函数名 = 注册名 |
-| `tests/test_evals_datasets.py`（新） | 每个数据集包 `load()` 返回非空类型化样本；版本目录自包含（样本引用的文件都在版本目录下）；`ScriptCheck` 每个 `kind` 一正一反 |
+| `tests/evals/test_evals_tasks.py` | 公开 task 恰为六个新名（S4 后七个）；`@task` 函数名 = 注册名 |
+| `tests/evals/world_script_execute/test_evals_datasets.py`（新） | 每个数据集包 `load()` 返回非空类型化样本；版本目录自包含（样本引用的文件都在版本目录下）；`ScriptCheck` 每个 `kind` 一正一反 |
 | `tests/test_evals_capture.py`（新） | 录制器包装假 chooser / judger：返回值与异常透传不变，落盘的信封可被 `ChooseCase.request` / `JudgeCase.request` 原样解析 |
 | `tests/test_evals_choose.py`（新） | `matches` 的命中规则（按键链逐段、脚本参数、形状不符）；三个指标与分组指标在构造的 `ChooseCase` 上的结果 |
 

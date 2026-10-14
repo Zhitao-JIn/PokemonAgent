@@ -54,8 +54,8 @@
 
 ### P4：自动化验证与本机服务 smoke（待执行）
 
-- 新增 `tests/test_langfuse_trace.py`，以注入的 fake client/API 测试 `TracePort` 读写、ID、父子关系、分页和延迟行为；不在单元测试中连网。
-- 更新 `tests/test_trace_tool.py` / `tests/test_build.py` 中必要的工厂选择示范，确认 LocalTrace 现有行为无回归。
+- 新增 `tests/trace/langfuse/test_langfuse_trace.py`，以注入的 fake client/API 测试 `TracePort` 读写、ID、父子关系、分页和延迟行为；不在单元测试中连网。
+- 更新 `tests/direct/trace/test_trace_tool.py` / `tests/assembly/test_build.py` 中必要的工厂选择示范，确认 LocalTrace 现有行为无回归。
 - 运行相关测试，再运行全量 pytest 与 `ruff check .`；记录确切结果到 CHANGELOG。
 - （尚未执行）使用本机 self-hosted Langfuse v4 做一次不启动 ROM、不调模型的 smoke：写入 run root、episode/task/step、generation、checkpoint save/restore；flush 后等待 Observations API 可见，再检查事件还原、branch 父节点和 Dashboard 树。
 - 若本机服务未运行或 SDK 凭据未配置，只完成 fake client 阶段并明确标注 smoke 未跑；不连接 Langfuse Cloud，不启动真实游戏 Harness。

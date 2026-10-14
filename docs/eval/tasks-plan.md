@@ -108,7 +108,7 @@
 | 3 | solver 改造：子进程结束 → 读 `run.json` / `run_result.json` → 写 `AgentRunRecord` → 有效样本 `RunStream.load` 后调 `replay_into_transcript`；无效 / 超时写一条说明性 `InfoEvent`；`state.output.completion` 保持现状 | `evals/solvers/agent_goal_run/solver.py` |
 | 4 | task 增加参数 `transcript: bool = True`，透传给 solver；`models` 透传给回放用作型号名 | `evals/tasks/agent_goal_run/task.py` |
 | 5 | scorer 改从 store 取记录：删掉自己拼 `work_dir_of(...)`、读 `run.json` 的代码 | `evals/scorers/agent_goal_run/task_scorer.py`、`result_grade.py` |
-| 6 | 单元测试（spec §1b.6-1） | `tests/test_evals_agent_transcript.py`（新） |
+| 6 | 单元测试（spec §1b.6-1） | `tests/evals/agent_short_goal_run/test_evals_agent_transcript.py`（新） |
 | 7 | 离线回放核对（spec §1b.6-2）：写一个一次性脚本或测试，对 `eval_results/inspect/runs/knowledge_door_transition/trace` 跑回放，打印各类事件计数与首尾时间 | 不进仓库 |
 | 8 | 文档：`docs/spec/evals/SPEC.md` 增加"agent_goal_run 的过程在 Inspect View 的 Transcript 里"一段与事件映射表；删去"过程层只在 Langfuse"的表述；CHANGELOG 一条 | 文档 |
 

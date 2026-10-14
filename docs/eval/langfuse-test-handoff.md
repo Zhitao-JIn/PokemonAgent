@@ -36,7 +36,7 @@
 
 ## 第二阶段：新增离线自动化测试
 
-新增 `tests/test_langfuse_trace.py`，通过注入 fake client 和 fake observations API 测试，不要求服务或密钥。所有新测试遵守仓库 `AGENTS.md` 的 Arrange / Act / Assert 结构、完整类型注解和命名规范。
+新增 `tests/trace/langfuse/test_langfuse_trace.py`，通过注入 fake client 和 fake observations API 测试，不要求服务或密钥。所有新测试遵守仓库 `AGENTS.md` 的 Arrange / Act / Assert 结构、完整类型注解和命名规范。
 
 至少覆盖：
 
@@ -53,14 +53,14 @@
 - LocalTrace 现有行为继续工作；TracePort 生命周期新方法为空操作。
 - Langfuse client 初始化只在选择该 backend 后发生；默认 local 不要求 Langfuse 配置/连接。
 
-必要时更新 `tests/test_trace_tool.py`、`tests/test_build.py`；不要为了测试触发模型或 ROM。
+必要时更新 `tests/direct/trace/test_trace_tool.py`、`tests/assembly/test_build.py`；不要为了测试触发模型或 ROM。
 
 ## 第三阶段：运行自动化验证
 
 按顺序运行并记录实际输出：
 
 ```powershell
-pytest tests/test_langfuse_trace.py tests/test_trace_tool.py tests/test_build.py
+pytest tests/trace/langfuse/test_langfuse_trace.py tests/direct/trace/test_trace_tool.py tests/assembly/test_build.py
 pytest
 ruff check .
 ruff format --check .

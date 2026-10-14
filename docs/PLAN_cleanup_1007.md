@@ -24,7 +24,7 @@
 |---|---|---|---|
 | 1.1 | `evals/tasks/macros/`、`evals/tasks/takeover_views/`、`evals/tasks/eval_results/inspect/` | 空目录 | 删除 |
 | 1.2 | `scripts/r0_smoke.py`、`scripts/_tmp_payload_scan.py` | 一次性冒烟 / 自标"临时" | 删除；先 `git grep` 确认零引用 |
-| 1.3 | `evals/e2e` 旧批跑链：`cli.py` 的 `run` / `report` / `dataset` 子命令、`runner/batch.py`、`runner/view.py`、`report/`（assemble / evaluate / grader / markdown）、`process/`、`rubric/`、`cases/` | `evals/cli.py` 只路由 `e2e run-one`；现行 inspect task（`tasks/e2e.py`、`tasks/result_grade.py`）不引用它们；只剩 `tests/test_evals_scoring.py`、`tests/test_run_result.py` 在测 | 只保留 `runner/one.py` 与它依赖的东西（`RUN_RECORD` / `RUN_RESULT` 常量就地移进 `runner/one.py` 或其旁边，别留一个只为两个常量存在的 `report/`）；其余删除。两个测试里**只测死代码的用例删掉**，测 `RunResult` / run-one 产物的用例保留。**`diff` 子命令与 `core/evallog.py` 本步不动**，见阶段 1b |
+| 1.3 | `evals/e2e` 旧批跑链：`cli.py` 的 `run` / `report` / `dataset` 子命令、`runner/batch.py`、`runner/view.py`、`report/`（assemble / evaluate / grader / markdown）、`process/`、`rubric/`、`cases/` | `evals/cli.py` 只路由 `e2e run-one`；现行 inspect task（`tasks/e2e.py`、`tasks/result_grade.py`）不引用它们；只剩 `tests/evals/agent_short_goal_run/test_evals_scoring.py`、`tests/harness/run/test_run_result.py` 在测 | 只保留 `runner/one.py` 与它依赖的东西（`RUN_RECORD` / `RUN_RESULT` 常量就地移进 `runner/one.py` 或其旁边，别留一个只为两个常量存在的 `report/`）；其余删除。两个测试里**只测死代码的用例删掉**，测 `RunResult` / run-one 产物的用例保留。**`diff` 子命令与 `core/evallog.py` 本步不动**，见阶段 1b |
 | 1.4 | 连带零消费者清扫 | 删完 1.3 后，`evals/schema`（`report.py` / `verdict.py` / `sample.py` 里的部分模型）、`evals/scorers/model_graded.py`、`evals/data` 里的 `load_rubric` / `rubric.json` 等可能变成零消费者 | 逐个按"三问"核：有没有实现在用、有没有类型标注在用、引用者是不是只有文档。**零消费者才删**。`ReportHeader` / `SampleResult` / `COMPARABLE_FIELDS` 是 diff 的输入形状，**等阶段 1b 定了再处理** |
 | 1.5 | `experiment/observation_check/` | 348 说读屏采集 / 复核工具已移进 `evals/data`；这份旧目录仍在 | 逐文件对照 `evals/data/` 下的对应物：已有等价物的删；`run_vision_model.py` / `equiv_probe.py` / `sync_vendor.py`（vendor 出去单调视觉模型的旁路，vision_perceive 已覆盖）删；对不上的列出来问开发者 |
 
@@ -55,7 +55,7 @@
 
 ## 2. 阶段二：`experiment/real_check/` 【需开发者拍板】
 
-现状：三图完整性核对已迁 `tests/test_harness_integrity.py`（350）；记忆写读 / 检索已进 memory task（348）；
+现状：三图完整性核对已迁 `tests/integration/test_harness_integrity.py`（350）；记忆写读 / 检索已进 memory task（348）；
 `check_checkpoint.py` 开发者说过准备删；`check_web_reviewer.py`（Web Reviewer 端到端自测）去留未定。
 目录里还有 4 条 ruff 旧告警。
 
@@ -73,7 +73,7 @@
 - A（推荐，符合 MCP SPEC "一脚本一 API"）：23 条脚本各写一个显式 `@mcp.tool()` 壳（签名照 `ActionEntry.params`，内部走现有 `_run_script`）。
 - B：从 `SCRIPT_SPECS` 动态生成 tool（少写代码，但 FastMCP 靠函数签名出 schema，动态构造可读性差）。
 
-做的话：删 `world_tool.py` 的拦截与 docstring 里的"已知缺口"；`tests/test_mcp_world_server.py::test_registry_lists_the_atomic_layer` 的精确名单、`test_mcp_world_tool.py::test_takeover_scripts_and_evolve_are_explicitly_unsupported` 同步改（evolve 那半保留）；`docs/spec/mcp/SPEC.md` 第七节、`docs/spec/tools/SPEC.md` 的 `execute` 行同步。
+做的话：删 `world_tool.py` 的拦截与 docstring 里的"已知缺口"；`tests/mcp_servers/test_mcp_world_server.py::test_registry_lists_the_atomic_layer` 的精确名单、`test_mcp_world_tool.py::test_takeover_scripts_and_evolve_are_explicitly_unsupported` 同步改（evolve 那半保留）；`docs/spec/mcp/SPEC.md` 第七节、`docs/spec/tools/SPEC.md` 的 `execute` 行同步。
 **验收**：用现有 MCP 测试替身跑通一条脚本（如 `shop_quit`）经 `WorldMcpTool.execute` 返回 `report`。
 
 ## 4. 阶段四：主链路 trace 后端缺省 【需开发者拍板】
@@ -82,11 +82,11 @@
 直接起跑 `build_real` 会在装配期被 Langfuse 健康检查拦下。
 
 问开发者：系统缺省改 `local`，还是保持 `langfuse`（起跑前自己开服务）。改的话只动这一个常量 +
-`tests/test_build.py` 里钉 `"langfuse"` 的断言 + 常量 docstring；不要在别处再加一份缺省（345 定案：只留 config 一处）。
+`tests/assembly/test_build.py` 里钉 `"langfuse"` 的断言 + 常量 docstring；不要在别处再加一份缺省（345 定案：只留 config 一处）。
 
 ## 5. 阶段五：决策 prompt 的覆盖 【新测试要先问】
 
-- `tests/test_decide_action_prompt.py` 只测了开放按键的场合；仅开放脚本的场合走 `direct/prompts/decide_action.py::_build_script_prompt` + `calls/decide_action/decide_script.md`，没有测试。问开发者要不要补一条"仅开放脚本的场合 prompt 只列本场合脚本、输出格式是 `args` 对象"的用法示范。
+- `tests/direct/prompts/test_decide_action_prompt.py` 只测了开放按键的场合；仅开放脚本的场合走 `direct/prompts/decide_action.py::_build_script_prompt` + `calls/decide_action/decide_script.md`，没有测试。问开发者要不要补一条"仅开放脚本的场合 prompt 只列本场合脚本、输出格式是 `args` 对象"的用法示范。
 - 解析器同时接受 `{"action": ..., "args": {...}}` 与参数平铺（347），平铺写法没有专门测试，同上一起问。
 - 真模型验证 `decide_script.md`：**不要做**，留给开发者本机。
 

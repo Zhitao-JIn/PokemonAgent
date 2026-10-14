@@ -22,7 +22,7 @@ HEALTH_PATH = "/health"
 （curl / 探活脚本直接打，不必懂 MCP）。
 
 **与 `mcpclient/client.py::HEALTH_PATH` 是两份字面量**（分处两个进程侧的包，
-互相 import 会把 client 绑到 server 代码上）——由 `tests/test_mcp_health.py`
+互相 import 会把 client 绑到 server 代码上）——由 `tests/mcp_servers/test_mcp_health.py`
 的等值断言钉住，改一处忘了另一处测试会红。
 """
 
