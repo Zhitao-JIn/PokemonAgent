@@ -1,3 +1,10 @@
+## 2026-10-14（453）—— brain/judge_verify 单元测试
+
+**改了什么**：新增 `tests/brain/judge_verify/` 下 `test_judge.py` / `test_verify.py` / `test_summarize.py`，复用 `tests/_doubles/llm.py` 的脚本化假 provider。
+**为什么这么改**：`judge` / `verify` / `summarize` 此前没有直接测试；「解析不出就抛、不静默降级」「漏条补负样本」「裸数组与 `verdicts` 包裹两种外层写法」「带图走 describe」都靠集成路径碰运气。
+**取舍**：解析只经公开方法测、不 import 私有函数；`goal` / `history` / `knowledge` 等「收下不读」的参数不钉成契约；`verify` 的字符串布尔、非列表 `verdicts`、重复 `index` 谁赢等未定义行为这轮不钉（见汇报里的观察项）。
+**影响面**：只增测试，不动 `pokemon_agent/` 下任何文件；新增用例 64 条（参数化展开后），全量 pytest 755 passed / 2 skipped（`test_evals_script_timeout.py` 的 2 条因沙箱删除守卫失败，与本次无关）。
+
 ## 2026-10-14（452）—— brain/choose 单元测试与脚本化假 provider
 
 **改了什么**：新增 `tests/_doubles/llm.py`（`ScriptedLLM` / `ScriptedJudge` 与 `text_reply` / `vision_reply` 两个回复构造函数）、`tests/_doubles/brain_choose.py` 与 `tests/brain/choose/` 下四个测试文件。
