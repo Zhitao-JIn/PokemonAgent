@@ -1,3 +1,10 @@
+## 2026-10-14（451）—— tests/ 入库：取消 .gitignore 忽略并提交现有测试基线
+
+**改了什么**：`.gitignore` 删掉 `tests/`，并把紧随注释里「跟 `tests/` 同一性质」的措辞改为只指 `experiment/real_check/`；把 `tests/` 下 81 个文件作为基线提交；修掉入库后才会被 `ruff check .` 扫到的 4 处 lint / 格式问题：`tests/direct/trace/test_trace_seq.py`（B905 `zip()` 补显式 `strict=False`）、`tests/mcpclient/game_tools/test_game_tools_action_space.py`（SIM300 Yoda 条件翻转、E501 折行）、`tests/mcpclient/memory_tool/test_object_recall_content.py`（I001 import 排序）。
+**为什么这么改**：要按模块重写全部单元测试，需要可回退、可审 diff 的基线；`.github/workflows/ci.yml` 已配 pytest，测试不入库等于那一步什么都没测。
+**取舍**：一次性入库当前（含将被重写的）测试，而不是等重写完再入库——留一部分不入库要写忽略例外，反而更乱；CI 能否在 ubuntu 上全绿（缺 ROM、`deepeval` 只在 dependency-groups）本次不核实，另案。
+**影响面**：版本库新增 `tests/`；本地 `ruff check .` / `ruff format --check .` 的扫描范围从此包含 `tests/`；不改任何 `pokemon_agent/` 代码，不改 CI 配置。
+
 ## 2026-10-14（450）—— 基础按键在所有场合开放
 
 **改了什么**：world/interface/domain/action_semantics.py 定义 BASIC_KEYS（方向键、a、b），compute_action_space 在所有场合与 overlay 开放后端支持的基础按键；接管场合仍给业务脚本，start 仅在非接管 NONE/CHOICE 开放，select 始终关闭。统一出口导出常量，更新按键/脚本选择文案及 world/tools SPEC；本地回归覆盖所有场合的基本键和 start/select 边界。
