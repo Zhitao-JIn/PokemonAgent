@@ -1,3 +1,17 @@
+## 2026-10-14（447）—— 测试间互相 import 的替身下沉到 tests/_doubles/
+
+**改了什么**：新增 `tests/_doubles/`（`world_console.py`：`FakeMemory` / `FakeConsole` / `StubConsole`；`vision.py`：`DownVision`；`script_frames.py`：`frame` / `run_of`），原定义从 `test_script_run.py`、`test_mcp_script_tools.py`、`test_evals_perceive.py`、`test_evals_scripts.py` 删除，五个消费方改为从 `_doubles` 取，`from tests.…` 形式的跨测试文件 import 清零。AGENTS.md / CLAUDE.md 测试目录一条补上这条约定。
+**为什么这么改**：（446）分目录之后，测试文件之间互相 import 让"挪一个文件"牵动别的文件，且 pytest 会把被引的测试文件当成第二个模块再导入一遍；替身本来就是共用件，该和 `_harness_fixtures/` 一样住在夹具层。
+**取舍**：只下沉被跨文件引用的四组，各文件私有的替身（如 `FixedVision`）不动；`StubConsole` 里的函数内延迟 import 原样保留，不顺手整理；新文件用 LF，由 git 的换行规范化统一。
+**影响面**：只动测试。收集用例集合不变，全量 639 passed / 2 skipped；`test_evals_script_timeout.py` 的 2 条仍因沙箱无删除权限失败，与本次无关。本机收尾复验为 641 passed / 2 skipped，Ruff 检查和格式检查全绿。
+
+## 2026-10-14（446）—— tests 按 模块 → 功能 分目录
+
+**改了什么**：`tests/` 下 69 个平铺的 `test_*.py` 迁入 `tests/<module>/[<feature>/]`，模块名与 `pokemon_agent/` 下的包同名（agent_reviewer / brain / direct / harness / mcp_servers / mcpclient / memory / review_backend / trace / world），评测按任务分到 `evals/<任务名>/`，跨模块端到端放 `integration/`，装配点那条放 `assembly/`。文件名一个没改。共享夹具（`_fake_run.py` / `_fake_langfuse.py` / `_harness_fixtures/`）留在 `tests/` 根；`pyproject.toml` 的 `pythonpath` 追加 `tests`，顶层 import 不用动。修了三类断点：两处 `parents[N]` 回溯仓库根的层数、五处测试之间互相 import 的路径、代码与文档里对旧测试路径的引用。AGENTS.md / CLAUDE.md 的测试目录一条同步改为新约定。
+**为什么这么改**：要按模块重写单元测试，先让目录与被测包一一对应，后面每个模块写什么、缺什么一眼能看出来；平铺 69 个文件已经分不清哪个测哪一层。
+**取舍**：目录不叫 `build/`——pytest 默认 `norecursedirs` 含 `build`，会被静默跳过，所以叫 `assembly/`。文件名保持全仓唯一（没有 `__init__.py`，靠 basename 区分），换来零重命名、git 能识别为移动。测试之间互相 import 的 `FakeConsole` / `StubConsole` / `DownVision` / `frame`·`run_of` 仍在原文件里，只改了路径；它们该下沉成夹具，留给重写时处理。`p5` / `p6` 开头的文件名是阶段名，也留给重写。历史 CHANGELOG 条目里的旧路径不改。
+**影响面**：只动目录与路径，不动任何用例。迁移前后收集到的用例集合逐条一致（643 条），全量 639 passed / 2 skipped；`test_evals_script_timeout.py` 的 2 条在沙箱里因无删除权限失败，迁移前同样失败。本机收尾复验为 641 passed / 2 skipped，Ruff 检查和格式检查全绿。
+
 ## 2026-10-14（445）—— memory 的 object 回忆条目 content 改为字符串
 
 **改了什么**：_recall_objects 的 content 改为无损的 Unicode JSON 字符串，payload、其他记忆族与 Port 字段保持不变；新增进程内和 MCP 完整 MemoryTool.recall 的 object 与混合回忆回归测试。

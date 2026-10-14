@@ -429,7 +429,7 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 
 规则见「可读性与可维护性 / 5. 测试是用法示范」。工具与硬性要求：
 
-- `pytest`。测试文件与被测模块同名：`tests/test_<module>.py`。
+- `pytest`。目录按 **模块 → 功能** 两级镜像被测包：`tests/<module>/[<feature>/]test_<name>.py`（`<module>` 与 `pokemon_agent/` 下的包同名，跨模块的端到端放 `tests/integration/`；文件名全仓唯一，不靠目录区分）。共享夹具 `_fake_run.py` / `_fake_langfuse.py` / `_harness_fixtures/` / `_doubles/` 留在 `tests/` 根，经 `pyproject.toml` 的 `pythonpath` 直接 import；测试文件之间不互相 import，共用的替身放 `_doubles/`。
 - 必须存在的两个：**FakeLLM 跑完整 ReAct 循环且结果确定可复现**；
   **大脑在给定观测下选出预期动作**。
 - 测试不许连网、不许调真实模型、不许依赖时间戳精确值。
