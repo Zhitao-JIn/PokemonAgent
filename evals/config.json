@@ -4,7 +4,7 @@
   "samples": [],
   "knowledge": true,
   "speed": 0,
-  "timeout": 3600,
+  "timeout": 600,
   "epochs": 1,
   "log_dir": "eval_results/inspect",
   "trace_backend": "local",

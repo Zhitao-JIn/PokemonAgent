@@ -153,7 +153,7 @@ EPISODE_STALL_LIMIT = 3
 RUN_STALL_LIMIT = 3
 """run 层停摆上限：连续多少局失败就结束本 run。"""
 
-RUN_MAX_EPISODES = 50
+RUN_MAX_EPISODES = 3
 """run 层预算：一个 run 最多派多少局（episode 与 task 的预算各在自己的 `Task.max_steps`）。"""
 
 EPISODE_MAX_TASKS_PER_PLAN = 5

@@ -9,17 +9,17 @@
     "run_id": "eval-knowledge_battle_action_menu",
     "branch": "main",
     "run_goal": {
-      "goal": "依次完成：在战斗行动菜单里把光标移到 RUN",
+      "goal": "依次完成：在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标",
       "criteria": "scene 是 battle、overlay 是 choice，且 cursor 是 RUN"
     },
     "goals": [
       {
         "task": {
           "task_id": "knowledge_battle_action_menu",
-          "goal": "在战斗行动菜单里把光标移到 RUN",
+          "goal": "在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标",
           "success_criteria": "scene 是 battle、overlay 是 choice，且 cursor 是 RUN",
           "max_steps": 15,
-          "initial_state_hint": "战斗选择画面，scene=battle overlay=choice"
+          "initial_state_hint": "起点已是战斗行动菜单，scene=battle、overlay=choice；这里只需菜单导航，结束时保持 cursor=RUN，不需推进战斗或返回地图"
         },
         "status": "pending",
         "attempts": 0,

@@ -1,3 +1,10 @@
+## 2026-10-14（448）—— 短目标评测收紧 RUN 菜单描述与执行预算
+
+**改了什么**：knowledge_battle_action_menu 的样本和冻结存档目标明确只移动光标到 RUN 并停手，禁止确认逃跑、重新遇敌和额外收尾；evals/config.json 的单样本超时从 3600 改为 600 秒，pokemon_agent/config.py 的全局 RUN_MAX_EPISODES 从 50 改为 3。同步评测 SPEC，本地回归覆盖局部成功重置失败计数后仍按总局数预算收尾。
+**为什么这么改**：c2ded1d 上的视觉删除 S0 第七例多次用 battle_run() 销毁目标菜单，又由 planner 派发重新遇敌和逃跑收尾；局部成功打断连续失败计数，旧总预算允许长时间反复。进一步核账确认 covered_by_script 场合当前只给脚本、names 为空，导航目标与动作协议不相容，不能仅归因于模型失误。用户要求中止该例并收紧描述和配置，上限范围已确认；方向键开放另作协议修正。
+**取舍**：保持机械真值、评分器、模型配置和存档世界/记忆不变，只同步冻结存档中的文字，避免仅改样本却仍恢复旧目标。三局预算是全局实验策略，会限制所有 run；600 秒是 worker 超时，不是单次模型请求或独立评分器的上限。没有新增调用数护栏，也不改 brain 或 harness 节点逻辑；未再次调用模型验证描述改善。
+**影响面**：第七例中止时记录了 358 次模型调用、40 次视觉感知、101 次动作，七局启动、六局收尾；第八到十例未启动。完整报告及原始日志独立保存在 eval_results/battle_action_menu_failure_c2ded1d/。旧六例评分均 C，仅作子集证据，本次不构成完整 S0；改变目标描述和预算后须另行授权重建基线，未进入视觉删除 S1。
+
 ## 2026-10-14（447）—— 测试间互相 import 的替身下沉到 tests/_doubles/
 
 **改了什么**：新增 `tests/_doubles/`（`world_console.py`：`FakeMemory` / `FakeConsole` / `StubConsole`；`vision.py`：`DownVision`；`script_frames.py`：`frame` / `run_of`），原定义从 `test_script_run.py`、`test_mcp_script_tools.py`、`test_evals_perceive.py`、`test_evals_scripts.py` 删除，五个消费方改为从 `_doubles` 取，`from tests.…` 形式的跨测试文件 import 清零。AGENTS.md / CLAUDE.md 测试目录一条补上这条约定。
