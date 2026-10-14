@@ -1,7 +1,7 @@
 # spec —— memory MCP 服务补齐 snapshot / restore
 
 > 关联：`memory-admin-intent.md`
-> 状态：**v1，待确认后执行**
+> 状态：**v1.1，待执行**（v1.1：P1 实测发现 D8 与测试第 4 项冲突，已修订 D8，见下）
 > 范围：`mcp_servers/memory_server.py`、`mcpclient/memory_tool.py`、`mcpclient/memory_local.py`（装配）、`mcp_servers/common.py`（常量）及对应测试与文档。
 > 与"删除视觉感知档"互不依赖；两项的提交不交叉。
 
@@ -29,7 +29,7 @@ Port 信封（`FromHarnessToMemoryTool{Snapshot,Restore}MemoryReq/Resp`）**不�
 | D5 | **管理面默认不暴露。** 服务端新增启动参数 `--enable-admin`；只有带它启动，`snapshot_memory`、`restore_memory` 才注册进 MCP 注册表。默认启动的注册表仍只有 `recall`、`memorize`。门面在调用前检查 `client.registry`，缺失时抛 `MemoryAdminDisabled`（新异常，继承 memory 门面现有错误基类；若无则继承 `RuntimeError`），消息写明"服务端需用 `--enable-admin` 启动"。`/health` 响应里增加 `admin: bool`。 |
 | D6 | **体积上限**：`MAX_ARCHIVE_BYTES = 256 * 1024 * 1024`（原始 zip 字节）。服务端打包后超限则返回 `fail("rejected", …)`，客户端发送前超限则在本地抛错，不发请求。常量在 `mcp_servers/common.py` 与 `mcpclient/memory_tool.py` 各一份字面量，由测试钉等值（与 `HEALTH_PATH` 同款做法）。 |
 | D7 | **互斥**：服务端用一把模块级 `threading.Lock`，`snapshot_memory`、`restore_memory`、`memorize` 三者共用，防止恢复期间并发写入；`recall` 不加锁。（本地单客户端使用场景下足够；多客户端协调不在本项。） |
-| D8 | **校验**：服务端 `restore_memory` 在解 base64 后先验 `sha256`、再验是 zip（`zipfile.is_zipfile`），之后沿用 `MemoryStore.restore` 现有的"只认 `<kind>/<file>` 两层路径"防目录穿越逻辑，不另写一份。`name` 的校验沿用 `MemoryStore.snapshot` 的断言，服务端把 `AssertionError` 转成 `rejected`。 |
+| D8 | **校验放在 `MemoryCapability.restore`，两种模式共用，且在任何删除之前完成。**（v1.1 修订：原稿写"沿用现有逻辑不另写校验"，但 P1 实测显示现有 `MemoryStore.restore` 遇到不合法条目只是跳过，随后仍按"zip 里没有的就删"清库——只含 `../outside.txt` 的 zip 会把 1 条记录清成 0 条。）规则：zip 内任一条目路径**不安全**——绝对路径、含 `..` 段、含反斜杠或盘符——则整个归档拒绝，抛 `AssertionError`（进程内）/ 服务端转 `rejected`，**库不变**。无害的多余条目（根目录下的杂散文件等）仍按现状跳过，因为本层自己打的快照可能带它们，不能拒绝自己的产物。服务端 `restore_memory` 另在解 base64 后先验 `sha256`、再验 `zipfile.is_zipfile`。`name` 的校验沿用 `MemoryStore.snapshot` 的断言，服务端把 `AssertionError` 转成 `rejected`。 |
 
 ## 三、文件改动清单
 
@@ -50,15 +50,18 @@ Port 信封（`FromHarnessToMemoryTool{Snapshot,Restore}MemoryReq/Resp`）**不�
 ### 常量 `pokemon_agent/mcp_servers/common.py`
 - 新增 `MAX_ARCHIVE_BYTES`；`_CODES` 不新增（沿用 `rejected`）。
 
+### 共用层 `pokemon_agent/memory/recall.py`（v1.1 新增）
+- `MemoryCapability.restore` 在调用 `MemoryStore.restore` **之前**扫描 zip 条目，按 D8 拒绝不安全条目。只加这一段前置校验，不改 `restore` 的"以 zip 为准"语义，不改 `memory/store.py`。进程内模式因此同样受益，这是有意的：两种模式必须一致。
+
 ### 不改
-`memory/store.py`、`memory/recall.py`、`harness/checkpoint/*`、`schemas/harness/communication/FromHarnessToMemoryTool*`、`evals/agent_short_goal_run/*`。
+`memory/store.py`、`harness/checkpoint/*`、`schemas/harness/communication/FromHarnessToMemoryTool*`、`evals/agent_short_goal_run/*`。
 
 ## 四、测试（本地 `tests/`，gitignore，需全绿）
 
 1. **对照测试**（新增 `tests/test_memory_admin_parity.py`）：对"进程内 `MemoryTool`"与"经 MCP 的 `MemoryTool`"各跑同一串操作——memorize 若干条 → `snapshot_memory("a")` → 再 memorize 若干条 → `restore_memory(a)` → `recall` 与计数；两种实现的 `unpacked`、`recall` 结果、记忆根下文件集合逐项相等。
 2. **跨根测试**：服务端 `--memory-root` 与客户端 `snapshot_root` 是**两个不同的临时目录**；快照落在客户端目录，服务端目录下也有一份；用客户端那份恢复成功。（证明不依赖共享路径。）
 3. **任意路径恢复**：把快照拷到一个随意目录再用它恢复，成功。
-4. **完整性**：篡改 `sha256`、篡改 base64、传入非 zip、zip 内含非 `<kind>/<file>` 条目（含 `../`）：均返回 `rejected` 或被现有逻辑跳过，库不被破坏（恢复前后 `recall` 不变）。
+4. **完整性**：篡改 `sha256`、篡改 base64、传入非 zip、zip 内含不安全条目（`../x`、绝对路径、反斜杠、盘符；包括"只含不安全条目"的 zip）：均拒绝，且库不被破坏（恢复前后记录数与 `recall` 不变）。**进程内与 MCP 两种模式都要测**，结果一致。再测一条反例：本层自己打的快照在根目录有杂散文件时仍能恢复。
 5. **上限**：构造超过 `MAX_ARCHIVE_BYTES` 的文件（可把常量用 monkeypatch 调小）→ 客户端发送前拒绝；服务端打包超限 → `rejected`。
 6. **默认不暴露**：不带 `--enable-admin` 启动，`registry == ["recall", "memorize"]`；门面调用 `snapshot` / `restore` 抛 `MemoryAdminDisabled`，消息含 `--enable-admin`。带开关则注册表含四项，`/health.admin` 为真。
 7. **互斥**：恢复进行中并发 `memorize` 不得交错（用慢 `restore` 的 stub 或事件同步验证）。
@@ -84,7 +87,8 @@ Port 信封（`FromHarnessToMemoryTool{Snapshot,Restore}MemoryReq/Resp`）**不�
 
 - 第五节第 1 点的体积/耗时阈值被触发。
 - `MemoryStore.restore` 现有的删除逻辑在服务端临时文件路径下表现不同（例如依赖 zip 位于 `snapshots/`）。
-- 任何需要改动 Port 信封、`memory/store.py` 或 checkpoint 代码才能做成。
+- 本层自己打的快照被 D8 的规则拒绝（说明"不安全"的判据过严）。
+- 任何需要改动 Port 信封、`memory/store.py` 或 checkpoint 代码才能做成（`memory/recall.py` 的前置校验已获允许，范围仅限 D8）。
 - FastMCP 不支持在 `start()` 里按条件注册 tool（则报告，改用两个独立的 `FastMCP` 实例或注册表过滤，由设计侧选）。
 - 对照测试中两种实现出现无法用传输差异解释的行为差别。
 
