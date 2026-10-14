@@ -68,6 +68,8 @@ THINKING_TIMEOUT_SECONDS = 420
 
 def build_llm_providers(
     config: BrainLlmConfig,
+    *,
+    plan_timeout_s: float | None = None,
 ) -> tuple[LLMProvider | None, JudgeProvider | None, JudgeProvider | None, LLMProvider | None]:
     """造 `Brain` 的 provider，返回 `(decide, judge, verify, plan)`——**按需**。
 
@@ -130,7 +132,13 @@ def build_llm_providers(
             max_tokens=config.plan_max_tokens,
             json_mode=config.json_mode,
             thinking=config.plan_thinking,
-            timeout=THINKING_TIMEOUT_SECONDS if config.plan_thinking else 45,
+            timeout=(
+                plan_timeout_s
+                if plan_timeout_s is not None
+                else THINKING_TIMEOUT_SECONDS
+                if config.plan_thinking
+                else 45
+            ),
         )
         if config.plan
         else None

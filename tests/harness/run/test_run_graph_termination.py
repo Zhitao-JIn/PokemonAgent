@@ -20,7 +20,7 @@ from types import SimpleNamespace
 import pytest
 
 from pokemon_agent.brain import Goal, RunPlan, Task
-from pokemon_agent.config import RUN_MAX_EPISODES, RUN_STALL_LIMIT
+from pokemon_agent.config import DEFAULT_RUN_BUDGET, RUN_STALL_LIMIT
 from pokemon_agent.direct.trace import TraceTool
 from pokemon_agent.errors import AgentError
 from pokemon_agent.harness import RunRuntime
@@ -138,6 +138,7 @@ def _run(
     monkeypatch.setattr(episode_entry, "run_episode", fake_run_episode)
     trace, memory = TraceTool(LocalTrace(root=tmp_path)), _Memory()
     deps = RunRuntime(
+        budget=DEFAULT_RUN_BUDGET.model_copy(update={"max_episodes": 3}),
         trace=trace,
         memory=memory,  # type: ignore[arg-type]
         reviewer=NullReviewer(),
@@ -228,7 +229,7 @@ def test_episode_budget_stops_a_run_even_when_success_resets_the_failure_streak(
         judger=_Judger(done_on=None),
     )
 
-    assert len(calls) == RUN_MAX_EPISODES == 3
+    assert len(calls) == 3
     assert final.fail_streak < RUN_STALL_LIMIT
     assert final.termination is Termination.BUDGET_EXHAUSTED
     assert final.done and not final.success

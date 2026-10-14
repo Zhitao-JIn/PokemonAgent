@@ -21,7 +21,7 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.config import RUN_MAX_EPISODES, RUN_STALL_LIMIT
+from pokemon_agent.config import RUN_STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeReq,
@@ -90,7 +90,7 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
     termination = mechanical_termination(
         world_ended=bool(state.observation and state.observation.done),
         stalled=fail_streak >= RUN_STALL_LIMIT,
-        exhausted=state.step >= RUN_MAX_EPISODES,
+        exhausted=state.step >= deps.budget.max_episodes,
     )
     verdict = None
     feedback = None

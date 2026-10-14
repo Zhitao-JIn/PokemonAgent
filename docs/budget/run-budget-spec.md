@@ -41,7 +41,7 @@
 | D11 | 起始数值（**待验证**）。共用层：`reserve_s=60`、`episode_max_tasks=6`、`max_decompositions=2`、`task_default_steps=8`、`task_max_steps=12`、`min_request_s=3`。评测覆盖：`wall_clock_s=600`（与样本硬终止一致）、`max_episodes=3`、`max_total_actions=60`。生产：`wall_clock_s=None`、`max_episodes=50`、`max_total_actions=None`。共用层数值写在 `config.py`，评测覆盖写在配置文件的 `budget` 段 | 改数字只改配置 |
 | D12 | 请求开始/结束/取消事件与关联 ID（定位"卡在哪一链"）涉及 trace 落点与结构，**必须先与用户商定**，本版不实现，列入第七节 | trace 落点须与开发者商谈 |
 | D13 | `state_schema_hash` 若因新增状态字段变化：**立即停下报告**，由我决定是否接受并重建存档；不自行重建 | hash 是存档兼容的哨兵 |
-| D14 | **统一的配置入口**：唯一装配点 `build_real`（`pokemon_agent/build.py`）新增入参 `config: str \| Path \| None = None`（运行配置文件路径；None=默认档）。文件是 JSON，顶层按段组织，本项只有 `budget` 段：`{"budget": {"wall_clock_s": 600, "max_episodes": 3, "max_total_actions": 60}}`；**只写要覆盖的字段**，其余取共用层默认；未知字段与类型错误在装配期就报错（`extra="forbid"`），不静默忽略。解析函数 `load_run_config(path) -> RunConfig`（类型化，放在 `pokemon_agent/config.py` 同层的配置模块，不放进 brain/world），`build_real` 只把解析出的 `RunBudget` 递给各层，仍是"装配点只递裸字段"。起跑脚本加同名 `--config`。评测不再自己拼预算：`evals/config.json` 的 `budget` 段在评测启动时被写成报告目录下的 `run_config.json`（逐字节落盘），`RunOneRequest` 携带这个文件的路径，worker 把它交给 `build_real(config=…)`；`baseline_context.json` 记录该文件路径与 sha256，视觉删除前后两次基线用同一文件即证明同口径 | 评测与生产走同一条读取路径；配置文件是可复现、可哈希的证据；段结构为以后收纳别的实验旋钮留口，但本项不迁移任何现有参数 |
+| D14 | **统一的配置入口**：唯一装配点 `build_real`（`pokemon_agent/build.py`）新增入参 `config: str \| Path \| None = None`（运行配置文件路径；None=默认档）。文件是 JSON，顶层按段组织，本项只有 `budget` 段：`{"budget": {"wall_clock_s": 600, "max_episodes": 3, "max_total_actions": 60}}`；**只写要覆盖的字段**，其余取共用层默认；未知字段与类型错误在装配期就报错（`extra="forbid"`），不静默忽略。解析函数 `load_run_config(path) -> RunConfig`（类型化，放在 `pokemon_agent/config.py` 同层的配置模块，不放进 brain/world），`build_real` 只把解析出的 `RunBudget` 递给各层，仍是"装配点只递裸字段"。**本项不新增命令行入口**：仓库当前没有通用起跑脚本，`build_real` 的调用方只有评测 worker 与数据集打包脚本；等将来有了起跑入口，它只需把 `--config` 透传给 `build_real(config=…)`（2026-10-14 裁决：不新增 `python -m pokemon_agent`，那是另一项产品面决定）。评测不再自己拼预算：`evals/config.json` 的 `budget` 段在评测启动时被写成报告目录下的 `run_config.json`（逐字节落盘），`RunOneRequest` 携带这个文件的路径，worker 把它交给 `build_real(config=…)`；`baseline_context.json` 记录该文件路径与 sha256，视觉删除前后两次基线用同一文件即证明同口径 | 评测与生产走同一条读取路径；配置文件是可复现、可哈希的证据；段结构为以后收纳别的实验旋钮留口，但本项不迁移任何现有参数 |
 
 ## 三、`RunBudget` 字段
 
@@ -61,7 +61,7 @@
 
 | 步 | 内容 | 提交信息 |
 |---|---|---|
-| B1 | `RunBudget` 模型 + 共用层数值 + `load_run_config` + `build_real(config=…)` 入参与起跑脚本 `--config`（D14） + 装配点注入（含把模型配置值接入既有的 `plan_thinking` / `plan_max_tokens` / 单请求上限 / `BRAIN_MAX_ATTEMPTS` 装配）+ `RUN_MAX_EPISODES` 并入预算档、生产值 50 + 测试（档的取值与上表一致；评测覆盖只改总量三项；字段校验）。本步只放数值与注入，限制的执行在 B2/B3 | `feat(budget): 2026-10-14（453）—— 引入分层运行预算档与共用层数值` |
+| B1 | `RunBudget` 模型 + 共用层数值 + `load_run_config` + `build_real(config=…)` 入参（D14，不含命令行入口） + 装配点注入（含把模型配置值接入既有的 `plan_thinking` / `plan_max_tokens` / 单请求上限 / `BRAIN_MAX_ATTEMPTS` 装配）+ `RUN_MAX_EPISODES` 并入预算档、生产值 50 + 测试（档的取值与上表一致；评测覆盖只改总量三项；字段校验）。本步只放数值与注入，限制的执行在 B2/B3 | `feat(budget): 2026-10-14（453）—— 引入分层运行预算档与共用层数值` |
 | B2 | deadline 贯穿：`Deadline` 对象、brain 门面每次尝试前取 `allowed`、provider 接受单次 timeout 覆盖（含总等待闸）、`BudgetExhausted` 类型化错误；测试用假时钟：剩余不足不发请求、重试受剩余限制、生产档（无 `wall_clock_s`）不设 deadline、行为不变 | `feat(budget): 2026-10-14（454）—— 模型请求与重试受剩余时间约束` |
 | B3 | 计数与收尾：累计动作、task clamp + `budget_clamped` 记账、episode 任务数与拆解轮次上限、软停止、机械收尾保证 `run_end`；测试覆盖每个耗尽原因都得到 `run_end` 且不调模型 | `feat(budget): 2026-10-14（455）—— 累计预算与确定的收尾路径` |
 | B4 | 评测接线：`evals/config.json` 加 `budget` 块（总量三项覆盖）；评测启动时写出报告目录下的 `run_config.json`；`RunOneRequest` 增加该文件路径字段，worker 传给 `build_real(config=…)`；`baseline_context.json` 记录该文件路径与 sha256；样本硬终止仍 600 秒；文档与 CHANGELOG | `feat(evals): 2026-10-14（456）—— 短目标评测使用独立预算档` |

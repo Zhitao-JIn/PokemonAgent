@@ -24,12 +24,14 @@
 
 from __future__ import annotations
 
+from pokemon_agent.run_budget import RunBudget
+
 # ---- 重试预算：一次调用最多问几遍外部模型 ----
 # brain 的六条链路（choose/plan/judge/verify/summarize 调模型，reflect 不调）
 # 在 `direct/brain_tool.py` 里走**同一个**重试循环，预算就是下面这一个数。
 # 感知（world）另有自己的预算——它是另一条链路、另一个重试循环。
 
-BRAIN_MAX_ATTEMPTS = 3
+BRAIN_MAX_ATTEMPTS = 2
 """brain 各链路的重试预算：一次调用最多问几遍模型（含首次）。
 
 **为什么五条链路共用一个数**：它们的失败形态是同一个（模型调不通 / 输出解析
@@ -60,26 +62,11 @@ PROVIDER_JSON_MODE = True
 是否接受该字段尚未验证）。关掉 = 回到"靠 prompt 要求 + 本地解析兜底"。
 """
 
-PLAN_THINKING = True
-"""`plan` 位置（run 级规划 `plan()` 与 episode 级拆解 `decompose()` 共用的那个 provider）
-要不要开**思考模式**。
+PLAN_THINKING = False
+"""规划与拆解的共用思考开关；生产与评测均关闭，复杂推理另设预算档。"""
 
-**它是实验旋钮**：这两条链路要在地图、目标表上做空间与依赖推理，关思考时模型只能一口气
-写出答案（真机第一跑：拆解出了目标格是墙的 task）。开了会更慢更贵——思考 token 计入
-`reasoning_tokens`，单请求超时随之放宽（`brain/build_llm_providers.py::THINKING_TIMEOUT_SECONDS`）。
-只影响 `plan` 位置；decide / judge / verify / 感知仍关思考。关掉 = 回到从前。
-"""
-
-PLAN_MAX_TOKENS = 65536
-"""`plan` 位置（`plan()` 与 `decompose()` 共用的 provider）的输出上限。
-
-**思考 token 与正文共用这一份额度**。
-
-**它是实验旋钮**：思考模式下推理长度不由 prompt 决定，推理吃满上限时正文为空（`EmptyCompletion`，
-`finish_reason='length'`）。其余三个位置不开思考，仍用 `BrainTool.build(max_tokens=…)` 的缺省。
-DeepSeek 的服务端硬上限远高于此；放大时单请求耗时同比变长，超时见
-`brain/build_llm_providers.py::THINKING_TIMEOUT_SECONDS`。
-"""
+PLAN_MAX_TOKENS = 4096
+"""规划与拆解共用输出上限；短 JSON 输出不保留长思考额度。"""
 
 MODEL_RETRY_BACKOFF_SECONDS = 1.0
 """两个重试循环（`brain_tool` / `game_tools`）里，**刚失败的那次不是超时**时，到下一次尝试的间隔。
@@ -153,8 +140,22 @@ EPISODE_STALL_LIMIT = 3
 RUN_STALL_LIMIT = 3
 """run 层停摆上限：连续多少局失败就结束本 run。"""
 
-RUN_MAX_EPISODES = 3
-"""run 层预算：一个 run 最多派多少局（episode 与 task 的预算各在自己的 `Task.max_steps`）。"""
+DEFAULT_RUN_BUDGET = RunBudget(
+    max_episodes=50,
+    max_total_actions=None,
+    wall_clock_s=None,
+    reserve_s=60,
+    episode_max_tasks=6,
+    max_decompositions=2,
+    task_default_steps=8,
+    task_max_steps=12,
+    min_request_s=3,
+    brain_max_attempts=BRAIN_MAX_ATTEMPTS,
+    plan_thinking=PLAN_THINKING,
+    plan_max_tokens=PLAN_MAX_TOKENS,
+    plan_timeout_s=45,
+)
+"""生产默认预算；评测只覆盖总时长、最多局数和累计动作总量。"""
 
 EPISODE_MAX_TASKS_PER_PLAN = 5
 """一次拆解最多**建议**模型给几个 task（给模型的上限，harness 不截断）。"""

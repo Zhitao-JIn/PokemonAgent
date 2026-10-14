@@ -173,8 +173,9 @@ def dedup_snapshots(
 class Planner:
     """`PlanPort` 的实现：run 级规划的信封翻译器。run 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort) -> None:
+    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
         self._brain = brain
+        self._max_attempts = max_attempts
 
     def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
         """run 级规划：拼 prompt + 重试循环（**原样重问**，无纠正说明）→ 打包整条账。
@@ -206,7 +207,7 @@ class Planner:
                 thinking=_thinking_after(calls),
             )
 
-        result, calls = _attempt_loop("plan", attempt)
+        result, calls = _attempt_loop("plan", attempt, max_attempts=self._max_attempts)
         return FromHarnessToBrainToolPlanOnceResp(plan=result.plan, calls=calls)
 
 
@@ -216,8 +217,9 @@ class Planner:
 class Decomposer:
     """`DecomposePort` 的实现：episode 级拆解的信封翻译器。episode 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort) -> None:
+    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
         self._brain = brain
+        self._max_attempts = max_attempts
 
     def decompose(
         self, req: FromHarnessToBrainToolDecomposeReq
@@ -239,7 +241,7 @@ class Decomposer:
                 thinking=_thinking_after(calls),
             )
 
-        result, calls = _attempt_loop("decompose", attempt)
+        result, calls = _attempt_loop("decompose", attempt, max_attempts=self._max_attempts)
         return FromHarnessToBrainToolDecomposeResp(decomposition=result.decomposition, calls=calls)
 
 
@@ -250,8 +252,9 @@ class Chooser:
     """`ChoosePort` 的实现：决策的信封翻译器。episode 层 runtime 持它；
     task 层将来持自己的实例（受限 space / 换策略时只换这一个对象）。"""
 
-    def __init__(self, brain: BrainPort) -> None:
+    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
         self._brain = brain
+        self._max_attempts = max_attempts
 
     def choose(
         self, req: FromHarnessToBrainToolChooseOnceReq
@@ -289,7 +292,7 @@ class Chooser:
                 scripts=scripts,
             )
 
-        result, calls = _attempt_loop("choose", attempt)
+        result, calls = _attempt_loop("choose", attempt, max_attempts=self._max_attempts)
         return FromHarnessToBrainToolChooseOnceResp(
             action=self._normalize(result.action),
             calls=calls,
@@ -370,8 +373,9 @@ def _signature(entry: ActionEntry) -> ScriptSignature:
 class Reflector:
     """`ReflectPort` 的实现：反思的信封翻译器（本链路**不调模型**，无重试循环）。"""
 
-    def __init__(self, brain: BrainPort) -> None:
+    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
         self._brain = brain
+        self._max_attempts = max_attempts
 
     def reflect(self, req: FromHarnessToBrainToolReflectReq) -> FromHarnessToBrainToolReflectResp:
         """反思：渲染两帧 → 调 `Brain.reflect()` → 用 `Reflection` + 坐标组装 `ActMemory`。
@@ -409,8 +413,9 @@ class Reflector:
 class Judger:
     """`JudgePort` 的实现：判定的信封翻译器。episode 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort) -> None:
+    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
         self._brain = brain
+        self._max_attempts = max_attempts
 
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         """判定：拼 prompt + 重试循环调 `Brain.judge()`。
@@ -442,7 +447,7 @@ class Judger:
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
 
-        result, calls = _attempt_loop("judge", attempt)
+        result, calls = _attempt_loop("judge", attempt, max_attempts=self._max_attempts)
         return FromHarnessToBrainToolJudgeResp(
             done=result.done, interrupted=result.interrupted, why=result.why, calls=calls
         )
@@ -454,8 +459,9 @@ class Judger:
 class Verifier:
     """`VerifyPort` 的实现：校验的信封翻译器。episode/task 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort) -> None:
+    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
         self._brain = brain
+        self._max_attempts = max_attempts
 
     def verify(self, req: FromHarnessToBrainToolVerifyReq) -> FromHarnessToBrainToolVerifyResp:
         """校验：拼 prompt + 重试循环调 `Brain.verify()`。
@@ -486,7 +492,7 @@ class Verifier:
                 images=images,
             )
 
-        result, calls = _attempt_loop("verify", attempt)
+        result, calls = _attempt_loop("verify", attempt, max_attempts=self._max_attempts)
         return FromHarnessToBrainToolVerifyResp(verdicts=result.verdicts, calls=calls)
 
 
@@ -516,8 +522,9 @@ def _verify_images(entries: list[ActMemory | TaskMemory]) -> list[str]:
 class Summarizer:
     """`SummarizePort` 的实现：蒸馏的信封翻译器。episode 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort) -> None:
+    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
         self._brain = brain
+        self._max_attempts = max_attempts
 
     def summarize(
         self, req: FromHarnessToBrainToolSummarizeReq
@@ -561,7 +568,7 @@ class Summarizer:
                 images=images,
             )
 
-        result, calls = _attempt_loop("summarize_episode", attempt)
+        result, calls = _attempt_loop("summarize_episode", attempt, max_attempts=self._max_attempts)
         summary: EpisodeSummary = result.summary
         episode_memory = EpisodeMemory(
             episode_id=req.episode_id,
@@ -595,8 +602,9 @@ class Summarizer:
 class TaskSummarizer:
     """`TaskSummarizePort` 的实现：task 蒸馏的信封翻译器。task 层 runtime 持它。"""
 
-    def __init__(self, brain: BrainPort) -> None:
+    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
         self._brain = brain
+        self._max_attempts = max_attempts
 
     def summarize_task(
         self, req: FromHarnessToBrainToolSummarizeTaskReq
@@ -626,7 +634,7 @@ class TaskSummarizer:
                 images=images,
             )
 
-        result, calls = _attempt_loop("summarize_task", attempt)
+        result, calls = _attempt_loop("summarize_task", attempt, max_attempts=self._max_attempts)
         summary: EpisodeSummary = result.summary
         first = next((e.before_frame for e in req.entries if e.before_frame), None)
         last = next((e.after_frame for e in reversed(req.entries) if e.after_frame), None)
@@ -687,6 +695,8 @@ class BrainTool:
         plan_max_tokens: int = PLAN_MAX_TOKENS,
         json_mode: bool = PROVIDER_JSON_MODE,
         plan_thinking: bool = PLAN_THINKING,
+        plan_timeout_s: float = 45,
+        max_attempts: int = BRAIN_MAX_ATTEMPTS,
     ) -> BrainTool:
         """按需装配：**只传这一层要的型号名**，没传的位置 provider 为 `None`。
 
@@ -703,7 +713,7 @@ class BrainTool:
         "协议归属、实现归属、接线归属"三者对齐。
 
         **它是 `__init__` 的糖，不是第二套装配逻辑**：内部就是
-        `BrainLlmConfig(...)` + `build_llm_providers(config)` + `Brain(...)` +
+        `BrainLlmConfig(...)` + provider 接线 + `Brain(...)` +
         九个能力对象，没有任何额外判断——"谁 new 具体实现"仍然只有一个答案。
 
         前置条件：`verify`/`plan` 的型号名是火山方舟认的豆包型号名
@@ -724,7 +734,9 @@ class BrainTool:
             json_mode=json_mode,
             plan_thinking=plan_thinking,
         )
-        decide, judge_llm, verify_llm, plan_llm = build_llm_providers(config)
+        decide, judge_llm, verify_llm, plan_llm = build_llm_providers(
+            config, plan_timeout_s=plan_timeout_s
+        )
         brain = Brain(
             decide_llm=decide,
             judge_llm=judge_llm,
@@ -732,14 +744,14 @@ class BrainTool:
             plan_llm=plan_llm,
         )
         return cls(
-            planner=Planner(brain),
-            decomposer=Decomposer(brain),
-            chooser=Chooser(brain),
-            judger=Judger(brain),
-            reflector=Reflector(brain),
-            verifier=Verifier(brain),
-            summarizer=Summarizer(brain),
-            task_summarizer=TaskSummarizer(brain),
+            planner=Planner(brain, max_attempts=max_attempts),
+            decomposer=Decomposer(brain, max_attempts=max_attempts),
+            chooser=Chooser(brain, max_attempts=max_attempts),
+            judger=Judger(brain, max_attempts=max_attempts),
+            reflector=Reflector(brain, max_attempts=max_attempts),
+            verifier=Verifier(brain, max_attempts=max_attempts),
+            summarizer=Summarizer(brain, max_attempts=max_attempts),
+            task_summarizer=TaskSummarizer(brain, max_attempts=max_attempts),
         )
 
 
@@ -752,6 +764,7 @@ def _attempt_loop(
     *,
     retry_prompt: Callable[[str, list[ModelCall]], str] | None = None,
     base_prompt: str = "",
+    max_attempts: int = BRAIN_MAX_ATTEMPTS,
 ) -> tuple[_Result, list[ModelCall]]:
     """brain 各链路共用的重试循环：**成功带整条账返回 / 耗尽带整条账抛异常**。
 
@@ -788,7 +801,7 @@ def _attempt_loop(
         except AttemptFailed as exc:
             call = _adopt(exc.call)
             calls.append(call)
-            if call.error_kind == ProviderRejected.__name__ or len(calls) >= BRAIN_MAX_ATTEMPTS:
+            if call.error_kind == ProviderRejected.__name__ or len(calls) >= max_attempts:
                 raise MaxRetriesExceeded(
                     len(calls), _last_error(calls), calls, source=source
                 ) from exc

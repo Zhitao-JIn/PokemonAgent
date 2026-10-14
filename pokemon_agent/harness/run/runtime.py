@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph.state import CompiledStateGraph
 
+from pokemon_agent.config import DEFAULT_RUN_BUDGET
 from pokemon_agent.direct.interface import (
     GameToolPort,
     JudgePort,
@@ -46,6 +47,7 @@ from pokemon_agent.direct.interface import (
     PlanPort,
     TraceToolPort,
 )
+from pokemon_agent.run_budget import RunBudget
 
 from ..episode.episode_runtime import EpisodeRuntime
 from ..interface.reviewer import Reviewer
@@ -90,6 +92,9 @@ class RunRuntime:
     """episode 侧的 runtime（`build.py` 先造它、再造本对象）。**必传、恒非空**。"""
 
     # ---- 存档：run 级在 `run_entry.new_run`，episode 级在 `act` 开头，本局结束在 `act` 里封存 ----
+
+    budget: RunBudget = DEFAULT_RUN_BUDGET
+    """装配点注入的不可变预算档。"""
 
     checkpointer: Checkpointer | None = None
     """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""

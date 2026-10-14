@@ -29,6 +29,7 @@ from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.harness.run.review_and_judge import review_and_judge
 from pokemon_agent.harness.run.run_state import RunState
 from pokemon_agent.mcpclient.memory_local import MemoryTool
+from pokemon_agent.run_config import RunConfig
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolJudgeResp,
     FromHarnessToMemoryToolMemorizeRecord,
@@ -95,6 +96,7 @@ def _memory_tool(tmp_path: pathlib.Path) -> MemoryTool:
 def _deps(tmp_path: pathlib.Path) -> SimpleNamespace:
     """`review_and_judge` 读的四样：记忆、记账、人审、判定。"""
     return SimpleNamespace(
+        budget=RunConfig().budget,
         memory=_memory_tool(tmp_path),
         trace=_Trace(),
         reviewer=NullReviewer(),

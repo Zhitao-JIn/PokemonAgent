@@ -1,3 +1,10 @@
+## 2026-10-14（455）—— 引入分层运行预算档与统一配置入口
+
+**改了什么**：新增不可变 `RunBudget`、`RunConfig` 与 `load_run_config`；`build_real(config=…)` 在装配期读取预算并注入 run 上下文与 brain 门面。共用层采用规划关思考、输出 4096、规划请求基准 45 秒与两次尝试；生产最多局数恢复 50，原全局 `RUN_MAX_EPISODES` 并入预算档。补充配置校验、装配透传测试与既有 runtime 替身的预算依赖，同步预算 spec 的入口措辞。
+**为什么这么改**：固定的三局限制无法约束一直不结束的第一局，模型与各层预算需要一个可复现的装配入口；评测和生产共用层数值，差别只在 run 总量。
+**取舍**：本步先定义并注入预算，deadline、累计动作、拆解轮次与机械收尾在后续步骤执行；不新增命令行入口，不迁移模型名、speed 或 trace 后端配置。
+**影响面**：生产默认最多 50 局，模型调用最多两次，规划不再默认长思考；数据集、真值、存档与 brain/interface 不变，state_schema_hash 保持 `570c830a9cf52445`。
+
 ## 2026-10-14（454）—— brain/plan 单元测试
 
 **改了什么**：新增 `tests/brain/plan/` 下 `test_plan.py` / `test_decompose.py`，复用 `tests/_doubles/llm.py` 的 `ScriptedLLM`。

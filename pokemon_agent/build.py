@@ -45,6 +45,7 @@ from pokemon_agent.harness.task import compile_task_graph
 from pokemon_agent.mcpclient import assert_mcp_server_ready
 from pokemon_agent.mcpclient.game_tools import GameTools
 from pokemon_agent.mcpclient.memory_local import MemoryTool
+from pokemon_agent.run_config import load_run_config
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,7 @@ def build_real(
     # env（`MCP_WORLD_SERVER_URL`）。**给了就必须通**：装配期先打 `/health`，
     # 因为 PyBoyWorld 单实例 + 强状态，连上一个半死的 server 会让整局跑在假世界上。
     reviewer: Reviewer | None = None,
+    config: str | Path | None = None,
 ) -> tuple[RunHarness, GameTools]:
     """装配真实链路；返回 `(harness, game)`。
 
@@ -168,6 +170,7 @@ def build_real(
     # **本文件对 `pokemon_agent.world` 零 import**。
     # **env 只在这里读一次**（`.env` → os.environ，真环境变量优先）。它必须在
     # 任何 `env_str(...)` 之前——world / memory 两个 server 地址的缺省都来自它。
+    budget = load_run_config(config).budget
     load_env_file()
 
     world_server_url = (world_server_url or env_str("MCP_WORLD_SERVER_URL") or "").strip() or None
@@ -266,18 +269,30 @@ def build_real(
         plan=plan_model or "doubao-seed-2-1-pro-260628",
         judge=judge_model,
         max_tokens=max_tokens,
+        plan_max_tokens=budget.plan_max_tokens,
+        plan_thinking=budget.plan_thinking,
+        plan_timeout_s=budget.plan_timeout_s,
+        max_attempts=budget.brain_max_attempts,
     )
     episode_brain = BrainTool.build(
         plan=plan_model or "doubao-seed-2-1-pro-260628",
         judge=judge_model,
         verify=verify_model or "doubao-seed-2-1-pro-260628",
         max_tokens=max_tokens,
+        plan_max_tokens=budget.plan_max_tokens,
+        plan_thinking=budget.plan_thinking,
+        plan_timeout_s=budget.plan_timeout_s,
+        max_attempts=budget.brain_max_attempts,
     )
     task_brain = BrainTool.build(
         text=text_model,
         judge=judge_model,
         verify=verify_model or "doubao-seed-2-1-pro-260628",
         max_tokens=max_tokens,
+        plan_max_tokens=budget.plan_max_tokens,
+        plan_thinking=budget.plan_thinking,
+        plan_timeout_s=budget.plan_timeout_s,
+        max_attempts=budget.brain_max_attempts,
     )
 
     reviewer = reviewer or NullReviewer()
@@ -354,6 +369,7 @@ def build_real(
         checkpointer=checkpointer,
     )
     run_rt = RunRuntime(
+        budget=budget,
         trace=trace_tool,
         memory=memory,
         game=game,
