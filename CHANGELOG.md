@@ -1,3 +1,10 @@
+## 2026-10-14（454）—— brain/plan 单元测试
+
+**改了什么**：新增 `tests/brain/plan/` 下 `test_plan.py` / `test_decompose.py`，复用 `tests/_doubles/llm.py` 的 `ScriptedLLM`。
+**为什么这么改**：`plan` / `decompose` 此前没有直接测试；字段不合法算解析失败、思考开关进请求与账、plan 缺省回退 judge 都靠集成路径碰运气。
+**取舍**：解析只经公开方法测、不 import 私有函数；`max_push` / `max_tasks` 的上限不在 brain 校验（渲进 prompt 的约束），不测；`updates[].index` 越界只测原样交回。
+**影响面**：只增测试，不动 `pokemon_agent/` 下任何文件；新增用例 44 条（参数化展开后），`tests/brain` 全绿；全量 pytest 因工作区另有并行任务在改 harness，失败集合与起点不同，细节见提交说明。
+
 ## 2026-10-14（453）—— brain/judge_verify 单元测试
 
 **改了什么**：新增 `tests/brain/judge_verify/` 下 `test_judge.py` / `test_verify.py` / `test_summarize.py`，复用 `tests/_doubles/llm.py` 的脚本化假 provider。
