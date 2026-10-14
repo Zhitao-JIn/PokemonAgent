@@ -1,3 +1,10 @@
+## 2026-10-14（452）—— brain/choose 单元测试与脚本化假 provider
+
+**改了什么**：新增 `tests/_doubles/llm.py`（`ScriptedLLM` / `ScriptedJudge` 与 `text_reply` / `vision_reply` 两个回复构造函数）、`tests/_doubles/brain_choose.py` 与 `tests/brain/choose/` 下四个测试文件。
+**为什么这么改**：`Brain.choose` 此前没有任何直接测试；解析的各个分支、失败分类与账、有图时的转发表都靠集成路径碰运气。
+**取舍**：解析器只经 `choose` 测、不 import 私有函数；假 provider 手写不用 MagicMock，后面 plan / judge / verify 目录复用它；入口 assert 只测一条作为契约示范。
+**影响面**：只增测试与测试夹具，不动 `pokemon_agent/` 下任何文件；新增用例 34 条（参数化展开后），全量 pytest 691 passed / 2 skipped（`test_evals_script_timeout.py` 的 2 条因沙箱删除守卫失败，与本次无关）。
+
 ## 2026-10-14（451）—— tests/ 入库：取消 .gitignore 忽略并提交现有测试基线
 
 **改了什么**：`.gitignore` 删掉 `tests/`，并把紧随注释里「跟 `tests/` 同一性质」的措辞改为只指 `experiment/real_check/`；把 `tests/` 下 81 个文件作为基线提交；修掉入库后才会被 `ruff check .` 扫到的 4 处 lint / 格式问题：`tests/direct/trace/test_trace_seq.py`（B905 `zip()` 补显式 `strict=False`）、`tests/mcpclient/game_tools/test_game_tools_action_space.py`（SIM300 Yoda 条件翻转、E501 折行）、`tests/mcpclient/memory_tool/test_object_recall_content.py`（I001 import 排序）。
