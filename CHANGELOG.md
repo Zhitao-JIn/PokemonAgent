@@ -1,3 +1,10 @@
+## 2026-10-14（456）—— brain/json_utils 单元测试
+
+**改了什么**：新增 `tests/brain/json_utils/test_load_json.py`，直接钉 `_load_json` 的容忍边界。
+**为什么这么改**：六条解析共用这块地基，此前它的边界只被各条链的用例间接碰到；改一处会静默影响全部。
+**取舍**：这是 brain 测试里唯一直接测私有函数的地方（破例已确认）；围栏标签细节与括号前缀的限制只记入观察，不钉成预期。
+**影响面**：只增测试，不动 `pokemon_agent/` 下任何文件；新增用例 31 条（参数化展开后），`tests/brain/json_utils` 全绿；全量 pytest 810→841 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
+
 ## 2026-10-14（455）—— 引入分层运行预算档与统一配置入口
 
 **改了什么**：新增不可变 `RunBudget`、`RunConfig` 与 `load_run_config`；`build_real(config=…)` 在装配期读取预算并注入 run 上下文与 brain 门面。共用层采用规划关思考、输出 4096、规划请求基准 45 秒与两次尝试；生产最多局数恢复 50，原全局 `RUN_MAX_EPISODES` 并入预算档。补充配置校验、装配透传测试与既有 runtime 替身的预算依赖，同步预算 spec 的入口措辞。
