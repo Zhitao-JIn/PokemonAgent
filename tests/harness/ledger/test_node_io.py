@@ -100,11 +100,11 @@ def test_a_failed_task_is_followed_by_a_fresh_decomposition(tmp_path: Path) -> N
     ], "失败定案后同一版剩下的条目被放弃；重拆的是第 2 版、id 接着往下数"
 
 
-class _OverturnFirstTask:
-    """审到第一个 task 时推翻，其余都认账。"""
+class _OverturnFirstJudgement:
+    """首次审 episode 的达成裁决时推翻，其余认账。"""
 
     def __init__(self) -> None:
-        self.audited: list[str | None] = []
+        self.audited: list[str] = []
 
     def inject(self, req):  # noqa: ANN001
         from pokemon_agent.schemas.harness import FromHarnessToReviewerInjectResp
@@ -114,25 +114,28 @@ class _OverturnFirstTask:
     def audit(self, req):  # noqa: ANN001
         from pokemon_agent.schemas.harness import AuditVerdict, FromHarnessToReviewerAuditResp
 
-        self.audited.append(req.task_id)
-        if req.task_id == "g1-t1":
+        self.audited.append(req.episode_id)
+        if req.episode_id == EP1 and self.audited.count(EP1) == 1:
             return FromHarnessToReviewerAuditResp(
                 verdict=AuditVerdict.OVERTURN, note="其实没到", answered=True
             )
         return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=True)
 
 
-def test_the_episode_can_overturn_a_task(tmp_path: Path) -> None:
-    """episode 审 task：推翻"成"为"败"→ 表上标 overturned、剩下的条目被放弃、下一圈重拆。"""
-    reviewer = _OverturnFirstTask()
-    events = run_fake(tmp_path, episode=every(3), run=lambda asked: True, reviewer=reviewer)
+def test_a_judge_overturn_leaves_task_settlements_mechanical(tmp_path: Path) -> None:
+    """推翻 episode 的达成裁决后，task 的机械结算和来源账仍一致。"""
+    reviewer = _OverturnFirstJudgement()
+
+    events = run_fake(tmp_path, episode=every(2), run=every(1), reviewer=reviewer)
+
     _check_all(events)
-    first = next(_content(e) for e in events if e["kind"] == "settle_task")
-    assert (first["task_id"], first["status"], first["overturned"]) == ("g1-t1", "failed", "true")
-    assert first["note"] == "其实没到" and first["abandoned"] == ["g1-t2"]
-    assert "g1-t1" in reviewer.audited and None in reviewer.audited, "task 与局都经人审"
+    stamps = [_content(e) for e in events if e["kind"] == "settle_task"]
+    assert stamps and all(s["status"] == "completed" for s in stamps)
+    assert all(s["overturned"] == "false" and s["audit"] == "" for s in stamps)
+    assert all(not s["abandoned"] for s in stamps)
+    assert reviewer.audited == [EP1, "r1"]
     end = next(_content(e) for e in events if e["kind"] == "task_end")
-    assert end["termination"] == "goal_done", "task_end 仍是机器判定；定案以表为准"
+    assert end["termination"] == "goal_done"
 
 
 def test_a_task_that_breaks_mid_way_fails_and_the_episode_goes_on(tmp_path: Path) -> None:

@@ -8,7 +8,7 @@
 
 1. **不重问 LLM**。"带着人的那句去重问"是调用方节点的事
    （`plan_episode` / `review_and_judge`）——它只负责把话拿到手。
-2. **不写状态**。`audit` 只回"认 / 推翻"，落到目标表上的状态改写由 harness 盖章。
+2. **不写状态**。`audit` 只回"认 / 推翻"，harness 据此接受裁决或记录推翻理由。
 3. **不阻塞图的结构**。它是节点内的一个同步函数调用——"问一句"不改变图的形状
    （加图节点要付 `recursion_limit` 的代价，见
    `docs/PLAN_console_reviewer.md` §3.2）。
@@ -98,7 +98,7 @@ class ConsoleReviewer:
         return FromHarnessToReviewerInjectResp(text=line, answered=True)
 
     def audit(self, req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
-        """**审**：把这一局（或这个 task）的裁定亮给人，收一个表态。
+        """**审**：把 judge 的目标达成裁决亮给人，收一个表态。
 
         人答 `o`（overturn）就推翻——接着读一行当理由；空行或其它输入按**认账**；
         超时按认账并标 `answered=False`。

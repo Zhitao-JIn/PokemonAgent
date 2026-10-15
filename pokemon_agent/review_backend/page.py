@@ -239,7 +239,7 @@ function show(m) {
   const inject = m.kind === 'inject';
   $('kind').textContent = inject ? '插话' : '审';
   $('kind').className = `tag ${m.kind}`;
-  const where = [m.run_id, m.episode_id, m.task_id].filter(Boolean).join(' · ');
+  const where = [m.run_id, m.episode_id].filter(Boolean).join(' · ');
   $('where').textContent = `第 ${m.seq} 问 · ${where}${m.form_kind ? ' · ' + m.form_kind : ''}`;
   $('prompt').textContent = m.prompt;
   $('body').textContent = m.body;

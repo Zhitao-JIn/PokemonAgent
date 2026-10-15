@@ -18,7 +18,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerAuditReq,
     TraceEvent,
 )
-from pokemon_agent.schemas.harness.domain import EpisodeOutput, TaskOutput
 
 EVENT_CONTENT_LIMIT = 160
 """事件行里 content 的截断长度（字）。"""
@@ -81,41 +80,20 @@ def _render_leaf(value: Any) -> str:  # noqa: ANN401
     return str(value)
 
 
-def outcome_kind(outcome: EpisodeOutput | TaskOutput | FromHarnessToBrainToolJudgeResp) -> str:
-    """被审对象的种类标签：`EpisodeOutput` / `TaskOutput` / `JudgeVerdict`。"""
-    if isinstance(outcome, FromHarnessToBrainToolJudgeResp):
-        return "JudgeVerdict"
-    return type(outcome).__name__
+def outcome_kind(outcome: FromHarnessToBrainToolJudgeResp) -> str:
+    """被审对象的种类标签：`JudgeVerdict`。"""
+    return "JudgeVerdict"
 
 
 def audit_prompt(req: FromHarnessToReviewerAuditReq) -> str:
-    """一句话说明这次审的是什么。"""
-    outcome = req.outcome
-    if isinstance(outcome, FromHarnessToBrainToolJudgeResp):
-        return "审模型裁决：本层目标真的已经达成、可以收工了吗？"
-    if isinstance(outcome, TaskOutput):
-        return f"审 task 结果：{req.task_id} 算成算败？"
-    return f"审一局的结果：{req.episode_id} 算成算败？"
+    """一句话说明本次审的是 judge 的目标达成裁决。"""
+    return "审模型裁决：本层目标真的已经达成、可以收工了吗？"
 
 
 def render_outcome(req: FromHarnessToReviewerAuditReq) -> str:
-    """被审结论的文本：机械结算四行，或模型裁决两行。"""
+    """把模型裁决与理由渲染为两行文本。"""
     outcome = req.outcome
-    if isinstance(outcome, FromHarnessToBrainToolJudgeResp):
-        return f"  模型说   {'已达成' if outcome.done else '未达成'}\n  理由     {outcome.why}\n"
-    verdict_line = "成功" if outcome.success else "失败"
-    if isinstance(outcome, TaskOutput):
-        who = f"  task   {req.task_id}（局 {req.episode_id}）\n"
-        counts = f"{outcome.steps_used} 键"
-    else:
-        who = f"  局号   {req.episode_id}\n"
-        counts = f"{outcome.tasks_used} 个 task / {outcome.acts_used} 键"
-    return (
-        f"{who}"
-        f"  裁定   {verdict_line}（{outcome.termination.value}，{counts}）\n"
-        f"  依据   {outcome.judge_reason or '（无）'}\n"
-        f"  结论   {outcome.reason or '（无）'}\n"
-    )
+    return f"  模型说   {'已达成' if outcome.done else '未达成'}\n  理由     {outcome.why}\n"
 
 
 def render_events(events: list[TraceEvent]) -> list[str]:

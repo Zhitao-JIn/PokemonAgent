@@ -1022,7 +1022,7 @@ def decompose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 
 def settle_goal(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """run 级盖章：目标表那一行的新状态 + 人审表态。前置条件：req.goal、req.audit 非 None。"""
+    """run 级盖章：目标表那一行的新状态，audit 空串表示没问人。前置条件：req.goal 非 None。"""
     goal = req.goal
     return Rendered(
         EventType.LIFECYCLE,
@@ -1032,7 +1032,7 @@ def settle_goal(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "status": goal.status.value,
             "episode_id": goal.last_episode_id or "",
             "attempts": str(goal.attempts),
-            "audit": req.audit,
+            "audit": req.audit or "",
             "note": goal.note,
             "overturned": str(goal.overturned).lower(),
             "fail_streak": str(req.fail_streak) if req.fail_streak is not None else "",
@@ -1122,10 +1122,10 @@ def review_audit(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 
 def settle_task(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """episode 级盖章：任务表那一行的定案 + 人审表态 + 被放弃的剩余条目。
+    """episode 级盖章：任务表那一行的定案 + 被放弃的剩余条目，audit 空串表示没问人。
 
     写在 episode 层（`meta.task_id` = 本局），所以被盖章的 task 在正文里点名（`task_id`）。
-    前置条件：req.task_entry、req.audit 非 None。
+    前置条件：req.task_entry 非 None。
     """
     entry = req.task_entry
     return Rendered(
@@ -1135,7 +1135,7 @@ def settle_task(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "task_id": entry.task.task_id,
             "status": entry.status.value,
             "round": str(entry.round),
-            "audit": req.audit,
+            "audit": req.audit or "",
             "note": entry.note,
             "overturned": str(entry.overturned).lower(),
             "abandoned": list(req.abandoned or []),

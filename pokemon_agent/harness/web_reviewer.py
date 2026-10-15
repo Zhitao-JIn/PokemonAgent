@@ -88,7 +88,6 @@ class WebReviewer:
         wire = FromHarnessToReviewBackendAuditReq(
             run_id=self._run_id,
             episode_id=req.episode_id,
-            task_id=req.task_id,
             prompt=audit_prompt(req),
             form_kind=outcome_kind(req.outcome),
             outcome_text=render_outcome(req),

@@ -1,10 +1,10 @@
 """`review_and_judge` 格（episode 层）：**定案上一个 task + 判停**——与 run 层同构。
 
-⓪定案（表里有 RUNNING 时）：按 `TaskOutput` 盖章（COMPLETED / FAILED）→ 亮给人审，推翻则
-盖反面、`overturned=True`、修正失败连击 → 定案为失败时（被打断的 task 也盖 FAILED，note 写
+⓪定案（表里有 RUNNING 时）：只按 `TaskOutput.success` 盖章（COMPLETED / FAILED）。
+定案为失败时（被打断的 task 也盖 FAILED，note 写
 "被打断：…"，只是不计失败连击），把剩下的 PENDING 条目标 ABANDONED
 （它们是按"上一个会成"拆的，前提已失效；`plan_episode` 会带着这张表重拆）→ 记 `settle_task`。
-TaskMemory 的章保留机器判定，任务表是最终定案。
+TaskMemory 的章与任务表均保留机器判定，失败连击沿用 state 原值。
 
 停没停、成没成都由 `termination` 推出（`Settled`）。
 
@@ -25,14 +25,13 @@ from pokemon_agent.config import EPISODE_STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeReq,
-    FromHarnessToReviewerAuditReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
 from pokemon_agent.schemas.harness.domain import EntryStatus, TaskOutput, Termination
 
 from ...judging import ask_judger, judge_reason, mechanical_termination, record_verdict
-from ...reviewing import ask_audit, audit_judgement
+from ...reviewing import audit_judgement
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState, current_goal, current_knowledge
 
@@ -106,49 +105,17 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
 
 
 def _settle(deps: EpisodeRuntime, state: EpisodeRunState, outcome: TaskOutput) -> dict[str, object]:
-    """盖章 → 人审（推翻则盖反面）→ 失败则放弃剩余 PENDING → 记 `settle_task`。"""
+    """机械盖章 → 失败则放弃剩余 PENDING → 记 `settle_task`。"""
     index = next(i for i, e in enumerate(state.tasks) if e.status is EntryStatus.RUNNING)
     entry = state.tasks[index]
     assert outcome.task_id == entry.task.task_id, "最新结算与 RUNNING 条目对不上"
 
-    # 步骤 1：机械盖章；亮给人审，推翻则盖反面、失败连击跟着修正。
+    # 步骤 1：按机械结算盖章，保留失败连击与被打断的说明。
     status = EntryStatus.COMPLETED if outcome.success else EntryStatus.FAILED
-    resp = ask_audit(
-        deps.reviewer,
-        deps.trace,
-        FromHarnessToReviewerAuditReq(
-            run_id=state.run_id,
-            episode_id=state.episode_id,
-            task_id=entry.task.task_id,
-            outcome=outcome,
-            events=deps.trace.read_events(
-                {
-                    "run_id": state.run_id,
-                    "episode_id": state.episode_id,
-                    "task_id": entry.task.task_id,
-                }
-            ),
-        ),
-        meta={
-            "source": _SOURCE,
-            "episode_id": state.episode_id,
-            "task_id": "",
-            "step": state.step + 1,
-        },
-    )
-    overturned = resp.verdict is AuditVerdict.OVERTURN
     fail_streak = state.fail_streak
-    if overturned:
-        status = EntryStatus.FAILED if status is EntryStatus.COMPLETED else EntryStatus.COMPLETED
-        fail_streak = 0 if status is EntryStatus.COMPLETED else fail_streak + 1
-    interrupted = not overturned and outcome.termination is Termination.INTERRUPTED
-    if overturned and resp.note:
-        note = resp.note
-    elif interrupted:
-        note = f"被打断：{outcome.judge_reason}"
-    else:
-        note = entry.note
-    stamped = entry.model_copy(update={"status": status, "overturned": overturned, "note": note})
+    interrupted = outcome.termination is Termination.INTERRUPTED
+    note = f"被打断：{outcome.judge_reason}" if interrupted else entry.note
+    stamped = entry.model_copy(update={"status": status, "overturned": False, "note": note})
 
     # 步骤 2：定案为失败 → 剩下的 PENDING 前提失效，标 ABANDONED。
     tasks = [*state.tasks[:index], stamped, *state.tasks[index + 1 :]]
@@ -172,7 +139,7 @@ def _settle(deps: EpisodeRuntime, state: EpisodeRunState, outcome: TaskOutput) -
                 "step": state.step + 1,
             },
             task_entry=stamped,
-            audit=resp.verdict.value,
+            audit=None,
             abandoned=abandoned,
             fail_streak=fail_streak,
         )

@@ -14,14 +14,13 @@ from pydantic import BaseModel, Field
 class FromHarnessToReviewBackendAuditReq(BaseModel):
     """一次审：被审结论的渲染文本 + 被审对象的事件行。
 
-    form_kind：被审对象（`EpisodeOutput` / `TaskOutput` / `JudgeVerdict`），页面据此挑面孔。
+    form_kind：被审对象（`JudgeVerdict`），页面据此挑面孔。
     timeout_s：后端等人答的秒数；到点由后端回认账、`answered=False`。
     """
 
     msg: Literal["audit"] = Field(default="audit", description="消息标签：`/harness` 上据此分流")
     run_id: str = Field(description="这次 run 的标识")
     episode_id: str = Field(description="被审对象所在的局（run 层审裁决时放 run_id）")
-    task_id: str | None = Field(default=None, description="审 task 时是那个 task 的标识")
     prompt: str = Field(description="给人看的说明")
     form_kind: str = Field(description="被审对象的种类")
     outcome_text: str = Field(description="源程序渲染好的结论文本")

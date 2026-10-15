@@ -364,7 +364,6 @@ def _to_ask(seq: int, req: HarnessReq, deadline: float | None) -> FromReviewBack
         body=req.outcome_text,
         events=req.events,
         episode_id=req.episode_id,
-        task_id=req.task_id,
         deadline=deadline,
     )
 
