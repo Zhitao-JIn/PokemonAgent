@@ -90,3 +90,10 @@ P0 提交 442 ──► S0 基线 ──► S1 切换取帧 ──► S2 删调�
 
 - 预算 B3 把累计动作、拆解轮次放进状态，`state_schema_hash` 由 `570c830a9cf52445` 变为新值（见预算 spec D13），评测存档随之重打（B3b）。
 - 视觉删除的“哈希不得变化”停止条件改为：**相对重打后的新哈希不得变化**。基线记录的哈希以预算合入后的值为准。
+
+## 2026-10-14 预算已合入，基线在独立 worktree 上重建
+
+- 预算 B1–B5 已快进合入 `codex/unify-script-execution`，HEAD 为 `19307a1`（提交 455–458 与规格 v1.3 修正）。`state_schema_hash` 为 `40e2cd635256744f`，20 份 v1 存档已重打。
+- 视觉删除在新 worktree `D:\Users\GummiGu\PycharmProjects\Pokemon_Agent-vision`、新分支 `perceive/remove-vision` 上做，起点固定为 `19307a1`；worktree 的 HEAD 不随其他会话的提交移动，这就是基线的"冻结"。
+- S0 基线在该 worktree 的 `19307a1` 上用 `evals/config.json` 的预算档跑前十个 val 样本（`wall_clock_s=600`、`max_episodes=3`、`max_total_actions=60`，其余取共用层默认），结果目录 `eval_results/remove_vision_baseline_19307a1/`。评测 task 启动时自己写 `baseline_context.json`（预算文件路径与 sha256、模型、样本、超时），环境与 HEAD 等补充信息另存 `baseline_env.json`，不要手改前者。
+- 基线通过判据（先于任何分数）：10 个样本都有 `run_end`；无样本触发 600 秒硬终止；第一个样本的评分阶段通过后才放行其余。分数只记录，不作验收判据。
