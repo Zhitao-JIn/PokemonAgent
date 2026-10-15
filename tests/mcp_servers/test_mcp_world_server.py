@@ -125,18 +125,11 @@ def test_get_action_space_exposes_one_flat_namespace() -> None:
     assert {e["name"] for e in body["data"]["entries"]} == {n for n, on in mask.items() if on}
 
 
-def test_perceive_task_never_fails_and_perceive_once_reports_failure() -> None:
-    """task 档不会失败；视觉档失败走 `perception_failed` 信封（不抛、不重试）。"""
+def test_perceive_task_returns_the_memory_scene() -> None:
+    """内存观测经 tool 信封返回场合，不调用视觉模型。"""
     world = _FakeWorld()
     world_server.start(world, rom="fake.rom")
     assert world_server.perceive_task()["data"]["observation"]["scene"] == "walk"
-
-    ok = world_server.perceive_once()
-    assert ok["ok"] is True and ok["data"]["calls"] == [{"model": "fake"}]
-
-    world._fail_perceive = True
-    bad = world_server.perceive_once()
-    assert bad["ok"] is False and bad["code"] == "perception_failed"
 
 
 def test_state_roundtrip_is_base64(server: _FakeWorld) -> None:
@@ -218,7 +211,6 @@ def test_registry_lists_the_atomic_layer() -> None:
         "reset",
         "get_action_space",
         "perceive_task",
-        "perceive_once",
         "step",
         "save_state",
         "load_state",

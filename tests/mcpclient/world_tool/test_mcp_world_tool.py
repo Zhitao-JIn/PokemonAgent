@@ -149,13 +149,9 @@ def test_get_action_space_revalidates_the_server_mask(tool: WorldMcpTool) -> Non
     assert space.scene == "walk"
 
 
-def test_perceive_task_and_perceive_with_retry(tool: WorldMcpTool) -> None:
-    """task 档直接验回观测；视觉档的**重试循环在 client 侧**（预算/退避同 GameTools）。"""
+def test_perceive_task_returns_the_memory_scene(tool: WorldMcpTool) -> None:
+    """内存观测经过 MCP 后保留 TaskScene。"""
     assert tool.perceive_task().observation.scene == TaskScene.WALK
-
-    resp, log = tool.perceive_with_retry()
-    assert resp.calls == [{"model": "fake"}]
-    assert len(log) == 1
 
 
 def test_state_files_round_trip_on_the_client_side(

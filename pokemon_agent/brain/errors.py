@@ -116,8 +116,8 @@ class ToolTimeout(BrainError):
     replay 里它们指向不同修法：前者改 prompt/解析，后者查网关/配额。
 
     **可重试**：传输抖动下一次可能就通（0915 真机实测 405 连挂两次第三次成功）。
-    重试的循环与预算都在调用方（`BrainTool._attempt_loop` /
-    `GameTools.perceive_with_retry`）——provider 自己**一次都不重发**（0915 起：
+    重试的循环与预算都在调用方（`BrainTool._attempt_loop`）——
+    provider 自己**一次都不重发**（0915 起：
     一次调用 = 一次 HTTP 请求，provider 层重试已删，账的可信度靠它）。
 
     **4xx（401/403/400）不在这里**：那是服务端的**明确拒绝**，不是抖动，

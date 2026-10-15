@@ -66,7 +66,6 @@ __all__ = [
     "FromHarnessToGameToolGetActionSpaceReq",
     "FromHarnessToGameToolGetActionSpaceResp",
     "FromHarnessToGameToolLoadStateReq",
-    "FromHarnessToGameToolPerceiveOnceResp",
     "FromHarnessToGameToolPerceiveTaskResp",
     "FromHarnessToGameToolResetReq",
     "FromHarnessToGameToolSaveStateReq",
@@ -153,9 +152,6 @@ from .communication.FromHarnessToGameToolGetActionSpaceResp import (
     FromHarnessToGameToolGetActionSpaceResp,
 )
 from .communication.FromHarnessToGameToolLoadStateReq import FromHarnessToGameToolLoadStateReq
-from .communication.FromHarnessToGameToolPerceiveOnceResp import (
-    FromHarnessToGameToolPerceiveOnceResp,
-)
 from .communication.FromHarnessToGameToolPerceiveTaskResp import (
     FromHarnessToGameToolPerceiveTaskResp,
 )
