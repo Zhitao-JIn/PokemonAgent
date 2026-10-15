@@ -1,3 +1,13 @@
+## 2026-10-15（465）—— brain/providers 单元测试（构造、请求、响应、错误、选型）
+
+**改了什么**：新增共享替身 `tests/_doubles/http.py`（手写 `urllib.request.urlopen` 替身：记录请求、按脚本回话、可抛 HTTPError/URLError/ConnectionResetError/TimeoutError、可阻塞）与 `tests/brain/providers/` 下五个测试文件（test_provider_construction / test_provider_request / test_provider_responses / test_provider_errors / test_provider_for），新增 77 条用例，钉 19 项契约：构造期校验（温度 [0,2] 闭区间、空型号名、key 查找顺序与构造即失败）、请求形状（URL/头/体、思考开关的厂商形状与单次覆盖、超时传递含 `timeout_s` 单次覆盖）、响应映射（token 字段、`finish_reason` 截断判据、空正文 `EmptyCompletion`）、HTTP 失败分类（4xx→`ProviderRejected`、5xx 与网络层→`ToolTimeout`、一次调用一请求、单请求总时长硬闸、key 不进错误消息）、`provider_for` 选型（前缀、大小写、参数转发、新实例）。
+
+**为什么这么改**：`providers.py` 是全项目唯一直连模型服务的文件，它的失败分类决定调用方"值不值得重试"，token 映射与截断判据决定实验账目是否可信——这些改动不会报错，只会悄悄改变行为，全部 19 项契约此前无人守。
+
+**取舍**：只走公开面（构造、`complete`、`config()`、`multimodal`、`provider_for`），不碰私有方法；唯一的替身是手写 urlopen 替身，不用 `unittest.mock`；缺省总时长闸 `timeout+15` 不测（要等 16 秒以上），只测 `timeout_s` 路径；多模态发图、拼网格图、静默丢图留第二步；已有 `test_provider_json_mode.py` / `test_empty_completion.py` 不改不搬。
+
+**影响面**：起点 `2 failed, 1040 passed, 2 skipped` → 终点 `2 failed, 1117 passed, 2 skipped`（+77，失败集合不变，仍是沙箱删除守卫的 2 条 evals）；五处破坏验证（温度上界、key 顺序、4xx 边界、truncated 判据、Ark 关思考形状）各做一次全部让指定用例失败后还原，`git diff pokemon_agent/` 为空；ruff check 与 format 全绿（601 文件）。
+
 ## 2026-10-14（464）—— brain/factory 单元测试
 
 **改了什么**：新增 `tests/brain/factory/` 下两个测试文件（test_build_llm_providers / test_build_vision_provider），钉住两个厂商接线工厂的温度/输出上限/超时分层与厂商按前缀选型。
