@@ -151,6 +151,8 @@ evals/dataset/<名>/
 └── v1/ v2/ …        冻结文件；冻结后不改，要改出新版本
 ```
 
+> 例外（2026-10-15）：agent_short_goal_run v1 的 `knowledge_battle_pokemon_switch.check_id` 已补（CHANGELOG 459），为冻结后唯一一次单字段修改。
+
 **契约**：
 
 - `load()` 是 task 拿数据的唯一入口；task 不拼路径、不读文件。

@@ -1,3 +1,10 @@
+## 2026-10-15（459）—— 补第十例机械判据 party_list_opened_in_battle
+
+**改了什么**：新增战斗队伍列表机械判据：战斗标志为真、解码选项非空且排除行动菜单、CANCEL 与招式名，选项数须等于内存队伍只数。仅补 v1 第十例的 `check_id`，更新覆盖表与正反例测试；原基线第十例离线重判为 pass，证据选项为 BULBASAUR / PIDGEY。
+**为什么这么改**：屏幕解码已经覆盖队伍列表，原先的不可机械判定已不成立；视觉档删除前后的对比需要完整机械分，因此批准 v1 冻结的唯一单字段例外。world-e2e-plan、world-e2e-spec、tasks-intent、tasks-spec、spec2 均补充例外说明，其余冻结约束保留。
+**取舍**：招式名经 world.moves 的公开接口取得并按 fold 比较，不读私有表；保留原基线全部文件，仅新增离线重判记录，不重跑模型或改写历史分数。
+**影响面**：仅评测判据、单个样本的 check_id、覆盖表、测试与文档；目标、成功判据、rubric、红线、来源状态及哈希、存档不变，被测系统 pokemon_agent/ 未改。
+
 ## 2026-10-14（458）—— 短目标评测使用独立预算档
 
 **改了什么**：`evals/config.json` 只覆盖总时长、最多局数、累计动作三项；评测 task 写出 `run_config.json`，将路径和 SHA256 记入 `baseline_context.json`，再经 solver 请求与 worker 交给 `build_real(config=…)`。增加文件字节、请求传递和装配值测试。

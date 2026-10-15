@@ -58,6 +58,8 @@ evals/
 └── data/loader.py         读 + 校验冻结（哈希对不上即拒）
 ```
 
+> 例外（2026-10-15）：agent_short_goal_run v1 的 `knowledge_battle_pokemon_switch.check_id` 已补（CHANGELOG 459），为冻结后唯一一次单字段修改。
+
 **迁移映射**（旧 9 子目录 → 新骨架，搬完旧目录删除）：
 
 | 旧 | 新 | 动作 |
