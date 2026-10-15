@@ -201,7 +201,7 @@ function onFeed(event) {
   if (item.content.frame) {
     const img = $('live-frame');
     // `content.frame` 是**完整 data URI**（`data:image/png;base64,…`，0915 起全仓唯一
-    // 帧格式，编码点 `world/pyboy_world.py::_png_data_uri`）——直接上 src，别再拼前缀。
+    // 帧格式，编码点 `world/frame_encoding.py::png_data_uri`）——直接上 src，别再拼前缀。
     img.src = item.content.frame; img.hidden = false;
     const m = item.meta;
     $('live-caption').textContent = `${m.episode_id || ''} · ${m.task_id || ''} · 第 ${m.step} 步`;

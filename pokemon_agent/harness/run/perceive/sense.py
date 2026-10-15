@@ -1,6 +1,6 @@
-"""`sense`（run 层）：**每圈**用视觉档取一帧 → `observation`。
+"""`sense`（run 层）：**每圈**用内存观测取一帧 → `observation`。
 
-记 `sense_call`（视觉调用）↔ `sense_frame`（取到的这一帧）。
+只记 `sense_frame`（取到的这一帧），不产出模型调用账。
 
 run 层唯一向世界取帧的地方。取到的是**局与局之间**的世界状态：首圈 = 世界起点
 载入后的画面，之后 = 上一局打完、还没派下一局的画面。消费方：`review_and_judge`
@@ -14,8 +14,6 @@ run 层唯一向世界取帧的地方。取到的是**局与局之间**的世界
 **账面步号** = `step + 1`（圈号，与 episode/task 两层同构）。
 这一帧不进帧槽：帧槽只服务 task 层 ActMemory 的前后两张图；`sense_frame` 账直接带图。
 
-**取帧失败作废整个 run**（视觉档重试耗尽原样上抛 → run 级异常收尾 `run_error`）——
-episode 层同故障只作废一局，run 层押上的是整个 run，这是视觉档的已知代价（0928 拍板）。
 """
 
 from __future__ import annotations
@@ -26,7 +24,7 @@ from langgraph.runtime import Runtime
 
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
 
-from ...sensing import perceive_once
+from ...sensing import perceive_task
 from ..run_state import RunState
 from ..runtime import RunRuntime
 
@@ -34,19 +32,12 @@ _SOURCE = "run.sense"
 
 
 def sense(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
-    """取一帧（视觉档），写进 `observation`。"""
+    """取一帧（内存观测），写进 `observation`。"""
     deps = runtime.context
     frame_step, account_step = state.total_acts, state.step + 1
 
-    # 步骤 1：取帧；帧观测盖全局累计键数、sense_call 账头盖圈号（两个步号分家，0928 定稿）。
-    obs, frame_png, ram = perceive_once(
-        deps,
-        episode_id=state.run_id,
-        task_id=state.run_id,
-        step=frame_step,
-        account_step=account_step,
-        source=_SOURCE,
-    )
+    # 步骤 1：取帧；帧观测盖全局累计键数、观察账盖圈号。
+    obs, frame_png, ram = perceive_task(deps, step=frame_step)
 
     # 步骤 2：记观察账（账面步号 = 圈号；run 级账的 episode_id / task_id 位都放 run_id）。
     deps.trace.append(

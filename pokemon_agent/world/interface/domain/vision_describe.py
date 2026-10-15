@@ -37,7 +37,7 @@ class VisionDescribeReq(BaseModel):
     images：待识别的图片，**完整的 PNG data URI 字符串**（不是原始字节）——
         `data:image/png;base64,…`，0915 起这是**唯一**格式（自描述、grep 可寻，
         裸 base64 已废）。**按要出现在 prompt 里的顺序排列**，至少一张。
-        产出点唯一：`PyBoyWorld._png_data_uri`。
+        产出点唯一：`world.frame_encoding.png_data_uri`。
     prompt：要问这些图的问题。
     """
 

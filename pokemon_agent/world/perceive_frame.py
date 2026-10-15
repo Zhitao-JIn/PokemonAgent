@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from pokemon_agent.world import VisionProvider
 
-from .battle_status import read_battle_status
+from .frame_encoding import png_data_uri
 from .interface import Facts, Memory, Observation, Perceived, ScreenState, ScreenText, TerrainMap
 from .interface.domain import terrain_legend
 from .prompts import PromptTemplate
 from .ram import map_settled, read_terrain
 from .readout import read_readout
 from .screen_text import layout_field, overlay_of, read_screen_text
-from .visual_perception import _png_data_uri, parse_screen, perceive_visual
+from .task_perception import _battle_fields
+from .visual_perception import parse_screen, perceive_visual
 
 
 def _checked_overlay(vision: Facts.Overlay, text: ScreenText) -> Facts.Overlay:
@@ -42,12 +43,6 @@ def _status_line(s: ScreenState, cursor: str = "") -> str:
     return "".join(bits)
 
 
-def _battle_fields(mem: Memory) -> dict[str, str]:
-    """战斗双方状态框压成 `Facts` 动态字段（`my_*` / `foe_*`）；不在战斗时为空。"""
-    battle = read_battle_status(mem)
-    return battle.facts_fields() if battle is not None else {}
-
-
 def perceive_frame(
     png: bytes,
     memory: Memory,
@@ -76,7 +71,7 @@ def perceive_frame(
 
     obs = _observation(screen, ram_text, memory, terrain, overlay, closed)
     ram = read_readout(memory, ram_text, text_source="vlm")
-    return Perceived(observation=obs, calls=[call], frame_png=_png_data_uri(png), ram=ram)
+    return Perceived(observation=obs, calls=[call], frame_png=png_data_uri(png), ram=ram)
 
 
 def _observation(
@@ -115,7 +110,6 @@ def _observation(
         status=_status_line(screen, facts.cursor or ""),
         facts=facts,
         done=closed,
-        perceived=True,
     )
 
 

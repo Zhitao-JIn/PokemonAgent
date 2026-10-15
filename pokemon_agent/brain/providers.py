@@ -338,7 +338,7 @@ def _png_bytes(image: str) -> bytes:
     """帧字符串 → PNG 原始字节。
 
     前置条件：`image` 是完整 data URI（`data:image/png;base64,…`）——
-    0915 起这是**唯一**的帧格式（`world/pyboy_world._png_data_uri` 产出），
+    0915 起这是**唯一**的帧格式（`world/frame_encoding.png_data_uri` 产出），
     裸 base64 不再被认。需要字节的只有两处：拼网格图（PIL 只吃像素）和
     排查落盘（写 .png 文件）——这两处绕不开"文本 → 字节"这一跳。
     """
@@ -580,7 +580,7 @@ def pack_images_grid(images: list[str]) -> str:
         canvas.paste(f, ((i % cols) * (w + sep), (i // cols) * (h + sep)))
     buf = io.BytesIO()
     canvas.save(buf, "PNG")
-    # 产出与前缀纪律一致（`world/pyboy_world._png_data_uri`）：网格图离开本层
+    # 产出与前缀纪律一致（`world/frame_encoding.png_data_uri`）：网格图离开本层
     # 之后与普通帧无异（进模型 / 落盘 / 进账），格式必须还是完整 data URI。
     return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"
 

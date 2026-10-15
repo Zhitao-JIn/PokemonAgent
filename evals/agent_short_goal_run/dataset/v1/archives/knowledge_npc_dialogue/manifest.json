@@ -1,5 +1,5 @@
 {
-  "checkpoint_id": "eval-knowledge_npc_dialogue@main-2e460b46",
+  "checkpoint_id": "eval-knowledge_npc_dialogue@main-37944481",
   "level": "run",
   "run_id": "eval-knowledge_npc_dialogue",
   "branch": "main",
@@ -45,11 +45,11 @@
   "run_ref": null,
   "episode_ref": null,
   "world_file": "world.state",
-  "memory_archive": "archives/knowledge_npc_dialogue/memory/snapshots/eval-knowledge_npc_dialogue@main-2e460b46.zip",
+  "memory_archive": "archives/knowledge_npc_dialogue/memory/snapshots/eval-knowledge_npc_dialogue@main-37944481.zip",
   "code": {
-    "git_commit": "12a6ccfe51545e8e0641207374832ecf03c678c5",
+    "git_commit": "188f9db16390e581de0db9e4c8959ca6d3944798",
     "git_dirty": true,
-    "state_schema_hash": "40e2cd635256744f"
+    "state_schema_hash": "b143f3ee76954378"
   },
   "models": {
     "vision": "deepseek-flash",
@@ -58,5 +58,5 @@
     "verify": "deepseek-flash",
     "plan": "deepseek-flash"
   },
-  "created_at": "2026-10-14T21:23:50+0200"
+  "created_at": "2026-10-15T16:10:01+0200"
 }

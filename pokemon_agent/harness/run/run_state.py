@@ -29,7 +29,7 @@ from pokemon_agent.schemas.harness.domain import (
     Termination,
 )
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
-from pokemon_agent.world import Observation
+from pokemon_agent.world import TaskObservation
 
 
 class PlanContext(BaseModel):
@@ -67,7 +67,7 @@ class RunState(Settled, BaseModel):
         default=None, ge=0, description="检查点处剩余运行秒数；None 不限"
     )
 
-    observation: Observation | None = Field(
+    observation: TaskObservation | None = Field(
         default=None,
         description="本圈 sense 取的一帧（run 层唯一向世界取帧的地方，perceive 的 sense 写）；"
         "None = 还没取过。review_and_judge 的机械判停读 `observation.done`",

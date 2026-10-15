@@ -19,16 +19,16 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.world import Observation
+from pokemon_agent.world import TaskObservation
 
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState
 
 
-def build_knowledge_query(obs: Observation, goal: str) -> str:
+def build_knowledge_query(obs: TaskObservation, goal: str) -> str:
     """拼知识库检索 query：observation 特征 + goal，不只按 goal 检索。"""
     bits = [
-        f"scene:{obs.facts.scene_value}",
+        f"scene:{obs.scene.value}",
         f"overlay:{obs.facts.overlay_value}",
         obs.status,
     ]
@@ -88,7 +88,7 @@ def retrieve_knowledge_semantic_memory(
         "ep_ctx": state.ep_ctx.model_copy(
             update={
                 "knowledge_semantic_memory": contents,
-                "knowledge_scene": obs.facts.scene_value,
+                "knowledge_scene": obs.scene.value,
                 "knowledge_at_tasks": len(state.task_outputs),
             }
         )
@@ -100,6 +100,6 @@ def _needs_refresh(state: EpisodeRunState) -> bool:
     ctx = state.ep_ctx
     if ctx.knowledge_semantic_memory is None:
         return True
-    if ctx.observation.facts.scene_value != ctx.knowledge_scene:
+    if ctx.observation.scene.value != ctx.knowledge_scene:
         return True
     return any(not out.success for out in state.task_outputs[ctx.knowledge_at_tasks :])

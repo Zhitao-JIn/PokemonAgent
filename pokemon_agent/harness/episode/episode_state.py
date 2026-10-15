@@ -12,7 +12,7 @@
 
 **一圈的数据流**：`act` 弹队首、拼 `TaskInput`、经 `task_entry.run_task` 跑子图，
 只把 `TaskOutput` 写进 `pending_task`、`step+1` → 回 `perceive`：先吸收
-`pending_task`（键数、失败连击、`task_outputs`），再 `sense` 取一帧（完整档）、做四路检索。
+`pending_task`（键数、失败连击、`task_outputs`），再 `sense` 取一帧（内存观测）、做四路检索。
 判定、拆解、收尾都只用 perceive 装好的 `ep_ctx`，不再自己查库。
 队列空了 `plan_episode` 才问 decomposer 拆下一串 task。
 
@@ -39,14 +39,14 @@ from pokemon_agent.schemas.harness.domain import (
     Termination,
 )
 from pokemon_agent.schemas.memory import EpisodeMemory, TaskMemory
-from pokemon_agent.world import Observation
+from pokemon_agent.world import TaskObservation
 
 
 class EpisodeContext(BaseModel):
     """perceive 格的产物束：这一圈判定与规划的全部输入。"""
 
-    observation: Observation | None = Field(
-        default=None, description="本圈 sense 取的当前帧（完整档）；进图前为 None"
+    observation: TaskObservation | None = Field(
+        default=None, description="本圈 sense 取的当前帧（内存观测）；进图前为 None"
     )
     task_memories: list[TaskMemory] = Field(
         default_factory=list, description="本局全部 TaskMemory（按 total_acts 升序）"
@@ -58,7 +58,7 @@ class EpisodeContext(BaseModel):
         default=None, description="知识库检索结果；None = 本局还没查过。之后沿用，到下次重查为止"
     )
     knowledge_scene: str = Field(
-        default="", description="上次检索知识时的场景（`facts.scene_value`）；变了就重查"
+        default="", description="上次检索知识时的场景（`TaskObservation.scene.value`）；变了就重查"
     )
     knowledge_at_tasks: int = Field(
         default=0, ge=0, description="上次检索知识时已结算的 task 数；此后有 task 失败就重查"
