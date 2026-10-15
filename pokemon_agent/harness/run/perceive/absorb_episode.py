@@ -24,6 +24,7 @@ def absorb_episode(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, A
         "fail_streak": 0 if out.success else state.fail_streak + 1,
         "pending_episode": None,
         "total_acts": state.total_acts + out.acts_used,
+        "actions_used": state.actions_used + out.acts_used,
     }
 
 

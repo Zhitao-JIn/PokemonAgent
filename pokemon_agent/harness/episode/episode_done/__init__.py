@@ -13,6 +13,7 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
+from ...budget_nodes import BUDGET_TERMINATIONS
 from ...compose import compose_units
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState
@@ -26,6 +27,15 @@ def episode_done(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
     """按序跑收尾单元，返回全部增量的合并。"""
     updates: dict[str, Any] = {}
     current = state
+    if state.termination in BUDGET_TERMINATIONS:
+        reason = (
+            f"{state.goal.goal}；{state.termination.value}；"
+            f"任务 {state.step}；动作 {state.total_acts}"
+        )
+        current = state.model_copy(update={"reason": reason})
+        inc = leave_chapter(current, runtime)
+        current = current.model_copy(update=inc)
+        return {"reason": reason, **inc, **close_episode(current, runtime)}
 
     # 步骤 1：有记忆才标、才蒸；没有就补空章。
     if current.ep_ctx.task_memories:

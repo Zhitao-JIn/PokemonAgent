@@ -62,6 +62,11 @@ class RunState(Settled, BaseModel):
         " `step` 盖它（局外帧没有「局内键数」语义，0928 定稿）",
     )
 
+    actions_used: int = Field(default=0, ge=0, description="跨局累计动作预算计数，成功不重置")
+    remaining_s: float | None = Field(
+        default=None, ge=0, description="检查点处剩余运行秒数；None 不限"
+    )
+
     observation: Observation | None = Field(
         default=None,
         description="本圈 sense 取的一帧（run 层唯一向世界取帧的地方，perceive 的 sense 写）；"

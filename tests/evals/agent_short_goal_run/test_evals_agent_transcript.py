@@ -175,6 +175,7 @@ def test_solver_writes_store_and_scorer_uses_its_run_location(
     )
     solve = run_one_solver(
         report_dir=str(tmp_path),
+        run_config_path=str(tmp_path / "run_config.json"),
         models={},
         knowledge=False,
         speed=0,

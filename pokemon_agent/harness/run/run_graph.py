@@ -19,9 +19,11 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from ..budget_nodes import guarded
 from .act import act
 from .begin import begin
 from .perceive import perceive
+from .perceive.absorb_episode import absorb_episode
 from .plan_run import plan_run
 from .review_and_judge import review_and_judge
 from .run_done import run_done
@@ -39,12 +41,12 @@ def compile_run_graph(checkpointer: BaseCheckpointSaver | None = None) -> Compil
     """
     # ========== 1. 注册 6 个格 ==========
     graph = StateGraph(RunState, context_schema=RunRuntime)
-    graph.add_node("begin", begin)
-    graph.add_node("perceive", perceive)
-    graph.add_node("review_and_judge", review_and_judge)
-    graph.add_node("plan_run", plan_run)
-    graph.add_node("act", act)
-    graph.add_node("run_done", run_done)
+    graph.add_node("begin", guarded(begin, "run", "begin"))
+    graph.add_node("perceive", guarded(perceive, "run", "perceive", absorb_episode))
+    graph.add_node("review_and_judge", guarded(review_and_judge, "run", "review_and_judge"))
+    graph.add_node("plan_run", guarded(plan_run, "run", "plan_run"))
+    graph.add_node("act", guarded(act, "run", "act"))
+    graph.add_node("run_done", guarded(run_done, "run", "run_done"))
 
     # ========== 2. 接边——判停出口按 done 分叉，act 出口无条件回 perceive ==========
     graph.add_edge(START, "begin")
@@ -55,7 +57,11 @@ def compile_run_graph(checkpointer: BaseCheckpointSaver | None = None) -> Compil
         lambda state: "run_done" if state.done else "plan_run",
         {"plan_run": "plan_run", "run_done": "run_done"},
     )
-    graph.add_edge("plan_run", "act")
+    graph.add_conditional_edges(
+        "plan_run",
+        lambda state: "run_done" if state.done else "act",
+        {"act": "act", "run_done": "run_done"},
+    )
     graph.add_edge("act", "perceive")
     graph.add_edge("run_done", END)
     return graph.compile(checkpointer=checkpointer)

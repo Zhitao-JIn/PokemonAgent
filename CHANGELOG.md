@@ -1,44 +1,65 @@
-## 2026-10-14（461）—— brain/factory 单元测试
+## 2026-10-14（464）—— brain/factory 单元测试
 
 **改了什么**：新增 `tests/brain/factory/` 下两个测试文件（test_build_llm_providers / test_build_vision_provider），钉住两个厂商接线工厂的温度/输出上限/超时分层与厂商按前缀选型。
 **为什么这么改**：这些分层写在代码常量里，改错了不报错、只会悄悄改变模型行为；按前缀选厂商的位置混搭和"四个位置各一个实例"此前没有测试守。
 **取舍**：只经 `config()` 与手写假 `urlopen` 观察，不碰私有属性；json_mode/thinking 的传递已有测试不重复；build_vision_provider 的缺省 json_mode 随项目配置、超时常量本身不进 __all__，均不测。
 **影响面**：只增测试，不动 `pokemon_agent/`；新增用例 27 条（参数化展开后），`tests/brain/factory` 全绿；全量 pytest 990→1017 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
 
-## 2026-10-14（460）—— brain/domain 单元测试
+## 2026-10-14（463）—— brain/domain 单元测试
 
 **改了什么**：新增 `tests/brain/domain/` 下四个测试文件（test_action / test_script_call / test_planning_models / test_results），钉住对外数据模型的约束与默认值。
 **为什么这么改**：这些模型是 harness 与 schemas 内嵌的"数据形状"，字段约束变动会静默改变"模型输出解析得过不过"，此前没有任何测试守项目自己声明的约束与默认值。
 **取舍**：只测项目声明的约束与默认值，不测 pydantic 框架本身；Task.max_steps 的 >0（O9）、ModelCall 不可变、布尔转 int（O10）、python -O 下 assert 失效（O11）是待裁决项，不钉；Reflection 已在 reflect 目录覆盖。
 **影响面**：只增测试，不动 `pokemon_agent/`；新增用例 53 条（参数化展开后），`tests/brain/domain` 全绿；全量 pytest 937→990 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
 
-## 2026-10-14（459）—— brain/errors 单元测试
+## 2026-10-14（462）—— brain/errors 单元测试
 
 **改了什么**：新增 `tests/brain/errors/test_brain_errors.py`，钉住 15 个异常类的继承树、`AttemptFailed` 六子类的默认 `source`、各异常字段、与 `AgentError` 的分工、`__all__` 导出一致性。
 **为什么这么改**：外部代码靠 `except BrainError` / `except AttemptFailed` 接异常，replay 靠类名统计失败类型；继承关系错一处，`except` 与统计就静默失配，此前没有任何测试守它。
 **取舍**：provider 产出 `EmptyCompletion` 的测试留在 `providers/`，不搬；包根不导出异常（O8）是现状不钉；消息只断关键片段、不钉完整字面量。
 **影响面**：只增测试，不动 `pokemon_agent/`；新增用例 59 条（参数化展开后），`tests/brain/errors` 全绿；全量 pytest 878→937 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
 
-## 2026-10-14（458）—— brain/reflect 单元测试
+## 2026-10-14（461）—— brain/reflect 单元测试
 
 **改了什么**：新增 `tests/brain/reflect/test_reflect.py`，钉住 `reflect` 的三段原样透传与两个空串入口断言。
 **为什么这么改**：`reflect` 是本版唯一不调模型的公开方法，此前它的契约（原样装进 `Reflection`、空串被拦、`prompt` 不读、关键字专用、无副作用）没有任何直接测试。
 **取舍**：不用任何 LLM 替身——`Brain()` 不给 provider 就能调；「返回对象可变」是现状不是契约，不钉；pydantic 校验细节不测。
 **影响面**：只增测试，不动 `pokemon_agent/`；新增用例 12 条（参数化展开后），`tests/brain/reflect` 全绿；全量 pytest 866→878 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
 
-## 2026-10-14（457）—— brain/wiring 单元测试
+## 2026-10-14（460）—— brain/wiring 单元测试
 
 **改了什么**：新增 `tests/brain/wiring/test_provider_wiring.py`，钉住四个 provider 槽位对六个方法的可用性矩阵，以及四个都给时各走各的。
 **为什么这么改**：「谁回退、谁不回退」是 `Brain.__init__` 的装配规则本身，此前各方法目录只各自验证了「缺了会报错」，没有任何用例防止回退关系被改乱。
 **取舍**：缺 provider 的 assert 文案与回退的单项验证已在 judge_verify / plan 目录，不重复；本文件只测矩阵与不串线。
 **影响面**：只增测试，不动 `pokemon_agent/`；新增用例 25 条（参数化展开后），`tests/brain/wiring` 全绿；全量 pytest 841→866 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
 
-## 2026-10-14（456）—— brain/json_utils 单元测试
+## 2026-10-14（459）—— brain/json_utils 单元测试
 
 **改了什么**：新增 `tests/brain/json_utils/test_load_json.py`，直接钉 `_load_json` 的容忍边界。
 **为什么这么改**：六条解析共用这块地基，此前它的边界只被各条链的用例间接碰到；改一处会静默影响全部。
 **取舍**：这是 brain 测试里唯一直接测私有函数的地方（破例已确认）；围栏标签细节与括号前缀的限制只记入观察，不钉成预期。
 **影响面**：只增测试，不动 `pokemon_agent/` 下任何文件；新增用例 31 条（参数化展开后），`tests/brain/json_utils` 全绿；全量 pytest 810→841 passed，失败集合不变（仍 test_evals_script_timeout.py 的 2 条沙箱删除守卫失败）。
+
+## 2026-10-14（458）—— 短目标评测使用独立预算档
+
+**改了什么**：`evals/config.json` 只覆盖总时长、最多局数、累计动作三项；评测 task 写出 `run_config.json`，将路径和 SHA256 记入 `baseline_context.json`，再经 solver 请求与 worker 交给 `build_real(config=…)`。增加文件字节、请求传递和装配值测试。
+**为什么这么改**：评测之前只靠 600 秒外层强杀，三局上限还曾影响生产；配置文件把收紧的总量固定为可复验的输入，并让评测与生产共用同一条装配路径。
+**取舍**：worker 的 600 秒硬超时保留为最后保护；预算文件只含总量三项，其余分层值由生产默认档提供，不把模型名和 trace 后端迁入运行配置。
+**影响面**：短目标 Inspect task 的配置、报告证据与单样本 worker 接线；数据集、真值、评分规则和生产默认预算不变。
+
+## 2026-10-14（457）—— 累计预算与确定的收尾路径
+
+**改了什么**：run 跨局累计动作，task 超长步数截断并记 `budget_clamped`，episode 限任务数和拆解轮次；三层在预算耗尽时机械结算并写出 `run_end`。增加可恢复的预算状态字段及测试，按新 `state_schema_hash` 重打 20 份评测存档，保留原世界状态。
+**为什么这么改**：旧的局数限制挡不住单局长时间循环，硬超时会让评测缺少结算账；预算必须跨层传递并在耗尽时走确定的收尾路径。
+**取舍**：动作按一次按键或脚本调用计数，不逐个统计脚本内部按键；软停止后跳过模型摘要，改用机械来源章。模型漏给 `max_steps` 仍按解析失败重试，不补默认值。状态结构变化导致旧存档不兼容，故同次重打存档；`world.state` 字节保持不变。
+**影响面**：run、episode、task 图的预算状态和收尾、trace 词表与渲染、20 份评测存档清单及记忆快照；不改数据集真值、评分规则或 brain 契约，`state_schema_hash` 为 `40e2cd635256744f`。
+
+## 2026-10-14（456）—— 模型请求与重试受剩余时间约束
+
+**改了什么**：新增可注入假时钟的 `Deadline` 与类型化 `BudgetExhausted`；装配点把同一截止点传给 run 上下文和各层 brain 门面。tool 层 provider 适配器逐请求覆盖 socket 和总等待闸，重试与退避也先扣除收尾预留；有限预算在新 run 或恢复进图时开始计时。
+**为什么这么改**：样本只剩少量时间时，原规划仍能启动远超剩余时间的请求，重试继续消耗时间，最后只能被 worker 强杀；请求必须共享一个可解释的剩余预算。
+**取舍**：不改变无状态 brain 的接口，不添加请求生命周期事件；耗尽异常保留已完成的调用账，未发送请求不虚构账。生产不限总时长时没有 run deadline，但仍遵守各链路单请求上限；机械收尾在下一步实现。已有 HTTP 工作线程在超时后可能继续等待网络，预算限制调用方等待，不声称取消服务端计算。
+**影响面**：brain 门面与 provider 传输等待，配置读取路径及存档状态结构不变，state_schema_hash 保持 `570c830a9cf52445`；验证只用假时钟、脚本化 provider 和假传输，不调用真实模型。
 
 ## 2026-10-14（455）—— 引入分层运行预算档与统一配置入口
 

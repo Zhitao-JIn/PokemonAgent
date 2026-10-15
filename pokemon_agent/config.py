@@ -147,7 +147,6 @@ DEFAULT_RUN_BUDGET = RunBudget(
     reserve_s=60,
     episode_max_tasks=6,
     max_decompositions=2,
-    task_default_steps=8,
     task_max_steps=12,
     min_request_s=3,
     brain_max_attempts=BRAIN_MAX_ATTEMPTS,

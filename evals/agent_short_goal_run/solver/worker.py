@@ -35,6 +35,7 @@ def _execute(request: RunOneRequest) -> None:
         sample,
         Path(request.work_dir),
         request.models,
+        run_config_path=request.run_config_path,
         knowledge=request.knowledge,
         speed=request.speed,
         epoch=request.epoch,

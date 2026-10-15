@@ -24,6 +24,7 @@ REQUIRED_KEYS: tuple[str, ...] = (
     "knowledge",
     "speed",
     "timeout",
+    "budget",
     "epochs",
     "log_dir",
     "trace_backend",

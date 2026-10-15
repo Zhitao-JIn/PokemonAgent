@@ -34,6 +34,14 @@ def act(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
     # 步骤 1：选目标、盖 RUNNING、拼 EpisodeInput（纯函数，还没动任何东西）。
     dispatched = dispatch(state)
     episode_input: EpisodeInput = dispatched["episode_input"]
+    limit = runtime.context.budget.max_total_actions
+    episode_input = episode_input.model_copy(
+        update={
+            "actions_budget": None if limit is None else max(0, limit - state.actions_used),
+            "remaining_s": state.remaining_s,
+        }
+    )
+    dispatched["episode_input"] = episode_input
 
     # 步骤 2：有恢复计划就不存档（世界与记忆已是目标 task 开局的样子，按 episode 级存会名不副实）；
     # 否则存 episode 级档——存的是进 `act` 前的状态，将派的就是这一局。

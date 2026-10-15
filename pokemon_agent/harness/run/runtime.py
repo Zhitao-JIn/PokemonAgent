@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING
 from langgraph.graph.state import CompiledStateGraph
 
 from pokemon_agent.config import DEFAULT_RUN_BUDGET
+from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.interface import (
     GameToolPort,
     JudgePort,
@@ -92,6 +93,9 @@ class RunRuntime:
     """episode 侧的 runtime（`build.py` 先造它、再造本对象）。**必传、恒非空**。"""
 
     # ---- 存档：run 级在 `run_entry.new_run`，episode 级在 `act` 开头，本局结束在 `act` 里封存 ----
+
+    deadline: Deadline | None = None
+    """有限总时长档的共享单调截止点；生产无总时长限制时为 None。"""
 
     budget: RunBudget = DEFAULT_RUN_BUDGET
     """装配点注入的不可变预算档。"""

@@ -14,6 +14,7 @@ from pokemon_agent.config import NODES_PER_DECISION, NODES_PER_PRESS, RECURSION_
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
 from pokemon_agent.schemas.harness.domain import TaskInput, TaskOutput
 
+from ..budget_record import budget_meta, record_budget
 from .task_runtime import TaskRuntime
 from .task_state import TaskState
 
@@ -57,10 +58,24 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
     state = TaskState(
         run_id=task_input.run_id,
         episode_id=task_input.episode_id,
-        task=task_input.task,
+        task=task_input.task.model_copy(
+            update={
+                "max_steps": min(task_input.task.max_steps, deps.budget.task_max_steps),
+            }
+        ),
         total_acts=task_input.total_acts,
         knowledge=task_input.knowledge,
+        actions_budget=task_input.actions_budget,
+        remaining_s=task_input.remaining_s,
     )
+    if state.task.max_steps != task_input.task.max_steps:
+        record_budget(
+            deps.trace,
+            budget_meta(state, "task", "begin_task"),
+            TraceKind.BUDGET_CLAMPED,
+            original=task_input.task.max_steps,
+            clamped=state.task.max_steps,
+        )
     return state
 
 

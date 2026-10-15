@@ -9,6 +9,7 @@ decomposer 只给内容，身份归 harness。
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from langgraph.runtime import Runtime
@@ -16,7 +17,7 @@ from langgraph.runtime import Runtime
 from pokemon_agent.brain import Task
 from pokemon_agent.brain.interface import Decomposition
 from pokemon_agent.config import EPISODE_MAX_TASKS_PER_PLAN
-from pokemon_agent.errors import MaxRetriesExceeded
+from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolDecomposeResp,
@@ -26,12 +27,23 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.schemas.harness.domain import EntryStatus, TaskEntry, Termination
 
+from ...budget_nodes import stopped_updates
 from ...reviewing import ask_inject
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState, current_goal, current_knowledge
 
 EXHAUSTED_REASON = "拆解耗尽重试，没有 task 可派"
 """拆解耗尽时写进 `judge_reason` 的机械说明（本局以 `Termination.ERROR` 收尾）。"""
+
+
+@dataclass(frozen=True)
+class Elicited:
+    """一次逻辑拆解的结果与已用轮数；内部模型重试不增加轮数。"""
+
+    response: FromHarnessToBrainToolDecomposeResp | None
+    note: str
+    used: int
+    termination: Termination | None = None
 
 
 def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str, Any]:
@@ -51,10 +63,20 @@ def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
     }
 
     # 步骤 1：要一版（含插话循环）；拆解耗尽重试时本局按 ERROR 收尾，不再上抛。
-    try:
-        resp, note = _elicit(deps, state, meta)
-    except MaxRetriesExceeded:
-        return {"termination": Termination.ERROR, "judge_reason": EXHAUSTED_REASON}
+    result = _elicit(deps, state, meta)
+    if result.termination is not None:
+        if result.termination is Termination.ERROR:
+            return {
+                "termination": Termination.ERROR,
+                "judge_reason": EXHAUSTED_REASON,
+                "decompositions_used": result.used,
+            }
+        return {
+            **stopped_updates(state, deps, "episode", "plan_episode", result.termination),
+            "decompositions_used": result.used,
+        }
+    resp, note = result.response, result.note
+    assert resp is not None
 
     # 步骤 2：编 task_id 与版次，记结论，追加进表。
     tasks = _to_tasks(resp.decomposition, state.goal.task_id, len(state.tasks))
@@ -68,33 +90,26 @@ def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
             human_note=note,
         )
     )
-    return {"tasks": [*state.tasks, *(TaskEntry(task=t, round=version) for t in tasks)]}
+    return {
+        "tasks": [*state.tasks, *(TaskEntry(task=t, round=version) for t in tasks)],
+        "decompositions_used": result.used,
+    }
 
 
-def _elicit(
-    deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object]
-) -> tuple[FromHarnessToBrainToolDecomposeResp, str]:
-    """问 decomposer 要一版；人有意见就带着那句话重问，直到人没意见。返回 `(定稿, 定稿时的插话)`。
-
-    失败：`_ask` 耗尽时的 `MaxRetriesExceeded` 原样上抛（账已由 `_ask` 记好）。
-    """
+def _elicit(deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object]) -> Elicited:
+    """人要求重拆也计轮数；返回定稿或机械终止，以及已用逻辑轮数。"""
     note = ""
+    used = state.decompositions_used
     while True:
-        resp = _ask(
-            deps,
-            meta,
-            FromHarnessToBrainToolDecomposeReq(
-                goal=current_goal(state),
-                observation=state.ep_ctx.observation,
-                task_memories=state.ep_ctx.task_memories,
-                task_table=state.tasks,
-                episode_memories=state.ep_ctx.global_episode_memories,
-                knowledge=current_knowledge(state),
-                max_tasks=EPISODE_MAX_TASKS_PER_PLAN,
-                last_judge=state.last_judge,
-                human_note=note,
-            ),
-        )
+        if used >= deps.budget.max_decompositions:
+            return Elicited(None, note, used, Termination.DECOMPOSITIONS_EXHAUSTED)
+        used += 1
+        try:
+            resp = _ask(deps, meta, _request(deps, state, note))
+        except MaxRetriesExceeded:
+            return Elicited(None, note, used, Termination.ERROR)
+        except BudgetExhausted:
+            return Elicited(None, note, used, Termination.TIME_EXHAUSTED)
         reply = ask_inject(
             deps.reviewer,
             deps.trace,
@@ -106,8 +121,25 @@ def _elicit(
             meta=meta,
         )
         if not reply:
-            return resp, note
+            return Elicited(resp, note, used)
         note = reply
+
+
+def _request(
+    deps: EpisodeRuntime, state: EpisodeRunState, note: str
+) -> FromHarnessToBrainToolDecomposeReq:
+    """只装本轮素材，模型重试仍由门面负责。"""
+    return FromHarnessToBrainToolDecomposeReq(
+        goal=current_goal(state),
+        observation=state.ep_ctx.observation,
+        task_memories=state.ep_ctx.task_memories,
+        task_table=state.tasks,
+        episode_memories=state.ep_ctx.global_episode_memories,
+        knowledge=current_knowledge(state),
+        max_tasks=min(EPISODE_MAX_TASKS_PER_PLAN, deps.budget.episode_max_tasks - state.step),
+        last_judge=state.last_judge,
+        human_note=note,
+    )
 
 
 def _ask(
@@ -116,6 +148,16 @@ def _ask(
     """问一次 decomposer 并记 `decompose_call`；耗尽时记整条账 + `call_exhausted` 后上抛。"""
     try:
         resp = deps.decomposer.decompose(req)
+    except BudgetExhausted as exc:
+        if exc.calls:
+            deps.trace.append(
+                FromHarnessToTraceToolAppendReq(
+                    kind=TraceKind.DECOMPOSE_CALL,
+                    meta=meta,
+                    calls=list(exc.calls),
+                )
+            )
+        raise
     except MaxRetriesExceeded as exc:
         deps.trace.append(
             FromHarnessToTraceToolAppendReq(

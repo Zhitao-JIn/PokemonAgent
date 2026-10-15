@@ -15,11 +15,13 @@ from __future__ import annotations
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from ..budget_nodes import guarded
 from .act import act
 from .episode_done import episode_done
 from .episode_runtime import EpisodeRuntime
 from .episode_state import EpisodeRunState
 from .perceive import perceive
+from .perceive.absorb_task import absorb_task
 from .plan_episode import plan_episode
 from .review_and_judge import review_and_judge
 
@@ -37,11 +39,11 @@ def compile_episode_graph() -> CompiledStateGraph:
     """
     # ========== 1. 注册 5 个格 ==========
     graph = StateGraph(EpisodeRunState, context_schema=EpisodeRuntime)
-    graph.add_node("perceive", perceive)
-    graph.add_node("review_and_judge", review_and_judge)
-    graph.add_node("plan_episode", plan_episode)
-    graph.add_node("act", act)
-    graph.add_node("episode_done", episode_done)
+    graph.add_node("perceive", guarded(perceive, "episode", "perceive", absorb_task))
+    graph.add_node("review_and_judge", guarded(review_and_judge, "episode", "review_and_judge"))
+    graph.add_node("plan_episode", guarded(plan_episode, "episode", "plan_episode"))
+    graph.add_node("act", guarded(act, "episode", "act"))
+    graph.add_node("episode_done", guarded(episode_done, "episode", "episode_done"))
 
     # ========== 2. 接边——判停出口与拆解出口按 done 分叉，act 出口无条件回 perceive ==========
     graph.set_entry_point("perceive")

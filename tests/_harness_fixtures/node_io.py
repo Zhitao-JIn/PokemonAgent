@@ -58,6 +58,8 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 
+from pokemon_agent.schemas.harness.domain import Termination
+
 Event = dict[str, object]
 """一条落盘事件（`load_events()` 的产物）——`{uuid, kind, type, ts, meta, content}`。"""
 
@@ -79,9 +81,20 @@ BOOLEAN_FIELDS: frozenset[str] = frozenset({"done", "ok", "perceived", "overturn
 生产者侧由 `tests/test_trace_boolean_literals.py` 的 AST 守卫离线拦；这里是落盘后的复核。"""
 
 TERMINATIONS: frozenset[str] = frozenset(
-    {"goal_done", "world_ended", "stalled", "budget_exhausted", "interrupted", "error"}
+    {
+        Termination.GOAL_DONE.value,
+        Termination.WORLD_ENDED.value,
+        Termination.STALLED.value,
+        Termination.BUDGET_EXHAUSTED.value,
+        Termination.TIME_EXHAUSTED.value,
+        Termination.ACTIONS_EXHAUSTED.value,
+        Termination.TASKS_EXHAUSTED.value,
+        Termination.DECOMPOSITIONS_EXHAUSTED.value,
+        Termination.INTERRUPTED.value,
+        Termination.ERROR.value,
+    }
 )
-"""`Termination` 的六个值——`task_end` / `episode_end` / `run_end` 的 `termination` 只许取这些
+"""`Termination` 的值——`task_end` / `episode_end` / `run_end` 的 `termination` 只许取这些
 （`judge_verdict` 未判停时为空串）。与 `schemas/harness/domain/termination.py` 由
 `check_model_call_links_match_render` 旁的 `check_terminations_match_enum` 对照。"""
 

@@ -187,7 +187,13 @@ class _OpenAICompatibleBase:
         **各家格式不同，子类必须覆盖**。返回一个要 merge 进请求体顶层的字典片段。"""
         raise NotImplementedError(f"{type(self).__name__} 必须覆盖 _enable_thinking_payload()")
 
-    def _post(self, content: list[dict] | str, thinking: bool | None = None) -> dict:
+    def _post(
+        self,
+        content: list[dict] | str,
+        thinking: bool | None = None,
+        *,
+        timeout_s: float | None = None,
+    ) -> dict:
         """POST **一次**，失败按类别立即上抛。**不重试**——重试的循环与预算
         全在调用方（`BrainTool._attempt_loop` / `GameTools.perceive_with_retry`），
         见 `__init__` docstring 里"没有 `max_attempts`"那段。
@@ -211,6 +217,10 @@ class _OpenAICompatibleBase:
         `ToolTimeout`——最坏情况是干净地失败，不是卡死。deadline 取
         timeout+15：正常完成（健康时实测 max 8.2s）不受影响，慢滴 60s 内被弃。
         """
+        socket_timeout = self._timeout if timeout_s is None else timeout_s
+        total_timeout = self._timeout + 15 if timeout_s is None else timeout_s
+        if socket_timeout <= 0:
+            raise ValueError("timeout_s must be positive")
         body = {
             "model": self._model,
             "temperature": self._temperature,
@@ -232,13 +242,13 @@ class _OpenAICompatibleBase:
         )
 
         def _do_post() -> dict:
-            with urllib.request.urlopen(req, timeout=self._timeout) as r:
+            with urllib.request.urlopen(req, timeout=socket_timeout) as r:
                 return json.loads(r.read())
 
         try:
             # **单请求总时长硬闸**（见 docstring）。挂起的请求变成孤儿线程留在
             # `_POST_POOL` 里占一个 worker，直到它自己被网关吐回来或进程退出。
-            return _POST_POOL.submit(_do_post).result(timeout=self._timeout + 15)
+            return _POST_POOL.submit(_do_post).result(timeout=total_timeout)
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8", "ignore")
             if 400 <= e.code < 500:
@@ -376,7 +386,7 @@ class _MultimodalMixin:
         """
         return list(images)
 
-    def complete(self, req: LlmCompleteReq) -> LlmCompleteResp:
+    def complete(self, req: LlmCompleteReq, *, timeout_s: float | None = None) -> LlmCompleteResp:
         """见 `LLMProvider.complete` 的契约。本方法不为输出格式负责。
 
         **纯文本**（0915 129 定案）：本方法不收图、也不在内部判断走不走多模态
@@ -386,7 +396,9 @@ class _MultimodalMixin:
         prompt = req.prompt
         assert prompt, "complete() got an empty prompt"
 
-        text, n_in, n_out, n_cached, n_reason, cut = self._unpack(self._post(prompt, req.thinking))
+        text, n_in, n_out, n_cached, n_reason, cut = self._unpack(
+            self._post(prompt, req.thinking, timeout_s=timeout_s)
+        )
         return LlmCompleteResp(
             text=text,
             prompt_tokens=n_in,
@@ -397,7 +409,7 @@ class _MultimodalMixin:
         )
 
     def _send_multimodal(
-        self, prompt: str, images: list[str]
+        self, prompt: str, images: list[str], *, timeout_s: float | None = None
     ) -> tuple[str, int, int, int, int, bool]:
         """带图发一次：发送前处理（拼网格/落盘）→ 组多模态 content → POST → 解包。
 
@@ -434,7 +446,9 @@ class _MultimodalMixin:
             }
             for image_b64 in images
         )
-        text, n_in, n_out, n_cached, n_reason, cut = self._unpack(self._post(content))
+        text, n_in, n_out, n_cached, n_reason, cut = self._unpack(
+            self._post(content, timeout_s=timeout_s)
+        )
 
         # 这一行是整个感知链路最重要的一行：没有它，丢图会表现为"一切正常"。
         # 多图按张数等比放大阈值——`_floor` 本来就是"一张图真被处理时至少这么
@@ -447,7 +461,9 @@ class _MultimodalMixin:
 
         return text, n_in, n_out, n_cached, n_reason, cut
 
-    def describe(self, req: VisionDescribeReq) -> VisionDescribeResp:
+    def describe(
+        self, req: VisionDescribeReq, *, timeout_s: float | None = None
+    ) -> VisionDescribeResp:
         """见 `VisionProvider.describe` 的契约，尤其是关于静默丢图的那一段。
 
         图片是一组（`judge`/`verify`/`summarize` 会带 `ActMemory` 历史里的
@@ -471,7 +487,7 @@ class _MultimodalMixin:
         assert req.prompt, "describe() got an empty prompt"
 
         text, n_in, n_out, n_cached, n_reason, _cut = self._send_multimodal(
-            req.prompt, list(req.images)
+            req.prompt, list(req.images), timeout_s=timeout_s
         )
 
         return VisionDescribeResp(

@@ -1,5 +1,5 @@
 {
-  "checkpoint_id": "eval-knowledge_pokemon_center_heal@main-7988f2b9",
+  "checkpoint_id": "eval-knowledge_pokemon_center_heal@main-a42e5001",
   "level": "run",
   "run_id": "eval-knowledge_pokemon_center_heal",
   "branch": "main",
@@ -31,6 +31,8 @@
     "step": 0,
     "fail_streak": 0,
     "total_acts": 0,
+    "actions_used": 0,
+    "remaining_s": null,
     "observation": null,
     "plan_ctx": null,
     "episode_input": null,
@@ -43,11 +45,11 @@
   "run_ref": null,
   "episode_ref": null,
   "world_file": "world.state",
-  "memory_archive": "archives/knowledge_pokemon_center_heal/memory/snapshots/eval-knowledge_pokemon_center_heal@main-7988f2b9.zip",
+  "memory_archive": "archives/knowledge_pokemon_center_heal/memory/snapshots/eval-knowledge_pokemon_center_heal@main-a42e5001.zip",
   "code": {
-    "git_commit": "32bb1ccf2f9c91b974ec427c7d8a33223f32109d",
+    "git_commit": "12a6ccfe51545e8e0641207374832ecf03c678c5",
     "git_dirty": true,
-    "state_schema_hash": "570c830a9cf52445"
+    "state_schema_hash": "40e2cd635256744f"
   },
   "models": {
     "vision": "deepseek-flash",
@@ -56,5 +58,5 @@
     "verify": "deepseek-flash",
     "plan": "deepseek-flash"
   },
-  "created_at": "2026-10-13T16:44:09+0200"
+  "created_at": "2026-10-14T21:23:54+0200"
 }

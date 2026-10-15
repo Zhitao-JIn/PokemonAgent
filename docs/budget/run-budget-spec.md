@@ -1,6 +1,6 @@
 # 分层运行预算（意图 + spec + 步骤）
 
-状态：v1.1，2026-10-14。用户已确认第七节第 1、1a 项（共用层数值、生产行为变严、评测与生产仅总量不同）；B1–B5 均可执行。第七节第 2、3 项仍待定，本项不实现。
+状态：v1.3，2026-10-14（v1.2：D13 接受哈希变化并重打存档，B3b 并入 B3；v1.3：D7 取消“模型漏给 max_steps 时补默认值”，删除 `task_default_steps`，原因见 D7）。用户已确认第七节第 1、1a 项（共用层数值、生产行为变严、评测与生产仅总量不同）；B1–B5 均可执行。第七节第 2、3 项仍待定，本项不实现。
 证据：`eval_results/recent_status_20261014/REPORT.md`（现状与各层上限表）、
 `eval_results/remove_vision_baseline_d40aedb_inproc/SHOP_TIMEOUT_ANALYSIS.md`（第六例超时）。
 关联：视觉删除 `docs/perceive/remove-vision-plan.md`（本项完成并重建基线前，S1 暂停）。
@@ -34,25 +34,25 @@
 | D4 | 每次模型尝试前：`allowed = min(该链路单请求上限, remaining() - 收尾预留)`；`allowed < 最小有用时长（默认 3 秒）` 则**不发请求**，抛类型化的 `BudgetExhausted`；provider 的 socket timeout 与总等待闸（现为 timeout+15）都取 `allowed`，不能只改 socket timeout | 修的是"剩 160 秒仍启动 435 秒请求" |
 | D5 | 软停止：`remaining() <= 收尾预留`（60 秒）后，harness 不再派新 task / 新拆解，把 run 标 `time_exhausted` 并进入收尾。收尾路径**不得依赖模型**：run 摘要用机械摘要（已有字段拼接），保证 `run_end` 一定写出；若原本的收尾要调模型，则在软停止后跳过该调用并在 trace 里记明跳过原因 | "预留 60 秒"单独不保证收尾，必须同时去掉收尾的模型依赖 |
 | D6 | 累计动作计数进入 run 状态，**不因成功重置**。单位：一次按键或一次脚本调用计 1（脚本内部按键不逐个计，沿用现状）。耗尽→`actions_exhausted` | 若需要限物理按键量，另定计量项，本项不做 |
-| D7 | task 动作预算：模型给的 `max_steps` 取 `min(模型值, task_max_steps)`；越界**不静默**：clamp 并在该 task 的 trace 记 `budget_clamped`（原值、新值）；模型未给的用 `task_default_steps` | 不静默截断 |
+| D7 | task 动作预算：模型给的 `max_steps` 取 `min(模型值, task_max_steps)`；越界**不静默**：clamp 并在该 task 的 trace 记 `budget_clamped`（原值、新值）；模型漏给 `max_steps` 仍是解析失败，由门面既有重试处理（`Decomposition` 契约 `max_steps` 必填且 `gt=0`，decompose 提示词已要求并有示例，不改契约、不改解析语义，故不设默认值与 `task_default_steps`） | 不静默截断 |
 | D8 | episode：任务数硬上限（`episode_max_tasks`，6）与拆解轮次上限（`max_decompositions`，2）；耗尽→episode 以 `tasks_exhausted` / `decompositions_exhausted` 结算，**失败**，并计入 run 的连续失败；这两项独立于数据集里冻结的 `max_steps=15`，数据不改 | 15 与运行预算分开 |
 | D9 | 停滞规则本轮不动（task 5、episode/run 3），仅在文档里标明它们是辅助诊断、不承担累计预算职责 | 调低可能误伤合法菜单/对话，先回归再说 |
 | D10 | 共用层的模型配置：规划/拆解 `plan_thinking=False`、`plan_max_tokens=4096`、单请求上限 45 秒（`BrainLlmConfig` 已有字段，改装配值）；模型尝试最多 2 次（含首发）且受 D4 约束。**生产也使用这组值**（不再保留 `PLAN_THINKING=True` / 65536 / 420 秒 / 3 次的现行值） | 关思考后"空 JSON"失败模式随之消失（原先 65536 就是为它加的）；代价：生产的规划/拆解质量可能变化，由重建的基线量出来；需要长推理的任务以后另开显式、受限的推理档，不是默认 |
-| D11 | 起始数值（**待验证**）。共用层：`reserve_s=60`、`episode_max_tasks=6`、`max_decompositions=2`、`task_default_steps=8`、`task_max_steps=12`、`min_request_s=3`。评测覆盖：`wall_clock_s=600`（与样本硬终止一致）、`max_episodes=3`、`max_total_actions=60`。生产：`wall_clock_s=None`、`max_episodes=50`、`max_total_actions=None`。共用层数值写在 `config.py`，评测覆盖写在配置文件的 `budget` 段 | 改数字只改配置 |
+| D11 | 起始数值（**待验证**）。共用层：`reserve_s=60`、`episode_max_tasks=6`、`max_decompositions=2`、`task_max_steps=12`、`min_request_s=3`。评测覆盖：`wall_clock_s=600`（与样本硬终止一致）、`max_episodes=3`、`max_total_actions=60`。生产：`wall_clock_s=None`、`max_episodes=50`、`max_total_actions=None`。共用层数值写在 `config.py`，评测覆盖写在配置文件的 `budget` 段 | 改数字只改配置 |
 | D12 | 请求开始/结束/取消事件与关联 ID（定位"卡在哪一链"）涉及 trace 落点与结构，**必须先与用户商定**，本版不实现，列入第七节 | trace 落点须与开发者商谈 |
-| D13 | `state_schema_hash` 若因新增状态字段变化：**立即停下报告**，由我决定是否接受并重建存档；不自行重建 | hash 是存档兼容的哨兵 |
+| D13 | **状态字段与 `state_schema_hash`（v1.2 修订）**：累计动作、拆解轮次等预算计数必须放进 run / episode 状态（放在运行时对象里，从检查点恢复后计数会归零，等于预算被绕过）。因此 `state_schema_hash` 会变化，**这是预期且已被接受的**（2026-10-14 裁决）。约束：(1) B3 先一次性列全所需的新状态字段，在同一个提交里加入，哈希只变这一次；之后再变化仍然立即停下汇报；(2) 哈希变化后，旧的评测存档会被 restore 拒载，必须用 `python -m evals.agent_short_goal_run.dataset.build.pack` 重打 v1 的 20 个存档（无模型调用，只起模拟器、需要 ROM 与来源 `.state`），作为独立的一步 B3b 提交；(3) 新字段全部带默认值，类型化，不用裸 dict | 重打存档是一次性、机械、无模型的代价，换来预算在恢复后仍然成立 |
 | D14 | **统一的配置入口**：唯一装配点 `build_real`（`pokemon_agent/build.py`）新增入参 `config: str \| Path \| None = None`（运行配置文件路径；None=默认档）。文件是 JSON，顶层按段组织，本项只有 `budget` 段：`{"budget": {"wall_clock_s": 600, "max_episodes": 3, "max_total_actions": 60}}`；**只写要覆盖的字段**，其余取共用层默认；未知字段与类型错误在装配期就报错（`extra="forbid"`），不静默忽略。解析函数 `load_run_config(path) -> RunConfig`（类型化，放在 `pokemon_agent/config.py` 同层的配置模块，不放进 brain/world），`build_real` 只把解析出的 `RunBudget` 递给各层，仍是"装配点只递裸字段"。**本项不新增命令行入口**：仓库当前没有通用起跑脚本，`build_real` 的调用方只有评测 worker 与数据集打包脚本；等将来有了起跑入口，它只需把 `--config` 透传给 `build_real(config=…)`（2026-10-14 裁决：不新增 `python -m pokemon_agent`，那是另一项产品面决定）。评测不再自己拼预算：`evals/config.json` 的 `budget` 段在评测启动时被写成报告目录下的 `run_config.json`（逐字节落盘），`RunOneRequest` 携带这个文件的路径，worker 把它交给 `build_real(config=…)`；`baseline_context.json` 记录该文件路径与 sha256，视觉删除前后两次基线用同一文件即证明同口径 | 评测与生产走同一条读取路径；配置文件是可复现、可哈希的证据；段结构为以后收纳别的实验旋钮留口，但本项不迁移任何现有参数 |
 
 ## 三、`RunBudget` 字段
 
-`max_episodes`、`max_total_actions`、`episode_max_tasks`、`max_decompositions`、`task_default_steps`、`task_max_steps`、`wall_clock_s`（None=不限）、`reserve_s`（收尾预留）、`min_request_s`、`brain_max_attempts`、`plan_thinking`、`plan_max_tokens`、`plan_timeout_s`。
+`max_episodes`、`max_total_actions`、`episode_max_tasks`、`max_decompositions`、`task_max_steps`、`wall_clock_s`（None=不限）、`reserve_s`（收尾预留）、`min_request_s`、`brain_max_attempts`、`plan_thinking`、`plan_max_tokens`、`plan_timeout_s`。
 
 | 层 | 字段 | 评测 | 生产 |
 |---|---|---|---|
 | 总量 / run 级（可不同） | `wall_clock_s` | 600 | 不限 |
 | | `max_episodes` | 3 | 50 |
 | | `max_total_actions` | 60 | 不限 |
-| 共用层（必须相同） | `reserve_s` / `episode_max_tasks` / `max_decompositions` / `task_default_steps` / `task_max_steps` / `min_request_s` | 60 / 6 / 2 / 8 / 12 / 3 | 同左 |
+| 共用层（必须相同） | `reserve_s` / `episode_max_tasks` / `max_decompositions` / `task_max_steps` / `min_request_s` | 60 / 6 / 2 / 12 / 3 | 同左 |
 | | `plan_thinking` / `plan_max_tokens` / `plan_timeout_s` / `brain_max_attempts` | 关 / 4096 / 45 / 2 | 同左 |
 
 **B1 的验收不再是"行为逐字节不变"**（共用层让生产变严了），而是：预算档值与上表一致、评测覆盖只改总量三项、`build_real(config=…)` 是唯一读取配置文件的地方。
@@ -64,6 +64,7 @@
 | B1 | `RunBudget` 模型 + 共用层数值 + `load_run_config` + `build_real(config=…)` 入参（D14，不含命令行入口） + 装配点注入（含把模型配置值接入既有的 `plan_thinking` / `plan_max_tokens` / 单请求上限 / `BRAIN_MAX_ATTEMPTS` 装配）+ `RUN_MAX_EPISODES` 并入预算档、生产值 50 + 测试（档的取值与上表一致；评测覆盖只改总量三项；字段校验）。本步只放数值与注入，限制的执行在 B2/B3 | `feat(budget): 2026-10-14（453）—— 引入分层运行预算档与共用层数值` |
 | B2 | deadline 贯穿：`Deadline` 对象、brain 门面每次尝试前取 `allowed`、provider 接受单次 timeout 覆盖（含总等待闸）、`BudgetExhausted` 类型化错误；测试用假时钟：剩余不足不发请求、重试受剩余限制、生产档（无 `wall_clock_s`）不设 deadline、行为不变 | `feat(budget): 2026-10-14（454）—— 模型请求与重试受剩余时间约束` |
 | B3 | 计数与收尾：累计动作、task clamp + `budget_clamped` 记账、episode 任务数与拆解轮次上限、软停止、机械收尾保证 `run_end`；测试覆盖每个耗尽原因都得到 `run_end` 且不调模型 | `feat(budget): 2026-10-14（455）—— 累计预算与确定的收尾路径` |
+| B3b | 重打 v1 评测存档：在 B3 之后立即做，把新哈希写进 20 个存档的 `manifest.json`；打包前核对每个样本的来源 `.state` 哈希；不改数据集条目和真值；**与 B3 同一个提交**（只改状态结构、未重打存档的中间态里，校验存档哈希的测试必然变红，而每个提交都必须全绿）；提交信息：`feat(budget): 2026-10-14（<编号>）—— 累计预算与确定的收尾路径，并重打 v1 存档` | 见 D13 |
 | B4 | 评测接线：`evals/config.json` 加 `budget` 块（总量三项覆盖）；评测启动时写出报告目录下的 `run_config.json`；`RunOneRequest` 增加该文件路径字段，worker 传给 `build_real(config=…)`；`baseline_context.json` 记录该文件路径与 sha256；样本硬终止仍 600 秒；文档与 CHANGELOG | `feat(evals): 2026-10-14（456）—— 短目标评测使用独立预算档` |
 | B5 | 无模型端到端冒烟：假时钟 + 脚本化假 provider，演示"拆解卡住 → 软停止 → 机械收尾 → `run_end` 写出"，以及累计动作耗尽；证据目录 `eval_results/budget_smoke_<HEAD前七位>/` | 不提交代码，只提交证据说明时另给提交信息 |
 

@@ -55,11 +55,14 @@ from pokemon_agent.trace.langfuse_support import (
 )
 
 from . import render
+from .budget_render import budget_record
 from .lineage import BranchEdge, Fork, branch_graph, lineage_of
 from .live_feed import LiveFeedTrace
 from .parse import CONTENT_MODELS, MODEL_CALL_KINDS, ParsedEvent, parse
 
 _RENDERERS = {
+    TraceKind.BUDGET_CLAMPED: budget_record,
+    TraceKind.BUDGET_SKIPPED: budget_record,
     TraceKind.RUN_START: render.run_start,
     TraceKind.RUN_END: render.run_end,
     TraceKind.RUN_ERROR: render.run_error,

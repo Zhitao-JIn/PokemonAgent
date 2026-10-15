@@ -5,6 +5,11 @@
   "knowledge": true,
   "speed": 0,
   "timeout": 600,
+  "budget": {
+    "wall_clock_s": 600,
+    "max_episodes": 3,
+    "max_total_actions": 60
+  },
   "epochs": 1,
   "log_dir": "eval_results/inspect",
   "trace_backend": "local",
