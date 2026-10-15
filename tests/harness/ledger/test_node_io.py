@@ -109,7 +109,7 @@ class _OverturnFirstJudgement:
     def inject(self, req):  # noqa: ANN001
         from pokemon_agent.schemas.harness import FromHarnessToReviewerInjectResp
 
-        return FromHarnessToReviewerInjectResp(text="", answered=True)
+        return FromHarnessToReviewerInjectResp(text="", answered=True, by="human")
 
     def audit(self, req):  # noqa: ANN001
         from pokemon_agent.schemas.harness import AuditVerdict, FromHarnessToReviewerAuditResp
@@ -117,9 +117,11 @@ class _OverturnFirstJudgement:
         self.audited.append(req.episode_id)
         if req.episode_id == EP1 and self.audited.count(EP1) == 1:
             return FromHarnessToReviewerAuditResp(
-                verdict=AuditVerdict.OVERTURN, note="其实没到", answered=True
+                verdict=AuditVerdict.OVERTURN, note="其实没到", answered=True, by="human"
             )
-        return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=True)
+        return FromHarnessToReviewerAuditResp(
+            verdict=AuditVerdict.ACCEPT, answered=True, by="human"
+        )
 
 
 def test_a_judge_overturn_leaves_task_settlements_mechanical(tmp_path: Path) -> None:

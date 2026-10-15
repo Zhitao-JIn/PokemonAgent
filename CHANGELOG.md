@@ -1,3 +1,10 @@
+## 2026-10-15（503）—— 回话加 by 标签并贯通到后端与记账
+
+**改了什么**：四张回话信封新增必填 human/agent/none 来源标签，并用模型校验约束 answered 与 by 一致；贯通 Null、Console、Web reviewer、后端回话映射和两本 review 账。同步测试夹具，新增三类测试，参数化后共十三个用例。
+**为什么这么改**：harness 需要区分人、AI 与默认回话，才能追溯复核结论的来源，同时只认识标签、不依赖复核席的具体实现。
+**取舍**：保留 answered 并强制 answered == (by != "none")；后端内部 timeout/harness_gone 标签不变，只在跳 A 映射为 none。ReviewMark 通过渲染后的 content JSON 落盘，TraceEvent/_Event 封套字段无需新增；不引入 capped、round 或后续只读查询能力。
+**影响面**：reviewer 回话及跳 A 协议要求显式来源标签，Web 断连后的每问均标 none；review_inject/review_audit 正文增加 by。前端、状态模型、存档哈希与审点数量不变。
+
 ## 2026-10-15（502）—— 审点收敛到 judge：删除两层结算审及其线上 task_id
 
 **改了什么**：删除 episode/run 两层结算审与推翻分支，把审核逻辑并入 audit_judgement；审核信封仅收 judge 裁决，删除审核链路直至页面的 task_id，简化控制台与共享渲染。更新审核和节点衔接测试，新增两个测试函数，参数化后为五个用例。

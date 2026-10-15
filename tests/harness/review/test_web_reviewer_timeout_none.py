@@ -13,7 +13,7 @@ from pokemon_agent.schemas.harness import (
 
 def _fake_conn() -> MagicMock:
     conn = MagicMock()
-    resp = FromHarnessToReviewerInjectResp(seq=1, text="", answered=False)
+    resp = FromHarnessToReviewerInjectResp(seq=1, text="", answered=False, by="none")
     conn.recv.return_value = resp.model_dump_json()
     return conn
 

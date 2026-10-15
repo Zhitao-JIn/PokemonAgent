@@ -14,7 +14,7 @@
    `docs/PLAN_console_reviewer.md` §3.2）。
 
 **超时**（用户定调）：读 `pokemon_agent.config.CONSOLE_REVIEW_TIMEOUT`（默认 30s）。
-超时按"人没意见"处理——插话回空串、审回认账，并标 `answered=False`。
+超时按"人没意见"处理——插话回空串、审回认账，并标 `answered=False, by="none"`。
 **这是控制台实现自己的策略**，不是 `Reviewer` 契约的一部分。
 
 **渲染**走 `harness/review_render.py`，与 `WebReviewer` 同一份口径。
@@ -90,29 +90,33 @@ class ConsoleReviewer:
     # ---- Reviewer 契约的两个方法 ----
 
     def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
-        """**插话**：把表单亮给人，收一句反馈（空串 = 没意见；超时 `answered=False`）。"""
+        """**插话**：把表单亮给人，收一句反馈；空串表示没意见，超时标为无人作答。"""
         self._render_form(req)
         line = self._read_line(">>> 有意见就说（直接回车 = 没有）: ")
         if line is None:
-            return FromHarnessToReviewerInjectResp(text="", answered=False)
-        return FromHarnessToReviewerInjectResp(text=line, answered=True)
+            return FromHarnessToReviewerInjectResp(text="", answered=False, by="none")
+        return FromHarnessToReviewerInjectResp(text=line, answered=True, by="human")
 
     def audit(self, req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
         """**审**：把 judge 的目标达成裁决亮给人，收一个表态。
 
         人答 `o`（overturn）就推翻——接着读一行当理由；空行或其它输入按**认账**；
-        超时按认账并标 `answered=False`。
+        超时按认账并标 `answered=False, by="none"`。
         """
         header = f"\n=== {audit_prompt(req)} ===\n{render_outcome(req)}"
         answer = self._read_line(header + ">>> 回车 = 认账；输入 o = 推翻: ")
         if answer is None:
-            return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=False)
+            return FromHarnessToReviewerAuditResp(
+                verdict=AuditVerdict.ACCEPT, answered=False, by="none"
+            )
         if answer.lower() in {"o", "overturn"}:
             note = self._read_line(">>> 推翻理由（下一次 plan 会看到）: ") or ""
             return FromHarnessToReviewerAuditResp(
-                verdict=AuditVerdict.OVERTURN, note=note, answered=True
+                verdict=AuditVerdict.OVERTURN, note=note, answered=True, by="human"
             )
-        return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=True)
+        return FromHarnessToReviewerAuditResp(
+            verdict=AuditVerdict.ACCEPT, answered=True, by="human"
+        )
 
     # ---- 渲染 ----
 

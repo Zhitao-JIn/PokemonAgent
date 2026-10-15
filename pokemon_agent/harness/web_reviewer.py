@@ -79,9 +79,9 @@ class WebReviewer:
         )
         resp = self._exchange(wire, FromHarnessToReviewBackendInjectResp)
         if resp is None:
-            return FromHarnessToReviewerInjectResp(text="", answered=False)
+            return FromHarnessToReviewerInjectResp(text="", answered=False, by="none")
         _say(f"第 {resp.seq} 问（插话）：{_summary(resp.answered, resp.text or '没意见')}")
-        return FromHarnessToReviewerInjectResp(text=resp.text, answered=resp.answered)
+        return FromHarnessToReviewerInjectResp(text=resp.text, answered=resp.answered, by=resp.by)
 
     def audit(self, req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
         """**审**：结论与被审对象的事件渲染成文本交给后端，等网页上的人认或推翻。"""
@@ -96,11 +96,13 @@ class WebReviewer:
         )
         resp = self._exchange(wire, FromHarnessToReviewBackendAuditResp)
         if resp is None:
-            return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=False)
+            return FromHarnessToReviewerAuditResp(
+                verdict=AuditVerdict.ACCEPT, answered=False, by="none"
+            )
         said = f"{resp.verdict.value}{('：' + resp.note) if resp.note else ''}"
         _say(f"第 {resp.seq} 问（审 {wire.form_kind}）：{_summary(resp.answered, said)}")
         return FromHarnessToReviewerAuditResp(
-            verdict=resp.verdict, note=resp.note, answered=resp.answered
+            verdict=resp.verdict, note=resp.note, answered=resp.answered, by=resp.by
         )
 
     def close(self) -> None:

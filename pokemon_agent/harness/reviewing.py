@@ -44,6 +44,7 @@ def ask_inject(
                 form_kind=req.form_kind,
                 reply=resp.text,
                 answered=resp.answered,
+                by=resp.by,
                 wait_s=time.monotonic() - asked_at,
             ),
         )
@@ -90,6 +91,7 @@ def audit_judgement(
                 verdict=resp.verdict.value,
                 note=resp.note,
                 answered=resp.answered,
+                by=resp.by,
                 wait_s=time.monotonic() - asked_at,
             ),
         )

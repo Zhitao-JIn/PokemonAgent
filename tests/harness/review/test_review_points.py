@@ -37,16 +37,18 @@ class _ScriptedHuman:
         self.requests: list[FromHarnessToReviewerAuditReq] = []
 
     def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
-        return FromHarnessToReviewerInjectResp(text="", answered=True)
+        return FromHarnessToReviewerInjectResp(text="", answered=True, by="human")
 
     def audit(self, req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
         self.requests.append(req)
         self.judgements.append(req.episode_id)
         if req.episode_id == self._overturn_at and self.judgements.count(req.episode_id) == 1:
             return FromHarnessToReviewerAuditResp(
-                verdict=AuditVerdict.OVERTURN, note=self._note, answered=True
+                verdict=AuditVerdict.OVERTURN, note=self._note, answered=True, by="human"
             )
-        return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=True)
+        return FromHarnessToReviewerAuditResp(
+            verdict=AuditVerdict.ACCEPT, answered=True, by="human"
+        )
 
 
 def _content(event: dict) -> dict:

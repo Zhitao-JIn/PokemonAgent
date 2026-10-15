@@ -235,7 +235,7 @@ class ReviewBackend:
         _say(f"第 {ask.seq} 问了结：{by}")
         if by == "harness_gone":
             return None
-        return _to_resp(settle, answered=by in ("human", "agent"))
+        return _to_resp(settle)
 
     # ---- /feed：实时 trace ----
 
@@ -394,14 +394,16 @@ def _settle(
     return FromReviewBackendToFrontendSettleReq(seq=ask.seq, by=by, verdict=AuditVerdict.ACCEPT)
 
 
-def _to_resp(settle: FromReviewBackendToFrontendSettleReq, *, answered: bool) -> HarnessResp:
-    """了结的一问翻成回给源程序的跳 A 回话。"""
+def _to_resp(settle: FromReviewBackendToFrontendSettleReq) -> HarnessResp:
+    """了结的一问翻成跳 A 回话；内部超时与断连标签统一映射为 none。"""
+    by = settle.by if settle.by in ("human", "agent") else "none"
+    answered = by != "none"
     if settle.verdict is None:
         return FromHarnessToReviewBackendInjectResp(
-            seq=settle.seq, text=settle.text, answered=answered
+            seq=settle.seq, text=settle.text, answered=answered, by=by
         )
     return FromHarnessToReviewBackendAuditResp(
-        seq=settle.seq, verdict=settle.verdict, note=settle.note, answered=answered
+        seq=settle.seq, verdict=settle.verdict, note=settle.note, answered=answered, by=by
     )
 
 

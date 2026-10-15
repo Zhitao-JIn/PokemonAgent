@@ -1096,6 +1096,7 @@ def review_inject(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "form_kind": mark.form_kind,
             "reply": mark.reply,
             "answered": str(mark.answered).lower(),
+            "by": mark.by,
             "wait_s": f"{mark.wait_s:.3f}",
         },
     )
@@ -1116,6 +1117,7 @@ def review_audit(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "verdict": mark.verdict,
             "note": mark.note,
             "answered": str(mark.answered).lower(),
+            "by": mark.by,
             "wait_s": f"{mark.wait_s:.3f}",
         },
     )
