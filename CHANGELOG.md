@@ -1,3 +1,13 @@
+## 2026-10-15（466）—— brain/providers 多模态单元测试（发图、静默丢图、网格拼图）
+
+**改了什么**：新增 `tests/_doubles/frames.py`（`solid_frame`：按颜色与尺寸造合法 PNG data URI，PIL）与 `tests/brain/providers/` 下三个测试文件（test_provider_describe / test_provider_image_floor / test_image_grid），新增 56 条用例，钉 19 项契约：`describe()` 的请求形状（文字块在最前、图按序原样透传）、响应映射（四个 token 数落到 `VisionDescribeResp`）、空 prompt 前置拒绝、超时单次覆盖、失败分类与 `complete` 同路；静默丢图检测的门槛边界（Qwen/DeepSeek 随实际发出的图片数放大、Ark 恒为单图门槛、自定义 `token_floor`、`ImageNotDelivered` 带账）；网格拼图（`image_grid_dims` 三列布局、`pack_images_grid` 的画布尺寸/行优先像素/黑色分隔线/空格子、Ark 多帧恰好 1 张网格图）。
+
+**为什么这么改**：多模态这一半是花钱出错的地方——图费按张计（Ark 拼网格把图费与帧数解耦的保证）、网关静默丢图时调用方只能靠 `prompt_tokens` 塌回文本量级来发现（`ImageNotDelivered` 是整个感知链路最重要的一行）、文字块在前后决定隐式缓存能否吃到。这些此前全部无人守。
+
+**取舍**：只走公开面（`describe`、构造参数 `token_floor`、模块级 `image_grid_dims`/`pack_images_grid`/`IMAGE_TOKEN_FLOOR`），不碰 `_send_multimodal`/`_prepare_images` 等私有实现；像素断言经解码 data URI 而非比对 base64 全文；`VISION_DUMP_DIR` 落盘、O16（`describe` 丢弃截断标记）、O17（帧尺寸不一致被裁）没有测；`VisionDescribeReq` 构造期校验归 schemas 目录。
+
+**影响面**：起点 `2 failed, 1117 passed, 2 skipped` → 终点 `2 failed, 1173 passed, 2 skipped`（+56，失败集合不变，仍是沙箱删除守卫的 2 条 evals）；六处破坏验证（floor 不乘张数、列数改 4、图文顺序对调、Ark 不拼网格、分隔线 sep=0、cached_tokens 丢 0）各做一次全部让指定用例失败后还原，`git diff pokemon_agent/` 为空；ruff check 与 format 全绿（605 文件）。
+
 ## 2026-10-15（465）—— brain/providers 单元测试（构造、请求、响应、错误、选型）
 
 **改了什么**：新增共享替身 `tests/_doubles/http.py`（手写 `urllib.request.urlopen` 替身：记录请求、按脚本回话、可抛 HTTPError/URLError/ConnectionResetError/TimeoutError、可阻塞）与 `tests/brain/providers/` 下五个测试文件（test_provider_construction / test_provider_request / test_provider_responses / test_provider_errors / test_provider_for），新增 77 条用例，钉 19 项契约：构造期校验（温度 [0,2] 闭区间、空型号名、key 查找顺序与构造即失败）、请求形状（URL/头/体、思考开关的厂商形状与单次覆盖、超时传递含 `timeout_s` 单次覆盖）、响应映射（token 字段、`finish_reason` 截断判据、空正文 `EmptyCompletion`）、HTTP 失败分类（4xx→`ProviderRejected`、5xx 与网络层→`ToolTimeout`、一次调用一请求、单请求总时长硬闸、key 不进错误消息）、`provider_for` 选型（前缀、大小写、参数转发、新实例）。
