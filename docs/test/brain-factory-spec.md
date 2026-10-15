@@ -69,7 +69,7 @@
 ## 已知观察（不写测试，由我与用户裁决）
 
 - O12：`pokemon_agent/brain/vision_factory.py` 位于 brain 目录，顶部却 `from pokemon_agent.world import VisionProvider`，模块自己的 docstring 也写着"这个函数住在 tools 层"。brain 要"能被整体拷走、不欠外部任何东西"，这个文件的位置与依赖方向和该原则冲突。是文件放错目录，还是 docstring 过期，待定。
-- O13：`provider_for` 在 `temperature=1.7` 时不报错，温度的 0–2 范围没有被校验。意图文档里写过"温度越界被拒"的构造期用例，这与现状不符；归 `providers` 目录处理时再裁决。
+- O13（已撤回，2026-10-15）：此前写"`provider_for` 不校验温度范围"是错的。`_OpenAICompatibleBase.__init__` 里有 `assert 0.0 <= temperature <= 2.0`，越界会抛 `AssertionError`；当初探针用了 1.7，落在合法区间内，才误判成没有校验。温度范围的契约改在 `providers` 目录的构造期测试里钉（见 `docs/test/brain-providers-http-spec.md`）。
 
 ## 测试风格与规模
 
