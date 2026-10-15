@@ -1,3 +1,13 @@
+## 2026-10-15（467）—— brain/schemas 单元测试（补全信封）
+
+**改了什么**：新增 `tests/brain/schemas/test_envelopes.py`，28 条用例，钉 9 项契约，补已有 `test_llm_complete_req_roundtrip.py`（只守 `prompt`）没覆盖的四类：包出口（`__all__` 恰为四个信封名）、必填字段（缺 prompt/images/text 的 `ValidationError` 指向正确位置）、默认值（`thinking is None`、两个 Resp 的四个 token 数缺省 0、`truncated is False`）、`thinking` 三态原样保留、类型拒绝（prompt 为 None/数字、images 为裸字符串或含非字符串元素）、`images` 至少一张且顺序保持、空 prompt 在信封层被接受、四个模型 `model_dump()` 的键集合恰好等于声明集合、四模型经 `model_dump`/`model_validate` 与 JSON 序列化往返相等。
+
+**为什么这么改**：0915 事故是 `prompt` 字段被静默删除、pydantic 忽略未知字段导致构造"成功"但 prompt 丢失——已有回归只钉那一个字段。这次把"字段被静默删除"的守卫泛化到四个模型全部字段（契约 8 用 `model_dump().keys()` 钉集合），并补上默认值与必填的完整形状，信封一改错，脑里所有解析链路的钱与账就都失真。
+
+**取舍**：不测 pydantic 对未知字段的默认忽略与数字字符串的宽松转换（库的行为）；不测 brain 与 world 两份 `VisionDescribe*` 副本是否同构（跨模块，归 world 目录或集成阶段）；不用 `model_fields` 内省（字段集合用 `model_dump().keys()` 看）；不改、不删、不搬已有的 roundtrip 测试。
+
+**影响面**：起点 `2 failed, 1173 passed, 2 skipped` → 终点 `2 failed, 1201 passed, 2 skipped`（+28，失败集合不变，仍是沙箱删除守卫的 2 条 evals）；五处破坏验证（去掉 `min_length=1`、`truncated` 默认改 True、`thinking` 默认改 False、删 `reasoning_tokens` 字段、`cached_tokens` 默认改 1）各做一次全部让指定用例失败后还原，`git diff pokemon_agent/` 为空；ruff check 与 format 全绿（606 文件）。
+
 ## 2026-10-15（466）—— brain/providers 多模态单元测试（发图、静默丢图、网格拼图）
 
 **改了什么**：新增 `tests/_doubles/frames.py`（`solid_frame`：按颜色与尺寸造合法 PNG data URI，PIL）与 `tests/brain/providers/` 下三个测试文件（test_provider_describe / test_provider_image_floor / test_image_grid），新增 56 条用例，钉 19 项契约：`describe()` 的请求形状（文字块在最前、图按序原样透传）、响应映射（四个 token 数落到 `VisionDescribeResp`）、空 prompt 前置拒绝、超时单次覆盖、失败分类与 `complete` 同路；静默丢图检测的门槛边界（Qwen/DeepSeek 随实际发出的图片数放大、Ark 恒为单图门槛、自定义 `token_floor`、`ImageNotDelivered` 带账）；网格拼图（`image_grid_dims` 三列布局、`pack_images_grid` 的画布尺寸/行优先像素/黑色分隔线/空格子、Ark 多帧恰好 1 张网格图）。
