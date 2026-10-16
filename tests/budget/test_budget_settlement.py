@@ -181,5 +181,4 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
 
 
 def test_budget_schema_is_frozen_after_the_complete_field_batch():
-    # 468 批：Task.max_steps 加 gt=0（O9），Task 的 JSON Schema 变化传导进 state_schema_hash。
-    assert state_schema_hash() == "88f089fdbc27eaea"
+    assert state_schema_hash() == "40e2cd635256744f"

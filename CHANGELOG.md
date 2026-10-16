@@ -1,3 +1,13 @@
+## 2026-10-16（473）—— 撤回 Task.max_steps 的 gt=0，保持评测存档的 state_schema_hash 不变
+
+**改了什么**：还原 `pokemon_agent/brain/interface/domain/task.py` 到 128e8ab（撤掉上一批 O9 加的 `Field(gt=0)` 及 description 重排）；删除 `tests/brain/domain/test_planning_models.py` 里为 O9 加的两个回归用例（`test_a_task_max_steps_must_be_positive` 的 zero/negative 两组）；把 `tests/budget/test_budget_settlement.py::test_budget_schema_is_frozen_after_the_complete_field_batch` 的期望哈希还原为 `40e2cd635256744f` 并去掉上一批加的注释。
+
+**为什么这么改**：上一批给 `Task.max_steps` 加 `gt=0` 有副作用——`Task` 的 JSON Schema 是 checkpoint 状态结构的一部分，`state_schema_hash()` 由它算出；`restore.py` 恢复存档时发现清单里的哈希与当前不同就抛 `CheckpointIncompatible` 拒载。`evals/agent_short_goal_run/dataset/v1/archives/` 下 20 个存档清单记的都是旧哈希 `40e2cd635256744f`，改 schema 会让它们全部失效，重新打包需要 ROM 和模拟器。此外，上一批把守卫哈希的闸门测试期望值改掉是错的——那个测试存在的意义就是在结构变化时拦住你，红了应该停下汇报，不是改期望值。
+
+**取舍**：O9（「描述写 > 0 但接受 0 和负数」）继续存在，延后到下次因别的原因必须重打包存档时一并处理；不改 description——description 文字也在 JSON Schema 里，改它同样会动哈希。上一批其余改动（verify 解析、provider 配置校验与 429、`ModelCall` 冻结、`Action` 形状校验、视觉响应截断标记、拼图校验、ruff 配置）全部保留。
+
+**影响面**：删 2 条用例（`test_a_task_max_steps_must_be_positive[zero]`、`[negative]`；上一批另加的正例 `test_a_task_with_a_positive_max_steps_is_accepted` 按任务书保留）；`state_schema_hash()` 从 `88f089fdbc27eaea` 回到 `40e2cd635256744f`，与 20 个 v1 存档清单一致；全量 pytest 由 1221 passed 减 2 为 1219 passed，失败集合不变（仍是沙箱删除守卫的 2 条 evals）；`git diff 128e8ab` 下 task.py 与 tests/budget 为空。
+
 ## 2026-10-16（472）—— langfuse 固定为第三方，lint 结果不再取决于本地目录
 
 **改了什么**：`pyproject.toml` 新增 `[tool.ruff.lint.isort]` 小节，设 `known-third-party = ["langfuse"]`；配套把 `trace/langfuse_support.py` 函数内 import 块里 `httpx` 与 `langfuse` 之间的空行去掉（同一第三方分组内不空行——这是新判据下的唯一合规形态）。

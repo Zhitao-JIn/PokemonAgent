@@ -125,21 +125,6 @@ def test_episode_summary_defaults_its_optional_fields() -> None:
     assert summary.tags == []
 
 
-@pytest.mark.parametrize("bad_steps", [0, -5], ids=["zero", "negative"])
-def test_a_task_max_steps_must_be_positive(bad_steps: int) -> None:
-    """`Task.max_steps` 描述写「> 0」，0 与负数在模型层就拒（O9）。"""
-
-    from pokemon_agent.brain.interface.domain import Task
-
-    with pytest.raises(ValidationError):
-        Task(
-            task_id="t1",
-            goal="g",
-            success_criteria="s",
-            max_steps=bad_steps,
-        )
-
-
 def test_a_task_with_a_positive_max_steps_is_accepted() -> None:
     """`max_steps=1` 是合法下界。"""
 
