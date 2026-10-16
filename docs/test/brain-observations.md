@@ -1,6 +1,6 @@
 # brain 测试线观察台账（统一编号）
 
-状态：2026-10-16 创建，裁决依据用户「按推荐」。本台账取代各 spec「已知观察」一节里的零散编号；各 spec 不改，凡与本台账冲突处以本台账为准。
+状态：2026-10-16 创建，裁决依据用户「按推荐」；**同日修订**：O9 撤回（见下），验收时发现它会让评测存档失效。本台账取代各 spec「已知观察」一节里的零散编号；各 spec 不改，凡与本台账冲突处以本台账为准。
 编号规则：原编号保留；O7、O8 在不同 spec 里各被用过两次，这里加后缀区分（`-json`、`-reflect`、`-errors`）。
 
 ## 一、修（由「brain 观察修复」任务一次处理，每条配回归测试）
@@ -10,7 +10,6 @@
 | O1 | judge_verify | `verify` 里 `{"positive": "false"}`（字符串）被 `bool("false")` 判成正样本 | `positive` 存在但不是真正的布尔值 → 整份输出按 `ParseFailure` 处理；缺 `positive` 键仍按负样本（现行为不变） |
 | O2 | judge_verify | `verdicts` 不是列表（如 `"xyz"`）时不抛，全部补成负样本 | 抛 `ParseFailure` |
 | O3 | judge_verify | 重复 `index` 谁覆盖谁没写明 | 文档写明「后出现的覆盖先出现的」（现行为），并补一条测试钉住 |
-| O9 | domain | `Task.max_steps` 描述写「> 0」，实际接受 0 与 -5 | 加 `gt=0` |
 | O10 | domain | `ModelCall` 文档写「不可变值语义」，实际可赋值 | 改成 frozen（仅 brain 里的那一份） |
 | O11 | domain | `Action` 的「恰好一种形状」用 assert，`-O` 下空 `Action()` 被放行 | 改成显式异常（`ValueError`，由 pydantic 包成 `ValidationError`），消息不变 |
 | O14 | providers | HTTP 429 被归 `ProviderRejected`，重试循环立即放弃 | 归 `ToolTimeout`（与 5xx 一样值得在预算内重试）；其余 4xx 不变 |
@@ -24,6 +23,7 @@
 
 | 编号 | 来源 spec | 内容 | 裁决 |
 |---|---|---|---|
+| O9 | domain | `Task.max_steps` 描述写「> 0」，实际接受 0 与 -5 | **撤回修复，延后**：给 `max_steps` 加 `gt=0` 或改 description 都会改变 `Task` 的 JSON Schema，进而改变 `state_schema_hash`（`pokemon_agent/harness/checkpoint/manifest.py`）；`restore_run` 遇到哈希不同的存档会拒载，评测数据集 v1 的 20 个存档（`evals/agent_short_goal_run/dataset/v1/archives/*/manifest.json`，哈希 `40e2cd635256744f`）全部失效，重新打包要 ROM 和模拟器。等下次因别的原因必须重打包存档时一并做。 |
 | O4 | judge_verify | `quality_score` 传字符串 `"0.7"` 被 pydantic 悄悄转成数字 | 库行为，不测不改 |
 | O5 | plan | `max_push` / `max_tasks` 不校验上限 | 设计取舍（调用方判断） |
 | O6 | plan | `updates[].index` 越界原样交回 | 设计取舍，已测「原样交回」 |
@@ -47,4 +47,4 @@
 - `brain-factory-spec.md`、`brain-wiring-spec.md`：凡写「`AssertionError`」且对象是型号名或温度的地方（O15）。
 - `brain-providers-multimodal-spec.md`：探针表「`finish_reason="length"` 不暴露」「帧尺寸各异」「单张绕过校验」三处，以及「已知观察」O16–O17（O16/O17/O18）。
 - `brain-schemas-spec.md`：`VisionDescribeResp` 的字段集合与默认值多了 `truncated`（O16）。
-- `brain-domain-spec.md`：O9–O11 三条的「待定」（已裁决）。
+- `brain-domain-spec.md`：O10、O11 两条的「待定」已裁决（修）；O9 已裁决为延后。
