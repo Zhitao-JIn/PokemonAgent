@@ -1,3 +1,13 @@
+## 2026-10-16（477）—— 合并 remove-vision 后删除测已删模块的用例
+
+**改了什么**：删除 `tests/brain/factory/test_build_vision_provider.py`。
+
+**为什么这么改**：测试线新增了这份用例，测的是 `pokemon_agent/brain/vision_factory.build_vision_provider`；remove-vision（475）把该模块连同 world 视觉感知档整体删除。两条线各自都绿，合并后这份用例 import 失败，pytest 在收集阶段中断，ruff 的 I001 也来自同一处。
+
+**取舍**：不为这份用例恢复 `vision_factory`，视觉档已按 475 删除；`docs/test/brain-factory-spec.md` 等测试规格里对该用例的描述不在本条处理，留给测试线后续修订。
+
+**影响面**：只删 1 个测试文件；生产代码与 `state_schema_hash()` 不变（`4f1cac6fcc7216d5`）；pytest 用例数相应减少。
+
 ## 2026-10-16（476）—— 修正 run 级机械评分的取帧范围
 
 **改了什么**：run 级样本的机械规则读取整条执行线，重规划产生新 goal_id 后的帧也计入；episode 等较小粒度仍按原目标筛局。新增跨目标重规划、末帧回退、后续局开菜单及无关样本隔离测试，同步现行评测规格。
