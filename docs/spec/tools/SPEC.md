@@ -122,7 +122,7 @@ restore_memory；`/health.admin` 报告开关，未开放时门面抛 MemoryAdmi
 |---|---|---|
 | `BrainTool.build(*, text=…, judge=…, verify=…, plan=…, max_tokens=…)` | `BrainLlmConfig` + providers + `Brain` | `direct/brain_tool.py` |
 | `GameTools.build(rom, *, state_path, watch, speed, world_server_url=None)` | 配了 `world_server_url`（裸字段，env `MCP_WORLD_SERVER_URL` 只是缺省来源）→ `WorldMcpTool`；否则 `PyBoyWorld` | `mcpclient/game_tools.py` |
-| `MemoryTool.build(*, memory_root, max_summaries, memory_server_url=None)` | 同上双轨（env `MCP_MEMORY_SERVER_URL`） | `mcpclient/memory_local.py` |
+| `MemoryTool.build(*, memory_root, memory_server_url=None)` | 同上双轨（env `MCP_MEMORY_SERVER_URL`） | `mcpclient/memory_local.py` |
 | `TraceTool.build(*, run_id, trace_root)` | `LocalTrace` | `direct/trace/__init__.py` |
 
 返回值直接进三个 runtime，大脑按层各造一份（`run_brain` / `episode_brain` /

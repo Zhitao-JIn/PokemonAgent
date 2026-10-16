@@ -306,7 +306,7 @@ harness/**, schemas/**     ✅ 零处引用 memory 包（引用的是 schemas.me
 | 工厂 | 造什么 | 住哪 |
 |---|---|---|
 | `BrainTool.build(...)` | brain 的 provider（**按需**，未传为 None）+ `Brain` | `direct/brain_tool.py` |
-| **`MemoryTool.build(memory_root=…, max_summaries=…)`** | **memory 的两个检索 provider + `MemoryTool`** | **`mcpclient/memory_local.py`** |
+| **`MemoryTool.build(memory_root=…)`** | **memory 的两个检索 provider + `MemoryTool`** | **`mcpclient/memory_local.py`** |
 | `GameTools.build(rom, …)` | `PyBoyWorld`（确定性内存观测） | `mcpclient/game_tools.py` |
 | `TraceTool.build(run_id=…, trace_root=…)` | `LocalTrace` | `direct/trace/__init__.py` |
 
