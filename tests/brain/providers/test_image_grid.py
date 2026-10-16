@@ -253,3 +253,19 @@ def test_pack_images_grid_lays_frames_out_at_their_own_size(
 
     assert packed.getpixel((80, 72)) == RED
     assert packed.getpixel((244, 72)) == GREEN
+
+
+def test_frames_of_different_sizes_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """帧尺寸不一致 → AssertionError（O17）：静默裁剪大的、留黑小的不如当场炸。"""
+
+    frames = [solid_frame(RED, size=(160, 144)), solid_frame(GREEN, size=(200, 200))]
+
+    with pytest.raises(AssertionError):
+        pack_images_grid(frames)
+
+
+def test_a_single_frame_also_passes_the_uri_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """单张非 data URI → AssertionError（O18）：不能因为不拼接就绕过校验。"""
+
+    with pytest.raises(AssertionError, match="帧不是 data URI 格式"):
+        pack_images_grid(["not-a-uri"])

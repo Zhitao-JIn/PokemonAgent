@@ -232,3 +232,28 @@ def test_describe_sends_the_thinking_field_from_the_constructor_only(
 
     assert fake_urlopen.calls[0]["json"]["enable_thinking"] is True
     assert fake_urlopen.calls[1]["json"]["enable_thinking"] is False
+
+
+def test_the_truncation_marker_reaches_the_describe_response(
+    monkeypatch: pytest.MonkeyPatch, fake_urlopen: FakeUrlopen
+) -> None:
+    """finish_reason="length" → `truncated is True`；"stop" → False（O16）。"""
+
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-q")
+    provider = QwenProvider(temperature=0.0)
+    request = VisionDescribeReq(images=["data:image/png;base64,AAA"], prompt="Q")
+
+    fake_urlopen.next_body = {
+        "choices": [{"message": {"content": "cut"}, "finish_reason": "length"}],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 25600},
+    }
+    truncated = provider.describe(request)
+
+    fake_urlopen.next_body = {
+        "choices": [{"message": {"content": "done"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 3},
+    }
+    complete = provider.describe(request)
+
+    assert truncated.truncated is True
+    assert complete.truncated is False

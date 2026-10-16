@@ -159,7 +159,14 @@ def test_an_empty_prompt_is_accepted_at_the_envelope_layer() -> None:
         (VisionDescribeReq(images=["a"], prompt="q"), {"images", "prompt"}),
         (
             VisionDescribeResp(text="x"),
-            {"text", "input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens"},
+            {
+                "text",
+                "input_tokens",
+                "output_tokens",
+                "cached_tokens",
+                "reasoning_tokens",
+                "truncated",
+            },
         ),
     ],
     ids=["llm-req", "llm-resp", "vision-req", "vision-resp"],

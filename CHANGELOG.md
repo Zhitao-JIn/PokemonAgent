@@ -1,3 +1,13 @@
+## 2026-10-16（471）—— 视觉响应带截断标记；拼图校验帧尺寸与单张 URI
+
+**改了什么**：三处——① `VisionDescribeResp` 新增 `truncated: bool = False`（docstring 与 `LlmCompleteResp.truncated` 同口径），`describe()` 把此前丢弃的 `_cut` 填进去；② `pack_images_grid` 拼接前 `assert` 所有帧尺寸一致（消息写明第一张尺寸与其余差异清单）；③ 单张输入也过 data-URI 前缀校验（与拼接路径同一消息），合法时仍原样返回同一字符串。world 里的 `VisionDescribeResp` 副本与 `ArkProvider._prepare_images` 不动。
+
+**为什么这么改**：O16——视觉链路里模型输出被 `max_tokens` 截断时调用方无从得知，只在后续解析时表现为 JSON 不完整；O17——帧尺寸不一致时静默裁掉大的、留黑小的，模型看错的图没人知道；O18——单张输入绕过 URI 校验，非法帧会在更远的下游才炸，那时指不回来源。
+
+**取舍**：新增字段带默认值 `False`——grep 确认构造点只有 `providers.py`（已填）与 `tests/_doubles/llm.py` 的 `vision_reply`（缺省安全）、world 副本是独立类不受影响；帧尺寸用 `assert` 而非 `ValueError`——帧来自我们自己的 world，属于调用方前置条件（AGENTS.md：assert 管前置条件）；`VISION_DUMP_DIR` 落盘行为不动。
+
+**影响面**：`pokemon_agent/brain/schemas/vision.py`、`pokemon_agent/brain/providers.py`（`describe` 填标记、`pack_images_grid` 两道校验）；新增回归测试 3 条（O16 截断标记 1、O17 尺寸不一致 1、O18 单张 URI 1）；旧测试改新行为 1 处（`test_envelopes.py` 的 `vision-resp` 字段集合加 `truncated`）；修复前红的用例：O16 1 组、O17 1 组、O18 1 组；providers+schemas 184 passed 全绿。
+
 ## 2026-10-16（470）—— Task.max_steps 加下界、ModelCall 冻结、Action 形状校验改显式异常
 
 **改了什么**：domain 模型三处——① `Task.max_steps` 加 `Field(gt=0)`（description 不变），0 与负数在模型层被拒；② brain 方言的 `ModelCall` 加 `model_config = ConfigDict(frozen=True)`，字段赋值抛 `ValidationError`，改动一律走 `model_copy(update=...)`（docstring 一直写「不可变值语义」，这次让代码与之一致）；③ `Action._one_shape` 的 `assert filled == 1` 改成 `if filled != 1: raise ValueError(...)`，消息不变（pydantic 包成 `ValidationError`，对外表现不变），`python -O` 下也生效。

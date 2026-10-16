@@ -54,6 +54,10 @@ class VisionDescribeResp(BaseModel):
     reasoning_tokens: int = 0
     """同 `LlmCompleteResp.reasoning_tokens`——判定链路（judge/verify）
     带图问思考模型时，输出的大头往往是思考 token 而不是结论本身。"""
+    truncated: bool = False
+    """输出是不是被 max_tokens 截断了——同 `LlmCompleteResp.truncated`
+    的口径：必须由 provider 给，不能让调用方猜（截断在下游表现为
+    "JSON 少了个右括号"，与"模型不会写 JSON"修法相反）。"""
 
 
 __all__ = ["VisionDescribeReq", "VisionDescribeResp"]

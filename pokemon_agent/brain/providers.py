@@ -492,7 +492,7 @@ class _MultimodalMixin:
         assert req.images, "describe() got no images"
         assert req.prompt, "describe() got an empty prompt"
 
-        text, n_in, n_out, n_cached, n_reason, _cut = self._send_multimodal(
+        text, n_in, n_out, n_cached, n_reason, cut = self._send_multimodal(
             req.prompt, list(req.images), timeout_s=timeout_s
         )
 
@@ -502,6 +502,7 @@ class _MultimodalMixin:
             output_tokens=n_out,
             cached_tokens=n_cached,
             reasoning_tokens=n_reason,
+            truncated=cut,
         )
 
 
@@ -575,10 +576,22 @@ def pack_images_grid(images: list[str]) -> str:
     图费与帧数解耦，每帧等效成本随帧数摊薄。
     """
     assert images, "pack_images_grid() got no images"
+    # 单张也要过同一道 URI 校验（O18）：不能因为不拼接就放过非法帧——
+    # Ark 单图路径原样透传，非法 URI 会在更远的下游才炸，那时指不回来源。
+    for image in images:
+        assert image.startswith("data:image/png;base64,"), (
+            f"帧不是 data URI 格式（0915 起唯一格式）：{image[:40]!r}…"
+        )
     if len(images) == 1:
         return images[0]
     frames = [Image.open(io.BytesIO(_png_bytes(b64))).convert("RGB") for b64 in images]
     w, h = frames[0].size
+    # 所有帧尺寸必须一致（O17）：画布按第一张算，其余直接贴——不一致时
+    # 大的会被裁掉、小的留黑，静默出错不如当场炸。帧来自我们自己的 world，
+    # 这是调用方前置条件，用 assert。
+    assert all(f.size == (w, h) for f in frames), (
+        f"帧尺寸不一致：第一张是 {w}x{h}，其余是 {sorted({f.size for f in frames} - {(w, h)})}"
+    )
     rows, cols = image_grid_dims(len(frames))
     sep = 4
     canvas = Image.new("RGB", (cols * w + (cols - 1) * sep, rows * h + (rows - 1) * sep), (0, 0, 0))
