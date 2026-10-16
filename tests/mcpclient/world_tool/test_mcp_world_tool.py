@@ -40,7 +40,6 @@ class _FakeWorld:
     def __init__(self) -> None:
         self.calls: list[tuple[str, Any]] = []
         self._pos = (12, 13, 8)
-        self._fail_perceive = False
 
     def _observation(self) -> TaskObservation:
         return TaskObservation(
@@ -66,22 +65,6 @@ class _FakeWorld:
             "TaskPerceived",
             (),
             {"observation": self._observation(), "frame_png": "png", "ram": None},
-        )()
-
-    def perceive_once(self) -> Any:
-        if self._fail_perceive:
-            from pokemon_agent.world.errors import PerceptionAttemptFailed
-
-            raise PerceptionAttemptFailed({"error": "VisionParseFailure: 读不出"})
-        return type(
-            "Perceived",
-            (),
-            {
-                "observation": self._observation(),
-                "calls": [{"model": "fake"}],
-                "frame_png": "png",
-                "ram": None,
-            },
         )()
 
     def step(self, segments: list[tuple[str, int]], *, settle: bool = True) -> None:

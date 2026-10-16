@@ -1,39 +1,12 @@
-"""世界接口：模拟器 + 视觉模型抽象成的那一层。
+"""世界接口：用裸字段推进模拟器，读取确定性的内存观测。
 
-**物理位置**：原来在顶层 `pokemon_agent/interfaces/world/`，跟这个子系统吐出来的
-数据形状（`Facts`，同目录 `domain/facts.py`）搬到了一起——协议和协议吐出来的数据
-形状本来就是同一件事的两个角度，没道理分居两处。`pokemon_agent/interfaces/` 这个
-集中注册表已经整个撤销，消费方直接 `from pokemon_agent.world import WorldPort`。
-
-**零依赖**：`brain`/`world`/`memory`/`trace` 这几个领域模块之间、以及它们与
-`schemas.*` 之间，原则是完全没有相互依赖——模块间只靠裸函数和 tool 层交互
-（`providers` 例外，当作底层公共库，各模块都能直接依赖）。这个协议原来收
-`Action`/`Task`（来自 `pokemon_agent.brain`）、返回
-`schemas.world.communication.PerceiveOnceResp`（来自 `schemas`）——两条依赖
-都得去掉：
-
-- `reset()`/`set_task()` 不再收 `Task` 这个 brain 的类型，改收裸字段
-  （`task_id`/`goal`/`success_criteria`/`max_steps`/`initial_state_hint`）——
-  world 本来就只用得到这几个原始值，`Task` 剩下的字段（比如给 LLM
-  读的 `goal` 怎么措辞）它从来不关心。
-- `step()` 不再收 `Action` 这个 brain 的类型，改收
-  `list[tuple[str, int]]`（按键名 + 连按次数的按键段列表）——world 只关心
-  "按哪个键、按几次"，不关心 brain 的动作类型。
-- `perceive_once()` 不再返回 `schemas` 里的信封，改返回 `Perceived`
-  （`domain/perceived.py`）——world 自己的数据形状，不是"两个模块协商出的
-  信封"。
-
-`mcpclient/game_tools.py`（`GameToolPort` 的实现）是唯一的调用方，负责把
-harness 那一侧的 `Task`/`Action`/信封拆成这里要的裸字段，
-再把这里吐出来的 `Perceived` 拼回 harness 认识的信封——这正是"tool 层承接
-拆信封/拼信封"这条分工在 world 这一侧的落地。
-"""
+模块不认识 harness 信封；双向转换由 tool 层完成。"""
 
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from .domain import ActionSpace, Perceived, TaskPerceived
+from .domain import ActionSpace, TaskPerceived
 
 
 @runtime_checkable
@@ -49,7 +22,7 @@ class WorldPort(Protocol):
         max_steps: int,
         initial_state_hint: str = "",
     ) -> None:
-        """按任务重置到初始状态。**不感知**——第一帧由调用方另调 `perceive_once()` 拿。
+        """按任务重置到初始状态。**不感知**——第一帧由调用方另调 `perceive_task()` 拿。
 
         参数是 `Task` 拆开的裸字段——world 只用得到这几个原始值。
         前置条件：max_steps > 0。
@@ -83,7 +56,7 @@ class WorldPort(Protocol):
 
     def step(self, segments: list[tuple[str, int]], *, settle: bool = True) -> None:
         """执行动作，推进世界。**不感知**——之后那一帧由调用方另调
-        `perceive_once()` 拿。
+        `perceive_task()` 拿。
 
         segments：按序执行的按键段，每段是 `(按键名, 连按次数)`——
             `Action.sequence` 拆开的裸字段。执行层恒传单键（一段、一次）。
@@ -95,20 +68,6 @@ class WorldPort(Protocol):
             代价是 `False` 那一档可能抄到过场的中间帧。
         前置条件：每一段的按键都在 all_actions() 中；当前 episode 未结束。
         失败：按键不在 all_actions() 是调用方 bug，assert 拦下。
-        """
-        ...
-
-    def perceive_once(self) -> Perceived:
-        """感知当前这一帧（episode 层的视觉档）。
-
-        **只问一次视觉模型，不重试**。调用方在
-        `reset()`/`step()` 之后调它拿观测；重试预算与循环归调用方管
-        （`mcpclient/game_tools.py::GameTools.perceive_with_retry`——0913 夜从
-        harness 节点搬回 tool 层，与 `BrainTool._attempt_loop` 同形）。
-        失败：解析不出结构化状态时抛 `PerceptionAttemptFailed`（附这次的账）——
-            要不要再问一次是调用方的判断。
-
-        后置条件：返回时 observation 非空，且是这次真调用产生的新观测。
         """
         ...
 

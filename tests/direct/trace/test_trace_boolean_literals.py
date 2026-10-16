@@ -1,12 +1,12 @@
 """payload 里的布尔字段：**生产者必须写小写**（`true`/`false`）——全项目一套字面量。
 
-这个文件守的是**生产侧**：`render.py` / `brain/brain.py` / `world/perceive_frame.py`
-三处直接往账 payload 里写布尔的地方。核对侧（`tests/_harness_fixtures/node_io.py`
+这个文件守的是**生产侧**：`render.py` / `brain/brain.py`
+两处直接往账 payload 里写布尔的地方。核对侧（`tests/_harness_fixtures/node_io.py`
 的 `BOOLEAN_FIELDS`）也能发现同一种错，但那要**跑完真机**才报得出来——而那时
 PyBoy 启动费与一整局的模型钱已经付了。这里用 AST 在**离线**把同一件事拦住。
 
-**为什么扫源码而不是调函数**：三处生产者里有两处要真实模型才走得到
-（`brain.choose()` 要一次补全、`pyboy_world` 要一张真帧），而这条规则讲的是
+**为什么扫源码而不是调函数**：生产者可能依赖真实模型
+（`brain.choose()` 要一次补全），而这条规则讲的是
 **写法**——裸 `str(x)` 就是错的写法，不管当时有没有测试跑到它。
 
 *（由来：0914 之前账本里同时存在两套布尔字面量——账单的 `ok` 与两条收尾账的
@@ -25,12 +25,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 PRODUCERS: tuple[pathlib.Path, ...] = (
     ROOT / "pokemon_agent" / "direct" / "trace" / "render.py",
     ROOT / "pokemon_agent" / "brain" / "brain.py",
-    ROOT / "pokemon_agent" / "world" / "visual_perception.py",
 )
-"""三个**直接往 payload 里写布尔**的文件。它们是这条规则的全体生产者。
+"""两个**直接往 payload 里写布尔**的文件。它们是这条规则的全体生产者。
 
-第四处若将来出现（比如 `trace` 之外又有人自己拼账单），核对侧一样会拦——
-所以这里只列当下这三处，不假装穷举。
+其他生产者若将来出现（比如 `trace` 之外又有人自己拼账单），核对侧一样会拦——
+所以这里只列当下这两处，不假装穷举。
 """
 
 ALLOWED_LITERALS: frozenset[str] = frozenset({"'true'", '"true"', "'false'", '"false"'})
@@ -55,7 +54,7 @@ def _boolean_values(path: pathlib.Path) -> list[tuple[int, str]]:
 
 
 def test_every_boolean_payload_value_is_written_lowercase():
-    """三个生产者写的布尔值，只能是 `str(...).lower()` 或小写字面量。
+    """两个生产者写的布尔值，只能是 `str(...).lower()` 或小写字面量。
 
     允许的两种写法：`str(x).lower()`（算出来的）与 `'true'`/`'false'`（写死的）。
     其余一律不行，尤其是**裸 `str(x)`**——它会写出 `True`，而那正是这个项目

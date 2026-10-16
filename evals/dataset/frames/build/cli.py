@@ -2,7 +2,7 @@
 
 build --capture 目录 [--version v2]     从新采集记录重造数据集（产物冻结进仓库）
 
-测评经 decode、episode_vision_read 两个 inspect task 执行。
+测评经 decode 的 DeepEval 入口执行。
 """
 
 from __future__ import annotations

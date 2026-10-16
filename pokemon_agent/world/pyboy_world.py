@@ -1,4 +1,4 @@
-"""`WorldPort` 的唯一实现：PyBoy 模拟器 + 视觉模型的粘合层。"""
+"""`WorldPort` 的唯一实现：PyBoy 模拟器与内存观测。"""
 
 from __future__ import annotations
 
@@ -8,19 +8,12 @@ from dataclasses import dataclass
 
 from pyboy import PyBoy
 
-from pokemon_agent.world import VisionProvider
-
 from .action_space import compute_action_space
 from .interface import (
     OVERLAY_ACTIONS,
     ActionSpace,
-    Perceived,
     TaskPerceived,
 )
-from .perceive_frame import (
-    perceive_frame,
-)
-from .prompts import load as load_prompt
 from .ram import map_settled, read_terrain
 from .screen_text import read_screen_text
 from .task_perception import observe_task
@@ -57,14 +50,12 @@ class PyBoyWorld:
     def __init__(
         self,
         rom: str,
-        vision: VisionProvider,
         *,
         state_path: str | None = None,
-        prompt_name: str = "perceive_screen",
         watch: bool = False,
         speed: int = 0,
     ) -> None:
-        """构造模拟器；ROM 或显式存档不存在时失败，视觉依赖由调用方传入。"""
+        """构造模拟器；ROM 或显式存档不存在时失败。"""
         if state_path and not pathlib.Path(state_path).is_file():
             raise FileNotFoundError(
                 f"找不到存档 {state_path}。传 state_path=None 从开机跑起，"
@@ -80,8 +71,6 @@ class PyBoyWorld:
             no_input=True,
         )
         self._pyboy.set_emulation_speed(speed)
-        self._vision = vision
-        self._prompt = load_prompt(prompt_name)
         self._state_path = state_path
         self._rom = pathlib.Path(rom).read_bytes()
         """ROM 原样：脚本与接管视图从里面读道具价格这类常量表。"""
@@ -101,7 +90,7 @@ class PyBoyWorld:
         max_steps: int,
         initial_state_hint: str = "",
     ) -> None:
-        """按任务重置。**不感知**——第一帧由调用方另调 `perceive_once()` / `perceive_task()` 拿。"""
+        """按任务重置。**不感知**——第一帧由调用方另调 `perceive_task()` 拿。"""
         assert max_steps > 0, f"max_steps must be > 0, got {max_steps}"
 
         # 步骤 1。
@@ -170,17 +159,6 @@ class PyBoyWorld:
             png,
             memory=memory,
             rom=self._rom,
-            closed=self._closed,
-        )
-
-    def perceive_once(self) -> Perceived:
-        """感知当前这一帧（episode 层）：**只问一次视觉模型，不重试**。"""
-        assert self._task is not None, "perceive_once() before reset()"
-        return perceive_frame(
-            self._frame_png(),
-            self._pyboy.memory,
-            template=self._prompt,
-            vision=self._vision,
             closed=self._closed,
         )
 

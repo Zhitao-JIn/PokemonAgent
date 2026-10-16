@@ -146,7 +146,6 @@ class Facts(BaseModel):
     cursor: str | None = Field(
         default=None, description="选择框光标指向的那一项原文；读不出为 None"
     )
-    overview: str = Field(default="", description="视觉模型对整幅画面布局的一句话描述")
     walk_map: str = Field(
         default="", description="这一帧的地形网格渲染文本，来自模拟器内存，不是模型读出来的"
     )
@@ -224,8 +223,6 @@ class Facts(BaseModel):
             if k in seen or extra[k] in (None, ""):
                 continue
             entries.append((k, k, str(extra[k])))
-        if self.overview:
-            entries.append(("overview", "概况", self.overview))
         if self.walk_map:
             entries.append(("walk_map", "walk_map", self.walk_map))
         if self.screen:

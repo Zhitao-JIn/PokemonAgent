@@ -147,8 +147,8 @@ class _OpenAICompatibleBase:
         不接受调用方覆盖——见模块 docstring 第 2 条设计决定。
 
         **没有 `max_attempts`**（0915 起）：provider 一次都不重发——一次调用
-        就是一次 HTTP 请求，重试的循环与预算全在调用方（`BrainTool._attempt_loop` /
-        `GameTools.perceive_with_retry`）。provider 层偷偷重试会让账上一条
+        就是一次 HTTP 请求，重试的循环与预算全在调用方（`BrainTool._attempt_loop`）。
+        provider 层偷偷重试会让账上一条
         `ModelCall` 藏最多 3 次真实请求，耗费与失败计数全部失真。
         """
         assert model, "model must not be empty"
@@ -195,7 +195,7 @@ class _OpenAICompatibleBase:
         timeout_s: float | None = None,
     ) -> dict:
         """POST **一次**，失败按类别立即上抛。**不重试**——重试的循环与预算
-        全在调用方（`BrainTool._attempt_loop` / `GameTools.perceive_with_retry`），
+        全在调用方（`BrainTool._attempt_loop`），
         见 `__init__` docstring 里"没有 `max_attempts`"那段。
 
         `thinking`：这一次的思考开关覆盖（`LlmCompleteReq.thinking`）；

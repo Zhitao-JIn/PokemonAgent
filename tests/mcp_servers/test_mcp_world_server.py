@@ -17,7 +17,6 @@ from pokemon_agent.mcp_servers import world_server
 from pokemon_agent.mcpclient import McpClient
 from pokemon_agent.world import ActionSpace, PlaceInWorld, TaskObservation, TaskScene
 from pokemon_agent.world.action_space import compute_action_space
-from pokemon_agent.world.errors import PerceptionAttemptFailed
 
 ALL_BUTTONS = ["a", "b", "up", "down", "left", "right", "start", "select"]
 
@@ -31,7 +30,6 @@ class _FakeWorld:
         self.loaded: list[bytes] = []
         self._pos = (12, 13, 8)
         self._moves = moves
-        self._fail_perceive = False
 
     # ---- WorldPort ----
 
@@ -54,21 +52,6 @@ class _FakeWorld:
         )
         return type(
             "TaskPerceived", (), {"observation": observation, "frame_png": "", "ram": None}
-        )()
-
-    def perceive_once(self) -> Any:
-        if self._fail_perceive:
-            raise PerceptionAttemptFailed({"error": "VisionParseFailure: 读不出"})
-        observation = TaskObservation(step=0, status="你在野外。", scene=TaskScene.WALK)
-        return type(
-            "Perceived",
-            (),
-            {
-                "observation": observation,
-                "calls": [{"model": "fake"}],
-                "frame_png": "",
-                "ram": None,
-            },
         )()
 
     def step(self, segments: list[tuple[str, int]], *, settle: bool = True) -> None:

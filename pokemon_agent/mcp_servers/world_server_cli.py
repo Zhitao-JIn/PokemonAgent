@@ -20,12 +20,10 @@ def main(mcp: FastMCP, start: Callable[[WorldPort, str | None], None], service_n
     parser.add_argument("--port", type=int, default=8767)
     args = parser.parse_args()
 
-    from pokemon_agent.brain.vision_factory import build_vision_provider
     from pokemon_agent.world import PyBoyWorld
 
     world = PyBoyWorld(
         args.rom,
-        build_vision_provider(model=args.vision_model, temperature=0.0),
         state_path=args.state_file,
     )
     start(world, args.rom)

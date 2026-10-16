@@ -181,4 +181,4 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
 
 
 def test_budget_schema_is_frozen_after_the_complete_field_batch():
-    assert state_schema_hash() == "b143f3ee76954378"
+    assert state_schema_hash() == "4f1cac6fcc7216d5"

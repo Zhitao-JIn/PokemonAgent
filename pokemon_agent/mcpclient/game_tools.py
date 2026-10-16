@@ -125,12 +125,7 @@ class GameTools:
         信封翻译随迁）；缺省 = 进程内 `PyBoyWorld`（与改造前行为一致）。
         **不在这里探活**——探活是 run 开始前的一道闸，放装配点显式打。
 
-        **为什么"造 `PyBoyWorld` + 挂哪个感知实现"收在这一处**：与
-        `BrainTool.build()` / `MemoryTool.build()` / `TraceTool.build()` 同一条
-        判据——"这个技能接哪个实现"是这条链路的接线知识，装配点不该 import
-        具体类。此前 `build.py` 直接 `PyBoyWorld(...)`，是四个独立模块里
-        **唯一还没做工厂的一个**；零件工厂（`build_vision_provider()`）早就有，
-        本体却还在装配点，是"造零件在 tool 层、装配在装配点"的半截工厂。
+        模拟器实现由本工厂装配，调用方只递 ROM、存档与运行选项。
 
         前置条件：`rom` 是存在的 ROM 路径；`state_path` 给了就必须存在
             （缺了在构造时当场炸，不留到 `reset()`——见 `PyBoyWorld.__init__`）。
@@ -151,16 +146,11 @@ class GameTools:
 
         # 导入放函数内：`pyboy_world` 一整条链拖着 `pyboy` + `PIL`，
         # 不该在 import 本模块时连带拉起（`tools/__init__.py` 的懒加载链同理）。
-        from pokemon_agent.brain.vision_factory import build_vision_provider
         from pokemon_agent.world import PyBoyWorld
 
         return cls(
             PyBoyWorld(
                 rom,
-                # temperature 钉死在 0：感知是抽取不是创作，同一张图两次读出
-                # 不同结果是纯噪声（`build_vision_provider` 的默认值已保证，
-                # 显式写出来是给读代码的人看）。
-                build_vision_provider(model=vision_model, temperature=0.0),
                 state_path=state_path,
                 watch=watch,
                 speed=speed,
