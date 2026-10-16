@@ -1,3 +1,13 @@
+## 2026-10-16（470）—— Task.max_steps 加下界、ModelCall 冻结、Action 形状校验改显式异常
+
+**改了什么**：domain 模型三处——① `Task.max_steps` 加 `Field(gt=0)`（description 不变），0 与负数在模型层被拒；② brain 方言的 `ModelCall` 加 `model_config = ConfigDict(frozen=True)`，字段赋值抛 `ValidationError`，改动一律走 `model_copy(update=...)`（docstring 一直写「不可变值语义」，这次让代码与之一致）；③ `Action._one_shape` 的 `assert filled == 1` 改成 `if filled != 1: raise ValueError(...)`，消息不变（pydantic 包成 `ValidationError`，对外表现不变），`python -O` 下也生效。
+
+**为什么这么改**：O9——文档写「> 0」但 0 与 -5 被接受，下界该由模型守而不是靠调用方 assert；O10——文档承诺不可变，实际可赋值，重试循环里一条账被原地改写就没有留档可言；O11——「恰好一种形状」是 pydantic 校验器该干的活，`assert` 在 `-O` 下被剥掉，空 `Action()` 会被放行。
+
+**取舍**：O11 消息保持原句「Action 必须恰好是按键链或脚本调用之一」，由 pydantic 包成 `ValidationError`，普通模式对外行为完全不变，只有 `-O` 下从「放行」变「拒绝」；`schemas/harness/communication/ModelCall.py` 那份 tool 层副本不动（语义归属不同，见 brain 侧模块 docstring）。
+
+**影响面**：`pokemon_agent/brain/interface/domain/task.py`、`model_call.py`、`action.py`；新增回归测试 4 条（O9 参数化 2 + 正例 1、O10 冻结与 copy 1、O11 空 Action 1），无旧测试被改（grep 确认仓库里没有构造 `max_steps<=0` 的生产代码、没有对 brain `ModelCall` 字段赋值的代码）；`python -O` 下 `Action()` 仍抛 `ValidationError`（仓库外脚本，`sys.flags.optimize=1`）；修复前红：O9 两组、O10 一组（普通模式），O11 的红只在 `-O` 下可见（改动前 `-O` 跑该用例失败，改动后通过）；domain+plan 102 passed 全绿。
+
 ## 2026-10-16（469）—— 429 归可重试；配置值校验改用 ValueError
 
 **改了什么**：`providers.py` 两处——① `_post` 的 HTTP 分类把 429 从 `ProviderRejected` 改归 `ToolTimeout`（消息格式不变，仍含类名、状态码、响应体），其余 4xx（400/401/403/404 等）与 5xx 不变；`_post` docstring 的分类段补写 429 例外及原因。② 配置值校验从 `assert` 改为抛 `ValueError`（消息一字不变）：基类构造的「型号名非空」与「0.0 <= temperature <= 2.0」、`ArkProvider` 与 `DeepSeekProvider` 构造的「型号名非空」、`provider_for` 的空型号名。调用方前置条件（`complete`/`describe` 的空 prompt、`describe` 空 images、`pack_images_grid` 前置断言）仍是 assert，不动。

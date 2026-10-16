@@ -91,3 +91,10 @@ def test_an_action_segment_defaults_to_a_single_press() -> None:
 def test_an_action_segment_rejects_a_non_positive_times(times: int) -> None:
     with pytest.raises(ValidationError):
         ActionSegment(name="up", times=times)
+
+
+def test_an_empty_action_is_rejected_even_under_python_o() -> None:
+    """`Action()` 两形状都空 → ValidationError；改动后 -O 下也生效（O11）。"""
+
+    with pytest.raises(ValidationError):
+        Action()

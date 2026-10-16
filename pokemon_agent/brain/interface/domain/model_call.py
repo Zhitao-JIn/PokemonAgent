@@ -32,15 +32,17 @@ tool 层的 `ModelCall`（`schemas/harness/communication/ModelCall.py`）是
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelCall(BaseModel):
     """brain 一次模型调用留下的账，外加它成没成。
 
-    **不可变值语义**（Pydantic 模型，改动一律用 `model_copy`）——
+    **不可变值语义**（Pydantic frozen 模型，改动一律用 `model_copy`）——
     重试循环里每一条账都要独立留档。
     """
+
+    model_config = ConfigDict(frozen=True)
 
     payload: dict[str, str | float | list[str]] = Field(
         default_factory=dict,

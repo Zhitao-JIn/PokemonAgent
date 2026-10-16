@@ -76,3 +76,18 @@ def test_model_call_defaults_to_success_and_an_empty_payload() -> None:
     assert call.error_kind == ""
     assert call.error == ""
     assert call.payload == {}
+
+
+def test_a_model_call_is_frozen_and_copies_on_change() -> None:
+    """`ModelCall` 是不可变值语义：字段赋值被拒，改动一律走 `model_copy(update=...)`（O10）。"""
+
+    call = ModelCall(payload={"ok": "true"}, error_kind="", error="")
+
+    with pytest.raises(ValidationError):
+        call.error = "boom"  # type: ignore[misc]
+
+    changed = call.model_copy(update={"error_kind": "ParseFailure", "error": "boom"})
+
+    assert call.error_kind == ""
+    assert changed.error_kind == "ParseFailure"
+    assert changed.error == "boom"

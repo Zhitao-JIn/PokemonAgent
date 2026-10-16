@@ -54,7 +54,8 @@ class Action(BaseModel):
     def _one_shape(self) -> Action:
         """`sequence` / `script` 恰好一个非空。"""
         filled = bool(self.sequence) + (self.script is not None)
-        assert filled == 1, "Action 必须恰好是按键链或脚本调用之一"
+        if filled != 1:
+            raise ValueError("Action 必须恰好是按键链或脚本调用之一")
         return self
 
     def segments(self) -> list[ActionSegment]:
