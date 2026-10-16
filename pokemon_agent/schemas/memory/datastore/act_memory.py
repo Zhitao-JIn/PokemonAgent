@@ -39,14 +39,6 @@ _EXTRA_ORDER: tuple[str, ...] = ("my_name", "my_level", "my_hp", "foe_name", "fo
 """同 `world.interface.domain.facts._EXTRA_ORDER`：视觉模型按 scene 自由给的那批
 字段里，这几个几乎每帧都出现、值得固定顺序，其余按字母序排在后面。"""
 
-BLIND_NOTE = "（本帧没做视觉感知：场景 / 叠加层 / 对话 / 概况等字段不在这一帧里）"
-"""没做过视觉感知的那一帧，渲染时必须顶上的那一行。
-
-**必须显式写出来，不能靠字段为空来暗示。** "没读过"和"读过、是空的/没变"是
-两件完全不同的事——静默省略会被读者（大脑、判定器）当成后者。同一条理由见
-`world/interface/domain/facts.py` 里"光标读不出要明写"那条。
-"""
-
 
 class ActMemory(BaseModel):
     """一条情景记忆：**我看到这样的画面，因为这些理由，做了这个动作，然后变成了这样。**
@@ -211,18 +203,14 @@ class ActMemory(BaseModel):
         done: bool = Field(default=False, description="产生这份观测时世界层是否已经不在了")
         perceived: bool = Field(
             default=True,
-            description="这一帧做过视觉感知没有。**链内按键只做纯 RAM 观测**——"
-            "位置/朝向/地标/通行图免费且确定，而视觉模型一次调用只买得到场景与对话。"
-            "所以那些帧的 `perceived` 是 False：`scene`/`overlay`/`dialog_text`/"
-            "`overview` **不是空的，是没读过**。这两者必须能分开——"
-            "静默省略会被读成「这些字段没变」",
+            description="仅为读取旧记忆保留的视觉感知标记，不影响当前渲染。",
         )
 
         def render(self, indent: str = "  ") -> str:
-            """同真身 `Observation.render()`；**没做过视觉感知时显式顶一行**。"""
+            """同真身 `Observation.render()`；旧感知标记不参与渲染。"""
             body = self.facts.render(indent)
             text = body if body else f"{indent}{self.status}"
-            return text if self.perceived else f"{indent}{BLIND_NOTE}\n{text}"
+            return text
 
     before: Observation = Field(description="做决定时看到的画面")
     action: str = Field(

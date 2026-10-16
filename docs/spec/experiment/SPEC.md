@@ -109,7 +109,7 @@ experiment/
 
 `check_harness.py` 的三个模块常量：`MODEL = "deepseek-flash"`（**一个常量管全部五个位置**，
 厂商类由前缀表选）、`WATCH = False`、`SPEED = 10`。装配调用是
-`build_real(ROM, STATE, vision_model=MODEL, …, run_id=run_id,
+`build_real(ROM, STATE, …, run_id=run_id,
 reviewer=WebReviewer(run_id, url=review_url) if _REVIEW_MODE else None,
 watch=WATCH, speed=SPEED)`。
 

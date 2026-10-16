@@ -59,7 +59,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolGetActionSpaceReq,
     FromHarnessToGameToolGetActionSpaceResp,
     FromHarnessToGameToolLoadStateReq,
-    FromHarnessToGameToolPerceiveOnceResp,
     FromHarnessToGameToolPerceiveTaskResp,
     FromHarnessToGameToolResetReq,
     FromHarnessToGameToolSaveStateReq,
@@ -73,7 +72,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolSnapshotMemoryReq,
     FromHarnessToMemoryToolSnapshotMemoryResp,
     FromHarnessToTraceToolAppendReq,
-    ModelCallLog,
     TraceEvent,
 )
 
@@ -203,7 +201,7 @@ class GameToolPort(Protocol):
         ...
 
     def reset(self, req: FromHarnessToGameToolResetReq) -> None:
-        """按任务重置到初始状态。**不感知**——调用方另调 `perceive_with_retry()` 拿第一帧。
+        """按任务重置到初始状态。**不感知**——调用方另调 `perceive_task()` 拿第一帧。
 
         req.task：要跑的任务。
         前置条件：req.task.max_steps > 0。
@@ -225,20 +223,6 @@ class GameToolPort(Protocol):
 
         前置条件：`req.path` 是 `save_state` 写出的文件。
         失败：文件不存在或读失败原样抛出。
-        """
-        ...
-
-    def perceive_with_retry(self) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]:
-        """感知当前这一帧（episode 层的视觉档）——**重试循环与异常翻译都在实现方**（0913 夜定案）。
-
-        反复问视觉模型，直到成功或预算耗尽。
-        harness 只负责**落账**：成功用返回的 `log`，耗尽用异常携带的 `calls`
-        ——两侧分工与 brain 那六条链路逐字相同（见 `think_action`）。
-        失败：预算耗尽抛 `MaxRetriesExceeded`（`source="sense"`）。
-            **`PerceptionAttemptFailed` 不是本协议的词汇**——那是 world 的内部
-            细节，被实现方在桥上接住、翻译掉了，跨不过这层。
-
-        后置条件：resp.observation 非空；step 未盖章（Harness 的事）。
         """
         ...
 

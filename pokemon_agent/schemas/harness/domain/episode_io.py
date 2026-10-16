@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from pokemon_agent.brain import Task
 from pokemon_agent.schemas.memory import EpisodeMemory
-from pokemon_agent.world import Observation
+from pokemon_agent.world import TaskObservation
 
 from .termination import Settled, Termination
 
@@ -46,7 +46,7 @@ class EpisodeOutput(Settled, BaseModel):
     )
     tasks_used: int = Field(ge=0, description="本局派了几个 task")
     acts_used: int = Field(ge=0, description="本局累计按了几个键（统计用，不参与预算）")
-    observation: Observation | None = Field(default=None, description="终局帧；异常局为 None")
+    observation: TaskObservation | None = Field(default=None, description="终局帧；异常局为 None")
     memory: EpisodeMemory | None = Field(
         default=None, description="本局蒸出的 EpisodeMemory；没有可蒸 TaskMemory 时为 None"
     )

@@ -75,16 +75,15 @@ def test_decode_fields_skip_only_missing_truth_and_score_empty_truth(actual, tru
     assert field_verdict(actual, truth, key).value == value
 
 
-def test_only_the_six_evaluation_tasks_are_public() -> None:
+def test_only_the_five_evaluation_tasks_are_public() -> None:
     assert set(TASKS) == {
         "decode",
         "memory_store_recall",
         "world_script_execute",
-        "episode_vision_read",
         "brain_goal_judge",
         "agent_short_goal_run",
     }
-    assert sum(entry.kind == "deepeval" for entry in TASKS.values()) == 4
+    assert sum(entry.kind == "deepeval" for entry in TASKS.values()) == 3
     for name, entry in TASKS.items():
         if entry.kind == "deepeval":
             assert Path(entry.entry.replace(".", "/"), "__main__.py").is_file()

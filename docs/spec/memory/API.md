@@ -1,5 +1,7 @@
 # memory —— API 接口文档
 
+> 当前观测不再产出 perceived/overview。旧记忆的 perceived 字段只为读取保留、不再渲染；overview 字段与“概况”渲染仍保留。
+
 > 最后更新：2026-09-16 ｜ 活文档：跟随代码更新，与代码冲突时**以代码为准**
 >
 > 本文档是 **API 参考**（调什么、怎么调、出错什么样）；
@@ -543,7 +545,7 @@ class MemoryTool:
 **签名收裸字段而不是收 provider 实例**：那样装配点就得先
 `from pokemon_agent.memory import FastEmbed*`——正是 `build()` 要消灭的那一行。
 `MemoryTool.build()` 是**全项目唯一 `new LocalEmbeddingProvider / LocalRerankerProvider` 的地方**，
-与 `BrainTool.build()` / `TraceTool.build()` / `build_vision_provider()` 同形。
+与 `BrainTool.build()` / `TraceTool.build()` 同形。
 
 ### 7.1 四族与被查询方式
 

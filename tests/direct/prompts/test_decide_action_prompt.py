@@ -31,7 +31,7 @@ def _goal_section(goals: list[Goal]) -> str:
     prompt = build_prompt(
         FromHarnessToBrainToolChooseOnceReq(
             goals=goals,
-            obs=TaskObservation(step=0, status="你在野外。", perceived=False, scene=TaskScene.WALK),
+            obs=TaskObservation(step=0, status="你在野外。", scene=TaskScene.WALK),
             space=ActionSpace(names=["up"], descriptions={"up": "向上走"}),
             memories=[],
         )

@@ -1,7 +1,7 @@
-"""存下来的一帧 → `perceive_frame` 要的两样输入：截图字节 + 按绝对地址可读的内存。
+"""存下来的一帧 → `perceive_task` 要的两样输入：截图字节 + 按绝对地址可读的内存。
 
 帧样本带着整块 WRAM（0xC000–0xDFFF）与截图；通行表在 ROM bank 0
-（`ram.read_passable`），所以 WRAM 快照 + ROM 前 16KB 就够 `perceive_frame` 读出与当时
+（`ram.read_passable`），所以 WRAM 快照 + ROM 前 16KB 就够 `perceive_task` 读出与当时
 逐字节相同的地形、屏幕文字与战斗状态——不需要起模拟器。
 """
 
@@ -22,7 +22,7 @@ PNG_PREFIX = "data:image/png;base64,"
 class SnapshotMemory:
     """WRAM 快照 + ROM bank 0 的只读内存（`world.interface.Memory` 的形状）。
 
-    读到这两段以外的地址当场炸：说明 `perceive_frame` 开始读快照里没有的东西
+    读到这两段以外的地址当场炸：说明 `perceive_task` 开始读快照里没有的东西
     （切换 bank 的 ROM、VRAM、HRAM），这份快照就不再等价于那一帧了。
     """
 

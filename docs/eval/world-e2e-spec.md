@@ -1,7 +1,7 @@
 # spec —— world_script_execute 与 agent_goal_run 的下一版
 
 > 流程位置：（本轮没有 intent，范围由用户 1008 定：**只做这两个 task**）→ **world-e2e-spec.md** → world-e2e-plan.md
-> 现状以 2026-10-08 仓库为准（CHANGELOG 424）。用户已确认收敛为 **31 个公开脚本**；本次只更新规格与计划，能力收敛尚未实施。decode / episode_vision_read / memory_store_recall / brain_goal_judge 本轮不动。
+> 现状以 2026-10-08 仓库为准（CHANGELOG 424）。用户已确认收敛为 **31 个公开脚本**；本次只更新规格与计划，能力收敛尚未实施。decode / episode_vision_read（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） / memory_store_recall / brain_goal_judge 本轮不动。
 
 ---
 
@@ -18,6 +18,8 @@
 | E4 | v2 规模：L1 20（v1 原样）+ L2 ≈10 + L3 ≈5；L3 进 `test` 切分 | 只做 L1 + L2 | §3.5 |
 | E5 | 正式基线 **k=3**；记忆开关对照作为可选的最后一步 | k=1；或不做对照 | §3.6、§3.8 |
 | E6 | v2 样本 schema 删 `rubric` / `k_metric`（零消费者），v1 loader 兼容读 | 保留 | §3.2 P5 |
+
+> 例外（2026-10-15）：v1 的 `knowledge_battle_pokemon_switch` 的 `check_id` 已从 `null` 改为 `party_list_opened_in_battle`，见 CHANGELOG 459；W1 的“v1 冻结不动”与 E1 的“v1 数据零改动”其余部分不变。本例外不向样本增加字段，也不改 world 用例。
 
 **world 已确认的架构约束**：只暴露 §2.1 的 31 个完整操作；内部脚本由 world 实现和调用，
 不出现在动作空间、模型签名、MCP 工具列表或外部通用分发中。全部脚本纳入同一能力目录。W1/W2 已完成；新增能力目录与合并工作必须先于 v2 用例冻结。
@@ -115,6 +117,8 @@ close_menu 无需让调用方指定内部菜单种类，seek_encounter 保留有
 | bag_toss / party_switch / party_field_move / party_stats / naming_enter_name | toss_item / reorder_party / use_field_move / pokemon_stats / enter_name | 按新业务名对外，其余规则不因改名改变 |
 | 其余 22 个名字 | 保留 | 纳入同一公开目录 |
 
+> 上述暂定项表下的冻结例外仅适用于 `knowledge_battle_pokemon_switch.check_id`（CHANGELOG 459），本节其余冻结约束不变。
+
 旧名和内部名不作为生产外部调用的兼容别名。既有 v1 冻结文件与历史 trace 不重写；
 v1 的旧用例与日志保留作历史依据，不增加旧名的生产调用入口。
 v2 迁移语义相同的旧用例，排除只核内部步骤的用例。只核 shop_buy 等内部菜单步骤的
@@ -192,6 +196,8 @@ kind_accuracy 使用已落地的独立指标名，避免多个同名 grouped 被
 | P6 | **评分模型不独立**。评分模型和被测系统同为 deepseek-flash；对 19 条可机械判定的样本它是冗余列，只在 1 条不可判样本上真正有用，却从没校准过 |
 | P7 | **失败没有归因**。只有"判负"一个结论，分不清是脚本坏了、判定员误判、停摆，还是预算耗尽 |
 | P8 | `knowledge_battle_pokemon_switch` 没有机械判据。decode 现在能识别 `battle_switch` 场合，可以补上 |
+
+> P8 更新（2026-10-15）：已由 CHANGELOG 459 补齐 `party_list_opened_in_battle` 与 v1 样本的 `check_id`；上表保留原问题记录。
 
 ### 3.3 判据分两型（E1）
 

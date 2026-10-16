@@ -5,14 +5,8 @@
 `JudgeProvider` 两个协议搬进 `brain/interface/` 是同一条判据，只是这次搬的是
 实现。此后 `pokemon_agent/providers/` 这个包**不再存在**。
 
-**它只服务 brain 吗**：不是——`world` 的 `PyBoyWorld` 也拿一个 `QwenProvider`
-当视觉用。但 `world` 通过**自己声明的** `VisionProvider` 协议消费它，不需要
-知道这个类住哪；它由 tool 层的接线工厂
-（`brain/vision_factory.build_vision_provider()`，0913 深夜九起）造出来、
-装配点（`build.py::build_real()`）只负责递进去——**对 brain 的实现依赖
-因此只落在 tool 层**。
-两个消费者之中 brain 是主要那个，且"用哪家厂商、怎么关思考模式"这套接线知识
-本来就是 brain 这条链路的（见 `build_llm_providers.py`），所以家在 brain。
+文本与多模态补全都由 brain 自己的 `LLMProvider` / `JudgeProvider` 协议消费；
+provider 的选择由 `build_llm_providers()` 完成。
 
 **全项目只有这个文件直连模型服务**（CLAUDE.md 第六节）——"直连层"从
 `providers/` 这个物理包变成"这一份文件"，铁律本身没变。加一个新供应商 =
@@ -24,8 +18,8 @@
 1. **一个供应商一个 Provider 类，不按用途（text/vision）分类。** 当前在用的
    `qwen3.8-max`/`doubao-seed-2-1-pro`/`doubao-seed-2-1-turbo` 全是原生多模态
    模型，一个类 `.complete()`/`.describe()` 两个方法都实现，用哪个方法取决于
-   调用方（`Brain` 走 `LLMProvider.complete`，`PyBoyWorld` 走
-   `VisionProvider.describe`），跟"这个类打的是哪个供应商"是两件事。哪怕
+   调用方（`Brain` 按输入走 `LLMProvider.complete` 或
+   `JudgeProvider.describe`），跟"这个类打的是哪个供应商"是两件事。哪怕
    塞进去的 `model` 是纯文本模型（比如 `qwen-plus`），类本身仍然两个方法都有
    ——只是永远不会被调 `.describe()`。
 2. **换供应商 = 换类，换模型 = 换 `model=` 参数，url/key 不用跟着变。** 每个
@@ -147,8 +141,8 @@ class _OpenAICompatibleBase:
         不接受调用方覆盖——见模块 docstring 第 2 条设计决定。
 
         **没有 `max_attempts`**（0915 起）：provider 一次都不重发——一次调用
-        就是一次 HTTP 请求，重试的循环与预算全在调用方（`BrainTool._attempt_loop` /
-        `GameTools.perceive_with_retry`）。provider 层偷偷重试会让账上一条
+        就是一次 HTTP 请求，重试的循环与预算全在调用方（`BrainTool._attempt_loop`）。
+        provider 层偷偷重试会让账上一条
         `ModelCall` 藏最多 3 次真实请求，耗费与失败计数全部失真。
         """
         if not model:
@@ -197,7 +191,7 @@ class _OpenAICompatibleBase:
         timeout_s: float | None = None,
     ) -> dict:
         """POST **一次**，失败按类别立即上抛。**不重试**——重试的循环与预算
-        全在调用方（`BrainTool._attempt_loop` / `GameTools.perceive_with_retry`），
+        全在调用方（`BrainTool._attempt_loop`），
         见 `__init__` docstring 里"没有 `max_attempts`"那段。
 
         `thinking`：这一次的思考开关覆盖（`LlmCompleteReq.thinking`）；
@@ -344,7 +338,7 @@ def _png_bytes(image: str) -> bytes:
     """帧字符串 → PNG 原始字节。
 
     前置条件：`image` 是完整 data URI（`data:image/png;base64,…`）——
-    0915 起这是**唯一**的帧格式（`world/pyboy_world._png_data_uri` 产出），
+    0915 起这是**唯一**的帧格式（`world/frame_encoding.png_data_uri` 产出），
     裸 base64 不再被认。需要字节的只有两处：拼网格图（PIL 只吃像素）和
     排查落盘（写 .png 文件）——这两处绕不开"文本 → 字节"这一跳。
     """
@@ -470,7 +464,7 @@ class _MultimodalMixin:
     def describe(
         self, req: VisionDescribeReq, *, timeout_s: float | None = None
     ) -> VisionDescribeResp:
-        """见 `VisionProvider.describe` 的契约，尤其是关于静默丢图的那一段。
+        """见 `JudgeProvider.describe` 的契约，尤其是关于静默丢图的那一段。
 
         图片是一组（`judge`/`verify`/`summarize` 会带 `ActMemory` 历史里的
         截图一起问），按 `req.images` 的顺序排列。
@@ -478,7 +472,7 @@ class _MultimodalMixin:
         **文字块在最前面，图片在最后面**——
         DashScope/火山方舟的隐式缓存都是从请求
         **最开头**匹配前缀的，而我们的 `prompt` 里前面一大截是静态规则文字
-        （`perceive_screen.md`/`judge_success.md` 那种，每次调用几乎一字不
+        （`judge_success.md`/`verify.md` 那种，每次调用几乎一字不
         变），后面才是这一帧才有的动态内容；`images` 却是每一步都不同的一
         帧截图。图片摆在最前面时，这个天天不变的静态前缀永远排在"会变的
         图片"后面，前缀匹配从第一个 token 起就断了，静态部分**一分钱缓存
@@ -486,7 +480,7 @@ class _MultimodalMixin:
         被跨调用复用、按标准价的 20% 计费。**图在前/图在后会改变视觉模型实际
         读到的 token 顺序**，对识别准确率的影响没有实测数据，需要真机跑几局
         观察 `ModelCall.payload["cached_tokens"]` 涨没涨、以及识别准确率
-        （`ImageNotDelivered`/`ParseFailure` 频率、judge/perception 的实际判断
+        （`ImageNotDelivered`/`ParseFailure` 频率、judge/verify 的实际判断
         质量）有没有退化（调整决策记录见 `CHANGELOG.md` 2026-09-05 条目）。
         """
         assert req.images, "describe() got no images"
@@ -599,7 +593,7 @@ def pack_images_grid(images: list[str]) -> str:
         canvas.paste(f, ((i % cols) * (w + sep), (i // cols) * (h + sep)))
     buf = io.BytesIO()
     canvas.save(buf, "PNG")
-    # 产出与前缀纪律一致（`world/pyboy_world._png_data_uri`）：网格图离开本层
+    # 产出与前缀纪律一致（`world/frame_encoding.png_data_uri`）：网格图离开本层
     # 之后与普通帧无异（进模型 / 落盘 / 进账），格式必须还是完整 data URI。
     return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"
 
@@ -738,20 +732,6 @@ class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
 
 # ---- 选型表：型号名 → 厂商类（0914 起） ----
 #
-# **为什么需要它**：在它之前，"这个型号名该走哪个类"这条知识被**写死**在两处——
-# `brain/build_llm_providers.py` 里 decide/judge 恒为 `QwenProvider`、verify/plan 恒为
-# `ArkProvider`，`brain/vision_factory.py` 里恒为 `QwenProvider`。三处（加上装配点传的
-# 型号名）各说各话：想把某条链路换一家厂商，得改两个文件里的 new 语句，而"哪个型号名
-# 属于哪家"从来没有一处能一眼看全。上面那段模块文档的第 2 条说"换供应商 = 换类"，
-# 但**"换成哪个类"此前没有落点**——本表就是那个落点。
-#
-# **它不新增 new 实现的地方**：全项目能 new 具体实现的口子仍然只有贴着消费者的
-# 那几个工厂（`BrainTool.build` / `GameTools.build` / `MemoryTool.build` /
-# `TraceTool.build`）与 `build_llm_providers`/`build_vision_provider` 两个接线工厂；
-# 本函数是那两个工厂**共用的一张表**，不是第三个口子。
-#
-# **判据按前缀而不是全名**：型号名带版本（`qwen3.8-max`）与日期（`doubao-seed-2-1-pro-260628`）
-# 后缀，全名表写完就过期。"前缀"取的是**厂商名**那一维，它不随版本漂。
 _PROVIDER_PREFIXES: tuple[tuple[str, type[_OpenAICompatibleBase]], ...] = (
     ("deepseek", DeepSeekProvider),
     ("doubao", ArkProvider),

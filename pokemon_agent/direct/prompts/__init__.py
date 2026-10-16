@@ -35,17 +35,6 @@
   summarize 原本合并成一次调用，拆开后模板与装配模块都跟着一分为二）；`run_plan.py` 服务
   `RunHarness.plan()`——`RunHarness` 只组装结构化的 `PlanOnceReq`，
   struct→text 一律在这层做。
-  `perceive_screen` **已经不在这一层了**（0913 定案，CHANGELOG 同日条目）：
-  它不经过 `Brain` 也不经过任何 Harness 节点——`PyBoyWorld` 自己 `load()` 并渲染，
-  是"拥有这次 LLM 调用的那个类"自己的事，所以素材跟着 world 走
-  （现居 `world/prompts/perceive_screen.md`，读取器 `world/prompts/__init__.py`）。
-  它曾经还构成一条**反向依赖**（`world → tools.prompts → world` 的环），
-  只是被 `world/__init__.py` 的"interface eager / 实现 lazy"恰好错开——
-  那份保护是脆的，所以按 P1「拷走 world 后感知还跑得起来吗」把它移回去了。
-  （`episode_summary.md` 与 `verify_and_summarize.md` 都已删除——前者并进了那次
-  合并调用，后者又随 `verify`/`summarize` 拆成两次独立调用而退役，各由
-  `calls/verify.md` + `calls/summarize.md` 接手；结构演进史见 `CHANGELOG.md`
-  2026-09-04/05/06 与 2026-09-12 第 39 条。）
 
 **调用方不需要关心某个 prompt 到底在哪一层子目录下**：`load(name)` 在整棵
 `prompts/` 目录树里递归找 `<name>.md`，`load("decide_action")` 和
@@ -54,9 +43,9 @@
 当场报错（`assert`），不会默默取第一个匹配。
 
 用法：
-    from pokemon_agent.prompts import load
-    tpl = load("perceive_screen")
-    text = tpl.render(scene_fields="...")
+    from pokemon_agent.direct.prompts import load
+    tpl = load("button_help")
+    text = tpl.render()
 """
 
 from __future__ import annotations

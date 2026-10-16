@@ -22,7 +22,7 @@
 
 | 对象 | 类型（协议） | 唯一来源 | 装配点递的裸字段 |
 |---|---|---|---|
-| `game` | `GameTools`（`GameToolPort`） | `GameTools.build(rom, state_path=…, watch=…, vision_model=…, speed=…)` | ROM 路径、存档、两个旋钮、感知型号名 |
+| `game` | `GameTools`（`GameToolPort`） | `GameTools.build(rom, state_path=…, watch=…, speed=…)` | ROM 路径、存档、两个旋钮 |
 | `trace_tool` | `TraceTool`（`TraceToolPort`） | `TraceTool.build(run_id=…, trace_root=…)` | `run_id`、`trace_root` |
 | `memory` | `MemoryTool`（`MemoryToolPort`） | `MemoryTool.build(memory_root=…)` | 一个记忆根（四族一视同仁地住在它下面各自的 `<kind>/`） |
 | `run_brain` / `episode_brain` / `task_brain` | `BrainTool`（容器） | `BrainTool.build(...)` **按需各造一份**：run 只传 `plan=`，episode 传 `text/judge/verify=`，task 只传 `text=` | 各自的型号名 + 输出上限 |
@@ -41,7 +41,7 @@
 - **`reviewer` 必须是同一份策略对象**（`plan` 插话与 `review` 审两处读）；**`world` 与事件流都不在返回值里**
   （world 归 `GameTools` 持有，账一律经 `deps.trace` 读写）。
 
-`build_real` 的参数（缺省值即工厂缺省）：`rom`、`state_file=None`、`vision_model="qwen3.8-max"`、
+`build_real` 的参数（缺省值即工厂缺省）：`rom`、`state_file=None`、
 `text_model="qwen-plus"`、`judge_model="qwen3.8-max"`、`verify_model="doubao-seed-2-1-pro-260628"`、
 `plan_model="doubao-seed-2-1-pro-260628"`、`max_tokens=25600`、`watch=False`、`speed=0`、
 `run_id="local"`、`trace_root=None`、`memory_root=None`、`checkpoint_root=None`、`branch="main"`（两个落盘根：缺省 = **进程启动目录**
@@ -49,16 +49,15 @@
 memory 只有一个根，四族各占其下 `<kind>/`）、
 `reviewer=None`。
 
-**tool 层的接线工厂共五个**：`BrainTool.build` / `GameTools.build` / `MemoryTool.build` /
-`TraceTool.build`（四个 classmethod）+ `vision_factory.build_vision_provider(model, temperature=0.0)`
-（函数，由 `GameTools.build` 内部调）。另有一个不在 tool 层的
+**tool 层的接线工厂共四个**：`BrainTool.build` / `GameTools.build` / `MemoryTool.build` /
+`TraceTool.build`（四个 classmethod）。另有一个不在 tool 层的
 `brain/build_llm_providers.py::build_llm_providers(config)`（由 `BrainTool.build()` 内部调）；`build.py` 一个都不越过。
 
 - **厂商由型号名前缀决定**：`brain/providers.py::provider_for()` 查 `_PROVIDER_PREFIXES`
   （顺序即优先级）：`deepseek` → `DeepSeekProvider`、`doubao` → `ArkProvider`、`qwen` → `QwenProvider`。
   前缀不认识 → **装配期** `ValueError`，不拖到第一次调用才 404。
 - **温度分层**（`brain/build_llm_providers.py` 的常量，不是旋钮）：`DECIDE_TEMPERATURE = 0.3`
-  （决策链）、`DETERMINISTIC_TEMPERATURE = 0.0`（judge / verify / plan）；感知链温度恒 0。
+  （决策链）、`DETERMINISTIC_TEMPERATURE = 0.0`（judge / verify / plan）。
 - **两个旋钮互相独立**：`watch` 管开不开 SDL 窗口，`speed` 管倍率（`0` 不限速、`1` 真实速度）。
 
 ## 三、环境变量
@@ -86,11 +85,11 @@ memory 只有一个根，四族各占其下 `<kind>/`）、
 | 类 | 语义 | 谁抛 / 谁接 |
 |---|---|---|
 | `AgentError(Exception)` | 本项目**预期内失败**的基类；捕获它 = "我知道这里会出问题" | —— |
-| `MaxRetriesExceeded(AgentError)` | 连续重试仍拿不到可用结果的**升级态** | 抛：`BrainTool._attempt_loop` / `GameTools.perceive_with_retry`；接：harness 的调用点（run / episode 的 `act` 只兜 `AgentError`） |
+| `MaxRetriesExceeded(AgentError)` | 连续重试仍拿不到可用结果的**升级态** | 抛：`BrainTool._attempt_loop`；接：harness 的调用点（run / episode 的 `act` 只兜 `AgentError`） |
 
 `MaxRetriesExceeded.__init__(attempts, last_reason, calls=(), source="")` 四个字段：`attempts`（试了几次）、
 `last_reason`（最后一次为什么失败）、`calls: list[ModelCall]`（整条失败账，tool 层那份 `ModelCall`，可空）、
-`source`（哪条链路耗尽：`"choose"` / `"plan"` / `"decompose"` / `"judge"` / `"verify"` / `"summarize_episode"` / `"summarize_task"` / `"sense"`）。
+`source`（哪条链路耗尽：`"choose"` / `"plan"` / `"decompose"` / `"judge"` / `"verify"` / `"summarize_episode"` / `"summarize_task"`）。
 
 **模块自己的词汇不住这里**：`brain/errors.py` 自成一根 `BrainError`、`world/errors.py` 自成一根
 `WorldError`——它们的异常在 tool 层的桥上就被翻译成 `MaxRetriesExceeded`，
@@ -98,7 +97,7 @@ memory 只有一个根，四族各占其下 `<kind>/`）、
 
 ## 五、当前状态与已知缺口
 
-- `config.py` 的全部常量：重试预算 `BRAIN_MAX_ATTEMPTS=3`、`PERCEPTION_MAX_RETRIES=3`、
+- `config.py` 的全部常量：重试预算 `BRAIN_MAX_ATTEMPTS=3`、
   `MODEL_RETRY_BACKOFF_SECONDS=0.5`、`CONSOLE_REVIEW_TIMEOUT=30.0`；输出上限 `MAX_SEGMENTS=4`、`MAX_TIMES=8`；
   三层停判 `STALL_LIMIT=5`（task）、`EPISODE_STALL_LIMIT=3`、`RUN_STALL_LIMIT=3`、`RUN_MAX_EPISODES=50`；
   规划 `EPISODE_MAX_TASKS_PER_PLAN=5`、`PLAN_MAX_NEW_GOALS=3`；图闸门 `NODES_PER_DECISION=3`、`NODES_PER_PRESS=1`、
@@ -109,5 +108,5 @@ memory 只有一个根，四族各占其下 `<kind>/`）、
 
 ### 发现的不一致
 
-- **AGENTS.md 六写"这三个工厂同形，都在 tool 层"**：代码里 tool 层实际有**五个** `build*`
-  （四个 classmethod + `build_vision_provider`），而 `build_llm_providers` 在 `brain/` 不在 tool 层。
+- **AGENTS.md 六写"这三个工厂同形，都在 tool 层"**：代码里 tool 层有**四个** `build*`
+  （四个 classmethod），而 `build_llm_providers` 在 `brain/` 不在 tool 层。

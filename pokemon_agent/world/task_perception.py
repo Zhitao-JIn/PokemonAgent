@@ -1,12 +1,18 @@
 """task 档单帧 RAM 观测装配；地图不稳定时省略位置与地形。"""
 
+from .battle_status import read_battle_status
+from .frame_encoding import png_data_uri
 from .interface import Facts, Memory, ScreenText, TaskObservation, TaskPerceived, TerrainMap
-from .perceive_frame import _battle_fields
 from .readout import read_readout
 from .scene import classify_scene
 from .screen_text import layout_field, overlay_of
 from .scripts.scenes import takeover_view
-from .visual_perception import _png_data_uri
+
+
+def _battle_fields(mem: Memory) -> dict[str, str]:
+    """战斗双方状态框压成 `Facts` 动态字段（`my_*` / `foe_*`）；不在战斗时为空。"""
+    battle = read_battle_status(mem)
+    return battle.facts_fields() if battle is not None else {}
 
 
 def _ram_status(terrain: TerrainMap | None, text: ScreenText) -> str:
@@ -60,11 +66,10 @@ def observe_task(
             status=_ram_status(terrain, text),
             facts=facts,
             done=closed,
-            perceived=False,
             scene=scene,
             menu_decode_complete=text.covered,
             takeover=takeover_view(scene, text, mem, rom),
         ),
-        frame_png=_png_data_uri(png),
+        frame_png=png_data_uri(png),
         ram=read_readout(mem, text, text_source="decode"),
     )

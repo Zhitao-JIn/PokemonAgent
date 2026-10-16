@@ -75,7 +75,7 @@ class SenseFrameContent(_Content):
     status: str
     facts: Facts
     done: bool
-    perceived: bool
+    perceived: bool | None = None
     place: PlaceInWorld | None = None
     scene: TaskScene | None = None
     takeover: TakeoverView | None = None

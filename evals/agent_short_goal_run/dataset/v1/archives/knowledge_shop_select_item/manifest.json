@@ -1,5 +1,5 @@
 {
-  "checkpoint_id": "eval-knowledge_shop_select_item@main-832f46c2",
+  "checkpoint_id": "eval-knowledge_shop_select_item@main-53d5ffd0",
   "level": "run",
   "run_id": "eval-knowledge_shop_select_item",
   "branch": "main",
@@ -45,11 +45,11 @@
   "run_ref": null,
   "episode_ref": null,
   "world_file": "world.state",
-  "memory_archive": "archives/knowledge_shop_select_item/memory/snapshots/eval-knowledge_shop_select_item@main-832f46c2.zip",
+  "memory_archive": "archives/knowledge_shop_select_item/memory/snapshots/eval-knowledge_shop_select_item@main-53d5ffd0.zip",
   "code": {
-    "git_commit": "12a6ccfe51545e8e0641207374832ecf03c678c5",
+    "git_commit": "256253f4a8ad0a3c86b48dea5f4d28c384756bcd",
     "git_dirty": true,
-    "state_schema_hash": "40e2cd635256744f"
+    "state_schema_hash": "4f1cac6fcc7216d5"
   },
   "models": {
     "vision": "deepseek-flash",
@@ -58,5 +58,5 @@
     "verify": "deepseek-flash",
     "plan": "deepseek-flash"
   },
-  "created_at": "2026-10-14T21:23:53+0200"
+  "created_at": "2026-10-16T16:21:11+0200"
 }

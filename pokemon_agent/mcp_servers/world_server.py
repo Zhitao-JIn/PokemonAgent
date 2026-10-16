@@ -1,4 +1,4 @@
-"""world server：MCP 注册表暴露 7 条原子操作、租约归还与 37 条脚本，另有健康检查。
+"""world server：MCP 注册表暴露 6 条原子操作、租约归还与 37 条脚本，另有健康检查。
 
 **这一层没有领域逻辑**：每条 tool = `WorldPort` 同名方法的直译（bytes 走 base64），
 信封组装归 mcpclient、脚本与判定归 server 进程内的脚本层（P4 起）。
@@ -128,24 +128,6 @@ def perceive_task() -> dict[str, Any]:
         data={
             "observation": perceived.observation.model_dump(mode="json"),
             "frame_png": perceived.frame_png,
-            "ram": perceived.ram,
-        }
-    )
-
-
-@mcp.tool()
-def perceive_once() -> dict[str, Any]:
-    """读当前这一帧的**视觉档**（调一次视觉模型，不重试；重试预算归调用方）。"""
-    try:
-        perceived = _w().perceive_once()
-    except Exception as exc:  # noqa: BLE001 —— world 的词汇不该跨进程泄漏
-        return fail("perception_failed", f"{type(exc).__name__}: {exc}")
-    return envelope(
-        data={
-            "observation": perceived.observation.model_dump(mode="json")
-            if perceived.observation is not None
-            else None,
-            "calls": perceived.calls,
             "ram": perceived.ram,
         }
     )

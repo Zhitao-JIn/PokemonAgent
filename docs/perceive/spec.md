@@ -1,4 +1,5 @@
 # spec —— task 层按场合感知；一切多级选择机械接管
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 流程位置：intent.md → **spec.md** → plan.md → PR → production
 > 状态：**草案**（2026-09-26）；第十三节 1–4 已定，第 5 条是落地前的补测清单

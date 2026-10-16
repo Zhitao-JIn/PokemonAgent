@@ -1,33 +1,6 @@
-"""world 包：`WorldPort` 的实现——PyBoy 模拟器与视觉感知的粘合层。
+"""world 统一出口：模拟器、内存观测、动作与世界语义常量。
 
-- `interface/`：这个子系统的港口 + 全部数据 schema——协议（`world_port.py` 的
-  `WorldPort`、`memory.py` 的 `Memory`）和数据形状（`domain/` 下的
-  `Facts`/`ScreenState`/`TerrainMap`/`Observation`/`ActionSpace`/`PlaceInWorld`/
-  `Perceived`，外加一批常量）都在这里，跟"怎么读/怎么算"的实现物理分开
-- `pyboy_world.py`：`PyBoyWorld`——模拟器生命周期、按键链、感知调度
-- `ram.py`：从模拟器内存直接读地形/朝向/地标（`read_terrain` 等），产出
-  `interface` 里定义的 `TerrainMap`
-- `prompts/`：world 自己的 prompt 素材（`perceive_screen.md` + 一份自持的
-  `load()`/`PromptTemplate`）——这条 LLM 调用不经过 `Brain` 也不经过任何
-  Harness 节点，是 `PyBoyWorld` 自己 `load()` 并渲染的，素材因此跟着 world 走
-  （0913 从 `direct/prompts/` 搬来，理由见该包 docstring）
-
-本文件是统一出口：消费方只写 `from pokemon_agent.world import X`，不深到模块文件。
-
-**`interface/` 立即加载，其余懒加载。** `interface/`（含 `WorldPort`）现在是
-零依赖的纯协议 + pydantic schema，不碰 PyBoy，可以放心立即加载——`WorldPort`
-的方法签名已经改成裸字段，不再 `import pokemon_agent.brain`、也不再依赖
-`schemas.*`（详见 `world/interface/world_port.py` 的模块 docstring）。
-`pyboy_world.py` 一整条链还拖着 `from pyboy import PyBoy` 这个重依赖，继续
-懒加载，不需要为了一个重依赖拖慢整个包的 import。（`VisionProvider` 曾经也要
-从 `providers` 拿，2026-09-13 已搬进 `interface/`——这一条不再是懒加载的理由。）
-
-**实时画面管道 0913 夜已删**：`world/frame_slot.py`（`FrameSlot`）连同
-`PyBoyWorld.latest_frame()`、`GameTools.latest_frame()`、两个
-`FromFrontendToGameToolLatestFrame*` 信封一起移除——唯一消费者是 `api.py`
-的 SSE 端点，而 `api.py` 0913 晚已删，整条链从此零调用，生产端却仍每帧
-`image.copy()`。服务端重建时按需重写，不预留"现成件"。
-"""
+协议和数据形状立即加载；PyBoy 实现与读取函数按需加载。"""
 
 from __future__ import annotations
 
@@ -70,10 +43,8 @@ from .interface import (
     Observation,
     PartyView,
     PcView,
-    Perceived,
     PlaceInWorld,
     RamReadout,
-    ScreenState,
     ScreenText,
     ScriptParam,
     ShopItem,
@@ -83,15 +54,11 @@ from .interface import (
     TaskPerceived,
     TaskScene,
     TerrainMap,
-    VisionDescribeReq,
-    VisionDescribeResp,
-    VisionProvider,
     WorldPort,
     terrain_legend,
 )
 
 if TYPE_CHECKING:
-    from .perceive_frame import parse_screen
     from .pyboy_world import PyBoyWorld
     from .ram import read_facing, read_passable, read_screen_tiles, read_terrain
     from .scene import at_start, classify_scene
@@ -118,12 +85,10 @@ __all__ = [
     "PERSON",
     "PLAYER_CELL",
     "PLAYER_MARK",
-    "Perceived",
     "PlaceInWorld",
     "PyBoyWorld",
     "RamReadout",
     "SIGN",
-    "ScreenState",
     "ScreenText",
     "ScriptParam",
     "SCRIPT_ONLY_SCENES",
@@ -146,13 +111,9 @@ __all__ = [
     "PcView",
     "TaskScene",
     "TerrainMap",
-    "VisionDescribeReq",
-    "VisionDescribeResp",
-    "VisionProvider",
     "WorldPort",
     "at_start",
     "classify_scene",
-    "parse_screen",
     "read_facing",
     "read_passable",
     "read_screen_tiles",
@@ -171,7 +132,6 @@ _LAZY: dict[str, tuple[str, str]] = {
     "PyBoyWorld": (".pyboy_world", "PyBoyWorld"),
     "at_start": (".scene", "at_start"),
     "classify_scene": (".scene", "classify_scene"),
-    "parse_screen": (".perceive_frame", "parse_screen"),
     "read_facing": (".ram", "read_facing"),
     "read_passable": (".ram", "read_passable"),
     "read_screen_tiles": (".ram", "read_screen_tiles"),

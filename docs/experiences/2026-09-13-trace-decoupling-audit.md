@@ -1,4 +1,5 @@
 # trace 模块脱钩审计：按 P1～P7 清点「如何移出」
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 - 日期：2026-09-13
 - 对标文档：`docs/experiences/2026-09-13-brain-decoupling-principles.md`（P1～P7）

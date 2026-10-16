@@ -19,7 +19,6 @@ from evals.agent_short_goal_run.scorer.stream import RunStream
 from pokemon_agent.direct.trace.parse import MODEL_CALL_KINDS, ParsedEvent
 
 MODEL_LINKS: dict[str, str] = {
-    "sense_call": "vision_model",
     "choose_call": "text_model",
     "plan_call": "plan_model",
     "decompose_call": "plan_model",

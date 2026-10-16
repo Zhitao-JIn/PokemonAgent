@@ -53,14 +53,8 @@ class JudgeProvider(LLMProvider, Protocol):
     或文件确实缺失）退化成纯文本，走 `LLMProvider.complete()` 兜底——
     两条链路不该因为一张便利副本缺失就直接判定失败。
 
-    **它是 brain 自己的协议，不是跨模块合并**（0913 修正）：早先的写法是
-    `class JudgeProvider(LLMProvider, VisionProvider, Protocol)`，借 `world`
-    的 `VisionProvider` 来表达"还会 `describe()`"。那是**用别人的协议名描述
-    自己的能力**——brain 的 provider 从来不是 world 那个协议的实现者，
-    它只是恰好也长着 `describe()` 这个方法。现在 `describe()` 由本模块
-    自己声明（形参与返回类型用 `brain/schemas/` 那对补全信封——**0913
-    深夜十一起它是 brain 的内部协议**，world 另有一份自己的副本，
-    两份同构是刻意的，见 `brain/schemas/__init__.py`）。
+    `describe()` 由本模块声明，使用 `brain/schemas/` 的请求和响应；
+    协议不依赖其他领域模块。
 
     `Brain.__init__` 用这个类型标 `judge_llm`/`verify_llm`，一眼能看出
     "这两个位置的 provider 比 `decide_llm`（只标 `LLMProvider`，带图与否由

@@ -1,8 +1,8 @@
 """`GameToolPort` 的 MCP 远程门面：世界住在另一个进程时，harness 侧拿到的还是
 同一张口。
 
-**信封翻译在这里，判定不在**：`Task` → 裸字段、`Perceived` → 信封、存档的
-base64 ↔ 文件、感知的重试循环——全是原 `mcpclient/game_tools.py` 的职责，随迁到
+**信封翻译在这里，判定不在**：`Task` → 裸字段、`TaskPerceived` → 信封、存档的
+base64 ↔ 文件——全是原 `mcpclient/game_tools.py` 的职责，随迁到
 这一层（mcpclient 带逻辑属性，2026-09-29 定案）。server 只做 `WorldPort` 的
 直译，一点领域判断都没有。
 
@@ -14,12 +14,9 @@ base64 ↔ 文件、感知的重试循环——全是原 `mcpclient/game_tools.p
 from __future__ import annotations
 
 import base64
-import time
 from pathlib import Path
 from typing import Any
 
-from pokemon_agent.backoff import backoff_seconds
-from pokemon_agent.config import PERCEPTION_MAX_RETRIES
 from pokemon_agent.mcpclient.client import McpClient, McpToolError
 from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolExecuteReq,
@@ -27,23 +24,12 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolGetActionSpaceReq,
     FromHarnessToGameToolGetActionSpaceResp,
     FromHarnessToGameToolLoadStateReq,
-    FromHarnessToGameToolPerceiveOnceResp,
     FromHarnessToGameToolPerceiveTaskResp,
     FromHarnessToGameToolResetReq,
     FromHarnessToGameToolSaveStateReq,
     FromHarnessToGameToolSaveStateResp,
-    ModelCall,
-    ModelCallLog,
 )
 from pokemon_agent.world import ActionSpace
-
-
-def _last_error(calls: list[ModelCall]) -> str:
-    """最后一次尝试的失败信息折成一句话（与 `game_tools._last_error` 同形）。"""
-    if not calls:
-        return "no attempts recorded"
-    last = calls[-1]
-    return f"{last.error_kind}: {last.error}"
 
 
 class WorldMcpTool:
@@ -110,52 +96,6 @@ class WorldMcpTool:
             frame_png=body["data"].get("frame_png", ""),
             ram=body["data"].get("ram"),
         )
-
-    def perceive_with_retry(self) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]:
-        """视觉档感知：**重试循环在 client 这一侧**（与 `GameTools` 同预算、
-        同退避、同翻译）。
-
-        为什么循环在这：只有循环控制者知道试了几次、还剩几次预算、耗尽之后
-        这个节点怎么收场——这与 brain 六链路把循环收在 tool 层是同一条判据。
-        server 只负责"问一次、不问成就报 `perception_failed`"。
-        """
-        from pokemon_agent.errors import MaxRetriesExceeded
-
-        log: ModelCallLog = []
-        for nth in range(1, PERCEPTION_MAX_RETRIES + 1):
-            body = self._client.call_tool_sync("perceive_once", {})
-            if not body["ok"]:
-                payload: dict[str, Any] = {"error": body.get("error") or body["code"]}
-                # server 侧的世界词汇不跨进程，这里只认得出"这次没读出"与
-                # 4xx（重试注定无用）——与 `game_tools` 从异常名前缀还原同判据。
-                text = str(body.get("error", ""))
-                kind = text.split(":", 1)[0].strip() or "PerceptionParseFailure"
-                log.append(ModelCall(payload=payload, error_kind=kind, error=text))
-                if kind == "ProviderRejected":
-                    raise MaxRetriesExceeded(len(log), _last_error(log), log, source="sense")
-                if nth < PERCEPTION_MAX_RETRIES:
-                    timeouts = sum(c.error_kind == "ToolTimeout" for c in log)
-                    time.sleep(backoff_seconds(kind == "ToolTimeout", timeouts))
-                continue
-
-            calls = body["data"].get("calls") or []
-            log.extend(ModelCall(payload=call) for call in calls)
-            from pokemon_agent.world import Observation
-
-            observation = body["data"].get("observation")
-            return (
-                FromHarnessToGameToolPerceiveOnceResp(
-                    observation=Observation.model_validate(observation)
-                    if observation is not None
-                    else None,
-                    calls=calls,
-                    frame_png=body["data"].get("frame_png", ""),
-                    ram=body["data"].get("ram"),
-                ),
-                log,
-            )
-
-        raise MaxRetriesExceeded(PERCEPTION_MAX_RETRIES, _last_error(log), log, source="sense")
 
     def execute(self, req: FromHarnessToGameToolExecuteReq) -> FromHarnessToGameToolExecuteResp:
         """执行**一个键或一条脚本**：键走 `step`（唯一按键执行口），脚本走同名 tool。

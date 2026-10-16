@@ -540,7 +540,7 @@ _contract(("lifecycle", "advance_step"), "next_step", "步号推进（close_step
 # ---- 观测 ----
 _contract(
     ("view", "sense_frame"),
-    "status facts done perceived",
+    "status facts done",
     "三层 sense 取到的一帧（run/episode 视觉档 / task 层轻档；`place` 有值才出现、"
     "`scene` 只在 task 层、`frame` 是 base64 PNG、`ram` 是内存读数对象，没有就缺省，都不进必填表）",
 )

@@ -23,14 +23,12 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolGetActionSpaceReq,
     FromHarnessToGameToolGetActionSpaceResp,
     FromHarnessToGameToolLoadStateReq,
-    FromHarnessToGameToolPerceiveOnceResp,
     FromHarnessToGameToolPerceiveTaskResp,
     FromHarnessToGameToolResetReq,
     FromHarnessToGameToolSaveStateReq,
     FromHarnessToGameToolSaveStateResp,
-    ModelCallLog,
 )
-from pokemon_agent.world import ActionSpace, Observation, TaskObservation, TaskScene
+from pokemon_agent.world import ActionSpace, TaskObservation, TaskScene
 
 SUBTASK = "子任务"
 """假拆解给出的每个 task 的目标文字（task 层判定据此认出自己）。"""
@@ -56,21 +54,10 @@ class _Game:
         self._presses = 0
         self._fail_on_press = fail_on_press
 
-    def perceive_with_retry(self) -> tuple[FromHarnessToGameToolPerceiveOnceResp, ModelCallLog]:
-        time.sleep(_MOCK_DELAY_SECONDS)
-        self._frames += 1
-        observation = Observation(step=0, status=f"s{self._frames}")
-        resp = FromHarnessToGameToolPerceiveOnceResp(
-            observation=observation, frame_png=f"F{self._frames}"
-        )
-        return resp, []
-
     def perceive_task(self) -> FromHarnessToGameToolPerceiveTaskResp:
         time.sleep(_MOCK_DELAY_SECONDS)
         self._frames += 1
-        observation = TaskObservation(
-            step=0, status=f"s{self._frames}", perceived=False, scene=TaskScene.WALK
-        )
+        observation = TaskObservation(step=0, status=f"s{self._frames}", scene=TaskScene.WALK)
         return FromHarnessToGameToolPerceiveTaskResp(
             observation=observation, frame_png=f"F{self._frames}"
         )

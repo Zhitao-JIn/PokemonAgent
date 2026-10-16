@@ -43,6 +43,8 @@
 - **生命周期三件套**：`<层>_start` 在该层入口、`<层>_end` 在该层 `*_done`、`<层>_error` 由
   **接住异常的那一格**记（task 的由 episode `act`、episode 的由 run `act`、run 的由 `new_run`）；
 - **定案**：`settle_goal`（run 给目标表定案）/ `settle_task`（episode 给任务表定案）。
+
+sense_call 已停止产出；相关类型与映射仅为读取旧账保留。
 """
 
 from __future__ import annotations

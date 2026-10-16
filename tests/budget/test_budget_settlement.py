@@ -18,7 +18,7 @@ from pokemon_agent.harness.run.run_state import RunState
 from pokemon_agent.harness.task.task_entry import begin_task
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolDecomposeReq, TraceKind
 from pokemon_agent.schemas.harness.domain import GoalEntry, TaskInput, Termination
-from pokemon_agent.world import Observation
+from pokemon_agent.world import TaskObservation, TaskScene
 
 
 class Clock:
@@ -168,7 +168,7 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
     decomposer = Decomposer(Brain(plan_llm=provider))
     req = FromHarnessToBrainToolDecomposeReq(
         goal=Goal(goal="g", criteria="c"),
-        observation=Observation(step=0, status="s"),
+        observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
         max_tasks=2,
     )
 
@@ -181,4 +181,4 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
 
 
 def test_budget_schema_is_frozen_after_the_complete_field_batch():
-    assert state_schema_hash() == "40e2cd635256744f"
+    assert state_schema_hash() == "4f1cac6fcc7216d5"

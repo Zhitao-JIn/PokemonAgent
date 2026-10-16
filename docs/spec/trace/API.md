@@ -1,5 +1,7 @@
 # trace —— API 接口文档
 
+> sense_call 已停止产出，旧账仍可读；TraceKind 与解析、渲染映射保持兼容。
+
 > 最后更新：2026-09-27 ｜ 活文档：跟随代码更新，与代码冲突时**以代码为准**
 >
 > 本文档是 **API 参考**（调什么、怎么调、出错什么样）；
@@ -238,7 +240,7 @@ RFC 9562 的 **v7 布局**，前 48 位是毫秒时间戳：
 | `MODEL_CALL` | `model_call` | 七条链共用的调用账 |
 | `ERROR` | `error` | `call_failed` / `call_exhausted` / `summary_parse_error` |
 | `LLM_OUTCOME` | `llm_outcome` | `choose_verdict` 与三个 `*_verdict`（与 `MODEL_CALL` 配对） |
-| `VIEW` | `view` | `sense_frame`（episode 完整档 / task RAM 档） |
+| `VIEW` | `view` | `sense_frame`（run / episode / task 内存观测） |
 | `ACT` | `act` | `act_call`（key/script 两形，P5 起原 `press_key` 改名；脚本也走 script 形） / `get_action_space` / `check_stall` |
 | `MEMORY_IO` | `memory_io` | 六条 `read_*` + 三条 `write_*` |
 | `LIFECYCLE` | `lifecycle` | run / episode 边界账 + `advance_step` |
@@ -313,7 +315,7 @@ class TraceTool:
 不写这条账（`render.model_call` 对空 `calls` 有 assert）。
 
 `TraceTool.build()` 是**全项目唯一 `new LocalTrace` 的地方**，
-与 `BrainTool.build()` / `MemoryTool.build()` / `build_vision_provider()` 同形。
+与 `BrainTool.build()` / `MemoryTool.build()` 同形。
 
 **tool 层比 trace 多出来的前置条件**（`TraceTool.append` 入口的 assert，全部就地爆炸）：
 

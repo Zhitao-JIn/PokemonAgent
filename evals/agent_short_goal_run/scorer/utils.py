@@ -22,7 +22,9 @@ POKE_BALL = 0x04
 
 
 def target_frames(stream: RunStream, sample: EvalSample) -> list[Frame]:
-    """派给样本目标的那几局里的全部帧。"""
+    """run 样本取整条执行线；较小粒度保留原目标对应局的范围。"""
+    if sample.granularity == "run":
+        return stream.frames()
     return stream.frames(stream.episodes_for(sample.sample_id))
 
 

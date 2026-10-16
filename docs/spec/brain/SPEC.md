@@ -104,11 +104,10 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 | 位置 | 引了什么 |
 |---|---|
 | `pokemon_agent/direct/brain_tool.py` | 顶层：`Action` / `ActionSegment` / `BrainPort` / `EpisodeSummary` / `LearnedKnowledge` / `Reflection`、`errors` 的 `AttemptFailed` / `ParseFailure` / `ProviderRejected`；函数体内：`Brain` / `BrainLlmConfig` / `build_llm_providers` |
-| `pokemon_agent/brain/vision_factory.py` | 函数体内 `brain.providers.provider_for`（给 `world` 造感知 provider） |
 | `pokemon_agent/mcpclient/game_tools.py` | `brain.errors.ProviderRejected` |
 | `pokemon_agent/build.py` | **零 import**——只在注释里提型号名与工厂路径 |
 
-**数据形状引用（不是实现依赖）**：`harness/**`（`Action` / `ActionSegment` / `Goal` / `Task` / `RunPlan`）、`schemas/harness/communication/**`（`Goal` / `Action` / `RunPlan` / `EpisodeSummary` / `VerifyVerdict` / `Task`）、`pokemon_agent/direct/prompts/decide_action.py`、`pokemon_agent/direct/trace/render.py`、`tests/**`。`world/**` 对 brain **零 import**——它只在 docstring 里提 `QwenProvider` 被当 `VisionProvider` 用，那条依赖由 tool 层接线。
+**数据形状引用（不是实现依赖）**：`harness/**`（`Action` / `ActionSegment` / `Goal` / `Task` / `RunPlan`）、`schemas/harness/communication/**`（`Goal` / `Action` / `RunPlan` / `EpisodeSummary` / `VerifyVerdict` / `Task`）、`pokemon_agent/direct/prompts/decide_action.py`、`pokemon_agent/direct/trace/render.py`、`tests/**`。`world/**` 对 brain **零 import**，观测只读模拟器内存。`JudgeProvider` 在 brain 内自行声明 `describe()`；判定器等仍能接收多模态图片。
 
 ## 六、接线与选型
 
@@ -134,7 +133,7 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 | `ArkProvider` | `https://ark.cn-beijing.volces.com/api/v3` | `("ARK_API_KEY",)` | 无（必须显式传带日期后缀的豆包型号名） |
 | `DeepSeekProvider` | `https://api.deepseek.com` | `("DEEPSEEK_API_KEY",)` | `"deepseek-flash"` |
 
-- `provider_for(model, *, temperature, max_tokens=None, timeout=45)` 按 `_PROVIDER_PREFIXES`（顺序 `deepseek` → `doubao` → `qwen`）选类，是"型号名 → 厂商类"的唯一判据；本模块的工厂与 `brain/vision_factory.build_vision_provider()` 共用它。
+- `provider_for(model, *, temperature, max_tokens=None, timeout=45)` 按 `_PROVIDER_PREFIXES`（顺序 `deepseek` → `doubao` → `qwen`）选类，是"型号名 → 厂商类"的唯一判据；`build_llm_providers()` 用它装配各条模型链路。
 - `_disable_thinking_payload()` 必须被子类覆盖：Qwen 用扁平布尔 `{"enable_thinking": False}`，Ark 与 DeepSeek 用嵌套对象 `{"thinking": {"type": "disabled"}}`。
 - 一次调用 = 一次 HTTP 请求，provider **不重试、不重发**；4xx → `ProviderRejected`（调用方立即耗尽预算），5xx / 网络层 / 单请求总时长超闸 → `ToolTimeout`。
 - 密钥只从环境变量读；`config()` 自报配置进 run manifest，不含 key。
@@ -144,5 +143,5 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 - `reflect()` 本版**不调模型**（`prompt` 收下不消费），为形状统一预留位置。
 - `brain/providers.py` 有模块级可变全局 `_dump_seq`（配合环境变量 `VISION_DUMP_DIR` 的排查落盘序号）——铁律 1 说"不许有模块级可变全局"，这是全模块唯一一处，且只影响调试文件名。
 - 约束解码未上；模型给的 markdown 代码围栏由 `brain/brain.py` 的模块级私有函数 `_strip_json_fence` 剥掉，不做任何内容修复。
-- `brain/schemas/vision.py` 与 `pokemon_agent/world/interface/domain/vision_describe.py` 是同构的两份，靠"字段名人工核对"保持一致，没有机器检查。
+- `brain/schemas/vision.py` 声明 brain 自己消费的图片请求与响应，`JudgeProvider.describe()` 使用它们。
 - `scripts/` 下**没有** brain 专用的自包含检查脚本（只有 `check_trace_self_contained.py` 与 `check_world_self_contained.py`），"出边为零 / 装配点零 import"目前靠人工核对。

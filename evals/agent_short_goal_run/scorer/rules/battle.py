@@ -15,6 +15,7 @@ from evals.agent_short_goal_run.scorer.utils import (
     with_ram,
 )
 from evals.agent_short_goal_run.scorer.verdict import CheckVerdict
+from pokemon_agent.world.moves import fold, move_name
 
 _MOVE_RESULT_TEXT: tuple[str, ...] = (" used ", "fainted", "failed", "Critical hit", "effective")
 """招式打出去之后对话框里会出现的字样。"""
@@ -73,6 +74,38 @@ def move_list_opened(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     return first_match(frames, is_moves, found="打开了招式列表", missing="没打开招式列表")
 
 
+@rule("party_list_opened_in_battle")
+def party_list_opened_in_battle(stream: RunStream, sample: EvalSample) -> CheckVerdict:
+    """任一战斗解码帧打开队伍列表即判成。
+
+    选项须非空、与行动菜单无交集、不含 CANCEL、每项均非招式名，且数量等于
+    同帧 ram.party 的只数；名字按 fold 规范形比较。没有解码帧不可判，否则未命中判负。
+    """
+    frames = decoded(target_frames(stream, sample))
+    if not frames:
+        return unjudgeable("没有解码来源的帧")
+    move_names = {
+        fold(name)
+        for move_id in range(256)
+        if not (name := move_name(move_id)).startswith("MOVE_0x")
+    }
+
+    def is_party(frame: Frame) -> bool:
+        ram = frame.content.ram
+        assert ram is not None, "decoded 帧必须带内存读数"
+        options = [fold(option) for option in frame.text.options]
+        return (
+            ram.in_battle
+            and bool(options)
+            and not set(options) & BATTLE_MENU
+            and "CANCEL" not in options
+            and not any(option in move_names for option in options)
+            and len(options) == len(ram.party)
+        )
+
+    return first_match(frames, is_party, found="打开了宝可梦列表", missing="没打开宝可梦列表")
+
+
 @rule("move_used")
 def move_used(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     """招式打出去了：对手 HP 比开局低，或对话框出现招式结算字样。"""
@@ -129,5 +162,6 @@ __all__ = [
     "cursor_on_run",
     "move_list_opened",
     "move_used",
+    "party_list_opened_in_battle",
     "run_attempted",
 ]
