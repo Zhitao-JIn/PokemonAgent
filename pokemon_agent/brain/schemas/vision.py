@@ -6,10 +6,7 @@
 （judge/verify 带得到图时走它），实现在 `brain/providers.py` 的
 `_MultimodalMixin.describe()`。
 
-**world 有一份自己的副本**：`world/interface/domain/vision_describe.py`——
-world 的 `VisionProvider` 协议也要声明这两个形状，但它**不 import brain**。
-两份字段同构是刻意的：brain 的实现同时满足两个协议，装配点递进去时结构对得上。
-理由与代价见 `brain/schemas/__init__.py` 的模块 docstring。
+请求和响应由 brain 自己声明，调用方经 `JudgeProvider` 传入。
 """
 
 from __future__ import annotations

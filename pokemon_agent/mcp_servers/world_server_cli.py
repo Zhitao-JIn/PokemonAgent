@@ -15,7 +15,6 @@ def main(mcp: FastMCP, start: Callable[[WorldPort, str | None], None], service_n
     parser = argparse.ArgumentParser(description="pokemon world MCP server")
     parser.add_argument("--rom", required=True, help="ROM 路径")
     parser.add_argument("--state-file", default=None, help="起点存档（不给 = 从开机起跑）")
-    parser.add_argument("--vision-model", default="qwen3.8-max")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8767)
     args = parser.parse_args()

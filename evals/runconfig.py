@@ -34,7 +34,6 @@ REQUIRED_KEYS: tuple[str, ...] = (
 """config.json 必须全填的键；缺一即错。"""
 
 MODEL_LINKS: tuple[str, ...] = (
-    "vision_model",
     "text_model",
     "judge_model",
     "verify_model",

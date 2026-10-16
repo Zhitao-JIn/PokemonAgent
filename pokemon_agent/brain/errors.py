@@ -172,12 +172,6 @@ class ImageNotDelivered(BrainError):
     内部之后，brain 拷走时**不再欠任何外部文件**（此前它住顶层 `errors.py`，
     拷走 brain 就得连那个文件一起带，第三方可替换性破功）。
 
-    **world 的感知链怎么办**：world 的 `describe()` 也走这同一份实现（它拿
-    一个 `QwenProvider` 当 `VisionProvider`），于是也可能收到这个异常。world
-    **不 import 它**——`world/pyboy_world.py` 在 `describe()` 外面把任何失败
-    （含这个）就地包成 world 自己的 `PerceptionAttemptFailed`，
-    world 的失败出口因此仍然只有自己那两个类（见 `world/errors.py`）。
-    **两个模块各自成立，桥在"谁调谁包"这一层**，不是共享一个异常类。
     """
 
     def __init__(self, input_tokens: int, floor: int) -> None:

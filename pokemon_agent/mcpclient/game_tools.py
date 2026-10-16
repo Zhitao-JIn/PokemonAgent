@@ -113,7 +113,6 @@ class GameTools:
         *,
         state_path: str | None = None,
         watch: bool = False,
-        vision_model: str = "qwen3.8-max",
         speed: int = 0,
         world_server_url: str | None = None,
     ) -> GameTools | WorldMcpTool:

@@ -55,6 +55,8 @@ content  这笔账的正文（可 JSON 化的对象；`store` 负责序列化成
 
 章（成没成、几步、是不是空章）在 `episode_start` / `episode_end` 两条边界账上，
 **不进写账的 content**。
+
+sense_call 已停止产出；相关类型与映射仅为读取旧账保留。
 """
 
 from __future__ import annotations
