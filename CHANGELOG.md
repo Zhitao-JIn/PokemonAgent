@@ -1,3 +1,10 @@
+## 2026-10-16（460）—— 删除视觉感知档
+
+**改了什么**：run/episode 与 task 统一使用内存观测；删除 world 视觉档、一次性读屏与重试调用链、视觉型号接线及配置、evals/episode_vision_read。公开评测六项变五项，MCP world tool 45→44。同步当前规格、33 份历史文档标注和评测分类文档；清理测试夹具中的旧观测字段。
+**为什么这么改**：每圈视觉模型读取的信息与内存观测重复。基线 `eval_results/remove_vision_baseline_19307a1/` 为 10 个样本，平均 29.8 次模型调用/局，其中 sense_call 平均 5 次；机械分 10/10（第十例已离线重判），模型分 9/10，平均耗时 86.5 秒。删除后对比跑待补，真实模型费用需另行授权。
+**取舍**：保留 SENSE_CALL 与旧账解析/渲染；旧记忆的 overview 字段与“概况”渲染保留，perceived 字段只为读旧记忆保留、不再渲染，当前观测不再产出两字段；旧 manifest 的 vision 键保持原样，新 manifest 不再记录该型号。brain 的 describe() 及多模态图片通道保留。架构图等分类待裁决项列入 S5 报告，本次不改。
+**影响面**：S1–S4 的生产删除与本次测试、文档收尾合记本条。state_schema_hash 链为 570c830a9cf52445 → 40e2cd635256744f（预算 B3）→ d30940d71e1612aa（S1 中间态）→ b143f3ee76954378（S1）→ 4f1cac6fcc7216d5（S3）；预算 B3、S1、S3 的最终状态均随提交重打 20 份 v1 存档，world.state sha256 逐项不变。S4/S5 不改存档、不再变更哈希。S5 起点 `python -m pytest --basetemp=.pytest_tmp/vision_s5_1`：801 passed、2 skipped；ruff check 通过，ruff format --check：569 files already formatted。提交前 `python -m pytest --basetemp=.pytest_tmp/vision_s5_2`：801 passed、2 skipped、1 warning in 191.24s；ruff check：All checks passed!；ruff format --check：569 files already formatted。测试数不变，未调用真实模型。证据见 `eval_results/vision_s5/REPORT.md`。
+
 ## 2026-10-15（459）—— 补第十例机械判据 party_list_opened_in_battle
 
 **改了什么**：新增战斗队伍列表机械判据：战斗标志为真、解码选项非空且排除行动菜单、CANCEL 与招式名，选项数须等于内存队伍只数。仅补 v1 第十例的 `check_id`，更新覆盖表与正反例测试；原基线第十例离线重判为 pass，证据选项为 BULBASAUR / PIDGEY。

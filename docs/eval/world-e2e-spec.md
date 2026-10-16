@@ -1,7 +1,7 @@
 # spec —— world_script_execute 与 agent_goal_run 的下一版
 
 > 流程位置：（本轮没有 intent，范围由用户 1008 定：**只做这两个 task**）→ **world-e2e-spec.md** → world-e2e-plan.md
-> 现状以 2026-10-08 仓库为准（CHANGELOG 424）。用户已确认收敛为 **31 个公开脚本**；本次只更新规格与计划，能力收敛尚未实施。decode / episode_vision_read / memory_store_recall / brain_goal_judge 本轮不动。
+> 现状以 2026-10-08 仓库为准（CHANGELOG 424）。用户已确认收敛为 **31 个公开脚本**；本次只更新规格与计划，能力收敛尚未实施。decode / episode_vision_read（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） / memory_store_recall / brain_goal_judge 本轮不动。
 
 ---
 

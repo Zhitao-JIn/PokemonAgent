@@ -20,7 +20,7 @@ episode（一个目标）、task（目标拆出的一个小任务），也是**�
 ```
 harness/
 ├── __init__.py  compose.py（compose_units：格内单元串接）  judging.py（三层共用的停判）
-│                sensing.py（perceive_once：向世界取一帧的唯一入口）
+│                sensing.py（perceive_task：run / episode / task 统一的内存观测入口）
 │                reviewing.py（ask_inject / ask_audit：问人并记 review_inject / review_audit）
 │                review_render.py（问人时的渲染口径，控制台与网页共用）
 │                checkpoint/（三级存档与图内恢复，见 docs/spec/checkpoint/SPEC.md）
@@ -28,7 +28,7 @@ harness/
 ├── console_reviewer.py  null_reviewer.py  web_reviewer.py
 ├── run/
 │   ├── harness.py（RunHarness） run_entry.py（new_run / close） run_graph.py run_state.py runtime.py
-│   ├── begin/  perceive/{absorb_episode, read_plan_context}  review_and_judge/
+│   ├── begin/  perceive/{absorb_episode, sense, read_plan_context}  review_and_judge/
 │   └── plan_run/  act/{dispatch}  run_done/
 ├── episode/
 │   ├── episode_entry.py（begin_episode / run_episode / close） episode_graph.py episode_state.py episode_runtime.py
@@ -65,7 +65,7 @@ run 图另有 `START → begin → perceive`（`begin` 校验目标表、写 `ru
 `act` 接整局抛错 → 补空章、记 `episode_error`。`AgentError` 兜成 `termination=error` 的 `*Output` 交给下一圈
 perceive（这一局 / 这一 run 照常往下走），别的异常记完原样上抛，最终由 `run_entry.new_run` 记 `run_error`。
 
-**每层 perceive 的三件事**：吸收下层结算 → 取帧（episode 完整档、task RAM 档、run 不取）→
+**每层 perceive 的三件事**：吸收下层结算 → 取帧（三层统一读内存，使用 TaskObservation）→
 读直属下一级的记忆与世界事实。本层其余各格只用 perceive 装好的上下文，不自己查库。
 
 | 层 | plan 格做什么 | act 格做什么 | 收尾 |

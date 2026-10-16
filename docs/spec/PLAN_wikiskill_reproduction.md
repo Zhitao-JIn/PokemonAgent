@@ -1,4 +1,5 @@
 # PLAN_wikiskill_reproduction —— 复现 WikiSkill 的三层机制
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 目标：**忠实复现 WikiSkill（Google Research, arXiv 2608.27454）的三层架构与四步进化循环**，
 > 把它落在本项目现有的 trace / memory 骨架上，新增 skill 层。

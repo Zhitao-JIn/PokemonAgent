@@ -1,4 +1,5 @@
 # plan —— 测评体系 v1
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 流程位置：intent.md → spec.md → **plan.md** → PR → production
 > 依据：`docs/eval/spec.md`（09-25 晚定稿：S1～S10、W1～W4、红线 R1～R3）｜ 起草：2026-09-25 ｜ 状态：**草案，待确认**（§三 的 D1～D4）

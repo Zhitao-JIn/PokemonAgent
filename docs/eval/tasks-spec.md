@@ -28,7 +28,7 @@ intent 第六节里没拍板的项，本 spec 先按推荐方案写；推翻哪�
 | 现 task | 新 task | task 目录（只含 `task.py`） | `@task` 函数名 |
 |---|---|---|---|
 | decode | decode | `evals/tasks/decode/`（不动） | `decode` |
-| vision_perceive | episode_vision_read | `evals/tasks/episode_vision_read/` | `episode_vision_read` |
+| vision_perceive | episode_vision_read（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） | `evals/tasks/episode_vision_read（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md））/` | `episode_vision_read`（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） |
 | world_actions | world_script_execute | `evals/tasks/world_script_execute/` | `world_script_execute` |
 | memory | memory_store_recall | `evals/tasks/memory_store_recall/` | `memory_store_recall` |
 | judge | brain_goal_judge | `evals/tasks/brain_goal_judge/` | `brain_goal_judge` |
@@ -76,7 +76,7 @@ evals/
 | `evals/core/frames.py`、`evals/core/snapshot.py` | S2 进 `evals/dataset/frames/`（S1 期间先放 `evals/solvers/frames.py`、`evals/solvers/snapshot.py`） |
 | `evals/core/task.py`、`evals/core/evalset.py`（只 re-export inspect） | 删除 |
 | `decode/{solver,schemas}.py` / `decode/scorer.py` | `solvers/decode.py` / `scorers/decode.py` |
-| `vision_perceive/{solver,schemas}.py` / `scorer.py` | `solvers/episode_vision_read.py` / `scorers/episode_vision_read.py` |
+| `vision_perceive/{solver,schemas}.py` / `scorer.py` | `solvers/episode_vision_read（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md））.py` / `scorers/episode_vision_read（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md））.py` |
 | `memory/{solver,schemas}.py` / `task.py` 里的 `storage_scorer`、`retrieval_scorer`、`retrieval_metrics` | `solvers/memory_store_recall.py` / `scorers/memory_store_recall.py` |
 | `judge/task.py` 里的 `judge_solver` / `judge_scorer`、`confusion` 与 `judge/metrics.py` | `solvers/brain_goal_judge.py` / `scorers/brain_goal_judge.py` |
 | 旧脚本执行与评分实现及 12 个世界状态核对函数 | `solvers/world_script_execute.py` / `scorers/world_script_execute/`（子包：`scorer.py`、`checks.py`） |

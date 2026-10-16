@@ -49,9 +49,7 @@ def _real(scene, overlay, extra: dict[str, str]) -> Observation:
     )
     for key, value in extra.items():
         setattr(facts, key, value)
-    return Observation(
-        step=7, place=None, status="你在野外。", facts=facts, done=False, perceived=True
-    )
+    return Observation(step=7, place=None, status="你在野外。", facts=facts, done=False)
 
 
 def _to_snapshot(obs: Observation) -> ActMemory.Observation:

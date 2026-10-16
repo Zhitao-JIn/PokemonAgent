@@ -1,4 +1,5 @@
 # brain 与 harness 脱钩、brain 独立成模块：全流程经验原则
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 - 日期：2026-09-13
 - 关联 Issue：`AGENTS.md` 第 2 条铁律（四模块按独立第三方对待）

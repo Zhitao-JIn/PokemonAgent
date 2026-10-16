@@ -58,7 +58,7 @@ schemas/
   - `SummarizeReq` / `SummarizeTaskReq` 带 `verdicts`（正负标注）、`termination`、`acts_used`；`success` 是推出的属性。
   - `PlanOnceReq` 带 `human_note` 与 `last_judge`（上一次 run 判定及人的表态）。
   - `JudgeReq` 没有 `human_note`：判定在审格，人只表态、不带话重问判定员。
-- **往 `game_tool`**：`Reset`、`Execute`（`ExecuteResp.report`：脚本的终态报告；`event`：按键的裸事件）、`Evolve`、`GetActionSpace`、`PerceiveOnce`、`PerceiveTask`。
+- **往 `game_tool`**：`Reset`、`Execute`（`ExecuteResp.report`：脚本的终态报告；`event`：按键的裸事件）、`Evolve`、`GetActionSpace`、`PerceiveTask`。
 - `ChooseOnceReq.last_result`：上一脚本结果的一句话（调用 → 结局码：摘要或原因，`act` 写进 `TaskState.last_result`），prompt 渲染在观测之后；上一步不是脚本时为空。
 - **往 `memory_tool`**：ActMemory（`StoreActMemory` / `QueryActMemories` / `QueryRecentActMemories`）、
   TaskMemory（`StoreTaskMemory` / `QueryTaskMemories`）、EpisodeMemory（`StoreEpisodeSummary` / `QueryEpisodeSummaries`）、
@@ -88,7 +88,7 @@ schemas/
 **规则二（裸名）**：模块对外的接口模型用裸名、不带 From/To——因为发起方可能换人（今天 harness，明天第三方），From/To 前缀是赌一个注定被换掉的名字。**适用范围到此为止**：
 
 - 在 `schemas/` 里落地的裸名只有 `RunResp` 与 `ModelCall`（加上 `domain/` 的实体 `TraceKind` / `TraceEvent` / `GoalEntry` / `GoalStatus`，以及 `ModelCall.py` 里的 `ModelCallLog` 别名、只服务审的 `AuditVerdict`）。
-- 其余裸名住在各自模块内，**不在 `schemas/`**：brain 的 `LlmCompleteReq` 在 `pokemon_agent/brain/schemas/completion.py`，world 的 `Perceived` 在 `pokemon_agent/world/interface/domain/perceived.py`。
+- 其余裸名住在各自模块内，**不在 `schemas/`**：brain 的 `LlmCompleteReq` 在 `pokemon_agent/brain/schemas/completion.py`，world 的 `TaskPerceived` 在 `pokemon_agent/world/interface/domain/task_perceived.py`。
 - **第二跳（门面 → 具体模块）走裸参数、返回模块自己的类型**，不造信封也不新建模型。
 
 ## 五、domain 实体与归属

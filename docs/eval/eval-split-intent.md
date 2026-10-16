@@ -34,7 +34,7 @@
 **边界规则：**
 
 - 三类互不包含。一个任务只归属一类。
-- 归类看被测对象和形态，不看是否用了模型。`episode_vision_read` 用了视觉模型，但输入是单帧截图，属于 B。`decode` 不调 LLM，但它是 agent 感知链路的一环，在冻结帧数据集上有成功率指标，同样属于 B。
+- 归类看被测对象和形态，不看是否用了模型。`episode_vision_read`（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） 用了视觉模型，但输入是单帧截图，属于 B。`decode` 不调 LLM，但它是 agent 感知链路的一环，在冻结帧数据集上有成功率指标，同样属于 B。
 - C 类一律有 LLM 参与。纯状态比对且无 LLM 的检查，不进 C。
 
 ## 四、任务归属
@@ -44,7 +44,7 @@
 | decode | B | agent 感知链路的机械解码；单帧输入，在冻结帧数据集上有成功率指标；不调 LLM，用自写的逐字段确定性指标 |
 | world_script_execute | B | 单次脚本调用，结果与世界真值比对，无 agent 轨迹 |
 | memory_store_recall | B | RAG 检索，单次查询 |
-| episode_vision_read | B | 视觉工具，单帧输入 |
+| episode_vision_read（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） | B | 视觉工具，单帧输入 |
 | memory_poisoning_resistance（提议） | B | 单次记忆写入判定 |
 | script_interrupt_recovery（提议） | B | 单次脚本执行的中断处理（需先核对是否已被 106 例覆盖） |
 | brain_choose_action（S4） | B | 动作空间内的单步选择，即"action space"任务；设计见 `brain-choose-action-intent.md` 与 `brain-choose-action-spec.md` |
@@ -118,7 +118,7 @@ DeepEval 的接法已在隔离环境（Python 3.12，deepeval 4.2.8）验证，�
 - **B 类三个**改为 DeepEval 入口，口径沿用 decode（一个状态一个用例、确定性自写指标、无从判不进分母、DeepEval 原生汇总）：
   - `memory_store_recall`：逐记录判存储，逐查询给 recall@k 与 MRR；
   - `world_script_execute`：106 条用例，判"自报"与"真值"两面，另按脚本给通过率；
-  - `episode_vision_read`：视觉模型读单帧，五个视觉字段加"解析成功"共六列，对照人工标注。
+  - `episode_vision_read`（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md））：视觉模型读单帧，五个视觉字段加"解析成功"共六列，对照人工标注。
 - **C 类两个**（`brain_goal_judge`、`agent_short_goal_run`）仍是 Inspect task，只把代码搬进各自的任务目录，逻辑不变。
 - 迁完后 `evals/solvers/`、`evals/scorers/`、`evals/tasks/` 不再存在，`evals/dataset/` 只留共用数据集；公开任务共六个：四个 B（含 decode）、两个 C，登记在 `evals/registry.py`。
 - decode 的 DeepEval 运行器抽成公共的 `evals/common/run.py`，四个 B 类共用。
@@ -132,7 +132,7 @@ DeepEval 的接法已在隔离环境（Python 3.12，deepeval 4.2.8）验证，�
 
 **需要你确认的取舍**（详见 spec-2 第〇节 D1–D9）：
 1. `world_script_execute` 的"按脚本分组准确率"改为每个脚本一个指标 `pass.<脚本名>`（38 个），原按 `kind` 的分组不再单列。
-2. `episode_vision_read` 正常调视觉模型；调用本身不通的帧不进分母，运行时打印提示。迁移前后的等价性靠保存基线时的模型输出对照，不重复调模型。
+2. `episode_vision_read`（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） 正常调视觉模型；调用本身不通的帧不进分母，运行时打印提示。迁移前后的等价性靠保存基线时的模型输出对照，不重复调模型。
 3. 共用数据集留在 `evals/dataset/`（已按你的意见，不再改名）。
 4. 开工前需要你先提交当前工作区约 125 项未提交改动（`agent_goal_run` → `agent_short_goal_run` 改名及 CLI 删除），否则 C 类的目录迁移会与未跟踪文件混在一起。
 

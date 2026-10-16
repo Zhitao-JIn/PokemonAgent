@@ -1,4 +1,5 @@
 # PLAN_console_reviewer —— 控制台交互：同步提问的 review 机制
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 用户 0914 00:2x / 01:5x 定调（两轮纠正后定稿）：**这是控制台，不是观测台。**
 > 观测台那套（`RunInteraction` 三槽 + 前端 `POST /runs/{id}/goals` 整栈原子替换）是为

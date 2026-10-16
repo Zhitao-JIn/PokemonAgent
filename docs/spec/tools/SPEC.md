@@ -10,7 +10,7 @@
 > `tools/brain_tool`→`direct/brain_tool`、`tools/trace`→`direct/trace`、
 > `tools/prompts`→`direct/prompts`、`tools/interface`→`direct/interface`、
 > `tools/game_tools`→`mcpclient/game_tools`、`tools/memory_tool`→`mcpclient/memory_local`、
-> `tools/vision_factory`→`brain/vision_factory`、`tools/backoff`→`backoff`（顶层）。
+> `tools/backoff`→`backoff`（顶层）。
 
 ## 一、职责与边界
 
@@ -21,7 +21,7 @@
   返回 `*Resp`；两半都放发起方（harness），实体住在
   `pokemon_agent/schemas/harness/communication/`。
 - **第二跳（门面 → 模块）走裸参数、返回模块自己的类型**，不造第二个信封
-  （`GameToolPort.perceive_with_retry` / `perceive_task` 连 Req 都没有；
+  （`GameToolPort.perceive_task` 连 Req 都没有；
   `from pokemon_agent.world import …` 那一跳见各实现文件）。
 
 **跨模块的双向转换只在门面层做**：信封里的领域对象（`Observation` /
@@ -59,10 +59,7 @@ pokemon_agent/mcpclient/             memory / world 半边（原 tools/ 的下�
 └── world_server / memory_server     （住 mcp_servers/，不在本包——列在这里对位）
 
 共享件：
-├── backoff.py                       backoff_seconds()（两个重试循环共用；P7 起升顶层）
-└── brain/vision_factory.py          build_vision_provider()（P7 起归 brain——
-                                     它是 brain provider 的接线知识，且 world server
-                                     也消费它，放 mcpclient 会造成 server→client 反向依赖）
+└── backoff.py                       backoff_seconds()（模型重试退避）
 ```
 
 ## 三、四张门面与信封清单
@@ -85,8 +82,7 @@ MCP 远程门面 `mcpclient/world_tool.py::WorldMcpTool`）**：
 | `get_action_space` | `(req: …GetActionSpaceReq) -> …GetActionSpaceResp` | 开放按键的场合按 overlay 给键 + 按场合给脚本条目，所有场合开放方向键、a、b；脚本接管场合另给本场合脚本、关闭 start/select |
 | `execute` | `(req: …ExecuteReq) -> FromHarnessToGameToolExecuteResp` | 两形分流：键 → `world/object_events.observe_step`，`event` 带本键裸事件；脚本（统一调用）→ 掩码校验后跑脚本层，`report` 是终态报告（`{ok, code, data, events, calls}`）。MCP 门面调用同名工具并保留报告事件 |
 | `reset` | `(req: …ResetReq) -> None` | 只有 Req |
-| `perceive_with_retry` | `() -> tuple[…PerceiveOnceResp, ModelCallLog]` | episode 层视觉档；只有 Resp |
-| `perceive_task` | `() -> …PerceiveTaskResp` | task 层，不调模型、不失败 |
+| `perceive_task` | `() -> …PerceiveTaskResp` | run / episode / task 统一使用，不调模型、不失败 |
 | `evolve` | `(req: …EvolveReq) -> None` | 只有 Req（MCP 面不提供） |
 | `save_state` / `load_state` | Req（+Resp） | 路径由 harness 给，本层原子写文件 |
 
@@ -110,7 +106,7 @@ restore_memory；`/health.admin` 报告开关，未开放时门面抛 MemoryAdmi
 | 门面 | Req 文件 | Resp 文件 |
 |---|---|---|
 | brain | `FromHarnessToBrainTool{ChooseOnce,Judge,Reflect,Verify,Summarize,SummarizeTask,PlanOnce,Decompose}Req.py` | 同前缀八个 `…Resp.py` |
-| game | `FromHarnessToGameTool{GetActionSpace,Execute,Reset,Evolve}Req.py` | `…GetActionSpaceResp.py`、`…PerceiveOnceResp.py`、`…SaveStateResp.py` |
+| game | `FromHarnessToGameTool{GetActionSpace,Execute,Reset,Evolve}Req.py` | `…GetActionSpaceResp.py`、`…PerceiveTaskResp.py`、`…SaveStateResp.py` |
 | memory | 14 个 `FromHarnessToMemoryTool*Req.py`（清单见 memory/API.md） | 除三个纯写口外各有 `…Resp.py` |
 | trace | `FromHarnessToTraceToolAppendReq.py` | 无（返回 None） |
 
@@ -119,21 +115,18 @@ restore_memory；`/health.admin` 报告开关，未开放时门面抛 MemoryAdmi
 
 ## 四、接线工厂
 
-五个工厂，"这个技能接哪家厂商"的接线知识全收在门面层，装配点
+四个工厂，"这个技能接哪家厂商"的接线知识全收在门面层，装配点
 （`pokemon_agent/build.py`）对 `brain`/`world`/`memory`/`trace` 零 import：
 
 | 工厂 | 造什么 | 住哪 |
 |---|---|---|
 | `BrainTool.build(*, text=…, judge=…, verify=…, plan=…, max_tokens=…)` | `BrainLlmConfig` + providers + `Brain` | `direct/brain_tool.py` |
-| `GameTools.build(rom, *, state_path, watch, vision_model, speed, world_server_url=None)` | 配了 `world_server_url`（裸字段，env `MCP_WORLD_SERVER_URL` 只是缺省来源）→ `WorldMcpTool`；否则 `PyBoyWorld` + 感知 provider | `mcpclient/game_tools.py` |
+| `GameTools.build(rom, *, state_path, watch, speed, world_server_url=None)` | 配了 `world_server_url`（裸字段，env `MCP_WORLD_SERVER_URL` 只是缺省来源）→ `WorldMcpTool`；否则 `PyBoyWorld` | `mcpclient/game_tools.py` |
 | `MemoryTool.build(*, memory_root, max_summaries, memory_server_url=None)` | 同上双轨（env `MCP_MEMORY_SERVER_URL`） | `mcpclient/memory_local.py` |
 | `TraceTool.build(*, run_id, trace_root)` | `LocalTrace` | `direct/trace/__init__.py` |
-| `build_vision_provider(model, temperature=0.0)` | world 的 `VisionProvider` | `brain/vision_factory.py` |
 
 返回值直接进三个 runtime，大脑按层各造一份（`run_brain` / `episode_brain` /
-`task_brain`）。**server 侧（`mcp_servers/world_server.py`）也消费
-`build_vision_provider`**——这是 `vision_factory` 归 brain 而不归 mcpclient 的原因
-（否则 server→client 反向依赖）。
+`task_brain`）。world server 不依赖模型或 prompt。
 
 ## 五、跨模块转换规则
 
@@ -164,18 +157,16 @@ restore_memory；`/health.admin` 报告开关，未开放时门面抛 MemoryAdmi
 **文件名**加载（`prompts/__init__.py::load()` 整树 `rglob`，重名当场 assert）。
 P5 起 `decide_action.md` 的"可用动作"一节并列键与脚本条目（签名 + 说明 +
 `{"action": "walk_to", "args": {…}}` 输出格式），组装见 `decide_action.py`。
-世界侧的感知模板住 `world/prompts/perceive_screen.md`（不在本层）。
+world 的内存观测不使用模板。
 其余对照表不变（judge_success / verify / summarize / summarize_task /
 decompose / run_plan / object_render）。
 
 ## 七、当前状态与已知缺口
 
 - **四张门面**：`CheckpointToolPort` 已解散；`TraceToolPort` 只剩通用读口
-  `read_events`；MCP 面上 world server 共 45 个 tool（原子 7 + release_lease
+  `read_events`；MCP 面上 world server 共 44 个 tool（原子 6 + release_lease
   + 脚本 37），脚本一次调用占 harness 账一步。
-- **重试循环全在门面层**：`direct/brain_tool.py::_attempt_loop()` 七条链，
-  `mcpclient/game_tools.py::perceive_with_retry()` 与
-  `mcpclient/world_tool.py::perceive_with_retry()`（远程同构）。
+- **模型重试循环在门面层**：`direct/brain_tool.py::_attempt_loop()`；内存观测不调用模型。
 - **`render.py` 里的墓碑**：`plan_failed()` / `human_note_injected()`
   `raise AssertionError`，不在 `_RENDERERS` 表。
 - **`mcpclient.game_tools` → `direct.prompts` 的文案耦合**（见五）——等
@@ -186,10 +177,9 @@ decompose / run_plan / object_render）。
 1. **`meta` 由谁拼**。`TraceTool.append` 不拼：`direct/trace/__init__.py`
    assert `"run_id" not in req.meta`，`source`/`episode_id`/`task_id`/`step`
    由 harness 一次交齐（`run_id` 由落盘层盖）。
-2. **接线工厂的数量与住址**。五个工厂分布在 direct / mcpclient / brain 三处
+2. **接线工厂的数量与住址**。四个工厂分布在 direct / mcpclient 两处
    （见四）；`docs/spec/memory/PORTS.md` 若仍写"三个"以本文件为准。
-3. **prompt 不只在 `direct/prompts/`**：世界侧感知模板在
-   `world/prompts/perceive_screen.md`。
+3. **world 无 prompt**：模型调用的模板由发起方持有，brain 的多模态图片通道保留。
 4. **历史文档冻结**：`docs/checkpoint` / `docs/eval` / `docs/experiences` /
    `docs/perceive` / `docs/web_reviewer` / `docs/HANDOFF_*` / `docs/roadmap/*_archive.md`
    里的 `tools/` 路径引用是过去时的记录，不改——按本文件头部的映射表读。

@@ -10,7 +10,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外有六个任务，统一登记在 `evals/registry.py`：四个 DeepEval 模块入口、两个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
+对外有五个任务，统一登记在 `evals/registry.py`：三个 DeepEval 模块入口、两个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
@@ -59,9 +59,6 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 测什么：同一帧冻结 WRAM 经机械解码后，输出是否与独立真值一致。1045 帧，用 DeepEval 按真值键逐字段计分，未标注字段跳过，显式空值照常比较。原生输出字段通过率及计分数、帧级通过率。不调用模型、不启动模拟器。
 不测：视觉读取与在线执行。
 
-**episode_vision_read**（已实现）
-测什么：生产视觉节点的纯视觉部分。只给截图，视觉模型能否读出场景、覆盖层、对话文字、选项、光标，以及解析是否成功。需要视觉模型，当前为 deepseek-flash。代码在 evals/episode_vision_read/，默认四线程；支持 --vision-model、--per-scene、--all。六列指标对应原 C/I/N，无从判跳过，解析失败的适用列判负；调用不通帧不造用例，运行末尾打印一行列出原因。
-
 **world_script_execute**（已实现）
 测什么：世界侧多步脚本在真实模拟器上执行是否正确，共 106 例。代码与数据位于 evals/world_script_execute/；每例独立进程，300 秒墙钟超时后终止，已取得开跑帧的脚本记 crash=超时，装配超时则抛专名异常。原生 code/truth 的 Total 各为 106，38 个 pass.<脚本名> 的 Total 合计 106，不再单列 kind 分组。按脚本自报结局与前后世界真值比对评分，自报成功不等于世界真值。不调用 LLM。
 不测：脚本被中途打断后的恢复。
@@ -100,9 +97,9 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 ## 帧与独立真值
 
-`evals/dataset/frames/v2/samples.jsonl` 是唯一的 v2 帧集（1045 帧）；`source` 只记录采集来源，不决定 decode 的评分组。原基础帧、接管快照、地形快照均已合并，加载器不再拼接来源文件。采集命令按来源替换统一帧集中的对应样本，保留其余来源。decode、episode_vision_read 共用加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
+`evals/dataset/frames/v2/samples.jsonl` 是唯一的 v2 帧集（1045 帧）；`source` 只记录采集来源，不决定 decode 的评分组。原基础帧、接管快照、地形快照均已合并，加载器不再拼接来源文件。采集命令按来源替换统一帧集中的对应样本，保留其余来源。decode 使用帧加载器，按所需标注筛选。现场模拟器只用于数据采集，decode 不再启动模拟器。
 
-`evals/dataset/frames/v2/truth.jsonl`是decode独立真值的唯一存储，按sample_id记录scene_truth、screen_truth、takeover_truth、terrain_truth。所有已标字段直接挂到帧上计分，删除reviewed及配套组/字段审核标记，不再按审核状态过滤。未标字段跳过，不进入该字段分母；unresolved_fields记录无法判定原因。decode不从label_checked或label回退取答案。1045帧已标全部适用字段，地图稳定的1019帧有地形标注；c-0109的walk_map与neighbors为unresolved，其余26帧地形不适用。网页审阅意见独立保存，不控制真值计分。视觉任务保留自身原有label_checked口径。
+`evals/dataset/frames/v2/truth.jsonl`是decode独立真值的唯一存储，按sample_id记录scene_truth、screen_truth、takeover_truth、terrain_truth。所有已标字段直接挂到帧上计分，删除reviewed及配套组/字段审核标记，不再按审核状态过滤。未标字段跳过，不进入该字段分母；unresolved_fields记录无法判定原因。decode不从label_checked或label回退取答案。1045帧已标全部适用字段，地图稳定的1019帧有地形标注；c-0109的walk_map与neighbors为unresolved，其余26帧地形不适用。网页审阅意见独立保存，不控制真值计分。
 
 `scene_truth` 查三个字段：`scene`、`covered_by_script`、`at_start`。`covered_by_script=true` 表示当前场合由脚本负责，包含未回初态的子菜单；有可选脚本的场合允许按键，covered_by_script 为 false。真值从独立标注场合和已核对的八类脚本对应关系补出，不读取被测分类器结果。1045 帧已标此字段；两帧完整空菜单重绘按2026-10-08裁决标为start_menu（c-0419）和bag（c-0440）。该字段只测覆盖识别是否正确；实际退回初态与执行结果由 `world_script_execute` 验证，模型选择目标脚本由决策 prompt 约束，本次未运行真实模型验证。
 
@@ -118,7 +115,7 @@ decode 的代码全部位于 `evals/decode/`：`dataset.py` 将帧转为用例�
 不进该字段分母。真值为 null、空字符串、空列表、false 或 0 均照常计分；
 输出必须含有对应键且值相等。`screen_contains` 要求每条文字都在屏幕文本中。
 
-四个 B 类共用 evals/common/run.py；默认只列失败帧，DeepEval 原生输出 Aggregate Metrics 与帧级 Pass Rate。
+三个 B 类共用 evals/common/run.py；默认只列失败帧，DeepEval 原生输出 Aggregate Metrics 与帧级 Pass Rate。
 各字段 Total 等于有标注帧数；帧级通过要求该帧全部计分字段通过。
 至少有一个计分字段的帧进入帧级分母；全部跳过的帧由 DeepEval 排除。
 不再单列四组 C/(C+I)，需要时可由逐字段记录推导。
@@ -128,9 +125,9 @@ decode 的代码全部位于 `evals/decode/`：`dataset.py` 将帧转为用例�
 
 ## 模型与启动
 
-视觉为 `evals/config.json` 的 `models.vision_model = deepseek-flash`；五条完整系统链路使用配置的各自型号。
+完整系统链路使用 `evals/config.json` 配置的各自型号，world 内存观测不调用模型。
 
-真实模型测试使用配置型号；视觉可用 --vision-model 覆盖。第二阶段按用户授权只对每场景一帧的 9 帧执行旧基线与新入口验证；默认仍是人工核过的 45 帧。该次新入口 8/9 通过，退出 1；同批保存输出的六列判定新旧一致。
+真实模型测试使用配置型号；三个 B 类任务的确定性指标不调用模型。
 
 ```powershell
 python -m evals.decode
@@ -139,7 +136,6 @@ python -m evals.decode --scene bag
 python -m evals.world_script_execute --workers 1
 python -m evals.memory_store_recall --k 5
 python -m pytest tests/integration/test_harness_integrity.py
-python -m evals.episode_vision_read --vision-model deepseek-flash --per-scene 1
 python -m evals.dataset.frames.build.freeze
 python -m evals.dataset.frames.build.terrain
 ```

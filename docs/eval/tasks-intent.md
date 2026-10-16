@@ -23,7 +23,7 @@
 | 现名 | 新名 | 测的是 |
 |---|---|---|
 | decode | decode（不改） | world 从 RAM 机械解码场合、读屏文字、接管视图、地形 |
-| vision_perceive | `episode_vision_read` | episode / run 档取帧的纯视觉子节点 `perceive_visual` |
+| vision_perceive | `episode_vision_read`（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） | episode / run 档取帧的纯视觉子节点 `perceive_visual` |
 | world_actions | `world_script_execute` | world 脚本（按场合配置）在真模拟器上执行 |
 | memory | `memory_store_recall` | 记忆写入、读回与检索 |
 | judge | `brain_goal_judge` | brain 判定目标是否达成（第五节扩容的就是它） |
@@ -54,7 +54,7 @@
 
 ```
 evals/dataset/
-├── frames/                        ← decode、episode_vision_read 共用
+├── frames/                        ← decode、episode_vision_read（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） 共用
 │   ├── schemas.py / loader.py     ScreenSample / FrameTruth；读帧集 + 挂已审核真值
 │   └── v2/                        samples.jsonl（1045 帧）+ truth.jsonl
 ├── agent_goal_run/

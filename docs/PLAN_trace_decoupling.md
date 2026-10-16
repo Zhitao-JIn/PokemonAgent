@@ -1,4 +1,5 @@
 # trace 脱钩：非 tool 引用清零
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 - 日期：2026-09-13
 - 上游审计：`docs/experiences/2026-09-13-trace-decoupling-audit.md`（v2）

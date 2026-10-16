@@ -23,7 +23,7 @@
 
    - `act` 只执行：run / episode 从表里派一条（标 RUNNING）、跑下层子图，把结算写进
      `pending_episode` / `pending_task`；task 按一个键；
-   - `perceive` 吸收上一圈的后果，**取帧**（episode 完整档、task RAM 档），**读直属下一级的记忆**
+   - `perceive` 吸收上一圈的后果，**取帧**（run / episode / task 统一读内存），**读直属下一级的记忆**
      与世界事实，装好本圈的上下文；本层其余各格只用这份上下文，不自己查库；
    - `review_and_judge` 先**定案**上一条（run 定上一局、episode 定上一个 task：盖章 → 人审可推翻
      → 记盖章账），再判停（机械三类 + 问模型）——**唯一的停机点**；
@@ -42,8 +42,8 @@
    **只存 `termination`**（枚举）：停没停（`done`）、成没成（`success`）都由它推出，不存第二份。
    判停时 `review_and_judge` 另写 `judge_reason`（判定依据：判定员的理由 / 机械判停类别）；它与
    `*_done` 里 LLM 写的 `reason`（结论：停在哪、差在哪）分开，判定员以后换成别的模型也不会混。
-4. **感知边界清楚：每层只有 perceive 取帧，档位按层。** episode 每圈（每个 task 前后）用完整档
-   （内存 + 视觉），拆解与判定据此看懂局面；task 每圈用 RAM 档：坐标、地形、地标、战斗标志，
+4. **感知边界清楚：每层只有 perceive 取帧，三层统一读内存。** run、episode、task
+   每圈通过 `perceive_task` 读取坐标、地形、地标、战斗标志，
    以及从屏幕 tile 缓冲解码出的**对话、选项、光标与选单排布**（`screen_text.py`）。
    入口不取帧，上层也不向下层传帧——task 的开局帧由它自己第一圈取。
 5. **记忆阶梯，每层只读直属下一级。** act（一键一条，源记录）→ task（一 task 一条）→

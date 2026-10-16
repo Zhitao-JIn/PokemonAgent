@@ -17,7 +17,7 @@
 - **`mcp_servers/memory_server`**：`MemoryStorePort` 11 方法的 1:1 JSON 直译，
   **零领域逻辑**。持有 MemoryStore 与两个本地检索 provider（配置注入）。
 - **`mcp_servers/world_server`**：`WorldPort` 裸方法直译（原子层）+ **脚本层**
-  （ScriptRun 骨架 + 15 条机械脚本）。持有 PyBoy 与视觉 provider（可注入）。
+  （ScriptRun 骨架 + 15 条机械脚本）。持有 PyBoy，以内存与屏幕字符缓冲提供确定性观测，不调用模型。
   outcome / object_kind 判定在这里；账本三章不在。
 
 边界铁律（沿用 AGENTS.md）：
@@ -160,8 +160,7 @@ transport 级失败（JSON-RPC error）由 mcpclient 翻译成 Python 异常抛�
   - key 动作：`{kind:"key", button, moved, event?}`（event = 本键裸事件或 null）；
   - script 动作：`{kind:"script", name, args, ok, code, data 摘要, events[]}`——
     脚本内部 N 键**不逐键记账**（不在 harness 视野，账本坐标只算一步）；
-- **脚本内部模型调用账必须带回**：脚本期间 perceive_once 的 ModelCall 记录
-  随终态报告 `calls[]` 返回，harness 按现有 `*_call` kind 逐条落账；
+- 脚本终态报告保留 `calls[]` 载荷形状；world 的内存观测不产生模型调用账；
 - node_io：STEP 模板 / source 表随 `act_call` 改名同步；META_KEYS 三章不变。
 
 ## 四、memory server（能力面：`recall` + `memorize`，注册表暴露）
@@ -221,17 +220,16 @@ class MemoryToolPort(Protocol):
 
 **并发**：单写者约定（同刻一个 client 有写权），冲突后再议文件锁。
 
-## 五、world server——原子层（7 条）
+## 五、world server——原子层（6 条）
 
 | # | tool | 入参 | data | 契约要点 |
 |---|---|---|---|---|
 | 1 | `reset` | task_id, goal, success_criteria, max_steps, initial_state_hint? | null | 载 task 存档；max_steps>0；不感知；清会话缓存 |
 | 2 | `get_action_space` | — | `{mask:{name:bool}, entries:[{kind,name,params?,desc?}], scene}` | **统一能力掩码**（用户定案）：原子键与脚本**等价**——同一 `name→enabled` 命名空间，LLM 同权选择；`entries` 带各条目载荷（脚本带 params/desc）。吸收并替代原 all_actions / 宏签名表（删） |
 | 3 | `perceive_task` | — | `{scene, screen\|walk_map, pos}` | 只读内存与屏幕缓冲；不失败不重试 |
-| 4 | `perceive_once` | — | Perceived JSON | 调一次视觉模型不重试；失败 → `perception_failed`；ModelCall 记录随 Perceived 交调用方 |
-| 5 | `step` | segments:[[key,times],…], settle:bool | `{moved:bool, event:裸事件\|null}` | **唯一按键执行口**；每段键断言在动作空间；响应带本键裸事件——判定前移 server 的输出点 |
-| 6 | `save_state` | — | state_base64 | 全量导出逐字节，不 tick |
-| 7 | `load_state` | state_base64 | null | 原样恢复不 tick；清会话缓存 |
+| 4 | `step` | segments:[[key,times],…], settle:bool | `{moved:bool, event:裸事件\|null}` | **唯一按键执行口**；每段键断言在动作空间；响应带本键裸事件——判定前移 server 的输出点 |
+| 5 | `save_state` | — | state_base64 | 全量导出逐字节，不 tick |
+| 6 | `load_state` | state_base64 | null | 原样恢复不 tick；清会话缓存 |
 
 **契约变更**（Port 层，过 CHANGELOG 编号条目）：mask/scripts 计算上移 world
 （原 GameToolPort.get_action_space 职责迁入）；`all_actions` 删除；`step`

@@ -73,7 +73,7 @@ def frame(
         else DecodedText(dialog_text="", options=[], cursor=""),
     )
     content = SenseFrameContent(
-        status="s", facts=facts, done=False, perceived=False,
+        status="s", facts=facts, done=False,
         place=PlaceInWorld(map_id=map_id, x=3, y=y), ram=ram,
     )  # fmt: skip
     return _event("sense_frame", n, content)

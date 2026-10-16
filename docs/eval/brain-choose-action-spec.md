@@ -82,7 +82,7 @@ class ChooseCase(BaseModel):
 - `chooser` 为 `BrainTool.build(text=<text_model>).chooser`，与生产同一条渲染、重试、规范化路径；`chooser.choose(case.request)` 返回动作。
 - 模型缺省取 `models.text_model`；模型名不认识时构造当场炸。
 - 结果 `ChooseRun`：`action: Action | None`、`failure: str`（`MaxRetriesExceeded` 的摘要）、`calls`（模型调用账，原样保留便于排查）；契约：`action` 与 `failure` 恰好一个有值。
-- 网络、密钥、网关不通（不是解析失败）：该样本不造结果，抛 `ProviderUnreachable`，由入口捕获、打印、不进分母。判别方式沿用 `episode_vision_read`：调用账里有 `error`。
+- 网络、密钥、网关不通（不是解析失败）：该样本不造结果，抛 `ProviderUnreachable`，由入口捕获、打印、不进分母。判别方式沿用 `episode_vision_read`（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md））：调用账里有 `error`。
 - 并发：线程池，`--workers N`，默认 4。
 
 ### 2.2 用例（`evals/brain_choose_action/cases.py`）

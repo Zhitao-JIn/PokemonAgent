@@ -360,7 +360,7 @@ def test_a_write_body_that_carries_a_frame_is_caught(events: list[dict]) -> None
 
 
 def test_a_capital_boolean_is_caught(events: list[dict]) -> None:
-    _set_content(_find(events, "sense_frame", nth=1), "perceived", "False")
+    _set_content(_find(events, "sense_frame", nth=1), "done", "False")
     with pytest.raises(AssertionError, match="小写"):
         node_io.check_payloads(events)
 

@@ -1,4 +1,5 @@
 # 搭测评框架：judge 机械复核从"引用过但已删除"到可运行 + 接 CI
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 - 日期：2026-09-01
 - 关联 Issue：路线图 P3（`docs/EXPERIENCE_DOCS.md` 第六节）

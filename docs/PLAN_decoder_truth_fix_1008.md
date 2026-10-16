@@ -1,4 +1,5 @@
 # 交接：decoder 真值修补与 decoder 修复（2026-10-08）
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 给执行这项任务的 AI。先读 `AGENTS.md`，再读本文件。依据与证据见：
 > - `docs/DECODER_TRUTH_AUDIT_1007.md`：审计报告（问题、地址、截图核对）。
