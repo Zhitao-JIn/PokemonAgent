@@ -30,7 +30,7 @@
 | O7-json | json_utils | 起点是文本里第一个 `{` 或 `[`，前缀里有无关括号会失败 | 设计取舍；留意重试率 |
 | O8-json | json_utils | 围栏标签 ```` ```jsonl ```` 会剩下 `l` | 无实际场景 |
 | O7-reflect | reflect | `""` 被拒、`" "` 被收下 | 与 docstring 一致，不当缺陷 |
-| O8-errors | errors | 包根 `pokemon_agent.brain` 不导出异常 | 未裁决：是否有意，等用户定 |
+| O8-errors | errors | 包根 `pokemon_agent.brain` 不导出异常 | 有意，不改（2026-10-16 用户裁决）：异常是 brain 内部词汇，全被 `_attempt_loop` 接住后翻译成 `MaxRetriesExceeded`，调用方从 `pokemon_agent.brain.errors` 导入；包根只放数据形状与 `Brain` / `BrainPort`。 |
 | 其他 | domain | `ScriptCall(args={"x": True})` 被存成整数 `1` | 库行为（联合类型的强转），不改 |
 | O13 | factory / providers | 「`provider_for` 不校验温度」 | **已撤回**：基类构造里有 `assert 0.0 <= temperature <= 2.0`；O15 把它改成 `ValueError` |
 
