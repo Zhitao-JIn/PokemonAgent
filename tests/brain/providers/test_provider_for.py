@@ -73,11 +73,11 @@ def test_an_unknown_prefix_raises_value_error_naming_the_model(
 def test_an_empty_model_name_and_a_missing_temperature_are_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """空型号名抛 AssertionError；不给温度抛 TypeError。"""
+    """空型号名抛 ValueError（配置值）；不给温度抛 TypeError。"""
 
     monkeypatch.setenv("DASHSCOPE_API_KEY", "k")
 
-    with pytest.raises(AssertionError, match="empty model name"):
+    with pytest.raises(ValueError, match="empty model name"):
         provider_for("", temperature=0.3)
 
     with pytest.raises(TypeError):

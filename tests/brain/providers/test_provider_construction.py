@@ -82,7 +82,7 @@ def test_the_temperature_must_sit_in_the_closed_interval_from_zero_to_two(
 
         assert provider.config()["temperature"] == str(temperature)
     else:
-        with pytest.raises(AssertionError, match="temperature out of range"):
+        with pytest.raises(ValueError, match="temperature out of range"):
             make(vendor, temperature=temperature)
 
 
@@ -113,11 +113,11 @@ def test_the_temperature_is_a_required_keyword_for_ark(
 def test_an_empty_model_name_is_rejected_at_construction(
     vendor: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """型号名为空串在构造时就被拒（三家消息不同，但都是 assert）。"""
+    """型号名为空串在构造时就被拒（三家消息不同，配置值用 ValueError）。"""
 
     monkeypatch.setenv(VENDOR_ENV[vendor], "k")
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError):
         make(vendor, model="", temperature=0.0)
 
 

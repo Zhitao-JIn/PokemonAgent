@@ -142,3 +142,19 @@ def test_the_api_key_never_leaks_into_error_messages(
 
     assert "sk-unique-secret-123" not in message
     assert "Bearer" not in message
+
+
+def test_a_rate_limit_429_is_a_retryable_tool_timeout(
+    provider: QwenProvider, fake_urlopen: FakeUrlopen
+) -> None:
+    """429 是瞬时限流，等一等往往能成功——归 ToolTimeout（值得在预算内重试）。
+
+    其余 4xx 仍是 ProviderRejected（配置/请求错误，重试注定无用）。
+    """
+
+    _raise_http_error(fake_urlopen, 429, body="rate limited")
+
+    with pytest.raises(ToolTimeout, match="QwenProvider HTTP 429: rate limited"):
+        provider.complete(LlmCompleteReq(prompt="hi"))
+
+    assert fake_urlopen.call_count == 1

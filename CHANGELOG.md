@@ -1,3 +1,13 @@
+## 2026-10-16（469）—— 429 归可重试；配置值校验改用 ValueError
+
+**改了什么**：`providers.py` 两处——① `_post` 的 HTTP 分类把 429 从 `ProviderRejected` 改归 `ToolTimeout`（消息格式不变，仍含类名、状态码、响应体），其余 4xx（400/401/403/404 等）与 5xx 不变；`_post` docstring 的分类段补写 429 例外及原因。② 配置值校验从 `assert` 改为抛 `ValueError`（消息一字不变）：基类构造的「型号名非空」与「0.0 <= temperature <= 2.0」、`ArkProvider` 与 `DeepSeekProvider` 构造的「型号名非空」、`provider_for` 的空型号名。调用方前置条件（`complete`/`describe` 的空 prompt、`describe` 空 images、`pack_images_grid` 前置断言）仍是 assert，不动。
+
+**为什么这么改**：O14——限流是瞬时的，等一等往往能成功，归 `ProviderRejected` 会让重试循环立即放弃；O15——型号名与温度来自装配点的配置，`python -O` 下 `assert` 被剥掉校验就失效（AGENTS.md：assert 不校验外部输入）。
+
+**取舍**：429 单独一档而不是并进 4xx——它与 5xx 同属「值得再试」，与配置错误分属两端；`ValueError` 保留原消息文本，调用方对错误文案的匹配不受影响。
+
+**影响面**：`pokemon_agent/brain/providers.py`（`_post` 分类 + docstring + 五处构造校验）；新增 429 → `ToolTimeout` 回归测试 1 条（含一次调用一请求）；旧测试改异常类型 4 处（`test_provider_construction.py` 温度越界 1 处、空型号名 1 处，`test_provider_for.py` 空型号名 1 处，均为 `AssertionError` → `ValueError`）；`python -O` 下 `QwenProvider("", temperature=0)` 与 `QwenProvider(temperature=2.1)` 仍抛 `ValueError`（仓库外脚本验证，`sys.flags.optimize=1`）；providers+factory+wiring 203 passed 全绿。
+
 ## 2026-10-16（468）—— verify 对非布尔 positive 与非列表 verdicts 按解析失败处理
 
 **改了什么**：`brain.py::_parse_verify` 增加两道解析校验：`verdicts` 不是列表（字符串、数字、对象）→ 整份输出按 `ParseFailure` 处理；某条判定的 `positive` 键存在但不是真正的布尔值（字符串 `"false"`/`"true"`、数字 1/0、null）→ 同样按 `ParseFailure`（此前 `bool("false")` 会把它判成真，负样本被反转成正样本，方向反了）。`positive` 键缺失仍按负样本（现行为不变）；真布尔不受影响。docstring 补写两件事：重复 `index` 时后出现的覆盖先出现的（现有行为，此前未写明），以及上面两种「输出坏了」的判据。

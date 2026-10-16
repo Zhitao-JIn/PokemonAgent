@@ -151,10 +151,12 @@ class _OpenAICompatibleBase:
         `GameTools.perceive_with_retry`）。provider 层偷偷重试会让账上一条
         `ModelCall` 藏最多 3 次真实请求，耗费与失败计数全部失真。
         """
-        assert model, "model must not be empty"
+        if not model:
+            raise ValueError("model must not be empty")
         assert self.BASE_URL, f"{type(self).__name__} 没有设置 BASE_URL 类属性"
         assert self.API_KEY_ENVS, f"{type(self).__name__} 没有设置 API_KEY_ENVS 类属性"
-        assert 0.0 <= temperature <= 2.0, f"temperature out of range: {temperature}"
+        if not 0.0 <= temperature <= 2.0:
+            raise ValueError(f"temperature out of range: {temperature}")
 
         self._model = model
         self._temperature = temperature
@@ -205,7 +207,8 @@ class _OpenAICompatibleBase:
 
         - **4xx → `ProviderRejected`**：服务端读了请求并明确拒绝（401 密钥、
           403 配额、400 格式、404 型号），重试改变不了任何东西，让循环
-          **立即耗尽**而不是烧满预算。
+          **立即耗尽**而不是烧满预算。**429 例外**：限流是瞬时的，等一等
+          往往能成功，按 `ToolTimeout` 处理（值得在预算内重试）。
         - **5xx / 网络层 → `ToolTimeout`**：传输侧没调通，调用方值得再试。
         - **单请求总时长超闸 → 同样 `ToolTimeout`**：慢滴网关被硬闸掐掉，
           也算"没调通"。
@@ -251,6 +254,9 @@ class _OpenAICompatibleBase:
             return _POST_POOL.submit(_do_post).result(timeout=total_timeout)
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8", "ignore")
+            if e.code == 429:
+                # 429 是瞬时限流，等一等往往能成功——与 5xx 同属"值得再试"。
+                raise ToolTimeout(f"{type(self).__name__} HTTP {e.code}: {error_body}") from e
             if 400 <= e.code < 500:
                 # 4xx 是配置/请求错误——重试注定无用，当场崩（装配期就该暴露）。
                 raise ProviderRejected(f"{type(self).__name__} HTTP {e.code}: {error_body}") from e
@@ -619,7 +625,8 @@ class ArkProvider(_MultimodalMixin, _OpenAICompatibleBase):
         两个候选（pro/turbo），刻意不替调用方选一个，装配处必须显式写清楚
         用的是哪一个（带完整日期后缀）。其余参数含义同 `QwenProvider`。
         """
-        assert model, "ArkProvider 的 model 必须显式给出（pro/turbo 两个候选，不设默认值）"
+        if not model:
+            raise ValueError("ArkProvider 的 model 必须显式给出（pro/turbo 两个候选，不设默认值）")
         super().__init__(model, temperature=temperature, max_tokens=max_tokens, **kw)  # type: ignore[arg-type]
         self._floor = token_floor
 
@@ -698,7 +705,8 @@ class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
         抬高默认值——真正控成本的是 `max_steps` 和 prompt 长度，不是这个数
         （同 `QwenProvider` 的理由）。
         """
-        assert model, "DeepSeekProvider 的 model 不能是空字符串"
+        if not model:
+            raise ValueError("DeepSeekProvider 的 model 不能是空字符串")
         super().__init__(model, temperature=temperature, max_tokens=max_tokens, **kw)  # type: ignore[arg-type]
         self._floor = token_floor
 
@@ -776,7 +784,8 @@ def provider_for(
     第 4 条：assert 不校验外部输入）——而且它要在**装配期**就炸，不是等第一次
     调用 404（那时错误信息只有一个 HTTP 状态码，指不回型号名）。
     """
-    assert model, "provider_for() got an empty model name"
+    if not model:
+        raise ValueError("provider_for() got an empty model name")
     head = model.strip().lower()
     for prefix, provider_cls in _PROVIDER_PREFIXES:
         if head.startswith(prefix):
