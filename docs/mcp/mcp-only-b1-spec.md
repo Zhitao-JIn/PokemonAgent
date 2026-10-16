@@ -1,6 +1,6 @@
 # spec —— 批 ①：memory 只保留 MCP 形态
 
-> 流程位置：intent（`docs/mcp/mcp-only-intent.md`）→ **spec（本文，v2，待确认）** → 派发 → 验收 → 合入
+> 流程位置：intent（`docs/mcp/mcp-only-intent.md`）→ **spec（本文，v3）** → 派发 → 验收 → 合入
 > 分支：`refactor/mcp-only`，基线 `352af88`，`state_schema_hash = 4f1cac6fcc7216d5`（本批不应改变它）。
 > 范围：只做 memory 的生产代码与相关测试。world（批②）与评测脚本（批③）不动。
 
@@ -37,7 +37,7 @@
 | `tests/mcpclient/memory_tool/test_memory_admin_validation.py` | 前半用 `MemoryTool(Embedder, Reranker, …)`；后半测 `build(memory_server_url=…)` | 前半改用共用夹具（D7）；后半保持，因 D2 签名变化而调整 |
 | `tests/mcpclient/memory_tool/test_episode_summary_order.py`、`test_object_recall_content.py` | 真 `MemoryTool` 测召回顺序 / 内容 | 改用共用夹具（D7）经 `MemoryTool` 访问，断言不动。`test_object_recall_content.py` 里的"两种传输"参数化删去进程内那一支，保留 MCP 那一支 |
 | `tests/memory/test_memory_store.py` | `MemoryTool` 与 `LocalMemoryStore` 混测 | 逐个判断：经 Port 信封收发的用例（`tool.recall(Req)` 等）改用共用夹具（D7）；测落盘根、目录布局、缺省根的用例，被测对象本来是 `MemoryCapability`，改为直接构造它；`LocalMemoryStore` 部分不动。（这个文件的重做留给测试重做主线，本批只保它绿；若超过一半的用例无法按上述两类归位，停下汇报） |
-| `tests/harness/episode/test_episode_memory_chapter.py` | 真 `MemoryTool` + 隔离目录 | 它是 harness 测试，按用户决定改用手写替身：优先用 `tests/_harness_fixtures/memory.py` 的 `_Memory`；若它表达不了某条断言（例如要求真实落盘形状），**停下汇报**，不自己扩充替身语义 |
+| `tests/harness/episode/test_episode_memory_chapter.py` | 真 `MemoryTool` + 隔离目录；文件的价值正是"存储形状是真的"（"一局一条"靠按 `episode_id` 召回判断，半截正文由存储层校验拒收） | **v3 裁决：整个文件改用共用夹具（D7），不用 `_Memory` 替身**——它的断言依赖真实存储契约，替身表达不了（执行方在 v2 下已按停止条件汇报）。`test_store_refuses_a_body_that_is_only_half_there` 的校验在服务端抛出，经 MCP 回到客户端时 `MemoryMcpTool` 会包成 `AssertionError("memorize failed: …")`；先核对服务端错误文本是否仍出现在这条消息里，是则只调整 `match`（若 `match` 已能命中就不动）；不在，则把这一条迁到 `tests/memory/` 下直接对 `MemoryCapability` 测（断言内容不变），并在报告里说明 |
 | `tests/budget/test_run_config.py`、`tests/evals/agent_short_goal_run/test_budget_wiring.py` | `monkeypatch(MemoryTool, "build", …)` | 签名变了但 monkeypatch 用 `**kwargs`，预计不用改；若 `build_real` 的缺地址报错让它们失败，在测试里补 `memory_server_url="http://example"`（不碰真实网络，`build` 已被替换） |
 
 **新增用例（名即一句话说明）**
@@ -64,7 +64,6 @@
 
 - 需要改第四节之外的文件；共用夹具无法让现有 MCP 用例（`tests/mcp_servers/`）保持绿；`HEAD` 与交接不符；起点不是全绿。
 - 发现 `build_real` 缺地址的新用例无法在不连网、不起 server 的前提下写出来。
-- 替身表达不了 `test_episode_memory_chapter.py` 的某条断言。
 - 需要新增 `MemoryStorePort` 方法、改 `MemoryCapability` 行为，或改 `CLAUDE.md` / `AGENTS.md` 的规范性内容。
 - 发现生产里还有别处构造本地 `MemoryCapability`（除 `mcp_servers/memory_server.py` 外）。
 
