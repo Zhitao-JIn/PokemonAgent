@@ -262,3 +262,92 @@ def test_calling_verify_without_any_provider_trips_the_entry_assert() -> None:
 
     with pytest.raises(AssertionError, match="verify provider"):
         brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
+
+
+@pytest.mark.parametrize(
+    "bad_positive",
+    ["false", "true", 1, 0, None],
+    ids=["str-false", "str-true", "int-one", "int-zero", "null"],
+)
+def test_a_non_boolean_positive_is_a_parse_failure(bad_positive: object) -> None:
+    """某条的 positive 存在但不是真正的布尔值 → 整份输出按解析失败处理。
+
+    字符串 "false" 被 bool() 判成真会让「负样本」反转成正样本，方向反了；
+    数字 1/0、null 同理不是布尔。缺 positive 键时仍是负样本（不在本参数化里）。
+    """
+
+    reply = json.dumps([{"index": 0, "positive": bad_positive, "why": "x"}])
+    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+
+    with pytest.raises(VerifyAttemptFailed) as excinfo:
+        brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
+
+    assert excinfo.value.call.error_kind == "ParseFailure"
+
+
+def test_real_booleans_still_parse_normally() -> None:
+    """真布尔 true/false 不受非布尔拒收影响，正负各就各位。"""
+
+    reply = json.dumps(
+        [
+            {"index": 0, "positive": True, "why": "a"},
+            {"index": 1, "positive": False, "why": "b"},
+            {"index": 2, "positive": True, "why": "c"},
+        ]
+    )
+    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+
+    result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
+
+    assert [v.positive for v in result.verdicts] == [True, False, True]
+
+
+def test_a_missing_positive_key_is_still_a_negative_sample() -> None:
+    """positive 键缺失 → 该条按负样本（不因非布尔校验变成解析失败）。"""
+
+    reply = json.dumps([{"index": 0, "why": "没给 positive"}])
+    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+
+    result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
+
+    assert result.verdicts[0].positive is False
+
+
+@pytest.mark.parametrize(
+    "bad_verdicts",
+    ["xyz", 5, {"a": 1}],
+    ids=["string", "number", "object"],
+)
+def test_a_non_list_verdicts_is_a_parse_failure(bad_verdicts: object) -> None:
+    """verdicts 不是列表（字符串、数字、对象）→ 整份输出按解析失败处理。
+
+    以前它会被静默迭代不出任何条目、全部补成负样本——「模型输出坏了」
+    和「模型没确认达标」必须分开，前者该重试，后者该保守放行。
+    """
+
+    reply = json.dumps({"verdicts": bad_verdicts})
+    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+
+    with pytest.raises(VerifyAttemptFailed) as excinfo:
+        brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
+
+    assert excinfo.value.call.error_kind == "ParseFailure"
+
+
+def test_a_duplicate_index_takes_the_later_verdict() -> None:
+    """重复 index 时后出现的覆盖先出现的（现有行为，docstring 已写明）。"""
+
+    reply = json.dumps(
+        [
+            {"index": 0, "positive": True, "why": "first"},
+            {"index": 0, "positive": False, "why": "second"},
+            {"index": 1, "positive": False, "why": "b"},
+            {"index": 2, "positive": True, "why": "c"},
+        ]
+    )
+    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+
+    result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
+
+    assert result.verdicts[0].positive is False
+    assert result.verdicts[0].why == "second"

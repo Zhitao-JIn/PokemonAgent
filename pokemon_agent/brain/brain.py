@@ -719,15 +719,33 @@ class Brain:
         标注"校验遗漏该条"但**不算整体解析失败**（那是模型少判了一条，
         不是输出坏了，标负样本正是保守的正确答案——不确认达标就不给下游
         `summarize` 喂）。
+
+        重复 `index` 时**后出现的覆盖先出现的**（`by_index` 字典按序赋值的
+        自然结果）——模型自我修正的最后一条算数，这个行为是有意的。
+
+        以下三种算「输出坏了」，整份按解析失败（`ParseFailure`）处理：
+        顶层不是列表也不是带 `verdicts` 键的对象、`verdicts` 本身不是列表、
+        某条的 `positive` 存在但不是真正的布尔值（字符串 "false" 被
+        `bool()` 判真会把负样本反转成正样本，方向反了）。
+        `positive` 键缺失不算坏——那条按负样本。
         """
         try:
             raw = _load_json(text)
             items = raw["verdicts"] if isinstance(raw, dict) else raw
+            if not isinstance(items, list):
+                raise TypeError(f"verdicts 不是列表，是 {type(items).__name__}")
             by_index = {
                 int(item["index"]): item
                 for item in items
                 if isinstance(item, dict) and "index" in item
             }
+            for item in items:
+                if (
+                    isinstance(item, dict)
+                    and "positive" in item
+                    and not isinstance(item["positive"], bool)
+                ):
+                    raise TypeError(f"positive 不是布尔值，是 {type(item['positive']).__name__}")
         except Exception as exc:  # noqa: BLE001  畸形，保守兜底 + 上抛
             return (
                 [

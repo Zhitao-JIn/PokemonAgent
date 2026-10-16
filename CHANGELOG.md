@@ -1,3 +1,13 @@
+## 2026-10-16（468）—— verify 对非布尔 positive 与非列表 verdicts 按解析失败处理
+
+**改了什么**：`brain.py::_parse_verify` 增加两道解析校验：`verdicts` 不是列表（字符串、数字、对象）→ 整份输出按 `ParseFailure` 处理；某条判定的 `positive` 键存在但不是真正的布尔值（字符串 `"false"`/`"true"`、数字 1/0、null）→ 同样按 `ParseFailure`（此前 `bool("false")` 会把它判成真，负样本被反转成正样本，方向反了）。`positive` 键缺失仍按负样本（现行为不变）；真布尔不受影响。docstring 补写两件事：重复 `index` 时后出现的覆盖先出现的（现有行为，此前未写明），以及上面两种「输出坏了」的判据。
+
+**为什么这么改**：O1/O2（观察台账裁决「修」）——「模型输出坏了」和「模型没确认达标」必须分开：字符串 `"false"` 方向反了是直接的正确性错误；`verdicts` 是字符串或对象时旧代码静默迭代出空集、全部补成负样本，调用方失去重试的机会。
+
+**取舍**：非布尔整份拒绝而不是单条拒绝——解析语义是「这份输出整体可信才逐条采信」，单条放行会让账目好坏混合；数字 `verdicts`（如 5）本就因不可迭代走现有畸形兜底返回 `ParseFailure`，本次校验把它变成显式判据，行为不变。
+
+**影响面**：`pokemon_agent/brain/brain.py`（`_parse_verify`：docstring + 两道校验）；新增回归测试 11 条（非布尔 positive 参数化 5 + 真布尔正常 1 + 缺 positive 键仍负样本 1 + 非列表 verdicts 参数化 3 + 重复 index 取后一条 1），无旧测试被改；修复前红的用例：非布尔 5 组、非列表 string/object 2 组（number 组未红——现有畸形兜底已把它判成 `ParseFailure`，测试钉住保持）；judge_verify 目录 75 passed 全绿。
+
 ## 2026-10-15（467）—— brain/schemas 单元测试（补全信封）
 
 **改了什么**：新增 `tests/brain/schemas/test_envelopes.py`，28 条用例，钉 9 项契约，补已有 `test_llm_complete_req_roundtrip.py`（只守 `prompt`）没覆盖的四类：包出口（`__all__` 恰为四个信封名）、必填字段（缺 prompt/images/text 的 `ValidationError` 指向正确位置）、默认值（`thinking is None`、两个 Resp 的四个 token 数缺省 0、`truncated is False`）、`thinking` 三态原样保留、类型拒绝（prompt 为 None/数字、images 为裸字符串或含非字符串元素）、`images` 至少一张且顺序保持、空 prompt 在信封层被接受、四个模型 `model_dump()` 的键集合恰好等于声明集合、四模型经 `model_dump`/`model_validate` 与 JSON 序列化往返相等。
