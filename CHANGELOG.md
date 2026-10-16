@@ -1,3 +1,13 @@
+## 2026-10-16（472）—— langfuse 固定为第三方，lint 结果不再取决于本地目录
+
+**改了什么**：`pyproject.toml` 新增 `[tool.ruff.lint.isort]` 小节，设 `known-third-party = ["langfuse"]`；配套把 `trace/langfuse_support.py` 函数内 import 块里 `httpx` 与 `langfuse` 之间的空行去掉（同一第三方分组内不空行——这是新判据下的唯一合规形态）。
+
+**为什么这么改**：factory 验收时发现 ruff 对该 import 块的 I001 判定取决于仓库根目录碰巧有没有那个未跟踪的 `langfuse/` 目录——目录在，ruff 把 `langfuse` 当项目内包（第一方），空行合规；目录不在，判第三方，空行违规。同一个仓库在不同机器上 lint 结果不同。`langfuse` 是第三方 SDK（自托管 v4），归属本就不该摇摆。
+
+**取舍**：固化判据后旧 import 块在两种状态下都会报 I001，去掉空行是判据统一的必然结果，不改任何运行时行为（import 语义与顺序不变）；`extend-exclude` 里的 `"langfuse"`（排除该目录本身的文件）保持不变。
+
+**影响面**：`pyproject.toml`（+4 行配置）、`pokemon_agent/trace/langfuse_support.py`（去 1 空行）；无 pytest 测试（chore）；验证：临时挪开根目录的空 `langfuse/` 目录后 `ruff check .` 与 `ruff format --check .` 全绿，改回后同样全绿——lint 结果不再依赖本地目录。
+
 ## 2026-10-16（471）—— 视觉响应带截断标记；拼图校验帧尺寸与单张 URI
 
 **改了什么**：三处——① `VisionDescribeResp` 新增 `truncated: bool = False`（docstring 与 `LlmCompleteResp.truncated` 同口径），`describe()` 把此前丢弃的 `_cut` 填进去；② `pack_images_grid` 拼接前 `assert` 所有帧尺寸一致（消息写明第一张尺寸与其余差异清单）；③ 单张输入也过 data-URI 前缀校验（与拼接路径同一消息），合法时仍原样返回同一字符串。world 里的 `VisionDescribeResp` 副本与 `ArkProvider._prepare_images` 不动。

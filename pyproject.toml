@@ -63,6 +63,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
 # ANN101/ANN102 已从 ruff 移除，无需 ignore
 ignore = []
 
+[tool.ruff.lint.isort]
+# langfuse 是第三方 SDK（自托管 v4），不是本项目的包——固定判第三方，
+# 不让 import 排序结果取决于仓库根目录碰巧有没有那个未跟踪的 langfuse/ 目录。
+known-third-party = ["langfuse"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN"]
 # Langfuse 是第三方 SDK 边界：observation 的 input/output/metadata、client 注入口

@@ -138,7 +138,6 @@ def build_client_from_environment() -> Any:
     # 带 cursor 的翻页请求打回 308（重定向回同一 URL），httpx 跟随后死循环。
     # 生命周期归本进程：SDK 不关闭调用方传入的 client，随进程退出释放。
     import httpx
-
     from langfuse import Langfuse
 
     return Langfuse(
