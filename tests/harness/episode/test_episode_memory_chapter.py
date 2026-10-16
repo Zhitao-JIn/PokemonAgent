@@ -12,16 +12,17 @@ run 的 `review_and_judge` 不再写任何记忆。
 **没有标记位**（0914 99 连字段一起删了 `chapter_only`）：空不空看 `markdown` /
 `summary` 自己——多一枚标记就是同一件事的第二个真相来源。
 
-**用真 `MemoryTool` + 隔离目录**：存储形状（记录 + 索引）是真的，只把落盘根
-指到 `tmp_path`——不碰模拟器、不调模型、不写仓库的 `memory/`。
+**通过共用内存传输夹具访问真 memory server**，存储契约与 MCP 错误信封均走真实实现。
 """
 
 from __future__ import annotations
 
-import pathlib
+from collections.abc import Iterator
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _doubles.memory_server import memory_server_context
 
 from pokemon_agent.brain import Goal, Task
 from pokemon_agent.harness.episode.episode_done.leave_chapter import store_empty_chapter
@@ -70,34 +71,18 @@ class _Judger:
         return FromHarnessToBrainToolJudgeResp(done=False, why="桩", calls=[ModelCall(payload={})])
 
 
-class _Embedder:
-    """桩向量器：只要求"别把真模型拉起来"。"""
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[0.0, 0.0, 0.0] for _ in texts]
-
-
-class _Reranker:
-    """桩精排：同上。"""
-
-    def rerank(self, query: str, documents: list[str]) -> list[float]:
-        return [0.0 for _ in documents]
+@pytest.fixture
+def memory(tmp_path: Path) -> Iterator[MemoryTool]:
+    """通过 MCP 测试真实存储契约，退出时关闭内存传输。"""
+    with memory_server_context(tmp_path / "server", tmp_path / "client") as (_, tool):
+        yield tool
 
 
-def _memory_tool(tmp_path: pathlib.Path) -> MemoryTool:
-    """真 `MemoryTool`（存储是真的），只把记忆根指到 `tmp_path`、模型换成桩。"""
-    return MemoryTool(
-        embedding_provider=_Embedder(),  # type: ignore[arg-type]
-        reranker_provider=_Reranker(),  # type: ignore[arg-type]
-        memory_root=tmp_path,
-    )
-
-
-def _deps(tmp_path: pathlib.Path) -> SimpleNamespace:
+def _deps(memory: MemoryTool) -> SimpleNamespace:
     """`review_and_judge` 读的四样：记忆、记账、人审、判定。"""
     return SimpleNamespace(
         budget=RunConfig().budget,
-        memory=_memory_tool(tmp_path),
+        memory=memory,
         trace=_Trace(),
         reviewer=NullReviewer(),
         judger=_Judger(),
@@ -161,9 +146,9 @@ def _leave(deps: SimpleNamespace) -> EpisodeMemory:
     )
 
 
-def test_an_episode_that_left_nothing_gets_a_chapter(tmp_path: pathlib.Path) -> None:
+def test_an_episode_that_left_nothing_gets_a_chapter(memory: MemoryTool) -> None:
     """零痕迹的局补一条**只有来源章**的记录，并记一笔 `write_episode_memory`。"""
-    deps = _deps(tmp_path)
+    deps = _deps(memory)
 
     _leave(deps)
 
@@ -179,9 +164,9 @@ def test_an_episode_that_left_nothing_gets_a_chapter(tmp_path: pathlib.Path) -> 
     assert len(writes) == 1 and writes[0].meta["episode_id"] == "r1-ep1", "章记在这一局名下"
 
 
-def test_an_episode_that_already_has_a_memory_is_left_alone(tmp_path: pathlib.Path) -> None:
+def test_an_episode_that_already_has_a_memory_is_left_alone(memory: MemoryTool) -> None:
     """已经蒸馏过正文的局一个字都不动——补章只填空缺。"""
-    deps = _deps(tmp_path)
+    deps = _deps(memory)
     deps.memory.memorize(
         FromHarnessToMemoryToolMemorizeReq(
             records=[
@@ -212,9 +197,9 @@ def test_an_episode_that_already_has_a_memory_is_left_alone(tmp_path: pathlib.Pa
     )
 
 
-def test_run_review_writes_no_memory(tmp_path: pathlib.Path) -> None:
+def test_run_review_writes_no_memory(memory: MemoryTool) -> None:
     """run 的 `review_and_judge` 只定案（`settle_goal`），不写记忆——每层的记忆只由本层写。"""
-    deps = _deps(tmp_path)
+    deps = _deps(memory)
 
     review_and_judge(_failed_state(), _Runtime(deps))
 
@@ -245,13 +230,12 @@ def test_a_chapter_renders_without_a_fake_body() -> None:
     assert "本局没有产出可蒸馏的正文" in text, "至少说明为什么没有"
 
 
-def test_store_refuses_a_body_that_is_only_half_there(tmp_path: pathlib.Path) -> None:
+def test_store_refuses_a_body_that_is_only_half_there(memory: MemoryTool) -> None:
     """正文要么整条完整、要么整条为空——**半截的当场炸**。
 
     `markdown` 空着却写出了 `summary`，是"写入方在伪造内容"：读的人按
     `markdown` 判定这条没有正文，而 `summary` 又在那儿，两边打架。
     """
-    memory = _memory_tool(tmp_path)
     bad = EpisodeMemory(
         episode_id="r1-ep1",
         run_id="r1",

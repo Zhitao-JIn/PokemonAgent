@@ -54,7 +54,7 @@ pokemon_agent/mcpclient/             memory / world 半边（原 tools/ 的下�
 ├── client.py                        McpClient（同步外观 / 异步内核）+ 端点与健康探针
 ├── game_tools.py                    GameTools（GameToolPort 进程内实现；MCP 模式转交 WorldMcpTool）
 ├── world_tool.py                    WorldMcpTool（GameToolPort 的 MCP 远程门面）
-├── memory_local.py                  MemoryTool（MemoryToolPort 进程内实现）
+├── memory_local.py                  MemoryTool（MemoryToolPort 的 MCP 信封适配层）
 ├── memory_tool.py                   MemoryMcpTool（MemoryToolPort 的 MCP 远程门面）
 └── world_server / memory_server     （住 mcp_servers/，不在本包——列在这里对位）
 
@@ -86,7 +86,7 @@ MCP 远程门面 `mcpclient/world_tool.py::WorldMcpTool`）**：
 | `evolve` | `(req: …EvolveReq) -> None` | 只有 Req（MCP 面不提供） |
 | `save_state` / `load_state` | Req（+Resp） | 路径由 harness 给，本层原子写文件 |
 
-**`MemoryToolPort`（进程内实现 `mcpclient/memory_local.py::MemoryTool`；
+**`MemoryToolPort`（MCP 信封适配层 `mcpclient/memory_local.py::MemoryTool`；
 远程委托 `mcpclient/memory_tool.py::MemoryMcpTool`）**——四个方法：
 `recall` / `memorize` / `snapshot_memory` / `restore_memory`，Port 信封不变。
 服务端默认只注册 recall / memorize，带 `--enable-admin` 才注册 snapshot_memory /
@@ -122,7 +122,7 @@ restore_memory；`/health.admin` 报告开关，未开放时门面抛 MemoryAdmi
 |---|---|---|
 | `BrainTool.build(*, text=…, judge=…, verify=…, plan=…, max_tokens=…)` | `BrainLlmConfig` + providers + `Brain` | `direct/brain_tool.py` |
 | `GameTools.build(rom, *, state_path, watch, speed, world_server_url=None)` | 配了 `world_server_url`（裸字段，env `MCP_WORLD_SERVER_URL` 只是缺省来源）→ `WorldMcpTool`；否则 `PyBoyWorld` | `mcpclient/game_tools.py` |
-| `MemoryTool.build(*, memory_root, memory_server_url=None)` | 同上双轨（env `MCP_MEMORY_SERVER_URL`） | `mcpclient/memory_local.py` |
+| `MemoryTool.build(*, memory_server_url, memory_root=None)` | 只经 MCP；地址必填（装配点可读 env `MCP_MEMORY_SERVER_URL`），缺地址即报错 | `mcpclient/memory_local.py` |
 | `TraceTool.build(*, run_id, trace_root)` | `LocalTrace` | `direct/trace/__init__.py` |
 
 返回值直接进三个 runtime，大脑按层各造一份（`run_brain` / `episode_brain` /

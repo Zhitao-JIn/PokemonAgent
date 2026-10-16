@@ -44,6 +44,7 @@ from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.harness.run import compile_run_graph
 from pokemon_agent.harness.task import compile_task_graph
 from pokemon_agent.mcpclient import assert_mcp_server_ready
+from pokemon_agent.mcpclient.client import McpTransportError
 from pokemon_agent.mcpclient.game_tools import GameTools
 from pokemon_agent.mcpclient.memory_local import MemoryTool
 from pokemon_agent.run_config import load_run_config
@@ -83,25 +84,6 @@ def build_real(
     # 因为型号名前缀与厂商类必须配套这件事已经由表保证。
     # state_file: None = 从开机起跑；API 装配默认传 `rom + ".state"`（存在时）。
     #
-    # `trace_root`（仅 local backend）与 `memory_root`：两份数据的落盘根（0916 起，启动时指定）。
-    # 缺省 None = **进程启动目录**下的 `tracelog/` 与 `memory/`——不再写死
-    # 仓库根。起跑脚本经 `--trace-root` / `--memory-root` 传进来，不传时从哪个
-    # 目录启动、数据就落在哪个目录。
-    #
-    # **memory 只有一个根**（0916 同日定案）：四族记忆（step / object / episode /
-    # knowledge）一视同仁地住在它下面各自的 `<kind>/` 子文件夹里。一度改成"四族
-    # 各一个 root"，随即回退——四族没有哪一族特殊，为它们各开一个开关只是把
-    # "一个位置"说成四遍。
-    #
-    # `memory_server_url`：memory server 的 **base 地址**（`http://127.0.0.1:8766`）。
-    # 给了 → 记忆读写经 MCP 走 server 进程；不给 → 进程内直连（改造前的行为）。
-    # **缺省来源不是代码常量而是 env**（`MCP_MEMORY_SERVER_URL`，见 `.env`）：
-    # server 起在哪台机器哪个端口是部署事实，写死在代码里只会逼人改代码去迁服务
-    # ——与 `LANGFUSE_BASE_URL` 同一条规矩。显式传参优先于 env。
-    # **给了就必须通**：装配期先打 `/health` 探针（与 langfuse 同款先例），
-    # server 没起 / 起了但能力没注入 → 就地报错，不进 run。理由与 langfuse 一样：
-    # MCP 这条路上的失败是**静默**的（调用方只看到超时或空结果），
-    # 跑一半才发现等于白跑一局。
     # `world_server_url`：world server 的 **base 地址**（`http://127.0.0.1:8767`）。
     # 给了 → 世界住在独立进程（契合 0924 口径：模拟器由用户本机起跑），harness
     # 经 mcpclient 调它；不给 → 进程内 PyBoyWorld（与改造前一致）。缺省来源同样是
@@ -111,6 +93,9 @@ def build_real(
     config: str | Path | None = None,
 ) -> tuple[RunHarness, GameTools]:
     """装配真实链路；返回 `(harness, game)`。
+
+    memory_server_url 显式参数优先于 MCP_MEMORY_SERVER_URL；缺地址抛 McpTransportError，
+    有地址先检查 /health。memory_root 仅指定客户端快照根，缺省为启动目录下的 memory/。
 
     **`world` 不在返回值里**（0913 夜）：生命周期归 `GameTools` 持有——
     `build_real` 再交一个 `PyBoyWorld` 出去，
@@ -214,28 +199,21 @@ def build_real(
         backend=trace_backend,
     )
 
-    # 图内节点伸向记忆的唯一通道
-    # **memory 的两个检索 provider 不在这里造**（2026-09-13，深夜十二）：
-    # "这条链路要接哪个实现"是接线知识，收在 `MemoryTool.build()`——与
-    # `BrainTool.build()` / `GameTools.build()` 同形。本装配点对
-    # `pokemon_agent.memory` **零 import**（此前第 25 行有一行
-    # `from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider`，
-    # 并在此处直接 new 两个实现）。
-    # memory：进程内（缺省）还是经 MCP 走 server 进程，由 base 地址决定。
-    # 地址的唯一缺省来源是 env（`MCP_MEMORY_SERVER_URL`）——部署事实不写进代码。
+    # 步骤 2：记忆只经 MCP 访问，缺地址在装配期失败。
     memory_server_url = (
         memory_server_url or env_str("MCP_MEMORY_SERVER_URL") or ""
     ).strip() or None
-    if memory_server_url is not None:
-        health = assert_mcp_server_ready(memory_server_url, "memory")
-        logger.info(
-            "memory MCP server 健康检查通过（%s service=%s root=%s）",
-            memory_server_url,
-            health.get("service"),
-            health.get("root"),
+    if memory_server_url is None:
+        raise McpTransportError(
+            "memory 只经 MCP：设 MCP_MEMORY_SERVER_URL 或传 memory_server_url，并先起 memory server"
         )
-    else:
-        logger.info("memory 走进程内实现（未配 MCP_MEMORY_SERVER_URL）")
+    health = assert_mcp_server_ready(memory_server_url, "memory")
+    logger.info(
+        "memory MCP server 健康检查通过（%s service=%s root=%s）",
+        memory_server_url,
+        health.get("service"),
+        health.get("root"),
+    )
 
     memory = MemoryTool.build(memory_root=memory_root, memory_server_url=memory_server_url)
 

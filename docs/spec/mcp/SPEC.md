@@ -198,10 +198,10 @@ class MemoryToolPort(Protocol):
 - 运维能力（snapshot / restore / count / refresh_changed）**不进 MCP 面**——
   留 server 启动参数与本地管理命令。
 
-### 4.3 分族逻辑落点（一份实现，两模式共用）
+### 4.3 分族逻辑落点（服务端调用）
 
 - `recall` / `memorize` 的实现住 **memory 包**（`memory/recall.py`）：
-  进程内模式 MemoryTool 直调、MCP 模式由 server 调——一份代码两处用；
+  MemoryTool 只经 MCP 访问，由 server 调用能力实现；
 - **recall 分族规则（机械）**：
   - `conditions.episode_id` → act / task 圈本局（step 升序）；
   - `conditions.place / map_id` → object 圈格；
@@ -408,13 +408,13 @@ no_response`（确认无反应是合法结果）；其它场合（choice/battle 
 
 - `mcpclient/memory_tool.py`：实现 `MemoryToolPort`（收敛后两方法 `recall` /
   `memorize`，信封面，harness 消费不变）——薄转发至 server 对应 tool；
-  分族/融合/判重逻辑在 server（`memory/recall.py` 的一份实现两模式共用）；
+  分族/融合/判重逻辑仅由 server 调用 `memory/recall.py` 实现；
 - `mcpclient/world_tool.py`：实现 `GameToolPort`（信封面）——原 GameTools 的
   信封翻译随迁，world 调用换 MCP 转发（脚本动作入口也在此）；
 - **不持账本坐标**：三章由 harness 判定层补——mcpclient 持有的是
   "信封↔裸面"翻译与转发，不是账本行为；
-- **进程内模式**（server_url 缺省）：mcpclient 内部直调 `memory/recall.py`
-  / 进程内 world，行为与现状语义一致——**门面唯一，传输切换**。
+- **memory 只经 MCP**：`memory_server_url` 必填，装配点可读取 `MCP_MEMORY_SERVER_URL`，缺地址抛 `McpTransportError`；有地址仍检查 `/health`。
+  world 暂保留 server_url 缺省时的进程内实现。
 
 ## 十、验证（全部 pytest，无测评体系）
 

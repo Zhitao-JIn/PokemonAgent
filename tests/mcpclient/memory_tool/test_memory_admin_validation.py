@@ -1,18 +1,19 @@
-"""管理面的注册、完整性、上限和互斥，以及进程内共享的坏归档拒绝。"""
+"""通过 MCP 验证管理面的注册、完整性、上限、互斥与坏归档拒绝。"""
 
 from __future__ import annotations
 
 import base64
 import hashlib
+import shutil
 import threading
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from _doubles.memory_server import act, recall, server_archive_limit
+from _doubles.memory_server import remote as remote
 from starlette.testclient import TestClient
-from test_memory_admin_parity import Embedder, Reranker, act, recall
-from test_memory_admin_parity import remote as remote
 
 from pokemon_agent.mcp_servers import common, memory_server
 from pokemon_agent.mcpclient import client as client_module
@@ -21,6 +22,7 @@ from pokemon_agent.mcpclient.memory_local import MemoryTool
 from pokemon_agent.mcpclient.memory_tool import MemoryAdminDisabled
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolMemorizeReq,
+    FromHarnessToMemoryToolRestoreMemoryReq,
     FromHarnessToMemoryToolSnapshotMemoryReq,
 )
 
@@ -33,20 +35,15 @@ def state(root: Path) -> dict[str, bytes]:
     }
 
 
-@pytest.mark.parametrize("mode", ["local", "remote"])
 @pytest.mark.parametrize("mixed", [False, True])
 @pytest.mark.parametrize(
     "entry", ["../x", "/absolute", "step_memory\\x", "C:escape", "step_memory/D:escape"]
 )
 def test_unsafe_entries_reject_the_entire_archive_before_any_deletion(
-    tmp_path, remote, mode, mixed, entry
+    tmp_path, remote, mixed, entry
 ):
-    server, _, delegate, tool = remote
-    if mode == "local":
-        tool = MemoryTool(Embedder(), Reranker(), memory_root=tmp_path / "local")
-        delegate, root = tool._capability, tmp_path / "local"
-    else:
-        root = server.root
+    server, tool = remote
+    delegate, root = tool._client, server.root
     tool.memorize(FromHarnessToMemoryToolMemorizeReq(records=[act(1)]))
     before, files = recall(tool), state(root)
     bad = tmp_path / "bad.zip"
@@ -66,14 +63,9 @@ def test_unsafe_entries_reject_the_entire_archive_before_any_deletion(
     assert state(root) == files
 
 
-@pytest.mark.parametrize("mode", ["local", "remote"])
-def test_non_zip_is_rejected_without_changing_the_library(tmp_path, remote, mode):
-    server, _, delegate, tool = remote
-    if mode == "local":
-        tool = MemoryTool(Embedder(), Reranker(), memory_root=tmp_path / "local")
-        delegate, root = tool._capability, tmp_path / "local"
-    else:
-        root = server.root
+def test_non_zip_is_rejected_without_changing_the_library(tmp_path, remote):
+    server, tool = remote
+    delegate, root = tool._client, server.root
     tool.memorize(FromHarnessToMemoryToolMemorizeReq(records=[act(1)]))
     before, files = recall(tool), state(root)
     bad = tmp_path / "not_zip"
@@ -88,7 +80,9 @@ def test_non_zip_is_rejected_without_changing_the_library(tmp_path, remote, mode
 
 @pytest.mark.parametrize("change", ["sha256", "archive_base64"])
 def test_transport_corruption_does_not_change_the_library(remote, change):
-    server, client, delegate, tool = remote
+    server, tool = remote
+    delegate = tool._client
+    client = delegate._client
     tool.memorize(FromHarnessToMemoryToolMemorizeReq(records=[act(1)]))
     data = delegate.snapshot("a").read_bytes()
     arguments = {
@@ -106,7 +100,9 @@ def test_transport_corruption_does_not_change_the_library(remote, change):
 
 
 def test_corrupt_snapshot_response_cannot_overwrite_an_existing_archive(remote, monkeypatch):
-    _, client, delegate, _ = remote
+    _, tool = remote
+    delegate = tool._client
+    client = delegate._client
     archive = delegate.snapshot("a")
     before = archive.read_bytes()
     original = client.call_tool_sync
@@ -125,7 +121,9 @@ def test_corrupt_snapshot_response_cannot_overwrite_an_existing_archive(remote, 
 
 
 def test_client_rejects_an_oversized_archive_before_sending(remote, tmp_path, monkeypatch):
-    _, client, delegate, _ = remote
+    _, tool = remote
+    delegate = tool._client
+    client = delegate._client
     assert "restore_memory" in client.registry
     calls = []
     monkeypatch.setattr(client, "call_tool_sync", lambda *args: calls.append(args))
@@ -139,25 +137,28 @@ def test_client_rejects_an_oversized_archive_before_sending(remote, tmp_path, mo
     assert not calls
 
 
-def test_server_rejects_oversized_snapshots_and_restore_payloads(remote, monkeypatch):
-    _, client, delegate, _ = remote
+def test_server_rejects_oversized_snapshots_and_restore_payloads(remote):
+    _, tool = remote
+    delegate = tool._client
+    client = delegate._client
     data = delegate.snapshot("a").read_bytes()
-    monkeypatch.setattr(memory_server, "MAX_ARCHIVE_BYTES", 1)
-
-    snapshot = client.call_tool_sync("snapshot_memory", {"name": "a"})
-    restore = client.call_tool_sync(
-        "restore_memory",
-        {
-            "archive_base64": base64.b64encode(data).decode(),
-            "sha256": hashlib.sha256(data).hexdigest(),
-        },
-    )
+    with server_archive_limit(1):
+        snapshot = client.call_tool_sync("snapshot_memory", {"name": "a"})
+        restore = client.call_tool_sync(
+            "restore_memory",
+            {
+                "archive_base64": base64.b64encode(data).decode(),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            },
+        )
 
     assert snapshot["code"] == restore["code"] == "rejected"
 
 
 def test_admin_tools_and_health_follow_the_enable_admin_switch(remote):
-    server, client, delegate, _ = remote
+    server, tool = remote
+    delegate = tool._client
+    client = delegate._client
     assert set(client.registry) == {"recall", "memorize", "snapshot_memory", "restore_memory"}
     with TestClient(memory_server.mcp.streamable_http_app()) as http:
         assert http.get("/health").json()["admin"] is True
@@ -172,7 +173,8 @@ def test_admin_tools_and_health_follow_the_enable_admin_switch(remote):
 
 
 def test_factory_uses_only_the_client_root_for_snapshots(remote, tmp_path, monkeypatch):
-    server, client, _, _ = remote
+    server, connected = remote
+    client = connected._client._client
     monkeypatch.setattr(client_module, "McpClient", lambda endpoint: client)
     root = tmp_path / "another_client"
 
@@ -184,7 +186,8 @@ def test_factory_uses_only_the_client_root_for_snapshots(remote, tmp_path, monke
 
 
 def test_factory_defaults_client_snapshots_to_launch_directory(remote, tmp_path, monkeypatch):
-    server, client, _, _ = remote
+    server, connected = remote
+    client = connected._client._client
     monkeypatch.setattr(client_module, "McpClient", lambda endpoint: client)
     monkeypatch.chdir(tmp_path)
 
@@ -196,7 +199,8 @@ def test_factory_defaults_client_snapshots_to_launch_directory(remote, tmp_path,
 
 
 def test_memorize_cannot_interleave_with_restore(remote, monkeypatch):
-    server, _, delegate, _ = remote
+    server, tool = remote
+    delegate = tool._client
     data = delegate.snapshot("a").read_bytes()
     entered, release, wrote = threading.Event(), threading.Event(), threading.Event()
     original = server.restore
@@ -226,3 +230,42 @@ def test_memorize_cannot_interleave_with_restore(remote, monkeypatch):
 
 def test_archive_limits_agree_between_client_and_server():
     assert common.MAX_ARCHIVE_BYTES == memory_tool.MAX_ARCHIVE_BYTES == 256 * 1024 * 1024
+
+
+def test_snapshot_crosses_roots_and_restores_from_an_arbitrary_path(tmp_path: Path, remote):
+    server, tool = remote
+    delegate = tool._client
+    tool.memorize(FromHarnessToMemoryToolMemorizeReq(records=[act(1)]))
+    before, files = recall(tool), state(server.root)
+
+    archive = delegate.snapshot("a")
+    external = tmp_path / "elsewhere" / "other.zip"
+    external.parent.mkdir()
+    shutil.copy2(archive, external)
+    delegate.snapshot("a")
+    tool.memorize(FromHarnessToMemoryToolMemorizeReq(records=[act(2)]))
+    unpacked = delegate.restore(external)
+
+    assert archive == tmp_path / "client" / "snapshots" / "a.zip"
+    assert (server.root / "snapshots" / "a.zip").is_file()
+    assert not list(archive.parent.glob("*.tmp"))
+    assert unpacked == 2
+    assert recall(tool) == before
+    assert state(server.root) == files
+    tool.memorize(FromHarnessToMemoryToolMemorizeReq(records=[act(2)]))
+    assert len(recall(tool)) == 2
+
+
+def test_own_snapshots_with_harmless_root_files_are_accepted(tmp_path: Path, remote):
+    server, tool = remote
+    root = server.root
+    tool.memorize(FromHarnessToMemoryToolMemorizeReq(records=[act(1)]))
+    (root / "notes.txt").write_text("harmless", encoding="utf-8")
+    before = recall(tool)
+
+    archive = tool.snapshot_memory(FromHarnessToMemoryToolSnapshotMemoryReq(name="a"))
+    tool.memorize(FromHarnessToMemoryToolMemorizeReq(records=[act(2)]))
+    tool.restore_memory(FromHarnessToMemoryToolRestoreMemoryReq(archive=archive.archive))
+
+    assert recall(tool) == before
+    assert (root / "notes.txt").read_text(encoding="utf-8") == "harmless"

@@ -1,3 +1,14 @@
+## 2026-10-16（479）—— memory 只保留 MCP 形态（批 ①）
+
+**改了什么**：MemoryTool 只接受 MemoryMcpTool，删除进程内构造与本地 provider 接线；
+build_real 缺记忆服务地址时抛 McpTransportError，有地址继续检查 /health。
+**为什么这么改**：忘配地址应在装配期明确失败，避免运行链路静默换成进程内实现；
+测试通过共用内存传输连接真服务端，验证实际使用的 MCP 路径与存储契约。
+**取舍**：退役双传输 parity，保留跨根快照等独有断言；文件名 memory_local.py 暂留，
+本批不改 world、评测脚本或 MemoryCapability 行为，不增加依赖。
+**影响面**：迁移相关 memory/harness 测试并同步现行装配文档；memory_root 仅作客户端快照根，
+服务端数据根仍由 server 配置，状态模型与 checkpoint schema 不变。
+
 ## 2026-10-16（478）—— 删除局摘要数量上限 max_summaries
 
 **改了什么**：删除 `MemoryCapability` 的 `max_summaries` 参数与 `_trim_episodes`（跨局摘要超过 50 条就淘汰质量最差的一条），删除 `MemoryTool.build` / `MemoryTool.__init__` 的同名参数；`evals/memory_store_recall/solver.py` 不再传它；`docs/spec/memory/API.md`、`PORTS.md`、`docs/spec/build/SPEC.md` 与 `memory/ports.py`、`memory/store.py` 里提到它的段落同步改掉。

@@ -107,7 +107,11 @@ def test_build_real_injects_the_budget_and_model_settings(tmp_path, monkeypatch)
     monkeypatch.setattr(assembly, "compile_episode_graph", lambda: None)
     monkeypatch.setattr(assembly, "compile_run_graph", lambda **kwargs: None)
 
-    harness, actual_game = assembly.build_real("unused", config=path, trace_backend="local")
+    monkeypatch.setattr(assembly, "assert_mcp_server_ready", lambda *args: {})
+
+    harness, actual_game = assembly.build_real(
+        "unused", config=path, trace_backend="local", memory_server_url="http://example"
+    )
 
     assert actual_game is game
     assert harness.deps.budget.max_episodes == 3

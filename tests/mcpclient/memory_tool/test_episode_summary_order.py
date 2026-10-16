@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
-import pathlib
+from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
+from _doubles.memory_server import memory_server_context
 
 from pokemon_agent.mcpclient.memory_local import MemoryTool
 from pokemon_agent.schemas.harness import (
@@ -19,24 +21,11 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.memory import EpisodeMemory
 
 
-class _Embedder:
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[0.0, 0.0, 0.0] for _ in texts]
-
-
-class _Reranker:
-    def rerank(self, query: str, documents: list[str]) -> list[float]:
-        return [0.0 for _ in documents]
-
-
 @pytest.fixture
-def memory(tmp_path: pathlib.Path) -> MemoryTool:
-    """真 `MemoryTool`，记忆根指到 `tmp_path`。"""
-    return MemoryTool(
-        embedding_provider=_Embedder(),  # type: ignore[arg-type]
-        reranker_provider=_Reranker(),  # type: ignore[arg-type]
-        memory_root=tmp_path,
-    )
+def memory(tmp_path: Path) -> Iterator[MemoryTool]:
+    """通过内存传输连接真 memory server。"""
+    with memory_server_context(tmp_path / "server", tmp_path / "client") as (_, tool):
+        yield tool
 
 
 def _summary(episode_id: str) -> EpisodeMemory:

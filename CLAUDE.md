@@ -233,7 +233,7 @@ pokemon_agent/
 │                     verify=…, plan=…, max_tokens=…)` 造大脑 + 四个 provider、
 │                     `GameTools.build(rom, …, world_server_url=?)` 造 world 实现
 │                     （配了 URL 走 MCP，缺省进程内）、
-│                     `MemoryTool.build(memory_root=…, memory_server_url=?)` 同理、
+│                     `MemoryTool.build(memory_server_url=…, memory_root=…)` 只经 MCP（URL 必填）、
 │                     `TraceTool.build(run_id=…, trace_root=…)` 造 `LocalTrace`。
 │                     **"谁依赖 brain"的唯一答案就是 direct + mcpclient 两层**——
 │                     装配点 `build.py` 只递型号名 / 路径 / server 地址这类裸字段

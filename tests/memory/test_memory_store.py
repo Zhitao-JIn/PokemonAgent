@@ -4,7 +4,7 @@
 四条行为没有编译器保护，只有测试能钉住：
 
 1. `LocalMemoryStore` 不传 `root` → 落在**启动目录**下的 `memory/<kind>/`；
-2. `MemoryTool` 不传 `memory_root` → 四族共用一个根，各占其下 `<kind>/`；
+2. `MemoryCapability` 不传 `memory_root` → 四族共用一个根，各占其下 `<kind>/`；
 3. `snapshot(name)` 把**整个记忆根**打成 `<根>/snapshots/<name>.zip`，且 zip 里
    **不含 `snapshots/` 自己**（否则每拍一次就自我嵌套一层）；
 4. `restore(archive)` 是**覆盖**——zip 里有谁就是谁，zip 里没有的原样留着；
@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import pathlib
 import zipfile
+from collections.abc import Iterator
 
 import pytest
+from _doubles.memory_server import memory_server_context
 
 from pokemon_agent.mcpclient.memory_local import MemoryTool
 from pokemon_agent.memory import LocalMemoryStore
+from pokemon_agent.memory.recall import MemoryCapability
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolRestoreMemoryReq,
     FromHarnessToMemoryToolSnapshotMemoryReq,
@@ -70,6 +73,13 @@ def _snap(tool: MemoryTool, name: str = "s1") -> pathlib.Path:
     )
 
 
+@pytest.fixture
+def connected(tmp_path: pathlib.Path) -> Iterator[tuple[MemoryCapability, MemoryTool]]:
+    """服务端根与客户端快照根分开，通过 MCP 信封往返。"""
+    with memory_server_context(tmp_path / "server", tmp_path) as pair:
+        yield pair
+
+
 # ---- 落盘根 ----
 
 
@@ -100,7 +110,7 @@ def test_tool_defaults_put_each_family_under_the_shared_root(
     区别只在于"根在哪"由**一个**参数决定。
     """
     monkeypatch.chdir(tmp_path)
-    MemoryTool(_FakeEmbedder(), _FakeReranker())
+    MemoryCapability(_FakeEmbedder(), _FakeReranker())
 
     for kind in _KINDS:
         assert (tmp_path / "memory" / kind).is_dir(), kind
@@ -108,7 +118,7 @@ def test_tool_defaults_put_each_family_under_the_shared_root(
 
 def test_explicit_memory_root_wins_over_the_default(tmp_path: pathlib.Path) -> None:
     """显式给 `memory_root` 时四族全落在它下面（缺省不被用到）。"""
-    MemoryTool(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
+    MemoryCapability(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
 
     for kind in _KINDS:
         assert (tmp_path / kind).is_dir(), kind
@@ -126,14 +136,16 @@ def test_store_explicit_root_wins_over_the_default(tmp_path: pathlib.Path) -> No
 # ---- 快照 / 恢复 ----
 
 
-def test_snapshot_zips_the_whole_root_and_excludes_itself(tmp_path: pathlib.Path) -> None:
+def test_snapshot_zips_the_whole_root_and_excludes_itself(
+    tmp_path: pathlib.Path, connected: tuple[MemoryCapability, MemoryTool]
+) -> None:
     """快照打的是**整个记忆根**，落在 `<根>/snapshots/<name>.zip`，且里面没有 `snapshots/`。
 
     若 `snapshots/` 也进 zip，第二次快照就会把第一次的 zip 套进去——体积指数增长。
     四族都是同一个根下的子文件夹，所以一张快照天然覆盖四族。
     """
-    tool = MemoryTool(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
-    _put(tool._capability._store("act"))
+    capability, tool = connected
+    _put(capability._store("act"))
 
     archive = _snap(tool)
 
@@ -144,72 +156,76 @@ def test_snapshot_zips_the_whole_root_and_excludes_itself(tmp_path: pathlib.Path
     assert not any(name.startswith("snapshots/") for name in names), names
 
 
-def test_snapshot_overwrites_a_previous_one_with_the_same_name(tmp_path: pathlib.Path) -> None:
+def test_snapshot_overwrites_a_previous_one_with_the_same_name(
+    tmp_path: pathlib.Path, connected: tuple[MemoryCapability, MemoryTool]
+) -> None:
     """同名快照覆盖——`name` 是调用方给的标识，不是一个自增号。"""
-    tool = MemoryTool(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
+    capability, tool = connected
     req = FromHarnessToMemoryToolSnapshotMemoryReq(name="s1")
 
     first = _snap(tool, req.name)
     first_size = first.stat().st_size
-    _put(tool._capability._store("act"), episode_id="e1")
+    _put(capability._store("act"), episode_id="e1")
     second = _snap(tool, req.name)
 
     assert second == first
     assert second.stat().st_size >= first_size
 
 
-def test_snapshot_name_may_not_contain_path_separators(tmp_path: pathlib.Path) -> None:
+def test_snapshot_name_may_not_contain_path_separators(
+    tmp_path: pathlib.Path, connected: tuple[MemoryCapability, MemoryTool]
+) -> None:
     """`name` 只是文件名——带路径等于让 harness 决定 zip 落哪，那不是它的活。"""
-    tool = MemoryTool(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
+    capability, tool = connected
 
     with pytest.raises(AssertionError):
         tool.snapshot_memory(FromHarnessToMemoryToolSnapshotMemoryReq(name="../escape"))
 
 
-def test_restore_makes_deleted_records_come_back(tmp_path: pathlib.Path) -> None:
+def test_restore_makes_deleted_records_come_back(
+    tmp_path: pathlib.Path, connected: tuple[MemoryCapability, MemoryTool]
+) -> None:
     """删了再恢复 == 回来。这是快照存在的理由：`delete_many` 之后没有第二次机会。"""
-    tool = MemoryTool(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
-    record_id = _put(tool._capability._store("act"))
+    capability, tool = connected
+    record_id = _put(capability._store("act"))
     archive = _snap(tool)
 
-    tool._capability._store("act").delete_many([record_id])
-    assert tool._capability._store("act").count() == 0
+    capability._store("act").delete_many([record_id])
+    assert capability._store("act").count() == 0
 
     tool.restore_memory(FromHarnessToMemoryToolRestoreMemoryReq(archive=str(archive)))
 
-    assert tool._capability._store("act").count() == 1, (
-        "恢复后内存态也要刷新（reload + 清 max 缓存）"
-    )
+    assert capability._store("act").count() == 1, "恢复后内存态也要刷新（reload + 清 max 缓存）"
 
 
-def test_restore_deletes_records_written_after_the_snapshot(tmp_path: pathlib.Path) -> None:
+def test_restore_deletes_records_written_after_the_snapshot(
+    tmp_path: pathlib.Path, connected: tuple[MemoryCapability, MemoryTool]
+) -> None:
     """恢复是**以 zip 为准**：快照之后新写的记录会被删掉。
 
     留下快照之后才写进去的那些，就不是那一刻了——"越恢复越多"会让快照失去
     "能整体还原"的意义。要"只加不减"是另一套语义，本方法不做。
     """
-    tool = MemoryTool(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
-    _put(tool._capability._store("act"), episode_id="before-snap")
+    capability, tool = connected
+    _put(capability._store("act"), episode_id="before-snap")
     archive = _snap(tool)
 
-    _put(tool._capability._store("act"), episode_id="after-snap")
-    assert tool._capability._store("act").count() == 2
+    _put(capability._store("act"), episode_id="after-snap")
+    assert capability._store("act").count() == 2
 
     tool.restore_memory(FromHarnessToMemoryToolRestoreMemoryReq(archive=str(archive)))
 
-    assert tool._capability._store("act").count() == 1, "以 zip 为准——快照之后写的那条该被删掉"
-    assert tool._capability._store("act").filter({"episode_id": "before-snap"}), (
-        "zip 里那条必须还在"
-    )
-    assert not tool._capability._store("act").filter({"episode_id": "after-snap"}), (
-        "zip 里没有的不该留下"
-    )
+    assert capability._store("act").count() == 1, "以 zip 为准——快照之后写的那条该被删掉"
+    assert capability._store("act").filter({"episode_id": "before-snap"}), "zip 里那条必须还在"
+    assert not capability._store("act").filter({"episode_id": "after-snap"}), "zip 里没有的不该留下"
 
 
-def test_restore_leaves_the_snapshots_directory_alone(tmp_path: pathlib.Path) -> None:
+def test_restore_leaves_the_snapshots_directory_alone(
+    tmp_path: pathlib.Path, connected: tuple[MemoryCapability, MemoryTool]
+) -> None:
     """`snapshots/` 不参与还原——恢复一次就把存档自己删了，那份档就再也用不上。"""
-    tool = MemoryTool(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
-    _put(tool._capability._store("act"))
+    capability, tool = connected
+    _put(capability._store("act"))
     used = _snap(tool, "keep-me")
     other = _snap(tool, "other")
 
@@ -219,27 +235,31 @@ def test_restore_leaves_the_snapshots_directory_alone(tmp_path: pathlib.Path) ->
     assert other.is_file(), "别的存档也不该被删"
 
 
-def test_restore_refreshes_every_family_not_just_step_memory(tmp_path: pathlib.Path) -> None:
+def test_restore_refreshes_every_family_not_just_step_memory(
+    tmp_path: pathlib.Path, connected: tuple[MemoryCapability, MemoryTool]
+) -> None:
     """四族都要 `reload`——`restore()` 只刷它自己那个实例（`step_memory`）。
 
     只在 step 上刷、别的族不刷的话：恢复回来的摘要"文件在盘上但索引里查不到"，
     直到进程重启才自愈。这个测试钉住 `restore_memory` 里那个 for 循环。
     """
-    tool = MemoryTool(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
-    summary_id = _put(tool._capability._store("episode"), episode_id="ep-1")
+    capability, tool = connected
+    summary_id = _put(capability._store("episode"), episode_id="ep-1")
     archive = _snap(tool)
 
-    tool._capability._store("episode").delete_many([summary_id])
-    assert tool._capability._store("episode").count() == 0
+    capability._store("episode").delete_many([summary_id])
+    assert capability._store("episode").count() == 0
 
     tool.restore_memory(FromHarnessToMemoryToolRestoreMemoryReq(archive=str(archive)))
 
-    assert tool._capability._store("episode").count() == 1, "episode_memory 的内存态也要跟着刷"
+    assert capability._store("episode").count() == 1, "episode_memory 的内存态也要跟着刷"
 
 
-def test_restore_rejects_unsafe_entries_before_touching_the_library(tmp_path: pathlib.Path) -> None:
+def test_restore_rejects_unsafe_entries_before_touching_the_library(
+    tmp_path: pathlib.Path, connected: tuple[MemoryCapability, MemoryTool]
+) -> None:
     """能力层在删除前拒绝含不安全条目的整个归档。"""
-    tool = MemoryTool(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
+    capability, tool = connected
     evil = tmp_path / "evil.zip"
     with zipfile.ZipFile(evil, "w") as zf:
         zf.writestr("../escaped.json", "{}")
@@ -326,7 +346,9 @@ def test_refresh_changed_recomputes_when_content_actually_changes(
     assert embedder.calls > before, "正文真变了就该重算——热更新性质不能被 hash 判据吞掉"
 
 
-def test_bm25_corpus_persists_across_instances(tmp_path: pathlib.Path) -> None:
+def test_bm25_corpus_persists_across_instances(
+    tmp_path: pathlib.Path, connected: tuple[MemoryCapability, MemoryTool]
+) -> None:
     """BM25 的**分词语料随 index.json 持久化**（0928 326）：换一个实例
     （= 重启进程）检索，语料直接吃盘上的，不重分词。"""
     import json
@@ -338,7 +360,7 @@ def test_bm25_corpus_persists_across_instances(tmp_path: pathlib.Path) -> None:
     )
     from pokemon_agent.schemas.memory import KnowledgeRecord
 
-    tool = MemoryTool(_FakeEmbedder(), _FakeReranker(), memory_root=tmp_path)
+    capability, tool = connected
     tool.memorize(
         FromHarnessToMemoryToolMemorizeReq(
             records=[
@@ -357,10 +379,12 @@ def test_bm25_corpus_persists_across_instances(tmp_path: pathlib.Path) -> None:
     )
     tool.recall(FromHarnessToMemoryToolRecallReq(query="战斗 菜单", limit=5))
 
-    index = json.loads((tmp_path / "knowledge_memory" / "index.json").read_text(encoding="utf-8"))
+    index = json.loads(
+        (capability.root / "knowledge_memory" / "index.json").read_text(encoding="utf-8")
+    )
     assert index["corpus"], "语料应随 index.json 落盘"
 
-    fresh = LocalMemoryStore(_FakeEmbedder(), _FakeReranker(), "knowledge_memory", tmp_path)
+    fresh = LocalMemoryStore(_FakeEmbedder(), _FakeReranker(), "knowledge_memory", capability.root)
     hits, timings = fresh.search("战斗 菜单", limit=5)
     assert hits, "新实例不吃任何进程内状态也能检索"
     assert set(timings) == {"prepare", "bm25", "vector", "rrf", "rerank"}
