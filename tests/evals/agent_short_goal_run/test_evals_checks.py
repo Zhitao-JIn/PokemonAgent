@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from evals.agent_short_goal_run.dataset import load
 from evals.agent_short_goal_run.dataset.schemas import EvalSample, SampleStart
 from evals.agent_short_goal_run.scorer import RULES, RunStream, judge
 from pokemon_agent.direct.trace import ParsedEvent
@@ -72,7 +73,7 @@ def frame(
         else DecodedText(dialog_text="", options=[], cursor=""),
     )
     content = SenseFrameContent(
-        status="s", facts=facts, done=False, perceived=False,
+        status="s", facts=facts, done=False,
         place=PlaceInWorld(map_id=map_id, x=3, y=y), ram=ram,
     )  # fmt: skip
     return _event("sense_frame", n, content)
@@ -172,6 +173,38 @@ CASES = {
         [frame(1, in_battle=True, options=("TACKLE", "GROWL"), cursor="TACKLE")],
         [frame(1, in_battle=True, options=("POTION", "CANCEL"), cursor="POTION")],
     ),
+    "party_list_opened_in_battle": (
+        [
+            frame(
+                1,
+                in_battle=True,
+                options=("BULBASAUR", "PIDGEY"),
+                cursor="BULBASAUR",
+                party=((20, 20), (15, 20)),
+            ),
+        ],
+        [
+            frame(
+                1,
+                in_battle=True,
+                options=("FIGHT", "PKMN", "ITEM", "RUN"),
+                party=((20, 20),) * 4,
+            ),
+            frame(
+                2,
+                in_battle=True,
+                options=("POTION", "CANCEL"),
+                party=((20, 20), (15, 20)),
+            ),
+            frame(
+                3,
+                in_battle=True,
+                options=(" tackle ", "growl"),
+                party=((20, 20), (15, 20)),
+            ),
+            frame(4, in_battle=True, options=("BULBASAUR", "PIDGEY")),
+        ],
+    ),
     "move_used": (
         [frame(1, in_battle=True, foe_hp=15), frame(2, in_battle=True, foe_hp=11)],
         [
@@ -249,3 +282,17 @@ def test_text_from_vision_is_never_taken_as_truth() -> None:
     assert verdict.outcome == "fail", "视觉给的对话不算出现过"
     vision_dialog = stream(frame(1), frame(2, dialog="Hey!", source="vlm"))
     assert judge(vision_dialog, sample("dialog_opened")).outcome == "fail"
+
+
+def test_party_list_without_decoded_frames_is_unjudgeable() -> None:
+    verdict = judge(stream(), sample("party_list_opened_in_battle"))
+
+    assert verdict.outcome == "unjudgeable"
+
+
+def test_pokemon_switch_sample_has_a_registered_mechanical_rule() -> None:
+    samples = load(rule_ids=set(RULES))
+    switch = next(s for s in samples if s.sample_id == "knowledge_battle_pokemon_switch")
+
+    assert switch.check_id == "party_list_opened_in_battle"
+    assert switch.check_id in RULES

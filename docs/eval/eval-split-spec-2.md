@@ -1,4 +1,5 @@
 # spec —— 第二阶段：其余任务按类迁入 `evals/<任务名>/`
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 流程位置：intent.md（`docs/eval/eval-split-intent.md` 第十节）→ **spec.md（本文）** → plan.md → PR → production
 > 状态：**v7 已按用户授权实施**；验收 6 的两个新入口已执行，agent 的有效目标运行受既有冻结存档结构不兼容限制。第一阶段（decode）已完成，见 `docs/eval/eval-split-spec.md`（提交 430–434）。

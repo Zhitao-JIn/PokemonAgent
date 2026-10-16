@@ -116,8 +116,8 @@ class ToolTimeout(BrainError):
     replay 里它们指向不同修法：前者改 prompt/解析，后者查网关/配额。
 
     **可重试**：传输抖动下一次可能就通（0915 真机实测 405 连挂两次第三次成功）。
-    重试的循环与预算都在调用方（`BrainTool._attempt_loop` /
-    `GameTools.perceive_with_retry`）——provider 自己**一次都不重发**（0915 起：
+    重试的循环与预算都在调用方（`BrainTool._attempt_loop`）——
+    provider 自己**一次都不重发**（0915 起：
     一次调用 = 一次 HTTP 请求，provider 层重试已删，账的可信度靠它）。
 
     **4xx（401/403/400）不在这里**：那是服务端的**明确拒绝**，不是抖动，
@@ -172,12 +172,6 @@ class ImageNotDelivered(BrainError):
     内部之后，brain 拷走时**不再欠任何外部文件**（此前它住顶层 `errors.py`，
     拷走 brain 就得连那个文件一起带，第三方可替换性破功）。
 
-    **world 的感知链怎么办**：world 的 `describe()` 也走这同一份实现（它拿
-    一个 `QwenProvider` 当 `VisionProvider`），于是也可能收到这个异常。world
-    **不 import 它**——`world/pyboy_world.py` 在 `describe()` 外面把任何失败
-    （含这个）就地包成 world 自己的 `PerceptionAttemptFailed`，
-    world 的失败出口因此仍然只有自己那两个类（见 `world/errors.py`）。
-    **两个模块各自成立，桥在"谁调谁包"这一层**，不是共享一个异常类。
     """
 
     def __init__(self, input_tokens: int, floor: int) -> None:

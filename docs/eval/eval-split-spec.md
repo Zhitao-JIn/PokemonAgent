@@ -1,4 +1,5 @@
 # spec —— decode 迁到 B 类：DeepEval `evaluate()` 启动、逐字段指标、DeepEval 汇总
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 流程位置：eval-split-intent.md → **eval-split-spec.md** → plan → PR → production
 > 依据：`docs/eval/eval-split-intent.md` v6 第八节；现状以 2026-10-12 仓库为准（registry 六个 inspect task；`pyproject.toml` dev 组已含 `deepeval>=4.2.8`，已装入 `.venv`）

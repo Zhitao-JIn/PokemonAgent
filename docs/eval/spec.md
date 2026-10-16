@@ -1,4 +1,5 @@
 # spec —— 测评体系 v1（run 入口单目标样本 + judge 过程集 + 读侧解析层）
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 流程位置：intent.md → **spec.md** → plan.md → PR → production
 > 状态：**已定稿（09-25 晚）**：起点改为 run_begin 存档、真值表按实际来源重写、rubric 改打分、W1～W4 全部拍板 → 下一步写 `docs/eval/plan.md`

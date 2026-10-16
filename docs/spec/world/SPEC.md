@@ -20,7 +20,7 @@ scene_layout提供无地图空屏、独立开场画像和战斗菜单框形证�
 
 - 地形精灵按 `C204/C205 + 16*slot - 4` 的地图格位定位，再相对主角转成屏幕格网；移动中的 NPC 取游戏已更新的目标格。`D5CE` 的槽号/全局编号列表与 `D5A6` 的隐藏位图决定是否跳过槽位。招牌、门、精灵的覆盖顺序及图片种类规则不变。`D535=FF` 表示没有草，不生成 G。通行仍取每格左下子图块。
 - `ram.map_settled(memory)` 是生产、冻结数据集 `has_map`、coverage 共用的地图适用判据：通行表指针非零，且地图编号在静态表内、地图头 tileset 等于 `D367`。`scripts/build_map_tilesets.py` 从英文红版 ROM 的 `01AE` 地图头指针与 `C23D` 银行表生成 `world/tables/map_tilesets.json`，含 248 个地图编号；运行时只读静态表，不查 ROM 地图头。该判据识别 tileset 不一致的换图过程，不能证明所有同 tileset 换图都已稳定。
-- 无字且地图未稳定时为 transition。task 与 episode 两条生产感知路径都跳过地形，不沿用上一帧：`place=None`、`map_id=None`、where/facing/neighbors/walk_map 为空、landmarks 为空；当前截图、屏幕解码、RAM 读数及模型调用账仍照常返回。task 单帧装配在 `task_perception.observe_task`，PyBoyWorld 负责取帧与调用。
+- 无字且地图未稳定时为 transition。三层共用的生产观测路径都跳过地形，不沿用上一帧：`place=None`、`map_id=None`、where/facing/neighbors/walk_map 为空、landmarks 为空；当前截图、屏幕解码与 RAM 读数仍照常返回。task 单帧装配在 `task_perception.observe_task`，PyBoyWorld 负责取帧与调用。
 - 起名对象由 `D07D` 决定：0 是 YOUR NAME?，1 是 RIVAL's NAME?，其余是 NICKNAME?；前两者最多 7 个字符，昵称最多 10 个。键盘维持 9/9/8/9/9，第三行第九格的空格是真正可输入的键，但产品刻意不提供它。0x76/0x77 在命名布局显示 `_`，其余布局维持 HUD 框线。
 - 战斗招式框侧边完整时，恰为 `-` 的行是不可达空位，从选项、排布和附注中去掉，但保留整屏显示；命名键盘的 `-` 仍为可选键。类型说明框可能覆盖招式框左上角，因此不以该角判定框形。
 - 无实心光标时仍读取完整商品框。只有末项 CANCEL 可以没有价格，其余商品必须具有完整价格；数量框遮挡或残框不补造选项，不猜光标。
@@ -34,27 +34,23 @@ scene_layout提供无地图空屏、独立开场画像和战斗菜单框形证�
 
 ## 一、职责与边界
 
-world 是 `WorldPort` 的唯一实现：把 PyBoy 模拟器与视觉模型粘成"一个可推进、可观测的世界"，
-外加这个世界自己的语义常量（按哪个键、往哪个方向、哪个键算互动、地形字符什么意思）。
-
-一帧画面变成 `Observation` 要经过两条来源，各管一段，互不替代（`world/pyboy_world.py` 的模块
-docstring）：`world/ram.py` 给出坐标、地图编号、朝向、地形通行图、门与招牌的位置——确定，不会
-读错；视觉模型给出场景类别、对话框文字、屏幕上有什么——会读错，所以要记账。
+world 是 `WorldPort` 的唯一实现：把 PyBoy 模拟器、内存读取与屏幕字符缓冲解码组成可推进、可观测的世界。
+观测只有 `perceive_task` 一档，不调用模型。坐标、地形、战斗与队伍来自游戏变量；对话、选项、光标来自字符缓冲。
 
 边界四条：
 
 - **出边为零**：`world/` 包内不 import `pokemon_agent` 的其余部分（第八节有可执行核对）。
 - **不认识信封**：Port 收/吐裸字段与 world 自己的形状，不认本项目的 `*Req` 信封。
 - **不做判定**：不知道任务目标，不算"这一局该不该结束"；`Observation.done` 只回答"世界还在不在"。
-- **不写 trace**：模型调用记录随 `Perceived.calls` 交给 tool 层，world 侧不攒缓冲区。
+- **不写 trace**：观测与截图交给 tool 层，再由 harness 写账。
 
 ## 二、目录结构
 
 ```
 world/
 ├── __init__.py                  统一出口：interface 立即加载，pyboy_world/ram 经 _LAZY 表懒加载
-├── errors.py                    WorldError（根）/ PerceptionAttemptFailed（唯一子类）
-├── pyboy_world.py               ALL_BUTTONS、节奏常量、parse_screen、PyBoyWorld
+├── errors.py                    WorldError（根）
+├── pyboy_world.py               ALL_BUTTONS、节奏常量、PyBoyWorld
 ├── ram.py                       读内存：read_facing / read_passable / read_screen_tiles / read_terrain
 ├── screen_text.py               读屏幕文字：wTileMap(0xC3A0) 按英文版字符表解码 → 对话 / 选项 / 光标 / 排布 /
 │                                选项附注（× 数量、¥ 价格）/ 覆盖判定；光标字节 0xED、战斗标志 wIsInBattle(0xD057)
@@ -95,11 +91,10 @@ world/
 │       └── learn_move.py        learn_move 场合：forget / skip、learn_view
 ├── interface/
 │   ├── __init__.py              统一出口（协议 + 数据形状 + 常量）
-│   ├── world_port.py            WorldPort 契约（8 个方法）
-│   ├── vision_provider.py       VisionProvider 协议（describe）
+│   ├── world_port.py            WorldPort 契约（7 个方法）
 │   ├── memory.py                Memory 协议（按地址取字节）
 │   └── domain/
-│       ├── __init__.py          统一出口，__all__ 59 个名字
+│       ├── __init__.py          统一出口
 │       ├── action_semantics.py  BUTTON_FACING / FACING_STEP / DIRECTION_KEYS / INTERACT_KEY
 │       ├── action_space.py      ActionSpace（mask / entries；键 names 只在开放按键的场合非空）
 │       ├── action_entry.py      ActionEntry（kind ∈ key / script，签名 signature()）
@@ -110,41 +105,36 @@ world/
 │       ├── battle_status.py     BattleStatus / Combatant（facts_fields() 给 my_* / foe_* 字段）
 │       ├── ram_readout.py       RamReadout / MenuVars / BagItem / PartyMon / DecodedText / TextSource（只进 trace）
 │       ├── facts.py             Facts（内部类 Scene/Overlay/Landmark）+ OVERLAY_ACTIONS
-│       ├── observation.py       Observation、BLIND_NOTE
-│       ├── perceived.py         Perceived
+│       ├── observation.py       Observation
 │       ├── place_in_world.py    PlaceInWorld
 │       ├── screen_model.py      网格常量、地形字符、TERRAIN_MEANING、terrain_legend
-│       ├── screen_state.py      ScreenState（视觉模型输出的 schema）、CURSOR_MARKS
 │       ├── screen_text.py       ScreenText（dialog_text / options / cursor / option_grid / cursor_cell /
 │       │                        option_details / covered + render_layout() / render_details()）
 │       ├── task_scene.py        TaskScene（task 层场合词表）、SCRIPT_ONLY_SCENES
 │       ├── task_observation.py  TaskObservation（Observation + scene + takeover + covered_by_script）
 │       ├── terrain_map.py       TerrainMap
-│       └── vision_describe.py   VisionDescribeReq / VisionDescribeResp（world 自己的副本）
-└── prompts/
-    ├── __init__.py              PromptTemplate、load()
-    └── perceive_screen.md       感知这条链的 prompt 素材
+│       └── task_perceived.py    TaskPerceived（观测、截图与 RAM 读数）
+├── task_perception.py           observe_task：装配内存观测
+└── frame_encoding.py            png_data_uri：截图编码
 ```
 
-`world/__init__.py` 的 `__all__` 有 36 个名字；`PyBoyWorld` / `parse_screen` / `read_facing` / `read_passable` / `read_screen_tiles` / `read_terrain` / `classify_scene` / `at_start` 走 `_LAZY` 表懒加载（`pyboy_world` 拽着 `pyboy`），其余（`interface/` 的协议与数据形状）立即加载。
+`world/__init__.py` 统一导出公开形状；`PyBoyWorld` / `read_facing` / `read_passable` / `read_screen_tiles` / `read_terrain` / `classify_scene` / `at_start` 走 `_LAZY` 表懒加载（`pyboy_world` 拽着 `pyboy`），其余（`interface/` 的协议与数据形状）立即加载。
 
 ## 三、WorldPort 契约
 
-`world/interface/world_port.py`，`@runtime_checkable` 的 `Protocol`，**8 个方法**：
+`world/interface/world_port.py`，`@runtime_checkable` 的 `Protocol`，**7 个方法**：
 
 | # | 方法 | 签名 | 前置条件 | 承诺 | 失败方式 |
 |---|---|---|---|---|---|
-| 1 | `reset` | `(*, task_id: str, goal: str, success_criteria: str, max_steps: int, initial_state_hint: str = "") -> None` | `max_steps > 0` | 按任务重置到初始状态，**不感知**——第一帧由调用方另调 `perceive_once()` / `perceive_task()` | 实现里 `assert max_steps > 0`；`state_path` 缺失在构造期就 `FileNotFoundError` |
+| 1 | `reset` | `(*, task_id: str, goal: str, success_criteria: str, max_steps: int, initial_state_hint: str = "") -> None` | `max_steps > 0` | 按任务重置到初始状态，**不感知**——第一帧由调用方另调 `perceive_task()` | 实现里 `assert max_steps > 0`；`state_path` 缺失在构造期就 `FileNotFoundError` |
 | 2 | `all_actions` | `() -> list[str]` | 无 | 非空，且整个 episode 内不变 | 不失败 |
 | 3 | `step` | `(segments: list[tuple[str, int]], *, settle: bool = True) -> None` | 每一段的按键都在 `all_actions()` 中；当前 episode 未结束 | 按序执行按键段，推进世界，**不感知** | 按键不在 `ALL_BUTTONS` 是调用方 bug，assert 拦下；实现另断言"已 `reset()`""窗口没关" |
-| 4 | `perceive_once` | `() -> Perceived` | 已 `reset()` | episode 层视觉档：返回这次真调用产生的新观测（observation 非空） | 解析不出 `ScreenState` 时抛 `PerceptionAttemptFailed`（附这次的账）；其余异常就地收编成它 |
-| 4′ | `perceive_task` | `() -> TaskPerceived` | 已 `reset()` | task 层：只读内存与屏幕缓冲，`TaskObservation` 带场合、`perceived=False` | 不失败 |
+| 4 | `perceive_task` | `() -> TaskPerceived` | 已 `reset()` | 三层共用：只读内存与屏幕缓冲，`TaskObservation` 带场合与接管视图 | 不失败 |
 | 5 | `save_state` | `() -> bytes` | 无 | 模拟器完整状态（CPU / 内存 / 画面）的字节串，非空；**不推进世界** | 不失败 |
 | 6 | `load_state` | `(data: bytes) -> None` | `data` 是 `save_state` 的产物 | 恢复到导出那一刻；**读档后不 tick**（09-25 实测读档即恢复画面与内存，多 tick 一帧内存就偏离） | 数据非法时 PyBoy 原样抛出 |
 
 两个要点：**裸字段**——`reset` 收 `Task` 拆开后的五个原始值、`step` 收 `Action.sequence` 拆开的 `(按键名, 连按次数)` 列表，world 不依赖 brain 的类型。
 **`settle` 只改调用方什么时候拿到控制权**，不改按键本身的效果：`True` 等"按下去之后自己走完"的过程（换图淡入淡出 / 战斗开场 / 对话逐字打出 / 菜单弹出）走完；`False` 按完即返回，链中间的键用这一档，代价是可能抄到过场的中间帧。
-`perceive_once` **只问一次、不重试**——重试循环与预算归调用方 `mcpclient/game_tools.py::GameTools.perceive_with_retry`。
 
 实现类 `PyBoyWorld` 另有两个不在 `WorldPort` 里的方法：`stop()` 与 `evolve(frames)`
 （`assert frames >= 0`）——见第九节。
@@ -179,72 +169,41 @@ world/
 （每次按完推进多少帧）、`AFTER_ACTION_FRAMES = 10 * GB_FPS` = 600（`settle=True` 时整条链
 按完再推进多少帧）、`BOOT_FRAMES = 10 * GB_FPS` = 600（无存档时空转多少帧越过开机 logo）。
 
-**其他常量**：`BLIND_NOTE`（`observation.py`，没做过视觉感知的那一帧顶上那一行）、
-`CURSOR_MARKS = frozenset("▶►▸➤>")` 与 `NEEDS_OVERVIEW = (Facts.Scene.FIELD, Facts.Scene.INDOOR)`
-（`screen_state.py`）、`_EXTRA_ORDER`（`facts.py`）。
+**其他常量**：`_EXTRA_ORDER`（`facts.py`）定义事实字段的渲染顺序。
 
 ## 五、数据形状
 
 | 形状 | 谁产出 | 谁消费 | 关键字段 |
 |---|---|---|---|
-| `Observation` | `PyBoyWorld.perceive_once()` | harness（`EpisodeRunState`）、`mcpclient/game_tools.py`、trace 渲染、`schemas/harness/communication/**` | `step`（占位 0，由 Harness 盖章）、`place: PlaceInWorld \| None`、`status`、`facts: Facts`、`done`、`perceived`；方法 `stall_key()` / `render(indent="  ")` |
-| `TaskObservation` / `TaskPerceived` | `PyBoyWorld.perceive_task()`（`task_perception.observe_task`） | task 层：`GameTools.perceive_task` → `FromHarnessToGameToolPerceiveTaskResp`、`TaskState`、决策 / 反思 / 掩码 / 执行的信封、`sense_frame` 账（正文带 `scene`）、ActMemory 的前后帧（`scene` 字段） | `Observation` 的全部字段 + `scene: TaskScene`（场合，必有）+ `takeover: TakeoverView \| None`（脚本接管场合给视图）+ `covered_by_script: bool`（从场合派生的只读接管覆盖标志）。与 episode 层的 `Observation` 是两种观测，`scene` 与 `Facts.Scene` 只是重名 |
+| `Observation` | 内存观测的基础类型 | `TaskObservation`、旧账兼容读取 | `step`（占位 0，由 Harness 盖章）、`place: PlaceInWorld \| None`、`status`、`facts: Facts`、`done`；方法 `stall_key()` / `render(indent="  ")` |
+| `TaskObservation` / `TaskPerceived` | `PyBoyWorld.perceive_task()`（`task_perception.observe_task`） | run / episode / task：`GameTools.perceive_task` → `FromHarnessToGameToolPerceiveTaskResp`、`TaskState`、决策 / 反思 / 掩码 / 执行的信封、`sense_frame` 账（正文带 `scene`）、ActMemory 的前后帧（`scene` 字段） | `Observation` 的全部字段 + `scene: TaskScene`（场合，必有）+ `takeover: TakeoverView \| None`（脚本接管场合给视图）+ `covered_by_script: bool`（从场合派生的只读接管覆盖标志）。三层状态都声明为 `TaskObservation`，序列化保留 scene/takeover；`scene` 与 `Facts.Scene` 是不同字段 |
 | `TaskScene` / `SCRIPT_ONLY_SCENES` | `scene.classify_scene()` | task 层、读屏测评 | 16 类场合，见 `docs/perceive/spec.md` 第三节 |
-| `Facts` | `PyBoyWorld` 拼装 | harness 交互判定、`direct/prompts`、记忆检索 query | 具名 `scene`/`overlay`/`where`/`facing`/`neighbors`/`landmarks`/`dialog_text`/`options`/`cursor`/`overview`/`walk_map`/`map_id`；`extra="allow"` 接住视觉模型按 scene 自由给的字段；`scene_value` / `overlay_value` / `exclude(keys)` / `items()` / `stall_key_part()` / `render()` |
-| `Facts.Scene` | 视觉模型（经 `ScreenState`） | 掩码与 prompt | `FIELD` `INDOOR` `BATTLE` `MENU` `SHOP` `TRANSITION` |
-| `Facts.Overlay` | 视觉模型 | `OVERLAY_ACTIONS` 的键 | `NONE` `DIALOG` `CHOICE` |
+| `Facts` | `PyBoyWorld` 拼装 | harness 交互判定、`direct/prompts`、记忆检索 query | 具名 `scene`/`overlay`/`where`/`facing`/`neighbors`/`landmarks`/`dialog_text`/`options`/`cursor`/`walk_map`/`map_id`；`extra="allow"` 接住内存派生的额外字段；`scene_value` / `overlay_value` / `exclude(keys)` / `items()` / `stall_key_part()` / `render()` |
+| `Facts.Scene` | 内存战斗标志（战斗或空） | 掩码与 prompt | `FIELD` `INDOOR` `BATTLE` `MENU` `SHOP` `TRANSITION` |
+| `Facts.Overlay` | 屏幕字符缓冲解码 | `OVERLAY_ACTIONS` 的键 | `NONE` `DIALOG` `CHOICE` |
 | `Facts.Landmark` | `TerrainMap.landmarks()` | harness 交互判定 | `kind`（`KIND_DOOR`/`KIND_SIGN`/`KIND_PERSON`/`KIND_ITEM`/`KIND_BOULDER`）、`map_id`、`x`、`y`；属性 `place` 现场拼 `PlaceInWorld` |
 | `PlaceInWorld` | RAM 读出的坐标 | 记忆的键、交互判定 | `map_id` / `x` / `y`；`step_toward(facing)`、属性 `key` = `"{map_id}:{x}:{y}"`、`render()` |
 | `ActionSpace` | `compute_action_space()`（掩码的唯一出处；`mcpclient/game_tools.py::_action_space()` 只在其上补 prompt 文案） | brain（`ChooseOnceReq`） | `mask` / `entries: list[ActionEntry]` / `names` / `descriptions` / `note` / `map_note`（所有场合开放基础按键，脚本接管场合另外开放业务脚本，start/select 仍关闭）；`contains(name)` / `enabled(name)` / `entry(name)` |
 | `ActionEntry` / `ScriptParam` | `scripts/catalog.py`（脚本）、`scripts/scenes/` 各场合文件（脚本） | tool 层：动作空间、prompt 的脚本签名与说明、转成 brain 的 `ScriptSignature` | `kind`（`key` / `script`）/ `name` / `params`（`name` / `type`∈{str,int} / `description` / `default`，None = 必填）/ `description`；`signature()` 写成 `buy_item(item: str, count: int)` |
 | `TakeoverView` | `scripts.scenes.takeover_view()`（`task_perception.observe_task` 里） | `TaskObservation.takeover` → 脚本接管场合的决策 prompt、`sense_frame` 账 | `ShopItemsView`（`items` 名字与价格、`money`、`bag`）/ `NamingView`（`target` 屏幕标题、`typed` 已输入）/ `BattleMenuView`（`mine` 在场那只带招式与剩余 PP、`foe`、`trainer`、`party`、`bag`）/ `BattleSwitchView`（`party`）/ `BagView`（`bag`、`party`）/ `PartyView`（`party`）/ `PcView`（`items` PC 道具、`bag`、`box` 当前箱、`box_number`、`party`）/ `LearnMoveView`（`pokemon`、`new_move`、`moves`）；队员是 `MonEntry`（昵称、等级、HP、状态、是否在场、招式）；`render()` 给 prompt 几行 |
-| `Perceived` | `PyBoyWorld.perceive_once()` | `GameTools.perceive_with_retry()` | `observation` / `calls: list[dict[str, str]]` / `frame_png`（base64 PNG）/ `ram: RamReadout` |
-| `RamReadout` | `readout.read_readout()` | 经 tool 层写进 `sense_frame` 账的 `ram`；**不进 agent 输入**，测评读它 | `in_battle` / `covered` / `text_source`（`decode`/`vlm`/`none`，这一帧文字实际来自哪）/ `would_be`（W4 下会来自哪）/ `menu: MenuVars` / `money` / `bag: [BagItem]` / `party: [PartyMon]` / `battle: BattleStatus \| None` / `decoded: DecodedText \| None`（legacy 档额外存解码结果，供逐帧对比） |
+| `RamReadout` | `readout.read_readout()` | 经 tool 层写进 `sense_frame` 账的 `ram`；**不进 agent 输入**，测评读它 | `in_battle` / `covered` / `text_source`（当前为 `decode`，`vlm` 仅兼容旧账）/ `menu: MenuVars` / `money` / `bag: [BagItem]` / `party: [PartyMon]` / `battle: BattleStatus \| None` / `decoded: DecodedText`（每帧的屏幕解码结果，供机械判据读取） |
 | `BattleStatus` | `battle_status.read_battle_status()`（不在战斗时 `None`） | `Facts` 的额外字段（`facts_fields()`）、`RamReadout.battle` | `mine` / `foe: Combatant`（`name` 取 RAM 昵称字段、`level`、`hp`、`max_hp`、`status`） |
-| `ScreenState` | `parse_screen()`（视觉模型的文本） | 只有 `pyboy_world.py`——不离开 world | `scene` / `overlay` / `overview` / `dialog_text` / `options` / `option_lines` / `cursor` / `fields: dict[str, str]` |
 | `TerrainMap` | `ram.read_terrain()` | `PyBoyWorld` 拼 `Facts` | `cells`（9 行 × 10 字符，构造时校验形状与字符集）/ `map_id` / `player_x` / `player_y` / `facing` / `ambiguous_cells`；`at()` / `neighbors()` / `render()` / `landmarks()` / `place()` / `render_neighbors()` |
-| `VisionDescribeReq` / `VisionDescribeResp` | `PyBoyWorld` 构造请求 | `VisionProvider.describe()` | Req：`images: list[str]`（base64 PNG，`min_length=1`）+ `prompt`；Resp：`text` + `input_tokens` / `output_tokens` / `cached_tokens` / `reasoning_tokens` |
 | `Memory`（Protocol） | —— | `ram.py` 的四个读函数 | `__getitem__(addr: int \| slice)`，只要能按地址取字节，不必是真 PyBoy |
-
-`VisionDescribeReq` / `VisionDescribeResp` 是 **world 自己的一份副本**（`vision_describe.py`），
-与 `brain/schemas/vision.py` 的两份**字段同构是刻意的**：world 不 import brain，
-同构靠 tool 层这一座桥守。
 
 ## 六、感知链路
 
-```
-PyBoy 屏幕 → PNG 字节（_frame_png）→ base64 → VisionDescribeReq
-           → VisionProvider.describe() → text → parse_screen() → ScreenState
-           → 与 ram.read_terrain() 的地形拼装 → Facts + Observation → Perceived
-```
+`PyBoyWorld.perceive_task()` 读取截图、游戏变量与屏幕字符缓冲，经 `task_perception.observe_task`
+装配 `TaskPerceived`（`TaskObservation`、frame_png、ram）。run、episode、task 三层都经
+`harness.sensing.perceive_task` 使用它，不调模型、不产模型调用账；截图仍可交给 brain 的多模态判定通道。
 
-**两个入口，两层各用一个**。harness 只在两层 perceive 的 `sense` 单元取帧：task 层每圈走 `perceive_task()`，
-episode 层每圈走 `perceive_once()`（带 VLM）。**RAM 档也读文字**：`screen_text.read_screen_text()` 给出对话、选项、光标、
-选项排布（进 `Facts` 的额外字段 `option_layout`，告诉决策"几行几列、光标在哪、方向键怎么走"），
-并据此推 `overlay`（有光标 = CHOICE，有对话 = DIALOG，否则 NONE），`wIsInBattle` 非零时 `Facts.scene=battle`。
-RAM 档产出 `TaskObservation`：另带场合 `scene`（`scene.classify_scene`，读屏幕缓冲 + `wIsInBattle` / `wListPointer` / `wCurMapTileset`）；
-画面字段二选一——屏上有字只给 `Facts.screen`，没字（走路）只给 `Facts.walk_map`。
-完整档里 options / cursor 也以 RAM 读数覆盖视觉模型的抄写。
+- 游戏变量提供位置、地图、朝向、地形、地标、战斗状态、队伍与背包。
+- 屏幕解码提供整屏文字、对话、选项、光标、排布和 overlay；`scene.classify_scene` 提供 `TaskScene`。
+- `Facts.scene` 仍为战斗或空，知识检索用 `TaskObservation.scene.value` 作为场景键。
+- 屏幕有字时给 screen，没字时给 walk_map；地图未稳定不沿用旧地形。
+- 观测本身不含 perceived 或 overview。旧记忆的兼容字段由 memory 的快照形状负责。
+- 三层 sense 节点记录 sense_frame；sense_call 已停止产出，旧账仍可读。
 
-| 档 | 调模型 | 读什么 | `perceived` | `calls` |
-|---|---|---|---|---|
-| `perceive_once()` | 是，一次 | 内存 + 视觉 | `True` | 一条账 |
-| `perceive_task()` | 否 | 只有内存：坐标、朝向、地标、通行图（屏上没字时）、地图编号 + 屏幕文字（对话 / 选项 / 光标 / 排布 / overlay / 战斗）+ 场合 | `False`——概况等视觉字段**不是空的，是没读过** | 没有（`TaskPerceived` 不带账） |
-
-两档都截帧：`frame_png` 照截照传——"帧的可得性与有没有人看过它无关"。
-
-**读数来源与两层分工（0926 定，取代 W4）**：
-
-| 来源 | 给什么 | 可靠性 |
-|---|---|---|
-| 游戏变量 | 坐标 / 地图 / 朝向 / 通行图 / 地标、在不在战斗、战斗双方名字 / 等级 / HP / 状态（`my_*` / `foe_*`） | 确定 |
-| 屏幕字符缓冲 | 切好的对话 / 选项 / 光标 / 排布 / `×` `¥` 附注（尽力）+ 整屏原样 `Facts.screen`（`screen_text.render_screen`） | 字符确定，切分尽力 |
-| 视觉模型 | `scene`、`overview`、场合字段；episode 层的对话 / 选项 / 光标 | 会看错 |
-
-- **task 层（`perceive_task()`）**：不调视觉。文字字段来自解码，另给整屏原样；解码切不出的界面（队伍列表、
-  数量框、起名键盘……）由模型自己读 `screen`（`decide_action.md` 写明"字段对不上时以 `屏幕` 为准"）。
-- **episode 层**：调一次视觉，文字字段以视觉为准（解码不再覆盖视觉的选项 / 光标）；也给整屏原样，
-  `decompose.md` 写明"字面内容听 `屏幕`，图形和场面听视觉"。
 - **整屏渲染**：一个图块一个字符；边框 `┌─┐│└┘`（含战斗 HUD 框线 0x6F / 0x76–0x78）、等级 `:L`、
   血条 `HP:[██████]`（每格 8 像素按填充渲染）、`ID` / `No.` 只在战斗外渲染，其余非文字图块 `·`。
   `:L` / `HP:` 一个图块占两三个字符，所在行后面的列会右移。整屏既没字也没边框（走路、过场）时给空串。
@@ -252,30 +211,13 @@ RAM 档产出 `TaskObservation`：另带场合 `scene`（`scene.classify_scene`�
 - **叠加层**（`screen_text.overlay_of`）：屏幕上有 `▶`、数量框（`×` 紧跟两位数字）或完整商品价格列表→ CHOICE；
   严格的对话帧（`ScreenText.strict_dialog`：底部对话框画着（空框也算）、没有 `▶`、没有数量框、对话框外没有别的框）→ DIALOG；
   图鉴条目页下半的说明框（图鉴专用边框图块 0x66–0x6F）按对话框读，说明文字进 `dialog_text`；
-  其余 NONE。这里表达按键控制模式，不是窗口是否重叠。看档路径上视觉说 DIALOG 还要解码认得是严格对话帧，否则按解码推（`_checked_overlay`）。
+  其余 NONE。这里表达按键控制模式，不是窗口是否重叠。
   菜单定位与提取在 `screen_menu.py`，无箭头的完整商品框由 `priced_menu.py` 读取商品、排布与价格；
   数量框遮挡、边框不完整或价格不齐时不补造完整列表，无箭头时 cursor 为空、cursor_cell 为 null。
   战斗中的队伍选择统一为 battle_switch，主动换人与倒下换人不按HP区分场合；两者只提供同一个换人脚本和队伍视图。野外队伍列表仍是 party，战斗用道具选对象仍属于 battle_menu。
 - **掩码**：所有场合开放后端支持的上下左右、a、b；非接管 NONE 与 CHOICE 另外给 `start`，DIALOG 和接管场合不给 start；所有场合不给 select——
   叠加层判错的代价只是多几个当帧无效的键。
-- **测评**：`RamReadout.decoded` 每帧都记（两层），机械判据只读它；`covered` 只做统计。
-
-**prompt**：`PyBoyWorld.__init__` 用 `world/prompts/__init__.py::load("perceive_screen")` 读
-`prompts/perceive_screen.md`，`perceive_once()` 里以
-`render(known_map=terrain.render(), terrain_legend=terrain_legend())` 填两个 `$` 占位符。
-
-**账的形状**（`dict[str, str]`，值一律 `str`）：成功给 `input_tokens` / `output_tokens` /
-`cached_tokens` / `reasoning_tokens` / `ok`（`"true"`/`"false"`）/ `raw` / `prompt`；
-失败给 `ok="false"` / `raw=""` / `prompt` / `error`（`"{类型名}: {消息}"` 前缀），
-由 `PerceptionAttemptFailed(call)` 带出，读方是它的 `.call` 属性。
-
-**跨步骤的常量不在 world**：重试预算 `PERCEPTION_MAX_RETRIES = 3` 与固定退避
-`MODEL_RETRY_BACKOFF_SECONDS = 0.5` 在 `pokemon_agent/config.py`，循环在
-`GameTools.perceive_with_retry()`——world 只抛一次性的 `PerceptionAttemptFailed`。
-
-两条实现规则：视觉模型报 `overlay=DIALOG` 却一个字都没抄出来时**降级成 `NONE`**
-（免得用假对话算出一组按不出效果的掩码）；task 层的状态行由 `_ram_status()` 生成，
-只写它真读过的东西，不编"你在野外"这类场景词。
+- **测评**：`RamReadout.decoded` 每帧都记（三层），机械判据只读它；`covered` 只做统计。
 
 transition 场合开放 `wait_until_scene(scene: str, timeout_s: int=10)`，只推进帧、不按键；目标场合匹配即返回 ok，超时返回 timeout 并带当前场合，task 随后重新感知。目标匹配不保证稳定，目标应按任务上下文指定。标题菜单按用户保证不进入生产运行范围，冻结标题帧只作为历史解码样本，不要求本轮补无地图感知入口。
 
@@ -335,13 +277,8 @@ PC 道具走主角的 PC、宝可梦与换箱走比尔的 PC；打开时 "Access
 **出边为零**：`world/` 内唯一的绝对 import 是 `from pokemon_agent.world import …`
 （`pyboy_world.py:26`），其余全是相对 import。⇒ 整个 `world/` 拷进另一个项目仍能跑。
 
-**谁能碰实现：只有 tool 层**。`mcpclient/game_tools.py:37`（`OVERLAY_ACTIONS` / `ActionSpace` /
-`Facts` / `Observation` / `WorldPort`）、`:44`（`world.errors.PerceptionAttemptFailed`）、
-`:137`（`PyBoyWorld`，在 `GameTools.build()` 函数体内）、`brain/vision_factory.py:36`
-（`VisionProvider`）、`direct/brain_tool.py:91`（`DIRECTION_KEYS` / `INTERACT_KEY`）、
-`direct/prompts/decide_action.py:32-33`（`terrain_legend` / `Facts`）、
-`direct/trace/render.py:86`（`Observation`）。非 tool 侧只许 import `pokemon_agent.world`
-与 `pokemon_agent.world.interface*`（数据形状）。
+**谁能碰实现**：门面层与指定的 world MCP 服务适配器。`GameTools.build()` 创建 `PyBoyWorld`；
+其余消费者通过 Port 或公开数据形状取值。world 不依赖 brain，也不持有模型 provider。
 
 **核对脚本**：`python scripts/check_world_self_contained.py`（退出码 0 = 全过），查三类：
 
@@ -351,7 +288,7 @@ PC 道具走主角的 PC、宝可梦与换箱走比尔的 PC；打开时 "Access
   `pokemon_agent.world` 与 `pokemon_agent.world.interface*`；白名单式——新增一个
   `world/xxx.py` 默认就是"实现面"，要放行得改 `ALLOWED_OUTSIDE_TOOLS`。
 - **C〔装配点零 import〕**：`build.py` 一个字都不许 import `pokemon_agent.world`
-  （`GameTools.build()` / `build_vision_provider()` 全在 tool 层）。
+  （`GameTools.build()` 在 tool 层）。
 
 末尾另打印一份**账本**（不算失败）：非 tool 侧对 world 数据形状的 import 点，当前 **12 处**
 （`harness/episode` 4、`schemas/harness/communication` 8）。`AGENTS.md` 第十二节第 4 条登记的
@@ -359,18 +296,15 @@ PC 道具走主角的 PC、宝可梦与换箱走比尔的 PC；打开时 "Access
 
 ## 九、当前状态与已知缺口
 
-**已成立**：A/B/C 三类约束全过（脚本实测）；两层读数分工与整屏渲染已落地（0926，W4 撤销）；`WorldPort` 由 `PyBoyWorld` 唯一实现，
+**已成立**：A/B/C 三类约束全过（脚本实测）；三层统一内存观测与整屏渲染已落地；`WorldPort` 由 `PyBoyWorld` 唯一实现，
 方法签名与第三节的契约表一致。
 
 **已知缺口**（均不影响运行，但读代码时会被误导）：
 
-- `pyboy_world.py` 模块 docstring 说"感知按帧哈希缓存……重复 `observe()` 不调模型"，
-  但 `PyBoyWorld` **没有 `observe()` 方法、也没有任何缓存字段**——重复调 `perceive_once()`
-  每次都会真问一遍模型。这段缓存叙述是陈旧的。
 - `_Task` 的 docstring 写"`reset()`/`set_task()` 收到的裸字段"，但 `WorldPort` 与
   `PyBoyWorld` **都没有 `set_task()`**。
 - `evolve()` 的 docstring 自称"仍是 `WorldPort` 契约的一部分"，但 `world_port.py`
-  只声明了上面 8 个方法，**没有声明 `evolve`**；它当前的唯一调用方是
+  只声明了 7 个方法，**没有声明 `evolve`**；它当前的唯一调用方是
   `mcpclient/game_tools.py::GameTools.evolve`。
 - `TerrainMap.cells` 的字段说明引用
   `pokemon_agent.schemas.world.domain.screen_model.MAP_CHARS`——该路径已无对应文件

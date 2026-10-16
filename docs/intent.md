@@ -1,4 +1,5 @@
 # INTENT —— 模块 MCP 化改造定案（world / memory）
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 2026-09-29 与用户逐轮定向后的最终设计。取代此前所有被否的中间方案
 > （McpMemoryStore proxy / RemoteMemoryTool stub / server 持有 MemoryTool——均废弃）。

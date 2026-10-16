@@ -55,6 +55,8 @@ content  这笔账的正文（可 JSON 化的对象；`store` 负责序列化成
 
 章（成没成、几步、是不是空章）在 `episode_start` / `episode_end` 两条边界账上，
 **不进写账的 content**。
+
+sense_call 已停止产出；相关类型与映射仅为读取旧账保留。
 """
 
 from __future__ import annotations
@@ -438,17 +440,16 @@ def plan_failed(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
 
 def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """两层 `sense` 取到的一帧（episode 视觉档 / task 层带场合的一帧，按 `meta.task_id` 分层）。
+    """三层 `sense` 取到的内存观测，按 `meta` 分层。
 
     **facts 必须进正文**——它才是观测的实质内容；视觉给的 `facts.scene` / `overlay`
     就在 `facts` 里，不另抄。
     正文：
     - `status`：状态行；
     - `facts`：整份事实快照，**直接放对象**（不双重编码）；
-    - `done` / `perceived`：世界还在不在、这一帧问没问过视觉模型——用 `perceived`
-      分开"没读过"和"读到是空"；
+    - `done`：世界还在不在；
     - `place`：主角格的结构化坐标，`None` 时省略这个键；
-    - `scene`：task 层的场合（`TaskObservation.scene`），episode 层的帧省略这个键；
+    - `scene`：内存观测的场合（`TaskObservation.scene`），旧观测可以没有这个键；
     - `takeover`：仅开放脚本的场合的视图（**直接放对象**），没有就省略；
     - `frame`：这一帧的原始画面（base64 PNG），没有就省略；
     - `ram`：这一帧的内存读数（`RamReadout`，**直接放对象**），没有就省略。
@@ -462,7 +463,6 @@ def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         "status": obs.status,
         "facts": obs.facts.model_dump(),
         "done": str(obs.done).lower(),
-        "perceived": str(obs.perceived).lower(),
     }
     if obs.place is not None:
         content["place"] = obs.place.model_dump()

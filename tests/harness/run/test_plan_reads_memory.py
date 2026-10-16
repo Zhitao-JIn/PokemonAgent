@@ -33,14 +33,14 @@ from pokemon_agent.harness.run.perceive import perceive
 from pokemon_agent.harness.run.plan_run import plan_run
 from pokemon_agent.harness.run.run_state import RunState
 from pokemon_agent.schemas.harness import (
-    FromHarnessToGameToolPerceiveOnceResp,
+    FromHarnessToGameToolPerceiveTaskResp,
     FromHarnessToMemoryToolRecallItem,
     FromHarnessToMemoryToolRecallResp,
     ModelCall,
 )
 from pokemon_agent.schemas.harness.domain import EntryStatus, EpisodeOutput, GoalEntry, Termination
 from pokemon_agent.schemas.memory import EpisodeMemory
-from pokemon_agent.world import Observation
+from pokemon_agent.world import TaskObservation, TaskScene
 
 
 def _CALL() -> ModelCall:
@@ -150,11 +150,9 @@ def _deps(memory: _Memory, planner: _BrainTool) -> RunRuntime:
         trace=_Trace(),  # type: ignore[arg-type]
         memory=memory,  # type: ignore[arg-type]
         game=SimpleNamespace(  # type: ignore[arg-type]
-            perceive_with_retry=lambda: (
-                FromHarnessToGameToolPerceiveOnceResp(
-                    observation=Observation(step=0, status="s"), frame_png="F"
-                ),
-                [],
+            perceive_task=lambda: FromHarnessToGameToolPerceiveTaskResp(
+                observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
+                frame_png="F",
             )
         ),
         reviewer=_Reviewer(),  # type: ignore[arg-type]

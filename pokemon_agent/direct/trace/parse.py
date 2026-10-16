@@ -2,6 +2,8 @@
 
 与 `render.py` 成对：那边把领域对象写成正文，这边把正文读回类型。测评等读账的一方只从这里取，
 不自己 `json.loads` 再按字符串键摸字段。没建模的账读成 `OtherContent`（原样保留全部键）。
+
+sense_call 已停止产出；相关类型与映射仅为读取旧账保留。
 """
 
 from __future__ import annotations

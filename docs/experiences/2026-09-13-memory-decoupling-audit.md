@@ -1,4 +1,5 @@
 # memory 模块按「brain 脱钩原则」审计：如何移出
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 - 日期：2026-09-13
 - 判据来源：`docs/experiences/2026-09-13-brain-decoupling-principles.md`

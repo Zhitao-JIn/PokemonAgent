@@ -11,17 +11,7 @@
 `pokemon_agent.schemas.*` 的依赖**只剩数据形状**（那些是跨层信封的字段类型，
 本来就该共享）。补全协议不再欠外部任何东西。
 
-**world 怎么办**：world 的 `VisionProvider` 协议也要声明 `describe()` 的
-请求/响应形状。它**不 import brain**——world 在自己的
-`world/interface/domain/vision_describe.py` 里**复制一份**
-（只复制它需要的两个：`VisionDescribeReq`/`VisionDescribeResp`）。
-两份字段同构是**刻意的**：实现（brain 的 `_MultimodalMixin`）同时满足两个协议，
-装配点递进去时结构对得上即可——**同形不同约，各自声明自己的**
-（跟 `JudgeProvider` 与 `VisionProvider` 长得像但分属两家的道理一样）。
-
-**放这里的代价与收益**：代价是"同一个形状有两个副本"（brain 一份、world 一份），
-收益是**两个模块都能独立拷走**。用户拍板取后者——"我要的是 brain 可以作为
-第三方替换"。
+文本与图片补全均使用 brain 自己声明的请求/响应形状，模块可独立替换。
 
 **目录内部结构**：扁平放，不分子目录。两个文件分别装一对 Req/Resp，
 外加 `__init__.py` 做统一出口。

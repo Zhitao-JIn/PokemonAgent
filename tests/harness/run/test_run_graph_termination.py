@@ -31,7 +31,7 @@ from pokemon_agent.harness.run.run_entry import initial_plan
 from pokemon_agent.harness.run.run_state import RunState
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolJudgeResp,
-    FromHarnessToGameToolPerceiveOnceResp,
+    FromHarnessToGameToolPerceiveTaskResp,
     FromHarnessToMemoryToolMemorizedRecord,
     FromHarnessToMemoryToolMemorizeResp,
     FromHarnessToMemoryToolRecallItem,
@@ -41,7 +41,7 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.harness.domain import EntryStatus, EpisodeOutput, Termination
 from pokemon_agent.schemas.memory import EpisodeMemory
 from pokemon_agent.trace import LocalTrace
-from pokemon_agent.world import Observation
+from pokemon_agent.world import TaskObservation, TaskScene
 
 
 class _Planner:
@@ -149,11 +149,9 @@ def _run(
         episode=SimpleNamespace(memory=memory, trace=trace),  # type: ignore[arg-type]
         # run 层每圈取帧（`perceive` 的 `sense`）；桩一个恒定画面（done=False，不触发判停）。
         game=SimpleNamespace(  # type: ignore[arg-type]
-            perceive_with_retry=lambda: (
-                FromHarnessToGameToolPerceiveOnceResp(
-                    observation=Observation(step=0, status="s"), frame_png="F"
-                ),
-                [],
+            perceive_task=lambda: FromHarnessToGameToolPerceiveTaskResp(
+                observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
+                frame_png="F",
             )
         ),
     )

@@ -17,7 +17,7 @@
 
 每张图都是 `perceive → review_and_judge →(done? *_done : plan_*) → act → perceive`：
 
-- **perceive**：吸收下层上一圈的结算 → **取帧**（episode 完整档、task RAM 档；run 不取）→
+- **perceive**：吸收下层上一圈的结算 → **取帧**（三层统一内存观测）→
   **读直属下一级的记忆**与世界事实，装好本圈上下文（`plan_ctx` / `ep_ctx` / `task_ctx`）。
   本层其余各格只用这份上下文，不自己查库。
 - **review_and_judge**：run / episode 先**定案上一条**（盖章 → 人审可推翻 → 记 `settle_goal` /
@@ -68,7 +68,7 @@
 ### run
 
 ```
-begin ─► perceive[absorb_episode → read_plan_context]
+begin ─► perceive[absorb_episode → sense（内存观测）→ read_plan_context]
       ─► review_and_judge[定案上一局（盖章 → 人审 → settle_goal） → 机械三类 → judge（判成则人审）]
       ─► (done → run_done) | plan_run[Planner → 目标表更新] ─► act[dispatch → run_episode] ─► perceive
 ```
@@ -84,7 +84,7 @@ begin ─► perceive[absorb_episode → read_plan_context]
 ### episode
 
 ```
-begin_episode ─► perceive[absorb_task → sense（完整档）→ retrieve_task_memories
+begin_episode ─► perceive[absorb_task → sense（内存观测）→ retrieve_task_memories
                           → retrieve_global / knowledge / object → merge_retrieval]
               ─► review_and_judge[定案上一个 task（盖章 → 人审 → 失败则放弃剩余 PENDING → settle_task）
                                   → 机械三类 → judge(goal × 任务表 × TaskMemory)（判成则人审）]
@@ -103,7 +103,7 @@ episode_done = verify_task_memories → summarize_episode → close_episode
 ### task
 
 ```
-begin_task ─► perceive[sense（RAM 档）→ detect_stall → store_step_episode_memory
+begin_task ─► perceive[sense（内存观测）→ detect_stall → store_step_episode_memory
                        → store_object_semantic_memory → close_step → retrieve_act_memories → get_action_space]
            ─► review_and_judge[机械三类 → judge(task × 本 task 最近几条 ActMemory)]
            ─► (done → task_done) | plan_task[Chooser → 首段 times=1 | 脚本调用] ─► act[按键 | 跑脚本, step+1] ─► perceive
@@ -136,7 +136,7 @@ task 读本 task 的 ActMemory，episode 读本局的 TaskMemory，run 读 Episo
 
 | 族 | 规则 | 成对 |
 |---|---|---|
-| 模型交互 | `<链路>_call` ↔ 它的结论账；链路名 = `link` 的值 | `sense_call`↔`sense_frame`、`choose_call`↔`choose_verdict`、`plan_call`↔`plan_verdict`、`decompose_call`↔`decompose_verdict`、`judge_call`↔`judge_verdict`、`verify_call`↔`verify_verdict`、`summarize_task_call`↔`write_task_memory`、`summarize_episode_call`↔`write_episode_memory` |
+| 模型交互 | `<链路>_call` ↔ 它的结论账；链路名 = `link` 的值 | `choose_call`↔`choose_verdict`、`plan_call`↔`plan_verdict`、`decompose_call`↔`decompose_verdict`、`judge_call`↔`judge_verdict`、`verify_call`↔`verify_verdict`、`summarize_task_call`↔`write_task_memory`、`summarize_episode_call`↔`write_episode_memory` |
 | 记忆 | `read_<记忆全名>` / `write_<记忆全名>` | act_memory / task_memory / episode_memory / object_memory / knowledge |
 | 动作 | 动词在前 | `act_call`（P5，原 `press_key`）、`check_stall`、`advance_step`、`get_action_space` |
 | 生命周期 | `<层>_start` 在该层入口、`<层>_end` 在该层 `*_done`、`<层>_error` 由**接住异常的那一格**记 | task_error ← episode `act`；episode_error ← run `act`；run_error ← `new_run` |
@@ -175,7 +175,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 | `verify_call`（+`verdicts`） | `verify_act_memories` / `verify_task_memories` |
 | `summarize_task_call` | `summarize_task` |
 | `summarize_episode_call` | `summarize_episode` |
-| `sense_call` | episode 的 `sense`（完整档才调视觉模型） |
+| `sense_call` | 已停止产出，旧账仍可读 |
 
 **结论账（`llm_outcome`）**：带 `input`/`output`（成功那次的请求与原文）
 
@@ -191,7 +191,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 
 | kind | type | producer | `content` |
 |---|---|---|---|
-| `sense_frame` | view | episode 的 `sense`（视觉档）/ `task.sense`（`perceive_task`，带场合） | `status`、`facts`、`done`、`perceived`、可选 `place` / `scene`（task 层的场合）/ `takeover`（仅开放脚本的场合的视图对象）/ `frame` / `ram`（`RamReadout`：菜单变量、金钱、背包、队伍、战斗、文字来源、每帧的解码文字 `decoded`；只进账、不进 agent 输入，测评读它）；`facts.screen` 是整屏文字原样（两层都给 agent） |
+| `sense_frame` | view | run / episode / task 的 `sense`（`perceive_task` 内存观测，带场合） | `status`、`facts`、`done`、可选 `place` / `scene`（三层共同使用的场合）/ `takeover`（仅开放脚本的场合的视图对象）/ `frame` / `ram`（`RamReadout`：菜单变量、金钱、背包、队伍、战斗、文字来源、每帧的解码文字 `decoded`；只进账、不进 agent 输入，测评读它）；`facts.screen` 是整屏文字原样（两层都给 agent） |
 | `get_action_space` | act | `get_action_space` | `names` |
 | `act_call` | act | `act`（task） | 两形（P5）：key 形 = `sequence`（单段）；script 形 = `script`、`args`（对象）、`ok`（小写字符串）、`code`，可选 `data` / `events[]`（脚本终态报告；脚本的 `data` 带 `scene` / `status` / `reason` / `summary` / `steps`） |
 | `check_stall` | act | `detect_stall` | `stall_key`、`stall_count` |
@@ -224,7 +224,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
   上层的空槽填本层自己的 id（run 级账 `episode_id = task_id = run_id`；episode 级账 `task_id = episode_id`）；
   run 级 `step` = 已派局数；episode 级与 task 级 = 本局当前键号（同一局里两层共用一条键号轴）。
 - **顺序只认 `(ts, uuid)`**，磁盘账本是唯一真相。
-- **标量一律 `str()`，布尔一律小写**（`done` / `ok` / `perceived` / `overturned`）。
+- **标量一律 `str()`，布尔一律小写**（`done` / `ok` / `overturned`）。
 - **结构化数据直接放对象 / 数组**（`facts` / `sequence` / `verdicts` / `refs` / `names` / `goals` / `tasks` /
   `abandoned` / 写账正文），不双重编码。
 - **能推出来的不写**：`success` / `done` 由 `termination` 推出，结算账里不记；`task_id` 在 `meta` 上的，正文不重复。
@@ -236,6 +236,6 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 - **逐格核对**在 `experiment/real_check/node_io.py`：按 `meta` 把账切成 run / episode / task 三种流，
   每种流用一张后继表（就是那张图的拓扑）核执行序，再核层间计数与盖章。样本见 `tests/_fake_run.py`。
 - **按类型读正文**走 `direct/trace/parse.py::parse`（测评 `evals/` 用；见 `docs/spec/trace/SPEC.md` 第五节）。
-- **`sense_call` 在假样本里碰不到**（假世界不产调用账），它的正文只由账单契约核。
+- **`sense_call` 已停止产出，旧账仍可读**，其历史正文由兼容读取路径保留。
 - **`MemoryToolPort.query_recent_act_memories` 已无 harness 调用方**（task 层改读 `task_ctx.act_memories`），
   只剩 `check_memory_roundtrip` 在用。

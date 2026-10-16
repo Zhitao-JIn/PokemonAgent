@@ -1,4 +1,5 @@
 # 项目路线图（ROADMAP）
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 单一权威版本。别处（`docs/EXPERIENCE_DOCS.md`）只做链接，
 > 不再各自维护一份路线图表格。

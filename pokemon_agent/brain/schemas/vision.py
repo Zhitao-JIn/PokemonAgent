@@ -6,10 +6,7 @@
 （judge/verify 带得到图时走它），实现在 `brain/providers.py` 的
 `_MultimodalMixin.describe()`。
 
-**world 有一份自己的副本**：`world/interface/domain/vision_describe.py`——
-world 的 `VisionProvider` 协议也要声明这两个形状，但它**不 import brain**。
-两份字段同构是刻意的：brain 的实现同时满足两个协议，装配点递进去时结构对得上。
-理由与代价见 `brain/schemas/__init__.py` 的模块 docstring。
+请求和响应由 brain 自己声明，调用方经 `JudgeProvider` 传入。
 """
 
 from __future__ import annotations
@@ -22,7 +19,7 @@ class VisionDescribeReq(BaseModel):
 
     images：待识别的图片，**完整的 PNG data URI 字符串**（不是原始字节）——
         `data:image/png;base64,…`，0915 起这是**唯一**格式（自描述、grep 可寻，
-        裸 base64 已废；产出点唯一：`world/pyboy_world._png_data_uri`）。
+        裸 base64 已废；产出点唯一：`world/frame_encoding.png_data_uri`）。
         **按要出现在 prompt 里的顺序排列**，至少一张。`ActMemory`
         直接存 data URI（省掉“存文件名→用的时候再读盘+编码”这一趟），
         `judge`/`verify_steps` 用的图片天然就是已经编好的字符串，

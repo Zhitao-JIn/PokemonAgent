@@ -44,15 +44,12 @@ def _real(scene, overlay, extra: dict[str, str]) -> Observation:
         dialog_text="你好，旅行者！" if overlay is RealFacts.Overlay.DIALOG else "",
         options=["是", "否"] if overlay is RealFacts.Overlay.CHOICE else [],
         cursor="是" if overlay is RealFacts.Overlay.CHOICE else None,
-        overview="一片草地，右侧有围栏",
         walk_map="y=12 ....GGGG#.\ny=13 ##NGGG#.",
         map_id=12,
     )
     for key, value in extra.items():
         setattr(facts, key, value)
-    return Observation(
-        step=7, place=None, status="你在野外。", facts=facts, done=False, perceived=True
-    )
+    return Observation(step=7, place=None, status="你在野外。", facts=facts, done=False)
 
 
 def _to_snapshot(obs: Observation) -> ActMemory.Observation:
@@ -89,13 +86,15 @@ def _cases() -> list[tuple[str, Observation]]:
 
 
 def test_dual_copy_declares_the_same_fields_in_the_same_order() -> None:
-    """两份的字段名与声明顺序必须完全一致——顺序决定渲染出的行序。
+    """除旧记忆保留的 overview 外，字段名与顺序相同——顺序决定渲染行序。
 
     `scene`/`overlay` 的注解**允许**不同（真身是 Enum，快照是 str）：快照不需要
     枚举行为，只存文本值；这条差异是刻意的，所以这里只比字段名。
     """
+    assert "overview" not in RealFacts.model_fields
+    assert "overview" in SnapFacts.model_fields
     real_fields = [name for name in RealFacts.model_fields]
-    snap_fields = [name for name in SnapFacts.model_fields]
+    snap_fields = [name for name in SnapFacts.model_fields if name != "overview"]
 
     assert snap_fields == real_fields, (
         "两份 Facts 的字段漂了——真身与快照渲染出的文本会不再可比：\n"

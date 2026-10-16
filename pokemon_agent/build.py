@@ -54,7 +54,6 @@ logger = logging.getLogger(__name__)
 def build_real(
     rom: str,
     state_file: str | None = None,
-    vision_model: str = "qwen3.8-max",
     text_model: str = "qwen-plus",
     judge_model: str = "qwen3.8-max",
     verify_model: str = "doubao-seed-2-1-pro-260628",
@@ -159,18 +158,7 @@ def build_real(
     那个占位格已随 0923 压格删除——图拓扑归 `episode_graph.py` 管，与这里
     有没有参数无关。）
     """
-    # **world 本体也不在这里造**（0913 夜）：`GameTools.build()` 是它唯一的
-    # 接线工厂——"造一个 `PyBoyWorld`、给它挂哪个感知实现、temperature 钉多少"
-    # 都是这条链路的接线知识，与 `BrainTool.build()` / `MemoryTool.build()` /
-    # `TraceTool.build()` 同一条判据，收在 tool 层离消费者近。装配点只递
-    # 裸字段（ROM 路径、存档、开关、型号名）。
-    #
-    # 此前这里有两行：`build_vision_provider(...)`（零件工厂，0913 深夜九建的）
-    # 与 `PyBoyWorld(...)`（本体，直接 new）——"造零件在 tool 层、装配在装配点"
-    # 的半截工厂，也是四个独立模块里**唯一没做工厂的一个**。现在收平：
-    # **本文件对 `pokemon_agent.world` 零 import**。
-    # **env 只在这里读一次**（`.env` → os.environ，真环境变量优先）。它必须在
-    # 任何 `env_str(...)` 之前——world / memory 两个 server 地址的缺省都来自它。
+    # 步骤 1：读取预算和环境；世界、记忆与大脑经各自 tool 工厂装配。
     budget = load_run_config(config).budget
     deadline = (
         Deadline(budget.wall_clock_s, budget.reserve_s, budget.min_request_s)
@@ -194,7 +182,6 @@ def build_real(
         rom,
         state_path=state_file,
         watch=watch,
-        vision_model=vision_model,
         speed=speed,
         world_server_url=world_server_url,
     )
@@ -343,7 +330,6 @@ def build_real(
             trace=trace_tool,
             branch=branch,
             models={
-                "vision": vision_model,
                 "text": text_model,
                 "judge": judge_model,
                 "verify": verify_model,

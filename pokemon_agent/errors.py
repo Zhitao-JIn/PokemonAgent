@@ -1,63 +1,11 @@
-"""预期内的失败——**跨模块的共同祖先与升级态**。
+"""预期内失败的跨层异常。
 
-划分依据（CLAUDE.md 第八节）：**调用方违约用 assert，外部世界不配合用这里的异常。**
-每类失败有名字，是因为 replay 要按失败类型归类统计——
-"修了 Z 类失败模式"这句话的 Z 就是这里的类数。
+模块内部的失败词汇各自归模块所有，不继承本文件的 `AgentError`。
+大脑的 `AttemptFailed` 由 tool 层 `BrainTool._attempt_loop` 捕获并翻译；
+重试耗尽才以 `MaxRetriesExceeded` 跨到 harness，由调用节点决定结算方式。
 
-**0913 拆分：模块自己的词汇回自己家，这里只留跨模块的。** 判据是
-**"拷走这个模块，还欠外面什么"**——它自带的词汇必须跟着走，除非那条异常
-**真的会走到本文件的捕获点**（那样它才需要本文件的根）。
-
-| 留在这里的 | 为什么不能进模块 |
-|---|---|
-| `AgentError` | 全体根。run / episode 的 `act` 只兜它——"单局 / 单个 task 异常不崩掉上一层"
-  这条 run 级策略需要一个所有**跨模块**异常都继承的共同祖先（tool 层的
-  `MaxRetriesExceeded`） |
-| `MaxRetriesExceeded` | **tool 抛、harness 接**：它描述的是"重试预算耗尽"这个
-  **调用方处境**，不是任何模块自己的词汇。模块只管"这一次成没成"（brain 抛
-  `AttemptFailed`、world 抛 `PerceptionAttemptFailed`），"这条链路彻底完了"
-  由循环控制者（`BrainTool` / `GameTools`）宣布 |
-
-**搬走的**（各自回了模块内部，且**都不继承 `AgentError`**——0913 深夜十一修正
-brain，0913 夜修正 world）：
-
-- **brain 的词汇** → `pokemon_agent/brain/errors.py`：
-  `ParseFailure` / `IllegalAction` / `OutputTruncated` / `ToolTimeout` /
-  `ProviderRejected` / `AttemptFailed` 家族（`Decision` / `Plan` / `Judge` /
-  `Decompose` / `Verify` / `Summarize`）。
-  brain 要能被整体拷走，词汇得跟着走；**且它有一根自己的根 `BrainError`**——
-  此前继承这里的 `AgentError`，但实测那些异常全被 `BrainTool._attempt_loop`
-  接住、翻译成 `MaxRetriesExceeded` 才上抛，**走不到 harness 的捕获点**，
-  "共同祖先"是纯仪式。留一个外部基类等于 brain 拷走后还得带上本文件才能跑。
-- **world 的词汇** → `pokemon_agent/world/errors.py`：
-  `PerceptionAttemptFailed`——它现在也**自成一根 `WorldError`**（0913 夜）。
-  改动的原因是 **P4**：world 的重试循环原本建在 harness 节点
-  （当时的感知节点里那个 `for attempt in ...`），
-  于是 world 的异常真的跨上了 harness；0913 夜把它搬回 tool 层
-  （`GameTools.perceive_with_retry`，与 `BrainTool._attempt_loop` 同形），
-  world 的词汇**在桥上就被翻译掉**——继承随之失去对象。
-  **world 与 brain 现在同一规格。**
-
-**"继承 `AgentError`"的判据（0913 深夜十一确立，0913 夜在 world 上第二次适用）**：
-**只有真的会走到 harness 捕获点的模块异常才需要继承它。**
-判据问的不是"谁抛谁接"，是**"这条异常有没有跨过 tool 层这座桥"**：
-brain 的异常在 `BrainTool._attempt_loop` 被吃掉、翻译成 `MaxRetriesExceeded`，
-world 的异常在 `GameTools.perceive_with_retry` 被同样处理——**两者都在 tool 层
-止步**，所以两者都自成一根。跨过桥的只有 `MaxRetriesExceeded` 本身，
-它本来就是本文件的住户。
-
-**所以"子类搬走、根留下"现在没有对象了**：四个独立模块（brain / world /
-memory / trace）里，**没有任何模块异常真的走到 harness 的捕获点**——桥建在
-tool 层，模块的词汇在桥上翻译。两层 `act` 兜的是**tool 层宣布的
-升级态**，不是模块的原始词汇。
-
-**`ImageNotDelivered` 回 brain 了**（0913 深夜十一）：它由 `brain/providers.py::describe()`
-抛出，所以**归 brain**（`brain/errors.py`）。world 侧的 `describe()` 由 world 自己的
-`VisionProvider` 协议声明、brain 侧由 brain 自己的 `JudgeProvider` 声明；实现
-（`brain/providers.py` 的 `_MultimodalMixin`）**同时满足两个协议**，抛的是 brain 的
-`ImageNotDelivered`。**world 不再认识它**——world 的感知链在 `PyBoyWorld.perceive_once`
-里就地 `except Exception` 包成自己的 `PerceptionAttemptFailed`，把"这次没读出来"这个
-world 才知道的处境讲出来。这样 brain 拷走后不欠外面任何东西。
+`BudgetExhausted` 表示剩余预算不够，harness 直接机械收尾，不作为模型失败重试。
+world 的视觉感知调用链已从 tool 层移除，不再在这里翻译它的内部异常。
 """
 
 from __future__ import annotations
@@ -104,11 +52,10 @@ class MaxRetriesExceeded(AgentError):
     到这一步说明模型在当前状态下持续失败，是一条要进 trace 并被 replay 统计的失败模式，
     不是"再试试就好"。
 
-    **谁抛**：tool 层的两个循环控制者——`BrainTool._attempt_loop`（各条大脑链路统一重试
-    `BRAIN_MAX_ATTEMPTS` 次）与 `GameTools.perceive_with_retry`（感知链重试
-    `PERCEPTION_MAX_RETRIES` 次）。
+    **谁抛**：tool 层的 `BrainTool._attempt_loop`（各条大脑链路统一重试
+    `BRAIN_MAX_ATTEMPTS` 次）。
     **谁接**：harness 的调用点——它决定这一局/这一轮怎么收场（`choose` 耗尽让这一局
-    失败，`plan` 耗尽路由 review 交人工，感知耗尽让这一局以错误收场，等）。
+    失败，`plan` 耗尽路由 review 交人工，等）。
 
     **它为什么不进 brain**（0913）：brain 只回答"这一次成没成"（抛 `AttemptFailed`），
     不含"重试几次""耗尽之后怎么办"这些**调用方处境**的知识。循环在 tool 层，所以这个

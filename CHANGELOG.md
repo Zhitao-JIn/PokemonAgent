@@ -1,3 +1,24 @@
+## 2026-10-16（476）—— 修正 run 级机械评分的取帧范围
+
+**改了什么**：run 级样本的机械规则读取整条执行线，重规划产生新 goal_id 后的帧也计入；episode 等较小粒度仍按原目标筛局。新增跨目标重规划、末帧回退、后续局开菜单及无关样本隔离测试，同步现行评测规格。
+**为什么这么改**：进门对比跑实际在第三局进入地图39，旧机械规则却只读原目标的第一局，错误报告末帧仍在地图0。一个样本评的是完整 run，不能因内部重规划换了目标 id 而漏掉后续执行结果。
+**取舍**：不改状态型/事件型比较条件，不改红线、运行时模型 judge、独立模型评分、规划、生产代码、数据集或存档；只对已保存 trace 离线重判，不重跑真实模型。
+**影响面**：机械取帧共用函数、五项回归测试及评测文档。已有十样本基线机械分保持10/10；删除后的对比跑机械分由8/10变为9/10（进门由I变C，商店仍I）；模型分保持原记录，不重新评分。原对比报告与原始分数不覆盖，新结果存于 eval_results/mechanical_run_scope/。全量验证：806 passed、2 skipped；ruff check 通过，ruff format --check 为570 files already formatted。
+
+## 2026-10-16（475）—— 删除视觉感知档
+
+**改了什么**：run/episode 与 task 统一使用内存观测；删除 world 视觉档、一次性读屏与重试调用链、视觉型号接线及配置、evals/episode_vision_read。公开评测六项变五项，MCP world tool 45→44。同步当前规格、33 份历史文档标注和评测分类文档；清理测试夹具中的旧观测字段。
+**为什么这么改**：每圈视觉模型读取的信息与内存观测重复。基线 `eval_results/remove_vision_baseline_19307a1/` 为 10 个样本，平均 29.8 次模型调用/局，其中 sense_call 平均 5 次；机械分 10/10（第十例已离线重判），模型分 9/10，平均耗时 86.5 秒。删除后对比跑待补，真实模型费用需另行授权。
+**取舍**：保留 SENSE_CALL 与旧账解析/渲染；旧记忆的 overview 字段与“概况”渲染保留，perceived 字段只为读旧记忆保留、不再渲染，当前观测不再产出两字段；旧 manifest 的 vision 键保持原样，新 manifest 不再记录该型号。brain 的 describe() 及多模态图片通道保留。架构图等分类待裁决项列入 S5 报告，本次不改。
+**影响面**：S1–S4 的生产删除与本次测试、文档收尾合记本条。state_schema_hash 链为 570c830a9cf52445 → 40e2cd635256744f（预算 B3）→ d30940d71e1612aa（S1 中间态）→ b143f3ee76954378（S1）→ 4f1cac6fcc7216d5（S3）；预算 B3、S1、S3 的最终状态均随提交重打 20 份 v1 存档，world.state sha256 逐项不变。S4/S5 不改存档、不再变更哈希。S5 起点 `python -m pytest --basetemp=.pytest_tmp/vision_s5_1`：801 passed、2 skipped；ruff check 通过，ruff format --check：569 files already formatted。提交前 `python -m pytest --basetemp=.pytest_tmp/vision_s5_2`：801 passed、2 skipped、1 warning in 191.24s；ruff check：All checks passed!；ruff format --check：569 files already formatted。测试数不变，未调用真实模型。证据见 `eval_results/vision_s5/REPORT.md`。
+
+## 2026-10-15（474）—— 补第十例机械判据 party_list_opened_in_battle
+
+**改了什么**：新增战斗队伍列表机械判据：战斗标志为真、解码选项非空且排除行动菜单、CANCEL 与招式名，选项数须等于内存队伍只数。仅补 v1 第十例的 `check_id`，更新覆盖表与正反例测试；原基线第十例离线重判为 pass，证据选项为 BULBASAUR / PIDGEY。
+**为什么这么改**：屏幕解码已经覆盖队伍列表，原先的不可机械判定已不成立；视觉档删除前后的对比需要完整机械分，因此批准 v1 冻结的唯一单字段例外。world-e2e-plan、world-e2e-spec、tasks-intent、tasks-spec、spec2 均补充例外说明，其余冻结约束保留。
+**取舍**：招式名经 world.moves 的公开接口取得并按 fold 比较，不读私有表；保留原基线全部文件，仅新增离线重判记录，不重跑模型或改写历史分数。
+**影响面**：仅评测判据、单个样本的 check_id、覆盖表、测试与文档；目标、成功判据、rubric、红线、来源状态及哈希、存档不变，被测系统 pokemon_agent/ 未改。
+
 ## 2026-10-16（473）—— 撤回 Task.max_steps 的 gt=0，保持评测存档的 state_schema_hash 不变
 
 **改了什么**：还原 `pokemon_agent/brain/interface/domain/task.py` 到 128e8ab（撤掉上一批 O9 加的 `Field(gt=0)` 及 description 重排）；删除 `tests/brain/domain/test_planning_models.py` 里为 O9 加的两个回归用例（`test_a_task_max_steps_must_be_positive` 的 zero/negative 两组）；把 `tests/budget/test_budget_settlement.py::test_budget_schema_is_frozen_after_the_complete_field_batch` 的期望哈希还原为 `40e2cd635256744f` 并去掉上一批加的注释。

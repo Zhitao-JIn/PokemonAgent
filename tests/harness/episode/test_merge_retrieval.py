@@ -27,7 +27,7 @@ from typing import Any
 from pokemon_agent.brain import Task
 from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeRunState
 from pokemon_agent.harness.episode.perceive.merge_retrieval import merge_retrieval
-from pokemon_agent.world import Facts, Observation
+from pokemon_agent.world import Facts, TaskObservation, TaskScene
 
 OBJECT_MEMORY = "- 人 地图12 (16,13)：已互动 1 次、结果 无效果"
 
@@ -49,7 +49,8 @@ def _state(object_memory: str) -> EpisodeRunState:
             max_steps=20,
         ),
         ep_ctx=EpisodeContext(
-            observation=Observation(
+            observation=TaskObservation(
+                scene=TaskScene.WALK,
                 step=3,
                 status="你在野外。",
                 facts=Facts(where="全局坐标 地图12 x=16 y=12", facing="south"),

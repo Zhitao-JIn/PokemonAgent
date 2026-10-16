@@ -9,8 +9,8 @@
 | 2026-09-13 | **这里** | `schemas/harness` 才是"harness 唯一认识的那一层" |
 
 **为什么最终落在这里**——它跟 `ModelCallLog`（本文件下方，`list[ModelCall]`
-的别名）是同一批读者：`harness` 侧（`think_action`/`judge`/`verify_and_summarize`/
-`harness/sensing.perceive_once`）拿到账之后要**原样装进 `FromHarnessToTraceToolAppendReq.calls`**
+的别名）是同一批读者：`harness` 侧（`think_action`/`judge`/`verify_and_summarize`）
+拿到账之后要**原样装进 `FromHarnessToTraceToolAppendReq.calls`**
 交给 trace 渲染，而这个信封是 `schemas.harness` 的类型。**装得进去的前提是同一个类型**。
 
 试过放 `tools.interface`（它看起来更像"账的家"），立刻回环：

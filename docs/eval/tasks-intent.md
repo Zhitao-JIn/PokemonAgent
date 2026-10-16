@@ -23,7 +23,7 @@
 | 现名 | 新名 | 测的是 |
 |---|---|---|
 | decode | decode（不改） | world 从 RAM 机械解码场合、读屏文字、接管视图、地形 |
-| vision_perceive | `episode_vision_read` | episode / run 档取帧的纯视觉子节点 `perceive_visual` |
+| vision_perceive | `episode_vision_read`（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） | episode / run 档取帧的纯视觉子节点 `perceive_visual` |
 | world_actions | `world_script_execute` | world 脚本（按场合配置）在真模拟器上执行 |
 | memory | `memory_store_recall` | 记忆写入、读回与检索 |
 | judge | `brain_goal_judge` | brain 判定目标是否达成（第五节扩容的就是它） |
@@ -45,13 +45,16 @@
 1. 一级目录按**使用它的 task 名**（与改名后的名字一致）；多个 task 共用的数据单独一个目录，名字说清它是什么（`frames/`）。
 2. 每个一级目录是一个包，装**这份数据的契约与读取代码**：`schemas.py`（样本的数据契约——数据集产出它，所以归这里，不归 task）+ `loader.py`（读冻结文件、核冻结、挂真值），出口只导出读取函数与样本类型。task 只经这个出口拿数据，不知道文件在哪、什么格式。task 自己运行时的记录（`StoreModel` 等）仍留在 task 目录。
 3. 包下的二级目录是**版本**（`v1/`、`v2/`…），只放冻结文件：冻结后不改，要改就出新版本。
+
+   > 例外（2026-10-15）：agent_short_goal_run v1 的 `knowledge_battle_pokemon_switch.check_id` 已补（CHANGELOG 459），为冻结后唯一一次单字段修改。
+
 4. 每份数据**自包含**：用到的存档拷进本数据集目录，不跨目录引用 `experiment/` 下的文件（`experiment/` 留给它自己的实验）。
 
 **目标布局**：
 
 ```
 evals/dataset/
-├── frames/                        ← decode、episode_vision_read 共用
+├── frames/                        ← decode、episode_vision_read（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） 共用
 │   ├── schemas.py / loader.py     ScreenSample / FrameTruth；读帧集 + 挂已审核真值
 │   └── v2/                        samples.jsonl（1045 帧）+ truth.jsonl
 ├── agent_goal_run/

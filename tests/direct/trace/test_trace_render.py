@@ -56,7 +56,7 @@ def _run_start(goals: list[str]) -> dict[str, object]:
 
 
 def _observe(*, frame: str | None = None) -> dict[str, object]:
-    """task 层 `sense` 取到的一帧（RAM 档：`perceived=False`）。"""
+    """task 层 `sense` 取到的一帧（内存观测）。"""
     return render.sense_frame(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.SENSE_FRAME,
@@ -71,7 +71,6 @@ def _observe(*, frame: str | None = None) -> dict[str, object]:
                     "walk_map": "…",
                     "map_id": 12,
                 },
-                perceived=False,
             ),
             frame=frame,
         )
@@ -92,7 +91,7 @@ def test_an_observation_carries_its_frame_only_when_one_exists() -> None:
     """
     body = _observe(frame="Zm9v")
     assert body["frame"] == "Zm9v"
-    assert body["perceived"] == "false", "RAM 档要标出'没问过视觉模型'"
+    assert "perceived" not in body
     assert body["done"] == "false"
     assert isinstance(body["facts"], dict) and body["facts"]["map_id"] == 12
     assert "goals" not in body

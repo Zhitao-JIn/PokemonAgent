@@ -34,6 +34,8 @@ trace 是独立第三方模块，只有"桥"认识它。
 
 **本包收拢两个 trace 相关文件**：`__init__.py`（分派器 + 端口实现）、
 `render.py`（每种账的正文，纯函数）。
+
+sense_call 已停止产出；相关类型与映射仅为读取旧账保留。
 """
 
 from __future__ import annotations
@@ -213,8 +215,8 @@ class TraceTool:
         """接线工厂：选择 trace 后端并包成 `TraceTool`。
 
         **trace 后端的唯一选择点**——装配点（`build.py`）只递裸字段，
-        与 `BrainTool.build()` / `MemoryTool.build()` / `build_vision_provider()`
-        同形（那三件是"选型知识收在 tool 层"的同一条定案）。
+        与 `BrainTool.build()` / `MemoryTool.build()` 同形，
+        选型知识统一收在 tool 层。
 
         `backend="local"` 保持默认的本地 JSON 行为；`backend="langfuse"` 使用
         本机自托管 Langfuse SDK，读取 `LANGFUSE_*` 环境变量，不创建本地事件副本。

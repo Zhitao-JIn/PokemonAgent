@@ -11,14 +11,14 @@ from pokemon_agent.brain.interface import Goal
 from pokemon_agent.schemas.harness.domain.judge_feedback import JudgeFeedback
 from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
 from pokemon_agent.schemas.memory import EpisodeMemory, TaskMemory
-from pokemon_agent.world import Observation
+from pokemon_agent.world import TaskObservation
 
 
 class FromHarnessToBrainToolDecomposeReq(BaseModel):
     """拆一版任务链要的全部素材。"""
 
     goal: Goal = Field(description="本局目标（含判据）")
-    observation: Observation = Field(description="当前帧")
+    observation: TaskObservation = Field(description="当前帧")
     task_memories: list[TaskMemory] = Field(
         default_factory=list, description="本局已跑 task 的记忆，按执行序"
     )

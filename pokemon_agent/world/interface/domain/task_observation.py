@@ -1,8 +1,7 @@
 """task 层的观测（`TaskObservation`）：只读内存与屏幕缓冲、不调模型的那一档，多一个场合。
 
 与 episode 层的 `Observation` 是两种观测。形状上沿用 `Observation` 的全部字段
-（位置、状态行、`Facts`），再加 task 层自己的 `scene`，仅开放脚本的场合另带视图 `takeover`；
-`perceived` 恒为假（这一档从不做视觉感知）。
+（位置、状态行、`Facts`），再加 task 层自己的 `scene`，仅开放脚本的场合另带视图 `takeover`。
 """
 
 from __future__ import annotations

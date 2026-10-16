@@ -1,5 +1,7 @@
 # memory 模块对外暴露的 Port 与出口清单
 
+> 当前观测不再产出 perceived/overview。旧记忆的 perceived 字段只为读取保留、不再渲染；overview 字段与“概况”渲染仍保留。
+
 - 日期：2026-09-16
 - 关联：`AGENTS.md` 铁律 2/3、`docs/experiences/2026-09-13-memory-decoupling-audit.md`
 - 用途：查"memory 对外承诺了什么"，改 memory 前先核这里
@@ -299,14 +301,13 @@ build.py                   ✅ 对 memory **零 import**（改走 MemoryTool.bui
 harness/**, schemas/**     ✅ 零处引用 memory 包（引用的是 schemas.memory 的形状）
 ```
 
-### 五个接线工厂（同形，都在 tool 层）
+### 四个接线工厂（同形，都在 tool 层）
 
 | 工厂 | 造什么 | 住哪 |
 |---|---|---|
 | `BrainTool.build(...)` | brain 的 provider（**按需**，未传为 None）+ `Brain` | `direct/brain_tool.py` |
-| `build_vision_provider(model=…)` | world 的感知 provider | `brain/vision_factory.py` |
 | **`MemoryTool.build(memory_root=…, max_summaries=…)`** | **memory 的两个检索 provider + `MemoryTool`** | **`mcpclient/memory_local.py`** |
-| `GameTools.build(rom, …)` | `PyBoyWorld` + 感知 provider | `mcpclient/game_tools.py` |
+| `GameTools.build(rom, …)` | `PyBoyWorld`（确定性内存观测） | `mcpclient/game_tools.py` |
 | `TraceTool.build(run_id=…, trace_root=…)` | `LocalTrace` | `direct/trace/__init__.py` |
 
 `build.py` 只递型号名 / 路径这类裸字段，一个工厂都不越过。

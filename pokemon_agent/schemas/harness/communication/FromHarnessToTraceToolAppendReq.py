@@ -50,7 +50,7 @@ from pokemon_agent.schemas.memory import (
     ObjectFactEvent,
     TaskMemory,
 )
-from pokemon_agent.world import Observation, RamReadout
+from pokemon_agent.world import Observation, RamReadout, TaskObservation
 
 from .ModelCall import ModelCall
 from .RunResp import RunResp
@@ -139,7 +139,7 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     """task 的局内累计键数快照（`task_start` 带）。"""
 
     # ---- 决策 / 观测 ----
-    obs: Observation | None = None
+    obs: TaskObservation | Observation | None = None
     goals: list[Goal] | None = None
     action: Action | None = None
     names: list[str] | None = None

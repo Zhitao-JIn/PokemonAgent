@@ -1,6 +1,6 @@
 """模型调用重试的退避间隔。
 
-两个重试循环（`brain_tool._attempt_loop` / `GameTools.perceive_with_retry`）共用。
+供 `brain_tool._attempt_loop` 的模型重试使用。
 """
 
 from __future__ import annotations

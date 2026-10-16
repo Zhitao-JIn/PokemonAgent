@@ -1,4 +1,5 @@
 # plan —— checkpointer 实施计划
+> 视觉感知档已于 2026-10-16 删除，见 docs/perceive/remove-vision-spec.md；本文为历史记录，正文未改。
 
 > 流程位置：intent.md → spec.md → **plan.md** → PR → production
 > 依据：`docs/checkpoint/spec.md`（09-25 定稿）｜ 起草：2026-09-25 ｜ 状态：**已定稿（09-25）**；测试写 P4、P7 两个；P0 核实记录单独成文 `docs/checkpoint/p0-findings.md`

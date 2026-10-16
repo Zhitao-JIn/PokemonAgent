@@ -15,17 +15,14 @@ def main(mcp: FastMCP, start: Callable[[WorldPort, str | None], None], service_n
     parser = argparse.ArgumentParser(description="pokemon world MCP server")
     parser.add_argument("--rom", required=True, help="ROM 路径")
     parser.add_argument("--state-file", default=None, help="起点存档（不给 = 从开机起跑）")
-    parser.add_argument("--vision-model", default="qwen3.8-max")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8767)
     args = parser.parse_args()
 
-    from pokemon_agent.brain.vision_factory import build_vision_provider
     from pokemon_agent.world import PyBoyWorld
 
     world = PyBoyWorld(
         args.rom,
-        build_vision_provider(model=args.vision_model, temperature=0.0),
         state_path=args.state_file,
     )
     start(world, args.rom)
