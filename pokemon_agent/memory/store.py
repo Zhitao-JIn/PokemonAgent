@@ -182,7 +182,7 @@ class LocalMemoryStore:
     def delete_many(self, uuids: Sequence[str]) -> int:
         """把一批记录**删掉**（摘出索引 + unlink 记录文件）——"让记录消失"的唯一路径。
 
-        `MemoryTool._trim_summaries()` 走的就是它（摘要超容量时按质量淘汰）。
+        当前没有生产代码调用它（跨局摘要的容量淘汰已于 2026-10-16 删除）。
         **0916 起不再有"归档"**：原先的 `archive_many` 把文件搬进
         `memory/voided-<ts>/<kind>/` 留档，换成快照（`snapshot()` / `restore()`）之后
         那套中间态没有了意义——要留档就在淘汰之前先拍一张快照，淘汰本身该是干脆的。

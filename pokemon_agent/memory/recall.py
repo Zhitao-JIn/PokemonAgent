@@ -11,7 +11,7 @@
   hint 分族圈定 + 语义检索，融合排序后返回混合条目（每条自带 `kind` 身份）；
 - `memorize(records)`：统一记忆口。records 按 `kind` 判别落族
   （act / task / episode / knowledge / object），metadata 拼装、knowledge 判重、
-  step 单调前置校验、摘要裁剪——全部沿用原 `MemoryTool` 的既有规则。
+  step 单调前置校验——全部沿用原 `MemoryTool` 的既有规则。
 
 **MemoryStorePort 的 11 个方法在本模块之后是内部接口**：能力面（recall/memorize）
 是对外契约，存储原语不再是跨层 Port。
@@ -64,7 +64,7 @@ class MemoryCapability:
     `<kind>/` 子文件夹），不持有任何记录状态——记录在盘上，索引随各自文件夹。
 
     与原 `MemoryTool` 的关系：五族 store 的构造、metadata 拼装、knowledge 判重、
-    step 单调前置、摘要裁剪——全部**随迁到这里**；`MemoryTool` 收敛为
+    step 单调前置——全部**随迁到这里**；`MemoryTool` 收敛为
     `MemoryToolPort`（recall / memorize 两方法）后委托本类，直至旧方法删除。
     """
 
@@ -73,14 +73,12 @@ class MemoryCapability:
         embedding_provider: EmbeddingProviderPort,
         reranker_provider: RerankerProviderPort,
         memory_root: str | Path | None = None,
-        max_summaries: int = 50,
     ) -> None:
         self._root = Path(memory_root) if memory_root is not None else _default_root()
         self._stores: dict[str, LocalMemoryStore] = {
             kind: LocalMemoryStore(embedding_provider, reranker_provider, dirname, self._root)
             for kind, dirname in _KIND_DIRS.items()
         }
-        self._max_summaries = max_summaries
         self._step_max: dict[str, int] = {}
         self._object_max: dict[str, int] = {}
 
@@ -362,14 +360,14 @@ class MemoryCapability:
         )
 
     def _memorize_episode(self, payload: dict[str, Any]) -> str:
-        """落一条跨局摘要（markdown/summary 自洽校验 + 超限按质量裁剪）。"""
+        """落一条跨局摘要（markdown/summary 自洽校验）。"""
         memory = EpisodeMemory(**payload)
         assert memory.episode_id, "episode memorize needs a non-empty episode_id"
         assert bool(memory.markdown.strip()) == bool(memory.summary.strip()), (
             "正文要么整条完整、要么整条为空——markdown 与 summary 必须同真同假"
         )
         store = self._store("episode")
-        uuid_ = store.put(
+        return store.put(
             metadata={
                 "run_id": memory.run_id,
                 "episode_id": memory.episode_id,
@@ -380,23 +378,6 @@ class MemoryCapability:
             payload=memory.model_dump(exclude={"markdown"}),
             text=memory.markdown,
         )
-        self._trim_episodes()
-        return uuid_
-
-    def _trim_episodes(self) -> None:
-        """episode 摘要超 max_summaries 时淘汰质量最差的（平手淘汰先入库的）。"""
-        store = self._store("episode")
-        if store.count() <= self._max_summaries:
-            return
-        pool: list[tuple[str, float]] = []
-        for record_id, _meta, payload, _text in store.get_many(store.filter({})):
-            try:
-                pool.append((record_id, EpisodeMemory(**payload).quality_score))
-            except ValidationError:
-                continue
-        if pool:
-            worst = min(pool, key=lambda pair: pair[1])[0]
-            store.delete_many([worst])
 
     def _memorize_object(self, payload: dict[str, Any]) -> str:
         """落一条 object 交互事件（step 单调 + place 键拼装）。"""

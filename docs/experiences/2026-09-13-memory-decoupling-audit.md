@@ -1,5 +1,7 @@
 # memory 模块按「brain 脱钩原则」审计：如何移出
 
+> 2026-10-16 注：下文提到的 `max_summaries`（局摘要数量上限）已删除，见 CHANGELOG 474。本文是历史审计，其余内容不改。
+
 - 日期：2026-09-13
 - 判据来源：`docs/experiences/2026-09-13-brain-decoupling-principles.md`
 - 关联铁律：`AGENTS.md` 第 2 条（四模块各自只暴露一个 Port，按独立第三方对待）

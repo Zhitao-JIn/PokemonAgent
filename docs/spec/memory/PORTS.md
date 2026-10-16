@@ -93,7 +93,7 @@ class MemoryStorePort(Protocol):
 **`delete_many`** — 摘出索引 + unlink 记录文件，**"让记录消失"的唯一路径**（0916 起）。
 此前叫 `archive_many`（搬进 `dest_dir` 留档、**不 unlink**）——那套归档已整个删掉，
 换成快照：要留档就在淘汰之前先 `snapshot()`，淘汰本身该是干脆的。
-当前唯一调用方是 `MemoryTool._trim_summaries()`（摘要超容量按质量淘汰最差的一条）。
+当前没有生产代码调用它（跨局摘要的容量淘汰已于 2026-10-16 删除）。
 不存在的 uuid 跳过、不报错；返回实际删掉的条数。
 
 **`count`** — 当前在索引里的条数（不含已删的）。

@@ -117,8 +117,8 @@ class MemoryStorePort(Protocol):
     def delete_many(self, uuids: Sequence[str]) -> int:
         """把一批记录删掉（摘出索引 + unlink 记录文件）——**"让记录消失"的唯一路径**。
 
-        当前唯一调用方是 `MemoryTool._trim_summaries()`（跨局摘要超容量时按质量
-        淘汰）。局正常收尾不删任何记录——step 记忆按 `episode_id` 查询天然隔离，
+        当前没有生产代码调用它（跨局摘要的容量淘汰已于 2026-10-16 删除）。
+        局正常收尾不删任何记录——step 记忆按 `episode_id` 查询天然隔离，
         没有清场的必要。
 
         **0916 起不再有"归档"**：原先这条叫 `archive_many`，把文件搬进

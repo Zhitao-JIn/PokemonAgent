@@ -62,5 +62,5 @@ def run_memory(dataset: MemoryDataset, k: int) -> MemoryRun:
     root_directory = Path.cwd() / "eval_results"
     root_directory.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(dir=root_directory, prefix="memory-") as root:
-        tool = MemoryTool.build(memory_root=root, max_summaries=len(dataset.records))
+        tool = MemoryTool.build(memory_root=root)
         return evaluate_memory(dataset, tool, k)

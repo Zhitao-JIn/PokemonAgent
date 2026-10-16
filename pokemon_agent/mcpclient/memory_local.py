@@ -52,7 +52,6 @@ class MemoryTool:
         embedding_provider: EmbeddingProviderPort,
         reranker_provider: RerankerProviderPort,
         memory_root: str | Path | None = None,
-        max_summaries: int = 50,
     ) -> None:
         """接好检索用的两个模型 provider 与整个记忆库的落盘根（同原口径）。
 
@@ -63,7 +62,6 @@ class MemoryTool:
             embedding_provider=embedding_provider,
             reranker_provider=reranker_provider,
             memory_root=memory_root,
-            max_summaries=max_summaries,
         )
 
     @classmethod
@@ -71,7 +69,6 @@ class MemoryTool:
         cls,
         *,
         memory_root: str | Path | None = None,
-        max_summaries: int = 50,
         memory_server_url: str | None = None,
     ) -> MemoryTool:
         """装配点唯一的入口。
@@ -100,7 +97,6 @@ class MemoryTool:
             embedding_provider=LocalEmbeddingProvider(),
             reranker_provider=LocalRerankerProvider(),
             memory_root=memory_root,
-            max_summaries=max_summaries,
         )
 
     @classmethod

@@ -1,3 +1,13 @@
+## 2026-10-16（474）—— 删除局摘要数量上限 max_summaries
+
+**改了什么**：删除 `MemoryCapability` 的 `max_summaries` 参数与 `_trim_episodes`（跨局摘要超过 50 条就淘汰质量最差的一条），删除 `MemoryTool.build` / `MemoryTool.__init__` 的同名参数；`evals/memory_store_recall/solver.py` 不再传它；`docs/spec/memory/API.md`、`PORTS.md`、`docs/spec/build/SPEC.md` 与 `memory/ports.py`、`memory/store.py` 里提到它的段落同步改掉。
+
+**为什么这么改**：这是早期设计的残留。生产代码从不传这个参数（一直用默认 50），全仓没有任何测试覆盖淘汰行为，只有记忆评测为了不触发它才传 `len(dataset.records)`。上限的存在还会在"memory 只保留 MCP 形态"那一项里逼出一个新的 server 启动参数，不如直接删掉。
+
+**取舍**：局摘要从此只增不减，记忆库随运行次数增长，体积靠快照与手动清理控制。`delete_many` 因此没有生产调用方了，接口先保留（它是存储契约的一部分），是否删除另案处理。
+
+**影响面**：不动 `Task` 等任何参与 `state_schema_hash` 的结构；用例数不变（没有测试引用被删的参数）。
+
 ## 2026-10-16（473）—— 撤回 Task.max_steps 的 gt=0，保持评测存档的 state_schema_hash 不变
 
 **改了什么**：还原 `pokemon_agent/brain/interface/domain/task.py` 到 128e8ab（撤掉上一批 O9 加的 `Field(gt=0)` 及 description 重排）；删除 `tests/brain/domain/test_planning_models.py` 里为 O9 加的两个回归用例（`test_a_task_max_steps_must_be_positive` 的 zero/negative 两组）；把 `tests/budget/test_budget_settlement.py::test_budget_schema_is_frozen_after_the_complete_field_batch` 的期望哈希还原为 `40e2cd635256744f` 并去掉上一批加的注释。

@@ -149,7 +149,7 @@ n = store.delete_many(["a1b2...", "c3d4..."])
 逐条：不在 `_uuids` 里就跳过 → `unlink(missing_ok=True)` → `_unindex`。
 返回**实际删掉的条数**；不存在的 uuid 跳过、不报错。删过东西才重写 `index.json`。
 
-**当前唯一调用方是 `MemoryTool._trim_summaries()`**（摘要超容量时按质量淘汰最差的一条）。
+**当前没有生产代码调用它**（跨局摘要的容量淘汰已于 2026-10-16 删除，见下文）。
 
 **0916 前的名字是 `archive_many(uuids, dest_dir)`**：它把记录搬进
 `memory/voided-<ts>/<kind>/` 留档、**不 unlink**。那套归档已整个删掉，换成快照。
@@ -531,12 +531,10 @@ RRF 只看排名不看绝对分，**连归一化都省了**。
 class MemoryTool:
     def __init__(self, embedding_provider: EmbeddingProviderPort,
                  reranker_provider: RerankerProviderPort,
-                 memory_root: str | Path | None = None,
-                 max_summaries: int = 50) -> None: ...
+                 memory_root: str | Path | None = None) -> None: ...
 
     @classmethod
-    def build(cls, *, memory_root: str | Path | None = None,
-              max_summaries: int = 50) -> MemoryTool: ...
+    def build(cls, *, memory_root: str | Path | None = None) -> MemoryTool: ...
 ```
 
 `__init__` 拿 `memory_root` 造**四个 `LocalMemoryStore`**（四族各占 `<kind>/`，
@@ -605,8 +603,8 @@ class MemoryTool:
 现在这一跳只剩 metadata 交集 + 反序列化，顺序按 `episode_id` 字典序
 （**那不是相关性排序**，只是让同一个库读两次拿到同一个顺序）。
 
-**容量淘汰**：`max_summaries`（缺省 50）超了就按 `quality_score` 淘汰最差的一条
-（平手淘汰先入库的），**直接 `delete_many`**。局正常收尾**什么都不做**——
+**没有容量淘汰**（2026-10-16 起）：原先的 `max_summaries`（缺省 50）上限已删除，
+跨局摘要只增不减，要控制体积靠快照与手动清理。局正常收尾**什么都不做**——
 step 记忆按 `episode_id` 查询天然隔离，没有清场的必要。
 
 ### 7.4 两个快照方法

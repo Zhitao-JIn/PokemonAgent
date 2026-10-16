@@ -24,7 +24,7 @@
 |---|---|---|---|
 | `game` | `GameTools`（`GameToolPort`） | `GameTools.build(rom, state_path=…, watch=…, vision_model=…, speed=…)` | ROM 路径、存档、两个旋钮、感知型号名 |
 | `trace_tool` | `TraceTool`（`TraceToolPort`） | `TraceTool.build(run_id=…, trace_root=…)` | `run_id`、`trace_root` |
-| `memory` | `MemoryTool`（`MemoryToolPort`） | `MemoryTool.build(memory_root=…, max_summaries=…)` | 一个记忆根（四族一视同仁地住在它下面各自的 `<kind>/`） |
+| `memory` | `MemoryTool`（`MemoryToolPort`） | `MemoryTool.build(memory_root=…)` | 一个记忆根（四族一视同仁地住在它下面各自的 `<kind>/`） |
 | `run_brain` / `episode_brain` / `task_brain` | `BrainTool`（容器） | `BrainTool.build(...)` **按需各造一份**：run 只传 `plan=`，episode 传 `text/judge/verify=`，task 只传 `text=` | 各自的型号名 + 输出上限 |
 | —— | 八个能力对象（`Planner`/`Decomposer`/`Chooser`/`Judger`/`Reflector`/`Verifier`/`Summarizer`/`TaskSummarizer`） | 由容器组装、按层分发（`run_brain.planner·judger` / `episode_brain.decomposer·judger·verifier·summarizer` / `task_brain.chooser·judger·reflector·verifier·task_summarizer`） | —— |
 | `reviewer` | `Reviewer`（Protocol） | 参数；不传 → `NullReviewer()` | 一个策略对象 |
