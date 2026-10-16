@@ -15,6 +15,9 @@ from .interface.domain import ActionEntry, ActionSpace, Facts, TaskObservation
 from .scripts.catalog import script_entries
 from .scripts.scenes import scene_script_entries
 
+ALL_BUTTONS: tuple[str, ...] = ("a", "b", "up", "down", "left", "right", "start", "select")
+"""世界支持的全部动作，**与状态无关**（`WorldPort.all_actions()` 的契约）。"""
+
 
 def compute_action_space(obs: TaskObservation, all_actions: list[str]) -> ActionSpace:
     """按这份观测的 overlay / 场合算此刻的能力掩码。**纯函数。**

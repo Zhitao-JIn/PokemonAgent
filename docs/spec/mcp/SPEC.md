@@ -411,6 +411,9 @@ no_response`（确认无反应是合法结果）；其它场合（choice/battle 
   分族/融合/判重逻辑仅由 server 调用 `memory/recall.py` 实现；
 - `mcpclient/world_tool.py`：实现 `GameToolPort`（信封面）——原 GameTools 的
   信封翻译随迁，world 调用换 MCP 转发（脚本动作入口也在此）；
+  get_action_space 保留 server 掩码并通过共用 with_prompt_text 补静态文案，只看 overlay 与
+  covered_by_script，不改 prompt 模板顺序；execute 在发出 MCP 调用前按请求观测本地校验
+  单键掩码及脚本条目，错误文本同 GameTools，键响应保留 data.event（缺失或 null 为 None）；
 - **不持账本坐标**：三章由 harness 判定层补——mcpclient 持有的是
   "信封↔裸面"翻译与转发，不是账本行为；
 - **memory 只经 MCP**：`memory_server_url` 必填，装配点可读取 `MCP_MEMORY_SERVER_URL`，缺地址抛 `McpTransportError`；有地址仍检查 `/health`。

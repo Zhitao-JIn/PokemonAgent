@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from pyboy import PyBoy
 
-from .action_space import compute_action_space
+from .action_space import ALL_BUTTONS, compute_action_space
 from .interface import (
     OVERLAY_ACTIONS,
     ActionSpace,
@@ -29,9 +29,6 @@ class _Task:
     max_steps: int
     initial_state_hint: str = ""
 
-
-ALL_BUTTONS: tuple[str, ...] = ("a", "b", "up", "down", "left", "right", "start", "select")
-"""世界支持的全部动作，**与状态无关**（`WorldPort.all_actions()` 的契约）。"""
 
 assert {b for buttons in OVERLAY_ACTIONS.values() for b in buttons} <= set(ALL_BUTTONS), (
     "OVERLAY_ACTIONS references a button that the world cannot execute"

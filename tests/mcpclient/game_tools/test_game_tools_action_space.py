@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pokemon_agent.mcpclient.game_tools import _action_space
+from pokemon_agent.mcpclient.action_space import action_space_for as _action_space
 from pokemon_agent.world import PlaceInWorld, TaskObservation, TaskScene
 from pokemon_agent.world.action_space import compute_action_space
 

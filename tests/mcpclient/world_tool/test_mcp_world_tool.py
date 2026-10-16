@@ -7,9 +7,7 @@ server 实例，不起端口）+ `_FakeWorld`（不起真模拟器）。
 
 from __future__ import annotations
 
-import asyncio
 import pathlib
-from typing import Any
 
 import pytest
 
@@ -24,87 +22,12 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.world import PlaceInWorld, TaskObservation, TaskScene
 
-ALL_BUTTONS = ["a", "b", "up", "down", "left", "right", "start", "select"]
-
 
 def _task_obs() -> TaskObservation:
     """`FromHarnessToGameToolExecuteReq` 必带的"动作所依据的观测"。"""
     return TaskObservation(
         step=0, status="你在野外。", scene=TaskScene.WALK, place=PlaceInWorld(map_id=12, x=13, y=8)
     )
-
-
-class _FakeWorld:
-    """最小 `WorldPort`：只记下被调用了什么。"""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, Any]] = []
-        self._pos = (12, 13, 8)
-
-    def _observation(self) -> TaskObservation:
-        return TaskObservation(
-            step=0,
-            status="你在野外。",
-            scene=TaskScene.WALK,
-            place=PlaceInWorld(map_id=self._pos[0], x=self._pos[1], y=self._pos[2]),
-        )
-
-    def reset(self, **kwargs: Any) -> None:
-        self.calls.append(("reset", kwargs))
-
-    def all_actions(self) -> list[str]:
-        return list(ALL_BUTTONS)
-
-    def get_action_space(self) -> Any:
-        from pokemon_agent.world.action_space import compute_action_space
-
-        return compute_action_space(self._observation(), list(ALL_BUTTONS))
-
-    def perceive_task(self) -> Any:
-        return type(
-            "TaskPerceived",
-            (),
-            {"observation": self._observation(), "frame_png": "png", "ram": None},
-        )()
-
-    def step(self, segments: list[tuple[str, int]], *, settle: bool = True) -> None:
-        self.calls.append(("step", (segments, settle)))
-        self._pos = (self._pos[0], self._pos[1] + 1, self._pos[2])
-
-    def save_state(self) -> bytes:
-        return b"STATE"
-
-    def load_state(self, data: bytes) -> None:
-        self.calls.append(("load_state", data))
-
-
-class _InMemoryClient:
-    """把 in-memory MCP session 包成 `WorldMcpTool` 要的同步 client 形状。"""
-
-    def __init__(self, server: Any) -> None:
-        self._server = server
-
-    def call_tool_sync(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        import json
-
-        from mcp.shared.memory import create_connected_server_and_client_session
-
-        async def call() -> dict[str, Any]:
-            async with create_connected_server_and_client_session(self._server) as session:
-                await session.initialize()
-                result = await session.call_tool(name, arguments)
-                return json.loads(result.content[0].text)
-
-        return asyncio.run(call())
-
-
-@pytest.fixture()
-def tool() -> WorldMcpTool:
-    world = _FakeWorld()
-    world_server.start(world, rom="fake.rom")
-    world_server._lease_owner = None
-    client = _InMemoryClient(world_server.mcp._mcp_server)
-    return WorldMcpTool(client, client_id="test-runner")  # type: ignore[arg-type]
 
 
 def test_execute_sends_one_key_and_reports_moved(tool: WorldMcpTool) -> None:
@@ -178,7 +101,7 @@ def test_shop_quit_returns_its_report_over_real_mcp_transport(tool: WorldMcpTool
         response = tool.execute(
             FromHarnessToGameToolExecuteReq(
                 action=Action(script=ScriptCall(name="shop_quit", args={})),
-                observation=_task_obs(),
+                observation=_task_obs().model_copy(update={"scene": TaskScene.SHOP_ITEMS}),
                 settle=True,
             )
         )
@@ -203,7 +126,7 @@ def test_shop_quit_rejects_wrong_scene_with_a_named_report(tool: WorldMcpTool) -
         response = tool.execute(
             FromHarnessToGameToolExecuteReq(
                 action=Action(script=ScriptCall(name="shop_quit", args={})),
-                observation=_task_obs(),
+                observation=_task_obs().model_copy(update={"scene": TaskScene.SHOP_ITEMS}),
             )
         )
     finally:

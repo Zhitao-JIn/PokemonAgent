@@ -77,6 +77,11 @@ pokemon_agent/mcpclient/             memory / world 半边（原 tools/ 的下�
 **`GameToolPort`（进程内实现 `mcpclient/game_tools.py::GameTools`；
 MCP 远程门面 `mcpclient/world_tool.py::WorldMcpTool`）**：
 
+WorldMcpTool 验回 server 的掩码后，用共用的 `with_prompt_text` 补按键说明、连按用法与地图规则；
+文案只依赖 overlay 与 covered_by_script，不包含每帧数据，prompt 模板顺序不变。
+execute 在任何 MCP 调用前按请求观测校验单键掩码或脚本条目，断言与 GameTools 一致；
+键动作把 server 的 `data.event` 原样带入 `resp.event`（缺失或 null 为 None），脚本事件仍在 report 中。
+
 | 方法 | 签名 | 信封文件 |
 |---|---|---|
 | `get_action_space` | `(req: …GetActionSpaceReq) -> …GetActionSpaceResp` | 开放按键的场合按 overlay 给键 + 按场合给脚本条目，所有场合开放方向键、a、b；脚本接管场合另给本场合脚本、关闭 start/select |

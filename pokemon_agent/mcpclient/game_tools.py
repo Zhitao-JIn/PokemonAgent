@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # 只为标注返回值：MCP 模式返回的是远程门面，与 GameTools 同协议
     from pokemon_agent.mcpclient.world_tool import WorldMcpTool
-from pokemon_agent.direct.prompts import BUTTON_HELP, MAP_HINT, REPEAT_HINT
+from pokemon_agent.mcpclient.action_space import action_space_for
 from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolEvolveReq,
     FromHarnessToGameToolExecuteReq,
@@ -31,47 +31,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolSaveStateReq,
     FromHarnessToGameToolSaveStateResp,
 )
-from pokemon_agent.world import (
-    ActionSpace,
-    Facts,
-    TaskObservation,
-    WorldPort,
-)
-from pokemon_agent.world.action_space import compute_action_space
-
-# `BUTTON_HELP`/`MAP_HINT`/`REPEAT_HINT` 的组装逻辑全在
-# `pokemon_agent/direct/prompts/decide_action.py`（decide_action.md 一个模板的
-# 全部装配逻辑收在一处）——这里只是消费方。
-
-
-def _action_space(obs: TaskObservation, all_actions: list[str]) -> ActionSpace:
-    """动作空间由 world 的 `compute_action_space` 算出（`names` / `mask` / `entries` 的唯一出处），
-    本函数不改它们，只给开放按键的场合补上 prompt 要渲染的按键说明、连按用法与地图规则。
-
-    这三段文案属 prompt 层（`direct/prompts`），world 不依赖它，所以在这一层补。
-    脚本接管场合也有方向键；没有后端按键能力时不补文案。
-
-    `get_action_space()` 和 `execute()` 共用它，而**不是让后者去调前者**——
-    两个方法各自对外的语义不同（一个交出动作空间、一个校验并执行），
-    让后者内部调前者只会多绕一层，读代码的人还要多想一步谁依赖谁。
-    """
-    space = compute_action_space(obs, all_actions)
-    if not space.names:
-        return space
-    overlay = obs.facts.overlay or Facts.Overlay.NONE
-    # `note`/`map_note` 分开是有意的：地图/证据规则（`map_note`）要紧跟在已知事实
-    # 后面渲染，连按用法（`note`）留在可用按键说明这一节——见
-    # `ActionSpace.map_note` 的字段说明。
-    return space.model_copy(
-        update={
-            "descriptions": {
-                name: BUTTON_HELP[overlay].get(name, BUTTON_HELP[Facts.Overlay.NONE].get(name, ""))
-                for name in space.names
-            },
-            "note": REPEAT_HINT,
-            "map_note": "" if obs.covered_by_script else MAP_HINT,
-        }
-    )
+from pokemon_agent.world import WorldPort
 
 
 def _run_script_report(
@@ -213,7 +173,7 @@ class GameTools:
         按这份观测的 overlay 给出能按的键。
         """
         return FromHarnessToGameToolGetActionSpaceResp(
-            action_space=_action_space(req.observation, self._world.all_actions())
+            action_space=action_space_for(req.observation, self._world.all_actions())
         )
 
     def execute(self, req: FromHarnessToGameToolExecuteReq) -> FromHarnessToGameToolExecuteResp:
@@ -232,7 +192,7 @@ class GameTools:
         步骤 2：键 → 校验单键且在掩码里，按下去。
         """
         action = req.action
-        space = _action_space(req.observation, self._world.all_actions())
+        space = action_space_for(req.observation, self._world.all_actions())
 
         # 步骤 1：脚本。一次调用占 harness 账一步——内部 N 键不展开（P5 定案）。
         if action.script is not None:

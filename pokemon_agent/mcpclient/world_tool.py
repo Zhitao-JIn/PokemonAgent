@@ -17,6 +17,7 @@ import base64
 from pathlib import Path
 from typing import Any
 
+from pokemon_agent.mcpclient.action_space import action_space_for, with_prompt_text
 from pokemon_agent.mcpclient.client import McpClient, McpToolError
 from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolExecuteReq,
@@ -30,6 +31,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolSaveStateResp,
 )
 from pokemon_agent.world import ActionSpace
+from pokemon_agent.world.action_space import ALL_BUTTONS
 
 
 class WorldMcpTool:
@@ -76,14 +78,14 @@ class WorldMcpTool:
         """取能力掩码——**由 server 按它自己那一帧算**（tool 层在另一个进程，
         没有帧）。
 
-        `req.observation` 在这里只作**一致性前提**：调用方交出它据以决策的那份
-        观测，两次调用之间没有 step（server 同步单 client），所以两边算出的掩码
-        必然是同一份；server 那一份是真相。
+        `req.observation` 是调用方据以决策的观测，也用于补充静态 prompt 文案。
+        两次调用之间没有 step（server 同步单 client），两边掩码一致；server 那份是真相。
+        返回值保留 server 掩码，只补按键说明、连按用法与地图规则。
         """
         assert req.observation is not None, "get_action_space() needs the observation in question"
         body = self._client.call_tool_sync("get_action_space", {})
         return FromHarnessToGameToolGetActionSpaceResp(
-            action_space=ActionSpace.model_validate(body["data"])
+            action_space=with_prompt_text(ActionSpace.model_validate(body["data"]), req.observation)
         )
 
     def perceive_task(self) -> FromHarnessToGameToolPerceiveTaskResp:
@@ -98,16 +100,20 @@ class WorldMcpTool:
         )
 
     def execute(self, req: FromHarnessToGameToolExecuteReq) -> FromHarnessToGameToolExecuteResp:
-        """执行**一个键或一条脚本**：键走 `step`（唯一按键执行口），脚本走同名 tool。
+        """执行单键或脚本，键走 step、脚本走同名 tool。
 
-        脚本动作 = `call_tool_sync(脚本名, args + client_id)`——脚本 tool 的返回
-        形状就是终态报告（`{ok, code, data, events, calls}`），原样进 `resp.report`
-        （与进程内 `_run_script_report` 的折法逐字段一致）。
-
-        所有公开脚本走同名 tool；内部 shop_buy/shop_sell 由买卖脚本组合调用。
+        前置条件：动作在 req.observation 的空间内；键为单键，脚本条目 enabled。
+        违约在任何 MCP 调用前断言失败；传输错误向上传递。
+        后置条件：键响应保留本键裸事件（缺失或 null 为 None），脚本响应保留终态报告。
         """
         action = req.action
+        space = action_space_for(req.observation, list(ALL_BUTTONS))
         if action.script is not None:
+            script_names = [e.name for e in space.entries if e.kind == "script"]
+            entry = space.entry(action.script.name)
+            assert entry is not None and entry.kind == "script" and space.enabled(entry.name), (
+                f"execute() got script {action.script.name!r} outside {script_names}"
+            )
             body = self._client.call_tool_sync(
                 action.script.name,
                 {**action.script.args, "client_id": self._client_id},
@@ -115,9 +121,12 @@ class WorldMcpTool:
             return FromHarnessToGameToolExecuteResp(
                 report={**body["data"], "events": body.get("events", [])}
             )
-        assert len(action.sequence) == 1, "execute() 只接受单键动作"
+        assert len(action.sequence) == 1, (
+            "execute() 只接受单键动作；连按应由 Harness 的循环展开成多步"
+        )
         segment = action.sequence[0]
-        self._client.call_tool_sync(
+        assert space.contains(segment.name), f"execute() got {segment.name!r} outside {space.names}"
+        body = self._client.call_tool_sync(
             "step",
             {
                 "segments": [[segment.name, segment.times]],
@@ -125,7 +134,7 @@ class WorldMcpTool:
                 "client_id": self._client_id,
             },
         )
-        return FromHarnessToGameToolExecuteResp()
+        return FromHarnessToGameToolExecuteResp(event=body["data"].get("event"))
 
     def save_state(
         self, req: FromHarnessToGameToolSaveStateReq
