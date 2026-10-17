@@ -61,7 +61,7 @@
 
 **CP6（490）**（派发时细化）`harness/run/`：`perceive/read_plan_context.py`、新增 `perceive/retrieve_run_knowledge.py`、`perceive/__init__.py`、`run_state.py`（`PlanContext` 去 `index`、加 `run_index` / `knowledge`）、`plan_run/plan_run.py`、`review_and_judge/review_and_judge.py`；新增共享的 `harness/knowledge_query.py`（`build_knowledge_query` 迁入，episode 的 `retrieve_knowledge_semantic_memory.py` 改为从它导入）；`schemas/harness/communication/` 的 `FromHarnessToBrainToolPlanOnceReq.py`（删 `index`，加 `run_index` / `knowledge` / `observation`）与 `FromHarnessToBrainToolJudgeReq.py`（加 `run_index`）；`direct/brain_tool.py`（仅 `Judger` 的 L0 带图）、`direct/prompts/run_plan.py`、`direct/prompts/judge_success.py`、`direct/prompts/calls/run_plan.md`、`calls/judge_success.md`；`tests/_harness_fixtures/node_io.py` 与相关测试（含冻结哈希常量）；`docs/spec/DATAFLOW.md`、`docs/spec/harness/SPEC.md`；`CHANGELOG.md`。**本检查点状态哈希预期变化**（`PlanContext` 字段）。
 
-**CP7（491）** `pokemon_agent/config.py`（`max_episodes`）、`tests/budget/test_run_config.py`、`docs/budget/run-budget-spec.md`、`docs/spec/build/SPEC.md`、`docs/spec/DATAFLOW.md`、新增集成测试、残留扫描涉及的文件
+**CP7（491）**（派发时细化）`pokemon_agent/config.py`（仅 `max_episodes` 50→10）、`tests/budget/test_run_config.py`、`docs/budget/run-budget-spec.md`（D1 / D11 / 预算表三处的 50）、`docs/spec/build/SPEC.md`（约 102 行的 50）、`docs/spec/DATAFLOW.md`（约 60 行的 50）、新增 `tests/integration/test_brain_scope_consistency.py`（范围一致性集成测试，验收 1、2、4、6、7）、残留扫描命中的现行代码 / 测试 / 文档（仅限清残留，不扩功能）、`CHANGELOG.md`。起点与终点各跑一次 `-m slow`（终点那次兼作 CP8 前的那次）。哈希预期不变。
 
 ## 五、每个检查点我的核对点
 
