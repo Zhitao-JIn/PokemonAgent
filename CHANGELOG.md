@@ -1,3 +1,26 @@
+## 2026-10-17（495）—— 测试瘦身收尾：修 rules.py 旧测试名注释、trace_parse/restore 耗时调查（测试未改）
+
+**改了什么**：`rules.py` 第 16 行注释里已改名的旧测试路径 `test_p6_event_alignment.py` →
+`test_step_and_script_event_alignment.py`（仅这一行，不动任何代码）。对默认运行最慢的
+`test_trace_parse.py::test_every_modelled_account_of_a_whole_run_parses_into_its_model` 做计时调查，
+并 cProfile 复现一次 `restore_run`——**两个测试都未改**（判据未达 / 属环境开销，见下）。
+
+**为什么这么改**：上轮标 slow 后默认全量降到约 73–91s，最慢单用例剩 trace_parse（本次 17.54s、
+历史 37.41s，方差大）；任务假设大头是 `run_fake(checkpoints=True)` 的存档开销，先用数据核实再决定。
+
+**取舍**：① trace_parse：`checkpoints=False` 相对 `True` 在 `%TEMP%` 下仅快 0.69s（3.28s→2.59s），
+在沙箱工作区路径 `.pytest_tmp` 下中位快约 7.6s（True 中位 9.48s、区间 8.72–15.59s；False 中位 1.84s、
+区间 1.77–2.23s；最大配差约 13.75s）——均未达"至少快 15 秒"的改判据，故不改。
+② profile 显示真正大头是 langgraph SqliteSaver 的 sqlite commit：一次 `restore_run`（墙钟约
+19.5–21.7s）里 `sqlite3.Connection.commit` 独占约 14.9s / 167 次（≈89ms/次），库在
+`<tmp>/checkpoints/langgraph.sqlite`，sqlite 默认 `synchronous=FULL`（每次 commit fsync）；
+这同时解释 trace_parse 的路径依赖（同代码 `%TEMP%` 3.3s vs `.pytest_tmp` 8–40s）——属工作区
+文件系统/沙箱的环境开销，非 checkpoint 逻辑；safe-delete 护栏不是瓶颈（仅 2 次 subprocess.run、0.28s）。
+
+**影响面**：`rules.py` 一行注释；测试与 pytest 配置零改动；全仓用例数不变（1195 collected /
+默认 1192 selected / 3 deselected）。默认全量 pytest **1192 passed / 3 deselected**（73.33s，
+1 warning）；`ruff check .` 与 `ruff format --check .` 全绿。
+
 ## 2026-10-17（494）—— 测试瘦身第三步：整图恢复测试标 slow 默认不跑、瘦身两个耗时测试
 
 **改了什么**：`pyproject.toml` 的 `[tool.pytest.ini_options]` 注册 `slow` 标记（整图 + 存档恢复，
