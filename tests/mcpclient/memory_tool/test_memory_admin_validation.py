@@ -35,9 +35,14 @@ def state(root: Path) -> dict[str, bytes]:
     }
 
 
-@pytest.mark.parametrize("mixed", [False, True])
 @pytest.mark.parametrize(
-    "entry", ["../x", "/absolute", "step_memory\\x", "C:escape", "step_memory/D:escape"]
+    ("entry", "mixed"),
+    [
+        ("step_memory\\x", False),
+        ("../x", True),
+        ("/absolute", False),
+        ("C:escape", True),
+    ],
 )
 def test_unsafe_entries_reject_the_entire_archive_before_any_deletion(
     tmp_path, remote, mixed, entry

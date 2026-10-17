@@ -86,7 +86,11 @@ testpaths = ["tests"]
 # 留在原地，之前 TEMP 里堆了 40 多个就是这个症状。）
 # 用点号开头：ruff 默认跳过隐藏目录，不会被静态检查扫到。该目录已在 .gitignore 里。
 # 注意 `--basetemp` 的相对路径是**相对当前工作目录**解析的——从仓库根跑即落在仓库根。
-addopts = "-q --basetemp=.pytest_tmp"
+addopts = "-q --basetemp=.pytest_tmp -m \"not slow\""
+# 慢测试标记：整图 + 存档恢复，单个用例数十秒，默认跳过；用 `python -m pytest -m slow` 单独跑。
+markers = [
+    "slow: 整图 + 存档恢复，单个用例数十秒，默认跳过",
+]
 # 包没 pip install 进环境，把项目根塞进 sys.path，测试里才能 import pokemon_agent。
 pythonpath = [".", "tests"]
 

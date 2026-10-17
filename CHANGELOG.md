@@ -1,3 +1,31 @@
+## 2026-10-17（494）—— 测试瘦身第三步：整图恢复测试标 slow 默认不跑、瘦身两个耗时测试
+
+**改了什么**：`pyproject.toml` 的 `[tool.pytest.ini_options]` 注册 `slow` 标记（整图 + 存档恢复，
+单个用例数十秒，默认跳过），`addopts` 改为 `-q --basetemp=.pytest_tmp -m "not slow"`。
+`tests/harness/checkpoint/test_checkpoint_restore.py` 整模块标 `pytestmark = pytest.mark.slow`，
+并把第三个用例 `test_restored_branches_pass_node_io_once_stitched_by_lineage` 的独有部分
+（分支套分支：从 b1 自己的第 2 局存档再恢复出 b2、b2 血缘 `[b1, "main"]`、b1/b2/main 三执行线
+逐条 node_io 核对）并入第二个用例 `test_run_and_episode_saves_restore_into_new_branches` 末尾，
+删除第三个用例（4 → 3，第二个用例原有断言一条不少）。`tests/direct/trace/test_trace_parse.py`
+的整图用例改为只跑正常那一个 `run_fake(checkpoints=True)`，差集 `{task_error, episode_error}`
+在文件里手工拼最小 `TraceEvent` 覆盖（3 个假 run → 1 个 run + 2 条手工事件）。
+`tests/mcpclient/memory_tool/test_memory_admin_validation.py` 的 `test_unsafe_entries_...` 从
+5×2=10 参数化改为显式 4 组合（去掉 `step_memory/D:escape`，反斜杠/父目录穿越/绝对路径/盘符四类
+各一次、mixed False/True 各两次）。`AGENTS.md` / `CLAUDE.md` 的 pytest 条末各加一句 slow 说明。
+
+**为什么这么改**：全量 pytest 里 checkpoint 恢复 3 个用例约 268s（占 71%），标 slow 默认不跑后
+默认全量从 375s 降到约 91s；trace_parse 与 memory_admin 的参数化瘦身再减少用例数。判据是
+"耗时很长但保护关键不变量的整图测试标 slow、默认不跑"。
+
+**取舍**：不改任何生产代码；并入时保留第二个用例全部原有断言；差集事件用最小 meta（只 `run_id`）；
+memory_admin 去掉的 `step_memory/D:escape` 一类与保留的 `step_memory\x`（反斜杠）覆盖不同面，
+四类不安全条目与 mixed 两值仍按要求各覆盖足次。
+
+**影响面**：全仓用例 1202 → 1195（−7 = checkpoint 合并 −1 + memory_admin 参数化 −6）；默认
+pytest **1192 passed / 3 deselected**（91.25s），`python -m pytest -m slow` **3 passed**（108.90s）；
+`ruff check .` 与 `ruff format --check .` 全绿。默认运行最慢用例从 213s 的 checkpoint 恢复降到
+37.41s 的 `test_trace_parse`。
+
 ## 2026-10-17（493）—— 测试瘦身第二步：删非单元测试与旧 reviewer 集成栈、改名事件流对齐钉子
 
 **改了什么**：删 6 个文件——`tests/evals/agent_short_goal_run/test_no_eval_knobs.py`（3，测已删的
