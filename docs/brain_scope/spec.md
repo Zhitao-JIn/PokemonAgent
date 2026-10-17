@@ -307,7 +307,7 @@ EpisodeMemory(episode_id="r1-ep2", goal="走到门口并进去", termination="go
 
 - `test_three_levels_plan_and_judge_read_the_same_details`：FakeLLM + 假记忆，装好三层的请求，断言 ①同层 plan 与 judge 的详情是同一份、条数等于绑定单元下全部子记忆；②索引不含本单元；③索引生成过程零模型调用（FakeLLM 计数）。
 
-**需随改动调整的既有测试**（执行方按 grep 找全）：`tests/budget/test_run_config.py`；引用 `DecomposeReq` / `PlanOnceReq` / `ChooseOnceReq` / `JudgeReq` / `dedup_snapshots` 的 `tests/direct/prompts/test_decide_action_prompt.py`、`tests/harness/perceive/test_memory_observation.py`、`tests/integration/test_p5_script_actions.py`、`tests/budget/test_budget_settlement.py`、`tests/budget/test_deadline.py`；`evals/brain_goal_judge/dataset.py` 若构造旧形状的 `JudgeReq`。
+**需随改动调整的既有测试**（执行方按 grep 找全；测试瘦身合入后的路径见 plan 第十二节）：`tests/budget/test_run_config.py`；引用 `DecomposeReq` / `PlanOnceReq` / `ChooseOnceReq` / `JudgeReq` / `dedup_snapshots` 的 `tests/direct/prompts/test_decide_action_prompt.py`、`tests/harness/perceive/test_memory_observation.py`、`tests/budget/test_budget_settlement.py`、`tests/budget/test_deadline.py`、`tests/harness/ledger/test_node_io.py`（原 `tests/integration/test_node_io.py`）；`evals/brain_goal_judge/dataset.py` 若构造旧形状的 `JudgeReq`。（`tests/integration/test_p5_script_actions.py` 已于瘦身中删除。）
 
 ---
 
@@ -366,6 +366,7 @@ EpisodeMemory(episode_id="r1-ep2", goal="走到门口并进去", termination="go
 | 11 | v1.0 把 L1 写成「含本 run 其他局与过往 run 的局」，把 L2 写成「本 episode 内全部此前 task」 | v1.1 改正：L1 的集合就是 `run_goal` 相等的 episode（run 内所有局共享同一 `run_goal`，所以本 run 的其他局自然在内；过往 run 在内只因同一目标被重新发起）；L2 只含**目标文本相同**的此前 task |
 | 12 | **v1.2**：`max_summaries` 与 `_trim_episodes` 已删除（CHANGELOG 478） | D4 / D6 / 第八、九节 / Q5 随之更正；编号从 480 起（479 被 mcp-only 批 ① 占用）；基线改为 `352af88` |
 | 13 | **v1.3**：基线前移到 `ce1e9c3`，记忆侧对新代码重核 | 见头部修订原因。另：①intent 里『按 `episode_goal` 取 task』『含异常收尾』与 spec 不一致，intent 已改成最终版；②『列出 run 级记忆』的 hint 由 `kind` 改 `runs`；③run 蒸馏改为 `run_done` 之前的两个新格；④异常上抛的 run 不写 RunMemory（Q10） |
+| 14 | **v1.3.1（测试瘦身合入）**：`chore/test-reclass` 合入本分支，默认 pytest 不再跑 `slow`（存档恢复 3 例）；多个既有测试被删 / 改名 | 见 plan 第十二节：CP4 起点补跑 `-m slow`，CP7 与 CP8 前再跑；新增测试按瘦身判据只留必要的整图用例；路径对照表在 plan 第十二节 |
 
 ## 十一、用户确认记录
 

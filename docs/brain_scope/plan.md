@@ -72,7 +72,7 @@
 
 ## 六、与并行任务的关系（`overlap.py` 与台账）
 
-- `chore/test-reclass`（484）：搬移 integration 下 2 个文件、删 2 个无用测试、测耗时。与本项目的文件交集目前为空；两边都会往 `CHANGELOG.md` 顶部插条目，合并时在集成分支里保留两边条目、按编号排序，用单独整理提交解决，不改编号。
+- `chore/test-reclass`（484 / 493 / 494 / 495，测试瘦身）：**已合入本分支**（合并提交 `1a16806`，合入的是 `5964222`，不是带快照提交 `97647a9` 的 `main`）。冲突两处：`CHANGELOG.md` 两边条目按编号降序并存；`tests/integration/test_harness_integrity.py` 主线已删，取删除。影响见第十二节。
 - `feature/reviewer-transparency`（暂缓）：**本项目先合入**，reviewer 恢复时以合入后的请求形状为准；其 CHANGELOG 460 / 461 与主线冲突，恢复时统一重编号。
 - 主线新增提交碰到本分支文件时，我在下一次验收时把主线 merge 进来（不 rebase），并在台账记一笔。
 
@@ -98,7 +98,7 @@
 
 ## 十、PR 组织与合入
 
-整个分支一个 PR（或用户直接合并），提交顺序即检查点顺序；合入由用户做。合入前我核对分支相对 `ce1e9c3` 的提交范围，以及主线之后别的任务是否动了同一批文件。
+整个分支一个 PR（或用户直接合并），提交顺序即检查点顺序；合入由用户做。**本分支现在含 `chore/test-reclass` 的 4 个提交**（经 `1a16806` 合入）：`chore/test-reclass` 与本分支要么先后合入 `main`（先合 `chore/test-reclass`，再合本分支），要么一起合；`main` 上的快照提交 `97647a9` 不得带进来。合入前我核对分支相对 `ce1e9c3` 的提交范围，以及主线之后别的任务是否动了同一批文件。
 
 ## 十一、合入后遗留清单
 
@@ -107,3 +107,26 @@
 3. `SCOPE_IMAGE_CAP = 20` 是实验旋钮，待真实运行后看是否需要调。
 4. 异常上抛的 run 不写 RunMemory（spec Q10）；若将来要求异常也落空章，另案处理。
 5. reviewer 恢复时的 CHANGELOG 重编号与 `render_context` 适配。
+
+## 十二、测试瘦身合入后的调整（2026-10-17 晚，合并提交 `1a16806`）
+
+**1. 基线**：从 CP4 起，起点是 `1a16806`（含瘦身后的全部测试）。生产代码只多了 `rules.py` 一行注释，状态哈希应仍为 `ef3ba958c2680260`。
+
+**2. pytest 的新事实**
+- 默认 `addopts` 带 `-m "not slow"`（`pyproject.toml`）；默认全量约 1192 例（本分支新增测试另计）、约 75–90 秒。
+- `slow` 只有 `tests/harness/checkpoint/test_checkpoint_restore.py` 的 3 例（整图 + 存档恢复，约 110 秒），用 `python -m pytest -m slow` 单独跑，**默认不跑**。
+- 本项目 CP2 起改了 run 图（8 格）、`RunState`（`run_memory` 槽）与 `EpisodeInput`（必填 `run_goal`），存档恢复正好经过这些，而默认套件已不覆盖它。所以：**CP4 起点补跑一次 `-m slow`**，之后 **CP7 与 CP8 前各再跑一次**。失败即停下汇报，由我另分配 CHANGELOG 号处理，不并入当前检查点。
+
+**3. 路径对照（交接消息里的既有测试清单按此改）**
+- `tests/integration/test_node_io.py` → `tests/harness/ledger/test_node_io.py`。
+- `tests/harness/task/test_p6_event_alignment.py` → `test_step_and_script_event_alignment.py`。
+- 已删，不再调整：`tests/integration/test_harness_integrity.py`、`test_p5_script_actions.py`、`test_web_reviewer_integration.py`、`tests/review_backend/*`、`tests/assembly/test_build.py`、`test_run_result.py` 里两个整图用例、`test_no_eval_knobs.py`。
+- 这些的断言里原有的「计入 run 记忆」「ChooseOnceReq」等适配不必再补。`tests/integration/` 目录现为空，但 `AGENTS.md` 的约定「跨模块的端到端放 `tests/integration/`」仍有效，CP7 的范围一致性集成测试仍放那里。
+
+**4. 本项目新增测试的约束（承接瘦身判据：非单元测试且不被其他测试覆盖的删，所以我们只留必要的）**
+- 优先单元。整图跑的只留两处唯一守卫：CP2 的 `test_run_summary_cells_run_after_done_in_a_full_graph_run`（防两格被 `guarded` 跳过）与 CP7 的范围一致性集成测试。
+- 整图测试一律 `run_fake(checkpoints=False)` 或等价的无存档装配，目标单个用例 5 秒内；不标 `slow`。若实测超过 20 秒，停下问我是标 slow 还是改写。
+- 每个检查点汇报里加一项：本检查点新增 / 调整的测试文件的 `--durations=10` 前十行。
+- CP4 起点另做一次：对 `tests/memory/test_memory_index_lines.py`、`test_run_memory_family.py`、`tests/harness/run/test_run_memory_write.py`、`tests/harness/episode/test_episode_scope_stamp.py`、`tests/harness/episode/test_task_index_dispatch.py`、`tests/harness/task/test_task_scope*.py`、`tests/brain/summarize/`、`tests/direct/` 下 CP2 / CP3 新增的文件跑 `--durations=0`，汇报总耗时与最慢三例，我据此决定是否要瘦。
+
+**5. 顺序与编号不变**：CP4（488）→ CP5（489）→ CP6（490）→ CP7（491）；CP8（492）预留。台账里 493–495 已被 `chore/test-reclass` 占用，下一个空号 496，留给合入后补修用。
