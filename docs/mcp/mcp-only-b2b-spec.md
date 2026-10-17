@@ -1,6 +1,6 @@
 # spec —— 批 ②b：world 只保留 MCP 形态
 
-> 流程位置：批 ①、②a 已合入 → **批 ②b（本文，v2）** → 批 ③（评测走 MCP）
+> 流程位置：批 ①、②a 已合入 → **批 ②b（本文，v3）** → 批 ③（评测走 MCP）
 > 分支：`refactor/mcp-only`，基线 `0ae865c`（含批 ①、②a；主工作区已快进到同一提交），`state_schema_hash = 4f1cac6fcc7216d5`（本批不应改变它）。
 > 用户决定（2026-10-17）：`build_real` 删 `rom` / `state_file` / `watch` / `speed` 四个参数，`watch` / `speed` 改为 world server 命令行旋钮；评测在 ②b 与 ③ 之间不可用，②b 与 ③ 做完后一起合入主线。
 
@@ -14,6 +14,8 @@
 - `one.py` 经 `restore_run` 载入 checkpoint 里的 `world.state`（走 `load_state`），不依赖 `build_real` 的 `state_file`，在 MCP 下仍然成立。
 
 ## 二、决定表
+
+**v3 文档口径（裁决）。** 零出现的验收只针对代码、测试、脚本，以及 D6 点名的文档。除此之外：`docs/spec/**/*.md` 里把 `GameTools` 当作进程内实现的**事实性短语**（一句话内能改对的）允许最小替换为 `WorldMcpTool` 或改写；改不动（需要重写段落或设计判断）的不改，逐处列进汇报。`docs/spec/diagrams/*.puml|svg` 不改，列进汇报。`AGENTS.md` / `CLAUDE.md` 除 D6 点名的那一句外**一律不改**，其余引用（契约示例、目录树等）按文件与行号列进汇报，由用户另行决定。列出的遗留项不算验收失败。
 
 **D1 `WorldMcpTool.build`。** 在 `mcpclient/world_tool.py` 新增 `WorldMcpTool.build(*, world_server_url: str, client_id: str | None = None) -> WorldMcpTool`，形状与 `MemoryTool.build` 同构：空串抛 `ValueError`（文案指向 `MCP_WORLD_SERVER_URL`）；否则造 `McpClient(mcp_endpoint(url))`、`start()`、返回门面；**不探活**（探活在 `build_real`，保持不变）。
 
@@ -60,13 +62,13 @@
 生产：`pokemon_agent/build.py`、`pokemon_agent/mcpclient/world_tool.py`、`pokemon_agent/mcpclient/game_tools.py`（删除）、`pokemon_agent/mcpclient/__init__.py`（若有再导出）、`pokemon_agent/mcp_servers/world_server_cli.py`、`pokemon_agent/world/action_space.py`、`pokemon_agent/world/scripts/catalog.py`（二者都只改说明文字；后者仅第 182、216 行提到 `GameTools.execute` 的两处，改为指向 server 的脚本 tool / `WorldConsole.run_script`，不动任何代码）。
 评测：`evals/agent_short_goal_run/solver/runner/one.py`、`evals/agent_short_goal_run/dataset/build/pack.py`。
 测试：第三节列出的文件及新增用例所在文件。
-文档与脚本：D6 列出的各处；`CHANGELOG.md`（四段，+10 行左右，编号 481）。
+文档与脚本：D6 列出的各处，以及 v3 口径允许的 `docs/spec/**/*.md` 事实性短语；`CHANGELOG.md`（四段，+10 行左右，编号 481）。
 其他一律不动。
 
 ## 五、验证
 
 - 全量 `pytest`、`ruff check .`、`ruff format --check .` 全绿。
-- 搜索：`PyBoyWorld(` 在 `pokemon_agent/` 内只出现在 `mcp_servers/world_server_cli.py`（与 `world/` 自身）；`GameTools` 在现行代码与现行文档中零出现（CHANGELOG、`changelog/`、历史 `docs/` 除外）；`build_real(` 的所有调用点都不再传 `rom` / `state_file` / `watch` / `speed`。
+- 搜索：`PyBoyWorld(` 在 `pokemon_agent/` 内只出现在 `mcp_servers/world_server_cli.py`（与 `world/` 自身）；`GameTools` 在 `pokemon_agent/`、`evals/`、`tests/`、`scripts/` 的代码与测试中零出现；文档按 D6 与 v3 文档口径处理；`build_real(` 的所有调用点都不再传 `rom` / `state_file` / `watch` / `speed`。
 - 破坏验证：临时删掉 `build_real` 的缺 world 地址报错，对应用例必须失败；临时去掉 server CLI 里把 `watch` 传给 `PyBoyWorld` 的那一项，CLI 用例必须失败；恢复后转绿。
 - 汇报 `state_schema_hash`，应为 `4f1cac6fcc7216d5`。
 
