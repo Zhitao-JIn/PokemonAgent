@@ -1,3 +1,32 @@
+## 2026-10-17（493）—— 测试瘦身第二步：删非单元测试与旧 reviewer 集成栈、改名事件流对齐钉子
+
+**改了什么**：删 6 个文件——`tests/evals/agent_short_goal_run/test_no_eval_knobs.py`（3，测已删的
+knowledge/speed/watch 旋钮）、`tests/brain/schemas/test_llm_complete_req_roundtrip.py`（2，
+与 test_envelopes / test_choose_contract 重复）、`tests/assembly/test_build.py`（2，AST 扫
+`build_real` 源码，非单元）、`tests/integration/test_web_reviewer_integration.py`（3）、
+`tests/review_backend/test_review_backend.py`（13）、`tests/review_backend/test_review_backend_agent.py`（2，
+后三个是起真 websocket 的旧 reviewer 集成栈，用户已确认删）。修剪两个文件：`test_no_workers.py`
+删 `test_main_no_longer_accepts_workers`（1），`test_run_result.py` 删
+`test_fake_run_returns_runresult_with_usage` 与 `test_fake_run_checkpoint_only_returns_empty_result`
+（2，整图全跑）。改名 `tests/harness/task/test_p6_event_alignment.py` →
+`tests/harness/task/test_step_and_script_event_alignment.py`（只改 docstring 去计划编号，断言与 5 个函数名不动）。
+同步 `test_envelopes.py` docstring（去掉对已删文件的提及），清理修剪文件因此不再使用的 import。
+
+**为什么这么改**：全量 pytest 1230 用例、约 6 分钟，拖慢开发。判据是「不是单元测试、且不会被
+后续单元测试覆盖或复用的测试，删除」——删的 6 个文件分别命中：测已删除的旋钮、字段集合被别处
+更全覆盖、AST 静态扫源码（非单元）、旧 reviewer 起真 websocket 服务的集成测试；`test_run_result`
+删的两个是把真三张图整图全跑一遍的全链用例。
+
+**取舍**：生产代码（`pokemon_agent/review_backend`、`pokemon_agent/harness/web_reviewer.py` 等）
+一律不动；保留 `tests/harness/review/` 的 `test_web_reviewer_timeout_none.py` 与
+`test_review_render.py`。共享辅助无变成无主——`_fake_run` 仍被 7 处使用（含 scripts 与多个测试文件）。
+`pokemon_agent/harness/task/perceive/store_object_semantic_memory/rules.py` 注释里指向旧文件名的
+钉子说明未同步（生产代码不改，留待后续）。
+
+**影响面**：全仓用例 1230 → 1202（−28 = 3+1+2+2+2+3+13+2）；全量 pytest **1202 passed**
+（375.15s，1 warning）；`ruff check .` 与 `ruff format --check .` 全绿。`tests/integration/`、
+`tests/review_backend/`、`tests/assembly/` 删后仅剩 `__pycache__`（空目录，git 不跟踪）。
+
 ## 2026-10-17（484）—— 测试瘦身第一步：重归类两个 integration 文件、删除两个无用测试
 
 **改了什么**：`tests/integration/test_node_io.py` 整文件搬到 `tests/harness/ledger/test_node_io.py`

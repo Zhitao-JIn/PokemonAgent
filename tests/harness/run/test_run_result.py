@@ -1,15 +1,11 @@
-"""`RunResult`（V8，plan2 R1）的用法示范：契约往返、账聚合口径、假 run 全链带回。
+"""`RunResult`（V8，plan2 R1）的用法示范：契约往返、账聚合口径。
 
-聚合的假账搭法与 `test_evals_checks` 同源（手工 ParsedEvent）；全链用 `_fake_run`
-的真三张图——usage 从假 run 的 `_call` 账聚合出来，这就是"eval 不再读 trace"的兑现。
+聚合的假账搭法与 `test_evals_checks` 同源（手工 ParsedEvent）。
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-from _fake_run import GOAL, build_fake
 
 from pokemon_agent.direct.trace import ParsedEvent
 from pokemon_agent.direct.trace.content import (
@@ -96,37 +92,6 @@ def test_aggregate_empty_events_is_all_zero() -> None:
     assert counts == LineCounts()
     assert (started_at, ended_at) == (0.0, 0.0)
     assert bounds == []
-
-
-def test_fake_run_returns_runresult_with_usage(tmp_path: Path) -> None:
-    fake = build_fake(tmp_path)
-
-    result = fake.harness.run("r1", [GOAL], sample_id="s1")
-
-    assert isinstance(result, RunResult)
-    assert result.sample_id == "s1"
-    assert result.run_id == "r1"
-    assert result.branch == "main"
-    assert result.outcomes, "假 run 至少跑出一局"
-    assert result.total == len(result.outcomes)
-    assert result.usage.calls_by_link, "假大脑的调用账要聚合进 usage"
-    assert result.usage.call_failed == 0
-    assert result.counts.presses > 0 and result.counts.episodes >= 1
-    assert result.episode_bounds, "逐局证据边界要非空"
-    assert result.started_at > 0 and result.ended_at >= result.started_at
-
-
-def test_fake_run_checkpoint_only_returns_empty_result(tmp_path: Path) -> None:
-    fake = build_fake(tmp_path, checkpoints=True)
-
-    result = fake.harness.run("r1", [GOAL], checkpoint_only=True, sample_id="s1")
-
-    assert result.outcomes == []
-    assert result.total == 0
-    assert result.usage.calls_by_link == {}
-    assert result.counts == LineCounts()
-    assert result.sample_id == "s1"
-    assert result.termination == ""
 
 
 @pytest.mark.parametrize("field", ["outcomes", "usage", "episode_bounds"])

@@ -1,8 +1,6 @@
-"""world_script_execute 串行化：build_cases 顺序执行，__main__ 不再接受 --workers。"""
+"""world_script_execute 串行化：build_cases 顺序执行。"""
 
 from __future__ import annotations
-
-import sys
 
 import pytest
 from _doubles.script_frames import frame, run_of
@@ -36,15 +34,3 @@ def test_build_cases_runs_sequentially_in_input_order(monkeypatch: pytest.Monkey
 
     assert order == ["a", "b", "c"]
     assert [test_case.name for test_case in built] == ["a", "b", "c"]
-
-
-def test_main_no_longer_accepts_workers(monkeypatch: pytest.MonkeyPatch) -> None:
-    """传入 --workers 视为参数错误。"""
-    from evals.world_script_execute import __main__ as main_mod
-
-    monkeypatch.setattr(sys, "argv", ["evals.world_script_execute", "--workers", "2"])
-
-    with pytest.raises(SystemExit) as exc:
-        main_mod.main()
-
-    assert exc.value.code == 2

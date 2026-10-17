@@ -1,8 +1,7 @@
 """brain 的四个补全信封：必填、默认值、类型拒绝、字段集合与序列化往返。
 
-这是对 `test_llm_complete_req_roundtrip.py`（只守 `prompt` 字段）的补全——
 字段被静默删除是 0915 事故的教训，这里用 `model_dump().keys()` 把四个模型的
-字段集合全部钉住，而不是只盯一个字段。
+字段集合全部钉住。
 """
 
 from __future__ import annotations
