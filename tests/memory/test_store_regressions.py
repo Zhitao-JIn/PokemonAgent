@@ -13,6 +13,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from pokemon_agent.memory import LocalMemoryStore
 
 
@@ -35,6 +37,13 @@ class _NoRerank:
 
     def rerank(self, query: str, documents: list[str]) -> list[float]:
         raise AssertionError("本测试不该触发 rerank")
+
+
+class _ScoringRerank:
+    """rerank 占位：按文档顺序给递减分数，让 search 的正常路径能跑完（本测试不验排序）。"""
+
+    def rerank(self, query: str, documents: list[str]) -> list[float]:
+        return [float(len(documents) - i) for i in range(len(documents))]
 
 
 _TOUCHED = 1_000_000_000.0
@@ -119,3 +128,22 @@ def test_get_returns_none_when_record_file_removed_outside_index(tmp_path: Path)
     # Assert
     assert first_get is None
     assert second_get is None
+
+
+def test_search_rejects_non_positive_limit(tmp_path: Path) -> None:
+    """limit<=0 在 search 入口就断言拒绝：不再按切片语义静默返回（limit=-1 曾返回 n-1 条）。"""
+
+    # Arrange
+    store = LocalMemoryStore(_CountingEmbedder(), _ScoringRerank(), "step_memory", root=tmp_path)
+    for i in range(3):
+        store.put({"source": "s"}, {"n": i}, text=f"宝可梦 正文 {i}")
+
+    # Act / Assert
+    with pytest.raises(AssertionError):
+        store.search("宝可梦", limit=-1)
+    with pytest.raises(AssertionError):
+        store.search("宝可梦", limit=0)
+    uuids, _timings = store.search("宝可梦", limit=1)
+
+    # Assert
+    assert len(uuids) == 1

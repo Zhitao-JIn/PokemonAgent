@@ -1,3 +1,23 @@
+## 2026-10-18（498）—— store.search 入口断言 limit>0，修复 limit<=0 静默返回
+
+**改了什么**：`pokemon_agent/memory/store.py` 的 `search` 入口增加前置断言
+`assert limit > 0, f"search() needs limit > 0, got {limit}"`（一行，仅此一处）。
+`tests/memory/test_store_regressions.py` 追加第 5 条回归
+`test_search_rejects_non_positive_limit`（库里放 3 条带 text 的 step_memory：`limit=-1` 与
+`limit=0` 均触发 `AssertionError`，`limit=1` 正常返回 1 条）。
+
+**为什么这么改**：`search` 对 `limit<=0` 没有前置断言——`ranked[:limit]` 的切片语义让
+`limit=-1` 静默返回 n-1 条、`limit=0` 静默返回空，违反 store 端口契约。上层
+`capability.recall(limit=0)` 会因 episode 分支的 rank 断言先炸，所以 O3 在 capability 层被
+掩盖，但 store 端口本身是错的；修复落在 store 端口，回归测试也打在 store 端口。
+
+**取舍**：只加入口断言，不动 `rank`、`filter`、切片调用方与 `recall`；断言消息带上实收的
+limit 值，便于定位误用方。`assert` 在 `python -O` 下会被剥掉——与仓库其余端口断言
+（kind、`fuse_top_k` 等）口径一致，不引入自定义异常类。
+
+**影响面**：直接调 `store.search(query, limit<=0)` 的调用方从静默错误结果变为
+`AssertionError`。全量 pytest 1197 通过（1196 + 1 条新回归），ruff check / format 全绿。
+
 ## 2026-10-17（497）—— store.get 缺失返回 None：外部删除后第一次查询不再返回空三元组
 
 **改了什么**：`pokemon_agent/memory/store.py` 的 `get` 在调 `_read_record` 之前增加文件存在性

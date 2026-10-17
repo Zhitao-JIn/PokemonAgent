@@ -296,6 +296,7 @@ class LocalMemoryStore:
         返回 `(uuids, timings)`，契约见 `MemoryStorePort.search`；
         timings 由 `rank` 报出（等值过滤不走模型、微秒级，不占段位）。
         """
+        assert limit > 0, f"search() needs limit > 0, got {limit}"
         candidate_ids = self.filter(conditions or {})
         ranked, timings = self.rank(candidate_ids, query, fuse_top_k=max(limit * 3, 10))
         return [record_id for record_id, _score in ranked[:limit]], timings
