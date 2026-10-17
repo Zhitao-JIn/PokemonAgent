@@ -55,7 +55,7 @@
 
 **CP3（487）** `pokemon_agent/config.py`、`harness/task/`（`plan_task`、`review_and_judge`、`task_state.py`、`task_entry.py`）、`harness/episode/act/dispatch_task.py`、`schemas/harness/domain/task_io.py`、`schemas/harness/communication/` 的 `ChooseOnceReq` / `JudgeReq`、`direct/brain_tool.py`（`cap_images`）、`direct/prompts/`（`decide_action`、`judge_success` 及其 `.md`）、`schemas/memory/datastore/act_memory.py`（仅一处注释）、`build.py`（装配期断言）、`docs/spec/build/SPEC.md`、测试
 
-**CP4（488）** `brain/interface/brain_port.py`、`brain/brain.py`、`brain/providers.py`（若需要）、`direct/brain_tool.py`（`Planner` / `Decomposer`）、`direct/interface/ports.py`、mock 与相关测试
+**CP4（488）**（CP3 裁定：run 蒸馏带图从 CP2 顺延到本检查点，`BrainPort.summarize_run` 加 `images` 并过 `cap_images`；`task_index` 住 `TaskState` 顶层而非 `task_ctx`）`brain/interface/brain_port.py`、`brain/brain.py`、`brain/providers.py`（若需要）、`direct/brain_tool.py`（`Planner` / `Decomposer`）、`direct/interface/ports.py`、mock 与相关测试
 
 **CP5（489）** `harness/episode/`（`perceive/`、`episode_state.py`、`plan_episode/`、`review_and_judge/`）、`schemas/harness/communication/` 的 `DecomposeReq` / `JudgeReq`、`direct/prompts/`（`decompose`、`judge_success`）、测试
 
