@@ -145,4 +145,4 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 - **`ConsoleReviewer` 的停等人**：它在每局、每个 task 结束时都会停下等人
   （最多 `CONSOLE_REVIEW_TIMEOUT` 秒，超时按认账）——交互调试时才接它。
 - **图形状的守卫**：`experiment/real_check/node_io.py` 按层切流、用后继表核三张图的执行序；
-  `tests/integration/test_node_io.py` 用 `tests/_fake_run.py`（假大脑跑真图）做正反例。
+  `tests/harness/ledger/test_node_io.py` 用 `tests/_fake_run.py`（假大脑跑真图）做正反例。

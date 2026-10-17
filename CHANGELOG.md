@@ -1,3 +1,27 @@
+## 2026-10-17（484）—— 测试瘦身第一步：重归类两个 integration 文件、删除两个无用测试
+
+**改了什么**：`tests/integration/test_node_io.py` 整文件搬到 `tests/harness/ledger/test_node_io.py`
+（内容不变、仅改路径）；`tests/integration/test_p5_script_actions.py` 按节标记拆成 7 个镜像位置
+文件（见下方目标路径），拆后删原文件；删除 `tests/integration/test_harness_integrity.py` 与
+`tests/evals/world_script_execute/test_evals_script_timeout.py` 两个无用测试；`docs/spec/` 三处
+引用同步（路径改新位置，或删去已删除文件的条目）。
+
+**为什么这么改**：全量 pytest 约 1236 用例、约 5 分钟，拖慢开发循环。本批只做纯机械的
+重归类与删除（不改任何断言），同时产出逐文件耗时数据；后续是否按数据减删由设计方另行
+决定，本批不据此删任何东西。
+
+**取舍**：搬移/拆分未改任何断言——59 条用例 id（41 + 18）逐项比对与搬移前完全一致；
+删除 `test_harness_integrity.py`（4 条，与 test_node_io 校验重复、且 Langfuse 参数化用例恒
+被跳过）与 `test_evals_script_timeout.py`（2 条，测已删除的东西的超时、在带删除保护的
+环境必失败）；`tests/integration/test_web_reviewer_integration.py` 本次不动（reviewer 重构线
+保留）。
+
+**影响面**：全仓用例 1236 → 1230（−6）；全量 pytest 1230 passed（305.49s）。目标路径：
+`tests/harness/ledger/test_node_io.py`、`tests/world/scripts/test_script_catalog.py`、
+`tests/world/test_action_space_scripts.py`、`tests/brain/choose/test_choose_script_calls.py`、
+`tests/direct/test_chooser_script_passthrough.py`、`tests/direct/trace/test_trace_render_act_call_script.py`、
+`tests/direct/prompts/test_decide_action_script_entries.py`、`tests/mcpclient/world_tool/test_world_mcp_script_e2e.py`。
+
 ## 2026-10-17（483）—— 评测脚本改走 MCP（批 ③b）
 
 **改了什么**：评测脚本全部改走 MCP——`evals/common/world_case.py` 经 WorldMcpTool

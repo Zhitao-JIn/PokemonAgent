@@ -74,7 +74,7 @@ experiment/
 - **能证 / 不能证**：能证"格跑过、账的格式对、执行序与拓扑一致、层间计数一致"；**不能证格读到的
   state 值**。
 
-**样本**：`tests/_fake_run.py` 用假大脑 / 假世界跑真的三张图，`tests/integration/test_node_io.py` 拿它做正例
+**样本**：`tests/_fake_run.py` 用假大脑 / 假世界跑真的三张图，`tests/harness/ledger/test_node_io.py` 拿它做正例
 （正常 / task 失败后重拆 / task 抛错后这一局继续 / 整局抛错由 run.act 收尾）与逐处改动的反例。
 
 ## 四、命令行与开关
