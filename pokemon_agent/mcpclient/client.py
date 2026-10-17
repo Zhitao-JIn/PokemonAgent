@@ -92,7 +92,7 @@ class McpTransportError(RuntimeError):
 
 
 class McpToolError(RuntimeError):
-    """工具执行失败（isError=true）。message 来自工具返回的文本。"""
+    """工具执行失败（isError=true），或门面收到必须成功操作的失败信封。"""
 
 
 class McpClient:

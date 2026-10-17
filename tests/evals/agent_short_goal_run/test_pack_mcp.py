@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from evals.agent_short_goal_run.dataset.schemas import EvalSample, SampleStart
+from pokemon_agent.mcpclient.client import McpToolError
 
 
 def _sample() -> EvalSample:
@@ -30,10 +31,12 @@ def _sample() -> EvalSample:
     )
 
 
+@pytest.mark.parametrize("failure_point", ["bind", "run"])
+@pytest.mark.parametrize("release_fails", [False, True])
 def test_pack_one_clears_memory_then_binds_start_state_before_run(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure_point: str, release_fails: bool
 ) -> None:
-    """clear_memory 先于 build_real，use_start_state 先于 harness.run。"""
+    """绑定或 run 异常均释放租约；释放也失败时保留两份异常。"""
     import evals.agent_short_goal_run.dataset.build.pack as pack
 
     version = "v1"
@@ -58,6 +61,13 @@ def test_pack_one_clears_memory_then_binds_start_state_before_run(
     class _Game:
         def use_start_state(self, path: Path) -> None:
             events.append(("use_start_state", path))
+            if failure_point == "bind":
+                raise OSError("start state disappeared")
+
+        def release_lease(self) -> None:
+            events.append("release_lease")
+            if release_fails:
+                raise McpToolError("release rejected")
 
     class _Harness:
         def run(self, run_id: str, tasks: list, checkpoint_only: bool = False) -> None:
@@ -70,15 +80,20 @@ def test_pack_one_clears_memory_then_binds_start_state_before_run(
 
     monkeypatch.setattr(pack, "build_real", fake_build_real)
 
-    with pytest.raises(RuntimeError, match="stop"):
+    expected_error = OSError if failure_point == "bind" else RuntimeError
+    with pytest.raises(ExceptionGroup if release_fails else expected_error) as raised:
         pack.pack_one(_sample(), version)
 
+    if release_fails:
+        assert isinstance(raised.value.exceptions[0], expected_error)
+        assert isinstance(raised.value.exceptions[1], McpToolError)
     assert events == [
         "memory_build",
         "clear_memory",
         "build_real",
         ("use_start_state", state),
-        ("harness.run", "eval-s1", True),
+        *([("harness.run", "eval-s1", True)] if failure_point == "run" else []),
+        "release_lease",
     ]
 
 

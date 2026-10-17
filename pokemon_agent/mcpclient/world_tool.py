@@ -70,8 +70,15 @@ class WorldMcpTool:
         return self._client_id
 
     def release_lease(self) -> None:
-        """归还租约，让另一个客户端能接管这个世界。"""
-        self._client.call_tool_sync("release_lease", {"client_id": self._client_id})
+        """归还本客户端的租约；服务端拒绝时抛 McpToolError。"""
+        self._call_checked("release_lease", {"client_id": self._client_id})
+
+    def _call_checked(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """调用必须成功的世界操作；失败信封转为具名异常，传输错误向上传递。"""
+        body = self._client.call_tool_sync(name, arguments)
+        if body.get("ok") is not True:
+            raise McpToolError(f"{name}: {body.get('code')} — {body.get('error')}")
+        return body
 
     # ---- 评测侧直连口（不做掩码断言） ----
 
@@ -79,8 +86,9 @@ class WorldMcpTool:
         """按开跑前的键：直接调 server 的 step，带 client_id，不做掩码断言。
 
         评测进程没有 observation，也不是 harness 的决策，不受 execute 的前置约束。
+        服务端拒绝时抛 McpToolError。
         """
-        self._client.call_tool_sync(
+        self._call_checked(
             "step",
             {
                 "segments": [[name, times] for name, times in segments],
@@ -109,7 +117,7 @@ class WorldMcpTool:
         self._start_state = data
 
     def reset(self, req: FromHarnessToGameToolResetReq) -> None:
-        """开新一局：`Task` 拆成裸字段（world 不认识 brain 的类型）。"""
+        """开新一局：Task 拆成裸字段；服务端拒绝时抛 McpToolError，不继续存档。"""
         task = req.task
         arguments = {
             "task_id": task.task_id,
@@ -121,7 +129,7 @@ class WorldMcpTool:
         }
         if self._start_state is not None:
             arguments["state_base64"] = base64.b64encode(self._start_state).decode("ascii")
-        self._client.call_tool_sync("reset", arguments)
+        self._call_checked("reset", arguments)
 
     def get_action_space(
         self, req: FromHarnessToGameToolGetActionSpaceReq
@@ -178,7 +186,7 @@ class WorldMcpTool:
         )
         segment = action.sequence[0]
         assert space.contains(segment.name), f"execute() got {segment.name!r} outside {space.names}"
-        body = self._client.call_tool_sync(
+        body = self._call_checked(
             "step",
             {
                 "segments": [[segment.name, segment.times]],
@@ -213,8 +221,8 @@ class WorldMcpTool:
         return data
 
     def load_state(self, req: FromHarnessToGameToolLoadStateReq) -> None:
-        """读盘在 client，字节过 MCP 交给 server 恢复。"""
-        self._client.call_tool_sync(
+        """读盘在 client，字节过 MCP 交 server；拒绝时抛 McpToolError。"""
+        self._call_checked(
             "load_state",
             {
                 "state_base64": base64.b64encode(Path(req.path).read_bytes()).decode("ascii"),

@@ -199,6 +199,7 @@ class GameToolPort(Protocol):
         req.settle：按完要不要等世界把过场走完（链中间的键不等，见该字段说明）。
         前置条件：动作的按键或脚本名属于 get_action_space(req.observation) 的结果（实现方 assert）。
         后置条件：脚本动作时 `resp.report` 是终态报告，按键动作时为 None。
+        失败：服务端拒绝按键时抛 McpToolError；脚本业务失败由终态报告表达。
         """
         ...
 
@@ -207,6 +208,7 @@ class GameToolPort(Protocol):
 
         req.task：要跑的任务。
         前置条件：req.task.max_steps > 0。
+        后置条件：世界已重置到绑定起点；服务端拒绝时抛 McpToolError，不得继续存档。
         """
         ...
 
@@ -224,7 +226,7 @@ class GameToolPort(Protocol):
         """从 `req.path` 读回模拟器完整状态。**不推进世界**。
 
         前置条件：`req.path` 是 `save_state` 写出的文件。
-        失败：文件不存在或读失败原样抛出。
+        失败：文件不存在或读失败原样抛出；服务端拒绝读档时抛 McpToolError。
         """
         ...
 
