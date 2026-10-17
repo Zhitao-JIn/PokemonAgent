@@ -1,16 +1,20 @@
 """读侧解析层的用法示范：落盘账本 → `parse()` → 类型化事件，写与读逐字段对得上。
 
 `direct/trace/content.py` 是 `render.py` 的镜像；两边任何一边改了字段名，这里当场红。
-样本有两份：`_fake_run` 用真的三张图跑出来的整局账本（覆盖面），以及一条带内存读数的
+覆盖面来自一个正常整局账本（`_fake_run` 跑真的三张图）加上手工补的两种异常账
+（`task_error` / `episode_error`，只有异常 run 才产）；另有一条带内存读数的
 `sense_frame`（`ram` 是测评读真值的唯一来源，单独回环一次）。
 """
 
 from __future__ import annotations
 
+import json
+
 from _fake_run import run_fake
 
 from pokemon_agent.direct.trace import CONTENT_MODELS, TraceTool, parse
 from pokemon_agent.direct.trace.content import (
+    ErrorEndContent,
     OtherContent,
     SenseFrameContent,
     TaskEndContent,
@@ -28,12 +32,9 @@ from pokemon_agent.world.interface import (
 
 
 def test_every_modelled_account_of_a_whole_run_parses_into_its_model(tmp_path) -> None:
-    runs = [
-        run_fake(tmp_path / "normal", checkpoints=True),
-        run_fake(tmp_path / "task_error", fail_on_press=2, run=lambda asked: True),
-        run_fake(tmp_path / "episode_error", fail_on_decompose=1, run=lambda asked: True),
-    ]
-    events = [TraceEvent.model_validate(e) for run in runs for e in run]
+    """正常整局的建模账都读成它的模型；差集（只有异常 run 才产的账）手工补最小事件覆盖。"""
+    run = run_fake(tmp_path / "normal", checkpoints=True)
+    events = [TraceEvent.model_validate(e) for e in run]
 
     parsed = [parse(e) for e in events]
 
@@ -45,6 +46,37 @@ def test_every_modelled_account_of_a_whole_run_parses_into_its_model(tmp_path) -
     ends = [p.content for p in parsed if p.kind == TraceKind.TASK_END]
     assert ends and all(isinstance(c, TaskEndContent) for c in ends)
     assert all(isinstance(c.steps_used, int) for c in ends), "标量读回来是真实类型，不是字符串"
+
+    # 差集（3-run 并集 − 正常 run = {task_error, episode_error}）手工补最小事件，
+    # 保证原先被异常 run 覆盖的每种建模账仍被覆盖。
+    normal_modelled = {p.kind for p in modelled}
+    extra = [
+        TraceEvent(
+            uuid="te",
+            seq=1,
+            kind=TraceKind.TASK_ERROR,
+            type="lifecycle",
+            started_at=1.0,
+            ended_at=1.0,
+            meta=json.dumps({"run_id": "r1"}),
+            content=json.dumps({"error": "boom"}),
+        ),
+        TraceEvent(
+            uuid="ee",
+            seq=1,
+            kind=TraceKind.EPISODE_ERROR,
+            type="lifecycle",
+            started_at=1.0,
+            ended_at=1.0,
+            meta=json.dumps({"run_id": "r1"}),
+            content=json.dumps({"error": "boom"}),
+        ),
+    ]
+    for event in extra:
+        assert event.kind not in normal_modelled, f"{event.kind} 正常 run 也产，不属于差集"
+        parsed_extra = parse(event)
+        assert isinstance(parsed_extra.content, ErrorEndContent)
+        assert not isinstance(parsed_extra.content, OtherContent)
 
 
 def test_a_sense_frame_with_a_ram_readout_round_trips(tmp_path) -> None:

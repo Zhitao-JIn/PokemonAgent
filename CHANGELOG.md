@@ -1,3 +1,83 @@
+## 2026-10-17（495）—— 测试瘦身收尾：修 rules.py 旧测试名注释、trace_parse/restore 耗时调查（测试未改）
+
+**改了什么**：`rules.py` 第 16 行注释里已改名的旧测试路径 `test_p6_event_alignment.py` →
+`test_step_and_script_event_alignment.py`（仅这一行，不动任何代码）。对默认运行最慢的
+`test_trace_parse.py::test_every_modelled_account_of_a_whole_run_parses_into_its_model` 做计时调查，
+并 cProfile 复现一次 `restore_run`——**两个测试都未改**（判据未达 / 属环境开销，见下）。
+
+**为什么这么改**：上轮标 slow 后默认全量降到约 73–91s，最慢单用例剩 trace_parse（本次 17.54s、
+历史 37.41s，方差大）；任务假设大头是 `run_fake(checkpoints=True)` 的存档开销，先用数据核实再决定。
+
+**取舍**：① trace_parse：`checkpoints=False` 相对 `True` 在 `%TEMP%` 下仅快 0.69s（3.28s→2.59s），
+在沙箱工作区路径 `.pytest_tmp` 下中位快约 7.6s（True 中位 9.48s、区间 8.72–15.59s；False 中位 1.84s、
+区间 1.77–2.23s；最大配差约 13.75s）——均未达"至少快 15 秒"的改判据，故不改。
+② profile 显示真正大头是 langgraph SqliteSaver 的 sqlite commit：一次 `restore_run`（墙钟约
+19.5–21.7s）里 `sqlite3.Connection.commit` 独占约 14.9s / 167 次（≈89ms/次），库在
+`<tmp>/checkpoints/langgraph.sqlite`，sqlite 默认 `synchronous=FULL`（每次 commit fsync）；
+这同时解释 trace_parse 的路径依赖（同代码 `%TEMP%` 3.3s vs `.pytest_tmp` 8–40s）——属工作区
+文件系统/沙箱的环境开销，非 checkpoint 逻辑；safe-delete 护栏不是瓶颈（仅 2 次 subprocess.run、0.28s）。
+
+**影响面**：`rules.py` 一行注释；测试与 pytest 配置零改动；全仓用例数不变（1195 collected /
+默认 1192 selected / 3 deselected）。默认全量 pytest **1192 passed / 3 deselected**（73.33s，
+1 warning）；`ruff check .` 与 `ruff format --check .` 全绿。
+
+## 2026-10-17（494）—— 测试瘦身第三步：整图恢复测试标 slow 默认不跑、瘦身两个耗时测试
+
+**改了什么**：`pyproject.toml` 的 `[tool.pytest.ini_options]` 注册 `slow` 标记（整图 + 存档恢复，
+单个用例数十秒，默认跳过），`addopts` 改为 `-q --basetemp=.pytest_tmp -m "not slow"`。
+`tests/harness/checkpoint/test_checkpoint_restore.py` 整模块标 `pytestmark = pytest.mark.slow`，
+并把第三个用例 `test_restored_branches_pass_node_io_once_stitched_by_lineage` 的独有部分
+（分支套分支：从 b1 自己的第 2 局存档再恢复出 b2、b2 血缘 `[b1, "main"]`、b1/b2/main 三执行线
+逐条 node_io 核对）并入第二个用例 `test_run_and_episode_saves_restore_into_new_branches` 末尾，
+删除第三个用例（4 → 3，第二个用例原有断言一条不少）。`tests/direct/trace/test_trace_parse.py`
+的整图用例改为只跑正常那一个 `run_fake(checkpoints=True)`，差集 `{task_error, episode_error}`
+在文件里手工拼最小 `TraceEvent` 覆盖（3 个假 run → 1 个 run + 2 条手工事件）。
+`tests/mcpclient/memory_tool/test_memory_admin_validation.py` 的 `test_unsafe_entries_...` 从
+5×2=10 参数化改为显式 4 组合（去掉 `step_memory/D:escape`，反斜杠/父目录穿越/绝对路径/盘符四类
+各一次、mixed False/True 各两次）。`AGENTS.md` / `CLAUDE.md` 的 pytest 条末各加一句 slow 说明。
+
+**为什么这么改**：全量 pytest 里 checkpoint 恢复 3 个用例约 268s（占 71%），标 slow 默认不跑后
+默认全量从 375s 降到约 91s；trace_parse 与 memory_admin 的参数化瘦身再减少用例数。判据是
+"耗时很长但保护关键不变量的整图测试标 slow、默认不跑"。
+
+**取舍**：不改任何生产代码；并入时保留第二个用例全部原有断言；差集事件用最小 meta（只 `run_id`）；
+memory_admin 去掉的 `step_memory/D:escape` 一类与保留的 `step_memory\x`（反斜杠）覆盖不同面，
+四类不安全条目与 mixed 两值仍按要求各覆盖足次。
+
+**影响面**：全仓用例 1202 → 1195（−7 = checkpoint 合并 −1 + memory_admin 参数化 −6）；默认
+pytest **1192 passed / 3 deselected**（91.25s），`python -m pytest -m slow` **3 passed**（108.90s）；
+`ruff check .` 与 `ruff format --check .` 全绿。默认运行最慢用例从 213s 的 checkpoint 恢复降到
+37.41s 的 `test_trace_parse`。
+
+## 2026-10-17（493）—— 测试瘦身第二步：删非单元测试与旧 reviewer 集成栈、改名事件流对齐钉子
+
+**改了什么**：删 6 个文件——`tests/evals/agent_short_goal_run/test_no_eval_knobs.py`（3，测已删的
+knowledge/speed/watch 旋钮）、`tests/brain/schemas/test_llm_complete_req_roundtrip.py`（2，
+与 test_envelopes / test_choose_contract 重复）、`tests/assembly/test_build.py`（2，AST 扫
+`build_real` 源码，非单元）、`tests/integration/test_web_reviewer_integration.py`（3）、
+`tests/review_backend/test_review_backend.py`（13）、`tests/review_backend/test_review_backend_agent.py`（2，
+后三个是起真 websocket 的旧 reviewer 集成栈，用户已确认删）。修剪两个文件：`test_no_workers.py`
+删 `test_main_no_longer_accepts_workers`（1），`test_run_result.py` 删
+`test_fake_run_returns_runresult_with_usage` 与 `test_fake_run_checkpoint_only_returns_empty_result`
+（2，整图全跑）。改名 `tests/harness/task/test_p6_event_alignment.py` →
+`tests/harness/task/test_step_and_script_event_alignment.py`（只改 docstring 去计划编号，断言与 5 个函数名不动）。
+同步 `test_envelopes.py` docstring（去掉对已删文件的提及），清理修剪文件因此不再使用的 import。
+
+**为什么这么改**：全量 pytest 1230 用例、约 6 分钟，拖慢开发。判据是「不是单元测试、且不会被
+后续单元测试覆盖或复用的测试，删除」——删的 6 个文件分别命中：测已删除的旋钮、字段集合被别处
+更全覆盖、AST 静态扫源码（非单元）、旧 reviewer 起真 websocket 服务的集成测试；`test_run_result`
+删的两个是把真三张图整图全跑一遍的全链用例。
+
+**取舍**：生产代码（`pokemon_agent/review_backend`、`pokemon_agent/harness/web_reviewer.py` 等）
+一律不动；保留 `tests/harness/review/` 的 `test_web_reviewer_timeout_none.py` 与
+`test_review_render.py`。共享辅助无变成无主——`_fake_run` 仍被 7 处使用（含 scripts 与多个测试文件）。
+`pokemon_agent/harness/task/perceive/store_object_semantic_memory/rules.py` 注释里指向旧文件名的
+钉子说明未同步（生产代码不改，留待后续）。
+
+**影响面**：全仓用例 1230 → 1202（−28 = 3+1+2+2+2+3+13+2）；全量 pytest **1202 passed**
+（375.15s，1 warning）；`ruff check .` 与 `ruff format --check .` 全绿。`tests/integration/`、
+`tests/review_backend/`、`tests/assembly/` 删后仅剩 `__pycache__`（空目录，git 不跟踪）。
+
 ## 2026-10-17（487）—— brain_scope CP3：task 层读全部 ActMemory，新增同目标 task 索引，删两个窗口常量
 
 **改了什么**：task 决策与判定读取同源的全部 ActMemory，判定同步收到知识。
@@ -57,6 +137,30 @@ ruff 排除 .worktrees。
 新增 run 目录随整库快照恢复与清空。既有落盘根测试夹具仅加 run_memory，
 其原有 task_memory 缺项保留，后续检查点再接入调用方。经追加批准，trace 写账正文
 排除 run_goal 与首末帧，冻结哈希测试更新为实测新值 1da60900e11478a0。
+
+## 2026-10-17（484）—— 测试瘦身第一步：重归类两个 integration 文件、删除两个无用测试
+
+**改了什么**：`tests/integration/test_node_io.py` 整文件搬到 `tests/harness/ledger/test_node_io.py`
+（内容不变、仅改路径）；`tests/integration/test_p5_script_actions.py` 按节标记拆成 7 个镜像位置
+文件（见下方目标路径），拆后删原文件；删除 `tests/integration/test_harness_integrity.py` 与
+`tests/evals/world_script_execute/test_evals_script_timeout.py` 两个无用测试；`docs/spec/` 三处
+引用同步（路径改新位置，或删去已删除文件的条目）。
+
+**为什么这么改**：全量 pytest 约 1236 用例、约 5 分钟，拖慢开发循环。本批只做纯机械的
+重归类与删除（不改任何断言），同时产出逐文件耗时数据；后续是否按数据减删由设计方另行
+决定，本批不据此删任何东西。
+
+**取舍**：搬移/拆分未改任何断言——59 条用例 id（41 + 18）逐项比对与搬移前完全一致；
+删除 `test_harness_integrity.py`（4 条，与 test_node_io 校验重复、且 Langfuse 参数化用例恒
+被跳过）与 `test_evals_script_timeout.py`（2 条，测已删除的东西的超时、在带删除保护的
+环境必失败）；`tests/integration/test_web_reviewer_integration.py` 本次不动（reviewer 重构线
+保留）。
+
+**影响面**：全仓用例 1236 → 1230（−6）；全量 pytest 1230 passed（305.49s）。目标路径：
+`tests/harness/ledger/test_node_io.py`、`tests/world/scripts/test_script_catalog.py`、
+`tests/world/test_action_space_scripts.py`、`tests/brain/choose/test_choose_script_calls.py`、
+`tests/direct/test_chooser_script_passthrough.py`、`tests/direct/trace/test_trace_render_act_call_script.py`、
+`tests/direct/prompts/test_decide_action_script_entries.py`、`tests/mcpclient/world_tool/test_world_mcp_script_e2e.py`。
 
 ## 2026-10-17（483）—— 评测脚本改走 MCP（批 ③b）
 

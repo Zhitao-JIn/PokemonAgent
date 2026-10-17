@@ -1,6 +1,5 @@
-"""P6 事件流对齐钉子：**同一操作序列，step 路径与脚本路径产出逐字段一致的事件。**
+"""事件流对齐钉子：**同一操作序列，step 路径与脚本路径产出逐字段一致的事件。**
 
-**对得上谁**：PLAN_mcp_servers P6 验证清单——
 - 两路径对齐钉子（判定收进 `world/object_events.py` 后的结构性保证，这里钉死）；
 - 入流过滤：普通移动零事件、blocked 零事件、门 warp 入流；
 - `rules.stamp_events` 补三章（episode_id/step）与三族落库类型组装。

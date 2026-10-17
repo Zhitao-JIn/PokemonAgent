@@ -1,11 +1,15 @@
 """从存档恢复的用法示范：run 级、episode 级存档各恢复出一条新执行线，在图里跑到 run 结束。
 
+**慢测试**（`pytestmark = slow`）：每个用例都跑整图 + 多次存档恢复，单个数十秒，默认跳过，
+用 `python -m pytest -m slow` 单独跑。
+
 一次 run 自动存两级档（`<存档根>/<run_id>/<checkpoint_id>/manifest.json`，id 形如
 `<episode_id 或 run_id>@<branch>-<8 位随机 hex>`）：run 开局一份，每局开派之前（run 的 `act`
 一开始）一份。恢复 = `restore_run(清单路径, 装配函数)`：装配函数只按"新分支名"装一套 runtime
 （真机包一层 `build_real`，这里用假件版 `build_fake`）。新执行线与父线共用 `run_id`，
 第一条账是 `checkpoint_restore`（meta 带存档 id）；父线的账一个字节都不动；新执行线上照常存档。
-血缘与分支图都从账本推（`tools.trace.lineage_of` / `branch_graph`），没有别的登记表。
+血缘与分支图都从账本推（`tools.trace.lineage_of` / `branch_graph`），没有别的登记表；
+run/episode 恢复那条末尾还接着做分支套分支（再恢复出孙线）与逐执行线的 node_io 核对。
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from __future__ import annotations
 import json
 import pathlib
 
+import pytest
 from _fake_run import GOAL, build_fake
 from _harness_fixtures import node_io
 
@@ -24,6 +29,8 @@ from pokemon_agent.harness.checkpoint import (
     restore_run,
 )
 from pokemon_agent.harness.run.run_state import RunState
+
+pytestmark = pytest.mark.slow
 
 
 def _manifests(tmp_path: pathlib.Path, branch: str = "main") -> dict[str, CheckpointManifest]:
@@ -94,7 +101,8 @@ def test_a_run_saves_at_its_start_before_each_episode_and_before_each_task(
 
 
 def test_run_and_episode_saves_restore_into_new_branches(tmp_path: pathlib.Path) -> None:
-    """main 跑完后，从 run 开局与第 2 局开派前各恢复一次，各得一条新线，都跑到 run 结束。"""
+    """main 跑完后，从 run 开局与第 2 局开派前各恢复一次，各得一条新线，都跑到 run 结束；
+    再从新线自己的存档恢复出孙线（分支套分支），三条执行线按血缘拼好后逐格核对。"""
     # 步骤 1：main 跑一个完整 run，存档自动落下。
     main = build_fake(tmp_path, checkpoints=True)
     main.harness.run("r1", [GOAL])
@@ -144,29 +152,21 @@ def test_run_and_episode_saves_restore_into_new_branches(tmp_path: pathlib.Path)
     after = _trace_bytes(tmp_path)
     assert all(after[name] == data for name, data in before.items())
 
-
-def test_restored_branches_pass_node_io_once_stitched_by_lineage(tmp_path: pathlib.Path) -> None:
-    """恢复出来的执行线按血缘拼完整后，逐格核对照样走得通；从新线的存档还能再恢复（分支套分支）。"""
-    # 步骤 1：main 跑完；从第 2 局开派前恢复出 b1。
-    build_fake(tmp_path, checkpoints=True).harness.run("r1", [GOAL])
-    build = _build_branch(tmp_path)
-    restore_run(_path(tmp_path, _manifests(tmp_path)["r1-ep2"]), build)
-    (b1,) = _branches(tmp_path) - {"main"}
-
-    # 步骤 2：从 b1 自己的第 2 局存档再恢复出 b2；b2 的血缘由近到远是 b1、main。
+    # 步骤 7：分支套分支——从 b1（循环最后一轮 "r1-ep2" 恢复出的新线）自己的第 2 局存档
+    # 再恢复出 b2；b2 的血缘由近到远是 b1、main。
+    b1 = branch
     b1_ep2 = _manifests(tmp_path, b1).get("r1-ep2")
     assert b1_ep2 is not None, "b1 上没有存下自己的 episode 存档"
-    restore_run(_path(tmp_path, b1_ep2), build)
-    (b2,) = _branches(tmp_path) - {"main", b1}
+    known_before_b2 = _branches(tmp_path)
+    restore_run(_path(tmp_path, b1_ep2), _build_branch(tmp_path))
+    (b2,) = _branches(tmp_path) - known_before_b2
+
+    # 步骤 8：三条执行线（b1、b2、main）按血缘拼好，逐格核对照样走得通。
     trace = build_fake(tmp_path).trace
     assert [f.branch for f in lineage_of(trace.read_events({}), b2)] == [b1, "main"]
-
-    # 步骤 3：三条执行线混在一个账本里；按执行线拼好再逐条核。
     events = [json.loads(e.model_dump_json()) for e in trace.read_events({})]
-    branches = sorted({node_io.branch_of(e) for e in events})
-    assert branches == sorted([b1, b2, "main"])
-    for branch in branches:
-        view = node_io.branch_view(events, branch)
+    for line in (b1, b2, "main"):
+        view = node_io.branch_view(events, line)
         node_io.check_run_markers(view)
         node_io.check_vocabulary(view)
         node_io.check_payloads(view)
