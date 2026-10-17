@@ -91,7 +91,9 @@
 | 时点 | `state_schema_hash` | 备注 |
 |---|---|---|
 | `352af88`（spec v1.2 时） | `4f1cac6fcc7216d5` | 探针 |
-| `ce1e9c3` 起点 | 待 CP1 执行方实测 | v1.3 沙箱无依赖，未复测 |
+| `ce1e9c3` 起点 | `4f1cac6fcc7216d5` | CP1 执行方实测，与探针一致 |
+| CP1 终点 `01d66de` | `1da60900e11478a0` | EpisodeMemory 加三字段 |
+| CP2 终点 `161a155` | `3c713ab4487ef650` | 变化来自首末帧描述、EpisodeInput.run_goal、RunState.run_memory |
 
 ## 十、PR 组织与合入
 
