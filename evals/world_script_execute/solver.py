@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from evals.common.world_case import read_frame, start_world, stop_world
 from evals.world_script_execute.dataset import ScriptCase
 from evals.world_script_execute.dataset.loader import state_path
 from evals.world_script_execute.dataset.schemas import EventOutcome
 from pokemon_agent.world import RamReadout, TaskObservation
-from pokemon_agent.world.scripts.catalog import run_script_by_name
-from pokemon_agent.world.scripts.console_adapter import WorldConsoleAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class ScriptEvent(BaseModel):
@@ -58,15 +59,12 @@ class ScriptRun(BaseModel):
         return self
 
 
-_JSON = TypeAdapter(dict)
-
-
 def run_case(case: ScriptCase, version: str = "v1", *, checkpoint: Path | None = None) -> ScriptRun:
-    """在真模拟器上跑一条用例（同步，solver 放进线程里调）。
+    """在 MCP world server 上跑一条用例（同步，solver 放进线程里调）。
 
     步骤 1：起 world、按开跑前的键、读开跑帧。
-    步骤 2：调脚本；脚本抛异常记为 crash。
-    步骤 3：读收尾帧，关模拟器。
+    步骤 2：调脚本；脚本异常与 server 侧异常记为 crash。
+    步骤 3：读收尾帧，归还租约。
     """
     # 步骤 1。
     world = start_world(state_path(case.state, version), case.pre, case_id=case.case_id)
@@ -79,12 +77,12 @@ def run_case(case: ScriptCase, version: str = "v1", *, checkpoint: Path | None =
         report, crash = None, ""
         started = time.monotonic()
         try:
-            result = run_script_by_name(WorldConsoleAdapter(world), case.script, dict(case.args))
+            body = world.call_script(case.script, dict(case.args))
             report = ScriptReport(
-                ok=result.ok,
-                code=result.code,
-                data=_JSON.dump_python(result.data, mode="json"),
-                events=list(result.events),
+                ok=body["data"]["ok"],
+                code=body["data"]["code"],
+                data={k: v for k, v in body["data"].items() if k not in {"ok", "code", "calls"}},
+                events=body["events"],
             )
         except Exception as exc:  # noqa: BLE001 —— 脚本的任何异常都是被测结论，留痕后判负
             crash = f"{type(exc).__name__}: {exc}"
@@ -93,7 +91,10 @@ def run_case(case: ScriptCase, version: str = "v1", *, checkpoint: Path | None =
         # 步骤 3。
         after_observation, after_ram = read_frame(world)
     finally:
-        stop_world(world)
+        try:
+            stop_world(world)
+        except Exception:  # noqa: BLE001 —— 归还租约失败不得掩盖步骤 2/3 已有的结论
+            logger.warning("归还 world 租约失败", exc_info=True)
     return ScriptRun(
         report=report,
         crash=crash,

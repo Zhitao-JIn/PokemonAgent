@@ -26,9 +26,8 @@ def main() -> int:
 
 
 def _execute(request: RunOneRequest) -> None:
-    """按请求跑一条样本；`watch` 取自 `evals/config.json`。"""
+    """按请求跑一条样本。"""
     from evals.agent_short_goal_run.solver.runner import run_one
-    from evals.runconfig import load_config
 
     [sample] = [s for s in load_samples(request.version) if s.sample_id == request.sample_id]
     run_one(
@@ -36,11 +35,8 @@ def _execute(request: RunOneRequest) -> None:
         Path(request.work_dir),
         request.models,
         run_config_path=request.run_config_path,
-        knowledge=request.knowledge,
-        speed=request.speed,
         epoch=request.epoch,
         trace_backend=request.trace_backend,
-        watch=bool(load_config().get("watch", False)),
     )
 
 

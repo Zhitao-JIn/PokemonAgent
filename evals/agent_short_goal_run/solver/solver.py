@@ -76,8 +76,6 @@ def run_one_solver(
     report_dir: str,
     run_config_path: str,
     models: dict[str, str],
-    knowledge: bool,
-    speed: int,
     timeout: int,
     trace_backend: str = "local",
     version: str = "v1",
@@ -100,8 +98,6 @@ def run_one_solver(
             sample_id=sample_id,
             epoch=epoch,
             models=models,
-            knowledge=knowledge,
-            speed=speed,
             trace_backend=trace_backend,
             version=version,
         )

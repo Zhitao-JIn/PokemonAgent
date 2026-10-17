@@ -52,8 +52,6 @@ def agent_short_goal_run(
     version: str | None = None,
     split: str | None = None,
     samples: list[str] | None = None,
-    knowledge: bool | None = None,
-    speed: int | None = None,
     timeout: int | None = None,
     log_dir: str | None = None,
     trace_backend: str | None = None,
@@ -77,8 +75,6 @@ def agent_short_goal_run(
     version = version or str(cfg["version"])
     split = split if split is not None else (str(cfg["split"]) if cfg["split"] else None)
     sample_ids = samples if samples is not None else [str(s) for s in cfg.get("samples", [])]
-    knowledge = knowledge if knowledge is not None else bool(cfg["knowledge"])
-    speed = speed if speed is not None else int(cfg["speed"])
     timeout = timeout if timeout is not None else int(cfg["timeout"])
     report_dir = log_dir or str(cfg["log_dir"])
     trace_backend = trace_backend or str(cfg.get("trace_backend", "local"))
@@ -93,8 +89,6 @@ def agent_short_goal_run(
                 "models": models,
                 "sample_ids": [s.sample_id for s in chosen],
                 "timeout": timeout,
-                "knowledge": knowledge,
-                "speed": speed,
                 "trace_backend": trace_backend,
             },
             ensure_ascii=False,
@@ -110,8 +104,6 @@ def agent_short_goal_run(
             report_dir=report_dir,
             run_config_path=str(run_config_path),
             models=models,
-            knowledge=knowledge,
-            speed=speed,
             timeout=timeout,
             trace_backend=trace_backend,
             version=version,
@@ -124,9 +116,7 @@ def agent_short_goal_run(
         metadata={
             "dataset_version": version,
             "split": split,
-            "speed": speed,
             "timeout": timeout,
-            "knowledge": knowledge,
             "trace_backend": trace_backend,
             "transcript": transcript,
             "models": models,

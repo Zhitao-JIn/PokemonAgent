@@ -10,9 +10,10 @@ from pydantic import BaseModel
 from evals.common.world_case import start_world, stop_world
 from evals.dataset.frames.schemas import ScreenLabel, ScreenSample
 from evals.dataset.io import read_models
-from pokemon_agent.world import W_TILEMAP, TaskScene
+from pokemon_agent.world import TaskScene
 
 from .storage import save_frames
+from .tiles import tiles_from_wram
 
 SOURCES = Path(__file__).resolve().parents[1] / "sources"
 
@@ -40,7 +41,7 @@ def freeze_takeover() -> None:
         world = start_world(SOURCES / "states" / case.state, case.pre, case_id=case.case_id)
         try:
             perceived = world.perceive_task()
-            memory = world._pyboy.memory
+            wram = world.read_wram()
             truth = {
                 **{f"view.{key}": value for key, value in case.expect.items()},
             }
@@ -50,16 +51,13 @@ def freeze_takeover() -> None:
                     source="takeover_snapshot",
                     category="",
                     in_battle=bool(perceived.ram and perceived.ram.in_battle),
-                    tiles=[
-                        [memory[W_TILEMAP + row * 20 + column] for column in range(20)]
-                        for row in range(18)
-                    ],
+                    tiles=tiles_from_wram(wram),
                     frame_png=perceived.frame_png,
                     label=ScreenLabel(scene=case.scene.value, overlay="none"),
                     takeover_truth=truth,
                     scene_truth={"scene": case.scene.value},
                     screen_truth={"screen_contains": list(case.on_screen)},
-                    wram=base64.b64encode(zlib.compress(bytes(memory[0xC000:0xE000]), 9)).decode(),
+                    wram=base64.b64encode(zlib.compress(wram, 9)).decode(),
                     note="原接管视图手写期望；场合与文字片段各归所属分组，地形未标",
                 )
             )

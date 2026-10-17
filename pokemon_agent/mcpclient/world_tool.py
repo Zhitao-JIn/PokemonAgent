@@ -13,9 +13,11 @@ base64 ↔ 文件——由门面负责。server 只做 `WorldPort` 的
 from __future__ import annotations
 
 import base64
+import os
 from pathlib import Path
 from typing import Any
 
+from pokemon_agent.env import env_str
 from pokemon_agent.mcpclient.action_space import action_space_for, with_prompt_text
 from pokemon_agent.mcpclient.client import McpClient, McpToolError
 from pokemon_agent.schemas.harness import (
@@ -44,7 +46,7 @@ class WorldMcpTool:
     def __init__(self, client: McpClient, client_id: str | None = None) -> None:
         self._client = client
         self._start_state: bytes | None = None
-        self._client_id = client_id or f"harness-{__import__('os').getpid()}"
+        self._client_id = client_id or env_str("MCP_WORLD_CLIENT_ID") or f"harness-{os.getpid()}"
 
     @classmethod
     def build(cls, *, world_server_url: str, client_id: str | None = None) -> WorldMcpTool:
@@ -70,6 +72,29 @@ class WorldMcpTool:
     def release_lease(self) -> None:
         """归还租约，让另一个客户端能接管这个世界。"""
         self._client.call_tool_sync("release_lease", {"client_id": self._client_id})
+
+    # ---- 评测侧直连口（不做掩码断言） ----
+
+    def press(self, segments: list[tuple[str, int]], *, settle: bool = True) -> None:
+        """按开跑前的键：直接调 server 的 step，带 client_id，不做掩码断言。
+
+        评测进程没有 observation，也不是 harness 的决策，不受 execute 的前置约束。
+        """
+        self._client.call_tool_sync(
+            "step",
+            {
+                "segments": [[name, times] for name, times in segments],
+                "settle": settle,
+                "client_id": self._client_id,
+            },
+        )
+
+    def call_script(self, name: str, args: dict[str, str | int | float | None]) -> dict[str, Any]:
+        """直接调同名脚本 tool，带 client_id，不做掩码断言；返回 server 的完整信封。
+
+        脚本失败码不抛异常（信封照回）；server 侧异常（McpToolError）向上传递。
+        """
+        return self._client.call_tool_sync(name, {**args, "client_id": self._client_id})
 
     # ---- GameToolPort ----
 

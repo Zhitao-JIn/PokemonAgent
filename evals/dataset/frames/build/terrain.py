@@ -12,9 +12,9 @@ from pydantic import BaseModel
 
 from evals.common.world_case import start_world, stop_world
 from evals.dataset.frames.schemas import ScreenLabel, ScreenSample
-from pokemon_agent.world import W_TILEMAP
 
 from .storage import save_frames
+from .tiles import tiles_from_wram
 
 SOURCES = Path(__file__).resolve().parents[1] / "sources"
 BASIS = "evals/tasks/world_script_execute/regular_batch_1.py 文件顶层存档速记"
@@ -61,21 +61,18 @@ def freeze_terrain() -> None:
     for case in CASES:
         world = start_world(SOURCES / "states" / case.state, (), case_id=case.case_id)
         try:
-            memory = world._pyboy.memory
+            wram = world.read_wram()
             frames.append(
                 ScreenSample(
                     sample_id=f"terrain:{case.case_id}",
                     source="terrain_snapshot",
                     category="",
                     in_battle=False,
-                    tiles=[
-                        [memory[W_TILEMAP + row * 20 + column] for column in range(20)]
-                        for row in range(18)
-                    ],
+                    tiles=tiles_from_wram(wram),
                     frame_png=world.perceive_task().frame_png,
                     label=ScreenLabel(scene="walk", overlay="none"),
                     terrain_truth=case.truth,
-                    wram=base64.b64encode(zlib.compress(bytes(memory[0xC000:0xE000]), 9)).decode(),
+                    wram=base64.b64encode(zlib.compress(wram, 9)).decode(),
                     note=f"地形事实依据：{case.basis}；文字、接管与完整 walk_map 未标",
                 )
             )

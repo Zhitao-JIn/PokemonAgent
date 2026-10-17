@@ -87,6 +87,8 @@ execute 在任何 MCP 调用前按请求观测校验单键掩码或脚本条目�
 | `reset` | `(req: …ResetReq) -> None` | 只有 Req；绑定起点时额外传 state_base64，未绑定则不加该键 |
 | `use_start_state` | `(path: Path \| None) -> None` | WorldMcpTool 扩展入口：读取非空起点字节，每次 reset 持续生效；None 清除 |
 | `read_wram` | `() -> bytes` | WorldMcpTool 扩展入口：只读 WRAM，经 MCP 解码并断言长度 8192 |
+| `press` | `(segments: list[tuple[str, int]], *, settle=True) -> None` | WorldMcpTool 评测直连口：直接调 server 的 step、带 client_id，不做掩码断言 |
+| `call_script` | `(name: str, args: dict) -> dict` | WorldMcpTool 评测直连口：直接调同名脚本 tool、带 client_id，返回完整信封；脚本失败码不抛、server 侧异常上抛 |
 | `perceive_task` | `() -> …PerceiveTaskResp` | run / episode / task 统一使用，不调模型、不失败 |
 | `evolve` | `(req: …EvolveReq) -> None` | 只有 Req（MCP 面不提供） |
 | `save_state` / `load_state` | Req（+Resp） | 路径由 harness 给，本层原子写文件 |
@@ -126,7 +128,7 @@ restore_memory；`/health.admin` 报告开关，未开放时门面抛 MemoryAdmi
 | 工厂 | 造什么 | 住哪 |
 |---|---|---|
 | `BrainTool.build(*, text=…, judge=…, verify=…, plan=…, max_tokens=…)` | `BrainLlmConfig` + providers + `Brain` | `direct/brain_tool.py` |
-| `WorldMcpTool.build(*, world_server_url, client_id=None)` | 连接 world server，地址必填；缺地址在装配期抛 `McpTransportError` | `mcpclient/world_tool.py` |
+| `WorldMcpTool.build(*, world_server_url, client_id=None)` | 连接 world server，地址必填；缺地址在装配期抛 `McpTransportError`；`client_id` 缺省优先级 = 参数 > `MCP_WORLD_CLIENT_ID` > `harness-<pid>` | `mcpclient/world_tool.py` |
 | `MemoryTool.build(*, memory_server_url, memory_root=None)` | 只经 MCP；地址必填（装配点可读 env `MCP_MEMORY_SERVER_URL`），缺地址即报错 | `mcpclient/memory_local.py` |
 | `TraceTool.build(*, run_id, trace_root)` | `LocalTrace` | `direct/trace/__init__.py` |
 

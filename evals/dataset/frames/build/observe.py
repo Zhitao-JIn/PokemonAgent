@@ -1,6 +1,6 @@
 """一帧样本 → task 层执行器会看到的观测。
 
-与 `PyBoyWorld._ram_observe` 同一套解码与渲染（地形字段除外）。
+与生产世界 `_ram_observe` 同一套解码与渲染（地形字段除外）。
 """
 
 from __future__ import annotations

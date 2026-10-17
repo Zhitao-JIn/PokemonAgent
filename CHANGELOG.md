@@ -1,3 +1,32 @@
+## 2026-10-17（483）—— 评测脚本改走 MCP（批 ③b）
+
+**改了什么**：评测脚本全部改走 MCP——`evals/common/world_case.py` 经 WorldMcpTool
+起世界、读帧、归还租约；WorldMcpTool 增加评测直连口 `press` 与 `call_script`
+（不做掩码断言，`client_id` 缺省按参数 > `MCP_WORLD_CLIENT_ID` > `harness-<pid>`）；
+`world_script_execute` 由脚本信封映射 `ScriptReport`、`--workers` 删除改串行；
+`freeze.py`/`terrain.py` 用 `read_wram` + 纯函数 `tiles_from_wram` 派生图块矩阵；
+`pack.py` 去掉 NotImplementedError，先清空记忆再 `use_start_state` 打包；
+`memory_store_recall` 清空评测专用记忆库后评测；`agent_short_goal_run` 删除
+`knowledge`/`speed`/`watch` 三个旋钮及其全链路管线。
+
+**为什么这么改**：memory 与 world 已只保留 MCP 形态（批 ①–③a），评测却仍在进程内
+new 模拟器、写本地记忆库，两条实现路径已经分叉；把这些评测脚本迁到 MCP 才能让
+"进程内模拟器 / 进程内记忆"彻底没有第二个实现，speed/watch 也随之只剩 world server
+命令行一个入口。
+
+**取舍**：新增 `evals/common/memory_server.py::clear_memory`（空 zip 还原 ⇒ 全删）作为
+pack 与 memory_store_recall 共用的清库动作；删除 knowledge 拷贝管线（先验改由样本存档
+的 restore 决定）、speed/watch 评测侧管线；`build.py`（裸 PyBoy 的离线采帧工具）本批
+不动，留作遗留项。
+
+**影响面**：评测前置条件变为——①world server 已起（带或不带 `--state-file` 均可，
+`--watch`/`--speed` 在 server 命令行设置）；②memory server 已起并带 `--enable-admin`，
+且是评测专用实例（pack 与 memory_store_recall 会清空它，restore 会覆盖它）；③设好
+`MCP_WORLD_SERVER_URL`、`MCP_MEMORY_SERVER_URL` 两个环境变量；④评测串行。
+`evals/config.json` 删除 `knowledge`/`speed`/`watch` 三个键（`REQUIRED_KEYS` 同步），
+`world_script_execute` 的 `--workers` 删除。`state_schema_hash` 不变
+（`4f1cac6fcc7216d5`）。
+
 ## 2026-10-17（482）—— world server 增加 reset 起点与读 WRAM（批 ③a）
 
 **改了什么**：WorldPort 与 world server 的 reset 接受可选字节起点，优先于启动时的存档；

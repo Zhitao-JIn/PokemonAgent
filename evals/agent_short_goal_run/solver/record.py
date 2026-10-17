@@ -21,8 +21,6 @@ class RunOneRequest(BaseModel):
     sample_id: str
     epoch: int = 1
     models: dict[str, str]
-    knowledge: bool
-    speed: int
     trace_backend: str
     version: str
 

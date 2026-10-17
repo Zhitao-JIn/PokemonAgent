@@ -6,13 +6,17 @@
 起点存档缺失或被拒载记 `invalid`（先跑
 `python -m evals.agent_short_goal_run.dataset.build.pack` 重打），
 run 自己出错只记 `error`——它是被测系统的问题，由红线 R1 判。
+
+评测前置（本机跑评测前先满足）：①world server 已起（带或不带 `--state-file` 均可，
+`--watch`/`--speed` 在 server 命令行设置）；②memory server 已起并带 `--enable-admin`，
+且是评测专用实例（pack 与 memory_store_recall 会清空它，restore 会覆盖它）；
+③设好两个环境变量 `MCP_WORLD_SERVER_URL`、`MCP_MEMORY_SERVER_URL`；④评测串行。
 """
 
 from __future__ import annotations
 
 import json
 import os
-import shutil
 from pathlib import Path
 
 from evals.agent_short_goal_run.dataset.loader import DATASET_DIR
@@ -27,12 +31,6 @@ from .archive import prepare_archive
 RUN_RECORD = "run.json"
 RUN_RESULT = "run_result.json"
 
-ROM = "assets/rom"
-"""ROM 路径，相对仓库根（`assets/` 不进 git）。"""
-
-KNOWLEDGE_DIR = REPO_ROOT / "memory" / "knowledge_memory"
-"""知识库源目录；开知识时整个拷进样本的记忆根。"""
-
 
 def run_one(
     sample: EvalSample,
@@ -40,11 +38,8 @@ def run_one(
     models: dict[str, str],
     *,
     run_config_path: str,
-    knowledge: bool,
-    speed: int,
     epoch: int = 1,
     trace_backend: str = "local",
-    watch: bool = False,
 ) -> None:
     """跑一条样本并写 `run.json`。前置条件：当前工作目录是仓库根（存档清单里的路径相对它）。
 
@@ -52,7 +47,6 @@ def run_one(
     同一样本的各 epoch 互不残留（R3 的 eval_set 按 epoch 起子进程）。
     `trace_backend`：与 scorer 的读账后端同源（langfuse 需本机服务在跑）。
     `run_config_path`：task 落盘的预算配置；子进程原路径传给唯一装配点。
-    `watch`：开 SDL 窗口人看模拟器（默认无头批量）。
     """
     assert Path.cwd().resolve() == REPO_ROOT.resolve(), "run_one 要从仓库根起跑"
     assert epoch >= 1, "epoch 从 1 起"
@@ -63,10 +57,6 @@ def run_one(
         "memory_root": work / "memory",
         "checkpoint_root": work / "checkpoints",
     }
-    if knowledge and KNOWLEDGE_DIR.is_dir():
-        shutil.copytree(
-            KNOWLEDGE_DIR, roots["memory_root"] / "knowledge_memory", dirs_exist_ok=True
-        )
 
     # 步骤 1：起点——直读数据层里**打包好的** run 级存档（打包是数据准备动作，见 data/pack.py）。
     run_id = run_id_for(sample.sample_id, epoch)
@@ -86,8 +76,6 @@ def run_one(
 
     # 步骤 2：从存档恢复出新执行线，跑到 run 结束。
     def build_branch(branch: str) -> RunRuntime:
-        # trace_backend 与 scorer 的读账后端同源（config.json 的 trace_backend）；
-        # watch 开 SDL 窗口（config.json 的 watch）。
         # trace_root 只对 local 后端有意义——langfuse 传了会被 TraceTool.build 拒收。
         roots_kw = {
             "memory_root": roots["memory_root"],
@@ -156,4 +144,4 @@ def _load_env(path: Path) -> None:
             os.environ.setdefault(key.strip(), value.strip())
 
 
-__all__ = ["ROM", "run_id_for", "run_one"]
+__all__ = ["run_id_for", "run_one"]

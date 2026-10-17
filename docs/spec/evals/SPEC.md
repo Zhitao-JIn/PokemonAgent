@@ -131,11 +131,17 @@ decode 的代码全部位于 `evals/decode/`：`dataset.py` 将帧转为用例�
 
 真实模型测试使用配置型号；三个 B 类任务的确定性指标不调用模型。
 
+需要真实模拟器 / 记忆服务的评测（world_script_execute、agent_short_goal_run、
+memory_store_recall、pack）在本机跑之前须满足：①world server 已起（带或不带
+`--state-file` 均可；`--watch`/`--speed` 在 server 命令行设置）；②memory server 已起并带
+`--enable-admin`，且是评测专用实例（pack 与 memory_store_recall 会清空它，restore 会覆盖它）；
+③设好两个环境变量 `MCP_WORLD_SERVER_URL`、`MCP_MEMORY_SERVER_URL`；④评测串行。
+
 ```powershell
 python -m evals.decode
 python -m evals.decode --frame p-option_screen
 python -m evals.decode --scene bag
-python -m evals.world_script_execute --workers 1
+python -m evals.world_script_execute
 python -m evals.memory_store_recall --k 5
 python -m pytest tests/integration/test_harness_integrity.py
 python -m evals.dataset.frames.build.freeze

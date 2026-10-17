@@ -2,8 +2,6 @@
   "version": "v1",
   "split": "val",
   "samples": [],
-  "knowledge": true,
-  "speed": 0,
   "timeout": 600,
   "budget": {
     "wall_clock_s": 600,
@@ -13,7 +11,6 @@
   "epochs": 1,
   "log_dir": "eval_results/inspect",
   "trace_backend": "local",
-  "watch": false,
   "evaluation_models": {
     "test_text": "openai-api/deepseek/deepseek-flash"
   },

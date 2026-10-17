@@ -75,8 +75,6 @@ def test_solver_request_carries_the_config_file_path(tmp_path, monkeypatch):
         report_dir=str(tmp_path),
         run_config_path=path,
         models={},
-        knowledge=False,
-        speed=0,
         timeout=600,
         transcript=False,
     )
@@ -103,8 +101,6 @@ def test_worker_passes_config_path_to_runner(tmp_path, monkeypatch):
         run_config_path=path,
         sample_id=SAMPLE_ID,
         models={},
-        knowledge=False,
-        speed=0,
         trace_backend="local",
         version="v1",
     )
@@ -182,8 +178,6 @@ def test_runner_reads_the_same_file_through_build_real(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "prepare_archive", lambda sample, work: "manifest")
     monkeypatch.setattr(runner, "restore_run", fake_restore)
 
-    runner.run_one(
-        sample, tmp_path / "sample", {}, run_config_path=str(path), knowledge=False, speed=0
-    )
+    runner.run_one(sample, tmp_path / "sample", {}, run_config_path=str(path))
 
     assert seen == [(path, digest)]

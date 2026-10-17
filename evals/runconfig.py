@@ -21,14 +21,11 @@ REQUIRED_KEYS: tuple[str, ...] = (
     "version",
     "split",
     "samples",
-    "knowledge",
-    "speed",
     "timeout",
     "budget",
     "epochs",
     "log_dir",
     "trace_backend",
-    "watch",
     "models",
 )
 """config.json 必须全填的键；缺一即错。"""

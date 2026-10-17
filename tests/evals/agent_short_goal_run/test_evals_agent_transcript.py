@@ -177,8 +177,6 @@ def test_solver_writes_store_and_scorer_uses_its_run_location(
         report_dir=str(tmp_path),
         run_config_path=str(tmp_path / "run_config.json"),
         models={},
-        knowledge=False,
-        speed=0,
         timeout=1,
         transcript=mode != "disabled",
         trace_backend="langfuse",
