@@ -228,8 +228,8 @@ pokemon_agent/
 │                     （MCP 远程 WorldMcpTool）/ `client.py`（同步外观异步内核）。
 │                     **四个接线工厂**：`BrainTool.build(text=…, judge=…,
 │                     verify=…, plan=…, max_tokens=…)` 造大脑 + 四个 provider、
-│                     `GameTools.build(rom, …, world_server_url=?)` 造 world 实现
-│                     （配了 URL 走 MCP，缺省进程内）、
+│                     `WorldMcpTool.build(world_server_url=…)` 连接 world server
+│                     （只经 MCP，URL 必填）、
 │                     `MemoryTool.build(memory_server_url=…, memory_root=…)` 只经 MCP（URL 必填）、
 │                     `TraceTool.build(run_id=…, trace_root=…)` 造 `LocalTrace`。
 │                     **"谁依赖 brain"的唯一答案就是 direct + mcpclient 两层**——

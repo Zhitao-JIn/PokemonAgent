@@ -1,4 +1,4 @@
-"""GameTools 的动作空间：`names` / `mask` / `entries` 只来自 world，game_tools 只补 prompt 文案。"""
+"""动作空间纯函数：names / mask / entries 来自 world，门面层只补 prompt 文案。"""
 
 from __future__ import annotations
 

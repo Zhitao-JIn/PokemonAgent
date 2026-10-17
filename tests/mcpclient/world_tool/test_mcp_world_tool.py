@@ -1,7 +1,7 @@
 """world 的 MCP 远程门面（`WorldMcpTool`）：信封翻译与传输是否真的对得上。
 
-**对得上谁**：与进程内 `GameTools` 的契约（`GameToolPort`）逐条对齐——同一张口、
-同一批信封，换的只是底下一跳。测试用 **in-memory MCP transport**（client 直连
+**契约**：`WorldMcpTool` 是 `GameToolPort` 的唯一实现，负责同一批信封的翻译与传输。
+测试用 **in-memory MCP transport**（client 直连
 server 实例，不起端口）+ `_FakeWorld`（不起真模拟器）。
 """
 

@@ -15,6 +15,10 @@ def main(mcp: FastMCP, start: Callable[[WorldPort, str | None], None], service_n
     parser = argparse.ArgumentParser(description="pokemon world MCP server")
     parser.add_argument("--rom", required=True, help="ROM 路径")
     parser.add_argument("--state-file", default=None, help="起点存档（不给 = 从开机起跑）")
+    parser.add_argument("--watch", action="store_true", help="在 server 所在机器打开模拟器窗口")
+    parser.add_argument(
+        "--speed", type=int, default=0, help="server 所在机器的模拟器速度；0 不限速"
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8767)
     args = parser.parse_args()
@@ -24,6 +28,8 @@ def main(mcp: FastMCP, start: Callable[[WorldPort, str | None], None], service_n
     world = PyBoyWorld(
         args.rom,
         state_path=args.state_file,
+        watch=args.watch,
+        speed=args.speed,
     )
     start(world, args.rom)
     mcp.settings.host = args.host

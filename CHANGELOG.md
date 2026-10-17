@@ -1,3 +1,14 @@
+## 2026-10-17（481）—— world 只保留 MCP 形态（批 ②b）
+
+**改了什么**：删除进程内 GameTools，WorldMcpTool 增加连接工厂；world 缺地址时在 memory 检查前报错，
+world server 命令行增加 --watch/--speed；迁移纯函数测试并以本地函数和字面契约替代旧实现对照。
+**为什么这么改**：世界运行链路只经 MCP，缺配置应在装配期失败，避免传入起点或旋钮却被静默忽略；
+pack 尚未通过 MCP 载入样本起点，因此两个打包入口先显式拒绝。
+**取舍**：不改 server 协议、模拟器行为和 prompt；保留状态模型及原有事件、文案与前置断言守卫，
+文档只同步事实性短语，图示及规范文件的其余历史引用列为遗留。
+**影响面**：build_real 删除 rom/state_file/watch/speed 四个参数（位置参数顺序变化）；
+评测的 pack 在批 ③ 前会大声失败、不要在批 ③ 合入前跑评测；watch/speed 改为 world server 命令行旋钮；evals 里 speed/watch 的上游管线留待批 ③。
+
 ## 2026-10-16（480）—— WorldMcpTool 补齐事件、提示文案与前置校验（批 ②a）
 
 **改了什么**：提取共用动作空间文案适配，WorldMcpTool 验回 server 掩码后补文案，

@@ -96,13 +96,9 @@ def run_one(
         if trace_backend == "local":
             roots_kw["trace_root"] = roots["trace_root"]
         harness, _game = build_real(
-            ROM,
-            None,
             run_id=run_id,
             branch=branch,
-            speed=speed,
             trace_backend=trace_backend,
-            watch=watch,
             config=run_config_path,
             **models,
             **roots_kw,

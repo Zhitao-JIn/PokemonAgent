@@ -97,7 +97,7 @@ def test_build_real_injects_the_budget_and_model_settings(tmp_path, monkeypatch)
     game, memory, trace = object(), object(), object()
     monkeypatch.setattr(assembly, "load_env_file", lambda: None)
     monkeypatch.setattr(assembly, "env_str", lambda name: "")
-    monkeypatch.setattr(assembly.GameTools, "build", lambda *args, **kwargs: game)
+    monkeypatch.setattr(assembly.WorldMcpTool, "build", lambda *args, **kwargs: game)
     monkeypatch.setattr(assembly.MemoryTool, "build", lambda **kwargs: memory)
     monkeypatch.setattr(assembly.TraceTool, "build", lambda **kwargs: trace)
     monkeypatch.setattr(assembly.BrainTool, "build", brain_build)
@@ -110,7 +110,10 @@ def test_build_real_injects_the_budget_and_model_settings(tmp_path, monkeypatch)
     monkeypatch.setattr(assembly, "assert_mcp_server_ready", lambda *args: {})
 
     harness, actual_game = assembly.build_real(
-        "unused", config=path, trace_backend="local", memory_server_url="http://example"
+        config=path,
+        trace_backend="local",
+        memory_server_url="http://example",
+        world_server_url="http://example",
     )
 
     assert actual_game is game

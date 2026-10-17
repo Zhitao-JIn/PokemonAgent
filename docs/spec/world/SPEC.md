@@ -176,7 +176,7 @@ world/
 | 形状 | 谁产出 | 谁消费 | 关键字段 |
 |---|---|---|---|
 | `Observation` | 内存观测的基础类型 | `TaskObservation`、旧账兼容读取 | `step`（占位 0，由 Harness 盖章）、`place: PlaceInWorld \| None`、`status`、`facts: Facts`、`done`；方法 `stall_key()` / `render(indent="  ")` |
-| `TaskObservation` / `TaskPerceived` | `PyBoyWorld.perceive_task()`（`task_perception.observe_task`） | run / episode / task：`GameTools.perceive_task` → `FromHarnessToGameToolPerceiveTaskResp`、`TaskState`、决策 / 反思 / 掩码 / 执行的信封、`sense_frame` 账（正文带 `scene`）、ActMemory 的前后帧（`scene` 字段） | `Observation` 的全部字段 + `scene: TaskScene`（场合，必有）+ `takeover: TakeoverView \| None`（脚本接管场合给视图）+ `covered_by_script: bool`（从场合派生的只读接管覆盖标志）。三层状态都声明为 `TaskObservation`，序列化保留 scene/takeover；`scene` 与 `Facts.Scene` 是不同字段 |
+| `TaskObservation` / `TaskPerceived` | `PyBoyWorld.perceive_task()`（`task_perception.observe_task`） | run / episode / task：`WorldMcpTool.perceive_task` → `FromHarnessToGameToolPerceiveTaskResp`、`TaskState`、决策 / 反思 / 掩码 / 执行的信封、`sense_frame` 账（正文带 `scene`）、ActMemory 的前后帧（`scene` 字段） | `Observation` 的全部字段 + `scene: TaskScene`（场合，必有）+ `takeover: TakeoverView \| None`（脚本接管场合给视图）+ `covered_by_script: bool`（从场合派生的只读接管覆盖标志）。三层状态都声明为 `TaskObservation`，序列化保留 scene/takeover；`scene` 与 `Facts.Scene` 是不同字段 |
 | `TaskScene` / `SCRIPT_ONLY_SCENES` | `scene.classify_scene()` | task 层、读屏测评 | 16 类场合，见 `docs/perceive/spec.md` 第三节 |
 | `Facts` | `PyBoyWorld` 拼装 | harness 交互判定、`direct/prompts`、记忆检索 query | 具名 `scene`/`overlay`/`where`/`facing`/`neighbors`/`landmarks`/`dialog_text`/`options`/`cursor`/`walk_map`/`map_id`；`extra="allow"` 接住内存派生的额外字段；`scene_value` / `overlay_value` / `exclude(keys)` / `items()` / `stall_key_part()` / `render()` |
 | `Facts.Scene` | 内存战斗标志（战斗或空） | 掩码与 prompt | `FIELD` `INDOOR` `BATTLE` `MENU` `SHOP` `TRANSITION` |
@@ -230,7 +230,7 @@ TaskObservation 另带 `menu_decode_complete: bool | None`（生产取 ScreenTex
 task 决策的当前帧显示由 `direct/prompts/task_frame.py` 按场合与叠加层投影，不改变完整观测、历史记忆或 decode 输出。开放按键的帧显示 task `scene`、`covered_by_script`、`overlay`；walk/none 与 shop/none 给位置、朝向、地标与地形（网格与四邻择一），纯对话给对话文字，dialog/shop 交谈另保留地点，选单和信息页优先给整屏文字以避免切分遗漏，不重复列 options/cursor/layout。战斗文字保留双方状态。脚本接管帧显示覆盖标志、业务视图、overlay、已解码光标及整屏文字以支持方向键导航；缺业务视图时用整屏文字兜底，不显示地形或 at_start。整屏显示只省略空白行和行尾空格；无可显示内容时明确提示不能据此判断界面结束。目标、合法动作和上一脚本结果继续由各自段落提供。实际帧组合与静态下一步核对见 `docs/SCENE_OVERLAY_EXAMPLES_1007.md`，不代替模型选择与脚本执行验证。
 
 脚本接管场合里 JEV 可以用基础按键导航，或选一条带参数的业务脚本；选择脚本时由 world 执行到底。所有脚本统一使用脚本动作
-（`ActionEntry`，`kind="script"`，经 `GameTools.execute` 的脚本通道执行，记 `act_call` script 形），
+（`ActionEntry`，`kind="script"`，经 `WorldMcpTool.execute` 的脚本通道执行，记 `act_call` script 形），
 差别在可用场合和脚本选择的规则，执行现场相同。**对外名 = 场合前缀 + 文件内短名**（`shop_quit` = `shop` + `quit`），
 前缀表 `scenes.PREFIX` 是唯一规则。每个场合一个文件，每条只写**前提校验 + 执行 + 收尾**，
 这些脚本通过 `definitions.run_definition` 执行显式声明的 `menu_policy`：
@@ -277,7 +277,7 @@ PC 道具走主角的 PC、宝可梦与换箱走比尔的 PC；打开时 "Access
 **出边为零**：`world/` 内唯一的绝对 import 是 `from pokemon_agent.world import …`
 （`pyboy_world.py:26`），其余全是相对 import。⇒ 整个 `world/` 拷进另一个项目仍能跑。
 
-**谁能碰实现**：门面层与指定的 world MCP 服务适配器。`GameTools.build()` 创建 `PyBoyWorld`；
+**谁能碰实现**：门面层与指定的 world MCP 服务适配器。`mcp_servers/world_server_cli.py` 创建 `PyBoyWorld`；
 其余消费者通过 Port 或公开数据形状取值。world 不依赖 brain，也不持有模型 provider。
 
 **核对脚本**：`python scripts/check_world_self_contained.py`（退出码 0 = 全过），查三类：
@@ -288,7 +288,7 @@ PC 道具走主角的 PC、宝可梦与换箱走比尔的 PC；打开时 "Access
   `pokemon_agent.world` 与 `pokemon_agent.world.interface*`；白名单式——新增一个
   `world/xxx.py` 默认就是"实现面"，要放行得改 `ALLOWED_OUTSIDE_TOOLS`。
 - **C〔装配点零 import〕**：`build.py` 一个字都不许 import `pokemon_agent.world`
-  （`GameTools.build()` 在 tool 层）。
+  （`WorldMcpTool.build()` 在 tool 层）。
 
 末尾另打印一份**账本**（不算失败）：非 tool 侧对 world 数据形状的 import 点，当前 **12 处**
 （`harness/episode` 4、`schemas/harness/communication` 8）。`AGENTS.md` 第十二节第 4 条登记的
@@ -304,8 +304,7 @@ PC 道具走主角的 PC、宝可梦与换箱走比尔的 PC；打开时 "Access
 - `_Task` 的 docstring 写"`reset()`/`set_task()` 收到的裸字段"，但 `WorldPort` 与
   `PyBoyWorld` **都没有 `set_task()`**。
 - `evolve()` 的 docstring 自称"仍是 `WorldPort` 契约的一部分"，但 `world_port.py`
-  只声明了 7 个方法，**没有声明 `evolve`**；它当前的唯一调用方是
-  `mcpclient/game_tools.py::GameTools.evolve`。
+  只声明了 7 个方法，**没有声明 `evolve`**；当前没有生产调用方，MCP 面不提供此方法。
 - `TerrainMap.cells` 的字段说明引用
   `pokemon_agent.schemas.world.domain.screen_model.MAP_CHARS`——该路径已无对应文件
   （`pokemon_agent/schemas/world/` 只剩空的 `communication/`、`domain/` 两个目录），

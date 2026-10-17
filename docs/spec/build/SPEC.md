@@ -9,7 +9,7 @@
   它只做一件事：造 `TaskRuntime` → `EpisodeRuntime` → `RunRuntime`（逐层嵌套），再用它们造 `RunHarness`。
 - **对四个独立模块零 import**：本文件顶部只 import `pokemon_agent.harness` / `harness.null_reviewer` /
   `pokemon_agent.tools`——`brain` / `world` / `memory` / `trace` 的实现类一个都不出现，要什么全经工具层工厂拿。
-- **只递裸字段**：型号名、ROM / 存档路径、`run_id`——不传 `*Config` 对象、不传 provider 实例；
+- **只递裸字段**：型号名、server 地址、`run_id`——不传 `*Config` 对象、不传 provider 实例；
   **不装图、不跑 run**（节点表与边住 `harness/run/run_graph.py` / `harness/episode/episode_graph.py`，
   开局编排住 `harness/run/run_entry.py::new_run`）。
 - **`config.py`**：全项目唯一的**策略常量**集中地，分四组（重试预算 / 动作输出上限 / 循环控制 / 召回与判定）。
@@ -18,11 +18,11 @@
 
 ## 二、装配出的对象与来源
 
-`build_real(...)` 返回 `tuple[RunHarness, GameTools]`。内部逐个：
+`build_real(...)` 返回 `tuple[RunHarness, WorldMcpTool]`。内部逐个：
 
 | 对象 | 类型（协议） | 唯一来源 | 装配点递的裸字段 |
 |---|---|---|---|
-| `game` | `GameTools`（`GameToolPort`） | `GameTools.build(rom, state_path=…, watch=…, speed=…)` | ROM 路径、存档、两个旋钮 |
+| `game` | `WorldMcpTool`（`GameToolPort`） | `WorldMcpTool.build(world_server_url=…)` | 地址显式参数优先于 MCP_WORLD_SERVER_URL；缺地址在 memory 检查前抛 McpTransportError，有地址先检查 /health |
 | `trace_tool` | `TraceTool`（`TraceToolPort`） | `TraceTool.build(run_id=…, trace_root=…)` | `run_id`、`trace_root` |
 | `memory` | `MemoryTool`（`MemoryToolPort`） | `MemoryTool.build(memory_server_url=…, memory_root=…)` | 只经 MCP；缺地址在装配期抛 `McpTransportError`；`memory_root` 仅作客户端快照根 |
 | `run_brain` / `episode_brain` / `task_brain` | `BrainTool`（容器） | `BrainTool.build(...)` **按需各造一份**：run 只传 `plan=`，episode 传 `text/judge/verify=`，task 只传 `text=` | 各自的型号名 + 输出上限 |
@@ -39,17 +39,17 @@
 - **`reviewer` 缺省 `NullReviewer`（没人插话）**；plan 位置的规划来源就是 brain
   （185 起注入的 `planner` 能力对象），没有独立的 planner 装配。
 - **`reviewer` 必须是同一份策略对象**（`plan` 插话与 `review` 审两处读）；**`world` 与事件流都不在返回值里**
-  （world 归 `GameTools` 持有，账一律经 `deps.trace` 读写）。
+  （world 归 server 持有，调用方持有 `WorldMcpTool`，账一律经 `deps.trace` 读写）。
 
-`build_real` 的参数（缺省值即工厂缺省）：`rom`、`state_file=None`、
+`build_real` 的参数（缺省值即工厂缺省，全部调用点使用关键字）：
 `text_model="qwen-plus"`、`judge_model="qwen3.8-max"`、`verify_model="doubao-seed-2-1-pro-260628"`、
-`plan_model="doubao-seed-2-1-pro-260628"`、`max_tokens=25600`、`watch=False`、`speed=0`、
-`run_id="local"`、`trace_root=None`、`memory_root=None`、`checkpoint_root=None`、`branch="main"`（两个落盘根：缺省 = **进程启动目录**
+`plan_model="doubao-seed-2-1-pro-260628"`、`max_tokens=25600`、
+`run_id="local"`、`trace_root=None`、`memory_root=None`、`memory_server_url=None`、`world_server_url=None`、`checkpoint_root=None`、`branch="main"`（两个落盘根：缺省 = **进程启动目录**
 下的 `tracelog/` 与 `memory/`，0916 起——数据跟着启动走，不再锚在仓库根；
 memory 只有一个根，四族各占其下 `<kind>/`）、
 `reviewer=None`。
 
-**tool 层的接线工厂共四个**：`BrainTool.build` / `GameTools.build` / `MemoryTool.build` /
+**tool 层的接线工厂共四个**：`BrainTool.build` / `WorldMcpTool.build` / `MemoryTool.build` /
 `TraceTool.build`（四个 classmethod）。另有一个不在 tool 层的
 `brain/build_llm_providers.py::build_llm_providers(config)`（由 `BrainTool.build()` 内部调）；`build.py` 一个都不越过。
 
@@ -58,7 +58,7 @@ memory 只有一个根，四族各占其下 `<kind>/`）、
   前缀不认识 → **装配期** `ValueError`，不拖到第一次调用才 404。
 - **温度分层**（`brain/build_llm_providers.py` 的常量，不是旋钮）：`DECIDE_TEMPERATURE = 0.3`
   （决策链）、`DETERMINISTIC_TEMPERATURE = 0.0`（judge / verify / plan）。
-- **两个旋钮互相独立**：`watch` 管开不开 SDL 窗口，`speed` 管倍率（`0` 不限速、`1` 真实速度）。
+- **server 命令行旋钮**：`--watch` 管 server 所在机器的 SDL 窗口，`--speed` 管倍率（`0` 不限速、`1` 真实速度）；这两项不再是 build_real 参数。
 
 ## 三、环境变量
 

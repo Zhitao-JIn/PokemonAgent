@@ -25,7 +25,7 @@ import tempfile
 from pathlib import Path
 
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
-from evals.agent_short_goal_run.solver.runner.one import ROM, _load_env, run_id_for
+from evals.agent_short_goal_run.solver.runner.one import _load_env, run_id_for
 from evals.paths import REPO_ROOT
 from pokemon_agent.brain import Task
 from pokemon_agent.build import build_real
@@ -42,6 +42,7 @@ def pack_one(sample: EvalSample, version: str) -> Path:
     前置条件：`sample.start.kind == "archive"` 且来源 `.state` 存在、哈希与
     `source_sha256` 一致。失败：哈希不符 / 起点缺失 / 打包没落 checkpoint_save → 异常上抛。
     """
+    raise NotImplementedError("打包的起点存档尚未经 MCP 载入，待 mcp-only 批 ③；不要在此之前打包")
     state = DATASET_DIR / version / sample.start.source_state
     if not state.is_file() or sha256_of(state) != sample.start.source_sha256:
         raise ValueError(f"来源 .state 缺失或哈希对不上：{sample.start.source_state}")
@@ -56,9 +57,7 @@ def pack_one(sample: EvalSample, version: str) -> Path:
             "memory_root": tmp / "memory",
             "checkpoint_root": tmp / "checkpoints",
         }
-        harness, _game = build_real(
-            ROM, str(state), run_id=run_id, speed=0, trace_backend="local", **_models(), **roots
-        )
+        harness, _game = build_real(run_id=run_id, trace_backend="local", **_models(), **roots)
         task = Task(
             task_id=sample.sample_id,
             goal=sample.goal,
@@ -112,6 +111,7 @@ def _models() -> dict[str, str]:
 
 def main(argv: list[str] | None = None) -> int:
     """命令行入口（数据准备工具，非 eval 跑批入口）。"""
+    raise NotImplementedError("打包的起点存档尚未经 MCP 载入，待 mcp-only 批 ③；不要在此之前打包")
     parser = argparse.ArgumentParser(prog="python -m evals.agent_short_goal_run.dataset.build.pack")
     parser.add_argument("--version", default="v1")
     parser.add_argument("--samples", default="", help="逗号分隔的样本 id；缺省打全部")

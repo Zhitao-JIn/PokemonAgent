@@ -12,7 +12,7 @@
 - **`mcpclient/`**：`tools/` 拆出的对外一半，**带逻辑属性**——memory / world 两个
   门面随迁（`memory_tool.py` 实现 `MemoryToolPort`、`world_tool.py` 实现
   `GameToolPort`）：**信封翻译与组装逻辑由 mcpclient 担任**（升序 / 判重 /
-  键拼装随迁自原 MemoryTool / GameTools），底层调用换成 MCP client 转发。
+  键拼装由门面负责），底层调用换成 MCP client 转发。
   **不持账本坐标**——三章（episode_id/step/run_id）归 harness 判定层。
 - **`mcp_servers/memory_server`**：`MemoryStorePort` 11 方法的 1:1 JSON 直译，
   **零领域逻辑**。持有 MemoryStore 与两个本地检索 provider（配置注入）。
@@ -290,7 +290,7 @@ ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已�
 ## 七、world server——脚本层（37 条，一脚本一 API）
 
 全部脚本使用同一执行通道；按业务场合分文件的实现放在 `scripts/scenes/`。
-进程内经 `GameTools.execute` 执行，MCP 面经 `WorldMcpTool.execute` 调用同名工具。泛型 run_script 废。
+经 `WorldMcpTool.execute` 调用 server 同名脚本工具。泛型 run_script 废。
 成功谓词机械可判；终态报告统一带 `events[]` 与现状快照。
 
 全部 37 条脚本用显式函数签名注册，
@@ -409,15 +409,15 @@ no_response`（确认无反应是合法结果）；其它场合（choice/battle 
 - `mcpclient/memory_tool.py`：实现 `MemoryToolPort`（收敛后两方法 `recall` /
   `memorize`，信封面，harness 消费不变）——薄转发至 server 对应 tool；
   分族/融合/判重逻辑仅由 server 调用 `memory/recall.py` 实现；
-- `mcpclient/world_tool.py`：实现 `GameToolPort`（信封面）——原 GameTools 的
-  信封翻译随迁，world 调用换 MCP 转发（脚本动作入口也在此）；
+- `mcpclient/world_tool.py`：实现 `GameToolPort`（信封面）——信封翻译与 MCP 转发（脚本动作入口也在此）；
   get_action_space 保留 server 掩码并通过共用 with_prompt_text 补静态文案，只看 overlay 与
   covered_by_script，不改 prompt 模板顺序；execute 在发出 MCP 调用前按请求观测本地校验
-  单键掩码及脚本条目，错误文本同 GameTools，键响应保留 data.event（缺失或 null 为 None）；
+  单键掩码及脚本条目，错误文本符合执行前置契约，键响应保留 data.event（缺失或 null 为 None）；
 - **不持账本坐标**：三章由 harness 判定层补——mcpclient 持有的是
   "信封↔裸面"翻译与转发，不是账本行为；
 - **memory 只经 MCP**：`memory_server_url` 必填，装配点可读取 `MCP_MEMORY_SERVER_URL`，缺地址抛 `McpTransportError`；有地址仍检查 `/health`。
-  world 暂保留 server_url 缺省时的进程内实现。
+  world 同样只经 MCP，缺 MCP_WORLD_SERVER_URL 或显式地址时在 memory 检查前报错；
+  --watch / --speed 由 world server 命令行提供，仅在 server 所在机器生效。
 
 ## 十、验证（全部 pytest，无测评体系）
 

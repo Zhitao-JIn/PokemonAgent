@@ -52,7 +52,6 @@ pokemon_agent/direct/                brain / trace 半边（原 tools/ 的上半
 
 pokemon_agent/mcpclient/             memory / world 半边（原 tools/ 的下半）
 ├── client.py                        McpClient（同步外观 / 异步内核）+ 端点与健康探针
-├── game_tools.py                    GameTools（GameToolPort 进程内实现；MCP 模式转交 WorldMcpTool）
 ├── world_tool.py                    WorldMcpTool（GameToolPort 的 MCP 远程门面）
 ├── memory_local.py                  MemoryTool（MemoryToolPort 的 MCP 信封适配层）
 ├── memory_tool.py                   MemoryMcpTool（MemoryToolPort 的 MCP 远程门面）
@@ -74,12 +73,11 @@ pokemon_agent/mcpclient/             memory / world 半边（原 tools/ 的下�
 转成 brain 的 `ScriptSignature` 随 `keys` 交给 `Brain.choose`；脚本调用
 不过 `_normalize` 的按键规则，语义校验归 world 执行器。
 
-**`GameToolPort`（进程内实现 `mcpclient/game_tools.py::GameTools`；
-MCP 远程门面 `mcpclient/world_tool.py::WorldMcpTool`）**：
+**`GameToolPort`（唯一实现 `mcpclient/world_tool.py::WorldMcpTool`，只经 MCP 访问世界）**：
 
 WorldMcpTool 验回 server 的掩码后，用共用的 `with_prompt_text` 补按键说明、连按用法与地图规则；
 文案只依赖 overlay 与 covered_by_script，不包含每帧数据，prompt 模板顺序不变。
-execute 在任何 MCP 调用前按请求观测校验单键掩码或脚本条目，断言与 GameTools 一致；
+execute 在任何 MCP 调用前按请求观测校验单键掩码或脚本条目，断言执行前置契约；
 键动作把 server 的 `data.event` 原样带入 `resp.event`（缺失或 null 为 None），脚本事件仍在 report 中。
 
 | 方法 | 签名 | 信封文件 |
@@ -126,7 +124,7 @@ restore_memory；`/health.admin` 报告开关，未开放时门面抛 MemoryAdmi
 | 工厂 | 造什么 | 住哪 |
 |---|---|---|
 | `BrainTool.build(*, text=…, judge=…, verify=…, plan=…, max_tokens=…)` | `BrainLlmConfig` + providers + `Brain` | `direct/brain_tool.py` |
-| `GameTools.build(rom, *, state_path, watch, speed, world_server_url=None)` | 配了 `world_server_url`（裸字段，env `MCP_WORLD_SERVER_URL` 只是缺省来源）→ `WorldMcpTool`；否则 `PyBoyWorld` | `mcpclient/game_tools.py` |
+| `WorldMcpTool.build(*, world_server_url, client_id=None)` | 连接 world server，地址必填；缺地址在装配期抛 `McpTransportError` | `mcpclient/world_tool.py` |
 | `MemoryTool.build(*, memory_server_url, memory_root=None)` | 只经 MCP；地址必填（装配点可读 env `MCP_MEMORY_SERVER_URL`），缺地址即报错 | `mcpclient/memory_local.py` |
 | `TraceTool.build(*, run_id, trace_root)` | `LocalTrace` | `direct/trace/__init__.py` |
 

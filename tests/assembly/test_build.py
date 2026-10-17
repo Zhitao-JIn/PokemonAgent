@@ -1,7 +1,7 @@
 """`build_real` 的 trace 后端透传核对：装配点只递裸字段，选择收在 tool 工厂。
 
-**为什么用 AST 而不真跑 `build_real`**：装配点第一行就 `GameTools.build(rom)`
-——真跑它会拉起 PyBoy / ROM，而本项目红线明确"测试不碰模拟器"。backend 透传
+**为什么用 AST 而不真跑 `build_real`**：装配点会经 `WorldMcpTool.build` 连接服务，
+静态核对不需要网络、模拟器或模型。backend 透传
 是纯接线事实（`build_real(trace_backend=…)` → `TraceTool.build(backend=…)`），
 静态核对调用点的关键字实参就是这句话的可执行版本——与
 `scripts/check_trace_self_contained.py` 用 AST 核对 import 边界同一条思路。

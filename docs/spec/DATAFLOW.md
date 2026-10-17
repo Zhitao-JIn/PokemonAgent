@@ -113,7 +113,7 @@ task_done = verify_act_memories → summarize_task → close_task
 - `sense` 每圈都取帧（步号 = `start_step + step`）；中间三个单元只在上一圈按过键时写
   （停摆、ActMemory、物件事件）；`close_step` 把新帧转正（上一圈按过键才记 `advance_step`）。
 - 帧槽只由 task 的 `sense` 写、只由 `store_step_episode_memory` 读（ActMemory 的前后两张图）。
-- **脚本动作**（脚本统一执行）：`act` 经 `GameTools.execute` 的脚本通道执行到底，记 `act_call`
+- **脚本动作**（脚本统一执行）：`act` 经 `WorldMcpTool.execute` 的脚本通道执行到底，记 `act_call`
   script 形，终态报告写进 `last_report`、一行结果（调用 → 结局码：摘要或原因）写进 `last_result`；
   下一圈 ActMemory 的 `result` 写结果那一句，停摆按结果比（没执行到位的脚本不论参数都按"脚本名 + 结局码"算同一个
   无效动作，执行到位的带结果那一句，战斗里同一招连出、HP 在变不算停摆），下一次决策的 prompt 在观测之后带上 `last_result`。

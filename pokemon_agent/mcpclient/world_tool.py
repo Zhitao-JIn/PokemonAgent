@@ -2,12 +2,11 @@
 同一张口。
 
 **信封翻译在这里，判定不在**：`Task` → 裸字段、`TaskPerceived` → 信封、存档的
-base64 ↔ 文件——全是原 `mcpclient/game_tools.py` 的职责，随迁到
-这一层（mcpclient 带逻辑属性，2026-09-29 定案）。server 只做 `WorldPort` 的
+base64 ↔ 文件——由门面负责。server 只做 `WorldPort` 的
 直译，一点领域判断都没有。
 
 **已知缺口**（刻意不在这里打补丁）：
-- **`evolve`**：无输入推进。当前全仓零调用方（只有 `GameTools.evolve` 自己），
+- **`evolve`**：无输入推进。当前全仓零调用方，
   7 条原子里没有它，故 MCP 面不提供。
 """
 
@@ -45,6 +44,22 @@ class WorldMcpTool:
     def __init__(self, client: McpClient, client_id: str | None = None) -> None:
         self._client = client
         self._client_id = client_id or f"harness-{__import__('os').getpid()}"
+
+    @classmethod
+    def build(cls, *, world_server_url: str, client_id: str | None = None) -> WorldMcpTool:
+        """连接 world server；空地址抛 ValueError，传输失败向上传递。
+
+        调用方提供非空地址；启动客户端并保留租约身份，不探活。
+        /health 由装配点在 run 开始前检查。
+        """
+        if not world_server_url.strip():
+            raise ValueError("world 只经 MCP：请设置 MCP_WORLD_SERVER_URL")
+
+        from pokemon_agent.mcpclient.client import McpClient, mcp_endpoint
+
+        client = McpClient(mcp_endpoint(world_server_url))
+        client.start()
+        return cls(client, client_id=client_id)
 
     @property
     def client_id(self) -> str:
@@ -105,6 +120,7 @@ class WorldMcpTool:
         前置条件：动作在 req.observation 的空间内；键为单键，脚本条目 enabled。
         违约在任何 MCP 调用前断言失败；传输错误向上传递。
         后置条件：键响应保留本键裸事件（缺失或 null 为 None），脚本响应保留终态报告。
+        所有公开脚本走同名 tool；内部 shop_buy/shop_sell 由买卖脚本组合调用。
         """
         action = req.action
         space = action_space_for(req.observation, list(ALL_BUTTONS))

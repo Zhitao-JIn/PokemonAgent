@@ -18,7 +18,7 @@ trace）的要求是**实现依赖只允许落在 tool 层**；这条此前只�
   `GameToolPort` 或数据形状说话。
 - **C〔装配点零 import〕**：`build.py` **一个字都不许** import `pokemon_agent.world`
   ——四个模块的实现都由 tool 层的接线工厂造（`BrainTool.build` /
-  `GameTools.build` / `MemoryTool.build` / `TraceTool.build`），装配点只递裸字段。
+  `WorldMcpTool.build` / `MemoryTool.build` / `TraceTool.build`），装配点只递裸字段。
 
     ⚠️ **B 与 C 的分工**：B 只管"实现面"，光靠它 `build.py` 仍可以合法地
     `from pokemon_agent.world import Observation`。C 把装配点单独收紧到零——

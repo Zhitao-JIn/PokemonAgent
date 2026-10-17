@@ -164,10 +164,12 @@ def test_runner_reads_the_same_file_through_build_real(tmp_path, monkeypatch):
     monkeypatch.setattr(
         assembly,
         "env_str",
-        lambda name: "http://example" if name == "MCP_MEMORY_SERVER_URL" else "",
+        lambda name: (
+            "http://example" if name in {"MCP_MEMORY_SERVER_URL", "MCP_WORLD_SERVER_URL"} else ""
+        ),
     )
     monkeypatch.setattr(assembly, "assert_mcp_server_ready", lambda *args: {})
-    monkeypatch.setattr(assembly.GameTools, "build", lambda *args, **kwargs: object())
+    monkeypatch.setattr(assembly.WorldMcpTool, "build", lambda *args, **kwargs: object())
     monkeypatch.setattr(assembly.MemoryTool, "build", lambda **kwargs: object())
     monkeypatch.setattr(assembly.TraceTool, "build", lambda **kwargs: object())
     monkeypatch.setattr(assembly.BrainTool, "build", lambda **kwargs: tools)

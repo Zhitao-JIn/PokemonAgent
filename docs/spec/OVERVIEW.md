@@ -71,7 +71,7 @@
 |---|---|---|
 | 外壳 | `experiment/` | 起 run、真机核对；不包装信封，裸字段调 `RunHarness.run` |
 | 编排 | `pokemon_agent/harness/` | 三张 LangGraph 图、三级 state 与 runtime、Reviewer；唯一写 trace |
-| 适配 | `pokemon_agent/direct/` + `mcpclient/` | BrainTool（8 个能力对象）、TraceTool、`prompts/`（direct）；GameTools、MemoryTool、MCP 远程门面（mcpclient） |
+| 适配 | `pokemon_agent/direct/` + `mcpclient/` | BrainTool（8 个能力对象）、TraceTool、`prompts/`（direct）；WorldMcpTool、MemoryTool、MCP client（mcpclient） |
 | 模块 | `brain/` `world/` `memory/` `trace/` | 各自一个 Port，可整体拷走复用 |
 | 纯库 | `schemas/` `config.py` | 跨层契约与策略常量，任何层可直接 import |
 | 装配 | `build.py` | 唯一 new 具体实现的地方；按层各造一个 BrainTool |

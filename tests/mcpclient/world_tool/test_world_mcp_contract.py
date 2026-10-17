@@ -1,4 +1,4 @@
-"""MCP 门面的事件、静态文案与前置契约同进程内路径一致。"""
+"""MCP 门面的事件、静态文案与执行前置契约。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import pytest
 from pokemon_agent.brain.interface import Action, ActionSegment, Goal, ScriptCall
 from pokemon_agent.direct.prompts.decide_action import build_prompt
 from pokemon_agent.mcpclient.action_space import action_space_for
-from pokemon_agent.mcpclient.game_tools import GameTools
 from pokemon_agent.mcpclient.world_tool import WorldMcpTool
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
@@ -97,20 +96,20 @@ def test_execute_returns_the_event_the_server_judged(
         (TaskScene.BAG, Facts.Overlay.DIALOG),
     ],
 )
-def test_get_action_space_adds_prompt_text_like_the_in_process_path(
+def test_get_action_space_adds_prompt_text_like_the_local_contract(
     tool: WorldMcpTool,
     world: Any,
     monkeypatch: pytest.MonkeyPatch,
     scene: TaskScene,
     overlay: Facts.Overlay,
 ) -> None:
-    """同一观测经两条路径所得空间与完整 prompt 逐字节相等。"""
+    """MCP 返回的空间与共用纯函数基准相等，完整 prompt 逐字节相等。"""
     observation = _observation(scene, overlay)
     monkeypatch.setattr(world, "_observation", lambda: observation)
     request = FromHarnessToGameToolGetActionSpaceReq(observation=observation)
 
     remote = tool.get_action_space(request).action_space
-    local = GameTools(world).get_action_space(request).action_space
+    local = action_space_for(observation, list(ALL_BUTTONS))
 
     assert remote.model_dump() == local.model_dump()
     assert remote.model_dump() == action_space_for(observation, list(ALL_BUTTONS)).model_dump()
@@ -154,42 +153,44 @@ def test_prompt_text_is_deterministic_and_frame_independent(
 @pytest.mark.parametrize("names", [["select"], ["up", "down"]])
 def test_execute_rejects_a_key_outside_the_mask(
     tool: WorldMcpTool,
-    world: Any,
     client: Any,
     names: list[str],
 ) -> None:
-    """非法键或未展开的多键在任何 MCP 调用前失败，错误文本同 GameTools。"""
+    """非法键或未展开的多键在任何 MCP 调用前失败，错误文本符合原契约。"""
     request = FromHarnessToGameToolExecuteReq(
         action=Action(sequence=[ActionSegment(name=name, times=1) for name in names]),
         observation=_observation(TaskScene.WALK, Facts.Overlay.NONE),
     )
 
-    with pytest.raises(AssertionError) as local:
-        GameTools(world).execute(request)
     with pytest.raises(AssertionError) as remote:
         tool.execute(request)
 
-    assert str(remote.value) == str(local.value)
+    space = action_space_for(request.observation, list(ALL_BUTTONS))
+    expected = (
+        f"execute() got {names[0]!r} outside {space.names}"
+        if len(names) == 1
+        else "execute() 只接受单键动作；连按应由 Harness 的循环展开成多步"
+    )
+    assert str(remote.value) == expected
     assert client.calls == []
 
 
 @pytest.mark.parametrize("name", ["shop_quit", "invented_script"])
 def test_execute_rejects_a_script_outside_the_space(
     tool: WorldMcpTool,
-    world: Any,
     client: Any,
     name: str,
 ) -> None:
-    """其他场合的脚本与不存在的脚本都在本地拒绝，错误文本同 GameTools。"""
+    """其他场合的脚本与不存在的脚本都在本地拒绝，错误文本符合原契约。"""
     request = FromHarnessToGameToolExecuteReq(
         action=Action(script=ScriptCall(name=name, args={})),
         observation=_observation(TaskScene.WALK, Facts.Overlay.NONE),
     )
 
-    with pytest.raises(AssertionError) as local:
-        GameTools(world).execute(request)
     with pytest.raises(AssertionError) as remote:
         tool.execute(request)
 
-    assert str(remote.value) == str(local.value)
+    space = action_space_for(request.observation, list(ALL_BUTTONS))
+    script_names = [entry.name for entry in space.entries if entry.kind == "script"]
+    assert str(remote.value) == f"execute() got script {name!r} outside {script_names}"
     assert client.calls == []

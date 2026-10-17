@@ -179,7 +179,7 @@ def script_entry(name: str) -> ActionEntry | None:
     return SCRIPT_SPECS.get(name)
 
 
-# ---- 分发：名字 → 脚本函数（`GameTools.execute` 的脚本通道、`WorldConsole.run_script` 共用）----
+# ---- 分发：名字 → 脚本函数（server 的脚本 tool、`WorldConsole.run_script` 共用）----
 
 
 def _defined_func(name: str) -> Callable[..., ScriptResult]:
@@ -213,7 +213,7 @@ SCRIPT_FUNCS: dict[str, Callable[..., ScriptResult]] = {
 def run_script_by_name(
     console: WorldConsole, name: str, args: dict[str, str | int]
 ) -> ScriptResult:
-    """按名字执行一条脚本（`GameTools.execute` / 测试共用）。未知脚本名当场炸。"""
+    """按名执行脚本，供 server tool / `WorldConsole.run_script` 共用；未知名字断言失败。"""
     func = SCRIPT_FUNCS.get(name)
     assert func is not None, f"unknown script {name!r}"
     return func(console, **args)

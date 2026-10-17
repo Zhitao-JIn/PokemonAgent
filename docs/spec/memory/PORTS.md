@@ -307,7 +307,7 @@ harness/**, schemas/**     ✅ 零处引用 memory 包（引用的是 schemas.me
 |---|---|---|
 | `BrainTool.build(...)` | brain 的 provider（**按需**，未传为 None）+ `Brain` | `direct/brain_tool.py` |
 | **`MemoryTool.build(memory_root=…)`** | **memory 的两个检索 provider + `MemoryTool`** | **`mcpclient/memory_local.py`** |
-| `GameTools.build(rom, …)` | `PyBoyWorld`（确定性内存观测） | `mcpclient/game_tools.py` |
+| `WorldMcpTool.build(world_server_url=…)` | `WorldMcpTool`（MCP 世界门面） | `mcpclient/world_tool.py` |
 | `TraceTool.build(run_id=…, trace_root=…)` | `LocalTrace` | `direct/trace/__init__.py` |
 
 `build.py` 只递型号名 / 路径这类裸字段，一个工厂都不越过。

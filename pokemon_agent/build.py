@@ -1,7 +1,7 @@
-"""全项目唯一装配点：把所有具体实现 new 起来，拼成 RunHarness 与 GameTools。
+"""全项目唯一装配点：把所有具体实现 new 起来，拼成 RunHarness 与 WorldMcpTool。
 
 **四个独立模块（brain / world / memory / trace）的实现类，本文件一律零 import**
-——各自由 tool 层上的接线工厂造好：`BrainTool.build()` / `GameTools.build()` /
+——各自由 tool 层上的接线工厂造好：`BrainTool.build()` / `WorldMcpTool.build()` /
 `MemoryTool.build()` / `TraceTool.build()`。装配点只递裸字段（型号名、路径、开关）。
 本文件对 `pokemon_agent.{brain,world,memory,trace}` 的 AST import 点都是 **0**。
 
@@ -45,23 +45,19 @@ from pokemon_agent.harness.run import compile_run_graph
 from pokemon_agent.harness.task import compile_task_graph
 from pokemon_agent.mcpclient import assert_mcp_server_ready
 from pokemon_agent.mcpclient.client import McpTransportError
-from pokemon_agent.mcpclient.game_tools import GameTools
 from pokemon_agent.mcpclient.memory_local import MemoryTool
+from pokemon_agent.mcpclient.world_tool import WorldMcpTool
 from pokemon_agent.run_config import load_run_config
 
 logger = logging.getLogger(__name__)
 
 
 def build_real(
-    rom: str,
-    state_file: str | None = None,
     text_model: str = "qwen-plus",
     judge_model: str = "qwen3.8-max",
     verify_model: str = "doubao-seed-2-1-pro-260628",
     plan_model: str = "doubao-seed-2-1-pro-260628",
     max_tokens: int = 25600,
-    watch: bool = False,
-    speed: int = 0,
     run_id: str = "local",
     trace_root: str | Path | None = None,
     trace_backend: str | None = None,
@@ -82,27 +78,16 @@ def build_real(
     # **这不是硬约束**：换哪家只改这几个字符串，`provider_for()` 会造出配套的类
     # ——"传 Qwen 型号名给 verify 会 404"那种事现在在装配期就变成 `ValueError`，
     # 因为型号名前缀与厂商类必须配套这件事已经由表保证。
-    # state_file: None = 从开机起跑；API 装配默认传 `rom + ".state"`（存在时）。
-    #
-    # `world_server_url`：world server 的 **base 地址**（`http://127.0.0.1:8767`）。
-    # 给了 → 世界住在独立进程（契合 0924 口径：模拟器由用户本机起跑），harness
-    # 经 mcpclient 调它；不给 → 进程内 PyBoyWorld（与改造前一致）。缺省来源同样是
-    # env（`MCP_WORLD_SERVER_URL`）。**给了就必须通**：装配期先打 `/health`，
-    # 因为 PyBoyWorld 单实例 + 强状态，连上一个半死的 server 会让整局跑在假世界上。
     reviewer: Reviewer | None = None,
     config: str | Path | None = None,
-) -> tuple[RunHarness, GameTools]:
+) -> tuple[RunHarness, WorldMcpTool]:
     """装配真实链路；返回 `(harness, game)`。
 
     memory_server_url 显式参数优先于 MCP_MEMORY_SERVER_URL；缺地址抛 McpTransportError，
     有地址先检查 /health。memory_root 仅指定客户端快照根，缺省为启动目录下的 memory/。
 
-    **`world` 不在返回值里**（0913 夜）：生命周期归 `GameTools` 持有——
-    `build_real` 再交一个 `PyBoyWorld` 出去，
-    只会逼调用方去认一个 world 类型，而它此前唯一的用途
-    （`_RunHandle.world` + `getattr(world, "close")`）是**死码**
-    （真实实现上的方法叫 `stop()`，那个 `getattr` 恒为 `None`）。
-    与 trace 那次"`build_real` 返回值去掉零消费者的 `trace` 项"同款。
+    world_server_url 显式参数优先于 MCP_WORLD_SERVER_URL；缺地址抛 McpTransportError。
+    世界仅由 server 持有，装配点返回 MCP 门面，不创建模拟器。
 
     **事件流不在返回值里**（0913 下午）：harness 侧全部读点走
     `Runtime.trace`（`TraceToolPort`），装配点把 `LocalTrace` 交出去只会
@@ -130,13 +115,6 @@ def build_real(
     （审）两处读，传进来的必须是同一个实例——否则"人对 plan 的那一版说的话"
     传到审那一格就断了，而表现只是"人说了话、图却像没听见"。
 
-    **`watch` 与 `speed` 是两个独立旋钮**（0914 解耦）：`watch` 开 SDL 窗口
-    （看得见画面），`speed` 是模拟器速度（`0` = 不限速，缺省；`1` = 真实速度，
-    过场看得清但 CPU 占用大幅下降）。两者可以单独动——"开窗口 + 不限速"
-    （`watch=True, speed=0`）是合法组合，而解耦前它**根本写不出来**
-    （那时 `speed` 只在 `watch=True` 时才生效）。无头批量跑用缺省即可
-    （关窗 + 不限速），与解耦前的行为逐字相同。
-
     **没有存档 / 恢复参数**（0913 存档链整体删除）：`resume_cursor` 这类
     "从第 N 个事件接着跑"的入口与存档端是**成对的**，恢复链删掉之后它就没有
     消费方了——单独留一个裸游标参数，只会让下一个人以为还能接上。（`save_checkpoint`
@@ -153,23 +131,17 @@ def build_real(
     load_env_file()
 
     world_server_url = (world_server_url or env_str("MCP_WORLD_SERVER_URL") or "").strip() or None
-    if world_server_url is not None:
-        health = assert_mcp_server_ready(world_server_url, "world")
-        logger.info(
-            "world MCP server 健康检查通过（%s lease_owner=%s）",
-            world_server_url,
-            health.get("lease_owner"),
+    if world_server_url is None:
+        raise McpTransportError(
+            "world 只经 MCP：设 MCP_WORLD_SERVER_URL 或传 world_server_url，并先起 world server"
         )
-    else:
-        logger.info("world 走进程内实现（未配 MCP_WORLD_SERVER_URL）")
-
-    game = GameTools.build(
-        rom,
-        state_path=state_file,
-        watch=watch,
-        speed=speed,
-        world_server_url=world_server_url,
+    health = assert_mcp_server_ready(world_server_url, "world")
+    logger.info(
+        "world MCP server 健康检查通过（%s lease_owner=%s）",
+        world_server_url,
+        health.get("lease_owner"),
     )
+    game = WorldMcpTool.build(world_server_url=world_server_url)
 
     # 一条事件一个 json 文件落盘（0910 重构）；
     # 文件名是时间递增 uuid，**排序看内容里的 `(ts, uuid)`**（0914 封套改造：
@@ -180,7 +152,7 @@ def build_real(
     #
     # trace 后端不在这里造：`TraceTool.build()` 是唯一的接线工厂，选择 local 或 Langfuse；
     # 本装配点只递裸字段。与
-    # `BrainTool.build()` / `MemoryTool.build()` / `GameTools.build()` 同形。
+    # `BrainTool.build()` / `MemoryTool.build()` / `WorldMcpTool.build()` 同形。
     # **本文件对 `pokemon_agent.trace` 零 import**（探针也经 tool 层的再出口拿）。
     #
     # **Langfuse 是真实 run 的默认后端**（0927 定案）：SDK 是异步批量发送，

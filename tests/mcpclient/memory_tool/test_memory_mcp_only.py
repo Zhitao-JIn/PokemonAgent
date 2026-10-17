@@ -28,16 +28,17 @@ def test_build_real_without_memory_url_fails_at_assembly(monkeypatch: pytest.Mon
     monkeypatch.delenv("MCP_MEMORY_SERVER_URL", raising=False)
     monkeypatch.delenv("MCP_WORLD_SERVER_URL", raising=False)
     monkeypatch.setattr(assembly, "load_env_file", lambda: None)
-    monkeypatch.setattr(assembly.GameTools, "build", lambda *args, **kwargs: object())
+    monkeypatch.setattr(assembly.WorldMcpTool, "build", lambda *args, **kwargs: object())
     monkeypatch.setattr(assembly.TraceTool, "build", lambda **kwargs: object())
 
-    def unexpected_probe(*args: object) -> dict[str, object]:
-        raise AssertionError("缺地址时不能访问健康检查")
+    def world_probe(url: str, service: str) -> dict[str, object]:
+        assert service == "world", "memory 缺地址时不能探活"
+        return {}
 
-    monkeypatch.setattr(assembly, "assert_mcp_server_ready", unexpected_probe)
+    monkeypatch.setattr(assembly, "assert_mcp_server_ready", world_probe)
 
     with pytest.raises(McpTransportError, match="MCP_MEMORY_SERVER_URL"):
-        assembly.build_real("unused", trace_backend="local")
+        assembly.build_real(trace_backend="local", world_server_url="http://example")
 
 
 def test_memory_tool_round_trips_all_four_calls_through_a_real_server(tmp_path: Path) -> None:
