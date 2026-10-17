@@ -98,6 +98,7 @@
 | CP4 终点 `9a88439` | `ef3ba958c2680260` | 不变（只改 docstring 与 brain 方法签名） |
 | CP5 终点 `c58171a` | `d8fa15ee4072f698` | 仅来自 EpisodeContext.global_episode_memories → episode_index 及描述 |
 | CP6 终点 `3839339` | `5ea6dffeeb229b7c` | 仅来自 PlanContext（去 index，加 run_index / knowledge） |
+| CP7 终点 `0f29078` | `5ea6dffeeb229b7c` | 不变 |
 
 ## 十、PR 组织与合入
 
