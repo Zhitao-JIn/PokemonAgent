@@ -95,6 +95,7 @@
 | CP1 终点 `01d66de` | `1da60900e11478a0` | EpisodeMemory 加三字段 |
 | CP2 终点 `161a155` | `3c713ab4487ef650` | 变化来自首末帧描述、EpisodeInput.run_goal、RunState.run_memory |
 | CP3 终点 `0a34982` | `ef3ba958c2680260` | 变化仅来自 TaskState.task_index |
+| CP4 终点 `9a88439` | `ef3ba958c2680260` | 不变（只改 docstring 与 brain 方法签名） |
 
 ## 十、PR 组织与合入
 
