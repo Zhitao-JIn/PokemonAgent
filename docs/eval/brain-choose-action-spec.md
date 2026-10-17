@@ -128,7 +128,7 @@ python -m evals.brain_choose_action [--text-model M] [--scene S]... [--tag T]...
 1. 取 WRAM 快照与地图：`snapshot_of(sample)`、`read_terrain(memory)`、`read_screen_text(memory)`；
 2. `observe_task(terrain, text, png, memory=…, rom=ROM.read_bytes(), closed=False)` 得 `TaskObservation`（`evals.decode.solver` 里已有等价的读取序列可参照）；
 3. `compute_action_space(observation, all_actions)` 得 `ActionSpace`（`world/action_space.py`，掩码的唯一出处）；`all_actions` 取与生产一致的全部按键名（`pyboy_world` 里的 `ALL_BUTTONS`）；
-4. 拼 `FromHarnessToBrainToolChooseOnceReq(goals=[Goal(goal, criteria)], obs, space, memories=[], last_result="", knowledge="", episode_memories="", human_note="")`。
+4. 拼 `FromHarnessToBrainToolChooseOnceReq(goals=[Goal(goal, criteria)], obs, space, memories=[], last_result="", knowledge="", task_index=[], human_note="")`。
 
 选帧：按 `ScreenSample.label.scene` 取 `walk`、`dialog`、`start_menu`、`battle_menu` 各 8–10 帧，要求 `label_checked` 且 `wram` 非空，并且观测装配出的 `TaskObservation.scene` 与目标场合一致（不一致的丢弃并记录）。
 
@@ -156,7 +156,7 @@ python -m evals.brain_choose_action [--text-model M] [--scene S]... [--tag T]...
 
 难点标签判定：
 - `read_screen`：`obs` 的解码字段切不全（`menu_decode_complete is False`，或数量框、队伍列表、起名键盘）；
-- `answer_in_memory`：标注人确认正确动作依赖 `memories` / `knowledge` / `episode_memories`；
+- `answer_in_memory`：标注人确认正确动作依赖 `memories` / `knowledge` / `task_index`；
 - `after_failure`：`request.last_result` 非空且报失败。
 
 ### 3.4 规模

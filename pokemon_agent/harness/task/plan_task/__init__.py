@@ -1,7 +1,7 @@
 """`plan_task` 格（task 层）：**产键**——问 chooser 要这一键，写 `state.action`。
 
 素材：RAM 档观测（含屏幕文字读出的对话 / 选项 / 光标）+ 受限动作空间 + 本 task 目标
-+ 最近 8 条 ActMemory + 上一脚本结果。**只产出单键**：取首段、`times` 恒为 1
++ 本 task 全部 ActMemory + 上一脚本结果。**只产出单键**：取首段、`times` 恒为 1
 （prompt 同样要求单键）；选了脚本则产出一个脚本调用，原样交出。
 
 失败契约同 judge：重试耗尽落整条账 + `CALL_EXHAUSTED`（`link="choose"`）后原样上抛。
@@ -15,7 +15,6 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Action, Goal
-from pokemon_agent.config import CHOOSE_HISTORY_STEPS
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
@@ -42,12 +41,13 @@ def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
     step = state.step + 1  # 账面步号 = 圈号（0928 定稿：dispatch 落 0、每圈取帧 +1）
 
     # ========== 1. 组装 req（本 task 的目标 + 轻感知帧 + 受限空间 + 近期记忆） ==========
-    history = state.task_ctx.act_memories[-CHOOSE_HISTORY_STEPS:]
+    history = state.task_ctx.act_memories
     req = FromHarnessToBrainToolChooseOnceReq(
         goals=[Goal(goal=state.task.goal, criteria=state.task.success_criteria)],
         obs=state.task_ctx.observation,
         space=state.task_ctx.action_space,
         memories=history,
+        task_index=state.task_index,
         last_result=state.last_result,
         knowledge="\n\n".join(state.knowledge),
     )

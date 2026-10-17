@@ -65,6 +65,7 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
         ),
         total_acts=task_input.total_acts,
         knowledge=task_input.knowledge,
+        task_index=task_input.task_index,
         actions_budget=task_input.actions_budget,
         remaining_s=task_input.remaining_s,
     )

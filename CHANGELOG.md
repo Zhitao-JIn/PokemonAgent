@@ -1,3 +1,24 @@
+## 2026-10-17（487）—— brain_scope CP3：task 层读全部 ActMemory，新增同目标 task 索引，删两个窗口常量
+
+**改了什么**：task 决策与判定读取同源的全部 ActMemory，判定同步收到知识。
+episode 派发时按 total_acts 升序整理同局、目标逐字相等的此前 task 索引，去掉代表帧，
+经 TaskInput 交给 TaskState；决策与判定 prompt 明确区分执行证据、背景索引与普遍知识。
+删除两项历史窗口常量及残留说明，新增 SCOPE_IMAGE_CAP、cap_images 与装配期预算断言。
+
+**为什么这么改**：让 task 的生成者与判定员看到完整且一致的执行过程，
+同时保留重拆任务时有用的同目标背景，避免把此前 task 的结论误当成本 task 完成的证据。
+
+**取舍**：task_index 放在 TaskState 顶层，仿 knowledge 在入口固定，避免改变 perceive。
+cap_images 先落地后接线，本检查点没有生产调用方。L2 帧与文字逐帧对应，因此不过帽；
+装配期要求图上限至少覆盖 task_max_steps + 1。目标匹配逐字相等，模型改写目标文字时
+索引为空，这是已知限制；索引只作背景，不参与当前完成证据。
+
+**影响面**：TaskInput 与 TaskState 新增 task_index；三份状态 schema 的唯一差异是
+TaskState.task_index（TaskInput 不在状态 schema 闭包内），状态哈希从 3c713ab4487ef650
+变为 ef3ba958c2680260，冻结哈希测试同步更新。评测使用的决策 prompt 删除了
+「跨局摘要记忆」节，改为本局此前同目标 task；判定 prompt 增加知识说明。
+新增假端口测试覆盖全部历史、索引、知识、图上限与脚本一轮一条记忆，并验证三种回退均被测试捕获。
+
 ## 2026-10-17（486）—— brain_scope CP2：run_goal 与首末帧盖章，新增 run 蒸馏链路与两个收尾格
 
 **改了什么**：EpisodeInput 与 EpisodeRunState 传递 run_goal，episode 正文与空章写入

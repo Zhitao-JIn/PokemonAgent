@@ -164,7 +164,7 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     拼装的唯一入口，谁调用都要满足同一组前提。
 
     当前帧经 `render_task_frame()` 按场合与叠加层投影，只显示适用的观测字段。
-    `knowledge`/`episode_memories` 走各自的占位符，调用方不得塞进 `obs.facts`；
+    `knowledge`/`task_index` 走各自的占位符，调用方不得塞进 `obs.facts`；
     它们跟 `memories` 分开渲染、分开给可信度说明。
 
     `memories` 那一段**逐条渲染、相邻帧去重**（`render_sequence()`）——跟判定器/校验器
@@ -216,7 +216,8 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
             map_guide=space.map_note,
             knowledge=req.knowledge or "（没有检索到相关知识）",
             memories=recalled,
-            episode_memories=req.episode_memories or "（无跨局摘要）",
+            task_index="\n".join(m.index_line() for m in req.task_index)
+            or "（本局内没有同目标的此前 task）",
             actions=actions,
             max_segments=MAX_SEGMENTS,
             read_screen=READ_SCREEN,
@@ -230,6 +231,7 @@ def _build_script_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     """仅开放脚本的场合的决策 prompt（`decide_script.md`）：视图、上一脚本结果、脚本签名与说明。
 
     签名与说明原样取自脚本条目（world 定义），模板只写怎么选。
+    task_index 逐条渲染为一行背景，与本 task 相关记忆分开。
     """
     obs, space = req.obs, req.space
     view = render_task_frame(obs)
@@ -251,7 +253,8 @@ def _build_script_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
             view=view,
             last_result=req.last_result or "（这是本场合的第一条脚本）",
             memories="\n\n".join(render_sequence(req.memories)) or "（无相关记忆）",
-            episode_memories=req.episode_memories or "（无跨局摘要）",
+            task_index="\n".join(m.index_line() for m in req.task_index)
+            or "（本局内没有同目标的此前 task）",
             scripts=scripts,
         ),
         req.human_note,

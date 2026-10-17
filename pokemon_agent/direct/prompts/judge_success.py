@@ -47,7 +47,7 @@ _INTERRUPT_RULE = load("judge_interrupt").render()
 
 
 def memory_blocks(req: FromHarnessToBrainToolJudgeReq) -> list[str]:
-    """episode / run 层判定的素材块：task 记忆与局摘要，逐条 `render()`。
+    """三层判定的记忆素材块：上层详情全文，以及 task 层的一行背景索引。
 
     唯一真源：`build_prompt()` 与 `BrainTool.judge()` 的 `history` 都调它。
     """
@@ -57,6 +57,9 @@ def memory_blocks(req: FromHarnessToBrainToolJudgeReq) -> list[str]:
         blocks.append(f"## 本局任务表（成败以此为准，下面各 task 记忆里的成败是机器判定）\n{rows}")
     blocks += [f"## task {m.task_id}\n{m.render()}" for m in req.task_memories]
     blocks += [f"## 局 {m.episode_id}\n{m.render()}" for m in req.episode_memories]
+    if req.task_index:
+        rows = "\n".join(memory.index_line() for memory in req.task_index)
+        blocks.append(f"## 本局内此前同目标的 task（背景，不是本 task 完成的证据）\n{rows}")
     return blocks
 
 
@@ -70,10 +73,9 @@ def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
     可能抛 `KeyError`（模板占位符对不上，prompt 是改得最勤的那类文件）——
     调用方负责兜住，见模块文档。
 
-    **渲染用 `render_sequence`**（跟校验链对齐）：`history` 虽然只是
-    最近 `JUDGE_HISTORY_STEPS` 条的小窗口，不像校验链那样全量，但相邻两条之间
-    `after`/`before` 重复这件事本身跟窗口大小无关——只要窗口里有连续的
-    两步，重复就存在，所以两条链路必须走同一个去重渲染。
+    **渲染用 `render_sequence`**：task 层 history 是本 task 全部 ActMemory，
+    相邻两条的 after/before 边界帧只渲染一次，条目不删。
+    task_index 是此前同目标 task 的背景，knowledge 是普遍规律，均不能替代执行证据。
 
     **没有单独的"当前观测"**：`history` 最后一条的"之后变成"就是当前这一帧
     （judge 第 0 步不问模型，走到这里 `history` 保证非空），模板里也不再有
@@ -95,6 +97,7 @@ def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
     past = "\n\n".join(filter(None, [past, *memory_blocks(req)]))
     return _TEMPLATE.render(
         goal=goal.goal,
+        knowledge=req.knowledge or "（没有检索到相关知识）",
         criteria=goal.criteria,
         history=past or "（这是第一步，之前什么都没发生）",
         interrupt_rule=_INTERRUPT_RULE if req.allow_interrupt else "",

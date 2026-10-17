@@ -48,7 +48,7 @@ brain 是第三方模块，不知道这些。它只回答"这一次成没成"。
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TypeVar, cast
 
@@ -124,6 +124,15 @@ from .prompts import decide_action as decide_action_prompt
 from .prompts import judge_success as judge_success_prompt
 
 _Result = TypeVar("_Result")
+
+
+def cap_images(frames: Sequence[str], cap: int) -> list[str]:
+    """保留最新 cap 张并返回副本；调用方保证 cap > 0。本检查点先落地，后续才接线。
+
+    L0 / L1 / run 蒸馏后续使用；L2 的帧与文字逐帧对应，不调用本函数。
+    """
+    assert cap > 0, "cap_images() needs a positive cap"
+    return list(frames[-cap:])
 
 
 def dedup_snapshots(
