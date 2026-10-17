@@ -78,6 +78,22 @@ knowledge/speed/watch 旋钮）、`tests/brain/schemas/test_llm_complete_req_rou
 （375.15s，1 warning）；`ruff check .` 与 `ruff format --check .` 全绿。`tests/integration/`、
 `tests/review_backend/`、`tests/assembly/` 删后仅剩 `__pycache__`（空目录，git 不跟踪）。
 
+## 2026-10-17（491）—— brain_scope CP7：预算收口与三级感知范围集成验收
+
+**改了什么**：生产默认 `max_episodes` 从 50 调为 10，同步预算用例与三份现行预算/装配/数据流文档。
+新增无存档的 `tests/integration/test_brain_scope_consistency.py`，在真实三层图与假端口上核对共享详情、索引范围、图片去重与上限、索引零模型调用和唯一 run 收尾记忆。
+经追加授权，L2 两个请求构造点在校验后重绑原始 ActMemory 列表，保持 plan/judge 的严格对象身份。
+
+**为什么这么改**：七个检查点的感知范围需要一条跨层使用示范串起来，防止各层单元测试分别通过、装配后却读到不同范围；预算先取 10，真实运行长度出来后复核。
+
+**取舍**：复用已有无存档假装配，仅在新测试内加记录，不改 fixtures 的既有行为；同一用例比较有/无跨 run 索引的两次运行。
+预置超过 20 张不同代表帧与重复帧，严格比较实际发送的最新 20 张；历史计划与过时 trace 样例文档保留不动（设计侧裁定：历史记录不改不删）；仍然正确的纯文本 provider 契约保留。
+
+**影响面**：生产最多局数减少；请求字段与类型、三个状态模型均不变，状态哈希仍为 `5ea6dffeeb229b7c`。
+另清理 provider 工厂 docstring 的 plan 纯文本旧说法，以及 task 召回 docstring 的最近几条旧说法。
+起点默认 1303 passed、slow 3 passed；终点默认 1305 passed（35.79 秒）、slow 3 passed（84.83 秒），ruff check 与 format check 全绿。
+范围集成单例在终点全量中为 2.24 秒；两项破坏验证均使它失败且已逐字节还原。`docs/test/` 无同类集成索引，未新增文档；未调用真实模型或模拟器。
+
 ## 2026-10-17（490）—— brain_scope CP6：L0 共享全部局详情，过往 run 背景与每圈知识带图
 
 **改了什么**：PlanContext 删除局级 index，details 保留本 run 全部局，新增 run_index

@@ -141,7 +141,7 @@ RUN_STALL_LIMIT = 3
 """run 层停摆上限：连续多少局失败就结束本 run。"""
 
 DEFAULT_RUN_BUDGET = RunBudget(
-    max_episodes=50,
+    max_episodes=10,
     max_total_actions=None,
     wall_clock_s=None,
     reserve_s=60,

@@ -48,16 +48,18 @@ def review_and_judge(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[st
     if state.step > 0:
         history = state.task_ctx.act_memories
         goal = Goal(goal=state.task.goal, criteria=state.task.success_criteria)
+        req = FromHarnessToBrainToolJudgeReq(
+            goal=goal,
+            history=history,
+            allow_interrupt=True,
+            task_index=state.task_index,
+            knowledge="\n\n".join(state.knowledge),
+        )
+        req.history = history
         verdict = ask_judger(
             deps.judger,
             deps.trace,
-            FromHarnessToBrainToolJudgeReq(
-                goal=goal,
-                history=history,
-                allow_interrupt=True,
-                task_index=state.task_index,
-                knowledge="\n\n".join(state.knowledge),
-            ),
+            req,
             source=_SOURCE,
             episode_id=ep,
             task_id=task_id,

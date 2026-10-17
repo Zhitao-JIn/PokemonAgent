@@ -51,6 +51,7 @@ def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
         last_result=state.last_result,
         knowledge="\n\n".join(state.knowledge),
     )
+    req.memories = history
 
     # ========== 2. 问 chooser → 落账 → 取单键 ==========
     try:

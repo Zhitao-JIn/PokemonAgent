@@ -57,7 +57,7 @@
 
 | 层 | 世界终局 | 停滞 | 预算 |
 |---|---|---|---|
-| run | 上一局 `observation.done` | `fail_streak ≥ RUN_STALL_LIMIT`(3) | `step ≥ RUN_MAX_EPISODES`(50) |
+| run | 上一局 `observation.done` | `fail_streak ≥ RUN_STALL_LIMIT`(3) | `step ≥ RUN_MAX_EPISODES`(10) |
 | episode | 本圈帧 `observation.done` | `fail_streak ≥ EPISODE_STALL_LIMIT`(3) | `step ≥ goal.max_steps`（task 数） |
 | task | 本圈帧 `observation.done` | `stall_count ≥ ACT_STALL_LIMIT`(5) | `step ≥ task.max_steps`（键数） |
 
