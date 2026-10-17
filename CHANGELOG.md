@@ -1,3 +1,24 @@
+## 2026-10-17（496）—— store 索引持久化 content hash：重启后 refresh_changed 不再整库重算向量
+
+**改了什么**：`pokemon_agent/memory/store.py` 三处——`_save_index` 写入的 index.json 增加
+`"hashes"` 键（为每条在册记录写入 content hash）；`_load_or_rebuild` 对账通过的分支读
+`self._hashes = dict(doc.get("hashes", {}))`；全量重建分支清空 `_hashes` 并对 md 类记录逐条
+补算。新增 `tests/memory/test_store_regressions.py`（3 条 CP1 回归）。put / refresh_changed
+的逻辑未动。
+
+**为什么这么改**：O1 缺陷——`_hashes` 基线没有随 index.json 持久化，进程重启后
+`refresh_changed()` 在"文件 mtime 变了但内容一字没变"（git checkout / pull 重写工作区文件的
+常见场景）时把整库向量白算一遍。探针复现：同实例 touch 不重算（0 次）；新实例 touch 同样
+内容重算 3 次。
+
+**取舍**：旧索引（无 `hashes` 键）按空字典加载，向后兼容；全量重建时才对 md 类补算 hash
+（json 类无 hash 概念）；只修持久化，不动 `refresh_changed` 的判据逻辑。
+
+**影响面**：全仓用例 1192 → 1195（+3 回归）；全量 pytest **1195 passed / 0 failed /
+0 error / 0 skipped**（74.05s）；`ruff check .` 与 `ruff format --check .` 全绿。回归第一条
+修复前失败（`assert 3 == 0`，计数 3）、修复后为 0；破坏验证（删 `_load_or_rebuild` 的 hashes
+读取行）复现失败后逐字节还原。
+
 ## 2026-10-17（495）—— 测试瘦身收尾：修 rules.py 旧测试名注释、trace_parse/restore 耗时调查（测试未改）
 
 **改了什么**：`rules.py` 第 16 行注释里已改名的旧测试路径 `test_p6_event_alignment.py` →

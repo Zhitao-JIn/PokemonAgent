@@ -581,6 +581,7 @@ class LocalMemoryStore:
             },
             "mtimes": {k: self._mtimes[k] for k in sorted(self._mtimes) if k in self._uuids},
             "corpus": {k: self._corpus[k] for k in sorted(self._corpus) if k in self._uuids},
+            "hashes": {k: self._hashes[k] for k in sorted(self._hashes) if k in self._uuids},
         }
         _atomic_write_text(self._index_file, json.dumps(doc, ensure_ascii=False, indent=2))
 
@@ -599,16 +600,20 @@ class LocalMemoryStore:
             self._uuids = indexed
             self._mtimes = dict(doc.get("mtimes", {}))
             self._corpus = dict(doc.get("corpus", {}))
+            self._hashes = dict(doc.get("hashes", {}))
             return
         # 对账失败：全量扫描重建（真相是记录文件，索引只是派生物）。
         self._inverted = {}
         self._uuids = set()
         self._mtimes = {}
         self._corpus = {}
+        self._hashes = {}
         for record_id in sorted(files):
             text, metadata, _payload = self._read_record(record_id)
             self._index_record(record_id, metadata)
             self._mtimes[record_id] = self._record_path(record_id).stat().st_mtime
+            if self._is_md:
+                self._hashes[record_id] = self._hash_of_file(record_id)
             if text:
                 self._corpus[record_id] = tokenize(text)
         self._save_index()
