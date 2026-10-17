@@ -187,7 +187,7 @@ RUN_SOURCES: tuple[str, ...] = (
 EPISODE_SOURCES: tuple[str, ...] = (
     "sense",
     "retrieve_task_memories",
-    "retrieve_global_episode_memory",
+    "retrieve_episode_index",
     "retrieve_knowledge_semantic_memory",
     "retrieve_object_semantic_memory",
     "review_and_judge",
@@ -253,7 +253,7 @@ NODE_FINGERPRINTS: dict[str, tuple[Styled, ...]] = {
     # ---- episode ----
     "sense": (("view", "sense_frame"),),
     "retrieve_task_memories": (("memory_io", "read_task_memory"),),
-    "retrieve_global_episode_memory": (("memory_io", "read_episode_memory"),),
+    "retrieve_episode_index": (("memory_io", "read_episode_memory"),),
     "retrieve_knowledge_semantic_memory": (("memory_io", "read_knowledge"),),
     "retrieve_object_semantic_memory": (("memory_io", "read_object_memory"),),
     "review_and_judge": (("llm_outcome", "judge_verdict"),),
@@ -292,7 +292,7 @@ CELL_SOURCES: dict[str, tuple[str, ...]] = {
     "episode.perceive": (
         "sense",
         "retrieve_task_memories",
-        "retrieve_global_episode_memory",
+        "retrieve_episode_index",
         "retrieve_knowledge_semantic_memory",
         "retrieve_object_semantic_memory",
     ),

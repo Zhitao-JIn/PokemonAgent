@@ -32,7 +32,7 @@ harness/
 │   └── plan_run/  act/{dispatch}  run_done/
 ├── episode/
 │   ├── episode_entry.py（begin_episode / run_episode / close） episode_graph.py episode_state.py episode_runtime.py
-│   ├── perceive/{absorb_task, sense, retrieve_task_memories, retrieve_global_episode_memory,
+│   ├── perceive/{absorb_task, sense, retrieve_task_memories, retrieve_episode_index,
 │   │             retrieve_knowledge_semantic_memory, retrieve_object_semantic_memory, merge_retrieval}
 │   ├── review_and_judge/  plan_episode/  act/
 │   └── episode_done/{verify_task_memories, summarize_episode, close_episode}

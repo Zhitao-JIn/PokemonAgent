@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from pokemon_agent.brain.interface import Goal
 from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
 from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, TaskMemory
+from pokemon_agent.world import TaskObservation
 
 
 class FromHarnessToBrainToolJudgeReq(BaseModel):
@@ -28,7 +29,9 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     task_table：episode 层判定的素材（本局任务表——成败以表为准，含人审推翻）；另两层留空。
     episode_memories：run 层判定的素材（本 run 的局摘要）；下两层留空。
     task_index：本 episode 内此前同目标 task 的无帧背景索引，只有 task 层填写。
-    knowledge：task 层领域知识；episode / run 层本检查点保持为空串，索引保持为空。
+    episode_index：episode 层的同 run_goal 其他局背景，只用 index_line 渲染。
+    observation：episode 层当前画面；task / run 层本检查点留空。
+    knowledge：task / episode 层领域知识；run 层本检查点保持为空串。
     allow_interrupt：只有 task 层置真——prompt 多一段「是不是被打断了」的判法，
         判定员多回答一个 `interrupted`。另两层不问，结果里 `interrupted` 恒为假。
 
@@ -46,5 +49,7 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     task_table: Sequence[TaskEntry] = ()
     episode_memories: Sequence[EpisodeMemory] = ()
     task_index: Sequence[TaskMemory] = ()
+    episode_index: Sequence[EpisodeMemory] = ()
+    observation: TaskObservation | None = None
     knowledge: str = ""
     allow_interrupt: bool = False

@@ -78,6 +78,26 @@ knowledge/speed/watch 旋钮）、`tests/brain/schemas/test_llm_complete_req_rou
 （375.15s，1 warning）；`ruff check .` 与 `ruff format --check .` 全绿。`tests/integration/`、
 `tests/review_backend/`、`tests/assembly/` 删后仅剩 `__pycache__`（空目录，git 不跟踪）。
 
+## 2026-10-17（489）—— brain_scope CP5：L1 共享 task 详情，同目标局索引与判定带图
+
+**改了什么**：episode 召回单元改名 retrieve_episode_index，按 run_goal 等值全取其他局，
+排除本局后写 episode_index，规划与判定仅用 index_line 渲染背景。空目标不查库，仍记读账。
+L1 判定补知识、当前画面和同目标局背景；无逐步历史时取 task 首末帧，去重后保留最新 20 张。
+图只核对文字，位置证据看文字 where。节点名表、契约文档与冻结哈希测试同步更新。
+
+**为什么这么改**：让 L1 规划与判定看到同一份完整执行详情，并能核对其首末帧；
+其他局只提供同总目标的背景，避免把过去的摘要正文当成本局完成的证据。
+
+**取舍**：沿用 recall 等值条件，不新增存储接口；同目标索引可以来自其他 run。
+Pydantic 校验会重建列表容器，因此信封校验后绑定回 state 的 task_memories 原列表，
+保证 plan 与 judge 共享同一只读输入。L2 仍按逐步历史去重且不过帽；L0 图路径留待 CP6。
+新增验证均为单元测试，不新增整图测试；旧计划、审计、归档及明确过时示例保留历史名称。
+
+**影响面**：EpisodeContext.global_episode_memories 改为 episode_index，并更新描述，
+这是三份状态 schema 的唯一变化，哈希由 ef3ba958c2680260 变为 d8fa15ee4072f698，
+冻结测试同步更新。DecomposeReq 同步改名背景字段，JudgeReq 新增 episode_index 与
+observation，原 episode_memories 仍供 run 层使用。L1 判定增加图 token；其他层调用点不变。
+
 ## 2026-10-17（488）—— brain_scope CP4：规划、拆解与 run 蒸馏带图，推翻 0915 的纯文本链定案
 
 **改了什么**：BrainPort 与 Brain 的 plan / decompose 新增可选 images；Planner、

@@ -204,7 +204,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 | `read_act_memory` | `retrieve_act_memories`（task.perceive，按 `episode_id` 查、再按 `task_id` 筛） |
 | `read_task_memory` | `retrieve_task_memories`（episode.perceive） |
 | `read_run_memory` | 由后续检查点产生 |
-| `read_episode_memory` | `retrieve_global_episode_memory`、`run.perceive`（读口按 `episode_id` 自然序返回） |
+| `read_episode_memory` | `retrieve_episode_index`、`run.perceive`（读口按 `episode_id` 自然序返回） |
 | `read_knowledge` | `retrieve_knowledge_semantic_memory` |
 | `read_object_memory` | `retrieve_object_semantic_memory`、`run.perceive`（`refs` 为物体格 `place.key`） |
 | `write_act_memory` | `store_step_episode_memory` |

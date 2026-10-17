@@ -51,8 +51,9 @@ class EpisodeContext(BaseModel):
     task_memories: list[TaskMemory] = Field(
         default_factory=list, description="本局全部 TaskMemory（按 total_acts 升序）"
     )
-    global_episode_memories: list[EpisodeMemory] = Field(
-        default_factory=list, description="本 run 的跨局摘要"
+    episode_index: list[EpisodeMemory] = Field(
+        default_factory=list,
+        description="run_goal 相同的其他 episode，不含本局；只用 index_line 渲染",
     )
     knowledge_semantic_memory: list[str] | None = Field(
         default=None, description="知识库检索结果；None = 本局还没查过。之后沿用，到下次重查为止"

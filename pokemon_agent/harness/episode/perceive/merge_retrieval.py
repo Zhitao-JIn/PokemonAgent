@@ -2,7 +2,7 @@
 
 **只有 `known_objects` 折进 `obs.facts`**：它虽然也是跨步骤攒出来的，但坐标锚定在
 这张地图上，跟 `walk_map`/`landmarks` 同一个可信度级别。`knowledge`（知识库）与
-`global_episode_memories`（跨局摘要）、`task_memories`（本局 TaskMemory）各自留在 `ep_ctx`
+`episode_index`（同目标的其他局背景）、`task_memories`（本局 TaskMemory）各自留在 `ep_ctx`
 里，由判定与拆解分别取用，**不混进"已知事实"**。
 
 **本格不写账**（0914 对齐审计）：它原来另记一条 `MEMORY_READ` 当"四路合并"的账，
@@ -30,7 +30,7 @@ def merge_retrieval(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) ->
     trace。**
 
     前置条件：四路 retrieve 都已跑过（`state` 里四个字段齐备）、`state.ep_ctx` 非空。
-    后置条件：返回 `{"observation": …}`；`knowledge`/`episode_memories` 原样留在 state 里
+    后置条件：返回 `{"observation": …}`；`knowledge`/`episode_index` 原样留在 state 里
     给 `plan_episode` 自己取。
     """
     obs = state.ep_ctx.observation

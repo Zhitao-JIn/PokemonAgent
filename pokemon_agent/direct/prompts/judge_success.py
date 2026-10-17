@@ -14,12 +14,13 @@
 **调用方是 `BrainTool.judge()`**（0913 定案）：信封里**没有 `prompt` 字段**，
 拼出来的字符串是局部变量——harness 只管装素材。
 
-**不再单独拼"当前观测"（0909 拍板）**：以前这里从 `req.snapshots[-1]` 另起一份
+**task 层不再单独拼"当前观测"（0909 拍板）**：以前这里从 `req.snapshots[-1]` 另起一份
 `$observation`，跟 `$history` 最后一条的"之后变成"是同一份观测、渲染两遍。
-judge 第 0 步不问模型（`harness/episode/gate/judge.py` 的 `obs.step == 0` 分支），
+task judge 第 0 步不问模型（`harness/episode/gate/judge.py` 的 `obs.step == 0` 分支），
 走到这里 `history` 保证非空，最后一条的"之后变成"本来就是当前这一帧，直接复用即可。
 `req.snapshots` 字段随这次改动一并从 `JudgeReq`/
 `FromHarnessToBrainToolJudgeReq` 删除（不用的字段不留）。
+episode 层无逐步 history，改用 observation 单独渲染当前画面。
 
 原来 `JUDGE_BLIND` 常量（挡 `known_objects`/`walk_map`/`landmarks` 三个字段
 不让判定器看到）也随这次改动删除——它只用来过滤那份被删掉的"当前观测"，
@@ -60,6 +61,11 @@ def memory_blocks(req: FromHarnessToBrainToolJudgeReq) -> list[str]:
     if req.task_index:
         rows = "\n".join(memory.index_line() for memory in req.task_index)
         blocks.append(f"## 本局内此前同目标的 task（背景，不是本 task 完成的证据）\n{rows}")
+    if req.episode_index:
+        rows = "\n".join(memory.index_line() for memory in req.episode_index)
+        blocks.append(f"## 同目标的过往局(背景,不是本局完成的证据)\n{rows}")
+    if req.observation is not None:
+        blocks.append(f"## 当前画面\n{req.observation.render()}")
     return blocks
 
 
@@ -77,9 +83,9 @@ def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
     相邻两条的 after/before 边界帧只渲染一次，条目不删。
     task_index 是此前同目标 task 的背景，knowledge 是普遍规律，均不能替代执行证据。
 
-    **没有单独的"当前观测"**：`history` 最后一条的"之后变成"就是当前这一帧
+    **task 层没有重复的"当前观测"**：`history` 最后一条的"之后变成"就是当前这一帧
     （judge 第 0 步不问模型，走到这里 `history` 保证非空），模板里也不再有
-    独立的 `$observation` 占位符——理由见模块文档。
+    独立的 `$observation` 占位符；episode 层 observation 由 memory_blocks 渲染。
 
     **没有插话**：判定在审格，人只对它表态（认 / 推翻），不带话重问判定员。
     """

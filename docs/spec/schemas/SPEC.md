@@ -54,8 +54,9 @@ schemas/
 - **往 `brain_tool`**：`ChooseOnce`、`PlanOnce`、`Decompose`、`Judge`、`Reflect`、`Verify`、`Summarize`、
   `SummarizeTask`，各一对 `Req` / `Resp`（前缀 `FromHarnessToBrainTool`）。
   - `JudgeReq` 带 `task_memories` / `task_table` / `episode_memories`（episode / run 层判定的素材），
-    以及 `task_index` / `knowledge`（task 层的同目标背景与领域知识）。
-  - `DecomposeReq` 带 `task_table`（本局任务表，成败以表为准）与 `last_judge`（上一次本局判定及人的表态）。
+    以及 `task_index`（task 层背景）、`episode_index` / `observation`（episode 层背景与当前画面）、
+    `knowledge`（task / episode 层领域知识）。
+  - `DecomposeReq` 带 `episode_index`（同目标的其他局一行背景）、`task_table`（本局任务表，成败以表为准）与 `last_judge`（上一次本局判定及人的表态）。
   - `SummarizeReq` / `SummarizeTaskReq` 带 `verdicts`（正负标注）、`termination`、`acts_used`；`success` 是推出的属性。
   - `PlanOnceReq` 带 `human_note` 与 `last_judge`（上一次 run 判定及人的表态）。
   - `JudgeReq` 没有 `human_note`：判定在审格，人只表态、不带话重问判定员。
