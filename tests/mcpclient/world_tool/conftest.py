@@ -54,6 +54,9 @@ class _FakeWorld:
     def save_state(self) -> bytes:
         return b"STATE"
 
+    def read_wram(self) -> bytes:
+        return bytes(range(256)) * 32
+
     def load_state(self, data: bytes) -> None:
         self.calls.append(("load_state", data))
 

@@ -1,3 +1,14 @@
+## 2026-10-17（482）—— world server 增加 reset 起点与读 WRAM（批 ③a）
+
+**改了什么**：WorldPort 与 world server 的 reset 接受可选字节起点，优先于启动时的存档；
+增加只读 read_wram，WorldMcpTool 提供起点绑定与 WRAM 读取入口。
+**为什么这么改**：评测样本需要各自的 reset 起点，数据集冻结需要读取完整 WRAM，
+先补齐 MCP 能力，供后续评测迁移使用。
+**取舍**：起点在客户端绑定时读入，直到清除前每次 reset 都发送；WRAM 固定为 8192 字节，
+保留未绑定起点时的原请求、租约规则、读档与存档语义，不扩展其他内存口。
+**影响面**：新增可选参数和只读工具，world server 注册工具数由 44 增至 45；
+不改 harness、状态模型、prompt 与评测脚本，pack 的迁移留待批 ③b。
+
 ## 2026-10-17（481）—— world 只保留 MCP 形态（批 ②b）
 
 **改了什么**：删除进程内 GameTools，WorldMcpTool 增加连接工厂；world 缺地址时在 memory 检查前报错，

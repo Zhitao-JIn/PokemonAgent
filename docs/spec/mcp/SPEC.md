@@ -220,16 +220,19 @@ class MemoryToolPort(Protocol):
 
 **并发**：单写者约定（同刻一个 client 有写权），冲突后再议文件锁。
 
-## 五、world server——原子层（6 条）
+## 五、world server——原子层（7 条）
 
 | # | tool | 入参 | data | 契约要点 |
 |---|---|---|---|---|
-| 1 | `reset` | task_id, goal, success_criteria, max_steps, initial_state_hint? | null | 载 task 存档；max_steps>0；不感知；清会话缓存 |
+| 1 | `reset` | task_id, goal, success_criteria, max_steps, initial_state_hint?, state_base64?, client_id? | null | 先检查租约；给了 state_base64 则解码为本次 reset 的 start_state，优先于默认起点；max_steps>0；不感知 |
 | 2 | `get_action_space` | — | `{mask:{name:bool}, entries:[{kind,name,params?,desc?}], scene}` | **统一能力掩码**（用户定案）：原子键与脚本**等价**——同一 `name→enabled` 命名空间，LLM 同权选择；`entries` 带各条目载荷（脚本带 params/desc）。吸收并替代原 all_actions / 宏签名表（删） |
 | 3 | `perceive_task` | — | `{scene, screen\|walk_map, pos}` | 只读内存与屏幕缓冲；不失败不重试 |
 | 4 | `step` | segments:[[key,times],…], settle:bool | `{moved:bool, event:裸事件\|null}` | **唯一按键执行口**；每段键断言在动作空间；响应带本键裸事件——判定前移 server 的输出点 |
 | 5 | `save_state` | — | state_base64 | 全量导出逐字节，不 tick |
-| 6 | `load_state` | state_base64 | null | 原样恢复不 tick；清会话缓存 |
+| 6 | `read_wram` | — | wram_base64 | 数据集冻结用的只读口，返回 `0xC000–0xDFFF` 共 8192 字节的 base64；不占租约、不推进世界 |
+| 7 | `load_state` | state_base64 | null | 原样恢复不 tick；清会话缓存 |
+
+world server 注册表实测共 45 个 tool（原子 7 + release_lease + 脚本 37）。
 
 **契约变更**（Port 层，过 CHANGELOG 编号条目）：mask/scripts 计算上移 world
 （原 GameToolPort.get_action_space 职责迁入）；`all_actions` 删除；`step`

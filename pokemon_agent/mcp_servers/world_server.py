@@ -1,4 +1,4 @@
-"""world server：MCP 注册表暴露 6 条原子操作、租约归还与 37 条脚本，另有健康检查。
+"""world server：MCP 注册表暴露 7 条原子操作、租约归还与 37 条脚本，另有健康检查。
 
 **这一层没有领域逻辑**：每条 tool = `WorldPort` 同名方法的直译（bytes 走 base64），
 信封组装归 mcpclient、脚本与判定归 server 进程内的脚本层（P4 起）。
@@ -139,6 +139,12 @@ def save_state() -> dict[str, Any]:
     return envelope(data={"state_base64": base64.b64encode(_w().save_state()).decode("ascii")})
 
 
+@mcp.tool()
+def read_wram() -> dict[str, Any]:
+    """数据集冻结用的只读 WRAM 导出（8192 字节 base64），不占租约、不推进世界。"""
+    return envelope(data={"wram_base64": base64.b64encode(_w().read_wram()).decode("ascii")})
+
+
 # ---- 变更面（占租约）----
 
 
@@ -149,18 +155,26 @@ def reset(
     success_criteria: str,
     max_steps: int,
     initial_state_hint: str = "",
+    state_base64: str | None = None,
     client_id: str | None = None,
 ) -> dict[str, Any]:
-    """开新一局：按任务重置到初始状态。**不感知**——第一帧由调用方另取。"""
+    """开新一局：按任务重置到初始状态，不感知，第一帧由调用方另取。
+
+    state_base64 非 None 时解码为本次 reset 的字节起点，优先于服务端默认起点。
+    """
     denied = _take_lease(client_id)
     if denied is not None:
         return denied
+    start_arguments = (
+        {"start_state": base64.b64decode(state_base64)} if state_base64 is not None else {}
+    )
     _w().reset(
         task_id=task_id,
         goal=goal,
         success_criteria=success_criteria,
         max_steps=max_steps,
         initial_state_hint=initial_state_hint,
+        **start_arguments,
     )
     return envelope()
 

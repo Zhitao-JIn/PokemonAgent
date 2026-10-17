@@ -84,7 +84,9 @@ execute 在任何 MCP 调用前按请求观测校验单键掩码或脚本条目�
 |---|---|---|
 | `get_action_space` | `(req: …GetActionSpaceReq) -> …GetActionSpaceResp` | 开放按键的场合按 overlay 给键 + 按场合给脚本条目，所有场合开放方向键、a、b；脚本接管场合另给本场合脚本、关闭 start/select |
 | `execute` | `(req: …ExecuteReq) -> FromHarnessToGameToolExecuteResp` | 两形分流：键 → `world/object_events.observe_step`，`event` 带本键裸事件；脚本（统一调用）→ 掩码校验后跑脚本层，`report` 是终态报告（`{ok, code, data, events, calls}`）。MCP 门面调用同名工具并保留报告事件 |
-| `reset` | `(req: …ResetReq) -> None` | 只有 Req |
+| `reset` | `(req: …ResetReq) -> None` | 只有 Req；绑定起点时额外传 state_base64，未绑定则不加该键 |
+| `use_start_state` | `(path: Path \| None) -> None` | WorldMcpTool 扩展入口：读取非空起点字节，每次 reset 持续生效；None 清除 |
+| `read_wram` | `() -> bytes` | WorldMcpTool 扩展入口：只读 WRAM，经 MCP 解码并断言长度 8192 |
 | `perceive_task` | `() -> …PerceiveTaskResp` | run / episode / task 统一使用，不调模型、不失败 |
 | `evolve` | `(req: …EvolveReq) -> None` | 只有 Req（MCP 面不提供） |
 | `save_state` / `load_state` | Req（+Resp） | 路径由 harness 给，本层原子写文件 |
@@ -167,7 +169,7 @@ decompose / run_plan / object_render）。
 ## 七、当前状态与已知缺口
 
 - **四张门面**：`CheckpointToolPort` 已解散；`TraceToolPort` 只剩通用读口
-  `read_events`；MCP 面上 world server 共 44 个 tool（原子 6 + release_lease
+  `read_events`；MCP 面上 world server 共 45 个 tool（原子 7 + release_lease
   + 脚本 37），脚本一次调用占 harness 账一步。
 - **模型重试循环在门面层**：`direct/brain_tool.py::_attempt_loop()`；内存观测不调用模型。
 - **`render.py` 里的墓碑**：`plan_failed()` / `human_note_injected()`

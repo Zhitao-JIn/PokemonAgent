@@ -1,4 +1,4 @@
-"""world server 原子层：7 条 tool 的形状、单实例租约、health。
+"""world server 原子层与租约：8 条 tool 的形状、单实例租约、health。
 
 **不起真模拟器**（.venv 无 pyboy，且真机起跑交回用户本机）：`_FakeWorld` 实现
 `WorldPort` 的那几个方法，只验 server 这一层的直译与闸门——"按下去世界里
@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 
@@ -61,6 +62,9 @@ class _FakeWorld:
 
     def save_state(self) -> bytes:
         return b"STATE"
+
+    def read_wram(self) -> bytes:
+        return bytes(range(256)) * 32
 
     def load_state(self, data: bytes) -> None:
         self.loaded.append(data)
@@ -129,7 +133,7 @@ def test_state_roundtrip_is_base64(server: _FakeWorld) -> None:
 
 def test_first_client_takes_the_lease_and_the_second_is_rejected(server: _FakeWorld) -> None:
     """同一时刻只允许一个推进者——两个模拟器并存是这台机器的硬红线。"""
-    assert world_server.reset("t1", "g", "c", 10, "", "c1")["ok"] is True
+    assert world_server.reset("t1", "g", "c", 10, "", client_id="c1")["ok"] is True
     assert world_server.step([["up", 1]], True, "c1")["ok"] is True
 
     denied = world_server.step([["up", 1]], True, "c2")
@@ -148,7 +152,7 @@ def test_read_only_tools_do_not_take_the_lease(server: _FakeWorld) -> None:
 
 
 def test_only_the_holder_can_release_the_lease(server: _FakeWorld) -> None:
-    world_server.reset("t1", "g", "c", 10, "", "c1")
+    world_server.reset("t1", "g", "c", 10, "", client_id="c1")
     assert world_server.release_lease("c2")["ok"] is False
 
     assert world_server.release_lease("c1")["ok"] is True
@@ -169,7 +173,7 @@ def test_health_reports_ready_and_lease_holder() -> None:
         assert body["ready"] is True
         assert body["lease_owner"] is None
 
-        world_server.reset("t1", "g", "c", 10, "", "c1")
+        world_server.reset("t1", "g", "c", 10, "", client_id="c1")
         assert client.get("/health").json()["lease_owner"] == "c1"
 
 
@@ -196,6 +200,7 @@ def test_registry_lists_the_atomic_layer() -> None:
         "perceive_task",
         "step",
         "save_state",
+        "read_wram",
         "load_state",
         "release_lease",
         # 脚本层（§7，一脚本一 API）
@@ -258,3 +263,41 @@ def test_client_roundtrip_over_mcp_transport() -> None:
     body = asyncio.run(call())
     assert body["ok"] is True and body["data"]["mask"]["up"] is True
     assert McpClient is not None  # client 侧在 P5 接线，这里只确认形状可解
+
+
+def test_reset_passes_start_state_only_when_supplied(server: _FakeWorld) -> None:
+    data = b"\x00sample\xff"
+
+    assert world_server.reset("t1", "g", "c", 10, client_id="c1")["ok"] is True
+    assert "start_state" not in server.reset_calls[-1]
+    body = world_server.reset(
+        "t1", "g", "c", 10, state_base64=base64.b64encode(data).decode("ascii"), client_id="c1"
+    )
+
+    assert body["ok"] is True
+    assert server.reset_calls[-1]["start_state"] == data
+    assert world_server._lease_owner == "c1"
+
+
+def test_reset_with_start_state_still_checks_lease_before_world(server: _FakeWorld) -> None:
+    world_server.reset("t1", "g", "c", 10, client_id="c1")
+    before = list(server.reset_calls)
+
+    denied = world_server.reset("t1", "g", "c", 10, state_base64="U1RBVEU=", client_id="c2")
+
+    assert denied["ok"] is False and denied["code"] == "rejected"
+    assert server.reset_calls == before
+    assert world_server._lease_owner == "c1"
+
+
+@pytest.mark.parametrize("owner", [None, "c1"])
+def test_read_wram_preserves_bytes_and_lease(server: _FakeWorld, owner: str | None) -> None:
+    world_server._lease_owner = owner
+    before = (list(server.steps), list(server.loaded), list(server.reset_calls))
+
+    body = world_server.read_wram()
+
+    assert body["ok"] is True
+    assert base64.b64decode(body["data"]["wram_base64"]) == bytes(range(256)) * 32
+    assert world_server._lease_owner == owner
+    assert (server.steps, server.loaded, server.reset_calls) == before

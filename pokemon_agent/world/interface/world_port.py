@@ -21,11 +21,14 @@ class WorldPort(Protocol):
         success_criteria: str,
         max_steps: int,
         initial_state_hint: str = "",
+        start_state: bytes | None = None,
     ) -> None:
         """按任务重置到初始状态。**不感知**——第一帧由调用方另调 `perceive_task()` 拿。
 
         参数是 `Task` 拆开的裸字段——world 只用得到这几个原始值。
-        前置条件：max_steps > 0。
+        start_state 非 None 时用该字节起点重置，不读 state_path、不走开机；
+        不给则保留原来的起点行为。
+        前置条件：max_steps > 0；给了 start_state 则必须非空。
         """
         ...
 
@@ -87,6 +90,13 @@ class WorldPort(Protocol):
         给 checkpointer 用：与 `load_state` 成对，`load_state(save_state())` 之后
         世界与导出那一刻逐字节相同。
         后置条件：返回非空字节串。
+        """
+        ...
+
+    def read_wram(self) -> bytes:
+        """数据集冻结用的只读口：返回 0xC000–0xDFFF，不推进世界。
+
+        后置条件：返回恰好 8192 字节；长度违约时实现断言失败。
         """
         ...
 

@@ -86,12 +86,21 @@ class PyBoyWorld:
         success_criteria: str,
         max_steps: int,
         initial_state_hint: str = "",
+        start_state: bytes | None = None,
     ) -> None:
-        """按任务重置。**不感知**——第一帧由调用方另调 `perceive_task()` 拿。"""
+        """按任务重置，不感知；起点优先级为 start_state、state_path、开机。
+
+        前置条件：max_steps > 0；start_state 非 None 时必须非空。
+        字节起点与文件起点读档后都推进一帧；不指定字节时保留原行为。
+        """
         assert max_steps > 0, f"max_steps must be > 0, got {max_steps}"
 
         # 步骤 1。
-        if self._state_path:
+        if start_state is not None:
+            assert start_state, "reset() got empty start_state"
+            self._pyboy.load_state(io.BytesIO(start_state))
+            self._tick(1)
+        elif self._state_path:
             with open(self._state_path, "rb") as f:
                 self._pyboy.load_state(f)
             self._tick(1)
@@ -108,6 +117,15 @@ class PyBoyWorld:
         self._pyboy.save_state(buf)
         data = buf.getvalue()
         assert data, "pyboy.save_state produced no bytes"
+        return data
+
+    def read_wram(self) -> bytes:
+        """数据集冻结用的只读口：返回 0xC000–0xDFFF，不推进世界。
+
+        后置条件：返回恰好 8192 字节，否则断言失败。
+        """
+        data = bytes(self._pyboy.memory[0xC000:0xE000])
+        assert len(data) == 8192, "read_wram() must return 8192 bytes"
         return data
 
     def load_state(self, data: bytes) -> None:

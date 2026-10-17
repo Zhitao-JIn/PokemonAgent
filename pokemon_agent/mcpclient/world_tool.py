@@ -43,6 +43,7 @@ class WorldMcpTool:
 
     def __init__(self, client: McpClient, client_id: str | None = None) -> None:
         self._client = client
+        self._start_state: bytes | None = None
         self._client_id = client_id or f"harness-{__import__('os').getpid()}"
 
     @classmethod
@@ -72,20 +73,30 @@ class WorldMcpTool:
 
     # ---- GameToolPort ----
 
+    def use_start_state(self, path: Path | None) -> None:
+        """绑定之后每次 reset 使用的起点字节；None 清除绑定。
+
+        前置条件：给了路径则文件内容非空；读文件失败向上传递。
+        文件只在绑定时读取，直到再次绑定或清除之前持续生效。
+        """
+        data = path.read_bytes() if path is not None else None
+        assert data is None or data, "use_start_state() got empty file"
+        self._start_state = data
+
     def reset(self, req: FromHarnessToGameToolResetReq) -> None:
         """开新一局：`Task` 拆成裸字段（world 不认识 brain 的类型）。"""
         task = req.task
-        self._client.call_tool_sync(
-            "reset",
-            {
-                "task_id": task.task_id,
-                "goal": task.goal,
-                "success_criteria": task.success_criteria,
-                "max_steps": task.max_steps,
-                "initial_state_hint": task.initial_state_hint,
-                "client_id": self._client_id,
-            },
-        )
+        arguments = {
+            "task_id": task.task_id,
+            "goal": task.goal,
+            "success_criteria": task.success_criteria,
+            "max_steps": task.max_steps,
+            "initial_state_hint": task.initial_state_hint,
+            "client_id": self._client_id,
+        }
+        if self._start_state is not None:
+            arguments["state_base64"] = base64.b64encode(self._start_state).decode("ascii")
+        self._client.call_tool_sync("reset", arguments)
 
     def get_action_space(
         self, req: FromHarnessToGameToolGetActionSpaceReq
@@ -165,6 +176,16 @@ class WorldMcpTool:
         tmp.replace(path)
         assert path.stat().st_size == len(data) > 0
         return FromHarnessToGameToolSaveStateResp(path=str(path), size=len(data))
+
+    def read_wram(self) -> bytes:
+        """经 MCP 读取数据集冻结所需的 WRAM，不推进世界。
+
+        后置条件：解码结果恰好 8192 字节，否则断言失败；传输错误向上传递。
+        """
+        body = self._client.call_tool_sync("read_wram", {})
+        data = base64.b64decode(body["data"]["wram_base64"])
+        assert len(data) == 8192, "read_wram() must return 8192 bytes"
+        return data
 
     def load_state(self, req: FromHarnessToGameToolLoadStateReq) -> None:
         """读盘在 client，字节过 MCP 交给 server 恢复。"""
