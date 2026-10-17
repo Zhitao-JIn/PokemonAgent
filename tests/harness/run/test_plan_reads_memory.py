@@ -5,10 +5,9 @@
 1. **素材是 memory，不是 trace**：`plan` 向 `MemoryToolPort` 要本 run 的
    `episode_memory`（带 `run_id` 条件）与 `object_memory`（不带 `map_id`——
    run 级没有"当前地图"）。原先它读全量事件流，那条路已经断掉。
-2. **索引按执行顺序排**：`episode_id` 是 `{run_id}-ep{n}`，**字典序在 n≥10 时会乱**
+2. **详情按执行顺序排**：`episode_id` 是 `{run_id}-ep{n}`，**字典序在 n≥10 时会乱**
    （`ep10 < ep2`）。排序键取 `state.episode_outputs`（执行序 append 的机械记录）。
-3. **详情按确定性规则预取**：最近 1 局 + 全部失败局；其余只给索引行
-   （渐进披露的最小可用形态）。
+3. **详情是本 run 全部局**：更早的成功局同样保留，规划与判定共用这份详情。
 
 外加两条权限边界：`updates` 只能写"重开/放弃"（机械事实由 harness 盖章），
 以及 **plan 节点把模型方言（表内序号 + `RunPlan`）翻成编排方言（`task_id` +
@@ -204,22 +203,19 @@ def test_plan_asks_memory_for_this_run_and_for_no_particular_map() -> None:
     assert memory.recall_reqs[0].conditions == {"run_id": "r1"}
 
 
-def test_plan_index_order_is_the_memorys_not_resorted() -> None:
-    """索引的顺序是记忆读口给的（按 `episode_id` 自然序，即执行序），plan 原样使用、不再自己排。
+def test_plan_details_order_is_the_memorys_not_resorted() -> None:
+    """详情的顺序是记忆读口给的（按 `episode_id` 自然序，即执行序），plan 原样使用、不再自己排。
 
     自然序本身（`ep2` < `ep10`）由 `MemoryTool` 负责，见 `test_episode_summary_order.py`。
     """
     summaries = [_memory("r1-ep2", True), _memory("r1-ep10", True)]
     _, deps, planner = _run_once([_entry("g1")], summaries, ["r1-ep2", "r1-ep10"])
 
-    assert [m.episode_id for m in planner.reqs[0].index] == ["r1-ep2", "r1-ep10"]
+    assert [m.episode_id for m in planner.reqs[0].details] == ["r1-ep2", "r1-ep10"]
 
 
-def test_plan_details_are_latest_run_plus_every_failure() -> None:
-    """详情预取：最近 1 局 + 全部失败局；更早的成功局只留索引行。
-
-    两个边界：全成功时**只有最近 1 局**；索引为空时给空列表（首轮规划就是这样）。
-    """
+def test_run_plan_details_are_all_episodes_of_this_run() -> None:
+    """全部局都保留；更早的成功局也在，首轮详情为空。"""
     summaries = [
         _memory("r1-ep1", True),
         _memory("r1-ep2", False),
@@ -231,18 +227,18 @@ def test_plan_details_are_latest_run_plus_every_failure() -> None:
 
     req = planner.reqs[0]
 
-    assert [m.episode_id for m in req.index] == outcomes, "索引给全部局"
-    assert [m.episode_id for m in req.details] == ["r1-ep2", "r1-ep4"], "详情只给失败局 + 最近一局"
+    assert [m.episode_id for m in req.details] == outcomes, "详情包含全部局"
+    assert "index" not in type(req).model_fields
 
     _, _, all_success = _run_once(
         [_entry("g1")], [_memory("r1-ep1", True), _memory("r1-ep2", True)], ["r1-ep1", "r1-ep2"]
     )
-    assert [m.episode_id for m in all_success.reqs[0].details] == ["r1-ep2"], "全成功只给最近一局"
+    assert [m.episode_id for m in all_success.reqs[0].details] == ["r1-ep1", "r1-ep2"], (
+        "更早的成功局也保留"
+    )
 
     _, _, first_round = _run_once([_entry("g1")], [], [])
-    assert first_round.reqs[0].index == [] and first_round.reqs[0].details == [], (
-        "首轮没有任何局，两个列表都是空的"
-    )
+    assert first_round.reqs[0].details == [], "首轮没有任何局"
 
 
 # ---- 目标表的写入 ----

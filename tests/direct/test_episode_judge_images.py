@@ -95,7 +95,7 @@ def test_task_history_images_are_not_capped_even_when_there_are_more_than_twenty
     assert brain.frames == frames
 
 
-def test_run_judge_image_selection_is_unchanged_before_cp6() -> None:
+def test_judger_sends_capped_episode_frames_when_history_is_empty() -> None:
     brain = _RecordingBrain()
     memory = EpisodeMemory(
         run_id="r",
@@ -106,12 +106,21 @@ def test_run_judge_image_selection_is_unchanged_before_cp6() -> None:
         summary="s",
         quality_score=0.5,
         quality_rationale="q",
-        first_frame="frame",
+        first_frame="frame-0",
+        last_frame="frame-1",
     )
+    frames = [f"frame-{index}" for index in range(24)]
+    memories = [
+        memory.model_copy(
+            update={"episode_id": f"e{i}", "first_frame": frames[i], "last_frame": frames[i + 1]}
+        )
+        for i in range(0, 24, 2)
+    ]
+    memories.append(memory.model_copy(update={"first_frame": None, "last_frame": None}))
     request = FromHarnessToBrainToolJudgeReq(
-        goal=Goal(goal="总目标", criteria="c"), episode_memories=[memory]
+        goal=Goal(goal="总目标", criteria="c"), episode_memories=memories
     )
 
     Judger(brain).judge(request)
 
-    assert brain.frames == []
+    assert brain.frames == frames[-20:]

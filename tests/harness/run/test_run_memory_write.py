@@ -174,7 +174,7 @@ def test_run_summary_cells_run_after_done_in_a_full_graph_run(
     assert len(fake.memory.runs) == 1
     assert sum(event.kind == "write_run_memory" for event in events) == 1
     assert events[-1].kind == "run_end"
-    assert not any(event.kind == "read_run_memory" for event in events)
+    assert any(event.kind == "read_run_memory" for event in events) == (not actions_exhausted)
     if actions_exhausted:
         assert fake.memory.runs[0].termination == "actions_exhausted"
     else:

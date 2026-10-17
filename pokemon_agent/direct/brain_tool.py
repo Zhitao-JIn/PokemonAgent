@@ -523,7 +523,7 @@ class Judger:
         谁把 req 变成请求"）：harness 只装素材（history），`dedup_snapshots(req.history)`
         与 `$history` 段的 `render_sequence()` 是同一件事的图片版/文字版——
         prompt 里读到的每一步和模型看到的画面逐帧同源。
-        无逐步历史且有 task 详情时，取其首末帧并过帽；task 的 history 不过帽。
+        无逐步历史时，取 task 或 episode 详情的首末帧并过帽；task 的 history 不过帽。
 
         **重试是原样重问**——判定不像决策那样有"上次错在哪"可用来纠正。
         重试耗尽抛 `MaxRetriesExceeded`，由 harness 的调用点决定怎么收场。
@@ -533,8 +533,10 @@ class Judger:
         history = [entry.render() for entry in req.history] + judge_success_prompt.memory_blocks(
             req
         )
-        if not req.history and req.task_memories:
-            images = cap_images(collect_frames(req.task_memories), SCOPE_IMAGE_CAP)
+        if not req.history:
+            images = cap_images(
+                collect_frames([*req.task_memories, *req.episode_memories]), SCOPE_IMAGE_CAP
+            )
         else:
             images, _snapshots = dedup_snapshots(list(req.history))
 

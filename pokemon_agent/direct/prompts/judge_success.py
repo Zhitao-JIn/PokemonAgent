@@ -20,7 +20,7 @@ task judge 第 0 步不问模型（`harness/episode/gate/judge.py` 的 `obs.step
 走到这里 `history` 保证非空，最后一条的"之后变成"本来就是当前这一帧，直接复用即可。
 `req.snapshots` 字段随这次改动一并从 `JudgeReq`/
 `FromHarnessToBrainToolJudgeReq` 删除（不用的字段不留）。
-episode 层无逐步 history，改用 observation 单独渲染当前画面。
+episode / run 层无逐步 history，改用 observation 单独渲染当前画面。
 
 原来 `JUDGE_BLIND` 常量（挡 `known_objects`/`walk_map`/`landmarks` 三个字段
 不让判定器看到）也随这次改动删除——它只用来过滤那份被删掉的"当前观测"，
@@ -64,6 +64,9 @@ def memory_blocks(req: FromHarnessToBrainToolJudgeReq) -> list[str]:
     if req.episode_index:
         rows = "\n".join(memory.index_line() for memory in req.episode_index)
         blocks.append(f"## 同目标的过往局(背景,不是本局完成的证据)\n{rows}")
+    if req.run_index:
+        rows = "\n".join(memory.index_line() for memory in req.run_index)
+        blocks.append(f"## 过往 run(背景,不是本 run 完成的证据)\n{rows}")
     if req.observation is not None:
         blocks.append(f"## 当前画面\n{req.observation.render()}")
     return blocks
@@ -85,7 +88,7 @@ def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
 
     **task 层没有重复的"当前观测"**：`history` 最后一条的"之后变成"就是当前这一帧
     （judge 第 0 步不问模型，走到这里 `history` 保证非空），模板里也不再有
-    独立的 `$observation` 占位符；episode 层 observation 由 memory_blocks 渲染。
+    独立的 `$observation` 占位符；episode / run 层 observation 由 memory_blocks 渲染。
 
     **没有插话**：判定在审格，人只对它表态（认 / 推翻），不带话重问判定员。
     """

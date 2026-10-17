@@ -14,27 +14,15 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.config import MEMORY_RECALL_LIMIT
+from pokemon_agent.harness.knowledge_query import build_knowledge_query
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolRecallReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.world import TaskObservation
 
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState
-
-
-def build_knowledge_query(obs: TaskObservation, goal: str) -> str:
-    """拼知识库检索 query：observation 特征 + goal，不只按 goal 检索。"""
-    bits = [
-        f"scene:{obs.scene.value}",
-        f"overlay:{obs.facts.overlay_value}",
-        obs.status,
-    ]
-    if obs.place is not None:
-        bits.append(f"map:{obs.place.map_id}")
-    return " ".join(filter(None, bits + [f"目标：{goal}"]))
 
 
 def retrieve_knowledge_semantic_memory(

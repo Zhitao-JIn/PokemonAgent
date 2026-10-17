@@ -78,6 +78,27 @@ knowledge/speed/watch 旋钮）、`tests/brain/schemas/test_llm_complete_req_rou
 （375.15s，1 warning）；`ruff check .` 与 `ruff format --check .` 全绿。`tests/integration/`、
 `tests/review_backend/`、`tests/assembly/` 删后仅剩 `__pycache__`（空目录，git 不跟踪）。
 
+## 2026-10-17（490）—— brain_scope CP6：L0 共享全部局详情，过往 run 背景与每圈知识带图
+
+**改了什么**：PlanContext 删除局级 index，details 保留本 run 全部局，新增 run_index
+与 knowledge。读取全部过往 run 并排除本 run，补 read_run_memory 账；run perceive
+在读上下文后每圈检索知识，共用从 episode 原样搬出的 build_knowledge_query。
+L0 规划与判定同步收到全部局详情、过往 run 一行背景、知识与当前画面；判定带各局首末帧。
+规划 prompt 去掉局索引与部分正文语义，保留附图读法，三类新增素材独立成节。
+
+**为什么这么改**：让总目标的规划者与判定员基于同一份完整经历判断下一步和完成状态，
+避免更早的成功局被详情预取规则隐藏；其他 run 只提供背景，不能冒充本 run 的经历。
+
+**取舍**：详情沿用记忆读口的执行序，不再筛选；过往 run 不按目标过滤，只排除自身。
+请求校验后绑定原详情列表，确保 plan 与 judge 共用同一对象。知识每圈重查，不套用
+局级刷新条件；原 episode 模块仍导出共享 query 函数。无逐步历史时共用 20 张图上限，
+保留最新；L2 逐步图路径不变。不新增整图测试，组合链用真实 perceive 单格验证。
+
+**影响面**：状态 schema 仅 PlanContext 改变，哈希由 d8fa15ee4072f698 变为
+5ea6dffeeb229b7c，冻结测试同步更新。PlanOnceReq 删除 index，新增背景、知识与画面；
+JudgeReq 新增 run_index，L0 知识和画面开始填写。run 增加一次背景召回与每圈知识召回，
+判定增加图 token；既有节点名表、账流后继表、收尾读账与 L0 素材、图路径测试按新契约适配。
+
 ## 2026-10-17（489）—— brain_scope CP5：L1 共享 task 详情，同目标局索引与判定带图
 
 **改了什么**：episode 召回单元改名 retrieve_episode_index，按 run_goal 等值全取其他局，

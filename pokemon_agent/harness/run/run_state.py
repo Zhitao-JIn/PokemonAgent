@@ -4,7 +4,7 @@
     计数    step（已派局数）/ fail_streak          act 写 / perceive 写（人审推翻时 review 修正）
             total_acts（跨局累计键数）              perceive 的 absorb 累加
     感知    observation（本圈取的一帧）            perceive 的 sense 写
-            plan_ctx（局索引 + 详情 + 地图事实）    perceive 写
+            plan_ctx（全部局详情 + 过往 run 背景 + 知识 + 地图事实）    perceive 写
             pending_episode（刚跑完的结算）        act 写，perceive 吸收后清
             episode_outputs（全部结算）            perceive 写
     交界    episode_input（本局入参）              act 的 dispatch 写
@@ -35,8 +35,11 @@ from pokemon_agent.world import TaskObservation
 class PlanContext(BaseModel):
     """perceive 格的产物：`plan_run` 与 `review_and_judge` 这一圈的素材。"""
 
-    index: list[EpisodeMemory] = Field(description="本 run 的局索引（按执行顺序）")
-    details: list[EpisodeMemory] = Field(description="详情预取（最近 1 局 + 全部失败局）")
+    details: list[EpisodeMemory] = Field(description="本 run 全部 EpisodeMemory，按执行顺序")
+    run_index: list[RunMemory] = Field(
+        default_factory=list, description="过往 run 的一行背景，不含本 run"
+    )
+    knowledge: list[str] = Field(default_factory=list, description="本圈检索到的领域知识全文")
     objects: list[ObjectFactEvent] = Field(description="地图交互事实")
 
 
