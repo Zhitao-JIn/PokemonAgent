@@ -76,6 +76,7 @@ from pokemon_agent.config import (
     PLAN_MAX_TOKENS,
     PLAN_THINKING,
     PROVIDER_JSON_MODE,
+    SCOPE_IMAGE_CAP,
 )
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.budget_provider import BudgetProvider, TimeoutProvider
@@ -133,6 +134,21 @@ def cap_images(frames: Sequence[str], cap: int) -> list[str]:
     """
     assert cap > 0, "cap_images() needs a positive cap"
     return list(frames[-cap:])
+
+
+def collect_frames(memories: Sequence[EpisodeMemory | TaskMemory]) -> list[str]:
+    """依次收集每条记忆的首末帧，跳过 None，按字符串相等去重并保留首次位置。
+
+    返回独立列表，不限制数量；调用方另行过帽。
+    """
+    frames: list[str] = []
+    seen: set[str] = set()
+    for memory in memories:
+        for frame in (memory.first_frame, memory.last_frame):
+            if frame is not None and frame not in seen:
+                seen.add(frame)
+                frames.append(frame)
+    return frames
 
 
 def dedup_snapshots(
@@ -222,6 +238,7 @@ class Planner:
         prompt = run_plan_prompt.build_prompt(req)
         goal_stack = run_plan_prompt.goals_lines(req.plan)
         history = run_plan_prompt.history_blocks(req)
+        images = cap_images(collect_frames(req.details), SCOPE_IMAGE_CAP)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.plan(
@@ -229,6 +246,7 @@ class Planner:
                 goal_stack=goal_stack,
                 history=history,
                 max_push=req.max_push,
+                images=images,
                 thinking=_thinking_after(calls),
             )
 
@@ -271,6 +289,7 @@ class Decomposer:
         prompt = decompose_prompt.build_prompt(req)
         goal = f"{req.goal.goal}（判据：{req.goal.criteria}）"
         context = decompose_prompt.context_lines(req)
+        images = cap_images(collect_frames(req.task_memories), SCOPE_IMAGE_CAP)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.decompose(
@@ -278,6 +297,7 @@ class Decomposer:
                 goal=goal,
                 context=context,
                 max_tasks=req.max_tasks,
+                images=images,
                 thinking=_thinking_after(calls),
             )
 
@@ -729,6 +749,7 @@ class RunSummarizer:
     ) -> FromHarnessToBrainToolSummarizeRunResp:
         """蒸馏最终目标表与局记忆；调用方保证局记忆非空，耗尽异常交给 harness 降级。"""
         prompt = summarize_run_prompt.build_prompt(req)
+        images = cap_images(collect_frames(req.episode_memories), SCOPE_IMAGE_CAP)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.summarize_run(
@@ -738,6 +759,7 @@ class RunSummarizer:
                 success=req.success,
                 steps=req.episodes,
                 max_steps=req.max_episodes,
+                images=images,
             )
 
         result, calls = _attempt_loop(

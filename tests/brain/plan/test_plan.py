@@ -1,7 +1,7 @@
-"""`Brain.plan`：run 级规划的一次尝试——解析、失败出口、思考开关与纯文本链。
+"""`Brain.plan`：run 级规划的一次尝试——解析、失败出口、思考开关与文本回退。
 
 守的是「规划」这条链——模型输出解析成 `RunPlan`、字段不合法算 `ParseFailure` 并抛
-`PlanAttemptFailed`（带账、不吞）、纯文本链不带图（账里 `images` 恒 `[]`）、`thinking`
+`PlanAttemptFailed`（带账、不吞）、未提供 images 时走纯文本（账里 `images` 为 `[]`）、`thinking`
 原样进请求并在账里记 `true`/`false`/`none`、成功恰好一条账、自己不重试、没配 provider
 就调被入口 assert 拦下、`plan_llm` 缺省回退 `judge_llm`。
 """
@@ -139,7 +139,9 @@ def test_non_json_or_non_object_output_fails_as_parse_failure_and_keeps_the_raw_
 
 
 @pytest.mark.parametrize(("reply", "raises"), [(plan_json(), False), ("nope", True)])
-def test_plan_never_sends_images_and_the_ledger_images_is_empty(reply: str, raises: bool) -> None:
+def test_plan_without_images_uses_text_and_records_an_empty_image_list(
+    reply: str, raises: bool
+) -> None:
     provider = ScriptedLLM(text_reply(reply))
     brain = Brain(plan_llm=provider)
 

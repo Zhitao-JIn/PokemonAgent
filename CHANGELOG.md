@@ -78,6 +78,26 @@ knowledge/speed/watch 旋钮）、`tests/brain/schemas/test_llm_complete_req_rou
 （375.15s，1 warning）；`ruff check .` 与 `ruff format --check .` 全绿。`tests/integration/`、
 `tests/review_backend/`、`tests/assembly/` 删后仅剩 `__pycache__`（空目录，git 不跟踪）。
 
+## 2026-10-17（488）—— brain_scope CP4：规划、拆解与 run 蒸馏带图，推翻 0915 的纯文本链定案
+
+**改了什么**：BrainPort 与 Brain 的 plan / decompose 新增可选 images；Planner、
+Decomposer、RunSummarizer 从请求已有记忆的首末帧收集图片，去重后过共用上限，
+仅经 images 通道发送。三份 prompt 补充首末帧、去重与缺图的读法，相关契约文档同步。
+
+**为什么这么改**：让 run 规划、episode 拆解与 run 复盘能直接核对摘要对应的画面，
+避免只有文字而无法检查蒸馏是否抽错，同时不改变记忆读取范围或请求的数据字段。
+
+**取舍**：沿用 choose 的 multimodal 标志分派：有图且模型支持时走 describe，否则
+走 complete。VisionDescribeReq 没有 thinking，带图路径无法应用覆盖，但账仍记录
+传入值；空回复后 _thinking_after 仍返回 False，只对文本重试实际生效，图重试的思考
+设置不变。去重按字符串相等、保留首次出现位置；SCOPE_IMAGE_CAP=20 保留最新、丢最旧。
+L2 不过帽，拼图逻辑保持原样。新增测试均为单元测试，不增加整图执行。
+
+**影响面**：规划与拆解增加图 token，调用费用会上升；调用账里的 images 不再恒为空，
+成功、解析失败与 provider 异常均记录实际发送的图片。假 brain 签名与既有文本测试
+按新契约最小适配，run 蒸馏的带图用例改用视觉假响应。状态模型、请求字段与装配参数
+不变，起终点状态哈希同为 ef3ba958c2680260。
+
 ## 2026-10-17（487）—— brain_scope CP3：task 层读全部 ActMemory，新增同目标 task 索引，删两个窗口常量
 
 **改了什么**：task 决策与判定读取同源的全部 ActMemory，判定同步收到知识。

@@ -17,7 +17,8 @@ from pydantic import BaseModel
 class LlmCompleteReq(BaseModel):
     """一次纯文本补全请求。
 
-    **不带图**（0915 129 定案）：带图与否是"这个模型看不看得见图"的判断，
+    本信封只承载纯文本；plan / decompose 等链路的图走 VisionDescribeReq。
+    带图与否是"这个模型看不看得见图"的判断，
     这个判断归调用方（`Brain` 查 provider 的 `multimodal` 标志）——为真的链路
     直接走 `describe()`（`VisionDescribeReq`），不为图保留一条双格式信封。
     """

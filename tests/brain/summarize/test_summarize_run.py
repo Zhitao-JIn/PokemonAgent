@@ -1,7 +1,7 @@
 """run 蒸馏复用 provider，并保持一次尝试与 run 方言。"""
 
 import pytest
-from _doubles.llm import ScriptedJudge, text_reply
+from _doubles.llm import ScriptedJudge, text_reply, vision_reply
 
 from pokemon_agent.brain import Brain, RunSummary, Task
 from pokemon_agent.brain.errors import SummarizeAttemptFailed
@@ -44,7 +44,7 @@ def test_run_summary_prompt_keeps_final_overturns_and_complete_episode_text_with
     None
 ):
     summary = RunSummary(summary="复盘", quality_score=0.5, quality_rationale="q", markdown="全文")
-    provider = ScriptedJudge(text_reply(summary.model_dump_json()))
+    provider = ScriptedJudge(vision_reply(summary.model_dump_json()), multimodal=True)
     task = Task(task_id="g1", goal="局目标", success_criteria="c", max_steps=2)
     memory = EpisodeMemory(
         run_id="r1",
@@ -72,7 +72,7 @@ def test_run_summary_prompt_keeps_final_overturns_and_complete_episode_text_with
     )
 
     result = RunSummarizer(Brain(verify_llm=provider)).summarize_run(req)
-    prompt = provider.requests[0].prompt
+    prompt = provider.described[0].prompt
 
     assert "总目标" in prompt and "人工判失败" in prompt and "overturned=true" in prompt
     assert "第二句完整保留" in prompt

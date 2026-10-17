@@ -122,6 +122,7 @@ class _Brain:
         goal_stack: Sequence[str],
         history: Sequence[str],
         max_push: int,
+        images: Sequence[str] = (),
         thinking: bool | None = None,
     ) -> PlanResult:
         goal = RunPlan.PlanGoal(goal="新目标", success_criteria="c", max_steps=3)
@@ -135,6 +136,7 @@ class _Brain:
         goal: str,
         context: Sequence[str],
         max_tasks: int,
+        images: Sequence[str] = (),
         thinking: bool | None = None,
     ) -> DecomposeResult:
         self._decomposed += 1

@@ -42,7 +42,8 @@ class FromHarnessToBrainToolPlanOnceReq(BaseModel):
     max_push：这一次最多新增几个目标。**提示模型的建议上限，不是截断**——
         `plan` 节点不再替模型裁剪（裁掉就是静默丢目标）。
 
-    **没有 images 字段**（0915 129 定案）：规划是 run 级纯文本判断，不带图。
+    图不是本信封的字段，由 Planner 从 details 的首末帧拼出，
+    与 judge / choose 同样由门面掌握图的组装。
     """
 
     run_id: str

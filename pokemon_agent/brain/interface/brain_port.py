@@ -24,10 +24,9 @@
 天然就是"做一次"。
 
 **带图方法的形状统一**：`prompt`（规则）+ 素材 + 可选 `images`。
-`choose`/`judge`/`verify`/`summarize`/`summarize_run` 五个方法接受
+`choose`/`judge`/`verify`/`summarize`/`summarize_run`/`plan`/`decompose` 接受
 `images`——多模态素材物理上塞不进文本 prompt，只能独立传；默认空序列表示
 这次纯文本（模型多模态可用时走 `describe()`，否则 `complete()`）。
-**`plan` / `decompose` 是例外**（0915 129 定案）：规划与拆解是纯文本判断，不接图；
 `reflect` 不调模型，天然没有图。
 
 **`verify`/`summarize` 两条链路共用同一类素材**（下级记忆），但产物归属不同：
@@ -200,6 +199,7 @@ class BrainPort(Protocol):
         goal_stack: Sequence[str],
         history: Sequence[str],
         max_push: int,
+        images: Sequence[str] = (),
         thinking: bool | None = None,
     ) -> PlanResult:
         """run 级规划：根据历史决定目标表怎么变。
@@ -218,8 +218,8 @@ class BrainPort(Protocol):
           本项目不在 harness 侧截断（截掉就是静默丢目标，见 `PlanOnceReq.max_push`）。
         - `prompt`：怎么规划、输出什么格式的规则。
 
-        **本方法不接图**（0915 129）：规划是 run 级纯文本判断，依据是局索引、
-        详情正文与目标表——一帧"现在屏幕在哪"帮不上忙，只会白烧图费。
+        `images` 是各局首末帧（完整 PNG data URI）；非空且模型多模态可用时
+        走 describe()，否则纯文本。带图请求不支持 thinking 覆盖，但账仍记录传入值。
 
         **与 `prompt` 不重复**：本项目把这四块都渲进了 `run_plan.md` 的对应占位符，
         但签名立的是"规划必须有这几块"这个约定——谁整体拷走 brain 复用时，
@@ -242,6 +242,7 @@ class BrainPort(Protocol):
         goal: str,
         context: Sequence[str],
         max_tasks: int,
+        images: Sequence[str] = (),
         thinking: bool | None = None,
     ) -> DecomposeResult:
         """episode 级规划：把一个目标拆成按执行顺序排好的任务链。
@@ -250,6 +251,8 @@ class BrainPort(Protocol):
         - `context`：已渲染好的素材行（当前画面摘要、本局已跑 task 的结论、相关记忆）。
         - `max_tasks`：这一版最多给几个 task（给模型的建议上限，调用方不截断）。
         - `prompt`：怎么拆、输出什么格式的规则。
+        - `images`：各 task 首末帧（完整 PNG data URI）；非空且模型多模态可用时
+          走 describe()，否则纯文本。带图路径不支持 thinking 覆盖，但账仍记录传入值。
         - `thinking`：同 `plan()`。
 
         后置条件：`result.decomposition.tasks` 非空；`result.calls` 恰好一条。
