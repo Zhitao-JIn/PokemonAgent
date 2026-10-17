@@ -1,3 +1,25 @@
+## 2026-10-17（486）—— brain_scope CP2：run_goal 与首末帧盖章，新增 run 蒸馏链路与两个收尾格
+
+**改了什么**：EpisodeInput 与 EpisodeRunState 传递 run_goal，episode 正文与空章写入
+所属 run 目标，正文代表帧取本局首末 task。新增 RunSummary、请求响应、RunSummarizePort、
+RunSummarizer 与复盘 prompt，run 图经 summarize_run → store_run_memory → run_done 收尾。
+登记蒸馏调用、读 run 记忆与写 run 记忆三本账；写账排除来源章，读账留待后续检查点产生。
+补 run 召回的 refresh_changed，并纠正 episode 代表帧描述。
+
+**为什么这么改**：先让三级感知范围所需的来源章与最高一级记忆在真实写入链上产生，
+确保正常收尾的 run 留下可复用的复盘；判定、规划和读取范围留给后续检查点接入。
+
+**取舍**：RunState 增加 run_memory 交接槽，把蒸馏与幂等落库两格连接起来。
+两个新格在 done 后运行且自带降级，直接注册、不经 guarded，不改变预算包装器。
+run 蒸馏复用现有蒸馏 provider，本检查点不带图。重试耗尽、预算耗尽或无局摘要时
+保留来源章与错误账并落空章；episode 层仍保留耗尽即上抛的原语义。
+
+**影响面**：EpisodeRunState 新增 run_goal，入口同步透传；RunState 新增 run_memory，
+EpisodeInput 新增必填 run_goal，代表帧描述纠正，这些变化导致状态 schema 哈希
+从 1da60900e11478a0 变为 3c713ab4487ef650，冻结测试同步更新。trace 请求信封扩展
+RunMemory 联合类型，门面统一出口增加协议。既有假 brain、记忆快照、账本核对与预算
+收尾测试按新增能力和收尾账最小适配；先查再写保证恢复重入不覆盖既有 run 记录。
+
 ## 2026-10-17（485）—— brain_scope CP1：记忆阶梯加 Run 一级，召回口加 run_goal 与 runs 两种取法
 
 **改了什么**：新增 RunMemory、三级记忆的一行索引与确定性首句渲染；EpisodeMemory

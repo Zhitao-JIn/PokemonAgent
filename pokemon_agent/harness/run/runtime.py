@@ -13,7 +13,8 @@ episode 图的 `context=…` 由 `episode_entry._invoke` 显式传（形态 B）
 没有任何地方能"拿到"第二份 context，只能由 run 侧递下去（run 图的 `act` 格）
 那一格做 `episode_entry.run_episode(runtime.context.episode, …)`。
 
-**brain 能力按层注入**（185）：run 侧只注入 `planner`（plan 链路），episode 侧
+**brain 能力按层注入**（185）：run 侧注入 `planner`（plan 链路）与 `run_summarizer`（收尾蒸馏），
+episode 侧
 注入其余六个能力对象。`trace` / `memory` / `reviewer` 两边是**同一实例**（装配时
 复制引用）——隔离的是类型可见性，不是运行期实例。**id 一律归 state**（186）：
 `run_id` 住在 `RunState` 上，runtime 不再复制（trace 的归属章由
@@ -46,6 +47,7 @@ from pokemon_agent.direct.interface import (
     JudgePort,
     MemoryToolPort,
     PlanPort,
+    RunSummarizePort,
     TraceToolPort,
 )
 from pokemon_agent.run_budget import RunBudget
@@ -78,6 +80,9 @@ class RunRuntime:
     reviewer: Reviewer
     """人与图之间的门：plan 位置的插话 + review 的审（与 `EpisodeRuntime.reviewer`
     是**同一实例**——"人对 plan 说的那句话"要能传到审那一格，必须同对象）。"""
+    run_summarizer: RunSummarizePort
+    """run 正常收尾的蒸馏口；summarize_run 格使用，自带预算耗尽降级。"""
+
     planner: PlanPort
     """run 层的规划口（`BrainTool.build(plan=…)` 组装的 `Planner`）——
     `plan_run` 格唯一使用者。原 `planner` 壳随 184 撤销、185 起注入的就是

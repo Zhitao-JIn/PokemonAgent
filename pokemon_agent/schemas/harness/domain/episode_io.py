@@ -22,6 +22,7 @@ class EpisodeInput(BaseModel):
     """
 
     run_id: str = Field(description="所属 run")
+    run_goal: str = Field(description="所属 run 的目标文本")
     episode_id: str = Field(description="本局标识 `{run_id}-ep{n}`")
     goal: Task = Field(description="本局唯一目标（task_id 即目标表条目的 task_id）")
     actions_budget: int | None = Field(

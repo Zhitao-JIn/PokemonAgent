@@ -49,6 +49,8 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolReflectResp,
     FromHarnessToBrainToolSummarizeReq,
     FromHarnessToBrainToolSummarizeResp,
+    FromHarnessToBrainToolSummarizeRunReq,
+    FromHarnessToBrainToolSummarizeRunResp,
     FromHarnessToBrainToolSummarizeTaskReq,
     FromHarnessToBrainToolSummarizeTaskResp,
     FromHarnessToBrainToolVerifyReq,
@@ -374,4 +376,15 @@ class TraceToolPort(Protocol):
 
         调用方负责在 harness 生命周期结束后调用。SDK 已提供进程退出处理时，实现可以幂等委托。
         """
+        ...
+
+
+@runtime_checkable
+class RunSummarizePort(Protocol):
+    """run 蒸馏能力，输入最终素材，输出未落库记忆。"""
+
+    def summarize_run(
+        self, req: FromHarnessToBrainToolSummarizeRunReq
+    ) -> FromHarnessToBrainToolSummarizeRunResp:
+        """承诺以请求盖来源章；调用方保证素材非空；耗尽抛明确的预算或重试异常。"""
         ...

@@ -10,7 +10,7 @@
     plan       看 run 级历史 + 目标表，问一次模型该推什么目标 / 改哪行  plan_llm
     decompose  把 episode 目标拆成只靠观测 + 固定动作空间可完成的 task 链  plan_llm
 
-**六个调模型的方法都是「问一次」的语义，没有一个内部重试。** 失败时**一律抛
+**七个调模型的方法都是「问一次」的语义，没有一个内部重试。** 失败时**一律抛
 `AttemptFailed` 家族**（`DecisionAttemptFailed` / `PlanAttemptFailed` /
 `DecomposeAttemptFailed` / `JudgeAttemptFailed` / `VerifyAttemptFailed` /
 `SummarizeAttemptFailed`），
@@ -25,7 +25,7 @@
   现在它们照抛，兜底由调用方的重试预算决定。
 - **`attempt` 字段不由大脑盖**。它属于"这是第几次尝试"，只有循环控制者知道。
 
-**它不写 trace，也不知道自己在哪一局。** 七个方法（含不调模型的
+**它不写 trace，也不知道自己在哪一局。** 八个方法（含不调模型的
 `reflect`）都不收 `step`/`episode_id`/
 `run_id`——构造函数里也没有 `TracePort`——账跟着结果交给调用方。
 规则只有一句：**谁控制循环，谁记账。**
@@ -83,10 +83,12 @@ from .interface import (
     PlanResult,
     Reflection,
     RunPlan,
+    RunSummary,
     ScriptArg,
     ScriptCall,
     ScriptSignature,
     SummarizeResult,
+    SummarizeRunResult,
     VerifyResult,
     VerifyVerdict,
 )
@@ -847,6 +849,36 @@ class Brain:
             raise SummarizeAttemptFailed(call)
 
         return SummarizeResult(summary=summary, calls=[call])
+
+    def summarize_run(
+        self,
+        *,
+        prompt: str,
+        goal: str,
+        history: Sequence[str],
+        success: bool,
+        steps: int,
+        max_steps: int,
+        images: Sequence[str] = (),
+    ) -> SummarizeRunResult:
+        """问一次现有蒸馏 provider，交回 run 方言；失败沿用 SummarizeAttemptFailed。
+
+        前置条件：history 至少一条；调用方负责素材渲染。
+        后置条件：RunSummary 非空，calls 为本次调用的整条账。
+        """
+        assert history, "summarize_run() needs episode history"
+        result = self.summarize(
+            prompt=prompt,
+            goal=goal,
+            history=history,
+            success=success,
+            steps=steps,
+            max_steps=max_steps,
+            images=images,
+        )
+        return SummarizeRunResult(
+            summary=RunSummary.model_validate(result.summary.model_dump()), calls=result.calls
+        )
 
     @staticmethod
     def _parse_summary(text: str) -> EpisodeSummary | None:

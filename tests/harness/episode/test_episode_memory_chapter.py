@@ -135,6 +135,7 @@ def _leave(deps: SimpleNamespace) -> EpisodeMemory:
     return store_empty_chapter(
         deps,  # type: ignore[arg-type]
         run_id="r1",
+        run_goal="测试总目标",
         episode_id="r1-ep1",
         goal="目标 g1",
         tasks_used=0,

@@ -31,6 +31,7 @@ from pokemon_agent.schemas.memory import (
     ActMemory,
     EpisodeMemory,
     ObjectDialogEvent,
+    RunMemory,
     TaskMemory,
 )
 from pokemon_agent.world import Observation
@@ -206,6 +207,16 @@ def _writes() -> dict[str, object]:
         # 而不是"没给所以没有"。
         markdown="# 本局\n",
     )
+    run_memory = RunMemory(
+        run_id=RUN,
+        run_goal="总目标",
+        episodes=1,
+        succeeded=1,
+        summary="复盘",
+        quality_score=0.8,
+        quality_rationale="可复用",
+        markdown="# run\n",
+    )
     rendered = {
         "write_act_memory": render.memory_write(
             FromHarnessToTraceToolAppendReq(
@@ -249,6 +260,18 @@ def _writes() -> dict[str, object]:
                     quality_rationale="可复用",
                     markdown="# 本 task\n",
                 ),
+            )
+        ),
+        "write_run_memory": render.run_memory_write(
+            FromHarnessToTraceToolAppendReq(
+                kind=TraceKind.WRITE_RUN_MEMORY,
+                meta={
+                    "source": "run.store_run_memory",
+                    "episode_id": RUN,
+                    "task_id": RUN,
+                    "step": 1,
+                },
+                memory=run_memory,
             )
         ),
         "write_episode_memory": render.episode_memory_write(

@@ -290,6 +290,7 @@ class MemoryCapability:
     def _recall_run_memories(self) -> list[dict[str, Any]]:
         """返回全部可解析 run 记录，按 run_id 自然序，正文为 markdown。"""
         store = self._store("run")
+        store.refresh_changed()
         items: list[dict[str, Any]] = []
         for uuid_, _metadata, payload, text in store.get_many(store.filter({})):
             try:

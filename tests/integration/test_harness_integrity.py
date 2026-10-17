@@ -58,7 +58,12 @@ def run_integrity(root: Path, backend: str, scenario: str) -> IntegrityRun:
         except AssertionError as exc:
             problems.append(str(exc))
         records = list((root / "memory_snapshots" / "records").glob("*.json"))
-        expected = len(fake.memory.acts) + len(fake.memory.tasks) + len(fake.memory.episodes)
+        expected = (
+            len(fake.memory.acts)
+            + len(fake.memory.tasks)
+            + len(fake.memory.episodes)
+            + len(fake.memory.runs)
+        )
         if len(records) != expected or expected == 0:
             problems.append(f"记忆落盘 {len(records)}，期望 {expected}")
         for record in records:

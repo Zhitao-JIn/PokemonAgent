@@ -26,6 +26,7 @@ def dispatch(state: RunState) -> dict[str, Any]:
     )
     episode_input = EpisodeInput(
         run_id=state.run_id,
+        run_goal=state.run_goal.goal,
         episode_id=f"{state.run_id}-ep{state.step + 1}",
         goal=selected.task,
     )

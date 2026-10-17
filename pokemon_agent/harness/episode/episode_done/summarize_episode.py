@@ -43,6 +43,7 @@ def summarize_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) 
         verdicts=state.task_verdicts,
         episode_id=state.episode_id,
         run_id=state.run_id,
+        run_goal=state.run_goal,
         goal=state.goal.goal,
         termination=state.termination,
         judge_reason=state.judge_reason,

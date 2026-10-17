@@ -85,6 +85,7 @@ def test_build_real_injects_the_budget_and_model_settings(tmp_path, monkeypatch)
                 "verifier",
                 "decomposer",
                 "summarizer",
+                "run_summarizer",
                 "task_summarizer",
             )
         }

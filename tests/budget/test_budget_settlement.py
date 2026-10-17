@@ -45,7 +45,11 @@ def events(fake):
 def assert_mechanical_tail(fake):
     stream = events(fake)
     first_stop = next(i for i, event in enumerate(stream) if event.kind == "budget_skipped")
-    assert not [event for event in stream[first_stop:] if event.type == "model_call"]
+    assert not [
+        event
+        for event in stream[first_stop:]
+        if event.type == "model_call" and event.kind != "summarize_run_call"
+    ]
     assert sum(event.kind == "run_end" for event in stream) == 1
     assert not [event for event in stream if event.kind.endswith("_error")]
 
@@ -140,7 +144,12 @@ def test_restored_action_and_decomposition_counters_do_not_reset(tmp_path):
     assert final["termination"] is Termination.ACTIONS_EXHAUSTED
     assert_mechanical_tail(fake)
     ep = EpisodeRunState(
-        run_id="r1", episode_id="r1-ep1", goal=GOAL, ep_ctx=EpisodeContext(), decompositions_used=2
+        run_id="r1",
+        episode_id="r1-ep1",
+        goal=GOAL,
+        ep_ctx=EpisodeContext(),
+        decompositions_used=2,
+        run_goal="测试总目标",
     )
     final_ep = fake.run_rt.episode_graph.invoke(
         EpisodeRunState.model_validate_json(ep.model_dump_json()),
@@ -181,4 +190,4 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
 
 
 def test_budget_schema_is_frozen_after_the_complete_field_batch():
-    assert state_schema_hash() == "1da60900e11478a0"
+    assert state_schema_hash() == "3c713ab4487ef650"

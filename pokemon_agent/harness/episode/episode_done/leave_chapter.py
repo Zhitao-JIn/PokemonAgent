@@ -37,6 +37,7 @@ def store_empty_chapter(
     deps: EpisodeRuntime,
     *,
     run_id: str,
+    run_goal: str,
     episode_id: str,
     goal: str,
     tasks_used: int,
@@ -64,6 +65,7 @@ def store_empty_chapter(
     chapter = EpisodeMemory(
         episode_id=episode_id,
         run_id=run_id,
+        run_goal=run_goal,
         goal=goal,
         steps=tasks_used,
         acts_used=acts_used,
@@ -97,6 +99,7 @@ def leave_chapter(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> d
     stored = store_empty_chapter(
         runtime.context,
         run_id=state.run_id,
+        run_goal=state.run_goal,
         episode_id=state.episode_id,
         goal=state.goal.goal,
         tasks_used=state.step,

@@ -23,6 +23,7 @@ class FromHarnessToBrainToolSummarizeReq(Settled, BaseModel):
     verdicts: list[VerifyVerdict] = Field(description="与 entries 等长的正/负标注")
     episode_id: str = Field(description="来源章")
     run_id: str = Field(description="来源章")
+    run_goal: str = Field(description="所属 run 的目标文本，来源章")
     goal: str = Field(description="本局目标")
     termination: Termination = Field(description="终止类别（`success` 由它推出）")
     judge_reason: str = Field(

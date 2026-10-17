@@ -72,6 +72,7 @@ class EpisodeRunState(Settled, BaseModel):
     """一局的全部可序列化状态（分组见模块文档）。"""
 
     run_id: str = Field(description="所属 run")
+    run_goal: str = Field(description="所属 run 的目标文本")
     episode_id: str = Field(description="本局标识")
     goal: Task = Field(description="本局唯一目标；`max_steps` 单位是 task 数")
 

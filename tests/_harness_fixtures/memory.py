@@ -27,7 +27,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolSnapshotMemoryReq,
     FromHarnessToMemoryToolSnapshotMemoryResp,
 )
-from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, TaskMemory
+from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, RunMemory, TaskMemory
 
 SUBTASK = "子任务"
 """假拆解给出的每个 task 的目标文字（task 层判定据此认出自己）。"""
@@ -52,6 +52,7 @@ class _Memory:
         self.acts: list = []
         self.tasks: list = []
         self.episodes: list = []
+        self.runs: list = []
         self._snapshot_dir = snapshot_dir
 
     def snapshot_memory(
@@ -60,21 +61,36 @@ class _Memory:
         assert self._snapshot_dir is not None, "这份假记忆没给快照目录"
         self._snapshot_dir.mkdir(parents=True, exist_ok=True)
         path = self._snapshot_dir / f"{req.name}.pkl"
-        path.write_bytes(pickle.dumps((self.acts, self.tasks, self.episodes)))
+        path.write_bytes(pickle.dumps((self.acts, self.tasks, self.episodes, self.runs)))
         return FromHarnessToMemoryToolSnapshotMemoryResp(archive=str(path))
 
     def restore_memory(
         self, req: FromHarnessToMemoryToolRestoreMemoryReq
     ) -> FromHarnessToMemoryToolRestoreMemoryResp:
-        self.acts, self.tasks, self.episodes = pickle.loads(Path(req.archive).read_bytes())
+        self.acts, self.tasks, self.episodes, self.runs = pickle.loads(
+            Path(req.archive).read_bytes()
+        )
         return FromHarnessToMemoryToolRestoreMemoryResp(
-            unpacked=len(self.acts) + len(self.tasks) + len(self.episodes)
+            unpacked=len(self.acts) + len(self.tasks) + len(self.episodes) + len(self.runs)
         )
 
     def recall(self, req: FromHarnessToMemoryToolRecallReq) -> FromHarnessToMemoryToolRecallResp:
         time.sleep(_MOCK_DELAY_SECONDS)
         items: list = []
         episode_id = req.conditions.get("episode_id")
+        if req.conditions.get("runs") == "all":
+            return FromHarnessToMemoryToolRecallResp(
+                items=[
+                    FromHarnessToMemoryToolRecallItem(
+                        kind="run",
+                        uuid=f"r{i}",
+                        score=None,
+                        content=memory.markdown,
+                        payload=memory.model_dump(exclude={"markdown"}),
+                    )
+                    for i, memory in enumerate(self.runs)
+                ]
+            )
         if episode_id:
             items += [
                 {
@@ -123,11 +139,14 @@ class _Memory:
     ) -> FromHarnessToMemoryToolMemorizeResp:
         stored = []
         for record in req.records:
-            uuid_ = f"{record.kind}-{len(self.acts) + len(self.tasks) + len(self.episodes)}"
+            count = len(self.acts) + len(self.tasks) + len(self.episodes) + len(self.runs)
+            uuid_ = f"{record.kind}-{count}"
             if record.kind == "act":
                 self.acts.append(ActMemory.model_validate(record.payload))
             elif record.kind == "task":
                 self.tasks.append(TaskMemory.model_validate(record.payload))
+            elif record.kind == "run":
+                self.runs.append(RunMemory(**record.payload))
             elif record.kind == "episode":
                 self.episodes.append(EpisodeMemory(**record.payload))
             stored.append(FromHarnessToMemoryToolMemorizedRecord(kind=record.kind, uuid=uuid_))

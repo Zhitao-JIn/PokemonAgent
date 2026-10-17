@@ -83,6 +83,7 @@ class TraceKind(StrEnum):
     VERIFY_CALL = "verify_call"
     SUMMARIZE_EPISODE_CALL = "summarize_episode_call"
     SUMMARIZE_TASK_CALL = "summarize_task_call"
+    SUMMARIZE_RUN_CALL = "summarize_run_call"
 
     # ---- 错误：**三个闭集**（0914 定案）----
     #
@@ -163,6 +164,7 @@ class TraceKind(StrEnum):
     READ_ACT_MEMORY = "read_act_memory"
     READ_TASK_MEMORY = "read_task_memory"
     READ_EPISODE_MEMORY = "read_episode_memory"
+    READ_RUN_MEMORY = "read_run_memory"
     READ_KNOWLEDGE = "read_knowledge"
     READ_OBJECT_MEMORY = "read_object_memory"
 
@@ -179,5 +181,6 @@ class TraceKind(StrEnum):
     WRITE_TASK_MEMORY = "write_task_memory"
     WRITE_OBJECT_MEMORY = "write_object_memory"
     WRITE_EPISODE_MEMORY = "write_episode_memory"
+    WRITE_RUN_MEMORY = "write_run_memory"
     BUDGET_CLAMPED = "budget_clamped"
     BUDGET_SKIPPED = "budget_skipped"

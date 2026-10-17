@@ -79,6 +79,7 @@ from pokemon_agent.schemas.memory import (
     ActMemory,
     EpisodeMemory,
     ObjectFactEvent,
+    RunMemory,
 )
 from pokemon_agent.trace import EventType
 from pokemon_agent.world import Observation, TaskObservation
@@ -262,6 +263,7 @@ _CALL_LINK: dict[str, str] = {
     TraceKind.VERIFY_CALL: "verify",
     TraceKind.SUMMARIZE_EPISODE_CALL: "summarize_episode",
     TraceKind.SUMMARIZE_TASK_CALL: "summarize_task",
+    TraceKind.SUMMARIZE_RUN_CALL: "summarize_run",
 }
 """`TraceKind` 的九个调用类 → **链路名**，那个维度唯一的真源。
 
@@ -762,6 +764,28 @@ def episode_memory_write(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         EventType.MEMORY_IO,
         TraceKind.WRITE_EPISODE_MEMORY,
         _body(memory, drop=_EPISODE_BODY_DROP),
+    )
+
+
+def run_memory_write(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """run 写账只装派生正文与 reason；来源章身份与统计不重复落入正文。"""
+    assert isinstance(req.memory, RunMemory), "run write needs a RunMemory"
+    return Rendered(
+        EventType.MEMORY_IO,
+        TraceKind.WRITE_RUN_MEMORY,
+        _body(
+            req.memory,
+            drop=frozenset(
+                {
+                    "run_id",
+                    "run_goal",
+                    "episodes",
+                    "succeeded",
+                    "acts_used",
+                    "termination",
+                }
+            ),
+        ),
     )
 
 

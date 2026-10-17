@@ -28,7 +28,7 @@ from pokemon_agent.schemas.harness.domain import (
     Settled,
     Termination,
 )
-from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
+from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, RunMemory
 from pokemon_agent.world import TaskObservation
 
 
@@ -93,6 +93,9 @@ class RunState(Settled, BaseModel):
     judge_reason: str = Field(
         default="",
         description="review_and_judge 写的判定依据（判定员的理由 / 机械判停类别）；与 reason 分开",
+    )
+    run_memory: RunMemory | None = Field(
+        default=None, description="summarize_run 写、store_run_memory 读；None = 还没蒸"
     )
     last_judge: JudgeFeedback | None = Field(
         default=None,

@@ -156,6 +156,7 @@ def _deps(memory: _Memory, planner: _BrainTool) -> RunRuntime:
             )
         ),
         reviewer=_Reviewer(),  # type: ignore[arg-type]
+        run_summarizer=None,  # type: ignore[arg-type]
         planner=planner,  # type: ignore[arg-type]
         judger=None,  # type: ignore[arg-type]
         episode_graph=None,  # type: ignore[arg-type]

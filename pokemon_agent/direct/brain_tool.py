@@ -58,6 +58,7 @@ from pokemon_agent.brain import (
     ActionSegment,
     BrainPort,
     EpisodeSummary,
+    RunSummary,
     ScriptArg,
     ScriptSignature,
 )
@@ -81,6 +82,7 @@ from pokemon_agent.direct.budget_provider import BudgetProvider, TimeoutProvider
 from pokemon_agent.direct.prompts import decompose as decompose_prompt
 from pokemon_agent.direct.prompts import run_plan as run_plan_prompt
 from pokemon_agent.direct.prompts import summarize as summarize_prompt
+from pokemon_agent.direct.prompts import summarize_run as summarize_run_prompt
 from pokemon_agent.direct.prompts import summarize_task as summarize_task_prompt
 from pokemon_agent.direct.prompts import verify as verify_prompt
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
@@ -97,6 +99,8 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolReflectResp,
     FromHarnessToBrainToolSummarizeReq,
     FromHarnessToBrainToolSummarizeResp,
+    FromHarnessToBrainToolSummarizeRunReq,
+    FromHarnessToBrainToolSummarizeRunResp,
     FromHarnessToBrainToolSummarizeTaskReq,
     FromHarnessToBrainToolSummarizeTaskResp,
     FromHarnessToBrainToolVerifyReq,
@@ -107,6 +111,7 @@ from pokemon_agent.schemas.memory import (
     SNAPSHOT_BLIND,
     ActMemory,
     EpisodeMemory,
+    RunMemory,
     TaskMemory,
 )
 from pokemon_agent.world import (
@@ -665,6 +670,9 @@ class Summarizer:
         episode_memory = EpisodeMemory(
             episode_id=req.episode_id,
             run_id=req.run_id,
+            run_goal=req.run_goal,
+            first_frame=req.entries[0].first_frame,
+            last_frame=req.entries[-1].last_frame,
             goal=req.goal,
             steps=req.steps,
             acts_used=req.acts_used,
@@ -689,6 +697,60 @@ class Summarizer:
 
 
 # ---- task 蒸馏 ----
+
+
+class RunSummarizer:
+    """RunSummarizePort 的实现：复用蒸馏 provider 和重试预算，盖 run 来源章。"""
+
+    def __init__(
+        self,
+        brain: BrainPort,
+        *,
+        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        deadline: Deadline | None = None,
+        request_timeout_s: float = 60,
+    ) -> None:
+        self._brain = brain
+        self._max_attempts = max_attempts
+        self._deadline = deadline
+        self._request_timeout_s = request_timeout_s
+
+    def summarize_run(
+        self, req: FromHarnessToBrainToolSummarizeRunReq
+    ) -> FromHarnessToBrainToolSummarizeRunResp:
+        """蒸馏最终目标表与局记忆；调用方保证局记忆非空，耗尽异常交给 harness 降级。"""
+        prompt = summarize_run_prompt.build_prompt(req)
+
+        def attempt(nth: int, calls: list[ModelCall]) -> object:
+            return self._brain.summarize_run(
+                prompt=prompt,
+                goal=req.run_goal,
+                history=summarize_run_prompt.history_blocks(req),
+                success=req.success,
+                steps=req.episodes,
+                max_steps=req.max_episodes,
+            )
+
+        result, calls = _attempt_loop(
+            "summarize_run",
+            attempt,
+            max_attempts=self._max_attempts,
+            deadline=self._deadline,
+            request_timeout_s=self._request_timeout_s,
+        )
+        summary: RunSummary = result.summary
+        memory = RunMemory(
+            run_id=req.run_id,
+            run_goal=req.run_goal,
+            episodes=req.episodes,
+            succeeded=req.succeeded,
+            acts_used=req.acts_used,
+            termination=req.termination.value,
+            **summary.model_dump(),
+        )
+        return FromHarnessToBrainToolSummarizeRunResp(
+            summary=summary, run_memory=memory, calls=calls
+        )
 
 
 class TaskSummarizer:
@@ -789,6 +851,7 @@ class BrainTool:
     verifier: Verifier
     summarizer: Summarizer
     task_summarizer: TaskSummarizer
+    run_summarizer: RunSummarizer
 
     @classmethod
     def build(
@@ -887,6 +950,9 @@ class BrainTool:
                 brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
             ),
             summarizer=Summarizer(
+                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+            ),
+            run_summarizer=RunSummarizer(
                 brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
             ),
             task_summarizer=TaskSummarizer(

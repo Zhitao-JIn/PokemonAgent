@@ -83,6 +83,7 @@ _RENDERERS = {
     TraceKind.VERIFY_CALL: render.verify_call,
     TraceKind.SUMMARIZE_EPISODE_CALL: render.model_call,
     TraceKind.SUMMARIZE_TASK_CALL: render.model_call,
+    TraceKind.SUMMARIZE_RUN_CALL: render.model_call,
     # 三条错误账：`call_failed` 一般由 `model_call` 连带产出，登记一个渲染器
     # 让表完整（也有调用方按老路直接发它）。
     TraceKind.CALL_FAILED: render.call_failed,
@@ -100,12 +101,14 @@ _RENDERERS = {
     # 六条读口共用 `retrieve_node` 一个渲染函数，账名由 `req.kind` 定。
     TraceKind.READ_ACT_MEMORY: render.retrieve_node,
     TraceKind.READ_EPISODE_MEMORY: render.retrieve_node,
+    TraceKind.READ_RUN_MEMORY: render.retrieve_node,
     TraceKind.READ_KNOWLEDGE: render.retrieve_node,
     TraceKind.READ_OBJECT_MEMORY: render.retrieve_node,
     TraceKind.READ_TASK_MEMORY: render.retrieve_node,
     TraceKind.WRITE_ACT_MEMORY: render.memory_write,
     TraceKind.WRITE_OBJECT_MEMORY: render.object_note,
     TraceKind.WRITE_EPISODE_MEMORY: render.episode_memory_write,
+    TraceKind.WRITE_RUN_MEMORY: render.run_memory_write,
     TraceKind.WRITE_TASK_MEMORY: render.task_memory_write,
     TraceKind.ADVANCE_STEP: render.advance_step,
     TraceKind.PLAN_VERDICT: render.plan_verdict,

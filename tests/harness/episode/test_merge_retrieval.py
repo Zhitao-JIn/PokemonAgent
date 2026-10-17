@@ -41,6 +41,7 @@ class _Runtime:
 def _state(object_memory: str) -> EpisodeRunState:
     return EpisodeRunState(
         run_id="r1",
+        run_goal="测试总目标",
         episode_id="r1-ep1",
         goal=Task(
             task_id="g1",

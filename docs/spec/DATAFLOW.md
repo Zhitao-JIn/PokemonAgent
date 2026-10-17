@@ -175,6 +175,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 | `verify_call`（+`verdicts`） | `verify_act_memories` / `verify_task_memories` |
 | `summarize_task_call` | `summarize_task` |
 | `summarize_episode_call` | `summarize_episode` |
+| `summarize_run_call` | `run.summarize_run` |
 | `sense_call` | 已停止产出，旧账仍可读 |
 
 **结论账（`llm_outcome`）**：带 `input`/`output`（成功那次的请求与原文）
@@ -202,12 +203,14 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 |---|---|
 | `read_act_memory` | `retrieve_act_memories`（task.perceive，按 `episode_id` 查、再按 `task_id` 筛） |
 | `read_task_memory` | `retrieve_task_memories`（episode.perceive） |
+| `read_run_memory` | 由后续检查点产生 |
 | `read_episode_memory` | `retrieve_global_episode_memory`、`run.perceive`（读口按 `episode_id` 自然序返回） |
 | `read_knowledge` | `retrieve_knowledge_semantic_memory` |
 | `read_object_memory` | `retrieve_object_semantic_memory`、`run.perceive`（`refs` 为物体格 `place.key`） |
 | `write_act_memory` | `store_step_episode_memory` |
 | `write_object_memory` | `store_object_semantic_memory` |
 | `write_task_memory` | `summarize_task` |
+| `write_run_memory` | `run.store_run_memory`（正文或降级空章） |
 | `write_episode_memory` | `summarize_episode`（正文版）/ `leave_chapter`、`run.act`（空章版） |
 
 存档与问人的账不进 `node_io` 的活动流（旁路；条数随存档开关、人插话几轮浮动）。`checkpoint_error`（type `error`：`checkpoint_id`/`stage`/`error`）存档失败时记。

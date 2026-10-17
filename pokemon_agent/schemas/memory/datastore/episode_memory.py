@@ -86,10 +86,12 @@ class EpisodeMemory(BaseModel):
     # 自己的 docstring 写着「uuid 文件名天然不撞」。删的是字段本身，
     # 不是账上少抄一份。
     first_frame: str | None = Field(
-        default=None, description="本 task 首键的 before 帧（PNG data URI，可空）"
+        default=None,
+        description="本局第一个 task 的首帧（按执行序，PNG data URI；None = 缺帧或空章）",
     )
     last_frame: str | None = Field(
-        default=None, description="本 task 末键的 after 帧（PNG data URI，可空）"
+        default=None,
+        description="本局最后一个 task 的末帧（按执行序，PNG data URI；None = 缺帧或空章）",
     )
 
     markdown: str = Field(default="", description="LLM 生成的完整记忆正文（.md 主内容）")

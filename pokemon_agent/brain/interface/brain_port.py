@@ -20,11 +20,11 @@
    拷走复用**，跟 `memory/` 同一个规格。
 
 方法名与"一个方法一件事"对应：`choose`/`reflect`/`judge`/`plan`/`decompose`/`verify`/
-`summarize`。**没有 `*_once` 后缀**——"一次"是调用方的循环术语，模块层的方法
+`summarize`/`summarize_run`。**没有 `*_once` 后缀**——"一次"是调用方的循环术语，模块层的方法
 天然就是"做一次"。
 
 **带图方法的形状统一**：`prompt`（规则）+ 素材 + 可选 `images`。
-`choose`/`judge`/`verify`/`summarize` 四个方法接受
+`choose`/`judge`/`verify`/`summarize`/`summarize_run` 五个方法接受
 `images`——多模态素材物理上塞不进文本 prompt，只能独立传；默认空序列表示
 这次纯文本（模型多模态可用时走 `describe()`，否则 `complete()`）。
 **`plan` / `decompose` 是例外**（0915 129 定案）：规划与拆解是纯文本判断，不接图；
@@ -40,7 +40,7 @@
 harness 的截图本来就是以 base64 存的（"截图直存 base64"），谁进了这一层
 再 `b64decode` 一次，就会在构造请求时直接 ValidationError。
 
-**七个方法的失败语义也统一：一律抛 `AttemptFailed` 家族，一律不重试。**
+**八个方法的失败语义也统一：一律抛 `AttemptFailed` 家族，一律不重试。**
 这是本契约里最容易被写歪的一条，所以写在这里：
 
 | 方法 | 失败时抛 | 携带 |
@@ -51,6 +51,7 @@ harness 的截图本来就是以 base64 存的（"截图直存 base64"），谁�
 | `judge` | `JudgeAttemptFailed` | 同上 |
 | `verify` | `VerifyAttemptFailed` | 同上 |
 | `summarize` | `SummarizeAttemptFailed` | 同上 |
+| `summarize_run` | `SummarizeAttemptFailed` | 同上 |
 | `reflect` | 不调模型，只在调用方违约时 assert | — |
 
 **为什么失败必须抛、不许降级**：判定/校验/蒸馏曾经把失败吞成"一个看起来
@@ -77,6 +78,7 @@ from .domain import (
     Reflection,
     ScriptSignature,
     SummarizeResult,
+    SummarizeRunResult,
     VerifyResult,
 )
 
@@ -325,3 +327,22 @@ class BrainPort(Protocol):
         ...
 
     # ---- 世界知识抽取 ----
+
+    def summarize_run(
+        self,
+        *,
+        prompt: str,
+        goal: str,
+        history: Sequence[str],
+        success: bool,
+        steps: int,
+        max_steps: int,
+        images: Sequence[str] = (),
+    ) -> SummarizeRunResult:
+        """一次 run 蒸馏，复用 summarize 的 provider；不持有状态、不重试。
+
+        前置条件：调用方已将最终目标表与全部局摘要渲入 prompt，history 非空。
+        后置条件：返回 RunSummary 与恰好一次调用的账。
+        失败：调用或解析失败抛 SummarizeAttemptFailed，由调用方决定重试。
+        """
+        ...

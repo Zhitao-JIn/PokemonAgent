@@ -325,6 +325,7 @@ def build_real(
         game=game,
         reviewer=episode_rt.reviewer,
         planner=run_brain.planner,
+        run_summarizer=episode_brain.run_summarizer,
         judger=run_brain.judger,
         episode_graph=episode_graph,
         episode=episode_rt,

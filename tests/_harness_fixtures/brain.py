@@ -26,8 +26,10 @@ from pokemon_agent.brain.interface import (
     ModelCall,
     PlanResult,
     Reflection,
+    RunSummary,
     ScriptSignature,
     SummarizeResult,
+    SummarizeRunResult,
     VerifyResult,
     VerifyVerdict,
 )
@@ -174,4 +176,26 @@ class _Brain:
             summary="s", reason="原因", quality_score=0.5, quality_rationale="q"
         )
         result = SummarizeResult(summary=summary, calls=[])
+        return result.model_copy(update={"calls": _call(prompt, result)})
+
+    def summarize_run(
+        self,
+        *,
+        prompt: str,
+        goal: str,
+        history: Sequence[str],
+        success: bool,
+        steps: int,
+        max_steps: int,
+        images: Sequence[str] = (),
+    ) -> SummarizeRunResult:
+        """假 run 蒸馏与真实 BrainPort 同签名，返回可落库正文及一次调用账。"""
+        summary = RunSummary(
+            summary="run summary",
+            reason="原因",
+            quality_score=0.5,
+            quality_rationale="q",
+            markdown="run summary",
+        )
+        result = SummarizeRunResult(summary=summary)
         return result.model_copy(update={"calls": _call(prompt, result)})
