@@ -57,7 +57,7 @@
 
 **CP4（488）**（CP3 裁定：run 蒸馏带图从 CP2 顺延到本检查点，`BrainPort.summarize_run` 加 `images` 并过 `cap_images`；`task_index` 住 `TaskState` 顶层而非 `task_ctx`）`brain/interface/brain_port.py`、`brain/brain.py`、`brain/providers.py`（若需要）、`direct/brain_tool.py`（`Planner` / `Decomposer`）、`direct/interface/ports.py`、mock 与相关测试
 
-**CP5（489）** `harness/episode/`（`perceive/`、`episode_state.py`、`plan_episode/`、`review_and_judge/`）、`schemas/harness/communication/` 的 `DecomposeReq` / `JudgeReq`、`direct/prompts/`（`decompose`、`judge_success`）、测试
+**CP5（489）**（派发时细化）`harness/episode/`：`perceive/retrieve_global_episode_memory.py` 改名 `retrieve_episode_index.py`、`perceive/__init__.py`、`perceive/merge_retrieval.py`（仅 docstring）、`episode_state.py`（`EpisodeContext.global_episode_memories` → `episode_index`）、`plan_episode/plan_episode.py`、`review_and_judge/__init__.py`；`schemas/harness/communication/` 的 `FromHarnessToBrainToolDecomposeReq.py`（`episode_memories` → `episode_index`）与 `FromHarnessToBrainToolJudgeReq.py`（加 `episode_index`、`observation`）；`direct/brain_tool.py`（仅 `Judger` 的 L1 带图）、`direct/prompts/decompose.py`、`direct/prompts/judge_success.py`、`direct/prompts/calls/judge_success.md`；`tests/_harness_fixtures/node_io.py` 与相关测试（含冻结哈希测试的常量）；`docs/spec/DATAFLOW.md`、`docs/spec/harness/SPEC.md`、`docs/spec/schemas/SPEC.md`、`docs/eval/tasks-intent.md`（仅字段名处）；`CHANGELOG.md`。**本检查点状态哈希预期变化**（`ep_ctx` 字段改名与描述）。
 
 **CP6（490）** `harness/run/`（`perceive/read_plan_context.py`、新增知识检索格、`run_state.py`、`plan_run/`、`review_and_judge/`）、`schemas/harness/communication/` 的 `PlanOnceReq` / `JudgeReq`、`direct/prompts/`（`run_plan`、`judge_success`）、测试
 
