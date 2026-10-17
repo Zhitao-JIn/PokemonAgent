@@ -1,6 +1,6 @@
 # spec —— 批 ②b：world 只保留 MCP 形态
 
-> 流程位置：批 ①、②a 已合入 → **批 ②b（本文，v1）** → 批 ③（评测走 MCP）
+> 流程位置：批 ①、②a 已合入 → **批 ②b（本文，v2）** → 批 ③（评测走 MCP）
 > 分支：`refactor/mcp-only`，基线 `0ae865c`（含批 ①、②a；主工作区已快进到同一提交），`state_schema_hash = 4f1cac6fcc7216d5`（本批不应改变它）。
 > 用户决定（2026-10-17）：`build_real` 删 `rom` / `state_file` / `watch` / `speed` 四个参数，`watch` / `speed` 改为 world server 命令行旋钮；评测在 ②b 与 ③ 之间不可用，②b 与 ③ 做完后一起合入主线。
 
@@ -8,7 +8,7 @@
 
 ## 一、事实（读码核对，基线 `0ae865c`）
 
-- `GameTools` 除 `build()` 外没有任何构造点（全仓无 `GameTools(`）；`build()` 的进程内分支只被 `build_real` 触达。删掉该分支后，整个 `GameTools` 类与 `game_tools.py::_run_script_report` 无人使用。
+- `GameTools` 除 `build()` 外，生产代码里没有构造点；唯一的构造点在批 ②a 新增的对照测试 `tests/mcpclient/world_tool/test_world_mcp_parity.py`（用 `GameTools(world)` 当"进程内基准"，第 113、168、190 行附近）。`build()` 的进程内分支只被 `build_real` 触达。删掉该分支后，整个 `GameTools` 类与 `game_tools.py::_run_script_report` 无人使用。
 - `build_real(rom, state_file, watch, speed)` 这四个参数只在进程内分支有意义；MCP 模式下被静默忽略（world server 命令行只有 `--rom`、`--state-file`，没有 `watch` / `speed`）。
 - 评测里 `pack.py` 给每个样本传自己的 `.state` 给 `build_real`：在 MCP 下这个起点会被**静默忽略**，打包会从 server 当时所在的状态开始，造出错误的存档——这一点必须在本批让它大声失败，而不是静默。
 - `one.py` 经 `restore_run` 载入 checkpoint 里的 `world.state`（走 `load_state`），不依赖 `build_real` 的 `state_file`，在 MCP 下仍然成立。
@@ -41,6 +41,10 @@
 ## 三、测试
 
 **迁移 / 调整**
+- `tests/mcpclient/world_tool/test_world_mcp_parity.py`（**v2 新增裁决**）：它拿 `GameTools` 当基准，`GameTools` 删除后改为以共用纯函数和原契约文本为基准，用例意图不变：
+  - 动作空间与 prompt 对照：把 `GameTools(world).get_action_space(...)` 换成 `action_space_for(observation, list(ALL_BUTTONS))` 作为"本地基准"，prompt 全文逐字节对比保留；
+  - 前置失败用例：不再构造 `GameTools`，改为断言 MCP 路径抛出的 `AssertionError` 文本等于**字面期望文本**——键：`f"execute() got {name!r} outside {space.names}"`（`space` 取 `action_space_for(observation, list(ALL_BUTTONS))`）；多键：`"execute() 只接受单键动作；连按应由 Harness 的循环展开成多步"`；脚本：`f"execute() got script {name!r} outside {script_names}"`（`script_names` 为该空间里 `kind == "script"` 的条目名列表）；`client.calls == []` 保留；
+  - 文件改名为 `test_world_mcp_contract.py`（旧文件删除），模块与用例 docstring 里"同进程内路径一致 / 同 GameTools"的措辞改成当前事实。
 - `tests/mcpclient/game_tools/test_game_tools_action_space.py`：被测的是 `mcpclient/action_space.py`，按"测试目录镜像源码"移到 `tests/mcpclient/action_space/test_action_space.py`，用例内容不变（旧文件删除，旧目录若变空一并清掉）。
 - 所有 `monkeypatch.setattr(assembly.GameTools, "build", …)`（`tests/budget/test_run_config.py`、`tests/evals/agent_short_goal_run/test_budget_wiring.py`、`tests/mcpclient/memory_tool/test_memory_mcp_only.py`）改为对 `assembly.WorldMcpTool` 的 `build`；这些测试里的 `build_real(...)` 调用同步去掉被删参数。
 - `test_memory_mcp_only.py::test_build_real_without_memory_url_fails_at_assembly`：现在 world 检查在前，该用例要先让 world 通过（给 `world_server_url` 并替换 `WorldMcpTool.build` 与对 world 的 `assert_mcp_server_ready`），再断言 memory 缺地址报错；不得放松断言。
@@ -53,7 +57,7 @@
 
 ## 四、允许改动的文件
 
-生产：`pokemon_agent/build.py`、`pokemon_agent/mcpclient/world_tool.py`、`pokemon_agent/mcpclient/game_tools.py`（删除）、`pokemon_agent/mcpclient/__init__.py`（若有再导出）、`pokemon_agent/mcp_servers/world_server_cli.py`、`pokemon_agent/world/action_space.py`（仅说明文字）。
+生产：`pokemon_agent/build.py`、`pokemon_agent/mcpclient/world_tool.py`、`pokemon_agent/mcpclient/game_tools.py`（删除）、`pokemon_agent/mcpclient/__init__.py`（若有再导出）、`pokemon_agent/mcp_servers/world_server_cli.py`、`pokemon_agent/world/action_space.py`、`pokemon_agent/world/scripts/catalog.py`（二者都只改说明文字；后者仅第 182、216 行提到 `GameTools.execute` 的两处，改为指向 server 的脚本 tool / `WorldConsole.run_script`，不动任何代码）。
 评测：`evals/agent_short_goal_run/solver/runner/one.py`、`evals/agent_short_goal_run/dataset/build/pack.py`。
 测试：第三节列出的文件及新增用例所在文件。
 文档与脚本：D6 列出的各处；`CHANGELOG.md`（四段，+10 行左右，编号 481）。
