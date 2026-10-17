@@ -8,12 +8,13 @@
 **能力实现位于 memory server**，本类只通过 `MemoryMcpTool` 访问 MCP，
 负责 Port 信封与远程能力裸返回之间的转换。
 
-五族记忆的读写语义（随迁的领域规则，实现细节见 `memory/recall.py`）：
+六族记忆的读写语义（随迁的领域规则，实现细节见 `memory/recall.py`）：
 
     act（单步情景）      等值筛（episode_id）+ step 数值升序
     task（一层一条）     等值筛（episode_id）+ total_acts 升序
     object（一格事件）   等值筛（map/place）+ step 数值升序
     episode（跨局摘要）  hint 等值筛（run_id/episode_id）自然序 / query 语义 rank
+    run（整次摘要）      runs=all 全部读出，按 run_id 自然序；按 run 落盘
     knowledge（先验）    纯语义检索（BM25 + 向量 + reranker）+ 判重
 """
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from .index_text import first_sentence
+
 
 class EpisodeMemory(BaseModel):
     """一条跨局摘要记忆——**本局 TaskMemory 的派生视图**，不是第二份事实。
@@ -51,6 +53,7 @@ class EpisodeMemory(BaseModel):
     # —— 来源章（harness 盖的，取自 run state；与 step memory 无关）——
     episode_id: str = Field(description="蒸馏自哪一局")
     run_id: str = Field(description="所属 run 的标识符")
+    run_goal: str = Field(default="", description="所属 run 的目标文本")
     goal: str = Field(description="那一局的任务目标")
     steps: int = Field(ge=0, description="那一局派了几个 task（本层计数单位）")
     acts_used: int = Field(default=0, ge=0, description="那一局累计按了几个键（统计用）")
@@ -82,12 +85,27 @@ class EpisodeMemory(BaseModel):
     # 改用 uuid 之后它就成了"只被写、从没被读"的一格——`store_episode_summary`
     # 自己的 docstring 写着「uuid 文件名天然不撞」。删的是字段本身，
     # 不是账上少抄一份。
+    first_frame: str | None = Field(
+        default=None, description="本 task 首键的 before 帧（PNG data URI，可空）"
+    )
+    last_frame: str | None = Field(
+        default=None, description="本 task 末键的 after 帧（PNG data URI，可空）"
+    )
+
     markdown: str = Field(default="", description="LLM 生成的完整记忆正文（.md 主内容）")
 
     @property
     def success(self) -> bool:
         """成没成——由 `termination` 推出（`goal_done` 即达成），不单独存。"""
         return self.termination == "goal_done"
+
+    def index_line(self) -> str:
+        """仅用来源章和正文首句生成一行索引。"""
+        return (
+            f"- {self.episode_id}｜{self.goal}｜{'成功' if self.success else '未成功'}｜"
+            f"{self.termination or '-'}｜{self.steps} task/{self.acts_used} 键｜"
+            f"{first_sentence(self.summary)}"
+        )
 
     def render(self) -> str:
         """渲染成进 prompt 的样子，**检索打分也用它**——理由同

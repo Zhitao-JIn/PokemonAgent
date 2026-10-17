@@ -53,7 +53,7 @@ class _FakeReranker:
         return [0.0] * len(documents)
 
 
-_KINDS = ("step_memory", "object_memory", "episode_memory", "knowledge_memory")
+_KINDS = ("step_memory", "object_memory", "episode_memory", "knowledge_memory", "run_memory")
 
 
 def _store(root: pathlib.Path | None = None, kind: str = "step_memory") -> LocalMemoryStore:

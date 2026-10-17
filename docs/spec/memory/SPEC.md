@@ -17,7 +17,7 @@ memory 的能力只有三块：**按 uuid 落盘记录**、**维护倒排索引*
 - 字段叫什么、值怎么序列化、`payload` 里装什么，对本层**完全不透明**：
   `LocalMemoryStore.put(metadata, payload, text)` 只认 `dict[str, str]` + `dict` + `str` 裸字段；
   包内不 import `world` / `brain` / `harness` / `schemas` / `tools`（`TYPE_CHECKING` 也没有外部的）。
-  因此五类记录的具体形状**不在本包**，住 `pokemon_agent/schemas/memory/datastore/`（见第五节）。
+  因此六类记录的具体形状**不在本包**，住 `pokemon_agent/schemas/memory/datastore/`（见第五节）。
 
 ## 二、目录结构
 
@@ -115,7 +115,9 @@ BM25 认得死词（技能名、地名），向量认得改写，cross-encoder �
 
 ## 五、数据形状
 
-五类记录的形状住 `pokemon_agent/schemas/memory/datastore/`（`schemas/memory/__init__.py` 统一出口）；
+run 记录归属 `schemas/memory/datastore/run_memory.py`，是整次 run 的派生摘要。
+
+六类记录的形状住 `pokemon_agent/schemas/memory/datastore/`（`schemas/memory/__init__.py` 统一出口）；
 memory 只把它们当 `metadata` / `payload` / `text` 三块收发，字段含义由 tool 层与组装方负责。
 
 | kind | 记录类 | 一条 = 什么 | 格式 |
@@ -186,7 +188,7 @@ API：检索发生在 episode 内的 retrieve 节点里（`harness/episode/retri
   造五个 store；`MemoryTool.build()` 内 `from pokemon_agent.memory import LocalRerankerProvider, LocalEmbeddingProvider`
   造两个 provider（接线知识收在 tool 层，装配点不越过）。`build.py` 对 memory **零 import**，
   只调 `MemoryTool.build(...)` 递裸字段。
-- `harness/**`、`brain/**`、`schemas/**`、`world/**` 均不 import memory 包；`schemas.memory` 的五类形状由
+- `harness/**`、`brain/**`、`schemas/**`、`world/**` 均不 import memory 包；`schemas.memory` 的六类形状由
   `mcpclient/memory_local.py` 构造与解析。核对脚本 `experiment/real_check/check_memory.py`、`check_memory_roundtrip.py` 走 `MemoryTool.build()`。
 
 ## 八、当前状态与已知缺口

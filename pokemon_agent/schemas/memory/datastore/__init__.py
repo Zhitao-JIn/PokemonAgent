@@ -34,6 +34,7 @@ harness/brain（构造这些记录的地方）才直接打交道，这里存的�
 __all__ = [
     "SNAPSHOT_BLIND",
     "EpisodeMemory",
+    "RunMemory",
     "KnowledgeRecord",
     "ObjectDialogEvent",
     "ObjectFactEvent",
@@ -59,4 +60,5 @@ from .object_memory import (
     ObjectStillEvent,
     ObjectWarpEvent,
 )
+from .run_memory import RunMemory
 from .task_memory import TaskMemory

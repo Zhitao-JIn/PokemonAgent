@@ -1,3 +1,20 @@
+## 2026-10-17（485）—— brain_scope CP1：记忆阶梯加 Run 一级，召回口加 run_goal 与 runs 两种取法
+
+**改了什么**：新增 RunMemory、三级记忆的一行索引与确定性首句渲染；EpisodeMemory
+增加 run_goal 和首末帧；run 记忆接入落盘、召回与 restore；同步信封 kind、工具说明和测试。
+ruff 排除 .worktrees。
+
+**为什么这么改**：后续三级目标需要读取绑定单元的全部下级记忆和同级背景索引，
+先让记忆数据与召回能力具备这个表达范围，避免调用方自行拼接存储规则。
+
+**取舍**：仅建立记忆侧能力，不接入实际来源章盖章或 run 蒸馏；旧 payload 使用字段默认值，
+不回填旧数据。召回沿用 filter 等值筛选与既有 limit，不新增 Port 方法或淘汰机制。
+
+**影响面**：EpisodeMemory 嵌入状态模型，状态 schema 哈希随新增字段变化；
+新增 run 目录随整库快照恢复与清空。既有落盘根测试夹具仅加 run_memory，
+其原有 task_memory 缺项保留，后续检查点再接入调用方。经追加批准，trace 写账正文
+排除 run_goal 与首末帧，冻结哈希测试更新为实测新值 1da60900e11478a0。
+
 ## 2026-10-17（483）—— 评测脚本改走 MCP（批 ③b）
 
 **改了什么**：评测脚本全部改走 MCP——`evals/common/world_case.py` 经 WorldMcpTool

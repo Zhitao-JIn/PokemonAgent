@@ -645,9 +645,22 @@ _OBJECT_BODY_DROP = frozenset({"episode_id", "step", "run_id"})
 物体格的检索键 `place.key` 是 `place` 的派生物，读的人从 `content.place` 现算即可。"""
 
 _EPISODE_BODY_DROP = frozenset(
-    {"episode_id", "run_id", "goal", "success", "steps", "acts_used", "termination"}
+    {
+        "episode_id",
+        "run_id",
+        "goal",
+        "success",
+        "steps",
+        "acts_used",
+        "termination",
+        "run_goal",
+        "first_frame",
+        "last_frame",
+    }
 )
-"""`EpisodeMemory` 里不进 `content` 的字段——**坐标 + 来源章**。
+"""`EpisodeMemory` 里不进 `content` 的字段——**坐标 + 来源章 + 代表帧**。
+
+`run_goal` 属来源章，`first_frame` / `last_frame` 属代表帧，均不进入写账正文。
 
 `episode_id` / `run_id` 是坐标（`meta` 上有）；`goal` / `success` / `steps` /
 `acts_used` / `termination` 是

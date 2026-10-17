@@ -18,6 +18,7 @@
 __all__ = [
     "SNAPSHOT_BLIND",
     "EpisodeMemory",
+    "RunMemory",
     "KnowledgeRecord",
     "ObjectDialogEvent",
     "ObjectFactEvent",
@@ -37,6 +38,7 @@ from .datastore import (
     ObjectFactEvent,
     ObjectStillEvent,
     ObjectWarpEvent,
+    RunMemory,
     TaskMemory,
     render_sequence,
 )

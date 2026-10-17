@@ -65,7 +65,7 @@ if TYPE_CHECKING:
     from pokemon_agent.memory import EmbeddingProviderPort, RerankerProviderPort
 
 # md 类 kind：记录是 frontmatter + 正文的 markdown；其余 kind 是整文件 JSON。
-_MD_KINDS = frozenset({"episode_memory", "knowledge_memory"})
+_MD_KINDS = frozenset({"episode_memory", "knowledge_memory", "run_memory"})
 
 _KINDS = frozenset({"step_memory", "task_memory", "object_memory", *_MD_KINDS})
 """合法的 kind（= 子目录名 = collection 名，项目无关的概念）。"""

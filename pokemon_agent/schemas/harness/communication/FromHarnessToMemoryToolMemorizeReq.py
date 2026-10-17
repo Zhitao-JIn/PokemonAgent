@@ -16,7 +16,7 @@ class FromHarnessToMemoryToolMemorizeRecord(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["act", "task", "episode", "object", "knowledge"] = Field(
+    kind: Literal["act", "task", "episode", "object", "knowledge", "run"] = Field(
         description="这条属于哪个记忆族"
     )
     payload: dict[str, Any] = Field(description="记录本体（对应 kind schema 的 model_dump）")
