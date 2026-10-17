@@ -101,3 +101,21 @@ def test_refresh_changed_reembeds_when_content_really_changes_after_restart(tmp_
 
     # Assert
     assert restarted_embedder.calls == 1
+
+
+def test_get_returns_none_when_record_file_removed_outside_index(tmp_path: Path) -> None:
+    """记录文件被外部删掉、索引尚未对账：get 第一次就返回 None（契约），不再返回空三元组。"""
+
+    # Arrange
+    store = LocalMemoryStore(_CountingEmbedder(), _NoRerank(), "step_memory", root=tmp_path)
+    record_id = store.put({"source": "s"}, {"n": 0}, text="正文")
+    record = tmp_path / "step_memory" / f"{record_id}.json"
+    record.unlink()
+
+    # Act
+    first_get = store.get(record_id)
+    second_get = store.get(record_id)
+
+    # Assert
+    assert first_get is None
+    assert second_get is None

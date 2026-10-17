@@ -1,3 +1,24 @@
+## 2026-10-17（497）—— store.get 缺失返回 None：外部删除后第一次查询不再返回空三元组
+
+**改了什么**：`pokemon_agent/memory/store.py` 的 `get` 在调 `_read_record` 之前增加文件存在性
+检查——`if not self._record_path(uuid).is_file(): self._unindex(uuid); return None`。
+`tests/memory/test_store_regressions.py` 追加第 4 条回归
+`test_get_returns_none_when_record_file_removed_outside_index`（put 一条 step_memory → 外部删
+文件 → 连调两次 get，两次都为 None）。
+
+**为什么这么改**：接口契约写的是「不存在返回 None」，但记录文件被外部删除、索引尚未对账的
+窗口里，第一次 `get` 会走到 `_read_record` 的文件缺失兜底分支，返回 `({}, {}, '')` 而不是
+None——调用方拿到空三元组会当成「记录存在但内容为空」，与契约相反。要等第二次调用（第一次
+已顺手 `_unindex`）才拿到 None。探针已复现：第一次 `({}, {}, '')`，第二次 `None`。
+
+**取舍**：只补 `get` 入口的存在性检查，`get_many`、`_read_record`、`put`、`refresh_changed`
+的逻辑一字未动（`_read_record` 的兜底分支保留给其他调用方）；检查复用已有 `_record_path`，
+无新依赖、无新 I/O 模式（本来也要读文件）。
+
+**影响面**：`get` 对「文件真没了」的返回从空三元组变为 None——这正是契约原意，但若有调用方
+一直在依赖（错误的）空三元组行为，需自查。全量 pytest 1196 通过（1195 + 1 条新回归），
+ruff check / format 全绿。
+
 ## 2026-10-17（496）—— store 索引持久化 content hash：重启后 refresh_changed 不再整库重算向量
 
 **改了什么**：`pokemon_agent/memory/store.py` 三处——`_save_index` 写入的 index.json 增加

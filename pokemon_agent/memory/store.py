@@ -255,6 +255,9 @@ class LocalMemoryStore:
         """按 uuid 点查一条记录，返回 (metadata, payload, text)；不存在返回 None。"""
         if uuid not in self._uuids:
             return None
+        if not self._record_path(uuid).is_file():
+            self._unindex(uuid)
+            return None
         text, metadata, payload = self._read_record(uuid)
         return metadata, payload, text
 
