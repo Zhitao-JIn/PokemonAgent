@@ -87,3 +87,56 @@ CP1 合计 **29 条**（7 + 10 + 8 + 4）。
 | `screen_glyphs.py` | `title_logo` 的切片起点改为 `1:17` | 第 7 条 |
 | `items.py` | `item_price` 的 HM 判断改为 `FIRST_HM < item` | 第 6 条 |
 | `moves.py` | `fold` 删除 `é` 替换 | 第 3 条 |
+
+## 六、CP2：场景与菜单（533，已探针核对）
+
+依据：2026-10-18 在沙箱用真实模块（`pokemon_agent/world/` 源码，不起模拟器，内存为手写假件）逐条探针核对。下列每条断言都有探针结果；探针里的疑点写在“已知观察”，不钉成测试。
+
+假件约定：`Mem` 为字典式内存（未写地址读 0）；屏幕 tile 由 `W_TILEMAP` 起始写入；文字用 `CHARMAP` 反查写入；菜单框内空白用 `0x7F`。
+
+### 6.1 `pokemon_agent/world/scene.py` 与 `scene_layout.py`（8 个用例）→ `tests/world/test_world_scene.py`
+
+1. `test_blank_screen_is_transition`：全屏 `0x7F`、不在战斗 → `TaskScene.TRANSITION`。
+2. `test_title_logo_row_is_title_scene`：第 1 行第 2–17 列为 `0x80..0x8F` → `TaskScene.TITLE`。
+3. `test_empty_start_frame_is_start_menu`：`(0,10)…(15,19)` 完整空框（角 `0x79/0x7B/0x7D/0x7E`，边 `0x7A`，侧 `0x7C`，内部 `0x7F`）→ `TaskScene.START_MENU`；`empty_menu_frame(tiles, 0, 10, 15)` 为真。
+4. `test_alphabet_row_is_naming`：屏上有 `A B C D E F G H I` → `TaskScene.NAMING`。
+5. `test_battle_menu_with_fight_cursor_is_battle_menu`：战斗中（`W_IS_IN_BATTLE=1`），2×2 战斗菜单，光标在 FIGHT → `TaskScene.BATTLE_MENU`。
+6. `test_at_start_true_when_battle_cursor_on_fight`：同上帧，`at_start(text, BATTLE_MENU)` 为真。
+7. `test_at_start_false_when_battle_cursor_on_item`：光标移到 ITEM，`at_start` 为假。
+8. `test_at_start_refuses_a_normal_scene`：`at_start(text, TaskScene.WALK)` 触发 `AssertionError`（前置条件：仅开放脚本的场合）。
+
+### 6.2 `pokemon_agent/world/screen_menu.py`（3 个用例）→ `tests/world/test_world_screen_menu.py`
+
+9. `test_vertical_menu_reads_every_row_and_marks_cursor_cell`：竖排三项，光标在第一项 → `grid == [["POKEMON"], ["ITEM"], ["SAVE"]]`，`cell == (0, 0)`，`covered is True`。
+10. `test_cursor_on_second_row_reports_that_cell`：同一框光标在第二项 → `cell == (1, 0)`。
+11. `test_battle_menu_reads_a_two_by_two_grid`：战斗 2×2 → `read_screen_text(...).option_grid == [["FIGHT", "PKMN"], ["ITEM", "RUN"]]`。
+
+### 6.3 `pokemon_agent/world/priced_menu.py`（4 个用例）→ `tests/world/test_world_priced_menu.py`
+
+12. `test_no_money_title_returns_empty`：屏上没有 `MONEY` → `[]`。
+13. `test_priced_box_returns_items_with_prices_and_cancel`：`MONEY ¥300` 屏，框内 `POTION` / `¥300`、`CANCEL` → `[("POTION", "¥300"), ("CANCEL", "")]`。
+14. `test_single_item_box_is_refused`：框内只有一项 `CANCEL` → `[]`（`len(items) >= 2` 的判据）。
+15. `test_border_tile_inside_box_is_refused`：价格框内某行的一格写入边框图块 `0x7D` → `[]`。
+
+### 6.4 `pokemon_agent/world/battle_status.py`（4 个用例函数，展开参数后 9 项）→ `tests/world/test_world_battle_status.py`
+
+16. `test_outside_battle_returns_none`：`W_IS_IN_BATTLE=0` → `read_battle_status(mem) is None`。
+17. `test_reads_both_sides_names_levels_and_big_endian_hp`：我方 `PIKACHU`、等级 12、HP `0x0123`（291）、最大 `0x0140`（320）、状态 `0x08`；敌方 `RATTATA`、等级 3、HP 9、最大 20、状态 0 → 我方 `PSN`，敌方 `ok`。
+18. `test_name_stops_at_terminator`：名字 `PIKACHU` 第 3 字节后写入 `NAME_END`，其后再写字符 → 名字 `"PIK"`。
+19. `test_status_abbr_maps_each_status_bit`（参数化 6 项）：`0x00→ok`、`0x40→PAR`、`0x20→FRZ`、`0x10→BRN`、`0x08→PSN`、`0x07→SLP`。
+
+CP2 合计 **19 个用例函数**，展开参数后 **24 个 pytest 项**（8 + 3 + 4 + 4 函数；`status_abbr` 参数化 6 项，故 +5）。
+
+### 6.5 CP2 的破坏验证点
+
+| 模块 | 破坏方式 | 必须失败的用例 |
+|---|---|---|
+| `scene.py` | 删掉 `if title_logo(tiles): return TaskScene.TITLE` | 第 2 条 |
+| `scene.py` | `at_start` 的 `BATTLE_MENU` 判断去掉 `text.cursor == "FIGHT"` | 第 7 条 |
+| `screen_menu.py` | 光标格判定 `(r, c) == (row0, col0 + 1)` 改为 `col0 + 2` | 第 9、10 条 |
+| `priced_menu.py` | `if len(items) >= 2` 改为 `>= 1` | 第 14 条 |
+| `battle_status.py` | `u16` 的高低字节顺序对调 | 第 17 条 |
+
+### 6.6 CP2 已知观察（不写测试，不钉成预期，由设计侧裁决）
+
+- 价格框内某行含光标字形 `0xED` 时，`read_priced_menu` 仍返回商品（探针 PR4：`POTION`/`¥300`/`CANCEL` 照常返回）。与第 15 条相比，只拒绝 `0x79–0x7E` 边框图块，光标字形不在拒绝集合内。是否应拒绝，待裁决。
