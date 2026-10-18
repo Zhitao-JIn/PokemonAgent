@@ -67,6 +67,7 @@ class PyBoyWorld:
             scale=4,
             no_input=True,
         )
+        self._watch = watch
         self._pyboy.set_emulation_speed(speed)
         self._state_path = state_path
         self._rom = pathlib.Path(rom).read_bytes()
@@ -182,9 +183,28 @@ class PyBoyWorld:
     def _tick(self, frames: int) -> None:
         """逐帧推进；窗口关闭时标记 closed 并停止。"""
         for _ in range(frames):
+            self._pump_window_events()
             if not self._pyboy.tick(1):
                 self._closed = True  # 窗口被关，世界没了——这是 world 唯一的终止权
                 return
+
+    def _pump_window_events(self) -> None:
+        """处理 SDL 系统事件并丢弃物理按键，维持可视窗口刷新。"""
+        if not self._watch:
+            return
+
+        import ctypes
+
+        import sdl2
+        from pyboy.utils import WindowEvent
+
+        event = sdl2.SDL_Event()
+        while sdl2.SDL_PollEvent(ctypes.byref(event)):
+            if event.type == sdl2.SDL_QUIT or (
+                event.type == sdl2.SDL_WINDOWEVENT
+                and event.window.event == sdl2.SDL_WINDOWEVENT_CLOSE
+            ):
+                self._pyboy.send_input(WindowEvent.QUIT)
 
     def _frame_png(self) -> bytes:
         """把当前画面截成 PNG 字节。"""
