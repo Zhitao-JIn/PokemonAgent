@@ -19,7 +19,15 @@
 
 CP1 允许改动文件：`evals/dataset/brain_goal_judge/{__init__.py,schemas.py,loader.py}`、`evals/dataset/brain_goal_judge/v1/`、迁移后删除的 `evals/brain_goal_judge/v1/dataset.jsonl`、`evals/brain_goal_judge/{dataset.py,task.py,solver.py,scorer.py}`、`tests/evals/test_brain_goal_judge_dataset.py`、`tests/evals/test_evals_tasks.py`、`tests/evals/world_script_execute/test_evals_datasets.py`、`CHANGELOG.md`。迁移前后核对 v1 文件 SHA-256 完全一致；删除旧 task 目录下的数据与 `dataset.py` 前须确认所有引用已迁至数据包出口。不得改 registry、v2、build 工具或生产代码。
 
-编号台账：522 设计文档首提交；523 指标说明、CP0 结果与 CP 编号；524 CP1；525 CP2；526 CP3；527 CP4；528 本次精确化 CP1 文件范围。CP0 是只读审计，无仓库变更编号。
+## CP2 文件范围与已恢复输入
+
+CP2 只读输入：`eval_results/brain_goal_judge/cp0_audit.json`、`eval_results/brain_choose_action/task_capture_20261018_102238/` 与 `eval_results/brain_choose_action/supplement_20261018_172952/`。两批来源原件已从 `brain-choose-action` worktree 按相对路径逐文件 SHA-256 核对后，复制到本 worktree；执行方不访问来源 worktree。原批 5,551 个文件、154,608,479 字节，文件清单摘要 SHA-256 为 `572a6f9dc9f5c5b8561bf2740a22fd7c4517f8652fcadd50b3221197eedbee2`；补采 1,937 个文件、59,834,101 字节，摘要 SHA-256 为 `146ac9df319d6d419bb07dde1439d5964681aed8b4eaec4931ebefe38cf262fe`。摘要以按相对路径排序的 `(路径, 单文件 SHA-256)` JSON 序列计算，源与目标两侧一致。
+
+CP2 允许改动：`evals/dataset/brain_goal_judge/build/__init__.py`、`evals/dataset/brain_goal_judge/build/audit_candidates.py`、`tests/evals/test_brain_goal_judge_audit.py`、`eval_results/brain_goal_judge/cp2_draft.jsonl`、`eval_results/brain_goal_judge/cp2_review.csv`、`eval_results/brain_goal_judge/cp2_coverage.md` 与 `CHANGELOG.md` 中编号 525 的条目。来源目录和 CP0 报告只读；不得改 v1、创建 v2 或碰 production。
+
+派发前 `overlap.py` 显示 CP2 与 `tests/world-unit` 唯一文件交集为 `CHANGELOG.md`。CP2 仅添加编号 525 的独立条目；后续集成保留两个分支条目并按编号排序，不覆盖对方改动。
+
+编号台账：522 设计文档首提交；523 指标说明、CP0 结果与 CP 编号；524 CP1；525 CP2；526 CP3；527 CP4；528 本次精确化 CP1 文件范围；532 精确化 CP2 文件范围与输入清单。CP0 是只读审计，无仓库变更编号。
 
 ## 关键实施顺序
 
