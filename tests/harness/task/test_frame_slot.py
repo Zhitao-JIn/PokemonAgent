@@ -49,6 +49,7 @@ def _deps() -> TaskRuntime:
         verifier=None,
         task_summarizer=None,
         trace=_NoTrace(),
+        reviewer=None,
     )
 
 

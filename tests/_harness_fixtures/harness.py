@@ -159,6 +159,7 @@ def assemble_runtime(
         verifier=Verifier(brain),
         task_summarizer=TaskSummarizer(brain),
         trace=trace,
+        reviewer=reviewer,
         checkpointer=checkpointer,
     )
     episode_rt = EpisodeRuntime(
