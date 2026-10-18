@@ -1,3 +1,13 @@
+## 2026-10-18（521）—— world 纯逻辑小模块补 29 条单元测试（CP1）
+
+**改了什么**：新增四个测试文件，覆盖 world 线的纯逻辑小模块——`test_world_action_space.py` 7 条（掩码覆盖整个命名空间、不可用键显式为 False、无 overlay 时基础键全开、overlay 键替换普通键、接管场合只留基础键、空动作空间断言、接管标志与场合注册表不一致断言）；`test_screen_glyphs.py` 10 条（左右邻是文字、黑块邻格不算文字、列 0 只看右邻、擦除黑块计数与忽略、标题 Logo 需第一行连续十六块、纯图形页的三个判据）；`test_items.py` 8 条（表内名字、表外 id 写成 Hex、名字与 id 往返、大小写与 `é`/`e` 视同、认不出为 None、HM 价为 0、TM 与越界 id 为 None、ROM 三字节 BCD 解码）；`test_moves.py` 4 条（表内名字、表外 id 写成 Hex、`fold` 大写与音符映射、`fold` 空白归一与幂等）。全部用真实字节 / 字表 / 域模型构造，不起模拟器、不读 ROM、不发网络请求、不用 `MagicMock`；`test_world_action_space.py` 不重复 `test_action_space_scripts.py` 已有的两条。
+
+**为什么这么改**：这四个模块目前只有间接覆盖（脚本目录与 `screen_text` 的用例顺带走到），没有针对各自后置条件的用例。用例按 spec 第五节做了破坏验证：删掉空空间断言、`title_logo` 切片左移一格、HM 判断改成开区间、去掉 `fold` 的 `é` 替换，四处对应用例均失败，还原后 `git diff pokemon_agent/` 为空。
+
+**取舍**：按 spec D1 只经公开函数与手写假件测试——接管标志那条用 `TaskObservation` 的子类做假件（`covered_by_script` 是从场合派生的计算属性，无法直接赋值，只能在假件里覆盖）；不测 `_` 开头的私有成员，不新增夹具目录，不顺手改生产代码。
+
+**影响面**：仅新增测试，生产代码零改动。`tests/world/` 现 138 条、耗时 0.99 秒；全量 junit 计数 1443 → 1472，failures / errors / skipped 均为 0，耗时 58.5 → 60.6 秒。`ruff check .` 与 `ruff format --check .` 全绿。
+
 ## 2026-10-18（513）—— ReviewContext：随问快照、frames_of 与渲染
 
 **改了什么**：两个 reviewer 请求统一要求 ReviewContext；run / episode 的规划与判定四个
