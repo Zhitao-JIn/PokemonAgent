@@ -15,7 +15,9 @@
 
 数据包归属为 `evals/dataset/brain_goal_judge/`：`schemas.py`、`loader.py` 和 `v1/`、`v2/` 冻结目录。task 装配代码仍在 `evals/brain_goal_judge/`。现有四条 v1 示例保留原样；扩容数据另建 v2，不覆盖 v1。加载默认版本改为 v2，只有 v2 达到下述冻结门槛后才切换。
 
-`JudgeCase` 至少包含：
+`JudgeCase` 的共同字段为 `case_id`、生产 `request` 和 `achieved`。为保留 v1 原文件字节与旧样本语义，读取 v1 时使用兼容的核心模型；v2 使用继承该核心字段并要求下列标注元数据齐全的专用模型。loader 按版本选模型，不能让 v1 缺少新字段而失效，也不能让 v2 静默缺标注字段。
+
+v2 的标注元数据至少包含：
 
 - `case_id`：版本内唯一 ID；
 - `request`：生产 `FromHarnessToBrainToolJudgeReq` 原样冻结，含完整 task 历史及历史帧；不得把它缩成单帧，也不得把标签塞入 request；
@@ -44,7 +46,7 @@
 
 ## 四、指标与报告
 
-每条有效响应按 `predicted = response.done` 与 `achieved` 落入 TP、FP、FN、TN。报告四格原始计数及分母，并计算：
+每条有效响应按 `predicted = response.done` 与独立标签 `achieved` 落入 TP、FP、FN、TN。**主指标是假阳率 FPR**：目标实际未完成时，judge 却返回 `done=true` 的比例。这种错误会让 task 被过早结算。其余指标用于检查是否以漏判换来了较低假阳率：
 
 | 指标 | 定义 | 分母 |
 |---|---|---|
@@ -53,6 +55,8 @@
 | 完成精确率 | TP / (TP + FP) | 模型判 done 的样本数 |
 | 假阳率（FPR） | FP / (FP + TN) | 未达成样本数 |
 | 准确率 | (TP + TN) / N | 有效响应样本数 |
+
+例如，100 条有效响应中有 40 条真值已完成、60 条未完成；模型报 `done=true` 共 50 条，其中 32 条确实已完成，则 TP=32、FN=8、FP=18、TN=42。主指标 FPR=18/(18+42)=30%，意思是 60 条未完成现场中有 18 条被误报完成；召回率=32/40=80%，精确率=32/50=64%，准确率=(32+42)/100=74%。
 
 分母为 0 时显示 `NA`，同时保留 0 分母，不伪造 0%。按 `goal_family` 报四格和上述可定义的率；按 `negative_mode` 报 FP、TN、FPR 与该组分母，帮助定位难负例。多组样本来自相同 task 时同时显示唯一 task/episode 数。该数据不是独立抽样基准，不报告看似精确的总体置信区间，也不把样本微平均外推为真实游戏总体能力。
 
@@ -73,6 +77,8 @@ inspect eval evals/brain_goal_judge/task.py -T version=v2
 ### CP0：只读数据可行性审计
 
 审计全部 257 个候选 judge 调用，逐条报告请求能否精确重建、prompt/图片是否与生产输入一致、是否具备独立真值证据、排除原因、按 truth 类别与 goal family 的分布、唯一 run/episode/task 数。重点查明 67 条未匹配记录；不把 190 条已对齐记录直接计作可标注样本。输出审计草稿到 `eval_results/brain_goal_judge/`，不改仓库冻结集。
+
+**已完成结果（只作候选盘点）**：257 条覆盖 24 个 run、30 个 episode、68 个唯一 `(run, episode, task)`；257 条 prompt 均精确重建。190 条的结构化请求、prompt、图片均已核对；另 67 条原调用 prompt 与图片存在且 prompt 精确，但图片未能绑定回结构化历史中的具体帧。257 条均未标 `achieved` 或 `negative_mode`。逐条材料见 `eval_results/brain_goal_judge/cp0_audit.md` 与 `.json`。因此 CP0 已交付，但 67 条输入仍待帧绑定核验，真值审核尚未开始；不得据此冻结数据。
 
 **停止条件**：生产输入无法重建；大量候选只剩模型输出或最终结果作证；真值类别严重缺失；源 trace 与历史哈希不能闭合。遇到时先报告，不降标签标准、不启动模型。
 

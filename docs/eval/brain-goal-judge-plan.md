@@ -9,13 +9,17 @@
 
 ## 检查点顺序
 
-| CP | 交付物 | 验收重点 | 验收后动作 |
-|---|---|---|---|
-| CP0 | 只读 257 条 judge 调用盘点报告 | 输入还原、证据可判、类别覆盖分别计数；解释 67 条未匹配 | 报告并停止，等待审阅 |
-| CP1 | `JudgeCase` schema、loader、旧 v1 迁移与测试 | v1 字节/语义保留；冻结引用、哈希、重复 ID 被拒绝 | 跑指定测试，停止 |
-| CP2 | trace 审计/草稿生成器、逐条标签证据表、覆盖报告 | 每个标签可追溯；不能判定的显式排除；请求仍等于生产输入 | 交用户逐条审阅，停止等批准 |
-| CP3 | 用户审核后的 v2 冻结物、数据清单、指标/分组 scorer | 正负样本与 hard-negative 口径；零分母；provider errors 不进分母 | 跑指定测试，停止 |
-| CP4 | Inspect 接入、注册、文档同步 | task 数为 6；相关测试、全量 pytest、ruff 全绿 | 汇报完成；不跑真实模型 |
+| CP | 编号 | 交付物 | 验收重点 | 验收后动作 |
+|---|---|---|---|---|
+| CP0 | — | 只读盘点已完成；257 条、24 run、30 episode、68 task；190 条全输入匹配，67 条图片帧绑定待核，257 条真值均待审 | 交付审计报告，停止等审阅 |
+| CP1 | 524 | `JudgeCase` 版本模型、loader、旧 v1 迁移与测试 | v1 字节与语义保留；重复 ID、版本边界、清单哈希校验有效 | 验收后由设计侧提交，再派 CP2 |
+| CP2 | 525 | trace 审计/草稿生成器、逐条标签证据表、覆盖报告 | 每个标签可追溯；无法判定的显式排除；请求与生产输入一致 | 交用户逐条审阅，停止等批准 |
+| CP3 | 526 | 用户审核后的 v2 冻结物、指标/分组 scorer 与测试 | 主指标 FPR、四格、派生率和分母正确；错误分列 | 验收后由设计侧提交，再派 CP4 |
+| CP4 | 527 | Inspect 接入、注册、文档同步 | task 数为 6；相关测试、全量 pytest、ruff 全绿 | 汇报完成；不跑真实模型 |
+
+CP1 允许改动文件：`evals/dataset/brain_goal_judge/{__init__.py,schemas.py,loader.py}`、`evals/dataset/brain_goal_judge/v1/`、`evals/brain_goal_judge/{dataset.py,task.py,solver.py,scorer.py}`、`tests/evals/test_brain_goal_judge_dataset.py`、`tests/evals/test_evals_tasks.py`、`tests/evals/world_script_execute/test_evals_datasets.py`、`CHANGELOG.md`。删除旧 task 目录下的 `dataset.py` 前须确认所有引用已迁至数据包出口。不得改 registry、v2、build 工具或生产代码。
+
+编号台账：522 设计文档首提交；523 本 plan 的 CP 编号与指标说明修订；524 CP1；525 CP2；526 CP3；527 CP4。CP0 是只读审计，无仓库变更编号。
 
 ## 关键实施顺序
 
@@ -27,4 +31,4 @@
 
 ## 变更记录与版本
 
-CP 的 CHANGELOG 编号按交接分配表登记，每个检查点一个编号；执行者只改工作树，不提交。每个 CP 验收后由设计侧按项目 Conventional Commits 规范提交。v1 保持可显式读取，v2 的文件冻结后只增新版本不覆写。
+每个实现检查点一个 CHANGELOG 编号，见上表；执行者只改工作树，不提交。每个 CP 验收后由设计侧按项目 Conventional Commits 规范提交。v1 保持可显式读取，v2 的文件冻结后只增新版本不覆写。
