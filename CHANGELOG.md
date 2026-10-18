@@ -1,3 +1,23 @@
+## 2026-10-18（499）—— 注释对齐：recall knowledge 的 score 恒为 None；store 的 _corpus 说明移回赋值之后
+
+**改了什么**：两处纯注释。`pokemon_agent/memory/recall.py` 的 `_recall_knowledge` docstring
+由「score = 相关性」改为「score 恒为 None：本路不回填相关性分，字段保留以与其他 kind
+同形」（函数体一字未改）。`pokemon_agent/memory/store.py` 的 `LocalMemoryStore.__init__` 里
+`_corpus` 的属性说明字符串从 `self._vector_rows = 0` 之后的游离位置移回
+`self._corpus` 赋值之后（字符串内容一字未改，赋值语句与逻辑零改动）。
+
+**为什么这么改**：O4——`_recall_knowledge` 往条目里写的 `score` 恒为 `None`，docstring 却
+说「score = 相关性」，读代码的人会去找一个不存在的回填路径。O5——`_corpus` 的说明字符串
+排在 `_vector_rows` 赋值之后成了第二段游离字符串，与本文件其余属性说明「紧跟各自赋值」的
+惯例（PEP 258 属性 docstring）不一致，容易误读成 `_vector_rows` 的说明。
+
+**取舍**：只动文档位置与措辞，不动任何行为、不加测试（`score is None` 的断言属于
+capability spec 用例 17，排期在 CP7/502，本轮不越界）；recall.py 的新 docstring 因行宽
+限制折成两行，文字内容不变。
+
+**影响面**：零行为变化。全量 pytest 1197 通过（与改动前一致：tests=1197 / failures=0 /
+errors=0 / skipped=0），ruff check / format 全绿。
+
 ## 2026-10-18（498）—— store.search 入口断言 limit>0，修复 limit<=0 静默返回
 
 **改了什么**：`pokemon_agent/memory/store.py` 的 `search` 入口增加前置断言

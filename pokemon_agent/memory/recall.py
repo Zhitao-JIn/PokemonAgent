@@ -280,7 +280,8 @@ class MemoryCapability:
         return items
 
     def _recall_knowledge(self, query: str, limit: int) -> list[dict[str, Any]]:
-        """knowledge 语义检索（查前 mtime 增量刷新），score = 相关性。"""
+        """knowledge 语义检索（查前 mtime 增量刷新）。score 恒为 None：本路不回填相关
+        性分，字段保留以与其他 kind 同形。"""
         store = self._store("knowledge")
         store.refresh_changed()
         hits, _timings = store.search(query, limit)

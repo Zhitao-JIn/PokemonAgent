@@ -142,12 +142,12 @@ class LocalMemoryStore:
         复用，put / delete / refresh_changed 改了任何 text，指纹自然失配、下次
         查询重建（0928 326：消灭每次查询的全库重分词）。"""
         self._corpus: dict[str, list[str]] = {}
-        self._vector_rows = 0
-        """sidecar 当前行数（`_load_vectors` 统计，自动压实的判据输入）。"""
         """uuid → 分好词的语料（0928 326：**随 index.json 持久化**）——跨进程也
         免全库重分词，BM25 索引从它秒建。text 变了（put / 真编辑）就地重算；
         缺失（旧索引）惰性补算并写穿。只收 text 非空的记录（语义检索看不见
         空文本，给它存 token 是纯浪费）。"""
+        self._vector_rows = 0
+        """sidecar 当前行数（`_load_vectors` 统计，自动压实的判据输入）。"""
         self._load_or_rebuild()
 
     @property
