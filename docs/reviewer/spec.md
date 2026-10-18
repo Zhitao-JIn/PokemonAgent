@@ -1,3 +1,5 @@
+> R6c（523）清理说明：旧后端、控制台、网页与实时推送已删除；依赖旧后端信封的旧 AI 进程及其测试一并删除。R7 保留新 AI 席、依赖与探针工作。
+
 # Reviewer spec —— 全链路只读透明 + 最终裁决（插话 / 审），一个独立 reviewer 进程、人（终端）与 AI 同权
 
 > 流程位置：intent.md → **spec.md**（本文件）→ plan → 落码
@@ -6,7 +8,7 @@
 > v3.1（2026-10-17）：task 层改为**可选审点**（配置 `REVIEW_LAYERS`，默认关闭，只做 judge 处的 audit，不做 inject），见 #22；新增 R3b。
 > v4（2026-10-17）：reviewer 改为**独立进程**（人、AI、hub、读端口同在其内，harness 只经 `Reviewer` 端口与薄适配 `RemoteReviewer` 相连），见 #23；删除 harness 侧 `ReviewView`；`read_world` 取消；重写 §二 / §五 / §六 / §九 / §十 / §十三，R5 / R6 重排。
 > 上游：`docs/reviewer/intent.md`
-> 改动面：`harness/`、`schemas/`、新包 `reviewer/`（独立进程）、新包 `reviewer_link/`（run 侧适配）、`build.py` 一处装配；旧的 `review_backend/`、`agent_reviewer/` 在 R6c / R7 删除
+> 改动面：`harness/`、`schemas/`、新包 `reviewer/`（独立进程）、新包 `reviewer_link/`（run 侧适配）、`build.py` 一处装配；旧的 `review_backend/`、`agent_reviewer/` 已在 R6c 删除
 > 约束：不碰 brain；不改 `Reviewer` 协议的两个方法名；产出只有一个作者（无改写）；harness 只依赖自己定义的端口
 
 ---
@@ -123,7 +125,7 @@ task / episode 的**成败从此只由机械判定决定**，不再有人审翻�
 | 旧控制台 | `harness/console_reviewer.py::ConsoleReviewer`、`config.CONSOLE_REVIEW_TIMEOUT`；`tests/harness/review/test_reviewer_by.py` 里对它的用例（改为对 `ReviewerApp` / `RemoteReviewer`）；`docs/PLAN_console_reviewer.md` 的状态说明 | R6c |
 | 旧网页与后端 | `harness/web_reviewer.py::WebReviewer`；整个 `review_backend/` 包（含 `page.py`、`agent_client.py`、`backend.py`）；`config.WEB_REVIEW_TIMEOUT`；跳 A（`FromHarnessToReviewBackend*`）与跳 B（`FromReviewBackendToFrontend*`、`FromFrontendToReviewBackend*`）全部信封及其包出口；对应测试与夹具 | R6c |
 | 实时流 | `direct/trace/live_feed.py::LiveFeedTrace`；`TraceTool.build` 与 `build.py` 的 `live_feed_url` 参数；`FromHarnessToReviewBackendFeedReq` / `FromReviewBackendToFrontendFeedReq`；`tests/_harness_fixtures/harness.py` 的 `live_feed_url`；相关测试 | R6c |
-| 旧 AI 席 | 整个 `agent_reviewer/` 包（`agent.py` 的 `_OVERTURN_WORDS` / `_ACCEPT_WORDS` / `_parse` / `_render`、`server.py`、`provider.py` 旧形状）；`schemas/agent_reviewer/`；对应测试 | R7 |
+| 旧 AI 席 | 整个 `agent_reviewer/` 包（`agent.py` 的 `_OVERTURN_WORDS` / `_ACCEPT_WORDS` / `_parse` / `_render`、`server.py`、`provider.py` 旧形状）；`schemas/agent_reviewer/`；对应测试 | R6c（关联清理） |
 | 线上陈旧字段 | 随跳 A 一并消失（`timeout_s` 等） | R6c |
 | 文档与测试 | `reviewer.py` 顶部「落点」表；`docs/agent_reviewer/card.md`、`docs/agent_reviewer/spec.md`、`docs/web_reviewer/*`（加状态说明，正文不改）；测试里对 `overturned` / task 审点的断言与假件 | R6c / R7 / R9 |
 | 规范 | `CLAUDE.md` / `AGENTS.md` §四第 3 条中「人审推翻只改目标表 / 任务表」整句（须你点头） | R9 |
@@ -648,7 +650,7 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 | R6a | `reviewer/` 的 hub（含对 `read_brain_frames` 的回答）+ 命令层 + 终端席（`human` only）+ `ReviewerApp`（进程内，无网络）+ 导入边界测试 | R4、R5 |
 | R6b | 链路：线上信封 + reviewer 侧本地 WS 服务 + reviewer 进程入口（`python -m pokemon_agent.reviewer`）+ run 侧 `reviewer_link/RemoteReviewer`（flush、断线语义）+ `build.py` 装配（`REVIEW_LINK_URL` 有值则装 `RemoteReviewer`）+ 回环测试 | R6a |
 | R6c | 删旧栈：`ConsoleReviewer` / `WebReviewer` / `review_backend` / 跳 A·B 信封 / `LiveFeedTrace` 与 `live_feed_url` / 旧常量与测试 / 文档状态说明 | R6b |
-| R7 | 0）图 + tools + `tool_choice` 探针（用 Pydantic AI）；AI 席（`reviewer/seats/ai`，Pydantic AI 之上的有界循环）+ `human`+`ai` / `ai only` 模式 + 倒计时；删 `agent_reviewer/` 与 `schemas/agent_reviewer/`；`pyproject.toml` 加依赖 | R6c |
+| R7 | 0）图 + tools + `tool_choice` 探针（用 Pydantic AI）；AI 席（`reviewer/seats/ai`，Pydantic AI 之上的有界循环）+ `human`+`ai` / `ai only` 模式 + 倒计时；旧 AI 栈已随 R6c 删除；`pyproject.toml` 加依赖 | R6c |
 | R8 | （暂缓）网页入口：在同一 hub 上加网页壳 | R7 |
 | R9 | 文档同步：`reviewer.py` 表格、`docs/agent_reviewer`、规范 §四第 3 条（须用户点头） | R1a–R7 |
 | R10 | 用户本机真机跑（三种模式） | R7 |

@@ -1,6 +1,6 @@
 """`Reviewer`：人与图之间的那扇门——**插话**与**审**两种机制。
 
-**判据只有一条**（`docs/PLAN_console_reviewer.md` §2）：人不满意的那个东西，
+**判据只有一条**（`docs/reviewer/spec.md`）：人不满意的那个东西，
 是**多字段结构体**（→ 插话）还是**单一结论**（→ 审）。
 
 | | 插话 `inject` | 审 `audit` |
@@ -8,17 +8,18 @@
 | 人不满意的是 | LLM 返回的多字段结构体 | 一个已给的单一结论 |
 | 人做什么 | 说一句"不对"（可不说） | 表态：认 / 推翻 |
 | 谁出最终结果 | **LLM 带着这句重填** | **人自己** |
-| 落点 | **只在 plan 格**（`plan_run` / `plan_episode`） | **只在 `review_and_judge` 格** |
+| 落点 | **只在 plan 格**（`plan_run` / `plan_episode`） | **`review_and_judge` 格** |
+
+审支持 run / episode 与可选 task 层。
 
 **"接管（人自己按键）"不存在**：`act` 要处理的 `Action` 字段多，人填不了，
 所以它也是插话——人**从不手填任何字段**。
 
 **两种机制都是阻塞的**：图停下来、把东西亮给人、等人说完（或直接跳过）再继续。
-槽那套的非阻塞语义在这里完全不成立——控制台里人就在图的调用栈上。
+远程适配器在调用期间等待独立复核进程答复。
 
-**实现必须写在这里**（`harness/interface/`）而不是紧挨 `ConsoleReviewer`：
-用户定调"以后还会有别的类"（测试假件、脚本化回放、将来的 TUI）。
-`ConsoleReviewer` 只是其中一个实现。
+协议由消费方 harness 声明；远程实现位于 `reviewer_link/`，通过单跳 WS 连接独立复核进程。
+测试假件与 `NullReviewer` 实现同一个协议。
 """
 
 from __future__ import annotations

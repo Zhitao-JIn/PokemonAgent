@@ -21,8 +21,7 @@ dependencies = [
 # 会从 HuggingFace Hub 下一次权重、之后离线复用——这是"混合检索"（关键词 BM25 +
 # 向量 + reranker 精排）里向量和精排两段用的库，见 memory/retrieval.py。
 # rank-bm25：纯 Python 的 BM25 实现，混合检索里关键词那一段用它，不用再手写一遍。
-# websockets：人在环后端（`pokemon_agent/review_backend/`）与 `WebReviewer` 之间、
-# 后端与网页之间的 WebSocket；纯 Python，不手写帧。
+# websockets：run 侧 reviewer_link 与独立 reviewer 进程之间的单跳 WebSocket。
 # langfuse：可选显式选择的自托管 trace backend（Python SDK v4 + Observations API v2）；
 # LocalTrace 默认仍是 JSON 文件存储。
 # agent-permission（工具/大脑调用上的权限切面）已整体移除接入——见 CHANGELOG.md

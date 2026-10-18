@@ -59,7 +59,6 @@ from pokemon_agent.trace.langfuse_support import (
 from . import render
 from .budget_render import budget_record
 from .lineage import BranchEdge, Fork, branch_graph, lineage_of
-from .live_feed import LiveFeedTrace
 from .parse import CONTENT_MODELS, MODEL_CALL_KINDS, ParsedEvent, parse
 
 _RENDERERS = {
@@ -212,7 +211,6 @@ class TraceTool:
         run_id: str = "local",
         trace_root: str | Path | None = None,
         branch: str = "main",
-        live_feed_url: str | None = None,
         backend: str = "local",
     ) -> TraceTool:
         """接线工厂：选择 trace 后端并包成 `TraceTool`。
@@ -226,8 +224,6 @@ class TraceTool:
         `trace_root` 只对 local backend 生效。
 
         `branch`：本执行线的分支名；未经恢复时用缺省。
-        `live_feed_url`：人在环后端地址（`ws://host:port`）；给了就在存储外包一层
-        `LiveFeedTrace`，每笔账顺手推给网页实时看。None = 不推。
         """
         if backend == "local":
             store: TracePort = LocalTrace(root=trace_root)
@@ -241,8 +237,6 @@ class TraceTool:
             )
         else:
             raise ValueError(f"unknown trace backend: {backend!r}")
-        if live_feed_url is not None:
-            store = LiveFeedTrace(store, run_id=run_id, url=live_feed_url)
         return cls(store, run_id=run_id, branch=branch)
 
     def flush(self) -> None:

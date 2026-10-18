@@ -1,8 +1,7 @@
-"""复核席回话来源的用法示范：三种实现、回话不变式与落盘账。"""
+"""复核席回话来源的用法示范：回话不变式与落盘账。"""
 
 from __future__ import annotations
 
-import io
 import json
 from pathlib import Path
 from typing import Literal
@@ -12,16 +11,12 @@ from _fake_run import build_fake
 from _review_context import review_context
 from pydantic import ValidationError
 
-from pokemon_agent.harness.console_reviewer import ConsoleReviewer
 from pokemon_agent.harness.interface.reviewer import Reviewer
 from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.harness.reviewing import ReviewRound, ask_inject, audit_judgement
-from pokemon_agent.harness.web_reviewer import WebReviewer
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeResp,
-    FromHarnessToReviewBackendAuditResp,
-    FromHarnessToReviewBackendInjectResp,
     FromHarnessToReviewerAuditReq,
     FromHarnessToReviewerAuditResp,
     FromHarnessToReviewerInjectReq,
@@ -30,27 +25,6 @@ from pokemon_agent.schemas.harness import (
 )
 
 ReplyBy = Literal["human", "agent", "none"]
-
-
-class _Connection:
-    """脚本化连接：按顺序回 JSON 或断连，不创建套接字。"""
-
-    def __init__(self, replies: list[str | OSError]) -> None:
-        self.replies = replies
-        self.sent: list[str] = []
-        self.closed = False
-
-    def send(self, data: str) -> None:
-        self.sent.append(data)
-
-    def recv(self, timeout: float | None = None) -> str:
-        reply = self.replies.pop(0)
-        if isinstance(reply, OSError):
-            raise reply
-        return reply
-
-    def close(self) -> None:
-        self.closed = True
 
 
 class _TaggedReviewer:
@@ -95,46 +69,19 @@ def _check_reply(
 
 
 @pytest.mark.parametrize("kind", ["inject", "audit"])
-def test_by_and_answered_invariant(monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
-    """三种复核席标明来源，Web 断连后每问默认；四种信封拒绝不一致与缺失标签。"""
-    backend_type = (
-        FromHarnessToReviewBackendInjectResp
-        if kind == "inject"
-        else FromHarnessToReviewBackendAuditResp
-    )
-    replies = [
-        backend_type(
-            seq=index, text="", verdict=AuditVerdict.ACCEPT, answered=by != "none", by=by
-        ).model_dump_json()
-        for index, by in enumerate(("human", "agent", "none"), 1)
-    ]
-    connection = _Connection([*replies, OSError("后端断连")])
-    monkeypatch.setattr("pokemon_agent.harness.web_reviewer.connect", lambda *a, **k: connection)
-
+def test_by_and_answered_invariant(kind: str) -> None:
+    """空复核席标记未回答，两种响应拒绝矛盾或缺失的来源标签。"""
     _check_reply(_reply(NullReviewer(), kind), "none")
-    monkeypatch.setattr("sys.stdin", io.StringIO("\n"))
-    _check_reply(_reply(ConsoleReviewer(timeout=0), kind), "human")
-    monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    _check_reply(_reply(ConsoleReviewer(timeout=0), kind), "none")
-    web = WebReviewer("r1", "ws://fake.invalid", timeout=0)
-    try:
-        for expected in ("human", "agent", "none", "none", "none"):
-            _check_reply(_reply(web, kind), expected)
-    finally:
-        web.close()
-
-    assert connection.closed
-    assert len(connection.sent) == 4
+    for by in ("human", "agent", "none"):
+        _check_reply(_reply(_TaggedReviewer(by), kind), by)
     _check_invalid_replies()
 
 
 def _check_invalid_replies() -> None:
-    """四种信封都拒绝矛盾或缺失的来源标签。"""
+    """两种信封都拒绝矛盾或缺失的来源标签。"""
     for model in (
         FromHarnessToReviewerInjectResp,
         FromHarnessToReviewerAuditResp,
-        FromHarnessToReviewBackendInjectResp,
-        FromHarnessToReviewBackendAuditResp,
     ):
         for by, answered in (("none", True), ("human", False)):
             with pytest.raises(ValidationError, match="answered must equal"):

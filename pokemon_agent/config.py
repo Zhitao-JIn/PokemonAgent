@@ -97,24 +97,6 @@ TIMEOUT_RETRY_BACKOFF_SECONDS = 2.0
 0924 真机：服务端卡顿成簇出现（同一步连续 2~3 次无响应），固定短间隔的重试会落在同一段
 卡顿里；拉开间隔让下一次尽量落在卡顿之后。重试预算不单列，与其它失败共用 `BRAIN_MAX_ATTEMPTS`。"""
 
-CONSOLE_REVIEW_TIMEOUT = 30.0
-"""控制台提问的等待秒数——超时按"人没意见"处理。
-
-**两个消费者**（同一个数，两种机制）：`ConsoleReviewer.inject()`（插话：超时→空串，
-即不重问）与 `ConsoleReviewer.audit()`（审：超时→认账）。
-取 30 秒：够人看清一屏上下文并打字，又不至于让无人值守的 run 每步白等。
-**它取代了旧的 `MAX_GOAL_RETRIES`**——那条硬上限删掉后，"重试几次"改由 plan
-读历史后决策（见 `docs/PLAN_console_reviewer.md` §3.1），run 级不再有自动重试预算。
-"""
-
-WEB_REVIEW_TIMEOUT = 30.0
-"""网页问人的等待秒数——到点由后端回默认值（插话空串、审认账），标 `answered=False`。
-
-**两个消费者**：`WebReviewer` 把它放进每一问的 `timeout_s` 交给后端计时；自己等回话时
-多等 5 秒兜底。与 `CONSOLE_REVIEW_TIMEOUT` 分开：两个实现的人看的东西不一样多，各自调。
-"""
-
-
 # ---- 动作输出上限：模型一次决策能写多大 ----
 # **两个消费者必须同源**：prompt 渲染与 tool 校验读同一份，
 # 不会出现"prompt 说 4 段、校验说 3 段"的自相矛盾。

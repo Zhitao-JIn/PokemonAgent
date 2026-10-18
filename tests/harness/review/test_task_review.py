@@ -12,10 +12,10 @@ from pydantic import ValidationError
 from pokemon_agent.brain import Action, ActionSegment, Task
 from pokemon_agent.config import REVIEW_LAYERS
 from pokemon_agent.direct.trace import TraceTool
-from pokemon_agent.harness.review_render import render_context
 from pokemon_agent.harness.task.plan_task import plan_task
 from pokemon_agent.harness.task.review_and_judge import review_and_judge
 from pokemon_agent.harness.task.task_state import TaskContext, TaskState
+from pokemon_agent.reviewer.hub.context import context_sections, context_text
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolChooseOnceReq,
@@ -199,10 +199,11 @@ def test_task_review_context_carries_task_judge_req(tmp_path: Path) -> None:
         ("t1 第 1 键前帧", "data:image/png;base64,A"),
         ("t1 第 1 键后帧", "data:image/png;base64,B"),
     ]
-    assert "data:image" not in render_context(ctx)
-    assert "（图 2 张，用 brain-frames 查看）" in render_context(ctx)
-    assert ctx.brain_input.task_index[0].index_line() in render_context(ctx)
-    assert "背景全文不应展开" not in render_context(ctx)
+    text = "\n\n".join(context_text(ctx, section) for section in context_sections(ctx))
+    assert "data:image" not in text
+    assert "图 2 张，用 brain-frames 查看" in text
+    assert ctx.brain_input.task_index[0].index_line() in text
+    assert "背景全文不应展开" not in text
     for changes in ({"task_id": None}, {"goals": []}, {"tasks": []}):
         with pytest.raises(ValidationError):
             ReviewContext.model_validate({**ctx.model_dump(), **changes})

@@ -7,7 +7,7 @@ from _review_context import review_context
 from pydantic import ValidationError
 
 from pokemon_agent.brain import Goal, Task
-from pokemon_agent.harness.review_render import render_context
+from pokemon_agent.reviewer.hub.context import context_sections, context_text
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolJudgeReq,
@@ -169,16 +169,16 @@ def test_render_context_sections_and_dedupe(kind: str) -> None:
     ctx = _context(kind)
     original = ctx.model_dump_json()
 
-    text = render_context(ctx)
+    text = "\n\n".join(context_text(ctx, section) for section in context_sections(ctx))
 
     for section in ("大脑输入", "目标表", "任务表", "计数"):
         assert text.count(f"## {section}") == 1
     assert "data:image" not in text
     assert "base64" not in text
     assert text.count("唯一表目标") == 1
-    assert "（图 3 张，用 brain-frames 查看）" in text
-    assert "first_frame" not in text and "last_frame" not in text
-    assert "step: 4" in text and "fail_streak: 2" in text
+    assert "图 3 张，用 brain-frames 查看" in text
+    assert "[frame omitted]" in text
+    assert '"step": 4' in text and '"fail_streak": 2' in text
     assert ctx.model_dump_json() == original
     assert ReviewContext.model_validate_json(original).model_dump(mode="json") == ctx.model_dump(
         mode="json"
@@ -189,7 +189,7 @@ def test_render_context_sections_and_dedupe(kind: str) -> None:
 def test_render_context_follows_brain_scope_fields(kind: str) -> None:
     ctx = _context(kind)
 
-    text = render_context(ctx)
+    text = "\n\n".join(context_text(ctx, section) for section in context_sections(ctx))
 
     if kind in {"plan", "judge_run"}:
         assert "ep1 全文" in text and "ep2 全文" in text
@@ -198,10 +198,10 @@ def test_render_context_follows_brain_scope_fields(kind: str) -> None:
         assert ctx.brain_input.episode_index[0].index_line() in text
         assert "older 全文" not in text
     if kind == "plan":
-        assert "details:" in text
+        assert '"details":' in text
         assert ctx.brain_input.run_index[0].index_line() in text
-        assert "plan:" not in text
-    assert "task_table:" not in text
+        assert '"plan":' not in text
+    assert '"task_table":' not in text
 
 
 @pytest.mark.parametrize(

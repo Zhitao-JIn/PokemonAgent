@@ -1,3 +1,5 @@
+> 状态：旧实现已在 reviewer R6c（523）删除；当前入口为 `python -m pokemon_agent.reviewer --seats human`。新 AI 席待 R7。以下正文作为历史设计保留。
+
 # Agent Reviewer spec —— 独立进程内的视觉 LLM 复核席，与人在同一个聊天栏里磨结论
 
 > 状态：**已实施 v3.4**（2026-09-29，基于 `card.md` v3.4：agent 是独立进程、地址在 `.env` 的

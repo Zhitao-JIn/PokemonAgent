@@ -1,3 +1,5 @@
+> 状态：旧实现已在 reviewer R6c（523）删除；当前入口为 `python -m pokemon_agent.reviewer --seats human`。新 AI 席待 R7。以下正文作为历史设计保留。
+
 # Web Reviewer spec —— 人在环第三实现：独立后端 + 网页（WebSocket 推送）
 
 > 状态：v1（0925）。前身 `spec-v0.md`（原 `docs/PLAN_web_reviewer.md`，写于 checkpoint-v2 之前）。

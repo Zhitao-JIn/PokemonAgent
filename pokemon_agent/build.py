@@ -73,7 +73,6 @@ def build_real(
     world_server_url: str | None = None,
     checkpoint_root: str | Path | None = None,
     branch: str = "main",
-    live_feed_url: str | None = None,
     # 供应商由**型号名前缀**决定（0914 起，表在 `brain/providers.py::_PROVIDER_PREFIXES`）：
     # `qwen*` → DashScope、`doubao*` → 火山方舟、`deepseek*` → DeepSeek 官方 API。
     # 下面这几个缺省值因此不只是"型号名"，它们同时**选定了厂商**。
@@ -106,9 +105,6 @@ def build_real(
     `reviewer` 显式实例优先；否则按 reviewer_url、REVIEW_LINK_URL 环境变量、
     config.REVIEW_LINK_URL 的顺序选地址，有地址就接 RemoteReviewer 并注入 trace.flush。
     无地址保持 NullReviewer（测试、CI、无头批量跑），不是缺配置。
-
-    `live_feed_url`：人在环后端地址（`ws://host:port`）；给了就把每笔账顺手推给网页实时看
-    （`TraceTool.build` 里包一层 `LiveFeedTrace`）。None = 不推。
 
     `trace_backend`：`langfuse`（本机自托管服务，选它时**启动前先打健康检查探针**，
     服务没起当场报错不进 run）或 `local`（落本地 JSON）；langfuse 不写本地事件副本。
@@ -179,7 +175,6 @@ def build_real(
         # trace_root 仅对 local 后端生效——langfuse 传了会被 TraceTool.build 拒收（335）。
         trace_root=trace_root if trace_backend == "local" else None,
         branch=branch,
-        live_feed_url=live_feed_url,
         backend=trace_backend,
     )
 
