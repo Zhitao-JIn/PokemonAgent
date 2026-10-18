@@ -4,6 +4,12 @@
 **取舍**：采集原件保留为本机未跟踪评测数据；CP2 只生成待人工审阅材料，不创建冻结 v2。
 **影响面**：仅评测计划与协作记录；不改生产代码、冻结 v1 或任务注册。
 
+## 2026-10-18（525）—— brain_goal_judge 候选核对与真值审阅草稿（CP2）
+**改了什么**：新增只读审计工具 `evals/dataset/brain_goal_judge/build/audit_candidates.py`，对 257 条候选按 `(run, episode, task, step)` 去重后重建生产 `FromHarnessToBrainToolJudgeReq`（完整 task 历史与历史帧，含每条 `before_frame`/`after_frame`），用生产 `build_prompt` 核 prompt、用 `dedup_snapshots` 逐帧哈希核图片绑定；真值只用已有机械规则（`map_changed` / `reach_map12_y14` / `dialog_opened` / `dialog_finished` / `shop_*` / `move_*` 等）在请求时刻证据上自动判定，其余样本不赋真值、只留未审定建议或标待审，逐条附结构化证据（source/locator/summary，定位到 trace 或 `step_memory` 具体文件与字段）；输出 `cp2_draft.jsonl`（257 条）、`cp2_review.csv` 与 `cp2_coverage.md`，并新增 `tests/evals/test_brain_goal_judge_audit.py`。
+**为什么这么改**：真值必须独立于模型 `done`/`why`、后续动作与 run 最终结果；只有独立机械规则能自动赋真值，其余须人工审阅，故把「请求可复原」「prompt/图片对齐」「真值可判」三者分开，逐条留下候选 ID、来源坐标、trace UUID、request 哈希与可定位证据，才能支撑后续 v2 冻结时逐条可追溯。
+**取舍**：机械标签只映射已有 `check_id`，不臆造规则或 ID；非机械样本的自动推测只落 `suggested_achieved`，不写 `truth_method="human"`、不计入真值；CP0 标待核的 67 条图片帧绑定经 `step_memory` 帧全部核验一致；析取/含糊 criteria 标待审（不降标签标准）；不创建 v2、不切换默认版本、不注册 task。实测：prompt 精确 257/257、图片帧绑定 257/257；机械判定 145（达成 30、未达成 115）、待人工审阅 112（建议 92、未能建议 20）。
+**影响面**：仅新增评测审计工具、测试与未冻结审阅草稿；不改 `pokemon_agent/` 生产代码、`v1/`、`v2/`、task/solver/scorer 或 registry。
+
 ## 2026-10-18（524）—— brain_goal_judge 数据集出口与 v1 迁移
 **改了什么**：新增版本化 judge 数据包 schema、loader 与 v1 清单；原四条 v1 样本按 SHA-256 原样迁入新目录，并将任务、solver、scorer 和数据集测试改为使用新出口。
 **为什么这么改**：数据契约和冻结文件放在同一个数据包后，v1 可以兼容读取，v2 也能在独立扩展模型中强制真值元数据，同时由清单核验冻结文件完整性。
