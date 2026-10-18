@@ -192,7 +192,8 @@ class MemoryReader(Protocol):         # 对应 MemoryToolPort.recall，仅此一
     def recall(self, req: FromHarnessToMemoryToolRecallReq) -> FromHarnessToMemoryToolRecallResp: ...
 
 class ViewReaders:
-    def __init__(self, trace: TraceReader, memory: MemoryReader) -> None: ...
+    def __init__(self, trace: TraceReader | None, memory: MemoryReader | None,
+                 *, trace_delayed: bool = False) -> None: ...
     def read_trace(self, q: TraceQuery, *, default_run_id: str) -> ViewAnswer: ...
     def recall(self, q: RecallQuery) -> ViewAnswer: ...
     def read_frame(self, q: FrameQuery, *, default_run_id: str) -> ViewAnswer: ...
@@ -200,7 +201,7 @@ class ViewReaders:
 
 签名以 R5 核查结果为准。`read_brain_frames` 由 hub 回答（5.3）。同步端口在 hub 的单事件循环里经 `run_in_executor` 调用，不阻塞终端与倒计时。
 
-返回 `ViewAnswer(ok: bool, text: str, images: list[str])`：`text` 是渲染好的文本（人 / LLM 直接读），`images` 只有 `read_frame` / `read_brain_frames` 才非空（data URI，单次 ≤ `FRAME_QUERY_MAX_IMAGES`）。失败 `ok=False` 并在 `text` 里说明，不抛。
+返回 `ViewAnswer(ok: bool, text: str, images: list[str])`：`text` 是渲染好的文本（人 / LLM 直接读），`images` 只有 `read_frame` / `read_brain_frames` 才非空（data URI，单次 ≤ `FRAME_QUERY_MAX_IMAGES`）。预期读取失败 `ok=False` 并在 `text` 里说明；编程错误上抛。
 
 ### 5.2 查询模型（`schemas/reviewer/view.py`，reviewer 产出）
 
@@ -247,16 +248,17 @@ ViewQuery = Annotated[
 ### 5.3 实现
 
 - **装配与只读**：`ViewReaders` 由 reviewer 的 `__main__` 装配；窄 Protocol 声明在 `reviewer/view/` 内，类型上拿不到 `append` / `memorize` 等写方法。记忆读端口背后是 MCP 客户端（`MCP_MEMORY_SERVER_URL`）；trace 读端口背后是与 run 同一后端、同一份配置的读取器。只用默认开放的 `recall`，不依赖 `--enable-admin`。
-- `read_trace`：`meta = {"run_id": query.run_id or default_run_id, **非空过滤键}` → `read_events` → 按 `(ts, uuid)` 取尾部 `last_n` 并应用 `offset` → 复用 `render_events` 的行格式；`content` 按 `content_limit` 截断；**帧 / data URI 一律剔除**（只留 `[frame omitted]`）。
+- `read_trace`：`meta = {"run_id": query.run_id or default_run_id, **非空过滤键}` → `read_events` → 按 kind 筛选 → 按当前事件契约 `(ended_at, seq)` 取尾部 `last_n` 并应用 `offset`，页内升序 → 复用 `render_events` 的行格式而不 import harness；正文先递归去图再按 `content_limit` 截断，0 表示不展示正文；**帧 / data URI 一律剔除**（只留 `[frame omitted]`）。Langfuse 装配传 `trace_delayed=True`，头行提示「可能不含最近几秒」。
 - `recall`：`FromHarnessToMemoryToolRecallReq(query, conditions, limit)` → 文本化。**不强加 `run_id`**：记忆库跨 run 共享，大脑自己召回的索引就来自其他 run，reviewer 要看到「大脑看到的」就必须能查到同一批。
-- `read_frame`：`which == "latest"` 读 trace 最近一条 `sense_frame` 账的 `content.frame`（更正 #18）。`before` / `after`：画面真源是 `memory/step_memory/*.json` 的 `before_frame` / `after_frame`，**没有按 (episode_id, step) 取一步的现成接口**（更正 #16）；先走 `recall(conditions={"episode_id": …})` 取该局 act 族条目（族内按 step 升序），按 `step` 挑出，返回 `images=[data URI]`；取不到回 `ok=False`。是否可行（act 族 payload 是否带帧、单次条数上限是否够覆盖该局、`recall` 有无访问计数等副作用）**R5 开工前先核**；不可行则 `before` / `after` 不上线，另议新增只读记忆接口（会违背 2026-09-29「能力面收敛」决定，须用户拍板）。
+- `read_frame`：`which == "latest"` 读当前 run 最近一条 `sense_frame` 账的 `content.frame`；最新条目缺帧或格式坏时失败，不冒充返回更早画面。`before` / `after` 经 `recall(conditions={"episode_id": …}, limit=None)` 取该局 act 族完整 payload，按 `step` 精确匹配，返回 `images=[data URI]`；取不到或帧无效回 `ok=False`。R5 已经真实 MCP 服务端路径验证 12 条记录两帧完整保留、admin 关闭时可用，传输使用内存连接；不新增记忆能力。
 - `read_brain_frames`（更正 #19）：**不经读端口**（读端口与「哪一问」无关），由 hub 用当前 pending 问的 `ReviewContext` 回答：`frames_of(ctx.brain_input)` → 按 `offset` / `limit` 切片 → `ViewAnswer(text=头行「共 N 张，本次第 i–j 张」+ 每张的来源标签（如 `r1-ep2 首帧`）, images=[…])`。`frames_of` 是 `schemas/harness/domain/review_context.py` 里的纯函数：按请求类型逐个取记忆对象的首末帧（task 层 `JudgeReq`：`history` 里每条 ActMemory 的前后帧），保持对象顺序，按帧字符串相等去重（同大脑），缺帧跳过，返回 `list[tuple[label, data_uri]]`；不套 `SCOPE_IMAGE_CAP`。该问已了结后回 `ok=False`（同其他查询）。
-- **后置条件**：任何入参下都不改 trace、不改记忆；读端口无写方法；reviewer 进程不构造 game / brain 端口。
+- **后置条件**：查询不写 trace、不改写记忆记录正文，不调用 memorize；读端口无业务写方法。R5 核查发现 recall 会刷新索引与向量 sidecar，用户明确允许此类客观更新，故复用现有 recall，不承诺磁盘零写入。reviewer 进程不构造 game / brain 端口。
 
 ### 5.4 装配
 
 - `reviewer/__main__.py` 是 reviewer 进程的唯一装配点：读 `config.py` / `.env` → 造 trace 读端口与记忆 MCP 客户端 → `ViewReaders` → `ReviewerApp`。trace 或记忆缺配置时，对应查询回 `ok=False, text="读端口未接入"`，不阻止 reviewer 启动。
 - harness 侧没有任何查询相关装配；`build.py` 只负责 `RemoteReviewer`（6.2）。
+- trace 读协议要求支持调用方指定的 run。Langfuse 实例绑定 trace_id，R6b 装配时必须按查询 run 选择读取器；不能只修改 meta 后继续使用固定 run 的实例。
 
 ---
 
@@ -691,7 +693,7 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 ## 十八、落码前须核对（本 spec 起草时未读全）
 
 1. **（R5 前置）** `recall(conditions={"episode_id": …})` 返回的 act 族条目 payload 是否带 `before_frame` / `after_frame`；单次条数上限是否足以覆盖一局；经 MCP 远程版时是否仍如此。不满足则 `read_frame` 不上线。
-2. **（R5 前置）** `MemoryCapability.recall` 是否无副作用（访问计数、向量缓存落盘等），MCP 远程版同理。若有副作用，视图的 `recall` 需换成纯查询接口（须用户拍板，涉及记忆模块能力面）。
+2. **（R5 已裁决）** 实测 MCP recall 会在外部编辑后更新 index.json / vectors.jsonl；用户确认这是客观更新、允许保留。只读保证限定为无业务写操作、不改记录正文，继续复用现有 recall，详见 `r5-audit.md`。
 3. **（R5 前置）** trace 后端（本地文件 / Langfuse）在 run 进程 flush 之后，另一进程能否立即读到；`TraceToolPort` 是否已有 `flush`（或等价）接口；没有则要在 trace 模块加一个（触及 trace 能力面，须用户拍板）。
 4. `build.py` 里 `RemoteReviewer` 的装配位置、`flush` 回调的来源（trace 端口），以及 `reviewer` 参数从「传实例」到「装配期按 `REVIEW_LINK_URL` 构造」的入口改法（`check_harness` 等）；reviewer 进程 `__main__` 如何按 run 的 trace 配置造读端口（同一份 `.env` / `config`）。
 5. trace 读端口与 `recall` 在 reviewer 进程里的线程 / 协程安全：hub 单事件循环，同步端口需放线程池（`run_in_executor`），核查它们能否被并发调用。

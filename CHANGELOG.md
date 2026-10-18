@@ -1,3 +1,24 @@
+## 2026-10-18（518）—— reviewer 查询门面：按需读取 trace、记忆与历史帧
+
+**改了什么**：新增 reviewer/view 的 TraceReader / MemoryReader 窄协议与 ViewReaders，
+以及 schemas/reviewer 的四种查询、统一结果和体量校验。trace 支持跨 run 标签过滤、
+kind 筛选与尾部翻页；记忆探索保留 run_goal / runs hint；按步取帧显式不限量召回。
+文本递归去图后再截断，图片仅在显式取帧结果的 images 中返回；缺端口、断连与坏帧明确失败。
+
+**为什么这么改**：让后续终端与 AI 席共用类型化查询入口，用同一份数据查证结论；
+避免默认八条召回上限漏掉后续步骤，也避免图片编码混入文本占用上下文。
+
+**取舍**：R5 实测 recall 会刷新 index.json / vectors.jsonl，用户明确允许此类客观更新，
+故保留原能力面，只读限定为不写 trace、不改记忆正文、不调用 memorize。trace 沿当前
+ended_at / seq 排序；Langfuse 查询标注可能延迟，跨 run 后端选择由 R6b 装配负责。
+BrainFramesQuery 仅定义 schema，随问画面的实际分页仍归 R6a hub，不在读门面持有当前问。
+
+**影响面**：新增 52 项测试，完整默认 1515 项、slow 3 项通过，ruff check / format 通过
+（677 个 Python 文件）。真实 MCP 服务端路径在 admin 关闭时取回第 12 步前后帧；独立
+Python 进程读取已 flush 本地账；缓存刷新时记录正文哈希不变。把取帧上限改回八条使两项
+失败，关闭 data URI 去图使一项失败，均逐字节还原。状态哈希仍为 28e96b09966dc94e；
+不改 harness / memory / trace 实现，不新增第三方依赖，R6a 尚未实施。
+
 ## 2026-10-18（517）—— 统一规划复核重问并限制 AI 连续插话
 
 **改了什么**：run / episode 的两段插话循环改用共享 elicit_with_review 临时图；
