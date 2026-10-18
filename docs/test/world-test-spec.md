@@ -66,8 +66,9 @@ CP1 合计 **29 条**（7 + 10 + 8 + 4）。
 ## 三、CP2–CP5 范围（进入时再写用例）
 
 - **CP2 场景与菜单**：`scene`、`scene_layout`、`screen_menu`、`priced_menu`、`battle_status`。
-- **CP3 读数与对象**：`readout`、`object_events`、`terrain_sprites`、`map_tilesets`、`frame_encoding`、`task_perception`、`ram`（解码部分）、`tables/` 的 `warps.json` / `shop_layouts.json` / `pokecenter_layouts.json`。
-- **CP4 `pyboy_world`**：只测调用模拟器之前的断言与构造检查（intent 第四节第 1 条列出的 4 类）。
+- **CP3 读数与地形**：`readout`（`read_money`、`read_bag`、`read_party`）、`ram`（`read_facing`、`read_passable`）、`terrain_sprites`、`map_tilesets`、`frame_encoding`。`read_readout` 本轮不测（只做封装，断言价值由子函数承担）。
+- **范围变更（2026-10-18，设计侧）**：`object_events`、`task_perception` 与 `tables/` 三张表（`warps.json`、`shop_layouts.json`、`pokecenter_layouts.json`）从 CP3 移至 CP4。理由：`object_events.py` 325 行、`task_perception.py` 75 行，表格的 `_source` 溯源字段尚未探针，都不是纯逻辑小模块，和 CP3 不同质。
+- **CP4 `pyboy_world` 及其余**：`pyboy_world` 只测调用模拟器之前的断言与构造检查（intent 第四节第 1 条列出的 4 类）；并接收 `object_events`、`task_perception` 与 `tables/` 三张表。
 - **CP5 迁移**：intent 第五节的 mcp 用例迁入，mcp 侧同时删除，同一条 CHANGELOG。
 
 `screen_text` 已由 `tests/world/test_screen_text.py` 覆盖，不在 world 线的新增范围内。
@@ -140,3 +141,58 @@ CP2 合计 **19 个用例函数**，展开参数后 **24 个 pytest 项**（8 + 
 ### 6.6 CP2 已知观察（不写测试，不钉成预期，由设计侧裁决）
 
 - 价格框内某行含光标字形 `0xED` 时，`read_priced_menu` 仍返回商品（探针 PR4：`POTION`/`¥300`/`CANCEL` 照常返回）。与第 15 条相比，只拒绝 `0x79–0x7E` 边框图块，光标字形不在拒绝集合内。是否应拒绝，待裁决。
+
+## 七、CP3：读数、地形精灵、地图表与帧编码（537，已探针核对）
+
+假件沿用第六节开头。探针在沙箱 Python 3.11 venv 里对真实模块跑过，期望值全部是探针读出的结果，不是按源码推的。
+
+### 7.1 `pokemon_agent/world/readout.py`（5 个用例函数，展开 7 项）→ `tests/world/test_world_readout.py`
+
+- `test_money_is_three_byte_bcd`（参数化 3 项）：`12 34 56` → 123456；`00 30 00` → 3000；`00 03 00` → 300。
+- `test_bag_stops_at_list_end`：件数写 3，第三项起始字节为 `0xFF`，读出 2 件 `(4, 5)`、`(10, 2)`。
+- `test_bag_capped_at_capacity`：件数写 25，读出 20 件，末件 id 为 20。
+- `test_party_reads_fields_for_count_only`：人数写 2，只读前 2 只。第一只 species 153、lv 12、HP 291/320、状态 `PSN`；第二只 species 37、lv 3、HP 9/20、状态 `ok`。
+- `test_party_capped_at_six`：人数写 9，读出 6 只。
+
+### 7.2 `pokemon_agent/world/ram.py` 解码（3 个用例函数，展开 6 项）→ `tests/world/test_world_ram_decode.py`
+
+- `test_facing_from_sprite_byte`（参数化 4 项）：精灵表 +9 字节 0 / 4 / 8 / 12 → `south` / `north` / `west` / `east`。
+- `test_passable_reads_list_until_ff`：从指针处读 `01 05 2C FF`，得 `{1, 5, 44}`。
+- `test_passable_empty_list_asserts`：列表首字节即 `0xFF` → `AssertionError`。
+
+`_sprite_kind` 是私有成员，不直接测，由 CP4 的 `read_terrain` 间接覆盖。
+
+### 7.3 `pokemon_agent/world/terrain_sprites.py`（3 个用例函数，展开 4 项）→ `tests/world/test_world_terrain_sprites.py`
+
+- `test_hidden_slots_flagged_only`：missable 表写 `(3, 7)`、`(5, 2)`、`0xFF` 终止；位图第 0 字节置 `0x80`，结果 `{3}`。
+- `test_sprite_position_offset_minus_four`：槽 2 的原始 x=10、y=7 → `(6, 3)`。
+- `test_sprite_slot_range_asserts`（参数化 2 项）：槽 0 与槽 16 → `AssertionError`。
+
+### 7.4 `pokemon_agent/world/map_tilesets.py`（2 个用例函数）→ `tests/world/test_world_map_tilesets.py`
+
+- `test_tilesets_indexed_by_map_id`：返回 `tuple`，长度 248，下标 `i` 与 `tables/map_tilesets.json` 的键 `str(i)` 逐项一致。
+- `test_tilesets_cached_single_object`：两次调用返回同一对象（`lru_cache`）。
+
+### 7.5 `pokemon_agent/world/frame_encoding.py`（2 个用例函数）→ `tests/world/test_world_frame_encoding.py`
+
+- `test_png_data_uri_prefix_and_base64`：`b'\x89PNG\r\n'` → 前缀 `data:image/png;base64,`，后段 base64 解回原字节。
+- `test_empty_png_still_prefixed`：空字节 → `data:image/png;base64,`。
+
+### 7.6 CP3 合计
+
+15 个用例函数，展开 21 项（7.1 为 7 项，7.2 为 6 项，7.3 为 4 项，7.4 为 2 项，7.5 为 2 项）。
+
+### 7.7 CP3 的破坏验证点（5 处）
+
+1. `readout.py` `read_money`：`(byte >> 4) * 10` 改为 `byte >> 4`，期望 `test_money_is_three_byte_bcd` 失败。
+2. `readout.py` `read_bag`：去掉 `min(..., BAG_CAPACITY)`，期望 `test_bag_capped_at_capacity` 失败。
+3. `ram.py` `FACING_BY_BYTE`：删去 `12: "east"`，期望 `test_facing_from_sprite_byte` 的对应参数失败。
+4. `ram.py` `read_passable`：去掉 `if b == 0xFF: break`，期望 `test_passable_reads_list_until_ff` 失败。
+5. `terrain_sprites.py` `sprite_position`：`- 4` 改为 `- 3`，期望 `test_sprite_position_offset_minus_four` 失败。
+
+还原后 `pokemon_agent/` 应无改动。
+
+### 7.8 CP3 已知观察（不写测试，不钉成预期，由设计侧裁决）
+
+- `read_facing` 对未知字节（如 5）返回空串 `""`。这是“静默兜底”还是“应报错”，待裁决；本轮不把 `""` 钉成预期。
+- `read_readout` 本轮不测；若要测，需在 CP4 前补探针确认其 `text_source` 与 `decoded` 字段。
