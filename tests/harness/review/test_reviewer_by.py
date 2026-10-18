@@ -15,7 +15,7 @@ from pydantic import ValidationError
 from pokemon_agent.harness.console_reviewer import ConsoleReviewer
 from pokemon_agent.harness.interface.reviewer import Reviewer
 from pokemon_agent.harness.null_reviewer import NullReviewer
-from pokemon_agent.harness.reviewing import ask_inject, audit_judgement
+from pokemon_agent.harness.reviewing import ReviewRound, ask_inject, audit_judgement
 from pokemon_agent.harness.web_reviewer import WebReviewer
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
@@ -151,12 +151,18 @@ def test_review_accounts_record_who_answered(tmp_path: Path, by: ReplyBy) -> Non
     reviewer = _TaggedReviewer(by)
     trace = build_fake(tmp_path).trace
     meta = {"source": "review_and_judge", "episode_id": "r1-ep1", "task_id": "", "step": 1}
+    rounds = ReviewRound(number=1, consecutive_agent_rounds=0, max_agent_rounds=3)
     request = FromHarnessToReviewerInjectReq(
-        prompt="意见", form={}, form_kind="x", context=review_context()
+        prompt="意见",
+        form={},
+        form_kind="x",
+        context=review_context(),
+        round=rounds.number,
+        max_agent_rounds=rounds.max_agent_rounds,
     )
     verdict = FromHarnessToBrainToolJudgeResp(done=True, why="依据", calls=[ModelCall()])
 
-    ask_inject(reviewer, trace, request, meta=meta)
+    ask_inject(reviewer, trace, request, meta=meta, rounds=rounds)
     audit_judgement(reviewer, trace, verdict, run_id="r1", meta=meta, context=review_context())
 
     events = trace.read_events({"run_id": "r1"})

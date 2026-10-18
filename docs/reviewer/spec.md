@@ -440,7 +440,10 @@ AI 席是复核者而非第二个 judge：审的是「judge 结论与它自己�
 
 ## 八、插话重问循环与 AI 轮次阀（harness 侧）
 
-两处循环（`plan_run::_elicit`、`plan_episode::_plan`）改为共享一个小函数（放 `harness/reviewing.py`）：
+两处循环（`plan_run::_elicit`、`plan_episode::_elicit`）共享 `elicit_with_review`，
+从 `harness/reviewing.py` 导出；实现放 `harness/review_loop.py`，用临时 StateGraph 调度。
+它不进入 run / episode / task 的持久状态，关闭 checkpoint 并显式使用 `durability="exit"`，
+避免继承外层图的同步存档设置；不改变三层恢复拓扑或状态哈希。
 
 ```python
 def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Outcome, str]:
@@ -452,6 +455,9 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 - 计数器：**连续**的 agent 生效轮数；一条 `by=human` 的意见把它清零；空回话（无意见）直接收尾。
 - `max_agent_rounds = config.REVIEW_AI_INJECT_MAX_ROUNDS`（默认 3，**实验旋钮**，进 `config.py`）。
 - `round` = 本插话点已亮出的次数 + 1（含人与 agent），传给 `InjectReq`；AI prompt 里写「本问第 {round} 轮；agent 连续生效上限 {max}」。
+- `InjectReq` 同时携带 `max_agent_rounds`；两处循环总是传入实际配置值。独立请求可省略该上限，默认 `None`；`round` 默认 1。
+- 每次实际询问由 `ask_inject` 返回同一份已落账的 `ReviewMark`，计数器由本次临时图持有；到顶后的空回话仍是无意见，`capped=False`。
+- 人的插话不受 AI 轮次阀或图的默认递归步数限制；episode 原有拆解次数、时间预算及异常结算仍有效。
 - harness 知道的只是「谁答的」标签，**不知道对面是什么实现**；`NullReviewer.by = "none"`。
 - `ReviewMark` 增 `capped: bool = False`、`round: int = 0`（R4 加；`by` 已在 R2 加）；`capped` 与 `by` 同账可查，评测能区分「AI 到顶被截」与「AI 自己没意见」。
 - 需同步：`schemas/harness/domain/trace_event.py::TraceEvent` 与 `trace/datastore/event.py::_Event` 是否需要新增顶层字段——`by` 经渲染写入 `content`、不需要；`capped` / `round` 同理，R4 开工时按同一依据复核。

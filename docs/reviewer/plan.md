@@ -4,6 +4,7 @@
 > 依据：`docs/reviewer/spec.md`（§十六）；意图见 `docs/reviewer/intent.md`；协作规则见 `docs/workflow.md`
 > 状态：R0 **已完成**（2026-10-18）：brain-scope 已合入主线（main d6e9aaa）；R1a = 514（提交 7eb5dba）、R2 = 515（提交 6a85edd）已验收；基线 `state_schema_hash()` = `5ea6dffeeb229b7c`（与 main 逐位相同）。R3 = 513（提交 b3e1985）已完成，随本次合入 main；R3b（516）已完成；用户授权新增 TaskState.last_judge，新哈希 `28e96b09966dc94e`，20 份评测存档已重打并真实恢复验收。
 > 本文件中的 460 / 461 / 462 等旧编号以台账 `.coordination/ledger.md` 为准（R1a / R2 已重编号为 514 / 515）。
+> R4（517）已完成于独立分支 `codex/reviewer-r4`，基于 R3b 提交 `b0035e8`；默认全量 1463 项、slow 3 项及 ruff 通过，两次破坏验证均拦截成功；状态哈希保持 `28e96b09966dc94e`。R3b 与 R4 均待合入，R5 尚未开始。
 > v3（2026-10-17）：spec 已按 brain-scope v1.3 同步；新增 R0 与 §八；R3 / R5 / R6a 的内容与前置更新；编号与哈希关卡改为「恢复时重定」。
 > v4（2026-10-17）：reviewer 改为独立进程（spec #23）：R5 缩为 reviewer 内的读端口，R6a / R6b 重排，删除 `ReviewView` 相关项；task 层可选审点 R3b 已在 v3.1 记入。
 
@@ -34,7 +35,7 @@
 | R0 | 恢复准备：主线合入、重编号、新建 worktree、基线哈希、文档入库 | — ✅ | brain-scope 合入 | 已完成：全量 pytest / slow / ruff 绿；`state_schema_hash()` = `5ea6dffeeb229b7c` 与 main 相同；台账更新 |
 | R3 | `ReviewContext`（**不含画面**）+ `frames_of` + `render_context`（按 brain-scope 后的请求形状，带帧处只写张数）+ 四个调用点构造 + `InjectReq` / `AuditReq` 的 `context` 字段 + 文档更新 | 513 ✅（b3e1985） | R0 | 已完成； 四个调用点带 `context`；互斥校验、渲染去重（无 `data:image`）、`frames_of` 去重 / 标签测试（含破坏验证）；`state_schema_hash()` 与 R0 实测起点 `5ea6dffeeb229b7c` 逐位相同 |
 | R3b | task 层可选审点（`REVIEW_LAYERS` 默认不含 `task`）：`ReviewContext` 增 `task` 层与 `task_id`；task 层 `review_and_judge` 判成处 audit；`frames_of` 支持 `history` 帧；`build.py` 给 task 层装配 reviewer | 516 ✅ | R3 | 已完成；默认配置下 task 图无 reviewer 调用（行为逐位相同）；开启后的 audit 测试（认账 / 推翻 / 不判成不审，含破坏验证）；新增 TaskState.last_judge，哈希改为 `28e96b09966dc94e`，20 份存档重打与恢复验收 |
-| R4 | `elicit_with_review` + AI 轮次阀 + `ReviewMark.capped/round` + config 常量 | 待分配 | R2、R3 | 轮次阀测试：agent N+1 次不生效且 `capped`，人不受限且清零 |
+| R4 | `elicit_with_review` + AI 轮次阀 + `ReviewMark.capped/round` + config 常量 | 517 ✅ | R2、R3 | 已完成；两层规划共用临时 StateGraph，agent N+1 次不生效但原话落账；人的意见不限轮次并清零；空回话、零上限、跨调用重置与两层入口测试；哈希保持 `28e96b09966dc94e` |
 | R5 | 前置核查（`recall` 取帧、trace 跨进程可见性与 flush 接口、`recall` 副作用）→ `reviewer/view/`：窄 Protocol `TraceReader` / `MemoryReader`、查询模型（含 `BrainFramesQuery`；`RecallQuery` 加 `run_goal` 键与 `runs` 提示）、`ViewReaders` 与测试（只新增 reviewer 包内文件，不碰 harness） | 待分配 | R3 | 核查报告交设计侧裁决；只读测试 |
 | R6a | `reviewer/`：hub（含对 `read_brain_frames` 的回答）+ 命令层 + 终端席（`human` only）+ `ReviewerApp`（进程内，无网络）+ 导入边界测试 | 待分配 | R4、R5 | 命令 ⇔ 类型化调用等价测试；先答先得；导入扫描 |
 | R6b | 链路：线上信封 + reviewer 侧本地 WS 服务 + reviewer 进程入口（`python -m pokemon_agent.reviewer`）+ run 侧 `reviewer_link/RemoteReviewer`（flush、断线语义）+ `build.py` 装配 + 回环测试 | 待分配 | R6a | 回环测试（含 flush、断线、`qid` 幂等）；画面存 PNG |

@@ -1,3 +1,23 @@
+## 2026-10-18（517）—— 统一规划复核重问并限制 AI 连续插话
+
+**改了什么**：run / episode 的两段插话循环改用共享 elicit_with_review 临时图；
+REVIEW_AI_INJECT_MAX_ROUNDS 默认 3。连续前三条 AI 意见生效，下一条保留原话、
+标 capped 并接受当前提案；人的有效意见清零计数且不受该上限限制。请求传 round / 上限，
+ask_inject 返回已落账的 ReviewMark；两本复核账的 content 增 capped / round。
+
+**为什么这么改**：让两层规划使用同一套重问规则，避免 AI 复核席无限改稿；
+保留被截意见与实际轮次，才能区分主动无意见和到顶截断，并核对最终生效的反馈。
+
+**取舍**：临时 StateGraph 关闭 checkpoint、显式使用 durability="exit"，隔离外层同步存档；
+不限制人的轮次，但 episode 原有拆解次数、时间预算和失败结算仍有效。
+当前 LangGraph 对无 checkpointer 的显式 durability 发出提示；保留提示，不屏蔽警告。
+轮次不进入三层持久状态，状态哈希保持 28e96b09966dc94e，无需重打存档。
+
+**影响面**：新增 9 项测试，覆盖零上限、空回话、连续计数、人的清零与超过默认图步数的
+插话、跨调用重置、两层真实规划入口。默认全量 1463 项、slow 3 项通过，ruff check / format
+通过（665 个 Python 文件）。关闭轮次阀、移除人的清零分别触发对应测试失败，均逐字节还原。
+未新增 trace 顶层字段、账名或第三方依赖；下一阶段读端口与复核进程尚未实施。
+
 ## 2026-10-18（516）—— task 可选复核：持久化判定反馈并重打起点存档
 
 **改了什么**：REVIEW_LAYERS 默认仅 run / episode；TaskRuntime 统一注入 Reviewer，

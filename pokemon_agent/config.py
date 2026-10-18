@@ -31,6 +31,9 @@ from pokemon_agent.run_budget import RunBudget
 REVIEW_LAYERS: tuple[Literal["run", "episode", "task"], ...] = ("run", "episode")
 """启用审点的层；加入 task 后才复核 task 判成，默认保持原执行行为。"""
 
+REVIEW_AI_INJECT_MAX_ROUNDS = 3
+"""一次插话点内，连续 AI 意见最多生效的轮数；人的有效意见清零计数。"""
+
 # ---- 重试预算：一次调用最多问几遍外部模型 ----
 # brain 的六条链路（choose/plan/judge/verify/summarize 调模型，reflect 不调）
 # 在 `direct/brain_tool.py` 里走**同一个**重试循环，预算就是下面这一个数。

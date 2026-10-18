@@ -24,6 +24,7 @@ from pokemon_agent.schemas.harness.domain import JudgeFeedback, ReviewMark
 from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from .interface.reviewer import Reviewer
+from .review_loop import ReviewRound, elicit_with_review
 from .review_render import outcome_kind
 
 
@@ -33,24 +34,37 @@ def ask_inject(
     req: FromHarnessToReviewerInjectReq,
     *,
     meta: dict[str, Any],
-) -> str:
-    """把一张表单亮给人，记一笔 `review_inject`，返回人说的话（空串 = 没意见）。"""
+    rounds: ReviewRound,
+) -> ReviewMark:
+    """亮表并返回同一份落账素材；AI 到顶时保留原话，标 capped，意见不再生效。
+
+    前置条件：请求中的轮次、上限与本轮上下文相同；不吞 reviewer 的异常。
+    后置条件：每次询问恰落一账，人的意见和空回话不标 capped。
+    """
+    assert req.round == rounds.number and req.max_agent_rounds == rounds.max_agent_rounds
     asked_at = time.monotonic()
     resp = reviewer.inject(req)
+    mark = ReviewMark(
+        form_kind=req.form_kind,
+        reply=resp.text,
+        answered=resp.answered,
+        by=resp.by,
+        wait_s=time.monotonic() - asked_at,
+        capped=bool(
+            resp.text
+            and resp.by == "agent"
+            and rounds.consecutive_agent_rounds >= rounds.max_agent_rounds
+        ),
+        round=req.round,
+    )
     trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.REVIEW_INJECT,
             meta=meta,
-            review=ReviewMark(
-                form_kind=req.form_kind,
-                reply=resp.text,
-                answered=resp.answered,
-                by=resp.by,
-                wait_s=time.monotonic() - asked_at,
-            ),
+            review=mark,
         )
     )
-    return resp.text
+    return mark
 
 
 def audit_judgement(
@@ -105,4 +119,4 @@ def audit_judgement(
     return JudgeFeedback(done=True, why=verdict.why, audit=resp.verdict, note=resp.note)
 
 
-__all__ = ["ask_inject", "audit_judgement"]
+__all__ = ["ReviewRound", "ask_inject", "audit_judgement", "elicit_with_review"]

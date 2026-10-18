@@ -15,9 +15,10 @@ from __future__ import annotations
 from typing import Any
 
 from langgraph.runtime import Runtime
+from pydantic import BaseModel
 
 from pokemon_agent.brain import Task
-from pokemon_agent.config import PLAN_MAX_NEW_GOALS
+from pokemon_agent.config import PLAN_MAX_NEW_GOALS, REVIEW_AI_INJECT_MAX_ROUNDS
 from pokemon_agent.errors import MaxRetriesExceeded, NoGoalToDispatch
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceReq,
@@ -26,11 +27,11 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.harness.domain import EntryStatus, GoalEntry
+from pokemon_agent.schemas.harness.domain import EntryStatus, GoalEntry, ReviewMark
 from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...interface.planner_outcome import ALLOWED_UPDATE_STATUSES, GoalUpdate, PlannerOutcome
-from ...reviewing import ask_inject
+from ...reviewing import ReviewRound, ask_inject, elicit_with_review
 from ..run_state import RunState
 from ..runtime import RunRuntime
 
@@ -75,48 +76,77 @@ def plan_run(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
     return {"goals": table}
 
 
+class _PlanDraft(BaseModel):
+    """一轮实际大脑请求与对应提案，供复核快照原样引用。"""
+
+    request: FromHarnessToBrainToolPlanOnceReq
+    outcome: PlannerOutcome
+
+
 def _elicit(deps: RunRuntime, state: RunState, meta: dict[str, Any]) -> tuple[PlannerOutcome, str]:
-    """问 brain 要一版；人有意见就带着那句话重问，直到人没意见。返回 `(定稿, 定稿时的插话)`。"""
+    """统一重问；AI 连续意见到顶后接受当前版，人的意见清零计数。"""
+
+    def ask_brain(note: str, number: int) -> _PlanDraft:
+        req = _request(state, note)
+        return _PlanDraft(
+            request=req, outcome=_to_outcome(state.goals, state.run_id, _ask(deps, meta, req))
+        )
+
+    def ask_reviewer(draft: _PlanDraft, rounds: ReviewRound) -> ReviewMark:
+        return _review_draft(deps, state, meta, draft, rounds)
+
+    draft, note = elicit_with_review(
+        ask_brain, ask_reviewer, max_agent_rounds=REVIEW_AI_INJECT_MAX_ROUNDS
+    )
+    return draft.outcome, note
+
+
+def _request(state: RunState, note: str) -> FromHarnessToBrainToolPlanOnceReq:
+    """只拼当轮素材；详情绑定 perceive 原列表。"""
     ctx = state.plan_ctx
     assert ctx is not None, "plan_run before perceive"
-    note = ""
-    while True:
-        req = FromHarnessToBrainToolPlanOnceReq(
-            run_id=state.run_id,
-            plan=state.goals,
-            details=ctx.details,
-            run_index=ctx.run_index,
-            knowledge=ctx.knowledge,
-            observation=state.observation,
-            objects=ctx.objects,
-            max_push=PLAN_MAX_NEW_GOALS,
-            last_judge=state.last_judge,
-            human_note=note,
-        )
-        req.details = ctx.details
-        proposed = _to_outcome(state.goals, state.run_id, _ask(deps, meta, req))
-        reply = ask_inject(
-            deps.reviewer,
-            deps.trace,
-            FromHarnessToReviewerInjectReq(
-                prompt=_prompt_for(proposed, note),
-                form=proposed,
-                form_kind="PlannerOutcome",
-                context=ReviewContext(
-                    layer="run",
-                    run_id=state.run_id,
-                    episode_id=state.run_id,
-                    brain_input=req,
-                    goals=state.goals,
-                    step=meta["step"],
-                    fail_streak=state.fail_streak,
-                ),
+    req = FromHarnessToBrainToolPlanOnceReq(
+        run_id=state.run_id,
+        plan=state.goals,
+        details=ctx.details,
+        run_index=ctx.run_index,
+        knowledge=ctx.knowledge,
+        observation=state.observation,
+        objects=ctx.objects,
+        max_push=PLAN_MAX_NEW_GOALS,
+        last_judge=state.last_judge,
+        human_note=note,
+    )
+    req.details = ctx.details
+    return req
+
+
+def _review_draft(
+    deps: RunRuntime, state: RunState, meta: dict[str, Any], draft: _PlanDraft, rounds: ReviewRound
+) -> ReviewMark:
+    """亮出本轮提案，计数、快照及记账使用同一轮上下文。"""
+    return ask_inject(
+        deps.reviewer,
+        deps.trace,
+        FromHarnessToReviewerInjectReq(
+            prompt=_prompt_for(draft.outcome, draft.request.human_note),
+            form=draft.outcome,
+            form_kind="PlannerOutcome",
+            round=rounds.number,
+            max_agent_rounds=rounds.max_agent_rounds,
+            context=ReviewContext(
+                layer="run",
+                run_id=state.run_id,
+                episode_id=state.run_id,
+                brain_input=draft.request,
+                goals=state.goals,
+                step=meta["step"],
+                fail_streak=state.fail_streak,
             ),
-            meta=meta,
-        )
-        if not reply:
-            return proposed, note
-        note = reply
+        ),
+        meta=meta,
+        rounds=rounds,
+    )
 
 
 def _ask(

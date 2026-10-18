@@ -30,6 +30,10 @@ class FromHarnessToReviewerInjectReq(BaseModel):
     """
 
     context: ReviewContext = Field(description="本次实际大脑请求、所属层的表与计数")
+    round: int = Field(default=1, ge=1, description="本插话点第几次亮表，含人与 AI 的轮次")
+    max_agent_rounds: int | None = Field(
+        default=None, ge=0, description="循环请求携带 AI 连续生效上限；独立询问可不设置"
+    )
     prompt: str = Field(description="给人看的说明：这张表单是什么、要人看什么")
     form: Any = Field(description="亮给人的结构体本体（调用方按 form_kind 渲染成文本）")
     form_kind: str = Field(
