@@ -65,7 +65,7 @@ def render_context(ctx: ReviewContext) -> str:
 
     brain_input = without_frames(ctx.brain_input)
     display = {name: None for name in ("plan", "task_table")}
-    for name in ("run_index", "episode_index"):
+    for name in ("run_index", "episode_index", "task_index"):
         if hasattr(ctx.brain_input, name):
             display[name] = "\n".join(item.index_line() for item in getattr(ctx.brain_input, name))
     brain_text = format_form(brain_input.model_copy(update=display))
@@ -78,7 +78,8 @@ def render_context(ctx: ReviewContext) -> str:
             f"## 目标表\n{goals_text}",
             f"## 任务表\n{tasks_text}",
             f"## 计数\nlayer: {ctx.layer}\nrun_id: {ctx.run_id}\nepisode_id: {ctx.episode_id}"
-            f"\nstep: {ctx.step}\nfail_streak: {ctx.fail_streak}",
+            f"\nstep: {ctx.step}\nfail_streak: {ctx.fail_streak}"
+            + (f"\ntask_id: {ctx.task_id}" if ctx.task_id else ""),
         ]
     )
     assert "data:image" not in result, "render_context leaked image data"

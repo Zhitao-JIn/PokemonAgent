@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pokemon_agent.config import DEFAULT_RUN_BUDGET
+from pokemon_agent.config import DEFAULT_RUN_BUDGET, REVIEW_LAYERS
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.interface import (
     ChoosePort,
@@ -40,6 +40,8 @@ from pokemon_agent.direct.interface import (
     VerifyPort,
 )
 from pokemon_agent.run_budget import RunBudget
+
+from ..interface.reviewer import Reviewer
 
 if TYPE_CHECKING:
     from ..checkpoint import Checkpointer
@@ -73,6 +75,9 @@ class TaskRuntime:
     """task 蒸馏口（`task_done` 产 TaskMemory 用）。"""
     trace: TraceToolPort
     """记账（与 `EpisodeRuntime.trace` 是**同一实例**）。"""
+    reviewer: Reviewer
+    """与上两层共享的复核席；仅启用 task 层时询问。"""
+    review_layers: tuple[str, ...] = REVIEW_LAYERS
 
     # ---- 账：跨 task 要活着的可变账 ----
 

@@ -304,6 +304,7 @@ def build_real(
         verifier=task_brain.verifier,
         task_summarizer=task_brain.task_summarizer,
         trace=trace_tool,
+        reviewer=reviewer,
         checkpointer=checkpointer,
     )
     episode_rt = EpisodeRuntime(
