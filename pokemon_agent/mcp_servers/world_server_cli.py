@@ -31,6 +31,13 @@ def main(mcp: FastMCP, start: Callable[[WorldPort, str | None], None], service_n
         watch=args.watch,
         speed=args.speed,
     )
+    if args.watch and args.state_file:
+        world.reset(
+            task_id="startup-preview",
+            goal="显示配置的初始存档。",
+            success_criteria="初始存档画面已载入。",
+            max_steps=1,
+        )
     start(world, args.rom)
     mcp.settings.host = args.host
     mcp.settings.port = args.port
