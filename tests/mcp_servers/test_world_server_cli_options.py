@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 import pokemon_agent.world as world_module
+from pokemon_agent.mcp_servers import world_server_cli
 from pokemon_agent.mcp_servers.common import MCP_PATH
-from pokemon_agent.mcp_servers.world_server_cli import main
 
 
 @pytest.mark.parametrize(
@@ -30,6 +30,8 @@ def test_world_server_cli_passes_watch_and_speed_to_the_world(
     constructors: list[dict[str, object]] = []
     starts: list[tuple[object, str]] = []
     resets: list[dict[str, object]] = []
+    watched: list[tuple[object, object]] = []
+    runs: list[dict[str, object]] = []
     instance = SimpleNamespace(reset=lambda **kwargs: resets.append(kwargs))
 
     def fake_world(
@@ -41,14 +43,22 @@ def test_world_server_cli_passes_watch_and_speed_to_the_world(
     monkeypatch.setitem(world_module.__dict__, "PyBoyWorld", fake_world)
     monkeypatch.setattr(sys, "argv", ["world-server", "--rom", "fake.rom", *flags])
     server = SimpleNamespace(
-        settings=SimpleNamespace(streamable_http_path=MCP_PATH), run=lambda **kwargs: None
+        settings=SimpleNamespace(streamable_http_path=MCP_PATH),
+        run=lambda **kwargs: runs.append(kwargs),
+    )
+    monkeypatch.setattr(
+        world_server_cli,
+        "_run_watching_server",
+        lambda target, current_world: watched.append((target, current_world)),
     )
 
-    main(server, lambda world, rom: starts.append((world, rom)), "test-world")
+    world_server_cli.main(server, lambda world, rom: starts.append((world, rom)), "test-world")
 
     assert constructors == [dict(rom="fake.rom", state_path=state_file, watch=watch, speed=speed)]
     assert starts == [(instance, "fake.rom")]
     assert bool(resets) is preview
+    assert watched == ([(server, instance)] if watch else [])
+    assert runs == ([] if watch else [{"transport": "streamable-http"}])
     if preview:
         assert resets == [
             dict(
