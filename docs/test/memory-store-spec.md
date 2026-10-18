@@ -15,7 +15,7 @@
 | D5 | **O2 修复**：`get` 在 `_read_record` 之前检查文件是否存在，缺失时摘索引并返回 `None` | 与接口契约"不存在返回 None"一致；`_read_record` 的缺失分支保留为防御（不被 `get` 之外的调用影响） |
 | D6 | **O3 修复**：`search` 入口补 `assert limit > 0`，与 `ports.py` 第 94 行一致 | `recall` 带 query 时 episode 分支已由 `rank` 断言兜住，本修复只改 store 层 |
 | D7 | **O4**：只改 `recall.py` 的 `_recall_knowledge` docstring，写明 `score` 恒为 `None`；测试断言 `score is None`（与改后注释一致） | 不改行为；见 capability spec |
-| D8 | **O5**：把 `_corpus` 的属性文档字符串移到其赋值之前，删除游离字符串 | 纯注释位置 |
+| D8 | **O5**：把 `_corpus` 的属性文档字符串移到其赋值之后，删除游离字符串 | 纯注释位置 |
 | D9 | 回归测试 CP1–CP3 放在 `tests/memory/test_store_regressions.py`，CP6 并入 `store/` | 避免 CP1 时新建目录 |
 
 ## 二、修复检查点（CP1–CP3）

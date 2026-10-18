@@ -1,7 +1,7 @@
 # spec —— `tests/memory/retrieval/`：检索纯函数的单元测试
 
 > 依据：`docs/test/memory-test-intent.md` 第五节；源码 `pokemon_agent/memory/retrieval.py`（194 行）。
-> 检查点：CP5（编号 500，派发时登记）。替身：`tests/_doubles/memory.py`（本检查点新建）。
+> 检查点：CP5（编号 504，派发时登记；500 已由 mcp_servers CP1 占用）。替身：`tests/_doubles/memory.py`（本检查点新建）。
 
 ## 一、决定表
 

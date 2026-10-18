@@ -16,12 +16,12 @@
 | CP2 | 497 | O2 修复：`get` 文件缺失时返回 `None` + 回归测试 | 无（与 CP1 同文件 `store.py`，串行） |
 | CP3 | 498 | O3 修复：`search` 入口 `assert limit > 0` + 回归测试 | CP2 之后（同文件） |
 | CP4 | 499 | O4 + O5：只改注释（`recall.py` 的 knowledge score 说明、`store.py` 属性文档位置） | CP1–CP3 之后（`store.py` 串行） |
-| CP5 | 500 | 共用替身 `tests/_doubles/memory.py` + `tests/memory/retrieval/`（按 retrieval spec） | CP4 |
+| CP5 | 504 | 共用替身 `tests/_doubles/memory.py` + `tests/memory/retrieval/`（按 retrieval spec） | CP4 |
 | CP6 | 501 | `tests/memory/store/`（按 store spec）；从 `test_memory_store.py` 迁出 store 相关用例 | CP5 |
 | CP7 | 502 | `tests/memory/capability/`（按 capability spec）；迁入 `mcpclient/memory_tool` 两个用例；删除 `tests/memory/test_memory_store.py` 与 `test_episode_summary_order.py` / `test_object_recall_content.py` 中已迁走部分 | CP6 |
 | CP8 | 503 | `tests/memory/providers/`（按 providers spec） | CP5 |
 
-编号说明：496–499 已在台账预留；500 起在派发时逐个登记（CP5 派发时登记为 500，依此类推）。
+编号说明：496–499 已在台账预留；500 已由 mcp_servers CP1 占用；memory 的 CP5 登记为 504，CP6–CP8 保持 501–503。
 
 ## 三、每个检查点的验收核对点（设计侧）
 
