@@ -142,6 +142,7 @@ def _run(
         trace=trace,
         memory=memory,  # type: ignore[arg-type]
         reviewer=NullReviewer(),
+        run_summarizer=None,  # type: ignore[arg-type]
         planner=planner,  # type: ignore[arg-type]
         judger=judger,  # type: ignore[arg-type]
         episode_graph=None,  # type: ignore[arg-type]

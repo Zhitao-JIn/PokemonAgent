@@ -71,6 +71,7 @@ def episode_state(obs: TaskObservation | None = None) -> EpisodeRunState:
     """与 run 使用相同圈号、动作数的 episode 状态。"""
     return EpisodeRunState(
         run_id="r1",
+        run_goal="测试总目标",
         episode_id="r1-ep1",
         step=2,
         total_acts=17,

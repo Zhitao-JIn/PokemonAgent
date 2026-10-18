@@ -70,7 +70,7 @@
 
 ### 2. `brain/plan/` —— run 级规划与 episode 级拆解
 
-**这块在守什么**：两条都是纯文本链、走 `plan_llm`、不带图；解析出 `RunPlan` / `Decomposition`，字段不合法算解析失败。
+**这块在守什么**：两条都走 `plan_llm`，带图且模型支持时走 describe，否则纯文本；解析出 `RunPlan` / `Decomposition`，字段不合法算解析失败。
 
 | 文件 | 用例 |
 |---|---|

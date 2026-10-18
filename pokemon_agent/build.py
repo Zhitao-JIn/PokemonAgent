@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from pokemon_agent.config import CHECKPOINT_ENABLED, TRACE_BACKEND
+from pokemon_agent.config import CHECKPOINT_ENABLED, SCOPE_IMAGE_CAP, TRACE_BACKEND
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.brain_tool import BrainTool
 from pokemon_agent.direct.trace import TraceTool, assert_server_ready
@@ -123,6 +123,10 @@ def build_real(
     """
     # 步骤 1：读取预算和环境；世界、记忆与大脑经各自 tool 工厂装配。
     budget = load_run_config(config).budget
+    assert budget.task_max_steps + 1 <= SCOPE_IMAGE_CAP, (
+        f"SCOPE_IMAGE_CAP={SCOPE_IMAGE_CAP} must be >= "
+        f"task_max_steps + 1={budget.task_max_steps + 1}"
+    )
     deadline = (
         Deadline(budget.wall_clock_s, budget.reserve_s, budget.min_request_s)
         if budget.wall_clock_s is not None
@@ -325,6 +329,7 @@ def build_real(
         game=game,
         reviewer=episode_rt.reviewer,
         planner=run_brain.planner,
+        run_summarizer=episode_brain.run_summarizer,
         judger=run_brain.judger,
         episode_graph=episode_graph,
         episode=episode_rt,

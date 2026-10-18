@@ -35,6 +35,7 @@ from pokemon_agent.direct.trace.content import CheckpointSaveContent
 from pokemon_agent.env import env_str, load_env_file
 from pokemon_agent.mcpclient import McpTransportError
 from pokemon_agent.mcpclient.memory_local import MemoryTool
+from pokemon_agent.mcpclient.world_tool import WorldMcpTool
 from pokemon_agent.schemas.harness import TraceKind
 
 from ..loader import DATASET_DIR, load_samples, sha256_of
@@ -45,25 +46,17 @@ def pack_one(sample: EvalSample, version: str) -> Path:
 
     前置条件：`sample.start.kind == "archive"` 且来源 `.state` 存在、哈希与
     `source_sha256` 一致；评测专用 memory server（带 --enable-admin）已起。
-    失败：哈希不符 / 起点缺失 / 打包没落 checkpoint_save → 异常上抛。
+    失败：哈希不符 / 起点缺失 / reset 被拒绝 / 未落 checkpoint_save → 异常上抛。
+    装配成功后，无论打包成功或异常退出都归还本客户端租约。
     """
     state = DATASET_DIR / version / sample.start.source_state
     if not state.is_file() or sha256_of(state) != sample.start.source_sha256:
         raise ValueError(f"来源 .state 缺失或哈希对不上：{sample.start.source_state}")
 
-    # 步骤 1：清空评测专用 memory server（以 zip 为准 ⇒ 全删，避免混入上一样本的记忆）。
-    load_env_file()
-    memory_url = env_str("MCP_MEMORY_SERVER_URL")
-    if not memory_url:
-        raise McpTransportError(
-            "memory 只经 MCP：设 MCP_MEMORY_SERVER_URL 或传 memory_server_url，并先起 memory server"
-        )
-    clear_memory(MemoryTool.build(memory_server_url=memory_url))
-
-    # run_id 用正式名（eval-<样本>）：manifest 的 RunState.run_id 会被 restore 原样带进
-    # 跑批账本，必须与 scorer 读的 run_id 一致（pack 走 local 后端，无 Langfuse 撞车）。
+    _clear_memory()
     run_id = run_id_for(sample.sample_id)
     tmp = Path(tempfile.mkdtemp(prefix=f"pack-{sample.sample_id}-"))
+    game: WorldMcpTool | None = None
     try:
         roots = {
             "trace_root": tmp / "trace",
@@ -80,40 +73,68 @@ def pack_one(sample: EvalSample, version: str) -> Path:
             initial_state_hint=sample.initial_state_hint,
         )
         harness.run(run_id, [task], checkpoint_only=True)
-
-        trace = TraceTool.build(run_id=run_id, trace_root=roots["trace_root"])
-        saves = [
-            parse(e)
-            for e in trace.read_events({"run_id": run_id})
-            if e.kind == TraceKind.CHECKPOINT_SAVE
-        ]
-        assert saves, "打包没有落下 checkpoint_save"
-        content = saves[-1].content
-        assert isinstance(content, CheckpointSaveContent)
-        src = Path(content.manifest_path).parent
-
-        dst = DATASET_DIR / version / "archives" / sample.sample_id
-        dst.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-        # 记忆快照在 memory_root（checkpoint 目录之外），一并拷进存档；
-        # manifest 里的绝对路径改写成仓库相对路径（run_one 保证 cwd=仓库根）。
-        snapshots = roots["memory_root"] / "snapshots"
-        if snapshots.is_dir():
-            shutil.copytree(snapshots, dst / "memory" / "snapshots", dirs_exist_ok=True)
-        manifest_file = dst / "manifest.json"
-        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-        manifest["memory_archive"] = (
-            (dst / "memory" / "snapshots" / Path(manifest["memory_archive"]).name).relative_to(
-                DATASET_DIR / version
-            )
-        ).as_posix()
-        manifest_file.write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        return dst
+        return _copy_checkpoint(run_id, roots, sample.sample_id, version)
     finally:
-        # 尽力清理：sqlite 存档器的连接可能没关（WinError 32），残留 temp 目录无害。
-        shutil.rmtree(tmp, ignore_errors=True)
+        try:
+            if game is not None:
+                _release_world(game)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _clear_memory() -> None:
+    """清空评测专用记忆；缺地址或服务端失败直接上抛。"""
+    load_env_file()
+    memory_url = env_str("MCP_MEMORY_SERVER_URL")
+    if not memory_url:
+        raise McpTransportError(
+            "memory 只经 MCP：设 MCP_MEMORY_SERVER_URL 或传 memory_server_url，并先起 memory server"
+        )
+    clear_memory(MemoryTool.build(memory_server_url=memory_url))
+
+
+def _release_world(game: WorldMcpTool) -> None:
+    """归还租约；若打包与释放均失败，保留两份异常，避免掩盖打包失败原因。"""
+    active_error = sys.exception()
+    try:
+        game.release_lease()
+    except Exception as cleanup_error:
+        if active_error is None:
+            raise
+        raise BaseExceptionGroup(
+            f"打包失败（{active_error}），且 world 租约释放失败（{cleanup_error}）",
+            [active_error, cleanup_error],
+        ) from None
+
+
+def _copy_checkpoint(run_id: str, roots: dict[str, Path], sample_id: str, version: str) -> Path:
+    """拷贝已成功保存的 checkpoint 与记忆快照，改写 manifest 的相对路径。"""
+    trace = TraceTool.build(run_id=run_id, trace_root=roots["trace_root"])
+    saves = [
+        parse(e)
+        for e in trace.read_events({"run_id": run_id})
+        if e.kind == TraceKind.CHECKPOINT_SAVE
+    ]
+    assert saves, "打包没有落下 checkpoint_save"
+    content = saves[-1].content
+    assert isinstance(content, CheckpointSaveContent)
+    src = Path(content.manifest_path).parent
+
+    dst = DATASET_DIR / version / "archives" / sample_id
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dst, dirs_exist_ok=True)
+    snapshots = roots["memory_root"] / "snapshots"
+    if snapshots.is_dir():
+        shutil.copytree(snapshots, dst / "memory" / "snapshots", dirs_exist_ok=True)
+    manifest_file = dst / "manifest.json"
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    manifest["memory_archive"] = (
+        (dst / "memory" / "snapshots" / Path(manifest["memory_archive"]).name).relative_to(
+            DATASET_DIR / version
+        )
+    ).as_posix()
+    manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return dst
 
 
 def _models() -> dict[str, str]:

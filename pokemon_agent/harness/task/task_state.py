@@ -67,6 +67,9 @@ class TaskState(Settled, BaseModel):
         default=None, ge=0, description="检查点处剩余运行秒数；None 不限"
     )
 
+    task_index: list[TaskMemory] = Field(
+        default_factory=list, description="episode 交下来的只读背景：此前同目标 task，task 内不变"
+    )
     knowledge: list[str] = Field(
         default_factory=list,
         description="episode 交下来的领域知识全文（task 内只读，每次决策原样带上）",

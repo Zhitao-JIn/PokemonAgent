@@ -77,8 +77,8 @@ def build_llm_providers(
     `Brain(*build_llm_providers(config))`。
 
     后置条件：返回值的类型与 `Brain.__init__` 的四个形参逐一匹配——
-    `decide`/`plan` 是 `LLMProvider`（纯文本；`decide` 的带图路由由
-    `Brain.choose` 查 provider 的 `multimodal` 标志分派，0915 129——
+    `decide`/`plan` 是 `LLMProvider`；`Brain.choose`、`Brain.plan` 与 `Brain.decompose`
+    按有图且 provider 的 `multimodal` 标志为真走 describe，否则 complete（0915 129——
     当前在用型号全为多模态、标志默认真），
     `judge`/`verify` 是 `JudgeProvider`（带得到图时走多模态）。
     **config 里为 None 的位置返回 None**（0922 185 按需实例化：每层 BrainTool

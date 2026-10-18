@@ -5,8 +5,26 @@ from __future__ import annotations
 from typing import Any
 
 from pokemon_agent.schemas.harness.domain import EntryStatus, TaskInput
+from pokemon_agent.schemas.memory import TaskMemory
 
 from ..episode_state import EpisodeRunState, current_knowledge
+
+
+def _task_index(state: EpisodeRunState, goal: str, task_id: str) -> list[TaskMemory]:
+    """同局同目标的此前 task 按 total_acts 升序；调用方保证其中不含当前 task。"""
+    memories = sorted(
+        (
+            memory
+            for memory in state.ep_ctx.task_memories
+            if memory.goal == goal and memory.episode_id == state.episode_id
+        ),
+        key=lambda memory: memory.total_acts,
+    )
+    index = [
+        memory.model_copy(update={"first_frame": None, "last_frame": None}) for memory in memories
+    ]
+    assert all(memory.task_id != task_id for memory in index), "task index includes current task"
+    return index
 
 
 def dispatch_task(state: EpisodeRunState) -> dict[str, Any]:
@@ -33,6 +51,7 @@ def dispatch_task(state: EpisodeRunState) -> dict[str, Any]:
         task=entry.task,
         total_acts=state.total_acts,
         knowledge=current_knowledge(state),
+        task_index=_task_index(state, entry.task.goal, entry.task.task_id),
         actions_budget=(
             None
             if state.actions_budget is None

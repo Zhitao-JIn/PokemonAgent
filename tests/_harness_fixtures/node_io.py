@@ -147,6 +147,8 @@ RUN_NODES: tuple[str, ...] = (
     "review_and_judge",
     "plan_run",
     "act",
+    "summarize_run",
+    "store_run_memory",
     "run_done",
 )
 """run 图的 6 格 + error handler。"""
@@ -173,9 +175,12 @@ RUN_SOURCES: tuple[str, ...] = (
     "run.begin",
     "run.sense",
     "run.perceive",
+    "run.retrieve_knowledge",
     "run.review_and_judge",
     "plan_run",
     "run.act",
+    "run.summarize_run",
+    "run.store_run_memory",
     "run_done",
 )
 """run 侧发账位置（`begin` / `act` / `run_done` 不发账）。"""
@@ -183,7 +188,7 @@ RUN_SOURCES: tuple[str, ...] = (
 EPISODE_SOURCES: tuple[str, ...] = (
     "sense",
     "retrieve_task_memories",
-    "retrieve_global_episode_memory",
+    "retrieve_episode_index",
     "retrieve_knowledge_semantic_memory",
     "retrieve_object_semantic_memory",
     "review_and_judge",
@@ -235,7 +240,12 @@ NODE_FINGERPRINTS: dict[str, tuple[Styled, ...]] = {
     # ---- run ----
     "run.begin": (("lifecycle", "run_start"),),
     "run.sense": (("view", "sense_frame"),),
-    "run.perceive": (("memory_io", "read_episode_memory"), ("memory_io", "read_object_memory")),
+    "run.perceive": (
+        ("memory_io", "read_episode_memory"),
+        ("memory_io", "read_object_memory"),
+        ("memory_io", "read_run_memory"),
+    ),
+    "run.retrieve_knowledge": (("memory_io", "read_knowledge"),),
     "run.review_and_judge": (("llm_outcome", "judge_verdict"),),
     "plan_run": (("llm_outcome", "plan_verdict"),),
     "run.act": (
@@ -243,11 +253,13 @@ NODE_FINGERPRINTS: dict[str, tuple[Styled, ...]] = {
         ("memory_io", "read_episode_memory"),
         ("memory_io", "write_episode_memory"),
     ),
+    "run.summarize_run": (("model_call", "summarize_run_call"),),
+    "run.store_run_memory": (("memory_io", "write_run_memory"),),
     "run_done": (("lifecycle", "run_end"),),
     # ---- episode ----
     "sense": (("view", "sense_frame"),),
     "retrieve_task_memories": (("memory_io", "read_task_memory"),),
-    "retrieve_global_episode_memory": (("memory_io", "read_episode_memory"),),
+    "retrieve_episode_index": (("memory_io", "read_episode_memory"),),
     "retrieve_knowledge_semantic_memory": (("memory_io", "read_knowledge"),),
     "retrieve_object_semantic_memory": (("memory_io", "read_object_memory"),),
     "review_and_judge": (("llm_outcome", "judge_verdict"),),
@@ -276,15 +288,17 @@ NODE_FINGERPRINTS: dict[str, tuple[Styled, ...]] = {
 
 CELL_SOURCES: dict[str, tuple[str, ...]] = {
     "run.begin": ("run.begin",),
-    "run.perceive": ("run.sense", "run.perceive"),
+    "run.perceive": ("run.sense", "run.perceive", "run.retrieve_knowledge"),
     "run.review_and_judge": ("run.review_and_judge",),
     "run.plan_run": ("plan_run",),
     "run.act": ("run.act",),
     "run.run_done": ("run_done",),
+    "run.summarize_run": ("run.summarize_run",),
+    "run.store_run_memory": ("run.store_run_memory",),
     "episode.perceive": (
         "sense",
         "retrieve_task_memories",
-        "retrieve_global_episode_memory",
+        "retrieve_episode_index",
         "retrieve_knowledge_semantic_memory",
         "retrieve_object_semantic_memory",
     ),
@@ -321,6 +335,7 @@ SILENT_NODES: dict[str, str] = {}
 （格内的 `merge_retrieval` 单元同理不写账：它只把四路检索拼进 `ep_ctx`。）"""
 
 CONDITIONAL_NODES: dict[str, str] = {
+    "run.summarize_run": "无任何局摘要时不调模型，只写空章与 call_exhausted。",
     "plan_episode": (
         "只在任务链空时拆（首圈 / 链走完 / 上一个 task 失败被清空）；首圈就判停的局不经过它。"
     ),
@@ -387,19 +402,23 @@ RUN_NEXT: dict[str, frozenset[str]] = {
     "run_start": frozenset({"sense_frame"}),
     "sense_frame": frozenset({"read_episode_memory"}),
     "read_episode_memory": frozenset({"read_object_memory"}),
-    "read_object_memory": frozenset({"judge_verdict", "settle_goal"}),
+    "read_object_memory": frozenset({"read_run_memory"}),
+    "read_run_memory": frozenset({"read_knowledge"}),
+    "read_knowledge": frozenset({"judge_verdict", "settle_goal"}),
     "settle_goal": frozenset({"judge_verdict"}),
-    "judge_verdict": frozenset({"plan_verdict", "run_end"}),
+    "judge_verdict": frozenset({"plan_verdict", "write_run_memory"}),
+    "write_run_memory": frozenset({"run_end"}),
     "plan_verdict": frozenset({EPISODE_TOKEN}),
     EPISODE_TOKEN: frozenset({"sense_frame"}),
 }
 """run 图：`begin[run_start]` → `perceive[run.sense 的 sense_frame → read_episode_memory →
-read_object_memory]` → `review_and_judge[(定案 settle_goal) → judge_verdict]` →
+read_object_memory → read_run_memory → read_knowledge]` →
+`review_and_judge[(定案 settle_goal) → judge_verdict]` →
 `plan_run[plan_verdict（插话重问只落最后一版）]` → `act[一局]` → perceive …；
 判停后 `run_done[run_end]`。
 （整局抛错时 `act` 记的 `write_episode_memory` / `episode_error` 挂在那一局名下，进 episode 流。）
 
-首圈没有上一局可盖章，所以 `read_object_memory` 可以直接接 `judge_verdict`。
+首圈没有上一局可盖章，所以 `read_knowledge` 可以直接接 `judge_verdict`。
 `run.sense` 每圈都取帧（0928 起）：run_start 之后与每一局（EPISODE 记号）之后的第一笔都是它。"""
 
 RUN_ENDS: frozenset[str] = frozenset({"run_end", "run_error"})
@@ -550,6 +569,7 @@ _READ_SHAPE = "query refs"
 _READ_WHY = {
     "read_act_memory": "本 task 的 ActMemory（task.perceive）",
     "read_episode_memory": "跨局摘要记忆检索",
+    "read_run_memory": "run 记忆检索",
     "read_knowledge": "知识库检索（主循环）",
     "read_object_memory": "地图事实检索",
     "read_task_memory": "本局 TaskMemory（episode.perceive）",
@@ -565,6 +585,10 @@ _WRITE_BODY_KEYS: dict[str, str] = {
         " quality_rationale tags markdown"
     ),
     "write_object_memory": "outcome object_kind place actor_place button",
+    "write_run_memory": (
+        "reason summary reusable_patterns critical_decisions failure_points quality_score"
+        " quality_rationale applicable_scenes tags markdown"
+    ),
     "write_episode_memory": (
         "reason summary reusable_patterns critical_decisions failure_points quality_score"
         " quality_rationale applicable_scenes tags markdown"
@@ -617,6 +641,7 @@ _WRITE_WHY = {
     "write_act_memory": "一条按键情景记忆落库（正文 = `ActMemory` 去掉坐标与两张图）",
     "write_task_memory": "一条 task 记忆落库（正文 = 蒸馏各字段 + markdown；章与代表帧不落）",
     "write_object_memory": "一条对象交互事件落库（正文 = 事件本体，物体格在 `content.place`）",
+    "write_run_memory": "整次 run 的派生摘要落库，来源章不落正文",
     "write_episode_memory": "一局的跨局摘要落库（正文 = 蒸馏各字段 + `markdown`，**章不落**）",
 }
 for _kind, _body_keys in _WRITE_BODY_KEYS.items():
@@ -729,6 +754,7 @@ MODEL_CALL_LINKS: tuple[str, ...] = (
     "verify",
     "summarize_episode",
     "summarize_task",
+    "summarize_run",
 )
 """九个 `MODEL_CALL` 的链路名——与 `direct/trace/render.py::_CALL_LINK` 逐字同源。
 

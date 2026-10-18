@@ -7,10 +7,10 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pokemon_agent.brain.interface import Goal
-from pokemon_agent.schemas.memory import ActMemory
+from pokemon_agent.schemas.memory import ActMemory, TaskMemory
 from pokemon_agent.world import ActionSpace, TaskObservation
 
 
@@ -25,7 +25,7 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     memories：本局内情景记忆（`ActMemory`）。
     last_result：上一步脚本的结果一句话（调用 → 结局码：摘要或原因），渲染在观测之后；
         上一步不是脚本时为空。
-    knowledge/episode_memories/human_note：分开放，各自在 prompt 里有独立
+    knowledge/task_index/human_note：分开放，各自在 prompt 里有独立
         占位符与可信度说明（混在一起模型没法区分对待）。
 
     `human_note` 由 `build_prompt()` 拼在**整个 prompt 的最末尾**（0914 控制台
@@ -50,5 +50,8 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     memories: list[ActMemory]
     last_result: str = ""
     knowledge: str = ""
-    episode_memories: str = ""
+    task_index: list[TaskMemory] = Field(
+        default_factory=list,
+        description="本 episode 内、goal 与本 task 相同的此前 task，已去掉两张帧",
+    )
     human_note: str = ""

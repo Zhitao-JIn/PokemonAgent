@@ -7,7 +7,7 @@
 2. 机械三类：本圈 perceive 取的帧 `obs.done`（run 层自己取帧，0928 起不再借上一局
    结算带回的旧画面；首圈也有帧——世界起点的画面）/ `fail_streak >= RUN_STALL_LIMIT` /
    `step >= RUN_MAX_EPISODES`。
-3. 问模型"run_goal 达成没有"（素材是 `plan_ctx.index` 局摘要）；判成时亮给人**审**——
+3. 问模型"run_goal 达成没有"（素材是 `plan_ctx.details` 的全部局详情）；判成时亮给人**审**——
    认账即 `GOAL_DONE`，推翻则 run 继续。run 继续跑时，判定员的话与人的推翻理由写进
    `last_judge`，由下一次 `plan_run` 带给规划。
 
@@ -97,7 +97,8 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
 
     # 步骤 3：问模型"run_goal 达成没有"（素材是本 run 的局摘要）；判成时亮给人审，认账才覆盖。
     if last is not None:
-        index = state.plan_ctx.index if state.plan_ctx is not None else []
+        ctx = state.plan_ctx
+        details = ctx.details if ctx is not None else []
         meta = {
             "source": _SOURCE,
             "episode_id": state.run_id,
@@ -105,12 +106,15 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
             # 圈号语义（0928 定稿，与 episode/task 两层同构）。
             "step": state.step + 1,
         }
-        verdict = ask_judger(
-            deps.judger,
-            deps.trace,
-            FromHarnessToBrainToolJudgeReq(goal=state.run_goal, episode_memories=index),
-            **meta,
+        req = FromHarnessToBrainToolJudgeReq(
+            goal=state.run_goal,
+            episode_memories=details,
+            run_index=ctx.run_index if ctx is not None else [],
+            knowledge="\n\n".join(ctx.knowledge) if ctx is not None else "",
+            observation=state.observation,
         )
+        req.episode_memories = details
+        verdict = ask_judger(deps.judger, deps.trace, req, **meta)
         feedback = audit_judgement(
             deps.reviewer, deps.trace, verdict, run_id=state.run_id, meta=meta
         )

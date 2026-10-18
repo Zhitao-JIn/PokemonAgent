@@ -89,7 +89,7 @@ evals/dataset/
 
 ## 五、judge 扩容（`brain_goal_judge`）
 
-**被测对象不变**：生产判定器读 `FromHarnessToBrainToolJudgeReq`（`goal` / `history` / `task_memories` / `task_table` / `episode_memories` / `allow_interrupt`），给出达成与否和理由。
+**被测对象不变**：生产判定器读 `FromHarnessToBrainToolJudgeReq`（`goal` / `history` / `task_memories` / `task_table` / `episode_memories` / `episode_index` / `observation` / `knowledge` / `allow_interrupt`），给出达成与否和理由。
 
 **样本 = 一次真实判定现场**：冻结的 `JudgeReq` + 真值 `achieved`。标签只给 scorer，不进判定器。
 

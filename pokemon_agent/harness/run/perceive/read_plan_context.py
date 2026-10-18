@@ -1,8 +1,4 @@
-"""`read_plan_context`：读本 run 的局索引（按执行序）、详情预取与地图事实，写 `plan_ctx`。
-
-感知源是**记忆**（run 层没有世界帧）；零模型调用。
-两路读各记一笔 `read_episode_memory` / `read_object_memory`。
-"""
+"""读取本 run 全部局与地图事实、过往 run 背景；三种读账分别留痕。"""
 
 from __future__ import annotations
 
@@ -17,82 +13,103 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
+from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, RunMemory
 
 from ..run_state import PlanContext, RunState
 from ..runtime import RunRuntime
 
 
 def read_plan_context(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
-    """装配这一圈的规划与判定素材，写 `plan_ctx` 一处。"""
-    deps = runtime.context
-    meta = {
-        "source": "run.perceive",
-        "episode_id": state.run_id,
-        "task_id": state.run_id,
-        # 账面步号是圈号（0928 定稿，与 episode/task 两层同构）：首圈 perceive 落 1。
-        "step": state.step + 1,
-    }
+    """写本圈 plan_ctx；详情与背景均全取，不改变读口给出的执行顺序。"""
+    details, objects = _read_details_and_objects(state, runtime)
+    run_index = _read_run_index(state, runtime)
+    return {"plan_ctx": PlanContext(details=details, objects=objects, run_index=run_index)}
 
-    # 步骤 1：局索引（记忆按 `episode_id` 自然序返回，即执行序）+ 详情预取。
-    t0 = time.time()
-    resp = deps.memory.recall(
+
+def _read_details_and_objects(
+    state: RunState, runtime: Runtime[RunRuntime]
+) -> tuple[list[EpisodeMemory], list[ObjectFactEvent]]:
+    """同一次 run_id 召回分出全部局详情与地图事实，各记原有读账。"""
+    started_at = time.time()
+    response = runtime.context.memory.recall(
         FromHarnessToMemoryToolRecallReq(query="", conditions={"run_id": state.run_id}, limit=10**6)
     )
-    index = [
+    details = [
         EpisodeMemory(**item.payload, markdown=item.content)
-        for item in resp.items
+        for item in response.items
         if item.kind == "episode"
     ]
-    t1 = time.time()
-    deps.trace.append(
-        FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.READ_EPISODE_MEMORY,
-            meta=meta,
-            query=f"run_id={state.run_id}",
-            refs=[m.episode_id for m in index],
-            started_at=t0,
-            ended_at=t1,
-        )
+    _record_read(
+        state,
+        runtime,
+        TraceKind.READ_EPISODE_MEMORY,
+        f"run_id={state.run_id}",
+        [memory.episode_id for memory in details],
+        started_at,
     )
-
-    # 步骤 2：本 run 的地图交互事实（run 级不按地图筛）。
-    t0 = time.time()
-    _adapter = TypeAdapter(ObjectFactEvent)
+    started_at = time.time()
+    adapter = TypeAdapter(ObjectFactEvent)
     objects = [
-        _adapter.validate_python(item.payload) for item in resp.items if item.kind == "object"
+        adapter.validate_python(item.payload) for item in response.items if item.kind == "object"
     ]
-    t1 = time.time()
-    deps.trace.append(
+    _record_read(
+        state,
+        runtime,
+        TraceKind.READ_OBJECT_MEMORY,
+        f"run_id={state.run_id} map_id=None",
+        [event.place.key for event in objects],
+        started_at,
+    )
+    return details, objects
+
+
+def _read_run_index(state: RunState, runtime: Runtime[RunRuntime]) -> list[RunMemory]:
+    """跨目标读取过往 run 的背景，排除本 run，并记录查询与实际保留的 refs。"""
+    started_at = time.time()
+    response = runtime.context.memory.recall(
+        FromHarnessToMemoryToolRecallReq(query="", conditions={"runs": "all"}, limit=10**6)
+    )
+    memories = [
+        RunMemory(**item.payload, markdown=item.content)
+        for item in response.items
+        if item.kind == "run"
+    ]
+    run_index = [memory for memory in memories if memory.run_id != state.run_id]
+    _record_read(
+        state,
+        runtime,
+        TraceKind.READ_RUN_MEMORY,
+        "runs=all",
+        [memory.run_id for memory in run_index],
+        started_at,
+    )
+    return run_index
+
+
+def _record_read(
+    state: RunState,
+    runtime: Runtime[RunRuntime],
+    kind: TraceKind,
+    query: str,
+    refs: list[str],
+    started_at: float,
+) -> None:
+    """三本读账共用本格 meta，分别保留各自的查询、refs 与计时。"""
+    runtime.context.trace.append(
         FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.READ_OBJECT_MEMORY,
-            meta=meta,
-            query=f"run_id={state.run_id} map_id=None",
-            refs=[e.place.key for e in objects],
-            started_at=t0,
-            ended_at=t1,
+            kind=kind,
+            meta={
+                "source": "run.perceive",
+                "episode_id": state.run_id,
+                "task_id": state.run_id,
+                "step": state.step + 1,
+            },
+            query=query,
+            refs=refs,
+            started_at=started_at,
+            ended_at=time.time(),
         )
     )
-    return {"plan_ctx": PlanContext(index=index, details=_pick_details(index), objects=objects)}
-
-
-def _pick_details(index: list[EpisodeMemory]) -> list[EpisodeMemory]:
-    """一期详情预取规则：**最近 1 局 + 全部失败局**。
-
-    这是渐进披露的最小可用形态——上下文里装"全部局的骨架 + 少数几局的肉"，
-    而不是"把所有局的正文都倒进去"。三条依据：
-
-    - **最近 1 局**：刚发生的事最相关，模型规划下一步时最先要看它；
-    - **全部失败局**：失败是最该被看见的原料，"这个做法不行"必须能传到下一版规划里；
-    - 其余（更早的成功局）：只给索引行——它们的内容多半已经被后续局覆盖。
-
-    二期上工具环（模型自己请求要哪几局的正文）之后，这个函数退休，
-    `details` 由模型的请求决定（信封不用改）。
-    """
-    chosen = {memory.episode_id for memory in index if not memory.success}
-    if index:
-        chosen.add(index[-1].episode_id)
-    return [memory for memory in index if memory.episode_id in chosen]
 
 
 __all__ = ["read_plan_context"]

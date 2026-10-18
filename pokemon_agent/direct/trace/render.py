@@ -79,6 +79,7 @@ from pokemon_agent.schemas.memory import (
     ActMemory,
     EpisodeMemory,
     ObjectFactEvent,
+    RunMemory,
 )
 from pokemon_agent.trace import EventType
 from pokemon_agent.world import Observation, TaskObservation
@@ -262,6 +263,7 @@ _CALL_LINK: dict[str, str] = {
     TraceKind.VERIFY_CALL: "verify",
     TraceKind.SUMMARIZE_EPISODE_CALL: "summarize_episode",
     TraceKind.SUMMARIZE_TASK_CALL: "summarize_task",
+    TraceKind.SUMMARIZE_RUN_CALL: "summarize_run",
 }
 """`TraceKind` 的九个调用类 → **链路名**，那个维度唯一的真源。
 
@@ -645,9 +647,22 @@ _OBJECT_BODY_DROP = frozenset({"episode_id", "step", "run_id"})
 物体格的检索键 `place.key` 是 `place` 的派生物，读的人从 `content.place` 现算即可。"""
 
 _EPISODE_BODY_DROP = frozenset(
-    {"episode_id", "run_id", "goal", "success", "steps", "acts_used", "termination"}
+    {
+        "episode_id",
+        "run_id",
+        "goal",
+        "success",
+        "steps",
+        "acts_used",
+        "termination",
+        "run_goal",
+        "first_frame",
+        "last_frame",
+    }
 )
-"""`EpisodeMemory` 里不进 `content` 的字段——**坐标 + 来源章**。
+"""`EpisodeMemory` 里不进 `content` 的字段——**坐标 + 来源章 + 代表帧**。
+
+`run_goal` 属来源章，`first_frame` / `last_frame` 属代表帧，均不进入写账正文。
 
 `episode_id` / `run_id` 是坐标（`meta` 上有）；`goal` / `success` / `steps` /
 `acts_used` / `termination` 是
@@ -749,6 +764,28 @@ def episode_memory_write(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         EventType.MEMORY_IO,
         TraceKind.WRITE_EPISODE_MEMORY,
         _body(memory, drop=_EPISODE_BODY_DROP),
+    )
+
+
+def run_memory_write(req: FromHarnessToTraceToolAppendReq) -> Rendered:
+    """run 写账只装派生正文与 reason；来源章身份与统计不重复落入正文。"""
+    assert isinstance(req.memory, RunMemory), "run write needs a RunMemory"
+    return Rendered(
+        EventType.MEMORY_IO,
+        TraceKind.WRITE_RUN_MEMORY,
+        _body(
+            req.memory,
+            drop=frozenset(
+                {
+                    "run_id",
+                    "run_goal",
+                    "episodes",
+                    "succeeded",
+                    "acts_used",
+                    "termination",
+                }
+            ),
+        ),
     )
 
 

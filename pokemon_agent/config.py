@@ -141,7 +141,7 @@ RUN_STALL_LIMIT = 3
 """run 层停摆上限：连续多少局失败就结束本 run。"""
 
 DEFAULT_RUN_BUDGET = RunBudget(
-    max_episodes=50,
+    max_episodes=10,
     max_total_actions=None,
     wall_clock_s=None,
     reserve_s=60,
@@ -219,32 +219,11 @@ MEMORY_RECALL_LIMIT = 5
 共用一个数字，改一处就够。两个读者正是它该住 config 的判据。
 """
 
-CHOOSE_HISTORY_STEPS = 8
-"""`plan_task` 决策时带上本 task 最近几条 ActMemory（`task_ctx.act_memories` 的尾部）。
+SCOPE_IMAGE_CAP = 20
+"""L0 / L1 / run 蒸馏的图片数量上限：保留最新的，丢弃最旧的。
 
-只取**本 task** 的：前面几个 task 的经验已由 episode 层消化进 TaskMemory，不越层。
+L2 不过帽，因为它的帧与文字逐帧对应；L2 帧数上界为 task_max_steps + 1。
 """
-
-JUDGE_HISTORY_STEPS = 3
-"""task 层 `judge` 判定时能看到的本 task 最近几条 ActMemory（`render(reason=False)`，
-不含决策者主张）。
-
-**单位是 step memory 条数，按条取，不按决策分组。** 一次决策展开成 L 个键就是
-L 条 step memory，取"最近 3 条"就是字面意思——不再乘 L。
-
-**为什么改回条数**（2026-09-14 定案）：0913 粒度下沉（步 → 键）时，这个窗口曾被
-换算成"最近 2 次决策"，理由是"保持时间视野不被静默除以决策长度"。但那个换算把
-**窗口大小**和**单位**绑在了一起——判定器要看的是"最近发生了什么"这个**事件窗口**，
-事件就是逐个键发生的，窗口本来就该按事件条数说。按决策取的结果是窗口随 L 浮动
-（L=1 取 2 条、L=4 取 8 条），同一句"最近 2 次"在不同链长下看到的事件量差 4 倍，
-判据前提反而不可控。改回条数后窗口恒定，链长怎么变都不影响判定器的证据量。
-"""
-
-# 历史：`JUDGE_HISTORY_KEY_CAP = 8` 已删（2026-09-14）。
-# 它原本是"按决策取窗口"的配套查询上限（防两条长链把 prompt 顶爆）。改成按条数
-# 取之后，`JUDGE_HISTORY_STEPS` 本身就是条数上限，查询上限与渲染上限同源，
-# 再留一个帽就是两个数字描述同一件事、还能互相矛盾（cap < steps 时截断静默发生）。
-# 链长膨胀的风险也一并消除：取的是固定 3 条，与 L 无关。
 
 
 CHECKPOINT_ENABLED = True

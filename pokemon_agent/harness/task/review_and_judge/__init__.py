@@ -4,7 +4,7 @@
 
 ①机械：世界结束（`obs.done`）/ 停摆（`stall_count >= ACT_STALL_LIMIT`）/ 键预算尽
 （`step >= task.max_steps`）。②模型：第 1 键之后每圈问"task 目标达成没有"，
-判成即 `GOAL_DONE`，覆盖机械结论。第 0 键不问模型。判定只看**本 task** 的最近几键
+判成即 `GOAL_DONE`，覆盖机械结论。第 0 键不问模型。判定只看**本 task** 的全部 ActMemory
 （按 ActMemory 的 `task_id` 章筛），不混进同局前面 task 的键。判定员还可判"被打断"
 （遇敌、剧情对话、被传送，目标此刻推不下去）→ `INTERRUPTED`，同样覆盖机械结论。`reason` 不在这里写。
 """
@@ -16,7 +16,7 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.config import ACT_STALL_LIMIT, JUDGE_HISTORY_STEPS
+from pokemon_agent.config import ACT_STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolJudgeReq,
 )
@@ -46,12 +46,20 @@ def review_and_judge(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[st
 
     # 步骤 2：问模型"task 目标达成没有"，判成覆盖机械结论。
     if state.step > 0:
-        history = state.task_ctx.act_memories[-JUDGE_HISTORY_STEPS:]
+        history = state.task_ctx.act_memories
         goal = Goal(goal=state.task.goal, criteria=state.task.success_criteria)
+        req = FromHarnessToBrainToolJudgeReq(
+            goal=goal,
+            history=history,
+            allow_interrupt=True,
+            task_index=state.task_index,
+            knowledge="\n\n".join(state.knowledge),
+        )
+        req.history = history
         verdict = ask_judger(
             deps.judger,
             deps.trace,
-            FromHarnessToBrainToolJudgeReq(goal=goal, history=history, allow_interrupt=True),
+            req,
             source=_SOURCE,
             episode_id=ep,
             task_id=task_id,

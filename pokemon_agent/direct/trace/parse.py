@@ -31,6 +31,7 @@ from .content import (
     ModelCallContent,
     OtherContent,
     PlanVerdictContent,
+    ReadRunMemoryContent,
     RunEndContent,
     RunStartContent,
     SenseFrameContent,
@@ -39,6 +40,7 @@ from .content import (
     TaskEndContent,
     TaskStartContent,
     VerifyVerdictContent,
+    WriteRunMemoryContent,
 )
 
 CONTENT_MODELS: dict[str, type[BaseModel]] = {
@@ -67,6 +69,9 @@ CONTENT_MODELS: dict[str, type[BaseModel]] = {
     TraceKind.VERIFY_CALL: ModelCallContent,
     TraceKind.SUMMARIZE_EPISODE_CALL: ModelCallContent,
     TraceKind.SUMMARIZE_TASK_CALL: ModelCallContent,
+    TraceKind.SUMMARIZE_RUN_CALL: ModelCallContent,
+    TraceKind.READ_RUN_MEMORY: ReadRunMemoryContent,
+    TraceKind.WRITE_RUN_MEMORY: WriteRunMemoryContent,
     TraceKind.CALL_FAILED: CallFailedContent,
     TraceKind.CALL_EXHAUSTED: CallExhaustedContent,
     TraceKind.SUMMARY_PARSE_ERROR: SummaryParseErrorContent,

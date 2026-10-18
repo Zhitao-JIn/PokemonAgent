@@ -34,7 +34,7 @@ from pokemon_agent.schemas.harness.domain import EntryStatus, TaskOutput, Termin
 from ...judging import ask_judger, judge_reason, mechanical_termination, record_verdict
 from ...reviewing import ask_audit, audit_judgement
 from ..episode_runtime import EpisodeRuntime
-from ..episode_state import EpisodeRunState, current_goal
+from ..episode_state import EpisodeRunState, current_goal, current_knowledge
 
 _SOURCE = "review_and_judge"
 
@@ -67,8 +67,12 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
         req = FromHarnessToBrainToolJudgeReq(
             goal=current_goal(state),
             task_memories=state.ep_ctx.task_memories,
+            episode_index=state.ep_ctx.episode_index,
+            knowledge="\n\n".join(current_knowledge(state)),
+            observation=state.ep_ctx.observation,
             task_table=updates.get("tasks", state.tasks),
         )
+        req.task_memories = state.ep_ctx.task_memories
         verdict = ask_judger(deps.judger, deps.trace, req, **meta)
         feedback = audit_judgement(
             deps.reviewer, deps.trace, verdict, run_id=state.run_id, meta=meta

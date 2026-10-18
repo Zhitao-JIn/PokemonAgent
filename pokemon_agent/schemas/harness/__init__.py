@@ -55,6 +55,8 @@ __all__ = [
     "FromHarnessToBrainToolReflectReq",
     "FromHarnessToBrainToolReflectResp",
     "FromHarnessToBrainToolSummarizeReq",
+    "FromHarnessToBrainToolSummarizeRunReq",
+    "FromHarnessToBrainToolSummarizeRunResp",
     "FromHarnessToBrainToolSummarizeTaskReq",
     "FromHarnessToBrainToolSummarizeTaskResp",
     "FromHarnessToBrainToolSummarizeResp",
@@ -134,6 +136,12 @@ from .communication.FromHarnessToBrainToolReflectReq import FromHarnessToBrainTo
 from .communication.FromHarnessToBrainToolReflectResp import FromHarnessToBrainToolReflectResp
 from .communication.FromHarnessToBrainToolSummarizeReq import FromHarnessToBrainToolSummarizeReq
 from .communication.FromHarnessToBrainToolSummarizeResp import FromHarnessToBrainToolSummarizeResp
+from .communication.FromHarnessToBrainToolSummarizeRunReq import (
+    FromHarnessToBrainToolSummarizeRunReq,
+)
+from .communication.FromHarnessToBrainToolSummarizeRunResp import (
+    FromHarnessToBrainToolSummarizeRunResp,
+)
 from .communication.FromHarnessToBrainToolSummarizeTaskReq import (
     FromHarnessToBrainToolSummarizeTaskReq,
 )

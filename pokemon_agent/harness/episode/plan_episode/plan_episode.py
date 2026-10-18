@@ -128,18 +128,20 @@ def _elicit(deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object
 def _request(
     deps: EpisodeRuntime, state: EpisodeRunState, note: str
 ) -> FromHarnessToBrainToolDecomposeReq:
-    """只装本轮素材，模型重试仍由门面负责。"""
-    return FromHarnessToBrainToolDecomposeReq(
+    """只装本轮素材；校验后绑定 state 的详情原列表，与判定共享只读输入。"""
+    req = FromHarnessToBrainToolDecomposeReq(
         goal=current_goal(state),
         observation=state.ep_ctx.observation,
         task_memories=state.ep_ctx.task_memories,
         task_table=state.tasks,
-        episode_memories=state.ep_ctx.global_episode_memories,
+        episode_index=state.ep_ctx.episode_index,
         knowledge=current_knowledge(state),
         max_tasks=min(EPISODE_MAX_TASKS_PER_PLAN, deps.budget.episode_max_tasks - state.step),
         last_judge=state.last_judge,
         human_note=note,
     )
+    req.task_memories = state.ep_ctx.task_memories
+    return req
 
 
 def _ask(

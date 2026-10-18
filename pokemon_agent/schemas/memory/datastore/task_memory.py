@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from .index_text import first_sentence
+
 
 class TaskMemory(BaseModel):
     """一条 task 记忆——**本 task ActMemory 的派生视图**（一 task 一条）。"""
@@ -72,6 +74,13 @@ class TaskMemory(BaseModel):
     def success(self) -> bool:
         """成没成——由 `termination` 推出（`goal_done` 即达成），不单独存。"""
         return self.termination == "goal_done"
+
+    def index_line(self) -> str:
+        """仅用来源章和正文首句生成一行索引。"""
+        return (
+            f"- {self.task_id}｜{self.goal}｜{'成功' if self.success else '未成功'}｜"
+            f"{self.termination or '-'}｜{self.steps_used} 键｜{first_sentence(self.summary)}"
+        )
 
     def render(self) -> str:
         """渲染成进 prompt 的样子：来源章一行 + 正文。"""

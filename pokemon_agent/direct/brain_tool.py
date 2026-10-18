@@ -48,7 +48,7 @@ brain 是第三方模块，不知道这些。它只回答"这一次成没成"。
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TypeVar, cast
 
@@ -58,6 +58,7 @@ from pokemon_agent.brain import (
     ActionSegment,
     BrainPort,
     EpisodeSummary,
+    RunSummary,
     ScriptArg,
     ScriptSignature,
 )
@@ -75,12 +76,14 @@ from pokemon_agent.config import (
     PLAN_MAX_TOKENS,
     PLAN_THINKING,
     PROVIDER_JSON_MODE,
+    SCOPE_IMAGE_CAP,
 )
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.budget_provider import BudgetProvider, TimeoutProvider
 from pokemon_agent.direct.prompts import decompose as decompose_prompt
 from pokemon_agent.direct.prompts import run_plan as run_plan_prompt
 from pokemon_agent.direct.prompts import summarize as summarize_prompt
+from pokemon_agent.direct.prompts import summarize_run as summarize_run_prompt
 from pokemon_agent.direct.prompts import summarize_task as summarize_task_prompt
 from pokemon_agent.direct.prompts import verify as verify_prompt
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
@@ -97,6 +100,8 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolReflectResp,
     FromHarnessToBrainToolSummarizeReq,
     FromHarnessToBrainToolSummarizeResp,
+    FromHarnessToBrainToolSummarizeRunReq,
+    FromHarnessToBrainToolSummarizeRunResp,
     FromHarnessToBrainToolSummarizeTaskReq,
     FromHarnessToBrainToolSummarizeTaskResp,
     FromHarnessToBrainToolVerifyReq,
@@ -107,6 +112,7 @@ from pokemon_agent.schemas.memory import (
     SNAPSHOT_BLIND,
     ActMemory,
     EpisodeMemory,
+    RunMemory,
     TaskMemory,
 )
 from pokemon_agent.world import (
@@ -119,6 +125,30 @@ from .prompts import decide_action as decide_action_prompt
 from .prompts import judge_success as judge_success_prompt
 
 _Result = TypeVar("_Result")
+
+
+def cap_images(frames: Sequence[str], cap: int) -> list[str]:
+    """保留最新 cap 张并返回副本；调用方保证 cap > 0。本检查点先落地，后续才接线。
+
+    L0 / L1 / run 蒸馏后续使用；L2 的帧与文字逐帧对应，不调用本函数。
+    """
+    assert cap > 0, "cap_images() needs a positive cap"
+    return list(frames[-cap:])
+
+
+def collect_frames(memories: Sequence[EpisodeMemory | TaskMemory]) -> list[str]:
+    """依次收集每条记忆的首末帧，跳过 None，按字符串相等去重并保留首次位置。
+
+    返回独立列表，不限制数量；调用方另行过帽。
+    """
+    frames: list[str] = []
+    seen: set[str] = set()
+    for memory in memories:
+        for frame in (memory.first_frame, memory.last_frame):
+            if frame is not None and frame not in seen:
+                seen.add(frame)
+                frames.append(frame)
+    return frames
 
 
 def dedup_snapshots(
@@ -208,6 +238,7 @@ class Planner:
         prompt = run_plan_prompt.build_prompt(req)
         goal_stack = run_plan_prompt.goals_lines(req.plan)
         history = run_plan_prompt.history_blocks(req)
+        images = cap_images(collect_frames(req.details), SCOPE_IMAGE_CAP)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.plan(
@@ -215,6 +246,7 @@ class Planner:
                 goal_stack=goal_stack,
                 history=history,
                 max_push=req.max_push,
+                images=images,
                 thinking=_thinking_after(calls),
             )
 
@@ -257,6 +289,7 @@ class Decomposer:
         prompt = decompose_prompt.build_prompt(req)
         goal = f"{req.goal.goal}（判据：{req.goal.criteria}）"
         context = decompose_prompt.context_lines(req)
+        images = cap_images(collect_frames(req.task_memories), SCOPE_IMAGE_CAP)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.decompose(
@@ -264,6 +297,7 @@ class Decomposer:
                 goal=goal,
                 context=context,
                 max_tasks=req.max_tasks,
+                images=images,
                 thinking=_thinking_after(calls),
             )
 
@@ -489,6 +523,7 @@ class Judger:
         谁把 req 变成请求"）：harness 只装素材（history），`dedup_snapshots(req.history)`
         与 `$history` 段的 `render_sequence()` 是同一件事的图片版/文字版——
         prompt 里读到的每一步和模型看到的画面逐帧同源。
+        无逐步历史时，取 task 或 episode 详情的首末帧并过帽；task 的 history 不过帽。
 
         **重试是原样重问**——判定不像决策那样有"上次错在哪"可用来纠正。
         重试耗尽抛 `MaxRetriesExceeded`，由 harness 的调用点决定怎么收场。
@@ -498,7 +533,12 @@ class Judger:
         history = [entry.render() for entry in req.history] + judge_success_prompt.memory_blocks(
             req
         )
-        images, _snapshots = dedup_snapshots(list(req.history))
+        if not req.history:
+            images = cap_images(
+                collect_frames([*req.task_memories, *req.episode_memories]), SCOPE_IMAGE_CAP
+            )
+        else:
+            images, _snapshots = dedup_snapshots(list(req.history))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
@@ -665,6 +705,9 @@ class Summarizer:
         episode_memory = EpisodeMemory(
             episode_id=req.episode_id,
             run_id=req.run_id,
+            run_goal=req.run_goal,
+            first_frame=req.entries[0].first_frame,
+            last_frame=req.entries[-1].last_frame,
             goal=req.goal,
             steps=req.steps,
             acts_used=req.acts_used,
@@ -689,6 +732,62 @@ class Summarizer:
 
 
 # ---- task 蒸馏 ----
+
+
+class RunSummarizer:
+    """RunSummarizePort 的实现：复用蒸馏 provider 和重试预算，盖 run 来源章。"""
+
+    def __init__(
+        self,
+        brain: BrainPort,
+        *,
+        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        deadline: Deadline | None = None,
+        request_timeout_s: float = 60,
+    ) -> None:
+        self._brain = brain
+        self._max_attempts = max_attempts
+        self._deadline = deadline
+        self._request_timeout_s = request_timeout_s
+
+    def summarize_run(
+        self, req: FromHarnessToBrainToolSummarizeRunReq
+    ) -> FromHarnessToBrainToolSummarizeRunResp:
+        """蒸馏最终目标表与局记忆；调用方保证局记忆非空，耗尽异常交给 harness 降级。"""
+        prompt = summarize_run_prompt.build_prompt(req)
+        images = cap_images(collect_frames(req.episode_memories), SCOPE_IMAGE_CAP)
+
+        def attempt(nth: int, calls: list[ModelCall]) -> object:
+            return self._brain.summarize_run(
+                prompt=prompt,
+                goal=req.run_goal,
+                history=summarize_run_prompt.history_blocks(req),
+                success=req.success,
+                steps=req.episodes,
+                max_steps=req.max_episodes,
+                images=images,
+            )
+
+        result, calls = _attempt_loop(
+            "summarize_run",
+            attempt,
+            max_attempts=self._max_attempts,
+            deadline=self._deadline,
+            request_timeout_s=self._request_timeout_s,
+        )
+        summary: RunSummary = result.summary
+        memory = RunMemory(
+            run_id=req.run_id,
+            run_goal=req.run_goal,
+            episodes=req.episodes,
+            succeeded=req.succeeded,
+            acts_used=req.acts_used,
+            termination=req.termination.value,
+            **summary.model_dump(),
+        )
+        return FromHarnessToBrainToolSummarizeRunResp(
+            summary=summary, run_memory=memory, calls=calls
+        )
 
 
 class TaskSummarizer:
@@ -789,6 +888,7 @@ class BrainTool:
     verifier: Verifier
     summarizer: Summarizer
     task_summarizer: TaskSummarizer
+    run_summarizer: RunSummarizer
 
     @classmethod
     def build(
@@ -887,6 +987,9 @@ class BrainTool:
                 brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
             ),
             summarizer=Summarizer(
+                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+            ),
+            run_summarizer=RunSummarizer(
                 brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
             ),
             task_summarizer=TaskSummarizer(

@@ -25,6 +25,7 @@ def settle_episode_error(
     store_empty_chapter(
         deps,
         run_id=run_id,
+        run_goal=episode_input.run_goal,
         episode_id=episode_id,
         goal=episode_input.goal.goal,
         tasks_used=0,

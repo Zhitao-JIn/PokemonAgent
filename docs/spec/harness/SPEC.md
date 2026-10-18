@@ -32,7 +32,7 @@ harness/
 │   └── plan_run/  act/{dispatch}  run_done/
 ├── episode/
 │   ├── episode_entry.py（begin_episode / run_episode / close） episode_graph.py episode_state.py episode_runtime.py
-│   ├── perceive/{absorb_task, sense, retrieve_task_memories, retrieve_global_episode_memory,
+│   ├── perceive/{absorb_task, sense, retrieve_task_memories, retrieve_episode_index,
 │   │             retrieve_knowledge_semantic_memory, retrieve_object_semantic_memory, merge_retrieval}
 │   ├── review_and_judge/  plan_episode/  act/
 │   └── episode_done/{verify_task_memories, summarize_episode, close_episode}
@@ -90,7 +90,7 @@ run 与 episode 这一格还负责**定案上一条**（`_settle`）：盖章 �
 | 本层计数 | `step`（已派局数） | `step`（已派 task 数）、`total_acts` | `step`（本 task 已按键数；帧步号 = `start_step + step`） |
 | 失败计数 | `fail_streak` | `fail_streak` | `stall_key`、`stall_count` |
 | 表 | `goals`（`GoalEntry`） | `tasks`（`TaskEntry`） | — |
-| 上下文 | `plan_ctx`（局索引 / 详情 / 物件） | `ep_ctx`（帧 / TaskMemory / 跨局摘要 / 知识 / 物件） | `task_ctx`（帧 / ActMemory / 动作空间）、`action`、`last_report` / `last_result`（上一动作是脚本时的终态报告与一行结果，按键时为 None / 空串） |
+| 上下文 | `plan_ctx`（本 run 全部局详情 / 过往 run 背景 / 知识 / 物件） | `ep_ctx`（帧 / TaskMemory / 跨局摘要 / 知识 / 物件） | `task_ctx`（帧 / ActMemory / 动作空间）、`action`、`last_report` / `last_result`（上一动作是脚本时的终态报告与一行结果，按键时为 None / 空串） |
 | 下层交回 | `pending_episode` → `episode_outputs` | `pending_task` → `task_outputs` | `after_observation`（格内流转） |
 | 终局 | `termination`、`judge_reason` | 同左 + `task_verdicts`、`reason`、`memory`、`output` | 同左 + `act_verdicts`、`reason`、`memory`、`output` |
 

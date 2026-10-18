@@ -35,6 +35,9 @@ class TaskInput(BaseModel):
     remaining_s: float | None = Field(
         default=None, ge=0, description="派发时剩余运行秒数；None 不限"
     )
+    task_index: list[TaskMemory] = Field(
+        default_factory=list, description="本 episode 内此前同目标 task 的无帧背景索引"
+    )
     knowledge: list[str] = Field(
         default_factory=list,
         description="episode 层检索到的领域知识全文（与拆解看到的同一份，不筛），"

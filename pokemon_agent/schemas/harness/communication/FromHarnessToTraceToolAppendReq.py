@@ -48,6 +48,7 @@ from pokemon_agent.schemas.memory import (
     ActMemory,
     EpisodeMemory,
     ObjectFactEvent,
+    RunMemory,
     TaskMemory,
 )
 from pokemon_agent.world import Observation, RamReadout, TaskObservation
@@ -197,7 +198,8 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     "哪条读口按什么数条数"的表，而 `read_knowledge` 的 5 个文件名一个括号都没有，
     把"一律数括号"那条判据当场打成假警。命中为空就是空数组（`[]`），不是特例。"""
     entry: ActMemory | None = None
-    memory: EpisodeMemory | TaskMemory | None = None
+    memory: EpisodeMemory | TaskMemory | RunMemory | None = None
+    """RunMemory 为 run 收尾蒸馏的存储形状，供 write_run_memory 写账。"""
     event: ObjectFactEvent | None = None
     reason: str | None = None
 

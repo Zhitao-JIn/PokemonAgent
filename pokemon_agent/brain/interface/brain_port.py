@@ -20,14 +20,13 @@
    拷走复用**，跟 `memory/` 同一个规格。
 
 方法名与"一个方法一件事"对应：`choose`/`reflect`/`judge`/`plan`/`decompose`/`verify`/
-`summarize`。**没有 `*_once` 后缀**——"一次"是调用方的循环术语，模块层的方法
+`summarize`/`summarize_run`。**没有 `*_once` 后缀**——"一次"是调用方的循环术语，模块层的方法
 天然就是"做一次"。
 
 **带图方法的形状统一**：`prompt`（规则）+ 素材 + 可选 `images`。
-`choose`/`judge`/`verify`/`summarize` 四个方法接受
+`choose`/`judge`/`verify`/`summarize`/`summarize_run`/`plan`/`decompose` 接受
 `images`——多模态素材物理上塞不进文本 prompt，只能独立传；默认空序列表示
 这次纯文本（模型多模态可用时走 `describe()`，否则 `complete()`）。
-**`plan` / `decompose` 是例外**（0915 129 定案）：规划与拆解是纯文本判断，不接图；
 `reflect` 不调模型，天然没有图。
 
 **`verify`/`summarize` 两条链路共用同一类素材**（下级记忆），但产物归属不同：
@@ -40,7 +39,7 @@
 harness 的截图本来就是以 base64 存的（"截图直存 base64"），谁进了这一层
 再 `b64decode` 一次，就会在构造请求时直接 ValidationError。
 
-**七个方法的失败语义也统一：一律抛 `AttemptFailed` 家族，一律不重试。**
+**八个方法的失败语义也统一：一律抛 `AttemptFailed` 家族，一律不重试。**
 这是本契约里最容易被写歪的一条，所以写在这里：
 
 | 方法 | 失败时抛 | 携带 |
@@ -51,6 +50,7 @@ harness 的截图本来就是以 base64 存的（"截图直存 base64"），谁�
 | `judge` | `JudgeAttemptFailed` | 同上 |
 | `verify` | `VerifyAttemptFailed` | 同上 |
 | `summarize` | `SummarizeAttemptFailed` | 同上 |
+| `summarize_run` | `SummarizeAttemptFailed` | 同上 |
 | `reflect` | 不调模型，只在调用方违约时 assert | — |
 
 **为什么失败必须抛、不许降级**：判定/校验/蒸馏曾经把失败吞成"一个看起来
@@ -77,6 +77,7 @@ from .domain import (
     Reflection,
     ScriptSignature,
     SummarizeResult,
+    SummarizeRunResult,
     VerifyResult,
 )
 
@@ -198,6 +199,7 @@ class BrainPort(Protocol):
         goal_stack: Sequence[str],
         history: Sequence[str],
         max_push: int,
+        images: Sequence[str] = (),
         thinking: bool | None = None,
     ) -> PlanResult:
         """run 级规划：根据历史决定目标表怎么变。
@@ -216,8 +218,8 @@ class BrainPort(Protocol):
           本项目不在 harness 侧截断（截掉就是静默丢目标，见 `PlanOnceReq.max_push`）。
         - `prompt`：怎么规划、输出什么格式的规则。
 
-        **本方法不接图**（0915 129）：规划是 run 级纯文本判断，依据是局索引、
-        详情正文与目标表——一帧"现在屏幕在哪"帮不上忙，只会白烧图费。
+        `images` 是各局首末帧（完整 PNG data URI）；非空且模型多模态可用时
+        走 describe()，否则纯文本。带图请求不支持 thinking 覆盖，但账仍记录传入值。
 
         **与 `prompt` 不重复**：本项目把这四块都渲进了 `run_plan.md` 的对应占位符，
         但签名立的是"规划必须有这几块"这个约定——谁整体拷走 brain 复用时，
@@ -240,6 +242,7 @@ class BrainPort(Protocol):
         goal: str,
         context: Sequence[str],
         max_tasks: int,
+        images: Sequence[str] = (),
         thinking: bool | None = None,
     ) -> DecomposeResult:
         """episode 级规划：把一个目标拆成按执行顺序排好的任务链。
@@ -248,6 +251,8 @@ class BrainPort(Protocol):
         - `context`：已渲染好的素材行（当前画面摘要、本局已跑 task 的结论、相关记忆）。
         - `max_tasks`：这一版最多给几个 task（给模型的建议上限，调用方不截断）。
         - `prompt`：怎么拆、输出什么格式的规则。
+        - `images`：各 task 首末帧（完整 PNG data URI）；非空且模型多模态可用时
+          走 describe()，否则纯文本。带图路径不支持 thinking 覆盖，但账仍记录传入值。
         - `thinking`：同 `plan()`。
 
         后置条件：`result.decomposition.tasks` 非空；`result.calls` 恰好一条。
@@ -325,3 +330,22 @@ class BrainPort(Protocol):
         ...
 
     # ---- 世界知识抽取 ----
+
+    def summarize_run(
+        self,
+        *,
+        prompt: str,
+        goal: str,
+        history: Sequence[str],
+        success: bool,
+        steps: int,
+        max_steps: int,
+        images: Sequence[str] = (),
+    ) -> SummarizeRunResult:
+        """一次 run 蒸馏，复用 summarize 的 provider；不持有状态、不重试。
+
+        前置条件：调用方已将最终目标表与全部局摘要渲入 prompt，history 非空。
+        后置条件：返回 RunSummary 与恰好一次调用的账。
+        失败：调用或解析失败抛 SummarizeAttemptFailed，由调用方决定重试。
+        """
+        ...

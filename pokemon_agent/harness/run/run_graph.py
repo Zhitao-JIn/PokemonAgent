@@ -1,7 +1,9 @@
-"""run 图的装配：6 格 + 1 条条件边（一局一圈）。
+"""run 图的装配：8 格 + 2 条条件边（一局一圈）。
 
-    begin → perceive → review_and_judge ─done→ run_done → END
+    begin → perceive → review_and_judge ─done→ summarize_run → store_run_memory → run_done → END
                               └─否则→ plan_run → act → perceive
+
+两个收尾新格在 done 后运行、自带耗尽降级，直接注册，不经 guarded。
 
 - `review_and_judge` 是**唯一的停机判定点**：收上一局结算、盖章，再机械三类 + 问模型。
   首圈 `outcome` 为 None，只做机械判定。
@@ -29,23 +31,27 @@ from .review_and_judge import review_and_judge
 from .run_done import run_done
 from .run_state import RunState
 from .runtime import RunRuntime
+from .store_run_memory import store_run_memory
+from .summarize_run import summarize_run
 
 
 def compile_run_graph(checkpointer: BaseCheckpointSaver | None = None) -> CompiledStateGraph:
-    """把 6 个格与它们之间的边装配成图，返回编译好的对象。
+    """把 8 个格与它们之间的边装配成图，返回编译好的对象。
 
     checkpointer：图状态的持久化后端（装配点给 sqlite saver）；None = 不持久化（测试用）。
     episode / task 图在节点函数里被 `invoke`，其状态自动写进同一个 saver（嵌套命名空间）。
 
     `context_schema` 是 `RunRuntime`：`run_entry.new_run()` 经 `invoke(..., context=deps)` 递入。
     """
-    # ========== 1. 注册 6 个格 ==========
+    # ========== 1. 注册 8 个格 ==========
     graph = StateGraph(RunState, context_schema=RunRuntime)
     graph.add_node("begin", guarded(begin, "run", "begin"))
     graph.add_node("perceive", guarded(perceive, "run", "perceive", absorb_episode))
     graph.add_node("review_and_judge", guarded(review_and_judge, "run", "review_and_judge"))
     graph.add_node("plan_run", guarded(plan_run, "run", "plan_run"))
     graph.add_node("act", guarded(act, "run", "act"))
+    graph.add_node("summarize_run", summarize_run)
+    graph.add_node("store_run_memory", store_run_memory)
     graph.add_node("run_done", guarded(run_done, "run", "run_done"))
 
     # ========== 2. 接边——判停出口按 done 分叉，act 出口无条件回 perceive ==========
@@ -54,15 +60,17 @@ def compile_run_graph(checkpointer: BaseCheckpointSaver | None = None) -> Compil
     graph.add_edge("perceive", "review_and_judge")
     graph.add_conditional_edges(
         "review_and_judge",
-        lambda state: "run_done" if state.done else "plan_run",
-        {"plan_run": "plan_run", "run_done": "run_done"},
+        lambda state: "summarize_run" if state.done else "plan_run",
+        {"plan_run": "plan_run", "summarize_run": "summarize_run"},
     )
     graph.add_conditional_edges(
         "plan_run",
-        lambda state: "run_done" if state.done else "act",
-        {"act": "act", "run_done": "run_done"},
+        lambda state: "summarize_run" if state.done else "act",
+        {"act": "act", "summarize_run": "summarize_run"},
     )
     graph.add_edge("act", "perceive")
+    graph.add_edge("summarize_run", "store_run_memory")
+    graph.add_edge("store_run_memory", "run_done")
     graph.add_edge("run_done", END)
     return graph.compile(checkpointer=checkpointer)
 

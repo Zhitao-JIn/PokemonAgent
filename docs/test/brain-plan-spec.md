@@ -3,7 +3,7 @@
 > 状态：**已定稿，待执行**（v1，2026-10-14）
 > 上游：`docs/test/brain-test-intent.md` 第 2 节（总意图；不一致以本文件为准）；写法与验证口径沿用已落地的 `docs/test/brain-judge-verify-spec.md`
 > 被测：`pokemon_agent/brain/brain.py` 的 `Brain.plan` / `Brain.decompose`（内部 `_parse_plan` / `_parse_decomposition` **只经这两个公开方法测**）
-> 复用夹具：`tests/_doubles/llm.py` 的 `ScriptedLLM` / `text_reply`（**不得修改**；这两条链是纯文本链，只用 `complete()`，所以用 `ScriptedLLM` 即可，不需要 `ScriptedJudge`）
+> 复用夹具：`tests/_doubles/llm.py` 的 `ScriptedLLM` / `text_reply`（**不得修改**；纯文本用 ScriptedLLM / text_reply，带图用 ScriptedJudge / vision_reply）
 > CHANGELOG 编号：动态取号，规则见第七节
 
 ## 一、目标
@@ -11,7 +11,7 @@
 钉住两条规划链各自的四件事：
 1. 模型怎么写，大脑怎么读：解析出 `RunPlan` / `Decomposition`，字段不合法算 `ParseFailure`；
 2. 失败都抛该链自己的 `*AttemptFailed`，带账、不吞；
-3. 纯文本链：不带图，账里 `images` 恒为 `[]`；思考开关 `thinking` 原样进请求，并在账里以 `true` / `false` / `none` 记下；
+3. 有图且 provider 多模态可用时走 describe，账里 images 记实际发出的图；否则走 complete，images 为空。thinking 仅纯文本请求支持覆盖，带图请求只记账；
 4. 成功路径的后置条件：一次尝试恰好一条账、大脑自己不重试、没配 provider 就调会被入口 assert 当场拦下、`plan_llm` 缺省回退 `judge_llm`。
 
 ## 二、决定表
@@ -72,7 +72,7 @@
 | `test_an_update_index_beyond_the_table_is_passed_through_for_the_caller_to_drop` | `plan_json(updates=[{"index": 9, "status": "pending"}])` | 不抛；`result.plan.updates[0].index == 9`；`note == ""`（O6） |
 | `test_an_invalid_plan_field_fails_as_parse_failure_naming_the_field`（参数化 5 组） | (a) `push_goals` 里 `goal=""`，关键词 `goal`；(b) `max_steps=0`，关键词 `max_steps`；(c) `updates[0].index=-1`，关键词 `index`；(d) `updates[0].status="completed"`，关键词 `status`；(e) `push_goals="x"`（不是列表），关键词 `push_goals`。每组都基于 `plan_json(...)` 覆盖相应键 | 抛 `PlanAttemptFailed`；`call.error_kind == "ParseFailure"`；`excinfo.value.source == "plan"`；`call.error` 含 `RunPlan` 与该组关键词；`payload["ok"] == "false"` |
 | `test_non_json_or_non_object_output_fails_as_parse_failure_and_keeps_the_raw_text`（参数化 2 组） | `nope`、`[1]` | 抛 `PlanAttemptFailed`；`error_kind == "ParseFailure"`；`payload["raw"]` 为回复原文；`payload["input_tokens"] == "11"`、`output_tokens == "7"` |
-| `test_plan_never_sends_images_and_the_ledger_images_is_empty`（参数化：成功 / 解析失败各一组） | 成功用 `plan_json()`，失败用 `nope` | 两种情形的 `payload["images"] == []`；`provider.requests` 里每条都是 `LlmCompleteReq`（纯文本请求） |
+| `test_plan_without_images_uses_text_and_records_an_empty_image_list`（参数化：成功 / 解析失败各一组） | 成功用 `plan_json()`，失败用 `nope` | 未提供 images 时，两种情形的 `payload["images"] == []`；`provider.requests` 里每条都是 `LlmCompleteReq`（纯文本请求） |
 | `test_the_thinking_override_reaches_the_request_and_the_ledger`（参数化 3 组） | `thinking` 取 `True` / `False` / `None` | `provider.requests == [LlmCompleteReq(prompt=PROMPT, thinking=<该值>)]`；`payload["thinking_override"]` 分别为 `"true"` / `"false"` / `"none"` |
 | `test_a_successful_attempt_returns_exactly_one_ledger_entry` | `plan_json()` | `len(result.calls) == 1`；`payload` 键集合恰为 `LEDGER_KEYS`；`ok == "true"`；四个 token 值为 `"11"` `"7"` `"3"` `"2"`；`raw` 为回复原文；`prompt == PROMPT`；`images == []`；`thinking_override == "none"`；`started_at` / `ended_at` 是 `float` 且 `started_at <= ended_at`；`error_kind == ""`、`error == ""` |
 | `test_the_prompt_reaches_the_provider_verbatim_whatever_the_materials_say` | 成功一次 | `provider.requests == [LlmCompleteReq(prompt=PROMPT)]`（`GOAL_STACK` / `HISTORY` / `MAX_PUSH` 不会被拼进请求，D5） |

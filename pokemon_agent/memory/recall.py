@@ -1,4 +1,4 @@
-"""recall / memorize 能力实现：五族 store 之上的统一回忆与统一记忆口。
+"""recall / memorize 能力实现：六族 store 之上的统一回忆与统一记忆口。
 
 **一份实现，两模式共用**（MCP 化定案 2026-09-29）：进程内模式下 `MemoryTool`
 直调这里；MCP 模式下 `mcp_servers/memory_server.py` 的 tool 调这里——分族分流、
@@ -10,7 +10,7 @@
   `conditions` 只放上下文 hint（`episode_id` / `map_id` / `place`），底层按
   hint 分族圈定 + 语义检索，融合排序后返回混合条目（每条自带 `kind` 身份）；
 - `memorize(records)`：统一记忆口。records 按 `kind` 判别落族
-  （act / task / episode / knowledge / object），metadata 拼装、knowledge 判重、
+  （act / task / episode / run / knowledge / object），metadata 拼装、knowledge 判重、
   step 单调前置校验——全部沿用原 `MemoryTool` 的既有规则。
 
 **MemoryStorePort 的 11 个方法在本模块之后是内部接口**：能力面（recall/memorize）
@@ -33,6 +33,7 @@ from pokemon_agent.schemas.memory import (
     EpisodeMemory,
     KnowledgeRecord,
     ObjectFactEvent,
+    RunMemory,
     TaskMemory,
 )
 
@@ -41,6 +42,7 @@ _KIND_DIRS: dict[str, str] = {
     "act": "step_memory",
     "task": "task_memory",
     "episode": "episode_memory",
+    "run": "run_memory",
     "object": "object_memory",
     "knowledge": "knowledge_memory",
 }
@@ -60,10 +62,10 @@ def _default_root() -> Path:
 
 
 class MemoryCapability:
-    """recall / memorize 的唯一能力实现。持有五族统一索引层实例（各占
+    """recall / memorize 的唯一能力实现。持有六族统一索引层实例（各占
     `<kind>/` 子文件夹），不持有任何记录状态——记录在盘上，索引随各自文件夹。
 
-    与原 `MemoryTool` 的关系：五族 store 的构造、metadata 拼装、knowledge 判重、
+    与原 `MemoryTool` 的关系：六族 store 的构造、metadata 拼装、knowledge 判重、
     step 单调前置——全部**随迁到这里**；`MemoryTool` 收敛为
     `MemoryToolPort`（recall / memorize 两方法）后委托本类，直至旧方法删除。
     """
@@ -137,12 +139,18 @@ class MemoryCapability:
           → object（step 升序）；
         - `conditions["run_id"]` / `conditions["episode_id"]` → episode 摘要
           （无 query 时按 conditions 等值 filter 全量自然序；有 query 走语义 rank）；
+        - `conditions["run_goal"]` → 同目标 episode 摘要，跨 run 自然序；
+        - `conditions["runs"] == "all"` → 仅全部 run 记忆，按 run_id 自然序；
         - `query` 非空 → knowledge（语义 search）；
         融合：hint 命中族在前（族内按各自序），语义族随后按 score 降序；截断 limit。
         """
         conditions = conditions or {}
         items: list[dict[str, Any]] = []
 
+        if conditions.get("runs") == "all":
+            return self._recall_run_memories()[:limit]
+
+        run_goal = conditions.get("run_goal")
         episode_id = conditions.get("episode_id")
         run_id = conditions.get("run_id")
         if episode_id:
@@ -161,7 +169,7 @@ class MemoryCapability:
                 object_conditions["run_id"] = run_id
             items.extend(self._recall_objects(object_conditions))
 
-        if run_id or episode_id or query:
+        if run_id or episode_id or run_goal or query:
             items.extend(self._recall_episode_summaries(query, conditions, limit))
 
         if query:
@@ -244,14 +252,16 @@ class MemoryCapability:
         """episode 摘要：query 非空走语义 rank（score = 相关性）；
         无 query 时按 conditions 等值 filter 全量自然序（score = None）。
 
-        episode 族只认 run_id / episode_id 两个等值键（success / scene 未来加）——
+        episode 族只认 run_id / episode_id / run_goal 三个等值键（success / scene 未来加）——
         其余 hint 键（place 等）不属于这一族，透传会查空。
         content 恒 = markdown（空章就是空串，消费方靠它区分空章与有正文）。
         """
         store = self._store("episode")
         store.refresh_changed()
         episode_conditions = {
-            key: value for key, value in conditions.items() if key in ("run_id", "episode_id")
+            key: value
+            for key, value in conditions.items()
+            if key in ("run_id", "episode_id", "run_goal")
         }
         items: list[dict[str, Any]] = []
         if query:
@@ -259,10 +269,8 @@ class MemoryCapability:
             hits, _timings = store.rank(uuids, query, limit)
             pairs: list[tuple[str, float | None]] = hits
         else:
-            # 无 query：conditions 等值 filter 全量，按 episode_id **自然序**
-            # （数字段按数值，`r1-ep2` < `r1-ep10`——即本 run 的执行序；缺字段排最后）
             keyed = [
-                (_natural_key(meta.get("episode_id")), uuid_)
+                ((_natural_key(meta.get("run_id")), _natural_key(meta.get("episode_id"))), uuid_)
                 for uuid_, meta, _p, _t in store.get_many(store.filter(episode_conditions))
             ]
             keyed.sort(key=lambda row: row[0])
@@ -285,6 +293,28 @@ class MemoryCapability:
                     "payload": payload,
                 }
             )
+        return items
+
+    def _recall_run_memories(self) -> list[dict[str, Any]]:
+        """返回全部可解析 run 记录，按 run_id 自然序，正文为 markdown。"""
+        store = self._store("run")
+        store.refresh_changed()
+        items: list[dict[str, Any]] = []
+        for uuid_, _metadata, payload, text in store.get_many(store.filter({})):
+            try:
+                memory = RunMemory(**payload, markdown=text)
+            except ValidationError:
+                continue
+            items.append(
+                {
+                    "kind": "run",
+                    "uuid": uuid_,
+                    "score": None,
+                    "content": memory.markdown,
+                    "payload": payload,
+                }
+            )
+        items.sort(key=lambda item: _natural_key(item["payload"].get("run_id")))
         return items
 
     def _recall_knowledge(self, query: str, limit: int) -> list[dict[str, Any]]:
@@ -330,6 +360,8 @@ class MemoryCapability:
                 uuid_ = self._memorize_task(payload)
             elif kind == "episode":
                 uuid_ = self._memorize_episode(payload)
+            elif kind == "run":
+                uuid_ = self._memorize_run(payload)
             elif kind == "object":
                 uuid_ = self._memorize_object(payload)
             else:
@@ -382,10 +414,24 @@ class MemoryCapability:
             metadata={
                 "run_id": memory.run_id,
                 "episode_id": memory.episode_id,
+                "run_goal": memory.run_goal,
                 "success": str(memory.success),
                 "quality_score": f"{memory.quality_score:.2f}",
                 "scene": "|".join(memory.applicable_scenes),
             },
+            payload=memory.model_dump(exclude={"markdown"}),
+            text=memory.markdown,
+        )
+
+    def _memorize_run(self, payload: dict[str, Any]) -> str:
+        """落一条 run 记忆；调用方保证 run_id 非空、markdown 与 summary 同真同假。"""
+        memory = RunMemory(**payload)
+        assert memory.run_id, "run memorize needs a non-empty run_id"
+        assert bool(memory.markdown.strip()) == bool(memory.summary.strip()), (
+            "正文要么整条完整、要么整条为空——markdown 与 summary 必须同真同假"
+        )
+        return self._store("run").put(
+            metadata={"run_id": memory.run_id, "run_goal": memory.run_goal},
             payload=memory.model_dump(exclude={"markdown"}),
             text=memory.markdown,
         )
@@ -433,7 +479,7 @@ class MemoryCapability:
         return self._store("act").snapshot(name)
 
     def restore(self, archive: str | Path) -> int:
-        """以 zip 为准还原整个根；五族内存态重读、单调缓存清空。
+        """以 zip 为准还原整个根；六族内存态重读、单调缓存清空。
 
         不安全条目在删除前抛 AssertionError，库保持不变。
         """
@@ -449,7 +495,7 @@ class MemoryCapability:
                 ):
                     raise AssertionError(f"restore() 拒绝不安全的归档条目：{filename!r}")
         unpacked = self._store("act").restore(archive)
-        for kind in ("task", "episode", "object", "knowledge"):
+        for kind in ("task", "episode", "object", "knowledge", "run"):
             self._store(kind).reload()
         self._sync_max_caches()
         return unpacked

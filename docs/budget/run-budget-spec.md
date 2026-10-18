@@ -28,7 +28,7 @@
 
 | # | 决定 | 取舍 |
 |---|---|---|
-| D1 | 新增预算档模型 `RunBudget`（类型化，字段见第三节）。**分两层取值：共用层**（task / episode / 拆解 / 模型请求的数值，评测与生产相同）写在 `pokemon_agent/config.py` 的默认预算档；**run 级与总量层**（`max_episodes`、`max_total_actions`、`wall_clock_s`）由运行场合覆盖：评测在配置文件的 `budget` 段里收紧，生产使用放开的取值。`RUN_MAX_EPISODES` 常量并入预算档，生产值恢复 50（`bcd4cc9` 改成 3 是为评测） | 评测与生产的差别只剩总量，评测测到的行为才代表生产；代价：生产的分层限制比现在严，见第七节 |
+| D1 | 新增预算档模型 `RunBudget`（类型化，字段见第三节）。**分两层取值：共用层**（task / episode / 拆解 / 模型请求的数值，评测与生产相同）写在 `pokemon_agent/config.py` 的默认预算档；**run 级与总量层**（`max_episodes`、`max_total_actions`、`wall_clock_s`）由运行场合覆盖：评测在配置文件的 `budget` 段里收紧，生产使用放开的取值。`RUN_MAX_EPISODES` 常量并入预算档，生产值取 10（`bcd4cc9` 改成 3 是为评测） | 评测与生产的差别只剩总量，评测测到的行为才代表生产；代价：生产的分层限制比现在严，见第七节 |
 | D2 | 预算档只在唯一装配点构造并注入运行上下文（`RunRuntime`），模块内不读全局可变状态；brain 契约保持无状态，不加全局计数器 | 符合依赖注入原则 |
 | D3 | deadline 用 `time.monotonic()` 的绝对截止点；对象 `Deadline(remaining() -> float)` 由装配点创建（run 开始时刻 + 总时长），经上下文传到 brain 门面（`direct/brain_tool.py`）与 harness | 单一时钟源，可在测试里替换成假时钟 |
 | D4 | 每次模型尝试前：`allowed = min(该链路单请求上限, remaining() - 收尾预留)`；`allowed < 最小有用时长（默认 3 秒）` 则**不发请求**，抛类型化的 `BudgetExhausted`；provider 的 socket timeout 与总等待闸（现为 timeout+15）都取 `allowed`，不能只改 socket timeout | 修的是"剩 160 秒仍启动 435 秒请求" |
@@ -38,7 +38,7 @@
 | D8 | episode：任务数硬上限（`episode_max_tasks`，6）与拆解轮次上限（`max_decompositions`，2）；耗尽→episode 以 `tasks_exhausted` / `decompositions_exhausted` 结算，**失败**，并计入 run 的连续失败；这两项独立于数据集里冻结的 `max_steps=15`，数据不改 | 15 与运行预算分开 |
 | D9 | 停滞规则本轮不动（task 5、episode/run 3），仅在文档里标明它们是辅助诊断、不承担累计预算职责 | 调低可能误伤合法菜单/对话，先回归再说 |
 | D10 | 共用层的模型配置：规划/拆解 `plan_thinking=False`、`plan_max_tokens=4096`、单请求上限 45 秒（`BrainLlmConfig` 已有字段，改装配值）；模型尝试最多 2 次（含首发）且受 D4 约束。**生产也使用这组值**（不再保留 `PLAN_THINKING=True` / 65536 / 420 秒 / 3 次的现行值） | 关思考后"空 JSON"失败模式随之消失（原先 65536 就是为它加的）；代价：生产的规划/拆解质量可能变化，由重建的基线量出来；需要长推理的任务以后另开显式、受限的推理档，不是默认 |
-| D11 | 起始数值（**待验证**）。共用层：`reserve_s=60`、`episode_max_tasks=6`、`max_decompositions=2`、`task_max_steps=12`、`min_request_s=3`。评测覆盖：`wall_clock_s=600`（与样本硬终止一致）、`max_episodes=3`、`max_total_actions=60`。生产：`wall_clock_s=None`、`max_episodes=50`、`max_total_actions=None`。共用层数值写在 `config.py`，评测覆盖写在配置文件的 `budget` 段 | 改数字只改配置 |
+| D11 | 起始数值（**待验证**）。共用层：`reserve_s=60`、`episode_max_tasks=6`、`max_decompositions=2`、`task_max_steps=12`、`min_request_s=3`。评测覆盖：`wall_clock_s=600`（与样本硬终止一致）、`max_episodes=3`、`max_total_actions=60`。生产：`wall_clock_s=None`、`max_episodes=10`、`max_total_actions=None`。共用层数值写在 `config.py`，评测覆盖写在配置文件的 `budget` 段 | 改数字只改配置（brain_scope 取 10；真实长度出来后复核） |
 | D12 | 请求开始/结束/取消事件与关联 ID（定位"卡在哪一链"）涉及 trace 落点与结构，**必须先与用户商定**，本版不实现，列入第七节 | trace 落点须与开发者商谈 |
 | D13 | **状态字段与 `state_schema_hash`（v1.2 修订）**：累计动作、拆解轮次等预算计数必须放进 run / episode 状态（放在运行时对象里，从检查点恢复后计数会归零，等于预算被绕过）。因此 `state_schema_hash` 会变化，**这是预期且已被接受的**（2026-10-14 裁决）。约束：(1) B3 先一次性列全所需的新状态字段，在同一个提交里加入，哈希只变这一次；之后再变化仍然立即停下汇报；(2) 哈希变化后，旧的评测存档会被 restore 拒载，必须用 `python -m evals.agent_short_goal_run.dataset.build.pack` 重打 v1 的 20 个存档（无模型调用，只起模拟器、需要 ROM 与来源 `.state`），作为独立的一步 B3b 提交；(3) 新字段全部带默认值，类型化，不用裸 dict | 重打存档是一次性、机械、无模型的代价，换来预算在恢复后仍然成立 |
 | D14 | **统一的配置入口**：唯一装配点 `build_real`（`pokemon_agent/build.py`）新增入参 `config: str \| Path \| None = None`（运行配置文件路径；None=默认档）。文件是 JSON，顶层按段组织，本项只有 `budget` 段：`{"budget": {"wall_clock_s": 600, "max_episodes": 3, "max_total_actions": 60}}`；**只写要覆盖的字段**，其余取共用层默认；未知字段与类型错误在装配期就报错（`extra="forbid"`），不静默忽略。解析函数 `load_run_config(path) -> RunConfig`（类型化，放在 `pokemon_agent/config.py` 同层的配置模块，不放进 brain/world），`build_real` 只把解析出的 `RunBudget` 递给各层，仍是"装配点只递裸字段"。**本项不新增命令行入口**：仓库当前没有通用起跑脚本，`build_real` 的调用方只有评测 worker 与数据集打包脚本；等将来有了起跑入口，它只需把 `--config` 透传给 `build_real(config=…)`（2026-10-14 裁决：不新增 `python -m pokemon_agent`，那是另一项产品面决定）。评测不再自己拼预算：`evals/config.json` 的 `budget` 段在评测启动时被写成报告目录下的 `run_config.json`（逐字节落盘），`RunOneRequest` 携带这个文件的路径，worker 把它交给 `build_real(config=…)`；`baseline_context.json` 记录该文件路径与 sha256，视觉删除前后两次基线用同一文件即证明同口径 | 评测与生产走同一条读取路径；配置文件是可复现、可哈希的证据；段结构为以后收纳别的实验旋钮留口，但本项不迁移任何现有参数 |
@@ -50,7 +50,7 @@
 | 层 | 字段 | 评测 | 生产 |
 |---|---|---|---|
 | 总量 / run 级（可不同） | `wall_clock_s` | 600 | 不限 |
-| | `max_episodes` | 3 | 50 |
+| | `max_episodes` | 3 | 10 |
 | | `max_total_actions` | 60 | 不限 |
 | 共用层（必须相同） | `reserve_s` / `episode_max_tasks` / `max_decompositions` / `task_max_steps` / `min_request_s` | 60 / 6 / 2 / 12 / 3 | 同左 |
 | | `plan_thinking` / `plan_max_tokens` / `plan_timeout_s` / `brain_max_attempts` | 关 / 4096 / 45 / 2 | 同左 |

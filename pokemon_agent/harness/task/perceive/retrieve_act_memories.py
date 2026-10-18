@@ -1,7 +1,7 @@
 """`retrieve_act_memories`（task 层）：查本 task 的全部 ActMemory → `task_ctx.act_memories`。
 
-task 只读**直属下一级**的记忆（本 task 按过的键）：决策取最近几条、判定取最近几条、
-收尾的标记与蒸馏取全部。排在两个 store 之后，所以上一键刚写的那条也在里面。
+task 只读**直属下一级**的记忆（本 task 按过的键）：决策、判定、
+收尾的标记与蒸馏都取全部。排在两个 store 之后，所以上一键刚写的那条也在里面。
 """
 
 from __future__ import annotations

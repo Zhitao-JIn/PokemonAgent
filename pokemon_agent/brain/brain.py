@@ -10,7 +10,7 @@
     plan       看 run 级历史 + 目标表，问一次模型该推什么目标 / 改哪行  plan_llm
     decompose  把 episode 目标拆成只靠观测 + 固定动作空间可完成的 task 链  plan_llm
 
-**六个调模型的方法都是「问一次」的语义，没有一个内部重试。** 失败时**一律抛
+**七个调模型的方法都是「问一次」的语义，没有一个内部重试。** 失败时**一律抛
 `AttemptFailed` 家族**（`DecisionAttemptFailed` / `PlanAttemptFailed` /
 `DecomposeAttemptFailed` / `JudgeAttemptFailed` / `VerifyAttemptFailed` /
 `SummarizeAttemptFailed`），
@@ -25,7 +25,7 @@
   现在它们照抛，兜底由调用方的重试预算决定。
 - **`attempt` 字段不由大脑盖**。它属于"这是第几次尝试"，只有循环控制者知道。
 
-**它不写 trace，也不知道自己在哪一局。** 七个方法（含不调模型的
+**它不写 trace，也不知道自己在哪一局。** 八个方法（含不调模型的
 `reflect`）都不收 `step`/`episode_id`/
 `run_id`——构造函数里也没有 `TracePort`——账跟着结果交给调用方。
 规则只有一句：**谁控制循环，谁记账。**
@@ -83,10 +83,12 @@ from .interface import (
     PlanResult,
     Reflection,
     RunPlan,
+    RunSummary,
     ScriptArg,
     ScriptCall,
     ScriptSignature,
     SummarizeResult,
+    SummarizeRunResult,
     VerifyResult,
     VerifyVerdict,
 )
@@ -159,8 +161,8 @@ class Brain:
         缺省回退到 `judge_llm`——跟 `verify_llm` 同理：规划和判定都不是"决策"，
         分组更接近，装配处（`build.py`）实际也一直把这条链路的模型跟
         judge/verify 放在同一个供应商（火山方舟）下。类型是纯 `LLMProvider`
-        （不是 `JudgeProvider`）：`plan` 是纯文本链，只用 `complete()` 一个方法
-        （0915 129 定案：规划不带图）。
+        （不是 `JudgeProvider`）：plan / decompose 与 choose 一样检查 multimodal
+        标志，有图且可用时走 describe()，否则走 complete()。
 
         `judge_llm`/`verify_llm` 的类型是 `JudgeProvider`（brain 自己的协议：
         `complete()` + `describe()`），不是纯 `LLMProvider`——`judge()`/`verify()`/
@@ -320,6 +322,7 @@ class Brain:
         goal_stack: Sequence[str],
         history: Sequence[str],
         max_push: int,
+        images: Sequence[str] = (),
         thinking: bool | None = None,
     ) -> PlanResult:
         """一次 run 级规划尝试：问一次模型、解析。**不重试**——重试是调用方
@@ -330,31 +333,48 @@ class Brain:
         本方法**不消费**前三块：它们已经由调用方渲进 `prompt` 了，
         这里收下只为让"规划要什么"在接口上立得住。
 
-        **纯文本链**（0915 129 定案）：规划不带图——run 级判断的依据是局索引、
-        详情正文与目标表，一帧"现在屏幕在哪"帮不上忙，只会白烧图费。
-        账上的 `images` 恒为空列表（账形与其余链路统一）。
+        images 是各局首末帧；有图且 plan_llm.multimodal 为真时走 describe()，
+        否则走 complete()。账里的 images 只记录实际发出的图。
 
         失败：模型调不通 / 解析不出 `RunPlan`，都抛 `PlanAttemptFailed`（附这次的账）。
 
-        `thinking`：这一次的思考开关覆盖，原样进 `LlmCompleteReq`；`None` = 沿用 provider 的设置。
+        thinking 在纯文本路径原样进 LlmCompleteReq；None 沿用 provider 设置。
+        VisionDescribeReq 没有 thinking 字段，带图路径无法应用覆盖，账仍记录传入值；
+        空回复后调用方传 False 重试也不会改变带图请求的思考设置。
 
-        步骤 1：调模型（`plan_llm`，纯文本）。
+        步骤 1：调模型（plan_llm，按多模态能力分派）。
         步骤 2：解析，失败就把账封进异常抛出去；成功就打包成 `PlanResult` 交回去。
         """
         assert self._plan_llm is not None, (
             "plan() 需要一个 plan provider——这次装配没给它（按需装配）"
         )
         # 步骤 1：调模型。
+        with_vision = bool(images) and bool(getattr(self._plan_llm, "multimodal", False))
+        sent_images = list(images) if with_vision else []
         t0 = time.time()
         try:
-            completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt, thinking=thinking))
+            if with_vision:
+                text, n_in, n_out, n_cached, n_reason = self._ask(
+                    self._plan_llm, prompt, sent_images
+                )
+            else:
+                completion = self._plan_llm.complete(
+                    LlmCompleteReq(prompt=prompt, thinking=thinking)
+                )
+                text, n_in, n_out, n_cached, n_reason = (
+                    completion.text,
+                    completion.prompt_tokens,
+                    completion.completion_tokens,
+                    completion.cached_tokens,
+                    completion.reasoning_tokens,
+                )
             t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
                     "ok": "false",
                     "prompt": prompt,
-                    "images": [],
+                    "images": sent_images,
                     "thinking_override": _override(thinking),
                     "started_at": t0,
                     "ended_at": time.time(),
@@ -368,23 +388,22 @@ class Brain:
         parsed: RunPlan | None = None
         kind = reason = ""
         try:
-            parsed = self._parse_plan(completion.text)
+            parsed = self._parse_plan(text)
         except ParseFailure as exc:
             kind, reason = type(exc).__name__, str(exc)
 
         # 一次模型调用 = 一条账，成功失败都留：失败的那次同样烧了 token。
         call = ModelCall(
             payload={
-                "input_tokens": str(completion.prompt_tokens),
-                "output_tokens": str(completion.completion_tokens),
-                "cached_tokens": str(completion.cached_tokens),
-                "reasoning_tokens": str(completion.reasoning_tokens),
+                "input_tokens": str(n_in),
+                "output_tokens": str(n_out),
+                "cached_tokens": str(n_cached),
+                "reasoning_tokens": str(n_reason),
                 "thinking_override": _override(thinking),
                 "ok": str(parsed is not None).lower(),
-                "raw": completion.text,
+                "raw": text,
                 "prompt": prompt,
-                # 规划链纯文本（见 docstring），账形与其余链路统一
-                "images": [],
+                "images": sent_images,
                 "started_at": t0,
                 "ended_at": t1,
             },
@@ -403,16 +422,19 @@ class Brain:
         goal: str,
         context: Sequence[str],
         max_tasks: int,
+        images: Sequence[str] = (),
         thinking: bool | None = None,
     ) -> DecomposeResult:
         """一次 episode 级拆解尝试：问一次模型、解析成 `Decomposition`。**不重试**。
 
         素材（`goal`/`context`/`max_tasks`）已由调用方渲进 `prompt`，这里收下只为
-        让"拆解要什么"在接口上立得住。纯文本链，走 `plan_llm`。
+        让"拆解要什么"在接口上立得住。images 是各 task 首末帧，走 plan_llm；
+        有图且 multimodal 为真时用 describe()，否则用 complete()。
 
         失败：模型调不通 / 解析不出 `Decomposition`，都抛 `DecomposeAttemptFailed`。
 
-        `thinking`：同 `plan()`。
+        thinking 同 plan()：带图请求无法应用覆盖，账仍记录传入值；
+        空回复后 False 重试对带图请求的思考设置无效。
 
         步骤 1：调模型。
         步骤 2：解析，失败封账抛出；成功打包成 `DecomposeResult`。
@@ -422,16 +444,32 @@ class Brain:
         )
         assert max_tasks > 0, "decompose() got a non-positive max_tasks"
         # 步骤 1：调模型。
+        with_vision = bool(images) and bool(getattr(self._plan_llm, "multimodal", False))
+        sent_images = list(images) if with_vision else []
         t0 = time.time()
         try:
-            completion = self._plan_llm.complete(LlmCompleteReq(prompt=prompt, thinking=thinking))
+            if with_vision:
+                text, n_in, n_out, n_cached, n_reason = self._ask(
+                    self._plan_llm, prompt, sent_images
+                )
+            else:
+                completion = self._plan_llm.complete(
+                    LlmCompleteReq(prompt=prompt, thinking=thinking)
+                )
+                text, n_in, n_out, n_cached, n_reason = (
+                    completion.text,
+                    completion.prompt_tokens,
+                    completion.completion_tokens,
+                    completion.cached_tokens,
+                    completion.reasoning_tokens,
+                )
             t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
                     "ok": "false",
                     "prompt": prompt,
-                    "images": [],
+                    "images": sent_images,
                     "thinking_override": _override(thinking),
                     "started_at": t0,
                     "ended_at": time.time(),
@@ -445,20 +483,20 @@ class Brain:
         parsed: Decomposition | None = None
         kind = reason = ""
         try:
-            parsed = self._parse_decomposition(completion.text)
+            parsed = self._parse_decomposition(text)
         except ParseFailure as exc:
             kind, reason = type(exc).__name__, str(exc)
         call = ModelCall(
             payload={
-                "input_tokens": str(completion.prompt_tokens),
-                "output_tokens": str(completion.completion_tokens),
-                "cached_tokens": str(completion.cached_tokens),
-                "reasoning_tokens": str(completion.reasoning_tokens),
+                "input_tokens": str(n_in),
+                "output_tokens": str(n_out),
+                "cached_tokens": str(n_cached),
+                "reasoning_tokens": str(n_reason),
                 "thinking_override": _override(thinking),
                 "ok": str(parsed is not None).lower(),
-                "raw": completion.text,
+                "raw": text,
                 "prompt": prompt,
-                "images": [],
+                "images": sent_images,
                 "started_at": t0,
                 "ended_at": t1,
             },
@@ -570,8 +608,8 @@ class Brain:
         降级成纯文本判定总比抛异常/硬编一个失败结果强。
 
         **调用方要保证**：`images` 非空时 `provider` 真的有 `describe()`——
-        `judge`/`verify`/`summarize` 的 provider 类型就带；`choose`
-        的 `decide_llm` 只有 `multimodal` 标志为真才会带图进来（0915 129）。
+        `judge`/`verify`/`summarize` 的 provider 类型就带；choose / plan / decompose
+        只有 provider 的 multimodal 标志为真才会带图进来。
         类型联合只是把"两个位置都可能传"写出来，运行时分派靠的是这条前置条件。
 
         **`images` 是 base64 字符串不是原始 bytes**：直接进
@@ -847,6 +885,36 @@ class Brain:
             raise SummarizeAttemptFailed(call)
 
         return SummarizeResult(summary=summary, calls=[call])
+
+    def summarize_run(
+        self,
+        *,
+        prompt: str,
+        goal: str,
+        history: Sequence[str],
+        success: bool,
+        steps: int,
+        max_steps: int,
+        images: Sequence[str] = (),
+    ) -> SummarizeRunResult:
+        """问一次现有蒸馏 provider，交回 run 方言；失败沿用 SummarizeAttemptFailed。
+
+        前置条件：history 至少一条；调用方负责素材渲染。
+        后置条件：RunSummary 非空，calls 为本次调用的整条账。
+        """
+        assert history, "summarize_run() needs episode history"
+        result = self.summarize(
+            prompt=prompt,
+            goal=goal,
+            history=history,
+            success=success,
+            steps=steps,
+            max_steps=max_steps,
+            images=images,
+        )
+        return SummarizeRunResult(
+            summary=RunSummary.model_validate(result.summary.model_dump()), calls=result.calls
+        )
 
     @staticmethod
     def _parse_summary(text: str) -> EpisodeSummary | None:

@@ -321,9 +321,8 @@ def render_sequence(entries: list[ActMemory]) -> list[str]:
     之间，上一条的 `after` 和下一条的 `before` 内容其实完全相同（`store_step_
     episode_memory()` 是同一份 `after_observation` 先当这一条的 `after` 存
     一次，`close_step()` 再把它扶正成下一条的 `before`）。
-    校验器喂的是**整局全量**（不像 `judge` 只取最近 `JUDGE_HISTORY_STEPS`
-    条——那个常量住 `pokemon_agent/config.py`，这里不重复硬编码），逐条渲染
-    就是把每一帧连续存两遍，长局的 prompt 长度直接翻倍。
+    判定与校验都读取本 task 全量记忆；逐条渲染会把相邻边界帧连续贴两遍，
+    使 prompt 长度增大。
 
     **保留全量、只去重渲染**：这里不砍步数（校验器仍然看得到每一步），只在
     相邻两条**确认首尾相接**（`entries[i].step + 1 == entries[i+1].step` 且

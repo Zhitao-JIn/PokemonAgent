@@ -24,6 +24,7 @@ from .decomposition import Decomposition
 from .episode_summary import EpisodeSummary
 from .model_call import ModelCall
 from .run_plan import RunPlan
+from .run_summary import RunSummary
 from .verify_verdict import VerifyVerdict
 
 
@@ -113,3 +114,10 @@ class SummarizeResult(_ResultBase):
 
     summary: EpisodeSummary = Field(description="蒸馏出的本局摘要")
     calls: list[ModelCall] = Field(default_factory=list, description="这次蒸馏调用的账")
+
+
+class SummarizeRunResult(_ResultBase):
+    """summarize_run 一次成功尝试的正文和调用账；失败抛 SummarizeAttemptFailed。"""
+
+    summary: RunSummary = Field(description="蒸馏出的 run 摘要")
+    calls: list[ModelCall] = Field(default_factory=list, description="本次蒸馏的调用账")

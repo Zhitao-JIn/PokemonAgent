@@ -51,8 +51,9 @@ class EpisodeContext(BaseModel):
     task_memories: list[TaskMemory] = Field(
         default_factory=list, description="本局全部 TaskMemory（按 total_acts 升序）"
     )
-    global_episode_memories: list[EpisodeMemory] = Field(
-        default_factory=list, description="本 run 的跨局摘要"
+    episode_index: list[EpisodeMemory] = Field(
+        default_factory=list,
+        description="run_goal 相同的其他 episode，不含本局；只用 index_line 渲染",
     )
     knowledge_semantic_memory: list[str] | None = Field(
         default=None, description="知识库检索结果；None = 本局还没查过。之后沿用，到下次重查为止"
@@ -72,6 +73,7 @@ class EpisodeRunState(Settled, BaseModel):
     """一局的全部可序列化状态（分组见模块文档）。"""
 
     run_id: str = Field(description="所属 run")
+    run_goal: str = Field(description="所属 run 的目标文本")
     episode_id: str = Field(description="本局标识")
     goal: Task = Field(description="本局唯一目标；`max_steps` 单位是 task 数")
 

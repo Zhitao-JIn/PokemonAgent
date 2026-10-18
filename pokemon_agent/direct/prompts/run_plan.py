@@ -1,21 +1,7 @@
-"""`run_plan.md` 的装配逻辑：加载、拼装、渲染，都在这一个文件里。
+"""run 规划素材渲染：本 run 全部局正文、过往 run 一行背景与地图事实。
 
-跟 `decide_action.py`/`judge_success.py`/`verify.py`/`summarize.py` 同一个模式
-——`RunHarness` 只负责取记忆、组装 `PlanOnceReq`（`plan`/`index`/`details`/`objects`
-保持结构化），struct→text 交给这里的 `build_prompt()`。
-
-**0914 S2：素材从 trace 换成 memory**。原先这里是 `history_lines(events)`——从全量
-事件流里挑 `episode_start`/`episode_end` 折出"每局一行"。现在折的是记忆，三段：
-
-- `index_lines`：本 run **每一局一行**，取的是章（`episode_id`/`goal`/成败/步数）；
-- `detail_blocks`：**少数几局的正文**（一期按确定性规则选，见
-  `run/perceive`（`_pick_details`））；
-- `object_lines`：本 run 涉及的地图交互事实，一条一行。
-
-`history_blocks()` 把三段拼成 brain 认的"发生过什么"
-（`Brain.plan(history=…)` 要一个 `Sequence[str]`），`build_prompt()` 把它们渲进
-模板的对应占位符——**共用同一份实现**，分两份迟早漂移（一处改了措辞、另一处没改，
-模型读到的历史和控制台看到的历史就不一样了）。
+history_blocks 与 build_prompt 共用详情、背景与事实的渲染函数。
+知识和当前画面各有独立占位符，图片只走 images 通道。
 """
 
 from __future__ import annotations
@@ -25,34 +11,16 @@ from collections.abc import Sequence
 from pokemon_agent.direct.prompts.object_render import render_object_events
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolPlanOnceReq
 from pokemon_agent.schemas.harness.domain import GoalEntry
-from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent
+from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, RunMemory
 
 from . import append_human_note, load
 from .last_judge import last_judge_lines
 
 _TEMPLATE = load("run_plan")
 
-_DETAIL_SEPARATOR = "--- 以上每一局一行是索引；以下是其中几局的正文 ---"
-
-
-def index_lines(index: Sequence[EpisodeMemory]) -> list[str]:
-    """把本 run 的局索引折成**每局一行**，返回**行列表**。
-
-    **只取来源章**（成败是 harness 的机械判定，`success` 字段），正文不进这一行
-    ——那是 `detail_blocks` 的事。这正是渐进披露的第一层："全部局的骨架"。
-
-    标签（`tags`）附在行尾供定位；没有标签就不写空括号。
-    """
-    lines: list[str] = []
-    for memory in index:
-        mark = "成功" if memory.success else "失败"
-        tags = f"｜{'/'.join(memory.tags)}" if memory.tags else ""
-        lines.append(f"- {memory.episode_id}: {memory.goal} → {mark}（{memory.steps} 步）{tags}")
-    return lines
-
 
 def detail_blocks(details: Sequence[EpisodeMemory]) -> list[str]:
-    """把**被选中的那几局**渲染成正文块，返回**块列表**（一块一局）。
+    """把本 run 全部局按执行顺序渲染成正文块，返回**块列表**（一块一局）。
 
     用 `EpisodeMemory.render()`——它已经是"章 + 正文"的形态，且与检索打分共用
     同一份文本（`schemas/memory/datastore/episode_memory.py` 里那条"两处用同一份
@@ -60,6 +28,11 @@ def detail_blocks(details: Sequence[EpisodeMemory]) -> list[str]:
     这里不特判。
     """
     return [memory.render() for memory in details]
+
+
+def run_index_lines(memories: Sequence[RunMemory]) -> list[str]:
+    """过往 run 每条仅渲染 index_line，背景不充当本 run 的经历。"""
+    return [memory.index_line() for memory in memories]
 
 
 def object_lines(objects: Sequence[ObjectFactEvent]) -> list[str]:
@@ -74,18 +47,14 @@ def object_lines(objects: Sequence[ObjectFactEvent]) -> list[str]:
 
 
 def history_blocks(req: FromHarnessToBrainToolPlanOnceReq) -> list[str]:
-    """拼出 brain `history` 参数要的"发生过什么"：索引 + 详情 + 地图事实。
-
-    **唯一真源**：`build_prompt()` 与 `BrainTool.plan()` 都调这个函数，谁也不
-    自己拼一遍。
-    """
-    blocks = index_lines(req.index)
-    details = detail_blocks(req.details)
+    """依次拼全部局详情、过往 run 一行背景、地图交互事实；与 prompt 同源。"""
+    blocks = detail_blocks(req.details)
+    background = run_index_lines(req.run_index)
     objects = object_lines(req.objects)
-    if details:
-        blocks = [*blocks, "", _DETAIL_SEPARATOR, "", *details]
+    if background:
+        blocks += ["", "## 过往 run(背景,一行一条,不是本 run 的经历)", *background]
     if objects:
-        blocks = [*blocks, "", "--- 地图交互事实（跨局共池，一行一条）---", "", *objects]
+        blocks += ["", "--- 地图交互事实（跨局共池，一行一条）---", *objects]
     return blocks
 
 
@@ -110,15 +79,19 @@ def goals_lines(plan: Sequence[GoalEntry]) -> list[str]:
 
 def build_prompt(req: FromHarnessToBrainToolPlanOnceReq) -> str:
     """拼出这一轮 `plan` 用的完整 prompt。"""
-    index = index_lines(req.index)
+    background = run_index_lines(req.run_index)
     details = detail_blocks(req.details)
     objects = object_lines(req.objects)
     goals = goals_lines(req.plan)
     judged = last_judge_lines(req.last_judge) if req.last_judge is not None else []
     return append_human_note(
         _TEMPLATE.render(
-            index="\n".join(index) if index else "（本 run 还没有跑完任何一局）",
-            details="\n\n".join(details) if details else "（这一版不附任何一局的正文）",
+            details="\n\n".join(details) if details else "（本 run 还没有跑完任何一局）",
+            run_index="\n".join(background) if background else "（没有过往 run）",
+            knowledge="\n\n".join(req.knowledge) if req.knowledge else "（没有检索到相关知识）",
+            observation=req.observation.render()
+            if req.observation is not None
+            else "（当前画面尚未取得）",
             objects="\n".join(objects) if objects else "（还没有任何地图交互事实）",
             goals="\n".join(goals) if goals else "（空表）",
             last_judge="\n".join(judged) if judged else "（还没有判定过）",
@@ -133,6 +106,6 @@ __all__ = [
     "detail_blocks",
     "goals_lines",
     "history_blocks",
-    "index_lines",
+    "run_index_lines",
     "object_lines",
 ]

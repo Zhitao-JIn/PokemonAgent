@@ -26,8 +26,9 @@ class FromHarnessToBrainToolDecomposeReq(BaseModel):
         default_factory=list,
         description="本局任务表：已定案的成败（以表为准，含人审推翻）、被放弃的条目与版次",
     )
-    episode_memories: list[EpisodeMemory] = Field(
-        default_factory=list, description="本 run 的跨局摘要"
+    episode_index: list[EpisodeMemory] = Field(
+        default_factory=list,
+        description="run_goal 相同的其他 episode，不含本局；只用 index_line 渲染",
     )
     knowledge: list[str] = Field(
         default_factory=list, description="episode 层检索到的领域知识全文，一篇一条（不筛）"

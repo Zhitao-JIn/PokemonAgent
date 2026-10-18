@@ -99,10 +99,10 @@ memory 只有一个根，四族各占其下 `<kind>/`）、
 
 - `config.py` 的全部常量：重试预算 `BRAIN_MAX_ATTEMPTS=3`、
   `MODEL_RETRY_BACKOFF_SECONDS=0.5`、`CONSOLE_REVIEW_TIMEOUT=30.0`；输出上限 `MAX_SEGMENTS=4`、`MAX_TIMES=8`；
-  三层停判 `STALL_LIMIT=5`（task）、`EPISODE_STALL_LIMIT=3`、`RUN_STALL_LIMIT=3`、`RUN_MAX_EPISODES=50`；
+  三层停判 `STALL_LIMIT=5`（task）、`EPISODE_STALL_LIMIT=3`、`RUN_STALL_LIMIT=3`、`RUN_MAX_EPISODES=10`；
   规划 `EPISODE_MAX_TASKS_PER_PLAN=5`、`PLAN_MAX_NEW_GOALS=3`；图闸门 `NODES_PER_DECISION=3`、`NODES_PER_PRESS=1`、
   `RECURSION_MARGIN=20`、`EPISODE_RECURSION_LIMIT=20_000`、`RUN_RECURSION_LIMIT=200_000`；召回与判定
-  `MEMORY_RECALL_LIMIT=5`、`JUDGE_HISTORY_STEPS=3`。
+  `MEMORY_RECALL_LIMIT=5`；L2 读取本 task 全部 ActMemory。
 - 图上没有存档格：存档由图外入口与 run 的 `act` 显式调用存档器（`docs/spec/checkpoint/SPEC.md`）；`build_real` 的 `branch` 只给恢复出来的执行线用（血缘由 trace 从账本推，不经装配点）。模块私有物理量故意不在 config：`pyboy_world.PRESS_FRAMES`、
   `providers.IMAGE_TOKEN_FLOOR = 100`、`memory/store.py` 的 `_KINDS` / `_MD_KINDS`。
 

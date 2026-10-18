@@ -15,7 +15,6 @@ import pytest
 from starlette.testclient import TestClient
 
 from pokemon_agent.mcp_servers import world_server
-from pokemon_agent.mcpclient import McpClient
 from pokemon_agent.world import ActionSpace, PlaceInWorld, TaskObservation, TaskScene
 from pokemon_agent.world.action_space import compute_action_space
 
@@ -84,7 +83,7 @@ def server():  # noqa: ANN201
 
 
 def test_step_is_the_only_key_execution_gate_and_reports_moved(server: _FakeWorld) -> None:
-    """`step` 是唯一按键口：段按序交给 world，`moved` 由位置变化机械判定。"""
+    """【待迁 world 线】`step` 是唯一按键口：段按序交给 world，`moved` 由位置变化机械判定。"""
     body = world_server.step([["up", 1]], True, "c1")
 
     assert body["ok"] is True
@@ -94,14 +93,14 @@ def test_step_is_the_only_key_execution_gate_and_reports_moved(server: _FakeWorl
 
 
 def test_step_reports_not_moved_when_the_world_did_not_move() -> None:
-    """撞墙没动 → moved=False（blocked 的机械依据，不需要 world 额外报告）。"""
+    """【待迁 world 线】撞墙没动 → moved=False（blocked 的机械依据，不需要 world 额外报告）。"""
     world_server.start(_FakeWorld(moves=False), rom="fake.rom")
     world_server._lease_owner = None
     assert world_server.step([["up", 1]], True, "c1")["data"]["moved"] is False
 
 
 def test_get_action_space_exposes_one_flat_namespace() -> None:
-    """键与脚本在**同一个** mask 里；不可用的显式 False（不是缺席）。"""
+    """【待迁 world 线】键与脚本在**同一个** mask 里；不可用的显式 False（不是缺席）。"""
     world_server.start(_FakeWorld(), rom="fake.rom")
     body = world_server.get_action_space()
 
@@ -113,7 +112,7 @@ def test_get_action_space_exposes_one_flat_namespace() -> None:
 
 
 def test_perceive_task_returns_the_memory_scene() -> None:
-    """内存观测经 tool 信封返回场合，不调用视觉模型。"""
+    """【待迁 world 线】内存观测经 tool 信封返回场合，不调用视觉模型。"""
     world = _FakeWorld()
     world_server.start(world, rom="fake.rom")
     assert world_server.perceive_task()["data"]["observation"]["scene"] == "walk"
@@ -262,10 +261,10 @@ def test_client_roundtrip_over_mcp_transport() -> None:
 
     body = asyncio.run(call())
     assert body["ok"] is True and body["data"]["mask"]["up"] is True
-    assert McpClient is not None  # client 侧在 P5 接线，这里只确认形状可解
 
 
 def test_reset_passes_start_state_only_when_supplied(server: _FakeWorld) -> None:
+    """【待迁 world 线】"""
     data = b"\x00sample\xff"
 
     assert world_server.reset("t1", "g", "c", 10, client_id="c1")["ok"] is True
@@ -291,13 +290,20 @@ def test_reset_with_start_state_still_checks_lease_before_world(server: _FakeWor
 
 
 @pytest.mark.parametrize("owner", [None, "c1"])
-def test_read_wram_preserves_bytes_and_lease(server: _FakeWorld, owner: str | None) -> None:
+def test_read_wram_keeps_lease_owner_unchanged(server: _FakeWorld, owner: str | None) -> None:
+    """只读 tool 不占租约：owner 原样，且世界一次都没被驱动。"""
     world_server._lease_owner = owner
     before = (list(server.steps), list(server.loaded), list(server.reset_calls))
 
     body = world_server.read_wram()
 
     assert body["ok"] is True
-    assert base64.b64decode(body["data"]["wram_base64"]) == bytes(range(256)) * 32
     assert world_server._lease_owner == owner
     assert (server.steps, server.loaded, server.reset_calls) == before
+
+
+def test_read_wram_returns_the_world_bytes_base64(server: _FakeWorld) -> None:
+    """【待迁 world 线】读回的 WRAM 字节逐字节相同（base64 是线上编码）。"""
+    body = world_server.read_wram()
+
+    assert base64.b64decode(body["data"]["wram_base64"]) == bytes(range(256)) * 32

@@ -257,3 +257,26 @@ __all__ = [
     "TaskStartContent",
     "VerifyVerdictContent",
 ]
+
+
+class ReadRunMemoryContent(_Content):
+    """run 记忆读账，形状与 episode 的 query/refs 检索账一致。"""
+
+    query: str
+    refs: list[str]
+    timings: dict[str, float] | None = None
+
+
+class WriteRunMemoryContent(_Content):
+    """run 记忆派生正文，不含来源章坐标与计数。"""
+
+    summary: str
+    reason: str
+    reusable_patterns: list[str]
+    critical_decisions: list[str]
+    failure_points: list[str]
+    quality_score: float
+    quality_rationale: str
+    applicable_scenes: list[str]
+    tags: list[str]
+    markdown: str

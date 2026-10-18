@@ -92,7 +92,7 @@ def recall(
 def memorize(records: list[dict[str, Any]]) -> dict[str, Any]:
     """统一记忆口：把一批记忆写进记忆库，按每条的 kind 判别落族。
 
-    records 每条：{"kind": "act"|"task"|"episode"|"object"|"knowledge", "payload": {...}}。
+    records 每条：{"kind": "act"|"task"|"episode"|"object"|"knowledge"|"run", "payload": {...}}。
     payload 形状按 kind 对应各自 schema 的 model_dump（act=ActMemory、
     task=TaskMemory、episode=EpisodeMemory、object=ObjectFactEvent、
     knowledge={topic, content, source}）。

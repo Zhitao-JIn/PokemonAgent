@@ -1,7 +1,7 @@
-"""`Brain.decompose`：episode 级拆解的一次尝试——解析、失败出口、思考开关与纯文本链。
+"""`Brain.decompose`：episode 级拆解的一次尝试——解析、失败出口、思考开关与文本回退。
 
 守的是「拆解」这条链——模型输出解析成 `Decomposition`、字段不合法算 `ParseFailure` 并抛
-`DecomposeAttemptFailed`（带账、不吞）、纯文本链不带图、`thinking` 进请求与账、成功恰好
+`DecomposeAttemptFailed`（带账、不吞）、未提供 images 时走纯文本、`thinking` 进请求与账、成功恰好
 一条账、自己不重试、没配 provider 或 `max_tasks` 非正数被入口 assert 拦下、`plan_llm`
 缺省回退 `judge_llm`。
 """

@@ -18,7 +18,7 @@ def test_default_and_evaluation_share_all_layer_values(tmp_path):
     production = load_run_config(None).budget
     evaluation = load_run_config(path).budget
 
-    assert production.max_episodes == 50
+    assert production.max_episodes == 10
     assert production.wall_clock_s is None and production.max_total_actions is None
     assert evaluation.model_dump() == {**production.model_dump(), **overrides}
     assert (production.reserve_s, production.episode_max_tasks, production.max_decompositions) == (
@@ -36,6 +36,10 @@ def test_default_and_evaluation_share_all_layer_values(tmp_path):
         production.plan_timeout_s,
         production.brain_max_attempts,
     ) == (False, 4096, 45, 2)
+
+
+def test_default_budget_max_episodes_is_ten() -> None:
+    assert DEFAULT_RUN_BUDGET.max_episodes == load_run_config(None).budget.max_episodes == 10
 
 
 @pytest.mark.parametrize(
@@ -85,6 +89,7 @@ def test_build_real_injects_the_budget_and_model_settings(tmp_path, monkeypatch)
                 "verifier",
                 "decomposer",
                 "summarizer",
+                "run_summarizer",
                 "task_summarizer",
             )
         }

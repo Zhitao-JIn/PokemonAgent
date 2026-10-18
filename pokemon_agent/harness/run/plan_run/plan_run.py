@@ -1,6 +1,6 @@
 """`plan_run`：**目标表的唯一写入点**——问 planner 要一版规划，给人插话，落表。
 
-1. 素材是 `perceive` 写好的 `plan_ctx`（局索引 + 详情 + 地图事实）连同当前目标表。
+1. 素材是 `perceive` 写好的 `plan_ctx`（全部局详情、过往 run 背景、知识与地图事实）及目标表。
 2. `planner.plan(req)` 交回 `RunPlan`（新目标 + 对已有条目的重开/放弃表态），
    `_to_outcome` 把它翻成 `PlannerOutcome`（表内序号 → `task_id`）。
 3. `Reviewer.inject()` 亮出这一版；人说了话就带话重问，直到没意见。
@@ -83,13 +83,16 @@ def _elicit(deps: RunRuntime, state: RunState, meta: dict[str, Any]) -> tuple[Pl
         req = FromHarnessToBrainToolPlanOnceReq(
             run_id=state.run_id,
             plan=state.goals,
-            index=ctx.index,
             details=ctx.details,
+            run_index=ctx.run_index,
+            knowledge=ctx.knowledge,
+            observation=state.observation,
             objects=ctx.objects,
             max_push=PLAN_MAX_NEW_GOALS,
             last_judge=state.last_judge,
             human_note=note,
         )
+        req.details = ctx.details
         proposed = _to_outcome(state.goals, state.run_id, _ask(deps, meta, req))
         reply = ask_inject(
             deps.reviewer,

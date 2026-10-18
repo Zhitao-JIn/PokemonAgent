@@ -86,7 +86,7 @@ payload 连 `memorize` 都进不去（`ActMemory.model_validate` 先抛 Validati
 object_recall 拆分只删断言不减用例），ruff check / format 全绿；`tests/memory/` 目录
 1.85s（预算 3s）。
 
-## 2026-10-18（501）—— store 测试迁移：直调 LocalMemoryStore，新建 tests/memory/store/，并入回归文件，映射见正文
+## 2026-10-18（508）—— store 测试迁移：直调 LocalMemoryStore，新建 tests/memory/store/，并入回归文件，映射见正文
 
 **改了什么**：新建 `tests/memory/store/`（8 个文件 37 条）——`test_store_construction`（3）、
 `test_store_records`（5）、`test_store_filter`（6）、`test_store_index_recovery`（2）、
@@ -196,7 +196,7 @@ limit 值，便于定位误用方。`assert` 在 `python -O` 下会被剥掉—�
 **影响面**：直接调 `store.search(query, limit<=0)` 的调用方从静默错误结果变为
 `AssertionError`。全量 pytest 1197 通过（1196 + 1 条新回归），ruff check / format 全绿。
 
-## 2026-10-17（497）—— store.get 缺失返回 None：外部删除后第一次查询不再返回空三元组
+## 2026-10-17（507）—— store.get 缺失返回 None：外部删除后第一次查询不再返回空三元组
 
 **改了什么**：`pokemon_agent/memory/store.py` 的 `get` 在调 `_read_record` 之前增加文件存在性
 检查——`if not self._record_path(uuid).is_file(): self._unindex(uuid); return None`。
@@ -217,7 +217,7 @@ None——调用方拿到空三元组会当成「记录存在但内容为空」�
 一直在依赖（错误的）空三元组行为，需自查。全量 pytest 1196 通过（1195 + 1 条新回归），
 ruff check / format 全绿。
 
-## 2026-10-17（496）—— store 索引持久化 content hash：重启后 refresh_changed 不再整库重算向量
+## 2026-10-17（506）—— store 索引持久化 content hash：重启后 refresh_changed 不再整库重算向量
 
 **改了什么**：`pokemon_agent/memory/store.py` 三处——`_save_index` 写入的 index.json 增加
 `"hashes"` 键（为每条在册记录写入 content hash）；`_load_or_rebuild` 对账通过的分支读
@@ -237,6 +237,68 @@ ruff check / format 全绿。
 0 error / 0 skipped**（74.05s）；`ruff check .` 与 `ruff format --check .` 全绿。回归第一条
 修复前失败（`assert 3 == 0`，计数 3）、修复后为 0；破坏验证（删 `_load_or_rebuild` 的 hashes
 读取行）复现失败后逐字节还原。
+
+## 2026-10-18（501）—— brain_scope 收尾：固化 CP8 存档并清理失效快照
+
+**改了什么**：提交 20 份新 manifest、13 份变化的 world.state 与当前引用的 20 份快照，
+删除 20 份不再引用的旧快照；另清理 1 份未跟踪的单样本实验快照。plan 登记 CP1–CP8 完成。
+
+**为什么这么改**：CP8 的重打产物已由用户验收，需让仓库中的存档与当前 schema 一致、
+每个 manifest 都指向存在的唯一快照，避免留下旧快照与新清单混杂的状态。
+
+**取舍**：接受已核对的 13 份 world.state 历史差异，不再追查；保留源存档哈希核验与同源
+分组一致性。沿用 CHANGELOG 496 的 A/B 复现实验结论和证据边界。498 与 500 已被其他
+测试分支占用，本条使用 501。下一阶段重写及其他测试分支不在本次合入范围。
+
+**影响面**：评测存档及 brain_scope 完成记录，无生产代码变更。20 个源哈希、manifest
+schema / plan_ctx、快照引用和同源分组全部核验通过，快照目录恰好保留 20 个被引用的 zip。
+全套 pytest（含 slow）1316 passed（109.44s，1 条 SDL2 版本提示）；ruff check / format 通过。
+主线是本分支祖先，采用 fast-forward；排除历史快照提交 97647a9。专用记忆目录保留。
+
+## 2026-10-18（497）—— 修复打包残留 world 租约与 reset 拒绝后静默保存旧状态
+
+**改了什么**：WorldMcpTool 对 reset、load_state、按键推进及 release_lease 检查失败信封，
+拒绝时抛 McpToolError；pack_one 在成功或异常退出时归还租约，并始终尝试清理临时目录。
+若打包和释放同时失败，用异常组保留双方原因；抽出记忆清空与产物拷贝以保持函数长度约束。
+
+**为什么这么改**：旧 pack 结束后没有释放租约，新进程的 reset 因客户端身份不同而被拒绝；
+门面忽略失败信封，随后仍保存服务端旧状态并报告成功。拒绝必须阻止 checkpoint，正常退出
+也必须让下一进程能重新取得租约。
+
+**取舍**：保留服务端的单持有者规则，不抢占其他客户端租约，不用固定客户端 ID 绕过互斥。
+脚本的业务失败继续由原终态报告表达。finally 处理正常退出及可展开栈的异常，不承诺强杀
+进程后自动回收租约；本次不增加过期或心跳机制。
+
+**影响面**：world MCP 门面、GameToolPort 契约说明与 pack 生命周期；回归测试覆盖拒绝不推进、
+释放后接管、绑定或执行失败时清理，以及清理失败不掩盖原异常。相关测试通过，ruff check / format
+通过。两个真实独立进程不设 MCP_WORLD_CLIENT_ID 串行打包到仓库外，退出后 lease_owner 均为 null，
+起点哈希仍分别以 A7764F399C24、6B76EB0164B5 开头；本次验证未覆盖仓库内既有存档产物。
+
+## 2026-10-18（496）—— 重打评测起点存档并核对单样本可复现性
+
+**改了什么**：重打 v1 全部 20 份起点存档，随后单独重打 `knowledge_battle_action_menu`；
+清理 3 个未被 manifest 引用的试打快照 zip。
+
+**为什么这么改**：存档需要同步当前状态 schema。全量重打后 13 份 world.state 与旧 HEAD 不同、
+7 份相同；按本次验收决定接受差异。战斗菜单样本重打前 A 与重打后 B 均为
+`C66A5C45E62A290A0165DCBDE89EDE9D59B632B9007009E378B9CD59E5F91982`，
+本次对照未发现该样本的随机差异。
+
+**取舍**：不再追查历史差异；“上次打包以来代码变化造成差异”仍是推测，本实验不能定位
+具体变化，也不证明其余样本均确定。为避免跨进程残留租约拒绝 reset，本次打包使用固定
+`MCP_WORLD_CLIENT_ID=pack-eval-brain-scope`，结束后释放租约。
+
+**影响面**：评测存档产物及本日志；无生产代码变更。两个指定样本哈希前缀分别通过
+`A7764F399C24`、`6B76EB0164B5` 核验；world / memory 服务及仓库外专用记忆目录保留。
+## 2026-10-17（500）—— mcp_servers 连接性收敛：删无效断言、拆 read_wram、世界逻辑用例标注待迁
+
+**改了什么**：`tests/mcp_servers/test_mcp_world_server.py`：① 删除 `test_client_roundtrip_over_mcp_transport` 中的无效断言 `assert McpClient is not None`，及仅此一处使用的 `from pokemon_agent.mcpclient import McpClient`；② 把 `test_read_wram_preserves_bytes_and_lease`（参数化 None / c1，2 例）拆成 `test_read_wram_keeps_lease_owner_unchanged`（参数化 2 例，只断言 ok、租约 owner 不变、steps / loaded / reset_calls 与调用前相同）与 `test_read_wram_returns_the_world_bytes_base64`（1 例，只断言 base64 解出的字节等于 `bytes(range(256)) * 32`，docstring 第一行标【待迁 world 线】）；③ 给 5 条待迁用例 docstring 第一行加前缀「【待迁 world 线】」（`test_reset_passes_start_state_only_when_supplied` 原本没有 docstring，补为仅含该前缀的一行），其余 docstring 内容不变。`tests/mcp_servers/test_mcp_script_tools.py`：`test_walk_to_adjacent_forwarding`、`test_walk_to_adjacent_blocked_envelope`、`test_buy_item_end_to_end` 三条 docstring 同加前缀，函数体一字未改。`tests/mcp_servers/test_mcp_health.py`：文件 docstring 第一行后加一句，登记 env 读取用例不属于连接性、归属待定（spec D7）。生产代码零改动。
+
+**为什么这么改**：mcp 线测试只证明连接性（服务端能起、工具注册正确、调用能穿传输层原样返回），世界逻辑归 world 线（intent 第一节）。`assert McpClient is not None` 不验证任何行为，只为躲未使用告警（spec D6）。read_wram 的字节内容属世界逻辑，「不占租约、不驱动世界」属连接性，按 D5 拆开，两半各自归属清晰。
+
+**取舍**：世界逻辑用例一律原地保留、不删除、不迁入 `tests/world/`（spec D2——删了就丢覆盖，且 world 线未启动）；不修 K1 的 `world_server._lease_owner` 模块级私有访问（另案）；`test_load_env_file_*` 归属仍待定（D7）。拆分后的租约用例断言集合是原用例的子集（仅去掉字节断言），字节断言原样落入新用例，覆盖无丢失。
+
+**影响面**：`tests/mcp_servers/` 用例 40 → 41（junit 实测，+1 即拆分净增，其余用例名完全一致）；目录默认 pytest 0 failures / 0 errors / 0 skipped，junit 计时 1.357s（起点 1.275s，≤ 3s 达标）；全量 pytest 1192 → 1193 passed / 0 failed / 0 error（48.74s）；`ruff check .` 与 `ruff format --check .` 全绿（606 files already formatted）。破坏验证：临时把 `world_server.read_wram` 改成抢锁后，`test_read_wram_keeps_lease_owner_unchanged` 两个参数化（None / c1）全部失败（None 例租约被抢成 "sabotage"、c1 例拿到 rejected 信封）；还原后 `git diff pokemon_agent/` 为空。
 
 ## 2026-10-17（495）—— 测试瘦身收尾：修 rules.py 旧测试名注释、trace_parse/restore 耗时调查（测试未改）
 
@@ -317,6 +379,143 @@ knowledge/speed/watch 旋钮）、`tests/brain/schemas/test_llm_complete_req_rou
 **影响面**：全仓用例 1230 → 1202（−28 = 3+1+2+2+2+3+13+2）；全量 pytest **1202 passed**
 （375.15s，1 warning）；`ruff check .` 与 `ruff format --check .` 全绿。`tests/integration/`、
 `tests/review_backend/`、`tests/assembly/` 删后仅剩 `__pycache__`（空目录，git 不跟踪）。
+
+## 2026-10-17（491）—— brain_scope CP7：预算收口与三级感知范围集成验收
+
+**改了什么**：生产默认 `max_episodes` 从 50 调为 10，同步预算用例与三份现行预算/装配/数据流文档。
+新增无存档的 `tests/integration/test_brain_scope_consistency.py`，在真实三层图与假端口上核对共享详情、索引范围、图片去重与上限、索引零模型调用和唯一 run 收尾记忆。
+经追加授权，L2 两个请求构造点在校验后重绑原始 ActMemory 列表，保持 plan/judge 的严格对象身份。
+
+**为什么这么改**：七个检查点的感知范围需要一条跨层使用示范串起来，防止各层单元测试分别通过、装配后却读到不同范围；预算先取 10，真实运行长度出来后复核。
+
+**取舍**：复用已有无存档假装配，仅在新测试内加记录，不改 fixtures 的既有行为；同一用例比较有/无跨 run 索引的两次运行。
+预置超过 20 张不同代表帧与重复帧，严格比较实际发送的最新 20 张；历史计划与过时 trace 样例文档保留不动（设计侧裁定：历史记录不改不删）；仍然正确的纯文本 provider 契约保留。
+
+**影响面**：生产最多局数减少；请求字段与类型、三个状态模型均不变，状态哈希仍为 `5ea6dffeeb229b7c`。
+另清理 provider 工厂 docstring 的 plan 纯文本旧说法，以及 task 召回 docstring 的最近几条旧说法。
+起点默认 1303 passed、slow 3 passed；终点默认 1305 passed（35.79 秒）、slow 3 passed（84.83 秒），ruff check 与 format check 全绿。
+范围集成单例在终点全量中为 2.24 秒；两项破坏验证均使它失败且已逐字节还原。`docs/test/` 无同类集成索引，未新增文档；未调用真实模型或模拟器。
+
+## 2026-10-17（490）—— brain_scope CP6：L0 共享全部局详情，过往 run 背景与每圈知识带图
+
+**改了什么**：PlanContext 删除局级 index，details 保留本 run 全部局，新增 run_index
+与 knowledge。读取全部过往 run 并排除本 run，补 read_run_memory 账；run perceive
+在读上下文后每圈检索知识，共用从 episode 原样搬出的 build_knowledge_query。
+L0 规划与判定同步收到全部局详情、过往 run 一行背景、知识与当前画面；判定带各局首末帧。
+规划 prompt 去掉局索引与部分正文语义，保留附图读法，三类新增素材独立成节。
+
+**为什么这么改**：让总目标的规划者与判定员基于同一份完整经历判断下一步和完成状态，
+避免更早的成功局被详情预取规则隐藏；其他 run 只提供背景，不能冒充本 run 的经历。
+
+**取舍**：详情沿用记忆读口的执行序，不再筛选；过往 run 不按目标过滤，只排除自身。
+请求校验后绑定原详情列表，确保 plan 与 judge 共用同一对象。知识每圈重查，不套用
+局级刷新条件；原 episode 模块仍导出共享 query 函数。无逐步历史时共用 20 张图上限，
+保留最新；L2 逐步图路径不变。不新增整图测试，组合链用真实 perceive 单格验证。
+
+**影响面**：状态 schema 仅 PlanContext 改变，哈希由 d8fa15ee4072f698 变为
+5ea6dffeeb229b7c，冻结测试同步更新。PlanOnceReq 删除 index，新增背景、知识与画面；
+JudgeReq 新增 run_index，L0 知识和画面开始填写。run 增加一次背景召回与每圈知识召回，
+判定增加图 token；既有节点名表、账流后继表、收尾读账与 L0 素材、图路径测试按新契约适配。
+
+## 2026-10-17（489）—— brain_scope CP5：L1 共享 task 详情，同目标局索引与判定带图
+
+**改了什么**：episode 召回单元改名 retrieve_episode_index，按 run_goal 等值全取其他局，
+排除本局后写 episode_index，规划与判定仅用 index_line 渲染背景。空目标不查库，仍记读账。
+L1 判定补知识、当前画面和同目标局背景；无逐步历史时取 task 首末帧，去重后保留最新 20 张。
+图只核对文字，位置证据看文字 where。节点名表、契约文档与冻结哈希测试同步更新。
+
+**为什么这么改**：让 L1 规划与判定看到同一份完整执行详情，并能核对其首末帧；
+其他局只提供同总目标的背景，避免把过去的摘要正文当成本局完成的证据。
+
+**取舍**：沿用 recall 等值条件，不新增存储接口；同目标索引可以来自其他 run。
+Pydantic 校验会重建列表容器，因此信封校验后绑定回 state 的 task_memories 原列表，
+保证 plan 与 judge 共享同一只读输入。L2 仍按逐步历史去重且不过帽；L0 图路径留待 CP6。
+新增验证均为单元测试，不新增整图测试；旧计划、审计、归档及明确过时示例保留历史名称。
+
+**影响面**：EpisodeContext.global_episode_memories 改为 episode_index，并更新描述，
+这是三份状态 schema 的唯一变化，哈希由 ef3ba958c2680260 变为 d8fa15ee4072f698，
+冻结测试同步更新。DecomposeReq 同步改名背景字段，JudgeReq 新增 episode_index 与
+observation，原 episode_memories 仍供 run 层使用。L1 判定增加图 token；其他层调用点不变。
+
+## 2026-10-17（488）—— brain_scope CP4：规划、拆解与 run 蒸馏带图，推翻 0915 的纯文本链定案
+
+**改了什么**：BrainPort 与 Brain 的 plan / decompose 新增可选 images；Planner、
+Decomposer、RunSummarizer 从请求已有记忆的首末帧收集图片，去重后过共用上限，
+仅经 images 通道发送。三份 prompt 补充首末帧、去重与缺图的读法，相关契约文档同步。
+
+**为什么这么改**：让 run 规划、episode 拆解与 run 复盘能直接核对摘要对应的画面，
+避免只有文字而无法检查蒸馏是否抽错，同时不改变记忆读取范围或请求的数据字段。
+
+**取舍**：沿用 choose 的 multimodal 标志分派：有图且模型支持时走 describe，否则
+走 complete。VisionDescribeReq 没有 thinking，带图路径无法应用覆盖，但账仍记录
+传入值；空回复后 _thinking_after 仍返回 False，只对文本重试实际生效，图重试的思考
+设置不变。去重按字符串相等、保留首次出现位置；SCOPE_IMAGE_CAP=20 保留最新、丢最旧。
+L2 不过帽，拼图逻辑保持原样。新增测试均为单元测试，不增加整图执行。
+
+**影响面**：规划与拆解增加图 token，调用费用会上升；调用账里的 images 不再恒为空，
+成功、解析失败与 provider 异常均记录实际发送的图片。假 brain 签名与既有文本测试
+按新契约最小适配，run 蒸馏的带图用例改用视觉假响应。状态模型、请求字段与装配参数
+不变，起终点状态哈希同为 ef3ba958c2680260。
+
+## 2026-10-17（487）—— brain_scope CP3：task 层读全部 ActMemory，新增同目标 task 索引，删两个窗口常量
+
+**改了什么**：task 决策与判定读取同源的全部 ActMemory，判定同步收到知识。
+episode 派发时按 total_acts 升序整理同局、目标逐字相等的此前 task 索引，去掉代表帧，
+经 TaskInput 交给 TaskState；决策与判定 prompt 明确区分执行证据、背景索引与普遍知识。
+删除两项历史窗口常量及残留说明，新增 SCOPE_IMAGE_CAP、cap_images 与装配期预算断言。
+
+**为什么这么改**：让 task 的生成者与判定员看到完整且一致的执行过程，
+同时保留重拆任务时有用的同目标背景，避免把此前 task 的结论误当成本 task 完成的证据。
+
+**取舍**：task_index 放在 TaskState 顶层，仿 knowledge 在入口固定，避免改变 perceive。
+cap_images 先落地后接线，本检查点没有生产调用方。L2 帧与文字逐帧对应，因此不过帽；
+装配期要求图上限至少覆盖 task_max_steps + 1。目标匹配逐字相等，模型改写目标文字时
+索引为空，这是已知限制；索引只作背景，不参与当前完成证据。
+
+**影响面**：TaskInput 与 TaskState 新增 task_index；三份状态 schema 的唯一差异是
+TaskState.task_index（TaskInput 不在状态 schema 闭包内），状态哈希从 3c713ab4487ef650
+变为 ef3ba958c2680260，冻结哈希测试同步更新。评测使用的决策 prompt 删除了
+「跨局摘要记忆」节，改为本局此前同目标 task；判定 prompt 增加知识说明。
+新增假端口测试覆盖全部历史、索引、知识、图上限与脚本一轮一条记忆，并验证三种回退均被测试捕获。
+
+## 2026-10-17（486）—— brain_scope CP2：run_goal 与首末帧盖章，新增 run 蒸馏链路与两个收尾格
+
+**改了什么**：EpisodeInput 与 EpisodeRunState 传递 run_goal，episode 正文与空章写入
+所属 run 目标，正文代表帧取本局首末 task。新增 RunSummary、请求响应、RunSummarizePort、
+RunSummarizer 与复盘 prompt，run 图经 summarize_run → store_run_memory → run_done 收尾。
+登记蒸馏调用、读 run 记忆与写 run 记忆三本账；写账排除来源章，读账留待后续检查点产生。
+补 run 召回的 refresh_changed，并纠正 episode 代表帧描述。
+
+**为什么这么改**：先让三级感知范围所需的来源章与最高一级记忆在真实写入链上产生，
+确保正常收尾的 run 留下可复用的复盘；判定、规划和读取范围留给后续检查点接入。
+
+**取舍**：RunState 增加 run_memory 交接槽，把蒸馏与幂等落库两格连接起来。
+两个新格在 done 后运行且自带降级，直接注册、不经 guarded，不改变预算包装器。
+run 蒸馏复用现有蒸馏 provider，本检查点不带图。重试耗尽、预算耗尽或无局摘要时
+保留来源章与错误账并落空章；episode 层仍保留耗尽即上抛的原语义。
+
+**影响面**：EpisodeRunState 新增 run_goal，入口同步透传；RunState 新增 run_memory，
+EpisodeInput 新增必填 run_goal，代表帧描述纠正，这些变化导致状态 schema 哈希
+从 1da60900e11478a0 变为 3c713ab4487ef650，冻结测试同步更新。trace 请求信封扩展
+RunMemory 联合类型，门面统一出口增加协议。既有假 brain、记忆快照、账本核对与预算
+收尾测试按新增能力和收尾账最小适配；先查再写保证恢复重入不覆盖既有 run 记录。
+
+## 2026-10-17（485）—— brain_scope CP1：记忆阶梯加 Run 一级，召回口加 run_goal 与 runs 两种取法
+
+**改了什么**：新增 RunMemory、三级记忆的一行索引与确定性首句渲染；EpisodeMemory
+增加 run_goal 和首末帧；run 记忆接入落盘、召回与 restore；同步信封 kind、工具说明和测试。
+ruff 排除 .worktrees。
+
+**为什么这么改**：后续三级目标需要读取绑定单元的全部下级记忆和同级背景索引，
+先让记忆数据与召回能力具备这个表达范围，避免调用方自行拼接存储规则。
+
+**取舍**：仅建立记忆侧能力，不接入实际来源章盖章或 run 蒸馏；旧 payload 使用字段默认值，
+不回填旧数据。召回沿用 filter 等值筛选与既有 limit，不新增 Port 方法或淘汰机制。
+
+**影响面**：EpisodeMemory 嵌入状态模型，状态 schema 哈希随新增字段变化；
+新增 run 目录随整库快照恢复与清空。既有落盘根测试夹具仅加 run_memory，
+其原有 task_memory 缺项保留，后续检查点再接入调用方。经追加批准，trace 写账正文
+排除 run_goal 与首末帧，冻结哈希测试更新为实测新值 1da60900e11478a0。
 
 ## 2026-10-17（484）—— 测试瘦身第一步：重归类两个 integration 文件、删除两个无用测试
 
