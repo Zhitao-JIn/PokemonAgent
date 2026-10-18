@@ -1,3 +1,25 @@
+## 2026-10-18（519）—— reviewer 进程内编排：首答仲裁、类型化命令与终端席
+
+**改了什么**：新增 Hub、Commands、HumanSeat 与依赖注入的 ReviewerApp；一问挂起，
+首个匹配答复生效，取消与 EOF 显式唤醒等待方。新增 Ask / Settle / SubmitAck / Answer /
+HistoryEntry / Activity / ReviewSeats；随问画面经 frames_of 分页，输入与历史副本隔离。
+查询命令和 help 从 ViewQuery 派生，recall hint 的 Literal 键同时成为 CLI 参数来源。
+终端图片保存 PNG 并显示来源、路径和尺寸，不打印编码，同问多次查询不覆盖先前文件。
+
+**为什么这么改**：把问题生命周期集中到单事件循环的一处仲裁中，使终端、后续链路和
+AI 席共用同一组类型化操作；命令只翻译输入，查询不会变成答复，迟到结果不会混进下一问。
+
+**取舍**：本步只接 human 席与注入的异步行源，网络入口和真实 stdin 装配留 R6b，AI 席
+留 R7。同步查询放线程池，终端命令用 TaskGroup 管理，慢查询期间可继续提交；读取后
+重核 seq。历史与活动各最多 50 条，历史不保留整份带图请求。取消不伪造认账；输出异常
+向上抛，同时保证仲裁占用得到解除。不改现有 harness、记忆能力或 trace 账名。
+
+**影响面**：新增 52 项测试，reviewer 共 104 项；默认全量 1567 项、slow 3 项、ruff
+（693 个 Python 文件）通过。覆盖每条命令的类型化调用、自动增加 schema 变体的帮助、
+阻塞查询与答复并行、取消、有限历史、PNG 输出及全 reviewer 导入扫描。放开旧编号提交、
+移除查询后的编号复核分别使对应测试失败，均逐字节还原。状态哈希保持 28e96b09966dc94e，
+不重打存档、不新增依赖；R6b 尚未实施。
+
 ## 2026-10-18（518）—— reviewer 查询门面：按需读取 trace、记忆与历史帧
 
 **改了什么**：新增 reviewer/view 的 TraceReader / MemoryReader 窄协议与 ViewReaders，

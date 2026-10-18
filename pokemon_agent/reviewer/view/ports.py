@@ -7,6 +7,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolRecallResp,
     TraceEvent,
 )
+from pokemon_agent.schemas.reviewer import FrameQuery, RecallQuery, TraceQuery, ViewAnswer
 
 
 class TraceReader(Protocol):
@@ -30,4 +31,20 @@ class MemoryReader(Protocol):
         不调用 memorize、不改记录正文；允许刷新派生缓存（用户已授权）。
         预期读取失败抛 OSError / RuntimeError / ValueError；调用方须传合法请求模型。
         """
+        ...
+
+
+class ViewQueries(Protocol):
+    """Hub 消费的三种同步查询；实现不持有当前问的状态。"""
+
+    def read_trace(self, q: TraceQuery, *, default_run_id: str) -> ViewAnswer:
+        """查询指定 run；预期失败返回 ok=False，不改写 trace。"""
+        ...
+
+    def recall(self, q: RecallQuery) -> ViewAnswer:
+        """跨 run 探索记忆，不改正文；允许派生缓存刷新。"""
+        ...
+
+    def read_frame(self, q: FrameQuery, *, default_run_id: str) -> ViewAnswer:
+        """显式读取历史画面；缺帧或坏帧正常返回失败。"""
         ...

@@ -295,9 +295,11 @@ class ReviewSeats(BaseModel):
     ai: bool                        # 至少一个为 True（契约）
 
 class ReviewerApp:
-    def __init__(self, seats: ReviewSeats, *, readers: ViewReaders,
-                 ai: AiSeatConfig | None = None, url: str = REVIEW_LINK_URL) -> None: ...
-    async def serve(self) -> None: ...        # 监听 harness 连入；收到一问即交给 hub；Ctrl-C 退出
+    def __init__(self, seats: ReviewSeats, *, hub: AppHub,
+                 commands: CommandRunner, human: HumanTerminal) -> None: ...
+    async def ask(self, req: ReviewRequest) -> Settle: ...
+    async def serve(self) -> None: ...        # R6a 消费注入的终端行源；R6b 另装配链路服务
+    def close(self) -> None: ...             # 幂等取消当前问，关闭不伪造认账
 
 # run 进程（reviewer_link/）
 class RemoteReviewer:                # 实现 Reviewer 端口
@@ -309,6 +311,7 @@ class RemoteReviewer:                # 实现 Reviewer 端口
 ```
 
 - reviewer 进程：单个 asyncio 事件循环承载 hub、链路服务、终端、AI 任务，所有状态只在这一个循环里改，无锁。`seats` 在启动命令里显式指定（`--seats human|ai|both`），不靠「有没有人连着」推断。
+- R6a 只启用 human 席，其他有效席位配置明确拒绝，待 R7 接入 AI；所有组件经窄 Protocol 注入，构造不读取全局 stdin、配置或网络。终端行源与输出函数由装配方提供。链路服务、CLI 入口与真实 stdin 适配由 R6b 加入。
 - `RemoteReviewer`：内部一条后台线程跑 WS 客户端；`inject` / `audit` 先调 `flush()`（trace 落盘），再把 `ask` 交给后台线程，并用 `concurrent.futures.Future` 阻塞图线程。同一 `qid` 重复提问幂等。连上时收 reviewer 的 `hello`（含 `mode`）。
 - **断线语义**：链路丢失或尚未连上时，`RemoteReviewer` 每 30s 记一条醒目日志并持续重连，重连后重发当前未答的 `ask`（reviewer 按 `qid` 去重，已答的直接回缓存的答案）。最近一次 `hello` 的 `mode == "ai"` 时，丢失超过 `REVIEW_LINK_LOST_TIMEOUT_S` 即按 `by="none"` 返回（插话没意见、审认账）；`human` / `both`，或从未连上过，则**无限等**。
 - 装配：`build.py`（唯一装配点）在 `REVIEW_LINK_URL` 有值时装 `RemoteReviewer(url, flush=trace.flush)`，否则装 `NullReviewer`；`flush` 回调来自 trace 端口（§十八第 3 条核查其存在性）。
@@ -323,12 +326,18 @@ class Hub:
     def submit(self, seq: int, answer: InjectAnswer | AuditAnswer, by: Literal["human","agent"]) -> SubmitAck: ...
     def propose(self, seq: int, proposal: Proposal) -> None: ...   # AI 席提交
     def discuss(self, seq: int, text: str) -> None: ...            # 人 → AI 讨论
-    def query(self, seq: int, q: ViewQuery) -> ViewAnswer: ...     # 校验 seq 仍是当前问，再调视图
+    async def query(self, seq: int, q: ViewQuery) -> ViewAnswer: ...  # 读取前后都校验 seq
+    def context(self, seq: int, section: str | None = None) -> ViewAnswer: ...
+    def cancel(self, seq: int, reason: str = "该问已取消") -> SubmitAck: ...
     def history(self, n: int) -> list[HistoryEntry]: ...
 ```
 
 契约：同一时刻只有一个 pending 问；`submit` 先答先得（已了结 / 编号不对 / 与问不配都回 `ok=False` 的 `SubmitAck`，不抛）；`query` 在 pending 已了结后回 `ok=False, text="该问已了结"`。
 **命令层不含业务**：它把文本翻译成上面这些调用，解析失败只返回说明文本。
+R6a 的 open_ask 对输入做独立快照，current/history 返回独立副本；历史摘要最多 50 条，
+不保留整份带图请求。取消返回 cancelled 的 Settle，response 为空；正常 Settle 的 response
+是原有 InjectResp / AuditResp。调用方或终端 EOF 退出都会解除 pending。
+propose 与真正的 discuss 行为由 R7 接入，R6a 的 ask-ai 明确返回「没有 AI 席」。
 
 ### 6.4 命令层（人的入口用的语法）
 
@@ -351,6 +360,7 @@ help [命令]                              用法
 
 - 查询类命令（`trace` / `recall` / `frame` / `brain-frames`）的参数由对应 `ViewQuery` 变体的字段自动生成：字段名转 `--kebab-case`，`Literal` 字段成为选项，上下限与键校验由 Pydantic 给出，越界或非法键就地回一行原因，不抛。
 - `help` 与参数表同样自动派生，加一个 `ViewQuery` 变体即同时出现。
+- `RecallQuery.conditions` 的 Literal 键在 schema 中提供 hint 清单，自动派生 `--run-goal` / `--runs` 等选项；保留 `--run`、`--episode`、`--map`、`-n` 与 frame 位置参数的既定语法。
 - `say` 用于审问、`overturn` 用于插话问：回「该命令不适用于本问」，不当作答复。
 - **每条命令都有「等价于某个类型化调用」的测试**，防止命令层长出自己的行为。
 
@@ -487,6 +497,7 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 ### 9.3 并发
 
 - reviewer 进程只有一个 asyncio 事件循环：hub、链路服务、终端读行、AI 任务都在其上，状态单线程修改，无锁。读端口里的同步调用（trace / `recall`）经 `run_in_executor` 放到线程池，不阻塞终端与倒计时。
+- R6a 使用 asyncio.to_thread 执行同步读操作；终端命令任务由 TaskGroup 管理，慢查询期间继续接收人的答复。读取后若 seq 已失效，结果不交给下一问；EOF / 关闭时取消未完成命令，终端图像只保存到注入目录并打印路径、尺寸与来源，不在文字中输出编码。
 - run 进程里只有 `RemoteReviewer` 的一条后台 WS 线程与被它阻塞的图线程，二者经 `Future` 交接。
 
 ---

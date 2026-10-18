@@ -10,6 +10,7 @@ TRACE_QUERY_MAX_ROWS: int = 50
 TRACE_QUERY_MAX_CONTENT: int = 2000
 RECALL_QUERY_MAX_ROWS: int = 8
 FRAME_QUERY_MAX_IMAGES: int = 2
+RecallHint = Literal["episode_id", "map_id", "place", "run_id", "run_goal", "runs"]
 
 
 class TraceQuery(BaseModel):
@@ -35,7 +36,7 @@ class RecallQuery(BaseModel):
 
     tool: Literal["recall"] = "recall"
     query: str = ""
-    conditions: dict[str, str] = Field(
+    conditions: dict[RecallHint, str] = Field(
         default_factory=dict,
         description="episode_id / map_id / place / run_id / run_goal，或单独 runs=all",
     )
@@ -44,9 +45,6 @@ class RecallQuery(BaseModel):
     @model_validator(mode="after")
     def validate_hints(self) -> Self:
         """拒绝未知 hint 与会被底层忽略的 runs 组合。"""
-        allowed = {"episode_id", "map_id", "place", "run_id", "run_goal", "runs"}
-        if set(self.conditions) - allowed:
-            raise ValueError("未知 recall hint")
         if "runs" in self.conditions and self.conditions != {"runs": "all"}:
             raise ValueError("runs 只接受单独的 runs=all")
         return self
