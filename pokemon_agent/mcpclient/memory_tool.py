@@ -41,9 +41,9 @@ class MemoryMcpTool:
         self,
         query: str,
         conditions: dict[str, str] | None = None,
-        limit: int = 8,
+        limit: int | None = 8,
     ) -> list[dict[str, Any]]:
-        """统一回忆口：返回混合条目 `[{kind, uuid, score, content, payload}]`。"""
+        """统一回忆口：返回混合条目；limit 为 null 时不截断，省略时上限为 8。"""
         envelope = self._client.call_tool_sync(
             "recall", {"query": query, "conditions": conditions, "limit": limit}
         )

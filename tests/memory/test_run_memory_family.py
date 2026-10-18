@@ -55,7 +55,7 @@ def test_run_memory_round_trips_through_memorize_and_recall(tmp_path: Path) -> N
     memory = _run()
 
     stored = capability.memorize([{"kind": "run", "payload": memory.model_dump()}])
-    items = _capability(tmp_path).recall("", {"runs": "all"})
+    items = _capability(tmp_path).recall("", {"runs": "all"}, limit=8)
 
     assert len(items) == 1
     assert items[0]["uuid"] == stored[0]["uuid"]
@@ -97,7 +97,7 @@ def test_run_goal_with_spaces_and_cjk_matches_by_equality(tmp_path: Path, goal: 
         ]
     )
 
-    items = _capability(tmp_path).recall("", {"run_goal": goal})
+    items = _capability(tmp_path).recall("", {"run_goal": goal}, limit=8)
 
     assert len(items) == 1
     assert items[0]["payload"]["run_goal"] == goal
@@ -124,7 +124,7 @@ def test_restore_reloads_the_run_memory_family(tmp_path: Path) -> None:
     capability.memorize([{"kind": "run", "payload": _run("r2").model_dump()}])
 
     capability.restore(archive)
-    items = capability.recall("", {"runs": "all"})
+    items = capability.recall("", {"runs": "all"}, limit=8)
 
     assert [item["payload"]["run_id"] for item in items] == ["r1"]
 
@@ -150,4 +150,4 @@ def test_restore_with_an_empty_archive_clears_run_memory(tmp_path: Path) -> None
         {"episode_id": "e1"},
         {},
     ):
-        assert capability.recall("", conditions) == []
+        assert capability.recall("", conditions, limit=8) == []

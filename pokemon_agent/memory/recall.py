@@ -121,7 +121,7 @@ class MemoryCapability:
         self,
         query: str,
         conditions: dict[str, str] | None = None,
-        limit: int = 8,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """统一回忆口。返回 items：`[{kind, uuid, score, content, payload}]`。
 
@@ -134,10 +134,12 @@ class MemoryCapability:
         - `conditions["run_goal"]` → 同目标 episode 摘要，跨 run 自然序；
         - `conditions["runs"] == "all"` → 仅全部 run 记忆，按 run_id 自然序；
         - `query` 非空 → knowledge（语义 search）；
-        融合：hint 命中族在前（族内按各自序），语义族随后按 score 降序；截断 limit。
+        融合：hint 命中族在前（族内按各自序），语义族随后按 score 降序。
+        limit 为 None 时不截断；给定整数时在融合后截断。
         """
         conditions = conditions or {}
         items: list[dict[str, Any]] = []
+        retrieval_limit = 10**6 if limit is None else limit
 
         if conditions.get("runs") == "all":
             return self._recall_run_memories()[:limit]
@@ -162,12 +164,12 @@ class MemoryCapability:
             items.extend(self._recall_objects(object_conditions))
 
         if run_id or episode_id or run_goal or query:
-            items.extend(self._recall_episode_summaries(query, conditions, limit))
+            items.extend(self._recall_episode_summaries(query, conditions, retrieval_limit))
 
         if query:
-            items.extend(self._recall_knowledge(query, limit))
+            items.extend(self._recall_knowledge(query, retrieval_limit))
 
-        return items[:limit]
+        return items if limit is None else items[:limit]
 
     def _recall_acts(self, episode_id: str) -> list[dict[str, Any]]:
         """本局 act 记忆，step 升序。score 恒 None（近因序，非语义分）。"""

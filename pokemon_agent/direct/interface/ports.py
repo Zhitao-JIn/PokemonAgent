@@ -281,7 +281,7 @@ class MemoryToolPort(Protocol):
         前置条件：`req.limit >= 1`；`req.conditions` 的值全是 str。
         后置条件：`resp.items` 每条带 kind/uuid/score/content/payload；
         hint 命中族在前（族内按 step / total_acts 升序），语义族按相关性降序；
-        总数 <= req.limit。
+        req.limit is None 或总数 <= req.limit。
         """
         ...
 

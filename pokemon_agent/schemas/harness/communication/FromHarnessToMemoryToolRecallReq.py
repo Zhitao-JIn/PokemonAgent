@@ -22,4 +22,4 @@ class FromHarnessToMemoryToolRecallReq(BaseModel):
             "/ runs=all（只圈全部 run 记忆）"
         ),
     )
-    limit: int = Field(default=8, ge=1, description="融合后返回的条数上限")
+    limit: int | None = Field(default=8, ge=1, description="融合后返回的条数上限；null 不截断")
