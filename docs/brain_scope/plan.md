@@ -1,5 +1,7 @@
 # plan —— 大脑感知范围（brain_scope）
 
+> 状态：CP1–CP8 已完成（2026-10-18）；存档验收与收尾见第十三节。
+
 > 流程位置：intent（已确认）→ spec v1.3（Q1–Q9 已确认）→ **plan.md（本文）** → 落码
 > 依据：`docs/brain_scope/spec.md`（执行依据；本文与它不一致时以 spec 为准）、`docs/brain_scope/intent.md`。
 > 基线：分支 `feature/brain-scope`，worktree `.worktrees/brain-scope`，基于主线 `ce1e9c3`（CHANGELOG 顶号 483）；第一个提交 `bf7c7c0` 是 intent / spec / workflow 三份文档。
@@ -134,3 +136,19 @@
 - CP4 起点另做一次：对 `tests/memory/test_memory_index_lines.py`、`test_run_memory_family.py`、`tests/harness/run/test_run_memory_write.py`、`tests/harness/episode/test_episode_scope_stamp.py`、`tests/harness/episode/test_task_index_dispatch.py`、`tests/harness/task/test_task_scope*.py`、`tests/brain/summarize/`、`tests/direct/` 下 CP2 / CP3 新增的文件跑 `--durations=0`，汇报总耗时与最慢三例，我据此决定是否要瘦。
 
 **5. 顺序与编号不变**：CP4（488）→ CP5（489）→ CP6（490）→ CP7（491）；CP8（492）预留。台账里 493–495 已被 `chore/test-reclass` 占用，下一个空号 496，留给合入后补修用。
+
+## 十三、CP8 验收与收尾（2026-10-18）
+
+- 已重打 20 份 v1 起点存档：`state_schema_hash` 统一为 `5ea6dffeeb229b7c`，`plan_ctx` 均为 null。
+  全部源 `.state` 哈希与数据集冻结值一致；同源样本的新 world.state 仍保持一致。
+- 对比重打前 HEAD：13 份 world.state 改变、7 份不变。用户接受此差异，不再追查历史原因；
+  战斗菜单样本 A/B 重打实验哈希相同，证据及其边界记录在 CHANGELOG 496。
+- 固化 20 份 manifest、13 份变化的 world.state、20 份当前引用的快照；清理 20 份旧的已跟踪
+  快照及额外一次单样本重打留下的未引用快照。此前指定的 3 份试打快照已清理。
+- 租约缺陷已由 `c222dcc` 修复：失败信封立即报错，pack 成功或异常退出均尝试释放租约。
+  两个独立进程采用默认身份实测成功，退出后租约为空，起点哈希符合预期。
+- 用户已授权本次完成清理、提交与主线合入；采用 fast-forward，禁止带入的 `97647a9` 不在
+  本分支历史中。world / memory 服务及仓库外专用记忆目录保留。
+- eval、reviewer 与测试重写不属于本次收尾，另行开始；其他测试 worktree 不改动。
+
+- 收尾全套 pytest（含 slow）：1316 passed（109.44s，1 条 SDL2 版本提示）；ruff check / format 通过。
