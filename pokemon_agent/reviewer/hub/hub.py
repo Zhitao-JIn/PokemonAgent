@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from pokemon_agent.schemas.harness import (
+    AuditVerdict,
     FromHarnessToReviewerAuditResp,
     FromHarnessToReviewerInjectResp,
 )
@@ -24,6 +25,7 @@ from pokemon_agent.schemas.reviewer.interaction import (
     AuditAnswer,
     HistoryEntry,
     InjectAnswer,
+    ReviewProposal,
     ReviewRequest,
     Settle,
     SubmitAck,
@@ -49,6 +51,11 @@ class Hub:
         self._future: asyncio.Future[Settle] | None = None
         self._history: deque[HistoryEntry] = deque(maxlen=HISTORY_LIMIT)
         self._activities: deque[Activity] = deque(maxlen=HISTORY_LIMIT)
+        self._discuss_handler: Callable[[int, str], SubmitAck] | None = None
+
+    def set_discuss_handler(self, handler: Callable[[int, str], SubmitAck]) -> None:
+        """绑定应用层 AI 调度；只能在事件循环内调用。"""
+        self._discuss_handler = handler
 
     def current(self, seq: int | None = None) -> Ask | None:
         """返回独立快照；旧编号看不到下一问的素材。"""
@@ -133,8 +140,30 @@ class Hub:
         return [item.model_copy(deep=True) for item in self._activities]
 
     def discuss(self, seq: int, text: str) -> SubmitAck:
-        """R6a 只有 human 席；讨论不构成答复。AI 能力在 R7 接入。"""
-        return SubmitAck(ok=False, text="没有 AI 席" if self.current(seq) else "该问已了结")
+        """将人的增量意见交应用层调度 AI，不构成答复。"""
+        if self.current(seq) is None:
+            return SubmitAck(ok=False, text="该问已了结")
+        if self._discuss_handler is None:
+            return SubmitAck(ok=False, text="没有 AI 席")
+        return self._discuss_handler(seq, text)
+
+    def propose(self, seq: int, proposal: ReviewProposal) -> SubmitAck:
+        """只接受与当前问类型匹配的 AI 提案。"""
+        return self.submit(seq, proposal.answer, "agent")
+
+    def submit_default(self, seq: int) -> SubmitAck:
+        """AI 无法作答时按无人值守契约返回默认值，明确标记 by=none。"""
+        ask = self.current(seq)
+        if ask is None:
+            return SubmitAck(ok=False, text="该问已了结")
+        if ask.kind == "inject":
+            response = FromHarnessToReviewerInjectResp(text="", answered=False, by="none")
+        else:
+            response = FromHarnessToReviewerAuditResp(
+                verdict=AuditVerdict.ACCEPT, note="", answered=False, by="none"
+            )
+        self._finish(Settle(seq=seq, response=response))
+        return SubmitAck(ok=True, text="无人答复，采用默认结论")
 
     def _read(self, ask: Ask, q: TraceQuery | RecallQuery | FrameQuery) -> ViewAnswer:
         """只读操作不在工作线程里访问 hub 可变状态。"""

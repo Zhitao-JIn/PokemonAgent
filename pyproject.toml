@@ -49,6 +49,9 @@ dev = [
 # 两个顶层包都必须 editable 装进 venv（334 的部署缺口）。
 include = ["pokemon_agent*", "evals*"]
 
+[tool.setuptools.package-data]
+pokemon_agent = ["reviewer/seats/ai/prompts/*.md"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

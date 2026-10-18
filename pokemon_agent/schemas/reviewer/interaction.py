@@ -52,6 +52,13 @@ class AuditAnswer(BaseModel):
         return self
 
 
+class ReviewProposal(BaseModel):
+    """AI 席产出的候选答复；hub 会按当前问种类再次核对。"""
+
+    model_config = ConfigDict(extra="forbid")
+    answer: InjectAnswer | AuditAnswer
+
+
 class Ask(BaseModel):
     """一问的进程内编号与原始素材快照。"""
 

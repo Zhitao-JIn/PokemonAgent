@@ -400,8 +400,8 @@ help [命令]                              用法
 - **循环引擎选用 Pydantic AI（`pydantic-ai-slim[openai]`，R7 加入 `pyproject.toml` 并固定版本）。** 它只替我们承担「messages 数组、工具调用与回灌、参数校验与重试、结构化提交、用量上限」这一层通用循环；工具集、提交类型、预算、取消、取证规则、与 hub 的交互仍是我们自己的代码。
   - 选型依据：沙箱里用本地脚本化的 OpenAI 兼容服务（v2.57.0）实测通过——工具循环；输出类型自动成为 `final_result` 提交工具；参数非法回灌纠正并在重试用尽后抛 `UnexpectedModelBehavior`；`UsageLimits(tool_calls_limit=N)` 超限抛 `UsageLimitExceeded`；工具返回图片时自动追加带图 user 消息；首条 user 消息带图；总时限（`asyncio.wait_for`）与由工具内抛出的取消均能终止线程。这些**只证明库的控制力，不证明真模型行为**（见 7.3a）。
   - 同时**否决 OpenAI Agents SDK**：其结构化输出走 `response_format: json_schema` 而非提交工具，退出条件不如显式提交工具明确，且未验证所选模型对 `json_schema` 的支持。
-  - 兜底：若 7.3a 探针或后续真机发现该库在所选模型上控制不住（如 `tool_choice="required"` 被拒且无法关闭），退回**自写循环**（约百行，接口不变：`AiSeat.run_turn(...) -> Proposal`），hub 与命令层不受影响。
-- 模型接入：`OpenAIChatModel` + `OpenAIProvider(base_url, api_key)`，取值来自 `config.py` / `.env` 里 AI 席自己的那组配置（沿用旧 `agent_reviewer` 的模型与密钥配置项名；`provider.py` 旧副本随 `agent_reviewer/` 一并删除）。AI 席与 `brain/providers.py` 各自独立（不回流）。思考模式保持关闭（经 `ModelSettings` 传入，具体字段名以探针确认为准）。
+  - 兜底：若 7.3a 探针或后续真机发现该库在所选模型上控制不住，退回**自写循环**（约百行，接口不变：`AiSeat.run_turn(...) -> Proposal`），hub 与命令层不受影响。
+- 模型接入：`OpenAIChatModel` + `OpenAIProvider(base_url, api_key)`，取值来自 reviewer 入口配置 / `.env`（`AGENT_REVIEWER_MODEL`、`AGENT_REVIEWER_BASE_URL`、`DEEPSEEK_API_KEY`；缺省模型 `deepseek-flash`，缺省地址 `https://api.deepseek.com`）。AI 席与 `brain/providers.py` 各自独立（不回流）。思考模式通过 Pydantic AI `ModelSettings.extra_body` 发送 DeepSeek 官方的 `{"thinking":{"type":"disabled"}}`。
 - 查询由工具函数直接调 reviewer 进程内的 `ViewReaders`（同一个实例，同一套 `ViewQuery`），不经过命令文本；每次查询由 hub 记一条 activity 并打印到终端。取消靠 `task.cancel()`。
 
 ### 7.2 有界工具循环（Pydantic AI 之上的我们自己的部分）
@@ -419,18 +419,18 @@ help [命令]                              用法
   5. 取消：hub 了结该问时 `cancel()` 该 AI 任务（`CancelledError` 直接生效；若库把它包成别的异常，捕获后以**该问是否已了结**判定「被取消」，而非看异常类型），不产出 proposal；
   6. 任何未预期异常 → 捕获、日志、空提案，**不得影响 hub 与人席**。
 - 一轮并行多个工具调用：由库逐个执行并全部回灌，仍计入工具调用次数。
-- 库默认每轮都发 `tool_choice="required"`（必须调工具）：与「结论也是一次工具调用」一致，但**须由 7.3a 探针确认所选模型接受**。
+- 允许工具名单固定为四个查询工具和 `final_result`；Pydantic AI 把这份名单转换为强制从名单中选一个工具。不能静态设置 `tool_choice="required"`：v2.57.0 会因此排除输出工具，并拒绝阻止 Agent 完成的配置。超限收尾只允许 `final_result`。
 - 结构化输出：删除关键词子串判定（`_OVERTURN_WORDS` / `_ACCEPT_WORDS` / `_parse`）。
 
-### 7.3a 先验证再落码（R7 的第 0 步）
+### 7.3a 官方协议核查与真实模型验收
 
-文档只确认所选模型支持图文输入，**没有确认「图片 + tools 同一请求」可用**。R7 开工前写一个一次性探针脚本（用户本机、读 `.env`，**用 Pydantic AI 本身发请求**，代码仿 7.2 的最小形态，不进仓库）：同一请求里带一帧图 + 两个只读工具 + 提交工具，逐项看：
+R7 实现前查阅了 [DeepSeek Vision](https://api-docs.deepseek.com/guides/vision/)、[DeepSeek Tool Calls](https://api-docs.deepseek.com/guides/tool_calls/) 与 [Pydantic AI v2.57.0 settings](https://github.com/pydantic/pydantic-ai/blob/v2.57.0/pydantic_ai_slim/pydantic_ai/settings.py)：DeepSeek 确认 `deepseek-flash` 支持 Chat Completions 图片输入与工具调用，并示范以 `extra_body` 关闭 thinking；Pydantic AI 支持图像与附加请求体，也说明静态 `required` 会排除输出工具。因此实现使用五个显式工具名白名单。文档**不等于账号上的真实模型联调**；保留一次性 `.pytest_tmp/r7_tool_choice_probe.py` 脚本，用户本机使用 `.env` 执行后补记结果。探针逐项看：
 1. 是否返回合法 `tool_calls`；`prompt_tokens` 是否计入图（沿用 `ImageNotDelivered` 的静默丢图检测）；
 2. 模型是否接受 `tool_choice="required"`；
 3. 工具返回图片后追加的 user 消息（含 `image_url`）是否被接受并被模型利用；
 4. 思考模式关闭的参数写法；
 5. 参数非法后的纠正回灌是否能让该模型改正。
-通过 → 按本节落码；(1)(3) 不通过 → 降级为「图只在首条 user 消息里带、之后纯文本 + tools」；(2) 不通过且无法关闭 → 退回自写循环（7.1 兜底）；仍不通过才退回文本 JSON 协议（另开讨论，不预先实现）。
+官方契约支持 → 可先按本节实现并由本地假模型测试库行为；真实探针是三种席位投产验收的一部分，不得标为已通过。若真实请求发现图像或工具调用不兼容，按探针结果缩减后重新验收；仍无法满足结构化提交时才退回自写循环（7.1 兜底）。
 
 ### 7.4 Prompt（规则 / 素材分离）
 

@@ -34,6 +34,15 @@ REVIEW_LAYERS: tuple[Literal["run", "episode", "task"], ...] = ("run", "episode"
 REVIEW_AI_INJECT_MAX_ROUNDS = 3
 """一次插话点内，连续 AI 意见最多生效的轮数；人的有效意见清零计数。"""
 
+AGENT_MAX_TOOL_CALLS = 6
+"""AI reviewer 每问允许的只读工具调用数。"""
+
+AGENT_TURN_BUDGET_S = 90
+"""AI reviewer 单轮总时限，包含模型请求与工具执行。"""
+
+REVIEW_AI_COUNTDOWN_S = 30
+"""human + AI 模式下，人席接管 AI 提案前的等待秒数。"""
+
 REVIEW_LINK_URL: str | None = None
 """复核链路显式启用地址；None 保持无头，部署也可通过同名环境变量指定。"""
 

@@ -1,3 +1,24 @@
+## 2026-10-18（531）—— reviewer R7 AI 席：接入只读工具与三种席位模式
+
+**改了什么**：新增进程内 DeepSeek / Pydantic AI 席、四个类型化只读查询工具、结构化答复、
+超限后的提交专用收尾、单轮总时限与取消；ReviewerApp 支持 human、ai、both，both 提供
+30 秒接管窗口与 ask-ai 讨论。AI 仅在 reviewer optional extra 中装载，配置沿用独立 reviewer
+密钥、模型与 API 地址。Hub 增加 AI proposal 与 `by=none` 默认结算。
+
+**为什么这么改**：新 reviewer 的核心链路已切换为单跳 WS 与 human 入口，R7 要补回审核席能力，
+同时把模型限制在当前问的 ViewQuery 上，避免它修改记忆、trace 或运行状态。
+
+**取舍**：DeepSeek 官方文档确认图像输入、工具调用和关闭 thinking 的请求字段；Pydantic AI
+2.57.0 文档表明静态 `tool_choice="required"` 会排除输出工具，因此使用包含四个查询工具与
+`final_result` 的白名单。共享解释器未安装 optional extra，也未发送真实模型请求；账号级图像、
+工具回灌与用量仍须按探针在用户本机验收，不将文档核查记作真机通过。human+AI 倒计时内人的
+答复先到先得；模型失败时人席继续等待，ai-only 使用 `by=none`。
+
+**影响面**：改 reviewer 入口、应用、Hub、AI 席、交互 schema、配置、依赖包数据、测试与 reviewer
+规范；不改 brain、memory、trace Port 或 harness 线上信封。reviewer 测试 163 passed；全仓默认
+pytest 1592 passed / 3 deselected，慢测 3 passed；ruff check 通过、ruff format 674 文件未改；
+`uv lock --check` 通过；`state_schema_hash()` 保持 `28e96b09966dc94e`。真实模型探针待用户本机验收。
+
 ## 2026-10-18（530）—— reviewer R7 依赖准备：锁定独立 AI 席环境与探针版本
 
 **改了什么**：将 `pydantic-ai-slim[openai]` 以精确版本 2.57.0 加入 `reviewer` optional extra，

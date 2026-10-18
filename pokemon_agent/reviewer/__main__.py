@@ -6,6 +6,7 @@ import itertools
 import logging
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -13,7 +14,14 @@ from urllib.parse import urlsplit
 import httpx
 from langfuse.api.core.api_error import ApiError
 
-from pokemon_agent.config import DEFAULT_REVIEW_LINK_URL, REVIEW_LINK_URL, TRACE_BACKEND
+from pokemon_agent.config import (
+    AGENT_MAX_TOOL_CALLS,
+    AGENT_TURN_BUDGET_S,
+    DEFAULT_REVIEW_LINK_URL,
+    REVIEW_AI_COUNTDOWN_S,
+    REVIEW_LINK_URL,
+    TRACE_BACKEND,
+)
 from pokemon_agent.env import env_str, load_env_file
 from pokemon_agent.mcpclient.client import McpClient, mcp_endpoint
 from pokemon_agent.mcpclient.memory_local import MemoryTool
@@ -37,6 +45,7 @@ from pokemon_agent.trace.langfuse_support import (
 from .app import ReviewerApp
 from .hub import Commands, Hub
 from .link.server import ReviewLinkServer
+from .ports import AiReviewer
 from .seats.human import HumanSeat
 from .seats.terminal_io import StdinLines
 from .view import ViewReaders
@@ -118,30 +127,43 @@ async def run(args: argparse.Namespace) -> None:
     parsed = urlsplit(url)
     if parsed.scheme != "ws" or not parsed.hostname:
         raise ValueError("本地 reviewer 监听地址必须是 ws://host:port")
-    if args.seats != "human":
-        raise ValueError("AI 席尚未接入，请使用 --seats human")
     if args.trace_backend == "langfuse" and args.trace_root is not None:
         raise ValueError("--trace-root 仅适用于 local 后端")
+    has_human = args.seats in {"human", "both"}
+    has_ai = args.seats in {"ai", "both"}
+    ai_settings = _ai_settings() if has_ai else None
     trace, client = _trace(args)
     memory_client, memory = _memory(args.memory_server_url)
-    lines = StdinLines(sys.stdin.readline)
-    human = HumanSeat(lines, _write, image_root=args.image_root)
+    lines = StdinLines(sys.stdin.readline) if has_human else None
+    human = HumanSeat(lines, _write, image_root=args.image_root) if lines is not None else None
     readers = ViewReaders(trace, memory, trace_delayed=args.trace_backend == "langfuse")
-    hub = Hub(readers, on_activity=human.activity)
+    hub = Hub(readers, on_activity=human.activity if human is not None else None)
+    ai = _ai_seat(hub, ai_settings) if ai_settings is not None else None
     app = ReviewerApp(
-        ReviewSeats(human=True, ai=False), hub=hub, commands=Commands(hub), human=human
+        ReviewSeats(human=has_human, ai=has_ai),
+        hub=hub,
+        commands=Commands(hub),
+        human=human,
+        ai=ai,
+        countdown_s=REVIEW_AI_COUNTDOWN_S,
     )
-    link = ReviewLinkServer(app, mode="human")
+    link = ReviewLinkServer(app, mode=args.seats)
     try:
         port = parsed.port if parsed.port is not None else 80
         async with await link.serve(parsed.hostname, port) as listener:
             host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
             address = f"ws://{host}:{listener.sockets[0].getsockname()[1]}{parsed.path}"
-            _write(f"[reviewer] 已启动：{address}；共享 trace={args.trace_backend}，Ctrl-C 退出")
-            await app.serve()
+            _write(
+                f"[reviewer] 已启动：{address}；席位={args.seats}，共享 trace={args.trace_backend}"
+            )
+            if has_human:
+                await app.serve()
+            else:
+                await asyncio.Future()
     finally:
         app.close()
-        lines.close()
+        if lines is not None:
+            lines.close()
         await link.shutdown()
         if memory_client is not None:
             memory_client.stop()
@@ -174,6 +196,33 @@ def _memory(url: str | None) -> tuple[McpClient | None, MemoryTool | None]:
         MemoryMcpTool(client, snapshot_root=Path(tempfile.gettempdir()) / "pokemon-review-memory")
     )
     return client, memory
+
+
+def _ai_settings() -> tuple[Callable[..., AiReviewer], str, str, str]:
+    """在启动读服务前核对 key 和 optional extra，避免失败时留下客户端线程。"""
+    api_key = env_str("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise RuntimeError("AI 席需要配置 DEEPSEEK_API_KEY")
+    try:
+        from pokemon_agent.reviewer.seats.ai import AiSeat
+    except ImportError as exc:
+        raise RuntimeError("AI 席需安装项目 reviewer 可选依赖") from exc
+    model = env_str("AGENT_REVIEWER_MODEL") or "deepseek-flash"
+    base_url = env_str("AGENT_REVIEWER_BASE_URL") or "https://api.deepseek.com"
+    return AiSeat, model, api_key, base_url
+
+
+def _ai_seat(hub: Hub, settings: tuple[Callable[..., AiReviewer], str, str, str]) -> AiReviewer:
+    """使用已验证配置与当前 reviewer 的查询仲裁构造 AI 席。"""
+    factory, model, api_key, base_url = settings
+    return factory(
+        model_name=model,
+        api_key=api_key,
+        base_url=base_url,
+        query=hub.query,
+        max_tool_calls=AGENT_MAX_TOOL_CALLS,
+        turn_budget_s=AGENT_TURN_BUDGET_S,
+    )
 
 
 def _write(text: str) -> None:

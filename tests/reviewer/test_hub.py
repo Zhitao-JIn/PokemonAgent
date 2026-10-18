@@ -17,6 +17,7 @@ from pokemon_agent.schemas.reviewer.interaction import (
     InjectAnswer,
     ReviewSeats,
     Settle,
+    SubmitAck,
 )
 
 
@@ -54,6 +55,46 @@ def test_audit_overturn_and_cancel_are_distinct_resolutions() -> None:
         result = await pending
         assert result.cancelled and result.response is None and result.reason == "断开"
         assert not hub.cancel(2).ok
+
+    asyncio.run(scenario())
+
+
+def test_ai_proposal_is_type_checked_and_unavailable_ai_uses_by_none() -> None:
+    from pokemon_agent.schemas.reviewer.interaction import ReviewProposal
+
+    async def scenario() -> None:
+        hub = Hub(ViewReaders(None, None))
+        first = hub.open_ask(inject_request())
+        assert hub.propose(1, ReviewProposal(answer=InjectAnswer(text="提议"))).ok
+        result = await first
+        assert result.response.text == "提议" and result.response.by == "agent"
+
+        second = hub.open_ask(inject_request())
+        assert hub.submit_default(2).ok
+        result = await second
+        assert result.response.text == "" and result.response.by == "none"
+        assert result.response.answered is False
+
+    asyncio.run(scenario())
+
+
+def test_discuss_delegates_only_for_the_pending_question() -> None:
+    async def scenario() -> None:
+        hub = Hub(ViewReaders(None, None))
+        calls: list[tuple[int, str]] = []
+
+        def enqueue(seq: int, text: str) -> SubmitAck:
+            calls.append((seq, text))
+            return SubmitAck(ok=True, text="queued")
+
+        hub.set_discuss_handler(enqueue)
+        future = hub.open_ask(inject_request())
+
+        assert hub.discuss(1, "check-repeat").ok
+        assert calls == [(1, "check-repeat")]
+        hub.cancel(1)
+        await future
+        assert not hub.discuss(1, "stale-note").ok
 
     asyncio.run(scenario())
 

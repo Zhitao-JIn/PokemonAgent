@@ -45,8 +45,8 @@
 | R6a | hub、随问帧分页、schema 派生命令与 help、human 终端、进程内 ReviewerApp、窄协议与导入边界 | 519 ✅ | R4、R5 | 已完成；先答先得、取消与 EOF、快照和历史隔离、命令 ⇔ 类型化调用、慢查询期间答复、旧查询不进入下一问、真实 PNG 输出；新增 52 项，全量 1567 / slow 3 / ruff 通过；两次破坏验证成功，hash 不变 |
 | R6b | 单跳线上信封、ReviewLinkServer、RemoteReviewer、独立 human 入口、共享读口装配与 build URL 选择 | 520 ✅ | R6a | 已完成；真实 WS 与独立子进程经 stdin 答复、PNG 查询；qid 重发/离线答复/缓存/取消/占用；已知 AI 超时与其他模式无限等；新增 54 项，默认 1621 / slow 3 / ruff 全绿；两次破坏验证成功，hash 不变 |
 | R6c | 删旧栈：`ConsoleReviewer` / `WebReviewer` / `review_backend` / 跳 A·B 信封 / `LiveFeedTrace` 与 `live_feed_url` / 旧常量 / 对应测试 / 文档状态说明 | 529 | R6b | 旧实现符号零残留；新展示接口承接上下文验收；完整回归与哈希验收见 CHANGELOG |
-| R7a | 固定 Pydantic AI 2.57.0 为 reviewer optional extra、锁依赖、准备一次性探针 | 530 ✅ | R6c | `uv lock --check` 通过；模型探针待用户本机运行 |
-| R7b | 0）探针通过后实现 AI 席（进程内 asyncio、有界循环、三种模式与倒计时） | 531 | R7a + 探针结果 | 工具循环、纠正回灌、预算、取消与倒计时测试 |
+| R7a | 固定 Pydantic AI 2.57.0 为 reviewer optional extra、锁依赖、准备一次性探针 | 530 ✅ | R6c | `uv lock --check` 通过；DeepSeek / Pydantic AI 官方文档已核对；真实模型探针留 R10 |
+| R7b | 实现进程内 AI 席（Pydantic AI 有界循环、三种模式、讨论与倒计时） | 531 ✅ | R7a 官方接口核查 | 已实现；reviewer 163 项与全量默认测试通过，slow 3 项 / Ruff / 锁文件通过；真实模型结果留 R10 |
 | R8 | （暂缓）网页入口 | — | R7 | 另行立项 |
 | R9 | 文档同步；规范 §四第 3 条修订（须用户点头） | 待分配 | R1a–R7 | 文档与代码一致 |
 | R10 | 用户本机真机跑（三种模式） | — | R7 | 用户反馈 |

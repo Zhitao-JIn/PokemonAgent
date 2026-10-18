@@ -160,10 +160,10 @@ def test_stdin_errors_propagate_instead_of_becoming_an_answer() -> None:
         ["--seats", "human", "--trace-backend", "langfuse", "--trace-root", "irrelevant"],
     ],
 )
-def test_invalid_entrypoint_modes_and_addresses_fail_before_assembly(
+def test_invalid_entrypoint_configuration_fails_before_serve(
     tmp_path: Path, arguments: list[str]
 ) -> None:
     args = entry.argument_parser().parse_args([*arguments, "--env-file", str(tmp_path / "no.env")])
 
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, RuntimeError)):
         asyncio.run(entry.run(args))

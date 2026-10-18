@@ -35,6 +35,11 @@ class HumanSeat:
         self._write(ask_text(ask))
         self.prompt(ask)
 
+    def show_proposal(self, ask: Ask, proposal: str, countdown_s: int) -> None:
+        """展示 AI 候选答复与接管窗口，不直接提交。"""
+        self._write(f"[AI 提案 {ask.seq}] {text_without_frames(proposal)}")
+        self._write(f"{countdown_s} 秒内可用 ok / overturn / say 接管")
+
     def prompt(self, ask: Ask | None) -> None:
         """查询后仍显示同一个问的编号；空闲时提示等待下一问。"""
         self._write(f"[{ask.seq} {ask.kind}] help / ctx >" if ask else "等待 run 连入 / 等待下一问")

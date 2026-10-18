@@ -1,11 +1,27 @@
 """进程内应用的装配契约；生产实现和测试替身满足同一组窄协议。"""
 
 import asyncio
-from collections.abc import AsyncIterator
-from typing import Protocol
+from collections.abc import AsyncIterator, Callable
+from typing import Literal, Protocol
 
 from pokemon_agent.schemas.reviewer import ViewAnswer
-from pokemon_agent.schemas.reviewer.interaction import Ask, ReviewRequest, Settle, SubmitAck
+from pokemon_agent.schemas.reviewer.interaction import (
+    Ask,
+    AuditAnswer,
+    InjectAnswer,
+    ReviewProposal,
+    ReviewRequest,
+    Settle,
+    SubmitAck,
+)
+
+
+class AiReviewer(Protocol):
+    """reviewer 进程内的 AI 席；不向应用泄露模型 SDK 类型。"""
+
+    async def run_turn(self, ask: Ask, human_note: str = "") -> ReviewProposal | None:
+        """为当前问形成候选答复；模型失败返回 None，可由调用方取消。"""
+        ...
 
 
 class AppHub(Protocol):
@@ -21,6 +37,27 @@ class AppHub(Protocol):
 
     def cancel(self, seq: int, reason: str = "该问已取消") -> SubmitAck:
         """取消唤醒等待方；旧编号正常拒绝，不伪造认账。"""
+        ...
+
+    def submit(
+        self,
+        seq: int,
+        answer: AuditAnswer | InjectAnswer,
+        by: Literal["human", "agent"],
+    ) -> SubmitAck:
+        """提交匹配问种类的答复；过期编号明确拒绝。"""
+        ...
+
+    def propose(self, seq: int, proposal: ReviewProposal) -> SubmitAck:
+        """提交 AI 候选答复；hub 再次校验当前问与答复类型。"""
+        ...
+
+    def submit_default(self, seq: int) -> SubmitAck:
+        """以 by=none 结算无人答复；过期编号明确拒绝。"""
+        ...
+
+    def set_discuss_handler(self, handler: Callable[[int, str], SubmitAck]) -> None:
+        """绑定应用层 AI 调度回调，人的讨论仍由 hub 校验当前 qid。"""
         ...
 
 
@@ -45,6 +82,10 @@ class HumanTerminal(Protocol):
 
     def prompt(self, ask: Ask | None) -> None:
         """显示当前问或空闲提示；不产生答复。"""
+        ...
+
+    def show_proposal(self, ask: Ask, proposal: str, countdown_s: int) -> None:
+        """展示 AI 提案与倒计时，供人席接管。"""
         ...
 
     def show_result(self, seq: int, answer: ViewAnswer) -> None:
