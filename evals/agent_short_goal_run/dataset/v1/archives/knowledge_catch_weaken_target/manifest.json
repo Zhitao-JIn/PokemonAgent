@@ -1,5 +1,5 @@
 {
-  "checkpoint_id": "eval-knowledge_catch_weaken_target@main-91e335ff",
+  "checkpoint_id": "eval-knowledge_catch_weaken_target@main-499de71d",
   "level": "run",
   "run_id": "eval-knowledge_catch_weaken_target",
   "branch": "main",
@@ -46,11 +46,11 @@
   "run_ref": null,
   "episode_ref": null,
   "world_file": "world.state",
-  "memory_archive": "archives/knowledge_catch_weaken_target/memory/snapshots/eval-knowledge_catch_weaken_target@main-91e335ff.zip",
+  "memory_archive": "archives/knowledge_catch_weaken_target/memory/snapshots/eval-knowledge_catch_weaken_target@main-499de71d.zip",
   "code": {
-    "git_commit": "fc1ca5e18ea09022feb715c4e0874c7fad03187d",
+    "git_commit": "f684af8b7a754396d50c0b4e73a1f8b2dcbb5227",
     "git_dirty": true,
-    "state_schema_hash": "28e96b09966dc94e"
+    "state_schema_hash": "5ea6dffeeb229b7c"
   },
   "models": {
     "text": "deepseek-flash",
@@ -58,5 +58,5 @@
     "verify": "deepseek-flash",
     "plan": "deepseek-flash"
   },
-  "created_at": "2026-10-18T17:29:15+0200"
+  "created_at": "2026-10-18T00:22:50+0200"
 }

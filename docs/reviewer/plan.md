@@ -2,7 +2,7 @@
 
 > 流程位置：intent.md → spec.md → **plan.md**（本文件）→ PR
 > 依据：`docs/reviewer/spec.md`（§十六）；意图见 `docs/reviewer/intent.md`；协作规则见 `docs/workflow.md`
-> 状态：R0 **已完成**（2026-10-18）：brain-scope 已合入主线（main d6e9aaa）；R1a = 514（提交 7eb5dba）、R2 = 515（提交 6a85edd）已验收；基线 `state_schema_hash()` = `5ea6dffeeb229b7c`（与 main 逐位相同）。R3 = 513（提交 b3e1985）已完成，随本次合入 main；R3b（516）已完成；用户授权新增 TaskState.last_judge，新哈希 `28e96b09966dc94e`，20 份评测存档已重打并真实恢复验收。
+> 状态：R0 **已完成**（2026-10-18）：brain-scope 已合入主线（main d6e9aaa）；R1a = 514（提交 7eb5dba）、R2 = 515（提交 6a85edd）已验收；基线 `state_schema_hash()` = `5ea6dffeeb229b7c`（与 main 逐位相同）。R3 = 513（提交 b3e1985）已完成，随本次合入 main；R3b 及后续尚未开始。
 > 本文件中的 460 / 461 / 462 等旧编号以台账 `.coordination/ledger.md` 为准（R1a / R2 已重编号为 514 / 515）。
 > v3（2026-10-17）：spec 已按 brain-scope v1.3 同步；新增 R0 与 §八；R3 / R5 / R6a 的内容与前置更新；编号与哈希关卡改为「恢复时重定」。
 > v4（2026-10-17）：reviewer 改为独立进程（spec #23）：R5 缩为 reviewer 内的读端口，R6a / R6b 重排，删除 `ReviewView` 相关项；task 层可选审点 R3b 已在 v3.1 记入。
@@ -33,7 +33,7 @@
 | R2 | `by` / `answered` 不变式 | 515 ✅（6a85edd） | R1a | 已验收 |
 | R0 | 恢复准备：主线合入、重编号、新建 worktree、基线哈希、文档入库 | — ✅ | brain-scope 合入 | 已完成：全量 pytest / slow / ruff 绿；`state_schema_hash()` = `5ea6dffeeb229b7c` 与 main 相同；台账更新 |
 | R3 | `ReviewContext`（**不含画面**）+ `frames_of` + `render_context`（按 brain-scope 后的请求形状，带帧处只写张数）+ 四个调用点构造 + `InjectReq` / `AuditReq` 的 `context` 字段 + 文档更新 | 513 ✅（b3e1985） | R0 | 已完成； 四个调用点带 `context`；互斥校验、渲染去重（无 `data:image`）、`frames_of` 去重 / 标签测试（含破坏验证）；`state_schema_hash()` 与 R0 实测起点 `5ea6dffeeb229b7c` 逐位相同 |
-| R3b | task 层可选审点（`REVIEW_LAYERS` 默认不含 `task`）：`ReviewContext` 增 `task` 层与 `task_id`；task 层 `review_and_judge` 判成处 audit；`frames_of` 支持 `history` 帧；`build.py` 给 task 层装配 reviewer | 516 ✅ | R3 | 已完成；默认配置下 task 图无 reviewer 调用（行为逐位相同）；开启后的 audit 测试（认账 / 推翻 / 不判成不审，含破坏验证）；新增 TaskState.last_judge，哈希改为 `28e96b09966dc94e`，20 份存档重打与恢复验收 |
+| R3b | task 层可选审点（`REVIEW_LAYERS` 默认不含 `task`）：`ReviewContext` 增 `task` 层与 `task_id`；task 层 `review_and_judge` 判成处 audit；`frames_of` 支持 `history` 帧；`build.py` 给 task 层装配 reviewer | 恢复时按台账取号 | R3 | 默认配置下 task 图无 reviewer 调用（行为逐位相同）；开启后的 audit 测试（认账 / 推翻 / 不判成不审，含破坏验证）；`state_schema_hash()` 不变 |
 | R4 | `elicit_with_review` + AI 轮次阀 + `ReviewMark.capped/round` + config 常量 | 待分配 | R2、R3 | 轮次阀测试：agent N+1 次不生效且 `capped`，人不受限且清零 |
 | R5 | 前置核查（`recall` 取帧、trace 跨进程可见性与 flush 接口、`recall` 副作用）→ `reviewer/view/`：窄 Protocol `TraceReader` / `MemoryReader`、查询模型（含 `BrainFramesQuery`；`RecallQuery` 加 `run_goal` 键与 `runs` 提示）、`ViewReaders` 与测试（只新增 reviewer 包内文件，不碰 harness） | 待分配 | R3 | 核查报告交设计侧裁决；只读测试 |
 | R6a | `reviewer/`：hub（含对 `read_brain_frames` 的回答）+ 命令层 + 终端席（`human` only）+ `ReviewerApp`（进程内，无网络）+ 导入边界测试 | 待分配 | R4、R5 | 命令 ⇔ 类型化调用等价测试；先答先得；导入扫描 |
@@ -83,6 +83,6 @@
 1. **顺序**：brain-scope 先合入主线，reviewer 之后恢复（用户 2026-10-17 已定，台账同）。brain-scope 已于 2026-10-18 合入（main d6e9aaa），R0 据此执行。
 2. **已知文件冲突**（`overlap.py`，2026-10-17）：与 brain-scope 的真冲突候选是 `pokemon_agent/direct/trace/render.py`、`tests/_harness_fixtures/node_io.py`、`tests/harness/run/test_plan_reads_memory.py`；`CHANGELOG.md` 为共享文件。reviewer 分支另与主线冲突于 `review_backend/page.py`、`trace/langfuse_support.py`（MCP-only 与测试瘦身所致）。R0 合并时逐个人工解决，解决提交与重编号提交分开。
 3. **请求形状**：R3 起一律以合入后的代码为准（spec 4.1 为依据，字段名待核）；`ReviewContext.brain_input` 保留三类请求，图经 `frames_of` / `read_brain_frames`。
-4. **哈希与存档**：brain-scope 的 CP8 已重打 20 份评测存档（501），`state_schema_hash()` 已定型为 `5ea6dffeeb229b7c`。R3b 经用户 2026-10-18 授权新增 TaskState.last_judge，哈希改为 `28e96b09966dc94e` 并重打 20 份存档；R1b 之后仍需按最终结构另行重打。
+4. **哈希与存档**：brain-scope 的 CP8 已重打 20 份评测存档（501），`state_schema_hash()` 已定型为 `5ea6dffeeb229b7c`。R1b 也改哈希并重打，次序只能在 CP8 之后（已满足），R1b 到时单独重打。
 5. **可提前的部分（待核）**：设计文档（本版）已同步，不占执行方。代码步骤里 R5 现在只新增 `reviewer/view/` 与 `schemas/reviewer/` 下的新文件，几乎不改既有文件，与 brain-scope 的文件交集预计为零；但它依赖 brain-scope CP1 的召回新取法（`run_goal` / `runs`）与 R3 的 `frames_of`，所以**默认等 brain-scope 合入**（现已满足，R5 排在 R3 之后）；派发前须对 R5 的精确文件清单跑 `overlap.py --branch`。
 6. **R3b 与 brain-scope CP3 同一处**：R3b 改 task 层 `review_and_judge`，brain-scope CP3 已改过它（取全部 ActMemory、`task_index`），所以 R3b 只能在 brain-scope 合入之后做，以合入后的形状为准。

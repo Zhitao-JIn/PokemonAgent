@@ -24,12 +24,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pokemon_agent.run_budget import RunBudget
-
-REVIEW_LAYERS: tuple[Literal["run", "episode", "task"], ...] = ("run", "episode")
-"""启用审点的层；加入 task 后才复核 task 判成，默认保持原执行行为。"""
 
 # ---- 重试预算：一次调用最多问几遍外部模型 ----
 # brain 的六条链路（choose/plan/judge/verify/summarize 调模型，reflect 不调）

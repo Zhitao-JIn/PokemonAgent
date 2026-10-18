@@ -1,7 +1,7 @@
 # Reviewer spec —— 全链路只读透明 + 最终裁决（插话 / 审），一个独立 reviewer 进程、人（终端）与 AI 同权
 
 > 流程位置：intent.md → **spec.md**（本文件）→ plan → 落码
-> 状态：v3（2026-10-17）；R1a、R2、R3、R3b 已完成；其余待按 plan 逐步放行，**R3 起须等 brain-scope 合入主线后恢复**（见 plan §八）
+> 状态：v3（2026-10-17）；R1a、R2、R3 已完成；其余待按 plan 逐步放行，**R3 起须等 brain-scope 合入主线后恢复**（见 plan §八）
 > v3 修订原因：brain-scope（`docs/brain_scope/spec.md` v1.3）改变大脑请求的形状，并让规划 / 拆解处开始看图。本稿同步：①更正 #18 的前提并新增 #19–#21（`brain_input` 里的帧、`read_brain_frames`、AI 首条消息不带图）；②`ReviewContext` 渲染按新字段（4.1）；③`RecallQuery` 增 `run_goal` 键与 `runs` 提示；④清掉 v2 遗留的 `frame` 残句（6.5、7.2、十四、十五）与 `FrameQuery` 缺 `latest` 的不一致。
 > v3.1（2026-10-17）：task 层改为**可选审点**（配置 `REVIEW_LAYERS`，默认关闭，只做 judge 处的 audit，不做 inject），见 #22；新增 R3b。
 > v4（2026-10-17）：reviewer 改为**独立进程**（人、AI、hub、读端口同在其内，harness 只经 `Reviewer` 端口与薄适配 `RemoteReviewer` 相连），见 #23；删除 harness 侧 `ReviewView`；`read_world` 取消；重写 §二 / §五 / §六 / §九 / §十 / §十三，R5 / R6 重排。
@@ -37,7 +37,7 @@
 | 19 | v2 的 #18 把「规划与拆解处大脑不看图」当前提（`PlanOnceReq` 无 images）。brain-scope（spec v1.3 D9，CP4）之后该前提**不再成立**：`BrainPort.plan` / `decompose` 增 `images`，L0 带每局首末帧、L1 带每 task 首末帧；这些帧就在请求里的记忆对象上（`EpisodeMemory` / `TaskMemory` 的 `first_frame` / `last_frame`）。reviewer 默认只涉及 run / episode 两层，即这两类对象（task 层可选，其帧在 `ActMemory` 的前后帧上，同理，见 #22） | #18 的**结论不变**：「当前帧」仍不是任何请求的入参，仍不进 `ReviewContext`、仍按需拉取。**新增一条口径**：reviewer 必须能看到「大脑这一问看到的图」。`brain_input` 的记忆对象本来就带着帧，由纯函数 `frames_of(brain_input)` 取出（顺序与去重同大脑；不套 `SCOPE_IMAGE_CAP`，故 reviewer 可见 ⊇ 大脑所见）；新增查询变体 `BrainFramesQuery`（`read_brain_frames`），分页返回，由 hub 用当前问的快照回答（5.3）。渲染文本一律不输出这些 data URI，只写「图 N 张」 |
 | 20 | v2 的 7.2 写 AI 首条消息带 `context.frame` 图 | 作废（该字段自 #18 起已不存在）：**首条消息只带快照文本，不带图**；图由 AI 按需调 `read_brain_frames` / `read_frame`。理由：brain-scope 后一问的大脑图像最多 20 张（`SCOPE_IMAGE_CAP`），每问都带会把 AI 席成本推高一个量级，而多数问不需要看图 |
 | 21 | v2 遗留：`FromReviewerToCliAskMsg.frame`、`test_four_review_points_carry_context` 与验收 4 里的 `frame`；`FrameQuery` 没有 #18 说的 `latest` | 一并订正：Ask 信封的 `context` 改为渲染文本，另带 `brain_frames`（张数），帧不上线（6.5）；`FrameQuery` 的 `which` 增 `latest`（5.2） |
-| 22 | 原设计：reviewer 只管 run / episode 两层，task 层不碰 reviewer | 改为 **task 层可选**：配置 `REVIEW_LAYERS`（默认 `("run", "episode")`，加 `"task"` 即开）。开启后 task 层只多**一个审点**：`judge·L2` 判「已达成」时的 **audit**（与另两层同构：认账才盖 `GOAL_DONE`，推翻写 `TaskState.last_judge`、本 task 继续，下一次 choose 的 `human_note` 带推翻理由）。**不做 inject**：task 层的规划是逐步的 `choose`（一个 task 至多 12 步），逐步插话会让 run 被反复阻塞，且 `ChooseOnceReq.human_note` 已是现成的人工入口，需要时另案。默认关闭时 task 图行为与现状逐位相同；开启后每个 task 判成时阻塞一次（每 episode 至多 `episode_max_tasks` 次） |
+| 22 | 原设计：reviewer 只管 run / episode 两层，task 层不碰 reviewer | 改为 **task 层可选**：配置 `REVIEW_LAYERS`（默认 `("run", "episode")`，加 `"task"` 即开）。开启后 task 层只多**一个审点**：`judge·L2` 判「已达成」时的 **audit**（与另两层同构：认账才盖 `GOAL_DONE`，推翻写 `last_judge`、本 task 继续）。**不做 inject**：task 层的规划是逐步的 `choose`（一个 task 至多 12 步），逐步插话会让 run 被反复阻塞，且 `ChooseOnceReq.human_note` 已是现成的人工入口，需要时另案。默认关闭时 task 图行为与现状逐位相同；开启后每个 task 判成时阻塞一次（每 episode 至多 `episode_max_tasks` 次） |
 | 23 | v3 及之前：reviewer 并入 run 进程（AI 席进程内线程，人经本地 WS 连独立 CLI 终端）；harness 里有 `ReviewView` 端口、`HarnessReviewView`、`ViewAware`、`bind_view` | **v4：reviewer 整体独立成进程**（用户 2026-10-17）。人席（终端）、AI 席（Pydantic AI，asyncio 任务）、hub、读端口同在一个进程；harness 只有薄适配 `RemoteReviewer`（`reviewer_link/`，经本地 WS 送出一问、等回话）。reviewer 自己持有 trace 与记忆的**只读**读端口，按需拉取；默认快照仍是 judge / plan 当次的请求。连带变化：①删除 harness 侧 `ReviewView` / `HarnessReviewView` / `ViewAware` / `bind_view`；②`read_world` 取消（快照已含 RAM 现状 `observation`；动作空间如需，由 run 随问附带）；③提问前 harness 先 flush trace，保证另一进程读到最新账；④查询模型的产出方改为 reviewer（`schemas/reviewer/`）；⑤`review_cli` 包不再有，终端并入 `reviewer`；⑥多终端同连取消；⑦往期问答可跨 run 保留（reviewer 进程不随 run 生灭，`HISTORY_LIMIT` 仍封顶）；⑧启动顺序：先起 reviewer、再起 run |
 
 **术语**：intent 里「decode」＝ `plan_episode` 里的 **decompose**（把目标拆成 task）。
@@ -152,7 +152,7 @@ class ReviewContext(BaseModel):
     fail_streak: int
 ```
 
-- **互斥校验**：`layer == "run"` ⇒ `goals` 非 None 且 `tasks` 为 None；`layer == "episode"` ⇒ `tasks` 非 None 且 `goals` 为 None；`layer == "task"` ⇒ `goals`、`tasks` 皆 None 且 `task_id` 非 None（task 层的快照就是 `brain_input` 里的 `JudgeReq`：task 目标、本 task 全部 ActMemory、`task_index`、`knowledge`）（用仓库既有的契约写法）。task 层的 fail_streak 取本层 stall_count。
+- **互斥校验**：`layer == "run"` ⇒ `goals` 非 None 且 `tasks` 为 None；`layer == "episode"` ⇒ `tasks` 非 None 且 `goals` 为 None；`layer == "task"` ⇒ `goals`、`tasks` 皆 None 且 `task_id` 非 None（task 层的快照就是 `brain_input` 里的 `JudgeReq`：task 目标、本 task 全部 ActMemory、`task_index`、`knowledge`）（用仓库既有的契约写法）。
 - **取值**：run 层 `goals` 取判停前已定案的表（`updates.get("goals", state.goals)`）；episode 层 `tasks` 取 `updates.get("tasks", state.tasks)`；`brain_input` 取该次实际发给大脑的那封请求；
   不放「当前帧」（更正 #18）；大脑这一问看到的图在 `brain_input` 的记忆对象里，经 `frames_of` 取、经 `read_brain_frames` 按需看（更正 #19）。
 - **不放**：世界动作空间（不是任何一次大脑请求的入参；v4 起 reviewer 没有世界读取，#23）。
@@ -604,7 +604,7 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 8. agent 连续 `REVIEW_AI_INJECT_MAX_ROUNDS + 1` 次插话 → 账里最后一条 `review_inject` 的 `capped == true`，且 `plan_*` 没有第 N+2 次重问。
 9. 人在 `human`+`ai` 模式中途接管（`by=human`）后，agent 计数清零。
 10. 所有 Resp：`answered == (by != "none")`（R2 已验）。
-11. 死代码清理（3.4）清单逐项完成：R1b 之后 `grep -rn overturned pokemon_agent tests` 为空；R6c 之后无 `review_backend` / `WebReviewer` / `ConsoleReviewer` / `LiveFeed` 符号；R7 之后无 `agent_reviewer`；`state_schema_hash()` 除 R1b 与获用户授权的 R3b 外前后逐位相同；R3b 新增 TaskState.last_judge 后为 `28e96b09966dc94e`，需重打并核验 20 份评测存档。
+11. 死代码清理（3.4）清单逐项完成：R1b 之后 `grep -rn overturned pokemon_agent tests` 为空；R6c 之后无 `review_backend` / `WebReviewer` / `ConsoleReviewer` / `LiveFeed` 符号；R7 之后无 `agent_reviewer`；`state_schema_hash()` 在 R1b 之外的每一步前后逐位相同。
 12. AI 席的 LLM 请求体是 `messages` 数组 + `tools`；提交工具（`final_result`）只在对应 `kind` 的问里暴露；`pydantic_ai` 只在 `reviewer/seats/ai` 内被 import；run 进程（harness、`reviewer_link`）不 import `pydantic_ai`。
 13. `ruff check . && ruff format --check .` 净；真机跑（`human`+`ai`、`ai only`、`human` only 各一次）交用户本机，AI 不拉起长跑进程。
 14. 提问前 trace 已 flush（`RemoteReviewer` 的 `flush` 回调在每次 `ask` 前被调用）；reviewer 进程掉线时 harness 按 6.2 / 十三的语义继续。

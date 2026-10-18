@@ -79,10 +79,7 @@ def _requests(
     chooser, judger = _Chooser(), _Judger()
     runtime = Runtime(
         context=SimpleNamespace(
-            chooser=chooser,
-            judger=judger,
-            trace=TraceTool.build(run_id="r1", trace_root=tmp_path),
-            review_layers=("run", "episode"),
+            chooser=chooser, judger=judger, trace=TraceTool.build(run_id="r1", trace_root=tmp_path)
         )
     )
     plan_task(state, runtime)

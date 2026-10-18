@@ -1,22 +1,3 @@
-## 2026-10-18（516）—— task 可选复核：持久化判定反馈并重打起点存档
-
-**改了什么**：REVIEW_LAYERS 默认仅 run / episode；TaskRuntime 统一注入 Reviewer，
-启用 task 后仅在 judge 判成时 audit，认账才盖 GOAL_DONE，推翻保留机械边界并写
-TaskState.last_judge，下一次 choose 的 human_note 带上推翻理由。ReviewContext 支持
-task 的 JudgeReq、task_id 与互斥空表；frames_of 按动作顺序提取前后帧并去重。
-
-**为什么这么改**：让 task 层也能按需拦住提前收工的误判；复核意见进入正式图状态，
-既能引导下一步决策，也能随 checkpoint 恢复，不依赖进程内临时缓存。
-
-**取舍**：用户明确允许状态结构变化并重打旧存档，故新增正式 last_judge 字段，
-状态哈希从 5ea6dffeeb229b7c 变为 28e96b09966dc94e。关闭 task 审点时不询问复核席、
-不写反馈；不做逐键 inject。推翻不会移除世界结束、停摆或预算耗尽的机械边界。
-
-**影响面**：新增 11 项测试，默认全量 1454 项、slow 3 项通过，ruff check / format 通过。强制关闭审点使 4 项启用用例失败，
-强制开启使 2 项默认行为用例失败，两次破坏验证后均逐字节还原。20 份 v1 起点存档
-全部重打并通过真实 world / memory 恢复，模型调用为 0；20 份 world.state 哈希均不变。
-记忆快照仅保留 20 份当前引用文件；移除的 20 份旧快照与旧存档已在仓库外备份。
-
 ## 2026-10-18（513）—— ReviewContext：随问快照、frames_of 与渲染
 
 **改了什么**：两个 reviewer 请求统一要求 ReviewContext；run / episode 的规划与判定四个
