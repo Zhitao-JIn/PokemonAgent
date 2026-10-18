@@ -52,10 +52,10 @@
 24. `test_restore_resets_step_monotonic_cache`：memorize step=5 → restore 到只含 step=0 的快照 → memorize step=1 通过（不被旧缓存拦住）。
 
 **缺省根**
+25. `test_root_property_reports_memory_under_cwd_by_default`：`monkeypatch.chdir` 后 `root == cwd/memory`。
 26. `test_tool_defaults_put_each_family_under_the_shared_root`：经 MemoryTool 的缺省根，四族都落在同一根下（原 104）。
 27. `test_explicit_memory_root_wins_over_the_default`：经 MemoryTool 的显式根优先于缺省根（原 119）；若执行方确认只经 store，则改并入 store 用例 2。
 28. `test_restore_refreshes_every_family_not_just_step_memory`：`restore_memory` 之后四族都 reload，不只 step（原 238）。
-25. `test_root_property_reports_memory_under_cwd_by_default`：`monkeypatch.chdir` 后 `root == cwd/memory`。
 
 ## 四、迁移清单
 
