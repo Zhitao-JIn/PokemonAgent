@@ -424,13 +424,16 @@ help [命令]                              用法
 
 ### 7.3a 官方协议核查与真实模型验收
 
-R7 实现前查阅了 [DeepSeek Vision](https://api-docs.deepseek.com/guides/vision/)、[DeepSeek Tool Calls](https://api-docs.deepseek.com/guides/tool_calls/) 与 [Pydantic AI v2.57.0 settings](https://github.com/pydantic/pydantic-ai/blob/v2.57.0/pydantic_ai_slim/pydantic_ai/settings.py)：DeepSeek 确认 `deepseek-flash` 支持 Chat Completions 图片输入与工具调用，并示范以 `extra_body` 关闭 thinking；Pydantic AI 支持图像与附加请求体，也说明静态 `required` 会排除输出工具。因此实现使用五个显式工具名白名单。文档**不等于账号上的真实模型联调**；保留一次性 `.pytest_tmp/r7_tool_choice_probe.py` 脚本，用户本机使用 `.env` 执行后补记结果。探针逐项看：
-1. 是否返回合法 `tool_calls`；`prompt_tokens` 是否计入图（沿用 `ImageNotDelivered` 的静默丢图检测）；
-2. 模型是否接受 `tool_choice="required"`；
-3. 工具返回图片后追加的 user 消息（含 `image_url`）是否被接受并被模型利用；
-4. 思考模式关闭的参数写法；
-5. 参数非法后的纠正回灌是否能让该模型改正。
-官方契约支持 → 可先按本节实现并由本地假模型测试库行为；真实探针是三种席位投产验收的一部分，不得标为已通过。若真实请求发现图像或工具调用不兼容，按探针结果缩减后重新验收；仍无法满足结构化提交时才退回自写循环（7.1 兜底）。
+R7 实现前查阅了 [DeepSeek Vision](https://api-docs.deepseek.com/guides/vision/)、[DeepSeek Tool Calls](https://api-docs.deepseek.com/guides/tool_calls/) 与 [Pydantic AI v2.57.0 settings](https://github.com/pydantic/pydantic-ai/blob/v2.57.0/pydantic_ai_slim/pydantic_ai/settings.py)：DeepSeek 确认 `deepseek-flash` 支持 Chat Completions 图片输入与工具调用，并示范以 `extra_body` 关闭 thinking；Pydantic AI 支持图像与附加请求体，也说明静态 `required` 会排除输出工具。因此实现使用五个显式工具名白名单。
+
+**R10 真机验收（2026-10-18）**：使用主仓库 `.env` 的账号配置，在临时 uv 环境中加载 Pydantic AI 2.57.0；没有输出密钥，也没有安装进共享环境。
+1. `AiSeat` 真实请求调用 `read_brain_frames`，工具返回两张有效 PNG 后模型继续调用 `final_result`；两次 Chat Completions 请求均为 HTTP 200，答复识别出红色。总 usage 为 5492 输入 / 148 输出 token。
+2. 同提示的带图和不带图直接请求分别用 211 和 27 输入 token（差 184），确认图像进入模型并计入输入用量；图片答案为 red。
+3. 固定工具名单、结构化输出工具及 `extra_body={"thinking":{"type":"disabled"}}` 的真实请求均成功。
+4. 独立结构化校验器要求第一次答复缺失的 marker，DeepSeek 在错误回灌后修正；2 次请求、2 次提交工具调用后校验通过。
+5. 本地真实 WebSocket 单问验收：`human` 返回 `by=human`；`ai` 返回 `by=agent`；`both` 展示 AI 提案后由人席接管，最终 `by=human`；三者均 `answered=true`，hello 声明与配置一致。
+
+模式链路使用合成审问与隔离的空 trace / memory 读口，没有启动游戏 run，也没有连共享 trace / memory 服务；因此本项验收不覆盖共享后端可见性。当前模型账号上的图像、工具回灌、关闭 thinking、参数纠正和 usage 已实测通过。后续模型或 Pydantic AI 版本变化时需重跑本节验收；若接口不兼容，再按 7.1 退回方案处理。
 
 ### 7.4 Prompt（规则 / 素材分离）
 
