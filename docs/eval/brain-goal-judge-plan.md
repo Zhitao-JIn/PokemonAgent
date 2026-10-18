@@ -17,9 +17,9 @@
 | CP3 | 526 | 用户审核后的 v2 冻结物、指标/分组 scorer 与测试 | 主指标 FPR、四格、派生率和分母正确；错误分列 | 验收后由设计侧提交，再派 CP4 |
 | CP4 | 527 | Inspect 接入、注册、文档同步 | task 数为 6；相关测试、全量 pytest、ruff 全绿 | 汇报完成；不跑真实模型 |
 
-CP1 允许改动文件：`evals/dataset/brain_goal_judge/{__init__.py,schemas.py,loader.py}`、`evals/dataset/brain_goal_judge/v1/`、`evals/brain_goal_judge/{dataset.py,task.py,solver.py,scorer.py}`、`tests/evals/test_brain_goal_judge_dataset.py`、`tests/evals/test_evals_tasks.py`、`tests/evals/world_script_execute/test_evals_datasets.py`、`CHANGELOG.md`。删除旧 task 目录下的 `dataset.py` 前须确认所有引用已迁至数据包出口。不得改 registry、v2、build 工具或生产代码。
+CP1 允许改动文件：`evals/dataset/brain_goal_judge/{__init__.py,schemas.py,loader.py}`、`evals/dataset/brain_goal_judge/v1/`、迁移后删除的 `evals/brain_goal_judge/v1/dataset.jsonl`、`evals/brain_goal_judge/{dataset.py,task.py,solver.py,scorer.py}`、`tests/evals/test_brain_goal_judge_dataset.py`、`tests/evals/test_evals_tasks.py`、`tests/evals/world_script_execute/test_evals_datasets.py`、`CHANGELOG.md`。迁移前后核对 v1 文件 SHA-256 完全一致；删除旧 task 目录下的数据与 `dataset.py` 前须确认所有引用已迁至数据包出口。不得改 registry、v2、build 工具或生产代码。
 
-编号台账：522 设计文档首提交；523 本 plan 的 CP 编号与指标说明修订；524 CP1；525 CP2；526 CP3；527 CP4。CP0 是只读审计，无仓库变更编号。
+编号台账：522 设计文档首提交；523 指标说明、CP0 结果与 CP 编号；524 CP1；525 CP2；526 CP3；527 CP4；528 本次精确化 CP1 文件范围。CP0 是只读审计，无仓库变更编号。
 
 ## 关键实施顺序
 
