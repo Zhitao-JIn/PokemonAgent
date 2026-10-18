@@ -13,6 +13,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from pokemon_agent.schemas.harness.domain import TraceEvent
+from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from .FromHarnessToBrainToolJudgeResp import FromHarnessToBrainToolJudgeResp
 
@@ -24,6 +25,7 @@ class FromHarnessToReviewerAuditReq(BaseModel):
     `events` 是被审对象自己的 trace——一次请求自带审查所需的全部依据。
     """
 
+    context: ReviewContext = Field(description="本次实际大脑请求、定案后的表与计数")
     run_id: str = Field(description="这次 run 的标识")
     episode_id: str = Field(description="被审对象所在的局（run 层审裁决时放 run_id）")
     outcome: FromHarnessToBrainToolJudgeResp = Field(description="被审的结论：judge 的裁决")

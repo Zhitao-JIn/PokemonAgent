@@ -18,6 +18,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
+
 
 class FromHarnessToReviewerInjectReq(BaseModel):
     """一次插话请求：把"表单"（一个结构体的当前版本）亮给人。
@@ -27,6 +29,7 @@ class FromHarnessToReviewerInjectReq(BaseModel):
     `"verdict"` / `"goals"` ……），供实现方决定怎么渲染，也进 trace 便于复盘。
     """
 
+    context: ReviewContext = Field(description="本次实际大脑请求、所属层的表与计数")
     prompt: str = Field(description="给人看的说明：这张表单是什么、要人看什么")
     form: Any = Field(description="亮给人的结构体本体（调用方按 form_kind 渲染成文本）")
     form_kind: str = Field(

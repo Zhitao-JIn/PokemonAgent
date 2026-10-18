@@ -30,6 +30,7 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 from pokemon_agent.schemas.harness.domain import EntryStatus, EpisodeOutput, GoalEntry, Termination
+from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...judging import ask_judger, judge_reason, mechanical_termination, record_verdict
 from ...reviewing import audit_judgement
@@ -115,7 +116,20 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
         req.episode_memories = details
         verdict = ask_judger(deps.judger, deps.trace, req, **meta)
         feedback = audit_judgement(
-            deps.reviewer, deps.trace, verdict, run_id=state.run_id, meta=meta
+            deps.reviewer,
+            deps.trace,
+            verdict,
+            run_id=state.run_id,
+            meta=meta,
+            context=ReviewContext(
+                layer="run",
+                run_id=state.run_id,
+                episode_id=state.run_id,
+                brain_input=req,
+                goals=updates.get("goals", state.goals),
+                step=meta["step"],
+                fail_streak=fail_streak,
+            ),
         )
         if feedback.audit is AuditVerdict.ACCEPT:
             termination = Termination.GOAL_DONE

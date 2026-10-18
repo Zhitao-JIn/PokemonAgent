@@ -18,6 +18,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerAuditReq,
     TraceEvent,
 )
+from pokemon_agent.schemas.harness.domain.review_context import ReviewContext, frames_of
 
 EVENT_CONTENT_LIMIT = 160
 """事件行里 content 的截断长度（字）。"""
@@ -40,6 +41,48 @@ def format_form(form: Any) -> str:  # noqa: ANN401 —— 信封的 form 本来�
     if isinstance(form, BaseModel):
         return _render_model(form, "")
     return str(form)
+
+
+def render_context(ctx: ReviewContext) -> str:
+    """按节渲染快照：表仅展示一次、索引每条一行、帧仅计数，原请求保持不变。
+
+    调用方提供通过互斥校验的快照；返回文本承诺不含 data:image。
+    """
+
+    def without_frames(value: Any) -> Any:  # noqa: ANN401
+        if isinstance(value, BaseModel):
+            return value.model_copy(
+                update={
+                    name: None
+                    if name in {"first_frame", "last_frame", "before_frame", "after_frame"}
+                    else without_frames(getattr(value, name))
+                    for name in type(value).model_fields
+                }
+            )
+        if isinstance(value, (list, tuple)):
+            return [without_frames(item) for item in value]
+        return value
+
+    brain_input = without_frames(ctx.brain_input)
+    display = {name: None for name in ("plan", "task_table")}
+    for name in ("run_index", "episode_index"):
+        if hasattr(ctx.brain_input, name):
+            display[name] = "\n".join(item.index_line() for item in getattr(ctx.brain_input, name))
+    brain_text = format_form(brain_input.model_copy(update=display))
+    frames_text = f"（图 {len(frames_of(ctx.brain_input))} 张，用 brain-frames 查看）"
+    goals_text = "\n".join(format_form(entry) for entry in ctx.goals or []) or "（无）"
+    tasks_text = "\n".join(format_form(entry) for entry in ctx.tasks or []) or "（无）"
+    result = "\n\n".join(
+        [
+            f"## 大脑输入\n{brain_text}\n{frames_text}",
+            f"## 目标表\n{goals_text}",
+            f"## 任务表\n{tasks_text}",
+            f"## 计数\nlayer: {ctx.layer}\nrun_id: {ctx.run_id}\nepisode_id: {ctx.episode_id}"
+            f"\nstep: {ctx.step}\nfail_streak: {ctx.fail_streak}",
+        ]
+    )
+    assert "data:image" not in result, "render_context leaked image data"
+    return result
 
 
 def _render_model(model: BaseModel, indent: str) -> str:
@@ -119,5 +162,6 @@ __all__ = [
     "format_form",
     "outcome_kind",
     "render_events",
+    "render_context",
     "render_outcome",
 ]

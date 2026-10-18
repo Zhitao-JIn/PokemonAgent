@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from _fake_run import build_fake, every, never, run_fake
+from _review_context import review_context
 
 from pokemon_agent.harness.reviewing import audit_judgement
 from pokemon_agent.schemas.harness import (
@@ -147,7 +148,14 @@ def test_judge_only_asks_reviewer_when_done(tmp_path: Path, episode_id: str, don
     verdict = FromHarnessToBrainToolJudgeResp(done=done, why="判定依据", calls=[ModelCall()])
     meta = {"source": "review_and_judge", "episode_id": episode_id, "task_id": "", "step": 1}
 
-    feedback = audit_judgement(human, trace, verdict, run_id=RUN_ID, meta=meta)
+    feedback = audit_judgement(
+        human,
+        trace,
+        verdict,
+        run_id=RUN_ID,
+        meta=meta,
+        context=review_context(RUN_ID, episode_id),
+    )
 
     assert feedback.done is done
     assert feedback.audit is (AuditVerdict.ACCEPT if done else None)

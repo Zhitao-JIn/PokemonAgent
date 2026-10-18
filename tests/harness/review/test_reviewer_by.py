@@ -9,6 +9,7 @@ from typing import Literal
 
 import pytest
 from _fake_run import build_fake
+from _review_context import review_context
 from pydantic import ValidationError
 
 from pokemon_agent.harness.console_reviewer import ConsoleReviewer
@@ -72,13 +73,16 @@ def _reply(
 ) -> FromHarnessToReviewerInjectResp | FromHarnessToReviewerAuditResp:
     if kind == "inject":
         return reviewer.inject(
-            FromHarnessToReviewerInjectReq(prompt="意见", form={}, form_kind="x")
+            FromHarnessToReviewerInjectReq(
+                prompt="意见", form={}, form_kind="x", context=review_context()
+            )
         )
     return reviewer.audit(
         FromHarnessToReviewerAuditReq(
             run_id="r1",
             episode_id="r1-ep1",
             outcome=FromHarnessToBrainToolJudgeResp(done=True, why="依据", calls=[ModelCall()]),
+            context=review_context(),
         )
     )
 
@@ -147,11 +151,13 @@ def test_review_accounts_record_who_answered(tmp_path: Path, by: ReplyBy) -> Non
     reviewer = _TaggedReviewer(by)
     trace = build_fake(tmp_path).trace
     meta = {"source": "review_and_judge", "episode_id": "r1-ep1", "task_id": "", "step": 1}
-    request = FromHarnessToReviewerInjectReq(prompt="意见", form={}, form_kind="x")
+    request = FromHarnessToReviewerInjectReq(
+        prompt="意见", form={}, form_kind="x", context=review_context()
+    )
     verdict = FromHarnessToBrainToolJudgeResp(done=True, why="依据", calls=[ModelCall()])
 
     ask_inject(reviewer, trace, request, meta=meta)
-    audit_judgement(reviewer, trace, verdict, run_id="r1", meta=meta)
+    audit_judgement(reviewer, trace, verdict, run_id="r1", meta=meta, context=review_context())
 
     events = trace.read_events({"run_id": "r1"})
     assert {event.kind for event in events} == {"review_inject", "review_audit"}

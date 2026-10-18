@@ -21,6 +21,7 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 from pokemon_agent.schemas.harness.domain import JudgeFeedback, ReviewMark
+from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from .interface.reviewer import Reviewer
 from .review_render import outcome_kind
@@ -58,6 +59,7 @@ def audit_judgement(
     verdict: FromHarnessToBrainToolJudgeResp,
     *,
     run_id: str,
+    context: ReviewContext,
     meta: dict[str, Any],
 ) -> JudgeFeedback:
     """审本层 judge 的裁决，返回本层的判定反馈（`JudgeFeedback`）。
@@ -78,7 +80,11 @@ def audit_judgement(
     ]
     # 步骤 2：亮给人审。
     req = FromHarnessToReviewerAuditReq(
-        run_id=run_id, episode_id=meta["episode_id"], outcome=verdict, events=events[-1:]
+        run_id=run_id,
+        episode_id=meta["episode_id"],
+        outcome=verdict,
+        events=events[-1:],
+        context=context,
     )
     asked_at = time.monotonic()
     resp = reviewer.audit(req)
