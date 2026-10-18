@@ -78,18 +78,46 @@
 25. `test_snapshot_writes_zip_containing_the_kind_records`。
 26. `test_restore_brings_back_records_written_before_snapshot`。
 
+27. `test_snapshot_overwrites_a_previous_one_with_the_same_name`：同名 `store.snapshot` 覆盖，返回路径不变（原 159，改直调 store）。
+28. `test_snapshot_name_may_not_contain_path_separators`：`store.snapshot("../x")` 触发断言（原 175）。
+29. `test_restore_deletes_records_written_after_the_snapshot`：以 zip 为准，快照之后写的记录被删（原 201）。
+30. `test_restore_leaves_the_snapshots_directory_alone`：`snapshots/` 不参与还原，拿来还原的 zip 与其他存档都保留（原 223）。
+31. `test_search_returns_per_stage_timings`：`store.search` 第二个返回值的键为 bm25 / vector / rrf / rerank 的子集，值为非负浮点（原 275，改直调 store）。
+32. `test_refresh_changed_skips_rewrites_with_identical_content`：内容未变、只 touch 时不重写记录文件（原 300）。
+33. `test_bm25_corpus_persists_across_instances`：重启后语料仍可用，BM25 结果与重启前一致（原 349）。
+34. `test_sidecar_auto_compacts_when_garbage_rows_dominate`：**待探针**（见下），原 418。
+
 **向量 sidecar**
 - **待探针确认后再定用例**（惰性加载、压实阈值）。执行方第一步对 `_load_vectors` / `_maybe_compact_vectors` 做一次探针，结果写回本节再写用例。不预先钉。
 
-## 四、迁移清单（`tests/memory/test_memory_store.py`，19 个）
+## 四、迁移清单（`tests/memory/test_memory_store.py`，实际 18 个）
 
-- 落盘根相关 → 用例 2、3（store 部分）。
-- put / get / 语料持久化 → 用例 4、5、8；语料持久化中的 BM25 秒建用 `refresh_changed` 相关用例覆盖。
-- snapshot / restore（经 MCP 的 7 个）→ 改直调 store：用例 25、26。MCP 传输部分不迁，留在 `mcp_servers/` 与 `mcpclient/`。
-- timings、`refresh_changed` ×2、numpy 零向量 → 用例 23、24 与 retrieval 目录的零向量用例。
-- 其余（sidecar 压实）→ 待探针后决定归属。
+逐条映射（旧函数行号按当前文件）。执行方逐条读原文核对；映射与原文不符 → 停，汇报。
 
-执行方在 CP6 逐条读原文件，把每条原用例标注"迁到哪个用例号 / 留在哪里 / 删除"，写进 CHANGELOG 条目，核对迁移前后名称集合。
+| 旧用例（行号） | 去向 |
+|---|---|
+| `test_store_default_root_is_the_startup_directory`（86） | 用例 3 |
+| `test_tool_defaults_put_each_family_under_the_shared_root`（104） | **CP7** capability（经 MemoryTool 的缺省根，见 capability spec 四节） |
+| `test_explicit_memory_root_wins_over_the_default`（119） | **CP7** capability（经 MemoryTool 的显式根）；若执行方读原文后确认只经 LocalMemoryStore，则并入用例 2 |
+| `test_store_explicit_root_wins_over_the_default`（127） | 用例 2 |
+| `test_snapshot_zips_the_whole_root_and_excludes_itself`（139） | 用例 25（改为直调 `store.snapshot`，不经 MCP 信封） |
+| `test_snapshot_overwrites_a_previous_one_with_the_same_name`（159） | 用例 27 |
+| `test_snapshot_name_may_not_contain_path_separators`（175） | 用例 28 |
+| `test_restore_makes_deleted_records_come_back`（185） | 用例 26 |
+| `test_restore_deletes_records_written_after_the_snapshot`（201） | 用例 29 |
+| `test_restore_leaves_the_snapshots_directory_alone`（223） | 用例 30 |
+| `test_restore_refreshes_every_family_not_just_step_memory`（238） | **CP7** capability（`restore_memory` 的四族 reload 循环在能力层） |
+| `test_restore_rejects_unsafe_entries_before_touching_the_library`（258） | **CP7** capability 用例 9（已在 capability spec 中） |
+| `test_knowledge_store_search_returns_per_stage_timings`（275） | 用例 31 |
+| `test_refresh_changed_skips_rewrites_with_identical_content`（300） | 用例 32 |
+| `test_refresh_changed_recomputes_when_content_actually_changes`（327） | 用例 23 |
+| `test_bm25_corpus_persists_across_instances`（349） | 用例 33 |
+| `test_embedding_rank_scores_with_numpy_matrix_include_zero_vectors`（393） | **删除**：纯函数零向量用例已由 CP5（504）`test_embedding_rank_scores_zero_vector_document_as_zero` 覆盖；删前执行方须确认函数体只调 `embedding_rank` |
+| `test_sidecar_auto_compacts_when_garbage_rows_dominate`（418） | 用例 34，**待探针**：执行方先对 `_load_vectors` / `_maybe_compact_vectors` 做探针，结果写回本节，再定断言 |
+
+落盘根的 `MemoryTool` 级用例（104、119）与快照恢复的能力层用例（238、258）随 CP7 迁出，CP6 不做。
+
+CP6 完成后：`test_memory_store.py` 中剩余的 MCP 信封相关断言一律不迁、随 CP7 处理原文件的删除（见 capability spec 四节）。迁移前后用例名集合必须能对上：每个旧名字都有去向，新增名字都在第三节。
 
 ## 五、验证
 
