@@ -52,7 +52,7 @@
 5. `test_item_id_returns_none_for_unknown_name`
 6. `test_item_price_is_zero_for_the_hm_range`：`0xC4..0xC8` 为 0。
 7. `test_item_price_is_none_for_tm_and_out_of_range_ids`：TM 与 `0` 或 `> LAST_REGULAR_ITEM` 为 `None`。
-8. `test_item_price_decodes_bcd_from_rom`：构造 `ITEM_PRICES` 偏移处的三字节 BCD（如 `00 30 00` → `300`），用假 ROM 字节。
+8. `test_item_price_decodes_bcd_from_rom`：构造 `ITEM_PRICES` 偏移处的三字节 BCD（如 `00 03 00` → `300`；注意 `00 30 00` 解码为 3000，不可用作 300 的例子），用假 ROM 字节。
 
 ### 2.4 `pokemon_agent/world/moves.py`（4 条）→ `tests/world/test_moves.py`
 
