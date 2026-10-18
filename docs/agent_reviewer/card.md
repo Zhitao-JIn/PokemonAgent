@@ -1,4 +1,4 @@
-> 状态：旧实现已在 reviewer R6c（523）删除；当前入口为 `python -m pokemon_agent.reviewer --seats human`。新 AI 席待 R7。以下正文作为历史设计保留。
+> 状态：旧实现已在 reviewer R6c（529）删除；当前入口为 `python -m pokemon_agent.reviewer --seats human`。新 AI 席待 R7。以下正文作为历史设计保留。
 
 # card —— Agent Reviewer：人 + AI 在同一个聊天栏里磨出一个结论，再发给后端
 

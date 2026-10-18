@@ -1,4 +1,4 @@
-> R6c（523）清理说明：旧后端、控制台、网页与实时推送已删除；依赖旧后端信封的旧 AI 进程及其测试一并删除。R7 保留新 AI 席、依赖与探针工作。
+> R6c（529）清理说明：旧后端、控制台、网页与实时推送已删除；依赖旧后端信封的旧 AI 进程及其测试一并删除。R7 保留新 AI 席、依赖与探针工作。
 
 # Reviewer plan —— 步骤、关卡、回退与合入
 
@@ -9,7 +9,7 @@
 > R4（517）已完成于独立分支 `codex/reviewer-r4`，基于 R3b 提交 `b0035e8`；默认全量 1463 项、slow 3 项及 ruff 通过，两次破坏验证均拦截成功；状态哈希保持 `28e96b09966dc94e`。R3b 与 R4 均待合入。
 > R5（518）已完成于 `codex/reviewer-r5`：前置报告 `3296bd5`，用户允许 recall 正常更新派生缓存；新增查询模型、窄读协议与 ViewReaders，默认全量 1515 项 / slow 3 项通过，状态哈希不变。
 > R6a（519）已完成于 `codex/reviewer-r6a`：进程内 human 席、hub、命令与 PNG 展示；新增 52 项测试，默认全量 1567 项 / slow 3 项通过，693 文件 ruff 通过；状态哈希保持 `28e96b09966dc94e`。
-> R6b（520）已完成于 `codex/reviewer-r6b`：单跳 WS、重连与幂等、独立入口、build 装配；新增 54 项测试，默认 1621 项 / slow 3 项通过，713 文件 ruff 通过；哈希不变。R6c（523）已删除旧栈，新 AI 席待 R7。
+> R6b（520）已完成于 `codex/reviewer-r6b`：单跳 WS、重连与幂等、独立入口、build 装配；新增 54 项测试，默认 1621 项 / slow 3 项通过，713 文件 ruff 通过；哈希不变。R6c（529）已删除旧栈，新 AI 席待 R7。
 > v3（2026-10-17）：spec 已按 brain-scope v1.3 同步；新增 R0 与 §八；R3 / R5 / R6a 的内容与前置更新；编号与哈希关卡改为「恢复时重定」。
 > v4（2026-10-17）：reviewer 改为独立进程（spec #23）：R5 缩为 reviewer 内的读端口，R6a / R6b 重排，删除 `ReviewView` 相关项；task 层可选审点 R3b 已在 v3.1 记入。
 
@@ -44,7 +44,7 @@
 | R5 | 前置核查 → `reviewer/view/` 窄 Protocol、ViewReaders；`schemas/reviewer` 查询模型（含 BrainFramesQuery、run_goal / runs hint） | 518 ✅ | R3 | 已完成；52 项新增测试，真实 MCP 第 12 步取帧、跨进程读取、去图与分页；用户允许派生缓存客观更新，不改记录正文；完整回归 1515 / slow 3 通过；取帧上限与去图两次破坏验证拦截成功；hash 不变 |
 | R6a | hub、随问帧分页、schema 派生命令与 help、human 终端、进程内 ReviewerApp、窄协议与导入边界 | 519 ✅ | R4、R5 | 已完成；先答先得、取消与 EOF、快照和历史隔离、命令 ⇔ 类型化调用、慢查询期间答复、旧查询不进入下一问、真实 PNG 输出；新增 52 项，全量 1567 / slow 3 / ruff 通过；两次破坏验证成功，hash 不变 |
 | R6b | 单跳线上信封、ReviewLinkServer、RemoteReviewer、独立 human 入口、共享读口装配与 build URL 选择 | 520 ✅ | R6a | 已完成；真实 WS 与独立子进程经 stdin 答复、PNG 查询；qid 重发/离线答复/缓存/取消/占用；已知 AI 超时与其他模式无限等；新增 54 项，默认 1621 / slow 3 / ruff 全绿；两次破坏验证成功，hash 不变 |
-| R6c | 删旧栈：`ConsoleReviewer` / `WebReviewer` / `review_backend` / 跳 A·B 信封 / `LiveFeedTrace` 与 `live_feed_url` / 旧常量 / 对应测试 / 文档状态说明 | 523 | R6b | 旧实现符号零残留；新展示接口承接上下文验收；完整回归与哈希验收见 CHANGELOG |
+| R6c | 删旧栈：`ConsoleReviewer` / `WebReviewer` / `review_backend` / 跳 A·B 信封 / `LiveFeedTrace` 与 `live_feed_url` / 旧常量 / 对应测试 / 文档状态说明 | 529 | R6b | 旧实现符号零残留；新展示接口承接上下文验收；完整回归与哈希验收见 CHANGELOG |
 | R7 | 0）图 + tools + `tool_choice` 探针（用 Pydantic AI，用户本机）；AI 席（进程内线程，Pydantic AI 之上的有界循环）+ 三种模式 + 倒计时；加依赖（旧 AI 栈已随 R6c 删除） | 待分配 | R6c | 探针结果由用户本机提供；工具循环、纠正回灌、倒计时测试 |
 | R8 | （暂缓）网页入口 | — | R7 | 另行立项 |
 | R9 | 文档同步；规范 §四第 3 条修订（须用户点头） | 待分配 | R1a–R7 | 文档与代码一致 |

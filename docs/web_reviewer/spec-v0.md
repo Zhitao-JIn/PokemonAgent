@@ -1,4 +1,4 @@
-> 状态：旧实现已在 reviewer R6c（523）删除；当前入口为 `python -m pokemon_agent.reviewer --seats human`。新 AI 席待 R7。以下正文作为历史设计保留。
+> 状态：旧实现已在 reviewer R6c（529）删除；当前入口为 `python -m pokemon_agent.reviewer --seats human`。新 AI 席待 R7。以下正文作为历史设计保留。
 
 # PLAN_web_reviewer —— 人在环第三实现：独立后端 + 前端页面（WebSocket 推送）
 
