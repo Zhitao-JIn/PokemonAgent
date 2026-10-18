@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _doubles.reviewer import inject_request
+from _doubles.reviewer import audit_request, inject_request
 from PIL import Image
 
 from pokemon_agent.config import REVIEW_AI_COUNTDOWN_S
@@ -19,7 +19,10 @@ from pokemon_agent.reviewer.seats.human import HumanSeat
 from pokemon_agent.reviewer.view import ViewReaders
 from pokemon_agent.schemas.harness import TraceEvent
 from pokemon_agent.schemas.reviewer import ViewAnswer
-from pokemon_agent.schemas.reviewer.interaction import Ask, ReviewSeats
+from pokemon_agent.schemas.reviewer.interaction import (
+    Ask,
+    ReviewSeats,
+)
 
 
 async def lines(*values: str) -> AsyncIterator[str]:
@@ -135,6 +138,23 @@ def test_bad_image_reports_failure_without_crashing_the_terminal(tmp_path: Path)
 
     assert any("画面保存失败" in text for text in output)
     assert not list(tmp_path.glob("*.png")) and all("data:" not in text for text in output)
+
+
+def test_proposal_controls_explain_inject_and_audit_actions(tmp_path: Path) -> None:
+    output: list[str] = []
+    seat = HumanSeat(lines(), output.append, image_root=tmp_path)
+
+    seat.show_proposal(Ask(seq=1, request=inject_request()), "建议", 30)
+    seat.show_proposal(Ask(seq=2, request=audit_request()), "认账", 30)
+
+    assert output[1] == (
+        "30 秒内：say <意见> 提交你的意见；ask-ai <要求> 让 AI 重拟；"
+        "ok 提交空意见。倒计时结束自动采用 AI 提案。"
+    )
+    assert output[3] == (
+        "30 秒内：ok 接受当前判定；overturn <理由> 推翻并继续；"
+        "ask-ai <要求> 让 AI 重拟。倒计时结束自动采用 AI 判定。"
+    )
 
 
 class SlowTrace:

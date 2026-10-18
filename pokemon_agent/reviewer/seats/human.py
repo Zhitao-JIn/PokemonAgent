@@ -38,7 +38,7 @@ class HumanSeat:
     def show_proposal(self, ask: Ask, proposal: str, countdown_s: int) -> None:
         """展示 AI 候选答复与接管窗口，不直接提交。"""
         self._write(f"[AI 提案 {ask.seq}] {text_without_frames(proposal)}")
-        self._write(f"{countdown_s} 秒内可用 ok / overturn / say 接管")
+        self._write(_proposal_controls(ask, countdown_s))
 
     def prompt(self, ask: Ask | None) -> None:
         """查询后仍显示同一个问的编号；空闲时提示等待下一问。"""
@@ -72,3 +72,16 @@ class HumanSeat:
             path = self._image_root / f"{seq}-{self._image_number}.png"
             image.save(path, format="PNG")
             return path, image.size
+
+
+def _proposal_controls(ask: Ask, countdown_s: int) -> str:
+    """按问题类型解释人工命令与倒计时后的自动提交行为。"""
+    if ask.kind == "inject":
+        return (
+            f"{countdown_s} 秒内：say <意见> 提交你的意见；ask-ai <要求> 让 AI 重拟；"
+            "ok 提交空意见。倒计时结束自动采用 AI 提案。"
+        )
+    return (
+        f"{countdown_s} 秒内：ok 接受当前判定；overturn <理由> 推翻并继续；"
+        "ask-ai <要求> 让 AI 重拟。倒计时结束自动采用 AI 判定。"
+    )
