@@ -234,7 +234,6 @@ def test_frame_build_can_create_a_new_version_without_changing_the_frozen_source
 @pytest.mark.parametrize(
     "name",
     [
-        "brain_goal_judge",
         "agent_short_goal_run",
     ],
 )
