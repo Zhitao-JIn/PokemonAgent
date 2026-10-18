@@ -97,8 +97,8 @@
 | 旧用例（行号） | 去向 |
 |---|---|
 | `test_store_default_root_is_the_startup_directory`（86） | 用例 3 |
-| `test_tool_defaults_put_each_family_under_the_shared_root`（104） | **CP7** capability（经 MemoryTool 的缺省根，见 capability spec 四节） |
-| `test_explicit_memory_root_wins_over_the_default`（119） | **CP7** capability（经 MemoryTool 的显式根）；若执行方读原文后确认只经 LocalMemoryStore，则并入用例 2 |
+| `test_tool_defaults_put_each_family_under_the_shared_root`（104） | **CP7** capability 用例 26 |
+| `test_explicit_memory_root_wins_over_the_default`（119） | **CP7** capability 用例 27；若执行方读原文后确认只经 LocalMemoryStore，则并入用例 2 |
 | `test_store_explicit_root_wins_over_the_default`（127） | 用例 2 |
 | `test_snapshot_zips_the_whole_root_and_excludes_itself`（139） | 用例 25（改为直调 `store.snapshot`，不经 MCP 信封） |
 | `test_snapshot_overwrites_a_previous_one_with_the_same_name`（159） | 用例 27 |
@@ -106,8 +106,8 @@
 | `test_restore_makes_deleted_records_come_back`（185） | 用例 26 |
 | `test_restore_deletes_records_written_after_the_snapshot`（201） | 用例 29 |
 | `test_restore_leaves_the_snapshots_directory_alone`（223） | 用例 30 |
-| `test_restore_refreshes_every_family_not_just_step_memory`（238） | **CP7** capability（`restore_memory` 的四族 reload 循环在能力层） |
-| `test_restore_rejects_unsafe_entries_before_touching_the_library`（258） | **CP7** capability 用例 9（已在 capability spec 中） |
+| `test_restore_refreshes_every_family_not_just_step_memory`（238） | **CP7** capability 用例 28 |
+| `test_restore_rejects_unsafe_entries_before_touching_the_library`（258） | **CP7** capability 用例 23（已在 capability spec 中） |
 | `test_knowledge_store_search_returns_per_stage_timings`（275） | 用例 31 |
 | `test_refresh_changed_skips_rewrites_with_identical_content`（300） | 用例 32 |
 | `test_refresh_changed_recomputes_when_content_actually_changes`（327） | 用例 23 |
