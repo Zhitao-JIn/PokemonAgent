@@ -41,7 +41,7 @@ def test_each_dataset_returns_frozen_typed_samples(name, count):
     modules = {
         "memory_store_recall": "evals.memory_store_recall.dataset",
         "world_script_execute": "evals.world_script_execute.dataset",
-        "brain_goal_judge": "evals.brain_goal_judge.dataset",
+        "brain_goal_judge": "evals.dataset.brain_goal_judge",
         "agent_short_goal_run": "evals.agent_short_goal_run.dataset",
     }
     dataset = importlib.import_module(modules.get(name, f"evals.dataset.{name}"))

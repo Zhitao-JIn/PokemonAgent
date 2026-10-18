@@ -10,8 +10,9 @@ from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 
 from evals.agent_short_goal_run.scorer.judged import judged_accuracy, judged_count
-from evals.brain_goal_judge.dataset import DATASET_DIR, JudgeCase
 from evals.brain_goal_judge.scorer import confusion
+from evals.dataset.brain_goal_judge import JudgeCaseV1
+from evals.dataset.brain_goal_judge.loader import DATASET_DIR
 from evals.dataset.frames import load as load_frames
 from evals.decode.compare import field_verdict, truth_for
 from evals.decode.solver import decode_frame
@@ -157,7 +158,7 @@ def test_recall_uses_all_relevant_records_and_mrr_uses_the_first_hit() -> None:
 
 def test_judge_labels_are_independent_and_all_four_cells_are_counted() -> None:
     cases = [
-        JudgeCase.model_validate_json(line)
+        JudgeCaseV1.model_validate_json(line)
         for line in DATASET.read_text(encoding="utf-8").splitlines()
     ]
 

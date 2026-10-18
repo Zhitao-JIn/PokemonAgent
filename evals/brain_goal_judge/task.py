@@ -3,9 +3,9 @@
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
-from evals.brain_goal_judge.dataset import load
 from evals.brain_goal_judge.scorer import judge_scorer
 from evals.brain_goal_judge.solver import judge_solver
+from evals.dataset.brain_goal_judge import load
 from evals.runconfig import load_config
 from pokemon_agent.env import load_env_file
 
