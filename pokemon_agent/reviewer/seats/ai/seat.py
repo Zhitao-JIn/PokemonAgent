@@ -6,7 +6,9 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from importlib.resources import files
+from typing import Annotated
 
+from pydantic import BaseModel, ConfigDict, StringConstraints
 from pydantic_ai import (
     Agent,
     AgentRunResult,
@@ -37,7 +39,16 @@ from pokemon_agent.schemas.reviewer.interaction import (
 
 logger = logging.getLogger(__name__)
 QueryPort = Callable[[int, ViewQuery], Awaitable[ViewAnswer]]
-AnswerType = type[AuditAnswer] | type[InjectAnswer]
+
+
+class _AiInjectAnswer(BaseModel):
+    """AI 插话提案必须带有可供人判断的实际内容。"""
+
+    model_config = ConfigDict(extra="forbid")
+    text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+AnswerType = type[AuditAnswer] | type[_AiInjectAnswer]
 
 
 class AiSeat:
@@ -75,7 +86,7 @@ class AiSeat:
 
     async def _run(self, ask: Ask, human_note: str) -> ReviewProposal:
         """生成类型匹配的提交工具，并把查询调用转交 hub 验证。"""
-        answer_type: AnswerType = AuditAnswer if ask.kind == "audit" else InjectAnswer
+        answer_type: AnswerType = AuditAnswer if ask.kind == "audit" else _AiInjectAnswer
         instructions = _instructions(ask, human_note)
         agent = _agent(self._model, answer_type, instructions)
 
@@ -92,7 +103,12 @@ class AiSeat:
                 )
             except UsageLimitExceeded:
                 result = await _forced_submit(self._model, answer_type, instructions, messages)
-        return ReviewProposal(answer=result.output)
+        answer = (
+            result.output
+            if isinstance(result.output, AuditAnswer)
+            else InjectAnswer(text=result.output.text)
+        )
+        return ReviewProposal(answer=answer)
 
 
 def _agent(model: OpenAIChatModel, answer_type: AnswerType, instructions: str) -> Agent:
