@@ -1,10 +1,11 @@
 """reviewer 进程内 human / AI 应用与问题生命周期。"""
 
 import asyncio
-import json
 
 from pokemon_agent.schemas.reviewer.interaction import (
     Ask,
+    AuditAnswer,
+    ReviewProposal,
     ReviewRequest,
     ReviewSeats,
     Settle,
@@ -108,9 +109,7 @@ class ReviewerApp:
         if self._human is None:
             self._hub.propose(ask.seq, proposal)
             return
-        self._human.show_proposal(
-            ask, json.dumps(proposal.model_dump(mode="json")), self._countdown_s
-        )
+        self._human.show_proposal(ask, _proposal_text(proposal), self._countdown_s)
         try:
             await asyncio.sleep(self._countdown_s)
         except asyncio.CancelledError:
@@ -132,3 +131,12 @@ class ReviewerApp:
         if self._ai_task is not None and not self._ai_task.done():
             self._ai_task.cancel()
         self._ai_task = None
+
+
+def _proposal_text(proposal: ReviewProposal) -> str:
+    """把结构化 AI 答复转成供人阅读的内容，不展示传输信封。"""
+    answer = proposal.answer
+    if isinstance(answer, AuditAnswer):
+        verdict = "认账" if answer.verdict.value == "accept" else "推翻"
+        return verdict if not answer.note else f"{verdict}：{answer.note}"
+    return answer.text

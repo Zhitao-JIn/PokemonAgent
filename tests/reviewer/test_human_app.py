@@ -265,7 +265,9 @@ def test_human_answer_takes_over_ai_proposal_during_countdown(tmp_path: Path) ->
 
         class Ai:
             async def run_turn(self, ask, human_note="") -> ReviewProposal:
-                return ReviewProposal(answer=InjectAnswer(text="PROPOSAL-NOTE-471"))
+                return ReviewProposal(
+                    answer=InjectAnswer(text="建议按当前方案继续。\n依据：角色已在草丛内。")
+                )
 
         human = HumanSeat(inputs(), write, image_root=tmp_path)
         hub = Hub(ViewReaders(None, None))
@@ -284,6 +286,8 @@ def test_human_answer_takes_over_ai_proposal_during_countdown(tmp_path: Path) ->
         result = await asyncio.wait_for(asking, timeout=1)
 
         assert result.response.text == "" and result.response.by == "human"
-        assert any("PROPOSAL-NOTE-471" in line for line in output)
+        proposal_line = next(line for line in output if line.startswith("[AI 提案"))
+        assert proposal_line == "[AI 提案 1] 建议按当前方案继续。\n依据：角色已在草丛内。"
+        assert all('"answer"' not in line and "\\u" not in line for line in output)
 
     asyncio.run(scenario())
