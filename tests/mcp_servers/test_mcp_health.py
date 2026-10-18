@@ -1,4 +1,6 @@
 """MCP 运维面：env 加载、地址形状、health 路由、build 前探活。
+本文件的环境读取用例（test_load_env_file_* 与 test_env_empty_value_counts_as_unset）
+不属于连接性，归属待定，见 spec D7。
 
 **测试定位**（与 SPEC §十一致）：全部 pytest，不起真服务进程、不连真模型。
 health 路由用 Starlette `TestClient`（进程内 ASGI）打；探活用 monkeypatch 顶掉

@@ -50,6 +50,15 @@ schema / plan_ctx、快照引用和同源分组全部核验通过，快照目录
 
 **影响面**：评测存档产物及本日志；无生产代码变更。两个指定样本哈希前缀分别通过
 `A7764F399C24`、`6B76EB0164B5` 核验；world / memory 服务及仓库外专用记忆目录保留。
+## 2026-10-17（500）—— mcp_servers 连接性收敛：删无效断言、拆 read_wram、世界逻辑用例标注待迁
+
+**改了什么**：`tests/mcp_servers/test_mcp_world_server.py`：① 删除 `test_client_roundtrip_over_mcp_transport` 中的无效断言 `assert McpClient is not None`，及仅此一处使用的 `from pokemon_agent.mcpclient import McpClient`；② 把 `test_read_wram_preserves_bytes_and_lease`（参数化 None / c1，2 例）拆成 `test_read_wram_keeps_lease_owner_unchanged`（参数化 2 例，只断言 ok、租约 owner 不变、steps / loaded / reset_calls 与调用前相同）与 `test_read_wram_returns_the_world_bytes_base64`（1 例，只断言 base64 解出的字节等于 `bytes(range(256)) * 32`，docstring 第一行标【待迁 world 线】）；③ 给 5 条待迁用例 docstring 第一行加前缀「【待迁 world 线】」（`test_reset_passes_start_state_only_when_supplied` 原本没有 docstring，补为仅含该前缀的一行），其余 docstring 内容不变。`tests/mcp_servers/test_mcp_script_tools.py`：`test_walk_to_adjacent_forwarding`、`test_walk_to_adjacent_blocked_envelope`、`test_buy_item_end_to_end` 三条 docstring 同加前缀，函数体一字未改。`tests/mcp_servers/test_mcp_health.py`：文件 docstring 第一行后加一句，登记 env 读取用例不属于连接性、归属待定（spec D7）。生产代码零改动。
+
+**为什么这么改**：mcp 线测试只证明连接性（服务端能起、工具注册正确、调用能穿传输层原样返回），世界逻辑归 world 线（intent 第一节）。`assert McpClient is not None` 不验证任何行为，只为躲未使用告警（spec D6）。read_wram 的字节内容属世界逻辑，「不占租约、不驱动世界」属连接性，按 D5 拆开，两半各自归属清晰。
+
+**取舍**：世界逻辑用例一律原地保留、不删除、不迁入 `tests/world/`（spec D2——删了就丢覆盖，且 world 线未启动）；不修 K1 的 `world_server._lease_owner` 模块级私有访问（另案）；`test_load_env_file_*` 归属仍待定（D7）。拆分后的租约用例断言集合是原用例的子集（仅去掉字节断言），字节断言原样落入新用例，覆盖无丢失。
+
+**影响面**：`tests/mcp_servers/` 用例 40 → 41（junit 实测，+1 即拆分净增，其余用例名完全一致）；目录默认 pytest 0 failures / 0 errors / 0 skipped，junit 计时 1.357s（起点 1.275s，≤ 3s 达标）；全量 pytest 1192 → 1193 passed / 0 failed / 0 error（48.74s）；`ruff check .` 与 `ruff format --check .` 全绿（606 files already formatted）。破坏验证：临时把 `world_server.read_wram` 改成抢锁后，`test_read_wram_keeps_lease_owner_unchanged` 两个参数化（None / c1）全部失败（None 例租约被抢成 "sabotage"、c1 例拿到 rejected 信封）；还原后 `git diff pokemon_agent/` 为空。
 
 ## 2026-10-17（495）—— 测试瘦身收尾：修 rules.py 旧测试名注释、trace_parse/restore 耗时调查（测试未改）
 
