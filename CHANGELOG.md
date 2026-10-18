@@ -1,3 +1,26 @@
+## 2026-10-18（505）—— provider 协议契约测试：构造不加载模型、前置条件先于导入断言
+
+**改了什么**：新增 `tests/memory/providers/test_provider_contracts.py`（12 条），覆盖
+`LocalEmbeddingProvider` / `LocalRerankerProvider` / `LocalMemoryStore` 对
+`EmbeddingProviderPort` / `RerankerProviderPort` / `MemoryStorePort` 三个
+`runtime_checkable` 协议的 `isinstance` 判定；两个 provider 构造不加载 fastembed
+（经 `sys.modules["fastembed"] = None` 证明）；`embed`/`rerank` 的空输入前置条件在导入
+模型之前触发；`config()` 自报默认模型（`BAAI/bge-small-zh-v1.5` / `BAAI/bge-reranker-base`）
+与自定义模型名。生产代码零改动。
+
+**为什么这么改**：这三个协议此前只有 `MemoryStorePort` 有 store 层的间接覆盖，
+`EmbeddingProviderPort` / `RerankerProviderPort` 与两个本地实现（懒加载、断言先于导入、
+config 自报）没有直接钉子；按 memory-providers-spec 补齐契约测试。spec 的探针在沙箱
+（未装 fastembed）做过，本机复核 fastembed 已装——用例不依赖已装/未装，两种环境都过
+（「不加载」经 monkeypatch 置 None 证明，而非靠未装）。
+
+**取舍**：D4 不测真实推理/向量维度/分数质量；D1 用 `monkeypatch.setitem(sys.modules,
+"fastembed", None)` 而非真的卸载，避免泄漏到其它用例；前置条件用例同样在 fastembed=None
+下跑，即使断言被绕过也只会 ImportError 而非真下载模型。
+
+**影响面**：纯新增测试，零行为变化。全量 pytest 1278 通过（1266 + 12），ruff check /
+format 全绿；`tests/memory/` 目录 1.68s（预算 3s）。
+
 ## 2026-10-18（503）—— 修复 _check_step_monotonic 同实例缓存不推进：memorize 后更新 max 缓存
 
 **改了什么**：`pokemon_agent/memory/recall.py` 新增 `_advance_step_cache(episode_id, step,
