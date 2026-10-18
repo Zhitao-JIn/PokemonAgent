@@ -1,3 +1,13 @@
+## 2026-10-18（533）—— world 场景与菜单补 19 个用例函数（CP2）
+
+**改了什么**：新增四个测试文件，覆盖 world 线的场景与菜单四组纯函数——`test_world_scene.py` 8 个（全屏 `0x7F` 是过场、第一行连续十六块 Logo 是标题、`(0,10)…(15,19)` 完整空框是开始菜单且 `empty_menu_frame(tiles, 0, 10, 15)` 为真、屏上 `A B C D E F G H I` 是命名键盘、战斗中光标在 FIGHT 的 2×2 菜单是 `BATTLE_MENU`、`at_start` 在 FIGHT 上为真、光标移到 ITEM 上为假、`at_start` 对普通场合触发 `AssertionError`）；`test_world_screen_menu.py` 3 个（竖排三项逐行读出 `POKEMON / ITEM / SAVE` 且光标格为 `(0, 0)` 并判定覆盖、光标移到第二项报 `(1, 0)`、战斗 2×2 读出 `[["FIGHT", "PKMN"], ["ITEM", "RUN"]]`）；`test_world_priced_menu.py` 4 个（无 `MONEY` 标题返回空表、`MONEY ¥300` 屏读出 `[("POTION", "¥300"), ("CANCEL", "")]`、框内只有一项被 `len(items) >= 2` 拒绝、框内出现 `0x79–0x7E` 边框图块被拒绝）；`test_world_battle_status.py` 4 个（`wIsInBattle` 为 0 返回 None、双方名字等级与大端 HP（`0x0123` → 291）与状态缩写、名字遇 `NAME_END` 截止、`status_abbr` 六个状态位参数化 6 项）。19 个函数展开为 24 个 pytest 项。假件沿用 spec 第六节开头：`Mem` 是字典式内存（未写地址读 0），屏幕 tile 从 `W_TILEMAP` 起写，文字按 `CHARMAP` 反查写入，菜单框内空白为 `0x7F`；不起模拟器、不读 ROM、不发网络请求、不用 `MagicMock`、不测 `_` 开头的私有成员。
+
+**为什么这么改**：场景分类、屏幕菜单、价格框、战斗状态这四组纯函数此前只有间接覆盖（`screen_text` 与脚本目录的用例顺带走到），没有针对各自判据的用例。用例按 spec 6.5 做了破坏验证：删掉 `title_logo` 分支、`at_start` 的 `BATTLE_MENU` 判断去掉 `text.cursor == "FIGHT"`、光标格判定改成 `col0 + 2`、`len(items) >= 2` 改成 `>= 1`、`u16` 高低字节对调，五处对应用例均失败，还原后 `git diff pokemon_agent/` 为空。
+
+**取舍**：菜单与价格框两组走公开入口读取——前三条经 `read_screen_text` 断言 `option_grid` / `cursor_cell` / `covered`，价格框直接调 `read_priced_menu` 并配一个按 `CHARMAP` 逐块转文字的手写渲染器（`screen_text._text` 是私有成员，不直接引用）。spec 6.6 记下的“框内光标字形 `0xED` 仍返回商品”是待裁决观察，没有钉成预期。
+
+**影响面**：仅新增测试，生产代码零改动。`tests/world/` 现 162 项、耗时 1.22 秒；全量 junit 计数 1472 → 1496，failures / errors / skipped 均为 0，耗时 60.8 → 61.0 秒。`ruff check .` 与 `ruff format --check .` 全绿。
+
 ## 2026-10-18（521）—— world 纯逻辑小模块补 29 条单元测试（CP1）
 
 **改了什么**：新增四个测试文件，覆盖 world 线的纯逻辑小模块——`test_world_action_space.py` 7 条（掩码覆盖整个命名空间、不可用键显式为 False、无 overlay 时基础键全开、overlay 键替换普通键、接管场合只留基础键、空动作空间断言、接管标志与场合注册表不一致断言）；`test_screen_glyphs.py` 10 条（左右邻是文字、黑块邻格不算文字、列 0 只看右邻、擦除黑块计数与忽略、标题 Logo 需第一行连续十六块、纯图形页的三个判据）；`test_items.py` 8 条（表内名字、表外 id 写成 Hex、名字与 id 往返、大小写与 `é`/`e` 视同、认不出为 None、HM 价为 0、TM 与越界 id 为 None、ROM 三字节 BCD 解码）；`test_moves.py` 4 条（表内名字、表外 id 写成 Hex、`fold` 大写与音符映射、`fold` 空白归一与幂等）。全部用真实字节 / 字表 / 域模型构造，不起模拟器、不读 ROM、不发网络请求、不用 `MagicMock`；`test_world_action_space.py` 不重复 `test_action_space_scripts.py` 已有的两条。
