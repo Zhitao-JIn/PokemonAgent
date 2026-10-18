@@ -82,13 +82,14 @@
 28. `test_snapshot_name_may_not_contain_path_separators`：`store.snapshot("../x")` 触发断言（原 175）。
 29. `test_restore_deletes_records_written_after_the_snapshot`：以 zip 为准，快照之后写的记录被删（原 201）。
 30. `test_restore_leaves_the_snapshots_directory_alone`：`snapshots/` 不参与还原，拿来还原的 zip 与其他存档都保留（原 223）。
-31. `test_search_returns_per_stage_timings`：`store.search` 第二个返回值的键为 bm25 / vector / rrf / rerank 的子集，值为非负浮点（原 275，改直调 store）。
+31. `test_search_returns_per_stage_timings`：`store.search` 第二个返回值 timings 的键为 prepare / bm25 / vector / rrf / rerank 的子集（prepare 为入口准备段，计入 timings），值为非负浮点；断言 bm25、vector、rrf、rerank 四个检索阶段均存在（原 275，改直调 store）。
 32. `test_refresh_changed_skips_rewrites_with_identical_content`：内容未变、只 touch 时不重写记录文件（原 300）。
 33. `test_bm25_corpus_persists_across_instances`：重启后语料仍可用，BM25 结果与重启前一致（原 349）。
-34. `test_sidecar_auto_compacts_when_garbage_rows_dominate`：**待探针**（见下），原 418。
+34. `test_sidecar_auto_compacts_when_garbage_rows_dominate`：垃圾行超过阈值后压实，压实后每 uuid 一行、按 uuid 排序（原 418）。
+35. `test_store_skips_invalid_act_record_on_disk`：盘上存在无法解析的 act 记录时，store 层读取跳过该条而不抛出（来自 CP7 用例 14 的迁移：非法 payload 无法经 `memorize` 公开接口构造，故移入 store 层，直写盘上数据后新建实例验证）。
 
 **向量 sidecar**
-- **待探针确认后再定用例**（惰性加载、压实阈值）。执行方第一步对 `_load_vectors` / `_maybe_compact_vectors` 做一次探针，结果写回本节再写用例。不预先钉。
+- 探针结论（已完成）：惰性加载，首次 `search` 时才读 sidecar；压实阈值为 `_vector_rows > max(64, active*4)` 时压实，压实后每 uuid 一行、按 uuid 排序；64/65 边界已验证。
 
 ## 四、迁移清单（`tests/memory/test_memory_store.py`，实际 18 个）
 

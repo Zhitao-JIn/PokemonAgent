@@ -53,8 +53,8 @@
 
 **缺省根**
 25. `test_root_property_reports_memory_under_cwd_by_default`：`monkeypatch.chdir` 后 `root == cwd/memory`。
-26. `test_tool_defaults_put_each_family_under_the_shared_root`：经 MemoryTool 的缺省根，四族都落在同一根下（原 104）。
-27. `test_explicit_memory_root_wins_over_the_default`：经 MemoryTool 的显式根优先于缺省根（原 119）；若执行方确认只经 store，则改并入 store 用例 2。
+26. `test_tool_defaults_put_each_family_under_the_shared_root`：直接构造 `MemoryCapability(embedder, reranker)`（不传根）时，四族都落在同一缺省根下（原 104，原文即直构 capability，非 MemoryTool）。
+27. `test_explicit_memory_root_wins_over_the_default`：直接构造 `MemoryCapability(embedder, reranker, memory_root=…)` 时，显式根优先于缺省根（原 119，原文即直构 capability）。
 28. `test_restore_refreshes_every_family_not_just_step_memory`：`restore_memory` 之后四族都 reload，不只 step（原 238）。
 
 ## 四、迁移清单
@@ -63,7 +63,7 @@
 - `tests/mcpclient/memory_tool/test_object_recall_content.py` → 拆：object 内容往返的 memory 侧断言迁入用例 7、15；"条目满足 MCP 端口模型"的断言**原地保留**，文件保留并删去已迁部分。
 - `tests/memory/test_memory_store.py` 中能力层的用例（不安全条目整包拒绝、kind 分发、step 单调、knowledge 判重）→ 用例 9、11、23、24；随 CP6–CP7 删除原文件。
 - `tests/mcp_servers/test_mcp_memory_e2e.py`：保留，不迁。
-- 【由 store spec 迁入，CP7 新增用例】`test_tool_defaults_put_each_family_under_the_shared_root`（原 104，经 MemoryTool 的缺省根）、`test_explicit_memory_root_wins_over_the_default`（原 119，经 MemoryTool 的显式根，若执行方确认只经 store 则改并入 store 用例 2）、`test_restore_refreshes_every_family_not_just_step_memory`（原 238，`restore_memory` 的四族 reload）。原文件中的 `test_restore_rejects_unsafe_entries_before_touching_the_library`（原 258）即本节用例 23。
+- 【由 store spec 迁入，CP7 新增用例】`test_tool_defaults_put_each_family_under_the_shared_root`（原 104，直构 MemoryCapability 的缺省根）、`test_explicit_memory_root_wins_over_the_default`（原 119，直构 MemoryCapability 的显式根）、`test_restore_refreshes_every_family_not_just_step_memory`（原 238，`restore_memory` 的四族 reload）。原文件中的 `test_restore_rejects_unsafe_entries_before_touching_the_library`（原 258）即本节用例 23。
 
 CP7 必须逐条写出迁移映射（旧用例名 → 新用例号 / 保留位置），写进 CHANGELOG 条目。
 
