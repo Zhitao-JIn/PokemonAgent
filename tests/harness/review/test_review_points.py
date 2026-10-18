@@ -2,7 +2,7 @@
 下一次拆解 / 规划看得见为什么。
 
 样本是 `_fake_run` 把真的三张图跑一遍的落盘账本。人由一个按脚本答的 reviewer 扮演：
-插话一律没意见；审到哪一层的模型裁决就按脚本认或推翻，其余审（task / 一局的结果）一律认账。
+插话一律没意见；只审两层 judge 的「已达成」裁决，按脚本认或推翻。
 """
 
 from __future__ import annotations
@@ -10,8 +10,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from _fake_run import every, never, run_fake
+import pytest
+from _fake_run import build_fake, every, never, run_fake
+from _review_context import review_context
 
+from pokemon_agent.harness.reviewing import audit_judgement
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeResp,
@@ -19,6 +22,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerAuditResp,
     FromHarnessToReviewerInjectReq,
     FromHarnessToReviewerInjectResp,
+    ModelCall,
 )
 
 RUN_ID = "r1"
@@ -31,18 +35,21 @@ class _ScriptedHuman:
     def __init__(self, overturn_at: str, note: str) -> None:
         self._overturn_at, self._note = overturn_at, note
         self.judgements: list[str] = []
+        self.requests: list[FromHarnessToReviewerAuditReq] = []
 
     def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
-        return FromHarnessToReviewerInjectResp(text="", answered=True)
+        return FromHarnessToReviewerInjectResp(text="", answered=True, by="human")
 
     def audit(self, req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
-        if isinstance(req.outcome, FromHarnessToBrainToolJudgeResp):
-            self.judgements.append(req.episode_id)
-            if req.episode_id == self._overturn_at and self.judgements.count(req.episode_id) == 1:
-                return FromHarnessToReviewerAuditResp(
-                    verdict=AuditVerdict.OVERTURN, note=self._note, answered=True
-                )
-        return FromHarnessToReviewerAuditResp(verdict=AuditVerdict.ACCEPT, answered=True)
+        self.requests.append(req)
+        self.judgements.append(req.episode_id)
+        if req.episode_id == self._overturn_at and self.judgements.count(req.episode_id) == 1:
+            return FromHarnessToReviewerAuditResp(
+                verdict=AuditVerdict.OVERTURN, note=self._note, answered=True, by="human"
+            )
+        return FromHarnessToReviewerAuditResp(
+            verdict=AuditVerdict.ACCEPT, answered=True, by="human"
+        )
 
 
 def _content(event: dict) -> dict:
@@ -109,10 +116,51 @@ def test_overturning_the_run_judge_keeps_the_run_going_and_tells_the_next_plan(
 
 
 def test_every_audit_is_on_the_books_with_what_was_audited(tmp_path: Path) -> None:
-    """四个审点在账上分得开：`review_audit.form_kind` 说审的是什么，`answered` 说人真答了没有。"""
+    """两层审点只审 judge：`review_audit.form_kind` 说审的是什么，`answered` 说人真答了没有。"""
     human = _ScriptedHuman(overturn_at=EP1, note="n")
     events = run_fake(tmp_path, episode=every(2), run=every(1), reviewer=human)
 
     kinds = {_content(e)["form_kind"] for e in events if e["kind"] == "review_audit"}
-    assert kinds == {"TaskOutput", "EpisodeOutput", "JudgeVerdict"}
+    assert kinds == {"JudgeVerdict"}
     assert all(_content(e)["answered"] == "true" for e in events if e["kind"] == "review_audit")
+
+
+def test_settlements_never_ask_reviewer(tmp_path: Path) -> None:
+    """真实三图完成 task 与 episode 结算，仅两层 judge 的达成裁决询问复核席。"""
+    human = _ScriptedHuman(overturn_at="nobody", note="")
+
+    events = run_fake(tmp_path, episode=every(2), run=every(1), reviewer=human)
+
+    settlements = [e for e in events if e["kind"] in {"settle_task", "settle_goal"}]
+    assert {e["kind"] for e in settlements} == {"settle_task", "settle_goal"}
+    assert all(_content(e)["audit"] == "" for e in settlements)
+    assert all(_content(e)["overturned"] == "false" for e in settlements)
+    assert human.judgements == [EP1, RUN_ID]
+    assert all(req.outcome.done for req in human.requests)
+
+
+@pytest.mark.parametrize("episode_id", [EP1, RUN_ID])
+@pytest.mark.parametrize("done", [False, True])
+def test_judge_only_asks_reviewer_when_done(tmp_path: Path, episode_id: str, done: bool) -> None:
+    """两层 judge 判未达成时不审，判已达成时询问一次并记一笔审账。"""
+    human = _ScriptedHuman(overturn_at="nobody", note="")
+    trace = build_fake(tmp_path).trace
+    verdict = FromHarnessToBrainToolJudgeResp(done=done, why="判定依据", calls=[ModelCall()])
+    meta = {"source": "review_and_judge", "episode_id": episode_id, "task_id": "", "step": 1}
+
+    feedback = audit_judgement(
+        human,
+        trace,
+        verdict,
+        run_id=RUN_ID,
+        meta=meta,
+        context=review_context(RUN_ID, episode_id),
+    )
+
+    assert feedback.done is done
+    assert feedback.audit is (AuditVerdict.ACCEPT if done else None)
+    assert human.judgements == ([episode_id] if done else [])
+    audits = [
+        event for event in trace.read_events({"run_id": RUN_ID}) if event.kind == "review_audit"
+    ]
+    assert len(audits) == int(done)

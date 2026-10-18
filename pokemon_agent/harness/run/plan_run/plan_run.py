@@ -27,6 +27,7 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 from pokemon_agent.schemas.harness.domain import EntryStatus, GoalEntry
+from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...interface.planner_outcome import ALLOWED_UPDATE_STATUSES, GoalUpdate, PlannerOutcome
 from ...reviewing import ask_inject
@@ -101,6 +102,15 @@ def _elicit(deps: RunRuntime, state: RunState, meta: dict[str, Any]) -> tuple[Pl
                 prompt=_prompt_for(proposed, note),
                 form=proposed,
                 form_kind="PlannerOutcome",
+                context=ReviewContext(
+                    layer="run",
+                    run_id=state.run_id,
+                    episode_id=state.run_id,
+                    brain_input=req,
+                    goals=state.goals,
+                    step=meta["step"],
+                    fail_streak=state.fail_streak,
+                ),
             ),
             meta=meta,
         )

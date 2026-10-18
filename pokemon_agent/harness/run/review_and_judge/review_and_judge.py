@@ -1,8 +1,8 @@
 """`review_and_judge` 格（run 层）：**收结算 + 判停**——run 唯一的停机判定点。
 
 1. 定案上一局（表里有 RUNNING 时）：按 `success` 盖章（成功 COMPLETED / 失败 FAILED，
-   都是终态、不自动重派）→ 亮给人审，推翻则盖反面、`overturned=True`、修正 `fail_streak`
-   → 记 `settle_goal`。（一局一条 EpisodeMemory 由 episode 层自己保证，本格不写记忆。）
+   都是终态、不自动重派），失败连击沿用 state 原值 → 记 `settle_goal`。
+   （一局一条 EpisodeMemory 由 episode 层自己保证，本格不写记忆。）
    （收结算在 perceive 的 `absorb_episode`。）
 2. 机械三类：本圈 perceive 取的帧 `obs.done`（run 层自己取帧，0928 起不再借上一局
    结算带回的旧画面；首圈也有帧——世界起点的画面）/ `fail_streak >= RUN_STALL_LIMIT` /
@@ -25,15 +25,15 @@ from pokemon_agent.config import RUN_STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeReq,
-    FromHarnessToReviewerAuditReq,
     FromHarnessToTraceToolAppendReq,
     TraceEvent,
     TraceKind,
 )
 from pokemon_agent.schemas.harness.domain import EntryStatus, EpisodeOutput, GoalEntry, Termination
+from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...judging import ask_judger, judge_reason, mechanical_termination, record_verdict
-from ...reviewing import ask_audit, audit_judgement
+from ...reviewing import audit_judgement
 from ..run_state import RunState
 from ..runtime import RunRuntime
 
@@ -70,7 +70,7 @@ def _meta_episode_id(event: TraceEvent) -> str:
 
 
 def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
-    """定案上一局（盖章 → 人审）→ 机械三类 + 问模型，写 `termination`。
+    """定案上一局（机械盖章）→ 机械三类 + 问模型，写 `termination`。
 
     上一局的结算已由 `perceive` 收进 `episode_outputs`（与 episode / task 两层同构：吸收在
     perceive、判定在这里）。表里有 `RUNNING` 就说明刚跑完一局，用 `outcomes[-1]` 定案。
@@ -116,7 +116,20 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
         req.episode_memories = details
         verdict = ask_judger(deps.judger, deps.trace, req, **meta)
         feedback = audit_judgement(
-            deps.reviewer, deps.trace, verdict, run_id=state.run_id, meta=meta
+            deps.reviewer,
+            deps.trace,
+            verdict,
+            run_id=state.run_id,
+            meta=meta,
+            context=ReviewContext(
+                layer="run",
+                run_id=state.run_id,
+                episode_id=state.run_id,
+                brain_input=req,
+                goals=updates.get("goals", state.goals),
+                step=meta["step"],
+                fail_streak=fail_streak,
+            ),
         )
         if feedback.audit is AuditVerdict.ACCEPT:
             termination = Termination.GOAL_DONE
@@ -147,7 +160,7 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
 
 
 def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[str, Any]:
-    """盖章 → 亮给人审（推翻则盖反面、修正 `fail_streak`）→ 记 `settle_goal`。"""
+    """按机械结算盖章，保留失败连击，记 `settle_goal`。"""
     index = _running_index(state.goals)
     assert index is not None, "review_and_judge found no RUNNING goal to stamp"
     assert outcome.goal_id == state.goals[index].task.task_id, "最新结算与 RUNNING 条目对不上"
@@ -156,33 +169,9 @@ def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[s
     # 步骤 1：机械盖章。
     stamped = _stamp(entry, outcome.success, outcome.episode_id)
 
-    # 步骤 2：亮给人审；推翻则盖反面，理由记进 note，失败连击跟着修正。
-    resp = ask_audit(
-        deps.reviewer,
-        deps.trace,
-        FromHarnessToReviewerAuditReq(
-            run_id=state.run_id,
-            episode_id=outcome.episode_id,
-            outcome=outcome,
-            events=episode_trace_events(
-                deps.trace.read_events({"run_id": state.run_id}), outcome.episode_id
-            ),
-        ),
-        meta={
-            "source": _SOURCE,
-            "episode_id": state.run_id,
-            "task_id": state.run_id,
-            "step": state.step + 1,
-        },
-    )
     fail_streak = state.fail_streak
-    if resp.verdict is AuditVerdict.OVERTURN:
-        stamped = _stamp(entry, not outcome.success, outcome.episode_id).model_copy(
-            update={"overturned": True, "note": resp.note or stamped.note}
-        )
-        fail_streak = 0 if stamped.status is EntryStatus.COMPLETED else fail_streak + 1
 
-    # 步骤 3：记定案账。
+    # 步骤 2：记定案账。
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.SETTLE_GOAL,
@@ -193,7 +182,7 @@ def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[s
                 "step": state.step + 1,
             },
             goal=stamped,
-            audit=resp.verdict.value,
+            audit=None,
             fail_streak=fail_streak,
         )
     )

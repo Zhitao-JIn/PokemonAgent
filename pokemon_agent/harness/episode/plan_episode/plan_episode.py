@@ -26,6 +26,7 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 from pokemon_agent.schemas.harness.domain import EntryStatus, TaskEntry, Termination
+from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...budget_nodes import stopped_updates
 from ...reviewing import ask_inject
@@ -105,7 +106,8 @@ def _elicit(deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object
             return Elicited(None, note, used, Termination.DECOMPOSITIONS_EXHAUSTED)
         used += 1
         try:
-            resp = _ask(deps, meta, _request(deps, state, note))
+            req = _request(deps, state, note)
+            resp = _ask(deps, meta, req)
         except MaxRetriesExceeded:
             return Elicited(None, note, used, Termination.ERROR)
         except BudgetExhausted:
@@ -117,6 +119,15 @@ def _elicit(deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object
                 prompt=f"本局目标拆成 {len(resp.decomposition.tasks)} 个 task，看对不对",
                 form=resp.decomposition,
                 form_kind="Decomposition",
+                context=ReviewContext(
+                    layer="episode",
+                    run_id=state.run_id,
+                    episode_id=state.episode_id,
+                    brain_input=req,
+                    tasks=state.tasks,
+                    step=meta["step"],
+                    fail_streak=state.fail_streak,
+                ),
             ),
             meta=meta,
         )

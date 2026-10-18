@@ -1,3 +1,35 @@
+## 2026-10-18（513）—— ReviewContext：随问快照、frames_of 与渲染
+
+**改了什么**：两个 reviewer 请求统一要求 ReviewContext；run / episode 的规划与判定四个
+审点传入当次原始大脑请求、该层的表及计数，共用审查入口同步接收快照。新增 frames_of
+按详情顺序提取首末帧、去重与标注来源；render_context 按四节渲染，表只展示一次，
+背景索引用 index_line，帧仅显示张数。既有请求构造与测试夹具全部迁移到必填 context。
+
+**为什么这么改**：复核者需要知道这次提案或裁决基于什么输入；随问快照让输入和计数
+对齐当次调用，图片按需查看时仍能定位来源，也避免把 data URI 混入文本。
+
+**取舍**：遵循 spec §四的非 None 表归属校验，允许首轮的空表；只支持 run / episode。
+保留大脑请求中的帧，不额外复制当前帧，也不新增 trace 或 memory 读取。旧席位实现保持
+原有行为，其测试只适配必填快照；共享入口与三个既有测试文件的配套修改经用户追加授权。
+
+**影响面**：reviewer 相关 37 项测试通过；新增用例验证四个审点传递原对象、重问带话、
+定案后表、计数对账、图片去重与无图片文本。删除去重条件后 4 项用例均失败，已逐字节
+还原。state_schema_hash() 仍为 5ea6dffeeb229b7c；不进入 R3b 或后续迁移。
+
+## 2026-10-15（515）—— 回话加 by 标签并贯通到后端与记账
+
+**改了什么**：四张回话信封新增必填 human/agent/none 来源标签，并用模型校验约束 answered 与 by 一致；贯通 Null、Console、Web reviewer、后端回话映射和两本 review 账。同步测试夹具，新增三类测试，参数化后共十三个用例。
+**为什么这么改**：harness 需要区分人、AI 与默认回话，才能追溯复核结论的来源，同时只认识标签、不依赖复核席的具体实现。
+**取舍**：保留 answered 并强制 answered == (by != "none")；后端内部 timeout/harness_gone 标签不变，只在跳 A 映射为 none。ReviewMark 通过渲染后的 content JSON 落盘，TraceEvent/_Event 封套字段无需新增；不引入 capped、round 或后续只读查询能力。
+**影响面**：reviewer 回话及跳 A 协议要求显式来源标签，Web 断连后的每问均标 none；review_inject/review_audit 正文增加 by。前端、状态模型、存档哈希与审点数量不变。
+
+## 2026-10-15（514）—— 审点收敛到 judge：删除两层结算审及其线上 task_id
+
+**改了什么**：删除 episode/run 两层结算审与推翻分支，把审核逻辑并入 audit_judgement；审核信封仅收 judge 裁决，删除审核链路直至页面的 task_id，简化控制台与共享渲染。更新审核和节点衔接测试，新增两个测试函数，参数化后为五个用例。
+**为什么这么改**：产品决定审点收敛到 judge，只对两层“目标已达成”的裁决复核，避免 task/episode 机械结算再单独询问一次。
+**取舍**：为保持 state_schema_hash 与既有存档兼容，overturned 字段及全部读方原样保留，结算时仍写 False，恒为 False 的临时死代码留待后续清理；结算账 audit 键也推迟删除，保留原内容形状，以空串表示没问人。
+**影响面**：task/episode 成败只由机械判定决定，fail_streak 不再被人审修正；保留被打断的说明、失败后放弃剩余任务、judge 推翻与规划插话，审核线上请求不再带 task_id。
+
 ## 2026-10-18（512）—— 召回去掉静默截断，上限交调用方
 
 **改了什么**：MemoryCapability.recall 的 limit 默认 None，融合后仅在给定整数时截断；

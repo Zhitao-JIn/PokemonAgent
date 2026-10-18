@@ -26,7 +26,6 @@ class FromReviewBackendToFrontendAskReq(BaseModel):
     body: str = Field(description="渲染好的表单或结论文本")
     events: list[str] = Field(default_factory=list, description="被审对象的事件，一条一行")
     episode_id: str | None = Field(default=None, description="审时：被审对象所在的局")
-    task_id: str | None = Field(default=None, description="审 task 时：那个 task")
     deadline: float | None = Field(
         default=None, description="作废时刻（Unix 秒）；None = 无倒计时（人模式，由人决定何时答）"
     )

@@ -85,7 +85,7 @@ class _Reviewer:
     def inject(self, req):
         from pokemon_agent.schemas.harness import FromHarnessToReviewerInjectResp
 
-        return FromHarnessToReviewerInjectResp(text="", answered=False)
+        return FromHarnessToReviewerInjectResp(text="", answered=False, by="none")
 
 
 class _BrainTool:

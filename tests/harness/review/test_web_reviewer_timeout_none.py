@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from _review_context import review_context
+
 from pokemon_agent.harness.web_reviewer import WebReviewer
 from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerInjectReq,
@@ -13,13 +15,15 @@ from pokemon_agent.schemas.harness import (
 
 def _fake_conn() -> MagicMock:
     conn = MagicMock()
-    resp = FromHarnessToReviewerInjectResp(seq=1, text="", answered=False)
+    resp = FromHarnessToReviewerInjectResp(seq=1, text="", answered=False, by="none")
     conn.recv.return_value = resp.model_dump_json()
     return conn
 
 
 def _inject_req() -> FromHarnessToReviewerInjectReq:
-    return FromHarnessToReviewerInjectReq(prompt="p", form={}, form_kind="x")
+    return FromHarnessToReviewerInjectReq(
+        prompt="p", form={}, form_kind="x", context=review_context()
+    )
 
 
 def test_timeout_none_recv_none_no_grace() -> None:
