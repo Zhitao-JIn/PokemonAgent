@@ -78,10 +78,10 @@ def _proposal_controls(ask: Ask, countdown_s: int) -> str:
     """按问题类型解释人工命令与倒计时后的自动提交行为。"""
     if ask.kind == "inject":
         return (
-            f"{countdown_s} 秒内：say <意见> 提交你的意见；ask-ai <要求> 让 AI 重拟；"
-            "ok 提交空意见。倒计时结束自动采用 AI 提案。"
+            f"{countdown_s} 秒内：accept-ai 直接采纳 AI 建议；say <意见> 提交你的意见；"
+            "ok 提交空意见；ask-ai <要求> 让 AI 重拟。倒计时结束自动采用 AI 提案。"
         )
     return (
-        f"{countdown_s} 秒内：ok 接受当前判定；overturn <理由> 推翻并继续；"
-        "ask-ai <要求> 让 AI 重拟。倒计时结束自动采用 AI 判定。"
+        f"{countdown_s} 秒内：accept-ai 采纳 AI 判定；ok 人工认账；"
+        "overturn <理由> 推翻并继续；ask-ai <要求> 让 AI 重拟。倒计时结束自动采用 AI 判定。"
     )

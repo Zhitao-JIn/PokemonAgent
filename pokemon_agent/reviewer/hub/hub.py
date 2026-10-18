@@ -48,6 +48,7 @@ class Hub:
         self._on_activity = on_activity
         self._seq = 0
         self._ask: Ask | None = None
+        self._proposal: ReviewProposal | None = None
         self._future: asyncio.Future[Settle] | None = None
         self._history: deque[HistoryEntry] = deque(maxlen=HISTORY_LIMIT)
         self._activities: deque[Activity] = deque(maxlen=HISTORY_LIMIT)
@@ -68,6 +69,7 @@ class Hub:
         assert self._ask is None, "only one review question may be pending"
         self._seq += 1
         self._ask = Ask(seq=self._seq, request=req.model_copy(deep=True))
+        self._proposal = None
         self._future = asyncio.get_running_loop().create_future()
         try:
             self._record("open", f"{self._ask.kind} {req.context.run_id}")
@@ -145,7 +147,28 @@ class Hub:
             return SubmitAck(ok=False, text="该问已了结")
         if self._discuss_handler is None:
             return SubmitAck(ok=False, text="没有 AI 席")
+        self._proposal = None
         return self._discuss_handler(seq, text)
+
+    def stage_proposal(self, seq: int, proposal: ReviewProposal) -> SubmitAck:
+        """暂存匹配当前问的 AI 答复，供人工在倒计时内明确采纳。"""
+        ask = self.current(seq)
+        if ask is None:
+            return SubmitAck(ok=False, text="该问已了结")
+        if not _proposal_matches(ask, proposal):
+            return SubmitAck(ok=False, text="该提案不适用于本问")
+        self._proposal = proposal.model_copy(deep=True)
+        return SubmitAck(ok=True, text="AI 提案已准备好")
+
+    def accept_proposal(self, seq: int) -> SubmitAck:
+        """由人工确认并提交当前 AI 答复，答复来源记录为 human。"""
+        if self.current(seq) is None:
+            return SubmitAck(ok=False, text="该问已了结")
+        if self._proposal is None:
+            return SubmitAck(ok=False, text="当前没有可采纳的 AI 提案")
+        proposal = self._proposal
+        self._proposal = None
+        return self.submit(seq, proposal.answer, "human")
 
     def propose(self, seq: int, proposal: ReviewProposal) -> SubmitAck:
         """只接受与当前问类型匹配的 AI 提案。"""
@@ -189,6 +212,7 @@ class Hub:
             )
         )
         self._ask = None
+        self._proposal = None
         self._future = None
         future.set_result(settle)
         self._record(
@@ -212,3 +236,10 @@ def _brain_frames(ask: Ask, q: BrainFramesQuery) -> ViewAnswer:
     span = f"第 {q.offset + 1}–{q.offset + len(page)} 张" if page else "0 张"
     text = f"共 {len(frames)} 张，本次{span}\n" + "\n".join(label for label, _ in page)
     return ViewAnswer(ok=True, text=text_without_frames(text), images=[frame for _, frame in page])
+
+
+def _proposal_matches(ask: Ask, proposal: ReviewProposal) -> bool:
+    """拒绝与固定问题类型不匹配的暂存提案。"""
+    if ask.kind == "inject":
+        return isinstance(proposal.answer, InjectAnswer)
+    return isinstance(proposal.answer, AuditAnswer)

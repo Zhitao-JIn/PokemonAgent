@@ -109,6 +109,7 @@ class ReviewerApp:
         if self._human is None:
             self._hub.propose(ask.seq, proposal)
             return
+        self._hub.stage_proposal(ask.seq, proposal)
         self._human.show_proposal(ask, _proposal_text(proposal), self._countdown_s)
         try:
             await asyncio.sleep(self._countdown_s)

@@ -25,6 +25,10 @@ class CommandHub(Protocol):
         """先答先得；旧编号和不匹配的答复正常拒绝，不抛。"""
         ...
 
+    def accept_proposal(self, seq: int) -> SubmitAck:
+        """由人工确认当前 AI 提案；没有待确认提案时明确拒绝。"""
+        ...
+
     async def query(self, seq: int, q: ViewQuery) -> ViewAnswer:
         """查当前问材料；预期失败显式返回，查询不构成答复。"""
         ...

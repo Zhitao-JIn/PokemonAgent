@@ -13,7 +13,7 @@ from .ports import CommandHub
 from .query_commands import CommandParseError, CommandParser, parse_query, query_help, query_schemas
 
 _CONTROL_HELP = (
-    "ctx [--section 名]\nhistory [-n 10]\nsay <原文>\nok\noverturn <理由>\n"
+    "ctx [--section 名]\nhistory [-n 10]\nsay <原文>\naccept-ai\nok\noverturn <理由>\n"
     "ask-ai <原文>\nhelp [命令]"
 )
 
@@ -80,6 +80,8 @@ class Commands:
                 return ViewAnswer(ok=False, text="该问已了结")
             answer = InjectAnswer() if ask.kind == "inject" else AuditAnswer()
             return _answer(self._hub.submit(seq, answer, "human"))
+        if name == "accept-ai" and not arguments:
+            return _answer(self._hub.accept_proposal(seq))
         raise CommandParseError(f"未知命令或多余参数：{name}，用 help 查看用法")
 
     def _history(self, arguments: list[str]) -> ViewAnswer:

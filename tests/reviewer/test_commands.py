@@ -40,6 +40,10 @@ class RecordingHub:
         self.calls.append(("submit", seq, answer, by))
         return SubmitAck(ok=True, text="submitted")
 
+    def accept_proposal(self, seq: int) -> SubmitAck:
+        self.calls.append(("accept_proposal", seq))
+        return SubmitAck(ok=True, text="accepted proposal")
+
     async def query(self, seq: int, q: ViewQuery) -> ViewAnswer:
         self.calls.append(("query", seq, q))
         return ViewAnswer(ok=True, text=q.model_dump_json())
@@ -114,6 +118,7 @@ def test_each_query_command_is_exactly_the_corresponding_typed_query(
             ("submit", 1, AuditAnswer(verdict="overturn", note="还没  达成"), "human"),
         ),
         ('ask-ai 请核对 "这里', ("discuss", 1, '请核对 "这里')),
+        ("accept-ai", ("accept_proposal", 1)),
     ],
 )
 def test_control_commands_delegate_with_original_text(line: str, expected: tuple) -> None:
@@ -141,6 +146,7 @@ def test_control_commands_delegate_with_original_text(line: str, expected: tuple
         "say   ",
         "overturn   ",
         "ok extra",
+        "accept-ai extra",
         'ctx --section "unclosed',
         "history -n 0",
     ],

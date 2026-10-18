@@ -59,6 +59,35 @@ def test_audit_overturn_and_cancel_are_distinct_resolutions() -> None:
     asyncio.run(scenario())
 
 
+def test_human_can_accept_the_staged_ai_proposal_for_either_question_kind() -> None:
+    from pokemon_agent.schemas.reviewer.interaction import ReviewProposal
+
+    async def scenario() -> None:
+        hub = Hub(ViewReaders(None, None))
+        inject_future = hub.open_ask(inject_request())
+        inject_proposal = ReviewProposal(answer=InjectAnswer(text="按 AI 建议移动"))
+
+        assert not hub.accept_proposal(1).ok
+        assert not hub.stage_proposal(1, ReviewProposal(answer=AuditAnswer(verdict="accept"))).ok
+        assert hub.stage_proposal(1, inject_proposal).ok
+        assert hub.accept_proposal(1).ok
+        inject_result = await inject_future
+        assert inject_result.response.text == "按 AI 建议移动"
+        assert inject_result.response.by == "human"
+
+        audit_future = hub.open_ask(audit_request())
+        audit_proposal = ReviewProposal(answer=AuditAnswer(verdict="overturn", note="证据不足"))
+
+        assert hub.stage_proposal(2, audit_proposal).ok
+        assert hub.accept_proposal(2).ok
+        audit_result = await audit_future
+        assert audit_result.response.verdict == "overturn"
+        assert audit_result.response.note == "证据不足"
+        assert audit_result.response.by == "human"
+
+    asyncio.run(scenario())
+
+
 def test_ai_proposal_is_type_checked_and_unavailable_ai_uses_by_none() -> None:
     from pokemon_agent.schemas.reviewer.interaction import ReviewProposal
 

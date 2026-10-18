@@ -52,6 +52,10 @@ class AppHub(Protocol):
         """提交 AI 候选答复；hub 再次校验当前问与答复类型。"""
         ...
 
+    def stage_proposal(self, seq: int, proposal: ReviewProposal) -> SubmitAck:
+        """保存待人工确认的 AI 候选答复；不结束当前问题。"""
+        ...
+
     def submit_default(self, seq: int) -> SubmitAck:
         """以 by=none 结算无人答复；过期编号明确拒绝。"""
         ...

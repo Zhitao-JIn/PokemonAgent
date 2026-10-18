@@ -148,12 +148,12 @@ def test_proposal_controls_explain_inject_and_audit_actions(tmp_path: Path) -> N
     seat.show_proposal(Ask(seq=2, request=audit_request()), "认账", 30)
 
     assert output[1] == (
-        "30 秒内：say <意见> 提交你的意见；ask-ai <要求> 让 AI 重拟；"
-        "ok 提交空意见。倒计时结束自动采用 AI 提案。"
+        "30 秒内：accept-ai 直接采纳 AI 建议；say <意见> 提交你的意见；"
+        "ok 提交空意见；ask-ai <要求> 让 AI 重拟。倒计时结束自动采用 AI 提案。"
     )
     assert output[3] == (
-        "30 秒内：ok 接受当前判定；overturn <理由> 推翻并继续；"
-        "ask-ai <要求> 让 AI 重拟。倒计时结束自动采用 AI 判定。"
+        "30 秒内：accept-ai 采纳 AI 判定；ok 人工认账；"
+        "overturn <理由> 推翻并继续；ask-ai <要求> 让 AI 重拟。倒计时结束自动采用 AI 判定。"
     )
 
 
@@ -280,7 +280,7 @@ def test_human_answer_takes_over_ai_proposal_during_countdown(tmp_path: Path) ->
 
         async def inputs() -> AsyncIterator[str]:
             await proposal_shown.wait()
-            yield "ok"
+            yield "accept-ai"
             await asyncio.sleep(0.02)
 
         class Ai:
@@ -305,7 +305,8 @@ def test_human_answer_takes_over_ai_proposal_during_countdown(tmp_path: Path) ->
         await asyncio.wait_for(app.serve(), timeout=1)
         result = await asyncio.wait_for(asking, timeout=1)
 
-        assert result.response.text == "" and result.response.by == "human"
+        assert result.response.text == "建议按当前方案继续。\n依据：角色已在草丛内。"
+        assert result.response.by == "human"
         proposal_line = next(line for line in output if line.startswith("[AI 提案"))
         assert proposal_line == "[AI 提案 1] 建议按当前方案继续。\n依据：角色已在草丛内。"
         assert all('"answer"' not in line and "\\u" not in line for line in output)
