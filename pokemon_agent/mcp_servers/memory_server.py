@@ -72,15 +72,16 @@ def _cap() -> MemoryCapability:
 def recall(
     query: str,
     conditions: dict[str, str] | None = None,
-    limit: int = 8,
+    limit: int | None = 8,
 ) -> dict[str, Any]:
     """统一回忆口：跨全部记忆族（act / task / episode / object / knowledge）检索。
 
     不需要指定记忆种类——给一句 query（想回忆什么）和可选的上下文 hint：
     conditions 可带 episode_id（圈本局）、map_id / place（圈某格或某图）。
     返回按相关性与 hint 命中排序的混合条目，每条自带 kind 身份。
+    limit 为 null 时不截断，省略时上限为 8。
     """
-    assert limit > 0, f"limit must be > 0, got {limit}"
+    assert limit is None or limit > 0, f"limit must be > 0 or None, got {limit}"
     try:
         items = _cap().recall(query=query, conditions=conditions, limit=limit)
     except AssertionError as exc:
