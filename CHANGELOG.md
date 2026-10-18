@@ -1,3 +1,27 @@
+## 2026-10-18（520）—— reviewer 单跳链路：重连幂等、独立入口与 run 装配
+
+**改了什么**：新增 ask / cancel / answer / hello 四种类型化线上信封、ReviewLinkServer
+与同步 RemoteReviewer。每次提问先 flush，再由后台 WS 线程传输；重连复用原 qid，
+服务端保留待答问及已答缓存，取消幂等，第二连接明确拒绝。新增独立 human 入口与可关闭
+stdin 适配，PNG 存入指定目录。build 按显式实例、URL 参数、env、config 选择实现，
+无地址仍用 NullReviewer，同一实例注入三层，断线预算从 config 传入。
+
+**为什么这么改**：把人的终端与图进程分开，同时避免断线重问、重复采纳或后台丢失导致
+图无限卡死而无提示；人的等待不按 AI 预算放行，未知模式也不能擅自假定无人值守。
+
+**取舍**：仅最近 hello 为 ai 时允许断线预算耗尽后返回 by=none；human / both / 未知
+模式持续重连，每 30 秒警告。关闭在可连接时发送 cancel，离线退出通知只能尽力而为。
+qid 签名与答复缓存保留到进程退出，独立于 50 条人审历史，不保留完整请求。Langfuse
+实际按 run / branch 分 trace，入口改为跨 trace 分页后按 meta 筛选，可能读取较多候选页，
+不承诺 flush 后立即查询可见；真实 Langfuse 未联调，使用已安装 SDK 契约替身验证。
+旧复核栈与旧入口切换留 R6c，AI 席留 R7，不新增依赖或记忆 / trace 能力。
+
+**影响面**：新增 54 项，reviewer 共 158 项；默认全量 1621 项、slow 3 项、ruff（713 个
+Python 文件）通过。真实 WS 覆盖两类问、flush、同 qid 重发、离线答复、取消、占用、
+无效消息与跨 50 条历史的缓存重放；独立子进程经 stdin 提交并输出真实 PNG。去掉 flush、
+错误地让 human 超时分别触发测试失败，均逐字节还原。状态哈希仍为 28e96b09966dc94e，
+不重打存档，R6c 尚未实施。
+
 ## 2026-10-18（519）—— reviewer 进程内编排：首答仲裁、类型化命令与终端席
 
 **改了什么**：新增 Hub、Commands、HumanSeat 与依赖注入的 ReviewerApp；一问挂起，

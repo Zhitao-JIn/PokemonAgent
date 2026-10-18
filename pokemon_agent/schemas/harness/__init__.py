@@ -110,6 +110,8 @@ __all__ = [
     "FromHarnessToReviewBackendInjectReq",
     "FromHarnessToReviewBackendInjectResp",
     "FromHarnessToReviewerAuditReq",
+    "FromHarnessToReviewerAskMsg",
+    "FromHarnessToReviewerCancelMsg",
     "FromHarnessToReviewerAuditResp",
     "FromHarnessToReviewerInjectReq",
     "FromHarnessToReviewerInjectResp",
@@ -267,8 +269,10 @@ from .communication.FromHarnessToReviewBackendInjectReq import (
 from .communication.FromHarnessToReviewBackendInjectResp import (
     FromHarnessToReviewBackendInjectResp,
 )
+from .communication.FromHarnessToReviewerAskMsg import FromHarnessToReviewerAskMsg
 from .communication.FromHarnessToReviewerAuditReq import FromHarnessToReviewerAuditReq
 from .communication.FromHarnessToReviewerAuditResp import FromHarnessToReviewerAuditResp
+from .communication.FromHarnessToReviewerCancelMsg import FromHarnessToReviewerCancelMsg
 from .communication.FromHarnessToReviewerInjectReq import FromHarnessToReviewerInjectReq
 from .communication.FromHarnessToReviewerInjectResp import FromHarnessToReviewerInjectResp
 from .communication.FromHarnessToTraceToolAppendReq import FromHarnessToTraceToolAppendReq

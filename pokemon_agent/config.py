@@ -34,6 +34,15 @@ REVIEW_LAYERS: tuple[Literal["run", "episode", "task"], ...] = ("run", "episode"
 REVIEW_AI_INJECT_MAX_ROUNDS = 3
 """一次插话点内，连续 AI 意见最多生效的轮数；人的有效意见清零计数。"""
 
+REVIEW_LINK_URL: str | None = None
+"""复核链路显式启用地址；None 保持无头，部署也可通过同名环境变量指定。"""
+
+DEFAULT_REVIEW_LINK_URL: str = "ws://127.0.0.1:8765"
+"""独立 reviewer 入口的默认监听地址，沿用原后端端口。"""
+
+REVIEW_LINK_LOST_TIMEOUT_S: float | None = 120.0
+"""仅已知 AI 模式的断线预算；None 无限等，human/both/未知模式总是无限等。"""
+
 # ---- 重试预算：一次调用最多问几遍外部模型 ----
 # brain 的六条链路（choose/plan/judge/verify/summarize 调模型，reflect 不调）
 # 在 `direct/brain_tool.py` 里走**同一个**重试循环，预算就是下面这一个数。

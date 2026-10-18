@@ -41,8 +41,10 @@ embedding / reranker 替身，未接真实模型、未改生产记忆。
   立即读到相同 uuid，跨进程验证通过。
 - Langfuse：现实现明确写明 flush 只排空 SDK 队列，查询仍可能延迟；不承诺立即可见。
   本次未连接真实 Langfuse，也未改变服务配置。后续查询头行应注明可能不含最近几秒。
-- Langfuse 读取器绑定构造时的 trace_id，跨 run 查询不能只换 meta 过滤；后续装配需要
-  按查询 run 选择读取器，不能把固定 run 的读取器当作全局 reader。
+- Langfuse 读取器绑定构造时的 trace_id，实际寻址为 `(run_id, branch)`。R6b 已在独立
+  入口采用 Observations API 跨 trace 分页、解码兼容封套后按完整 meta 等值筛选，避免
+  固定 main 分支导致恢复分支漏账。不改 trace 能力；这会扫描项目候选页，数据量大时
+  查询可能更慢。本次使用 SDK 契约替身验证跨页、跨 run 与跨 branch，未连接真实 Langfuse。
 
 ## 4. 实现时必须遵守的当前形状
 

@@ -258,7 +258,7 @@ ViewQuery = Annotated[
 
 - `reviewer/__main__.py` 是 reviewer 进程的唯一装配点：读 `config.py` / `.env` → 造 trace 读端口与记忆 MCP 客户端 → `ViewReaders` → `ReviewerApp`。trace 或记忆缺配置时，对应查询回 `ok=False, text="读端口未接入"`，不阻止 reviewer 启动。
 - harness 侧没有任何查询相关装配；`build.py` 只负责 `RemoteReviewer`（6.2）。
-- trace 读协议要求支持调用方指定的 run。Langfuse 实例绑定 trace_id，R6b 装配时必须按查询 run 选择读取器；不能只修改 meta 后继续使用固定 run 的实例。
+- trace 读协议支持调用方指定的 run。Langfuse 实例绑定 `(run_id, branch)` 的 trace_id；R6b 入口跨 trace 分页解码，再按完整 meta 精确筛选，不能只修改 meta 后继续使用固定分支的实例。分页沿已有时间窗，SDK 契约测试覆盖跨 run / branch，真实服务尚未联调。
 
 ---
 
@@ -304,7 +304,7 @@ class ReviewerApp:
 # run 进程（reviewer_link/）
 class RemoteReviewer:                # 实现 Reviewer 端口
     def __init__(self, url: str, *, flush: Callable[[], None],
-                 lost_timeout_s: float | None = REVIEW_LINK_LOST_TIMEOUT_S) -> None: ...
+                 lost_timeout_s: float | None) -> None: ...  # 装配点传 config 的默认 120s
     def inject(self, req) -> FromHarnessToReviewerInjectResp: ...   # 阻塞图线程
     def audit(self, req) -> FromHarnessToReviewerAuditResp: ...
     def close(self) -> None: ...
@@ -314,7 +314,7 @@ class RemoteReviewer:                # 实现 Reviewer 端口
 - R6a 只启用 human 席，其他有效席位配置明确拒绝，待 R7 接入 AI；所有组件经窄 Protocol 注入，构造不读取全局 stdin、配置或网络。终端行源与输出函数由装配方提供。链路服务、CLI 入口与真实 stdin 适配由 R6b 加入。
 - `RemoteReviewer`：内部一条后台线程跑 WS 客户端；`inject` / `audit` 先调 `flush()`（trace 落盘），再把 `ask` 交给后台线程，并用 `concurrent.futures.Future` 阻塞图线程。同一 `qid` 重复提问幂等。连上时收 reviewer 的 `hello`（含 `mode`）。
 - **断线语义**：链路丢失或尚未连上时，`RemoteReviewer` 每 30s 记一条醒目日志并持续重连，重连后重发当前未答的 `ask`（reviewer 按 `qid` 去重，已答的直接回缓存的答案）。最近一次 `hello` 的 `mode == "ai"` 时，丢失超过 `REVIEW_LINK_LOST_TIMEOUT_S` 即按 `by="none"` 返回（插话没意见、审认账）；`human` / `both`，或从未连上过，则**无限等**。
-- 装配：`build.py`（唯一装配点）在 `REVIEW_LINK_URL` 有值时装 `RemoteReviewer(url, flush=trace.flush)`，否则装 `NullReviewer`；`flush` 回调来自 trace 端口（§十八第 3 条核查其存在性）。
+- 装配：`build.py` 保留显式 reviewer 实例的优先级；无实例时按 `reviewer_url` 参数、同名 `REVIEW_LINK_URL` 环境变量、config.REVIEW_LINK_URL 选地址，注入 `trace.flush` 与 config.REVIEW_LINK_LOST_TIMEOUT_S。无地址保持 NullReviewer；RemoteReviewer 不反向 import config 或 reviewer 实现。
 - `NullReviewer` 仍用于**无头**场景（没有任何席位）；不要为「没有席位」启动 reviewer 进程。
 - 端口默认值沿用现有后端默认端口，放在 `config.py`；同一台机器并行跑多个 run 且要各用各的 reviewer 时，各自指定不同端口。
 
@@ -376,6 +376,8 @@ help [命令]                              用法
 | `FromReviewerToHarnessHelloMsg` | reviewer → harness | `msg="hello"` `mode: "human"\|"ai"\|"both"`（连上即发） |
 
 - 同一时刻只接受一个 harness 连入，且只有一个 pending 问；第二个连入被拒，说明里写明已有 run 占用。
+- 同 qid 的请求素材签名必须相同。瞬时断线保留当前问，用户可离线答复；重连后原 qid 取回同一答案，不重开终端问。取消通知幂等且只影响该 qid。答复/取消缓存保留到 reviewer 进程退出，不随 50 条终端历史淘汰；只保存签名和答复，不缓存整份请求。
+- cancel 与 ask 在客户端串行发送。关闭在连接可用时先发 cancel 再断开；连接已不可用时，退出通知只能尽力发送，服务端可能保留原问等待人工处理。AI 断线超时产生的取消留待后续重连投递。
 - 人与 AI 之间、终端与 hub 之间**没有线上协议**：同进程，走 6.3 的类型化 API。
 - 一问最多约 20 张图（brain-scope 的 `SCOPE_IMAGE_CAP`），回环传输可接受；若实测过大，改为只传帧引用、由 reviewer 经记忆 `recall` 取帧，另案。
 
@@ -505,6 +507,8 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 ## 十、reviewer 进程入口与终端（`python -m pokemon_agent.reviewer`）
 
 - 启动：`python -m pokemon_agent.reviewer --seats human|ai|both [--url ws://127.0.0.1:<port>]`；读 `config.py` / `.env`（AI 席的模型与密钥配置、trace 与记忆的连接配置都在这里，与 run 同一份）；监听 `REVIEW_LINK_URL`，等 run 连入，连上即发 `hello`。
+- R6b 可执行入口目前使用 `--seats human`；`--trace-backend` / `--trace-root` 必须与 run 指向同一后端和存储，`--memory-server-url` 缺省取 MCP_MEMORY_SERVER_URL。支持 `--env-file` 与 `--image-root`。没有 Langfuse 配置或 memory 地址时，只把对应读口标为未接入，不静默换后端；端口占用明确失败。
+- 实际 stdin 由可关闭的 daemon 读线程送入事件循环，避免 Ctrl-C 后因阻塞 readline 等待线程池退出。行源 EOF 关闭应用并取消 pending，不启动 run。
 - 终端（`human` / `both`）：读行 → 命令层（6.4）→ 打印；提示符带当前问的种类与 seq；`both` 时显示倒计时剩余秒数（仅显示，决定权在 hub）；空闲时提示「等待 run 连入 / 等待下一问」。
 - `ai` 模式 headless：无终端，只写日志。
 - **不**自动拉起 run（AI 不替用户启动长跑进程，沿用既有铁律）；reviewer 进程本身由用户启动。
@@ -521,7 +525,8 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 | `AGENT_MAX_TOOL_CALLS` | `config.py` | 6 | 实验旋钮 |
 | `AGENT_TURN_BUDGET_S` | `config.py` | 90 | 实验旋钮 |
 | `REVIEW_AI_COUNTDOWN_S` | `config.py`（由 `review_backend.AI_COUNTDOWN` 迁入） | 30 | 实验旋钮 |
-| `REVIEW_LINK_URL`（host / port） | `config.py`（沿用现有后端默认端口） | `ws://127.0.0.1:<现状端口>` | 部署事实；run 侧与 reviewer 进程共用 |
+| `REVIEW_LINK_URL`（启用地址） | `config.py` 或同名 env | None | 部署事实；未配置则 run 保持无头 |
+| `DEFAULT_REVIEW_LINK_URL`（入口监听默认值） | `config.py` | `ws://127.0.0.1:8765` | 沿用旧后端端口；启动独立入口不自动启用 run 复核 |
 | `REVIEW_LINK_LOST_TIMEOUT_S` | `config.py` | 120 | 实验旋钮；仅当最近一次 `hello` 的 `mode` 为 `ai` 时，链路丢失超过它则按 `by="none"` 继续 |
 | `REVIEW_LAYERS` | `config.py` | `("run", "episode")` | 实验旋钮；加 `"task"` 开启 task 层审点 |
 | `HISTORY_LIMIT` | `reviewer/hub/hub.py` | 50 | 模块私有物理量 |
@@ -696,7 +701,7 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 
 - v2 / v3：reviewer 是 run 进程里的一个对象，AI 席进程内线程，人经本地 WS 连独立 CLI；harness 持有 `ReviewView` 并回答查询。
 - v4（用户 2026-10-17）：人、AI、hub、读端口同在一个独立进程，进程边界移到 `Reviewer` 端口上。理由：①查询权属于 reviewer 而非 harness，harness 不再背 `ReviewView` / `ViewAware` / `bind_view`；②AI 席与 run 隔离，线程安全核查项消失；③`pydantic-ai` 依赖只进 reviewer 进程；④人与 AI 在同一事件循环里，AI 不需要线程；⑤全程只有一条跨进程线路。
-- 代价：先起 reviewer 再起 run；多终端同连取消；trace 跨进程可见性靠提问前 flush 保证；`read_world` 取消。
+- 代价：先起 reviewer 再起 run；多终端同连取消；本地 trace 在提问前 flush 后可见，Langfuse 仍可能延迟；`read_world` 取消。
 - 仍成立的否决：不用 A2A、不用 MCP 作边界、不加 tool 层门面（17.1 / 17.2）；链路是自己的类型化信封。
 
 ---
