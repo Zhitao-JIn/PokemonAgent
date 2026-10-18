@@ -1,3 +1,24 @@
+## 2026-10-18（504）—— retrieval 纯函数单元测试 + 共用替身 tests/_doubles/memory.py
+
+**改了什么**：新增 `tests/memory/retrieval/`（5 个文件 26 条用例）与共用替身
+`tests/_doubles/memory.py`（`DeterministicEmbedder`：bigram 哈希进 16 维、`calls` 计条数；
+`OverlapReranker`：分数 = query 与文档共有 bigram 数、空入参断言）。五组覆盖：
+tokenize 4 条、BM25 建索引与排名 6 条、embedding_rank 6 条、reciprocal_rank_fusion
+4 条、hybrid_retrieve 6 条。零向量 embedder 按 spec D3 手写在 embedding 测试文件内，
+不进共用替身。生产代码零改动。
+
+**为什么这么改**：`retrieval.py` 的纯函数此前只被 store 的集成路径间接覆盖——
+签名、前置断言（空 documents / 长度对不上）、RRF 公式常数（k=60）、prebuilt 输出等价
+这些契约没有直接钉子，改一处公式只有全链路测试红得很晚。本检查点按
+`docs/test/memory-retrieval-spec.md` 建立直接契约测试，替身供后续检查点复用。
+
+**取舍**：不测排序质量（评测的活）、不 spy 私有成员（prebuilt 只测输出等价，D4）、
+K1（`hybrid_retrieve(fuse_top_k=0)` 的断言来源）按 spec 记为遗留不测；hybrid 组 21–25
+用替身而非真实 fastembed，快（整目录 0.20s）但钉不住语义质量。
+
+**影响面**：纯新增测试与测试替身，零行为变化。全量 pytest 1223 通过
+（1197 + 26），ruff check / format 全绿。
+
 ## 2026-10-18（499）—— 注释对齐：recall knowledge 的 score 恒为 None；store 的 _corpus 说明移回赋值之后
 
 **改了什么**：两处纯注释。`pokemon_agent/memory/recall.py` 的 `_recall_knowledge` docstring
