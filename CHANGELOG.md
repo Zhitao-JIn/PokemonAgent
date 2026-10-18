@@ -1,3 +1,29 @@
+## 2026-10-18（503）—— 修复 _check_step_monotonic 同实例缓存不推进：memorize 后更新 max 缓存
+
+**改了什么**：`pokemon_agent/memory/recall.py` 新增 `_advance_step_cache(episode_id, step,
+max_cache)`（`max_cache[episode_id] = max(max_cache[episode_id], step)`）；`_memorize_act` 与
+`_memorize_object` 在 `put` 成功返回后调用它推进各自的 max 缓存（先 put 后更新——put 抛
+异常时缓存不推进）。`tests/memory/capability/test_capability_memorize.py` 新增三条同实例
+回归：`test_memorize_act_rejects_lower_step_in_same_instance`（step 6 后写 step 3 断言、
+盘上只剩 step 6）、`test_memorize_act_accepts_equal_step_in_same_instance`（step 6 后写
+step 6 通过）、`test_memorize_object_rejects_lower_step_in_same_instance`（object 族同场景）。
+
+**为什么这么改**：CP7 收尾时发现的缺陷（O6）——`_check_step_monotonic` 缓存 miss 时从
+索引现查、填入的是**写入前**的最大值，而两个 memorize 写入成功后不更新缓存：同一实例内
+对同一 episode 先写大 step 再写小 step，第二写看到的是陈旧的 max（首写前的值），静默放行。
+append 单调本是"该局已有最大 step"的契约，实例内连续写同样要成立（harness 一个 episode
+的多次 memorize 都在同一进程里）。原有用例 2/8 只覆盖了新实例（缓存重建）场景，没钉住
+这个窗口。
+
+**取舍**：只补缓存推进，不动 `_check_step_monotonic` 的签名、miss 现查语义与断言文案；
+不动 restore 路径与 `_sync_max_caches`（那里靠清缓存重建可信度，语义不变）；不动其他族
+（knowledge 无 step 概念）。`_advance_step_cache` 依赖"episode_id 必在缓存中"——前面的
+检查已保证，故不再做存在性判断。
+
+**影响面**：同实例内更小 step 的 memorize 从静默放行变为 `AssertionError`——这是契约本
+意，但若有调用方依赖旧行为（同进程内乱序补写），会开始收断言。全量 pytest 1266 通过
+（1263 + 3 条回归），ruff check / format 全绿；`tests/memory/` 目录耗时仍在 3s 预算内。
+
 ## 2026-10-18（502）—— capability 层测试：直调 MemoryCapability，新建 tests/memory/capability/，迁移映射见正文
 
 **改了什么**：新建 `tests/memory/capability/`（4 个文件 27 条）——`test_capability_memorize`

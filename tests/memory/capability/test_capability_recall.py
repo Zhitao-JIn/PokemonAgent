@@ -75,16 +75,20 @@ def _object(step: int = 1, episode_id: str = _EP) -> dict:
 
 
 def test_recall_by_episode_id_returns_acts_in_step_order_then_tasks(tmp_path) -> None:
-    """同局 recall：先 act（step 升序），后 task（total_acts 升序）——写入顺序打乱也一样。"""
+    """同局 recall：先 act（step 升序），后 task（total_acts 升序）——与写入顺序无关。
+
+    task 族没有 append 单调约束，仍乱序写（t2 先于 t1、total_acts 5 先于 2），读回的
+    total_acts 升序与写入序相反，排序验证保留；act/object 按 O6 修复后的契约升序写。
+    """
 
     # Arrange
     capability = _capability(tmp_path)
     capability.memorize(
         [
             {"kind": "task", "payload": _task("t2", total_acts=5)},
-            {"kind": "act", "payload": _act(step=2)},
-            {"kind": "task", "payload": _task("t1", total_acts=2)},
             {"kind": "act", "payload": _act(step=1)},
+            {"kind": "task", "payload": _task("t1", total_acts=2)},
+            {"kind": "act", "payload": _act(step=2)},
         ]
     )
 
@@ -99,14 +103,14 @@ def test_recall_by_episode_id_returns_acts_in_step_order_then_tasks(tmp_path) ->
 
 
 def test_recall_by_place_or_map_id_routes_to_object_family(tmp_path) -> None:
-    """conditions 带 place 或 map_id → object 族（step 升序）。"""
+    """conditions 带 place 或 map_id → object 族（step 升序；O6 修复后同实例须按序写）。"""
 
     # Arrange
     capability = _capability(tmp_path)
     capability.memorize(
         [
-            {"kind": "object", "payload": _object(step=2)},
             {"kind": "object", "payload": _object(step=1)},
+            {"kind": "object", "payload": _object(step=2)},
             {"kind": "act", "payload": _act(step=1)},
         ]
     )

@@ -23,13 +23,13 @@
 
 **memorize：各族落族与断言**
 1. `test_memorize_act_stores_run_episode_step_and_map_metadata`：act 的 metadata 含 `run_id`、`episode_id`、`step`、`map_id`（用 `recall` 取回校验，不读盘）。
-2. `test_memorize_act_accepts_equal_step_and_rejects_lower_step`：同 step 通过；更小 step 触发断言。
+2. `test_memorize_act_accepts_equal_step_and_rejects_lower_step`：同 step 通过；更小 step 触发断言。同实例回归见用例 `test_memorize_act_rejects_lower_step_in_same_instance` / `test_memorize_act_accepts_equal_step_in_same_instance`（O6 修复后新增）。
 3. `test_memorize_task_stores_summary_as_searchable_text`：task 的 text = summary，可经 `recall(episode_id=…)` 取回 `content == summary`。
 4. `test_memorize_episode_rejects_markdown_without_summary`：markdown 非空、summary 为空 → 断言。
 5. `test_memorize_episode_rejects_summary_without_markdown`：反向 → 断言。
 6. `test_memorize_episode_accepts_both_empty`：两者皆空（空章）→ 通过，`stored` 含该条。
 7. `test_memorize_object_stores_place_key_and_map_metadata`：object 的 `place` 与 `map_id` 可经 `recall(place=…)` 命中。
-8. `test_memorize_object_rejects_lower_step_within_same_episode`：object 的 step 单调。
+8. `test_memorize_object_rejects_lower_step_within_same_episode`：object 的 step 单调。同实例回归见用例 `test_memorize_object_rejects_lower_step_in_same_instance`（O6 修复后新增）。
 9. `test_memorize_knowledge_skips_identical_topic_and_text`：第二次同 topic+text → `stored` 为空（探针已确认）。
 10. `test_memorize_knowledge_keeps_same_topic_with_different_text`：同 topic 不同正文 → 两条都入库。
 11. `test_memorize_rejects_unknown_kind`：`kind="bogus"` → 断言（探针已确认）。

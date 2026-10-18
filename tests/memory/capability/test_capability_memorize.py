@@ -123,6 +123,34 @@ def test_memorize_act_accepts_equal_step_and_rejects_lower_step(tmp_path) -> Non
         restarted.memorize([{"kind": "act", "payload": _act(step=1)}])
 
 
+def test_memorize_act_rejects_lower_step_in_same_instance(tmp_path) -> None:
+    """O6 回归：同一实例内先写 step 6 再写 step 3 → 断言，且盘上只留下 step 6 那条。"""
+
+    # Arrange
+    capability = _capability(tmp_path)
+    capability.memorize([{"kind": "act", "payload": _act(step=6)}])
+
+    # Act / Assert
+    with pytest.raises(AssertionError):
+        capability.memorize([{"kind": "act", "payload": _act(step=3)}])
+    items = capability.recall("", {"episode_id": _EP})
+    assert [item["payload"]["step"] for item in items] == [6]
+
+
+def test_memorize_act_accepts_equal_step_in_same_instance(tmp_path) -> None:
+    """同一实例内相等 step 仍然通过（单调是"不小于"，不是"大于"）。"""
+
+    # Arrange
+    capability = _capability(tmp_path)
+    capability.memorize([{"kind": "act", "payload": _act(step=6)}])
+
+    # Act
+    stored = capability.memorize([{"kind": "act", "payload": _act(step=6)}])
+
+    # Assert
+    assert [entry["kind"] for entry in stored] == ["act"]
+
+
 def test_memorize_task_stores_summary_as_searchable_text(tmp_path) -> None:
     """task 的 text = summary，可经 recall(episode_id=…) 取回 content == summary。"""
 
@@ -199,6 +227,18 @@ def test_memorize_object_rejects_lower_step_within_same_episode(tmp_path) -> Non
     restarted = _capability(tmp_path)
     with pytest.raises(AssertionError):
         restarted.memorize([{"kind": "object", "payload": _object(step=1)}])
+
+
+def test_memorize_object_rejects_lower_step_in_same_instance(tmp_path) -> None:
+    """O6 回归（object 族）：同一实例内先写 step 6 再写 step 3 → 断言。"""
+
+    # Arrange
+    capability = _capability(tmp_path)
+    capability.memorize([{"kind": "object", "payload": _object(step=6)}])
+
+    # Act / Assert
+    with pytest.raises(AssertionError):
+        capability.memorize([{"kind": "object", "payload": _object(step=3)}])
 
 
 def test_memorize_knowledge_skips_identical_topic_and_text(tmp_path) -> None:

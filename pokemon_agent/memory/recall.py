@@ -113,6 +113,14 @@ class MemoryCapability:
             f"step {step} < max {max_cache[episode_id]}"
         )
 
+    def _advance_step_cache(self, episode_id: str, step: int, max_cache: dict[str, int]) -> None:
+        """put 成功后推进该局的 max 缓存——同实例后续写入的单调检查以它为准。
+
+        调用时机在 put 之后：put 抛异常时缓存不推进（盘上没多出记录，缓存也不该动）。
+        此时 episode_id 必然已在缓存中（前面的 `_check_step_monotonic` 已填充）。
+        """
+        max_cache[episode_id] = max(max_cache[episode_id], step)
+
     # ---- recall：分族圈定 + 语义检索 + 融合 ----
 
     def recall(
@@ -336,7 +344,7 @@ class MemoryCapability:
         entry = ActMemory.model_validate(payload)
         self._check_step_monotonic(entry.episode_id, entry.step, self._step_max, "act")
         map_id = entry.before.place.map_id if entry.before.place is not None else ""
-        return self._store("act").put(
+        uuid_ = self._store("act").put(
             metadata={
                 "run_id": entry.run_id,
                 "episode_id": entry.episode_id,
@@ -346,6 +354,8 @@ class MemoryCapability:
             payload=entry.model_dump(),
             text="",
         )
+        self._advance_step_cache(entry.episode_id, entry.step, self._step_max)
+        return uuid_
 
     def _memorize_task(self, payload: dict[str, Any]) -> str:
         """落一条 task 记忆（metadata 只收等值坐标；text = summary）。"""
@@ -385,7 +395,7 @@ class MemoryCapability:
         adapter = TypeAdapter(ObjectFactEvent)
         event = adapter.validate_python(payload)
         self._check_step_monotonic(event.episode_id, event.step, self._object_max, "object")
-        return self._store("object").put(
+        uuid_ = self._store("object").put(
             metadata={
                 "run_id": event.run_id,
                 "episode_id": event.episode_id,
@@ -396,6 +406,8 @@ class MemoryCapability:
             payload=event.model_dump(),
             text="",
         )
+        self._advance_step_cache(event.episode_id, event.step, self._object_max)
+        return uuid_
 
     def _memorize_knowledge(self, payload: dict[str, Any]) -> str:
         """落一条 knowledge（判重 topic+正文逐字；落盘形态与手工先验一致）。
