@@ -1,3 +1,52 @@
+## 2026-10-18（501）—— store 测试迁移：直调 LocalMemoryStore，新建 tests/memory/store/，并入回归文件，映射见正文
+
+**改了什么**：新建 `tests/memory/store/`（8 个文件 37 条）——`test_store_construction`（3）、
+`test_store_records`（5）、`test_store_filter`（6）、`test_store_index_recovery`（2）、
+`test_store_search`（6）、`test_store_refresh_changed`（5）、`test_store_snapshot_restore`（6）、
+`test_store_sidecar`（4）。`tests/memory/test_memory_store.py` 只剩 4 条能力层用例
+（104/119/238/258，随 CP7 处理）；`tests/memory/test_store_regressions.py` 删除，5 条回归
+并入 store/。生产代码零改动。迁移映射（旧 → 新）：
+
+| 旧用例（test_memory_store.py） | 去向 |
+|---|---|
+| `test_store_default_root_is_the_startup_directory` | → 用例 3 `test_store_default_root_is_memory_under_cwd` |
+| `test_store_explicit_root_wins_over_the_default` | → 用例 2 `test_store_creates_kind_directory_under_given_root` |
+| `test_snapshot_zips_the_whole_root_and_excludes_itself` | → 用例 25 `test_snapshot_writes_zip_containing_the_kind_records`（改直调 `store.snapshot`） |
+| `test_snapshot_overwrites_a_previous_one_with_the_same_name` | → 用例 27（同名，改直调） |
+| `test_snapshot_name_may_not_contain_path_separators` | → 用例 28（同名，改直调） |
+| `test_restore_makes_deleted_records_come_back` | → 用例 26（同名，改直调） |
+| `test_restore_deletes_records_written_after_the_snapshot` | → 用例 29（同名，改直调） |
+| `test_restore_leaves_the_snapshots_directory_alone` | → 用例 30（同名，改直调） |
+| `test_knowledge_store_search_returns_per_stage_timings` | → 用例 31 `test_search_returns_per_stage_timings`（改直调） |
+| `test_refresh_changed_skips_rewrites_with_identical_content` | → 用例 32（同名） |
+| `test_refresh_changed_recomputes_when_content_actually_changes` | → 用例 23 `test_refresh_changed_reembeds_only_the_edited_markdown_record` |
+| `test_bm25_corpus_persists_across_instances` | → 用例 33（同名，改直调） |
+| `test_sidecar_auto_compacts_when_garbage_rows_dominate` | → 用例 34（同名，断言依探针） |
+| `test_tool_defaults_put_each_family_under_the_shared_root`（104） | 保留（CP7 capability） |
+| `test_explicit_memory_root_wins_over_the_default`（119） | 保留（CP7 capability；原文经 MemoryCapability，不并入用例 2） |
+| `test_restore_refreshes_every_family_not_just_step_memory`（238） | 保留（CP7 capability） |
+| `test_restore_rejects_unsafe_entries_before_touching_the_library`（258） | 保留（CP7 capability） |
+| `test_embedding_rank_scores_with_numpy_matrix_include_zero_vectors`（393） | 删除（函数体只调 `embedding_rank`，零向量语义已由 504 的 `test_embedding_rank_scores_zero_vector_document_as_zero` 覆盖） |
+
+回归文件 5 条（CP1×3 / CP2 / CP3）同名并入 store/：`test_get_returns_none_when_record_file_
+removed_outside_index`、`test_search_rejects_non_positive_limit`、`test_refresh_changed_does_
+not_reembed_after_restart_when_content_unchanged`、`test_refresh_changed_same_instance_touch_
+does_not_reembed`、`test_refresh_changed_reembeds_when_content_really_changes_after_restart`。
+
+**为什么这么改**：旧文件 18 条里 13 条经 MCP 信封 / `MemoryCapability` 绕行才碰到 store，
+store 的 put/get/filter/delete/count 没有直调用例；按 store spec 第四节迁入 `store/` 并改为
+直调 `LocalMemoryStore` / `store.snapshot` / `store.restore`，同时把 CP1–CP3 回归文件并入
+同一目录（spec D9）。sidecar 用例 34 按探针实证写断言：行数越过 `max(64, 活数×4)` 时
+`_load_vectors` 加载即压实为每 uuid 一行（按 uuid 排序）。
+
+**取舍**：用例 31 按 spec 口径只钉 hybrid 四段（`bm25/vector/rrf/rerank` ⊆ timings 键），
+比旧原文的五段全等（含 `prepare`）宽松——`rank` 的 docstring 报五段，spec 措辞是四段，
+取四段子集口径；能力层与 MCP 信封用例一律不迁，留 CP7。
+
+**影响面**：纯测试重组，零行为变化。全量 pytest 1241 通过（1223 − 14 旧文件 − 5 回归文件
++ 37 新建；393 为唯一下删），ruff check / format 全绿；`tests/memory/` 目录耗时 1.84s
+（预算 3s）。
+
 ## 2026-10-18（504）—— retrieval 纯函数单元测试 + 共用替身 tests/_doubles/memory.py
 
 **改了什么**：新增 `tests/memory/retrieval/`（5 个文件 26 条用例）与共用替身
