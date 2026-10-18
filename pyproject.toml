@@ -15,7 +15,7 @@ dependencies = [
     "langfuse>=4.7,<5",
     "inspect-ai==0.3.271",
     "pyboy>=2.7.0",
-    "mcp>=1.0",
+    "mcp>=1.0,<2",
 ]
 # fastembed：本地跑 embedding/reranker（ONNX runtime，不需要 torch），首次用某个模型时
 # 会从 HuggingFace Hub 下一次权重、之后离线复用——这是"混合检索"（关键词 BM25 +
