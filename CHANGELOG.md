@@ -1,3 +1,42 @@
+## 2026-10-18（502）—— capability 层测试：直调 MemoryCapability，新建 tests/memory/capability/，迁移映射见正文
+
+**改了什么**：新建 `tests/memory/capability/`（4 个文件 27 条）——`test_capability_memorize`
+（12）、`test_capability_recall`（8）、`test_capability_snapshot_restore`（3）、
+`test_capability_default_root`（4）。删除 `tests/memory/test_memory_store.py`（剩余 4 条迁出）
+与 `tests/mcpclient/memory_tool/test_episode_summary_order.py`（1 条迁出）；
+`tests/mcpclient/memory_tool/test_object_recall_content.py` 拆去已迁部分（保留 MCP 端口
+模型断言）。生产代码零改动。迁移映射（旧 → 新）：
+
+| 旧用例 | 去向 |
+|---|---|
+| `test_episode_summaries_come_back_in_execution_order`（episode_summary_order） | → 用例 16 `test_recall_by_run_id_returns_episode_summaries_in_natural_order`（改直调 recall） |
+| `test_object_content_round_trips_through_the_mcp_port` 的 memory 侧断言（object_recall_content，参数化×2） | → 用例 7 `test_memorize_object_stores_place_key_and_map_metadata` 与用例 15 `test_recall_by_place_or_map_id_routes_to_object_family`；MCP 端口模型断言原地保留 |
+| `test_mixed_recall_items_all_satisfy_the_mcp_port`（object_recall_content） | 原地保留（MCP 信封断言，不迁） |
+| `test_tool_defaults_put_each_family_under_the_shared_root`（memory_store 104） | → 用例 26（同名） |
+| `test_explicit_memory_root_wins_over_the_default`（memory_store 119） | → 用例 27（同名） |
+| `test_restore_refreshes_every_family_not_just_step_memory`（memory_store 238） | → 用例 28（同名，断言改经 recall 验证四族刷新） |
+| `test_restore_rejects_unsafe_entries_before_touching_the_library`（memory_store 258） | → 用例 23 `test_restore_rejects_archive_with_unsafe_entry_and_leaves_library_unchanged`（归 snapshot/restore 组） |
+
+用例 14（`test_recall_by_episode_id_skips_payloads_that_fail_validation`）**未写**：非法 act
+payload 连 `memorize` 都进不去（`ActMemory.model_validate` 先抛 ValidationError），无法经
+公开接口构造——按 spec 第六节移入 store 层，待设计侧定（store 层可直写构造非法盘上数据）。
+
+**为什么这么改**：`MemoryCapability` 的契约此前散落在 mcpclient 与旧文件里、且多经 MCP
+信封绕行；按 capability spec 集中到 `capability/` 并只经公开方法（D1/D2），装配统一为
+`MemoryCapability(embedder, reranker, memory_root=tmp_path)`。用例 20/21 按 D5 钉住
+`limit=0` 的 `AssertionError`（21 注释写明经 episode 分支触发，K1）；用例 17 钉住 O4 之后
+的 knowledge `score is None`。
+
+**取舍**：用例 2/8 的「更小 step 触发断言」写在**新实例**（缓存重建）场景——同实例内
+`_check_step_monotonic` 的 max 缓存 miss 时填的是写入前的最大值、写入后不更新，同实例
+重复写不拦（疑似缺陷，未改生产代码，交设计侧）；跨实例/重启场景正是 harness 依赖的性质。
+用例 26/27 沿用旧用例的 `MemoryCapability` 直构写法（spec 文字写"经 MemoryTool"，与旧
+原文不符，按原文与 D1 执行）。
+
+**影响面**：纯测试重组，零行为变化。全量 pytest 1263 通过（1241 − 1 − 4 + 27；
+object_recall 拆分只删断言不减用例），ruff check / format 全绿；`tests/memory/` 目录
+1.85s（预算 3s）。
+
 ## 2026-10-18（501）—— store 测试迁移：直调 LocalMemoryStore，新建 tests/memory/store/，并入回归文件，映射见正文
 
 **改了什么**：新建 `tests/memory/store/`（8 个文件 37 条）——`test_store_construction`（3）、

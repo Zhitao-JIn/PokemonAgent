@@ -1,6 +1,5 @@
 """已有 object 事件命中完整 MemoryTool 门面时，MCP 返回字符串 content。"""
 
-import json
 from typing import Any
 
 import pytest
@@ -65,6 +64,11 @@ def _knowledge_payload(
 
 @pytest.mark.parametrize("conditions", [{"place": "12:13:8"}, {"map_id": "12"}])
 def test_object_content_round_trips_through_the_mcp_port(remote, conditions):
+    """object 条目满足 MCP 端口模型：payload 经 `ObjectFactEvent` 校验、content 是 JSON 字符串。
+
+    memory 侧的内容往返断言（content 与 payload 逐字段相等、"你好" 在正文里）已迁去
+    `tests/memory/capability/` 用例 7/15，直调 `MemoryCapability`；这里只留 MCP 端口的形状。
+    """
     records = [{"kind": "object", "payload": _object_payload(step)} for step in (1, 2)]
     _, tool = remote
     tool.memorize(FromHarnessToMemoryToolMemorizeReq(records=records))
@@ -73,13 +77,9 @@ def test_object_content_round_trips_through_the_mcp_port(remote, conditions):
 
     assert len(response.items) == 2
     for item in response.items:
-        expected = (
-            TypeAdapter(ObjectFactEvent).validate_python(item.payload).model_dump(mode="json")
-        )
+        TypeAdapter(ObjectFactEvent).validate_python(item.payload)
         assert item.kind == "object"
         assert isinstance(item.content, str)
-        assert json.loads(item.content) == expected
-        assert "你好" in item.content
 
 
 def test_mixed_recall_items_all_satisfy_the_mcp_port(remote):
