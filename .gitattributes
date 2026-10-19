@@ -1,3 +1,4 @@
+* text=auto eol=lf
 /evals/dataset/brain_goal_judge/v1/dataset.jsonl -text
 /evals/dataset/brain_goal_judge/v2/dataset.jsonl -text
 /evals/dataset/brain_choose_action/v1/cases.jsonl -text
