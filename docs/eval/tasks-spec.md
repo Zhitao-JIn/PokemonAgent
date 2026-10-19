@@ -240,6 +240,8 @@ class JudgeCase(BaseModel):
 
 ---
 
+2026-10-18 冻结更新：`brain_choose_action` 的数据与读取工具在 `evals/dataset/brain_choose_action/`，评测入口在 `evals/brain_choose_action/`。v1 采用用户批准的 189 条完整 task choose 请求，包含同 task 全部历史，覆盖 walk、dialog、battle_menu、battle、shop、shop_items；未覆盖 start_menu。67 条排除与 2 条范围外记录保留，原批次采集版本限制见数据 manifest 与审核报告。动作集合评分契约见 `brain-choose-action-spec.md`，本次批准的实际范围覆盖其旧场合配额。
+
 ## 六、测试（用法示范）
 
 | 测试文件 | 内容 |

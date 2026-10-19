@@ -10,7 +10,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外有五个任务，统一登记在 `evals/registry.py`：三个 DeepEval 模块入口、两个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
+对外有六个任务，统一登记在 `evals/registry.py`：四个 DeepEval 模块入口、两个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
@@ -18,6 +18,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
+| brain_choose_action | 冻结的完整 choose 请求（含本 task 历史），v1 共 189 条、六类场合 | 可接受动作集合匹配、解析、合法性及场合分组 | 决策模型 |
 | brain_goal_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
 | agent_short_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
 
@@ -207,6 +208,7 @@ C 类由 `task.py` 装配原有 Inspect 链路。文件多时使用同名子包�
 | agent_short_goal_run | v1，20 个起点、样本、rubric 与档案 | build/pack.py |
 | world_script_execute | v1，106 条 cases.jsonl 与所用存档 | 106 条统一读取；核对函数在 scorer |
 | memory_store_recall | v1，dataset.json（一份3条记录/3个查询的库） | 无 |
+| brain_choose_action | 冻结的完整 choose 请求（含本 task 历史），v1 共 189 条、六类场合 | 可接受动作集合匹配、解析、合法性及场合分组 | 决策模型 |
 | brain_goal_judge | v1，dataset.jsonl（4条） | 本次不扩容 |
 
 agent 的 source_state 与 manifest.memory_archive 均相对版本目录；恢复前由 solver 在工作目录

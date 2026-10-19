@@ -311,5 +311,5 @@ evals/common/recorder.py
 1. **数据路径**：数据与读取代码放 `evals/dataset/brain_choose_action/`（`schemas.py`、`loader.py`、`build/`、`v1/`）。前文 §一 1.1 的 `schemas.py` 路径、§三 的 `dataset/` 路径、§四 目录树中的 `dataset/` 作废。依据 `docs/eval/tasks-intent.md` 第三节。
 2. **数据生产工具**（from_frames、label、collect）放 `evals/dataset/brain_choose_action/build/`，与数据同包（tasks-intent 选项 a）。
 3. **公开任务数**：当前 `evals/registry.py` 为 5 个，加入本任务后为 6 个。前文"六个变七个"作废，§四、§五 以 6 为准。
-4. **CHANGELOG 编号**：502–505，依次对应 CP1–CP4 各一条（台账 `.coordination/ledger.md` 已登记）。
+4. **CHANGELOG 编号**：原分配 502–505 在主线已被其他条目占用；集成到主线时改为 546–549，依次对应 CP1–CP4 各一条。
 5. **检查点**：CP0 装配验证（只读）、CP1 契约与骨架、CP2 A 路数据与标注草稿（草稿交用户人工审）、CP3 录制器与采集入口、CP4 注册与收尾。真实模型运行不在这五个检查点内，另行授权。
