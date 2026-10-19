@@ -98,7 +98,7 @@ def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
 
 
 def _elicit(deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object]) -> Elicited:
-    """重问由共享图调度；拆解预算、耗尽与超时仍按本层原有规则结算。"""
+    """重问由共享图调度；AI 重写次数不超过剩余拆解预算。"""
 
     def ask_brain(note: str, number: int) -> Elicited:
         return _ask_version(deps, state, meta, note, number)
@@ -106,8 +106,11 @@ def _elicit(deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object
     def ask_reviewer(result: Elicited, rounds: ReviewRound) -> ReviewMark:
         return _review_version(deps, state, meta, result, rounds)
 
+    revision_budget = max(0, deps.budget.max_decompositions - state.decompositions_used - 1)
     result, note = elicit_with_review(
-        ask_brain, ask_reviewer, max_agent_rounds=REVIEW_AI_INJECT_MAX_ROUNDS
+        ask_brain,
+        ask_reviewer,
+        max_agent_rounds=min(REVIEW_AI_INJECT_MAX_ROUNDS, revision_budget),
     )
     return result.model_copy(update={"note": note})
 

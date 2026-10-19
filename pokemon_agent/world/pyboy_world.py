@@ -36,8 +36,8 @@ assert {b for buttons in OVERLAY_ACTIONS.values() for b in buttons} <= set(ALL_B
 
 GB_FPS = 60  # Game Boy 大约每秒 60 帧；下面几个常量都按这个换算成秒
 PRESS_FRAMES = 10  # 按键按住多少帧
-WITHIN_ACTION_FRAMES = 1 * GB_FPS  # 连按时，每次按完推进多少帧（1 秒）
-AFTER_ACTION_FRAMES = 10 * GB_FPS  # 整条链按完后再推进多少帧（10 秒），然后才感知
+WITHIN_ACTION_FRAMES = 1 * GB_FPS  # 每次按键后推进一秒，保持动作连贯
+AFTER_ACTION_FRAMES = 0  # 最后一键已推进一秒，不再叠加固定尾部等待
 BOOT_FRAMES = 10 * GB_FPS  # 无存档时空转多少帧越过开机 logo
 
 
@@ -160,7 +160,7 @@ class PyBoyWorld:
                 self._tick(WITHIN_ACTION_FRAMES)
 
         # 步骤 3：按调用方要求等待游戏画面演化。
-        if settle:
+        if settle and AFTER_ACTION_FRAMES:
             self._tick(AFTER_ACTION_FRAMES)
 
     def perceive_task(self) -> TaskPerceived:
