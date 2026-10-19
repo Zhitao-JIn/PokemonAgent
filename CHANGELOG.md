@@ -1,3 +1,13 @@
+## 2026-10-19（556）—— 三层全脑调用录制与二十样本采集入口
+
+**改了什么**：增加生产 Port 旁路录制，分层保存 plan、decompose、choose、三层 judge、verify、reflect 与三层 summary 的完整请求、响应、异常和单调等待时长；新增专用 MCP 服务、正式 archive 恢复 worker、二十例重打及串行采集入口和 trace 双向对账。
+
+**为什么这么改**：此前只有 choose 留完整生产信封，其他链路主要依赖最终 prompt；统一边界后才能按同一 brain scope 构建五类测评数据，保留未完成调用，并证明重试与 trace 没有遗漏。
+
+**取舍**：仅 eval 层包裹现有 Port，不改变生产脑输入或范围；每例独立空记忆与世界服务，原始 state 与旧 archive 备份保留。按 HEAD、运行代码与 prompt、配置和 archive 哈希核版本连续性；无对应调用的类别记零覆盖，不伪造样本。
+
+**影响面**：新增 eval 采集和对账工具、录制用法测试；原 choose 入口保留兼容并可显式启用全脑录制。29 条相关测试通过，Ruff check / format 通过；本条提交尚不代表真实二十例采集完成。
+
 ## 2026-10-19（555）—— L1 背景按本 run 的 goal 身份隔离
 
 **改了什么**：episode 背景召回改为 run_id 与 L1 goal_id 联合等值筛选，排除本局；正常蒸馏、无正文与异常空章均保存 goal_id，记忆元数据同步索引。decompose 与 episode judge 继续共用 ep_ctx，范围文档与回归用例同步更正。

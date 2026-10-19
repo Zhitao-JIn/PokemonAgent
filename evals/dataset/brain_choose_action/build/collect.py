@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
+from evals.common.brain_capture import record_brain_calls
 from evals.common.recorder import RecordingChooser
 from evals.paths import REPO_ROOT
 from evals.runconfig import load_config, resolve_models
@@ -41,7 +42,9 @@ def _release_world(game: WorldMcpTool) -> None:
         ) from None
 
 
-def collect(state: Path, goal: str, criteria: str, steps: int, out: Path) -> None:
+def collect(
+    state: Path, goal: str, criteria: str, steps: int, out: Path, *, all_calls: bool = False
+) -> None:
     """从原始状态跑一次生产 harness，仅替换 task chooser 并设置动作预算。
 
     输入须为 states/ 内的 .state、非空目标与判据、正整数预算及不存在的输出目录；
@@ -75,8 +78,11 @@ def collect(state: Path, goal: str, criteria: str, steps: int, out: Path) -> Non
         **models,
     )
     try:
-        task_runtime = harness.deps.episode.task
-        task_runtime.chooser = RecordingChooser(task_runtime.chooser, out)
+        if all_calls:
+            record_brain_calls(harness.deps, out / "brain_calls")
+        else:
+            task_runtime = harness.deps.episode.task
+            task_runtime.chooser = RecordingChooser(task_runtime.chooser, out)
         game.use_start_state(state)
         task = Task(task_id=run_id, goal=goal, success_criteria=criteria, max_steps=steps)
         result = harness.run(run_id, [task], run_goal=Goal(goal=goal, criteria=criteria))
@@ -96,8 +102,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--criteria", required=True, help="单帧可判断的达成判据")
     parser.add_argument("--steps", type=int, required=True, help="全局动作预算，正整数")
     parser.add_argument("--out", type=Path, required=True, help="不存在的采集输出目录")
+    parser.add_argument("--all-calls", action="store_true", help="按三层录制全部 brain Port")
     args = parser.parse_args(argv)
-    collect(args.state, args.goal, args.criteria, args.steps, args.out)
+    if args.all_calls:
+        collect(args.state, args.goal, args.criteria, args.steps, args.out, all_calls=True)
+    else:
+        collect(args.state, args.goal, args.criteria, args.steps, args.out)
     print(f"采集结束：{args.out.resolve()}")
     return 0
 
