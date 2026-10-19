@@ -3,15 +3,15 @@
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
-from evals.brain_goal_judge.dataset import load
 from evals.brain_goal_judge.scorer import judge_scorer
 from evals.brain_goal_judge.solver import judge_solver
+from evals.dataset.brain_goal_judge import load
 from evals.runconfig import load_config
 from pokemon_agent.env import load_env_file
 
 
 @task
-def brain_goal_judge(version: str = "v1", judge_model: str | None = None) -> Task:
+def brain_goal_judge(version: str = "v2", judge_model: str | None = None) -> Task:
     """用独立真值历史测成功判定；目标和历史通过生产信封交给模型。"""
     load_env_file()
     cases = load(version)

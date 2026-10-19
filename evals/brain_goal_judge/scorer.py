@@ -4,9 +4,9 @@ from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 
-from evals.brain_goal_judge.dataset import JudgeCase
-from evals.brain_goal_judge.metrics import confusion_count
+from evals.brain_goal_judge.metrics import judge_summary
 from evals.brain_goal_judge.solver import JudgeRecord
+from evals.dataset.brain_goal_judge import JudgeCase
 
 
 def confusion(predicted: bool, achieved: bool) -> dict[str, int]:
@@ -15,14 +15,26 @@ def confusion(predicted: bool, achieved: bool) -> dict[str, int]:
     return {name: int(name == cell) for name in ("TP", "FP", "FN", "TN")}
 
 
-@scorer(metrics={name: [confusion_count()] for name in ("TP", "FP", "FN", "TN")})
+@scorer(metrics=[judge_summary()])
 def judge_scorer() -> Scorer:
-    """四格值为 0/1；汇总各格次数，标签独立于模型输出。"""
+    """汇总四格、派生率与分组指标；标签独立于模型输出。"""
 
     async def score(state: TaskState, target: Target) -> Score:
         case = JudgeCase.model_validate(state.metadata["case"])
         record = store_as(JudgeRecord)
         assert record.done is not None, "solver 未写裁决"
-        return Score(value=confusion(record.done, case.achieved), explanation=record.why)
+        raw_case = state.metadata["case"]
+        origin = raw_case.get("origin", {}) if isinstance(raw_case, dict) else {}
+        metadata = {
+            "goal_family": raw_case.get("goal_family", "other"),
+            "negative_mode": raw_case.get("negative_mode"),
+            "task_id": origin.get("task_id"),
+            "episode_id": origin.get("episode_id"),
+        }
+        return Score(
+            value=confusion(record.done, case.achieved),
+            explanation=record.why,
+            metadata=metadata,
+        )
 
     return score

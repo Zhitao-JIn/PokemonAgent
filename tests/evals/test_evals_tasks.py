@@ -1,4 +1,4 @@
-"""五项 Inspect 与 decode测评的使用示范：冻结解码、分母与记忆排序指标。"""
+"""公开评测任务与冻结解码、分母和记忆排序指标的使用示范。"""
 
 import ast
 from pathlib import Path
@@ -10,8 +10,9 @@ from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 
 from evals.agent_short_goal_run.scorer.judged import judged_accuracy, judged_count
-from evals.brain_goal_judge.dataset import DATASET_DIR, JudgeCase
 from evals.brain_goal_judge.scorer import confusion
+from evals.dataset.brain_goal_judge import JudgeCaseV1
+from evals.dataset.brain_goal_judge.loader import DATASET_DIR
 from evals.dataset.frames import load as load_frames
 from evals.decode.compare import field_verdict, truth_for
 from evals.decode.solver import decode_frame
@@ -84,6 +85,7 @@ def test_only_the_five_evaluation_tasks_are_public() -> None:
         "agent_short_goal_run",
     }
     assert sum(entry.kind == "deepeval" for entry in TASKS.values()) == 3
+    assert sum(entry.kind == "inspect" for entry in TASKS.values()) == 2
     for name, entry in TASKS.items():
         if entry.kind == "deepeval":
             assert Path(entry.entry.replace(".", "/"), "__main__.py").is_file()
@@ -157,7 +159,7 @@ def test_recall_uses_all_relevant_records_and_mrr_uses_the_first_hit() -> None:
 
 def test_judge_labels_are_independent_and_all_four_cells_are_counted() -> None:
     cases = [
-        JudgeCase.model_validate_json(line)
+        JudgeCaseV1.model_validate_json(line)
         for line in DATASET.read_text(encoding="utf-8").splitlines()
     ]
 
