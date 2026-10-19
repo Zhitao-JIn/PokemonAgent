@@ -1,3 +1,22 @@
+## 2026-10-18（546）—— brain_choose_action CP1：建立单步决策数据契约与确定性评测骨架
+
+**改了什么**：新增数据集 schemas / loader / 出口，以及 compare、solver、cases、scorer
+和命令行入口。冻结生产 choose 请求，单独保存非空可接受集合；读取缺失或重复 id 明确报错。
+入口支持模型覆盖、场合 / 标签 / id 筛选及线程池，模型配置缺键与未知筛选项当场报错。
+
+**为什么这么改**：将单步选错、解析耗尽和越权分开衡量，避免只能从整局成败间接判断。
+acceptable 按键链逐段命中并检查次数，脚本按名称与参数子集匹配；parsed 统计是否有动作，
+legal 只检查 world 原始 mask，解析失败不进 legal 分母；提供者不可达不进任何评分分母。
+
+**取舍**：v1 仍限定 walk / dialog / start_menu / battle_menu，不做动作执行验证或 LLM 判分。
+CP1 只用假 chooser 与手造样本，不注册任务、不创建冻结 cases.jsonl；人工审核与用户采集
+保留为后续检查点。生产失败账的 error 同时覆盖输出与传输失败，依据 error_kind 区分；
+DeepEval 用例仍按约定携带 additional_metadata，指标读取其当前 metadata 别名以免触发弃用提示。
+
+**影响面**：只新增评测与读取代码及测试，保留已验收的 CP3，pokemon_agent/ 零改动。
+32 项新增测试通过；原生 DeepEval 假现场四例的整体通过率为 25%，acceptable / parsed
+分母为 4，legal 为 3，标签组仅包含对应现场。全量验证结果以本检查点汇报为准。
+
 ## 2026-10-18（513）—— ReviewContext：随问快照、frames_of 与渲染
 
 **改了什么**：两个 reviewer 请求统一要求 ReviewContext；run / episode 的规划与判定四个
