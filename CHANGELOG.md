@@ -1,3 +1,13 @@
+## 2026-10-18（537）—— world 单元测试 CP3
+
+**改了什么**：新增五个测试文件，覆盖 world 线的读数、地形精灵、地图表与帧编码——`test_world_readout.py` 5 个函数（`read_money` 三字节 BCD 参数化 3 项（`12 34 56` → 123456、`00 30 00` → 3000、`00 03 00` → 300）、背包遇 `LIST_END` 截止、背包件数封顶 20 且末件 id 为 20、队伍只数 `wPartyCount` 只并读出 species / 等级 / 大端 HP / 状态、队伍人数封顶 6）；`test_world_ram_decode.py` 3 个函数（精灵表 +9 字节 0 / 4 / 8 / 12 → `south` / `north` / `west` / `east` 参数化 4 项、通行表从指针处读到 `0xFF` 得 `{1, 5, 44}`、首字节即 `0xFF` 触发 `AssertionError`）；`test_world_terrain_sprites.py` 3 个函数（`hidden_slots` 只收隐藏位为一的槽位（`(3, 7)` 命中、`(5, 2)` 不命中 → `{3}`）、`sprite_position` 相对屏幕原点偏移 4（槽 2 原始 `(10, 7)` → `(6, 3)`）、槽 0 与槽 16 触发 `AssertionError` 参数化 2 项）；`test_world_map_tilesets.py` 2 个（返回长度 248 的 `tuple` 且下标 `i` 与 `tables/map_tilesets.json` 的 `str(i)` 逐项一致、两次调用是同一对象）；`test_world_frame_encoding.py` 2 个（PNG 字节 → `data:image/png;base64,` 前缀且 base64 解回原字节、空字节仍只出前缀）。15 个函数展开为 21 个 pytest 项。假件沿用 spec 第六节开头的字典式 `Mem`（未写地址读 0）；不起模拟器、不读 ROM、不发网络请求、不用 `MagicMock`、不测 `_` 开头的私有成员（`_sprite_kind` 留给 CP4 的 `read_terrain` 间接覆盖）。
+
+**为什么这么改**：这五组此前只有间接覆盖（脚本目录与 `screen_text` 的用例顺带走到），没有针对各自判据的用例。用例按 spec 7.7 做了破坏验证：`read_money` 的 `(byte >> 4) * 10` 改成 `byte >> 4`、`read_bag` 去掉 `min(..., BAG_CAPACITY)`、`FACING_BY_BYTE` 删去 `12: "east"`、`read_passable` 去掉 `if b == 0xFF: break`、`sprite_position` 的 `- 4` 改成 `- 3`，五处对应用例均失败，还原后 `git diff --stat -- pokemon_agent/` 为空。
+
+**取舍**：`map_tilesets` 那条直接读仓库里的 `tables/map_tilesets.json` 与返回值逐项比对（表是静态数据，不是 ROM，路径由模块文件位置推出）；`read_facing` 对未知字节返回空串是 spec 7.8 的待裁决观察，没有钉成预期；`read_readout` 本轮不测（只做封装，断言价值由三个子函数承担）。
+
+**影响面**：仅新增测试，生产代码零改动。`tests/world/` 现 183 项、耗时 1.63 秒；全量 junit 计数 1496 → 1517，failures / errors / skipped 均为 0。`ruff check .` 与 `ruff format --check .` 全绿。
+
 ## 2026-10-18（533）—— world 场景与菜单补 19 个用例函数（CP2）
 
 **改了什么**：新增四个测试文件，覆盖 world 线的场景与菜单四组纯函数——`test_world_scene.py` 8 个（全屏 `0x7F` 是过场、第一行连续十六块 Logo 是标题、`(0,10)…(15,19)` 完整空框是开始菜单且 `empty_menu_frame(tiles, 0, 10, 15)` 为真、屏上 `A B C D E F G H I` 是命名键盘、战斗中光标在 FIGHT 的 2×2 菜单是 `BATTLE_MENU`、`at_start` 在 FIGHT 上为真、光标移到 ITEM 上为假、`at_start` 对普通场合触发 `AssertionError`）；`test_world_screen_menu.py` 3 个（竖排三项逐行读出 `POKEMON / ITEM / SAVE` 且光标格为 `(0, 0)` 并判定覆盖、光标移到第二项报 `(1, 0)`、战斗 2×2 读出 `[["FIGHT", "PKMN"], ["ITEM", "RUN"]]`）；`test_world_priced_menu.py` 4 个（无 `MONEY` 标题返回空表、`MONEY ¥300` 屏读出 `[("POTION", "¥300"), ("CANCEL", "")]`、框内只有一项被 `len(items) >= 2` 拒绝、框内出现 `0x79–0x7E` 边框图块被拒绝）；`test_world_battle_status.py` 4 个（`wIsInBattle` 为 0 返回 None、双方名字等级与大端 HP（`0x0123` → 291）与状态缩写、名字遇 `NAME_END` 截止、`status_abbr` 六个状态位参数化 6 项）。19 个函数展开为 24 个 pytest 项。假件沿用 spec 第六节开头：`Mem` 是字典式内存（未写地址读 0），屏幕 tile 从 `W_TILEMAP` 起写，文字按 `CHARMAP` 反查写入，菜单框内空白为 `0x7F`；不起模拟器、不读 ROM、不发网络请求、不用 `MagicMock`、不测 `_` 开头的私有成员。
