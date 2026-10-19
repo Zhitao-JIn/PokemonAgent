@@ -45,7 +45,7 @@ intent 第六节里没拍板的项，本 spec 先按推荐方案写；推翻哪�
 
 ### 1.3 验收
 
-`python -m evals list` 恰好列出五个公开名；`tests/evals/test_evals_tasks.py` 断言集合与"`@task` 函数名 = 注册名"；`evals/tasks/*/` 下除 `task.py`（与 `__init__.py`）外没有别的文件；`evals/core/` 不存在；全量 pytest 与 ruff 不比改名前多出失败。
+`python -m evals list` 恰好列出六个公开名；`tests/evals/test_evals_tasks.py` 断言集合与"`@task` 函数名 = 注册名"；`evals/tasks/*/` 下除 `task.py`（与 `__init__.py`）外没有别的文件；`evals/core/` 不存在；全量 pytest 与 ruff 不比改名前多出失败。
 
 ### 1.4 目录按 inspect 槽位归位，`evals/core/` 解散
 
@@ -242,11 +242,13 @@ class JudgeCase(BaseModel):
 
 ---
 
+2026-10-18 冻结更新：`brain_choose_action` 的数据与读取工具在 `evals/dataset/brain_choose_action/`，评测入口在 `evals/brain_choose_action/`。v1 采用用户批准的 189 条完整 task choose 请求，包含同 task 全部历史，覆盖 walk、dialog、battle_menu、battle、shop、shop_items；未覆盖 start_menu。67 条排除与 2 条范围外记录保留，原批次采集版本限制见数据 manifest 与审核报告。动作集合评分契约见 `brain-choose-action-spec.md`，本次批准的实际范围覆盖其旧场合配额。
+
 ## 六、测试（用法示范）
 
 | 测试文件 | 内容 |
 |---|---|
-| `tests/evals/test_evals_tasks.py` | 公开 task 恰为五个；`@task` 函数名 = 注册名 |
+| `tests/evals/test_evals_tasks.py` | 公开 task 恰为六个；`@task` 函数名 = 注册名 |
 | `tests/evals/world_script_execute/test_evals_datasets.py`（新） | 每个数据集包 `load()` 返回非空类型化样本；版本目录自包含（样本引用的文件都在版本目录下）；`ScriptCheck` 每个 `kind` 一正一反 |
 | `tests/test_evals_capture.py`（新） | 录制器包装假 chooser / judger：返回值与异常透传不变，落盘的信封可被 `ChooseCase.request` / `JudgeCase.request` 原样解析 |
 | `tests/test_evals_choose.py`（新） | `matches` 的命中规则（按键链逐段、脚本参数、形状不符）；三个指标与分组指标在构造的 `ChooseCase` 上的结果 |

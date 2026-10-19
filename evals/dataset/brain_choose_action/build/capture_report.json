@@ -1,0 +1,102 @@
+{
+  "original_batch": "eval_results\\brain_choose_action\\task_capture_20261018_102238",
+  "supplement_batch": "eval_results\\brain_choose_action\\supplement_20261018_172952",
+  "total_records": 258,
+  "scene_counts": {
+    "walk": 103,
+    "shop": 65,
+    "battle_menu": 30,
+    "shop_items": 16,
+    "battle": 12,
+    "dialog": 30,
+    "bag": 2
+  },
+  "supplement_audit": {
+    "states": 4,
+    "counts": {
+      "requests": 73,
+      "with_memories": 54,
+      "with_task_index": 0,
+      "with_last_result": 0,
+      "with_knowledge": 0,
+      "with_action_instructions": 73,
+      "with_ram": 73,
+      "with_frame": 73,
+      "successful_responses": 73,
+      "effective_action_matches": 73,
+      "execution_matches": 73
+    },
+    "scenes": {
+      "walk": 29,
+      "dialog": 21,
+      "battle_menu": 10,
+      "battle": 11,
+      "bag": 2
+    },
+    "problems": [],
+    "capture_boundary": "harness.deps.episode.task.chooser",
+    "budget": {
+      "wall_clock_s": 600,
+      "max_episodes": 3,
+      "max_total_actions": 60
+    }
+  },
+  "code_before": {
+    "head": "73463bb9794093ebb7e17a29d1872ce2a083f7f6",
+    "production_sha256": "898a25047071d182035b5e22938d394aa98c2982001fcd0a41e7352e4ac90b22"
+  },
+  "code_after": {
+    "head": "73463bb9794093ebb7e17a29d1872ce2a083f7f6",
+    "production_sha256": "898a25047071d182035b5e22938d394aa98c2982001fcd0a41e7352e4ac90b22"
+  },
+  "runs": [
+    {
+      "sample_id": "knowledge_npc_dialogue",
+      "termination": "goal_done",
+      "actions": 5,
+      "state_sha256": "c63bf40afefa98c485bebf143f85ec0b6bee13124a64d80064e752e94e226f29"
+    },
+    {
+      "sample_id": "knowledge_battle_move_select",
+      "termination": "goal_done",
+      "actions": 12,
+      "state_sha256": "088488e4b2342055f57820dfbef4ca1ea60ae6b7b9c8a2d492a896487891d491"
+    },
+    {
+      "sample_id": "knowledge_catch_throw_ball",
+      "termination": "goal_done",
+      "actions": 9,
+      "state_sha256": "7da2bb185f7469b0c9d148fb28f1c01cd897d0458da06842b3d2e0aa482287ee"
+    },
+    {
+      "sample_id": "knowledge_pokemon_center_heal",
+      "termination": "budget_exhausted",
+      "actions": 47,
+      "state_sha256": "aa0f40b03d1f3574e9f1896e7887c93a94bdcbffb0dbcac2a244700a5aaa32ce"
+    }
+  ],
+  "review_required": true,
+  "coverage_notes": [
+    "bag 两条仅存档，不纳入当前六类评测",
+    "start_menu 仍缺失",
+    "原批次无法证明采集全过程代码版本未变化",
+    "补采首尾 HEAD 与生产源码摘要一致，未消除旧批次的版本限制",
+    "所有标签仍未审；不同文本数量不等同于独立策略样本数量"
+  ],
+  "initial_prelabel_draft_count": 84,
+  "initial_prelabel_status_counts": {
+    "rule_draft": 84,
+    "pending": 172,
+    "outside_scope": 2
+  },
+  "initial_prelabel_draft_scene_counts": {
+    "walk": 15,
+    "shop": 24,
+    "shop_items": 5,
+    "battle": 10,
+    "dialog": 30
+  },
+  "current_draft_count": 189,
+  "current_annotation_report": "history_review_report.json",
+  "current_review_scope": "full_choose_request_and_matching_judge_input"
+}
