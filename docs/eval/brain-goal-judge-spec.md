@@ -24,7 +24,7 @@ v2 的标注元数据至少包含：
 - `achieved`：请求时刻目标是否已达成；
 - `goal_family`：`navigation`、`interaction`、`party_or_inventory`、`battle_or_encounter`、`other` 之一；
 - `negative_mode`：未达成样本必填且只能选一项：`near_miss`、`wrong_map_or_location`、`wrong_dialogue_or_event`、`required_state_missing`、`other`；已达成样本为空；
-- `truth_method`：`mechanical` 或 `human`；机械标签必须附 `check_id`，人工标签必须有具体证据说明；
+- `truth_method`：`mechanical`、`history_adjudicated` 或 `human`；机械标签必须附 `check_id`；历史裁定和人工标签均须附可定位证据。`history_adjudicated` 表示由确定性规则检查冻结请求历史，不代表独立人工复核；`human` 仅用于真实人工逐条审阅；
 - `origin`：run/episode/task/step 与源 `judge_call` trace UUID；
 - `request_sha256` 与 `evidence`：输入规范化哈希、标签依据的来源定位和摘要。
 
@@ -33,7 +33,7 @@ v2 的标注元数据至少包含：
 标签规则按优先级执行：
 
 1. 对应目标可由现有独立机械规则判定时，使用该规则在 judge 请求时刻的证据上计算，并记录 `check_id` 与证据定位。不得调用被测 judge 获取标签。
-2. 机械规则不适用时，可由人工根据冻结的请求历史和独立世界证据标注；写明实际观察到的字段、帧或状态以及目标条件如何满足/未满足。
+2. 机械规则不适用但请求历史能明确回答时，可用明确记录的历史裁定规则检查冻结历史，并记为 `history_adjudicated`；若由人逐条审阅则记为 `human`。两者都写明实际观察字段、帧或状态以及目标条件如何满足/未满足。
 3. 证据缺失、冲突或目标定义含糊时标为排除，不进入冻结集；不通过模型理由、之后的动作、run 最终状态或已有 `done` 字段补标签。
 
 一个逻辑 judge 调用最多保留一条：按 `(run, episode, task, step)` 去重；重试不算多个样本。每个 task 可有多个不同 step 的决策，但结果必须同时报告样本数、唯一 task 数与 episode 数，不将相关样本表述为独立统计样本。v2 的候选数量和类别分布由审计实测决定，不为满足预设数字放宽标签标准。
@@ -96,7 +96,7 @@ inspect eval evals/brain_goal_judge/task.py -T version=v2
 
 ### CP4：接入与验收
 
-Inspect task 默认版本切至 v2，补充回归测试；同步 `evals/registry.py`、`AGENTS.md`、`CLAUDE.md`、`docs/spec/evals/SPEC.md` 与 `docs/eval/tasks-intent.md` / `tasks-spec.md` 的 judge 条目；更新 task 数量（当前 5，注册后 6）。执行相关测试、全量 pytest、ruff check、ruff format --check。**不调用真实模型**；如需实际评分，由用户另行授权后单独运行。
+Inspect task 默认版本切至 v2，补充回归测试；同步 `evals/registry.py`、`AGENTS.md`、`CLAUDE.md`、`docs/spec/evals/SPEC.md` 与 `docs/eval/tasks-intent.md` / `tasks-spec.md` 的 judge 条目。核对发现 `brain_goal_judge` 在 CP0 基线已是公开任务，因此扩容不新增 task 名；当前 registry 仍为 5 个任务。旧计划中“注册后 6 个”的计数与实际基线不符，不能通过重复注册 judge 或添加无关任务来满足。执行相关测试、全量 pytest、ruff check、ruff format --check。**不调用真实模型**；如需实际评分，由用户另行授权后单独运行。
 
 任何阶段如需修改 `pokemon_agent/`、调用真实模型或更改上述真值规则，先停止并报告。
 
@@ -106,4 +106,4 @@ Inspect task 默认版本切至 v2，补充回归测试；同步 `evals/registry
 - 保留 v1 的四条契约样本，v2 保存扩展样本；数据与 loader 归 `evals/dataset/brain_goal_judge/`。
 - 每条冻结样本可以仅从版本目录及其自包含素材重建生产请求，并独立追溯标签依据。
 - 报告给出 TP/FP/FN/TN、率及分母、错误数、goal family / hard-negative 分组、task/episode 数和采集版本限制。
-- 公开 task 从 5 个增为 6 个；不沿用旧 spec 的“六个变七个”。
+- 本次扩容复用已公开的 `brain_goal_judge` task，公开 task 数仍为 5；不沿用旧 spec 的“六个变七个”。

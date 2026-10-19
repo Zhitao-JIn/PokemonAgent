@@ -46,9 +46,11 @@ def test_loader_rejects_invalid_or_unsupported_versions(version: str) -> None:
         load(version)
 
 
-def test_loader_does_not_fallback_when_v2_has_no_frozen_directory() -> None:
-    with pytest.raises(DatasetError, match="没有数据集版本"):
-        load("v2")
+def test_loader_reads_the_frozen_v2_dataset() -> None:
+    cases = load("v2")
+
+    assert len(cases) == 257
+    assert all(isinstance(case, JudgeCaseV2) for case in cases)
 
 
 def test_loader_rejects_duplicate_case_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

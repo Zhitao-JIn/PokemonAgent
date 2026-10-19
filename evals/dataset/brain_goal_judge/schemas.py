@@ -22,7 +22,7 @@ NegativeMode = Literal[
     "required_state_missing",
     "other",
 ]
-TruthMethod = Literal["mechanical", "human"]
+TruthMethod = Literal["mechanical", "history_adjudicated", "human"]
 
 
 class JudgeCase(BaseModel):
@@ -64,7 +64,7 @@ class JudgeEvidence(BaseModel):
 
 
 class JudgeCaseV2(JudgeCase):
-    """带完整真值依据的扩展样本；CP1 只定义契约，不创建 v2 数据。"""
+    """带完整真值依据的扩展样本。"""
 
     model_config = ConfigDict(extra="forbid")
 

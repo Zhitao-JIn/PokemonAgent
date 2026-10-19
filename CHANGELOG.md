@@ -4,6 +4,12 @@
 **取舍**：采集原件保留为本机未跟踪评测数据；CP2 只生成待人工审阅材料，不创建冻结 v2。
 **影响面**：仅评测计划与协作记录；不改生产代码、冻结 v1 或任务注册。
 
+## 2026-10-18（526）—— 冻结 brain_goal_judge v2 并实现分组评分（CP3）
+**改了什么**：冻结 257 条完整 judge 请求到 `evals/dataset/brain_goal_judge/v2/`，逐条保留 request hash、来源坐标和标签证据；使用确定性历史裁定规则检查完整请求历史，为 112 条非机械样本生成独立标签，并将方法标为 `history_adjudicated`。scorer 输出总体四格、FPR/召回率/精确率/准确率及分母，并按 `goal_family`、`negative_mode` 汇总与统计唯一 task/episode。
+**为什么这么改**：judge 的早停判断需要独立真值；使用请求历史中的状态和事件证据可区分目标是否已达成，分组率与明确分母则能定位误报发生在哪类目标。
+**取舍**：`case_id` 用唯一 trace UUID，避免采集批次间展示坐标重复；完整历史规则修正了 1 条战斗结束标签与 1 条商店选项标签，20 条原无建议样本也由同一规则裁定。规则裁定不冒称独立人工复核，`human` 标签保留给未来实际逐条人审。调用错误继续由 Inspect 作为 sample error 记录，不进入混淆矩阵；零分母率在数值日志中为 NaN，并保留 0 分母，解释为 NA。原批采集版本连续性仍无法证明，补采版本 SHA 见 CP3 覆盖报告；本检查点不调用真实模型。
+**影响面**：新增 v2 冻结数据、历史裁定/冻结构建工具、评分指标与测试；保留 v1 字节不变，不改生产代码、prompt、任务注册或默认版本。
+
 ## 2026-10-18（525）—— brain_goal_judge 候选核对与真值审阅草稿（CP2）
 **改了什么**：新增只读审计工具 `evals/dataset/brain_goal_judge/build/audit_candidates.py`，对 257 条候选按 `(run, episode, task, step)` 去重后重建生产 `FromHarnessToBrainToolJudgeReq`（完整 task 历史与历史帧，含每条 `before_frame`/`after_frame`），用生产 `build_prompt` 核 prompt、用 `dedup_snapshots` 逐帧哈希核图片绑定；真值只用已有机械规则（`map_changed` / `reach_map12_y14` / `dialog_opened` / `dialog_finished` / `shop_*` / `move_*` 等）在请求时刻证据上自动判定，其余样本不赋真值、只留未审定建议或标待审，逐条附结构化证据（source/locator/summary，定位到 trace 或 `step_memory` 具体文件与字段）；输出 `cp2_draft.jsonl`（257 条）、`cp2_review.csv` 与 `cp2_coverage.md`，并新增 `tests/evals/test_brain_goal_judge_audit.py`。
 **为什么这么改**：真值必须独立于模型 `done`/`why`、后续动作与 run 最终结果；只有独立机械规则能自动赋真值，其余须人工审阅，故把「请求可复原」「prompt/图片对齐」「真值可判」三者分开，逐条留下候选 ID、来源坐标、trace UUID、request 哈希与可定位证据，才能支撑后续 v2 冻结时逐条可追溯。
