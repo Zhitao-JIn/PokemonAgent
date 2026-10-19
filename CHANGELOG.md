@@ -1,3 +1,13 @@
+## 2026-10-19（558）—— plan 与 decompose 拆成独立评测入口
+
+**改了什么**：新增 brain_plan、brain_decompose 两个独立 Inspect 任务，各自具有数据加载、生产 Port 调用、结构评分和语义评分入口；独立数据清单固定 26 条 plan 与 37 条 decompose 的来源版本、输入和参考哈希。与已有 brain_choose、brain_judge 一起形成四个独立脑能力评测，registry 共八个公开任务。模型结果、实际 prompt/附图、调用账与重试耗尽信息保留在 Inspect 记录中。
+
+**为什么这么改**：仅将 plan/decompose 放进采集资料，仍不能单独运行、选择模型、评分与查看结果。每种能力应有自己的运行与报告边界；结构合法也不能替代规划质量，两种分数必须分列，参考和来源元信息不能进入被测模型请求。
+
+**取舍**：独立清单复用已冻结原料，不复制或改写这轮 20 例资料，不重新跑游戏。结构分仅检查可机械核对的约束；质量分由单独的模型请求逐条核证据量表，明确标作模型审阅，可单独指定型号；评分缺项、重复、无效或未定不冒充通过，关闭 grader 时不进语义分母。型号相同仍是两次独立请求，不宣称评分器是不同模型。summary 原料单独保留，本次不新增 summary 公开入口。
+
+**影响面**：eval 两个独立任务、共享量表评分与数据清单校验、registry、规范和任务文档；choose/judge 的入口、冻结数据、生产 brain scope 与存档不变。新增 13 个用法/约束/隔离/评分与指纹测试；默认全量 1738 passed、7 skipped、3 deselected，测试进程显式清空 DeepSeek key。Inspect CLI 能分别发现两个新任务；Ruff 通过（排除原有 .pytest_base）。本次验证使用 Fake Port 和 Fake Grader，未新增真实模型跑分或重采。
+
 ## 2026-10-19（557）—— 二十场景全脑数据冻结与评测命名统一
 
 **改了什么**：按 schema 11a4afa05e6ed43d 重打二十份正式 archive，并在固定提交 5d1ff1e 上完成真实采集。冻结 judge 289、plan 26、decompose 37、choose 207、summary 99 条完整输入，保存 12 个 Port 的请求、响应、异常、耗时、737 次模型尝试与 trace；双向缺账为零，17 条预算跳过账单列。增加来源哈希包、范围审计、独立参考、构建/验证/加载入口。brain_goal_judge 与 brain_choose_action 分别统一改名为 brain_judge 与 brain_choose，旧冻结 JSONL 字节保留；新增三层 judge v3 的 206 条机械标签与 choose v2 的 21 条独立动作集合。

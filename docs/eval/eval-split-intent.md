@@ -139,4 +139,4 @@ DeepEval 的接法已在隔离环境（Python 3.12，deepeval 4.2.8）验证，�
 **验收（意图层面）：**
 - 三个 B 类任务迁移前后，同一份数据上每个 (用例, 指标) 的判定逐项一致。
 - 一条命令得到整体通过率与逐指标汇总，有失败时退出码非零。
-- 六个公开任务都能从 `evals/registry.py` 找到入口；`evals/solvers/`、`evals/scorers/`、`evals/tasks/` 不存在。
+- 八个公开任务都能从 `evals/registry.py` 找到入口；`evals/solvers/`、`evals/scorers/`、`evals/tasks/` 不存在。

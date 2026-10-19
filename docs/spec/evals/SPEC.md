@@ -10,7 +10,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外有六个任务，统一登记在 `evals/registry.py`：四个 DeepEval 模块入口、两个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
+对外有八个任务，统一登记在 `evals/registry.py`：四个 DeepEval 模块入口、四个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
@@ -232,3 +232,31 @@ python -m evals.dataset.frames.build.cli build --capture <capture_dir> --version
 旧采集工具重跑已会改变当前 v2，迁移前后重采产物逐字节相同，但与正式冻结物不同；
 本次仅在副本验证，没有将重采结果覆盖 v2。新 pack 工具在副本打包的 world.state 与现有档案一致。
 真实 LLM 测评未重跑；三个无 LLM task 已全量运行，world 的原有 switch_from_party_list 失败保持不变。
+
+
+## 四个独立脑能力评测
+
+`brain_choose`、`brain_plan`、`brain_decompose`、`brain_judge` 各有独立入口、加载器、
+生产 Port 调用与评分结果，不把五族采集资料作为一个综合评测。
+plan/decompose 的数据清单位于 `evals/dataset/brain_plan/v1` 与
+`evals/dataset/brain_decompose/v1`，各自固定来源版本和输入/参考哈希；只复用同批原料字节。
+
+plan 独立调用 Planner，结构分核新增上限、更新索引和应用后是否仍可派发；
+decompose 独立调用 Decomposer，结构分核任务数量、正步数与非空目标/判据。
+两者另列 quality_scorer：独立评分调用根据完整生产 prompt、实际附图、候选结果和证据量表
+逐项审阅。语义分是模型审阅，不是机械真值，也不要求匹配旧模型答案。
+必选项明确失败则失败，有未定项且无失败则不进语义分母；评分缺条、重复或格式错误也不进分母。
+生产调用重试耗尽为 sample error，已有 calls 与 failure 留在 Inspect store。
+
+```powershell
+python -m evals.brain_choose --version v2
+inspect eval evals/brain_plan/task.py -T version=v1
+inspect eval evals/brain_decompose/task.py -T version=v1
+inspect eval evals/brain_judge/task.py -T version=v3
+```
+
+plan/decompose 的被测模型默认读 config.models.plan_model，语义评分模型默认读
+config.evaluation_models.test_text，分别可用 `-T model=...` 与 `-T grader_model=...` 覆盖。
+`-T grader_model=none` 仅运行机械约束；不会产生语义通过率。
+这些是独立模型调用，不保证型号不同；需要不同型号时显式指定 grader_model。
+summary 的 99 条三层原料仍保留，本轮四个脑能力任务不新增 summary 公开入口。

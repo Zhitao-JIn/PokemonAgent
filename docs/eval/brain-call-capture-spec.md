@@ -57,10 +57,12 @@ pack 前核二十份原始 state 哈希，备份旧 archives；pack 后核 schem
 新 judge v3 显式携带层级与原始身份，运行指标按层分列；episode 原始空 task_id 不补造。
 choose v2 只收独立规则能给出动作集合的子集，保留方向键和等价脚本。
 其余调用完整保留，使用证据 rubric 或待审标记，不混入动作命中率/四格指标分母。
-plan、decompose、summary 已有完整输入、约束与证据量表，尚未注册为新的公开运行任务。
+plan 与 decompose 已各自注册独立公开任务，独立清单固定本批输入与参考哈希；summary 的输入、约束与证据量表继续单独保留。
 
 ```powershell
 python -m evals.dataset.brain_calls.verify_dataset evals/dataset/brain_calls/v1
+inspect eval evals/brain_plan/task.py -T version=v1
+inspect eval evals/brain_decompose/task.py -T version=v1
 inspect eval evals/brain_judge/task.py -T version=v3
 python -m evals.brain_choose --version v2
 ```
