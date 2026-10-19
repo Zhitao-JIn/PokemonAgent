@@ -20,6 +20,7 @@ _VERSION_MODELS: dict[str, type[JudgeCaseV1] | type[JudgeCaseV2]] = {
     "v1": JudgeCaseV1,
     "v2": JudgeCaseV2,
     "v3": JudgeCaseV3,
+    "v4": JudgeCaseV3,
 }
 _LoadedCase: TypeAlias = JudgeCaseV1 | JudgeCaseV2 | JudgeCaseV3
 

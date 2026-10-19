@@ -208,8 +208,8 @@ C 类由 `task.py` 装配原有 Inspect 链路。文件多时使用同名子包�
 | agent_short_goal_run | v1，20 个起点、样本、rubric 与档案 | build/pack.py |
 | world_script_execute | v1，106 条 cases.jsonl 与所用存档 | 106 条统一读取；核对函数在 scorer |
 | memory_store_recall | v1，dataset.json（一份3条记录/3个查询的库） | 无 |
-| brain_choose | v1，189 条完整 choose 请求（含本 task 历史），覆盖六类场合；start_menu 未覆盖 | `evals/dataset/brain_choose/build/` |
-| brain_judge | 默认 v2，dataset.jsonl（257条）；v1 保留 4 条 | `evals/dataset/brain_judge/build/` |
+| brain_choose | 默认 v3，131 条历史标注；v1 的189条与 v2 的21条机械标签保留 | `evals/dataset/brain_annotations/` |
+| brain_judge | 默认 v4，289 条三层标注；旧 v1/v2/v3 保留 | `evals/dataset/brain_annotations/` |
 
 agent 的 source_state 与 manifest.memory_archive 均相对版本目录；恢复前由 solver 在工作目录
 生成路径适配清单，冻结原件不写回。world 用例的 state 相对版本下的 states/，
@@ -249,10 +249,10 @@ decompose 独立调用 Decomposer，结构分核任务数量、正步数与非�
 生产调用重试耗尽为 sample error，已有 calls 与 failure 留在 Inspect store。
 
 ```powershell
-python -m evals.brain_choose --version v2
-inspect eval evals/brain_plan/task.py -T version=v1
-inspect eval evals/brain_decompose/task.py -T version=v1
-inspect eval evals/brain_judge/task.py -T version=v3
+python -m evals.brain_choose --version v3
+inspect eval evals/brain_plan/task.py -T version=v2
+inspect eval evals/brain_decompose/task.py -T version=v2
+inspect eval evals/brain_judge/task.py -T version=v4
 ```
 
 plan/decompose 的被测模型默认读 config.models.plan_model，语义评分模型默认读
@@ -260,3 +260,13 @@ config.evaluation_models.test_text，分别可用 `-T model=...` 与 `-T grader_
 `-T grader_model=none` 仅运行机械约束；不会产生语义通过率。
 这些是独立模型调用，不保证型号不同；需要不同型号时显式指定 grader_model。
 summary 的 99 条三层原料仍保留，本轮四个脑能力任务不新增 summary 公开入口。
+
+2026-10-19 历史审阅旁账位于 `evals/dataset/brain_annotations/v1`。
+本轮原待审332条全部记录处理结论；旧机械标签227条保留来源。559条中可评分481条：
+choose131、judge289、plan25、decompose36。35条前提冲突、43条证据不足，附理由但不进分母。
+plan/decompose v2 在 v1 原始请求上叠加逐例评分要求，排除各1条已逃跑却禁止重新遇敌的冲突现场。
+四个公开入口默认新版；底层旧加载器的默认版本保留兼容，可显式传新版本。
+新增真值标为 history_adjudicated，不冒称人审；规划语义分仍是模型审阅。
+choose 集合是已审的保守动作集合，不宣称穷尽全部合理策略。
+各条证据绑定该请求的原值指纹，不能从后续记录或别的 L1 取材补答案。
+完整数量、裁决示例和局限见 `evals/dataset/brain_annotations/v1/REPORT.md`。

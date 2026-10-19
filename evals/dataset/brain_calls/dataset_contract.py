@@ -91,7 +91,9 @@ class ReferenceCase(BaseModel):
     criteria: list[Criterion] = Field(min_length=1)
     constraints: dict[str, object]
     evidence: list[str]
-    label_source: Literal["mechanical", "source_contract"] = "source_contract"
+    label_source: Literal["mechanical", "source_contract", "history_adjudicated"] = (
+        "source_contract"
+    )
     mechanical_reason: str = ""
 
 

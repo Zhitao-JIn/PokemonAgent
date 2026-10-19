@@ -15,6 +15,7 @@ class ActionMatcher(BaseModel):
 
     key: str | None = Field(default=None, min_length=1)
     max_times: int | None = Field(default=None, ge=1)
+    max_total_times: int | None = Field(default=None, ge=1)
     script: str | None = Field(default=None, min_length=1)
     args: dict[str, str | int] | None = None
 
@@ -25,6 +26,8 @@ class ActionMatcher(BaseModel):
             raise ValueError("key 与 script 必须恰好一个非空")
         if self.max_times is not None and self.key is None:
             raise ValueError("max_times 仅可用于 key")
+        if self.max_total_times is not None and self.key is None:
+            raise ValueError("max_total_times 仅可用于 key")
         if self.args is not None and self.script is None:
             raise ValueError("args 仅可用于 script")
         return self
@@ -41,6 +44,6 @@ class ChooseCase(BaseModel):
         default_factory=list
     )
     source: Literal["frame", "collected"]
-    label_source: Literal["rule", "human"]
+    label_source: Literal["rule", "human", "history_adjudicated"]
     label_note: str
     origin: str

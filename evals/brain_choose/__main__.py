@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     """校验筛选后才装配生产 chooser；有评分失败返回 1，不通样本打印但不计分。"""
     parser = argparse.ArgumentParser(description="brain choose 单步离线评测")
     parser.add_argument("--text-model")
-    parser.add_argument("--version", default="v1")
+    parser.add_argument("--version", default="v3")
     parser.add_argument("--scene", action="append", default=[])
     parser.add_argument("--tag", action="append", default=[])
     parser.add_argument("--case", action="append", default=[])

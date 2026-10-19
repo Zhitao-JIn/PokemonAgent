@@ -268,7 +268,7 @@ def test_cli_excludes_unreachable_cases_and_preserves_model_override(monkeypatch
 
     assert builds == [{"text": "fake-model"}]
     assert evaluations[0]["hyperparameters"] == {
-        "dataset": "v1",
+        "dataset": "v3",
         "cases": 1,
         "text_model": "fake-model",
     }

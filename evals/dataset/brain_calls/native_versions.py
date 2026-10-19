@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from evals.dataset.brain_choose.schemas import ChooseCase
-from evals.dataset.brain_judge.schemas import JudgeEvidence
+from evals.dataset.brain_judge.schemas import JudgeEvidence, TruthMethod
 from evals.dataset.brain_judge.schemas_v3 import JudgeCaseV3, JudgeOriginV3
 from evals.paths import REPO_ROOT
 
@@ -26,8 +26,10 @@ def pairs(root: Path, family: str) -> list[tuple[InputCase, ReferenceCase]]:
     return list(zip(inputs, refs, strict=True))
 
 
-def judge_case(case: InputCase, ref: ReferenceCase) -> JudgeCaseV3:
-    """调用方保证独立机械标签已确定且有完整 trace 身份。"""
+def judge_case(
+    case: InputCase, ref: ReferenceCase, truth_method: TruthMethod = "mechanical"
+) -> JudgeCaseV3:
+    """调用方保证独立标签已确定且有原始 trace 身份；来源方法必须如实填写。"""
     assert ref.achieved is not None and case.source.trace_uuids
     meta = case.source.meta
     return JudgeCaseV3(
@@ -43,7 +45,7 @@ def judge_case(case: InputCase, ref: ReferenceCase) -> JudgeCaseV3:
             else "interaction"
         ),
         negative_mode=None if ref.achieved else "required_state_missing",
-        truth_method="mechanical",
+        truth_method=truth_method,
         check_id=ref.check_id,
         origin=JudgeOriginV3(
             branch=meta["branch"],

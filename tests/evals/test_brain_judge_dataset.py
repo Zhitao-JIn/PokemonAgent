@@ -53,13 +53,13 @@ def test_loader_reads_the_frozen_v2_dataset() -> None:
     assert all(isinstance(case, JudgeCaseV2) for case in cases)
 
 
-def test_inspect_task_defaults_to_v2_and_keeps_v1_selectable(
+def test_inspect_task_defaults_to_v4_and_keeps_v1_selectable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from evals.brain_judge import task as task_module
 
     requested_versions: list[str] = []
-    cases_by_version = {"v1": load("v1"), "v2": load("v2")}
+    cases_by_version = {"v1": load("v1"), "v4": load("v4")}
 
     def fake_load(version: str) -> list[JudgeCase]:
         requested_versions.append(version)
@@ -73,8 +73,8 @@ def test_inspect_task_defaults_to_v2_and_keeps_v1_selectable(
     default_task = task_module.brain_judge()
     v1_task = task_module.brain_judge(version="v1")
 
-    assert requested_versions == ["v2", "v1"]
-    assert len(default_task.dataset) == 257
+    assert requested_versions == ["v4", "v1"]
+    assert len(default_task.dataset) == 289
     assert len(v1_task.dataset) == 4
 
 

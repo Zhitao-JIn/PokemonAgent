@@ -19,6 +19,11 @@ def matches(action: Action, acceptable: list[ActionMatcher]) -> bool:
             )
             for matcher in acceptable
         )
+    limits = [
+        matcher.max_total_times for matcher in acceptable if matcher.max_total_times is not None
+    ]
+    if limits and sum(segment.times for segment in action.sequence) > min(limits):
+        return False
     return bool(action.sequence) and all(
         any(
             matcher.key == segment.name
