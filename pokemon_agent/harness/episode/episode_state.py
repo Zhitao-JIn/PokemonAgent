@@ -53,7 +53,7 @@ class EpisodeContext(BaseModel):
     )
     episode_index: list[EpisodeMemory] = Field(
         default_factory=list,
-        description="run_goal 相同的其他 episode，不含本局；只用 index_line 渲染",
+        description="本 run 内同一个 L1 goal 的其他 episode，不含本局；只用 index_line 渲染",
     )
     knowledge_semantic_memory: list[str] | None = Field(
         default=None, description="知识库检索结果；None = 本局还没查过。之后沿用，到下次重查为止"

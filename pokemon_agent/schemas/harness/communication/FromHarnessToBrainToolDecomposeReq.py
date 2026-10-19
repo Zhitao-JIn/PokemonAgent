@@ -28,7 +28,7 @@ class FromHarnessToBrainToolDecomposeReq(BaseModel):
     )
     episode_index: list[EpisodeMemory] = Field(
         default_factory=list,
-        description="run_goal 相同的其他 episode，不含本局；只用 index_line 渲染",
+        description="本 run 内同一个 L1 goal 的其他 episode，不含本局；只用 index_line 渲染",
     )
     knowledge: list[str] = Field(
         default_factory=list, description="episode 层检索到的领域知识全文，一篇一条（不筛）"

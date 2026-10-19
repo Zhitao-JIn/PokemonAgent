@@ -656,6 +656,7 @@ _EPISODE_BODY_DROP = frozenset(
         "acts_used",
         "termination",
         "run_goal",
+        "goal_id",
         "first_frame",
         "last_frame",
     }

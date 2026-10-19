@@ -54,6 +54,7 @@ class EpisodeMemory(BaseModel):
     episode_id: str = Field(description="蒸馏自哪一局")
     run_id: str = Field(description="所属 run 的标识符")
     run_goal: str = Field(default="", description="所属 run 的目标文本")
+    goal_id: str = Field(default="", description="所属 L1 goal 的身份；与 run_id 共同限定背景范围")
     goal: str = Field(description="那一局的任务目标")
     steps: int = Field(ge=0, description="那一局派了几个 task（本层计数单位）")
     acts_used: int = Field(default=0, ge=0, description="那一局累计按了几个键（统计用）")

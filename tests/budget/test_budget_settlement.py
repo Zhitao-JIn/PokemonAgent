@@ -189,5 +189,5 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
     assert all(call.payload["raw"] == raw for call in caught.value.calls)
 
 
-def test_budget_schema_is_frozen_after_the_complete_field_batch():
-    assert state_schema_hash() == "28e96b09966dc94e"
+def test_state_schema_is_frozen_after_the_l1_goal_identity_stamp():
+    assert state_schema_hash() == "11a4afa05e6ed43d"

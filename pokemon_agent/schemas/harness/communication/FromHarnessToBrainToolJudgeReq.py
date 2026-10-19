@@ -30,7 +30,7 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     episode_memories：L0 详情，本 run 全部局，与 plan·L0 的 details 共用；下两层留空。
     run_index：L0 背景，过往 run 的一行记录，不含本 run。
     task_index：本 episode 内此前同目标 task 的无帧背景索引，只有 task 层填写。
-    episode_index：episode 层的同 run_goal 其他局背景，只用 index_line 渲染。
+    episode_index：本 run 内同一个 L1 goal 的其他局背景，只用 index_line 渲染。
     observation：episode / run 层当前画面；task 层留空。
     knowledge：三层各自检索到的领域知识。
     allow_interrupt：只有 task 层置真——prompt 多一段「是不是被打断了」的判法，

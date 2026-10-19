@@ -1,3 +1,13 @@
+## 2026-10-19（555）—— L1 背景按本 run 的 goal 身份隔离
+
+**改了什么**：episode 背景召回改为 run_id 与 L1 goal_id 联合等值筛选，排除本局；正常蒸馏、无正文与异常空章均保存 goal_id，记忆元数据同步索引。decompose 与 episode judge 继续共用 ep_ctx，范围文档与回归用例同步更正。
+
+**为什么这么改**：原实现按 run_goal 文本关联，会把同 run 的其他 L1 goal、乃至其他 run 的局当作当前 goal 的经验。背景必须属于同一个 plan 产出的 goal 身份，不能由目标文字相等推断。
+
+**取舍**：run_goal 保留作来源章，不再用作 episode 召回键；旧记录缺少 goal_id 时不回填、不按文字补配。L0 的其他 run 索引和 L2 的同局同目标文本索引保持原规则。状态 schema hash 从 28e96b09966dc94e 变为 11a4afa05e6ed43d，旧存档仍按原校验拒载，本次不重打。
+
+**影响面**：episode 来源章、harness 收尾、memory 筛选、trace 正文排除来源章及 brain_scope 文档。回归覆盖同文字异 goal、跨 run 同 goal_id、当前局排除、缺身份旧记录、总目标文字变化、空章与三层图共用范围；不改变模型 provider、动作空间或冻结评测数据。当前工作区默认全量 1723 passed、3 deselected；慢测 3 passed；Ruff check / format 通过（排除原有 .pytest_base 临时产物）。测试进程显式清空 DeepSeek key，隔离 reviewer 的无密钥入口测试与本机凭据。
+
 ## 2026-10-19（554）—— 增加 PyBoy 暂停与按键循环现场探针
 
 **改了什么**：新增独立探针脚本，使用真实 ROM 与草丛遇敌存档左右交替按键；每次推进 60 帧后暂停一段时间并刷新窗口，记录动作前后的帧号。

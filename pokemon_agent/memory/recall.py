@@ -139,22 +139,26 @@ class MemoryCapability:
           → object（step 升序）；
         - `conditions["run_id"]` / `conditions["episode_id"]` → episode 摘要
           （无 query 时按 conditions 等值 filter 全量自然序；有 query 走语义 rank）；
-        - `conditions["run_goal"]` → 同目标 episode 摘要，跨 run 自然序；
+        - `conditions["goal_id"]` 与 run_id → 本 run 同一 L1 goal 的 episode 摘要；
         - `conditions["runs"] == "all"` → 仅全部 run 记忆，按 run_id 自然序；
         - `query` 非空 → knowledge（语义 search）；
         融合：hint 命中族在前（族内按各自序），语义族随后按 score 降序。
         limit 为 None 时不截断；给定整数时在融合后截断。
         """
         conditions = conditions or {}
+        if "run_goal" in conditions:
+            raise ValueError("run_goal is not an episode scope; use run_id and goal_id")
         items: list[dict[str, Any]] = []
         retrieval_limit = 10**6 if limit is None else limit
 
         if conditions.get("runs") == "all":
             return self._recall_run_memories()[:limit]
 
-        run_goal = conditions.get("run_goal")
+        goal_id = conditions.get("goal_id")
         episode_id = conditions.get("episode_id")
         run_id = conditions.get("run_id")
+        if goal_id and not run_id:
+            raise ValueError("goal_id recall requires run_id")
         if episode_id:
             items.extend(self._recall_acts(episode_id))
             items.extend(self._recall_tasks(episode_id))
@@ -171,7 +175,7 @@ class MemoryCapability:
                 object_conditions["run_id"] = run_id
             items.extend(self._recall_objects(object_conditions))
 
-        if run_id or episode_id or run_goal or query:
+        if run_id or episode_id or goal_id or query:
             items.extend(self._recall_episode_summaries(query, conditions, retrieval_limit))
 
         if query:
@@ -254,7 +258,7 @@ class MemoryCapability:
         """episode 摘要：query 非空走语义 rank（score = 相关性）；
         无 query 时按 conditions 等值 filter 全量自然序（score = None）。
 
-        episode 族只认 run_id / episode_id / run_goal 三个等值键（success / scene 未来加）——
+        episode 族只认 run_id / episode_id / goal_id 三个等值键（success / scene 未来加）——
         其余 hint 键（place 等）不属于这一族，透传会查空。
         content 恒 = markdown（空章就是空串，消费方靠它区分空章与有正文）。
         """
@@ -263,7 +267,7 @@ class MemoryCapability:
         episode_conditions = {
             key: value
             for key, value in conditions.items()
-            if key in ("run_id", "episode_id", "run_goal")
+            if key in ("run_id", "episode_id", "goal_id")
         }
         items: list[dict[str, Any]] = []
         if query:
@@ -417,6 +421,7 @@ class MemoryCapability:
                 "run_id": memory.run_id,
                 "episode_id": memory.episode_id,
                 "run_goal": memory.run_goal,
+                "goal_id": memory.goal_id,
                 "success": str(memory.success),
                 "quality_score": f"{memory.quality_score:.2f}",
                 "scene": "|".join(memory.applicable_scenes),

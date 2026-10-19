@@ -706,6 +706,7 @@ class Summarizer:
             episode_id=req.episode_id,
             run_id=req.run_id,
             run_goal=req.run_goal,
+            goal_id=req.goal_id,
             first_frame=req.entries[0].first_frame,
             last_frame=req.entries[-1].last_frame,
             goal=req.goal,
