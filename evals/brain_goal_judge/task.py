@@ -11,7 +11,7 @@ from pokemon_agent.env import load_env_file
 
 
 @task
-def brain_goal_judge(version: str = "v1", judge_model: str | None = None) -> Task:
+def brain_goal_judge(version: str = "v2", judge_model: str | None = None) -> Task:
     """用独立真值历史测成功判定；目标和历史通过生产信封交给模型。"""
     load_env_file()
     cases = load(version)

@@ -53,6 +53,31 @@ def test_loader_reads_the_frozen_v2_dataset() -> None:
     assert all(isinstance(case, JudgeCaseV2) for case in cases)
 
 
+def test_inspect_task_defaults_to_v2_and_keeps_v1_selectable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from evals.brain_goal_judge import task as task_module
+
+    requested_versions: list[str] = []
+    cases_by_version = {"v1": load("v1"), "v2": load("v2")}
+
+    def fake_load(version: str) -> list[JudgeCase]:
+        requested_versions.append(version)
+        return cases_by_version[version]
+
+    monkeypatch.setattr(task_module, "load", fake_load)
+    monkeypatch.setattr(task_module, "load_env_file", lambda: None)
+    monkeypatch.setattr(task_module, "load_config", lambda: {"models": {"judge_model": "fake"}})
+    monkeypatch.setattr(task_module, "judge_solver", lambda model: [])
+
+    default_task = task_module.brain_goal_judge()
+    v1_task = task_module.brain_goal_judge(version="v1")
+
+    assert requested_versions == ["v2", "v1"]
+    assert len(default_task.dataset) == 257
+    assert len(v1_task.dataset) == 4
+
+
 def test_loader_rejects_duplicate_case_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     case = load()[0]
     raw = case.model_dump_json().encode("utf-8")

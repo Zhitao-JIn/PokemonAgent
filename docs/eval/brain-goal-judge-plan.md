@@ -15,7 +15,7 @@
 | CP1 | 524 | `JudgeCase` 版本模型、loader、旧 v1 迁移与测试 | v1 字节与语义保留；重复 ID、版本边界、清单哈希校验有效 | 验收后由设计侧提交，再派 CP2 |
 | CP2 | 525 | trace 审计/草稿生成器、逐条标签证据表、覆盖报告 | 每个标签可追溯；无法判定的显式排除；请求与生产输入一致 | 交用户逐条审阅，停止等批准 |
 | CP3 | 526 | 用户审核后的 v2 冻结物、指标/分组 scorer 与测试 | 主指标 FPR、四格、派生率和分母正确；错误分列 | 验收后由设计侧提交，再派 CP4 |
-| CP4 | 527 | Inspect 接入、注册、文档同步 | task 数为 6；相关测试、全量 pytest、ruff 全绿 | 汇报完成；不跑真实模型 |
+| CP4 | 527 | Inspect 默认接入 v2、回归测试、文档同步 | `brain_goal_judge` 已在 registry；实测公开 task 数仍为 5；相关测试、全量 pytest、ruff 全绿 | 汇报完成；不跑真实模型 |
 
 CP1 允许改动文件：`evals/dataset/brain_goal_judge/{__init__.py,schemas.py,loader.py}`、`evals/dataset/brain_goal_judge/v1/`、迁移后删除的 `evals/brain_goal_judge/v1/dataset.jsonl`、`evals/brain_goal_judge/{dataset.py,task.py,solver.py,scorer.py}`、`tests/evals/test_brain_goal_judge_dataset.py`、`tests/evals/test_evals_tasks.py`、`tests/evals/world_script_execute/test_evals_datasets.py`、`CHANGELOG.md`。迁移前后核对 v1 文件 SHA-256 完全一致；删除旧 task 目录下的数据与 `dataset.py` 前须确认所有引用已迁至数据包出口。不得改 registry、v2、build 工具或生产代码。
 
