@@ -4,7 +4,7 @@
 > 流程位置：intent.md（`docs/eval/eval-split-intent.md` 第十节）→ **spec.md（本文）** → plan.md → PR → production
 > 状态：**v7 已按用户授权实施**；验收 6 的两个新入口已执行，agent 的有效目标运行受既有冻结存档结构不兼容限制。第一阶段（decode）已完成，见 `docs/eval/eval-split-spec.md`（提交 430–434）。
 > 起草：2026-10-13
-> 范围：把 `evals/` 下其余五个 task 迁完。三个 B 类（memory_store_recall、world_script_execute、episode_vision_read）改为 DeepEval 入口；两个 C 类（brain_goal_judge、agent_short_goal_run）只换目录，仍是 Inspect task。
+> 范围：把 `evals/` 下其余五个 task 迁完。三个 B 类（memory_store_recall、world_script_execute、episode_vision_read）改为 DeepEval 入口；两个 C 类（brain_judge、agent_short_goal_run）只换目录，仍是 Inspect task。
 > 约束：被测系统（`pokemon_agent/`）、冻结数据、真值、判定语义一律不改；只动 `evals/`、`tests/`、`scripts/` 与文档。
 
 ---
@@ -143,7 +143,7 @@ evals/
 │   └── dataset/       # loader.py schemas.py build/ v1/（cases.jsonl + states/，体量大，保持子包）
 ├── episode_vision_read/
 │   └── __main__.py  dataset.py  solver.py  compare.py  scorer.py
-├── brain_goal_judge/     # Inspect
+├── brain_judge/     # Inspect
 │   └── task.py  dataset.py  solver.py  scorer.py  metrics.py  v1/dataset.jsonl
 └── agent_short_goal_run/ # Inspect
     ├── task.py  bridge.py
@@ -152,7 +152,7 @@ evals/
     └── scorer/     # 原 scorers/agent_short_goal_run/ + judged.py verdict.py utils.py redlines.py stream.py registry.py rules/
 ```
 
-C 类的搬迁理由（依赖已查）：`judged`、`verdict`、`utils`、`redlines`、`stream`、`registry`、`rules/` 仅被 `agent_short_goal_run` 使用，`judge_metrics.py` 仅被 `brain_goal_judge` 使用，`bridge.py` 仅被 `agent_short_goal_run` 使用；`episode_vision_read` 迁成 B 类后不再用 `judged`。
+C 类的搬迁理由（依赖已查）：`judged`、`verdict`、`utils`、`redlines`、`stream`、`registry`、`rules/` 仅被 `agent_short_goal_run` 使用，`judge_metrics.py` 仅被 `brain_judge` 使用，`bridge.py` 仅被 `agent_short_goal_run` 使用；`episode_vision_read` 迁成 B 类后不再用 `judged`。
 
 ### 3.2 移动与删除
 
@@ -179,7 +179,7 @@ python -m evals.world_script_execute [--case ID]... [--script NAME]... [--versio
 python -m evals.episode_vision_read [--vision-model M] [--per-scene N] [--all] [--workers 4]
 
 # C 类（Inspect）：路径改为任务目录
-inspect eval evals/brain_goal_judge/task.py
+inspect eval evals/brain_judge/task.py
 inspect eval evals/agent_short_goal_run/task.py
 ```
 
@@ -230,7 +230,7 @@ inspect eval evals/agent_short_goal_run/task.py
 ## 八、非目标
 
 - 不改判定语义、数据、真值、被测代码，不换评审模型。
-- 不新增任务（brain_choose_action、memory_poisoning_resistance 等仍待单独排期）。
+- 不新增任务（brain_choose、memory_poisoning_resistance 等仍待单独排期）。
 - 不改 C 类的 scorer 与 solver 逻辑，只搬目录与改 import。
 - 不引入 GEval 等需要 LLM 判分的指标；本阶段三个 B 类都是确定性判定。
 - 不处理 `docs/eval/tasks-intent.md` 等历史计划文档的正文，只加标注。
@@ -265,7 +265,7 @@ inspect eval evals/agent_short_goal_run/task.py
 3. 删旧代码，改测试与文档。
 
 **S5 C 类与收尾**
-1. 迁 `brain_goal_judge`、`agent_short_goal_run` 到新布局（§3.1），只改 import；两个 task 各跑 `--limit 1` 装配检查。
+1. 迁 `brain_judge`、`agent_short_goal_run` 到新布局（§3.1），只改 import；两个 task 各跑 `--limit 1` 装配检查。
 2. 建 `evals/registry.py`，删 `evals/tasks/`、`evals/solvers/`、`evals/scorers/`，清掉 `evals/dataset/` 里已搬走的任务子目录。
 3. 同步 `AGENTS.md`、`CLAUDE.md`、`SPEC.md`、`tasks-spec.md`；`CHANGELOG.md` 加条目；全仓 grep 旧路径。
 

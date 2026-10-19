@@ -26,9 +26,9 @@
 | vision_perceive | `episode_vision_read`（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） | episode / run 档取帧的纯视觉子节点 `perceive_visual` |
 | world_actions | `world_script_execute` | world 脚本（按场合配置）在真模拟器上执行 |
 | memory | `memory_store_recall` | 记忆写入、读回与检索 |
-| judge | `brain_goal_judge` | brain 判定目标是否达成（第五节扩容的就是它） |
+| judge | `brain_judge` | brain 判定目标是否达成（第五节扩容的就是它） |
 | e2e | `agent_goal_run` | 完整系统跑完一个目标 |
-| （新增） | `brain_choose_action` | brain 选一步动作（第四节） |
+| （新增） | `brain_choose` | brain 选一步动作（第四节） |
 
 **改动面**：task 目录与 `@task` 函数名、`evals/tasks/registry.py`、`python -m evals run <名>`、引用它们的测试、`docs/spec/evals/SPEC.md`、AGENTS.md / CLAUDE.md 的 task 清单、CHANGELOG。
 
@@ -66,10 +66,10 @@ evals/dataset/
 ├── memory_store_recall/
 │   ├── schemas.py / loader.py
 │   └── v1/                        dataset.json（现有 3 条记录 / 3 个查询）
-├── brain_goal_judge/
+├── brain_judge/
 │   ├── schemas.py / loader.py     JudgeCase
 │   └── v1/                        dataset.jsonl（现有 4 条）；扩容后出 v2
-└── brain_choose_action/           （新建，同一形状）
+└── brain_choose/           （新建，同一形状）
 ```
 
 **搬迁映射**：
@@ -80,16 +80,16 @@ evals/dataset/
 | `evals/data/v1/*` | `evals/dataset/agent_goal_run/v1/` |
 | `evals/tasks/world_actions/` 下的脚本用例+ 用到的 `experiment/experiment_states/*` | `evals/dataset/world_script_execute/v1/` |
 | `evals/tasks/memory/dataset.json` | `evals/dataset/memory_store_recall/v1/` |
-| `evals/tasks/judge/dataset.jsonl` | `evals/dataset/brain_goal_judge/v1/` |
+| `evals/tasks/judge/dataset.jsonl` | `evals/dataset/brain_judge/v1/` |
 | 读取代码：`evals/data/loader.py`、`evals/data/frames/{schemas,truth}.py` 与 `build.py::load_samples`、`evals/core/frames.py`、各 task 里读 `dataset.json(l)` 与 import 用例的代码 | 各自数据集包的 `loader.py`；样本契约（`ScriptCase`、`JudgeCase`、`EvalSample`…）移到对应包的 `schemas.py` |
 
-## 四、choose 节点测评（`brain_choose_action`）
+## 四、choose 节点测评（`brain_choose`）
 
-> 2026-10-13：本节原有的设计已整体取代，改为独立的专用文档，见 `docs/eval/brain-choose-action-intent.md` 与 `docs/eval/brain-choose-action-spec.md`（B 类，DeepEval，目录 `evals/brain_choose_action/`）。此处不再保留正文，避免两处真相。
+> 2026-10-13：本节原有的设计已整体取代，改为独立的专用文档，见 `docs/eval/brain-choose-intent.md` 与 `docs/eval/brain-choose-spec.md`（B 类，DeepEval，目录 `evals/brain_choose/`）。此处不再保留正文，避免两处真相。
 
-2026-10-18 冻结更新：`brain_choose_action` 的数据与读取工具在 `evals/dataset/brain_choose_action/`，评测入口在 `evals/brain_choose_action/`。v1 采用用户批准的 189 条完整 task choose 请求，包含同 task 全部历史，覆盖 walk、dialog、battle_menu、battle、shop、shop_items；未覆盖 start_menu。67 条排除与 2 条范围外记录保留，原批次采集版本限制见数据 manifest 与审核报告。动作集合评分契约见 `brain-choose-action-spec.md`，本次批准的实际范围覆盖其旧场合配额。
+2026-10-18 冻结更新：`brain_choose` 的数据与读取工具在 `evals/dataset/brain_choose/`，评测入口在 `evals/brain_choose/`。v1 采用用户批准的 189 条完整 task choose 请求，包含同 task 全部历史，覆盖 walk、dialog、battle_menu、battle、shop、shop_items；未覆盖 start_menu。67 条排除与 2 条范围外记录保留，原批次采集版本限制见数据 manifest 与审核报告。动作集合评分契约见 `brain-choose-spec.md`，本次批准的实际范围覆盖其旧场合配额。
 
-## 五、judge 扩容（`brain_goal_judge`）
+## 五、judge 扩容（`brain_judge`）
 
 **被测对象不变**：生产判定器读 `FromHarnessToBrainToolJudgeReq`（`goal` / `history` / `task_memories` / `task_table` / `episode_memories` / `episode_index` / `observation` / `knowledge` / `allow_interrupt`），给出达成与否和理由。
 
@@ -121,8 +121,8 @@ evals/dataset/
 
 1. `python -m evals list` 列出的每个名字都能直接读出"哪个模块的哪个节点"。
 2. 每个 task 只经 `evals/dataset/<task 或共用名>/` 的出口拿数据；冻结文件都在其下的 `<版本>/` 里且自包含；task 代码目录里不再有数据文件和读取代码，`evals/data/` 包不复存在。
-3. `brain_choose_action` 跑完给出：可接受率、越权率、解析失败率，按场合与难点标签分组，每组带样本数。
-4. `brain_goal_judge` 给出假阳率 / 假阴率与样本数，按难负例类别分组；e2e 里一次 judge 误判能追到它在数据集里的样本。
+3. `brain_choose` 跑完给出：可接受率、越权率、解析失败率，按场合与难点标签分组，每组带样本数。
+4. `brain_judge` 给出假阳率 / 假阴率与样本数，按难负例类别分组；e2e 里一次 judge 误判能追到它在数据集里的样本。
 5. 两个数据集的每条样本都能只用冻结物复现（不重跑游戏）；改 prompt 后同一批样本可以直接重测对比。
 
 ## 八、不做

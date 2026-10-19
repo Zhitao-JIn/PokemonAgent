@@ -18,8 +18,8 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
-| brain_choose_action | 冻结的完整 choose 请求（含本 task 历史），v1 共 189 条、六类场合 | 可接受动作集合匹配、解析、合法性及场合分组 | 决策模型 |
-| brain_goal_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
+| brain_choose | 冻结的完整 choose 请求（含本 task 历史），v1 共 189 条、六类场合 | 可接受动作集合匹配、解析、合法性及场合分组 | 决策模型 |
+| brain_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
 | agent_short_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
 
 ## task 分层与描述
@@ -86,7 +86,7 @@ run 级样本的机械结果读取同一 run、同一执行分支的全部帧，
 
 ### 流程层
 
-**brain_goal_judge**（已实现）
+**brain_judge**（已实现）
 测什么：生产判定器拿到真值目标与观测历史，能否正确判定目标是否达成。v2 默认包含 257 条真实调用现场，报告 TP / FP / FN / TN、FPR、召回率、精确率、准确率及分母，并按 `goal_family`、`negative_mode` 分组；v1 的 4 条契约示范仍可显式选择。v2 不是独立随机抽样基准，且原批采集的代码版本连续性无法证明，不能把汇总率外推为真实游戏总体能力。
 
 **brain_step_verify**（规划中，优先级高）
@@ -152,7 +152,7 @@ python -m evals.dataset.frames.build.terrain
 
 world_script_execute 共 106 例，统一按脚本的调用、结局与前后世界真值评分。所有脚本共用同一个 ScriptRun 执行多步操作，等待、中断、初态恢复与收尾属于脚本自己的配置或步骤。保留原用例依据与世界真值。被测脚本自报成功不是世界真值；重构不根据实际输出改写期望。
 
-memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。brain_goal_judge 保留 v1 的四条契约示范，扩展 v2 用真实判定现场评估生产判定器。
+memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。brain_judge 保留 v1 的四条契约示范，扩展 v2 用真实判定现场评估生产判定器。
 
 agent_short_goal_run 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
 
@@ -208,8 +208,8 @@ C 类由 `task.py` 装配原有 Inspect 链路。文件多时使用同名子包�
 | agent_short_goal_run | v1，20 个起点、样本、rubric 与档案 | build/pack.py |
 | world_script_execute | v1，106 条 cases.jsonl 与所用存档 | 106 条统一读取；核对函数在 scorer |
 | memory_store_recall | v1，dataset.json（一份3条记录/3个查询的库） | 无 |
-| brain_choose_action | v1，189 条完整 choose 请求（含本 task 历史），覆盖六类场合；start_menu 未覆盖 | `evals/dataset/brain_choose_action/build/` |
-| brain_goal_judge | 默认 v2，dataset.jsonl（257条）；v1 保留 4 条 | `evals/dataset/brain_goal_judge/build/` |
+| brain_choose | v1，189 条完整 choose 请求（含本 task 历史），覆盖六类场合；start_menu 未覆盖 | `evals/dataset/brain_choose/build/` |
+| brain_judge | 默认 v2，dataset.jsonl（257条）；v1 保留 4 条 | `evals/dataset/brain_judge/build/` |
 
 agent 的 source_state 与 manifest.memory_archive 均相对版本目录；恢复前由 solver 在工作目录
 生成路径适配清单，冻结原件不写回。world 用例的 state 相对版本下的 states/，

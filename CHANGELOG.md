@@ -1,3 +1,13 @@
+## 2026-10-19（557）—— 二十场景全脑数据冻结与评测命名统一
+
+**改了什么**：按 schema 11a4afa05e6ed43d 重打二十份正式 archive，并在固定提交 5d1ff1e 上完成真实采集。冻结 judge 289、plan 26、decompose 37、choose 207、summary 99 条完整输入，保存 12 个 Port 的请求、响应、异常、耗时、737 次模型尝试与 trace；双向缺账为零，17 条预算跳过账单列。增加来源哈希包、范围审计、独立参考、构建/验证/加载入口。brain_goal_judge 与 brain_choose_action 分别统一改名为 brain_judge 与 brain_choose，旧冻结 JSONL 字节保留；新增三层 judge v3 的 206 条机械标签与 choose v2 的 21 条独立动作集合。
+
+**为什么这么改**：仅留 choose 或最终 prompt 无法复用 plan、decompose、judge 的完整生产口径，也无法区分漏采和预算跳过。输入、原始 baseline 与独立评分依据必须分离；原屏幕的数量框和投球结算话语还揭示了旧机械规则覆盖缺口，不能把这些规则的漏判写成负真值。
+
+**取舍**：每例独立空记忆，不宣称覆盖持久跨 run 背景或独立留出泛化。只有可独立确定的 judge/choose 子集进入现有运行器分母；其余完整输入附约束、证据 rubric 或待审标记，不冒称全部 golden。plan/decompose/summary 本次交付数据与量表，尚未注册新公开任务。旧默认版本保留，新版显式选择；来源包约 34 MiB，保留正式起点、录制和原始账以换取跨机器可审计性。旧快照移入本批备份，不销毁。
+
+**影响面**：eval 目录、任务登记、独立数据契约/构建器、三层 judge 分组、choose 版本参数、正式 archive、相关文档及回归测试；不改变生产 brain scope、模型或预算。全量默认测试 1725 passed、7 skipped、3 deselected；269 条相关测试先行通过。Ruff check / format 通过（排除原有 .pytest_base 临时目录）；测试进程显式清空 DeepSeek key，避免 reviewer 无密钥入口测试使用本机凭据。来源与类型/hash/范围核验通过，旧 judge 2 份和 choose 10 份 JSONL 字节保持一致。
+
 ## 2026-10-19（556）—— 三层全脑调用录制与二十样本采集入口
 
 **改了什么**：增加生产 Port 旁路录制，分层保存 plan、decompose、choose、三层 judge、verify、reflect 与三层 summary 的完整请求、响应、异常和单调等待时长；新增专用 MCP 服务、正式 archive 恢复 worker、二十例重打及串行采集入口和 trace 双向对账。

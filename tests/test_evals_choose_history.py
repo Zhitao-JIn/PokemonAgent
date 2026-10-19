@@ -5,24 +5,24 @@ from pathlib import Path
 
 import pytest
 
-from evals.brain_choose_action.compare import matches
-from evals.dataset.brain_choose_action.build.from_capture import CaptureRow
-from evals.dataset.brain_choose_action.build.history_context import (
+from evals.brain_choose.compare import matches
+from evals.dataset.brain_choose.build.from_capture import CaptureRow
+from evals.dataset.brain_choose.build.history_context import (
     HistoryPacket,
     JudgeInput,
     build_packet,
     load_packets,
     validate_history,
 )
-from evals.dataset.brain_choose_action.build.history_review import (
+from evals.dataset.brain_choose.build.history_review import (
     Annotation,
     HistoryReview,
     validate_annotation,
 )
-from evals.dataset.brain_choose_action.schemas import ChooseCase
+from evals.dataset.brain_choose.schemas import ChooseCase
 from pokemon_agent.brain.interface import Action
 
-ROOT = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose_action"
+ROOT = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose"
 
 
 @pytest.fixture(scope="module")

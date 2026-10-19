@@ -186,7 +186,7 @@ def collection_inputs(tmp_path, monkeypatch, capture):
 def test_collection_wires_only_task_chooser_budget_state_and_releases_lease(
     tmp_path, monkeypatch, failure_point, release_fails
 ):
-    import evals.dataset.brain_choose_action.build.collect as capture
+    import evals.dataset.brain_choose.build.collect as capture
 
     state, out = collection_inputs(tmp_path, monkeypatch, capture)
     original = FakeChooser(out, result=response())
@@ -236,7 +236,7 @@ def test_collection_wires_only_task_chooser_budget_state_and_releases_lease(
 
 
 def test_collection_rejects_archives_before_creating_output_or_assembling(tmp_path):
-    from evals.dataset.brain_choose_action.build.collect import collect
+    from evals.dataset.brain_choose.build.collect import collect
 
     out = tmp_path / "out"
 
@@ -247,7 +247,7 @@ def test_collection_rejects_archives_before_creating_output_or_assembling(tmp_pa
 
 
 def test_collection_cli_passes_all_five_required_arguments(tmp_path, monkeypatch):
-    import evals.dataset.brain_choose_action.build.collect as capture
+    import evals.dataset.brain_choose.build.collect as capture
 
     calls = []
     monkeypatch.setattr(capture, "collect", lambda *args: calls.append(args))
@@ -277,7 +277,7 @@ def test_collection_cli_passes_all_five_required_arguments(tmp_path, monkeypatch
 def test_collection_rejects_invalid_inputs_and_existing_output(
     tmp_path, monkeypatch, steps, goal, criteria
 ):
-    import evals.dataset.brain_choose_action.build.collect as capture
+    import evals.dataset.brain_choose.build.collect as capture
 
     state = tmp_path / "source.state"
     state.write_bytes(b"fake")

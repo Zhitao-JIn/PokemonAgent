@@ -42,3 +42,37 @@ pack 前核二十份原始 state 哈希，备份旧 archives；pack 后核 schem
 
 评测输入与评分真值分离。缺标签不计入相应指标分母；待审材料不得伪称可评分 golden。
 不同生产 schema 的既有 judge / choose 冻结版本保留，新采集另建版本。
+
+
+## 已落地的数据版本与消费边界
+
+二十例在固定提交 `5d1ff1e` 上运行，schema 为 `11a4afa05e6ed43d`。
+原始请求和响应、开始/结束、trace、正式起点与逐例报告保存在
+`evals/dataset/brain_calls/v1/sources.zip`，逐条 SHA 见 `sources.manifest.json`。
+完整生产输入在五族 `inputs.jsonl`，独立评分依据在 `references.jsonl`，旧输出不进真值。
+`load_inputs` 与 `load_references` 分开提供；范围不一致直接拒绝导出。
+
+`brain_goal_judge` 已改名 `brain_judge`；`brain_choose_action` 已改名 `brain_choose`。
+已有 judge v1/v2 与 choose v1 按原始字节保留，默认版本不变。
+新 judge v3 显式携带层级与原始身份，运行指标按层分列；episode 原始空 task_id 不补造。
+choose v2 只收独立规则能给出动作集合的子集，保留方向键和等价脚本。
+其余调用完整保留，使用证据 rubric 或待审标记，不混入动作命中率/四格指标分母。
+plan、decompose、summary 已有完整输入、约束与证据量表，尚未注册为新的公开运行任务。
+
+```powershell
+python -m evals.dataset.brain_calls.verify_dataset evals/dataset/brain_calls/v1
+inspect eval evals/brain_judge/task.py -T version=v3
+python -m evals.brain_choose --version v2
+```
+
+从新批次构建时使用不存在的输出目录；入口不调用模型、不覆盖冻结数据：
+
+```powershell
+python -m evals.dataset.brain_calls.build --batch eval_results/<batch> --out <collection> --judge-out <judge-version> --choose-out <choose-version>
+```
+
+本批检出两个旧机械规则覆盖缺口：商品选项解码未变时，原屏幕已经出现数量框；
+投球失败的 `Aww! It appeared to be caught!` 未被旧文本枚举覆盖。
+新独立标签严格匹配对应判据与原屏幕/结果文字，不让旧规则覆盖明确原证据。
+`baseline_scores.json` 仍如实保留旧机械诊断，不能将其失败无条件解释为真实未达成。
+17 条预算跳过账单列，未发生的调用不伪造请求。所有 12 个 Port 的耗时和覆盖见 REPORT。

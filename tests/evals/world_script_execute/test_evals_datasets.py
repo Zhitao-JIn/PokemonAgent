@@ -34,14 +34,14 @@ from pokemon_agent.world.interface.domain.takeover_view import (
         ("agent_short_goal_run", 20),
         ("world_script_execute", 106),
         ("memory_store_recall", 1),
-        ("brain_goal_judge", 4),
+        ("brain_judge", 4),
     ],
 )
 def test_each_dataset_returns_frozen_typed_samples(name, count):
     modules = {
         "memory_store_recall": "evals.memory_store_recall.dataset",
         "world_script_execute": "evals.world_script_execute.dataset",
-        "brain_goal_judge": "evals.dataset.brain_goal_judge",
+        "brain_judge": "evals.dataset.brain_judge",
         "agent_short_goal_run": "evals.agent_short_goal_run.dataset",
     }
     dataset = importlib.import_module(modules.get(name, f"evals.dataset.{name}"))

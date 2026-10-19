@@ -5,12 +5,12 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from evals.dataset.brain_choose_action import load
+from evals.dataset.brain_choose import load
 
 
 def test_frozen_dataset_matches_approved_history_review_and_manifest() -> None:
     """Load all six scenes without capture files or a model provider."""
-    root = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose_action"
+    root = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose"
     manifest = json.loads((root / "v1/manifest.json").read_text(encoding="utf-8"))
 
     cases = load("v1")

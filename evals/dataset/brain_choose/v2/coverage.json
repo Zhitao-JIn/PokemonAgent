@@ -1,0 +1,751 @@
+{
+  "labelled": 21,
+  "excluded": [
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000004",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000005",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000006",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000007",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000008",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000009",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000012",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000013",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000014",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000015",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000016",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000017",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000018",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000019",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000020",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000021",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000022",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000023",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_fight_menu.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_item_use.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_move_select.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_move_select.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_move_select.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_move_select.task.choose.000004",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_pokemon_switch.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_run_attempt.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_run_attempt.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_battle_run_attempt.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000004",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000005",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000006",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000007",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000008",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000009",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000010",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000011",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_throw_ball.task.choose.000012",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_weaken_target.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_catch_weaken_target.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_dialogue_advance.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_door_transition.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_door_transition.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_door_transition.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_door_transition.task.choose.000004",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_door_transition.task.choose.000005",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_door_transition.task.choose.000006",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_door_transition.task.choose.000007",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_door_transition.task.choose.000008",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_door_transition.task.choose.000009",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_movement_obstacle.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_npc_dialogue.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_npc_dialogue.task.choose.000004",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_enter.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_enter.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_enter.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_enter.task.choose.000004",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_enter.task.choose.000005",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000004",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000005",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000006",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000007",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000008",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000009",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000010",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000012",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000013",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000014",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000015",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000016",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000017",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000018",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000019",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000020",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000021",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000022",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000023",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000024",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000025",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000026",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000027",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000028",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000029",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000030",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000031",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000032",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000033",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000034",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000035",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000036",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000037",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000038",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000039",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000040",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000041",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000042",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000043",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000044",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000045",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000046",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000047",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000048",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000049",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000050",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000051",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000052",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000004",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000005",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000006",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000007",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000008",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000009",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000010",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000011",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_cancel_purchase.task.choose.000012",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_confirm_purchase.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_confirm_purchase.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_confirm_purchase.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_confirm_purchase.task.choose.000004",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000002",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000003",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000004",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000005",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000006",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000007",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000008",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000009",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000010",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000011",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000012",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000013",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000016",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000017",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000018",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000019",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000020",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000021",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000022",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000023",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000024",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000025",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000027",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000028",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000029",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000030",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000031",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000032",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000033",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000034",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000035",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000036",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000037",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000038",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000039",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000040",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000041",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000042",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000043",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000044",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000045",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000046",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000047",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000048",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000049",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000050",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000051",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000053",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000054",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000055",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000056",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000057",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000058",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000059",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000060",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_open_buy_menu.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_shop_select_item.task.choose.000001",
+      "reason": "independent_label_pending"
+    },
+    {
+      "case_id": "knowledge_wild_encounter.task.choose.000005",
+      "reason": "independent_label_pending"
+    }
+  ],
+  "source_collection": "evals/dataset/brain_calls/v1",
+  "baseline_answers_used_as_gold": false
+}

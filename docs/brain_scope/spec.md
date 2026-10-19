@@ -316,7 +316,7 @@ EpisodeMemory(episode_id="r1-ep2", goal="走到门口并进去", termination="go
 
 - `test_three_levels_plan_and_judge_read_the_same_details`：FakeLLM + 假记忆，装好三层的请求，断言 ①同层 plan 与 judge 的详情是同一份、条数等于绑定单元下全部子记忆；②索引不含本单元；③索引生成过程零模型调用（FakeLLM 计数）。
 
-**需随改动调整的既有测试**（执行方按 grep 找全；测试瘦身合入后的路径见 plan 第十二节）：`tests/budget/test_run_config.py`；引用 `DecomposeReq` / `PlanOnceReq` / `ChooseOnceReq` / `JudgeReq` / `dedup_snapshots` 的 `tests/direct/prompts/test_decide_action_prompt.py`、`tests/harness/perceive/test_memory_observation.py`、`tests/budget/test_budget_settlement.py`、`tests/budget/test_deadline.py`、`tests/harness/ledger/test_node_io.py`（原 `tests/integration/test_node_io.py`）；`evals/brain_goal_judge/dataset.py` 若构造旧形状的 `JudgeReq`。（`tests/integration/test_p5_script_actions.py` 已于瘦身中删除。）
+**需随改动调整的既有测试**（执行方按 grep 找全；测试瘦身合入后的路径见 plan 第十二节）：`tests/budget/test_run_config.py`；引用 `DecomposeReq` / `PlanOnceReq` / `ChooseOnceReq` / `JudgeReq` / `dedup_snapshots` 的 `tests/direct/prompts/test_decide_action_prompt.py`、`tests/harness/perceive/test_memory_observation.py`、`tests/budget/test_budget_settlement.py`、`tests/budget/test_deadline.py`、`tests/harness/ledger/test_node_io.py`（原 `tests/integration/test_node_io.py`）；`evals/brain_judge/dataset.py` 若构造旧形状的 `JudgeReq`。（`tests/integration/test_p5_script_actions.py` 已于瘦身中删除。）
 
 ---
 

@@ -10,9 +10,9 @@ from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 
 from evals.agent_short_goal_run.scorer.judged import judged_accuracy, judged_count
-from evals.brain_goal_judge.scorer import confusion
-from evals.dataset.brain_goal_judge import JudgeCaseV1
-from evals.dataset.brain_goal_judge.loader import DATASET_DIR
+from evals.brain_judge.scorer import confusion
+from evals.dataset.brain_judge import JudgeCaseV1
+from evals.dataset.brain_judge.loader import DATASET_DIR
 from evals.dataset.frames import load as load_frames
 from evals.decode.compare import field_verdict, truth_for
 from evals.decode.solver import decode_frame
@@ -78,11 +78,11 @@ def test_decode_fields_skip_only_missing_truth_and_score_empty_truth(actual, tru
 
 def test_only_the_six_evaluation_tasks_are_public() -> None:
     assert set(TASKS) == {
-        "brain_choose_action",
+        "brain_choose",
         "decode",
         "memory_store_recall",
         "world_script_execute",
-        "brain_goal_judge",
+        "brain_judge",
         "agent_short_goal_run",
     }
     assert sum(entry.kind == "deepeval" for entry in TASKS.values()) == 4

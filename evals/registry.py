@@ -13,10 +13,10 @@ class TaskEntry(BaseModel):
 
 
 TASKS: dict[str, TaskEntry] = {
-    "brain_choose_action": TaskEntry(kind="deepeval", entry="evals.brain_choose_action"),
+    "brain_choose": TaskEntry(kind="deepeval", entry="evals.brain_choose"),
     "decode": TaskEntry(kind="deepeval", entry="evals.decode"),
     "memory_store_recall": TaskEntry(kind="deepeval", entry="evals.memory_store_recall"),
     "world_script_execute": TaskEntry(kind="deepeval", entry="evals.world_script_execute"),
-    "brain_goal_judge": TaskEntry(kind="inspect", entry="evals/brain_goal_judge/task.py"),
+    "brain_judge": TaskEntry(kind="inspect", entry="evals/brain_judge/task.py"),
     "agent_short_goal_run": TaskEntry(kind="inspect", entry="evals/agent_short_goal_run/task.py"),
 }

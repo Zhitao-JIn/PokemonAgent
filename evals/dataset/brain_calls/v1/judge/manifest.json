@@ -1,0 +1,31 @@
+{
+  "version": "v1",
+  "family": "judge",
+  "cases": 289,
+  "layers": {
+    "episode": 60,
+    "run": 23,
+    "task": 206
+  },
+  "baseline_status": {
+    "success": 289
+  },
+  "mechanical_labels": 206,
+  "action_set_labels": 0,
+  "rubric_cases": 83,
+  "files_sha256": {
+    "inputs.jsonl": "559624a59aefdd1cc3d8677bb08c26acbe349e0a598309f42d0b78cf12cbf413",
+    "references.jsonl": "aac6461aadc275348acb0905c113c3dfb3afdcc03f52a0eed92d31486fe8323e",
+    "judge.request.schema.json": "bfac7b7e2c8ed0d41e7ec9e3475de03def30d085b8d907f2c06fb09c6869b732"
+  },
+  "source_head": "5d1ff1ee94f4c1da110f247fc230d69186608c1d",
+  "source_code_sha256": "8677991cdfc4d79708c75fd5f0f539b112756fe3a7567a1f2f7b620a3c623290",
+  "schema_hash": "11a4afa05e6ed43d",
+  "limitations": [
+    "二十个短场景的现场分布，不代表独立留出集或长程能力。",
+    "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+    "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+    "choose 独立动作集合子集可评分；其余开放参考不冒称完备 acceptable 集合。",
+    "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+  ]
+}
