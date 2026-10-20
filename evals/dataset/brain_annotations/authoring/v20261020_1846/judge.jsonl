@@ -1,0 +1,113 @@
+{"case_id": "knowledge_battle_fight_menu.task.judge.000001", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "选项已变为招式名"}
+{"case_id": "knowledge_battle_item_use.task.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "光标仅移到 ITEM，尚未确认"}
+{"case_id": "knowledge_battle_item_use.task.judge.000002", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "选项已变为道具名"}
+{"case_id": "knowledge_battle_move_select.task.judge.000001", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "招式列表已出现"}
+{"case_id": "knowledge_battle_move_select.task.judge.000002", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仅出现 used TACKLE! 文字，尚无执行结果或 HP 下降"}
+{"case_id": "knowledge_battle_move_select.task.judge.000003", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仅出现 used TACKLE! 文字，尚无执行结果或 HP 下降"}
+{"case_id": "knowledge_battle_move_select.task.judge.000004", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "对手 HP 15→10"}
+{"case_id": "knowledge_battle_pokemon_switch.task.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "光标仅移到 PKMN"}
+{"case_id": "knowledge_battle_pokemon_switch.task.judge.000002", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "出现宝可梦名单"}
+{"case_id": "knowledge_battle_run_attempt.task.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "光标未到 RUN 或未确认"}
+{"case_id": "knowledge_battle_run_attempt.task.judge.000002", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "光标未到 RUN 或未确认"}
+{"case_id": "knowledge_battle_run_attempt.task.judge.000003", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "出现 Got away safel… 逃跑结果文字前缀，已可唯一确定为逃跑成功"}
+{"case_id": "knowledge_catch_throw_ball.task.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "光标仅移到 ITEM"}
+{"case_id": "knowledge_catch_throw_ball.task.judge.000002", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "背包物品列表已出现"}
+{"case_id": "knowledge_catch_throw_ball.task.judge.000003", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "光标指向 POKé BALL"}
+{"case_id": "knowledge_catch_throw_ball.task.judge.000004", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仍在 RED used POKé BALL! 对话，无结果文字"}
+{"case_id": "knowledge_catch_throw_ball.task.judge.000005", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仍在 RED used POKé BALL! 对话，无结果文字"}
+{"case_id": "knowledge_catch_throw_ball.task.judge.000006", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仍在 RED used POKé BALL! 对话，无结果文字"}
+{"case_id": "knowledge_catch_throw_ball.task.judge.000007", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仍在 RED used POKé BALL! 对话，无结果文字"}
+{"case_id": "knowledge_catch_throw_ball.task.judge.000008", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仍在 RED used POKé BALL! 对话，无结果文字"}
+{"case_id": "knowledge_catch_throw_ball.task.judge.000009", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仅 All ri 前缀，不足以区分投球结果"}
+{"case_id": "knowledge_catch_throw_ball.task.judge.000010", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "All right! PIDGEY was… 已是捕获结果文字"}
+{"case_id": "knowledge_catch_weaken_target.task.judge.000001", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "招式选择列表出现"}
+{"case_id": "knowledge_catch_weaken_target.task.judge.000002", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "出现 BULBASAUR used TACKLE! 招式使用信息"}
+{"case_id": "knowledge_catch_weaken_target.task.judge.000003", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "HP 未降，无受伤信息"}
+{"case_id": "knowledge_catch_weaken_target.task.judge.000004", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "foe_hp 15→10"}
+{"case_id": "knowledge_dialogue_advance.task.judge.000001", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "对话框消失"}
+{"case_id": "knowledge_door_transition.episode.judge.000006", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仍在室外 (10,7)，首个 task 预算耗尽但还有后续规划"}
+{"case_id": "knowledge_door_transition.episode.judge.000007", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到门前面朝北进入，计划余下 task 待执行"}
+{"case_id": "knowledge_door_transition.episode.judge.000008", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到门前面朝北进入，计划余下 task 待执行"}
+{"case_id": "knowledge_door_transition.episode.judge.000009", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "已切换到室内地图 39"}
+{"case_id": "knowledge_door_transition.task.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到门相邻格，路径仍在尝试"}
+{"case_id": "knowledge_door_transition.task.judge.000002", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到门相邻格，路径仍在尝试"}
+{"case_id": "knowledge_door_transition.task.judge.000003", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到门相邻格，路径仍在尝试"}
+{"case_id": "knowledge_door_transition.task.judge.000004", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到门相邻格，路径仍在尝试"}
+{"case_id": "knowledge_door_transition.task.judge.000005", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到门相邻格，路径仍在尝试"}
+{"case_id": "knowledge_door_transition.task.judge.000006", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到门相邻格，路径仍在尝试"}
+{"case_id": "knowledge_door_transition.task.judge.000007", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "在 (11,4) 反复右/下无位移，路径被墙和招牌挡住"}
+{"case_id": "knowledge_door_transition.task.judge.000008", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "在 (11,4) 反复右/下无位移，路径被墙和招牌挡住"}
+{"case_id": "knowledge_door_transition.task.judge.000009", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "在 (11,4) 反复右/下无位移，路径被墙和招牌挡住"}
+{"case_id": "knowledge_door_transition.task.judge.000010", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "在 (11,4) 反复右/下无位移，路径被墙和招牌挡住"}
+{"case_id": "knowledge_door_transition.task.judge.000011", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "在 (11,4) 反复右/下无位移，路径被墙和招牌挡住"}
+{"case_id": "knowledge_door_transition.task.judge.000012", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "在 (11,4) 反复右/下无位移，路径被墙和招牌挡住"}
+{"case_id": "knowledge_door_transition.task.judge.000013", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到 (13,4)"}
+{"case_id": "knowledge_door_transition.task.judge.000014", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到 (13,4)"}
+{"case_id": "knowledge_door_transition.task.judge.000015", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到 (13,4)"}
+{"case_id": "knowledge_door_transition.task.judge.000016", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未到 (13,4)"}
+{"case_id": "knowledge_door_transition.task.judge.000017", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仍在 (11,3)/(11,4) 附近，尝试中"}
+{"case_id": "knowledge_door_transition.task.judge.000018", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仍在 (11,3)/(11,4) 附近，尝试中"}
+{"case_id": "knowledge_door_transition.task.judge.000019", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "walk_to 返回 not_converging，仍在原地绕"}
+{"case_id": "knowledge_door_transition.task.judge.000020", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "长历史循环于 (11,3)/(11,4)，东侧为墙，无进展"}
+{"case_id": "knowledge_door_transition.task.judge.000021", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "长历史循环于 (11,3)/(11,4)，东侧为墙，无进展"}
+{"case_id": "knowledge_door_transition.task.judge.000022", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "长历史循环于 (11,3)/(11,4)，东侧为墙，无进展"}
+{"case_id": "knowledge_door_transition.task.judge.000023", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "长历史循环于 (11,3)/(11,4)，东侧为墙，无进展"}
+{"case_id": "knowledge_door_transition.task.judge.000024", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "长历史循环于 (11,3)/(11,4)，东侧为墙，无进展"}
+{"case_id": "knowledge_door_transition.task.judge.000028", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "向南一格被墙挡，需改道"}
+{"case_id": "knowledge_door_transition.task.judge.000029", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "向南一格被墙挡，需改道"}
+{"case_id": "knowledge_door_transition.task.judge.000030", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(13,2) 向南连续无位移，南侧为墙"}
+{"case_id": "knowledge_door_transition.task.judge.000031", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(13,2) 向南连续无位移，南侧为墙"}
+{"case_id": "knowledge_door_transition.task.judge.000032", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(13,2) 向南连续无位移，南侧为墙"}
+{"case_id": "knowledge_door_transition.task.judge.000033", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(13,2) 向南连续无位移，南侧为墙"}
+{"case_id": "knowledge_door_transition.task.judge.000034", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(13,2) 向南连续无位移，南侧为墙"}
+{"case_id": "knowledge_door_transition.task.judge.000035", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(13,2) 向南连续无位移，南侧为墙"}
+{"case_id": "knowledge_door_transition.task.judge.000036", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "按改道路线前进中，尚未到 (12,4)/(12,5)"}
+{"case_id": "knowledge_door_transition.task.judge.000037", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "按改道路线前进中，尚未到 (12,4)/(12,5)"}
+{"case_id": "knowledge_door_transition.task.judge.000038", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "按改道路线前进中，尚未到 (12,4)/(12,5)"}
+{"case_id": "knowledge_door_transition.task.judge.000039", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "按改道路线前进中，尚未到 (12,4)/(12,5)"}
+{"case_id": "knowledge_door_transition.task.judge.000040", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(11,4) 向东为墙，目标侧格不可由此到达，来回循环"}
+{"case_id": "knowledge_door_transition.task.judge.000041", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(11,4) 向东为墙，目标侧格不可由此到达，来回循环"}
+{"case_id": "knowledge_door_transition.task.judge.000042", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(11,4) 向东为墙，目标侧格不可由此到达，来回循环"}
+{"case_id": "knowledge_door_transition.task.judge.000043", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(11,4) 向东为墙，目标侧格不可由此到达，来回循环"}
+{"case_id": "knowledge_door_transition.task.judge.000044", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(11,4) 向东为墙，目标侧格不可由此到达，来回循环"}
+{"case_id": "knowledge_door_transition.task.judge.000045", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(11,4) 向东为墙，目标侧格不可由此到达，来回循环"}
+{"case_id": "knowledge_door_transition.task.judge.000046", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(11,4) 向东为墙，目标侧格不可由此到达，来回循环"}
+{"case_id": "knowledge_door_transition.task.judge.000047", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "(11,4) 向东为墙，目标侧格不可由此到达，来回循环"}
+{"case_id": "knowledge_door_transition.task.judge.000058", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "已进入室内地图 39"}
+{"case_id": "knowledge_door_transition.task.judge.000059", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "已进入室内地图 39"}
+{"case_id": "knowledge_movement_obstacle.task.judge.000001", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "落到 y=14，map 12"}
+{"case_id": "knowledge_npc_dialogue.task.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "刚走到 (5,4)，尚未到 (5,3)"}
+{"case_id": "knowledge_npc_dialogue.task.judge.000002", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "到达 (5,3) 且 NPC 在北侧"}
+{"case_id": "knowledge_npc_dialogue.task.judge.000003", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "overlay 为 dialog 且有文字"}
+{"case_id": "knowledge_pokemon_center_enter.task.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "在 (23,26)，门前尚差一格"}
+{"case_id": "knowledge_pokemon_center_enter.task.judge.000002", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "已换到地图 41"}
+{"case_id": "knowledge_pokemon_center_heal.episode.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "预算耗尽，仍在地图41门口，治疗对话未出现"}
+{"case_id": "knowledge_pokemon_center_heal.run.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "整局以 blocked 结束，治疗未完成"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未换地图，仍在尝试进门"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000002", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未换地图，仍在尝试进门"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000003", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未换地图，仍在尝试进门"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000004", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未换地图，仍在尝试进门"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000005", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未换地图，仍在尝试进门"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000006", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未换地图，仍在尝试进门"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000007", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未换地图，仍在尝试进门"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000008", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "尚未换地图，仍在尝试进门"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000009", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "在门口格 (3,7)/(4,7) 左右往返，a 无效，无进展"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000010", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "在门口格 (3,7)/(4,7) 左右往返，a 无效，无进展"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000011", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "在门口格 (3,7)/(4,7) 左右往返，a 无效，无进展"}
+{"case_id": "knowledge_pokemon_center_heal.task.judge.000012", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "在门口格 (3,7)/(4,7) 左右往返，a 无效，无进展"}
+{"case_id": "knowledge_shop_cancel_purchase.task.judge.000001", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "商品列表已出现"}
+{"case_id": "knowledge_shop_cancel_purchase.task.judge.000002", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "确认框尚未出现"}
+{"case_id": "knowledge_shop_cancel_purchase.task.judge.000003", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "确认框尚未出现"}
+{"case_id": "knowledge_shop_cancel_purchase.task.judge.000004", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "YES/NO 确认框出现，光标在 YES"}
+{"case_id": "knowledge_shop_cancel_purchase.task.judge.000005", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "光标移到 NO，尚未按 a 取消"}
+{"case_id": "knowledge_shop_cancel_purchase.task.judge.000006", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "回到商品列表，光标在 POKé BALL"}
+{"case_id": "knowledge_shop_confirm_purchase.task.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仅 Take your time. 对话，无购买确认"}
+{"case_id": "knowledge_shop_confirm_purchase.task.judge.000002", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仅 POKé BALL? That will be 前半句，无 YES/NO 且非成功文字"}
+{"case_id": "knowledge_shop_confirm_purchase.task.judge.000003", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "YES/NO 选项出现"}
+{"case_id": "knowledge_shop_confirm_purchase.task.judge.000004", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "仅 Here you 前缀，尚不足以确认购买成功文字"}
+{"case_id": "knowledge_shop_interaction.task.judge.000001", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "到达 (3,4) 且朝北"}
+{"case_id": "knowledge_shop_interaction.task.judge.000002", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "对话已出现但 BUY/SELL/QUIT 菜单尚未出现"}
+{"case_id": "knowledge_shop_interaction.task.judge.000003", "status": "labelled", "achieved": false, "expected_decision": "blocked", "rationale": "对话结束于 No! POTIONs are all sold out.，无菜单可期"}
+{"case_id": "knowledge_shop_open_buy_menu.task.judge.000001", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "商品列表出现"}
+{"case_id": "knowledge_shop_select_item.task.judge.000001", "status": "labelled", "achieved": false, "expected_decision": "continue", "rationale": "按 a 后仅 Take your time.，选项未变为数量或 YES/NO"}
+{"case_id": "knowledge_wild_encounter.task.judge.000001", "status": "labelled", "achieved": true, "expected_decision": "achieved", "rationale": "场景变为 battle"}

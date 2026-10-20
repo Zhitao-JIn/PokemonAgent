@@ -1,3 +1,13 @@
+## 2026-10-20（566）—— 递归规划二十例标注旁账与逐例作者表
+
+**改了什么**：新增 `brain_annotations/authoring.py`（作者表读取，缺登记/多登记/重复/排除项带答案均失败）与 `recursive_build.py`，按 `authoring/v20261020_1846/{choose,plan,decompose,judge}.jsonl` 生成旁账 `brain_annotations/v20261020_1846`；`Annotation` 增加可选 `expected_decision`（仅 judge，且须与 `achieved` 一致）；证据指针补齐 `run_goal`、`remaining_planning_rounds`、`execution_order`、`episode_memories`、`trigger`、`planning_round`、`allow_interrupt`。judge 183 例中 70 例保留机械标签，113 例由请求可见证据逐例裁定并给出四类决策；choose 122（15 例机械动作集合并入可接受动作）、plan 21、decompose 41 全部为建议式。
+
+**为什么这么改**：新批次的 plan/decompose 已是递归规划形态（空计划合法、可更新、可重排），旧 v1/v2 旁账不覆盖这些字段；作者表放数据文件而不是 Python 字典，便于审阅，且构建器逐例对账，未登记就失败关闭。
+
+**取舍**：不调用任何真实模型，也不读取采集时的模型应答作标签；judge 机械例的 `expected_decision` 只在已达成时填 `achieved`，未达成不猜 continue/blocked。choose 的建议文本按目标与当前画面成类编写，细节由 AI 评分员对照请求判断，不当作动作白名单。判定中对对话文字被截断的现场（如 “Here you”“All ri”）一律按“尚未出现完整结果文字”处理，仅当前缀已能唯一确定结果（如 “Got away safel”“All right! … was”）才算达成。
+
+**影响面**：新增旁账目录、作者表与两个模块；`Annotation` 仅新增默认空字段，旧旁账读取与字节不变；任务默认版本与能力清单尚未切换。
+
 ## 2026-10-20（565）—— 递归规划二十例合并为一个冻结集合
 
 **改了什么**：新增 `evals/dataset/brain_calls/merge_exports.py`，把已核验的两段导出（原批次十四例、补采六例）并为 `brain_calls/v20261020_1846`：五族 judge 183 / plan 21 / decompose 41 / choose 122 / summary 81，来源包取并集；`DatasetManifest` 新增可选 `source_parts` 逐段登记批次、提交、代码哈希、schema 哈希与样本；新增合并测试。

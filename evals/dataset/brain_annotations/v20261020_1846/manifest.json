@@ -1,0 +1,58 @@
+{
+  "version": "v20261020_1846",
+  "collection_version": "v20261020_1846",
+  "families": {
+    "choose": {
+      "cases": 122,
+      "status": {
+        "labelled": 122
+      },
+      "method": {
+        "codex_history_review": 122
+      },
+      "sha256": "cb7c8dcd938acc8b258dafe121144a23993a3f5763c9576cc5af3263c4b578b4",
+      "inputs_sha256": "18ba039bad0c9f667f984f5742a8e9a1c8336d36bbded9f9b047c35fa071f0ee",
+      "authoring_sha256": "5f2890c42284b93b6c1e5cb4fdf57bcf209721374f632e89ddd0d288273a95ca"
+    },
+    "judge": {
+      "cases": 183,
+      "status": {
+        "labelled": 183
+      },
+      "method": {
+        "mechanical_preexisting": 70,
+        "codex_history_review": 113
+      },
+      "sha256": "cbbb352aa0fa9388ebd42ac97daa334a7c98e12fd1897380e21bc4d61e34d319",
+      "inputs_sha256": "08dc85b258965b287a5bcc03d3440d4852880dd49f1833df837d1973fec95435",
+      "authoring_sha256": "28923057928011952b9b4d2436594a7a80fea13952d0b696f5c9262bf54f1cec"
+    },
+    "plan": {
+      "cases": 21,
+      "status": {
+        "labelled": 21
+      },
+      "method": {
+        "codex_history_review": 21
+      },
+      "sha256": "d775e5b04d4a5c0e17cb156caf1e358fad32b6259fdbed6fbc644f8cd6795446",
+      "inputs_sha256": "34f8e0da500085623a9b6bc1ee1241eab3c1d1075e20ddb2b3e2b5e4d77c6905",
+      "authoring_sha256": "a7abc1a1899c0bf282240b3c375c8c0696c3b972c077626046f576b8cd9cee35"
+    },
+    "decompose": {
+      "cases": 41,
+      "status": {
+        "labelled": 41
+      },
+      "method": {
+        "codex_history_review": 41
+      },
+      "sha256": "f62cdd72df0ab00816d23a2e8e56660974fe0f2640829d97c1507f9d9373d750",
+      "inputs_sha256": "8d48f37c755580aaca38090c61fc8339897eaa3126462f63acaae30310d979b8",
+      "authoring_sha256": "ff9e2a1171830dfccf70a3776c1f630afd2b30a6e1726bd7c685468be7f9daff"
+    }
+  },
+  "baseline_answers_used": false,
+  "reviewer": "codex_history_review",
+  "policy": "Recursive-planning capture. Judge: mechanical labels kept with provenance, others adjudicated from request-visible evidence only, with expected_decision. Choose/plan/decompose: advisory suggestions, AI quality grading, not gold."
+}
