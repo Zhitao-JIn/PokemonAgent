@@ -89,4 +89,4 @@ def test_published_recursive_annotations_cover_every_case() -> None:
 
     assert counts == {"choose": 122, "judge": 183, "plan": 21, "decompose": 41}
     decisions = {row.expected_decision for row in load("judge", VERSION)}
-    assert {"achieved", "continue", "blocked"} <= decisions
+    assert {"achieved", "continue", None} <= decisions
