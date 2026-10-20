@@ -62,7 +62,11 @@ class Judger:
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         self.requests.append(req)
         return FromHarnessToBrainToolJudgeResp(
-            done=self.done, interrupted=self.interrupted, why="门口", calls=[ModelCall()]
+            decision=(
+                "achieved" if self.done else "interrupted" if self.interrupted else "continue"
+            ),
+            why="门口",
+            calls=[ModelCall()],
         )
 
 
@@ -95,6 +99,7 @@ def _state() -> TaskState:
         for i in (1, 2)
     ]
     return TaskState(
+        entry_id=(Task(task_id="t1", goal="进门", success_criteria="在屋内", max_steps=5)).task_id,
         run_id="r1",
         episode_id="ep1",
         total_acts=0,

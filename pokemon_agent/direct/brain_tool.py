@@ -80,6 +80,7 @@ from pokemon_agent.config import (
 )
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.budget_provider import BudgetProvider, TimeoutProvider
+from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.direct.prompts import decompose as decompose_prompt
 from pokemon_agent.direct.prompts import run_plan as run_plan_prompt
 from pokemon_agent.direct.prompts import summarize as summarize_prompt
@@ -241,7 +242,7 @@ class Planner:
         images = cap_images(collect_frames(req.details), SCOPE_IMAGE_CAP)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.plan(
+            result = self._brain.plan(
                 prompt=prompt,
                 goal_stack=goal_stack,
                 history=history,
@@ -249,6 +250,7 @@ class Planner:
                 images=images,
                 thinking=_thinking_after(calls),
             )
+            return validate_result(result, [e.status.value for e in req.plan])
 
         result, calls = _attempt_loop(
             "plan",
@@ -292,7 +294,7 @@ class Decomposer:
         images = cap_images(collect_frames(req.task_memories), SCOPE_IMAGE_CAP)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.decompose(
+            result = self._brain.decompose(
                 prompt=prompt,
                 goal=goal,
                 context=context,
@@ -300,6 +302,7 @@ class Decomposer:
                 images=images,
                 thinking=_thinking_after(calls),
             )
+            return validate_result(result, [e.status.value for e in req.task_table])
 
         result, calls = _attempt_loop(
             "decompose",
@@ -508,26 +511,7 @@ class Judger:
         self._request_timeout_s = request_timeout_s
 
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
-        """判定：拼 prompt + 重试循环调 `Brain.judge()`。
-
-        **prompt 在这里拼**（0913 定案）：`judge_success.build_prompt(req)`。
-        它可能抛 `KeyError`（模板占位符对不上，编程错误）——**本层不吞**，
-        原样上抛：这里没有重试能修好一个拼错的模板。
-
-        `goal`/`history` 按 brain 的约定**独立传一份渲染文本**——判定必须有
-        这三块，`Brain.judge()` 的签名是那个约定的具象。两份内容一致（prompt
-        里的 `$goal`/`$history` 就是这两样渲的），但**语义不同**：prompt 是
-        "怎么判"的规则成品，这两样是"判什么"的素材。
-
-        **images 也在这里拼**（0915 130 收权，与 choose 同一个归属："谁问模型，
-        谁把 req 变成请求"）：harness 只装素材（history），`dedup_snapshots(req.history)`
-        与 `$history` 段的 `render_sequence()` 是同一件事的图片版/文字版——
-        prompt 里读到的每一步和模型看到的画面逐帧同源。
-        无逐步历史时，取 task 或 episode 详情的首末帧并过帽；task 的 history 不过帽。
-
-        **重试是原样重问**——判定不像决策那样有"上次错在哪"可用来纠正。
-        重试耗尽抛 `MaxRetriesExceeded`，由 harness 的调用点决定怎么收场。
-        """
+        """消费本次完整请求并返回结果；失败保留调用账，输入不被修改。"""
         prompt = judge_success_prompt.build_prompt(req)
         goal = req.goal.goal
         history = [entry.render() for entry in req.history] + judge_success_prompt.memory_blocks(
@@ -541,7 +525,17 @@ class Judger:
             images, _snapshots = dedup_snapshots(list(req.history))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
+            result = self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
+            if result.interrupted and not req.allow_interrupt:
+                call = result.calls[-1].model_copy(
+                    update={
+                        "error_kind": "ParseFailure",
+                        "error": "本层不允许 interrupted",
+                        "payload": {**result.calls[-1].payload, "ok": "false"},
+                    }
+                )
+                raise AttemptFailed(call)
+            return result
 
         result, calls = _attempt_loop(
             "judge",
@@ -551,7 +545,7 @@ class Judger:
             request_timeout_s=self._request_timeout_s,
         )
         return FromHarnessToBrainToolJudgeResp(
-            done=result.done, interrupted=result.interrupted, why=result.why, calls=calls
+            decision=result.decision, why=result.why, calls=calls
         )
 
 
@@ -848,6 +842,7 @@ class TaskSummarizer:
         memory = TaskMemory(
             run_id=req.run_id,
             episode_id=req.episode_id,
+            entry_id=req.entry_id,
             task_id=req.task_id,
             goal=req.goal,
             termination=req.termination.value,
@@ -931,7 +926,8 @@ class BrainTool:
         后置条件：返回的容器持有的 `Brain`，造出来的 provider **互不相同**
         （`judge` 与 `decide` 不共用是硬约束，见 `Brain` 模块 docstring）。
         """
-        from pokemon_agent.brain import Brain, BrainLlmConfig, build_llm_providers
+        from pokemon_agent.brain import Brain, BrainLlmConfig
+        from pokemon_agent.brain.build_llm_providers import build_llm_providers
 
         config = BrainLlmConfig(
             text=text,

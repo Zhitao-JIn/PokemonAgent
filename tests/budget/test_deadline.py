@@ -6,7 +6,7 @@ import json
 import pytest
 from _doubles.llm import ScriptedLLM, text_reply
 
-from pokemon_agent.brain import Brain
+from pokemon_agent.brain import Brain, Goal
 from pokemon_agent.brain.errors import ToolTimeout
 from pokemon_agent.brain.providers import DeepSeekProvider
 from pokemon_agent.brain.schemas import LlmCompleteReq, VisionDescribeReq
@@ -31,11 +31,16 @@ class Clock:
 
 
 def plan_request():
-    return FromHarnessToBrainToolPlanOnceReq(run_id="budget", plan=[], max_push=3)
+    return FromHarnessToBrainToolPlanOnceReq(
+        run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
+        run_id="budget",
+        plan=[],
+        max_push=3,
+    )
 
 
 def plan_reply():
-    return text_reply('{"push_goals":[],"updates":[],"why":"scripted"}')
+    return text_reply('{"updates": [], "why": "scripted", "new_items": []}')
 
 
 def test_deadline_uses_one_clock_and_preserves_the_reserve():

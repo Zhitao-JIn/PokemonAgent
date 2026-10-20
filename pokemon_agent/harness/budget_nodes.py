@@ -29,6 +29,7 @@ BUDGET_TERMINATIONS = frozenset(
         Termination.ACTIONS_EXHAUSTED,
         Termination.TASKS_EXHAUSTED,
         Termination.DECOMPOSITIONS_EXHAUSTED,
+        Termination.PLANNING_EXHAUSTED,
     )
 )
 _CALL_KINDS = {

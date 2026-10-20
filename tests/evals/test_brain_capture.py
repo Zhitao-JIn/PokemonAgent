@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from evals.common.brain_capture import record_brain_calls
 from evals.common.capture_audit import audit_capture
 from evals.common.invocation import RecordingInvocation
+from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.schemas.harness import ModelCall, TraceEvent
 
 
@@ -119,6 +120,7 @@ def test_all_runtime_ports_are_recorded_in_separate_layer_directories(tmp_path: 
         summarize_run=invoke,
     )
     task = SimpleNamespace(
+        reviewer=NullReviewer(),
         chooser=original,
         judger=original,
         verifier=original,
@@ -126,6 +128,7 @@ def test_all_runtime_ports_are_recorded_in_separate_layer_directories(tmp_path: 
         task_summarizer=original,
     )
     episode = SimpleNamespace(
+        reviewer=NullReviewer(),
         task=task,
         decomposer=original,
         judger=original,
@@ -133,6 +136,7 @@ def test_all_runtime_ports_are_recorded_in_separate_layer_directories(tmp_path: 
         summarizer=original,
     )
     runtime = SimpleNamespace(
+        reviewer=NullReviewer(),
         episode=episode,
         planner=original,
         judger=original,

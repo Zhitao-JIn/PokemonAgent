@@ -32,7 +32,9 @@ from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import (
     Action,
+    Decomposition,
     Goal,
+    RunPlan,
     Task,
     VerifyVerdict,
 )
@@ -214,6 +216,12 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     """连续失败计数（episode / run 的 `judge_verdict` 与 `settle_goal` 带）。"""
     updates: list[dict[str, str]] | None = None
     """规划对已有目标的表态（`plan_verdict` 带）：`{task_id, status, note}`。"""
+    planning: RunPlan | Decomposition | None = None
+    planning_round: int | None = None
+    decision: str | None = None
+    judge_trigger: str | None = None
+    execution_order: list[str] | None = None
+    entry_id: str | None = None
     tasks: list[Task] | None = None
     """拆解出的任务链（`decompose_verdict` 带），`task_id` 已由 harness 编好。"""
     goal: GoalEntry | None = None

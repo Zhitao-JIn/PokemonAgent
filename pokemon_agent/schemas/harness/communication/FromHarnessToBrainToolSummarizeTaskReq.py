@@ -21,6 +21,7 @@ class FromHarnessToBrainToolSummarizeTaskReq(Settled, BaseModel):
         min_length=1, description="本 task 区间的全部 ActMemory，按 step 升序"
     )
     verdicts: list[VerifyVerdict] = Field(description="与 entries 等长的正/负标注")
+    entry_id: str
     task_id: str = Field(description="本 task 的标识（来源章）")
     episode_id: str = Field(description="所属 episode 的标识（来源章）")
     run_id: str = Field(description="所属 run 的标识（来源章）")

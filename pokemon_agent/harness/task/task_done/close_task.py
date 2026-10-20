@@ -17,6 +17,7 @@ def close_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any
     """前置条件：`done` 且 `termination` 非空。"""
     assert state.done and state.termination is not None, "close_task before the task finished"
     output = TaskOutput(
+        entry_id=state.entry_id,
         task_id=state.task.task_id,
         termination=state.termination,
         judge_reason=state.judge_reason,

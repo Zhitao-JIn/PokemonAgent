@@ -113,6 +113,7 @@ def test_episode_limits_produce_failed_outcomes_and_run_end(tmp_path, limit, exp
 def test_task_clamp_records_both_values_without_changing_the_input(tmp_path):
     fake = build_fake(tmp_path)
     task_input = TaskInput(
+        entry_id=(GOAL.model_copy(update={"max_steps": 30})).task_id,
         run_id="r1",
         episode_id="r1-ep1",
         total_acts=0,
@@ -151,6 +152,7 @@ def test_restored_action_and_decomposition_counters_do_not_reset(tmp_path):
         decompositions_used=2,
         run_goal="测试总目标",
     )
+    configure(fake, max_decompositions=2)
     final_ep = fake.run_rt.episode_graph.invoke(
         EpisodeRunState.model_validate_json(ep.model_dump_json()),
         context=fake.run_rt.episode,
@@ -190,4 +192,4 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
 
 
 def test_state_schema_is_frozen_after_the_l1_goal_identity_stamp():
-    assert state_schema_hash() == "11a4afa05e6ed43d"
+    assert state_schema_hash() == "5d3630f2b479ee78"

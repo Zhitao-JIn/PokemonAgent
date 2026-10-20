@@ -1,5 +1,6 @@
 """run 规划完整详情、过往背景、知识与当前画面独立渲染，帧数据不进文本。"""
 
+from pokemon_agent.brain import Goal
 from pokemon_agent.direct.prompts.run_plan import build_prompt, history_blocks
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolPlanOnceReq
 from pokemon_agent.schemas.memory import EpisodeMemory, RunMemory
@@ -34,6 +35,7 @@ def _request() -> FromHarnessToBrainToolPlanOnceReq:
         step=3, scene=TaskScene.WALK, status="当前状态", facts=Facts(where="地图12 x=3 y=5")
     )
     return FromHarnessToBrainToolPlanOnceReq(
+        run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
         run_id="r",
         plan=[],
         details=details,
@@ -71,7 +73,12 @@ def test_run_history_starts_with_all_details_then_past_run_background() -> None:
 
 
 def test_an_empty_run_context_has_explicit_placeholders_without_the_old_index_field() -> None:
-    request = FromHarnessToBrainToolPlanOnceReq(run_id="r", plan=[], max_push=1)
+    request = FromHarnessToBrainToolPlanOnceReq(
+        run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
+        run_id="r",
+        plan=[],
+        max_push=1,
+    )
 
     prompt = build_prompt(request)
 

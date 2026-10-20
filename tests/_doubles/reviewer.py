@@ -36,5 +36,7 @@ def audit_request() -> FromHarnessToReviewerAuditReq:
         context=review_context(),
         run_id="r1",
         episode_id="r1-ep1",
-        outcome=FromHarnessToBrainToolJudgeResp(done=True, why="达成", calls=[ModelCall()]),
+        outcome=FromHarnessToBrainToolJudgeResp(
+            decision=("achieved" if True else "continue"), why="达成", calls=[ModelCall()]
+        ),
     )

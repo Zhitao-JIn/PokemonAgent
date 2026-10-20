@@ -83,6 +83,8 @@ BOOLEAN_FIELDS: frozenset[str] = frozenset({"done", "ok", "perceived", "overturn
 TERMINATIONS: frozenset[str] = frozenset(
     {
         Termination.GOAL_DONE.value,
+        Termination.BLOCKED.value,
+        Termination.PLANNING_EXHAUSTED.value,
         Termination.WORLD_ENDED.value,
         Termination.STALLED.value,
         Termination.BUDGET_EXHAUSTED.value,
@@ -1398,13 +1400,14 @@ def check_content_invariants(events: Sequence[Event], episode_id: str) -> None:
     for token, event in episode_stream(events, episode_id):
         if token == "decompose_verdict":
             tasks = content_of(event).get("tasks")
-            assert isinstance(tasks, list) and tasks, "decompose_verdict 的 tasks 应是非空数组"
+            assert isinstance(tasks, list), "decompose_verdict 的 tasks 应是数组"
             ids = [str(t.get("task_id", "")) for t in tasks]
             assert len(set(ids)) == len(ids), f"decompose_verdict 里 task_id 重复：{ids}"
             planned |= set(ids)
         elif token == TASK_TOKEN:
             task_id = _task_of(event)
-            assert task_id in planned, f"task {task_id} 被派出去了，但此前没有哪一版拆解给过它"
+            entry_id = content_of(event).get("entry_id") or task_id
+            assert entry_id in planned, f"task {task_id} 被派出去了，但此前没有哪一版拆解给过它"
 
     _check_task_stamps(events, episode_id)
 
@@ -1452,7 +1455,7 @@ def _check_task_stamps(events: Sequence[Event], episode_id: str) -> None:
             assert content.get("task_id") == last_task, (
                 f"settle_task 盖的是 {content.get('task_id')!r}，刚结束的 task 是 {last_task!r}"
             )
-            assert content.get("status") in ("completed", "failed"), (
+            assert content.get("status") in ("completed", "failed", "blocked"), (
                 f"settle_task.status={content.get('status')!r} 应为 completed / failed"
             )
             gone = content.get("abandoned") or []
@@ -1544,7 +1547,7 @@ def check_run_invariants(events: Sequence[Event]) -> None:
             assert content.get("episode_id") == last_episode, (
                 f"settle_goal 盖的是 {content.get('episode_id')!r}，刚结束的一局是 {last_episode!r}"
             )
-            assert content.get("status") in ("completed", "failed"), (
+            assert content.get("status") in ("completed", "failed", "blocked"), (
                 f"settle_goal.status={content.get('status')!r} 应为 completed / failed"
             )
         elif token == "run_end":

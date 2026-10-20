@@ -19,7 +19,13 @@ def export_controls(batch: Path, output: Path, samples: list[str]) -> int:
     """只从原始账导出 budget_skipped；空集合也创建文件，便于区分未采集。"""
     records = []
     for sample_id in samples:
-        for path in (batch / "runs" / sample_id / "trace").glob("*.json"):
+        report = json.loads((batch / "reports" / f"{sample_id}.json").read_text("utf-8"))
+        work = (
+            Path(report["work_directory"])
+            if report.get("work_directory")
+            else batch / "runs" / sample_id
+        )
+        for path in (work / "trace").glob("*.json"):
             event = TraceEvent.model_validate_json(path.read_text("utf-8"))
             if event.kind == "budget_skipped":
                 records.append(SkippedCall(sample_id=sample_id, event=event))

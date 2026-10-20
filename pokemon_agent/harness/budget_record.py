@@ -65,11 +65,17 @@ def settle_running(
             continue
         outcome = outputs[-1] if outputs else None
         fields: dict[str, object] = {
-            "status": EntryStatus.COMPLETED if outcome and outcome.success else EntryStatus.FAILED,
+            "status": EntryStatus.COMPLETED
+            if outcome and outcome.success
+            else EntryStatus.BLOCKED
+            if outcome and outcome.termination is Termination.BLOCKED
+            else EntryStatus.FAILED,
             "note": reason.value,
         }
         if layer == "run" and outcome is not None:
             fields["last_episode_id"] = outcome.episode_id
+        if layer == "episode" and outcome is not None:
+            assert outcome.entry_id == entry.entry_id and outcome.task_id == entry.last_task_id
         entries[index] = entry.model_copy(update=fields)
         deps.trace.append(
             FromHarnessToTraceToolAppendReq(

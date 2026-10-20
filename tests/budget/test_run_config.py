@@ -24,7 +24,7 @@ def test_default_and_evaluation_share_all_layer_values(tmp_path):
     assert (production.reserve_s, production.episode_max_tasks, production.max_decompositions) == (
         60,
         6,
-        2,
+        12,
     )
     assert (production.task_max_steps, production.min_request_s) == (
         12,

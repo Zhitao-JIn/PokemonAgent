@@ -101,6 +101,7 @@ def read_case(path: Path, work: Path, lookup: dict[str, deque]) -> InputCase:
         else "failure",
     )
     return InputCase(
+        contract_version="v2",
         case_id=f"{work.name}.{layer}.{method}.{prefix}",
         family=FAMILIES[method],
         layer=layer,
@@ -145,7 +146,7 @@ def write_family(
         schema_paths.append(path)
     files = [directory / name for name in ("inputs.jsonl", "references.jsonl")] + schema_paths
     manifest = DatasetManifest(
-        version="v1",
+        version="v2" if report.archive_root else "v1",
         family=family,
         cases=len(pairs),
         layers=dict(Counter(case.layer for case, _ in pairs)),
@@ -174,7 +175,12 @@ def gather_cases(batch: Path, reports: list[Path], samples: dict) -> tuple[dict,
     grouped = defaultdict(list)
     warnings = {}
     for report_path in reports:
-        work = batch / "runs" / report_path.stem
+        report_value = json.loads(report_path.read_text("utf-8"))
+        work = (
+            Path(report_value["work_directory"])
+            if report_value.get("work_directory")
+            else batch / "runs" / report_path.stem
+        )
         events, lookup = load_events(work)
         for path in sorted((work / "brain_calls").glob("*/*/*.request.json")):
             if path.parent.name not in REQUESTS:

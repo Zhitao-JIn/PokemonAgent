@@ -66,7 +66,16 @@ def test_semantic_grader_gets_actual_context_images_candidate_and_separate_refer
 
     monkeypatch.setattr(source_quality, "get_model", lambda model: Grader())
 
-    score = asyncio.run(source_quality.assess("fake-grader", case.reference, RunPlan(), calls))
+    score = asyncio.run(
+        source_quality.assess(
+            "fake-grader",
+            case.reference,
+            RunPlan(
+                why="测试规划依据",
+            ),
+            calls,
+        )
+    )
 
     assert score.value == "C" and score.metadata["truth_method"] == "model_review"
     assert "actual original context" in seen[1].content[0].text
@@ -85,7 +94,12 @@ def test_invalid_model_grade_is_unjudged_instead_of_a_success(monkeypatch) -> No
 
     score = asyncio.run(
         source_quality.assess(
-            "fake-grader", case.reference, RunPlan(), [ModelCall(payload={"prompt": "context"})]
+            "fake-grader",
+            case.reference,
+            RunPlan(
+                why="测试规划依据",
+            ),
+            [ModelCall(payload={"prompt": "context"})],
         )
     )
 

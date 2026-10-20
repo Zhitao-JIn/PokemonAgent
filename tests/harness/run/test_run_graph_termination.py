@@ -52,12 +52,17 @@ class _Planner:
 
     def plan(self, req):
         updates = [
-            RunPlan.PlanUpdate(index=i, status="pending")
+            RunPlan.PlanUpdate(note="explicit planning reason", index=i, status="pending")
             for i, entry in enumerate(req.plan)
             if self._reopen and entry.status is EntryStatus.FAILED
         ]
         return type(
-            "Resp", (), {"plan": RunPlan(updates=updates), "calls": [ModelCall(payload={})]}
+            "Resp",
+            (),
+            {
+                "plan": RunPlan(why="测试规划依据", updates=updates),
+                "calls": [ModelCall(payload={})],
+            },
         )()
 
 
@@ -70,7 +75,9 @@ class _Judger:
     def judge(self, req):
         self.asked += 1
         return FromHarnessToBrainToolJudgeResp(
-            done=self.asked == self._done_on, why="桩", calls=[ModelCall(payload={})]
+            decision=("achieved" if self.asked == self._done_on else "continue"),
+            why="桩",
+            calls=[ModelCall(payload={})],
         )
 
 

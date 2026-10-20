@@ -25,19 +25,28 @@ def task_table_lines(table: Sequence[TaskEntry]) -> list[str]:
     拆解与 episode 判定共用这一个渲染（唯一真源）。
     """
     lines: list[str] = []
-    for entry in table:
+    for index, entry in enumerate(table):
         overturned = "（人审推翻）" if entry.overturned else ""
         note = f" · {entry.note}" if entry.note else ""
         lines.append(
-            f"[{entry.task.task_id} · 第{entry.round}版] {entry.status.value}{overturned} "
-            f"{entry.task.goal}{note}"
+            f"[{index}] ID={entry.entry_id} · 第{entry.round}版 {entry.status.value}{overturned} "
+            f"{entry.task.goal} · 验收={entry.task.success_criteria} "
+            f"· 预算={entry.task.max_steps} actions · 已试={entry.attempts} "
+            f"· 最近执行={entry.last_task_id or '尚未派发'}{note}"
         )
     return lines
 
 
 def context_lines(req: FromHarnessToBrainToolDecomposeReq) -> list[str]:
     """当前帧、任务表、上次判定、本局 task 详情、同目标其他局索引与知识。"""
-    lines = ["## 当前画面", req.observation.render()]
+    remaining = (
+        req.remaining_planning_rounds if req.remaining_planning_rounds is not None else "未提供"
+    )
+    lines = [
+        "## 当前画面",
+        req.observation.render(),
+        f"剩余拆解轮数：{remaining}；派发顺序：{req.execution_order}",
+    ]
     if req.task_table:
         lines += ["", "## 本局任务表（成败以此为准）", *task_table_lines(req.task_table)]
     if req.last_judge is not None:

@@ -11,7 +11,8 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel
 
-from pokemon_agent.brain.interface import Goal
+from pokemon_agent.brain.interface import Decomposition, Goal, RunPlan
+from pokemon_agent.schemas.harness.domain.goal_entry import GoalEntry
 from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
 from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, RunMemory, TaskMemory
 from pokemon_agent.world import TaskObservation
@@ -44,6 +45,10 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     tool 入口，harness 只装素材。
     """
 
+    goal_table: Sequence[GoalEntry] = ()
+    latest_planning: RunPlan | Decomposition | None = None
+    planning_round: int = 0
+    trigger: str = "normal"
     goal: Goal
     history: Sequence[ActMemory] = ()
     task_memories: Sequence[TaskMemory] = ()

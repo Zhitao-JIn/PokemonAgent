@@ -40,9 +40,17 @@ LEDGER_KEYS = {
 def chain_json(**overrides: object) -> str:
     """一份完整合法的任务链 JSON；`overrides` 覆盖或新增顶层键。"""
     data: dict[str, object] = {
-        "tasks": [
-            {"goal": "reach the gym", "success_criteria": "standing in the gym", "max_steps": 6},
-            {"goal": "beat the leader", "success_criteria": "badge obtained", "max_steps": 8},
+        "new_items": [
+            {
+                "goal": "reach the gym",
+                "success_criteria": "standing in the gym",
+                "budget": {"limit": 6, "unit": "actions"},
+            },
+            {
+                "goal": "beat the leader",
+                "success_criteria": "badge obtained",
+                "budget": {"limit": 8, "unit": "actions"},
+            },
         ],
         "why": "gym first",
     }
@@ -70,23 +78,40 @@ def test_a_json_fence_around_the_chain_is_tolerated() -> None:
     assert len(result.decomposition.tasks) == 2
 
 
-def test_the_explanation_is_optional() -> None:
+def test_the_explanation_is_required() -> None:
     data = json.loads(chain_json())
     data.pop("why")
     brain = Brain(plan_llm=ScriptedLLM(text_reply(json.dumps(data))))
 
-    result = brain.decompose(prompt=PROMPT, goal=GOAL, context=CONTEXT, max_tasks=MAX_TASKS)
-
-    assert result.decomposition.why == ""
+    with pytest.raises(DecomposeAttemptFailed):
+        brain.decompose(prompt=PROMPT, goal=GOAL, context=CONTEXT, max_tasks=MAX_TASKS)
 
 
 @pytest.mark.parametrize(
     ("reply", "keyword"),
     [
-        ("{}", "tasks"),
-        (json.dumps({"tasks": [], "why": "x"}), "tasks"),
-        (chain_json(tasks=[{"goal": "g", "success_criteria": "s", "max_steps": 0}]), "max_steps"),
-        (chain_json(tasks=[{"goal": "", "success_criteria": "s", "max_steps": 6}]), "goal"),
+        ("{}", "why"),
+        (json.dumps({"new_items": [], "why": ""}), "why"),
+        (
+            chain_json(
+                new_items=[
+                    {
+                        "goal": "g",
+                        "success_criteria": "s",
+                        "budget": {"limit": 0, "unit": "actions"},
+                    }
+                ]
+            ),
+            "limit",
+        ),
+        (
+            chain_json(
+                new_items=[
+                    {"goal": "", "success_criteria": "s", "budget": {"limit": 6, "unit": "actions"}}
+                ]
+            ),
+            "goal",
+        ),
     ],
 )
 def test_an_invalid_chain_fails_as_parse_failure_naming_the_field(reply: str, keyword: str) -> None:

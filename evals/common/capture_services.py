@@ -58,6 +58,16 @@ def wait_ready(process: subprocess.Popen[bytes], address: str) -> None:
 def stop_process(process: subprocess.Popen[bytes]) -> None:
     """只停止本工具持有的子进程；已经结束的进程不再操作。"""
     if process.poll() is None:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                check=False,
+            )
+            process.wait(timeout=15)
+            return
         process.terminate()
         try:
             process.wait(timeout=15)

@@ -840,6 +840,9 @@ def judge_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         TraceKind.JUDGE_VERDICT,
         {
             "termination": req.termination.value if req.termination else "",
+            "decision": req.decision or "",
+            "judge_trigger": req.judge_trigger or "normal",
+            "planning_round": str(req.planning_round) if req.planning_round is not None else "",
             "fail_streak": str(req.fail_streak) if req.fail_streak is not None else "",
             "judge_reason": req.judge_reason,
             "audit": req.audit or "",
@@ -960,6 +963,12 @@ def plan_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         "why": req.why,
         "human_note": req.human_note,
     }
+    if req.planning is not None:
+        content.update(
+            planning=req.planning.model_dump(mode="json"),
+            planning_round=str(req.planning_round),
+            execution_order=req.execution_order,
+        )
     return Rendered(EventType.LLM_OUTCOME, TraceKind.PLAN_VERDICT, content)
 
 
@@ -977,6 +986,7 @@ def task_start(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "success_criteria": task.success_criteria,
             "max_steps": str(task.max_steps),
             "total_acts": str(req.total_acts),
+            "entry_id": req.entry_id,
         },
     )
 
@@ -991,6 +1001,7 @@ def task_end(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "termination": out.termination.value,
             "judge_reason": out.judge_reason,
             "steps_used": str(out.steps_used),
+            "entry_id": out.entry_id,
             "reason": out.reason,
         },
     )
@@ -1019,6 +1030,12 @@ def decompose_verdict(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         "why": req.why,
         "human_note": req.human_note,
     }
+    if req.planning is not None:
+        content.update(
+            planning=req.planning.model_dump(mode="json"),
+            planning_round=str(req.planning_round),
+            execution_order=req.execution_order,
+        )
     return Rendered(EventType.LLM_OUTCOME, TraceKind.DECOMPOSE_VERDICT, content)
 
 
@@ -1139,7 +1156,9 @@ def settle_task(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         EventType.LIFECYCLE,
         TraceKind.SETTLE_TASK,
         {
-            "task_id": entry.task.task_id,
+            "task_id": entry.last_task_id or entry.task.task_id,
+            "entry_id": entry.entry_id,
+            "attempts": str(entry.attempts),
             "status": entry.status.value,
             "round": str(entry.round),
             "audit": req.audit or "",

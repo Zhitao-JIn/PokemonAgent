@@ -8,6 +8,7 @@ class RunBudget(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
+    max_planning_rounds: int = Field(default=20, gt=0)
     max_episodes: int = Field(gt=0)
     max_total_actions: int | None = Field(default=None, gt=0)
     wall_clock_s: float | None = Field(default=None, gt=0, allow_inf_nan=False)

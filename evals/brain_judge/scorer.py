@@ -4,6 +4,7 @@ from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 
+from evals.brain_judge.decision_metrics import decision_summary
 from evals.brain_judge.metrics import judge_summary
 from evals.brain_judge.solver import JudgeRecord
 from evals.dataset.brain_judge import JudgeCase
@@ -15,7 +16,7 @@ def confusion(predicted: bool, achieved: bool) -> dict[str, int]:
     return {name: int(name == cell) for name in ("TP", "FP", "FN", "TN")}
 
 
-@scorer(metrics=[judge_summary()])
+@scorer(metrics=[judge_summary(), decision_summary()])
 def judge_scorer() -> Scorer:
     """汇总四格、派生率与分组指标；标签独立于模型输出。"""
 
@@ -26,6 +27,8 @@ def judge_scorer() -> Scorer:
         raw_case = state.metadata["case"]
         origin = raw_case.get("origin", {}) if isinstance(raw_case, dict) else {}
         metadata = {
+            "decision": record.decision,
+            "expected_decision": case.expected_decision,
             "goal_family": raw_case.get("goal_family", "other"),
             "layer": raw_case.get("layer"),
             "negative_mode": raw_case.get("negative_mode"),

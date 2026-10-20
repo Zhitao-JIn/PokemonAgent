@@ -68,7 +68,9 @@ class _Judger:
     """run 级判定恒回"未达成"——本文件只关心补章，不关心停机。"""
 
     def judge(self, req):
-        return FromHarnessToBrainToolJudgeResp(done=False, why="桩", calls=[ModelCall(payload={})])
+        return FromHarnessToBrainToolJudgeResp(
+            decision=("achieved" if False else "continue"), why="桩", calls=[ModelCall(payload={})]
+        )
 
 
 @pytest.fixture

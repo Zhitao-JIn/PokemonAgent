@@ -17,6 +17,8 @@ from pokemon_agent.world import TaskObservation
 class FromHarnessToBrainToolDecomposeReq(BaseModel):
     """拆一版任务链要的全部素材。"""
 
+    remaining_planning_rounds: int | None = None
+    execution_order: list[str] = Field(default_factory=list)
     goal: Goal = Field(description="本局目标（含判据）")
     observation: TaskObservation = Field(description="当前帧")
     task_memories: list[TaskMemory] = Field(

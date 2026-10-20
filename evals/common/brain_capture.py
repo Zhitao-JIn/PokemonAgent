@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pokemon_agent.harness.run.runtime import RunRuntime
 
+from .capture_review import RecordedReviewer
 from .recorded_ports import (
     RecordedChooser,
     RecordedDecomposer,
@@ -20,6 +21,10 @@ from .recorded_ports import (
 def record_brain_calls(runtime: RunRuntime, directory: Path) -> None:
     """装配后、进图前调用一次；各层独立目录防止 judge 混层。"""
     episode = runtime.episode
+    review_root = directory.parent / "review_calls"
+    runtime.reviewer = RecordedReviewer(runtime.reviewer, review_root / "run")
+    episode.reviewer = RecordedReviewer(episode.reviewer, review_root / "episode")
+    episode.task.reviewer = RecordedReviewer(episode.task.reviewer, review_root / "task")
     task = episode.task
     runtime.planner = RecordedPlanner(runtime.planner, directory / "run/plan")
     runtime.judger = RecordedJudger(runtime.judger, directory / "run/judge")

@@ -55,6 +55,7 @@ class InputCase(BaseModel):
     """仅 request 送入原生产 Port；其余均为数据目录索引和评分元信息。"""
 
     model_config = ConfigDict(extra="forbid")
+    contract_version: str = "v1"
     case_id: str
     family: Family
     layer: Layer
@@ -68,7 +69,12 @@ class InputCase(BaseModel):
         """JSON 重读时按原方法的精确契约解析，不用字段相似度猜类型。"""
         if isinstance(value, dict) and isinstance(value.get("request"), dict):
             value = dict(value)
-            value["request"] = REQUESTS[value["method"]].model_validate(value["request"])
+            request_type = REQUESTS[value["method"]]
+            if value.get("contract_version", "v1") == "v1":
+                from evals.common.legacy_requests.registry import REQUESTS as LEGACY_REQUESTS
+
+                request_type = LEGACY_REQUESTS.get(value["method"], request_type)
+            value["request"] = request_type.model_validate(value["request"])
         return value
 
 

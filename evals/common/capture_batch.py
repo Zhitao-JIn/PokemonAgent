@@ -18,12 +18,17 @@ from evals.paths import REPO_ROOT
 from evals.runconfig import load_config
 from pokemon_agent.env import load_env_file
 from pokemon_agent.harness.checkpoint.manifest import state_schema_hash
+from pokemon_agent.run_budget import RunBudget
 from pokemon_agent.schemas.harness.domain import RunResult
 
 
 class PackReport(BaseModel):
     """新起点与本次执行版本，原始 state 哈希单独记录。"""
 
+    archive_root: str | None = None
+    effective_budget: RunBudget | None = None
+    sample_sha256: str | None = None
+    archive_payload_hashes: dict[str, str] = Field(default_factory=dict)
     git_head: str
     schema_hash: str
     source_hashes: dict[str, str]
@@ -35,6 +40,8 @@ class PackReport(BaseModel):
 class CaseReport(BaseModel):
     """业务失败仍保留样本；录制遗漏或进程异常须明确报告。"""
 
+    work_directory: str | None = None
+    interrupted: bool = False
     sample_id: str
     git_head: str
     exit_code: int

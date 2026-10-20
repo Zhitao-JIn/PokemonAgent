@@ -41,7 +41,7 @@ from pokemon_agent.schemas.harness import TraceKind
 from ..loader import DATASET_DIR, load_samples, sha256_of
 
 
-def pack_one(sample: EvalSample, version: str) -> Path:
+def pack_one(sample: EvalSample, version: str, archive_root: Path | None = None) -> Path:
     """打一条样本的起点存档，返回存档目录（`archives/<样本>/`）。
 
     前置条件：`sample.start.kind == "archive"` 且来源 `.state` 存在、哈希与
@@ -73,7 +73,7 @@ def pack_one(sample: EvalSample, version: str) -> Path:
             initial_state_hint=sample.initial_state_hint,
         )
         harness.run(run_id, [task], checkpoint_only=True)
-        return _copy_checkpoint(run_id, roots, sample.sample_id, version)
+        return _copy_checkpoint(run_id, roots, sample.sample_id, version, archive_root)
     finally:
         try:
             if game is not None:
@@ -107,7 +107,13 @@ def _release_world(game: WorldMcpTool) -> None:
         ) from None
 
 
-def _copy_checkpoint(run_id: str, roots: dict[str, Path], sample_id: str, version: str) -> Path:
+def _copy_checkpoint(
+    run_id: str,
+    roots: dict[str, Path],
+    sample_id: str,
+    version: str,
+    archive_root: Path | None = None,
+) -> Path:
     """拷贝已成功保存的 checkpoint 与记忆快照，改写 manifest 的相对路径。"""
     trace = TraceTool.build(run_id=run_id, trace_root=roots["trace_root"])
     saves = [
@@ -120,7 +126,9 @@ def _copy_checkpoint(run_id: str, roots: dict[str, Path], sample_id: str, versio
     assert isinstance(content, CheckpointSaveContent)
     src = Path(content.manifest_path).parent
 
-    dst = DATASET_DIR / version / "archives" / sample_id
+    dst = (archive_root or (DATASET_DIR / version / "archives")) / sample_id
+    if archive_root is not None and dst.exists():
+        raise FileExistsError(dst)
     dst.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dst, dirs_exist_ok=True)
     snapshots = roots["memory_root"] / "snapshots"
@@ -128,11 +136,12 @@ def _copy_checkpoint(run_id: str, roots: dict[str, Path], sample_id: str, versio
         shutil.copytree(snapshots, dst / "memory" / "snapshots", dirs_exist_ok=True)
     manifest_file = dst / "manifest.json"
     manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    memory_path = dst / "memory" / "snapshots" / Path(manifest["memory_archive"]).name
     manifest["memory_archive"] = (
-        (dst / "memory" / "snapshots" / Path(manifest["memory_archive"]).name).relative_to(
-            DATASET_DIR / version
-        )
-    ).as_posix()
+        str(memory_path.resolve())
+        if archive_root
+        else memory_path.relative_to(DATASET_DIR / version).as_posix()
+    )
     manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return dst
 
@@ -152,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(prog="python -m evals.agent_short_goal_run.dataset.build.pack")
     parser.add_argument("--version", default="v1")
+    parser.add_argument("--archive-root", type=Path)
     parser.add_argument("--samples", default="", help="逗号分隔的样本 id；缺省打全部")
     args = parser.parse_args(argv)
 
@@ -170,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{sample.sample_id}：起点不是 archive 形态（缺 source_state）"
         )
         try:
-            dst = pack_one(sample, args.version)
+            dst = pack_one(sample, args.version, args.archive_root)
             print(f"✓ {sample.sample_id} → {dst}", flush=True)
         except Exception as exc:  # noqa: BLE001 —— 逐条打包，失败继续下一条，最后汇总
             failed.append(sample.sample_id)

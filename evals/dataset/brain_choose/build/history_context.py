@@ -8,13 +8,13 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from evals.common.legacy_requests.judge import FromHarnessToBrainToolJudgeReq
+from evals.common.legacy_requests.judge_prompt import build_prompt
 from evals.dataset.brain_choose.build.from_capture import CaptureRow, read_request
 from evals.dataset.io import contained_file
 from pokemon_agent.direct.brain_tool import dedup_snapshots
-from pokemon_agent.direct.prompts.judge_success import build_prompt
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
-    FromHarnessToBrainToolJudgeReq,
 )
 from pokemon_agent.world.interface.domain.ram_readout import RamReadout
 

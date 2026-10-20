@@ -24,14 +24,19 @@ def frozen_start_files(batch: Path) -> list[Path]:
     pack = json.loads((batch / "pack_report.json").read_text("utf-8"))
     files = []
     for sample_id, expected in pack["archive_hashes"].items():
-        path = DATASET_DIR / "v1/archives" / sample_id / "manifest.json"
+        archive_root = (
+            Path(pack["archive_root"]) if pack.get("archive_root") else DATASET_DIR / "v1/archives"
+        )
+        path = archive_root / sample_id / "manifest.json"
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             raise ValueError(f"captured start manifest changed: {sample_id}")
         manifest = json.loads(path.read_text("utf-8"))
         files += [
             path,
             path.parent / manifest["world_file"],
-            DATASET_DIR / "v1" / manifest["memory_archive"],
+            Path(manifest["memory_archive"])
+            if Path(manifest["memory_archive"]).is_absolute()
+            else DATASET_DIR / "v1" / manifest["memory_archive"],
         ]
     return files
 
@@ -41,9 +46,17 @@ def archive_sources(batch: Path, output: Path) -> SourceArchiveManifest:
     files = frozen_start_files(batch)
     files += list((batch / "reports").glob("*.json"))
     files += [batch / name for name in ("pack_report.json", "batch_report.json")]
-    for work in sorted((batch / "runs").iterdir()):
+    for report_path in sorted((batch / "reports").glob("*.json")):
+        report = json.loads(report_path.read_text("utf-8"))
+        work = (
+            Path(report["work_directory"])
+            if report.get("work_directory")
+            else batch / "runs" / report_path.stem
+        )
         files += list((work / "brain_calls").glob("*/*/*.json"))
         files += list((work / "trace").glob("*.json"))
+        files += list((work / "review_calls").glob("*/*/*.json"))
+        files += [work / "review_wait_report.json"]
         files += [work / name for name in ("sample.json", "run_config.json", "run_result.json")]
     archive = output / "sources.zip"
     entries = {}

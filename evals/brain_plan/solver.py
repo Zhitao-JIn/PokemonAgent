@@ -9,7 +9,7 @@ from pydantic import Field
 from pokemon_agent.brain.interface import RunPlan
 from pokemon_agent.direct.brain_tool import BrainTool
 from pokemon_agent.errors import MaxRetriesExceeded
-from pokemon_agent.schemas.harness import ModelCall
+from pokemon_agent.schemas.harness import FromHarnessToBrainToolPlanOnceReq, ModelCall
 
 from .dataset import Case
 
@@ -29,6 +29,10 @@ def plan_solver(model: str) -> Solver:
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         case = Case.model_validate(state.metadata["case"])
+        if case.contract_version != "v2" or not isinstance(
+            case.request, FromHarnessToBrainToolPlanOnceReq
+        ):
+            raise ValueError("旧版本仅供审计；新规划契约需要完整新请求，请选择重采版本")
         record = store_as(Record)
         try:
             response = await asyncio.to_thread(port.plan, case.request)

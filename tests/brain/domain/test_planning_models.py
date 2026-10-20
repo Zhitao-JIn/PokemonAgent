@@ -19,71 +19,71 @@ from pokemon_agent.brain.interface.domain import (
 )
 
 
-def test_a_decomposition_requires_at_least_one_task() -> None:
-    with pytest.raises(ValidationError):
-        Decomposition(tasks=[])
+def test_a_decomposition_allows_no_new_task() -> None:
+    assert Decomposition(why="测试规划依据", new_items=[]).new_items == []
 
 
 @pytest.mark.parametrize(
     "task",
     [
-        {"goal": "", "success_criteria": "s", "max_steps": 1},
-        {"goal": "a", "success_criteria": "", "max_steps": 1},
+        {"goal": "", "success_criteria": "s", "budget": {"limit": 1, "unit": "actions"}},
+        {"goal": "a", "success_criteria": "", "budget": {"limit": 1, "unit": "actions"}},
     ],
 )
 def test_a_planned_task_requires_a_non_empty_goal_and_success_criteria(task: dict) -> None:
     with pytest.raises(ValidationError):
-        Decomposition(tasks=[task])
+        Decomposition(why="测试规划依据", new_items=[task])
 
 
 @pytest.mark.parametrize("max_steps", [0, -1])
 def test_a_planned_task_requires_a_positive_max_steps(max_steps: int) -> None:
     with pytest.raises(ValidationError):
-        Decomposition(tasks=[{"goal": "a", "success_criteria": "s", "max_steps": max_steps}])
+        Decomposition(
+            why="测试规划依据",
+            new_items=[
+                {
+                    "goal": "a",
+                    "success_criteria": "s",
+                    "budget": {"limit": max_steps, "unit": "actions"},
+                }
+            ],
+        )
 
 
-def test_a_decomposition_defaults_why_to_empty() -> None:
-    decomposition = Decomposition(tasks=[{"goal": "a", "success_criteria": "s", "max_steps": 1}])
-
-    assert decomposition.why == ""
-
-
-def test_a_run_plan_may_be_empty() -> None:
-    plan = RunPlan()
-
-    assert plan.push_goals == []
-    assert plan.updates == []
-    assert plan.why == ""
+def test_both_planners_require_an_explanation_even_with_empty_new_items() -> None:
+    for model in (RunPlan, Decomposition):
+        assert model(why="existing work is sufficient").new_items == []
+        with pytest.raises(ValidationError):
+            model()
 
 
 @pytest.mark.parametrize(
     "goal",
     [
-        {"goal": "", "success_criteria": "s", "max_steps": 1},
-        {"goal": "a", "success_criteria": "", "max_steps": 1},
-        {"goal": "a", "success_criteria": "s", "max_steps": 0},
+        {"goal": "", "success_criteria": "s", "budget": {"limit": 1, "unit": "tasks"}},
+        {"goal": "a", "success_criteria": "", "budget": {"limit": 1, "unit": "tasks"}},
+        {"goal": "a", "success_criteria": "s", "budget": {"limit": 0, "unit": "tasks"}},
     ],
 )
 def test_a_plan_goal_requires_non_empty_fields_and_a_positive_max_steps(goal: dict) -> None:
     with pytest.raises(ValidationError):
-        RunPlan(push_goals=[goal])
+        RunPlan(why="测试规划依据", new_items=[goal])
 
 
 @pytest.mark.parametrize("status", ["completed", "failed"])
 def test_a_plan_update_status_is_limited_to_pending_or_abandoned(status: str) -> None:
     with pytest.raises(ValidationError):
-        RunPlan(updates=[{"index": 0, "status": status}])
+        RunPlan(why="测试规划依据", updates=[{"index": 0, "status": status}])
 
 
 def test_a_plan_update_index_cannot_be_negative() -> None:
     with pytest.raises(ValidationError):
-        RunPlan(updates=[{"index": -1, "status": "pending"}])
+        RunPlan(why="测试规划依据", updates=[{"index": -1, "status": "pending"}])
 
 
-def test_a_plan_update_note_defaults_to_empty() -> None:
-    plan = RunPlan(updates=[{"index": 0, "status": "pending"}])
-
-    assert plan.updates[0].note == ""
+def test_a_plan_update_requires_a_reason() -> None:
+    with pytest.raises(ValidationError):
+        RunPlan(why="change", updates=[{"index": 0, "status": "pending"}])
 
 
 @pytest.mark.parametrize(

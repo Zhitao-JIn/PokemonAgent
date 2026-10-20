@@ -27,6 +27,7 @@ class PortCoverage(BaseModel):
     pending: int = 0
     elapsed_s: float = 0
     model_attempts: int = 0
+    model_elapsed_s: float = 0
 
 
 class CaptureAudit(BaseModel):
@@ -98,4 +99,9 @@ def _audit_invocation(request: Path, coverage: PortCoverage, recorded: Counter[s
     if calls:
         kind = KINDS[parent.name]
         for call in calls:
+            payload = call["payload"]
+            if "started_at" in payload and "ended_at" in payload:
+                coverage.model_elapsed_s += float(payload["ended_at"]) - float(
+                    payload["started_at"]
+                )
             recorded[_signature(kind, call["payload"])] += 1

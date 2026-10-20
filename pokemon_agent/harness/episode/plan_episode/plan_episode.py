@@ -1,11 +1,4 @@
-"""`plan_episode`：任务表里还有 PENDING 就直通；没有了（首圈 / 链走完 / 上一个 task 定案失败、
-剩余条目被放弃）就问 decomposer 要下一版任务链（人可插话，带话重问），追加进表。
-
-`task_id` 由这里编：`{goal.task_id}-t{n}`，`n` 接着任务表已有条数往下数（被弃的也算，id 不复用）。
-decomposer 只给内容，身份归 harness。
-
-拆解耗尽重试时本格写 `termination = ERROR`，本局经图的分叉走 `episode_done` 收尾。
-"""
+"""L1 原子采纳任务表规划；已有待办仍可修订，无待办交 judge。"""
 
 from __future__ import annotations
 
@@ -25,10 +18,11 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.harness.domain import EntryStatus, ReviewMark, TaskEntry, Termination
+from pokemon_agent.schemas.harness.domain import ReviewMark, TaskEntry, Termination
 from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...budget_nodes import stopped_updates
+from ...planning import apply_planning
 from ...reviewing import ReviewRound, ask_inject, elicit_with_review
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState, current_goal, current_knowledge
@@ -48,13 +42,7 @@ class Elicited(BaseModel):
 
 
 def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str, Any]:
-    """还有 PENDING 返回空增量；否则把新一版追加进任务表（至少一条）。
-
-    拆解耗尽重试（`MaxRetriesExceeded`）时不追加，返回 `{"termination": ERROR, "judge_reason"}`，
-    图的分叉据此把本局送进 `episode_done` 正常收尾，而不是让异常冒到 run 层记 `episode_error`。
-    """
-    if any(entry.status is EntryStatus.PENDING for entry in state.tasks):
-        return {}
+    """消费本次完整请求并返回结果；失败保留调用账，输入不被修改。"""
     deps = runtime.context
     meta = {
         "source": "plan_episode",
@@ -79,21 +67,41 @@ def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
     resp, note = result.response, result.note
     assert resp is not None
 
+    return _adopt(deps, state, meta, resp.decomposition, result.used, note)
+
+
+def _adopt(
+    deps: EpisodeRuntime,
+    state: EpisodeRunState,
+    meta: dict[str, object],
+    proposal: Decomposition,
+    used: int,
+    note: str,
+) -> dict[str, Any]:
+    """整版采纳后分配逻辑身份，记录修订与最终顺序。"""
     # 步骤 2：编 task_id 与版次，记结论，追加进表。
-    tasks = _to_tasks(resp.decomposition, state.goal.task_id, len(state.tasks))
+    tasks = _to_tasks(proposal, state.goal.task_id, len(state.tasks))
     version = max((entry.round for entry in state.tasks), default=0) + 1
+    entries = [TaskEntry(entry_id=t.task_id, task=t, round=version) for t in tasks]
+    table, order = apply_planning(state.tasks, entries, proposal, state.execution_order)
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.DECOMPOSE_VERDICT,
             meta=meta,
             tasks=tasks,
-            why=resp.decomposition.why,
+            planning=proposal,
+            planning_round=used,
+            execution_order=order,
+            why=proposal.why,
             human_note=note,
         )
     )
     return {
-        "tasks": [*state.tasks, *(TaskEntry(task=t, round=version) for t in tasks)],
-        "decompositions_used": result.used,
+        "tasks": table,
+        "execution_order": order,
+        "latest_planning": proposal,
+        "judge_trigger": "no_pending" if not order else "normal",
+        "decompositions_used": used,
     }
 
 
@@ -173,6 +181,8 @@ def _request(
 ) -> FromHarnessToBrainToolDecomposeReq:
     """只装本轮素材；校验后绑定 state 的详情原列表，与判定共享只读输入。"""
     req = FromHarnessToBrainToolDecomposeReq(
+        remaining_planning_rounds=deps.budget.max_decompositions - state.decompositions_used,
+        execution_order=state.execution_order,
         goal=current_goal(state),
         observation=state.ep_ctx.observation,
         task_memories=state.ep_ctx.task_memories,

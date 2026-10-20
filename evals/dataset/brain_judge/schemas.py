@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from evals.common.legacy_requests.judge import FromHarnessToBrainToolJudgeReq as LegacyJudgeReq
+from evals.dataset.brain_calls.dataset_contract import ReferenceCase
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolJudgeReq
 
 GoalFamily = Literal[
@@ -31,8 +33,23 @@ class JudgeCase(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     case_id: str = Field(min_length=1)
-    request: FromHarnessToBrainToolJudgeReq
+    request: FromHarnessToBrainToolJudgeReq | LegacyJudgeReq
     achieved: bool
+    reference: ReferenceCase | None = None
+    expected_decision: Literal["achieved", "continue", "blocked", "interrupted"] | None = None
+
+    @model_validator(mode="after")
+    def validate_decision_label(self) -> JudgeCase:
+        """完整标签与成功投影一致，参考也必须属于同一现场。"""
+        if self.expected_decision is not None and (
+            (self.expected_decision == "achieved") != self.achieved
+        ):
+            raise ValueError("expected_decision conflicts with achieved")
+        if self.expected_decision == "interrupted" and not self.request.allow_interrupt:
+            raise ValueError("interrupted label is only valid for task judgement")
+        if self.reference is not None and self.reference.case_id != self.case_id:
+            raise ValueError("judge reference belongs to another case")
+        return self
 
 
 class JudgeCaseV1(JudgeCase):

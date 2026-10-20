@@ -23,6 +23,7 @@ from pokemon_agent.schemas.harness.domain import TaskInput
 
 def _input(max_steps: int = 10) -> TaskInput:
     return TaskInput(
+        entry_id=(Task(task_id="t1", goal="g", success_criteria="c", max_steps=max_steps)).task_id,
         run_id="r1",
         episode_id="r1-ep1",
         task=Task(task_id="t1", goal="g", success_criteria="c", max_steps=max_steps),

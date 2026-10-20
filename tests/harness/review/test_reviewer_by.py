@@ -55,7 +55,9 @@ def _reply(
         FromHarnessToReviewerAuditReq(
             run_id="r1",
             episode_id="r1-ep1",
-            outcome=FromHarnessToBrainToolJudgeResp(done=True, why="依据", calls=[ModelCall()]),
+            outcome=FromHarnessToBrainToolJudgeResp(
+                decision=("achieved" if True else "continue"), why="依据", calls=[ModelCall()]
+            ),
             context=review_context(),
         )
     )
@@ -107,7 +109,9 @@ def test_review_accounts_record_who_answered(tmp_path: Path, by: ReplyBy) -> Non
         round=rounds.number,
         max_agent_rounds=rounds.max_agent_rounds,
     )
-    verdict = FromHarnessToBrainToolJudgeResp(done=True, why="依据", calls=[ModelCall()])
+    verdict = FromHarnessToBrainToolJudgeResp(
+        decision=("achieved" if True else "continue"), why="依据", calls=[ModelCall()]
+    )
 
     ask_inject(reviewer, trace, request, meta=meta, rounds=rounds)
     audit_judgement(reviewer, trace, verdict, run_id="r1", meta=meta, context=review_context())

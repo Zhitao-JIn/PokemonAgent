@@ -15,14 +15,15 @@ from PIL import Image
 from pokemon_agent.reviewer_link import RemoteReviewer
 
 
-async def read_until(process: subprocess.Popen, marker: str) -> str:
-    """只等待有限行，超时由测试报错并在 finally 终止子进程。"""
-    for _ in range(100):
-        line = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), 5)
-        if not line:
-            raise RuntimeError("reviewer 提前退出")
-        if marker in line:
-            return line
+async def read_until(process: subprocess.Popen, marker: str, timeout_s: float = 5) -> str:
+    """等待有限行且受总时限限制；启动阶段容纳 Windows 冷加载。"""
+    async with asyncio.timeout(timeout_s):
+        for _ in range(100):
+            line = await asyncio.to_thread(process.stdout.readline)
+            if not line:
+                raise RuntimeError("reviewer 提前退出")
+            if marker in line:
+                return line
     raise RuntimeError(f"未收到预期输出：{marker}")
 
 
@@ -61,7 +62,7 @@ def test_independent_reviewer_process_supports_stdin_answers_and_png_queries(
         process = start_process(tmp_path)
         client = None
         try:
-            started = await read_until(process, "已启动：")
+            started = await read_until(process, "已启动：", timeout_s=60)
             url = re.search(r"ws://127\.0\.0\.1:\d+", started).group()
             client = RemoteReviewer(url, flush=lambda: None, lost_timeout_s=0.01)
             request = inject_request(frames=True)

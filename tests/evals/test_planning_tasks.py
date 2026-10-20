@@ -10,9 +10,11 @@ from evals.brain_decompose.compare import contract_checks as decompose_checks
 from evals.brain_decompose.dataset import load as load_decompositions
 from evals.brain_plan.compare import contract_checks as plan_checks
 from evals.brain_plan.dataset import load as load_plans
-from pokemon_agent.brain.interface import Decomposition, RunPlan
+from pokemon_agent.brain.interface import Decomposition, Goal, RunPlan
 from pokemon_agent.schemas.harness import (
+    FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolDecomposeResp,
+    FromHarnessToBrainToolPlanOnceReq,
     FromHarnessToBrainToolPlanOnceResp,
     ModelCall,
 )
@@ -29,25 +31,52 @@ def test_planning_tasks_have_their_own_frozen_inputs() -> None:
 
 def test_plan_contract_checks_goal_indices_and_dispatchability() -> None:
     case = load_plans()[0]
-    invalid = RunPlan(updates=[RunPlan.PlanUpdate(index=len(case.request.plan), status="pending")])
-    no_work = RunPlan(
+    invalid = RunPlan(
+        why="测试规划依据",
         updates=[
-            RunPlan.PlanUpdate(index=index, status="abandoned")
+            RunPlan.PlanUpdate(
+                note="explicit planning reason",
+                index=len(case.request.plan),
+                status="pending",
+            )
+        ],
+    )
+    no_work = RunPlan(
+        why="测试规划依据",
+        updates=[
+            RunPlan.PlanUpdate(
+                note="explicit planning reason",
+                index=index,
+                status="abandoned",
+            )
             for index in range(len(case.request.plan))
-        ]
+        ],
     )
 
-    assert not plan_checks(case.request, invalid)["valid_indices"]
-    assert not plan_checks(case.request, no_work)["dispatchable_goal"]
-    assert all(plan_checks(case.request, RunPlan()).values())
+    assert not plan_checks(case.request, invalid)["valid_table_operations"]
+    assert plan_checks(case.request, no_work)["valid_table_operations"]
+    assert all(
+        plan_checks(
+            case.request,
+            RunPlan(
+                why="测试规划依据",
+            ),
+        ).values()
+    )
 
 
 def test_decomposition_contract_enforces_the_current_request_limit() -> None:
     request = load_decompositions()[0].request.model_copy(update={"max_tasks": 1})
-    task = Decomposition.PlannedTask(goal="one", success_criteria="visible", max_steps=1)
+    task = Decomposition.PlannedTask(
+        goal="one", success_criteria="visible", budget={"limit": 1, "unit": "actions"}
+    )
 
-    assert all(decompose_checks(request, Decomposition(tasks=[task])).values())
-    assert not decompose_checks(request, Decomposition(tasks=[task, task]))["task_limit"]
+    assert all(
+        decompose_checks(request, Decomposition(why="测试规划依据", new_items=[task])).values()
+    )
+    assert not decompose_checks(request, Decomposition(why="测试规划依据", new_items=[task, task]))[
+        "new_item_limit"
+    ]
 
 
 @pytest.mark.parametrize("family", ["plan", "decompose"])
@@ -60,16 +89,25 @@ def test_independent_tasks_run_production_ports_without_leaking_references(
 
     module = importlib.import_module(f"evals.brain_{family}.task")
     original = module.load()[0]
+    request = synthetic_request(family, original)
+    original = original.model_copy(update={"request": request, "contract_version": "v2"})
     seen = []
 
     def invoke(request):
         seen.append(request)
         calls = [ModelCall(payload={"prompt": "actual production context", "images": []})]
         if family == "plan":
-            return FromHarnessToBrainToolPlanOnceResp(plan=RunPlan(), calls=calls)
-        task = Decomposition.PlannedTask(goal="one", success_criteria="visible", max_steps=1)
+            return FromHarnessToBrainToolPlanOnceResp(
+                plan=RunPlan(
+                    why="测试规划依据",
+                ),
+                calls=calls,
+            )
+        task = Decomposition.PlannedTask(
+            goal="one", success_criteria="visible", budget={"limit": 1, "unit": "actions"}
+        )
         return FromHarnessToBrainToolDecomposeResp(
-            decomposition=Decomposition(tasks=[task]), calls=calls
+            decomposition=Decomposition(why="测试规划依据", new_items=[task]), calls=calls
         )
 
     port = SimpleNamespace(**{family: invoke})
@@ -111,3 +149,20 @@ def test_independent_dataset_rejects_a_changed_reference_fingerprint(
 
     with pytest.raises(DatasetError, match="fingerprint"):
         module.load()
+
+
+def synthetic_request(family, original):
+    """本测试显式提供新现场，不给旧冻结请求猜补字段。"""
+    if family == "plan":
+        request = FromHarnessToBrainToolPlanOnceReq(
+            run_id="synthetic",
+            run_goal=Goal(goal="测试总目标", criteria="明确验收"),
+            plan=[],
+            max_push=2,
+        )
+    else:
+        source = original.request
+        request = FromHarnessToBrainToolDecomposeReq(
+            goal=source.goal, observation=source.observation, max_tasks=2
+        )
+    return request

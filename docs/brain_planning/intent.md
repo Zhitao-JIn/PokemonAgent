@@ -1,11 +1,11 @@
 # intent —— 两层递归规划：状态表、验收条件与执行闭环
 
-> 流程位置：**intent.md（修订草案，供审阅）** → spec → plan → 落码。
+> 流程位置：**intent.md（已采纳）** → spec → plan → 落码。
 > 关联：`docs/brain_scope/intent.md`、`docs/spec/evals/SPEC.md`、
 > `pokemon_agent/brain/interface/domain/{run_plan,decomposition}.py`。
 > 本文规定机制与行为；具体字段、身份编码、图路由和迁移归 spec。
-> 本次只修订意图，生产接口、状态模型及冻结 dataset 均未修改。
-> 配套草案：`spec.md`、`plan.md` 已补齐；落码与采集尚未开始。
+> 配套设计见 `spec.md`、`plan.md`；现已进入落码与验证。
+> 生产契约升级与冻结 dataset 分开版本化，实际采集进度以独立批次报告为准。
 
 ## 一、一句话意图
 

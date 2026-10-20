@@ -281,3 +281,20 @@ decompose v3 为36/37条，剩余1条无法在禁止重新遇敌且任务列表�
 judge v4 的289条真假标注及准确率评分不变；总计557/559条具备评分参考。
 旁账位于 `evals/dataset/brain_annotations/v2`，旧原料/旁账/版本不改写。
 choose 的 `python -m evals.brain_choose -T ...` 也运行 Inspect，旧集合命中工具移至未登记的legacy模块。
+
+2026-10-20 递归规划契约升级：plan/decompose 的候选使用同构
+`new_items/updates/execution_order/why`，允许空新增；结构分检查整版表修订、预算单位和完整派发顺序。
+空新增本身不决定分数或终止。judge 使用 achieved/continue/blocked，task 另允许 interrupted；
+独立完整标签用于多类别混淆矩阵，旧真假标签只用于成功投影，不猜补 continue/blocked。
+judge 另存完整尝试账与失败；依据质量有独立参考才由 AI 单列评分，否则不计质量分。
+
+冻结 v1 原料与旧版本保持原字节，旧请求、TaskMemory 及 judge prompt 的只读审计契约保存在
+`evals/common/legacy_requests`。plan/decompose 的旧发布版本仍可审计，solver 明确拒绝把旧请求
+作为新契约请求运行，不能猜补父目标验收条件和尝试身份；新版本须在重采、标注及发布后选择。
+judge 的旧任务表若不能满足新输入契约，同样显式报错；二元标签不能冒充完整决策评测。
+choose 动作契约不变。新版本尚未发布时，旧计数仅说明历史数据覆盖，不能代表新契约评分覆盖。
+
+本轮新原料由 `python -m evals.common.capture_control start --out <新目录>` 启动，
+以 status/stop/resume 控制，顺序执行 preflight、独立起点 pack、二十场景 capture、audit、export。
+脚本分别记录 Port 耗时、模型耗时、reviewer 等待、未询问与 pending，自动核对录制和生产 trace。
+生成的 `exports/attemptN/v2` 是独立批次候选原料，未自动覆盖旧数据或冒称已完成独立标注/真实评分。
