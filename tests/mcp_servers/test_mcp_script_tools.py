@@ -81,7 +81,7 @@ def test_script_tool_registered(console: StubConsole) -> None:
 
 
 def test_walk_to_adjacent_forwarding(console: StubConsole) -> None:
-    """【待迁 world 线】参数转发 + 信封装配：data.ok / final_pos 都在。"""
+    """参数转发 + 信封装配：data.ok / final_pos 都在。"""
     console._walkable = {(16, 8)}
     res = _call("walk_to_adjacent", {"direction": "east", "client_id": "t"})
     assert res["ok"] is True and res["code"] == "ok"
@@ -90,14 +90,14 @@ def test_walk_to_adjacent_forwarding(console: StubConsole) -> None:
 
 
 def test_walk_to_adjacent_blocked_envelope(console: StubConsole) -> None:
-    """【待迁 world 线】blocked 也是合法结局码：信封 ok=False 但不是 transport 错误。"""
+    """blocked 也是合法结局码：信封 ok=False 但不是 transport 错误。"""
     res = _call("walk_to_adjacent", {"direction": "east", "client_id": "t"})
     assert res["ok"] is False and res["code"] == "blocked"
     assert res["code"] in _CODES
 
 
 def test_buy_item_end_to_end(console: StubConsole) -> None:
-    """【待迁 world 线】buy_item 经 server 全链路：扣款入库都在替身上发生。"""
+    """buy_item 经 server 全链路：扣款入库都在替身上发生。"""
     res = _call("buy_item", {"item": "POKé BALL", "count": 2, "client_id": "t"})
     assert res["ok"] is True and res["code"] == "ok"
     assert res["data"]["spent"] == 400

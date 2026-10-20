@@ -1,3 +1,13 @@
+## 2026-10-20（561）—— world 单元测试 CP5：mcp 迁移清单重新分类
+
+**改了什么**：两个 mcp 测试文件共 9 处 docstring 去掉开头的 `【待迁 world 线】` 标注——`test_mcp_world_server.py` 五处（`step` 唯一按键口、未移动时 `moved=False`、扁平命名空间掩码、内存观测经信封、`read_wram` 逐字节相同），另一处 `test_reset_passes_start_state_only_when_supplied` 的 docstring 原本只有该标注，补全为“start_state 只在传入时转发给 world（base64 解码），并占住租约。”；`test_mcp_script_tools.py` 三处（`walk_to_adjacent` 参数转发、`blocked` 是合法结局码、`buy_item` 全链路）。用例集合与断言零变化：`pytest --collect-only tests/mcp_servers` 改动前后各 41 条节点 ID，逐字相同。
+
+**为什么这么改**：设计侧核对后确认这 9 条断言的是服务端壳——信封 `ok/code/data/events`、租约、`state_base64` 解码与转发——逻辑在 `pokemon_agent/mcp_servers/world_server.py`，不在 `pokemon_agent/world/`。它们依赖的 world 侧逻辑（`moved` 判定、动作空间掩码、场景感知、脚本结算、读 WRAM、reset 起点）已由 CP1–CP4 与既有 `tests/world/` 覆盖，标注已失效，且会误导后续去“迁移”它们。
+
+**取舍**：按 spec 第九节的裁决——mcp 保留服务端契约、world 保留具体逻辑——不搬文件、不删用例、不改任何断言；字面迁移会让用例丢掉原本断言的内容，或迫使 `tests/world/` 反向依赖 `mcp_servers`。`tests/mcpclient/world_tool/` 测的是客户端装配（`WorldMcpTool`），归另案，本轮不动。`docs/` 与 intent 的同步由设计侧完成，本提交不含文档改动。
+
+**影响面**：仅两个测试文件的文档字符串，生产代码零改动（`git diff -- pokemon_agent/` 为空）。全量 junit 计数 1575 → 1575，failures / errors / skipped 均为 0，耗时 64.6 → 60.0 秒；`tests/world/` 241 项、`tests/mcp_servers` 41 项不变。`ruff check .` 与 `ruff format --check .` 全绿。本检查点没有生产代码改动，按 spec 9.4 不做破坏验证。
+
 ## 2026-10-20（545）—— world 单元测试 CP4
 
 **改了什么**：新增五个测试文件，覆盖 world 线的物体事件、地形精灵、单帧装配、静态表与模拟器入口前置检查——`test_world_object_events.py` 13 个函数 / 27 项（`press_cells` 四个朝向各返回脚下格与该方向邻格、a 对人有对话与 still 两种结局、隔柜台时优先 nearer person、走进物品格按 dialog / still 分派、a 不拾取物品、进门的停在门格不产事件与跨图记 warp、踩在门格朝外按方向记 warp / still、六种非交互（连按两次、先转向、无 actor、无 after、b 键、巨石）均空、`observe_step` 用真实 landmarks 出 dialog / still、移动并拾取时 moved=True、石地标不产事件、多段链只报 moved、settle=False 原样透传）；`test_world_terrain_map.py` 3 个（可见精灵的四类符号与空槽不标记、隐藏槽 1 后只剩 I 与 N、视野外的巨石被裁掉）；`test_world_task_perception.py` 5 个（地图未稳定时省略位置与地形、稳定帧逐字段对应素材并透出 closed→done、帧 PNG 与 `decode` 读数接线、商店视图 `ShopItemsView` 的名与价、战斗双方八个 `my_*`/`foe_*` 字段）；`test_world_tables.py` 4 个 / 11 项（三张表的地图键与 `_source`/`_note` 溯源、41/42/40 的门与 12 的两条边缘出口、商店与中心三种图的 clerk / stand 站位、六个服务图的 tileset 对应）；`test_world_pyboy_world_prechecks.py` 9 个 / 12 项（存档与 ROM 缺失在构造前失败、`max_steps` 非正被拒、三个入口 before-reset、关门后拒绝 step、整条动作链先校验后执行、`evolve` 负帧、`load_state` 空字节、overlay 按钮属于动作命名空间）。34 个函数展开为 58 个 pytest 项。
