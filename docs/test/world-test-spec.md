@@ -370,3 +370,57 @@ P5允许在准备阶段注入closed状态；不调用私有_tick制造该状态�
 来自world-unit。脚本命令显式-X utf8；日志UTF-8捕获，stdout/stderr分开。
 新增五个测试文件、CHANGELOG顶部一条（545）是唯一永久实现变更。
 不得迁移mcp测试、不得改既有测试、不得增加共用假件文件；CP5另行处理。
+
+## 九、CP5：mcp 迁移清单重新分类（561）
+
+### 9.1 决定与依据
+
+- 2026-10-20 设计侧核对 mcp 侧 9 条“待迁 world 线”用例，结论：它们断言的是服务端壳——信封
+  `ok/code/data/events`、租约、`state_base64` 解码与转发——这些逻辑在
+  `pokemon_agent/mcp_servers/world_server.py`，不在 `pokemon_agent/world/`。
+  它们依赖的 world 侧逻辑（`moved` 判定、动作空间掩码、场景感知、脚本结算、读 WRAM、reset 起点）
+  已由 CP1–CP4 与既有 `tests/world/` 覆盖，见 9.2。
+- 用户裁决（选项 1）：**mcp 保留服务端契约，world 保留具体逻辑**。因此 CP5 不搬文件、不删用例、
+  不改变任何用例的断言或节点名；字面迁移会让用例丢掉原本断言的内容，或迫使 `tests/world/`
+  反向依赖 `mcp_servers`。
+- `tests/mcpclient/world_tool/` 下的用例测的是客户端装配（`WorldMcpTool`），归“mcpclient 客户端装配（另案）”，
+  不属于 world 线，本轮不动。
+- 原 intent 的迁移清单与迁移时机据此作废；两份 intent 的相应段落在 CP5 提交时由设计侧同步，
+  执行者不改任何文档。
+
+### 9.2 逐条对应
+
+| mcp 侧用例 | 去向 | 它在服务端壳钉住的 | world 侧对应覆盖 |
+|---|---|---|---|
+| `test_mcp_world_server.py::test_step_is_the_only_key_execution_gate_and_reports_moved` | 留 mcp | 段还原为 `(键名, 次数)` 元组、信封形状 | `test_world_object_events.py` O9–O13（`observe_step` 的 moved 与 event） |
+| `…::test_step_reports_not_moved_when_the_world_did_not_move` | 留 mcp | `moved=False` 经信封返回 | O9 / O11 / O12 |
+| `…::test_get_action_space_exposes_one_flat_namespace` | 留 mcp | `mask` / `entries` 信封形状 | `test_world_action_space.py::test_mask_covers_the_whole_namespace_with_keys_and_scripts`、`test_unavailable_key_is_listed_as_false_not_omitted` |
+| `…::test_perceive_task_returns_the_memory_scene` | 留 mcp | 观测经信封返回 | `test_world_task_perception.py` T1–T5 |
+| `…::test_reset_passes_start_state_only_when_supplied` | 留 mcp | base64 解码后转发、占租约 | `test_pyboy_world_state.py` 的 start_state / 空起点用例，`test_world_pyboy_world_prechecks.py` P3 |
+| `…::test_read_wram_returns_the_world_bytes_base64` | 留 mcp | base64 线上编码逐字节还原 | `test_pyboy_world_state.py::test_read_wram_returns_only_the_wram_slice_without_ticking`、`test_read_wram_rejects_wrong_length` |
+| `test_mcp_script_tools.py::test_walk_to_adjacent_forwarding` | 留 mcp | 参数转发、信封 `ok/code/data/events` 装配 | `tests/world/scripts/test_scripts_movement.py::test_walk_to_adjacent_open_ground` |
+| `…::test_walk_to_adjacent_blocked_envelope` | 留 mcp | `blocked` 是合法结局码，不是传输错误 | `…::test_walk_to_adjacent_blocked_by_tree_or_npc` |
+| `…::test_buy_item_end_to_end` | 留 mcp | 经 server 全链路的信封 | `tests/world/scripts/test_scripts_shop.py::test_buy_success` 及其失败路径用例 |
+
+### 9.3 执行者改动（唯一的代码层改动，仅 docstring）
+
+只改下列两个文件中的 docstring，不动函数名、参数、断言、夹具与导入：
+
+- `tests/mcp_servers/test_mcp_world_server.py`：第 86、96、103、115、306 行去掉 docstring 开头的
+  `【待迁 world 线】`（其后原文保留）；第 267 行 docstring 原文只有 `【待迁 world 线】`，
+  改为 `start_state 只在传入时转发给 world（base64 解码），并占住租约。`
+- `tests/mcp_servers/test_mcp_script_tools.py`：第 84、93、100 行去掉 docstring 开头的
+  `【待迁 world 线】`。
+- 行号以实际文件为准；改完后全仓 `tests/` 下不得再出现 `【待迁 world 线】`。
+- `CHANGELOG.md` 顶部加一条，编号 561。除以上两个文件与 CHANGELOG 外，没有其他永久改动，
+  不得改 `pokemon_agent/`、`docs/`、`.coordination/`。
+
+### 9.4 验证
+
+- 改动前后各做一次 `pytest --collect-only -q tests/mcp_servers`，节点 ID 集合逐字相同。
+- 全量计数与基线一致：默认全量 1575、`tests/world` 241、`tests/mcp_servers` 不变，failures/errors/skipped 均 0。
+- `git diff` 中每个变化行都在 docstring 内：只出现删去标注前缀的 docstring 行对，
+  第 267 行是一行换一行。
+- `git diff --stat` 只含上述两个测试文件与 `CHANGELOG.md`；`git diff -- pokemon_agent/` 为空。
+- Ruff check 与 format --check 通过。本检查点没有生产代码改动，因此不做破坏验证。
+- 所有入库文件行尾为 LF。
