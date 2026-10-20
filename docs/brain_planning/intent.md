@@ -5,6 +5,7 @@
 > `pokemon_agent/brain/interface/domain/{run_plan,decomposition}.py`。
 > 本文规定机制与行为；具体字段、身份编码、图路由和迁移归 spec。
 > 本次只修订意图，生产接口、状态模型及冻结 dataset 均未修改。
+> 配套草案：`spec.md`、`plan.md` 已补齐；落码与采集尚未开始。
 
 ## 一、一句话意图
 
