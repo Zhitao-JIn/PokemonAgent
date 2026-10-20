@@ -68,7 +68,6 @@ from pydantic import BaseModel
 from pokemon_agent.brain import (
     Action,
     Task,
-    VerifyVerdict,
 )
 from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
@@ -354,14 +353,14 @@ def judge_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
     """判定的账单，比别的链路多一份**判定依据（`why`）**：成功率是要报的数字，
     每一个 True 都得说得出依据。依据跟着账单走，episode_end 不再重复存。
 
-    前置条件：req.calls、req.why 非 None。
+    前置条件：req.calls 非空；有判定结果时 req.why 提供依据。
     """
-    # why 只标注成功渲染的调用账——CALL_FAILED 的正文（link/exception/reason）不收 why，
-    # 硬塞会 ValidationError（335 首跑实锤：judge 调用 503 失败 → 整个 run 炸）。
+    # 步骤 1：仅在模型调用账附加依据，保留独立错误账。
     return [
         event._replace(content={**event.content, "why": req.why})
+        if event.type == EventType.MODEL_CALL
+        else event
         for event in model_call(req)
-        if event.kind != TraceKind.CALL_FAILED
     ]
 
 
@@ -372,12 +371,15 @@ def verify_call(req: FromHarnessToTraceToolAppendReq) -> list[Rendered]:
     `json.dumps` 出来的一串字符塞在正文里，而正文当时本身就是 JSON 串，等于
     双重编码；现在正文就是 JSON，里面的结构化数据不必再自己 encode 一次。
 
-    前置条件：req.calls、req.verdicts 非 None。
+    前置条件：req.calls 非空；有校验结果时提供 req.verdicts，失败耗尽时可为 None。
+    后置条件：附加字段只进入模型调用账，连带错误账保持原有形状。
     """
-    verdicts: list[VerifyVerdict] = req.verdicts
-    rendered = [v.model_dump() for v in verdicts]
+    rendered = [v.model_dump() for v in req.verdicts] if req.verdicts is not None else None
     return [
-        event._replace(content={**event.content, "verdicts": rendered}) for event in model_call(req)
+        event._replace(content={**event.content, "verdicts": rendered})
+        if event.type == EventType.MODEL_CALL and rendered is not None
+        else event
+        for event in model_call(req)
     ]
 
 

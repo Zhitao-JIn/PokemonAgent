@@ -1,3 +1,13 @@
+## 2026-10-20（562）—— verify 与 judge 失败调用完整落账
+
+**改了什么**：修复 verify 耗尽后无 verdicts 时的 trace 渲染异常；仅在模型调用账附加结构化判定，不向 call_failed 错误账混入 verdicts。judge 保留模型调用连带产生的 call_failed，不再过滤丢失。新增落盘读回与真三层图集成回归，覆盖供应商拒绝、失败后重试成功及 task/episode 两层 verify 错误结算和采集对账。
+
+**为什么这么改**：二十例采集在确认购买场景先收到 DeepSeek HTTP 402 余额不足，随后失败落账遍历 None 又抛 TypeError，掩盖原始拒绝并丢失一条模型尝试。相邻重试路径还会污染错误账的严格 schema，judge 则静默丢错误事件；失败的调用也必须完整可读，才能准确结算并解释采集为何停止。
+
+**取舍**：无校验结果时不伪造空判定列表，错误账保持原形；不改变模型重试、任务成败或余额策略，不把服务拒绝标作成功。旧批次、已完成十四例与失败现场原样保留；修复版本采集须建立新批次，不能修改旧 manifest 或混合版本。账户余额是独立外部条件，需要补足后才能重采。
+
+**影响面**：仅 trace 的 verify/judge 渲染与五项新增回归；生产请求、checkpoint schema、scope、模型选型及冻结数据均不变。测试使用本地 trace、FakeLLM/MockWorld 与同协议拒绝端口，不调用真实模型。全量非 slow 测试 1780 passed、7 skipped、3 deselected，Ruff check/format 通过。Graphiti 探针设计仍是独立未提交文档，不随本次修复提交。
+
 ## 2026-10-20（561）—— 递归规划、judge 统一退出与脚本重采闭环
 
 **改了什么**：plan/decompose 统一为 new_items、updates、execution_order、why，子项均带验收条件和有单位预算；允许空新增、保留待办、显式放弃与重开，整版校验后原子采纳。L2 稳定 entry_id 与每次执行 task_id 分离，保留尝试历史。无待办返回本层 judge，判定统一为 achieved/continue/blocked，task 保留 interrupted；blocked 正常返回上层且不计失败连击。补齐提案、轮次、触发原因、身份与判定 trace。评测同步结构检查、独立质量评分与 judge 多类别指标，冻结旧请求和 prompt 供历史审计。新增 start/status/stop/resume 控制器，顺序独立打包、二十例采集、调用及等待审计、导出候选原料。
