@@ -1,0 +1,1410 @@
+{
+  "$defs": {
+    "ActMemory": {
+      "description": "一条情景记忆：**我看到这样的画面，因为这些理由，做了这个动作，然后变成了这样。**\n\n## 为什么两头都是完整观察\n\n只记\"结果：你在野外\"这种一句话，等于把结果压成一个没有信息量的标签\n（十条全长一个样）。**结果本身也是一次观察**，\n只有把它完整记下来，这条经验才回答得了\"那一下到底改变了什么\"。\n\n代价是上一条的 `after` 和下一条的 `before` 内容重复。这是有意接受的：\n**每条自成一体**，取回时不用去拼上下文，也不依赖别的条目还在不在。\n\n## 这仍然只是 episodic\n\n\"这次尝试里发生了什么\"，是自己跑出来的轨迹，有时效。\n\n不要和**语义记忆**混淆：那是\"世界是什么样\"（\"水克火\"、\"map 0 的 (5,5) 通往 map 37\"），\n自带作用域、在作用域内永远为真。也不要和**目标**混淆：目标有完成态，\n凡是有完成态的都不是知识，它属于运行时状态，不进这里。\n\n程序记忆、skill library（机制二）、值回填（机制三）都还没做。",
+      "properties": {
+        "before": {
+          "$ref": "#/$defs/Observation",
+          "description": "做决定时看到的画面"
+        },
+        "action": {
+          "description": "**一个动作**：键（`up`）或脚本（`script:walk_to(x=5, y=2)`）。连按已经展开成多步，这里不再是链",
+          "title": "Action",
+          "type": "string"
+        },
+        "after": {
+          "$ref": "#/$defs/Observation",
+          "description": "执行之后的画面。**结果也是一次观察**"
+        },
+        "result": {
+          "default": "",
+          "description": "脚本动作的终态报告摘要（`ok` / `verify_failed` 这类结局码）；键动作为空串。脚本一次调用占一步、内部 N 键不展开（P5 定案），这个字段就是那一步的机械结局——判据只认达成的约定下，它是判停可直接采信的证据",
+          "title": "Result",
+          "type": "string"
+        },
+        "step": {
+          "description": "该键按下**前**那一帧的本局累计键数（跨 task 连续，harness 盖章）——相邻记忆构成 `step+1` 链，机制三沿它回填",
+          "title": "Step",
+          "type": "integer"
+        },
+        "episode_id": {
+          "description": "这条经验来自哪次尝试",
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "task_id": {
+          "default": "",
+          "description": "这条经验属于哪个 task（harness 盖章）",
+          "title": "Task Id",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "description": "这条经验来自哪个 run——checkpoint 恢复的落盘签名三元组之一（run_id/episode_id/step），由 Harness 盖章（大脑不知道自己在哪个 run）",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "before_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "`before` 对应的截图，**完整的 PNG data URI 字符串**（`data:image/png;base64,…`，0915 起唯一格式：产出点直接带前缀、自描述、grep 可寻，裸 base64 已废）。不是文件名，也不是原始字节。存 data URI 不存文件名引用——**这条记忆的`before`/`after` 本来就有跟相邻条目重复的问题**（上一条的 after ==下一条的 before），文字字段重复是接受的成本，这条也一并接受：换来的是`judge`/`verify_steps` 用的时候不用再去读盘、不用再关心截图文件是否存在/是否被撞名改了后缀——`store_step_episode_memory()` 写这条记忆时已经从盘上读过一次图、编码好了，后面全是内存里的字符串。**可能是 `None`**（那一步感知失败、截图确实没能落盘）——调用方（`judge`/`verify_steps` 拼请求）按跳过这张图处理，不能因为一步缺图让整条判定链路失败",
+          "title": "Before Frame"
+        },
+        "after_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "`after` 对应的截图，格式同 `before_frame`（完整 PNG data URI）。跟 `before_frame` 之间的关系正是 `render_sequence()`已经在处理的那种重复——相邻两条 `entries[i].after_frame ==``entries[i+1].before_frame`（同一帧画面，编码结果自然相等），拼多模态请求时应该按这一点去重，不要同一张图发两遍——去重的实现在`direct/brain_tool.py::dedup_snapshots()`（0915 起归 tool 层，那是发请求的组装逻辑，不是记忆的数据形状）",
+          "title": "After Frame"
+        }
+      },
+      "required": [
+        "before",
+        "action",
+        "after",
+        "step",
+        "episode_id"
+      ],
+      "title": "ActMemory",
+      "type": "object"
+    },
+    "ActionEntry": {
+      "description": "一个可选动作（键 / 脚本）。\n\n`kind` 只决定**载荷差异**（脚本有参数与说明，键只有一个名字），\n不决定选择方式——选择面是 `ActionSpace.mask` 那个扁平命名空间。",
+      "properties": {
+        "kind": {
+          "description": "动作归属；选择时不区分",
+          "enum": [
+            "key",
+            "script"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "description": "动作名（掩码的键）",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "params": {
+          "description": "参数签名；原子键为空",
+          "items": {
+            "$ref": "#/$defs/ScriptParam"
+          },
+          "title": "Params",
+          "type": "array"
+        },
+        "description": {
+          "default": "",
+          "description": "给模型读的说明（做什么、什么时候用）",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "ActionEntry",
+      "type": "object"
+    },
+    "ActionSpace": {
+      "description": "**喂给大脑的**当前可用动作集合（state-dependent action masking）。\n\n注意语义：这不是\"全部动作\"，是\"此刻允许的动作\"。动作空间不增长，\n增长的是掩码之外的 skill library（本阶段不做）。\n\n**统一能力掩码**：`mask` 是 `名字 → 是否可用` 的**扁平命名空间**，原子键与\n脚本混在一起——调用方（模型）只做一次选择：名字 ∈ 掩码且 enabled；`entries`\n只带各自的载荷差异（脚本有参数与说明，键只有一个名字）。`names` 旧字段保留给\nprompt 渲染按键说明用，与 `mask` 一致性由 `compute_action_space()` 一处产出保证。",
+      "properties": {
+        "scene": {
+          "default": "",
+          "description": "这份掩码是按哪个场合算的（可追溯）",
+          "title": "Scene",
+          "type": "string"
+        },
+        "mask": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "description": "名字 → 此刻是否可用（键与脚本同一命名空间）",
+          "title": "Mask",
+          "type": "object"
+        },
+        "entries": {
+          "description": "掩码里各条目的载荷（参数签名、说明）",
+          "items": {
+            "$ref": "#/$defs/ActionEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "names": {
+          "description": "可用按键名；仅开放脚本的场合为空（只给脚本）",
+          "items": {
+            "type": "string"
+          },
+          "title": "Names",
+          "type": "array"
+        },
+        "descriptions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "动作名 -> 给 LLM 读的说明",
+          "title": "Descriptions",
+          "type": "object"
+        },
+        "note": {
+          "default": "",
+          "description": "关于整个动作空间的说明（如连按怎么用），不属于任何单个动作。**必须有这个字段**：prompt 只渲染 names 里的动作说明，塞进 descriptions 的额外条目永远不会被渲染出去",
+          "title": "Note",
+          "type": "string"
+        },
+        "map_note": {
+          "default": "",
+          "description": "怎么读地图/判断证据的说明（`MAP_HINT`）。跟 `note`（连按怎么用）分开存是有意的：两者在 prompt 里渲染到不同位置——`map_note` 紧跟在已知事实之后（判断证据这类规则要在模型看到 facts 后立刻读到，不能等到读完一大段按键说明才看到），`note` 留在可用按键那一节——地图/证据规则挂在'可用按键'标题下面会位置和内容对不上。",
+          "title": "Map Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "names"
+      ],
+      "title": "ActionSpace",
+      "type": "object"
+    },
+    "BagEntry": {
+      "description": "背包里的一样东西。",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "quantity": {
+          "minimum": 0,
+          "title": "Quantity",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "quantity"
+      ],
+      "title": "BagEntry",
+      "type": "object"
+    },
+    "BagView": {
+      "description": "野外背包：背包、队伍（给药要选对象）。",
+      "properties": {
+        "kind": {
+          "const": "bag",
+          "default": "bag",
+          "title": "Kind",
+          "type": "string"
+        },
+        "bag": {
+          "description": "背包（名、数量）",
+          "items": {
+            "$ref": "#/$defs/BagEntry"
+          },
+          "title": "Bag",
+          "type": "array"
+        },
+        "party": {
+          "description": "队伍，按队伍顺序",
+          "items": {
+            "$ref": "#/$defs/MonEntry"
+          },
+          "title": "Party",
+          "type": "array"
+        }
+      },
+      "title": "BagView",
+      "type": "object"
+    },
+    "BattleMenuView": {
+      "description": "战斗选单：在场宝可梦与招式、对手、队伍、背包。",
+      "properties": {
+        "kind": {
+          "const": "battle_menu",
+          "default": "battle_menu",
+          "title": "Kind",
+          "type": "string"
+        },
+        "mine": {
+          "$ref": "#/$defs/MonEntry",
+          "description": "我方在场的那只（带招式与 PP）"
+        },
+        "foe": {
+          "$ref": "#/$defs/MonEntry",
+          "description": "对手"
+        },
+        "trainer": {
+          "default": false,
+          "description": "训练家对战（不能逃、不能扔球）",
+          "title": "Trainer",
+          "type": "boolean"
+        },
+        "party": {
+          "description": "队伍，按队伍顺序",
+          "items": {
+            "$ref": "#/$defs/MonEntry"
+          },
+          "title": "Party",
+          "type": "array"
+        },
+        "bag": {
+          "description": "背包（名、数量）",
+          "items": {
+            "$ref": "#/$defs/BagEntry"
+          },
+          "title": "Bag",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mine",
+        "foe"
+      ],
+      "title": "BattleMenuView",
+      "type": "object"
+    },
+    "BattleSwitchView": {
+      "description": "战斗换人：队伍；主动换人与倒下换人使用同一形状。",
+      "properties": {
+        "kind": {
+          "const": "battle_switch",
+          "default": "battle_switch",
+          "title": "Kind",
+          "type": "string"
+        },
+        "party": {
+          "description": "队伍，按队伍顺序",
+          "items": {
+            "$ref": "#/$defs/MonEntry"
+          },
+          "title": "Party",
+          "type": "array"
+        }
+      },
+      "title": "BattleSwitchView",
+      "type": "object"
+    },
+    "BoxEntry": {
+      "description": "PC 箱里的一只：昵称、等级。",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "level": {
+          "minimum": 0,
+          "title": "Level",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "level"
+      ],
+      "title": "BoxEntry",
+      "type": "object"
+    },
+    "Goal": {
+      "description": "**喂给大脑的目标**：想达成什么，以及**怎么算达成**。\n\n两样一起给，不能只给前者：判定器的输入就是这两项，没有判据它无从判断，\n只能凭\"看起来差不多了\"回答——而那正是成功率会被污染的地方。\n\n本阶段一局只有一个目标，由任务给定（0922 第 186 条起交界是**单投**：run 只投\n一个 `goal` 进 episode，见 `EpisodeRunState.goal`）。`Goal` 这个形状留着——\n拆解器（decompose）要回来，但**拆的机制会在别处重写**，不是现在这个 intent 分派。",
+      "properties": {
+        "goal": {
+          "description": "想达成什么，一句话",
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "criteria": {
+          "description": "画面上出现什么才算达成。**要能只看一帧就判断**",
+          "minLength": 1,
+          "title": "Criteria",
+          "type": "string"
+        }
+      },
+      "required": [
+        "goal",
+        "criteria"
+      ],
+      "title": "Goal",
+      "type": "object"
+    },
+    "LearnMoveView": {
+      "description": "学新招要忘旧招：谁在学、想学的招、现有四招。",
+      "properties": {
+        "kind": {
+          "const": "learn_move",
+          "default": "learn_move",
+          "title": "Kind",
+          "type": "string"
+        },
+        "pokemon": {
+          "description": "正在学招的宝可梦（昵称）",
+          "title": "Pokemon",
+          "type": "string"
+        },
+        "new_move": {
+          "description": "想学的招",
+          "title": "New Move",
+          "type": "string"
+        },
+        "moves": {
+          "description": "现有的招与剩余 PP",
+          "items": {
+            "$ref": "#/$defs/MoveEntry"
+          },
+          "title": "Moves",
+          "type": "array"
+        }
+      },
+      "required": [
+        "pokemon",
+        "new_move"
+      ],
+      "title": "LearnMoveView",
+      "type": "object"
+    },
+    "MonEntry": {
+      "description": "队伍里的一只（或战斗中的一方）：昵称、等级、HP、状态、招式。",
+      "properties": {
+        "name": {
+          "description": "昵称（屏幕上显示的名字）",
+          "title": "Name",
+          "type": "string"
+        },
+        "level": {
+          "minimum": 0,
+          "title": "Level",
+          "type": "integer"
+        },
+        "hp": {
+          "minimum": 0,
+          "title": "Hp",
+          "type": "integer"
+        },
+        "max_hp": {
+          "minimum": 0,
+          "title": "Max Hp",
+          "type": "integer"
+        },
+        "status": {
+          "default": "ok",
+          "description": "状态缩写：ok / PSN / BRN / FRZ / PAR / SLP",
+          "title": "Status",
+          "type": "string"
+        },
+        "active": {
+          "default": false,
+          "description": "是不是正在场上的那只",
+          "title": "Active",
+          "type": "boolean"
+        },
+        "moves": {
+          "description": "招式与剩余 PP；对手为空",
+          "items": {
+            "$ref": "#/$defs/MoveEntry"
+          },
+          "title": "Moves",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "level",
+        "hp",
+        "max_hp"
+      ],
+      "title": "MonEntry",
+      "type": "object"
+    },
+    "MoveEntry": {
+      "description": "一个招式与剩余 PP。",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "pp": {
+          "description": "剩余 PP",
+          "minimum": 0,
+          "title": "Pp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "pp"
+      ],
+      "title": "MoveEntry",
+      "type": "object"
+    },
+    "NamingView": {
+      "description": "起名键盘：给谁起名、已输入的名字。",
+      "properties": {
+        "kind": {
+          "const": "naming",
+          "default": "naming",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "description": "给谁起名：屏幕标题原样（YOUR NAME? / RIVAL's NAME? / NICKNAME?）",
+          "title": "Target",
+          "type": "string"
+        },
+        "typed": {
+          "default": "",
+          "description": "已输入的名字",
+          "title": "Typed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "title": "NamingView",
+      "type": "object"
+    },
+    "Observation": {
+      "description": "`ActMemory` 自己存的\"观测快照\"——**不是** `pokemon_agent.world.Observation`。\n\n这条记忆只需要\"当时看到的样子\"——渲染成文本、跟另一份快照比对是否相同，\n从不需要 `world.Observation`/`Facts` 的任何**行为**（那些是 world 子系统\n对外承诺的 Port 产物）。按\"模块间零依赖，只靠裸字段交互\"这条边界，这里\n重新声明一份字段形状完全一致、类本身互不引用的内部类型——`ActMemory`\n唯一认识两边形状的组装方是 `brain.brain.py::reflect()`，它负责在构造\n`ActMemory` 之前把真身 `Observation.model_dump(mode=\"json\")` 拍平后\n验证成这里的类型（字段名一致，一次 `model_validate()` 就能转过去，不需要\n逐字段手写映射）。",
+      "properties": {
+        "step": {
+          "description": "本局累计键数，从 0 开始（同真身 `world.Observation.step` 口径：局内跨 task 连续；harness 盖章）",
+          "title": "Step",
+          "type": "integer"
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Place"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "主角所在的格子（结构化坐标）"
+        },
+        "status": {
+          "description": "这一帧的状态行",
+          "title": "Status",
+          "type": "string"
+        },
+        "scene": {
+          "default": "",
+          "description": "task 层的场合（`TaskScene` 的值）；这一字段之前写下的记录为空",
+          "title": "Scene",
+          "type": "string"
+        },
+        "facts": {
+          "$ref": "#/$defs/pokemon_agent__schemas__memory__datastore__act_memory__ActMemory__Observation__Facts",
+          "description": "结构化事实容器的快照"
+        },
+        "done": {
+          "default": false,
+          "description": "产生这份观测时世界层是否已经不在了",
+          "title": "Done",
+          "type": "boolean"
+        },
+        "perceived": {
+          "default": true,
+          "description": "仅为读取旧记忆保留的视觉感知标记，不影响当前渲染。",
+          "title": "Perceived",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "step",
+        "status"
+      ],
+      "title": "Observation",
+      "type": "object"
+    },
+    "Overlay": {
+      "description": "屏幕上盖着什么等你操作。决定**可以按什么键**。",
+      "enum": [
+        "none",
+        "dialog",
+        "choice"
+      ],
+      "title": "Overlay",
+      "type": "string"
+    },
+    "PartyView": {
+      "description": "野外队伍列表：队伍与各自的招式。",
+      "properties": {
+        "kind": {
+          "const": "party",
+          "default": "party",
+          "title": "Kind",
+          "type": "string"
+        },
+        "party": {
+          "description": "队伍，按队伍顺序",
+          "items": {
+            "$ref": "#/$defs/MonEntry"
+          },
+          "title": "Party",
+          "type": "array"
+        }
+      },
+      "title": "PartyView",
+      "type": "object"
+    },
+    "PcView": {
+      "description": "PC：PC 里的道具、背包、当前箱里的宝可梦、当前箱号、队伍。",
+      "properties": {
+        "kind": {
+          "const": "pc",
+          "default": "pc",
+          "title": "Kind",
+          "type": "string"
+        },
+        "items": {
+          "description": "存在 PC 里的道具",
+          "items": {
+            "$ref": "#/$defs/BagEntry"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "bag": {
+          "description": "背包",
+          "items": {
+            "$ref": "#/$defs/BagEntry"
+          },
+          "title": "Bag",
+          "type": "array"
+        },
+        "box": {
+          "description": "当前箱里的宝可梦",
+          "items": {
+            "$ref": "#/$defs/BoxEntry"
+          },
+          "title": "Box",
+          "type": "array"
+        },
+        "box_number": {
+          "description": "当前箱号（1–12）",
+          "minimum": 1,
+          "title": "Box Number",
+          "type": "integer"
+        },
+        "party": {
+          "description": "队伍",
+          "items": {
+            "$ref": "#/$defs/MonEntry"
+          },
+          "title": "Party",
+          "type": "array"
+        }
+      },
+      "required": [
+        "box_number"
+      ],
+      "title": "PcView",
+      "type": "object"
+    },
+    "Place": {
+      "description": "同 `PlaceInWorld` 的快照版：只留 `map_id`/`x`/`y` 三个原始字段——\n`.step_toward()` 这类行为只有判定层（harness）拿着真身才用得到，\n这里只是存下来的记忆，不需要。",
+      "properties": {
+        "map_id": {
+          "title": "Map Id",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "map_id",
+        "x",
+        "y"
+      ],
+      "title": "Place",
+      "type": "object"
+    },
+    "PlaceInWorld": {
+      "description": "地图上的一个格子。**这是全项目唯一的\"位置\"表示。**\n\n做成模型而不是三个散字段，是因为它现在**承载记忆的键**：\n语义记忆按 `(map_id, x, y)` 索引，那三个数必须整体传递、整体比较。\n散着传总有一天会漏掉 `map_id`，而漏掉之后两张地图上的同一个坐标会撞在一起——\n那种错不报错，只会让记忆开始张冠李戴。",
+      "properties": {
+        "map_id": {
+          "title": "Map Id",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "map_id",
+        "x",
+        "y"
+      ],
+      "title": "PlaceInWorld",
+      "type": "object"
+    },
+    "Scene": {
+      "description": "你在什么场合。决定**要读哪些字段**。",
+      "enum": [
+        "field",
+        "indoor",
+        "battle",
+        "menu",
+        "shop",
+        "transition",
+        "naming",
+        "map_view"
+      ],
+      "title": "Scene",
+      "type": "string"
+    },
+    "ScriptParam": {
+      "description": "脚本的一个参数。",
+      "properties": {
+        "name": {
+          "description": "参数名",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "description": "参数类型",
+          "enum": [
+            "str",
+            "int"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "description": "给 LLM 读的说明",
+          "title": "Description",
+          "type": "string"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "缺省值；None = 必填",
+          "title": "Default"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "title": "ScriptParam",
+      "type": "object"
+    },
+    "ShopItem": {
+      "description": "店里卖的一样东西。",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "price": {
+          "description": "单价",
+          "minimum": 0,
+          "title": "Price",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "price"
+      ],
+      "title": "ShopItem",
+      "type": "object"
+    },
+    "ShopItemsView": {
+      "description": "商店买卖：商品表、金钱、背包。",
+      "properties": {
+        "kind": {
+          "const": "shop_items",
+          "default": "shop_items",
+          "title": "Kind",
+          "type": "string"
+        },
+        "items": {
+          "description": "商品（名、单价）",
+          "items": {
+            "$ref": "#/$defs/ShopItem"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "money": {
+          "description": "当前金钱",
+          "minimum": 0,
+          "title": "Money",
+          "type": "integer"
+        },
+        "bag": {
+          "description": "背包（名、数量）",
+          "items": {
+            "$ref": "#/$defs/BagEntry"
+          },
+          "title": "Bag",
+          "type": "array"
+        }
+      },
+      "required": [
+        "money"
+      ],
+      "title": "ShopItemsView",
+      "type": "object"
+    },
+    "TaskMemory": {
+      "description": "一条 task 记忆——**本 task ActMemory 的派生视图**（一 task 一条）。",
+      "properties": {
+        "run_id": {
+          "description": "所属 run 的标识",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "episode_id": {
+          "description": "所属 episode 的标识",
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "entry_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "逻辑 L2 条目；旧历史记录可为空",
+          "title": "Entry Id"
+        },
+        "task_id": {
+          "description": "本 task 的标识",
+          "title": "Task Id",
+          "type": "string"
+        },
+        "goal": {
+          "description": "本 task 的目标",
+          "title": "Goal",
+          "type": "string"
+        },
+        "termination": {
+          "default": "",
+          "description": "终止类别：goal_done / world_ended / stalled / budget_exhausted / interrupted",
+          "title": "Termination",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "description": "task_done 里 LLM 写的结论说明",
+          "title": "Reason",
+          "type": "string"
+        },
+        "steps_used": {
+          "description": "本 task 消耗的键数",
+          "minimum": 0,
+          "title": "Steps Used",
+          "type": "integer"
+        },
+        "total_acts": {
+          "description": "本 task 的局内累计键数起点（ActMemory 步号区间下界，进 task 时的快照）",
+          "minimum": 0,
+          "title": "Total Acts",
+          "type": "integer"
+        },
+        "summary": {
+          "description": "本 task 的简明总结：前后变化与结果",
+          "title": "Summary",
+          "type": "string"
+        },
+        "reusable_patterns": {
+          "description": "可重复利用的游戏策略和经验模式",
+          "items": {
+            "type": "string"
+          },
+          "title": "Reusable Patterns",
+          "type": "array"
+        },
+        "critical_decisions": {
+          "description": "关键决策点及其效果",
+          "items": {
+            "type": "string"
+          },
+          "title": "Critical Decisions",
+          "type": "array"
+        },
+        "failure_points": {
+          "description": "可能导致失败的环节及规避方法",
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Points",
+          "type": "array"
+        },
+        "quality_score": {
+          "description": "记忆质量评分(0.0-1.0)",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Quality Score",
+          "type": "number"
+        },
+        "quality_rationale": {
+          "description": "质量评分的理由",
+          "title": "Quality Rationale",
+          "type": "string"
+        },
+        "tags": {
+          "description": "记忆标签",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "first_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "本 task 首键的 before 帧（PNG data URI，可空）",
+          "title": "First Frame"
+        },
+        "last_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "本 task 末键的 after 帧（PNG data URI，可空）",
+          "title": "Last Frame"
+        },
+        "markdown": {
+          "default": "",
+          "description": "LLM 生成的完整记忆正文（.md 主内容）",
+          "title": "Markdown",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "episode_id",
+        "task_id",
+        "goal",
+        "steps_used",
+        "total_acts",
+        "summary",
+        "quality_score",
+        "quality_rationale"
+      ],
+      "title": "TaskMemory",
+      "type": "object"
+    },
+    "TaskObservation": {
+      "description": "**task 层的一帧**：RAM 档观测 + 场合。",
+      "properties": {
+        "step": {
+          "description": "本局累计键数，从 0 开始（局内跨 task 连续不归零）：这一帧是本局第几个键按下之后的世界状态。world 恒填 0 占位，由 harness 盖章（task 的 total_acts 快照 + task 内键序）；帧槽 / ActMemory 按它做键。run 层的局外帧盖全局累计键数（跨局累加——局外帧没有局内语义，0928 定稿）",
+          "title": "Step",
+          "type": "integer"
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlaceInWorld"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "主角所在的格子。**结构化的那一份**——`facts.where` 是它渲染出来给模型读的文本，而记忆的键要拿这三个数去算，不能靠反解字符串"
+        },
+        "status": {
+          "description": "这一帧的**状态行**：由 scene + overlay 机械拼出来的一句话（`你在野外。对话框：「…」`）。**不是画面描述**——画面描述是视觉模型写的`facts.overview`，那才是这一帧真正被看到的东西。这一句只是 prompt 里「当前状态」那一行的内容",
+          "title": "Status",
+          "type": "string"
+        },
+        "facts": {
+          "$ref": "#/$defs/pokemon_agent__world__interface__domain__facts__Facts",
+          "description": "结构化事实容器（场景、叠加层、地标、位置文本、HP……）。`Facts` 本身是 Pydantic 模型，字段该是什么类型就是什么类型——结构化的东西（`scene`/`overlay`/`landmarks`）不再被迫先渲染成文本塞进一个 `dict[str, str]`，判定层/记忆检索也不用再从文本反解回来（定义见 `pokemon_agent/world/interface/domain/facts.py`）。机制一的 state key 未来从这里派生"
+        },
+        "done": {
+          "default": false,
+          "description": "**世界层自己的信号**：这个观测产生时，世界本身是不是已经不在了（目前唯一来源是模拟器窗口被关闭）。**不是**「这一局该不该结束」——那是 harness 综合三类机械条件 + judge 判定之后的结论，归 `EpisodeRunState.done`，不借用/覆写这个字段。这里只读不写：世界层产出观测时给一次值，之后没有任何人再改它",
+          "title": "Done",
+          "type": "boolean"
+        },
+        "scene": {
+          "$ref": "#/$defs/TaskScene",
+          "description": "这一帧属于哪个场合（`world/scene.py::classify_scene`）"
+        },
+        "takeover": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "bag": "#/$defs/BagView",
+                  "battle_menu": "#/$defs/BattleMenuView",
+                  "battle_switch": "#/$defs/BattleSwitchView",
+                  "learn_move": "#/$defs/LearnMoveView",
+                  "naming": "#/$defs/NamingView",
+                  "party": "#/$defs/PartyView",
+                  "pc": "#/$defs/PcView",
+                  "shop_items": "#/$defs/ShopItemsView"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ShopItemsView"
+                },
+                {
+                  "$ref": "#/$defs/NamingView"
+                },
+                {
+                  "$ref": "#/$defs/BattleMenuView"
+                },
+                {
+                  "$ref": "#/$defs/BattleSwitchView"
+                },
+                {
+                  "$ref": "#/$defs/BagView"
+                },
+                {
+                  "$ref": "#/$defs/PartyView"
+                },
+                {
+                  "$ref": "#/$defs/PcView"
+                },
+                {
+                  "$ref": "#/$defs/LearnMoveView"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "当前场合的业务视图；不适用或尚无对应视图时为 None",
+          "title": "Takeover"
+        },
+        "menu_decode_complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ScreenText.covered 的选单切分完整性；None 表示未测，不能证明整帧识别正确或画面稳定",
+          "title": "Menu Decode Complete"
+        }
+      },
+      "required": [
+        "step",
+        "status",
+        "scene"
+      ],
+      "title": "TaskObservation",
+      "type": "object"
+    },
+    "TaskScene": {
+      "description": "一帧属于哪个场合。开放按键的场合一键一决策；仅开放脚本的场合（`SCRIPT_ONLY_SCENES`）由脚本执行到底。",
+      "enum": [
+        "walk",
+        "dialog",
+        "battle",
+        "shop",
+        "pokemon_info",
+        "start_menu",
+        "title",
+        "transition",
+        "naming",
+        "shop_items",
+        "pc",
+        "bag",
+        "battle_menu",
+        "battle_switch",
+        "party",
+        "learn_move"
+      ],
+      "title": "TaskScene",
+      "type": "string"
+    },
+    "pokemon_agent__schemas__memory__datastore__act_memory__ActMemory__Observation__Facts": {
+      "additionalProperties": true,
+      "description": "同 `world.interface.domain.facts.Facts` 的快照版：字段、渲染对齐\n算法照抄（两边要渲染出一模一样的文本，大脑才能拿旧记忆和当前观测\n直接比对），但类不互相引用。`extra=\"allow\"`——视觉模型按 scene 自由\n给的字段（`my_hp`/`foe_level`…）原样收进来，同真身一致。",
+      "properties": {
+        "scene": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene"
+        },
+        "overlay": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Overlay"
+        },
+        "where": {
+          "default": "",
+          "title": "Where",
+          "type": "string"
+        },
+        "facing": {
+          "default": "",
+          "title": "Facing",
+          "type": "string"
+        },
+        "neighbors": {
+          "default": "",
+          "title": "Neighbors",
+          "type": "string"
+        },
+        "landmarks": {
+          "items": {
+            "$ref": "#/$defs/pokemon_agent__schemas__memory__datastore__act_memory__ActMemory__Observation__Facts__Landmark"
+          },
+          "title": "Landmarks",
+          "type": "array"
+        },
+        "dialog_text": {
+          "default": "",
+          "title": "Dialog Text",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "overview": {
+          "default": "",
+          "title": "Overview",
+          "type": "string"
+        },
+        "walk_map": {
+          "default": "",
+          "title": "Walk Map",
+          "type": "string"
+        },
+        "map_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Map Id"
+        },
+        "screen": {
+          "default": "",
+          "title": "Screen",
+          "type": "string"
+        }
+      },
+      "title": "Facts",
+      "type": "object"
+    },
+    "pokemon_agent__schemas__memory__datastore__act_memory__ActMemory__Observation__Facts__Landmark": {
+      "description": "同 `Facts.Landmark` 的快照版：门/招牌/人/物/石，只留渲染要用的字段。",
+      "properties": {
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "map_id": {
+          "title": "Map Id",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "map_id",
+        "x",
+        "y"
+      ],
+      "title": "Landmark",
+      "type": "object"
+    },
+    "pokemon_agent__world__interface__domain__facts__Facts": {
+      "additionalProperties": true,
+      "description": "一步里\"世界事实\"的结构化容器：场景、叠加层、地标、位置文本、HP……\n\n**`extra=\"allow\"`**：随 scene 变化的字段直接挂在这个模型上——视觉模型按 scene 给的\n（`type`/`title`…）与战斗中内存读出的双方状态框（`my_hp`/`foe_level`…）。\n不必为每个 scene 各开一个具名字段——那些字段本来就随 scene 变化，\n强行都声明成具名字段只会让这个模型跟着每个新 scene 改一次。\nRAM/世界层能确定给出的那几项（`scene`/`overlay`/`landmarks`/`where`/…）才\n值得做成具名字段：它们的类型是确定的，判定层/记忆检索需要按类型访问它们，\n不是按\"这份文本里有没有这个词\"去猜。",
+      "properties": {
+        "scene": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Scene"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "这一帧在什么场合"
+        },
+        "overlay": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Overlay"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "这一帧屏幕上盖着什么"
+        },
+        "where": {
+          "default": "",
+          "description": "主角位置渲染成的文本（结构化的那份在 `Observation.place`）",
+          "title": "Where",
+          "type": "string"
+        },
+        "facing": {
+          "default": "",
+          "description": "朝向（up/down/left/right），来自精灵表，不是按键推断",
+          "title": "Facing",
+          "type": "string"
+        },
+        "neighbors": {
+          "default": "",
+          "description": "四邻通行性，相对'我'的地形描述",
+          "title": "Neighbors",
+          "type": "string"
+        },
+        "landmarks": {
+          "description": "这一帧屏幕上的地标（门/招牌/人/物/石），来自 `TerrainMap.landmarks()`。**结构化原件**——判定层（`harness/episode/store/store_object_semantic_memory/rules.py`）直接用，不用再从渲染出去的文本反解一遍。空列表就是这一帧没有地标，不是漏填",
+          "items": {
+            "$ref": "#/$defs/pokemon_agent__world__interface__domain__facts__Facts__Landmark"
+          },
+          "title": "Landmarks",
+          "type": "array"
+        },
+        "dialog_text": {
+          "default": "",
+          "description": "对话框里的文字，overlay=DIALOG 时才有",
+          "title": "Dialog Text",
+          "type": "string"
+        },
+        "options": {
+          "description": "选择框的选项列表，overlay=CHOICE 时才有",
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "选择框光标指向的那一项原文；读不出为 None",
+          "title": "Cursor"
+        },
+        "walk_map": {
+          "default": "",
+          "description": "这一帧的地形网格渲染文本，来自模拟器内存，不是模型读出来的",
+          "title": "Walk Map",
+          "type": "string"
+        },
+        "map_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "当前地图编号",
+          "title": "Map Id"
+        },
+        "screen": {
+          "default": "",
+          "description": "整屏文字原样（内存里的屏幕字符缓冲逐行渲染，`screen_text.render_screen`）。与上面切好的对话 / 选项 / 光标互相校验：字段是尽力解析，这里是原样",
+          "title": "Screen",
+          "type": "string"
+        }
+      },
+      "title": "Facts",
+      "type": "object"
+    },
+    "pokemon_agent__world__interface__domain__facts__Facts__Landmark": {
+      "description": "世界里格子上的一个东西：门 / 招牌 / 人 / 物 / 石。类型和位置都来自模拟器内存。\n\n**没有名字。** 名字在总览画面里没有可观测的证据，只能靠走过去交互再记住——\n那正是语义记忆（object）的活（\"物\"除外——拾取瞬间弹出的对话文字本身就是\n名字，见\n`harness/episode/store/store_object_semantic_memory/rules.py::_pickup_or_still`）。\n\n**存 `map_id`/`x`/`y` 三个原始字段，不直接嵌 `PlaceInWorld`。** 不是不想用\n`PlaceInWorld`（`.place` 属性就是现拼一个给调用方）——这个模块要保持\n**包内零依赖**（见本文件顶部的说明），嵌真身会在顶层多出一条指向同包\n`place_in_world.py` 的依赖；而 Pydantic 字段的类型在类定义那一刻就要能解析，\n做不到\"引用一个还没导入的类型，等以后再补\"。",
+      "properties": {
+        "kind": {
+          "description": "门 / 招牌 / 人 / 物 / 石",
+          "title": "Kind",
+          "type": "string"
+        },
+        "map_id": {
+          "title": "Map Id",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "map_id",
+        "x",
+        "y"
+      ],
+      "title": "Landmark",
+      "type": "object"
+    }
+  },
+  "description": "harness 侧组装（`harness/episode/decide/think_action.py`，纯参数拼接）、\n交给 `BrainTool` 的决策请求。\n\ngoals：整个目标栈，栈顶（最后一个）是这一轮要完成的。\nobs：当前观测（`facts` 只装这一帧从模拟器内存读出来的东西）。\nspace：当前可用动作空间——`BrainTool` 从它提取 `keys` 传给大脑，\n    说明文字则渲进 prompt。\nmemories：本局内情景记忆（`ActMemory`）。\nlast_result：上一步脚本的结果一句话（调用 → 结局码：摘要或原因），渲染在观测之后；\n    上一步不是脚本时为空。\nknowledge/task_index/human_note：分开放，各自在 prompt 里有独立\n    占位符与可信度说明（混在一起模型没法区分对待）。\n\n`human_note` 由 `build_prompt()` 拼在**整个 prompt 的最末尾**（0914 控制台\n改造：它是覆盖指令，不是又一节背景说明——理由见\n`direct/prompts/__init__.py::append_human_note`）。**模板里没有它的占位符**\n——它是\"渲染完之后再追加\"，所以不在 `decide_action.md` 的那些 `$` 变量里。\n\n**`prompt` 不是本模型的字段**（0913 删）：`BrainTool.choose()` 入口处调\n`prompts.decide_action.build_prompt(req)` 拼它，只活在那一次调用的局部\n——\"先拼 prompt 再回填进同一个 req\"那个中间态不再外露。\n\n**决策的截图也不进信封**（0915 129）：`memories` 里每条 `ActMemory` 自带\n`before_frame`/`after_frame`，`BrainTool.choose()` 用 `dedup_snapshots()`\n把它们拼装成随请求发出的 images——与 prompt 的 `$memories` 段落\n（`render_sequence()` 的文字版）**同一批帧、逐帧对应**。不另开素材通道的\n理由：两条通道迟早漂移，\"模型读到的文字步骤\"和\"看到的画面\"必须严格同源。",
+  "properties": {
+    "goals": {
+      "items": {
+        "$ref": "#/$defs/Goal"
+      },
+      "title": "Goals",
+      "type": "array"
+    },
+    "obs": {
+      "$ref": "#/$defs/TaskObservation"
+    },
+    "space": {
+      "$ref": "#/$defs/ActionSpace"
+    },
+    "memories": {
+      "items": {
+        "$ref": "#/$defs/ActMemory"
+      },
+      "title": "Memories",
+      "type": "array"
+    },
+    "last_result": {
+      "default": "",
+      "title": "Last Result",
+      "type": "string"
+    },
+    "knowledge": {
+      "default": "",
+      "title": "Knowledge",
+      "type": "string"
+    },
+    "task_index": {
+      "description": "本 episode 内、goal 与本 task 相同的此前 task，已去掉两张帧",
+      "items": {
+        "$ref": "#/$defs/TaskMemory"
+      },
+      "title": "Task Index",
+      "type": "array"
+    },
+    "human_note": {
+      "default": "",
+      "title": "Human Note",
+      "type": "string"
+    }
+  },
+  "required": [
+    "goals",
+    "obs",
+    "space",
+    "memories"
+  ],
+  "title": "FromHarnessToBrainToolChooseOnceReq",
+  "type": "object"
+}

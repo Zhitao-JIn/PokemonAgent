@@ -1,0 +1,292 @@
+{
+  "$defs": {
+    "TaskMemory": {
+      "description": "一条 task 记忆——**本 task ActMemory 的派生视图**（一 task 一条）。",
+      "properties": {
+        "run_id": {
+          "description": "所属 run 的标识",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "episode_id": {
+          "description": "所属 episode 的标识",
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "entry_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "逻辑 L2 条目；旧历史记录可为空",
+          "title": "Entry Id"
+        },
+        "task_id": {
+          "description": "本 task 的标识",
+          "title": "Task Id",
+          "type": "string"
+        },
+        "goal": {
+          "description": "本 task 的目标",
+          "title": "Goal",
+          "type": "string"
+        },
+        "termination": {
+          "default": "",
+          "description": "终止类别：goal_done / world_ended / stalled / budget_exhausted / interrupted",
+          "title": "Termination",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "description": "task_done 里 LLM 写的结论说明",
+          "title": "Reason",
+          "type": "string"
+        },
+        "steps_used": {
+          "description": "本 task 消耗的键数",
+          "minimum": 0,
+          "title": "Steps Used",
+          "type": "integer"
+        },
+        "total_acts": {
+          "description": "本 task 的局内累计键数起点（ActMemory 步号区间下界，进 task 时的快照）",
+          "minimum": 0,
+          "title": "Total Acts",
+          "type": "integer"
+        },
+        "summary": {
+          "description": "本 task 的简明总结：前后变化与结果",
+          "title": "Summary",
+          "type": "string"
+        },
+        "reusable_patterns": {
+          "description": "可重复利用的游戏策略和经验模式",
+          "items": {
+            "type": "string"
+          },
+          "title": "Reusable Patterns",
+          "type": "array"
+        },
+        "critical_decisions": {
+          "description": "关键决策点及其效果",
+          "items": {
+            "type": "string"
+          },
+          "title": "Critical Decisions",
+          "type": "array"
+        },
+        "failure_points": {
+          "description": "可能导致失败的环节及规避方法",
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Points",
+          "type": "array"
+        },
+        "quality_score": {
+          "description": "记忆质量评分(0.0-1.0)",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Quality Score",
+          "type": "number"
+        },
+        "quality_rationale": {
+          "description": "质量评分的理由",
+          "title": "Quality Rationale",
+          "type": "string"
+        },
+        "tags": {
+          "description": "记忆标签",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "first_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "本 task 首键的 before 帧（PNG data URI，可空）",
+          "title": "First Frame"
+        },
+        "last_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "本 task 末键的 after 帧（PNG data URI，可空）",
+          "title": "Last Frame"
+        },
+        "markdown": {
+          "default": "",
+          "description": "LLM 生成的完整记忆正文（.md 主内容）",
+          "title": "Markdown",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "episode_id",
+        "task_id",
+        "goal",
+        "steps_used",
+        "total_acts",
+        "summary",
+        "quality_score",
+        "quality_rationale"
+      ],
+      "title": "TaskMemory",
+      "type": "object"
+    },
+    "Termination": {
+      "description": "一层循环的终止类别。三层各自独立计数：run 数局、episode 数 task、task 数键。",
+      "enum": [
+        "blocked",
+        "planning_exhausted",
+        "goal_done",
+        "world_ended",
+        "stalled",
+        "budget_exhausted",
+        "time_exhausted",
+        "actions_exhausted",
+        "tasks_exhausted",
+        "decompositions_exhausted",
+        "interrupted",
+        "error"
+      ],
+      "title": "Termination",
+      "type": "string"
+    },
+    "VerifyVerdict": {
+      "description": "对一条 entries（ActMemory 或 TaskMemory）的判定。",
+      "properties": {
+        "index": {
+          "description": "对应 entries 的下标",
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "positive": {
+          "description": "这条行为/总结是否符合 goal：符合=正样本",
+          "title": "Positive",
+          "type": "boolean"
+        },
+        "why": {
+          "description": "依据——判负样本时要说清不符合在哪",
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "positive",
+        "why"
+      ],
+      "title": "VerifyVerdict",
+      "type": "object"
+    }
+  },
+  "description": "harness 侧组装、交给 `BrainTool` 的 episode 蒸馏请求。",
+  "properties": {
+    "entries": {
+      "description": "本局全部 TaskMemory，按 total_acts 升序",
+      "items": {
+        "$ref": "#/$defs/TaskMemory"
+      },
+      "minItems": 1,
+      "title": "Entries",
+      "type": "array"
+    },
+    "verdicts": {
+      "description": "与 entries 等长的正/负标注",
+      "items": {
+        "$ref": "#/$defs/VerifyVerdict"
+      },
+      "title": "Verdicts",
+      "type": "array"
+    },
+    "episode_id": {
+      "description": "来源章",
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "run_id": {
+      "description": "来源章",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "run_goal": {
+      "description": "所属 run 的目标文本，来源章",
+      "title": "Run Goal",
+      "type": "string"
+    },
+    "goal_id": {
+      "default": "",
+      "description": "来源章：本局所属 L1 goal 的 task_id",
+      "title": "Goal Id",
+      "type": "string"
+    },
+    "goal": {
+      "description": "本局目标",
+      "title": "Goal",
+      "type": "string"
+    },
+    "termination": {
+      "$ref": "#/$defs/Termination",
+      "description": "终止类别（`success` 由它推出）"
+    },
+    "judge_reason": {
+      "default": "",
+      "description": "判停时的判定依据——蒸馏写结论时的参考，不必复述",
+      "title": "Judge Reason",
+      "type": "string"
+    },
+    "steps": {
+      "description": "本局派了几个 task",
+      "title": "Steps",
+      "type": "integer"
+    },
+    "acts_used": {
+      "default": 0,
+      "description": "本局累计按了几个键",
+      "title": "Acts Used",
+      "type": "integer"
+    },
+    "max_steps": {
+      "description": "本局 task 数预算",
+      "title": "Max Steps",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "entries",
+    "verdicts",
+    "episode_id",
+    "run_id",
+    "run_goal",
+    "goal",
+    "termination",
+    "steps",
+    "max_steps"
+  ],
+  "title": "FromHarnessToBrainToolSummarizeReq",
+  "type": "object"
+}

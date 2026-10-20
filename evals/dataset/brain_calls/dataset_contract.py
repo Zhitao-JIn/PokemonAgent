@@ -103,6 +103,16 @@ class ReferenceCase(BaseModel):
     mechanical_reason: str = ""
 
 
+class SourcePart(BaseModel):
+    """合并集合中的一段采集：同一批次的不同时间可用不同提交，逐段如实登记。"""
+
+    batch: str
+    source_head: str
+    source_code_sha256: str
+    schema_hash: str
+    samples: list[str]
+
+
 class DatasetManifest(BaseModel):
     """文件字节指纹、类型和实际覆盖；不把未完成调用或 rubric 冒称人工 gold。"""
 
@@ -119,3 +129,4 @@ class DatasetManifest(BaseModel):
     source_code_sha256: str
     schema_hash: str
     limitations: list[str]
+    source_parts: list[SourcePart] = Field(default_factory=list)
