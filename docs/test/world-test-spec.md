@@ -424,3 +424,43 @@ P5允许在准备阶段注入closed状态；不调用私有_tick制造该状态�
 - `git diff --stat` 只含上述两个测试文件与 `CHANGELOG.md`；`git diff -- pokemon_agent/` 为空。
 - Ruff check 与 format --check 通过。本检查点没有生产代码改动，因此不做破坏验证。
 - 所有入库文件行尾为 LF。
+
+## 十、CP4 修正：入口前置检查改用公开构造函数装配（564）
+
+### 10.1 起因
+
+- 合入 main 前在合并后的代码上验证：`test_world_pyboy_world_prechecks.py` 有 2 条失败——
+  `test_step_rejects_a_closed_world_before_acting`、`test_step_validates_every_segment_before_any_button`。
+  成因：main 的 542 让 `_tick` 每帧先调 `_pump_window_events()`，后者读构造函数里才设置的 `_watch`；
+  我们的 `_bare_world()` 用 `object.__new__` 绕过构造函数，只手工补了 `_pyboy/_state_path/_rom/_task/_closed`，
+  缺 `_watch`，于是公开 `reset` 在 `_tick` 里抛 `AttributeError`。
+- 这说明“绕过构造函数 + 注入私有属性”的装配方式会随生产代码新增属性而失效。本节取代 8.1 与 8.7 中
+  “允许绕过 `PyBoyWorld.__init__`、将内部状态置空/注入 closed”的准备方式。
+
+### 10.2 新装配方式（仅换准备方式，断言不变）
+
+- 用公开构造函数 `PyBoyWorld(rom, state_path=None)` 创建实例：`monkeypatch.setattr(module, "PyBoy", 工厂)`，
+  工厂返回手写假 pyboy 并保存引用，供测试读取其 `buttons/ticks/loaded` 记录；ROM 参数是 `tmp_path` 下一个
+  普通空文件（只通过存在性检查，不是 ROM，不读取任何真实 ROM）。
+- 假 pyboy 除现有的 `button/tick/load_state` 外，补构造函数会调用的 `set_emulation_speed(speed)`；
+  构造参数不关心，可接收任意。`watch` 取默认 `False`，窗口泵不触发 SDL。
+- “已 reset”的样本仍经公开 `reset(..., start_state=b"\x00")` 准备，然后清空假件记录。
+- “未 reset”的样本就是刚构造出来的实例，不再手工置空任务状态。
+- P5 的“已关闭窗口”样本不再注入 `_closed`：让假 pyboy 的 `tick` 返回 `False`，经公开 `evolve(1)` 使世界进入关闭态，
+  再清空记录；随后 `step([("a", 1)])` 应匹配 `window was closed` 且无 `button/tick`。
+- 断言读取假件记录一律经测试自己持有的假件引用，不再访问 `world._pyboy`、`world._closed` 等任何下划线成员；
+  文件内不得出现对 `PyBoyWorld` 实例下划线属性的读写。
+- P1、P2 保持现状（它们本来就走公开构造 + monkeypatch）。9 个函数/12 项的名字、参数与断言文本不变。
+
+### 10.3 范围与验证
+
+- 只改 `tests/world/test_world_pyboy_world_prechecks.py` 与 `CHANGELOG.md`（顶部一条，编号 564）。
+- 验证：该文件 12 项全过；`tests/world` 现有 241 项全过；原先通过的 132 项新增测试全过；Ruff check 与 format --check 通过；
+  `git diff -- pokemon_agent/` 为空；入库文件 LF。
+- 破坏验证：在新装配下重做两处，确认测试仍有检出力：
+  1. `pyboy_world.py` `reset` 的 `max_steps > 0` 改 `>= 0` → P3 的 0 参数失败；
+  2. `pyboy_world.py` `step` 的“已关闭”断言临时去掉 → P5 失败。
+  还原后 `git diff -- pokemon_agent/` 为空。
+- main 侧既有问题不在本节范围：9 条因本地冻结数据缺失的 evals 用例（需把被忽略的
+  `eval_results/brain_choose_action/task_capture_20261018_102238/` 复制进 worktree）、
+  1 条在 `DEEPSEEK_API_KEY` 存在时挂死的 reviewer 入口用例，均如实报告，不修。
