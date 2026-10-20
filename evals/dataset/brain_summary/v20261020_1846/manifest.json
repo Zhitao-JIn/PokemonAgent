@@ -1,0 +1,12 @@
+{
+  "version": "v20261020_1846",
+  "collection_version": "v20261020_1846",
+  "cases": 81,
+  "layers": {
+    "episode": 20,
+    "run": 20,
+    "task": 41
+  },
+  "inputs_sha256": "f8fb7368e84dd5ae02cc9d5f68f578030c2b8281201434e0e62a22978014c68c",
+  "rubric_sha256": "ab26c95cb6732571200f19363a620e11e065a3249f3c1a9fcffacfefbab0524c"
+}
