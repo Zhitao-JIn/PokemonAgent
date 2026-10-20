@@ -15,7 +15,7 @@ class TaskEntry(BaseModel):
 TASKS: dict[str, TaskEntry] = {
     "brain_plan": TaskEntry(kind="inspect", entry="evals/brain_plan/task.py"),
     "brain_decompose": TaskEntry(kind="inspect", entry="evals/brain_decompose/task.py"),
-    "brain_choose": TaskEntry(kind="deepeval", entry="evals.brain_choose"),
+    "brain_choose": TaskEntry(kind="inspect", entry="evals/brain_choose/task.py"),
     "decode": TaskEntry(kind="deepeval", entry="evals.decode"),
     "memory_store_recall": TaskEntry(kind="deepeval", entry="evals.memory_store_recall"),
     "world_script_execute": TaskEntry(kind="deepeval", entry="evals.world_script_execute"),

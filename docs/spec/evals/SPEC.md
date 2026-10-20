@@ -10,7 +10,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外有八个任务，统一登记在 `evals/registry.py`：四个 DeepEval 模块入口、四个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
+对外有八个任务，统一登记在 `evals/registry.py`：三个 DeepEval 模块入口、五个 Inspect task 文件入口。四个脑能力 choose/plan/decompose/judge 统一由 Inspect 管理，另一个 Inspect 任务为 agent_short_goal_run。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；choose 的模块入口同样转发给 Inspect。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
@@ -18,7 +18,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
-| brain_choose | 冻结的完整 choose 请求（含本 task 历史），v1 共 189 条、六类场合 | 可接受动作集合匹配、解析、合法性及场合分组 | 决策模型 |
+| brain_choose | 完整 choose 请求，默认 v4 的206条建议式参考 | Inspect AI 质量分、能力掩码与单步结构检查 | 决策模型和独立评分模型 |
 | brain_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
 | agent_short_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
 
@@ -208,7 +208,7 @@ C 类由 `task.py` 装配原有 Inspect 链路。文件多时使用同名子包�
 | agent_short_goal_run | v1，20 个起点、样本、rubric 与档案 | build/pack.py |
 | world_script_execute | v1，106 条 cases.jsonl 与所用存档 | 106 条统一读取；核对函数在 scorer |
 | memory_store_recall | v1，dataset.json（一份3条记录/3个查询的库） | 无 |
-| brain_choose | 默认 v3，131 条历史标注；v1 的189条与 v2 的21条机械标签保留 | `evals/dataset/brain_annotations/` |
+| brain_choose | 默认 Inspect v4，206条建议式参考；旧v1/v2/v3保留 | `evals/dataset/brain_annotations/` |
 | brain_judge | 默认 v4，289 条三层标注；旧 v1/v2/v3 保留 | `evals/dataset/brain_annotations/` |
 
 agent 的 source_state 与 manifest.memory_archive 均相对版本目录；恢复前由 solver 在工作目录
@@ -243,15 +243,18 @@ plan/decompose 的数据清单位于 `evals/dataset/brain_plan/v1` 与
 
 plan 独立调用 Planner，结构分核新增上限、更新索引和应用后是否仍可派发；
 decompose 独立调用 Decomposer，结构分核任务数量、正步数与非空目标/判据。
-两者另列 quality_scorer：独立评分调用根据完整生产 prompt、实际附图、候选结果和证据量表
-逐项审阅。语义分是模型审阅，不是机械真值，也不要求匹配旧模型答案。
-必选项明确失败则失败，有未定项且无失败则不进语义分母；评分缺条、重复或格式错误也不进分母。
+choose、plan、decompose 均另列 quality_scorer：独立评分调用根据完整生产 prompt、
+实际附图、候选结果和建议式参考逐维给0..1分，完整维度平均得到样本质量分。
+参考动作和拆分不是穷尽白名单，合理的未列入动作、失败纠偏、探索与等价计划同样可得高分。
+语义分是模型审阅，不是机械真值；能力/单步/预算等结构分另列，不强制匹配旧模型答案。
+有未知维度、评分缺条、重复、越界数字或格式错误不进语义分母，不能省略难评维度抬高分数。
+旧版本 C/I 量表评分保留，新的 quality_mean/quality_count 兼容旧版结果。
 生产调用重试耗尽为 sample error，已有 calls 与 failure 留在 Inspect store。
 
 ```powershell
-python -m evals.brain_choose --version v3
-inspect eval evals/brain_plan/task.py -T version=v2
-inspect eval evals/brain_decompose/task.py -T version=v2
+inspect eval evals/brain_choose/task.py -T version=v4
+inspect eval evals/brain_plan/task.py -T version=v3
+inspect eval evals/brain_decompose/task.py -T version=v3
 inspect eval evals/brain_judge/task.py -T version=v4
 ```
 
@@ -265,8 +268,16 @@ summary 的 99 条三层原料仍保留，本轮四个脑能力任务不新增 s
 本轮原待审332条全部记录处理结论；旧机械标签227条保留来源。559条中可评分481条：
 choose131、judge289、plan25、decompose36。35条前提冲突、43条证据不足，附理由但不进分母。
 plan/decompose v2 在 v1 原始请求上叠加逐例评分要求，排除各1条已逃跑却禁止重新遇敌的冲突现场。
-四个公开入口默认新版；底层旧加载器的默认版本保留兼容，可显式传新版本。
+以上数量为2026-10-19的历史发布记录，2026-10-20建议式参考已扩展分母，见下文。
 新增真值标为 history_adjudicated，不冒称人审；规划语义分仍是模型审阅。
 choose 集合是已审的保守动作集合，不宣称穷尽全部合理策略。
 各条证据绑定该请求的原值指纹，不能从后续记录或别的 L1 取材补答案。
 完整数量、裁决示例和局限见 `evals/dataset/brain_annotations/v1/REPORT.md`。
+
+2026-10-20：四个脑任务全部通过 Inspect 管理。choose v4 使用建议式参考206/207条，
+补回75条可合理纠偏/探索的失败现场；仅1条已完成RUN光标目标但没有stop能力的现场排除。
+plan v3 使用26/26条参考，明确冲突现场也能评价 why/note 中的解释和目标处理；结构派发诊断分另列。
+decompose v3 为36/37条，剩余1条无法在禁止重新遇敌且任务列表必须非空的原契约下表达可执行补救。
+judge v4 的289条真假标注及准确率评分不变；总计557/559条具备评分参考。
+旁账位于 `evals/dataset/brain_annotations/v2`，旧原料/旁账/版本不改写。
+choose 的 `python -m evals.brain_choose -T ...` 也运行 Inspect，旧集合命中工具移至未登记的legacy模块。

@@ -7,9 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 import evals.common.run as evaluation
-from evals.brain_choose.__main__ import main, run_cases, select_cases
 from evals.brain_choose.cases import build_cases
 from evals.brain_choose.compare import is_legal, matches
+from evals.brain_choose.legacy import main, run_cases, select_cases
 from evals.brain_choose.scorer import Acceptable, AcceptableBy, Legal, Parsed, build_metrics
 from evals.brain_choose.solver import ChooseRun, ProviderUnreachable, choose_case
 from evals.dataset.brain_choose import ActionMatcher, ChooseCase
@@ -244,7 +244,7 @@ def test_unknown_filters_are_errors(case_ids, scenes, tags):
 
 
 def test_cli_excludes_unreachable_cases_and_preserves_model_override(monkeypatch, capsys):
-    import evals.brain_choose.__main__ as entry
+    import evals.brain_choose.legacy as entry
 
     cases = [case("hit", tags=["read_screen"]), case("network", tags=["read_screen"])]
     chooser = FakeChooser(

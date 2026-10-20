@@ -12,7 +12,7 @@ from pokemon_agent.env import load_env_file
 
 @task
 def brain_plan(
-    version: str = "v2",
+    version: str = "v3",
     model: str | None = None,
     grader_model: str | None = None,
 ) -> Task:

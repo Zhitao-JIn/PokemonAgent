@@ -1,0 +1,10 @@
+{
+  "version": "v3",
+  "family": "decompose",
+  "collection_version": "v1",
+  "cases": 37,
+  "inputs_sha256": "c19362163d81d6fbe335b90bf07190bc7781344e76fb9eda863f961a23ebbab8",
+  "references_sha256": "029d0b59e9354214d35e65100df06125247c722d08d4bb94115fe6a97d8bb9da",
+  "annotation_version": "v2",
+  "annotation_sha256": "fba155063321d3b23d7853903d7f4e8266962e2751b9fef88be90d546a7f27bc"
+}

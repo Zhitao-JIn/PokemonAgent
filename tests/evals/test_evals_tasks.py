@@ -87,8 +87,8 @@ def test_only_the_eight_evaluation_tasks_are_public() -> None:
         "brain_judge",
         "agent_short_goal_run",
     }
-    assert sum(entry.kind == "deepeval" for entry in TASKS.values()) == 4
-    assert sum(entry.kind == "inspect" for entry in TASKS.values()) == 4
+    assert sum(entry.kind == "deepeval" for entry in TASKS.values()) == 3
+    assert sum(entry.kind == "inspect" for entry in TASKS.values()) == 5
     for name, entry in TASKS.items():
         if entry.kind == "deepeval":
             assert Path(entry.entry.replace(".", "/"), "__main__.py").is_file()

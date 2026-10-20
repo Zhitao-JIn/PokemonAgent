@@ -17,7 +17,7 @@ class CapabilityManifest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     version: str
-    family: Literal["plan", "decompose"]
+    family: Literal["plan", "decompose", "choose"]
     collection_version: str
     cases: int = Field(gt=0)
     inputs_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")

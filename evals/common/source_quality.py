@@ -80,6 +80,10 @@ async def assess(
     calls: list[ModelCall],
 ) -> Score:
     """独立生成评分；禁用或评分格式无效时不计语义分，模型传输失败保留为评分错误。"""
+    if reference.constraints.get("semantic_grading") == "advisory_v1":
+        from .advisory_quality import assess as assess_advisory
+
+        return await assess_advisory(grader_model, reference, answer, calls)
     if grader_model == "none":
         return Score(value=NOANSWER, explanation="未启用语义评分模型；只运行机械约束")
     client = (

@@ -5,6 +5,7 @@ from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 
 from evals.agent_short_goal_run.scorer.judged import judged_accuracy, judged_count
+from evals.common.quality_metrics import quality_count, quality_mean
 from evals.common.source_quality import assess
 
 from .compare import contract_checks
@@ -25,7 +26,7 @@ def contract_scorer() -> Scorer:
     return score
 
 
-@scorer(metrics=[judged_accuracy(), judged_count()])
+@scorer(metrics=[quality_mean(), quality_count()])
 def quality_scorer(grader_model: str) -> Scorer:
     """逐条量表有证据才能判；评分缺失或无法确定不计入语义分母。"""
 

@@ -26,15 +26,23 @@ class Annotation(BaseModel):
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["labelled", "invalid_task", "unjudgeable"]
     method: Literal["mechanical_preexisting", "codex_history_review"]
+    evaluation_mode: Literal["exact", "advisory"] = "exact"
     rationale: str = Field(min_length=1)
     evidence: list[Evidence] = Field(min_length=1)
     achieved: bool | None = None
     acceptable: list[ActionMatcher] = Field(default_factory=list)
     criteria: list[Criterion] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_label(self) -> "Annotation":
         """拒绝缺失真值、混用真值与排除项携带答案的外部记录。"""
+        if self.status == "labelled" and self.evaluation_mode == "advisory":
+            if self.family == "judge" or self.achieved is not None or not self.criteria:
+                raise ValueError("advisory labels need criteria, not a binary truth")
+            if self.family != "choose" and self.acceptable:
+                raise ValueError("only choose can carry suggested actions")
+            return self
         present = (self.achieved is not None, bool(self.acceptable), bool(self.criteria))
         expected = (
             (self.family == "judge", self.family == "choose", self.family in {"plan", "decompose"})

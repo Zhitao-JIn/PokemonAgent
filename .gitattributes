@@ -11,3 +11,4 @@
 /evals/dataset/brain_annotations/v1/*.jsonl -text
 /evals/dataset/brain_choose/v3/cases.jsonl -text
 /evals/dataset/brain_judge/v4/dataset.jsonl -text
+/evals/dataset/brain_annotations/v2/*.jsonl -text

@@ -88,7 +88,7 @@ def test_independent_tasks_run_production_ports_without_leaking_references(
     assert len(seen) == 1 and seen[0].model_dump() == original.request.model_dump()
     assert "reference" not in type(seen[0]).model_fields
     assert log.results.scores[0].metrics["judged_accuracy"].value == 1
-    assert log.results.scores[1].metrics["judged_count"].value == 0
+    assert log.results.scores[1].metrics["quality_count"].value == 0
 
 
 @pytest.mark.parametrize("family", ["plan", "decompose"])
