@@ -6,10 +6,9 @@ import subprocess
 from pathlib import Path
 from shutil import disk_usage
 
-from evals.agent_short_goal_run.dataset.loader import DATASET_DIR, load_samples
+from evals.agent_short_goal_run.dataset.loader import DATASET_DIR
 from evals.common.capture_audit import audit_capture
 from evals.common.capture_batch import (
-    BatchReport,
     CaseReport,
     PackReport,
     code_sha256,
@@ -18,9 +17,11 @@ from evals.common.capture_batch import (
     source_states,
 )
 from evals.common.capture_configuration import capture_budget
+from evals.common.capture_export import export
 from evals.common.capture_integrity import audit_batch
 from evals.common.capture_pack import pack_sample, payload_paths
 from evals.common.capture_review import audit_review
+from evals.common.capture_selection import selected_samples
 from evals.common.capture_services import capture_services, start_process, stop_process
 from evals.common.capture_state import ControlState, read_state, save_state
 from evals.common.invocation import write_record
@@ -49,7 +50,9 @@ def fixed_version(directory: Path) -> PackReport:
             state_schema_hash(),
         ):
             raise RuntimeError("capture version or configuration drift")
-        if report.source_hashes != source_states(load_samples()):
+        if report.source_hashes != source_states(
+            selected_samples(read_state(directory).sample_ids)
+        ):
             raise RuntimeError("capture source states changed")
         if report.effective_budget != capture_budget():
             raise RuntimeError("capture effective budget changed")
@@ -63,10 +66,8 @@ def fixed_version(directory: Path) -> PackReport:
 
 
 def preflight(directory: Path) -> None:
-    """先固定二十例来源和已提交代码，不输出密钥值。"""
-    samples = load_samples()
-    if len(samples) != 20:
-        raise ValueError("expected twenty source samples")
+    """先固定所选来源和已提交代码，不输出密钥值。"""
+    samples = selected_samples(read_state(directory).sample_ids)
     models = resolve_models(load_config()["models"])
     BrainTool.build(
         text=models["text_model"],
@@ -98,7 +99,7 @@ def preflight(directory: Path) -> None:
 
 def pack(directory: Path, state: ControlState) -> None:
     """每起点单独打包；恢复只跳过哈希已核对的完整存档。"""
-    for sample in load_samples():
+    for sample in selected_samples(state.sample_ids):
         report = fixed_version(directory)
         if sample.sample_id in report.archive_hashes:
             manifest = directory / "archives" / sample.sample_id / "manifest.json"
@@ -202,7 +203,7 @@ def recover_completed(directory: Path, sample_id: str, state: ControlState) -> b
 
 def capture(directory: Path, state: ControlState) -> None:
     """完成一例才落审计报告；失败尝试保留，resume 使用新 attempt。"""
-    for sample in load_samples():
+    for sample in selected_samples(state.sample_ids):
         report = fixed_version(directory)
         manifest = directory / "archives" / sample.sample_id / "manifest.json"
         if sha256(manifest) != report.archive_hashes[sample.sample_id]:
@@ -236,35 +237,6 @@ def capture(directory: Path, state: ControlState) -> None:
         write_record(directory / "reports" / f"{sample.sample_id}.json", result)
         state.completed.append(sample.sample_id)
         save_state(directory, state)
-
-
-def export(directory: Path, state: ControlState) -> None:
-    """审计全部完成后只导出原料；标注、公开版本和真实评分另行处理。"""
-    from evals.dataset.brain_calls.export_dataset import export as export_dataset
-    from evals.dataset.brain_calls.source_archive import archive_sources
-    from evals.dataset.brain_calls.verify_dataset import verify
-
-    reports = [
-        CaseReport.model_validate_json(p.read_text("utf-8"))
-        for p in sorted((directory / "reports").glob("*.json"))
-    ]
-    if len(reports) != 20 or len(state.completed) != 20:
-        raise RuntimeError("cannot export incomplete batch")
-    batch_path = directory / "batch_report.json"
-    expected = BatchReport(completed=reports)
-    if batch_path.exists():
-        if BatchReport.model_validate_json(batch_path.read_text("utf-8")) != expected:
-            raise RuntimeError("completed batch report changed")
-    else:
-        write_record(batch_path, expected)
-    number = state.attempts.get("export", 0) + 1
-    state.attempts["export"] = number
-    save_state(directory, state)
-    output = directory / "exports" / f"attempt{number}" / "v2"
-    export_dataset(directory, output)
-    archive_sources(directory, output)
-    verify(output)
-    state.output = str(output)
 
 
 def audit(directory: Path, state: ControlState) -> None:

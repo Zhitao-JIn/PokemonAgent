@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from .capture_audit import audit_capture
-from .capture_batch import CaseReport
+from .capture_batch import CaseReport, PackReport
 from .capture_review import ReviewWaitAudit, audit_review
 from .invocation import write_record
 
@@ -46,11 +46,12 @@ def branch_counts(work: Path) -> dict[str, int]:
 
 
 def audit_batch(directory: Path) -> BatchAudit:
-    """二十例全部有结算、录制闭合且双向对账后才允许导出。"""
+    """固定来源清单全部有结算、录制闭合且双向对账后才允许导出。"""
     reports = list((directory / "reports").glob("*.json"))
-    if len(reports) != 20:
-        raise ValueError("batch audit requires twenty reports")
-    summary = BatchAudit(completed=20)
+    pack = PackReport.model_validate_json((directory / "pack_report.json").read_text("utf-8"))
+    if not pack.source_hashes or {path.stem for path in reports} != set(pack.source_hashes):
+        raise ValueError("batch audit requires every selected report")
+    summary = BatchAudit(completed=len(reports))
     for path in reports:
         report = CaseReport.model_validate_json(path.read_text("utf-8"))
         work = Path(report.work_directory)

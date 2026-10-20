@@ -298,3 +298,9 @@ choose 动作契约不变。新版本尚未发布时，旧计数仅说明历史�
 以 status/stop/resume 控制，顺序执行 preflight、独立起点 pack、二十场景 capture、audit、export。
 脚本分别记录 Port 耗时、模型耗时、reviewer 等待、未询问与 pending，自动核对录制和生产 trace。
 生成的 `exports/attemptN/v2` 是独立批次候选原料，未自动覆盖旧数据或冒称已完成独立标注/真实评分。
+
+补采可用 `capture_control start --out <新目录> --samples <id> <id> ...` 显式选择未完成用例。
+选择在启动时校验并固定，resume 不接受改清单；来源哈希、打包、采集、审计和导出均以同一清单为准。
+子集完成数不能冒充二十例完成，导出清单注明 expected 和 sample_ids。
+跨版本补采保留旧批次，continuation.json 记录复用报告的路径、字节哈希与提交及待补用例；
+复用用例不再执行，也不改写其来源版本，新批次的 manifest 仅声明本批次实际采集的数据。

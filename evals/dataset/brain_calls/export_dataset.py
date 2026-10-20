@@ -159,7 +159,7 @@ def write_family(
         source_code_sha256=report.code_sha256,
         schema_hash=report.schema_hash,
         limitations=[
-            "二十个短场景的现场分布，不代表独立留出集或长程能力。",
+            f"{len(report.source_hashes)} 个短场景的现场分布，不代表独立留出集或长程能力。",
             "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
             "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
             "choose 独立动作集合子集可评分；其余开放参考不冒称完备 acceptable 集合。",
@@ -209,13 +209,19 @@ def export(batch: Path, output: Path, *, partial: bool = False) -> list[DatasetM
     report = PackReport.model_validate_json((batch / "pack_report.json").read_text("utf-8"))
     samples = {sample.sample_id: sample for sample in load_samples()}
     reports = sorted((batch / "reports").glob("*.json"))
-    if not partial and len(reports) != 20:
-        raise ValueError(f"expected twenty completed reports; got {len(reports)}")
+    expected_ids = set(report.source_hashes)
+    if not partial and {path.stem for path in reports} != expected_ids:
+        raise ValueError(f"expected {len(expected_ids)} selected reports; got {len(reports)}")
     if not partial:
         batch_report = BatchReport.model_validate_json(
             (batch / "batch_report.json").read_text("utf-8")
         )
-        if batch_report.error or len(batch_report.completed) != 20:
+        if (
+            batch_report.error
+            or batch_report.expected != len(expected_ids)
+            or {case.sample_id for case in batch_report.completed} != expected_ids
+            or len(batch_report.completed) != len(expected_ids)
+        ):
             raise ValueError("batch did not finish with all audit gates passing")
     grouped, warnings = gather_cases(batch, reports, samples)
     output.mkdir(parents=True, exist_ok=False)
@@ -235,6 +241,8 @@ def export(batch: Path, output: Path, *, partial: bool = False) -> list[DatasetM
                     path.name: digest(path) for path in sorted(Path(__file__).parent.glob("*.py"))
                 },
                 "completed": len(reports),
+                "expected": len(expected_ids),
+                "sample_ids": sorted(expected_ids),
                 "partial": partial,
                 "skipped_calls": skipped,
                 "families": [item.model_dump() for item in manifests],

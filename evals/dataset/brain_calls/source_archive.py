@@ -46,6 +46,7 @@ def archive_sources(batch: Path, output: Path) -> SourceArchiveManifest:
     files = frozen_start_files(batch)
     files += list((batch / "reports").glob("*.json"))
     files += [batch / name for name in ("pack_report.json", "batch_report.json")]
+    files += [batch / "continuation.json"]
     for report_path in sorted((batch / "reports").glob("*.json")):
         report = json.loads(report_path.read_text("utf-8"))
         work = (

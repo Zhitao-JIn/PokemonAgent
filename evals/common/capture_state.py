@@ -15,6 +15,7 @@ class ControlState(BaseModel):
     phase: str = "preflight"
     status: str = "starting"
     completed: list[str] = Field(default_factory=list)
+    sample_ids: list[str] | None = None
     current_sample: str | None = None
     error: str = ""
     updated_at: float = Field(default_factory=time)
