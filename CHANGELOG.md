@@ -8,7 +8,7 @@
 
 **影响面**：仅两个测试文件的文档字符串，生产代码零改动（`git diff -- pokemon_agent/` 为空）。全量 junit 计数 1575 → 1575，failures / errors / skipped 均为 0，耗时 64.6 → 60.0 秒；`tests/world/` 241 项、`tests/mcp_servers` 41 项不变。`ruff check .` 与 `ruff format --check .` 全绿。本检查点没有生产代码改动，按 spec 9.4 不做破坏验证。
 
-## 2026-10-20（545）—— world 单元测试 CP4
+## 2026-10-20（563）—— world 单元测试 CP4
 
 **改了什么**：新增五个测试文件，覆盖 world 线的物体事件、地形精灵、单帧装配、静态表与模拟器入口前置检查——`test_world_object_events.py` 13 个函数 / 27 项（`press_cells` 四个朝向各返回脚下格与该方向邻格、a 对人有对话与 still 两种结局、隔柜台时优先 nearer person、走进物品格按 dialog / still 分派、a 不拾取物品、进门的停在门格不产事件与跨图记 warp、踩在门格朝外按方向记 warp / still、六种非交互（连按两次、先转向、无 actor、无 after、b 键、巨石）均空、`observe_step` 用真实 landmarks 出 dialog / still、移动并拾取时 moved=True、石地标不产事件、多段链只报 moved、settle=False 原样透传）；`test_world_terrain_map.py` 3 个（可见精灵的四类符号与空槽不标记、隐藏槽 1 后只剩 I 与 N、视野外的巨石被裁掉）；`test_world_task_perception.py` 5 个（地图未稳定时省略位置与地形、稳定帧逐字段对应素材并透出 closed→done、帧 PNG 与 `decode` 读数接线、商店视图 `ShopItemsView` 的名与价、战斗双方八个 `my_*`/`foe_*` 字段）；`test_world_tables.py` 4 个 / 11 项（三张表的地图键与 `_source`/`_note` 溯源、41/42/40 的门与 12 的两条边缘出口、商店与中心三种图的 clerk / stand 站位、六个服务图的 tileset 对应）；`test_world_pyboy_world_prechecks.py` 9 个 / 12 项（存档与 ROM 缺失在构造前失败、`max_steps` 非正被拒、三个入口 before-reset、关门后拒绝 step、整条动作链先校验后执行、`evolve` 负帧、`load_state` 空字节、overlay 按钮属于动作命名空间）。34 个函数展开为 58 个 pytest 项。
 
@@ -18,7 +18,7 @@
 
 **影响面**：仅新增测试与这一条 CHANGELOG，生产代码零改动。`tests/world/` 现 241 项、耗时 1.11 秒；全量 junit 计数 1517 → 1575，failures / errors / skipped 均为 0，耗时 56.3 → 57.3 秒。`ruff check .` 与 `ruff format --check .` 全绿。
 
-## 2026-10-18（537）—— world 单元测试 CP3
+## 2026-10-18（562）—— world 单元测试 CP3
 
 **改了什么**：新增五个测试文件，覆盖 world 线的读数、地形精灵、地图表与帧编码——`test_world_readout.py` 5 个函数（`read_money` 三字节 BCD 参数化 3 项（`12 34 56` → 123456、`00 30 00` → 3000、`00 03 00` → 300）、背包遇 `LIST_END` 截止、背包件数封顶 20 且末件 id 为 20、队伍只数 `wPartyCount` 只并读出 species / 等级 / 大端 HP / 状态、队伍人数封顶 6）；`test_world_ram_decode.py` 3 个函数（精灵表 +9 字节 0 / 4 / 8 / 12 → `south` / `north` / `west` / `east` 参数化 4 项、通行表从指针处读到 `0xFF` 得 `{1, 5, 44}`、首字节即 `0xFF` 触发 `AssertionError`）；`test_world_terrain_sprites.py` 3 个函数（`hidden_slots` 只收隐藏位为一的槽位（`(3, 7)` 命中、`(5, 2)` 不命中 → `{3}`）、`sprite_position` 相对屏幕原点偏移 4（槽 2 原始 `(10, 7)` → `(6, 3)`）、槽 0 与槽 16 触发 `AssertionError` 参数化 2 项）；`test_world_map_tilesets.py` 2 个（返回长度 248 的 `tuple` 且下标 `i` 与 `tables/map_tilesets.json` 的 `str(i)` 逐项一致、两次调用是同一对象）；`test_world_frame_encoding.py` 2 个（PNG 字节 → `data:image/png;base64,` 前缀且 base64 解回原字节、空字节仍只出前缀）。15 个函数展开为 21 个 pytest 项。假件沿用 spec 第六节开头的字典式 `Mem`（未写地址读 0）；不起模拟器、不读 ROM、不发网络请求、不用 `MagicMock`、不测 `_` 开头的私有成员（`_sprite_kind` 留给 CP4 的 `read_terrain` 间接覆盖）。
 
