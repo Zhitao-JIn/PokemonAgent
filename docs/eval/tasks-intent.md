@@ -1,7 +1,7 @@
 # intent —— 测评 task 改名 + choose 节点测评 + judge 扩容
 
 > 流程位置：**tasks-intent.md** → tasks-spec.md → tasks-plan.md → PR → production
-> 前置：`docs/eval/intent.md`（测评体系总意图）、`docs/spec/evals/SPEC.md`（现行六个 task）
+> 前置：`docs/eval/intent.md`（测评体系总意图）、`docs/spec/evals/SPEC.md`（现行五个 task）
 > 范围：三项，按顺序做——① 改名 ② choose 节点测评 ③ judge 扩容。其余节点不加 task（见「不做」）。
 
 ---
@@ -87,6 +87,8 @@ evals/dataset/
 
 > 2026-10-13：本节原有的设计已整体取代，改为独立的专用文档，见 `docs/eval/brain-choose-action-intent.md` 与 `docs/eval/brain-choose-action-spec.md`（B 类，DeepEval，目录 `evals/brain_choose_action/`）。此处不再保留正文，避免两处真相。
 
+2026-10-18 冻结更新：`brain_choose_action` 的数据与读取工具在 `evals/dataset/brain_choose_action/`，评测入口在 `evals/brain_choose_action/`。v1 采用用户批准的 189 条完整 task choose 请求，包含同 task 全部历史，覆盖 walk、dialog、battle_menu、battle、shop、shop_items；未覆盖 start_menu。67 条排除与 2 条范围外记录保留，原批次采集版本限制见数据 manifest 与审核报告。动作集合评分契约见 `brain-choose-action-spec.md`，本次批准的实际范围覆盖其旧场合配额。
+
 ## 五、judge 扩容（`brain_goal_judge`）
 
 **被测对象不变**：生产判定器读 `FromHarnessToBrainToolJudgeReq`（`goal` / `history` / `task_memories` / `task_table` / `episode_memories` / `episode_index` / `observation` / `knowledge` / `allow_interrupt`），给出达成与否和理由。
@@ -110,7 +112,7 @@ evals/dataset/
 |---|---|---|
 | J1（已定） | choose 的可接受集合怎么定 | 规则从真值算出 + 人工全审；不靠存档重放 |
 | J2（已定） | 决策 / 判定现场怎么采 | (c) evals 侧录制用的包装对象，只在采集时装配；choose 另有冻结帧一路 |
-| J3（choose 已定） | 首版规模与配比 | choose：四类场合各约 8–10 条，共约 35 条；judge 正负比例、每类难负例至少多少条仍待定 |
+| J3（已落地） | 首版规模与配比 | choose 的覆盖约定见专用 spec；judge v2 冻结 257 条，达成 60、未达成 197；145 条机械判定、112 条按完整请求历史逐条裁定。样本不是独立随机抽样基准，原批采集版本连续性有限制 |
 | D1 | 数据**生产**工具放哪（读取代码已定：进各数据集包） | 采集 / 构建 / 打包 / 审核工具（`pack.py`、`frames/` 的 `build_v2`、`glyphs`、`observe`、`freeze`、`terrain`、`storage`、`coverage`、`deduplicate`、`cli`）：(a) 也进对应数据集包的 `tools/` 子目录，一份数据的读与造都在一处；(b) 统一收进 `evals/datatools/`，数据集包只管读 |
 | 已定 | world_script_execute 的用例格式 | 转成 `cases.jsonl`（全部用例统一读取，运行时的转换改为一次性转换后冻结）；`frames/capture_cases.py` 同样转成数据 |
 | 已定 | 存档放几份 | evals 拷一份进 `evals/dataset/world_script_execute/v1/states/`；`experiment/` 保留自己那份不动 |

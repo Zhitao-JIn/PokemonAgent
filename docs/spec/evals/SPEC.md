@@ -10,7 +10,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外有五个任务，统一登记在 `evals/registry.py`：三个 DeepEval 模块入口、两个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
+对外有六个任务，统一登记在 `evals/registry.py`：四个 DeepEval 模块入口、两个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
@@ -18,6 +18,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
+| brain_choose_action | 冻结的完整 choose 请求（含本 task 历史），v1 共 189 条、六类场合 | 可接受动作集合匹配、解析、合法性及场合分组 | 决策模型 |
 | brain_goal_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
 | agent_short_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
 
@@ -86,7 +87,7 @@ run 级样本的机械结果读取同一 run、同一执行分支的全部帧，
 ### 流程层
 
 **brain_goal_judge**（已实现）
-测什么：生产判定器拿到真值目标与观测历史，能否正确判定目标是否达成，统计 TP / FP / FN / TN。目前只有 4 条用例，是运行契约示范，不能代替完整能力评估。
+测什么：生产判定器拿到真值目标与观测历史，能否正确判定目标是否达成。v2 默认包含 257 条真实调用现场，报告 TP / FP / FN / TN、FPR、召回率、精确率、准确率及分母，并按 `goal_family`、`negative_mode` 分组；v1 的 4 条契约示范仍可显式选择。v2 不是独立随机抽样基准，且原批采集的代码版本连续性无法证明，不能把汇总率外推为真实游戏总体能力。
 
 **brain_step_verify**（规划中，优先级高）
 测什么：步骤验证（`StepVerifyVerdict`）对"这一步是否生效"的判断，重点是假阳性率。世界状态没变却判成功是卡死的主要诱因。输入前后观测与动作，对照世界真值统计 TP / FP / FN / TN。
@@ -151,7 +152,7 @@ python -m evals.dataset.frames.build.terrain
 
 world_script_execute 共 106 例，统一按脚本的调用、结局与前后世界真值评分。所有脚本共用同一个 ScriptRun 执行多步操作，等待、中断、初态恢复与收尾属于脚本自己的配置或步骤。保留原用例依据与世界真值。被测脚本自报成功不是世界真值；重构不根据实际输出改写期望。
 
-memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。brain_goal_judge 初始四条独立真假历史；这些小型用例是运行契约示范，不能代替完整能力评估。
+memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。brain_goal_judge 保留 v1 的四条契约示范，扩展 v2 用真实判定现场评估生产判定器。
 
 agent_short_goal_run 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
 
@@ -199,7 +200,7 @@ C 类由 `task.py` 装配原有 Inspect 链路。文件多时使用同名子包�
 旧 `tasks/`、`solvers/`、`scorers/` 槽位已删除。
 
 数据包出口只导出 `load()` 与样本类型；读取时核冻结文件、重复 id、版本内引用和来源哈希，
-失败抛 `evals.dataset.errors.DatasetError`。judge 的 task 参数与 memory 的 --version 均默认为 v1。
+失败抛 `evals.dataset.errors.DatasetError`。judge 的 task 参数默认为 v2，仍可显式指定 v1；memory 的 --version 默认为 v1。
 
 | 数据包 | 默认版本与冻结物 | 构建工具 |
 |---|---|---|
@@ -207,7 +208,8 @@ C 类由 `task.py` 装配原有 Inspect 链路。文件多时使用同名子包�
 | agent_short_goal_run | v1，20 个起点、样本、rubric 与档案 | build/pack.py |
 | world_script_execute | v1，106 条 cases.jsonl 与所用存档 | 106 条统一读取；核对函数在 scorer |
 | memory_store_recall | v1，dataset.json（一份3条记录/3个查询的库） | 无 |
-| brain_goal_judge | v1，dataset.jsonl（4条） | 本次不扩容 |
+| brain_choose_action | v1，189 条完整 choose 请求（含本 task 历史），覆盖六类场合；start_menu 未覆盖 | `evals/dataset/brain_choose_action/build/` |
+| brain_goal_judge | 默认 v2，dataset.jsonl（257条）；v1 保留 4 条 | `evals/dataset/brain_goal_judge/build/` |
 
 agent 的 source_state 与 manifest.memory_archive 均相对版本目录；恢复前由 solver 在工作目录
 生成路径适配清单，冻结原件不写回。world 用例的 state 相对版本下的 states/，

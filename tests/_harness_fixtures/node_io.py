@@ -724,12 +724,12 @@ CHECKPOINT_KINDS: frozenset[str] = frozenset(
 # ---- 问人两本账（`harness/reviewing.py`）：**不进流**，条数随人插话几轮浮动 ----
 _contract(
     ("lifecycle", "review_inject"),
-    "form_kind reply answered by wait_s",
+    "form_kind reply answered by wait_s capped round",
     "插话一次：表单种类、人的回话、是否真答、等了多久",
 )
 _contract(
     ("lifecycle", "review_audit"),
-    "form_kind verdict note answered by wait_s",
+    "form_kind verdict note answered by wait_s capped round",
     "审一次：审的是什么、认 / 推翻与理由、是否真答、等了多久",
 )
 

@@ -1,7 +1,10 @@
 """不构造模拟器，直接验证起点优先级与 WRAM 只读契约。"""
 
+import ctypes
 import importlib
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, BinaryIO
 
 import pytest
@@ -13,9 +16,13 @@ class _PyBoy:
     def __init__(self) -> None:
         self.loaded: list[bytes] = []
         self.memory = bytes(range(256)) * 256
+        self.events: list[int] = []
 
     def load_state(self, stream: BinaryIO) -> None:
         self.loaded.append(stream.read())
+
+    def send_input(self, event: int) -> None:
+        self.events.append(event)
 
 
 @pytest.fixture
@@ -88,3 +95,54 @@ def test_read_wram_rejects_wrong_length(world: Any) -> None:
         world.read_wram()
 
     assert world.ticks == []
+
+
+@pytest.mark.parametrize("close_event", [False, True])
+def test_watch_pumps_sdl_events_without_forwarding_keyboard_input(
+    world: Any, monkeypatch: pytest.MonkeyPatch, close_event: bool
+) -> None:
+    world._watch = True
+    received: list[int] = []
+    queued: list[int] = []
+
+    class _WindowEvent(ctypes.Structure):
+        _fields_ = [
+            ("type", ctypes.c_uint32),
+            ("timestamp", ctypes.c_uint32),
+            ("window_id", ctypes.c_uint32),
+            ("event", ctypes.c_uint8),
+        ]
+
+    class _Event(ctypes.Union):
+        _fields_ = [("type", ctypes.c_uint32), ("window", _WindowEvent)]
+
+    event_type = 0x100 if close_event else 0x300
+    window_event = 14 if close_event else 0
+
+    def _poll(pointer: Any) -> int:
+        if received:
+            return 0
+        event = ctypes.cast(pointer, ctypes.POINTER(_Event)).contents
+        event.type = event_type
+        event.window.event = window_event
+        received.append(event_type)
+        return 1
+
+    def _send_input(event: int) -> None:
+        queued.append(event)
+
+    world._pyboy.send_input = _send_input
+
+    sdl2 = SimpleNamespace(
+        SDL_Event=_Event,
+        SDL_PollEvent=_poll,
+        SDL_QUIT=0x100,
+        SDL_WINDOWEVENT=0x200,
+        SDL_WINDOWEVENT_CLOSE=14,
+    )
+    monkeypatch.setitem(sys.modules, "sdl2", sdl2)
+
+    world._pump_window_events()
+
+    assert received == [event_type]
+    assert bool(queued) is close_event

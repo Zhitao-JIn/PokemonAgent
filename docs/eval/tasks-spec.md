@@ -45,7 +45,7 @@ intent 第六节里没拍板的项，本 spec 先按推荐方案写；推翻哪�
 
 ### 1.3 验收
 
-`python -m evals list` 恰好列出六个新名；`tests/evals/test_evals_tasks.py` 断言集合与"`@task` 函数名 = 注册名"；`evals/tasks/*/` 下除 `task.py`（与 `__init__.py`）外没有别的文件；`evals/core/` 不存在；全量 pytest 与 ruff 不比改名前多出失败。
+`python -m evals list` 恰好列出六个公开名；`tests/evals/test_evals_tasks.py` 断言集合与"`@task` 函数名 = 注册名"；`evals/tasks/*/` 下除 `task.py`（与 `__init__.py`）外没有别的文件；`evals/core/` 不存在；全量 pytest 与 ruff 不比改名前多出失败。
 
 ### 1.4 目录按 inspect 槽位归位，`evals/core/` 解散
 
@@ -169,7 +169,7 @@ evals/dataset/<名>/
 | `agent_goal_run` | `EvalSample`、`RubricItem`、`RedLine` | `v1/samples.jsonl`、`v1/states/`、`v1/archives/`、`v1/rubric.json`、`v1/coverage.md` | `evals/data/loader.py`、`evals/schema/sample.py` | `evals/data/pack.py` |
 | `world_script_execute` | `ScriptCase`、`ScriptExpect`、`ScriptCheck` | `v1/cases.jsonl`（106 条）、`v1/states/` | 旧脚本用例与常量 | 一次性转换脚本 `build/convert_cases.py`（转换完成即可删，见 §2.3） |
 | `memory_store_recall` | `MemoryDataset` | `v1/dataset.json` | `evals/tasks/memory/schemas.py` 的数据集部分、task 里的读文件代码 | — |
-| `brain_goal_judge` | `JudgeCase` | `v1/dataset.jsonl`（现 4 条）；S3 出 `v2/` | `evals/tasks/judge/schemas.py::JudgeCase`、task 里的读文件代码 | S3 的标注工具 |
+| `brain_goal_judge` | `JudgeCaseV1` / `JudgeCaseV2` | 默认 `v2/dataset.jsonl`（257 条），保留 `v1/dataset.jsonl`（4 条） | `evals/dataset/brain_goal_judge/` 数据包出口 | `evals/dataset/brain_goal_judge/build/` |
 
 `evals/data/` 包与 `evals/schema/sample.py` 迁完后删除（`verdict.py` 已在 S1 进 `evals/scorers/`），`evals/schema/` 删除。
 
@@ -204,6 +204,8 @@ class ScriptCheck(BaseModel):
 ---
 
 ## 三、S3 judge 扩容（`brain_goal_judge`）
+
+本节早期草案已由 [`brain-goal-judge-spec.md`](brain-goal-judge-spec.md) 取代。当前实现以该专用 spec 为准：257 条请求现场冻结在 `evals/dataset/brain_goal_judge/v2/`，含独立真值证据；v1 四条样本按原字节保留。Inspect task 默认读 v2，显式传 `version=v1` 可运行契约示例。评分报告四格、FPR/召回率/精确率/准确率及分母，并按目标家族和未达成模式分组；错误作为 sample error 单列。真实模型运行须另行授权。
 
 ### 3.1 样本契约（`evals/dataset/brain_goal_judge/schemas.py`）
 
@@ -240,11 +242,13 @@ class JudgeCase(BaseModel):
 
 ---
 
+2026-10-18 冻结更新：`brain_choose_action` 的数据与读取工具在 `evals/dataset/brain_choose_action/`，评测入口在 `evals/brain_choose_action/`。v1 采用用户批准的 189 条完整 task choose 请求，包含同 task 全部历史，覆盖 walk、dialog、battle_menu、battle、shop、shop_items；未覆盖 start_menu。67 条排除与 2 条范围外记录保留，原批次采集版本限制见数据 manifest 与审核报告。动作集合评分契约见 `brain-choose-action-spec.md`，本次批准的实际范围覆盖其旧场合配额。
+
 ## 六、测试（用法示范）
 
 | 测试文件 | 内容 |
 |---|---|
-| `tests/evals/test_evals_tasks.py` | 公开 task 恰为六个新名（S4 后七个）；`@task` 函数名 = 注册名 |
+| `tests/evals/test_evals_tasks.py` | 公开 task 恰为六个；`@task` 函数名 = 注册名 |
 | `tests/evals/world_script_execute/test_evals_datasets.py`（新） | 每个数据集包 `load()` 返回非空类型化样本；版本目录自包含（样本引用的文件都在版本目录下）；`ScriptCheck` 每个 `kind` 一正一反 |
 | `tests/test_evals_capture.py`（新） | 录制器包装假 chooser / judger：返回值与异常透传不变，落盘的信封可被 `ChooseCase.request` / `JudgeCase.request` 原样解析 |
 | `tests/test_evals_choose.py`（新） | `matches` 的命中规则（按键链逐段、脚本参数、形状不符）；三个指标与分组指标在构造的 `ChooseCase` 上的结果 |

@@ -1,0 +1,36 @@
+{
+  "review_scope": "full_choose_request_and_matching_judge_input",
+  "reviewed": 258,
+  "history_entries": 810,
+  "judge_inputs_exactly_matched": 190,
+  "task_entry_without_history": 68,
+  "statuses": {
+    "eligible": 189,
+    "excluded": 67,
+    "outside_scope": 2
+  },
+  "eligible_scenes": {
+    "walk": 56,
+    "shop": 48,
+    "battle_menu": 30,
+    "shop_items": 16,
+    "battle": 9,
+    "dialog": 30
+  },
+  "cases_with_script_matchers": 105,
+  "frozen": true,
+  "notes": [
+    "助手受托审核，label_source 保持 rule，不冒称人工审核",
+    "脚本按现有契约核名称与目标参数，不运行脚本、不模拟其未来结果",
+    "原批次采集版本限制保留；start_menu 未覆盖；不引入其他 task 的记忆",
+    "只使用 choose 之前的 judge 输入，不读取 judge 答案或之后执行结果"
+  ],
+  "excluded_for_ambiguous_target": 22,
+  "visual_spot_checks": 12,
+  "previous_review": "ram_review_report.json (superseded)",
+  "cases_draft": "../v1/cases_draft.jsonl",
+  "ready_for_freeze_review": true,
+  "raw_capture_responses_used_for_labels": false,
+  "frozen_cases": "../v1/cases.jsonl",
+  "freeze_approved": "2026-10-18"
+}

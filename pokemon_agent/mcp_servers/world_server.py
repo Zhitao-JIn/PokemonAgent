@@ -35,6 +35,7 @@ from pokemon_agent.mcp_servers.common import (
 if TYPE_CHECKING:  # 只为类型标注：world 的协议是零依赖的纯 Protocol
     from pokemon_agent.world import WorldPort
 
+
 mcp = FastMCP("pokemon-world")
 
 SERVICE_NAME = "pokemon-world"

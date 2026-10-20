@@ -36,8 +36,6 @@ Frontend 发起的信封已在 0914 控制台改造中**整个删除**（`schema
 一起下线。人的表态现在是两处：**插话**（`Reviewer.inject()` 收一句自然语言，
 回车即收）与**审**（`AuditVerdict`——认 / 推翻，住 `domain/`，三跳共用）。
 
-**跳 A 信封**（`FromHarnessToReviewBackend*`）：`WebReviewer` 与常驻后端之间的线上 JSON，
-由 harness 发起、住这里；跳 B（后端 ↔ 网页）在 `schemas/review_backend/`。
 "继续/停止"不再是人的选项，由 run 的 `review_and_judge` 判（机械三类 + 问模型）；"重试"改成
 `EntryStatus` 上的一次状态迁移（`plan_run` 把 `FAILED`/`ABANDONED` 重开成 `PENDING`）。
 """
@@ -104,12 +102,9 @@ __all__ = [
     "FromHarnessToMemoryToolStoreEpisodeSummaryResp",
     "FromHarnessToMemoryToolStoreKnowledgeReq",
     "FromHarnessToMemoryToolStoreKnowledgeResp",
-    "FromHarnessToReviewBackendAuditReq",
-    "FromHarnessToReviewBackendAuditResp",
-    "FromHarnessToReviewBackendFeedReq",
-    "FromHarnessToReviewBackendInjectReq",
-    "FromHarnessToReviewBackendInjectResp",
     "FromHarnessToReviewerAuditReq",
+    "FromHarnessToReviewerAskMsg",
+    "FromHarnessToReviewerCancelMsg",
     "FromHarnessToReviewerAuditResp",
     "FromHarnessToReviewerInjectReq",
     "FromHarnessToReviewerInjectResp",
@@ -256,19 +251,10 @@ from .communication.FromHarnessToMemoryToolStoreKnowledgeResp import (
 from .communication.FromHarnessToMemoryToolStoreTaskMemoryReq import (
     FromHarnessToMemoryToolStoreTaskMemoryReq,
 )
-from .communication.FromHarnessToReviewBackendAuditReq import FromHarnessToReviewBackendAuditReq
-from .communication.FromHarnessToReviewBackendAuditResp import (
-    FromHarnessToReviewBackendAuditResp,
-)
-from .communication.FromHarnessToReviewBackendFeedReq import FromHarnessToReviewBackendFeedReq
-from .communication.FromHarnessToReviewBackendInjectReq import (
-    FromHarnessToReviewBackendInjectReq,
-)
-from .communication.FromHarnessToReviewBackendInjectResp import (
-    FromHarnessToReviewBackendInjectResp,
-)
+from .communication.FromHarnessToReviewerAskMsg import FromHarnessToReviewerAskMsg
 from .communication.FromHarnessToReviewerAuditReq import FromHarnessToReviewerAuditReq
 from .communication.FromHarnessToReviewerAuditResp import FromHarnessToReviewerAuditResp
+from .communication.FromHarnessToReviewerCancelMsg import FromHarnessToReviewerCancelMsg
 from .communication.FromHarnessToReviewerInjectReq import FromHarnessToReviewerInjectReq
 from .communication.FromHarnessToReviewerInjectResp import FromHarnessToReviewerInjectResp
 from .communication.FromHarnessToTraceToolAppendReq import FromHarnessToTraceToolAppendReq

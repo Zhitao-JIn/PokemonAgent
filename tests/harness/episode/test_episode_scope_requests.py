@@ -17,6 +17,10 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeResp,
     FromHarnessToBrainToolJudgeReq,
     FromHarnessToBrainToolJudgeResp,
+    FromHarnessToReviewerAuditReq,
+    FromHarnessToReviewerAuditResp,
+    FromHarnessToReviewerInjectReq,
+    FromHarnessToReviewerInjectResp,
     ModelCall,
 )
 from pokemon_agent.schemas.harness.domain import TaskEntry
@@ -47,6 +51,19 @@ class _Judger:
         return FromHarnessToBrainToolJudgeResp(
             done=False, why="继续", calls=[ModelCall(payload={})]
         )
+
+
+class _RevisingReviewer:
+    def __init__(self) -> None:
+        self.requests: list[FromHarnessToReviewerInjectReq] = []
+        self.replies = ["第一次修改", "第二次修改"]
+
+    def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
+        self.requests.append(req)
+        return FromHarnessToReviewerInjectResp(text=self.replies.pop(0), by="agent", answered=True)
+
+    def audit(self, _req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
+        raise AssertionError("plan_episode does not audit judgement")
 
 
 def _state() -> EpisodeRunState:
@@ -116,6 +133,23 @@ def test_decompose_context_lists_episode_index_lines_not_full_text(tmp_path: Pat
     assert "## 同目标的过往局(背景,不是本局完成的证据)" in text
     empty = request.model_copy(update={"episode_index": []})
     assert "## 同目标的过往局" not in "\n".join(context_lines(empty))
+
+
+def test_agent_revisions_respect_remaining_decomposition_budget(tmp_path: Path) -> None:
+    fake = build_fake(tmp_path, checkpoints=False)
+    decomposer, reviewer = _Decomposer(), _RevisingReviewer()
+    deps = fake.run_rt.episode
+    deps.decomposer = decomposer
+    deps.reviewer = reviewer
+    deps.budget = deps.budget.model_copy(update={"max_decompositions": 2})
+
+    updates = plan_episode(_state(), Runtime(context=deps))
+
+    assert len(decomposer.requests) == 2
+    assert [request.human_note for request in decomposer.requests] == ["", "第一次修改"]
+    assert [request.max_agent_rounds for request in reviewer.requests] == [1, 1]
+    assert len(updates["tasks"]) == 1
+    assert updates["decompositions_used"] == 2
 
 
 def test_plan_and_judge_at_episode_level_read_the_same_task_memories(tmp_path: Path) -> None:

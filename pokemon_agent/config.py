@@ -24,7 +24,33 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pokemon_agent.run_budget import RunBudget
+
+REVIEW_LAYERS: tuple[Literal["run", "episode", "task"], ...] = ("run", "episode")
+"""启用审点的层；加入 task 后才复核 task 判成，默认保持原执行行为。"""
+
+REVIEW_AI_INJECT_MAX_ROUNDS = 3
+"""一次插话点内，连续 AI 意见最多生效的轮数；人的有效意见清零计数。"""
+
+AGENT_MAX_TOOL_CALLS = 6
+"""AI reviewer 每问允许的只读工具调用数。"""
+
+AGENT_TURN_BUDGET_S = 90
+"""AI reviewer 单轮总时限，包含模型请求与工具执行。"""
+
+REVIEW_AI_COUNTDOWN_S = 30
+"""human + AI 模式下，人席接管 AI 提案前的等待秒数。"""
+
+REVIEW_LINK_URL: str | None = None
+"""复核链路显式启用地址；None 保持无头，部署也可通过同名环境变量指定。"""
+
+DEFAULT_REVIEW_LINK_URL: str = "ws://127.0.0.1:8765"
+"""独立 reviewer 入口的默认监听地址，沿用原后端端口。"""
+
+REVIEW_LINK_LOST_TIMEOUT_S: float | None = 120.0
+"""仅已知 AI 模式的断线预算；None 无限等，human/both/未知模式总是无限等。"""
 
 # ---- 重试预算：一次调用最多问几遍外部模型 ----
 # brain 的六条链路（choose/plan/judge/verify/summarize 调模型，reflect 不调）
@@ -79,24 +105,6 @@ TIMEOUT_RETRY_BACKOFF_SECONDS = 2.0
 
 0924 真机：服务端卡顿成簇出现（同一步连续 2~3 次无响应），固定短间隔的重试会落在同一段
 卡顿里；拉开间隔让下一次尽量落在卡顿之后。重试预算不单列，与其它失败共用 `BRAIN_MAX_ATTEMPTS`。"""
-
-CONSOLE_REVIEW_TIMEOUT = 30.0
-"""控制台提问的等待秒数——超时按"人没意见"处理。
-
-**两个消费者**（同一个数，两种机制）：`ConsoleReviewer.inject()`（插话：超时→空串，
-即不重问）与 `ConsoleReviewer.audit()`（审：超时→认账）。
-取 30 秒：够人看清一屏上下文并打字，又不至于让无人值守的 run 每步白等。
-**它取代了旧的 `MAX_GOAL_RETRIES`**——那条硬上限删掉后，"重试几次"改由 plan
-读历史后决策（见 `docs/PLAN_console_reviewer.md` §3.1），run 级不再有自动重试预算。
-"""
-
-WEB_REVIEW_TIMEOUT = 30.0
-"""网页问人的等待秒数——到点由后端回默认值（插话空串、审认账），标 `answered=False`。
-
-**两个消费者**：`WebReviewer` 把它放进每一问的 `timeout_s` 交给后端计时；自己等回话时
-多等 5 秒兜底。与 `CONSOLE_REVIEW_TIMEOUT` 分开：两个实现的人看的东西不一样多，各自调。
-"""
-
 
 # ---- 动作输出上限：模型一次决策能写多大 ----
 # **两个消费者必须同源**：prompt 渲染与 tool 校验读同一份，

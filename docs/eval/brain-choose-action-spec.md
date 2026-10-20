@@ -1,7 +1,7 @@
 # spec —— `brain_choose_action`：契约、数据、指标与交接
 
 > 流程位置：intent.md（`brain-choose-action-intent.md`）→ **spec.md（本文）** → plan.md → PR → production
-> 状态：**v1 草案，待确认**
+> 状态：**已确认（2026-10-18，用户确认开搭；D1–D9 按暂定项执行）**
 > 起草：2026-10-13
 > 依据：`brain-choose-action-intent.md`；现状以 2026-10-13 仓库为准（HEAD `32bb1cc`，第二阶段完成）
 > 约束：`pokemon_agent/`（含 prompt、brain、world）零改动；只动 `evals/`、`tests/`、文档。
@@ -280,3 +280,36 @@ evals/common/recorder.py
 **停止条件汇总**：S0 的场合或帧数不足；人工审未完成；`read_terrain` 无法支撑路径规则；任何需要改 `pokemon_agent/` 才能继续；任何一步需要真实模型调用而用户尚未确认费用。遇到就停下来报告，不要改比较规则或降低样本要求去凑通过。
 
 **完成条件**：验收 1–8 全部满足；CHANGELOG 写明本任务的口径（指标定义、命中规则、v1 范围与不做执行验证）。
+
+---
+
+## 十、P0 记录与交接（2026-10-18）
+
+**用户已确认**：开搭 `brain_choose_action`；D1–D9 按本文暂定项执行；行尾统一回仓库约定（LF）。
+
+**P0 结果（已通过）**
+- 工作区内容无改动。打开时 `git status` 显示 160 个 `M`，全部是 CRLF 行尾差异（`git diff --ignore-cr-at-eol` 为空，索引为 `i/lf`，工作区为 `w/crlf`）。
+- 处理方式：逐文件确认忽略 CR 后无差异，再把工作区行尾改为 LF。未用 `git checkout`，因为挂载目录不允许删除，unlink 会报 `Operation not permitted`。处理后 `git status` 只剩两个未跟踪目录：`.pytest_tmp_cmp1/`、`langfuse/`，它们不属于本任务，未动。
+- 未提交任何东西（用户未要求提交）。后续每步的提交仍按 CHANGELOG 条目一步一提。
+- 以后改文件一律保持 LF。在 Windows 上编辑时，编辑器与 `core.autocrlf` 要保持一致，避免再次出现整文件 CRLF 差异。
+
+**环境与数据（S0 需要）**
+- ROM：`assets/rom`（1 MiB）。存档同目录：`assets/rom.state`、`assets/rom_field.state`、`assets/rom_fight.state`、`assets/rom_indoor.state`。spec 中的 `ROM.read_bytes()` 指向 `assets/rom`。
+- 帧集：`evals/dataset/frames/v2/`（`samples.jsonl`、`truth.jsonl`）。
+- 项目要求 Python 3.11；挂载目录内 `.venv` 是 Windows 版本。Linux 沙箱的 `python3` 为 3.10，且未装 pydantic / pyboy / deepeval，因此 **S0 由用户在本机 venv 运行**，沙箱内不跑。
+
+**下一步**
+1. S0（只读，不写仓库）：在本机运行 §3.1 的装配脚本，报告各场合可装出的帧数、场合一致性、动作空间是否非空、`battle_menu` 的脚本签名。
+2. 停止条件同 §七 / §九；S0 不足 8 帧或场合大面积不一致则停下报告。
+
+---
+
+## 十一、设计裁定（2026-10-18，覆盖前文同名处）
+
+修订原因：派发前核对发现前文与 tasks-intent 及现有仓库不一致，设计侧统一如下。
+
+1. **数据路径**：数据与读取代码放 `evals/dataset/brain_choose_action/`（`schemas.py`、`loader.py`、`build/`、`v1/`）。前文 §一 1.1 的 `schemas.py` 路径、§三 的 `dataset/` 路径、§四 目录树中的 `dataset/` 作废。依据 `docs/eval/tasks-intent.md` 第三节。
+2. **数据生产工具**（from_frames、label、collect）放 `evals/dataset/brain_choose_action/build/`，与数据同包（tasks-intent 选项 a）。
+3. **公开任务数**：当前 `evals/registry.py` 为 5 个，加入本任务后为 6 个。前文"六个变七个"作废，§四、§五 以 6 为准。
+4. **CHANGELOG 编号**：原分配 502–505 在主线已被其他条目占用；集成到主线时改为 546–549，依次对应 CP1–CP4 各一条。
+5. **检查点**：CP0 装配验证（只读）、CP1 契约与骨架、CP2 A 路数据与标注草稿（草稿交用户人工审）、CP3 录制器与采集入口、CP4 注册与收尾。真实模型运行不在这五个检查点内，另行授权。

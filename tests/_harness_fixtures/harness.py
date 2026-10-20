@@ -101,7 +101,6 @@ def build_fake(
     reviewer: Reviewer | None = None,
     checkpoints: bool = False,
     branch: str = "main",
-    live_feed_url: str | None = None,
     backend: str = "local",
 ) -> FakeRun:
     """装配一套假 run（`build.py` 的假件版）。`checkpoints=True` 时挂 sqlite saver 与存档器，
@@ -114,7 +113,6 @@ def build_fake(
         run_id=run_id,
         **({} if backend != "local" else {"trace_root": str(tmp_path / "trace")}),
         branch=branch,
-        live_feed_url=live_feed_url,
         backend=backend,
     )
     reviewer = reviewer or NullReviewer()
@@ -159,6 +157,7 @@ def assemble_runtime(
         verifier=Verifier(brain),
         task_summarizer=TaskSummarizer(brain),
         trace=trace,
+        reviewer=reviewer,
         checkpointer=checkpointer,
     )
     episode_rt = EpisodeRuntime(

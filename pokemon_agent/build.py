@@ -26,7 +26,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from pokemon_agent.config import CHECKPOINT_ENABLED, SCOPE_IMAGE_CAP, TRACE_BACKEND
+from pokemon_agent.config import (
+    CHECKPOINT_ENABLED,
+    REVIEW_LINK_LOST_TIMEOUT_S,
+    REVIEW_LINK_URL,
+    SCOPE_IMAGE_CAP,
+    TRACE_BACKEND,
+)
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.brain_tool import BrainTool
 from pokemon_agent.direct.trace import TraceTool, assert_server_ready
@@ -47,6 +53,7 @@ from pokemon_agent.mcpclient import assert_mcp_server_ready
 from pokemon_agent.mcpclient.client import McpTransportError
 from pokemon_agent.mcpclient.memory_local import MemoryTool
 from pokemon_agent.mcpclient.world_tool import WorldMcpTool
+from pokemon_agent.reviewer_link import RemoteReviewer
 from pokemon_agent.run_config import load_run_config
 
 logger = logging.getLogger(__name__)
@@ -66,7 +73,6 @@ def build_real(
     world_server_url: str | None = None,
     checkpoint_root: str | Path | None = None,
     branch: str = "main",
-    live_feed_url: str | None = None,
     # 供应商由**型号名前缀**决定（0914 起，表在 `brain/providers.py::_PROVIDER_PREFIXES`）：
     # `qwen*` → DashScope、`doubao*` → 火山方舟、`deepseek*` → DeepSeek 官方 API。
     # 下面这几个缺省值因此不只是"型号名"，它们同时**选定了厂商**。
@@ -79,6 +85,7 @@ def build_real(
     # ——"传 Qwen 型号名给 verify 会 404"那种事现在在装配期就变成 `ValueError`，
     # 因为型号名前缀与厂商类必须配套这件事已经由表保证。
     reviewer: Reviewer | None = None,
+    reviewer_url: str | None = None,
     config: str | Path | None = None,
 ) -> tuple[RunHarness, WorldMcpTool]:
     """装配真实链路；返回 `(harness, game)`。
@@ -95,12 +102,9 @@ def build_real(
     （缺省 = 启动目录下的 `tracelog/`，`trace_root` 可改），外部要读账一律经
     `deps.trace`。
 
-    `reviewer`：人与图之间的那扇门（**同步接口**，控制台实现会阻塞读 stdin）。
-    不传 → `NullReviewer`（没人插话、没人推翻）。不传而无头是一个正常场景
-    （测试、CI、无头批量跑），不是缺配置。
-
-    `live_feed_url`：人在环后端地址（`ws://host:port`）；给了就把每笔账顺手推给网页实时看
-    （`TraceTool.build` 里包一层 `LiveFeedTrace`）。None = 不推。
+    `reviewer` 显式实例优先；否则按 reviewer_url、REVIEW_LINK_URL 环境变量、
+    config.REVIEW_LINK_URL 的顺序选地址，有地址就接 RemoteReviewer 并注入 trace.flush。
+    无地址保持 NullReviewer（测试、CI、无头批量跑），不是缺配置。
 
     `trace_backend`：`langfuse`（本机自托管服务，选它时**启动前先打健康检查探针**，
     服务没起当场报错不进 run）或 `local`（落本地 JSON）；langfuse 不写本地事件副本。
@@ -171,7 +175,6 @@ def build_real(
         # trace_root 仅对 local 后端生效——langfuse 传了会被 TraceTool.build 拒收（335）。
         trace_root=trace_root if trace_backend == "local" else None,
         branch=branch,
-        live_feed_url=live_feed_url,
         backend=trace_backend,
     )
 
@@ -245,7 +248,15 @@ def build_real(
         deadline=deadline,
     )
 
-    reviewer = reviewer or NullReviewer()
+    reviewer_url = reviewer_url or env_str("REVIEW_LINK_URL") or REVIEW_LINK_URL
+    if reviewer is None:
+        reviewer = (
+            RemoteReviewer(
+                reviewer_url, flush=trace_tool.flush, lost_timeout_s=REVIEW_LINK_LOST_TIMEOUT_S
+            )
+            if reviewer_url
+            else NullReviewer()
+        )
 
     # `interaction` 那个"在这里先落实成一个真实例"的步骤已删（0914 控制台改造）：
     # 跨线程信箱整套下线，取而代之的是 `reviewer`/`planner` 两个同步接口——
@@ -257,8 +268,6 @@ def build_real(
     # `plan`（插话）与 `review`（审）两处——人对 plan 那一版说的话和审时的表态
     # 走的是同一扇门。
     #
-    # **`reviewer` 不传就装配成 Null 实现**（0914 控制台改造）：
-    # 无头 run 的语义是"LLM 出什么就是什么、没人插话也没人推翻"。
     # plan 位置的规划来源是 brain 本身（0922 第 184 条撤销 `planner` 壳，
     # 185 起注入的就是能力对象）：`plan_run` 格直接调注入的 `planner`。
     # task 层容器先行（第 181 条）；routes 表已随 186 删除——按 kind 选 provider
@@ -304,6 +313,7 @@ def build_real(
         verifier=task_brain.verifier,
         task_summarizer=task_brain.task_summarizer,
         trace=trace_tool,
+        reviewer=reviewer,
         checkpointer=checkpointer,
     )
     episode_rt = EpisodeRuntime(

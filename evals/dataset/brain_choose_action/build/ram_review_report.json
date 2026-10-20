@@ -1,0 +1,29 @@
+{
+  "reviewed": 258,
+  "verdicts": {
+    "local_supported": 98,
+    "goal_conflict": 38,
+    "insufficient_evidence": 120,
+    "outside_scope": 2
+  },
+  "local_supported_scenes": {
+    "walk": 24,
+    "shop": 12,
+    "battle_menu": 21,
+    "shop_items": 13,
+    "battle": 9,
+    "dialog": 19
+  },
+  "full_action_set_verified": 0,
+  "formal_evaluation_ready": false,
+  "blockers": [
+    "RAM 能证明输入状态和局部下一键，不能证明所有脚本参数的行为及完整策略正确性",
+    "当前 ActionMatcher 仅支持参数子集相等，不能表达推进预算等参数的有效范围",
+    "原始多段按键输出与 task 只执行首段一次的评分口径仍需明确",
+    "旧批次采集代码版本限制保留，start_menu 与失败反馈/知识覆盖仍缺失"
+  ],
+  "superseded": true,
+  "valid_for_annotation": false,
+  "superseded_by": "history_review_report.json",
+  "superseded_reason": "旧审核只核当前 RAM，遗漏已有完整历史，不作为最终标注依据。"
+}

@@ -1098,6 +1098,8 @@ def review_inject(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "answered": str(mark.answered).lower(),
             "by": mark.by,
             "wait_s": f"{mark.wait_s:.3f}",
+            "capped": str(mark.capped).lower(),
+            "round": str(mark.round),
         },
     )
 
@@ -1119,6 +1121,8 @@ def review_audit(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             "answered": str(mark.answered).lower(),
             "by": mark.by,
             "wait_s": f"{mark.wait_s:.3f}",
+            "capped": str(mark.capped).lower(),
+            "round": str(mark.round),
         },
     )
 

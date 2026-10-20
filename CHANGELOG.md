@@ -1,13 +1,3 @@
-## 2026-10-20（561）—— world 单元测试 CP5：mcp 迁移清单重新分类
-
-**改了什么**：两个 mcp 测试文件共 9 处 docstring 去掉开头的 `【待迁 world 线】` 标注——`test_mcp_world_server.py` 五处（`step` 唯一按键口、未移动时 `moved=False`、扁平命名空间掩码、内存观测经信封、`read_wram` 逐字节相同），另一处 `test_reset_passes_start_state_only_when_supplied` 的 docstring 原本只有该标注，补全为“start_state 只在传入时转发给 world（base64 解码），并占住租约。”；`test_mcp_script_tools.py` 三处（`walk_to_adjacent` 参数转发、`blocked` 是合法结局码、`buy_item` 全链路）。用例集合与断言零变化：`pytest --collect-only tests/mcp_servers` 改动前后各 41 条节点 ID，逐字相同。
-
-**为什么这么改**：设计侧核对后确认这 9 条断言的是服务端壳——信封 `ok/code/data/events`、租约、`state_base64` 解码与转发——逻辑在 `pokemon_agent/mcp_servers/world_server.py`，不在 `pokemon_agent/world/`。它们依赖的 world 侧逻辑（`moved` 判定、动作空间掩码、场景感知、脚本结算、读 WRAM、reset 起点）已由 CP1–CP4 与既有 `tests/world/` 覆盖，标注已失效，且会误导后续去“迁移”它们。
-
-**取舍**：按 spec 第九节的裁决——mcp 保留服务端契约、world 保留具体逻辑——不搬文件、不删用例、不改任何断言；字面迁移会让用例丢掉原本断言的内容，或迫使 `tests/world/` 反向依赖 `mcp_servers`。`tests/mcpclient/world_tool/` 测的是客户端装配（`WorldMcpTool`），归另案，本轮不动。`docs/` 与 intent 的同步由设计侧完成，本提交不含文档改动。
-
-**影响面**：仅两个测试文件的文档字符串，生产代码零改动（`git diff -- pokemon_agent/` 为空）。全量 junit 计数 1575 → 1575，failures / errors / skipped 均为 0，耗时 64.6 → 60.0 秒；`tests/world/` 241 项、`tests/mcp_servers` 41 项不变。`ruff check .` 与 `ruff format --check .` 全绿。本检查点没有生产代码改动，按 spec 9.4 不做破坏验证。
-
 ## 2026-10-20（563）—— world 单元测试 CP4
 
 **改了什么**：新增五个测试文件，覆盖 world 线的物体事件、地形精灵、单帧装配、静态表与模拟器入口前置检查——`test_world_object_events.py` 13 个函数 / 27 项（`press_cells` 四个朝向各返回脚下格与该方向邻格、a 对人有对话与 still 两种结局、隔柜台时优先 nearer person、走进物品格按 dialog / still 分派、a 不拾取物品、进门的停在门格不产事件与跨图记 warp、踩在门格朝外按方向记 warp / still、六种非交互（连按两次、先转向、无 actor、无 after、b 键、巨石）均空、`observe_step` 用真实 landmarks 出 dialog / still、移动并拾取时 moved=True、石地标不产事件、多段链只报 moved、settle=False 原样透传）；`test_world_terrain_map.py` 3 个（可见精灵的四类符号与空槽不标记、隐藏槽 1 后只剩 I 与 N、视野外的巨石被裁掉）；`test_world_task_perception.py` 5 个（地图未稳定时省略位置与地形、稳定帧逐字段对应素材并透出 closed→done、帧 PNG 与 `decode` 读数接线、商店视图 `ShopItemsView` 的名与价、战斗双方八个 `my_*`/`foe_*` 字段）；`test_world_tables.py` 4 个 / 11 项（三张表的地图键与 `_source`/`_note` 溯源、41/42/40 的门与 12 的两条边缘出口、商店与中心三种图的 clerk / stand 站位、六个服务图的 tileset 对应）；`test_world_pyboy_world_prechecks.py` 9 个 / 12 项（存档与 ROM 缺失在构造前失败、`max_steps` 非正被拒、三个入口 before-reset、关门后拒绝 step、整条动作链先校验后执行、`evolve` 负帧、`load_state` 空字节、overlay 按钮属于动作命名空间）。34 个函数展开为 58 个 pytest 项。
@@ -28,6 +18,273 @@
 
 **影响面**：仅新增测试，生产代码零改动。`tests/world/` 现 183 项、耗时 1.63 秒；全量 junit 计数 1496 → 1517，failures / errors / skipped 均为 0。`ruff check .` 与 `ruff format --check .` 全绿。
 
+## 2026-10-20（561）—— world 单元测试 CP5：mcp 迁移清单重新分类
+
+**改了什么**：两个 mcp 测试文件共 9 处 docstring 去掉开头的 `【待迁 world 线】` 标注——`test_mcp_world_server.py` 五处（`step` 唯一按键口、未移动时 `moved=False`、扁平命名空间掩码、内存观测经信封、`read_wram` 逐字节相同），另一处 `test_reset_passes_start_state_only_when_supplied` 的 docstring 原本只有该标注，补全为“start_state 只在传入时转发给 world（base64 解码），并占住租约。”；`test_mcp_script_tools.py` 三处（`walk_to_adjacent` 参数转发、`blocked` 是合法结局码、`buy_item` 全链路）。用例集合与断言零变化：`pytest --collect-only tests/mcp_servers` 改动前后各 41 条节点 ID，逐字相同。
+
+**为什么这么改**：设计侧核对后确认这 9 条断言的是服务端壳——信封 `ok/code/data/events`、租约、`state_base64` 解码与转发——逻辑在 `pokemon_agent/mcp_servers/world_server.py`，不在 `pokemon_agent/world/`。它们依赖的 world 侧逻辑（`moved` 判定、动作空间掩码、场景感知、脚本结算、读 WRAM、reset 起点）已由 CP1–CP4 与既有 `tests/world/` 覆盖，标注已失效，且会误导后续去“迁移”它们。
+
+**取舍**：按 spec 第九节的裁决——mcp 保留服务端契约、world 保留具体逻辑——不搬文件、不删用例、不改任何断言；字面迁移会让用例丢掉原本断言的内容，或迫使 `tests/world/` 反向依赖 `mcp_servers`。`tests/mcpclient/world_tool/` 测的是客户端装配（`WorldMcpTool`），归另案，本轮不动。`docs/` 与 intent 的同步由设计侧完成，本提交不含文档改动。
+
+**影响面**：仅两个测试文件的文档字符串，生产代码零改动（`git diff -- pokemon_agent/` 为空）。全量 junit 计数 1575 → 1575，failures / errors / skipped 均为 0，耗时 64.6 → 60.0 秒；`tests/world/` 241 项、`tests/mcp_servers` 41 项不变。`ruff check .` 与 `ruff format --check .` 全绿。本检查点没有生产代码改动，按 spec 9.4 不做破坏验证。
+
+## 2026-10-19（552）—— 统一 Git 文本行尾为 LF
+
+**改了什么**：配置 Git 将仓库文本文件统一检出为 LF，并规范化现有文本文件；冻结 JSONL 继续按原始字节保存。
+
+**为什么这么改**：消除 Windows 与其他平台的行尾差异，避免普通文本 diff 噪声和冻结数据哈希漂移。
+
+**取舍**：二进制文件由 Git 自动识别；明确标记的冻结 JSONL 不做任何文本转换。
+
+**影响面**：仓库 Git 行尾策略及现有文本文件的字节表示，不改变文件语义。
+
+## 2026-10-19（551）—— 保留 choose 审阅草稿原始行尾
+
+**改了什么**：将 choose 的历史审阅 JSONL 设为原始字节文件，保留与冻结数据逐字节相同的内容。
+
+**为什么这么改**：冻结校验测试会逐字节比较历史审阅产物与 v1 数据；Windows 行尾转换会使内容虽等价但比较失败。
+
+**取舍**：只固定该审阅产物的 Git 文本属性，不改标签或数据。
+
+**影响面**：仅 Git 属性、审阅数据字节与变更日志。
+
+## 2026-10-19（550）—— 冻结 choose JSONL 保留原始字节
+
+**改了什么**：将 choose v1 的冻结 JSONL 标记为不做行尾转换，并恢复与数据清单一致的原始字节。
+
+**为什么这么改**：Windows checkout 会把 LF 改成 CRLF，导致加载器按 SHA-256 校验冻结数据时失败。
+
+**取舍**：只对两份冻结 JSONL 关闭 Git 文本转换，不改变数据内容或评测逻辑。
+
+**影响面**：仅 Git 属性、冻结数据字节与变更日志。
+
+## 2026-10-18（549）—— brain_choose_action CP4：冻结完整历史数据并接入离线评测
+
+**改了什么**：冻结用户批准的 189 条完整 choose 请求，新增数据指纹与覆盖说明；登记第六个公开任务，同步任务文档和冻结测试。
+
+**为什么这么改**：以实际 task choose 输入隔离衡量动作选择，保留同 task 历史，与已核对的 judge 输入对齐。
+
+**取舍**：覆盖实际六类场合，start_menu 留缺口；助手审核保持 rule 来源，67 条排除和 2 条范围外记录保留，原采集版本限制不隐去。评测仅重放 choose，不执行动作。
+
+**影响面**：仅评测代码、数据、测试与文档；不改生产代码。真实模型运行按用户本次授权执行。
+
+## 2026-10-18（548）—— brain_choose_action CP3：录制 choose 信封并提供本机采集入口
+
+**改了什么**：新增 RecordingChooser，先落请求再转发，保存完整成功响应或异常摘要与调用账；
+返回值、异常对象原样透传。新增 collect 命令，沿用 build_real，经 MCP 绑定原始 .state，
+仅包装 task chooser，按 --steps 设置全局动作预算，保留配置、trace、快照与结算。
+
+**为什么这么改**：CP0 发现冻结帧中经人工核对且带 WRAM 的 walk、dialog、start_menu
+数量不足；先提供 B 路采集工具，让用户从真实单步现场补足数据并保留跨步记忆。
+
+**取舍**：本检查点先于 CP1、CP2，不注册任务、不造冻结数据。采集仅由用户显式运行，
+要求独立的空 memory server 与新输出目录；不清库、不删文件、不覆盖已有录制。
+串行录制，已有编号后追加；落异常摘要失败时将写入错误附到原异常，不替换原异常。
+
+**影响面**：仅评测录制器、数据生产入口与假依赖测试；pokemon_agent/ 与现有装配不变。
+测试覆盖生产信封往返、对象身份、调用顺序、编号追加、碰撞保护、预算与状态绑定、
+异常退出归还租约及双重异常保留；本次不运行采集、不调用真实模型或模拟器。
+
+## 2026-10-18（547）—— brain_choose_action CP2：从真实 task choose 现场生成六类未审草稿
+
+**改了什么**：新增 from_capture 与 prelabel，读取原始生产请求及同帧感知 / RAM 旁证，
+核对目标、场合、文字、帧存在与动作空间。原批次 185 条，加用户授权的四起点补采 73 条，
+共 258 条审核索引与 84 条规则候选草稿；172 条待人工标注，另有 2 条 bag 仅存档。
+walk / shop / battle_menu / shop_items / battle / dialog 分别有 103 / 65 / 30 / 16 / 12 / 30 条，
+规则草稿分别为 15 / 24 / 0 / 5 / 10 / 30 条，不为未定记录猜测 acceptable。
+
+**为什么这么改**：用户要求从 20 份原始冻结 state 重跑实际 task choose 链路，保证观测、
+动作说明与实际 choose 同口径；旧冻结帧手工装配不能替代真实请求。规则只读请求和感知证据，
+不读取采集模型的响应或执行动作，避免把被评模型自己的选择当作真值。
+
+**取舍**：按用户裁定改为实际六类、B 路现场，不造 start_menu 或按旧配额补样本。
+无选项文本推进、唯一坐标的可见普通地面路径、明确已到位菜单确认仅产生未审候选；
+battle_menu 全部人工标，脚本替代、门 / 台阶 / 屏外路线、数量框和候选集合完备性均需人工审核。
+不存在 cases.jsonl，不注册任务，不运行真实评测。用户接受以 73463bb 为新基线继续，
+但无法证明采集全过程代码版本未变化；该限制逐条保留在草稿和审核索引。
+
+**影响面**：仅数据生产工具、草稿、审核索引与测试；pokemon_agent/ 零改动，不提交。
+start_menu 无覆盖；知识、task_index、失败反馈覆盖缺失，带记忆现场不能自动等同于答案在记忆中。
+RAM 解码可核对输入事实，不能独立证明策略最优；需人工逐条审完才可冻结并进入 CP4。
+
+用户授权补采沿用每次 60 动作、600 秒上限，四次实际执行合计 73 动作，新增 dialog 21 条、
+battle 11 条；两类不同文本由 3 / 1 段增至 12 / 9 段，重复现场保留，不当作新增文本覆盖。
+四次请求均有帧、RAM、动作说明，响应 / task 动作规范化 / 执行动作的 73 条对齐检查通过。
+护士治疗完成文本已采到，但中心运行以 budget_exhausted 结束，其余三次为 goal_done。
+新增多批次 id 前缀、来源路径与补采报告；补采首尾 HEAD 和生产源码摘要一致，保留旧批次限制。
+新增 bag 仅进索引 outside_scope，不扩张六类评测范围；本次不新增冻结文件或真实评分运行。
+
+用户随后委托助手逐条按 RAM 审核。新增 ram_review 工具、258 条显式决定、同帧 RAM / 地图 /
+布局与来源内容摘要、审核汇总，以及 build/ 下的 98 条局部按键候选，不改原始请求与原草稿。
+核对结果为局部下一键支持 98 条、目标冲突 38 条、证据不足 120 条、范围外 2 条；
+局部候选按 walk / shop / battle_menu / shop_items / battle / dialog 为 24 / 12 / 21 / 13 / 9 / 19 条。
+墙格目标、错误二维菜单方向与已满足的子任务判据单列；NPC 身份不能只凭当前文本证明，
+保留不确定性，不推断后续一定能或不能治疗 / 开交易菜单。HEAL/CANCEL 的解码是真的，
+但两条原生产场合是 bag，因此仍只存档，不改场合迁就配额。
+
+助手核对不冒充 human 标签，不将局部下一键支持说成完整动作集合已审。脚本仅列待核候选，
+尚未执行或穷尽参数；当前 matcher 的参数子集相等不能表达有效预算范围，多段原始输出与
+task 首段一次执行的评分口径也仍需明确。未生成 cases.jsonl，未进入 CP4，未调用真实模型。
+测试保证逐条覆盖、来源摘要、冲突记录不进候选、未知记录无标签，以及场外场合不能误入。
+
+上段单帧审核遗漏了已保存的历史，用户指出后撤销其作为最终标注依据的资格；
+ram_review_report 明确标为 superseded，旧文件只作历史留存。新增 history_context / history_review，
+从完整生产请求恢复本 task 全部动作、前后观测与截图，不裁剪成当前帧；逐条检查 task/run/episode
+身份、真实步号与历史末态，拒绝未来证据。190 条带历史现场的 judge prompt 和去重图片与
+choose 之前同格真实 judge_call 完全一致；68 条无本 task 历史，不从别的 task 补造。共核对
+810 条动作记忆，全部保留前后帧；对 12 个有歧义的现场另做首态 / 历史末态 / 当前截图对照。
+
+完整历史重标 258 条：189 条可用（walk 56、shop 48、battle_menu 30、shop_items 16、battle 9、
+dialog 30），67 条排除（含 22 条无法可靠定案的目标），2 条 bag 只归档；每条有明确处置和
+历史引用。105 条可用样本包含脚本 matcher，按原始签名与目标参数核对，不把脚本默认判错。
+例如 FIGHT→PKMN 的已有历史使 RUN 的剩余方向为 down；已进新图、已投球等旧子目标单列排除。
+用可用集合更新 cases_draft，原始规则草稿另存 legacy；完整历史证据、标注与汇总在 build/。
+label_source 保持 rule 并注明助手完整历史审核，不冒称 human；没有生成 cases.jsonl 或注册任务，
+没有再次调用真实模型、模拟器或执行脚本。选择脚本的语义匹配仍按原有子集契约，不保证运行结果。
+
+## 2026-10-18（546）—— brain_choose_action CP1：建立单步决策数据契约与确定性评测骨架
+
+**改了什么**：新增数据集 schemas / loader / 出口，以及 compare、solver、cases、scorer
+和命令行入口。冻结生产 choose 请求，单独保存非空可接受集合；读取缺失或重复 id 明确报错。
+入口支持模型覆盖、场合 / 标签 / id 筛选及线程池，模型配置缺键与未知筛选项当场报错。
+
+**为什么这么改**：将单步选错、解析耗尽和越权分开衡量，避免只能从整局成败间接判断。
+acceptable 按键链逐段命中并检查次数，脚本按名称与参数子集匹配；parsed 统计是否有动作，
+legal 只检查 world 原始 mask，解析失败不进 legal 分母；提供者不可达不进任何评分分母。
+
+**取舍**：v1 仍限定 walk / dialog / start_menu / battle_menu，不做动作执行验证或 LLM 判分。
+CP1 只用假 chooser 与手造样本，不注册任务、不创建冻结 cases.jsonl；人工审核与用户采集
+保留为后续检查点。生产失败账的 error 同时覆盖输出与传输失败，依据 error_kind 区分；
+DeepEval 用例仍按约定携带 additional_metadata，指标读取其当前 metadata 别名以免触发弃用提示。
+
+**影响面**：只新增评测与读取代码及测试，保留已验收的 CP3，pokemon_agent/ 零改动。
+32 项新增测试通过；原生 DeepEval 假现场四例的整体通过率为 25%，acceptable / parsed
+分母为 4，legal 为 3，标签组仅包含对应现场。全量验证结果以本检查点汇报为准。
+
+## 2026-10-19（545）—— 冻结 judge JSONL 保留原始字节
+**改了什么**：为 brain_goal_judge v1/v2 冻结 JSONL 关闭 Git 行尾转换，并恢复与提交对象一致的文件字节。
+**为什么这么改**：Windows 的 autocrlf checkout 会把 JSONL 的 LF 转成 CRLF，使清单中的 SHA-256 校验失败。
+**取舍**：只对两份冻结 JSONL 使用 `-text`，确保跨平台检出时字节哈希稳定。
+**影响面**：新增 Git 属性与变更记录；不改变数据内容、评测逻辑或生产代码。
+
+## 2026-10-19（544）—— reviewer 重写预算与 PyBoy 按键等待收敛
+
+**改了什么**：episode 规划按剩余拆解额度限制 reviewer AI 可触发的重写轮数；PyBoy 保留每键后的 60 帧推进，并移除其后额外固定推进的 600 帧。
+
+**为什么这么改**：AI reviewer 原可要求三轮重写，但 episode 默认只允许两次拆解，导致已生成的任务在登记前耗尽额度；每键后的一秒推进有助于动作连贯，额外 10 秒尾等会造成明显停顿。
+
+**取舍**：达到可用额度上限后的 AI 意见仍记账，但不再触发新一轮模型调用；长过场交由后续感知与决策继续推进，不额外固定等待。
+
+**影响面**：只影响 episode 的 reviewer 插话重试上限，以及 PyBoy 世界的按键帧间隔和动作后等待，不改变工具接口。
+
+## 2026-10-19（543）—— PyBoy 窗口：服务空闲时持续处理 SDL 消息
+
+**改了什么**：world MCP lifespan 启动同线程的定时事件泵，服务空闲时每 50 毫秒处理一次 PyBoy 窗口事件，并在服务退出时取消任务。
+
+**为什么这么改**：逐帧事件泵只在模拟器动作期间运行；MCP 等请求时主事件循环空闲，Windows 会把没有处理窗口消息的 PyBoy 标记为“未响应”。
+
+**取舍**：定时器复用 MCP 的 asyncio 主线程，避免跨线程调用 SDL；继续丢弃物理按键，游戏动作仍只经 MCP 下发。
+
+**影响面**：仅影响 world MCP 进程中 PyBoy 窗口的空闲期消息处理。
+
+## 2026-10-19（542）—— PyBoy 窗口：独立泵送 SDL 系统事件
+
+**改了什么**：watch 模式逐帧轮询 SDL 事件，保留窗口关闭处理并丢弃物理按键事件。
+
+**为什么这么改**：PyBoy 的 `no_input=True` 会跳过其窗口事件处理；模拟器内部帧虽持续更新，原生窗口却缺少 SDL 事件泵，可能无法响应 Windows 刷新与关闭消息。
+
+**取舍**：仅在可视模式载入 SDL 并消费事件，键盘输入仍不进入游戏；无窗口模式不依赖 SDL。
+
+**影响面**：只影响 `PyBoyWorld(watch=True)` 的窗口消息处理与关闭检测。
+
+## 2026-10-18（541）—— reviewer 终端：增加直接采纳 AI 提案命令
+
+**改了什么**：新增 `accept-ai`，供人工在倒计时内直接提交当前 AI 提案；按插话与审问类型展示对应说明。
+
+**为什么这么改**：人工需要区分“采纳 AI 答复”和 `ok` 的人工空意见 / 人工认账语义，避免只能等待倒计时或手动重输提案。
+
+**取舍**：采纳后答复来源记录为 human，表示最终提交由人工确认；倒计时自动提交仍记录为 agent。
+
+**影响面**：仅影响启用人工席时的 reviewer 命令与提案等待窗口。
+
+## 2026-10-18（540）—— reviewer 终端：按问题类型说明提案操作
+
+**改了什么**：AI 提案下方按插话或审问分别展示有效命令，并说明倒计时结束会自动提交 AI 答复。
+
+**为什么这么改**：原提示把 `ok`、`overturn`、`say` 一概称作接管，容易让人误以为它们对所有问题都有效，也没有说明 `ok` 在插话中提交空意见。
+
+**取舍**：保留原命令与倒计时逻辑，仅改终端引导文案。
+
+**影响面**：只影响人工席展示 AI 提案时的操作说明。
+
+## 2026-10-18（539）—— reviewer 终端：以可读文本展示 AI 提案
+
+**改了什么**：插话提案在人工终端显示正文；审问提案显示认账或推翻及理由，不再显示 JSON 信封和转义字符串。
+
+**为什么这么改**：原终端把模型答复序列化为默认 ASCII JSON，中文变成 `\\uXXXX`，人难以阅读。
+
+**取舍**：仅改变展示文本，AI 答复仍通过原来的 Pydantic 结构提交与校验。
+
+**影响面**：仅影响双席 reviewer 的 AI 提案展示。
+
+## 2026-10-18（538）—— world 窗口：服务启动时显示配置存档
+
+**改了什么**：world MCP 以 `--watch` 和 `--state-file` 启动时，在开始监听前先把配置存档载入可视窗口。
+
+**为什么这么改**：PyBoy 构造时只载入 ROM，旧流程要等 harness 第一次 reset 才载入存档；启动等待期间窗口一直黑屏。
+
+**取舍**：启动预览只初始化显示；实际 run 仍会在自己的 reset 中重新加载同一份起点存档。
+
+**影响面**：仅影响带可视窗口和 state-file 的 world MCP 启动；无窗口或无存档的路径保持原样。
+
+## 2026-10-18（537）—— reviewer AI 提案：拒绝空插话答复
+
+**改了什么**：AI reviewer 的插话输出改用非空文本 schema；提示词要求结合当前问题给出具体建议，无需修改时明确说明依据。
+
+**为什么这么改**：旧提示允许 AI 用空文本表示“无建议”，导致双席复核窗口只显示空提案，无法帮助人判断。
+
+**取舍**：无修改意见时由 AI 提供简短、可核验的继续建议；空输出会按结构化校验失败重试。
+
+**影响面**：只影响 AI reviewer 的插话提案；审问结论与人工空答复行为不变。
+
+## 2026-10-18（536）—— 测试装配：移除需要厂商凭据的判定器构造用例
+
+**改了什么**：从公开 Inspect 任务装配测试中移除 `brain_goal_judge` 参数，只保留无需模型凭据的 agent 任务装配断言。
+
+**为什么这么改**：该用例只验证任务对象构造，却通过生产 `BrainTool` 初始化真实 provider，导致干净环境必须提供厂商 API key；API key 不应成为离线结构测试的前置条件。
+
+**取舍**：不再由这个通用数据集测试验证 `brain_goal_judge` 的 Task 装配；模型调用仍由专门的判定器测试与真实评测链路验证。
+
+**影响面**：只删除一项测试参数，不改运行代码、数据集或评测行为。
+
+## 2026-10-18（535）—— reviewer 合并验收：限制 MCP 到兼容的 1.x
+
+**改了什么**：将 MCP 依赖范围收紧到 `>=1.0,<2`，并重锁依赖；隔离合并验收时发现 MCP 2.x 已移除项目测试与服务端仍使用的 `FastMCP` 导入路径。
+
+**为什么这么改**：依赖声明必须覆盖代码实际使用的 API。仅写 `>=1.0` 会让锁文件升级到不兼容的 2.x，导致干净环境无法收集 reviewer 测试。
+
+**取舍**：暂留 MCP 1.x，待后续专门迁移代码与测试到 MCP 2.x 后再放宽上界。
+
+**影响面**：仅约束 Python 依赖解析并更新锁文件；不改运行时行为。隔离合并树重跑 reviewer 与 harness review 测试、Ruff。
+
+## 2026-10-18（534）—— reviewer R10 真机验收：DeepSeek 图片回灌与席位模式通过
+
+**改了什么**：记录 reviewer R10 真实模型与本地链路验收结果。DeepSeek `deepseek-flash` 完成工具选
+择、`read_brain_frames` 图片回灌与结构化提交；独立校验器触发的输出参数纠正成功；human、ai、both
+三种席位均通过本地 WebSocket 单问往返。
+
+**为什么这么改**：R7a/R7b 的官方契约核查和假模型测试不能代替所选账号的真实接口结果；验收项须以
+实际请求和返回为准，才能判断新席位是否可运行。
+
+**取舍**：使用 `.env` 中的密钥，但只在临时 uv 环境中安装 Pydantic AI，不打印密钥；只发合成审问，
+不启动游戏长跑。三模式 WS 验收使用隔离的只读查询门面，没有连接共享 trace / memory 服务，因此
+不代表这两个后端的线上可见性验收。
+
+**影响面**：只更新 reviewer 规范与计划，不改运行代码或存档结构。图像工具返回 2 次模型请求均为
+HTTP 200，结构化答复识别出红色，usage 为 5492 输入 / 148 输出 token；同提示带图 / 不带图输入为
+211 / 27 token。参数纠正经 2 次请求、2 次提交调用成功。human=`human`、ai=`agent`、both 展示 AI
+提案并由 human 接管，`answered=true`；真实模型结果已完成，不合入 main、不推送。
+
 ## 2026-10-18（533）—— world 场景与菜单补 19 个用例函数（CP2）
 
 **改了什么**：新增四个测试文件，覆盖 world 线的场景与菜单四组纯函数——`test_world_scene.py` 8 个（全屏 `0x7F` 是过场、第一行连续十六块 Logo 是标题、`(0,10)…(15,19)` 完整空框是开始菜单且 `empty_menu_frame(tiles, 0, 10, 15)` 为真、屏上 `A B C D E F G H I` 是命名键盘、战斗中光标在 FIGHT 的 2×2 菜单是 `BATTLE_MENU`、`at_start` 在 FIGHT 上为真、光标移到 ITEM 上为假、`at_start` 对普通场合触发 `AssertionError`）；`test_world_screen_menu.py` 3 个（竖排三项逐行读出 `POKEMON / ITEM / SAVE` 且光标格为 `(0, 0)` 并判定覆盖、光标移到第二项报 `(1, 0)`、战斗 2×2 读出 `[["FIGHT", "PKMN"], ["ITEM", "RUN"]]`）；`test_world_priced_menu.py` 4 个（无 `MONEY` 标题返回空表、`MONEY ¥300` 屏读出 `[("POTION", "¥300"), ("CANCEL", "")]`、框内只有一项被 `len(items) >= 2` 拒绝、框内出现 `0x79–0x7E` 边框图块被拒绝）；`test_world_battle_status.py` 4 个（`wIsInBattle` 为 0 返回 None、双方名字等级与大端 HP（`0x0123` → 291）与状态缩写、名字遇 `NAME_END` 截止、`status_abbr` 六个状态位参数化 6 项）。19 个函数展开为 24 个 pytest 项。假件沿用 spec 第六节开头：`Mem` 是字典式内存（未写地址读 0），屏幕 tile 从 `W_TILEMAP` 起写，文字按 `CHARMAP` 反查写入，菜单框内空白为 `0x7F`；不起模拟器、不读 ROM、不发网络请求、不用 `MagicMock`、不测 `_` 开头的私有成员。
@@ -38,6 +295,112 @@
 
 **影响面**：仅新增测试，生产代码零改动。`tests/world/` 现 162 项、耗时 1.22 秒；全量 junit 计数 1472 → 1496，failures / errors / skipped 均为 0，耗时 60.8 → 61.0 秒。`ruff check .` 与 `ruff format --check .` 全绿。
 
+## 2026-10-18（532）—— 精确化 brain_goal_judge CP2 输入与文件范围
+**改了什么**：在评测计划中列明 CP2 的只读来源、允许改动文件、与并行分支的 CHANGELOG 交集，以及两批原始采集文件清单摘要。
+**为什么这么改**：执行方需要在单一 worktree 内复现候选核对，并能验证输入来源完整且未被改写。
+**取舍**：采集原件保留为本机未跟踪评测数据；CP2 只生成待人工审阅材料，不创建冻结 v2。
+**影响面**：仅评测计划与协作记录；不改生产代码、冻结 v1 或任务注册。
+
+## 2026-10-18（531）—— reviewer R7 AI 席：接入只读工具与三种席位模式
+
+**改了什么**：新增进程内 DeepSeek / Pydantic AI 席、四个类型化只读查询工具、结构化答复、
+超限后的提交专用收尾、单轮总时限与取消；ReviewerApp 支持 human、ai、both，both 提供
+30 秒接管窗口与 ask-ai 讨论。AI 仅在 reviewer optional extra 中装载，配置沿用独立 reviewer
+密钥、模型与 API 地址。Hub 增加 AI proposal 与 `by=none` 默认结算。
+
+**为什么这么改**：新 reviewer 的核心链路已切换为单跳 WS 与 human 入口，R7 要补回审核席能力，
+同时把模型限制在当前问的 ViewQuery 上，避免它修改记忆、trace 或运行状态。
+
+**取舍**：DeepSeek 官方文档确认图像输入、工具调用和关闭 thinking 的请求字段；Pydantic AI
+2.57.0 文档表明静态 `tool_choice="required"` 会排除输出工具，因此使用包含四个查询工具与
+`final_result` 的白名单。共享解释器未安装 optional extra，也未发送真实模型请求；账号级图像、
+工具回灌与用量仍须按探针在用户本机验收，不将文档核查记作真机通过。human+AI 倒计时内人的
+答复先到先得；模型失败时人席继续等待，ai-only 使用 `by=none`。
+
+**影响面**：改 reviewer 入口、应用、Hub、AI 席、交互 schema、配置、依赖包数据、测试与 reviewer
+规范；不改 brain、memory、trace Port 或 harness 线上信封。reviewer 测试 163 passed；全仓默认
+pytest 1592 passed / 3 deselected，慢测 3 passed；ruff check 通过、ruff format 674 文件未改；
+`uv lock --check` 通过；`state_schema_hash()` 保持 `28e96b09966dc94e`。真实模型探针待用户本机验收。
+
+## 2026-10-18（530）—— reviewer R7 依赖准备：锁定独立 AI 席环境与探针版本
+
+**改了什么**：将 `pydantic-ai-slim[openai]` 以精确版本 2.57.0 加入 `reviewer` optional extra，
+更新 `uv.lock`，并准备一次性 DeepSeek 探针脚本。脚本使用项目现有 `DEEPSEEK_API_KEY`，
+检查图像与 tools、结构化提交、校验纠正、用量和模型参数，不打印密钥。
+
+**为什么这么改**：R7 规范要求 Pydantic AI 只随独立 reviewer 运行，不能进入 run 侧；
+在接入 AI 席前也必须由所选模型验证真实工具调用与图像路径。固定版本让探针与实现使用同一 API。
+
+**取舍**：依赖放 optional extra `reviewer`，默认 run 环境不安装；共享虚拟环境未安装新包。
+探针脚本暂存在被忽略的 `.pytest_tmp/`，按规范不进仓库；须在用户本机、凭据可用时执行，
+完成前不按探针通过处理。
+
+**影响面**：新增 reviewer 运行 extra 与锁文件条目，不改默认依赖集、运行时模块或持久状态。
+`uv lock --check` 通过；模型请求与 AI 席实现留待探针结果后进行。
+
+## 2026-10-18（529）—— reviewer 清退旧栈：统一独立进程链路与展示验收
+
+**改了什么**：删除旧控制台、网页后端、实时推送及跳 A/B 信封，移除 build_real、
+TraceTool.build 和测试工厂的 live_feed_url 参数及两项旧等待常量。依赖旧后端信封的
+旧 AI 进程、跳 C 信封与测试同步删除。来源标签与落盘账断言保留，上下文测试转向
+当前 reviewer 的 context_sections / context_text；旧渲染仅留下 harness 记账消费的结论标签。
+历史设计文档加停用说明，当前计划同步清理边界。
+
+**为什么这么改**：R6b 的单跳 WS 与独立 human 入口已经通过真实链路验收，保留旧栈会
+继续暴露两套装配与传输方式；只删后端则让旧 AI 模块留下断裂导入。展示验收应覆盖实际
+运行入口，避免测试继续保活已经没有调用方的旧实现。
+
+**取舍**：将原排在 R7 的旧 AI 删除提前作为关联清理，不保留兼容信封；新 AI 席、
+依赖与模型探针仍留给 R7。实时展示日后可从 Git 历史恢复，旧文档正文作为历史保留。
+本次不新增依赖，不改持久状态，不重打存档。
+
+**影响面**：旧入口与 live_feed_url 不再可用，现有复核使用独立 reviewer + RemoteReviewer。
+默认全量 1587 项、slow 3 项与 ruff 通过；删除 34 项旧实现测试，迁移后的语义断言保留。
+迁移后的表去重与索引限展测试经两次破坏验证均能拦截，恢复后源码哈希一致。
+状态哈希保持 28e96b09966dc94e；main 未修改，未合入、未推送。
+
+## 2026-10-18（528）—— 精确化 judge 数据包迁移文件范围
+**改了什么**：明确 CP1 迁移旧 v1 数据文件的源、目标路径及 SHA-256 核对要求。
+**为什么这么改**：执行方需要知道数据迁移会移除哪一份旧位置文件，避免双份真源或误删其他数据。
+**取舍**：保持 v1 文件内容原样，只移动归属；保留现有评测入口并将读取导向新数据包。
+**影响面**：只修订评测计划和后续检查点编号；不改实现、冻结数据或生产代码。
+
+## 2026-10-18（527）—— 默认运行 brain_goal_judge v2 并同步评测目录
+**改了什么**：Inspect task 默认读取 257 条 v2，仍允许显式选择 v1 四条例子；补回归测试并更新注册目录、任务清单与评测文档。
+**为什么这么改**：v2 已冻结并通过 CP3 验收后，默认评测应使用扩展样本，同时保留 v1 契约样本的可运行入口。
+**取舍**：CP4 计划原写“task 数从 5 增至 6”，但基线 registry 已包含 `brain_goal_judge`，本次扩容没有新增 task 名；因此按实测保持 5 个公开任务，不重复注册或创建无关任务。本次不运行真实模型。
+**影响面**：仅评测 task 默认值、注册目录说明、测试、评测文档与 CHANGELOG；不改生产代码、提示词、provider 或冻结数据。
+
+## 2026-10-18（526）—— 冻结 brain_goal_judge v2 并实现分组评分（CP3）
+**改了什么**：冻结 257 条完整 judge 请求到 `evals/dataset/brain_goal_judge/v2/`，逐条保留 request hash、来源坐标和标签证据；使用确定性历史裁定规则检查完整请求历史，为 112 条非机械样本生成独立标签，并将方法标为 `history_adjudicated`。scorer 输出总体四格、FPR/召回率/精确率/准确率及分母，并按 `goal_family`、`negative_mode` 汇总与统计唯一 task/episode。
+**为什么这么改**：judge 的早停判断需要独立真值；使用请求历史中的状态和事件证据可区分目标是否已达成，分组率与明确分母则能定位误报发生在哪类目标。
+**取舍**：`case_id` 用唯一 trace UUID，避免采集批次间展示坐标重复；完整历史规则修正了 1 条战斗结束标签与 1 条商店选项标签，20 条原无建议样本也由同一规则裁定。规则裁定不冒称独立人工复核，`human` 标签保留给未来实际逐条人审。调用错误继续由 Inspect 作为 sample error 记录，不进入混淆矩阵；零分母率在数值日志中为 NaN，并保留 0 分母，解释为 NA。原批采集版本连续性仍无法证明，补采版本 SHA 见 CP3 覆盖报告；本检查点不调用真实模型。
+**影响面**：新增 v2 冻结数据、历史裁定/冻结构建工具、评分指标与测试；保留 v1 字节不变，不改生产代码、prompt、任务注册或默认版本。
+
+## 2026-10-18（525）—— brain_goal_judge 候选核对与真值审阅草稿（CP2）
+**改了什么**：新增只读审计工具 `evals/dataset/brain_goal_judge/build/audit_candidates.py`，对 257 条候选按 `(run, episode, task, step)` 去重后重建生产 `FromHarnessToBrainToolJudgeReq`（完整 task 历史与历史帧，含每条 `before_frame`/`after_frame`），用生产 `build_prompt` 核 prompt、用 `dedup_snapshots` 逐帧哈希核图片绑定；真值只用已有机械规则（`map_changed` / `reach_map12_y14` / `dialog_opened` / `dialog_finished` / `shop_*` / `move_*` 等）在请求时刻证据上自动判定，其余样本不赋真值、只留未审定建议或标待审，逐条附结构化证据（source/locator/summary，定位到 trace 或 `step_memory` 具体文件与字段）；输出 `cp2_draft.jsonl`（257 条）、`cp2_review.csv` 与 `cp2_coverage.md`，并新增 `tests/evals/test_brain_goal_judge_audit.py`。
+**为什么这么改**：真值必须独立于模型 `done`/`why`、后续动作与 run 最终结果；只有独立机械规则能自动赋真值，其余须人工审阅，故把「请求可复原」「prompt/图片对齐」「真值可判」三者分开，逐条留下候选 ID、来源坐标、trace UUID、request 哈希与可定位证据，才能支撑后续 v2 冻结时逐条可追溯。
+**取舍**：机械标签只映射已有 `check_id`，不臆造规则或 ID；非机械样本的自动推测只落 `suggested_achieved`，不写 `truth_method="human"`、不计入真值；CP0 标待核的 67 条图片帧绑定经 `step_memory` 帧全部核验一致；析取/含糊 criteria 标待审（不降标签标准）；不创建 v2、不切换默认版本、不注册 task。实测：prompt 精确 257/257、图片帧绑定 257/257；机械判定 145（达成 30、未达成 115）、待人工审阅 112（建议 92、未能建议 20）。
+**影响面**：仅新增评测审计工具、测试与未冻结审阅草稿；不改 `pokemon_agent/` 生产代码、`v1/`、`v2/`、task/solver/scorer 或 registry。
+
+## 2026-10-18（524）—— brain_goal_judge 数据集出口与 v1 迁移
+**改了什么**：新增版本化 judge 数据包 schema、loader 与 v1 清单；原四条 v1 样本按 SHA-256 原样迁入新目录，并将任务、solver、scorer 和数据集测试改为使用新出口。
+**为什么这么改**：数据契约和冻结文件放在同一个数据包后，v1 可以兼容读取，v2 也能在独立扩展模型中强制真值元数据，同时由清单核验冻结文件完整性。
+**取舍**：默认版本仍为 v1；只定义 v2 契约，不创建 v2 样本、不注册任务；旧位置的数据文件和 dataset.py 在引用切换后移除。
+**影响面**：仅评测数据包、现有评测入口引用、loader 契约测试和变更日志；不改生产代码或 task registry。
+
+## 2026-10-18（523）—— 明确 judge 假阳率主指标与检查点编号
+**改了什么**：在 judge 扩容 spec 中补入 CP0 实测候选状态、解释假阳率分母的算例，并为 CP1–CP4 分配 524–527 编号及 CP1 文件范围。
+**为什么这么改**：执行交接需要能直接照着实现；指标只有明确正负标签、分子和分母，才能判断过早完成判断的比例。
+**取舍**：FPR 作为主指标，召回率、精确率、准确率作配套诊断；67 条图片帧绑定未核实记录和所有未审真值继续留在候选状态。
+**影响面**：只更新评测设计与计划；不改评测实现、冻结数据或生产代码。
+
+## 2026-10-18（522）—— 设计 brain_goal_judge 真实 task 完成判定扩容
+**改了什么**：新增评测 intent、spec 与分阶段执行计划，定义 task judge 的输入、独立真值、四格及分组指标，并将 257 条历史调用审计设为数据冻结前置门槛。
+**为什么这么改**：现有四条示例只能验证评分契约；真实 task 历史可以检查生产完成判定，但请求复现与真值可判是两件事，必须分开验收。
+**取舍**：保留 v1 示例，v2 另行冻结；歧义样本排除，错误与有效响应分列，不预设未经盘点的数据配额，也不在本阶段调用真实模型。
+**影响面**：仅评测设计文档与 CHANGELOG；不改生产代码、数据集、评测实现或公开 task 注册。
+
 ## 2026-10-18（521）—— world 纯逻辑小模块补 29 条单元测试（CP1）
 
 **改了什么**：新增四个测试文件，覆盖 world 线的纯逻辑小模块——`test_world_action_space.py` 7 条（掩码覆盖整个命名空间、不可用键显式为 False、无 overlay 时基础键全开、overlay 键替换普通键、接管场合只留基础键、空动作空间断言、接管标志与场合注册表不一致断言）；`test_screen_glyphs.py` 10 条（左右邻是文字、黑块邻格不算文字、列 0 只看右邻、擦除黑块计数与忽略、标题 Logo 需第一行连续十六块、纯图形页的三个判据）；`test_items.py` 8 条（表内名字、表外 id 写成 Hex、名字与 id 往返、大小写与 `é`/`e` 视同、认不出为 None、HM 价为 0、TM 与越界 id 为 None、ROM 三字节 BCD 解码）；`test_moves.py` 4 条（表内名字、表外 id 写成 Hex、`fold` 大写与音符映射、`fold` 空白归一与幂等）。全部用真实字节 / 字表 / 域模型构造，不起模拟器、不读 ROM、不发网络请求、不用 `MagicMock`；`test_world_action_space.py` 不重复 `test_action_space_scripts.py` 已有的两条。
@@ -47,6 +410,111 @@
 **取舍**：按 spec D1 只经公开函数与手写假件测试——接管标志那条用 `TaskObservation` 的子类做假件（`covered_by_script` 是从场合派生的计算属性，无法直接赋值，只能在假件里覆盖）；不测 `_` 开头的私有成员，不新增夹具目录，不顺手改生产代码。
 
 **影响面**：仅新增测试，生产代码零改动。`tests/world/` 现 138 条、耗时 0.99 秒；全量 junit 计数 1443 → 1472，failures / errors / skipped 均为 0，耗时 58.5 → 60.6 秒。`ruff check .` 与 `ruff format --check .` 全绿。
+## 2026-10-18（520）—— reviewer 单跳链路：重连幂等、独立入口与 run 装配
+
+**改了什么**：新增 ask / cancel / answer / hello 四种类型化线上信封、ReviewLinkServer
+与同步 RemoteReviewer。每次提问先 flush，再由后台 WS 线程传输；重连复用原 qid，
+服务端保留待答问及已答缓存，取消幂等，第二连接明确拒绝。新增独立 human 入口与可关闭
+stdin 适配，PNG 存入指定目录。build 按显式实例、URL 参数、env、config 选择实现，
+无地址仍用 NullReviewer，同一实例注入三层，断线预算从 config 传入。
+
+**为什么这么改**：把人的终端与图进程分开，同时避免断线重问、重复采纳或后台丢失导致
+图无限卡死而无提示；人的等待不按 AI 预算放行，未知模式也不能擅自假定无人值守。
+
+**取舍**：仅最近 hello 为 ai 时允许断线预算耗尽后返回 by=none；human / both / 未知
+模式持续重连，每 30 秒警告。关闭在可连接时发送 cancel，离线退出通知只能尽力而为。
+qid 签名与答复缓存保留到进程退出，独立于 50 条人审历史，不保留完整请求。Langfuse
+实际按 run / branch 分 trace，入口改为跨 trace 分页后按 meta 筛选，可能读取较多候选页，
+不承诺 flush 后立即查询可见；真实 Langfuse 未联调，使用已安装 SDK 契约替身验证。
+旧复核栈与旧入口切换留 R6c，AI 席留 R7，不新增依赖或记忆 / trace 能力。
+
+**影响面**：新增 54 项，reviewer 共 158 项；默认全量 1621 项、slow 3 项、ruff（713 个
+Python 文件）通过。真实 WS 覆盖两类问、flush、同 qid 重发、离线答复、取消、占用、
+无效消息与跨 50 条历史的缓存重放；独立子进程经 stdin 提交并输出真实 PNG。去掉 flush、
+错误地让 human 超时分别触发测试失败，均逐字节还原。状态哈希仍为 28e96b09966dc94e，
+不重打存档，R6c 尚未实施。
+
+## 2026-10-18（519）—— reviewer 进程内编排：首答仲裁、类型化命令与终端席
+
+**改了什么**：新增 Hub、Commands、HumanSeat 与依赖注入的 ReviewerApp；一问挂起，
+首个匹配答复生效，取消与 EOF 显式唤醒等待方。新增 Ask / Settle / SubmitAck / Answer /
+HistoryEntry / Activity / ReviewSeats；随问画面经 frames_of 分页，输入与历史副本隔离。
+查询命令和 help 从 ViewQuery 派生，recall hint 的 Literal 键同时成为 CLI 参数来源。
+终端图片保存 PNG 并显示来源、路径和尺寸，不打印编码，同问多次查询不覆盖先前文件。
+
+**为什么这么改**：把问题生命周期集中到单事件循环的一处仲裁中，使终端、后续链路和
+AI 席共用同一组类型化操作；命令只翻译输入，查询不会变成答复，迟到结果不会混进下一问。
+
+**取舍**：本步只接 human 席与注入的异步行源，网络入口和真实 stdin 装配留 R6b，AI 席
+留 R7。同步查询放线程池，终端命令用 TaskGroup 管理，慢查询期间可继续提交；读取后
+重核 seq。历史与活动各最多 50 条，历史不保留整份带图请求。取消不伪造认账；输出异常
+向上抛，同时保证仲裁占用得到解除。不改现有 harness、记忆能力或 trace 账名。
+
+**影响面**：新增 52 项测试，reviewer 共 104 项；默认全量 1567 项、slow 3 项、ruff
+（693 个 Python 文件）通过。覆盖每条命令的类型化调用、自动增加 schema 变体的帮助、
+阻塞查询与答复并行、取消、有限历史、PNG 输出及全 reviewer 导入扫描。放开旧编号提交、
+移除查询后的编号复核分别使对应测试失败，均逐字节还原。状态哈希保持 28e96b09966dc94e，
+不重打存档、不新增依赖；R6b 尚未实施。
+
+## 2026-10-18（518）—— reviewer 查询门面：按需读取 trace、记忆与历史帧
+
+**改了什么**：新增 reviewer/view 的 TraceReader / MemoryReader 窄协议与 ViewReaders，
+以及 schemas/reviewer 的四种查询、统一结果和体量校验。trace 支持跨 run 标签过滤、
+kind 筛选与尾部翻页；记忆探索保留 run_goal / runs hint；按步取帧显式不限量召回。
+文本递归去图后再截断，图片仅在显式取帧结果的 images 中返回；缺端口、断连与坏帧明确失败。
+
+**为什么这么改**：让后续终端与 AI 席共用类型化查询入口，用同一份数据查证结论；
+避免默认八条召回上限漏掉后续步骤，也避免图片编码混入文本占用上下文。
+
+**取舍**：R5 实测 recall 会刷新 index.json / vectors.jsonl，用户明确允许此类客观更新，
+故保留原能力面，只读限定为不写 trace、不改记忆正文、不调用 memorize。trace 沿当前
+ended_at / seq 排序；Langfuse 查询标注可能延迟，跨 run 后端选择由 R6b 装配负责。
+BrainFramesQuery 仅定义 schema，随问画面的实际分页仍归 R6a hub，不在读门面持有当前问。
+
+**影响面**：新增 52 项测试，完整默认 1515 项、slow 3 项通过，ruff check / format 通过
+（677 个 Python 文件）。真实 MCP 服务端路径在 admin 关闭时取回第 12 步前后帧；独立
+Python 进程读取已 flush 本地账；缓存刷新时记录正文哈希不变。把取帧上限改回八条使两项
+失败，关闭 data URI 去图使一项失败，均逐字节还原。状态哈希仍为 28e96b09966dc94e；
+不改 harness / memory / trace 实现，不新增第三方依赖，R6a 尚未实施。
+
+## 2026-10-18（517）—— 统一规划复核重问并限制 AI 连续插话
+
+**改了什么**：run / episode 的两段插话循环改用共享 elicit_with_review 临时图；
+REVIEW_AI_INJECT_MAX_ROUNDS 默认 3。连续前三条 AI 意见生效，下一条保留原话、
+标 capped 并接受当前提案；人的有效意见清零计数且不受该上限限制。请求传 round / 上限，
+ask_inject 返回已落账的 ReviewMark；两本复核账的 content 增 capped / round。
+
+**为什么这么改**：让两层规划使用同一套重问规则，避免 AI 复核席无限改稿；
+保留被截意见与实际轮次，才能区分主动无意见和到顶截断，并核对最终生效的反馈。
+
+**取舍**：临时 StateGraph 关闭 checkpoint、显式使用 durability="exit"，隔离外层同步存档；
+不限制人的轮次，但 episode 原有拆解次数、时间预算和失败结算仍有效。
+当前 LangGraph 对无 checkpointer 的显式 durability 发出提示；保留提示，不屏蔽警告。
+轮次不进入三层持久状态，状态哈希保持 28e96b09966dc94e，无需重打存档。
+
+**影响面**：新增 9 项测试，覆盖零上限、空回话、连续计数、人的清零与超过默认图步数的
+插话、跨调用重置、两层真实规划入口。默认全量 1463 项、slow 3 项通过，ruff check / format
+通过（665 个 Python 文件）。关闭轮次阀、移除人的清零分别触发对应测试失败，均逐字节还原。
+未新增 trace 顶层字段、账名或第三方依赖；下一阶段读端口与复核进程尚未实施。
+
+## 2026-10-18（516）—— task 可选复核：持久化判定反馈并重打起点存档
+
+**改了什么**：REVIEW_LAYERS 默认仅 run / episode；TaskRuntime 统一注入 Reviewer，
+启用 task 后仅在 judge 判成时 audit，认账才盖 GOAL_DONE，推翻保留机械边界并写
+TaskState.last_judge，下一次 choose 的 human_note 带上推翻理由。ReviewContext 支持
+task 的 JudgeReq、task_id 与互斥空表；frames_of 按动作顺序提取前后帧并去重。
+
+**为什么这么改**：让 task 层也能按需拦住提前收工的误判；复核意见进入正式图状态，
+既能引导下一步决策，也能随 checkpoint 恢复，不依赖进程内临时缓存。
+
+**取舍**：用户明确允许状态结构变化并重打旧存档，故新增正式 last_judge 字段，
+状态哈希从 5ea6dffeeb229b7c 变为 28e96b09966dc94e。关闭 task 审点时不询问复核席、
+不写反馈；不做逐键 inject。推翻不会移除世界结束、停摆或预算耗尽的机械边界。
+
+**影响面**：新增 11 项测试，默认全量 1454 项、slow 3 项通过，ruff check / format 通过。强制关闭审点使 4 项启用用例失败，
+强制开启使 2 项默认行为用例失败，两次破坏验证后均逐字节还原。20 份 v1 起点存档
+全部重打并通过真实 world / memory 恢复，模型调用为 0；20 份 world.state 哈希均不变。
+记忆快照仅保留 20 份当前引用文件；移除的 20 份旧快照与旧存档已在仓库外备份。
 
 ## 2026-10-18（513）—— ReviewContext：随问快照、frames_of 与渲染
 

@@ -548,7 +548,7 @@ harness 经门面调模块的架构不变。
 
 ## 测评任务收敛（2026-10-13）
 
-五个公开任务登记在 `evals/registry.py`：三个 B 类（decode、memory_store_recall、world_script_execute）用 `python -m evals.<任务名>` 启动 DeepEval；两个 C 类（brain_goal_judge、agent_short_goal_run）仍用 `inspect eval evals/<任务名>/task.py`。
+六个公开任务登记在 `evals/registry.py`：四个 B 类（decode、memory_store_recall、world_script_execute、brain_choose_action）用 `python -m evals.<任务名>` 启动 DeepEval；两个 C 类（brain_goal_judge、agent_short_goal_run）仍用 `inspect eval evals/<任务名>/task.py`。
 
 B 类每个状态一个 LLMTestCase，指标不调模型；缺标或无从判跳过，不进分母。decode 的显式空值照常计分。DeepEval 原生输出帧级通过率与逐指标 Average Score/Pass Rate/Total，默认只列失败，有失败退出 1。memory 逐记录计存储、逐查询计 Recall@k 与 MRR，后两者看 Average Score。world 分 code/truth 与 pass.<脚本名>，每例子进程保留 300 秒超时。
 

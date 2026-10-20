@@ -5,7 +5,7 @@ import asyncio
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.util import StoreModel, store_as
 
-from evals.brain_goal_judge.dataset import JudgeCase
+from evals.dataset.brain_goal_judge import JudgeCase
 from pokemon_agent.direct.brain_tool import BrainTool
 
 
