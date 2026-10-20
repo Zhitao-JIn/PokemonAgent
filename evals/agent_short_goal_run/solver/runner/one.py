@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
+from contextlib import ExitStack
 from pathlib import Path
 
 from evals.agent_short_goal_run.dataset.loader import DATASET_DIR
@@ -52,38 +54,63 @@ def run_one(
     assert epoch >= 1, "epoch 从 1 起"
     _load_env(REPO_ROOT / ".env")
     work.mkdir(parents=True, exist_ok=True)
-    roots = {
-        "trace_root": work / "trace",
-        "memory_root": work / "memory",
-        "checkpoint_root": work / "checkpoints",
-    }
-
-    # 步骤 1：起点——直读数据层里**打包好的** run 级存档（打包是数据准备动作，见 data/pack.py）。
     run_id = run_id_for(sample.sample_id, epoch)
+    if not _has_start(sample, work, run_id):
+        return
+
+    with ExitStack() as cleanup:
+        build_branch = _branch_builder(
+            work, models, run_id, trace_backend, run_config_path, cleanup
+        )
+        try:
+            manifest = prepare_archive(sample, work / "start")
+            result = restore_run(manifest, build_branch, sample_id=sample.sample_id)
+            (work / RUN_RESULT).write_text(result.model_dump_json(indent=2), encoding="utf-8")
+        except CheckpointIncompatible as exc:
+            _record(work, run_id, invalid=f"存档拒载：{exc}")
+            return
+        except Exception as exc:  # noqa: BLE001 —— 运行错误保留给红线 R1
+            _record(work, run_id, error=f"{type(exc).__name__}: {exc}")
+            return
+    _record(work, run_id, branch=result.branch)
+
+
+def _has_start(sample: EvalSample, work: Path, run_id: str) -> bool:
+    """起点缺失时写明无效原因；不启动世界或模型。"""
     manifest = (
         DATASET_DIR / sample.dataset_version / "archives" / sample.start.archive / "manifest.json"
     )
-    if not manifest.is_file():
-        _record(
-            work,
-            run_id,
-            invalid=(
-                f"起点存档缺失：{manifest}"
-                "（python -m evals.agent_short_goal_run.dataset.build.pack 重打）"
-            ),
-        )
-        return
+    if manifest.is_file():
+        return True
+    _record(
+        work,
+        run_id,
+        invalid=(
+            f"起点存档缺失：{manifest}"
+            "（python -m evals.agent_short_goal_run.dataset.build.pack 重打）"
+        ),
+    )
+    return False
 
-    # 步骤 2：从存档恢复出新执行线，跑到 run 结束。
+
+def _branch_builder(
+    work: Path,
+    models: dict[str, str],
+    run_id: str,
+    trace_backend: str,
+    run_config_path: str,
+    cleanup: ExitStack,
+) -> Callable[[str], RunRuntime]:
+    """装配每条恢复执行线，并立即登记世界租约的退出清理。"""
+
     def build_branch(branch: str) -> RunRuntime:
-        # trace_root 只对 local 后端有意义——langfuse 传了会被 TraceTool.build 拒收。
         roots_kw = {
-            "memory_root": roots["memory_root"],
-            "checkpoint_root": roots["checkpoint_root"],
+            "memory_root": work / "memory",
+            "checkpoint_root": work / "checkpoints",
         }
         if trace_backend == "local":
-            roots_kw["trace_root"] = roots["trace_root"]
-        harness, _game = build_real(
+            roots_kw["trace_root"] = work / "trace"
+        harness, game = build_real(
             run_id=run_id,
             branch=branch,
             trace_backend=trace_backend,
@@ -91,19 +118,10 @@ def run_one(
             **models,
             **roots_kw,
         )
+        cleanup.callback(game.release_lease)
         return harness.deps
 
-    try:
-        manifest = prepare_archive(sample, work / "start")
-        result = restore_run(manifest, build_branch, sample_id=sample.sample_id)
-        (work / RUN_RESULT).write_text(result.model_dump_json(indent=2), encoding="utf-8")
-    except CheckpointIncompatible as exc:
-        _record(work, run_id, invalid=f"存档拒载：{exc}")
-        return
-    except Exception as exc:  # noqa: BLE001 —— run 自己出错照样收尾，交给红线 R1
-        _record(work, run_id, error=f"{type(exc).__name__}: {exc}")
-        return
-    _record(work, run_id, branch=result.branch)
+    return build_branch
 
 
 def run_id_for(sample_id: str, epoch: int = 1) -> str:
