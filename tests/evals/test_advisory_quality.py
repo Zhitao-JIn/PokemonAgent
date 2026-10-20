@@ -27,7 +27,7 @@ from pokemon_agent.schemas.harness import (
 
 
 def test_recoverable_failures_are_scored_without_an_exhaustive_action_whitelist() -> None:
-    rows = choose()
+    rows = choose("v4")
     indexed = {row.case_id: row for row in rows}
 
     assert len(rows) == 206
@@ -61,7 +61,7 @@ def test_recovery_examples_include_multiple_valid_candidates() -> None:
 
 
 def test_ai_dimensions_give_partial_credit_instead_of_all_or_nothing() -> None:
-    reference = choose()[0].reference
+    reference = choose("v4")[0].reference
     grade = AdvisoryGrade(
         criteria=[
             DimensionGrade(name=item.name, score=value, evidence="input proof")
@@ -90,7 +90,7 @@ def test_quality_metrics_preserve_zero_and_exclude_unknown_scores() -> None:
 def test_missing_dimensions_are_unscored_instead_of_silently_ignored(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    case = choose()[0]
+    case = choose("v4")[0]
 
     class Grader:
         async def generate(self, messages: list[ChatMessage]) -> SimpleNamespace:
@@ -116,7 +116,9 @@ def test_unlisted_recovery_action_gets_ai_score_without_leaking_reference_to_cho
     from evals.brain_choose import inspect_solver, task
 
     case = next(
-        row for row in choose() if row.case_id == "knowledge_shop_interaction.task.choose.000046"
+        row
+        for row in choose("v4")
+        if row.case_id == "knowledge_shop_interaction.task.choose.000046"
     )
     action = Action.model_validate({"sequence": [{"name": "right", "times": 1}]})
     assert case.request.space.enabled("right")

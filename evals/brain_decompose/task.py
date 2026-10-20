@@ -12,7 +12,7 @@ from pokemon_agent.env import load_env_file
 
 @task
 def brain_decompose(
-    version: str = "v3",
+    version: str = "v20261020_1846",
     model: str | None = None,
     grader_model: str | None = None,
 ) -> Task:

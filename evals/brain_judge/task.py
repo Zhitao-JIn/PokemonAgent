@@ -13,7 +13,7 @@ from pokemon_agent.env import load_env_file
 
 @task
 def brain_judge(
-    version: str = "v4", judge_model: str | None = None, grader_model: str = "none"
+    version: str = "v20261020_1846", judge_model: str | None = None, grader_model: str = "none"
 ) -> Task:
     """用独立真值历史测成功判定；目标和历史通过生产信封交给模型。"""
     load_env_file()

@@ -20,7 +20,7 @@ class Case(BaseModel):
     reference: ReferenceCase
 
 
-def load(version: str = "v4") -> list[Case]:
+def load(version: str = "v20261020_1846") -> list[Case]:
     """哈希、输入/旁账配对或证据不匹配显式失败，排除项不进入运行分母。"""
     data = load_capability(DATASET_DIR, "choose", version)
     return [

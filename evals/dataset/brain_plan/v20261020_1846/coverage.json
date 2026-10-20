@@ -1,0 +1,8 @@
+{
+  "source_cases": 21,
+  "labelled": 21,
+  "excluded": [],
+  "annotation_version": "v20261020_1846",
+  "reference_role": "non_exhaustive_suggestions",
+  "baseline_answers_used_as_gold": false
+}

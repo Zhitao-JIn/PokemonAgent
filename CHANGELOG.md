@@ -1,3 +1,13 @@
+## 2026-10-20（567）—— 四个脑能力任务切换到递归规划二十例
+
+**改了什么**：新增 `publish_recursive.py`，发布 `brain_{choose,plan,decompose,judge}/v20261020_1846`（judge 为原生记录并带 `expected_decision`，其余固定输入/参考/旁账指纹）；`brain_judge` 加载器登记新版本；四个 Inspect 任务及 choose 加载器默认版本改为 `v20261020_1846`；新增整套数据假端口运行测试与报告 `docs/eval/brain-annotation-recursive-report.md`。
+
+**为什么这么改**：旧版本基于递归规划之前的请求形状，plan/decompose 缺 `remaining_planning_rounds`、`execution_order`、可更新/可空计划等字段，judge 缺统一语义退出；用户要求以这二十例的新数据替换上一版作为默认评测。
+
+**取舍**：旧版本目录与字节原样保留，只改默认值，仍可显式选择；judge 的 33 例机械未达成没有决策类别，不进决策矩阵而不是猜测。plan/decompose 的结构检查本已按新字段取值，故未改 scorer。两个断言旧默认版本的测试改为新默认。
+
+**影响面**：四个任务默认数据变化，显式 `version=` 的调用不受影响；不改生产代码、采集链、旧旁账和旧能力清单。
+
 ## 2026-10-20（566）—— 递归规划二十例标注旁账与逐例作者表
 
 **改了什么**：新增 `brain_annotations/authoring.py`（作者表读取，缺登记/多登记/重复/排除项带答案均失败）与 `recursive_build.py`，按 `authoring/v20261020_1846/{choose,plan,decompose,judge}.jsonl` 生成旁账 `brain_annotations/v20261020_1846`；`Annotation` 增加可选 `expected_decision`（仅 judge，且须与 `achieved` 一致）；证据指针补齐 `run_goal`、`remaining_planning_rounds`、`execution_order`、`episode_memories`、`trigger`、`planning_round`、`allow_interrupt`。judge 183 例中 70 例保留机械标签，113 例由请求可见证据逐例裁定并给出四类决策；choose 122（15 例机械动作集合并入可接受动作）、plan 21、decompose 41 全部为建议式。
