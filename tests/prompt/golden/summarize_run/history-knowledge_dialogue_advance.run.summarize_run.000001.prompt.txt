@@ -1,0 +1,33 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：把对话一句一句按完，直到对话框消失
+终止类别：goal_done；判定依据：历史里出现过对话框文字「Hey! You came from PALLET TOWN?」，而这一帧 overlay 已变为 none，对话框消失。
+累计 1 局，其中 1 局成功，使用 1 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_dialogue_advance｜把对话一句一句按完，直到对话框消失｜completed｜note=｜overturned=false
+- plan-eval-knowledge_dialogue_advance-1｜从当前对话中脱身，走出这扇门进入 1 号道路方向，确认已离开室内/城镇边界｜pending｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_dialogue_advance-ep1) 目标：把对话一句一句按完，直到对话框消失（成功，goal_done，1 个 task / 1 键）
+  结论  成功靠的是正确识别当前处于对话叠加层状态并直接按 a 推进，没有多余移动；本局只有一个 task 且一次按键即完成，属于最简对话推进场景。
+  总结  在商店/室内场景中，对话框显示「Hey! You came from PALLET TOWN?」时，按一次 a 键即关闭对话框，叠加层从 dialog 变为 none，角色位置与朝向随之更新，一步达成目标。
+  可复用经验  叠加层为 dialog 且文字已完整显示时，直接按 a 即可关闭对话框，无需移动或额外操作。；对话推进类任务优先检查 overlay 字段：dialog→none 即视为达成。；对话结束后角色坐标与朝向可能变化，判断成功应以 overlay 变化为准而非位置。
+  关键决策  第 0 步直接按 a 推进对话，而非先移动或寻找 NPC，避免了浪费按键。
+  失败点  样本过短，未覆盖多段对话、选项分支或对话中需要移动的情况，若对话未完整显示就按 a 可能跳过文本。
+  质量分 0.60（理由：记录状态明确、一步达成，但仅有一个 task、一次按键，缺乏多步对话与失败对照，可复用范围有限，故评分中等。）
+  标签  dialogue、overlay、a_button、pokemon_center
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

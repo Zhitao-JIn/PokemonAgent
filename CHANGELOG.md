@@ -1,3 +1,13 @@
+## 2026-10-21（587）—— prompt 模块 CP0：固化旧 build_prompt 的逐字节对拍基线
+
+**改了什么**：新增离线捕获脚本、集中合成用例与参数化黄金测试。固化 183 个用例（366 个输入/输出文件），共 4,402,796 字节；覆盖 8 个 build_prompt 任务与 retry_prompt。历史有效记录：choose 207、decompose 26、judge 229、summary 家族 99（summarize 19、summarize_task 60、summarize_run 20）；按 case_id 排序后每任务等距取最多 15 条，共 90 条。合成 53 条，其中 plan 9 条，verify / summarize_task / summarize_run 各 5 条；另取主仓库 20 个真实 ActMemory，分别生成 verify 与 summarize_task 各 20 条。
+
+**为什么这么改**：在生产 prompt 迁移前保留完整请求和旧渲染输出，后续以逐字节对拍检查措辞、条件分支与相邻帧去重是否改变。捕获前对同一序列化输入渲染两次、扫描凭据并检查体积；连续两次重新生成的 366 个文件逐字节一致，黄金测试连续两次 184 passed（0.57s / 0.54s）；将一个输出首字符改为 ! 后指定用例 1 failed，原字节还原后 1 passed。全量复核 2205 passed、2 failed、7 errors，与起点相比仅增加 184 个通过；ruff check 与 ruff format --check 均通过（885 files already formatted）。
+
+**取舍**：遵循设计补充裁决，不补造历史字段；plan 26 条全部跳过，原因是旧信封缺现行必填字段、不可无损升级，以现行合成用例承担基线。decompose 旧类 11 条因缺 remaining_planning_rounds、judge 旧类 60 条因缺 goal_table 无法直接渲染，全部跳过；summary 的 60 条旧 summarize_task 可直接渲染，保留旧类。为完整保留截图和请求字段并满足 5 MB 上限，每任务历史抽样上限取 15。源码联合类型实际有 8 个 takeover 视图，全部覆盖，另覆盖视图缺失。起点实测 2021 passed、2 failed、7 errors，均为被忽略的 choose 采集数据缺失，按设计裁决接受，不复制数据、不改旧测试。
+
+**影响面**：仅新增 scripts/capture_prompt_golden.py、tests/_doubles/prompt_cases.py、tests/prompt/test_golden_baseline.py 与 tests/prompt/golden/，并追加本条日志；生产代码、evals 与真实 memory 数据不变，不调用模型、不执行 Git 写操作。verify 和 plan 豁免历史有效数门槛，其余四个家族现行请求均可直接验证、渲染且不少于 10 条。凭据模式命中 0，宽泛 key 搜索命中 209 处，复核为按键字段/标签或 PNG Base64 片段。
+
 ## 2026-10-21（583）—— 合并 main：新配置装配接回租约清理、评分次数迁入 settings、测评数据合并新版本
 
 **改了什么**：合并 main 至 codex/pyboy-paused-window-pump；runner 保留覆盖文件与统一环境加载，用 ExitStack 登记每次装配的世界租约释放；评分格式重试次数迁入 settings 的 retry.eval_grader_format_attempts，保底为 2；新增 v20261021_merged_583 并切换默认，组合两位不同 NPC 对话、地板 buy_item 终态购买、受伤队伍全满 HP、逃跑解码与取消购买真实确认框起点。

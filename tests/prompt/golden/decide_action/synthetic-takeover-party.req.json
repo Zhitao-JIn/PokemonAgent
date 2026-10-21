@@ -1,0 +1,163 @@
+{
+  "task": "decide_action",
+  "case_id": "synthetic-takeover-party",
+  "source": "synthetic",
+  "request_kind": "current",
+  "request": {
+    "goals": [
+      {
+        "goal": "进门",
+        "criteria": "地图改变"
+      }
+    ],
+    "obs": {
+      "step": 1,
+      "place": null,
+      "status": "接管",
+      "facts": {
+        "scene": null,
+        "overlay": "choice",
+        "where": "",
+        "facing": "",
+        "neighbors": "",
+        "landmarks": [],
+        "dialog_text": "",
+        "options": [],
+        "cursor": "1",
+        "walk_map": "",
+        "map_id": null,
+        "screen": "选择操作"
+      },
+      "done": false,
+      "scene": "party",
+      "takeover": {
+        "kind": "party",
+        "party": [
+          {
+            "name": "BULBASAUR",
+            "level": 5,
+            "hp": 8,
+            "max_hp": 20,
+            "status": "ok",
+            "active": true,
+            "moves": [
+              {
+                "name": "TACKLE",
+                "pp": 10
+              }
+            ]
+          }
+        ]
+      },
+      "menu_decode_complete": null
+    },
+    "space": {
+      "scene": "party",
+      "mask": {
+        "up": true,
+        "a": true,
+        "b": true,
+        "party_switch": true,
+        "party_field_move": true,
+        "party_stats": true,
+        "party_close": true
+      },
+      "entries": [
+        {
+          "kind": "key",
+          "name": "up",
+          "params": [],
+          "description": ""
+        },
+        {
+          "kind": "key",
+          "name": "a",
+          "params": [],
+          "description": ""
+        },
+        {
+          "kind": "key",
+          "name": "b",
+          "params": [],
+          "description": ""
+        },
+        {
+          "kind": "script",
+          "name": "party_switch",
+          "params": [
+            {
+              "name": "a",
+              "type": "str",
+              "description": "一只的昵称",
+              "default": null
+            },
+            {
+              "name": "b",
+              "type": "str",
+              "description": "另一只的昵称",
+              "default": null
+            }
+          ],
+          "description": "对调两只在队伍里的位置（排第一的先出场）"
+        },
+        {
+          "kind": "script",
+          "name": "party_field_move",
+          "params": [
+            {
+              "name": "pokemon",
+              "type": "str",
+              "description": "宝可梦昵称，照视图「队伍」里的写",
+              "default": null
+            },
+            {
+              "name": "move",
+              "type": "str",
+              "description": "招式名",
+              "default": null
+            }
+          ],
+          "description": "用野外招式（CUT / SURF / STRENGTH / FLASH / DIG / TELEPORT / SOFTBOILED）；FLY 还不支持"
+        },
+        {
+          "kind": "script",
+          "name": "party_stats",
+          "params": [
+            {
+              "name": "pokemon",
+              "type": "str",
+              "description": "宝可梦昵称，照视图「队伍」里的写",
+              "default": null
+            }
+          ],
+          "description": "打开一只的能力页（之后照常按键翻页、退出）"
+        },
+        {
+          "kind": "script",
+          "name": "party_close",
+          "params": [],
+          "description": "关上队伍列表"
+        }
+      ],
+      "names": [
+        "up",
+        "a",
+        "b"
+      ],
+      "descriptions": {
+        "up": "光标上移一项",
+        "a": "确认当前光标项或推进对话；可能打开列表，也可能直接执行选项。目标只要求打开列表或移动光标时，达到后停手",
+        "b": "取消，退回上一层"
+      },
+      "note": "## 怎么选这一个键\n每次只按一个键，按完立刻重新看观测。走路时从 `walk_map` 上看下一格是不是 `.`（或 `G`），\n是 `#`、`D`、`S`、`N` 就换方向或先转身；台阶 `v` `<` `>` 只有朝它指的方向按才过得去（一步越过台阶），其余方向当墙；**忽略每行末尾的 `(x=..)` 括号**——那是全局坐标标注，不是格子。\n\n- 面前是人、招牌或门，要互动：先转向它（朝那个方向按一下方向键），再按 `a`。\n- 对话框出现时只能按 `a`，一次推一句。\n- 选单里先看已知事实里的 `option_layout`：它写明是竖排、横排还是几行几列、光标在第几行第几列，\n  并按屏幕位置列出每一项（`▶` 标着光标）。照它算出从光标到目标项要按哪个方向、按几次，\n  一次按一格，到了再按 `a`；按 `b` 返回上一级。\n",
+      "map_note": ""
+    },
+    "memories": [],
+    "last_result": "",
+    "knowledge": "",
+    "task_index": [],
+    "human_note": ""
+  },
+  "max_segments": 3,
+  "source_ref": ""
+}

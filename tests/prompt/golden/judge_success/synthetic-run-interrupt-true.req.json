@@ -1,0 +1,115 @@
+{
+  "task": "judge_success",
+  "case_id": "synthetic-run-interrupt-true",
+  "source": "synthetic",
+  "request_kind": "current",
+  "request": {
+    "goal_table": [
+      {
+        "task": {
+          "task_id": "goal-1",
+          "goal": "进门",
+          "success_criteria": "地图改变",
+          "max_steps": 3,
+          "initial_state_hint": ""
+        },
+        "status": "pending",
+        "attempts": 0,
+        "last_episode_id": null,
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "latest_planning": null,
+    "planning_round": 0,
+    "trigger": "normal",
+    "goal": {
+      "goal": "进门",
+      "criteria": "地图改变"
+    },
+    "history": [],
+    "task_memories": [],
+    "task_table": [],
+    "episode_memories": [
+      {
+        "episode_id": "ep-1",
+        "run_id": "run-1",
+        "run_goal": "出发",
+        "goal_id": "",
+        "goal": "进门",
+        "steps": 1,
+        "acts_used": 2,
+        "termination": "goal_done",
+        "reason": "地图改变",
+        "summary": "已进门。",
+        "reusable_patterns": [
+          "从门口向上"
+        ],
+        "critical_decisions": [
+          "选门"
+        ],
+        "failure_points": [
+          "避免撞墙"
+        ],
+        "quality_score": 0.8,
+        "quality_rationale": "有执行证据",
+        "applicable_scenes": [],
+        "tags": [
+          "导航"
+        ],
+        "first_frame": null,
+        "last_frame": null,
+        "markdown": "本局记录"
+      }
+    ],
+    "task_index": [],
+    "episode_index": [],
+    "run_index": [
+      {
+        "run_id": "run-old",
+        "run_goal": "出发",
+        "episodes": 1,
+        "succeeded": 0,
+        "acts_used": 2,
+        "termination": "budget_exhausted",
+        "reason": "",
+        "summary": "此前未进门。",
+        "reusable_patterns": [],
+        "critical_decisions": [],
+        "failure_points": [],
+        "quality_score": 0.5,
+        "quality_rationale": "预算不足",
+        "applicable_scenes": [],
+        "tags": [],
+        "markdown": ""
+      }
+    ],
+    "observation": {
+      "step": 0,
+      "place": null,
+      "status": "门口",
+      "facts": {
+        "scene": null,
+        "overlay": "none",
+        "where": "map=1 x=2 y=3",
+        "facing": "up",
+        "neighbors": "北 . 南 . 西 # 东 .",
+        "landmarks": [],
+        "dialog_text": "",
+        "options": [],
+        "cursor": null,
+        "walk_map": "y=3 #@. (x=1..3)",
+        "map_id": 1,
+        "screen": ""
+      },
+      "done": false,
+      "scene": "walk",
+      "takeover": null,
+      "menu_decode_complete": null
+    },
+    "knowledge": "",
+    "allow_interrupt": true
+  },
+  "max_segments": 3,
+  "source_ref": ""
+}

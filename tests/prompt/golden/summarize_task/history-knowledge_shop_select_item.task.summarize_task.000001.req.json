@@ -1,0 +1,160 @@
+{
+  "task": "summarize_task",
+  "case_id": "history-knowledge_shop_select_item.task.summarize_task.000001",
+  "source": "history",
+  "request_kind": "legacy",
+  "request": {
+    "entries": [
+      {
+        "before": {
+          "step": 0,
+          "place": {
+            "map_id": 42,
+            "x": 2,
+            "y": 5
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图42 x=2 y=5，朝向 west。对话框：「Take your time.」。可选项：POKé BALL/ ANTIDOTE/ PARLYZ HEAL/ BURN HEAL，光标在 POKé BALL",
+          "scene": "shop_items",
+          "facts": {
+            "scene": null,
+            "overlay": "choice",
+            "where": "全局坐标 地图42 x=2 y=5",
+            "facing": "west",
+            "neighbors": "北 # 南 # 西 # 东 #",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 3,
+                "y": 3
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 0,
+                "y": 5
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 5,
+                "y": 5
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "Take your time.",
+            "options": [
+              "POKé BALL",
+              "ANTIDOTE",
+              "PARLYZ HEAL",
+              "BURN HEAL"
+            ],
+            "cursor": "POKé BALL",
+            "overview": "",
+            "walk_map": "",
+            "map_id": 42,
+            "screen": "┌─────────┐┌─MONEY─┐\n│▷BUY     ││  ¥3000│\n│   ┌──────────────┐\n│ SE│              │\n│   │▶POKé BALL    │\n│ QU│         ¥200 │\n└───│ ANTIDOTE     │\n····│         ¥100 │\n····│ PARLYZ HEAL  │\n····│         ¥200 │\n····│ BURN HEAL    │\n····│         ¥250 │\n┌───└──────────────┘\n│                  │\n│Take your time.   │\n│                  │\n│                  │\n└──────────────────┘",
+            "option_layout": "竖排 4 项，光标在第 1 项；上/下 移动光标\n▶POKé BALL\n ANTIDOTE\n PARLYZ HEAL\n BURN HEAL",
+            "option_details": "POKé BALL ¥200 / ANTIDOTE ¥100 / PARLYZ HEAL ¥200 / BURN HEAL ¥250"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 1,
+          "place": {
+            "map_id": 42,
+            "x": 2,
+            "y": 5
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图42 x=2 y=5，朝向 west。对话框：「Take your time.」",
+          "scene": "shop_items",
+          "facts": {
+            "scene": null,
+            "overlay": "choice",
+            "where": "全局坐标 地图42 x=2 y=5",
+            "facing": "west",
+            "neighbors": "北 # 南 # 西 # 东 #",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 3,
+                "y": 3
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 0,
+                "y": 5
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 5,
+                "y": 5
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "Take your time.",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 42,
+            "screen": "┌─────────┐┌─MONEY─┐\n│▷BUY     ││  ¥3000│\n│   ┌──────────────┐\n│ SE│              │\n│   │▷POKé BALL    │\n│ QU│         ¥200 │\n└───│ ANTIDOTE     │\n····│         ¥100 │\n····│ PARLYZ HEAL  │\n····│  ┌───────────┐\n····│ B│×01    ¥200│\n····│  └───────────┘\n┌───└──────────────┘\n│                  │\n│Take your time.   │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 0,
+        "episode_id": "eval-knowledge_shop_select_item-ep1",
+        "task_id": "knowledge_shop_select_item-t1",
+        "run_id": "eval-knowledge_shop_select_item",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "按 a 后出现数量选择框 ×01 ¥200，确认选中了光标所在的 POKé BALL，推进了目标"
+      }
+    ],
+    "task_id": "knowledge_shop_select_item-t1",
+    "episode_id": "eval-knowledge_shop_select_item-ep1",
+    "run_id": "eval-knowledge_shop_select_item",
+    "goal": "在商品列表里按 a 选中当前光标所在的 POKé BALL",
+    "termination": "goal_done",
+    "judge_reason": "最后一条之后画面出现数量框 ×01（POKé BALL ¥200），商品列表已变成购买数量确认，符合判据",
+    "steps_used": 1,
+    "max_steps": 4
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_shop_select_item.task.summarize_task.000001"
+}

@@ -1,0 +1,89 @@
+{
+  "task": "summarize_run",
+  "case_id": "history-knowledge_battle_fight_menu.run.summarize_run.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "run_id": "eval-knowledge_battle_fight_menu",
+    "run_goal": "依次完成：在行动菜单里选 FIGHT，打开招式列表",
+    "goals": [
+      {
+        "task": {
+          "task_id": "knowledge_battle_fight_menu",
+          "goal": "在行动菜单里选 FIGHT，打开招式列表",
+          "success_criteria": "overlay 是 choice，且 options 是招式名（不再是 FIGHT / PKMN / ITEM / RUN）",
+          "max_steps": 15,
+          "initial_state_hint": "战斗行动菜单，scene=battle overlay=choice"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "last_episode_id": "eval-knowledge_battle_fight_menu-ep1",
+        "note": "",
+        "overturned": false
+      },
+      {
+        "task": {
+          "task_id": "plan-eval-knowledge_battle_fight_menu-1",
+          "goal": "在战斗中击败 RATTATA：选 FIGHT 打开招式列表，用攻击招式打倒对手",
+          "success_criteria": "RATTATA 的 HP 归零，画面出现战斗胜利/获得经验或对手倒下",
+          "max_steps": 6,
+          "initial_state_hint": ""
+        },
+        "status": "pending",
+        "attempts": 0,
+        "last_episode_id": null,
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "episode_memories": [
+      {
+        "episode_id": "eval-knowledge_battle_fight_menu-ep1",
+        "run_id": "eval-knowledge_battle_fight_menu",
+        "run_goal": "依次完成：在行动菜单里选 FIGHT，打开招式列表",
+        "goal_id": "knowledge_battle_fight_menu",
+        "goal": "在行动菜单里选 FIGHT，打开招式列表",
+        "steps": 1,
+        "acts_used": 1,
+        "termination": "goal_done",
+        "reason": "成功的关键是识别出光标初始就在 FIGHT 上，无需移动光标直接确认；本局无失败，1 键完成，属于最短路径。",
+        "summary": "战斗行动菜单中光标已停在 FIGHT 上，按一次 a 即展开招式列表（TACKLE/GROWL），单键达成目标。",
+        "reusable_patterns": [
+          "叠加层为 choice 且光标已在目标项（如 FIGHT）上时，直接按 a 确认，不要先按方向键「确认一下」",
+          "判断是否进入招式列表的判据：options 从 FIGHT/PKMN/ITEM/RUN 变为招式名（TACKLE/GROWL），且光标落在第一招",
+          "战斗菜单是 2×2 布局（FIGHT/PKMN 上排，ITEM/RUN 下排），光标默认在 FIGHT，多数情况下开局即可直接按 a"
+        ],
+        "critical_decisions": [
+          "step=0 直接按 a 确认 FIGHT，而不是先移动光标，是唯一且正确的转折键"
+        ],
+        "failure_points": [
+          "潜在风险：若光标不在 FIGHT 上（如上次操作后停在别的项），盲目按 a 会选错菜单项，应先核对 options 与光标位置"
+        ],
+        "quality_score": 0.6,
+        "quality_rationale": "记录字段完整、状态变化明确，但过程仅 1 键、无负样本，可复用信息量有限，故评分中等偏低。",
+        "applicable_scenes": [
+          "scene:battle",
+          "overlay:choice"
+        ],
+        "tags": [
+          "battle",
+          "fight_menu",
+          "move_list",
+          "menu_confirm",
+          "single_key"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "# 战斗菜单进入招式列表\n\n## 场景\n战斗场景，叠加层为 choice，选项为 FIGHT / PKMN / ITEM / RUN（2×2 布局，光标默认在 FIGHT）。\n\n## 做法\n- 先看 options 与光标位置：若光标已在 FIGHT 上，直接按 `a`，一次即可展开招式列表。\n- 不要为了「保险」先按方向键，多余移动可能把光标移出 FIGHT。\n\n## 成功判据\n- options 从 FIGHT/PKMN/ITEM/RUN 变为招式名（如 TACKLE / GROWL），光标落在第一招，即已进入招式选择界面。\n\n## 注意\n- 若光标不在 FIGHT 上（例如上次操作后停在 ITEM/RUN），直接按 a 会选错项，需先核对光标位置再确认。"
+      }
+    ],
+    "termination": "goal_done",
+    "judge_reason": "当前帧 overlay 是 choice，options 为 TACKLE / GROWL（招式名），光标停在 TACKLE，已打开招式列表",
+    "episodes": 1,
+    "succeeded": 1,
+    "acts_used": 1,
+    "max_episodes": 3
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_battle_fight_menu.run.summarize_run.000001"
+}

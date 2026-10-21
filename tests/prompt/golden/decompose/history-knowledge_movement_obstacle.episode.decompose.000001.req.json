@@ -1,0 +1,60 @@
+{
+  "task": "decompose",
+  "case_id": "history-knowledge_movement_obstacle.episode.decompose.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "goal": {
+      "goal": "你在地图 12 的 x=9 y=12，正南方 y=13 这一整行被挡住了。绕过它，走到 y=14 或更南的地方",
+      "criteria": "where 那一行显示 map_id 仍是 12 且 y >= 14"
+    },
+    "observation": {
+      "step": 0,
+      "place": {
+        "map_id": 12,
+        "x": 9,
+        "y": 12
+      },
+      "status": "（这一帧只读了内存）全局坐标 地图12 x=9 y=12，朝向 south",
+      "facts": {
+        "scene": null,
+        "overlay": "none",
+        "where": "全局坐标 地图12 x=9 y=12",
+        "facing": "south",
+        "neighbors": "北 . 南 v 西 . 东 .",
+        "landmarks": [
+          {
+            "kind": "人",
+            "map_id": 12,
+            "x": 14,
+            "y": 13
+          }
+        ],
+        "dialog_text": "",
+        "options": [],
+        "cursor": null,
+        "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=8  ....#GGGGG  (x=5..14)\ny=9  vvvv#GGGGG  (x=5..14)\ny=10 ..........  (x=5..14)\ny=11 ..........  (x=5..14)\ny=12 ....@....G  (x=5..14)\ny=13 #vvvv####N  (x=5..14)\ny=14 .........G  (x=5..14)\ny=15 .........G  (x=5..14)\ny=16 ..........  (x=5..14)",
+        "map_id": 12,
+        "screen": ""
+      },
+      "done": false,
+      "scene": "walk",
+      "takeover": null,
+      "menu_decode_complete": true,
+      "covered_by_script": false,
+      "selected_map_location": null,
+      "observation_notes": [
+        "未解码出屏幕文字，不能据此判断界面已结束"
+      ]
+    },
+    "task_memories": [],
+    "task_table": [],
+    "episode_index": [],
+    "knowledge": [],
+    "last_judge": null,
+    "max_tasks": 5,
+    "human_note": ""
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/decompose/inputs.jsonl#knowledge_movement_obstacle.episode.decompose.000001"
+}

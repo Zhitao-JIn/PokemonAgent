@@ -1,0 +1,144 @@
+{
+  "task": "summarize_run",
+  "case_id": "history-knowledge_pokemon_center_heal.run.summarize_run.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "run_id": "eval-knowledge_pokemon_center_heal",
+    "run_goal": "依次完成：让护士把队伍治好",
+    "goals": [
+      {
+        "task": {
+          "task_id": "knowledge_pokemon_center_heal",
+          "goal": "让护士把队伍治好",
+          "success_criteria": "对话框里出现治疗完成文字（如 We hope to see you again!）",
+          "max_steps": 15,
+          "initial_state_hint": "宝可梦中心护士前，队伍至少一只受伤"
+        },
+        "status": "abandoned",
+        "attempts": 1,
+        "last_episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "note": "上一局只反复与路人对话，未找到护士台；改为新目标从室内导航到护士处",
+        "overturned": false
+      },
+      {
+        "task": {
+          "task_id": "plan-eval-knowledge_pokemon_center_heal-1",
+          "goal": "从当前地图41的室内走到宝可梦中心护士台前并让护士治疗队伍",
+          "success_criteria": "画面出现护士对话与治疗完成文字（如 We hope to see you again!），队伍恢复",
+          "max_steps": 8,
+          "initial_state_hint": ""
+        },
+        "status": "abandoned",
+        "attempts": 1,
+        "last_episode_id": "eval-knowledge_pokemon_center_heal-ep2",
+        "note": "上一局在室内反复撞门/对话路人，未找到护士台；改为先定位护士再治疗",
+        "overturned": false
+      },
+      {
+        "task": {
+          "task_id": "plan-eval-knowledge_pokemon_center_heal-2",
+          "goal": "从地图41室内当前位置走到宝可梦中心护士台前（找到柜台后的护士并与其对话）",
+          "success_criteria": "画面出现护士对话文字（如 Welcome to the POKéMON CENTER! 或 Shall we heal your POKéMON?）",
+          "max_steps": 6,
+          "initial_state_hint": ""
+        },
+        "status": "failed",
+        "attempts": 1,
+        "last_episode_id": "eval-knowledge_pokemon_center_heal-ep3",
+        "note": "stalled",
+        "overturned": false
+      },
+      {
+        "task": {
+          "task_id": "plan-eval-knowledge_pokemon_center_heal-3",
+          "goal": "在护士对话中选择治疗选项，让护士把队伍治好",
+          "success_criteria": "画面出现治疗完成文字（如 We hope to see you again! 或队伍已恢复的提示）",
+          "max_steps": 4,
+          "initial_state_hint": ""
+        },
+        "status": "pending",
+        "attempts": 0,
+        "last_episode_id": null,
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "episode_memories": [
+      {
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "run_goal": "依次完成：让护士把队伍治好",
+        "goal_id": "knowledge_pokemon_center_heal",
+        "goal": "让护士把队伍治好",
+        "steps": 3,
+        "acts_used": 23,
+        "termination": "decompositions_exhausted",
+        "reason": "让护士把队伍治好；decompositions_exhausted；任务 3；动作 23",
+        "summary": "",
+        "reusable_patterns": [],
+        "critical_decisions": [],
+        "failure_points": [],
+        "quality_score": 0.0,
+        "quality_rationale": "本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆）",
+        "applicable_scenes": [],
+        "tags": [],
+        "first_frame": null,
+        "last_frame": null,
+        "markdown": ""
+      },
+      {
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep2",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "run_goal": "依次完成：让护士把队伍治好",
+        "goal_id": "plan-eval-knowledge_pokemon_center_heal-1",
+        "goal": "从当前地图41的室内走到宝可梦中心护士台前并让护士治疗队伍",
+        "steps": 2,
+        "acts_used": 18,
+        "termination": "decompositions_exhausted",
+        "reason": "从当前地图41的室内走到宝可梦中心护士台前并让护士治疗队伍；decompositions_exhausted；任务 2；动作 18",
+        "summary": "",
+        "reusable_patterns": [],
+        "critical_decisions": [],
+        "failure_points": [],
+        "quality_score": 0.0,
+        "quality_rationale": "本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆）",
+        "applicable_scenes": [],
+        "tags": [],
+        "first_frame": null,
+        "last_frame": null,
+        "markdown": ""
+      },
+      {
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep3",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "run_goal": "依次完成：让护士把队伍治好",
+        "goal_id": "plan-eval-knowledge_pokemon_center_heal-2",
+        "goal": "从地图41室内当前位置走到宝可梦中心护士台前（找到柜台后的护士并与其对话）",
+        "steps": 3,
+        "acts_used": 11,
+        "termination": "decompositions_exhausted",
+        "reason": "从地图41室内当前位置走到宝可梦中心护士台前（找到柜台后的护士并与其对话）；decompositions_exhausted；任务 3；动作 11",
+        "summary": "",
+        "reusable_patterns": [],
+        "critical_decisions": [],
+        "failure_points": [],
+        "quality_score": 0.0,
+        "quality_rationale": "本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆）",
+        "applicable_scenes": [],
+        "tags": [],
+        "first_frame": null,
+        "last_frame": null,
+        "markdown": ""
+      }
+    ],
+    "termination": "stalled",
+    "judge_reason": "stalled",
+    "episodes": 3,
+    "succeeded": 0,
+    "acts_used": 52,
+    "max_episodes": 3
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_pokemon_center_heal.run.summarize_run.000001"
+}

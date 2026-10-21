@@ -1,0 +1,46 @@
+你在整理一只玩神奇宝贝的 agent 的**单次 task 执行记录**。
+
+一个 task 是一段有预算的按键执行（goal：进门；task_id：task-1）。下面是执行期内
+逐键记录的情景记忆（"当时看到 → 做了 → 之后变成"）。每条都带标注：`【正样本】` 是推进了
+目标的一键，`【负样本】` 是没有效果或偏离目标的一键，标注后面是理由——两类都要用，
+负样本是 `failure_points` 的主要来源。结果：目标达成（goal_done）；判定依据：地图改变
+（用了 1 / 3 键）。
+
+## 第 0 条 【正样本】与目标有关
+(realcheck-0924-182535-ep1, step=3) 当时看到：
+  叠加层  none
+  位置    全局坐标 地图51 x=17 y=47
+  地图    51
+  朝向    south
+  四邻    北 . 南 # 西 D 东 D
+  地标    人 x=13 y=43; 招牌 x=18 y=45; 门 x=15 y=47; 门 x=16 y=47; 门 x=17 y=47; 门 x=18 y=47
+  做了  down
+  之后变成：
+  叠加层  none
+  位置    全局坐标 地图50 x=5 y=1
+  地图    50
+  朝向    south
+  四邻    北 D 南 . 西 . 东 .
+  地标    门 x=4 y=0; 门 x=5 y=0; 人 x=2 y=4; 人 x=8 y=4
+
+## 你的任务
+
+把**这一次 task 的前后变化**总结成一条 JSON 记忆，供上一层的 episode 总结与以后
+的局检索复用。要求：
+
+- `summary`：这一次 task 从什么状态走到什么状态、结果如何。**具体到字段/坐标/对话内容**，
+  不写空话。
+- `reason`：一两句话的**结论说明**——成了靠的是哪几键；没成卡在哪、为什么（结合「结果」
+  里的终止类别：`goal_done` 达成 / `world_ended` 世界结束 / `stalled` 原地打转 /
+  `budget_exhausted` 键数用尽 / `interrupted` 半路被意外打断，比如遇敌）。「结果」里的**判定依据**是判定员当时为什么判停的理由，可以参考，
+  但要写你自己看记录得出的结论，不要照抄它。上一层会直接读这句话决定下一步怎么拆。
+- `reusable_patterns`：以后遇到同类目标可以直接照做的做法。
+- `critical_decisions`：哪几步是转折（走对了或走错了）。
+- `failure_points`：哪一步浪费了键数、为什么。
+- `quality_score`（0.0–1.0）与 `quality_rationale`：这份记录对以后类似 task 的参考价值。
+  记录空洞、前后无变化时相应压低，`quality_rationale` 里说明原因。
+- `tags`：几个词。
+
+只输出一个 JSON 对象，字段同 episode 蒸馏契约（summary / reason / reusable_patterns /
+critical_decisions / failure_points / quality_score / quality_rationale /
+applicable_scenes / tags / markdown）。

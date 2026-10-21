@@ -1,0 +1,60 @@
+{
+  "task": "decompose",
+  "case_id": "history-knowledge_battle_action_menu.episode.decompose.000003",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "goal": {
+      "goal": "在野外草丛区域走动直到触发一场野生宝可梦战斗，进入战斗行动菜单",
+      "criteria": "画面出现战斗界面，底部行动菜单显示 FIGHT/BAG/POKEMON/RUN 等选项"
+    },
+    "observation": {
+      "step": 0,
+      "place": {
+        "map_id": 12,
+        "x": 12,
+        "y": 24
+      },
+      "status": "（这一帧只读了内存）全局坐标 地图12 x=12 y=24，朝向 east",
+      "facts": {
+        "scene": null,
+        "overlay": "none",
+        "where": "全局坐标 地图12 x=12 y=24",
+        "facing": "east",
+        "neighbors": "北 G 南 G 西 . 东 G",
+        "landmarks": [
+          {
+            "kind": "招牌",
+            "map_id": 12,
+            "x": 9,
+            "y": 27
+          }
+        ],
+        "dialog_text": "",
+        "options": [],
+        "cursor": null,
+        "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=20 ..........  (x=8..17)\ny=21 ..........  (x=8..17)\ny=22 ....GGGG..  (x=8..17)\ny=23 ####GGGGvv  (x=8..17)\ny=24 ....@GGG..  (x=8..17)\ny=25 ....GGGG..  (x=8..17)\ny=26 ..........  (x=8..17)\ny=27 .Svvvvvvvv  (x=8..17)\ny=28 GG....GGGG  (x=8..17)",
+        "map_id": 12,
+        "screen": ""
+      },
+      "done": false,
+      "scene": "walk",
+      "takeover": null,
+      "menu_decode_complete": true,
+      "covered_by_script": false,
+      "selected_map_location": null,
+      "observation_notes": [
+        "未解码出屏幕文字，不能据此判断界面已结束"
+      ]
+    },
+    "task_memories": [],
+    "task_table": [],
+    "episode_index": [],
+    "knowledge": [],
+    "last_judge": null,
+    "max_tasks": 5,
+    "human_note": ""
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/decompose/inputs.jsonl#knowledge_battle_action_menu.episode.decompose.000003"
+}

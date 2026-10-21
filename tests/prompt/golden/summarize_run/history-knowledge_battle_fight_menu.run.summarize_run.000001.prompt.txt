@@ -1,0 +1,33 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：在行动菜单里选 FIGHT，打开招式列表
+终止类别：goal_done；判定依据：当前帧 overlay 是 choice，options 为 TACKLE / GROWL（招式名），光标停在 TACKLE，已打开招式列表
+累计 1 局，其中 1 局成功，使用 1 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_battle_fight_menu｜在行动菜单里选 FIGHT，打开招式列表｜completed｜note=｜overturned=false
+- plan-eval-knowledge_battle_fight_menu-1｜在战斗中击败 RATTATA：选 FIGHT 打开招式列表，用攻击招式打倒对手｜pending｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_battle_fight_menu-ep1) 目标：在行动菜单里选 FIGHT，打开招式列表（成功，goal_done，1 个 task / 1 键）
+  结论  成功的关键是识别出光标初始就在 FIGHT 上，无需移动光标直接确认；本局无失败，1 键完成，属于最短路径。
+  总结  战斗行动菜单中光标已停在 FIGHT 上，按一次 a 即展开招式列表（TACKLE/GROWL），单键达成目标。
+  可复用经验  叠加层为 choice 且光标已在目标项（如 FIGHT）上时，直接按 a 确认，不要先按方向键「确认一下」；判断是否进入招式列表的判据：options 从 FIGHT/PKMN/ITEM/RUN 变为招式名（TACKLE/GROWL），且光标落在第一招；战斗菜单是 2×2 布局（FIGHT/PKMN 上排，ITEM/RUN 下排），光标默认在 FIGHT，多数情况下开局即可直接按 a
+  关键决策  step=0 直接按 a 确认 FIGHT，而不是先移动光标，是唯一且正确的转折键
+  失败点  潜在风险：若光标不在 FIGHT 上（如上次操作后停在别的项），盲目按 a 会选错菜单项，应先核对 options 与光标位置
+  质量分 0.60（理由：记录字段完整、状态变化明确，但过程仅 1 键、无负样本，可复用信息量有限，故评分中等偏低。）
+  标签  battle、fight_menu、move_list、menu_confirm、single_key
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

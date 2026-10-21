@@ -1,0 +1,82 @@
+{
+  "task": "decompose",
+  "case_id": "history-knowledge_dialogue_advance.episode.decompose.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "goal": {
+      "goal": "把对话一句一句按完，直到对话框消失",
+      "criteria": "历史里出现过 dialog_text，且这一帧 overlay 不是 dialog"
+    },
+    "observation": {
+      "step": 0,
+      "place": {
+        "map_id": 42,
+        "x": 3,
+        "y": 7
+      },
+      "status": "（这一帧只读了内存）全局坐标 地图42 x=3 y=7，朝向 north。对话框：「Hey! You came from PALLET TOWN?」",
+      "facts": {
+        "scene": null,
+        "overlay": "dialog",
+        "where": "全局坐标 地图42 x=3 y=7",
+        "facing": "north",
+        "neighbors": "北 . 南 # 西 . 东 D",
+        "landmarks": [
+          {
+            "kind": "人",
+            "map_id": 42,
+            "x": 3,
+            "y": 3
+          },
+          {
+            "kind": "人",
+            "map_id": 42,
+            "x": 0,
+            "y": 5
+          },
+          {
+            "kind": "人",
+            "map_id": 42,
+            "x": 5,
+            "y": 5
+          },
+          {
+            "kind": "门",
+            "map_id": 42,
+            "x": 3,
+            "y": 7
+          },
+          {
+            "kind": "门",
+            "map_id": 42,
+            "x": 4,
+            "y": 7
+          }
+        ],
+        "dialog_text": "Hey! You came from PALLET TOWN?",
+        "options": [],
+        "cursor": null,
+        "walk_map": "",
+        "map_id": 42,
+        "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│Hey! You came from│\n│                  │\n│PALLET TOWN?      │\n└──────────────────┘"
+      },
+      "done": false,
+      "scene": "shop",
+      "takeover": null,
+      "menu_decode_complete": true,
+      "covered_by_script": false,
+      "selected_map_location": null,
+      "observation_notes": []
+    },
+    "task_memories": [],
+    "task_table": [],
+    "episode_index": [],
+    "knowledge": [],
+    "last_judge": null,
+    "max_tasks": 5,
+    "human_note": ""
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/decompose/inputs.jsonl#knowledge_dialogue_advance.episode.decompose.000001"
+}

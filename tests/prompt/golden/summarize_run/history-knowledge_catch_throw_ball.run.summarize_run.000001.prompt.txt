@@ -1,0 +1,32 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：在战斗中打开背包，选精灵球扔出去
+终止类别：goal_done；判定依据：对话框里出现了投球结果文字「Aww! It appeared to be caught!」，说明精灵球已经扔出去了
+累计 1 局，其中 1 局成功，使用 12 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_catch_throw_ball｜在战斗中打开背包，选精灵球扔出去｜completed｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_catch_throw_ball-ep1) 目标：在战斗中打开背包，选精灵球扔出去（成功，goal_done，3 个 task / 12 键）
+  结论  最终达成 goal_done：关键在于选单导航用行列差算最短路径（FIGHT→ITEM 本可 down 一步直达）、背包里 down 一次精准落到 POKé BALL 再 a 确认、投球后必须连续按 a 让结算文字逐帧展开。卡点在于投球后画面短暂无变化时机械重复 a 四次，浪费预算并触发 stalled 判定。
+  总结  在战斗中从 FIGHT 选单打开背包、选中 POKé BALL 投出，并连续按 a 推进打字机式结算对话，直到出现「Aww! It appeared to be caught!」；全程 12 键内完成，但中途因重复按 a 空转被判 stalled 一次。
+  可复用经验  2×2 战斗选单（FIGHT/PKMN 上排，ITEM/RUN 下排）从 FIGHT 到 ITEM 最省键是 down 一次，不要 right+down+left 绕路；背包列表默认光标在 POTION，用 down/up 移到 POKé BALL，核对 ▶ 指向目标项后再按 a；对话框出现「RED used POKé BALL!」即表示投球已发出，属于正样本，不必再重复按 a；投球结算文字是打字机式逐帧展开，需连续按 a 直到出现 was caught!/broke free!/appeared to be caught! 等关键词；判断投球结果看 dialog 字段是否含 caught/broke free 关键词，而非看 HP 或场景变化；连续两次按键前后快照完全相同（同帧同对话）时立即停手，改等待或换键，避免空转被判 stalled
+  关键决策  step=2 按 left 从 RUN 回到 ITEM，是纠偏关键一步，把光标拉回目标格；step=3 在 ITEM 上按 a，正确触发道具菜单；step=4 按 down 把光标 POTION→POKé BALL，精准落在目标物品；step=5 按 a 确认使用，对话框变为「RED used POKé BALL!」；step=6 起继续按 a 四次无变化，是走错的分支点，应在此处改策略；t3 中连续两次 a 把对话从「RED used POKé BALL!」推进到完整结果文字，命中判据后立即停止
+  失败点  step=0 按 right 从 FIGHT 到 PKMN，方向偏离目标（应向下到 ITEM），浪费 1 键；step=1 按 down 从 PKMN 到 RUN，继续远离 ITEM，再浪费 1 键；step=6–9 共 4 次按 a 均无状态变化，未识别画面冻结，纯浪费键数并导致 stalled；未出现投球结果文字时没有尝试等待或换键，机械重复同一输入
+  质量分 0.80（理由：三个 task 覆盖了选单导航、背包选球、结算对话推进的完整链路，正负样本都有且字段具体，可复用性强；但样本仅一局、目标简单，且 t2 后半段同帧负样本信息量低，故未给更高分。）
+  标签  battle、item_menu、pokeball、dialog_advance、navigation、stalled_recovery
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

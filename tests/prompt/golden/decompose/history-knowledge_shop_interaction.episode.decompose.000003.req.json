@@ -1,0 +1,84 @@
+{
+  "task": "decompose",
+  "case_id": "history-knowledge_shop_interaction.episode.decompose.000003",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "goal": {
+      "goal": "从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）",
+      "criteria": "画面出现 BUY / SELL / QUIT 选项列表"
+    },
+    "observation": {
+      "step": 0,
+      "place": {
+        "map_id": 42,
+        "x": 4,
+        "y": 7
+      },
+      "status": "（这一帧只读了内存）全局坐标 地图42 x=4 y=7，朝向 south",
+      "facts": {
+        "scene": null,
+        "overlay": "none",
+        "where": "全局坐标 地图42 x=4 y=7",
+        "facing": "south",
+        "neighbors": "北 . 南 # 西 D 东 .",
+        "landmarks": [
+          {
+            "kind": "人",
+            "map_id": 42,
+            "x": 3,
+            "y": 3
+          },
+          {
+            "kind": "人",
+            "map_id": 42,
+            "x": 0,
+            "y": 5
+          },
+          {
+            "kind": "人",
+            "map_id": 42,
+            "x": 5,
+            "y": 6
+          },
+          {
+            "kind": "门",
+            "map_id": 42,
+            "x": 3,
+            "y": 7
+          },
+          {
+            "kind": "门",
+            "map_id": 42,
+            "x": 4,
+            "y": 7
+          }
+        ],
+        "dialog_text": "",
+        "options": [],
+        "cursor": null,
+        "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=3  ##.N######  (x=0..9)\ny=4  ##..######  (x=0..9)\ny=5  N#......##  (x=0..9)\ny=6  ##...N..##  (x=0..9)\ny=7  ...D@...##  (x=0..9)\ny=8  ##########  (x=0..9)\ny=9  ##########  (x=0..9)\ny=10 ##########  (x=0..9)\ny=11 ##########  (x=0..9)",
+        "map_id": 42,
+        "screen": ""
+      },
+      "done": false,
+      "scene": "shop",
+      "takeover": null,
+      "menu_decode_complete": true,
+      "covered_by_script": false,
+      "selected_map_location": null,
+      "observation_notes": [
+        "未解码出屏幕文字，不能据此判断界面已结束"
+      ]
+    },
+    "task_memories": [],
+    "task_table": [],
+    "episode_index": [],
+    "knowledge": [],
+    "last_judge": null,
+    "max_tasks": 5,
+    "human_note": ""
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/decompose/inputs.jsonl#knowledge_shop_interaction.episode.decompose.000003"
+}

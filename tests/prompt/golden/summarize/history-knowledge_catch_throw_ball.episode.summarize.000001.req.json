@@ -1,0 +1,146 @@
+{
+  "task": "summarize",
+  "case_id": "history-knowledge_catch_throw_ball.episode.summarize.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "entries": [
+      {
+        "run_id": "eval-knowledge_catch_throw_ball",
+        "episode_id": "eval-knowledge_catch_throw_ball-ep1",
+        "task_id": "knowledge_catch_throw_ball-t1",
+        "goal": "在战斗选单里把光标从 FIGHT 移到 ITEM 并确认",
+        "termination": "goal_done",
+        "reason": "成功靠最后两键 left + a：left 把光标从 RUN 横移到同行的 ITEM，a 在 ITEM 上确认打开道具菜单。前两键 right/down 是绕路（FIGHT→PKMN→RUN），多花了 2 键但未偏离到不可挽回。",
+        "steps_used": 4,
+        "total_acts": 0,
+        "summary": "战斗选单初始光标在 FIGHT（2×2 布局：FIGHT/PKMN 上排，ITEM/RUN 下排）。按 right 到 PKMN，按 down 到 RUN，按 left 到 ITEM（第 2 行第 1 列），按 a 确认后叠加层从四选项战斗选单变为道具列表 POTION ×1 / POKé BALL ×4 / CANCEL，光标停在 POTION，goal_done，共 4 键。",
+        "reusable_patterns": [
+          "2×2 战斗选单中，从 FIGHT 到 ITEM 最省键是 down 一次（FIGHT→ITEM），或 right+down+left；优先用 down 直达。",
+          "确认选项用 a；确认后叠加层选项列表变化即为成功信号（战斗四选项 → 道具列表）。",
+          "移动前先读 option_layout 的行列与光标行列，按行列差算最短路径，不要凭方向直觉乱按。"
+        ],
+        "critical_decisions": [
+          "step=2 按 left 从 RUN 回到 ITEM，是纠偏的关键一步，把光标拉回目标格。",
+          "step=3 在 ITEM 上按 a，正确触发道具菜单，完成目标。"
+        ],
+        "failure_points": [
+          "step=0 按 right 从 FIGHT 到 PKMN，方向偏离目标（应向下到 ITEM），浪费 1 键。",
+          "step=1 按 down 从 PKMN 到 RUN，继续远离 ITEM，再浪费 1 键；两步合计多花 2 键。"
+        ],
+        "quality_score": 0.75,
+        "quality_rationale": "记录完整、前后帧清晰，能看出最短路径与绕路原因，对同类选单导航有参考价值；但本次执行本身不是最优（4 键 vs 2 键），且目标简单，参考上限有限。",
+        "tags": [
+          "battle",
+          "menu-navigation",
+          "cursor",
+          "item",
+          "goal_done"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "## Task knowledge_catch_throw_ball-t1\n\n- 初始：battle/choice，光标 FIGHT（第1行第1列），选项 FIGHT/PKMN/ITEM/RUN。\n- 执行：right→PKMN，down→RUN，left→ITEM，a→道具菜单（POTION×1 / POKé BALL×4 / CANCEL）。\n- 结果：goal_done，4 键。\n- 结论：left+a 是成功关键；right/down 绕路多花 2 键，最短应为 down 直达 ITEM。\n"
+      },
+      {
+        "run_id": "eval-knowledge_catch_throw_ball",
+        "episode_id": "eval-knowledge_catch_throw_ball-ep1",
+        "task_id": "knowledge_catch_throw_ball-t2",
+        "goal": "在背包物品列表里把光标移到精灵球（POKé BALL）并确认使用",
+        "termination": "stalled",
+        "reason": "前两键（down 移光标到 POKé BALL + a 确认）是正确的，成功触发了投球对话；但投球结果文字迟迟不出现，后续 4 次 a 全部无效、画面冻结在同一帧，说明此时按键无法推进对话（可能是动画/结算尚未结束或输入被吞），agent 没有换策略（如等待或换键）而是一直重复 a，最终原地打转被判 stalled。",
+        "steps_used": 6,
+        "total_acts": 4,
+        "summary": "在 battle 场景（地图12 x=13 y=7，朝向 west，对手 PIDGEY L3 满血，我方 BULBASAUR L7 25/25）打开背包 choice 叠加层，选项为 POTION×1 / POKé BALL×4 / CANCEL，初始光标在 POTION。按 down 一次把光标从 POTION 移到 POKé BALL（第2项），再按 a 确认，对话框变为「RED used POKé BALL!」，成功投出精灵球。此后连续按 a 四次（step6–9），对话与画面完全不变，仍停在「RED used POKé BALL!」，未出现 was caught! / broke free! 等投球结果文字，6/12 键时被判 stalled，目标未达成。",
+        "reusable_patterns": [
+          "背包列表选物品：先用 down/up 把光标从默认项（POTION）移到目标项（POKé BALL），核对 option_layout 中 ▶ 指向目标后再按 a 确认。",
+          "确认使用后若对话框出现「RED used POKé BALL!」即表示投球已发出，属于正样本，不必再重复按 a。",
+          "当连续两次按键前后快照完全相同（同一帧、同一对话）时，应立即停止重复同一按键，改为等待/换键或判定为卡死，避免浪费预算。"
+        ],
+        "critical_decisions": [
+          "step4 按 down：光标 POTION→POKé BALL，精准落在目标物品上，是成功的关键一步。",
+          "step5 按 a：确认使用，对话框变为「RED used POKé BALL!」，投球动作成功触发。",
+          "step6 起继续按 a：第一次无变化后仍反复按 a（step6–9），是走错的分支点，应在此处改策略。"
+        ],
+        "failure_points": [
+          "step6–9 共 4 次按 a 均无任何状态变化，纯属浪费键数（6/12 中占 4 键），且未识别出画面冻结。",
+          "未出现投球结果文字时没有尝试其他输入或等待，导致机械判停 stalled。"
+        ],
+        "quality_score": 0.55,
+        "quality_rationale": "前半段（down 选球 + a 确认）是干净可复用的正样本，能直接指导同类背包选球任务；但后半段 4 条负样本完全同帧、信息量低，且暴露了重复无效按键的问题，整体参考价值中等。",
+        "tags": [
+          "battle",
+          "bag",
+          "POKé BALL",
+          "cursor_move",
+          "stalled",
+          "repeated_key"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "## 任务回顾：knowledge_catch_throw_ball-t2\n\n- **初始**：battle，choice 层，光标在 POTION（POTION×1 / POKé BALL×4 / CANCEL），对手 PIDGEY L3，我方 BULBASAUR L7 25/25。\n- **step4 down**：光标 POTION → POKé BALL ✅\n- **step5 a**：对话框「RED used POKé BALL!」✅ 投球成功触发\n- **step6–9 a×4**：画面完全不变，仍停在「RED used POKé BALL!」，无 was caught!/broke free! ❌\n- **结果**：stalled，6/12 键，目标未达成。\n\n**结论**：选球+确认两键正确；卡在投球结果不出现时反复按 a，未换策略。"
+      },
+      {
+        "run_id": "eval-knowledge_catch_throw_ball",
+        "episode_id": "eval-knowledge_catch_throw_ball-ep1",
+        "task_id": "knowledge_catch_throw_ball-t3",
+        "goal": "在战斗中按 a 推进投球结算对话，直到对话框出现投球结果文字（was caught! / broke free! 等）",
+        "termination": "goal_done",
+        "reason": "成功靠的是连续两次按 a：第一次把 'RED used POKé BALL!' 推进到结算文字开头，第二次补全整句 'Aww! It appeared to be caught!' 触发判据。投球结算对话是逐帧打字机式展开，必须多按 a 才能让结果文字完整出现，不能只按一次就停。",
+        "steps_used": 2,
+        "total_acts": 10,
+        "summary": "在战斗场景（地图12 x=13 y=7，朝向west，dialog叠加层）中，对话框初始为 'RED used POKé BALL!'，我方 BULBASAUR L7 满血25/25，敌方 PIDGEY L3 满血15/15。按第1个 a 后对话框推进为 'Aww! It app'，按第2个 a 后补全为 'Aww! It appeared to be caught!'，出现投球结果文字，goal_done，共耗2/12键。",
+        "reusable_patterns": [
+          "投球后对话框先显示 'RED used POKé BALL!'，随后进入结算文字，需连续按 a 推进打字机式对话直到出现 was caught!/broke free!/appeared to be caught! 等结果文字。",
+          "判断目标达成看 dialog 字段是否含 caught/broke free 等投球结果关键词，而非看 HP 或场景变化。",
+          "对话叠加层（overlay=dialog）下按 a 是唯一推进手段，无需移动或选菜单。"
+        ],
+        "critical_decisions": [
+          "第0步按 a：从 'RED used POKé BALL!' 推进到 'Aww! It app'，确认进入投球结算阶段。",
+          "第1步按 a：补全为 'Aww! It appeared to be caught!'，命中判据，立即停止，未浪费多余键。"
+        ],
+        "failure_points": [],
+        "quality_score": 0.9,
+        "quality_rationale": "记录完整呈现了从投球使用到结果文字出现的逐帧对话变化，正样本两键均有效、无负样本，字段与对话内容具体，对同类投球结算 task 有高参考价值；仅因过程极短、无失败分支可学，略低于满分。",
+        "tags": [
+          "battle",
+          "dialog",
+          "pokeball",
+          "catch",
+          "press-a"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "## Task knowledge_catch_throw_ball-t3\n\n- **起点**：battle 场景，dialog 叠加层，对话 'RED used POKé BALL!'，BULBASAUR L7 25/25 vs PIDGEY L3 15/15，坐标地图12 (13,7) 朝西。\n- **过程**：按 a → 'Aww! It app'；再按 a → 'Aww! It appeared to be caught!'。\n- **结果**：goal_done，2/12 键。\n- **要点**：投球结算文字是打字机式逐帧展开，需连续按 a 直到出现 caught/broke free 等结果关键词；判据看 dialog 字段而非 HP。"
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "按 left 后光标从 RUN 移到 ITEM，按 a 后叠加层从战斗四选项变为道具列表，实际推进了目标（打开背包）"
+      },
+      {
+        "index": 1,
+        "positive": true,
+        "why": "down 把光标从 POTION 移到 POKé BALL，a 确认后对话框变为「RED used POKé BALL!」，投球已发出，符合目标；后续重复 a 无变化属浪费但整体行为推进了目标"
+      },
+      {
+        "index": 2,
+        "positive": true,
+        "why": "两次按 a 使对话框从「RED used POKé BALL!」推进到「Aww! It appeared to be caught!」，出现投球结果文字，达成目标"
+      }
+    ],
+    "episode_id": "eval-knowledge_catch_throw_ball-ep1",
+    "run_id": "eval-knowledge_catch_throw_ball",
+    "run_goal": "依次完成：在战斗中打开背包，选精灵球扔出去",
+    "goal_id": "knowledge_catch_throw_ball",
+    "goal": "在战斗中打开背包，选精灵球扔出去",
+    "termination": "goal_done",
+    "judge_reason": "对话框显示投球结果文字「Aww! It appeared to be caught!」，属于投球结算结果。",
+    "steps": 3,
+    "acts_used": 12,
+    "max_steps": 15
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_catch_throw_ball.episode.summarize.000001"
+}
