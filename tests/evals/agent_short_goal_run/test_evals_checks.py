@@ -197,6 +197,35 @@ CASES = {
             ),
         ],
     ),
+    "shop_two_npcs_interacted": (
+        [
+            frame(1, people=((2, 5), (4, 3), (6, 4))),
+            _event(
+                "write_object_memory",
+                2,
+                OtherContent(
+                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
+                ),
+            ),
+            _event(
+                "write_object_memory",
+                3,
+                OtherContent(
+                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 4, "y": 3}
+                ),
+            ),
+        ],
+        [
+            frame(1, people=((2, 5), (4, 3), (6, 4))),
+            _event(
+                "write_object_memory",
+                2,
+                OtherContent(
+                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
+                ),
+            ),
+        ],
+    ),
     "shop_cancelled": (
         [
             frame(1, options=("YES", "NO")),

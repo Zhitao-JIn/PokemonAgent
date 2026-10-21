@@ -78,6 +78,41 @@ def shop_all_npcs_interacted(stream: RunStream, sample: EvalSample) -> CheckVerd
     )
 
 
+@rule("shop_two_npcs_interacted")
+def shop_two_npcs_interacted(stream: RunStream, sample: EvalSample) -> CheckVerdict:
+    """本 task 起点可见的至少两位不同 NPC 各有一次对话交互事件。"""
+    episodes = stream.episodes_for(sample.sample_id)
+    frames = stream.frames(episodes)
+    if not frames:
+        return unjudgeable("没有目标局的观测帧")
+    people = {
+        (mark.map_id, mark.x, mark.y)
+        for mark in frames[0].content.facts.landmarks
+        if mark.kind == "人"
+    }
+    if len(people) < 2:
+        return unjudgeable("起点观测不足两位可核对的 NPC 地标")
+    interacted: dict[tuple[int, int, int], str] = {}
+    for event in stream.in_episodes(episodes, "write_object_memory"):
+        content = event.content.model_dump(mode="python")
+        place = content.get("place")
+        if content.get("object_kind") != "人" or content.get("outcome") != "dialog":
+            continue
+        if not isinstance(place, dict):
+            continue
+        key = (place.get("map_id"), place.get("x"), place.get("y"))
+        if key in people:
+            interacted[key] = event.uuid
+    if len(interacted) < 2:
+        return failed(f"只与 {len(interacted)} 位不同 NPC 完成对话，至少需要 2 位")
+    evidence = [interacted[key] for key in sorted(interacted)[:2]]
+    return CheckVerdict(
+        outcome="pass",
+        evidence=evidence,
+        reason=f"本 task 已与起点可见的 {len(interacted)} 位不同 NPC 完成对话（要求至少 2 位）",
+    )
+
+
 @rule("shop_list_opened")
 def shop_list_opened(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     """出现过带价格的商品列表。"""
@@ -147,6 +182,7 @@ def shop_cancelled(stream: RunStream, sample: EvalSample) -> CheckVerdict:
 
 __all__ = [
     "shop_all_npcs_interacted",
+    "shop_two_npcs_interacted",
     "shop_bought",
     "shop_cancelled",
     "shop_item_selected",

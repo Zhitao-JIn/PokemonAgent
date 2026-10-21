@@ -142,3 +142,31 @@ def test_battle_navigation_prompt_exposes_directions_scripts_and_cursor() -> Non
     assert "battle_run" in prompt
     assert "cursor: FIGHT" in prompt and "▶FIGHT PKMN" in prompt
     assert "你不直接按键" not in prompt
+
+
+def test_walk_prompt_prioritizes_navigation_scripts_for_long_or_blocked_routes() -> None:
+    from pokemon_agent.world import Facts
+    from pokemon_agent.world.action_space import compute_action_space
+
+    observation = TaskObservation(
+        step=0,
+        status="野外",
+        scene=TaskScene.WALK,
+        facts=Facts(overlay=Facts.Overlay.NONE),
+    )
+    request = FromHarnessToBrainToolChooseOnceReq(
+        goals=[Goal(goal="绕过障碍走到门口", criteria="到达门口")],
+        obs=observation,
+        space=compute_action_space(observation, ["up", "down", "left", "right", "a", "b"]),
+        memories=[],
+    )
+
+    prompt = build_prompt(request)
+
+    assert "这一次要执行的一个动作" in prompt
+    assert "需要绕过障碍或跨图时，优先用「导航脚本」" in prompt
+    assert "移动受阻或位置连续没有进展时，改用导航脚本或换路线" in prompt
+    navigation_section = prompt.split("导航脚本（", 1)[1].split("业务脚本（", 1)[0]
+    assert "walk_to(" in navigation_section and "exit_map(" in navigation_section
+    assert "talk_to_adjacent_npc(" not in navigation_section
+    assert prompt.index("导航脚本（") < prompt.index("基础按键：")

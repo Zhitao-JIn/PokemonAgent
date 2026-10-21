@@ -1,0 +1,9 @@
+{
+  "parent_version": "v20261021_retest4",
+  "change": "retest4 with shop interaction target reduced to two distinct NPCs and choose prompt improved to prioritize navigation/business scripts when applicable",
+  "repacked_samples": [
+    "knowledge_shop_interaction"
+  ],
+  "source_state_updates": {},
+  "archive_note": "Only the shop interaction run goal and criterion were revised; frozen world and memory snapshots are reused."
+}

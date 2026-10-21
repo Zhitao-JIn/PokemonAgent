@@ -125,6 +125,7 @@ REPEAT_HINT = load("repeat_hint").text
 
 _TEMPLATE = load("decide_action")
 _SCRIPT_TEMPLATE = load("decide_script")
+_NAVIGATION_SCRIPTS = frozenset({"walk_to", "walk_to_adjacent", "face_direction", "exit_map"})
 
 
 def _render_goals(goals: list[Goal]) -> str:
@@ -190,18 +191,30 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq, *, max_segments: int)
     # （上一条的「之后变成」就是下一条的「当时看到」）。`render_sequence()` 逐条渲、
     # 只在确认首尾相接时把重复的那一帧换成提示——条目一条不删，画面不重复贴。
     recalled = "\n\n".join(render_sequence(req.memories)) or "（无相关记忆）"
-    actions = "\n".join(
-        f"- {name}: {space.descriptions.get(name, '（无说明）')}" for name in space.names
-    )
-    # 脚本条目（P5）：与键同列在"可用动作"一节，签名 + 说明 + 适用场合。
-    # 选择方式与键完全同权：输出 {"action": "<脚本名>", "args": {...}}。
-    script_lines = [
+    key_lines = [f"- {name}: {space.descriptions.get(name, '（无说明）')}" for name in space.names]
+    # 导航脚本单独前置，避免它们淹没在大量键与业务脚本中。
+    navigation_lines = [
         f"- {e.signature()}：{e.description}"
         for e in space.entries
-        if e.kind == "script" and space.enabled(e.name)
+        if e.kind == "script" and space.enabled(e.name) and e.name in _NAVIGATION_SCRIPTS
     ]
-    if script_lines:
-        actions += "\n\n机械脚本（一次调用做完一串按键，占一步）：\n" + "\n".join(script_lines)
+    business_lines = [
+        f"- {e.signature()}：{e.description}"
+        for e in space.entries
+        if e.kind == "script" and space.enabled(e.name) and e.name not in _NAVIGATION_SCRIPTS
+    ]
+    action_sections = []
+    if navigation_lines:
+        action_sections.append(
+            "导航脚本（到远处目标、绕障或跨图时优先考虑）：\n" + "\n".join(navigation_lines)
+        )
+    if business_lines:
+        action_sections.append(
+            "业务脚本（目标本身要求完整业务操作时优先考虑）：\n" + "\n".join(business_lines)
+        )
+    if key_lines:
+        action_sections.append("基础按键：\n" + "\n".join(key_lines))
+    actions = "\n\n".join(action_sections)
     if space.note:
         actions += f"\n\n{space.note}"
     return append_human_note(
