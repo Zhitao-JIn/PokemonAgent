@@ -9,7 +9,10 @@ tool 函数体是薄壳：信封组装（`common.envelope`）+ 委托 `memory.re
 
 起跑（用户本机，0924 口径）：
 
-    python -m pokemon_agent.mcp_servers.memory_server --memory-root <路径>
+    python -m pokemon_agent.mcp_servers.memory_server [--config 覆盖文件.json ...]
+
+落盘根、embedding / reranker 型号、融合参数与监听地址全部来自配置（`paths.memory`、
+`memory.*`、`services.memory_server_url`）；命令行只剩覆盖文件与管理面开关。
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ import threading
 import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
@@ -37,6 +41,7 @@ from pokemon_agent.mcp_servers.common import (
     health_payload,
 )
 from pokemon_agent.memory.recall import MemoryCapability
+from pokemon_agent.settings import load_config, resolve_path
 
 mcp = FastMCP("pokemon-memory")
 
@@ -169,31 +174,48 @@ async def health(_request: Request) -> JSONResponse:
     )
 
 
+def _listen_address(url: str | None, host: str | None, port: int | None) -> tuple[str, int]:
+    """监听地址：命令行覆盖 > 配置里的服务地址 > 本机 8766。"""
+    parsed = urlsplit(url) if url else None
+    resolved_host = host or (parsed.hostname if parsed and parsed.hostname else "127.0.0.1")
+    resolved_port = port or (parsed.port if parsed and parsed.port else 8766)
+    return resolved_host, resolved_port
+
+
 def main() -> None:
     """命令行入口：解析参数 → 构造能力 → 起 Streamable HTTP 服务。"""
     parser = argparse.ArgumentParser(description="pokemon memory MCP server")
-    parser.add_argument("--memory-root", default=None, help="记忆库落盘根（缺省=启动目录/memory）")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument(
+        "--config", action="append", type=Path, help="覆盖 default.json 的配置文件，可重复，后者胜"
+    )
+    parser.add_argument("--host", default=None, help="覆盖配置里 memory_server_url 的主机")
+    parser.add_argument(
+        "--port", type=int, default=None, help="覆盖配置里 memory_server_url 的端口"
+    )
     parser.add_argument("--enable-admin", action="store_true", help="开放快照与恢复管理工具")
     args = parser.parse_args()
 
     from pokemon_agent.memory import LocalEmbeddingProvider, LocalRerankerProvider
 
+    app = load_config(args.config).config
+    host, port = _listen_address(app.services.memory_server_url, args.host, args.port)
     capability = MemoryCapability(
-        embedding_provider=LocalEmbeddingProvider(),
-        reranker_provider=LocalRerankerProvider(),
-        memory_root=args.memory_root,
+        embedding_provider=LocalEmbeddingProvider(app.memory.embedding_model),
+        reranker_provider=LocalRerankerProvider(app.memory.reranker_model),
+        memory_root=resolve_path(app.paths, "memory"),
+        rrf_k=app.memory.rrf_k,
+        fuse_multiplier=app.memory.fuse_multiplier,
+        fuse_floor=app.memory.fuse_floor,
     )
     start(capability, enable_admin=args.enable_admin)
-    mcp.settings.host = args.host
-    mcp.settings.port = args.port
+    mcp.settings.host = host
+    mcp.settings.port = port
     assert mcp.settings.streamable_http_path == MCP_PATH, (
         f"FastMCP 的 streamable 路径变了（{mcp.settings.streamable_http_path} != {MCP_PATH}）"
         "——探活地址与挂载路径是两处常量，这里对不上就说明有一处没同步"
     )
-    print(f"{SERVICE_NAME} listening on http://{args.host}:{args.port}{MCP_PATH}")
-    print(f"health: http://{args.host}:{args.port}{HEALTH_PATH}")
+    print(f"{SERVICE_NAME} listening on http://{host}:{port}{MCP_PATH}")
+    print(f"health: http://{host}:{port}{HEALTH_PATH}")
     mcp.run(transport="streamable-http")
 
 

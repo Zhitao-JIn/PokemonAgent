@@ -141,6 +141,7 @@ def hybrid_retrieve(
     embedder: EmbeddingProviderPort,
     reranker: RerankerProviderPort,
     fuse_top_k: int = 10,
+    rrf_k: int = RRF_K,
     document_vectors: list[list[float]] | None = None,
     prebuilt_bm25: BM25Okapi | None = None,
 ) -> tuple[list[tuple[int, float]], Timings]:
@@ -177,7 +178,7 @@ def hybrid_retrieve(
     timings["vector"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    fused = reciprocal_rank_fusion([bm25_ranking, emb_ranking])
+    fused = reciprocal_rank_fusion([bm25_ranking, emb_ranking], k=rrf_k)
     timings["rrf"] = time.perf_counter() - t0
 
     candidate_idx = sorted(fused, key=lambda i: fused[i], reverse=True)[:fuse_top_k]
