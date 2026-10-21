@@ -39,6 +39,7 @@ from pokemon_agent.mcpclient.world_tool import WorldMcpTool
 from pokemon_agent.schemas.harness import TraceKind
 
 from ..loader import DATASET_DIR, load_samples, sha256_of
+from .preconditions import validate_start
 
 
 def pack_one(sample: EvalSample, version: str, archive_root: Path | None = None) -> Path:
@@ -73,6 +74,8 @@ def pack_one(sample: EvalSample, version: str, archive_root: Path | None = None)
             initial_state_hint=sample.initial_state_hint,
         )
         harness.run(run_id, [task], checkpoint_only=True)
+        if sample.check_id == "party_healed":
+            validate_start(sample, game.perceive_task().ram)
         return _copy_checkpoint(run_id, roots, sample.sample_id, version, archive_root)
     finally:
         try:

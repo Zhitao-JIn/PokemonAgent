@@ -1,0 +1,8 @@
+{
+  "parent_version": "v20261020_all9_01",
+  "change": "healing start: first party member HP set to half max HP without ticking; regenerated via build.injured_start.write_injured_start",
+  "original_source_sha256": "aa0f40b03d1f3574e9f1896e7887c93a94bdcbffb0dbcac2a244700a5aaa32ce",
+  "injured_source_sha256": "b82533cbca5f0d744467f5469bc4ecb0e08442ad6ddffd0ef15afc0cde371c16",
+  "source_batch": "full_eval_20261020_01/runtime_dataset_provenance.json",
+  "other_samples": "inputs and starting archives unchanged except dataset_version"
+}
