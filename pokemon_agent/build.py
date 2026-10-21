@@ -126,6 +126,7 @@ def build_real(
         return BrainTool.build(
             links=links,
             models=app.models,
+            prompt_registry=app.prompt.registry,
             retry=app.retry,
             request_timeouts=app.request_timeouts_s,
             action_limits=app.action_limits,

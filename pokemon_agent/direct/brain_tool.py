@@ -50,7 +50,10 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, TypeVar, cast
+
+from pydantic import BaseModel
 
 from pokemon_agent.backoff import backoff_seconds
 from pokemon_agent.brain import (
@@ -80,6 +83,7 @@ from pokemon_agent.direct.prompts import summarize_run as summarize_run_prompt
 from pokemon_agent.direct.prompts import summarize_task as summarize_task_prompt
 from pokemon_agent.direct.prompts import verify as verify_prompt
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
+from pokemon_agent.prompt import PromptGateway, RenderedPrompt
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
@@ -213,8 +217,10 @@ class Planner:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
+        prompt_gateway: PromptGateway | None = None,
     ) -> None:
         self._brain = brain
+        self._prompt_gateway = prompt_gateway
         self._policy = policy
         self._deadline = deadline
 
@@ -272,8 +278,10 @@ class Decomposer:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
+        prompt_gateway: PromptGateway | None = None,
     ) -> None:
         self._brain = brain
+        self._prompt_gateway = prompt_gateway
         self._policy = policy
         self._deadline = deadline
 
@@ -323,8 +331,10 @@ class Chooser:
         policy: CallPolicy,
         action_limits: ActionLimitsConfig,
         deadline: Deadline | None = None,
+        prompt_gateway: PromptGateway | None = None,
     ) -> None:
         self._brain = brain
+        self._prompt_gateway = prompt_gateway
         self._policy = policy
         self._limits = action_limits
         self._deadline = deadline
@@ -451,8 +461,9 @@ def _signature(entry: ActionEntry) -> ScriptSignature:
 class Reflector:
     """`ReflectPort` 的实现：反思的信封翻译器（本链路**不调模型**，无重试循环）。"""
 
-    def __init__(self, brain: BrainPort) -> None:
+    def __init__(self, brain: BrainPort, *, prompt_gateway: PromptGateway | None = None) -> None:
         self._brain = brain
+        self._prompt_gateway = prompt_gateway
 
     def reflect(self, req: FromHarnessToBrainToolReflectReq) -> FromHarnessToBrainToolReflectResp:
         """反思：渲染两帧 → 调 `Brain.reflect()` → 用 `Reflection` + 坐标组装 `ActMemory`。
@@ -496,8 +507,10 @@ class Judger:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
+        prompt_gateway: PromptGateway | None = None,
     ) -> None:
         self._brain = brain
+        self._prompt_gateway = prompt_gateway
         self._policy = policy
         self._deadline = deadline
 
@@ -551,8 +564,10 @@ class Verifier:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
+        prompt_gateway: PromptGateway | None = None,
     ) -> None:
         self._brain = brain
+        self._prompt_gateway = prompt_gateway
         self._policy = policy
         self._deadline = deadline
 
@@ -626,8 +641,10 @@ class Summarizer:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
+        prompt_gateway: PromptGateway | None = None,
     ) -> None:
         self._brain = brain
+        self._prompt_gateway = prompt_gateway
         self._policy = policy
         self._deadline = deadline
 
@@ -722,8 +739,10 @@ class RunSummarizer:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
+        prompt_gateway: PromptGateway | None = None,
     ) -> None:
         self._brain = brain
+        self._prompt_gateway = prompt_gateway
         self._policy = policy
         self._deadline = deadline
 
@@ -775,8 +794,10 @@ class TaskSummarizer:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
+        prompt_gateway: PromptGateway | None = None,
     ) -> None:
         self._brain = brain
+        self._prompt_gateway = prompt_gateway
         self._policy = policy
         self._deadline = deadline
 
@@ -874,6 +895,7 @@ class BrainTool:
         request_timeouts: RequestTimeoutsConfig,
         action_limits: ActionLimitsConfig,
         image_cap: int,
+        prompt_registry: str | None = None,
         vision_dump_dir: str | None = None,
         deadline: Deadline | None = None,
     ) -> BrainTool:
@@ -884,6 +906,7 @@ class BrainTool:
         - task 层：`links=("text", "judge", "verify")` → `chooser` 等。
 
         型号、温度、输出上限、超时、思考开关全部取自 `models`；重试预算与退避取自 `retry`；
+        `prompt_registry` 为 None 时用随包空表，相对路径按仓库根解析；网关由九个能力对象共享。
         各链路的单请求时限取自 `request_timeouts`（规划与拆解取 `models.plan.timeout_s`）；
         `action_limits` 同时约束决策 prompt 与动作校验。没配的链路被调用时，`Brain` 方法入口的
         assert 当场拦下；容器造出来就是终态，中途改选型没有语义。
@@ -896,6 +919,11 @@ class BrainTool:
         """
         from pokemon_agent.brain import Brain, BrainLlmConfig, LinkSpec
         from pokemon_agent.brain.build_llm_providers import build_llm_providers
+
+        registry_path = Path(prompt_registry) if prompt_registry is not None else None
+        if registry_path is not None and not registry_path.is_absolute():
+            registry_path = Path(__file__).resolve().parents[2] / registry_path
+        prompt_gateway = PromptGateway(registry_path)
 
         def spec(link: BrainLink) -> LinkSpec | None:
             if link not in links:
@@ -941,30 +969,84 @@ class BrainTool:
             return CallPolicy(retry=retry, request_timeout_s=timeout_s, image_cap=image_cap)
 
         return cls(
-            planner=Planner(brain, policy=policy(models.plan.timeout_s), deadline=deadline),
-            decomposer=Decomposer(brain, policy=policy(models.plan.timeout_s), deadline=deadline),
+            planner=Planner(
+                brain,
+                policy=policy(models.plan.timeout_s),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
+            ),
+            decomposer=Decomposer(
+                brain,
+                policy=policy(models.plan.timeout_s),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
+            ),
             chooser=Chooser(
                 brain,
                 policy=policy(request_timeouts.choose),
                 action_limits=action_limits,
                 deadline=deadline,
+                prompt_gateway=prompt_gateway,
             ),
-            judger=Judger(brain, policy=policy(request_timeouts.judge), deadline=deadline),
-            reflector=Reflector(brain),
-            verifier=Verifier(brain, policy=policy(request_timeouts.verify), deadline=deadline),
+            judger=Judger(
+                brain,
+                policy=policy(request_timeouts.judge),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
+            ),
+            reflector=Reflector(brain, prompt_gateway=prompt_gateway),
+            verifier=Verifier(
+                brain,
+                policy=policy(request_timeouts.verify),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
+            ),
             summarizer=Summarizer(
-                brain, policy=policy(request_timeouts.summarize), deadline=deadline
+                brain,
+                policy=policy(request_timeouts.summarize),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
             ),
             run_summarizer=RunSummarizer(
-                brain, policy=policy(request_timeouts.summarize), deadline=deadline
+                brain,
+                policy=policy(request_timeouts.summarize),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
             ),
             task_summarizer=TaskSummarizer(
-                brain, policy=policy(request_timeouts.summarize), deadline=deadline
+                brain,
+                policy=policy(request_timeouts.summarize),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
             ),
         )
 
 
 # ---- 内部辅助 ----
+
+
+def render_and_stamp(
+    gateway: PromptGateway,
+    task: str,
+    params: BaseModel,
+    calls: Sequence[ModelCall],
+) -> RenderedPrompt:
+    """渲染任务并为全部尝试盖章；调用方传入 _adopt 之后的 tool 层 ModelCall。
+
+    前置条件：所有调用账已经收编；保留已有 payload 与错误字段，原位追加三项版本信息。
+    后置条件：每条账的三项信息与返回的 RenderedPrompt 一致。此辅助尚未接入真实任务。
+    """
+    assert all(isinstance(call, ModelCall) for call in calls), "Stamp only adopted tool calls"
+    rendered = gateway.render(task, params)
+    stamp = {
+        "prompt_task": rendered.task,
+        "prompt_version": rendered.version,
+        "prompt_hash": rendered.hash,
+    }
+    for call in calls:
+        call.payload.update(stamp)
+    assert all(all(call.payload[key] == value for key, value in stamp.items()) for call in calls)
+    return rendered
 
 
 def _attempt_loop(

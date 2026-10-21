@@ -1,3 +1,13 @@
+## 2026-10-21（588）—— prompt 模块 CP1：网关、注册表、版本盖章与边界守卫骨架
+
+**改了什么**：新增独立 prompt 模块，包根仅导出 PromptGateway、RenderedPrompt、PromptRegistryError，默认注册表登记零个真实任务。注册表加载版本目录、任务级参数契约与拼装函数，启动时校验元数据身份、源文件 hash、契约和 compose 引用；提供 Compose / Assemble Protocol。新增 PromptSection，唯一字段 registry: str | None，默认 null；BrainTool.build 新增 prompt_registry，按仓库根解析相对路径并把同一网关注入九个能力对象，build_real 的三层装配统一传入 app.prompt.registry。新增 render_and_stamp，为已收编的全部 ModelCall.payload 追加 prompt_task / prompt_version / prompt_hash；新增 A/B/C 边界守卫与 35 项测试，补充包数据声明。
+
+**为什么这么改**：先建立可独立加载、启动即校验、按注册表选择版本的出口，以及能追溯每次尝试的版本信息，再逐任务迁移。hash 按文件名排序拼接 assemble.py 与 prompt.md 的字节，先将 CRLF 归一为 LF；版本目录不作为 Python 包，契约类身份由任务级模块保持。网关检查 task / fragment 区分、参数精确类型、非空输出与 hash 后置条件，配置错误统一抛 PromptRegistryError。
+
+**取舍**：本检查点不登记或迁移真实任务，旧 build_prompt 调用点保持原样，盖章辅助尚未接入旧任务。能力构造器的新注入参数默认 None，以保留旧调用形式；工厂始终注入实际网关，每次工厂调用单独创建。compose 名称限定为字面量以便启动时扫描、校验全部引用，另拒绝组合环；随包单元可由放在其他目录的注册表选择，测试示范单元放在临时注册表旁，重复单元目录显式报错。只读 Git，不提交；没有修改旧测试、golden、ModelCall、trace 词表、world、memory 或 evals。
+
+**影响面**：起点 HEAD 124ed40，全量 2202 passed；完成后全量 2237 passed、3 deselected、59 warnings（97.52s），独立 golden 184 passed，盖章及既有 trace / Langfuse 测试 77 passed。ruff check 通过，ruff format --check 为 904 files already formatted。真实守卫退出 0，A/B/C 临时违规样例各退出 1，另有 9 个负例覆盖绝对、相对和包根越界导入。破坏验证：示范 prompt.md 改一个标点且不更新 meta.hash，构造抛 PromptRegistryError；临时在真实 prompt/errors.py 加跨模块 import，守卫报 A 类违规并退出 1。两处均按原字节还原，真实守卫恢复退出 0，git status 无额外改动；全程离线、不调用真实模型。
+
 ## 2026-10-21（598）—— 补摘 choose_data 中仍读采集目录的两个对账用例
 
 **改了什么**：从 tests/test_evals_choose_data.py 再摘掉 test_ram_review_preserves_all_evidence_without_claiming_human_approval 与 test_ram_review_cannot_silently_expand_to_bag。
