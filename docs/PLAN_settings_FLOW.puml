@@ -1,0 +1,22 @@
+@startuml PLAN_settings_FLOW
+title settings 加载流程（第1步：只加载与校验，尚未接线）
+start
+:入口收到 --config 路径（0..n 个）;
+:读取保底 default.json（随包分发，全填）;
+while (还有覆盖文件?) is (是)
+  :读 JSON，顶层必须是对象;
+  if (读不到 / 非法 JSON / 非对象?) then (是)
+    #pink:ConfigFileError;
+    stop
+  endif
+  :deep_merge：对象递归合并，标量与列表整体替换;
+endwhile (否)
+:规范化为键排序 JSON，计算 sha256;
+:AppConfig 严格校验（未知键 / 类型 / 跨段约束）;
+if (通过?) then (否)
+  #pink:ConfigValidationError（issues + sources）;
+  stop
+endif
+:返回 ResolvedConfig（config + sources + merged_json + sha256）;
+stop
+@enduml

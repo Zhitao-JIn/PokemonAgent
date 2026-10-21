@@ -1,0 +1,34 @@
+@startuml PLAN_settings_DATAFLOW
+title settings 数据流（目标形态；第1步只实现虚线框左侧）
+skinparam componentStyle rectangle
+file "default.json\n(保底, 随包)" as D
+file "覆盖文件 *.json\n(只写要改的键)" as O
+component "load_config()" as L
+component "ResolvedConfig\nconfig / sources / sha256" as R
+component "build_real(config=...)\n唯一装配点" as B
+component "Runtime.config\nharness 各层" as H
+component "BrainTool.build(...)" as BT
+component "MemoryTool.build(...)" as MT
+component "TraceTool.build(...)" as TT
+component "ReviewerTool.build(...)" as RT
+component "reviewer 进程\n读同一份 config" as RP
+file ".env\n仅密钥" as E
+file "run 目录快照\n(生效 JSON + sha256 + 来源)" as S
+D --> L
+O --> L
+L --> R
+R --> B
+B --> H : AppConfig
+B --> BT : 裸字段
+B --> MT : 裸字段
+B --> TT : 裸字段
+B --> RT : 裸字段(mode/url/flush)
+R --> RP
+R --> S
+E ..> BT : API Key
+E ..> TT : Langfuse
+note right of B
+  brain/memory/trace/world 不认识 AppConfig，
+  只收 build.py 展开的裸字段
+end note
+@enduml
