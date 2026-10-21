@@ -28,6 +28,9 @@ from typing import Literal
 
 from pokemon_agent.run_budget import RunBudget
 
+EVAL_GRADER_FORMAT_ATTEMPTS = 2
+"""独立评分的格式尝试上限；只修无效格式，不因低分或未知而重问。"""
+
 REVIEW_LAYERS: tuple[Literal["run", "episode", "task"], ...] = ("run", "episode")
 """启用审点的层；加入 task 后才复核 task 判成，默认保持原执行行为。"""
 

@@ -4,8 +4,9 @@ import os
 
 from inspect_ai.model import ChatMessageSystem, get_model
 from inspect_ai.scorer import NOANSWER, Score
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
+from evals.common.review_generation import generate_review
 from evals.dataset.brain_calls.dataset_contract import ReferenceCase
 from pokemon_agent.schemas.harness import ModelCall
 
@@ -69,27 +70,33 @@ async def assess(
         if grader_model.startswith("openai-api/deepseek/")
         else get_model(grader_model)
     )
-    output = await client.generate(
-        [ChatMessageSystem(content=RULES), source_message(reference, answer, calls)]
+    result = await generate_review(
+        client,
+        [ChatMessageSystem(content=RULES), source_message(reference, answer, calls)],
+        AdvisoryGrade,
+        lambda grade: grade_value(reference, grade),
     )
-    try:
-        grade = AdvisoryGrade.model_validate_json(
-            output.completion.strip().removeprefix("```json").removesuffix("```").strip()
-        )
-        value = grade_value(reference, grade)
-    except (ValidationError, ValueError) as error:
+    grade = result.review
+    attempt_metadata = [attempt.model_dump() for attempt in result.attempts]
+    if grade is None:
         return Score(
             value=NOANSWER,
-            explanation=f"无效语义评分：{error}",
-            metadata={"model": grader_model, "raw": output.completion},
+            explanation=f"无效语义评分：{result.attempts[-1].error}",
+            metadata={
+                "model": grader_model,
+                "raw": result.raw,
+                "grading_attempts": attempt_metadata,
+            },
         )
+    value = result.value
     return Score(
         value=value,
         explanation="；".join(item.evidence for item in grade.criteria),
         metadata={
             "model": grader_model,
             "criteria": grade.model_dump()["criteria"],
-            "raw": output.completion,
+            "raw": result.raw,
+            "grading_attempts": attempt_metadata,
             "truth_method": "model_review",
             "reference_role": "non_exhaustive_suggestions",
         },
