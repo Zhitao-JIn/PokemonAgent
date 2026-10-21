@@ -1,3 +1,13 @@
+## 2026-10-21（590）—— prompt 模块 CP3：记忆渲染与四条蒸馏校验链路迁入网关
+
+**改了什么**：新增独立 ActRecord / TaskRecord / EpisodeRecord / RunRecord 与四个任务契约，登记 verify、summarize、summarize_task、summarize_run 的 v1 及 memory_records 片段。模板和固定标签进入 prompt.md，拼装逻辑与相邻帧去重进入版本目录。四个能力改走网关；统一重试循环在 _adopt 后为成功、失败、耗尽与预算异常中的调用账追加 task / version / hash 三键。新增网关对拍、同源 history、结构化字段优先、真实离线重试盖章与迁移守卫负例。
+
+**为什么这么改**：让模型 prompt 的文字、记录排版和去重逻辑受活动版本与 hash 约束，并保留 BrainPort 已有逐条素材参数的内容与顺序。独立模块只依赖标准库与 pydantic；四个能力的网关改为显式必传，由装配点提供，组件内部不创建依赖。
+
+**取舍**：自行补充 History Protocol 与 PromptGateway.render_history(task, params)，可选的 history(params, compose) 与 assemble 同文件、同 hash，内部 JSON 仅传输片段的逐条渲染结果，不进入模型 prompt；92 条可还原 golden 同时核对旧 history 逐项相等。按用户继续执行、允许扩范围的授权，另改六个既有测试装配文件，仅新增网关注入与必要导入，不改断言；CP1 的空注册表与出口列表断言随迁移更新。旧记忆缺少增量字段时仍保留已有投影文本作为兼容分支，原料存在则优先重建位置、四邻、选项和战斗状态；这些过渡契约字段随 CP6 的旧记忆处理一并复核。没有删除旧方法、旧包或任何字段。
+
+**影响面**：起点全量 2243 passed；最终 2341 passed、8 skipped、3 deselected、59 warnings（127.28s）。四任务 100 个 golden 中 92 个网关输出逐字节相同，8 个因既定 where 格式问题跳过；旧 183 个 golden 仍全通过。ruff check 通过，ruff format --check 为 919 files already formatted，A/B/C 守卫通过。临时改 verify 模板标点触发启动 hash 错误，临时越界 import 触发 A 类违规，均恢复原字节。local / Langfuse trace 往返仍通过；无真实模型调用。
+
 ## 2026-10-21（589）—— prompt 模块 CP2：结构化观测增量与历史往返
 
 **改了什么**：Facts 与 ActMemory 独立快照新增四邻、地形格、选项布局、选项附注、战斗状态和地形可见性；TaskObservation 新增结构化 observation_flags。observe_task 同帧填写新旧字段，新增实际 MCP 序列化、双副本与历史适配往返测试和 MCP 字段说明。

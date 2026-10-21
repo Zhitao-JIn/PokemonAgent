@@ -19,3 +19,11 @@ class Assemble(Protocol):
     def __call__(self, params: BaseModel, compose: Compose) -> str:
         """Require validated params; return nonempty text, composing only literal names."""
         ...
+
+
+class History(Protocol):
+    """同一版本为 BrainPort 提供与 prompt 同源的逐条素材。"""
+
+    def __call__(self, params: BaseModel, compose: Compose) -> list[str]:
+        """返回有序的素材列表；空素材列表允许为空。"""
+        ...

@@ -8,7 +8,7 @@ from typing import cast
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .errors import PromptRegistryError
-from .interfaces.assembly import Assemble
+from .interfaces.assembly import Assemble, History
 from .loading import load_source, task_package
 from .meta import PromptMeta, version_hash
 from .references import composition_names
@@ -37,6 +37,7 @@ class PromptUnit:
     assemble: Assemble
     directory: Path
     fragments: frozenset[str]
+    history: History | None = None
 
 
 def load_unit(root: Path, task: str, version: str) -> PromptUnit:
@@ -79,7 +80,21 @@ def load_unit(root: Path, task: str, version: str) -> PromptUnit:
         for argument in arguments
     ):
         raise PromptRegistryError(f"Expected assemble(params, compose): {directory}")
-    return PromptUnit(meta, params_type, cast(Assemble, assemble), directory, fragments)
+    history = getattr(module, "history", None)
+    if history is not None and (
+        not callable(history)
+        or inspect.iscoroutinefunction(history)
+        or list(inspect.signature(history).parameters) != ["params", "compose"]
+    ):
+        raise PromptRegistryError(f"Expected history(params, compose): {directory}")
+    return PromptUnit(
+        meta,
+        params_type,
+        cast(Assemble, assemble),
+        directory,
+        fragments,
+        cast(History | None, history),
+    )
 
 
 def validate_composition(units: dict[str, PromptUnit]) -> None:

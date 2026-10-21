@@ -37,6 +37,7 @@ from pokemon_agent.harness.interface.reviewer import Reviewer
 from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.harness.run import compile_run_graph
 from pokemon_agent.harness.task import compile_task_graph
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.settings import AppConfig
 
 from .app_config import ACTION_LIMITS, DEFAULT_APP_CONFIG, call_policy
@@ -151,6 +152,7 @@ def assemble_runtime(
     episode_graph: CompiledStateGraph,
     config: AppConfig = DEFAULT_APP_CONFIG,
 ) -> RunRuntime:
+    prompt_gateway = PromptGateway(None)
     """共享同一套依赖装配三层 runtime；图与依赖由调用方注入。"""
     task_rt = TaskRuntime(
         config=config,
@@ -159,8 +161,8 @@ def assemble_runtime(
         judger=Judger(brain, policy=call_policy()),
         memory=memory,
         reflector=Reflector(brain),
-        verifier=Verifier(brain, policy=call_policy()),
-        task_summarizer=TaskSummarizer(brain, policy=call_policy()),
+        verifier=Verifier(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
+        task_summarizer=TaskSummarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         trace=trace,
         reviewer=reviewer,
         checkpointer=checkpointer,
@@ -171,8 +173,8 @@ def assemble_runtime(
         memory=memory,
         decomposer=Decomposer(brain, policy=call_policy()),
         judger=Judger(brain, policy=call_policy()),
-        verifier=Verifier(brain, policy=call_policy()),
-        summarizer=Summarizer(brain, policy=call_policy()),
+        verifier=Verifier(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
+        summarizer=Summarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         trace=trace,
         reviewer=reviewer,
         task_graph=task_graph,
@@ -186,7 +188,7 @@ def assemble_runtime(
         game=game,
         reviewer=reviewer,
         planner=Planner(brain, policy=call_policy()),
-        run_summarizer=RunSummarizer(brain, policy=call_policy()),
+        run_summarizer=RunSummarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         judger=Judger(brain, policy=call_policy()),
         episode_graph=episode_graph,
         episode=episode_rt,

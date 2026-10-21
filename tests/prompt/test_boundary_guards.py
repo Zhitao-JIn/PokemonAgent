@@ -1,5 +1,6 @@
 """The real repository passes; each boundary rule rejects a minimal violating repository."""
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -57,3 +58,46 @@ def test_each_violation_reports_its_rule_and_source_location(
 
     assert result.returncode != 0
     assert f"[FAIL] {rule} {relative}:1" in result.stdout
+
+
+MIGRATED = frozenset({"Verifier", "Summarizer", "TaskSummarizer", "RunSummarizer"})
+LEGACY_NAMES = frozenset(
+    {"verify_prompt", "summarize_prompt", "summarize_task_prompt", "summarize_run_prompt"}
+)
+
+
+def migrated_legacy_references(source: str) -> list[int]:
+    """能力体内不得出现旧模板调用或局部导入。"""
+    failures: list[int] = []
+    for node in ast.parse(source).body:
+        if not isinstance(node, ast.ClassDef) or node.name not in MIGRATED:
+            continue
+        for child in ast.walk(node):
+            if isinstance(child, ast.Name) and child.id in LEGACY_NAMES:
+                failures.append(child.lineno)
+            if isinstance(child, ast.ImportFrom) and "prompts" in (child.module or ""):
+                failures.append(child.lineno)
+    return failures
+
+
+def test_migrated_capabilities_have_no_legacy_prompt_calls() -> None:
+    path = ROOT / "pokemon_agent/direct/brain_tool.py"
+
+    failures = migrated_legacy_references(path.read_text(encoding="utf-8"))
+
+    assert failures == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "verify_prompt.build_prompt(req)",
+        "from pokemon_agent.direct.prompts import verify",
+    ],
+)
+def test_migrated_capability_guard_rejects_legacy_calls_and_imports(body: str) -> None:
+    source = "class Verifier:\n    def verify(self, req):\n        " + body + "\n"
+
+    failures = migrated_legacy_references(source)
+
+    assert failures == [3]

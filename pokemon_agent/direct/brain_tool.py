@@ -78,12 +78,15 @@ from pokemon_agent.direct.call_policy import CallPolicy
 from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.direct.prompts import decompose as decompose_prompt
 from pokemon_agent.direct.prompts import run_plan as run_plan_prompt
-from pokemon_agent.direct.prompts import summarize as summarize_prompt
-from pokemon_agent.direct.prompts import summarize_run as summarize_run_prompt
-from pokemon_agent.direct.prompts import summarize_task as summarize_task_prompt
-from pokemon_agent.direct.prompts import verify as verify_prompt
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
-from pokemon_agent.prompt import PromptGateway, RenderedPrompt
+from pokemon_agent.prompt import (
+    PromptGateway,
+    RenderedPrompt,
+    SummarizeParams,
+    SummarizeRunParams,
+    SummarizeTaskParams,
+    VerifyParams,
+)
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
@@ -564,7 +567,7 @@ class Verifier:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
-        prompt_gateway: PromptGateway | None = None,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
         self._prompt_gateway = prompt_gateway
@@ -572,19 +575,11 @@ class Verifier:
         self._deadline = deadline
 
     def verify(self, req: FromHarnessToBrainToolVerifyReq) -> FromHarnessToBrainToolVerifyResp:
-        """校验：拼 prompt + 重试循环调 `Brain.verify()`。
-
-        这里把 `entries` 投影成"可对齐的素材"（`render()` 的文本）——
-        `verdicts.index` 因此能落回 `req.entries` 的下标。两级素材共用一条
-        链路（0923 192）：ActMemory 用 `render_sequence()` 去重相邻快照，
-        TaskMemory 各自独立渲染（一条一个 task，没有首尾相接这回事）。
-
-        **prompt 在这里拼**（0913 定案）：`verify.build_prompt(req)`。
-
-        **过滤仍归 harness**：本层只把裁决（正/负样本标记）原样带出去。
-        """
-        prompt = verify_prompt.build_prompt(req)
-        rendered = [entry.render() for entry in req.entries]
+        """校验完整素材；网关渲染 prompt 与逐条素材，所有尝试在收编后盖章。"""
+        params = VerifyParams.model_validate(req.model_dump(mode="json"))
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "verify", params, [])
+        prompt = rendered_prompt.text
+        records = self._prompt_gateway.render_history("verify", params)
         # **images 在这里拼**（0915 130 收权，与 judge/choose 同归属）：
         # harness 只装素材（entries），帧由本层对同一批 entries 取——
         # ActMemory 取 before/after 帧，TaskMemory 取首末代表帧；
@@ -594,7 +589,7 @@ class Verifier:
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.verify(
                 prompt=prompt,
-                entries=rendered,
+                entries=records,
                 goal=req.goal,
                 knowledge=req.knowledge,
                 images=images,
@@ -605,6 +600,7 @@ class Verifier:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
+            rendered_prompt=rendered_prompt,
         )
         return FromHarnessToBrainToolVerifyResp(verdicts=result.verdicts, calls=calls)
 
@@ -641,7 +637,7 @@ class Summarizer:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
-        prompt_gateway: PromptGateway | None = None,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
         self._prompt_gateway = prompt_gateway
@@ -651,23 +647,13 @@ class Summarizer:
     def summarize(
         self, req: FromHarnessToBrainToolSummarizeReq
     ) -> FromHarnessToBrainToolSummarizeResp:
-        """蒸馏：拼 prompt + 重试循环调 `Brain.summarize()` → 用 `EpisodeSummary`
-        + harness 元信息组装 `EpisodeMemory`（存储形状的装配在 tool 层）。
-
-        **这里是 `EpisodeMemory` 两个来源的分界**：`result.summary`
-        （`EpisodeSummary`）是**派生正文**——LLM 从 `req.entries` 蒸出来的；
-        `req` 上那五个字段（`episode_id` / `run_id` / `goal` / `success` / `steps`）
-        是**来源章**——harness 从 run state 给的。大脑不知道自己在哪一局，
-        也没资格判定自己成没成，所以这五个字段只能在这里照抄、不能由它产出。
-
-        **prompt 在这里拼**（0913 定案）：`summarize.build_prompt(req)`。
-
-        `history` 由 `req.entries`（**已过滤的可信记录**）渲成文本传下去，
-        **含决策者的论据**（`reason=True`）——蒸馏要总结"为什么这么做"，
-        跟 `verify()` 的方向相反。结局（`success`/`steps`/`max_steps`）也一并传：
-        蒸馏要评价"这做法值不值得复用"，没有基准就没法评。
-        """
-        prompt = summarize_prompt.build_prompt(req)
+        """蒸馏本局素材并组装 EpisodeMemory；来源章由请求提供，每次尝试保留版本戳。"""
+        params = SummarizeParams.model_validate(
+            {**req.model_dump(mode="json"), "success": req.success}
+        )
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize", params, [])
+        prompt = rendered_prompt.text
+        records = self._prompt_gateway.render_history("summarize", params)
         # **images 在这里拼**（0923 189：原料是 TaskMemory，取各条的代表帧去重）
         seen: set[str] = set()
         images: list[str] = []
@@ -681,9 +667,7 @@ class Summarizer:
             return self._brain.summarize(
                 prompt=prompt,
                 goal=req.goal,
-                history=summarize_prompt.labeled_blocks(
-                    [entry.render() for entry in req.entries], req.verdicts
-                ),
+                history=records,
                 success=req.success,
                 steps=req.steps,
                 max_steps=req.max_steps,
@@ -695,6 +679,7 @@ class Summarizer:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
+            rendered_prompt=rendered_prompt,
         )
         summary: EpisodeSummary = result.summary
         episode_memory = EpisodeMemory(
@@ -739,7 +724,7 @@ class RunSummarizer:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
-        prompt_gateway: PromptGateway | None = None,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
         self._prompt_gateway = prompt_gateway
@@ -749,15 +734,18 @@ class RunSummarizer:
     def summarize_run(
         self, req: FromHarnessToBrainToolSummarizeRunReq
     ) -> FromHarnessToBrainToolSummarizeRunResp:
-        """蒸馏最终目标表与局记忆；调用方保证局记忆非空，耗尽异常交给 harness 降级。"""
-        prompt = summarize_run_prompt.build_prompt(req)
+        """蒸馏最终目标表与局记忆；请求保证条目非空，所有尝试保留活动版本戳。"""
+        params = SummarizeRunParams.model_validate(req.model_dump(mode="json"))
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize_run", params, [])
+        prompt = rendered_prompt.text
+        records = self._prompt_gateway.render_history("summarize_run", params)
         images = cap_images(collect_frames(req.episode_memories), self._policy.image_cap)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.summarize_run(
                 prompt=prompt,
                 goal=req.run_goal,
-                history=summarize_run_prompt.history_blocks(req),
+                history=records,
                 success=req.success,
                 steps=req.episodes,
                 max_steps=req.max_episodes,
@@ -769,6 +757,7 @@ class RunSummarizer:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
+            rendered_prompt=rendered_prompt,
         )
         summary: RunSummary = result.summary
         memory = RunMemory(
@@ -794,7 +783,7 @@ class TaskSummarizer:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
-        prompt_gateway: PromptGateway | None = None,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
         self._prompt_gateway = prompt_gateway
@@ -804,25 +793,20 @@ class TaskSummarizer:
     def summarize_task(
         self, req: FromHarnessToBrainToolSummarizeTaskReq
     ) -> FromHarnessToBrainToolSummarizeTaskResp:
-        """把本 task 的可信 ActMemory 蒸馏成一条 TaskMemory。
-
-        与 `Summarizer.summarize()` 同一条 brain 链路（`Brain.summarize`，
-        输出契约同是 `EpisodeSummary`——task 级的"前后变化/关键决策/失败点"
-        恰好被同一组字段承载），差别只在 prompt（task 视角）与**组装的存储形状**
-        （`TaskMemory`，来源章盖的是 task 坐标）。
-
-        **代表帧**：`first_frame` 取首条 ActMemory 的 `before_frame`、
-        `last_frame` 取末条的 `after_frame`（都可空）——上层（episode_done）
-        总结时拿它们当画面锚点，不必回查全部按键记忆。
-        """
-        prompt = summarize_task_prompt.build_prompt(req)
+        """蒸馏本 task 的素材并组装 TaskMemory；请求保证条目非空，失败账随异常返回。"""
+        params = SummarizeTaskParams.model_validate(
+            {**req.model_dump(mode="json"), "success": req.success}
+        )
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize_task", params, [])
+        prompt = rendered_prompt.text
+        records = self._prompt_gateway.render_history("summarize_task", params)
         images, _snapshots = dedup_snapshots(list(req.entries))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.summarize(
                 prompt=prompt,
                 goal=req.goal,
-                history=summarize_task_prompt.history_blocks(req),
+                history=records,
                 success=req.success,
                 steps=req.steps_used,
                 max_steps=req.max_steps,
@@ -834,6 +818,7 @@ class TaskSummarizer:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
+            rendered_prompt=rendered_prompt,
         )
         summary: EpisodeSummary = result.summary
         first = next((e.before_frame for e in req.entries if e.before_frame), None)
@@ -1034,10 +1019,16 @@ def render_and_stamp(
     """渲染任务并为全部尝试盖章；调用方传入 _adopt 之后的 tool 层 ModelCall。
 
     前置条件：所有调用账已经收编；保留已有 payload 与错误字段，原位追加三项版本信息。
-    后置条件：每条账的三项信息与返回的 RenderedPrompt 一致。此辅助尚未接入真实任务。
+    后置条件：每条账的三项信息与返回的 RenderedPrompt 一致。
     """
     assert all(isinstance(call, ModelCall) for call in calls), "Stamp only adopted tool calls"
     rendered = gateway.render(task, params)
+    _stamp_calls(calls, rendered)
+    return rendered
+
+
+def _stamp_calls(calls: Sequence[ModelCall], rendered: RenderedPrompt) -> None:
+    """为已收编的每次尝试追加同一个版本戳，不覆盖已有账项。"""
     stamp = {
         "prompt_task": rendered.task,
         "prompt_version": rendered.version,
@@ -1046,7 +1037,6 @@ def render_and_stamp(
     for call in calls:
         call.payload.update(stamp)
     assert all(all(call.payload[key] == value for key, value in stamp.items()) for call in calls)
-    return rendered
 
 
 def _attempt_loop(
@@ -1057,6 +1047,7 @@ def _attempt_loop(
     base_prompt: str = "",
     policy: CallPolicy,
     deadline: Deadline | None = None,
+    rendered_prompt: RenderedPrompt | None = None,
 ) -> tuple[_Result, list[ModelCall]]:
     """brain 各链路共用的重试循环：**成功带整条账返回 / 耗尽带整条账抛异常**。
 
@@ -1093,9 +1084,14 @@ def _attempt_loop(
         try:
             result = attempt(len(calls) + 1, calls)
         except BudgetExhausted as exc:
-            raise BudgetExhausted(source, [*calls, *exc.calls], exc.reason) from exc
+            pending = [_adopt(call) for call in exc.calls] if rendered_prompt else exc.calls
+            if rendered_prompt is not None:
+                _stamp_calls(pending, rendered_prompt)
+            raise BudgetExhausted(source, [*calls, *pending], exc.reason) from exc
         except AttemptFailed as exc:
             call = _adopt(exc.call)
+            if rendered_prompt is not None:
+                _stamp_calls([call], rendered_prompt)
             calls.append(call)
             if (
                 call.error_kind == ProviderRejected.__name__
@@ -1112,6 +1108,8 @@ def _attempt_loop(
             continue
 
         calls.extend(_adopt(call) for call in result.calls)
+        if rendered_prompt is not None:
+            _stamp_calls(calls, rendered_prompt)
         return result, calls
 
 

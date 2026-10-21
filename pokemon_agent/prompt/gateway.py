@@ -44,6 +44,18 @@ class PromptGateway:
         assert rendered.hash == version_hash(unit.directory), "Version changed after loading"
         return rendered
 
+    def render_history(self, task: str, params: BaseModel) -> list[str]:
+        """以同一活动版本产生 BrainPort 的逐条素材，不改变模型 prompt。"""
+        assert task in self._units, f"Task not registered: {task}"
+        unit = self._units[task]
+        assert unit.meta.kind == "task", f"history requires kind=task: {task}"
+        assert type(params) is unit.params_type, f"Wrong params type for {task}"
+        assert unit.history is not None, f"History assembler missing: {task}"
+        records = unit.history(params, self._compose)
+        assert isinstance(records, list) and all(isinstance(record, str) for record in records)
+        assert unit.meta.hash == version_hash(unit.directory), f"Version changed: {task}"
+        return records
+
     def _compose(self, name: str, params: BaseModel) -> str:
         """Require a registered fragment and matching params; return its rendered text."""
         assert name in self._units, f"Fragment not registered: {name}"

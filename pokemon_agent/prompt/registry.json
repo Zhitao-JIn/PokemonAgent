@@ -1,1 +1,19 @@
-{"tasks": {}}
+{
+  "tasks": {
+    "memory_records": {
+      "active": "v1"
+    },
+    "verify": {
+      "active": "v1"
+    },
+    "summarize": {
+      "active": "v1"
+    },
+    "summarize_task": {
+      "active": "v1"
+    },
+    "summarize_run": {
+      "active": "v1"
+    }
+  }
+}

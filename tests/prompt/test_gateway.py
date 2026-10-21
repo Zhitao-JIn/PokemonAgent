@@ -25,10 +25,10 @@ def test_a_render_contains_text_task_version_and_the_source_hash(tmp_path: Path)
     )
 
 
-def test_the_bundled_registry_has_no_real_tasks() -> None:
+def test_the_bundled_registry_requires_the_real_task_contract() -> None:
     gateway = PromptGateway(None)
 
-    with pytest.raises(AssertionError, match="not registered"):
+    with pytest.raises(AssertionError, match="Wrong params type"):
         gateway.render("verify", ExampleParams(value="Red"))
 
 
@@ -97,4 +97,12 @@ def test_a_standalone_copy_uses_packaged_units_with_a_registry_stored_elsewhere(
     rendered = module.PromptGateway(registry).render("example", ExampleParams(value="Red"))
 
     assert rendered.text == "Hello Red.\n"
-    assert module.__all__ == ["PromptGateway", "RenderedPrompt", "PromptRegistryError"]
+    assert module.__all__ == [
+        "PromptGateway",
+        "RenderedPrompt",
+        "PromptRegistryError",
+        "VerifyParams",
+        "SummarizeParams",
+        "SummarizeTaskParams",
+        "SummarizeRunParams",
+    ]

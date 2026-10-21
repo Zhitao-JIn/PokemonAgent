@@ -9,6 +9,7 @@ from _harness_fixtures.brain import _Brain
 from pokemon_agent.brain import Goal
 from pokemon_agent.brain.interface import DecomposeResult, PlanResult, SummarizeRunResult
 from pokemon_agent.direct.brain_tool import Decomposer, Planner, RunSummarizer, collect_frames
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolPlanOnceReq,
@@ -147,7 +148,9 @@ def _invoke(
             )
         )
     else:
-        RunSummarizer(brain, policy=call_policy()).summarize_run(
+        RunSummarizer(
+            brain, policy=call_policy(), prompt_gateway=PromptGateway(None)
+        ).summarize_run(
             FromHarnessToBrainToolSummarizeRunReq(
                 run_id="r",
                 run_goal="总目标",

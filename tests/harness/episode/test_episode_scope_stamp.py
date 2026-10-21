@@ -8,6 +8,7 @@ from _harness_fixtures.memory import _Memory
 
 from pokemon_agent.direct.brain_tool import Summarizer
 from pokemon_agent.harness.episode.episode_done.leave_chapter import store_empty_chapter
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolSummarizeReq
 from pokemon_agent.schemas.harness.domain import Termination
 from pokemon_agent.schemas.memory import TaskMemory
@@ -31,7 +32,9 @@ def _task(index: int, first: str | None, last: str | None) -> TaskMemory:
 
 def test_episode_chapter_carries_run_goal_and_first_last_frames() -> None:
     summarizer = Summarizer(
-        _Brain(lambda n: True, lambda n: True, lambda n: True, 1), policy=call_policy()
+        _Brain(lambda n: True, lambda n: True, lambda n: True, 1),
+        policy=call_policy(),
+        prompt_gateway=PromptGateway(None),
     )
     req = FromHarnessToBrainToolSummarizeReq(
         run_id="r1",
