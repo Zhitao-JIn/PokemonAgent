@@ -16,6 +16,8 @@ from enum import StrEnum
 class Termination(StrEnum):
     """一层循环的终止类别。三层各自独立计数：run 数局、episode 数 task、task 数键。"""
 
+    BLOCKED = "blocked"
+    PLANNING_EXHAUSTED = "planning_exhausted"
     GOAL_DONE = "goal_done"
     """模型判定本层目标达成（`success` 的唯一来源）。"""
     WORLD_ENDED = "world_ended"

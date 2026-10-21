@@ -10,6 +10,8 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
+from pokemon_agent.schemas.harness.domain import Termination
+
 from ..run_state import RunState
 from ..runtime import RunRuntime
 
@@ -21,7 +23,11 @@ def absorb_episode(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, A
         return {}
     return {
         "episode_outputs": [*state.episode_outputs, out],
-        "fail_streak": 0 if out.success else state.fail_streak + 1,
+        "fail_streak": 0
+        if out.success
+        else state.fail_streak
+        if out.termination in (Termination.BLOCKED, Termination.INTERRUPTED)
+        else state.fail_streak + 1,
         "pending_episode": None,
         "total_acts": state.total_acts + out.acts_used,
         "actions_used": state.actions_used + out.acts_used,

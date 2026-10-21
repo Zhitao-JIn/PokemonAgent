@@ -88,7 +88,7 @@ def _run_watching_server(mcp: FastMCP, world: PyBoyWorld) -> None:
 
 
 async def _pump_window_events(world: PyBoyWorld) -> None:
-    """在 MCP 主线程每 50 毫秒处理一次 PyBoy 窗口事件。"""
+    """在 MCP 主线程每 50 毫秒调用 PyBoy 暂停态事件循环。"""
     while True:
-        world._pump_window_events()
+        world._pump_idle_window()
         await asyncio.sleep(0.05)

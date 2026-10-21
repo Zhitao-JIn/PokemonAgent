@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field
 class FromHarnessToMemoryToolRecallReq(BaseModel):
     """**统一回忆口**：不指定记忆种类——分族检索后融合排序（MCP 化定案 2026-09-29）。
 
-    `conditions` 只放上下文 hint（episode_id / map_id / place / run_id / run_goal / runs），
-    run_goal 圈同目标 episode 摘要；runs=all 只圈全部 run 记忆。
+    `conditions` 只放上下文 hint（episode_id / map_id / place / run_id / goal_id / runs），
+    run_id 与 goal_id 联合圈定同一 L1 goal 的 episode；runs=all 只圈全部 run 记忆。
     **不放 kind**——按 hint 分族圈定是底层规则，不是调用方的选择。
     """
 
@@ -18,7 +18,7 @@ class FromHarnessToMemoryToolRecallReq(BaseModel):
         default_factory=dict,
         description=(
             "上下文 hint：episode_id（圈本局 act+task）/ map_id、place"
-            "（圈格 object）/ run_id（圈 episode 摘要）/ run_goal（圈同目标 episode 摘要）"
+            "（圈格 object）/ run_id（圈 episode 摘要）/ goal_id（须与 run_id 联合圈同一 L1 goal）"
             "/ runs=all（只圈全部 run 记忆）"
         ),
     )

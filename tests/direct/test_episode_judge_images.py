@@ -25,7 +25,11 @@ class _RecordingBrain(_Brain):
         self, *, prompt: str, goal: str, history: Sequence[str], images: Sequence[str] = ()
     ) -> JudgeResult:
         self.frames = list(images)
-        return JudgeResult(done=False, why="继续", calls=[ModelCall(payload={})])
+        return JudgeResult(
+            decision=("achieved" if False else "continue"),
+            why="继续",
+            calls=[ModelCall(payload={})],
+        )
 
 
 def _task(number: int, first: str | None, last: str | None) -> TaskMemory:

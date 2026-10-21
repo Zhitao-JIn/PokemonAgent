@@ -80,9 +80,9 @@ def test_overturning_the_episode_judge_keeps_it_running_and_tells_the_next_decom
     assert overturned[0]["human_note"] == "还没按「是」，球没拿到"
 
     decompose_prompts = [_content(e)["prompt"] for e in _of(events, "decompose_call", EP1)]
-    assert len(decompose_prompts) == 2
+    assert len(decompose_prompts) == 3
     assert "## 上一次本局判定" not in decompose_prompts[0]
-    assert "人推翻了这个判定：还没按「是」，球没拿到" in decompose_prompts[1]
+    assert "人推翻了这个判定：还没按「是」，球没拿到" in decompose_prompts[-1]
 
 
 def test_a_not_done_judgement_is_not_audited_but_reaches_the_next_decompose(
@@ -95,7 +95,7 @@ def test_a_not_done_judgement_is_not_audited_but_reaches_the_next_decompose(
     assert EP1 not in human.judgements
     assert all(_content(e)["audit"] == "" for e in _of(events, "judge_verdict", EP1))
     decompose_prompts = [_content(e)["prompt"] for e in _of(events, "decompose_call", EP1)]
-    assert "判定员说：还没达成——w" in decompose_prompts[1]
+    assert "判定员说：continue——w" in decompose_prompts[1]
 
 
 def test_overturning_the_run_judge_keeps_the_run_going_and_tells_the_next_plan(
@@ -145,7 +145,9 @@ def test_judge_only_asks_reviewer_when_done(tmp_path: Path, episode_id: str, don
     """两层 judge 判未达成时不审，判已达成时询问一次并记一笔审账。"""
     human = _ScriptedHuman(overturn_at="nobody", note="")
     trace = build_fake(tmp_path).trace
-    verdict = FromHarnessToBrainToolJudgeResp(done=done, why="判定依据", calls=[ModelCall()])
+    verdict = FromHarnessToBrainToolJudgeResp(
+        decision=("achieved" if done else "continue"), why="判定依据", calls=[ModelCall()]
+    )
     meta = {"source": "review_and_judge", "episode_id": episode_id, "task_id": "", "step": 1}
 
     feedback = audit_judgement(

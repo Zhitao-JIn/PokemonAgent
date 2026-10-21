@@ -113,6 +113,9 @@ def test_judge_verdict_carries_no_depth() -> None:
 
     assert set(content) == {
         "termination",
+        "decision",
+        "judge_trigger",
+        "planning_round",
         "fail_streak",
         "judge_reason",
         "audit",

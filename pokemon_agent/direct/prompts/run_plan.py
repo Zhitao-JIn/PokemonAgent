@@ -73,7 +73,12 @@ def goals_lines(plan: Sequence[GoalEntry]) -> list[str]:
         overturned = "（人审推翻）" if entry.overturned else ""
         tried = f" · 已试 {entry.attempts} 次" if entry.attempts else ""
         note = f" · {entry.note}" if entry.note else ""
-        lines.append(f"[{i}] {entry.status.value:<9}{overturned} {entry.task.goal}{tried}{note}")
+        lines.append(
+            f"[{i}] {entry.status.value:<9}{overturned} {entry.task.goal} "
+            f"· 验收={entry.task.success_criteria} · 预算={entry.task.max_steps} tasks "
+            f"· ID={entry.task.task_id} "
+            f"· 最近执行={entry.last_episode_id or '尚未派发'}{tried}{note}"
+        )
     return lines
 
 
@@ -96,6 +101,12 @@ def build_prompt(req: FromHarnessToBrainToolPlanOnceReq) -> str:
             goals="\n".join(goals) if goals else "（空表）",
             last_judge="\n".join(judged) if judged else "（还没有判定过）",
             max_push=req.max_push,
+            parent_goal=req.run_goal.goal,
+            parent_criteria=req.run_goal.criteria,
+            planning_budget=str(req.remaining_planning_rounds)
+            if req.remaining_planning_rounds is not None
+            else "未提供",
+            execution_order=str(req.execution_order),
         ),
         req.human_note,
     )

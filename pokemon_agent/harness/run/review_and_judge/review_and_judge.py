@@ -96,7 +96,7 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
     feedback = None
 
     # 步骤 3：问模型"run_goal 达成没有"（素材是本 run 的局摘要）；判成时亮给人审，认账才覆盖。
-    if last is not None:
+    if last is not None or state.judge_trigger == "no_pending":
         ctx = state.plan_ctx
         details = ctx.details if ctx is not None else []
         meta = {
@@ -108,6 +108,10 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
         }
         req = FromHarnessToBrainToolJudgeReq(
             goal=state.run_goal,
+            goal_table=updates.get("goals", state.goals),
+            latest_planning=state.latest_planning,
+            planning_round=state.planning_rounds_used,
+            trigger=state.judge_trigger,
             episode_memories=details,
             run_index=ctx.run_index if ctx is not None else [],
             knowledge="\n\n".join(ctx.knowledge) if ctx is not None else "",
@@ -132,7 +136,7 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
             ),
         )
         if feedback.audit is AuditVerdict.ACCEPT:
-            termination = Termination.GOAL_DONE
+            termination = Termination.BLOCKED if verdict.blocked else Termination.GOAL_DONE
         else:
             updates["last_judge"] = feedback
 
@@ -151,12 +155,20 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
         task_id=state.run_id,
         step=state.step + 1,
         termination=termination,
+        decision=verdict.decision if verdict is not None else None,
+        trigger=state.judge_trigger,
+        planning_round=state.planning_rounds_used,
         judge_reason=reason_for_judge,
         fail_streak=fail_streak,
         audit=feedback.audit if feedback is not None else None,
         human_note=feedback.note if overturned else "",
     )
-    return {**updates, "termination": termination, "judge_reason": reason_for_judge}
+    return {
+        **updates,
+        "termination": termination,
+        "judge_reason": reason_for_judge,
+        "judge_trigger": "normal",
+    }
 
 
 def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[str, Any]:
@@ -168,6 +180,10 @@ def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[s
 
     # 步骤 1：机械盖章。
     stamped = _stamp(entry, outcome.success, outcome.episode_id)
+    if outcome.termination is Termination.BLOCKED:
+        stamped = stamped.model_copy(
+            update={"status": EntryStatus.BLOCKED, "note": outcome.judge_reason}
+        )
 
     fail_streak = state.fail_streak
 

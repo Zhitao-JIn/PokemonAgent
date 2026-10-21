@@ -1,4 +1,4 @@
-"""按 run_goal 等值召回其他局的一行背景索引，不把本局混入背景。"""
+"""按本 run 和 L1 goal 身份召回其他局索引，不按目标文本匹配。"""
 
 from __future__ import annotations
 
@@ -23,25 +23,27 @@ def retrieve_episode_index(
 ) -> dict[str, Any]:
     """返回只更新 episode_index 的 ep_ctx，并始终记一条 read_episode_memory。
 
-    run_goal 非空时按等值条件全取其他 episode；空串不查库，索引为空。
-    调用方保证运行身份已确定；返回的背景不含本局，只供 index_line 渲染。
+    调用方保证 run 与 L1 goal 身份已确定；只召回两者均匹配的其他 episode。
+    返回的背景不含本局、不跨 run、不按文字相等关联，只供 index_line 渲染。
     """
     deps = runtime.context
+    assert state.run_id and state.goal.task_id, "episode scope requires run and L1 goal identities"
     ep, step = state.episode_id, state.step + 1
     t0 = time.time()
-    episode_index: list[EpisodeMemory] = []
-    if state.run_goal:
-        resp = deps.memory.recall(
-            FromHarnessToMemoryToolRecallReq(
-                query="", conditions={"run_goal": state.run_goal}, limit=10**6
-            )
-        )
-        memories = [
-            EpisodeMemory(**item.payload, markdown=item.content)
-            for item in resp.items
-            if item.kind == "episode"
-        ]
-        episode_index = [m for m in memories if m.episode_id != state.episode_id]
+    conditions = {"run_id": state.run_id, "goal_id": state.goal.task_id}
+    resp = deps.memory.recall(
+        FromHarnessToMemoryToolRecallReq(query="", conditions=conditions, limit=10**6)
+    )
+    memories = [
+        EpisodeMemory(**item.payload, markdown=item.content)
+        for item in resp.items
+        if item.kind == "episode"
+    ]
+    episode_index = [memory for memory in memories if memory.episode_id != state.episode_id]
+    assert all(
+        memory.run_id == state.run_id and memory.goal_id == state.goal.task_id
+        for memory in episode_index
+    ), "memory recall violated run and goal equality filters"
     t1 = time.time()
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
@@ -52,7 +54,7 @@ def retrieve_episode_index(
                 "task_id": "",
                 "step": step,
             },
-            query=f"run_goal={state.run_goal}",
+            query=f"run_id={state.run_id} goal_id={state.goal.task_id}",
             refs=[m.episode_id for m in episode_index],
             started_at=t0,
             ended_at=t1,

@@ -76,16 +76,9 @@ def audit_judgement(
     context: ReviewContext,
     meta: dict[str, Any],
 ) -> JudgeFeedback:
-    """审本层 judge 的裁决，返回本层的判定反馈（`JudgeFeedback`）。
-
-    只在判定员说「已达成」时问人——误判「没达成」代价小（多跑几步），提前收工才要人拦。
-    亮给人的依据是本层刚记的那笔 `judge_call`（它的 prompt 就是判定员看的材料）。
-    meta：本层记账的签名（`source` / `episode_id` / `task_id` / `step`），
-        也用来找那笔 `judge_call`。
-    后置条件：判没成时 `audit is None`；判成时 `audit` 是人的表态。
-    """
-    if not verdict.done:
-        return JudgeFeedback(done=False, why=verdict.why)
+    """消费本次完整请求并返回结果；失败保留调用账，输入不被修改。"""
+    if not (verdict.done or verdict.blocked):
+        return JudgeFeedback(decision=verdict.decision, why=verdict.why)
     # 步骤 1：取本层刚记的 judge_call 当依据。
     events = [
         event
@@ -116,7 +109,9 @@ def audit_judgement(
             ),
         )
     )
-    return JudgeFeedback(done=True, why=verdict.why, audit=resp.verdict, note=resp.note)
+    return JudgeFeedback(
+        decision=verdict.decision, why=verdict.why, audit=resp.verdict, note=resp.note
+    )
 
 
 __all__ = ["ReviewRound", "ask_inject", "audit_judgement", "elicit_with_review"]

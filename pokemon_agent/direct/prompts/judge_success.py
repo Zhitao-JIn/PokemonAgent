@@ -42,6 +42,7 @@ from pokemon_agent.schemas.memory import render_sequence
 
 from . import READ_SCREEN, load
 from .decompose import task_table_lines
+from .run_plan import goals_lines
 
 _TEMPLATE = load("judge_success")
 _INTERRUPT_RULE = load("judge_interrupt").render()
@@ -53,6 +54,13 @@ def memory_blocks(req: FromHarnessToBrainToolJudgeReq) -> list[str]:
     唯一真源：`build_prompt()` 与 `BrainTool.judge()` 的 `history` 都调它。
     """
     blocks: list[str] = []
+    if req.goal_table:
+        blocks.append("## 本 run 目标表\n" + "\n".join(goals_lines(req.goal_table)))
+    if req.latest_planning is not None:
+        blocks.append(
+            f"## 最新规划主张（不是执行证据）\n触发={req.trigger}，版次={req.planning_round}\n"
+            f"{req.latest_planning.model_dump_json()}"
+        )
     if req.task_table:
         rows = "\n".join(task_table_lines(req.task_table))
         blocks.append(f"## 本局任务表（成败以此为准，下面各 task 记忆里的成败是机器判定）\n{rows}")

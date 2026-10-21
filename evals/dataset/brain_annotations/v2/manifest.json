@@ -1,0 +1,44 @@
+{
+  "version": "v2",
+  "collection_version": "v1",
+  "families": {
+    "choose": {
+      "cases": 207,
+      "status": {
+        "labelled": 206,
+        "invalid_task": 1
+      },
+      "method": {
+        "codex_history_review": 207
+      },
+      "sha256": "c4f99b4f5c0774dc134a8b44c0e75f69ee2492141057e3cd00c4aea307e86370",
+      "inputs_sha256": "39ea22d045314426212fd6f657f4b548e9de19524f176d4b0cb03546eeb2669a"
+    },
+    "plan": {
+      "cases": 26,
+      "status": {
+        "labelled": 26
+      },
+      "method": {
+        "codex_history_review": 26
+      },
+      "sha256": "e236174671ae26e7347d301d1c052242388c0f0af52efecbc0ee29dbe611cace",
+      "inputs_sha256": "7c0c345be4f93b1749532ec0cf7e49bd687dede721ea35bc5cb90a6062fee0fa"
+    },
+    "decompose": {
+      "cases": 37,
+      "status": {
+        "labelled": 36,
+        "invalid_task": 1
+      },
+      "method": {
+        "codex_history_review": 37
+      },
+      "sha256": "fba155063321d3b23d7853903d7f4e8266962e2751b9fef88be90d546a7f27bc",
+      "inputs_sha256": "c19362163d81d6fbe335b90bf07190bc7781344e76fb9eda863f961a23ebbab8"
+    }
+  },
+  "baseline_answers_used": false,
+  "reviewer": "codex_history_review",
+  "policy": "Advisory references, multiple valid actions and recovery allowed. AI quality grading, not an exhaustive whitelist. Judge remains on the unchanged v1 annotations/v4 task data."
+}

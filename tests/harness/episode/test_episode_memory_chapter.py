@@ -68,7 +68,9 @@ class _Judger:
     """run 级判定恒回"未达成"——本文件只关心补章，不关心停机。"""
 
     def judge(self, req):
-        return FromHarnessToBrainToolJudgeResp(done=False, why="桩", calls=[ModelCall(payload={})])
+        return FromHarnessToBrainToolJudgeResp(
+            decision=("achieved" if False else "continue"), why="桩", calls=[ModelCall(payload={})]
+        )
 
 
 @pytest.fixture
@@ -136,6 +138,7 @@ def _leave(deps: SimpleNamespace) -> EpisodeMemory:
         deps,  # type: ignore[arg-type]
         run_id="r1",
         run_goal="测试总目标",
+        goal_id="g1",
         episode_id="r1-ep1",
         goal="目标 g1",
         tasks_used=0,

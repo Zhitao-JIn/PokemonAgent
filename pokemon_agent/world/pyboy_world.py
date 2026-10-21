@@ -75,6 +75,7 @@ class PyBoyWorld:
 
         self._task: _Task | None = None
         self._closed = False
+        self._idle_paused = False
         """窗口被关了。**这是 world 唯一有资格宣告的终止**——世界没了，跑不下去。"""
 
     # ---- WorldPort ----
@@ -182,11 +183,31 @@ class PyBoyWorld:
 
     def _tick(self, frames: int) -> None:
         """逐帧推进；窗口关闭时标记 closed 并停止。"""
+        if frames and self._idle_paused:
+            from pyboy.utils import WindowEvent
+
+            self._pyboy.send_input(WindowEvent.UNPAUSE)
+            self._idle_paused = False
         for _ in range(frames):
             self._pump_window_events()
             if not self._pyboy.tick(1):
                 self._closed = True  # 窗口被关，世界没了——这是 world 唯一的终止权
                 return
+
+    def _pump_idle_window(self) -> None:
+        """暂停游戏帧时调用 PyBoy tick，让窗口插件处理消息并刷新。"""
+        if not self._watch or self._closed:
+            return
+
+        from pyboy.utils import WindowEvent
+
+        self._pump_window_events()
+        if not self._idle_paused:
+            self._pyboy.send_input(WindowEvent.PAUSE)
+            self._idle_paused = True
+        self._pyboy.send_input(WindowEvent._INTERNAL_RENDERER_FLUSH)
+        if not self._pyboy.tick(1):
+            self._closed = True
 
     def _pump_window_events(self) -> None:
         """处理 SDL 系统事件并丢弃物理按键，维持可视窗口刷新。"""

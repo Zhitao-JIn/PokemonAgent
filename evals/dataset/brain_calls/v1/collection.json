@@ -1,0 +1,181 @@
+{
+  "batch": "eval_results/brain_scope_capture_20261019",
+  "builder_sha256": {
+    "__init__.py": "503aba70320246a8dfc0693f53556b9fc9f37b6f8abdc4e0e5934a63e49efe36",
+    "baseline_score.py": "7e2df68058ea3cdc71ed5f5bb2e353645ce83214e9002602a1ff032eaba05b17",
+    "build.py": "bc3766c010546debf96c5e83c02b5065f7be4bf0c8ac8dd9b8a5241f0ebb1fe6",
+    "build_report.py": "da94b01a03d9590fd01e36a9b7436295ef41121786d1dc496d440cdd31ab4171",
+    "choose_labels.py": "ccc0fc7e1fa4157ccee93909b0669c79400b0957e37a6d4e15ac07bdb32a078d",
+    "dataset_contract.py": "2cb70401cef20aee720060033a2629879d19fade30934bdb7e84c128dc6b2171",
+    "export_controls.py": "92b0708f9e4319fdf369ddea7a7c952f47a0b80051d34a575de379b44c49f697",
+    "export_dataset.py": "aea7fefda937e0cb42bc39dfca3d0bab349e86842c84b4062c58f87a66c776ae",
+    "independent_reference.py": "1ad6966d12e1481a4f11b244b1611a881e2a9a8fe563c21d6f1c96c739c9545a",
+    "loader.py": "5e65898277c18d9ba10f74ef870d59077e0d7faf5edb5f742ef34ce22112d077",
+    "menu_labels.py": "71fcf80d68a9284be350e25865af860a7413da5d59ccd49ac98d2698c04896a3",
+    "milestones.py": "ac9a3a5bc20e1a2d56be1c8543718c8ba12b36cf4b2b347afc532b86e535a92f",
+    "native_versions.py": "a7dda040d0db1aaf0ab54a5f52be07a30544c5b614a170c19c69784b04e32e6b",
+    "rubrics.py": "1583a674f3c0235665df1619c43c1b5853270d54205d7c5d41b59dacfd1500f2",
+    "scope_audit.py": "8fac30dd418678fa7601082683d91f45eb821d5734ede14b7bdacb781485a2f3",
+    "source_archive.py": "a5f9e24d5810775f35f69ef41021bc605d5a7767aaa5942cbd6a31d537df706b",
+    "verify_dataset.py": "d68b08634d6b295d78893b8482e196a7c127f89d2750af962a63ecabda491351",
+    "visible_judge.py": "e95dbd168f98e4a1ba0679f88be645704844470d53195eaef3d7dcb63ccdf214",
+    "visible_menus.py": "0cde41835ed9c6a2aab034b6f77d5cb622f6a72b121d4eaa879697736b4c6210",
+    "visible_transactions.py": "47587499c4e005a08498616a05afa415eed27fed197b77f845b87777a0d71d46"
+  },
+  "completed": 20,
+  "partial": false,
+  "skipped_calls": 17,
+  "families": [
+    {
+      "version": "v1",
+      "family": "judge",
+      "cases": 289,
+      "layers": {
+        "episode": 60,
+        "run": 23,
+        "task": 206
+      },
+      "baseline_status": {
+        "success": 289
+      },
+      "mechanical_labels": 206,
+      "action_set_labels": 0,
+      "rubric_cases": 83,
+      "files_sha256": {
+        "inputs.jsonl": "559624a59aefdd1cc3d8677bb08c26acbe349e0a598309f42d0b78cf12cbf413",
+        "references.jsonl": "aac6461aadc275348acb0905c113c3dfb3afdcc03f52a0eed92d31486fe8323e",
+        "judge.request.schema.json": "bfac7b7e2c8ed0d41e7ec9e3475de03def30d085b8d907f2c06fb09c6869b732"
+      },
+      "source_head": "5d1ff1ee94f4c1da110f247fc230d69186608c1d",
+      "source_code_sha256": "8677991cdfc4d79708c75fd5f0f539b112756fe3a7567a1f2f7b620a3c623290",
+      "schema_hash": "11a4afa05e6ed43d",
+      "limitations": [
+        "二十个短场景的现场分布，不代表独立留出集或长程能力。",
+        "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+        "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+        "choose 独立动作集合子集可评分；其余开放参考不冒称完备 acceptable 集合。",
+        "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+      ]
+    },
+    {
+      "version": "v1",
+      "family": "plan",
+      "cases": 26,
+      "layers": {
+        "run": 26
+      },
+      "baseline_status": {
+        "success": 26
+      },
+      "mechanical_labels": 0,
+      "action_set_labels": 0,
+      "rubric_cases": 26,
+      "files_sha256": {
+        "inputs.jsonl": "7c0c345be4f93b1749532ec0cf7e49bd687dede721ea35bc5cb90a6062fee0fa",
+        "references.jsonl": "4b47471764a04a9ea86332fdc47e62e4a98e2e9e93435dc62f001c4f6bb29072",
+        "plan.request.schema.json": "e3c2e4442237418459a0f98d35c988a0099f31e94372368afdf0b67b91e9d97a"
+      },
+      "source_head": "5d1ff1ee94f4c1da110f247fc230d69186608c1d",
+      "source_code_sha256": "8677991cdfc4d79708c75fd5f0f539b112756fe3a7567a1f2f7b620a3c623290",
+      "schema_hash": "11a4afa05e6ed43d",
+      "limitations": [
+        "二十个短场景的现场分布，不代表独立留出集或长程能力。",
+        "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+        "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+        "choose 独立动作集合子集可评分；其余开放参考不冒称完备 acceptable 集合。",
+        "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+      ]
+    },
+    {
+      "version": "v1",
+      "family": "decompose",
+      "cases": 37,
+      "layers": {
+        "episode": 37
+      },
+      "baseline_status": {
+        "success": 37
+      },
+      "mechanical_labels": 0,
+      "action_set_labels": 0,
+      "rubric_cases": 37,
+      "files_sha256": {
+        "inputs.jsonl": "c19362163d81d6fbe335b90bf07190bc7781344e76fb9eda863f961a23ebbab8",
+        "references.jsonl": "029d0b59e9354214d35e65100df06125247c722d08d4bb94115fe6a97d8bb9da",
+        "decompose.request.schema.json": "4b97f0cc2a64461c3c76859de17e2f518a6679e3f69e9a873854f2c33f9f9cee"
+      },
+      "source_head": "5d1ff1ee94f4c1da110f247fc230d69186608c1d",
+      "source_code_sha256": "8677991cdfc4d79708c75fd5f0f539b112756fe3a7567a1f2f7b620a3c623290",
+      "schema_hash": "11a4afa05e6ed43d",
+      "limitations": [
+        "二十个短场景的现场分布，不代表独立留出集或长程能力。",
+        "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+        "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+        "choose 独立动作集合子集可评分；其余开放参考不冒称完备 acceptable 集合。",
+        "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+      ]
+    },
+    {
+      "version": "v1",
+      "family": "choose",
+      "cases": 207,
+      "layers": {
+        "task": 207
+      },
+      "baseline_status": {
+        "success": 207
+      },
+      "mechanical_labels": 0,
+      "action_set_labels": 21,
+      "rubric_cases": 186,
+      "files_sha256": {
+        "inputs.jsonl": "39ea22d045314426212fd6f657f4b548e9de19524f176d4b0cb03546eeb2669a",
+        "references.jsonl": "a0faeeaacc537e8cff1aa277f8b32d0f365fb10e0f9be82107c8008358aaeed9",
+        "choose.request.schema.json": "c0c69995165ecb324a491a476ce7544c515d1add99d110da6a884188fafd9ea7"
+      },
+      "source_head": "5d1ff1ee94f4c1da110f247fc230d69186608c1d",
+      "source_code_sha256": "8677991cdfc4d79708c75fd5f0f539b112756fe3a7567a1f2f7b620a3c623290",
+      "schema_hash": "11a4afa05e6ed43d",
+      "limitations": [
+        "二十个短场景的现场分布，不代表独立留出集或长程能力。",
+        "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+        "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+        "choose 独立动作集合子集可评分；其余开放参考不冒称完备 acceptable 集合。",
+        "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+      ]
+    },
+    {
+      "version": "v1",
+      "family": "summary",
+      "cases": 99,
+      "layers": {
+        "episode": 19,
+        "run": 20,
+        "task": 60
+      },
+      "baseline_status": {
+        "success": 99
+      },
+      "mechanical_labels": 0,
+      "action_set_labels": 0,
+      "rubric_cases": 99,
+      "files_sha256": {
+        "inputs.jsonl": "f44530685bcc6746540c4e6c55355f7a6c8142e610e0885f5c1bc36caa746335",
+        "references.jsonl": "455dea468ce7bafffa727d419dd96926e9d88fe37a85cd73f9fbb4f479391504",
+        "summarize.request.schema.json": "3c90ede05fcaf8c2df0dea8fecd98d007dc8ba21f0a32f2fd5a823d295a98f23",
+        "summarize_run.request.schema.json": "e09a7b62846bc3b0272e5b716923aeb162c8353a1ff0d65cb9d365e5f2caed93",
+        "summarize_task.request.schema.json": "72b9e0fc66900b33695c0edbe0a2542db58983e0f4f85d8114a1ac942b27c54a"
+      },
+      "source_head": "5d1ff1ee94f4c1da110f247fc230d69186608c1d",
+      "source_code_sha256": "8677991cdfc4d79708c75fd5f0f539b112756fe3a7567a1f2f7b620a3c623290",
+      "schema_hash": "11a4afa05e6ed43d",
+      "limitations": [
+        "二十个短场景的现场分布，不代表独立留出集或长程能力。",
+        "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+        "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+        "choose 独立动作集合子集可评分；其余开放参考不冒称完备 acceptable 集合。",
+        "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+      ]
+    }
+  ]
+}

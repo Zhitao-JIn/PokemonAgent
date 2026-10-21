@@ -7,7 +7,7 @@
 
 - `review_and_judge` 是**唯一的停机判定点**：收上一局结算、盖章，再机械三类 + 问模型。
   首圈 `outcome` 为 None，只做机械判定。
-- `plan_run` 只管目标表，不判停；规划完没有 PENDING 就 fail-fast。
+- `plan_run` 只管目标表；规划后没有 PENDING 就携提案返回 judge，规划预算另行限制循环。
 - `act` 派一局；整局抛错由 `act` 自己接住、记 `episode_error`，
   `AgentError` 兜成 `ERROR` 结算，同样回 `perceive`。
 - 失败盖 FAILED（终态），重试是 `plan_run` 的显式决定（把 FAILED 重开成 PENDING）。
@@ -22,6 +22,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from ..budget_nodes import guarded
+from ..planning import planning_route
 from .act import act
 from .begin import begin
 from .perceive import perceive
@@ -65,8 +66,8 @@ def compile_run_graph(checkpointer: BaseCheckpointSaver | None = None) -> Compil
     )
     graph.add_conditional_edges(
         "plan_run",
-        lambda state: "summarize_run" if state.done else "act",
-        {"act": "act", "summarize_run": "summarize_run"},
+        lambda state: planning_route(state, "goals", "summarize_run"),
+        {"act": "act", "summarize_run": "summarize_run", "review_and_judge": "review_and_judge"},
     )
     graph.add_edge("act", "perceive")
     graph.add_edge("summarize_run", "store_run_memory")

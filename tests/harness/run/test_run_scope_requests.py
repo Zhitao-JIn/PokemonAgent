@@ -28,9 +28,11 @@ class _Planner:
 
     def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
         self.requests.append(req)
-        goal = RunPlan.PlanGoal(goal="下一局目标", success_criteria="c", max_steps=2)
+        goal = RunPlan.PlanGoal(
+            goal="下一局目标", success_criteria="c", budget={"limit": 2, "unit": "tasks"}
+        )
         return FromHarnessToBrainToolPlanOnceResp(
-            plan=RunPlan(push_goals=[goal]), calls=[ModelCall(payload={})]
+            plan=RunPlan(why="测试规划依据", new_items=[goal]), calls=[ModelCall(payload={})]
         )
 
 
@@ -41,7 +43,9 @@ class _Judger:
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         self.requests.append(req)
         return FromHarnessToBrainToolJudgeResp(
-            done=False, why="继续", calls=[ModelCall(payload={})]
+            decision=("achieved" if False else "continue"),
+            why="继续",
+            calls=[ModelCall(payload={})],
         )
 
 

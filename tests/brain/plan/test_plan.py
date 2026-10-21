@@ -40,9 +40,17 @@ LEDGER_KEYS = {
 def plan_json(**overrides: object) -> str:
     """一份完整合法的计划 JSON；`overrides` 覆盖或新增顶层键。"""
     data: dict[str, object] = {
-        "push_goals": [
-            {"goal": "reach the gym", "success_criteria": "standing in the gym", "max_steps": 6},
-            {"goal": "beat the leader", "success_criteria": "badge obtained", "max_steps": 8},
+        "new_items": [
+            {
+                "goal": "reach the gym",
+                "success_criteria": "standing in the gym",
+                "budget": {"limit": 6, "unit": "tasks"},
+            },
+            {
+                "goal": "beat the leader",
+                "success_criteria": "badge obtained",
+                "budget": {"limit": 8, "unit": "tasks"},
+            },
         ],
         "updates": [{"index": 0, "status": "abandoned", "note": "dead end"}],
         "why": "gym first",
@@ -75,33 +83,41 @@ def test_a_json_fence_around_the_plan_is_tolerated() -> None:
     assert result.plan.why == "gym first"
 
 
-def test_an_empty_object_is_a_plan_that_pushes_and_updates_nothing() -> None:
+def test_an_empty_object_requires_a_reason() -> None:
     brain = Brain(plan_llm=ScriptedLLM(text_reply("{}")))
 
-    result = brain.plan(prompt=PROMPT, goal_stack=GOAL_STACK, history=HISTORY, max_push=MAX_PUSH)
-
-    assert result.plan.push_goals == []
-    assert result.plan.updates == []
-    assert result.plan.why == ""
+    with pytest.raises(PlanAttemptFailed):
+        brain.plan(prompt=PROMPT, goal_stack=GOAL_STACK, history=HISTORY, max_push=MAX_PUSH)
 
 
 def test_an_update_index_beyond_the_table_is_passed_through_for_the_caller_to_drop() -> None:
-    reply = plan_json(updates=[{"index": 9, "status": "pending"}])
+    reply = plan_json(updates=[{"index": 9, "status": "pending", "note": "retry"}])
     brain = Brain(plan_llm=ScriptedLLM(text_reply(reply)))
 
     result = brain.plan(prompt=PROMPT, goal_stack=GOAL_STACK, history=HISTORY, max_push=MAX_PUSH)
 
     assert result.plan.updates[0].index == 9
-    assert result.plan.updates[0].note == ""
+    assert result.plan.updates[0].note == "retry"
 
 
 @pytest.mark.parametrize(
     ("reply", "keyword"),
     [
-        (plan_json(push_goals=[{"goal": "", "success_criteria": "s", "max_steps": 6}]), "goal"),
         (
-            plan_json(push_goals=[{"goal": "g", "success_criteria": "s", "max_steps": 0}]),
-            "max_steps",
+            plan_json(
+                new_items=[
+                    {"goal": "", "success_criteria": "s", "budget": {"limit": 6, "unit": "tasks"}}
+                ]
+            ),
+            "goal",
+        ),
+        (
+            plan_json(
+                new_items=[
+                    {"goal": "g", "success_criteria": "s", "budget": {"limit": 0, "unit": "tasks"}}
+                ]
+            ),
+            "limit",
         ),
         (plan_json(updates=[{"index": -1, "status": "pending"}]), "index"),
         (plan_json(updates=[{"index": 0, "status": "completed"}]), "status"),

@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import pytest
 from _doubles.llm import ScriptedJudge, text_reply, vision_reply
 
-from pokemon_agent.brain import Brain
+from pokemon_agent.brain import Brain, Goal
 from pokemon_agent.brain.errors import (
     DecomposeAttemptFailed,
     EmptyCompletion,
@@ -23,9 +23,12 @@ FRAMES = ["data:image/png;base64,FIRST", "data:image/png;base64,LAST"]
 
 def _reply(method: str) -> str:
     return (
-        "{}"
+        '{"why": "retain existing work"}'
         if method == "plan"
-        else '{"tasks":[{"goal":"g","success_criteria":"c","max_steps":1}]}'
+        else (
+            '{"new_items": [{"goal": "g", "success_criteria": "c", "budge'
+            't": {"limit": 1, "unit": "actions"}}], "why": "next step"}'
+        )
     )
 
 
@@ -42,7 +45,7 @@ def _call(
 
 
 def test_brain_plan_with_images_uses_describe_and_records_images_in_the_call() -> None:
-    provider = ScriptedJudge(vision_reply("{}"), multimodal=True)
+    provider = ScriptedJudge(vision_reply('{"why": "retain existing work"}'), multimodal=True)
 
     result = _call(Brain(plan_llm=provider), "plan", FRAMES)
 
@@ -55,7 +58,7 @@ def test_brain_plan_with_images_uses_describe_and_records_images_in_the_call() -
 
 
 def test_brain_plan_falls_back_to_text_when_the_provider_is_not_multimodal() -> None:
-    provider = ScriptedJudge(text_reply("{}"), multimodal=False)
+    provider = ScriptedJudge(text_reply('{"why": "retain existing work"}'), multimodal=False)
 
     result = _call(Brain(plan_llm=provider), "plan", FRAMES, thinking=False)
 
@@ -107,7 +110,11 @@ def test_failed_visual_attempts_record_the_images_that_were_sent(method: str, fa
 
 
 def test_visual_empty_reply_retry_records_false_without_a_thinking_field() -> None:
-    provider = ScriptedJudge(EmptyCompletion(10, 8, "stop"), vision_reply("{}"), multimodal=True)
+    provider = ScriptedJudge(
+        EmptyCompletion(10, 8, "stop"),
+        vision_reply('{"why": "retain existing work"}'),
+        multimodal=True,
+    )
     memory = EpisodeMemory(
         run_id="r",
         run_goal="总目标",
@@ -119,7 +126,13 @@ def test_visual_empty_reply_retry_records_false_without_a_thinking_field() -> No
         quality_rationale="q",
         first_frame=FRAMES[0],
     )
-    request = FromHarnessToBrainToolPlanOnceReq(run_id="r", plan=[], details=[memory], max_push=1)
+    request = FromHarnessToBrainToolPlanOnceReq(
+        run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
+        run_id="r",
+        plan=[],
+        details=[memory],
+        max_push=1,
+    )
 
     result = Planner(Brain(plan_llm=provider), max_attempts=2).plan(request)
 

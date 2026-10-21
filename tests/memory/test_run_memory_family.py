@@ -36,11 +36,12 @@ def _run(run_id: str = "r1") -> RunMemory:
     )
 
 
-def _episode(run_id: str, episode_id: str, run_goal: str) -> EpisodeMemory:
+def _episode(run_id: str, episode_id: str, run_goal: str, goal_id: str = "g1") -> EpisodeMemory:
     return EpisodeMemory(
         run_id=run_id,
         episode_id=episode_id,
         run_goal=run_goal,
+        goal_id=goal_id,
         goal="走到门口",
         steps=1,
         summary="到了。",
@@ -65,42 +66,59 @@ def test_run_memory_round_trips_through_memorize_and_recall(tmp_path: Path) -> N
     assert items[0]["payload"] == memory.model_dump(exclude={"markdown"})
 
 
-def test_recall_by_run_goal_returns_only_matching_episodes_across_runs(tmp_path: Path) -> None:
+def test_recall_by_run_and_goal_identity_excludes_other_runs_and_same_text_goals(
+    tmp_path: Path,
+) -> None:
     capability = _capability(tmp_path)
     episodes = [
         _episode("r10", "e2", "目标"),
-        _episode("r2", "e10", "目标"),
+        _episode("r2", "e10", "不同总目标"),
         _episode("r2", "e2", "目标"),
         _episode("r1", "e1", "其他"),
+        _episode("r2", "other-goal", "目标", "g2"),
+        _episode("r2", "legacy", "目标", ""),
     ]
     capability.memorize(
         [{"kind": "episode", "payload": memory.model_dump()} for memory in episodes]
     )
 
-    items = capability.recall("", {"run_goal": "目标"}, limit=100)
+    items = capability.recall("", {"run_id": "r2", "goal_id": "g1"}, limit=100)
 
     assert [(item["payload"]["run_id"], item["payload"]["episode_id"]) for item in items] == [
         ("r2", "e2"),
         ("r2", "e10"),
-        ("r10", "e2"),
     ]
     assert all(item["kind"] == "episode" for item in items)
 
 
 @pytest.mark.parametrize("goal", ["通关 第一个 道馆", "目标｜中文 空格", " goal "])
-def test_run_goal_with_spaces_and_cjk_matches_by_equality(tmp_path: Path, goal: str) -> None:
+def test_goal_identity_with_spaces_and_cjk_matches_by_equality(tmp_path: Path, goal: str) -> None:
     capability = _capability(tmp_path)
     capability.memorize(
         [
-            {"kind": "episode", "payload": _episode("r1", "e1", goal).model_dump()},
-            {"kind": "episode", "payload": _episode("r2", "e2", goal + "别的").model_dump()},
+            {"kind": "episode", "payload": _episode("r1", "e1", "总", goal).model_dump()},
+            {"kind": "episode", "payload": _episode("r1", "e2", "总", goal + "别的").model_dump()},
         ]
     )
 
-    items = _capability(tmp_path).recall("", {"run_goal": goal}, limit=8)
+    items = _capability(tmp_path).recall("", {"run_id": "r1", "goal_id": goal}, limit=8)
 
     assert len(items) == 1
-    assert items[0]["payload"]["run_goal"] == goal
+    assert items[0]["payload"]["goal_id"] == goal
+
+
+def test_goal_identity_lookup_requires_run_identity(tmp_path: Path) -> None:
+    capability = _capability(tmp_path)
+
+    with pytest.raises(ValueError, match="requires run_id"):
+        capability.recall("", {"goal_id": "g1"})
+
+
+def test_run_goal_text_is_rejected_as_an_episode_scope(tmp_path: Path) -> None:
+    capability = _capability(tmp_path)
+
+    with pytest.raises(ValueError, match="run_goal is not an episode scope"):
+        capability.recall("有关经历", {"run_goal": "目标"})
 
 
 def test_recall_runs_hint_lists_every_run_memory_and_no_episode(tmp_path: Path) -> None:
@@ -146,7 +164,7 @@ def test_restore_with_an_empty_archive_clears_run_memory(tmp_path: Path) -> None
     for conditions in (
         {"runs": "all"},
         {"run_id": "r1"},
-        {"run_goal": "目标"},
+        {"run_id": "r1", "goal_id": "g1"},
         {"episode_id": "e1"},
         {},
     ):

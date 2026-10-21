@@ -1,6 +1,14 @@
 * text=auto eol=lf
-/evals/dataset/brain_goal_judge/v1/dataset.jsonl -text
-/evals/dataset/brain_goal_judge/v2/dataset.jsonl -text
-/evals/dataset/brain_choose_action/v1/cases.jsonl -text
-/evals/dataset/brain_choose_action/v1/cases_draft.jsonl -text
-/evals/dataset/brain_choose_action/build/cases_history_reviewed.jsonl -text
+/evals/dataset/brain_judge/v1/dataset.jsonl -text
+/evals/dataset/brain_judge/v2/dataset.jsonl -text
+/evals/dataset/brain_choose/v1/cases.jsonl -text
+/evals/dataset/brain_choose/v1/cases_draft.jsonl -text
+/evals/dataset/brain_choose/build/cases_history_reviewed.jsonl -text
+/evals/dataset/brain_judge/v3/dataset.jsonl -text
+/evals/dataset/brain_choose/v2/cases.jsonl -text
+/evals/dataset/brain_calls/v1/**/*.jsonl -text
+/evals/dataset/brain_calls/v1/**/*.request.schema.json -text
+/evals/dataset/brain_annotations/v1/*.jsonl -text
+/evals/dataset/brain_choose/v3/cases.jsonl -text
+/evals/dataset/brain_judge/v4/dataset.jsonl -text
+/evals/dataset/brain_annotations/v2/*.jsonl -text

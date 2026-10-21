@@ -128,7 +128,13 @@ def _invoke(
 ) -> None:
     if method == "plan":
         Planner(brain).plan(
-            FromHarnessToBrainToolPlanOnceReq(run_id="r", plan=[], details=episodes, max_push=1)
+            FromHarnessToBrainToolPlanOnceReq(
+                run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
+                run_id="r",
+                plan=[],
+                details=episodes,
+                max_push=1,
+            )
         )
     elif method == "decompose":
         Decomposer(brain).decompose(

@@ -69,12 +69,12 @@ def test_one_round_produces_one_act_memory_even_for_scripts(tmp_path: Path, scri
     runtime.game.get_action_space = space
     runtime.game.execute = execute
     task_input = TaskInput(
+        entry_id=(Task(task_id="t1", goal="子任务", success_criteria="c", max_steps=1)).task_id,
         run_id="r1",
         episode_id="e1",
         total_acts=0,
         task=Task(task_id="t1", goal="子任务", success_criteria="c", max_steps=1),
     )
-
     output = run_task(runtime, compile_task_graph(), task_input=task_input)
     writes = [event for event in fake.trace.read_events({}) if event.kind == "write_act_memory"]
 

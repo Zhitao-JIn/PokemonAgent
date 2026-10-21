@@ -40,7 +40,7 @@ def test_task_writes_exact_budget_bytes_and_matching_context(tmp_path, monkeypat
     assert context["run_config_sha256"] == hashlib.sha256(raw).hexdigest()
     assert task.metadata["run_config_sha256"] == context["run_config_sha256"]
     assert (budget.wall_clock_s, budget.max_episodes, budget.max_total_actions) == (600, 3, 60)
-    assert (budget.reserve_s, budget.episode_max_tasks, budget.max_decompositions) == (60, 6, 2)
+    assert (budget.reserve_s, budget.episode_max_tasks, budget.max_decompositions) == (60, 6, 12)
     assert (budget.task_max_steps, budget.min_request_s) == (12, 3)
     assert (budget.plan_thinking, budget.plan_max_tokens, budget.plan_timeout_s) == (
         False,

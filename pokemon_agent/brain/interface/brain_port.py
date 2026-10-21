@@ -180,8 +180,8 @@ class BrainPort(Protocol):
 
         images：可选截图，这次判定要看的画面。
 
-        后置条件：`result.calls` 恰好一条；`result.done` 是模型明确给出的布尔裁决
-            （本方法不替模型猜）。
+        后置条件：`result.calls` 恰好一条；decision 是明确的 achieved/continue/blocked，
+            task 还允许 interrupted；done/interrupted/blocked 只从 decision 派生。
         失败：抛 `JudgeAttemptFailed`（附这次的账）——**"永远返回一个判定"这条
             旧契约已废弃**。旧写法把调用失败吞成 `done=False`，于是"判定器坏了"
             与"真的没达成"在数据里分不开；现在失败必须被看见。
@@ -255,7 +255,8 @@ class BrainPort(Protocol):
           走 describe()，否则纯文本。带图路径不支持 thinking 覆盖，但账仍记录传入值。
         - `thinking`：同 `plan()`。
 
-        后置条件：`result.decomposition.tasks` 非空；`result.calls` 恰好一条。
+        后置条件：`result.calls` 恰好一条；new_items 可以为空，updates 只表达主观修订，
+            execution_order 使用请求表序号和本次新增序号，不生成身份或终止结论。
         失败：抛 `DecomposeAttemptFailed`（附这次的账）。
         """
         ...

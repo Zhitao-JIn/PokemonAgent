@@ -50,6 +50,7 @@ class TaskState(Settled, BaseModel):
 
     run_id: str = Field(description="所属 run（ActMemory 归属章）")
     episode_id: str = Field(description="所属 episode（记忆按局分组）")
+    entry_id: str
     task: Task = Field(description="本 task：目标、判据、键预算 `max_steps`")
     total_acts: int = Field(
         ge=0,

@@ -36,9 +36,12 @@ class _Decomposer:
         self, req: FromHarnessToBrainToolDecomposeReq
     ) -> FromHarnessToBrainToolDecomposeResp:
         self.requests.append(req)
-        task = Decomposition.PlannedTask(goal="下一任务", success_criteria="c", max_steps=2)
+        task = Decomposition.PlannedTask(
+            goal="下一任务", success_criteria="c", budget={"limit": 2, "unit": "actions"}
+        )
         return FromHarnessToBrainToolDecomposeResp(
-            decomposition=Decomposition(tasks=[task]), calls=[ModelCall(payload={})]
+            decomposition=Decomposition(why="测试规划依据", new_items=[task]),
+            calls=[ModelCall(payload={})],
         )
 
 
@@ -49,7 +52,9 @@ class _Judger:
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         self.requests.append(req)
         return FromHarnessToBrainToolJudgeResp(
-            done=False, why="继续", calls=[ModelCall(payload={})]
+            decision=("achieved" if False else "continue"),
+            why="继续",
+            calls=[ModelCall(payload={})],
         )
 
 
@@ -191,7 +196,7 @@ def test_judge_memory_blocks_keep_the_contractual_order(tmp_path: Path) -> None:
     task = Task(task_id="t", goal="任务", success_criteria="c", max_steps=1)
     judge = judge.model_copy(
         update={
-            "task_table": [TaskEntry(task=task, round=1)],
+            "task_table": [TaskEntry(entry_id=(task).task_id, task=task, round=1)],
             "episode_memories": state.ep_ctx.episode_index,
             "task_index": state.ep_ctx.task_memories,
         }

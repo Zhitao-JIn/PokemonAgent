@@ -2,8 +2,6 @@
 
 from types import SimpleNamespace
 
-import pytest
-
 from pokemon_agent.brain import Task
 from pokemon_agent.config import DEFAULT_RUN_BUDGET
 from pokemon_agent.harness.episode.act.dispatch_task import dispatch_task
@@ -38,6 +36,9 @@ def _episode(memories: list[TaskMemory]) -> EpisodeRunState:
         ep_ctx=EpisodeContext(task_memories=memories),
         tasks=[
             TaskEntry(
+                entry_id=(
+                    Task(task_id="current", goal="去门口", success_criteria="c", max_steps=12)
+                ).task_id,
                 round=1,
                 task=Task(task_id="current", goal="去门口", success_criteria="c", max_steps=12),
             )
@@ -81,8 +82,9 @@ def test_task_index_is_empty_without_a_matching_prior_task() -> None:
     assert result["task_input"].task_index == []
 
 
-def test_dispatch_rejects_a_current_task_in_its_prior_index() -> None:
+def test_new_execution_can_use_the_previous_same_goal_attempt_as_background() -> None:
     state = _episode([_memory("current", 0)])
 
-    with pytest.raises(AssertionError, match="includes current task"):
-        dispatch_task(state)
+    output = dispatch_task(state)
+    assert output["task_input"].task.task_id != "current"
+    assert output["task_input"].task_index[0].task_id == "current"

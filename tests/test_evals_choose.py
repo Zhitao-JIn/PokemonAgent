@@ -7,12 +7,12 @@ import pytest
 from pydantic import ValidationError
 
 import evals.common.run as evaluation
-from evals.brain_choose_action.__main__ import main, run_cases, select_cases
-from evals.brain_choose_action.cases import build_cases
-from evals.brain_choose_action.compare import is_legal, matches
-from evals.brain_choose_action.scorer import Acceptable, AcceptableBy, Legal, Parsed, build_metrics
-from evals.brain_choose_action.solver import ChooseRun, ProviderUnreachable, choose_case
-from evals.dataset.brain_choose_action import ActionMatcher, ChooseCase
+from evals.brain_choose.cases import build_cases
+from evals.brain_choose.compare import is_legal, matches
+from evals.brain_choose.legacy import main, run_cases, select_cases
+from evals.brain_choose.scorer import Acceptable, AcceptableBy, Legal, Parsed, build_metrics
+from evals.brain_choose.solver import ChooseRun, ProviderUnreachable, choose_case
+from evals.dataset.brain_choose import ActionMatcher, ChooseCase
 from evals.dataset.errors import DatasetError
 from pokemon_agent.brain.interface import Action, ActionSegment, Goal
 from pokemon_agent.brain.interface.domain.script_call import ScriptCall
@@ -215,7 +215,7 @@ def test_native_deepeval_counts_parsed_failure_once_and_skips_legal(tmp_path, mo
 
 
 def test_loader_reads_in_order_and_rejects_missing_files_or_duplicate_ids(tmp_path, monkeypatch):
-    import evals.dataset.brain_choose_action.loader as loader
+    import evals.dataset.brain_choose.loader as loader
 
     monkeypatch.setattr(loader, "DATASET_DIR", tmp_path)
     with pytest.raises(DatasetError):
@@ -244,7 +244,7 @@ def test_unknown_filters_are_errors(case_ids, scenes, tags):
 
 
 def test_cli_excludes_unreachable_cases_and_preserves_model_override(monkeypatch, capsys):
-    import evals.brain_choose_action.__main__ as entry
+    import evals.brain_choose.legacy as entry
 
     cases = [case("hit", tags=["read_screen"]), case("network", tags=["read_screen"])]
     chooser = FakeChooser(
@@ -268,7 +268,7 @@ def test_cli_excludes_unreachable_cases_and_preserves_model_override(monkeypatch
 
     assert builds == [{"text": "fake-model"}]
     assert evaluations[0]["hyperparameters"] == {
-        "dataset": "v1",
+        "dataset": "v3",
         "cases": 1,
         "text_model": "fake-model",
     }

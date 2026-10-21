@@ -24,6 +24,7 @@ class FromHarnessToBrainToolSummarizeReq(Settled, BaseModel):
     episode_id: str = Field(description="来源章")
     run_id: str = Field(description="来源章")
     run_goal: str = Field(description="所属 run 的目标文本，来源章")
+    goal_id: str = Field(default="", description="来源章：本局所属 L1 goal 的 task_id")
     goal: str = Field(description="本局目标")
     termination: Termination = Field(description="终止类别（`success` 由它推出）")
     judge_reason: str = Field(

@@ -10,7 +10,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 这批冻结帧同时用于定位和验收，没有独立留出集或真实模拟器操作验证；不由匹配率推断操作成功率。
 
-对外有六个任务，统一登记在 `evals/registry.py`：四个 DeepEval 模块入口、两个 Inspect task 文件入口。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；不提供 evals 根级 CLI。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
+对外有八个任务，统一登记在 `evals/registry.py`：三个 DeepEval 模块入口、五个 Inspect task 文件入口。四个脑能力 choose/plan/decompose/judge 统一由 Inspect 管理，另一个 Inspect 任务为 agent_short_goal_run。B 类使用 `python -m evals.<任务名>`，C 类使用 `inspect eval evals/<任务名>/task.py`；choose 的模块入口同样转发给 Inspect。DeepEval 保存原生 test_run JSON，Inspect 保存 .eval。
 
 旧批跑、report、diff 入口及只供其使用的报告模型已按用户决定删除。旧 diff 只读
 `header.json` / `results.jsonl`，无法比较现行 `.eval`；本轮未新增 Inspect 日志比较器，
@@ -18,8 +18,8 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 
 | task | 被测对象与输入 | scorer | 模型 |
 |---|---|---|---|
-| brain_choose_action | 冻结的完整 choose 请求（含本 task 历史），v1 共 189 条、六类场合 | 可接受动作集合匹配、解析、合法性及场合分组 | 决策模型 |
-| brain_goal_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
+| brain_choose | 完整 choose 请求，默认 v4 的206条建议式参考 | Inspect AI 质量分、能力掩码与单步结构检查 | 决策模型和独立评分模型 |
+| brain_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
 | agent_short_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
 
 ## task 分层与描述
@@ -86,7 +86,7 @@ run 级样本的机械结果读取同一 run、同一执行分支的全部帧，
 
 ### 流程层
 
-**brain_goal_judge**（已实现）
+**brain_judge**（已实现）
 测什么：生产判定器拿到真值目标与观测历史，能否正确判定目标是否达成。v2 默认包含 257 条真实调用现场，报告 TP / FP / FN / TN、FPR、召回率、精确率、准确率及分母，并按 `goal_family`、`negative_mode` 分组；v1 的 4 条契约示范仍可显式选择。v2 不是独立随机抽样基准，且原批采集的代码版本连续性无法证明，不能把汇总率外推为真实游戏总体能力。
 
 **brain_step_verify**（规划中，优先级高）
@@ -152,7 +152,7 @@ python -m evals.dataset.frames.build.terrain
 
 world_script_execute 共 106 例，统一按脚本的调用、结局与前后世界真值评分。所有脚本共用同一个 ScriptRun 执行多步操作，等待、中断、初态恢复与收尾属于脚本自己的配置或步骤。保留原用例依据与世界真值。被测脚本自报成功不是世界真值；重构不根据实际输出改写期望。
 
-memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。brain_goal_judge 保留 v1 的四条契约示范，扩展 v2 用真实判定现场评估生产判定器。
+memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。brain_judge 保留 v1 的四条契约示范，扩展 v2 用真实判定现场评估生产判定器。
 
 agent_short_goal_run 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
 
@@ -208,8 +208,8 @@ C 类由 `task.py` 装配原有 Inspect 链路。文件多时使用同名子包�
 | agent_short_goal_run | v1，20 个起点、样本、rubric 与档案 | build/pack.py |
 | world_script_execute | v1，106 条 cases.jsonl 与所用存档 | 106 条统一读取；核对函数在 scorer |
 | memory_store_recall | v1，dataset.json（一份3条记录/3个查询的库） | 无 |
-| brain_choose_action | v1，189 条完整 choose 请求（含本 task 历史），覆盖六类场合；start_menu 未覆盖 | `evals/dataset/brain_choose_action/build/` |
-| brain_goal_judge | 默认 v2，dataset.jsonl（257条）；v1 保留 4 条 | `evals/dataset/brain_goal_judge/build/` |
+| brain_choose | 默认 Inspect v4，206条建议式参考；旧v1/v2/v3保留 | `evals/dataset/brain_annotations/` |
+| brain_judge | 默认 v4，289 条三层标注；旧 v1/v2/v3 保留 | `evals/dataset/brain_annotations/` |
 
 agent 的 source_state 与 manifest.memory_archive 均相对版本目录；恢复前由 solver 在工作目录
 生成路径适配清单，冻结原件不写回。world 用例的 state 相对版本下的 states/，
@@ -232,3 +232,75 @@ python -m evals.dataset.frames.build.cli build --capture <capture_dir> --version
 旧采集工具重跑已会改变当前 v2，迁移前后重采产物逐字节相同，但与正式冻结物不同；
 本次仅在副本验证，没有将重采结果覆盖 v2。新 pack 工具在副本打包的 world.state 与现有档案一致。
 真实 LLM 测评未重跑；三个无 LLM task 已全量运行，world 的原有 switch_from_party_list 失败保持不变。
+
+
+## 四个独立脑能力评测
+
+`brain_choose`、`brain_plan`、`brain_decompose`、`brain_judge` 各有独立入口、加载器、
+生产 Port 调用与评分结果，不把五族采集资料作为一个综合评测。
+plan/decompose 的数据清单位于 `evals/dataset/brain_plan/v1` 与
+`evals/dataset/brain_decompose/v1`，各自固定来源版本和输入/参考哈希；只复用同批原料字节。
+
+plan 独立调用 Planner，结构分核新增上限、更新索引和应用后是否仍可派发；
+decompose 独立调用 Decomposer，结构分核任务数量、正步数与非空目标/判据。
+choose、plan、decompose 均另列 quality_scorer：独立评分调用根据完整生产 prompt、
+实际附图、候选结果和建议式参考逐维给0..1分，完整维度平均得到样本质量分。
+参考动作和拆分不是穷尽白名单，合理的未列入动作、失败纠偏、探索与等价计划同样可得高分。
+语义分是模型审阅，不是机械真值；能力/单步/预算等结构分另列，不强制匹配旧模型答案。
+有未知维度、评分缺条、重复、越界数字或格式错误不进语义分母，不能省略难评维度抬高分数。
+旧版本 C/I 量表评分保留，新的 quality_mean/quality_count 兼容旧版结果。
+生产调用重试耗尽为 sample error，已有 calls 与 failure 留在 Inspect store。
+
+```powershell
+inspect eval evals/brain_choose/task.py -T version=v4
+inspect eval evals/brain_plan/task.py -T version=v3
+inspect eval evals/brain_decompose/task.py -T version=v3
+inspect eval evals/brain_judge/task.py -T version=v4
+```
+
+plan/decompose 的被测模型默认读 config.models.plan_model，语义评分模型默认读
+config.evaluation_models.test_text，分别可用 `-T model=...` 与 `-T grader_model=...` 覆盖。
+`-T grader_model=none` 仅运行机械约束；不会产生语义通过率。
+这些是独立模型调用，不保证型号不同；需要不同型号时显式指定 grader_model。
+summary 的 99 条三层原料仍保留，本轮四个脑能力任务不新增 summary 公开入口。
+
+2026-10-19 历史审阅旁账位于 `evals/dataset/brain_annotations/v1`。
+本轮原待审332条全部记录处理结论；旧机械标签227条保留来源。559条中可评分481条：
+choose131、judge289、plan25、decompose36。35条前提冲突、43条证据不足，附理由但不进分母。
+plan/decompose v2 在 v1 原始请求上叠加逐例评分要求，排除各1条已逃跑却禁止重新遇敌的冲突现场。
+以上数量为2026-10-19的历史发布记录，2026-10-20建议式参考已扩展分母，见下文。
+新增真值标为 history_adjudicated，不冒称人审；规划语义分仍是模型审阅。
+choose 集合是已审的保守动作集合，不宣称穷尽全部合理策略。
+各条证据绑定该请求的原值指纹，不能从后续记录或别的 L1 取材补答案。
+完整数量、裁决示例和局限见 `evals/dataset/brain_annotations/v1/REPORT.md`。
+
+2026-10-20：四个脑任务全部通过 Inspect 管理。choose v4 使用建议式参考206/207条，
+补回75条可合理纠偏/探索的失败现场；仅1条已完成RUN光标目标但没有stop能力的现场排除。
+plan v3 使用26/26条参考，明确冲突现场也能评价 why/note 中的解释和目标处理；结构派发诊断分另列。
+decompose v3 为36/37条，剩余1条无法在禁止重新遇敌且任务列表必须非空的原契约下表达可执行补救。
+judge v4 的289条真假标注及准确率评分不变；总计557/559条具备评分参考。
+旁账位于 `evals/dataset/brain_annotations/v2`，旧原料/旁账/版本不改写。
+choose 的 `python -m evals.brain_choose -T ...` 也运行 Inspect，旧集合命中工具移至未登记的legacy模块。
+
+2026-10-20 递归规划契约升级：plan/decompose 的候选使用同构
+`new_items/updates/execution_order/why`，允许空新增；结构分检查整版表修订、预算单位和完整派发顺序。
+空新增本身不决定分数或终止。judge 使用 achieved/continue/blocked，task 另允许 interrupted；
+独立完整标签用于多类别混淆矩阵，旧真假标签只用于成功投影，不猜补 continue/blocked。
+judge 另存完整尝试账与失败；依据质量有独立参考才由 AI 单列评分，否则不计质量分。
+
+冻结 v1 原料与旧版本保持原字节，旧请求、TaskMemory 及 judge prompt 的只读审计契约保存在
+`evals/common/legacy_requests`。plan/decompose 的旧发布版本仍可审计，solver 明确拒绝把旧请求
+作为新契约请求运行，不能猜补父目标验收条件和尝试身份；新版本须在重采、标注及发布后选择。
+judge 的旧任务表若不能满足新输入契约，同样显式报错；二元标签不能冒充完整决策评测。
+choose 动作契约不变。新版本尚未发布时，旧计数仅说明历史数据覆盖，不能代表新契约评分覆盖。
+
+本轮新原料由 `python -m evals.common.capture_control start --out <新目录>` 启动，
+以 status/stop/resume 控制，顺序执行 preflight、独立起点 pack、二十场景 capture、audit、export。
+脚本分别记录 Port 耗时、模型耗时、reviewer 等待、未询问与 pending，自动核对录制和生产 trace。
+生成的 `exports/attemptN/v2` 是独立批次候选原料，未自动覆盖旧数据或冒称已完成独立标注/真实评分。
+
+补采可用 `capture_control start --out <新目录> --samples <id> <id> ...` 显式选择未完成用例。
+选择在启动时校验并固定，resume 不接受改清单；来源哈希、打包、采集、审计和导出均以同一清单为准。
+子集完成数不能冒充二十例完成，导出清单注明 expected 和 sample_ids。
+跨版本补采保留旧批次，continuation.json 记录复用报告的路径、字节哈希与提交及待补用例；
+复用用例不再执行，也不改写其来源版本，新批次的 manifest 仅声明本批次实际采集的数据。

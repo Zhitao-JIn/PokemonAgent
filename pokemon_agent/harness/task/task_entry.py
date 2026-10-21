@@ -50,6 +50,7 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
                 "step": 0,
             },
             task=task_input.task,
+            entry_id=task_input.entry_id,
             total_acts=task_input.total_acts,
         )
     )
@@ -58,6 +59,7 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
     state = TaskState(
         run_id=task_input.run_id,
         episode_id=task_input.episode_id,
+        entry_id=task_input.entry_id,
         task=task_input.task.model_copy(
             update={
                 "max_steps": min(task_input.task.max_steps, deps.budget.task_max_steps),

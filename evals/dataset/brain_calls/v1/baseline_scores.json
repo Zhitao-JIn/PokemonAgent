@@ -1,0 +1,191 @@
+{
+  "judge": {
+    "episode": {
+      "FN": 3,
+      "TN": 30,
+      "TP": 18,
+      "FP": 1
+    },
+    "run": {
+      "FN": 2,
+      "TP": 16,
+      "FP": 1,
+      "TN": 2
+    },
+    "task": {
+      "TN": 105,
+      "FN": 3,
+      "TP": 25
+    }
+  },
+  "choose": {
+    "labelled": 21,
+    "acceptable": 20,
+    "legal": 21
+  },
+  "short_goal_mechanical": [
+    {
+      "sample_id": "knowledge_wild_encounter",
+      "outcome": "pass",
+      "reason": "进了战斗",
+      "evidence": [
+        "01a15566-c277-78d1-802e-ab857b56d79d"
+      ]
+    },
+    {
+      "sample_id": "knowledge_door_transition",
+      "outcome": "pass",
+      "reason": "地图 0 → 39",
+      "evidence": [
+        "01a15567-86e3-75d5-abe3-fab43e41c843",
+        "01a15568-b729-7c73-bc80-dd011109fd95"
+      ]
+    },
+    {
+      "sample_id": "knowledge_npc_dialogue",
+      "outcome": "pass",
+      "reason": "出现了对话文字",
+      "evidence": [
+        "01a15569-b94b-7371-85df-75bdc7fd00f2"
+      ]
+    },
+    {
+      "sample_id": "knowledge_movement_obstacle",
+      "outcome": "pass",
+      "reason": "末帧在地图 12 的 y=14",
+      "evidence": [
+        "01a1556a-da9d-7c9b-9600-d15c962ae27e"
+      ]
+    },
+    {
+      "sample_id": "knowledge_dialogue_advance",
+      "outcome": "pass",
+      "reason": "对话出现过，末帧已关",
+      "evidence": [
+        "01a1556b-2e2b-7275-8134-760cd2cde7ef",
+        "01a1556b-b594-7ffb-99fd-c70132b6767b"
+      ]
+    },
+    {
+      "sample_id": "knowledge_shop_interaction",
+      "outcome": "fail",
+      "reason": "从没出现 BUY / SELL / QUIT",
+      "evidence": [
+        "01a15573-e6e9-72a8-82ab-56e3de5f3be2"
+      ]
+    },
+    {
+      "sample_id": "knowledge_battle_action_menu",
+      "outcome": "pass",
+      "reason": "光标到了 RUN",
+      "evidence": [
+        "01a15574-9b0d-7e2d-9acf-a7623379557f"
+      ]
+    },
+    {
+      "sample_id": "knowledge_battle_fight_menu",
+      "outcome": "pass",
+      "reason": "打开了招式列表",
+      "evidence": [
+        "01a15578-56ee-7669-896f-91725b409891"
+      ]
+    },
+    {
+      "sample_id": "knowledge_battle_move_select",
+      "outcome": "pass",
+      "reason": "招式打出去了",
+      "evidence": [
+        "01a15579-38c1-7eef-a94c-4de26993f853"
+      ]
+    },
+    {
+      "sample_id": "knowledge_battle_pokemon_switch",
+      "outcome": "pass",
+      "reason": "打开了宝可梦列表",
+      "evidence": [
+        "01a1557a-3daf-7576-93c0-64908af64e89"
+      ]
+    },
+    {
+      "sample_id": "knowledge_battle_item_use",
+      "outcome": "pass",
+      "reason": "打开了道具袋",
+      "evidence": [
+        "01a1557b-2024-7d27-9145-968001a6cd52"
+      ]
+    },
+    {
+      "sample_id": "knowledge_battle_run_attempt",
+      "outcome": "fail",
+      "reason": "始终在战斗里，也没出现逃跑结果",
+      "evidence": [
+        "01a1557c-52b2-75cf-b4ab-dd94a52ac1f7"
+      ]
+    },
+    {
+      "sample_id": "knowledge_shop_open_buy_menu",
+      "outcome": "pass",
+      "reason": "出现了商品列表",
+      "evidence": [
+        "01a1557c-cf1a-75f4-827d-26ee342813f6"
+      ]
+    },
+    {
+      "sample_id": "knowledge_shop_select_item",
+      "outcome": "fail",
+      "reason": "没进购买确认",
+      "evidence": [
+        "01a1557d-c069-7e96-875c-ed5af62637c9"
+      ]
+    },
+    {
+      "sample_id": "knowledge_shop_confirm_purchase",
+      "outcome": "pass",
+      "reason": "金钱 3000 → 2800，背包多了一件",
+      "evidence": [
+        "01a1557e-1833-756b-99fe-5932b4d91130",
+        "01a1557e-9a01-729f-b866-086899e3dbf7"
+      ]
+    },
+    {
+      "sample_id": "knowledge_shop_cancel_purchase",
+      "outcome": "pass",
+      "reason": "退回了商品列表，没花钱",
+      "evidence": [
+        "01a1557f-381f-7d62-86c0-0d1e2582b6b8",
+        "01a15581-2ee3-7927-9384-3ff106321b68"
+      ]
+    },
+    {
+      "sample_id": "knowledge_catch_weaken_target",
+      "outcome": "pass",
+      "reason": "对手 HP 降了",
+      "evidence": [
+        "01a15581-e24f-7a83-b5c4-4b2dec4eba5e"
+      ]
+    },
+    {
+      "sample_id": "knowledge_catch_throw_ball",
+      "outcome": "fail",
+      "reason": "精灵球数量没变",
+      "evidence": [
+        "01a15583-e669-715a-b298-e4fb2788b7f0"
+      ]
+    },
+    {
+      "sample_id": "knowledge_pokemon_center_enter",
+      "outcome": "pass",
+      "reason": "地图 1 → 41",
+      "evidence": [
+        "01a15584-37fa-744f-839e-5b6e26307985",
+        "01a15584-e11d-7842-b3d1-5b6cde736e8a"
+      ]
+    },
+    {
+      "sample_id": "knowledge_pokemon_center_heal",
+      "outcome": "unjudgeable",
+      "reason": "开局队伍本来就是满血，判不出治没治",
+      "evidence": []
+    }
+  ]
+}

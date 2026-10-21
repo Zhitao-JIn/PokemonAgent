@@ -1,5 +1,14 @@
 # spec —— 大脑感知范围（brain_scope）
 
+> **2026-10-19 范围更正（用户确认，覆盖下文 v1.1–v1.3 的旧 L1 口径）**：
+> L1 背景只能来自本 run 内、同一个 plan 产出的 L1 goal 的其他 episode，不含本局。
+> 身份键为 `(run_id, goal_id)`，其中 `goal_id = EpisodeRunState.goal.task_id`。
+> 禁止按 `run_goal`、目标文本等值关联，禁止跨 run；`run_goal` 仅保留作来源章。
+> 正常蒸馏、无正文空章与整局异常空章均盖 goal_id；没有该身份的旧记录不推断、不回填。
+> L0 仍读本 run 全部 EpisodeMemory、以其他 run 的 RunMemory 为索引；
+> L2 仍读本 task 全部 ActMemory、以同 episode 内同目标文本的此前 task 为索引。
+> 生成器与同层 judge 的范围一致，二者调用时点不同可以有新增记录。
+
 > 流程位置：intent（已确认）→ **spec.md（本文，v1.3，Q1–Q9 已由用户确认）** → plan → 落码
 > v1.1 修订原因：按用户澄清收紧两条索引的口径——L1 = 被同一 `run_goal` 绑定的 episode（跨 run 只因同一目标被重新发起）；L2 = 本 episode 内目标文本相同的此前 task。
 > v1.2（2026-10-16）修订原因：主线已用 CHANGELOG 478 删除 `max_summaries` 与 `_trim_episodes`（局摘要数量上限），不再有全局淘汰；D4、D6、第八、九、十一节中依赖淘汰的表述同步更正，Q5 消解；本项目 CHANGELOG 编号改从 480 起（478 为 cap 删除，479 为 mcp-only 批 ①）。
@@ -17,7 +26,7 @@
 | 调用点 | 绑定单元 | 详情（全部） | 背景索引（一行一条，不含本单元） | 图 |
 |---|---|---|---|---|
 | `plan·L0` / `judge·L0` | run | 本 run 全部 EpisodeMemory | 过往的 run（RunMemory，不按 `run_goal` 限制） | 每局首末帧 |
-| `plan·L1` / `judge·L1` | episode | 本 episode 全部 TaskMemory | 被同一个 `run_goal` 绑定的 episode（`run_goal` 文本相等，不含本局）。同一目标一次跑不完被重新发起时，这些 episode 会分布在多个 run 里，「跨」只因此而来 | 每 task 首末帧 |
+| `plan·L1` / `judge·L1` | episode | 本 episode 全部 TaskMemory | 本 run 内、同一个 L1 goal 的其他 episode；按 `(run_id, goal_id)` 绑定，不含本局、不按文本关联、不跨 run | 每 task 首末帧 |
 | `plan·L2` / `judge·L2` | task | 本 task 全部 ActMemory | 本 episode 内、目标文本与本 task 相同的此前 task 的 TaskMemory（不含本 task） | 每步前后帧（去重） |
 
 六处另给**知识**与**当前 RAM 现状**。
@@ -61,7 +70,7 @@
 |---|---|---|
 | `goal` / `observation` / `task_table` / `knowledge` / `last_judge` / `max_tasks` / `human_note` | 有 | 不变 |
 | `task_memories` | 本 episode 全部 TaskMemory（`retrieve_task_memories`，按 `episode_id` 召回） | 不变，即详情 |
-| `episode_memories` | 本 run 全部局的 EpisodeMemory，渲染全文（`retrieve_global_episode_memory`，按 `run_id` 召回） | **改名为 `episode_index`**：`run_goal` 与本 run 相同的 episode，**渲染成一行**，不含本局 |
+| `episode_memories` | 本 run 全部局的 EpisodeMemory，渲染全文（`retrieve_global_episode_memory`，按 `run_id` 召回） | **改名为 `episode_index`**：本 run 内同一个 L1 goal 的其他 episode，按 `(run_id, goal_id)` 绑定，**渲染成一行**，不含本局 |
 | 图 | 无（`BrainPort.decompose` 没有 `images`） | **增**：`task_memories` 每条的 `first_frame` / `last_frame` |
 
 ### 1.4 `judge·L1`（同一 `FromHarnessToBrainToolJudgeReq`，episode 层 `review_and_judge` 发出）
@@ -131,8 +140,8 @@ EpisodeMemory(episode_id="r1-ep2", goal="走到门口并进去", termination="go
 - 新字段：`run_goal: str = ""`（来源章，默认空以读旧文件）；`first_frame: str | None = None`、`last_frame: str | None = None`（PNG data URI）。
 - **盖章点**：`Summarizer.summarize()` 组装 EpisodeMemory 处，与 `store_empty_chapter()`（空章）。首末帧 = `ep_ctx.task_memories` 第一条的 `first_frame` 与最后一条的 `last_frame`（按执行序）；缺帧为 `None`；不调模型。
 - `run_goal` 的来源：`EpisodeInput` 新增 `run_goal: str`，由 run 层 `dispatch` 从 `RunState.run_goal.goal` 填入；经 `EpisodeRunState` 到盖章点。空章（整局异常，由 run 层 `act` 代写）同样盖。
-- 落盘：`_memorize_episode` 的元数据加 `"run_goal"`（供召回等值筛选）。`payload` 照旧 `model_dump(exclude={"markdown"})`，首末帧随 payload。
-- 旧文件（Q8，用户 2026-10-17 定）：**不为旧数据写任何兼容逻辑**。三个字段保留默认值，只因 pydantic 缺字段本就按默认读、改必填会连带改全部测试夹具；没有 `run_goal` 的旧 episode 不会被 `run_goal` 等值筛选命中（筛选值恒非空），旧记忆在 CP8 重打存档时随整库清空。
+- 落盘：`_memorize_episode` 的元数据保存 `run_goal` 作来源章，另保存 `goal_id` 与 `run_id` 供 L1 联合等值筛选。`payload` 照旧 `model_dump(exclude={"markdown"})`，身份和首末帧随 payload。
+- 旧文件：**不为旧数据推断 goal 身份**。`goal_id` 缺失读为空，不会命中当前 L1 goal 的非空身份；不得按目标文字或 run_goal 回填。本次不自动清库或重打存档。
 
 ### D4 `RunMemory`：新增一级，蒸馏正文
 
@@ -158,15 +167,15 @@ EpisodeMemory(episode_id="r1-ep2", goal="走到门口并进去", termination="go
 
 - 新 kind：对外 `run`，存储目录 `run_memory`，**md 类**（frontmatter + 正文，与 episode 同）。改动点（v1.3 对 `ce1e9c3` 逐项重核）：`memory/recall.py::_KIND_DIRS` 加 `"run": "run_memory"`（`MemoryCapability` 的 store 表由它生成，自动成为六族）；`memory/store.py` 的 `_MD_KINDS` 加 `run_memory`（`_KINDS` 随之含它；`restore` 的『不安全条目 / 未知目录』校验与清库循环都读 `_KINDS`，所以空 zip 还原会连 run 记忆一起清空，评测的 `evals/common/memory_server.py::clear_memory` 不用改，只加测试钉住）；`MemoryCapability.memorize()` 加 `elif kind == "run"` 与 `_memorize_run`；`MemoryCapability.restore()` 末尾重读循环 `("task", "episode", "object", "knowledge")` 加 `"run"`（漏列会让还原后读不到 run 记忆）；两处 Literal 加 `"run"`——`FromHarnessToMemoryToolMemorizeRecord.kind` 与 `FromHarnessToMemoryToolRecallItem.kind`（后者 v1.2 漏列）；`mcp_servers/memory_server.py` 的 `memorize` 工具说明里的 kind 清单；注释里的『五族 / 五类』改『六族 / 六类』（`memory/recall.py`、`mcpclient/memory_local.py`、`docs/spec/memory/SPEC.md`）。`docs/mcp/memory-admin-spec.md` 里没有 kind 清单，MCP 服务端没有按 kind 分的工具，核对后都不改。
 - 元数据：`{"run_id", "run_goal"}`。
-- **召回新取法 1**：`conditions={"run_goal": X}` → episode 族按 `run_goal` 等值筛选（`_recall_episode_summaries` 的条件键白名单 `("run_id", "episode_id")` 加 `run_goal`；触发分族的 `if run_id or episode_id or query` 加上 `run_goal`）。排序：按 `(run_id 自然序, episode_id 自然序)`，使跨 run 的顺序稳定。`run_goal` 是任意文本（含中文、空格、竖线），元数据等值筛选对取值没有限制，CP1 用测试钉住。`recall()` 末尾的 `items[:limit]` 会截断（默认 8），调用方沿用现有两处调用的约定 `limit=10**6`。
+- **召回新取法 1（2026-10-19 更正）**：`conditions={"run_id": 本 run, "goal_id": 本局 L1 goal 身份}`，episode 族对两键执行 AND 等值筛选，排除本局。goal_id 必须与 run_id 一起提供；没有 goal_id 的旧记录不按文本补配。episode 元数据与 payload 均保存 goal_id；run_goal 不再作为 episode 召回键。无 query 按 episode 自然序返回，调用方用 `limit=10**6` 保留全部。
 - **召回新取法 2**（v1.3 改 hint 名）：`conditions={"runs": "all"}` → 只返回 run 记忆族，全部，按 `run_id` 自然序，item 的 kind 为 `run`。v1.2 写的 `{"kind": "run"}` 与 `FromHarnessToMemoryToolRecallReq` 的约定冲突（该信封规定 conditions『不放 kind』：按 hint 分族圈定是底层规则，不是调用方的选择），故改用上下文 hint `runs`；信封的 `conditions` 说明与 `recall()` docstring 的分族规则同步补这一条。`runs` 不与其他键组合。
 - 不新增任何 `MemoryStorePort` 方法：两种取法都落在既有的 `filter()` 上。
-- **无条数上限**：episode 局摘要的数量上限（`max_summaries`）与淘汰（`_trim_episodes`）已由 CHANGELOG 478 删除，episode 记忆只增不淘汰，L1 的跨 run 索引不会因淘汰缺局。run 记忆同样不设条数上限；本项目不重新引入任何淘汰。
+- **无条数上限**：episode 局摘要的数量上限（`max_summaries`）与淘汰（`_trim_episodes`）已由 CHANGELOG 478 删除，episode 记忆只增不淘汰，L1 的同 run、同 goal 索引不会因淘汰缺局。run 记忆同样不设条数上限；本项目不重新引入任何淘汰。
 
 ### D7 三层的数据取法（perceive 单元的改动）
 
 - **run 层** `read_plan_context`：①`recall(conditions={"run_id": 本 run})` 照旧取本 run 全部局，直接作 `details`（删 `_pick_details`）；②新增 `recall(conditions={"runs":"all"}, limit=10**6)`，去掉本 run，得 `run_index`；③`objects` 照旧；④新增知识检索单元（见 D10）。账：`read_episode_memory` 照旧，新增 `read_run_memory`。
-- **episode 层** `retrieve_global_episode_memory`（改名为 `retrieve_episode_index`）：`recall(conditions={"run_goal": ep 的 run_goal}, limit=10**6)`，去掉本局 `episode_id`，写 `ep_ctx.episode_index`。`retrieve_task_memories` 不变。账：复用 `read_episode_memory`，`query` 字段写 `run_goal=…`。
+- **episode 层** `retrieve_episode_index`：按 `(state.run_id, state.goal.task_id)` 召回，去掉本局，写入 `ep_ctx.episode_index`。本局全部 TaskMemory 仍由 `retrieve_task_memories` 装入同一 ep_ctx；decompose 与 episode judge 共用。
 - **task 层**：不新增召回。`dispatch_task` 从 `ep_ctx.task_memories` 中取**目标文本与当前 task 的 `goal` 相等**的此前 task，去掉首末帧后放进 `TaskInput.task_index`（新字段），task 图把它抄进 `task_ctx`。`retrieve_act_memories` 已是「本 task 全部」，不变；`plan_task` 与 `review_and_judge` 去掉切片。
 - **「此前的 task」**：本 episode 内已有 TaskMemory、且 `goal` 与当前 task 相同的 task（同一个 task 目标被重新发起，典型场景是上一版任务链失败后 `plan_episode` 重拆出同目标的 task）。没产出 ActMemory 的 task 没有记忆，不在其内。上限是本 episode，不跨 episode。按 `total_acts` 升序。
 - **匹配口径**：`goal` 文本逐字相等。模型重拆时若改写了目标文字，这条索引就是空的——这是已知限制，不做模糊匹配（模糊匹配要调模型或语义检索，违背「索引机械生成」）。
@@ -295,7 +304,7 @@ EpisodeMemory(episode_id="r1-ep2", goal="走到门口并进去", termination="go
 - `test_one_round_produces_one_act_memory_even_for_scripts`
 - `test_plan_task_and_task_judge_read_all_act_memories`
 - `test_task_index_lists_prior_tasks_with_the_same_goal_in_this_episode_only`
-- `test_episode_index_excludes_current_episode_and_other_run_goals`
+- `test_episode_index_excludes_current_episode_other_goals_and_other_runs`
 - `test_run_index_excludes_current_run_and_ignores_run_goal`
 - `test_run_plan_details_are_all_episodes_of_this_run`
 - `test_cap_images_keeps_newest_and_drops_oldest`
@@ -307,7 +316,7 @@ EpisodeMemory(episode_id="r1-ep2", goal="走到门口并进去", termination="go
 
 - `test_three_levels_plan_and_judge_read_the_same_details`：FakeLLM + 假记忆，装好三层的请求，断言 ①同层 plan 与 judge 的详情是同一份、条数等于绑定单元下全部子记忆；②索引不含本单元；③索引生成过程零模型调用（FakeLLM 计数）。
 
-**需随改动调整的既有测试**（执行方按 grep 找全；测试瘦身合入后的路径见 plan 第十二节）：`tests/budget/test_run_config.py`；引用 `DecomposeReq` / `PlanOnceReq` / `ChooseOnceReq` / `JudgeReq` / `dedup_snapshots` 的 `tests/direct/prompts/test_decide_action_prompt.py`、`tests/harness/perceive/test_memory_observation.py`、`tests/budget/test_budget_settlement.py`、`tests/budget/test_deadline.py`、`tests/harness/ledger/test_node_io.py`（原 `tests/integration/test_node_io.py`）；`evals/brain_goal_judge/dataset.py` 若构造旧形状的 `JudgeReq`。（`tests/integration/test_p5_script_actions.py` 已于瘦身中删除。）
+**需随改动调整的既有测试**（执行方按 grep 找全；测试瘦身合入后的路径见 plan 第十二节）：`tests/budget/test_run_config.py`；引用 `DecomposeReq` / `PlanOnceReq` / `ChooseOnceReq` / `JudgeReq` / `dedup_snapshots` 的 `tests/direct/prompts/test_decide_action_prompt.py`、`tests/harness/perceive/test_memory_observation.py`、`tests/budget/test_budget_settlement.py`、`tests/budget/test_deadline.py`、`tests/harness/ledger/test_node_io.py`（原 `tests/integration/test_node_io.py`）；`evals/brain_judge/dataset.py` 若构造旧形状的 `JudgeReq`。（`tests/integration/test_p5_script_actions.py` 已于瘦身中删除。）
 
 ---
 

@@ -1,0 +1,10 @@
+{
+  "version": "v4",
+  "family": "choose",
+  "collection_version": "v1",
+  "cases": 207,
+  "inputs_sha256": "39ea22d045314426212fd6f657f4b548e9de19524f176d4b0cb03546eeb2669a",
+  "references_sha256": "a0faeeaacc537e8cff1aa277f8b32d0f365fb10e0f9be82107c8008358aaeed9",
+  "annotation_version": "v2",
+  "annotation_sha256": "c4f99b4f5c0774dc134a8b44c0e75f69ee2492141057e3cd00c4aea307e86370"
+}

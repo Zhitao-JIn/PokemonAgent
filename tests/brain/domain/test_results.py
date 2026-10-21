@@ -28,10 +28,19 @@ from pokemon_agent.brain.interface.domain import (
 
 _RESULT_BUILDERS = {
     "ChooseResult": lambda: ChooseResult(action=Action(sequence=[ActionSegment(name="up")])),
-    "JudgeResult": lambda: JudgeResult(done=False, why="w"),
-    "PlanResult": lambda: PlanResult(plan=RunPlan()),
+    "JudgeResult": lambda: JudgeResult(decision=("achieved" if False else "continue"), why="w"),
+    "PlanResult": lambda: PlanResult(
+        plan=RunPlan(
+            why="测试规划依据",
+        )
+    ),
     "DecomposeResult": lambda: DecomposeResult(
-        decomposition=Decomposition(tasks=[{"goal": "a", "success_criteria": "s", "max_steps": 1}])
+        decomposition=Decomposition(
+            why="测试规划依据",
+            new_items=[
+                {"goal": "a", "success_criteria": "s", "budget": {"limit": 1, "unit": "actions"}}
+            ],
+        )
     ),
     "VerifyResult": lambda: VerifyResult(verdicts=[VerifyVerdict(index=0, positive=True, why="w")]),
     "SummarizeResult": lambda: SummarizeResult(
@@ -49,8 +58,8 @@ def test_each_result_bag_defaults_calls_and_extra(name: str) -> None:
 
 
 def test_result_bags_do_not_share_calls_or_extra_between_instances() -> None:
-    first = JudgeResult(done=False, why="w")
-    second = JudgeResult(done=False, why="w")
+    first = JudgeResult(decision=("achieved" if False else "continue"), why="w")
+    second = JudgeResult(decision=("achieved" if False else "continue"), why="w")
 
     first.calls.append(ModelCall())
     first.extra["k"] = "v"
@@ -60,14 +69,14 @@ def test_result_bags_do_not_share_calls_or_extra_between_instances() -> None:
 
 
 def test_judge_result_defaults_interrupted_to_false() -> None:
-    result = JudgeResult(done=False, why="w")
+    result = JudgeResult(decision=("achieved" if False else "continue"), why="w")
 
     assert result.interrupted is False
 
 
 def test_judge_result_requires_a_why() -> None:
     with pytest.raises(ValidationError):
-        JudgeResult(done=False)
+        JudgeResult(decision=("achieved" if False else "continue"))
 
 
 def test_model_call_defaults_to_success_and_an_empty_payload() -> None:

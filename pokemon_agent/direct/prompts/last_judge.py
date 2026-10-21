@@ -10,7 +10,7 @@ from pokemon_agent.schemas.harness.domain import AuditVerdict, JudgeFeedback
 
 def last_judge_lines(feedback: JudgeFeedback) -> list[str]:
     """渲成素材行：判定员的结论与理由；被人推翻时再加一行人的理由。"""
-    said = "已达成" if feedback.done else "还没达成"
+    said = feedback.decision
     lines = [f"- 判定员说：{said}——{feedback.why}"]
     if feedback.audit is AuditVerdict.OVERTURN:
         lines.append(f"- 人推翻了这个判定：{feedback.note or '（没给理由）'}")

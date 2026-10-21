@@ -1,26 +1,24 @@
-"""`Decomposition`：`Brain.decompose()` 从模型输出解析出的**任务链**（episode 级规划）。
+"""递归规划提案；允许空新增，不具有终止权。"""
 
-一个目标拆成按执行顺序排好的若干 task。`task_id` 不在这里——身份由调用方
-（harness 的 `plan_episode`）按 `{goal.task_id}-t{n}` 编，brain 只给内容。
-"""
+from typing import ClassVar
 
-from __future__ import annotations
+from pydantic import BaseModel, ConfigDict, Field
 
-from pydantic import BaseModel, Field
+from .planning import PlannedTask, PlanningUpdate
 
 
 class Decomposition(BaseModel):
-    """一版任务链 + 规划说明。"""
+    """调用方整版验证和采纳；未点名表项保留。"""
 
-    class PlannedTask(BaseModel):
-        """链上的一个 task。"""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    PlannedTask: ClassVar[type[PlannedTask]] = PlannedTask
+    PlanUpdate: ClassVar[type[PlanningUpdate]] = PlanningUpdate
+    new_items: list[PlannedTask] = Field(default_factory=list)
+    updates: list[PlanningUpdate] = Field(default_factory=list)
+    execution_order: list[str] | None = None
+    why: str = Field(min_length=1)
 
-        goal: str = Field(min_length=1, description="这个 task 要达成什么，一句话")
-        success_criteria: str = Field(min_length=1, description="怎么算做成")
-        max_steps: int = Field(gt=0, description="这个 task 最多按几个键")
-
-    tasks: list[PlannedTask] = Field(min_length=1, description="任务链，按执行顺序；至少一条")
-    why: str = Field(default="", description="为什么这样拆")
-
-
-__all__ = ["Decomposition"]
+    @property
+    def tasks(self) -> list[PlannedTask]:
+        """内部转换读取新增项；序列化只输出 new_items。"""
+        return self.new_items

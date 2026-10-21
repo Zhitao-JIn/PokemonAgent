@@ -1,0 +1,10 @@
+{
+  "version": "v3",
+  "family": "plan",
+  "collection_version": "v1",
+  "cases": 26,
+  "inputs_sha256": "7c0c345be4f93b1749532ec0cf7e49bd687dede721ea35bc5cb90a6062fee0fa",
+  "references_sha256": "4b47471764a04a9ea86332fdc47e62e4a98e2e9e93435dc62f001c4f6bb29072",
+  "annotation_version": "v2",
+  "annotation_sha256": "e236174671ae26e7347d301d1c052242388c0f0af52efecbc0ee29dbe611cace"
+}

@@ -21,6 +21,7 @@ def mechanical_summary(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[
     memory = TaskMemory(
         run_id=state.run_id,
         episode_id=state.episode_id,
+        entry_id=state.entry_id,
         task_id=state.task.task_id,
         goal=state.task.goal,
         steps_used=state.step,

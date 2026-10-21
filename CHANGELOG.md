@@ -1,3 +1,143 @@
+## 2026-10-20（567）—— 四个脑能力任务切换到递归规划二十例
+
+**改了什么**：新增 `publish_recursive.py`，发布 `brain_{choose,plan,decompose,judge}/v20261020_1846`（judge 为原生记录并带 `expected_decision`，其余固定输入/参考/旁账指纹）；`brain_judge` 加载器登记新版本；四个 Inspect 任务及 choose 加载器默认版本改为 `v20261020_1846`；新增整套数据假端口运行测试与报告 `docs/eval/brain-annotation-recursive-report.md`。
+
+**为什么这么改**：旧版本基于递归规划之前的请求形状，plan/decompose 缺 `remaining_planning_rounds`、`execution_order`、可更新/可空计划等字段，judge 缺统一语义退出；用户要求以这二十例的新数据替换上一版作为默认评测。
+
+**取舍**：旧版本目录与字节原样保留，只改默认值，仍可显式选择；judge 的 33 例机械未达成没有决策类别，不进决策矩阵而不是猜测。plan/decompose 的结构检查本已按新字段取值，故未改 scorer。两个断言旧默认版本的测试改为新默认。
+
+**影响面**：四个任务默认数据变化，显式 `version=` 的调用不受影响；不改生产代码、采集链、旧旁账和旧能力清单。
+
+## 2026-10-20（566）—— 递归规划二十例标注旁账与逐例作者表
+
+**改了什么**：新增 `brain_annotations/authoring.py`（作者表读取，缺登记/多登记/重复/排除项带答案均失败）与 `recursive_build.py`，按 `authoring/v20261020_1846/{choose,plan,decompose,judge}.jsonl` 生成旁账 `brain_annotations/v20261020_1846`；`Annotation` 增加可选 `expected_decision`（仅 judge，且须与 `achieved` 一致）；证据指针补齐 `run_goal`、`remaining_planning_rounds`、`execution_order`、`episode_memories`、`trigger`、`planning_round`、`allow_interrupt`。judge 183 例中 70 例保留机械标签，113 例由请求可见证据逐例裁定并给出四类决策；choose 122（15 例机械动作集合并入可接受动作）、plan 21、decompose 41 全部为建议式。
+
+**为什么这么改**：新批次的 plan/decompose 已是递归规划形态（空计划合法、可更新、可重排），旧 v1/v2 旁账不覆盖这些字段；作者表放数据文件而不是 Python 字典，便于审阅，且构建器逐例对账，未登记就失败关闭。
+
+**取舍**：不调用任何真实模型，也不读取采集时的模型应答作标签；judge 机械例的 `expected_decision` 只在已达成时填 `achieved`，未达成不猜 continue/blocked。choose 的建议文本按目标与当前画面成类编写，细节由 AI 评分员对照请求判断，不当作动作白名单。判定中对对话文字被截断的现场（如 “Here you”“All ri”）一律按“尚未出现完整结果文字”处理，仅当前缀已能唯一确定结果（如 “Got away safel”“All right! … was”）才算达成。
+
+**影响面**：新增旁账目录、作者表与两个模块；`Annotation` 仅新增默认空字段，旧旁账读取与字节不变；任务默认版本与能力清单尚未切换。
+
+## 2026-10-20（565）—— 递归规划二十例合并为一个冻结集合
+
+**改了什么**：新增 `evals/dataset/brain_calls/merge_exports.py`，把已核验的两段导出（原批次十四例、补采六例）并为 `brain_calls/v20261020_1846`：五族 judge 183 / plan 21 / decompose 41 / choose 122 / summary 81，来源包取并集；`DatasetManifest` 新增可选 `source_parts` 逐段登记批次、提交、代码哈希、schema 哈希与样本；新增合并测试。
+
+**为什么这么改**：二十例分两次采集，中途因 verify 失败落账渲染异常（562）补采六例，采集提交为 `3ca4ecd` 与 `97ab011`；后续标注与四个 Inspect 任务需要一份统一、可校验的二十例集合，并且不能把两个提交伪装成一个。
+
+**取舍**：不重新导出批次，只读两份已通过来源哈希核验的导出，合并后整体重跑 `verify`；样本顺序按样本名升序，与单批导出一致；两段 schema 哈希一致才允许合并，来源包同名异字节直接失败。562/563 只改 trace 渲染与采集控制器，不改脑的运行逻辑，混合提交写入 `source_parts` 与报告，不另行重采。
+
+**影响面**：新增数据版本目录与合并模块；`DatasetManifest` 仅增加默认为空的字段，旧版本读写与字节不变；不改任何任务默认版本。
+
+## 2026-10-20（563）—— 采集控制器按固定用例子集补采
+
+**改了什么**：控制器 start 支持显式 samples，按数据集顺序固定非空唯一用例清单，resume 保留原清单。preflight、来源哈希、pack、capture、audit 和 export 统一按所选集合执行，导出 expected/sample_ids，不再硬编码二十条验收。导出阶段独立成模块，来源归档可保留 continuation.json 的旧报告与版本引用。新增六项测试验证非法清单、只选剩余六例、恢复不可改清单，以及同数量错误报告不能通过审计。
+
+**为什么这么改**：用户明确要求复用此前完成的十四例，只重跑失败例及尚未执行的五例；原控制器始终从二十例开始，既浪费模型调用，也无法按六例完成审计和导出。采集范围必须成为显式且贯穿全流程的契约。
+
+**取舍**：默认仍执行全部用例；补采使用独立批次固定新版本，旧十四例原样保留，来源不伪装成新提交。清单外记录和未知/重复 ID 明确拒绝；子集完成不是整个二十例集合完成，整体来源由 continuation 旁账说明，不放宽录制、等待和逐例对账要求。
+
+**影响面**：仅采集控制器、批次审计和候选原料导出、评测文档及选择测试；brain、生产 MCP、scope、checkpoint schema、模型选型、旧原料和标注不变。已误启动的全量修复批次在 pack 阶段停止，尚未进入模型采集，原目录保留。全量非 slow 测试 1786 passed、7 skipped、3 deselected，Ruff check/format 及冻结数据差异检查通过；旧十四例调用与等待审计重核通过。
+
+## 2026-10-20（562）—— verify 与 judge 失败调用完整落账
+
+**改了什么**：修复 verify 耗尽后无 verdicts 时的 trace 渲染异常；仅在模型调用账附加结构化判定，不向 call_failed 错误账混入 verdicts。judge 保留模型调用连带产生的 call_failed，不再过滤丢失。新增落盘读回与真三层图集成回归，覆盖供应商拒绝、失败后重试成功及 task/episode 两层 verify 错误结算和采集对账。
+
+**为什么这么改**：二十例采集在确认购买场景先收到 DeepSeek HTTP 402 余额不足，随后失败落账遍历 None 又抛 TypeError，掩盖原始拒绝并丢失一条模型尝试。相邻重试路径还会污染错误账的严格 schema，judge 则静默丢错误事件；失败的调用也必须完整可读，才能准确结算并解释采集为何停止。
+
+**取舍**：无校验结果时不伪造空判定列表，错误账保持原形；不改变模型重试、任务成败或余额策略，不把服务拒绝标作成功。旧批次、已完成十四例与失败现场原样保留；修复版本采集须建立新批次，不能修改旧 manifest 或混合版本。账户余额是独立外部条件，需要补足后才能重采。
+
+**影响面**：仅 trace 的 verify/judge 渲染与五项新增回归；生产请求、checkpoint schema、scope、模型选型及冻结数据均不变。测试使用本地 trace、FakeLLM/MockWorld 与同协议拒绝端口，不调用真实模型。全量非 slow 测试 1780 passed、7 skipped、3 deselected，Ruff check/format 通过。Graphiti 探针设计仍是独立未提交文档，不随本次修复提交。
+
+## 2026-10-20（561）—— 递归规划、judge 统一退出与脚本重采闭环
+
+**改了什么**：plan/decompose 统一为 new_items、updates、execution_order、why，子项均带验收条件和有单位预算；允许空新增、保留待办、显式放弃与重开，整版校验后原子采纳。L2 稳定 entry_id 与每次执行 task_id 分离，保留尝试历史。无待办返回本层 judge，判定统一为 achieved/continue/blocked，task 保留 interrupted；blocked 正常返回上层且不计失败连击。补齐提案、轮次、触发原因、身份与判定 trace。评测同步结构检查、独立质量评分与 judge 多类别指标，冻结旧请求和 prompt 供历史审计。新增 start/status/stop/resume 控制器，顺序独立打包、二十例采集、调用及等待审计、导出候选原料。
+
+**为什么这么改**：两层规划都在维护直属子目标表，应使用相同机制；空拆解只是当前无可派发项，父目标是否达成或无法推进应由 judge 结合实际可见历史判断。重复尝试需要独立执行身份，才能保留真实历史、预算与派发记录。新状态表和判定素材不能从旧数据可靠补出，必须固定版本重采，并通过脚本自动控制和核对所有等待。
+
+**取舍**：语义退出交 judge，预算、超时和错误仍机械终止；规划轮数有界。scope 沿用同一 run、同一 L1 goal 的既定口径，不扩大记忆可见范围。旧原料、标注和发布版本不改写，旧请求不足以满足新契约时明确拒绝 solver 运行；二元标签不猜补 continue/blocked。新采集只导出独立候选原料，不自动宣称完成标注、发布或真实评分。停止在用例边界生效，失败现场及未闭合调用保留；恢复不覆盖旧尝试，版本漂移即失败。
+
+**影响面**：brain 数据契约、tool 转换和重试、两层规划与三层 judge、状态表/执行身份/checkpoint 指纹、trace、Inspect solver/scorer、历史审计兼容和采集脚本。新增集成用例覆盖空规划、重开、原子拒绝、blocked 返回、有界循环、多类别评分、等待录制、Windows 进程树及中断恢复；reviewer 启动测试使用与服务一致的有界冷启动等待，业务交互断言保留。Ruff、冻结数据核验与非 slow 测试作为真实重采启动门槛；采集完成数、覆盖缺口和产物以独立批次报告为准。
+
+## 2026-10-20（560）—— 四个脑能力统一 Inspect 与建议式质量评分
+
+**改了什么**：choose、plan、decompose、judge 四个脑任务统一由 Inspect AI 管理，registry 仍为八项（三个 DeepEval、五个 Inspect）。choose 新增独立 Inspect 生产调用、结构检查和 AI 质量评分，模块启动也转发给 Inspect；旧集合命中运行器移到未登记的 legacy 诊断。新增建议式旁账v2及choose v4、plan/decompose v3，动作和拆分只作为不穷尽建议，允许未列入的合理选择、失败纠偏和等价计划。choose补回75条至206/207；plan26/26、decompose36/37、judge289/289，共557/559条具有评分参考。
+
+**为什么这么改**：失败子目标不代表choose没有合理下一步，不能因为无法证明某一键必成功就排除探索；也不能把另一L1原目标的限制强加给只看见当前task的choose。plan/decompose的参考应说明一种建议及其依据，由独立AI评估候选合理性，而不是把参考动作、任务粒度和路线变成唯一白名单。
+
+**取舍**：独立评分模型按现场与范围、推进或恢复、边界与历史三个维度给0..1分并平均，保留部分得分；任一维度未知、缺项、重复或无效数字则不计质量分。结构合法性、单步、索引和预算另列；judge沿用真假标签准确率。参考与候选都不能代替生产现场事实，未列入建议不能独立构成扣分原因。只保留两条无可表达产物的排除：已完成但无stop的choose，以及禁止重新遇敌且必须返回非空任务链的decompose；冲突plan可在why/note中解释，因此纳入质量分。旧版本与原始输入不改写，不修改生产Action/Brain接口，不新增真实模型跑分。
+
+**影响面**：评测registry、choose启动和Inspect任务、共享建议式评分/质量均值与分母、plan/decompose质量评分及默认版本、旁账契约和版本清单；AGENTS/CLAUDE与评测规范同步。新增12项测试覆盖补救参考、多候选、未列入候选仍可得AI分、参考隔离、部分分数、无效/未知维度及Inspect启动；全量1761 passed、7 skipped、3 deselected，评分链路使用Fake Chooser/Fake Grader。Ruff、模块/函数大小、证据与冻结文件指纹核验通过。
+
+## 2026-10-19（559）—— 四个脑能力逐例历史标注与独立版本发布
+
+**改了什么**：完成本轮剩余332条请求的独立历史审阅，逐条保存请求哈希、JSON pointer、证据原值指纹、摘要和裁决理由；原有227条机械标签保留原来源。共559条记录中，choose131、judge289、plan25、decompose36条可评分，35条前提冲突、43条证据不足单列排除。分别发布 brain_choose v3、brain_judge v4、brain_plan v2、brain_decompose v2，并作为四个公开入口的默认版本；旧版本保留。plan/decompose 使用逐例的前置条件、进度、停手边界和历史约束；新 choose 按键标签增加总按键次数约束，阻止重复按键链绕过单步限制。
+
+**为什么这么改**：只有通用 rubric 不能说明某个具体现场该如何判分；忽略历史边界会把别的 L1 或后续结果泄漏进答案。穿墙站位、将门当店员、逃跑后仍要求回原战斗菜单等上游错误也不能被硬塞成 choose 的正确动作。需要将可评分真值、无效目标和证据不足分开，才能让四个独立评测的分母与实际证据一致。
+
+**取舍**：新增裁决标为 codex_history_review/history_adjudicated，不冒称人审或机械真值；不读取配对 baseline 响应或后续记录补标签。原机械标签继承既有证据，不冒称本轮新增审阅。choose 仅列保守的已审动作及部分脚本，不宣称穷尽策略；plan/decompose 允许等价计划，原 pending 目标适用时允许不更新，语义分仍由独立评分调用审阅。summary99条原料不并入四族数量。本次没有重新调用真实模型跑分。
+
+**影响面**：新增标注契约、证据校验、构建/发布工具和完整旁账；四个任务的版本默认值、规划参考叠加、judge版本读取和choose单步比较；评测规范与报告同步。原brain_calls v1与旧版本字节不改写，生产brain scope不变。新数据显式按LF写入，冻结JSONL纳入-text规则，防止Git换行转换使指纹失效。新增11项测试覆盖全量配对、证据防篡改、分母、历史身份边界和按键链约束，相关107项通过；全量1749 passed、7 skipped、3 deselected，测试进程显式清空DeepSeek key；Ruff、文件/函数大小约束、旧原料与新发布指纹核验通过。
+
+## 2026-10-19（558）—— plan 与 decompose 拆成独立评测入口
+
+**改了什么**：新增 brain_plan、brain_decompose 两个独立 Inspect 任务，各自具有数据加载、生产 Port 调用、结构评分和语义评分入口；独立数据清单固定 26 条 plan 与 37 条 decompose 的来源版本、输入和参考哈希。与已有 brain_choose、brain_judge 一起形成四个独立脑能力评测，registry 共八个公开任务。模型结果、实际 prompt/附图、调用账与重试耗尽信息保留在 Inspect 记录中。
+
+**为什么这么改**：仅将 plan/decompose 放进采集资料，仍不能单独运行、选择模型、评分与查看结果。每种能力应有自己的运行与报告边界；结构合法也不能替代规划质量，两种分数必须分列，参考和来源元信息不能进入被测模型请求。
+
+**取舍**：独立清单复用已冻结原料，不复制或改写这轮 20 例资料，不重新跑游戏。结构分仅检查可机械核对的约束；质量分由单独的模型请求逐条核证据量表，明确标作模型审阅，可单独指定型号；评分缺项、重复、无效或未定不冒充通过，关闭 grader 时不进语义分母。型号相同仍是两次独立请求，不宣称评分器是不同模型。summary 原料单独保留，本次不新增 summary 公开入口。
+
+**影响面**：eval 两个独立任务、共享量表评分与数据清单校验、registry、规范和任务文档；choose/judge 的入口、冻结数据、生产 brain scope 与存档不变。新增 13 个用法/约束/隔离/评分与指纹测试；默认全量 1738 passed、7 skipped、3 deselected，测试进程显式清空 DeepSeek key。Inspect CLI 能分别发现两个新任务；Ruff 通过（排除原有 .pytest_base）。本次验证使用 Fake Port 和 Fake Grader，未新增真实模型跑分或重采。
+
+## 2026-10-19（557）—— 二十场景全脑数据冻结与评测命名统一
+
+**改了什么**：按 schema 11a4afa05e6ed43d 重打二十份正式 archive，并在固定提交 5d1ff1e 上完成真实采集。冻结 judge 289、plan 26、decompose 37、choose 207、summary 99 条完整输入，保存 12 个 Port 的请求、响应、异常、耗时、737 次模型尝试与 trace；双向缺账为零，17 条预算跳过账单列。增加来源哈希包、范围审计、独立参考、构建/验证/加载入口。brain_goal_judge 与 brain_choose_action 分别统一改名为 brain_judge 与 brain_choose，旧冻结 JSONL 字节保留；新增三层 judge v3 的 206 条机械标签与 choose v2 的 21 条独立动作集合。
+
+**为什么这么改**：仅留 choose 或最终 prompt 无法复用 plan、decompose、judge 的完整生产口径，也无法区分漏采和预算跳过。输入、原始 baseline 与独立评分依据必须分离；原屏幕的数量框和投球结算话语还揭示了旧机械规则覆盖缺口，不能把这些规则的漏判写成负真值。
+
+**取舍**：每例独立空记忆，不宣称覆盖持久跨 run 背景或独立留出泛化。只有可独立确定的 judge/choose 子集进入现有运行器分母；其余完整输入附约束、证据 rubric 或待审标记，不冒称全部 golden。plan/decompose/summary 本次交付数据与量表，尚未注册新公开任务。旧默认版本保留，新版显式选择；来源包约 34 MiB，保留正式起点、录制和原始账以换取跨机器可审计性。旧快照移入本批备份，不销毁。
+
+**影响面**：eval 目录、任务登记、独立数据契约/构建器、三层 judge 分组、choose 版本参数、正式 archive、相关文档及回归测试；不改变生产 brain scope、模型或预算。全量默认测试 1725 passed、7 skipped、3 deselected；269 条相关测试先行通过。Ruff check / format 通过（排除原有 .pytest_base 临时目录）；测试进程显式清空 DeepSeek key，避免 reviewer 无密钥入口测试使用本机凭据。来源与类型/hash/范围核验通过，旧 judge 2 份和 choose 10 份 JSONL 字节保持一致。
+
+## 2026-10-19（556）—— 三层全脑调用录制与二十样本采集入口
+
+**改了什么**：增加生产 Port 旁路录制，分层保存 plan、decompose、choose、三层 judge、verify、reflect 与三层 summary 的完整请求、响应、异常和单调等待时长；新增专用 MCP 服务、正式 archive 恢复 worker、二十例重打及串行采集入口和 trace 双向对账。
+
+**为什么这么改**：此前只有 choose 留完整生产信封，其他链路主要依赖最终 prompt；统一边界后才能按同一 brain scope 构建五类测评数据，保留未完成调用，并证明重试与 trace 没有遗漏。
+
+**取舍**：仅 eval 层包裹现有 Port，不改变生产脑输入或范围；每例独立空记忆与世界服务，原始 state 与旧 archive 备份保留。按 HEAD、运行代码与 prompt、配置和 archive 哈希核版本连续性；无对应调用的类别记零覆盖，不伪造样本。
+
+**影响面**：新增 eval 采集和对账工具、录制用法测试；原 choose 入口保留兼容并可显式启用全脑录制。29 条相关测试通过，Ruff check / format 通过；本条提交尚不代表真实二十例采集完成。
+
+## 2026-10-19（555）—— L1 背景按本 run 的 goal 身份隔离
+
+**改了什么**：episode 背景召回改为 run_id 与 L1 goal_id 联合等值筛选，排除本局；正常蒸馏、无正文与异常空章均保存 goal_id，记忆元数据同步索引。decompose 与 episode judge 继续共用 ep_ctx，范围文档与回归用例同步更正。
+
+**为什么这么改**：原实现按 run_goal 文本关联，会把同 run 的其他 L1 goal、乃至其他 run 的局当作当前 goal 的经验。背景必须属于同一个 plan 产出的 goal 身份，不能由目标文字相等推断。
+
+**取舍**：run_goal 保留作来源章，不再用作 episode 召回键；旧记录缺少 goal_id 时不回填、不按文字补配。L0 的其他 run 索引和 L2 的同局同目标文本索引保持原规则。状态 schema hash 从 28e96b09966dc94e 变为 11a4afa05e6ed43d，旧存档仍按原校验拒载，本次不重打。
+
+**影响面**：episode 来源章、harness 收尾、memory 筛选、trace 正文排除来源章及 brain_scope 文档。回归覆盖同文字异 goal、跨 run 同 goal_id、当前局排除、缺身份旧记录、总目标文字变化、空章与三层图共用范围；不改变模型 provider、动作空间或冻结评测数据。当前工作区默认全量 1723 passed、3 deselected；慢测 3 passed；Ruff check / format 通过（排除原有 .pytest_base 临时产物）。测试进程显式清空 DeepSeek key，隔离 reviewer 的无密钥入口测试与本机凭据。
+
+## 2026-10-19（554）—— 增加 PyBoy 暂停与按键循环现场探针
+
+**改了什么**：新增独立探针脚本，使用真实 ROM 与草丛遇敌存档左右交替按键；每次推进 60 帧后暂停一段时间并刷新窗口，记录动作前后的帧号。
+
+**为什么这么改**：现场同时观察按键期间画面是否推进、暂停期间窗口是否响应，并用帧号核实每次动作恰好推进 60 帧、暂停期不推进。
+
+**取舍**：脚本默认运行一分钟，允许调整总时长、暂停时长与刷新间隔；退出时不保存游戏 RAM，关闭窗口会结束探针。
+
+**影响面**：只新增实验诊断入口，不改变 MCP 服务行为或 WorldPort 契约；探针不写回电池 RAM。
+
+## 2026-10-19（553）—— PyBoy 空闲窗口泵改用原生暂停态 tick
+
+**改了什么**：MCP 可视服务空闲时让 PyBoy 进入内建暂停态并周期调用 `tick()` 与窗口刷新事件；收到动作后先恢复，再只推进动作要求的帧数。
+
+**为什么这么改**：窗口需要持续处理 SDL 消息并重绘，但等待 AI 时游戏帧必须冻结；PyBoy 暂停态的 `tick()` 跳过 Game Boy 核心帧，窗口刷新事件仍可调用 SDL renderer。
+
+**取舍**：继续由 world 丢弃物理按键，只转发窗口关闭事件；暂停期使用 PyBoy 已有的内部窗口刷新事件，不额外推进游戏或音频帧。
+
+**影响面**：只影响 `--watch` 下 MCP world 服务的空闲窗口维护与动作恢复，不改变无窗口模式或 WorldPort 契约。
+
 ## 2026-10-20（564）—— world 单元测试 CP4 修正：入口前置检查改用公开构造函数装配
 
 **改了什么**：`tests/world/test_world_pyboy_world_prechecks.py` 的准备方式整体换掉——删掉用 `object.__new__` 绕过构造函数、手补 `_pyboy`/`_state_path`/`_rom`/`_task`/`_closed` 的 `_bare_world()`，改为 monkeypatch 把模块引用的 `PyBoy` 绑到手写假件、再用公开构造函数 `PyBoyWorld(str(tmp_path / "x.gb"), state_path=None)` 建实例（ROM 只是 `tmp_path` 下一个空文件，只过存在性检查）。假件补构造函数会调的 `set_emulation_speed(speed)`，并把 `tick` 的返回值改成可切换的 `tick_result`；「已 reset」样本仍经公开 `reset(..., start_state=b"\x00")` 准备后清空假件记录，「未 reset」样本就是刚构造出来的实例，P5 的关闭态改由 `tick_result=False` + 公开 `evolve(1)` 制造。9 个函数 / 12 项的名字、参数化与断言文本不变，P1/P2 未动；文件内不再出现任何对 `PyBoyWorld` 实例下划线属性的读写（`grep -nE "world\._"` 无输出）。

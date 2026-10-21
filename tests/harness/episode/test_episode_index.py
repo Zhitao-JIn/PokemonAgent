@@ -1,4 +1,4 @@
-"""同总目标的其他局索引跨 run 召回，空目标也留下查询账。"""
+"""L1 背景只取本 run 同一个 goal 身份的其他局，与目标文本无关。"""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,10 +31,11 @@ class _RecordingMemory(_Memory):
         return response.model_copy(update={"items": [*response.items, unrelated]})
 
 
-def _memory(run: str, episode: str, goal: str) -> EpisodeMemory:
+def _memory(run: str, episode: str, goal: str, goal_id: str = "g") -> EpisodeMemory:
     return EpisodeMemory(
         run_id=run,
         run_goal=goal,
+        goal_id=goal_id,
         episode_id=episode,
         goal="局目标",
         steps=1,
@@ -66,7 +67,7 @@ def _retrieve(
 
 
 @pytest.mark.parametrize("goal", ["same goal", "通关 第一 道馆", " goal with spaces "])
-def test_episode_index_excludes_current_episode_and_other_run_goals(
+def test_episode_index_excludes_current_episode_other_goals_and_other_runs(
     tmp_path: Path, goal: str
 ) -> None:
     memory = _RecordingMemory()
@@ -74,31 +75,43 @@ def test_episode_index_excludes_current_episode_and_other_run_goals(
         _memory("r1", "current", goal),
         _memory("r1", "earlier", goal),
         _memory("r2", "another-run", goal),
-        _memory("r1", "different", goal + "!"),
+        _memory("r1", "same-text-different-goal", goal, "g-other"),
+        _memory("r1", "different-run-goal-text", goal + "!"),
+        _memory("r1", "legacy-without-goal-id", goal, ""),
     ]
 
     context, _trace = _retrieve(_state(goal), memory, tmp_path)
 
-    assert [entry.episode_id for entry in context.episode_index] == ["earlier", "another-run"]
-    assert memory.requests[0].conditions == {"run_goal": goal}
+    assert [entry.episode_id for entry in context.episode_index] == [
+        "earlier",
+        "different-run-goal-text",
+    ]
+    assert memory.requests[0].conditions == {"run_id": "r1", "goal_id": "g"}
     assert memory.requests[0].limit == 10**6
-    assert [entry.run_id for entry in context.episode_index] == ["r1", "r2"]
+    assert all(entry.run_id == "r1" and entry.goal_id == "g" for entry in context.episode_index)
 
 
-def test_an_empty_run_goal_clears_the_index_without_calling_recall(tmp_path: Path) -> None:
+def test_an_empty_run_goal_does_not_disable_goal_identity_lookup(tmp_path: Path) -> None:
     state, memory = _state(""), _RecordingMemory()
+    memory.episodes = [_memory("r1", "earlier", "")]
 
     context, trace = _retrieve(state, memory, tmp_path)
 
-    assert memory.requests == [] and context.episode_index == []
+    assert memory.requests[0].conditions == {"run_id": "r1", "goal_id": "g"}
+    assert [entry.episode_id for entry in context.episode_index] == ["earlier"]
     events = [parse(event) for event in trace.read_events()]
     assert len(events) == 1
-    assert events[0].content.query == "run_goal=" and events[0].content.refs == []
+    assert events[0].content.query == "run_id=r1 goal_id=g"
+    assert events[0].content.refs == ["earlier"]
 
 
-def test_episode_index_account_records_run_goal_query_and_refs(tmp_path: Path) -> None:
+def test_episode_index_account_records_run_and_goal_identity_query_and_refs(tmp_path: Path) -> None:
     goal, memory = "通关 第一 道馆", _RecordingMemory()
-    memory.episodes = [_memory("r1", "current", goal), _memory("r2", "foreign", goal)]
+    memory.episodes = [
+        _memory("r1", "current", goal),
+        _memory("r2", "foreign", goal),
+        _memory("r1", "earlier", goal),
+    ]
 
     _context, trace = _retrieve(_state(goal), memory, tmp_path)
     events = [parse(event) for event in trace.read_events()]
@@ -107,5 +120,5 @@ def test_episode_index_account_records_run_goal_query_and_refs(tmp_path: Path) -
     assert events[0].kind == "read_episode_memory"
     assert events[0].meta.source == "retrieve_episode_index"
     assert events[0].meta.step == 3 and events[0].meta.episode_id == "current"
-    assert events[0].content.query == f"run_goal={goal}"
-    assert events[0].content.refs == ["foreign"]
+    assert events[0].content.query == "run_id=r1 goal_id=g"
+    assert events[0].content.refs == ["earlier"]

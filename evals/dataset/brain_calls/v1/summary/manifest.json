@@ -1,0 +1,33 @@
+{
+  "version": "v1",
+  "family": "summary",
+  "cases": 99,
+  "layers": {
+    "episode": 19,
+    "run": 20,
+    "task": 60
+  },
+  "baseline_status": {
+    "success": 99
+  },
+  "mechanical_labels": 0,
+  "action_set_labels": 0,
+  "rubric_cases": 99,
+  "files_sha256": {
+    "inputs.jsonl": "f44530685bcc6746540c4e6c55355f7a6c8142e610e0885f5c1bc36caa746335",
+    "references.jsonl": "455dea468ce7bafffa727d419dd96926e9d88fe37a85cd73f9fbb4f479391504",
+    "summarize.request.schema.json": "3c90ede05fcaf8c2df0dea8fecd98d007dc8ba21f0a32f2fd5a823d295a98f23",
+    "summarize_run.request.schema.json": "e09a7b62846bc3b0272e5b716923aeb162c8353a1ff0d65cb9d365e5f2caed93",
+    "summarize_task.request.schema.json": "72b9e0fc66900b33695c0edbe0a2542db58983e0f4f85d8114a1ac942b27c54a"
+  },
+  "source_head": "5d1ff1ee94f4c1da110f247fc230d69186608c1d",
+  "source_code_sha256": "8677991cdfc4d79708c75fd5f0f539b112756fe3a7567a1f2f7b620a3c623290",
+  "schema_hash": "11a4afa05e6ed43d",
+  "limitations": [
+    "二十个短场景的现场分布，不代表独立留出集或长程能力。",
+    "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+    "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+    "choose 独立动作集合子集可评分；其余开放参考不冒称完备 acceptable 集合。",
+    "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+  ]
+}

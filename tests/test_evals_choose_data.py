@@ -5,16 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from evals.dataset.brain_choose_action.build.from_capture import (
+from evals.dataset.brain_choose.build.from_capture import (
     CaptureRow,
     build_drafts,
     capture_version_note,
     read_request,
     write_rows,
 )
-from evals.dataset.brain_choose_action.build.prelabel import candidate_keys, walking_keys
-from evals.dataset.brain_choose_action.build.ram_review import Decision, apply_review
-from evals.dataset.brain_choose_action.schemas import ChooseCase
+from evals.dataset.brain_choose.build.prelabel import candidate_keys, walking_keys
+from evals.dataset.brain_choose.build.ram_review import Decision, apply_review
+from evals.dataset.brain_choose.schemas import ChooseCase
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.world.interface.domain.ram_readout import RamReadout
 
@@ -175,7 +175,7 @@ def test_changed_production_digest_blocks_supplement(tmp_path: Path) -> None:
 
 
 def test_current_draft_preserves_full_history_review_and_source_index() -> None:
-    root = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose_action"
+    root = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose"
     cases = [
         ChooseCase.model_validate_json(line)
         for line in (root / "v1/cases_draft.jsonl").read_text(encoding="utf-8").splitlines()
@@ -218,7 +218,7 @@ def test_ram_review_requires_exact_source_coverage(tmp_path: Path) -> None:
 
 
 def test_ram_review_preserves_all_evidence_without_claiming_human_approval() -> None:
-    root = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose_action/build"
+    root = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose/build"
     decisions = [
         Decision.model_validate_json(line)
         for line in (root / "ram_decisions.jsonl").read_text(encoding="utf-8").splitlines()
@@ -241,7 +241,7 @@ def test_ram_review_preserves_all_evidence_without_claiming_human_approval() -> 
 
 
 def test_ram_review_cannot_silently_expand_to_bag() -> None:
-    root = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose_action/build"
+    root = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose/build"
     decisions = [
         Decision.model_validate_json(line)
         for line in (root / "ram_decisions.jsonl").read_text(encoding="utf-8").splitlines()

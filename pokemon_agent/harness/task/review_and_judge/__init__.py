@@ -58,8 +58,10 @@ def review_and_judge(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[st
                     fail_streak=state.stall_count,
                 ),
             )
-        if verdict.done and (feedback is None or feedback.audit is AuditVerdict.ACCEPT):
-            termination = Termination.GOAL_DONE
+        if (verdict.done or verdict.blocked) and (
+            feedback is None or feedback.audit is AuditVerdict.ACCEPT
+        ):
+            termination = Termination.BLOCKED if verdict.blocked else Termination.GOAL_DONE
         elif not verdict.done and verdict.interrupted:
             termination = Termination.INTERRUPTED
     return _finish(state, deps, termination, verdict, feedback)
@@ -100,6 +102,7 @@ def _finish(
         task_id=state.task.task_id,
         step=state.step + 1,
         termination=termination,
+        decision=verdict.decision if verdict is not None else None,
         judge_reason=reason,
         audit=feedback.audit if feedback is not None else None,
         human_note=feedback.note if overturned else "",

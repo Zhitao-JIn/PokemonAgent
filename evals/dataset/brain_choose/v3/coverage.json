@@ -1,0 +1,388 @@
+{
+  "source_cases": 207,
+  "labelled": 131,
+  "excluded": [
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000003",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图12 x=12 y=24，battle_menu/choice，朝east，光标RUN，文字''。当前 RUN 光标已满足仅移动目标，却继续调用无 stop 的 choose；a 会越界逃跑，应由上层结算。"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000004",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图12 x=12 y=24，battle/dialog，朝east，光标None，文字'Got away safel'。已逃跑，当前 Got away/field；任务却要求只推进对话回当前战斗主菜单。结束逃跑对话不会恢复原战斗，需上层修正前提。"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000005",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图12 x=12 y=24，battle/dialog，朝east，光标None，文字'Got away safely!'。已逃跑，当前 Got away/field；任务却要求只推进对话回当前战斗主菜单。结束逃跑对话不会恢复原战斗，需上层修正前提。"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000006",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图12 x=12 y=24，walk/none，朝east，光标None，文字''。已逃跑，当前 Got away/field；任务却要求只推进对话回当前战斗主菜单。结束逃跑对话不会恢复原战斗，需上层修正前提。"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000007",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图12 x=12 y=24，walk/none，朝east，光标None，文字''。已逃跑，当前 Got away/field；任务却要求只推进对话回当前战斗主菜单。结束逃跑对话不会恢复原战斗，需上层修正前提。"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000008",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图12 x=12 y=24，walk/none，朝east，光标None，文字''。已逃跑，当前 Got away/field；任务却要求只推进对话回当前战斗主菜单。结束逃跑对话不会恢复原战斗，需上层修正前提。"
+    },
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000009",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图12 x=12 y=24，walk/none，朝east，光标None，文字''。已逃跑，当前 Got away/field；任务却要求只推进对话回当前战斗主菜单。结束逃跑对话不会恢复原战斗，需上层修正前提。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000001",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图41 x=3 y=3，walk/none，朝north，光标None，文字''。任务要求站(3,2)朝北，当前可见 row2 全为 # 柜台；应修正为柜台外互动，而非给穿墙动作。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000002",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图41 x=3 y=3，walk/none，朝north，光标None，文字''。任务要求站(3,2)朝北，当前可见 row2 全为 # 柜台；应修正为柜台外互动，而非给穿墙动作。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000003",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图41 x=3 y=3，walk/none，朝north，光标None，文字''。任务要求站(3,2)朝北，当前可见 row2 全为 # 柜台；应修正为柜台外互动，而非给穿墙动作。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000004",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图41 x=3 y=4，walk/none，朝south，光标None，文字''。任务要求站(3,2)朝北，当前可见 row2 全为 # 柜台；应修正为柜台外互动，而非给穿墙动作。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000005",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图41 x=3 y=3，walk/none，朝north，光标None，文字''。任务要求站(3,2)朝北，当前可见 row2 全为 # 柜台；应修正为柜台外互动，而非给穿墙动作。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000006",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图41 x=2 y=3，walk/none，朝west，光标None，文字''。任务要求站(3,2)朝北，当前可见 row2 全为 # 柜台；应修正为柜台外互动，而非给穿墙动作。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000007",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图41 x=3 y=3，walk/none，朝east，光标None，文字''。任务要求站(3,2)朝北，当前可见 row2 全为 # 柜台；应修正为柜台外互动，而非给穿墙动作。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000008",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图41 x=3 y=3，walk/none，朝north，光标None，文字''。任务要求站(3,2)朝北，当前可见 row2 全为 # 柜台；应修正为柜台外互动，而非给穿墙动作。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000009",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图41 x=3 y=4，walk/none，朝south，光标None，文字''。任务要求站(3,2)朝北，当前可见 row2 全为 # 柜台；应修正为柜台外互动，而非给穿墙动作。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000010",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图41 x=3 y=3，walk/none，朝north，光标None，文字''。任务要求站(3,2)朝北，当前可见 row2 全为 # 柜台；应修正为柜台外互动，而非给穿墙动作。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000028",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=3 y=7，walk/none，朝south，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000029",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=3 y=7，walk/none，朝south，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000030",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝east，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000031",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=3 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000032",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝east，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000033",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=3 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000034",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝east，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000035",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=3 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000037",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝east，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000038",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=5 y=7，walk/none，朝east，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000039",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000040",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=5 y=7，walk/none，朝east，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000041",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000043",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000044",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000045",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000046",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000047",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=4 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000049",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=3 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000050",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=3 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000051",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=3 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_pokemon_center_heal.task.choose.000052",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图41 x=2 y=7，walk/none，朝west，光标None，文字''。已在门格附近但仍地图41；本次可见输入不能确定改变地图的触发方向/条件。a、横移无变化的历史不能反推另一个动作必然成功；不建立门口反复 a 的 gold，待补可验证出口机制或修订任务。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000005",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=3 y=4，shop/none，朝north，光标None，文字''。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000006",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=3 y=4，shop/dialog，朝north，光标None，文字'No! POTIONs ar'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000007",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=3 y=4，shop/dialog，朝north，光标None，文字'No! POTIONs are all sold out.'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000008",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=3 y=4，shop/none，朝north，光标None，文字''。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000009",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=3 y=4，shop/dialog，朝north，光标None，文字'No! POTIONs ar'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000010",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=3 y=4，shop/dialog，朝north，光标None，文字'No! POTIONs are all sold out.'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000011",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=3 y=4，shop/none，朝north，光标None，文字''。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000012",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=3 y=4，shop/dialog，朝north，光标None，文字'No! POTIONs ar'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000013",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=3 y=4，shop/dialog，朝north，光标None，文字'No! POTIONs are all sold out.'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000016",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=3 y=6，shop/none，朝south，光标None，文字''。目标将(3,7)门格 D 写成店员；当前地图无该位置 NPC。先修正人物身份/目标，不能把面向门重复 a 当商人互动。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000017",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=3 y=6，shop/none，朝south，光标None，文字''。目标将(3,7)门格 D 写成店员；当前地图无该位置 NPC。先修正人物身份/目标，不能把面向门重复 a 当商人互动。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000018",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=3 y=6，shop/none，朝south，光标None，文字''。目标将(3,7)门格 D 写成店员；当前地图无该位置 NPC。先修正人物身份/目标，不能把面向门重复 a 当商人互动。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000019",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=3 y=6，shop/none，朝south，光标None，文字''。目标将(3,7)门格 D 写成店员；当前地图无该位置 NPC。先修正人物身份/目标，不能把面向门重复 a 当商人互动。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000020",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=4 y=6，shop/none，朝east，光标None，文字''。目标将(3,7)门格 D 写成店员；当前地图无该位置 NPC。先修正人物身份/目标，不能把面向门重复 a 当商人互动。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000021",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=4 y=6，shop/none，朝east，光标None，文字''。目标将(3,7)门格 D 写成店员；当前地图无该位置 NPC。先修正人物身份/目标，不能把面向门重复 a 当商人互动。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000022",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=4 y=6，shop/none，朝east，光标None，文字''。目标将(3,7)门格 D 写成店员；当前地图无该位置 NPC。先修正人物身份/目标，不能把面向门重复 a 当商人互动。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000023",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=4 y=7，shop/none，朝south，光标None，文字''。目标将(3,7)门格 D 写成店员；当前地图无该位置 NPC。先修正人物身份/目标，不能把面向门重复 a 当商人互动。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000024",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=4 y=7，shop/none，朝south，光标None，文字''。目标将(3,7)门格 D 写成店员；当前地图无该位置 NPC。先修正人物身份/目标，不能把面向门重复 a 当商人互动。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000025",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=4 y=7，shop/none，朝south，光标None，文字''。目标将(3,7)门格 D 写成店员；当前地图无该位置 NPC。先修正人物身份/目标，不能把面向门重复 a 当商人互动。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000034",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/none，朝north，光标None，文字''。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000035",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/dialog，朝north，光标None，文字'This shop sell'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000036",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/dialog，朝north，光标None，文字'This shop sells many ANTIDOTEs.'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000037",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/none，朝north，光标None，文字''。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000038",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/dialog，朝north，光标None，文字'This shop sell'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000039",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/dialog，朝north，光标None，文字'This shop sells many ANTIDOTEs.'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000040",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/none，朝north，光标None，文字''。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000041",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/dialog，朝north，光标None，文字'This shop sell'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000046",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/none，朝north，光标None，文字''。要求站到(5,4)，但本次 walk_map 显示该格 #；绕开移动 NPC 也不能把墙格变成站位。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000047",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/none，朝north，光标None，文字''。要求站到(5,4)，但本次 walk_map 显示该格 #；绕开移动 NPC 也不能把墙格变成站位。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000048",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/none，朝north，光标None，文字''。要求站到(5,4)，但本次 walk_map 显示该格 #；绕开移动 NPC 也不能把墙格变成站位。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000049",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=5 y=6，shop/none，朝north，光标None，文字''。要求站到(5,4)，但本次 walk_map 显示该格 #；绕开移动 NPC 也不能把墙格变成站位。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000050",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=4 y=6，shop/none，朝west，光标None，文字''。要求站到(5,4)，但本次 walk_map 显示该格 #；绕开移动 NPC 也不能把墙格变成站位。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000051",
+      "status": "invalid_task",
+      "reason": "现场 全局坐标 地图42 x=4 y=5，shop/none，朝north，光标None，文字''。要求站到(5,4)，但本次 walk_map 显示该格 #；绕开移动 NPC 也不能把墙格变成站位。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000057",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=5，shop/none，朝north，光标None，文字''。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000058",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=5，shop/dialog，朝north，光标None，文字'Wow! Tons of PO'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000059",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=5，shop/dialog，朝north，光标None，文字'Wow! Tons of POKéMON stuff!'。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    },
+    {
+      "case_id": "knowledge_shop_interaction.task.choose.000060",
+      "status": "unjudgeable",
+      "reason": "现场 全局坐标 地图42 x=5 y=5，shop/none，朝north，光标None，文字''。本任务可见历史已完成一轮普通/售罄对话并关闭，未见 BUY/SELL/QUIT；当前任务仍要求同一对象开启菜单，输入不能证明哪一个动作可达成。排除无依据 a 循环 gold，需上游重规划。"
+    }
+  ],
+  "annotation_version": "v1",
+  "baseline_answers_used_as_gold": false
+}

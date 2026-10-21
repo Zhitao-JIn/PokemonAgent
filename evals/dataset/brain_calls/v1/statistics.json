@@ -1,0 +1,137 @@
+{
+  "families": {
+    "judge": {
+      "cases": 289,
+      "layers": {
+        "episode": 60,
+        "run": 23,
+        "task": 206
+      },
+      "evaluation": {
+        "mechanical": 206,
+        "source_grounded_rubric": 83
+      }
+    },
+    "plan": {
+      "cases": 26,
+      "layers": {
+        "run": 26
+      },
+      "evaluation": {
+        "source_grounded_rubric": 26
+      }
+    },
+    "decompose": {
+      "cases": 37,
+      "layers": {
+        "episode": 37
+      },
+      "evaluation": {
+        "source_grounded_rubric": 37
+      }
+    },
+    "choose": {
+      "cases": 207,
+      "layers": {
+        "task": 207
+      },
+      "evaluation": {
+        "action_set": 21,
+        "source_grounded_rubric": 186
+      }
+    },
+    "summary": {
+      "cases": 99,
+      "layers": {
+        "episode": 19,
+        "run": 20,
+        "task": 60
+      },
+      "evaluation": {
+        "source_grounded_rubric": 99
+      }
+    }
+  },
+  "ports": {
+    "episode/decompose": {
+      "calls": 37,
+      "total_s": 61.434999999939464,
+      "median_s": 1.625,
+      "p95_s": 2.0929999999934807
+    },
+    "episode/judge": {
+      "calls": 60,
+      "total_s": 83.46899999989546,
+      "median_s": 1.2735000000102445,
+      "p95_s": 2.1559999999881256
+    },
+    "episode/summarize": {
+      "calls": 19,
+      "total_s": 88.0789999999979,
+      "median_s": 4.062999999994645,
+      "p95_s": 6.092999999993481
+    },
+    "episode/verify": {
+      "calls": 19,
+      "total_s": 28.31399999995483,
+      "median_s": 1.4059999999881256,
+      "p95_s": 1.827999999979511
+    },
+    "run/judge": {
+      "calls": 23,
+      "total_s": 29.45000000006985,
+      "median_s": 1.25,
+      "p95_s": 1.547000000020489
+    },
+    "run/plan": {
+      "calls": 26,
+      "total_s": 36.07699999993201,
+      "median_s": 1.2344999999913853,
+      "p95_s": 1.889999999984866
+    },
+    "run/summarize_run": {
+      "calls": 20,
+      "total_s": 99.78200000000652,
+      "median_s": 4.9614999999903375,
+      "p95_s": 6.2810000000172295
+    },
+    "task/choose": {
+      "calls": 207,
+      "total_s": 229.39899999997579,
+      "median_s": 1.062999999994645,
+      "p95_s": 1.5929999999934807
+    },
+    "task/judge": {
+      "calls": 206,
+      "total_s": 261.1350000000675,
+      "median_s": 1.2340000000112923,
+      "p95_s": 1.6559999999881256
+    },
+    "task/reflect": {
+      "calls": 206,
+      "total_s": 0.21799999993527308,
+      "median_s": 0.0,
+      "p95_s": 0.014999999984866008
+    },
+    "task/summarize_task": {
+      "calls": 60,
+      "total_s": 248.63999999989755,
+      "median_s": 3.8515000000043074,
+      "p95_s": 5.875
+    },
+    "task/verify": {
+      "calls": 60,
+      "total_s": 89.68700000000536,
+      "median_s": 1.2890000000043074,
+      "p95_s": 2.3440000000118744
+    }
+  },
+  "attempts": 737,
+  "missing": 0,
+  "terminations": {
+    "budget_exhausted": 1,
+    "goal_done": 17,
+    "stalled": 1,
+    "actions_exhausted": 1
+  }
+}

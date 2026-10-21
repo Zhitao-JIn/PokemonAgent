@@ -94,10 +94,9 @@ def test_a_failed_task_is_followed_by_a_fresh_decomposition(tmp_path: Path) -> N
     ends = [_content(e)["termination"] for e in events if e["kind"] == "task_end"]
     assert ends == ["budget_exhausted", "budget_exhausted"]
     stamps = [_content(e) for e in events if e["kind"] == "settle_task"]
-    assert [(s["task_id"], s["status"], s["round"], s["abandoned"]) for s in stamps] == [
-        ("g1-t1", "failed", "1", ["g1-t2"]),
-        ("g1-t3", "failed", "2", ["g1-t4"]),
-    ], "失败定案后同一版剩下的条目被放弃；重拆的是第 2 版、id 接着往下数"
+    assert [s["entry_id"] for s in stamps] == ["g1-t1", "g1-t2"]
+    assert [s["task_id"] for s in stamps] == ["r1-ep1-task1", "r1-ep1-task2"]
+    assert all(s["status"] == "failed" and not s["abandoned"] for s in stamps)
 
 
 class _OverturnFirstJudgement:

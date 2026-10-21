@@ -1,0 +1,59 @@
+{
+  "version": "v1",
+  "collection_version": "v1",
+  "families": {
+    "choose": {
+      "cases": 207,
+      "status": {
+        "labelled": 131,
+        "invalid_task": 33,
+        "unjudgeable": 43
+      },
+      "method": {
+        "mechanical_preexisting": 21,
+        "codex_history_review": 186
+      },
+      "sha256": "21e19ebb86eb82ccaf3b970a5a43fd5ea2c2d3535e420174b39cc84d2abc56fb",
+      "inputs_sha256": "39ea22d045314426212fd6f657f4b548e9de19524f176d4b0cb03546eeb2669a"
+    },
+    "judge": {
+      "cases": 289,
+      "status": {
+        "labelled": 289
+      },
+      "method": {
+        "mechanical_preexisting": 206,
+        "codex_history_review": 83
+      },
+      "sha256": "74e946e34c6063540fd227ac45e6d81a69f047a21239c66752b50cbb3f3aeda8",
+      "inputs_sha256": "559624a59aefdd1cc3d8677bb08c26acbe349e0a598309f42d0b78cf12cbf413"
+    },
+    "plan": {
+      "cases": 26,
+      "status": {
+        "labelled": 25,
+        "invalid_task": 1
+      },
+      "method": {
+        "codex_history_review": 26
+      },
+      "sha256": "484989261ae7f3569c6309ae4b3c43a03da4f0829dfc7b14b9f6e5f79c8732c0",
+      "inputs_sha256": "7c0c345be4f93b1749532ec0cf7e49bd687dede721ea35bc5cb90a6062fee0fa"
+    },
+    "decompose": {
+      "cases": 37,
+      "status": {
+        "labelled": 36,
+        "invalid_task": 1
+      },
+      "method": {
+        "codex_history_review": 37
+      },
+      "sha256": "c99324072a1a03e4366c076eab5f76b009efc7cfdf2744a764c430c9370bafff",
+      "inputs_sha256": "c19362163d81d6fbe335b90bf07190bc7781344e76fb9eda863f961a23ebbab8"
+    }
+  },
+  "baseline_answers_used": false,
+  "reviewer": "codex_history_review",
+  "policy": "Only the exact request context. Mechanical labels retained with provenance. Exclusions outside score denominator. Planning labels are case-specific rubrics, not unique gold plans. Action sets are conservative reviewed alternatives, not an exhaustive strategy space."
+}

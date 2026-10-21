@@ -68,6 +68,7 @@ def _brain_input(kind: str) -> BrainInput:
     observation = TaskObservation(step=0, scene=TaskScene.WALK, status="RAM现状")
     if kind == "plan":
         return FromHarnessToBrainToolPlanOnceReq(
+            run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
             run_id="r1",
             plan=[GoalEntry(task=table_task)],
             details=episodes,
@@ -89,7 +90,7 @@ def _brain_input(kind: str) -> BrainInput:
             goal=goal,
             observation=observation,
             task_memories=tasks,
-            task_table=[TaskEntry(task=table_task, round=1)],
+            task_table=[TaskEntry(entry_id=(table_task).task_id, task=table_task, round=1)],
             episode_index=[_episode("older", FRAME_B, FRAME_C)],
             max_tasks=2,
         )
@@ -98,7 +99,9 @@ def _brain_input(kind: str) -> BrainInput:
         observation=observation,
         episode_memories=episodes if kind == "judge_run" else [],
         task_memories=tasks if kind == "judge_episode" else [],
-        task_table=[] if kind == "judge_run" else [TaskEntry(task=table_task, round=1)],
+        task_table=[]
+        if kind == "judge_run"
+        else [TaskEntry(entry_id=(table_task).task_id, task=table_task, round=1)],
         episode_index=[] if kind == "judge_run" else [_episode("older", FRAME_B, FRAME_C)],
     )
 
@@ -113,7 +116,7 @@ def _context(kind: str) -> ReviewContext:
         episode_id="r1" if is_run else "ep1",
         brain_input=req,
         goals=[GoalEntry(task=task)] if is_run else None,
-        tasks=None if is_run else [TaskEntry(task=task, round=1)],
+        tasks=None if is_run else [TaskEntry(entry_id=(task).task_id, task=task, round=1)],
         step=4,
         fail_streak=2,
     )
@@ -153,6 +156,7 @@ def test_frames_of_dedups_and_labels(kind: str) -> None:
 
 def test_frames_of_keeps_later_unique_frames_and_has_no_image_cap() -> None:
     req = FromHarnessToBrainToolPlanOnceReq(
+        run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
         run_id="r1",
         plan=[],
         max_push=2,

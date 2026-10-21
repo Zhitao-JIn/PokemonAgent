@@ -51,7 +51,7 @@
 | R9 | 文档同步；规范 §四第 3 条修订（须用户点头） | 待分配 | R1a–R7 | 文档与代码一致 |
 | R10 | 用户本机真机跑（三种模式） | 534 ✅ | R7 | `deepseek-flash` 图片工具回灌、结构化输出纠正与 usage 通过；本地 WS human / ai / both 均按预期答复；不含共享 trace / memory 服务验收 |
 | R1b | 删 `overturned` 字段与读方、结算账 `audit` 键、重建 20 份评测存档 | 待分配 | R1a、**用户另行授权**、评测任务已合入、brain-scope CP8 已完成 | 存档 20/20 真实恢复；`grep overturned` 为空 |
-| R11 | 死代码收尾自查（含 `AuditReq.run_id/episode_id` 重复、`brain_goal_judge` 非密闭测试） | 待分配 | 其余全部 | spec §3.4 grep 清单零残留 |
+| R11 | 死代码收尾自查（含 `AuditReq.run_id/episode_id` 重复、`brain_judge` 非密闭测试） | 待分配 | 其余全部 | spec §3.4 grep 清单零残留 |
 
 说明：原 R2b（hop-A 线上字段）并入 R6c 一并删除，不再单独做。每步一个提交（由设计侧在验收时提交），提交信息逐字复用 CHANGELOG 条目标题，末尾附协作署名行。
 
@@ -62,7 +62,7 @@
 ## 五、CHANGELOG 编号与合入
 
 - 编号由设计侧在派发时分配并记在本表；执行方动手前核对 `git show HEAD:CHANGELOG.md` 顶部编号与分配一致，不一致即停下汇报。
-- 编号以 `.coordination/ledger.md` 为准。reviewer 分支上的 R1a / R2 在合入 main 时由 502 / 503 重编号为 514 / 515（避开 memory 已用编号，不改 Git 历史）；R3 起的号恢复时才取。evals/brain-choose-action 的 508–511 继续预留，本次不改其状态。
+- 编号以 `.coordination/ledger.md` 为准。reviewer 分支上的 R1a / R2 在合入 main 时由 502 / 503 重编号为 514 / 515（避开 memory 已用编号，不改 Git 历史）；R3 起的号恢复时才取。evals/brain-choose 的 508–511 继续预留，本次不改其状态。
 - 合入前设计侧核对：分支相对基线的提交范围；主线上别的任务是否动了同一批文件（重点：`CHANGELOG.md`、`harness/*/review_and_judge/`、`review_backend/`、`direct/trace/`）。
 
 ## 六、停止条件（继承 `docs/workflow.md`，本任务加两条）
@@ -78,7 +78,7 @@
 - 人席也受轮次 / 次数限制的选项（改同一个常量即可，等用户决定）。
 - 网页入口（R8）与实时展示项目（从 git 历史取回 `/feed` 相关代码）。
 - 将来给 hub 包 MCP 薄壳（供外部 agent 充当 reviewer）。
-- `brain_goal_judge` 等测试依赖 `DEEPSEEK_API_KEY` 的非密闭问题。
+- `brain_judge` 等测试依赖 `DEEPSEEK_API_KEY` 的非密闭问题。
 - task 层的 inject（逐步 `choose` 处插话）：默认不做；若要，先评估阻塞频率，`ChooseOnceReq.human_note` 已是现成入口。
 - `read_world`（世界当前状态查询）与多终端同连：v4 取消；若将来要，另案（需先核实世界服务的租约是否允许只读旁路）。
 - reviewer 看到的图口径是「⊇ 大脑所见」（不套 `SCOPE_IMAGE_CAP`）；若将来要严格一致，需把 `cap_images` 的取舍结果也记进快照。

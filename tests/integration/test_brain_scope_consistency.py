@@ -11,6 +11,7 @@ from _harness_fixtures.harness import GOAL, FakeRun, build_fake
 from pydantic import BaseModel
 
 from pokemon_agent.config import SCOPE_IMAGE_CAP
+from pokemon_agent.direct.trace import parse
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolDecomposeReq,
@@ -44,6 +45,7 @@ def _seed_details(fake: FakeRun) -> None:
         EpisodeMemory(
             run_id="r1",
             run_goal=RUN_GOAL,
+            goal_id=GOAL.task_id,
             episode_id=f"r1-ep{index + 1}",
             goal="旧局",
             steps=1,
@@ -189,7 +191,7 @@ def _assert_shared_details(recording: _Recording) -> None:
         assert paired, f"{layer} requires a continuing round with both plan and judge"
 
 
-def _assert_indexes(recording: _Recording, seeded: bool) -> None:
+def _assert_indexes(recording: _Recording, seeded: bool, episode_goals: dict[str, str]) -> None:
     """验收 2：背景排除本单元，task 背景只取同局同目标的此前 task。"""
     for name in ("L0.plan", "L0.judge", "L1.plan", "L1.judge", "L2.plan", "L2.judge"):
         for seen in recording.requests[name]:
@@ -200,15 +202,18 @@ def _assert_indexes(recording: _Recording, seeded: bool) -> None:
                 assert all(memory.run_id != "r1" for memory in index)
             elif name.startswith("L1"):
                 episode_id = request.task_memories[0].episode_id
+                goal_id = episode_goals[episode_id]
                 index = request.episode_index
                 assert {memory.episode_id for memory in index} == {
                     memory.episode_id
                     for memory in seen.episodes
-                    if memory.run_goal == RUN_GOAL and memory.episode_id != episode_id
+                    if memory.run_id == "r1"
+                    and memory.goal_id == goal_id
+                    and memory.episode_id != episode_id
                 }
                 assert all(memory.episode_id != episode_id for memory in index)
-                assert all(memory.run_goal == RUN_GOAL for memory in index)
-                assert ("foreign-episode" in {memory.episode_id for memory in index}) == seeded
+                assert all(memory.run_id == "r1" and memory.goal_id == goal_id for memory in index)
+                assert "foreign-episode" not in {memory.episode_id for memory in index}
             else:
                 index = request.task_index
                 assert index
@@ -274,7 +279,12 @@ def test_brain_scope_consistency_across_three_graphs(
         result = fake.harness.run("r1", [GOAL])
 
         _assert_shared_details(recording)
-        _assert_indexes(recording, seeded)
+        episode_goals = {
+            event.meta.episode_id: event.content.goal_id
+            for raw in fake.run_rt.trace.read_events()
+            if (event := parse(raw)).kind == "episode_start"
+        }
+        _assert_indexes(recording, seeded, episode_goals)
         _assert_images(recording)
         assert Counter(name for name, _ in recording.calls)["summarize_run"] == 1
         memories = [memory for memory in fake.memory.runs if memory.run_id == "r1"]

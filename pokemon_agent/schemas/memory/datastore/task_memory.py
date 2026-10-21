@@ -35,6 +35,7 @@ class TaskMemory(BaseModel):
     # —— 来源章（harness 盖的，取自 TaskState）——
     run_id: str = Field(description="所属 run 的标识")
     episode_id: str = Field(description="所属 episode 的标识")
+    entry_id: str | None = Field(default=None, description="逻辑 L2 条目；旧历史记录可为空")
     task_id: str = Field(description="本 task 的标识")
     goal: str = Field(description="本 task 的目标")
     termination: str = Field(

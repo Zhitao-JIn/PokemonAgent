@@ -39,6 +39,7 @@ def summarize_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str,
     req = FromHarnessToBrainToolSummarizeTaskReq(
         entries=state.task_ctx.act_memories,
         verdicts=state.act_verdicts,
+        entry_id=state.entry_id,
         task_id=state.task.task_id,
         episode_id=state.episode_id,
         run_id=state.run_id,
