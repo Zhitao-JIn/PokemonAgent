@@ -43,6 +43,41 @@ def shop_menu_opened(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     )
 
 
+@rule("shop_all_npcs_interacted")
+def shop_all_npcs_interacted(stream: RunStream, sample: EvalSample) -> CheckVerdict:
+    """本 task 起点可见的每个 NPC 都至少产生过一次对话交互事件。"""
+    episodes = stream.episodes_for(sample.sample_id)
+    frames = stream.frames(episodes)
+    if not frames:
+        return unjudgeable("没有目标局的观测帧")
+    people = {
+        (mark.map_id, mark.x, mark.y)
+        for mark in frames[0].content.facts.landmarks
+        if mark.kind == "人"
+    }
+    if not people:
+        return unjudgeable("起点观测没有可核对的 NPC 地标")
+    interacted: dict[tuple[int, int, int], str] = {}
+    for event in stream.in_episodes(episodes, "write_object_memory"):
+        content = event.content.model_dump(mode="python")
+        place = content.get("place")
+        if content.get("object_kind") != "人" or content.get("outcome") != "dialog":
+            continue
+        if not isinstance(place, dict):
+            continue
+        key = (place.get("map_id"), place.get("x"), place.get("y"))
+        if key in people:
+            interacted[key] = event.uuid
+    missing = people - set(interacted)
+    if missing:
+        return failed(f"还有 {len(missing)} 位起点 NPC 没有对话交互记录")
+    return CheckVerdict(
+        outcome="pass",
+        evidence=[interacted[key] for key in sorted(people)],
+        reason=f"本 task 已与起点可见的 {len(people)} 位 NPC 各交互至少一次",
+    )
+
+
 @rule("shop_list_opened")
 def shop_list_opened(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     """出现过带价格的商品列表。"""
@@ -71,23 +106,25 @@ def shop_item_selected(stream: RunStream, sample: EvalSample) -> CheckVerdict:
 
 @rule("shop_bought")
 def shop_bought(stream: RunStream, sample: EvalSample) -> CheckVerdict:
-    """买成了：金钱少了，且背包里有一种物品多了。"""
-    frames = target_frames(stream, sample)
-    pair = ends(frames)
-    if pair is None:
-        return unjudgeable("目标局里不足两帧带内存读数")
-    start = pair[0]
-    assert start.content.ram is not None
-    before = _bag(start)
-    for frame in frames:
-        ram = frame.content.ram
-        if ram is None or ram.money >= start.content.ram.money:
-            continue
-        if any(qty > before.get(item, 0) for item, qty in _bag(frame).items()):
-            return passed(
-                f"金钱 {start.content.ram.money} → {ram.money}，背包多了一件", start, frame
+    """本 task 历史中 `buy_item` 脚本以 `ok` 正常结束即买成。"""
+    episodes = stream.episodes_for(sample.sample_id)
+    if not episodes:
+        return unjudgeable("没有目标局")
+    calls = stream.in_episodes(episodes, "act_call")
+    script_calls = [
+        event for event in calls if getattr(event.content, "script", None) == "buy_item"
+    ]
+    for event in script_calls:
+        if event.content.ok == "true" and event.content.code == "ok":
+            return CheckVerdict(
+                outcome="pass",
+                evidence=[event.uuid],
+                reason="本 task 历史记录 buy_item → ok",
             )
-    return failed("金钱与背包都没变成买到的样子", start, pair[1])
+    if script_calls:
+        last = script_calls[-1].content
+        return failed(f"本 task 历史 buy_item 未正常结束：{last.code or '无结局码'}")
+    return failed("本 task 历史中没有 buy_item 脚本调用")
 
 
 @rule("shop_cancelled")
@@ -109,6 +146,7 @@ def shop_cancelled(stream: RunStream, sample: EvalSample) -> CheckVerdict:
 
 
 __all__ = [
+    "shop_all_npcs_interacted",
     "shop_bought",
     "shop_cancelled",
     "shop_item_selected",

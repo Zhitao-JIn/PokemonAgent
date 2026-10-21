@@ -1,0 +1,7 @@
+{
+  "parent_version": "v1",
+  "change": "shop interaction sample now checks one dialog interaction with every NPC landmark; purchase sample starts from the same shop-floor state and checks buy_item terminal report",
+  "unchanged_samples": "other 18 samples and their starting archives copied unchanged except dataset_version",
+  "script_scene_audit": "shop floor receives field navigation/dialog scripts and buy/sell scripts; start_menu receives open_menu_to",
+  "archive_note": "the two shop archives share the original shop-floor world and memory snapshot but carry per-sample run goals"
+}

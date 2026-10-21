@@ -38,3 +38,13 @@ def test_action_space_takeover_scene_keeps_directions_with_its_takeover_scripts(
     assert all(entry.name.startswith("party_") and space.enabled(entry.name) for entry in scripts)
     assert space.enabled("a") and space.enabled("b")
     assert not space.enabled("start") and not space.enabled("select")
+
+
+def test_action_space_shop_floor_exposes_buy_and_npc_interaction_scripts() -> None:
+    space = compute_action_space(_obs(TaskScene.SHOP), ALL_BUTTONS)
+
+    assert space.enabled("buy_item")
+    assert space.enabled("sell_item")
+    assert space.enabled("walk_to")
+    assert space.enabled("talk_to_adjacent_npc")
+    assert space.enabled("a") and space.enabled("up")

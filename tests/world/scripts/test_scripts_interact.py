@@ -35,6 +35,7 @@ class TalkConsole:
         battle_at: set[tuple[int, int]] | None = None,
         script: list[dict[str, Any]] | None = None,
         vanish_at_press: int | None = None,
+        idle_scene: str = "walk",
     ) -> None:
         self._blocked = set(npcs or set())
         self._walkable = walkable | (grass or set()) - self._blocked
@@ -49,6 +50,7 @@ class TalkConsole:
         self.presses = 0
         self.memory: Any = _Mem()
         self.rom = b""
+        self.idle_scene = idle_scene
 
     def press(self, key: str) -> None:
         self.presses += 1
@@ -101,7 +103,7 @@ class TalkConsole:
             return "battle"
         if text.dialog_text:
             return "dialog"
-        return "walk"
+        return self.idle_scene
 
 
 def _ground() -> set[tuple[int, int]]:
@@ -122,6 +124,21 @@ def test_talk_two_frames_full_dialog_back_to_field() -> None:
     res = talk_to_adjacent_npc(console, "east")
     assert res.ok and res.code == "ok"
     assert res.data["dialog"] == ["框1", "框2"]
+
+
+def test_talk_from_shop_returns_when_the_shop_scene_is_restored() -> None:
+    console = TalkConsole(
+        _ground(),
+        start=(15, 8),
+        npcs={(16, 8)},
+        script=[{}, {"dialog_text": "Welcome!"}, {}],
+        idle_scene="shop",
+    )
+
+    result = talk_to_adjacent_npc(console, "east")
+
+    assert result.ok and result.code == "ok"
+    assert result.data["dialog"] == ["Welcome!"]
 
 
 def test_talk_choice_presented_freezes_with_dialog() -> None:

@@ -2,7 +2,7 @@
 
 用法（从仓库根）：
 
-    python -m evals.agent_short_goal_run.dataset.build.pack                     # 打 v1 全部样本
+    python -m evals.agent_short_goal_run.dataset.build.pack  # 打当前默认版本全部样本
     python -m evals.agent_short_goal_run.dataset.build.pack --samples id1,id2   # 只打指定样本
     python -m evals.agent_short_goal_run.dataset.build.pack --version v1
 
@@ -162,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
     memory server；本命令会清空该 memory server。
     """
     parser = argparse.ArgumentParser(prog="python -m evals.agent_short_goal_run.dataset.build.pack")
-    parser.add_argument("--version", default="v1")
+    parser.add_argument("--version", default="v2")
     parser.add_argument("--archive-root", type=Path)
     parser.add_argument("--samples", default="", help="逗号分隔的样本 id；缺省打全部")
     args = parser.parse_args(argv)

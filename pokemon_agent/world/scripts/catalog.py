@@ -150,6 +150,8 @@ _INTERNAL_SCRIPTS = frozenset({"shop_buy", "shop_sell"})
 SCENE_SCRIPTS: dict[str, frozenset[str]] = {
     "walk": _FIELD_SCRIPTS,
     "dialog": _DIALOG_SCRIPTS,
+    TaskScene.SHOP.value: _FIELD_SCRIPTS | _SHOP_SCRIPTS,
+    TaskScene.START_MENU.value: frozenset({"open_menu_to"}),
     "transition": frozenset({"wait_until_scene"}),
     **{
         scene.value: (frozenset(defs) - _INTERNAL_SCRIPTS)

@@ -14,11 +14,12 @@ from .movement import BUTTON_OF, DIRECTIONS, STEP_OF, _reject, _run
 
 def talk_to_adjacent_npc(console: WorldConsole, direction: str | None = None) -> ScriptResult:
     """跟面前 NPC 说话：复验面前格（会走，瞬息可变 → `no_target`）→ 按 a →
-    循环推进（对话增量由骨架采集）直至回野外；出选项 `choice_presented` 冻结
+    循环推进（对话增量由骨架采集）直至回到调用前场合；出选项 `choice_presented` 冻结
     （绝不代选）；训练家型 `battle_started` + dialog；按 a 无框 → `no_response`。"""
     direction = direction or console.facing()
     if direction not in DIRECTIONS:
         return _reject(direction)
+    start_scene = console.scene()
     run = _run(console, budget=40)
     start = console.pos()
     dx, dy = STEP_OF[direction]
@@ -38,7 +39,7 @@ def talk_to_adjacent_npc(console: WorldConsole, direction: str | None = None) ->
         run.press("a")
         if console.scene() != "dialog":
             return run.finish(ok=False, code="no_response", extra={"dialog": _dialog_texts(run)})
-        # ④ 循环推进直至回野外；choice / battle 由钩子抛 Halt。
+        # ④ 循环推进直至回到调用前场合；choice / battle 由钩子抛 Halt。
         while True:
             if run.budget <= 0:
                 return run.finish(
@@ -51,7 +52,7 @@ def talk_to_adjacent_npc(console: WorldConsole, direction: str | None = None) ->
                 )
             run.budget -= 1
             run.press("a")
-            if console.scene() == "walk":
+            if console.scene() == start_scene:
                 return run.finish(
                     ok=True,
                     code="ok",
