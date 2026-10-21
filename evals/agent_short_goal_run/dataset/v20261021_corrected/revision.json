@@ -5,5 +5,6 @@
   "injured_source_sha256": "b82533cbca5f0d744467f5469bc4ecb0e08442ad6ddffd0ef15afc0cde371c16",
   "source_batch": "full_eval_20261020_01/runtime_dataset_provenance.json",
   "other_samples": "inputs and starting archives unchanged except dataset_version",
-  "escape_criteria": "Explicit success/failure text accepted while battle flag still set; starting world unchanged; archive repacked for matching criteria."
+  "escape_criteria": "Explicit success/failure text accepted while battle flag still set; starting world unchanged; archive repacked for matching criteria.",
+  "cancel_start": "From goods list start, press a three times until purchase YES/NO; money remains 3000; save through MCP; cancel_prepare2.json records each frame. Archive repacked."
 }

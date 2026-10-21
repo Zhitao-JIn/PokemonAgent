@@ -1,5 +1,5 @@
 {
-  "checkpoint_id": "eval-knowledge_shop_cancel_purchase@main-d6e3a169",
+  "checkpoint_id": "eval-knowledge_shop_cancel_purchase@main-5403f5c9",
   "level": "run",
   "run_id": "eval-knowledge_shop_cancel_purchase",
   "branch": "main",
@@ -50,10 +50,10 @@
   "run_ref": null,
   "episode_ref": null,
   "world_file": "world.state",
-  "memory_archive": "archives/knowledge_shop_cancel_purchase/memory/snapshots/eval-knowledge_shop_cancel_purchase@main-d6e3a169.zip",
+  "memory_archive": "archives/knowledge_shop_cancel_purchase/memory/snapshots/eval-knowledge_shop_cancel_purchase@main-5403f5c9.zip",
   "code": {
-    "git_commit": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
-    "git_dirty": false,
+    "git_commit": "9a9f0a749e7ac5fed876944efb3571dce6043b11",
+    "git_dirty": true,
     "state_schema_hash": "5d3630f2b479ee78"
   },
   "models": {
@@ -62,5 +62,5 @@
     "verify": "deepseek-flash",
     "plan": "deepseek-flash"
   },
-  "created_at": "2026-10-20T17:57:23+0200"
+  "created_at": "2026-10-21T09:55:06+0200"
 }
