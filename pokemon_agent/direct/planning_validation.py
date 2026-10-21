@@ -1,5 +1,6 @@
 """以请求表快照验证规划操作；整版拒绝不合法输出并保留模型尝试账。"""
 
+from collections import Counter
 from collections.abc import Sequence
 
 from pokemon_agent.brain.errors import AttemptFailed
@@ -22,7 +23,14 @@ def pending_references(proposal: RunPlan | Decomposition, statuses: Sequence[str
     expected += [f"new:{i}" for i in range(len(proposal.new_items))]
     order = proposal.execution_order
     if order is not None and (len(order) != len(expected) or set(order) != set(expected)):
-        raise ValueError("execution_order 必须恰好包含全部待办引用一次")
+        repeated = [reference for reference, count in Counter(order).items() if count > 1]
+        raise ValueError(
+            "execution_order 必须恰好包含全部待办引用一次；"
+            f"应用 updates 后合法引用={expected}；"
+            f"缺少={sorted(set(expected) - set(order))}；"
+            f"非法={sorted(set(order) - set(expected))}；重复={repeated}。"
+            "new:N 只能引用本次 new_items 的第 N 项；保留原顺序时可用 null。"
+        )
     return expected if order is None else list(order)
 
 

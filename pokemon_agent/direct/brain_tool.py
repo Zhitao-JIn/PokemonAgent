@@ -220,7 +220,7 @@ class Planner:
         self._request_timeout_s = request_timeout_s
 
     def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
-        """run 级规划：拼 prompt + 重试循环（**原样重问**，无纠正说明）→ 打包整条账。
+        """run 级规划：解析失败带纠正说明，传输失败原样重问，逐次保留调用账。
 
         **prompt 在这里拼**（0913 定案）：`run_plan.build_prompt(req)`。
 
@@ -243,7 +243,7 @@ class Planner:
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             result = self._brain.plan(
-                prompt=prompt,
+                prompt=_retry_prompt(prompt, calls) if calls else prompt,
                 goal_stack=goal_stack,
                 history=history,
                 max_push=req.max_push,
@@ -284,7 +284,7 @@ class Decomposer:
     def decompose(
         self, req: FromHarnessToBrainToolDecomposeReq
     ) -> FromHarnessToBrainToolDecomposeResp:
-        """拼 prompt + 重试循环（原样重问）调 `Brain.decompose()` → 打包整条账。
+        """拼 prompt 调 `Brain.decompose()`，解析重试带错误反馈并打包整条账。
 
         `context` 与 prompt 里的素材段同源（`decompose.context_lines`）。
         """
@@ -295,7 +295,7 @@ class Decomposer:
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             result = self._brain.decompose(
-                prompt=prompt,
+                prompt=_retry_prompt(prompt, calls) if calls else prompt,
                 goal=goal,
                 context=context,
                 max_tasks=req.max_tasks,
@@ -343,7 +343,7 @@ class Chooser:
         `decide_action.build_prompt(req)`——"谁问模型，谁把 req 变成 prompt"，
         拼装只剩这一个调用点，harness 不再有"拼好回填"那一半。
 
-        **唯一会带"上一次失败"信息的链路**：解析类失败（`ParseFailure` 族）的
+        **解析重试带上一次失败信息**：解析类失败（`ParseFailure` 族）的
         下一次尝试把上次的失败原因与原始输出拼进 prompt（`retry_prompt`），
         重试携带信息增量；**传输失败原样重问**——模型根本没收到题，没什么可
         "纠正"的（0915 分叉，取代无条件叠加）。
