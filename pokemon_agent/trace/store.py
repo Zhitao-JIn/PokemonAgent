@@ -38,6 +38,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from .datastore.event import _Event
 from .interface.event import Event
 from .seq import next_seq
@@ -207,18 +209,22 @@ class LocalTrace:
     def _scan_events(self) -> list[tuple[_Event, Path]]:
         """落盘根下的全部事件（连同它们的文件路径），按 `(ended_at, seq)` 升序。
 
-        残文件/旧格式文件解析失败是预期内的运行期情况，跳过不报错。返回的
+        残文件/旧格式文件解析失败是预期内的运行期情况，跳过不报错；**读取失败
+        （权限、IO）不属于此类，原样抛出**——静默少一条会让读端以为那笔账从来没
+        发生过，与 `read_events` 的契约相悖。返回的
         `_Event` 带 `extra="allow"`，所以旧数据（`event_id`/`ts` 那套）
         里多出来的字段原样挂在 `model_extra` 上——**它们会缺 `uuid`/`ended_at`，
         于是解析当场失败被跳过**，不会静默混进结果。
         """
         found: list[tuple[_Event, Path]] = []
         for path in sorted(self._dir.glob("*.json")):
+            if not path.is_file():
+                continue
             if path.name.endswith(".tmp"):
                 continue
             try:
                 event = _Event.model_validate_json(path.read_text(encoding="utf-8"))
-            except Exception:
+            except (ValidationError, UnicodeDecodeError):
                 continue
             found.append((event, path))
         found.sort(key=lambda pair: (pair[0].ended_at, pair[0].seq))

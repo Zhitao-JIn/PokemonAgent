@@ -1,14 +1,17 @@
-"""`LocalTrace.read_events` 对坏文件的容忍：残文件、旧格式、`.tmp`、非 dict 的 `meta`。
+"""`LocalTrace.read_events` 对坏文件的容忍：残文件、旧格式、`.tmp`、非 dict 的 `meta`、
+非 UTF-8、同名目录，以及**不容忍**的那一类（读不动就抛）。
 
 **为什么这个文件值钱**：落盘根是"人也会往里丢东西"的目录——进程被 kill 会留下半个
 json，改形之前的旧账还在，原子写的 `.tmp` 可能没 rename 掉。这些**都是预期内的
 运行期情况**：跳过、不报错、也不许混进查询结果。反过来，坏文件不能把好文件带下水
 ——每一条的 Assert 都是"好账照常读得出 + 坏账没混进来"。
 
-**G1–G5 在 CP1**；G6（非 UTF-8）、G7（同名目录）、G8（读不动要抛而不是吞）属
-CP2——G8 先红再改 `store.py`，那一条不在这里。
+**容忍的边界在"内容坏了"**：解码失败、校验失败算残文件；**读不动**（权限、IO）
+不算——契约写明"底层读取失败原样抛出"，静默少一条会让读端以为那一笔从来没发生
+（G8 是这条边界唯一被钉住的反例）。
 
-**离线**：坏文件都是手写的，落盘根一律 `tmp_path`。
+**离线**：坏文件都是手写的，落盘根一律 `tmp_path`；"无读权限"用替换
+`pathlib.Path.read_text` 模拟（Windows 上 `chmod` 不生效）。
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ import json
 import pathlib
 from typing import Any
 
+import pytest
 from _doubles.trace import signed_meta
 
 from pokemon_agent.trace import LocalTrace
@@ -98,3 +102,43 @@ def test_a_file_whose_meta_is_not_an_object_matches_no_condition(tmp_path: pathl
     assert len(store.read_events({})) == 2
     assert [event.uuid for event in store.read_events({"run_id": "run-1"})] == [good]
     assert [event.uuid for event in store.read_events({"step": 9})] == []
+
+
+def test_a_file_with_invalid_utf8_is_skipped(tmp_path: pathlib.Path) -> None:
+    """不是合法 UTF-8 的文件：解码当场失败 → 跳过（内容坏了，属于预期内的残文件）。"""
+    good = _good_event(tmp_path)
+    (tmp_path / "latin1.json").write_bytes(b'{"uuid": "\xff\xfe", "seq": 1}')
+
+    assert [event.uuid for event in LocalTrace(root=tmp_path).read_events()] == [good]
+
+
+def test_a_directory_named_like_an_event_file_is_skipped(tmp_path: pathlib.Path) -> None:
+    """根下躺着个叫 `dir.json` 的目录（人丢进来的）：跳过，不许把它当事件读。"""
+    good = _good_event(tmp_path)
+    (tmp_path / "dir.json").mkdir()
+
+    assert [event.uuid for event in LocalTrace(root=tmp_path).read_events()] == [good]
+
+
+def test_an_unreadable_event_file_makes_read_events_raise_instead_of_hiding_it(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """读不动（权限/IO）不是"残文件"：`read_events` 要原样抛出，不许静默少一条。
+
+    "少一条"是读端最难发现的错——少了的那笔看起来像从来没发生过。所以这一类的
+    边界钉在**抛不抛**上，而不是"跳过还是列出来"。
+    """
+    _good_event(tmp_path)
+    unreadable = _write(tmp_path, "unreadable.json", json.dumps(_record(), ensure_ascii=False))
+    original = pathlib.Path.read_text
+
+    def read_text(path: pathlib.Path, *args: Any, **kwargs: Any) -> str:
+        if path == unreadable:
+            raise PermissionError(13, "Permission denied", str(path))
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+
+    with pytest.raises(PermissionError):
+        LocalTrace(root=tmp_path).read_events()
