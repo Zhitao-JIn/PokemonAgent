@@ -6,8 +6,8 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.util import StoreModel, store_as
 from pydantic import Field
 
+from evals.common.brain_link import single_link_brain
 from evals.dataset.brain_judge import JudgeCase
-from pokemon_agent.direct.brain_tool import BrainTool
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolJudgeReq, ModelCall
 
@@ -25,7 +25,7 @@ class JudgeRecord(StoreModel):
 @solver
 def judge_solver(model: str) -> Solver:
     """生产 Judger 消费信封；网络或重试耗尽上抛为 sample error。"""
-    judger = BrainTool.build(judge=model).judger
+    judger = single_link_brain("judge", model).judger
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         case = JudgeCase.model_validate(state.metadata["case"])

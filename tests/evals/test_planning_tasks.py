@@ -114,9 +114,11 @@ def test_independent_tasks_run_production_ports_without_leaking_references(
     monkeypatch.setattr(module, "load", lambda version="v1": [original])
     solver_module = importlib.import_module(f"evals.brain_{family}.solver")
     monkeypatch.setattr(
-        solver_module.BrainTool,
-        "build",
-        lambda **kwargs: SimpleNamespace(**{"planner" if family == "plan" else "decomposer": port}),
+        solver_module,
+        "single_link_brain",
+        lambda link, model: SimpleNamespace(
+            **{"planner" if family == "plan" else "decomposer": port}
+        ),
     )
     task = getattr(module, f"brain_{family}")(model="fake", grader_model="none")
 

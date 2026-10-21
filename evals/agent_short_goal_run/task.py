@@ -2,37 +2,31 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping
 from pathlib import Path
 
 from inspect_ai import Task, task
 
-import pokemon_agent.config as config
 from evals.agent_short_goal_run.bridge import samples_to_dataset
 from evals.agent_short_goal_run.dataset import EvalSample, load
 from evals.agent_short_goal_run.scorer import RULES
 from evals.agent_short_goal_run.scorer.result_grade import result_model_scorer
 from evals.agent_short_goal_run.scorer.task_scorer import e2e_scorer
 from evals.agent_short_goal_run.solver.solver import run_one_solver
+from evals.common.overlay import eval_overlay, write_overlay
 from evals.runconfig import load_config, resolve_models
 from pokemon_agent.env import load_env_file
-from pokemon_agent.run_config import load_run_config
+from pokemon_agent.settings import load_config as load_app_config
 
 __all__ = ["agent_short_goal_run", "write_run_config"]
 
 
-def write_run_config(report_dir: str | Path, budget: Mapping[str, object]) -> tuple[Path, str]:
-    """将本次预算覆盖落成唯一配置文件，并在派 worker 前验证它。"""
-    path = Path(report_dir).resolve() / "run_config.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    content = (json.dumps({"budget": dict(budget)}, ensure_ascii=False, indent=2) + "\n").encode(
-        "utf-8"
-    )
-    path.write_bytes(content)
-    load_run_config(path)
-    return path, hashlib.sha256(content).hexdigest()
+def write_run_config(report_dir: str | Path, overlay: Mapping[str, object]) -> tuple[Path, str]:
+    """将本次评测的 settings 覆盖层落成唯一文件，并在派 worker 前验证它能与保底合并。"""
+    path, digest = write_overlay(Path(report_dir).resolve() / "run_config.json", overlay)
+    load_app_config(path)
+    return path, digest
 
 
 def _select(
@@ -63,7 +57,7 @@ def agent_short_goal_run(
     参数缺省读 `evals/config.json`（`runconfig.load_config`）；`inspect eval -T` 逐项
     覆盖。`log_dir` 是 run-one 产物（`runs/<样本[#e<n>]>`）的落盘根——建议与
     `inspect eval --log-dir` 同值，`.eval` 与 trace 同根。被测系统的红线阈值
-    （`config.EPISODE_STALL_LIMIT` / `RUN_STALL_LIMIT`）在装配期快照进 scorer 闭包。
+    （生效配置的 `loop.episode_stall` / `loop.run_stall`）在装配期快照进 scorer 闭包。
     `trace_backend`（local/langfuse）是**写账与读账共同的后端**：run-one 用它写，
     scorer 用它读——切换前先确认对应服务可用（langfuse 需本机服务在跑）。
     """
@@ -80,7 +74,9 @@ def agent_short_goal_run(
     trace_backend = trace_backend or str(cfg.get("trace_backend", "local"))
     models = resolve_models(cfg.get("models", {}))
     chosen = _select(load(version, rule_ids=set(RULES)), split, sample_ids)
-    run_config_path, run_config_sha256 = write_run_config(report_dir, cfg["budget"])
+    overlay = eval_overlay({**cfg, "trace_backend": trace_backend})
+    run_config_path, run_config_sha256 = write_run_config(report_dir, overlay)
+    app_config = load_app_config(run_config_path).config
     (run_config_path.parent / "baseline_context.json").write_text(
         json.dumps(
             {
@@ -97,7 +93,7 @@ def agent_short_goal_run(
         + "\n",
         encoding="utf-8",
     )
-    stall_limits = (config.EPISODE_STALL_LIMIT, config.RUN_STALL_LIMIT)
+    stall_limits = (app_config.loop.episode_stall_limit, app_config.loop.run_stall_limit)
     return Task(
         dataset=samples_to_dataset(chosen),
         solver=run_one_solver(

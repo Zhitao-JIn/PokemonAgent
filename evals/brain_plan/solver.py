@@ -6,8 +6,8 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.util import StoreModel, store_as
 from pydantic import Field
 
+from evals.common.brain_link import single_link_brain
 from pokemon_agent.brain.interface import RunPlan
-from pokemon_agent.direct.brain_tool import BrainTool
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolPlanOnceReq, ModelCall
 
@@ -25,7 +25,7 @@ class Record(StoreModel):
 @solver
 def plan_solver(model: str) -> Solver:
     """仅传完整原始信封；提供者或重试耗尽保留为 Inspect sample error。"""
-    port = BrainTool.build(plan=model).planner
+    port = single_link_brain("plan", model).planner
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         case = Case.model_validate(state.metadata["case"])

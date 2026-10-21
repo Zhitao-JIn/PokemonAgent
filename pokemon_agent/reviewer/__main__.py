@@ -14,20 +14,13 @@ from urllib.parse import urlsplit
 import httpx
 from langfuse.api.core.api_error import ApiError
 
-from pokemon_agent.config import (
-    AGENT_MAX_TOOL_CALLS,
-    AGENT_TURN_BUDGET_S,
-    DEFAULT_REVIEW_LINK_URL,
-    REVIEW_AI_COUNTDOWN_S,
-    REVIEW_LINK_URL,
-    TRACE_BACKEND,
-)
 from pokemon_agent.env import env_str, load_env_file
 from pokemon_agent.mcpclient.client import McpClient, mcp_endpoint
 from pokemon_agent.mcpclient.memory_local import MemoryTool
 from pokemon_agent.mcpclient.memory_tool import MemoryMcpTool
 from pokemon_agent.schemas.harness import TraceEvent
 from pokemon_agent.schemas.reviewer.interaction import ReviewSeats
+from pokemon_agent.settings import AppConfig, load_config, resolve_path
 from pokemon_agent.trace import LocalTrace, TracePort
 from pokemon_agent.trace.langfuse_support import (
     PAGE_SIZE,
@@ -106,13 +99,14 @@ class ConfiguredTraceReader:
 
 
 def argument_parser() -> argparse.ArgumentParser:
-    """地址与共享存储可显式指定；席位必须由人指定，R6b 仍仅支持 human。"""
+    """席位、监听地址、共享 trace 与记忆地址全部来自配置；命令行只收覆盖文件。"""
     parser = argparse.ArgumentParser(description="Pokemon Agent 独立复核席")
-    parser.add_argument("--seats", required=True, choices=["human", "ai", "both"])
-    parser.add_argument("--url")
-    parser.add_argument("--trace-backend", choices=["local", "langfuse"], default=TRACE_BACKEND)
-    parser.add_argument("--trace-root", type=Path)
-    parser.add_argument("--memory-server-url")
+    parser.add_argument(
+        "--config",
+        action="append",
+        type=Path,
+        help="覆盖 default.json 的配置文件，可重复，后者胜；与 harness 用同一份",
+    )
     parser.add_argument(
         "--image-root", type=Path, default=Path(tempfile.gettempdir()) / "pokemon-review"
     )
@@ -123,20 +117,21 @@ def argument_parser() -> argparse.ArgumentParser:
 async def run(args: argparse.Namespace) -> None:
     """装配完整 human 路径；无记忆地址时查询返回未接入，不阻止启动。"""
     load_env_file(args.env_file)
-    url = args.url or env_str("REVIEW_LINK_URL") or REVIEW_LINK_URL or DEFAULT_REVIEW_LINK_URL
-    parsed = urlsplit(url)
+    app_config = load_config(args.config).config
+    review = app_config.review
+    if review.mode == "off" or review.link_url is None:
+        raise ValueError("review.mode 为 off：没有要服务的席位，请在配置里改成 human / ai / both")
+    parsed = urlsplit(review.link_url)
     if parsed.scheme != "ws" or not parsed.hostname:
         raise ValueError("本地 reviewer 监听地址必须是 ws://host:port")
-    if args.trace_backend == "langfuse" and args.trace_root is not None:
-        raise ValueError("--trace-root 仅适用于 local 后端")
-    has_human = args.seats in {"human", "both"}
-    has_ai = args.seats in {"ai", "both"}
-    ai_settings = _ai_settings() if has_ai else None
-    trace, client = _trace(args)
-    memory_client, memory = _memory(args.memory_server_url)
+    has_human = review.mode in {"human", "both"}
+    has_ai = review.mode in {"ai", "both"}
+    ai_settings = _ai_settings(app_config) if has_ai else None
+    trace, client = _trace(app_config)
+    memory_client, memory = _memory(app_config.services.memory_server_url)
     lines = StdinLines(sys.stdin.readline) if has_human else None
     human = HumanSeat(lines, _write, image_root=args.image_root) if lines is not None else None
-    readers = ViewReaders(trace, memory, trace_delayed=args.trace_backend == "langfuse")
+    readers = ViewReaders(trace, memory, trace_delayed=app_config.trace.backend == "langfuse")
     hub = Hub(readers, on_activity=human.activity if human is not None else None)
     ai = _ai_seat(hub, ai_settings) if ai_settings is not None else None
     app = ReviewerApp(
@@ -145,16 +140,17 @@ async def run(args: argparse.Namespace) -> None:
         commands=Commands(hub),
         human=human,
         ai=ai,
-        countdown_s=REVIEW_AI_COUNTDOWN_S,
+        countdown_s=review.ai_countdown_s,
     )
-    link = ReviewLinkServer(app, mode=args.seats)
+    link = ReviewLinkServer(app, mode=review.mode)
     try:
         port = parsed.port if parsed.port is not None else 80
         async with await link.serve(parsed.hostname, port) as listener:
             host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
             address = f"ws://{host}:{listener.sockets[0].getsockname()[1]}{parsed.path}"
             _write(
-                f"[reviewer] 已启动：{address}；席位={args.seats}，共享 trace={args.trace_backend}"
+                f"[reviewer] 已启动：{address}；席位={review.mode}，"
+                f"共享 trace={app_config.trace.backend}"
             )
             if has_human:
                 await app.serve()
@@ -172,11 +168,12 @@ async def run(args: argparse.Namespace) -> None:
 
 
 def _trace(
-    args: argparse.Namespace,
+    app_config: AppConfig,
 ) -> tuple[ConfiguredTraceReader | None, LangfuseClientPort | None]:
     """Langfuse 缺配置时保留查询未接入，不静默改读本地账，也不阻止终端启动。"""
-    if args.trace_backend == "local":
-        return ConfiguredTraceReader(local=LocalTrace(root=args.trace_root)), None
+    if app_config.trace.backend == "local":
+        trace_root = resolve_path(app_config.paths, "trace")
+        return ConfiguredTraceReader(local=LocalTrace(root=trace_root)), None
     try:
         client = build_client_from_environment()
     except (RuntimeError, ValueError) as exc:
@@ -187,10 +184,9 @@ def _trace(
 
 def _memory(url: str | None) -> tuple[McpClient | None, MemoryTool | None]:
     """只用普通 MCP 查询能力；保留客户端句柄以便服务退出时停止线程。"""
-    address = url or env_str("MCP_MEMORY_SERVER_URL")
-    if not address:
+    if not url:
         return None, None
-    client = McpClient(mcp_endpoint(address))
+    client = McpClient(mcp_endpoint(url))
     client.start()
     memory = MemoryTool(
         MemoryMcpTool(client, snapshot_root=Path(tempfile.gettempdir()) / "pokemon-review-memory")
@@ -198,8 +194,13 @@ def _memory(url: str | None) -> tuple[McpClient | None, MemoryTool | None]:
     return client, memory
 
 
-def _ai_settings() -> tuple[Callable[..., AiReviewer], str, str, str]:
-    """在启动读服务前核对 key 和 optional extra，避免失败时留下客户端线程。"""
+def _ai_settings(
+    app_config: AppConfig,
+) -> tuple[Callable[..., AiReviewer], AppConfig, str]:
+    """在启动读服务前核对 key 和 optional extra，避免失败时留下客户端线程。
+
+    模型名与 base_url 取自 `review.agent_*`；只有密钥走环境变量。
+    """
     api_key = env_str("DEEPSEEK_API_KEY")
     if not api_key:
         raise RuntimeError("AI 席需要配置 DEEPSEEK_API_KEY")
@@ -207,21 +208,20 @@ def _ai_settings() -> tuple[Callable[..., AiReviewer], str, str, str]:
         from pokemon_agent.reviewer.seats.ai import AiSeat
     except ImportError as exc:
         raise RuntimeError("AI 席需安装项目 reviewer 可选依赖") from exc
-    model = env_str("AGENT_REVIEWER_MODEL") or "deepseek-flash"
-    base_url = env_str("AGENT_REVIEWER_BASE_URL") or "https://api.deepseek.com"
-    return AiSeat, model, api_key, base_url
+    return AiSeat, app_config, api_key
 
 
-def _ai_seat(hub: Hub, settings: tuple[Callable[..., AiReviewer], str, str, str]) -> AiReviewer:
+def _ai_seat(hub: Hub, settings: tuple[Callable[..., AiReviewer], AppConfig, str]) -> AiReviewer:
     """使用已验证配置与当前 reviewer 的查询仲裁构造 AI 席。"""
-    factory, model, api_key, base_url = settings
+    factory, app_config, api_key = settings
+    review = app_config.review
     return factory(
-        model_name=model,
+        model_name=review.agent_model,
         api_key=api_key,
-        base_url=base_url,
+        base_url=review.agent_base_url,
         query=hub.query,
-        max_tool_calls=AGENT_MAX_TOOL_CALLS,
-        turn_budget_s=AGENT_TURN_BUDGET_S,
+        max_tool_calls=review.agent_max_tool_calls,
+        turn_budget_s=review.agent_turn_budget_s,
     )
 
 

@@ -10,9 +10,9 @@ from typing import Any
 
 import pytest
 from _doubles.reviewer import audit_request, inject_request
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
 from PIL import Image
 
-from pokemon_agent.config import REVIEW_AI_COUNTDOWN_S
 from pokemon_agent.reviewer.app import ReviewerApp
 from pokemon_agent.reviewer.hub import Commands, Hub
 from pokemon_agent.reviewer.seats.human import HumanSeat
@@ -42,7 +42,7 @@ def test_in_process_app_queries_then_answers_without_network(tmp_path: Path) -> 
             hub=hub,
             commands=Commands(hub),
             human=human,
-            countdown_s=REVIEW_AI_COUNTDOWN_S,
+            countdown_s=DEFAULT_APP_CONFIG.review.ai_countdown_s,
         )
         asking = asyncio.create_task(app.ask(inject_request()))
         await asyncio.sleep(0)
@@ -68,7 +68,7 @@ def test_eof_cancels_pending_and_closed_app_rejects_new_questions(tmp_path: Path
             hub=hub,
             commands=Commands(hub),
             human=human,
-            countdown_s=REVIEW_AI_COUNTDOWN_S,
+            countdown_s=DEFAULT_APP_CONFIG.review.ai_countdown_s,
         )
         asking = asyncio.create_task(app.ask(inject_request()))
         await asyncio.sleep(0)
@@ -92,7 +92,7 @@ def test_cancelling_the_ask_cancels_hub_pending(tmp_path: Path) -> None:
             hub=hub,
             commands=Commands(hub),
             human=human,
-            countdown_s=REVIEW_AI_COUNTDOWN_S,
+            countdown_s=DEFAULT_APP_CONFIG.review.ai_countdown_s,
         )
         task = asyncio.create_task(app.ask(inject_request()))
         await asyncio.sleep(0)
@@ -185,7 +185,7 @@ def test_terminal_keeps_accepting_an_answer_while_a_query_is_blocked(tmp_path: P
             hub=hub,
             commands=Commands(hub),
             human=seat,
-            countdown_s=REVIEW_AI_COUNTDOWN_S,
+            countdown_s=DEFAULT_APP_CONFIG.review.ai_countdown_s,
         )
         asking = asyncio.create_task(app.ask(inject_request()))
         await asyncio.sleep(0)
@@ -212,7 +212,7 @@ def test_app_requires_each_enabled_seat_to_be_injected(tmp_path: Path, seats: Re
             hub=hub,
             commands=Commands(hub),
             human=human,
-            countdown_s=REVIEW_AI_COUNTDOWN_S,
+            countdown_s=DEFAULT_APP_CONFIG.review.ai_countdown_s,
         )
 
 
@@ -231,7 +231,7 @@ def test_ai_only_mode_submits_structured_proposal_without_terminal() -> None:
             commands=Commands(hub),
             human=None,
             ai=Ai(),
-            countdown_s=REVIEW_AI_COUNTDOWN_S,
+            countdown_s=DEFAULT_APP_CONFIG.review.ai_countdown_s,
         )
 
         result = await asyncio.wait_for(app.ask(inject_request()), timeout=1)
@@ -255,7 +255,7 @@ def test_ai_only_failure_uses_unanswered_default() -> None:
             commands=Commands(hub),
             human=None,
             ai=Ai(),
-            countdown_s=REVIEW_AI_COUNTDOWN_S,
+            countdown_s=DEFAULT_APP_CONFIG.review.ai_countdown_s,
         )
 
         result = await asyncio.wait_for(app.ask(inject_request()), timeout=1)

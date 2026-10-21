@@ -10,12 +10,12 @@ from evals.common.recorder import RecordingChooser
 from pokemon_agent.brain.interface import Action, ActionSegment, Goal
 from pokemon_agent.direct.interface import ChoosePort
 from pokemon_agent.errors import MaxRetriesExceeded
-from pokemon_agent.run_config import load_run_config
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
     ModelCall,
 )
+from pokemon_agent.settings import load_config
 from pokemon_agent.world import ActionSpace, TaskObservation
 
 
@@ -206,10 +206,11 @@ def test_collection_wires_only_task_chooser_budget_state_and_releases_lease(
             raise original_error
         return SimpleNamespace(model_dump_json=lambda **kwargs: '{"finished": true}')
 
-    def build(**kwargs):
-        assert load_run_config(kwargs["config"]).budget.max_total_actions == 7
-        assert kwargs["trace_backend"] == "local"
-        assert kwargs["checkpoint_root"] == out / "checkpoints"
+    def build(config):
+        effective = load_config(config).config
+        assert effective.budget.max_total_actions == 7
+        assert effective.trace.backend == "local"
+        assert effective.paths.runs_root == str(out)
         harness = SimpleNamespace(
             deps=SimpleNamespace(episode=SimpleNamespace(task=task_runtime)), run=run
         )

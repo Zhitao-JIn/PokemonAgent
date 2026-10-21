@@ -4,10 +4,10 @@ import argparse
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from evals.common.brain_link import single_link_brain
 from evals.common.run import run_evaluation
 from evals.dataset.brain_choose import ChooseCase, load
 from evals.runconfig import load_config
-from pokemon_agent.direct.brain_tool import BrainTool
 from pokemon_agent.direct.interface import ChoosePort
 
 from .cases import build_cases
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         if not models.get("text_model"):
             raise ValueError("config.json models 缺少 text_model")
         model = str(models["text_model"])
-    chooser = BrainTool.build(text=model).chooser
+    chooser = single_link_brain("text", model).chooser
     scored, runs, skipped = run_cases(selected, chooser, args.workers)
     status = (
         run_evaluation(

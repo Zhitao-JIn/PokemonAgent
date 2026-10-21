@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import json
 import os
 import re
 import subprocess
@@ -29,17 +30,24 @@ async def read_until(process: subprocess.Popen, marker: str, timeout_s: float = 
 
 def start_process(root: Path) -> subprocess.Popen:
     """子进程使用独立路径与空的外部 memory 地址，不读任何真实密钥文件。"""
+    config = root / "reviewer.json"
+    config.write_text(
+        json.dumps(
+            {
+                "review": {"mode": "human", "link_url": "ws://127.0.0.1:0"},
+                "paths": {"runs_root": str(root)},
+                "services": {"memory_server_url": None},
+            }
+        ),
+        encoding="utf-8",
+    )
     return subprocess.Popen(
         [
             sys.executable,
             "-m",
             "pokemon_agent.reviewer",
-            "--seats",
-            "human",
-            "--url",
-            "ws://127.0.0.1:0",
-            "--trace-root",
-            str(root / "trace"),
+            "--config",
+            str(config),
             "--image-root",
             str(root / "images"),
             "--env-file",
@@ -50,7 +58,7 @@ def start_process(root: Path) -> subprocess.Popen:
         stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
-        env=dict(os.environ, PYTHONIOENCODING="utf-8", MCP_MEMORY_SERVER_URL=""),
+        env=dict(os.environ, PYTHONIOENCODING="utf-8"),
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 

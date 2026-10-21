@@ -16,7 +16,7 @@ from evals.common.capture_batch import (
     sha256,
     source_states,
 )
-from evals.common.capture_configuration import capture_budget
+from evals.common.capture_configuration import capture_app_config, capture_budget
 from evals.common.capture_export import export
 from evals.common.capture_integrity import audit_batch
 from evals.common.capture_pack import pack_sample, payload_paths
@@ -26,7 +26,7 @@ from evals.common.capture_services import capture_services, start_process, stop_
 from evals.common.capture_state import ControlState, read_state, save_state
 from evals.common.invocation import write_record
 from evals.paths import REPO_ROOT
-from evals.runconfig import load_config, resolve_models
+from evals.runconfig import load_config
 from pokemon_agent.direct.brain_tool import BrainTool
 from pokemon_agent.env import load_env_file
 from pokemon_agent.harness.checkpoint.manifest import state_schema_hash
@@ -68,12 +68,14 @@ def fixed_version(directory: Path) -> PackReport:
 def preflight(directory: Path) -> None:
     """先固定所选来源和已提交代码，不输出密钥值。"""
     samples = selected_samples(read_state(directory).sample_ids)
-    models = resolve_models(load_config()["models"])
+    app = capture_app_config(directory)
     BrainTool.build(
-        text=models["text_model"],
-        judge=models["judge_model"],
-        verify=models["verify_model"],
-        plan=models["plan_model"],
+        links=("text", "judge", "verify", "plan"),
+        models=app.models,
+        retry=app.retry,
+        request_timeouts=app.request_timeouts_s,
+        action_limits=app.action_limits,
+        image_cap=app.memory.scope_image_cap,
     )
     if disk_usage(directory).free < 2 * 1024**3:
         raise RuntimeError("capture requires at least 2 GiB free space")

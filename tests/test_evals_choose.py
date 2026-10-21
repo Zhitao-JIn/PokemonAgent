@@ -259,14 +259,14 @@ def test_cli_excludes_unreachable_cases_and_preserves_model_override(monkeypatch
     monkeypatch.setattr(entry, "load", lambda version: cases)
     monkeypatch.setattr(
         entry,
-        "BrainTool",
-        SimpleNamespace(build=lambda **kw: builds.append(kw) or SimpleNamespace(chooser=chooser)),
+        "single_link_brain",
+        lambda link, model: builds.append((link, model)) or SimpleNamespace(chooser=chooser),
     )
     monkeypatch.setattr(entry, "run_evaluation", lambda **kw: evaluations.append(kw) or 0)
 
     assert main(["--text-model", "fake-model", "--workers", "2", "--tag", "read_screen"]) == 0
 
-    assert builds == [{"text": "fake-model"}]
+    assert builds == [("text", "fake-model")]
     assert evaluations[0]["hyperparameters"] == {
         "dataset": "v3",
         "cases": 1,

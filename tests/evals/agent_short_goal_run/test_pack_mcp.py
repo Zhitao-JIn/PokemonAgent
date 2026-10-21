@@ -127,7 +127,7 @@ def test_main_no_longer_raises_not_implemented(monkeypatch: pytest.MonkeyPatch) 
     """main 走过了旧 NotImplementedError 位置：版本不一致先断言。"""
     import evals.agent_short_goal_run.dataset.build.pack as pack
 
-    monkeypatch.setattr(pack, "_load_env", lambda path: None)
+    monkeypatch.setattr(pack, "load_env_file", lambda path=None: None)
 
     with pytest.raises(AssertionError, match="version"):
         pack.main(["--version", "v99"])

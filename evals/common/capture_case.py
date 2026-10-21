@@ -9,40 +9,30 @@ from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.agent_short_goal_run.solver.runner.archive import prepare_archive
 from evals.agent_short_goal_run.solver.runner.one import run_id_for
 from evals.common.brain_capture import record_brain_calls
-from evals.common.capture_configuration import capture_budget
+from evals.common.capture_configuration import capture_overlay
 from evals.common.invocation import write_record
-from evals.runconfig import load_config, resolve_models
+from evals.common.overlay import sample_overlay, write_overlay
 from pokemon_agent.build import build_real
 from pokemon_agent.env import load_env_file
 from pokemon_agent.harness import RunRuntime
 from pokemon_agent.harness.checkpoint import restore_run
 from pokemon_agent.mcpclient.world_tool import WorldMcpTool
-from pokemon_agent.run_config import RunConfig
 
 
 def capture_case(sample: EvalSample, directory: Path, archive_root: Path | None = None) -> None:
     """从指定新起点恢复；原样录制，异常保留原产物和调用账。"""
     load_env_file()
-    configuration = load_config()
-    budget = capture_budget()
-    config = RunConfig(budget=budget)
     directory.mkdir(parents=True, exist_ok=False)
-    configuration_path = directory / "run_config.json"
-    write_record(configuration_path, config)
+    configuration_path, _digest = write_overlay(directory / "run_config.json", capture_overlay())
     write_record(directory / "sample.json", sample)
     games: list[WorldMcpTool] = []
 
     def build_branch(branch: str) -> RunRuntime:
-        harness, game = build_real(
-            run_id=run_id_for(sample.sample_id),
-            branch=branch,
-            trace_backend="local",
-            trace_root=directory / "trace",
-            memory_root=directory / "memory",
-            checkpoint_root=directory / "checkpoints",
-            config=configuration_path,
-            **resolve_models(configuration["models"]),
+        branch_config, _digest = write_overlay(
+            directory / f"config-{branch}.json",
+            sample_overlay(run_id=run_id_for(sample.sample_id), branch=branch, work=directory),
         )
+        harness, game = build_real(config=[configuration_path, branch_config])
         games.append(game)
         record_brain_calls(harness.deps, directory / "brain_calls")
         return harness.deps

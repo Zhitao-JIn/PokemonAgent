@@ -48,3 +48,4 @@ eval_results/
 
 .deepeval/
 eval_results/decode/
+config_snapshots/

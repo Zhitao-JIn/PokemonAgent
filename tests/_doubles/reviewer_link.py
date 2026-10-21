@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from pokemon_agent.config import REVIEW_AI_COUNTDOWN_S
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
+
 from pokemon_agent.reviewer.app import ReviewerApp
 from pokemon_agent.reviewer.hub import Commands, Hub
 from pokemon_agent.reviewer.link.server import ReviewLinkServer
@@ -47,7 +48,7 @@ async def reviewer_server(root: Path) -> AsyncIterator[LinkedReviewer]:
         hub=hub,
         commands=Commands(hub),
         human=seat,
-        countdown_s=REVIEW_AI_COUNTDOWN_S,
+        countdown_s=DEFAULT_APP_CONFIG.review.ai_countdown_s,
     )
     service = ReviewLinkServer(app, mode="human")
     async with await service.serve("127.0.0.1", 0) as listener:

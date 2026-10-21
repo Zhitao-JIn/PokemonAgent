@@ -84,8 +84,31 @@ def test_local_reader_does_not_bind_to_one_run_or_write_queries(tmp_path: Path) 
     assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
 
 
+def overlay(
+    tmp_path: Path,
+    *,
+    review_mode: str,
+    link_url: str = "ws://127.0.0.1:0",
+    trace_backend: str = "local",
+) -> Path:
+    """一份最小覆盖文件：席位模式、监听地址、trace 后端，落盘根指向临时目录。"""
+    path = tmp_path / "reviewer.json"
+    path.write_text(
+        json.dumps(
+            {
+                "review": {"mode": review_mode, "link_url": link_url},
+                "trace": {"backend": trace_backend},
+                "paths": {"runs_root": str(tmp_path)},
+                "services": {"memory_server_url": None},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_missing_langfuse_configuration_does_not_prevent_the_human_service_starting(
-    monkeypatch, caplog
+    tmp_path: Path, monkeypatch, caplog
 ) -> None:
     def missing():
         raise RuntimeError("missing LANGFUSE keys")
@@ -95,7 +118,7 @@ def test_missing_langfuse_configuration_does_not_prevent_the_human_service_start
     monkeypatch.setattr(entry, "env_str", lambda name: None)
     monkeypatch.setattr(entry.sys, "stdin", io.StringIO(""))
     args = entry.argument_parser().parse_args(
-        ["--seats", "human", "--trace-backend", "langfuse", "--url", "ws://127.0.0.1:0"]
+        ["--config", str(overlay(tmp_path, review_mode="human", trace_backend="langfuse"))]
     )
 
     asyncio.run(entry.run(args))
@@ -153,17 +176,21 @@ def test_stdin_errors_propagate_instead_of_becoming_an_answer() -> None:
 
 
 @pytest.mark.parametrize(
-    "arguments",
+    ("review_mode", "link_url"),
     [
-        ["--seats", "ai"],
-        ["--seats", "human", "--url", "http://localhost"],
-        ["--seats", "human", "--trace-backend", "langfuse", "--trace-root", "irrelevant"],
+        ("ai", "ws://127.0.0.1:0"),
+        ("human", "http://localhost"),
+        ("off", "ws://127.0.0.1:0"),
     ],
 )
 def test_invalid_entrypoint_configuration_fails_before_serve(
-    tmp_path: Path, arguments: list[str]
+    tmp_path: Path, monkeypatch, review_mode: str, link_url: str
 ) -> None:
-    args = entry.argument_parser().parse_args([*arguments, "--env-file", str(tmp_path / "no.env")])
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    config = overlay(tmp_path, review_mode=review_mode, link_url=link_url)
+    args = entry.argument_parser().parse_args(
+        ["--config", str(config), "--env-file", str(tmp_path / "no.env")]
+    )
 
     with pytest.raises((ValueError, RuntimeError)):
         asyncio.run(entry.run(args))

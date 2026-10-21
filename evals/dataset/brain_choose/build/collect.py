@@ -17,14 +17,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from evals.common.brain_capture import record_brain_calls
+from evals.common.overlay import eval_overlay, sample_overlay, write_overlay
 from evals.common.recorder import RecordingChooser
 from evals.paths import REPO_ROOT
-from evals.runconfig import load_config, resolve_models
+from evals.runconfig import load_config
 from pokemon_agent.brain.interface import Goal, Task
 from pokemon_agent.build import build_real
 from pokemon_agent.mcpclient.world_tool import WorldMcpTool
-from pokemon_agent.run_budget import RunBudget
-from pokemon_agent.run_config import RunConfig, load_run_config
 
 STATES_DIR = REPO_ROOT / "evals/agent_short_goal_run/dataset/v1/states"
 
@@ -56,27 +55,17 @@ def collect(
     if steps <= 0 or not goal.strip() or not criteria.strip():
         raise ValueError("--steps 必须为正整数，--goal 与 --criteria 必须非空")
     configuration = load_config()
-    models = resolve_models(configuration["models"])
-    budget = RunBudget.model_validate(
-        {
-            **load_run_config(None).budget.model_dump(),
-            **configuration["budget"],
-            "max_total_actions": steps,
-        }
-    )
     out.mkdir(parents=True, exist_ok=False)
-    config_path = out / "run_config.json"
-    config_path.write_text(RunConfig(budget=budget).model_dump_json(indent=2), encoding="utf-8")
     run_id = f"capture-choose-{uuid4().hex}"
-    harness, game = build_real(
-        run_id=run_id,
-        trace_backend="local",
-        trace_root=out / "trace",
-        memory_root=out / "memory",
-        checkpoint_root=out / "checkpoints",
-        config=config_path,
-        **models,
+    eval_config, _ = write_overlay(out / "config-eval.json", eval_overlay(configuration))
+    sample_config, _ = write_overlay(
+        out / "config-sample.json",
+        {
+            **sample_overlay(run_id=run_id, branch="main", work=out),
+            "budget": {"max_total_actions": steps},
+        },
     )
+    harness, game = build_real(config=[eval_config, sample_config])
     try:
         if all_calls:
             record_brain_calls(harness.deps, out / "brain_calls")

@@ -30,7 +30,7 @@
    **"谁依赖 brain"只有唯一答案：tool 层（0913 深夜九审计定案）。** 全仓库对
    `brain` 的**实现依赖**（`Brain`/`BrainPort`/`BrainLlmConfig`/`build_llm_providers`/
    厂商类）现在只剩门面层（`direct/` + `mcpclient/`）五处；装配点 `build.py` 对 brain **零 import**——
-   它经 tool 层的接线工厂 `BrainTool.build(text=…)` 造大脑。装配只递型号名，
+   它经 tool 层的接线工厂 `BrainTool.build(…)` 造大脑。装配只递配置节里的裸字段，
    `BrainLlmConfig` 由 `BrainTool.build()` 内部构造。
    （`harness`/`schemas`/`world` 对 brain 的引用一律是**数据形状**
    （`Action`/`Goal`/`Task`/`RunPlan`/`Reflection`/`EpisodeSummary`/
@@ -226,8 +226,10 @@ pokemon_agent/
 │                     `memory_local.py`（进程内 MemoryTool）/ `memory_tool.py`（MCP 远程
 │                     MemoryMcpTool）/ `game_tools.py`（进程内 GameTools）/ `world_tool.py`
 │                     （MCP 远程 WorldMcpTool）/ `client.py`（同步外观异步内核）。
-│                     **四个接线工厂**：`BrainTool.build(text=…, judge=…,
-│                     verify=…, plan=…, max_tokens=…)` 造大脑 + 四个 provider、
+│                     **接线工厂**（参数一律来自 `AppConfig` 的对应节）：
+│                     `BrainTool.build(links=…, …)` 造大脑 + provider、
+│                     `ReviewerTool.build(review, flush=…)` 按 `review.mode`
+│                     （off/human/ai/both）造复核席（住 `direct/reviewer_tool.py`）、
 │                     `WorldMcpTool.build(world_server_url=…)` 连接 world server
 │                     （只经 MCP，URL 必填）、
 │                     `MemoryTool.build(memory_server_url=…, memory_root=…)` 只经 MCP（URL 必填）、
@@ -263,11 +265,18 @@ pokemon_agent/
 │                     real_check/（真实链路核对：维度 1 harness / 2 trace /
 │                     3 checkpoint / 4 memory / 6 memory roundtrip；编号 5
 │                     随旧 restore 维度一起删了）——仓库根级，不在包内
-├── config.py         **全项目唯一的策略常量集中地**：重试预算 / 动作输出上限 /
-│                     循环控制 / 召回与判定四组。判据——"改这个数是为了做实验还是
-│                     为了让代码正确"：前者来 config，后者（帧数、内存地址、
-│                     网关下界等模块私有物理量）留在各自模块
-└── build.py          唯一的装配点（全项目唯一 new 具体实现的地方）
+├── settings/         **全项目唯一的配置中心**（取代旧 `config.py` / `run_config.py` /
+│                     `run_budget.py`）：全部 JSON。`default.json` 是随包保底值，启动时
+│                     可叠任意多个覆盖文件（深合并：dict 递归、list/标量整体替换），
+│                     `load_config(overlays)` → `ResolvedConfig`（冻结的严格 Pydantic
+│                     `AppConfig` + 来源 + 合并后 JSON + sha256）。每次 run 把合并结果
+│                     落成 `paths.config_snapshot` 下的快照文件。密钥（API key /
+│                     LANGFUSE_*）只在 `.env`，绝不进 JSON。判据——"改这个数是为了做实验
+│                     还是为了让代码正确"：前者进 settings，后者（帧数、内存地址、
+│                     网关下界等模块私有物理量）留在各自模块；独立模块
+│                     （brain/memory/trace/world）不许 import `pokemon_agent.settings`
+└── build.py          唯一的装配点：`build_real(config=None)` 只收配置文件路径（一个或
+                      多个覆盖层），其余全部读 `AppConfig`；全项目唯一 new 具体实现的地方
 
 tests/
 AGENTS.md          开发规范（本文件）
@@ -332,7 +341,7 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
   （`brain/interface`；`JudgeProvider.describe()` 保留多模态图片输入）、
   `EmbeddingProviderPort` / `RerankerProviderPort`（`memory/`）。**brain 的四个 provider 由
   `brain/build_llm_providers.py` 的 `build_llm_providers(config)` +
-  `BrainTool.build(text=…, judge=…, verify=…, plan=…, max_tokens=…)` 组装**
+  `BrainTool.build(links=…, …)`（链路型号与超参取自 `AppConfig.models`）组装**
   ——哪个技能接哪家厂商是 brain 的接线知识；`BrainLlmConfig` 由
   `BrainTool.build()` 内部构造（签名收裸字段，装配点因此不必
   import 任何 brain 名字）。world 只读模拟器内存，不调用模型；**memory 的检索 provider 走
@@ -340,7 +349,9 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
   knowledge_root=…, max_summaries=…)`**；
   另两个同形工厂是 `GameTools.build(rom, …)` 与
   `TraceTool.build(run_id=…, trace_root=…)`。
-  **四个工厂全在 tool 层，装配点一个都不越过**——它只递型号名 / 路径这类裸字段。
+  **所有工厂全在 tool 层，装配点一个都不越过**——它只递配置节里的型号名 / 路径这类字段。
+  reviewer 进程仍单独启动（`python -m pokemon_agent.reviewer --config …`），与主进程读同一份配置；
+  memory server 同样接受 `--config`。
   代码里**不许出现任何直连模型 SDK 的调用**——直连只发生在
   `brain/providers.py` 和 `memory/fastembed_*.py` 这几个实现文件里。
 - **prompt 是规则，入参是素材——不互相替代，同一东西绝不两处传。** "怎么判、怎么想、

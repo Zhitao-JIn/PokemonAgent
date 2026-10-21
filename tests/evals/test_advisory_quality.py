@@ -136,9 +136,9 @@ def test_unlisted_recovery_action_gets_ai_score_without_leaking_reference_to_cho
 
     monkeypatch.setattr(task, "load", lambda version: [case])
     monkeypatch.setattr(
-        inspect_solver.BrainTool,
-        "build",
-        lambda **kwargs: SimpleNamespace(chooser=SimpleNamespace(choose=invoke)),
+        inspect_solver,
+        "single_link_brain",
+        lambda link, model: SimpleNamespace(chooser=SimpleNamespace(choose=invoke)),
     )
     monkeypatch.setattr(
         advisory_quality, "get_model", lambda model: RecoveryGrader(case.reference, messages_seen)

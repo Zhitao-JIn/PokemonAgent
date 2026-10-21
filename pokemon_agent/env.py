@@ -1,7 +1,7 @@
 """部署配置（env）读取：`.env` 的极简加载 + 只读访问。
 
 **本文件只管 env，不管 knob**。实验旋钮（重试预算、召回条数……）住在
-`config.py`——那里改的是"这一轮实验想试什么"，这里改的是"这台机器/这个服务在
+`settings/default.json`——那里改的是"这一轮实验想试什么"，这里改的是"这台机器/这个服务在
 哪"。两者的生命周期不同，混在一起会让"这次实验的配置"无法从代码复现。
 
 **为什么自己解析而不用 python-dotenv**：仓库的 `.env` 只有 `KEY=VALUE`
@@ -28,7 +28,7 @@ ENV_FILE_NAME = ".env"
 
 def _parse_line(line: str) -> tuple[str, str] | None:
     """把一行 `KEY=VALUE` 解析成元组；注释 / 空行 / 无 `=` 的行返回 None。"""
-    stripped = line.strip()
+    stripped = line.strip().removeprefix("export ")
     if not stripped or stripped.startswith("#") or "=" not in stripped:
         return None
     key, _, value = stripped.partition("=")

@@ -1,3 +1,93 @@
+## 2026-10-21（572）—— 本机验证收尾：修正评测相关文件的导入排序
+
+**改了什么**：修正本机 Ruff 检出的 17 处 I001，涉及 15 个受跟踪的 scripts / tests 文件；仅调整导入排序与导入块空行。
+
+**为什么这么改**：本机将 evals 识别为项目包，云端留下的第三方导入分组在本机不符合 Ruff 规则，阻塞统一配置系统的验证验收。
+
+**取舍**：仅对明确列出的文件使用 I001 自动修复，不修改 Ruff 配置、业务逻辑、state 字段描述或旧临时目录；测试使用仓库内全新 basetemp 隔离既有目录权限问题。
+
+**影响面**：仅脚本与测试的导入块；统一配置系统接口、冻结数据和运行行为不变。
+
+## 2026-10-21（571）—— reviewer 由 tool 层工厂按 review.mode 内部装配，evals 改走覆盖文件，.env 解析收口
+
+**改了什么**：新增 `direct/reviewer_tool.py::ReviewerTool.build(review, *, flush)`，按 `review.mode`（off/human/ai/both）造复核席；`build_real` 不再收 reviewer 参数，也不 import reviewer 实现。`python -m pokemon_agent.reviewer` 新增 `--config / --image-root / --env-file`，席位、后端地址、trace、memory 地址与 AI 设置全读同一份配置。evals 的 `common/overlay.py` 把 `evals/config.json` 与每条样本的运行时事实（run_id、分支、落盘目录、服务地址）写成覆盖 JSON 文件，经 `build_real(config=[…])` 交给被测系统；`agent_short_goal_run`、`brain_*` 各 solver、`brain_choose/build/collect.py` 同步改完。`env.py` 成为 `.env` 的唯一解析处（支持 `export ` 前缀）。`experiment/manual_grass_fight.json` 取代 `start_grass_fight.ps1` 里散落的参数。删除 `config.py`、`run_config.py`、`run_budget.py` 与对应测试；AGENTS.md / CLAUDE.md 同步（目录树、工厂清单、`build_real` 签名）。
+
+**为什么这么改**：用户要求 reviewer 与 Brain 一样，装配点只传模式、由 tool 层工厂内部起；reviewer 进程仍单独启动，但读同一份配置，才不会出现两边各改各的。评测以前靠一串 `build_real` 形参注入，形参没了以后，覆盖文件落在工作目录里反而更好——"这次评测到底用了什么值"一眼可查。旧的三个配置模块已无读方，留着只会让人误读为第二个来源。
+
+**取舍**：ReviewerTool 放 `direct/` 而不是 `reviewer_link/`：后者有 import 纯度测试，只许导出 RemoteReviewer。`scripts/langfuse_smoke.py` 与 `langfuse_tree_rehearsal.py` 仍带各自的 `.env` 解析，属独立脚本，本步不动。`eval` 段在 `AppConfig` 里保持不透明，评测线自己解释。状态模型字段描述一律不改（`state_schema_hash()` 含描述，改了会让评测存档失效）。evals 测试只做了静态适配加子集运行：缺少冻结的大数据文件（frames、大 jsonl）的用例在容器里跑不了，需在本机复跑。
+
+**影响面**：`build_real` 现在只有 `config` 一个形参；所有 evals 入口、`start_grass_fight.ps1` 与 reviewer 启动命令的写法变了；不再有 `pokemon_agent.config` 可 import。
+
+## 2026-10-21（570）—— paths / services / debug 与 memory server 参数进配置，运行目录按仓库根解析
+
+**改了什么**：新增 `settings/paths.py`（`REPO_ROOT`、`resolve_path`、`write_snapshot`）；`paths` 段增加 `config_snapshot`；`memory` 段增加 `fuse_multiplier`、`fuse_floor`，`memory_server`、`memory/{retrieval,store,recall}.py` 的 RRF k、融合倍数与下限、embedding / reranker 型号名全部可配。每次 run 开局把合并后的配置写成 `<run_id>-<sha8>.json` 快照文件。
+
+**为什么这么改**：目录、服务地址和调试开关原先散在 `build_real` 形参与环境变量里，是"哪里改过"最难回答的一块。快照落成文件而不是 trace 事件，是因为配置在 trace 之前就要用，且文件可以直接拿去复现。
+
+**取舍**：`paths.runs_root` 默认 `"."`，相对于仓库根而不是进程当前目录，避免从不同目录启动落到不同位置。独立模块（memory）不 import settings，参数由 `MemoryTool.build` / 服务入口以裸字段传入。`fuse_top_k` 拆成"取多少"与"融合倍数 / 下限"两项，行为与旧值一致。
+
+**影响面**：新增 `config_snapshots/` 运行产物目录（需加入 `.gitignore`）；memory server 多接受 `--config`。
+
+## 2026-10-21（569）—— 模型型号、超参与超时进配置，BrainTool / 能力类要求显式 CallPolicy
+
+**改了什么**：`models.{text,judge,verify,plan}` 各带型号、温度、输出上限、超时、思考开关与 `json_mode`；`retry`、`request_timeouts_s`、`action_limits` 同样来自配置。Brain 侧新增纯数据 `LinkSpec` 与 `BrainLlmConfig`（各位置一份），`build_llm_providers` 与 `BrainTool.build(links=…)` 按它造 provider；各能力类要求显式传入必填的 `CallPolicy`，不再有隐含默认。`build_real` 为 plan、harness、reviewer 三条路径分别装配只带所需链路的 BrainTool。
+
+**为什么这么改**：型号与超时原来写死在 brain 与 tool 层各处，换型号要改代码；统一进配置后，实验只改 JSON。"没配就不造"沿用按需实例化原则，缺链路时由 Brain 入口 assert 拦下。
+
+**取舍**：brain 仍不 import settings，只认 `LinkSpec` 纯数据；`CallPolicy` 无默认值会让测试夹具多一个参数，已在 `tests/_harness_fixtures/app_config.py` 集中提供。
+
+**影响面**：`BrainTool.build` 签名变化；所有直接构造能力类的测试夹具已改。
+
+## 2026-10-21（568）—— 运行期配置接线：runtime 携带 AppConfig，build_real 只收配置路径
+
+**改了什么**：三个 runtime 持有 `config: AppConfig`，预算、循环、召回等读取处从模块常量改为读 `config`；`build.py` 重写为 `build_real(config=None)`：加载默认值与覆盖文件、生成快照，再依次装配 world / trace / memory / brain / reviewer / checkpointer。`reconfigure` 用 `model_copy` 更新预算，避免 `max_total_actions=0` 的校验在中间态报错。
+
+**为什么这么改**：第 567 步只落了 schema 与 loader，这一步让它成为唯一来源。显式形参是"不知道哪里改了"的根源，用户明确要求直接读配置。
+
+**取舍**：装配点仍对 brain / memory / trace / world 实现零 import，一律经 tool 层工厂；配置节原样递给工厂，不在 `build.py` 里挑字段拼装。
+
+**影响面**：所有 `build_real(...)` 调用点、`Runtime` 构造点与相关测试已同步；新增 `tests/settings/test_build_real_config.py`。
+
+## 2026-10-21（567）—— settings 包落地第 1 步：配置 schema、保底 default.json 与 loader（未接线）
+
+**改了什么**：新增 `pokemon_agent/settings/`（`schema/` 各配置段、`errors.py`、`loader.py`、随包分发的 `default.json`），`pyproject.toml` 的 package-data 加入 `settings/default.json`；新增 `docs/PLAN_settings_FLOW.puml` 与 `docs/PLAN_settings_DATAFLOW.puml` 两张图。`load_config(overlays)` 把保底 JSON 与任意个覆盖文件按顺序深度合并，再一次性严格校验，返回带来源列表与 sha256 的 `ResolvedConfig`。本步不接线：`config.py`、`run_config.py`、`build.py`、`evals/config.json` 全部原样。
+
+**为什么这么改**：配置分散在 `config.py` 常量、`RunConfig` 的 JSON、环境变量、`build_real` 形参默认值、`evals/config.json` 与各模块写死值六处，"这个值从哪来、哪里改过"无法一眼回答。目标是只剩两层来源（保底 < 覆盖文件），`build_real` 不再收显式参数，环境变量只留密钥。先单独落契约与加载语义，后续步骤才有稳定的依赖对象。包名用 `settings` 而不是 `config`：`config.py` 在第 2 步才删，同名包会提前遮住它，破坏现有约 20 处 import。
+
+**取舍**：值逐项取自现有常量，`default.json` 与旧常量用脚本逐项比对一致（含预算与 plan 超时）；重复定义已去重（`RunBudget` 里的重试次数、plan 思考开关、输出上限、超时分别并入 `retry` 与 `models.plan`）。`NODES_PER_DECISION` 等图拓扑常量与 RAM 地址、帧数等模块私有物理量不进 JSON（改它们是为了让代码正确，不是做实验）。`review.mode`（off/human/ai/both）取代"有地址就启用"的隐式规则。`eval` 段在 `AppConfig` 中不透明透传、由 evals 自己校验，这是登记的豁免。路径默认 `runs_root="."` 以保持现有落盘位置不变。生效配置快照暂不进 trace，落点待与开发者商定。校验用 JSON 模式以便数组进 tuple 而不放松严格类型。
+
+**影响面**：纯新增，无调用方、无行为变化。后续步骤：2) `build_real(config=…)` 与 Runtime 携带 config、替换约 20 处 `pokemon_agent.config` import 并删除 `config.py`、`RunBudget` 改由 `budget` 段派生；3) 模型/温度/超时清理写死值；4) memory 参数、paths、services 经工厂裸字段注入；5) `ReviewerTool.build` 与 reviewer 进程读同一份配置、evals 配置改覆盖文件、三份手写 `.env` 解析并回 `env.load_env_file()`。
+
+## 2026-10-20（566）—— 记忆后端横向选型调研（图+实体+时序+向量+元数据）
+
+**改了什么**：新增 `docs/spec/memory/MEMORY_BACKEND_SURVEY.md`。按 GitHub API 实测（star/许可/pushed）+ 读候选库 main 分支源码 + 读官方 API 文档，对 Cognee / Hindsight / Graphiti / neo4j-agent-memory / Mem0 / LangMem 做五项能力矩阵，并给出排序与下一步。未安装、未运行任何候选库，未改生产代码。
+
+**为什么这么改**：Graphiti 静态结论是 native `not_suitable`（元数据不落盘不过滤、episode 无向量），需要回答"是否存在五项全有的权威替代"。结论是**没有单一库五项全原生具备**，因此不能靠换库一劳永逸，必须知道缺哪几项、由谁补。
+
+**取舍**：只采信源码与官方 API 文档；第三方文章仅用于定位（Mem0 v3 移除开源 graph memory 一条明确标为 C 级）。凡未运行验证的能力一律标"待实测"，不把 README 宣传口径当 API 事实——Hindsight README 称 metadata 可过滤，但 recall 文档参数表里没有 metadata 参数、`metadata` 只是返回字段，以 API 文档为准并写明口径冲突。
+
+**影响面**：仅新增文档。关键发现三条：① Cognee 的 `DataPoint` 同一 `id` 跨图/向量/关系三库、`metadata.index_fields` 决定嵌哪些字段（正文向量原生可控），且 ladybug+lancedb+aiosqlite 是核心依赖 → **默认嵌入式、免 Docker**；② Cognee `SearchType.TEMPORAL` 有 `Timestamp` 一等节点与 `tightness_rank`，但 docstring 明写候选先取后前移再切 top_k → **是 rerank 不是硬过滤**；③ Hindsight `temporal_window` 官方明写 "This ranks, it does not filter"，过滤维度实际是 `tags`/`tag_groups` 复合布尔而非任意 kv；neo4j-agent-memory 官方自曝 `search_preferences` 不自动限定用户（与 Graphiti 同类坑）。
+
+## 2026-10-20（565）—— Graphiti 探针改用静态证据收敛结论（不起数据库）
+
+**改了什么**：新增 `eval_results/memory_graph_probe/20261020_01/STATIC_EVIDENCE.md`，结论从 `inconclusive` 收敛为 **native `not_suitable` / adapted `adaptation_required` / platform `native_ready`（文档级）**；`native/REPORT.md` 顶部存档原判定并指向新文件。未起 Docker、未装新依赖、未改生产代码。
+
+**为什么这么改**：用户口径「不要起 docker，只查文档或者其他人的实现」。两条硬门槛已在**源码层面**被证伪，不是"没测到"而是"不存在"，动态实测无法把它测出来：`SearchFilters.property_filters` 全包除定义外零消费者（多字段元数据无下推路径）；`EpisodicNode.episode_metadata` 有声明、注释写 for filtering，但全包仅此一处命中、`save()` 的 `episode_args` 不含它（**不落盘**）、`add_episode()` 无 metadata 入参（上游 main 签名逐字相同）；`EpisodeSearchMethod` 只有 `bm25`，episode 无任何 embedding 字段，有向量的 `EntityNode.name_embedding` 说明直写 "embedding of the name"。
+
+**取舍**：静态只判"能力是否存在/是否接线/过滤在截断前还是后"，不冒充动态结果——40/40 无损往返、recall@k、泄漏计数、快照残留、P5 真实抽取仍全部 `blocked` 并逐条列出。platform 结论标为 B 级（官方文档），且明确它是闭源 SaaS、不计入开源验收。第三方实证采用 `Quantum-L9/l9-graphiti-memory` ADR-085（跨租户共 group 时图遍历/社区结果被污染，被迫把 tenant+namespace 哈希成 group_id）与两个社区 fork（多租户一律编码进 `group_id`），不用社区文章当官方文档。
+
+**影响面**：仅新增 gitignore 下的产物文档；生产代码、memory 模块、MCP 注册表、采集批次零改动。附带确认两条口径偏差：`memorize` 是七个调用点而非三个；生产 metadata 无 `branch`/`entry_id`（分别在 checkpoint 层与 `budget_record`）。另记一条未实测的对照线索（LangGraph `BaseStore` 原生具备 namespace 前缀 + `filter` 多字段 + 可指定 `index.fields` 的正文向量，恰缺时序图），仅供"是否组合 LangMem"时参考，不作结论。
+
+## 2026-10-20（564）—— Graphiti 探针落地实验契约与原生能力实测起点
+
+**改了什么**：新增 `experiment/memory_graph_probe/`（实验契约 `contract.py`、40 条确定性 fixture `fixtures.py`、独立 oracle `oracle.py`、native/adapted 适配器 `backends/`、阶段脚本与 CLI `run.py`），产物落在 gitignore 的 `eval_results/memory_graph_probe/<batch>/<profile>/`。固定 graphiti-core **0.31.1**（commit `5961293`、wheel sha256 `fc0292…076`）与后端 `neo4j:5.26.32`，embedder 用与生产同型号的 `BAAI/bge-small-zh-v1.5`。P0 的 capability 表由**已安装源码**静态求出，不靠文档推断。
+
+**为什么这么改**：spec 要求「框架允许扩展」不等于原生实现已通过。静态核对给出两条硬证据：`SearchFilters.property_filters` 在 0.31.1 中除自身定义外**零消费者**（多字段元数据过滤无法在检索侧下推），`EpisodeSearchMethod` 只有 `bm25`（原始 episode 正文没有向量召回路径，实体节点默认嵌的是 name）。这两条直接决定 native 不可能是 `native_ready`，必须先有可复现证据再谈适配。
+
+**取舍**：适配器把 native 与 adapted 的界线写死在代码里，适配项（参数化 Cypher 先过滤候选、手写 `name_embedding` 嵌正文）逐项标注代价，不把适配结果记进 native。动态阶段因后端环境缺失全部记 `blocked`，不靠改 fixture、阈值或换后端凑数，也不拿确定性 CRUD 图结果冒充真实 LLM 抽取。探针使用独立 venv 与独占 namespace，不动生产 memory、不改 `MemoryStorePort`、不进 MCP 注册表。
+
+**影响面**：仅新增实验目录与 gitignore 下的产物；生产代码、brain scope、checkpoint schema、采集批次与冻结数据零改动。Ruff check/format 全绿。环境阻塞三条留证：Docker daemon 未起（Neo4j 容器起不来）、`graphiti-core[falkordblite]` 在 win32 构建失败（redislite 不支持）、DeepSeek 网关 402 导致 P5 真实抽取无法执行。本轮结论 `inconclusive`，待后端可用后跑 native/adapted 两个 profile 收敛。
+
 ## 2026-10-20（563）—— 采集控制器按固定用例子集补采
 
 **改了什么**：控制器 start 支持显式 samples，按数据集顺序固定非空唯一用例清单，resume 保留原清单。preflight、来源哈希、pack、capture、audit 和 export 统一按所选集合执行，导出 expected/sample_ids，不再硬编码二十条验收。导出阶段独立成模块，来源归档可保留 continuation.json 的旧报告与版本引用。新增六项测试验证非法清单、只选剩余六例、恢复不可改清单，以及同数量错误报告不能通过审计。

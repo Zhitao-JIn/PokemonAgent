@@ -25,9 +25,11 @@ import tempfile
 from pathlib import Path
 
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
-from evals.agent_short_goal_run.solver.runner.one import _load_env, run_id_for
+from evals.agent_short_goal_run.solver.runner.one import run_id_for
 from evals.common.memory_server import clear_memory
+from evals.common.overlay import eval_overlay, sample_overlay, write_overlay
 from evals.paths import REPO_ROOT
+from evals.runconfig import load_config
 from pokemon_agent.brain import Task
 from pokemon_agent.build import build_real
 from pokemon_agent.direct.trace import TraceTool, parse
@@ -63,7 +65,14 @@ def pack_one(sample: EvalSample, version: str, archive_root: Path | None = None)
             "memory_root": tmp / "memory",
             "checkpoint_root": tmp / "checkpoints",
         }
-        harness, game = build_real(run_id=run_id, trace_backend="local", **_models(), **roots)
+        eval_config, _digest = write_overlay(
+            tmp / "config-pack.json",
+            {
+                **eval_overlay({**load_config(), "trace_backend": "local"}),
+                **sample_overlay(run_id=run_id, branch="main", work=tmp),
+            },
+        )
+        harness, game = build_real(config=eval_config)
         game.use_start_state(state)
         task = Task(
             task_id=sample.sample_id,
@@ -146,13 +155,6 @@ def _copy_checkpoint(
     return dst
 
 
-def _models() -> dict[str, str]:
-    """链路型号从 `evals/config.json` 取（打包不调模型，只是 build_real 的形参）。"""
-    from evals.runconfig import load_config, resolve_models
-
-    return resolve_models(load_config()["models"])
-
-
 def main(argv: list[str] | None = None) -> int:
     """命令行入口（数据准备工具，非 eval 跑批入口）。
 
@@ -165,9 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--samples", default="", help="逗号分隔的样本 id；缺省打全部")
     args = parser.parse_args(argv)
 
-    _load_env(REPO_ROOT / ".env")
-    from evals.runconfig import load_config
-
+    load_env_file(REPO_ROOT / ".env")
     cfg_version = str(load_config().get("version", args.version))
     assert cfg_version == args.version, f"config.json 的 version={cfg_version} 与 --version 不一致"
     samples = load_samples(args.version)
