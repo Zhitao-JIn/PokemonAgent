@@ -108,8 +108,9 @@ def test_only_the_nine_evaluation_tasks_are_public() -> None:
 def test_world_script_execute_contains_all_script_samples() -> None:
     cases = load_scripts()
 
-    assert len(cases) == 106
-    assert len({case.case_id for case in cases}) == 106
+    assert len(cases) == 93
+    assert len({case.case_id for case in cases}) == 93
+    assert len(load_scripts("v1")) == 106
 
 
 def test_unlabelled_groups_do_not_turn_into_successes() -> None:
