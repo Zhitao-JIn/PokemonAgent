@@ -38,8 +38,8 @@ run 级样本的机械结果读取同一 run、同一执行分支的全部帧，
 
 单样本 worker 的硬超时仍为 `evals/config.json` 的 600 秒。评测只在该文件的
 `budget` 段覆盖总量：运行时长 600 秒、最多三局、累计动作 60 次；task 把这段写成
-报告目录下的 `run_config.json`，在 `baseline_context.json` 记录路径与 SHA256，worker
-将文件路径交给 `build_real(config=…)`。分层预算与生产共用，生产默认最多 50 局、
+报告目录下的覆盖 JSON（`config-eval.json` 与每样本的 `config-sample.json`，格式见 `evals/common/overlay.py`），在
+`baseline_context.json` 记录路径与 SHA256，worker 把两份文件路径交给 `build_real(config=[…])`。分层预算与生产共用，生产默认最多 50 局、
 总时长和累计动作不限；连续失败护栏不能替代总量预算。
 `knowledge_battle_action_menu` 只要求在当前战斗菜单移动光标并停在 RUN，禁止确认、
 逃跑、重新遇敌和逃跑收尾。任务描述同时保存在样本与冻结存档的 run_goal、pending task 中，

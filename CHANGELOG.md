@@ -1,3 +1,13 @@
+## 2026-10-21（574）—— 活文档同步统一配置系统
+
+**改了什么**：`docs/spec/build/SPEC.md` 按新装配方式重写（`build_real(config)`、`settings/` 配置中心、`ReviewerTool` 工厂、链路参数来自配置、`.env` 唯一解析处）；`docs/spec/evals/SPEC.md` 的预算覆盖改为 `config-eval.json` 与 `config-sample.json`；`docs/test/brain-factory-spec.md` 的 `json_mode` 说明改为随配置给出；`docs/budget/run-budget-spec.md` 顶部加"已被取代"提示。
+
+**为什么这么改**：这几份是活文档或仍被引用的设计依据，继续写着 `config.py`、`run_config.json` 和旧 `build_real` 参数会误导下一个读的人。
+
+**取舍**：`docs/brain_scope/`、`docs/eval/plan2.md`、`docs/PLAN_cleanup_1007.md`、`docs/PLAN_console_reviewer.md`、`docs/mcp/` 等历史计划与 spec 记录的是当时的决策，不改。
+
+**影响面**：仅文档，不动代码。
+
 ## 2026-10-21（573）—— Langfuse 手动脚本复用项目唯一的 .env 解析
 
 **改了什么**：删除 scripts/langfuse_smoke.py 与 scripts/langfuse_tree_rehearsal.py 内重复的 .env 解析函数，统一 import 并调用 pokemon_agent.env.load_env_file，显式传入原来的仓库根 .env 路径。
