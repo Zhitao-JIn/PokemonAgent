@@ -17,7 +17,7 @@ from evals.agent_short_goal_run.scorer.utils import (
     unjudgeable,
 )
 from evals.agent_short_goal_run.scorer.verdict import CheckVerdict
-from pokemon_agent.world import TaskScene
+from pokemon_agent.world import Facts, TaskScene
 
 
 def _quantity_selected(frame: Frame) -> bool:
@@ -48,16 +48,21 @@ def _bag(frame: Frame) -> dict[int, int]:
 
 @rule("shop_menu_opened")
 def shop_menu_opened(stream: RunStream, sample: EvalSample) -> CheckVerdict:
-    """出现过 BUY / SELL / QUIT 三项选单。"""
-    frames = decoded(target_frames(stream, sample))
+    """最终当前帧仍显示 BUY / SELL / QUIT 三项选单。"""
+    frames = target_frames(stream, sample)
     if not frames:
-        return unjudgeable("没有解码来源的帧")
-    return first_match(
-        frames,
-        lambda f: f.text.options == ["BUY", "SELL", "QUIT"],
-        found="出现了 BUY / SELL / QUIT",
-        missing="从没出现 BUY / SELL / QUIT",
-    )
+        return unjudgeable("没有目标帧")
+    current = frames[-1]
+    ram = current.content.ram
+    if ram is None or ram.text_source != "decode":
+        return unjudgeable("最终当前帧没有解码来源")
+    if current.content.facts.overlay == Facts.Overlay.CHOICE and current.text.options == [
+        "BUY",
+        "SELL",
+        "QUIT",
+    ]:
+        return passed("最终当前帧仍显示 BUY / SELL / QUIT", current)
+    return failed("最终当前帧未显示 BUY / SELL / QUIT 选单", current)
 
 
 @rule("shop_list_opened")

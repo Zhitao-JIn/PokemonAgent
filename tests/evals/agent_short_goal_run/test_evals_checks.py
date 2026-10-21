@@ -35,6 +35,7 @@ def frame(
     dialog: str = "",
     options: tuple[str, ...] = (),
     cursor: str | None = None,
+    overlay: Facts.Overlay | None = None,
     details: str = "",
     source: str = "decode",
     in_battle: bool = False,
@@ -50,7 +51,14 @@ def frame(
     `ram.decoded` 为空——判据读的是后者。
     """
     extra = {"option_details": details} if details else {}
-    facts = Facts(map_id=map_id, dialog_text=dialog, options=list(options), cursor=cursor, **extra)
+    facts = Facts(
+        map_id=map_id,
+        dialog_text=dialog,
+        options=list(options),
+        cursor=cursor,
+        overlay=overlay,
+        **extra,
+    )
     battle = (
         BattleStatus(
             mine=Combatant(name="BULBASAUR", level=5, hp=my_hp, max_hp=20, status="ok"),
@@ -127,7 +135,14 @@ CASES = {
         [frame(1, dialog="Hey!"), frame(2, dialog="...more")],
     ),
     "shop_menu_opened": (
-        [frame(1), frame(2, options=("BUY", "SELL", "QUIT"), cursor="BUY")],
+        [
+            frame(
+                1,
+                options=("BUY", "SELL", "QUIT"),
+                cursor="BUY",
+                overlay=Facts.Overlay.CHOICE,
+            )
+        ],
         [frame(1, dialog="Hi there! May I help you?"), frame(2)],
     ),
     "shop_list_opened": (
@@ -289,6 +304,20 @@ def test_text_from_vision_is_never_taken_as_truth() -> None:
 
 def test_party_list_without_decoded_frames_is_unjudgeable() -> None:
     verdict = judge(stream(), sample("party_list_opened_in_battle"))
+
+    assert verdict.outcome == "unjudgeable"
+
+
+def test_shop_menu_is_unjudgeable_when_only_the_previous_frame_is_decoded() -> None:
+    previous_menu = frame(
+        1,
+        options=("BUY", "SELL", "QUIT"),
+        cursor="BUY",
+        overlay=Facts.Overlay.CHOICE,
+    )
+    current_without_decode = frame(2, source="vlm", overlay=Facts.Overlay.CHOICE)
+
+    verdict = judge(stream(previous_menu, current_without_decode), sample("shop_menu_opened"))
 
     assert verdict.outcome == "unjudgeable"
 
