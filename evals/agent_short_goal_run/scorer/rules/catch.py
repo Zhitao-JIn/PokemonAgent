@@ -1,12 +1,13 @@
-"""捕捉类判据：对手 HP、背包里的精灵球（游戏变量）。"""
+"""捕捉类判据：对手 HP 与屏幕解码出的投球结果。"""
 
 from __future__ import annotations
+
+import re
 
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.agent_short_goal_run.scorer.registry import rule
 from evals.agent_short_goal_run.scorer.stream import Frame, RunStream
 from evals.agent_short_goal_run.scorer.utils import (
-    POKE_BALL,
     ends,
     first_match,
     target_frames,
@@ -21,11 +22,22 @@ def _foe_hp(frame: Frame) -> int | None:
     return ram.battle.foe.hp if ram is not None and ram.battle is not None else None
 
 
-def _balls(frame: Frame) -> int:
-    """背包里精灵球的数量。"""
-    ram = frame.content.ram
-    assert ram is not None
-    return sum(item.quantity for item in ram.bag if item.item_id == POKE_BALL)
+def _ball_result(frame: Frame) -> bool:
+    """只认实际解码的捕捉结算，不以道具光标或尚未结算的球数代替结果。"""
+    if not frame.from_decode:
+        return False
+    text = " ".join(frame.text.dialog_text.casefold().split())
+    return bool(
+        re.search(r"all right!.*was caught|(?:darn!|oh no!).*broke free", text)
+        or any(
+            phrase in text
+            for phrase in (
+                "aww! it appeared to be caught",
+                "aargh! almost had it",
+                "shoot! it was so close",
+            )
+        )
+    )
 
 
 @rule("foe_hp_dropped")
@@ -47,17 +59,18 @@ def foe_hp_dropped(stream: RunStream, sample: EvalSample) -> CheckVerdict:
 
 @rule("ball_thrown")
 def ball_thrown(stream: RunStream, sample: EvalSample) -> CheckVerdict:
-    """扔出了精灵球：背包里的精灵球比开局少。"""
+    """本次投球出现明确结果；球数可能在结果文字后扣除，不参与成功判据。"""
     frames = target_frames(stream, sample)
     pair = ends(frames)
     if pair is None:
         return unjudgeable("帧不够")
-    start = _balls(pair[0])
+    if _ball_result(pair[0]):
+        return unjudgeable("开局已有捕捉结果，无法归因到本次投球")
     return first_match(
-        [f for f in frames if f.content.ram is not None],
-        lambda f: _balls(f) < start,
-        found="精灵球少了一个",
-        missing="精灵球数量没变",
+        frames,
+        _ball_result,
+        found="出现了投球结果文字",
+        missing="未出现明确的投球结果文字",
     )
 
 

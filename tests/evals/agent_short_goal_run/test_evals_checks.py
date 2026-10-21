@@ -231,7 +231,10 @@ CASES = {
         ],
     ),
     "ball_thrown": (
-        [frame(1, bag={4: 3}), frame(2, bag={4: 2})],
+        [
+            frame(1, bag={4: 3}),
+            frame(2, bag={4: 3}, dialog="Aww! It appeared to be caught!"),
+        ],
         [
             frame(1, bag={4: 3}),
             frame(2, bag={4: 3}, dialog="Darn! The POKéMON broke free!", source="vlm"),

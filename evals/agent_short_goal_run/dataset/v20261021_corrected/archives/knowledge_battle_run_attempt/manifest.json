@@ -1,5 +1,5 @@
 {
-  "checkpoint_id": "eval-knowledge_battle_run_attempt@main-5752e5b6",
+  "checkpoint_id": "eval-knowledge_battle_run_attempt@main-3af98a0e",
   "level": "run",
   "run_id": "eval-knowledge_battle_run_attempt",
   "branch": "main",
@@ -14,14 +14,14 @@
     "branch": "main",
     "run_goal": {
       "goal": "依次完成：在野生战斗里选 RUN 逃跑",
-      "criteria": "scene 变回 field，或对话框里出现逃跑失败文字（如 Can't escape!）"
+      "criteria": "离开战斗，或对话框里出现明确的逃跑成功或失败结果（如 Got away safely! / Can't escape!）。"
     },
     "goals": [
       {
         "task": {
           "task_id": "knowledge_battle_run_attempt",
           "goal": "在野生战斗里选 RUN 逃跑",
-          "success_criteria": "scene 变回 field，或对话框里出现逃跑失败文字（如 Can't escape!）",
+          "success_criteria": "离开战斗，或对话框里出现明确的逃跑成功或失败结果（如 Got away safely! / Can't escape!）。",
           "max_steps": 15,
           "initial_state_hint": "野生战斗行动菜单，scene=battle overlay=choice"
         },
@@ -50,10 +50,10 @@
   "run_ref": null,
   "episode_ref": null,
   "world_file": "world.state",
-  "memory_archive": "archives/knowledge_battle_run_attempt/memory/snapshots/eval-knowledge_battle_run_attempt@main-5752e5b6.zip",
+  "memory_archive": "archives/knowledge_battle_run_attempt/memory/snapshots/eval-knowledge_battle_run_attempt@main-3af98a0e.zip",
   "code": {
-    "git_commit": "3ca4ecd6ad9faad0687a2ee41c2fa2976285c0e6",
-    "git_dirty": false,
+    "git_commit": "4457b04dc91dd25f78f0f0cf01d43b9f44fb2a94",
+    "git_dirty": true,
     "state_schema_hash": "5d3630f2b479ee78"
   },
   "models": {
@@ -62,5 +62,5 @@
     "verify": "deepseek-flash",
     "plan": "deepseek-flash"
   },
-  "created_at": "2026-10-20T16:32:40+0200"
+  "created_at": "2026-10-21T09:42:15+0200"
 }
