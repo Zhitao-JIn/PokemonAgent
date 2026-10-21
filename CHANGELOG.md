@@ -1,3 +1,15 @@
+## 2026-10-21（576）—— 重打四个失败场景并串行复测
+**改了什么**：修正评测专用 memory MCP 的启动方式，改用配置覆盖文件提供独立 memory 根目录和监听地址；基于 v2 冻结数据建立 `v20261021_retest4`，护士样本使用受伤起点、取消购买样本使用 YES/NO 确认起点，并重新打包 door_transition、shop_interaction、pokemon_center_heal、shop_cancel_purchase 四份存档。四项逐个启动服务、串行运行并保存结果。
+**为什么这么改**：memory server 已将落盘根和地址迁入统一配置，旧采集助手仍传已删除的 `--memory-root` 参数；多个样本共用 world 单实例时并行运行还会争抢租约。修正服务接线并隔离每项运行后，结果才能反映实际场景。
+**取舍**：保留 v2 原始数据与存档；新版本只重打这四项，其他样本沿用 v2。door_transition、shop_interaction、pokemon_center_heal 因 R1 异常收尾判为 I，shop_cancel_purchase 判为 C。第一次并行批次因租约冲突作废，不计入结果。
+**影响面**：评测服务采集助手与新增 `v20261021_retest4` 数据版本；`evals/config.json` 默认仍为 v2。
+
+## 2026-10-21（575）—— 补齐商店脚本入口并拆分 NPC 交互与购买评测
+**改了什么**：普通商店场景开放地图导航、NPC 对话及买卖脚本；开始菜单开放 `open_menu_to`。`talk_to_adjacent_npc` 在对话结束回到调用前场景时正常收尾。新增 v2 的 20 例数据集：第一例逐一核对起点可见 NPC 的对话交互记录，第二例从同一商店地板起点执行 `buy_item` 并按脚本终态评分。
+**为什么这么改**：原动作空间没有在商店地板暴露 `buy_item`，对话脚本也只认回到 `walk`；同时原菜单用例无法区分 NPC 交互和购买业务。新起点与目标把两类能力分开，且脚本执行完关闭菜单仍可依据历史终态判成。
+**取舍**：保留冻结 v1 与已有归档；新增 v2 并切换默认配置。未重跑模型端到端采集；本机未配置评测 MCP 服务，v2 两个商店归档沿用原商店地板的世界与记忆快照，并按各自目标更新 run checkpoint 清单。
+**影响面**：脚本场景权限、NPC 对话脚本终止条件、商店机械评分、端到端数据集默认版本；不改其他 18 个样本的目标和起点。
+
 ## 2026-10-21（574）—— 活文档同步统一配置系统
 
 **改了什么**：`docs/spec/build/SPEC.md` 按新装配方式重写（`build_real(config)`、`settings/` 配置中心、`ReviewerTool` 工厂、链路参数来自配置、`.env` 唯一解析处）；`docs/spec/evals/SPEC.md` 的预算覆盖改为 `config-eval.json` 与 `config-sample.json`；`docs/test/brain-factory-spec.md` 的 `json_mode` 说明改为随配置给出；`docs/budget/run-budget-spec.md` 顶部加"已被取代"提示。

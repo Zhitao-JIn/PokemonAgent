@@ -1,5 +1,6 @@
 """采集专用 world/memory 服务；独立端口和空目录，只清理本次子进程。"""
 
+import json
 import os
 import socket
 import subprocess
@@ -111,8 +112,8 @@ def capture_services(directory: Path) -> Iterator[dict[str, str]]:
             [
                 "-m",
                 "pokemon_agent.mcp_servers.memory_server",
-                "--memory-root",
-                str(directory / "memory"),
+                "--config",
+                str(_memory_config(directory, memory_port)),
                 "--enable-admin",
                 "--port",
                 str(memory_port),
@@ -126,3 +127,21 @@ def capture_services(directory: Path) -> Iterator[dict[str, str]]:
     finally:
         for process in reversed(processes):
             stop_process(process)
+
+
+def _memory_config(directory: Path, port: int) -> Path:
+    """为本次 memory MCP 生成独立落盘根与监听地址配置。"""
+    path = directory / "memory-server-config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "paths": {"memory": str(directory / "memory")},
+                "services": {"memory_server_url": f"http://127.0.0.1:{port}"},
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
