@@ -1,0 +1,8 @@
+{
+  "task": "takeover",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "TakeoverParams",
+  "reason": "CP4 首版迁移，共用片段保留旧措辞与次序",
+  "hash": "afd74f2e3ce592ae240e4e03f1d4a4ef5276d58ec7be8c5f4f7309d03cbf84ba"
+}

@@ -1,0 +1,8 @@
+{
+  "task": "read_screen",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "ReadScreenParams",
+  "reason": "CP4 首版迁移，共用片段保留旧措辞与次序",
+  "hash": "f8bf54ed57f135fb280c92cc40e341808eeda742463590102308fad1f23adbaa"
+}

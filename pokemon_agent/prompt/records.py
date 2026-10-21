@@ -175,6 +175,7 @@ class TaskSpecRecord(BaseModel):
     goal: str
     success_criteria: str = ""
     max_steps: int = 1
+    initial_state_hint: str = ""
 
 
 class GoalRecord(BaseModel):
@@ -184,3 +185,50 @@ class GoalRecord(BaseModel):
     last_episode_id: str | None = None
     note: str = ""
     overturned: bool = False
+
+
+class GoalDefinition(BaseModel):
+    goal: str
+    criteria: str
+
+
+class TaskTableRecord(BaseModel):
+    entry_id: str
+    attempts: int = 0
+    last_task_id: str | None = None
+    task: TaskSpecRecord
+    status: str = "pending"
+    note: str = ""
+    overturned: bool = False
+    round: int
+
+
+class JudgeFeedbackRecord(BaseModel):
+    decision: str
+    why: str
+    audit: str | None = None
+    note: str = ""
+
+
+class PlanningBudgetRecord(BaseModel):
+    limit: int
+    unit: str
+
+
+class PlannedRecord(BaseModel):
+    goal: str
+    success_criteria: str
+    budget: PlanningBudgetRecord
+
+
+class PlanningUpdateRecord(BaseModel):
+    index: int
+    status: str
+    note: str
+
+
+class PlanningRecord(BaseModel):
+    new_items: list[PlannedRecord] = Field(default_factory=list)
+    updates: list[PlanningUpdateRecord] = Field(default_factory=list)
+    execution_order: list[str] | None = None
+    why: str

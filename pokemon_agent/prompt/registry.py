@@ -38,6 +38,7 @@ class PromptUnit:
     directory: Path
     fragments: frozenset[str]
     history: History | None = None
+    goals: History | None = None
 
 
 def load_unit(root: Path, task: str, version: str) -> PromptUnit:
@@ -80,20 +81,24 @@ def load_unit(root: Path, task: str, version: str) -> PromptUnit:
         for argument in arguments
     ):
         raise PromptRegistryError(f"Expected assemble(params, compose): {directory}")
-    history = getattr(module, "history", None)
-    if history is not None and (
-        not callable(history)
-        or inspect.iscoroutinefunction(history)
-        or list(inspect.signature(history).parameters) != ["params", "compose"]
-    ):
-        raise PromptRegistryError(f"Expected history(params, compose): {directory}")
+    materials: dict[str, History | None] = {}
+    for name in ("history", "goals"):
+        renderer = getattr(module, name, None)
+        if renderer is not None and (
+            not callable(renderer)
+            or inspect.iscoroutinefunction(renderer)
+            or list(inspect.signature(renderer).parameters) != ["params", "compose"]
+        ):
+            raise PromptRegistryError(f"Expected {name}(params, compose): {directory}")
+        materials[name] = cast(History | None, renderer)
     return PromptUnit(
         meta,
         params_type,
         cast(Assemble, assemble),
         directory,
         fragments,
-        cast(History | None, history),
+        materials["history"],
+        materials["goals"],
     )
 
 

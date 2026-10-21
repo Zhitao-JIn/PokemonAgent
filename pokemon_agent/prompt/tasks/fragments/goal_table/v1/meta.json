@@ -1,0 +1,8 @@
+{
+  "task": "goal_table",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "GoalTableParams",
+  "reason": "CP4 首版迁移，共用片段保留旧措辞与次序",
+  "hash": "ea6fa30f094e85d0ac68bf7cae39d03c03a4d0dbc46f705c02d3f9de0b0da525"
+}

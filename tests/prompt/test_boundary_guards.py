@@ -60,9 +60,19 @@ def test_each_violation_reports_its_rule_and_source_location(
     assert f"[FAIL] {rule} {relative}:1" in result.stdout
 
 
-MIGRATED = frozenset({"Verifier", "Summarizer", "TaskSummarizer", "RunSummarizer"})
+MIGRATED = frozenset(
+    ["Decomposer", "Judger", "Planner", "RunSummarizer", "Summarizer", "TaskSummarizer", "Verifier"]
+)
 LEGACY_NAMES = frozenset(
-    {"verify_prompt", "summarize_prompt", "summarize_task_prompt", "summarize_run_prompt"}
+    [
+        "decompose_prompt",
+        "judge_success_prompt",
+        "run_plan_prompt",
+        "summarize_prompt",
+        "summarize_run_prompt",
+        "summarize_task_prompt",
+        "verify_prompt",
+    ]
 )
 
 

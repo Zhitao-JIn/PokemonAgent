@@ -1,0 +1,8 @@
+{
+  "task": "task_table",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "TaskTableParams",
+  "reason": "CP4 首版迁移，共用片段保留旧措辞与次序",
+  "hash": "f4e7963a9b79261bdb56c13ef89c0f3c75bd0d48aa625d7ee8aa514ec10d746b"
+}

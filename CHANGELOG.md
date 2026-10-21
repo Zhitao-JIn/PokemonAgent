@@ -1,3 +1,13 @@
+## 2026-10-21（591）—— prompt 模块 CP4：三层判定、拆解、run 规划与共用片段
+
+**改了什么**：将 judge_success、decompose、run_plan 迁入 v1；登记目标表、任务表、上次判定、人类插话、读图与中断规则六个片段，并增加地形图例、地图事件、完整观测与接管视图片段。新增独立原料契约；记忆片段支持一行索引、完整观测和原始地形格投影。三能力改为显式注入网关、同源素材与逐次盖章，判定不再向拆解或规划借渲染函数。knowledge_query 不再拼 obs.status，仅使用 scene、overlay、map 与目标。
+
+**为什么这么改**：复用的是有版本和启动校验的文本片段，而非跨任务借函数。地图、选单、战斗状态优先从结构化原料投影，显式空原料压过陈旧文本。知识检索 query 去掉渲染状态句，减少检索对展示文案的依赖；这会影响实际知识召回与排序，是本检查点按设计安排的行为变化，prompt 对同一输入的文字不变。
+
+**取舍**：代码事实的 takeover 判别联合为八类，独立模块复制测试覆盖全部八类，不补造第九类。沿用 CP3 的素材出口，为 Planner 的 goal_stack 增加 render_history(..., part="goals") 与同文件同 hash 的可选 goals 拼装函数；由共同表片段保持其逐条边界。按用户扩范围授权，另改七个既有测试装配文件，仅增加网关注入，不改断言。第一次全量的 9 项失败来自批量注入误匹配测试本地同名 Judger，已将该文件恢复为零 diff；新增视图测试最初缺少 view 包装，也已按契约修正。共用的解析重试助手按既定次序留到 CP5b 接线，不提前改重试分流；旧记忆文本兼容字段仍待 CP6 收缩。
+
+**影响面**：起点 2341 passed、8 skipped；最终 2396 passed、15 skipped、3 deselected、59 warnings（124.34s）。七任务 145 条 golden 中 130 条网关输出逐字节一致，history/context/目标表逐项相等，15 条因既定 where 格式不可恢复跳过；原 183 条旧黄金仍通过。八类接管视图和清单 9 passed；含三能力成功/耗尽盖章的专项 147 passed、15 skipped。ruff check 通过，格式检查 950 files already formatted，A/B/C 守卫全过。临时篡改共用插话模板触发启动 hash 错误，临时越界 import 触发 A 类违规，均原字节恢复后完成全量复测。无真实模型调用。
+
 ## 2026-10-21（590）—— prompt 模块 CP3：记忆渲染与四条蒸馏校验链路迁入网关
 
 **改了什么**：新增独立 ActRecord / TaskRecord / EpisodeRecord / RunRecord 与四个任务契约，登记 verify、summarize、summarize_task、summarize_run 的 v1 及 memory_records 片段。模板和固定标签进入 prompt.md，拼装逻辑与相邻帧去重进入版本目录。四个能力改走网关；统一重试循环在 _adopt 后为成功、失败、耗尽与预算异常中的调用账追加 task / version / hash 三键。新增网关对拍、同源 history、结构化字段优先、真实离线重试盖章与迁移守卫负例。

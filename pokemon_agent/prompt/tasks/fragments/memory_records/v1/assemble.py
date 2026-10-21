@@ -241,12 +241,30 @@ def run_render(self: RunRecord) -> str:
 
 def assemble(params: MemoryParams, compose: Compose) -> str:
     """按素材种类渲染，再执行任务需要的编号或标注。"""
+    if params.mode == "observation":
+        assert params.observation is not None
+        obs = params.observation
+        return observation_render(
+            obs.model_copy(update={"facts": snapshot_facts(obs, include_terrain=True)})
+        )
     entries = params.entries
+    if params.mode == "index":
+        records = []
+        for entry in entries:
+            if isinstance(entry, TaskRecord):
+                records.append(task_index(entry))
+            elif isinstance(entry, EpisodeRecord):
+                records.append(episode_index(entry))
+            elif isinstance(entry, RunRecord):
+                records.append(run_index(entry))
+            else:
+                raise AssertionError("Index requires task, episode, or run records")
+        return json.dumps(records, ensure_ascii=False) if params.serialized else "\n".join(records)
     if entries and isinstance(entries[0], ActRecord):
         acts = [entry for entry in entries if isinstance(entry, ActRecord)]
         records = (
             [act_render(entry) for entry in acts]
-            if params.mode == "verify_entries"
+            if params.mode in ("verify_entries", "plain")
             else act_sequence(acts)
         )
     else:
@@ -277,18 +295,38 @@ def assemble(params: MemoryParams, compose: Compose) -> str:
     return "\n\n".join(records) or _LABELS["empty"]
 
 
-def snapshot_facts(obs: ActRecord.Observation) -> ActRecord.Observation.Facts:
+def snapshot_facts(
+    obs: ActRecord.Observation, *, include_terrain: bool = False
+) -> ActRecord.Observation.Facts:
     """优先从同帧原料投影；旧记忆缺少增量字段时保留其已有文本。"""
-    facts = obs.facts.model_copy(update={"walk_map": ""})
+    facts = obs.facts.model_copy()
+    if not include_terrain:
+        facts.walk_map = ""
+    elif facts.cells and obs.place is not None:
+        facts.walk_map = terrain_render(facts.cells, obs.place) if facts.terrain_visible else ""
     if obs.place is not None and facts.where:
         place = obs.place
         facts.where = _LABELS["location"].format(place.map_id, place.x, place.y)
-    if facts.neighbor_cells:
+    if "neighbor_cells" in facts.model_fields_set:
         cells = facts.neighbor_cells
-        facts.neighbors = _LABELS["neighbors"].format(
-            cells["up"], cells["down"], cells["left"], cells["right"]
+        facts.neighbors = (
+            _LABELS["neighbors"].format(cells["up"], cells["down"], cells["left"], cells["right"])
+            if cells
+            else ""
         )
     updates: dict[str, Any] = {}
+    if "option_grid" in facts.model_fields_set:
+        updates["option_layout"] = ""
+    if "option_annotations" in facts.model_fields_set:
+        updates["option_details"] = ""
+    if "battle_status" in facts.model_fields_set and facts.battle_status is None:
+        updates.update(
+            {
+                prefix + "_" + name: ""
+                for prefix in ("my", "foe")
+                for name in ("name", "level", "hp", "status")
+            }
+        )
     if facts.option_grid and facts.cursor_cell is not None:
         grid = facts.option_grid
         row, col = facts.cursor_cell
@@ -320,3 +358,73 @@ def snapshot_facts(obs: ActRecord.Observation) -> ActRecord.Observation.Facts:
             updates[prefix + "_hp"] = str(side.hp) + "/" + str(side.max_hp)
             updates[prefix + "_status"] = side.status
     return facts.model_copy(update=updates)
+
+
+def task_index(self: TaskRecord) -> str:
+    """按原条件和顺序渲染独立原料。"""
+    return _LABELS["L071"].format(
+        self.task_id,
+        self.goal,
+        _LABELS["L069"] if self.success else _LABELS["L070"],
+        self.termination or "-",
+        self.steps_used,
+        first_sentence(self.summary),
+    )
+
+
+def episode_index(self: EpisodeRecord) -> str:
+    """按原条件和顺序渲染独立原料。"""
+    return _LABELS["L074"].format(
+        self.episode_id,
+        self.goal,
+        _LABELS["L072"] if self.success else _LABELS["L073"],
+        self.termination or "-",
+        self.steps,
+        self.acts_used,
+        first_sentence(self.summary),
+    )
+
+
+def run_index(self: RunRecord) -> str:
+    """按原条件和顺序渲染独立原料。"""
+    return _LABELS["L075"].format(
+        self.run_id,
+        self.run_goal,
+        self.succeeded,
+        self.episodes,
+        self.termination or "-",
+        first_sentence(self.summary),
+    )
+
+
+def first_sentence(text: str) -> str:
+    """按原条件和顺序渲染独立原料。"""
+    sentence = text.strip()
+    for index, character in enumerate(sentence):
+        if character in _LABELS["L076"]:
+            sentence = sentence[: index + 1]
+            break
+        if character in "\r\n":
+            sentence = sentence[:index]
+            break
+    sentence = sentence.strip()
+    if not sentence:
+        return _LABELS["L077"]
+    return sentence[:80] + _LABELS["L078"] if len(sentence) > 80 else sentence
+
+
+def terrain_render(cells: list[str], place: ActRecord.Observation.Place) -> str:
+    """固定九行十列，行号和行尾范围使用全局坐标。"""
+    assert len(cells) == 9 and all(len(line) == 10 for line in cells)
+    ys = [place.y + row - 4 for row in range(9)]
+    left, right = place.x - 4, place.x + 5
+    gutter = max(len(str(y)) for y in ys)
+    lines = [_LABELS["terrain_header"]]
+    for row, line in enumerate(cells):
+        chars = list(line)
+        if row == 4:
+            chars[4] = "@"
+        lines.append(
+            _LABELS["terrain_row"].format(str(ys[row]).ljust(gutter), "".join(chars), left, right)
+        )
+    return "\n".join(lines)

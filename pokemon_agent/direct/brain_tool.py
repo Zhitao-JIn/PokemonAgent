@@ -76,12 +76,13 @@ from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.budget_provider import BudgetProvider, TimeoutProvider
 from pokemon_agent.direct.call_policy import CallPolicy
 from pokemon_agent.direct.planning_validation import validate_result
-from pokemon_agent.direct.prompts import decompose as decompose_prompt
-from pokemon_agent.direct.prompts import run_plan as run_plan_prompt
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.prompt import (
+    DecomposeParams,
+    JudgeParams,
     PromptGateway,
     RenderedPrompt,
+    RunPlanParams,
     SummarizeParams,
     SummarizeRunParams,
     SummarizeTaskParams,
@@ -124,11 +125,11 @@ from pokemon_agent.settings import (
 from pokemon_agent.world import (
     DIRECTION_KEYS,
     INTERACT_KEY,
+    TERRAIN_MEANING,
     ActionEntry,
 )
 
 from .prompts import decide_action as decide_action_prompt
-from .prompts import judge_success as judge_success_prompt
 
 BrainLink = Literal["text", "judge", "verify", "plan"]
 """`BrainTool.build(links=…)` 可选的四条模型链路（对应配置文件 `models` 段的四个条目）。"""
@@ -220,7 +221,7 @@ class Planner:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
-        prompt_gateway: PromptGateway | None = None,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
         self._prompt_gateway = prompt_gateway
@@ -228,25 +229,12 @@ class Planner:
         self._deadline = deadline
 
     def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
-        """run 级规划：解析失败带纠正说明，传输失败原样重问，逐次保留调用账。
-
-        **prompt 在这里拼**（0913 定案）：`run_plan.build_prompt(req)`。
-
-        `goal_stack` / `history` 从 req 的素材渲成文本传下去——
-        **共用 `tools.prompts.run_plan` 的渲染函数**（`goals_lines` / `history_blocks`），
-        不另写一份：`run_plan.build_prompt()` 把行拼成整段塞进 prompt，
-        这里把同样的行原样交给 `Brain.plan(history=…)`（brain 的约定要求
-        "发生过什么"独立成块）。**分两份实现迟早漂移**，所以那层是唯一真源。
-
-        **两个参数名是 brain 的契约，装的东西已经换过**（0914 S2）：`goal_stack`
-        现在装的是**目标表的行**（表序 = 派发顺序，带状态），`history` 装的是
-        **记忆折出来的块**（局索引 + 详情 + 地图事实），不再是 trace 折的"每局一行"。
-        brain 侧签名一字未动——它收下的就是"已经渲染好的文本序列"，
-        渲染从哪来是调用方的事（这正是铁律 2 要的形状）。
-        """
-        prompt = run_plan_prompt.build_prompt(req)
-        goal_stack = run_plan_prompt.goals_lines(req.plan)
-        history = run_plan_prompt.history_blocks(req)
+        """渲染本轮规划并保留同源目标表与历史；重试保留全部调用账与版本戳。"""
+        params = RunPlanParams.model_validate(req.model_dump(mode="json"))
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "run_plan", params, [])
+        prompt = rendered_prompt.text
+        goal_stack = self._prompt_gateway.render_history("run_plan", params, part="goals")
+        history = self._prompt_gateway.render_history("run_plan", params)
         images = cap_images(collect_frames(req.details), self._policy.image_cap)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
@@ -265,6 +253,7 @@ class Planner:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
+            rendered_prompt=rendered_prompt,
         )
         return FromHarnessToBrainToolPlanOnceResp(plan=result.plan, calls=calls)
 
@@ -281,7 +270,7 @@ class Decomposer:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
-        prompt_gateway: PromptGateway | None = None,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
         self._prompt_gateway = prompt_gateway
@@ -291,13 +280,14 @@ class Decomposer:
     def decompose(
         self, req: FromHarnessToBrainToolDecomposeReq
     ) -> FromHarnessToBrainToolDecomposeResp:
-        """拼 prompt 调 `Brain.decompose()`，解析重试带错误反馈并打包整条账。
-
-        `context` 与 prompt 里的素材段同源（`decompose.context_lines`）。
-        """
-        prompt = decompose_prompt.build_prompt(req)
+        """以原始字段渲染拆解与 context；结构校验失败重问，每次尝试在收编后盖章。"""
+        params = DecomposeParams.model_validate(
+            {**req.model_dump(mode="json"), "terrain_meanings": TERRAIN_MEANING}
+        )
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "decompose", params, [])
+        prompt = rendered_prompt.text
         goal = f"{req.goal.goal}（判据：{req.goal.criteria}）"
-        context = decompose_prompt.context_lines(req)
+        context = self._prompt_gateway.render_history("decompose", params)
         images = cap_images(collect_frames(req.task_memories), self._policy.image_cap)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
@@ -316,6 +306,7 @@ class Decomposer:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
+            rendered_prompt=rendered_prompt,
         )
         return FromHarnessToBrainToolDecomposeResp(decomposition=result.decomposition, calls=calls)
 
@@ -510,7 +501,7 @@ class Judger:
         *,
         policy: CallPolicy,
         deadline: Deadline | None = None,
-        prompt_gateway: PromptGateway | None = None,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
         self._prompt_gateway = prompt_gateway
@@ -518,12 +509,12 @@ class Judger:
         self._deadline = deadline
 
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
-        """消费本次完整请求并返回结果；失败保留调用账，输入不被修改。"""
-        prompt = judge_success_prompt.build_prompt(req)
+        """渲染本层执行证据并判定；不允许的中断按解析失败重试，调用账保留版本戳。"""
+        params = JudgeParams.model_validate(req.model_dump(mode="json"))
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "judge_success", params, [])
+        prompt = rendered_prompt.text
         goal = req.goal.goal
-        history = [entry.render() for entry in req.history] + judge_success_prompt.memory_blocks(
-            req
-        )
+        history = self._prompt_gateway.render_history("judge_success", params)
         if not req.history:
             images = cap_images(
                 collect_frames([*req.task_memories, *req.episode_memories]), self._policy.image_cap
@@ -549,6 +540,7 @@ class Judger:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
+            rendered_prompt=rendered_prompt,
         )
         return FromHarnessToBrainToolJudgeResp(
             decision=result.decision, why=result.why, calls=calls

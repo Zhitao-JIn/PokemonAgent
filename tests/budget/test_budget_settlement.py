@@ -16,6 +16,7 @@ from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeR
 from pokemon_agent.harness.run import compile_run_graph
 from pokemon_agent.harness.run.run_state import RunState
 from pokemon_agent.harness.task.task_entry import begin_task
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolDecomposeReq, TraceKind
 from pokemon_agent.schemas.harness.domain import GoalEntry, TaskInput, Termination
 from pokemon_agent.world import TaskObservation, TaskScene
@@ -66,7 +67,10 @@ def test_slow_decomposition_leaves_time_for_mechanical_run_end(tmp_path):
         text_reply('{"tasks":[{"goal":"子任务","success_criteria":"c","max_steps":2}]}')
     )
     fake.run_rt.episode.decomposer = Decomposer(
-        Brain(plan_llm=provider), policy=call_policy(), deadline=deadline
+        Brain(plan_llm=provider),
+        policy=call_policy(),
+        deadline=deadline,
+        prompt_gateway=PromptGateway(None),
     )
     for deps in (fake.run_rt, fake.run_rt.episode, fake.run_rt.episode.task):
         deps.deadline = deadline
@@ -175,7 +179,9 @@ def test_remaining_time_snapshot_only_tightens_a_restored_deadline():
 def test_missing_task_steps_still_use_the_existing_parse_retry():
     raw = '{"tasks":[{"goal":"g","success_criteria":"c"}]}'
     provider = ScriptedLLM(text_reply(raw), text_reply(raw))
-    decomposer = Decomposer(Brain(plan_llm=provider), policy=call_policy())
+    decomposer = Decomposer(
+        Brain(plan_llm=provider), policy=call_policy(), prompt_gateway=PromptGateway(None)
+    )
     req = FromHarnessToBrainToolDecomposeReq(
         goal=Goal(goal="g", criteria="c"),
         observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),

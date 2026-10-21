@@ -4,20 +4,34 @@ from pathlib import Path
 
 import pytest
 
-from pokemon_agent.direct.prompts import summarize, summarize_run, summarize_task
+from pokemon_agent.direct.prompts import (
+    decompose,
+    judge_success,
+    run_plan,
+    summarize,
+    summarize_run,
+    summarize_task,
+)
 from pokemon_agent.prompt import (
+    DecomposeParams,
+    JudgeParams,
     PromptGateway,
+    RunPlanParams,
     SummarizeParams,
     SummarizeRunParams,
     SummarizeTaskParams,
     VerifyParams,
 )
+from pokemon_agent.world import TERRAIN_MEANING
 from scripts.capture_prompt_golden import GoldenCase, parse_request
 
 from .legacy_adapter import UnrestorableRequest, adapt_request
 
 GOLDEN = Path(__file__).parent / "golden"
 CONTRACTS = {
+    "judge_success": JudgeParams,
+    "decompose": DecomposeParams,
+    "run_plan": RunPlanParams,
     "verify": VerifyParams,
     "summarize": SummarizeParams,
     "summarize_task": SummarizeTaskParams,
@@ -26,8 +40,16 @@ CONTRACTS = {
 REQUESTS = [path for path in sorted(GOLDEN.glob("*/*.req.json")) if path.parent.name in CONTRACTS]
 
 
+@pytest.fixture(scope="module")
+def gateway() -> PromptGateway:
+    """同一活动注册表服务独立输入，避免每条 golden 重复启动。"""
+    return PromptGateway(None)
+
+
 @pytest.mark.parametrize("path", REQUESTS, ids=lambda path: str(path.relative_to(GOLDEN)))
-def test_migrated_prompt_and_history_preserve_the_old_contract(path: Path) -> None:
+def test_migrated_prompt_and_history_preserve_the_old_contract(
+    path: Path, gateway: PromptGateway
+) -> None:
     case = GoldenCase.model_validate_json(path.read_bytes())
     try:
         adapted = adapt_request(case.request)
@@ -37,9 +59,18 @@ def test_migrated_prompt_and_history_preserve_the_old_contract(path: Path) -> No
     data = req.model_dump(mode="json")
     if case.task in ("summarize", "summarize_task"):
         data["success"] = req.success
+    if case.task == "decompose":
+        data["terrain_meanings"] = TERRAIN_MEANING
     params = CONTRACTS[case.task].model_validate(data)
-    gateway = PromptGateway(None)
-    if case.task == "verify":
+    if case.task == "judge_success":
+        expected_history = [entry.render() for entry in req.history] + judge_success.memory_blocks(
+            req
+        )
+    elif case.task == "decompose":
+        expected_history = decompose.context_lines(req)
+    elif case.task == "run_plan":
+        expected_history = run_plan.history_blocks(req)
+    elif case.task == "verify":
         expected_history = [entry.render() for entry in req.entries]
     elif case.task == "summarize":
         expected_history = summarize.labeled_blocks(
@@ -56,6 +87,10 @@ def test_migrated_prompt_and_history_preserve_the_old_contract(path: Path) -> No
     expected = path.with_name(path.name.removesuffix(".req.json") + ".prompt.txt").read_bytes()
     assert actual.text.encode("utf-8") == expected
     assert history == expected_history
+    if case.task == "run_plan":
+        assert gateway.render_history(case.task, params, part="goals") == run_plan.goals_lines(
+            req.plan
+        )
     assert actual.task == case.task
     assert actual.version == "v1"
 
@@ -97,3 +132,30 @@ def test_snapshot_rendering_uses_structured_fields_ahead_of_old_text() -> None:
     assert "北 # 南 . 西 G 东 N" in text
     assert "竖排 2 项，光标在第 2 项；上/下 移动光标" in text
     assert "YES x2" in text
+
+
+def test_explicitly_empty_structured_fields_suppress_stale_legacy_projections() -> None:
+    facts = {
+        "scene": "field",
+        "neighbors": "STALE_PROJECTION",
+        "option_layout": "STALE_PROJECTION",
+        "option_details": "STALE_PROJECTION",
+        "my_name": "STALE_PROJECTION",
+        "neighbor_cells": {},
+        "option_grid": [],
+        "option_annotations": [],
+        "battle_status": None,
+    }
+    observation = {"step": 1, "status": "unused", "facts": facts}
+    entry = {
+        "before": observation,
+        "after": observation,
+        "action": "a",
+        "step": 1,
+        "episode_id": "e",
+    }
+    params = VerifyParams.model_validate({"goal": "g", "entries": [entry]})
+
+    text = PromptGateway(None).render("verify", params).text
+
+    assert "STALE_PROJECTION" not in text

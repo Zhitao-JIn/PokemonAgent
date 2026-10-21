@@ -1,6 +1,7 @@
 """The sole rendering gateway for task versions and their registered fragments."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -23,7 +24,7 @@ class PromptGateway:
     """Load once and render only registered tasks; initialization validates every unit."""
 
     def __init__(self, registry_path: Path | None) -> None:
-        """Use the bundled empty registry for None; raise PromptRegistryError on invalid data."""
+        """None 使用随包注册表；配置不完整或版本不匹配时抛 PromptRegistryError。"""
         path = (
             registry_path
             if registry_path is not None
@@ -44,14 +45,18 @@ class PromptGateway:
         assert rendered.hash == version_hash(unit.directory), "Version changed after loading"
         return rendered
 
-    def render_history(self, task: str, params: BaseModel) -> list[str]:
+    def render_history(
+        self, task: str, params: BaseModel, *, part: Literal["history", "goals"] = "history"
+    ) -> list[str]:
         """以同一活动版本产生 BrainPort 的逐条素材，不改变模型 prompt。"""
         assert task in self._units, f"Task not registered: {task}"
         unit = self._units[task]
         assert unit.meta.kind == "task", f"history requires kind=task: {task}"
         assert type(params) is unit.params_type, f"Wrong params type for {task}"
-        assert unit.history is not None, f"History assembler missing: {task}"
-        records = unit.history(params, self._compose)
+        assert part in ("history", "goals"), f"Unknown material part: {part}"
+        renderer = unit.history if part == "history" else unit.goals
+        assert renderer is not None, f"Material assembler missing: {task}.{part}"
+        records = renderer(params, self._compose)
         assert isinstance(records, list) and all(isinstance(record, str) for record in records)
         assert unit.meta.hash == version_hash(unit.directory), f"Version changed: {task}"
         return records
