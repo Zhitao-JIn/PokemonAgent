@@ -41,7 +41,7 @@
 15. `test_next_seq_is_positive_and_strictly_increasing`。
 16. `test_next_seq_hands_out_unique_values_across_threads`：8 线程 × 500。
 17. `test_seq_is_process_wide_not_per_instance`：两个 `LocalTrace` 交替 append，读回事件的 `seq` 严格递增且互不相同。
-18. `test_two_instances_break_equal_end_times_by_process_append_order`：两个实例共用一个根、交替写四笔同刻账 → 读回按 0,1,2,3（由 `tests/direct/trace/test_trace_seq.py` 的 local 半边改写，不经 `TraceTool`）。
+18. `test_two_instances_break_equal_end_times_by_process_append_order`：两个实例共用一个根、交替写八笔同刻账（固定 `store.time.time` 到同一毫秒，使 v7 前缀不替 uuid 排序）→ 读回按 0–7（由 `tests/direct/trace/test_trace_seq.py` 的 local 半边改写，不经 `TraceTool`）。
 
 > 文件名为什么不是 `test_trace_seq.py`：`tests/direct/trace/` 下已有同名文件，而本仓库测试文件名全仓唯一（多数目录无 `__init__.py`）。
 

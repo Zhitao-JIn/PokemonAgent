@@ -54,7 +54,7 @@ CHANGELOG 标题（实现提交逐字复用）：
 
 | # | 临时破坏 | 应变红的用例 |
 |---|---|---|
-| X1 | `store.py` 排序键 `(ended_at, seq)` 改成 `(ended_at, uuid)` | 契约 #12、序号 #18 |
+| X1 | `store.py` 排序键 `(ended_at, seq)` 改成 `(ended_at, uuid)` | 序号 #18 only（该用例固定 `store.time.time` 到同一毫秒、写 8 笔；契约 #12 用真实时钟，相邻 append 相隔 1–2 ms 时 v7 前缀已编码序，故不要求它变红，见 CP1 裁决） |
 | X2 | `_matches` 里的 `all` 改成 `any` | 契约 #6、#7 |
 | X3 | `append` 里 `json.dumps(..., ensure_ascii=False)` 去掉 `ensure_ascii=False`（content 那处） | `local/` #8 |
 | X4 | `new_event_uuid` 版本位 `0x7` 改成 `0x4` | `local/` #2、#29 |
