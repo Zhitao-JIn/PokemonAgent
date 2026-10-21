@@ -1,0 +1,79 @@
+{
+  "source_version": "v1",
+  "source_cases_sha256": "7b06755facc99ac19aaff3abee23702cde55c540bdd35d9f9f25a8855c2b8a95",
+  "retained_count": 93,
+  "retained_semantics": "Unchanged inputs and expectations; kind made explicit.",
+  "excluded": [
+    {
+      "case_id": "shop_buy:buy_ok",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_buy:buy_lowercase_name",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_buy:buy_no_money",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_buy:buy_not_sold",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_buy:buy_qty_zero",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_buy:buy_missing_arg",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_buy:buy_from_list",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_buy:buy_from_quantity_box",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_buy:buy_from_yes_no",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_sell:sell_ok",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_sell:sell_not_in_bag",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_sell:sell_too_many",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    },
+    {
+      "case_id": "shop_sell:sell_from_list",
+      "reason": "Internal composition script, not a public MCP tool; public buy_item/sell_item already covered."
+    }
+  ],
+  "state_sha256": {
+    "knowledge/knowledge_battle_pokemon_switch.state": "7da2bb185f7469b0c9d148fb28f1c01cd897d0458da06842b3d2e0aa482287ee",
+    "knowledge/knowledge_dialogue_advance.state": "2dc28b9d0c9581ecaae53930779dcac5cea514dd865eaa0a54f8dc2ec9a11e47",
+    "knowledge/knowledge_door_transition.state": "e6a77b8d943ef895881c4acf8943920594b51dc010f7f75a7a5ec752b8f916eb",
+    "knowledge/knowledge_movement_obstacle.state": "bb911251e712ad987933352733a1e4cc7549f750a950a7c3b93041da623696ad",
+    "knowledge/knowledge_npc_dialogue.state": "c63bf40afefa98c485bebf143f85ec0b6bee13124a64d80064e752e94e226f29",
+    "knowledge/knowledge_pc_save.state": "399807e6507de8fb57a5366c46bc4d56ef7a83e7b175acc2a04dca542a51d24f",
+    "knowledge/knowledge_pokemon_center_heal.state": "aa0f40b03d1f3574e9f1896e7887c93a94bdcbffb0dbcac2a244700a5aaa32ce",
+    "knowledge/knowledge_shop_confirm_purchase.state": "9665bb4e736ca45c753c8a7ac0af9481c614991ebb17d6dcda4c8388b426d45d",
+    "knowledge/knowledge_shop_interaction.state": "bddd2bdf21a73bc25e6af57f5ed1d4262625afef30532a15b76b81421f927fe3",
+    "knowledge/knowledge_shop_open_buy_menu.state": "4ef2bef0e3d3dd39f8f5ff7dcb1ab8de3d86ba14b150d02eccde851e1d23a8db",
+    "knowledge/knowledge_wild_encounter.state": "bfc58b7ff414ea6ed922ed489f02dec49c12228943307cc865caefc71f2ddf45",
+    "macros/battle_faint_switch.state": "85f77a2312fae9ae0ee7d4d833d0cf3011488da00fe8030a77b199a5c333b932",
+    "macros/battle_low_hp.state": "96f01fa62ec2bab379a06eb96125d5e78cb576fb9f125839634a99b67d860d36",
+    "macros/field_four_moves.state": "22f727c11dd24ae418cc6bb11e4c72bcd45a7a3e2cae65b3259535e909709dde",
+    "macros/field_two_mons.state": "09dc862ea4b105d31fc764e9eb0037ee9088efb69b3c14b8fac1f162fc3cb266",
+    "macros/learn_move.state": "5029c2710d54f3657bee89d0dde2e7a01b7fb810ebf7d3e889df5795799dd3b3",
+    "macros/player_keyboard.state": "005731872c6936a5714cbd97056ebe3f4420f90efdf1a219dd6b5be992a7a61f"
+  }
+}
