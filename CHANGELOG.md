@@ -1,3 +1,13 @@
+## 2026-10-21（598）—— 补摘 choose_data 中仍读采集目录的两个对账用例
+
+**改了什么**：从 tests/test_evals_choose_data.py 再摘掉 test_ram_review_preserves_all_evidence_without_claiming_human_approval 与 test_ram_review_cannot_silently_expand_to_bag。
+
+**为什么这么改**：这两个用例经 evals/dataset/brain_choose/build/goals.jsonl 间接读取 eval_results 下被 git 忽略的采集文件，并断言 258、98 等数据集计数；597 只摘了同类的另一个用例，在只有跟踪文件的 worktree 里这两个仍然失败，起点未全绿。
+
+**取舍**：同 597，只删对账类；该文件其余 12 个用例使用合成输入或临时目录，保留。
+
+**影响面**：仅测试集合；不改 pokemon_agent 与 evals 代码。
+
 ## 2026-10-21（597）—— 移除读真实采集数据的对账测试
 
 **改了什么**：删除 tests/test_evals_choose_history.py（7 个用例）；从 tests/test_evals_choose_data.py 摘掉 test_current_draft_preserves_full_history_review_and_source_index，并去掉随之无用的 ChooseCase 导入。
