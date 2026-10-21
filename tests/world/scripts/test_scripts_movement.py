@@ -8,10 +8,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from _doubles.grid_console import GridConsole
 
-from pokemon_agent.world import PlaceInWorld, ScreenText
-from pokemon_agent.world.interface import BUTTON_FACING
 from pokemon_agent.world.scripts.engine import ScriptRun
 from pokemon_agent.world.scripts.movement import (
     circle_walk,
@@ -21,66 +19,6 @@ from pokemon_agent.world.scripts.movement import (
 )
 
 MAP = 12
-
-
-class GridConsole:
-    """格网世界：`walkable` 可走格、`grass` 草丛格、`battle_at` 走到即遇怪。"""
-
-    def __init__(
-        self,
-        walkable: set[tuple[int, int]],
-        *,
-        start: tuple[int, int],
-        grass: set[tuple[int, int]] | None = None,
-        battle_at: set[tuple[int, int]] | None = None,
-        map_id: int = MAP,
-    ) -> None:
-        self._walkable = walkable | (grass or set())
-        self._grass = grass or set()
-        self._battle_at = battle_at or set()
-        self._battle = False
-        self.x, self.y = start
-        self._facing = "south"
-        self._map_id = map_id
-        self.presses = 0
-        self.memory: Any = _Mem()
-        self.rom = b""
-
-    def press(self, key: str) -> None:
-        self.presses += 1
-        self._facing = BUTTON_FACING[key]
-        dx, dy = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[key]
-        nx, ny = self.x + dx, self.y + dy
-        if (nx, ny) in self._walkable:
-            self.x, self.y = nx, ny
-            if (nx, ny) in self._battle_at:
-                self._battle = True  # 踩进遇怪格：战斗标志立起（map_id 不动）
-
-    def tick(self, frames: int) -> None:  # noqa: ARG002
-        pass
-
-    def read(self) -> ScreenText:
-        return ScreenText(in_battle=self._battle)  # 战斗帧 → scene=BATTLE → 钩子终止
-
-    def map_id(self) -> int:
-        return self._map_id
-
-    def pos(self) -> PlaceInWorld:
-        return PlaceInWorld(map_id=self._map_id, x=self.x, y=self.y)
-
-    def facing(self) -> str:
-        return self._facing
-
-    def object_kind(self, x: int, y: int) -> str | None:  # noqa: ARG002
-        return None
-
-    def is_grass(self, x: int, y: int) -> bool:
-        return (x, y) in self._grass
-
-
-class _Mem:
-    def __getitem__(self, addr: int) -> int:  # noqa: ARG002 —— 默认全 0（非战斗非 MART）
-        return 0
 
 
 def _rect(x0: int, y0: int, x1: int, y1: int) -> set[tuple[int, int]]:
@@ -165,8 +103,7 @@ def test_walk_to_detours_around_wall() -> None:
     res = walk_to(console, 15, 12)
     assert res.ok and res.code == "ok"
     assert (console.x, console.y) == (15, 12)
-    assert (15, 9) not in _rect(console.x, console.y, console.x, console.y) or True
-    assert res.data["steps_used"] > 4, "绕行步数必多于直线"
+    assert res.data["steps_used"] == 6
 
 
 def test_walk_to_fully_walled_blocks() -> None:
@@ -185,13 +122,81 @@ def test_walk_to_adjacent_counter_stops_without_wandering() -> None:
     assert (console.x, console.y) == (3, 3)
 
 
-def test_walk_to_not_converging() -> None:
-    # 南向被长墙挡死、东侧通道又被封 → 来回横移 5 步距离不减
-    wall = {(7, y) for y in range(5, 11)}
-    walkable = _rect(4, 5, 20, 15) - _rect(5, 6, 20, 10) - wall
-    console = GridConsole(walkable, start=(5, 5))
-    res = walk_to(console, 5, 10, max_steps=20)
-    assert not res.ok and res.code == "not_converging"
+def test_walk_to_follows_a_detour_that_initially_moves_away_from_target() -> None:
+    walkable = _rect(10, 5, 10, 13) | _rect(10, 13, 16, 13) | _rect(16, 5, 16, 13)
+    console = GridConsole(walkable, start=(10, 5))
+
+    result = walk_to(console, 16, 5, max_steps=30)
+
+    assert result.ok and result.code == "ok"
+    assert (console.x, console.y) == (16, 5)
+    assert result.data["steps_used"] == 22
+
+
+def test_walk_to_stops_at_an_unreachable_target_without_pressing_keys() -> None:
+    console = GridConsole(_rect(10, 5, 18, 12) - {(16, 8)}, start=(15, 8))
+
+    result = walk_to(console, 16, 8)
+
+    assert result.code == "blocked"
+    assert console.presses == 0
+
+
+def test_walk_to_stops_and_counts_the_press_that_triggers_battle() -> None:
+    console = GridConsole(_rect(10, 5, 20, 15), start=(15, 8), battle_at={(16, 8)})
+
+    result = walk_to(console, 18, 8)
+
+    assert result.code == "battle_started"
+    assert result.data["steps_used"] == 1
+    assert console.presses == 1
+
+
+def test_walk_to_replans_after_a_collision_missing_from_the_terrain() -> None:
+    console = GridConsole(_rect(10, 5, 20, 15), start=(15, 8), hidden_obstacles={(16, 8)})
+
+    result = walk_to(console, 18, 8)
+
+    assert result.ok
+    assert (console.x, console.y) == (18, 8)
+    assert result.data["steps_used"] == console.presses == 6
+
+
+def test_walk_to_explores_rolling_terrain_to_a_target_outside_the_initial_view() -> None:
+    console = GridConsole(_rect(5, 5, 30, 5), start=(5, 5))
+
+    result = walk_to(console, 30, 5)
+
+    assert result.ok
+    assert result.data["steps_used"] == 25
+
+
+def test_walk_to_jumps_a_ledge_in_its_allowed_direction() -> None:
+    console = GridConsole({(5, 5), (5, 7)}, start=(5, 5), ledges={(5, 6): "v"})
+
+    result = walk_to(console, 5, 7)
+
+    assert result.ok
+    assert result.data["steps_used"] == 1
+
+
+def test_walk_to_does_not_jump_a_ledge_in_reverse() -> None:
+    console = GridConsole({(5, 5), (5, 7)}, start=(5, 7), ledges={(5, 6): "v"})
+
+    result = walk_to(console, 5, 5)
+
+    assert result.code == "blocked"
+    assert console.presses == 0
+
+
+def test_walk_to_stops_on_a_map_transition() -> None:
+    console = GridConsole({(5, 5), (6, 5)}, start=(5, 5), warp_at={(6, 5)})
+
+    result = walk_to(console, 6, 5)
+
+    assert result.code == "map_changed"
+    assert result.data["map_id"] == MAP + 1
+    assert result.data["steps_used"] == 1
 
 
 def test_walk_to_budget_exhausted() -> None:

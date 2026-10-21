@@ -15,6 +15,7 @@ from typing import Any
 
 from .engine import Halt, ScriptResult, ScriptRun, WorldConsole
 from .interruptions import field_policy
+from .pathfinding import WalkingMap
 
 DIRECTIONS = ("north", "south", "west", "east")
 """脚本方向参数的合法词表（朝向词，与 `FACING_STEP` 同套）。"""
@@ -29,12 +30,6 @@ STEP_OF: dict[str, tuple[int, int]] = {
     "east": (1, 0),
 }
 """朝向词 → 位移（与 `FACING_STEP` 同值；本地一份避免跨层 import）。"""
-
-CONVERGE_WINDOW = 5
-"""walk_to 每 N 步校验一次距离收敛（§7.2）。"""
-
-REVERSE: dict[str, str] = {"east": "west", "west": "east", "south": "north", "north": "south"}
-"""反方向表：walk_to 上一步成功位移的反方向在下一步降权（防绕墙摆动）。"""
 
 
 def _reject(direction: str) -> ScriptResult:
@@ -108,60 +103,39 @@ def walk_to_adjacent(console: WorldConsole, direction: str) -> ScriptResult:
 
 
 def walk_to(console: WorldConsole, x: int, y: int, max_steps: int = 200) -> ScriptResult:
-    """走到目标格：固定轴序取缩短曼哈顿距离的方向，被挡换另一轴试一次，
-    相邻目标被挡立即 `blocked`，较远目标换轴试探；每 5 步校验距离收敛，
-    不收敛 `not_converging`。不做 BFS
-    （绕行决策交调用方——§7.2）。"""
+    """按 RAM 地形自动寻路到本图目标；逐键更新视野并重规划。
+
+    BFS 可先远离目标绕障，视野外目标通过可达边界探索。墙/NPC/招牌不可作
+    落点；门只允许作为目标，台阶只按箭头跳跃。不可达返回 blocked；每次实际
+    按键（含被挡或触发中断）消耗一步，达到 max_steps 返回 budget_exhausted。
+    战斗、选项和换图沿原 field_policy 中断并保留事件。
+    """
     run = _run(console, budget=max_steps)
-    start = console.pos()
+    terrain = WalkingMap()
     target = (x, y)
-    dist = lambda p: abs(p.x - x) + abs(p.y - y)  # noqa: E731 —— 单点闭包
     steps = 0
-    last_dist = dist(start)
-    last_dir: str | None = None
     try:
-        while steps < max_steps:
+        while True:
             here = console.pos()
-            if (here.x, here.y) == target:
+            point = (here.x, here.y)
+            if point == target:
                 return run.finish(
                     ok=True, code="ok", extra={"final_pos": _pos_dump(console), "steps_used": steps}
                 )
-            # 候选：所有严格缩短距离的方向，固定轴序（先 x 后 y）；
-            # 上一步刚走过来的反方向降到最后（防绕墙时来回摆），除非它是唯一候选。
-            cands = []
-            if x != here.x:
-                cands.append("east" if x > here.x else "west")
-            if y != here.y:
-                cands.append("south" if y > here.y else "north")
-            if last_dir is not None and len(cands) > 1:
-                cands.sort(key=lambda d: d == REVERSE[last_dir])
-            moved = False
-            for d in cands:
-                if run.press(BUTTON_OF[d]):
-                    moved, last_dir = True, d
-                    break
-            if not moved and dist(here) > 1:
-                alternatives = ["east", "west"] if y != here.y else ["south", "north"]
-                for direction in alternatives:
-                    if run.press(BUTTON_OF[direction]):
-                        moved, last_dir = True, direction
-                        break
-            steps += 1
-            if not moved:
+            if run.budget <= 0:
+                break
+            terrain.observe(console.terrain())
+            button = terrain.next_button(point, target)
+            if button is None:
                 return run.finish(
                     ok=False,
                     code="blocked",
                     extra={"final_pos": _pos_dump(console), "steps_used": steps},
                 )
-            if steps % CONVERGE_WINDOW == 0:
-                now = dist(console.pos())
-                if now >= last_dist:
-                    return run.finish(
-                        ok=False,
-                        code="not_converging",
-                        extra={"final_pos": _pos_dump(console), "steps_used": steps},
-                    )
-                last_dist = now
+            run.budget -= 1
+            steps += 1
+            if not run.press(button):
+                terrain.blocked.add((point, button))
     except Halt as halt:
         data = {"final_pos": _pos_dump(console), "steps_used": steps}
         data.update(halt.extra)

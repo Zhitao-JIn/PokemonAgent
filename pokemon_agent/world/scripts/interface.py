@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from ..interface import Memory, PlaceInWorld, ScreenText
+from ..interface import Memory, PlaceInWorld, ScreenText, TerrainMap
 
 if TYPE_CHECKING:
     from .control_flow import ScriptResult
@@ -38,6 +38,14 @@ class WorldConsole(Protocol):
 
     def facing(self) -> str:
         """角色当前朝向（`north/south/west/east`，`FACING_BY_BYTE` 同词；读不出为空串）。"""
+        ...
+
+    def terrain(self) -> TerrainMap:
+        """返回当前稳定地图的可见地形，不推进帧。
+
+        调用方须在地图操作期间读取；地图尚未稳定时不得规划路径。
+        返回网格使用当前玩家全局坐标，NPC 与障碍取自本帧内存。
+        """
         ...
 
     def is_grass(self, x: int, y: int) -> bool:

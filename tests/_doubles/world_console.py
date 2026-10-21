@@ -10,7 +10,25 @@ from __future__ import annotations
 from typing import Any
 
 from pokemon_agent.world import PlaceInWorld, ScreenText
+from pokemon_agent.world.interface import GRID_COLS, GRID_ROWS, PLAYER_CELL, TerrainMap
 from pokemon_agent.world.ram import W_COLLISION_PTR
+
+
+def grid_terrain(position: PlaceInWorld, walkable: set[tuple[int, int]]) -> TerrainMap:
+    """将格网替身的可走集合投影为与真机同形的滚动视野。"""
+    column, row = PLAYER_CELL
+    return TerrainMap(
+        map_id=position.map_id,
+        player_x=position.x,
+        player_y=position.y,
+        cells=[
+            "".join(
+                "." if (position.x + x - column, position.y + y - row) in walkable else "#"
+                for x in range(GRID_COLS)
+            )
+            for y in range(GRID_ROWS)
+        ],
+    )
 
 
 class FakeMemory:
@@ -55,6 +73,9 @@ class FakeConsole:
 
     def facing(self) -> str:
         return ""
+
+    def terrain(self) -> TerrainMap:
+        return grid_terrain(self.pos(), {(self._pos.x, self._pos.y)})
 
     def object_kind(self, x: int, y: int) -> str | None:  # noqa: ARG002
         return None
@@ -104,6 +125,9 @@ class StubConsole:
 
     def facing(self) -> str:
         return self._facing
+
+    def terrain(self) -> TerrainMap:
+        return grid_terrain(self.pos(), self._walkable)
 
     def object_kind(self, x: int, y: int) -> str | None:  # noqa: ARG002
         return None
