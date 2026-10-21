@@ -28,6 +28,7 @@ sys.path.insert(0, str(REPO / "tests"))
 
 from _fake_run import GOAL, build_fake  # noqa: E402
 
+from pokemon_agent.env import load_env_file  # noqa: E402
 from pokemon_agent.harness import RunRuntime  # noqa: E402
 from pokemon_agent.harness.checkpoint import (  # noqa: E402
     CheckpointManifest,
@@ -43,24 +44,7 @@ SETTLE_WAIT_SECONDS = 5.0
 POLL_DEADLINE_SECONDS = 60.0
 POLL_INTERVAL_SECONDS = 2.0
 
-
-def _load_env_file(path: Path) -> None:
-    """读 `.env`（KEY=VALUE 逐行，# 注释），已有环境变量优先、不覆盖。"""
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key, value = key.strip(), value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
-            value = value[1:-1]
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
-_load_env_file(REPO / ".env")
+load_env_file(REPO / ".env")
 
 base_url = os.environ.get("LANGFUSE_BASE_URL", "")
 host = base_url.split("//", 1)[-1].split(":", 1)[0].split("/", 1)[0]
