@@ -1,3 +1,12 @@
+## 2026-10-21（597）—— 移除读真实采集数据的对账测试
+
+**改了什么**：删除 tests/test_evals_choose_history.py（7 个用例）；从 tests/test_evals_choose_data.py 摘掉 test_current_draft_preserves_full_history_review_and_source_index，并去掉随之无用的 ChooseCase 导入。
+
+**为什么这么改**：这些用例读 eval_results 下被 git 忽略的采集数据，断言 258 条、810 条、190 条等数据集计数与标注约束，属于数据验收而非平台功能测试；在只有跟踪文件的干净检出里直接报失败或错误，使默认 pytest 起点不绿。
+
+**取舍**：只删对账类用例，不删评分、转录、租约等平台逻辑测试，也不动读取已跟踪冻结数据的 test_evals_choose_frozen.py 和 tests/evals/；不为它们补合成夹具，数据校验若仍需要，日后以独立入口另做。
+
+**影响面**：仅测试集合；不改 pokemon_agent 与 evals 代码。
 ## 2026-10-21（587）—— prompt 模块 CP0：固化旧 build_prompt 的逐字节对拍基线
 
 **改了什么**：新增离线捕获脚本、集中合成用例与参数化黄金测试。固化 183 个用例（366 个输入/输出文件），共 4,402,796 字节；覆盖 8 个 build_prompt 任务与 retry_prompt。历史有效记录：choose 207、decompose 26、judge 229、summary 家族 99（summarize 19、summarize_task 60、summarize_run 20）；按 case_id 排序后每任务等距取最多 15 条，共 90 条。合成 53 条，其中 plan 9 条，verify / summarize_task / summarize_run 各 5 条；另取主仓库 20 个真实 ActMemory，分别生成 verify 与 summarize_task 各 20 条。

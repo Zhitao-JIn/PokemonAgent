@@ -14,7 +14,6 @@ from evals.dataset.brain_choose.build.from_capture import (
 )
 from evals.dataset.brain_choose.build.prelabel import candidate_keys, walking_keys
 from evals.dataset.brain_choose.build.ram_review import Decision, apply_review
-from evals.dataset.brain_choose.schemas import ChooseCase
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.world.interface.domain.ram_readout import RamReadout
 
@@ -172,35 +171,6 @@ def test_changed_production_digest_blocks_supplement(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="不一致"):
         capture_version_note(tmp_path)
-
-
-def test_current_draft_preserves_full_history_review_and_source_index() -> None:
-    root = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose"
-    cases = [
-        ChooseCase.model_validate_json(line)
-        for line in (root / "v1/cases_draft.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
-    reviews = [
-        json.loads(line)
-        for line in (root / "build/goals.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
-
-    assert len(reviews) == 258
-    assert len(cases) == 189
-    assert {row["scene"] for row in reviews} == {
-        "walk",
-        "dialog",
-        "bag",
-        "battle_menu",
-        "battle",
-        "shop",
-        "shop_items",
-    }
-    assert all(case.source == "collected" and case.label_source == "rule" for case in cases)
-    assert all(case.scene != "bag" for case in cases)
-    assert all(row["status"] == "outside_scope" for row in reviews if row["scene"] == "bag")
-    assert all(case.acceptable and "完整历史重新标注" in case.label_note for case in cases)
-    assert (root / "v1/cases.jsonl").read_bytes() == (root / "v1/cases_draft.jsonl").read_bytes()
 
 
 @pytest.mark.parametrize("verdict,keys", [("local_supported", []), ("goal_conflict", ["a"])])
