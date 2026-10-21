@@ -6,6 +6,7 @@ from evals.common.run import run_evaluation
 
 from .dataset import load
 from .dataset.cases import build_cases
+from .dataset.loader import DEFAULT_VERSION
 from .scorer import ScriptPass, ScriptSide
 
 
@@ -14,7 +15,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="脚本自报与世界真值评测")
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--script", action="append", default=[])
-    parser.add_argument("--version", default="v1")
+    parser.add_argument("--version", default=DEFAULT_VERSION)
     arguments = parser.parse_args()
     cases = load(arguments.version)
     if not set(arguments.case) <= {case.case_id for case in cases}:

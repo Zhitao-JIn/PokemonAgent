@@ -32,7 +32,7 @@ from pokemon_agent.world.interface.domain.takeover_view import (
     [
         ("frames", 1045),
         ("agent_short_goal_run", 20),
-        ("world_script_execute", 106),
+        ("world_script_execute", 93),
         ("memory_store_recall", 1),
         ("brain_judge", 4),
     ],

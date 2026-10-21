@@ -47,13 +47,16 @@ def test_run_state_check_still_requires_success_in_the_final_frame() -> None:
     assert result.evidence == ["u1", "u5"]
 
 
-def test_run_event_check_can_find_a_menu_opened_after_replanning() -> None:
-    events = replanned_stream(frame(4, options=("BUY", "SELL", "QUIT")))
+def test_run_state_check_does_not_accept_a_menu_closed_after_replanning() -> None:
+    events = replanned_stream(
+        frame(4, options=("BUY", "SELL", "QUIT")),
+        frame(5),
+    )
 
     result = mechanical_scorer()(events, sample("shop_menu_opened"))
 
-    assert result.outcome == "pass"
-    assert result.evidence == ["u4"]
+    assert result.outcome == "fail"
+    assert result.evidence == ["u5"]
 
 
 def test_an_unrelated_run_is_not_accepted_as_sample_evidence() -> None:

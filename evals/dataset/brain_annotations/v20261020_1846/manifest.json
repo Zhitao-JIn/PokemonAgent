@@ -10,9 +10,9 @@
       "method": {
         "codex_history_review": 122
       },
-      "sha256": "cb7c8dcd938acc8b258dafe121144a23993a3f5763c9576cc5af3263c4b578b4",
+      "sha256": "1a1d594373a30facfcd780dfbba5fe5a39d2bf0e8ab2303a10b2ad87c9ab5a06",
       "inputs_sha256": "18ba039bad0c9f667f984f5742a8e9a1c8336d36bbded9f9b047c35fa071f0ee",
-      "authoring_sha256": "5f2890c42284b93b6c1e5cb4fdf57bcf209721374f632e89ddd0d288273a95ca"
+      "authoring_sha256": "385dcf23c98cae390a2441c57506bdf07d7f21fe4d96bc2c2a1bb204a680fa83"
     },
     "judge": {
       "cases": 183,
@@ -23,9 +23,9 @@
         "mechanical_preexisting": 70,
         "codex_history_review": 113
       },
-      "sha256": "cbbb352aa0fa9388ebd42ac97daa334a7c98e12fd1897380e21bc4d61e34d319",
+      "sha256": "3f0fb6afe986dd4dc6a707a0e0719881e2b3f66c4f384ca610470171d641be3c",
       "inputs_sha256": "08dc85b258965b287a5bcc03d3440d4852880dd49f1833df837d1973fec95435",
-      "authoring_sha256": "28923057928011952b9b4d2436594a7a80fea13952d0b696f5c9262bf54f1cec"
+      "authoring_sha256": "f0b0b7a7ae00da784750d32ed5facef28bd9e0ef3ba4f7da231d0857c86e55be"
     },
     "plan": {
       "cases": 21,
@@ -35,9 +35,9 @@
       "method": {
         "codex_history_review": 21
       },
-      "sha256": "d775e5b04d4a5c0e17cb156caf1e358fad32b6259fdbed6fbc644f8cd6795446",
+      "sha256": "50f56f425785477830145de32557fd5207e6f008d8402146fb0881e29d9fc196",
       "inputs_sha256": "34f8e0da500085623a9b6bc1ee1241eab3c1d1075e20ddb2b3e2b5e4d77c6905",
-      "authoring_sha256": "a7abc1a1899c0bf282240b3c375c8c0696c3b972c077626046f576b8cd9cee35"
+      "authoring_sha256": "8726b268300991831bc52180c49d14675bd2b21582ecd5d0c40089a6724371c9"
     },
     "decompose": {
       "cases": 41,
@@ -47,9 +47,9 @@
       "method": {
         "codex_history_review": 41
       },
-      "sha256": "f62cdd72df0ab00816d23a2e8e56660974fe0f2640829d97c1507f9d9373d750",
+      "sha256": "3f10007b9645116bffe0dbaaeba8611c7c8d4c7c12c05cfed1f6d2d353de6b47",
       "inputs_sha256": "8d48f37c755580aaca38090c61fc8339897eaa3126462f63acaae30310d979b8",
-      "authoring_sha256": "ff9e2a1171830dfccf70a3776c1f630afd2b30a6e1726bd7c685468be7f9daff"
+      "authoring_sha256": "0b8c8e0a38e83b4e30990a94e5c8f8c3d010737536ab9b319d4c273d63b6ed69"
     }
   },
   "baseline_answers_used": false,

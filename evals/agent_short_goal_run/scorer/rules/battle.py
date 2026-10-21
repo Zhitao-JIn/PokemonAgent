@@ -143,17 +143,25 @@ def bag_opened_in_battle(stream: RunStream, sample: EvalSample) -> CheckVerdict:
 
 @rule("run_attempted")
 def run_attempted(stream: RunStream, sample: EvalSample) -> CheckVerdict:
-    """逃跑有了结果：离开了战斗，或对话框出现 escape 字样（成功或失败都算）。"""
+    """逃跑有了结果：离开战斗，或解码出现明确成功/失败结果。"""
     frames = target_frames(stream, sample)
     usable = with_ram(frames)
     if not usable or not _in_battle(usable[0]):
         return unjudgeable("开局不在战斗")
     return first_match(
         usable,
-        lambda f: not _in_battle(f) or (f.from_decode and "escape" in f.text.dialog_text),
+        lambda f: not _in_battle(f) or _escape_result(f),
         found="逃跑有了结果",
         missing="始终在战斗里，也没出现逃跑结果",
     )
+
+
+def _escape_result(frame: Frame) -> bool:
+    """Got away safel 已唯一确定成功；不接受仅有 escape 的任意叙述。"""
+    if not frame.from_decode:
+        return False
+    text = " ".join(frame.text.dialog_text.casefold().replace("’", "'").split())
+    return "got away safel" in text or "can't escape!" in text
 
 
 __all__ = [

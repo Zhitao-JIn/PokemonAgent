@@ -12,13 +12,13 @@ from pydantic import ValidationError
 
 from evals.world_script_execute.compare import judge_case
 from evals.world_script_execute.dataset import ScriptCase, ScriptExpect, load
-from evals.world_script_execute.dataset.loader import DATASET_DIR
+from evals.world_script_execute.dataset.loader import DATASET_DIR, DEFAULT_VERSION
 from evals.world_script_execute.solver import (
     ScriptReport,
 )
 from pokemon_agent.world.scripts.catalog import SCRIPT_FUNCS
 
-STATES = DATASET_DIR / "v1" / "states"
+STATES = DATASET_DIR / DEFAULT_VERSION / "states"
 
 
 def case_of(expect: ScriptExpect, script: str = "walk_to_adjacent") -> ScriptCase:

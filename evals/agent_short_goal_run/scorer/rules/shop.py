@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.agent_short_goal_run.scorer.registry import rule
 from evals.agent_short_goal_run.scorer.stream import Frame, RunStream
@@ -15,6 +17,21 @@ from evals.agent_short_goal_run.scorer.utils import (
     unjudgeable,
 )
 from evals.agent_short_goal_run.scorer.verdict import CheckVerdict
+from pokemon_agent.world import Facts, TaskScene
+
+
+def _quantity_selected(frame: Frame) -> bool:
+    """商店整屏 RAM 解码中有数量与总价的独立框；它不进入底部 dialog_text。"""
+    ram = frame.content.ram
+    if ram is None or ram.text_source != "decode" or frame.content.scene != TaskScene.SHOP_ITEMS:
+        return False
+    lines = frame.content.facts.screen.splitlines()
+    return any(
+        re.search(r"│×\d{2}\s+¥\d+\s*│", lines[index])
+        and re.search(r"┌─+┐", lines[index - 1])
+        and re.search(r"└─+┘", lines[index + 1])
+        for index in range(1, len(lines) - 1)
+    )
 
 
 def _has_prices(frame: Frame) -> bool:
@@ -31,16 +48,21 @@ def _bag(frame: Frame) -> dict[int, int]:
 
 @rule("shop_menu_opened")
 def shop_menu_opened(stream: RunStream, sample: EvalSample) -> CheckVerdict:
-    """出现过 BUY / SELL / QUIT 三项选单。"""
-    frames = decoded(target_frames(stream, sample))
+    """最终当前帧仍显示 BUY / SELL / QUIT 三项选单。"""
+    frames = target_frames(stream, sample)
     if not frames:
-        return unjudgeable("没有解码来源的帧")
-    return first_match(
-        frames,
-        lambda f: f.text.options == ["BUY", "SELL", "QUIT"],
-        found="出现了 BUY / SELL / QUIT",
-        missing="从没出现 BUY / SELL / QUIT",
-    )
+        return unjudgeable("没有目标帧")
+    current = frames[-1]
+    ram = current.content.ram
+    if ram is None or ram.text_source != "decode":
+        return unjudgeable("最终当前帧没有解码来源")
+    if current.content.facts.overlay == Facts.Overlay.CHOICE and current.text.options == [
+        "BUY",
+        "SELL",
+        "QUIT",
+    ]:
+        return passed("最终当前帧仍显示 BUY / SELL / QUIT", current)
+    return failed("最终当前帧未显示 BUY / SELL / QUIT 选单", current)
 
 
 @rule("shop_list_opened")
@@ -61,7 +83,8 @@ def shop_item_selected(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     return first_match(
         frames,
         lambda f: (
-            f.text.options == ["YES", "NO"]
+            _quantity_selected(f)
+            or f.text.options == ["YES", "NO"]
             or any(s in f.text.dialog_text for s in ("How many", "That will be"))
         ),
         found="进了购买确认",
