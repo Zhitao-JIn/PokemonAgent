@@ -1,7 +1,7 @@
 # spec —— `tests/trace/`：`TracePort` 契约、进程内序号、事件协议与词表、包边界
 
 > 依据：`docs/test/trace-test-intent.md`；源码 `trace/interface/trace_port.py`、`interface/event.py`、`seq.py`、`datastore/{event,trace_event}.py`、`trace/__init__.py`。
-> 检查点：全部属 CP1（573）。
+> 检查点：全部属 CP1（584）。
 > 探针依据：见 `trace-local-spec.md` 开头（P8、P10、P13、P14）。另：`next_seq` 8 线程 × 500 次共 4000 个值全部唯一且为正；`from pokemon_agent.trace import …` 当前会连带导入 `langfuse_trace` / `langfuse_support`，但 `langfuse` SDK 本体只在调用时才导入（沙箱未装 SDK 也能导入包）。
 
 ## 一、决定表
