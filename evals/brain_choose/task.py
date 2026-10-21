@@ -12,7 +12,7 @@ from pokemon_agent.env import load_env_file
 
 @task
 def brain_choose(
-    version: str = "v4", model: str | None = None, grader_model: str | None = None
+    version: str = "v20261020_1846", model: str | None = None, grader_model: str | None = None
 ) -> Task:
     """建议参考只供独立 grader；旧 DeepEval 动作命中诊断保留在模块 CLI。"""
     load_env_file()

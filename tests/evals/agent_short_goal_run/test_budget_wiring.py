@@ -160,7 +160,11 @@ def test_runner_reads_the_same_file_through_build_real(tmp_path, monkeypatch):
     monkeypatch.setattr(assembly, "load_config", checked_load)
     monkeypatch.setattr(assembly, "load_env_file", lambda: None)
     monkeypatch.setattr(assembly, "assert_mcp_server_ready", lambda *args: {})
-    monkeypatch.setattr(assembly.WorldMcpTool, "build", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        assembly.WorldMcpTool,
+        "build",
+        lambda *args, **kwargs: SimpleNamespace(release_lease=lambda: None),
+    )
     monkeypatch.setattr(assembly.MemoryTool, "build", lambda **kwargs: object())
     monkeypatch.setattr(assembly.TraceTool, "build", lambda **kwargs: object())
     monkeypatch.setattr(assembly.BrainTool, "build", lambda **kwargs: tools)

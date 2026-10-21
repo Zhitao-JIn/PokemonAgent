@@ -1,4 +1,4 @@
-"""读取106条统一脚本用例；冻结文件与存档自包含。"""
+"""读取公开 MCP 脚本用例；旧版内部脚本样本仍可显式加载。"""
 
 from pathlib import Path
 
@@ -8,7 +8,7 @@ from evals.dataset.io import contained_file, read_models, version_directory
 from .schemas import ScriptCase
 
 DATASET_DIR = Path(__file__).resolve().parent
-DEFAULT_VERSION = "v1"
+DEFAULT_VERSION = "v20261021_public_mcp"
 
 
 def state_path(state: str, version: str = DEFAULT_VERSION) -> Path:

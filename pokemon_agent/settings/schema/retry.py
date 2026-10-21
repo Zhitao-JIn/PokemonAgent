@@ -12,6 +12,7 @@ class RetryConfig(Section):
     退避起点（逐次翻倍）。
     """
 
+    eval_grader_format_attempts: int = Field(gt=0)
     brain_max_attempts: int = Field(gt=0)
     perception_max_retries: int = Field(gt=0)
     backoff_s: float = Field(ge=0, allow_inf_nan=False)

@@ -7,7 +7,8 @@
     "plan":   {"model": "doubao-seed-2-1-pro-260628", "temperature": 0.0, "max_tokens": 4096, "timeout_s": 45, "thinking": false},
     "json_mode": true
   },
-  "retry": {"brain_max_attempts": 2, "perception_max_retries": 3, "backoff_s": 1.0, "timeout_backoff_s": 2.0},
+  "retry": {
+    "eval_grader_format_attempts": 2, "brain_max_attempts": 2, "perception_max_retries": 3, "backoff_s": 1.0, "timeout_backoff_s": 2.0},
   "request_timeouts_s": {"choose": 25, "judge": 60, "verify": 60, "summarize": 60},
   "action_limits": {"max_segments": 4, "max_times": 8},
   "loop": {

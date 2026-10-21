@@ -35,7 +35,7 @@ def test_v1_load_infers_kind_without_rewriting_frozen_data():
     path = dataset_loader.DATASET_DIR / "v1" / "cases.jsonl"
     before = path.read_bytes()
 
-    cases = load()
+    cases = load("v1")
 
     assert path.read_bytes() == before
     assert all(case.kind == ("success" if case.expect.ok else "failure") for case in cases)

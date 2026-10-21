@@ -8,9 +8,10 @@ from collections.abc import Mapping, Sequence
 from pydantic import BaseModel, Field
 
 from evals.world_script_execute.dataset import ScriptCase, load
-from pokemon_agent.world.scripts.catalog import SCRIPT_FUNCS
 
+from ..loader import DEFAULT_VERSION
 from .failure_codes import FAILURE_CODES
+from .public_tools import public_tools
 
 INTERRUPT_SCRIPTS: frozenset[str] = frozenset(
     {
@@ -91,9 +92,13 @@ def render(rows: Sequence[CoverageRow]) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     """核对指定版本；覆盖不足退出 1，数据错误由 DatasetError 明确报告。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", default="v1")
+    parser.add_argument("--version", default=DEFAULT_VERSION)
     args = parser.parse_args(argv)
-    rows = coverage(load(args.version), list(SCRIPT_FUNCS), FAILURE_CODES)
+    scripts = [tool.name for tool in public_tools()]
+    if args.version == "v1":
+        scripts.extend(["shop_buy", "shop_sell"])
+    failures = {name: codes for name, codes in FAILURE_CODES.items() if name in scripts}
+    rows = coverage(load(args.version), scripts, failures)
     print(render(rows))
     print("\nC2 含人工审核的源码出口（failure_codes.py）；源码变更后须同步审核。")
     return int(any(row.missing for row in rows))

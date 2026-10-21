@@ -1,0 +1,66 @@
+{
+  "checkpoint_id": "eval-knowledge_pokemon_center_enter@main-f84c7fc3",
+  "level": "run",
+  "run_id": "eval-knowledge_pokemon_center_enter",
+  "branch": "main",
+  "episode_id": null,
+  "task_id": null,
+  "run_state": {
+    "execution_order": [],
+    "latest_planning": null,
+    "judge_trigger": "normal",
+    "planning_rounds_used": 0,
+    "run_id": "eval-knowledge_pokemon_center_enter",
+    "branch": "main",
+    "run_goal": {
+      "goal": "依次完成：走进宝可梦中心",
+      "criteria": "scene 是 indoor，且 map_id 和历史里门外那几步不同（已经换过一次图）"
+    },
+    "goals": [
+      {
+        "task": {
+          "task_id": "knowledge_pokemon_center_enter",
+          "goal": "走进宝可梦中心",
+          "success_criteria": "scene 是 indoor，且 map_id 和历史里门外那几步不同（已经换过一次图）",
+          "max_steps": 15,
+          "initial_state_hint": "宝可梦中心门外 3–6 步"
+        },
+        "status": "pending",
+        "attempts": 0,
+        "last_episode_id": null,
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "step": 0,
+    "fail_streak": 0,
+    "total_acts": 0,
+    "actions_used": 0,
+    "remaining_s": null,
+    "observation": null,
+    "plan_ctx": null,
+    "episode_input": null,
+    "pending_episode": null,
+    "episode_outputs": [],
+    "termination": null,
+    "judge_reason": "",
+    "run_memory": null,
+    "last_judge": null
+  },
+  "run_ref": null,
+  "episode_ref": null,
+  "world_file": "world.state",
+  "memory_archive": "archives/knowledge_pokemon_center_enter/memory/snapshots/eval-knowledge_pokemon_center_enter@main-f84c7fc3.zip",
+  "code": {
+    "git_commit": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+    "git_dirty": false,
+    "state_schema_hash": "5d3630f2b479ee78"
+  },
+  "models": {
+    "text": "deepseek-flash",
+    "judge": "deepseek-flash",
+    "verify": "deepseek-flash",
+    "plan": "deepseek-flash"
+  },
+  "created_at": "2026-10-20T17:57:44+0200"
+}

@@ -55,6 +55,13 @@ def collect(case: InputCase) -> list[Evidence]:
         "objects",
         "knowledge",
         "run_index",
+        "run_goal",
+        "remaining_planning_rounds",
+        "execution_order",
+        "episode_memories",
+        "trigger",
+        "planning_round",
+        "allow_interrupt",
     ):
         if request.get(key):
             pointers.append(f"/{key}")

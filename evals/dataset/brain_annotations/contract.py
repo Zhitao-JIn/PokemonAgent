@@ -30,6 +30,7 @@ class Annotation(BaseModel):
     rationale: str = Field(min_length=1)
     evidence: list[Evidence] = Field(min_length=1)
     achieved: bool | None = None
+    expected_decision: Literal["achieved", "continue", "blocked", "interrupted"] | None = None
     acceptable: list[ActionMatcher] = Field(default_factory=list)
     criteria: list[Criterion] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
@@ -37,6 +38,11 @@ class Annotation(BaseModel):
     @model_validator(mode="after")
     def validate_label(self) -> "Annotation":
         """拒绝缺失真值、混用真值与排除项携带答案的外部记录。"""
+        if self.expected_decision is not None:
+            if self.family != "judge" or self.status != "labelled" or self.achieved is None:
+                raise ValueError("expected_decision only belongs to labelled judge truth")
+            if (self.expected_decision == "achieved") != self.achieved:
+                raise ValueError("expected_decision conflicts with achieved")
         if self.status == "labelled" and self.evaluation_mode == "advisory":
             if self.family == "judge" or self.achieved is not None or not self.criteria:
                 raise ValueError("advisory labels need criteria, not a binary truth")

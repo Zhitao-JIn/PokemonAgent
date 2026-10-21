@@ -1,0 +1,66 @@
+{
+  "checkpoint_id": "eval-knowledge_shop_interaction@main-c139c408",
+  "level": "run",
+  "run_id": "eval-knowledge_shop_interaction",
+  "branch": "main",
+  "episode_id": null,
+  "task_id": null,
+  "run_state": {
+    "execution_order": [],
+    "latest_planning": null,
+    "judge_trigger": "normal",
+    "planning_rounds_used": 0,
+    "run_id": "eval-knowledge_shop_interaction",
+    "branch": "main",
+    "run_goal": {
+      "goal": "与商店场景内至少两位不同 NPC 各完成一次对话",
+      "criteria": "起点观测中 kind=人 的地标至少有两位；本 task 历史中，至少两个不同起点 NPC 位置各有一条 object_kind=人、outcome=dialog 的交互记录。"
+    },
+    "goals": [
+      {
+        "task": {
+          "task_id": "knowledge_shop_interaction",
+          "goal": "与商店场景内至少两位不同 NPC 各完成一次对话",
+          "success_criteria": "起点观测中 kind=人 的地标至少有两位；本 task 历史中，至少两个不同起点 NPC 位置各有一条 object_kind=人、outcome=dialog 的交互记录。",
+          "max_steps": 30,
+          "initial_state_hint": "商店地板上（地图42 x=3 y=5），店员在柜台里，店里另有两个顾客"
+        },
+        "status": "pending",
+        "attempts": 0,
+        "last_episode_id": null,
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "step": 0,
+    "fail_streak": 0,
+    "total_acts": 0,
+    "actions_used": 0,
+    "remaining_s": null,
+    "observation": null,
+    "plan_ctx": null,
+    "episode_input": null,
+    "pending_episode": null,
+    "episode_outputs": [],
+    "termination": null,
+    "judge_reason": "",
+    "run_memory": null,
+    "last_judge": null
+  },
+  "run_ref": null,
+  "episode_ref": null,
+  "world_file": "world.state",
+  "memory_archive": "archives/knowledge_shop_interaction/memory/snapshots/eval-knowledge_shop_interaction@main-c139c408.zip",
+  "code": {
+    "git_commit": "747078ce2f77dbcfcf5305e5790e03a63eff82a6",
+    "git_dirty": true,
+    "state_schema_hash": "5d3630f2b479ee78"
+  },
+  "models": {
+    "text": "deepseek-flash",
+    "judge": "deepseek-flash",
+    "verify": "deepseek-flash",
+    "plan": "deepseek-flash"
+  },
+  "created_at": "2026-10-21T15:28:26+0200"
+}

@@ -1,0 +1,39 @@
+{
+  "criteria": [
+    {
+      "name": "factual_fidelity",
+      "instruction": "关键状态、动作、结果、先后顺序忠于实际生产输入；不编造经历，不把上游材料错误自动算成本次新增幻觉。",
+      "evidence": [],
+      "mandatory": true
+    },
+    {
+      "name": "key_information",
+      "instruction": "保留目标、结果、关键转折和影响后续决策的失败信息；可合理压缩，不要求逐步复述。",
+      "evidence": [],
+      "mandatory": true
+    },
+    {
+      "name": "causal_reasoning",
+      "instruction": "区分观察、归因和推测；不把一次失败泛化为不可能，不把时间先后当作因果；证据不足时说明限制。",
+      "evidence": [],
+      "mandatory": true
+    },
+    {
+      "name": "reusability",
+      "instruction": "经验或建议具体、有适用条件、有输入依据；允许带条件的新建议，不能伪装为已验证事实。原料贫乏时不强迫编造策略。",
+      "evidence": [],
+      "mandatory": true
+    },
+    {
+      "name": "consistency_brevity",
+      "instruction": "summary、reason、经验列表、markdown相互一致，表达精简且不堆流水账；自评quality_score不直接决定eval分数，只核自评理由是否自洽。",
+      "evidence": [],
+      "mandatory": true
+    }
+  ],
+  "layer_guidance": {
+    "task": "总结本次逐键记录及正负标注，保留起止状态、关键动作、结果和执行限制；不读取其他task或后续记录。",
+    "episode": "总结本局可见task记忆及标注；不要求重建未展示的逐键事实，区分各task结果与整局结果，提炼跨task的有效路径和失败前置。",
+    "run": "总结可见各局经历，成败服从目标表最终定案，保留note和overturned含义；不从机器旧总结自行改写最终结果。"
+  }
+}

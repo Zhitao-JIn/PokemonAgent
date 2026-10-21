@@ -1,4 +1,4 @@
-"""八个公开评测任务的类型与入口；不导入任务实现。"""
+"""九个公开评测任务的类型与入口；不导入任务实现。"""
 
 from typing import Literal
 
@@ -20,5 +20,6 @@ TASKS: dict[str, TaskEntry] = {
     "memory_store_recall": TaskEntry(kind="deepeval", entry="evals.memory_store_recall"),
     "world_script_execute": TaskEntry(kind="deepeval", entry="evals.world_script_execute"),
     "brain_judge": TaskEntry(kind="inspect", entry="evals/brain_judge/task.py"),
+    "brain_summary": TaskEntry(kind="inspect", entry="evals/brain_summary/task.py"),
     "agent_short_goal_run": TaskEntry(kind="inspect", entry="evals/agent_short_goal_run/task.py"),
 }

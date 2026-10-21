@@ -1,0 +1,66 @@
+{
+  "checkpoint_id": "eval-knowledge_npc_dialogue@main-245ce904",
+  "level": "run",
+  "run_id": "eval-knowledge_npc_dialogue",
+  "branch": "main",
+  "episode_id": null,
+  "task_id": null,
+  "run_state": {
+    "execution_order": [],
+    "latest_planning": null,
+    "judge_trigger": "normal",
+    "planning_rounds_used": 0,
+    "run_id": "eval-knowledge_npc_dialogue",
+    "branch": "main",
+    "run_goal": {
+      "goal": "依次完成：走到 NPC 面前按 a，让他说话",
+      "criteria": "overlay 是 dialog，且 dialog_text 非空"
+    },
+    "goals": [
+      {
+        "task": {
+          "task_id": "knowledge_npc_dialogue",
+          "goal": "走到 NPC 面前按 a，让他说话",
+          "success_criteria": "overlay 是 dialog，且 dialog_text 非空",
+          "max_steps": 15,
+          "initial_state_hint": "NPC 正前方一格，scene=field 或 indoor overlay=none"
+        },
+        "status": "pending",
+        "attempts": 0,
+        "last_episode_id": null,
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "step": 0,
+    "fail_streak": 0,
+    "total_acts": 0,
+    "actions_used": 0,
+    "remaining_s": null,
+    "observation": null,
+    "plan_ctx": null,
+    "episode_input": null,
+    "pending_episode": null,
+    "episode_outputs": [],
+    "termination": null,
+    "judge_reason": "",
+    "run_memory": null,
+    "last_judge": null
+  },
+  "run_ref": null,
+  "episode_ref": null,
+  "world_file": "world.state",
+  "memory_archive": "archives/knowledge_npc_dialogue/memory/snapshots/eval-knowledge_npc_dialogue@main-245ce904.zip",
+  "code": {
+    "git_commit": "3ca4ecd6ad9faad0687a2ee41c2fa2976285c0e6",
+    "git_dirty": false,
+    "state_schema_hash": "5d3630f2b479ee78"
+  },
+  "models": {
+    "text": "deepseek-flash",
+    "judge": "deepseek-flash",
+    "verify": "deepseek-flash",
+    "plan": "deepseek-flash"
+  },
+  "created_at": "2026-10-20T16:30:43+0200"
+}

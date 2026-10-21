@@ -1,0 +1,349 @@
+{
+  "$defs": {
+    "EntryStatus": {
+      "description": "一行（目标或 task）在本层内的状态。",
+      "enum": [
+        "blocked",
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "abandoned"
+      ],
+      "title": "EntryStatus",
+      "type": "string"
+    },
+    "EpisodeMemory": {
+      "description": "一条跨局摘要记忆——**本局 TaskMemory 的派生视图**，不是第二份事实。\n\n## 它是派的，不是记的\n\n**正文**（`reason` 与 `summary` 起）由 LLM 从本局全部 TaskMemory 蒸馏而来；\n每条 TaskMemory 都带 verify 的正/负标注一起送进去（负样本是 `failure_points`\n的主要来源）。蒸馏点在 `harness/episode/episode_done/summarize_episode.py`。\n\n**来源章**（`episode_id` / `run_id` / `goal` / `success` / `steps` / `acts_used` /\n`termination`）是 harness 从 episode state 盖的，与正文无关。装配点\n`direct/brain_tool.py::Summarizer.summarize()` 把 `EpisodeSummary` 与这些字段拼在一起。\n\n## 三条推论（改这里之前先读）\n\n1. **可重建**——同一批 TaskMemory + 同样的章，重跑蒸馏得**等价**的一条\n   （LLM 非确定，不逐字节相同）。所以\"换 prompt / 换模型重蒸\"是合法操作，\n   不是危险操作。\n2. **可丢弃**——`rm memory/episode_memory/*.md` 只损失算力，不损失事实。\n   这是它作为派生物的定义性质，也是\"什么时候可以放心重来\"的判据。\n3. **成败只认章，不认正文**——`success` 是 harness 的机械判定；LLM 被**告知**了\n   本局结果，所以它可能把\"成功\"写进叙述里。**读的人必须以字段为准**，不许从\n   `summary` 正文反推成败（`render()` 把章摆在第一行，就是这个意思）。\n\n## \"一局一条\"是硬约束\n\n每一局跑完都恰好留一条本类记录——**包括正文产不出来的那些**（整局异常、\n收尾时没有 TaskMemory 可蒸）：那时落一条**只有来源章、正文全空**的记录，\n写入点是 `harness/episode/episode_done/leave_chapter.py::store_empty_chapter()`\n（episode 收尾没有 TaskMemory 时由 `leave_chapter` 单元调、整局异常时由接住它的\nrun `act` 调）。所以\"这局我试过没有\"永远能从记忆里读出来，`plan` 不会对同一个\n目标反复做同一件蠢事。\n\n**空不空看正文自己**（0914 99）：早先另设过一枚 `chapter_only` 标记，\n已连字段一起删掉——\"这条记录有没有正文\"从 `markdown` / `summary` 为空\n就读得出来，多一枚标记就是同一件事的第二个真相来源。",
+      "properties": {
+        "episode_id": {
+          "description": "蒸馏自哪一局",
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "所属 run 的标识符",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "run_goal": {
+          "default": "",
+          "description": "所属 run 的目标文本",
+          "title": "Run Goal",
+          "type": "string"
+        },
+        "goal_id": {
+          "default": "",
+          "description": "所属 L1 goal 的身份；与 run_id 共同限定背景范围",
+          "title": "Goal Id",
+          "type": "string"
+        },
+        "goal": {
+          "description": "那一局的任务目标",
+          "title": "Goal",
+          "type": "string"
+        },
+        "steps": {
+          "description": "那一局派了几个 task（本层计数单位）",
+          "minimum": 0,
+          "title": "Steps",
+          "type": "integer"
+        },
+        "acts_used": {
+          "default": 0,
+          "description": "那一局累计按了几个键（统计用）",
+          "minimum": 0,
+          "title": "Acts Used",
+          "type": "integer"
+        },
+        "termination": {
+          "default": "",
+          "description": "机械终止类别：goal_done / world_ended / stalled / budget_exhausted / error",
+          "title": "Termination",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "description": "episode_done 里 LLM 写的结论说明；空章版为异常摘要",
+          "title": "Reason",
+          "type": "string"
+        },
+        "summary": {
+          "description": "Episode的简明总结",
+          "title": "Summary",
+          "type": "string"
+        },
+        "reusable_patterns": {
+          "description": "可重复利用的游戏策略和经验模式",
+          "items": {
+            "type": "string"
+          },
+          "title": "Reusable Patterns",
+          "type": "array"
+        },
+        "critical_decisions": {
+          "description": "关键决策点及其效果",
+          "items": {
+            "type": "string"
+          },
+          "title": "Critical Decisions",
+          "type": "array"
+        },
+        "failure_points": {
+          "description": "可能导致失败的环节及规避方法",
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Points",
+          "type": "array"
+        },
+        "quality_score": {
+          "description": "记忆质量评分(0.0-1.0)",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Quality Score",
+          "type": "number"
+        },
+        "quality_rationale": {
+          "description": "质量评分的理由",
+          "title": "Quality Rationale",
+          "type": "string"
+        },
+        "applicable_scenes": {
+          "description": "此记忆适用的游戏场景",
+          "items": {
+            "type": "string"
+          },
+          "title": "Applicable Scenes",
+          "type": "array"
+        },
+        "tags": {
+          "description": "记忆标签（导航/战斗/物品收集等）",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "first_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "本局第一个 task 的首帧（按执行序，PNG data URI；None = 缺帧或空章）",
+          "title": "First Frame"
+        },
+        "last_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "本局最后一个 task 的末帧（按执行序，PNG data URI；None = 缺帧或空章）",
+          "title": "Last Frame"
+        },
+        "markdown": {
+          "default": "",
+          "description": "LLM 生成的完整记忆正文（.md 主内容）",
+          "title": "Markdown",
+          "type": "string"
+        }
+      },
+      "required": [
+        "episode_id",
+        "run_id",
+        "goal",
+        "steps",
+        "summary",
+        "quality_score",
+        "quality_rationale"
+      ],
+      "title": "EpisodeMemory",
+      "type": "object"
+    },
+    "GoalEntry": {
+      "description": "目标表的一行：一个任务 + 它在 run 内的状态与追踪信息。\n\n字段注释里的\"权威\"读法见 `docs/PLAN_console_reviewer.md` §4.3 那张权限表。",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task",
+          "description": "任务本体（brain 的领域模型，一字不改）"
+        },
+        "status": {
+          "$ref": "#/$defs/EntryStatus",
+          "default": "pending",
+          "description": "编排状态。**至多一条 `RUNNING`**（dispatch 盖、review_and_judge 定案）"
+        },
+        "attempts": {
+          "default": 0,
+          "description": "已派发次数（原来是平行列表，现在贴着目标走）。它不再被任何上限截断——'要不要再试'是 plan 读表后的决策，不是常量",
+          "title": "Attempts",
+          "type": "integer"
+        },
+        "last_episode_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "最近一次派发 → 回查 step_memory / trace 的**指针**。`COMPLETED`/`FAILED` 的条目这一列必须非空——没有来源的状态等于不可追溯的断言",
+          "title": "Last Episode Id"
+        },
+        "note": {
+          "default": "",
+          "description": "放弃/重开的理由（人或模型给的）。弃掉的条目留表时，这一列就是**教训**",
+          "title": "Note",
+          "type": "string"
+        },
+        "overturned": {
+          "default": false,
+          "description": "这条定案是人审推翻来的（与记忆里的机器判定相反）；理由在 `note`",
+          "title": "Overturned",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "GoalEntry",
+      "type": "object"
+    },
+    "Task": {
+      "description": "一个有明确成败判据的任务。**episode 的边界就是任务的边界。**\n\n为什么不用\"通关\"做 episode：通关是几千步、只产出一个 0/1 结果，\n机制三的蒙特卡洛回填折扣一路乘下去，回填到前期步骤上几乎是噪声；\n评测也只能报\"通关了没有\"这一个二值数字。任务级则能报成功率、失败模式分布、\n有记忆 vs 无记忆的对比。\n\n但任务有**下界**：必须长到单靠上下文装不下、必须跨任务复用经验才做得好，\n否则记忆架构就失去了存在理由。\"打赢二号道馆\"合适，\"和 NPC 说句话\"不合适。",
+      "properties": {
+        "task_id": {
+          "description": "任务标识，同一任务的多次尝试共用它",
+          "title": "Task Id",
+          "type": "string"
+        },
+        "goal": {
+          "description": "给 LLM 读的目标描述，会进 prompt",
+          "title": "Goal",
+          "type": "string"
+        },
+        "success_criteria": {
+          "description": "成败判据的人类可读描述；判定由 world 实现",
+          "title": "Success Criteria",
+          "type": "string"
+        },
+        "max_steps": {
+          "description": "本层预算，> 0。**单位随所在层**：作 episode 目标时是 task 数，作 task 时是键数",
+          "title": "Max Steps",
+          "type": "integer"
+        },
+        "initial_state_hint": {
+          "default": "",
+          "description": "实验采集起点要求；不参与模型 prompt，仅用于选择和核对 state 文件",
+          "title": "Initial State Hint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "goal",
+        "success_criteria",
+        "max_steps"
+      ],
+      "title": "Task",
+      "type": "object"
+    },
+    "Termination": {
+      "description": "一层循环的终止类别。三层各自独立计数：run 数局、episode 数 task、task 数键。",
+      "enum": [
+        "blocked",
+        "planning_exhausted",
+        "goal_done",
+        "world_ended",
+        "stalled",
+        "budget_exhausted",
+        "time_exhausted",
+        "actions_exhausted",
+        "tasks_exhausted",
+        "decompositions_exhausted",
+        "interrupted",
+        "error"
+      ],
+      "title": "Termination",
+      "type": "string"
+    }
+  },
+  "description": "正常收尾的 run 蒸馏请求；来源章由 harness 给定。",
+  "properties": {
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "run_goal": {
+      "title": "Run Goal",
+      "type": "string"
+    },
+    "goals": {
+      "items": {
+        "$ref": "#/$defs/GoalEntry"
+      },
+      "title": "Goals",
+      "type": "array"
+    },
+    "episode_memories": {
+      "items": {
+        "$ref": "#/$defs/EpisodeMemory"
+      },
+      "minItems": 1,
+      "title": "Episode Memories",
+      "type": "array"
+    },
+    "termination": {
+      "$ref": "#/$defs/Termination"
+    },
+    "judge_reason": {
+      "title": "Judge Reason",
+      "type": "string"
+    },
+    "episodes": {
+      "minimum": 0,
+      "title": "Episodes",
+      "type": "integer"
+    },
+    "succeeded": {
+      "minimum": 0,
+      "title": "Succeeded",
+      "type": "integer"
+    },
+    "acts_used": {
+      "minimum": 0,
+      "title": "Acts Used",
+      "type": "integer"
+    },
+    "max_episodes": {
+      "minimum": 1,
+      "title": "Max Episodes",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "run_goal",
+    "goals",
+    "episode_memories",
+    "termination",
+    "judge_reason",
+    "episodes",
+    "succeeded",
+    "acts_used",
+    "max_episodes"
+  ],
+  "title": "FromHarnessToBrainToolSummarizeRunReq",
+  "type": "object"
+}
