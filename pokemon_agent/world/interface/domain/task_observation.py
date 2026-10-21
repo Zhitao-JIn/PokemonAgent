@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
-from pydantic import Field, computed_field
+from typing import Any
+
+from pydantic import Field, SerializerFunctionWrapHandler, computed_field, model_serializer
 
 from .observation import Observation
 from .takeover_view import TakeoverView
@@ -46,6 +48,39 @@ class TaskObservation(Observation):
         if lines and len(named) == 1 and lines[0] == named[0]:
             return named[0]
         return None
+
+    @model_serializer(mode="wrap")
+    def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """历史观测没有结构化增量时保留原信封。"""
+        data = handler(self)
+        if not self.facts.model_fields_set.intersection(
+            (
+                "neighbor_cells",
+                "cells",
+                "option_grid",
+                "cursor_cell",
+                "option_annotations",
+                "battle_status",
+                "terrain_visible",
+            )
+        ):
+            data.pop("observation_flags", None)
+        return data
+
+    @computed_field
+    @property
+    def observation_flags(self) -> list[str]:
+        """同帧的结构化限制标志，不包含给模型看的措辞。"""
+        flags: list[str] = []
+        if not (self.facts.screen or self.facts.dialog_text or self.facts.options):
+            flags.append("no_text")
+        if self.menu_decode_complete is False:
+            flags.append("incomplete_menu")
+        if self.covered_by_script and self.takeover is None:
+            flags.append("missing_takeover")
+        if self.scene is TaskScene.TRANSITION:
+            flags.append("transition")
+        return flags
 
     @computed_field
     @property

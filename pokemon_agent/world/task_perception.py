@@ -43,6 +43,7 @@ def observe_task(
     overlay = overlay_of(text)
     mem = memory
     scene = classify_scene(text, mem)
+    battle = read_battle_status(mem)
     facts = Facts(
         scene=Facts.Scene.BATTLE if text.in_battle else None,
         overlay=overlay,
@@ -56,7 +57,14 @@ def observe_task(
         walk_map=terrain.render() if terrain is not None and not text.screen else "",
         map_id=terrain.map_id if terrain is not None else None,
         screen=text.screen,
-        **_battle_fields(mem),
+        neighbor_cells=terrain.neighbors() if terrain is not None else {},
+        cells=list(terrain.cells) if terrain is not None else [],
+        option_grid=text.option_grid,
+        cursor_cell=text.cursor_cell,
+        option_annotations=text.option_details,
+        battle_status=battle,
+        terrain_visible=terrain is not None and not text.screen,
+        **(battle.facts_fields() if battle is not None else {}),
         **layout_field(text),
     )
     return TaskPerceived(

@@ -143,3 +143,49 @@ def test_snapshot_render_used_by_judge_drops_only_walk_map() -> None:
     assert "对话" in text and "你好，旅行者！" in text, "对话框文本必须留着"
     assert "my_hp" in text, "动态字段必须留着"
     assert "地标" in text and "人 x=15 y=13" in text, "地标是坐标推理的依据"
+
+
+def test_structured_facts_survive_snapshot_serialization_without_entering_old_text() -> None:
+    real = _real(RealFacts.Scene.FIELD, RealFacts.Overlay.NONE, {})
+    real.facts.neighbor_cells = {"up": "G", "down": ".", "left": "#", "right": "N"}
+    real.facts.cells = ["##########"] * 9
+    real.facts.option_grid = [["YES"], ["NO"]]
+    real.facts.cursor_cell = (1, 0)
+    real.facts.option_annotations = ["", "×2"]
+    real.facts.terrain_visible = True
+    old_text = real.render()
+
+    snapshot = _to_snapshot(real)
+
+    assert snapshot.facts.neighbor_cells == real.facts.neighbor_cells
+    assert snapshot.facts.cells == real.facts.cells
+    assert snapshot.facts.option_grid == real.facts.option_grid
+    assert snapshot.facts.cursor_cell == real.facts.cursor_cell
+    assert snapshot.facts.option_annotations == real.facts.option_annotations
+    assert snapshot.facts.terrain_visible
+    assert snapshot.render() == old_text
+
+
+def test_legacy_facts_dump_does_not_invent_incremental_fields() -> None:
+    # Arrange
+    fields = {"scene": "field", "overlay": "none", "where": "old position"}
+    real = RealFacts.model_validate(fields)
+    snapshot = SnapFacts.model_validate(fields)
+
+    # Act
+    real_data = real.model_dump(mode="json")
+    snapshot_data = snapshot.model_dump(mode="json")
+
+    # Assert
+    for name in (
+        "neighbor_cells",
+        "cells",
+        "option_grid",
+        "cursor_cell",
+        "option_annotations",
+        "battle_status",
+        "terrain_visible",
+    ):
+        assert name not in real_data
+        assert name not in snapshot_data
+    assert real_data["where"] == snapshot_data["where"] == "old position"

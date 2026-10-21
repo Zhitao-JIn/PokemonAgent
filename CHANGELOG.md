@@ -1,3 +1,13 @@
+## 2026-10-21（589）—— prompt 模块 CP2：结构化观测增量与历史往返
+
+**改了什么**：Facts 与 ActMemory 独立快照新增四邻、地形格、选项布局、选项附注、战斗状态和地形可见性；TaskObservation 新增结构化 observation_flags。observe_task 同帧填写新旧字段，新增实际 MCP 序列化、双副本与历史适配往返测试和 MCP 字段说明。
+
+**为什么这么改**：为后续 prompt 迁移提供原始字段，同时保留旧文本、旧 render 与冻结请求的序列化形状。旧输入未显式提供的增量字段不增写；新生产者显式填写新增字段。测试适配器经既有位置、地形、选项与战斗渲染器逐字段证明往返，不补造被遮挡地形或历史语义。
+
+**取舍**：按用户后续“可扩范围或自行变通、持续完成”的授权，额外更新 tests/budget/test_budget_settlement.py 的状态 schema 指纹断言，由 5d3630f2b479ee78 改为实算的 8532482fa5d9e4e6；不绕过旧 checkpoint 的 schema 校验。初次自验收的 25 项失败中，冻结请求形状问题通过条件序列化修复，不改 evals 或数据。适配成功 158/183（86.34%），25 条（13.66%）因 where 不是现行位置文本跳过；保留已有 golden 全部原字节。
+
+**影响面**：起点 2237 passed；完成后全量 2243 passed、3 deselected、59 warnings（122.56s），ruff check 通过，ruff format --check 为 906 files already formatted，边界 A/B/C 全通过。198 项定向回归通过。破坏地形可见性触发同帧测试失败，破坏适配坐标触发往返测试失败，均原字节还原。不调用模型，不修改真实 memory、evals 或旧 prompt 包。
+
 ## 2026-10-21（588）—— prompt 模块 CP1：网关、注册表、版本盖章与边界守卫骨架
 
 **改了什么**：新增独立 prompt 模块，包根仅导出 PromptGateway、RenderedPrompt、PromptRegistryError，默认注册表登记零个真实任务。注册表加载版本目录、任务级参数契约与拼装函数，启动时校验元数据身份、源文件 hash、契约和 compose 引用；提供 Compose / Assemble Protocol。新增 PromptSection，唯一字段 registry: str | None，默认 null；BrainTool.build 新增 prompt_registry，按仓库根解析相对路径并把同一网关注入九个能力对象，build_real 的三层装配统一传入 app.prompt.registry。新增 render_and_stamp，为已收编的全部 ModelCall.payload 追加 prompt_task / prompt_version / prompt_hash；新增 A/B/C 边界守卫与 35 项测试，补充包数据声明。

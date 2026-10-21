@@ -24,7 +24,9 @@ import unicodedata
 from enum import StrEnum
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
+
+from .battle_status import BattleStatus
 
 # **本模块在包内零依赖**：顶层只有标准库与 pydantic，`domain/__init__.py` 这个
 # 聚合出口（被 `world/interface/__init__.py` 立即加载）因此可以按任意顺序装配它
@@ -155,6 +157,33 @@ class Facts(BaseModel):
         description="整屏文字原样（内存里的屏幕字符缓冲逐行渲染，`screen_text.render_screen`）。"
         "与上面切好的对话 / 选项 / 光标互相校验：字段是尽力解析，这里是原样",
     )
+
+    neighbor_cells: dict[str, str] = Field(
+        default_factory=dict, description="四个方向对应的地形字符"
+    )
+    cells: list[str] = Field(default_factory=list, description="原始地形格；未取得地形时为空")
+    option_grid: list[list[str]] = Field(default_factory=list, description="选项的行列排布")
+    cursor_cell: tuple[int, int] | None = Field(default=None, description="光标所在行列，零起点")
+    option_annotations: list[str] = Field(default_factory=list, description="逐选项附注原文")
+    battle_status: BattleStatus | None = Field(default=None, description="战斗双方原始状态框")
+    terrain_visible: bool = Field(default=False, description="旧投影是否显示地形图")
+
+    @model_serializer(mode="wrap")
+    def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """旧快照未提供的增量字段不进入其序列化结果。"""
+        data = handler(self)
+        for name in (
+            "neighbor_cells",
+            "cells",
+            "option_grid",
+            "cursor_cell",
+            "option_annotations",
+            "battle_status",
+            "terrain_visible",
+        ):
+            if name not in self.model_fields_set:
+                data.pop(name, None)
+        return data
 
     @property
     def scene_value(self) -> str:

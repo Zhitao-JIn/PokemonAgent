@@ -198,3 +198,23 @@ def test_execute_rejects_a_script_outside_the_space(
     script_names = [entry.name for entry in space.entries if entry.kind == "script"]
     assert str(remote.value) == f"execute() got script {name!r} outside {script_names}"
     assert client.calls == []
+
+
+def test_structured_observation_fields_cross_the_real_mcp_serialization(
+    tool: WorldMcpTool, world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observation = _observation(TaskScene.WALK, Facts.Overlay.NONE)
+    observation.facts = Facts(
+        neighbor_cells={"up": "G"},
+        cells=["##########"] * 9,
+        option_grid=[["YES", "NO"]],
+        cursor_cell=(0, 1),
+        option_annotations=["", "×2"],
+        terrain_visible=True,
+    )
+    monkeypatch.setattr(world, "_observation", lambda: observation)
+
+    response = tool.perceive_task()
+
+    assert response.observation.facts.model_dump() == observation.facts.model_dump()
+    assert response.observation.observation_flags == observation.observation_flags

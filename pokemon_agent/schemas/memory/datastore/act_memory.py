@@ -5,7 +5,7 @@ from __future__ import annotations
 import unicodedata
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
 SNAPSHOT_BLIND: frozenset[str] = frozenset({"known_objects", "knowledge"})
 """**不进记忆的字段。** 记忆里每一项都必须跨步骤成立，这两项都不成立：
@@ -96,6 +96,19 @@ class ActMemory(BaseModel):
                 def render(self) -> str:
                     return f"{self.kind} x={self.x} y={self.y}"
 
+            class BattleStatus(BaseModel):
+                """战斗原始字段的独立快照，与 world 类型不互相引用。"""
+
+                class Combatant(BaseModel):
+                    name: str
+                    level: int
+                    hp: int
+                    max_hp: int
+                    status: str
+
+                mine: Combatant
+                foe: Combatant
+
             scene: str | None = None
             overlay: str | None = None
             where: str = ""
@@ -109,6 +122,43 @@ class ActMemory(BaseModel):
             walk_map: str = ""
             map_id: int | None = None
             screen: str = ""
+
+            neighbor_cells: dict[str, str] = Field(
+                default_factory=dict, description="四个方向对应的地形字符"
+            )
+            cells: list[str] = Field(
+                default_factory=list, description="原始地形格；未取得地形时为空"
+            )
+            option_grid: list[list[str]] = Field(default_factory=list, description="选项的行列排布")
+            cursor_cell: tuple[int, int] | None = Field(
+                default=None, description="光标所在行列，零起点"
+            )
+            option_annotations: list[str] = Field(
+                default_factory=list, description="逐选项附注原文"
+            )
+            battle_status: BattleStatus | None = Field(
+                default=None, description="战斗双方原始状态框"
+            )
+            terrain_visible: bool = Field(default=False, description="旧投影是否显示地形图")
+
+            @model_serializer(mode="wrap")
+            def serialize_incremental(
+                self, handler: SerializerFunctionWrapHandler
+            ) -> dict[str, Any]:
+                """旧快照未提供的增量字段不进入其序列化结果。"""
+                data = handler(self)
+                for name in (
+                    "neighbor_cells",
+                    "cells",
+                    "option_grid",
+                    "cursor_cell",
+                    "option_annotations",
+                    "battle_status",
+                    "terrain_visible",
+                ):
+                    if name not in self.model_fields_set:
+                        data.pop(name, None)
+                return data
 
             @property
             def scene_value(self) -> str:
@@ -205,6 +255,16 @@ class ActMemory(BaseModel):
             default=True,
             description="仅为读取旧记忆保留的视觉感知标记，不影响当前渲染。",
         )
+
+        observation_flags: list[str] = Field(default_factory=list)
+
+        @model_serializer(mode="wrap")
+        def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+            """保留旧记忆快照的序列化形状。"""
+            data = handler(self)
+            if "observation_flags" not in self.model_fields_set:
+                data.pop("observation_flags", None)
+            return data
 
         def render(self, indent: str = "  ") -> str:
             """同真身 `Observation.render()`；旧感知标记不参与渲染。"""

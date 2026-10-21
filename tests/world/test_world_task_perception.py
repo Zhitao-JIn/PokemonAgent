@@ -153,6 +153,7 @@ def test_task_perception_exposes_both_combatants() -> None:
     ).observation
 
     assert observation.facts.scene is Facts.Scene.BATTLE
+    assert observation.facts.battle_status.facts_fields() == observation.facts.model_extra
     assert observation.facts.model_extra == {
         "my_name": "PIKACHU",
         "my_level": "12",
@@ -163,3 +164,40 @@ def test_task_perception_exposes_both_combatants() -> None:
         "foe_hp": "9/20",
         "foe_status": "ok",
     }
+
+
+def test_new_geometry_and_menu_data_match_the_old_projection_on_the_same_frame() -> None:
+    terrain = _terrain()
+    text = ScreenText(
+        options=["YES", "NO"],
+        option_grid=[["YES"], ["NO"]],
+        cursor="NO",
+        cursor_cell=(1, 0),
+        option_details=["×2", ""],
+    )
+
+    observation = observe_task(terrain, text, PNG, memory=Mem(), rom=b"", closed=False).observation
+
+    assert observation.facts.cells == terrain.cells
+    assert observation.facts.neighbor_cells == terrain.neighbors()
+    assert observation.facts.neighbors == terrain.render_neighbors()
+    assert observation.facts.walk_map == terrain.render()
+    assert observation.facts.option_grid == text.option_grid
+    assert observation.facts.cursor_cell == text.cursor_cell
+    assert observation.facts.option_annotations == text.option_details
+    assert observation.facts.option_layout == text.render_layout()
+    assert observation.facts.option_details == text.render_details()
+    assert observation.facts.terrain_visible
+
+
+def test_observation_flags_are_structured_and_leave_the_old_notes_intact() -> None:
+    from pokemon_agent.world import TaskObservation
+
+    observation = TaskObservation(
+        step=0, status="背包", scene=TaskScene.BAG, menu_decode_complete=False
+    )
+
+    restored = TaskObservation.model_validate_json(observation.model_dump_json())
+
+    assert restored.observation_flags == ["no_text", "incomplete_menu", "missing_takeover"]
+    assert len(restored.observation_notes) == 3
