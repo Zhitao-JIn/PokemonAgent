@@ -1,3 +1,13 @@
+## 2026-10-21（597）—— 移除读真实采集数据的对账测试
+
+**改了什么**：删除 tests/test_evals_choose_history.py（7 个用例）；从 tests/test_evals_choose_data.py 摘掉 test_current_draft_preserves_full_history_review_and_source_index，并去掉随之无用的 ChooseCase 导入。
+
+**为什么这么改**：这些用例读 eval_results 下被 git 忽略的采集数据，断言 258 条、810 条、190 条等数据集计数与标注约束，属于数据验收而非平台功能测试；在只有跟踪文件的干净检出里直接报失败或错误，使默认 pytest 起点不绿。
+
+**取舍**：只删对账类用例，不删评分、转录、租约等平台逻辑测试，也不动读取已跟踪冻结数据的 test_evals_choose_frozen.py 和 tests/evals/；不为它们补合成夹具，数据校验若仍需要，日后以独立入口另做。
+
+**影响面**：仅测试集合；不改 pokemon_agent 与 evals 代码。
+
 ## 2026-10-21（583）—— 合并 main：新配置装配接回租约清理、评分次数迁入 settings、测评数据合并新版本
 
 **改了什么**：合并 main 至 codex/pyboy-paused-window-pump；runner 保留覆盖文件与统一环境加载，用 ExitStack 登记每次装配的世界租约释放；评分格式重试次数迁入 settings 的 retry.eval_grader_format_attempts，保底为 2；新增 v20261021_merged_583 并切换默认，组合两位不同 NPC 对话、地板 buy_item 终态购买、受伤队伍全满 HP、逃跑解码与取消购买真实确认框起点。
