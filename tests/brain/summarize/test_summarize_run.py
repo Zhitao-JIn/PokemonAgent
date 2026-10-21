@@ -2,6 +2,7 @@
 
 import pytest
 from _doubles.llm import ScriptedJudge, text_reply, vision_reply
+from _harness_fixtures.app_config import call_policy
 
 from pokemon_agent.brain import Brain, RunSummary, Task
 from pokemon_agent.brain.errors import SummarizeAttemptFailed
@@ -71,7 +72,7 @@ def test_run_summary_prompt_keeps_final_overturns_and_complete_episode_text_with
         max_episodes=3,
     )
 
-    result = RunSummarizer(Brain(verify_llm=provider)).summarize_run(req)
+    result = RunSummarizer(Brain(verify_llm=provider), policy=call_policy()).summarize_run(req)
     prompt = provider.described[0].prompt
 
     assert "总目标" in prompt and "人工判失败" in prompt and "overturned=true" in prompt

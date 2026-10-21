@@ -15,6 +15,8 @@ def _obs(scene: TaskScene) -> TaskObservation:
 
 
 def test_decide_prompt_lists_script_entries() -> None:
+    from _harness_fixtures.app_config import ACTION_LIMITS
+
     from pokemon_agent.brain.interface import Goal
     from pokemon_agent.direct.prompts.decide_action import build_prompt
     from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
@@ -47,7 +49,8 @@ def test_decide_prompt_lists_script_entries() -> None:
             obs=_obs(TaskScene.WALK),
             space=space,
             memories=[],
-        )
+        ),
+        max_segments=ACTION_LIMITS.max_segments,
     )
     assert "机械脚本" in prompt
     assert "walk_to(x: int, y: int)" in prompt

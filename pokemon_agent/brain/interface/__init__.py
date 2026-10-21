@@ -54,7 +54,7 @@ from .domain import (
     VerifyResult,
     VerifyVerdict,
 )
-from .llm_config import BrainLlmConfig
+from .llm_config import BrainLlmConfig, LinkSpec
 from .llm_provider import JudgeProvider, LLMProvider
 
 if TYPE_CHECKING:
@@ -67,6 +67,7 @@ __all__ = [
     "BrainPort",
     "ChooseResult",
     "DecomposeResult",
+    "LinkSpec",
     "Decomposition",
     "EpisodeSummary",
     "Goal",

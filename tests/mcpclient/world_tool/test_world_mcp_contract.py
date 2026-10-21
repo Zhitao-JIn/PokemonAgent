@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 import pytest
+from _harness_fixtures.app_config import ACTION_LIMITS
 
 from pokemon_agent.brain.interface import Action, ActionSegment, Goal, ScriptCall
-from pokemon_agent.direct.prompts.decide_action import build_prompt
+from pokemon_agent.direct.prompts import decide_action as _decide_action
 from pokemon_agent.mcpclient.action_space import action_space_for
 from pokemon_agent.mcpclient.world_tool import WorldMcpTool
 from pokemon_agent.schemas.harness import (
@@ -17,6 +19,8 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.world import Facts, PlaceInWorld, TaskObservation, TaskScene
 from pokemon_agent.world.action_space import ALL_BUTTONS
+
+build_prompt = partial(_decide_action.build_prompt, max_segments=ACTION_LIMITS.max_segments)
 
 
 def _observation(scene: TaskScene, overlay: Facts.Overlay) -> TaskObservation:

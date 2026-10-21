@@ -56,7 +56,7 @@ class WorldMcpTool:
         /health 由装配点在 run 开始前检查。
         """
         if not world_server_url.strip():
-            raise ValueError("world 只经 MCP：请设置 MCP_WORLD_SERVER_URL")
+            raise ValueError("world 只经 MCP：请在配置里设 services.world_server_url")
 
         from pokemon_agent.mcpclient.client import McpClient, mcp_endpoint
 

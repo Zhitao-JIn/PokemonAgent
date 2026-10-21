@@ -14,10 +14,16 @@
 
 from __future__ import annotations
 
+from functools import partial
+
+from _harness_fixtures.app_config import ACTION_LIMITS
+
 from pokemon_agent.brain.interface import Goal
-from pokemon_agent.direct.prompts.decide_action import build_prompt
+from pokemon_agent.direct.prompts import decide_action as _decide_action
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.world import ActionSpace, TaskObservation, TaskScene
+
+build_prompt = partial(_decide_action.build_prompt, max_segments=ACTION_LIMITS.max_segments)
 
 MARK = "← 你现在要完成的"
 

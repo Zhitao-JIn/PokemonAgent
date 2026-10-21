@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import pytest
 from _doubles.llm import ScriptedJudge, text_reply, vision_reply
+from _harness_fixtures.app_config import call_policy
 
 from pokemon_agent.brain import Brain, Goal
 from pokemon_agent.brain.errors import (
@@ -134,7 +135,7 @@ def test_visual_empty_reply_retry_records_false_without_a_thinking_field() -> No
         max_push=1,
     )
 
-    result = Planner(Brain(plan_llm=provider), max_attempts=2).plan(request)
+    result = Planner(Brain(plan_llm=provider), policy=call_policy(max_attempts=2)).plan(request)
 
     assert len(result.calls) == len(provider.described) == 2
     assert provider.requests == []

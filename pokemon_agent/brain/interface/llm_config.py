@@ -1,25 +1,12 @@
 """`BrainLlmConfig`：`Brain` 四个 provider 的**选型与超参**，纯数据。
 
-**为什么它住 `brain/interface/` 而不是 `brain/build_llm_providers.py`**
-（0913 深夜九定案）：它跟 `Action`/`Goal` 一样是**零重依赖的纯数据**，
-但原先住在工厂模块里时，任何只想拿这个 dataclass 的调用方
-（`build.py` 只为了 `BrainLlmConfig(...)` 造一份选型表）都要连着进口
-`build_llm_providers.py` 顶部的 `from .providers import ArkProvider, QwenProvider`
-——**实测连带拉进 25 个 brain 模块 + `PIL`**。"我想说这次用什么型号"
-和"我要一个 HTTP 客户端"是两件事，不该被一个 import 绑在一起。
+**为什么它住 `brain/interface/`**（0913 深夜九定案）：它跟 `Action`/`Goal` 一样是零重依赖的
+纯数据；只想说"这次用什么型号"的调用方不该连带进口厂商实现面（`providers.py` 与 `PIL`）。
 
-放进 `interface/` 之后，`from pokemon_agent.brain import BrainLlmConfig`
-只走到这一层（`brain/interface/__init__.py` 的立即加载面），
-`providers`/`build_llm_providers` 一个都不碰。
-
-**它为什么属于 `interface` 而不是 `providers`**：它描述的是**契约参数**
-（`Brain` 要四个什么样的 provider），而不是**某个厂商的接线细节**——
-厂商名（`qwen`/`doubao`）只出现在字段的**默认值**里，字段本身是型号名字符串。
-"哪家厂商"这个知识仍然留在 `build_llm_providers.py`（它才知道
-`verify` 那个位置必须是豆包型号名）。
-
-**搬运后不变的约束**：这里**只放数据、不放逻辑**，`frozen=True`，
-四个字段给默认值使 `BrainLlmConfig()` 就是一个能直接跑的真实链路配置。
+**每个位置一份 `LinkSpec`**：型号、温度、输出上限、单请求超时、思考开关都是调用方（装配点经
+tool 层）给的纯数据，本模块不替它们做主——哪个值是多少只看配置文件，不在 brain 里写死。
+`None` = 这个位置这次不装配（按需实例化：每层只造它要的链路，`Brain` 对应方法的入口 assert
+会把"没配就调"拦下）。`frozen=True`：装配期构造一次、此后只读。
 """
 
 from __future__ import annotations
@@ -28,76 +15,40 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class LinkSpec:
+    """一个位置（决策 / 判定 / 校验 / 规划）的 provider 选型与超参。
+
+    `model`：型号名，前缀决定厂商（表在 `providers.py`）；`temperature`：采样温度；
+    `max_tokens`：输出上限（思考 token 与正文共用这份额度）；`timeout_s`：单请求超时秒数
+    （总时长硬闸是它 +15）；`thinking`：是否开思考模式，只有规划位置会用到。
+    """
+
+    model: str
+    temperature: float
+    max_tokens: int
+    timeout_s: float
+    thinking: bool = False
+
+
+@dataclass(frozen=True)
 class BrainLlmConfig:
-    """`Brain` 四个 provider 的**选型与超参**，全是纯数据。
+    """`Brain` 四个 provider 的选型表；与 `Brain.__init__` 的四个形参一一对应。
 
-    `frozen=True`：装配期构造一次、此后只读——它描述的是"这次 run 用哪些模型"，
-    中途改它没有任何语义（provider 实例已经造出去了）。
-
-    字段分成两组，跟 `Brain.__init__` 的四个参数一一对应：
-
-    - `text` / `judge`：走 DashScope（`QwenProvider`）。`text` 是 `choose()` 的
-      决策模型（`temperature=0.3`，保留少量随机做探索多样性）；`judge` 是
-      `judge()` 的判定模型（`temperature=0.0`，确定性优先）。
-    - `verify` / `plan`：走火山方舟（`ArkProvider`，豆包）。两者都
-      `temperature=0.0`；模型名**必须是带日期后缀的豆包型号名**——`ArkProvider`
-      收到 Qwen 型号名会直接 404，不是"退化成纯文本"这种优雅失败
-      （`ArkProvider.__init__` 里有 assert 兜住空串，但型号名对错它验不了）。
-
-    四个字段都是 `str | None`，**缺省 `None` = 这个位置这次不装配**（0922 185
-    按需实例化：每层 BrainTool 只造它要的链路，`build_llm_providers()` 对 None
-    位置返回 None、`Brain` 对应方法的入口 assert 会把"没配就调"拦下）。
-    全部给型号名时就是一个能直接跑的完整配置。想换型号只改这里。
-
-    **温度分层的知识不在这里**（0913）：`temperature` 是**常量**不是旋钮
-    （judge/verify/plan 恒 0、decide 恒 0.3），所以它写在
-    `brain/build_llm_providers.py` 的构造语句里，本类只带"选哪个型号"。
+    - `text`：`choose()` 的决策模型；
+    - `judge`：`judge()` 的判定模型，**跟 `text` 分开是硬要求**（判定与决策误差同源会让
+      "读错画面 → 以为达成 → 判成功"越走越顺，见 `Brain` 模块 docstring），同型号也不共用实例；
+    - `verify`：`verify()` / `summarize()` 的模型；
+    - `plan`：`plan()` 与 `decompose()` 共用的规划模型；
+    - `json_mode`：四个 provider 共用的 JSON 输出开关（请求体带 `response_format: json_object`）；
+    - `vision_dump_dir`：非空时把实际送出的图落到该目录，排查用。
     """
 
-    text: str | None = None
-    """`choose()` 的模型（DashScope）。`None` = 这次不装配决策链。"""
-
-    judge: str | None = None
-    """`judge()` 的模型（DashScope）。**跟 `text` 分开是硬要求**：判定与决策
-    误差同源会让"读错画面 → 以为达成 → 判成功"这条错路越走越顺
-    （`Brain` 模块 docstring 有论证），所以哪怕同型号也不共用实例。
-    `None` = 这次不装配判定链。"""
-
-    verify: str | None = None
-    """`verify()`/`summarize()` 的模型（火山方舟，豆包）。`None` = 这次不装配。"""
-
-    plan: str | None = None
-    """`plan()` 的模型（火山方舟，豆包）。`None` = 这次不装配规划链。"""
-
-    max_tokens: int = 25600
-    """decide / judge / verify 三个 provider 共用的输出上限（plan 位置见 `plan_max_tokens`）。
-
-    **共用是判断不是偷懒**：上限该多大只取决于"这条链路要写多少字"，
-    与"打的哪家供应商"无关，三条链路没有证据支持该有不同的数。
-    """
-
-    plan_max_tokens: int = 25600
-    """`plan` 位置单独的输出上限；其余三个位置用 `max_tokens`。
-
-    默认与 `max_tokens` 相同；项目里由 tool 层的 `BrainTool.build()`
-    按 `config.PLAN_MAX_TOKENS` 递进来。
-    单列的理由：只有这个位置可能开思考，而思考 token 与正文共用这份额度。
-    """
-
-    plan_thinking: bool = False
-    """`plan` 位置（`plan()` 与 `decompose()` 共用的那个 provider）要不要开思考模式。
-
-    默认 `False`；项目里由 tool 层的 `BrainTool.build()` 按 `config.PLAN_THINKING` 递进来。
-    开了之后 `build_llm_providers()` 会同时放宽这个位置的单请求超时（见那里的
-    `THINKING_TIMEOUT_SECONDS`）。其余三个位置（decide / judge / verify）不受影响。
-    """
-
+    text: LinkSpec | None = None
+    judge: LinkSpec | None = None
+    verify: LinkSpec | None = None
+    plan: LinkSpec | None = None
     json_mode: bool = False
-    """四个 provider 共用的 JSON 输出开关：为真时每次请求带 `response_format: json_object`。
-
-    默认 `False`（本类是 brain 的纯数据，不认识项目的 `config.py`）；项目里由 tool 层的
-    `BrainTool.build()` 按 `config.PROVIDER_JSON_MODE` 递进来。
-    """
+    vision_dump_dir: str | None = None
 
 
-__all__ = ["BrainLlmConfig"]
+__all__ = ["BrainLlmConfig", "LinkSpec"]

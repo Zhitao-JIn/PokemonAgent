@@ -62,7 +62,7 @@ class MemoryTool:
         本方法启动客户端但不探活，装配点负责在 run 开始前检查 /health。
         """
         if not memory_server_url.strip():
-            raise ValueError("memory 只经 MCP：请设置 MCP_MEMORY_SERVER_URL")
+            raise ValueError("memory 只经 MCP：请在配置里设 services.memory_server_url")
 
         from pokemon_agent.mcpclient.client import McpClient, mcp_endpoint
 

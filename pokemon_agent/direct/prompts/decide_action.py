@@ -27,7 +27,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.config import MAX_SEGMENTS
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.schemas.memory import render_sequence
 from pokemon_agent.world import terrain_legend
@@ -143,7 +142,7 @@ def _render_goals(goals: list[Goal]) -> str:
     )
 
 
-def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
+def build_prompt(req: FromHarnessToBrainToolChooseOnceReq, *, max_segments: int) -> str:
     """组装一次决策请求对应的完整 `decide_action.md`。**只组装一次**——重试
     追加纠正说明是 `retry_prompt()` 的事，不会重新调用这里（同一份基础
     prompt 前缀，多次重试尝试才能共享缓存，见 `retry_prompt()`）。
@@ -158,6 +157,9 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
     ——本函数是"素材 → 文本"的转换，产物是局部变量，不再回填进 req
     （那个中间态曾经外露成 `req.model_copy(update={"prompt": ...})`，
     而 harness 与 tool 两处都要碰 prompt）。
+
+    `max_segments`：一条链最多几段，渲进模板（取自配置的 `action_limits.max_segments`，
+    与 `Chooser` 的校验同源）。
 
     前置条件：`req.space.names` 非空、`req.goals` 非空、`req.obs.done` 为
     False——这里自己 assert，不依赖调用方先检查过：这是 decide_action.md
@@ -219,7 +221,7 @@ def build_prompt(req: FromHarnessToBrainToolChooseOnceReq) -> str:
             task_index="\n".join(m.index_line() for m in req.task_index)
             or "（本局内没有同目标的此前 task）",
             actions=actions,
-            max_segments=MAX_SEGMENTS,
+            max_segments=max_segments,
             read_screen=READ_SCREEN,
             last_result=f"\n## 上一个脚本的结果\n\n{req.last_result}\n" if req.last_result else "",
         ),

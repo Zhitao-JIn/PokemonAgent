@@ -1,9 +1,12 @@
 """同目标 task 索引在键与脚本决策、判定里使用同一行视图。"""
 
+from functools import partial
+
 import pytest
+from _harness_fixtures.app_config import ACTION_LIMITS
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.direct.prompts.decide_action import build_prompt as decide_prompt
+from pokemon_agent.direct.prompts import decide_action as _decide_action
 from pokemon_agent.direct.prompts.judge_success import build_prompt as judge_prompt
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
@@ -11,6 +14,8 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.schemas.memory import TaskMemory
 from pokemon_agent.world import ActionEntry, ActionSpace, TaskObservation, TaskScene
+
+decide_prompt = partial(_decide_action.build_prompt, max_segments=ACTION_LIMITS.max_segments)
 
 
 def _memory() -> TaskMemory:

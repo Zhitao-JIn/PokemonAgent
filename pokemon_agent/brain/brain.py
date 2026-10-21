@@ -15,7 +15,7 @@
 `DecomposeAttemptFailed` / `JudgeAttemptFailed` / `VerifyAttemptFailed` /
 `SummarizeAttemptFailed`），
 异常携带这一次尝试的 `ModelCall`。重试循环住 `direct/brain_tool.py`，
-预算住 `pokemon_agent/config.py`——**大脑不知道"问几次"这件事**。
+预算住配置文件（`pokemon_agent/settings/default.json` 的 `retry`）——**大脑不知道"问几次"这件事**。
 
 由此跟着两条推论：
 
@@ -177,7 +177,7 @@ class Brain:
         都继承 `_MultimodalMixin`），不借 `world` 的任何协议。
 
         **没有 `max_retries`**——决策重试的预算和循环都在调用方
-        （`BRAIN_MAX_ATTEMPTS`，见 `pokemon_agent/config.py`），大脑不知道
+        （`retry.brain_max_attempts`，见 `pokemon_agent/settings/default.json`），大脑不知道
         "问几次"这件事，只知道"问一次"。
 
         存下四个 provider，此后不再变——prompt 全部由调用方拼好递进来。

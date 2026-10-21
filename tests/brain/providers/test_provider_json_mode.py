@@ -96,16 +96,11 @@ def test_build_llm_providers_hands_json_mode_to_every_chain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
-    from pokemon_agent.brain import BrainLlmConfig, build_llm_providers
+    from pokemon_agent.brain import BrainLlmConfig, LinkSpec, build_llm_providers
 
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
-    config = BrainLlmConfig(
-        text="deepseek-flash",
-        judge="deepseek-flash",
-        verify="deepseek-flash",
-        plan="deepseek-flash",
-        json_mode=True,
-    )
+    spec = LinkSpec(model="deepseek-flash", temperature=0.0, max_tokens=100, timeout_s=45)
+    config = BrainLlmConfig(text=spec, judge=spec, verify=spec, plan=spec, json_mode=True)
 
     # Act
     providers = build_llm_providers(config)
@@ -144,16 +139,14 @@ def test_build_llm_providers_turns_thinking_on_for_plan_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
-    from pokemon_agent.brain import BrainLlmConfig, build_llm_providers
+    from pokemon_agent.brain import BrainLlmConfig, LinkSpec, build_llm_providers
 
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
-    config = BrainLlmConfig(
-        text="deepseek-flash",
-        judge="deepseek-flash",
-        verify="deepseek-flash",
-        plan="deepseek-flash",
-        plan_thinking=True,
+    plain = LinkSpec(model="deepseek-flash", temperature=0.0, max_tokens=100, timeout_s=45)
+    thinking = LinkSpec(
+        model="deepseek-flash", temperature=0.0, max_tokens=100, timeout_s=420, thinking=True
     )
+    config = BrainLlmConfig(text=plain, judge=plain, verify=plain, plan=thinking)
 
     # Act
     decide, judge, verify, plan = build_llm_providers(config)

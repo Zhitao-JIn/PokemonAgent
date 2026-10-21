@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 
 import pytest
+from _harness_fixtures.app_config import call_policy
 from _harness_fixtures.brain import _Brain
 
 from pokemon_agent.brain import Goal
@@ -127,7 +128,7 @@ def _invoke(
     brain: _RecordingBrain, method: str, episodes: list[EpisodeMemory], tasks: list[TaskMemory]
 ) -> None:
     if method == "plan":
-        Planner(brain).plan(
+        Planner(brain, policy=call_policy()).plan(
             FromHarnessToBrainToolPlanOnceReq(
                 run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
                 run_id="r",
@@ -137,7 +138,7 @@ def _invoke(
             )
         )
     elif method == "decompose":
-        Decomposer(brain).decompose(
+        Decomposer(brain, policy=call_policy()).decompose(
             FromHarnessToBrainToolDecomposeReq(
                 goal=Goal(goal="局目标", criteria="c"),
                 observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
@@ -146,7 +147,7 @@ def _invoke(
             )
         )
     else:
-        RunSummarizer(brain).summarize_run(
+        RunSummarizer(brain, policy=call_policy()).summarize_run(
             FromHarnessToBrainToolSummarizeRunReq(
                 run_id="r",
                 run_goal="总目标",
