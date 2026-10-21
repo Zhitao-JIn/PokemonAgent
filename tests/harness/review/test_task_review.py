@@ -6,11 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 from _fake_run import GOAL, build_fake, every
+from _harness_fixtures.app_config import app_config, reconfigure
 from langgraph.runtime import Runtime
 from pydantic import ValidationError
 
 from pokemon_agent.brain import Action, ActionSegment, Task
-from pokemon_agent.config import REVIEW_LAYERS
 from pokemon_agent.direct.trace import TraceTool
 from pokemon_agent.harness.task.plan_task import plan_task
 from pokemon_agent.harness.task.review_and_judge import review_and_judge
@@ -134,7 +134,7 @@ def _runtime(root: Path, reviewer: Reviewer, judger: Judger) -> Runtime:
             reviewer=reviewer,
             judger=judger,
             chooser=Chooser(),
-            review_layers=(*REVIEW_LAYERS, "task"),
+            config=app_config(review={"layers": ["run", "episode", "task"]}),
         )
     )
 
@@ -145,7 +145,7 @@ def test_task_graph_never_touches_reviewer_by_default(tmp_path: Path) -> None:
 
     fake.harness.run("r1", [GOAL])
 
-    assert "task" not in fake.run_rt.episode.task.review_layers
+    assert "task" not in fake.run_rt.episode.task.config.review.layers
     assert fake.run_rt.episode.task.reviewer is reviewer
     assert all(req.context.layer != "task" for req in reviewer.requests)
     assert all(req.context.layer != "task" for req in reviewer.injections)
@@ -154,7 +154,7 @@ def test_task_graph_never_touches_reviewer_by_default(tmp_path: Path) -> None:
 def test_enabled_task_graph_uses_the_injected_reviewer(tmp_path: Path) -> None:
     reviewer = Reviewer()
     fake = build_fake(tmp_path, reviewer=reviewer, task=every(1), episode=every(1), run=every(1))
-    fake.run_rt.episode.task.review_layers = (*REVIEW_LAYERS, "task")
+    reconfigure(fake.run_rt, review={"layers": ["run", "episode", "task"]})
 
     fake.harness.run("r1", [GOAL])
 
@@ -239,7 +239,7 @@ def test_overturn_does_not_remove_the_mechanical_budget_boundary(tmp_path: Path)
 def test_disabled_task_review_retains_the_original_trace(tmp_path: Path) -> None:
     state, reviewer = _state(), Reviewer(AuditVerdict.OVERTURN)
     runtime = _runtime(tmp_path, reviewer, Judger(True))
-    runtime.context.review_layers = REVIEW_LAYERS
+    runtime.context.config = app_config()
 
     updates = review_and_judge(state, runtime)
 

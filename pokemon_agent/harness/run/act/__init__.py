@@ -34,7 +34,7 @@ def act(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
     # 步骤 1：选目标、盖 RUNNING、拼 EpisodeInput（纯函数，还没动任何东西）。
     dispatched = dispatch(state)
     episode_input: EpisodeInput = dispatched["episode_input"]
-    limit = runtime.context.budget.max_total_actions
+    limit = runtime.context.config.budget.max_total_actions
     episode_input = episode_input.model_copy(
         update={
             "actions_budget": None if limit is None else max(0, limit - state.actions_used),

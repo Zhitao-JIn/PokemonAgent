@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
 from _harness_fixtures.harness import GOAL, FakeRun, build_fake
 from pydantic import BaseModel
 
-from pokemon_agent.config import SCOPE_IMAGE_CAP
 from pokemon_agent.direct.trace import parse
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
@@ -237,7 +237,9 @@ def _assert_indexes(recording: _Recording, seeded: bool, episode_goals: dict[str
 
 def _assert_images(recording: _Recording) -> None:
     """验收 6：实际带图调用不过帽，L0/L1/run 蒸馏按字符串去重并保留最新帧。"""
-    assert all(len(images) <= SCOPE_IMAGE_CAP for _, images in recording.calls)
+    assert all(
+        len(images) <= DEFAULT_APP_CONFIG.memory.scope_image_cap for _, images in recording.calls
+    )
     for name in ("L0.plan", "L0.judge", "L1.plan", "L1.judge", "run.summary"):
         duplicated = False
         for seen in recording.requests[name]:
@@ -255,10 +257,11 @@ def _assert_images(recording: _Recording) -> None:
             ]
             unique = list(dict.fromkeys(frames))
             duplicated |= len(unique) < len(frames)
-            assert seen.images == unique[-SCOPE_IMAGE_CAP:]
+            assert seen.images == unique[-DEFAULT_APP_CONFIG.memory.scope_image_cap :]
         assert duplicated, f"{name} must exercise duplicate frames"
     assert any(
-        len(_details(seen.request)) * 2 > SCOPE_IMAGE_CAP for seen in recording.requests["L0.judge"]
+        len(_details(seen.request)) * 2 > DEFAULT_APP_CONFIG.memory.scope_image_cap
+        for seen in recording.requests["L0.judge"]
     )
 
 

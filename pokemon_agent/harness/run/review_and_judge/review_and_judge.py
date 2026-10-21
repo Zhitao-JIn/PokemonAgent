@@ -5,7 +5,7 @@
    （一局一条 EpisodeMemory 由 episode 层自己保证，本格不写记忆。）
    （收结算在 perceive 的 `absorb_episode`。）
 2. 机械三类：本圈 perceive 取的帧 `obs.done`（run 层自己取帧，0928 起不再借上一局
-   结算带回的旧画面；首圈也有帧——世界起点的画面）/ `fail_streak >= RUN_STALL_LIMIT` /
+   结算带回的旧画面；首圈也有帧——世界起点的画面）/ `fail_streak >= loop.run_stall_limit` /
    `step >= RUN_MAX_EPISODES`。
 3. 问模型"run_goal 达成没有"（素材是 `plan_ctx.details` 的全部局详情）；判成时亮给人**审**——
    认账即 `GOAL_DONE`，推翻则 run 继续。run 继续跑时，判定员的话与人的推翻理由写进
@@ -21,7 +21,6 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.config import RUN_STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeReq,
@@ -89,8 +88,8 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
     # 结算带回的画面（首圈还是 None），run 层自己取帧后这里看的是当前画面。
     termination = mechanical_termination(
         world_ended=bool(state.observation and state.observation.done),
-        stalled=fail_streak >= RUN_STALL_LIMIT,
-        exhausted=state.step >= deps.budget.max_episodes,
+        stalled=fail_streak >= deps.config.loop.run_stall_limit,
+        exhausted=state.step >= deps.config.budget.max_episodes,
     )
     verdict = None
     feedback = None

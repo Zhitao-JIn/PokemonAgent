@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from _fake_run import GOAL, build_fake, every
+from _harness_fixtures.app_config import reconfigure
 
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
@@ -43,9 +44,7 @@ def test_both_planning_graphs_apply_three_agent_replies_and_keep_the_fourth_on_t
 ) -> None:
     reviewer = AgentReviewer(layer)
     fake = build_fake(tmp_path, reviewer=reviewer, task=every(1), episode=every(1), run=every(1))
-    fake.run_rt.episode.budget = fake.run_rt.episode.budget.model_copy(
-        update={"max_decompositions": 20}
-    )
+    reconfigure(fake.run_rt, budget={"max_decompositions": 20})
 
     fake.harness.run("r1", [GOAL])
 

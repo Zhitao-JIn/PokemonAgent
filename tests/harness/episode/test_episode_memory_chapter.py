@@ -23,6 +23,7 @@ from types import SimpleNamespace
 
 import pytest
 from _doubles.memory_server import memory_server_context
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
 
 from pokemon_agent.brain import Goal, Task
 from pokemon_agent.harness.episode.episode_done.leave_chapter import store_empty_chapter
@@ -30,7 +31,6 @@ from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.harness.run.review_and_judge import review_and_judge
 from pokemon_agent.harness.run.run_state import RunState
 from pokemon_agent.mcpclient.memory_local import MemoryTool
-from pokemon_agent.run_config import RunConfig
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolJudgeResp,
     FromHarnessToMemoryToolMemorizeRecord,
@@ -83,7 +83,7 @@ def memory(tmp_path: Path) -> Iterator[MemoryTool]:
 def _deps(memory: MemoryTool) -> SimpleNamespace:
     """`review_and_judge` 读的四样：记忆、记账、人审、判定。"""
     return SimpleNamespace(
-        budget=RunConfig().budget,
+        config=DEFAULT_APP_CONFIG,
         memory=memory,
         trace=_Trace(),
         reviewer=NullReviewer(),

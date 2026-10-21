@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
+
 from pokemon_agent.harness.task.frames import frame_b64, remember_frame
 from pokemon_agent.harness.task.task_runtime import TaskRuntime
 
@@ -41,6 +43,7 @@ def _deps() -> TaskRuntime:
     task 层，槽跟着链走。）
     """
     return TaskRuntime(  # type: ignore[arg-type]
+        config=DEFAULT_APP_CONFIG,
         game=None,
         chooser=None,
         judger=None,

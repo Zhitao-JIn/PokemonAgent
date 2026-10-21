@@ -1,6 +1,7 @@
 """递归规划公开用法：空新增、保留、前置排序与重开执行身份。"""
 
 import pytest
+from _harness_fixtures.app_config import reconfigure
 from _harness_fixtures.harness import build_fake
 from langgraph.runtime import Runtime
 
@@ -162,10 +163,7 @@ def test_continue_after_empty_decomposition_stops_at_the_planning_budget(tmp_pat
     fake = build_fake(tmp_path)
     fake.run_rt.episode.decomposer = EmptyDecomposer()
     fake.run_rt.episode.judger = ContinueJudge()
-    fake.run_rt.episode.budget = fake.run_rt.episode.budget.model_copy(
-        update={"max_decompositions": 2}
-    )
-    fake.run_rt.budget = fake.run_rt.budget.model_copy(update={"max_episodes": 1})
+    reconfigure(fake.run_rt, budget={"max_decompositions": 2, "max_episodes": 1})
 
     result = fake.harness.run("r1", [entry("parent").task])
 

@@ -7,7 +7,7 @@ TaskMemory 的章与任务表均保留机器判定，失败连击沿用 state �
 
 停没停、成没成都由 `termination` 推出（`Settled`）。
 
-①机械：世界结束（`obs.done`）/ 停摆（`fail_streak >= EPISODE_STALL_LIMIT`）/
+①机械：世界结束（`obs.done`）/ 停摆（`fail_streak >= loop.episode_stall_limit`）/
 task 数预算尽（`step >= goal.max_steps`）。②模型：派过 task 或规划后无待办时问
 "本局目标达成没有"（素材是 perceive 装好的本局 TaskMemory）；判成时亮给人**审**——
 认账即 `GOAL_DONE`，推翻则本局继续。审格不重问模型：本局继续跑时，判定员的话与人的
@@ -20,7 +20,6 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.config import EPISODE_STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeReq,
@@ -49,7 +48,7 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
     if any(entry.status is EntryStatus.RUNNING for entry in state.tasks):
         updates = _settle(deps, state, state.task_outputs[-1])
     fail_streak = int(updates.get("fail_streak", state.fail_streak))
-    stalled = fail_streak >= EPISODE_STALL_LIMIT
+    stalled = fail_streak >= deps.config.loop.episode_stall_limit
 
     # 步骤 1：机械三类；还没派过 task 时不问模型。
     termination = mechanical_termination(

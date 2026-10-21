@@ -5,6 +5,7 @@ import json
 
 import pytest
 from _doubles.llm import ScriptedLLM, text_reply
+from _harness_fixtures.app_config import call_policy
 
 from pokemon_agent.brain import Brain, Goal
 from pokemon_agent.brain.errors import ToolTimeout
@@ -62,7 +63,7 @@ def test_insufficient_remaining_time_never_calls_the_brain_provider():
     clock = Clock()
     provider = ScriptedLLM(plan_reply())
     deadline = Deadline(100, 60, 3, clock=clock)
-    planner = Planner(Brain(plan_llm=provider), deadline=deadline)
+    planner = Planner(Brain(plan_llm=provider), policy=call_policy(), deadline=deadline)
     clock.advance(38)
 
     with pytest.raises(BudgetExhausted) as caught:
@@ -85,7 +86,9 @@ def test_retries_share_remaining_time_and_keep_completed_failure_calls(
 
     provider = SlowProvider(ToolTimeout("scripted timeout"), plan_reply())
     deadline = Deadline(100, 60, 3, clock=clock)
-    planner = Planner(Brain(plan_llm=provider), deadline=deadline, max_attempts=2)
+    planner = Planner(
+        Brain(plan_llm=provider), policy=call_policy(max_attempts=2), deadline=deadline
+    )
     monkeypatch.setattr("pokemon_agent.direct.brain_tool.time.sleep", clock.advance)
 
     if expected_requests == 1:
@@ -102,7 +105,7 @@ def test_retries_share_remaining_time_and_keep_completed_failure_calls(
 
 def test_without_a_run_deadline_the_production_request_can_complete():
     provider = ScriptedLLM(plan_reply())
-    planner = Planner(Brain(plan_llm=provider), deadline=None)
+    planner = Planner(Brain(plan_llm=provider), policy=call_policy(), deadline=None)
 
     response = planner.plan(plan_request())
 
@@ -183,7 +186,7 @@ def test_a_transport_timeout_can_exhaust_the_run_before_retrying(monkeypatch):
     monkeypatch.setattr(module, "_POST_POOL", Executor())
     deadline = Deadline(100, 60, 3, clock=clock)
     provider = BudgetProvider(DeepSeekProvider(temperature=0.0), deadline, 45, "plan")
-    planner = Planner(Brain(plan_llm=provider), deadline=deadline)
+    planner = Planner(Brain(plan_llm=provider), policy=call_policy(), deadline=deadline)
 
     with pytest.raises(BudgetExhausted) as caught:
         planner.plan(plan_request())

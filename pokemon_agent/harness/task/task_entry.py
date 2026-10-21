@@ -10,13 +10,24 @@ from typing import Any
 
 from langgraph.graph.state import CompiledStateGraph
 
-from pokemon_agent.config import NODES_PER_DECISION, NODES_PER_PRESS, RECURSION_MARGIN
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
 from pokemon_agent.schemas.harness.domain import TaskInput, TaskOutput
 
 from ..budget_record import budget_meta, record_budget
 from .task_runtime import TaskRuntime
 from .task_state import TaskState
+
+NODES_PER_DECISION = 3
+"""一圈决策烧掉的节点数：`perceive → review_and_judge → plan_*`（组合格只算一格）。
+
+图拓扑决定，不是实验旋钮。
+"""
+
+NODES_PER_PRESS = 1
+"""一圈执行烧掉的节点数：`act`（task 层只按键）。图拓扑决定，不是实验旋钮。"""
+
+RECURSION_MARGIN = 20
+"""图引擎自身开销 + 收尾分支（最多 5 个节点）的余量。"""
 
 
 def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
@@ -62,7 +73,7 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
         entry_id=task_input.entry_id,
         task=task_input.task.model_copy(
             update={
-                "max_steps": min(task_input.task.max_steps, deps.budget.task_max_steps),
+                "max_steps": min(task_input.task.max_steps, deps.config.budget.task_max_steps),
             }
         ),
         total_acts=task_input.total_acts,

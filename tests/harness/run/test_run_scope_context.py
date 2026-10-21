@@ -4,11 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
 from _harness_fixtures.memory import _Memory
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.config import MEMORY_RECALL_LIMIT
 from pokemon_agent.direct.trace import TraceTool, parse
 from pokemon_agent.harness.episode.perceive.retrieve_knowledge_semantic_memory import (
     build_knowledge_query as episode_query,
@@ -99,7 +99,11 @@ def _state() -> RunState:
 
 def _runtime(root: Path, memory: _RecordingMemory) -> Runtime:
     return Runtime(
-        context=SimpleNamespace(memory=memory, trace=TraceTool.build(run_id="r1", trace_root=root))
+        context=SimpleNamespace(
+            config=DEFAULT_APP_CONFIG,
+            memory=memory,
+            trace=TraceTool.build(run_id="r1", trace_root=root),
+        )
     )
 
 
@@ -157,7 +161,10 @@ def test_run_knowledge_is_retrieved_every_round_into_plan_ctx(tmp_path: Path) ->
     assert state.plan_ctx.details is original.details and state.plan_ctx.objects is original.objects
     assert state.plan_ctx.run_index is original.run_index
     requests = [req for req in memory.requests if req.query]
-    assert all(req.conditions == {} and req.limit == MEMORY_RECALL_LIMIT for req in requests)
+    assert all(
+        req.conditions == {} and req.limit == DEFAULT_APP_CONFIG.memory.recall_limit
+        for req in requests
+    )
     assert all(f"目标：{state.run_goal.goal}" in req.query for req in requests)
     events = [
         parse(event)

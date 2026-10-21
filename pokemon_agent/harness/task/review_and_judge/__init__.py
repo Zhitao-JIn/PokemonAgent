@@ -5,7 +5,6 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.config import ACT_STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeReq,
@@ -33,7 +32,7 @@ def review_and_judge(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[st
     }
     termination = mechanical_termination(
         world_ended=state.task_ctx.observation.done,
-        stalled=state.stall_count >= ACT_STALL_LIMIT,
+        stalled=state.stall_count >= deps.config.loop.act_stall_limit,
         exhausted=state.step >= state.task.max_steps,
     )
     verdict = None
@@ -41,7 +40,7 @@ def review_and_judge(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[st
     if state.step > 0:
         req = _request(state)
         verdict = ask_judger(deps.judger, deps.trace, req, **meta)
-        if "task" in deps.review_layers:
+        if "task" in deps.config.review.layers:
             feedback = audit_judgement(
                 deps.reviewer,
                 deps.trace,

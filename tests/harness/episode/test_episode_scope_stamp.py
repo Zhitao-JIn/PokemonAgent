@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+from _harness_fixtures.app_config import call_policy
 from _harness_fixtures.brain import _Brain
 from _harness_fixtures.memory import _Memory
 
@@ -29,7 +30,9 @@ def _task(index: int, first: str | None, last: str | None) -> TaskMemory:
 
 
 def test_episode_chapter_carries_run_goal_and_first_last_frames() -> None:
-    summarizer = Summarizer(_Brain(lambda n: True, lambda n: True, lambda n: True, 1))
+    summarizer = Summarizer(
+        _Brain(lambda n: True, lambda n: True, lambda n: True, 1), policy=call_policy()
+    )
     req = FromHarnessToBrainToolSummarizeReq(
         run_id="r1",
         run_goal="总目标",

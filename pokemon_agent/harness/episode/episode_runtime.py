@@ -48,7 +48,6 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph.state import CompiledStateGraph
 
-from pokemon_agent.config import DEFAULT_RUN_BUDGET
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.interface import (
     DecomposePort,
@@ -59,7 +58,7 @@ from pokemon_agent.direct.interface import (
     TraceToolPort,
     VerifyPort,
 )
-from pokemon_agent.run_budget import RunBudget
+from pokemon_agent.settings import AppConfig
 
 from ..interface.reviewer import Reviewer
 from ..task.task_runtime import TaskRuntime
@@ -102,6 +101,8 @@ class EpisodeRuntime:
 
     # ---- 嵌套：task 层的 context 由 episode 持有、将来经分流格递下去 ----
 
+    config: AppConfig
+    """生效配置（与 `RunRuntime.config`、`TaskRuntime.config` 是**同一实例**）。"""
     task: TaskRuntime
     """task 层的 runtime（`build.py` 先造它、再造本对象）。**必传、恒非空**——
     task 图的 `context=…` 由本层 `act` 格显式传（形态 B，同本对象被 run 侧
@@ -117,7 +118,6 @@ class EpisodeRuntime:
     # ---- 存档：episode 层自己不存（episode 级存档在 run 的 `act` 开头）；三层同形持有 ----
 
     checkpointer: Checkpointer | None = None
-    budget: RunBudget = DEFAULT_RUN_BUDGET
     deadline: Deadline | None = None
     """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""
 

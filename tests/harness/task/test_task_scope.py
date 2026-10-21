@@ -3,6 +3,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from _harness_fixtures.app_config import app_config
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Action, ActionSegment, Task
@@ -85,7 +86,7 @@ def _requests(
             chooser=chooser,
             judger=judger,
             trace=TraceTool.build(run_id="r1", trace_root=tmp_path),
-            review_layers=("run", "episode"),
+            config=app_config(),
         )
     )
     plan_task(state, runtime)

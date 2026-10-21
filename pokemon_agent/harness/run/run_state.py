@@ -10,7 +10,7 @@
     交界    episode_input（本局入参）              act 的 dispatch 写
     判定    termination（done / success 由它推出）           review_and_judge 写
 
-**停机只由 `review_and_judge` 判**：机械三类（世界结束 / 连续失败局 ≥ RUN_STALL_LIMIT /
+**停机只由 `review_and_judge` 判**：机械三类（世界结束 / 连续失败局 ≥ loop.run_stall_limit /
 已派局数 ≥ RUN_MAX_EPISODES）或模型判 `run_goal` 达成/无法推进；预算闸门独立处理机械停止。
 `plan_run` 保存原子表修订与最新规划，无待办时交回 judge，规划次数耗尽则机械收尾。
 活对象一个都不进来，它们住 `RunRuntime`。

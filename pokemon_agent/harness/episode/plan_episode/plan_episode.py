@@ -9,7 +9,6 @@ from pydantic import BaseModel
 
 from pokemon_agent.brain import Task
 from pokemon_agent.brain.interface import Decomposition
-from pokemon_agent.config import EPISODE_MAX_TASKS_PER_PLAN, REVIEW_AI_INJECT_MAX_ROUNDS
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
@@ -114,11 +113,11 @@ def _elicit(deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object
     def ask_reviewer(result: Elicited, rounds: ReviewRound) -> ReviewMark:
         return _review_version(deps, state, meta, result, rounds)
 
-    revision_budget = max(0, deps.budget.max_decompositions - state.decompositions_used - 1)
+    revision_budget = max(0, deps.config.budget.max_decompositions - state.decompositions_used - 1)
     result, note = elicit_with_review(
         ask_brain,
         ask_reviewer,
-        max_agent_rounds=min(REVIEW_AI_INJECT_MAX_ROUNDS, revision_budget),
+        max_agent_rounds=min(deps.config.review.ai_inject_max_rounds, revision_budget),
     )
     return result.model_copy(update={"note": note})
 
@@ -128,7 +127,7 @@ def _ask_version(
 ) -> Elicited:
     """一次逻辑拆解只占一轮；预算耗尽时不再问脑或询问 reviewer。"""
     used = state.decompositions_used + number
-    if used > deps.budget.max_decompositions:
+    if used > deps.config.budget.max_decompositions:
         return Elicited(note=note, used=used - 1, termination=Termination.DECOMPOSITIONS_EXHAUSTED)
     try:
         req = _request(deps, state, note)
@@ -181,7 +180,7 @@ def _request(
 ) -> FromHarnessToBrainToolDecomposeReq:
     """只装本轮素材；校验后绑定 state 的详情原列表，与判定共享只读输入。"""
     req = FromHarnessToBrainToolDecomposeReq(
-        remaining_planning_rounds=deps.budget.max_decompositions - state.decompositions_used,
+        remaining_planning_rounds=deps.config.budget.max_decompositions - state.decompositions_used,
         execution_order=state.execution_order,
         goal=current_goal(state),
         observation=state.ep_ctx.observation,
@@ -189,7 +188,10 @@ def _request(
         task_table=state.tasks,
         episode_index=state.ep_ctx.episode_index,
         knowledge=current_knowledge(state),
-        max_tasks=min(EPISODE_MAX_TASKS_PER_PLAN, deps.budget.episode_max_tasks - state.step),
+        max_tasks=min(
+            deps.config.loop.episode_max_tasks_per_plan,
+            deps.config.budget.episode_max_tasks - state.step,
+        ),
         last_judge=state.last_judge,
         human_note=note,
     )

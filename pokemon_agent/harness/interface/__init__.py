@@ -8,9 +8,9 @@
 
 - `RunState` → `run/run_state.py`（状态不是能力）；
 - `EpisodeRunState` → `episode/episode_state.py`；
-- 策略常量（`PLAN_MAX_NEW_GOALS`/`BRAIN_MAX_ATTEMPTS`…）→ 顶层
-  `pokemon_agent/config.py`（它们与其余策略常量同族，集中一处才好调实验参数）；
-  包出口**不再**导出常量——需要的人直接 `from pokemon_agent.config import X`。
+- 策略旋钮（`plan_max_new_goals`/`brain_max_attempts`…）→ `pokemon_agent/settings/default.json`
+  及覆盖文件，由 `build.py` 加载一次、经三层 runtime 的 `config` 字段下发；
+  包出口**不导出**常量。
 
 一句话：`interface/` 从此只回答"harness 需要外面给什么"，不再回答"harness 自己长
 什么样"。

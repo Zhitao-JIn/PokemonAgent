@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from _harness_fixtures.app_config import reconfigure
 from _harness_fixtures.harness import build_fake
 from langgraph.runtime import Runtime
 
@@ -146,7 +147,7 @@ def test_agent_revisions_respect_remaining_decomposition_budget(tmp_path: Path) 
     deps = fake.run_rt.episode
     deps.decomposer = decomposer
     deps.reviewer = reviewer
-    deps.budget = deps.budget.model_copy(update={"max_decompositions": 2})
+    reconfigure(fake.run_rt, budget={"max_decompositions": 2})
 
     updates = plan_episode(_state(), Runtime(context=deps))
 

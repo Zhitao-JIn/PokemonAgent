@@ -40,7 +40,6 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph.state import CompiledStateGraph
 
-from pokemon_agent.config import DEFAULT_RUN_BUDGET
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.interface import (
     GameToolPort,
@@ -50,7 +49,7 @@ from pokemon_agent.direct.interface import (
     RunSummarizePort,
     TraceToolPort,
 )
-from pokemon_agent.run_budget import RunBudget
+from pokemon_agent.settings import AppConfig
 
 from ..episode.episode_runtime import EpisodeRuntime
 from ..interface.reviewer import Reviewer
@@ -94,6 +93,8 @@ class RunRuntime:
     """run 层判定口：`review_and_judge` 问"run_goal 达成没有"（素材是局摘要）。"""
     episode_graph: CompiledStateGraph
     """episode 子图（`build.py` 编译的那一份）——`act` 格派局时经它 `invoke`。"""
+    config: AppConfig
+    """生效配置（`build.py` 加载一次，三层 runtime 持有**同一实例**）。"""
     episode: EpisodeRuntime
     """episode 侧的 runtime（`build.py` 先造它、再造本对象）。**必传、恒非空**。"""
 
@@ -101,9 +102,6 @@ class RunRuntime:
 
     deadline: Deadline | None = None
     """有限总时长档的共享单调截止点；生产无总时长限制时为 None。"""
-
-    budget: RunBudget = DEFAULT_RUN_BUDGET
-    """装配点注入的不可变预算档。"""
 
     checkpointer: Checkpointer | None = None
     """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""

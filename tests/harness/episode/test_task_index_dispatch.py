@@ -2,8 +2,9 @@
 
 from types import SimpleNamespace
 
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
+
 from pokemon_agent.brain import Task
-from pokemon_agent.config import DEFAULT_RUN_BUDGET
 from pokemon_agent.harness.episode.act.dispatch_task import dispatch_task
 from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeRunState
 from pokemon_agent.harness.task.task_entry import begin_task
@@ -59,7 +60,7 @@ def test_task_index_lists_prior_tasks_with_the_same_goal_in_this_episode_only() 
     task = begin_task(
         SimpleNamespace(
             checkpointer=None,
-            budget=DEFAULT_RUN_BUDGET,
+            config=DEFAULT_APP_CONFIG,
             trace=SimpleNamespace(append=lambda req: None),
         ),
         task_input,

@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.config import RUN_STALL_LIMIT
 from pokemon_agent.errors import BudgetExhausted
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
 from pokemon_agent.schemas.harness.domain import Termination
@@ -53,7 +52,7 @@ def budget_reason(
     if source == "begin":
         return None
     deadline = deps.deadline
-    if deadline is not None and deadline.remaining() <= deps.budget.reserve_s:
+    if deadline is not None and deadline.remaining() <= deps.config.budget.reserve_s:
         return Termination.TIME_EXHAUSTED
     outputs = (
         state.episode_outputs
@@ -74,17 +73,17 @@ def budget_reason(
         if layer == "episode"
         else state.step
     )
-    limit = deps.budget.max_total_actions if layer == "run" else state.actions_budget
+    limit = deps.config.budget.max_total_actions if layer == "run" else state.actions_budget
     if limit is not None and used >= limit:
         return Termination.ACTIONS_EXHAUSTED
     if state.done:
         return None
-    if layer == "episode" and state.step >= deps.budget.episode_max_tasks:
+    if layer == "episode" and state.step >= deps.config.budget.episode_max_tasks:
         return Termination.TASKS_EXHAUSTED
     if layer == "run" and source in ("review_and_judge", "plan_run", "act"):
-        if state.fail_streak >= RUN_STALL_LIMIT:
+        if state.fail_streak >= deps.config.loop.run_stall_limit:
             return Termination.STALLED
-        if state.step >= deps.budget.max_episodes:
+        if state.step >= deps.config.budget.max_episodes:
             return Termination.BUDGET_EXHAUSTED
     return None
 

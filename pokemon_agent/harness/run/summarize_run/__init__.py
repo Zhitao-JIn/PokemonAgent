@@ -51,7 +51,7 @@ def _request(
         episodes=chapter.episodes,
         succeeded=chapter.succeeded,
         acts_used=chapter.acts_used,
-        max_episodes=deps.budget.max_episodes,
+        max_episodes=deps.config.budget.max_episodes,
     )
 
 

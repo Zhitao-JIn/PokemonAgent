@@ -4,13 +4,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG, call_policy, reconfigure
 from _harness_fixtures.brain import _Brain
 from _harness_fixtures.harness import GOAL, build_fake
 from _harness_fixtures.memory import _Memory
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.config import DEFAULT_RUN_BUDGET
 from pokemon_agent.direct.brain_tool import RunSummarizer
 from pokemon_agent.direct.trace import TraceTool
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
@@ -70,7 +70,7 @@ def _runtime(tmp_path: Path, summarizer: object) -> Runtime:
     return Runtime(
         context=SimpleNamespace(
             run_summarizer=summarizer,
-            budget=DEFAULT_RUN_BUDGET,
+            config=DEFAULT_APP_CONFIG,
             memory=_Memory(),
             trace=TraceTool.build(run_id="r1", trace_root=tmp_path),
         )
@@ -78,7 +78,9 @@ def _runtime(tmp_path: Path, summarizer: object) -> Runtime:
 
 
 def _summarizer() -> RunSummarizer:
-    return RunSummarizer(_Brain(lambda n: True, lambda n: True, lambda n: True, 1))
+    return RunSummarizer(
+        _Brain(lambda n: True, lambda n: True, lambda n: True, 1), policy=call_policy()
+    )
 
 
 def test_every_edge_into_run_done_goes_through_the_run_summary_cells() -> None:
@@ -163,10 +165,7 @@ def test_run_summary_cells_run_after_done_in_a_full_graph_run(
 ) -> None:
     fake = build_fake(tmp_path)
     if actions_exhausted:
-        budget = fake.run_rt.budget.model_copy(update={"max_total_actions": 0})
-        fake.run_rt.budget = budget
-        fake.run_rt.episode.budget = budget
-        fake.run_rt.episode.task.budget = budget
+        reconfigure(fake.run_rt, budget={"max_total_actions": 0})
 
     fake.harness.run("r1", [GOAL])
     events = fake.trace.read_events({})

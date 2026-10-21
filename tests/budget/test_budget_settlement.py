@@ -5,9 +5,9 @@ import json
 import pytest
 from _doubles.llm import ScriptedLLM, text_reply
 from _fake_run import GOAL, build_fake, every, never
+from _harness_fixtures.app_config import call_policy, reconfigure
 
 from pokemon_agent.brain import Brain, Goal
-from pokemon_agent.config import DEFAULT_RUN_BUDGET
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.brain_tool import Decomposer
 from pokemon_agent.errors import MaxRetriesExceeded
@@ -32,10 +32,7 @@ class Clock:
 
 
 def configure(fake, **overrides):
-    budget = DEFAULT_RUN_BUDGET.model_copy(update=overrides)
-    for deps in (fake.run_rt, fake.run_rt.episode, fake.run_rt.episode.task):
-        deps.budget = budget
-    return budget
+    return reconfigure(fake.run_rt, budget=overrides).budget
 
 
 def events(fake):
@@ -68,7 +65,9 @@ def test_slow_decomposition_leaves_time_for_mechanical_run_end(tmp_path):
     provider = SlowProvider(
         text_reply('{"tasks":[{"goal":"子任务","success_criteria":"c","max_steps":2}]}')
     )
-    fake.run_rt.episode.decomposer = Decomposer(Brain(plan_llm=provider), deadline=deadline)
+    fake.run_rt.episode.decomposer = Decomposer(
+        Brain(plan_llm=provider), policy=call_policy(), deadline=deadline
+    )
     for deps in (fake.run_rt, fake.run_rt.episode, fake.run_rt.episode.task):
         deps.deadline = deadline
 
@@ -176,7 +175,7 @@ def test_remaining_time_snapshot_only_tightens_a_restored_deadline():
 def test_missing_task_steps_still_use_the_existing_parse_retry():
     raw = '{"tasks":[{"goal":"g","success_criteria":"c"}]}'
     provider = ScriptedLLM(text_reply(raw), text_reply(raw))
-    decomposer = Decomposer(Brain(plan_llm=provider))
+    decomposer = Decomposer(Brain(plan_llm=provider), policy=call_policy())
     req = FromHarnessToBrainToolDecomposeReq(
         goal=Goal(goal="g", criteria="c"),
         observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),

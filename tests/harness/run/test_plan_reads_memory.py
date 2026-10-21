@@ -24,6 +24,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
 
 from pokemon_agent.brain import Goal, RunPlan, Task
 from pokemon_agent.harness import RunRuntime
@@ -147,6 +148,7 @@ def _deps(memory: _Memory, planner: _BrainTool) -> RunRuntime:
     （测试直接调 `perceive` 格，`sense` 每圈取帧）。
     """
     return RunRuntime(
+        config=DEFAULT_APP_CONFIG,
         trace=_Trace(),  # type: ignore[arg-type]
         memory=memory,  # type: ignore[arg-type]
         game=SimpleNamespace(  # type: ignore[arg-type]

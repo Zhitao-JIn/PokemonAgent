@@ -7,7 +7,6 @@ from pydantic import BaseModel
 
 from pokemon_agent.brain import Task
 from pokemon_agent.brain.interface import RunPlan
-from pokemon_agent.config import PLAN_MAX_NEW_GOALS, REVIEW_AI_INJECT_MAX_ROUNDS
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolPlanOnceReq,
@@ -77,7 +76,9 @@ def plan_run(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
     }
 
 
-def _request(state: RunState, note: str, remaining: int) -> FromHarnessToBrainToolPlanOnceReq:
+def _request(
+    deps: RunRuntime, state: RunState, note: str, remaining: int
+) -> FromHarnessToBrainToolPlanOnceReq:
     """只装本次可见素材；父目标及验收条件显式传递。"""
     ctx = state.plan_ctx
     assert ctx is not None, "plan before perceive"
@@ -90,7 +91,7 @@ def _request(state: RunState, note: str, remaining: int) -> FromHarnessToBrainTo
         knowledge=ctx.knowledge,
         observation=state.observation,
         objects=ctx.objects,
-        max_push=PLAN_MAX_NEW_GOALS,
+        max_push=deps.config.loop.plan_max_new_goals,
         last_judge=state.last_judge,
         human_note=note,
         execution_order=state.execution_order,
@@ -105,9 +106,9 @@ def _elicit(deps: RunRuntime, state: RunState, meta: dict[str, object]) -> tuple
 
     def ask_brain(note: str, number: int) -> PlanDraft:
         used = state.planning_rounds_used + number
-        if used > deps.budget.max_planning_rounds:
+        if used > deps.config.budget.max_planning_rounds:
             return PlanDraft(used=used - 1)
-        req = _request(state, note, deps.budget.max_planning_rounds - used + 1)
+        req = _request(deps, state, note, deps.config.budget.max_planning_rounds - used + 1)
         return PlanDraft(request=req, proposal=_ask(deps, meta, req).plan, used=used)
 
     def ask_reviewer(draft: PlanDraft, rounds: ReviewRound) -> ReviewMark:
@@ -140,8 +141,8 @@ def _elicit(deps: RunRuntime, state: RunState, meta: dict[str, object]) -> tuple
         ask_brain,
         ask_reviewer,
         max_agent_rounds=min(
-            REVIEW_AI_INJECT_MAX_ROUNDS,
-            max(0, deps.budget.max_planning_rounds - state.planning_rounds_used - 1),
+            deps.config.review.ai_inject_max_rounds,
+            max(0, deps.config.budget.max_planning_rounds - state.planning_rounds_used - 1),
         ),
     )
 
