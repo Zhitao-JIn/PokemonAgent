@@ -1,0 +1,8 @@
+{
+  "task": "decide_action",
+  "version": "v1",
+  "kind": "task",
+  "params": "DecideActionParams",
+  "reason": "CP5a 首版收编静态决策模板，不改变措辞",
+  "hash": "826a3ef87165f1014b11ce98e87159d5d8dec95c1f40747686465747a597dad5"
+}

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from functools import partial
 from typing import Any
 
 import pytest
 from _harness_fixtures.app_config import ACTION_LIMITS
 
 from pokemon_agent.brain.interface import Action, ActionSegment, Goal, ScriptCall
-from pokemon_agent.direct.prompts import decide_action as _decide_action
+from pokemon_agent.direct.brain_tool import decide_prompt_params
 from pokemon_agent.mcpclient.action_space import action_space_for
 from pokemon_agent.mcpclient.world_tool import WorldMcpTool
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToGameToolExecuteReq,
@@ -19,8 +19,6 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.world import Facts, PlaceInWorld, TaskObservation, TaskScene
 from pokemon_agent.world.action_space import ALL_BUTTONS
-
-build_prompt = partial(_decide_action.build_prompt, max_segments=ACTION_LIMITS.max_segments)
 
 
 def _observation(scene: TaskScene, overlay: Facts.Overlay) -> TaskObservation:
@@ -100,7 +98,7 @@ def test_execute_returns_the_event_the_server_judged(
         (TaskScene.BAG, Facts.Overlay.DIALOG),
     ],
 )
-def test_get_action_space_adds_prompt_text_like_the_local_contract(
+def test_get_action_space_matches_the_local_raw_contract_and_gateway(
     tool: WorldMcpTool,
     world: Any,
     monkeypatch: pytest.MonkeyPatch,
@@ -123,19 +121,27 @@ def test_get_action_space_adds_prompt_text_like_the_local_contract(
         space=local,
         memories=[],
     )
-    local_prompt = build_prompt(request)
-    remote_prompt = build_prompt(request.model_copy(update={"space": remote}))
+    gateway = PromptGateway(None)
+    local_prompt = gateway.render(
+        "decide_action", decide_prompt_params(request, max_segments=ACTION_LIMITS.max_segments)
+    ).text
+    remote_prompt = gateway.render(
+        "decide_action",
+        decide_prompt_params(
+            request.model_copy(update={"space": remote}), max_segments=ACTION_LIMITS.max_segments
+        ),
+    ).text
     assert remote_prompt == local_prompt
     assert remote_prompt.encode("utf-8") == local_prompt.encode("utf-8")
 
 
 @pytest.mark.parametrize("scene", [TaskScene.WALK, TaskScene.PARTY])
 @pytest.mark.parametrize("overlay", list(Facts.Overlay))
-def test_prompt_text_is_deterministic_and_frame_independent(
+def test_action_space_never_contains_prompt_text_in_any_frame(
     scene: TaskScene,
     overlay: Facts.Overlay,
 ) -> None:
-    """改变坐标、步数与屏幕内容，不改变同场合叠加层下的三份静态文案。"""
+    """改变坐标、步数与屏幕内容，动作协议均只包含原始能力字段。"""
     before = _observation(scene, overlay)
     after = before.model_copy(
         update={
@@ -149,9 +155,8 @@ def test_prompt_text_is_deterministic_and_frame_independent(
     first = action_space_for(before, list(ALL_BUTTONS))
     second = action_space_for(after, list(ALL_BUTTONS))
 
-    assert first.descriptions == second.descriptions
-    assert first.note == second.note
-    assert first.map_note == second.map_note
+    assert set(first.model_dump()) == {"scene", "mask", "entries", "names"}
+    assert set(second.model_dump()) == {"scene", "mask", "entries", "names"}
 
 
 @pytest.mark.parametrize("names", [["select"], ["up", "down"]])

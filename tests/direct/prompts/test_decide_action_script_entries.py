@@ -16,9 +16,9 @@ def _obs(scene: TaskScene) -> TaskObservation:
 
 def test_decide_prompt_lists_script_entries() -> None:
     from _harness_fixtures.app_config import ACTION_LIMITS
+    from prompt.decision_example import build_prompt
 
     from pokemon_agent.brain.interface import Goal
-    from pokemon_agent.direct.prompts.decide_action import build_prompt
     from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
     from pokemon_agent.world import ActionEntry, ActionSpace
 

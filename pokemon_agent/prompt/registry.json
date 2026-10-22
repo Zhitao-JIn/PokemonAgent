@@ -53,6 +53,12 @@
     },
     "run_plan": {
       "active": "v1"
+    },
+    "decide_action": {
+      "active": "v1"
+    },
+    "decide_action_retry": {
+      "active": "v1"
     }
   }
 }

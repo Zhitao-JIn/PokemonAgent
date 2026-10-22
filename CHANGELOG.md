@@ -1,3 +1,13 @@
+## 2026-10-22（592）—— prompt 模块 CP5a：决策静态模板与动作空间文案归版本
+
+**改了什么**：decide_action 与 decide_action_retry 各登记 v1，将主模板、脚本模板、overlay 按键说明、地形图例、地图范例和重复按键规则收编；Chooser 显式注入网关并盖章。ActionSpace 只声明 scene、mask、entries、names，MCP 不再补模型文案；更新契约文档和用法测试。
+
+**为什么这么改**：动作空间产出能力原料，prompt 版本负责说明与排版，使模型可见规则受 hash 和活动版本管理。对同一输入保留原字节、原分支与相邻帧去重；脚本签名和 task_frame 临时桥接留到 CP5b 收回。
+
+**取舍**：extra=allow 仅为冻结旧输入保留三个文案扩展的无损往返，新原生动作空间不生产它们；with_prompt_text 留作无操作兼容入口。受保护旧包的常量不物理删除，延至 CP7，活动客户端已零引用。按用户扩范围授权，两处既有装配夹具增加显式DI，预算 schema 指纹改为实测 6cb5fa763de260ae；三处旧决策测试接入新网关入口、断言不变。首轮全量8失败均为旧测试仍读已移出字段；修正后11项定向通过。专项夹具缺memories及MCP旧入口问题已修正，没有 golden 文本差异。
+
+**影响面**：起点2396 passed、15 skipped；最终2434 passed、25 skipped、3 deselected、59 warnings（141.50s）。八任务179条中154条网关逐字节一致、25条沿用where不可恢复跳过，另4条retry一致；全库适配158/183、86.34%。ruff check通过、957 files already formatted、A/B/C守卫通过。模板标点破坏触发hash异常，越界import触发A，均原字节还原后复测。冻结golden、evals、真实memory、旧prompt包无改动，无真实模型调用。
+
 ## 2026-10-21（591）—— prompt 模块 CP4：三层判定、拆解、run 规划与共用片段
 
 **改了什么**：将 judge_success、decompose、run_plan 迁入 v1；登记目标表、任务表、上次判定、人类插话、读图与中断规则六个片段，并增加地形图例、地图事件、完整观测与接管视图片段。新增独立原料契约；记忆片段支持一行索引、完整观测和原始地形格投影。三能力改为显式注入网关、同源素材与逐次盖章，判定不再向拆解或规划借渲染函数。knowledge_query 不再拼 obs.status，仅使用 scene、overlay、map 与目标。

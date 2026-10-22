@@ -78,6 +78,7 @@ from pokemon_agent.direct.call_policy import CallPolicy
 from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.prompt import (
+    DecideActionParams,
     DecomposeParams,
     JudgeParams,
     PromptGateway,
@@ -130,6 +131,7 @@ from pokemon_agent.world import (
 )
 
 from .prompts import decide_action as decide_action_prompt
+from .prompts.task_frame import render_task_frame
 
 BrainLink = Literal["text", "judge", "verify", "plan"]
 """`BrainTool.build(links=…)` 可选的四条模型链路（对应配置文件 `models` 段的四个条目）。"""
@@ -314,6 +316,22 @@ class Decomposer:
 # ---- 决策 ----
 
 
+def decide_prompt_params(
+    req: FromHarnessToBrainToolChooseOnceReq, *, max_segments: int
+) -> DecideActionParams:
+    """转换决策原料；调用方保证段数上限为正。"""
+    assert max_segments > 0
+    data = req.model_dump(mode="json")
+    data["observation"] = data.pop("obs")
+    data.update(
+        max_segments=max_segments,
+        terrain_meanings=TERRAIN_MEANING,
+        frame_text=render_task_frame(req.obs),
+        signatures={entry.name: entry.signature() for entry in req.space.entries},
+    )
+    return DecideActionParams.model_validate(data)
+
+
 class Chooser:
     """`ChoosePort` 的实现：决策的信封翻译器。episode 层 runtime 持它；
     task 层将来持自己的实例（受限 space / 换策略时只换这一个对象）。"""
@@ -325,7 +343,7 @@ class Chooser:
         policy: CallPolicy,
         action_limits: ActionLimitsConfig,
         deadline: Deadline | None = None,
-        prompt_gateway: PromptGateway | None = None,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
         self._prompt_gateway = prompt_gateway
@@ -336,18 +354,10 @@ class Chooser:
     def choose(
         self, req: FromHarnessToBrainToolChooseOnceReq
     ) -> FromHarnessToBrainToolChooseOnceResp:
-        """决策：拼 prompt → 重试循环调 `Brain.choose()` → 规范化 → 打包整条账。
-
-        **prompt 在这里拼**（0913 定案）：harness 只装素材，本层入口调
-        `decide_action.build_prompt(req)`——"谁问模型，谁把 req 变成 prompt"，
-        拼装只剩这一个调用点，harness 不再有"拼好回填"那一半。
-
-        **解析重试带上一次失败信息**：解析类失败（`ParseFailure` 族）的
-        下一次尝试把上次的失败原因与原始输出拼进 prompt（`retry_prompt`），
-        重试携带信息增量；**传输失败原样重问**——模型根本没收到题，没什么可
-        "纠正"的（0915 分叉，取代无条件叠加）。
-        """
-        base_prompt = decide_action_prompt.build_prompt(req, max_segments=self._limits.max_segments)
+        """渲染决策并执行解析或传输重试；返回规范化动作及全部调用账。"""
+        params = decide_prompt_params(req, max_segments=self._limits.max_segments)
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "decide_action", params, [])
+        base_prompt = rendered_prompt.text
         # **images 在这里拼**（与 prompt 同一个归属："谁问模型，谁把 req 变成
         # 请求"），素材**不另开通道**：就是 `$memories` 段落拼装出来的那批帧
         # ——`dedup_snapshots()` 与 `render_sequence()` 是同一件事的图片版/
@@ -374,6 +384,7 @@ class Chooser:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
+            rendered_prompt=rendered_prompt,
         )
         return FromHarnessToBrainToolChooseOnceResp(
             action=self._normalize(result.action),

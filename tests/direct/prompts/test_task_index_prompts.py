@@ -4,9 +4,9 @@ from functools import partial
 
 import pytest
 from _harness_fixtures.app_config import ACTION_LIMITS
+from prompt import decision_example as _decide_action
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.direct.prompts import decide_action as _decide_action
 from pokemon_agent.direct.prompts.judge_success import build_prompt as judge_prompt
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,

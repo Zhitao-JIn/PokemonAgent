@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from pokemon_agent.direct.brain_tool import decide_prompt_params
 from pokemon_agent.direct.prompts import (
     decompose,
     judge_success,
@@ -13,6 +14,7 @@ from pokemon_agent.direct.prompts import (
     summarize_task,
 )
 from pokemon_agent.prompt import (
+    DecideActionParams,
     DecomposeParams,
     JudgeParams,
     PromptGateway,
@@ -29,6 +31,7 @@ from .legacy_adapter import UnrestorableRequest, adapt_request
 
 GOLDEN = Path(__file__).parent / "golden"
 CONTRACTS = {
+    "decide_action": DecideActionParams,
     "judge_success": JudgeParams,
     "decompose": DecomposeParams,
     "run_plan": RunPlanParams,
@@ -61,8 +64,14 @@ def test_migrated_prompt_and_history_preserve_the_old_contract(
         data["success"] = req.success
     if case.task == "decompose":
         data["terrain_meanings"] = TERRAIN_MEANING
-    params = CONTRACTS[case.task].model_validate(data)
-    if case.task == "judge_success":
+    params = (
+        decide_prompt_params(req, max_segments=case.max_segments)
+        if case.task == "decide_action"
+        else CONTRACTS[case.task].model_validate(data)
+    )
+    if case.task == "decide_action":
+        expected_history = []
+    elif case.task == "judge_success":
         expected_history = [entry.render() for entry in req.history] + judge_success.memory_blocks(
             req
         )
@@ -82,7 +91,7 @@ def test_migrated_prompt_and_history_preserve_the_old_contract(
         expected_history = summarize_run.history_blocks(req)
 
     actual = gateway.render(case.task, params)
-    history = gateway.render_history(case.task, params)
+    history = gateway.render_history(case.task, params) if case.task != "decide_action" else []
 
     expected = path.with_name(path.name.removesuffix(".req.json") + ".prompt.txt").read_bytes()
     assert actual.text.encode("utf-8") == expected

@@ -157,7 +157,9 @@ def assemble_runtime(
     task_rt = TaskRuntime(
         config=config,
         game=game,
-        chooser=Chooser(brain, policy=call_policy(), action_limits=ACTION_LIMITS),
+        chooser=Chooser(
+            brain, policy=call_policy(), action_limits=ACTION_LIMITS, prompt_gateway=prompt_gateway
+        ),
         judger=Judger(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         memory=memory,
         reflector=Reflector(brain),

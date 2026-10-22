@@ -2,6 +2,8 @@
 
 from .errors import PromptRegistryError
 from .gateway import PromptGateway, RenderedPrompt
+from .tasks.decide_action.params import DecideActionParams
+from .tasks.decide_action_retry.params import DecideActionRetryParams
 from .tasks.decompose.params import DecomposeParams
 from .tasks.judge_success.params import JudgeParams
 from .tasks.run_plan.params import RunPlanParams
@@ -21,4 +23,6 @@ __all__ = [
     "JudgeParams",
     "DecomposeParams",
     "RunPlanParams",
+    "DecideActionParams",
+    "DecideActionRetryParams",
 ]

@@ -1,4 +1,4 @@
-"""动作空间纯函数：names / mask / entries 来自 world，门面层只补 prompt 文案。"""
+"""动作空间纯函数：names / mask / entries 来自 world，门面层不再补 prompt 文案。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _obs(scene: TaskScene) -> TaskObservation:
     )
 
 
-def test_open_key_scene_is_world_space_plus_prompt_text() -> None:
+def test_open_key_scene_is_the_unmodified_world_space() -> None:
     obs = _obs(TaskScene.WALK)
     got, world = _action_space(obs, ALL_BUTTONS), compute_action_space(obs, ALL_BUTTONS)
     assert (got.scene, got.names, got.mask, got.entries) == (
@@ -26,17 +26,17 @@ def test_open_key_scene_is_world_space_plus_prompt_text() -> None:
         world.mask,
         world.entries,
     )
-    assert got.descriptions and got.note and got.map_note
-    assert not world.descriptions and not world.note and not world.map_note
+    assert got.model_dump() == world.model_dump()
+    assert {"descriptions", "note", "map_note"}.isdisjoint(got.model_dump())
 
 
-def test_script_scene_keeps_world_directions_and_adds_prompt_text() -> None:
+def test_script_scene_keeps_world_directions_without_prompt_text() -> None:
     obs = _obs(TaskScene.PARTY)
     got = _action_space(obs, ALL_BUTTONS)
     world = compute_action_space(obs, ALL_BUTTONS)
     assert (got.names, got.mask, got.entries) == (world.names, world.mask, world.entries)
     assert set(got.names) == {"up", "down", "left", "right", "a", "b"}
-    assert got.descriptions
+    assert {"descriptions", "note", "map_note"}.isdisjoint(got.model_dump())
     assert got.enabled("a") and got.enabled("b")
     assert not got.enabled("start") and not got.enabled("select")
 

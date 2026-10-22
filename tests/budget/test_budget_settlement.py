@@ -197,4 +197,4 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
 
 
 def test_state_schema_is_frozen_after_the_l1_goal_identity_stamp():
-    assert state_schema_hash() == "8532482fa5d9e4e6"
+    assert state_schema_hash() == "6cb5fa763de260ae"

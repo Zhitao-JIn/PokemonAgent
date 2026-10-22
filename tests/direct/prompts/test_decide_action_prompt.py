@@ -17,9 +17,9 @@ from __future__ import annotations
 from functools import partial
 
 from _harness_fixtures.app_config import ACTION_LIMITS
+from prompt import decision_example as _decide_action
 
 from pokemon_agent.brain.interface import Goal
-from pokemon_agent.direct.prompts import decide_action as _decide_action
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.world import ActionSpace, TaskObservation, TaskScene
 

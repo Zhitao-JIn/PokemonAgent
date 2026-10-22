@@ -61,10 +61,20 @@ def test_each_violation_reports_its_rule_and_source_location(
 
 
 MIGRATED = frozenset(
-    ["Decomposer", "Judger", "Planner", "RunSummarizer", "Summarizer", "TaskSummarizer", "Verifier"]
+    [
+        "Chooser",
+        "Decomposer",
+        "Judger",
+        "Planner",
+        "RunSummarizer",
+        "Summarizer",
+        "TaskSummarizer",
+        "Verifier",
+    ]
 )
 LEGACY_NAMES = frozenset(
     [
+        "decide_action_prompt",
         "decompose_prompt",
         "judge_success_prompt",
         "run_plan_prompt",
