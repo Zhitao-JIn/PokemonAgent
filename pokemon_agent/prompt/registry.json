@@ -59,6 +59,12 @@
     },
     "decide_action_retry": {
       "active": "v1"
+    },
+    "task_frame": {
+      "active": "v1"
+    },
+    "script_signature": {
+      "active": "v1"
     }
   }
 }

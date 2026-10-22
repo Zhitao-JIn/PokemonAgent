@@ -55,10 +55,13 @@ def test_planning_and_judging_stamp_all_failed_and_successful_attempts(
         calls = method(req).calls
 
     assert len(calls) == len(provider.requests) == 2
-    for call in calls:
-        assert call.payload["prompt_task"] == task
+    for index, call in enumerate(calls):
+        expected_task = "decide_action_retry" if index and task != "judge_success" else task
+        assert call.payload["prompt_task"] == expected_task
         assert call.payload["prompt_version"] == "v1"
         assert len(call.payload["prompt_hash"]) == 64
-    assert calls[0].payload["prompt_hash"] == calls[1].payload["prompt_hash"]
+    assert (calls[0].payload["prompt_hash"] == calls[1].payload["prompt_hash"]) == (
+        task == "judge_success"
+    )
     assert calls[0].error_kind == "ParseFailure"
     assert bool(calls[-1].error_kind) == exhausted

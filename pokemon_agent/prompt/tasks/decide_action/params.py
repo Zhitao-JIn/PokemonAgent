@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field
 
 from ...actions import ActionSpaceRecord
+from ...objects import ObjectFactEvent
 from ...observation import ObservationRecord
 from ...records import ActRecord, GoalDefinition, TaskRecord
 
@@ -18,5 +19,4 @@ class DecideActionParams(BaseModel):
     human_note: str = ""
     max_segments: int
     terrain_meanings: dict[str, str]
-    frame_text: str
-    signatures: dict[str, str]
+    known_objects: list[ObjectFactEvent] = Field(default_factory=list)

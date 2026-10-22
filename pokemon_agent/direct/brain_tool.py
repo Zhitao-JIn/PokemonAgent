@@ -79,6 +79,7 @@ from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.prompt import (
     DecideActionParams,
+    DecideActionRetryParams,
     DecomposeParams,
     JudgeParams,
     PromptGateway,
@@ -129,9 +130,6 @@ from pokemon_agent.world import (
     TERRAIN_MEANING,
     ActionEntry,
 )
-
-from .prompts import decide_action as decide_action_prompt
-from .prompts.task_frame import render_task_frame
 
 BrainLink = Literal["text", "judge", "verify", "plan"]
 """`BrainTool.build(links=…)` 可选的四条模型链路（对应配置文件 `models` 段的四个条目）。"""
@@ -234,14 +232,16 @@ class Planner:
         """渲染本轮规划并保留同源目标表与历史；重试保留全部调用账与版本戳。"""
         params = RunPlanParams.model_validate(req.model_dump(mode="json"))
         rendered_prompt = render_and_stamp(self._prompt_gateway, "run_plan", params, [])
-        prompt = rendered_prompt.text
+        current_prompt = rendered_prompt
         goal_stack = self._prompt_gateway.render_history("run_plan", params, part="goals")
         history = self._prompt_gateway.render_history("run_plan", params)
         images = cap_images(collect_frames(req.details), self._policy.image_cap)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
+            nonlocal current_prompt
+            current_prompt = _retry_prompt(rendered_prompt, calls, self._prompt_gateway)
             result = self._brain.plan(
-                prompt=_retry_prompt(prompt, calls) if calls else prompt,
+                prompt=current_prompt.text,
                 goal_stack=goal_stack,
                 history=history,
                 max_push=req.max_push,
@@ -255,7 +255,7 @@ class Planner:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
-            rendered_prompt=rendered_prompt,
+            rendered_prompt=lambda: current_prompt,
         )
         return FromHarnessToBrainToolPlanOnceResp(plan=result.plan, calls=calls)
 
@@ -287,14 +287,16 @@ class Decomposer:
             {**req.model_dump(mode="json"), "terrain_meanings": TERRAIN_MEANING}
         )
         rendered_prompt = render_and_stamp(self._prompt_gateway, "decompose", params, [])
-        prompt = rendered_prompt.text
+        current_prompt = rendered_prompt
         goal = f"{req.goal.goal}（判据：{req.goal.criteria}）"
         context = self._prompt_gateway.render_history("decompose", params)
         images = cap_images(collect_frames(req.task_memories), self._policy.image_cap)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
+            nonlocal current_prompt
+            current_prompt = _retry_prompt(rendered_prompt, calls, self._prompt_gateway)
             result = self._brain.decompose(
-                prompt=_retry_prompt(prompt, calls) if calls else prompt,
+                prompt=current_prompt.text,
                 goal=goal,
                 context=context,
                 max_tasks=req.max_tasks,
@@ -308,7 +310,7 @@ class Decomposer:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
-            rendered_prompt=rendered_prompt,
+            rendered_prompt=lambda: current_prompt,
         )
         return FromHarnessToBrainToolDecomposeResp(decomposition=result.decomposition, calls=calls)
 
@@ -326,8 +328,6 @@ def decide_prompt_params(
     data.update(
         max_segments=max_segments,
         terrain_meanings=TERRAIN_MEANING,
-        frame_text=render_task_frame(req.obs),
-        signatures={entry.name: entry.signature() for entry in req.space.entries},
     )
     return DecideActionParams.model_validate(data)
 
@@ -357,7 +357,7 @@ class Chooser:
         """渲染决策并执行解析或传输重试；返回规范化动作及全部调用账。"""
         params = decide_prompt_params(req, max_segments=self._limits.max_segments)
         rendered_prompt = render_and_stamp(self._prompt_gateway, "decide_action", params, [])
-        base_prompt = rendered_prompt.text
+        current_prompt = rendered_prompt
         # **images 在这里拼**（与 prompt 同一个归属："谁问模型，谁把 req 变成
         # 请求"），素材**不另开通道**：就是 `$memories` 段落拼装出来的那批帧
         # ——`dedup_snapshots()` 与 `render_sequence()` 是同一件事的图片版/
@@ -371,9 +371,10 @@ class Chooser:
         ]
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
-            prompt = base_prompt if not calls else _retry_prompt(base_prompt, calls)
+            nonlocal current_prompt
+            current_prompt = _retry_prompt(rendered_prompt, calls, self._prompt_gateway)
             return self._brain.choose(
-                prompt=prompt,
+                prompt=current_prompt.text,
                 keys=list(req.space.names),
                 images=images,
                 scripts=scripts,
@@ -384,7 +385,7 @@ class Chooser:
             attempt,
             policy=self._policy,
             deadline=self._deadline,
-            rendered_prompt=rendered_prompt,
+            rendered_prompt=lambda: current_prompt,
         )
         return FromHarnessToBrainToolChooseOnceResp(
             action=self._normalize(result.action),
@@ -1050,7 +1051,7 @@ def _attempt_loop(
     base_prompt: str = "",
     policy: CallPolicy,
     deadline: Deadline | None = None,
-    rendered_prompt: RenderedPrompt | None = None,
+    rendered_prompt: RenderedPrompt | Callable[[], RenderedPrompt] | None = None,
 ) -> tuple[_Result, list[ModelCall]]:
     """brain 各链路共用的重试循环：**成功带整条账返回 / 耗尽带整条账抛异常**。
 
@@ -1080,6 +1081,11 @@ def _attempt_loop(
     **账按序排列**：第 `n` 次尝试的账落在第 `n` 位——"第几次"由位置回答，
     不另盖一枚 `attempt` 戳（0914 跟进删）。
     """
+
+    def active_prompt() -> RenderedPrompt:
+        assert rendered_prompt is not None
+        return rendered_prompt() if callable(rendered_prompt) else rendered_prompt
+
     calls: list[ModelCall] = []
     while True:
         if deadline is not None:
@@ -1089,12 +1095,12 @@ def _attempt_loop(
         except BudgetExhausted as exc:
             pending = [_adopt(call) for call in exc.calls] if rendered_prompt else exc.calls
             if rendered_prompt is not None:
-                _stamp_calls(pending, rendered_prompt)
+                _stamp_calls(pending, active_prompt())
             raise BudgetExhausted(source, [*calls, *pending], exc.reason) from exc
         except AttemptFailed as exc:
             call = _adopt(exc.call)
             if rendered_prompt is not None:
-                _stamp_calls([call], rendered_prompt)
+                _stamp_calls([call], active_prompt())
             calls.append(call)
             if (
                 call.error_kind == ProviderRejected.__name__
@@ -1110,9 +1116,10 @@ def _attempt_loop(
             time.sleep(delay)
             continue
 
-        calls.extend(_adopt(call) for call in result.calls)
+        pending = [_adopt(call) for call in result.calls]
         if rendered_prompt is not None:
-            _stamp_calls(calls, rendered_prompt)
+            _stamp_calls(pending, active_prompt())
+        calls.extend(pending)
         return result, calls
 
 
@@ -1148,29 +1155,21 @@ def _illegal(why: str) -> Exception:
     return ParseFailure("", why)
 
 
-def _retry_prompt(base_prompt: str, attempts: list[ModelCall]) -> str:
-    """按**上一次失败的类型**决定重问的 prompt（0915 分叉，取代"无条件叠加"）。
-
-    - **解析类失败**（`ParseFailure`/`IllegalAction`/`OutputTruncated`）→ 追加
-      纠正说明：模型调通了、也看到了题，是它的输出不能用——告诉它上次错在哪。
-    - **传输失败**（`ToolTimeout` 等）→ **原样重问**：模型根本没收到题，
-      "你上一次的输出不合法 / 别再输出同样的东西"是张冠李戴——传输失败时
-      `$raw` 是空的，却劝模型改掉本来的答案。
-    - `ProviderRejected` 不会走到这里（循环在第一轮就耗尽了）。
-
-    **追加、不重新渲染**：`base_prompt` 前缀一个字节不变，多次重试尝试才能
-    共享同一段 prompt 缓存。
-    """
-    last = attempts[-1]
-    if last.error_kind not in _PARSE_ERROR_KINDS:
+def _retry_prompt(
+    base_prompt: RenderedPrompt, attempts: list[ModelCall], gateway: PromptGateway
+) -> RenderedPrompt:
+    """解析失败组合纠正版本；首次调用和传输失败保留原始版本。"""
+    if not attempts or attempts[-1].error_kind not in _PARSE_ERROR_KINDS:
         return base_prompt
-    return decide_action_prompt.retry_prompt(
-        decide_action_prompt.RetryPromptReq(
-            base_prompt=base_prompt,
+    last = attempts[-1]
+    return gateway.render(
+        "decide_action_retry",
+        DecideActionRetryParams(
+            base_prompt=base_prompt.text,
             attempt=len(attempts) + 1,
             reason=last.error,
-            raw=last.payload.get("raw", "")[:400],
-        )
+            raw=cast(str, last.payload.get("raw", ""))[:400],
+        ),
     )
 
 

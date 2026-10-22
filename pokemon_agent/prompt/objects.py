@@ -16,7 +16,12 @@ class ObjectFactEventBase(BaseModel):
     episode_id: str = Field()
     step: int = Field(ge=0)
     run_id: str = Field(default="")
-    actor_place: Place = Field()
+
+    class ActorPlace(BaseModel):
+        x: int
+        y: int
+
+    actor_place: ActorPlace = Field()
     place: Place = Field()
     object_kind: str = Field()
     button: str = Field()

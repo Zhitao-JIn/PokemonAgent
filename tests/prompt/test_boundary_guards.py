@@ -121,3 +121,44 @@ def test_migrated_capability_guard_rejects_legacy_calls_and_imports(body: str) -
     failures = migrated_legacy_references(source)
 
     assert failures == [3]
+
+
+def legacy_imports(source: str) -> list[int]:
+    """整个门面与 harness 都不得再引用旧 prompt 包。"""
+    failures: list[int] = []
+    for node in ast.walk(ast.parse(source)):
+        modules = (
+            [node.module or ""]
+            if isinstance(node, ast.ImportFrom)
+            else [alias.name for alias in node.names]
+            if isinstance(node, ast.Import)
+            else []
+        )
+        if any(
+            "direct.prompts" in module or module == "prompts" or module.startswith("prompts.")
+            for module in modules
+        ):
+            failures.append(node.lineno)
+    return failures
+
+
+def test_brain_tool_and_harness_have_no_legacy_prompt_imports() -> None:
+    paths = [
+        ROOT / "pokemon_agent/direct/brain_tool.py",
+        *(ROOT / "pokemon_agent/harness").rglob("*.py"),
+    ]
+
+    failures = [(path, legacy_imports(path.read_text(encoding="utf-8"))) for path in paths]
+
+    assert all(not lines for _path, lines in failures)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from pokemon_agent.direct.prompts import decide_action",
+        "from .prompts import decide_action",
+    ],
+)
+def test_whole_layer_guard_rejects_legacy_prompt_import(source: str) -> None:
+    assert legacy_imports(source) == [1]

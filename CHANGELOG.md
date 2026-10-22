@@ -1,3 +1,13 @@
+## 2026-10-22（593）—— prompt 模块 CP5b：帧投影、原始物体事件、脚本签名与重试归版本
+
+**改了什么**：新增 task_frame、script_signature 片段，移除 CP5a 的帧文本与签名桥接；帧从结构化事实、接管视图、限制标志生成，脚本签名从参数原件排版。物体检索保留原始事件，经 episode 上下文和请求信封交给判定、拆解，再由 object_events 片段稳定排序渲染。brain_tool 与 harness 对旧 prompt 包的 import 清零。解析纠正尝试走 decide_action_retry，并只给本次新收编账盖实际任务版本。
+
+**为什么这么改**：让场合投影、事件排版和重试文字都受活动版本与 hash 管理，保持原条件、标点、字段顺序、raw 的400字符上限，以及传输失败恢复原题的分流。此前失败账的版本戳不再被后续成功尝试覆盖；本地和 Langfuse 的实际三次尝试往返均保留各自三键。
+
+**取舍**：按用户扩范围授权，Choose、Decompose、Judge 三张信封新增 typed known_objects，未显式提供时省略序列化，冻结旧输入形状不变；预算 schema 指纹更新为实测95057cca4fffb08b，旧存档仍走严格校验。代码事实是物体记忆用于 episode 判定和拆解，task 重新取帧，故不额外传入 task 或延长可见时间。旧 object_semantic_memory、merge 的旧存档分支及全部旧渲染方法保留至 CP6；新检索不再生产文本。历史事件缺失 actor map_id/run_id，测试适配器只恢复可见原料，prompt 的 ActorPlace 只需 x/y，不补造语义；旧观测缺限制标志时从同帧条件推导。默认注册表22单元（9任务、13片段），没有做 CP6/CP7 清理。
+
+**影响面**：起点2434 passed、25 skipped；最终2506 passed、25 skipped、3 deselected、59 warnings（155.47s）。八任务154/179网关对拍一致、25条既定where无法恢复跳过，retry4/4一致；全库适配158/183、86.34%。原生专项99通过，包括16场合×3overlay、八接管视图及缺视图、六类脚本默认值、原始检索事件与实际重试trace往返。ruff check通过、962 files already formatted、A/B/C守卫通过；帧模板标点破坏和越界import均触发预期失败并原字节恢复后复测。golden仍366文件、4,402,796字节，受保护路径无diff、无文件删除、无真实模型调用。
+
 ## 2026-10-22（592）—— prompt 模块 CP5a：决策静态模板与动作空间文案归版本
 
 **改了什么**：decide_action 与 decide_action_retry 各登记 v1，将主模板、脚本模板、overlay 按键说明、地形图例、地图范例和重复按键规则收编；Chooser 显式注入网关并盖章。ActionSpace 只声明 scene、mask、entries、names，MCP 不再补模型文案；更新契约文档和用法测试。

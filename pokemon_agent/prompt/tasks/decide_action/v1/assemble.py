@@ -13,6 +13,8 @@ from ...records import ActRecord, GoalDefinition, TaskRecord
 from ..fragments.human_note.params import HumanNoteParams
 from ..fragments.memory_records.params import MemoryParams
 from ..fragments.read_screen.params import ReadScreenParams
+from ..fragments.script_signature.params import ScriptSignatureParams
+from ..fragments.task_frame.params import TaskFrameParams
 from ..fragments.terrain_legend.params import TerrainLegendParams
 from .params import DecideActionParams
 
@@ -103,19 +105,26 @@ def assemble(params: DecideActionParams, compose: Compose) -> str:
     assert goals, "build_prompt() got an empty goal stack"
     if not space.names:
         return _script(request, compose)
-    facts = request.frame_text
+    facts = compose(
+        "task_frame",
+        TaskFrameParams(observation=request.observation, known_objects=request.known_objects),
+    )
     recalled = "\n\n".join(_memory_lines(request.memories, "sequence", compose)) or _LABELS["L002"]
     key_lines = [
         _LABELS["L004"].format(name, _descriptions(request).get(name, _LABELS["L003"]))
         for name in space.names
     ]
     navigation_lines = [
-        _LABELS["L005"].format(request.signatures[e.name], e.description)
+        _LABELS["L005"].format(
+            compose("script_signature", ScriptSignatureParams(entry=e)), e.description
+        )
         for e in space.entries
         if e.kind == "script" and space.mask.get(e.name, False) and (e.name in _NAVIGATION_SCRIPTS)
     ]
     business_lines = [
-        _LABELS["L006"].format(request.signatures[e.name], e.description)
+        _LABELS["L006"].format(
+            compose("script_signature", ScriptSignatureParams(entry=e)), e.description
+        )
         for e in space.entries
         if e.kind == "script"
         and space.mask.get(e.name, False)
@@ -156,10 +165,16 @@ def assemble(params: DecideActionParams, compose: Compose) -> str:
 def _script(request: DecideActionParams, compose: Compose) -> str:
     """消费原料并保留既有决策条件与排版。"""
     obs, space = (request.observation, request.space)
-    view = request.frame_text
+    view = compose(
+        "task_frame",
+        TaskFrameParams(observation=request.observation, known_objects=request.known_objects),
+    )
     entries = [e for e in space.entries if e.kind == "script" and space.mask.get(e.name, False)]
     scripts = "\n".join(
-        _LABELS["L016"].format(request.signatures[e.name], e.description or _LABELS["L015"])
+        _LABELS["L016"].format(
+            compose("script_signature", ScriptSignatureParams(entry=e)),
+            e.description or _LABELS["L015"],
+        )
         for e in entries
     )
     params = "\n".join(

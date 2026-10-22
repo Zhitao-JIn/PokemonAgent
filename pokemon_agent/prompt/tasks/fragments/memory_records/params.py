@@ -19,6 +19,7 @@ class MemoryParams(BaseModel):
         "plain",
         "index",
         "observation",
+        "facts",
     ]
     entries: list[ActRecord | TaskRecord | EpisodeRecord | RunRecord]
     verdicts: list[VerdictRecord] = Field(default_factory=list)

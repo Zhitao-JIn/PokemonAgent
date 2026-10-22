@@ -108,7 +108,12 @@ def memory_blocks(params: JudgeParams, compose: Compose) -> list[str]:
     if params.observation is not None:
         blocks.append(
             _LABELS["L008"].format(
-                compose("observation", ObservationParams(observation=params.observation))
+                compose(
+                    "observation",
+                    ObservationParams(
+                        observation=params.observation, known_objects=params.known_objects
+                    ),
+                )
             )
         )
     return blocks

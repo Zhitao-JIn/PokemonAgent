@@ -69,6 +69,10 @@ def test_migrated_prompt_and_history_preserve_the_old_contract(
         if case.task == "decide_action"
         else CONTRACTS[case.task].model_validate(data)
     )
+    if adapted.prompt_fields:
+        params = CONTRACTS[case.task].model_validate(
+            {**params.model_dump(mode="json"), **adapted.prompt_fields}
+        )
     if case.task == "decide_action":
         expected_history = []
     elif case.task == "judge_success":

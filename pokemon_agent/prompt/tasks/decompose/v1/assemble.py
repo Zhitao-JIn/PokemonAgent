@@ -83,7 +83,10 @@ def context_lines(params: DecomposeParams, compose: Compose) -> list[str]:
     )
     lines = [
         _LABELS["L001"],
-        compose("observation", ObservationParams(observation=params.observation)),
+        compose(
+            "observation",
+            ObservationParams(observation=params.observation, known_objects=params.known_objects),
+        ),
         _LABELS["L002"].format(remaining, params.execution_order),
     ]
     if params.task_table:

@@ -1,0 +1,8 @@
+{
+  "task": "task_frame",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "TaskFrameParams",
+  "reason": "CP5b 原始帧投影",
+  "hash": "8ea456e8867db3b7eac7552806da716e94a5b7d3dbd8a0f467f873518fa32bbd"
+}

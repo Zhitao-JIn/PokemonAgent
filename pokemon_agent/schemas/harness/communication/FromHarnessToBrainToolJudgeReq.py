@@ -9,12 +9,18 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
 from pokemon_agent.brain.interface import Decomposition, Goal, RunPlan
 from pokemon_agent.schemas.harness.domain.goal_entry import GoalEntry
 from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
-from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, RunMemory, TaskMemory
+from pokemon_agent.schemas.memory import (
+    ActMemory,
+    EpisodeMemory,
+    ObjectFactEvent,
+    RunMemory,
+    TaskMemory,
+)
 from pokemon_agent.world import TaskObservation
 
 
@@ -60,3 +66,13 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     observation: TaskObservation | None = None
     knowledge: str = ""
     allow_interrupt: bool = False
+
+    known_objects: list[ObjectFactEvent] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        """历史请求未提供原始事件时保留原信封形状。"""
+        data = handler(self)
+        if "known_objects" not in self.model_fields_set:
+            data.pop("known_objects", None)
+        return data

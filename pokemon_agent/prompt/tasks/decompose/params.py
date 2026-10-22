@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, Field
 
+from ...objects import ObjectFactEvent
 from ...observation import ObservationRecord
 from ...records import (
     EpisodeRecord,
@@ -25,3 +26,5 @@ class DecomposeParams(BaseModel):
     remaining_planning_rounds: int | None = None
     human_note: str = ""
     terrain_meanings: dict[str, str]
+
+    known_objects: list[ObjectFactEvent] = Field(default_factory=list)

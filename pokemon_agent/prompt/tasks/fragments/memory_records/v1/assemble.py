@@ -241,6 +241,17 @@ def run_render(self: RunRecord) -> str:
 
 def assemble(params: MemoryParams, compose: Compose) -> str:
     """按素材种类渲染，再执行任务需要的编号或标注。"""
+    if params.mode == "facts":
+        assert params.observation is not None
+        return json.dumps(
+            {
+                key: value
+                for key, _label, value in facts_entries(
+                    snapshot_facts(params.observation, include_terrain=True)
+                )
+            },
+            ensure_ascii=False,
+        )
     if params.mode == "observation":
         assert params.observation is not None
         obs = params.observation
