@@ -99,7 +99,7 @@ agent_goal_run 的 solver 在 run-one 子进程跑完后，把这条样本的项
 
 ### 1b.2 读账
 
-- 用现有 `evals/scorers/stream.py::RunStream.load(trace_root, run_id, branch, backend)`（local 与 langfuse 两种后端都支持，和 scorer 同一个读法），得到已按 `(ts, uuid)` 排好、只含本次恢复执行线的 `ParsedEvent` 列表。
+- 用现有 `evals/agent_short_goal_run/scorer/stream.py::RunStream.load(trace_root, run_id, branch, backend)`（local 与 langfuse 两种后端都支持，和 scorer 同一个读法），得到已按 `(ended_at, seq)` 排好、只含本次恢复执行线的 `ParsedEvent` 列表。
 - 不直接读 json 文件（原型那样只是为了验证）。
 
 ### 1b.3 事件映射
