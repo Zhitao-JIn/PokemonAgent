@@ -1,11 +1,11 @@
-## 2026-10-22（599）—— 补齐 intent 第八节两处缺口：删 `KnowledgeRecord.render`、固化「只改注册表切换版本」
+## 2026-10-22（602）—— 补齐 intent 第八节两处缺口：删 `KnowledgeRecord.render`、固化「只改注册表切换版本」
 
 **改了什么**：
 
 - `pokemon_agent/schemas/memory/datastore/knowledge.py`：删除 `KnowledgeRecord.render()`（10 行，含 docstring）。字段、校验、序列化与 `__all__` 不变，无 import 增删。
 - `tests/prompt/test_registry_switch.py`（新增 41 行）：一条用法示范式测试。同一任务 `example` 建 v1 / v2 两版（各自 `prompt.md` / `assemble.py` / `meta.json`，hash 按 `assemble.py + prompt.md` 的 LF 归一化 sha256 生成）；同一 `PromptGateway` 类、同一 `ExampleParams` 批次下，registry 的 `active=v1` 时 `RenderedPrompt` 的 `version/text/hash` 为 v1，仅把 `registry.json` 改成 `active=v2` 并重建网关后三者切到 v2；同时断言两次渲染之间树内所有 `.py` 字节未变。反例（`active` 指向不存在的版本 → 构造即抛 `PromptRegistryError`）引用既有 `test_registry.py::test_a_missing_version_directory_is_rejected_at_startup`，不重复。
 
-**为什么这么改**：598 的第八节验收留了两处缺口——第 6 项在 `schemas/memory` 上仍残留 `KnowledgeRecord.render`（读方为零），第 5 项「只改注册表即可切换版本」只有手工探针、没有自动化测试。本步把两处都补成可机械复现的证据，第八节八项由此全部通过。
+**为什么这么改**：601 的第八节验收留了两处缺口——第 6 项在 `schemas/memory` 上仍残留 `KnowledgeRecord.render`（读方为零），第 5 项「只改注册表即可切换版本」只有手工探针、没有自动化测试。本步把两处都补成可机械复现的证据，第八节八项由此全部通过。
 
 **取舍**：
 
@@ -18,7 +18,7 @@
 
 **影响面**：全量 pytest `tests=2404, failures=0, errors=0, skipped=25` → **2379 passed / 25 skipped / 3 deselected**（基线 2403 + 新增 1 − 删除 0）；`ruff check` 全绿、`ruff format --check` 949 files；守卫 A/B/C/D；golden 专项 161 passed / 25 skipped 不变。intent 第八节最终：1–8 全部通过（第 5 项由新测试固化，第 6 项残留清零）。未改 `pokemon_agent/prompt/**`、golden、evals 数据、`registry.json`、文档与 `memory/`。
 
-## 2026-10-22（598）—— prompt 模块收口（CP7）：文档同步、.gitignore 补漏、intent 第八节验收
+## 2026-10-22（601）—— prompt 模块收口（CP7）：文档同步、.gitignore 补漏、intent 第八节验收
 
 **改了什么**：同步仍描述旧 prompt / world / memory 状态的活文档，并补一条 `.gitignore`：
 
@@ -35,13 +35,13 @@
 - `docs/brain_scope/spec.md`：D2 索引行改为由 prompt 网关渲染；D4 去掉 `render()` / `index_line()`；D5 的 `summarize_run` prompt 路径改为 `prompt/`。
 - `.gitignore`：新增 `memory/run_memory/`（代码仍会在启动时自动创建该目录）。
 
-**为什么这么改**：CP0–CP6、595、596、597 已把 prompt 渲染迁到 `pokemon_agent/prompt/`、删除 world/memory 旧字段与旧 memory 数据。活文档仍把 `direct/prompts`、模块级常量、`Reflection`、旧 `render` / `index_line`、旧 memory 目录写成现状，会让后续读者按不存在的接口工作。本步只改事实性描述，让文档与当前代码一致，并补上 `run_memory` 的忽略规则。
+**为什么这么改**：CP0–CP6、595、596、600 已把 prompt 渲染迁到 `pokemon_agent/prompt/`、删除 world/memory 旧字段与旧 memory 数据。活文档仍把 `direct/prompts`、模块级常量、`Reflection`、旧 `render` / `index_line`、旧 memory 目录写成现状，会让后续读者按不存在的接口工作。本步只改事实性描述，让文档与当前代码一致，并补上 `run_memory` 的忽略规则。
 
 **取舍**：分类按「活文档 = 当前行为 / 当前规范」与「历史记录 = 带日期的计划 / 审计 / 复盘 / 迁移设计」处理；`docs/prompt_module/**`、`docs/PLAN_*`、`docs/*_1007*`、`docs/experiences/**`、`docs/roadmap/*archive*`、`docs/perceive/spec.md`、`docs/test/brain-reflect-spec.md`、`docs/spec/PLAN_wikiskill_reproduction.md`、`docs/spec/TRACE_37_accounts_examples.md` 保持原样；`docs/brain_scope/plan.md` 是 CP 实施记录，未改。`docs/mcp/prompt_observation_fields.md` 选择直接改写为现状（而非只加“已被取代”页首），因为它本身就是 MCP 观测字段的当前说明，保留旧表会继续误导。`AGENTS.md` / `CLAUDE.md` 保留 3 行头部差异，只同步事实。`docs/brain_scope/spec.md` 只改 D2/D4/D5 的现状事实，后文 CP 历史清单未重写。第八节第 6 项发现 `KnowledgeRecord.render` 仍在 `schemas/memory/datastore/knowledge.py`（无读方），但本步禁止改 `.py`，未修，列入缺口。`AGENTS.md` 的 0915 import 计数保留历史口径并注明未重算，不伪造新数字。
 
 **影响面**：intent 第八节八项结论：1 通过（production 只有 `brain_tool.py` 从 `pokemon_agent.prompt` import 公开网关 / Params，零任务实现 / 版本模块 import）；2 通过（守卫 A）；3 通过（AST 零模块级旧常量定义；仅两处代码注释历史提及与 docs/CHANGELOG 历史文字）；4 通过（golden 161 passed / 25 skipped，25 条均为 legacy_adapter 的「where 不是现行 PlaceInWorld 文本」；golden 目录无说明页）；5 部分通过（账字段测试 16 passed；无「只改 registry.json 切换版本」的自动化测试，手工探针 v1→v2 通过，列为缺口）；6 有缺口（`KnowledgeRecord.render` 未删，其余 world/memory 类无 `render`/`index_line`）；7 通过（`test_registry.py` 的 hash mismatch / missing version 用例）；8 通过（全量 2378 passed / 25 skipped / 3 deselected，ruff 948 files，守卫 A/B/C/D）。无代码、测试、golden、evals 数据、prompt 模板、registry.json 改动；`memory/` 未触碰。
 
-## 2026-10-22（597）—— 删除旧 memory 运行期数据（保留 knowledge_memory）
+## 2026-10-22（600）—— 删除旧 memory 运行期数据（保留 knowledge_memory）
 
 **改了什么**：删除主仓库根 `memory/` 下五个运行期数据目录，保留 `knowledge_memory/`；不改任何代码、测试或数据文件：
 
@@ -218,6 +218,16 @@ evals/dataset 脚本改动（均为读方同步，不改数据）：
 
 **影响面**：起点 HEAD 124ed40，全量 2202 passed；完成后全量 2237 passed、3 deselected、59 warnings（97.52s），独立 golden 184 passed，盖章及既有 trace / Langfuse 测试 77 passed。ruff check 通过，ruff format --check 为 904 files already formatted。真实守卫退出 0，A/B/C 临时违规样例各退出 1，另有 9 个负例覆盖绝对、相对和包根越界导入。破坏验证：示范 prompt.md 改一个标点且不更新 meta.hash，构造抛 PromptRegistryError；临时在真实 prompt/errors.py 加跨模块 import，守卫报 A 类违规并退出 1。两处均按原字节还原，真实守卫恢复退出 0，git status 无额外改动；全程离线、不调用真实模型。
 
+## 2026-10-22（599）—— trace 文档清理：API/SPEC 对齐八字段与 (ended_at, seq)、三处残留注释、seq 字段描述
+
+**改了什么**：`docs/spec/trace/API.md` 与 `docs/spec/trace/SPEC.md` 对齐代码现状：落盘封套从"六个字段 + `ts`"改为八个字段（补 `seq`/`started_at`/`ended_at`，删 `ts`），排序真源 `(ts, uuid)` → `(ended_at, seq)`（同刻 `seq` 决胜，跨进程不保序）；`meta` 从"四键、落盘层盖 `run_id`"改为六键（`run_id`/`branch` 由 `TraceTool.append` 的 `_stamp_meta` 盖，`LocalTrace` 只透传、不 assert）；`LocalTrace` 构造签名去掉 `run_id`/`branch` 只收 `root`；`TraceTool.build` 签名补 `branch`/`backend`，assert 表按 `direct/trace/__init__.py` 真实断言逐条重写（`branch` 也不许调用方带、签名四件含 `task_id`、出口契约注明在 `render_request`）；落盘根覆盖链改为配置驱动（`paths.trace` → `build_real(config=…)` → `TraceTool.build(trace_root=…)` → `LocalTrace(root=…)`，`build_real` 不再收 `trace_root`）；4.2 示例 JSON 换成 2026-10-22 实测落盘的一条（六键 meta）；第 7 节示例改为可运行版本（`pokemon_agent.tools.trace` → `pokemon_agent.direct.trace`、`LocalTrace(root=…)`、meta 四件、临时目录）并附实测输出；8.2 命令改为 `pytest tests/trace tests/direct/trace`（139 条，Langfuse 39 条单独说明）；8.3 整节改写为"`experiment.real_check.check_trace` 已不在仓库"（`experiment/` 下现仅剩 `paused_window_probe.py`）；第九节与 SPEC 缺口段同步（旧格式缺 `seq`/`ended_at`、`seq` 是进程内计数器跨进程不保序、机械保障换成 `test_trace_event_protocol.py` 与 `test_trace_event_alignment.py`）。三处残留注释：`schemas/harness/domain/trace_event.py` 模块 docstring"七个字段分三组"→八字段（补 `seq`、删"排序看 `ts`…同毫秒靠 uuid 兜底"）、`direct/trace/__init__.py`"trace 自己的六个字段"→八个、`direct/interface/ports.py` `TraceToolPort.read_events` docstring 两处 `(ts, uuid)`→`(ended_at, seq)`。
+
+**为什么这么改**：文档停在 0914 六字段 + `ts` 形状，与 586 之后的代码（0927 双时刻、0928 325 `seq` 决胜）之间有一整轮文档债——586 的取舍明确把 API.md 的 `_stamp_run_id` 遗留"留给文档轮"，本轮就是那轮。`_stamp_run_id` 全仓已无定义（盖章在 tool 层 `_stamp_meta`），`_last_ts` 与撞刻 +1µs 也早删了；查字段、写查询、读回放的人只看这两份文档，错一处就按错形状写代码。
+
+**取舍**：**只改文档与注释，唯一的可执行表达式改动是 `trace/datastore/event.py` 里 `seq` 字段 `Field(description=...)` 的字符串**（"由 tool 层在 append 时分配、随调用传进封套"→"由 LocalTrace.append 取进程内单调序号（next_seq()）"）——C 组三个 .py 去掉全部 docstring 后与 HEAD 的 `ast.dump` 逐字节相同；event.py 的 AST 差异经字符串常量比对确认只有这一处。`scripts/check_trace_self_contained.py` 的 B 项已知过时（豁免目录仍写 `tools/`，实测当前退出码 1：A/C 过、B 报 6 处 violation——`direct/trace/` 三个文件 + `reviewer/__main__.py`），本轮只在两份文档里标记"待另案处理"，不改脚本。`AGENTS.md`/`CLAUDE.md` 第九节 586 已同步过，本轮不动；SPEC"发现的不一致"两条逐条核对后更新（重复段已了结，`event_id`/恢复链说法已不在该节，只剩"三件 vs 四件"一处）。API.md 4.6 与 SPEC 的 kind 覆盖清单按 `render.py` 实测补齐（`MEMORY_IO` 六读五写、`LIFECYCLE` 补 checkpoint/review/budget、`ERROR` 补 `checkpoint_error`、`TraceKind` 51 个成员、调用账九条链）。
+
+**影响面**：仅文档与三处 docstring/注释 + 一个 Field 描述字符串，`pokemon_agent/` 可执行逻辑零改动。实测：改前指定 pattern grep 五个文件共 49 处命中，改后 7 处且全部合法（新覆盖链/示例中的 `run_id=`、代码里的 `run_id=run_id`、两处"旧 `(ts, uuid)`"历史语境）；两份文档 285 个代码标识符 token 逐个核对在仓库里真实存在（6 个 allowlist 均已注明理由）；定向 `pytest tests/trace tests/direct/trace` 139 passed / 0 failed / 0 skipped，收集数仍 139 == 起点 N0；全量 2066 passed / 0 failed / 0 errors / 0 skipped / 194.03s；`ruff check .` 与 `ruff format --check .` 全绿；`git diff --ignore-cr-at-eol --stat` 与 `git diff --stat` 一致（仓库 LF，无 CRLF 混入）。
+
 ## 2026-10-21（598）—— 补摘 choose_data 中仍读采集目录的两个对账用例
 
 **改了什么**：从 tests/test_evals_choose_data.py 再摘掉 test_ram_review_preserves_all_evidence_without_claiming_human_approval 与 test_ram_review_cannot_silently_expand_to_bag。
@@ -246,6 +256,27 @@ evals/dataset 脚本改动（均为读方同步，不改数据）：
 **取舍**：遵循设计补充裁决，不补造历史字段；plan 26 条全部跳过，原因是旧信封缺现行必填字段、不可无损升级，以现行合成用例承担基线。decompose 旧类 11 条因缺 remaining_planning_rounds、judge 旧类 60 条因缺 goal_table 无法直接渲染，全部跳过；summary 的 60 条旧 summarize_task 可直接渲染，保留旧类。为完整保留截图和请求字段并满足 5 MB 上限，每任务历史抽样上限取 15。源码联合类型实际有 8 个 takeover 视图，全部覆盖，另覆盖视图缺失。起点实测 2021 passed、2 failed、7 errors，均为被忽略的 choose 采集数据缺失，按设计裁决接受，不复制数据、不改旧测试。
 
 **影响面**：仅新增 scripts/capture_prompt_golden.py、tests/_doubles/prompt_cases.py、tests/prompt/test_golden_baseline.py 与 tests/prompt/golden/，并追加本条日志；生产代码、evals 与真实 memory 数据不变，不调用模型、不执行 Git 写操作。verify 和 plan 豁免历史有效数门槛，其余四个家族现行请求均可直接验证、渲染且不少于 10 条。凭据模式命中 0，宽泛 key 搜索命中 209 处，复核为按键字段/标签或 PNG Base64 片段。
+
+## 2026-10-21（586）—— trace 文档对齐：八字段封套与 (ended_at, seq) 排序（CP3）
+
+**改了什么**：`trace/store.py` 模块 docstring 的「七个字段」改成八个（补 `seq`，并写清它是进程内 append 的单调序号、同刻 `ended_at` 的决胜键、由本类在 append 时取号）；`new_event_uuid` docstring 里「排序的真源是 `(ts, uuid)`」改成 `(ended_at, seq)`（uuid 只当纯标识）；`append` docstring 补「`content` 不可 JSON 序列化 → 抛 `TypeError` 且不落盘」（序列化在构造事件时跑完，`_atomic_write_text` 在其后）；`read_events` docstring 的封套字段清单补上 `seq`。`trace/datastore/event.py` 模块 docstring 的「六个字段」改成八个：分组表按封套（`uuid`/`seq`/`kind`/`type`/`started_at`/`ended_at`）、标签（`meta`）、正文（`content`）重写并在表下写清谁填，排序段改成 `(ended_at, seq)`（同刻按 append 序决胜，uuid 退化）。`AGENTS.md` 与 `CLAUDE.md` 第九节同步：排序真源、八字段、表格删 `ts` 增 `seq`/`started_at`/`ended_at` 三行、`meta` 的盖章点改成 `TraceTool.append`（`direct/trace/__init__.py::_stamp_meta`，`LocalTrace` 只透传），并补一条 0927 双时刻 + 0928 325 `seq` 的历史要点。两份第九节改完逐字一致（diff 为空）。
+**为什么这么改**：文档停在 0914 的六字段 + `ts` 形状，代码早已是 0927 双时刻加 0928 325 的 `seq` 决胜键。「六个字段」「`(ts, uuid)`」「`trace/store.py::_stamp_run_id` 盖章」这三种说法会把人带去写不存在的字段和函数——`_stamp_run_id` 全仓已无定义，盖章在 tool 层的 `_stamp_meta`。查字段、写查询、读回放的人只看这三份文档，错一处就按错形状写代码。
+**取舍**：**只改注释、docstring 与 `.md`，可执行语句零改动**——`store.py` 与 `datastore/event.py` 去掉全部 docstring 后与 HEAD 的 `ast.dump` 逐字节相同（字段 `description` 里的旧措辞因此也没动，见下）；`docs/spec/trace/API.md` 里同样的过时说法（`_stamp_run_id`）本轮不处理，留给文档轮；第九节用脚本整段同步（先证明 HEAD 两份逐字一致，再整段替换）而不是手改两遍。
+**影响面**：`pokemon_agent/trace/store.py`、`pokemon_agent/trace/datastore/event.py`（仅 docstring/注释）、`AGENTS.md`、`CLAUDE.md`（仅第九节）。用例零增减，收集数仍 2078；实测 `tests/trace` + `tests/direct/trace` 139 passed / 8.71 s，全量 2069 passed / 2 failed / 7 errors / 0 skipped / 3 deselected / 164.39 s，红灯仍是那 9 条 `eval_results/` 冻结采集数据缺失（该目录在 `.gitignore` 里，工作树不带），无新增；`ruff check .` 与 `ruff format --check .` 全绿。
+
+## 2026-10-21（585）—— trace 读盘只跳过预期内的残文件，不再吞掉 IO 错误（CP2）
+
+**改了什么**：`LocalTrace._scan_events` 的裸 `except Exception: continue` 收窄成 `except (ValidationError, UnicodeDecodeError): continue`；循环里先 `if not path.is_file(): continue`（同名目录不再靠异常兜住）；文件顶部加 `from pydantic import ValidationError`（trace 包已依赖 pydantic，不新增依赖）；同函数 docstring 补「读取失败（权限、IO）不属于此类，原样抛出」。`tests/trace/local/test_local_trace_tolerance.py` 追加 G6–G8 三条：非 UTF-8 文件跳过、`dir.json/` 同名目录跳过、读不动时 `read_events` 必须抛出（用替换 `pathlib.Path.read_text` 对该文件抛 `PermissionError` 模拟，Windows 上 `chmod` 不生效所以不用它）。收集数 2075 → 2078。
+**为什么这么改**：`TracePort.read_events` 的契约写明「底层读取失败原样抛出」，而旧实现对**任何**异常都 `continue`——权限被拒、句柄被锁、路径其实是目录，全都静默少一条。少一条是读端最难发现的错：少了的那笔看起来像从来没发生过，按事件数或事件序做的断言、回放统计会静默错。AGENTS.md 第八节同样要求预期外的异常直接向上抛。收窄后「跳过」只剩三类真正预期内的残文件：JSON 残缺或旧格式（`ValidationError`）、编码坏掉（`UnicodeDecodeError`）、同名的非文件条目（`is_file()` 兜）。
+**取舍**：权限/IO 错误现在会让 `read_events` 抛出（这是想要的）——读端拿到异常可以重试或报错，而不是拿到一份「少了几笔但看着正常」的列表；`.tmp` 与残文件的既有容忍一字未动。T4（反向区间）、T5（缺 `run_id`）两个嫌疑项按 D9 不钉成预期，Langfuse 侧的读一致性留到最后阶段，本轮只动 local 实现。
+**影响面**：`pokemon_agent/trace/store.py` 仅 `_scan_events` 与一处 import，`append` / `_matches` / `_meta_of` 未动。G8 在改代码前先红（`Failed: DID NOT RAISE PermissionError`），改后 Y1 破坏验证（收窄改回 `except Exception`）连跑两次均只红 G8、其余 7 条绿。实测 `tests/trace` 非 langfuse 56 passed / 0.95 s（限 3 s），`tests/trace` + `tests/direct/trace` 139 passed / 8.05 s；全量 2069 passed / 2 failed / 7 errors / 3 deselected / 157.48 s，红灯仍是那 9 条 `eval_results/` 冻结采集数据缺失（该目录在 `.gitignore` 里，工作树不带），无新增。`ruff check .` 与 `ruff format --check .` 全绿。
+
+## 2026-10-21（584）—— trace 单元测试：LocalTrace、TracePort 契约、序号与包边界（CP1）
+
+**改了什么**：`tests/trace/` 按源码文件镜像重建，只经 trace 的公开面说话——契约 14 条（`test_trace_port_contract.py`，夹具 `params=["local"]` 产出实现，用例只经 `append` / `read_events` / `flush` / `shutdown` 说话）、进程内序号 4 条（`test_trace_append_sequence.py`）、事件协议与词表 3 条（`test_trace_event_protocol.py`）、包边界 3 条（`test_trace_package_boundary.py`，AST 扫描替代手跑脚本）、`local/` 29 条（append 12 / read 4 / 容忍 G1–G5 5 / 落盘根 4 / `new_event_uuid` 4）；共享样本 `tests/_doubles/trace.py::signed_meta()`。`tests/trace/test_trace_store.py`（385 行、16 例）整文件删除：7 条门面用例逐字搬进新增的 `tests/direct/trace/test_trace_tool_contract.py`（断言、docstring、用例名不动，AST dump 与逐行 diff 均一致），另加 `tests/direct/trace/test_trace_event_alignment.py` 一条钉住 `schemas.harness.domain.TraceEvent` 与 `trace.Event` 的字段集合一致。收集数 2030 → 2075。
+**为什么这么改**：旧文件名不副实——16 例里一半测的是 direct 层门面（`meta` 缺键被拒、`run_id` 不许调用方传、`count` 已废、`build` 转发 `trace_root`），另一半测的虽是 trace 本身却要读懂门面信封才看得懂；`LocalTrace` 的构造、双时刻缺省补值、残文件与旧格式容忍从来没被直接测过，`next_seq` 的严格递增与线程安全只有门面侧一个用例守着，"trace 对 `pokemon_agent` 其余部分零 import"只有 `scripts/check_trace_self_contained.py` 在守、脚本不跑就没人知道。契约写成"夹具给实现、用例只经四个方法说话"的形状，Langfuse 阶段只往 `params` 加一项和一个构造分支。
+**取舍**：不含 Langfuse（`langfuse_trace.py` / `langfuse_support.py` / `tests/trace/langfuse/` / `tests/_fake_langfuse.py` 一概不动，`tests/direct/trace/test_trace_seq.py` 原样保留），G6–G8 与 T1（`_scan_events` 的 `except Exception`）留给 CP2。契约要能原样套到第二个实现上，所以契约用例不读盘、不碰 `tmp_path`，磁盘形状与坏文件容忍全放 `local/`；`_doubles/trace.py` 只放一个 `signed_meta()` 不放假件——`LocalTrace` 没有需要替身的依赖。门面搬家族不去重（`meta` 透传与 `run_id` 盖章两例有重叠也照搬），去重属 direct 那一轮的判断。
+**影响面**：只动测试与本文档，`pokemon_agent/` 零改动（破坏验证逐处还原后 `git diff pokemon_agent/` 为空）。实测 `tests/trace` 非 langfuse 部分 53 passed / 0.92 s（限 3 s），`tests/trace` + `tests/direct/trace` 136 passed / 8.66 s；全量 2066 passed / 2 failed / 7 errors / 3 deselected / 153.20 s，9 条红全部是 `evals/dataset` 引用的 `eval_results/` 冻结采集数据缺失（该目录在 `.gitignore` 里，工作树不带）——把同一份测试文件放到带数据的主目录下跑是 32 passed，与本次改动无关。破坏验证 X1–X7 按预期变红：X1 经设计侧裁决，改在序号 #18 里固定 `time.time` 到同一毫秒后变红（契约 #12 用真实时钟，不要求变红）。`ruff check .` 与 `ruff format --check .` 全绿。
 
 ## 2026-10-21（583）—— 合并 main：新配置装配接回租约清理、评分次数迁入 settings、测评数据合并新版本
 

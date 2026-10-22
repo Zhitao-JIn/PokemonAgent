@@ -352,7 +352,7 @@ class TraceToolPort(Protocol):
         ...
 
     def read_events(self, meta: dict[str, Any] | None = None) -> list[TraceEvent]:
-        """读当前 trace backend 可见的全部事件，按 `(ts, uuid)` 升序；可按签名做交集筛选。
+        """读当前 trace backend 可见的全部事件，按 `(ended_at, seq)` 升序；可按签名做交集筛选。
 
         meta：`None`（或空 dict）= 不过滤，返回 backend 当前可见的全部事件；给了就只返回
             **每个键都相等**的那批（键取 `run_id` / `source` / `episode_id` /
@@ -360,7 +360,7 @@ class TraceToolPort(Protocol):
             **不支持 OR、不支持大小比较**。
             LocalTrace 落盘不按 run 分层（0916）；LangfuseTrace 一实例绑定一个 run。
             `{"run_id": …, "episode_id": …}` 是"这一局"的常见筛选。
-        后置条件：按 `(ts, uuid)` 严格升序；无匹配时返回空列表（不抛异常）。
+        后置条件：按 `(ended_at, seq)` 严格升序；无匹配时返回空列表（不抛异常）。
         失败：所选 backend 读取失败原样抛出——本方法不吞这一类错。
         """
         ...
