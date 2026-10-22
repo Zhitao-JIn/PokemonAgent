@@ -99,7 +99,7 @@
 |---|---|
 | A | 不兼容旧 checkpoint：指纹不符即拒绝并报明确错误，不写迁移层 |
 | C | trace 的 `status` 键改为结构化的 `scene` / `overlay` / `place`，去掉 `status` |
-| D | **改为删除**，不再新增 `observation_text`：Reflector 不再渲染两帧、不再调用 `Brain.reflect`，只用 `req.before` / `req.after` 的结构化数据组装 `ActMemory`。`Brain.reflect`、`Reflection`、`ReflectPort` 对应方法此时变成无人调用，**本步不删**（涉及 brain 接口、`recorded_ports` 与各端口测试），列入 CP7 收口清单 |
+| D | **删除 brain 侧的 reflect**：删 `Brain.reflect`、`BrainPort.reflect`、`Reflection` 及其导出；`Reflector`（tool 层，`ReflectPort` 的实现）保留，因为 `ActMemory` 由它用结构化观测组装，与 brain 无关。`Reflector` 不再渲染两帧、不再持有 brain 与网关（构造参数随之去掉）；`BrainTool.build` 同步。`ReflectPort`、`FromHarnessToBrainToolReflectReq/Resp` 不变，产出的 `ActMemory` 与现在逐字段一致 |
 | E | reviewer 自管：在 reviewer 内写一个小函数复刻当前 `index_line` 的输出，并以现有样本做逐字节等价测试 |
 | F | `memory/` 下**只保留 `knowledge_memory`**，其余（`step_memory`、`episode_memory`、`task_memory`、`snapshots`、`object_memory`）CP6c 全删。注意：`object_memory` 是运行中累积的地图物体事实，被 `memory/recall.py`、`store_object_semantic_memory` 等读取；删后物体检索从空开始，程序仍可运行。删除前执行方列清单，你再授权 |
 | G | 数据集文件不改（用户未异议，按建议） |
