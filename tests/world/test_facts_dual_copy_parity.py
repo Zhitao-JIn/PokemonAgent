@@ -5,7 +5,7 @@
 `world.interface.domain.facts.Facts` 是**真身**（世界子系统对外承诺的观测形状）；
 `schemas.memory.datastore.act_memory.ActMemory.Observation.Facts` 是**快照版**
 （记忆只存"当时看到的样子"，不依赖 world 的行为——铁律 2 的模块零依赖）。
-两份类刻意互不引用，靠 `brain.brain.reflect()` 在构造 `ActMemory` 之前
+两份类刻意互不引用，靠 `direct/brain_tool.py::Reflector` 在构造 `ActMemory` 之前
 把真身 `model_dump(mode="json")` 拍平后验证过去。
 
 ## 为什么要测

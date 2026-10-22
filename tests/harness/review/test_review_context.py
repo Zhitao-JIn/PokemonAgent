@@ -1,5 +1,6 @@
 """快照的互斥表、记忆帧与文本渲染；全部使用内存中的请求。"""
 
+import json
 from typing import Literal
 
 import pytest
@@ -215,3 +216,62 @@ def test_every_reviewer_request_requires_context(request_model: type) -> None:
     assert request_model.model_fields["context"].is_required()
     with pytest.raises(ValidationError, match="context"):
         request_model.model_validate({})
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "结束了。后面还有。",
+        "",
+        "  ",
+        "字" * 81 + "。",
+        "首句\n后文",
+        "3.14",
+        "首句！后文",
+        "首句\r\n后文",
+    ],
+)
+@pytest.mark.parametrize("termination", ["", "goal_done", "budget_exhausted"])
+def test_reviewer_index_lines_are_byte_equal_to_the_memory_methods(
+    summary: str, termination: str
+) -> None:
+    memories = [
+        _episode("ep1", None, None),
+        _task("t1", None, None),
+        RunMemory(
+            run_id="r1",
+            run_goal="总目标",
+            episodes=2,
+            succeeded=1,
+            summary="样本",
+            quality_score=0.5,
+            quality_rationale="示例",
+        ),
+    ]
+    memories = [
+        item.model_copy(update={"summary": summary, "termination": termination})
+        for item in memories
+    ]
+    req = FromHarnessToBrainToolJudgeReq(
+        goal=Goal(goal="当前目标", criteria="已到达"),
+        episode_index=[memories[0]],
+        task_index=[memories[1]],
+        run_index=[memories[2]],
+    )
+    ctx = ReviewContext(
+        layer="task",
+        task_id="t1",
+        run_id="r1",
+        episode_id="ep1",
+        brain_input=req,
+        step=0,
+        fail_streak=0,
+    )
+    original = req.model_dump_json()
+
+    text = context_sections(ctx)["大脑输入"]
+    rendered = json.loads(text.rsplit("\n图 ", 1)[0])
+
+    for field, memory in zip(("episode_index", "task_index", "run_index"), memories, strict=True):
+        assert rendered[field] == [memory.index_line()]
+    assert req.model_dump_json() == original

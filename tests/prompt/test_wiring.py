@@ -45,12 +45,15 @@ def test_prompt_configuration_has_exactly_one_required_nullable_field(tmp_path: 
         PromptSection(registry=None, version="v1")
 
 
-def test_the_factory_injects_one_gateway_into_all_nine_capabilities() -> None:
+def test_the_factory_injects_one_gateway_into_all_eight_model_capabilities() -> None:
+    """八个调模型的能力共用同一个网关；`Reflector` 不调模型，不持网关（决定 D）。"""
     tool = build_tool()
 
-    gateways = [capability._prompt_gateway for capability in vars(tool).values()]
+    capabilities = [value for value in vars(tool).values() if hasattr(value, "_prompt_gateway")]
+    gateways = [capability._prompt_gateway for capability in capabilities]
 
-    assert len(gateways) == 9
+    assert len(gateways) == 8
+    assert not hasattr(tool.reflector, "_prompt_gateway")
     assert all(isinstance(gateway, PromptGateway) for gateway in gateways)
     assert all(gateway is gateways[0] for gateway in gateways)
     other = build_tool()

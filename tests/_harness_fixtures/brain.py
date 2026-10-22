@@ -25,7 +25,6 @@ from pokemon_agent.brain.interface import (
     JudgeResult,
     ModelCall,
     PlanResult,
-    Reflection,
     RunSummary,
     ScriptSignature,
     SummarizeResult,
@@ -103,9 +102,6 @@ class _Brain:
     ) -> ChooseResult:
         result = ChooseResult(action=Action(sequence=[ActionSegment(name=keys[0])]), calls=[])
         return result.model_copy(update={"calls": _call(prompt, result)})
-
-    def reflect(self, *, prompt: str, before: str, after: str, action_text: str) -> Reflection:
-        return Reflection(before=before, action_text=action_text, after=after)
 
     def judge(
         self, *, prompt: str, goal: str, history: Sequence[str], images: Sequence[str] = ()

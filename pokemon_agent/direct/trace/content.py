@@ -74,7 +74,7 @@ class TaskEndContent(_Content):
 
 
 class SenseFrameContent(_Content):
-    status: str
+    status: str | None = None
     facts: Facts
     done: bool
     perceived: bool | None = None

@@ -465,31 +465,14 @@ def _signature(entry: ActionEntry) -> ScriptSignature:
 
 
 class Reflector:
-    """`ReflectPort` 的实现：反思的信封翻译器（本链路**不调模型**，无重试循环）。"""
-
-    def __init__(self, brain: BrainPort, *, prompt_gateway: PromptGateway | None = None) -> None:
-        self._brain = brain
-        self._prompt_gateway = prompt_gateway
+    """`ReflectPort` 的实现：把一次操作的两帧观测装成 `ActMemory`（本链路**不调模型**）。"""
 
     def reflect(self, req: FromHarnessToBrainToolReflectReq) -> FromHarnessToBrainToolReflectResp:
-        """反思：渲染两帧 → 调 `Brain.reflect()` → 用 `Reflection` + 坐标组装 `ActMemory`。
+        """用两帧结构化观测组装记忆，不调用模型或网关。
 
-        **本链路不调模型**（`Brain.reflect` 是纯函数），所以**没有重试循环**——
-        它没有"失败"这种中间态可重试。
-
-        **`SNAPSHOT_BLIND` 的过滤在这里**（brain 不碰——那是存储策略）：
-        记忆里每一项都必须跨步骤成立，`known_objects`/`knowledge` 不成立。
+        前置：请求提供两帧任务观测和本步动作、坐标。
+        后置：保留快照与结果，仅剥离 SNAPSHOT_BLIND 中的检索字段；请求不变。
         """
-        before = _render_observation(_blind(req.before))
-        after = _render_observation(_blind(req.after))
-
-        self._brain.reflect(
-            prompt="",
-            before=before,
-            after=after,
-            action_text=req.action.describe(),
-        )
-
         entry = ActMemory(
             before=ActMemory.Observation.model_validate(_blind(req.before).model_dump(mode="json")),
             action=req.action.describe(),
@@ -983,7 +966,7 @@ class BrainTool:
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
-            reflector=Reflector(brain, prompt_gateway=prompt_gateway),
+            reflector=Reflector(),
             verifier=Verifier(
                 brain,
                 policy=policy(request_timeouts.verify),
@@ -1193,8 +1176,3 @@ def _blind(obs):  # noqa: ANN001, ANN202
     过滤只发生在写记忆这一步，大脑/世界看到的仍是完整观测。
     """
     return obs.model_copy(update={"facts": obs.facts.exclude(SNAPSHOT_BLIND)})
-
-
-def _render_observation(obs) -> str:  # noqa: ANN001
-    """把一帧观测渲成文本——brain 的 `Reflection` 要的就是文本。"""
-    return obs.render()

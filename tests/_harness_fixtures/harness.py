@@ -162,7 +162,7 @@ def assemble_runtime(
         ),
         judger=Judger(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         memory=memory,
-        reflector=Reflector(brain),
+        reflector=Reflector(),
         verifier=Verifier(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         task_summarizer=TaskSummarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         trace=trace,

@@ -42,7 +42,7 @@ def frame(
     options: tuple[str, ...] = (),
     cursor: str | None = None,
     overlay: Facts.Overlay | None = None,
-    details: str = "",
+    annotations: tuple[str, ...] = (),
     source: str = "decode",
     in_battle: bool = False,
     money: int = 3000,
@@ -57,7 +57,6 @@ def frame(
     `source="vlm"` 模拟 episode 层看档帧上视觉抄出了字、屏幕解码却没有：文字只进 `facts`，
     `ram.decoded` 为空——判据读的是后者。
     """
-    extra = {"option_details": details} if details else {}
     facts = Facts(
         map_id=map_id,
         dialog_text=dialog,
@@ -67,7 +66,7 @@ def frame(
             Facts.Landmark(kind="人", map_id=map_id, x=x, y=person_y) for x, person_y in people
         ],
         overlay=overlay,
-        **extra,
+        option_annotations=list(annotations),
     )
     battle = (
         BattleStatus(
@@ -158,7 +157,7 @@ CASES = {
     "shop_list_opened": (
         [
             frame(1),
-            frame(2, options=("POKé BALL", "CANCEL"), cursor="POKé BALL", details="POKé BALL ¥200"),
+            frame(2, options=("POKé BALL", "CANCEL"), cursor="POKé BALL", annotations=("¥200",)),
         ],
         [frame(1), frame(2, options=("BUY", "SELL", "QUIT"), cursor="BUY")],
     ),
@@ -166,7 +165,7 @@ CASES = {
         [frame(1), frame(2, options=("YES", "NO"), cursor="YES")],
         [
             frame(1),
-            frame(2, options=("POKé BALL", "CANCEL"), cursor="POKé BALL", details="POKé BALL ¥200"),
+            frame(2, options=("POKé BALL", "CANCEL"), cursor="POKé BALL", annotations=("¥200",)),
         ],
     ),
     "shop_bought": (
@@ -238,11 +237,11 @@ CASES = {
     "shop_cancelled": (
         [
             frame(1, options=("YES", "NO")),
-            frame(2, options=("POKé BALL",), details="POKé BALL ¥200"),
+            frame(2, options=("POKé BALL",), annotations=("¥200",)),
         ],
         [
             frame(1, money=3000, options=("YES", "NO")),
-            frame(2, money=2800, options=("POKé BALL",), details="POKé BALL ¥200"),
+            frame(2, money=2800, options=("POKé BALL",), annotations=("¥200",)),
         ],
     ),
     "battle_started": (

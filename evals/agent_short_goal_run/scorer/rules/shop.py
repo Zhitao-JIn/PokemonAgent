@@ -36,8 +36,7 @@ def _quantity_selected(frame: Frame) -> bool:
 
 def _has_prices(frame: Frame) -> bool:
     """这一帧是带价格的商品列表。"""
-    details = (frame.content.facts.model_extra or {}).get("option_details", "")
-    return "¥" in str(details)
+    return any("¥" in annotation for annotation in frame.content.facts.option_annotations)
 
 
 def _bag(frame: Frame) -> dict[int, int]:

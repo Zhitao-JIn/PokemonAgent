@@ -1,3 +1,13 @@
+## 2026-10-22（594）—— prompt 模块 CP6a：切换读方、移除 brain reflect 与 trace status 停写
+
+**改了什么**：删除 Brain.reflect、BrainPort.reflect、Reflection 及导出，仅删除 reflection.py 与对应 test_reflect.py 两个文件。tool 层 Reflector 保留，移除 brain/网关依赖和两帧文本渲染，直接按原逻辑过滤快照并组装 ActMemory。trace 的 sense_frame 不再写 status；SenseFrameContent.status 仅改为 str | None = None，兼容读取旧事件，scene、place 和 facts.overlay 原样保留。reviewer 自管三级记忆索引；decode 采用评测自有的三种冻结真值文本格式；shop 读取结构化 option_annotations。
+
+**为什么这么改**：移除被丢弃的 brain 反思文本中间结果，使记忆组装直接使用结构化观测；停止在 trace 重复写状态句，同时保留旧账本的读取能力。评测真值不改写，由评测自有格式承接旧文本；reviewer 不依赖 prompt，也不再调用记忆对象的索引方法。旧字段与旧方法定义本步均保留。
+
+**取舍**：接续前一执行方半成品，没有重做、回退或提交。三处获追认的 schema 文件及 ReflectPort 仅更新失真的文档，去掉 docstring/注释后 AST 与 HEAD 相同。仅同步 node_io 的 sense_frame 必需键及说明、harness 的 Reflector 装配；test_memory_observation 的两处仍是完整 Observation 请求输入，status 在该旧模型中仍必填，且它们不读取新事件的 status，因此无需改动。原始起点2506 passed、25 skipped，接手现状2497 passed、25 skipped；补齐公开 reviewer 入口的24组边界对拍、34条结构化组装用例和本地/Langfuse新旧事件往返。首次新增 reviewer 夹具漏填计数及task_id，已补齐必填字段，未放宽断言。受保护路径与旧定义未改，未动 trace 词表、ModelCall 或 parse.py；没有新增 observation_text 任务。
+
+**影响面**：最终2555 passed、25 skipped、3 deselected、59 warnings（162.49s）；相对原始起点删除12条 brain reflect 用例、增加61条验证。golden专项340 passed、25 skipped（2.24s），保持既定25条历史where跳过。28份改动前真实 Reflector 完整输出与当前逐字段一致；1045份冻结帧中1019份地图适用帧的三种文本逐字节相等，26份不适用帧地形真值为空。恢复后的专项161 passed；ruff check通过，963 files already formatted，A/B/C守卫通过。临时将reviewer索引首字符改坏触发24条等价测试失败，将decode位置格式删一字触发真值对拍失败，均原字节恢复后完成最终全量。没有真实模型、安装或git写操作。
+
 ## 2026-10-22（593）—— prompt 模块 CP5b：帧投影、原始物体事件、脚本签名与重试归版本
 
 **改了什么**：新增 task_frame、script_signature 片段，移除 CP5a 的帧文本与签名桥接；帧从结构化事实、接管视图、限制标志生成，脚本签名从参数原件排版。物体检索保留原始事件，经 episode 上下文和请求信封交给判定、拆解，再由 object_events 片段稳定排序渲染。brain_tool 与 harness 对旧 prompt 包的 import 清零。解析纠正尝试走 decide_action_retry，并只给本次新收编账盖实际任务版本。
