@@ -115,8 +115,8 @@ class LocalTrace:
 
         `root`：**落盘根**——一条事件一个文件的那个目录，不是它下面的某一层。
         缺省用启动目录下的 `_default_root()`（0916 起——不再从 `__file__` 推
-        仓库根）。做成形参是为了让调用方能换落盘位置：生产路径是启动参数
-        `--trace-root` → `build_real(trace_root=…)` → `TraceTool.build(trace_root=…)`
+        仓库根）。做成形参是为了让调用方能换落盘位置：生产路径是配置
+        `paths.trace` → `build_real(config=…)` → `TraceTool.build(trace_root=…)`
         逐级递进来，测试用 `tmp_path`，不往启动目录写。
 
         本类**不持有 run_id / branch**（0927 定案）：执行线标识由 tool 层在调用时
@@ -130,7 +130,7 @@ class LocalTrace:
         本类不再自己推进时刻。
         """
         # str 与 Path 都收（与 `LocalMemoryStore` 的 root 同一条归一规矩）——
-        # 覆盖链上 `build_real(trace_root=…)` 的形参就是 `str | Path`。
+        # 覆盖链上游 `TraceTool.build(trace_root=…)` 的形参就是 `str | Path | None`。
         self._dir = Path(root) if root is not None else _default_root()
         self._dir.mkdir(parents=True, exist_ok=True)
 

@@ -5,7 +5,7 @@
 trace_event.py::TraceEvent`）与 trace 自己的 `_Event` 都是**结构化满足**，
 既不需要显式继承、也不需要逐字段的副本。
 
-    Event           一条事件记什么——`store.py` 真的读/真的算的那六样。
+    Event           一条事件记什么——`store.py` 真的读/真的算的那八样。
 
 **为什么要有 `Event` 协议**：`TraceEvent` 是**跨层数据形状**（它出现在
 `FromHarnessToReviewerAuditReq` 等信封里），按"契约层不能被实现层反向依赖"
@@ -71,7 +71,8 @@ class Event(Protocol):
     """事件种类（裸 `str`，取值由声明方定义）。"""
 
     meta: str
-    """签名信息的 **JSON 字符串**（`{source, run_id, episode_id, step}` 那一族）。"""
+    """签名信息的 **JSON 字符串**（`{run_id, branch, source, episode_id, task_id,
+    step}` 六键，后四件由 harness 交齐、前两件由 tool 层盖）。"""
 
     content: str
     """账本体的 **JSON 字符串**。"""
