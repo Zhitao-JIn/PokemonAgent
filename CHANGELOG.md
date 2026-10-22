@@ -1,3 +1,13 @@
+## 2026-10-23（604）—— 重写 GitHub Actions 合入门禁
+
+**改了什么**：重写 `.github/workflows/ci.yml`，配置 main 的 push / pull request、手动触发及同 ref 并发取消；拆为并行的 `lint`、`boundary`、`test` 三个 job。lint 执行 Ruff 检查，boundary 执行 prompt 与 world 自持脚本，test 固定 Python 3.11，使用 uv 按锁文件安装 dev/reviewer extra 与 dev group，并缓存工作目录内的 fastembed 模型数据。
+
+**为什么这么改**：原 workflow 的 pip 安装遗漏 dependency group 与 reviewer extra，且没有覆盖模块边界；新门禁按锁文件准备完整测试依赖，并把格式、静态边界和默认测试分开验证。
+
+**取舍**：只运行 Python 3.11 和默认 pytest，不纳入 slow 测试、真实模型与 eval；暂不接入已知会报过时违规的 trace 边界脚本。首次无缓存运行可能需要下载 fastembed 模型。
+
+**影响面**：仅更新 CI workflow 与本变更日志，不改生产代码、测试、依赖声明或锁文件。GitHub runner 的真实结果由推送后确认。
+
 ## 2026-10-22（603）—— trace 文档遗留项：请求信封、覆盖链与接口注释对齐现状
 
 **改了什么**：599 之后残留的四处旧说法，逐项先读代码再改（只改 docstring/注释与一行文档）：① `schemas/harness/communication/FromHarnessToTraceToolAppendReq.py`：模块 docstring 的封套写法 `{uuid, kind, type, ts, meta, content}`（"封套四件"）改为八字段、`meta` 改为六键并写明"harness 交 `source`/`episode_id`/`task_id`/`step` 四件、`run_id`/`branch` 由 tool 层盖"；"只收三个裸参数"改为六个（补 `started_at`/`ended_at`）；类 docstring 的"落盘形状"代码块同步为八字段 + 六键 meta；`meta` 字段 docstring"恰好四件"改为"harness 四件 + tool 层两件 = 六件"，判据侧 `node_io._check_meta` 的说法从"核恰好四件"改为"核恰好六件（存档/恢复账另加 `checkpoint_id`，实测 META_KEYS 六键）"；"`run_id` 是落盘实例的标识、`store._stamp_run_id` 盖"改为"`run_id`/`branch` 是执行线标识、由 `TraceTool.append` → `_stamp_meta` 盖在头两个，trace 后端零持有只透传，调用方带了当场炸（`TraceTool.append` 入口 assert，实测）"；`ended_at` 与 `timings` 两条属性 docstring 的排序依据 `(ended_at, uuid)` → `(ended_at, seq)`。② `trace/store.py`：`__init__` docstring 覆盖链"启动参数 `--trace-root` → `build_real(trace_root=…)` → `TraceTool.build(trace_root=…)`"改为"配置 `paths.trace` → `build_real(config=…)` → `TraceTool.build(trace_root=…)`"（与 API.md §5.1 逐字同口径）；构造处注释"覆盖链上 `build_real(trace_root=…)` 的形参就是 `str | Path`"改为"上游 `TraceTool.build(trace_root=…)` 的形参是 `str | Path | None`"（`build_real` 现在只收 config，实测 build.py:101-106）。③ `trace/interface/event.py`：模块 docstring"`store.py` 真的读/真的算的那六样"→"那八样"（类 docstring 本来就是八样）；`meta` 属性 docstring 的键族 `{source, run_id, episode_id, step}` 那一族改为六键全列并注明后四件 harness 交、前两件 tool 层盖。④ `trace/interface/trace_port.py`：**核对后未改**——第 68 行"前置条件：`meta` 已带 `run_id` / `branch` 键（需要它们的实现就地 assert）"与现状一致：`LangfuseTrace.append` 确有 `assert "run_id" in stamped_meta and "branch" in stamped_meta`（langfuse_trace.py:133），`LocalTrace` 不需要这两个键、对 meta 不解释只透传，"需要它们的实现"这个条件句准确。⑤ `docs/eval/tasks-spec.md:102`：`RunStream.load` 的排序说法 `(ts, uuid)` → `(ended_at, seq)`（实际顺序来自 `TraceTool.read_events` 的 `(ended_at, seq)` 排序 + branch 过滤保序，`ts` 字段已不在封套里；签名 `(trace_root, run_id, branch, backend)` 核对一致未动）；同行路径 `evals/scorers/stream.py` 修正为真实位置 `evals/agent_short_goal_run/scorer/stream.py`。
