@@ -108,3 +108,8 @@
 **对第二节清查的修正**
 - `choose_review` 及 `evals/dataset/brain_*` 构建脚本解析的是冻结数据里的 `walk_map` 文本，而不是调用 world 的 `render`；历史数据没有 `cells`，无法改读结构。**这类脚本不改**。CP6a 的读方扫描只处理「调用 world / memory 旧方法」的代码与「运行期读取旧动态字段」的代码。
 - `agent_short_goal_run/scorer/rules/shop.py` 读的是运行期帧里的 `option_details` 动态字段，需要改读新的结构化字段。
+
+## 八、CP6a 停止后的裁决（2026-10-22）
+
+- **C 细化**：`SenseFrameContent` 已经有 `scene`、`place`，`overlay` 在 `facts` 里，三者本来就进 trace，不需要新增 `overlay` 键。所以只做一件事：`render.py` 不再写 `status`；`SenseFrameContent.status` 改为 `str | None = None`（只读兼容，不再写出），这样盘上已有的旧 trace 仍能解析（`_Content` 是 `extra="forbid"`，删字段会让旧账本读不进来）。不改 trace 词表、不改 `ModelCall`。
+- **允许范围追加**：`pokemon_agent/direct/trace/content.py`（仅 `SenseFrameContent.status`）、`tests/direct/trace/**`（含 `test_trace_parse.py`，并补一条「带 status 的旧事件仍可解析、新事件不写 status」的测试）、`tests/_harness_fixtures/harness.py`（仅 `Reflector` 装配）。
