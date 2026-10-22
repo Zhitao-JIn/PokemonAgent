@@ -50,7 +50,7 @@ class _Event(BaseModel):
     uuid: str = Field(description="本次事件的唯一标识（= 文件名），落盘那一刻由 store 盖上")
     seq: int = Field(
         description="进程内 append 的单调序号（0928 325）：**同刻 ended_at 的决胜键**，"
-        "排序看 `(ended_at, seq)`；由 tool 层在 append 时分配、随调用传进封套。"
+        "排序看 `(ended_at, seq)`；由 LocalTrace.append 取进程内单调序号（next_seq()）。"
         "旧格式账缺这个字段，解析当场失败被扫盘跳过（2026-09-28 用户拍板不兼容旧账）"
     )
     kind: str = Field(description="账名（裸 str，取值由声明方定义）")
