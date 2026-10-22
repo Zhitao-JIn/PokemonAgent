@@ -4,8 +4,11 @@
 `events/` 这一层**（0916）。"读哪一批"由 `read_events(meta=…)` 的交集匹配回答，
 `run_id` 只是 `meta` 里的一个键——与 `memory/` 同一条规矩。
 
-落盘记录就是 trace 自己的 `_Event`，七个字段：
-`{uuid, kind, type, started_at, ended_at, meta, content}`（2026-09-27 双时刻改造）。
+落盘记录就是 trace 自己的 `_Event`，八个字段：
+`{uuid, seq, kind, type, started_at, ended_at, meta, content}`（2026-09-27 双时刻改造、
+0928 325 加 `seq`）。`seq` 是**进程内 append 的单调序号**（本类在 append 时取号；
+双后端共享、重启置零、不持久化），也是**同刻 `ended_at` 的决胜键**——"第几条"
+不再靠随机 uuid 排。
 
 **谁盖什么**：`uuid`（= 文件名）归本类；`started_at` / `ended_at`（操作真实起止）
 调用方交了就透传、没交补记账时刻（机械账 start=end=now——它没有时长语义）；
@@ -61,8 +64,8 @@ def new_event_uuid() -> str:
     布局：`| 48 位毫秒时间戳 | 4 位版本号(7) | 12 位随机 A | 2 位变体(10) | 62 位随机 B |`。
     时间戳占最高位，所以**跨毫秒**生成的 id 按字典序排就是按时间排；同一毫秒内
     那两段是随机的，彼此之间不保序。**这只是给肉眼和 `ls` 的便利**，用来保证
-    "同一个目录里不会撞名、大致按写入时间排列"，排序的真源是 `(ts, uuid)`
-    （读侧见 `_scan_events`）。
+    "同一个目录里不会撞名、大致按写入时间排列"，排序的真源是 `(ended_at, seq)`
+    （读侧见 `_scan_events`），uuid 只当纯标识。
 
     为什么不用标准库现成的：`uuid.uuid7()` 要到 Python 3.14 才有（本项目跑
     3.12），`uuid.uuid1()` 会把网卡 MAC 写进 id，都不合适。这段实现只用
@@ -155,6 +158,9 @@ class LocalTrace:
         `meta` / `content` 在盘上是 **JSON 字符串**（`json.dumps(..., ensure_ascii=False)`）
         ——需要一层转义，读端 `json.loads` 回来。序列化只在本类做一处。
 
+        失败：`content` 不可 JSON 序列化 → 抛 `TypeError`，**且不落盘**（序列化在
+        构造事件时就跑完，`_atomic_write_text` 在那之后，根目录下不留残留文件）。
+
         后置条件：八个字段已全部落盘；返回的 uuid 与文件名同值。
         **排序真源是 `(ended_at, seq)`**（0928 325）：同刻账按 append 序决胜，
         uuid 退化为纯标识——原"`time.time()` 同值靠 uuid 兜底"会把执行序
@@ -195,7 +201,7 @@ class LocalTrace:
         每次调用重扫落盘目录——trace 不做内存缓存（内存镜像那套已删，
         需要"盘上有什么"就直接问盘）。
 
-        筛选那几维住在 `meta` 里（封套只认 `uuid`/`kind`/`type`/双时刻），所以要先
+        筛选那几维住在 `meta` 里（封套只认 `uuid`/`seq`/`kind`/`type`/双时刻），所以要先
         把那串 JSON 解回来——`_meta_of` 读不动给空 dict，于是读不动的文件
         **不匹配任何条件**（残文件是预期内的，它不该混进任何一次查询）。
         """
