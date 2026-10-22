@@ -1,0 +1,90 @@
+你是一个资深宝可梦玩家，负责从一整局游戏经历中蒸馏出可复用的经验。
+产出的是一条**跨局摘要记忆**——**这一局各 task 总结（TaskMemory）的总结**
+（一条只对应一局）。
+名字里"跨局"说的是它以后会被别的局检索回来当参考，不是它总结了多个局。
+
+**下面的每条记录都带了标注**：`【正样本】` 是审查认为推进了目标的 task，
+`【负样本】` 是没有推进或偏离了目标的 task，标注后面是审查给的理由。
+两类都要用：正样本是可复用的做法，负样本是教训——`failure_points` 主要从负样本里来。
+记录本身是机器读出的事实，不需要再质疑它们是否发生过。
+
+## 生成要求
+1. 用简明扼要的总结描述整个 episode
+2. 给出 `reason`：一两句话的**结论说明**——成了的话靠的是什么；没成的话卡在哪、为什么
+   （结合下面「本局结果」里的终止类别：`world_ended` 世界结束 / `stalled` 连续失败 /
+   `budget_exhausted` 预算用尽 / `goal_done` 达成）。「本局结果」里的**判定依据**是判定员当时
+   为什么判停的理由，可以参考，但 `reason` 要写你自己看记录得出的结论，不要照抄它
+3. 提取可重复利用的游戏策略和经验模式
+4. 指出关键决策点和潜在失败环节
+5. 评估记忆质量(0.0-1.0)和适用场景——如果记录很少或质量参差，评分要
+   相应压低，`quality_rationale` 里说明原因
+6. 为记忆添加有意义的标签
+7. 生成一个简短、稳定、适合文件系统的英文文件名（不要包含路径和扩展名）
+8. 生成一份可直接保存的 Markdown 正文
+
+## 输出格式
+
+只输出一个 JSON 对象，不要有其他文字：
+
+```json
+{
+  "summary": {
+    "summary": "在初心镇宝可梦中心门口反复横跳了 6 步才找到门，问题出在把 landmarks 当成了这一帧的实时位置",
+    "reason": "最终进了门：第 3 个 task 改为按 landmarks 里门的坐标直走后成功；此前两个 task 因方向判断错误失败",
+    "reusable_patterns": ["站在 D 格上判断门朝哪边开，要看 known_objects 里门的坐标而不是猜画面朝向"],
+    "critical_decisions": ["第 12 步：没有直接走进已确认的 D 格，而是先绕了一圈找宝可梦中心招牌，浪费了 6 步"],
+    "failure_points": ["把检索到的跨地图知识当成了这一帧已经到达的证据，导致提前判断「已经到中心了」"],
+    "quality_score": 0.7,
+    "quality_rationale": "这局的教训具体、可复用，但样本只有一次，尚未在别的地图验证过",
+    "applicable_scenes": ["interaction:door", "interaction:pokemon_center"],
+    "tags": ["door", "pokemon_center", "navigation"],
+    "markdown": "# 宝可梦中心门口导航\n\n站在 D 格上时，先核对 known_objects 里门的坐标，不要凭画面观感猜方向。"
+  }
+}
+```
+
+注意:
+- `summary` 内所有字段都必须提供，不能省略
+- `summary.quality_score` 必须是0.0-1.0之间的浮点数
+- `summary.markdown` 必须是完整的 Markdown 记忆正文，不能包含 JSON 代码围栏
+- `summary.applicable_scenes` 只能使用以下稳定标签：`*`、`map:<数字>`、`scene:field`、`scene:indoor`、`scene:battle`、`scene:menu`、`scene:shop`、`overlay:dialog`、`overlay:choice`、`terrain:grass`、`interaction:npc`、`interaction:door`、`interaction:shop`、`interaction:pokemon_center`
+- `summary.applicable_scenes` 只填写这条经验实际适用的标签；通用经验使用 `*`，不要写自然语言长句
+
+## 除了文字，你还会看到截图
+
+多帧截图已拼成**一张 3 列网格图**：帧间黑线分隔，行优先、从左到右从上到下，
+按时间先后排列。截图只是给你补充画面感的辅助材料——记录里的结构化字段已经
+是抽好的结果，不要拿截图去重新推算位置或坐标。
+
+## 本局目标
+
+在野生战斗里选 RUN 逃跑
+
+## 本局各 task 的总结（按顺序，带正/负标注）
+
+## 第 0 条 【正样本】截图显示光标从 FIGHT 移到 RUN（▶ 在 RUN 上），两键 right+down 达成目标，方向与 2×2 布局一致，无多余按键
+task `knowledge_battle_run_attempt-t1`：在战斗选单里把光标从 FIGHT 移到 RUN（按 right 到 PKMN 列，再按 down 到 RUN 行） —— 成功（键 0–1，共 2 键）
+  结论：两键即达成：right 完成列切换（FIGHT→PKMN），down 完成行切换（PKMN→RUN），方向与 2×2 布局完全吻合，无多余按键，属最短路径成功。
+  总结：战斗选单叠加层（battle/choice，地图12 x=12 y=24，BULBASAUR L5 20/20 对 RATTATA L3 15/15）初始光标在 FIGHT（2行×2列，第1行第1列）。按 right 后光标移到 PKMN（第1行第2列），再按 down 后光标移到 RUN（第2行第2列），最终选项显示 ITEM ▶RUN，goal_done，共用 2/4 键。
+  可复用：战斗选单为 2 行×2 列：上/下换行、左/右换列，FIGHT(1,1) PKMN(1,2) ITEM(2,1) RUN(2,2)。
+  可复用：从 FIGHT 到 RUN 的最短路径固定为 right 再 down（或 down 再 right），两键即可。
+  可复用：每按一键后核对 option_layout 中的光标行列与屏幕 ▶ 位置，确认移动生效再按下一键。
+  关键决策：step0 按 right 而非 down：先横移到 PKMN 列，符合目标第一步。
+  关键决策：step1 按 down 从 PKMN 落到 RUN，直接命中目标格，未多按。
+  质量分 0.95（理由：记录完整给出前后帧的 option_layout、光标行列与屏幕 ▶ 位置，两键均为正样本且无浪费，路径可复现；唯一不足是任务极短、无负样本可参考，故略低于满分。）
+
+## 第 1 条 【正样本】截图显示按 a 后叠加层由 choice 变为 dialog 并出现 "Got away safe"，逃跑成功，直接推进目标
+task `knowledge_battle_run_attempt-t2`：按 a 确认 RUN，尝试逃跑 —— 成功（键 2–2，共 1 键）
+  结论：成功靠的是在光标已停在 RUN 上时按 1 次 a 确认；无需移动光标，一键即触发逃跑判定并显示 Got away safe，达成 goal_done。
+  总结：在战斗场景（地图12 x=12 y=24，朝向east，BULBASAUR L5 20/20 对 RATTATA L3 15/15）的 choice 叠加层中，光标已位于 RUN 选项（2行2列布局的第2行第2列）。按 a 确认后，叠加层从 choice 变为 dialog，对话框显示 "Got away safel"，逃跑成功，goal_done，仅用 1/4 键。
+  可复用：战斗逃跑：先确认光标是否已在 RUN 上（option_layout 中 ▶ 标记位置），若已在则直接按 a，不要多余移动。
+  可复用：逃跑成功判据：叠加层由 choice 转为 dialog 且对话出现 "Got away safe"。
+  可复用：choice 布局为 2x2（FIGHT/PKMN 上排，ITEM/RUN 下排），RUN 在右下，可用 下+右 或直接确认。
+  可复用：逃跑前可核对 my_hp/foe_hp 与等级，判断是否值得逃跑。
+  关键决策：第0步：光标已在 RUN 上，直接按 a 确认，是唯一且正确的转折，一步达成目标。
+  质量分 0.90（理由：记录完整、前后状态字段清晰（叠加层 choice→dialog、对话内容、坐标、HP/等级），且展示了最短路径（1键）成功逃跑，对同类逃跑 task 参考价值高；因过程极短、无负样本，略低于满分。）
+
+## 本局结果
+成功完成（goal_done）；判定依据：对话框显示 "Got away safe"，说明逃跑成功，符合判据中逃跑成功的证据（共 2 个 task / 最多 15 个）
+
+照着上面的要求，输出 JSON。

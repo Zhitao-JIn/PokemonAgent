@@ -1,0 +1,99 @@
+{
+  "task": "summarize_task",
+  "case_id": "history-knowledge_wild_encounter.task.summarize_task.000005",
+  "source": "history",
+  "request_kind": "legacy",
+  "request": {
+    "entries": [
+      {
+        "before": {
+          "step": 4,
+          "place": {
+            "map_id": 12,
+            "x": 17,
+            "y": 8
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图12 x=17 y=8，朝向 east",
+          "scene": "walk",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图12 x=17 y=8",
+            "facing": "east",
+            "neighbors": "北 G 南 G 西 G 东 #",
+            "landmarks": [],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=4  .....#.GGG  (x=13..22)\ny=5  v....#.GGG  (x=13..22)\ny=6  GGGGG#.GGG  (x=13..22)\ny=7  GGGGG#.GGG  (x=13..22)\ny=8  GGGG@#.GGG  (x=13..22)\ny=9  GGGGG#.GGG  (x=13..22)\ny=10 .....#.GGG  (x=13..22)\ny=11 .....#.GGG  (x=13..22)\ny=12 .GGGG#.GGG  (x=13..22)",
+            "map_id": 12,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "script:bounce_in_tall_grass(steps=30)",
+        "after": {
+          "step": 5,
+          "place": {
+            "map_id": 12,
+            "x": 17,
+            "y": 8
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图12 x=17 y=8，朝向 south。战斗中",
+          "scene": "battle",
+          "facts": {
+            "scene": "battle",
+            "overlay": "none",
+            "where": "全局坐标 地图12 x=17 y=8",
+            "facing": "south",
+            "neighbors": "北 G 南 G 西 G 东 #",
+            "landmarks": [],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=4  .....#.GGG  (x=13..22)\ny=5  v....#.GGG  (x=13..22)\ny=6  GGGGG#.GGG  (x=13..22)\ny=7  GGGGG#.GGG  (x=13..22)\ny=8  GGGG@#.GGG  (x=13..22)\ny=9  GGGGG#.GGG  (x=13..22)\ny=10 .....#.GGG  (x=13..22)\ny=11 .....#.GGG  (x=13..22)\ny=12 .GGGG#.GGG  (x=13..22)",
+            "map_id": 12,
+            "screen": "",
+            "my_name": "BULBASAUR",
+            "my_level": "7",
+            "my_hp": "25/25",
+            "my_status": "ok",
+            "foe_name": "PIDGEY",
+            "foe_level": "3",
+            "foe_hp": "16/16",
+            "foe_status": "ok"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "battle_started",
+        "step": 4,
+        "episode_id": "eval-knowledge_wild_encounter-ep1",
+        "task_id": "knowledge_wild_encounter-t5",
+        "run_id": "eval-knowledge_wild_encounter",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAACyElEQVR4nO3ajU3bUBhAUadiRc/ATGGFDJmKqkGu+5wECFy3OkdC+fkMqV4utmN6mOf5PPFwp9Ppr+fmeR5uN8/z8Hb5fVvz0c9cvv7e5z+WD0aLZn57fdZrdW0d17N5EdVHHm+9zr8y/7G1wfLW/L71We+11l+j7U6rN2v5s0exjebrn7e+3fP8V4DL364R8+vrs1zQdWzrdbzMltufBkGPDrej+fr+1uvudX5wDvgYt855trY9vfOc75751nZ7nL8dgh12P3fa8chzwIvRYfjWfG3v86fhs3zaPR9Ytt6k9d702nzrF2O97V7nDsFfGNvWB4+tN+nRh7eLPc8P0zS5DkhmeBkGvosASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJPbUvv0/H43H4/PPz87f/W/539oB3xndrxscIkNzZ159rcDwez2uvz1mn6eFrcPh9h8tv4/k8HQ6Hd8/4GB9CBnG93r9GiI/jHHBhGd5yT7e8fytO3sch+Ap7uq9nD3jFy8vL26UXe76vYQ9Iyh6QlADv+IvH62N/Bfk6LrCuLkJvPXYxenIhunLZA/oPCY/lQwgp54CkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBMhU+glBzJyxKRNWCgAAAABJRU5ErkJggg=="
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "在草丛中执行 bounce_in_tall_grass 后场景从野外变为 battle，出现了野生 PIDGEY，成功遇敌，符合目标"
+      }
+    ],
+    "task_id": "knowledge_wild_encounter-t5",
+    "episode_id": "eval-knowledge_wild_encounter-ep1",
+    "run_id": "eval-knowledge_wild_encounter",
+    "goal": "在草丛里来回走动（如向南到 y=9 再向北回 y=8）直到遇敌",
+    "termination": "goal_done",
+    "judge_reason": "最后一条「之后变成」显示 scene 为 battle，对手是 PIDGEY Lv3，说明已经在草丛里遇敌进入战斗",
+    "steps_used": 1,
+    "max_steps": 12
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_wild_encounter.task.summarize_task.000005"
+}

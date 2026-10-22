@@ -63,7 +63,7 @@
 - `json_mode` 与 `thinking` 是否传到四个位置、`plan_thinking` 只对 plan 位置生效：`tests/brain/providers/test_provider_json_mode.py` 已有 `test_build_llm_providers_hands_json_mode_to_every_chain` 与 `test_build_llm_providers_turns_thinking_on_for_plan_only`，不重复，不搬动。
 - 函数尾部"实例互不相同"的出口 `assert`：在正常输入下触发不了，契约 4 从外部行为验证它。
 - `DECIDE_TIMEOUT_SECONDS` / `THINKING_TIMEOUT_SECONDS` 两个常量本身不进 `__all__`，不 import 它们；超时只经假 urlopen 观察。
-- `build_vision_provider` 的 `json_mode` 缺省值取自 `pokemon_agent.config.PROVIDER_JSON_MODE`，不测缺省（随项目配置变）。
+- `json_mode` 现在随 `BrainLlmConfig.json_mode` 由调用方给出（配置里是 `models.json_mode`），没有模块内缺省，不测缺省。
 - `provider_for`、厂商类的构造期契约、HTTP 错误分类：归 `providers` 目录。
 
 ## 已知观察（不写测试，由我与用户裁决）

@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from evals.common.world_case import read_frame, start_world, stop_world
 from evals.world_script_execute.dataset import ScriptCase
-from evals.world_script_execute.dataset.loader import state_path
+from evals.world_script_execute.dataset.loader import DEFAULT_VERSION, state_path
 from evals.world_script_execute.dataset.schemas import EventOutcome
 from pokemon_agent.world import RamReadout, TaskObservation
 
@@ -59,7 +59,9 @@ class ScriptRun(BaseModel):
         return self
 
 
-def run_case(case: ScriptCase, version: str = "v1", *, checkpoint: Path | None = None) -> ScriptRun:
+def run_case(
+    case: ScriptCase, version: str = DEFAULT_VERSION, *, checkpoint: Path | None = None
+) -> ScriptRun:
     """在 MCP world server 上跑一条用例（同步，solver 放进线程里调）。
 
     步骤 1：起 world、按开跑前的键、读开跑帧。

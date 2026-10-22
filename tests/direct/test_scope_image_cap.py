@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from pokemon_agent.direct.brain_tool import cap_images
+from pokemon_agent.settings import ConfigValidationError, load_config
 
 
 @pytest.mark.parametrize(
@@ -34,18 +35,9 @@ def test_cap_images_rejects_nonpositive_caps(cap: int) -> None:
         cap_images(["frame"], cap)
 
 
-def test_assembly_rejects_image_cap_below_task_steps_plus_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import pokemon_agent.build as assembly
+def test_config_rejects_image_cap_below_task_steps_plus_one(tmp_path: Path) -> None:
+    overlay = tmp_path / "budget.json"
+    overlay.write_text('{"budget":{"task_max_steps":20}}', encoding="utf-8")
 
-    config = tmp_path / "budget.json"
-    config.write_text('{"budget":{"task_max_steps":20}}', encoding="utf-8")
-
-    def after_budget() -> None:
-        pytest.fail("assembly continued past the image-cap assertion")
-
-    monkeypatch.setattr(assembly, "load_env_file", after_budget)
-
-    with pytest.raises(AssertionError, match=r"SCOPE_IMAGE_CAP=20.*task_max_steps \+ 1=21"):
-        assembly.build_real(config=config)
+    with pytest.raises(ConfigValidationError, match=r"scope_image_cap.*task_max_steps \+ 1"):
+        load_config(overlay)

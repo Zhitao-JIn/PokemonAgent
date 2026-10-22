@@ -21,18 +21,6 @@ def overlay_of(text: ScreenText) -> Facts.Overlay:
     return Facts.Overlay.NONE
 
 
-def layout_field(text: ScreenText) -> dict[str, str]:
-    """选单排布与附注作为 `Facts` 的动态字段 `option_layout` / `option_details`（没有就不放）。"""
-    fields: dict[str, str] = {}
-    layout = text.render_layout()
-    if layout:
-        fields["option_layout"] = layout
-    details = text.render_details()
-    if details:
-        fields["option_details"] = details
-    return fields
-
-
 """战斗标志：0 = 不在战斗；1 = 野生战；2 = 训练师战。"""
 
 CURSOR = 0xED

@@ -24,9 +24,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
 
 from pokemon_agent.brain import Goal, RunPlan, Task
-from pokemon_agent.errors import NoGoalToDispatch
 from pokemon_agent.harness import RunRuntime
 from pokemon_agent.harness.run.perceive import perceive
 from pokemon_agent.harness.run.plan_run import plan_run
@@ -92,7 +92,9 @@ class _BrainTool:
     """假大脑：记下收到的信封，按预设回一份 `RunPlan`。"""
 
     def __init__(self, run_plan: RunPlan | None = None) -> None:
-        self._run_plan = run_plan or RunPlan()
+        self._run_plan = run_plan or RunPlan(
+            why="测试规划依据",
+        )
         self.reqs: list = []
 
     def plan(self, req):
@@ -146,11 +148,14 @@ def _deps(memory: _Memory, planner: _BrainTool) -> RunRuntime:
     （测试直接调 `perceive` 格，`sense` 每圈取帧）。
     """
     return RunRuntime(
+        config=DEFAULT_APP_CONFIG,
         trace=_Trace(),  # type: ignore[arg-type]
         memory=memory,  # type: ignore[arg-type]
         game=SimpleNamespace(  # type: ignore[arg-type]
             perceive_task=lambda: FromHarnessToGameToolPerceiveTaskResp(
-                observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
+                observation=TaskObservation(
+                    facts={"overlay": "none"}, step=0, scene=TaskScene.WALK
+                ),
                 frame_png="F",
             )
         ),
@@ -253,10 +258,10 @@ def test_plan_updates_reopen_and_abandon_existing_entries() -> None:
     """
     table = [_entry("g1"), _entry("g2", EntryStatus.FAILED, "上次撞墙")]
     run_plan = RunPlan(
+        why="测试规划依据",
         updates=[
             RunPlan.PlanUpdate(index=1, status="pending", note="换个走法"),
-            RunPlan.PlanUpdate(index=9, status="abandoned"),  # 越界：作废
-        ]
+        ],
     )
 
     got, _, _ = _run_once(table, [], [], run_plan)
@@ -269,9 +274,14 @@ def test_plan_updates_reopen_and_abandon_existing_entries() -> None:
         [_entry("g3", EntryStatus.FAILED, "保持")],
         [],
         [],
-        RunPlan(updates=[RunPlan.PlanUpdate(index=0, status="pending")]),
+        RunPlan(
+            why="测试规划依据",
+            updates=[
+                RunPlan.PlanUpdate(note="explicit planning reason", index=0, status="pending")
+            ],
+        ),
     )
-    assert reopened["goals"][0].note == "保持", "模型没给新理由就留着旧的"
+    assert reopened["goals"][0].note == "explicit planning reason"
 
 
 def test_plan_cannot_stamp_machine_facts() -> None:
@@ -286,7 +296,7 @@ def test_plan_cannot_stamp_machine_facts() -> None:
         updates=[RunPlan.PlanUpdate.model_construct(index=0, status=EntryStatus.COMPLETED)]
     )
 
-    with pytest.raises(AssertionError, match="盖章"):
+    with pytest.raises(AssertionError):
         _run_once(table, [], [], forged)
 
 
@@ -298,7 +308,13 @@ def test_plan_translates_indices_into_task_ids() -> None:
     翻译成 `task_id` + `GoalEntry` 的是 plan 节点。
     """
     run_plan = RunPlan(
-        push_goals=[RunPlan.PlanGoal(goal="去宝可梦中心", success_criteria="体力满", max_steps=20)],
+        new_items=[
+            RunPlan.PlanGoal(
+                goal="去宝可梦中心",
+                success_criteria="体力满",
+                budget={"limit": 20, "unit": "tasks"},
+            )
+        ],
         updates=[RunPlan.PlanUpdate(index=0, status="abandoned", note="门锁着")],
         why="先补状态",
     )
@@ -319,11 +335,12 @@ def test_plan_translates_indices_into_task_ids() -> None:
 
 def test_plan_drops_updates_pointing_outside_the_table() -> None:
     """模型数错行（序号越界）不是异常——那条表态作废，别的照常。"""
-    run_plan = RunPlan(updates=[RunPlan.PlanUpdate(index=7, status="abandoned", note="?")])
+    run_plan = RunPlan(
+        why="测试规划依据", updates=[RunPlan.PlanUpdate(index=7, status="abandoned", note="?")]
+    )
 
-    got, _, _ = _run_once([_entry("seed")], [], [], run_plan)
-
-    assert [e.task.task_id for e in got["goals"]] == ["seed"], "表长不变、条目原样"
+    with pytest.raises(ValueError, match="序号"):
+        _run_once([_entry("seed")], [], [], run_plan)
 
 
 # ---- 停机不归 plan ----
@@ -331,27 +348,28 @@ def test_plan_drops_updates_pointing_outside_the_table() -> None:
 
 def test_plan_never_writes_done() -> None:
     """表里还有 `PENDING` 时，`plan_run` 只交回表——`done` 只由 `review_and_judge` 写。"""
-    got, _, _ = _run_once([_entry("还没做")], [], [], RunPlan())
+    got, _, _ = _run_once(
+        [_entry("还没做")],
+        [],
+        [],
+        RunPlan(
+            why="测试规划依据",
+        ),
+    )
 
-    assert set(got) == {"goals"}, "plan_run 的增量只有目标表"
+    assert "termination" not in got
+    assert got["judge_trigger"] == "normal"
+    assert got["execution_order"] == ["还没做"]
 
 
-def test_no_pending_goal_after_planning_fails_fast() -> None:
-    """规划完表里没有 `PENDING`（全部出局、模型也不新增/不重开）→ 抛 `NoGoalToDispatch`。
+def test_no_pending_goal_after_planning_requests_judge_without_stopping() -> None:
+    got, _, _ = _run_once(
+        [_entry("done", EntryStatus.COMPLETED)], [], [], RunPlan(why="no pending work")
+    )
 
-    这不是"该停了"的信号：run 还没被 `review_and_judge` 判停，却无事可派。
-    放弃最后一条活跃目标、又不给新目标，正是这种情形。
-    """
-    with pytest.raises(NoGoalToDispatch):
-        _run_once([_entry("已跑完", EntryStatus.COMPLETED)], [], [], RunPlan())
-
-    with pytest.raises(NoGoalToDispatch):
-        _run_once(
-            [_entry("做不动了")],
-            [],
-            [],
-            RunPlan(updates=[RunPlan.PlanUpdate(index=0, status="abandoned", note="门锁着")]),
-        )
+    assert got["judge_trigger"] == "no_pending"
+    assert got["execution_order"] == []
+    assert "termination" not in got
 
 
 def test_the_plan_verdict_event_carries_the_new_goals() -> None:
@@ -361,8 +379,12 @@ def test_the_plan_verdict_event_carries_the_new_goals() -> None:
         [],
         [],
         RunPlan(
-            push_goals=[
-                RunPlan.PlanGoal(goal="目标 plan-r1-1", success_criteria="判据", max_steps=10)
+            new_items=[
+                RunPlan.PlanGoal(
+                    goal="目标 plan-r1-1",
+                    success_criteria="判据",
+                    budget={"limit": 10, "unit": "tasks"},
+                )
             ],
             why="先铺路",
         ),

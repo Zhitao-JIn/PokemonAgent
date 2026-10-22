@@ -19,7 +19,7 @@
    `brain` 的 `__init__` 只收 provider，不读任何本项目配置——**当作能被整体
    拷走复用**，跟 `memory/` 同一个规格。
 
-方法名与"一个方法一件事"对应：`choose`/`reflect`/`judge`/`plan`/`decompose`/`verify`/
+方法名与"一个方法一件事"对应：`choose`/`judge`/`plan`/`decompose`/`verify`/
 `summarize`/`summarize_run`。**没有 `*_once` 后缀**——"一次"是调用方的循环术语，模块层的方法
 天然就是"做一次"。
 
@@ -27,7 +27,9 @@
 `choose`/`judge`/`verify`/`summarize`/`summarize_run`/`plan`/`decompose` 接受
 `images`——多模态素材物理上塞不进文本 prompt，只能独立传；默认空序列表示
 这次纯文本（模型多模态可用时走 `describe()`，否则 `complete()`）。
-`reflect` 不调模型，天然没有图。
+
+**`reflect` 已删除**（决定 D，2026-10-22）：它是纯复制，唯一下游是 `ActMemory`，
+而那份记忆要的本来就是结构化快照——现在由 tool 层的 `Reflector` 直接从观测组装。
 
 **`verify`/`summarize` 两条链路共用同一类素材**（下级记忆），但产物归属不同：
 裁决属于判定、摘要属于上一级记忆。**拆成两个方法而不是一个**，是因为"哪条链路花了多少钱、坏在哪"要在账上分得开
@@ -39,7 +41,7 @@
 harness 的截图本来就是以 base64 存的（"截图直存 base64"），谁进了这一层
 再 `b64decode` 一次，就会在构造请求时直接 ValidationError。
 
-**八个方法的失败语义也统一：一律抛 `AttemptFailed` 家族，一律不重试。**
+**七个方法的失败语义也统一：一律抛 `AttemptFailed` 家族，一律不重试。**
 这是本契约里最容易被写歪的一条，所以写在这里：
 
 | 方法 | 失败时抛 | 携带 |
@@ -51,7 +53,6 @@ harness 的截图本来就是以 base64 存的（"截图直存 base64"），谁�
 | `verify` | `VerifyAttemptFailed` | 同上 |
 | `summarize` | `SummarizeAttemptFailed` | 同上 |
 | `summarize_run` | `SummarizeAttemptFailed` | 同上 |
-| `reflect` | 不调模型，只在调用方违约时 assert | — |
 
 **为什么失败必须抛、不许降级**：判定/校验/蒸馏曾经把失败吞成"一个看起来
 正常的业务结果"（`done=False` / 全标不可靠 / `summary=None`），后果是
@@ -74,7 +75,6 @@ from .domain import (
     DecomposeResult,
     JudgeResult,
     PlanResult,
-    Reflection,
     ScriptSignature,
     SummarizeResult,
     SummarizeRunResult,
@@ -121,34 +121,6 @@ class BrainPort(Protocol):
         """
         ...
 
-    # ---- 反思 ----
-
-    def reflect(
-        self,
-        *,
-        prompt: str,
-        before: str,
-        after: str,
-        action_text: str,
-    ) -> Reflection:
-        """把这一步整理成一条经验：**看到什么 → 做了什么 → 变成什么**。
-
-        prompt：这次整理的规则。**本版不消费它**（四样素材已经在参数里，
-            让模型再复述一遍只会引入它自己的措辞偏差，还多烧一次调用）——
-            这个参数在这儿是因为 `reflect` 后面也要接 LLM（接口按"可能会调"
-            设计），六个方法形状统一。
-        before/after：前后两帧观测的**渲染文本**（渲染是调用方的事——剪哪些
-            字段、怎么对齐，都是渲染策略，随世界和存储策略变）。
-        action_text：这一步做了什么。
-
-        前置条件：`before`/`after` 非空——调用方要保证
-            （渲染是它的事，给空串是它的 bug，本方法 assert 拦下）。
-        后置条件：返回的 `Reflection` 三个字段与入参一一对应。
-        **本方法不写库**（写库是状态变更，而大脑无状态），**不盖章坐标**
-            （`episode_id`/`step` 由调用方加）。
-        """
-        ...
-
     # ---- 判定 ----
 
     def judge(
@@ -180,8 +152,8 @@ class BrainPort(Protocol):
 
         images：可选截图，这次判定要看的画面。
 
-        后置条件：`result.calls` 恰好一条；`result.done` 是模型明确给出的布尔裁决
-            （本方法不替模型猜）。
+        后置条件：`result.calls` 恰好一条；decision 是明确的 achieved/continue/blocked，
+            task 还允许 interrupted；done/interrupted/blocked 只从 decision 派生。
         失败：抛 `JudgeAttemptFailed`（附这次的账）——**"永远返回一个判定"这条
             旧契约已废弃**。旧写法把调用失败吞成 `done=False`，于是"判定器坏了"
             与"真的没达成"在数据里分不开；现在失败必须被看见。
@@ -255,7 +227,8 @@ class BrainPort(Protocol):
           走 describe()，否则纯文本。带图路径不支持 thinking 覆盖，但账仍记录传入值。
         - `thinking`：同 `plan()`。
 
-        后置条件：`result.decomposition.tasks` 非空；`result.calls` 恰好一条。
+        后置条件：`result.calls` 恰好一条；new_items 可以为空，updates 只表达主观修订，
+            execution_order 使用请求表序号和本次新增序号，不生成身份或终止结论。
         失败：抛 `DecomposeAttemptFailed`（附这次的账）。
         """
         ...

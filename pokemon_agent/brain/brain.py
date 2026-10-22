@@ -15,7 +15,7 @@
 `DecomposeAttemptFailed` / `JudgeAttemptFailed` / `VerifyAttemptFailed` /
 `SummarizeAttemptFailed`），
 异常携带这一次尝试的 `ModelCall`。重试循环住 `direct/brain_tool.py`，
-预算住 `pokemon_agent/config.py`——**大脑不知道"问几次"这件事**。
+预算住配置文件（`pokemon_agent/settings/default.json` 的 `retry`）——**大脑不知道"问几次"这件事**。
 
 由此跟着两条推论：
 
@@ -81,7 +81,6 @@ from .interface import (
     JudgeResult,
     ModelCall,
     PlanResult,
-    Reflection,
     RunPlan,
     RunSummary,
     ScriptArg,
@@ -92,6 +91,7 @@ from .interface import (
     VerifyResult,
     VerifyVerdict,
 )
+from .interface.domain.judgement import Judgement
 
 
 def _strip_json_fence(text: str) -> str:
@@ -176,7 +176,7 @@ class Brain:
         都继承 `_MultimodalMixin`），不借 `world` 的任何协议。
 
         **没有 `max_retries`**——决策重试的预算和循环都在调用方
-        （`BRAIN_MAX_ATTEMPTS`，见 `pokemon_agent/config.py`），大脑不知道
+        （`retry.brain_max_attempts`，见 `pokemon_agent/settings/default.json`），大脑不知道
         "问几次"这件事，只知道"问一次"。
 
         存下四个 provider，此后不再变——prompt 全部由调用方拼好递进来。
@@ -204,7 +204,7 @@ class Brain:
 
         **只认 `prompt` + `images`**：动作空间说明、目标栈、已知事实、记忆、
         领域知识、人类插话，以及"怎么选"的全部规则，全部由调用方拼好
-        （`pokemon_agent.direct.prompts.decide_action.build_prompt()`）；图也由
+        （`pokemon_agent.prompt.PromptGateway.render()`）；图也由
         调用方（tool 层）拼好递进来。
 
         **转发表在这里、不在 provider 里**（0915 129）：入参带了图、且当前
@@ -574,7 +574,7 @@ class Brain:
             raise JudgeAttemptFailed(call) from exc
 
         # 步骤 2：解析裁决。
-        done, interrupted, why, kind = self._parse_verdict(text)
+        decision, why, kind = self._parse_verdict(text)
 
         call = ModelCall(
             payload={
@@ -597,7 +597,7 @@ class Brain:
         if kind:
             raise JudgeAttemptFailed(call)
 
-        return JudgeResult(done=done, interrupted=interrupted, why=why, calls=[call])
+        return JudgeResult(decision=decision, why=why, calls=[call])
 
     @staticmethod
     def _ask(
@@ -644,24 +644,14 @@ class Brain:
         )
 
     @staticmethod
-    def _parse_verdict(text: str) -> tuple[bool, bool, str, str]:
-        """解析成 `(done, interrupted, why, 失败类型)`，第四项为空串表示解析成功。
-
-        `interrupted` 缺失或不是布尔按假处理（只有 task 层的 prompt 会要它）；`done` 为真时恒为假。
-        """
-        stripped = _strip_json_fence(text)
+    def _parse_verdict(text: str) -> tuple[str, str, str]:
+        """解析单一 decision；缺失或非法结论为显式解析失败。"""
         try:
-            raw = _load_json(stripped)
-        except json.JSONDecodeError:
-            return False, False, f"判定输出不是合法 JSON：{text!r}", "ParseFailure"
-
-        if not isinstance(raw, dict) or not isinstance(raw.get("done"), bool):
-            return False, False, f"判定输出缺少布尔 done：{text!r}", "ParseFailure"
-
-        done = bool(raw["done"])
-        interrupted = raw.get("interrupted") is True and not done
-        why = raw.get("why")
-        return done, interrupted, str(why) if why else "（未说明）", ""
+            raw = _load_json(_strip_json_fence(text))
+            result = Judgement.model_validate(raw)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            return "continue", f"判定输出不合法：{exc}", "ParseFailure"
+        return result.decision, result.why, ""
 
     # ---- step 记忆校验（独立判定器）----
 
@@ -953,39 +943,6 @@ class Brain:
             return None
 
     # ---- 世界知识抽取 ----
-
-    # ---- 记忆整理 ----
-
-    def reflect(
-        self,
-        *,
-        prompt: str,
-        before: str,
-        after: str,
-        action_text: str,
-    ) -> Reflection:
-        """把这一步整理成一条经验：**看到什么 → 做了什么 → 变成什么**。
-
-        **本版不调模型**：四样东西都已经在参数里，让模型再复述一遍只会引入
-        它自己的措辞偏差，还多烧一次调用。`prompt` 收下但本版不消费——
-        接口按"可能会调"设计（`reflect` 后面也要变成 LLM 接入），
-        六个方法的形状因此统一。
-
-        **本方法不写库**：写库是状态变更，而大脑无状态。
-        **不盖章坐标**：`episode_id`/`step` 由调用方加——大脑不知道自己在哪一局、
-        第几步。
-
-        前置条件：`before`/`after` 是渲染好的文本。调用方要
-        保证这一点（渲染是它的事）。
-        """
-        assert before, "reflect() got an empty before-snapshot text"
-        assert after, "reflect() got an empty after-snapshot text"
-
-        return Reflection(
-            before=before,
-            action_text=action_text,
-            after=after,
-        )
 
     # ---- 内部 ----
 

@@ -19,7 +19,10 @@ from pokemon_agent.brain.brain import Brain
 # 方法名 → (拿一个 `Brain` 调该方法、忽略返回值，该方法的最小合法回复文本)。
 CALLS: dict[str, tuple[Callable[[Brain], object], str]] = {
     "choose": (lambda brain: brain.choose(prompt="p", keys=["up"]), '{"action": "up"}'),
-    "judge": (lambda brain: brain.judge(prompt="p", goal="g", history=[]), '{"done": true}'),
+    "judge": (
+        lambda brain: brain.judge(prompt="p", goal="g", history=[]),
+        '{"decision": "achieved", "why": "observed evidence"}',
+    ),
     "verify": (
         lambda brain: brain.verify(prompt="p", entries=["e"], goal="g", knowledge="k"),
         '[{"index": 0, "positive": true, "why": "w"}]',
@@ -32,11 +35,14 @@ CALLS: dict[str, tuple[Callable[[Brain], object], str]] = {
     ),
     "plan": (
         lambda brain: brain.plan(prompt="p", goal_stack=[], history=[], max_push=1),
-        "{}",
+        '{"why": "retain existing work"}',
     ),
     "decompose": (
         lambda brain: brain.decompose(prompt="p", goal="g", context=[], max_tasks=1),
-        '{"tasks": [{"goal": "a", "success_criteria": "s", "max_steps": 1}]}',
+        (
+            '{"new_items": [{"goal": "a", "success_criteria": "s", "budge'
+            't": {"limit": 1, "unit": "actions"}}], "why": "next"}'
+        ),
     ),
 }
 
@@ -102,14 +108,17 @@ def test_a_method_is_available_only_through_the_provider_slots_that_serve_it(
 
 def test_each_method_uses_its_own_provider_when_all_four_are_given() -> None:
     d = ScriptedJudge(text_reply('{"action": "up"}'))
-    j = ScriptedJudge(text_reply('{"done": true}'))
+    j = ScriptedJudge(text_reply('{"decision": "achieved", "why": "observed evidence"}'))
     v = ScriptedJudge(
         text_reply('[{"index": 0, "positive": true, "why": "w"}]'),
         text_reply('{"summary": "s", "quality_score": 0.5, "quality_rationale": "q"}'),
     )
     p = ScriptedJudge(
-        text_reply("{}"),
-        text_reply('{"tasks": [{"goal": "a", "success_criteria": "s", "max_steps": 1}]}'),
+        text_reply('{"why": "retain existing work"}'),
+        text_reply(
+            '{"new_items": [{"goal": "a", "success_criteria": "s", "budge'
+            't": {"limit": 1, "unit": "actions"}}], "why": "next"}'
+        ),
     )
     brain = Brain(decide_llm=d, judge_llm=j, verify_llm=v, plan_llm=p)
 

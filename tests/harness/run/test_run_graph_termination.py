@@ -4,7 +4,7 @@
 问模型）；`plan_run` 不再判停。三条都没有类型系统保护、改坏了只会表现成"图跑不完"：
 
 - 失败目标盖 `FAILED`（终态），**不自动重派**——重试只能是 `plan_run` 的显式重开；
-- 连续失败达到 `RUN_STALL_LIMIT` 时机械停机，即使 planner 一直重开；
+- 连续失败达到 `loop.run_stall_limit` 时机械停机，即使 planner 一直重开；
 - 单局抛 `AgentError` 时，error handler 复用 `dispatch` 补出派发增量，
   `review_and_judge` 照常找到那条 `RUNNING` 盖章。
 
@@ -18,9 +18,9 @@ import pathlib
 from types import SimpleNamespace
 
 import pytest
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG, app_config
 
 from pokemon_agent.brain import Goal, RunPlan, Task
-from pokemon_agent.config import DEFAULT_RUN_BUDGET, RUN_STALL_LIMIT
 from pokemon_agent.direct.trace import TraceTool
 from pokemon_agent.errors import AgentError
 from pokemon_agent.harness import RunRuntime
@@ -52,12 +52,17 @@ class _Planner:
 
     def plan(self, req):
         updates = [
-            RunPlan.PlanUpdate(index=i, status="pending")
+            RunPlan.PlanUpdate(note="explicit planning reason", index=i, status="pending")
             for i, entry in enumerate(req.plan)
             if self._reopen and entry.status is EntryStatus.FAILED
         ]
         return type(
-            "Resp", (), {"plan": RunPlan(updates=updates), "calls": [ModelCall(payload={})]}
+            "Resp",
+            (),
+            {
+                "plan": RunPlan(why="测试规划依据", updates=updates),
+                "calls": [ModelCall(payload={})],
+            },
         )()
 
 
@@ -70,7 +75,9 @@ class _Judger:
     def judge(self, req):
         self.asked += 1
         return FromHarnessToBrainToolJudgeResp(
-            done=self.asked == self._done_on, why="桩", calls=[ModelCall(payload={})]
+            decision=("achieved" if self.asked == self._done_on else "continue"),
+            why="桩",
+            calls=[ModelCall(payload={})],
         )
 
 
@@ -138,7 +145,7 @@ def _run(
     monkeypatch.setattr(episode_entry, "run_episode", fake_run_episode)
     trace, memory = TraceTool(LocalTrace(root=tmp_path)), _Memory()
     deps = RunRuntime(
-        budget=DEFAULT_RUN_BUDGET.model_copy(update={"max_episodes": 3}),
+        config=app_config(budget={"max_episodes": 3}),
         trace=trace,
         memory=memory,  # type: ignore[arg-type]
         reviewer=NullReviewer(),
@@ -151,7 +158,9 @@ def _run(
         # run 层每圈取帧（`perceive` 的 `sense`）；桩一个恒定画面（done=False，不触发判停）。
         game=SimpleNamespace(  # type: ignore[arg-type]
             perceive_task=lambda: FromHarnessToGameToolPerceiveTaskResp(
-                observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
+                observation=TaskObservation(
+                    facts={"overlay": "none"}, step=0, scene=TaskScene.WALK
+                ),
                 frame_png="F",
             )
         ),
@@ -191,10 +200,10 @@ def test_consecutive_failures_stop_the_run_mechanically(tmp_path, monkeypatch) -
         tmp_path, monkeypatch, [], planner=_Planner(reopen=True), judger=_Judger(done_on=None)
     )
 
-    assert len(calls) == RUN_STALL_LIMIT
+    assert len(calls) == DEFAULT_APP_CONFIG.loop.run_stall_limit
     assert final.done and not final.success
     assert final.termination is Termination.STALLED
-    assert final.fail_streak == RUN_STALL_LIMIT
+    assert final.fail_streak == DEFAULT_APP_CONFIG.loop.run_stall_limit
 
 
 def test_an_episode_error_is_settled_as_a_failed_outcome(tmp_path, monkeypatch) -> None:
@@ -229,7 +238,7 @@ def test_episode_budget_stops_a_run_even_when_success_resets_the_failure_streak(
     )
 
     assert len(calls) == 3
-    assert final.fail_streak < RUN_STALL_LIMIT
+    assert final.fail_streak < DEFAULT_APP_CONFIG.loop.run_stall_limit
     assert final.termination is Termination.BUDGET_EXHAUSTED
     assert final.done and not final.success
     events = TraceTool(LocalTrace(root=tmp_path)).read_events()

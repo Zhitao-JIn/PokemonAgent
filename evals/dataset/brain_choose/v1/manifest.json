@@ -1,0 +1,22 @@
+{
+  "version": "v1",
+  "cases": 189,
+  "sha256": "1680ad9a9b6d1136c8306b27d6bb3f6dffa8faf9a5c3f00e00180243e00dd5e6",
+  "scenes": {
+    "walk": 56,
+    "shop": 48,
+    "battle_menu": 30,
+    "shop_items": 16,
+    "battle": 9,
+    "dialog": 30
+  },
+  "approval": "2026-10-18 用户批准采用完整历史审核后的189条并运行评测",
+  "label_source": "rule",
+  "review": "../build/history_review_report.json",
+  "limitations": [
+    "未覆盖 start_menu",
+    "原批次采集全过程代码版本不完全可证明",
+    "助手受托审核，不冒称人工来源",
+    "67条排除及2条范围外记录仍保留"
+  ]
+}

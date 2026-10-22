@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from .dataset import ScriptCase
+from .dataset.loader import DEFAULT_VERSION
 from .solver import ScriptRun
 
 SAMPLE_TIME_LIMIT = 300
@@ -31,7 +32,7 @@ class ScriptWorkerFailure(RuntimeError):
 
 
 def run_isolated(
-    case: ScriptCase, version: str = "v1", *, timeout: float = SAMPLE_TIME_LIMIT
+    case: ScriptCase, version: str = DEFAULT_VERSION, *, timeout: float = SAMPLE_TIME_LIMIT
 ) -> ScriptRun:
     """起一个 worker；超时由 subprocess 杀掉并回收，装配错误上抛。
 

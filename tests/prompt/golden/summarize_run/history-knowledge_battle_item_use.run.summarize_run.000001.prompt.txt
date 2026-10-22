@@ -1,0 +1,32 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：在战斗中打开道具袋
+终止类别：goal_done；判定依据：当前帧 overlay 是 choice，选项为 POTION / CANCEL，光标停在 POTION，道具袋已在战斗中打开
+累计 1 局，其中 1 局成功，使用 2 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_battle_item_use｜在战斗中打开道具袋｜completed｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_battle_item_use-ep1) 目标：在战斗中打开道具袋（成功，goal_done，2 个 task / 2 键）
+  结论  达成 goal_done：关键在于先读 option_layout 与光标行列，确认 ITEM 就在 FIGHT 正下方，用 down 一步到位，再直接按 a 确认；没有多余按键，也没有误触其他选项。
+  总结  在战斗主菜单中，光标初始停在 FIGHT，按一次 down 移到同列的 ITEM，再按一次 a 确认，成功打开道具袋（选项变为 POTION/CANCEL），全程仅用 2 键。
+  可复用经验  战斗主菜单为 2×2（FIGHT/PKMN 上排，ITEM/RUN 下排）时，从 FIGHT 到 ITEM 直接按 down 一次即可，无需先按 right；移动光标前先读 option_layout 与当前光标行列，确认目标格相对方位再选键，避免多按；光标已在目标格时直接按 a 确认，不要先按方向键；判断道具袋是否打开：看 options 是否从 FIGHT/PKMN/ITEM/RUN 变为竖排道具名（如 POTION/CANCEL），光标是否落在第一项道具上，option_details 显示数量
+  关键决策  第 0 步选择 down 而非 right：ITEM 与 FIGHT 同列且在其下一行，down 是正确方向，一步命中；第 1 步光标已在 ITEM 上，直接按 a 确认，没有多余移动
+  失败点  若未读光标行列就盲按方向键，可能多按或移出目标格，浪费键数；到达目标格后若继续按方向键而非 a，会错过确认时机
+  质量分 0.85（理由：两个 task 均为单步正样本，前后状态字段（光标坐标、option_layout、option_details）完整清晰，策略可直接复用；但任务极短、无负样本，泛化证据有限，故略低于满分。）
+  标签  battle、menu、item_bag、cursor_navigation、choice_overlay
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

@@ -47,11 +47,11 @@
 | episode_vision_read（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md）） | B | 视觉工具，单帧输入 |
 | memory_poisoning_resistance（提议） | B | 单次记忆写入判定 |
 | script_interrupt_recovery（提议） | B | 单次脚本执行的中断处理（需先核对是否已被 106 例覆盖） |
-| brain_choose_action（S4） | B | 动作空间内的单步选择，即"action space"任务；设计见 `brain-choose-action-intent.md` 与 `brain-choose-action-spec.md` |
+| brain_choose（S4） | B | 动作空间内的单步选择，即"action space"任务；设计见 `brain-choose-intent.md` 与 `brain-choose-spec.md` |
 | brain_step_verify | B | 单步前后观测判断 |
 | brain_reflect_replan | B | 注入单个失败情境后的反思 |
 | brain_plan_decompose | B | 单个目标的任务分解 |
-| brain_goal_judge | C | 输入含观测历史，属于多步轨迹 |
+| brain_judge | C | 输入含观测历史，属于多步轨迹 |
 | agent_short_goal_run | C | 完整系统多步执行 |
 | agent_long_goal_run | C | 多里程碑长程执行；里程碑检查在此 task 内完成 |
 | agent_stall_recovery_run | C | 多步脱困过程 |
@@ -76,7 +76,7 @@
 ## 七、已确认
 
 1. brain_step_verify、brain_reflect_replan、brain_plan_decompose 归 B 类（单步判断）。
-2. brain_goal_judge 归 C 类（输入含观测历史）。
+2. brain_judge 归 C 类（输入含观测历史）。
 3. world_script_execute 归 B 类（单次脚本调用，脚本内部按键不算 agent 轨迹）。
 4. 评审模型两类共用 `evals/config.json`。
 5. B 类不绑定 pytest，真值比较自写逐字段判断，汇总由 DeepEval 输出。
@@ -108,7 +108,7 @@ DeepEval 的接法已在隔离环境（Python 3.12，deepeval 4.2.8）验证，�
 ## 九、非目标
 
 - 不引入 DeepEval 替代 Inspect，也不把 Inspect task 改写成 B 类。
-- 不在本次拆分中新增任务。补充任务（memory_poisoning_resistance、script_interrupt_recovery，以及 brain_choose_action 等 B 类提议任务）待单独排期。
+- 不在本次拆分中新增任务。补充任务（memory_poisoning_resistance、script_interrupt_recovery，以及 brain_choose 等 B 类提议任务）待单独排期。
 - 不改变 Langfuse 的 run_id 对应关系。
 - 不改判定语义、数据集、真值与被测代码。
 
@@ -119,7 +119,7 @@ DeepEval 的接法已在隔离环境（Python 3.12，deepeval 4.2.8）验证，�
   - `memory_store_recall`：逐记录判存储，逐查询给 recall@k 与 MRR；
   - `world_script_execute`：106 条用例，判"自报"与"真值"两面，另按脚本给通过率；
   - `episode_vision_read`（已删除（2026-10-16，见 docs/perceive/remove-vision-spec.md））：视觉模型读单帧，五个视觉字段加"解析成功"共六列，对照人工标注。
-- **C 类两个**（`brain_goal_judge`、`agent_short_goal_run`）仍是 Inspect task，只把代码搬进各自的任务目录，逻辑不变。
+- **C 类两个**（`brain_judge`、`agent_short_goal_run`）仍是 Inspect task，只把代码搬进各自的任务目录，逻辑不变。
 - 迁完后 `evals/solvers/`、`evals/scorers/`、`evals/tasks/` 不再存在，`evals/dataset/` 只留共用数据集；公开任务共六个：四个 B（含 decode）、两个 C，登记在 `evals/registry.py`。
 - decode 的 DeepEval 运行器抽成公共的 `evals/common/run.py`，四个 B 类共用。
 
@@ -139,4 +139,4 @@ DeepEval 的接法已在隔离环境（Python 3.12，deepeval 4.2.8）验证，�
 **验收（意图层面）：**
 - 三个 B 类任务迁移前后，同一份数据上每个 (用例, 指标) 的判定逐项一致。
 - 一条命令得到整体通过率与逐指标汇总，有失败时退出码非零。
-- 六个公开任务都能从 `evals/registry.py` 找到入口；`evals/solvers/`、`evals/scorers/`、`evals/tasks/` 不存在。
+- 八个公开任务都能从 `evals/registry.py` 找到入口；`evals/solvers/`、`evals/scorers/`、`evals/tasks/` 不存在。

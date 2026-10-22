@@ -1,0 +1,147 @@
+{
+  "task": "decompose",
+  "case_id": "history-knowledge_catch_throw_ball.episode.decompose.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "goal": {
+      "goal": "在战斗中打开背包，选精灵球扔出去",
+      "criteria": "对话框里出现投球结果文字（如 All right! ... was caught! / Darn! The POKéMON broke free!）"
+    },
+    "observation": {
+      "step": 0,
+      "place": {
+        "map_id": 12,
+        "x": 13,
+        "y": 7
+      },
+      "status": "（这一帧只读了内存）全局坐标 地图12 x=13 y=7，朝向 west。战斗中。可选项：FIGHT/ PKMN/ ITEM/ RUN，光标在 FIGHT",
+      "facts": {
+        "scene": "battle",
+        "overlay": "choice",
+        "where": "全局坐标 地图12 x=13 y=7",
+        "facing": "west",
+        "neighbors": "北 # 南 # 西 . 东 #",
+        "landmarks": [],
+        "dialog_text": "",
+        "options": [
+          "FIGHT",
+          "PKMN",
+          "ITEM",
+          "RUN"
+        ],
+        "cursor": "FIGHT",
+        "walk_map": "",
+        "map_id": 12,
+        "screen": " PIDGEY     ·······\n    :L3      ·······\n ·HP:[██████] ·······\n ·────────│ ·······\n            ·······\n ·······    ·······\n ·······    ·······\n ·······  BULBASAUR\n ·······      :L7\n ·······  HP:[██████]\n ·······    25/ 25·\n ······· └────────┘\n┌───────┌──────────┐\n│       │          │\n│       │▶FIGHT PKMN │\n│       │          │\n│       │ ITEM  RUN│\n└───────└──────────┘",
+        "my_name": "BULBASAUR",
+        "my_level": "7",
+        "my_hp": "25/25",
+        "my_status": "ok",
+        "foe_name": "PIDGEY",
+        "foe_level": "3",
+        "foe_hp": "15/15",
+        "foe_status": "ok",
+        "option_layout": "2 行 × 2 列，光标在第 1 行第 1 列；上/下 换行，左/右 换列\n▶FIGHT   PKMN\n ITEM   RUN"
+      },
+      "done": false,
+      "scene": "battle_menu",
+      "takeover": {
+        "kind": "battle_menu",
+        "mine": {
+          "name": "BULBASAUR",
+          "level": 7,
+          "hp": 25,
+          "max_hp": 25,
+          "status": "ok",
+          "active": true,
+          "moves": [
+            {
+              "name": "TACKLE",
+              "pp": 35
+            },
+            {
+              "name": "GROWL",
+              "pp": 40
+            },
+            {
+              "name": "LEECH SEED",
+              "pp": 10
+            }
+          ]
+        },
+        "foe": {
+          "name": "PIDGEY",
+          "level": 3,
+          "hp": 15,
+          "max_hp": 15,
+          "status": "ok",
+          "active": false,
+          "moves": []
+        },
+        "trainer": false,
+        "party": [
+          {
+            "name": "BULBASAUR",
+            "level": 7,
+            "hp": 25,
+            "max_hp": 25,
+            "status": "ok",
+            "active": true,
+            "moves": [
+              {
+                "name": "TACKLE",
+                "pp": 35
+              },
+              {
+                "name": "GROWL",
+                "pp": 40
+              },
+              {
+                "name": "LEECH SEED",
+                "pp": 10
+              }
+            ]
+          },
+          {
+            "name": "PIDGEY",
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15,
+            "status": "ok",
+            "active": false,
+            "moves": [
+              {
+                "name": "GUST",
+                "pp": 35
+              }
+            ]
+          }
+        ],
+        "bag": [
+          {
+            "name": "POTION",
+            "quantity": 1
+          },
+          {
+            "name": "POKé BALL",
+            "quantity": 4
+          }
+        ]
+      },
+      "menu_decode_complete": true,
+      "covered_by_script": true,
+      "selected_map_location": null,
+      "observation_notes": []
+    },
+    "task_memories": [],
+    "task_table": [],
+    "episode_index": [],
+    "knowledge": [],
+    "last_judge": null,
+    "max_tasks": 5,
+    "human_note": ""
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/decompose/inputs.jsonl#knowledge_catch_throw_ball.episode.decompose.000001"
+}

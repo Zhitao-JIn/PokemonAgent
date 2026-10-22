@@ -4,8 +4,8 @@
 ValueError 列出缺的键**——杜绝"缺省值兜底读错目录"一类事故（335 实锤）。`models`
 五条链路也必须显式全填，`resolve_models` 不再做 null/主型号回退。
 
-被测系统的 harness 旋钮（如红线阈值）不在这里——仍从 `pokemon_agent.config` 装配期
-读一次进 metadata 快照。
+被测系统的 harness 旋钮（如红线阈值）不在这里——由 `pokemon_agent.settings` 的
+`default.json` 加覆盖文件解析，评测线只经 `evals/common/overlay.py` 写覆盖层。
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ MODEL_LINKS: tuple[str, ...] = (
     "verify_model",
     "plan_model",
 )
-"""`build_real` 收的五条链路参数名（与 `pokemon_agent/build.py` 签名一一对应）。"""
+"""评测配置里的链路型号键（由 `overlay.py` 映射到 settings 的 models 各节）。"""
 
 
 def load_config() -> dict[str, Any]:

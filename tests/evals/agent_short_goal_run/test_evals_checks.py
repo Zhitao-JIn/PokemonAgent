@@ -13,7 +13,13 @@ from evals.agent_short_goal_run.dataset import load
 from evals.agent_short_goal_run.dataset.schemas import EvalSample, SampleStart
 from evals.agent_short_goal_run.scorer import RULES, RunStream, judge
 from pokemon_agent.direct.trace import ParsedEvent
-from pokemon_agent.direct.trace.content import EpisodeStartContent, EventMeta, SenseFrameContent
+from pokemon_agent.direct.trace.content import (
+    ActCallContent,
+    EpisodeStartContent,
+    EventMeta,
+    OtherContent,
+    SenseFrameContent,
+)
 from pokemon_agent.world import Facts, PlaceInWorld, RamReadout
 from pokemon_agent.world.interface import (
     BagItem,
@@ -35,12 +41,14 @@ def frame(
     dialog: str = "",
     options: tuple[str, ...] = (),
     cursor: str | None = None,
-    details: str = "",
+    overlay: Facts.Overlay | None = None,
+    annotations: tuple[str, ...] = (),
     source: str = "decode",
     in_battle: bool = False,
     money: int = 3000,
     bag: dict[int, int] | None = None,
     party: tuple[tuple[int, int], ...] = ((20, 20),),
+    people: tuple[tuple[int, int], ...] = (),
     my_hp: int = 20,
     foe_hp: int = 15,
 ) -> ParsedEvent:
@@ -49,8 +57,17 @@ def frame(
     `source="vlm"` 模拟 episode 层看档帧上视觉抄出了字、屏幕解码却没有：文字只进 `facts`，
     `ram.decoded` 为空——判据读的是后者。
     """
-    extra = {"option_details": details} if details else {}
-    facts = Facts(map_id=map_id, dialog_text=dialog, options=list(options), cursor=cursor, **extra)
+    facts = Facts(
+        map_id=map_id,
+        dialog_text=dialog,
+        options=list(options),
+        cursor=cursor,
+        landmarks=[
+            Facts.Landmark(kind="人", map_id=map_id, x=x, y=person_y) for x, person_y in people
+        ],
+        overlay=overlay,
+        option_annotations=list(annotations),
+    )
     battle = (
         BattleStatus(
             mine=Combatant(name="BULBASAUR", level=5, hp=my_hp, max_hp=20, status="ok"),
@@ -127,13 +144,20 @@ CASES = {
         [frame(1, dialog="Hey!"), frame(2, dialog="...more")],
     ),
     "shop_menu_opened": (
-        [frame(1), frame(2, options=("BUY", "SELL", "QUIT"), cursor="BUY")],
+        [
+            frame(
+                1,
+                options=("BUY", "SELL", "QUIT"),
+                cursor="BUY",
+                overlay=Facts.Overlay.CHOICE,
+            )
+        ],
         [frame(1, dialog="Hi there! May I help you?"), frame(2)],
     ),
     "shop_list_opened": (
         [
             frame(1),
-            frame(2, options=("POKé BALL", "CANCEL"), cursor="POKé BALL", details="POKé BALL ¥200"),
+            frame(2, options=("POKé BALL", "CANCEL"), cursor="POKé BALL", annotations=("¥200",)),
         ],
         [frame(1), frame(2, options=("BUY", "SELL", "QUIT"), cursor="BUY")],
     ),
@@ -141,24 +165,83 @@ CASES = {
         [frame(1), frame(2, options=("YES", "NO"), cursor="YES")],
         [
             frame(1),
-            frame(2, options=("POKé BALL", "CANCEL"), cursor="POKé BALL", details="POKé BALL ¥200"),
+            frame(2, options=("POKé BALL", "CANCEL"), cursor="POKé BALL", annotations=("¥200",)),
         ],
     ),
     "shop_bought": (
-        [frame(1, money=3000, bag={4: 1}), frame(2, money=2800, bag={4: 2})],
+        [_event("act_call", 1, ActCallContent(script="buy_item", ok="true", code="ok"))],
         [
-            frame(1, money=3000, bag={4: 1}),
-            frame(2, money=3000, bag={4: 1}, dialog="Here you are! Thank you!"),
+            _event(
+                "act_call", 1, ActCallContent(script="buy_item", ok="false", code="verify_failed")
+            )
+        ],
+    ),
+    "shop_all_npcs_interacted": (
+        [
+            frame(1, people=((2, 5), (4, 3))),
+            _event(
+                "write_object_memory",
+                2,
+                OtherContent(
+                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
+                ),
+            ),
+            _event(
+                "write_object_memory",
+                3,
+                OtherContent(
+                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 4, "y": 3}
+                ),
+            ),
+        ],
+        [
+            frame(1, people=((2, 5), (4, 3))),
+            _event(
+                "write_object_memory",
+                2,
+                OtherContent(
+                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
+                ),
+            ),
+        ],
+    ),
+    "shop_two_npcs_interacted": (
+        [
+            frame(1, people=((2, 5), (4, 3), (6, 4))),
+            _event(
+                "write_object_memory",
+                2,
+                OtherContent(
+                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
+                ),
+            ),
+            _event(
+                "write_object_memory",
+                3,
+                OtherContent(
+                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 4, "y": 3}
+                ),
+            ),
+        ],
+        [
+            frame(1, people=((2, 5), (4, 3), (6, 4))),
+            _event(
+                "write_object_memory",
+                2,
+                OtherContent(
+                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
+                ),
+            ),
         ],
     ),
     "shop_cancelled": (
         [
             frame(1, options=("YES", "NO")),
-            frame(2, options=("POKé BALL",), details="POKé BALL ¥200"),
+            frame(2, options=("POKé BALL",), annotations=("¥200",)),
         ],
         [
             frame(1, money=3000, options=("YES", "NO")),
-            frame(2, money=2800, options=("POKé BALL",), details="POKé BALL ¥200"),
+            frame(2, money=2800, options=("POKé BALL",), annotations=("¥200",)),
         ],
     ),
     "battle_started": (
@@ -231,7 +314,10 @@ CASES = {
         ],
     ),
     "ball_thrown": (
-        [frame(1, bag={4: 3}), frame(2, bag={4: 2})],
+        [
+            frame(1, bag={4: 3}),
+            frame(2, bag={4: 3}, dialog="Aww! It appeared to be caught!"),
+        ],
         [
             frame(1, bag={4: 3}),
             frame(2, bag={4: 3}, dialog="Darn! The POKéMON broke free!", source="vlm"),
@@ -286,6 +372,20 @@ def test_text_from_vision_is_never_taken_as_truth() -> None:
 
 def test_party_list_without_decoded_frames_is_unjudgeable() -> None:
     verdict = judge(stream(), sample("party_list_opened_in_battle"))
+
+    assert verdict.outcome == "unjudgeable"
+
+
+def test_shop_menu_is_unjudgeable_when_only_the_previous_frame_is_decoded() -> None:
+    previous_menu = frame(
+        1,
+        options=("BUY", "SELL", "QUIT"),
+        cursor="BUY",
+        overlay=Facts.Overlay.CHOICE,
+    )
+    current_without_decode = frame(2, source="vlm", overlay=Facts.Overlay.CHOICE)
+
+    verdict = judge(stream(previous_menu, current_without_decode), sample("shop_menu_opened"))
 
     assert verdict.outcome == "unjudgeable"
 

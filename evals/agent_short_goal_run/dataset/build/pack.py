@@ -2,7 +2,7 @@
 
 用法（从仓库根）：
 
-    python -m evals.agent_short_goal_run.dataset.build.pack                     # 打 v1 全部样本
+    python -m evals.agent_short_goal_run.dataset.build.pack  # 打当前默认版本全部样本
     python -m evals.agent_short_goal_run.dataset.build.pack --samples id1,id2   # 只打指定样本
     python -m evals.agent_short_goal_run.dataset.build.pack --version v1
 
@@ -25,9 +25,11 @@ import tempfile
 from pathlib import Path
 
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
-from evals.agent_short_goal_run.solver.runner.one import _load_env, run_id_for
+from evals.agent_short_goal_run.solver.runner.one import run_id_for
 from evals.common.memory_server import clear_memory
+from evals.common.overlay import eval_overlay, sample_overlay, write_overlay
 from evals.paths import REPO_ROOT
+from evals.runconfig import load_config
 from pokemon_agent.brain import Task
 from pokemon_agent.build import build_real
 from pokemon_agent.direct.trace import TraceTool, parse
@@ -39,9 +41,10 @@ from pokemon_agent.mcpclient.world_tool import WorldMcpTool
 from pokemon_agent.schemas.harness import TraceKind
 
 from ..loader import DATASET_DIR, load_samples, sha256_of
+from .preconditions import validate_start
 
 
-def pack_one(sample: EvalSample, version: str) -> Path:
+def pack_one(sample: EvalSample, version: str, archive_root: Path | None = None) -> Path:
     """打一条样本的起点存档，返回存档目录（`archives/<样本>/`）。
 
     前置条件：`sample.start.kind == "archive"` 且来源 `.state` 存在、哈希与
@@ -63,7 +66,14 @@ def pack_one(sample: EvalSample, version: str) -> Path:
             "memory_root": tmp / "memory",
             "checkpoint_root": tmp / "checkpoints",
         }
-        harness, game = build_real(run_id=run_id, trace_backend="local", **_models(), **roots)
+        eval_config, _digest = write_overlay(
+            tmp / "config-pack.json",
+            {
+                **eval_overlay({**load_config(), "trace_backend": "local"}),
+                **sample_overlay(run_id=run_id, branch="main", work=tmp),
+            },
+        )
+        harness, game = build_real(config=eval_config)
         game.use_start_state(state)
         task = Task(
             task_id=sample.sample_id,
@@ -73,7 +83,10 @@ def pack_one(sample: EvalSample, version: str) -> Path:
             initial_state_hint=sample.initial_state_hint,
         )
         harness.run(run_id, [task], checkpoint_only=True)
-        return _copy_checkpoint(run_id, roots, sample.sample_id, version)
+        if sample.check_id in {"party_healed", "shop_cancelled"}:
+            perceived = game.perceive_task()
+            validate_start(sample, perceived.ram, perceived.observation)
+        return _copy_checkpoint(run_id, roots, sample.sample_id, version, archive_root)
     finally:
         try:
             if game is not None:
@@ -107,7 +120,13 @@ def _release_world(game: WorldMcpTool) -> None:
         ) from None
 
 
-def _copy_checkpoint(run_id: str, roots: dict[str, Path], sample_id: str, version: str) -> Path:
+def _copy_checkpoint(
+    run_id: str,
+    roots: dict[str, Path],
+    sample_id: str,
+    version: str,
+    archive_root: Path | None = None,
+) -> Path:
     """拷贝已成功保存的 checkpoint 与记忆快照，改写 manifest 的相对路径。"""
     trace = TraceTool.build(run_id=run_id, trace_root=roots["trace_root"])
     saves = [
@@ -120,7 +139,9 @@ def _copy_checkpoint(run_id: str, roots: dict[str, Path], sample_id: str, versio
     assert isinstance(content, CheckpointSaveContent)
     src = Path(content.manifest_path).parent
 
-    dst = DATASET_DIR / version / "archives" / sample_id
+    dst = (archive_root or (DATASET_DIR / version / "archives")) / sample_id
+    if archive_root is not None and dst.exists():
+        raise FileExistsError(dst)
     dst.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dst, dirs_exist_ok=True)
     snapshots = roots["memory_root"] / "snapshots"
@@ -128,20 +149,14 @@ def _copy_checkpoint(run_id: str, roots: dict[str, Path], sample_id: str, versio
         shutil.copytree(snapshots, dst / "memory" / "snapshots", dirs_exist_ok=True)
     manifest_file = dst / "manifest.json"
     manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    memory_path = dst / "memory" / "snapshots" / Path(manifest["memory_archive"]).name
     manifest["memory_archive"] = (
-        (dst / "memory" / "snapshots" / Path(manifest["memory_archive"]).name).relative_to(
-            DATASET_DIR / version
-        )
-    ).as_posix()
+        str(memory_path.resolve())
+        if archive_root
+        else memory_path.relative_to(DATASET_DIR / version).as_posix()
+    )
     manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return dst
-
-
-def _models() -> dict[str, str]:
-    """链路型号从 `evals/config.json` 取（打包不调模型，只是 build_real 的形参）。"""
-    from evals.runconfig import load_config, resolve_models
-
-    return resolve_models(load_config()["models"])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -151,13 +166,12 @@ def main(argv: list[str] | None = None) -> int:
     memory server；本命令会清空该 memory server。
     """
     parser = argparse.ArgumentParser(prog="python -m evals.agent_short_goal_run.dataset.build.pack")
-    parser.add_argument("--version", default="v1")
+    parser.add_argument("--version", default="v2")
+    parser.add_argument("--archive-root", type=Path)
     parser.add_argument("--samples", default="", help="逗号分隔的样本 id；缺省打全部")
     args = parser.parse_args(argv)
 
-    _load_env(REPO_ROOT / ".env")
-    from evals.runconfig import load_config
-
+    load_env_file(REPO_ROOT / ".env")
     cfg_version = str(load_config().get("version", args.version))
     assert cfg_version == args.version, f"config.json 的 version={cfg_version} 与 --version 不一致"
     samples = load_samples(args.version)
@@ -170,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{sample.sample_id}：起点不是 archive 形态（缺 source_state）"
         )
         try:
-            dst = pack_one(sample, args.version)
+            dst = pack_one(sample, args.version, args.archive_root)
             print(f"✓ {sample.sample_id} → {dst}", flush=True)
         except Exception as exc:  # noqa: BLE001 —— 逐条打包，失败继续下一条，最后汇总
             failed.append(sample.sample_id)

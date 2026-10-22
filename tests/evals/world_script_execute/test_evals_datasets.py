@@ -32,16 +32,16 @@ from pokemon_agent.world.interface.domain.takeover_view import (
     [
         ("frames", 1045),
         ("agent_short_goal_run", 20),
-        ("world_script_execute", 106),
+        ("world_script_execute", 93),
         ("memory_store_recall", 1),
-        ("brain_goal_judge", 4),
+        ("brain_judge", 4),
     ],
 )
 def test_each_dataset_returns_frozen_typed_samples(name, count):
     modules = {
         "memory_store_recall": "evals.memory_store_recall.dataset",
         "world_script_execute": "evals.world_script_execute.dataset",
-        "brain_goal_judge": "evals.brain_goal_judge.dataset",
+        "brain_judge": "evals.dataset.brain_judge",
         "agent_short_goal_run": "evals.agent_short_goal_run.dataset",
     }
     dataset = importlib.import_module(modules.get(name, f"evals.dataset.{name}"))
@@ -127,7 +127,7 @@ def test_archive_adapter_preserves_frozen_manifest_and_resolves_its_paths(tmp_pa
 
 
 def observation(view=None, scene=TaskScene.WALK, **facts):
-    return TaskObservation(step=0, status="", scene=scene, facts=Facts(**facts), takeover=view)
+    return TaskObservation(step=0, scene=scene, facts=Facts(**facts), takeover=view)
 
 
 def mon(name, hp=10, moves=()):
@@ -234,7 +234,6 @@ def test_frame_build_can_create_a_new_version_without_changing_the_frozen_source
 @pytest.mark.parametrize(
     "name",
     [
-        "brain_goal_judge",
         "agent_short_goal_run",
     ],
 )

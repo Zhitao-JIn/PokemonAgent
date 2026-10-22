@@ -7,8 +7,8 @@
 | `PENDING → RUNNING` | `run.act` 派发 | `episode.act` 派发 |
 | `RUNNING → COMPLETED / FAILED` | `run.review_and_judge` 盖章 | `episode.review_and_judge` 盖章 |
 | 人审推翻 | 盖反面、`overturned=True` | 同左 |
-| `FAILED / ABANDONED → PENDING` | `plan_run` 显式重开 | **不允许**，要重做就重拆（新条目） |
-| `PENDING → ABANDONED` | planner 或人的主观放弃 | 上一个 task 定案为失败后，harness 放弃剩余条目 |
+| `FAILED / BLOCKED / ABANDONED → PENDING` | plan 显式重开 | decompose 显式重开，产生新执行 |
+| `PENDING → ABANDONED` | planner 主观放弃 | decomposer 主观放弃，失败不自动清空剩余条目 |
 
 `COMPLETED` / `FAILED` **只能由 harness 盖章**（机械事实 + 人审表态），LLM 不直接写。
 """
@@ -21,8 +21,9 @@ from enum import StrEnum
 class EntryStatus(StrEnum):
     """一行（目标或 task）在本层内的状态。"""
 
+    BLOCKED = "blocked"
     PENDING = "pending"
-    """待派发：还没跑过，或被 `plan_run` 重开（只有 goal 能重开）。"""
+    """待派发：还没跑过，或由本层规划器显式重开。"""
     RUNNING = "running"
     """正在跑：已派发、还没定案。**全表至多一条**。"""
     COMPLETED = "completed"

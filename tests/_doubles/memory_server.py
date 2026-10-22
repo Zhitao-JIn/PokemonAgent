@@ -51,7 +51,7 @@ class InMemoryClient(McpClient):
 
 
 def act(step: int) -> dict[str, Any]:
-    observation = ActMemory.Observation(step=step, status="field")
+    observation = ActMemory.Observation(facts={"overlay": "none"}, step=step)
     payload = ActMemory(
         before=observation,
         after=observation,

@@ -1,0 +1,12 @@
+{
+  "source_cases": 207,
+  "labelled": 206,
+  "excluded": [
+    {
+      "case_id": "knowledge_battle_action_menu.task.choose.000003",
+      "reason": "现场 全局坐标 地图12 x=12 y=24，battle_menu/choice，朝east，光标RUN，文字''。当前 RUN 光标已满足仅移动目标，却继续调用无 stop 的 choose；a 会越界逃跑，应由上层结算。"
+    }
+  ],
+  "reference_role": "non_exhaustive_suggestions",
+  "baseline_answers_used_as_gold": false
+}

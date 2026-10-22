@@ -1,22 +1,14 @@
-"""`plan_episode`：任务表里还有 PENDING 就直通；没有了（首圈 / 链走完 / 上一个 task 定案失败、
-剩余条目被放弃）就问 decomposer 要下一版任务链（人可插话，带话重问），追加进表。
-
-`task_id` 由这里编：`{goal.task_id}-t{n}`，`n` 接着任务表已有条数往下数（被弃的也算，id 不复用）。
-decomposer 只给内容，身份归 harness。
-
-拆解耗尽重试时本格写 `termination = ERROR`，本局经图的分叉走 `episode_done` 收尾。
-"""
+"""L1 原子采纳任务表规划；已有待办仍可修订，无待办交 judge。"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from langgraph.runtime import Runtime
+from pydantic import BaseModel
 
 from pokemon_agent.brain import Task
 from pokemon_agent.brain.interface import Decomposition
-from pokemon_agent.config import EPISODE_MAX_TASKS_PER_PLAN
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
@@ -25,11 +17,12 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.harness.domain import EntryStatus, TaskEntry, Termination
+from pokemon_agent.schemas.harness.domain import ReviewMark, TaskEntry, Termination
 from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...budget_nodes import stopped_updates
-from ...reviewing import ask_inject
+from ...planning import apply_planning
+from ...reviewing import ReviewRound, ask_inject, elicit_with_review
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState, current_goal, current_knowledge
 
@@ -37,24 +30,18 @@ EXHAUSTED_REASON = "拆解耗尽重试，没有 task 可派"
 """拆解耗尽时写进 `judge_reason` 的机械说明（本局以 `Termination.ERROR` 收尾）。"""
 
 
-@dataclass(frozen=True)
-class Elicited:
+class Elicited(BaseModel):
     """一次逻辑拆解的结果与已用轮数；内部模型重试不增加轮数。"""
 
-    response: FromHarnessToBrainToolDecomposeResp | None
+    response: FromHarnessToBrainToolDecomposeResp | None = None
+    request: FromHarnessToBrainToolDecomposeReq | None = None
     note: str
     used: int
     termination: Termination | None = None
 
 
 def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str, Any]:
-    """还有 PENDING 返回空增量；否则把新一版追加进任务表（至少一条）。
-
-    拆解耗尽重试（`MaxRetriesExceeded`）时不追加，返回 `{"termination": ERROR, "judge_reason"}`，
-    图的分叉据此把本局送进 `episode_done` 正常收尾，而不是让异常冒到 run 层记 `episode_error`。
-    """
-    if any(entry.status is EntryStatus.PENDING for entry in state.tasks):
-        return {}
+    """消费本次完整请求并返回结果；失败保留调用账，输入不被修改。"""
     deps = runtime.context
     meta = {
         "source": "plan_episode",
@@ -79,61 +66,113 @@ def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
     resp, note = result.response, result.note
     assert resp is not None
 
+    return _adopt(deps, state, meta, resp.decomposition, result.used, note)
+
+
+def _adopt(
+    deps: EpisodeRuntime,
+    state: EpisodeRunState,
+    meta: dict[str, object],
+    proposal: Decomposition,
+    used: int,
+    note: str,
+) -> dict[str, Any]:
+    """整版采纳后分配逻辑身份，记录修订与最终顺序。"""
     # 步骤 2：编 task_id 与版次，记结论，追加进表。
-    tasks = _to_tasks(resp.decomposition, state.goal.task_id, len(state.tasks))
+    tasks = _to_tasks(proposal, state.goal.task_id, len(state.tasks))
     version = max((entry.round for entry in state.tasks), default=0) + 1
+    entries = [TaskEntry(entry_id=t.task_id, task=t, round=version) for t in tasks]
+    table, order = apply_planning(state.tasks, entries, proposal, state.execution_order)
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.DECOMPOSE_VERDICT,
             meta=meta,
             tasks=tasks,
-            why=resp.decomposition.why,
+            planning=proposal,
+            planning_round=used,
+            execution_order=order,
+            why=proposal.why,
             human_note=note,
         )
     )
     return {
-        "tasks": [*state.tasks, *(TaskEntry(task=t, round=version) for t in tasks)],
-        "decompositions_used": result.used,
+        "tasks": table,
+        "execution_order": order,
+        "latest_planning": proposal,
+        "judge_trigger": "no_pending" if not order else "normal",
+        "decompositions_used": used,
     }
 
 
 def _elicit(deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object]) -> Elicited:
-    """人要求重拆也计轮数；返回定稿或机械终止，以及已用逻辑轮数。"""
-    note = ""
-    used = state.decompositions_used
-    while True:
-        if used >= deps.budget.max_decompositions:
-            return Elicited(None, note, used, Termination.DECOMPOSITIONS_EXHAUSTED)
-        used += 1
-        try:
-            req = _request(deps, state, note)
-            resp = _ask(deps, meta, req)
-        except MaxRetriesExceeded:
-            return Elicited(None, note, used, Termination.ERROR)
-        except BudgetExhausted:
-            return Elicited(None, note, used, Termination.TIME_EXHAUSTED)
-        reply = ask_inject(
-            deps.reviewer,
-            deps.trace,
-            FromHarnessToReviewerInjectReq(
-                prompt=f"本局目标拆成 {len(resp.decomposition.tasks)} 个 task，看对不对",
-                form=resp.decomposition,
-                form_kind="Decomposition",
-                context=ReviewContext(
-                    layer="episode",
-                    run_id=state.run_id,
-                    episode_id=state.episode_id,
-                    brain_input=req,
-                    tasks=state.tasks,
-                    step=meta["step"],
-                    fail_streak=state.fail_streak,
-                ),
+    """重问由共享图调度；AI 重写次数不超过剩余拆解预算。"""
+
+    def ask_brain(note: str, number: int) -> Elicited:
+        return _ask_version(deps, state, meta, note, number)
+
+    def ask_reviewer(result: Elicited, rounds: ReviewRound) -> ReviewMark:
+        return _review_version(deps, state, meta, result, rounds)
+
+    revision_budget = max(0, deps.config.budget.max_decompositions - state.decompositions_used - 1)
+    result, note = elicit_with_review(
+        ask_brain,
+        ask_reviewer,
+        max_agent_rounds=min(deps.config.review.ai_inject_max_rounds, revision_budget),
+    )
+    return result.model_copy(update={"note": note})
+
+
+def _ask_version(
+    deps: EpisodeRuntime, state: EpisodeRunState, meta: dict[str, object], note: str, number: int
+) -> Elicited:
+    """一次逻辑拆解只占一轮；预算耗尽时不再问脑或询问 reviewer。"""
+    used = state.decompositions_used + number
+    if used > deps.config.budget.max_decompositions:
+        return Elicited(note=note, used=used - 1, termination=Termination.DECOMPOSITIONS_EXHAUSTED)
+    try:
+        req = _request(deps, state, note)
+        resp = _ask(deps, meta, req)
+    except MaxRetriesExceeded:
+        return Elicited(note=note, used=used, termination=Termination.ERROR)
+    except BudgetExhausted:
+        return Elicited(note=note, used=used, termination=Termination.TIME_EXHAUSTED)
+    return Elicited(response=resp, request=req, note=note, used=used)
+
+
+def _review_version(
+    deps: EpisodeRuntime,
+    state: EpisodeRunState,
+    meta: dict[str, object],
+    result: Elicited,
+    rounds: ReviewRound,
+) -> ReviewMark:
+    """仅实际拆出提案后亮表；机械终止返回内部结束标记，不额外产出询问账。"""
+    if result.response is None:
+        assert result.termination is not None
+        return ReviewMark(answered=False, by="none", wait_s=0, round=rounds.number)
+    assert result.request is not None
+    return ask_inject(
+        deps.reviewer,
+        deps.trace,
+        FromHarnessToReviewerInjectReq(
+            prompt=f"本局目标拆成 {len(result.response.decomposition.tasks)} 个 task，看对不对",
+            form=result.response.decomposition,
+            form_kind="Decomposition",
+            round=rounds.number,
+            max_agent_rounds=rounds.max_agent_rounds,
+            context=ReviewContext(
+                layer="episode",
+                run_id=state.run_id,
+                episode_id=state.episode_id,
+                brain_input=result.request,
+                tasks=state.tasks,
+                step=meta["step"],
+                fail_streak=state.fail_streak,
             ),
-            meta=meta,
-        )
-        if not reply:
-            return Elicited(resp, note, used)
-        note = reply
+        ),
+        meta=meta,
+        rounds=rounds,
+    )
 
 
 def _request(
@@ -141,13 +180,19 @@ def _request(
 ) -> FromHarnessToBrainToolDecomposeReq:
     """只装本轮素材；校验后绑定 state 的详情原列表，与判定共享只读输入。"""
     req = FromHarnessToBrainToolDecomposeReq(
+        remaining_planning_rounds=deps.config.budget.max_decompositions - state.decompositions_used,
+        execution_order=state.execution_order,
         goal=current_goal(state),
         observation=state.ep_ctx.observation,
+        known_objects=state.ep_ctx.object_semantic_events,
         task_memories=state.ep_ctx.task_memories,
         task_table=state.tasks,
         episode_index=state.ep_ctx.episode_index,
         knowledge=current_knowledge(state),
-        max_tasks=min(EPISODE_MAX_TASKS_PER_PLAN, deps.budget.episode_max_tasks - state.step),
+        max_tasks=min(
+            deps.config.loop.episode_max_tasks_per_plan,
+            deps.config.budget.episode_max_tasks - state.step,
+        ),
         last_judge=state.last_judge,
         human_note=note,
     )

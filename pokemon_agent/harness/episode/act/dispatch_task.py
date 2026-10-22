@@ -7,6 +7,7 @@ from typing import Any
 from pokemon_agent.schemas.harness.domain import EntryStatus, TaskInput
 from pokemon_agent.schemas.memory import TaskMemory
 
+from ...planning import dispatch_index
 from ..episode_state import EpisodeRunState, current_knowledge
 
 
@@ -35,23 +36,26 @@ def dispatch_task(state: EpisodeRunState) -> dict[str, Any]:
     前置条件：任务表里至少一条 `PENDING`（`plan_episode` 保证）。
     后置条件：表里被选中的那条变为 `RUNNING`，它的 task 就是 `task_input.task`；`step` 比入参多 1。
     """
-    index = next(
-        (i for i, entry in enumerate(state.tasks) if entry.status is EntryStatus.PENDING), None
-    )
-    assert index is not None, (
-        "dispatch_task() without a PENDING task (plan_episode should prevent this)"
-    )
+    index = dispatch_index(state.tasks, state.execution_order)
     entry = state.tasks[index]
 
     # 步骤 1：标 RUNNING，装配 TaskInput（快照 = 本局累计键数，task 内恒定）。
-    running = entry.model_copy(update={"status": EntryStatus.RUNNING})
+    task_id = f"{state.episode_id}-task{state.step + 1}"
+    running = entry.model_copy(
+        update={
+            "status": EntryStatus.RUNNING,
+            "attempts": entry.attempts + 1,
+            "last_task_id": task_id,
+        }
+    )
     task_input = TaskInput(
         run_id=state.run_id,
         episode_id=state.episode_id,
-        task=entry.task,
+        entry_id=entry.entry_id,
+        task=entry.task.model_copy(update={"task_id": task_id}),
         total_acts=state.total_acts,
         knowledge=current_knowledge(state),
-        task_index=_task_index(state, entry.task.goal, entry.task.task_id),
+        task_index=_task_index(state, entry.task.goal, task_id),
         actions_budget=(
             None
             if state.actions_budget is None
@@ -60,7 +64,7 @@ def dispatch_task(state: EpisodeRunState) -> dict[str, Any]:
         remaining_s=state.remaining_s,
     )
     tasks = [*state.tasks[:index], running, *state.tasks[index + 1 :]]
-    assert tasks[index].task == task_input.task
+    assert tasks[index].entry_id == task_input.entry_id
     return {"tasks": tasks, "step": state.step + 1, "task_input": task_input}
 
 

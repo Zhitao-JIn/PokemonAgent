@@ -25,6 +25,17 @@ def test_shop_scene_gets_checked_buy_sell_and_quit() -> None:
     assert {e.name for e in script_entries("shop_items")} == {"buy_item", "sell_item", "shop_quit"}
 
 
+def test_shop_floor_gets_field_and_transaction_scripts() -> None:
+    names = {entry.name for entry in script_entries("shop")}
+
+    assert names >= FIELD_SCRIPTS
+    assert {"buy_item", "sell_item"} <= names
+
+
+def test_start_menu_gets_menu_navigation_script() -> None:
+    assert {entry.name for entry in script_entries("start_menu")} == {"open_menu_to"}
+
+
 def test_dialog_scene_gets_only_dialog_scripts() -> None:
     assert {e.name for e in script_entries("dialog")} == {
         "advance_dialog",

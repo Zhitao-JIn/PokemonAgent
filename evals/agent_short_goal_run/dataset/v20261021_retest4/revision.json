@@ -1,0 +1,15 @@
+{
+  "parent_version": "v2",
+  "change": "retest four previously evaluated scenarios; use injured party and shop confirmation starts from corrected source states; retain all-NPC shop interaction objective",
+  "repacked_samples": [
+    "knowledge_door_transition",
+    "knowledge_shop_interaction",
+    "knowledge_pokemon_center_heal",
+    "knowledge_shop_cancel_purchase"
+  ],
+  "source_state_updates": {
+    "knowledge_pokemon_center_heal": "states/knowledge_pokemon_center_heal_injured.state",
+    "knowledge_shop_cancel_purchase": "states/knowledge_shop_cancel_purchase_confirm.state"
+  },
+  "archive_note": "archives for the four selected samples are regenerated from their exact frozen source states before running eval"
+}

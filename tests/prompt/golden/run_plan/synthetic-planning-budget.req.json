@@ -1,0 +1,43 @@
+{
+  "task": "run_plan",
+  "case_id": "synthetic-planning-budget",
+  "source": "synthetic",
+  "request_kind": "current",
+  "request": {
+    "run_goal": {
+      "goal": "进门",
+      "criteria": "地图改变"
+    },
+    "remaining_planning_rounds": 2,
+    "execution_order": [
+      "goal-1"
+    ],
+    "run_id": "run-1",
+    "plan": [
+      {
+        "task": {
+          "task_id": "goal-1",
+          "goal": "进门",
+          "success_criteria": "地图改变",
+          "max_steps": 3,
+          "initial_state_hint": ""
+        },
+        "status": "pending",
+        "attempts": 0,
+        "last_episode_id": null,
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "details": [],
+    "run_index": [],
+    "knowledge": [],
+    "observation": null,
+    "objects": [],
+    "last_judge": null,
+    "max_push": 2,
+    "human_note": ""
+  },
+  "max_segments": 3,
+  "source_ref": ""
+}

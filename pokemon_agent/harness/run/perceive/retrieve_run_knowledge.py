@@ -7,7 +7,6 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.config import MEMORY_RECALL_LIMIT
 from pokemon_agent.harness.knowledge_query import build_knowledge_query
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolRecallReq,
@@ -29,7 +28,9 @@ def retrieve_run_knowledge(state: RunState, runtime: Runtime[RunRuntime]) -> dic
     query = build_knowledge_query(state.observation, state.run_goal.goal)
     started_at = time.time()
     response = runtime.context.memory.recall(
-        FromHarnessToMemoryToolRecallReq(query=query, conditions={}, limit=MEMORY_RECALL_LIMIT)
+        FromHarnessToMemoryToolRecallReq(
+            query=query, conditions={}, limit=runtime.context.config.memory.recall_limit
+        )
     )
     items = [item for item in response.items if item.kind == "knowledge"]
     ended_at = time.time()

@@ -1,3 +1,5 @@
+> 状态：旧实现已在 reviewer R6c（529）删除；当前入口为 `python -m pokemon_agent.reviewer --seats human`。新 AI 席待 R7。以下正文作为历史设计保留。
+
 # intent —— 纯展示前端：不带 reviewer，只看实时推送
 
 > 流程位置：**intent.md** → spec（若需要）→ plan → 落码

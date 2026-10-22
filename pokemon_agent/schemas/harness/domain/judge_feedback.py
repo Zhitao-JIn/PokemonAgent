@@ -7,12 +7,13 @@ plan 只读 state 与记忆。
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from .audit_verdict import AuditVerdict
+from .judgement import Judgement
 
 
-class JudgeFeedback(BaseModel):
+class JudgeFeedback(Judgement):
     """一次本层判定及人对它的表态。
 
     done / why：judge 模型的裁决与理由。
@@ -20,8 +21,6 @@ class JudgeFeedback(BaseModel):
     note：人推翻时给的理由；其余情况为空串。
     """
 
-    done: bool = Field(description="模型是否判本层目标已达成")
-    why: str = Field(description="模型给的理由")
     audit: AuditVerdict | None = Field(
         default=None, description="人的表态；模型判没成时不问人，为 None"
     )

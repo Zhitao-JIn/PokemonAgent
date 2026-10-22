@@ -1,9 +1,8 @@
 """`build_llm_providers`：从 `BrainLlmConfig` 造出 `Brain` 要的四个 provider。
 
-四个位置（decide/judge/verify/plan）的型号名按前缀选厂商类，位置间可任意混搭；
-温度分层（decide 0.3、其余 0.0）、输出上限分层（plan 用 plan_max_tokens）、单请求
-超时分层（decide 10、其余 45、开思考 420）都写在代码常量里，改错了不报错只会悄悄
-改变模型行为。本文件不碰私有属性：配置经 `config()` 读，超时经手写假 `urlopen` 观察。
+四个位置（decide/judge/verify/plan）各带一份 `LinkSpec`（型号、温度、输出上限、超时、
+思考开关），型号名按前缀选厂商类，位置间可任意混搭；这些值全由调用方给出，brain 里不
+写死任何数字。本文件不碰私有属性：配置经 `config()` 读，超时经手写假 `urlopen` 观察。
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ import json
 
 import pytest
 
-from pokemon_agent.brain import BrainLlmConfig, build_llm_providers
+from pokemon_agent.brain import BrainLlmConfig, LinkSpec, build_llm_providers
 from pokemon_agent.brain.schemas import LlmCompleteReq
 
 
@@ -47,6 +46,23 @@ def captured_timeouts(monkeypatch: pytest.MonkeyPatch) -> list[float | None]:
     return timeouts
 
 
+def _spec(
+    model: str = "qwen3.8-max",
+    *,
+    temperature: float = 0.0,
+    max_tokens: int = 25600,
+    timeout_s: float = 45,
+    thinking: bool = False,
+) -> LinkSpec:
+    return LinkSpec(
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout_s=timeout_s,
+        thinking=thinking,
+    )
+
+
 def test_all_positions_default_to_none() -> None:
     decide, judge, verify, plan = build_llm_providers(BrainLlmConfig())
 
@@ -55,7 +71,7 @@ def test_all_positions_default_to_none() -> None:
 
 @pytest.mark.parametrize("field", ["text", "judge", "verify", "plan"])
 def test_each_position_builds_only_itself(field: str) -> None:
-    config = BrainLlmConfig(**{field: "qwen3.8-max"})
+    config = BrainLlmConfig(**{field: _spec()})
 
     decide, judge, verify, plan = build_llm_providers(config)
 
@@ -64,10 +80,10 @@ def test_each_position_builds_only_itself(field: str) -> None:
 
 def test_the_return_order_is_decide_judge_verify_plan_with_the_models_in_place() -> None:
     config = BrainLlmConfig(
-        text="qwen3.8-max",
-        judge="qwen3.8-max",
-        verify="doubao-seed-1-6-250615",
-        plan="deepseek-v4-flash",
+        text=_spec("qwen3.8-max"),
+        judge=_spec("qwen3.8-max"),
+        verify=_spec("doubao-seed-1-6-250615"),
+        plan=_spec("deepseek-v4-flash"),
     )
 
     decide, judge, verify, plan = build_llm_providers(config)
@@ -89,7 +105,7 @@ def test_the_return_order_is_decide_judge_verify_plan_with_the_models_in_place()
     ],
 )
 def test_the_vendor_class_follows_the_model_prefix(model: str, provider_name: str) -> None:
-    config = BrainLlmConfig(text=model)
+    config = BrainLlmConfig(text=_spec(model))
 
     decide, *_ = build_llm_providers(config)
 
@@ -97,124 +113,83 @@ def test_the_vendor_class_follows_the_model_prefix(model: str, provider_name: st
 
 
 def test_four_positions_with_the_same_model_still_get_distinct_instances() -> None:
-    config = BrainLlmConfig(
-        text="qwen3.8-max",
-        judge="qwen3.8-max",
-        verify="qwen3.8-max",
-        plan="qwen3.8-max",
-    )
+    config = BrainLlmConfig(text=_spec(), judge=_spec(), verify=_spec(), plan=_spec())
 
     decide, judge, verify, plan = build_llm_providers(config)
 
     assert len({id(p) for p in (decide, judge, verify, plan)}) == 4
 
 
-def test_temperature_is_layered_by_position() -> None:
+def test_temperature_and_max_tokens_come_from_each_positions_spec() -> None:
     config = BrainLlmConfig(
-        text="qwen3.8-max",
-        judge="qwen3.8-max",
-        verify="qwen3.8-max",
-        plan="qwen3.8-max",
+        text=_spec(temperature=0.3, max_tokens=7),
+        judge=_spec(temperature=0.0, max_tokens=8),
+        verify=_spec(temperature=0.1, max_tokens=9),
+        plan=_spec(temperature=0.2, max_tokens=10),
     )
 
     decide, judge, verify, plan = build_llm_providers(config)
 
-    assert decide.config()["temperature"] == "0.3"
-    assert judge.config()["temperature"] == "0.0"
-    assert verify.config()["temperature"] == "0.0"
-    assert plan.config()["temperature"] == "0.0"
+    assert [p.config()["temperature"] for p in (decide, judge, verify, plan)] == [
+        "0.3",
+        "0.0",
+        "0.1",
+        "0.2",
+    ]
+    assert [p.config()["max_tokens"] for p in (decide, judge, verify, plan)] == [
+        "7",
+        "8",
+        "9",
+        "10",
+    ]
 
 
-def test_max_tokens_is_layered_with_plan_using_plan_max_tokens() -> None:
-    config = BrainLlmConfig(
-        text="qwen3.8-max",
-        judge="qwen3.8-max",
-        verify="qwen3.8-max",
-        plan="qwen3.8-max",
-        max_tokens=7,
-        plan_max_tokens=9,
-    )
-
-    decide, judge, verify, plan = build_llm_providers(config)
-
-    assert decide.config()["max_tokens"] == "7"
-    assert judge.config()["max_tokens"] == "7"
-    assert verify.config()["max_tokens"] == "7"
-    assert plan.config()["max_tokens"] == "9"
-
-
-def test_max_tokens_defaults_to_25600() -> None:
-    config = BrainLlmConfig(text="qwen3.8-max")
-
-    decide, *_ = build_llm_providers(config)
-
-    assert decide.config()["max_tokens"] == "25600"
-
-
-def test_single_request_timeouts_are_layered_by_position(
+def test_single_request_timeouts_come_from_each_positions_spec(
     captured_timeouts: list[float | None],
 ) -> None:
     config = BrainLlmConfig(
-        text="qwen3.8-max",
-        judge="qwen3.8-max",
-        verify="qwen3.8-max",
-        plan="qwen3.8-max",
+        text=_spec(timeout_s=10),
+        judge=_spec(timeout_s=45),
+        verify=_spec(timeout_s=46),
+        plan=_spec(timeout_s=99),
     )
     decide, judge, verify, plan = build_llm_providers(config)
 
-    decide.complete(LlmCompleteReq(prompt="hi"))
-    judge.complete(LlmCompleteReq(prompt="hi"))
-    verify.complete(LlmCompleteReq(prompt="hi"))
-    plan.complete(LlmCompleteReq(prompt="hi"))
+    for provider in (decide, judge, verify, plan):
+        provider.complete(LlmCompleteReq(prompt="hi"))
 
-    assert captured_timeouts == [10, 45, 45, 45]
+    assert captured_timeouts == [10, 45, 46, 99]
 
 
-def test_plan_thinking_widens_only_the_plan_timeout(
-    captured_timeouts: list[float | None],
-) -> None:
+def test_thinking_is_a_per_position_switch() -> None:
     config = BrainLlmConfig(
-        text="qwen3.8-max",
-        judge="qwen3.8-max",
-        verify="qwen3.8-max",
-        plan="qwen3.8-max",
-        plan_thinking=True,
+        text=_spec(),
+        judge=_spec(),
+        verify=_spec(),
+        plan=_spec(thinking=True),
     )
+
     decide, judge, verify, plan = build_llm_providers(config)
 
-    decide.complete(LlmCompleteReq(prompt="hi"))
-    judge.complete(LlmCompleteReq(prompt="hi"))
-    verify.complete(LlmCompleteReq(prompt="hi"))
-    plan.complete(LlmCompleteReq(prompt="hi"))
+    assert [p.config()["thinking"] for p in (decide, judge, verify, plan)] == [
+        "false",
+        "false",
+        "false",
+        "true",
+    ]
 
-    assert captured_timeouts == [10, 45, 45, 420]
-    assert plan.config()["thinking"] == "true"
 
+def test_the_vision_dump_dir_reaches_every_provider() -> None:
+    config = BrainLlmConfig(text=_spec(), judge=_spec(), vision_dump_dir="dump")
 
-@pytest.mark.parametrize("plan_thinking", [True, False])
-def test_plan_timeout_s_overrides_plan_and_leaves_others_alone(
-    captured_timeouts: list[float | None], plan_thinking: bool
-) -> None:
-    config = BrainLlmConfig(
-        text="qwen3.8-max",
-        judge="qwen3.8-max",
-        verify="qwen3.8-max",
-        plan="qwen3.8-max",
-        plan_thinking=plan_thinking,
-    )
-    decide, judge, verify, plan = build_llm_providers(config, plan_timeout_s=99)
+    decide, judge, *_ = build_llm_providers(config)
 
-    decide.complete(LlmCompleteReq(prompt="hi"))
-    judge.complete(LlmCompleteReq(prompt="hi"))
-    verify.complete(LlmCompleteReq(prompt="hi"))
-    plan.complete(LlmCompleteReq(prompt="hi"))
-
-    assert captured_timeouts == [10, 45, 45, 99]
+    assert decide._vision_dump_dir == judge._vision_dump_dir == "dump"
 
 
 @pytest.mark.parametrize("field", ["text", "judge", "verify", "plan"])
 def test_an_unknown_model_prefix_fails_at_build_time(field: str) -> None:
-    config = BrainLlmConfig(**{field: "gpt-4"})
+    config = BrainLlmConfig(**{field: _spec("gpt-4")})
 
     with pytest.raises(ValueError, match="gpt-4"):
         build_llm_providers(config)

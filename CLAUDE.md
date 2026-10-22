@@ -33,11 +33,11 @@
    **"谁依赖 brain"只有唯一答案：tool 层（0913 深夜九审计定案）。** 全仓库对
    `brain` 的**实现依赖**（`Brain`/`BrainPort`/`BrainLlmConfig`/`build_llm_providers`/
    厂商类）现在只剩门面层（`direct/` + `mcpclient/`）五处；装配点 `build.py` 对 brain **零 import**——
-   它经 tool 层的接线工厂 `BrainTool.build(text=…)` 造大脑。装配只递型号名，
+   它经 tool 层的接线工厂 `BrainTool.build(…)` 造大脑。装配只递配置节里的裸字段，
    `BrainLlmConfig` 由 `BrainTool.build()` 内部构造。
    （`harness`/`schemas`/`world` 对 brain 的引用一律是**数据形状**
-   （`Action`/`Goal`/`Task`/`RunPlan`/`Reflection`/`EpisodeSummary`/
-   `StepVerifyVerdict`/五个结果袋），不是实现依赖，见第十二节第 4 条。）
+   （`Action`/`Goal`/`Task`/`RunPlan`/`EpisodeSummary`/
+   `StepVerifyVerdict`/七个结果袋），不是实现依赖，见第十二节第 4 条。）
    *为什么*：这条一旦破，"换一个世界 / 换一种记忆存储"就要改大脑代码，模块能整体拷走
    复用的意义就没了。
 
@@ -201,7 +201,7 @@ pokemon_agent/
 │                     两个 provider 契约与 errors，**不知道 harness / world / memory
 │                     的存在**。对外只有 `interface/brain_port.py`（七方法裸字段契约）
 │                     与 `interface/domain/`（brain 自己的方言：Action/Goal/Task/
-│                     RunPlan/Decomposition/Reflection/EpisodeSummary/VerifyVerdict + 各方法的结果袋
+│                     RunPlan/Decomposition/EpisodeSummary/VerifyVerdict + 各方法的结果袋
 │                     + `model_call.py` 那份 **brain 方言**的账，归属见第十二节第 4 条）
 │                     + `interface/llm_config.py`（`BrainLlmConfig` 选型纯数据，
 │                     0913 深夜九从工厂模块搬来——**只为数据而来的调用方不该连带进口
@@ -222,15 +222,21 @@ pokemon_agent/
 ├── world/            WorldPort 实现：PyBoy + 内存观测 + 世界语义常量
 │                     （INTERACT_KEY / DIRECTION_KEYS——"这个世界怎么按键"的知识）
 ├── direct/           Harness 伸向 brain / trace 的手（原 `tools/` 的 brain/trace 半边，
-│                     P7 拆分）：`brain_tool.py` / `trace/` / `prompts/` / `interface/`
+│                     P7 拆分）：`brain_tool.py` / `trace/` / `interface/`
 │                     （四张 Port 协议）。**跨模块的双向转换一律在这一层**
 │                     ——tool 认识两边的形状，是唯一的桥
+├── prompt/           prompt 模块：唯一渲染出口。`PromptGateway.render(task, params)`
+│                     返回 `RenderedPrompt{text, task, version, hash}`；`registry.json`
+│                     决定唯一生效版本。任务与片段按版本目录存放（`prompt.md` +
+│                     `assemble.py`），只接收字段，不持有世界 / 记忆对象。
 ├── mcpclient/        Harness 伸向 memory / world 的手（原 `tools/` 的 memory/world 半边）：
 │                     `memory_local.py`（进程内 MemoryTool）/ `memory_tool.py`（MCP 远程
 │                     MemoryMcpTool）/ `game_tools.py`（进程内 GameTools）/ `world_tool.py`
 │                     （MCP 远程 WorldMcpTool）/ `client.py`（同步外观异步内核）。
-│                     **四个接线工厂**：`BrainTool.build(text=…, judge=…,
-│                     verify=…, plan=…, max_tokens=…)` 造大脑 + 四个 provider、
+│                     **接线工厂**（参数一律来自 `AppConfig` 的对应节）：
+│                     `BrainTool.build(links=…, …)` 造大脑 + provider、
+│                     `ReviewerTool.build(review, flush=…)` 按 `review.mode`
+│                     （off/human/ai/both）造复核席（住 `direct/reviewer_tool.py`）、
 │                     `WorldMcpTool.build(world_server_url=…)` 连接 world server
 │                     （只经 MCP，URL 必填）、
 │                     `MemoryTool.build(memory_server_url=…, memory_root=…)` 只经 MCP（URL 必填）、
@@ -266,11 +272,18 @@ pokemon_agent/
 │                     real_check/（真实链路核对：维度 1 harness / 2 trace /
 │                     3 checkpoint / 4 memory / 6 memory roundtrip；编号 5
 │                     随旧 restore 维度一起删了）——仓库根级，不在包内
-├── config.py         **全项目唯一的策略常量集中地**：重试预算 / 动作输出上限 /
-│                     循环控制 / 召回与判定四组。判据——"改这个数是为了做实验还是
-│                     为了让代码正确"：前者来 config，后者（帧数、内存地址、
-│                     网关下界等模块私有物理量）留在各自模块
-└── build.py          唯一的装配点（全项目唯一 new 具体实现的地方）
+├── settings/         **全项目唯一的配置中心**（取代旧 `config.py` / `run_config.py` /
+│                     `run_budget.py`）：全部 JSON。`default.json` 是随包保底值，启动时
+│                     可叠任意多个覆盖文件（深合并：dict 递归、list/标量整体替换），
+│                     `load_config(overlays)` → `ResolvedConfig`（冻结的严格 Pydantic
+│                     `AppConfig` + 来源 + 合并后 JSON + sha256）。每次 run 把合并结果
+│                     落成 `paths.config_snapshot` 下的快照文件。密钥（API key /
+│                     LANGFUSE_*）只在 `.env`，绝不进 JSON。判据——"改这个数是为了做实验
+│                     还是为了让代码正确"：前者进 settings，后者（帧数、内存地址、
+│                     网关下界等模块私有物理量）留在各自模块；独立模块
+│                     （brain/memory/trace/world）不许 import `pokemon_agent.settings`
+└── build.py          唯一的装配点：`build_real(config=None)` 只收配置文件路径（一个或
+                      多个覆盖层），其余全部读 `AppConfig`；全项目唯一 new 具体实现的地方
 
 tests/
 AGENTS.md          开发规范（本文件）
@@ -335,22 +348,24 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
   （`brain/interface`；`JudgeProvider.describe()` 保留多模态图片输入）、
   `EmbeddingProviderPort` / `RerankerProviderPort`（`memory/`）。**brain 的四个 provider 由
   `brain/build_llm_providers.py` 的 `build_llm_providers(config)` +
-  `BrainTool.build(text=…, judge=…, verify=…, plan=…, max_tokens=…)` 组装**
+  `BrainTool.build(links=…, …)`（链路型号与超参取自 `AppConfig.models`）组装**
   ——哪个技能接哪家厂商是 brain 的接线知识；`BrainLlmConfig` 由
   `BrainTool.build()` 内部构造（签名收裸字段，装配点因此不必
-  import 任何 brain 名字）。world 只读模拟器内存，不调用模型；**memory 的检索 provider 走
-  `MemoryTool.build(step_root=…, object_root=…, episode_root=…,
-  knowledge_root=…, max_summaries=…)`**；
+  import 任何 brain 名字）。world 只读模拟器内存，不调用模型；**memory 只经 MCP：
+  `MemoryTool.build(memory_server_url=…, memory_root=…)`（地址必填，
+  `memory_root` 只是客户端快照根）**；
   另两个同形工厂是 `GameTools.build(rom, …)` 与
   `TraceTool.build(run_id=…, trace_root=…)`。
-  **四个工厂全在 tool 层，装配点一个都不越过**——它只递型号名 / 路径这类裸字段。
+  **所有工厂全在 tool 层，装配点一个都不越过**——它只递配置节里的型号名 / 路径这类字段。
+  reviewer 进程仍单独启动（`python -m pokemon_agent.reviewer --config …`），与主进程读同一份配置；
+  memory server 同样接受 `--config`。
   代码里**不许出现任何直连模型 SDK 的调用**——直连只发生在
   `brain/providers.py` 和 `memory/fastembed_*.py` 这几个实现文件里。
 - **prompt 是规则，入参是素材——不互相替代，同一东西绝不两处传。** "怎么判、怎么想、
   怎么规划"全在 prompt 里（调用方组装、模块原样拿去问模型）；"判什么、想什么"才是入参。
   所以一个方法要么在 prompt 里给、要么当参数传，**不许两边都放**（论据、`history` 这些
-  就是这样去掉的）。**模板跟着"拥有这次调用的那一方"走**：harness 发起的六条链路在
-  `direct/prompts/`（组装函数 + `calls/*.md`）；world 不持有 prompt。
+  就是这样去掉的）。**模板跟着"拥有这次调用的那一方"走**：harness 发起的链路统一由
+  `prompt/` 的 `PromptGateway` 按注册表版本渲染；world 不持有 prompt。
 - 动作选择输出用 **Pydantic schema**（`Action` / `ActionSegment`）解析。
 - **解析失败要重试并计数**，重试次数与失败计数进 trace。不许静默吞掉解析错误。
   重试循环住在 **tool 层**（`BrainTool.choose` / `BrainTool.plan`）——拼重试纠正说明是
@@ -361,7 +376,7 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 ## 七、代码风格
 
 - Python 3.11（`requires-python = ">=3.11"`；不是 3.10——`enum.StrEnum` 要 3.11 才有，
-  `schemas/harness/domain/trace_kind.py`、`schemas/memory/datastore/step_memory.py` 用到）。
+  `schemas/harness/domain/trace_kind.py` 用到）。
   所有公开函数、方法、Pydantic 字段**必须有类型注解**。
 - `ruff` 管 lint + format，行宽 100。提交前跑 `ruff check . && ruff format .`。
 - 命名用完整英文单词，不用缩写（`action_space` 不是 `act_sp`）。
@@ -384,7 +399,7 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 = **进程启动目录**，`--trace-root` 可改）。**不按 run 分层、也没有 `events/` 这一层**
 （0916 起）——run 的区分靠 `meta.run_id`。文件名是
 **时间递增的 uuid**（前 48 位是毫秒时间戳），但**顺序不认文件名**——排序的真源是
-内容里的 `(ts, uuid)`（同毫秒靠 uuid 兜底；文件名只保证不撞名、让 `ls` 大致按时间排）。
+内容里的 `(ended_at, seq)`（同刻按 append 序决胜，uuid 只是标识；文件名只保证不撞名、让 `ls` 大致按时间排）。
 **没有内存事件镜像**：磁盘账本（`TraceToolPort.read_events`）是唯一真相，
 读的人直接读它（`review` 节点的审核材料就走这里）。
 
@@ -393,25 +408,32 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 不支持大小比较）；`None` / 空 dict = 整个落盘根。落盘不按 run 分层之后，
 `{"run_id": …}` 是切片的主键，`{"run_id": …, "episode_id": …}` 就是"这一局"。
 
-每条事件六个字段（`schemas/harness/domain/trace_event.py::TraceEvent`，与
+每条事件八个字段（`schemas/harness/domain/trace_event.py::TraceEvent`，与
 `trace/datastore/event.py::_Event` 逐字段对齐——**没有编译器保护，改一处必须同步另一处**）：
 
 | 字段 | 说明 |
 |---|---|
 | `uuid` | 本次事件的唯一标识，**与文件名同值**。落盘那一刻由存储方盖上 |
+| `seq` | 进程内 append 的**单调序号**（双后端共享、重启置零、不持久化）：**同刻 `ended_at` 的决胜键**。由存储实现在落盘时取号，调用方不传 |
 | `kind` | **账名**（`schemas/harness/domain/trace_kind.py::TraceKind` 的值）。由 tool 层给，**渲染层不做任何翻译**——`req.kind` 一路落到这里 |
 | `type` | 粗类，7 类（`trace/datastore/trace_event.py::EventType`，见 `docs/spec/DATAFLOW.md` 第四节「事件总表」）：`model_call` / `error` / `llm_outcome` / `view` / `act` / `memory_io` / `lifecycle`。**0903 收敛原则**：type 与"哪条产物"正交、数量极小；"哪个节点产出了什么"全部由 `kind` 回答（如 `think`/`judge_verdict`/`verify_verdict`、`read_*`/`write_*`、`do_action`/`get_action_space`） |
-| `ts` | Unix 时间戳（秒）。**排序的唯一依据**（`(ts, uuid)` 升序），算延迟与对齐外部日志也用它 |
-| `meta` | **标签面的 JSON 字符串**：`{run_id, branch, source, episode_id, task_id, step}` 六件，**不多不少**。`run_id` 与 `branch`（执行线，未经恢复为 `main`）由落盘层（`trace/store.py::_stamp_run_id`）盖，另外四件由 harness 在 `req.meta` 里**一次交齐**，`TraceTool.append` 只核不拼。`source` = **这条账从哪个位置发出**（图上节点名，或图外入口名如 `run_entry.new_run`）。上层账的空位放本层 id：run 级账 `episode_id`/`task_id` 位放 run_id、`step` = 已派局数；episode 级账 `task_id` 位放 episode_id |
+| `started_at` | Unix 时间戳（秒）：操作**真实开始**时刻。调用方记了就交，没记由存储实现补记账时刻（机械账 start=end=now——它没有时长语义） |
+| `ended_at` | Unix 时间戳（秒）：操作**结束**时刻，**排序键的一半**（`(ended_at, seq)` 升序，算延迟与对齐外部日志也看它）。调用方不交则补记账时刻 |
+| `meta` | **标签面的 JSON 字符串**：`{run_id, branch, source, episode_id, task_id, step}` 六件，**不多不少**。`run_id` 与 `branch`（执行线，未经恢复为 `main`）由 `TraceTool.append` 盖（`direct/trace/__init__.py::_stamp_meta`），`LocalTrace` 对 `meta` 只透传；另外四件由 harness 在 `req.meta` 里**一次交齐**，`TraceTool.append` 只核不拼。`source` = **这条账从哪个位置发出**（图上节点名，或图外入口名如 `run_entry.new_run`）。上层账的空位放本层 id：run 级账 `episode_id`/`task_id` 位放 run_id、`step` = 已派局数；episode 级账 `task_id` 位放 episode_id |
 | `content` | **正文面的 JSON 字符串**。判据是"存在反函数"——能从这串字符无损还原出源记录的字段。**标量一律 `str()`、布尔一律小写 `true`/`false`**；本来就是结构化数据的那几处（`facts` / `sequence` / `verdicts` / 四本写账的正文）**直接放对象，不再 `json.dumps` 一次**（那是双重编码） |
 
-- **0914 封套改造**：形状从九个字段收成上面六个，删了 `event_id`（唯一读方随
+- **0914 封套改造**：形状从九个字段收成六个，删了 `event_id`（唯一读方随
   `frame_png` 一起下线；排序改看 `ts`）、`schema_version`（零读方、两份副本要人工
   同步）、`frame_png`（**画面真源改成 `memory/step_memory/*.json` 的
   `before_frame`/`after_frame`**，事件不再自带图；`read_event(id)` 随之下线）、
   以及顶层 `run_id`/`episode_id`/`step`（搬进 `meta`）。
   **`kind` 与落盘的账名现在是同一个词**：此前 harness 那套派发键（`MEMORY_WRITE`…）
   与落盘账名（`write_step`…）两套名字靠一张翻译表连着，已整个删掉。
+- **0927 双时刻改造 + 0928 325 `seq` 决胜键**：`ts` 拆成 `started_at`/`ended_at`（操作
+  真实起止；调用方没记的账补记账时刻），随后 `seq`（进程内 append 的单调序号）进封套，
+  排序从 `(ts, uuid)` 改成 `(ended_at, seq)`——同刻按 append 序决胜，uuid 退化为纯标识。
+  旧格式缺 `seq` 的账解析失败、被扫盘跳过（**不兼容旧账**，2026-09-28 拍板）；字段数
+  从六个变成上面八个。
 - **0913 晚结构体瘦身**：更早还删过 `phase`（值恒等于 `type`）、`source`
   （生产者维度下线；**"谁发的"这一维 0914 改由 `meta.source` 回答**——那是
   "发送位置"，与"链路"不是一回事）、`valid`（恢复链已删，新写入恒真）。
@@ -502,9 +524,10 @@ harness 经门面调模块的架构不变。
      `build_llm_providers` 一族，加 `brain.errors` 的 `AttemptFailed`/`ParseFailure`/
      `ProviderRejected`）、`mcpclient/game_tools.py` 1（`brain.errors.ProviderRejected`）。
      `build.py` 对 brain **零 import**（工厂全收在门面层）。其余包对 brain 的引用**一律是数据形状**
-     （`Action`/`ActionSegment`/`Goal`/`Task`/`RunPlan`/`Reflection`/
-     `EpisodeSummary`/`StepVerifyVerdict`/六个结果袋），按 import 语句数共 **28 处**：
-     `harness/**` 14、`schemas/**` 12、`direct/prompts` + `direct/trace/render` 2。
+     （`Action`/`ActionSegment`/`Goal`/`Task`/`RunPlan`/
+     `EpisodeSummary`/`StepVerifyVerdict`/七个结果袋），按 import 语句数共 **28 处**：
+     `harness/**` 14、`schemas/**` 12、`direct/trace/render` 2（`direct/prompts` 已于 595
+     删除；此处的 28 是 0915 的历史计数口径，未重算）。
      **形状引用不是实现依赖**，不违反本铁律（跨层信封必须能内嵌这些形状，见第 1 条）。
      *计数口径*：一条 `import` 语句算一处，不按导入的符号个数拆开——
      换口径要整段重算，别两处混用。
@@ -551,7 +574,7 @@ harness 经门面调模块的架构不变。
 
 ## 测评任务收敛（2026-10-13）
 
-五个公开任务登记在 `evals/registry.py`：三个 B 类（decode、memory_store_recall、world_script_execute）用 `python -m evals.<任务名>` 启动 DeepEval；两个 C 类（brain_goal_judge、agent_short_goal_run）仍用 `inspect eval evals/<任务名>/task.py`。
+九个公开任务登记在 `evals/registry.py`：三个 B 类（decode、memory_store_recall、world_script_execute）用 `python -m evals.<任务名>` 启动 DeepEval；六个 C 类（brain_choose、brain_plan、brain_decompose、brain_judge、brain_summary、agent_short_goal_run）用 `inspect eval evals/<任务名>/task.py`。choose、plan、decompose、judge、summary 五个独立脑能力评测统一由 Inspect AI 管理；`python -m evals.brain_choose` 同样转发给 Inspect。choose/plan/decompose 的参考是建议，允许多种合理动作、失败纠偏和等价拆分，由独立 AI 逐维给0..1质量分；动作能力、单步和预算等结构约束另列。judge 与既有真假标注比较准确率。summary 复用三层冻结原料，机械契约与 AI 五维质量、重大失真分开统计，整体质量按 task/episode/run 三层宏平均。
 
 B 类每个状态一个 LLMTestCase，指标不调模型；缺标或无从判跳过，不进分母。decode 的显式空值照常计分。DeepEval 原生输出帧级通过率与逐指标 Average Score/Pass Rate/Total，默认只列失败，有失败退出 1。memory 逐记录计存储、逐查询计 Recall@k 与 MRR，后两者看 Average Score。world 分 code/truth 与 pass.<脚本名>，每例子进程保留 300 秒超时。
 

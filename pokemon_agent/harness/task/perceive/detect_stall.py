@@ -2,7 +2,7 @@
 脚本动作按结果比：没执行到位的脚本不论参数一律按"脚本名 + 结局码"算同一个无效动作；
 执行到位的带上结果那一句（战斗里同一招连出，双方 HP 在变就不算停摆）。
 
-算数与判断分离：阈值（`ACT_STALL_LIMIT`）只由 `review_and_judge` 读。
+算数与判断分离：阈值（`loop.act_stall_limit`）只由 `review_and_judge` 读。
 """
 
 from __future__ import annotations

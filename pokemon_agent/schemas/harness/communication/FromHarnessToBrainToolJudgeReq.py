@@ -9,11 +9,18 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
-from pokemon_agent.brain.interface import Goal
+from pokemon_agent.brain.interface import Decomposition, Goal, RunPlan
+from pokemon_agent.schemas.harness.domain.goal_entry import GoalEntry
 from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
-from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, RunMemory, TaskMemory
+from pokemon_agent.schemas.memory import (
+    ActMemory,
+    EpisodeMemory,
+    ObjectFactEvent,
+    RunMemory,
+    TaskMemory,
+)
 from pokemon_agent.world import TaskObservation
 
 
@@ -30,7 +37,7 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     episode_memories：L0 详情，本 run 全部局，与 plan·L0 的 details 共用；下两层留空。
     run_index：L0 背景，过往 run 的一行记录，不含本 run。
     task_index：本 episode 内此前同目标 task 的无帧背景索引，只有 task 层填写。
-    episode_index：episode 层的同 run_goal 其他局背景，只用 index_line 渲染。
+    episode_index：本 run 内同一个 L1 goal 的其他局背景，只用 index_line 渲染。
     observation：episode / run 层当前画面；task 层留空。
     knowledge：三层各自检索到的领域知识。
     allow_interrupt：只有 task 层置真——prompt 多一段「是不是被打断了」的判法，
@@ -44,6 +51,10 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     tool 入口，harness 只装素材。
     """
 
+    goal_table: Sequence[GoalEntry] = ()
+    latest_planning: RunPlan | Decomposition | None = None
+    planning_round: int = 0
+    trigger: str = "normal"
     goal: Goal
     history: Sequence[ActMemory] = ()
     task_memories: Sequence[TaskMemory] = ()
@@ -55,3 +66,13 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     observation: TaskObservation | None = None
     knowledge: str = ""
     allow_interrupt: bool = False
+
+    known_objects: list[ObjectFactEvent] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        """历史请求未提供原始事件时保留原信封形状。"""
+        data = handler(self)
+        if "known_objects" not in self.model_fields_set:
+            data.pop("known_objects", None)
+        return data

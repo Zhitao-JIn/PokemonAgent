@@ -5,8 +5,9 @@ import json
 
 import pytest
 from _doubles.llm import ScriptedLLM, text_reply
+from _harness_fixtures.app_config import call_policy
 
-from pokemon_agent.brain import Brain
+from pokemon_agent.brain import Brain, Goal
 from pokemon_agent.brain.errors import ToolTimeout
 from pokemon_agent.brain.providers import DeepSeekProvider
 from pokemon_agent.brain.schemas import LlmCompleteReq, VisionDescribeReq
@@ -14,6 +15,7 @@ from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.brain_tool import Planner
 from pokemon_agent.direct.budget_provider import BudgetProvider
 from pokemon_agent.errors import BudgetExhausted
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolPlanOnceReq
 
 
@@ -31,11 +33,16 @@ class Clock:
 
 
 def plan_request():
-    return FromHarnessToBrainToolPlanOnceReq(run_id="budget", plan=[], max_push=3)
+    return FromHarnessToBrainToolPlanOnceReq(
+        run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
+        run_id="budget",
+        plan=[],
+        max_push=3,
+    )
 
 
 def plan_reply():
-    return text_reply('{"push_goals":[],"updates":[],"why":"scripted"}')
+    return text_reply('{"updates": [], "why": "scripted", "new_items": []}')
 
 
 def test_deadline_uses_one_clock_and_preserves_the_reserve():
@@ -57,7 +64,12 @@ def test_insufficient_remaining_time_never_calls_the_brain_provider():
     clock = Clock()
     provider = ScriptedLLM(plan_reply())
     deadline = Deadline(100, 60, 3, clock=clock)
-    planner = Planner(Brain(plan_llm=provider), deadline=deadline)
+    planner = Planner(
+        Brain(plan_llm=provider),
+        policy=call_policy(),
+        deadline=deadline,
+        prompt_gateway=PromptGateway(None),
+    )
     clock.advance(38)
 
     with pytest.raises(BudgetExhausted) as caught:
@@ -80,7 +92,12 @@ def test_retries_share_remaining_time_and_keep_completed_failure_calls(
 
     provider = SlowProvider(ToolTimeout("scripted timeout"), plan_reply())
     deadline = Deadline(100, 60, 3, clock=clock)
-    planner = Planner(Brain(plan_llm=provider), deadline=deadline, max_attempts=2)
+    planner = Planner(
+        Brain(plan_llm=provider),
+        policy=call_policy(max_attempts=2),
+        deadline=deadline,
+        prompt_gateway=PromptGateway(None),
+    )
     monkeypatch.setattr("pokemon_agent.direct.brain_tool.time.sleep", clock.advance)
 
     if expected_requests == 1:
@@ -97,7 +114,12 @@ def test_retries_share_remaining_time_and_keep_completed_failure_calls(
 
 def test_without_a_run_deadline_the_production_request_can_complete():
     provider = ScriptedLLM(plan_reply())
-    planner = Planner(Brain(plan_llm=provider), deadline=None)
+    planner = Planner(
+        Brain(plan_llm=provider),
+        policy=call_policy(),
+        deadline=None,
+        prompt_gateway=PromptGateway(None),
+    )
 
     response = planner.plan(plan_request())
 
@@ -178,7 +200,12 @@ def test_a_transport_timeout_can_exhaust_the_run_before_retrying(monkeypatch):
     monkeypatch.setattr(module, "_POST_POOL", Executor())
     deadline = Deadline(100, 60, 3, clock=clock)
     provider = BudgetProvider(DeepSeekProvider(temperature=0.0), deadline, 45, "plan")
-    planner = Planner(Brain(plan_llm=provider), deadline=deadline)
+    planner = Planner(
+        Brain(plan_llm=provider),
+        policy=call_policy(),
+        deadline=deadline,
+        prompt_gateway=PromptGateway(None),
+    )
 
     with pytest.raises(BudgetExhausted) as caught:
         planner.plan(plan_request())

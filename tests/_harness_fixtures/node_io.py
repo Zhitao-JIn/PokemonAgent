@@ -83,6 +83,8 @@ BOOLEAN_FIELDS: frozenset[str] = frozenset({"done", "ok", "perceived", "overturn
 TERMINATIONS: frozenset[str] = frozenset(
     {
         Termination.GOAL_DONE.value,
+        Termination.BLOCKED.value,
+        Termination.PLANNING_EXHAUSTED.value,
         Termination.WORLD_ENDED.value,
         Termination.STALLED.value,
         Termination.BUDGET_EXHAUSTED.value,
@@ -559,9 +561,11 @@ _contract(("lifecycle", "advance_step"), "next_step", "步号推进（close_step
 # ---- 观测 ----
 _contract(
     ("view", "sense_frame"),
-    "status facts done",
-    "三层 sense 取到的一帧（run/episode 视觉档 / task 层轻档；`place` 有值才出现、"
-    "`scene` 只在 task 层、`frame` 是 base64 PNG、`ram` 是内存读数对象，没有就缺省，都不进必填表）",
+    "facts done",
+    "三层 sense 取到的一帧（run/episode 视觉档 / task 层轻档；`status` 已随决定 C 停写"
+    "（旧账若带 `status` 仍可读，但它不再是必填键）；`place` 有值才出现、"
+    "`scene` 只在 task 层、`overlay` 在 `facts` 里、`frame` 是 base64 PNG、"
+    "`ram` 是内存读数对象，没有就缺省，都不进必填表）",
 )
 
 # ---- 记忆读：六条读口**一个形状**（`content = {query, refs}`）----
@@ -724,12 +728,12 @@ CHECKPOINT_KINDS: frozenset[str] = frozenset(
 # ---- 问人两本账（`harness/reviewing.py`）：**不进流**，条数随人插话几轮浮动 ----
 _contract(
     ("lifecycle", "review_inject"),
-    "form_kind reply answered by wait_s",
+    "form_kind reply answered by wait_s capped round",
     "插话一次：表单种类、人的回话、是否真答、等了多久",
 )
 _contract(
     ("lifecycle", "review_audit"),
-    "form_kind verdict note answered by wait_s",
+    "form_kind verdict note answered by wait_s capped round",
     "审一次：审的是什么、认 / 推翻与理由、是否真答、等了多久",
 )
 
@@ -1398,13 +1402,14 @@ def check_content_invariants(events: Sequence[Event], episode_id: str) -> None:
     for token, event in episode_stream(events, episode_id):
         if token == "decompose_verdict":
             tasks = content_of(event).get("tasks")
-            assert isinstance(tasks, list) and tasks, "decompose_verdict 的 tasks 应是非空数组"
+            assert isinstance(tasks, list), "decompose_verdict 的 tasks 应是数组"
             ids = [str(t.get("task_id", "")) for t in tasks]
             assert len(set(ids)) == len(ids), f"decompose_verdict 里 task_id 重复：{ids}"
             planned |= set(ids)
         elif token == TASK_TOKEN:
             task_id = _task_of(event)
-            assert task_id in planned, f"task {task_id} 被派出去了，但此前没有哪一版拆解给过它"
+            entry_id = content_of(event).get("entry_id") or task_id
+            assert entry_id in planned, f"task {task_id} 被派出去了，但此前没有哪一版拆解给过它"
 
     _check_task_stamps(events, episode_id)
 
@@ -1452,7 +1457,7 @@ def _check_task_stamps(events: Sequence[Event], episode_id: str) -> None:
             assert content.get("task_id") == last_task, (
                 f"settle_task 盖的是 {content.get('task_id')!r}，刚结束的 task 是 {last_task!r}"
             )
-            assert content.get("status") in ("completed", "failed"), (
+            assert content.get("status") in ("completed", "failed", "blocked"), (
                 f"settle_task.status={content.get('status')!r} 应为 completed / failed"
             )
             gone = content.get("abandoned") or []
@@ -1544,7 +1549,7 @@ def check_run_invariants(events: Sequence[Event]) -> None:
             assert content.get("episode_id") == last_episode, (
                 f"settle_goal 盖的是 {content.get('episode_id')!r}，刚结束的一局是 {last_episode!r}"
             )
-            assert content.get("status") in ("completed", "failed"), (
+            assert content.get("status") in ("completed", "failed", "blocked"), (
                 f"settle_goal.status={content.get('status')!r} 应为 completed / failed"
             )
         elif token == "run_end":

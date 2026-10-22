@@ -2,18 +2,19 @@
 
 harness 只负责组装——从这一步手头的领域对象里挑出本笔账需要的字段、声明
 `kind` 与 **`meta`**（签名信息）；tool 对 req 做处理（按 kind 渲染 `content`、
-必要时一拆多），模块（`TracePort` 的实现）只收**三个裸参数**：
-`type` / `kind` / `meta` + `content`。
+必要时一拆多），模块（`TracePort` 的实现）只收**裸参数**：
+`type` / `kind` / `meta` / `content`（加可选的 `started_at` / `ended_at`）。
 
 **`kind` 与落盘 `kind` 逐字同值**（0914 去翻译表）：渲染层不再改它的名字，
 `req.kind` 一路落到封套上。所以本枚举就是账名词表，见
 `schemas/harness/domain/trace_kind.py`。
 
 **`meta` 是一个语义成分，不是三个公共字段的拼装结果**（0914 跟进）：封套上那个
-`meta`（`{run_id, source, episode_id, step}`）是 harness 的**签名信息**，内容由
-harness 在 `req.meta` 里一次交齐，tool 原样转发（`run_id` 由落盘层盖）——
-它不该由 tool 从三个散着的公共字段现拼：那样 `meta` 的内容就归了 tool，
-harness 想多签一样东西都没有地方放。
+`meta`（`{run_id, branch, source, episode_id, task_id, step}`）是 harness 的
+**签名信息**——harness 在 `req.meta` 里一次交齐 `source` / `episode_id` /
+`task_id` / `step` 四件，`run_id` / `branch`（执行线标识）由 tool 层在 append
+时盖（`TraceTool.append` → `_stamp_meta`）——它不该由 tool 从三个散着的公共
+字段现拼：那样 `meta` 的内容就归了 tool，harness 想多签一样东西都没有地方放。
 
 **按 `kind` 分派、不按领域对象类型分派**：同一个类型产出不同事件——
 `ModelCall` 可以是决策账单（attempt）/判定账单（why）/校验账单（verdicts），
@@ -32,7 +33,9 @@ from pydantic import BaseModel
 
 from pokemon_agent.brain.interface import (
     Action,
+    Decomposition,
     Goal,
+    RunPlan,
     Task,
     VerifyVerdict,
 )
@@ -63,11 +66,12 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     **必填的两件**：`kind`（哪本账）与 `meta`（签名信息，见下）；
     其余字段全部可选，按 kind 取用，多余字段留着无妨（渲染函数只读自己那几个）。
 
-    **落盘形状**（0914 封套改造）：
+    **落盘形状**（0914 封套改造，2026-09-27 双时刻、0928 325 加 `seq`）：
 
     ```
-    {uuid, kind, type, ts, meta, content}          ← 封套四件 + 标签 + 正文
-    meta    = {run_id, source, episode_id, task_id, step}  ← JSON 字符串；run_id 由 store 盖
+    {uuid, seq, kind, type, started_at, ended_at, meta, content}  ← 封套八件
+    meta    = {run_id, branch, source, episode_id, task_id, step}  ← JSON 字符串
+              （run_id / branch 由 tool 层盖，其余四件由 harness 交齐）
     content = 该账的正文                            ← JSON 字符串
     ```
 
@@ -81,12 +85,13 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     kind: TraceKind
 
     meta: dict[str, Any]
-    """**这条账的签名信息**——封套 `meta` 的本体，由 harness 一次交齐。
+    """**这条账的签名信息**——封套 `meta` 的本体：harness 一次交齐四件，tool 层
+    再盖两件执行线标识，合起来六件。
 
-    恰好四件（run 级账沿用项目约定——`episode_id` 位放 `run_id`、step 恒 0）：
+    harness 交的四件（run 级账沿用项目约定——`episode_id` 位放 `run_id`、step 恒 0）：
 
     ```
-    {"source": "发这条账的位置", "episode_id": "…", "step": 3}
+    {"source": "发这条账的位置", "episode_id": "…", "task_id": "…", "step": 3}
     ```
 
     - **`source`**：图上单元名（`store_step_episode_memory`、`summarize_episode`、
@@ -96,10 +101,13 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
       `KnowledgeRecord.source` 混**：那个是"这条知识出自哪一局"，是记录自己的
       元数据；这个说的是"这条 trace 由谁写出"，两处同名不同层。
     - **`episode_id` / `step`**：这条账发在哪一局、哪一步。判据侧
-      （`node_io._check_meta`）核"恰好四件"——多签的东西要先进判据，不是自由槽。
+      （`node_io._check_meta`）核"恰好六件"（存档 / 恢复账另加 `checkpoint_id`）——
+      多签的东西要先进判据，不是自由槽。
 
-    **`run_id` 不在这里**：它是落盘实例的标识（构造 `LocalTrace` 时给的），只有
-    落盘那一层知道（`store._stamp_run_id` 盖，调用方带了就当场炸）。
+    **`run_id` / `branch` 不在这里**：它们是执行线标识，由 tool 层在 append 时盖
+    （`TraceTool.append` → `_stamp_meta`，排在头两个）；trace 后端对这两个键
+    零持有、只透传。调用方带了就当场炸（`TraceTool.append` 入口 assert——
+    同一件事说两遍）。
 
     **为什么由 harness 交齐、而不是 tool 拿三个公共字段拼**（0914 跟进）：`meta`
     是封套的语义成分，内容归 harness；拆成三个公共字段再由 tool 现拼，等于把
@@ -175,12 +183,12 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     检索（检索节点在 MemoryTool 查询前后取时，进本字段）。其余账不记——
     落盘层补 `start = end =` 记账时刻，封套里没有独立于操作时间的记账时刻。"""
     ended_at: float | None = None
-    """操作结束时刻；**排序的唯一依据**（`(ended_at, uuid)` 升序）。见 `started_at`。"""
+    """操作结束时刻；**排序键的一半**（`(ended_at, seq)` 升序）。见 `started_at`。"""
     timings: dict[str, float] | None = None
     """检索的**分段耗时**（秒，`prepare`/`bm25`/`vector`/`rrf`/`rerank`）——只有
     `read_knowledge` 带（0928 324，随检索返回值从 memory 模块带出），其余读口
     不计时、省略这个键（等值过滤没有分段可言）。渲染进 content 的 `timings` 键；
-    **不参与排序**——排序唯一依据是 `(ended_at, uuid)`，分段耗时只是观测数据。"""
+    **不参与排序**——排序唯一依据是 `(ended_at, seq)`，分段耗时只是观测数据。"""
     refs: list[str] | None = None
     """命中的**是谁**——每一条一个字符串（`render.retrieve_node` 原样转发）。
 
@@ -214,6 +222,12 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     """连续失败计数（episode / run 的 `judge_verdict` 与 `settle_goal` 带）。"""
     updates: list[dict[str, str]] | None = None
     """规划对已有目标的表态（`plan_verdict` 带）：`{task_id, status, note}`。"""
+    planning: RunPlan | Decomposition | None = None
+    planning_round: int | None = None
+    decision: str | None = None
+    judge_trigger: str | None = None
+    execution_order: list[str] | None = None
+    entry_id: str | None = None
     tasks: list[Task] | None = None
     """拆解出的任务链（`decompose_verdict` 带），`task_id` 已由 harness 编好。"""
     goal: GoalEntry | None = None

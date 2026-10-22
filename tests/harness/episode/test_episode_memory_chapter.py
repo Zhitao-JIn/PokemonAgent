@@ -23,6 +23,8 @@ from types import SimpleNamespace
 
 import pytest
 from _doubles.memory_server import memory_server_context
+from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
+from _harness_fixtures.prompt_text import record_text
 
 from pokemon_agent.brain import Goal, Task
 from pokemon_agent.harness.episode.episode_done.leave_chapter import store_empty_chapter
@@ -30,7 +32,6 @@ from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.harness.run.review_and_judge import review_and_judge
 from pokemon_agent.harness.run.run_state import RunState
 from pokemon_agent.mcpclient.memory_local import MemoryTool
-from pokemon_agent.run_config import RunConfig
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolJudgeResp,
     FromHarnessToMemoryToolMemorizeRecord,
@@ -68,7 +69,9 @@ class _Judger:
     """run 级判定恒回"未达成"——本文件只关心补章，不关心停机。"""
 
     def judge(self, req):
-        return FromHarnessToBrainToolJudgeResp(done=False, why="桩", calls=[ModelCall(payload={})])
+        return FromHarnessToBrainToolJudgeResp(
+            decision=("achieved" if False else "continue"), why="桩", calls=[ModelCall(payload={})]
+        )
 
 
 @pytest.fixture
@@ -81,7 +84,7 @@ def memory(tmp_path: Path) -> Iterator[MemoryTool]:
 def _deps(memory: MemoryTool) -> SimpleNamespace:
     """`review_and_judge` 读的四样：记忆、记账、人审、判定。"""
     return SimpleNamespace(
-        budget=RunConfig().budget,
+        config=DEFAULT_APP_CONFIG,
         memory=memory,
         trace=_Trace(),
         reviewer=NullReviewer(),
@@ -136,6 +139,7 @@ def _leave(deps: SimpleNamespace) -> EpisodeMemory:
         deps,  # type: ignore[arg-type]
         run_id="r1",
         run_goal="测试总目标",
+        goal_id="g1",
         episode_id="r1-ep1",
         goal="目标 g1",
         tasks_used=0,
@@ -222,7 +226,7 @@ def test_a_chapter_renders_without_a_fake_body() -> None:
         quality_rationale="本局没有产出可蒸馏的正文",
     )
 
-    text = chapter.render()
+    text = record_text(chapter)
 
     assert text.splitlines()[0] == "(r1-ep1) 目标：进商店买伤药（未成功，0 个 task / 0 键）", (
         "章在第一行"

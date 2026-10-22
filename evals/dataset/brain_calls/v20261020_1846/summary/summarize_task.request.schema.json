@@ -1,0 +1,423 @@
+{
+  "$defs": {
+    "ActMemory": {
+      "description": "一条情景记忆：**我看到这样的画面，因为这些理由，做了这个动作，然后变成了这样。**\n\n## 为什么两头都是完整观察\n\n只记\"结果：你在野外\"这种一句话，等于把结果压成一个没有信息量的标签\n（十条全长一个样）。**结果本身也是一次观察**，\n只有把它完整记下来，这条经验才回答得了\"那一下到底改变了什么\"。\n\n代价是上一条的 `after` 和下一条的 `before` 内容重复。这是有意接受的：\n**每条自成一体**，取回时不用去拼上下文，也不依赖别的条目还在不在。\n\n## 这仍然只是 episodic\n\n\"这次尝试里发生了什么\"，是自己跑出来的轨迹，有时效。\n\n不要和**语义记忆**混淆：那是\"世界是什么样\"（\"水克火\"、\"map 0 的 (5,5) 通往 map 37\"），\n自带作用域、在作用域内永远为真。也不要和**目标**混淆：目标有完成态，\n凡是有完成态的都不是知识，它属于运行时状态，不进这里。\n\n程序记忆、skill library（机制二）、值回填（机制三）都还没做。",
+      "properties": {
+        "before": {
+          "$ref": "#/$defs/Observation",
+          "description": "做决定时看到的画面"
+        },
+        "action": {
+          "description": "**一个动作**：键（`up`）或脚本（`script:walk_to(x=5, y=2)`）。连按已经展开成多步，这里不再是链",
+          "title": "Action",
+          "type": "string"
+        },
+        "after": {
+          "$ref": "#/$defs/Observation",
+          "description": "执行之后的画面。**结果也是一次观察**"
+        },
+        "result": {
+          "default": "",
+          "description": "脚本动作的终态报告摘要（`ok` / `verify_failed` 这类结局码）；键动作为空串。脚本一次调用占一步、内部 N 键不展开（P5 定案），这个字段就是那一步的机械结局——判据只认达成的约定下，它是判停可直接采信的证据",
+          "title": "Result",
+          "type": "string"
+        },
+        "step": {
+          "description": "该键按下**前**那一帧的本局累计键数（跨 task 连续，harness 盖章）——相邻记忆构成 `step+1` 链，机制三沿它回填",
+          "title": "Step",
+          "type": "integer"
+        },
+        "episode_id": {
+          "description": "这条经验来自哪次尝试",
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "task_id": {
+          "default": "",
+          "description": "这条经验属于哪个 task（harness 盖章）",
+          "title": "Task Id",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "description": "这条经验来自哪个 run——checkpoint 恢复的落盘签名三元组之一（run_id/episode_id/step），由 Harness 盖章（大脑不知道自己在哪个 run）",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "before_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "`before` 对应的截图，**完整的 PNG data URI 字符串**（`data:image/png;base64,…`，0915 起唯一格式：产出点直接带前缀、自描述、grep 可寻，裸 base64 已废）。不是文件名，也不是原始字节。存 data URI 不存文件名引用——**这条记忆的`before`/`after` 本来就有跟相邻条目重复的问题**（上一条的 after ==下一条的 before），文字字段重复是接受的成本，这条也一并接受：换来的是`judge`/`verify_steps` 用的时候不用再去读盘、不用再关心截图文件是否存在/是否被撞名改了后缀——`store_step_episode_memory()` 写这条记忆时已经从盘上读过一次图、编码好了，后面全是内存里的字符串。**可能是 `None`**（那一步感知失败、截图确实没能落盘）——调用方（`judge`/`verify_steps` 拼请求）按跳过这张图处理，不能因为一步缺图让整条判定链路失败",
+          "title": "Before Frame"
+        },
+        "after_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "`after` 对应的截图，格式同 `before_frame`（完整 PNG data URI）。跟 `before_frame` 之间的关系正是 `render_sequence()`已经在处理的那种重复——相邻两条 `entries[i].after_frame ==``entries[i+1].before_frame`（同一帧画面，编码结果自然相等），拼多模态请求时应该按这一点去重，不要同一张图发两遍——去重的实现在`direct/brain_tool.py::dedup_snapshots()`（0915 起归 tool 层，那是发请求的组装逻辑，不是记忆的数据形状）",
+          "title": "After Frame"
+        }
+      },
+      "required": [
+        "before",
+        "action",
+        "after",
+        "step",
+        "episode_id"
+      ],
+      "title": "ActMemory",
+      "type": "object"
+    },
+    "Facts": {
+      "additionalProperties": true,
+      "description": "同 `world.interface.domain.facts.Facts` 的快照版：字段、渲染对齐\n算法照抄（两边要渲染出一模一样的文本，大脑才能拿旧记忆和当前观测\n直接比对），但类不互相引用。`extra=\"allow\"`——视觉模型按 scene 自由\n给的字段（`my_hp`/`foe_level`…）原样收进来，同真身一致。",
+      "properties": {
+        "scene": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene"
+        },
+        "overlay": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Overlay"
+        },
+        "where": {
+          "default": "",
+          "title": "Where",
+          "type": "string"
+        },
+        "facing": {
+          "default": "",
+          "title": "Facing",
+          "type": "string"
+        },
+        "neighbors": {
+          "default": "",
+          "title": "Neighbors",
+          "type": "string"
+        },
+        "landmarks": {
+          "items": {
+            "$ref": "#/$defs/Landmark"
+          },
+          "title": "Landmarks",
+          "type": "array"
+        },
+        "dialog_text": {
+          "default": "",
+          "title": "Dialog Text",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "overview": {
+          "default": "",
+          "title": "Overview",
+          "type": "string"
+        },
+        "walk_map": {
+          "default": "",
+          "title": "Walk Map",
+          "type": "string"
+        },
+        "map_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Map Id"
+        },
+        "screen": {
+          "default": "",
+          "title": "Screen",
+          "type": "string"
+        }
+      },
+      "title": "Facts",
+      "type": "object"
+    },
+    "Landmark": {
+      "description": "同 `Facts.Landmark` 的快照版：门/招牌/人/物/石，只留渲染要用的字段。",
+      "properties": {
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "map_id": {
+          "title": "Map Id",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "map_id",
+        "x",
+        "y"
+      ],
+      "title": "Landmark",
+      "type": "object"
+    },
+    "Observation": {
+      "description": "`ActMemory` 自己存的\"观测快照\"——**不是** `pokemon_agent.world.Observation`。\n\n这条记忆只需要\"当时看到的样子\"——渲染成文本、跟另一份快照比对是否相同，\n从不需要 `world.Observation`/`Facts` 的任何**行为**（那些是 world 子系统\n对外承诺的 Port 产物）。按\"模块间零依赖，只靠裸字段交互\"这条边界，这里\n重新声明一份字段形状完全一致、类本身互不引用的内部类型——`ActMemory`\n唯一认识两边形状的组装方是 `brain.brain.py::reflect()`，它负责在构造\n`ActMemory` 之前把真身 `Observation.model_dump(mode=\"json\")` 拍平后\n验证成这里的类型（字段名一致，一次 `model_validate()` 就能转过去，不需要\n逐字段手写映射）。",
+      "properties": {
+        "step": {
+          "description": "本局累计键数，从 0 开始（同真身 `world.Observation.step` 口径：局内跨 task 连续；harness 盖章）",
+          "title": "Step",
+          "type": "integer"
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Place"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "主角所在的格子（结构化坐标）"
+        },
+        "status": {
+          "description": "这一帧的状态行",
+          "title": "Status",
+          "type": "string"
+        },
+        "scene": {
+          "default": "",
+          "description": "task 层的场合（`TaskScene` 的值）；这一字段之前写下的记录为空",
+          "title": "Scene",
+          "type": "string"
+        },
+        "facts": {
+          "$ref": "#/$defs/Facts",
+          "description": "结构化事实容器的快照"
+        },
+        "done": {
+          "default": false,
+          "description": "产生这份观测时世界层是否已经不在了",
+          "title": "Done",
+          "type": "boolean"
+        },
+        "perceived": {
+          "default": true,
+          "description": "仅为读取旧记忆保留的视觉感知标记，不影响当前渲染。",
+          "title": "Perceived",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "step",
+        "status"
+      ],
+      "title": "Observation",
+      "type": "object"
+    },
+    "Place": {
+      "description": "同 `PlaceInWorld` 的快照版：只留 `map_id`/`x`/`y` 三个原始字段——\n`.step_toward()` 这类行为只有判定层（harness）拿着真身才用得到，\n这里只是存下来的记忆，不需要。",
+      "properties": {
+        "map_id": {
+          "title": "Map Id",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "map_id",
+        "x",
+        "y"
+      ],
+      "title": "Place",
+      "type": "object"
+    },
+    "Termination": {
+      "description": "一层循环的终止类别。三层各自独立计数：run 数局、episode 数 task、task 数键。",
+      "enum": [
+        "blocked",
+        "planning_exhausted",
+        "goal_done",
+        "world_ended",
+        "stalled",
+        "budget_exhausted",
+        "time_exhausted",
+        "actions_exhausted",
+        "tasks_exhausted",
+        "decompositions_exhausted",
+        "interrupted",
+        "error"
+      ],
+      "title": "Termination",
+      "type": "string"
+    },
+    "VerifyVerdict": {
+      "description": "对一条 entries（ActMemory 或 TaskMemory）的判定。",
+      "properties": {
+        "index": {
+          "description": "对应 entries 的下标",
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "positive": {
+          "description": "这条行为/总结是否符合 goal：符合=正样本",
+          "title": "Positive",
+          "type": "boolean"
+        },
+        "why": {
+          "description": "依据——判负样本时要说清不符合在哪",
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "positive",
+        "why"
+      ],
+      "title": "VerifyVerdict",
+      "type": "object"
+    }
+  },
+  "description": "harness 侧组装、交给 `TaskSummarizer` 的 task 蒸馏请求。",
+  "properties": {
+    "entries": {
+      "description": "本 task 区间的全部 ActMemory，按 step 升序",
+      "items": {
+        "$ref": "#/$defs/ActMemory"
+      },
+      "minItems": 1,
+      "title": "Entries",
+      "type": "array"
+    },
+    "verdicts": {
+      "description": "与 entries 等长的正/负标注",
+      "items": {
+        "$ref": "#/$defs/VerifyVerdict"
+      },
+      "title": "Verdicts",
+      "type": "array"
+    },
+    "entry_id": {
+      "title": "Entry Id",
+      "type": "string"
+    },
+    "task_id": {
+      "description": "本 task 的标识（来源章）",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "episode_id": {
+      "description": "所属 episode 的标识（来源章）",
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "run_id": {
+      "description": "所属 run 的标识（来源章）",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "goal": {
+      "description": "本 task 的目标",
+      "title": "Goal",
+      "type": "string"
+    },
+    "termination": {
+      "$ref": "#/$defs/Termination",
+      "description": "终止类别（`success` 由它推出）"
+    },
+    "judge_reason": {
+      "default": "",
+      "description": "判停时的判定依据——蒸馏写结论时的参考，不必复述",
+      "title": "Judge Reason",
+      "type": "string"
+    },
+    "steps_used": {
+      "description": "本 task 消耗的键数",
+      "title": "Steps Used",
+      "type": "integer"
+    },
+    "max_steps": {
+      "description": "本 task 的键预算",
+      "title": "Max Steps",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "entries",
+    "verdicts",
+    "entry_id",
+    "task_id",
+    "episode_id",
+    "run_id",
+    "goal",
+    "termination",
+    "steps_used",
+    "max_steps"
+  ],
+  "title": "FromHarnessToBrainToolSummarizeTaskReq",
+  "type": "object"
+}

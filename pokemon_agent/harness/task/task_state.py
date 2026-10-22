@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from pokemon_agent.brain import Action, Task
 from pokemon_agent.brain.interface import VerifyVerdict
-from pokemon_agent.schemas.harness.domain import Settled, TaskOutput, Termination
+from pokemon_agent.schemas.harness.domain import JudgeFeedback, Settled, TaskOutput, Termination
 from pokemon_agent.schemas.memory import ActMemory, TaskMemory
 from pokemon_agent.world import ActionSpace, TaskObservation
 
@@ -50,6 +50,7 @@ class TaskState(Settled, BaseModel):
 
     run_id: str = Field(description="所属 run（ActMemory 归属章）")
     episode_id: str = Field(description="所属 episode（记忆按局分组）")
+    entry_id: str
     task: Task = Field(description="本 task：目标、判据、键预算 `max_steps`")
     total_acts: int = Field(
         ge=0,
@@ -116,6 +117,10 @@ class TaskState(Settled, BaseModel):
     judge_reason: str = Field(
         default="",
         description="review_and_judge 写的判定依据（判定员的理由 / 机械判停类别）；与 reason 分开",
+    )
+
+    last_judge: JudgeFeedback | None = Field(
+        default=None, description="启用 task 审点时的上次判定与复核意见；随图状态保存"
     )
 
     act_verdicts: list[VerifyVerdict] = Field(

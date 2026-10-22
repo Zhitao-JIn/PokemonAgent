@@ -1,0 +1,8 @@
+{
+  "task": "script_signature",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "ScriptSignatureParams",
+  "reason": "CP5b 脚本原料排版",
+  "hash": "babfa2eb5e818fd428e691448e985bb27992404f37759fc2a175fc9fbd22a7e4"
+}

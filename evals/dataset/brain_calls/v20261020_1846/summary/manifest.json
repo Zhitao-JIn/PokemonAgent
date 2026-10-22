@@ -1,0 +1,71 @@
+{
+  "version": "v20261020_1846",
+  "family": "summary",
+  "cases": 81,
+  "layers": {
+    "episode": 20,
+    "run": 20,
+    "task": 41
+  },
+  "baseline_status": {
+    "success": 81
+  },
+  "mechanical_labels": 0,
+  "action_set_labels": 0,
+  "rubric_cases": 81,
+  "files_sha256": {
+    "inputs.jsonl": "f8fb7368e84dd5ae02cc9d5f68f578030c2b8281201434e0e62a22978014c68c",
+    "references.jsonl": "e7f8b66e53184ec0b17fffc38c6a0bba69bf5b9374850e281189ae6d7b00d7ae",
+    "summarize.request.schema.json": "c8b380bceaa1cb6f49f8d832ab4ec2a3ed4ab821035e4b6bb89a7f5037f203de",
+    "summarize_run.request.schema.json": "342b0d879005e2385a77c12f29d1abb8bf7bb7f847b7fea208d1d538ae713911",
+    "summarize_task.request.schema.json": "1984b408cca03387da33c58a95333db00569bd6fca81dfd4c691fb2b794df8af"
+  },
+  "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+  "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+  "schema_hash": "5d3630f2b479ee78",
+  "limitations": [
+    "20 个短场景的现场分布，不代表独立留出集或长程能力。",
+    "采集分多段完成，各段提交见 source_parts；段间只改 trace 渲染与采集控制器。",
+    "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+    "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+    "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+  ],
+  "source_parts": [
+    {
+      "batch": "eval_results/brain_capture_recursive_20261020",
+      "source_head": "3ca4ecd6ad9faad0687a2ee41c2fa2976285c0e6",
+      "source_code_sha256": "f92f37af1898034d9fc61d1c3428ca017550084546cf642461c5d0610730fad1",
+      "schema_hash": "5d3630f2b479ee78",
+      "samples": [
+        "knowledge_battle_action_menu",
+        "knowledge_battle_fight_menu",
+        "knowledge_battle_item_use",
+        "knowledge_battle_move_select",
+        "knowledge_battle_pokemon_switch",
+        "knowledge_battle_run_attempt",
+        "knowledge_dialogue_advance",
+        "knowledge_door_transition",
+        "knowledge_movement_obstacle",
+        "knowledge_npc_dialogue",
+        "knowledge_shop_interaction",
+        "knowledge_shop_open_buy_menu",
+        "knowledge_shop_select_item",
+        "knowledge_wild_encounter"
+      ]
+    },
+    {
+      "batch": "eval_results/brain_capture_remaining6_20261020",
+      "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+      "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+      "schema_hash": "5d3630f2b479ee78",
+      "samples": [
+        "knowledge_catch_throw_ball",
+        "knowledge_catch_weaken_target",
+        "knowledge_pokemon_center_enter",
+        "knowledge_pokemon_center_heal",
+        "knowledge_shop_cancel_purchase",
+        "knowledge_shop_confirm_purchase"
+      ]
+    }
+  ]
+}

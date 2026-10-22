@@ -1,0 +1,43 @@
+{
+  "task": "verify",
+  "case_id": "synthetic-variant-4",
+  "source": "synthetic",
+  "request_kind": "current",
+  "request": {
+    "entries": [
+      {
+        "run_id": "run-1",
+        "episode_id": "ep-1",
+        "entry_id": null,
+        "task_id": "task-1",
+        "goal": "进门",
+        "termination": "goal_done",
+        "reason": "地图改变",
+        "steps_used": 2,
+        "total_acts": 0,
+        "summary": "走到门口并进门。",
+        "reusable_patterns": [
+          "对准门口"
+        ],
+        "critical_decisions": [
+          "向上"
+        ],
+        "failure_points": [
+          "不要撞墙"
+        ],
+        "quality_score": 0.8,
+        "quality_rationale": "有前后帧",
+        "tags": [
+          "导航"
+        ],
+        "first_frame": null,
+        "last_frame": null,
+        "markdown": "进门记录"
+      }
+    ],
+    "goal": "进门",
+    "knowledge": ""
+  },
+  "max_segments": 3,
+  "source_ref": ""
+}

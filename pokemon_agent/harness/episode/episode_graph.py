@@ -4,8 +4,9 @@
                       └─否则→ plan_episode ─done（拆解耗尽）→ episode_done
                                      └─否则→ act → perceive
 
-`perceive` 先吸收上一个 task 的结算再做检索；`plan_episode` 队列空时问
-decomposer；`act` 派一个 task 子图。每格的实现住同名文件夹，格入口在文件夹的
+`perceive` 先吸收上一个 task 的结算再做检索；`plan_episode` 每轮问
+decomposer 修订状态表；规划后无待办回 judge，有待办由 `act` 派一个 task 子图。
+每格的实现住同名文件夹，格入口在文件夹的
 `__init__.py`，单元串接语义见 `compose.py`。交界契约（`EpisodeInput` /
 `EpisodeOutput`）住 `schemas/harness/domain/episode_io.py`。
 """
@@ -16,6 +17,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from ..budget_nodes import guarded
+from ..planning import planning_route
 from .act import act
 from .episode_done import episode_done
 from .episode_runtime import EpisodeRuntime
@@ -30,7 +32,7 @@ def compile_episode_graph() -> CompiledStateGraph:
     """把 5 个格装配成图，返回编译好的对象。
 
     **两个分叉**：`review_and_judge` 出口的 `done` 决定进收尾还是继续循环；
-    `plan_episode` 出口的 `done`（拆解耗尽，写了 `ERROR`）决定进收尾还是去派 task。
+    `plan_episode` 出口按机械终止、待办、无待办分别收尾、派 task、返回 judge。
     `act` 出口无条件回 `perceive`（每个 task 的结算都要先吸收、再判停）；
     队列还有没有 task 由 `plan_episode` 自己看。
 
@@ -58,9 +60,10 @@ def compile_episode_graph() -> CompiledStateGraph:
     )
     graph.add_conditional_edges(
         "plan_episode",
-        lambda state: "episode_done" if state.done else "act",
+        lambda state: planning_route(state, "tasks", "episode_done"),
         {
             "act": "act",
+            "review_and_judge": "review_and_judge",
             "episode_done": "episode_done",
         },
     )

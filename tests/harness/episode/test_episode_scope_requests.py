@@ -2,26 +2,31 @@
 
 from pathlib import Path
 
+from _harness_fixtures.app_config import reconfigure
 from _harness_fixtures.harness import build_fake
+from _harness_fixtures.prompt_text import index_text, observation_text
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Task
 from pokemon_agent.brain.interface import Decomposition
-from pokemon_agent.direct.prompts.decompose import context_lines
-from pokemon_agent.direct.prompts.judge_success import build_prompt, memory_blocks
 from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeRunState
 from pokemon_agent.harness.episode.plan_episode.plan_episode import plan_episode
 from pokemon_agent.harness.episode.review_and_judge import review_and_judge
+from pokemon_agent.prompt import DecomposeParams, JudgeParams, PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolDecomposeResp,
     FromHarnessToBrainToolJudgeReq,
     FromHarnessToBrainToolJudgeResp,
+    FromHarnessToReviewerAuditReq,
+    FromHarnessToReviewerAuditResp,
+    FromHarnessToReviewerInjectReq,
+    FromHarnessToReviewerInjectResp,
     ModelCall,
 )
 from pokemon_agent.schemas.harness.domain import TaskEntry
 from pokemon_agent.schemas.memory import EpisodeMemory, TaskMemory
-from pokemon_agent.world import Facts, TaskObservation, TaskScene
+from pokemon_agent.world import TERRAIN_MEANING, Facts, TaskObservation, TaskScene
 
 
 class _Decomposer:
@@ -32,9 +37,12 @@ class _Decomposer:
         self, req: FromHarnessToBrainToolDecomposeReq
     ) -> FromHarnessToBrainToolDecomposeResp:
         self.requests.append(req)
-        task = Decomposition.PlannedTask(goal="下一任务", success_criteria="c", max_steps=2)
+        task = Decomposition.PlannedTask(
+            goal="下一任务", success_criteria="c", budget={"limit": 2, "unit": "actions"}
+        )
         return FromHarnessToBrainToolDecomposeResp(
-            decomposition=Decomposition(tasks=[task]), calls=[ModelCall(payload={})]
+            decomposition=Decomposition(why="测试规划依据", new_items=[task]),
+            calls=[ModelCall(payload={})],
         )
 
 
@@ -45,8 +53,23 @@ class _Judger:
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         self.requests.append(req)
         return FromHarnessToBrainToolJudgeResp(
-            done=False, why="继续", calls=[ModelCall(payload={})]
+            decision=("achieved" if False else "continue"),
+            why="继续",
+            calls=[ModelCall(payload={})],
         )
+
+
+class _RevisingReviewer:
+    def __init__(self) -> None:
+        self.requests: list[FromHarnessToReviewerInjectReq] = []
+        self.replies = ["第一次修改", "第二次修改"]
+
+    def inject(self, req: FromHarnessToReviewerInjectReq) -> FromHarnessToReviewerInjectResp:
+        self.requests.append(req)
+        return FromHarnessToReviewerInjectResp(text=self.replies.pop(0), by="agent", answered=True)
+
+    def audit(self, _req: FromHarnessToReviewerAuditReq) -> FromHarnessToReviewerAuditResp:
+        raise AssertionError("plan_episode does not audit judgement")
 
 
 def _state() -> EpisodeRunState:
@@ -74,7 +97,10 @@ def _state() -> EpisodeRunState:
         first_frame="data:image/png;base64,PRIOR",
     )
     observation = TaskObservation(
-        scene=TaskScene.WALK, step=1, status="当前画面状态", facts=Facts(where="地图12 x=3 y=5")
+        scene=TaskScene.WALK,
+        step=1,
+        place={"map_id": 12, "x": 3, "y": 5},
+        facts=Facts(overlay="none"),
     )
     return EpisodeRunState(
         run_id="r",
@@ -110,12 +136,29 @@ def test_decompose_context_lists_episode_index_lines_not_full_text(tmp_path: Pat
 
     text = "\n".join(context_lines(request))
 
-    assert state.ep_ctx.episode_index[0].index_line() in text
+    assert index_text(state.ep_ctx.episode_index[0]) in text
     assert "前局第二句" not in text and "data:image" not in text
     assert "task 第二句仍需完整读取" in text
     assert "## 同目标的过往局(背景,不是本局完成的证据)" in text
     empty = request.model_copy(update={"episode_index": []})
     assert "## 同目标的过往局" not in "\n".join(context_lines(empty))
+
+
+def test_agent_revisions_respect_remaining_decomposition_budget(tmp_path: Path) -> None:
+    fake = build_fake(tmp_path, checkpoints=False)
+    decomposer, reviewer = _Decomposer(), _RevisingReviewer()
+    deps = fake.run_rt.episode
+    deps.decomposer = decomposer
+    deps.reviewer = reviewer
+    reconfigure(fake.run_rt, budget={"max_decompositions": 2})
+
+    updates = plan_episode(_state(), Runtime(context=deps))
+
+    assert len(decomposer.requests) == 2
+    assert [request.human_note for request in decomposer.requests] == ["", "第一次修改"]
+    assert [request.max_agent_rounds for request in reviewer.requests] == [1, 1]
+    assert len(updates["tasks"]) == 1
+    assert updates["decompositions_used"] == 2
 
 
 def test_plan_and_judge_at_episode_level_read_the_same_task_memories(tmp_path: Path) -> None:
@@ -144,9 +187,9 @@ def test_episode_judge_request_carries_knowledge_observation_and_index(tmp_path:
     assert judge.knowledge == "\n\n".join(plan.knowledge) == "知识甲\n\n知识乙"
     assert judge.observation is state.ep_ctx.observation
     assert blocks[-2].startswith("## 同目标的过往局(背景,不是本局完成的证据)")
-    assert state.ep_ctx.episode_index[0].index_line() in blocks[-2]
+    assert index_text(state.ep_ctx.episode_index[0]) in blocks[-2]
     assert "前局第二句" not in blocks[-2]
-    assert blocks[-1] == "## 当前画面\n" + state.ep_ctx.observation.render()
+    assert blocks[-1] == "## 当前画面\n" + observation_text(state.ep_ctx.observation)
     assert judge.knowledge in prompt and "地图12 x=3 y=5" in prompt
     assert "task 第二句仍需完整读取" in prompt and "data:image" not in prompt
 
@@ -157,7 +200,7 @@ def test_judge_memory_blocks_keep_the_contractual_order(tmp_path: Path) -> None:
     task = Task(task_id="t", goal="任务", success_criteria="c", max_steps=1)
     judge = judge.model_copy(
         update={
-            "task_table": [TaskEntry(task=task, round=1)],
+            "task_table": [TaskEntry(entry_id=(task).task_id, task=task, round=1)],
             "episode_memories": state.ep_ctx.episode_index,
             "task_index": state.ep_ctx.task_memories,
         }
@@ -171,3 +214,27 @@ def test_judge_memory_blocks_keep_the_contractual_order(tmp_path: Path) -> None:
     assert headers[3].startswith("## 本局内此前同目标的 task")
     assert headers[4] == "## 同目标的过往局(背景,不是本局完成的证据)"
     assert headers[5] == "## 当前画面"
+
+
+def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
+    """Render the judgement materials through the gateway."""
+    return (
+        PromptGateway(None)
+        .render("judge_success", JudgeParams.model_validate(req.model_dump(mode="json")))
+        .text
+    )
+
+
+def memory_blocks(req: FromHarnessToBrainToolJudgeReq) -> list[str]:
+    """Keep the independent judgement material blocks and their order."""
+    return PromptGateway(None).render_history(
+        "judge_success", JudgeParams.model_validate(req.model_dump(mode="json"))
+    )
+
+
+def context_lines(req: FromHarnessToBrainToolDecomposeReq) -> list[str]:
+    """Keep decomposition material blocks and their order."""
+    params = DecomposeParams.model_validate(
+        {**req.model_dump(mode="json"), "terrain_meanings": TERRAIN_MEANING}
+    )
+    return PromptGateway(None).render_history("decompose", params)

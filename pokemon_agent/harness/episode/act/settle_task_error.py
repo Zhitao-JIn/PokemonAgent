@@ -43,6 +43,7 @@ def settle_task_error(
     if not isinstance(exc, AgentError):
         raise exc
     return TaskOutput(
+        entry_id=task_input.entry_id,
         task_id=task_id,
         termination=Termination.ERROR,
         judge_reason="这个 task 抛错，未经判定",

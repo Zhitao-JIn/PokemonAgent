@@ -1,0 +1,32 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：在野生战斗里选 RUN 逃跑
+终止类别：goal_done；判定依据：对话框里出现了逃跑成功文字“Got away safe”，符合逃跑成功的证据。
+累计 1 局，其中 1 局成功，使用 3 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_battle_run_attempt｜在野生战斗里选 RUN 逃跑｜completed｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_battle_run_attempt-ep1) 目标：在野生战斗里选 RUN 逃跑（成功，goal_done，2 个 task / 3 键）
+  结论  达成 goal_done：战斗选单是固定 2×2 布局（FIGHT/PKMN 上排、ITEM/RUN 下排），RUN 在右下角，right+down 两键即到，再按 a 一键确认；全程无多余按键，也没有走错方向。
+  总结  在野生战斗（BULBASAUR L5 对 RATTATA L3）中，从 FIGHT 光标出发，按 right 移到 PKMN 列、再按 down 落到 RUN，最后按 a 确认，共 3 键完成逃跑，对话框出现 "Got away safe"。
+  可复用经验  战斗选单固定 2 行×2 列：FIGHT(1,1)、PKMN(1,2)、ITEM(2,1)、RUN(2,2)；上/下换行、左/右换列。；从 FIGHT 到 RUN 的最短路径是 right 再 down（或 down 再 right），两键即可。；每按一键后核对 option_layout 的光标行列与屏幕 ▶ 位置，确认移动生效再按下一键。；若光标已在 RUN 上，直接按 a，不要多余移动。；逃跑成功判据：叠加层由 choice 转为 dialog 且出现 "Got away safe"。；逃跑前可核对 my_hp/foe_hp 与等级，判断是否值得逃跑。
+  关键决策  step0 按 right 而非 down：先横移到 PKMN 列，符合最短路径的第一步。；step1 按 down 从 PKMN 落到 RUN，直接命中目标格，未多按。；step2 光标已在 RUN 上，直接按 a 确认，一步触发逃跑判定。
+  失败点  本局无负样本；潜在风险是把 2×2 布局记错（例如以为 RUN 在左下），会多按或走错列。；未核对 option_layout 就连续按键，可能因光标未移动而误确认其他选项。
+  质量分 0.90（理由：两个 task 均为正样本，前后帧的 option_layout、光标行列、叠加层变化与对话文本齐全，路径可复现；但任务极短、无负样本，故略低于满分。）
+  标签  battle、run、menu_navigation、choice_overlay、shortest_path
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

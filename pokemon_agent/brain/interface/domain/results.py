@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from .action import Action
 from .decomposition import Decomposition
 from .episode_summary import EpisodeSummary
+from .judgement import Judgement
 from .model_call import ModelCall
 from .run_plan import RunPlan
 from .run_summary import RunSummary
@@ -56,24 +57,10 @@ class ChooseResult(_ResultBase):
     )
 
 
-class JudgeResult(_ResultBase):
-    """**`judge()` 的产物**：任务达成了没有、依据是什么、花了什么。
+class JudgeResult(Judgement, _ResultBase):
+    """判定结论与本次尝试的账；失败抛 JudgeAttemptFailed。"""
 
-    失败时**抛 `JudgeAttemptFailed`**（不再静默返回 `done=False`）——
-    那条旧契约让"判定器坏了"与"真的没达成"在数据里分不开。
-    """
-
-    done: bool = Field(description="任务达成了没有")
-    interrupted: bool = Field(
-        default=False,
-        description="模型判这件事被意外打断了"
-        "（输出里有布尔 `interrupted` 且 `done` 为假时才可能为真）",
-    )
-    why: str = Field(
-        description="看到了什么证据（或为什么证据不足）。"
-        "每一个 True 都得说得出依据，否则成功率就是一个无法证伪的数字"
-    )
-    calls: list[ModelCall] = Field(default_factory=list, description="这次判定的账，恰好一条")
+    calls: list[ModelCall] = Field(default_factory=list)
 
 
 class PlanResult(_ResultBase):

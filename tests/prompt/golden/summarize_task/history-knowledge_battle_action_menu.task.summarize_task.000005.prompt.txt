@@ -1,0 +1,390 @@
+你在整理一只玩神奇宝贝的 agent 的**单次 task 执行记录**。
+
+一个 task 是一段有预算的按键执行（goal：若进入战斗，把光标移到 FIGHT 并确认（若已在行动菜单则直接确认）；task_id：plan-eval-knowledge_battle_action_menu-1-t3）。下面是执行期内
+逐键记录的情景记忆（"当时看到 → 做了 → 之后变成"）。每条都带标注：`【正样本】` 是推进了
+目标的一键，`【负样本】` 是没有效果或偏离目标的一键，标注后面是理由——两类都要用，
+负样本是 `failure_points` 的主要来源。结果：目标未达成（budget_exhausted）；判定依据：机械判停：budget_exhausted；最后一帧对话框仍是「Go! BULBASAUR!」，尚未出现 FIGHT/BAG/POKEMON/RUN 选项菜单，光标也不在 FIGHT 上
+（用了 10 / 10 键）。
+
+## 第 0 条 【正样本】按 a 后四邻从可通行变为 #（进入战斗场景），场景为 battle，推进了进入战斗的目标
+(eval-knowledge_battle_action_menu-ep2, step=3) 当时看到：
+  场景        battle
+  叠加层      none
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 . 南 G 西 . 东 G
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+  做了  a
+  之后变成：
+  场景        battle
+  叠加层      none
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 # 南 # 西 # 东 #
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+
+## 第 1 条 【正样本】等待场景变为 battle，前后快照一致且场景确为 battle，符合目标状态
+(eval-knowledge_battle_action_menu-ep2, step=4) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  script:wait_until_scene(scene=battle, timeout_s=10)
+  之后变成：
+  场景        battle
+  叠加层      none
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 # 南 # 西 # 东 #
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+
+## 第 2 条 【正样本】按 a 后叠加层从 none 变为 dialog，出现对话框，推进战斗开场对话
+(eval-knowledge_battle_action_menu-ep2, step=5) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  a
+  之后变成：
+  场景        battle
+  叠加层      dialog
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 # 南 # 西 . 东 #
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+  屏幕        
+                          ·······
+                          ·······
+                          ·······
+                          ·······
+                          ·······
+                          ·······
+                          ·······
+              
+               ·······
+               ·······
+               ·······
+               ·······
+              ┌──────────────────┐
+              │                  │
+              │                  │
+              │                  │
+              │                  │
+              └──────────────────┘
+
+## 第 3 条 【正样本】按 a 后对话框内容推进（出现文字区域），对话继续
+(eval-knowledge_battle_action_menu-ep2, step=6) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  a
+  之后变成：
+  场景        battle
+  叠加层      dialog
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 # 南 # 西 . 东 #
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+  屏幕        
+                          ·······
+                          ·······
+                          ·······
+                          ·······
+                          ·······
+               ·······    ·······
+               ·······    ·······
+               ·······
+               ·······
+               ·······
+               ·······
+               ·······
+              ┌──────────────────┐
+              │                  │
+              │                  │
+              │                  │
+              │                  │
+              └──────────────────┘
+
+## 第 4 条 【正样本】按 a 后对话变为 Wild RATTATA app，战斗开场文本推进
+(eval-knowledge_battle_action_menu-ep2, step=7) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  a
+  之后变成：
+  场景        battle
+  叠加层      dialog
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 # 南 # 西 . 东 #
+  对话        Wild RATTATA app
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+  屏幕        
+                          ·······
+                          ·······
+                          ·······
+                          ·······
+                          ·······
+               ·······    ·······
+               ·······    ·······
+               ·······
+               ·······
+               ·······
+               ·······          ·
+               ······· └────────┘
+              ┌──────────────────┐
+              │                  │
+              │Wild RATTATA      │
+              │                  │
+              │app               │
+              └──────────────────┘
+
+## 第 5 条 【正样本】按 a 后对话变为 Wild RATTATA appeared!，开场文本继续推进
+(eval-knowledge_battle_action_menu-ep2, step=8) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  a
+  之后变成：
+  场景        battle
+  叠加层      dialog
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 # 南 # 西 . 东 #
+  对话        Wild RATTATA appeared!
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+  屏幕        
+                          ·······
+                          ·······
+                          ·······
+                          ·······
+                          ·······
+               ·······    ·······
+               ·······    ·······
+               ·······
+               ·······
+               ·······
+               ·······          ·
+               ······· └────────┘
+              ┌──────────────────┐
+              │                  │
+              │Wild RATTATA      │
+              │                  │
+              │appeared!         │
+              └──────────────────┘
+
+## 第 6 条 【正样本】按 a 后出现 RATTATA 血条界面，战斗画面推进
+(eval-knowledge_battle_action_menu-ep2, step=9) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  a
+  之后变成：
+  场景        battle
+  叠加层      dialog
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 # 南 # 西 # 东 #
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+  屏幕        
+               RATTATA    ·······
+                  :L3      ·······
+               ·HP:[██████] ·······
+               ·────────│ ·······
+                          ·······
+              ···         ·······
+              ···         ·······
+              ···
+              ···
+              ···
+              ···
+              ···
+              ┌──────────────────┐
+              │                  │
+              │                  │
+              │                  │
+              │                  │
+              └──────────────────┘
+
+## 第 7 条 【正样本】按 a 后出现 Go! BULBASAUR! 及双方血条，战斗正式开始推进
+(eval-knowledge_battle_action_menu-ep2, step=10) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  a
+  之后变成：
+  场景        battle
+  叠加层      dialog
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 # 南 # 西 # 东 #
+  对话        Go! BULBASAUR!
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+  屏幕        
+               RATTATA    ·······
+                  :L3      ·······
+               ·HP:[██████] ·······
+               ·────────│ ·······
+                          ·······
+                          ·······
+                          ·······
+                        BULBASAUR
+                            :L5
+                        HP:[██████]
+                          20/ 20·
+                       └────────┘
+              ┌──────────────────┐
+              │                  │
+              │Go! BULBASAUR!    │
+              │                  │
+              │                  │
+              └──────────────────┘
+
+## 第 8 条 【负样本】按 a 前后快照完全相同（对话仍为 Go! BULBASAUR!），动作未改变任何状态，对目标无贡献
+(eval-knowledge_battle_action_menu-ep2, step=11) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  a
+  之后变成：
+  场景        battle
+  叠加层      dialog
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 # 南 # 西 # 东 #
+  对话        Go! BULBASAUR!
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+  屏幕        
+               RATTATA    ·······
+                  :L3      ·······
+               ·HP:[██████] ·······
+               ·────────│ ·······
+                          ·······
+                          ·······
+                          ·······
+                        BULBASAUR
+                            :L5
+                        HP:[██████]
+                          20/ 20·
+                       └────────┘
+              ┌──────────────────┐
+              │                  │
+              │Go! BULBASAUR!    │
+              │                  │
+              │                  │
+              └──────────────────┘
+
+## 第 9 条 【正样本】按 a 后画面出现 BULBASAUR 出场动画（精灵球），战斗推进
+(eval-knowledge_battle_action_menu-ep2, step=12) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  a
+  之后变成：
+  场景        battle
+  叠加层      dialog
+  位置        全局坐标 地图12 x=12 y=22
+  地图        12
+  朝向        south
+  四邻        北 # 南 # 西 . 东 #
+  对话        Go! BULBASAUR!
+  my_name     BULBASAUR
+  my_level    5
+  my_hp       20/20
+  foe_name    RATTATA
+  foe_level   3
+  foe_hp      15/15
+  foe_status  ok
+  my_status   ok
+  屏幕        
+               RATTATA    ·······
+                  :L3      ·······
+               ·HP:[██████] ·······
+               ·────────│ ·······
+                          ·······
+               ·······    ·······
+               ·······    ·······
+               ·······  BULBASAUR
+               ·······      :L5
+               ·······  HP:[██████]
+               ·······    20/ 20·
+               ······· └────────┘
+              ┌──────────────────┐
+              │                  │
+              │Go! BULBASAUR!    │
+              │                  │
+              │                  │
+              └──────────────────┘
+
+## 你的任务
+
+把**这一次 task 的前后变化**总结成一条 JSON 记忆，供上一层的 episode 总结与以后
+的局检索复用。要求：
+
+- `summary`：这一次 task 从什么状态走到什么状态、结果如何。**具体到字段/坐标/对话内容**，
+  不写空话。
+- `reason`：一两句话的**结论说明**——成了靠的是哪几键；没成卡在哪、为什么（结合「结果」
+  里的终止类别：`goal_done` 达成 / `world_ended` 世界结束 / `stalled` 原地打转 /
+  `budget_exhausted` 键数用尽 / `interrupted` 半路被意外打断，比如遇敌）。「结果」里的**判定依据**是判定员当时为什么判停的理由，可以参考，
+  但要写你自己看记录得出的结论，不要照抄它。上一层会直接读这句话决定下一步怎么拆。
+- `reusable_patterns`：以后遇到同类目标可以直接照做的做法。
+- `critical_decisions`：哪几步是转折（走对了或走错了）。
+- `failure_points`：哪一步浪费了键数、为什么。
+- `quality_score`（0.0–1.0）与 `quality_rationale`：这份记录对以后类似 task 的参考价值。
+  记录空洞、前后无变化时相应压低，`quality_rationale` 里说明原因。
+- `tags`：几个词。
+
+只输出一个 JSON 对象，字段同 episode 蒸馏契约（summary / reason / reusable_patterns /
+critical_decisions / failure_points / quality_score / quality_rationale /
+applicable_scenes / tags / markdown）。

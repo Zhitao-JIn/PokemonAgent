@@ -1,13 +1,15 @@
 """快照的互斥表、记忆帧与文本渲染；全部使用内存中的请求。"""
 
+import json
 from typing import Literal
 
 import pytest
+from _harness_fixtures.prompt_text import index_text
 from _review_context import review_context
 from pydantic import ValidationError
 
 from pokemon_agent.brain import Goal, Task
-from pokemon_agent.harness.review_render import render_context
+from pokemon_agent.reviewer.hub.context import context_sections, context_text
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolJudgeReq,
@@ -65,9 +67,10 @@ def _brain_input(kind: str) -> BrainInput:
         _episode("ep3", None, None),
     ]
     tasks = [_task("t1", FRAME_A, FRAME_C), _task("t2", FRAME_A, FRAME_B), _task("t3", None, None)]
-    observation = TaskObservation(step=0, scene=TaskScene.WALK, status="RAM现状")
+    observation = TaskObservation(facts={"overlay": "none"}, step=0, scene=TaskScene.WALK)
     if kind == "plan":
         return FromHarnessToBrainToolPlanOnceReq(
+            run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
             run_id="r1",
             plan=[GoalEntry(task=table_task)],
             details=episodes,
@@ -89,7 +92,7 @@ def _brain_input(kind: str) -> BrainInput:
             goal=goal,
             observation=observation,
             task_memories=tasks,
-            task_table=[TaskEntry(task=table_task, round=1)],
+            task_table=[TaskEntry(entry_id=(table_task).task_id, task=table_task, round=1)],
             episode_index=[_episode("older", FRAME_B, FRAME_C)],
             max_tasks=2,
         )
@@ -98,7 +101,9 @@ def _brain_input(kind: str) -> BrainInput:
         observation=observation,
         episode_memories=episodes if kind == "judge_run" else [],
         task_memories=tasks if kind == "judge_episode" else [],
-        task_table=[] if kind == "judge_run" else [TaskEntry(task=table_task, round=1)],
+        task_table=[]
+        if kind == "judge_run"
+        else [TaskEntry(entry_id=(table_task).task_id, task=table_task, round=1)],
         episode_index=[] if kind == "judge_run" else [_episode("older", FRAME_B, FRAME_C)],
     )
 
@@ -113,7 +118,7 @@ def _context(kind: str) -> ReviewContext:
         episode_id="r1" if is_run else "ep1",
         brain_input=req,
         goals=[GoalEntry(task=task)] if is_run else None,
-        tasks=None if is_run else [TaskEntry(task=task, round=1)],
+        tasks=None if is_run else [TaskEntry(entry_id=(task).task_id, task=task, round=1)],
         step=4,
         fail_streak=2,
     )
@@ -153,6 +158,7 @@ def test_frames_of_dedups_and_labels(kind: str) -> None:
 
 def test_frames_of_keeps_later_unique_frames_and_has_no_image_cap() -> None:
     req = FromHarnessToBrainToolPlanOnceReq(
+        run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
         run_id="r1",
         plan=[],
         max_push=2,
@@ -169,16 +175,16 @@ def test_render_context_sections_and_dedupe(kind: str) -> None:
     ctx = _context(kind)
     original = ctx.model_dump_json()
 
-    text = render_context(ctx)
+    text = "\n\n".join(context_text(ctx, section) for section in context_sections(ctx))
 
     for section in ("大脑输入", "目标表", "任务表", "计数"):
         assert text.count(f"## {section}") == 1
     assert "data:image" not in text
     assert "base64" not in text
     assert text.count("唯一表目标") == 1
-    assert "（图 3 张，用 brain-frames 查看）" in text
-    assert "first_frame" not in text and "last_frame" not in text
-    assert "step: 4" in text and "fail_streak: 2" in text
+    assert "图 3 张，用 brain-frames 查看" in text
+    assert "[frame omitted]" in text
+    assert '"step": 4' in text and '"fail_streak": 2' in text
     assert ctx.model_dump_json() == original
     assert ReviewContext.model_validate_json(original).model_dump(mode="json") == ctx.model_dump(
         mode="json"
@@ -189,19 +195,19 @@ def test_render_context_sections_and_dedupe(kind: str) -> None:
 def test_render_context_follows_brain_scope_fields(kind: str) -> None:
     ctx = _context(kind)
 
-    text = render_context(ctx)
+    text = "\n\n".join(context_text(ctx, section) for section in context_sections(ctx))
 
     if kind in {"plan", "judge_run"}:
         assert "ep1 全文" in text and "ep2 全文" in text
     else:
         assert "t1 全文" in text and "t2 全文" in text
-        assert ctx.brain_input.episode_index[0].index_line() in text
+        assert index_text(ctx.brain_input.episode_index[0]) in text
         assert "older 全文" not in text
     if kind == "plan":
-        assert "details:" in text
-        assert ctx.brain_input.run_index[0].index_line() in text
-        assert "plan:" not in text
-    assert "task_table:" not in text
+        assert '"details":' in text
+        assert index_text(ctx.brain_input.run_index[0]) in text
+        assert '"plan":' not in text
+    assert '"task_table":' not in text
 
 
 @pytest.mark.parametrize(
@@ -211,3 +217,62 @@ def test_every_reviewer_request_requires_context(request_model: type) -> None:
     assert request_model.model_fields["context"].is_required()
     with pytest.raises(ValidationError, match="context"):
         request_model.model_validate({})
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "结束了。后面还有。",
+        "",
+        "  ",
+        "字" * 81 + "。",
+        "首句\n后文",
+        "3.14",
+        "首句！后文",
+        "首句\r\n后文",
+    ],
+)
+@pytest.mark.parametrize("termination", ["", "goal_done", "budget_exhausted"])
+def test_reviewer_index_lines_are_byte_equal_to_the_memory_methods(
+    summary: str, termination: str
+) -> None:
+    memories = [
+        _episode("ep1", None, None),
+        _task("t1", None, None),
+        RunMemory(
+            run_id="r1",
+            run_goal="总目标",
+            episodes=2,
+            succeeded=1,
+            summary="样本",
+            quality_score=0.5,
+            quality_rationale="示例",
+        ),
+    ]
+    memories = [
+        item.model_copy(update={"summary": summary, "termination": termination})
+        for item in memories
+    ]
+    req = FromHarnessToBrainToolJudgeReq(
+        goal=Goal(goal="当前目标", criteria="已到达"),
+        episode_index=[memories[0]],
+        task_index=[memories[1]],
+        run_index=[memories[2]],
+    )
+    ctx = ReviewContext(
+        layer="task",
+        task_id="t1",
+        run_id="r1",
+        episode_id="ep1",
+        brain_input=req,
+        step=0,
+        fail_streak=0,
+    )
+    original = req.model_dump_json()
+
+    text = context_sections(ctx)["大脑输入"]
+    rendered = json.loads(text.rsplit("\n图 ", 1)[0])
+
+    for field, memory in zip(("episode_index", "task_index", "run_index"), memories, strict=True):
+        assert rendered[field] == [index_text(memory)]
+    assert req.model_dump_json() == original

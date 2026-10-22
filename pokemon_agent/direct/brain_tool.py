@@ -26,7 +26,7 @@
 **重试的分工**（2026-09-13 定稿，取代此前的"a+c 方案"）：
 
     brain  ──抛 AttemptFailed（带这一次的账）──▶  tool
-    tool   ──重试 BRAIN_MAX_ATTEMPTS 次──▶  成功：resp 带整条账
+    tool   ──重试 retry.brain_max_attempts 次──▶  成功：resp 带整条账
                                          耗尽：抛 MaxRetriesExceeded（带整条账 + source）
     harness ──except MaxRetriesExceeded──▶ 决定怎么收场（失败这一局 / 路由 review / …）
 
@@ -50,7 +50,10 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TypeVar, cast
+from pathlib import Path
+from typing import Literal, TypeVar, cast
+
+from pydantic import BaseModel
 
 from pokemon_agent.backoff import backoff_seconds
 from pokemon_agent.brain import (
@@ -69,24 +72,24 @@ from pokemon_agent.brain.errors import (
     ProviderRejected,
     ToolTimeout,
 )
-from pokemon_agent.config import (
-    BRAIN_MAX_ATTEMPTS,
-    MAX_SEGMENTS,
-    MAX_TIMES,
-    PLAN_MAX_TOKENS,
-    PLAN_THINKING,
-    PROVIDER_JSON_MODE,
-    SCOPE_IMAGE_CAP,
-)
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.budget_provider import BudgetProvider, TimeoutProvider
-from pokemon_agent.direct.prompts import decompose as decompose_prompt
-from pokemon_agent.direct.prompts import run_plan as run_plan_prompt
-from pokemon_agent.direct.prompts import summarize as summarize_prompt
-from pokemon_agent.direct.prompts import summarize_run as summarize_run_prompt
-from pokemon_agent.direct.prompts import summarize_task as summarize_task_prompt
-from pokemon_agent.direct.prompts import verify as verify_prompt
+from pokemon_agent.direct.call_policy import CallPolicy
+from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
+from pokemon_agent.prompt import (
+    DecideActionParams,
+    DecideActionRetryParams,
+    DecomposeParams,
+    JudgeParams,
+    PromptGateway,
+    RenderedPrompt,
+    RunPlanParams,
+    SummarizeParams,
+    SummarizeRunParams,
+    SummarizeTaskParams,
+    VerifyParams,
+)
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
@@ -115,14 +118,21 @@ from pokemon_agent.schemas.memory import (
     RunMemory,
     TaskMemory,
 )
+from pokemon_agent.settings import (
+    ActionLimitsConfig,
+    ModelsConfig,
+    RequestTimeoutsConfig,
+    RetryConfig,
+)
 from pokemon_agent.world import (
     DIRECTION_KEYS,
     INTERACT_KEY,
+    TERRAIN_MEANING,
     ActionEntry,
 )
 
-from .prompts import decide_action as decide_action_prompt
-from .prompts import judge_success as judge_success_prompt
+BrainLink = Literal["text", "judge", "verify", "plan"]
+"""`BrainTool.build(links=…)` 可选的四条模型链路（对应配置文件 `models` 段的四个条目）。"""
 
 _Result = TypeVar("_Result")
 
@@ -209,53 +219,43 @@ class Planner:
         self,
         brain: BrainPort,
         *,
-        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        policy: CallPolicy,
         deadline: Deadline | None = None,
-        request_timeout_s: float = 45,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
-        self._max_attempts = max_attempts
+        self._prompt_gateway = prompt_gateway
+        self._policy = policy
         self._deadline = deadline
-        self._request_timeout_s = request_timeout_s
 
     def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
-        """run 级规划：拼 prompt + 重试循环（**原样重问**，无纠正说明）→ 打包整条账。
-
-        **prompt 在这里拼**（0913 定案）：`run_plan.build_prompt(req)`。
-
-        `goal_stack` / `history` 从 req 的素材渲成文本传下去——
-        **共用 `tools.prompts.run_plan` 的渲染函数**（`goals_lines` / `history_blocks`），
-        不另写一份：`run_plan.build_prompt()` 把行拼成整段塞进 prompt，
-        这里把同样的行原样交给 `Brain.plan(history=…)`（brain 的约定要求
-        "发生过什么"独立成块）。**分两份实现迟早漂移**，所以那层是唯一真源。
-
-        **两个参数名是 brain 的契约，装的东西已经换过**（0914 S2）：`goal_stack`
-        现在装的是**目标表的行**（表序 = 派发顺序，带状态），`history` 装的是
-        **记忆折出来的块**（局索引 + 详情 + 地图事实），不再是 trace 折的"每局一行"。
-        brain 侧签名一字未动——它收下的就是"已经渲染好的文本序列"，
-        渲染从哪来是调用方的事（这正是铁律 2 要的形状）。
-        """
-        prompt = run_plan_prompt.build_prompt(req)
-        goal_stack = run_plan_prompt.goals_lines(req.plan)
-        history = run_plan_prompt.history_blocks(req)
-        images = cap_images(collect_frames(req.details), SCOPE_IMAGE_CAP)
+        """渲染本轮规划并保留同源目标表与历史；重试保留全部调用账与版本戳。"""
+        params = RunPlanParams.model_validate(req.model_dump(mode="json"))
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "run_plan", params, [])
+        current_prompt = rendered_prompt
+        goal_stack = self._prompt_gateway.render_history("run_plan", params, part="goals")
+        history = self._prompt_gateway.render_history("run_plan", params)
+        images = cap_images(collect_frames(req.details), self._policy.image_cap)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.plan(
-                prompt=prompt,
+            nonlocal current_prompt
+            current_prompt = _retry_prompt(rendered_prompt, calls, self._prompt_gateway)
+            result = self._brain.plan(
+                prompt=current_prompt.text,
                 goal_stack=goal_stack,
                 history=history,
                 max_push=req.max_push,
                 images=images,
                 thinking=_thinking_after(calls),
             )
+            return validate_result(result, [e.status.value for e in req.plan])
 
         result, calls = _attempt_loop(
             "plan",
             attempt,
-            max_attempts=self._max_attempts,
+            policy=self._policy,
             deadline=self._deadline,
-            request_timeout_s=self._request_timeout_s,
+            rendered_prompt=lambda: current_prompt,
         )
         return FromHarnessToBrainToolPlanOnceResp(plan=result.plan, calls=calls)
 
@@ -270,48 +270,66 @@ class Decomposer:
         self,
         brain: BrainPort,
         *,
-        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        policy: CallPolicy,
         deadline: Deadline | None = None,
-        request_timeout_s: float = 45,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
-        self._max_attempts = max_attempts
+        self._prompt_gateway = prompt_gateway
+        self._policy = policy
         self._deadline = deadline
-        self._request_timeout_s = request_timeout_s
 
     def decompose(
         self, req: FromHarnessToBrainToolDecomposeReq
     ) -> FromHarnessToBrainToolDecomposeResp:
-        """拼 prompt + 重试循环（原样重问）调 `Brain.decompose()` → 打包整条账。
-
-        `context` 与 prompt 里的素材段同源（`decompose.context_lines`）。
-        """
-        prompt = decompose_prompt.build_prompt(req)
+        """以原始字段渲染拆解与 context；结构校验失败重问，每次尝试在收编后盖章。"""
+        params = DecomposeParams.model_validate(
+            {**req.model_dump(mode="json"), "terrain_meanings": TERRAIN_MEANING}
+        )
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "decompose", params, [])
+        current_prompt = rendered_prompt
         goal = f"{req.goal.goal}（判据：{req.goal.criteria}）"
-        context = decompose_prompt.context_lines(req)
-        images = cap_images(collect_frames(req.task_memories), SCOPE_IMAGE_CAP)
+        context = self._prompt_gateway.render_history("decompose", params)
+        images = cap_images(collect_frames(req.task_memories), self._policy.image_cap)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.decompose(
-                prompt=prompt,
+            nonlocal current_prompt
+            current_prompt = _retry_prompt(rendered_prompt, calls, self._prompt_gateway)
+            result = self._brain.decompose(
+                prompt=current_prompt.text,
                 goal=goal,
                 context=context,
                 max_tasks=req.max_tasks,
                 images=images,
                 thinking=_thinking_after(calls),
             )
+            return validate_result(result, [e.status.value for e in req.task_table])
 
         result, calls = _attempt_loop(
             "decompose",
             attempt,
-            max_attempts=self._max_attempts,
+            policy=self._policy,
             deadline=self._deadline,
-            request_timeout_s=self._request_timeout_s,
+            rendered_prompt=lambda: current_prompt,
         )
         return FromHarnessToBrainToolDecomposeResp(decomposition=result.decomposition, calls=calls)
 
 
 # ---- 决策 ----
+
+
+def decide_prompt_params(
+    req: FromHarnessToBrainToolChooseOnceReq, *, max_segments: int
+) -> DecideActionParams:
+    """转换决策原料；调用方保证段数上限为正。"""
+    assert max_segments > 0
+    data = req.model_dump(mode="json")
+    data["observation"] = data.pop("obs")
+    data.update(
+        max_segments=max_segments,
+        terrain_meanings=TERRAIN_MEANING,
+    )
+    return DecideActionParams.model_validate(data)
 
 
 class Chooser:
@@ -322,30 +340,24 @@ class Chooser:
         self,
         brain: BrainPort,
         *,
-        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        policy: CallPolicy,
+        action_limits: ActionLimitsConfig,
         deadline: Deadline | None = None,
-        request_timeout_s: float = 25,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
-        self._max_attempts = max_attempts
+        self._prompt_gateway = prompt_gateway
+        self._policy = policy
+        self._limits = action_limits
         self._deadline = deadline
-        self._request_timeout_s = request_timeout_s
 
     def choose(
         self, req: FromHarnessToBrainToolChooseOnceReq
     ) -> FromHarnessToBrainToolChooseOnceResp:
-        """决策：拼 prompt → 重试循环调 `Brain.choose()` → 规范化 → 打包整条账。
-
-        **prompt 在这里拼**（0913 定案）：harness 只装素材，本层入口调
-        `decide_action.build_prompt(req)`——"谁问模型，谁把 req 变成 prompt"，
-        拼装只剩这一个调用点，harness 不再有"拼好回填"那一半。
-
-        **唯一会带"上一次失败"信息的链路**：解析类失败（`ParseFailure` 族）的
-        下一次尝试把上次的失败原因与原始输出拼进 prompt（`retry_prompt`），
-        重试携带信息增量；**传输失败原样重问**——模型根本没收到题，没什么可
-        "纠正"的（0915 分叉，取代无条件叠加）。
-        """
-        base_prompt = decide_action_prompt.build_prompt(req)
+        """渲染决策并执行解析或传输重试；返回规范化动作及全部调用账。"""
+        params = decide_prompt_params(req, max_segments=self._limits.max_segments)
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "decide_action", params, [])
+        current_prompt = rendered_prompt
         # **images 在这里拼**（与 prompt 同一个归属："谁问模型，谁把 req 变成
         # 请求"），素材**不另开通道**：就是 `$memories` 段落拼装出来的那批帧
         # ——`dedup_snapshots()` 与 `render_sequence()` 是同一件事的图片版/
@@ -359,9 +371,10 @@ class Chooser:
         ]
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
-            prompt = base_prompt if not calls else _retry_prompt(base_prompt, calls)
+            nonlocal current_prompt
+            current_prompt = _retry_prompt(rendered_prompt, calls, self._prompt_gateway)
             return self._brain.choose(
-                prompt=prompt,
+                prompt=current_prompt.text,
                 keys=list(req.space.names),
                 images=images,
                 scripts=scripts,
@@ -370,9 +383,9 @@ class Chooser:
         result, calls = _attempt_loop(
             "choose",
             attempt,
-            max_attempts=self._max_attempts,
+            policy=self._policy,
             deadline=self._deadline,
-            request_timeout_s=self._request_timeout_s,
+            rendered_prompt=lambda: current_prompt,
         )
         return FromHarnessToBrainToolChooseOnceResp(
             action=self._normalize(result.action),
@@ -393,8 +406,8 @@ class Chooser:
         3. **链尾允许一个 `a`**：链尾那一帧本来就会被感知，`a` 打开的对话框正好
            出现在这一帧，证据没有丢。所以"走过去再按一下"能一次决策做完。
 
-        上限（`MAX_SEGMENTS`/`MAX_TIMES`/``）也在这里校验——
-        它们住在顶层 config，prompt 与校验读同一个常量，不会自相矛盾。
+        上限（`action_limits.max_segments` / `max_times`）也在这里校验——
+        prompt 渲染与这里的校验读同一份配置，不会自相矛盾。
 
         **改写不留痕、也不上抛**（2026-09-13 删 `normalized`）：规则 1 施加在
         "连按 `a`"这种**本就没有意义的写法**上，改写的结果与模型原意等价——
@@ -413,16 +426,16 @@ class Chooser:
         for index, segment in enumerate(action.sequence, start=1):
             name, times = segment.name, segment.times
 
-            if times > MAX_TIMES:
-                raise _illegal(f"segment {index}: times {times} > {MAX_TIMES}")
+            if times > self._limits.max_times:
+                raise _illegal(f"segment {index}: times {times} > {self._limits.max_times}")
 
             if name == INTERACT_KEY and times != 1:
                 times = 1
 
             segments.append(ActionSegment(name=name, times=times))
 
-        if len(segments) > MAX_SEGMENTS:
-            raise _illegal(f"{len(segments)} segments > {MAX_SEGMENTS}")
+        if len(segments) > self._limits.max_segments:
+            raise _illegal(f"{len(segments)} segments > {self._limits.max_segments}")
 
         if len(segments) > 1:
             body_bad = [s.name for s in segments[:-1] if s.name not in DIRECTION_KEYS]
@@ -452,31 +465,14 @@ def _signature(entry: ActionEntry) -> ScriptSignature:
 
 
 class Reflector:
-    """`ReflectPort` 的实现：反思的信封翻译器（本链路**不调模型**，无重试循环）。"""
-
-    def __init__(self, brain: BrainPort, *, max_attempts: int = BRAIN_MAX_ATTEMPTS) -> None:
-        self._brain = brain
-        self._max_attempts = max_attempts
+    """`ReflectPort` 的实现：把一次操作的两帧观测装成 `ActMemory`（本链路**不调模型**）。"""
 
     def reflect(self, req: FromHarnessToBrainToolReflectReq) -> FromHarnessToBrainToolReflectResp:
-        """反思：渲染两帧 → 调 `Brain.reflect()` → 用 `Reflection` + 坐标组装 `ActMemory`。
+        """用两帧结构化观测组装记忆，不调用模型或网关。
 
-        **本链路不调模型**（`Brain.reflect` 是纯函数），所以**没有重试循环**——
-        它没有"失败"这种中间态可重试。
-
-        **`SNAPSHOT_BLIND` 的过滤在这里**（brain 不碰——那是存储策略）：
-        记忆里每一项都必须跨步骤成立，`known_objects`/`knowledge` 不成立。
+        前置：请求提供两帧任务观测和本步动作、坐标。
+        后置：保留快照与结果，仅剥离 SNAPSHOT_BLIND 中的检索字段；请求不变。
         """
-        before = _render_observation(_blind(req.before))
-        after = _render_observation(_blind(req.after))
-
-        self._brain.reflect(
-            prompt="",
-            before=before,
-            after=after,
-            action_text=req.action.describe(),
-        )
-
         entry = ActMemory(
             before=ActMemory.Observation.model_validate(_blind(req.before).model_dump(mode="json")),
             action=req.action.describe(),
@@ -498,60 +494,51 @@ class Judger:
         self,
         brain: BrainPort,
         *,
-        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        policy: CallPolicy,
         deadline: Deadline | None = None,
-        request_timeout_s: float = 60,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
-        self._max_attempts = max_attempts
+        self._prompt_gateway = prompt_gateway
+        self._policy = policy
         self._deadline = deadline
-        self._request_timeout_s = request_timeout_s
 
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
-        """判定：拼 prompt + 重试循环调 `Brain.judge()`。
-
-        **prompt 在这里拼**（0913 定案）：`judge_success.build_prompt(req)`。
-        它可能抛 `KeyError`（模板占位符对不上，编程错误）——**本层不吞**，
-        原样上抛：这里没有重试能修好一个拼错的模板。
-
-        `goal`/`history` 按 brain 的约定**独立传一份渲染文本**——判定必须有
-        这三块，`Brain.judge()` 的签名是那个约定的具象。两份内容一致（prompt
-        里的 `$goal`/`$history` 就是这两样渲的），但**语义不同**：prompt 是
-        "怎么判"的规则成品，这两样是"判什么"的素材。
-
-        **images 也在这里拼**（0915 130 收权，与 choose 同一个归属："谁问模型，
-        谁把 req 变成请求"）：harness 只装素材（history），`dedup_snapshots(req.history)`
-        与 `$history` 段的 `render_sequence()` 是同一件事的图片版/文字版——
-        prompt 里读到的每一步和模型看到的画面逐帧同源。
-        无逐步历史时，取 task 或 episode 详情的首末帧并过帽；task 的 history 不过帽。
-
-        **重试是原样重问**——判定不像决策那样有"上次错在哪"可用来纠正。
-        重试耗尽抛 `MaxRetriesExceeded`，由 harness 的调用点决定怎么收场。
-        """
-        prompt = judge_success_prompt.build_prompt(req)
+        """渲染本层执行证据并判定；不允许的中断按解析失败重试，调用账保留版本戳。"""
+        params = JudgeParams.model_validate(req.model_dump(mode="json"))
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "judge_success", params, [])
+        prompt = rendered_prompt.text
         goal = req.goal.goal
-        history = [entry.render() for entry in req.history] + judge_success_prompt.memory_blocks(
-            req
-        )
+        history = self._prompt_gateway.render_history("judge_success", params)
         if not req.history:
             images = cap_images(
-                collect_frames([*req.task_memories, *req.episode_memories]), SCOPE_IMAGE_CAP
+                collect_frames([*req.task_memories, *req.episode_memories]), self._policy.image_cap
             )
         else:
             images, _snapshots = dedup_snapshots(list(req.history))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
-            return self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
+            result = self._brain.judge(prompt=prompt, goal=goal, history=history, images=images)
+            if result.interrupted and not req.allow_interrupt:
+                call = result.calls[-1].model_copy(
+                    update={
+                        "error_kind": "ParseFailure",
+                        "error": "本层不允许 interrupted",
+                        "payload": {**result.calls[-1].payload, "ok": "false"},
+                    }
+                )
+                raise AttemptFailed(call)
+            return result
 
         result, calls = _attempt_loop(
             "judge",
             attempt,
-            max_attempts=self._max_attempts,
+            policy=self._policy,
             deadline=self._deadline,
-            request_timeout_s=self._request_timeout_s,
+            rendered_prompt=rendered_prompt,
         )
         return FromHarnessToBrainToolJudgeResp(
-            done=result.done, interrupted=result.interrupted, why=result.why, calls=calls
+            decision=result.decision, why=result.why, calls=calls
         )
 
 
@@ -565,29 +552,21 @@ class Verifier:
         self,
         brain: BrainPort,
         *,
-        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        policy: CallPolicy,
         deadline: Deadline | None = None,
-        request_timeout_s: float = 60,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
-        self._max_attempts = max_attempts
+        self._prompt_gateway = prompt_gateway
+        self._policy = policy
         self._deadline = deadline
-        self._request_timeout_s = request_timeout_s
 
     def verify(self, req: FromHarnessToBrainToolVerifyReq) -> FromHarnessToBrainToolVerifyResp:
-        """校验：拼 prompt + 重试循环调 `Brain.verify()`。
-
-        这里把 `entries` 投影成"可对齐的素材"（`render()` 的文本）——
-        `verdicts.index` 因此能落回 `req.entries` 的下标。两级素材共用一条
-        链路（0923 192）：ActMemory 用 `render_sequence()` 去重相邻快照，
-        TaskMemory 各自独立渲染（一条一个 task，没有首尾相接这回事）。
-
-        **prompt 在这里拼**（0913 定案）：`verify.build_prompt(req)`。
-
-        **过滤仍归 harness**：本层只把裁决（正/负样本标记）原样带出去。
-        """
-        prompt = verify_prompt.build_prompt(req)
-        rendered = [entry.render() for entry in req.entries]
+        """校验完整素材；网关渲染 prompt 与逐条素材，所有尝试在收编后盖章。"""
+        params = VerifyParams.model_validate(req.model_dump(mode="json"))
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "verify", params, [])
+        prompt = rendered_prompt.text
+        records = self._prompt_gateway.render_history("verify", params)
         # **images 在这里拼**（0915 130 收权，与 judge/choose 同归属）：
         # harness 只装素材（entries），帧由本层对同一批 entries 取——
         # ActMemory 取 before/after 帧，TaskMemory 取首末代表帧；
@@ -597,7 +576,7 @@ class Verifier:
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.verify(
                 prompt=prompt,
-                entries=rendered,
+                entries=records,
                 goal=req.goal,
                 knowledge=req.knowledge,
                 images=images,
@@ -606,9 +585,9 @@ class Verifier:
         result, calls = _attempt_loop(
             "verify",
             attempt,
-            max_attempts=self._max_attempts,
+            policy=self._policy,
             deadline=self._deadline,
-            request_timeout_s=self._request_timeout_s,
+            rendered_prompt=rendered_prompt,
         )
         return FromHarnessToBrainToolVerifyResp(verdicts=result.verdicts, calls=calls)
 
@@ -643,35 +622,25 @@ class Summarizer:
         self,
         brain: BrainPort,
         *,
-        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        policy: CallPolicy,
         deadline: Deadline | None = None,
-        request_timeout_s: float = 60,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
-        self._max_attempts = max_attempts
+        self._prompt_gateway = prompt_gateway
+        self._policy = policy
         self._deadline = deadline
-        self._request_timeout_s = request_timeout_s
 
     def summarize(
         self, req: FromHarnessToBrainToolSummarizeReq
     ) -> FromHarnessToBrainToolSummarizeResp:
-        """蒸馏：拼 prompt + 重试循环调 `Brain.summarize()` → 用 `EpisodeSummary`
-        + harness 元信息组装 `EpisodeMemory`（存储形状的装配在 tool 层）。
-
-        **这里是 `EpisodeMemory` 两个来源的分界**：`result.summary`
-        （`EpisodeSummary`）是**派生正文**——LLM 从 `req.entries` 蒸出来的；
-        `req` 上那五个字段（`episode_id` / `run_id` / `goal` / `success` / `steps`）
-        是**来源章**——harness 从 run state 给的。大脑不知道自己在哪一局，
-        也没资格判定自己成没成，所以这五个字段只能在这里照抄、不能由它产出。
-
-        **prompt 在这里拼**（0913 定案）：`summarize.build_prompt(req)`。
-
-        `history` 由 `req.entries`（**已过滤的可信记录**）渲成文本传下去，
-        **含决策者的论据**（`reason=True`）——蒸馏要总结"为什么这么做"，
-        跟 `verify()` 的方向相反。结局（`success`/`steps`/`max_steps`）也一并传：
-        蒸馏要评价"这做法值不值得复用"，没有基准就没法评。
-        """
-        prompt = summarize_prompt.build_prompt(req)
+        """蒸馏本局素材并组装 EpisodeMemory；来源章由请求提供，每次尝试保留版本戳。"""
+        params = SummarizeParams.model_validate(
+            {**req.model_dump(mode="json"), "success": req.success}
+        )
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize", params, [])
+        prompt = rendered_prompt.text
+        records = self._prompt_gateway.render_history("summarize", params)
         # **images 在这里拼**（0923 189：原料是 TaskMemory，取各条的代表帧去重）
         seen: set[str] = set()
         images: list[str] = []
@@ -685,9 +654,7 @@ class Summarizer:
             return self._brain.summarize(
                 prompt=prompt,
                 goal=req.goal,
-                history=summarize_prompt.labeled_blocks(
-                    [entry.render() for entry in req.entries], req.verdicts
-                ),
+                history=records,
                 success=req.success,
                 steps=req.steps,
                 max_steps=req.max_steps,
@@ -697,15 +664,16 @@ class Summarizer:
         result, calls = _attempt_loop(
             "summarize_episode",
             attempt,
-            max_attempts=self._max_attempts,
+            policy=self._policy,
             deadline=self._deadline,
-            request_timeout_s=self._request_timeout_s,
+            rendered_prompt=rendered_prompt,
         )
         summary: EpisodeSummary = result.summary
         episode_memory = EpisodeMemory(
             episode_id=req.episode_id,
             run_id=req.run_id,
             run_goal=req.run_goal,
+            goal_id=req.goal_id,
             first_frame=req.entries[0].first_frame,
             last_frame=req.entries[-1].last_frame,
             goal=req.goal,
@@ -741,27 +709,30 @@ class RunSummarizer:
         self,
         brain: BrainPort,
         *,
-        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        policy: CallPolicy,
         deadline: Deadline | None = None,
-        request_timeout_s: float = 60,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
-        self._max_attempts = max_attempts
+        self._prompt_gateway = prompt_gateway
+        self._policy = policy
         self._deadline = deadline
-        self._request_timeout_s = request_timeout_s
 
     def summarize_run(
         self, req: FromHarnessToBrainToolSummarizeRunReq
     ) -> FromHarnessToBrainToolSummarizeRunResp:
-        """蒸馏最终目标表与局记忆；调用方保证局记忆非空，耗尽异常交给 harness 降级。"""
-        prompt = summarize_run_prompt.build_prompt(req)
-        images = cap_images(collect_frames(req.episode_memories), SCOPE_IMAGE_CAP)
+        """蒸馏最终目标表与局记忆；请求保证条目非空，所有尝试保留活动版本戳。"""
+        params = SummarizeRunParams.model_validate(req.model_dump(mode="json"))
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize_run", params, [])
+        prompt = rendered_prompt.text
+        records = self._prompt_gateway.render_history("summarize_run", params)
+        images = cap_images(collect_frames(req.episode_memories), self._policy.image_cap)
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.summarize_run(
                 prompt=prompt,
                 goal=req.run_goal,
-                history=summarize_run_prompt.history_blocks(req),
+                history=records,
                 success=req.success,
                 steps=req.episodes,
                 max_steps=req.max_episodes,
@@ -771,9 +742,9 @@ class RunSummarizer:
         result, calls = _attempt_loop(
             "summarize_run",
             attempt,
-            max_attempts=self._max_attempts,
+            policy=self._policy,
             deadline=self._deadline,
-            request_timeout_s=self._request_timeout_s,
+            rendered_prompt=rendered_prompt,
         )
         summary: RunSummary = result.summary
         memory = RunMemory(
@@ -797,37 +768,32 @@ class TaskSummarizer:
         self,
         brain: BrainPort,
         *,
-        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        policy: CallPolicy,
         deadline: Deadline | None = None,
-        request_timeout_s: float = 60,
+        prompt_gateway: PromptGateway,
     ) -> None:
         self._brain = brain
-        self._max_attempts = max_attempts
+        self._prompt_gateway = prompt_gateway
+        self._policy = policy
         self._deadline = deadline
-        self._request_timeout_s = request_timeout_s
 
     def summarize_task(
         self, req: FromHarnessToBrainToolSummarizeTaskReq
     ) -> FromHarnessToBrainToolSummarizeTaskResp:
-        """把本 task 的可信 ActMemory 蒸馏成一条 TaskMemory。
-
-        与 `Summarizer.summarize()` 同一条 brain 链路（`Brain.summarize`，
-        输出契约同是 `EpisodeSummary`——task 级的"前后变化/关键决策/失败点"
-        恰好被同一组字段承载），差别只在 prompt（task 视角）与**组装的存储形状**
-        （`TaskMemory`，来源章盖的是 task 坐标）。
-
-        **代表帧**：`first_frame` 取首条 ActMemory 的 `before_frame`、
-        `last_frame` 取末条的 `after_frame`（都可空）——上层（episode_done）
-        总结时拿它们当画面锚点，不必回查全部按键记忆。
-        """
-        prompt = summarize_task_prompt.build_prompt(req)
+        """蒸馏本 task 的素材并组装 TaskMemory；请求保证条目非空，失败账随异常返回。"""
+        params = SummarizeTaskParams.model_validate(
+            {**req.model_dump(mode="json"), "success": req.success}
+        )
+        rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize_task", params, [])
+        prompt = rendered_prompt.text
+        records = self._prompt_gateway.render_history("summarize_task", params)
         images, _snapshots = dedup_snapshots(list(req.entries))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             return self._brain.summarize(
                 prompt=prompt,
                 goal=req.goal,
-                history=summarize_task_prompt.history_blocks(req),
+                history=records,
                 success=req.success,
                 steps=req.steps_used,
                 max_steps=req.max_steps,
@@ -837,9 +803,9 @@ class TaskSummarizer:
         result, calls = _attempt_loop(
             "summarize_task",
             attempt,
-            max_attempts=self._max_attempts,
+            policy=self._policy,
             deadline=self._deadline,
-            request_timeout_s=self._request_timeout_s,
+            rendered_prompt=rendered_prompt,
         )
         summary: EpisodeSummary = result.summary
         first = next((e.before_frame for e in req.entries if e.before_frame), None)
@@ -847,6 +813,7 @@ class TaskSummarizer:
         memory = TaskMemory(
             run_id=req.run_id,
             episode_id=req.episode_id,
+            entry_id=req.entry_id,
             task_id=req.task_id,
             goal=req.goal,
             termination=req.termination.value,
@@ -894,66 +861,72 @@ class BrainTool:
     def build(
         cls,
         *,
-        text: str | None = None,
-        judge: str | None = None,
-        verify: str | None = None,
-        plan: str | None = None,
-        max_tokens: int = 25600,
-        plan_max_tokens: int = PLAN_MAX_TOKENS,
-        json_mode: bool = PROVIDER_JSON_MODE,
-        plan_thinking: bool = PLAN_THINKING,
-        plan_timeout_s: float = 45,
-        max_attempts: int = BRAIN_MAX_ATTEMPTS,
+        links: Sequence[BrainLink],
+        models: ModelsConfig,
+        retry: RetryConfig,
+        request_timeouts: RequestTimeoutsConfig,
+        action_limits: ActionLimitsConfig,
+        image_cap: int,
+        prompt_registry: str | None = None,
+        vision_dump_dir: str | None = None,
         deadline: Deadline | None = None,
     ) -> BrainTool:
-        """按需装配：**只传这一层要的型号名**，没传的位置 provider 为 `None`。
+        """按需装配：`links` 列出这一层要的链路，没列的位置 provider 为 `None`。
 
-        - run 层：`BrainTool.build(plan=…, judge=…)` → `planner` + `judger`；
-        - episode 层：`BrainTool.build(plan=…, judge=…, verify=…)` → `decomposer` 与其余；
-        - task 层：`BrainTool.build(text=…)` → 只用 `chooser`（接 JEV 时在这里
-          换成小快模型的型号名，或换实现——组装只发生在这一个地方，铁律 3）。
+        - run 层：`links=("plan", "judge")` → `planner` + `judger`；
+        - episode 层：`links=("plan", "judge", "verify")` → `decomposer` 与其余；
+        - task 层：`links=("text", "judge", "verify")` → `chooser` 等。
 
-        没配的链路被调用时，`Brain` 方法入口的 assert 当场拦下（构造前置弱化的
-        另一半）；容器造出来就是终态，中途改选型没有语义。
+        型号、温度、输出上限、超时、思考开关全部取自 `models`；重试预算与退避取自 `retry`；
+        `prompt_registry` 为 None 时用随包空表，相对路径按仓库根解析；网关由九个能力对象共享。
+        各链路的单请求时限取自 `request_timeouts`（规划与拆解取 `models.plan.timeout_s`）；
+        `action_limits` 同时约束决策 prompt 与动作校验。没配的链路被调用时，`Brain` 方法入口的
+        assert 当场拦下；容器造出来就是终态，中途改选型没有语义。
 
-        **签名收裸字段而不是收 `BrainLlmConfig`**（0913 深夜九）：`build.py`
-        对 brain **零 import**——`BrainLlmConfig` 在本方法内部构造，
-        "协议归属、实现归属、接线归属"三者对齐。
+        **签名收配置段而不是 `BrainLlmConfig`**：`build.py` 对 brain **零 import**，
+        `BrainLlmConfig` 在本方法内部构造，"协议归属、实现归属、接线归属"三者对齐。
 
-        **它是 `__init__` 的糖，不是第二套装配逻辑**：内部就是
-        `BrainLlmConfig(...)` + provider 接线 + `Brain(...)` +
-        九个能力对象，没有任何额外判断——"谁 new 具体实现"仍然只有一个答案。
-
-        前置条件：`verify`/`plan` 的型号名是火山方舟认的豆包型号名
-        （带日期后缀）——传 Qwen 型号名会在第一次调用时 404，
-        本方法不替调用方验这个（它验不了，没有厂商型号表）。
-        后置条件：返回的容器持有的 `Brain`，造出来的 provider **互不相同**
-        （`judge` 与 `decide` 不共用是硬约束，见 `Brain` 模块 docstring）。
+        后置条件：造出来的 provider 互不相同（`judge` 与 `decide` 不共用是硬约束，见 `Brain`
+        模块 docstring）。
         """
-        from pokemon_agent.brain import Brain, BrainLlmConfig, build_llm_providers
+        from pokemon_agent.brain import Brain, BrainLlmConfig, LinkSpec
+        from pokemon_agent.brain.build_llm_providers import build_llm_providers
+
+        registry_path = Path(prompt_registry) if prompt_registry is not None else None
+        if registry_path is not None and not registry_path.is_absolute():
+            registry_path = Path(__file__).resolve().parents[2] / registry_path
+        prompt_gateway = PromptGateway(registry_path)
+
+        def spec(link: BrainLink) -> LinkSpec | None:
+            if link not in links:
+                return None
+            chosen = getattr(models, link)
+            return LinkSpec(
+                model=chosen.model,
+                temperature=chosen.temperature,
+                max_tokens=chosen.max_tokens,
+                timeout_s=chosen.timeout_s,
+                thinking=getattr(chosen, "thinking", False),
+            )
 
         config = BrainLlmConfig(
-            text=text,
-            judge=judge,
-            verify=verify,
-            plan=plan,
-            max_tokens=max_tokens,
-            plan_max_tokens=plan_max_tokens,
-            json_mode=json_mode,
-            plan_thinking=plan_thinking,
+            text=spec("text"),
+            judge=spec("judge"),
+            verify=spec("verify"),
+            plan=spec("plan"),
+            json_mode=models.json_mode,
+            vision_dump_dir=vision_dump_dir,
         )
-        decide, judge_llm, verify_llm, plan_llm = build_llm_providers(
-            config, plan_timeout_s=plan_timeout_s
-        )
+        decide, judge_llm, verify_llm, plan_llm = build_llm_providers(config)
         bounded = [
             BudgetProvider(cast(TimeoutProvider, provider), deadline, limit, source)
             if provider is not None
             else None
             for provider, limit, source in (
-                (decide, 25, "choose"),
-                (judge_llm, 60, "judge"),
-                (verify_llm, 60, "verify"),
-                (plan_llm, plan_timeout_s, "plan"),
+                (decide, request_timeouts.choose, "choose"),
+                (judge_llm, request_timeouts.judge, "judge"),
+                (verify_llm, request_timeouts.verify, "verify"),
+                (plan_llm, models.plan.timeout_s, "plan"),
             )
         ]
         decide, judge_llm, verify_llm, plan_llm = bounded
@@ -963,42 +936,94 @@ class BrainTool:
             verify_llm=verify_llm,
             plan_llm=plan_llm,
         )
+
+        def policy(timeout_s: float) -> CallPolicy:
+            return CallPolicy(retry=retry, request_timeout_s=timeout_s, image_cap=image_cap)
+
         return cls(
             planner=Planner(
                 brain,
-                max_attempts=max_attempts,
+                policy=policy(models.plan.timeout_s),
                 deadline=deadline,
-                request_timeout_s=plan_timeout_s,
+                prompt_gateway=prompt_gateway,
             ),
             decomposer=Decomposer(
                 brain,
-                max_attempts=max_attempts,
+                policy=policy(models.plan.timeout_s),
                 deadline=deadline,
-                request_timeout_s=plan_timeout_s,
+                prompt_gateway=prompt_gateway,
             ),
             chooser=Chooser(
-                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=25
+                brain,
+                policy=policy(request_timeouts.choose),
+                action_limits=action_limits,
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
             ),
             judger=Judger(
-                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+                brain,
+                policy=policy(request_timeouts.judge),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
             ),
-            reflector=Reflector(brain, max_attempts=max_attempts),
+            reflector=Reflector(),
             verifier=Verifier(
-                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+                brain,
+                policy=policy(request_timeouts.verify),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
             ),
             summarizer=Summarizer(
-                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+                brain,
+                policy=policy(request_timeouts.summarize),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
             ),
             run_summarizer=RunSummarizer(
-                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+                brain,
+                policy=policy(request_timeouts.summarize),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
             ),
             task_summarizer=TaskSummarizer(
-                brain, max_attempts=max_attempts, deadline=deadline, request_timeout_s=60
+                brain,
+                policy=policy(request_timeouts.summarize),
+                deadline=deadline,
+                prompt_gateway=prompt_gateway,
             ),
         )
 
 
 # ---- 内部辅助 ----
+
+
+def render_and_stamp(
+    gateway: PromptGateway,
+    task: str,
+    params: BaseModel,
+    calls: Sequence[ModelCall],
+) -> RenderedPrompt:
+    """渲染任务并为全部尝试盖章；调用方传入 _adopt 之后的 tool 层 ModelCall。
+
+    前置条件：所有调用账已经收编；保留已有 payload 与错误字段，原位追加三项版本信息。
+    后置条件：每条账的三项信息与返回的 RenderedPrompt 一致。
+    """
+    assert all(isinstance(call, ModelCall) for call in calls), "Stamp only adopted tool calls"
+    rendered = gateway.render(task, params)
+    _stamp_calls(calls, rendered)
+    return rendered
+
+
+def _stamp_calls(calls: Sequence[ModelCall], rendered: RenderedPrompt) -> None:
+    """为已收编的每次尝试追加同一个版本戳，不覆盖已有账项。"""
+    stamp = {
+        "prompt_task": rendered.task,
+        "prompt_version": rendered.version,
+        "prompt_hash": rendered.hash,
+    }
+    for call in calls:
+        call.payload.update(stamp)
+    assert all(all(call.payload[key] == value for key, value in stamp.items()) for call in calls)
 
 
 def _attempt_loop(
@@ -1007,9 +1032,9 @@ def _attempt_loop(
     *,
     retry_prompt: Callable[[str, list[ModelCall]], str] | None = None,
     base_prompt: str = "",
-    max_attempts: int = BRAIN_MAX_ATTEMPTS,
+    policy: CallPolicy,
     deadline: Deadline | None = None,
-    request_timeout_s: float = 45,
+    rendered_prompt: RenderedPrompt | Callable[[], RenderedPrompt] | None = None,
 ) -> tuple[_Result, list[ModelCall]]:
     """brain 各链路共用的重试循环：**成功带整条账返回 / 耗尽带整条账抛异常**。
 
@@ -1025,7 +1050,7 @@ def _attempt_loop(
     重试注定无用——第一轮就抛 `MaxRetriesExceeded`（`attempts=1`），
     不烧预算、不给模型叠"你上一次的输出不合法"那种张冠李戴的纠正。
 
-    **预算所有失败共用**：最多 `BRAIN_MAX_ATTEMPTS` 次（含首次）。
+    **预算所有失败共用**：最多 `policy.retry.brain_max_attempts` 次（含首次）。
     **退避看刚失败的那次**（`backoff.backoff_seconds`）：不是超时睡 1s；是超时睡 2s、
     再超时 4s。耗尽那一轮不睡（后面是上抛，没人等这个间隔）。
 
@@ -1039,29 +1064,45 @@ def _attempt_loop(
     **账按序排列**：第 `n` 次尝试的账落在第 `n` 位——"第几次"由位置回答，
     不另盖一枚 `attempt` 戳（0914 跟进删）。
     """
+
+    def active_prompt() -> RenderedPrompt:
+        assert rendered_prompt is not None
+        return rendered_prompt() if callable(rendered_prompt) else rendered_prompt
+
     calls: list[ModelCall] = []
     while True:
         if deadline is not None:
-            deadline.allowed(request_timeout_s, source, calls)
+            deadline.allowed(policy.request_timeout_s, source, calls)
         try:
             result = attempt(len(calls) + 1, calls)
         except BudgetExhausted as exc:
-            raise BudgetExhausted(source, [*calls, *exc.calls], exc.reason) from exc
+            pending = [_adopt(call) for call in exc.calls] if rendered_prompt else exc.calls
+            if rendered_prompt is not None:
+                _stamp_calls(pending, active_prompt())
+            raise BudgetExhausted(source, [*calls, *pending], exc.reason) from exc
         except AttemptFailed as exc:
             call = _adopt(exc.call)
+            if rendered_prompt is not None:
+                _stamp_calls([call], active_prompt())
             calls.append(call)
-            if call.error_kind == ProviderRejected.__name__ or len(calls) >= max_attempts:
+            if (
+                call.error_kind == ProviderRejected.__name__
+                or len(calls) >= policy.retry.brain_max_attempts
+            ):
                 raise MaxRetriesExceeded(
                     len(calls), _last_error(calls), calls, source=source
                 ) from exc
             timeouts = sum(c.error_kind == ToolTimeout.__name__ for c in calls)
-            delay = backoff_seconds(call.error_kind == ToolTimeout.__name__, timeouts)
+            delay = backoff_seconds(call.error_kind == ToolTimeout.__name__, timeouts, policy.retry)
             if deadline is not None:
-                deadline.allowed(request_timeout_s, source, calls, delay_s=delay)
+                deadline.allowed(policy.request_timeout_s, source, calls, delay_s=delay)
             time.sleep(delay)
             continue
 
-        calls.extend(_adopt(call) for call in result.calls)
+        pending = [_adopt(call) for call in result.calls]
+        if rendered_prompt is not None:
+            _stamp_calls(pending, active_prompt())
+        calls.extend(pending)
         return result, calls
 
 
@@ -1097,29 +1138,21 @@ def _illegal(why: str) -> Exception:
     return ParseFailure("", why)
 
 
-def _retry_prompt(base_prompt: str, attempts: list[ModelCall]) -> str:
-    """按**上一次失败的类型**决定重问的 prompt（0915 分叉，取代"无条件叠加"）。
-
-    - **解析类失败**（`ParseFailure`/`IllegalAction`/`OutputTruncated`）→ 追加
-      纠正说明：模型调通了、也看到了题，是它的输出不能用——告诉它上次错在哪。
-    - **传输失败**（`ToolTimeout` 等）→ **原样重问**：模型根本没收到题，
-      "你上一次的输出不合法 / 别再输出同样的东西"是张冠李戴——传输失败时
-      `$raw` 是空的，却劝模型改掉本来的答案。
-    - `ProviderRejected` 不会走到这里（循环在第一轮就耗尽了）。
-
-    **追加、不重新渲染**：`base_prompt` 前缀一个字节不变，多次重试尝试才能
-    共享同一段 prompt 缓存。
-    """
-    last = attempts[-1]
-    if last.error_kind not in _PARSE_ERROR_KINDS:
+def _retry_prompt(
+    base_prompt: RenderedPrompt, attempts: list[ModelCall], gateway: PromptGateway
+) -> RenderedPrompt:
+    """解析失败组合纠正版本；首次调用和传输失败保留原始版本。"""
+    if not attempts or attempts[-1].error_kind not in _PARSE_ERROR_KINDS:
         return base_prompt
-    return decide_action_prompt.retry_prompt(
-        decide_action_prompt.RetryPromptReq(
-            base_prompt=base_prompt,
+    last = attempts[-1]
+    return gateway.render(
+        "decide_action_retry",
+        DecideActionRetryParams(
+            base_prompt=base_prompt.text,
             attempt=len(attempts) + 1,
             reason=last.error,
-            raw=last.payload.get("raw", "")[:400],
-        )
+            raw=cast(str, last.payload.get("raw", ""))[:400],
+        ),
     )
 
 
@@ -1143,8 +1176,3 @@ def _blind(obs):  # noqa: ANN001, ANN202
     过滤只发生在写记忆这一步，大脑/世界看到的仍是完整观测。
     """
     return obs.model_copy(update={"facts": obs.facts.exclude(SNAPSHOT_BLIND)})
-
-
-def _render_observation(obs) -> str:  # noqa: ANN001
-    """把一帧观测渲成文本——brain 的 `Reflection` 要的就是文本。"""
-    return obs.render()

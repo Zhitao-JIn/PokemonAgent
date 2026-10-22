@@ -2,11 +2,13 @@
 
 from collections.abc import Sequence
 
+from _harness_fixtures.app_config import call_policy
 from _harness_fixtures.brain import _Brain
 
 from pokemon_agent.brain import Goal
 from pokemon_agent.brain.interface import JudgeResult, ModelCall
 from pokemon_agent.direct.brain_tool import Judger
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolJudgeReq
 from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, TaskMemory
 
@@ -25,7 +27,11 @@ class _RecordingBrain(_Brain):
         self, *, prompt: str, goal: str, history: Sequence[str], images: Sequence[str] = ()
     ) -> JudgeResult:
         self.frames = list(images)
-        return JudgeResult(done=False, why="继续", calls=[ModelCall(payload={})])
+        return JudgeResult(
+            decision=("achieved" if False else "continue"),
+            why="继续",
+            calls=[ModelCall(payload={})],
+        )
 
 
 def _task(number: int, first: str | None, last: str | None) -> TaskMemory:
@@ -50,8 +56,8 @@ def _act(step: int, first: str, last: str) -> ActMemory:
         task_id="t",
         step=step,
         action="up",
-        before=ActMemory.Observation(step=step, status="before"),
-        after=ActMemory.Observation(step=step + 1, status="after"),
+        before=ActMemory.Observation(facts={"overlay": "none"}, step=step),
+        after=ActMemory.Observation(facts={"overlay": "none"}, step=step + 1),
         before_frame=first,
         after_frame=last,
     )
@@ -66,7 +72,7 @@ def test_judger_sends_capped_task_frames_when_history_is_empty() -> None:
         goal=Goal(goal="局目标", criteria="c"), task_memories=tasks
     )
 
-    Judger(brain).judge(request)
+    Judger(brain, policy=call_policy(), prompt_gateway=PromptGateway(None)).judge(request)
 
     assert brain.frames == frames[-20:]
 
@@ -79,7 +85,7 @@ def test_judger_prefers_step_history_and_deduplicates_its_boundary_frames() -> N
         task_memories=[_task(0, "task-first", "task-last")],
     )
 
-    Judger(brain).judge(request)
+    Judger(brain, policy=call_policy(), prompt_gateway=PromptGateway(None)).judge(request)
 
     assert brain.frames == ["a", "b", "c"]
 
@@ -90,7 +96,7 @@ def test_task_history_images_are_not_capped_even_when_there_are_more_than_twenty
     history = [_act(i, frames[2 * i], frames[2 * i + 1]) for i in range(12)]
     request = FromHarnessToBrainToolJudgeReq(goal=Goal(goal="任务", criteria="c"), history=history)
 
-    Judger(brain).judge(request)
+    Judger(brain, policy=call_policy(), prompt_gateway=PromptGateway(None)).judge(request)
 
     assert brain.frames == frames
 
@@ -121,6 +127,6 @@ def test_judger_sends_capped_episode_frames_when_history_is_empty() -> None:
         goal=Goal(goal="总目标", criteria="c"), episode_memories=memories
     )
 
-    Judger(brain).judge(request)
+    Judger(brain, policy=call_policy(), prompt_gateway=PromptGateway(None)).judge(request)
 
     assert brain.frames == frames[-20:]

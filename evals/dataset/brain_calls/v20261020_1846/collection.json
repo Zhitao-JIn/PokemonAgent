@@ -1,0 +1,405 @@
+{
+  "version": "v20261020_1846",
+  "batches": [
+    {
+      "batch": "eval_results/brain_capture_recursive_20261020",
+      "completed": 14
+    },
+    {
+      "batch": "eval_results/brain_capture_remaining6_20261020",
+      "completed": 6
+    }
+  ],
+  "builder_sha256": {
+    "__init__.py": "503aba70320246a8dfc0693f53556b9fc9f37b6f8abdc4e0e5934a63e49efe36",
+    "baseline_score.py": "7e2df68058ea3cdc71ed5f5bb2e353645ce83214e9002602a1ff032eaba05b17",
+    "build.py": "bc3766c010546debf96c5e83c02b5065f7be4bf0c8ac8dd9b8a5241f0ebb1fe6",
+    "build_report.py": "da94b01a03d9590fd01e36a9b7436295ef41121786d1dc496d440cdd31ab4171",
+    "choose_labels.py": "ccc0fc7e1fa4157ccee93909b0669c79400b0957e37a6d4e15ac07bdb32a078d",
+    "dataset_contract.py": "c0557acb5f68d4aedeaada91ad132f562acf146cfe582951d9fb46798424df8c",
+    "export_controls.py": "8d6a67ae608bc1a10df50215de46b8ff0644bfc0584645b3f18eccfcd5c3620b",
+    "export_dataset.py": "6e5ce49aeb9a199e171780e21695e6aa3722e57de49f562644413344df8dffca",
+    "independent_reference.py": "1ad6966d12e1481a4f11b244b1611a881e2a9a8fe563c21d6f1c96c739c9545a",
+    "loader.py": "5e65898277c18d9ba10f74ef870d59077e0d7faf5edb5f742ef34ce22112d077",
+    "menu_labels.py": "71fcf80d68a9284be350e25865af860a7413da5d59ccd49ac98d2698c04896a3",
+    "merge_exports.py": "6d2c98d024c14318e08a8e51a8dc51bdf4f32a0f42f04a379bc262bc7904d30e",
+    "milestones.py": "ac9a3a5bc20e1a2d56be1c8543718c8ba12b36cf4b2b347afc532b86e535a92f",
+    "native_versions.py": "668072b5e70b8b59f5aa9747e390d01129f9d1557bb2a670dffc08748be8b7f0",
+    "rubrics.py": "1583a674f3c0235665df1619c43c1b5853270d54205d7c5d41b59dacfd1500f2",
+    "scope_audit.py": "8fac30dd418678fa7601082683d91f45eb821d5734ede14b7bdacb781485a2f3",
+    "source_archive.py": "8e01c0bd1616a2cde1c3f17b2c39a47f4943d3a66547234583271c247687b50c",
+    "verify_dataset.py": "d68b08634d6b295d78893b8482e196a7c127f89d2750af962a63ecabda491351",
+    "visible_judge.py": "e95dbd168f98e4a1ba0679f88be645704844470d53195eaef3d7dcb63ccdf214",
+    "visible_menus.py": "0cde41835ed9c6a2aab034b6f77d5cb622f6a72b121d4eaa879697736b4c6210",
+    "visible_transactions.py": "47587499c4e005a08498616a05afa415eed27fed197b77f845b87777a0d71d46"
+  },
+  "completed": 20,
+  "expected": 20,
+  "sample_ids": [
+    "knowledge_battle_action_menu",
+    "knowledge_battle_fight_menu",
+    "knowledge_battle_item_use",
+    "knowledge_battle_move_select",
+    "knowledge_battle_pokemon_switch",
+    "knowledge_battle_run_attempt",
+    "knowledge_catch_throw_ball",
+    "knowledge_catch_weaken_target",
+    "knowledge_dialogue_advance",
+    "knowledge_door_transition",
+    "knowledge_movement_obstacle",
+    "knowledge_npc_dialogue",
+    "knowledge_pokemon_center_enter",
+    "knowledge_pokemon_center_heal",
+    "knowledge_shop_cancel_purchase",
+    "knowledge_shop_confirm_purchase",
+    "knowledge_shop_interaction",
+    "knowledge_shop_open_buy_menu",
+    "knowledge_shop_select_item",
+    "knowledge_wild_encounter"
+  ],
+  "partial": false,
+  "skipped_calls": 1,
+  "families": [
+    {
+      "version": "v20261020_1846",
+      "family": "judge",
+      "cases": 183,
+      "layers": {
+        "episode": 40,
+        "run": 21,
+        "task": 122
+      },
+      "baseline_status": {
+        "success": 183
+      },
+      "mechanical_labels": 70,
+      "action_set_labels": 0,
+      "rubric_cases": 113,
+      "files_sha256": {
+        "inputs.jsonl": "08dc85b258965b287a5bcc03d3440d4852880dd49f1833df837d1973fec95435",
+        "references.jsonl": "e2a3b3621df6e6b7f01dfc91786b4d4263feb126b35ef6b723af7f0824f53474",
+        "judge.request.schema.json": "bec31578d9df5844333ad7171778b3a04ae0281fe2e3f7688be7d4c0b67623ad"
+      },
+      "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+      "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+      "schema_hash": "5d3630f2b479ee78",
+      "limitations": [
+        "20 个短场景的现场分布，不代表独立留出集或长程能力。",
+        "采集分多段完成，各段提交见 source_parts；段间只改 trace 渲染与采集控制器。",
+        "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+        "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+        "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+      ],
+      "source_parts": [
+        {
+          "batch": "eval_results/brain_capture_recursive_20261020",
+          "source_head": "3ca4ecd6ad9faad0687a2ee41c2fa2976285c0e6",
+          "source_code_sha256": "f92f37af1898034d9fc61d1c3428ca017550084546cf642461c5d0610730fad1",
+          "schema_hash": "5d3630f2b479ee78",
+          "samples": [
+            "knowledge_battle_action_menu",
+            "knowledge_battle_fight_menu",
+            "knowledge_battle_item_use",
+            "knowledge_battle_move_select",
+            "knowledge_battle_pokemon_switch",
+            "knowledge_battle_run_attempt",
+            "knowledge_dialogue_advance",
+            "knowledge_door_transition",
+            "knowledge_movement_obstacle",
+            "knowledge_npc_dialogue",
+            "knowledge_shop_interaction",
+            "knowledge_shop_open_buy_menu",
+            "knowledge_shop_select_item",
+            "knowledge_wild_encounter"
+          ]
+        },
+        {
+          "batch": "eval_results/brain_capture_remaining6_20261020",
+          "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+          "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+          "schema_hash": "5d3630f2b479ee78",
+          "samples": [
+            "knowledge_catch_throw_ball",
+            "knowledge_catch_weaken_target",
+            "knowledge_pokemon_center_enter",
+            "knowledge_pokemon_center_heal",
+            "knowledge_shop_cancel_purchase",
+            "knowledge_shop_confirm_purchase"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v20261020_1846",
+      "family": "plan",
+      "cases": 21,
+      "layers": {
+        "run": 21
+      },
+      "baseline_status": {
+        "success": 21
+      },
+      "mechanical_labels": 0,
+      "action_set_labels": 0,
+      "rubric_cases": 21,
+      "files_sha256": {
+        "inputs.jsonl": "34f8e0da500085623a9b6bc1ee1241eab3c1d1075e20ddb2b3e2b5e4d77c6905",
+        "references.jsonl": "05c20fd948ae5600ebaaed84b557f7ec73aedf2eee3fb572950c0d5f2fc6bc6b",
+        "plan.request.schema.json": "f6b4303db65ebff1a30c7856277699220aa49aed921440e27fa4482e7c42dfda"
+      },
+      "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+      "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+      "schema_hash": "5d3630f2b479ee78",
+      "limitations": [
+        "20 个短场景的现场分布，不代表独立留出集或长程能力。",
+        "采集分多段完成，各段提交见 source_parts；段间只改 trace 渲染与采集控制器。",
+        "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+        "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+        "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+      ],
+      "source_parts": [
+        {
+          "batch": "eval_results/brain_capture_recursive_20261020",
+          "source_head": "3ca4ecd6ad9faad0687a2ee41c2fa2976285c0e6",
+          "source_code_sha256": "f92f37af1898034d9fc61d1c3428ca017550084546cf642461c5d0610730fad1",
+          "schema_hash": "5d3630f2b479ee78",
+          "samples": [
+            "knowledge_battle_action_menu",
+            "knowledge_battle_fight_menu",
+            "knowledge_battle_item_use",
+            "knowledge_battle_move_select",
+            "knowledge_battle_pokemon_switch",
+            "knowledge_battle_run_attempt",
+            "knowledge_dialogue_advance",
+            "knowledge_door_transition",
+            "knowledge_movement_obstacle",
+            "knowledge_npc_dialogue",
+            "knowledge_shop_interaction",
+            "knowledge_shop_open_buy_menu",
+            "knowledge_shop_select_item",
+            "knowledge_wild_encounter"
+          ]
+        },
+        {
+          "batch": "eval_results/brain_capture_remaining6_20261020",
+          "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+          "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+          "schema_hash": "5d3630f2b479ee78",
+          "samples": [
+            "knowledge_catch_throw_ball",
+            "knowledge_catch_weaken_target",
+            "knowledge_pokemon_center_enter",
+            "knowledge_pokemon_center_heal",
+            "knowledge_shop_cancel_purchase",
+            "knowledge_shop_confirm_purchase"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v20261020_1846",
+      "family": "decompose",
+      "cases": 41,
+      "layers": {
+        "episode": 41
+      },
+      "baseline_status": {
+        "success": 41
+      },
+      "mechanical_labels": 0,
+      "action_set_labels": 0,
+      "rubric_cases": 41,
+      "files_sha256": {
+        "inputs.jsonl": "8d48f37c755580aaca38090c61fc8339897eaa3126462f63acaae30310d979b8",
+        "references.jsonl": "36348237765bc09d3a6e85b3eab5b7d2798080c07b194538522b1138abbebba5",
+        "decompose.request.schema.json": "043db15c5d62ad8362cb6083b7570d2fdd1c111e1f1556a10a30b196bf8ec0e6"
+      },
+      "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+      "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+      "schema_hash": "5d3630f2b479ee78",
+      "limitations": [
+        "20 个短场景的现场分布，不代表独立留出集或长程能力。",
+        "采集分多段完成，各段提交见 source_parts；段间只改 trace 渲染与采集控制器。",
+        "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+        "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+        "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+      ],
+      "source_parts": [
+        {
+          "batch": "eval_results/brain_capture_recursive_20261020",
+          "source_head": "3ca4ecd6ad9faad0687a2ee41c2fa2976285c0e6",
+          "source_code_sha256": "f92f37af1898034d9fc61d1c3428ca017550084546cf642461c5d0610730fad1",
+          "schema_hash": "5d3630f2b479ee78",
+          "samples": [
+            "knowledge_battle_action_menu",
+            "knowledge_battle_fight_menu",
+            "knowledge_battle_item_use",
+            "knowledge_battle_move_select",
+            "knowledge_battle_pokemon_switch",
+            "knowledge_battle_run_attempt",
+            "knowledge_dialogue_advance",
+            "knowledge_door_transition",
+            "knowledge_movement_obstacle",
+            "knowledge_npc_dialogue",
+            "knowledge_shop_interaction",
+            "knowledge_shop_open_buy_menu",
+            "knowledge_shop_select_item",
+            "knowledge_wild_encounter"
+          ]
+        },
+        {
+          "batch": "eval_results/brain_capture_remaining6_20261020",
+          "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+          "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+          "schema_hash": "5d3630f2b479ee78",
+          "samples": [
+            "knowledge_catch_throw_ball",
+            "knowledge_catch_weaken_target",
+            "knowledge_pokemon_center_enter",
+            "knowledge_pokemon_center_heal",
+            "knowledge_shop_cancel_purchase",
+            "knowledge_shop_confirm_purchase"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v20261020_1846",
+      "family": "choose",
+      "cases": 122,
+      "layers": {
+        "task": 122
+      },
+      "baseline_status": {
+        "success": 122
+      },
+      "mechanical_labels": 0,
+      "action_set_labels": 15,
+      "rubric_cases": 107,
+      "files_sha256": {
+        "inputs.jsonl": "18ba039bad0c9f667f984f5742a8e9a1c8336d36bbded9f9b047c35fa071f0ee",
+        "references.jsonl": "1c155fad79b10e0ee8a288d2233a3482a3afda25d116c3afe86d70ca45d13ddc",
+        "choose.request.schema.json": "b0e6da93b259e157d5a2f65c56f5a4b096c378160fefc5dc1d10fdd3bd658a18"
+      },
+      "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+      "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+      "schema_hash": "5d3630f2b479ee78",
+      "limitations": [
+        "20 个短场景的现场分布，不代表独立留出集或长程能力。",
+        "采集分多段完成，各段提交见 source_parts；段间只改 trace 渲染与采集控制器。",
+        "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+        "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+        "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+      ],
+      "source_parts": [
+        {
+          "batch": "eval_results/brain_capture_recursive_20261020",
+          "source_head": "3ca4ecd6ad9faad0687a2ee41c2fa2976285c0e6",
+          "source_code_sha256": "f92f37af1898034d9fc61d1c3428ca017550084546cf642461c5d0610730fad1",
+          "schema_hash": "5d3630f2b479ee78",
+          "samples": [
+            "knowledge_battle_action_menu",
+            "knowledge_battle_fight_menu",
+            "knowledge_battle_item_use",
+            "knowledge_battle_move_select",
+            "knowledge_battle_pokemon_switch",
+            "knowledge_battle_run_attempt",
+            "knowledge_dialogue_advance",
+            "knowledge_door_transition",
+            "knowledge_movement_obstacle",
+            "knowledge_npc_dialogue",
+            "knowledge_shop_interaction",
+            "knowledge_shop_open_buy_menu",
+            "knowledge_shop_select_item",
+            "knowledge_wild_encounter"
+          ]
+        },
+        {
+          "batch": "eval_results/brain_capture_remaining6_20261020",
+          "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+          "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+          "schema_hash": "5d3630f2b479ee78",
+          "samples": [
+            "knowledge_catch_throw_ball",
+            "knowledge_catch_weaken_target",
+            "knowledge_pokemon_center_enter",
+            "knowledge_pokemon_center_heal",
+            "knowledge_shop_cancel_purchase",
+            "knowledge_shop_confirm_purchase"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v20261020_1846",
+      "family": "summary",
+      "cases": 81,
+      "layers": {
+        "episode": 20,
+        "run": 20,
+        "task": 41
+      },
+      "baseline_status": {
+        "success": 81
+      },
+      "mechanical_labels": 0,
+      "action_set_labels": 0,
+      "rubric_cases": 81,
+      "files_sha256": {
+        "inputs.jsonl": "f8fb7368e84dd5ae02cc9d5f68f578030c2b8281201434e0e62a22978014c68c",
+        "references.jsonl": "e7f8b66e53184ec0b17fffc38c6a0bba69bf5b9374850e281189ae6d7b00d7ae",
+        "summarize.request.schema.json": "c8b380bceaa1cb6f49f8d832ab4ec2a3ed4ab821035e4b6bb89a7f5037f203de",
+        "summarize_run.request.schema.json": "342b0d879005e2385a77c12f29d1abb8bf7bb7f847b7fea208d1d538ae713911",
+        "summarize_task.request.schema.json": "1984b408cca03387da33c58a95333db00569bd6fca81dfd4c691fb2b794df8af"
+      },
+      "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+      "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+      "schema_hash": "5d3630f2b479ee78",
+      "limitations": [
+        "20 个短场景的现场分布，不代表独立留出集或长程能力。",
+        "采集分多段完成，各段提交见 source_parts；段间只改 trace 渲染与采集控制器。",
+        "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+        "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+        "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+      ],
+      "source_parts": [
+        {
+          "batch": "eval_results/brain_capture_recursive_20261020",
+          "source_head": "3ca4ecd6ad9faad0687a2ee41c2fa2976285c0e6",
+          "source_code_sha256": "f92f37af1898034d9fc61d1c3428ca017550084546cf642461c5d0610730fad1",
+          "schema_hash": "5d3630f2b479ee78",
+          "samples": [
+            "knowledge_battle_action_menu",
+            "knowledge_battle_fight_menu",
+            "knowledge_battle_item_use",
+            "knowledge_battle_move_select",
+            "knowledge_battle_pokemon_switch",
+            "knowledge_battle_run_attempt",
+            "knowledge_dialogue_advance",
+            "knowledge_door_transition",
+            "knowledge_movement_obstacle",
+            "knowledge_npc_dialogue",
+            "knowledge_shop_interaction",
+            "knowledge_shop_open_buy_menu",
+            "knowledge_shop_select_item",
+            "knowledge_wild_encounter"
+          ]
+        },
+        {
+          "batch": "eval_results/brain_capture_remaining6_20261020",
+          "source_head": "97ab011bb6a56a70d5f81b9d0e5e35882a3d327a",
+          "source_code_sha256": "3548d66141a687b61ad4375bc85d88e7d1898b8d3efbe6c49feb849ec938f3f4",
+          "schema_hash": "5d3630f2b479ee78",
+          "samples": [
+            "knowledge_catch_throw_ball",
+            "knowledge_catch_weaken_target",
+            "knowledge_pokemon_center_enter",
+            "knowledge_pokemon_center_heal",
+            "knowledge_shop_cancel_purchase",
+            "knowledge_shop_confirm_purchase"
+          ]
+        }
+      ]
+    }
+  ]
+}

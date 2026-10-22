@@ -5,9 +5,9 @@ import json
 import pytest
 from _doubles.llm import ScriptedLLM, text_reply
 from _fake_run import GOAL, build_fake, every, never
+from _harness_fixtures.app_config import call_policy, reconfigure
 
 from pokemon_agent.brain import Brain, Goal
-from pokemon_agent.config import DEFAULT_RUN_BUDGET
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.brain_tool import Decomposer
 from pokemon_agent.errors import MaxRetriesExceeded
@@ -16,6 +16,7 @@ from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeR
 from pokemon_agent.harness.run import compile_run_graph
 from pokemon_agent.harness.run.run_state import RunState
 from pokemon_agent.harness.task.task_entry import begin_task
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolDecomposeReq, TraceKind
 from pokemon_agent.schemas.harness.domain import GoalEntry, TaskInput, Termination
 from pokemon_agent.world import TaskObservation, TaskScene
@@ -32,10 +33,7 @@ class Clock:
 
 
 def configure(fake, **overrides):
-    budget = DEFAULT_RUN_BUDGET.model_copy(update=overrides)
-    for deps in (fake.run_rt, fake.run_rt.episode, fake.run_rt.episode.task):
-        deps.budget = budget
-    return budget
+    return reconfigure(fake.run_rt, budget=overrides).budget
 
 
 def events(fake):
@@ -68,7 +66,12 @@ def test_slow_decomposition_leaves_time_for_mechanical_run_end(tmp_path):
     provider = SlowProvider(
         text_reply('{"tasks":[{"goal":"子任务","success_criteria":"c","max_steps":2}]}')
     )
-    fake.run_rt.episode.decomposer = Decomposer(Brain(plan_llm=provider), deadline=deadline)
+    fake.run_rt.episode.decomposer = Decomposer(
+        Brain(plan_llm=provider),
+        policy=call_policy(),
+        deadline=deadline,
+        prompt_gateway=PromptGateway(None),
+    )
     for deps in (fake.run_rt, fake.run_rt.episode, fake.run_rt.episode.task):
         deps.deadline = deadline
 
@@ -113,6 +116,7 @@ def test_episode_limits_produce_failed_outcomes_and_run_end(tmp_path, limit, exp
 def test_task_clamp_records_both_values_without_changing_the_input(tmp_path):
     fake = build_fake(tmp_path)
     task_input = TaskInput(
+        entry_id=(GOAL.model_copy(update={"max_steps": 30})).task_id,
         run_id="r1",
         episode_id="r1-ep1",
         total_acts=0,
@@ -151,6 +155,7 @@ def test_restored_action_and_decomposition_counters_do_not_reset(tmp_path):
         decompositions_used=2,
         run_goal="测试总目标",
     )
+    configure(fake, max_decompositions=2)
     final_ep = fake.run_rt.episode_graph.invoke(
         EpisodeRunState.model_validate_json(ep.model_dump_json()),
         context=fake.run_rt.episode,
@@ -174,10 +179,12 @@ def test_remaining_time_snapshot_only_tightens_a_restored_deadline():
 def test_missing_task_steps_still_use_the_existing_parse_retry():
     raw = '{"tasks":[{"goal":"g","success_criteria":"c"}]}'
     provider = ScriptedLLM(text_reply(raw), text_reply(raw))
-    decomposer = Decomposer(Brain(plan_llm=provider))
+    decomposer = Decomposer(
+        Brain(plan_llm=provider), policy=call_policy(), prompt_gateway=PromptGateway(None)
+    )
     req = FromHarnessToBrainToolDecomposeReq(
         goal=Goal(goal="g", criteria="c"),
-        observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
+        observation=TaskObservation(facts={"overlay": "none"}, step=0, scene=TaskScene.WALK),
         max_tasks=2,
     )
 
@@ -189,5 +196,5 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
     assert all(call.payload["raw"] == raw for call in caught.value.calls)
 
 
-def test_budget_schema_is_frozen_after_the_complete_field_batch():
-    assert state_schema_hash() == "5ea6dffeeb229b7c"
+def test_state_schema_is_frozen_after_structured_observation_cleanup():
+    assert state_schema_hash() == "e3bd23162bfd0e85"

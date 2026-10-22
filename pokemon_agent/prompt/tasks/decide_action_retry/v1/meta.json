@@ -1,0 +1,8 @@
+{
+  "task": "decide_action_retry",
+  "version": "v1",
+  "kind": "task",
+  "params": "DecideActionRetryParams",
+  "reason": "CP5a 首版收编静态决策模板，不改变措辞",
+  "hash": "016dbf3dca9f6ee62e48e090eaebb8164e3e4052104eaf6d5e73da2ce73718a8"
+}

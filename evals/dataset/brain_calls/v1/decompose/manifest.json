@@ -1,0 +1,29 @@
+{
+  "version": "v1",
+  "family": "decompose",
+  "cases": 37,
+  "layers": {
+    "episode": 37
+  },
+  "baseline_status": {
+    "success": 37
+  },
+  "mechanical_labels": 0,
+  "action_set_labels": 0,
+  "rubric_cases": 37,
+  "files_sha256": {
+    "inputs.jsonl": "c19362163d81d6fbe335b90bf07190bc7781344e76fb9eda863f961a23ebbab8",
+    "references.jsonl": "029d0b59e9354214d35e65100df06125247c722d08d4bb94115fe6a97d8bb9da",
+    "decompose.request.schema.json": "4b97f0cc2a64461c3c76859de17e2f518a6679e3f69e9a873854f2c33f9f9cee"
+  },
+  "source_head": "5d1ff1ee94f4c1da110f247fc230d69186608c1d",
+  "source_code_sha256": "8677991cdfc4d79708c75fd5f0f539b112756fe3a7567a1f2f7b620a3c623290",
+  "schema_hash": "11a4afa05e6ed43d",
+  "limitations": [
+    "二十个短场景的现场分布，不代表独立留出集或长程能力。",
+    "每例从空记忆起点恢复；过往 run 背景的覆盖取决于实际采集。",
+    "仅机械标签进入混淆矩阵；source_grounded_rubric 需要独立评分器。",
+    "choose 独立动作集合子集可评分；其余开放参考不冒称完备 acceptable 集合。",
+    "旧响应仅为 baseline 审计材料，未用于构建期望答案。"
+  ]
+}

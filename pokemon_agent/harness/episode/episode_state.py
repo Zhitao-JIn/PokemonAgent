@@ -14,7 +14,8 @@
 只把 `TaskOutput` 写进 `pending_task`、`step+1` → 回 `perceive`：先吸收
 `pending_task`（键数、失败连击、`task_outputs`），再 `sense` 取一帧（内存观测）、做四路检索。
 判定、拆解、收尾都只用 perceive 装好的 `ep_ctx`，不再自己查库。
-队列空了 `plan_episode` 才问 decomposer 拆下一串 task。
+每个子执行结算后若继续，`plan_episode` 都问 decomposer 修订任务表，包括仍有待办时。
+应用修订后无待办则携最新规划回 judge 复判，不直接派发或认定失败。
 
 **账面步号（0928 定稿）**：圈号语义——`episode_start` 落 0、圈中与收尾账一律
 `step + 1`，同圈所有账共用；与 `total_acts`（帧观测的局内累计键数，帧槽 /
@@ -29,7 +30,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from pokemon_agent.brain import Goal, Task
-from pokemon_agent.brain.interface import VerifyVerdict
+from pokemon_agent.brain.interface import Decomposition, VerifyVerdict
 from pokemon_agent.schemas.harness.domain import (
     EpisodeOutput,
     JudgeFeedback,
@@ -38,7 +39,7 @@ from pokemon_agent.schemas.harness.domain import (
     TaskOutput,
     Termination,
 )
-from pokemon_agent.schemas.memory import EpisodeMemory, TaskMemory
+from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, TaskMemory
 from pokemon_agent.world import TaskObservation
 
 
@@ -53,7 +54,7 @@ class EpisodeContext(BaseModel):
     )
     episode_index: list[EpisodeMemory] = Field(
         default_factory=list,
-        description="run_goal 相同的其他 episode，不含本局；只用 index_line 渲染",
+        description="本 run 内同一个 L1 goal 的其他 episode，不含本局；只用 index_line 渲染",
     )
     knowledge_semantic_memory: list[str] | None = Field(
         default=None, description="知识库检索结果；None = 本局还没查过。之后沿用，到下次重查为止"
@@ -64,13 +65,15 @@ class EpisodeContext(BaseModel):
     knowledge_at_tasks: int = Field(
         default=0, ge=0, description="上次检索知识时已结算的 task 数；此后有 task 失败就重查"
     )
-    object_semantic_memory: str = Field(
-        default="", description="本图 object 语义记忆文字化（merge 折进 facts）"
-    )
+    object_semantic_events: list[ObjectFactEvent] = Field(default_factory=list)
 
 
 class EpisodeRunState(Settled, BaseModel):
     """一局的全部可序列化状态（分组见模块文档）。"""
+
+    execution_order: list[str] = Field(default_factory=list)
+    latest_planning: Decomposition | None = None
+    judge_trigger: str = "normal"
 
     run_id: str = Field(description="所属 run")
     run_goal: str = Field(description="所属 run 的目标文本")

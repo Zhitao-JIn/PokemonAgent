@@ -15,10 +15,9 @@
 `harness/checkpoint/restore.py::restore_run`，它复用本文件的 `invoke_run` /
 `record_run_error` / `close` / `thread_id`（`docs/spec/checkpoint/SPEC.md`）。
 
-**`recursion_limit` 的常量住顶层 config**（`RUN_RECURSION_LIMIT`）：`invoke_run()` 是它唯一
+**`recursion_limit` 取自配置**（`config.loop.run_recursion_limit`）：`invoke_run()` 是它唯一
 的读者，它是 run 级的**闸门**而不是预算——贴身的限在内层
-task 层的贴身限（`task_entry.task_budget`，按键数算），三层的分工见那个常量
-自己的 docstring。
+task 层的贴身限（`task_entry.task_budget`，按键数算），三层的分工见 `settings/schema/loop.py`。
 
 **函数名与 `episode_entry` 刻意不同**：那边是 `run_episode`（"跑一局"），
 这里是 `new_run`（"起一个 run"），两个入口名 grep 时不撞。
@@ -35,7 +34,6 @@ from typing import Any
 from langgraph.graph.state import CompiledStateGraph
 
 from pokemon_agent.brain import Goal, Task
-from pokemon_agent.config import RUN_RECURSION_LIMIT
 from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolResetReq,
     FromHarnessToTraceToolAppendReq,
@@ -185,7 +183,7 @@ def close(
 def invoke_run(
     deps: RunRuntime, graph: CompiledStateGraph, state: RunState | None, *, thread: str
 ) -> dict[str, Any]:
-    """进图：递 `RUN_RECURSION_LIMIT`（闸门）与 `deps`（唯一的 context）。
+    """进图：递 `config.loop.run_recursion_limit`（闸门）与 `deps`（唯一的 context）。
 
     state：初始状态；恢复路径传 None——从 thread 上已写好的那一条接着跑（`update_state` 之后）。
 
@@ -207,7 +205,10 @@ def invoke_run(
         deps.deadline.start(saved.remaining_s)
     return graph.invoke(
         state,
-        {"recursion_limit": RUN_RECURSION_LIMIT, "configurable": {"thread_id": thread}},
+        {
+            "recursion_limit": deps.config.loop.run_recursion_limit,
+            "configurable": {"thread_id": thread},
+        },
         context=deps,
         durability="sync" if graph.checkpointer is not None else None,
     )
@@ -220,7 +221,6 @@ def thread_id(run_id: str, branch: str) -> str:
 
 
 __all__ = [
-    "RUN_RECURSION_LIMIT",
     "close",
     "default_run_goal",
     "exc_snapshot",

@@ -36,8 +36,8 @@ assert {b for buttons in OVERLAY_ACTIONS.values() for b in buttons} <= set(ALL_B
 
 GB_FPS = 60  # Game Boy 大约每秒 60 帧；下面几个常量都按这个换算成秒
 PRESS_FRAMES = 10  # 按键按住多少帧
-WITHIN_ACTION_FRAMES = 1 * GB_FPS  # 连按时，每次按完推进多少帧（1 秒）
-AFTER_ACTION_FRAMES = 10 * GB_FPS  # 整条链按完后再推进多少帧（10 秒），然后才感知
+WITHIN_ACTION_FRAMES = 1 * GB_FPS  # 每次按键后推进一秒，保持动作连贯
+AFTER_ACTION_FRAMES = 0  # 最后一键已推进一秒，不再叠加固定尾部等待
 BOOT_FRAMES = 10 * GB_FPS  # 无存档时空转多少帧越过开机 logo
 
 
@@ -67,6 +67,7 @@ class PyBoyWorld:
             scale=4,
             no_input=True,
         )
+        self._watch = watch
         self._pyboy.set_emulation_speed(speed)
         self._state_path = state_path
         self._rom = pathlib.Path(rom).read_bytes()
@@ -74,6 +75,7 @@ class PyBoyWorld:
 
         self._task: _Task | None = None
         self._closed = False
+        self._idle_paused = False
         """窗口被关了。**这是 world 唯一有资格宣告的终止**——世界没了，跑不下去。"""
 
     # ---- WorldPort ----
@@ -159,7 +161,7 @@ class PyBoyWorld:
                 self._tick(WITHIN_ACTION_FRAMES)
 
         # 步骤 3：按调用方要求等待游戏画面演化。
-        if settle:
+        if settle and AFTER_ACTION_FRAMES:
             self._tick(AFTER_ACTION_FRAMES)
 
     def perceive_task(self) -> TaskPerceived:
@@ -181,10 +183,49 @@ class PyBoyWorld:
 
     def _tick(self, frames: int) -> None:
         """逐帧推进；窗口关闭时标记 closed 并停止。"""
+        if frames and self._idle_paused:
+            from pyboy.utils import WindowEvent
+
+            self._pyboy.send_input(WindowEvent.UNPAUSE)
+            self._idle_paused = False
         for _ in range(frames):
+            self._pump_window_events()
             if not self._pyboy.tick(1):
                 self._closed = True  # 窗口被关，世界没了——这是 world 唯一的终止权
                 return
+
+    def _pump_idle_window(self) -> None:
+        """暂停游戏帧时调用 PyBoy tick，让窗口插件处理消息并刷新。"""
+        if not self._watch or self._closed:
+            return
+
+        from pyboy.utils import WindowEvent
+
+        self._pump_window_events()
+        if not self._idle_paused:
+            self._pyboy.send_input(WindowEvent.PAUSE)
+            self._idle_paused = True
+        self._pyboy.send_input(WindowEvent._INTERNAL_RENDERER_FLUSH)
+        if not self._pyboy.tick(1):
+            self._closed = True
+
+    def _pump_window_events(self) -> None:
+        """处理 SDL 系统事件并丢弃物理按键，维持可视窗口刷新。"""
+        if not self._watch:
+            return
+
+        import ctypes
+
+        import sdl2
+        from pyboy.utils import WindowEvent
+
+        event = sdl2.SDL_Event()
+        while sdl2.SDL_PollEvent(ctypes.byref(event)):
+            if event.type == sdl2.SDL_QUIT or (
+                event.type == sdl2.SDL_WINDOWEVENT
+                and event.window.event == sdl2.SDL_WINDOWEVENT_CLOSE
+            ):
+                self._pyboy.send_input(WindowEvent.QUIT)
 
     def _frame_png(self) -> bytes:
         """把当前画面截成 PNG 字节。"""

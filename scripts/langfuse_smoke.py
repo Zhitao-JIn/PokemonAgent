@@ -24,6 +24,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from pokemon_agent.env import load_env_file
 from pokemon_agent.trace import LangfuseTrace
 from pokemon_agent.trace.langfuse_support import build_client_from_environment, read_observations
 
@@ -103,24 +104,7 @@ def _event_meta(row: object) -> dict[str, Any]:
 
 # ========== 0. 前置校验 ==========
 
-
-def _load_env_file(path: Path) -> None:
-    """读 `.env`（KEY=VALUE 逐行，# 注释），已有环境变量优先、不覆盖。"""
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key, value = key.strip(), value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
-            value = value[1:-1]  # 容忍 shell 风格的引号写法
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
-_load_env_file(Path(__file__).resolve().parent.parent / ".env")
+load_env_file(Path(__file__).resolve().parent.parent / ".env")
 
 missing = [
     k

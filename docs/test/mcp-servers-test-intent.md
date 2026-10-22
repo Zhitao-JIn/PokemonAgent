@@ -1,6 +1,7 @@
 # intent —— mcp_servers 单元测试：收敛到连接性，world 逻辑迁往 world 模块
 
 > 状态：**已确认**（2026-10-17，用户回复「可以，可以」）。
+> 更新（2026-10-20）：下文“迁移清单”与第六节“迁移约定”**作废**。核对后确认这些用例断言的是服务端壳（信封、租约、`state_base64` 转发），world 侧逻辑已由 world 线覆盖；用户裁决为 **mcp 保留服务端契约、world 保留具体逻辑**，不搬文件、不删用例。逐条对应见 `docs/test/world-test-spec.md` 第九节（CP5，561）。
 > 范围：`pokemon_agent/mcp_servers/` 的测试只管**连接性**（服务端能起、工具注册正确、调用能到达后端并把结果原样返回、传输层的错误映射）。world 的游戏逻辑归 world 模块，不在 mcp 线测试。
 > 关联：`docs/test/memory-test-intent.md`（memory 线，同一做法）；AGENTS.md 第三节第 4、5 条。
 
@@ -18,7 +19,7 @@
 
 **是**：
 - 保留并整理连接性用例：健康检查与就绪、URL 与路径常量一致、探针的通过/拒绝/不可达、注册表条目、一次真 FastMCP 传输的往返（唯一端到端，作为用法示范）、CLI 参数能传到 world；
-- 迁移清单：世界逻辑的用例**登记清单，不删除，原地保留**，等 world 线开始时逐条迁入 `tests/world/`。
+- ~~迁移清单：世界逻辑的用例登记清单，不删除，原地保留，等 world 线开始时逐条迁入 `tests/world/`。~~（2026-10-20 作废，这些用例留在 mcp，作为服务端契约；`【待迁 world 线】` 标注已去掉。）
 
 **不是**：
 - 不重写 world 的按键、脚本、读内存、场景逻辑；
@@ -41,9 +42,11 @@
 
 **留在 mcp 线，但属于待定→已决**：线上存档的 base64 编码（`test_state_roundtrip_is_base64`）留 mcp，理由是它是传输编码。
 
-**迁移清单（世界逻辑，原地保留，world 线开始时迁入）**：按键语义与 `moved` 判定、`get_action_space` 的命名空间、`perceive_task` 的场景内容、`reset` 的起始状态转发、读 WRAM 的字节内容、脚本的 `walk_to_adjacent` 转发与被阻挡信封、`buy_item` 端到端，以及 `mcpclient/world_tool/` 下的世界逻辑用例。
+**（2026-10-20 作废，改为“留在 mcp 的服务端契约”，对应的 world 侧覆盖见 world spec 第九节）原迁移清单**：按键语义与 `moved` 判定、`get_action_space` 的命名空间、`perceive_task` 的场景内容、`reset` 的起始状态转发、读 WRAM 的字节内容、脚本的 `walk_to_adjacent` 转发与被阻挡信封、`buy_item` 端到端，以及 `mcpclient/world_tool/` 下的世界逻辑用例。
 
-## 六、迁移约定
+## 六、迁移约定（2026-10-20 作废）
+
+> 作废原因与替代口径见文首更新说明：不迁移、不删除；mcp 侧的这些用例保持原样，只去掉了待迁标注。以下为原文，仅作历史记录。
 
 - 本线**不删**任何世界逻辑用例，只在 spec 里登记清单；
 - world 线开始时，按清单逐条迁入 `tests/world/`，迁移前后用例名集合对得上；

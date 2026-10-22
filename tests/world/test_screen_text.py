@@ -136,7 +136,7 @@ def test_vertical_menu_lists_every_option_and_the_cursor() -> None:
     assert text.options == ["POKéDEX", "POKéMON", "ITEM", "EXIT"]
     assert text.cursor == "POKéDEX"
     assert text.option_grid == [["POKéDEX"], ["POKéMON"], ["ITEM"], ["EXIT"]]
-    assert text.render_layout().startswith("竖排 4 项，光标在第 1 项")
+    assert len(text.option_grid) == 4 and text.cursor_cell == (0, 0)
 
 
 def test_battle_menu_splits_into_two_columns() -> None:
@@ -158,7 +158,11 @@ def test_battle_menu_splits_into_two_columns() -> None:
     assert text.cursor == "PKMN"
     assert text.option_grid == [["FIGHT", "PKMN"], ["ITEM", "RUN"]]
     assert text.cursor_cell == (0, 1)
-    assert text.render_layout().startswith("2 行 × 2 列，光标在第 1 行第 2 列")
+    assert (
+        len(text.option_grid) == 2
+        and all(len(row) == 2 for row in text.option_grid)
+        and text.cursor_cell == (0, 1)
+    )
 
 
 def test_two_word_item_names_are_not_split() -> None:
@@ -205,7 +209,6 @@ def test_prices_and_quantities_hang_on_the_item_above() -> None:
 
     assert text.options == ["POKé BALL", "ANTIDOTE", "CANCEL"]
     assert text.option_details == ["¥200", "× 3", ""]
-    assert text.render_details() == "POKé BALL ¥200 / ANTIDOTE × 3"
     assert text.covered
 
 

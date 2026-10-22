@@ -9,7 +9,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import pytest
+from _fake_langfuse import FakeLangfuseClient
 from _fake_run import run_fake
 
 from pokemon_agent.direct.trace import CONTENT_MODELS, TraceTool, parse
@@ -20,7 +23,15 @@ from pokemon_agent.direct.trace.content import (
     TaskEndContent,
 )
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceEvent, TraceKind
-from pokemon_agent.world import Facts, Observation, RamReadout
+from pokemon_agent.trace import LangfuseTrace
+from pokemon_agent.world import (
+    Facts,
+    Observation,
+    PlaceInWorld,
+    RamReadout,
+    TaskObservation,
+    TaskScene,
+)
 from pokemon_agent.world.interface import (
     BagItem,
     BattleStatus,
@@ -102,7 +113,7 @@ def test_a_sense_frame_with_a_ram_readout_round_trips(tmp_path) -> None:
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.SENSE_FRAME,
             meta={"source": "task.sense", "episode_id": "r1-ep1", "task_id": "t1", "step": 3},
-            obs=Observation(step=3, status="s", facts=facts),
+            obs=Observation(step=3, facts=facts),
             frame="data:image/png;base64,AAAA",
             ram=ram,
         )
@@ -116,3 +127,47 @@ def test_a_sense_frame_with_a_ram_readout_round_trips(tmp_path) -> None:
     assert parsed.content.facts.options == ["FIGHT", "PKMN"]
     assert parsed.content.facts.model_extra == {"my_hp": "20/20"}
     assert parsed.content.done is False and parsed.meta.step == 3
+
+
+@pytest.mark.parametrize("backend", ["local", "langfuse"])
+def test_a_status_written_by_an_old_run_still_parses_but_new_ones_stop_writing_it(
+    tmp_path: Path, backend: str
+) -> None:
+    facts = Facts(overlay=Facts.Overlay.CHOICE, options=["FIGHT"], my_hp="20/20")
+    observation = TaskObservation(
+        step=0, facts=facts, scene=TaskScene.BATTLE, place=PlaceInWorld(map_id=1, x=2, y=3)
+    )
+    if backend == "local":
+        trace = TraceTool.build(run_id="r1", trace_root=tmp_path)
+    else:
+        client = FakeLangfuseClient()
+        trace = TraceTool(
+            LangfuseTrace(trace_id=client.create_trace_id(seed="r1"), client=client), run_id="r1"
+        )
+
+    trace.append(
+        FromHarnessToTraceToolAppendReq(
+            kind=TraceKind.SENSE_FRAME,
+            meta={"source": "task.sense", "episode_id": "r1-ep1", "task_id": "t1", "step": 0},
+            obs=observation,
+        )
+    )
+    [event] = trace.read_events({"run_id": "r1"})
+    written = json.loads(event.content)
+    current = parse(event)
+    old = event.model_copy(
+        update={"content": json.dumps({**written, "status": "旧状态"}, ensure_ascii=False)}
+    )
+    previous = parse(old)
+
+    assert set(written) == {"facts", "done", "scene", "place"}
+    assert written["facts"] == facts.model_dump(mode="json")
+    assert current.content.status is None
+    assert current.content.scene == observation.scene
+    assert current.content.place == observation.place
+    assert current.content.facts.overlay == Facts.Overlay.CHOICE
+    assert isinstance(previous.content, SenseFrameContent)
+    assert previous.content.status == "旧状态"
+    assert previous.content.model_dump(exclude={"status"}) == current.content.model_dump(
+        exclude={"status"}
+    )

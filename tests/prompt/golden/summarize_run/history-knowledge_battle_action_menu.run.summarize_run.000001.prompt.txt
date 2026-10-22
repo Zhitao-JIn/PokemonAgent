@@ -1,0 +1,47 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标
+终止类别：budget_exhausted；判定依据：budget_exhausted
+累计 3 局，其中 2 局成功，使用 26 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_battle_action_menu｜在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标｜completed｜note=budget_exhausted｜overturned=false
+- plan-eval-knowledge_battle_action_menu-1｜在野外草丛区域走动直到触发一场野生宝可梦战斗，进入战斗行动菜单｜completed｜note=｜overturned=false
+- plan-eval-knowledge_battle_action_menu-2｜在当前战斗行动菜单中仅用方向键把光标从 FIGHT 移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单｜pending｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_battle_action_menu-ep1) 目标：在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标（未成功，decompositions_exhausted，2 个 task / 9 键）
+  结论  在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标；decompositions_exhausted；任务 2；动作 9
+  （本局无正文：本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆））
+
+(eval-knowledge_battle_action_menu-ep2) 目标：在野外草丛区域走动直到触发一场野生宝可梦战斗，进入战斗行动菜单（成功，goal_done，4 个 task / 14 键）
+  结论  最终达成 goal_done：导航与遇敌环节都用了最省键的做法（对齐单轴直推 + 脚本自动来回走），战斗开场白虽因逐帧按 a 在 t3 耗尽 10 键预算，但 t4 只补 1 键就跨过最后一句对话进入行动菜单——说明方向正确，只是开场白帧数被低估。
+  总结  在 map12 草丛中先向北走两格到 (12,22)，再用 bounce_in_tall_grass(steps=30) 一步触发野生 RATTATA 战斗；进入战斗后连续按 a 推进开场白，最后一句 'Go! BULBASAUR!' 按掉后叠加层由 dialog 变 choice，行动菜单出现且光标停在 FIGHT。
+  可复用经验  目标坐标与当前坐标只差一个轴时，先对齐另一轴再沿该轴直推，不斜走不绕路；目标为『在草丛中来回走动直到进入 battle』时，直接调用 script:bounce_in_tall_grass(steps=N)，比逐键交替方向键更省键且稳定；执行 bounce 脚本前确认脚下或四邻有草丛格（G），否则不会触发遇敌；进入 battle 后开场白是固定多帧序列（Wild X app → appeared! → 血条 → Go! X! → 出场动画），每帧一次 a，需预留约 6-8 键；判断是否到行动菜单看叠加层字段（dialog→choice）与底部是否出现 ▶FIGHT/PKMN/ITEM/RUN，而不是只看对话文本；开场白最后一句通常是 'Go! <己方名>!'，按掉它即进入行动菜单，此时立即停手避免误选；预算紧张时进入战斗后连按 a 直到叠加层不再是 dialog，不要逐帧观察后再按
+  关键决策  第 0 步按 up 验证向北路线（x 不变、y 递减），第 1 步继续 up 命中目标格后立即停手；用 bounce_in_tall_grass(steps=30) 脚本代替手动方向键交替，是一步触发遇敌的关键转折；t3 中第 8 条按 a 前后快照完全相同（仍 'Go! BULBASAUR!'），是动画等待帧，白按一次——预算浪费的转折点；t4 只按 1 次 a 恰好推进最后一句对话，dialog→choice 切换并生成行动菜单
+  失败点  把 10 键预算几乎全花在开场对话上，没有为最后的 FIGHT 确认留余量，导致 budget_exhausted；逐帧手动按 a 推进开场白效率低，未在进入 battle 后立即采用连按/循环跳过对话的策略；在动画等待帧上按 a 不推进任何状态，纯浪费按键；仅看到 'Go! X!' 对话框就以为接近菜单，实际后面还有出场动画帧，拉长了到菜单的距离
+  质量分 0.80（理由：四个 task 覆盖导航、遇敌、开场白推进三段完整链路，正负样本都有且字段具体（坐标、朝向、叠加层、对话文本、HP/等级），可复用性高；扣分在于样本仅一局、任务都很短，且负样本只暴露了预算分配问题而非复杂战斗决策。）
+  标签  tall_grass、wild_encounter、battle_intro、action_menu、budget_management、script_bounce、navigation
+
+(eval-knowledge_battle_action_menu-ep3) 目标：在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标（成功，goal_done，1 个 task / 3 键）
+  结论  成功达成 goal_done：关键在于识别菜单是 2×2 网格，到达最右列后必须改用 down 换行才能到 RUN，而不是继续按 right；每次按键后核对光标行列坐标确认移动有效。
+  总结  在战斗行动菜单（2×2 网格 FIGHT/PKMN/ITEM/RUN）中，光标初始在 FIGHT，用 right→right→down 三键把光标移到 RUN 并停手，未按 a 确认，达成目标；其中第二次 right 在右边界无效，是唯一浪费的键。
+  可复用经验  2×2 行动菜单从 FIGHT 到 RUN：先 right 到 PKMN，再 down 到 RUN（或先 down 到 ITEM 再 right）；光标已在最右列时 right 无效，应改用 down/up 换行；每次按键后核对 option_layout 的行列坐标与光标字段，确认是否真的移动；目标只要求移动光标时，到达目标项后立即停手，不要按 a 确认
+  关键决策  step0 按 right：FIGHT→PKMN，正确换列；step1 再按 right：在右边界无效，应改按 down；step2 按 down：PKMN→RUN，正确换行并达成目标
+  失败点  step1 的 right 是无效键：光标已在第 2 列，右边界无法再右移，浪费 1 键；应在到达右列后立即改用 down；容易误以为一直按 right 就能到 RUN，忽略 2×2 网格需要换行
+  质量分 0.75（理由：记录完整、前后快照清晰，含一次典型边界无效键，对学习 2×2 菜单移动规律有参考价值；但任务极短、仅一个 task、信息量有限，故未给高分。）
+  标签  battle、action_menu、cursor_navigation、2x2_grid、boundary
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

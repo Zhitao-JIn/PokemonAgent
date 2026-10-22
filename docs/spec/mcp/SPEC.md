@@ -226,7 +226,7 @@ class MemoryToolPort(Protocol):
 |---|---|---|---|---|
 | 1 | `reset` | task_id, goal, success_criteria, max_steps, initial_state_hint?, state_base64?, client_id? | null | 先检查租约；给了 state_base64 则解码为本次 reset 的 start_state，优先于默认起点；max_steps>0；不感知 |
 | 2 | `get_action_space` | — | `{mask:{name:bool}, entries:[{kind,name,params?,desc?}], scene}` | **统一能力掩码**（用户定案）：原子键与脚本**等价**——同一 `name→enabled` 命名空间，LLM 同权选择；`entries` 带各条目载荷（脚本带 params/desc）。吸收并替代原 all_actions / 宏签名表（删） |
-| 3 | `perceive_task` | — | `{scene, screen\|walk_map, pos}` | 只读内存与屏幕缓冲；不失败不重试 |
+| 3 | `perceive_task` | — | `{scene, screen, cells, place}` | 只读内存与屏幕缓冲；不失败不重试 |
 | 4 | `step` | segments:[[key,times],…], settle:bool | `{moved:bool, event:裸事件\|null}` | **唯一按键执行口**；每段键断言在动作空间；响应带本键裸事件——判定前移 server 的输出点 |
 | 5 | `save_state` | — | state_base64 | 全量导出逐字节，不 tick |
 | 6 | `read_wram` | — | wram_base64 | 数据集冻结用的只读口，返回 `0xC000–0xDFFF` 共 8192 字节的 base64；不占租约、不推进世界 |
@@ -340,9 +340,11 @@ ScriptRun 持有：预算（steps/帧）；events[]；对话增量缓存（已�
 单步 step → 到位=成功；没动=`blocked`（一步即判）。
 
 **`walk_to(x, y, max_steps?=200)`** → `{final_pos, steps_used}`
-固定轴序选缩短曼哈顿距离的方向 → 位移失败换另一轴试一次 → 仍失败 `blocked` →
-每 5 步校验距离收敛，不收敛 `not_converging`。不做 BFS（绕行决策交调用方）。
-相邻目标不可走时立即 `blocked`，不离开原位绕行；较远目标保留横向试探。
+读取 RAM 地形并用 BFS 自动绕障；每次按键后合并滚动视野、重新规划。允许先远离目标绕过长墙；
+视野外目标沿可达的未知边界探索。墙、NPC、招牌和巨石不作为落点；台阶仅沿箭头跳跃；门仅作为
+明确目标，不作为其他目标的中途路径。目标为已知障碍或没有可达路径/探索边界时报告 `blocked`。
+实际碰撞会屏蔽该有向移动并尝试其他路径。每次按键消耗一个 `max_steps`（包含被挡/中断的一键），
+预算耗尽返回 `budget_exhausted`；保持原有战斗、选项、换图中断和交互事件。地图只保留在本次脚本调用内。
 
 **`face_direction(direction)`** → `{moved, facing}`
 游戏物理：前方可走即真移动。已面向 no-op；否则 step 一次，moved 如实报。
@@ -413,8 +415,7 @@ no_response`（确认无反应是合法结果）；其它场合（choice/battle 
   `memorize`，信封面，harness 消费不变）——薄转发至 server 对应 tool；
   分族/融合/判重逻辑仅由 server 调用 `memory/recall.py` 实现；
 - `mcpclient/world_tool.py`：实现 `GameToolPort`（信封面）——信封翻译与 MCP 转发（脚本动作入口也在此）；
-  get_action_space 保留 server 掩码并通过共用 with_prompt_text 补静态文案，只看 overlay 与
-  covered_by_script，不改 prompt 模板顺序；execute 在发出 MCP 调用前按请求观测本地校验
+  get_action_space 原样验回 server 的掩码与能力条目，不补展示文案；execute 在发出 MCP 调用前按请求观测本地校验
   单键掩码及脚本条目，错误文本符合执行前置契约，键响应保留 data.event（缺失或 null 为 None）；
 - **不持账本坐标**：三章由 harness 判定层补——mcpclient 持有的是
   "信封↔裸面"翻译与转发，不是账本行为；

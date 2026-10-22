@@ -4,8 +4,11 @@
 `events/` 这一层**（0916）。"读哪一批"由 `read_events(meta=…)` 的交集匹配回答，
 `run_id` 只是 `meta` 里的一个键——与 `memory/` 同一条规矩。
 
-落盘记录就是 trace 自己的 `_Event`，七个字段：
-`{uuid, kind, type, started_at, ended_at, meta, content}`（2026-09-27 双时刻改造）。
+落盘记录就是 trace 自己的 `_Event`，八个字段：
+`{uuid, seq, kind, type, started_at, ended_at, meta, content}`（2026-09-27 双时刻改造、
+0928 325 加 `seq`）。`seq` 是**进程内 append 的单调序号**（本类在 append 时取号；
+双后端共享、重启置零、不持久化），也是**同刻 `ended_at` 的决胜键**——"第几条"
+不再靠随机 uuid 排。
 
 **谁盖什么**：`uuid`（= 文件名）归本类；`started_at` / `ended_at`（操作真实起止）
 调用方交了就透传、没交补记账时刻（机械账 start=end=now——它没有时长语义）；
@@ -38,6 +41,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from .datastore.event import _Event
 from .interface.event import Event
 from .seq import next_seq
@@ -59,8 +64,8 @@ def new_event_uuid() -> str:
     布局：`| 48 位毫秒时间戳 | 4 位版本号(7) | 12 位随机 A | 2 位变体(10) | 62 位随机 B |`。
     时间戳占最高位，所以**跨毫秒**生成的 id 按字典序排就是按时间排；同一毫秒内
     那两段是随机的，彼此之间不保序。**这只是给肉眼和 `ls` 的便利**，用来保证
-    "同一个目录里不会撞名、大致按写入时间排列"，排序的真源是 `(ts, uuid)`
-    （读侧见 `_scan_events`）。
+    "同一个目录里不会撞名、大致按写入时间排列"，排序的真源是 `(ended_at, seq)`
+    （读侧见 `_scan_events`），uuid 只当纯标识。
 
     为什么不用标准库现成的：`uuid.uuid7()` 要到 Python 3.14 才有（本项目跑
     3.12），`uuid.uuid1()` 会把网卡 MAC 写进 id，都不合适。这段实现只用
@@ -110,8 +115,8 @@ class LocalTrace:
 
         `root`：**落盘根**——一条事件一个文件的那个目录，不是它下面的某一层。
         缺省用启动目录下的 `_default_root()`（0916 起——不再从 `__file__` 推
-        仓库根）。做成形参是为了让调用方能换落盘位置：生产路径是启动参数
-        `--trace-root` → `build_real(trace_root=…)` → `TraceTool.build(trace_root=…)`
+        仓库根）。做成形参是为了让调用方能换落盘位置：生产路径是配置
+        `paths.trace` → `build_real(config=…)` → `TraceTool.build(trace_root=…)`
         逐级递进来，测试用 `tmp_path`，不往启动目录写。
 
         本类**不持有 run_id / branch**（0927 定案）：执行线标识由 tool 层在调用时
@@ -125,7 +130,7 @@ class LocalTrace:
         本类不再自己推进时刻。
         """
         # str 与 Path 都收（与 `LocalMemoryStore` 的 root 同一条归一规矩）——
-        # 覆盖链上 `build_real(trace_root=…)` 的形参就是 `str | Path`。
+        # 覆盖链上游 `TraceTool.build(trace_root=…)` 的形参就是 `str | Path | None`。
         self._dir = Path(root) if root is not None else _default_root()
         self._dir.mkdir(parents=True, exist_ok=True)
 
@@ -152,6 +157,9 @@ class LocalTrace:
 
         `meta` / `content` 在盘上是 **JSON 字符串**（`json.dumps(..., ensure_ascii=False)`）
         ——需要一层转义，读端 `json.loads` 回来。序列化只在本类做一处。
+
+        失败：`content` 不可 JSON 序列化 → 抛 `TypeError`，**且不落盘**（序列化在
+        构造事件时就跑完，`_atomic_write_text` 在那之后，根目录下不留残留文件）。
 
         后置条件：八个字段已全部落盘；返回的 uuid 与文件名同值。
         **排序真源是 `(ended_at, seq)`**（0928 325）：同刻账按 append 序决胜，
@@ -193,7 +201,7 @@ class LocalTrace:
         每次调用重扫落盘目录——trace 不做内存缓存（内存镜像那套已删，
         需要"盘上有什么"就直接问盘）。
 
-        筛选那几维住在 `meta` 里（封套只认 `uuid`/`kind`/`type`/双时刻），所以要先
+        筛选那几维住在 `meta` 里（封套只认 `uuid`/`seq`/`kind`/`type`/双时刻），所以要先
         把那串 JSON 解回来——`_meta_of` 读不动给空 dict，于是读不动的文件
         **不匹配任何条件**（残文件是预期内的，它不该混进任何一次查询）。
         """
@@ -207,18 +215,22 @@ class LocalTrace:
     def _scan_events(self) -> list[tuple[_Event, Path]]:
         """落盘根下的全部事件（连同它们的文件路径），按 `(ended_at, seq)` 升序。
 
-        残文件/旧格式文件解析失败是预期内的运行期情况，跳过不报错。返回的
+        残文件/旧格式文件解析失败是预期内的运行期情况，跳过不报错；**读取失败
+        （权限、IO）不属于此类，原样抛出**——静默少一条会让读端以为那笔账从来没
+        发生过，与 `read_events` 的契约相悖。返回的
         `_Event` 带 `extra="allow"`，所以旧数据（`event_id`/`ts` 那套）
         里多出来的字段原样挂在 `model_extra` 上——**它们会缺 `uuid`/`ended_at`，
         于是解析当场失败被跳过**，不会静默混进结果。
         """
         found: list[tuple[_Event, Path]] = []
         for path in sorted(self._dir.glob("*.json")):
+            if not path.is_file():
+                continue
             if path.name.endswith(".tmp"):
                 continue
             try:
                 event = _Event.model_validate_json(path.read_text(encoding="utf-8"))
-            except Exception:
+            except (ValidationError, UnicodeDecodeError):
                 continue
             found.append((event, path))
         found.sort(key=lambda pair: (pair[0].ended_at, pair[0].seq))

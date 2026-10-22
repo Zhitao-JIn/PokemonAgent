@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from evals.common.world_case import ROM
 from evals.dataset.frames.schemas import ScreenSample
 from evals.dataset.frames.snapshot import has_map, snapshot_of
+from evals.decode.terrain_text import render_neighbors, render_walk_map, render_where
 from pokemon_agent.world import (
     SCRIPT_ONLY_SCENES,
     at_start,
@@ -38,10 +39,10 @@ def decode_frame(sample: ScreenSample) -> DecodeRun:
         decoded = read_terrain(memory)
         terrain = {
             "map_id": decoded.map_id,
-            "where": decoded.place().render(),
+            "where": render_where(decoded.place()),
             "facing": decoded.facing or "",
-            "walk_map": decoded.render(),
-            "neighbors": decoded.render_neighbors(),
+            "walk_map": render_walk_map(decoded),
+            "neighbors": render_neighbors(decoded),
         }
     return DecodeRun(
         scene={

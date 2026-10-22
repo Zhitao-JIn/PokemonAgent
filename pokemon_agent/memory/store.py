@@ -53,6 +53,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from pokemon_agent.memory.retrieval import (
+    RRF_K,
     Timings,
     build_bm25_from_corpus,
     hybrid_retrieve,
@@ -105,6 +106,10 @@ class LocalMemoryStore:
         reranker: RerankerProviderPort,
         kind: str,
         root: str | pathlib.Path | None = None,
+        *,
+        rrf_k: int = RRF_K,
+        fuse_multiplier: int = 3,
+        fuse_floor: int = 10,
     ) -> None:
         """接好检索用的两个模型 provider（依赖注入，不在这里自己 new）、本实例
         负责的 kind，以及 `memory/` 根目录（缺省为启动目录下的 `memory/`）。
@@ -113,6 +118,10 @@ class LocalMemoryStore:
         docstring"索引是派生物"）。记录文件本身**不读**，按 uuid 惰性读取。
         """
         assert kind in _KINDS, f"unknown kind {kind!r}, expected one of {sorted(_KINDS)}"
+        assert rrf_k > 0 and fuse_multiplier > 0 and fuse_floor > 0
+        self._rrf_k = rrf_k
+        self._fuse_multiplier = fuse_multiplier
+        self._fuse_floor = fuse_floor
         self._embedder = embedder
         self._reranker = reranker
         self._kind = kind
@@ -298,7 +307,9 @@ class LocalMemoryStore:
         """
         assert limit > 0, f"search() needs limit > 0, got {limit}"
         candidate_ids = self.filter(conditions or {})
-        ranked, timings = self.rank(candidate_ids, query, fuse_top_k=max(limit * 3, 10))
+        ranked, timings = self.rank(
+            candidate_ids, query, fuse_top_k=max(limit * self._fuse_multiplier, self._fuse_floor)
+        )
         return [record_id for record_id, _score in ranked[:limit]], timings
 
     def rank(
@@ -369,6 +380,7 @@ class LocalMemoryStore:
             self._embedder,
             self._reranker,
             fuse_top_k=fuse_top_k,
+            rrf_k=self._rrf_k,
             document_vectors=document_vectors,
             prebuilt_bm25=self._bm25_cache[1],
         )

@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from ..pyboy_world import PyBoyWorld
     from .engine import ScriptResult
 
-from ..interface import PlaceInWorld, ScreenText
+from ..interface import PlaceInWorld, ScreenText, TerrainMap
 
 
 class WorldConsoleAdapter:
@@ -73,6 +73,12 @@ class WorldConsoleAdapter:
 
     def facing(self) -> str:
         return read_facing(self.memory)
+
+    def terrain(self) -> TerrainMap:
+        """读取稳定地图的本帧地形，不执行按键或帧推进。"""
+        from ..ram import read_terrain
+
+        return read_terrain(self.memory)
 
     def is_grass(self, x: int, y: int) -> bool:
         px, py = int(self.memory[W_X_COORD]), int(self.memory[W_Y_COORD])

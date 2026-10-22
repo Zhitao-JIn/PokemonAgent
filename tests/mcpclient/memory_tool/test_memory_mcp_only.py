@@ -1,5 +1,6 @@
 """memory 只经 MCP 装配，四个 Port 信封通过真实服务端往返。"""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -17,16 +18,26 @@ from pokemon_agent.schemas.harness import (
 
 def test_build_requires_a_server_url() -> None:
     """空地址在启动客户端前报出部署变量名。"""
-    with pytest.raises(ValueError, match="MCP_MEMORY_SERVER_URL"):
+    with pytest.raises(ValueError, match="services.memory_server_url"):
         MemoryTool.build(memory_server_url="")
 
 
-def test_build_real_without_memory_url_fails_at_assembly(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_real_without_memory_url_fails_at_assembly(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """清空部署环境，装配期拒绝缺地址；不连接网络、不创建模拟器或模型。"""
     import pokemon_agent.build as assembly
 
-    monkeypatch.delenv("MCP_MEMORY_SERVER_URL", raising=False)
-    monkeypatch.delenv("MCP_WORLD_SERVER_URL", raising=False)
+    overlay = tmp_path / "overlay.json"
+    overlay.write_text(
+        json.dumps(
+            {
+                "services": {"world_server_url": "http://example", "memory_server_url": None},
+                "paths": {"runs_root": str(tmp_path)},
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(assembly, "load_env_file", lambda: None)
     monkeypatch.setattr(assembly.WorldMcpTool, "build", lambda *args, **kwargs: object())
     monkeypatch.setattr(assembly.TraceTool, "build", lambda **kwargs: object())
@@ -37,8 +48,8 @@ def test_build_real_without_memory_url_fails_at_assembly(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(assembly, "assert_mcp_server_ready", world_probe)
 
-    with pytest.raises(McpTransportError, match="MCP_MEMORY_SERVER_URL"):
-        assembly.build_real(trace_backend="local", world_server_url="http://example")
+    with pytest.raises(McpTransportError, match="services.memory_server_url"):
+        assembly.build_real(overlay)
 
 
 def test_memory_tool_round_trips_all_four_calls_through_a_real_server(tmp_path: Path) -> None:

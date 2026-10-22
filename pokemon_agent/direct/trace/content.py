@@ -58,6 +58,7 @@ class EpisodeEndContent(_Content):
 
 
 class TaskStartContent(_Content):
+    entry_id: str | None = None
     goal: str
     success_criteria: str
     max_steps: int
@@ -65,6 +66,7 @@ class TaskStartContent(_Content):
 
 
 class TaskEndContent(_Content):
+    entry_id: str | None = None
     termination: str
     judge_reason: str
     steps_used: int
@@ -72,7 +74,7 @@ class TaskEndContent(_Content):
 
 
 class SenseFrameContent(_Content):
-    status: str
+    status: str | None = None
     facts: Facts
     done: bool
     perceived: bool | None = None
@@ -127,6 +129,9 @@ class CheckStallContent(_Content):
 
 
 class JudgeVerdictContent(_Content):
+    decision: str = ""
+    judge_trigger: str = "normal"
+    planning_round: str = ""
     termination: str
     fail_streak: str
     judge_reason: str
@@ -142,12 +147,18 @@ class DecomposedTask(_Content):
 
 
 class DecomposeVerdictContent(_Content):
+    planning: dict[str, Any] | None = None
+    planning_round: str | None = None
+    execution_order: list[str] | None = None
     tasks: list[DecomposedTask]
     why: str
     human_note: str
 
 
 class PlanVerdictContent(_Content):
+    planning: dict[str, Any] | None = None
+    planning_round: str | None = None
+    execution_order: list[str] | None = None
     pushed_goals: list[str]
     updates: list[Any]
     why: str

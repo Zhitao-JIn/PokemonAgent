@@ -25,7 +25,6 @@ from pokemon_agent.brain.interface import (
     JudgeResult,
     ModelCall,
     PlanResult,
-    Reflection,
     RunSummary,
     ScriptSignature,
     SummarizeResult,
@@ -104,15 +103,16 @@ class _Brain:
         result = ChooseResult(action=Action(sequence=[ActionSegment(name=keys[0])]), calls=[])
         return result.model_copy(update={"calls": _call(prompt, result)})
 
-    def reflect(self, *, prompt: str, before: str, after: str, action_text: str) -> Reflection:
-        return Reflection(before=before, action_text=action_text, after=after)
-
     def judge(
         self, *, prompt: str, goal: str, history: Sequence[str], images: Sequence[str] = ()
     ) -> JudgeResult:
         layer = "task" if goal == SUBTASK else "run" if goal.startswith("依次完成") else "episode"
         self._asked[layer] += 1
-        result = JudgeResult(done=self._policies[layer](self._asked[layer]), why="w", calls=[])
+        result = JudgeResult(
+            decision=("achieved" if self._policies[layer](self._asked[layer]) else "continue"),
+            why="w",
+            calls=[],
+        )
         return result.model_copy(update={"calls": _call(prompt, result)})
 
     def plan(
@@ -125,8 +125,10 @@ class _Brain:
         images: Sequence[str] = (),
         thinking: bool | None = None,
     ) -> PlanResult:
-        goal = RunPlan.PlanGoal(goal="新目标", success_criteria="c", max_steps=3)
-        result = PlanResult(plan=RunPlan(push_goals=[goal]), calls=[])
+        goal = RunPlan.PlanGoal(
+            goal="新目标", success_criteria="c", budget={"limit": 3, "unit": "tasks"}
+        )
+        result = PlanResult(plan=RunPlan(why="测试规划依据", new_items=[goal]), calls=[])
         return result.model_copy(update={"calls": _call(prompt, result)})
 
     def decompose(
@@ -142,9 +144,14 @@ class _Brain:
         self._decomposed += 1
         if self._decomposed == self._fail_on_decompose:
             raise AgentError("假拆解在这一次上坏了")
-        planned = Decomposition.PlannedTask(goal=SUBTASK, success_criteria="c", max_steps=2)
+        planned = Decomposition.PlannedTask(
+            goal=SUBTASK, success_criteria="c", budget={"limit": 2, "unit": "actions"}
+        )
         result = DecomposeResult(
-            decomposition=Decomposition(tasks=[planned] * self._tasks_per_plan), calls=[]
+            decomposition=Decomposition(
+                why="测试规划依据", new_items=[planned] * self._tasks_per_plan
+            ),
+            calls=[],
         )
         return result.model_copy(update={"calls": _call(prompt, result)})
 

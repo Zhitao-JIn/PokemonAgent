@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from pokemon_agent.brain.interface import Goal
 from pokemon_agent.schemas.harness.domain import GoalEntry, JudgeFeedback
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, RunMemory
 from pokemon_agent.world import TaskObservation
@@ -34,6 +35,9 @@ class FromHarnessToBrainToolPlanOnceReq(BaseModel):
     与 judge / choose 同样由门面掌握图的组装。
     """
 
+    run_goal: Goal
+    remaining_planning_rounds: int | None = None
+    execution_order: list[str] = Field(default_factory=list)
     run_id: str
     plan: list[GoalEntry]
     details: list[EpisodeMemory] = Field(

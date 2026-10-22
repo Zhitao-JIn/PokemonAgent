@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from _doubles.world_console import grid_terrain
+
 from pokemon_agent.world import PlaceInWorld, ScreenText
-from pokemon_agent.world.interface import BUTTON_FACING
+from pokemon_agent.world.interface import BUTTON_FACING, TerrainMap
 from pokemon_agent.world.ram import (
     W_PARTY_COUNT,
     W_PARTY_MON1_HP,
@@ -76,6 +78,9 @@ class NavConsole:
 
     def facing(self) -> str:
         return self._facing
+
+    def terrain(self) -> TerrainMap:
+        return grid_terrain(self.pos(), self._walkable)
 
     def object_kind(self, x: int, y: int) -> str | None:  # noqa: ARG002
         return None
@@ -240,6 +245,9 @@ class HealConsole:
 
     def facing(self) -> str:
         return self._facing
+
+    def terrain(self):
+        return grid_terrain(self.pos(), self._walkable)
 
     def object_kind(self, x: int, y: int) -> str | None:  # noqa: ARG002
         return None

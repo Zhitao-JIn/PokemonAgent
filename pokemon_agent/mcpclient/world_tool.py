@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from pokemon_agent.env import env_str
-from pokemon_agent.mcpclient.action_space import action_space_for, with_prompt_text
+from pokemon_agent.mcpclient.action_space import action_space_for
 from pokemon_agent.mcpclient.client import McpClient, McpToolError
 from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolExecuteReq,
@@ -56,7 +56,7 @@ class WorldMcpTool:
         /health 由装配点在 run 开始前检查。
         """
         if not world_server_url.strip():
-            raise ValueError("world 只经 MCP：请设置 MCP_WORLD_SERVER_URL")
+            raise ValueError("world 只经 MCP：请在配置里设 services.world_server_url")
 
         from pokemon_agent.mcpclient.client import McpClient, mcp_endpoint
 
@@ -144,7 +144,7 @@ class WorldMcpTool:
         assert req.observation is not None, "get_action_space() needs the observation in question"
         body = self._client.call_tool_sync("get_action_space", {})
         return FromHarnessToGameToolGetActionSpaceResp(
-            action_space=with_prompt_text(ActionSpace.model_validate(body["data"]), req.observation)
+            action_space=ActionSpace.model_validate(body["data"])
         )
 
     def perceive_task(self) -> FromHarnessToGameToolPerceiveTaskResp:

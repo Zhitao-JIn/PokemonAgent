@@ -1,12 +1,14 @@
+> R6c（529）清理说明：旧后端、控制台、网页与实时推送已删除；依赖旧后端信封的旧 AI 进程及其测试一并删除。R7 保留新 AI 席、依赖与探针工作。
+
 # Reviewer spec —— 全链路只读透明 + 最终裁决（插话 / 审），一个独立 reviewer 进程、人（终端）与 AI 同权
 
 > 流程位置：intent.md → **spec.md**（本文件）→ plan → 落码
-> 状态：v3（2026-10-17）；R1a、R2、R3 已完成；其余待按 plan 逐步放行，**R3 起须等 brain-scope 合入主线后恢复**（见 plan §八）
+> 状态：v3（2026-10-17）；R1a、R2、R3、R3b 已完成；其余待按 plan 逐步放行，**R3 起须等 brain-scope 合入主线后恢复**（见 plan §八）
 > v3 修订原因：brain-scope（`docs/brain_scope/spec.md` v1.3）改变大脑请求的形状，并让规划 / 拆解处开始看图。本稿同步：①更正 #18 的前提并新增 #19–#21（`brain_input` 里的帧、`read_brain_frames`、AI 首条消息不带图）；②`ReviewContext` 渲染按新字段（4.1）；③`RecallQuery` 增 `run_goal` 键与 `runs` 提示；④清掉 v2 遗留的 `frame` 残句（6.5、7.2、十四、十五）与 `FrameQuery` 缺 `latest` 的不一致。
 > v3.1（2026-10-17）：task 层改为**可选审点**（配置 `REVIEW_LAYERS`，默认关闭，只做 judge 处的 audit，不做 inject），见 #22；新增 R3b。
 > v4（2026-10-17）：reviewer 改为**独立进程**（人、AI、hub、读端口同在其内，harness 只经 `Reviewer` 端口与薄适配 `RemoteReviewer` 相连），见 #23；删除 harness 侧 `ReviewView`；`read_world` 取消；重写 §二 / §五 / §六 / §九 / §十 / §十三，R5 / R6 重排。
 > 上游：`docs/reviewer/intent.md`
-> 改动面：`harness/`、`schemas/`、新包 `reviewer/`（独立进程）、新包 `reviewer_link/`（run 侧适配）、`build.py` 一处装配；旧的 `review_backend/`、`agent_reviewer/` 在 R6c / R7 删除
+> 改动面：`harness/`、`schemas/`、新包 `reviewer/`（独立进程）、新包 `reviewer_link/`（run 侧适配）、`build.py` 一处装配；旧的 `review_backend/`、`agent_reviewer/` 已在 R6c 删除
 > 约束：不碰 brain；不改 `Reviewer` 协议的两个方法名；产出只有一个作者（无改写）；harness 只依赖自己定义的端口
 
 ---
@@ -37,7 +39,7 @@
 | 19 | v2 的 #18 把「规划与拆解处大脑不看图」当前提（`PlanOnceReq` 无 images）。brain-scope（spec v1.3 D9，CP4）之后该前提**不再成立**：`BrainPort.plan` / `decompose` 增 `images`，L0 带每局首末帧、L1 带每 task 首末帧；这些帧就在请求里的记忆对象上（`EpisodeMemory` / `TaskMemory` 的 `first_frame` / `last_frame`）。reviewer 默认只涉及 run / episode 两层，即这两类对象（task 层可选，其帧在 `ActMemory` 的前后帧上，同理，见 #22） | #18 的**结论不变**：「当前帧」仍不是任何请求的入参，仍不进 `ReviewContext`、仍按需拉取。**新增一条口径**：reviewer 必须能看到「大脑这一问看到的图」。`brain_input` 的记忆对象本来就带着帧，由纯函数 `frames_of(brain_input)` 取出（顺序与去重同大脑；不套 `SCOPE_IMAGE_CAP`，故 reviewer 可见 ⊇ 大脑所见）；新增查询变体 `BrainFramesQuery`（`read_brain_frames`），分页返回，由 hub 用当前问的快照回答（5.3）。渲染文本一律不输出这些 data URI，只写「图 N 张」 |
 | 20 | v2 的 7.2 写 AI 首条消息带 `context.frame` 图 | 作废（该字段自 #18 起已不存在）：**首条消息只带快照文本，不带图**；图由 AI 按需调 `read_brain_frames` / `read_frame`。理由：brain-scope 后一问的大脑图像最多 20 张（`SCOPE_IMAGE_CAP`），每问都带会把 AI 席成本推高一个量级，而多数问不需要看图 |
 | 21 | v2 遗留：`FromReviewerToCliAskMsg.frame`、`test_four_review_points_carry_context` 与验收 4 里的 `frame`；`FrameQuery` 没有 #18 说的 `latest` | 一并订正：Ask 信封的 `context` 改为渲染文本，另带 `brain_frames`（张数），帧不上线（6.5）；`FrameQuery` 的 `which` 增 `latest`（5.2） |
-| 22 | 原设计：reviewer 只管 run / episode 两层，task 层不碰 reviewer | 改为 **task 层可选**：配置 `REVIEW_LAYERS`（默认 `("run", "episode")`，加 `"task"` 即开）。开启后 task 层只多**一个审点**：`judge·L2` 判「已达成」时的 **audit**（与另两层同构：认账才盖 `GOAL_DONE`，推翻写 `last_judge`、本 task 继续）。**不做 inject**：task 层的规划是逐步的 `choose`（一个 task 至多 12 步），逐步插话会让 run 被反复阻塞，且 `ChooseOnceReq.human_note` 已是现成的人工入口，需要时另案。默认关闭时 task 图行为与现状逐位相同；开启后每个 task 判成时阻塞一次（每 episode 至多 `episode_max_tasks` 次） |
+| 22 | 原设计：reviewer 只管 run / episode 两层，task 层不碰 reviewer | 改为 **task 层可选**：配置 `REVIEW_LAYERS`（默认 `("run", "episode")`，加 `"task"` 即开）。开启后 task 层只多**一个审点**：`judge·L2` 判「已达成」时的 **audit**（与另两层同构：认账才盖 `GOAL_DONE`，推翻写 `TaskState.last_judge`、本 task 继续，下一次 choose 的 `human_note` 带推翻理由）。**不做 inject**：task 层的规划是逐步的 `choose`（一个 task 至多 12 步），逐步插话会让 run 被反复阻塞，且 `ChooseOnceReq.human_note` 已是现成的人工入口，需要时另案。默认关闭时 task 图行为与现状逐位相同；开启后每个 task 判成时阻塞一次（每 episode 至多 `episode_max_tasks` 次） |
 | 23 | v3 及之前：reviewer 并入 run 进程（AI 席进程内线程，人经本地 WS 连独立 CLI 终端）；harness 里有 `ReviewView` 端口、`HarnessReviewView`、`ViewAware`、`bind_view` | **v4：reviewer 整体独立成进程**（用户 2026-10-17）。人席（终端）、AI 席（Pydantic AI，asyncio 任务）、hub、读端口同在一个进程；harness 只有薄适配 `RemoteReviewer`（`reviewer_link/`，经本地 WS 送出一问、等回话）。reviewer 自己持有 trace 与记忆的**只读**读端口，按需拉取；默认快照仍是 judge / plan 当次的请求。连带变化：①删除 harness 侧 `ReviewView` / `HarnessReviewView` / `ViewAware` / `bind_view`；②`read_world` 取消（快照已含 RAM 现状 `observation`；动作空间如需，由 run 随问附带）；③提问前 harness 先 flush trace，保证另一进程读到最新账；④查询模型的产出方改为 reviewer（`schemas/reviewer/`）；⑤`review_cli` 包不再有，终端并入 `reviewer`；⑥多终端同连取消；⑦往期问答可跨 run 保留（reviewer 进程不随 run 生灭，`HISTORY_LIMIT` 仍封顶）；⑧启动顺序：先起 reviewer、再起 run |
 
 **术语**：intent 里「decode」＝ `plan_episode` 里的 **decompose**（把目标拆成 task）。
@@ -123,7 +125,7 @@ task / episode 的**成败从此只由机械判定决定**，不再有人审翻�
 | 旧控制台 | `harness/console_reviewer.py::ConsoleReviewer`、`config.CONSOLE_REVIEW_TIMEOUT`；`tests/harness/review/test_reviewer_by.py` 里对它的用例（改为对 `ReviewerApp` / `RemoteReviewer`）；`docs/PLAN_console_reviewer.md` 的状态说明 | R6c |
 | 旧网页与后端 | `harness/web_reviewer.py::WebReviewer`；整个 `review_backend/` 包（含 `page.py`、`agent_client.py`、`backend.py`）；`config.WEB_REVIEW_TIMEOUT`；跳 A（`FromHarnessToReviewBackend*`）与跳 B（`FromReviewBackendToFrontend*`、`FromFrontendToReviewBackend*`）全部信封及其包出口；对应测试与夹具 | R6c |
 | 实时流 | `direct/trace/live_feed.py::LiveFeedTrace`；`TraceTool.build` 与 `build.py` 的 `live_feed_url` 参数；`FromHarnessToReviewBackendFeedReq` / `FromReviewBackendToFrontendFeedReq`；`tests/_harness_fixtures/harness.py` 的 `live_feed_url`；相关测试 | R6c |
-| 旧 AI 席 | 整个 `agent_reviewer/` 包（`agent.py` 的 `_OVERTURN_WORDS` / `_ACCEPT_WORDS` / `_parse` / `_render`、`server.py`、`provider.py` 旧形状）；`schemas/agent_reviewer/`；对应测试 | R7 |
+| 旧 AI 席 | 整个 `agent_reviewer/` 包（`agent.py` 的 `_OVERTURN_WORDS` / `_ACCEPT_WORDS` / `_parse` / `_render`、`server.py`、`provider.py` 旧形状）；`schemas/agent_reviewer/`；对应测试 | R6c（关联清理） |
 | 线上陈旧字段 | 随跳 A 一并消失（`timeout_s` 等） | R6c |
 | 文档与测试 | `reviewer.py` 顶部「落点」表；`docs/agent_reviewer/card.md`、`docs/agent_reviewer/spec.md`、`docs/web_reviewer/*`（加状态说明，正文不改）；测试里对 `overturned` / task 审点的断言与假件 | R6c / R7 / R9 |
 | 规范 | `CLAUDE.md` / `AGENTS.md` §四第 3 条中「人审推翻只改目标表 / 任务表」整句（须你点头） | R9 |
@@ -152,7 +154,7 @@ class ReviewContext(BaseModel):
     fail_streak: int
 ```
 
-- **互斥校验**：`layer == "run"` ⇒ `goals` 非 None 且 `tasks` 为 None；`layer == "episode"` ⇒ `tasks` 非 None 且 `goals` 为 None；`layer == "task"` ⇒ `goals`、`tasks` 皆 None 且 `task_id` 非 None（task 层的快照就是 `brain_input` 里的 `JudgeReq`：task 目标、本 task 全部 ActMemory、`task_index`、`knowledge`）（用仓库既有的契约写法）。
+- **互斥校验**：`layer == "run"` ⇒ `goals` 非 None 且 `tasks` 为 None；`layer == "episode"` ⇒ `tasks` 非 None 且 `goals` 为 None；`layer == "task"` ⇒ `goals`、`tasks` 皆 None 且 `task_id` 非 None（task 层的快照就是 `brain_input` 里的 `JudgeReq`：task 目标、本 task 全部 ActMemory、`task_index`、`knowledge`）（用仓库既有的契约写法）。task 层的 fail_streak 取本层 stall_count。
 - **取值**：run 层 `goals` 取判停前已定案的表（`updates.get("goals", state.goals)`）；episode 层 `tasks` 取 `updates.get("tasks", state.tasks)`；`brain_input` 取该次实际发给大脑的那封请求；
   不放「当前帧」（更正 #18）；大脑这一问看到的图在 `brain_input` 的记忆对象里，经 `frames_of` 取、经 `read_brain_frames` 按需看（更正 #19）。
 - **不放**：世界动作空间（不是任何一次大脑请求的入参；v4 起 reviewer 没有世界读取，#23）。
@@ -176,7 +178,7 @@ class ReviewContext(BaseModel):
 | task 层 judge（judge·L2，**可选**） | `JudgeReq` | `history`：本 task 全部 ActMemory | `task_index` | `knowledge`；RAM 现状由 `history` 最后一条的 `after` 给出 | `history[*].before_frame` / `after_frame` |
 
 - 体量变大：L0 详情是最多 `max_episodes`（brain-scope 后默认 10）条局记忆全文，`ctx` 因此改为**按节输出**（`ctx [--section 名]`，6.4），默认只打节目录与各节行数；AI 首条消息仍是全文（与大脑所见等量），故不带图（#20）。
-- 渲染对索引行直接用对象自带的 `index_line()` 结果，不另写一套。
+- 渲染对索引行由 reviewer 自己的渲染函数产出；memory 对象不再提供 `index_line()`。
 
 ---
 
@@ -192,7 +194,8 @@ class MemoryReader(Protocol):         # 对应 MemoryToolPort.recall，仅此一
     def recall(self, req: FromHarnessToMemoryToolRecallReq) -> FromHarnessToMemoryToolRecallResp: ...
 
 class ViewReaders:
-    def __init__(self, trace: TraceReader, memory: MemoryReader) -> None: ...
+    def __init__(self, trace: TraceReader | None, memory: MemoryReader | None,
+                 *, trace_delayed: bool = False) -> None: ...
     def read_trace(self, q: TraceQuery, *, default_run_id: str) -> ViewAnswer: ...
     def recall(self, q: RecallQuery) -> ViewAnswer: ...
     def read_frame(self, q: FrameQuery, *, default_run_id: str) -> ViewAnswer: ...
@@ -200,7 +203,7 @@ class ViewReaders:
 
 签名以 R5 核查结果为准。`read_brain_frames` 由 hub 回答（5.3）。同步端口在 hub 的单事件循环里经 `run_in_executor` 调用，不阻塞终端与倒计时。
 
-返回 `ViewAnswer(ok: bool, text: str, images: list[str])`：`text` 是渲染好的文本（人 / LLM 直接读），`images` 只有 `read_frame` / `read_brain_frames` 才非空（data URI，单次 ≤ `FRAME_QUERY_MAX_IMAGES`）。失败 `ok=False` 并在 `text` 里说明，不抛。
+返回 `ViewAnswer(ok: bool, text: str, images: list[str])`：`text` 是渲染好的文本（人 / LLM 直接读），`images` 只有 `read_frame` / `read_brain_frames` 才非空（data URI，单次 ≤ `FRAME_QUERY_MAX_IMAGES`）。预期读取失败 `ok=False` 并在 `text` 里说明；编程错误上抛。
 
 ### 5.2 查询模型（`schemas/reviewer/view.py`，reviewer 产出）
 
@@ -247,16 +250,17 @@ ViewQuery = Annotated[
 ### 5.3 实现
 
 - **装配与只读**：`ViewReaders` 由 reviewer 的 `__main__` 装配；窄 Protocol 声明在 `reviewer/view/` 内，类型上拿不到 `append` / `memorize` 等写方法。记忆读端口背后是 MCP 客户端（`MCP_MEMORY_SERVER_URL`）；trace 读端口背后是与 run 同一后端、同一份配置的读取器。只用默认开放的 `recall`，不依赖 `--enable-admin`。
-- `read_trace`：`meta = {"run_id": query.run_id or default_run_id, **非空过滤键}` → `read_events` → 按 `(ts, uuid)` 取尾部 `last_n` 并应用 `offset` → 复用 `render_events` 的行格式；`content` 按 `content_limit` 截断；**帧 / data URI 一律剔除**（只留 `[frame omitted]`）。
+- `read_trace`：`meta = {"run_id": query.run_id or default_run_id, **非空过滤键}` → `read_events` → 按 kind 筛选 → 按当前事件契约 `(ended_at, seq)` 取尾部 `last_n` 并应用 `offset`，页内升序 → 复用 `render_events` 的行格式而不 import harness；正文先递归去图再按 `content_limit` 截断，0 表示不展示正文；**帧 / data URI 一律剔除**（只留 `[frame omitted]`）。Langfuse 装配传 `trace_delayed=True`，头行提示「可能不含最近几秒」。
 - `recall`：`FromHarnessToMemoryToolRecallReq(query, conditions, limit)` → 文本化。**不强加 `run_id`**：记忆库跨 run 共享，大脑自己召回的索引就来自其他 run，reviewer 要看到「大脑看到的」就必须能查到同一批。
-- `read_frame`：`which == "latest"` 读 trace 最近一条 `sense_frame` 账的 `content.frame`（更正 #18）。`before` / `after`：画面真源是 `memory/step_memory/*.json` 的 `before_frame` / `after_frame`，**没有按 (episode_id, step) 取一步的现成接口**（更正 #16）；先走 `recall(conditions={"episode_id": …})` 取该局 act 族条目（族内按 step 升序），按 `step` 挑出，返回 `images=[data URI]`；取不到回 `ok=False`。是否可行（act 族 payload 是否带帧、单次条数上限是否够覆盖该局、`recall` 有无访问计数等副作用）**R5 开工前先核**；不可行则 `before` / `after` 不上线，另议新增只读记忆接口（会违背 2026-09-29「能力面收敛」决定，须用户拍板）。
+- `read_frame`：`which == "latest"` 读当前 run 最近一条 `sense_frame` 账的 `content.frame`；最新条目缺帧或格式坏时失败，不冒充返回更早画面。`before` / `after` 经 `recall(conditions={"episode_id": …}, limit=None)` 取该局 act 族完整 payload，按 `step` 精确匹配，返回 `images=[data URI]`；取不到或帧无效回 `ok=False`。R5 已经真实 MCP 服务端路径验证 12 条记录两帧完整保留、admin 关闭时可用，传输使用内存连接；不新增记忆能力。
 - `read_brain_frames`（更正 #19）：**不经读端口**（读端口与「哪一问」无关），由 hub 用当前 pending 问的 `ReviewContext` 回答：`frames_of(ctx.brain_input)` → 按 `offset` / `limit` 切片 → `ViewAnswer(text=头行「共 N 张，本次第 i–j 张」+ 每张的来源标签（如 `r1-ep2 首帧`）, images=[…])`。`frames_of` 是 `schemas/harness/domain/review_context.py` 里的纯函数：按请求类型逐个取记忆对象的首末帧（task 层 `JudgeReq`：`history` 里每条 ActMemory 的前后帧），保持对象顺序，按帧字符串相等去重（同大脑），缺帧跳过，返回 `list[tuple[label, data_uri]]`；不套 `SCOPE_IMAGE_CAP`。该问已了结后回 `ok=False`（同其他查询）。
-- **后置条件**：任何入参下都不改 trace、不改记忆；读端口无写方法；reviewer 进程不构造 game / brain 端口。
+- **后置条件**：查询不写 trace、不改写记忆记录正文，不调用 memorize；读端口无业务写方法。R5 核查发现 recall 会刷新索引与向量 sidecar，用户明确允许此类客观更新，故复用现有 recall，不承诺磁盘零写入。reviewer 进程不构造 game / brain 端口。
 
 ### 5.4 装配
 
 - `reviewer/__main__.py` 是 reviewer 进程的唯一装配点：读 `config.py` / `.env` → 造 trace 读端口与记忆 MCP 客户端 → `ViewReaders` → `ReviewerApp`。trace 或记忆缺配置时，对应查询回 `ok=False, text="读端口未接入"`，不阻止 reviewer 启动。
 - harness 侧没有任何查询相关装配；`build.py` 只负责 `RemoteReviewer`（6.2）。
+- trace 读协议支持调用方指定的 run。Langfuse 实例绑定 `(run_id, branch)` 的 trace_id；R6b 入口跨 trace 分页解码，再按完整 meta 精确筛选，不能只修改 meta 后继续使用固定分支的实例。分页沿已有时间窗，SDK 契约测试覆盖跨 run / branch，真实服务尚未联调。
 
 ---
 
@@ -293,23 +297,26 @@ class ReviewSeats(BaseModel):
     ai: bool                        # 至少一个为 True（契约）
 
 class ReviewerApp:
-    def __init__(self, seats: ReviewSeats, *, readers: ViewReaders,
-                 ai: AiSeatConfig | None = None, url: str = REVIEW_LINK_URL) -> None: ...
-    async def serve(self) -> None: ...        # 监听 harness 连入；收到一问即交给 hub；Ctrl-C 退出
+    def __init__(self, seats: ReviewSeats, *, hub: AppHub,
+                 commands: CommandRunner, human: HumanTerminal) -> None: ...
+    async def ask(self, req: ReviewRequest) -> Settle: ...
+    async def serve(self) -> None: ...        # R6a 消费注入的终端行源；R6b 另装配链路服务
+    def close(self) -> None: ...             # 幂等取消当前问，关闭不伪造认账
 
 # run 进程（reviewer_link/）
 class RemoteReviewer:                # 实现 Reviewer 端口
     def __init__(self, url: str, *, flush: Callable[[], None],
-                 lost_timeout_s: float | None = REVIEW_LINK_LOST_TIMEOUT_S) -> None: ...
+                 lost_timeout_s: float | None) -> None: ...  # 装配点传 config 的默认 120s
     def inject(self, req) -> FromHarnessToReviewerInjectResp: ...   # 阻塞图线程
     def audit(self, req) -> FromHarnessToReviewerAuditResp: ...
     def close(self) -> None: ...
 ```
 
 - reviewer 进程：单个 asyncio 事件循环承载 hub、链路服务、终端、AI 任务，所有状态只在这一个循环里改，无锁。`seats` 在启动命令里显式指定（`--seats human|ai|both`），不靠「有没有人连着」推断。
+- R6a 只启用 human 席，其他有效席位配置明确拒绝，待 R7 接入 AI；所有组件经窄 Protocol 注入，构造不读取全局 stdin、配置或网络。终端行源与输出函数由装配方提供。链路服务、CLI 入口与真实 stdin 适配由 R6b 加入。
 - `RemoteReviewer`：内部一条后台线程跑 WS 客户端；`inject` / `audit` 先调 `flush()`（trace 落盘），再把 `ask` 交给后台线程，并用 `concurrent.futures.Future` 阻塞图线程。同一 `qid` 重复提问幂等。连上时收 reviewer 的 `hello`（含 `mode`）。
 - **断线语义**：链路丢失或尚未连上时，`RemoteReviewer` 每 30s 记一条醒目日志并持续重连，重连后重发当前未答的 `ask`（reviewer 按 `qid` 去重，已答的直接回缓存的答案）。最近一次 `hello` 的 `mode == "ai"` 时，丢失超过 `REVIEW_LINK_LOST_TIMEOUT_S` 即按 `by="none"` 返回（插话没意见、审认账）；`human` / `both`，或从未连上过，则**无限等**。
-- 装配：`build.py`（唯一装配点）在 `REVIEW_LINK_URL` 有值时装 `RemoteReviewer(url, flush=trace.flush)`，否则装 `NullReviewer`；`flush` 回调来自 trace 端口（§十八第 3 条核查其存在性）。
+- 装配：`build.py` 保留显式 reviewer 实例的优先级；无实例时按 `reviewer_url` 参数、同名 `REVIEW_LINK_URL` 环境变量、config.REVIEW_LINK_URL 选地址，注入 `trace.flush` 与 config.REVIEW_LINK_LOST_TIMEOUT_S。无地址保持 NullReviewer；RemoteReviewer 不反向 import config 或 reviewer 实现。
 - `NullReviewer` 仍用于**无头**场景（没有任何席位）；不要为「没有席位」启动 reviewer 进程。
 - 端口默认值沿用现有后端默认端口，放在 `config.py`；同一台机器并行跑多个 run 且要各用各的 reviewer 时，各自指定不同端口。
 
@@ -321,12 +328,18 @@ class Hub:
     def submit(self, seq: int, answer: InjectAnswer | AuditAnswer, by: Literal["human","agent"]) -> SubmitAck: ...
     def propose(self, seq: int, proposal: Proposal) -> None: ...   # AI 席提交
     def discuss(self, seq: int, text: str) -> None: ...            # 人 → AI 讨论
-    def query(self, seq: int, q: ViewQuery) -> ViewAnswer: ...     # 校验 seq 仍是当前问，再调视图
+    async def query(self, seq: int, q: ViewQuery) -> ViewAnswer: ...  # 读取前后都校验 seq
+    def context(self, seq: int, section: str | None = None) -> ViewAnswer: ...
+    def cancel(self, seq: int, reason: str = "该问已取消") -> SubmitAck: ...
     def history(self, n: int) -> list[HistoryEntry]: ...
 ```
 
 契约：同一时刻只有一个 pending 问；`submit` 先答先得（已了结 / 编号不对 / 与问不配都回 `ok=False` 的 `SubmitAck`，不抛）；`query` 在 pending 已了结后回 `ok=False, text="该问已了结"`。
 **命令层不含业务**：它把文本翻译成上面这些调用，解析失败只返回说明文本。
+R6a 的 open_ask 对输入做独立快照，current/history 返回独立副本；历史摘要最多 50 条，
+不保留整份带图请求。取消返回 cancelled 的 Settle，response 为空；正常 Settle 的 response
+是原有 InjectResp / AuditResp。调用方或终端 EOF 退出都会解除 pending。
+propose 与真正的 discuss 行为由 R7 接入，R6a 的 ask-ai 明确返回「没有 AI 席」。
 
 ### 6.4 命令层（人的入口用的语法）
 
@@ -349,6 +362,7 @@ help [命令]                              用法
 
 - 查询类命令（`trace` / `recall` / `frame` / `brain-frames`）的参数由对应 `ViewQuery` 变体的字段自动生成：字段名转 `--kebab-case`，`Literal` 字段成为选项，上下限与键校验由 Pydantic 给出，越界或非法键就地回一行原因，不抛。
 - `help` 与参数表同样自动派生，加一个 `ViewQuery` 变体即同时出现。
+- `RecallQuery.conditions` 的 Literal 键在 schema 中提供 hint 清单，自动派生 `--run-goal` / `--runs` 等选项；保留 `--run`、`--episode`、`--map`、`-n` 与 frame 位置参数的既定语法。
 - `say` 用于审问、`overturn` 用于插话问：回「该命令不适用于本问」，不当作答复。
 - **每条命令都有「等价于某个类型化调用」的测试**，防止命令层长出自己的行为。
 
@@ -364,6 +378,8 @@ help [命令]                              用法
 | `FromReviewerToHarnessHelloMsg` | reviewer → harness | `msg="hello"` `mode: "human"\|"ai"\|"both"`（连上即发） |
 
 - 同一时刻只接受一个 harness 连入，且只有一个 pending 问；第二个连入被拒，说明里写明已有 run 占用。
+- 同 qid 的请求素材签名必须相同。瞬时断线保留当前问，用户可离线答复；重连后原 qid 取回同一答案，不重开终端问。取消通知幂等且只影响该 qid。答复/取消缓存保留到 reviewer 进程退出，不随 50 条终端历史淘汰；只保存签名和答复，不缓存整份请求。
+- cancel 与 ask 在客户端串行发送。关闭在连接可用时先发 cancel 再断开；连接已不可用时，退出通知只能尽力发送，服务端可能保留原问等待人工处理。AI 断线超时产生的取消留待后续重连投递。
 - 人与 AI 之间、终端与 hub 之间**没有线上协议**：同进程，走 6.3 的类型化 API。
 - 一问最多约 20 张图（brain-scope 的 `SCOPE_IMAGE_CAP`），回环传输可接受；若实测过大，改为只传帧引用、由 reviewer 经记忆 `recall` 取帧，另案。
 
@@ -384,8 +400,8 @@ help [命令]                              用法
 - **循环引擎选用 Pydantic AI（`pydantic-ai-slim[openai]`，R7 加入 `pyproject.toml` 并固定版本）。** 它只替我们承担「messages 数组、工具调用与回灌、参数校验与重试、结构化提交、用量上限」这一层通用循环；工具集、提交类型、预算、取消、取证规则、与 hub 的交互仍是我们自己的代码。
   - 选型依据：沙箱里用本地脚本化的 OpenAI 兼容服务（v2.57.0）实测通过——工具循环；输出类型自动成为 `final_result` 提交工具；参数非法回灌纠正并在重试用尽后抛 `UnexpectedModelBehavior`；`UsageLimits(tool_calls_limit=N)` 超限抛 `UsageLimitExceeded`；工具返回图片时自动追加带图 user 消息；首条 user 消息带图；总时限（`asyncio.wait_for`）与由工具内抛出的取消均能终止线程。这些**只证明库的控制力，不证明真模型行为**（见 7.3a）。
   - 同时**否决 OpenAI Agents SDK**：其结构化输出走 `response_format: json_schema` 而非提交工具，退出条件不如显式提交工具明确，且未验证所选模型对 `json_schema` 的支持。
-  - 兜底：若 7.3a 探针或后续真机发现该库在所选模型上控制不住（如 `tool_choice="required"` 被拒且无法关闭），退回**自写循环**（约百行，接口不变：`AiSeat.run_turn(...) -> Proposal`），hub 与命令层不受影响。
-- 模型接入：`OpenAIChatModel` + `OpenAIProvider(base_url, api_key)`，取值来自 `config.py` / `.env` 里 AI 席自己的那组配置（沿用旧 `agent_reviewer` 的模型与密钥配置项名；`provider.py` 旧副本随 `agent_reviewer/` 一并删除）。AI 席与 `brain/providers.py` 各自独立（不回流）。思考模式保持关闭（经 `ModelSettings` 传入，具体字段名以探针确认为准）。
+  - 兜底：若 7.3a 探针或后续真机发现该库在所选模型上控制不住，退回**自写循环**（约百行，接口不变：`AiSeat.run_turn(...) -> Proposal`），hub 与命令层不受影响。
+- 模型接入：`OpenAIChatModel` + `OpenAIProvider(base_url, api_key)`，取值来自 reviewer 入口配置 / `.env`（`AGENT_REVIEWER_MODEL`、`AGENT_REVIEWER_BASE_URL`、`DEEPSEEK_API_KEY`；缺省模型 `deepseek-flash`，缺省地址 `https://api.deepseek.com`）。AI 席与 `brain/providers.py` 各自独立（不回流）。思考模式通过 Pydantic AI `ModelSettings.extra_body` 发送 DeepSeek 官方的 `{"thinking":{"type":"disabled"}}`。
 - 查询由工具函数直接调 reviewer 进程内的 `ViewReaders`（同一个实例，同一套 `ViewQuery`），不经过命令文本；每次查询由 hub 记一条 activity 并打印到终端。取消靠 `task.cancel()`。
 
 ### 7.2 有界工具循环（Pydantic AI 之上的我们自己的部分）
@@ -403,18 +419,21 @@ help [命令]                              用法
   5. 取消：hub 了结该问时 `cancel()` 该 AI 任务（`CancelledError` 直接生效；若库把它包成别的异常，捕获后以**该问是否已了结**判定「被取消」，而非看异常类型），不产出 proposal；
   6. 任何未预期异常 → 捕获、日志、空提案，**不得影响 hub 与人席**。
 - 一轮并行多个工具调用：由库逐个执行并全部回灌，仍计入工具调用次数。
-- 库默认每轮都发 `tool_choice="required"`（必须调工具）：与「结论也是一次工具调用」一致，但**须由 7.3a 探针确认所选模型接受**。
+- 允许工具名单固定为四个查询工具和 `final_result`；Pydantic AI 把这份名单转换为强制从名单中选一个工具。不能静态设置 `tool_choice="required"`：v2.57.0 会因此排除输出工具，并拒绝阻止 Agent 完成的配置。超限收尾只允许 `final_result`。
 - 结构化输出：删除关键词子串判定（`_OVERTURN_WORDS` / `_ACCEPT_WORDS` / `_parse`）。
 
-### 7.3a 先验证再落码（R7 的第 0 步）
+### 7.3a 官方协议核查与真实模型验收
 
-文档只确认所选模型支持图文输入，**没有确认「图片 + tools 同一请求」可用**。R7 开工前写一个一次性探针脚本（用户本机、读 `.env`，**用 Pydantic AI 本身发请求**，代码仿 7.2 的最小形态，不进仓库）：同一请求里带一帧图 + 两个只读工具 + 提交工具，逐项看：
-1. 是否返回合法 `tool_calls`；`prompt_tokens` 是否计入图（沿用 `ImageNotDelivered` 的静默丢图检测）；
-2. 模型是否接受 `tool_choice="required"`；
-3. 工具返回图片后追加的 user 消息（含 `image_url`）是否被接受并被模型利用；
-4. 思考模式关闭的参数写法；
-5. 参数非法后的纠正回灌是否能让该模型改正。
-通过 → 按本节落码；(1)(3) 不通过 → 降级为「图只在首条 user 消息里带、之后纯文本 + tools」；(2) 不通过且无法关闭 → 退回自写循环（7.1 兜底）；仍不通过才退回文本 JSON 协议（另开讨论，不预先实现）。
+R7 实现前查阅了 [DeepSeek Vision](https://api-docs.deepseek.com/guides/vision/)、[DeepSeek Tool Calls](https://api-docs.deepseek.com/guides/tool_calls/) 与 [Pydantic AI v2.57.0 settings](https://github.com/pydantic/pydantic-ai/blob/v2.57.0/pydantic_ai_slim/pydantic_ai/settings.py)：DeepSeek 确认 `deepseek-flash` 支持 Chat Completions 图片输入与工具调用，并示范以 `extra_body` 关闭 thinking；Pydantic AI 支持图像与附加请求体，也说明静态 `required` 会排除输出工具。因此实现使用五个显式工具名白名单。
+
+**R10 真机验收（2026-10-18）**：使用主仓库 `.env` 的账号配置，在临时 uv 环境中加载 Pydantic AI 2.57.0；没有输出密钥，也没有安装进共享环境。
+1. `AiSeat` 真实请求调用 `read_brain_frames`，工具返回两张有效 PNG 后模型继续调用 `final_result`；两次 Chat Completions 请求均为 HTTP 200，答复识别出红色。总 usage 为 5492 输入 / 148 输出 token。
+2. 同提示的带图和不带图直接请求分别用 211 和 27 输入 token（差 184），确认图像进入模型并计入输入用量；图片答案为 red。
+3. 固定工具名单、结构化输出工具及 `extra_body={"thinking":{"type":"disabled"}}` 的真实请求均成功。
+4. 独立结构化校验器要求第一次答复缺失的 marker，DeepSeek 在错误回灌后修正；2 次请求、2 次提交工具调用后校验通过。
+5. 本地真实 WebSocket 单问验收：`human` 返回 `by=human`；`ai` 返回 `by=agent`；`both` 展示 AI 提案后由人席接管，最终 `by=human`；三者均 `answered=true`，hello 声明与配置一致。
+
+模式链路使用合成审问与隔离的空 trace / memory 读口，没有启动游戏 run，也没有连共享 trace / memory 服务；因此本项验收不覆盖共享后端可见性。当前模型账号上的图像、工具回灌、关闭 thinking、参数纠正和 usage 已实测通过。后续模型或 Pydantic AI 版本变化时需重跑本节验收；若接口不兼容，再按 7.1 退回方案处理。
 
 ### 7.4 Prompt（规则 / 素材分离）
 
@@ -440,7 +459,10 @@ AI 席是复核者而非第二个 judge：审的是「judge 结论与它自己�
 
 ## 八、插话重问循环与 AI 轮次阀（harness 侧）
 
-两处循环（`plan_run::_elicit`、`plan_episode::_plan`）改为共享一个小函数（放 `harness/reviewing.py`）：
+两处循环（`plan_run::_elicit`、`plan_episode::_elicit`）共享 `elicit_with_review`，
+从 `harness/reviewing.py` 导出；实现放 `harness/review_loop.py`，用临时 StateGraph 调度。
+它不进入 run / episode / task 的持久状态，关闭 checkpoint 并显式使用 `durability="exit"`，
+避免继承外层图的同步存档设置；不改变三层恢复拓扑或状态哈希。
 
 ```python
 def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Outcome, str]:
@@ -452,6 +474,9 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 - 计数器：**连续**的 agent 生效轮数；一条 `by=human` 的意见把它清零；空回话（无意见）直接收尾。
 - `max_agent_rounds = config.REVIEW_AI_INJECT_MAX_ROUNDS`（默认 3，**实验旋钮**，进 `config.py`）。
 - `round` = 本插话点已亮出的次数 + 1（含人与 agent），传给 `InjectReq`；AI prompt 里写「本问第 {round} 轮；agent 连续生效上限 {max}」。
+- `InjectReq` 同时携带 `max_agent_rounds`；两处循环总是传入实际配置值。独立请求可省略该上限，默认 `None`；`round` 默认 1。
+- 每次实际询问由 `ask_inject` 返回同一份已落账的 `ReviewMark`，计数器由本次临时图持有；到顶后的空回话仍是无意见，`capped=False`。
+- 人的插话不受 AI 轮次阀或图的默认递归步数限制；episode 原有拆解次数、时间预算及异常结算仍有效。
 - harness 知道的只是「谁答的」标签，**不知道对面是什么实现**；`NullReviewer.by = "none"`。
 - `ReviewMark` 增 `capped: bool = False`、`round: int = 0`（R4 加；`by` 已在 R2 加）；`capped` 与 `by` 同账可查，评测能区分「AI 到顶被截」与「AI 自己没意见」。
 - 需同步：`schemas/harness/domain/trace_event.py::TraceEvent` 与 `trace/datastore/event.py::_Event` 是否需要新增顶层字段——`by` 经渲染写入 `content`、不需要；`capped` / `round` 同理，R4 开工时按同一依据复核。
@@ -479,6 +504,7 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 ### 9.3 并发
 
 - reviewer 进程只有一个 asyncio 事件循环：hub、链路服务、终端读行、AI 任务都在其上，状态单线程修改，无锁。读端口里的同步调用（trace / `recall`）经 `run_in_executor` 放到线程池，不阻塞终端与倒计时。
+- R6a 使用 asyncio.to_thread 执行同步读操作；终端命令任务由 TaskGroup 管理，慢查询期间继续接收人的答复。读取后若 seq 已失效，结果不交给下一问；EOF / 关闭时取消未完成命令，终端图像只保存到注入目录并打印路径、尺寸与来源，不在文字中输出编码。
 - run 进程里只有 `RemoteReviewer` 的一条后台 WS 线程与被它阻塞的图线程，二者经 `Future` 交接。
 
 ---
@@ -486,6 +512,8 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 ## 十、reviewer 进程入口与终端（`python -m pokemon_agent.reviewer`）
 
 - 启动：`python -m pokemon_agent.reviewer --seats human|ai|both [--url ws://127.0.0.1:<port>]`；读 `config.py` / `.env`（AI 席的模型与密钥配置、trace 与记忆的连接配置都在这里，与 run 同一份）；监听 `REVIEW_LINK_URL`，等 run 连入，连上即发 `hello`。
+- R6b 可执行入口目前使用 `--seats human`；`--trace-backend` / `--trace-root` 必须与 run 指向同一后端和存储，`--memory-server-url` 缺省取 MCP_MEMORY_SERVER_URL。支持 `--env-file` 与 `--image-root`。没有 Langfuse 配置或 memory 地址时，只把对应读口标为未接入，不静默换后端；端口占用明确失败。
+- 实际 stdin 由可关闭的 daemon 读线程送入事件循环，避免 Ctrl-C 后因阻塞 readline 等待线程池退出。行源 EOF 关闭应用并取消 pending，不启动 run。
 - 终端（`human` / `both`）：读行 → 命令层（6.4）→ 打印；提示符带当前问的种类与 seq；`both` 时显示倒计时剩余秒数（仅显示，决定权在 hub）；空闲时提示「等待 run 连入 / 等待下一问」。
 - `ai` 模式 headless：无终端，只写日志。
 - **不**自动拉起 run（AI 不替用户启动长跑进程，沿用既有铁律）；reviewer 进程本身由用户启动。
@@ -502,7 +530,8 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 | `AGENT_MAX_TOOL_CALLS` | `config.py` | 6 | 实验旋钮 |
 | `AGENT_TURN_BUDGET_S` | `config.py` | 90 | 实验旋钮 |
 | `REVIEW_AI_COUNTDOWN_S` | `config.py`（由 `review_backend.AI_COUNTDOWN` 迁入） | 30 | 实验旋钮 |
-| `REVIEW_LINK_URL`（host / port） | `config.py`（沿用现有后端默认端口） | `ws://127.0.0.1:<现状端口>` | 部署事实；run 侧与 reviewer 进程共用 |
+| `REVIEW_LINK_URL`（启用地址） | `config.py` 或同名 env | None | 部署事实；未配置则 run 保持无头 |
+| `DEFAULT_REVIEW_LINK_URL`（入口监听默认值） | `config.py` | `ws://127.0.0.1:8765` | 沿用旧后端端口；启动独立入口不自动启用 run 复核 |
 | `REVIEW_LINK_LOST_TIMEOUT_S` | `config.py` | 120 | 实验旋钮；仅当最近一次 `hello` 的 `mode` 为 `ai` 时，链路丢失超过它则按 `by="none"` 继续 |
 | `REVIEW_LAYERS` | `config.py` | `("run", "episode")` | 实验旋钮；加 `"task"` 开启 task 层审点 |
 | `HISTORY_LIMIT` | `reviewer/hub/hub.py` | 50 | 模块私有物理量 |
@@ -604,7 +633,7 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 8. agent 连续 `REVIEW_AI_INJECT_MAX_ROUNDS + 1` 次插话 → 账里最后一条 `review_inject` 的 `capped == true`，且 `plan_*` 没有第 N+2 次重问。
 9. 人在 `human`+`ai` 模式中途接管（`by=human`）后，agent 计数清零。
 10. 所有 Resp：`answered == (by != "none")`（R2 已验）。
-11. 死代码清理（3.4）清单逐项完成：R1b 之后 `grep -rn overturned pokemon_agent tests` 为空；R6c 之后无 `review_backend` / `WebReviewer` / `ConsoleReviewer` / `LiveFeed` 符号；R7 之后无 `agent_reviewer`；`state_schema_hash()` 在 R1b 之外的每一步前后逐位相同。
+11. 死代码清理（3.4）清单逐项完成：R1b 之后 `grep -rn overturned pokemon_agent tests` 为空；R6c 之后无 `review_backend` / `WebReviewer` / `ConsoleReviewer` / `LiveFeed` 符号；R7 之后无 `agent_reviewer`；`state_schema_hash()` 除 R1b 与获用户授权的 R3b 外前后逐位相同；R3b 新增 TaskState.last_judge 后为 `28e96b09966dc94e`，需重打并核验 20 份评测存档。
 12. AI 席的 LLM 请求体是 `messages` 数组 + `tools`；提交工具（`final_result`）只在对应 `kind` 的问里暴露；`pydantic_ai` 只在 `reviewer/seats/ai` 内被 import；run 进程（harness、`reviewer_link`）不 import `pydantic_ai`。
 13. `ruff check . && ruff format --check .` 净；真机跑（`human`+`ai`、`ai only`、`human` only 各一次）交用户本机，AI 不拉起长跑进程。
 14. 提问前 trace 已 flush（`RemoteReviewer` 的 `flush` 回调在每次 `ask` 前被调用）；reviewer 进程掉线时 harness 按 6.2 / 十三的语义继续。
@@ -624,7 +653,7 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 | R6a | `reviewer/` 的 hub（含对 `read_brain_frames` 的回答）+ 命令层 + 终端席（`human` only）+ `ReviewerApp`（进程内，无网络）+ 导入边界测试 | R4、R5 |
 | R6b | 链路：线上信封 + reviewer 侧本地 WS 服务 + reviewer 进程入口（`python -m pokemon_agent.reviewer`）+ run 侧 `reviewer_link/RemoteReviewer`（flush、断线语义）+ `build.py` 装配（`REVIEW_LINK_URL` 有值则装 `RemoteReviewer`）+ 回环测试 | R6a |
 | R6c | 删旧栈：`ConsoleReviewer` / `WebReviewer` / `review_backend` / 跳 A·B 信封 / `LiveFeedTrace` 与 `live_feed_url` / 旧常量与测试 / 文档状态说明 | R6b |
-| R7 | 0）图 + tools + `tool_choice` 探针（用 Pydantic AI）；AI 席（`reviewer/seats/ai`，Pydantic AI 之上的有界循环）+ `human`+`ai` / `ai only` 模式 + 倒计时；删 `agent_reviewer/` 与 `schemas/agent_reviewer/`；`pyproject.toml` 加依赖 | R6c |
+| R7 | 0）图 + tools + `tool_choice` 探针（用 Pydantic AI）；AI 席（`reviewer/seats/ai`，Pydantic AI 之上的有界循环）+ `human`+`ai` / `ai only` 模式 + 倒计时；旧 AI 栈已随 R6c 删除；`pyproject.toml` 加依赖 | R6c |
 | R8 | （暂缓）网页入口：在同一 hub 上加网页壳 | R7 |
 | R9 | 文档同步：`reviewer.py` 表格、`docs/agent_reviewer`、规范 §四第 3 条（须用户点头） | R1a–R7 |
 | R10 | 用户本机真机跑（三种模式） | R7 |
@@ -677,7 +706,7 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 
 - v2 / v3：reviewer 是 run 进程里的一个对象，AI 席进程内线程，人经本地 WS 连独立 CLI；harness 持有 `ReviewView` 并回答查询。
 - v4（用户 2026-10-17）：人、AI、hub、读端口同在一个独立进程，进程边界移到 `Reviewer` 端口上。理由：①查询权属于 reviewer 而非 harness，harness 不再背 `ReviewView` / `ViewAware` / `bind_view`；②AI 席与 run 隔离，线程安全核查项消失；③`pydantic-ai` 依赖只进 reviewer 进程；④人与 AI 在同一事件循环里，AI 不需要线程；⑤全程只有一条跨进程线路。
-- 代价：先起 reviewer 再起 run；多终端同连取消；trace 跨进程可见性靠提问前 flush 保证；`read_world` 取消。
+- 代价：先起 reviewer 再起 run；多终端同连取消；本地 trace 在提问前 flush 后可见，Langfuse 仍可能延迟；`read_world` 取消。
 - 仍成立的否决：不用 A2A、不用 MCP 作边界、不加 tool 层门面（17.1 / 17.2）；链路是自己的类型化信封。
 
 ---
@@ -685,7 +714,7 @@ def elicit_with_review(ask_brain, ask_reviewer, *, max_agent_rounds) -> tuple[Ou
 ## 十八、落码前须核对（本 spec 起草时未读全）
 
 1. **（R5 前置）** `recall(conditions={"episode_id": …})` 返回的 act 族条目 payload 是否带 `before_frame` / `after_frame`；单次条数上限是否足以覆盖一局；经 MCP 远程版时是否仍如此。不满足则 `read_frame` 不上线。
-2. **（R5 前置）** `MemoryCapability.recall` 是否无副作用（访问计数、向量缓存落盘等），MCP 远程版同理。若有副作用，视图的 `recall` 需换成纯查询接口（须用户拍板，涉及记忆模块能力面）。
+2. **（R5 已裁决）** 实测 MCP recall 会在外部编辑后更新 index.json / vectors.jsonl；用户确认这是客观更新、允许保留。只读保证限定为无业务写操作、不改记录正文，继续复用现有 recall，详见 `r5-audit.md`。
 3. **（R5 前置）** trace 后端（本地文件 / Langfuse）在 run 进程 flush 之后，另一进程能否立即读到；`TraceToolPort` 是否已有 `flush`（或等价）接口；没有则要在 trace 模块加一个（触及 trace 能力面，须用户拍板）。
 4. `build.py` 里 `RemoteReviewer` 的装配位置、`flush` 回调的来源（trace 端口），以及 `reviewer` 参数从「传实例」到「装配期按 `REVIEW_LINK_URL` 构造」的入口改法（`check_harness` 等）；reviewer 进程 `__main__` 如何按 run 的 trace 配置造读端口（同一份 `.env` / `config`）。
 5. trace 读端口与 `recall` 在 reviewer 进程里的线程 / 协程安全：hub 单事件循环，同步端口需放线程池（`run_in_executor`），核查它们能否被并发调用。

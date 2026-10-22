@@ -1,0 +1,130 @@
+{
+  "task": "judge_success",
+  "case_id": "history-knowledge_battle_item_use.task.judge.000002",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "goal": {
+      "goal": "按 a 确认 ITEM，打开道具袋",
+      "criteria": "overlay 仍是 choice，且 options 变成道具名（如 POKé BALL / POTION / ANTIDOTE）"
+    },
+    "history": [
+      {
+        "before": {
+          "step": 1,
+          "place": {
+            "map_id": 12,
+            "x": 12,
+            "y": 24
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图12 x=12 y=24，朝向 east。战斗中。可选项：FIGHT/ PKMN/ ITEM/ RUN，光标在 ITEM",
+          "scene": "battle_menu",
+          "facts": {
+            "scene": "battle",
+            "overlay": "choice",
+            "where": "全局坐标 地图12 x=12 y=24",
+            "facing": "east",
+            "neighbors": "北 # 南 # 西 . 东 #",
+            "landmarks": [
+              {
+                "kind": "招牌",
+                "map_id": 12,
+                "x": 9,
+                "y": 27
+              }
+            ],
+            "dialog_text": "",
+            "options": [
+              "FIGHT",
+              "PKMN",
+              "ITEM",
+              "RUN"
+            ],
+            "cursor": "ITEM",
+            "overview": "",
+            "walk_map": "",
+            "map_id": 12,
+            "screen": " RATTATA    ·······\n    :L3      ·······\n ·HP:[██████] ·······\n ·────────│ ·······\n            ·······\n ·······    ·······\n ·······    ·······\n ·······  BULBASAUR\n ·······      :L5\n ·······  HP:[██████]\n ·······    20/ 20·\n ······· └────────┘\n┌───────┌──────────┐\n│       │          │\n│       │ FIGHT PKMN │\n│       │          │\n│       │▶ITEM  RUN│\n└───────└──────────┘",
+            "my_name": "BULBASAUR",
+            "my_level": "5",
+            "my_hp": "20/20",
+            "my_status": "ok",
+            "foe_name": "RATTATA",
+            "foe_level": "3",
+            "foe_hp": "15/15",
+            "foe_status": "ok",
+            "option_layout": "2 行 × 2 列，光标在第 2 行第 1 列；上/下 换行，左/右 换列\n FIGHT   PKMN\n▶ITEM   RUN"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 2,
+          "place": {
+            "map_id": 12,
+            "x": 12,
+            "y": 24
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图12 x=12 y=24，朝向 east。战斗中。可选项：POTION/ CANCEL，光标在 POTION",
+          "scene": "battle_menu",
+          "facts": {
+            "scene": "battle",
+            "overlay": "choice",
+            "where": "全局坐标 地图12 x=12 y=24",
+            "facing": "east",
+            "neighbors": "北 # 南 # 西 # 东 #",
+            "landmarks": [
+              {
+                "kind": "招牌",
+                "map_id": 12,
+                "x": 9,
+                "y": 27
+              }
+            ],
+            "dialog_text": "",
+            "options": [
+              "POTION",
+              "CANCEL"
+            ],
+            "cursor": "POTION",
+            "overview": "",
+            "walk_map": "",
+            "map_id": 12,
+            "screen": " RATTATA    ·······\n    :L3      ·······\n ···┌──────────────┐\n ·──│              │\n    │▶POTION       │\n ···│         × 1  │\n ···│ CANCEL       │\n ···│              │\n ···│              │\n ···│              │\n ···│              │\n ···│              │\n┌───└──────────────┘\n│                  │\n│                  │\n│                  │\n│                  │\n└──────────────────┘",
+            "my_name": "BULBASAUR",
+            "my_level": "5",
+            "my_hp": "20/20",
+            "my_status": "ok",
+            "foe_name": "RATTATA",
+            "foe_level": "3",
+            "foe_hp": "15/15",
+            "foe_status": "ok",
+            "option_layout": "竖排 2 项，光标在第 1 项；上/下 移动光标\n▶POTION\n CANCEL",
+            "option_details": "POTION × 1"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 1,
+        "episode_id": "eval-knowledge_battle_item_use-ep1",
+        "task_id": "knowledge_battle_item_use-t2",
+        "run_id": "eval-knowledge_battle_item_use",
+        "before_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAAJYUlEQVR4nO2diW3jMBBFzUVKSwt2CU5NcQlJC+5NizE0ATPhMbxJ6T9gsbuyLkvff3gMSbNt23YJYIxxbncdRvvK7b7j+Ryxz0vPHzsejMVoBKgRG/8/9JJjAtAcm3t+zfGgP/8GXBOAH94uClxhzuV+vL22y5Sev/X9gcYC9IlNWxarQen5W98faChAG+kg2jJiLqXnb31/YEAZMFZ7BaBaLRiAlqAWDNYqA44gpTEcrMXbjEKTwpK1cNc+YE2mCMGaCg3tA/EdjykcUONmcMFjMr0D2s4HjsdUzTBSaHZjt2Si2wZHESA4H0khGOEQHLIMCM5LlVqw3TxiJ37ahBJFVwYlmMmbYWwxurKor9frZWWQVTNRCHa5mb0NbgGaOmAs9Eq3OEJaV+8f1e12e/39/f39aztFkq+vr8tybAnQ7omHgIpcr9fo5/R+YvvNBAS4CFchKjYDFtzn56fz89nFOEVfMNDxeDwu9/v9FYY/Pz9/ffbx8fH6Q6H4/f3dWdmbMUQn9YQgG2XsMzHG/Ajv+Xy+hGZD20hkfE8sRhLtrEKEAEsfoLK9sxa32+1VAZEOSJADumaDYCESJMaZmo6yQvDqNdeVHfFrdy8WIsFtqa5ruhI6SLyziDA5GQHiS2OGl+wL4y7H7A2yYU7ETbQhknPSv0eKELXgEwnvy1H5oJr1yHAMAS7O4/F41X59Tkbi89V66djRZUII8ADtgvf73elkLlGx6CSjRAgBLszz+fwjInY8FhMLjl2SsJtlRoOE1IX5FgkJ3DjNLRVc9qPaLm0ngdIf+jdtk7CAewIBHoTn7nAUjvc+/h+h2Y3WtB/3jGhE3RqE4AUxe3ilP3aDNJff7HKeFN8soZdBO+BiGDHXtd2wLJGC475igoTrE2PPBmqE4MXYdteLiY9ERGLjiootxpD4iJ7DJCDABfnaa7kh8bGD2WU6LvvJbbJCYldkWgMBLojZwy8JR1YoWHxSQCQqcj6fcF1NOj1EiDLggtwCvRv8OUP7caXEdjoSGKdmcZ8wh14Oz3aZsRUQ4KLcrNov4as08H4yEdWuxPBn9jDZXiJEM8yifIu+X18eohQdI8Unt/UCZcAFue21YDvUcrlOltu43MfC4t4QRrobC5j7mLns2AqE4AO0Bd6sMOtyR86YsZteeACTK7zKpIRYmbMEOOCCbGK6E9cgdU0N1ic+dsge/cIQ4KJse1cciS1UZnO5nybxgIXd0v2yxoSAeTBimKYrDLtqtswMY0JQCz4I77u47MQEOQBptkQEAiF4UYyjR8MeL8wVCa7Nuno7QhnSvUAIXlyA911cnGAQyvWTWdJThOHRk9OAdOi10WREPPEQz4qlOc4+hreNBA64II/H408Gi9bFek8lEgMCBENBJQQMBc0whcRWcfKNtZXdaT5SVokKXSv3eM39u9CGdgiwAtqX1vL8xiNorai0PwjN/fmu0TUEY1Wledkm6vyCA1agdeq6iZzfdhvpYr4w6XPJHBcsWUyyugC5g1tOjDjTr642JSGo1vlDIi09PuX+Ur83HLAxueUqLTUqOaHjU+8/df+31guonMEJYyEotiCPidQkS0KcJgTnniO2v+YacMBCUoSQc/yW+bn8AZTeV+r9q3tm9v7AYvgXYuenETKZ0fdL4py1mZYQAO2BAx4cU9hQvKwAfdN8uVb4IThZUj4wOKOeUDl7FsFJ4IAHwCgK/LNlwXQTINeO7ZV6XLATskPK/ezlpwiUFS/ZlQzupZpBhMiGOQAm0sQz8+JC3UMwp4Ozw8m/+XPpeNIZY+2Ks4acFmyOxALezm1ysz4PlAEPxFbYJrekALX2zu2CXBaUTshIR/Rdx9fD4nPGI/fEzELOM0YZEKzpgL72OteMnfbnEp8TSuwB1rP1NdvX9mUKa8uqq1H6vFEG7DyRkExdunaci68Fpc05yQKUtVPu8Sid9iHmhHK7a5R/6H57OKPLzeSkkOA3cMCKxEKvdIstMc3p1CHY53ypIUTWhnOdUPYh+84jZw5t4UKu1Cdtf+x2cldELRgM5S3V+bTIGZlyHTMVOdsTO+UMtWXwF5QBJ8AoUuZTKzMptdMW168uQC5rxdr1apUFS/E532wYhyPLbBX579yBRr2unwLKgIPZ9oQBRv5QYl2QklRx1L7+dCFYTh2rRdtD4lr523boWZ3PxlTKVMl1ppGZMnDAwRhRtvKNRouJpIb4Sq7f3AFl+1sqvvZDbbtgrAdEni92HzPWho3nJcucvlriq3X9ElALXnxcsSkUX+n1pxGgdB6Z1xdzppgTyvZEJlYbX72zP8ZMDp4DyoCZzD7WYhXUDshlsVhfsM8JpbNpj5f7a9spffD1SmqaoB4oAyoJtbuBfNRzw/jmftH28fI4Xl9frTw+5ni+69krfdvngeP1IfU5wwErP1CQRvLsWDEnbE0v5wN9QC0YDAUrJYF5HPDsbVtn//4jnu+PA8rxrEcYMKNB5ryd7fv3wDVe+ue5v5bMnHwWzdac/fuPfL5vsRTso7uAbxTbWb7/6Of7zxVufNNLHJWzf/+WuJ7lrxR/ux3QNcfJmTj792+Fr/znbAc8+8M/+/fv/Uz/uVR6xod/9u8/CvSEgKFAgGAoECAYCgQIhgIBgqFAgGAoECAYClLyCwl114Um8glNf0a4Zqay0XQXaqdxC+3vyg7CzAiTEXshWjHZaBvEQ3NQa9EIuVX/OELwYIxHND17YzSimn5qjjOjCbE559k6Ta7pctFeXZIQYAVqvajNM1FkqGzWE9+sqSUgBA9mG5x3GCuTxipLpcABOyCTMeWL3RLWlutBKATX/sFAgIWk1lRT99kStvcSbU0RIgSDX/hCr9xWS+wQIBgKBAiGAgGCoUCAYCgQIBgKBAiGAgGCoaAhunEygibNKadHotXqSPa1Q9eJJS1o7w8CTHhJsV4J10PX5OttkRclj6vdH1sq8JIfA0JwAqOSBjbLKWecuaGkaw4OmEgLARhFPmHLHL0a+Yy59wcBZlBbCNvgBQNrpPXzeVKPRwjOfNBHZRPhNDW8pu4PB8x4Qan5fqtNEbwJJ2spQggw8cWkbNfstylH1OVeM+eeXNtr5CsGQ3DLoXcrEPr+tO3IYXckf8qAZxYhcfbv3/uZYp0QrBMyJLr8PHesEzJfJeBoYJ2QALHhhwjFbZ8v1gnBOiFzrhNyRs7+/Uc8XyzXCi4j+Q/xUWFnblRyLgAAAABJRU5ErkJggg==",
+        "after_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAAFLElEQVR4nO3djU3rMBSG4QYxGivACGUmGAFWYLdepZIr19d/cZwcn+P3kRCiNGmlfDqxHcdZbrfb7ZKxLEv09dhm63vD11Pbu32U/r93/6XtIWupCWBN2NzfuYNcCkDNtq37r9ke53sR+Ezg4fVSIXaai1U/93rvKrN3/0d/PxwcwFTYattiPezd/9HfDwcG0BdWkNo2Yqu9+z/6+0GgDVjqvQLdesHAkegFQ1cbUMKWwXDo8jpi0MJghb3w2Hug0xCn4JoOzfoewmfPEBWwpppRBW0avgL6lQ/2DDUMEwbNH+wODfS1YSWAmM+mUzCnQ5hsAzoE3LbY8e3SC/aHR/yJn77Smd7fLrUP6BTmwp8IcvgwjB+k3Cxq93f4P+iXO75dAxirWP5ruUCl7vWgCurmTwT2uePatQ0YC9j6Wmo4JZyl7H85TsE2xI7l03zSLcMwR18Ki7UlYS+E/nEdqhe8Inz25I7pMAHktsk5DRNAzIkAQlTTMEzPoRE6GnPbVAEJC4a4LxjohTYgRBFAiBrinpAzbtlMXZOuWV+wZkZ2bv8sDaI8gKVLgKUDnJqFUxuWrevglP6G0lNwy/BP7OD3nOhQs38mViivgC3L9I5WcbjGbSSAsRCOFrYUQqj8FNwSuNjpr2ebbOv+OR0rr4AtwYm1ybYIJ1OG+9i6f0KoNIC5HmrLtrXvOWJbLc2Go6kIIAfLLpVtQNi5L5sAGrBEOkF793EWAmjALXPv9ZZ9SCCARtyU3klIAI1YlN5LTQANWCKPItu6fTjWeVaQVQzDIC+3qHsNydO2mQDWrMaVmshQO8Uqtv/SfEKN7bIzmQhgTbByN76XQlLahoBN3AYsTSKtkWs39dg/jFfAlkZ6ahJpS7A0zEcc1RQBXNX06lpDSNgmPgWnTp/hlYHwJ3czU810em3jbaMyUQFjIdlTlWpCWHNnXamnfOM0bSOAe+bj1W7XOq+PkBk/BUM3AgibAeShM6hBBYStTsjHx0e0B0hjHDFUQNiogK7y/f7+Pr1OJUQOFRA2Hljt2npfX1/3339/f/ffPz8/0fellj5j/pxNqeNLBYTNS3FhW9BxFRJYUQFhezKC6x2/vb3df1+v16M/EopQATFXAL+/v+8/gEgAga5twNqp6W5c0LUFXRWkTTg3KiB0VsCw8r2/v0cr2ufn59P/AR8VELoqoKt8rqK5Kx6ubQdsQQWEjgqYqnxb23ZhbxhzowJi7AoYVr5arjfsKl5rxYRtVEDoaAO6NluvcT1XGbkSMjcqIGwHcK2c9HiRQgWEjjaga6u5NuBWe8cPYRMVEDbuCXG92rBihuOBgI8KCB0V0M1gLrXlUpUw7Amn7hvGXKiAGLsChqtbhSsblCphao0YxgaxogJC1+pYqVWwWtt0rI41B1bHgu31AXtgjcDJK+AIj1bwvyhsyB3TRwUM33RWCGJtwDM/H8fzK1/41IR7AKUfpif9+ZA7vo9xwNgj6XMb95J6aOBZn4+L6PF9iZ3uzm6HSX8+jhM7ln5H5KkXHLa/zj4F8lQl22LH979LcZKPSqDNZ1vs+D6GYRiDw5FSbXquBUMUAYQoAghRBBCiCCBEEUCIIoAQRQAhigBCFAGEKAIIUQQQogggRBFAiCKAEEUAIYoAQhQBhCgCCFEEEKIIIEQRQIgigBBFACGKAEIUAYQoAghRBBCiCCBEEUCIIoAYI4CxlcyB0ysgIcRUzwmBfcM/JwS2Df2cENim4jkhsKv5OSFAb7F8DfW4Vlym8w+Lg+dvNwJbaAAAAABJRU5ErkJggg=="
+      }
+    ],
+    "task_memories": [],
+    "task_table": [],
+    "episode_memories": [],
+    "task_index": [],
+    "episode_index": [],
+    "run_index": [],
+    "observation": null,
+    "knowledge": "",
+    "allow_interrupt": true
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/judge/inputs.jsonl#knowledge_battle_item_use.task.judge.000002"
+}

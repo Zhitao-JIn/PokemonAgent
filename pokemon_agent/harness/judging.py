@@ -76,12 +76,15 @@ def judge_reason(
     overturn_note：人推翻了判定员的「已达成」时给的理由（None = 没推翻）；推翻时依据写成
     「被人推翻：理由；判定员原话」。
     """
-    if termination in (Termination.GOAL_DONE, Termination.INTERRUPTED) and verdict is not None:
+    if (
+        termination in (Termination.GOAL_DONE, Termination.INTERRUPTED, Termination.BLOCKED)
+        and verdict is not None
+    ):
         return verdict.why
     said = verdict.why if verdict is not None else not_asked
     if overturn_note is not None and verdict is not None:
         note = overturn_note or "（未给理由）"
-        said = f"判定员判已达成，被人推翻：{note}；判定员原话：{verdict.why}"
+        said = f"判定员语义结论被人推翻：{note}；判定员原话：{verdict.why}"
     return f"机械判停：{termination.value}；{said}" if termination is not None else said
 
 
@@ -97,6 +100,9 @@ def record_verdict(
     fail_streak: int | None = None,
     audit: AuditVerdict | None = None,
     human_note: str = "",
+    decision: str | None = None,
+    trigger: str = "normal",
+    planning_round: int | None = None,
 ) -> None:
     """记一条 `judge_verdict`。
 
@@ -108,6 +114,9 @@ def record_verdict(
             kind=TraceKind.JUDGE_VERDICT,
             meta={"source": source, "episode_id": episode_id, "task_id": task_id, "step": step},
             termination=termination,
+            decision=decision,
+            judge_trigger=trigger,
+            planning_round=planning_round,
             fail_streak=fail_streak,
             judge_reason=judge_reason,
             audit=audit.value if audit is not None else None,

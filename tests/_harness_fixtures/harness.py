@@ -37,7 +37,10 @@ from pokemon_agent.harness.interface.reviewer import Reviewer
 from pokemon_agent.harness.null_reviewer import NullReviewer
 from pokemon_agent.harness.run import compile_run_graph
 from pokemon_agent.harness.task import compile_task_graph
+from pokemon_agent.prompt import PromptGateway
+from pokemon_agent.settings import AppConfig
 
+from .app_config import ACTION_LIMITS, DEFAULT_APP_CONFIG, call_policy
 from .brain import _Brain
 from .memory import _Memory
 from .world import _Game
@@ -101,8 +104,8 @@ def build_fake(
     reviewer: Reviewer | None = None,
     checkpoints: bool = False,
     branch: str = "main",
-    live_feed_url: str | None = None,
     backend: str = "local",
+    config: AppConfig = DEFAULT_APP_CONFIG,
 ) -> FakeRun:
     """装配一套假 run（`build.py` 的假件版）。`checkpoints=True` 时挂 sqlite saver 与存档器，
     库与存档都放在 `tmp_path/checkpoints/`；`branch` 给恢复出来的执行线用。
@@ -114,7 +117,6 @@ def build_fake(
         run_id=run_id,
         **({} if backend != "local" else {"trace_root": str(tmp_path / "trace")}),
         branch=branch,
-        live_feed_url=live_feed_url,
         backend=backend,
     )
     reviewer = reviewer or NullReviewer()
@@ -134,7 +136,7 @@ def build_fake(
         else None
     )
     run_rt = assemble_runtime(
-        brain, game, memory, trace, reviewer, checkpointer, task_graph, episode_graph
+        brain, game, memory, trace, reviewer, checkpointer, task_graph, episode_graph, config
     )
     return FakeRun(RunHarness(run_rt, run_graph), run_rt, trace, game, memory, checkpointer)
 
@@ -148,26 +150,33 @@ def assemble_runtime(
     checkpointer: Checkpointer | None,
     task_graph: CompiledStateGraph,
     episode_graph: CompiledStateGraph,
+    config: AppConfig = DEFAULT_APP_CONFIG,
 ) -> RunRuntime:
+    prompt_gateway = PromptGateway(None)
     """共享同一套依赖装配三层 runtime；图与依赖由调用方注入。"""
     task_rt = TaskRuntime(
+        config=config,
         game=game,
-        chooser=Chooser(brain),
-        judger=Judger(brain),
+        chooser=Chooser(
+            brain, policy=call_policy(), action_limits=ACTION_LIMITS, prompt_gateway=prompt_gateway
+        ),
+        judger=Judger(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         memory=memory,
-        reflector=Reflector(brain),
-        verifier=Verifier(brain),
-        task_summarizer=TaskSummarizer(brain),
+        reflector=Reflector(),
+        verifier=Verifier(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
+        task_summarizer=TaskSummarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         trace=trace,
+        reviewer=reviewer,
         checkpointer=checkpointer,
     )
     episode_rt = EpisodeRuntime(
+        config=config,
         game=game,
         memory=memory,
-        decomposer=Decomposer(brain),
-        judger=Judger(brain),
-        verifier=Verifier(brain),
-        summarizer=Summarizer(brain),
+        decomposer=Decomposer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
+        judger=Judger(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
+        verifier=Verifier(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
+        summarizer=Summarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         trace=trace,
         reviewer=reviewer,
         task_graph=task_graph,
@@ -175,13 +184,14 @@ def assemble_runtime(
         checkpointer=checkpointer,
     )
     return RunRuntime(
+        config=config,
         trace=trace,
         memory=memory,
         game=game,
         reviewer=reviewer,
-        planner=Planner(brain),
-        run_summarizer=RunSummarizer(brain),
-        judger=Judger(brain),
+        planner=Planner(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
+        run_summarizer=RunSummarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
+        judger=Judger(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         episode_graph=episode_graph,
         episode=episode_rt,
         checkpointer=checkpointer,

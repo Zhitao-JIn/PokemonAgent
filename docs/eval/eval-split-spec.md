@@ -147,7 +147,7 @@ python -m evals.decode --scene bag
    每个 (帧, 字段) 的"通过 / 失败 / 未挂指标"与基线中 C / I / N 逐项一致。
 2. 一条命令输出整体 Pass Rate 与 23 行 Aggregate Metrics；`display_option=FAILING` 时只列失败帧。
 3. 各指标的 Total 等于 §1.4 的计分帧数。
-4. 检查 `evals/registry.py` 的 `TASKS` 恰好为六个公开任务（四个 DeepEval、两个 Inspect），由 `test_only_the_six_evaluation_tasks_are_public` 核对键集合与入口函数；`test_evals_tasks.py`、`test_evals_datasets.py`、`test_evals_perceive.py` 与全量 `pytest` 通过。旧 CLI 已有意删除，不执行 `python -m evals list`。
+4. 检查 `evals/registry.py` 的 `TASKS` 恰好为八个公开任务（四个 DeepEval、四个 Inspect），由 `test_only_the_eight_evaluation_tasks_are_public` 核对键集合与入口函数；`test_evals_tasks.py`、`test_evals_datasets.py`、`test_evals_perceive.py` 与全量 `pytest` 通过。旧 CLI 已有意删除，不执行 `python -m evals list`。
 5. `--frame`、`--scene` 有效，失败时退出码为 1。
 6. 运行后工作区新增的未跟踪文件都已被 `.gitignore` 覆盖。
 7. 仓库内不再有对 `scripts/decoder_baseline.py`、`evals.solvers.decode`、`evals.scorers.decode`、`baseline_only` 的活引用（历史文档的说明性文字与 `CHANGELOG.md` 历史条目除外）。
@@ -209,6 +209,6 @@ python -m evals.decode --scene bag
 1. 删除 `evals/tasks/decode/`、`evals/solvers/decode.py`、`evals/scorers/decode.py`、`scripts/decoder_baseline.py`。
 2. 按 §二的"修改"两张表改代码、测试与文档（含 `AGENTS.md` 与 `CLAUDE.md` 两份逐字同步、`docs/spec/evals/SPEC.md`、`docs/eval/tasks-spec.md` 的追加注、`.gitignore`、`CHANGELOG.md` 新条目）。历史文档的两处说明已追加，不要改动。
 3. 跑 `ruff check . && ruff format .` 与全量 `pytest`。
-4. 按验收 4、6、7 收尾：根级 registry 的 `TASKS` 恰好为六个公开任务，公开任务契约测试通过；仓库内无对旧模块、基线脚本与 `baseline_only` 的活引用。不恢复已删除的 `evals/cli.py` 或 `evals/__main__.py`。
+4. 按验收 4、6、7 收尾：根级 registry 的 `TASKS` 恰好为八个公开任务，公开任务契约测试通过；仓库内无对旧模块、基线脚本与 `baseline_only` 的活引用。不恢复已删除的 `evals/cli.py` 或 `evals/__main__.py`。
 
 **完成条件**：验收 1–7 全部满足，并在最后一条 CHANGELOG 中写明口径变化（四组 `C/(C+I)` → 逐字段通过率与帧级通过率）。

@@ -49,7 +49,7 @@ EP = "e1"
 
 
 def _act_payload(step: int = 1) -> dict[str, Any]:
-    obs = ActMemory.Observation(step=step, status="你在野外。")
+    obs = ActMemory.Observation(facts={"overlay": "none"}, step=step)
     return ActMemory(
         before=obs, action="up", after=obs, step=step, episode_id=EP, run_id=RUN
     ).model_dump()

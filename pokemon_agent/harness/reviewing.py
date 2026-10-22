@@ -24,6 +24,7 @@ from pokemon_agent.schemas.harness.domain import JudgeFeedback, ReviewMark
 from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from .interface.reviewer import Reviewer
+from .review_loop import ReviewRound, elicit_with_review
 from .review_render import outcome_kind
 
 
@@ -33,24 +34,37 @@ def ask_inject(
     req: FromHarnessToReviewerInjectReq,
     *,
     meta: dict[str, Any],
-) -> str:
-    """把一张表单亮给人，记一笔 `review_inject`，返回人说的话（空串 = 没意见）。"""
+    rounds: ReviewRound,
+) -> ReviewMark:
+    """亮表并返回同一份落账素材；AI 到顶时保留原话，标 capped，意见不再生效。
+
+    前置条件：请求中的轮次、上限与本轮上下文相同；不吞 reviewer 的异常。
+    后置条件：每次询问恰落一账，人的意见和空回话不标 capped。
+    """
+    assert req.round == rounds.number and req.max_agent_rounds == rounds.max_agent_rounds
     asked_at = time.monotonic()
     resp = reviewer.inject(req)
+    mark = ReviewMark(
+        form_kind=req.form_kind,
+        reply=resp.text,
+        answered=resp.answered,
+        by=resp.by,
+        wait_s=time.monotonic() - asked_at,
+        capped=bool(
+            resp.text
+            and resp.by == "agent"
+            and rounds.consecutive_agent_rounds >= rounds.max_agent_rounds
+        ),
+        round=req.round,
+    )
     trace.append(
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.REVIEW_INJECT,
             meta=meta,
-            review=ReviewMark(
-                form_kind=req.form_kind,
-                reply=resp.text,
-                answered=resp.answered,
-                by=resp.by,
-                wait_s=time.monotonic() - asked_at,
-            ),
+            review=mark,
         )
     )
-    return resp.text
+    return mark
 
 
 def audit_judgement(
@@ -62,16 +76,9 @@ def audit_judgement(
     context: ReviewContext,
     meta: dict[str, Any],
 ) -> JudgeFeedback:
-    """审本层 judge 的裁决，返回本层的判定反馈（`JudgeFeedback`）。
-
-    只在判定员说「已达成」时问人——误判「没达成」代价小（多跑几步），提前收工才要人拦。
-    亮给人的依据是本层刚记的那笔 `judge_call`（它的 prompt 就是判定员看的材料）。
-    meta：本层记账的签名（`source` / `episode_id` / `task_id` / `step`），
-        也用来找那笔 `judge_call`。
-    后置条件：判没成时 `audit is None`；判成时 `audit` 是人的表态。
-    """
-    if not verdict.done:
-        return JudgeFeedback(done=False, why=verdict.why)
+    """消费本次完整请求并返回结果；失败保留调用账，输入不被修改。"""
+    if not (verdict.done or verdict.blocked):
+        return JudgeFeedback(decision=verdict.decision, why=verdict.why)
     # 步骤 1：取本层刚记的 judge_call 当依据。
     events = [
         event
@@ -102,7 +109,9 @@ def audit_judgement(
             ),
         )
     )
-    return JudgeFeedback(done=True, why=verdict.why, audit=resp.verdict, note=resp.note)
+    return JudgeFeedback(
+        decision=verdict.decision, why=verdict.why, audit=resp.verdict, note=resp.note
+    )
 
 
-__all__ = ["ask_inject", "audit_judgement"]
+__all__ = ["ReviewRound", "ask_inject", "audit_judgement", "elicit_with_review"]

@@ -5,7 +5,7 @@
    （一局一条 EpisodeMemory 由 episode 层自己保证，本格不写记忆。）
    （收结算在 perceive 的 `absorb_episode`。）
 2. 机械三类：本圈 perceive 取的帧 `obs.done`（run 层自己取帧，0928 起不再借上一局
-   结算带回的旧画面；首圈也有帧——世界起点的画面）/ `fail_streak >= RUN_STALL_LIMIT` /
+   结算带回的旧画面；首圈也有帧——世界起点的画面）/ `fail_streak >= loop.run_stall_limit` /
    `step >= RUN_MAX_EPISODES`。
 3. 问模型"run_goal 达成没有"（素材是 `plan_ctx.details` 的全部局详情）；判成时亮给人**审**——
    认账即 `GOAL_DONE`，推翻则 run 继续。run 继续跑时，判定员的话与人的推翻理由写进
@@ -21,7 +21,6 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.config import RUN_STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeReq,
@@ -89,14 +88,14 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
     # 结算带回的画面（首圈还是 None），run 层自己取帧后这里看的是当前画面。
     termination = mechanical_termination(
         world_ended=bool(state.observation and state.observation.done),
-        stalled=fail_streak >= RUN_STALL_LIMIT,
-        exhausted=state.step >= deps.budget.max_episodes,
+        stalled=fail_streak >= deps.config.loop.run_stall_limit,
+        exhausted=state.step >= deps.config.budget.max_episodes,
     )
     verdict = None
     feedback = None
 
     # 步骤 3：问模型"run_goal 达成没有"（素材是本 run 的局摘要）；判成时亮给人审，认账才覆盖。
-    if last is not None:
+    if last is not None or state.judge_trigger == "no_pending":
         ctx = state.plan_ctx
         details = ctx.details if ctx is not None else []
         meta = {
@@ -108,6 +107,10 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
         }
         req = FromHarnessToBrainToolJudgeReq(
             goal=state.run_goal,
+            goal_table=updates.get("goals", state.goals),
+            latest_planning=state.latest_planning,
+            planning_round=state.planning_rounds_used,
+            trigger=state.judge_trigger,
             episode_memories=details,
             run_index=ctx.run_index if ctx is not None else [],
             knowledge="\n\n".join(ctx.knowledge) if ctx is not None else "",
@@ -132,7 +135,7 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
             ),
         )
         if feedback.audit is AuditVerdict.ACCEPT:
-            termination = Termination.GOAL_DONE
+            termination = Termination.BLOCKED if verdict.blocked else Termination.GOAL_DONE
         else:
             updates["last_judge"] = feedback
 
@@ -151,12 +154,20 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
         task_id=state.run_id,
         step=state.step + 1,
         termination=termination,
+        decision=verdict.decision if verdict is not None else None,
+        trigger=state.judge_trigger,
+        planning_round=state.planning_rounds_used,
         judge_reason=reason_for_judge,
         fail_streak=fail_streak,
         audit=feedback.audit if feedback is not None else None,
         human_note=feedback.note if overturned else "",
     )
-    return {**updates, "termination": termination, "judge_reason": reason_for_judge}
+    return {
+        **updates,
+        "termination": termination,
+        "judge_reason": reason_for_judge,
+        "judge_trigger": "normal",
+    }
 
 
 def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[str, Any]:
@@ -168,6 +179,10 @@ def _settle(deps: RunRuntime, state: RunState, outcome: EpisodeOutput) -> dict[s
 
     # 步骤 1：机械盖章。
     stamped = _stamp(entry, outcome.success, outcome.episode_id)
+    if outcome.termination is Termination.BLOCKED:
+        stamped = stamped.model_copy(
+            update={"status": EntryStatus.BLOCKED, "note": outcome.judge_reason}
+        )
 
     fail_streak = state.fail_streak
 

@@ -13,7 +13,6 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.config import MEMORY_RECALL_LIMIT
 from pokemon_agent.harness.knowledge_query import build_knowledge_query
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolRecallReq,
@@ -46,7 +45,9 @@ def retrieve_knowledge_semantic_memory(
     query = build_knowledge_query(obs, state.goal.goal)
     t0 = time.time()
     resp = deps.memory.recall(
-        FromHarnessToMemoryToolRecallReq(query=query, conditions={}, limit=MEMORY_RECALL_LIMIT)
+        FromHarnessToMemoryToolRecallReq(
+            query=query, conditions={}, limit=deps.config.memory.recall_limit
+        )
     )
     _knowledge_items = [item for item in resp.items if item.kind == "knowledge"]
     contents = [item.content for item in _knowledge_items]

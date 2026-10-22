@@ -37,7 +37,7 @@ def _fail_streak(streak: int, out: TaskOutput) -> int:
     """成了清零；被打断（`INTERRUPTED`）不算失败、原样保留；其余 +1。"""
     if out.success:
         return 0
-    if out.termination is Termination.INTERRUPTED:
+    if out.termination in (Termination.INTERRUPTED, Termination.BLOCKED):
         return streak
     return streak + 1
 

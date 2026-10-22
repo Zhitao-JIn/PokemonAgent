@@ -1,7 +1,7 @@
 """brain 包：纯决策层。无状态——每一步的全部输入来自参数，全部记忆来自工具调用。
 
 - `interface/`：这个子系统的港口（`BrainPort`）+ 它内嵌的数据形状
-  （`Action`/`EpisodeSummary`/`Goal`/`Reflection`/`RunPlan`/
+  （`Action`/`EpisodeSummary`/`Goal`/`RunPlan`/
   `VerifyVerdict`/`Task`，以及每个方法的结果袋），跟"怎么决策"的实现
   物理分开。**选型纯数据 `BrainLlmConfig` 也住这里**（0913 深夜九从
   `build_llm_providers.py` 搬来）——它是零重依赖的 dataclass，住在工厂模块里
@@ -63,9 +63,9 @@ from .interface import (
     EpisodeSummary,
     Goal,
     JudgeResult,
+    LinkSpec,
     ModelCall,
     PlanResult,
-    Reflection,
     RunPlan,
     RunSummary,
     ScriptArg,
@@ -93,12 +93,12 @@ __all__ = [
     "EpisodeSummary",
     "Goal",
     "JudgeResult",
+    "LinkSpec",
     "ScriptArg",
     "ScriptCall",
     "ScriptSignature",
     "ModelCall",
     "PlanResult",
-    "Reflection",
     "RunPlan",
     "VerifyVerdict",
     "SummarizeResult",

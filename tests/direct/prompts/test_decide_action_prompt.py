@@ -14,10 +14,16 @@
 
 from __future__ import annotations
 
+from functools import partial
+
+from _harness_fixtures.app_config import ACTION_LIMITS
+from prompt import decision_example as _decide_action
+
 from pokemon_agent.brain.interface import Goal
-from pokemon_agent.direct.prompts.decide_action import build_prompt
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.world import ActionSpace, TaskObservation, TaskScene
+
+build_prompt = partial(_decide_action.build_prompt, max_segments=ACTION_LIMITS.max_segments)
 
 MARK = "← 你现在要完成的"
 
@@ -31,7 +37,7 @@ def _goal_section(goals: list[Goal]) -> str:
     prompt = build_prompt(
         FromHarnessToBrainToolChooseOnceReq(
             goals=goals,
-            obs=TaskObservation(step=0, status="你在野外。", scene=TaskScene.WALK),
+            obs=TaskObservation(facts={"overlay": "none"}, step=0, scene=TaskScene.WALK),
             space=ActionSpace(names=["up"], descriptions={"up": "向上走"}),
             memories=[],
         )
@@ -91,8 +97,8 @@ def test_shop_prompt_lists_only_shop_scripts_and_requests_an_args_object() -> No
     request = FromHarnessToBrainToolChooseOnceReq(
         goals=[Goal(goal="买一个精灵球", criteria="背包球数增加一")],
         obs=TaskObservation(
+            facts={"overlay": "none"},
             step=0,
-            status="商店菜单",
             scene=TaskScene.SHOP_ITEMS,
             takeover=ShopItemsView(items=[], money=3000, bag=[]),
         ),
@@ -119,7 +125,6 @@ def test_battle_navigation_prompt_exposes_directions_scripts_and_cursor() -> Non
 
     observation = TaskObservation(
         step=0,
-        status="战斗菜单",
         scene=TaskScene.BATTLE_MENU,
         facts=Facts(overlay=Facts.Overlay.CHOICE, cursor="FIGHT", screen="▶FIGHT PKMN\n ITEM RUN"),
     )
@@ -136,3 +141,28 @@ def test_battle_navigation_prompt_exposes_directions_scripts_and_cursor() -> Non
     assert "battle_run" in prompt
     assert "cursor: FIGHT" in prompt and "▶FIGHT PKMN" in prompt
     assert "你不直接按键" not in prompt
+
+
+def test_walk_prompt_prioritizes_navigation_scripts_for_long_or_blocked_routes() -> None:
+    from pokemon_agent.world import Facts
+    from pokemon_agent.world.action_space import compute_action_space
+
+    observation = TaskObservation(
+        step=0, scene=TaskScene.WALK, facts=Facts(overlay=Facts.Overlay.NONE)
+    )
+    request = FromHarnessToBrainToolChooseOnceReq(
+        goals=[Goal(goal="绕过障碍走到门口", criteria="到达门口")],
+        obs=observation,
+        space=compute_action_space(observation, ["up", "down", "left", "right", "a", "b"]),
+        memories=[],
+    )
+
+    prompt = build_prompt(request)
+
+    assert "这一次要执行的一个动作" in prompt
+    assert "需要绕过障碍或跨图时，优先用「导航脚本」" in prompt
+    assert "移动受阻或位置连续没有进展时，改用导航脚本或换路线" in prompt
+    navigation_section = prompt.split("导航脚本（", 1)[1].split("业务脚本（", 1)[0]
+    assert "walk_to(" in navigation_section and "exit_map(" in navigation_section
+    assert "talk_to_adjacent_npc(" not in navigation_section
+    assert prompt.index("导航脚本（") < prompt.index("基础按键：")

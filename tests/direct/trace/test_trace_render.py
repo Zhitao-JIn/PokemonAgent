@@ -64,7 +64,6 @@ def _observe(*, frame: str | None = None) -> dict[str, object]:
             meta={"source": "task.sense", "episode_id": "ep-1", "task_id": "t1", "step": 1},
             obs=Observation(
                 step=1,
-                status="（这一帧只读了内存）1 号道路 (13,7)，朝向 up",
                 facts={
                     "where": "1 号道路 (13,7)",
                     "facing": "up",
@@ -113,6 +112,9 @@ def test_judge_verdict_carries_no_depth() -> None:
 
     assert set(content) == {
         "termination",
+        "decision",
+        "judge_trigger",
+        "planning_round",
         "fail_streak",
         "judge_reason",
         "audit",
@@ -170,7 +172,7 @@ EP = "runstate-20260914T1200-ep1"
 
 
 def _step_memory() -> ActMemory:
-    obs = ActMemory.Observation(step=3, status="你在野外。")
+    obs = ActMemory.Observation(facts={"overlay": "none"}, step=3)
     return ActMemory(
         before=obs,
         action="up",

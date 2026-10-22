@@ -17,6 +17,7 @@ from langgraph.runtime import Runtime
 from pokemon_agent.brain import Action, Goal
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.schemas.harness import (
+    AuditVerdict,
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToTraceToolAppendReq,
     TraceKind,
@@ -50,6 +51,11 @@ def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
         task_index=state.task_index,
         last_result=state.last_result,
         knowledge="\n\n".join(state.knowledge),
+        human_note=(
+            state.last_judge.note
+            if state.last_judge is not None and state.last_judge.audit is AuditVerdict.OVERTURN
+            else ""
+        ),
     )
     req.memories = history
 

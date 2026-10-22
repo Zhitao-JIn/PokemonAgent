@@ -1,0 +1,119 @@
+{
+  "task": "summarize_task",
+  "case_id": "history-knowledge_battle_pokemon_switch.task.summarize_task.000001",
+  "source": "history",
+  "request_kind": "legacy",
+  "request": {
+    "entries": [
+      {
+        "before": {
+          "step": 0,
+          "place": {
+            "map_id": 12,
+            "x": 13,
+            "y": 7
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图12 x=13 y=7，朝向 west。战斗中。可选项：FIGHT/ PKMN/ ITEM/ RUN，光标在 FIGHT",
+          "scene": "battle_menu",
+          "facts": {
+            "scene": "battle",
+            "overlay": "choice",
+            "where": "全局坐标 地图12 x=13 y=7",
+            "facing": "west",
+            "neighbors": "北 # 南 # 西 . 东 #",
+            "landmarks": [],
+            "dialog_text": "",
+            "options": [
+              "FIGHT",
+              "PKMN",
+              "ITEM",
+              "RUN"
+            ],
+            "cursor": "FIGHT",
+            "overview": "",
+            "walk_map": "",
+            "map_id": 12,
+            "screen": " PIDGEY     ·······\n    :L3      ·······\n ·HP:[██████] ·······\n ·────────│ ·······\n            ·······\n ·······    ·······\n ·······    ·······\n ·······  BULBASAUR\n ·······      :L7\n ·······  HP:[██████]\n ·······    25/ 25·\n ······· └────────┘\n┌───────┌──────────┐\n│       │          │\n│       │▶FIGHT PKMN │\n│       │          │\n│       │ ITEM  RUN│\n└───────└──────────┘",
+            "my_name": "BULBASAUR",
+            "my_level": "7",
+            "my_hp": "25/25",
+            "my_status": "ok",
+            "foe_name": "PIDGEY",
+            "foe_level": "3",
+            "foe_hp": "15/15",
+            "foe_status": "ok",
+            "option_layout": "2 行 × 2 列，光标在第 1 行第 1 列；上/下 换行，左/右 换列\n▶FIGHT   PKMN\n ITEM   RUN"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "right",
+        "after": {
+          "step": 1,
+          "place": {
+            "map_id": 12,
+            "x": 13,
+            "y": 7
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图12 x=13 y=7，朝向 west。战斗中。可选项：FIGHT/ PKMN/ ITEM/ RUN，光标在 PKMN",
+          "scene": "battle_menu",
+          "facts": {
+            "scene": "battle",
+            "overlay": "choice",
+            "where": "全局坐标 地图12 x=13 y=7",
+            "facing": "west",
+            "neighbors": "北 # 南 # 西 . 东 #",
+            "landmarks": [],
+            "dialog_text": "",
+            "options": [
+              "FIGHT",
+              "PKMN",
+              "ITEM",
+              "RUN"
+            ],
+            "cursor": "PKMN",
+            "overview": "",
+            "walk_map": "",
+            "map_id": 12,
+            "screen": " PIDGEY     ·······\n    :L3      ·······\n ·HP:[██████] ·······\n ·────────│ ·······\n            ·······\n ·······    ·······\n ·······    ·······\n ·······  BULBASAUR\n ·······      :L7\n ·······  HP:[██████]\n ·······    25/ 25·\n ······· └────────┘\n┌───────┌──────────┐\n│       │          │\n│       │ FIGHT▶PKMN │\n│       │          │\n│       │ ITEM  RUN│\n└───────└──────────┘",
+            "my_name": "BULBASAUR",
+            "my_level": "7",
+            "my_hp": "25/25",
+            "my_status": "ok",
+            "foe_name": "PIDGEY",
+            "foe_level": "3",
+            "foe_hp": "15/15",
+            "foe_status": "ok",
+            "option_layout": "2 行 × 2 列，光标在第 1 行第 2 列；上/下 换行，左/右 换列\n FIGHT  ▶PKMN\n ITEM   RUN"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 0,
+        "episode_id": "eval-knowledge_battle_pokemon_switch-ep1",
+        "task_id": "knowledge_battle_pokemon_switch-t1",
+        "run_id": "eval-knowledge_battle_pokemon_switch",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "按 right 后光标从 FIGHT 移到 PKMN，截图也显示 ▶ 从 FIGHT 移到 PKMN，符合目标"
+      }
+    ],
+    "task_id": "knowledge_battle_pokemon_switch-t1",
+    "episode_id": "eval-knowledge_battle_pokemon_switch-ep1",
+    "run_id": "eval-knowledge_battle_pokemon_switch",
+    "goal": "在战斗选单里把光标从 FIGHT 移到 PKMN（按 right）",
+    "termination": "goal_done",
+    "judge_reason": "最后一条「之后变成」显示光标 ▶ 停在 PKMN 上（FIGHT▶PKMN），符合判据",
+    "steps_used": 1,
+    "max_steps": 3
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_battle_pokemon_switch.task.summarize_task.000001"
+}

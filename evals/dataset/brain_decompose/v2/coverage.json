@@ -1,0 +1,13 @@
+{
+  "source_cases": 37,
+  "labelled": 36,
+  "excluded": [
+    {
+      "case_id": "knowledge_battle_action_menu.episode.decompose.000002",
+      "status": "invalid_task",
+      "reason": "当前已逃跑/不在原战斗主菜单，但原 L1 明确只准方向键且禁止逃跑、离开后重新遇敌。现有输入不能同时满足目标和限制；恢复同一可用战斗现场或修订用户目标后才能作为生成任务计分。"
+    }
+  ],
+  "annotation_version": "v1",
+  "baseline_answers_used_as_gold": false
+}

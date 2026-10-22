@@ -99,10 +99,11 @@ class _OpenAICompatibleBase:
         *,
         temperature: float,
         max_tokens: int = 1024,
-        timeout: int = 45,
+        timeout: float = 45,
         multimodal: bool = True,
         json_mode: bool = False,
         thinking: bool = False,
+        vision_dump_dir: str | None = None,
     ) -> None:
         """`temperature` 没有默认值，**必须由调用方显式给出**。
 
@@ -158,6 +159,7 @@ class _OpenAICompatibleBase:
         self.multimodal = multimodal
         self._json_mode = json_mode
         self._thinking = thinking
+        self._vision_dump_dir = vision_dump_dir
         self._base = self.BASE_URL.rstrip("/")
         self._timeout = timeout
         self._key = next(
@@ -322,15 +324,6 @@ class _OpenAICompatibleBase:
         )
 
 
-_DUMP_DIR = os.environ.get("VISION_DUMP_DIR", "")
-"""把送进视觉模型的图写到这个目录。空 = 不写。
-
-    VISION_DUMP_DIR=vision_dump python -m <任一入口脚本> ...
-
-存的是**实际发出去**的字节，也就是模型真正收到的那一份（没有预处理这一步，
-发出去的就是感知拿到的原图）。
-"""
-
 _dump_seq = 0
 
 
@@ -348,7 +341,7 @@ def _png_bytes(image: str) -> bytes:
     return base64.b64decode(image.removeprefix("data:image/png;base64,"))
 
 
-def _dump(image_b64: str) -> None:
+def _dump(image_b64: str, directory: str) -> None:
     """写一张图，文件名按序号递增。**出错就算了，不能影响这一局。**
 
     入参是帧字符串（跟 `VisionDescribeReq.images` 类型一致），落盘前
@@ -358,7 +351,7 @@ def _dump(image_b64: str) -> None:
     global _dump_seq
     try:
         _dump_seq += 1
-        d = pathlib.Path(_DUMP_DIR)
+        d = pathlib.Path(directory)
         d.mkdir(parents=True, exist_ok=True)
         (d / f"{_dump_seq:04d}.png").write_bytes(_png_bytes(image_b64))
     except Exception:  # noqa: BLE001  排查工具不该让实验挂掉
@@ -431,10 +424,10 @@ class _MultimodalMixin:
         # 实测卡过一整轮：人看得清光标在 RUN，模型始终报 FIGHT，而当时没有任何办法
         # 分辨是"图里没有"还是"模型没看"。
         #
-        # 靠环境变量开，默认不写：这是排查用的，不该在正常实验里生成上千张图。
-        if _DUMP_DIR:
+        # 靠配置 `debug.vision_dump_dir` 开，默认不写：这是排查用的，不该在正常实验里生成上千张图。
+        if self._vision_dump_dir:
             for image_b64 in images:
-                _dump(image_b64)
+                _dump(image_b64, self._vision_dump_dir)
 
         content: list[dict[str, object]] = [{"type": "text", "text": prompt}]
         # 帧本身就是完整 data URI（0915 起唯一格式）——`image_url.url` 要的
@@ -745,9 +738,10 @@ def provider_for(
     *,
     temperature: float,
     max_tokens: int | None = None,
-    timeout: int = 45,
+    timeout: float = 45,
     json_mode: bool = False,
     thinking: bool = False,
+    vision_dump_dir: str | None = None,
 ) -> _OpenAICompatibleBase:
     """按型号名造一个 provider 实例——**"哪条链路接哪家厂商"的唯一判据**。
 
@@ -769,6 +763,8 @@ def provider_for(
     （PASS 局 `realcheck-0914-202735`）：视觉单次 max 1.16s、决策 max 8.24s，
     两者差 7 倍，一个阈值套两头要么放文本的松、要么给视觉白等。
 
+    `vision_dump_dir`：非空时把实际送出的图落到该目录（排查用）。
+
     `json_mode` / `thinking`：转发给 Provider 构造的 JSON 输出开关与思考模式开关，
     含义与前提见 `_OpenAICompatibleBase.__init__`；默认都是 `False`。
 
@@ -786,6 +782,7 @@ def provider_for(
             kwargs["timeout"] = timeout
             kwargs["json_mode"] = json_mode
             kwargs["thinking"] = thinking
+            kwargs["vision_dump_dir"] = vision_dump_dir
             return provider_cls(model, temperature=temperature, **kwargs)
     known = " / ".join(f"{prefix}*" for prefix, _ in _PROVIDER_PREFIXES)
     raise ValueError(

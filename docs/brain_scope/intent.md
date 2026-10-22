@@ -36,10 +36,10 @@
 | 调用点 | 详情（全部） | 背景索引（一行一条，不含本单元） | 图 |
 |---|---|---|---|
 | `plan·L0`、`judge·L0` | 本 run 全部 EpisodeMemory | 过往的 run（run 级记忆，一个 run 一行；**不按 `run_goal` 限制**） | 每局首末帧 |
-| `plan·L1`、`judge·L1` | 本 episode 全部 TaskMemory | 被同一个 `run_goal` 绑定的 episode（同一目标一次跑不完被重新发起时，它们会分布在多个 run 里） | 每个 task 首末帧 |
-| `plan·L2`、`judge·L2` | 本 task 全部 ActMemory | 被同一个 level1 目标（目标表的那一行，由 `plan·L0` 产出）绑定的 task（含同一 level1 目标被重新发起的其他 episode 里的 task；不含本 task） | 每步前后帧 |
+| `plan·L1`、`judge·L1` | 本 episode 全部 TaskMemory | 本 run 内同一个 L1 goal 的其他 episode；按 `(run_id, goal_id)` 绑定，排除本局，不跨 run、不按文本关联 | 每个 task 首末帧 |
+| `plan·L2`、`judge·L2` | 本 task 全部 ActMemory | 本 episode 内、目标文本与当前 task 相同的此前 task，不含当前 task、不跨 episode | 每步前后帧 |
 
-- **`run_goal` 只用来限制 episode 索引**（L1），不用来限制 L0 的 run 索引。
+- **L1 用 `(run_id, goal_id)` 限定 episode 索引**；goal_id 是 plan 产出的 L1 goal 身份。`run_goal` 只保留作来源章；L0 的 run 索引不按目标限制。
 - 六处都另给**知识**与**当前 RAM 现状**。各调用点原有的、不属于「记忆」的输入照旧：goals 表（L0）、本 episode 的 task 表（L1）、动作空间与上一步结果（L2）、`last_judge`、`human_note`。
 
 **命名**：`plan·L0` 即原来的 plan，`plan·L1` 即原来的 decompose，`plan·L2` 即原来的 choose；`judge·L0 / L1 / L2` 即三层 judge。本命名只用于文档，代码里的函数名不在本次改动范围。
@@ -55,10 +55,10 @@
 
 ## 六、记忆侧改动（用户已授权，写通道仅限于此）
 
-1. **EpisodeMemory** 加来源章 `run_goal`，以及可空的 `first_frame` / `last_frame`（PNG data URI）；首末帧由 harness 在盖来源章时取该局首个 task 的首帧与末个 task 的末帧，不调模型。
+1. **EpisodeMemory** 来源章保存 `run_goal` 文本和 `goal_id`（所属 L1 goal 身份），只有 `(run_id, goal_id)` 用于限定 L1 背景；另有可空的 `first_frame` / `last_frame`（PNG data URI），由 harness 取该局首个 task 首帧与末个 task 末帧，不调模型。
 2. **新增 run 级记忆**：每个 run 收尾留一条，由 harness 盖来源章，正文由 LLM 从本 run 全部 EpisodeMemory 蒸馏（每条带成败标注，成败以目标表的最终定案为准，含人审推翻）。蒸馏失败或没有可蒸的 EpisodeMemory 时落一条只有来源章、正文为空的记录，保证每个正常收尾的 run 恰好一条（正常收尾含预算、时间、动作数耗尽等机械终止；异常上抛的 run 不写，从存档续跑到收尾时才写）。它补上记忆阶梯的最高一级（Act → Task → Episode → Run），它和 EpisodeMemory 一样是派生物：可重建、可丢弃，成败只认章。
-3. **召回口**增加两种取法：按 `run_goal` 取 episode；列出 run 级记忆。L2 的背景索引不走召回：它取自 episode 层已装好的本 episode 全部 TaskMemory，按目标文本相同机械筛出，所以 TaskMemory 不加字段。
-4. 旧记忆文件缺新字段时读作默认值，但不为旧数据写任何兼容逻辑；没有 `run_goal` 的旧 episode 在存档重打时随整库清空。
+3. **召回口**增加两种取法：按 `(run_id, goal_id)` 取 episode；列出 run 级记忆。L2 的背景索引不走召回：它取自 episode 层已装好的本 episode 全部 TaskMemory，按目标文本相同机械筛出，所以 TaskMemory 不加字段。
+4. 旧记忆文件缺新字段时读作默认值，但不为旧数据写任何兼容逻辑；没有 `goal_id` 的旧 episode 在存档重打时随整库清空。
 5. 既有的蒸馏 prompt 不动；新增一个 run 级蒸馏 prompt、一次模型调用，以及它的账（蒸馏调用、读 run 记忆、写 run 记忆三本，已与用户确认）。
 
 ## 七、预算
@@ -86,7 +86,7 @@
 
 ## 十、需在 spec 阶段落实的前提
 
-1. 召回口的具体取法：按 `run_goal` 取 episode 需要把它写进 episode 记录的可筛选元数据；run 级记忆的落盘位置与写入点（保证每个正常收尾的 run 恰好一条）；（原「全局 episode 条数上限 `max_summaries` 对 L1 索引的影响」已无需考虑：该上限与淘汰已由 CHANGELOG 478 删除，episode 记忆不再被淘汰。）
+1. 召回口的具体取法：按 `(run_id, goal_id)` 取 episode 需要把它写进 episode 记录的可筛选元数据；run 级记忆的落盘位置与写入点（保证每个正常收尾的 run 恰好一条）；（原「全局 episode 条数上限 `max_summaries` 对 L1 索引的影响」已无需考虑：该上限与淘汰已由 CHANGELOG 478 删除，episode 记忆不再被淘汰。）
 2. 评测存档：EpisodeMemory 与状态模型加字段会改变 `state_schema_hash`，存档要重打。
 3. brain 的对外接口：`plan` / `decompose` 目前不收图，L0 / L1 带图要加 `images`。
 4. 图片总数共用上限的数值。

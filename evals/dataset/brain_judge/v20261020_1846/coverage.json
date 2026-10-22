@@ -1,0 +1,8 @@
+{
+  "source_cases": 183,
+  "labelled": 183,
+  "excluded": [],
+  "annotation_version": "v20261020_1846",
+  "reference_role": "decision_labels",
+  "baseline_answers_used_as_gold": false
+}

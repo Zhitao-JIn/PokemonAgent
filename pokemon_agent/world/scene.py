@@ -38,9 +38,9 @@ LEARN_MARKS = (
     "than 4 moves",
     "Delete an older",
     "move to make room",
-    "Which move should",
+    "Which move sho",
     "be forgotten",
-    "Abandon learning",
+    "Abandon learni",
 )
 """学新招的提示（`trying to learn / can't learn more than 4 moves! / Delete an older /
 move to make room / for XX?`，用 RARE CANDY 实测）。"""

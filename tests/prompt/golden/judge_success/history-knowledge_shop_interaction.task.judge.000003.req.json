@@ -1,0 +1,277 @@
+{
+  "task": "judge_success",
+  "case_id": "history-knowledge_shop_interaction.task.judge.000003",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "goal": {
+      "goal": "面朝 north 按 a 与上方店员对话，把对话推到出现选项",
+      "criteria": "overlay 是 choice，且 options 含 BUY / SELL / QUIT"
+    },
+    "history": [
+      {
+        "before": {
+          "step": 1,
+          "place": {
+            "map_id": 42,
+            "x": 3,
+            "y": 4
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图42 x=3 y=4，朝向 north",
+          "scene": "shop",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图42 x=3 y=4",
+            "facing": "north",
+            "neighbors": "北 N 南 . 西 . 东 #",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 3,
+                "y": 3
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 0,
+                "y": 5
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 4,
+                "y": 7
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 5,
+                "y": 7
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=0 ##########  (x=-1..8)\ny=1 ##########  (x=-1..8)\ny=2 #........#  (x=-1..8)\ny=3 ###.N#####  (x=-1..8)\ny=4 ###.@#####  (x=-1..8)\ny=5 #N#......#  (x=-1..8)\ny=6 ###......#  (x=-1..8)\ny=7 #...DDN..#  (x=-1..8)\ny=8 ##########  (x=-1..8)",
+            "map_id": 42,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 2,
+          "place": {
+            "map_id": 42,
+            "x": 3,
+            "y": 4
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图42 x=3 y=4，朝向 north。对话框：「No! POTIONs ar」",
+          "scene": "shop",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图42 x=3 y=4",
+            "facing": "north",
+            "neighbors": "北 N 南 . 西 . 东 #",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 3,
+                "y": 3
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 0,
+                "y": 5
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 4,
+                "y": 7
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 5,
+                "y": 7
+              }
+            ],
+            "dialog_text": "No! POTIONs ar",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 42,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│No! POTIONs ar    │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 1,
+        "episode_id": "eval-knowledge_shop_interaction-ep1",
+        "task_id": "knowledge_shop_interaction-t2",
+        "run_id": "eval-knowledge_shop_interaction",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 2,
+          "place": {
+            "map_id": 42,
+            "x": 3,
+            "y": 4
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图42 x=3 y=4，朝向 north。对话框：「No! POTIONs ar」",
+          "scene": "shop",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图42 x=3 y=4",
+            "facing": "north",
+            "neighbors": "北 N 南 . 西 . 东 #",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 3,
+                "y": 3
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 0,
+                "y": 5
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 4,
+                "y": 7
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 5,
+                "y": 7
+              }
+            ],
+            "dialog_text": "No! POTIONs ar",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 42,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│No! POTIONs ar    │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 3,
+          "place": {
+            "map_id": 42,
+            "x": 3,
+            "y": 4
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图42 x=3 y=4，朝向 north。对话框：「No! POTIONs are all sold out.」",
+          "scene": "shop",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图42 x=3 y=4",
+            "facing": "north",
+            "neighbors": "北 N 南 . 西 . 东 #",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 3,
+                "y": 3
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 0,
+                "y": 5
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 4,
+                "y": 7
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 5,
+                "y": 7
+              }
+            ],
+            "dialog_text": "No! POTIONs are all sold out.",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 42,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│No! POTIONs are   │\n│                  │\n│all sold out.     │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 2,
+        "episode_id": "eval-knowledge_shop_interaction-ep1",
+        "task_id": "knowledge_shop_interaction-t2",
+        "run_id": "eval-knowledge_shop_interaction",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAALlklEQVR4nO1dAZLkKghN/9qjzRV6jzB7pswRdq8wd+tf/FqmGD4oigma8KpS3YkhKhJFIPrYtu21ObDv+xaJz8/P7c+fP120z+fzv9+V6d/e3rZI/Pr1y0X/Y4QARAIa7/Xqe4cej8d/v6vTrwy3AM6Cj4+Ppvvf398vRX9bAewdPhJjsDr/3QIYrQN6dZDVsS/O/+V1wLvjc3H+X0IH/Pnzp6vhVqdfGQ+vGSaR2O7eA0abQaLpV8fLe/RiFP3z+WwuM6VZnb4Xo+g9x5AhGGZiqJOgZR7Otf94H86gvPTAC+gN0LOA+P3799d/SIf7QN9C4zXtgVam34P578E/20DwAmuKsuY+8tJrjQeNho1nxYr0bxPx/3QB5AUuzdKkNC89PgMO2njgYYBz6C0wvVSHVenfJuB/6CSEF0qqUIn5XnoADAlUocdhC91ctSFjZfrPCfjfg2E6YA+oDuKhR31IajxtpijpYKvS78H83+5uB+QNCLoSDFuazqRNAlalXxlDhuCZ7GC1nsPyzNXoXxPxP0wHbC0Mr7SXns4WqUkDegtq3sDoESm/lekfE/D/tp4QBAxbUlwdKs+Skn8l+hUx1A4YDdp4mskC7oGGkxp6dfoVcakecOQMbXX6VTBkFtyjdEuzwCPp8R5qcuBmnCvTH8l/Dy7VA3JfKgJNGjWmrU6/Ii7fA1qMvFemn70HHD4JgYJJb7J2fSQ9psMvHFLjlRz6q9NH8z9cAKGAyCBaWO36aHqcNaJDH2aKtPHgvBYMsDL9M5j/vXAHFfYEJ/KAyBH0+75/ncN/CjjH46r0WxD/PcewSYjXMj7Ksg7PgZ6CfrjdYjNblf41Cf9bMUQAvUbRUUZVaDRJYQeg+aJkX1uV/mMS/vfitfoR/U1GNP228DHEDNOrmKJj3UsfHQ0STf8M5n/40hy9biPLsGSh77VHXYX+VyD/R7gM3cMfnaHxczqL47O60nWOpN+n5N+AYdj3AEno6Lmlknm+L8uPKQTQIoRaZWqVTPp9av5NI4CaEFoqX2NC0s/Lv6kEsEUHtDIh6efm33QCaNEBW5mQ9Pu0/Au3A6INiTvJ6YfMlvWQpXvgGndLJf02Ff/CzTDSsKvpgK1vWKvCnPTn888rP4d+lORdysG7EnzSv4fyz4JDBdC7iE20kz3pP7ajcdgi5agDSjqEpXFLOkjSb9PzrwU5C+7UkTTciX6bzQxzBTugVtez8l+JfioBvIInpFbf2ct/W0/IFXzB1jrPWv4I+ikE8CrRMC11nqG8M5xPIYBYqFpvUetJemhHveHSs7VzXu8Z6r8H5R8ugLQQUiP3VthSad4Ivee0HtL12r3R9d8C8w8XQMsHMkekcyHw6EAS82ugZYis/zZB/p5jqCcEvhGAcuHBF7+madKHONZ0CWg05ef8+9qSe4nS0+806P+SATay/jPk34tL9IClHq50nfZo9Hml//w8ugd6Zg84zxvIe0JLz6d9Kgl0dH2W2tdr0fXfJ+B/D14rH5KtkfZ4Who9pB5OO+h9LbbDPDaNB37mRAHzbh12tVmw9L+Uxq+djW0C/nuPS62QymEddmGo0iYd/Ny7mkHiO4YIYM+W82egRfejazBrYeaYxnWr6Pr/nJT/pwkg7uZ4JlBgNLOIJ56NL1kh7aVG6SPrP0P+068RLe30Y02XGh83bOFLmSFa7X8UtB7S7JfnZ9la68j6A6Lz92LIJERShuEaD8niNqtaemuevXZAel/LZCu6/tsE+XuOoT0gf1vwTaE6Ch8uLOkctNeh6bWez+IJkXQ8Xh+tLBH1B0Tn78Hhs2BtxU9ruvXbA03Y6PWaTlgSPjpbbpkBn1X/WfO3wN2NRqzWiXnisMmH0Z5zeB43UktGax4PF1n/bYL8Q4fg3t22RwB6LFCg6ffHfGt57O1qPSRfi7mUJ94nrel8Jh7BNskpZsFH7BthBczYQBC40PFlQSy6IbX9lXRAhNU/nLiBAAJqQoiQdMBWpZpOgOAXeKCtlyxtPE3vfXam0zyj8w+dhIwoxAiAsFGhw3OY1VlnwRYhlIY7yAsbBfODmeWRvHn7m+cM+YcvUh4F7jKThNAifNykAeCCyK9LgggNwulQIOA6/W9Nf/tbB3g2/S8hOv+pluaIAhfCXk8If7Esw7Nkh/Pi/W+54Vn0/4z592D5aBh8AajAUSG0rI/HXUtSQAK9xg2/WAapYUpRNp50+uJH5+/BEE9IJKRZMILrgAgulHwSgoJFTTgALoAlf/QZeFzADBOuA2Lv02pxB+Gq6SLW9Ql5PCB6RLSVQGveg7PxWNgUdDkdkJetNx5QGs60eEA0SZRMFhSj0v8wM0xU/h5cRgccuT5hazwgmiRog2j/KQ2A07WkczNMVP63tgNqul/JE2Ixx+A5oBQdonlH6H9pdkpnlHslnUesaDyPzn8aHdBqJijd2wtpQlKKgpHKyO9DHbVGr80YOR3UuSUdQOukCUB0/lPogKXCYfDAUZDccZZQLETJZ1yir+nBtUnCoyNdMsNE5e/B0KU5LG/GUUO25guWluuQUIqWqdGDqYd/1H308ZuYl6LzX94O6DHDjIqG6T1f2QQyA9w9IAypFlsgvjl8GQkLNLMIoCR8iFJPZgnbL9FLy2FIPYZ23744/Qi4IlpxRVQtnUYOa9cxKlmLQMYPZzA/mueVVmhd8XxAVLRfAKUvySgkgWsVQLyPC70kdJIQasysMTnp9yKfbiGAtKL4nwugJoQW4asJYdKXF/ecQgBbloPl17FypXzwXt4rXnGfkpXop1shFcFnh5imKa5oI4QD7sFfpLFGnWAoFkVLPKB3fcG707di+H7B6NqRZq0oQDzKhAoYX2gHTC2Yjg5wNL1QR3nuV/z+jW+33S+YDpPasMxnUfQX9TY68+VdfW0WrOmA2nDSOuwk/T7nEMx7NfrmeG1GODy3IPcrfr/ffsGSUZoHfGrA4Zf/ojC1ClTuV/yxeXDGshyHBaTy8Ha+rormUwWhg1+6YkFpAcbcr1jG7fcL1kwp0jS+pkuALoeHpAOWTDElXU5Dq/3vzvTbbDog+mKhx6P+Q4u/GPU8fvTkT1GKguGw+IKTfizcs2CPJ8LSA2oz7xH5t7z5Sb8P7wGHCWCvL5YKIB1qtUMTwPQF7yG+7CkE0BONMqIHzGiYPezcKz+Pvw9JJELwbRICJo+M8E0cBUm+vnpAbeHrRMIL6uv/3ypkIICaoOXonBiBknz90IQNibIXTHhAQ+ooUK7+kYbbkftAJO4NSZaoS/ZbD8j1vxyCEyOg6X+A/7niUvgSo1GSqS8BnGHBxcT9cEhAaiJhRQpgIhQpgIlQpAAmQpECmAhFCmAiFCmAiVBUv4rT7II99sKejVWsgRLaQuIld+JXRIZwT8vzR/HnjjB9ljmCmZov0IJaA0sbx0hOcC1f7TkaXe08MVgALR4SbXfJoyGVa6RHx/L8M/jzKGwVwV9G6b6o9hn2YXqJydL1kb2CZYiMRit/ep6PaM3n6PY5bWUET8+iRUNYaVeAxh8ptM3TA0po7YFnQfPSHJ44wSMESWr0kW936/M1/nh6oIdhc8Tas2Z9ibvWhuFMtr7hR20vKpWnBdIOQ/QZrc+XAjCle6yQ+NsiwNaXIgLiR0lHFewoAUzMD02+Tt0tMwUvwZGekEQoUgAToUgBTIQiBTARihTARChSABOhSAFMXEcAvVvDH42W/KPLehdkDzgRHjcUerMnxONrHYGarzk63q2UvyWg9a7uyqZ4wKhYMkuokTfezdP7ePN/VSKyr4yuHvBsjIin6xGgxKTfhEQ0zqwRvWfgceFhuembkCgBqMWyeXtIT5CtJX/r81+OqPFVcWo8YOK+eCjy9WWGoYmp/yTC7IAphInRKMlU7hOSOBzS6Pplesp9QhJHo7S8Su4TkjgUdPUISShzn5DE6frft6VE6G6Zd7NBJc6FJF+5XWtii8S/pvYQxcZmBBQAAAAASUVORK5CYII="
+      }
+    ],
+    "task_memories": [],
+    "task_table": [],
+    "episode_memories": [],
+    "task_index": [],
+    "episode_index": [],
+    "run_index": [],
+    "observation": null,
+    "knowledge": "",
+    "allow_interrupt": true
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/judge/inputs.jsonl#knowledge_shop_interaction.task.judge.000003"
+}

@@ -1,15 +1,14 @@
 """`review_and_judge` 格（episode 层）：**定案上一个 task + 判停**——与 run 层同构。
 
 ⓪定案（表里有 RUNNING 时）：只按 `TaskOutput.success` 盖章（COMPLETED / FAILED）。
-定案为失败时（被打断的 task 也盖 FAILED，note 写
-"被打断：…"，只是不计失败连击），把剩下的 PENDING 条目标 ABANDONED
-（它们是按"上一个会成"拆的，前提已失效；`plan_episode` 会带着这张表重拆）→ 记 `settle_task`。
+无法推进盖 BLOCKED；被打断盖 FAILED，note 写"被打断：…"，不计失败连击。
+其余 PENDING 保留，下一次 decompose 决定是否继续、放弃或重开 → 记 `settle_task`。
 TaskMemory 的章与任务表均保留机器判定，失败连击沿用 state 原值。
 
 停没停、成没成都由 `termination` 推出（`Settled`）。
 
-①机械：世界结束（`obs.done`）/ 停摆（`fail_streak >= EPISODE_STALL_LIMIT`）/
-task 数预算尽（`step >= goal.max_steps`）。②模型：派过至少一个 task 之后问
+①机械：世界结束（`obs.done`）/ 停摆（`fail_streak >= loop.episode_stall_limit`）/
+task 数预算尽（`step >= goal.max_steps`）。②模型：派过 task 或规划后无待办时问
 "本局目标达成没有"（素材是 perceive 装好的本局 TaskMemory）；判成时亮给人**审**——
 认账即 `GOAL_DONE`，推翻则本局继续。审格不重问模型：本局继续跑时，判定员的话与人的
 推翻理由写进 `last_judge`，由下一次 `plan_episode` 带给拆解。`reason` 不在这里写。
@@ -21,7 +20,6 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from pokemon_agent.config import EPISODE_STALL_LIMIT
 from pokemon_agent.schemas.harness import (
     AuditVerdict,
     FromHarnessToBrainToolJudgeReq,
@@ -50,7 +48,7 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
     if any(entry.status is EntryStatus.RUNNING for entry in state.tasks):
         updates = _settle(deps, state, state.task_outputs[-1])
     fail_streak = int(updates.get("fail_streak", state.fail_streak))
-    stalled = fail_streak >= EPISODE_STALL_LIMIT
+    stalled = fail_streak >= deps.config.loop.episode_stall_limit
 
     # 步骤 1：机械三类；还没派过 task 时不问模型。
     termination = mechanical_termination(
@@ -62,14 +60,18 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
     feedback = None
 
     # 步骤 2：问模型；判成时亮给人审，认账才覆盖机械结论。
-    if state.step > 0:
+    if state.step > 0 or state.judge_trigger == "no_pending":
         meta = {"source": _SOURCE, "episode_id": ep, "task_id": "", "step": step}
         req = FromHarnessToBrainToolJudgeReq(
             goal=current_goal(state),
+            latest_planning=state.latest_planning,
+            planning_round=state.decompositions_used,
+            trigger=state.judge_trigger,
             task_memories=state.ep_ctx.task_memories,
             episode_index=state.ep_ctx.episode_index,
             knowledge="\n\n".join(current_knowledge(state)),
             observation=state.ep_ctx.observation,
+            known_objects=state.ep_ctx.object_semantic_events,
             task_table=updates.get("tasks", state.tasks),
         )
         req.task_memories = state.ep_ctx.task_memories
@@ -91,7 +93,7 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
             ),
         )
         if feedback.audit is AuditVerdict.ACCEPT:
-            termination = Termination.GOAL_DONE
+            termination = Termination.BLOCKED if verdict.blocked else Termination.GOAL_DONE
         else:
             updates["last_judge"] = feedback
 
@@ -110,37 +112,46 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
         task_id="",
         step=step,
         termination=termination,
+        decision=verdict.decision if verdict is not None else None,
+        trigger=state.judge_trigger,
+        planning_round=state.decompositions_used,
         judge_reason=reason_for_judge,
         fail_streak=state.fail_streak,
         audit=feedback.audit if feedback is not None else None,
         human_note=feedback.note if overturned else "",
     )
-    return {**updates, "termination": termination, "judge_reason": reason_for_judge}
+    return {
+        **updates,
+        "termination": termination,
+        "judge_reason": reason_for_judge,
+        "judge_trigger": "normal",
+    }
 
 
 def _settle(deps: EpisodeRuntime, state: EpisodeRunState, outcome: TaskOutput) -> dict[str, object]:
-    """机械盖章 → 失败则放弃剩余 PENDING → 记 `settle_task`。"""
+    """按本次执行结算盖章，保留其他条目，再记 `settle_task`。"""
     index = next(i for i, e in enumerate(state.tasks) if e.status is EntryStatus.RUNNING)
     entry = state.tasks[index]
-    assert outcome.task_id == entry.task.task_id, "最新结算与 RUNNING 条目对不上"
+    assert outcome.entry_id == entry.entry_id and outcome.task_id == entry.last_task_id, (
+        "最新结算与 RUNNING 条目对不上"
+    )
 
     # 步骤 1：按机械结算盖章，保留失败连击与被打断的说明。
-    status = EntryStatus.COMPLETED if outcome.success else EntryStatus.FAILED
+    status = (
+        EntryStatus.COMPLETED
+        if outcome.success
+        else EntryStatus.BLOCKED
+        if outcome.termination is Termination.BLOCKED
+        else EntryStatus.FAILED
+    )
     fail_streak = state.fail_streak
     interrupted = outcome.termination is Termination.INTERRUPTED
     note = f"被打断：{outcome.judge_reason}" if interrupted else entry.note
     stamped = entry.model_copy(update={"status": status, "overturned": False, "note": note})
 
-    # 步骤 2：定案为失败 → 剩下的 PENDING 前提失效，标 ABANDONED。
+    # 步骤 2：保留其他条目，是否放弃由下一次拆解决定。
     tasks = [*state.tasks[:index], stamped, *state.tasks[index + 1 :]]
     abandoned: list[str] = []
-    if status is EntryStatus.FAILED:
-        cause = "被打断" if interrupted else "失败"
-        note = f"{entry.task.task_id} {cause}，这一版剩下的前提已失效"
-        for i, other in enumerate(tasks):
-            if other.status is EntryStatus.PENDING:
-                tasks[i] = other.model_copy(update={"status": EntryStatus.ABANDONED, "note": note})
-                abandoned.append(other.task.task_id)
 
     # 步骤 3：记盖章账。
     deps.trace.append(

@@ -1,5 +1,5 @@
 {
-  "checkpoint_id": "eval-knowledge_door_transition@main-49f54ae1",
+  "checkpoint_id": "eval-knowledge_door_transition@main-42219772",
   "level": "run",
   "run_id": "eval-knowledge_door_transition",
   "branch": "main",
@@ -46,11 +46,11 @@
   "run_ref": null,
   "episode_ref": null,
   "world_file": "world.state",
-  "memory_archive": "archives/knowledge_door_transition/memory/snapshots/eval-knowledge_door_transition@main-49f54ae1.zip",
+  "memory_archive": "archives/knowledge_door_transition/memory/snapshots/eval-knowledge_door_transition@main-42219772.zip",
   "code": {
-    "git_commit": "f684af8b7a754396d50c0b4e73a1f8b2dcbb5227",
+    "git_commit": "5d1ff1ee94f4c1da110f247fc230d69186608c1d",
     "git_dirty": true,
-    "state_schema_hash": "5ea6dffeeb229b7c"
+    "state_schema_hash": "11a4afa05e6ed43d"
   },
   "models": {
     "text": "deepseek-flash",
@@ -58,5 +58,5 @@
     "verify": "deepseek-flash",
     "plan": "deepseek-flash"
   },
-  "created_at": "2026-10-18T00:22:22+0200"
+  "created_at": "2026-10-19T20:20:06+0200"
 }

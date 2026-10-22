@@ -6,6 +6,7 @@ from typing import Any
 
 from pokemon_agent.schemas.harness.domain import EntryStatus, EpisodeInput
 
+from ...planning import dispatch_index
 from ..run_state import RunState
 
 
@@ -15,12 +16,7 @@ def dispatch(state: RunState) -> dict[str, Any]:
     前置条件：表里至少一条 `PENDING`（`plan_run` 保证）。
     后置条件：表里恰好一条 `RUNNING`，它的 task 就是 `episode_input.goal`。
     """
-    index = next(
-        (i for i, entry in enumerate(state.goals) if entry.status is EntryStatus.PENDING), None
-    )
-    assert index is not None, (
-        "dispatch() called with no PENDING goal (plan_run should prevent this)"
-    )
+    index = dispatch_index(state.goals, state.execution_order)
     selected = state.goals[index].model_copy(
         update={"status": EntryStatus.RUNNING, "attempts": state.goals[index].attempts + 1}
     )

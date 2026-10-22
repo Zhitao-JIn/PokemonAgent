@@ -33,10 +33,8 @@ def _execute(request: RunOneRequest) -> None:
     run_one(
         sample,
         Path(request.work_dir),
-        request.models,
         run_config_path=request.run_config_path,
         epoch=request.epoch,
-        trace_backend=request.trace_backend,
     )
 
 

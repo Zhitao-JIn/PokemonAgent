@@ -1,0 +1,28 @@
+{
+  "task": "run_plan",
+  "case_id": "synthetic-knowledge",
+  "source": "synthetic",
+  "request_kind": "current",
+  "request": {
+    "run_goal": {
+      "goal": "进门",
+      "criteria": "地图改变"
+    },
+    "remaining_planning_rounds": null,
+    "execution_order": [],
+    "run_id": "run-1",
+    "plan": [],
+    "details": [],
+    "run_index": [],
+    "knowledge": [
+      "门通往室内"
+    ],
+    "observation": null,
+    "objects": [],
+    "last_judge": null,
+    "max_push": 2,
+    "human_note": ""
+  },
+  "max_segments": 3,
+  "source_ref": ""
+}

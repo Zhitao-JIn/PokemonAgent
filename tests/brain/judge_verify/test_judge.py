@@ -35,7 +35,9 @@ LEDGER_KEYS = {
 
 
 def test_done_true_is_a_success_verdict() -> None:
-    brain = Brain(judge_llm=ScriptedJudge(text_reply('{"done": true, "why": "badge on screen"}')))
+    brain = Brain(
+        judge_llm=ScriptedJudge(text_reply('{"why": "badge on screen", "decision": "achieved"}'))
+    )
 
     result = brain.judge(prompt=PROMPT, goal=GOAL, history=HISTORY)
 
@@ -45,7 +47,9 @@ def test_done_true_is_a_success_verdict() -> None:
 
 
 def test_done_false_is_a_not_yet_verdict() -> None:
-    brain = Brain(judge_llm=ScriptedJudge(text_reply('{"done": false, "why": "still in town"}')))
+    brain = Brain(
+        judge_llm=ScriptedJudge(text_reply('{"why": "still in town", "decision": "continue"}'))
+    )
 
     result = brain.judge(prompt=PROMPT, goal=GOAL, history=HISTORY)
 
@@ -57,10 +61,10 @@ def test_done_false_is_a_not_yet_verdict() -> None:
 @pytest.mark.parametrize(
     ("reply", "expected_done", "expected_interrupted"),
     [
-        ('{"done": false, "interrupted": true}', False, True),
-        ('{"done": true, "interrupted": true}', True, False),
-        ('{"done": false, "interrupted": "yes"}', False, False),
-        ('{"done": false}', False, False),
+        ('{"decision": "interrupted", "why": "observed evidence"}', False, True),
+        ('{"decision": "achieved", "why": "observed evidence"}', True, False),
+        ('{"decision": "continue", "why": "observed evidence"}', False, False),
+        ('{"decision": "continue", "why": "observed evidence"}', False, False),
     ],
 )
 def test_interrupted_is_only_honoured_when_done_is_false(
@@ -76,18 +80,23 @@ def test_interrupted_is_only_honoured_when_done_is_false(
 
 @pytest.mark.parametrize(
     "reply",
-    ['{"done": true}', '{"done": true, "why": ""}', '{"done": true, "why": null}'],
+    [
+        '{"decision": "achieved"}',
+        '{"why": "", "decision": "achieved"}',
+        '{"why": null, "decision": "achieved"}',
+    ],
 )
-def test_a_missing_or_empty_why_becomes_the_placeholder_text(reply: str) -> None:
+def test_a_missing_or_empty_why_is_a_parse_failure(reply: str) -> None:
     brain = Brain(judge_llm=ScriptedJudge(text_reply(reply)))
 
-    result = brain.judge(prompt=PROMPT, goal=GOAL, history=HISTORY)
-
-    assert result.why == "（未说明）"
+    with pytest.raises(JudgeAttemptFailed):
+        brain.judge(prompt=PROMPT, goal=GOAL, history=HISTORY)
 
 
 def test_a_json_fence_around_the_verdict_is_tolerated() -> None:
-    brain = Brain(judge_llm=ScriptedJudge(text_reply('```json\n{"done": false, "why": "no"}\n```')))
+    brain = Brain(
+        judge_llm=ScriptedJudge(text_reply('```json\n{"why": "no", "decision": "continue"}\n```'))
+    )
 
     result = brain.judge(prompt=PROMPT, goal=GOAL, history=HISTORY)
 
@@ -106,7 +115,7 @@ def test_a_missing_or_non_boolean_done_fails_as_parse_failure(reply: str) -> Non
         brain.judge(prompt=PROMPT, goal=GOAL, history=HISTORY)
 
     assert excinfo.value.call.error_kind == "ParseFailure"
-    assert "done" in excinfo.value.call.error
+    assert excinfo.value.call.error
     assert excinfo.value.call.payload["ok"] == "false"
 
 
@@ -125,7 +134,7 @@ def test_non_json_output_fails_as_parse_failure_and_keeps_the_raw_text() -> None
 
 
 def test_images_go_through_describe() -> None:
-    provider = ScriptedJudge(vision_reply('{"done": true}'))
+    provider = ScriptedJudge(vision_reply('{"decision": "achieved", "why": "observed evidence"}'))
     brain = Brain(judge_llm=provider)
 
     result = brain.judge(prompt=PROMPT, goal=GOAL, history=HISTORY, images=[IMAGE, IMAGE])
@@ -136,7 +145,7 @@ def test_images_go_through_describe() -> None:
 
 
 def test_no_images_fall_back_to_plain_completion() -> None:
-    provider = ScriptedJudge(text_reply('{"done": true}'))
+    provider = ScriptedJudge(text_reply('{"decision": "achieved", "why": "observed evidence"}'))
     brain = Brain(judge_llm=provider)
 
     result = brain.judge(prompt=PROMPT, goal=GOAL, history=HISTORY)
@@ -147,8 +156,14 @@ def test_no_images_fall_back_to_plain_completion() -> None:
 
 
 def test_the_two_response_shapes_land_in_the_same_ledger_keys() -> None:
-    vision = Brain(judge_llm=ScriptedJudge(vision_reply('{"done": true}')))
-    text = Brain(judge_llm=ScriptedJudge(text_reply('{"done": true}')))
+    vision = Brain(
+        judge_llm=ScriptedJudge(
+            vision_reply('{"decision": "achieved", "why": "observed evidence"}')
+        )
+    )
+    text = Brain(
+        judge_llm=ScriptedJudge(text_reply('{"decision": "achieved", "why": "observed evidence"}'))
+    )
 
     vision_payload = (
         vision.judge(prompt=PROMPT, goal=GOAL, history=HISTORY, images=[IMAGE]).calls[0].payload
@@ -168,7 +183,7 @@ def test_the_two_response_shapes_land_in_the_same_ledger_keys() -> None:
 
 
 def test_a_successful_attempt_returns_exactly_one_ledger_entry() -> None:
-    brain = Brain(judge_llm=ScriptedJudge(text_reply('{"done": true, "why": "ok"}')))
+    brain = Brain(judge_llm=ScriptedJudge(text_reply('{"why": "ok", "decision": "achieved"}')))
 
     result = brain.judge(prompt=PROMPT, goal=GOAL, history=HISTORY)
 
@@ -176,7 +191,7 @@ def test_a_successful_attempt_returns_exactly_one_ledger_entry() -> None:
     assert len(result.calls) == 1
     assert set(call.payload) == LEDGER_KEYS
     assert call.payload["ok"] == "true"
-    assert call.payload["raw"] == '{"done": true, "why": "ok"}'
+    assert call.payload["raw"] == '{"why": "ok", "decision": "achieved"}'
     assert call.payload["prompt"] == PROMPT
     assert isinstance(call.payload["started_at"], float)
     assert isinstance(call.payload["ended_at"], float)
@@ -186,7 +201,7 @@ def test_a_successful_attempt_returns_exactly_one_ledger_entry() -> None:
 
 
 def test_the_prompt_reaches_the_provider_verbatim_whatever_goal_and_history_say() -> None:
-    provider = ScriptedJudge(text_reply('{"done": true}'))
+    provider = ScriptedJudge(text_reply('{"decision": "achieved", "why": "observed evidence"}'))
     brain = Brain(judge_llm=provider)
 
     brain.judge(prompt=PROMPT, goal=GOAL, history=HISTORY)

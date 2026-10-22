@@ -14,7 +14,6 @@ from typing import Any
 from langgraph.config import get_config
 from langgraph.graph.state import CompiledStateGraph
 
-from pokemon_agent.config import EPISODE_RECURSION_LIMIT
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
 from pokemon_agent.schemas.harness.domain import EpisodeInput, EpisodeOutput
 
@@ -64,7 +63,9 @@ def run_episode(
     """跑完一局：装配 → 进图 → 取结算。异常原样上抛（run 层 `act` 接住并记 `episode_error`）。"""
     assert episode_input.goal.max_steps > 0, "episode max_steps (task count) must be > 0"
     state = begin_episode(deps, episode_input)
-    final = graph.invoke(state, {"recursion_limit": EPISODE_RECURSION_LIMIT}, context=deps)
+    final = graph.invoke(
+        state, {"recursion_limit": deps.config.loop.episode_recursion_limit}, context=deps
+    )
     return close(final, episode_input)
 
 
@@ -93,7 +94,9 @@ def resume_episode(
     )
     assert graph.get_state(config).next == ("act",), "写入后 episode 图下一格不是 act"
     # 步骤 2：接着跑，取结算。
-    final = graph.invoke(None, {"recursion_limit": EPISODE_RECURSION_LIMIT}, context=deps)
+    final = graph.invoke(
+        None, {"recursion_limit": deps.config.loop.episode_recursion_limit}, context=deps
+    )
     return close(final, episode_input)
 
 

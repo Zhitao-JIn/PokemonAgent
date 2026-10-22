@@ -1,0 +1,144 @@
+{
+  "task": "summarize_run",
+  "case_id": "history-knowledge_shop_interaction.run.summarize_run.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "run_id": "eval-knowledge_shop_interaction",
+    "run_goal": "依次完成：在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现",
+    "goals": [
+      {
+        "task": {
+          "task_id": "knowledge_shop_interaction",
+          "goal": "在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现",
+          "success_criteria": "overlay 是 choice，且 options 是 BUY / SELL / QUIT",
+          "max_steps": 15,
+          "initial_state_hint": "商店内地板上（地图42 x=3 y=5），店员在柜台里，店里另有两个顾客"
+        },
+        "status": "abandoned",
+        "attempts": 1,
+        "last_episode_id": "eval-knowledge_shop_interaction-ep1",
+        "note": "上次在 x=3 y=4 反复按 a 只触发卖光药水的对话，未出现菜单；改为从柜台正前方重新定位店员再对话",
+        "overturned": false
+      },
+      {
+        "task": {
+          "task_id": "plan-eval-knowledge_shop_interaction-1",
+          "goal": "从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）",
+          "success_criteria": "画面出现 BUY / SELL / QUIT 选项列表",
+          "max_steps": 6,
+          "initial_state_hint": ""
+        },
+        "status": "failed",
+        "attempts": 2,
+        "last_episode_id": "eval-knowledge_shop_interaction-ep3",
+        "note": "actions_exhausted",
+        "overturned": false
+      },
+      {
+        "task": {
+          "task_id": "plan-eval-knowledge_shop_interaction-2",
+          "goal": "在地图42中从当前位置(5,6)绕到店员(5,5)的正面，即站到(5,6)正对北侧店员并确认对话能触发商店菜单；若对话只显示商品介绍，则尝试在对话结束后继续按 a 推进到菜单出现",
+          "success_criteria": "画面出现 BUY / SELL / QUIT 选项菜单",
+          "max_steps": 6,
+          "initial_state_hint": ""
+        },
+        "status": "pending",
+        "attempts": 0,
+        "last_episode_id": null,
+        "note": "",
+        "overturned": false
+      },
+      {
+        "task": {
+          "task_id": "plan-eval-knowledge_shop_interaction-3",
+          "goal": "若与(5,5)店员对话始终只出商品介绍，则改去柜台另一侧与(3,3)店员对话，站到其正下方(3,4)并连续按 a 直到菜单出现",
+          "success_criteria": "画面出现 BUY / SELL / QUIT 选项菜单",
+          "max_steps": 6,
+          "initial_state_hint": ""
+        },
+        "status": "pending",
+        "attempts": 0,
+        "last_episode_id": null,
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "episode_memories": [
+      {
+        "episode_id": "eval-knowledge_shop_interaction-ep1",
+        "run_id": "eval-knowledge_shop_interaction",
+        "run_goal": "依次完成：在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现",
+        "goal_id": "knowledge_shop_interaction",
+        "goal": "在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现",
+        "steps": 4,
+        "acts_used": 25,
+        "termination": "decompositions_exhausted",
+        "reason": "在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现；decompositions_exhausted；任务 4；动作 25",
+        "summary": "",
+        "reusable_patterns": [],
+        "critical_decisions": [],
+        "failure_points": [],
+        "quality_score": 0.0,
+        "quality_rationale": "本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆）",
+        "applicable_scenes": [],
+        "tags": [],
+        "first_frame": null,
+        "last_frame": null,
+        "markdown": ""
+      },
+      {
+        "episode_id": "eval-knowledge_shop_interaction-ep2",
+        "run_id": "eval-knowledge_shop_interaction",
+        "run_goal": "依次完成：在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现",
+        "goal_id": "plan-eval-knowledge_shop_interaction-1",
+        "goal": "从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）",
+        "steps": 5,
+        "acts_used": 20,
+        "termination": "decompositions_exhausted",
+        "reason": "从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）；decompositions_exhausted；任务 5；动作 20",
+        "summary": "",
+        "reusable_patterns": [],
+        "critical_decisions": [],
+        "failure_points": [],
+        "quality_score": 0.0,
+        "quality_rationale": "本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆）",
+        "applicable_scenes": [],
+        "tags": [],
+        "first_frame": null,
+        "last_frame": null,
+        "markdown": ""
+      },
+      {
+        "episode_id": "eval-knowledge_shop_interaction-ep3",
+        "run_id": "eval-knowledge_shop_interaction",
+        "run_goal": "依次完成：在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现",
+        "goal_id": "plan-eval-knowledge_shop_interaction-1",
+        "goal": "从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）",
+        "steps": 3,
+        "acts_used": 15,
+        "termination": "actions_exhausted",
+        "reason": "从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）；actions_exhausted；任务 3；动作 15",
+        "summary": "",
+        "reusable_patterns": [],
+        "critical_decisions": [],
+        "failure_points": [],
+        "quality_score": 0.0,
+        "quality_rationale": "本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆）",
+        "applicable_scenes": [],
+        "tags": [],
+        "first_frame": null,
+        "last_frame": null,
+        "markdown": ""
+      }
+    ],
+    "termination": "actions_exhausted",
+    "judge_reason": "actions_exhausted",
+    "episodes": 3,
+    "succeeded": 0,
+    "acts_used": 60,
+    "max_episodes": 3
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_shop_interaction.run.summarize_run.000001"
+}

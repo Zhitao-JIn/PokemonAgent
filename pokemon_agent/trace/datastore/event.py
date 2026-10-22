@@ -4,22 +4,26 @@
 它声明不了"怎么构造"。而 `store.py` 真的要构造一条事件——落盘前 `new` 一个、
 扫盘时把磁盘上的 json 解析成一个。所以需要这一份**trace 私有的**实现。
 
-**六个字段，一个都不多**（0914 封套改造）：
+**八个字段，一个都不多**（0914 封套改造；0927 双时刻、0928 325 加 `seq`）：
 
 | 组 | 字段 | 谁填 |
 |---|---|---|
-| 封套 | `uuid`/`kind`/`type`/`ts` | `uuid`/`ts` 归 `store.py`；`kind`/`type` 由调用方给 |
+| 封套 | `uuid`/`seq`/`kind`/`type`/`started_at`/`ended_at` | 见下 |
 | 标签 | `meta` | 调用方给（**JSON 字符串**）——harness 自报的签名信息 |
 | 正文 | `content` | 调用方给（**JSON 字符串**）——这笔账的本体 |
 
-`uuid` 是文件名、`ts` 是写入时刻，两者都由 `store.py` 在落盘那一刻盖。
+`uuid` 是文件名，由 `store.py` 在落盘那一刻盖；`seq` 是进程内 append 的单调序号
+（双后端共享、重启置零），**同刻 `ended_at` 的决胜键**；`kind`/`type` 由调用方
+（tool 层）给。`started_at`/`ended_at` 是操作真实起止：调用方记了就交，没记由
+`store.py` 补记账时刻（机械账 start=end=now）。
 
 删掉的四件：`event_id`（唯一读方是随 `frame_png` 一起下线的"按 id 取单条"）、
 `schema_version`（恒 `5`、零读方、两份副本要人工同步）、`frame_png`（画面真源
 改到 `memory/step_memory/`）、顶层 `run_id`/`episode_id`/`step`（搬进 `meta`）。
 
-**排序改看 `(ts, uuid)`**（原 `event_id` 的活）：`ts` 从死字段变成排序键——
-`time.time()` 在 3.12 是百纳秒级，同值几乎不可能，真同值了还有 `uuid` 兜底。
+**排序看 `(ended_at, seq)`**（0928 325，原 `(ts, uuid)` 的活）：先按操作**结束时刻**
+排，同刻按 append 序决胜——`seq` 是进程内单调序号，比随机 `uuid` 可靠；`uuid` 退化成
+纯标识（旧 `(ts, uuid)` 会在同刻把执行序洗牌）。
 
 **`extra="allow"` 是这份契约的关键一半**：盘上可能躺着改形之前的老 json
 （带 `event_id`/`schema_version`/`payload`/`frame_png` 那套）。解析时它们不能丢
@@ -46,7 +50,7 @@ class _Event(BaseModel):
     uuid: str = Field(description="本次事件的唯一标识（= 文件名），落盘那一刻由 store 盖上")
     seq: int = Field(
         description="进程内 append 的单调序号（0928 325）：**同刻 ended_at 的决胜键**，"
-        "排序看 `(ended_at, seq)`；由 tool 层在 append 时分配、随调用传进封套。"
+        "排序看 `(ended_at, seq)`；由 LocalTrace.append 取进程内单调序号（next_seq()）。"
         "旧格式账缺这个字段，解析当场失败被扫盘跳过（2026-09-28 用户拍板不兼容旧账）"
     )
     kind: str = Field(description="账名（裸 str，取值由声明方定义）")

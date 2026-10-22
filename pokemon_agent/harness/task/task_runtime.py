@@ -27,7 +27,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pokemon_agent.config import DEFAULT_RUN_BUDGET
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.interface import (
     ChoosePort,
@@ -39,7 +38,9 @@ from pokemon_agent.direct.interface import (
     TraceToolPort,
     VerifyPort,
 )
-from pokemon_agent.run_budget import RunBudget
+from pokemon_agent.settings import AppConfig
+
+from ..interface.reviewer import Reviewer
 
 if TYPE_CHECKING:
     from ..checkpoint import Checkpointer
@@ -73,6 +74,11 @@ class TaskRuntime:
     """task 蒸馏口（`task_done` 产 TaskMemory 用）。"""
     trace: TraceToolPort
     """记账（与 `EpisodeRuntime.trace` 是**同一实例**）。"""
+    reviewer: Reviewer
+    """与上两层共享的复核席；仅启用 task 层时询问。"""
+    config: AppConfig
+    """生效配置（`build.py` 加载一次，三层 runtime 持有**同一实例**）。预算、停摆上限、
+    启用复核的层都从这里读：`config.budget` / `config.loop` / `config.review.layers`。"""
 
     # ---- 账：跨 task 要活着的可变账 ----
 
@@ -90,7 +96,6 @@ class TaskRuntime:
     # ---- 存档：task 开局的世界快照由 `task_entry.begin_task` 调用 ----
 
     checkpointer: Checkpointer | None = None
-    budget: RunBudget = DEFAULT_RUN_BUDGET
     deadline: Deadline | None = None
     """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""
 

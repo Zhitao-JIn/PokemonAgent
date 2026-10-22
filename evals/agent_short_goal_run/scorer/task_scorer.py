@@ -29,7 +29,7 @@ def e2e_scorer(*, stall_limits: tuple[int, int], trace_backend: str = "local") -
     真值口径不变：机械判定第一真源，红线命中即判负；value 用 inspect 的
     CORRECT / INCORRECT / NOANSWER 字面量（unjudgeable = NOANSWER）。证据 uuid 与
     run_id 进 metadata——View 钻取 ↔ Langfuse 定位的接线点。
-    `stall_limits` 由 task 装配期从 `pokemon_agent.config` 快照进闭包（不读 live config）。
+    `stall_limits` 由 task 装配期从生效配置（`loop.*_stall`）快照进闭包（不读 live config）。
     `trace_backend` 与 run-one 的写账后端同源（langfuse 时 scorer 直问服务）。
     """
 

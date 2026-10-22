@@ -1,12 +1,4 @@
-"""`TaskEntry`：episode 任务表的一行——一个拆出来的 task 与它在本局内的状态。
-
-**task 只派一次**：失败后不重开，要重做就重拆（新条目、新 `task_id`）。所以没有
-`GoalEntry` 的 `attempts` / `last_episode_id`——`task_id` 本身就对得上它的 `TaskOutput`
-与 TaskMemory。多一列 `round`：第几版拆解，让 decomposer 看得出"第 1 版剩下的条目是
-因为哪个失败被弃的"。
-
-**表为准**：同 `GoalEntry`——`status` 是最终定案（含人审推翻），TaskMemory 的章保留机器判定。
-"""
+"""逻辑 L2 目标表；执行身份、尝试次数与来源引用分别保存。"""
 
 from __future__ import annotations
 
@@ -20,7 +12,10 @@ from .entry_status import EntryStatus
 class TaskEntry(BaseModel):
     """任务表的一行。"""
 
-    task: Task = Field(description="task 本体（`task_id` 由 harness 编：`{goal_id}-t{n}`）")
+    entry_id: str = Field(min_length=1)
+    attempts: int = Field(default=0, ge=0)
+    last_task_id: str | None = None
+    task: Task = Field(description="逻辑目标内容；派发时复制为具有独立 task_id 的执行任务")
     status: EntryStatus = Field(
         default=EntryStatus.PENDING,
         description="本局内的状态。**至多一条 `RUNNING`**（episode.act 盖、review_and_judge 定案）",

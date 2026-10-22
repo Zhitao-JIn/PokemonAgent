@@ -21,3 +21,5 @@ class ReviewMark(BaseModel):
     answered: bool = Field(description="是否有人或 AI 作答；False = 默认回话")
     by: str = Field(default="", description="回话来源：human / agent / none；空串表示未填写")
     wait_s: float = Field(description="从亮给人到拿到回话的秒数")
+    capped: bool = Field(default=False, description="AI 意见因连续生效上限而未被采纳")
+    round: int = Field(default=0, ge=0, description="本插话点第几次亮表；审问为 0")

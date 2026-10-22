@@ -1,0 +1,98 @@
+{
+  "task": "summarize",
+  "case_id": "history-knowledge_battle_pokemon_switch.episode.summarize.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "entries": [
+      {
+        "run_id": "eval-knowledge_battle_pokemon_switch",
+        "episode_id": "eval-knowledge_battle_pokemon_switch-ep1",
+        "task_id": "knowledge_battle_pokemon_switch-t1",
+        "goal": "在战斗选单里把光标从 FIGHT 移到 PKMN（按 right）",
+        "termination": "goal_done",
+        "reason": "靠 1 次 right 键即达成：2×2 选单中 FIGHT 与 PKMN 同行相邻，右移一格正好落到 PKMN，无多余按键。",
+        "steps_used": 1,
+        "total_acts": 0,
+        "summary": "战斗选单（battle/choice，地图12 x=13 y=7，BULBASAUR L7 25/25 对 PIDGEY L3 15/15）中光标初始在 FIGHT（第1行第1列），按一次 right 后光标移到 PKMN（第1行第2列），屏幕显示 FIGHT▶PKMN，goal_done，仅用 1/3 键。",
+        "reusable_patterns": [
+          "战斗选单为 2 行×2 列（FIGHT/PKMN 上排，ITEM/RUN 下排），左右换列、上下换行；从 FIGHT 到 PKMN 只需按一次 right。",
+          "移动光标前先读 option_layout 与光标行列，确认目标格与当前格的相对位移，再决定按哪个方向键。",
+          "到达目标后立即停止按键，避免多按导致光标越位。"
+        ],
+        "critical_decisions": [
+          "第 0 步直接按 right 而非先按 down 或多次试探，一步命中 PKMN，是唯一且正确的转折。"
+        ],
+        "failure_points": [],
+        "quality_score": 0.9,
+        "quality_rationale": "记录前后状态字段完整、光标行列与截图一致，单键达成目标，可直接作为同类选单导航的正样本；因任务极简单、信息量有限，未给满分。",
+        "tags": [
+          "battle",
+          "choice-menu",
+          "cursor-nav",
+          "right-key",
+          "goal_done"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "## Task: knowledge_battle_pokemon_switch-t1\n\n- **初始**：battle/choice，光标 FIGHT（1行1列），BULBASAUR L7 25/25 vs PIDGEY L3 15/15\n- **动作**：right ×1\n- **结果**：光标 PKMN（1行2列），屏幕 FIGHT▶PKMN，goal_done（1/3 键）\n\n### 结论\n2×2 选单中 FIGHT→PKMN 同行相邻，一次 right 即可；读 option_layout 后按相对位移走，到位即停。"
+      },
+      {
+        "run_id": "eval-knowledge_battle_pokemon_switch",
+        "episode_id": "eval-knowledge_battle_pokemon_switch-ep1",
+        "task_id": "knowledge_battle_pokemon_switch-t2",
+        "goal": "按 a 确认 PKMN，打开宝可梦列表",
+        "termination": "goal_done",
+        "reason": "只按了1次a就达成目标：在战斗菜单中光标已预置在PKMN上，直接按a即进入宝可梦选择界面，无需先移动光标；全程无浪费键，判定为goal_done。",
+        "steps_used": 1,
+        "total_acts": 1,
+        "summary": "战斗场景（地图12 x=13 y=7，朝向west，对手PIDGEY L3 15/15，我方BULBASAUR L7 25/25）中，叠加层为choice、光标停在FIGHT/PKMN/ITEM/RUN菜单的PKMN项上；按一次a后，叠加层仍为choice，但对话变为'Choose a POKéMON.'，选项变为竖排的BULBASAUR / PIDGEY，光标停在BULBASAUR，宝可梦列表成功打开，目标达成（共用了1/4键）。",
+        "reusable_patterns": [
+          "战斗菜单中若光标已停在PKMN上，直接按a即可打开宝可梦列表，不必先按方向键。",
+          "打开宝可梦列表后，界面会显示'Choose a POKéMON.'并以竖排列出队伍宝可梦（如BULBASAUR / PIDGEY），可用上/下移动光标选择。",
+          "切换宝可梦的完整流程：战斗菜单选PKMN → a → 列表选目标宝可梦 → a 确认。"
+        ],
+        "critical_decisions": [
+          "第1步直接按a确认已选中的PKMN项，是唯一且正确的转折，一步进入选择界面。"
+        ],
+        "failure_points": [],
+        "quality_score": 0.9,
+        "quality_rationale": "记录前后状态字段完整（坐标、朝向、HP、选项布局、对话），且清晰展示了从战斗菜单到宝可梦列表的一键转变，对同类切换宝可梦任务参考价值高；因仅1键、过程简单，未覆盖列表内选择与确认步骤，故略低于满分。",
+        "tags": [
+          "battle",
+          "pokemon_switch",
+          "choice_menu",
+          "PKMN",
+          "goal_done"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "## 战斗切换宝可梦（knowledge_battle_pokemon_switch-t2）\n\n- **初始**：battle / choice，地图12 (13,7) 朝西；对手 PIDGEY L3 15/15，我方 BULBASAUR L7 25/25；菜单 FIGHT▶PKMN / ITEM RUN，光标在 PKMN。\n- **操作**：按 `a`（1/4 键）。\n- **结果**：叠加层仍 choice，对话变为 `Choose a POKéMON.`，选项变为竖排 `▶BULBASAUR / PIDGEY`，宝可梦列表打开，**goal_done**。\n- **结论**：光标已在 PKMN 上，直接按 a 即可，无需方向键；后续在列表内用上/下选目标再按 a 确认。"
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "按 right 后光标从 FIGHT 移到 PKMN（截图显示 FIGHT▶PKMN），朝打开宝可梦列表的目标推进"
+      },
+      {
+        "index": 1,
+        "positive": true,
+        "why": "按 a 后画面变为 'Choose a POKéMON.' 并列出 BULBASAUR/PIDGEY，宝可梦列表成功打开，目标达成"
+      }
+    ],
+    "episode_id": "eval-knowledge_battle_pokemon_switch-ep1",
+    "run_id": "eval-knowledge_battle_pokemon_switch",
+    "run_goal": "依次完成：在战斗中打开宝可梦列表",
+    "goal_id": "knowledge_battle_pokemon_switch",
+    "goal": "在战斗中打开宝可梦列表",
+    "termination": "goal_done",
+    "judge_reason": "当前帧 overlay 为 choice，选项是 BULBASAUR / PIDGEY 宝可梦名字，对话框显示 Choose a POKéMON.，宝可梦列表已打开",
+    "steps": 2,
+    "acts_used": 2,
+    "max_steps": 15
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_battle_pokemon_switch.episode.summarize.000001"
+}
