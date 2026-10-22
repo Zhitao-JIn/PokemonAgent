@@ -113,3 +113,13 @@
 
 - **C 细化**：`SenseFrameContent` 已经有 `scene`、`place`，`overlay` 在 `facts` 里，三者本来就进 trace，不需要新增 `overlay` 键。所以只做一件事：`render.py` 不再写 `status`；`SenseFrameContent.status` 改为 `str | None = None`（只读兼容，不再写出），这样盘上已有的旧 trace 仍能解析（`_Content` 是 `extra="forbid"`，删字段会让旧账本读不进来）。不改 trace 词表、不改 `ModelCall`。
 - **允许范围追加**：`pokemon_agent/direct/trace/content.py`（仅 `SenseFrameContent.status`）、`tests/direct/trace/**`（含 `test_trace_parse.py`，并补一条「带 status 的旧事件仍可解析、新事件不写 status」的测试）、`tests/_harness_fixtures/harness.py`（仅 `Reflector` 装配）。
+
+## 九、CP6a 之后的顺序调整（2026-10-22，用户确认）
+
+读方清查发现：旧 `render` / `index_line` / 旧字符串字段仍被 `pokemon_agent/direct/prompts/**`（旧包）及其对拍测试读取，旧包又被少量生产文件的注释与评测构建脚本引用。旧包不先删，旧方法与旧字段就删不掉。顺序改为：
+
+| 步 | 内容 |
+|---|---|
+| 595 | 收口旧包：删 `direct/prompts/**`、依赖它的对拍 oracle 测试、`evals/common/legacy_requests/judge_prompt.py`、`evals/dataset/brain_judge/build/audit_candidates.py`（用户确认随旧包一起删，不改数据文件）、`scripts/capture_prompt_golden.py`；守卫改为「旧包不存在」；golden 文件保留为唯一基线 |
+| 596 | 删旧字段与旧方法（原 CP6b 内容），范围与原 CP6b 相同 |
+| 597 起 | 删旧 memory（只留 `knowledge_memory`，需用户重新授权）；文档同步（`AGENTS.md` / `CLAUDE.md` / `docs/spec`）。编号届时取号 |
