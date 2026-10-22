@@ -1,7 +1,7 @@
 # spec —— `tests/trace/local/`：`LocalTrace` 与 `new_event_uuid` 的单元测试（含 T1 修复）
 
 > 依据：`docs/test/trace-test-intent.md`；源码 `pokemon_agent/trace/store.py`（228 行）、`datastore/event.py`、`interface/trace_port.py`。
-> 检查点：CP1（573）写 A / R / G1–G5 / O / U；CP2（574）写 G6–G8 并修 T1。
+> 检查点：CP1（584）写 A / R / G1–G5 / O / U；CP2（585）写 G6–G8 并修 T1。
 > 探针依据（2026-10-21，设计侧沙箱实跑，Python 3.10 + pydantic 2.14，补 `datetime.UTC`）：
 > P1 `append(content={1,2})` 抛 `TypeError`，落盘根下无任何残留文件；
 > P2 目录 `dir.json`、截断 JSON、非 UTF-8 字节、`.json.tmp` 残留都被跳过，其余事件照常读出；
@@ -25,7 +25,7 @@
 | D5 | 磁盘上的字段名用字面量断言（`{"uuid","seq","kind","type","started_at","ended_at","meta","content"}`） | 这就是封套契约本身；`Event` 协议与它的对齐由事件协议 spec 守 |
 | D6 | **T1 修复**：`_scan_events` 里 `except Exception: continue` 收窄为 `except (ValidationError, UnicodeDecodeError): continue`，并在读文件前跳过非文件（`if not path.is_file(): continue`）。`OSError` 及其他异常原样向上抛 | `TracePort.read_events` 契约写明底层读取失败不吞；残文件 / 旧格式 / 非 UTF-8 是预期内情况（AGENTS.md 第八节：预期内失败走显式处理）。代价：目录里出现无读权限的 `.json` 文件时 `read_events` 会抛 `PermissionError`，而不是悄悄少事件——这正是想要的 |
 | D7 | 「无读权限」用 `monkeypatch.setattr(pathlib.Path, "read_text", …)` 对 `.json` 文件抛 `PermissionError` 来模拟，**不用 `chmod`** | 用户机器是 Windows，`chmod 0` 不生效；沙箱里以 root 跑同样不生效 |
-| D8 | **T3 不改生产代码**：只写用例钉住「不可序列化 `content` 抛 `TypeError` 且不落文件」，并在 CP3（575）里把这句话补进 `append` 的 docstring | 探针 P1 已证实当前行为符合直觉；补文档不补代码 |
+| D8 | **T3 不改生产代码**：只写用例钉住「不可序列化 `content` 抛 `TypeError` 且不落文件」，并在 CP3（586）里把这句话补进 `append` 的 docstring | 探针 P1 已证实当前行为符合直觉；补文档不补代码 |
 | D9 | **T4 / T5 不钉**：不写「反向区间」「缺 `run_id`」的期望用例；A5 只钉「`LocalTrace` 对 `meta` 透传、不补盖、不要求任何键」 | intent 第六节：嫌疑项不钉成预期；A5 的断言写的是 docstring 已承诺的透传 |
 
 ## 二、用例清单

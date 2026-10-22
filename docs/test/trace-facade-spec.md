@@ -1,7 +1,7 @@
 # spec —— `tests/direct/trace/`：从 `test_trace_store.py` 搬出的 `TraceTool` 门面用例
 
 > 依据：`docs/test/trace-test-intent.md` 第七节决定 2；`tests/trace/test_trace_store.py`（385 行、16 例）。
-> 检查点：CP1（573）。
+> 检查点：CP1（584）。
 > 本文只管**搬家**，不重写门面测试——`direct` 层整体留给 direct 那一轮。
 
 ## 一、决定表

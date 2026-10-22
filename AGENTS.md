@@ -392,7 +392,7 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 = **进程启动目录**，`--trace-root` 可改）。**不按 run 分层、也没有 `events/` 这一层**
 （0916 起）——run 的区分靠 `meta.run_id`。文件名是
 **时间递增的 uuid**（前 48 位是毫秒时间戳），但**顺序不认文件名**——排序的真源是
-内容里的 `(ts, uuid)`（同毫秒靠 uuid 兜底；文件名只保证不撞名、让 `ls` 大致按时间排）。
+内容里的 `(ended_at, seq)`（同刻按 append 序决胜，uuid 只是标识；文件名只保证不撞名、让 `ls` 大致按时间排）。
 **没有内存事件镜像**：磁盘账本（`TraceToolPort.read_events`）是唯一真相，
 读的人直接读它（`review` 节点的审核材料就走这里）。
 
@@ -401,25 +401,32 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 不支持大小比较）；`None` / 空 dict = 整个落盘根。落盘不按 run 分层之后，
 `{"run_id": …}` 是切片的主键，`{"run_id": …, "episode_id": …}` 就是"这一局"。
 
-每条事件六个字段（`schemas/harness/domain/trace_event.py::TraceEvent`，与
+每条事件八个字段（`schemas/harness/domain/trace_event.py::TraceEvent`，与
 `trace/datastore/event.py::_Event` 逐字段对齐——**没有编译器保护，改一处必须同步另一处**）：
 
 | 字段 | 说明 |
 |---|---|
 | `uuid` | 本次事件的唯一标识，**与文件名同值**。落盘那一刻由存储方盖上 |
+| `seq` | 进程内 append 的**单调序号**（双后端共享、重启置零、不持久化）：**同刻 `ended_at` 的决胜键**。由存储实现在落盘时取号，调用方不传 |
 | `kind` | **账名**（`schemas/harness/domain/trace_kind.py::TraceKind` 的值）。由 tool 层给，**渲染层不做任何翻译**——`req.kind` 一路落到这里 |
 | `type` | 粗类，7 类（`trace/datastore/trace_event.py::EventType`，见 `docs/spec/DATAFLOW.md` 第四节「事件总表」）：`model_call` / `error` / `llm_outcome` / `view` / `act` / `memory_io` / `lifecycle`。**0903 收敛原则**：type 与"哪条产物"正交、数量极小；"哪个节点产出了什么"全部由 `kind` 回答（如 `think`/`judge_verdict`/`verify_verdict`、`read_*`/`write_*`、`do_action`/`get_action_space`） |
-| `ts` | Unix 时间戳（秒）。**排序的唯一依据**（`(ts, uuid)` 升序），算延迟与对齐外部日志也用它 |
-| `meta` | **标签面的 JSON 字符串**：`{run_id, branch, source, episode_id, task_id, step}` 六件，**不多不少**。`run_id` 与 `branch`（执行线，未经恢复为 `main`）由落盘层（`trace/store.py::_stamp_run_id`）盖，另外四件由 harness 在 `req.meta` 里**一次交齐**，`TraceTool.append` 只核不拼。`source` = **这条账从哪个位置发出**（图上节点名，或图外入口名如 `run_entry.new_run`）。上层账的空位放本层 id：run 级账 `episode_id`/`task_id` 位放 run_id、`step` = 已派局数；episode 级账 `task_id` 位放 episode_id |
+| `started_at` | Unix 时间戳（秒）：操作**真实开始**时刻。调用方记了就交，没记由存储实现补记账时刻（机械账 start=end=now——它没有时长语义） |
+| `ended_at` | Unix 时间戳（秒）：操作**结束**时刻，**排序键的一半**（`(ended_at, seq)` 升序，算延迟与对齐外部日志也看它）。调用方不交则补记账时刻 |
+| `meta` | **标签面的 JSON 字符串**：`{run_id, branch, source, episode_id, task_id, step}` 六件，**不多不少**。`run_id` 与 `branch`（执行线，未经恢复为 `main`）由 `TraceTool.append` 盖（`direct/trace/__init__.py::_stamp_meta`），`LocalTrace` 对 `meta` 只透传；另外四件由 harness 在 `req.meta` 里**一次交齐**，`TraceTool.append` 只核不拼。`source` = **这条账从哪个位置发出**（图上节点名，或图外入口名如 `run_entry.new_run`）。上层账的空位放本层 id：run 级账 `episode_id`/`task_id` 位放 run_id、`step` = 已派局数；episode 级账 `task_id` 位放 episode_id |
 | `content` | **正文面的 JSON 字符串**。判据是"存在反函数"——能从这串字符无损还原出源记录的字段。**标量一律 `str()`、布尔一律小写 `true`/`false`**；本来就是结构化数据的那几处（`facts` / `sequence` / `verdicts` / 四本写账的正文）**直接放对象，不再 `json.dumps` 一次**（那是双重编码） |
 
-- **0914 封套改造**：形状从九个字段收成上面六个，删了 `event_id`（唯一读方随
+- **0914 封套改造**：形状从九个字段收成六个，删了 `event_id`（唯一读方随
   `frame_png` 一起下线；排序改看 `ts`）、`schema_version`（零读方、两份副本要人工
   同步）、`frame_png`（**画面真源改成 `memory/step_memory/*.json` 的
   `before_frame`/`after_frame`**，事件不再自带图；`read_event(id)` 随之下线）、
   以及顶层 `run_id`/`episode_id`/`step`（搬进 `meta`）。
   **`kind` 与落盘的账名现在是同一个词**：此前 harness 那套派发键（`MEMORY_WRITE`…）
   与落盘账名（`write_step`…）两套名字靠一张翻译表连着，已整个删掉。
+- **0927 双时刻改造 + 0928 325 `seq` 决胜键**：`ts` 拆成 `started_at`/`ended_at`（操作
+  真实起止；调用方没记的账补记账时刻），随后 `seq`（进程内 append 的单调序号）进封套，
+  排序从 `(ts, uuid)` 改成 `(ended_at, seq)`——同刻按 append 序决胜，uuid 退化为纯标识。
+  旧格式缺 `seq` 的账解析失败、被扫盘跳过（**不兼容旧账**，2026-09-28 拍板）；字段数
+  从六个变成上面八个。
 - **0913 晚结构体瘦身**：更早还删过 `phase`（值恒等于 `type`）、`source`
   （生产者维度下线；**"谁发的"这一维 0914 改由 `meta.source` 回答**——那是
   "发送位置"，与"链路"不是一回事）、`valid`（恢复链已删，新写入恒真）。

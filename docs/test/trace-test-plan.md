@@ -1,7 +1,7 @@
 # plan —— trace 模块单元测试：检查点、编号与验收
 
 > 依据：`docs/test/trace-test-intent.md`、`trace-local-spec.md`、`trace-contract-spec.md`、`trace-facade-spec.md`。
-> 分支：`tests/trace-unit`，基线 `main`（c2080f8，建分支时以 `git rev-parse main` 为准并写进交接）。
+> 分支：`tests/trace-unit`，基线 `main`（2c95ab9，建分支时以 `git rev-parse main` 为准并写进交接）。
 > 范围：不含 Langfuse（留到 trace 线最后阶段，另起 intent / spec / plan）。
 
 ## 一、角色
@@ -13,14 +13,14 @@
 
 | 序 | 编号 | 内容 | 依赖 |
 |---|---|---|---|
-| CP1 | 573 | 新建 `tests/trace/`（契约 14 + 序号 4 + 事件协议 3 + 包边界 3 + `local/` 29）与 `tests/_doubles/trace.py`；搬门面 7 条 + 新增对齐 1 条；删 `test_trace_store.py` | 无 |
-| CP2 | 574 | T1：先补 G6–G8 三条（G8 必须先红），再改 `store.py::_scan_events` | CP1 |
-| CP3 | 575 | T2/T3 文档：`store.py` 与 `datastore/event.py` 的 docstring、`append` docstring 补「不可序列化 content 抛 TypeError 且不落盘」、AGENTS.md 与 CLAUDE.md 第九节（字段数、排序键）两份逐字一致 | CP2 |
+| CP1 | 584 | 新建 `tests/trace/`（契约 14 + 序号 4 + 事件协议 3 + 包边界 3 + `local/` 29）与 `tests/_doubles/trace.py`；搬门面 7 条 + 新增对齐 1 条；删 `test_trace_store.py` | 无 |
+| CP2 | 585 | T1：先补 G6–G8 三条（G8 必须先红），再改 `store.py::_scan_events` | CP1 |
+| CP3 | 586 | T2/T3 文档：`store.py` 与 `datastore/event.py` 的 docstring、`append` docstring 补「不可序列化 content 抛 TypeError 且不落盘」、AGENTS.md 与 CLAUDE.md 第九节（字段数、排序键）两份逐字一致 | CP2 |
 
 CHANGELOG 标题（实现提交逐字复用）：
-- 573：`2026-10-21（573）—— trace 单元测试：LocalTrace、TracePort 契约、序号与包边界（CP1）`
-- 574：`2026-10-21（574）—— trace 读盘只跳过预期内的残文件，不再吞掉 IO 错误（CP2）`
-- 575：`2026-10-21（575）—— trace 文档对齐：八字段封套与 (ended_at, seq) 排序（CP3）`
+- 584：`2026-10-21（584）—— trace 单元测试：LocalTrace、TracePort 契约、序号与包边界（CP1）`
+- 585：`2026-10-21（585）—— trace 读盘只跳过预期内的残文件，不再吞掉 IO 错误（CP2）`
+- 586：`2026-10-21（586）—— trace 文档对齐：八字段封套与 (ended_at, seq) 排序（CP3）`
 
 ## 三、允许改动的文件
 
@@ -42,19 +42,19 @@ CHANGELOG 标题（实现提交逐字复用）：
 
 **通用**
 1. `git diff --stat` 与未跟踪文件清单只涉及第三节允许的文件；`--ignore-cr-at-eol` 核对行尾未被整体改写（仓库以 LF 提交）。
-2. 写文件前先记录起点：HEAD、`git status --short`、默认全量 pytest 的 JUnit（N0）。若 N0 里有失败，**逐条列出**，不得当作新增失败。已知：565 未执行前，冻结数据缺失会让若干 evals 用例失败。
+2. 起点只做收集，不跑全量：记录 HEAD、`git status --short`、`python -m pytest --collect-only -q` 的总收集数 N0（含 deselected），以及 `python -m pytest tests/trace tests/direct/trace -q` 的结果（应全绿，有红则停下汇报）。全量默认 pytest 只在收尾跑一次：耗时 90 秒以上，必须放后台、写 JUnit，不前台等待；失败逐条列出，并到主目录（已检出 main，不含本分支改动；只复跑、不得修改其中任何跟踪文件）复跑同一文件，证明是已有失败。
 3. `ruff check .` 与 `ruff format --check .` 全绿。
 4. CHANGELOG 数字来自实测（用例数、junit 计数），不写估算值；四段固定格式。
 5. 默认 pytest 下 `tests/trace/` 非 langfuse 部分耗时 ≤ 3 秒（`--durations=10` 前十行进汇报）。
 
 **CP1 专项**
-6. 收集数：`N1 == N0 + 45`（删 16、搬 7、增 1、`tests/trace` 新增 53）；`failures / errors` 与 N0 相同，`skipped` 不增加。
+6. 收集数：`N1 == N0 + 45`（删 16、搬 7、增 1、`tests/trace` 新增 53）；全量的 `failures / errors` 与主目录复跑的结果一致，`skipped` 不增加。
 7. 搬走的 7 条函数体与原文件逐行一致（给出 diff 证据）。
 8. 破坏验证（临时改 `pokemon_agent/trace/` 内文件，逐处还原，最终 `git diff pokemon_agent/` 为空）：
 
 | # | 临时破坏 | 应变红的用例 |
 |---|---|---|
-| X1 | `store.py` 排序键 `(ended_at, seq)` 改成 `(ended_at, uuid)` | 契约 #12、序号 #18 |
+| X1 | `store.py` 排序键 `(ended_at, seq)` 改成 `(ended_at, uuid)` | 序号 #18 only（该用例固定 `store.time.time` 到同一毫秒、写 8 笔；契约 #12 用真实时钟，相邻 append 相隔 1–2 ms 时 v7 前缀已编码序，故不要求它变红，见 CP1 裁决） |
 | X2 | `_matches` 里的 `all` 改成 `any` | 契约 #6、#7 |
 | X3 | `append` 里 `json.dumps(..., ensure_ascii=False)` 去掉 `ensure_ascii=False`（content 那处） | `local/` #8 |
 | X4 | `new_event_uuid` 版本位 `0x7` 改成 `0x4` | `local/` #2、#29 |
@@ -73,8 +73,8 @@ CHANGELOG 标题（实现提交逐字复用）：
 
 ## 五、派发前清单（设计侧）
 
-1. `python .coordination/overlap.py`，确认 573–575 仍是预留且无新占用；
-2. 台账「活跃任务」新增一行 `tests/trace-unit`，并把 573–575 的状态改为「已派发」；
+1. `python .coordination/overlap.py`，确认 584–586 仍是预留且无新占用；
+2. 台账「活跃任务」新增一行 `tests/trace-unit`，并把 584–586 的状态改为「已派发」；
 3. 在本机建 worktree：`git worktree add .worktrees\trace-test -b tests/trace-unit main`；
 4. 设计文档（intent / 三份 spec / plan）作为分支第一个提交，之后才发 CP1 交接；
 5. 交接消息自包含，放在一个 ```text 代码块里，位于最后一条回复。
