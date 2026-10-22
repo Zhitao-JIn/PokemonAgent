@@ -24,7 +24,7 @@ trace 是独立第三方模块，只有"桥"认识它。
 **0913–0914 删掉的几件**：
 
 - `project` 钩子（把 trace 的 `Event` 投成项目侧记录）——落盘形状现在就是 trace
-  自己的六个字段；
+  自己的八个字段；
 - `event_sink` 双写（`RunDataCenter` 的内存事件镜像）——**磁盘账本是唯一真相**；
 - `read_screenshot` / `read_event`（0914）：帧不再随事件落盘，画面真源搬到
   `memory/step_memory/*.json` 的 `before_frame`/`after_frame`。

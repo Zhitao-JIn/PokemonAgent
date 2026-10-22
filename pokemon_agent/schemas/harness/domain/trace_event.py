@@ -17,21 +17,25 @@
 `ImportError: partially initialized module` 实测复现过——见
 `docs/PLAN_trace_decoupling.md` §3。脱钩把那条边切掉了。）
 
-**七个字段分三组**（2026-09-27 双时刻改造）：
+**八个字段分三组**（2026-09-27 双时刻改造、0928 325 加 `seq`）：
 
 | 组 | 字段 | 谁填 |
 |---|---|---|
-| 封套 | `uuid`/`kind`/`type`/`started_at`/`ended_at` | 前三个 tool 层给；双时刻缺省归 `store.py` |
-| 标签 | `meta` | harness 自报的签名（`source`/`run_id`/`episode_id`/`step`），**JSON 字符串** |
+| 封套 | `uuid`/`seq`/`kind`/`type`/`started_at`/`ended_at` | 见下 |
+| 标签 | `meta` | harness 自报签名加 tool 层盖章，**JSON 字符串** |
 | 正文 | `content` | 该账的内容，**JSON 字符串** |
 
-`uuid` 是文件名，落盘那一刻才生成，所以由 `store.py` 盖。
+封套六样：`kind` / `type` 归 tool 层给；`uuid` 是文件名，落盘那一刻才生成，所以由
+`store.py` 盖；`seq` 由 `LocalTrace.append` 取进程内序号（`next_seq()`）；
+`started_at` / `ended_at` 调用方记了就交，没交由 `store.py` 补记账时刻。
+排序看 `(ended_at, seq)`：同刻 `ended_at` 按 `seq`（进程内 append 序）决胜，
+uuid 只是标识。
 
 **0914 删掉的四件**（见 `CHANGELOG.md` 第 100 条）：
 
 - `event_id`（全局单调序号）——它的**唯一非内部读方**是"按 id 取单条事件"，
-  而那件事随 `frame_png` 一起下线了。排序改看 `ts`（时间戳进封套之后不再
-  是死字段），同毫秒靠 `uuid` 兜底；
+  而那件事随 `frame_png` 一起下线了。排序改看时间戳进封套之后的那一套
+  （现为 `(ended_at, seq)`：同刻按 `seq` 决胜，uuid 退化为纯标识）；
 - `schema_version`——两份同值副本要人工同步，且全 run 恒 `5`、零读方。
   删掉不会让"老数据被静默读错"：形状变到这个程度，旧 json 缺 `uuid`/`kind`/
   `meta`/`content` 会**当场解析失败**（`store._scan_events` 跳过残文件），
