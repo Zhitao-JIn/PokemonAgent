@@ -1,4 +1,4 @@
-"""Check prompt isolation (A), public imports (B), and build.py isolation (C) using AST."""
+"""Check prompt isolation (A), public imports (B), build isolation (C), and retirement (D)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PROMPT = "pokemon_agent.prompt"
+RETIRED = ".".join(("pokemon_agent", "direct", "prompts"))
 
 
 @dataclass(frozen=True)
@@ -75,13 +76,19 @@ def check(root: Path) -> list[Violation]:
     """Return violations from every source import, including imports inside functions."""
     exports = public_names(root)
     violations: list[Violation] = []
+    retired_path = Path(*RETIRED.split("."))
+    if (root / retired_path).exists():
+        violations.append(Violation("D", retired_path.as_posix(), 0, "retired package exists"))
     for path in python_files(root):
         relative = path.relative_to(root)
         inside = relative.is_relative_to(Path("pokemon_agent/prompt"))
         build = relative == Path("pokemon_agent/build.py")
-        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        source = path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(source, filename=str(path))
         for line, module, name in import_edges(tree, relative):
             target = f"{module}.{name}" if name else module
+            if target == RETIRED or target.startswith(RETIRED + "."):
+                violations.append(Violation("D", relative.as_posix(), line, target))
             touches_prompt = is_prompt(module) or is_prompt(target)
             detail = f"from {module} import {name}" if name else f"import {module}"
             if inside:
@@ -93,6 +100,12 @@ def check(root: Path) -> list[Violation]:
                 violations.append(Violation("B", relative.as_posix(), line, detail))
             if build and touches_prompt:
                 violations.append(Violation("C", relative.as_posix(), line, detail))
+        for line, text in enumerate(source.splitlines(), start=1):
+            normalized = text.replace("\\", "/")
+            if RETIRED in normalized or RETIRED.replace(".", "/") in normalized:
+                violations.append(
+                    Violation("D", relative.as_posix(), line, "retired package reference")
+                )
     return violations
 
 
@@ -109,7 +122,7 @@ def main() -> int:
     for violation in violations:
         print(f"[FAIL] {violation.rule} {violation.path}:{violation.line} {violation.detail}")
     failed = {violation.rule for violation in violations}
-    for rule in "ABC":
+    for rule in "ABCD":
         if rule not in failed:
             print(f"[ OK ] {rule}")
     return int(bool(violations))

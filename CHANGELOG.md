@@ -1,3 +1,50 @@
+## 2026-10-22（595）—— prompt 模块：收口旧 prompt 包，冻结 golden 为唯一对拍基线
+
+**改了什么**：删除旧 prompt 包（12 个 Python 文件、15 个模板）及四个模块常量 BUTTON_HELP、MAP_HINT、REPEAT_HINT、READ_SCREEN。完整删除清单（36 个源文件；旧包内缓存随授权目录清理）：
+
+- `pokemon_agent/direct/prompts/__init__.py`
+- `pokemon_agent/direct/prompts/calls/decide_action/button_help.md`
+- `pokemon_agent/direct/prompts/calls/decide_action/decide_action.md`
+- `pokemon_agent/direct/prompts/calls/decide_action/decide_script.md`
+- `pokemon_agent/direct/prompts/calls/decide_action/map_hint.md`
+- `pokemon_agent/direct/prompts/calls/decide_action/repeat_hint.md`
+- `pokemon_agent/direct/prompts/calls/decide_action/retry_note.md`
+- `pokemon_agent/direct/prompts/calls/decompose.md`
+- `pokemon_agent/direct/prompts/calls/judge_interrupt.md`
+- `pokemon_agent/direct/prompts/calls/judge_success.md`
+- `pokemon_agent/direct/prompts/calls/read_screen.md`
+- `pokemon_agent/direct/prompts/calls/run_plan.md`
+- `pokemon_agent/direct/prompts/calls/summarize.md`
+- `pokemon_agent/direct/prompts/calls/summarize_run.md`
+- `pokemon_agent/direct/prompts/calls/summarize_task.md`
+- `pokemon_agent/direct/prompts/calls/verify.md`
+- `pokemon_agent/direct/prompts/decide_action.py`
+- `pokemon_agent/direct/prompts/decompose.py`
+- `pokemon_agent/direct/prompts/judge_success.py`
+- `pokemon_agent/direct/prompts/last_judge.py`
+- `pokemon_agent/direct/prompts/object_render.py`
+- `pokemon_agent/direct/prompts/run_plan.py`
+- `pokemon_agent/direct/prompts/summarize.py`
+- `pokemon_agent/direct/prompts/summarize_run.py`
+- `pokemon_agent/direct/prompts/summarize_task.py`
+- `pokemon_agent/direct/prompts/task_frame.py`
+- `pokemon_agent/direct/prompts/verify.py`
+- `tests/direct/prompts/test_verify_prompt.py`
+- `tests/direct/prompts/test_run_scope_prompt.py`
+- `tests/direct/prompts/test_task_index_prompts.py`
+- `evals/common/legacy_requests/judge_prompt.py`
+- `evals/dataset/brain_judge/build/audit_candidates.py`
+- `evals/dataset/brain_choose/build/history_context.py`
+- `evals/dataset/brain_choose/build/history_review.py`
+- `scripts/capture_prompt_golden.py`
+- `tests/evals/test_brain_judge_audit.py`
+
+**为什么这么改**：活动任务已通过独立 prompt 网关渲染，旧包只剩兼容读方与实时 oracle。删除重复实现，保留 tests/prompt/golden 的 183 份输入与对应文本，避免下一步清理旧字段和旧方法时继续依赖旧渲染器。守卫保留 A/B/C，并增加 D：旧包目录不存在、绝对与相对 import 及源码路径引用均拒绝，负例使用临时字符串和目录。
+
+**取舍**：三个一次性构建脚本 audit_candidates.py、history_context.py、history_review.py 的产物已入库，按用户逐次裁决删除，不改数据文件；evals/dataset 下共有 4 处改动（删三个构建脚本、改 brain_judge/build/__init__.py 的导出），依据与前一条裁决相同。包根仅移除审计的九个导入和 __all__ 项，保留裁定与冻结四个公开名字。审计专属四例随脚本删除、不迁移；冻结和裁定测试原样保留，专项 7 passed。原 tests/direct/prompts 的 verify 四例、run 三例、task_index 四例转写到 tests/prompt/test_gateway_verify.py、test_gateway_run_scope.py、test_gateway_task_index.py，断言意图保留；另外两份已用网关的旧目录测试原样保留。test_golden_baseline 删除 183 个实时旧 builder oracle，只留库存检查；test_migrated_baseline 的 179 条网关对 frozen golden 检查与两条结构化优先级测试保留，历史素材检查改走网关；test_decision_native 保留四条 retry golden、79 个用例中的其余分支/签名/盖章/trace 意图，去掉实时旧 builder 比较；test_raw_objects 四例改为固定事件文字和顺序断言，保留检索、过滤、trace、缺失信息不补造的断言。GoldenCase/信封校验移为测试专用 golden_cases.py，不能生成或写入基线；adapter 与 planning_stamps 改用它。四份 harness 测试只换网关依赖；其中旧 Observation 夹具单独序列化，避免被现行 TaskObservation 信封序列化器当成新类型。源码引用已清零；冻结 history_review.jsonl 内的 judge_prompt 字段名按数据禁区保留，文档旧描述留待文档同步，不为 grep 删除数据。没有修改 world、schemas/memory、trace、活动 prompt、golden 或 memory，也没有提交。
+
+**影响面**：全量 2368 passed、25 skipped、3 deselected、59 warnings，相对起点 2555 passed 精确减少 183 条实时 oracle 与四条审计测试；11 条转写与守卫总数均不变。原两文件 golden 专项 340 passed、25 skipped，移除 183 个 oracle 后为 157 passed、25 skipped；加上保留的四条 retry golden，统一专项为 161 passed、25 skipped，158 份可还原输入逐字节相等、25 份旧 where 文本不可还原仍跳过（13.66%）。ruff check 与 format --check 通过，守卫 A/B/C/D 通过。破坏验证将 verify 模板一处句号改为叹号，先被 hash 校验拒绝，再临时同步 hash 后触发 golden 字节断言；临时旧包 import 触发 D 规则，均原字节还原。没有真实模型、安装或 git 写操作。
+
 ## 2026-10-22（594）—— prompt 模块 CP6a：切换读方、移除 brain reflect 与 trace status 停写
 
 **改了什么**：删除 Brain.reflect、BrainPort.reflect、Reflection 及导出，仅删除 reflection.py 与对应 test_reflect.py 两个文件。tool 层 Reflector 保留，移除 brain/网关依赖和两帧文本渲染，直接按原逻辑过滤快照并组装 ActMemory。trace 的 sense_frame 不再写 status；SenseFrameContent.status 仅改为 str | None = None，兼容读取旧事件，scene、place 和 facts.overlay 原样保留。reviewer 自管三级记忆索引；decode 采用评测自有的三种冻结真值文本格式；shop 读取结构化 option_annotations。

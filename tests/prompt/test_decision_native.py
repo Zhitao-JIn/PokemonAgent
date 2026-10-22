@@ -9,15 +9,14 @@ from _harness_fixtures.app_config import ACTION_LIMITS, call_policy
 
 from pokemon_agent.brain import Brain, Goal
 from pokemon_agent.direct.brain_tool import Chooser, decide_prompt_params
-from pokemon_agent.direct.prompts import BUTTON_HELP, MAP_HINT, REPEAT_HINT
-from pokemon_agent.direct.prompts.decide_action import build_prompt
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.mcpclient.action_space import action_space_for
 from pokemon_agent.prompt import DecideActionRetryParams, PromptGateway
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.world import ActionSpace, Facts, PlaceInWorld, TaskObservation, TaskScene
 from pokemon_agent.world.interface.domain.takeover_view import NamingView
-from scripts.capture_prompt_golden import GoldenCase
+
+from .golden_cases import GoldenCase, parse_request
 
 GOLDEN = Path(__file__).parent / "golden"
 
@@ -66,34 +65,38 @@ def native_request(
 
 @pytest.mark.parametrize("overlay", list(Facts.Overlay))
 @pytest.mark.parametrize("covered", [False, True])
-def test_native_action_space_without_display_fields_keeps_the_old_prompt(
+def test_native_action_space_renders_overlay_help_without_display_fields(
     overlay: Facts.Overlay, covered: bool
 ) -> None:
     req = native_request(overlay, covered)
-    legacy_space = req.space.model_copy(
-        update={
-            "descriptions": {
-                name: BUTTON_HELP[overlay].get(name, BUTTON_HELP[Facts.Overlay.NONE].get(name, ""))
-                for name in req.space.names
-            },
-            "note": REPEAT_HINT,
-            "map_note": "" if covered else MAP_HINT,
-        }
-    )
-    expected = build_prompt(req.model_copy(update={"space": legacy_space}), max_segments=3)
 
     actual = PromptGateway(None).render("decide_action", decide_prompt_params(req, max_segments=3))
 
     assert {"descriptions", "note", "map_note"}.isdisjoint(req.space.model_dump())
-    assert actual.text.encode("utf-8") == expected.encode("utf-8")
+    assert f"- covered_by_script: {str(covered).lower()}" in actual.text
+    assert f"- overlay: {overlay.value}" in actual.text
+    assert "先核对" in actual.text
+    assert "- up:" in actual.text
+    assert ("这一屏 10 列" in actual.text) is (not covered)
+    if covered:
+        assert "YOUR NAME?" in actual.text
+    elif overlay == Facts.Overlay.DIALOG:
+        assert "- dialog_text: 欢迎" in actual.text
+    elif overlay == Facts.Overlay.CHOICE:
+        assert "YES" in actual.text and "NO" in actual.text
 
 
-def test_a_script_only_action_space_keeps_its_old_prompt() -> None:
+def test_a_script_only_action_space_lists_scripts_without_basic_keys() -> None:
     req = native_request(Facts.Overlay.NONE, covered=True, script_only=True)
 
     actual = PromptGateway(None).render("decide_action", decide_prompt_params(req, max_segments=3))
 
-    assert actual.text == build_prompt(req, max_segments=3)
+    assert "YOUR NAME?" in actual.text
+    assert "## 可调用的脚本" in actual.text
+    scripts = [entry for entry in req.space.entries if req.space.mask.get(entry.name)]
+    assert scripts
+    assert all(entry.name in actual.text for entry in scripts)
+    assert "基础按键：" not in actual.text
     assert req.space.names == []
 
 
@@ -158,17 +161,24 @@ def test_real_choose_attempts_are_stamped_before_success_or_exhaustion(exhausted
     sorted((GOLDEN / "decide_action").glob("synthetic-takeover-*.req.json")),
     ids=lambda path: path.stem,
 )
-def test_all_takeover_frames_match_the_old_projection(path: Path) -> None:
-    from scripts.capture_prompt_golden import parse_request
-
+def test_all_takeover_frames_render_their_business_view(path: Path) -> None:
     req = parse_request(GoldenCase.model_validate_json(path.read_bytes()))
     req.obs.facts.where = ""
     req.obs.place = None
-    expected = build_prompt(req, max_segments=3)
 
     actual = PromptGateway(None).render("decide_action", decide_prompt_params(req, max_segments=3))
 
-    assert actual.text == expected
+    assert "- covered_by_script: true" in actual.text
+    overlay = req.obs.facts.overlay.value if req.obs.facts.overlay else "none"
+    assert f"- overlay: {overlay}" in actual.text
+    assert "这一屏 10 列" not in actual.text
+    if req.obs.takeover is not None:
+        assert req.obs.takeover.render() in actual.text
+    elif req.obs.facts.screen:
+        assert req.obs.facts.screen in actual.text
+        assert "接管业务视图缺失" in actual.text
+    else:
+        assert "（未读出业务视图）" in actual.text
 
 
 @pytest.mark.parametrize("scene", list(TaskScene))
@@ -181,21 +191,27 @@ def test_frame_visibility_and_notes_keep_every_scene_overlay_branch(
     req.obs.takeover = None
     req.obs.menu_decode_complete = False
     req.obs.facts.screen = "  TEXT  \n\n  > YES  "
-    legacy_space = req.space.model_copy(
-        update={
-            "descriptions": {
-                name: BUTTON_HELP[overlay].get(name, BUTTON_HELP[Facts.Overlay.NONE].get(name, ""))
-                for name in req.space.names
-            },
-            "note": REPEAT_HINT,
-            "map_note": "" if req.obs.covered_by_script else MAP_HINT,
-        }
-    )
-    expected = build_prompt(req.model_copy(update={"space": legacy_space}), max_segments=3)
 
     actual = PromptGateway(None).render("decide_action", decide_prompt_params(req, max_segments=3))
 
-    assert actual.text == expected
+    assert f"- covered_by_script: {str(req.obs.covered_by_script).lower()}" in actual.text
+    assert f"- overlay: {overlay.value}" in actual.text
+    assert "- menu_decode_complete: false" in actual.text
+    assert "选单切分不完整" in actual.text
+    assert ("这一屏 10 列" in actual.text) is (not req.obs.covered_by_script)
+    if req.obs.covered_by_script:
+        assert "  TEXT\n  > YES" in actual.text
+        assert "接管业务视图缺失" in actual.text
+    elif scene in {TaskScene.WALK, TaskScene.SHOP} and overlay == Facts.Overlay.NONE:
+        assert "- where: 全局坐标 地图1 x=2 y=3" in actual.text
+    elif overlay == Facts.Overlay.DIALOG and scene not in {
+        TaskScene.POKEMON_INFO,
+        TaskScene.START_MENU,
+        TaskScene.TITLE,
+    }:
+        assert "- dialog_text: 欢迎" in actual.text
+    else:
+        assert "- screen:   TEXT\n  > YES" in actual.text
 
 
 @pytest.mark.parametrize("backend", ["local", "langfuse"])
@@ -203,7 +219,6 @@ def test_parse_timeout_success_preserves_input_and_attempt_specific_stamps(
     tmp_path: Path, backend: str
 ) -> None:
     from pokemon_agent.brain.errors import ToolTimeout
-    from pokemon_agent.direct.prompts.decide_action import RetryPromptReq, retry_prompt
 
     req = native_request(Facts.Overlay.NONE)
     provider = ScriptedLLM(
@@ -230,13 +245,12 @@ def test_parse_timeout_success_preserves_input_and_attempt_specific_stamps(
     assert calls[0].payload["prompt_hash"] == calls[2].payload["prompt_hash"] == base.hash
     assert calls[1].payload["prompt_hash"] != base.hash
     prompts = [request.prompt for request in provider.requests]
-    assert prompts == [
-        base.text,
-        retry_prompt(
-            RetryPromptReq(base_prompt=base.text, attempt=2, reason=calls[0].error, raw="x" * 400)
-        ),
-        base.text,
-    ]
+    assert prompts[0] == prompts[2] == base.text
+    assert prompts[1].startswith(base.text)
+    assert "第 2 次尝试" in prompts[1]
+    assert calls[0].error in prompts[1]
+    raw = prompts[1].split("上次你输出的是：\n", 1)[1].split("\n\n", 1)[0]
+    assert raw == "x" * 400
     assert calls[1].error_kind == "ToolTimeout"
     from _fake_langfuse import FakeLangfuseClient
 
@@ -287,8 +301,11 @@ def test_script_signature_defaults_keep_the_old_repr(default: str | int | None) 
         )
     ]
     req.space.mask = {"example": True}
-    expected = build_prompt(req, max_segments=3)
 
     actual = PromptGateway(None).render("decide_action", decide_prompt_params(req, max_segments=3))
 
-    assert actual.text == expected
+    parameter = "int" if isinstance(default, int) else "str"
+    signature = f"example(value: {parameter}"
+    if default is not None:
+        signature += f" = {default!r}"
+    assert signature + ")：说明" in actual.text

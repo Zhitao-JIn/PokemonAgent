@@ -1,7 +1,7 @@
 """run 规划完整详情、过往背景、知识与当前画面独立渲染，帧数据不进文本。"""
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.direct.prompts.run_plan import build_prompt, history_blocks
+from pokemon_agent.prompt import PromptGateway, RunPlanParams
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolPlanOnceReq
 from pokemon_agent.schemas.memory import EpisodeMemory, RunMemory
 from pokemon_agent.world import Facts, TaskObservation, TaskScene
@@ -49,7 +49,11 @@ def _request() -> FromHarnessToBrainToolPlanOnceReq:
 def test_run_plan_prompt_renders_all_details_run_index_knowledge_observation() -> None:
     request = _request()
 
-    prompt = build_prompt(request)
+    prompt = (
+        PromptGateway(None)
+        .render("run_plan", RunPlanParams.model_validate(request.model_dump(mode="json")))
+        .text
+    )
 
     assert all(f"局{i}正文第二句" in prompt for i in range(3))
     assert request.run_index[0].index_line() in prompt and "背景第二句" not in prompt
@@ -65,7 +69,9 @@ def test_run_plan_prompt_renders_all_details_run_index_knowledge_observation() -
 def test_run_history_starts_with_all_details_then_past_run_background() -> None:
     request = _request()
 
-    blocks = history_blocks(request)
+    blocks = PromptGateway(None).render_history(
+        "run_plan", RunPlanParams.model_validate(request.model_dump(mode="json"))
+    )
 
     assert blocks[:3] == [memory.render() for memory in request.details]
     assert blocks[4] == "## 过往 run(背景,一行一条,不是本 run 的经历)"
@@ -80,7 +86,11 @@ def test_an_empty_run_context_has_explicit_placeholders_without_the_old_index_fi
         max_push=1,
     )
 
-    prompt = build_prompt(request)
+    prompt = (
+        PromptGateway(None)
+        .render("run_plan", RunPlanParams.model_validate(request.model_dump(mode="json")))
+        .text
+    )
 
     assert "index" not in type(request).model_fields
     assert "（本 run 还没有跑完任何一局）" in prompt

@@ -7,7 +7,7 @@ verify 是标记器不是审判官：entries 收 ActMemory（task 层）或 Task
 from __future__ import annotations
 
 from pokemon_agent.brain import VerifyVerdict
-from pokemon_agent.direct.prompts import verify as verify_prompt
+from pokemon_agent.prompt import PromptGateway, VerifyParams
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolVerifyReq
 from pokemon_agent.schemas.memory import ActMemory, TaskMemory
 
@@ -46,7 +46,11 @@ def test_verify_verdict_marks_positive_not_reliability() -> None:
 def test_build_prompt_renders_task_memories_with_indices() -> None:
     """episode 层 prompt：TaskMemory 逐条渲 `## 第 i 条`，goal 原样进模板。"""
     req = FromHarnessToBrainToolVerifyReq(entries=[_task_memory(0)], goal="走到地图北端")
-    prompt = verify_prompt.build_prompt(req)
+    prompt = (
+        PromptGateway(None)
+        .render("verify", VerifyParams.model_validate(req.model_dump(mode="json")))
+        .text
+    )
     assert "## 第 0 条" in prompt
     assert "task `t0`" in prompt
     assert "走到地图北端" in prompt
@@ -65,7 +69,11 @@ def test_build_prompt_still_renders_act_memories_via_sequence() -> None:
         after={"step": 1, "status": "站立", "map_id": 12},
     )
     req = FromHarnessToBrainToolVerifyReq(entries=[act], goal="向北走一步")
-    prompt = verify_prompt.build_prompt(req)
+    prompt = (
+        PromptGateway(None)
+        .render("verify", VerifyParams.model_validate(req.model_dump(mode="json")))
+        .text
+    )
     assert "## 第 0 条" in prompt
     assert "up" in prompt
     assert "positive" in prompt

@@ -6,10 +6,10 @@ from _harness_fixtures.harness import build_fake
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Goal, RunPlan
-from pokemon_agent.direct.prompts.judge_success import build_prompt, memory_blocks
 from pokemon_agent.harness.run.plan_run import plan_run
 from pokemon_agent.harness.run.review_and_judge.review_and_judge import review_and_judge
 from pokemon_agent.harness.run.run_state import PlanContext, RunState
+from pokemon_agent.prompt import JudgeParams, PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolJudgeReq,
     FromHarnessToBrainToolJudgeResp,
@@ -145,3 +145,19 @@ def test_run_judge_keeps_the_existing_empty_details_case_without_plan_context(
     request = judger.requests[0]
     assert request.episode_memories == [] and request.run_index == []
     assert request.knowledge == "" and request.observation is state.observation
+
+
+def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
+    """Render the judgement materials through the gateway."""
+    return (
+        PromptGateway(None)
+        .render("judge_success", JudgeParams.model_validate(req.model_dump(mode="json")))
+        .text
+    )
+
+
+def memory_blocks(req: FromHarnessToBrainToolJudgeReq) -> list[str]:
+    """Keep the independent judgement material blocks and their order."""
+    return PromptGateway(None).render_history(
+        "judge_success", JudgeParams.model_validate(req.model_dump(mode="json"))
+    )

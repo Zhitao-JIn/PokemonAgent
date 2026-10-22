@@ -8,11 +8,10 @@ from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Task
 from pokemon_agent.brain.interface import Decomposition
-from pokemon_agent.direct.prompts.decompose import context_lines
-from pokemon_agent.direct.prompts.judge_success import build_prompt, memory_blocks
 from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeRunState
 from pokemon_agent.harness.episode.plan_episode.plan_episode import plan_episode
 from pokemon_agent.harness.episode.review_and_judge import review_and_judge
+from pokemon_agent.prompt import DecomposeParams, JudgeParams, PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolDecomposeResp,
@@ -26,7 +25,7 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.schemas.harness.domain import TaskEntry
 from pokemon_agent.schemas.memory import EpisodeMemory, TaskMemory
-from pokemon_agent.world import Facts, TaskObservation, TaskScene
+from pokemon_agent.world import TERRAIN_MEANING, Facts, TaskObservation, TaskScene
 
 
 class _Decomposer:
@@ -211,3 +210,27 @@ def test_judge_memory_blocks_keep_the_contractual_order(tmp_path: Path) -> None:
     assert headers[3].startswith("## 本局内此前同目标的 task")
     assert headers[4] == "## 同目标的过往局(背景,不是本局完成的证据)"
     assert headers[5] == "## 当前画面"
+
+
+def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
+    """Render the judgement materials through the gateway."""
+    return (
+        PromptGateway(None)
+        .render("judge_success", JudgeParams.model_validate(req.model_dump(mode="json")))
+        .text
+    )
+
+
+def memory_blocks(req: FromHarnessToBrainToolJudgeReq) -> list[str]:
+    """Keep the independent judgement material blocks and their order."""
+    return PromptGateway(None).render_history(
+        "judge_success", JudgeParams.model_validate(req.model_dump(mode="json"))
+    )
+
+
+def context_lines(req: FromHarnessToBrainToolDecomposeReq) -> list[str]:
+    """Keep decomposition material blocks and their order."""
+    params = DecomposeParams.model_validate(
+        {**req.model_dump(mode="json"), "terrain_meanings": TERRAIN_MEANING}
+    )
+    return PromptGateway(None).render_history("decompose", params)

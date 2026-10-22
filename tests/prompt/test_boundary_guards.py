@@ -1,6 +1,5 @@
 """The real repository passes; each boundary rule rejects a minimal violating repository."""
 
-import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -21,11 +20,11 @@ def run_guard(root: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_the_real_repository_obeys_all_three_rules() -> None:
+def test_the_real_repository_obeys_all_four_rules() -> None:
     result = run_guard(ROOT)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert all(f"[ OK ] {rule}" in result.stdout for rule in "ABC")
+    assert all(f"[ OK ] {rule}" in result.stdout for rule in "ABCD")
 
 
 @pytest.mark.parametrize(
@@ -60,105 +59,33 @@ def test_each_violation_reports_its_rule_and_source_location(
     assert f"[FAIL] {rule} {relative}:1" in result.stdout
 
 
-MIGRATED = frozenset(
-    [
-        "Chooser",
-        "Decomposer",
-        "Judger",
-        "Planner",
-        "RunSummarizer",
-        "Summarizer",
-        "TaskSummarizer",
-        "Verifier",
-    ]
-)
-LEGACY_NAMES = frozenset(
-    [
-        "decide_action_prompt",
-        "decompose_prompt",
-        "judge_success_prompt",
-        "run_plan_prompt",
-        "summarize_prompt",
-        "summarize_run_prompt",
-        "summarize_task_prompt",
-        "verify_prompt",
-    ]
-)
-
-
-def migrated_legacy_references(source: str) -> list[int]:
-    """能力体内不得出现旧模板调用或局部导入。"""
-    failures: list[int] = []
-    for node in ast.parse(source).body:
-        if not isinstance(node, ast.ClassDef) or node.name not in MIGRATED:
-            continue
-        for child in ast.walk(node):
-            if isinstance(child, ast.Name) and child.id in LEGACY_NAMES:
-                failures.append(child.lineno)
-            if isinstance(child, ast.ImportFrom) and "prompts" in (child.module or ""):
-                failures.append(child.lineno)
-    return failures
-
-
-def test_migrated_capabilities_have_no_legacy_prompt_calls() -> None:
-    path = ROOT / "pokemon_agent/direct/brain_tool.py"
-
-    failures = migrated_legacy_references(path.read_text(encoding="utf-8"))
-
-    assert failures == []
+RETIRED = ".".join(("pokemon_agent", "direct", "prompts"))
 
 
 @pytest.mark.parametrize(
-    "body",
+    ("relative", "source"),
     [
-        "verify_prompt.build_prompt(req)",
-        "from pokemon_agent.direct.prompts import verify",
+        ("consumer.py", f"import {RETIRED}\n"),
+        ("consumer.py", f"from {RETIRED} import verify\n"),
+        ("pokemon_agent/direct/consumer.py", "from .prompts import verify\n"),
+        ("consumer.py", f"path = {RETIRED.replace('.', '/')!r}\n"),
+        ("consumer.py", f"# obsolete reader: {RETIRED}\n"),
+        (RETIRED.replace(".", "/") + "/__init__.py", ""),
     ],
 )
-def test_migrated_capability_guard_rejects_legacy_calls_and_imports(body: str) -> None:
-    source = "class Verifier:\n    def verify(self, req):\n        " + body + "\n"
+def test_retired_package_guard_rejects_imports_paths_and_directory(
+    tmp_path: Path, relative: str, source: str
+) -> None:
+    directory = tmp_path / "pokemon_agent/prompt"
+    directory.mkdir(parents=True)
+    (directory / "__init__.py").write_text('__all__ = ["PromptGateway"]\n', encoding="utf-8")
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(source, encoding="utf-8")
 
-    failures = migrated_legacy_references(source)
+    result = run_guard(tmp_path)
 
-    assert failures == [3]
-
-
-def legacy_imports(source: str) -> list[int]:
-    """整个门面与 harness 都不得再引用旧 prompt 包。"""
-    failures: list[int] = []
-    for node in ast.walk(ast.parse(source)):
-        modules = (
-            [node.module or ""]
-            if isinstance(node, ast.ImportFrom)
-            else [alias.name for alias in node.names]
-            if isinstance(node, ast.Import)
-            else []
-        )
-        if any(
-            "direct.prompts" in module or module == "prompts" or module.startswith("prompts.")
-            for module in modules
-        ):
-            failures.append(node.lineno)
-    return failures
-
-
-def test_brain_tool_and_harness_have_no_legacy_prompt_imports() -> None:
-    paths = [
-        ROOT / "pokemon_agent/direct/brain_tool.py",
-        *(ROOT / "pokemon_agent/harness").rglob("*.py"),
-    ]
-
-    failures = [(path, legacy_imports(path.read_text(encoding="utf-8"))) for path in paths]
-
-    assert all(not lines for _path, lines in failures)
-
-
-@pytest.mark.parametrize(
-    "source",
-    [
-        "from pokemon_agent.direct.prompts import decide_action",
-        "from .prompts import decide_action",
-    ],
-)
-def test_whole_layer_guard_rejects_legacy_prompt_import(source: str) -> None:
-    assert legacy_imports(source) == [1]
+    assert result.returncode != 0
+    assert "[FAIL] D " in result.stdout
+    location = RETIRED.replace(".", "/") if not source else relative
+    assert location in result.stdout

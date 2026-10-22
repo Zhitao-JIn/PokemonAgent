@@ -204,7 +204,7 @@ class Brain:
 
         **只认 `prompt` + `images`**：动作空间说明、目标栈、已知事实、记忆、
         领域知识、人类插话，以及"怎么选"的全部规则，全部由调用方拼好
-        （`pokemon_agent.direct.prompts.decide_action.build_prompt()`）；图也由
+        （`pokemon_agent.prompt.PromptGateway.render()`）；图也由
         调用方（tool 层）拼好递进来。
 
         **转发表在这里、不在 provider 里**（0915 129）：入参带了图、且当前

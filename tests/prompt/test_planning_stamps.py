@@ -10,7 +10,8 @@ from pokemon_agent.brain import Brain
 from pokemon_agent.direct.brain_tool import Decomposer, Judger, Planner
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.prompt import PromptGateway
-from scripts.capture_prompt_golden import GoldenCase, parse_request
+
+from .golden_cases import GoldenCase, parse_request
 
 GOLDEN = Path(__file__).parent / "golden"
 

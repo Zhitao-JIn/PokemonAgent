@@ -1,18 +1,10 @@
-"""已迁移任务通过活动版本网关与同源素材渲染逐字节对拍。"""
+"""活动版本网关与冻结 golden 文件逐字节对拍。"""
 
 from pathlib import Path
 
 import pytest
 
 from pokemon_agent.direct.brain_tool import decide_prompt_params
-from pokemon_agent.direct.prompts import (
-    decompose,
-    judge_success,
-    run_plan,
-    summarize,
-    summarize_run,
-    summarize_task,
-)
 from pokemon_agent.prompt import (
     DecideActionParams,
     DecomposeParams,
@@ -24,9 +16,11 @@ from pokemon_agent.prompt import (
     SummarizeTaskParams,
     VerifyParams,
 )
+from pokemon_agent.schemas.memory import ActMemory
+from pokemon_agent.schemas.memory.datastore.act_memory import render_sequence
 from pokemon_agent.world import TERRAIN_MEANING
-from scripts.capture_prompt_golden import GoldenCase, parse_request
 
+from .golden_cases import GoldenCase, parse_request
 from .legacy_adapter import UnrestorableRequest, adapt_request
 
 GOLDEN = Path(__file__).parent / "golden"
@@ -50,9 +44,7 @@ def gateway() -> PromptGateway:
 
 
 @pytest.mark.parametrize("path", REQUESTS, ids=lambda path: str(path.relative_to(GOLDEN)))
-def test_migrated_prompt_and_history_preserve_the_old_contract(
-    path: Path, gateway: PromptGateway
-) -> None:
+def test_gateway_prompt_preserves_the_frozen_bytes(path: Path, gateway: PromptGateway) -> None:
     case = GoldenCase.model_validate_json(path.read_bytes())
     try:
         adapted = adapt_request(case.request)
@@ -73,39 +65,42 @@ def test_migrated_prompt_and_history_preserve_the_old_contract(
         params = CONTRACTS[case.task].model_validate(
             {**params.model_dump(mode="json"), **adapted.prompt_fields}
         )
-    if case.task == "decide_action":
-        expected_history = []
-    elif case.task == "judge_success":
-        expected_history = [entry.render() for entry in req.history] + judge_success.memory_blocks(
-            req
-        )
-    elif case.task == "decompose":
-        expected_history = decompose.context_lines(req)
-    elif case.task == "run_plan":
-        expected_history = run_plan.history_blocks(req)
-    elif case.task == "verify":
-        expected_history = [entry.render() for entry in req.entries]
-    elif case.task == "summarize":
-        expected_history = summarize.labeled_blocks(
-            [entry.render() for entry in req.entries], req.verdicts
-        )
-    elif case.task == "summarize_task":
-        expected_history = summarize_task.history_blocks(req)
-    else:
-        expected_history = summarize_run.history_blocks(req)
-
     actual = gateway.render(case.task, params)
     history = gateway.render_history(case.task, params) if case.task != "decide_action" else []
 
     expected = path.with_name(path.name.removesuffix(".req.json") + ".prompt.txt").read_bytes()
     assert actual.text.encode("utf-8") == expected
-    assert history == expected_history
-    if case.task == "run_plan":
-        assert gateway.render_history(case.task, params, part="goals") == run_plan.goals_lines(
-            req.plan
-        )
     assert actual.task == case.task
     assert actual.version == "v1"
+    if case.task == "verify":
+        assert history == [entry.render() for entry in req.entries]
+    elif case.task in {"summarize", "summarize_task"}:
+        entries = req.entries
+        records = (
+            render_sequence(entries)
+            if entries and isinstance(entries[0], ActMemory)
+            else [entry.render() for entry in entries]
+        )
+        verdicts = {verdict.index: verdict for verdict in req.verdicts}
+        expected_blocks = []
+        for index, record in enumerate(records):
+            verdict = verdicts.get(index)
+            tag = "【未校验】"
+            if verdict is not None:
+                tag = ("【正样本】" if verdict.positive else "【负样本】") + verdict.why
+            expected_blocks.append(f"## 第 {index} 条 {tag}\n{record}")
+        assert history == expected_blocks
+    elif case.task == "summarize_run":
+        assert history == [entry.render() for entry in req.episode_memories]
+    elif case.task == "judge_success":
+        assert history[: len(req.history)] == [entry.render() for entry in req.history]
+    elif case.task == "decompose":
+        assert "\n".join(history) in actual.text
+    elif case.task == "run_plan":
+        assert history[: len(req.details)] == [entry.render() for entry in req.details]
+        goals = gateway.render_history(case.task, params, part="goals")
+        assert len(goals) == len(req.plan)
+        assert all(line in actual.text for line in goals)
 
 
 def test_snapshot_rendering_uses_structured_fields_ahead_of_old_text() -> None:

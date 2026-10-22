@@ -8,7 +8,6 @@ from _harness_fixtures.world import _Game
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Action, ActionSegment, Goal, Task
-from pokemon_agent.direct.prompts.decompose import build_prompt
 from pokemon_agent.direct.trace import parse
 from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeRunState
 from pokemon_agent.harness.episode.perceive.retrieve_knowledge_semantic_memory import (
@@ -17,6 +16,7 @@ from pokemon_agent.harness.episode.perceive.retrieve_knowledge_semantic_memory i
 from pokemon_agent.harness.episode.perceive.sense import sense as episode_sense
 from pokemon_agent.harness.run.perceive.sense import sense as run_sense
 from pokemon_agent.harness.run.run_state import RunState
+from pokemon_agent.prompt import DecomposeParams, PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolReflectReq,
@@ -26,7 +26,7 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.schemas.harness.domain import EpisodeOutput, Termination
 from pokemon_agent.schemas.memory import ActMemory
-from pokemon_agent.world import Facts, Observation, TaskObservation, TaskScene
+from pokemon_agent.world import TERRAIN_MEANING, Facts, Observation, TaskObservation, TaskScene
 from pokemon_agent.world.interface.domain.takeover_view import NamingView
 
 
@@ -239,3 +239,15 @@ def test_episode_prompt_keeps_existing_sections_after_memory_sense(tmp_path: Pat
     assert "## 当前画面\n  " in prompt
     assert "## 检索到的相关知识\n（没有检索到相关知识）" in prompt
     (tmp_path / "sense_prompt.txt").write_text(prompt, encoding="utf-8")
+
+
+def build_prompt(req: FromHarnessToBrainToolDecomposeReq) -> str:
+    """Render the same decomposition materials through the gateway."""
+    params = DecomposeParams.model_validate(
+        {
+            **req.model_dump(mode="json", exclude={"observation"}),
+            "observation": req.observation.model_dump(mode="json"),
+            "terrain_meanings": TERRAIN_MEANING,
+        }
+    )
+    return PromptGateway(None).render("decompose", params).text

@@ -9,8 +9,6 @@ from pydantic import JsonValue, TypeAdapter
 
 from pokemon_agent.brain import Brain, Goal, Task
 from pokemon_agent.direct.brain_tool import Decomposer
-from pokemon_agent.direct.prompts import decompose
-from pokemon_agent.direct.prompts.object_render import render_object_events
 from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeRunState
 from pokemon_agent.harness.episode.perceive.merge_retrieval import merge_retrieval
 from pokemon_agent.harness.episode.perceive.retrieve_object_semantic_memory import (
@@ -113,22 +111,30 @@ def test_retrieved_events_keep_filter_trace_and_old_model_input() -> None:
     assert not (merged.observation.facts.model_extra or {})
     assert memory.requests[0].conditions == {"run_id": "run", "map_id": "1"}
     assert trace.requests[0].refs == [e.place.key for e in events[:3]]
-    old_obs = obs.model_copy(
-        update={
-            "facts": obs.facts.model_copy(
-                update={"known_objects": render_object_events(events[:3])}
-            )
-        }
-    )
-    old_req = req.model_copy(update={"observation": old_obs})
-    assert provider.requests[0].prompt == decompose.build_prompt(old_req)
+    prompt = provider.requests[0].prompt
+    lines = [
+        "ep step1 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：进入新地图9",
+        "ep step2 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：无效果",
+        'ep step3 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：对话"你好"朋友"',
+        '下一行"',
+    ]
+    positions = [prompt.index(line) for line in lines]
+    assert positions == sorted(positions)
+    assert "ep step4" not in prompt
     assert response.calls[0].payload["prompt_task"] == "decompose"
 
 
 @pytest.mark.parametrize("outcome", ["dialog", "warp", "still"])
 def test_text_adapter_restores_only_information_present_in_the_text(outcome: str) -> None:
-    events = [event(2, outcome), event(1, "still")]
-    text = render_object_events(events)
+    result = {
+        "dialog": '对话"你好"朋友"\n下一行"',
+        "warp": "进入新地图9",
+        "still": "无效果",
+    }[outcome]
+    text = (
+        "ep step1 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：无效果\n"
+        f"ep step2 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：{result}"
+    )
     raw = restore_object_events(text)
     obs = TaskObservation(step=4, status="ok", scene=TaskScene.WALK)
     params = DecomposeParams.model_validate(
@@ -144,13 +150,6 @@ def test_text_adapter_restores_only_information_present_in_the_text(outcome: str
     actual = PromptGateway(None).render("decompose", params)
 
     assert "run_id" not in raw[0] and "map_id" not in raw[0]["actor_place"]
-    expected = decompose.build_prompt(
-        FromHarnessToBrainToolDecomposeReq(
-            goal=Goal(goal="g", criteria="c"),
-            observation=obs.model_copy(
-                update={"facts": obs.facts.model_copy(update={"known_objects": text})}
-            ),
-            max_tasks=3,
-        )
-    )
-    assert actual.text == expected
+    for line in text.splitlines():
+        assert line in actual.text
+    assert actual.text.index("ep step1") < actual.text.index("ep step2")

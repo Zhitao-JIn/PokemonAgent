@@ -4,16 +4,16 @@ from functools import partial
 
 import pytest
 from _harness_fixtures.app_config import ACTION_LIMITS
-from prompt import decision_example as _decide_action
 
 from pokemon_agent.brain import Goal
-from pokemon_agent.direct.prompts.judge_success import build_prompt as judge_prompt
+from pokemon_agent.prompt import JudgeParams, PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolJudgeReq,
 )
 from pokemon_agent.schemas.memory import TaskMemory
 from pokemon_agent.world import ActionEntry, ActionSpace, TaskObservation, TaskScene
+from prompt import decision_example as _decide_action
 
 decide_prompt = partial(_decide_action.build_prompt, max_segments=ACTION_LIMITS.max_segments)
 
@@ -53,14 +53,14 @@ def test_task_index_is_rendered_by_index_line_in_both_prompts(script: bool) -> N
     choose = _choose(script, [memory])
     judge = FromHarnessToBrainToolJudgeReq(goal=choose.goals[0], task_index=[memory])
 
-    decision, verdict = decide_prompt(choose), judge_prompt(judge)
+    decision, verdict = decide_prompt(choose), render_verdict(judge)
 
     assert memory.index_line() in decision and memory.index_line() in verdict
     assert "不能用来断言当前目标已达成" in decision
     assert "背景，不是本 task 完成的证据" in verdict
     empty = decide_prompt(_choose(script, []))
     assert "（本局内没有同目标的此前 task）" in empty
-    empty_judge = judge_prompt(FromHarnessToBrainToolJudgeReq(goal=choose.goals[0]))
+    empty_judge = render_verdict(FromHarnessToBrainToolJudgeReq(goal=choose.goals[0]))
     assert "## 本局内此前同目标的 task（背景，不是本 task 完成的证据）" not in empty_judge
     assert "（没有检索到相关知识）" in empty_judge
 
@@ -73,3 +73,12 @@ def test_decide_prompt_no_longer_has_the_cross_episode_section(script: bool) -> 
 
     assert "跨局摘要记忆" not in prompt
     assert "episode_memories" not in type(req).model_fields
+
+
+def render_verdict(req: FromHarnessToBrainToolJudgeReq) -> str:
+    """Render the current judgement contract from a harness envelope."""
+    return (
+        PromptGateway(None)
+        .render("judge_success", JudgeParams.model_validate(req.model_dump(mode="json")))
+        .text
+    )
