@@ -1,0 +1,79 @@
+{
+  "task": "summarize_run",
+  "case_id": "history-knowledge_battle_item_use.run.summarize_run.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "run_id": "eval-knowledge_battle_item_use",
+    "run_goal": "依次完成：在战斗中打开道具袋",
+    "goals": [
+      {
+        "task": {
+          "task_id": "knowledge_battle_item_use",
+          "goal": "在战斗中打开道具袋",
+          "success_criteria": "overlay 是 choice，且 options 是道具名（如 POKé BALL / POTION / ANTIDOTE）",
+          "max_steps": 15,
+          "initial_state_hint": "战斗行动菜单，scene=battle overlay=choice"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "last_episode_id": "eval-knowledge_battle_item_use-ep1",
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "episode_memories": [
+      {
+        "episode_id": "eval-knowledge_battle_item_use-ep1",
+        "run_id": "eval-knowledge_battle_item_use",
+        "run_goal": "依次完成：在战斗中打开道具袋",
+        "goal_id": "knowledge_battle_item_use",
+        "goal": "在战斗中打开道具袋",
+        "steps": 2,
+        "acts_used": 2,
+        "termination": "goal_done",
+        "reason": "达成 goal_done：关键在于先读 option_layout 与光标行列，确认 ITEM 就在 FIGHT 正下方，用 down 一步到位，再直接按 a 确认；没有多余按键，也没有误触其他选项。",
+        "summary": "在战斗主菜单中，光标初始停在 FIGHT，按一次 down 移到同列的 ITEM，再按一次 a 确认，成功打开道具袋（选项变为 POTION/CANCEL），全程仅用 2 键。",
+        "reusable_patterns": [
+          "战斗主菜单为 2×2（FIGHT/PKMN 上排，ITEM/RUN 下排）时，从 FIGHT 到 ITEM 直接按 down 一次即可，无需先按 right",
+          "移动光标前先读 option_layout 与当前光标行列，确认目标格相对方位再选键，避免多按",
+          "光标已在目标格时直接按 a 确认，不要先按方向键",
+          "判断道具袋是否打开：看 options 是否从 FIGHT/PKMN/ITEM/RUN 变为竖排道具名（如 POTION/CANCEL），光标是否落在第一项道具上，option_details 显示数量"
+        ],
+        "critical_decisions": [
+          "第 0 步选择 down 而非 right：ITEM 与 FIGHT 同列且在其下一行，down 是正确方向，一步命中",
+          "第 1 步光标已在 ITEM 上，直接按 a 确认，没有多余移动"
+        ],
+        "failure_points": [
+          "若未读光标行列就盲按方向键，可能多按或移出目标格，浪费键数",
+          "到达目标格后若继续按方向键而非 a，会错过确认时机"
+        ],
+        "quality_score": 0.85,
+        "quality_rationale": "两个 task 均为单步正样本，前后状态字段（光标坐标、option_layout、option_details）完整清晰，策略可直接复用；但任务极短、无负样本，泛化证据有限，故略低于满分。",
+        "applicable_scenes": [
+          "scene:battle",
+          "overlay:choice",
+          "scene:menu"
+        ],
+        "tags": [
+          "battle",
+          "menu",
+          "item_bag",
+          "cursor_navigation",
+          "choice_overlay"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAAFLElEQVR4nO3djU3rMBSG4QYxGivACGUmGAFWYLdepZIr19d/cZwcn+P3kRCiNGmlfDqxHcdZbrfb7ZKxLEv09dhm63vD11Pbu32U/r93/6XtIWupCWBN2NzfuYNcCkDNtq37r9ke53sR+Ezg4fVSIXaai1U/93rvKrN3/0d/PxwcwFTYattiPezd/9HfDwcG0BdWkNo2Yqu9+z/6+0GgDVjqvQLdesHAkegFQ1cbUMKWwXDo8jpi0MJghb3w2Hug0xCn4JoOzfoewmfPEBWwpppRBW0avgL6lQ/2DDUMEwbNH+wODfS1YSWAmM+mUzCnQ5hsAzoE3LbY8e3SC/aHR/yJn77Smd7fLrUP6BTmwp8IcvgwjB+k3Cxq93f4P+iXO75dAxirWP5ruUCl7vWgCurmTwT2uePatQ0YC9j6Wmo4JZyl7H85TsE2xI7l03zSLcMwR18Ki7UlYS+E/nEdqhe8Inz25I7pMAHktsk5DRNAzIkAQlTTMEzPoRE6GnPbVAEJC4a4LxjohTYgRBFAiBrinpAzbtlMXZOuWV+wZkZ2bv8sDaI8gKVLgKUDnJqFUxuWrevglP6G0lNwy/BP7OD3nOhQs38mViivgC3L9I5WcbjGbSSAsRCOFrYUQqj8FNwSuNjpr2ebbOv+OR0rr4AtwYm1ybYIJ1OG+9i6f0KoNIC5HmrLtrXvOWJbLc2Go6kIIAfLLpVtQNi5L5sAGrBEOkF793EWAmjALXPv9ZZ9SCCARtyU3klIAI1YlN5LTQANWCKPItu6fTjWeVaQVQzDIC+3qHsNydO2mQDWrMaVmshQO8Uqtv/SfEKN7bIzmQhgTbByN76XQlLahoBN3AYsTSKtkWs39dg/jFfAlkZ6ahJpS7A0zEcc1RQBXNX06lpDSNgmPgWnTp/hlYHwJ3czU810em3jbaMyUQFjIdlTlWpCWHNnXamnfOM0bSOAe+bj1W7XOq+PkBk/BUM3AgibAeShM6hBBYStTsjHx0e0B0hjHDFUQNiogK7y/f7+Pr1OJUQOFRA2Hljt2npfX1/3339/f/ffPz8/0fellj5j/pxNqeNLBYTNS3FhW9BxFRJYUQFhezKC6x2/vb3df1+v16M/EopQATFXAL+/v+8/gEgAga5twNqp6W5c0LUFXRWkTTg3KiB0VsCw8r2/v0cr2ufn59P/AR8VELoqoKt8rqK5Kx6ubQdsQQWEjgqYqnxb23ZhbxhzowJi7AoYVr5arjfsKl5rxYRtVEDoaAO6NluvcT1XGbkSMjcqIGwHcK2c9HiRQgWEjjaga6u5NuBWe8cPYRMVEDbuCXG92rBihuOBgI8KCB0V0M1gLrXlUpUw7Amn7hvGXKiAGLsChqtbhSsblCphao0YxgaxogJC1+pYqVWwWtt0rI41B1bHgu31AXtgjcDJK+AIj1bwvyhsyB3TRwUM33RWCGJtwDM/H8fzK1/41IR7AKUfpif9+ZA7vo9xwNgj6XMb95J6aOBZn4+L6PF9iZ3uzm6HSX8+jhM7ln5H5KkXHLa/zj4F8lQl22LH979LcZKPSqDNZ1vs+D6GYRiDw5FSbXquBUMUAYQoAghRBBCiCCBEEUCIIoAQRQAhigBCFAGEKAIIUQQQogggRBFAiCKAEEUAIYoAQhQBhCgCCFEEEKIIIEQRQIgigBBFACGKAEIUAYQoAghRBBCiCCBEEUCIIoAYI4CxlcyB0ysgIcRUzwmBfcM/JwS2Df2cENim4jkhsKv5OSFAb7F8DfW4Vlym8w+Lg+dvNwJbaAAAAABJRU5ErkJggg==",
+        "markdown": "# 战斗中打开道具袋\n\n## 场景\n战斗场景，主菜单叠加层 choice，2×2 选项：FIGHT/PKMN（上排）、ITEM/RUN（下排），光标初始在 FIGHT。\n\n## 步骤\n1. 读 option_layout 与光标行列，确认 ITEM 在 FIGHT 正下方（同列下一行）。\n2. 按一次 down，光标从 FIGHT 移到 ITEM。\n3. 光标已在 ITEM 时直接按 a 确认，打开道具袋。\n\n## 验证成功\n- options 从 FIGHT/PKMN/ITEM/RUN 变为竖排道具名（如 POTION / CANCEL）。\n- 光标落在第一项道具上，option_details 显示数量（如 POTION × 1）。\n\n## 教训\n- 不要盲按方向键：先确认目标格相对当前格的方位，down 比 right 更直接。\n- 到达目标格后立即按 a，不要继续移动光标。"
+      }
+    ],
+    "termination": "goal_done",
+    "judge_reason": "当前帧 overlay 是 choice，选项为 POTION / CANCEL，光标停在 POTION，道具袋已在战斗中打开",
+    "episodes": 1,
+    "succeeded": 1,
+    "acts_used": 2,
+    "max_episodes": 3
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_battle_item_use.run.summarize_run.000001"
+}

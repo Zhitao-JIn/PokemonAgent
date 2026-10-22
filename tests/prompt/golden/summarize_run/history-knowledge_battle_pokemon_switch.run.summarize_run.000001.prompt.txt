@@ -1,0 +1,32 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：在战斗中打开宝可梦列表
+终止类别：goal_done；判定依据：画面显示 overlay 为 choice，选项是 BULBASAUR / PIDGEY 宝可梦名字，对话框写着 Choose a POKéMON.，已打开宝可梦列表
+累计 1 局，其中 1 局成功，使用 2 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_battle_pokemon_switch｜在战斗中打开宝可梦列表｜completed｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_battle_pokemon_switch-ep1) 目标：在战斗中打开宝可梦列表（成功，goal_done，2 个 task / 2 键）
+  结论  达成 goal_done：关键在于先读 option_layout 与光标行列，确认 FIGHT 与 PKMN 同行相邻，一次 right 精准落位后直接 a 确认，没有任何试探性多余按键。
+  总结  战斗选单中光标初始在 FIGHT，按一次 right 移到 PKMN，再按一次 a 即打开宝可梦列表（显示 'Choose a POKéMON.' 并竖排列出 BULBASAUR/PIDGEY），全程 2 键达成目标。
+  可复用经验  战斗选单为 2×2 布局（FIGHT/PKMN 上排，ITEM/RUN 下排），左右换列、上下换行；移动光标前先读 option_layout 与当前光标行列，算出目标格相对位移再按键；光标已停在 PKMN 上时直接按 a 即可打开宝可梦列表，无需再按方向键；打开列表后界面显示 'Choose a POKéMON.' 并竖排列出队伍宝可梦，用上下选择、a 确认；到达目标格后立即停止按键，避免越位
+  关键决策  第 0 步直接按 right 而非先按 down 或多次试探，一步命中 PKMN；第 1 步直接按 a 确认已选中的 PKMN，一步进入选择界面
+  失败点  本局无负样本；潜在风险是未先读光标行列就盲按方向键，可能越位到 ITEM/RUN 或多次试探浪费按键
+  质量分 0.85（理由：两个 task 均为单键达成、前后状态字段完整且与截图一致，正样本清晰可复用；但过程极简单、未覆盖列表内选择与确认步骤，信息量有限，故未给满分。）
+  标签  battle、menu、pokemon_switch、cursor_navigation、choice_overlay
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

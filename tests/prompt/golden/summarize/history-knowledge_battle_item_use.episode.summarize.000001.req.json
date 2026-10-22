@@ -1,0 +1,98 @@
+{
+  "task": "summarize",
+  "case_id": "history-knowledge_battle_item_use.episode.summarize.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "entries": [
+      {
+        "run_id": "eval-knowledge_battle_item_use",
+        "episode_id": "eval-knowledge_battle_item_use-ep1",
+        "task_id": "knowledge_battle_item_use-t1",
+        "goal": "在战斗选单里把光标从 FIGHT 移到 ITEM（按 right 或 down 到第 2 行第 1 列）",
+        "termination": "goal_done",
+        "reason": "成功靠的是唯一一次 down：2×2 选单中 FIGHT 正下方就是 ITEM，一步到位；没有多余按键，也没有触发战斗结算或遇敌。",
+        "steps_used": 1,
+        "total_acts": 0,
+        "summary": "战斗选单（choice 叠加层）初始光标在 FIGHT（第1行第1列），按一次 down 后光标移到 ITEM（第2行第1列），与目标位置一致；全程 my BULBASAUR L5 HP 20/20、foe RATTATA L3 HP 15/15 未变，仅用 1/4 键即达成 goal_done。",
+        "reusable_patterns": [
+          "战斗选单为 2 行×2 列（FIGHT/PKMN 上排，ITEM/RUN 下排）时，从 FIGHT 到 ITEM 直接按 down 一次即可，无需先按 right。",
+          "移动光标前先读 option_layout 与光标行列，确认目标格相对当前格的方位再选键，避免多按。",
+          "到达目标格后立即停手，不要按 A 确认，除非 task 明确要求选择该选项。"
+        ],
+        "critical_decisions": [
+          "第 0 步选择 down 而非 right：ITEM 与 FIGHT 同列（第1列）且在其下一行，down 是正确方向，一步命中。"
+        ],
+        "failure_points": [],
+        "quality_score": 0.9,
+        "quality_rationale": "记录前后状态完整、光标坐标与 option_layout 变化清晰，正样本单步达成，可直接作为同类选单导航的范例；因任务极短、无负样本可分析，略低于满分。",
+        "tags": [
+          "battle",
+          "choice_menu",
+          "cursor_navigation",
+          "down",
+          "goal_done"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "### Task knowledge_battle_item_use-t1\n- 初始：battle/choice，光标 FIGHT（1行1列），BULBASAUR L5 20/20 vs RATTATA L3 15/15\n- 操作：`down` ×1\n- 结果：光标 ▶ITEM（2行1列），goal_done，用键 1/4\n- 结论：FIGHT 正下方即 ITEM，单次 down 即可；到位即停，勿多按。"
+      },
+      {
+        "run_id": "eval-knowledge_battle_item_use",
+        "episode_id": "eval-knowledge_battle_item_use-ep1",
+        "task_id": "knowledge_battle_item_use-t2",
+        "goal": "按 a 确认 ITEM，打开道具袋",
+        "termination": "goal_done",
+        "reason": "只按了 1 次 a 就达成目标：因为进入时光标已经预置在 ITEM 上，直接确认即打开道具袋；没有走错方向键，也没有浪费键数。",
+        "steps_used": 1,
+        "total_acts": 1,
+        "summary": "战斗场景（地图12 x=12 y=24，朝向east，BULBASAUR L5 20/20 对 RATTATA L3 15/15）中，主菜单叠加层 choice 的 2x2 选项为 FIGHT/PKMN/ITEM/RUN，光标已停在 ITEM（第2行第1列）。按一次 a 后，叠加层仍为 choice，但选项变为竖排 POTION / CANCEL，光标停在 POTION，option_details 显示 POTION × 1，即成功从战斗主菜单进入道具袋列表。全程仅用 1/4 键，goal_done。",
+        "reusable_patterns": [
+          "战斗主菜单中若光标已在 ITEM，直接按 a 即可打开道具袋列表，无需先移动光标",
+          "打开道具袋后叠加层仍是 choice，但选项变为竖排道具名（如 POTION / CANCEL），可用选项字段和 option_details 确认是否成功",
+          "确认道具袋是否打开：看 options 是否从 FIGHT/PKMN/ITEM/RUN 变为道具名列表，光标是否落在第一项道具上"
+        ],
+        "critical_decisions": [
+          "第1步按 a 确认 ITEM：这是唯一且正确的转折，直接打开道具袋；若光标不在 ITEM 而先按方向键反而浪费键数"
+        ],
+        "failure_points": [],
+        "quality_score": 0.9,
+        "quality_rationale": "记录前后状态字段完整、变化明确（选项从战斗菜单变为道具列表、光标位置、道具数量），且只有一步正样本，对同类“打开道具袋”任务参考价值高；因任务极短、无负样本，略低于满分。",
+        "tags": [
+          "battle",
+          "item_menu",
+          "choice_overlay",
+          "single_key",
+          "goal_done"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAAFLElEQVR4nO3djU3rMBSG4QYxGivACGUmGAFWYLdepZIr19d/cZwcn+P3kRCiNGmlfDqxHcdZbrfb7ZKxLEv09dhm63vD11Pbu32U/r93/6XtIWupCWBN2NzfuYNcCkDNtq37r9ke53sR+Ezg4fVSIXaai1U/93rvKrN3/0d/PxwcwFTYattiPezd/9HfDwcG0BdWkNo2Yqu9+z/6+0GgDVjqvQLdesHAkegFQ1cbUMKWwXDo8jpi0MJghb3w2Hug0xCn4JoOzfoewmfPEBWwpppRBW0avgL6lQ/2DDUMEwbNH+wODfS1YSWAmM+mUzCnQ5hsAzoE3LbY8e3SC/aHR/yJn77Smd7fLrUP6BTmwp8IcvgwjB+k3Cxq93f4P+iXO75dAxirWP5ruUCl7vWgCurmTwT2uePatQ0YC9j6Wmo4JZyl7H85TsE2xI7l03zSLcMwR18Ki7UlYS+E/nEdqhe8Inz25I7pMAHktsk5DRNAzIkAQlTTMEzPoRE6GnPbVAEJC4a4LxjohTYgRBFAiBrinpAzbtlMXZOuWV+wZkZ2bv8sDaI8gKVLgKUDnJqFUxuWrevglP6G0lNwy/BP7OD3nOhQs38mViivgC3L9I5WcbjGbSSAsRCOFrYUQqj8FNwSuNjpr2ebbOv+OR0rr4AtwYm1ybYIJ1OG+9i6f0KoNIC5HmrLtrXvOWJbLc2Go6kIIAfLLpVtQNi5L5sAGrBEOkF793EWAmjALXPv9ZZ9SCCARtyU3klIAI1YlN5LTQANWCKPItu6fTjWeVaQVQzDIC+3qHsNydO2mQDWrMaVmshQO8Uqtv/SfEKN7bIzmQhgTbByN76XQlLahoBN3AYsTSKtkWs39dg/jFfAlkZ6ahJpS7A0zEcc1RQBXNX06lpDSNgmPgWnTp/hlYHwJ3czU810em3jbaMyUQFjIdlTlWpCWHNnXamnfOM0bSOAe+bj1W7XOq+PkBk/BUM3AgibAeShM6hBBYStTsjHx0e0B0hjHDFUQNiogK7y/f7+Pr1OJUQOFRA2Hljt2npfX1/3339/f/ffPz8/0fellj5j/pxNqeNLBYTNS3FhW9BxFRJYUQFhezKC6x2/vb3df1+v16M/EopQATFXAL+/v+8/gEgAga5twNqp6W5c0LUFXRWkTTg3KiB0VsCw8r2/v0cr2ufn59P/AR8VELoqoKt8rqK5Kx6ubQdsQQWEjgqYqnxb23ZhbxhzowJi7AoYVr5arjfsKl5rxYRtVEDoaAO6NluvcT1XGbkSMjcqIGwHcK2c9HiRQgWEjjaga6u5NuBWe8cPYRMVEDbuCXG92rBihuOBgI8KCB0V0M1gLrXlUpUw7Amn7hvGXKiAGLsChqtbhSsblCphao0YxgaxogJC1+pYqVWwWtt0rI41B1bHgu31AXtgjcDJK+AIj1bwvyhsyB3TRwUM33RWCGJtwDM/H8fzK1/41IR7AKUfpif9+ZA7vo9xwNgj6XMb95J6aOBZn4+L6PF9iZ3uzm6HSX8+jhM7ln5H5KkXHLa/zj4F8lQl22LH979LcZKPSqDNZ1vs+D6GYRiDw5FSbXquBUMUAYQoAghRBBCiCCBEEUCIIoAQRQAhigBCFAGEKAIIUQQQogggRBFAiCKAEEUAIYoAQhQBhCgCCFEEEKIIIEQRQIgigBBFACGKAEIUAYQoAghRBBCiCCBEEUCIIoAYI4CxlcyB0ysgIcRUzwmBfcM/JwS2Df2cENim4jkhsKv5OSFAb7F8DfW4Vlym8w+Lg+dvNwJbaAAAAABJRU5ErkJggg==",
+        "markdown": "## Task knowledge_battle_item_use-t2\n\n- **初始**：battle，overlay=choice，选项 FIGHT/PKMN/ITEM/RUN，光标在 ITEM（2行2列布局第2行第1列），BULBASAUR L5 20/20 vs RATTATA L3 15/15。\n- **操作**：按 `a`。\n- **结果**：overlay 仍为 choice，选项变为竖排 `POTION / CANCEL`，光标在 POTION，`option_details: POTION × 1`，道具袋成功打开。\n- **判定**：goal_done，用 1/4 键。\n- **要点**：光标已在 ITEM 时直接按 a 即可，无需方向键。"
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "按 down 后光标从 FIGHT 移到 ITEM（截图第1帧到第2帧可见光标下移），朝目标推进"
+      },
+      {
+        "index": 1,
+        "positive": true,
+        "why": "按 a 后叠加层从 FIGHT/PKMN/ITEM/RUN 变为 POTION/CANCEL 道具列表（截图第3帧可见），成功打开道具袋"
+      }
+    ],
+    "episode_id": "eval-knowledge_battle_item_use-ep1",
+    "run_id": "eval-knowledge_battle_item_use",
+    "run_goal": "依次完成：在战斗中打开道具袋",
+    "goal_id": "knowledge_battle_item_use",
+    "goal": "在战斗中打开道具袋",
+    "termination": "goal_done",
+    "judge_reason": "当前帧 overlay 是 choice，选项为 POTION / CANCEL，光标停在 POTION，道具袋已打开",
+    "steps": 2,
+    "acts_used": 2,
+    "max_steps": 15
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_battle_item_use.episode.summarize.000001"
+}

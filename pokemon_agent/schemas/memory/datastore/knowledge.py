@@ -44,15 +44,5 @@ class KnowledgeRecord(BaseModel):
     run_id: str = Field(description="产出它的 run（追溯用，不是它的身份）")
     episode_id: str = Field(description="产出它的那一局（追溯用，不是它的身份）")
 
-    def render(self) -> str:
-        """渲染成进 prompt 的样子——**就是正文本身**。
-
-        知识库没有"来源章"要摆在第一行（那是 `EpisodeMemory` 的规矩：成败是
-        机械判定，必须压过 LLM 的叙述）。一条知识没有"成没成"可言，
-        正文就是它的全部；`source` 只进 metadata 供人追溯，不进 prompt——
-        读者关心"这个世界的规则是什么"，不关心它是哪一局读到的。
-        """
-        return self.text
-
 
 __all__ = ["KnowledgeRecord"]

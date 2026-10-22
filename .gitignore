@@ -36,6 +36,7 @@ memory/voided-*/
 memory/*/vectors.jsonl
 memory/*/index.json
 memory/task_memory/
+memory/run_memory/
 memory/snapshots/
 Claude outputs/
 canvas.miora

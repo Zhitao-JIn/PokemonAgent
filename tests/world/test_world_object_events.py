@@ -86,7 +86,6 @@ def _observation(
     return TaskObservation(
         step=0,
         place=place,
-        status="",
         facts=Facts(facing=facing, dialog_text=dialog, landmarks=landmarks or []),
         scene=TaskScene.WALK,
     )

@@ -1,0 +1,51 @@
+{
+  "task": "summarize_run",
+  "case_id": "synthetic-variant-1",
+  "source": "synthetic",
+  "request_kind": "current",
+  "request": {
+    "run_id": "run-1",
+    "run_goal": "出发",
+    "goals": [],
+    "episode_memories": [
+      {
+        "episode_id": "ep-1",
+        "run_id": "run-1",
+        "run_goal": "出发",
+        "goal_id": "",
+        "goal": "进门",
+        "steps": 1,
+        "acts_used": 2,
+        "termination": "goal_done",
+        "reason": "地图改变",
+        "summary": "已进门。",
+        "reusable_patterns": [
+          "从门口向上"
+        ],
+        "critical_decisions": [
+          "选门"
+        ],
+        "failure_points": [
+          "避免撞墙"
+        ],
+        "quality_score": 0.8,
+        "quality_rationale": "有执行证据",
+        "applicable_scenes": [],
+        "tags": [
+          "导航"
+        ],
+        "first_frame": null,
+        "last_frame": null,
+        "markdown": "本局记录"
+      }
+    ],
+    "termination": "budget_exhausted",
+    "judge_reason": "",
+    "episodes": 1,
+    "succeeded": 0,
+    "acts_used": 2,
+    "max_episodes": 3
+  },
+  "max_segments": 3,
+  "source_ref": ""
+}

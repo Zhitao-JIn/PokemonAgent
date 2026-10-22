@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from pokemon_agent.env import env_str
-from pokemon_agent.mcpclient.action_space import action_space_for, with_prompt_text
+from pokemon_agent.mcpclient.action_space import action_space_for
 from pokemon_agent.mcpclient.client import McpClient, McpToolError
 from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolExecuteReq,
@@ -144,7 +144,7 @@ class WorldMcpTool:
         assert req.observation is not None, "get_action_space() needs the observation in question"
         body = self._client.call_tool_sync("get_action_space", {})
         return FromHarnessToGameToolGetActionSpaceResp(
-            action_space=with_prompt_text(ActionSpace.model_validate(body["data"]), req.observation)
+            action_space=ActionSpace.model_validate(body["data"])
         )
 
     def perceive_task(self) -> FromHarnessToGameToolPerceiveTaskResp:

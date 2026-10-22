@@ -113,7 +113,7 @@ def test_zero_execution_rejudgement_sees_latest_empty_plan_and_returns_blocked(t
         episode_id="ep",
         goal=entry("parent").task,
         ep_ctx=EpisodeContext(
-            observation=TaskObservation(step=0, status="ok", scene=TaskScene.WALK, facts=Facts())
+            observation=TaskObservation(step=0, scene=TaskScene.WALK, facts=Facts())
         ),
         latest_planning=proposal,
         judge_trigger="no_pending",

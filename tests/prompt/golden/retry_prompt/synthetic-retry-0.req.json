@@ -1,0 +1,14 @@
+{
+  "task": "retry_prompt",
+  "case_id": "synthetic-retry-0",
+  "source": "synthetic",
+  "request_kind": "retry",
+  "request": {
+    "base_prompt": "基础 prompt\n请输出 JSON。",
+    "attempt": 1,
+    "reason": "JSON 格式错误",
+    "raw": "{broken"
+  },
+  "max_segments": 3,
+  "source_ref": ""
+}

@@ -10,6 +10,7 @@ from evals.brain_plan.dataset import load as load_plans
 from pokemon_agent.brain import Brain
 from pokemon_agent.brain.errors import ToolTimeout
 from pokemon_agent.direct.brain_tool import Decomposer, Planner
+from pokemon_agent.prompt import PromptGateway
 
 
 def test_retry_explains_missing_and_nonexistent_references_and_keeps_both_calls():
@@ -27,9 +28,11 @@ def test_retry_explains_missing_and_nonexistent_references_and_keeps_both_calls(
     corrected = {**invalid, "execution_order": ["existing:1", "existing:2"]}
     model = ScriptedLLM(text_reply(json.dumps(invalid)), text_reply(json.dumps(corrected)))
 
-    response = Decomposer(Brain(plan_llm=model), policy=call_policy(max_attempts=2)).decompose(
-        case.request
-    )
+    response = Decomposer(
+        Brain(plan_llm=model),
+        policy=call_policy(max_attempts=2),
+        prompt_gateway=PromptGateway(None),
+    ).decompose(case.request)
 
     assert response.decomposition.execution_order == ["existing:1", "existing:2"]
     assert len(response.calls) == 2
@@ -48,7 +51,11 @@ def test_plan_parse_retry_includes_the_same_correction_channel():
     valid = {"new_items": [], "execution_order": None, "why": "保留"}
     model = ScriptedLLM(text_reply(json.dumps(invalid)), text_reply(json.dumps(valid)))
 
-    response = Planner(Brain(plan_llm=model), policy=call_policy(max_attempts=2)).plan(case.request)
+    response = Planner(
+        Brain(plan_llm=model),
+        policy=call_policy(max_attempts=2),
+        prompt_gateway=PromptGateway(None),
+    ).plan(case.request)
 
     assert len(response.calls) == 2
     assert response.calls[0].error in response.calls[1].payload["prompt"]
@@ -59,9 +66,11 @@ def test_decompose_transport_retry_does_not_invent_a_parse_correction():
     valid = {"new_items": [], "execution_order": None, "why": "保留"}
     model = ScriptedLLM(ToolTimeout("network timeout"), text_reply(json.dumps(valid)))
 
-    response = Decomposer(Brain(plan_llm=model), policy=call_policy(max_attempts=2)).decompose(
-        case.request
-    )
+    response = Decomposer(
+        Brain(plan_llm=model),
+        policy=call_policy(max_attempts=2),
+        prompt_gateway=PromptGateway(None),
+    ).decompose(case.request)
 
     assert len(response.calls) == 2
     assert response.calls[0].error_kind == "ToolTimeout"

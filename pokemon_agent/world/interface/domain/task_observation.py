@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
-from pydantic import Field, computed_field
+from typing import Any
+
+from pydantic import Field, SerializerFunctionWrapHandler, computed_field, model_serializer
 
 from .observation import Observation
 from .takeover_view import TakeoverView
@@ -47,23 +49,38 @@ class TaskObservation(Observation):
             return named[0]
         return None
 
+    @model_serializer(mode="wrap")
+    def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """历史观测没有结构化增量时保留原信封。"""
+        data = handler(self)
+        if not self.facts.model_fields_set.intersection(
+            (
+                "neighbor_cells",
+                "cells",
+                "option_grid",
+                "cursor_cell",
+                "option_annotations",
+                "battle_status",
+                "terrain_visible",
+            )
+        ):
+            data.pop("observation_flags", None)
+        return data
+
     @computed_field
     @property
-    def observation_notes(self) -> list[str]:
-        """显示相关的观测限制；缺文字、切分不全和业务视图缺失分别说明，不推断稳定性。"""
-        notes: list[str] = []
+    def observation_flags(self) -> list[str]:
+        """同帧的结构化限制标志，不包含给模型看的措辞。"""
+        flags: list[str] = []
         if not (self.facts.screen or self.facts.dialog_text or self.facts.options):
-            notes.append("未解码出屏幕文字，不能据此判断界面已结束")
+            flags.append("no_text")
         if self.menu_decode_complete is False:
-            if self.covered_by_script:
-                notes.append("选单切分不完整，接管参数以业务视图为准；缺选项不表示没有选单")
-            else:
-                notes.append("选单切分不完整，不能用空选项判断没有选单；以 screen 核对文字")
+            flags.append("incomplete_menu")
         if self.covered_by_script and self.takeover is None:
-            notes.append("接管业务视图缺失，脚本参数依据可能不足；覆盖标志不代表参数已知")
+            flags.append("missing_takeover")
         if self.scene is TaskScene.TRANSITION:
-            notes.append("当前分类为过场，单帧不能判断是否稳定；需新观测确认")
-        return notes
+            flags.append("transition")
+        return flags
 
 
 __all__ = ["TaskObservation"]

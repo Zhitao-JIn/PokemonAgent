@@ -81,7 +81,6 @@ from .interface import (
     JudgeResult,
     ModelCall,
     PlanResult,
-    Reflection,
     RunPlan,
     RunSummary,
     ScriptArg,
@@ -205,7 +204,7 @@ class Brain:
 
         **只认 `prompt` + `images`**：动作空间说明、目标栈、已知事实、记忆、
         领域知识、人类插话，以及"怎么选"的全部规则，全部由调用方拼好
-        （`pokemon_agent.direct.prompts.decide_action.build_prompt()`）；图也由
+        （`pokemon_agent.prompt.PromptGateway.render()`）；图也由
         调用方（tool 层）拼好递进来。
 
         **转发表在这里、不在 provider 里**（0915 129）：入参带了图、且当前
@@ -944,39 +943,6 @@ class Brain:
             return None
 
     # ---- 世界知识抽取 ----
-
-    # ---- 记忆整理 ----
-
-    def reflect(
-        self,
-        *,
-        prompt: str,
-        before: str,
-        after: str,
-        action_text: str,
-    ) -> Reflection:
-        """把这一步整理成一条经验：**看到什么 → 做了什么 → 变成什么**。
-
-        **本版不调模型**：四样东西都已经在参数里，让模型再复述一遍只会引入
-        它自己的措辞偏差，还多烧一次调用。`prompt` 收下但本版不消费——
-        接口按"可能会调"设计（`reflect` 后面也要变成 LLM 接入），
-        六个方法的形状因此统一。
-
-        **本方法不写库**：写库是状态变更，而大脑无状态。
-        **不盖章坐标**：`episode_id`/`step` 由调用方加——大脑不知道自己在哪一局、
-        第几步。
-
-        前置条件：`before`/`after` 是渲染好的文本。调用方要
-        保证这一点（渲染是它的事）。
-        """
-        assert before, "reflect() got an empty before-snapshot text"
-        assert after, "reflect() got an empty after-snapshot text"
-
-        return Reflection(
-            before=before,
-            action_text=action_text,
-            after=after,
-        )
 
     # ---- 内部 ----
 

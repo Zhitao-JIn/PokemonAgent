@@ -1,0 +1,38 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：让护士把队伍治好
+终止类别：stalled；判定依据：stalled
+累计 3 局，其中 0 局成功，使用 52 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_pokemon_center_heal｜让护士把队伍治好｜abandoned｜note=上一局只反复与路人对话，未找到护士台；改为新目标从室内导航到护士处｜overturned=false
+- plan-eval-knowledge_pokemon_center_heal-1｜从当前地图41的室内走到宝可梦中心护士台前并让护士治疗队伍｜abandoned｜note=上一局在室内反复撞门/对话路人，未找到护士台；改为先定位护士再治疗｜overturned=false
+- plan-eval-knowledge_pokemon_center_heal-2｜从地图41室内当前位置走到宝可梦中心护士台前（找到柜台后的护士并与其对话）｜failed｜note=stalled｜overturned=false
+- plan-eval-knowledge_pokemon_center_heal-3｜在护士对话中选择治疗选项，让护士把队伍治好｜pending｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_pokemon_center_heal-ep1) 目标：让护士把队伍治好（未成功，decompositions_exhausted，3 个 task / 23 键）
+  结论  让护士把队伍治好；decompositions_exhausted；任务 3；动作 23
+  （本局无正文：本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆））
+
+(eval-knowledge_pokemon_center_heal-ep2) 目标：从当前地图41的室内走到宝可梦中心护士台前并让护士治疗队伍（未成功，decompositions_exhausted，2 个 task / 18 键）
+  结论  从当前地图41的室内走到宝可梦中心护士台前并让护士治疗队伍；decompositions_exhausted；任务 2；动作 18
+  （本局无正文：本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆））
+
+(eval-knowledge_pokemon_center_heal-ep3) 目标：从地图41室内当前位置走到宝可梦中心护士台前（找到柜台后的护士并与其对话）（未成功，decompositions_exhausted，3 个 task / 11 键）
+  结论  从地图41室内当前位置走到宝可梦中心护士台前（找到柜台后的护士并与其对话）；decompositions_exhausted；任务 3；动作 11
+  （本局无正文：本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆））
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

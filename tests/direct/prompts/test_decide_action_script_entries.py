@@ -7,7 +7,7 @@ from pokemon_agent.world import PlaceInWorld, TaskObservation, TaskScene
 
 def _obs(scene: TaskScene) -> TaskObservation:
     return TaskObservation(
-        step=0, status="s", scene=scene, place=PlaceInWorld(map_id=12, x=13, y=8)
+        facts={"overlay": "none"}, step=0, scene=scene, place=PlaceInWorld(map_id=12, x=13, y=8)
     )
 
 
@@ -16,9 +16,9 @@ def _obs(scene: TaskScene) -> TaskObservation:
 
 def test_decide_prompt_lists_script_entries() -> None:
     from _harness_fixtures.app_config import ACTION_LIMITS
+    from prompt.decision_example import build_prompt
 
     from pokemon_agent.brain.interface import Goal
-    from pokemon_agent.direct.prompts.decide_action import build_prompt
     from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
     from pokemon_agent.world import ActionEntry, ActionSpace
 

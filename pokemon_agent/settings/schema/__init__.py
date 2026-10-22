@@ -13,6 +13,7 @@ from .deployment import (
 from .loop import ActionLimitsConfig, BudgetConfig, LoopConfig
 from .memory import MemoryConfig
 from .models import ModelLink, ModelsConfig, PlanModelLink
+from .prompt import PromptSection
 from .resolved_config import ResolvedConfig
 from .retry import RequestTimeoutsConfig, RetryConfig
 from .review import ReviewConfig
@@ -29,6 +30,7 @@ __all__ = [
     "ModelsConfig",
     "PathsSection",
     "PlanModelLink",
+    "PromptSection",
     "RequestTimeoutsConfig",
     "ResolvedConfig",
     "RetryConfig",

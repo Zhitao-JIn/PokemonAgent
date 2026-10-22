@@ -19,7 +19,7 @@ def _capability(tmp_path) -> MemoryCapability:
 
 
 def _act(step: int = 1) -> dict:
-    obs = ActMemory.Observation(step=step, status=f"第 {step} 步。")
+    obs = ActMemory.Observation(facts={"overlay": "none"}, step=step)
     return ActMemory(
         before=obs, action="up", after=obs, step=step, episode_id=_EP, run_id=_RUN
     ).model_dump()

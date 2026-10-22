@@ -24,14 +24,8 @@ class Observation(BaseModel):
     place: PlaceInWorld | None = Field(
         default=None,
         description="主角所在的格子。**结构化的那一份**——"
-        "`facts.where` 是它渲染出来给模型读的文本，"
+        "位置仅传结构化原料，文字由prompt模块生成；"
         "而记忆的键要拿这三个数去算，不能靠反解字符串",
-    )
-    status: str = Field(
-        description="这一帧的**状态行**：由 scene + overlay 机械拼出来的一句话"
-        "（`你在野外。对话框：「…」`）。**不是画面描述**——画面描述是视觉模型写的"
-        "`facts.overview`，那才是这一帧真正被看到的东西。"
-        "这一句只是 prompt 里「当前状态」那一行的内容",
     )
     facts: Facts = Field(
         default_factory=Facts,
@@ -66,15 +60,3 @@ class Observation(BaseModel):
         """
         place = self.place.key if self.place is not None else "-"
         return "|".join((place, self.facts.stall_key_part()))
-
-    def render(self, indent: str = "  ") -> str:
-        """把这份观测渲染成一段可读、可打分的文本。
-
-        **字段顺序固定不是为了好看**：前后两份观测要摆在一起给大脑比对，同一个
-        字段在两份里必须出现在同一个相对位置，否则"哪一项变了"就得靠它先做一次
-        字段配对。具体顺序在 `Facts._entries()` 里维护。
-
-        """
-        body = self.facts.render(indent)
-        text = body if body else f"{indent}{self.status}"
-        return text

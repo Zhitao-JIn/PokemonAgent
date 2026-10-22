@@ -1,10 +1,4 @@
-"""`retrieve_object_semantic_memory`：查语义记忆（object：这张地图上互动过的事件），
-文字化后交给 `plan_episode`。
-
-事件 → 文本的转换在 `pokemon_agent.prompts.object_render.render_object_events`（渲染是
-prompt 层的事，本节点只决定"查什么、记什么账"）。**统计口径 = 事件条数**——渲染文本
-一行一条事件，两者恒相等。
-"""
+"""按地图与局内键号检索原始交互事件，保留 trace 引用和事件顺序。"""
 
 from __future__ import annotations
 
@@ -14,7 +8,6 @@ from typing import Any
 from langgraph.runtime import Runtime
 from pydantic import TypeAdapter
 
-from pokemon_agent.direct.prompts.object_render import render_object_events
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolRecallReq,
     FromHarnessToTraceToolAppendReq,
@@ -29,14 +22,7 @@ from ..episode_state import EpisodeRunState
 def retrieve_object_semantic_memory(
     state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]
 ) -> dict[str, Any]:
-    """查本 run 在这张地图上的 object 事件。**只改 `ep_ctx.object_semantic_memory` 一处。**
-
-    `obs.place` 为 None 时没有地图可过滤，按空事件处理——一局刚开始、地形还没
-    读出来是正常情形，不是异常。
-
-    前置条件：`state.ep_ctx` 非空。
-    后置条件：返回 `{"object_semantic_memory": <渲染后的文本>}`。
-    """
+    """前置：本圈观测已取；返回本圈 object_semantic_events，不渲染模型文案。"""
     deps = runtime.context
     ep, place = state.episode_id, state.ep_ctx.observation.place
     # 两个步号分家（0928 定稿）：object 事件按**局内累计键数**存坐标（与 ActMemory 同口径），
@@ -44,7 +30,7 @@ def retrieve_object_semantic_memory(
     before_step, step = state.total_acts, state.step + 1
     t0 = time.time()
     if place is None:
-        events: list = []
+        events: list[ObjectFactEvent] = []
     else:
         resp = deps.memory.recall(
             FromHarnessToMemoryToolRecallReq(
@@ -60,7 +46,6 @@ def retrieve_object_semantic_memory(
         if before_step is not None:
             events = [e for e in events if e.step < before_step]
     t1 = time.time()
-    known = render_object_events(events)
     # `refs` 记每条事件的物体格（`PlaceInWorld.key`，形如 `12:13:8`）。
     #
     # `query` 照实记检索条件，`place` 为 None 时写 `map_id=None`——**这一格那时
@@ -84,4 +69,4 @@ def retrieve_object_semantic_memory(
             ended_at=t1,
         )
     )
-    return {"ep_ctx": state.ep_ctx.model_copy(update={"object_semantic_memory": known})}
+    return {"ep_ctx": state.ep_ctx.model_copy(update={"object_semantic_events": events})}

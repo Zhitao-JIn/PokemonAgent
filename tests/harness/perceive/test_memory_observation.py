@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 from _harness_fixtures.harness import build_fake
+from _harness_fixtures.prompt_text import observation_text
 from _harness_fixtures.world import _Game
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Action, ActionSegment, Goal, Task
-from pokemon_agent.direct.prompts.decompose import build_prompt
 from pokemon_agent.direct.trace import parse
 from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeRunState
 from pokemon_agent.harness.episode.perceive.retrieve_knowledge_semantic_memory import (
@@ -17,6 +17,7 @@ from pokemon_agent.harness.episode.perceive.retrieve_knowledge_semantic_memory i
 from pokemon_agent.harness.episode.perceive.sense import sense as episode_sense
 from pokemon_agent.harness.run.perceive.sense import sense as run_sense
 from pokemon_agent.harness.run.run_state import RunState
+from pokemon_agent.prompt import DecomposeParams, PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolReflectReq,
@@ -26,7 +27,7 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.schemas.harness.domain import EpisodeOutput, Termination
 from pokemon_agent.schemas.memory import ActMemory
-from pokemon_agent.world import Facts, Observation, TaskObservation, TaskScene
+from pokemon_agent.world import TERRAIN_MEANING, Facts, Observation, TaskObservation, TaskScene
 from pokemon_agent.world.interface.domain.takeover_view import NamingView
 
 
@@ -34,12 +35,12 @@ def observation(scene: TaskScene = TaskScene.NAMING) -> TaskObservation:
     """带确定文字和位置的内存观测，起名场合另带业务视图。"""
     return TaskObservation(
         step=0,
-        status="地图12 x=3 y=5，朝向 south",
         scene=scene,
         takeover=NamingView(target="YOUR NAME?", typed="RED")
         if scene is TaskScene.NAMING
         else None,
-        facts=Facts(where="地图12 x=3 y=5", facing="south", screen="YOUR NAME?"),
+        place={"map_id": 12, "x": 3, "y": 5},
+        facts=Facts(overlay="none", facing="south", screen="YOUR NAME?"),
     )
 
 
@@ -113,12 +114,12 @@ def test_current_and_legacy_memory_render_without_blind_note(snapshot: bool) -> 
         {**obs.model_dump(mode="json"), "perceived": False}
     )
 
-    text = stored.render() if snapshot else obs.render()
+    text = observation_text(stored) if snapshot else observation_text(obs)
 
     assert "没做视觉感知" not in text
     assert "地图12 x=3 y=5" in text
     assert "perceived" not in obs.model_dump()
-    assert text == obs.facts.render()
+    assert text == observation_text(obs)
 
 
 def test_knowledge_refresh_uses_task_scene_when_facts_scene_does_not_change(
@@ -239,3 +240,15 @@ def test_episode_prompt_keeps_existing_sections_after_memory_sense(tmp_path: Pat
     assert "## 当前画面\n  " in prompt
     assert "## 检索到的相关知识\n（没有检索到相关知识）" in prompt
     (tmp_path / "sense_prompt.txt").write_text(prompt, encoding="utf-8")
+
+
+def build_prompt(req: FromHarnessToBrainToolDecomposeReq) -> str:
+    """Render the same decomposition materials through the gateway."""
+    params = DecomposeParams.model_validate(
+        {
+            **req.model_dump(mode="json", exclude={"observation"}),
+            "observation": req.observation.model_dump(mode="json"),
+            "terrain_meanings": TERRAIN_MEANING,
+        }
+    )
+    return PromptGateway(None).render("decompose", params).text

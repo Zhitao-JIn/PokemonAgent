@@ -25,7 +25,7 @@ def load(family: str, version: str = "v1") -> list[Annotation]:
     path = directory / f"{family}.jsonl"
     if hashlib.sha256(path.read_bytes()).hexdigest() != expected["sha256"]:
         raise DatasetError("annotation file hash mismatch")
-    _, source = directory_for(family, manifest["collection_version"])
+    source_directory, source = directory_for(family, manifest["collection_version"])
     if source.files_sha256["inputs.jsonl"] != expected["inputs_sha256"]:
         raise DatasetError("annotation source hash mismatch")
     rows = read_models(path, Annotation)
@@ -34,10 +34,17 @@ def load(family: str, version: str = "v1") -> list[Annotation]:
         c.case_id for c in cases
     ]:
         raise DatasetError("annotation identity/count mismatch")
+    raw_requests = {
+        item["case_id"]: item["request"]
+        for item in (
+            json.loads(line)
+            for line in (source_directory / "inputs.jsonl").read_text("utf-8").splitlines()
+        )
+    }
     for case, row in zip(cases, rows, strict=True):
         if row.family != family or row.request_sha256 != case.source.request_canonical_sha256:
             raise DatasetError("annotation request mismatch")
-        request = case.request.model_dump(mode="json")
+        request = raw_requests[case.case_id]
         for evidence in row.evidence:
             value = encoded(resolve(request, evidence.pointer))
             if (

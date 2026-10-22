@@ -38,21 +38,22 @@ pokemon_agent/memory/
 
 ## 三、存储布局
 
-一个 kind = `memory/` 下一个子文件夹 = 一个 `LocalMemoryStore` 实例。`MemoryTool.__init__`
-（`mcpclient/memory_local.py`）一次造五个：`step_memory`（ActMemory）/ `task_memory` / `object_memory` / `episode_memory` / `knowledge_memory`。
+一个 kind = `memory/` 下一个子文件夹 = 一个 `LocalMemoryStore` 实例。`MemoryCapability.__init__`
+（`memory/recall.py`）一次造六个：`step_memory`（ActMemory）/ `task_memory` / `object_memory` / `episode_memory` / `run_memory` / `knowledge_memory`。
 
 ```
 memory/<kind>/
-├── <uuid>.json     # json 类记录（step_memory / object_memory）
-├── <uuid>.md       # md 类记录（episode_memory / knowledge_memory）
+├── <uuid>.json     # json 类记录（step_memory / task_memory / object_memory）
+├── <uuid>.md       # md 类记录（episode_memory / run_memory / knowledge_memory）
 ├── index.json      # 倒排索引（派生物：写穿 + 可自愈重建）
 └── vectors.jsonl   # 向量 sidecar（派生物：append-only）
 ```
 
 - kind 白名单是模块级 `_KINDS`（md 类子集 `_MD_KINDS`），构造期 `assert kind in _KINDS`，传错即炸；
   `root` 缺省为**进程启动目录**下的 `memory/`（`Path.cwd()`，0916 起——不再从 `__file__`
-  推仓库根）。`MemoryTool` 收**一个 `memory_root`**（父目录），四族**一视同仁**地住在
-  它下面各自的 `<kind>/` 子文件夹里——"哪一族住哪"不是一个需要逐个指定的问题
+  推仓库根）。`MemoryCapability` 收**一个 `memory_root`**（父目录），六族**一视同仁**地住在
+  它下面各自的 `<kind>/` 子文件夹里——"哪一族住哪"不是一个需要逐个指定的问题；
+  `MemoryTool` 的 `memory_root` 只是客户端快照根，服务端根由 memory server 的 `paths.memory` 决定
   （0916 中途一度拆成 `step_root` / `object_root` / `episode_root` / `knowledge_root`
   四个独立开关，同日回退）。
 
@@ -122,18 +123,18 @@ memory 只把它们当 `metadata` / `payload` / `text` 三块收发，字段含�
 
 | kind | 记录类 | 一条 = 什么 | 格式 |
 |---|---|---|---|
-| `step_memory` | `ActMemory` | 一键：`before` / `rationale` / `action` / `after`（各含 `Observation` 快照）；集合名沿用旧名 | json |
+| `step_memory` | `ActMemory` | 一键：`before` / `action` / `after`（各含 `Observation` 快照）；集合名沿用旧名 | json |
 | `task_memory` | `TaskMemory` | 一个 task：来源章 + 本 task ActMemory（带正负标注）的蒸馏正文 | md |
 | `episode_memory` | `EpisodeMemory` | 一整局：来源章 + 本局 TaskMemory（带正负标注）的蒸馏正文 | md |
 | `object_memory` | `ObjectFactEvent` | 一次按键对一格的交互事件 | json |
 | `knowledge_memory` | `KnowledgeRecord` | 一条和坐标无关的世界知识 | md |
 
 - `ActMemory`：`before` / `after` 都是 `ActMemory.Observation`（内部类，非 `world.Observation`），
-  含 `step` / `place`（`map_id,x,y`）/ `status` / `facts`（`Facts` 快照，`extra="allow"`）/
-  `done` / `perceived`；另有 `rationale: list[str]`、`action: str`、`step`、`episode_id`、`task_id`、`run_id`、
+  含 `step` / `place`（`map_id,x,y`）/ `facts`（结构化快照，`extra="allow"`）/ `done`；
+  另有 `action: str`、`result`、`step`、`episode_id`、`task_id`、`run_id`、
   `before_frame` / `after_frame`（base64 PNG 字符串，可为 `None`）。落盘 `text=""`，
   所以它**不参与语义检索**，只按 `episode_id` / `task_id` 等值筛 + 调用方按 `step` 数值排。
-- `TaskMemory`：来源章 `run_id` / `episode_id` / `task_id` / `goal` / `termination`（`success` 由它推出，不存） / `steps_used` / `start_step`，
+- `TaskMemory`：来源章 `run_id` / `episode_id` / `task_id` / `goal` / `termination`（`success` 由它推出，不存） / `steps_used` / `total_acts`，
   派生正文同 `EpisodeMemory`（含 `reason`），另带首末帧。
 - `EpisodeMemory`：来源章 `episode_id` / `run_id` / `goal` / `termination`（`success` 由它推出） / `steps`（task 数）/ `acts_used`
   （harness 盖的），派生正文 `summary` / `reason` / `reusable_patterns` / `critical_decisions` / `failure_points` / `quality_score` /

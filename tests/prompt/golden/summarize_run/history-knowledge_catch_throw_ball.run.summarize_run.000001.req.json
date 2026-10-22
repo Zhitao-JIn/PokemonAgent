@@ -1,0 +1,90 @@
+{
+  "task": "summarize_run",
+  "case_id": "history-knowledge_catch_throw_ball.run.summarize_run.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "run_id": "eval-knowledge_catch_throw_ball",
+    "run_goal": "依次完成：在战斗中打开背包，选精灵球扔出去",
+    "goals": [
+      {
+        "task": {
+          "task_id": "knowledge_catch_throw_ball",
+          "goal": "在战斗中打开背包，选精灵球扔出去",
+          "success_criteria": "对话框里出现投球结果文字（如 All right! ... was caught! / Darn! The POKéMON broke free!）",
+          "max_steps": 15,
+          "initial_state_hint": "野生战斗中，背包至少有一枚精灵球"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "last_episode_id": "eval-knowledge_catch_throw_ball-ep1",
+        "note": "",
+        "overturned": false
+      }
+    ],
+    "episode_memories": [
+      {
+        "episode_id": "eval-knowledge_catch_throw_ball-ep1",
+        "run_id": "eval-knowledge_catch_throw_ball",
+        "run_goal": "依次完成：在战斗中打开背包，选精灵球扔出去",
+        "goal_id": "knowledge_catch_throw_ball",
+        "goal": "在战斗中打开背包，选精灵球扔出去",
+        "steps": 3,
+        "acts_used": 12,
+        "termination": "goal_done",
+        "reason": "最终达成 goal_done：关键在于选单导航用行列差算最短路径（FIGHT→ITEM 本可 down 一步直达）、背包里 down 一次精准落到 POKé BALL 再 a 确认、投球后必须连续按 a 让结算文字逐帧展开。卡点在于投球后画面短暂无变化时机械重复 a 四次，浪费预算并触发 stalled 判定。",
+        "summary": "在战斗中从 FIGHT 选单打开背包、选中 POKé BALL 投出，并连续按 a 推进打字机式结算对话，直到出现「Aww! It appeared to be caught!」；全程 12 键内完成，但中途因重复按 a 空转被判 stalled 一次。",
+        "reusable_patterns": [
+          "2×2 战斗选单（FIGHT/PKMN 上排，ITEM/RUN 下排）从 FIGHT 到 ITEM 最省键是 down 一次，不要 right+down+left 绕路",
+          "背包列表默认光标在 POTION，用 down/up 移到 POKé BALL，核对 ▶ 指向目标项后再按 a",
+          "对话框出现「RED used POKé BALL!」即表示投球已发出，属于正样本，不必再重复按 a",
+          "投球结算文字是打字机式逐帧展开，需连续按 a 直到出现 was caught!/broke free!/appeared to be caught! 等关键词",
+          "判断投球结果看 dialog 字段是否含 caught/broke free 关键词，而非看 HP 或场景变化",
+          "连续两次按键前后快照完全相同（同帧同对话）时立即停手，改等待或换键，避免空转被判 stalled"
+        ],
+        "critical_decisions": [
+          "step=2 按 left 从 RUN 回到 ITEM，是纠偏关键一步，把光标拉回目标格",
+          "step=3 在 ITEM 上按 a，正确触发道具菜单",
+          "step=4 按 down 把光标 POTION→POKé BALL，精准落在目标物品",
+          "step=5 按 a 确认使用，对话框变为「RED used POKé BALL!」",
+          "step=6 起继续按 a 四次无变化，是走错的分支点，应在此处改策略",
+          "t3 中连续两次 a 把对话从「RED used POKé BALL!」推进到完整结果文字，命中判据后立即停止"
+        ],
+        "failure_points": [
+          "step=0 按 right 从 FIGHT 到 PKMN，方向偏离目标（应向下到 ITEM），浪费 1 键",
+          "step=1 按 down 从 PKMN 到 RUN，继续远离 ITEM，再浪费 1 键",
+          "step=6–9 共 4 次按 a 均无状态变化，未识别画面冻结，纯浪费键数并导致 stalled",
+          "未出现投球结果文字时没有尝试等待或换键，机械重复同一输入"
+        ],
+        "quality_score": 0.8,
+        "quality_rationale": "三个 task 覆盖了选单导航、背包选球、结算对话推进的完整链路，正负样本都有且字段具体，可复用性强；但样本仅一局、目标简单，且 t2 后半段同帧负样本信息量低，故未给更高分。",
+        "applicable_scenes": [
+          "scene:battle",
+          "scene:menu",
+          "overlay:dialog",
+          "overlay:choice",
+          "interaction:pokemon_center"
+        ],
+        "tags": [
+          "battle",
+          "item_menu",
+          "pokeball",
+          "dialog_advance",
+          "navigation",
+          "stalled_recovery"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "# 战斗中使用精灵球投球的完整链路\n\n## 流程\n1. **战斗选单 → ITEM**：2×2 布局（FIGHT/PKMN 上排，ITEM/RUN 下排）。从 FIGHT 到 ITEM 最省键是 **down 一次**；不要 right→down→left 绕路。移动前先读 option_layout 的行列与光标行列，按行列差算最短路径。\n2. **背包选球**：道具列表默认光标在 POTION，按 **down** 移到 POKé BALL，核对 ▶ 指向目标项后按 **a** 确认。\n3. **确认投球**：对话框出现「RED used POKé BALL!」即表示球已投出，这是正样本信号，**不要重复按 a**。\n4. **推进结算**：投球结果文字是打字机式逐帧展开，需**连续按 a** 直到出现 `was caught!` / `broke free!` / `appeared to be caught!` 等关键词。判断达成看 dialog 字段关键词，不看 HP 或场景变化。\n\n## 教训\n- 连续两次按键前后快照完全相同（同帧同对话）时，立即停手，改等待或换键——本局在「RED used POKé BALL!」上机械按 a 四次，浪费预算并触发 stalled。\n- 方向直觉不可靠：从 FIGHT 按 right 到 PKMN 是偏离目标，应向下。"
+      }
+    ],
+    "termination": "goal_done",
+    "judge_reason": "对话框里出现了投球结果文字「Aww! It appeared to be caught!」，说明精灵球已经扔出去了",
+    "episodes": 1,
+    "succeeded": 1,
+    "acts_used": 12,
+    "max_episodes": 3
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_catch_throw_ball.run.summarize_run.000001"
+}

@@ -1,0 +1,153 @@
+{
+  "task": "summarize_task",
+  "case_id": "history-knowledge_shop_interaction.task.summarize_task.000001",
+  "source": "history",
+  "request_kind": "legacy",
+  "request": {
+    "entries": [
+      {
+        "before": {
+          "step": 0,
+          "place": {
+            "map_id": 42,
+            "x": 3,
+            "y": 5
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图42 x=3 y=5，朝向 north",
+          "scene": "shop",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图42 x=3 y=5",
+            "facing": "north",
+            "neighbors": "北 . 南 . 西 . 东 .",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 3,
+                "y": 3
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 0,
+                "y": 5
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 4,
+                "y": 7
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 5,
+                "y": 7
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=1 ##########  (x=-1..8)\ny=2 #........#  (x=-1..8)\ny=3 ###.N#####  (x=-1..8)\ny=4 ###..#####  (x=-1..8)\ny=5 #N#.@....#  (x=-1..8)\ny=6 ###......#  (x=-1..8)\ny=7 #...DDN..#  (x=-1..8)\ny=8 ##########  (x=-1..8)\ny=9 ##########  (x=-1..8)",
+            "map_id": 42,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "up",
+        "after": {
+          "step": 1,
+          "place": {
+            "map_id": 42,
+            "x": 3,
+            "y": 4
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图42 x=3 y=4，朝向 north",
+          "scene": "shop",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图42 x=3 y=4",
+            "facing": "north",
+            "neighbors": "北 N 南 . 西 . 东 #",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 3,
+                "y": 3
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 0,
+                "y": 5
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 4,
+                "y": 7
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 5,
+                "y": 7
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=0 ##########  (x=-1..8)\ny=1 ##########  (x=-1..8)\ny=2 #........#  (x=-1..8)\ny=3 ###.N#####  (x=-1..8)\ny=4 ###.@#####  (x=-1..8)\ny=5 #N#......#  (x=-1..8)\ny=6 ###......#  (x=-1..8)\ny=7 #...DDN..#  (x=-1..8)\ny=8 ##########  (x=-1..8)",
+            "map_id": 42,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 0,
+        "episode_id": "eval-knowledge_shop_interaction-ep1",
+        "task_id": "knowledge_shop_interaction-t1",
+        "run_id": "eval-knowledge_shop_interaction",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "up 后位置从 (3,5) 到 (3,4)，正对上方店员 (3,3)，到达目标柜台前"
+      }
+    ],
+    "task_id": "knowledge_shop_interaction-t1",
+    "episode_id": "eval-knowledge_shop_interaction-ep1",
+    "run_id": "eval-knowledge_shop_interaction",
+    "goal": "从 x=3 y=5 走到 x=3 y=4（柜台前，正对上方店员 x=3 y=3）",
+    "termination": "goal_done",
+    "judge_reason": "最后一条「之后变成」显示位置为地图42 x=3 y=4，与判据要求的 x=3 y=4 一致",
+    "steps_used": 1,
+    "max_steps": 6
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_shop_interaction.task.summarize_task.000001"
+}

@@ -1,0 +1,38 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现
+终止类别：actions_exhausted；判定依据：actions_exhausted
+累计 3 局，其中 0 局成功，使用 60 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_shop_interaction｜在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现｜abandoned｜note=上次在 x=3 y=4 反复按 a 只触发卖光药水的对话，未出现菜单；改为从柜台正前方重新定位店员再对话｜overturned=false
+- plan-eval-knowledge_shop_interaction-1｜从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）｜failed｜note=actions_exhausted｜overturned=false
+- plan-eval-knowledge_shop_interaction-2｜在地图42中从当前位置(5,6)绕到店员(5,5)的正面，即站到(5,6)正对北侧店员并确认对话能触发商店菜单；若对话只显示商品介绍，则尝试在对话结束后继续按 a 推进到菜单出现｜pending｜note=｜overturned=false
+- plan-eval-knowledge_shop_interaction-3｜若与(5,5)店员对话始终只出商品介绍，则改去柜台另一侧与(3,3)店员对话，站到其正下方(3,4)并连续按 a 直到菜单出现｜pending｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_shop_interaction-ep1) 目标：在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现（未成功，decompositions_exhausted，4 个 task / 25 键）
+  结论  在商店里找到店员，隔着柜台跟他说话，直到 BUY / SELL / QUIT 出现；decompositions_exhausted；任务 4；动作 25
+  （本局无正文：本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆））
+
+(eval-knowledge_shop_interaction-ep2) 目标：从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）（未成功，decompositions_exhausted，5 个 task / 20 键）
+  结论  从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）；decompositions_exhausted；任务 5；动作 20
+  （本局无正文：本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆））
+
+(eval-knowledge_shop_interaction-ep3) 目标：从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）（未成功，actions_exhausted，3 个 task / 15 键）
+  结论  从当前地图42的柜台区域走到店员柜台正前方，隔着柜台与店员对话，触发商店菜单（BUY/SELL/QUIT）；actions_exhausted；任务 3；动作 15
+  （本局无正文：本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆））
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

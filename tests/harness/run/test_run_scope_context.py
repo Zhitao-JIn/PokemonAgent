@@ -87,7 +87,10 @@ def _run(run: str, goal: str) -> RunMemory:
 
 def _state() -> RunState:
     observation = TaskObservation(
-        step=0, scene=TaskScene.WALK, status="当前状态", facts=Facts(where="地图12 x=3 y=5")
+        step=0,
+        scene=TaskScene.WALK,
+        place={"map_id": 12, "x": 3, "y": 5},
+        facts=Facts(overlay="none"),
     )
     return RunState(
         run_id="r1",

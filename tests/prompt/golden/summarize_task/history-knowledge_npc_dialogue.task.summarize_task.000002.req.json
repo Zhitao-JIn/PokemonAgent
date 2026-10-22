@@ -1,0 +1,260 @@
+{
+  "task": "summarize_task",
+  "case_id": "history-knowledge_npc_dialogue.task.summarize_task.000002",
+  "source": "history",
+  "request_kind": "legacy",
+  "request": {
+    "entries": [
+      {
+        "before": {
+          "step": 2,
+          "place": {
+            "map_id": 40,
+            "x": 5,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图40 x=5 y=3，朝向 east",
+          "scene": "walk",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图40 x=5 y=3",
+            "facing": "east",
+            "neighbors": "北 N 南 . 西 . 东 #",
+            "landmarks": [
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 2,
+                "y": 1
+              },
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 40,
+                "x": 5,
+                "y": 2
+              },
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 7,
+                "y": 3
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=-1 ##########  (x=1..10)\ny=0  ##########  (x=1..10)\ny=1  #II..#####  (x=1..10)\ny=2  ....N....#  (x=1..10)\ny=3  ....@#I#.#  (x=1..10)\ny=4  .........#  (x=1..10)\ny=5  .........#  (x=1..10)\ny=6  ###..#####  (x=1..10)\ny=7  ###..#####  (x=1..10)",
+            "map_id": 40,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "up",
+        "after": {
+          "step": 3,
+          "place": {
+            "map_id": 40,
+            "x": 5,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图40 x=5 y=3，朝向 north",
+          "scene": "walk",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图40 x=5 y=3",
+            "facing": "north",
+            "neighbors": "北 N 南 . 西 . 东 #",
+            "landmarks": [
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 2,
+                "y": 1
+              },
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 40,
+                "x": 5,
+                "y": 2
+              },
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 7,
+                "y": 3
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=-1 ##########  (x=1..10)\ny=0  ##########  (x=1..10)\ny=1  #II..#####  (x=1..10)\ny=2  ....N....#  (x=1..10)\ny=3  ....@#I#.#  (x=1..10)\ny=4  .........#  (x=1..10)\ny=5  .........#  (x=1..10)\ny=6  ###..#####  (x=1..10)\ny=7  ###..#####  (x=1..10)",
+            "map_id": 40,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 2,
+        "episode_id": "eval-knowledge_npc_dialogue-ep1",
+        "task_id": "knowledge_npc_dialogue-t2",
+        "run_id": "eval-knowledge_npc_dialogue",
+        "before_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAAIHElEQVR4nO2dDXKrOgyFw5ssLVtIlxDWRJfQbCF7yx23UZ/qMQEjwbHgfDMdKIlCMEI+ln/SnU6n54kQEP+hTkwIHZDAYQQkUOiABAodkEChAxIodEAChQ5IoNABCRQ6IIFCByRQ6IAECh2QQKEDEih0QALlfL1eT5H5+vo6dV23yPb5/BkKabH//Pw89X2/yH4Yhu9tZPultkL3lLsQmORA8iBdLpe37308Ht/b+/3+xwGX2ifbpUXYvRw/ur2F3ThgYu6l5O+32IsDpkhYw+12+/M5ke1PR9eA2nE+Pj5+t3pfb3Mbqz1Zzvm0M5Im1Nut7ckBI6CmFLmEOU5ltScHd0BxlNx5tGOtbU/mc5gqeG70stqTBRFQWkDRtzpS5RGrFL287JdExqnPjmRvYhiGlIl5Rt/+NEx/uF6vv/v6mBxP7/WyT/vp+GuC/+w/bXMNbm/6a8F5PLbiQOIk4jDambQDednrm5H+l2N6W9ovOcAQ1N70txfn0xFsCv1+q/3YDZTXtI3en3KASPaWv+51wtCk/sjaPu3Ulab7Qpfai23etZd30+X7YpOIbm9hN61ga2F4FKbumpIGij421XXVBbc/rANKJEPZl7COEumD28/lvNWJ9k6tE8uomr3Yu0bAmo52GQ+XLiCNkNDokJ1/Zj6Obqn9GtGrBj7ANs4lZ5tb1yfb/AbopK4M80mOpY9rRxOxu9S+FWodMW/09MHt3TXgnChYclTtHHPGmOXvqbVvCd2qlhZyfkz292jv6oBTN39MA+iIlUeuOdTae2kRb9J3TzdKHqh8f+/2czl7Rxn5knk1ObfarLWfGkK/Njp9Y71Bt+D2Lq1gCbPvIsuSm55Htq3ttwCdh+si5gFzMakdrzQEaWoUxFhjYSyyedu3AjoP10fJA+qIlpwv7adqRaqW2tan1UFq7VvRgOg83LCnPKBQO+VwTE/O1ZlL7FvRgOg0SB85DaO9Wfals3mu9ooS8teiFEHkmkqvzYlAfSD7pZxLnfDau+doryXzSjVLejO85qUSLGdJOCYnSg0MWepCnLD1iTitaEBi1ID5VEQ9Xq5l1tCAUz0F3sO4jsz3gNS8U39OJ3+KPFL41ip4CVIFez0k2unGGl6l80XXrmjOyZFSdasLMv1/tKpNS5F87RdB/s+dMJVXbSTWD/A1uL2FVLrmIfnICOi5vJyO6KU0lDijPme6cZGXV4Mvz+bhgEi8q+CpvKc4YQR9vAVWBzQtUKlDOAKvBkBe9ZZynvrYWFVMnPKAteylJSjRL2/giIPq9xAfutf8zuooNzWt0Ss6Tp3fo7EkUxJ1lBubkijv8dafUbEGH5cI+I61P98jD5g+Q6pfXc0Kej89bC3MRWkF6/2djIBjJ9I3oNQk944O787v2QDJo10ij4psiPyPuRW8h5URLGh9lztYTmm1gKNHwt7aCj4FZ42EeckJxxofR0vYexPeAa0aUOu/uYlaVsF+GnCXS/TWIo6WRzlpcGjkPUever0IHwG9SA71bnyhfo3O58fsVvDeeTcwd2rQ7pG5W9MwR28FW8cDHp3+6K1gb94lmZmA9ocOWOFg+Xopa9KPLBiwywGpZB6yXsqSJX1rNdUwMvJ6b9qTGvBFvlZhTmntwjVWixrUueWcerDvWudaCjXgRtWfOEE+V1Z35VnpKtZl9DofumqnBpwg7yce04DWKQl94XNLnyn5SqvjtLLGDjXgC/2zA/kPWefsSTc/wNdyRq+t0hL5BKOxMYG6zDzHO94Kmq/0uqcOtN5/84BUk/XOkGpQT8tELIp+a6R63AI64Jt8X14Fr+l8w8vx58zKQzccPKEGnDFIdc+T9R/UgO3wTs+MaSVPDTiMVP9rjkGkBmwIPdM/v+Fb6b/hdY4tq38k1IDA/t53oM+/FdSABfLFmuQYWi+tAfqamAc0aqPoq0JcwHlAzgkhUOiABAo14MF5UAPGJmmgiKv1969GFloDMg3jQNRRyvcGGlB0wJ3cyKhQAzolrtdaH9HKFusrWmAe8ODR8UINuK/R1PpYS9xXXF/RAjWgUxRpfWT5pdHvRw240xs7F7QG5LxgYsI6P4VdcQQKHZBAoQYkUJgHJCY4HpCEhhqQQKEGJFCoAYkJakASGmpAAoUakEChBiQmqAFJaKgBCRRqQAKFGpCYoAYkoaEGJFCoAQkUakBighqQhIYakEChBiR4Dbh0bqf193K97NGgr78H2ls1YFpZ8bn092fHflRlS3u0E1p+L7hroPw87F3Whqn9vdv8B/XQ9mjQ1/8ZtPzDL06EXtuEHNwB0YsDtb7+X+swDUOg0AEJlPBVMDXgDhzw4+OjWkslG72Psm9BA0YuPw97lwhYm4zM10BG26NBX38ftPz/aMCU1JXErt6W9kug7dGgr38IWP7fPSGyyrvumknZ8ZTplix5vq9XhkfaoyOhfIeo5edh79YIkez20r5BhH0LGjBy+Xnamx1Q9+1J14w+NtX3h7ZHg77+LmD5j+YBrU8B2h4N+vr7IOX/GwFrxWWef0PZt5IHjFp+XvaHTUS3pAFJPcwDOoHOw/XMA8bMQ3mCvv4hYPkzD2iEeUAbzAMaYR7QBvOAjqDzcB3zgPHyUGuBvv4+SPkzD+gEOg83RM8DopvxS+1byQNGLT/0cKy3EVC+VOm1OU/QlvZo0Nc/BC1/zgkhUMJ3xbUWCcnBHLAVDUgMPSGnwKC75qKni5qIgKlFUxtJUtWnh3Qj7dGgr/8auPy7YRiekZcHQ2vAPSxv1xvsrTXAPzsSJfdWFwxbAAAAAElFTkSuQmCC",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 3,
+          "place": {
+            "map_id": 40,
+            "x": 5,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图40 x=5 y=3，朝向 north",
+          "scene": "walk",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图40 x=5 y=3",
+            "facing": "north",
+            "neighbors": "北 N 南 . 西 . 东 #",
+            "landmarks": [
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 2,
+                "y": 1
+              },
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 40,
+                "x": 5,
+                "y": 2
+              },
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 7,
+                "y": 3
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=-1 ##########  (x=1..10)\ny=0  ##########  (x=1..10)\ny=1  #II..#####  (x=1..10)\ny=2  ....N....#  (x=1..10)\ny=3  ....@#I#.#  (x=1..10)\ny=4  .........#  (x=1..10)\ny=5  .........#  (x=1..10)\ny=6  ###..#####  (x=1..10)\ny=7  ###..#####  (x=1..10)",
+            "map_id": 40,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 4,
+          "place": {
+            "map_id": 40,
+            "x": 5,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图40 x=5 y=3，朝向 north。对话框：「OAK: RED, rai」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图40 x=5 y=3",
+            "facing": "north",
+            "neighbors": "北 N 南 . 西 . 东 #",
+            "landmarks": [
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 2,
+                "y": 1
+              },
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 40,
+                "x": 5,
+                "y": 2
+              },
+              {
+                "kind": "物",
+                "map_id": 40,
+                "x": 7,
+                "y": 3
+              }
+            ],
+            "dialog_text": "OAK: RED, rai",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 40,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│OAK: RED,         │\n│                  │\n│rai               │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 3,
+        "episode_id": "eval-knowledge_npc_dialogue-ep1",
+        "task_id": "knowledge_npc_dialogue-t2",
+        "run_id": "eval-knowledge_npc_dialogue",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "up 后朝向从 east 变为 north，正对北侧的人，朝目标方向推进"
+      },
+      {
+        "index": 1,
+        "positive": true,
+        "why": "面朝北按 a 后叠加层从 none 变为 dialog，出现 OAK: RED, rai 文字，达成目标"
+      }
+    ],
+    "task_id": "knowledge_npc_dialogue-t2",
+    "episode_id": "eval-knowledge_npc_dialogue-ep1",
+    "run_id": "eval-knowledge_npc_dialogue",
+    "goal": "面朝北（上方的人）按 a，把对话推到出现文字",
+    "termination": "goal_done",
+    "judge_reason": "对话框里出现了 OAK: RED, rai 的文字，对话非空，符合完成判据",
+    "steps_used": 2,
+    "max_steps": 6
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_npc_dialogue.task.summarize_task.000002"
+}

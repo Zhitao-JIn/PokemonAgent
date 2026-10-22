@@ -130,7 +130,7 @@ class ReflectPort(Protocol):
     """反思口：`Reflector` 满足它。本链路不调模型、无重试。"""
 
     def reflect(self, req: FromHarnessToBrainToolReflectReq) -> FromHarnessToBrainToolReflectResp:
-        """一次反思：渲染两帧 → 调大脑 → 用 `Reflection` + 坐标组装 `ActMemory`。"""
+        """一次反思：过滤存储盲区，用结构化观测 + 坐标组装 `ActMemory`（不经大脑）。"""
         ...
 
 

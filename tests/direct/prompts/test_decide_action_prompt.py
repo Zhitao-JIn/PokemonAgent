@@ -17,9 +17,9 @@ from __future__ import annotations
 from functools import partial
 
 from _harness_fixtures.app_config import ACTION_LIMITS
+from prompt import decision_example as _decide_action
 
 from pokemon_agent.brain.interface import Goal
-from pokemon_agent.direct.prompts import decide_action as _decide_action
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.world import ActionSpace, TaskObservation, TaskScene
 
@@ -37,7 +37,7 @@ def _goal_section(goals: list[Goal]) -> str:
     prompt = build_prompt(
         FromHarnessToBrainToolChooseOnceReq(
             goals=goals,
-            obs=TaskObservation(step=0, status="你在野外。", scene=TaskScene.WALK),
+            obs=TaskObservation(facts={"overlay": "none"}, step=0, scene=TaskScene.WALK),
             space=ActionSpace(names=["up"], descriptions={"up": "向上走"}),
             memories=[],
         )
@@ -97,8 +97,8 @@ def test_shop_prompt_lists_only_shop_scripts_and_requests_an_args_object() -> No
     request = FromHarnessToBrainToolChooseOnceReq(
         goals=[Goal(goal="买一个精灵球", criteria="背包球数增加一")],
         obs=TaskObservation(
+            facts={"overlay": "none"},
             step=0,
-            status="商店菜单",
             scene=TaskScene.SHOP_ITEMS,
             takeover=ShopItemsView(items=[], money=3000, bag=[]),
         ),
@@ -125,7 +125,6 @@ def test_battle_navigation_prompt_exposes_directions_scripts_and_cursor() -> Non
 
     observation = TaskObservation(
         step=0,
-        status="战斗菜单",
         scene=TaskScene.BATTLE_MENU,
         facts=Facts(overlay=Facts.Overlay.CHOICE, cursor="FIGHT", screen="▶FIGHT PKMN\n ITEM RUN"),
     )
@@ -149,10 +148,7 @@ def test_walk_prompt_prioritizes_navigation_scripts_for_long_or_blocked_routes()
     from pokemon_agent.world.action_space import compute_action_space
 
     observation = TaskObservation(
-        step=0,
-        status="野外",
-        scene=TaskScene.WALK,
-        facts=Facts(overlay=Facts.Overlay.NONE),
+        step=0, scene=TaskScene.WALK, facts=Facts(overlay=Facts.Overlay.NONE)
     )
     request = FromHarnessToBrainToolChooseOnceReq(
         goals=[Goal(goal="绕过障碍走到门口", criteria="到达门口")],

@@ -1,0 +1,8 @@
+{
+  "task": "last_judge",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "LastJudgeParams",
+  "reason": "CP4 首版迁移，共用片段保留旧措辞与次序",
+  "hash": "ba084f4520044654a183d2d38566d73f26dc718f53297f508e12f6d0875b90fc"
+}

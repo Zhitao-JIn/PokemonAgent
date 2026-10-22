@@ -1,0 +1,8 @@
+{
+  "task": "object_events",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "ObjectEventsParams",
+  "reason": "CP4 首版迁移，共用片段保留旧措辞与次序",
+  "hash": "fd1034699bfa7e3cf21916be319844fc8783f18f07b2dc99a0264a0d8a87bcab"
+}

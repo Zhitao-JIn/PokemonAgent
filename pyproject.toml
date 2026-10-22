@@ -50,7 +50,7 @@ dev = [
 include = ["pokemon_agent*", "evals*"]
 
 [tool.setuptools.package-data]
-pokemon_agent = ["reviewer/seats/ai/prompts/*.md", "settings/default.json"]
+pokemon_agent = ["reviewer/seats/ai/prompts/*.md", "settings/default.json", "prompt/**/*.md", "prompt/**/*.json", "prompt/registry.json"]
 
 [tool.ruff]
 line-length = 100

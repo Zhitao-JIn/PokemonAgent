@@ -4,7 +4,7 @@
 
 按 `truth_patch_1007.json` 对 490 帧应用 713 条批准操作。每条 set/delete/replace_group 核对 before；新增 unresolved 的两条额外核对键不存在。原始真值保留在 `eval_results/labeling_1007/truth_before_patch_1008.jsonl`，未修改样本、截图、WRAM、存档或补丁之外的真值字段。
 
-地图适用性统一调用 `world.ram.map_settled`：通行表指针非零且静态地图头 tileset 与 WRAM 的 D367 一致。原 1032 个地图已载入帧中，13 个 tileset 不一致的换图中间帧不再适用地形，加原 13 个无地图帧，共 26 帧地形为 N；适用帧为 1019。c-0109 的 walk_map、neighbors 无法确定，各在 unresolved_fields 保留原因、相应真值键删除；其他三项仍参与评分，不把整帧地形判 N。
+地图适用性统一调用 `world.ram.map_settled`：通行表指针非零且静态地图头 tileset 与 WRAM 的 D367 一致。原 1032 个地图已载入帧中，13 个 tileset 不一致的换图中间帧不再适用地形，加原 13 个无地图帧，共 26 帧地形为 N；适用帧为 1019。c-0109 的 walk_map、neighbors 无法确定，各在 unresolved_fields 保留原因、相应真值键删除；其他三项仍参与评分，不把整帧地形判 N。这里的 `where` / `walk_map` / `neighbors` 是**冻结数据集真值字段**，不是 world 运行期返回值（world 已只返回结构化 `place` / `cells` / `neighbor_cells`）。
 
 scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各覆盖 1019，walk_map/neighbors 各覆盖 1018，另有 c-0109 的两项 unresolved。coverage 的 unaccounted_fields 为空。完整诊断各组全为 C，地形仅不适用的 26 帧为 N。13 字段修补后基线为 962/1045，修复后为 1045/1045，regressed 为空。逐字段基线、四组 Inspect 日志、覆盖检查和原值核对报告均在 `eval_results/labeling_1007/`。
 

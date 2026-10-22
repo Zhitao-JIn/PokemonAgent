@@ -1,0 +1,8 @@
+{
+  "task": "observation",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "ObservationParams",
+  "reason": "CP4 首版迁移，共用片段保留旧措辞与次序",
+  "hash": "19b9e325f9cd7923cb509620eba20e0724f8815220f2495e5021991269b1b584"
+}

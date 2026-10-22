@@ -1,0 +1,32 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：在购买确认里选 NO 取消，退回商品列表
+终止类别：goal_done；判定依据：当前画面显示商品列表（POKé BALL/ANTIDOTE/PARLYZ HEAL/BURN HEAL），光标在 POKé BALL，对话为 'Take your time.'，YES/NO 确认框已消失，已退回商品列表。
+累计 1 局，其中 1 局成功，使用 12 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_shop_cancel_purchase｜在购买确认里选 NO 取消，退回商品列表｜completed｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_shop_cancel_purchase-ep1) 目标：在购买确认里选 NO 取消，退回商品列表（成功，goal_done，5 个 task / 12 键）
+  结论  达成 goal_done：关键在于每一步都按「当前叠加层与光标位置」判断该按什么键——竖排菜单用 down 逐项移动、确认框默认光标在 YES 时必须先 down 到 NO 再按 a，否则会误确认购买；每步后核对叠加层/对话/光标变化，没有一次空按。
+  总结  在商店（map42）里完成了一次完整的「进店→开菜单→进商品列表→进购买确认→取消购买」流程：先用两次 down 把光标从 BUY 移到 QUIT 退出商店，再用三次 a 重新打开商店菜单，一次 a 进入商品列表，三次 a 逐级推进到 YES/NO 确认框，最后 down+a 把光标从 YES 移到 NO 确认，成功退回商品列表。全程 11 键、5 个 task 全部正样本。
+  可复用经验  竖排选项菜单（BUY/SELL/QUIT、YES/NO）中目标项在下方时，连续按 down 逐项移动，每按一次核对光标字段是否前进一项。；商店购买流程是三级确认：商品列表按 a → 数量框 ×01 按 a → 'That will be ¥N. OK?' 按 a → YES/NO 确认框，每键推进一层，无需方向键。；取消购买：确认框光标默认在 YES，必须先按 down 移到 NO 再按 a；直接按 a 会完成购买。；取消成功的判定标志：YES/NO 框消失、对话变回 'Take your time.'、选项恢复为商品列表且光标回到 POKé BALL。；菜单关闭后若屏幕仍残留 BUY/SELL/QUIT 叠加层，先按 a 清掉残留，再按 a 重新触发 NPC 对话（对话→选项通常需两次 a）。；进入商品列表的判定：对话变为 'Take your time.'，选项变为 POKé BALL/ANTIDOTE/PARLYZ HEAL/BURN HEAL。
+  关键决策  第 10 步：在 YES/NO 确认框上按 down 把光标从 YES 移到 NO，这是取消购买而非完成购买的唯一分水岭。；第 6 步：光标已在 BUY 时直接按 a 进入商品列表，没有多余的方向键操作。；第 3–5 步：连续三次 a 依次清残留菜单、推进对话、弹出选项，正好在预算内重新打开商店菜单。
+  失败点  确认框默认光标在 YES，若习惯性直接按 a 会误确认购买，与「取消」目标相反——这是本流程最大的陷阱。；菜单关闭后画面可能残留 BUY/SELL/QUIT 叠加层，若误判为菜单仍打开而继续按方向键，会浪费键数。；把「退出商店（QUIT）」当成「取消购买」：两者目标不同，QUIT 只是任务链前置步骤，不能替代在确认框里选 NO。
+  质量分 0.90（理由：5 个 task 全部正样本、逐键前后状态（叠加层、光标、对话、选项）记录完整，因果链清晰，可直接复用于商店购买/取消流程；扣分点在于全程无失败对照样本，且流程较短，泛化到其他菜单场景需自行迁移。）
+  标签  shop、cancel_purchase、menu_navigation、yes_no_confirm、pokemon_center_shop
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

@@ -1,0 +1,128 @@
+{
+  "task": "decompose",
+  "case_id": "history-knowledge_battle_action_menu.episode.decompose.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "goal": {
+      "goal": "在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标",
+      "criteria": "scene 是 battle、overlay 是 choice，且 cursor 是 RUN"
+    },
+    "observation": {
+      "step": 0,
+      "place": {
+        "map_id": 12,
+        "x": 12,
+        "y": 24
+      },
+      "status": "（这一帧只读了内存）全局坐标 地图12 x=12 y=24，朝向 east。战斗中。可选项：FIGHT/ PKMN/ ITEM/ RUN，光标在 FIGHT",
+      "facts": {
+        "scene": "battle",
+        "overlay": "choice",
+        "where": "全局坐标 地图12 x=12 y=24",
+        "facing": "east",
+        "neighbors": "北 # 南 # 西 . 东 #",
+        "landmarks": [
+          {
+            "kind": "招牌",
+            "map_id": 12,
+            "x": 9,
+            "y": 27
+          }
+        ],
+        "dialog_text": "",
+        "options": [
+          "FIGHT",
+          "PKMN",
+          "ITEM",
+          "RUN"
+        ],
+        "cursor": "FIGHT",
+        "walk_map": "",
+        "map_id": 12,
+        "screen": " RATTATA    ·······\n    :L3      ·······\n ·HP:[██████] ·······\n ·────────│ ·······\n            ·······\n ·······    ·······\n ·······    ·······\n ·······  BULBASAUR\n ·······      :L5\n ·······  HP:[██████]\n ·······    20/ 20·\n ······· └────────┘\n┌───────┌──────────┐\n│       │          │\n│       │▶FIGHT PKMN │\n│       │          │\n│       │ ITEM  RUN│\n└───────└──────────┘",
+        "my_name": "BULBASAUR",
+        "my_level": "5",
+        "my_hp": "20/20",
+        "my_status": "ok",
+        "foe_name": "RATTATA",
+        "foe_level": "3",
+        "foe_hp": "15/15",
+        "foe_status": "ok",
+        "option_layout": "2 行 × 2 列，光标在第 1 行第 1 列；上/下 换行，左/右 换列\n▶FIGHT   PKMN\n ITEM   RUN"
+      },
+      "done": false,
+      "scene": "battle_menu",
+      "takeover": {
+        "kind": "battle_menu",
+        "mine": {
+          "name": "BULBASAUR",
+          "level": 5,
+          "hp": 20,
+          "max_hp": 20,
+          "status": "ok",
+          "active": true,
+          "moves": [
+            {
+              "name": "TACKLE",
+              "pp": 35
+            },
+            {
+              "name": "GROWL",
+              "pp": 40
+            }
+          ]
+        },
+        "foe": {
+          "name": "RATTATA",
+          "level": 3,
+          "hp": 15,
+          "max_hp": 15,
+          "status": "ok",
+          "active": false,
+          "moves": []
+        },
+        "trainer": false,
+        "party": [
+          {
+            "name": "BULBASAUR",
+            "level": 5,
+            "hp": 20,
+            "max_hp": 20,
+            "status": "ok",
+            "active": true,
+            "moves": [
+              {
+                "name": "TACKLE",
+                "pp": 35
+              },
+              {
+                "name": "GROWL",
+                "pp": 40
+              }
+            ]
+          }
+        ],
+        "bag": [
+          {
+            "name": "POTION",
+            "quantity": 1
+          }
+        ]
+      },
+      "menu_decode_complete": true,
+      "covered_by_script": true,
+      "selected_map_location": null,
+      "observation_notes": []
+    },
+    "task_memories": [],
+    "task_table": [],
+    "episode_index": [],
+    "knowledge": [],
+    "last_judge": null,
+    "max_tasks": 5,
+    "human_note": ""
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/decompose/inputs.jsonl#knowledge_battle_action_menu.episode.decompose.000001"
+}

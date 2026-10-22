@@ -16,7 +16,6 @@ def frame(
     observation = TaskObservation(
         step=0,
         place=PlaceInWorld(map_id=12, x=x, y=y),
-        status="",
         facts=Facts(facing="south"),
         scene=TaskScene.WALK,
     )

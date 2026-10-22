@@ -18,6 +18,7 @@ from pokemon_agent.harness.run.run_graph import compile_run_graph
 from pokemon_agent.harness.run.run_state import RunState
 from pokemon_agent.harness.run.store_run_memory import store_run_memory
 from pokemon_agent.harness.run.summarize_run import summarize_run
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import ModelCall
 from pokemon_agent.schemas.harness.domain import EpisodeOutput, Termination
 from pokemon_agent.schemas.memory import EpisodeMemory
@@ -79,7 +80,9 @@ def _runtime(tmp_path: Path, summarizer: object) -> Runtime:
 
 def _summarizer() -> RunSummarizer:
     return RunSummarizer(
-        _Brain(lambda n: True, lambda n: True, lambda n: True, 1), policy=call_policy()
+        _Brain(lambda n: True, lambda n: True, lambda n: True, 1),
+        policy=call_policy(),
+        prompt_gateway=PromptGateway(None),
     )
 
 

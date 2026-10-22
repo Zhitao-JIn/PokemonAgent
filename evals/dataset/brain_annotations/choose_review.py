@@ -64,7 +64,9 @@ def decision(case: InputCase) -> Decision:
         return battle_intro(number)
     if scenario == "door_transition" or scenario == "pokemon_center_enter":
         target = (13, 5) if scenario == "door_transition" else (23, 25)
-        keys = route(obs.facts.walk_map, obs.place.x, obs.place.y, target)
+        keys = route(
+            (obs.facts.model_extra or {}).get("walk_map", ""), obs.place.x, obs.place.y, target
+        )
         return (
             "labelled",
             keys,
@@ -183,7 +185,7 @@ def review(case: InputCase) -> Annotation:
         raise ValueError(f"review produced no enabled action: {case.case_id}")
     obs = case.request.obs
     context = (
-        f"现场 {obs.facts.where}，{obs.scene}/{obs.facts.overlay}，"
+        f"现场 {(obs.facts.model_extra or {}).get('where', '')}，{obs.scene}/{obs.facts.overlay}，"
         f"朝{obs.facts.facing}，光标{obs.facts.cursor}，文字{obs.facts.dialog_text!r}。"
     )
     return Annotation(

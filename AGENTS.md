@@ -33,8 +33,8 @@
    它经 tool 层的接线工厂 `BrainTool.build(…)` 造大脑。装配只递配置节里的裸字段，
    `BrainLlmConfig` 由 `BrainTool.build()` 内部构造。
    （`harness`/`schemas`/`world` 对 brain 的引用一律是**数据形状**
-   （`Action`/`Goal`/`Task`/`RunPlan`/`Reflection`/`EpisodeSummary`/
-   `StepVerifyVerdict`/五个结果袋），不是实现依赖，见第十二节第 4 条。）
+   （`Action`/`Goal`/`Task`/`RunPlan`/`EpisodeSummary`/
+   `StepVerifyVerdict`/七个结果袋），不是实现依赖，见第十二节第 4 条。）
    *为什么*：这条一旦破，"换一个世界 / 换一种记忆存储"就要改大脑代码，模块能整体拷走
    复用的意义就没了。
 
@@ -198,7 +198,7 @@ pokemon_agent/
 │                     两个 provider 契约与 errors，**不知道 harness / world / memory
 │                     的存在**。对外只有 `interface/brain_port.py`（七方法裸字段契约）
 │                     与 `interface/domain/`（brain 自己的方言：Action/Goal/Task/
-│                     RunPlan/Decomposition/Reflection/EpisodeSummary/VerifyVerdict + 各方法的结果袋
+│                     RunPlan/Decomposition/EpisodeSummary/VerifyVerdict + 各方法的结果袋
 │                     + `model_call.py` 那份 **brain 方言**的账，归属见第十二节第 4 条）
 │                     + `interface/llm_config.py`（`BrainLlmConfig` 选型纯数据，
 │                     0913 深夜九从工厂模块搬来——**只为数据而来的调用方不该连带进口
@@ -219,9 +219,13 @@ pokemon_agent/
 ├── world/            WorldPort 实现：PyBoy + 内存观测 + 世界语义常量
 │                     （INTERACT_KEY / DIRECTION_KEYS——"这个世界怎么按键"的知识）
 ├── direct/           Harness 伸向 brain / trace 的手（原 `tools/` 的 brain/trace 半边，
-│                     P7 拆分）：`brain_tool.py` / `trace/` / `prompts/` / `interface/`
+│                     P7 拆分）：`brain_tool.py` / `trace/` / `interface/`
 │                     （四张 Port 协议）。**跨模块的双向转换一律在这一层**
 │                     ——tool 认识两边的形状，是唯一的桥
+├── prompt/           prompt 模块：唯一渲染出口。`PromptGateway.render(task, params)`
+│                     返回 `RenderedPrompt{text, task, version, hash}`；`registry.json`
+│                     决定唯一生效版本。任务与片段按版本目录存放（`prompt.md` +
+│                     `assemble.py`），只接收字段，不持有世界 / 记忆对象。
 ├── mcpclient/        Harness 伸向 memory / world 的手（原 `tools/` 的 memory/world 半边）：
 │                     `memory_local.py`（进程内 MemoryTool）/ `memory_tool.py`（MCP 远程
 │                     MemoryMcpTool）/ `game_tools.py`（进程内 GameTools）/ `world_tool.py`
@@ -344,9 +348,9 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
   `BrainTool.build(links=…, …)`（链路型号与超参取自 `AppConfig.models`）组装**
   ——哪个技能接哪家厂商是 brain 的接线知识；`BrainLlmConfig` 由
   `BrainTool.build()` 内部构造（签名收裸字段，装配点因此不必
-  import 任何 brain 名字）。world 只读模拟器内存，不调用模型；**memory 的检索 provider 走
-  `MemoryTool.build(step_root=…, object_root=…, episode_root=…,
-  knowledge_root=…, max_summaries=…)`**；
+  import 任何 brain 名字）。world 只读模拟器内存，不调用模型；**memory 只经 MCP：
+  `MemoryTool.build(memory_server_url=…, memory_root=…)`（地址必填，
+  `memory_root` 只是客户端快照根）**；
   另两个同形工厂是 `GameTools.build(rom, …)` 与
   `TraceTool.build(run_id=…, trace_root=…)`。
   **所有工厂全在 tool 层，装配点一个都不越过**——它只递配置节里的型号名 / 路径这类字段。
@@ -357,8 +361,8 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 - **prompt 是规则，入参是素材——不互相替代，同一东西绝不两处传。** "怎么判、怎么想、
   怎么规划"全在 prompt 里（调用方组装、模块原样拿去问模型）；"判什么、想什么"才是入参。
   所以一个方法要么在 prompt 里给、要么当参数传，**不许两边都放**（论据、`history` 这些
-  就是这样去掉的）。**模板跟着"拥有这次调用的那一方"走**：harness 发起的六条链路在
-  `direct/prompts/`（组装函数 + `calls/*.md`）；world 不持有 prompt。
+  就是这样去掉的）。**模板跟着"拥有这次调用的那一方"走**：harness 发起的链路统一由
+  `prompt/` 的 `PromptGateway` 按注册表版本渲染；world 不持有 prompt。
 - 动作选择输出用 **Pydantic schema**（`Action` / `ActionSegment`）解析。
 - **解析失败要重试并计数**，重试次数与失败计数进 trace。不许静默吞掉解析错误。
   重试循环住在 **tool 层**（`BrainTool.choose` / `BrainTool.plan`）——拼重试纠正说明是
@@ -369,7 +373,7 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 ## 七、代码风格
 
 - Python 3.11（`requires-python = ">=3.11"`；不是 3.10——`enum.StrEnum` 要 3.11 才有，
-  `schemas/harness/domain/trace_kind.py`、`schemas/memory/datastore/step_memory.py` 用到）。
+  `schemas/harness/domain/trace_kind.py` 用到）。
   所有公开函数、方法、Pydantic 字段**必须有类型注解**。
 - `ruff` 管 lint + format，行宽 100。提交前跑 `ruff check . && ruff format .`。
 - 命名用完整英文单词，不用缩写（`action_space` 不是 `act_sp`）。
@@ -517,9 +521,10 @@ harness 经门面调模块的架构不变。
      `build_llm_providers` 一族，加 `brain.errors` 的 `AttemptFailed`/`ParseFailure`/
      `ProviderRejected`）、`mcpclient/game_tools.py` 1（`brain.errors.ProviderRejected`）。
      `build.py` 对 brain **零 import**（工厂全收在门面层）。其余包对 brain 的引用**一律是数据形状**
-     （`Action`/`ActionSegment`/`Goal`/`Task`/`RunPlan`/`Reflection`/
-     `EpisodeSummary`/`StepVerifyVerdict`/六个结果袋），按 import 语句数共 **28 处**：
-     `harness/**` 14、`schemas/**` 12、`direct/prompts` + `direct/trace/render` 2。
+     （`Action`/`ActionSegment`/`Goal`/`Task`/`RunPlan`/
+     `EpisodeSummary`/`StepVerifyVerdict`/七个结果袋），按 import 语句数共 **28 处**：
+     `harness/**` 14、`schemas/**` 12、`direct/trace/render` 2（`direct/prompts` 已于 595
+     删除；此处的 28 是 0915 的历史计数口径，未重算）。
      **形状引用不是实现依赖**，不违反本铁律（跨层信封必须能内嵌这些形状，见第 1 条）。
      *计数口径*：一条 `import` 语句算一处，不按导入的符号个数拆开——
      换口径要整段重算，别两处混用。

@@ -7,11 +7,11 @@ from _harness_fixtures.app_config import app_config
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Action, ActionSegment, Task
-from pokemon_agent.direct.prompts.judge_success import build_prompt
 from pokemon_agent.direct.trace import TraceTool
 from pokemon_agent.harness.task.plan_task import plan_task
 from pokemon_agent.harness.task.review_and_judge import review_and_judge
 from pokemon_agent.harness.task.task_state import TaskContext, TaskState
+from pokemon_agent.prompt import JudgeParams, PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
@@ -56,8 +56,8 @@ def _state() -> TaskState:
             task_id="t1",
             step=index,
             action="up",
-            before=ActMemory.Observation(step=index, status=f"before {index}"),
-            after=ActMemory.Observation(step=index + 1, status=f"after {index}"),
+            before=ActMemory.Observation(facts={"overlay": "none"}, step=index),
+            after=ActMemory.Observation(facts={"overlay": "none"}, step=index + 1),
         )
         for index in range(10)
     ]
@@ -71,7 +71,7 @@ def _state() -> TaskState:
         knowledge=["知识一：门需要确认", "知识二：朝向要正确"],
         task_ctx=TaskContext(
             act_memories=memories,
-            observation=TaskObservation(step=10, status="当前", scene=TaskScene.WALK),
+            observation=TaskObservation(facts={"overlay": "none"}, step=10, scene=TaskScene.WALK),
             action_space=ActionSpace(names=["up"]),
         ),
     )
@@ -105,7 +105,7 @@ def test_plan_task_and_task_judge_read_all_act_memories(tmp_path: Path) -> None:
     assert choose.task_index == judge.task_index == state.task_index
 
 
-def test_judge_prompt_carries_knowledge_for_the_task_layer(tmp_path: Path) -> None:
+def test_judgement_carries_knowledge_for_the_task_layer(tmp_path: Path) -> None:
     state = _state()
 
     choose, judge = _requests(state, tmp_path)
@@ -114,3 +114,12 @@ def test_judge_prompt_carries_knowledge_for_the_task_layer(tmp_path: Path) -> No
     assert judge.knowledge == choose.knowledge == "\n\n".join(state.knowledge)
     assert judge.knowledge in prompt
     assert "不能替代历史里的证据，也不能作为目标已完成的依据" in prompt
+
+
+def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
+    """Render the judgement materials through the gateway."""
+    return (
+        PromptGateway(None)
+        .render("judge_success", JudgeParams.model_validate(req.model_dump(mode="json")))
+        .text
+    )

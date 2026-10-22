@@ -1,8 +1,4 @@
-"""`BattleStatus`：战斗中双方状态框的内存读数——`battle_status.read_battle_status` 的产出 schema。
-
-双方的名字、等级、HP、状态异常都是游戏变量，直接从内存读，不经视觉模型。
-`facts_fields()` 把它压成 `Facts` 动态字段（`my_*` / `foe_*`）那一份字符串形状。
-"""
+"""战斗双方状态框的结构化内存读数，含名字、等级、HP与异常状态。"""
 
 from __future__ import annotations
 
@@ -24,16 +20,6 @@ class BattleStatus(BaseModel):
 
     mine: Combatant
     foe: Combatant
-
-    def facts_fields(self) -> dict[str, str]:
-        """压成 `Facts` 动态字段：`my_hp` / `foe_hp` 是 `当前/最大`，其余照值转字符串。"""
-        out: dict[str, str] = {}
-        for prefix, side in (("my", self.mine), ("foe", self.foe)):
-            out[f"{prefix}_name"] = side.name
-            out[f"{prefix}_level"] = str(side.level)
-            out[f"{prefix}_hp"] = f"{side.hp}/{side.max_hp}"
-            out[f"{prefix}_status"] = side.status
-        return out
 
 
 __all__ = ["BattleStatus", "Combatant"]

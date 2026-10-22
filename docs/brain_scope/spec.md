@@ -111,9 +111,9 @@
 - 同一层的 `plan_*` 与 `review_and_judge` **从同一个上下文对象取详情与索引**，不各自再取、不各自截取。这样验收 1（详情条数相同）由构造成立，而不是靠两边各写一遍再对齐。
 - 取舍：不新建「Scope」总类，复用现有上下文对象——新类要同步改三张状态图，且与现有 `PlanContext` / `ep_ctx` / `task_ctx` 重复。代价：三个上下文对象各自加字段，字段名在 1.x 节统一。
 
-### D2 索引行：三个 `index_line()`，挂在数据形状上
+### D2 索引行：由 prompt 网关渲染
 
-「渲染跟着数据形状放」：`EpisodeMemory.index_line()`、`TaskMemory.index_line()`、`RunMemory.index_line()` 三个纯函数，与同类的 `render()` 并列；**不调模型、不读外部状态**。
+索引行不再挂在数据形状上：`EpisodeMemory` / `TaskMemory` / `RunMemory` 只提供字段，由 `prompt/` 的片段按注册表版本渲染；reviewer 也有自己的索引行实现。**不调模型、不读外部状态**。
 
 **首句规则（确定性）**：取 `summary` 去首尾空白后，到第一个 `。` `！` `？` `.` `!` `?` 或换行为止（含该标点）；超过 80 个字符时截成前 80 个字符并追加 `…`；`summary` 为空则写 `（无正文）`。
 
@@ -149,7 +149,7 @@ EpisodeMemory(episode_id="r1-ep2", goal="走到门口并进去", termination="go
 - **来源章**（harness 盖）：`run_id`、`run_goal`、`episodes`（局数）、`succeeded`（成功局数）、`acts_used`（累计按键）、`termination`（run 层终止类别）、`reason`（本 run 蒸馏时 LLM 写的结论说明，空章为异常摘要）。`succeeded` / `episodes` 取自 `RunResp`（结算时点的真值），**不事后从 episode 反推**——`RunResp` 是结算时点的真值，反推要依赖 episode 记忆恰好齐全。
 - **派生正文**（LLM 蒸馏）：与 EpisodeMemory 同形——`summary`、`reusable_patterns`、`critical_decisions`、`failure_points`、`quality_score`、`quality_rationale`、`applicable_scenes`、`tags`、`markdown`。
 - 同样的三条推论：成败只认章（`.success` 由 `termination == "goal_done"` 推出）；可重建；可丢弃。「一个 run 恰好一条」是硬约束：蒸馏失败或没有可蒸的 EpisodeMemory 时落一条只有来源章、正文为空的记录（`quality_rationale` 写原因），与 `store_empty_chapter` 同一套做法。
-- `render()` 与 `index_line()`：`render()` 供召回打分与全文展示，`index_line()` 见 D2。
+- 全文与索引行均由 `prompt/` 的片段渲染；记忆对象不再提供 `render()` / `index_line()`。
 
 ### D5 run 级蒸馏链路（新增的一次模型调用）
 
@@ -157,7 +157,7 @@ EpisodeMemory(episode_id="r1-ep2", goal="走到门口并进去", termination="go
 - **信封**：`FromHarnessToBrainToolSummarizeRunReq` / `Resp`（住 `schemas/harness/communication/`，From/To 放发起方，内嵌 `RunSummary` 的 Resp 由 `BrainTool` 组装出 `RunMemory`，同 `SummarizeResp.episode_memory` 的做法）。Req 装：`run_id`、`run_goal`、`goals`（目标表最终定案：状态、`note`、`overturned`）、`episode_memories`（本 run 全部局）、`termination`、`judge_reason`、`episodes`（= `RunResp.total`）、`succeeded`、`acts_used`（= 各局 `EpisodeOutput.acts_used` 之和；`RunResp` 没有这个字段，由新格自己求和）、`max_episodes`。
 - **成败标注**：每局的成败以**目标表的最终定案**为准（含人审推翻），不再多问一次校验模型——与 episode 层不同，run 层没有 `verify` 这一环，不新增。
 - **门面**：`direct/brain_tool.py` 新增 `RunSummarizer`；`direct/interface/ports.py` 新增 `RunSummarizePort`；`BrainTool.build()` 产出并经 `build.py` 注入 `RunRuntime`（依赖注入，装配点仍只递裸字段）。provider 槽位复用 `summarize` 那一档，不新增 `BrainTool.build()` 参数。
-- **prompt**：`direct/prompts/calls/summarize_run.md` + `direct/prompts/summarize_run.py`（`build_prompt`），结构仿 `summarize.md`；既有 `summarize.md` / `summarize_task.md` 不动。
+- **prompt**：`prompt/` 中 `summarize_run` 任务的 `prompt.md` + `assemble.py`（按注册表版本生效）；既有 `summarize` / `summarize_task` 不动。
 - **收尾位置**（v1.3 对 `run_graph.py` 核实后改）：`run_done` 有两条入边——`review_and_judge` 判停、`plan_run` 之后已 `done`——两条条件边的目标都改为新格 `summarize_run`，其后 `summarize_run → store_run_memory → run_done → END`。`run_done`（记 `run_end`，`settle_run()` 不变）仍是终止唯一出口，`run_end` 仍是 run 的最后一条账；新格运行时 `state.done` 与 `termination` 已定，`RunState` 不变。`summarize_run` 问模型并记账；`store_run_memory` 先查 `run_id` 再写，已有记录一字不动。`run_graph.py` 的模块 docstring（『6 格 + 1 条条件边』）随之更新。
 - **失败降级**：蒸馏耗尽重试（`MaxRetriesExceeded`）、预算耗尽（`BudgetExhausted`）、没有 EpisodeMemory——都**不上抛**，落空章，并记 `call_exhausted`。理由：run 已经结束，上抛会丢掉 `RunResp`；这与 episode 层的「耗尽即上抛」不同（Q7 已确认）。
 - **图**：素材带各局首末帧，过 `SCOPE_IMAGE_CAP`（D9）（Q2 已确认带图）。
@@ -228,7 +228,7 @@ EpisodeMemory(episode_id="r1-ep2", goal="走到门口并进去", termination="go
 ### D14 与 reviewer 的衔接
 
 - reviewer 分支（`feature/reviewer-transparency`，R3 待执行）的 `ReviewContext.brain_input` 为 `PlanOnceReq | DecomposeReq | JudgeReq`，渲染时跳过 `plan` / `task_table`。本项目保留这三个字段，改的是素材字段（见第一节），所以 `render_context` 的跳过规则不受影响，但它渲染 `brain_input` 的其余字段要适配新字段名。
-- 其 spec 更正 #18「规划与拆解处大脑不看图」与本项目冲突：图经 `details` / `task_memories` 里的首末帧字段进入 req，**渲染文本必须不输出这些 data URI**（`TaskMemory.render()` 已不输出帧，EpisodeMemory 同）。
+- 其 spec 更正 #18「规划与拆解处大脑不看图」与本项目冲突：图经 `details` / `task_memories` 里的首末帧字段进入 req，**渲染文本必须不输出这些 data URI**（渲染由 `prompt/` 负责；记忆对象不再提供 `TaskMemory.render()`，EpisodeMemory 同理）。
 - **合并顺序**：建议本项目先合入，reviewer R3 在新请求形状上落地。编号：reviewer 原占的 460–462 与主线已冲突（主线已用到 483），等它恢复时由设计侧统一重编号。
 
 ### D15 trace：新增三本账（Q1 已确认）

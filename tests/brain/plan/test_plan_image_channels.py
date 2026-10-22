@@ -16,6 +16,7 @@ from pokemon_agent.brain.errors import (
 from pokemon_agent.brain.interface import DecomposeResult, PlanResult
 from pokemon_agent.brain.schemas import LlmCompleteReq, VisionDescribeReq
 from pokemon_agent.direct.brain_tool import Planner
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolPlanOnceReq
 from pokemon_agent.schemas.memory import EpisodeMemory
 
@@ -135,7 +136,11 @@ def test_visual_empty_reply_retry_records_false_without_a_thinking_field() -> No
         max_push=1,
     )
 
-    result = Planner(Brain(plan_llm=provider), policy=call_policy(max_attempts=2)).plan(request)
+    result = Planner(
+        Brain(plan_llm=provider),
+        policy=call_policy(max_attempts=2),
+        prompt_gateway=PromptGateway(None),
+    ).plan(request)
 
     assert len(result.calls) == len(provider.described) == 2
     assert provider.requests == []

@@ -1,0 +1,85 @@
+{
+  "task": "judge_success",
+  "case_id": "history-knowledge_battle_action_menu.run.judge.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "goal": {
+      "goal": "依次完成：在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标",
+      "criteria": "scene 是 battle、overlay 是 choice，且 cursor 是 RUN"
+    },
+    "history": [],
+    "task_memories": [],
+    "task_table": [],
+    "episode_memories": [
+      {
+        "episode_id": "eval-knowledge_battle_action_menu-ep1",
+        "run_id": "eval-knowledge_battle_action_menu",
+        "run_goal": "依次完成：在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标",
+        "goal_id": "knowledge_battle_action_menu",
+        "goal": "在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标",
+        "steps": 2,
+        "acts_used": 9,
+        "termination": "decompositions_exhausted",
+        "reason": "在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标；decompositions_exhausted；任务 2；动作 9",
+        "summary": "",
+        "reusable_patterns": [],
+        "critical_decisions": [],
+        "failure_points": [],
+        "quality_score": 0.0,
+        "quality_rationale": "本局没有产出可蒸馏的正文（整局异常，或收尾时没有一条 task 记忆）",
+        "applicable_scenes": [],
+        "tags": [],
+        "first_frame": null,
+        "last_frame": null,
+        "markdown": ""
+      }
+    ],
+    "task_index": [],
+    "episode_index": [],
+    "run_index": [],
+    "observation": {
+      "step": 9,
+      "place": {
+        "map_id": 12,
+        "x": 12,
+        "y": 24
+      },
+      "status": "（这一帧只读了内存）全局坐标 地图12 x=12 y=24，朝向 east",
+      "facts": {
+        "scene": null,
+        "overlay": "none",
+        "where": "全局坐标 地图12 x=12 y=24",
+        "facing": "east",
+        "neighbors": "北 G 南 G 西 . 东 G",
+        "landmarks": [
+          {
+            "kind": "招牌",
+            "map_id": 12,
+            "x": 9,
+            "y": 27
+          }
+        ],
+        "dialog_text": "",
+        "options": [],
+        "cursor": null,
+        "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=20 ..........  (x=8..17)\ny=21 ..........  (x=8..17)\ny=22 ....GGGG..  (x=8..17)\ny=23 ####GGGGvv  (x=8..17)\ny=24 ....@GGG..  (x=8..17)\ny=25 ....GGGG..  (x=8..17)\ny=26 ..........  (x=8..17)\ny=27 .Svvvvvvvv  (x=8..17)\ny=28 GG....GGGG  (x=8..17)",
+        "map_id": 12,
+        "screen": ""
+      },
+      "done": false,
+      "scene": "walk",
+      "takeover": null,
+      "menu_decode_complete": true,
+      "covered_by_script": false,
+      "selected_map_location": null,
+      "observation_notes": [
+        "未解码出屏幕文字，不能据此判断界面已结束"
+      ]
+    },
+    "knowledge": "",
+    "allow_interrupt": false
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/judge/inputs.jsonl#knowledge_battle_action_menu.run.judge.000001"
+}

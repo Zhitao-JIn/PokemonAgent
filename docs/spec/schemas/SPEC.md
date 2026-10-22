@@ -34,12 +34,13 @@ schemas/
 │       ├── trace_event.py            TraceEvent
 │       └── trace_kind.py             TraceKind
 └── memory/
-    ├── __init__.py                   出口：SNAPSHOT_BLIND / ActMemory / TaskMemory / EpisodeMemory / KnowledgeRecord /
-    │                                 ObjectDialogEvent / ObjectFactEvent / ObjectStillEvent / ObjectWarpEvent / render_sequence
+    ├── __init__.py                   出口：SNAPSHOT_BLIND / ActMemory / TaskMemory / EpisodeMemory / RunMemory / KnowledgeRecord /
+    │                                 ObjectDialogEvent / ObjectFactEvent / ObjectStillEvent / ObjectWarpEvent
     └── datastore/
-        ├── act_memory.py             ActMemory / SNAPSHOT_BLIND / render_sequence
+        ├── act_memory.py             ActMemory / SNAPSHOT_BLIND
         ├── task_memory.py            TaskMemory
         ├── episode_memory.py         EpisodeMemory
+        ├── run_memory.py             RunMemory
         ├── object_memory.py          ObjectFactEventBase / 三个子类 / ObjectFactEvent
         └── knowledge.py              KnowledgeRecord
 ```
@@ -123,9 +124,9 @@ schemas/
 | `ObjectFactEvent` | 一格的一次交互 | `Place.key` = `"{map_id}:{x}:{y}"` | task.perceive `store_object_semantic_memory` |
 | `KnowledgeRecord` | 不挂坐标的世界知识 | `topic` | 人管理（自动抽取已删） |
 
-- **`ActMemory`**：`before` / `after`（内部快照类）、`rationale`、`action`（一个键）、签名 `run_id` / `episode_id` /
-  `task_id` / `step`、截图 `before_frame` / `after_frame`。`render(reason=False)` 给判定器用——**判定器读不到决策者的理由**。
-- **`TaskMemory`**：章（`task_id` / `goal` / `termination`（`success` 是由它推出的属性） / `steps_used` / `start_step`）+ LLM 正文
+- **`ActMemory`**：`before` / `after`（内部快照类）、`action`（一个键）、`result`、签名 `run_id` / `episode_id` /
+  `task_id` / `step`、截图 `before_frame` / `after_frame`；展示文本由 `prompt/` 渲染，记忆对象不再提供 `render()`。
+- **`TaskMemory`**：章（`task_id` / `goal` / `termination`（`success` 是由它推出的属性） / `steps_used` / `total_acts`）+ LLM 正文
   （`summary` / `reason` / `reusable_patterns` / `critical_decisions` / `failure_points` / `quality_*` / `tags` / `markdown`）+ 首末帧。
 - **`EpisodeMemory`**：章（`episode_id` / `run_id` / `goal` / `termination`（`success` 由它推出） / `steps`=task 数 / `acts_used`）+ 同形正文 + `reason`。
 - **派生关系**：上一级是下一级的派生视图（可重建、可丢弃）；**成败只认章不认正文**。verify 给每条下级记忆标正 / 负，

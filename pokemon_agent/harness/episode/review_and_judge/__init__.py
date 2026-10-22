@@ -71,6 +71,7 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
             episode_index=state.ep_ctx.episode_index,
             knowledge="\n\n".join(current_knowledge(state)),
             observation=state.ep_ctx.observation,
+            known_objects=state.ep_ctx.object_semantic_events,
             task_table=updates.get("tasks", state.tasks),
         )
         req.task_memories = state.ep_ctx.task_memories

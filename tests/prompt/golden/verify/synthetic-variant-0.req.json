@@ -1,0 +1,13 @@
+{
+  "task": "verify",
+  "case_id": "synthetic-variant-0",
+  "source": "synthetic",
+  "request_kind": "current",
+  "request": {
+    "entries": [],
+    "goal": "进门",
+    "knowledge": ""
+  },
+  "max_segments": 3,
+  "source_ref": ""
+}

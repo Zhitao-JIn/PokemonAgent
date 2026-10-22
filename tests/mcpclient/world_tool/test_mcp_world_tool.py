@@ -26,7 +26,10 @@ from pokemon_agent.world import PlaceInWorld, TaskObservation, TaskScene
 def _task_obs() -> TaskObservation:
     """`FromHarnessToGameToolExecuteReq` 必带的"动作所依据的观测"。"""
     return TaskObservation(
-        step=0, status="你在野外。", scene=TaskScene.WALK, place=PlaceInWorld(map_id=12, x=13, y=8)
+        facts={"overlay": "none"},
+        step=0,
+        scene=TaskScene.WALK,
+        place=PlaceInWorld(map_id=12, x=13, y=8),
     )
 
 
@@ -46,7 +49,7 @@ def test_get_action_space_revalidates_the_server_mask(tool: WorldMcpTool) -> Non
     """server 侧的 `ActionSpace` 过网络后能被验回（names/mask/entries 一个不少）。"""
     resp = tool.get_action_space(
         FromHarnessToGameToolGetActionSpaceReq(
-            observation=TaskObservation(step=0, status="你在野外。", scene=TaskScene.WALK)
+            observation=TaskObservation(facts={"overlay": "none"}, step=0, scene=TaskScene.WALK)
         )
     )
     space = resp.action_space

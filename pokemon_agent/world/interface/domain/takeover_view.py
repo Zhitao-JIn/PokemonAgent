@@ -32,12 +32,6 @@ class ShopItemsView(BaseModel):
     money: int = Field(ge=0, description="当前金钱")
     bag: list[BagEntry] = Field(default_factory=list, description="背包（名、数量）")
 
-    def render(self) -> str:
-        """给 prompt 的几行。"""
-        goods = "、".join(f"{i.name} ¥{i.price}" for i in self.items) or "（无）"
-        bag = "、".join(f"{b.name} ×{b.quantity}" for b in self.bag) or "（空）"
-        return f"商品：{goods}\n金钱：¥{self.money}\n背包：{bag}"
-
 
 class NamingView(BaseModel):
     """起名键盘：给谁起名、已输入的名字。"""
@@ -47,10 +41,6 @@ class NamingView(BaseModel):
         description="给谁起名：屏幕标题原样（YOUR NAME? / RIVAL's NAME? / NICKNAME?）"
     )
     typed: str = Field(default="", description="已输入的名字")
-
-    def render(self) -> str:
-        """给 prompt 的几行。"""
-        return f"起名：{self.target}\n已输入：{self.typed or '（空）'}"
 
 
 class MoveEntry(BaseModel):
@@ -71,16 +61,6 @@ class MonEntry(BaseModel):
     active: bool = Field(default=False, description="是不是正在场上的那只")
     moves: list[MoveEntry] = Field(default_factory=list, description="招式与剩余 PP；对手为空")
 
-    def render(self) -> str:
-        """`BULBASAUR L7 HP 25/25` 加状态、在场与倒下标记。"""
-        tags = [t for t in (self.status if self.status != "ok" else "",) if t]
-        if self.active:
-            tags.append("在场")
-        if self.hp == 0 and self.max_hp:
-            tags.append("倒下")
-        suffix = f"（{'、'.join(tags)}）" if tags else ""
-        return f"{self.name} L{self.level} HP {self.hp}/{self.max_hp}{suffix}"
-
 
 class BattleMenuView(BaseModel):
     """战斗选单：在场宝可梦与招式、对手、队伍、背包。"""
@@ -92,27 +72,12 @@ class BattleMenuView(BaseModel):
     party: list[MonEntry] = Field(default_factory=list, description="队伍，按队伍顺序")
     bag: list[BagEntry] = Field(default_factory=list, description="背包（名、数量）")
 
-    def render(self) -> str:
-        """给 prompt 的几行。"""
-        moves = "、".join(f"{m.name}（PP {m.pp}）" for m in self.mine.moves) or "（无）"
-        party = "；".join(m.render() for m in self.party) or "（无）"
-        bag = "、".join(f"{b.name} ×{b.quantity}" for b in self.bag) or "（空）"
-        kind = "训练家对战" if self.trainer else "野生宝可梦"
-        return (
-            f"对战：{kind}\n我方：{self.mine.render()}\n招式：{moves}\n"
-            f"对手：{self.foe.render()}\n队伍：{party}\n背包：{bag}"
-        )
-
 
 class BattleSwitchView(BaseModel):
     """战斗换人：队伍；主动换人与倒下换人使用同一形状。"""
 
     kind: Literal["battle_switch"] = "battle_switch"
     party: list[MonEntry] = Field(default_factory=list, description="队伍，按队伍顺序")
-
-    def render(self) -> str:
-        """给 prompt 的几行。"""
-        return "队伍：" + ("；".join(m.render() for m in self.party) or "（无）")
 
 
 class BagView(BaseModel):
@@ -122,26 +87,12 @@ class BagView(BaseModel):
     bag: list[BagEntry] = Field(default_factory=list, description="背包（名、数量）")
     party: list[MonEntry] = Field(default_factory=list, description="队伍，按队伍顺序")
 
-    def render(self) -> str:
-        """给 prompt 的几行。"""
-        bag = "、".join(f"{b.name} ×{b.quantity}" for b in self.bag) or "（空）"
-        party = "；".join(m.render() for m in self.party) or "（无）"
-        return f"背包：{bag}\n队伍：{party}"
-
 
 class PartyView(BaseModel):
     """野外队伍列表：队伍与各自的招式。"""
 
     kind: Literal["party"] = "party"
     party: list[MonEntry] = Field(default_factory=list, description="队伍，按队伍顺序")
-
-    def render(self) -> str:
-        """给 prompt 的几行：一只一行，带招式。"""
-        lines = [
-            f"{i + 1}. {m.render()}；招式：" + ("、".join(x.name for x in m.moves) or "（无）")
-            for i, m in enumerate(self.party)
-        ]
-        return "队伍：\n" + ("\n".join(lines) or "（无）")
 
 
 class BoxEntry(BaseModel):
@@ -161,14 +112,6 @@ class PcView(BaseModel):
     box_number: int = Field(ge=1, description="当前箱号（1–12）")
     party: list[MonEntry] = Field(default_factory=list, description="队伍")
 
-    def render(self) -> str:
-        """给 prompt 的几行。"""
-        items = "、".join(f"{b.name} ×{b.quantity}" for b in self.items) or "（空）"
-        bag = "、".join(f"{b.name} ×{b.quantity}" for b in self.bag) or "（空）"
-        box = "、".join(f"{m.name} L{m.level}" for m in self.box) or "（空）"
-        party = "；".join(m.render() for m in self.party) or "（无）"
-        return f"PC 道具：{items}\n背包：{bag}\n当前箱 BOX {self.box_number}：{box}\n队伍：{party}"
-
 
 class LearnMoveView(BaseModel):
     """学新招要忘旧招：谁在学、想学的招、现有四招。"""
@@ -177,11 +120,6 @@ class LearnMoveView(BaseModel):
     pokemon: str = Field(description="正在学招的宝可梦（昵称）")
     new_move: str = Field(description="想学的招")
     moves: list[MoveEntry] = Field(default_factory=list, description="现有的招与剩余 PP")
-
-    def render(self) -> str:
-        """给 prompt 的几行。"""
-        known = "、".join(f"{m.name}（PP {m.pp}）" for m in self.moves) or "（无）"
-        return f"{self.pokemon} 想学 {self.new_move}\n现有的招：{known}"
 
 
 TakeoverView = Annotated[

@@ -1,0 +1,70 @@
+{
+  "tasks": {
+    "memory_records": {
+      "active": "v1"
+    },
+    "verify": {
+      "active": "v1"
+    },
+    "summarize": {
+      "active": "v1"
+    },
+    "summarize_task": {
+      "active": "v1"
+    },
+    "summarize_run": {
+      "active": "v1"
+    },
+    "goal_table": {
+      "active": "v1"
+    },
+    "task_table": {
+      "active": "v1"
+    },
+    "last_judge": {
+      "active": "v1"
+    },
+    "read_screen": {
+      "active": "v1"
+    },
+    "judge_interrupt": {
+      "active": "v1"
+    },
+    "human_note": {
+      "active": "v1"
+    },
+    "terrain_legend": {
+      "active": "v1"
+    },
+    "object_events": {
+      "active": "v1"
+    },
+    "takeover": {
+      "active": "v1"
+    },
+    "observation": {
+      "active": "v1"
+    },
+    "judge_success": {
+      "active": "v1"
+    },
+    "decompose": {
+      "active": "v1"
+    },
+    "run_plan": {
+      "active": "v1"
+    },
+    "decide_action": {
+      "active": "v1"
+    },
+    "decide_action_retry": {
+      "active": "v1"
+    },
+    "task_frame": {
+      "active": "v1"
+    },
+    "script_signature": {
+      "active": "v1"
+    }
+  }
+}

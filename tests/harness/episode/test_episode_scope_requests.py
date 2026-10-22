@@ -4,15 +4,15 @@ from pathlib import Path
 
 from _harness_fixtures.app_config import reconfigure
 from _harness_fixtures.harness import build_fake
+from _harness_fixtures.prompt_text import index_text, observation_text
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Task
 from pokemon_agent.brain.interface import Decomposition
-from pokemon_agent.direct.prompts.decompose import context_lines
-from pokemon_agent.direct.prompts.judge_success import build_prompt, memory_blocks
 from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeRunState
 from pokemon_agent.harness.episode.plan_episode.plan_episode import plan_episode
 from pokemon_agent.harness.episode.review_and_judge import review_and_judge
+from pokemon_agent.prompt import DecomposeParams, JudgeParams, PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolDecomposeResp,
@@ -26,7 +26,7 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.schemas.harness.domain import TaskEntry
 from pokemon_agent.schemas.memory import EpisodeMemory, TaskMemory
-from pokemon_agent.world import Facts, TaskObservation, TaskScene
+from pokemon_agent.world import TERRAIN_MEANING, Facts, TaskObservation, TaskScene
 
 
 class _Decomposer:
@@ -97,7 +97,10 @@ def _state() -> EpisodeRunState:
         first_frame="data:image/png;base64,PRIOR",
     )
     observation = TaskObservation(
-        scene=TaskScene.WALK, step=1, status="当前画面状态", facts=Facts(where="地图12 x=3 y=5")
+        scene=TaskScene.WALK,
+        step=1,
+        place={"map_id": 12, "x": 3, "y": 5},
+        facts=Facts(overlay="none"),
     )
     return EpisodeRunState(
         run_id="r",
@@ -133,7 +136,7 @@ def test_decompose_context_lists_episode_index_lines_not_full_text(tmp_path: Pat
 
     text = "\n".join(context_lines(request))
 
-    assert state.ep_ctx.episode_index[0].index_line() in text
+    assert index_text(state.ep_ctx.episode_index[0]) in text
     assert "前局第二句" not in text and "data:image" not in text
     assert "task 第二句仍需完整读取" in text
     assert "## 同目标的过往局(背景,不是本局完成的证据)" in text
@@ -184,9 +187,9 @@ def test_episode_judge_request_carries_knowledge_observation_and_index(tmp_path:
     assert judge.knowledge == "\n\n".join(plan.knowledge) == "知识甲\n\n知识乙"
     assert judge.observation is state.ep_ctx.observation
     assert blocks[-2].startswith("## 同目标的过往局(背景,不是本局完成的证据)")
-    assert state.ep_ctx.episode_index[0].index_line() in blocks[-2]
+    assert index_text(state.ep_ctx.episode_index[0]) in blocks[-2]
     assert "前局第二句" not in blocks[-2]
-    assert blocks[-1] == "## 当前画面\n" + state.ep_ctx.observation.render()
+    assert blocks[-1] == "## 当前画面\n" + observation_text(state.ep_ctx.observation)
     assert judge.knowledge in prompt and "地图12 x=3 y=5" in prompt
     assert "task 第二句仍需完整读取" in prompt and "data:image" not in prompt
 
@@ -211,3 +214,27 @@ def test_judge_memory_blocks_keep_the_contractual_order(tmp_path: Path) -> None:
     assert headers[3].startswith("## 本局内此前同目标的 task")
     assert headers[4] == "## 同目标的过往局(背景,不是本局完成的证据)"
     assert headers[5] == "## 当前画面"
+
+
+def build_prompt(req: FromHarnessToBrainToolJudgeReq) -> str:
+    """Render the judgement materials through the gateway."""
+    return (
+        PromptGateway(None)
+        .render("judge_success", JudgeParams.model_validate(req.model_dump(mode="json")))
+        .text
+    )
+
+
+def memory_blocks(req: FromHarnessToBrainToolJudgeReq) -> list[str]:
+    """Keep the independent judgement material blocks and their order."""
+    return PromptGateway(None).render_history(
+        "judge_success", JudgeParams.model_validate(req.model_dump(mode="json"))
+    )
+
+
+def context_lines(req: FromHarnessToBrainToolDecomposeReq) -> list[str]:
+    """Keep decomposition material blocks and their order."""
+    params = DecomposeParams.model_validate(
+        {**req.model_dump(mode="json"), "terrain_meanings": TERRAIN_MEANING}
+    )
+    return PromptGateway(None).render_history("decompose", params)

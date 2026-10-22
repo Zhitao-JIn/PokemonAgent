@@ -1,0 +1,241 @@
+你在整理一只玩神奇宝贝的 agent 的**单次 task 执行记录**。
+
+一个 task 是一段有预算的按键执行（goal：在战斗选单里把光标从 FIGHT 移到 ITEM 并确认；task_id：knowledge_catch_throw_ball-t1）。下面是执行期内
+逐键记录的情景记忆（"当时看到 → 做了 → 之后变成"）。每条都带标注：`【正样本】` 是推进了
+目标的一键，`【负样本】` 是没有效果或偏离目标的一键，标注后面是理由——两类都要用，
+负样本是 `failure_points` 的主要来源。结果：目标达成（goal_done）；判定依据：光标曾移到 ITEM 上，按 A 确认后屏幕变成 POTION / POKé BALL / CANCEL 的物品列表，不再是四选项战斗选单
+（用了 4 / 6 键）。
+
+## 第 0 条 【负样本】目标是移到 ITEM，但按 right 后光标从 FIGHT 移到 PKMN，方向偏离目标
+(eval-knowledge_catch_throw_ball-ep1, step=0) 当时看到：
+  场景           battle
+  叠加层         choice
+  位置           全局坐标 地图12 x=13 y=7
+  地图           12
+  朝向           west
+  四邻           北 # 南 # 西 . 东 #
+  选项           FIGHT / PKMN / ITEM / RUN
+  光标           FIGHT
+  my_name        BULBASAUR
+  my_level       7
+  my_hp          25/25
+  foe_name       PIDGEY
+  foe_level      3
+  foe_hp         15/15
+  foe_status     ok
+  my_status      ok
+  option_layout  2 行 × 2 列，光标在第 1 行第 1 列；上/下 换行，左/右 换列
+                 ▶FIGHT   PKMN
+                  ITEM   RUN
+  屏幕           
+                  PIDGEY     ·······
+                     :L3      ·······
+                  ·HP:[██████] ·······
+                  ·────────│ ·······
+                             ·······
+                  ·······    ·······
+                  ·······    ·······
+                  ·······  BULBASAUR
+                  ·······      :L7
+                  ·······  HP:[██████]
+                  ·······    25/ 25·
+                  ······· └────────┘
+                 ┌───────┌──────────┐
+                 │       │          │
+                 │       │▶FIGHT PKMN │
+                 │       │          │
+                 │       │ ITEM  RUN│
+                 └───────└──────────┘
+  做了  right
+  之后变成：
+  场景           battle
+  叠加层         choice
+  位置           全局坐标 地图12 x=13 y=7
+  地图           12
+  朝向           west
+  四邻           北 # 南 # 西 . 东 #
+  选项           FIGHT / PKMN / ITEM / RUN
+  光标           PKMN
+  my_name        BULBASAUR
+  my_level       7
+  my_hp          25/25
+  foe_name       PIDGEY
+  foe_level      3
+  foe_hp         15/15
+  foe_status     ok
+  my_status      ok
+  option_layout  2 行 × 2 列，光标在第 1 行第 2 列；上/下 换行，左/右 换列
+                  FIGHT  ▶PKMN
+                  ITEM   RUN
+  屏幕           
+                  PIDGEY     ·······
+                     :L3      ·······
+                  ·HP:[██████] ·······
+                  ·────────│ ·······
+                             ·······
+                  ·······    ·······
+                  ·······    ·······
+                  ·······  BULBASAUR
+                  ·······      :L7
+                  ·······  HP:[██████]
+                  ·······    25/ 25·
+                  ······· └────────┘
+                 ┌───────┌──────────┐
+                 │       │          │
+                 │       │ FIGHT▶PKMN │
+                 │       │          │
+                 │       │ ITEM  RUN│
+                 └───────└──────────┘
+
+## 第 1 条 【负样本】按 down 后光标从 PKMN 移到 RUN，远离 ITEM 所在位置
+(eval-knowledge_catch_throw_ball-ep1, step=1) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  down
+  之后变成：
+  场景           battle
+  叠加层         choice
+  位置           全局坐标 地图12 x=13 y=7
+  地图           12
+  朝向           west
+  四邻           北 # 南 # 西 . 东 #
+  选项           FIGHT / PKMN / ITEM / RUN
+  光标           RUN
+  my_name        BULBASAUR
+  my_level       7
+  my_hp          25/25
+  foe_name       PIDGEY
+  foe_level      3
+  foe_hp         15/15
+  foe_status     ok
+  my_status      ok
+  option_layout  2 行 × 2 列，光标在第 2 行第 2 列；上/下 换行，左/右 换列
+                  FIGHT   PKMN
+                  ITEM  ▶RUN
+  屏幕           
+                  PIDGEY     ·······
+                     :L3      ·······
+                  ·HP:[██████] ·······
+                  ·────────│ ·······
+                             ·······
+                  ·······    ·······
+                  ·······    ·······
+                  ·······  BULBASAUR
+                  ·······      :L7
+                  ·······  HP:[██████]
+                  ·······    25/ 25·
+                  ······· └────────┘
+                 ┌───────┌──────────┐
+                 │       │          │
+                 │       │ FIGHT PKMN │
+                 │       │          │
+                 │       │ ITEM ▶RUN│
+                 └───────└──────────┘
+
+## 第 2 条 【正样本】按 left 后光标从 RUN 移到 ITEM，正好到达目标选项
+(eval-knowledge_catch_throw_ball-ep1, step=2) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  left
+  之后变成：
+  场景           battle
+  叠加层         choice
+  位置           全局坐标 地图12 x=13 y=7
+  地图           12
+  朝向           west
+  四邻           北 # 南 # 西 . 东 #
+  选项           FIGHT / PKMN / ITEM / RUN
+  光标           ITEM
+  my_name        BULBASAUR
+  my_level       7
+  my_hp          25/25
+  foe_name       PIDGEY
+  foe_level      3
+  foe_hp         15/15
+  foe_status     ok
+  my_status      ok
+  option_layout  2 行 × 2 列，光标在第 2 行第 1 列；上/下 换行，左/右 换列
+                  FIGHT   PKMN
+                 ▶ITEM   RUN
+  屏幕           
+                  PIDGEY     ·······
+                     :L3      ·······
+                  ·HP:[██████] ·······
+                  ·────────│ ·······
+                             ·······
+                  ·······    ·······
+                  ·······    ·······
+                  ·······  BULBASAUR
+                  ·······      :L7
+                  ·······  HP:[██████]
+                  ·······    25/ 25·
+                  ······· └────────┘
+                 ┌───────┌──────────┐
+                 │       │          │
+                 │       │ FIGHT PKMN │
+                 │       │          │
+                 │       │▶ITEM  RUN│
+                 └───────└──────────┘
+
+## 第 3 条 【正样本】在 ITEM 上按 a 后打开道具菜单（POTION/POKé BALL/CANCEL），确认了 ITEM 选择，推进目标
+(eval-knowledge_catch_throw_ball-ep1, step=3) 当时看到：（同上一条「之后变成」，同一帧，不重复贴）
+  做了  a
+  之后变成：
+  场景            battle
+  叠加层          choice
+  位置            全局坐标 地图12 x=13 y=7
+  地图            12
+  朝向            west
+  四邻            北 # 南 # 西 # 东 #
+  选项            POTION / POKé BALL / CANCEL
+  光标            POTION
+  my_name         BULBASAUR
+  my_level        7
+  my_hp           25/25
+  foe_name        PIDGEY
+  foe_level       3
+  foe_hp          15/15
+  foe_status      ok
+  my_status       ok
+  option_details  POTION × 1 / POKé BALL × 4
+  option_layout   竖排 3 项，光标在第 1 项；上/下 移动光标
+                  ▶POTION
+                   POKé BALL
+                   CANCEL
+  屏幕            
+                   PIDGEY     ·······
+                      :L3      ·······
+                   ···┌──────────────┐
+                   ·──│              │
+                      │▶POTION       │
+                   ···│         × 1  │
+                   ···│ POKé BALL    │
+                   ···│         × 4  │
+                   ···│ CANCEL       │
+                   ···│              │
+                   ···│              │
+                   ···│              │
+                  ┌───└──────────────┘
+                  │                  │
+                  │                  │
+                  │                  │
+                  │                  │
+                  └──────────────────┘
+
+## 你的任务
+
+把**这一次 task 的前后变化**总结成一条 JSON 记忆，供上一层的 episode 总结与以后
+的局检索复用。要求：
+
+- `summary`：这一次 task 从什么状态走到什么状态、结果如何。**具体到字段/坐标/对话内容**，
+  不写空话。
+- `reason`：一两句话的**结论说明**——成了靠的是哪几键；没成卡在哪、为什么（结合「结果」
+  里的终止类别：`goal_done` 达成 / `world_ended` 世界结束 / `stalled` 原地打转 /
+  `budget_exhausted` 键数用尽 / `interrupted` 半路被意外打断，比如遇敌）。「结果」里的**判定依据**是判定员当时为什么判停的理由，可以参考，
+  但要写你自己看记录得出的结论，不要照抄它。上一层会直接读这句话决定下一步怎么拆。
+- `reusable_patterns`：以后遇到同类目标可以直接照做的做法。
+- `critical_decisions`：哪几步是转折（走对了或走错了）。
+- `failure_points`：哪一步浪费了键数、为什么。
+- `quality_score`（0.0–1.0）与 `quality_rationale`：这份记录对以后类似 task 的参考价值。
+  记录空洞、前后无变化时相应压低，`quality_rationale` 里说明原因。
+- `tags`：几个词。
+
+只输出一个 JSON 对象，字段同 episode 蒸馏契约（summary / reason / reusable_patterns /
+critical_decisions / failure_points / quality_score / quality_rationale /
+applicable_scenes / tags / markdown）。

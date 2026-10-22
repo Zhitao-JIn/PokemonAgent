@@ -23,7 +23,7 @@ def request() -> FromHarnessToBrainToolChooseOnceReq:
     """手造一份生产信封，不接帧集、模拟器或模型。"""
     return FromHarnessToBrainToolChooseOnceReq(
         goals=[Goal(goal="向上走一格", criteria="主角位于上一格")],
-        obs=TaskObservation(step=0, status="站在路上", scene="walk"),
+        obs=TaskObservation(facts={"overlay": "none"}, step=0, scene="walk"),
         space=ActionSpace(names=["up"], mask={"up": True, "a": False}),
         memories=[],
         last_result="上一动作失败",

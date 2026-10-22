@@ -7,10 +7,10 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
 from pokemon_agent.brain.interface import Goal
-from pokemon_agent.schemas.memory import ActMemory, TaskMemory
+from pokemon_agent.schemas.memory import ActMemory, ObjectFactEvent, TaskMemory
 from pokemon_agent.world import ActionSpace, TaskObservation
 
 
@@ -30,11 +30,11 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
 
     `human_note` 由 `build_prompt()` 拼在**整个 prompt 的最末尾**（0914 控制台
     改造：它是覆盖指令，不是又一节背景说明——理由见
-    `direct/prompts/__init__.py::append_human_note`）。**模板里没有它的占位符**
+    `prompt` 模块的 human_note 片段）。**模板里没有它的占位符**
     ——它是"渲染完之后再追加"，所以不在 `decide_action.md` 的那些 `$` 变量里。
 
     **`prompt` 不是本模型的字段**（0913 删）：`BrainTool.choose()` 入口处调
-    `prompts.decide_action.build_prompt(req)` 拼它，只活在那一次调用的局部
+    `PromptGateway.render()` 拼它，只活在那一次调用的局部
     ——"先拼 prompt 再回填进同一个 req"那个中间态不再外露。
 
     **决策的截图也不进信封**（0915 129）：`memories` 里每条 `ActMemory` 自带
@@ -55,3 +55,13 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
         description="本 episode 内、goal 与本 task 相同的此前 task，已去掉两张帧",
     )
     human_note: str = ""
+
+    known_objects: list[ObjectFactEvent] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        """历史请求未提供原始事件时保留原信封形状。"""
+        data = handler(self)
+        if "known_objects" not in self.model_fields_set:
+            data.pop("known_objects", None)
+        return data

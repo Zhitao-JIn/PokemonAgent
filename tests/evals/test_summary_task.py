@@ -19,6 +19,7 @@ from evals.dataset.errors import DatasetError
 from pokemon_agent.brain import Brain
 from pokemon_agent.brain.interface import EpisodeSummary
 from pokemon_agent.direct.brain_tool import RunSummarizer, Summarizer, TaskSummarizer
+from pokemon_agent.prompt import PromptGateway
 
 
 class Grader:
@@ -76,10 +77,11 @@ def test_all_summary_layers_use_production_prompts_and_independent_review(
         *[vision_reply(answer.model_dump_json()) for _ in range(81)], multimodal=True
     )
     brain = Brain(verify_llm=provider)
+    prompt_gateway = PromptGateway(None)
     tools = SimpleNamespace(
-        summarizer=Summarizer(brain, policy=call_policy()),
-        task_summarizer=TaskSummarizer(brain, policy=call_policy()),
-        run_summarizer=RunSummarizer(brain, policy=call_policy()),
+        summarizer=Summarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
+        task_summarizer=TaskSummarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
+        run_summarizer=RunSummarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
     )
     built: list[dict[str, object]] = []
     monkeypatch.setattr(

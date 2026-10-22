@@ -1,11 +1,11 @@
 """`FromHarnessToBrainToolReflectReq`：harness → `BrainTool` 的反思请求。
 
-**harness 交完整观测，`BrainTool` 负责渲染 + 剪裁 + 盖章**：
-- 渲染成文本（`before`/`after`）
+**harness 交完整观测，`BrainTool` 负责筛选 + 盖章**：
 - 剪掉不该进经验的字段（用 memory 的 `SNAPSHOT_BLIND`）
 - 盖坐标（`episode_id`/`step`）
 
-这三件都是"存储策略"，不是大脑的事——大脑只把四样东西装成 `Reflection`。
+这两件都是"存储策略"，不是大脑的事。`Reflector` 直接用结构化观测组装 `ActMemory`，
+不调用大脑。
 """
 
 from __future__ import annotations

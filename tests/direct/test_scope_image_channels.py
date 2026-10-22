@@ -9,6 +9,7 @@ from _harness_fixtures.brain import _Brain
 from pokemon_agent.brain import Goal
 from pokemon_agent.brain.interface import DecomposeResult, PlanResult, SummarizeRunResult
 from pokemon_agent.direct.brain_tool import Decomposer, Planner, RunSummarizer, collect_frames
+from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolDecomposeReq,
     FromHarnessToBrainToolPlanOnceReq,
@@ -128,7 +129,7 @@ def _invoke(
     brain: _RecordingBrain, method: str, episodes: list[EpisodeMemory], tasks: list[TaskMemory]
 ) -> None:
     if method == "plan":
-        Planner(brain, policy=call_policy()).plan(
+        Planner(brain, policy=call_policy(), prompt_gateway=PromptGateway(None)).plan(
             FromHarnessToBrainToolPlanOnceReq(
                 run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
                 run_id="r",
@@ -138,16 +139,20 @@ def _invoke(
             )
         )
     elif method == "decompose":
-        Decomposer(brain, policy=call_policy()).decompose(
+        Decomposer(brain, policy=call_policy(), prompt_gateway=PromptGateway(None)).decompose(
             FromHarnessToBrainToolDecomposeReq(
                 goal=Goal(goal="局目标", criteria="c"),
-                observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
+                observation=TaskObservation(
+                    facts={"overlay": "none"}, step=0, scene=TaskScene.WALK
+                ),
                 task_memories=tasks,
                 max_tasks=1,
             )
         )
     else:
-        RunSummarizer(brain, policy=call_policy()).summarize_run(
+        RunSummarizer(
+            brain, policy=call_policy(), prompt_gateway=PromptGateway(None)
+        ).summarize_run(
             FromHarnessToBrainToolSummarizeRunReq(
                 run_id="r",
                 run_goal="总目标",

@@ -1,0 +1,32 @@
+你负责对一次 run 做整体复盘。总目标：依次完成：在商店里选 BUY，打开商品列表
+终止类别：goal_done；判定依据：画面显示商店菜单中 BUY 已被选中（▷BUY），并弹出了商品列表 POKé BALL ¥200 / ANTIDOTE ¥100 等，说明已选 BUY 打开商品列表
+累计 1 局，其中 1 局成功，使用 1 键；局数预算 3。
+
+目标表最终定案：
+- knowledge_shop_open_buy_menu｜在商店里选 BUY，打开商品列表｜completed｜note=｜overturned=false
+
+各局记忆全文（来源章是当时的机器判定，目标表是最终定案）：
+(eval-knowledge_shop_open_buy_menu-ep1) 目标：在商店里选 BUY，打开商品列表（成功，goal_done，1 个 task / 1 键）
+  结论  达成 goal_done：关键在于先核对 option_layout 中光标已位于 BUY，再直接按 a，没有多余的方向键；本局只有一个 task 且一次成功，没有卡点。
+  总结  在 map42 商店内，choice 叠加层显示 BUY/SELL/QUIT 且光标已停在 BUY 时，直接按一次 a 即从菜单切入商品列表（对话变为 'Take your time.'，选项变为 POKé BALL ¥200 等），1 键达成目标。
+  可复用经验  choice 叠加层中光标已在目标项（如 ▶BUY）上时，直接按 a 确认，不要先上下移动光标；进入商店菜单后先读 option_layout 确认光标位置，再决定按键；判定商品列表已打开：对话变为 'Take your time.' 且选项变为商品名+价格列表
+  关键决策  第 0 步：光标已停在 BUY 时选择直接按 a 而非移动光标，一步命中目标
+  失败点  潜在风险：未确认光标位置就按方向键，可能把光标移离 BUY 而多耗按键；本局未发生
+  质量分 0.60（理由：记录字段完整、结论干净，但整局仅 1 个 task、1 次按键，样本极薄且任务过于简单，可迁移决策有限，故评分中等偏低）
+  标签  shop、buy_menu、choice_overlay、single_key、pokemon_center
+
+请从「下次再接到同一个总目标，应该先做什么、避开什么」的视角总结。
+成败以目标表最终定案为准，保留 note 和是否被人审推翻的含义，不得自行改写成败。
+不得复述帧数据或 base64。仅输出 JSON 对象，字段如下：
+{"summary":"整体简明总结", "reason":"结论说明", "reusable_patterns":[],
+ "critical_decisions":[], "failure_points":[], "quality_score":0.5,
+ "quality_rationale":"评分理由", "applicable_scenes":[], "tags":[],
+ "markdown":"可复用的完整 Markdown 复盘正文"}
+quality_score 范围 0 到 1；summary 与 markdown 均须有正文。
+
+## 附图的读法
+
+若本次附有截图，它们是此前各局的首末帧，按时间先后排列，最后一张最新。
+截图已按字符串相等去重，超过数量上限时最旧的几张会被丢弃，所以图可能不全。
+截图用来核对文字摘要有没有抽错，不是新的事实来源；文字摘要与截图不一致时，
+以截图上能直接看到的内容为准，但不要据此重新推算坐标。

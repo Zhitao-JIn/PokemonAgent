@@ -20,6 +20,7 @@ from .deployment import (
 from .loop import ActionLimitsConfig, BudgetConfig, LoopConfig
 from .memory import MemoryConfig
 from .models import ModelsConfig
+from .prompt import PromptSection
 from .retry import RequestTimeoutsConfig, RetryConfig
 from .review import ReviewConfig
 
@@ -29,6 +30,7 @@ class AppConfig(Section):
 
     run: RunSection
     models: ModelsConfig
+    prompt: PromptSection
     retry: RetryConfig
     request_timeouts_s: RequestTimeoutsConfig
     action_limits: ActionLimitsConfig

@@ -1,0 +1,1450 @@
+{
+  "task": "summarize_task",
+  "case_id": "history-knowledge_pokemon_center_heal.task.summarize_task.000003",
+  "source": "history",
+  "request_kind": "legacy",
+  "request": {
+    "entries": [
+      {
+        "before": {
+          "step": 11,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east",
+          "scene": "walk",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=-1 ##########  (x=-1..8)\ny=0  ##########  (x=-1..8)\ny=1  ####N.###.  (x=-1..8)\ny=2  ##########  (x=-1..8)\ny=3  #...@N....  (x=-1..8)\ny=4  ##........  (x=-1..8)\ny=5  ##........  (x=-1..8)\ny=6  ###....##.  (x=-1..8)\ny=7  ###.DD.##.  (x=-1..8)",
+            "map_id": 41,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 12,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「There's a POKéM」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "There's a POKéM",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│There's a POKéM    │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 11,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 12,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「There's a POKéM」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "There's a POKéM",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│There's a POKéM    │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 13,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「There's a POKéMON CENTER in every」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "There's a POKéMON CENTER in every",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│There's a POKéMON  │\n│                  │\n│CENTER in every  ▼│\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 12,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 13,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「There's a POKéMON CENTER in every」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "There's a POKéMON CENTER in every",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│There's a POKéMON  │\n│                  │\n│CENTER in every  ▼│\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 14,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「CENTER in every town ahead.」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "CENTER in every town ahead.",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│CENTER in every   │\n│                  │\n│town ahead.      ▼│\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 13,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 14,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「CENTER in every town ahead.」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "CENTER in every town ahead.",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│CENTER in every   │\n│                  │\n│town ahead.      ▼│\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 15,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「They don't char」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "They don't char",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│They don't char    │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 14,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 15,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「They don't char」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "They don't char",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│They don't char    │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 16,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「They don't charge any money either!」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "They don't charge any money either!",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│They don't charge  │\n│                  │\n│any money either! │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 15,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAAJ4ElEQVR4nO1dDXLjLAyNd/Zoe4XuEZozeY/QXKF3y46++dRRteLPgCWc92bSxnYERjyEEBhvt9vteQMAJ/zwyhgAQEDAHbCAgCtAQMAVICDgChAQcAUICLgCBARcAQICrgABAVeAgIArQEDAFSAg4AoQEHAFCAi44ueIRJ7P5+3Pnz9NMp+fn7fH43Hb9/0WGXSfPfj161f2+v1+v7T+TiHgWRVMCq/B29vbbSQ+Pj4Oyf3+/bubwFfQX2gCtiiPLEUNtm2brkTKQ6L23rzwCKa/MASsbZWe6erukbpNqiC2jGTpqNJ0dzirbKvpLzQBa30YqvQWP4lbcMkHa+3imHxWfnRNlofO1fiAV9ZfeAK2+kilCtMVMsIHe39/N/Mny5f7LeUdyQf00l9oAh7pClK+jPTLWG6EL6MtR2pQQvm3jmZfQX+hCVjja5DCtNNfqmhqydTaR/gyshuidOledCVG9gGfzvoLTcCSD5PrMmR3p3/LXUdvnIzS0fnQcc0omGS9fcC7s/7CE/CIj8GVX1N5s3yY2pBGNB8wiv7CELAVXpH/ksVbJS64B5s5cSdgq4/BrZZ9FA0PP0yDyRfFB4ysP3cCtvgw1B3wqMzyUei3fJ58r6NzpbpipHWrsWw8SIkQB7w76G8pAtb6GNZIzqpArbRWH0bLy+ByjiwpYkbxAZ8n6W85Arag1a9qtS48X8ohCiYf/+dKPHOyfiX9HQE1iW5vuWc5USu48rVs6nwLuOVzmIWO+bsm5kg8L6K/JS2gNvfaZ+L1ckfAJMrF4/iaJJUONLPlk/fK5CTiyHiaPk6d5+PN6Baj6U/CyqOn/KFXRGtStHysNDRYmdLPSVUYnZNpsTKZhPK8tma1JF1NfyPK724BJcj8yy4gFSpoAVsvna5sydLxZvJJK8jfuavU03HaEsrjM8n3mKA/Kw3LAh4tfxgLyJaHfBH+P6qiOE1Ol/KyuuSaykr9JmUJziLffZL+KA2Zpu4JessfgoB6jZ3XihK2bAS2dvSRljAXF7Mq4SzyvU3Wn0yTG/GI8ofpgmmJE62vk93ISEVaa/csh1qS0Jo9KOFsyzdbf5SGTJPyoLxSg6fW8ochoIy+c2seGe7gCmLlWQMQztMK2loj4VRrz/lAWi66/qR1pbR1g+WyHC1/CAJKqyO7Evo+Ki7FFpD/syL5Pweb5QBDdseSfHqkbBEqpXx5fRRJZupPp0f3K2eHrFFvS/lDEJCQiteNIqC2gFb+UrF6FMzQz33kcEaoZbb+rMFa7XMiNeUPMQhJYWQXbPmApZCDFRNrCep6L8+/D+qCj6Km/GEs4Kw4lraAjJQPOEq5OR+oRn6VOGCqHLXld58L1n4Vd5Oyu0yt5CjdE8tq68f5pqborHnWVstXOwrc1DxzVP3pNKUP2FP+EF3wzDgWK56fZJNPtKXIR+d5QCJnQGpgKTvlqF8tDnik/CEIqONY/DSWvGkmQu1HjwR5Oi5nCbRFlN1zDYmslt8iH1F/HAfkNNkKjip/KB8wFcfqrTi9fo/ysMhmHafmOGu7nVr5qPorxQF7yx/KB0yRZQakD5gjY01kv+d4G+gDztBfKj0dBzxcfrwvGLjEBpVHULO8/ejefKtgM3ZZOEP2UgTsXdXbG0A+C7I7G/lcyNahv0j6cSMg+1Mt0Mvgo4PJJxe4jiLh/gL6SyFMGGaV3UXlAgWPh96vhlBhGAuzN0isAcfUrBUwvff3mLBYYCWEJ+DsB6NrYEX+OT7mfX+fAfRzaQJGaeHa5xq1ZcUDFjA2IrVwOeiIcl+fQe5jWQt49Tjf7BDWx+L6cyfgzBjiK2BbXH/uBEzF0qTP1Rsniyz/GDxX25p/CmfJIw5ogJcfMVo367bkgaAWMBpymzKmXlKj5XPnV93abRZgAQVKO4LStZwlrLGSmD35DizHUihtvbG60385Cyifm6CPPk6d5+Mo8jWbDxHkknVLXv+mpLc9SPm95P/TV8+HsO/7U2LF41wZ6Tp/ZLl1evo8n0vpLVL5vY6HEDCXSelmosiXysffLZJxuikCWnmMvv99UflhBKzJLHXzUeRTpKshYOo3qrUnCRih/B7yQwmYu8nSzUeRzxGsdL1GtvSbfXH9tcoPJ6CVWe3Ne8uzv5ey7iXyyDRqz19Jf0fku8MwqS0aWvfHiyCvt2DT4FFbLv9UmIaX8qcewXwPUH4v+W4L2Gp2jzq2s+WlBWS0+rqWH6jPRS2/h/zUmZDeHQC85Y/CsoJHAtjvi+vPfX/A3i01zpYnI8VdL+8NKHdNrU3jyLUr6O+IfPdihN794XLpesizr1Zacl/KX5LW2mMvavk95DEKNnyUmtF+i3xLGvtCo9he+eEEXC0OBfkLxQFXjMRD/iIzIavORULeV39DCNjKfBxDH8MImHLYdQs4St7UeVi4/RL66yYgk1Al+nUMCwqLv+dnjsYQUJIwZRmPdOPeLRTy+1T9DSVgrrudYQlrlQD5uPqbZgFLZPs/83/OIY63V1XuVeRPt4DGDSwdyYd8n/6GPJZZejUAT8LrN1DKedeV17NB/ua3HrDGAjLe3t7+aQEsb6HV4YX8evobujWHfB2T9bLk1FZis/a4W2E93KvLD10PqM2tXEtHH/lKAfpeWvbUS8wV1sO9uvw0C6gJJH2/GpJZ72qLup4N8o7rAVM+IPl7HJKRyMnyh2VTwcwSMIrdq3yxCPobSkDOLEVAKUPXLRJK8skbjxrHgnzQOKAkkiYek09+t8inR80RI/mQDzATwkTS5NJda4qIKfJpK5gqRK6wkN9D6+8UC6g//Jta8rW2LBzvy+hjoz/GIAYATsG3OCDH6wBgBix+fVlAOTdLkN8BoAdyXxzJry8C5jbUAYBe5Pj1M0U2FoIVBHrwtQ90gl8/rO5Wm0sAOAqLS3JZ3jcLqP0/dMHACKT8P3M1DMgHjEaOUz8slsLyAWcBr+oCXAECAq4AAQFXgICAK0BAwBUgIOAKEBBwRfGpuNx0nLXjQRSMuicrej8aW0D9hSGgVMwrKio3jwn0Y+hzwS2WNEfsGZWcyz93PTWZbqXRk3+L/JUawDAC5hRkEWo0yXKuQm3+ViPQy4mO3HdN/luBYFftiYYRsKSgmUu7zs5vBGrIv1J5wnfBpXeoXVXBKbRYsS1jLVfHKQRMEUwqtUfBJQJb1492Yal1ba3315L/05C/SjdsPpR0dsFGkQOIixS/TuuCcwDhXheYCQFcAQICrgABAVeAgIArQEDAFSAg4AoQEHAFCAi4AgQEXAECAq4AAQFXgICAK0BAwBUgIOAKEBCIQUBrJ3MAON0CgoTAaOQ4hfeEANOB94QArsB7QgA34D0hQOj3hHx7W+YZO0EBr4vN4Bde1wrcPPEXS0ETb+Lo1VUAAAAASUVORK5CYII=",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 16,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「They don't charge any money either!」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "They don't charge any money either!",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│They don't charge  │\n│                  │\n│any money either! │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 17,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east",
+          "scene": "walk",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=-1 ##########  (x=-1..8)\ny=0  ##########  (x=-1..8)\ny=1  ####N.###.  (x=-1..8)\ny=2  ##########  (x=-1..8)\ny=3  #...@N....  (x=-1..8)\ny=4  ##........  (x=-1..8)\ny=5  ##........  (x=-1..8)\ny=6  ###....##.  (x=-1..8)\ny=7  ###.DD.##.  (x=-1..8)",
+            "map_id": 41,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 16,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAAKrElEQVR4nO1dC3LbOgy0Oj1ar5AeIT6TeoT4CrmbO3zzkEFQgB+RFEB5d8aJJRn8QCsQAiFqu91uzxsAOOGHV8UAAAIC7oAFBFwBAgKuAAEBV4CAgCtAQMAVICDgChAQcAUICLgCBARcAQICrgABAVeAgIArQEDAFT9HFPJ8Pm9//vxpkvn8/Lw9Ho/bvu+3yEjt7MGvX7+yx+/3+6X1dwoBzzrBSeE1eHt7u43Ex8fHIbnfv393E/gK+gtNwBblJUtRg23bpisx1cFR2zYvPILpLwwBa69Kz3Ll8JiGzXSCyDImS5dOmhwOZ/VtNf2FJmCtD5NOeoufRFdwyQdrHeKIfFp96RjvT9pX4wNeWX/hCdjqI5VOmDwhI3yw9/d3tf5k+XK/TXVH8gG99BeagEeGAsuX4X4ZyY3wZaTlsG5KUv2td7OvoL/QBKzxNZLCpNNfOtHpSk5X+whfhg9DqdzUFnkSI/uAT2f9hSZgyYfJDRl8uJO/paGjN06WypH1pO2au+Ak6+0D3p31F56AR3wMOvk1J2+WD1Mb0ojmA0bRXxgCtsIr8l+yeKvEBfdgMyfuBGz1MeiqJR9FwsMPkyDyRfEBI+vPnYAtPkwaDuiuTPNR0m9pf/K9js6VyhPDrVuNZaOblAhxwLuD/pYiYK2Pod3JaSdQKq3Vh5HyPLicI4tFzCg+4PMk/S1HwBa0+lWt1oXmSylEQeSj/3QSz5ysX0l/R5AuiW5vuSedqBV08qWstb8FdOVTmCVt03dJzJF4XkR/S1pAae6lz0T5ckdAJMrF4+gYJ5UMNJPl420lcibi8Hia3Lb20/amDIvR9Meh1dHT/9AZ0ZIULR+tDAlSJvdzrBOW9vGySJlEQr5fWrNakq6mvxH9d7eAHMn88yHAChW0gKyXLJdfydzxJvJxK0jfaaiU03HSEvLtM8n3mKA/rQzNAh7tfxgLSJYn+SL0f9SJojKp3FSXNiTXnCzrN5YlOIt890n6S2XwMuVI0Nv/EASUOXZeGSVk2RLI2qUPt4S5uJh2Es4i39tk/fEy6SIe0f8wQ3BKcUr5dXwYGalILXdPc6g5CbXZgxLOtnyz9ZfK4GWmOlJd1s1Ta//DEJBH3+lqHhnuoBNEytNuQKhOLWir3QlbV3vOB5Jy0fXHrWsqW16w1Jej/Q9BQG51+FCSvo+KS5EFpP+kSPpPwWZ+g8GHY04+eaesEcpSPj8+iiQz9SfLS+3ls0PaXW9L/0MQMMGK140ioLSAWv1csfIumCCf+8jhjFDLbP1pN2u1z4nU9D/ETYiFkUOw5gOWQg5aTKwlqOudnn8fNAQfRU3/w1jAWXEsaQEJlg84Srk5H6hGfpU4oNWP2v67zwVLv4qGST5cWpkcpTaRrLR+VK81RafNs7Zavtq7wE3MM0fVnyyT+4A9/Q8xBM+MY5Hi6Uk2/kSbRb60n25I+AxIDTRlW4761eKAR/ofgoAyjkVPY/FGExFqP/JOkKbjcpZAWkQ+PNeQSLvyW+Qj6o/igFQmWcFR/Q/lA1pxrN4TJ/P3Uh0a2bRta46zdtiplY+qv1IcsLf/oXxAiywzwH3AHBlrIvs929tAH3CG/qzyZBzwcP/xvmDgEgtUHkFNevvRtflWwaassnCG7KUI2JvV2xtAPgt8OBv5XMjWob9I+nEjIPlTLZBp8NFB5OMJrqNIuL+A/iyECcOssrooT1DweOj9aggVhtEwe4HEGlBMTcuA6W3fY0KywEoIT8DZD0bXQIv8U3zMu32fAfRzaQJGucKlzzVqyYoHLGBsRLrC+U1HlHZ9BmnHshbw6nG+2SGsj8X1507AmTHEV8C2uP7cCWjF0rjP1Rsniyz/GDxX21q/hbPkEQdUQOlHhNbFujV5IKgFjIbcoozWS2qkfG7/qku7zQIsIENpRdB0LGcJa6wkZk++A+lYAqWlN1Z3+i9nAflzE+kjt639tB1FvmbxoQSesq7Jy9+U9LYH6b+X/H/66vkk7Pv+5FhxO9fHdJw+vN+yPLmf9ll6i9R/r+0hBMxVUmpMFPlS/+i7RjIq1yKgVsfo9u+Lyg8jYE1lVuOjyFukqyGg9RtxtZsEjNB/D/mhBMw1stT4KPI5gpWO18iWfrMvrr9W+eEE1Cqrbby3PPl7lnUvkYeXUbv/Svo7It8dhrGWaGhdHy+CvFyCTYLu2nL1W2EaSuW3HsF8D9B/L/luC9hqdo86trPluQUktPq6mh8o90Xtv4f81JmQ3hUAvOWPQrOCRwLY74vrz319wN4lNc6WT0aKhl5aG5CvmlpbxpFjV9DfEfnuZITe9eFy5XrIk69WSrkv1c9Jq62xF7X/HvK4C1Z8lJq7/Rb5ljL2he5ie+WHE3C1OBTkLxQHXDESD/mLzISsOhcJeV/9DSFgK/OxDX0MI6DlsMsr4Ch5rf2wcPsl9NdNQCKhKPRrGxYUFn/PzxyNISAnoWUZjwzj3lco5Pep+htKwNxwO8MS1ioB8nH1N80Clsj2f+X/7EMcb686uVeRP90CKg1YOpIP+T79DXkss/RqAJqEl2+g5POuK+ezQf7mlw9YYwEJb29v/1wBJK+h1eGF/Hr6G7o0B38dk/ayZGspsVlr3K2QD/fq8kPzAaW55bl06cNfKZC+l9Keeom5Qj7cq8tPs4CSQNz3qyGZ9q62qPlskHfMB7R8wOTvUUiGIydLH5K1gpkl4C52r/LFIuhvKAGpMouAXCYd10jIyccbHjWOBfmgcUBOJEk8Ih//rpFP3jVHjORDPsBMCBFJkksOrRYRLfJJK2h1ItdZyO+h9XeKBZQf+k0t+VqvLGzvy+hjS3+UmxgAOAXf4oAUrwOAGdD49WUB+dxsAv8OAD3g6+Jwfn0RMLegDgD0IsevnxbZSAhWEOjB1zrQBr9+aMOtNJcAcBQal3ha3jcLKP0/DMHACFj+n5oNA/IBo5Hj1A+NpbB8wFnAq7oAV4CAgCtAQMAVICDgChAQcAUICLgCBARcUXwqLjcdp614EAWj2qRF70djC6i/MATkinlFReXmMYF+DH0uuMWS5og94yTn6s8dtybTtTJ66m+R19quPXctdSqRO37WRTaMgLUKyu0bVb92rKZ+7SKQ6URH2l1T/5bRn9W2mnpy9be0LzwBSwqamdp1dn0jUEP+lv70EsZLX6cNwaV3qEUnzGi0EGbLWMtR+vXya08hoKUA3umSgo+Unzt+VOFWXltr+1rqfyryrRYvZ1Frzs8sqA8lnX01eDnAr4LNiVyyDRq/ThuCcwDhXle/mAkBXAECAq4AAQFXgICAK0BAwBUgIOAKEBBwBQh4AWwnTWPOWL4PBAyErSLhwAtaOtoIVM+ElNKFZuX7WXOWtfl8I46PyFesmW58GmX25iKW6q/JJ5yFagLWnIBZSaVaLp71PVd/Tukz8+Fqy98Kes21aUQ+pkcewCELeEXM7t/s8p+T8wmPZAENI2BNPloOK+T7zc5X9E4IeBbqr2nfjD789MhHG03GGfl2sowZF+Cz8YQetUKj6p9hAU/JB1w932/19o9CDwGL+YD84GgSrn7CVm9/ZD38EwfUHkMEgB7kOIX3hADTIUdX2peA94QA02GNpomEeE8IMBVk6ay4JN4TApzu/32bheJvy5wR5wGAHL/wulbg5om/pYI0ZORDtsMAAAAASUVORK5CYII=",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 17,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east",
+          "scene": "walk",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=-1 ##########  (x=-1..8)\ny=0  ##########  (x=-1..8)\ny=1  ####N.###.  (x=-1..8)\ny=2  ##########  (x=-1..8)\ny=3  #...@N....  (x=-1..8)\ny=4  ##........  (x=-1..8)\ny=5  ##........  (x=-1..8)\ny=6  ###....##.  (x=-1..8)\ny=7  ###.DD.##.  (x=-1..8)",
+            "map_id": 41,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 18,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「There's a POKéM」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "There's a POKéM",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│There's a POKéM    │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 17,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAAKAElEQVR4nO1di3HcOAxdZVJaWnBKsGtSSohbcG97g5uDB8YB/IiUAMrvzay9khb8gE8gCFLU9ng8ng8ACMKPqIwBAAQEwgELCIQCBARCAQICoQABgVCAgEAoQEAgFCAgEAoQEAgFCAiEAgQEQgECAqEAAYFQgIBAKH7OSOT5fD7+/PnTJfPx8fF4f39/7Pv+yAwq5wh+/fpVvP729nZr/V1CwKsamBTegpeXl8dM/P3795Dc79+/hwl8B/2lJmCP8shStGDbttOVSHlItJYtCu/J9JeGgK13ZWS6unukbpMaiC0jWTpqNN0dnlW31fSXmoCtPgw1eo+fxHdwzQfr7eKYfFZ+dE3Wh861+IB31l96Avb6SLUG0w0ywwd7fX018yfLV/ot5Z3JB4zSX2oCHukKPF9G+mUsN8OX0ZbDG5RQ/r2j2e+gv9QEbPE1SGHa6a81NN3JdLfP8GVkN0TpUll0I2b2AZ/B+ktNwJoPU+oyZHenf8tdx2icjNLR+dBxyyiYZKN9wLdg/aUn4BEfgxu/pfHO8mFaQxrZfMAs+ktDwF5ERf5rFm+VuOCebOYknIC9PgbfteyjaET4YRpMviw+YGb9hROwx4eh7oBHZZaPQr/l8+R7HZ0r1Q0jrVuLZeNBSoY44FuA/pYiYKuPYY3krAbUSuv1YbS8DC6XyOIRM4sP+LxIf8sRsAe9flWvdeH5Ug5RMPn4PzfilZP1K+nvCOiWGPaWR5YT9YIbX8t653vAdz6HWeiYv2tizsTzJvpb0gJqc699Jl4vdwRMolI8jq9JUulAM1s+WVYmJxFHxtP0sXeejzejW8ymPwkrj5H6p14RrUnR87HS0GBlSj/HazA6J9NiZTIJ5XltzVpJupr+ZtQ/3AJKkPmXXYAXKugBWy+drryTpePN5JNWkL9zV6mn47QllMdXku/9BP1ZaVgW8Gj901hAtjzki/D/WQ3FaXK6lJfVJbc0lvcbzxJcRb63k/RHacg0dU8wWv8UBNRr7KJWlLBlI7C1o4+0hKW4mNUIV5Hv5WT9yTT5Jp5R/zRdMC1xovV1shuZqUhr7Z7lUEsSWrMHNVxt+c7WH6Uh06Q8KC9v8NRb/zQElNF3vptnhju4gVh51gCE87SCttZI2LvbSz6QlsuuP2ldKW19w3JdjtY/BQGl1ZFdCX2fFZdiC8j/WZH8n4PNcoAhu2NJPj1StgjlKV9en0WSM/Wn06Pyytkha9TbU/8UBCR48bpZBNQW0MpfKlaPghn6uY8Srgi1nK0/a7DW+pxIS/1TDEI8zOyCLR+wFnKwYmI9Qd3o5flvk7rgo2ipfxoLeFYcS1tAhucDzlJuyQdqkV8lDujVo7X+4XPB2q/iblJ2l95KjlqZWFZbP87Xm6Kz5ll7LV/rKHBT88xZ9afTlD7gSP1TdMFnxrFY8fwkm3yizSMfnecBiZwBaYGlbM9Rv1sc8Ej9UxBQx7H4aSxZaCZC60ePBHk6rmQJtEWU3XMLiaw7v0c+o/44DshpshWcVf9UPqAXxxptOL1+j/KwyGYde3Ocrd1Oq3xW/dXigKP1T+UDemQ5A9IHLJGxJbI/crxN9AHP0J+Xno4DHq4/3hcM3GKDyiNoWd5+dG++VbAZuyxcIXsrAo6u6h0NIF8F2Z3NfC5kG9BfJv2EEZD9qR7oZfDZweSTC1xnkXD/BvrzkCYMs8ruonKBQsRD73dDqjCMhbM3SGwBx9SsFTCj5Xs/YbHASkhPwLMfjG6BFfnn+Fh0+T4S6OfWBMxyh2ufa9aWFe+wgLmR6Q6Xg44s5fpIUo5lLeDd43xnh7D+Lq6/cAKeGUP8DtgW1184Ab1YmvS5RuNkmeXfJ8/V9ubv4Sp5xAEN8PIjRu9m3ZY8kNQCZkNpU0bvJTVavnR+1a3dzgIsoEBtR1C6VrKELVYSsydfgeVYCrWtN1Z3+m9nAeVzE/TRx955Ps4i37L5EEEuWbfk9W9qetuT1D9K/l99jXwI+74/JVY8LtWRrvNH1lunp8/zOU9vmeofdTyFgKVMaoXJIl+rH3+3SMbpegS08phd/n1R+WkEbMnMK3wWeY90LQT0fqPudpeAGeofIT+VgKVC1gqfRb5EsNr1Ftnab/bF9dcrP52AVmathY+WZ3/Ps+418sg0Ws/fSX9H5IfDMN4WDb3742WQ11uwafCorZS/F6bhpfzeI5ivCeofJT9sAXvN7lHH9mx5aQEZvb6u5Qfqc1nrHyF/6kzI6A4A0fJHYVnBIwHs18X1F74/4OiWGlfLk5Hirpf3BpS7pramceTaHfR3RH54McLo/nCldCPk2VerLbmv5S9Ja+2xl7X+EfIYBRs+Sstov0e+J419oVHsqPx0Aq4Wh4L8jeKAK0biIX+TmZBV5yIhH6u/KQTsZT6OoY9pBPQcdn0HHCWvdx4Wbr+F/oYJyCRUiX4ew4LC4u/lmaM5BJQk9CzjkW48+g6F/H6q/qYSsNTdnmEJW5UA+bz6O80C1sj2X+b/O4c43t7UuHeRv9wCGgVYOpIP+TH9TXkss/ZqAJ6E12+glPOuK69ng/wjbj1giwVkvLy8/O8OYHkLvQ4v5NfT39StOeTrmKyXJXtbiZ21x90K6+G+u/zU9YDa3Mq1dPSRrxSg77VlT6PEXGE93HeXP80CagJJ36+FZNa72rKuZ4N84HpAzwckf49DMhIlWf6wrBfMrAGj2L3JF8ugv6kE5Mw8AkoZum6RUJJPFjxrHAvySeOAkkiaeEw++d0inx41Z4zkQz7BTAgTSZNLd60eET3yaSvoVaJUWcjvqfV3iQXUH/5NK/l67ywc78voY6M/xiAGAC7Blzggx+sA4AxY/Pq0gHJuliC/A8AI5L44kl+fBCxtqAMAoyjx66dHNhaCFQRG8LkPtMOvH1Z3q80lAByFxSW5LO+LBdT+H7pgYAY8/89cDQPyAbNR4tQPi6WwfMBVwKu6gFCAgEAoQEAgFCAgEAoQEAgFCAiEAgQEQlF9Kq40HWfteHA1rOh6RP4a3tynvrYZuvPOWenenoA1ZUUjw5y1pRNrGxLrmob1W0I2vc/C1OeCS9Ak8RqkZCkseU9Wy/eUb2ZjW2TzZpw257e6fLPLeAsClhqwp5upWRN9bpYbMGLpLQvcW5atYMV7dPVtCdji15RQU2hN3uqKR0nUilEibIXuekb5MuOyLrjWSKPXrd+0WgnP75oBq7vVx0/1vdQV3w0/IwcKrUptkZ+d/swuTqffcrNtIv9R/WWG+VDSHSoG5ILHLwSigVCAgEAoQEAgFCAgEAoQEAgFCAiEAgQEQgECAqEAAYFQgIBAKEBAIBQgIBAKEBAIBQgIhAIEBEIBAgI5CGjtZA4Al1tAkBCYjRKn8J4Q4HTgPSFAKPCeECAMeE8IkPo9IV/elnn3jXCAWFj8wutagUck/gGSHE9VZBxGzgAAAABJRU5ErkJggg=="
+      },
+      {
+        "before": {
+          "step": 18,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「There's a POKéM」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "There's a POKéM",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│There's a POKéM    │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 19,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「There's a POKéMON CENTER in every」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "There's a POKéMON CENTER in every",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│There's a POKéMON  │\n│                  │\n│CENTER in every  ▼│\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 18,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 19,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「There's a POKéMON CENTER in every」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "There's a POKéMON CENTER in every",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│There's a POKéMON  │\n│                  │\n│CENTER in every  ▼│\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 20,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「CENTER in every town ahead.」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "CENTER in every town ahead.",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│CENTER in every   │\n│                  │\n│town ahead.      ▼│\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 19,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 20,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「CENTER in every town ahead.」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "CENTER in every town ahead.",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│CENTER in every   │\n│                  │\n│town ahead.      ▼│\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 21,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「They don't char」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "They don't char",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│They don't char    │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 20,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 21,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「They don't char」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "They don't char",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│They don't char    │\n│                  │\n│                  │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 22,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「They don't charge any money either!」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "They don't charge any money either!",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│They don't charge  │\n│                  │\n│any money either! │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 21,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAAJ4ElEQVR4nO1dDXLjLAyNd/Zoe4XuEZozeY/QXKF3y46++dRRteLPgCWc92bSxnYERjyEEBhvt9vteQMAJ/zwyhgAQEDAHbCAgCtAQMAVICDgChAQcAUICLgCBARcAQICrgABAVeAgIArQEDAFSAg4AoQEHAFCAi44ueIRJ7P5+3Pnz9NMp+fn7fH43Hb9/0WGXSfPfj161f2+v1+v7T+TiHgWRVMCq/B29vbbSQ+Pj4Oyf3+/bubwFfQX2gCtiiPLEUNtm2brkTKQ6L23rzwCKa/MASsbZWe6erukbpNqiC2jGTpqNJ0dzirbKvpLzQBa30YqvQWP4lbcMkHa+3imHxWfnRNlofO1fiAV9ZfeAK2+kilCtMVMsIHe39/N/Mny5f7LeUdyQf00l9oAh7pClK+jPTLWG6EL6MtR2pQQvm3jmZfQX+hCVjja5DCtNNfqmhqydTaR/gyshuidOledCVG9gGfzvoLTcCSD5PrMmR3p3/LXUdvnIzS0fnQcc0omGS9fcC7s/7CE/CIj8GVX1N5s3yY2pBGNB8wiv7CELAVXpH/ksVbJS64B5s5cSdgq4/BrZZ9FA0PP0yDyRfFB4ysP3cCtvgw1B3wqMzyUei3fJ58r6NzpbpipHWrsWw8SIkQB7w76G8pAtb6GNZIzqpArbRWH0bLy+ByjiwpYkbxAZ8n6W85Arag1a9qtS48X8ohCiYf/+dKPHOyfiX9HQE1iW5vuWc5USu48rVs6nwLuOVzmIWO+bsm5kg8L6K/JS2gNvfaZ+L1ckfAJMrF4/iaJJUONLPlk/fK5CTiyHiaPk6d5+PN6Baj6U/CyqOn/KFXRGtStHysNDRYmdLPSVUYnZNpsTKZhPK8tma1JF1NfyPK724BJcj8yy4gFSpoAVsvna5sydLxZvJJK8jfuavU03HaEsrjM8n3mKA/Kw3LAh4tfxgLyJaHfBH+P6qiOE1Ol/KyuuSaykr9JmUJziLffZL+KA2Zpu4JessfgoB6jZ3XihK2bAS2dvSRljAXF7Mq4SzyvU3Wn0yTG/GI8ofpgmmJE62vk93ISEVaa/csh1qS0Jo9KOFsyzdbf5SGTJPyoLxSg6fW8ochoIy+c2seGe7gCmLlWQMQztMK2loj4VRrz/lAWi66/qR1pbR1g+WyHC1/CAJKqyO7Evo+Ki7FFpD/syL5Pweb5QBDdseSfHqkbBEqpXx5fRRJZupPp0f3K2eHrFFvS/lDEJCQiteNIqC2gFb+UrF6FMzQz33kcEaoZbb+rMFa7XMiNeUPMQhJYWQXbPmApZCDFRNrCep6L8+/D+qCj6Km/GEs4Kw4lraAjJQPOEq5OR+oRn6VOGCqHLXld58L1n4Vd5Oyu0yt5CjdE8tq68f5pqborHnWVstXOwrc1DxzVP3pNKUP2FP+EF3wzDgWK56fZJNPtKXIR+d5QCJnQGpgKTvlqF8tDnik/CEIqONY/DSWvGkmQu1HjwR5Oi5nCbRFlN1zDYmslt8iH1F/HAfkNNkKjip/KB8wFcfqrTi9fo/ysMhmHafmOGu7nVr5qPorxQF7yx/KB0yRZQakD5gjY01kv+d4G+gDztBfKj0dBzxcfrwvGLjEBpVHULO8/ejefKtgM3ZZOEP2UgTsXdXbG0A+C7I7G/lcyNahv0j6cSMg+1Mt0Mvgo4PJJxe4jiLh/gL6SyFMGGaV3UXlAgWPh96vhlBhGAuzN0isAcfUrBUwvff3mLBYYCWEJ+DsB6NrYEX+OT7mfX+fAfRzaQJGaeHa5xq1ZcUDFjA2IrVwOeiIcl+fQe5jWQt49Tjf7BDWx+L6cyfgzBjiK2BbXH/uBEzF0qTP1Rsniyz/GDxX25p/CmfJIw5ogJcfMVo367bkgaAWMBpymzKmXlKj5XPnV93abRZgAQVKO4LStZwlrLGSmD35DizHUihtvbG60385Cyifm6CPPk6d5+Mo8jWbDxHkknVLXv+mpLc9SPm95P/TV8+HsO/7U2LF41wZ6Tp/ZLl1evo8n0vpLVL5vY6HEDCXSelmosiXysffLZJxuikCWnmMvv99UflhBKzJLHXzUeRTpKshYOo3qrUnCRih/B7yQwmYu8nSzUeRzxGsdL1GtvSbfXH9tcoPJ6CVWe3Ne8uzv5ey7iXyyDRqz19Jf0fku8MwqS0aWvfHiyCvt2DT4FFbLv9UmIaX8qcewXwPUH4v+W4L2Gp2jzq2s+WlBWS0+rqWH6jPRS2/h/zUmZDeHQC85Y/CsoJHAtjvi+vPfX/A3i01zpYnI8VdL+8NKHdNrU3jyLUr6O+IfPdihN794XLpesizr1Zacl/KX5LW2mMvavk95DEKNnyUmtF+i3xLGvtCo9he+eEEXC0OBfkLxQFXjMRD/iIzIavORULeV39DCNjKfBxDH8MImHLYdQs4St7UeVi4/RL66yYgk1Al+nUMCwqLv+dnjsYQUJIwZRmPdOPeLRTy+1T9DSVgrrudYQlrlQD5uPqbZgFLZPs/83/OIY63V1XuVeRPt4DGDSwdyYd8n/6GPJZZejUAT8LrN1DKedeV17NB/ua3HrDGAjLe3t7+aQEsb6HV4YX8evobujWHfB2T9bLk1FZis/a4W2E93KvLD10PqM2tXEtHH/lKAfpeWvbUS8wV1sO9uvw0C6gJJH2/GpJZ72qLup4N8o7rAVM+IPl7HJKRyMnyh2VTwcwSMIrdq3yxCPobSkDOLEVAKUPXLRJK8skbjxrHgnzQOKAkkiYek09+t8inR80RI/mQDzATwkTS5NJda4qIKfJpK5gqRK6wkN9D6+8UC6g//Jta8rW2LBzvy+hjoz/GIAYATsG3OCDH6wBgBix+fVlAOTdLkN8BoAdyXxzJry8C5jbUAYBe5Pj1M0U2FoIVBHrwtQ90gl8/rO5Wm0sAOAqLS3JZ3jcLqP0/dMHACKT8P3M1DMgHjEaOUz8slsLyAWcBr+oCXAECAq4AAQFXgICAK0BAwBUgIOAKEBBwRfGpuNx0nLXjQRSMuicrej8aW0D9hSGgVMwrKio3jwn0Y+hzwS2WNEfsGZWcyz93PTWZbqXRk3+L/JUawDAC5hRkEWo0yXKuQm3+ViPQy4mO3HdN/luBYFftiYYRsKSgmUu7zs5vBGrIv1J5wnfBpXeoXVXBKbRYsS1jLVfHKQRMEUwqtUfBJQJb1492Yal1ba3315L/05C/SjdsPpR0dsFGkQOIixS/TuuCcwDhXheYCQFcAQICrgABAVeAgIArQEDAFSAg4AoQEHAFCAi4AgQEXAECAq4AAQFXgICAK0BAwBUgIOAKEBCIQUBrJ3MAON0CgoTAaOQ4hfeEANOB94QArsB7QgA34D0hQOj3hHx7W+YZO0EBr4vN4Bde1wrcPPEXS0ETb+Lo1VUAAAAASUVORK5CYII=",
+        "after_frame": "data:image/png;base64,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"
+      },
+      {
+        "before": {
+          "step": 22,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east。对话框：「They don't charge any money either!」",
+          "scene": "dialog",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "They don't charge any money either!",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 41,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│They don't charge  │\n│                  │\n│any money either! │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 23,
+          "place": {
+            "map_id": 41,
+            "x": 3,
+            "y": 3
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图41 x=3 y=3，朝向 east",
+          "scene": "walk",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图41 x=3 y=3",
+            "facing": "east",
+            "neighbors": "北 # 南 . 西 . 东 N",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 3,
+                "y": 1
+              },
+              {
+                "kind": "人",
+                "map_id": 41,
+                "x": 4,
+                "y": 3
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 41,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=-1 ##########  (x=-1..8)\ny=0  ##########  (x=-1..8)\ny=1  ####N.###.  (x=-1..8)\ny=2  ##########  (x=-1..8)\ny=3  #...@N....  (x=-1..8)\ny=4  ##........  (x=-1..8)\ny=5  ##........  (x=-1..8)\ny=6  ###....##.  (x=-1..8)\ny=7  ###.DD.##.  (x=-1..8)",
+            "map_id": 41,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 22,
+        "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+        "task_id": "knowledge_pokemon_center_heal-t4",
+        "run_id": "eval-knowledge_pokemon_center_heal",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "按 a 后出现对话框，对话开始推进，朝目标方向前进"
+      },
+      {
+        "index": 1,
+        "positive": true,
+        "why": "对话从 'There's a POKéM' 推进到 'There's a POKéMON CENTER in every'，文本继续前进"
+      },
+      {
+        "index": 2,
+        "positive": true,
+        "why": "对话推进到 'CENTER in every town ahead.'，继续前进"
+      },
+      {
+        "index": 3,
+        "positive": true,
+        "why": "对话推进到 'They don't char'，继续前进"
+      },
+      {
+        "index": 4,
+        "positive": true,
+        "why": "对话推进到 'They don't charge any money either!'，继续前进"
+      },
+      {
+        "index": 5,
+        "positive": false,
+        "why": "按 a 后对话框关闭、叠加层变为 none，对话被结束而非推进到治疗完成文字，方向偏离目标"
+      },
+      {
+        "index": 6,
+        "positive": false,
+        "why": "对话重新从 'There's a POKéM' 开始，是重复循环而非推进到治疗完成文字"
+      },
+      {
+        "index": 7,
+        "positive": false,
+        "why": "对话再次推进到 'There's a POKéMON CENTER in every'，属于重复循环，未朝治疗完成推进"
+      },
+      {
+        "index": 8,
+        "positive": false,
+        "why": "对话再次到 'CENTER in every town ahead.'，重复循环，未推进目标"
+      },
+      {
+        "index": 9,
+        "positive": false,
+        "why": "对话再次到 'They don't char'，重复循环，未推进目标"
+      },
+      {
+        "index": 10,
+        "positive": false,
+        "why": "对话再次到 'They don't charge any money either!'，重复循环，未推进目标"
+      },
+      {
+        "index": 11,
+        "positive": false,
+        "why": "按 a 后对话框再次关闭、叠加层 none，对话被结束而非出现治疗完成文字，偏离目标"
+      }
+    ],
+    "task_id": "knowledge_pokemon_center_heal-t4",
+    "episode_id": "eval-knowledge_pokemon_center_heal-ep1",
+    "run_id": "eval-knowledge_pokemon_center_heal",
+    "goal": "在 (3,3) 面朝 north 按 a，把对话推到出现治疗完成文字",
+    "termination": "budget_exhausted",
+    "judge_reason": "机械判停：budget_exhausted；对话框里只有关于宝可梦中心的介绍文字（There's a POKéMON CENTER in every town ahead. / They don't charge any money either!），没有出现 We hope to see you again! 之类的治疗完成文字",
+    "steps_used": 12,
+    "max_steps": 12
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_pokemon_center_heal.task.summarize_task.000003"
+}

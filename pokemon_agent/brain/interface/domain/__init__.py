@@ -12,7 +12,6 @@ from .decomposition import Decomposition
 from .episode_summary import EpisodeSummary
 from .goal import Goal
 from .model_call import ModelCall
-from .reflection import Reflection
 from .results import (
     ChooseResult,
     DecomposeResult,
@@ -42,7 +41,6 @@ __all__ = [
     "ScriptSignature",
     "ModelCall",
     "PlanResult",
-    "Reflection",
     "RunPlan",
     "VerifyVerdict",
     "SummarizeResult",

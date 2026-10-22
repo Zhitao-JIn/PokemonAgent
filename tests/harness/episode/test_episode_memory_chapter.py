@@ -24,6 +24,7 @@ from types import SimpleNamespace
 import pytest
 from _doubles.memory_server import memory_server_context
 from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
+from _harness_fixtures.prompt_text import record_text
 
 from pokemon_agent.brain import Goal, Task
 from pokemon_agent.harness.episode.episode_done.leave_chapter import store_empty_chapter
@@ -225,7 +226,7 @@ def test_a_chapter_renders_without_a_fake_body() -> None:
         quality_rationale="本局没有产出可蒸馏的正文",
     )
 
-    text = chapter.render()
+    text = record_text(chapter)
 
     assert text.splitlines()[0] == "(r1-ep1) 目标：进商店买伤药（未成功，0 个 task / 0 键）", (
         "章在第一行"

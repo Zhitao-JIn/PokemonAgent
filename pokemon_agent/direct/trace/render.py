@@ -447,9 +447,11 @@ def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """三层 `sense` 取到的内存观测，按 `meta` 分层。
 
     **facts 必须进正文**——它才是观测的实质内容；视觉给的 `facts.scene` / `overlay`
-    就在 `facts` 里，不另抄。
+    就在 `facts` 里，不另抄。**`status` 已停写**（决定 C，2026-10-22）：它是
+    `facts` 重渲出来的状态行，与 `facts` 是"同一件事两处说"；观测里字段还在，
+    trace 不再抄。旧账带 `status` 仍可读（`SenseFrameContent.status` 可空），
+    新账不写。
     正文：
-    - `status`：状态行；
     - `facts`：整份事实快照，**直接放对象**（不双重编码）；
     - `done`：世界还在不在；
     - `place`：主角格的结构化坐标，`None` 时省略这个键；
@@ -464,7 +466,6 @@ def sense_frame(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """
     obs: Observation = req.obs
     content: dict[str, Any] = {
-        "status": obs.status,
         "facts": obs.facts.model_dump(),
         "done": str(obs.done).lower(),
     }

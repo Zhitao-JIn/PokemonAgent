@@ -10,7 +10,6 @@ def build_knowledge_query(obs: TaskObservation, goal: str) -> str:
     bits = [
         f"scene:{obs.scene.value}",
         f"overlay:{obs.facts.overlay_value}",
-        obs.status,
     ]
     if obs.place is not None:
         bits.append(f"map:{obs.place.map_id}")

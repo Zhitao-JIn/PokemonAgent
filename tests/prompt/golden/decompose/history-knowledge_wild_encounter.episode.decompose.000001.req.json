@@ -1,0 +1,53 @@
+{
+  "task": "decompose",
+  "case_id": "history-knowledge_wild_encounter.episode.decompose.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "goal": {
+      "goal": "在草丛里一直走，直到撞上一只野生宝可梦",
+      "criteria": "scene 是 battle，或对话框里出现 `WILD ... appeared!`"
+    },
+    "observation": {
+      "step": 0,
+      "place": {
+        "map_id": 12,
+        "x": 13,
+        "y": 8
+      },
+      "status": "（这一帧只读了内存）全局坐标 地图12 x=13 y=8，朝向 east",
+      "facts": {
+        "scene": null,
+        "overlay": "none",
+        "where": "全局坐标 地图12 x=13 y=8",
+        "facing": "east",
+        "neighbors": "北 G 南 G 西 G 东 G",
+        "landmarks": [],
+        "dialog_text": "",
+        "options": [],
+        "cursor": null,
+        "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=4  #........#  (x=9..18)\ny=5  #vvvv....#  (x=9..18)\ny=6  #GGGGGGGG#  (x=9..18)\ny=7  #GGGGGGGG#  (x=9..18)\ny=8  #GGG@GGGG#  (x=9..18)\ny=9  #GGGGGGGG#  (x=9..18)\ny=10 .........#  (x=9..18)\ny=11 .........#  (x=9..18)\ny=12 .....GGGG#  (x=9..18)",
+        "map_id": 12,
+        "screen": ""
+      },
+      "done": false,
+      "scene": "walk",
+      "takeover": null,
+      "menu_decode_complete": true,
+      "covered_by_script": false,
+      "selected_map_location": null,
+      "observation_notes": [
+        "未解码出屏幕文字，不能据此判断界面已结束"
+      ]
+    },
+    "task_memories": [],
+    "task_table": [],
+    "episode_index": [],
+    "knowledge": [],
+    "last_judge": null,
+    "max_tasks": 5,
+    "human_note": ""
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/decompose/inputs.jsonl#knowledge_wild_encounter.episode.decompose.000001"
+}

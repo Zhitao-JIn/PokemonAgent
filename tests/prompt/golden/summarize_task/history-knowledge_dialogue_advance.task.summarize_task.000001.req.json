@@ -1,0 +1,153 @@
+{
+  "task": "summarize_task",
+  "case_id": "history-knowledge_dialogue_advance.task.summarize_task.000001",
+  "source": "history",
+  "request_kind": "legacy",
+  "request": {
+    "entries": [
+      {
+        "before": {
+          "step": 0,
+          "place": {
+            "map_id": 42,
+            "x": 3,
+            "y": 7
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图42 x=3 y=7，朝向 north。对话框：「Hey! You came from PALLET TOWN?」",
+          "scene": "shop",
+          "facts": {
+            "scene": null,
+            "overlay": "dialog",
+            "where": "全局坐标 地图42 x=3 y=7",
+            "facing": "north",
+            "neighbors": "北 . 南 # 西 . 东 D",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 3,
+                "y": 3
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 0,
+                "y": 5
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 5,
+                "y": 5
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "Hey! You came from PALLET TOWN?",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "",
+            "map_id": 42,
+            "screen": "····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n····················\n┌──────────────────┐\n│                  │\n│Hey! You came from│\n│                  │\n│PALLET TOWN?      │\n└──────────────────┘"
+          },
+          "done": false,
+          "perceived": true
+        },
+        "action": "a",
+        "after": {
+          "step": 1,
+          "place": {
+            "map_id": 42,
+            "x": 3,
+            "y": 5
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图42 x=3 y=5，朝向 west",
+          "scene": "shop",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图42 x=3 y=5",
+            "facing": "west",
+            "neighbors": "北 . 南 . 西 # 东 .",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 3,
+                "y": 3
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 0,
+                "y": 5
+              },
+              {
+                "kind": "人",
+                "map_id": 42,
+                "x": 5,
+                "y": 5
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 3,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 42,
+                "x": 4,
+                "y": 7
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=1 ##########  (x=-1..8)\ny=2 ##........  (x=-1..8)\ny=3 ####N.####  (x=-1..8)\ny=4 ####..####  (x=-1..8)\ny=5 #N.#@.N...  (x=-1..8)\ny=6 ####......  (x=-1..8)\ny=7 ##..DD....  (x=-1..8)\ny=8 ##########  (x=-1..8)\ny=9 ##########  (x=-1..8)",
+            "map_id": 42,
+            "screen": ""
+          },
+          "done": false,
+          "perceived": true
+        },
+        "result": "",
+        "step": 0,
+        "episode_id": "eval-knowledge_dialogue_advance-ep1",
+        "task_id": "knowledge_dialogue_advance-t1",
+        "run_id": "eval-knowledge_dialogue_advance",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "按 a 后对话框消失（叠加层从 dialog 变为 none），符合目标"
+      }
+    ],
+    "task_id": "knowledge_dialogue_advance-t1",
+    "episode_id": "eval-knowledge_dialogue_advance-ep1",
+    "run_id": "eval-knowledge_dialogue_advance",
+    "goal": "按 a 推进对话，直到对话框消失",
+    "termination": "goal_done",
+    "judge_reason": "历史里出现过对话框文字「Hey! You came from PALLET TOWN?」，而最后一条「之后变成」中 overlay 已变为 none，对话框消失。",
+    "steps_used": 1,
+    "max_steps": 12
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_dialogue_advance.task.summarize_task.000001"
+}

@@ -1,0 +1,8 @@
+{
+  "task": "run_plan",
+  "version": "v1",
+  "kind": "task",
+  "params": "RunPlanParams",
+  "reason": "CP4 首版迁移，共用片段保留旧措辞与次序",
+  "hash": "0f5c7e66b7c491932e10f03a88b6277b5f853791077f4ec976bd7a16f9e3e90e"
+}

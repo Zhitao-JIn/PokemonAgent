@@ -1,0 +1,111 @@
+{
+  "task": "verify",
+  "case_id": "act-0876faf1353e4ff8a17c2ca34863d071",
+  "source": "act_memory",
+  "request_kind": "current",
+  "request": {
+    "entries": [
+      {
+        "before": {
+          "step": 57,
+          "place": {
+            "map_id": 50,
+            "x": 5,
+            "y": 7
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图50 x=5 y=7，朝向 south",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图50 x=5 y=7",
+            "facing": "south",
+            "neighbors": "北 . 南 # 西 D 东 .",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 50,
+                "x": 8,
+                "y": 4
+              },
+              {
+                "kind": "门",
+                "map_id": 50,
+                "x": 4,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 50,
+                "x": 5,
+                "y": 7
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=3  .....#.###  (x=1..10)\ny=4  .......N##  (x=1..10)\ny=5  .....#.###  (x=1..10)\ny=6  .....#.###  (x=1..10)\ny=7  ...D@...##  (x=1..10)\ny=8  ##########  (x=1..10)\ny=9  ##########  (x=1..10)\ny=10 ##########  (x=1..10)\ny=11 ##########  (x=1..10)",
+            "map_id": 50
+          },
+          "done": false,
+          "perceived": false
+        },
+        "action": "left",
+        "after": {
+          "step": 58,
+          "place": {
+            "map_id": 50,
+            "x": 4,
+            "y": 7
+          },
+          "status": "（这一帧只读了内存）全局坐标 地图50 x=4 y=7，朝向 west",
+          "facts": {
+            "scene": null,
+            "overlay": "none",
+            "where": "全局坐标 地图50 x=4 y=7",
+            "facing": "west",
+            "neighbors": "北 . 南 # 西 . 东 D",
+            "landmarks": [
+              {
+                "kind": "人",
+                "map_id": 50,
+                "x": 8,
+                "y": 4
+              },
+              {
+                "kind": "门",
+                "map_id": 50,
+                "x": 4,
+                "y": 7
+              },
+              {
+                "kind": "门",
+                "map_id": 50,
+                "x": 5,
+                "y": 7
+              }
+            ],
+            "dialog_text": "",
+            "options": [],
+            "cursor": null,
+            "overview": "",
+            "walk_map": "这一屏 10 列 × 9 行；每行末尾括号里是该行首尾两格的全局 x\ny=3  #.....#.##  (x=0..9)\ny=4  #.......N#  (x=0..9)\ny=5  #.....#.##  (x=0..9)\ny=6  #.....#.##  (x=0..9)\ny=7  #...@D...#  (x=0..9)\ny=8  ##########  (x=0..9)\ny=9  ##########  (x=0..9)\ny=10 ##########  (x=0..9)\ny=11 ##########  (x=0..9)",
+            "map_id": 50
+          },
+          "done": false,
+          "perceived": false
+        },
+        "step": 57,
+        "episode_id": "realcheck-0924-174203-ep1",
+        "task_id": "realcheck-t10",
+        "run_id": "realcheck-0924-174203",
+        "before_frame": "data:image/png;base64,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",
+        "after_frame": "data:image/png;base64,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"
+      }
+    ],
+    "goal": "检查这一键的前后变化",
+    "knowledge": ""
+  },
+  "max_segments": 3,
+  "source_ref": "D:/Users/GummiGu/PycharmProjects/Pokemon_Agent/memory/step_memory/0876faf1353e4ff8a17c2ca34863d071.json"
+}

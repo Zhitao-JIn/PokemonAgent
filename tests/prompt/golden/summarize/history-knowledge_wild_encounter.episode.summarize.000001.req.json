@@ -1,0 +1,209 @@
+{
+  "task": "summarize",
+  "case_id": "history-knowledge_wild_encounter.episode.summarize.000001",
+  "source": "history",
+  "request_kind": "current",
+  "request": {
+    "entries": [
+      {
+        "run_id": "eval-knowledge_wild_encounter",
+        "episode_id": "eval-knowledge_wild_encounter-ep1",
+        "task_id": "knowledge_wild_encounter-t1",
+        "goal": "在草丛里向东走一格到 x=14 y=8",
+        "termination": "goal_done",
+        "reason": "成功靠的是唯一一次 right 键：起点 (13,8) 与目标 (14,8) 恰好相差一格东向，按 right 后坐标精确命中且仍在草丛内，无遇敌、无偏移，因此一步达成。",
+        "steps_used": 1,
+        "total_acts": 0,
+        "summary": "在草丛地图12中，角色从全局坐标 (13,8) 朝东，按一次 right 后移动到 (14,8)，四邻均为草丛(G)，叠加层 none，达成目标坐标 x=14 y=8，goal_done，仅用 1/4 键。",
+        "reusable_patterns": [
+          "目标坐标与当前坐标只差一格时，直接朝该方向按一次方向键即可，无需绕路或试探。",
+          "在草丛内移动前先读全局坐标与朝向，确认目标格的四邻是否仍为草丛(G)，避免踩出草丛触发遇敌。",
+          "单步移动任务优先用坐标差判断方向：dx>0 按 right，dx<0 按 left，dy>0 按 down，dy<0 按 up。"
+        ],
+        "critical_decisions": [
+          "第 0 步：看到全局坐标 (13,8)、目标 (14,8)，判定需向东一格，选择 right 而非其他方向，一步命中目标。"
+        ],
+        "failure_points": [],
+        "quality_score": 0.9,
+        "quality_rationale": "记录前后状态、坐标、四邻与按键结果都完整清晰，正样本一步达成，可直接作为“坐标差一格→按对应方向键”的范例；唯一不足是任务过于简单、只有一键，对复杂路径规划的参考价值有限，故给 0.9 而非满分。",
+        "tags": [
+          "草丛",
+          "单步移动",
+          "坐标对齐",
+          "right",
+          "goal_done"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "### Task knowledge_wild_encounter-t1\n- 起点：地图12 (13,8)，朝向 east，四邻全 G\n- 动作：right ×1\n- 终点：地图12 (14,8)，四邻全 G，叠加层 none\n- 结果：goal_done（1/4 键）\n- 结论：坐标差一格东向，直接 right 命中，无失败点。"
+      },
+      {
+        "run_id": "eval-knowledge_wild_encounter",
+        "episode_id": "eval-knowledge_wild_encounter-ep1",
+        "task_id": "knowledge_wild_encounter-t2",
+        "goal": "继续在草丛里向东走一格到 x=15 y=8",
+        "termination": "goal_done",
+        "reason": "成功靠的是唯一一次 right 键：起点 (14,8) 与目标 (15,8) 恰好相差一格东向，按 right 即到位，判定为 goal_done。本记录无负样本、无浪费键，属于最短路径达成。",
+        "steps_used": 1,
+        "total_acts": 1,
+        "summary": "在 map12 的草丛中，agent 从全局坐标 (14,8)、朝向 east 出发，按一次 right 键后移动到 (15,8)，朝向保持 east，四邻均为草地(G)，叠加层 none，未触发野生遇敌。目标坐标 x=15 y=8 达成，共消耗 1/4 键。",
+        "reusable_patterns": [
+          "目标为『向东走一格到指定坐标』时，先比对当前全局坐标与目标坐标的差值，若仅 x+1 且朝向已是 east，直接按一次 right 即可，无需转向。",
+          "在草丛中移动前先看四邻是否均为 G（可通行草地），确认无阻挡再按键，可避免撞墙浪费键。",
+          "每按一键后核对『之后变成』的全局坐标，确认位移方向与预期一致，再决定下一步。"
+        ],
+        "critical_decisions": [
+          "第 0 条：判断 (14,8)→(15,8) 只需东移一格，直接按 right，一步到位，是本次唯一且正确的转折点。"
+        ],
+        "failure_points": [],
+        "quality_score": 0.55,
+        "quality_rationale": "记录前后变化清晰、坐标与朝向字段完整，但任务过于简单（单键达成、无负样本、无遇敌或障碍处理），可提炼的决策信息有限，对复杂同类任务的参考价值中等偏低，故给中等分。",
+        "tags": [
+          "坐标导航",
+          "单格移动",
+          "草丛",
+          "最短路径",
+          "goal_done"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "## Task knowledge_wild_encounter-t2\n\n- **起点**：map12 全局坐标 (14,8)，朝向 east，四邻皆 G，叠加层 none\n- **动作**：right ×1\n- **终点**：map12 全局坐标 (15,8)，朝向 east，四邻皆 G\n- **结果**：goal_done（1/4 键）\n\n### 结论\n目标与起点仅差东向一格，朝向已为 east，直接按 right 一步到位，无浪费键、无遇敌。\n\n### 可复用\n1. 先算坐标差，若仅 x+1 且朝向 east，直接 right。\n2. 移动前确认四邻为可通行草地。\n3. 每键后核对全局坐标验证位移。"
+      },
+      {
+        "run_id": "eval-knowledge_wild_encounter",
+        "episode_id": "eval-knowledge_wild_encounter-ep1",
+        "task_id": "knowledge_wild_encounter-t3",
+        "goal": "继续在草丛里向东走一格到 x=16 y=8",
+        "termination": "goal_done",
+        "reason": "成功靠的是唯一一次 right 键：起点 (15,8) 与目标 (16,8) 只差一格东向，且朝向已是 east，直接前进即达成；全程仅用 1/4 键，无浪费。",
+        "steps_used": 1,
+        "total_acts": 2,
+        "summary": "本次 task 从地图12 全局坐标 (15,8)、朝向 east 出发，执行 1 次 right 后到达 (16,8)，与 goal 要求的 x=16 y=8 完全一致，goal_done；四邻均为草地 G，未触发遇敌。",
+        "reusable_patterns": [
+          "当目标坐标与当前坐标只差一格且朝向已对齐时，直接按一次对应方向键即可，无需转向或试探。",
+          "在草丛中向东走一格前先确认朝向为 east，可省去一次转向键。",
+          "到达目标后立即核对全局坐标与 goal 判据是否一致，再结束 task。"
+        ],
+        "critical_decisions": [
+          "第 0 条按 right：起点 (15,8) 朝向 east，一步到 (16,8)，是唯一且正确的转折点。"
+        ],
+        "failure_points": [],
+        "quality_score": 0.6,
+        "quality_rationale": "记录前后坐标、朝向、四邻清晰，正样本可复用；但 task 极短（仅 1 键、无负样本、无遇敌或障碍处理），对复杂场景的参考价值有限，故给中等分。",
+        "tags": [
+          "草丛",
+          "单格移动",
+          "east",
+          "goal_done",
+          "短程导航"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "## Task knowledge_wild_encounter-t3\n\n- **起点**：地图12 (15,8)，朝向 east，四邻皆 G\n- **操作**：right ×1\n- **终点**：地图12 (16,8)，朝向 east\n- **结果**：goal_done（1/4 键）\n\n### 结论\n目标与起点仅差一格东向且朝向已对齐，一次 right 即达成，无失败点。"
+      },
+      {
+        "run_id": "eval-knowledge_wild_encounter",
+        "episode_id": "eval-knowledge_wild_encounter-ep1",
+        "task_id": "knowledge_wild_encounter-t4",
+        "goal": "继续在草丛里向东走一格到 x=17 y=8",
+        "termination": "goal_done",
+        "reason": "成功靠的是唯一一次 right 按键：从 (16,8) 向东平移一格即命中目标 (17,8)，无多余动作、无遇敌或偏移，属于最短路径达成。",
+        "steps_used": 1,
+        "total_acts": 3,
+        "summary": "在草丛地图12中，角色初始位于全局坐标 (16,8)、朝向 east，四邻均为草地(G)。执行一次 right 按键后，位置变为 (17,8)，朝向保持 east，东侧邻格变为障碍(#)，恰好到达目标坐标 x=17 y=8，goal_done。全程仅用 1/4 键。",
+        "reusable_patterns": [
+          "目标为『向东走一格到指定坐标』时，先核对当前全局坐标与目标坐标的差值，若仅差 1 格且朝向已是 east，直接按一次 right 即可。",
+          "按键前检查四邻：东侧为 G（可走）才按 right；若东侧为 # 或障碍则不应直走，需绕行。",
+          "到达目标后立即停止，不追加按键，避免越界或触发遇敌。"
+        ],
+        "critical_decisions": [
+          "第 0 步：确认当前位置 (16,8) 与目标 (17,8) 仅差东向 1 格、东邻为 G，果断按 right，一步到位。"
+        ],
+        "failure_points": [],
+        "quality_score": 0.9,
+        "quality_rationale": "记录前后状态、坐标、朝向、四邻变化完整清晰，单键达成目标，正样本明确；唯一不足是样本量极小（仅 1 键），对复杂路径规划的参考价值有限，故略低于满分。",
+        "tags": [
+          "坐标导航",
+          "单格移动",
+          "草丛",
+          "goal_done",
+          "最短路径"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,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",
+        "markdown": "## Task knowledge_wild_encounter-t4\n\n- **初始**：地图12，全局坐标 (16,8)，朝向 east，四邻 北G 南G 西G 东G\n- **动作**：`right`（1/4 键）\n- **结果**：坐标 (17,8)，朝向 east，东邻变 #，**goal_done**\n\n### 结论\n目标仅差东向 1 格且东邻可走，一次 right 即达成，无浪费键数。\n\n### 可复用\n- 先算坐标差，差 1 格且朝向对 → 直接按方向键\n- 按键前确认目标方向邻格为 G\n- 到达即停"
+      },
+      {
+        "run_id": "eval-knowledge_wild_encounter",
+        "episode_id": "eval-knowledge_wild_encounter-ep1",
+        "task_id": "knowledge_wild_encounter-t5",
+        "goal": "在草丛里来回走动（如向南到 y=9 再向北回 y=8）直到遇敌",
+        "termination": "goal_done",
+        "reason": "成功靠的是唯一一键 bounce_in_tall_grass：它把「站在草丛格」直接转成「进入战斗」，无需先走位到 y=9 再回 y=8；判定依据（scene=battle、foe=PIDGEY Lv3）与记录一致，属于 goal_done 而非 interrupted，因为遇敌正是本 task 的终止条件。",
+        "steps_used": 1,
+        "total_acts": 4,
+        "summary": "在 map12 全局坐标 x=17 y=8 的草丛格（四邻北/南/西均为 G 草丛，东为 # 障碍）执行 script:bounce_in_tall_grass(steps=30)，场景由野外直接切换为 battle，出现野生 PIDGEY Lv3（HP 16/16），我方 BULBASAUR Lv7（HP 25/25），朝向由 east 变为 south，仅用 1/12 键即达成遇敌目标。",
+        "reusable_patterns": [
+          "遇敌类 task 优先用 bounce_in_tall_grass 这类脚本动作，站在草丛格上一步即可触发，比逐格南北走位省键",
+          "执行前确认四邻至少有一格是 G 草丛（本例北/南/西三面皆 G），保证脚本有草丛可踩",
+          "遇敌后立即停止按键，把控制权交给战斗流程，避免多余按键浪费预算"
+        ],
+        "critical_decisions": [
+          "第 4 步选择 script:bounce_in_tall_grass(steps=30) 而非手动向南/向北逐格移动，是唯一且正确的转折点，1 键完成遇敌"
+        ],
+        "failure_points": [],
+        "quality_score": 0.85,
+        "quality_rationale": "记录前后状态字段完整（坐标、四邻、双方等级血量、场景切换），单键即达成目标，对「草丛遇敌」类 task 有直接可复用的示范价值；扣分在于只有一条情景记忆、缺少失败对照，且未体现多步走位策略的取舍过程。",
+        "tags": [
+          "wild_encounter",
+          "tall_grass",
+          "bounce_in_tall_grass",
+          "battle",
+          "one_key_success"
+        ],
+        "first_frame": "data:image/png;base64,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",
+        "last_frame": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACQCAYAAACPtWCAAAACyElEQVR4nO3ajU3bUBhAUadiRc/ATGGFDJmKqkGu+5wECFy3OkdC+fkMqV4utmN6mOf5PPFwp9Ppr+fmeR5uN8/z8Hb5fVvz0c9cvv7e5z+WD0aLZn57fdZrdW0d17N5EdVHHm+9zr8y/7G1wfLW/L71We+11l+j7U6rN2v5s0exjebrn7e+3fP8V4DL364R8+vrs1zQdWzrdbzMltufBkGPDrej+fr+1uvudX5wDvgYt855trY9vfOc75751nZ7nL8dgh12P3fa8chzwIvRYfjWfG3v86fhs3zaPR9Ytt6k9d702nzrF2O97V7nDsFfGNvWB4+tN+nRh7eLPc8P0zS5DkhmeBkGvosASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJCZCUAEkJkJQASQmQlABJPbUvv0/H43H4/PPz87f/W/539oB3xndrxscIkNzZ159rcDwez2uvz1mn6eFrcPh9h8tv4/k8HQ6Hd8/4GB9CBnG93r9GiI/jHHBhGd5yT7e8fytO3sch+Ap7uq9nD3jFy8vL26UXe76vYQ9Iyh6QlADv+IvH62N/Bfk6LrCuLkJvPXYxenIhunLZA/oPCY/lQwgp54CkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBEhKgKQESEqApARISoCkBMhU+glBzJyxKRNWCgAAAABJRU5ErkJggg==",
+        "markdown": "## task knowledge_wild_encounter-t5\n\n- **起点**：map12 (17,8)，朝向 east，四邻 北G/南G/西G/东#，处于草丛中\n- **动作**：`script:bounce_in_tall_grass(steps=30)`（1/12 键）\n- **终点**：scene=battle，野生 PIDGEY Lv3 (16/16) vs BULBASAUR Lv7 (25/25)，朝向 south\n- **结果**：goal_done\n\n**结论**：站在草丛格上直接用 bounce 脚本一步遇敌，无需南北来回走位；遇敌即停，把键数留给战斗。"
+      }
+    ],
+    "verdicts": [
+      {
+        "index": 0,
+        "positive": true,
+        "why": "按 right 后坐标从 (13,8) 变为 (14,8)，仍在草丛内，朝目标方向推进"
+      },
+      {
+        "index": 1,
+        "positive": true,
+        "why": "按 right 后坐标从 (14,8) 变为 (15,8)，仍在草丛内，朝目标方向推进"
+      },
+      {
+        "index": 2,
+        "positive": true,
+        "why": "按 right 后坐标从 (15,8) 变为 (16,8)，仍在草丛内，朝目标方向推进"
+      },
+      {
+        "index": 3,
+        "positive": true,
+        "why": "按 right 后坐标从 (16,8) 变为 (17,8)，仍在草丛内，朝目标方向推进"
+      },
+      {
+        "index": 4,
+        "positive": true,
+        "why": "执行 bounce_in_tall_grass 后场景由野外切换为 battle，出现野生 PIDGEY，达成遇敌目标；无领域知识，按前后变化判"
+      }
+    ],
+    "episode_id": "eval-knowledge_wild_encounter-ep1",
+    "run_id": "eval-knowledge_wild_encounter",
+    "run_goal": "依次完成：在草丛里一直走，直到撞上一只野生宝可梦",
+    "goal_id": "knowledge_wild_encounter",
+    "goal": "在草丛里一直走，直到撞上一只野生宝可梦",
+    "termination": "goal_done",
+    "judge_reason": "当前帧 scene 是 battle，对手是野生 PIDGEY Lv3，说明已经在草丛里撞上了野生宝可梦。",
+    "steps": 5,
+    "acts_used": 5,
+    "max_steps": 15
+  },
+  "max_segments": 3,
+  "source_ref": "evals/dataset/brain_calls/v1/summary/inputs.jsonl#knowledge_wild_encounter.episode.summarize.000001"
+}

@@ -1,0 +1,8 @@
+{
+  "task": "judge_success",
+  "version": "v1",
+  "kind": "task",
+  "params": "JudgeParams",
+  "reason": "CP4 首版迁移，共用片段保留旧措辞与次序",
+  "hash": "6988c1819be076cf7bd8bb2312204db18b8884249e6e96f51ba8e78b24761d34"
+}
