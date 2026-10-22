@@ -1,3 +1,21 @@
+## 2026-10-22（597）—— 删除旧 memory 运行期数据（保留 knowledge_memory）
+
+**改了什么**：删除主仓库根 `memory/` 下五个运行期数据目录，保留 `knowledge_memory/`；不改任何代码、测试或数据文件：
+
+- `memory/step_memory/`：231 个文件、2,446,155 字节
+- `memory/episode_memory/`：9 个文件、85,546 字节
+- `memory/task_memory/`：1 个文件（仅 `index.json`）、9,247 字节
+- `memory/snapshots/`：24 个 zip、1,215,929 字节
+- `memory/object_memory/`：38 个文件、33,811 字节
+
+合计删除 303 个文件、3,790,688 字节。`memory/knowledge_memory/` 14 个文件原样保留：12 个被 git 跟踪的 `.md`，加 2 个被 `.gitignore` 忽略的派生文件 `index.json`、`vectors.jsonl`。
+
+**为什么这么改**：这批旧记忆是 CP596 之前的观测形状（step 快照里仍有 `status` / `where` / `neighbors` / `walk_map` 等已删字段），渲染文本已经迁进 prompt 模块；继续留着旧数据会让旧文本投影与新结构化字段两套形状并存。清掉后记忆库从空开始，新记录按 596 之后的字段重新积累；物体检索也从空开始，符合「用新记忆替代旧记忆」的路线。
+
+**取舍**：这些目录是 git 之外的运行期产物，`.gitignore` 明确忽略，删除不能靠 git 恢复。删除前已备份到 `.coordination/prompt-module/backup/memory-old-20261022.zip`（忽略目录，2,794,958 字节，sha256 `ed7f15cb53364e6527d2fee7f84b870389046a23bbf4823f3eb5da069e6db573`），包内 303 个条目与源文件逐字节一致，需要时可解压恢复。`task_memory` 在删除前盘上只有 `index.json`（count=31），对应的 31 条记录文件早已不存在，备份只能保存这个悬空索引，无法恢复记录正文。`knowledge_memory` 未打包：它保留原地，12 个 `.md` 有 git 副本，`index.json` / `vectors.jsonl` 是可重建的派生物。删除按目录逐个执行，每个目录删完立即核对不存在；未使用通配符、未删除 `memory/` 本身、未触碰 `knowledge_memory` / `eval_results/` / worktree。
+
+**影响面**：删除后 `memory/` 只剩 `knowledge_memory/`；14 个文件的路径、字节数、sha256 与删除前逐一相同，两个 worktree 的 `knowledge_memory` 副本也未变；删除动作本身没有产生任何 git 变化（主仓库只有先前已存在的未跟踪 `langfuse/`），写本条 CHANGELOG 后 worktree 只有 `M CHANGELOG.md`。验证数字：全量 pytest 2378 passed / 25 skipped / 3 deselected（JUnit tests=2403, failures=0, errors=0, skipped=25）；ruff check `All checks passed!`、ruff format `948 files already formatted`；守卫 A/B/C/D；golden 161 passed / 25 skipped。空临时根初始化演示自动创建六个 kind 目录，三种空检索均返回 `[]`，证明删后可启动。`memory/run_memory/` 在代码里仍会在启动时自动创建，但 `.gitignore` 尚未覆盖（留待文档同步一步处理，本步不改 `.gitignore`）。
+
 ## 2026-10-22（596）—— prompt 模块：删除 world / memory 旧字符串字段与旧渲染方法（只减不加）
 
 **改了什么**：prompt 模块已是唯一渲染出口，本步删除 world 与 schemas/memory 里已无活读方的旧字符串字段、旧渲染方法与旧存档物体文本分支；结构化字段、机器判定字段与冻结数据全部保留。
