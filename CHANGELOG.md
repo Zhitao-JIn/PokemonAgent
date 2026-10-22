@@ -1,3 +1,26 @@
+## 2026-10-22（598）—— prompt 模块收口（CP7）：文档同步、.gitignore 补漏、intent 第八节验收
+
+**改了什么**：同步仍描述旧 prompt / world / memory 状态的活文档，并补一条 `.gitignore`：
+
+- `AGENTS.md` / `CLAUDE.md`：目录树补 `prompt/` 模块、从 `direct/` 去掉 `prompts/`；把 `Reflection` 从 brain 数据形状与结果袋列表移除；`MemoryTool.build` 改为 `memory_server_url` / `memory_root`（只经 MCP）；prompt 模板位置改为 `prompt/` 的 `PromptGateway`；删除 `schemas/memory/datastore/step_memory.py` 的失效引用。两份文件原有的 3 行头部差异保持不动。
+- `docs/spec/brain/SPEC.md`：删 `reflect` / `Reflection` 行与相关不变式；补 `summarize_run` 方法与 `SummarizeRunResult`；结果袋计数改为 7；`ModelCall.payload` 标注 `prompt_task` / `prompt_version` / `prompt_hash`；数据形状引用去掉 `direct/prompts` 与失效的 `LearnedKnowledge`。
+- `docs/spec/world/SPEC.md`：删 `Observation.status` / `render`、`Facts.where/neighbors/walk_map`、`Facts.items/render`、`PlaceInWorld.render`、`ActionSpace.descriptions/note/map_note`、`ActionEntry.signature`、`TakeoverView.render`、`BattleStatus.facts_fields`、`TerrainMap.render/render_neighbors`、`TaskObservation.observation_notes`；改为当前结构化字段、`observation_flags` 与 prompt 侧渲染。
+- `docs/spec/tools/SPEC.md`：动作空间不再挂 `BUTTON_HELP` / `REPEAT_HINT` / `MAP_HINT`；文字化改由 `prompt/` 的 `PromptGateway`；`prompts` 章节改写为网关 + 注册表版本契约；`with_prompt_text` 与 `_render_observation` 引用删除。
+- `docs/spec/schemas/SPEC.md`：memory 出口去掉 `render_sequence`，补 `run_memory.py` 与 `RunMemory`；`ActMemory` 去 `rationale`/`render`，`TaskMemory` 的 `start_step` 改 `total_acts`。
+- `docs/spec/memory/SPEC.md`：`ActMemory` 去 `rationale` / `status` / `perceived`，`TaskMemory` 的 `start_step` 改 `total_acts`。
+- `docs/spec/mcp/SPEC.md`：`perceive_task` 返回从 `screen|walk_map, pos` 改为 `scene, screen, cells, place`。
+- `docs/spec/evals/SPEC.md`：注明 `where` / `walk_map` / `neighbors` 是冻结数据集真值字段，不是 world 运行期返回值。
+- `docs/mcp/prompt_observation_fields.md`：从「旧文本 + 新结构化」改为「只返回结构化字段、措辞由 prompt 模块生成」，`terrain_visible` 的旧「是否显示 walk_map」措辞改为「是否显示地形」。
+- `docs/reviewer/spec.md`：索引行改由 reviewer 自己的渲染函数产出，memory 对象不再提供 `index_line()`。
+- `docs/brain_scope/spec.md`：D2 索引行改为由 prompt 网关渲染；D4 去掉 `render()` / `index_line()`；D5 的 `summarize_run` prompt 路径改为 `prompt/`。
+- `.gitignore`：新增 `memory/run_memory/`（代码仍会在启动时自动创建该目录）。
+
+**为什么这么改**：CP0–CP6、595、596、597 已把 prompt 渲染迁到 `pokemon_agent/prompt/`、删除 world/memory 旧字段与旧 memory 数据。活文档仍把 `direct/prompts`、模块级常量、`Reflection`、旧 `render` / `index_line`、旧 memory 目录写成现状，会让后续读者按不存在的接口工作。本步只改事实性描述，让文档与当前代码一致，并补上 `run_memory` 的忽略规则。
+
+**取舍**：分类按「活文档 = 当前行为 / 当前规范」与「历史记录 = 带日期的计划 / 审计 / 复盘 / 迁移设计」处理；`docs/prompt_module/**`、`docs/PLAN_*`、`docs/*_1007*`、`docs/experiences/**`、`docs/roadmap/*archive*`、`docs/perceive/spec.md`、`docs/test/brain-reflect-spec.md`、`docs/spec/PLAN_wikiskill_reproduction.md`、`docs/spec/TRACE_37_accounts_examples.md` 保持原样；`docs/brain_scope/plan.md` 是 CP 实施记录，未改。`docs/mcp/prompt_observation_fields.md` 选择直接改写为现状（而非只加“已被取代”页首），因为它本身就是 MCP 观测字段的当前说明，保留旧表会继续误导。`AGENTS.md` / `CLAUDE.md` 保留 3 行头部差异，只同步事实。`docs/brain_scope/spec.md` 只改 D2/D4/D5 的现状事实，后文 CP 历史清单未重写。第八节第 6 项发现 `KnowledgeRecord.render` 仍在 `schemas/memory/datastore/knowledge.py`（无读方），但本步禁止改 `.py`，未修，列入缺口。`AGENTS.md` 的 0915 import 计数保留历史口径并注明未重算，不伪造新数字。
+
+**影响面**：intent 第八节八项结论：1 通过（production 只有 `brain_tool.py` 从 `pokemon_agent.prompt` import 公开网关 / Params，零任务实现 / 版本模块 import）；2 通过（守卫 A）；3 通过（AST 零模块级旧常量定义；仅两处代码注释历史提及与 docs/CHANGELOG 历史文字）；4 通过（golden 161 passed / 25 skipped，25 条均为 legacy_adapter 的「where 不是现行 PlaceInWorld 文本」；golden 目录无说明页）；5 部分通过（账字段测试 16 passed；无「只改 registry.json 切换版本」的自动化测试，手工探针 v1→v2 通过，列为缺口）；6 有缺口（`KnowledgeRecord.render` 未删，其余 world/memory 类无 `render`/`index_line`）；7 通过（`test_registry.py` 的 hash mismatch / missing version 用例）；8 通过（全量 2378 passed / 25 skipped / 3 deselected，ruff 948 files，守卫 A/B/C/D）。无代码、测试、golden、evals 数据、prompt 模板、registry.json 改动；`memory/` 未触碰。
+
 ## 2026-10-22（597）—— 删除旧 memory 运行期数据（保留 knowledge_memory）
 
 **改了什么**：删除主仓库根 `memory/` 下五个运行期数据目录，保留 `knowledge_memory/`；不改任何代码、测试或数据文件：

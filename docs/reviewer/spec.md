@@ -178,7 +178,7 @@ class ReviewContext(BaseModel):
 | task 层 judge（judge·L2，**可选**） | `JudgeReq` | `history`：本 task 全部 ActMemory | `task_index` | `knowledge`；RAM 现状由 `history` 最后一条的 `after` 给出 | `history[*].before_frame` / `after_frame` |
 
 - 体量变大：L0 详情是最多 `max_episodes`（brain-scope 后默认 10）条局记忆全文，`ctx` 因此改为**按节输出**（`ctx [--section 名]`，6.4），默认只打节目录与各节行数；AI 首条消息仍是全文（与大脑所见等量），故不带图（#20）。
-- 渲染对索引行直接用对象自带的 `index_line()` 结果，不另写一套。
+- 渲染对索引行由 reviewer 自己的渲染函数产出；memory 对象不再提供 `index_line()`。
 
 ---
 

@@ -9,8 +9,8 @@
 - **无状态**（铁律 1）：`Brain.__init__` 只存注入的四个 provider，没有跨步骤的实例变量；每个方法的全部输入都来自参数。
 - **只认自己声明的契约**（铁律 2）：不 import `harness` / `world` / `memory` / `trace` / `tools`；唯一横向依赖是 `brain/interface/llm_provider.py` 的两个 provider 协议与 `brain/errors.py` 的 `BrainError` 家族——后者**不继承 `AgentError`**。
 - **收裸字段**（铁律 3）：入参只有 `str` / `Sequence[str]`，不认识任何 `*Req` 信封；需要结构的三处是 `keys`（校验动作合法性）、`images`（base64 PNG）、`entries`（`verdicts` 的 `index` 落回它的下标）。
-- **prompt 是规则，入参是素材**：怎么判、怎么想、怎么规划全在调用方渲染好的 `prompt` 里，`Brain` 不拼 prompt、不知道 `direct/prompts/` 存在；出参是 brain 自己的方言，唯一转换点是 `direct/brain_tool.py`。
-- **七个方法都是"问一次"**（`reflect` 不调模型）：内部不重试，失败抛 `AttemptFailed` 家族并携带这次尝试的 `ModelCall`；重试循环住 `direct/brain_tool.py::_attempt_loop`，预算住 `pokemon_agent/config.py`（`BRAIN_MAX_ATTEMPTS`）。
+- **prompt 是规则，入参是素材**：怎么判、怎么想、怎么规划全在调用方渲染好的 `prompt` 里，`Brain` 不拼 prompt、不知道 `prompt/` 存在；出参是 brain 自己的方言，唯一转换点是 `direct/brain_tool.py`。
+- **七个方法都是"问一次"**：内部不重试，失败抛 `AttemptFailed` 家族并携带这次尝试的 `ModelCall`；重试循环住 `direct/brain_tool.py::_attempt_loop`，预算住 `pokemon_agent/config.py`（`BRAIN_MAX_ATTEMPTS`）。旧的 `reflect` 已删除，`Reflector`（tool 层）直接用结构化观测组装 `ActMemory`。
 
 ## 二、目录结构
 
@@ -34,12 +34,12 @@ brain/
 | 方法 | 签名 | 前置条件 | 承诺（后置） | 失败 |
 |---|---|---|---|---|
 | `choose` | `(*, prompt, keys: Sequence[str], images=()) -> ChooseResult` | `keys` 非空 | `action.sequence` 每段 `name` 都在 `keys` 内；`calls` 恰好一条 | `DecisionAttemptFailed` |
-| `reflect` | `(*, prompt, before, after, action_text) -> Reflection` | `before` / `after` 非空 | `Reflection` 四字段与入参一一对应 | 不调模型，只在调用方违约时 assert |
 | `judge` | `(*, prompt, goal, history: Sequence[str], images=()) -> JudgeResult` | — | `done` 是模型明确给出的布尔裁决；`calls` 恰好一条 | `JudgeAttemptFailed` |
 | `plan` | `(*, prompt, goal_stack: Sequence[str], history: Sequence[str], max_push: int, images=()) -> PlanResult` | — | `calls` 恰好一条 | `PlanAttemptFailed` |
 | `decompose` | `(*, prompt, goal, context: Sequence[str], max_tasks: int, images=()) -> DecomposeResult` | `max_tasks > 0` | `decomposition.tasks` 至少一条；`calls` 恰好一条；走 plan provider，支持首末帧 | `DecomposeAttemptFailed` |
 | `verify` | `(*, prompt, entries: Sequence[str], goal, knowledge, images=()) -> VerifyResult` | — | `verdicts` 与 `entries` 等长且按 `index` 顺序；`calls` 恰好一条 | `VerifyAttemptFailed` |
 | `summarize` | `(*, prompt, goal, history: Sequence[str], success: bool, steps: int, max_steps: int, images=()) -> SummarizeResult` | `history` 只装已过滤的可信记录且至少一条 | `summary` 非 `None`；`calls` 恰好一条 | `SummarizeAttemptFailed` |
+| `summarize_run` | `(*, prompt, goal, history: Sequence[str], success: bool, steps: int, max_steps: int, images=()) -> SummarizeRunResult` | `history` 非空 | `summary` 非 `None`；`calls` 恰好一条 | `SummarizeAttemptFailed` |
 
 **统一约定（改前必读）：**
 
@@ -75,21 +75,20 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 | `ScriptCall` / `ScriptSignature` / `ScriptArg` | 调用：`name` + `args: dict[str, str \| int]`，`Action.describe()` 写成 `script:buy_item(item=POKé BALL, count=5)`；签名：`name` + `params`（`name` / `type`∈{str,int} / `required`） | 调用由 `Brain.choose` 产；签名由 tool 从 world 的脚本条目 `ActionEntry` 转来 | 世界执行脚本、trace / 记忆 |
 | `Goal` / `Task` | `goal` + `criteria`；`task_id` / `goal` / `success_criteria` / `max_steps` / `initial_state_hint` | 任务来自 `experiment/tasks.py`，经 harness 递给大脑 | harness 渲染进 prompt、`world` 的 `reset()` |
 | `RunPlan`（内嵌 `PlanGoal` / `PlanUpdate`） | `push_goals`、`updates`、`why`（不再有 `done`：停判归 review_and_judge）；`PlanGoal` 有 `goal` / `success_criteria` / `max_steps`（task 数上限），`PlanUpdate` 有 `index` / `status` / `note` | `Brain.plan` | harness 的目标表（`task_id` 由 harness 生成） |
-| `Reflection` | `before`、`rationale`、`action_text`、`after` | `Brain.reflect` | tool → step 记忆 |
 | `Decomposition`（内嵌 `PlannedTask`） | `tasks`（`goal` / `success_criteria` / `max_steps`=键数上限，至少一条）、`why` | `Brain.decompose` | harness 编 `task_id` 后成为 `Task` 链 |
 | `EpisodeSummary` | `summary`、`reason`（LLM 写的结论说明）、`quality_score`（0.0–1.0）、`quality_rationale`、`markdown` 等 | `Brain.summarize` | tool 配五个来源章 → `EpisodeMemory` |
 | `VerifyVerdict` | `index`、`positive`（符合 goal = 正样本）、`why` | `Brain.verify` | 正负两组都交给 summarize 当参考，不过滤 |
-| `ModelCall` | `payload: dict[str, str]`、`error_kind`、`error` | `Brain` 七个方法 | `direct/brain_tool.py::_adopt()` |
-| 六个结果袋：`ChooseResult` / `JudgeResult` / `PlanResult` / `DecomposeResult` / `VerifyResult` / `SummarizeResult` | 硬性字段（`action` / `done`+`why` / `plan` / `decomposition` / `verdicts` / `summary`）+ `calls` + `extra` | `Brain` 对应方法 | `BrainTool` 对应方法 |
+| `ModelCall` | `payload: dict[str, str]`（含 `prompt_task` / `prompt_version` / `prompt_hash`）、`error_kind`、`error` | `Brain` 七个方法 | `direct/brain_tool.py::_adopt()` |
+| 七个结果袋：`ChooseResult` / `JudgeResult` / `PlanResult` / `DecomposeResult` / `VerifyResult` / `SummarizeResult` / `SummarizeRunResult` | 硬性字段（`action` / `done`+`why` / `plan` / `decomposition` / `verdicts` / `summary`）+ `calls` + `extra` | `Brain` 对应方法 | `BrainTool` 对应方法 |
 
 **关键不变式：**
 
-- 六个结果袋同形：硬性字段 + 底座 `_ResultBase.extra`；写 `extra` 的判据是"调用方不必为了继续而读它"——一旦某字段"没有它就没法继续"，它该升格成硬性字段。
+- 七个结果袋同形：硬性字段 + 底座 `_ResultBase.extra`；写 `extra` 的判据是"调用方不必为了继续而读它"——一旦某字段"没有它就没法继续"，它该升格成硬性字段。
 - **一次模型调用 = 一条账**："试了几次" = `len(calls)`，账里没有 `attempt` 字段；`ModelCall.payload` 的 `ok` 一律小写 `"true"` / `"false"`，`error_kind` 空串表示这次成功。
 - `RunPlan` 用**表内序号**寻址（`PlanUpdate.index`），不认 `task_id`；`status` 只允许 `"pending"` / `"abandoned"`，`completed` / `failed` 是 harness 从结算推导的机械事实。
 - `Action` / `ActionSegment` **不带任何上限常量**：段数、次数的上限是调用方（tool/harness）的校验策略。
 - `choose(prompt, keys, images, scripts)`：模型输出 `{"action": 名字, "args": {参数…}}`（参数平铺在顶层也收）；名字在 `keys` 里成单键，在 `scripts` 里按签名收参数成 `ScriptCall`（`int` 收整数或纯数字串，签名外字段忽略）。只查名字、参数齐全与类型，**不做语义校验**（钱够不够、道具在不在归 world 的脚本）；不合法抛 `ParseFailure` / `IllegalAction`，走现有重试。
-- `EpisodeSummary` **没有 `filename`**，`Reflection` **没有 `episode_id` / `step`**——轨迹坐标由调用方盖章。
+- `EpisodeSummary` **没有 `filename`**——轨迹坐标由调用方盖章。
 
 ## 五、依赖边界
 
@@ -103,11 +102,11 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 
 | 位置 | 引了什么 |
 |---|---|
-| `pokemon_agent/direct/brain_tool.py` | 顶层：`Action` / `ActionSegment` / `BrainPort` / `EpisodeSummary` / `LearnedKnowledge` / `Reflection`、`errors` 的 `AttemptFailed` / `ParseFailure` / `ProviderRejected`；函数体内：`Brain` / `BrainLlmConfig` / `build_llm_providers` |
+| `pokemon_agent/direct/brain_tool.py` | 顶层：`Action` / `ActionSegment` / `BrainPort` / `EpisodeSummary` / `RunSummary` / `ScriptArg` / `ScriptSignature`、`errors` 的 `AttemptFailed` / `ParseFailure` / `ProviderRejected`；函数体内：`Brain` / `BrainLlmConfig` / `build_llm_providers` |
 | `pokemon_agent/mcpclient/game_tools.py` | `brain.errors.ProviderRejected` |
 | `pokemon_agent/build.py` | **零 import**——只在注释里提型号名与工厂路径 |
 
-**数据形状引用（不是实现依赖）**：`harness/**`（`Action` / `ActionSegment` / `Goal` / `Task` / `RunPlan`）、`schemas/harness/communication/**`（`Goal` / `Action` / `RunPlan` / `EpisodeSummary` / `VerifyVerdict` / `Task`）、`pokemon_agent/direct/prompts/decide_action.py`、`pokemon_agent/direct/trace/render.py`、`tests/**`。`world/**` 对 brain **零 import**，观测只读模拟器内存。`JudgeProvider` 在 brain 内自行声明 `describe()`；判定器等仍能接收多模态图片。
+**数据形状引用（不是实现依赖）**：`harness/**`（`Action` / `ActionSegment` / `Goal` / `Task` / `RunPlan`）、`schemas/harness/communication/**`（`Goal` / `Action` / `RunPlan` / `EpisodeSummary` / `VerifyVerdict` / `Task`）、`pokemon_agent/direct/trace/render.py`、`tests/**`。`world/**` 对 brain **零 import**，观测只读模拟器内存。`JudgeProvider` 在 brain 内自行声明 `describe()`；判定器等仍能接收多模态图片。
 
 ## 六、接线与选型
 

@@ -1,6 +1,6 @@
-# Prompt CP2：增量观测字段
+# MCP perceive_task 观测字段（现状）
 
-world 的 TaskPerceived / MCP perceive_task 同时返回旧文本与新结构化数据。
+world 的 TaskPerceived / MCP perceive_task 只返回结构化字段；给模型看的措辞与排版由 `prompt/` 的 `PromptGateway` 生成，world 不再返回 `where` / `neighbors` / `walk_map` / `option_layout` / `option_details` 文本。
 
 | 位置 | 字段 | 语义 |
 |---|---|---|
@@ -10,7 +10,7 @@ world 的 TaskPerceived / MCP perceive_task 同时返回旧文本与新结构化
 | facts | cursor_cell | 光标的零起点行列，未取得时为 null |
 | facts | option_annotations | 按选项顺序排列的附注原文 |
 | facts | battle_status | mine / foe 的名字、等级、当前及最大 HP、异常状态；非战斗为 null |
-| facts | terrain_visible | 本帧旧投影是否显示 walk_map，避免有菜单时额外展开地图 |
+| facts | terrain_visible | 本帧是否显示地形（`cells` / `neighbor_cells`） |
 | observation | observation_flags | no_text / incomplete_menu / missing_takeover / transition |
 
 CP596删除where、neighbors、walk_map的声明、动态option_layout/option_details与my_*/foe_*生产、Observation.status、TaskObservation.observation_notes，以及world/memory旧render/index_line等方法。ActMemory保留独立同构的结构化快照。Facts的extra="allow"仍接收冻结旧键；历史核验读取原始JSON，数据不改。新trace不写旧键，旧账仍可解析；旧checkpoint因schema指纹不同明确拒绝，不迁移。

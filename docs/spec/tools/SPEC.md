@@ -4,11 +4,11 @@
 >
 > **P7 拆分定案**（2026-09-30，CHANGELOG 342/344）：原 `pokemon_agent/tools/`
 > 一个包拆成两半——**`direct/`**（brain / trace 半边：BrainTool、TraceTool、
-> prompts、四张 Port 协议）与 **`mcpclient/`**（memory / world 半边：进程内
+> 四张 Port 协议）与 **`mcpclient/`**（memory / world 半边：进程内
 > 实现 + MCP 远程门面 + client）。文件名 `tools/SPEC.md` 沿用，讲的是这整个
 > 门面层。历史文档里的 `tools/...` 路径引用一律按映射读：
 > `tools/brain_tool`→`direct/brain_tool`、`tools/trace`→`direct/trace`、
-> `tools/prompts`→`direct/prompts`、`tools/interface`→`direct/interface`、
+> `tools/prompts`→`direct/prompts`（595 后已迁至 `prompt/`）、`tools/interface`→`direct/interface`、
 > `tools/game_tools`→`mcpclient/game_tools`、`tools/memory_tool`→`mcpclient/memory_local`、
 > `tools/backoff`→`backoff`（顶层）。
 
@@ -75,8 +75,8 @@ pokemon_agent/mcpclient/             memory / world 半边（原 tools/ 的下�
 
 **`GameToolPort`（唯一实现 `mcpclient/world_tool.py::WorldMcpTool`，只经 MCP 访问世界）**：
 
-WorldMcpTool 验回 server 的掩码后，用共用的 `with_prompt_text` 补按键说明、连按用法与地图规则；
-文案只依赖 overlay 与 covered_by_script，不包含每帧数据，prompt 模板顺序不变。
+WorldMcpTool 验回 server 的掩码与能力条目后直接返回；按键说明、连按用法与地图规则由
+`prompt/` 的注册表版本渲染，客户端不再补文案。
 execute 在任何 MCP 调用前按请求观测校验单键掩码或脚本条目，断言执行前置契约；
 键动作把 server 的 `data.event` 原样带入 `resp.event`（缺失或 null 为 None），脚本事件仍在 report 中。
 
@@ -143,30 +143,27 @@ restore_memory；`/health.admin` 报告开关，未开放时门面抛 MemoryAdmi
 - **世界语义 + 存储形状**：`_normalize()`（键链规则，脚本原样放行）、
   `reflect()` 组装 `ActMemory`（`result` 字段 P5 起带脚本结局码）、
   `summarize_task()` / `summarize()` / `decompose()`。
-- **记忆过滤**：`_blind()` / `_render_observation()`（SNAPSHOT_BLIND）。
+- **记忆过滤**：`_blind()`（剥离 `SNAPSHOT_BLIND`）；`Reflector` 直接用结构化观测组装 `ActMemory`，不再做旧文本投影。
 - **动作空间**：`mcpclient/game_tools.py::_action_space()` 调 world 的 `compute_action_space`
-  取 `names` / `mask` / `entries`（掩码只由 world 给出，本层不改），再给开放按键的场合挂
-  `BUTTON_HELP`/`REPEAT_HINT`/`MAP_HINT`。
-  **已知耦合**：`mcpclient.game_tools` import `direct.prompts` 的三份文案——
-  337 定案的方向是"desc 由 server 产出自带于 entries"，届时这份文案该迁去
-  world 侧，耦合随之消失。
+  取 `names` / `mask` / `entries`（掩码只由 world 给出，本层不改）；按键帮助、脚本签名与
+  静态地图规则由 `prompt/` 的注册表版本渲染，本层不补展示文案。
 - **trace 正文**：`direct/trace/render.py` 每渲染函数收 `AppendReq` 吐 `Rendered`；
   `act_call` 按 key / script 两形分支（P5）。
-- **文字化**：`direct/prompts/object_render.py` / `run_plan.py`。
+- **文字化**：统一由 `prompt/` 的 `PromptGateway` 按注册表版本渲染；`direct/brain_tool.py`
+  只负责把原始对象转成各任务的入参字段，不拼措辞。
 - **object 事件（P6）**：判定唯一裁判是 `world/object_events.py::judge_press`；
   逐键路径事件随 `step` 响应（`observe_step`）回 harness，脚本路径随终态报告
   `events[]` 批量——两路在 `store_object_semantic_memory` 汇合，
   `rules.stamp_events` 只补章，不再判定。
 
-## 六、prompts（`direct/prompts/`）
+## 六、prompts（`prompt/`）
 
-每个需要拼装逻辑的模板配一个同名 `.py`，对外只给 `build_prompt()`；模板按
-**文件名**加载（`prompts/__init__.py::load()` 整树 `rglob`，重名当场 assert）。
-P5 起 `decide_action.md` 的"可用动作"一节并列键与脚本条目（签名 + 说明 +
-`{"action": "walk_to", "args": {…}}` 输出格式），组装见 `decide_action.py`。
-world 的内存观测不使用模板。
-其余对照表不变（judge_success / verify / summarize / summarize_task /
-decompose / run_plan / object_render）。
+prompt 的唯一出口是 `pokemon_agent/prompt/`：`PromptGateway.render(task, params)` 返回
+`RenderedPrompt{text, task, version, hash}`。`registry.json` 决定每个任务 / 片段唯一生效的
+版本；任务与片段按版本目录存放（`prompt.md` + `assemble.py`），没有 `version=` 参数，也没有
+模块级 prompt 常量。每次模型调用的账带 `prompt_task` / `prompt_version` / `prompt_hash`。
+world 与记忆对象只返回字段，措辞和渲染全部在 prompt 模块；`BrainTool` 负责把原始对象转成
+入参字段。`decide_action` 的重试段是独立任务 `decide_action_retry`。
 
 ## 七、当前状态与已知缺口
 
@@ -176,8 +173,8 @@ decompose / run_plan / object_render）。
 - **模型重试循环在门面层**：`direct/brain_tool.py::_attempt_loop()`；内存观测不调用模型。
 - **`render.py` 里的墓碑**：`plan_failed()` / `human_note_injected()`
   `raise AssertionError`，不在 `_RENDERERS` 表。
-- **`mcpclient.game_tools` → `direct.prompts` 的文案耦合**（见五）——等
-  desc 迁 server 侧后消除。
+- **prompt 模块是唯一渲染出口**：`mcpclient` 不再读取 prompt 文案，旧
+  `mcpclient.game_tools` 的文案耦合已随 595 删除。
 
 ## 八、发现的不一致
 
