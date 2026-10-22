@@ -45,8 +45,8 @@ class _FakeWorld:
 
     def perceive_task(self) -> Any:
         observation = TaskObservation(
+            facts={"overlay": "none"},
             step=0,
-            status="你在野外。",
             scene=TaskScene.WALK,
             place=PlaceInWorld(map_id=self._pos[0], x=self._pos[1], y=self._pos[2]),
         )

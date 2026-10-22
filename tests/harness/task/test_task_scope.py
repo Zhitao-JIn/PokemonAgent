@@ -56,8 +56,8 @@ def _state() -> TaskState:
             task_id="t1",
             step=index,
             action="up",
-            before=ActMemory.Observation(step=index, status=f"before {index}"),
-            after=ActMemory.Observation(step=index + 1, status=f"after {index}"),
+            before=ActMemory.Observation(facts={"overlay": "none"}, step=index),
+            after=ActMemory.Observation(facts={"overlay": "none"}, step=index + 1),
         )
         for index in range(10)
     ]
@@ -71,7 +71,7 @@ def _state() -> TaskState:
         knowledge=["知识一：门需要确认", "知识二：朝向要正确"],
         task_ctx=TaskContext(
             act_memories=memories,
-            observation=TaskObservation(step=10, status="当前", scene=TaskScene.WALK),
+            observation=TaskObservation(facts={"overlay": "none"}, step=10, scene=TaskScene.WALK),
             action_space=ActionSpace(names=["up"]),
         ),
     )

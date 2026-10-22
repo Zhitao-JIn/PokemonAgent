@@ -58,13 +58,9 @@ def test_unsettled_map_omits_location_and_terrain() -> None:
 
     assert observation.place is None
     assert observation.done is False
-    assert observation.facts.where == ""
     assert observation.facts.facing == ""
-    assert observation.facts.neighbors == ""
-    assert observation.facts.walk_map == ""
     assert observation.facts.map_id is None
     assert observation.facts.landmarks == []
-    assert observation.status == "（这一帧只读了内存）地图尚未稳定。"
 
 
 def test_task_perception_assembles_location_dialog_and_closed() -> None:
@@ -76,19 +72,12 @@ def test_task_perception_assembles_location_dialog_and_closed() -> None:
 
     assert observation.place.model_dump() == {"map_id": 12, "x": 13, "y": 8}
     assert observation.done is True
-    assert observation.facts.where == "全局坐标 地图12 x=13 y=8"
     assert observation.facts.facing == "north"
-    assert observation.facts.neighbors == "北 # 南 # 西 # 东 #"
-    assert observation.facts.walk_map == _terrain().render()
     assert observation.facts.map_id == 12
     assert observation.facts.landmarks == []
     assert observation.facts.dialog_text == "你好！"
     assert observation.facts.options == ["YES", "NO"]
     assert observation.facts.cursor == "YES"
-    assert observation.status == (
-        "（这一帧只读了内存）全局坐标 地图12 x=13 y=8，朝向 north。"
-        "对话框：「你好！」。可选项：YES/ NO，光标在 YES"
-    )
 
 
 def test_task_perception_wires_frame_and_decoded_readout() -> None:
@@ -153,16 +142,21 @@ def test_task_perception_exposes_both_combatants() -> None:
     ).observation
 
     assert observation.facts.scene is Facts.Scene.BATTLE
-    assert observation.facts.battle_status.facts_fields() == observation.facts.model_extra
-    assert observation.facts.model_extra == {
-        "my_name": "PIKACHU",
-        "my_level": "12",
-        "my_hp": "291/320",
-        "my_status": "PSN",
-        "foe_name": "RATTATA",
-        "foe_level": "3",
-        "foe_hp": "9/20",
-        "foe_status": "ok",
+    assert not observation.facts.model_extra
+    mine, foe = observation.facts.battle_status.mine, observation.facts.battle_status.foe
+    assert mine.model_dump() == {
+        "name": "PIKACHU",
+        "level": 12,
+        "hp": 291,
+        "max_hp": 320,
+        "status": "PSN",
+    }
+    assert foe.model_dump() == {
+        "name": "RATTATA",
+        "level": 3,
+        "hp": 9,
+        "max_hp": 20,
+        "status": "ok",
     }
 
 
@@ -178,15 +172,15 @@ def test_new_geometry_and_menu_data_match_the_old_projection_on_the_same_frame()
 
     observation = observe_task(terrain, text, PNG, memory=Mem(), rom=b"", closed=False).observation
 
+    assert (
+        not {"where", "neighbors", "walk_map", "option_layout", "option_details"}
+        & observation.facts.model_dump().keys()
+    )
     assert observation.facts.cells == terrain.cells
     assert observation.facts.neighbor_cells == terrain.neighbors()
-    assert observation.facts.neighbors == terrain.render_neighbors()
-    assert observation.facts.walk_map == terrain.render()
     assert observation.facts.option_grid == text.option_grid
     assert observation.facts.cursor_cell == text.cursor_cell
     assert observation.facts.option_annotations == text.option_details
-    assert observation.facts.option_layout == text.render_layout()
-    assert observation.facts.option_details == text.render_details()
     assert observation.facts.terrain_visible
 
 
@@ -194,10 +188,10 @@ def test_observation_flags_are_structured_and_leave_the_old_notes_intact() -> No
     from pokemon_agent.world import TaskObservation
 
     observation = TaskObservation(
-        step=0, status="背包", scene=TaskScene.BAG, menu_decode_complete=False
+        facts={"overlay": "none"}, step=0, scene=TaskScene.BAG, menu_decode_complete=False
     )
 
     restored = TaskObservation.model_validate_json(observation.model_dump_json())
 
     assert restored.observation_flags == ["no_text", "incomplete_menu", "missing_takeover"]
-    assert len(restored.observation_notes) == 3
+    assert "observation_notes" not in restored.model_dump()

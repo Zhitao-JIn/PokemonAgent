@@ -7,6 +7,7 @@ import re
 
 from pydantic import BaseModel, Field, JsonValue, ValidationError
 
+from evals.decode.terrain_text import render_neighbors, render_walk_map, render_where
 from pokemon_agent.world import PlaceInWorld, ScreenText, TerrainMap
 from pokemon_agent.world.interface.domain.battle_status import BattleStatus
 
@@ -35,7 +36,7 @@ def restore_observation(observation: dict[str, JsonValue]) -> None:
         if match is None:
             raise UnrestorableRequest("where 不是现行 PlaceInWorld 文本")
         parsed = PlaceInWorld(map_id=int(match[1]), x=int(match[2]), y=int(match[3]))
-        if parsed.render() != where:
+        if render_where(parsed) != where:
             raise UnrestorableRequest("where 往返不一致")
         place = parsed.model_dump(mode="json")
         observation["place"] = place
@@ -64,10 +65,10 @@ def restore_observation(observation: dict[str, JsonValue]) -> None:
             player_x=int(str(place["x"])),
             player_y=int(str(place["y"])),
         )
-        if terrain.render() != walk_map:
+        if render_walk_map(terrain) != walk_map:
             raise UnrestorableRequest("walk_map 往返不一致")
         facts["cells"] = cells
-        if neighbors and terrain.render_neighbors() != neighbors:
+        if neighbors and render_neighbors(terrain) != neighbors:
             raise UnrestorableRequest("地形与四邻矛盾")
     layout = facts.get("option_layout", "")
     if layout:
@@ -81,7 +82,7 @@ def restore_observation(observation: dict[str, JsonValue]) -> None:
                 if item.startswith("▶"):
                     cursor = (row, col)
         screen = ScreenText(option_grid=grid, cursor_cell=cursor)
-        if screen.render_layout() != layout:
+        if frozen_layout(screen) != layout:
             raise UnrestorableRequest("option_layout 往返不一致")
         facts["option_grid"] = grid
         facts["cursor_cell"] = list(cursor) if cursor is not None else None
@@ -98,7 +99,14 @@ def restore_observation(observation: dict[str, JsonValue]) -> None:
             index = matches[0]
             annotations[index] = part[len(str(options[index])) + 1 :]
         screen = ScreenText(options=options, option_details=annotations)
-        if screen.render_details() != details:
+        if (
+            " / ".join(
+                option + " " + detail
+                for option, detail in zip(screen.options, screen.option_details, strict=False)
+                if detail
+            )
+            != details
+        ):
             raise UnrestorableRequest("option_details 往返不一致")
         facts["option_annotations"] = annotations
     battle_keys = [
@@ -118,7 +126,17 @@ def restore_observation(observation: dict[str, JsonValue]) -> None:
                 "status": facts[prefix + "_status"],
             }
         battle = BattleStatus.model_validate(sides)
-        if any(battle.facts_fields()[key] != facts[key] for key in battle_keys):
+        projected = {}
+        for prefix, side in (("my", battle.mine), ("foe", battle.foe)):
+            projected.update(
+                {
+                    prefix + "_name": side.name,
+                    prefix + "_level": str(side.level),
+                    prefix + "_hp": f"{side.hp}/{side.max_hp}",
+                    prefix + "_status": side.status,
+                }
+            )
+        if any(projected[key] != facts[key] for key in battle_keys):
             raise UnrestorableRequest("战斗状态往返不一致")
         facts["battle_status"] = battle.model_dump(mode="json")
 
@@ -188,3 +206,26 @@ def restore_object_events(text: str) -> list[dict[str, JsonValue]]:
     if [event["step"] for event in events] != sorted(event["step"] for event in events):
         raise UnrestorableRequest("known_objects 未按步号排序")
     return events
+
+
+def frozen_layout(screen: ScreenText) -> str:
+    """历史原文的格式验证，不依赖已删除的world排版方法。"""
+    if not screen.option_grid or screen.cursor_cell is None:
+        return ""
+    rows, cols = len(screen.option_grid), max(map(len, screen.option_grid))
+    row, col = screen.cursor_cell
+    if cols == 1:
+        head = f"竖排 {rows} 项，光标在第 {row + 1} 项；上/下 移动光标"
+    elif rows == 1:
+        head = f"横排 {cols} 项，光标在第 {col + 1} 项；左/右 移动光标"
+    else:
+        head = (
+            f"{rows} 行 × {cols} 列，光标在第 {row + 1} 行第 {col + 1} 列；上/下 换行，左/右 换列"
+        )
+    lines = [
+        "  ".join(
+            ("▶" if (i, j) == screen.cursor_cell else " ") + item for j, item in enumerate(items)
+        )
+        for i, items in enumerate(screen.option_grid)
+    ]
+    return head + "\n" + "\n".join(lines)

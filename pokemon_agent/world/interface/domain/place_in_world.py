@@ -35,8 +35,3 @@ class PlaceInWorld(BaseModel):
     def key(self) -> str:
         """记忆的键。**跨 episode 稳定**——同一张地图上的同一格永远是同一个键。"""
         return f"{self.map_id}:{self.x}:{self.y}"
-
-    def render(self) -> str:
-        """渲染成进 prompt 的样子。"""
-        """**全局坐标写成 `x= y=`，不用括号** —— 括号写法留给屏幕格。"""
-        return f"全局坐标 地图{self.map_id} x={self.x} y={self.y}"

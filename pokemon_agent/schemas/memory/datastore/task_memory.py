@@ -26,8 +26,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from .index_text import first_sentence
-
 
 class TaskMemory(BaseModel):
     """一条 task 记忆——**本 task ActMemory 的派生视图**（一 task 一条）。"""
@@ -75,35 +73,6 @@ class TaskMemory(BaseModel):
     def success(self) -> bool:
         """成没成——由 `termination` 推出（`goal_done` 即达成），不单独存。"""
         return self.termination == "goal_done"
-
-    def index_line(self) -> str:
-        """仅用来源章和正文首句生成一行索引。"""
-        return (
-            f"- {self.task_id}｜{self.goal}｜{'成功' if self.success else '未成功'}｜"
-            f"{self.termination or '-'}｜{self.steps_used} 键｜{first_sentence(self.summary)}"
-        )
-
-    def render(self) -> str:
-        """渲染成进 prompt 的样子：来源章一行 + 正文。"""
-        mark = "成功" if self.success else f"未成功（{self.termination or '未知'}）"
-        lines = [
-            f"task `{self.task_id}`：{self.goal} —— {mark}"
-            f"（键 {self.total_acts}–{self.total_acts + self.steps_used - 1}，"
-            f"共 {self.steps_used} 键）",
-        ]
-        if self.reason:
-            lines.append(f"  结论：{self.reason}")
-        lines.append(f"  总结：{self.summary}")
-        for label, items in (
-            ("可复用", self.reusable_patterns),
-            ("关键决策", self.critical_decisions),
-            ("失败点", self.failure_points),
-        ):
-            for item in items:
-                lines.append(f"  {label}：{item}")
-        if self.quality_rationale:
-            lines.append(f"  质量分 {self.quality_score:.2f}（理由：{self.quality_rationale}）")
-        return "\n".join(lines)
 
 
 __all__ = ["TaskMemory"]

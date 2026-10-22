@@ -4,6 +4,7 @@ from pathlib import Path
 
 from _harness_fixtures.app_config import reconfigure
 from _harness_fixtures.harness import build_fake
+from _harness_fixtures.prompt_text import index_text, observation_text
 from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Task
@@ -96,7 +97,10 @@ def _state() -> EpisodeRunState:
         first_frame="data:image/png;base64,PRIOR",
     )
     observation = TaskObservation(
-        scene=TaskScene.WALK, step=1, status="当前画面状态", facts=Facts(where="地图12 x=3 y=5")
+        scene=TaskScene.WALK,
+        step=1,
+        place={"map_id": 12, "x": 3, "y": 5},
+        facts=Facts(overlay="none"),
     )
     return EpisodeRunState(
         run_id="r",
@@ -132,7 +136,7 @@ def test_decompose_context_lists_episode_index_lines_not_full_text(tmp_path: Pat
 
     text = "\n".join(context_lines(request))
 
-    assert state.ep_ctx.episode_index[0].index_line() in text
+    assert index_text(state.ep_ctx.episode_index[0]) in text
     assert "前局第二句" not in text and "data:image" not in text
     assert "task 第二句仍需完整读取" in text
     assert "## 同目标的过往局(背景,不是本局完成的证据)" in text
@@ -183,9 +187,9 @@ def test_episode_judge_request_carries_knowledge_observation_and_index(tmp_path:
     assert judge.knowledge == "\n\n".join(plan.knowledge) == "知识甲\n\n知识乙"
     assert judge.observation is state.ep_ctx.observation
     assert blocks[-2].startswith("## 同目标的过往局(背景,不是本局完成的证据)")
-    assert state.ep_ctx.episode_index[0].index_line() in blocks[-2]
+    assert index_text(state.ep_ctx.episode_index[0]) in blocks[-2]
     assert "前局第二句" not in blocks[-2]
-    assert blocks[-1] == "## 当前画面\n" + state.ep_ctx.observation.render()
+    assert blocks[-1] == "## 当前画面\n" + observation_text(state.ep_ctx.observation)
     assert judge.knowledge in prompt and "地图12 x=3 y=5" in prompt
     assert "task 第二句仍需完整读取" in prompt and "data:image" not in prompt
 

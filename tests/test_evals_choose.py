@@ -32,7 +32,7 @@ def key(name="up", times=1):
 def case(case_id="hit", **updates):
     req = FromHarnessToBrainToolChooseOnceReq(
         goals=[Goal(goal=case_id, criteria="单帧可判断")],
-        obs=TaskObservation(step=0, scene="walk", status="站在路上"),
+        obs=TaskObservation(facts={"overlay": "none"}, step=0, scene="walk"),
         space=ActionSpace(names=["up", "down"], mask={"up": True, "down": True, "a": False}),
         memories=[],
     )

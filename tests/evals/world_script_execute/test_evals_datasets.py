@@ -127,7 +127,7 @@ def test_archive_adapter_preserves_frozen_manifest_and_resolves_its_paths(tmp_pa
 
 
 def observation(view=None, scene=TaskScene.WALK, **facts):
-    return TaskObservation(step=0, status="", scene=scene, facts=Facts(**facts), takeover=view)
+    return TaskObservation(step=0, scene=scene, facts=Facts(**facts), takeover=view)
 
 
 def mon(name, hp=10, moves=()):

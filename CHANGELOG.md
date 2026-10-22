@@ -1,3 +1,45 @@
+## 2026-10-22（596）—— prompt 模块：删除 world / memory 旧字符串字段与旧渲染方法（只减不加）
+
+**改了什么**：prompt 模块已是唯一渲染出口，本步删除 world 与 schemas/memory 里已无活读方的旧字符串字段、旧渲染方法与旧存档物体文本分支；结构化字段、机器判定字段与冻结数据全部保留。
+
+删除的字段与方法（按定义文件）：
+
+- `world/interface/domain/facts.py`：字段 `Facts.where` / `Facts.neighbors` / `Facts.walk_map`；方法 `Facts.Landmark.render` / `Facts._entries` / `Facts.items` / `Facts.render`；模块私有 `_display_width` / `_EXTRA_ORDER`。
+- `world/interface/domain/observation.py`：字段 `Observation.status`；方法 `Observation.render`。
+- `world/interface/domain/task_observation.py`：`TaskObservation.observation_notes`（computed_field）。
+- `world/interface/domain/terrain_map.py`：`TerrainMap.render` / `TerrainMap.render_neighbors`（结构化 `neighbors()` / `landmarks()` / `place()` 保留）。
+- `world/interface/domain/place_in_world.py`：`PlaceInWorld.render`（`key()` 保留）。
+- `world/interface/domain/screen_text.py`：`ScreenText.render_layout` / `ScreenText.render_details`（`option_grid` / `cursor_cell` / `option_details` 等结构化字段保留）。
+- `world/interface/domain/takeover_view.py`：`ShopItemsView.render`、`NamingView.render`、`MonEntry.render`、`BattleMenuView.render`、`BattleSwitchView.render`、`BagView.render`、`PartyView.render`、`PcView.render`、`LearnMoveView.render`。
+- `world/interface/domain/action_entry.py`：`ActionEntry.signature`；`world/interface/domain/battle_status.py`：`BattleStatus.facts_fields`。
+- `world/screen_text.py`：`layout_field`；`world/task_perception.py`：`_battle_fields` / `_ram_status`，`observe_task` 不再填 `where` / `neighbors` / `walk_map` / `status` / `my_*` / `foe_*` / `option_layout` / `option_details`；`world/__init__.py` 删除 `layout_field` 的悬空导出。
+- `schemas/memory/datastore/act_memory.py`：快照字段 `where` / `neighbors` / `walk_map` / `status`；方法 `Landmark.render`、`Facts._entries` / `Facts.render`、`Observation.render`、`ActMemory.render` / `_render_obs` / `_snapshot_equal`；模块函数 `render_sequence` 及 `_display_width` / `_EXTRA_ORDER`。
+- `schemas/memory/datastore/episode_memory.py` / `run_memory.py` / `task_memory.py`：各自的 `index_line` 与 `render`。
+- `harness/episode/episode_state.py`：`EpisodeContext.object_semantic_memory`；`harness/episode/perceive/merge_retrieval.py`：只服务旧存档物体文本的折叠分支（节点保留，改为原样返回 `ep_ctx`）。
+- `mcpclient/action_space.py`：`with_prompt_text`；`world/interface/domain/action_space.py`：`extra` 由 `allow` 改回 `ignore`，冻结输入里的 `descriptions` / `note` / `map_note` 被忽略而不是回传。
+
+checkpoint 指纹：旧值 `95057cca4fffb08b` → 新值 `e3bd23162bfd0e85`。计算方式：`sha256(json.dumps([RunState.model_json_schema(), EpisodeRunState.model_json_schema(), TaskState.model_json_schema()], sort_keys=True).encode()).hexdigest()[:16]`（`pokemon_agent/harness/checkpoint/manifest.py::state_schema_hash`，算法未改，仅数据结构变化）。旧存档在装配分支前抛 `CheckpointIncompatible`，错误信息含存档 id 与「状态结构与当前代码不同，拒绝加载」；不写迁移层。`tests/harness/checkpoint/test_schema_compatibility.py` 钉住拒绝与相符清单可读。
+
+trace：新 `SENSE_FRAME` 账不再写 `status` 等旧键（测试断言写入键为 `facts` / `done` / `scene` / `place`）；旧账仍可解析（`SenseFrameContent.status` 兼容位保留，`test_a_status_written_by_an_old_run_still_parses_but_new_ones_stop_writing_it`）。
+
+测试删除与改写：删除 `tests/_doubles/prompt_cases.py`（362 行；595 删捕获脚本后零 import 读方，只构造旧字段）。改写清单与意图去向见 `tests/**` 逐文件 diff；要点：`tests/world/test_facts_dual_copy_parity.py` 由「两份渲染文本相同」改为「结构化字段双份一致、旧键只进 extra」，旧渲染等价由 prompt golden 承担；`tests/memory/test_memory_index_lines.py`、`tests/harness/review/test_review_context.py`、`tests/harness/run/test_run_scope_requests.py` 等改经 prompt 网关取索引/正文，保留原有「一行索引/全文只出现一次」断言；所有以 `status=` 构造观测的夹具改用 `facts={"overlay": "none"}` 或结构化 `place`；`tests/test_evals_choose_data.py` 的历史夹具改为在 `request.json` 与 `context.sense` 写历史 `status` 字面量，并新增两处 status 不一致即抛错的负例。
+
+prompt 侧修复（裁决一，仅三处）：`pokemon_agent/prompt/records.py` 的 `ActRecord.Observation.status` 改为非必填默认空串；`prompt/tasks/fragments/memory_records/v1/assemble.py` 的位置门由「place 非空且 facts.where 非空」改为「place 非空」，无 status 且无 facts 时不再输出空缩进行；`meta.json` hash 重算为 `4fb6fb7e57cc32770b287ccf26e3e557bb9d64e053ea5ff5ad8ef23197e2bb33`（`prompt.md`/`assemble.py` 的 LF 归一化字节 sha256）。`prompt/observation.py` 无需改：`ObservationRecord` 继承 `ActRecord.Observation`。所有 `.md` 模板措辞未改，golden 逐字节不变（161 passed / 25 skipped，跳过数不增不减）。新增 `tests/prompt/test_structured_only.py`：四类任务对「live 形状」与「同输入再加旧文本字段」逐字节相等；真实 `FromHarnessToBrainToolDecomposeReq` 去掉 status 仍可渲染。
+
+evals/dataset 脚本改动（均为读方同步，不改数据）：
+
+- `brain_choose/build/from_capture.py`：`req.obs.status` 改为从 `row.request` 指向的原始 JSON 取 `["obs"]["status"]` 与 context 的 `sense["status"]` 比较；其余校验与异常文案不变。
+- `brain_calls/verify_dataset.py`：导出请求改为读 `inputs.jsonl` 原始 JSON 校验 canonical digest 与 `original == exported`，再把 typed 模型重新验证原 JSON 与存量 typed 请求对拍；新增测试证明篡改冻结 `status` 仍被拒。
+- `brain_annotations/loader.py`：evidence 指针在原始 `inputs.jsonl` 上解析（保留旧键），不再依赖 typed dump。
+- `brain_annotations/choose_review.py`、`recovery_options.py`、`brain_calls/choose_labels.py`、`brain_choose/build/prelabel.py`：旧 `walk_map` / `where` 改从 `facts.model_extra` 读取，冻结文本与路由逻辑不变。
+- `frames/build/observe.py`：删除的 `layout_field` 与 `Facts.items()` 用模块内冻结副本重放，构建历史帧的输出保持原样（该文件此前因 `layout_field` 导出删除而 import 失败，本步修复）。
+
+**为什么这么改**：595 之后 prompt 模块是唯一渲染出口，world/memory 上的旧字符串字段既不再被新观测生产，也不再有生产读方；留着它们会让「结构化真身」和「旧文本投影」两套事实继续并存，任何一边漂移都不报错。删除后：world 只生产结构化字段，文字由 prompt 版本化生成；记忆快照只存结构化快照，索引行与正文由网关/reviewer 各自渲染；旧存档因 schema 指纹变化明确拒绝，而不是带着半懂的状态继续跑。冻结数据集是历史证据，按决定 G 一律不改，靠 `Facts(extra="allow")` 与原始 JSON 读取保持可读。
+
+**取舍**：① prompt 自己的 `ActRecord.Observation.Facts` 仍保留 `where` / `neighbors` / `walk_map` / `option_layout` / `option_details` 与 `my_*` / `foe_*` 投影，`ObservationRecord.observation_notes` 也保留——它们是冻结输入兼容层，不是 world/memory 的旧字段；live 形状不再生产这些键，golden 因此逐字节不变。② `ActMemory.Observation.Facts` 保留 `overview` 与 `extra="allow"`，旧记忆里的 `where` / `walk_map` 仍能读回并在 prompt 侧渲染；`Observation.status` 在旧 JSON 中被忽略（Pydantic 默认 extra ignore），不迁移。③ `schemas/memory/datastore/index_text.py` 的 `first_sentence` 保留：`evals/common/legacy_requests/task_memory.py` 仍用它冻结旧模型的首句格式。④ `tests/prompt/test_migrated_baseline.py` 里原先按 `entry.render()` 对拍 history 块的断言改为「块都是字符串」；逐字节 golden 断言已经覆盖全部输出，块形状不再单独可对拍，这是本步唯一一处测试强度下降，意图去向在此说明。⑤ `test_all_takeover_frames_render_their_business_view` 不再调用已删的 `TakeoverView.render()`，改为断言业务视图里的一处数据原文出现在 prompt 中；精确字节仍由 golden 覆盖。⑥ `test_takeover_views` 的独立副本断言改用冻结 `.prompt.txt` 子串并加非空检查。⑦ `test_evals_datasets` / `test_decode_terrain_text` 对真值里存在的键才逐字节对拍（部分历史帧只有 `where`，没有 `walk_map` / `neighbors`），不补造真值。⑧ 未写迁移层、未改 `evals/dataset` 数据、未改 golden、未改 `docs/spec`、未改 trace 实现、未调用真实模型。⑨ 本步额外修了上一执行方漏掉的两处：`world/__init__.py` 的 `layout_field` 悬空导出、`evals/dataset/frames/build/observe.py` 的 import 断链与 `Facts.items()` 读方；前者在允许的 world 范围内，后者按裁决三的 evals 非数据源码处理。
+
+**影响面**：`state_schema_hash` 改变，旧 checkpoint 一律拒绝（明确错误，不迁移）；新 trace 账不再带旧键，旧账仍可读；旧 memory 记录仍可按 extra 读入，新记录不再写旧字段；prompt golden 161 passed / 25 skipped 逐字节不变；冻结数据 131 个 JSON/JSONL 文件、9025 行全部可解析，typed 加载 5733 行无错，数据字节零改动；全量 pytest 2378 passed / 25 skipped / 3 deselected，`ruff check` 与 `ruff format --check` 全绿，`scripts/check_prompt_boundary.py` A/B/C/D 全过。MCP 文档同步 `docs/mcp`，`docs/spec` 留待后续步骤。
+
 ## 2026-10-22（595）—— prompt 模块：收口旧 prompt 包，冻结 golden 为唯一对拍基线
 
 **改了什么**：删除旧 prompt 包（12 个 Python 文件、15 个模板）及四个模块常量 BUTTON_HELP、MAP_HINT、REPEAT_HINT、READ_SCREEN。完整删除清单（36 个源文件；旧包内缓存随授权目录清理）：

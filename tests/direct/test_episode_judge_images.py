@@ -56,8 +56,8 @@ def _act(step: int, first: str, last: str) -> ActMemory:
         task_id="t",
         step=step,
         action="up",
-        before=ActMemory.Observation(step=step, status="before"),
-        after=ActMemory.Observation(step=step + 1, status="after"),
+        before=ActMemory.Observation(facts={"overlay": "none"}, step=step),
+        after=ActMemory.Observation(facts={"overlay": "none"}, step=step + 1),
         before_frame=first,
         after_frame=last,
     )

@@ -13,7 +13,12 @@ from .export_dataset import canonical_digest
 from .source_archive import verify_sources
 
 
-def verify_pair(row: InputCase, ref: ReferenceCase, sources: dict[str, bytes] | None) -> None:
+def verify_pair(
+    row: InputCase,
+    ref: ReferenceCase,
+    sources: dict[str, bytes] | None,
+    raw_request: dict,
+) -> None:
     """来源字节、完整请求、标签类型各自核验。"""
     source = (
         sources[row.source.request_file]
@@ -22,11 +27,15 @@ def verify_pair(row: InputCase, ref: ReferenceCase, sources: dict[str, bytes] | 
     )
     if hashlib.sha256(source).hexdigest() != row.source.request_sha256:
         raise ValueError("original request changed")
-    if canonical_digest(row.request.model_dump(mode="json")) != row.source.request_canonical_sha256:
-        raise ValueError("typed input round trip changed request")
     original = json.loads(source)
-    if original != row.request.model_dump(mode="json"):
+    exported = raw_request
+    if canonical_digest(exported) != row.source.request_canonical_sha256:
+        raise ValueError("typed input round trip changed request")
+    if original != exported:
         raise ValueError("exported input differs from actual production request")
+    typed_source = InputCase.model_validate({**row.model_dump(mode="json"), "request": original})
+    if typed_source.request.model_dump(mode="json") != row.request.model_dump(mode="json"):
+        raise ValueError("typed input round trip changed request")
     if ref.evaluation == "mechanical" and (
         ref.achieved is None or not ref.check_id or ref.label_source != "mechanical"
     ):
@@ -76,8 +85,15 @@ def verify(root: Path) -> dict[str, int]:
             raise ValueError("input/reference pairing mismatch")
         if len({row.case_id for row in inputs}) != len(inputs):
             raise ValueError("duplicate case id")
+        raw_requests = {
+            item["case_id"]: item["request"]
+            for item in (
+                json.loads(line)
+                for line in (directory / "inputs.jsonl").read_text("utf-8").splitlines()
+            )
+        }
         for row, ref in zip(inputs, refs, strict=True):
-            verify_pair(row, ref, sources)
+            verify_pair(row, ref, sources, raw_requests[row.case_id])
             verify_labels(row, ref)
         if manifest.action_set_labels != sum(ref.evaluation == "action_set" for ref in refs):
             raise ValueError("action label count mismatch")

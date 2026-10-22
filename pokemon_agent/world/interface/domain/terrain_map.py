@@ -96,66 +96,6 @@ class TerrainMap(BaseModel):
             "right": self.at(col + 1, row),
         }
 
-    def render(self) -> str:
-        """渲染成带行列号的文本。**行列号就是全局坐标。**
-
-        ## 为什么不是 0-9
-
-        原来列号是 `0123456789`、行号 `0..8`，那是**屏幕格**：主角恒在 `(4,4)`，
-        地图跟着他滚动。于是同一张图上有两套坐标——这里是屏幕格，
-        `where` / `landmarks` / `known_objects` 是全局坐标——中间隔着一次换算。
-
-        那次换算是全项目最大的一个错误来源，而且是**我们自己造出来的**：
-
-        - 决策模型每步花一千多个输出 token 反复核对同一行字符，
-          还是会得出"(6,4) 是 `#` 所以不可达"，而那一格明明是 `G`。
-        - 它把换算结果写进子目标（"移动到屏幕格(7,4)"），
-          而那种判据**永远不可能成立**——走过去之后他还是 `(4,4)`。
-        - 判定器拿到那句判据，只能把全局的 `x=16 y=2` 读成屏幕的 `(16,2)`。
-
-        把换算删掉，这三类错一起消失。**图上的每个数字和记忆里的每个数字
-        现在是同一套东西**，不需要任何转换就能对上。
-
-        ## 没有逐格列号，行尾给范围
-
-        行号能横着写（一行一个数，写在左边），逐格列号不能——全局 x 是两三位数，
-        而一列只有一个字符宽。试过把列号竖着摞成两行（十位一行、个位一行），
-        **模型读不动**：那要求它对着某一列纵向拼数字，比原来的换算还难。
-
-        但「只在开头写一句这一屏覆盖到哪」实测也不够：行起点随相机滚动每帧都变，
-        模型要做「行起点 x + 字符索引」的换算，且会把手写说明里的示例坐标声明
-        （`decide_action.py` 的 `_sample_map`）当成通用规则套用到当前帧上，
-        算出矛盾后开始长篇自我核对（2026-09-08 实测一条 thought 烧掉 1633
-        output token，详见 `CHANGELOG.md`）。所以现在改成**每一行行尾直接标注
-        该行的全局 x 范围**——不是逐格列号（那还是读不动），是把「起点+索引」
-        的换算降为一次查表；开头一句只解释括号的含义，不再重复具体数字，
-        避免同一信息出现两份。
-
-        ## 格子之间不加空格
-
-        警示：空格会被模型当成格子——一行 10 格看成 19 格，坐标全线错位。
-        行尾的 `(x=..)` 括号是标注不是格子，图例里没有 `(` 和 `)` 这两种字符。
-        """
-        from .screen_model import (
-            GRID_COLS,
-            GRID_ROWS,
-            PLAYER_CELL,
-            PLAYER_MARK,
-        )
-
-        col, row = PLAYER_CELL
-        ys = [self.player_y + r - row for r in range(GRID_ROWS)]
-        left, right = self.player_x - col, self.player_x + GRID_COLS - 1 - col
-        gutter = max(len(str(y)) for y in ys)
-
-        lines = [f"这一屏 {GRID_COLS} 列 × {GRID_ROWS} 行；每行末尾括号里是该行首尾两格的全局 x"]
-        for r, line in enumerate(self.cells):
-            chars = list(line)
-            if r == row:
-                chars[col] = PLAYER_MARK
-            lines.append(f"y={ys[r]:<{gutter}} " + "".join(chars) + f"  (x={left}..{right})")
-        return "\n".join(lines)
-
     def landmarks(self) -> list[Facts.Landmark]:
         """屏幕上的门 / 招牌 / 人 / 物 / 石，**换算成全局坐标**。返回 `(类型, x, y)`。
 
@@ -228,9 +168,3 @@ class TerrainMap(BaseModel):
         from .place_in_world import PlaceInWorld
 
         return PlaceInWorld(map_id=self.map_id, x=self.player_x, y=self.player_y)
-
-    def render_neighbors(self) -> str:
-        """四邻渲染成一行。**相对『我』的方向，不依赖屏幕原点，所以能进记忆。**"""
-        n = self.neighbors()
-        名 = {"up": "北", "down": "南", "left": "西", "right": "东"}
-        return " ".join(f"{名[d]} {n[d]}" for d in ("up", "down", "left", "right"))

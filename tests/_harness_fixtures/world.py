@@ -28,7 +28,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToGameToolSaveStateReq,
     FromHarnessToGameToolSaveStateResp,
 )
-from pokemon_agent.world import ActionSpace, TaskObservation, TaskScene
+from pokemon_agent.world import ActionSpace, Facts, TaskObservation, TaskScene
 
 SUBTASK = "子任务"
 """假拆解给出的每个 task 的目标文字（task 层判定据此认出自己）。"""
@@ -57,7 +57,11 @@ class _Game:
     def perceive_task(self) -> FromHarnessToGameToolPerceiveTaskResp:
         time.sleep(_MOCK_DELAY_SECONDS)
         self._frames += 1
-        observation = TaskObservation(step=0, status=f"s{self._frames}", scene=TaskScene.WALK)
+        observation = TaskObservation(
+            step=0,
+            facts=Facts(overlay=Facts.Overlay.NONE, screen=f"s{self._frames}"),
+            scene=TaskScene.WALK,
+        )
         return FromHarnessToGameToolPerceiveTaskResp(
             observation=observation, frame_png=f"F{self._frames}"
         )

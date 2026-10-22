@@ -43,13 +43,11 @@ __all__ = [
     "ObjectWarpEvent",
     "ActMemory",
     "TaskMemory",
-    "render_sequence",
 ]
 
 from .act_memory import (
     SNAPSHOT_BLIND,
     ActMemory,
-    render_sequence,
 )
 from .episode_memory import EpisodeMemory
 from .knowledge import KnowledgeRecord

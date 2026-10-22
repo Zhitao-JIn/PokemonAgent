@@ -26,7 +26,6 @@ __all__ = [
     "ObjectWarpEvent",
     "ActMemory",
     "TaskMemory",
-    "render_sequence",
 ]
 
 from .datastore import (
@@ -40,5 +39,4 @@ from .datastore import (
     ObjectWarpEvent,
     RunMemory,
     TaskMemory,
-    render_sequence,
 )

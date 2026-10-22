@@ -74,25 +74,34 @@ def parse_request(case: GoldenCase) -> BaseModel:
     return cls.model_validate(case.request)
 
 
-def render_case(case: GoldenCase, gateway: PromptGateway) -> bytes:
-    """Render through the active registry; unrecoverable input remains an explicit error."""
-    if case.task == "retry_prompt":
-        params = DecideActionRetryParams.model_validate(case.request)
-        return gateway.render("decide_action_retry", params).text.encode("utf-8")
+def params_for(case: GoldenCase) -> BaseModel:
+    """历史兼容只读原始JSON，保留被新信封忽略的旧值，不补造语义。"""
     adapted = adapt_request(case.request)
     req = parse_request(case.model_copy(update={"request": adapted.request}))
     data = req.model_dump(mode="json")
     if case.task in {"summarize", "summarize_task"}:
         data["success"] = req.success
+    data.update(adapted.request)
     if case.task == "decompose":
         data["terrain_meanings"] = TERRAIN_MEANING
-    params = (
-        decide_prompt_params(req, max_segments=case.max_segments)
-        if case.task == "decide_action"
-        else CONTRACTS[case.task].model_validate(data)
-    )
-    if adapted.prompt_fields:
-        params = CONTRACTS[case.task].model_validate(
-            {**params.model_dump(mode="json"), **adapted.prompt_fields}
+    if case.task == "decide_action":
+        converted = decide_prompt_params(req, max_segments=case.max_segments).model_dump(
+            mode="json"
         )
-    return gateway.render(case.task, params).text.encode("utf-8")
+        observation = {**converted["observation"], **adapted.request["obs"]}
+        converted.update(
+            {key: value for key, value in adapted.request.items() if key not in {"obs", "space"}}
+        )
+        converted["observation"] = observation
+        data = converted
+    data.update(adapted.prompt_fields)
+    return CONTRACTS[case.task].model_validate(data)
+
+
+def render_case(case: GoldenCase, gateway: PromptGateway) -> bytes:
+    """只经活动网关对冻结文本，不写入golden。"""
+    if case.task == "retry_prompt":
+        return gateway.render(
+            "decide_action_retry", DecideActionRetryParams.model_validate(case.request)
+        ).text.encode("utf-8")
+    return gateway.render(case.task, params_for(case)).text.encode("utf-8")

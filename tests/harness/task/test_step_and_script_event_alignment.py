@@ -36,7 +36,6 @@ def _obs(
         marks.append(Facts.Landmark(kind="门", map_id=place.map_id, x=DOOR.x, y=DOOR.y))
     return TaskObservation(
         step=0,
-        status="s",
         scene=TaskScene.WALK,
         place=place,
         facts=Facts(landmarks=marks, facing=facing, dialog_text=dialog),

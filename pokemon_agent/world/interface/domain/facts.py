@@ -1,26 +1,7 @@
-"""Facts：大脑在某一步看到的世界的结构化事实容器。
-
-原来 `Observation.facts` 是 `dict[str, str]`——结构化的东西（地标、场景、
-叠加层）先渲染成文本塞进去，判定层/记忆检索再从文本反解回来，这条弯路本身就是
-错误的来源。这里只定义**一个**"总的" facts 类型：`Facts` 本身是 Pydantic 模型，
-字段该是什么类型就是什么类型；`Scene`/`Overlay`/`Landmark` 都收成 `Facts` 的
-**内部类**——它们只对 facts 有意义，不该在 `Facts` 之外单独存在（避免"到底是
-`pokemon_agent.xxx.Overlay` 还是 `Facts.Overlay`"这种两个名字指同一个概念的混乱）。
-
-**stringify 是 prompt 层的事**：`render()`/`items()` 是这里唯一做"结构化 → 文本"
-转换的地方，且只在渲染给大脑读、或者拼检索 query 的那一刻才发生；判定层
-（`harness/episode/store/store_object_semantic_memory/rules.py`）拿到的永远是
-`Facts.landmarks` 这份
-`list[Facts.Landmark]` 原件，不用反解任何文本。
-
-**物理位置**：这个文件放在 `world/interface/domain/` 而不是 `schemas/world/domain/`——
-`Facts` 是"世界这个子系统对外承诺的观测事实长什么样"，跟 `WorldPort`（同目录的
-`world_port.py`）是同一件事的两个角度（协议 + 协议吐出来的数据形状），归一起管理。
-"""
+"""世界的结构化观测事实；模型文字由prompt模块生成，冻结旧键由extra保留。"""
 
 from __future__ import annotations
 
-import unicodedata
 from enum import StrEnum
 from typing import Any, ClassVar
 
@@ -36,32 +17,8 @@ from .battle_status import BattleStatus
 # `PlaceInWorld` 的地方（`.place` 属性）才在方法体里现场 `import`。
 
 
-def _display_width(text: str) -> int:
-    """这段文字占几个字符宽。**中日韩字符算两格。**
-
-    对齐要用它而不是 `len()`：标签里中英混排（`位置` 和 `my_hp` 同时出现），
-    按字数补空格的话，中文那几行会短一半——而这份文本的**唯一用途**就是让大脑
-    逐行对照前后两份快照，列对不齐等于把配对的活又推回给它。
-    """
-    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
-
-
-_EXTRA_ORDER: tuple[str, ...] = ("my_name", "my_level", "my_hp", "foe_name", "foe_level", "foe_hp")
-"""动态字段里值得固定顺序的那几个：战斗双方状态框（内存读出，`battle_status.py`）。
-其余动态字段（视觉模型按 scene 给的 `ScreenState.fields`）按字母序排在后面。"""
-
-
 class Facts(BaseModel):
-    """一步里"世界事实"的结构化容器：场景、叠加层、地标、位置文本、HP……
-
-    **`extra="allow"`**：随 scene 变化的字段直接挂在这个模型上——视觉模型按 scene 给的
-    （`type`/`title`…）与战斗中内存读出的双方状态框（`my_hp`/`foe_level`…）。
-    不必为每个 scene 各开一个具名字段——那些字段本来就随 scene 变化，
-    强行都声明成具名字段只会让这个模型跟着每个新 scene 改一次。
-    RAM/世界层能确定给出的那几项（`scene`/`overlay`/`landmarks`/`where`/…）才
-    值得做成具名字段：它们的类型是确定的，判定层/记忆检索需要按类型访问它们，
-    不是按"这份文本里有没有这个词"去猜。
-    """
+    """场景、叠加层与原始观测字段。extra仅保留冻结输入和额外事实，不生产旧文本投影。"""
 
     model_config = ConfigDict(extra="allow")
 
@@ -121,19 +78,11 @@ class Facts(BaseModel):
 
             return PlaceInWorld(map_id=self.map_id, x=self.x, y=self.y)
 
-        def render(self) -> str:
-            """渲染成 prompt 里那一行。"""
-            return f"{self.kind} x={self.x} y={self.y}"
-
     scene: Scene | None = Field(default=None, description="这一帧在什么场合")
     overlay: Overlay | None = Field(default=None, description="这一帧屏幕上盖着什么")
-    where: str = Field(
-        default="", description="主角位置渲染成的文本（结构化的那份在 `Observation.place`）"
-    )
     facing: str = Field(
         default="", description="朝向（up/down/left/right），来自精灵表，不是按键推断"
     )
-    neighbors: str = Field(default="", description="四邻通行性，相对'我'的地形描述")
     landmarks: list[Landmark] = Field(
         default_factory=list,
         description="这一帧屏幕上的地标（门/招牌/人/物/石），来自 `TerrainMap.landmarks()`。"
@@ -147,9 +96,6 @@ class Facts(BaseModel):
     )
     cursor: str | None = Field(
         default=None, description="选择框光标指向的那一项原文；读不出为 None"
-    )
-    walk_map: str = Field(
-        default="", description="这一帧的地形网格渲染文本，来自模拟器内存，不是模型读出来的"
     )
     map_id: int | None = Field(default=None, description="当前地图编号")
     screen: str = Field(
@@ -213,59 +159,6 @@ class Facts(BaseModel):
                 extra.pop(k, None)
         return copy
 
-    def _entries(self) -> list[tuple[str, str, str]]:
-        """`(字段名, 中文标签, 文本)` 列表，只含"有值"的字段，按固定顺序。
-
-        顺序固定不是为了好看：前后两份 facts 要摆在一起给大脑比对，同一个字段在
-        两份里必须出现在同一个相对位置，否则"哪一项变了"就得靠它先做一次字段配对。
-        `render()`（对齐文本）和 `items()`（`- key: value` 朴素列举）共用这份顺序，
-        两处措辞不一致的话，"大脑读到的"和"记忆里存的"就会变成两个不同的东西。
-        """
-        entries: list[tuple[str, str, str]] = []
-        if self.scene is not None:
-            entries.append(("scene", "场景", self.scene.value))
-        if self.overlay is not None:
-            entries.append(("overlay", "叠加层", self.overlay.value))
-        if self.where:
-            entries.append(("where", "位置", self.where))
-        if self.map_id is not None:
-            entries.append(("map_id", "地图", str(self.map_id)))
-        if self.facing:
-            entries.append(("facing", "朝向", self.facing))
-        if self.neighbors:
-            entries.append(("neighbors", "四邻", self.neighbors))
-        if self.landmarks:
-            entries.append(("landmarks", "地标", "; ".join(m.render() for m in self.landmarks)))
-        if self.dialog_text:
-            entries.append(("dialog_text", "对话", self.dialog_text))
-        if self.options:
-            entries.append(("options", "选项", " / ".join(self.options)))
-        if self.cursor:
-            entries.append(("cursor", "光标", self.cursor))
-        extra: dict[str, Any] = self.model_extra or {}
-        seen = set()
-        for k in _EXTRA_ORDER:
-            if k in extra and extra[k] not in (None, ""):
-                entries.append((k, k, str(extra[k])))
-                seen.add(k)
-        for k in sorted(extra):
-            if k in seen or extra[k] in (None, ""):
-                continue
-            entries.append((k, k, str(extra[k])))
-        if self.walk_map:
-            entries.append(("walk_map", "walk_map", self.walk_map))
-        if self.screen:
-            entries.append(("screen", "屏幕", "\n" + self.screen))
-        return entries
-
-    def items(self) -> list[tuple[str, str]]:
-        """`(字段名, 文本)` 列表——给需要 `- key: value` 这种朴素列举格式的调用方用
-        （`prompts/decide_action.py` 的主 prompt）。跟字典的 `.items()` 同名，是
-        故意的：调用方原来对着 `dict[str, str]` 写 `for k, v in obs.facts.items()`，
-        现在对着 `Facts` 写同样的代码不用改一个字。
-        """
-        return [(k, text) for k, _label, text in self._entries()]
-
     def stall_key_part(self) -> str:
         """停摆检测键里由 facts 贡献的那一段，给 `Observation.stall_key()` 用。
 
@@ -275,24 +168,6 @@ class Facts(BaseModel):
         真的打转。它是 world 机械读出的文本，不是视觉模型的自由措辞，同帧重读稳定。
         """
         return "|".join((self.scene_value, self.overlay_value, self.cursor or "", self.dialog_text))
-
-    def render(self, indent: str = "  ") -> str:
-        """把这份 facts 渲染成一段可读、可打分的文本，供 prompt 用。空 facts 返回空串
-        （调用方——`Observation.render()`——自己决定空的时候摆什么）。
-        """
-        entries = self._entries()
-        if not entries:
-            return ""
-        width = max(_display_width(label) for _k, label, _v in entries)
-        lines = []
-        for _k, label, body in entries:
-            pad = " " * (width - _display_width(label) + 2)
-            # 多行的值（`walk_map`）续行要缩进到同一列，理由同旧版：顶格续行的话
-            # 图的第二行看起来就像下一个字段。
-            gutter = " " * (len(indent) + width + 2)
-            body = body.replace("\n", "\n" + gutter)
-            lines.append(f"{indent}{label}{pad}{body}")
-        return "\n".join(lines)
 
 
 _OPEN_KEYS: tuple[str, ...] = ("up", "down", "left", "right", "a", "b", "start")

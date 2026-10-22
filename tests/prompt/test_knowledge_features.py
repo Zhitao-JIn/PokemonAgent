@@ -8,7 +8,6 @@ def test_knowledge_query_uses_scene_overlay_map_and_goal_without_rendered_status
     observation = TaskObservation(
         step=1,
         scene=TaskScene.DIALOG,
-        status="THIS_STATUS_MUST_NOT_ENTER_THE_QUERY",
         place=PlaceInWorld(map_id=12, x=3, y=4),
         facts=Facts(overlay=Facts.Overlay.DIALOG),
     )
@@ -16,4 +15,4 @@ def test_knowledge_query_uses_scene_overlay_map_and_goal_without_rendered_status
     query = build_knowledge_query(observation, "寻找入口")
 
     assert query == "scene:dialog overlay:dialog map:12 目标：寻找入口"
-    assert observation.status not in query
+    assert "THIS_STATUS_MUST_NOT_ENTER_THE_QUERY" not in query

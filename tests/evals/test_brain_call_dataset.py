@@ -1,10 +1,13 @@
 """冻结现场的可重现核验：无本机采集目录、无模型、无网络。"""
 
+import copy
+import json
 from pathlib import Path
 
 import pytest
 
 from evals.agent_short_goal_run.dataset.loader import load_samples
+from evals.dataset.brain_calls import load_references
 from evals.dataset.brain_calls.dataset_contract import InputCase
 from evals.dataset.brain_calls.independent_reference import (
     judge_reference,
@@ -12,13 +15,24 @@ from evals.dataset.brain_calls.independent_reference import (
     summary_reference,
 )
 from evals.dataset.brain_calls.scope_audit import verify_scope
-from evals.dataset.brain_calls.source_archive import load_source_events
-from evals.dataset.brain_calls.verify_dataset import verify
+from evals.dataset.brain_calls.source_archive import load_source_events, verify_sources
+from evals.dataset.brain_calls.verify_dataset import verify, verify_pair
 from evals.dataset.brain_choose import load as load_choices
 from evals.dataset.brain_judge import load as load_judges
 from pokemon_agent.schemas.memory import EpisodeMemory
 
 ROOT = Path(__file__).resolve().parents[2] / "evals/dataset/brain_calls/v1"
+
+
+def test_frozen_status_tampering_is_rejected_even_after_the_typed_field_is_removed() -> None:
+    raw = json.loads((ROOT / "choose/inputs.jsonl").read_text("utf-8").splitlines()[0])
+    row = InputCase.model_validate(raw)
+    reference = load_references("choose")[0]
+    altered = copy.deepcopy(raw["request"])
+    altered["obs"]["status"] = "tampered frozen status"
+
+    with pytest.raises(ValueError, match="typed input round trip changed request"):
+        verify_pair(row, reference, verify_sources(ROOT), altered)
 
 
 def cases(family: str) -> list[InputCase]:

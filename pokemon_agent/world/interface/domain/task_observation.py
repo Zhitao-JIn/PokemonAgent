@@ -82,23 +82,5 @@ class TaskObservation(Observation):
             flags.append("transition")
         return flags
 
-    @computed_field
-    @property
-    def observation_notes(self) -> list[str]:
-        """显示相关的观测限制；缺文字、切分不全和业务视图缺失分别说明，不推断稳定性。"""
-        notes: list[str] = []
-        if not (self.facts.screen or self.facts.dialog_text or self.facts.options):
-            notes.append("未解码出屏幕文字，不能据此判断界面已结束")
-        if self.menu_decode_complete is False:
-            if self.covered_by_script:
-                notes.append("选单切分不完整，接管参数以业务视图为准；缺选项不表示没有选单")
-            else:
-                notes.append("选单切分不完整，不能用空选项判断没有选单；以 screen 核对文字")
-        if self.covered_by_script and self.takeover is None:
-            notes.append("接管业务视图缺失，脚本参数依据可能不足；覆盖标志不代表参数已知")
-        if self.scene is TaskScene.TRANSITION:
-            notes.append("当前分类为过场，单帧不能判断是否稳定；需新观测确认")
-        return notes
-
 
 __all__ = ["TaskObservation"]

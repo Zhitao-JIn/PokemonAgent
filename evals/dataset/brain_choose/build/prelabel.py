@@ -53,7 +53,9 @@ def candidate_keys(req: FromHarnessToBrainToolChooseOnceReq) -> tuple[list[str],
         keys, reason = menu_keys(req)
     elif facts.overlay == "none" and req.obs.scene == "walk" and req.obs.place:
         keys = walking_keys(
-            facts.walk_map, (req.obs.place.x, req.obs.place.y), req.goals[-1].criteria
+            (facts.model_extra or {}).get("walk_map", ""),
+            (req.obs.place.x, req.obs.place.y),
+            req.goals[-1].criteria,
         )
         reason = "唯一目标坐标，可见普通地面最短路；脚本、台阶与屏外路线需人工补审"
     else:

@@ -19,7 +19,7 @@ class ActionSpace(BaseModel):
     prompt 渲染按键说明用，与 `mask` 一致性由 `compute_action_space()` 一处产出保证。
     """
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
     scene: str = Field(default="", description="这份掩码是按哪个场合算的（可追溯）")
     mask: dict[str, bool] = Field(

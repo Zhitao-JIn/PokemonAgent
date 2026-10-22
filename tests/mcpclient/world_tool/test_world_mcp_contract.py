@@ -24,11 +24,7 @@ from pokemon_agent.world.action_space import ALL_BUTTONS
 def _observation(scene: TaskScene, overlay: Facts.Overlay) -> TaskObservation:
     """同一位置的假观测，由测试选择场合与叠加层。"""
     return TaskObservation(
-        step=0,
-        status="你在野外。",
-        scene=scene,
-        place=PlaceInWorld(map_id=12, x=13, y=8),
-        facts=Facts(overlay=overlay),
+        step=0, scene=scene, place=PlaceInWorld(map_id=12, x=13, y=8), facts=Facts(overlay=overlay)
     )
 
 

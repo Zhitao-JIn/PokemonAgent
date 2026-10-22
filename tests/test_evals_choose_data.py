@@ -96,11 +96,13 @@ def capture(tmp_path: Path) -> CaptureRow:
             "decoded": {"dialog_text": "Welcome!", "options": [], "cursor": ""},
         }
     )
-    (tmp_path / "request.json").write_text(req.model_dump_json(), encoding="utf-8")
+    historical = req.model_dump(mode="json")
+    historical["obs"]["status"] = "测试现场"
+    (tmp_path / "request.json").write_text(json.dumps(historical), encoding="utf-8")
     context = {
         "sense_event": {
             "content": {
-                "status": req.obs.status,
+                "status": "测试现场",
                 "facts": req.obs.facts.model_dump(mode="json"),
                 "frame": "test-frame",
                 "ram": ram.model_dump(mode="json"),
@@ -185,3 +187,14 @@ def test_ram_review_requires_exact_source_coverage(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="完整覆盖"):
         apply_review(source, [Decision(case_id="absent", verdict="outside_scope", reason="test")])
+
+
+def test_mismatched_historical_status_is_rejected(tmp_path: Path) -> None:
+    row = capture(tmp_path)
+    path = tmp_path / row.context
+    context = json.loads(path.read_text(encoding="utf-8"))
+    context["sense_event"]["content"]["status"] = "different frame"
+    path.write_text(json.dumps(context), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="感知与请求不一致"):
+        read_request(tmp_path, row)

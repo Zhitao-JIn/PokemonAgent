@@ -20,11 +20,7 @@ ALL_BUTTONS = ["a", "b", "up", "down", "left", "right", "start", "select"]
 
 def _obs(scene: TaskScene, overlay: Facts.Overlay | None = None) -> TaskObservation:
     return TaskObservation(
-        step=0,
-        status="s",
-        scene=scene,
-        place=PlaceInWorld(map_id=12, x=13, y=8),
-        facts=Facts(overlay=overlay),
+        step=0, scene=scene, place=PlaceInWorld(map_id=12, x=13, y=8), facts=Facts(overlay=overlay)
     )
 
 

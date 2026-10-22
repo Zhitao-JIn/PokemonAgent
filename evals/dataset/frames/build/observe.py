@@ -12,7 +12,6 @@ from pokemon_agent.world import (
     Facts,
     at_start,
     classify_scene,
-    layout_field,
     overlay_of,
     read_screen_text,
 )
@@ -39,6 +38,47 @@ def screen_text(sample: ScreenSample) -> ScreenText:
     return read_screen_text(_Screen(sample))
 
 
+_EXTRA_ORDER = ("my_name", "my_level", "my_hp", "foe_name", "foe_level", "foe_hp")
+"""旧 `Facts._EXTRA_ORDER` 的冻结副本：重放历史样本时保持原有行序。"""
+
+
+def _render_layout(text: ScreenText) -> str:
+    """旧 `ScreenText.render_layout()` 的冻结副本：构建历史样本时逐字节对齐。"""
+    if not text.option_grid or text.cursor_cell is None:
+        return ""
+    rows, cols = len(text.option_grid), max(len(row) for row in text.option_grid)
+    r, c = text.cursor_cell
+    if cols == 1:
+        head = f"竖排 {rows} 项，光标在第 {r + 1} 项；上/下 移动光标"
+    elif rows == 1:
+        head = f"横排 {cols} 项，光标在第 {c + 1} 项；左/右 移动光标"
+    else:
+        head = f"{rows} 行 × {cols} 列，光标在第 {r + 1} 行第 {c + 1} 列；上/下 换行，左/右 换列"
+    lines = [
+        "  ".join(("▶" if (i, j) == text.cursor_cell else " ") + item for j, item in enumerate(row))
+        for i, row in enumerate(text.option_grid)
+    ]
+    return head + "\n" + "\n".join(lines)
+
+
+def _render_details(text: ScreenText) -> str:
+    """旧 `ScreenText.render_details()` 的冻结副本：只读结构化选项与附注。"""
+    pairs = zip(text.options, text.option_details, strict=False)
+    return " / ".join(f"{option} {detail}" for option, detail in pairs if detail)
+
+
+def _layout_fields(text: ScreenText) -> dict[str, str]:
+    """旧 `layout_field()` 的冻结副本：排布与附注作为历史样本的两个文本键。"""
+    fields: dict[str, str] = {}
+    layout = _render_layout(text)
+    if layout:
+        fields["option_layout"] = layout
+    details = _render_details(text)
+    if details:
+        fields["option_details"] = details
+    return fields
+
+
 def task_facts(text: ScreenText) -> Facts:
     """task 层 `Facts` 里与屏幕有关的那几项（地形 / 位置 / 地标不在这里测）。"""
     return Facts(
@@ -48,13 +88,64 @@ def task_facts(text: ScreenText) -> Facts:
         options=text.options,
         cursor=text.cursor or None,
         screen=text.screen,
-        **layout_field(text),
+        **_layout_fields(text),
     )
+
+
+def _retired(facts: Facts, name: str) -> str:
+    """旧文本键只从 extra 读回，不在新观测里重新生成。"""
+    value = getattr(facts, name, "")
+    return value if isinstance(value, str) else ""
+
+
+def _facts_items(facts: Facts) -> list[tuple[str, str]]:
+    """旧 `Facts.items()` 的冻结副本：重放历史样本的 `- key: value` 行序。"""
+    entries: list[tuple[str, str]] = []
+    if facts.scene is not None:
+        entries.append(("scene", facts.scene.value))
+    if facts.overlay is not None:
+        entries.append(("overlay", facts.overlay.value))
+    where = _retired(facts, "where")
+    if where:
+        entries.append(("where", where))
+    if facts.map_id is not None:
+        entries.append(("map_id", str(facts.map_id)))
+    if facts.facing:
+        entries.append(("facing", facts.facing))
+    neighbors = _retired(facts, "neighbors")
+    if neighbors:
+        entries.append(("neighbors", neighbors))
+    if facts.landmarks:
+        entries.append(
+            ("landmarks", "; ".join(f"{m.kind} x={m.x} y={m.y}" for m in facts.landmarks))
+        )
+    if facts.dialog_text:
+        entries.append(("dialog_text", facts.dialog_text))
+    if facts.options:
+        entries.append(("options", " / ".join(facts.options)))
+    if facts.cursor:
+        entries.append(("cursor", facts.cursor))
+    extra = facts.model_extra or {}
+    seen: set[str] = set()
+    for key in _EXTRA_ORDER:
+        if key in extra and extra[key] not in (None, ""):
+            entries.append((key, str(extra[key])))
+            seen.add(key)
+    for key in sorted(extra):
+        if key in seen or key in {"where", "neighbors", "walk_map"} or extra[key] in (None, ""):
+            continue
+        entries.append((key, str(extra[key])))
+    walk_map = _retired(facts, "walk_map")
+    if walk_map:
+        entries.append(("walk_map", walk_map))
+    if facts.screen:
+        entries.append(("screen", "\n" + facts.screen))
+    return entries
 
 
 def observation_text(facts: Facts) -> str:
     """按 `decide_action.py` 渲染 `$facts` 的同一写法：逐项 `- 键: 值`。"""
-    return "\n".join(f"- {k}: {v}" for k, v in facts.items()) or "（无）"
+    return "\n".join(f"- {k}: {v}" for k, v in _facts_items(facts)) or "（无）"
 
 
 def decoded_answer(text: ScreenText, ram: bytes = b"") -> ScreenAnswer:

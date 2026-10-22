@@ -153,7 +153,9 @@ def _deps(memory: _Memory, planner: _BrainTool) -> RunRuntime:
         memory=memory,  # type: ignore[arg-type]
         game=SimpleNamespace(  # type: ignore[arg-type]
             perceive_task=lambda: FromHarnessToGameToolPerceiveTaskResp(
-                observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
+                observation=TaskObservation(
+                    facts={"overlay": "none"}, step=0, scene=TaskScene.WALK
+                ),
                 frame_png="F",
             )
         ),

@@ -55,7 +55,13 @@ def read_request(batch: Path, row: CaptureRow) -> FromHarnessToBrainToolChooseOn
     sense = context["sense_event"]["content"]
     ram = RamReadout.model_validate(sense["ram"])
     expected = req.obs.facts.model_dump(mode="json")
-    if sense["facts"] != expected or sense["status"] != req.obs.status:
+    if (
+        sense["facts"] != expected
+        or sense["status"]
+        != json.loads(contained_file(batch, row.request).read_text(encoding="utf-8"))["obs"][
+            "status"
+        ]
+    ):
         raise ValueError(f"{row.id}: 感知与请求不一致")
     if row.scene != req.obs.scene or req.space.scene != req.obs.scene:
         raise ValueError(f"{row.id}: 场合不一致")

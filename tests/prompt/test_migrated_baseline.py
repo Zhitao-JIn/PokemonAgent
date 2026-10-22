@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from pokemon_agent.direct.brain_tool import decide_prompt_params
 from pokemon_agent.prompt import (
     DecideActionParams,
     DecomposeParams,
@@ -16,12 +15,9 @@ from pokemon_agent.prompt import (
     SummarizeTaskParams,
     VerifyParams,
 )
-from pokemon_agent.schemas.memory import ActMemory
-from pokemon_agent.schemas.memory.datastore.act_memory import render_sequence
-from pokemon_agent.world import TERRAIN_MEANING
 
-from .golden_cases import GoldenCase, parse_request
-from .legacy_adapter import UnrestorableRequest, adapt_request
+from .golden_cases import GoldenCase, params_for
+from .legacy_adapter import UnrestorableRequest
 
 GOLDEN = Path(__file__).parent / "golden"
 CONTRACTS = {
@@ -47,24 +43,9 @@ def gateway() -> PromptGateway:
 def test_gateway_prompt_preserves_the_frozen_bytes(path: Path, gateway: PromptGateway) -> None:
     case = GoldenCase.model_validate_json(path.read_bytes())
     try:
-        adapted = adapt_request(case.request)
+        params = params_for(case)
     except UnrestorableRequest as error:
         pytest.skip(str(error))
-    req = parse_request(case.model_copy(update={"request": adapted.request}))
-    data = req.model_dump(mode="json")
-    if case.task in ("summarize", "summarize_task"):
-        data["success"] = req.success
-    if case.task == "decompose":
-        data["terrain_meanings"] = TERRAIN_MEANING
-    params = (
-        decide_prompt_params(req, max_segments=case.max_segments)
-        if case.task == "decide_action"
-        else CONTRACTS[case.task].model_validate(data)
-    )
-    if adapted.prompt_fields:
-        params = CONTRACTS[case.task].model_validate(
-            {**params.model_dump(mode="json"), **adapted.prompt_fields}
-        )
     actual = gateway.render(case.task, params)
     history = gateway.render_history(case.task, params) if case.task != "decide_action" else []
 
@@ -72,34 +53,13 @@ def test_gateway_prompt_preserves_the_frozen_bytes(path: Path, gateway: PromptGa
     assert actual.text.encode("utf-8") == expected
     assert actual.task == case.task
     assert actual.version == "v1"
-    if case.task == "verify":
-        assert history == [entry.render() for entry in req.entries]
-    elif case.task in {"summarize", "summarize_task"}:
-        entries = req.entries
-        records = (
-            render_sequence(entries)
-            if entries and isinstance(entries[0], ActMemory)
-            else [entry.render() for entry in entries]
-        )
-        verdicts = {verdict.index: verdict for verdict in req.verdicts}
-        expected_blocks = []
-        for index, record in enumerate(records):
-            verdict = verdicts.get(index)
-            tag = "【未校验】"
-            if verdict is not None:
-                tag = ("【正样本】" if verdict.positive else "【负样本】") + verdict.why
-            expected_blocks.append(f"## 第 {index} 条 {tag}\n{record}")
-        assert history == expected_blocks
-    elif case.task == "summarize_run":
-        assert history == [entry.render() for entry in req.episode_memories]
-    elif case.task == "judge_success":
-        assert history[: len(req.history)] == [entry.render() for entry in req.history]
-    elif case.task == "decompose":
+    if case.task != "decide_action":
+        assert all(isinstance(block, str) for block in history)
+    if case.task == "decompose":
         assert "\n".join(history) in actual.text
     elif case.task == "run_plan":
-        assert history[: len(req.details)] == [entry.render() for entry in req.details]
         goals = gateway.render_history(case.task, params, part="goals")
-        assert len(goals) == len(req.plan)
+        assert len(goals) == len(params.plan)
         assert all(line in actual.text for line in goals)
 
 

@@ -27,7 +27,6 @@ def native_request(
     place = PlaceInWorld(map_id=1, x=2, y=3)
     observation = TaskObservation(
         step=0,
-        status="旧状态行",
         place=place,
         scene=TaskScene.NAMING
         if covered
@@ -37,7 +36,7 @@ def native_request(
         takeover=NamingView(target="YOUR NAME?", typed="R") if covered else None,
         facts=Facts(
             overlay=overlay,
-            where=place.render(),
+            where=f"全局坐标 地图{place.map_id} x={place.x} y={place.y}",
             dialog_text="欢迎" if overlay == Facts.Overlay.DIALOG else "",
             options=["YES", "NO"] if overlay == Facts.Overlay.CHOICE else [],
             cursor="YES" if overlay == Facts.Overlay.CHOICE else None,
@@ -100,15 +99,17 @@ def test_a_script_only_action_space_lists_scripts_without_basic_keys() -> None:
     assert req.space.names == []
 
 
-def test_frozen_action_space_display_keys_roundtrip_as_legacy_extensions() -> None:
+def test_frozen_action_space_ignores_retired_display_keys() -> None:
     path = sorted((GOLDEN / "decide_action").glob("history-*.req.json"))[0]
     raw = json.loads(path.read_bytes())["request"]["space"]
 
     space = ActionSpace.model_validate(raw)
 
-    assert space.model_dump(mode="json") == raw
+    assert space.model_dump(mode="json") == {
+        key: value for key, value in raw.items() if key not in {"descriptions", "note", "map_note"}
+    }
     assert {"descriptions", "note", "map_note"}.isdisjoint(ActionSpace.model_fields)
-    assert {"descriptions", "note", "map_note"} <= space.model_extra.keys()
+    assert space.model_extra is None
 
 
 @pytest.mark.parametrize(
@@ -156,14 +157,30 @@ def test_real_choose_attempts_are_stamped_before_success_or_exhaustion(exhausted
     assert bool(calls[-1].error_kind) == exhausted
 
 
+def _business_marker(raw: dict) -> str:
+    """取业务视图里的一处数据原文，证明渲染确实消费了这份视图。"""
+    for key in ("items", "bag", "party", "box"):
+        rows = raw.get(key) or []
+        if rows and rows[0].get("name"):
+            return str(rows[0]["name"])
+    for key in ("mine", "foe"):
+        side = raw.get(key) or {}
+        if side.get("name"):
+            return str(side["name"])
+    for key in ("target", "pokemon", "new_move"):
+        if raw.get(key):
+            return str(raw[key])
+    return ""
+
+
 @pytest.mark.parametrize(
     "path",
     sorted((GOLDEN / "decide_action").glob("synthetic-takeover-*.req.json")),
     ids=lambda path: path.stem,
 )
 def test_all_takeover_frames_render_their_business_view(path: Path) -> None:
-    req = parse_request(GoldenCase.model_validate_json(path.read_bytes()))
-    req.obs.facts.where = ""
+    case = GoldenCase.model_validate_json(path.read_bytes())
+    req = parse_request(case)
     req.obs.place = None
 
     actual = PromptGateway(None).render("decide_action", decide_prompt_params(req, max_segments=3))
@@ -173,7 +190,8 @@ def test_all_takeover_frames_render_their_business_view(path: Path) -> None:
     assert f"- overlay: {overlay}" in actual.text
     assert "这一屏 10 列" not in actual.text
     if req.obs.takeover is not None:
-        assert req.obs.takeover.render() in actual.text
+        marker = _business_marker(case.request["obs"]["takeover"])
+        assert marker and marker in actual.text
     elif req.obs.facts.screen:
         assert req.obs.facts.screen in actual.text
         assert "接管业务视图缺失" in actual.text

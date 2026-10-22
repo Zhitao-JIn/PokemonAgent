@@ -113,7 +113,7 @@ def test_a_sense_frame_with_a_ram_readout_round_trips(tmp_path) -> None:
         FromHarnessToTraceToolAppendReq(
             kind=TraceKind.SENSE_FRAME,
             meta={"source": "task.sense", "episode_id": "r1-ep1", "task_id": "t1", "step": 3},
-            obs=Observation(step=3, status="s", facts=facts),
+            obs=Observation(step=3, facts=facts),
             frame="data:image/png;base64,AAAA",
             ram=ram,
         )
@@ -135,11 +135,7 @@ def test_a_status_written_by_an_old_run_still_parses_but_new_ones_stop_writing_i
 ) -> None:
     facts = Facts(overlay=Facts.Overlay.CHOICE, options=["FIGHT"], my_hp="20/20")
     observation = TaskObservation(
-        step=0,
-        status="旧状态",
-        facts=facts,
-        scene=TaskScene.BATTLE,
-        place=PlaceInWorld(map_id=1, x=2, y=3),
+        step=0, facts=facts, scene=TaskScene.BATTLE, place=PlaceInWorld(map_id=1, x=2, y=3)
     )
     if backend == "local":
         trace = TraceTool.build(run_id="r1", trace_root=tmp_path)

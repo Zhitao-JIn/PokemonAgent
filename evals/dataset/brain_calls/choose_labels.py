@@ -23,7 +23,7 @@ def acceptable_actions(case: InputCase) -> tuple[list[ActionMatcher], str]:
     if re.fullmatch(r"where\s*显示\s*x=\d+\s+y=\d+", request.goals[-1].criteria.strip()) is None:
         return [], "不是无附加条件的明确坐标目标"
     keys = walking_keys(
-        observation.facts.walk_map,
+        (observation.facts.model_extra or {}).get("walk_map", ""),
         (observation.place.x, observation.place.y),
         request.goals[-1].criteria,
     )

@@ -184,7 +184,7 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
     )
     req = FromHarnessToBrainToolDecomposeReq(
         goal=Goal(goal="g", criteria="c"),
-        observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
+        observation=TaskObservation(facts={"overlay": "none"}, step=0, scene=TaskScene.WALK),
         max_tasks=2,
     )
 
@@ -196,5 +196,5 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
     assert all(call.payload["raw"] == raw for call in caught.value.calls)
 
 
-def test_state_schema_is_frozen_after_the_l1_goal_identity_stamp():
-    assert state_schema_hash() == "95057cca4fffb08b"
+def test_state_schema_is_frozen_after_structured_observation_cleanup():
+    assert state_schema_hash() == "e3bd23162bfd0e85"

@@ -13,7 +13,7 @@ world 的 TaskPerceived / MCP perceive_task 同时返回旧文本与新结构化
 | facts | terrain_visible | 本帧旧投影是否显示 walk_map，避免有菜单时额外展开地图 |
 | observation | observation_flags | no_text / incomplete_menu / missing_takeover / transition |
 
-旧 where、neighbors、walk_map、option_layout、option_details、my_*、foe_*、status 与 observation_notes 均保留，旧渲染保持原样。ActMemory 中使用独立的同构快照；新字段默认空值，使已有记录仍可读取。
+CP596删除where、neighbors、walk_map的声明、动态option_layout/option_details与my_*/foe_*生产、Observation.status、TaskObservation.observation_notes，以及world/memory旧render/index_line等方法。ActMemory保留独立同构的结构化快照。Facts的extra="allow"仍接收冻结旧键；历史核验读取原始JSON，数据不改。新trace不写旧键，旧账仍可解析；旧checkpoint因schema指纹不同明确拒绝，不迁移。
 
 历史文本适配只存在于 tests/prompt/legacy_adapter.py。位置、地形、四邻、选项与战斗状态通过旧渲染器逐字段往返验证，不能逐字还原时显式拒绝。历史地图中心的 @ 作为可见标记保留，不推断被主角遮挡的地形。
 

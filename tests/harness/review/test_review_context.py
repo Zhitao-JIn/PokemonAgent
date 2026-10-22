@@ -4,6 +4,7 @@ import json
 from typing import Literal
 
 import pytest
+from _harness_fixtures.prompt_text import index_text
 from _review_context import review_context
 from pydantic import ValidationError
 
@@ -66,7 +67,7 @@ def _brain_input(kind: str) -> BrainInput:
         _episode("ep3", None, None),
     ]
     tasks = [_task("t1", FRAME_A, FRAME_C), _task("t2", FRAME_A, FRAME_B), _task("t3", None, None)]
-    observation = TaskObservation(step=0, scene=TaskScene.WALK, status="RAM现状")
+    observation = TaskObservation(facts={"overlay": "none"}, step=0, scene=TaskScene.WALK)
     if kind == "plan":
         return FromHarnessToBrainToolPlanOnceReq(
             run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
@@ -200,11 +201,11 @@ def test_render_context_follows_brain_scope_fields(kind: str) -> None:
         assert "ep1 全文" in text and "ep2 全文" in text
     else:
         assert "t1 全文" in text and "t2 全文" in text
-        assert ctx.brain_input.episode_index[0].index_line() in text
+        assert index_text(ctx.brain_input.episode_index[0]) in text
         assert "older 全文" not in text
     if kind == "plan":
         assert '"details":' in text
-        assert ctx.brain_input.run_index[0].index_line() in text
+        assert index_text(ctx.brain_input.run_index[0]) in text
         assert '"plan":' not in text
     assert '"task_table":' not in text
 
@@ -273,5 +274,5 @@ def test_reviewer_index_lines_are_byte_equal_to_the_memory_methods(
     rendered = json.loads(text.rsplit("\n图 ", 1)[0])
 
     for field, memory in zip(("episode_index", "task_index", "run_index"), memories, strict=True):
-        assert rendered[field] == [memory.index_line()]
+        assert rendered[field] == [index_text(memory)]
     assert req.model_dump_json() == original

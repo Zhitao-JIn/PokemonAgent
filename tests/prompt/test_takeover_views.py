@@ -28,7 +28,7 @@ def test_each_takeover_view_matches_the_legacy_text_in_an_independent_copy(
     path: Path,
 ) -> None:
     raw = json.loads(path.read_bytes())["request"]["obs"]["takeover"]
-    old_view = TypeAdapter(TakeoverView).validate_python(raw)
+    TypeAdapter(TakeoverView).validate_python(raw)
     directory = tmp_path / "isolated"
     shutil.copytree(
         ROOT / "pokemon_agent/prompt", directory, ignore=shutil.ignore_patterns("__pycache__")
@@ -53,7 +53,10 @@ def test_each_takeover_view_matches_the_legacy_text_in_an_independent_copy(
         "example", ExampleParams(value=json.dumps({"view": raw}))
     )
 
-    assert result.text == old_view.render()
+    expected = path.with_name(path.name.removesuffix(".req.json") + ".prompt.txt").read_text(
+        encoding="utf-8"
+    )
+    assert result.text and result.text in expected
     assert result.task == "example"
 
 

@@ -1,3 +1,5 @@
+> CP596现状：本文记录早期方案。当前ActionSpace只传能力字段、忽略旧文案扩展，with_prompt_text已删除；观测仅生产结构化字段。当前契约见action_space_prompt_boundary.md与prompt_observation_fields.md。下文保留为历史方案。
+
 # spec —— 批 ②a：补齐 `WorldMcpTool` 相对 `GameTools` 缺的三样
 
 > 流程位置：intent（`docs/mcp/mcp-only-intent.md`）→ 批 ① 已完成 → **批 ②a（本文，v1）** → 批 ②b（删进程内 world）→ 批 ③（评测走 MCP）

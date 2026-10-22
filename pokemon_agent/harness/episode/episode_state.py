@@ -66,9 +66,6 @@ class EpisodeContext(BaseModel):
         default=0, ge=0, description="上次检索知识时已结算的 task 数；此后有 task 失败就重查"
     )
     object_semantic_events: list[ObjectFactEvent] = Field(default_factory=list)
-    object_semantic_memory: str = Field(
-        default="", description="本图 object 语义记忆文字化（merge 折进 facts）"
-    )
 
 
 class EpisodeRunState(Settled, BaseModel):

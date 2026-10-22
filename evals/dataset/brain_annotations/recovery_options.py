@@ -22,7 +22,7 @@ def recovery(case: InputCase) -> tuple[list[str], str]:
         )
     if sample == "knowledge_pokemon_center_heal" and number <= 10:
         if (place.x, place.y) != (3, 3):
-            return route(facts.walk_map, place.x, place.y, (3, 3)), (
+            return route((facts.model_extra or {}).get("walk_map", ""), place.x, place.y, (3, 3)), (
                 "目标(3,2)是 #；可先回可走的(3,3)，再朝目标人物核实柜台互动。"
             )
         return ["a"] if facts.facing == "north" else ["up"], (
@@ -48,7 +48,9 @@ def merchant(case: InputCase, number: int) -> tuple[list[str], str]:
             "允许转查其他人物或柜台。不能凭一次推进断言商店菜单将出现。"
         )
     if 16 <= number <= 25 or 46 <= number <= 51:
-        return route(obs.facts.walk_map, obs.place.x, obs.place.y, (3, 4)), (
+        return route(
+            (obs.facts.model_extra or {}).get("walk_map", ""), obs.place.x, obs.place.y, (3, 4)
+        ), (
             "当前子目标把 D 当人物或要求站到 #。可转向可走的(3,4)调查当前可见(3,3)人物，"
             "也可选择其他可见人物/柜台验证身份；建议坐标不代表已确认店员。"
         )

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from _fake_run import GOAL, build_fake, every
 from _harness_fixtures.app_config import app_config, reconfigure
+from _harness_fixtures.prompt_text import index_text
 from langgraph.runtime import Runtime
 from pydantic import ValidationError
 
@@ -84,15 +85,15 @@ class Chooser:
 
 
 def _state() -> TaskState:
-    observation = TaskObservation(step=1, scene=TaskScene.WALK, status="门口")
+    observation = TaskObservation(facts={"overlay": "none"}, step=1, scene=TaskScene.WALK)
     history = [
         ActMemory(
             task_id="t1",
             episode_id="ep1",
             step=i,
             action="up",
-            before=ActMemory.Observation(step=i, status="前"),
-            after=ActMemory.Observation(step=i + 1, status="后"),
+            before=ActMemory.Observation(facts={"overlay": "none"}, step=i),
+            after=ActMemory.Observation(facts={"overlay": "none"}, step=i + 1),
             before_frame="data:image/png;base64,A",
             after_frame="data:image/png;base64,B" if i == 1 else None,
         )
@@ -207,7 +208,7 @@ def test_task_review_context_carries_task_judge_req(tmp_path: Path) -> None:
     text = "\n\n".join(context_text(ctx, section) for section in context_sections(ctx))
     assert "data:image" not in text
     assert "图 2 张，用 brain-frames 查看" in text
-    assert ctx.brain_input.task_index[0].index_line() in text
+    assert index_text(ctx.brain_input.task_index[0]) in text
     assert "背景全文不应展开" not in text
     for changes in ({"task_id": None}, {"goals": []}, {"tasks": []}):
         with pytest.raises(ValidationError):

@@ -92,7 +92,7 @@ def facts_render(self: ActRecord.Observation.Facts, indent: str = "  ") -> str:
 def observation_render(self: ActRecord.Observation, indent: str = "  ") -> str:
     """保留既有字段顺序与条件，仅转换独立原料。"""
     body = facts_render(self.facts, indent)
-    text = body if body else _LABELS["L014"].format(indent, self.status)
+    text = body if body else _LABELS["L014"].format(indent, self.status) if self.status else ""
     return text
 
 
@@ -315,7 +315,7 @@ def snapshot_facts(
         facts.walk_map = ""
     elif facts.cells and obs.place is not None:
         facts.walk_map = terrain_render(facts.cells, obs.place) if facts.terrain_visible else ""
-    if obs.place is not None and facts.where:
+    if obs.place is not None:
         place = obs.place
         facts.where = _LABELS["location"].format(place.map_id, place.x, place.y)
     if "neighbor_cells" in facts.model_fields_set:

@@ -14,7 +14,7 @@ from evals.decode.terrain_text import render_neighbors, render_walk_map, render_
 from pokemon_agent.world.ram import read_terrain
 
 
-def test_copied_terrain_text_is_byte_equal_to_the_world_methods() -> None:
+def test_terrain_text_matches_all_frozen_truth() -> None:
     samples = load_frames()
     frames = [frame for frame in samples if frame.terrain_truth is not None and has_map(frame)]
     assert all(not frame.terrain_truth for frame in samples if not has_map(frame))
@@ -23,6 +23,8 @@ def test_copied_terrain_text_is_byte_equal_to_the_world_methods() -> None:
     for frame in frames:
         _, memory = snapshot_of(frame)
         terrain = read_terrain(memory)
-        assert render_where(terrain.place()) == terrain.place().render(), frame.sample_id
-        assert render_walk_map(terrain) == terrain.render(), frame.sample_id
-        assert render_neighbors(terrain) == terrain.render_neighbors(), frame.sample_id
+        assert render_where(terrain.place()) == frame.terrain_truth["where"], frame.sample_id
+        if "walk_map" in frame.terrain_truth:
+            assert render_walk_map(terrain) == frame.terrain_truth["walk_map"], frame.sample_id
+        if "neighbors" in frame.terrain_truth:
+            assert render_neighbors(terrain) == frame.terrain_truth["neighbors"], frame.sample_id

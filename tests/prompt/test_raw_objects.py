@@ -74,10 +74,9 @@ def test_retrieved_events_keep_filter_trace_and_old_model_input() -> None:
     events = [event(3, "dialog"), event(1, "warp"), event(2, "still"), event(4, "still")]
     obs = TaskObservation(
         step=4,
-        status="ok",
         scene=TaskScene.WALK,
         place=PlaceInWorld(map_id=1, x=-2, y=3),
-        facts=Facts(where="全局坐标 地图1 x=-2 y=3"),
+        facts=Facts(overlay=Facts.Overlay.NONE),
     )
     state = EpisodeRunState(
         run_id="run",
@@ -107,7 +106,7 @@ def test_retrieved_events_keep_filter_trace_and_old_model_input() -> None:
     response = capability.decompose(req)
 
     assert merged.object_semantic_events == events[:3]
-    assert not merged.object_semantic_memory
+    assert "object_semantic_memory" not in type(merged).model_fields
     assert not (merged.observation.facts.model_extra or {})
     assert memory.requests[0].conditions == {"run_id": "run", "map_id": "1"}
     assert trace.requests[0].refs == [e.place.key for e in events[:3]]
@@ -136,7 +135,7 @@ def test_text_adapter_restores_only_information_present_in_the_text(outcome: str
         f"ep step2 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：{result}"
     )
     raw = restore_object_events(text)
-    obs = TaskObservation(step=4, status="ok", scene=TaskScene.WALK)
+    obs = TaskObservation(facts={"overlay": "none"}, step=4, scene=TaskScene.WALK)
     params = DecomposeParams.model_validate(
         {
             "goal": {"goal": "g", "criteria": "c"},

@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
 from _harness_fixtures.harness import GOAL, FakeRun, build_fake
+from _harness_fixtures.prompt_text import index_text
 from pydantic import BaseModel
 
 from pokemon_agent.direct.trace import parse
@@ -230,7 +231,7 @@ def _assert_indexes(recording: _Recording, seeded: bool, episode_goals: dict[str
                 if _details(request):
                     assert all(memory.task_id != _details(request)[0].task_id for memory in index)
             assert all(
-                "\n" not in memory.index_line() and "\r" not in memory.index_line()
+                "\n" not in index_text(memory) and "\r" not in index_text(memory)
                 for memory in index
             )
 

@@ -47,33 +47,6 @@ class ScreenText(BaseModel):
         description="整屏逐行渲成的文字（`screen_text.render_screen`），与切好的字段互相校验",
     )
 
-    def render_details(self) -> str:
-        """有附注的选项渲染成 `选项 附注`，用 ` / ` 连接；一个附注都没有时为空串。"""
-        pairs = zip(self.options, self.option_details, strict=False)
-        return " / ".join(f"{option} {detail}" for option, detail in pairs if detail)
-
-    def render_layout(self) -> str:
-        """把排布渲染成给决策读的一段：几行几列、光标在哪、方向键怎么走，再逐行列出选项。"""
-        if not self.option_grid or self.cursor_cell is None:
-            return ""
-        rows, cols = len(self.option_grid), max(len(row) for row in self.option_grid)
-        r, c = self.cursor_cell
-        if cols == 1:
-            head = f"竖排 {rows} 项，光标在第 {r + 1} 项；上/下 移动光标"
-        elif rows == 1:
-            head = f"横排 {cols} 项，光标在第 {c + 1} 项；左/右 移动光标"
-        else:
-            head = (
-                f"{rows} 行 × {cols} 列，光标在第 {r + 1} 行第 {c + 1} 列；上/下 换行，左/右 换列"
-            )
-        lines = [
-            "  ".join(
-                ("▶" if (i, j) == self.cursor_cell else " ") + item for j, item in enumerate(row)
-            )
-            for i, row in enumerate(self.option_grid)
-        ]
-        return head + "\n" + "\n".join(lines)
-
     in_battle: bool = Field(default=False, description="战斗标志（wIsInBattle 非 0）")
 
 

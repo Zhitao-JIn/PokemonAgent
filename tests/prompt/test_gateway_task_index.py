@@ -4,6 +4,7 @@ from functools import partial
 
 import pytest
 from _harness_fixtures.app_config import ACTION_LIMITS
+from _harness_fixtures.prompt_text import index_text
 
 from pokemon_agent.brain import Goal
 from pokemon_agent.prompt import JudgeParams, PromptGateway
@@ -40,7 +41,7 @@ def _choose(script: bool, index: list[TaskMemory]) -> FromHarnessToBrainToolChoo
     )
     return FromHarnessToBrainToolChooseOnceReq(
         goals=[Goal(goal="去门口", criteria="c")],
-        obs=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
+        obs=TaskObservation(facts={"overlay": "none"}, step=0, scene=TaskScene.WALK),
         space=space,
         memories=[],
         task_index=index,
@@ -55,7 +56,7 @@ def test_task_index_is_rendered_by_index_line_in_both_prompts(script: bool) -> N
 
     decision, verdict = decide_prompt(choose), render_verdict(judge)
 
-    assert memory.index_line() in decision and memory.index_line() in verdict
+    assert index_text(memory) in decision and index_text(memory) in verdict
     assert "不能用来断言当前目标已达成" in decision
     assert "背景，不是本 task 完成的证据" in verdict
     empty = decide_prompt(_choose(script, []))

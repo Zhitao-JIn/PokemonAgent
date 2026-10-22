@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from _harness_fixtures.harness import build_fake
+from _harness_fixtures.prompt_text import observation_text
 from _harness_fixtures.world import _Game
 from langgraph.runtime import Runtime
 
@@ -34,12 +35,12 @@ def observation(scene: TaskScene = TaskScene.NAMING) -> TaskObservation:
     """带确定文字和位置的内存观测，起名场合另带业务视图。"""
     return TaskObservation(
         step=0,
-        status="地图12 x=3 y=5，朝向 south",
         scene=scene,
         takeover=NamingView(target="YOUR NAME?", typed="RED")
         if scene is TaskScene.NAMING
         else None,
-        facts=Facts(where="地图12 x=3 y=5", facing="south", screen="YOUR NAME?"),
+        place={"map_id": 12, "x": 3, "y": 5},
+        facts=Facts(overlay="none", facing="south", screen="YOUR NAME?"),
     )
 
 
@@ -113,12 +114,12 @@ def test_current_and_legacy_memory_render_without_blind_note(snapshot: bool) -> 
         {**obs.model_dump(mode="json"), "perceived": False}
     )
 
-    text = stored.render() if snapshot else obs.render()
+    text = observation_text(stored) if snapshot else observation_text(obs)
 
     assert "没做视觉感知" not in text
     assert "地图12 x=3 y=5" in text
     assert "perceived" not in obs.model_dump()
-    assert text == obs.facts.render()
+    assert text == observation_text(obs)
 
 
 def test_knowledge_refresh_uses_task_scene_when_facts_scene_does_not_change(

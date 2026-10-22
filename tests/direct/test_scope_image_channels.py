@@ -142,7 +142,9 @@ def _invoke(
         Decomposer(brain, policy=call_policy(), prompt_gateway=PromptGateway(None)).decompose(
             FromHarnessToBrainToolDecomposeReq(
                 goal=Goal(goal="局目标", criteria="c"),
-                observation=TaskObservation(step=0, status="s", scene=TaskScene.WALK),
+                observation=TaskObservation(
+                    facts={"overlay": "none"}, step=0, scene=TaskScene.WALK
+                ),
                 task_memories=tasks,
                 max_tasks=1,
             )

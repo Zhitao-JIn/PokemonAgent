@@ -66,7 +66,7 @@ class ActRecord(BaseModel):
 
         step: int = Field()
         place: Place | None = Field(default=None)
-        status: str = Field()
+        status: str = Field(default="")
         scene: str = Field(default="")
         facts: Facts = Field(default_factory=Facts)
         done: bool = Field(default=False)
