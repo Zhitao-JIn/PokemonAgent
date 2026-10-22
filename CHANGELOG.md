@@ -1,3 +1,23 @@
+## 2026-10-22（599）—— 补齐 intent 第八节两处缺口：删 `KnowledgeRecord.render`、固化「只改注册表切换版本」
+
+**改了什么**：
+
+- `pokemon_agent/schemas/memory/datastore/knowledge.py`：删除 `KnowledgeRecord.render()`（10 行，含 docstring）。字段、校验、序列化与 `__all__` 不变，无 import 增删。
+- `tests/prompt/test_registry_switch.py`（新增 41 行）：一条用法示范式测试。同一任务 `example` 建 v1 / v2 两版（各自 `prompt.md` / `assemble.py` / `meta.json`，hash 按 `assemble.py + prompt.md` 的 LF 归一化 sha256 生成）；同一 `PromptGateway` 类、同一 `ExampleParams` 批次下，registry 的 `active=v1` 时 `RenderedPrompt` 的 `version/text/hash` 为 v1，仅把 `registry.json` 改成 `active=v2` 并重建网关后三者切到 v2；同时断言两次渲染之间树内所有 `.py` 字节未变。反例（`active` 指向不存在的版本 → 构造即抛 `PromptRegistryError`）引用既有 `test_registry.py::test_a_missing_version_directory_is_rejected_at_startup`，不重复。
+
+**为什么这么改**：598 的第八节验收留了两处缺口——第 6 项在 `schemas/memory` 上仍残留 `KnowledgeRecord.render`（读方为零），第 5 项「只改注册表即可切换版本」只有手工探针、没有自动化测试。本步把两处都补成可机械复现的证据，第八节八项由此全部通过。
+
+**取舍**：
+
+- 新测试单独建文件而不是塞进 `test_registry.py`：后者的模块说明只管「非法注册表在构造时就失败」，正向切换场景放进去会破坏该文件单一主题。
+- 测试命名沿用同目录既有风格（61 条既有测试全为英文函数名 + 模块 docstring，无逐条中文名），没有另创中文命名；仅模块 docstring 内用中文注明反例去向。
+- 删除前做了 AST + grep 读方扫描：全仓 `.render()` 调用全部落在 `PromptGateway`（生产 2 处、测试若干）；同名例外是 `evals/common/legacy_requests/task_memory.py` 的旧请求形状副本（`render` / `index_line`）与 `evals/world_script_execute/dataset/build/coverage.py` 的模块级 `render`，都不属于 `schemas/memory` / `world` 对象，且本步禁止改 evals 数据，保留。
+- 删除前后 `KnowledgeRecord.model_json_schema()` 逐字节一致（sha256 `31329edf1d778034502c3495a64c73c1ec63f0f85931ee4a7a5f74038deeb3b2`），字段仍是 `topic` / `text` / `source` / `run_id` / `episode_id`，不改变任何 schema 或 checkpoint 指纹。
+- 破坏验证两处：临时把 v2 的 `meta.json` hash 改坏 → 新测试失败（`Version hash mismatch`）；临时让 `load_registry` 忽略 `active`、对 `example` 固定取 v1 → 新测试失败（`'v1' != 'v2'`）。两处都按备份字节还原并 sha256 复核一致。
+- 代码注释里仍有 `observation.render()` / `ActMemory.render()` 等历史提及（`sense.py:5`、`direct/trace/render.py:594`、`brain.py:207`、`FromHarnessToBrainToolChooseOnceReq.py:37`），属于其它 `.py`，本步禁止改，留待后续。
+
+**影响面**：全量 pytest `tests=2404, failures=0, errors=0, skipped=25` → **2379 passed / 25 skipped / 3 deselected**（基线 2403 + 新增 1 − 删除 0）；`ruff check` 全绿、`ruff format --check` 949 files；守卫 A/B/C/D；golden 专项 161 passed / 25 skipped 不变。intent 第八节最终：1–8 全部通过（第 5 项由新测试固化，第 6 项残留清零）。未改 `pokemon_agent/prompt/**`、golden、evals 数据、`registry.json`、文档与 `memory/`。
+
 ## 2026-10-22（598）—— prompt 模块收口（CP7）：文档同步、.gitignore 补漏、intent 第八节验收
 
 **改了什么**：同步仍描述旧 prompt / world / memory 状态的活文档，并补一条 `.gitignore`：
