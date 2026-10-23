@@ -1,4 +1,6 @@
-# spec —— Claude / OpenAI 两个 provider 与选型落地（v1.0）
+# spec —— Claude / OpenAI 两个 provider 与选型落地（v1.1）
+
+> v1.1 修订原因：CP1 执行方核对官方文档发现 Haiku 5.5 无 thinking 预算，D4 的预算断言不成立，改为 adaptive + effort。
 
 > 依据：`docs/model_providers/intent.md`（搭配已定）。本文是执行依据；与 intent 不一致时以本文为准。
 > 编号：620（CP1）/ 621（CP2）/ 622（CP3）/ 623（CP4）。
@@ -10,7 +12,7 @@
 | D1 | 新增 `ClaudeProvider`（前缀 `claude-`），**原生 Messages API**：`POST https://api.anthropic.com/v1/messages`，头 `x-api-key`、`anthropic-version: 2023-06-01`；key 从 `ANTHROPIC_API_KEY` 读（只读这一个名字，不读 `ANTHROPIC_AUTH_TOKEN`） | 不用 Anthropic 的 OpenAI 兼容层（无缓存、无 thinking 输出、`temperature<1` 报错）；不引入官方 SDK，沿用 urllib |
 | D2 | Claude 请求体**不带** `temperature` / `top_p` / `top_k`；构造函数仍收 `temperature`（接口不变），`config()` 里如实记 `temperature_sent=false` | `judge` 现配 0.0，Claude 上该值被忽略；可复现性靠评测重测 |
 | D3 | Claude 缓存：请求内容按「静态前缀 + 动态尾部」组块，在**静态前缀末尾**放一个 `cache_control: {"type":"ephemeral"}` 断点；静态前缀 = 现有 `prompt` 文本里图片之前的全部文字 | 实现只做一个断点，不做多断点；最小可缓存长度 512 token，不足时服务端不缓存也不报错 |
-| D4 | Claude thinking：`thinking=false` 发 `thinking: {"type":"disabled"}`；`thinking=true` 发自适应 thinking 并带 `effort`（默认 `high`，构造参数 `effort` 可覆盖）；`max_tokens` 必须大于 thinking 预算，由 provider 在 `thinking=true` 时断言 | Haiku 5.5 默认开自适应 thinking，必须显式关；字段名与取值以官方文档为准，CP1 开工前先核对官方页，核对结果写进汇报 |
+| D4 | Claude thinking（v1.1 按官方文档修订）：`thinking=false` 发 `thinking: {"type":"disabled"}`，不发 effort；`thinking=true` 发 `thinking: {"type":"adaptive"}` 并带 `output_config: {"effort": <effort>}`（构造参数 `effort`，默认 `"high"`，取值 low / medium / high / xhigh / max）。官方已取消手动 thinking 预算（`budget_tokens` 会 400），所以**不做 max_tokens 与预算的比较断言**；thinking 的 token 计入 `max_tokens`，不够时由 `stop_reason == "max_tokens"` 报截断，调用方按现有截断流程处理 | Haiku 5.5 默认开自适应 thinking，必须显式关；字段名来自官方 Haiku 5.5 提示指南与迁移指南 |
 | D5 | Claude 响应解包：`content` 里取所有 `type=="text"` 块拼接；`usage.input_tokens + cache_read_input_tokens + cache_creation_input_tokens` 之和作为 `prompt_tokens`，`cache_read_input_tokens` 作为 `cached_tokens`；`stop_reason == "max_tokens"` 为截断；`reasoning_tokens` 取不到记 0；正文为空照旧抛 `EmptyCompletion` | 与现有 `_unpack` 返回的六元组同形，上层不改 |
 | D6 | Claude 图片：`{"type":"image","source":{"type":"base64","media_type":"image/png","data":<去掉 data URI 头的 base64>}}`；多图逐张发（不拼网格）；`describe()` 保持「文字在前、图在后」 | 与现有帧格式（完整 data URI）互转只在 provider 内部 |
 | D7 | 新增 `OpenAIProvider`（前缀 `gpt-`），Chat Completions：`POST https://api.openai.com/v1/chat/completions`，`Authorization: Bearer`，key 读 `OPENAI_API_KEY`；沿用 `_OpenAICompatibleBase` 的 `_post` / `_unpack`；token 上限字段用 `max_completion_tokens`（不是 `max_tokens`）；缓存是自动前缀缓存，不需任何请求参数 | 复用最多 |
