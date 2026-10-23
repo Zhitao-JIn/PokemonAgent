@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ## 2026-10-23（608）—— 评测入口自动管理 MCP 服务
 
 **改了什么**：将 `eval_services` 接入 `agent_short_goal_run`、`world_script_execute` 与 `memory_store_recall`；更新评测提示、AGENTS / CLAUDE 说明，并增加服务生命周期与子进程环境传递测试。
@@ -27,6 +28,17 @@
 **取舍**：保留 `archive` 作为兼容字段但不读取；冻结数据集文件不变。`evals/common/capture_case.py`、`capture_batch.py`、`capture_pack.py` 的历史存档流程超出 CP1 允许文件范围，暂不改。
 
 **影响面**：只涉及 `evals/agent_short_goal_run/`、指定测试与本日志；未改 `pokemon_agent/` 或冻结数据文件。最终全量 pytest 为 2419 passed / 25 skipped / 3 deselected，ruff check 全绿、ruff format --check 957 files；`state_schema_hash=e3bd23162bfd0e85`。grep 仍发现 `evals/common/capture_case.py`、`capture_batch.py`、`capture_pack.py` 中的历史存档引用，超出本检查点允许修改范围。
+=======
+## 2026-10-23（604）—— 重写 GitHub Actions 合入门禁
+
+**改了什么**：重写 `.github/workflows/ci.yml`，配置 main 的 push / pull request、手动触发及同 ref 并发取消；拆为并行的 `lint`、`boundary`、`test` 三个 job。lint 执行 Ruff 检查，boundary 执行 prompt 与 world 自持脚本，test 固定 Python 3.11，使用 uv 按锁文件安装 dev/reviewer extra 与 dev group，并缓存工作目录内的 fastembed 模型数据。
+
+**为什么这么改**：原 workflow 的 pip 安装遗漏 dependency group 与 reviewer extra，且没有覆盖模块边界；新门禁按锁文件准备完整测试依赖，并把格式、静态边界和默认测试分开验证。
+
+**取舍**：只运行 Python 3.11 和默认 pytest，不纳入 slow 测试、真实模型与 eval；暂不接入已知会报过时违规的 trace 边界脚本。首次无缓存运行可能需要下载 fastembed 模型。
+
+**影响面**：仅更新 CI workflow 与本变更日志，不改生产代码、测试、依赖声明或锁文件。GitHub runner 的真实结果由推送后确认。
+>>>>>>> origin/main
 
 ## 2026-10-22（603）—— trace 文档遗留项：请求信封、覆盖链与接口注释对齐现状
 
