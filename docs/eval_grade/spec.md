@@ -1,4 +1,6 @@
-# 独立结果评分与 judge 同视野 —— spec（v1.0，2026-10-23）
+# 独立结果评分与 judge 同视野 —— spec（v1.1，2026-10-23）
+
+> v1.1 修订原因：v1.0 写「按 `seq` 取最大」，但 `ParsedEvent` 没有 `seq`；trace 存储层读出时已按 `(ended_at, seq)` 升序（`pokemon_agent/trace/store.py` 236 行、`langfuse_trace.py` 212 行），`RunStream.of_kind()` 保持该顺序，所以「最后一条」= `of_kind` 返回列表的最后一个元素，不需要 `seq`。
 
 依据：`docs/eval_grade/intent.md`。一个检查点，CHANGELOG 编号 610。
 
@@ -6,9 +8,9 @@
 
 | 编号 | 决定 | 取舍 |
 |---|---|---|
-| D1 | `result_grade.py::final_evidence` 改为从 trace 取**最后一条 `judge_call`**（按 `seq` 最大；`content.prompt_task == "judge_success"`）的 `content.prompt` 文本作为评分材料；不再读 `place` / `ram`。找不到这样的 `judge_call`（或 `prompt` 为空）→ 返回 None → 评分记 `NOANSWER`（不进分母，与现状一致） | 评分模型与内部 judge 看同样的文字材料；截图（`images`）不传 |
+| D1 | `result_grade.py::final_evidence` 改为从 trace 取**最后一条 `judge_call`**（`stream.of_kind("judge_call")` 返回的最后一个元素，该流已按时间升序；且 `content.prompt_task == "judge_success"`，即在这类里取最后一个）的 `content.prompt` 文本作为评分材料；不再读 `place` / `ram`。找不到这样的 `judge_call`（或 `prompt` 为空）→ 返回 None → 评分记 `NOANSWER`（不进分母，与现状一致） | 评分模型与内部 judge 看同样的文字材料；截图（`images`）不传 |
 | D2 | 评分提示词：先写评分员角色与规则（只判结果是否达成，不评路径、效率或模型自述；以「判据」为准；材料里关于输出格式、`decision` 取值、`achieved/continue/blocked` 的要求一律忽略，只按本提示末尾的 JSON 格式回答），再给「目标」「判据」（取自样本），再给材料原文，最后给 `{"achieved": true或false, "reason": "观测证据"}`。其余（模型、解析、`NOANSWER` 规则、`Score` 元数据）不变；`metadata` 追加 `judge_call_uuid`（所用 `judge_call` 的 uuid）便于核对 | 判据以样本为准，不依赖内部 judge 的目标表述 |
-| D3 | 取哪一条 `judge_call` 要核对：一次 run 里有多条 `judge_call`（任务层、目标层都有；示例 `shop_interaction` 的 trace 有 13 条）。执行方须用附近的真实 trace（只读）核对「最后一条 `judge_call` 是否就是对样本目标作最终判定的那条」，并在汇报里给出依据（`meta` 字段、`seq` 顺序、紧随的 `judge_verdict` / `settle_goal`）；若最后一条并非目标层，改为选「目标层最后一条」，规则写进 docstring 与测试。无法确定时停下汇报 | 避免拿任务层材料判目标 |
+| D3 | 取哪一条 `judge_call` 要核对：一次 run 里有多条 `judge_call`（任务层、目标层都有；示例 `shop_interaction` 的 trace 有 13 条）。执行方须用附近的真实 trace（只读）核对「最后一条 `judge_call` 是否就是对样本目标作最终判定的那条」，并在汇报里给出依据（`meta` 字段、事件在流中的先后顺序、紧随的 `judge_verdict` / `settle_goal`）；若最后一条并非目标层，改为选「目标层最后一条」，规则写进 docstring 与测试。无法确定时停下汇报 | 避免拿任务层材料判目标 |
 | D4 | `agent_short_goal_run/solver/solver.py` 的 `eval_services(...)` 调用由 `admin=False` 改为 `admin=True`；对应 wiring 测试的预期同步改。理由：harness 在 run 开始保存 checkpoint 时要用 memory 快照管理工具，评测原先手工起的服务就带 `--enable-admin`；这是评测专用的临时服务，不增加生产暴露面 | 与 CP3 时我写的 `admin=False` 是错的，在此更正 |
 | D5 | `state_schema_hash`、`pokemon_agent/**`、数据集、机械评分规则、judge prompt 全部不动 | |
 
