@@ -1,3 +1,13 @@
+## 2026-10-23（607）—— 新增评测服务生命周期上下文
+
+**改了什么**：新增 `evals/common/eval_services.py`，按次隔离启动 world / memory 服务，准备临时 knowledge，导出评测环境，并在退出时停止服务、归档日志与清理临时目录；新增假服务原语测试覆盖环境、复用、knowledge、权限、失败清理与并发隔离。
+
+**为什么这么改**：评测服务此前依赖人工启动与共享 URL，端口、记忆目录和服务生命周期容易跨运行串用；上下文管理器让服务跟随一次评测运行并隔离其数据。
+
+**取舍**：只新增基础设施与测试，不接入任何评测入口；复用已有 URL 时保留调试逃生口，memory 记录仍由现有 store 按需读取。
+
+**影响面**：仅 `evals/common/`、新增 eval 服务测试与本日志；未改 `pokemon_agent/`、评测入口或冻结数据。验证：全量 pytest `2430 passed, 25 skipped, 3 deselected`；ruff check 全绿，ruff format --check 为 959 files。
+
 ## 2026-10-23（606）—— agent_short_goal_run 改用原始 .state 轻起点
 
 **改了什么**：`run_one` 从样本 `.state` 起跑并现建目标 `Task`；起点校验移到加载后、进 run 图前；样本契约允许旧 `archive` 标记及 `state` 标记，loader 只核 `.state` 文件与哈希。删除旧打包器、存档路径适配器及纯打包测试；更新对应 runner 与数据集测试。
