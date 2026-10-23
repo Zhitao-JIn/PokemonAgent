@@ -127,9 +127,9 @@ def test_task_defaults_disables_or_overrides_only_the_grader_model(
     assert configuration["evaluation_models"] == evaluation_before
     assert evaluation_before["test_text"] == "openai-api/deepseek/deepseek-flash"
     if override is not None and override.lower() == "none":
-        assert seen == [] and len(task.scorer) == 1
+        assert seen == [] and len(task.scorer) == 8
     else:
-        assert len(seen) == 1 and len(task.scorer) == 2
+        assert len(seen) == 1 and len(task.scorer) == 9
         expected = {**evaluation_before["result_grader"]}
         if override is not None:
             expected["model"] = override

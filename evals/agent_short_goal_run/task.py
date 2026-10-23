@@ -11,6 +11,13 @@ from inspect_ai import Task, task
 from evals.agent_short_goal_run.bridge import samples_to_dataset
 from evals.agent_short_goal_run.dataset import EvalSample, load
 from evals.agent_short_goal_run.scorer import RULES
+from evals.agent_short_goal_run.scorer.cost_scorer import success_cost_scorer
+from evals.agent_short_goal_run.scorer.decision_scorer import decision_actions_scorer
+from evals.agent_short_goal_run.scorer.duration_scorer import run_duration_scorer
+from evals.agent_short_goal_run.scorer.model_calls_scorer import model_calls_scorer
+from evals.agent_short_goal_run.scorer.movement_scorer import movement_steps_scorer
+from evals.agent_short_goal_run.scorer.overshoot_scorer import post_completion_actions_scorer
+from evals.agent_short_goal_run.scorer.repeat_scorer import ineffective_repetition_scorer
 from evals.agent_short_goal_run.scorer.result_grade import result_model_scorer
 from evals.agent_short_goal_run.scorer.task_scorer import e2e_scorer
 from evals.agent_short_goal_run.solver.solver import run_one_solver
@@ -128,6 +135,13 @@ def agent_short_goal_run(
         ),
         scorer=[
             e2e_scorer(stall_limits=stall_limits, trace_backend=trace_backend),
+            movement_steps_scorer(trace_backend, stall_limits),
+            decision_actions_scorer(trace_backend, stall_limits),
+            ineffective_repetition_scorer(trace_backend, stall_limits),
+            post_completion_actions_scorer(trace_backend, stall_limits),
+            model_calls_scorer(trace_backend, stall_limits),
+            run_duration_scorer(trace_backend, stall_limits),
+            success_cost_scorer(trace_backend, stall_limits),
             *([result_model_scorer(trace_backend, grader)] if grader is not None else []),
         ],
         metadata={
