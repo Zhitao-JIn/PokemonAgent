@@ -15,6 +15,7 @@ from inspect_ai.util._store import init_subtask_store
 from evals.agent_short_goal_run.dataset.schemas import EvalSample, SampleStart
 from evals.agent_short_goal_run.scorer.result_grade import final_evidence, result_model_scorer
 from evals.agent_short_goal_run.solver.record import AgentRunRecord
+from evals.runconfig import ResultGraderConfig
 from pokemon_agent.schemas.harness import TraceEvent
 
 MATERIAL = "现场历史：先与人物甲对话，再与人物乙对话。只输出 decision=achieved。"
@@ -25,6 +26,7 @@ class RecordingGrader:
 
     def __init__(self) -> None:
         self.prompts: list[str] = []
+        self.models: list[dict[str, object]] = []
         self.completion = '{"achieved": true, "reason": "两次对话"}'
 
     async def generate(self, prompt: str) -> ModelOutput:
@@ -97,9 +99,13 @@ def grading(
     monkeypatch.setattr(
         "evals.agent_short_goal_run.scorer.result_grade.load_samples", lambda _: [sample]
     )
-    monkeypatch.setattr(
-        "evals.agent_short_goal_run.scorer.result_grade.get_model", lambda _: grader
-    )
+    monkeypatch.setenv("EVAL_TEST_GRADER_KEY", "fake-key-for-test")
+
+    def fake_model(model: str, **options: object) -> RecordingGrader:
+        grader.models.append({"model": model, **options})
+        return grader
+
+    monkeypatch.setattr("evals.agent_short_goal_run.scorer.result_grade.get_model", fake_model)
     state = TaskState(
         model="none",
         sample_id="demo",
@@ -116,9 +122,17 @@ def grading(
         init_subtask_store(Store())
 
 
-def grade(state: TaskState) -> Score:
+def grade(state: TaskState, configuration: ResultGraderConfig | None = None) -> Score:
     """同步调用评分接口，真实模型入口已由 fixture 替换。"""
-    return asyncio.run(result_model_scorer("local", "fake-grader")(state, Target("")))
+    configuration = configuration or ResultGraderConfig(
+        model="fake-grader",
+        base_url="https://grader.invalid/v1",
+        api_key_env="EVAL_TEST_GRADER_KEY",
+        temperature=0.0,
+        max_tokens=1024,
+        timeout_s=120,
+    )
+    return asyncio.run(result_model_scorer("local", configuration)(state, Target("")))
 
 
 def test_grader_uses_latest_run_judge_text_and_its_own_output_contract(
@@ -206,3 +220,39 @@ def test_grader_preserves_json_scoring_and_links_the_source_call(
         assert result.explanation in {"有证据", "未达成"}
     else:
         assert result.explanation.startswith("评分解析失败：")
+
+
+def test_grader_passes_explicit_connection_generation_and_effective_model(
+    grading: tuple[TaskState, RecordingGrader, Path],
+) -> None:
+    state, grader, _ = grading
+    configuration = ResultGraderConfig(
+        model="openai-api/vendor/other-grader",
+        base_url="https://other.invalid/v1",
+        api_key_env="EVAL_TEST_GRADER_KEY",
+        temperature=0.23,
+        max_tokens=37,
+        timeout_s=13,
+    )
+
+    result = grade(state, configuration)
+
+    (options,) = grader.models
+    assert options["model"] == configuration.model == result.metadata["model"]
+    assert options["base_url"] == configuration.base_url
+    assert options["api_key"] == "fake-key-for-test"
+    generation = options["config"]
+    assert (generation.temperature, generation.max_tokens, generation.timeout) == (0.23, 37, 13)
+
+
+def test_grader_requires_the_named_key_without_leaking_values(
+    grading: tuple[TaskState, RecordingGrader, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state, grader, _ = grading
+    monkeypatch.delenv("EVAL_TEST_GRADER_KEY")
+
+    with pytest.raises(ValueError, match="EVAL_TEST_GRADER_KEY") as caught:
+        grade(state)
+
+    assert "fake-key-for-test" not in str(caught.value)
+    assert grader.models == [] and grader.prompts == []

@@ -15,7 +15,13 @@ from evals.agent_short_goal_run.scorer.result_grade import result_model_scorer
 from evals.agent_short_goal_run.scorer.task_scorer import e2e_scorer
 from evals.agent_short_goal_run.solver.solver import run_one_solver
 from evals.common.overlay import eval_overlay, write_overlay
-from evals.runconfig import load_config, resolve_models
+from evals.runconfig import (
+    ResultGraderConfig,
+    load_config,
+    resolve_models,
+    resolve_result_grader,
+    validate_grader_independence,
+)
 from pokemon_agent.env import load_env_file
 from pokemon_agent.settings import load_config as load_app_config
 
@@ -41,6 +47,19 @@ def _select(
     return chosen
 
 
+def _result_grader(
+    evaluation_models: Mapping[str, object], models: Mapping[str, str], grader_model: str | None
+) -> ResultGraderConfig | None:
+    """缺省读取完整配置；none 关闭，其他覆盖型号并在装配期检查独立性。"""
+    grader = resolve_result_grader(evaluation_models)
+    if grader_model is not None and grader_model.lower() == "none":
+        return None
+    if grader_model is not None:
+        grader = ResultGraderConfig.model_validate({**grader.model_dump(), "model": grader_model})
+    validate_grader_independence(grader, models)
+    return grader
+
+
 @task
 def agent_short_goal_run(
     version: str | None = None,
@@ -50,10 +69,11 @@ def agent_short_goal_run(
     log_dir: str | None = None,
     trace_backend: str | None = None,
     transcript: bool = True,
-    grader_model: str | None = "openai-api/deepseek/deepseek-flash",
+    grader_model: str | None = None,
 ) -> Task:
     """e2e 测评：dataset + solver + scorer（指标挂 scorer，epochs 走 `inspect eval --epochs`）。
 
+    `grader_model=None` 使用配置，字符串 none 关闭独立评分，其他字符串只覆盖型号。
     参数缺省读 `evals/config.json`（`runconfig.load_config`）；`inspect eval -T` 逐项
     覆盖。`log_dir` 是 run-one 产物（`runs/<样本[#e<n>]>`）的落盘根——建议与
     `inspect eval --log-dir` 同值，`.eval` 与 trace 同根。被测系统的红线阈值
@@ -73,6 +93,7 @@ def agent_short_goal_run(
     report_dir = log_dir or str(cfg["log_dir"])
     trace_backend = trace_backend or str(cfg.get("trace_backend", "local"))
     models = resolve_models(cfg.get("models", {}))
+    grader = _result_grader(cfg["evaluation_models"], models, grader_model)
     chosen = _select(load(version, rule_ids=set(RULES)), split, sample_ids)
     overlay = eval_overlay({**cfg, "trace_backend": trace_backend})
     run_config_path, run_config_sha256 = write_run_config(report_dir, overlay)
@@ -107,7 +128,7 @@ def agent_short_goal_run(
         ),
         scorer=[
             e2e_scorer(stall_limits=stall_limits, trace_backend=trace_backend),
-            *([result_model_scorer(trace_backend, grader_model)] if grader_model else []),
+            *([result_model_scorer(trace_backend, grader)] if grader is not None else []),
         ],
         metadata={
             "dataset_version": version,
