@@ -5,17 +5,17 @@ from pathlib import Path
 
 from pokemon_agent.prompt import PromptGateway
 
-from .golden_cases import GoldenCase, render_case
+from .golden_cases import GoldenCase, frozen_v1_registry, render_case
 from .legacy_adapter import UnrestorableRequest, adapt_request
 
 GOLDEN = Path(__file__).parent / "golden"
 
 
-def test_the_corpus_roundtrips_without_changing_any_old_prompt() -> None:
+def test_the_corpus_roundtrips_without_changing_any_old_prompt(tmp_path: Path) -> None:
     paths = sorted(GOLDEN.glob("*/*.req.json"))
     skipped: Counter[str] = Counter()
     restored = 0
-    gateway = PromptGateway(None)
+    gateway = PromptGateway(frozen_v1_registry(tmp_path))
     for path in paths:
         case = GoldenCase.model_validate_json(path.read_bytes())
         try:

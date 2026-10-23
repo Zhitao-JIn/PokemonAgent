@@ -11,7 +11,7 @@ from pokemon_agent.direct.brain_tool import Decomposer, Judger, Planner
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.prompt import PromptGateway
 
-from .golden_cases import GoldenCase, parse_request
+from .golden_cases import GoldenCase, active_version, parse_request
 
 GOLDEN = Path(__file__).parent / "golden"
 
@@ -59,7 +59,7 @@ def test_planning_and_judging_stamp_all_failed_and_successful_attempts(
     for index, call in enumerate(calls):
         expected_task = "decide_action_retry" if index and task != "judge_success" else task
         assert call.payload["prompt_task"] == expected_task
-        assert call.payload["prompt_version"] == "v1"
+        assert call.payload["prompt_version"] == active_version(expected_task)
         assert len(call.payload["prompt_hash"]) == 64
     assert (calls[0].payload["prompt_hash"] == calls[1].payload["prompt_hash"]) == (
         task == "judge_success"

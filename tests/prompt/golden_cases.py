@@ -1,5 +1,7 @@
 """Frozen replay envelopes and explicit gateway conversion; no baseline generation."""
 
+import json
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, JsonValue
@@ -105,3 +107,23 @@ def render_case(case: GoldenCase, gateway: PromptGateway) -> bytes:
             "decide_action_retry", DecideActionRetryParams.model_validate(case.request)
         ).text.encode("utf-8")
     return gateway.render(case.task, params_for(case)).text.encode("utf-8")
+
+
+PACKAGED_REGISTRY = (
+    Path(__file__).resolve().parents[2] / "pokemon_agent" / "prompt" / "registry.json"
+)
+
+
+def frozen_v1_registry(root: Path) -> Path:
+    """把每个单元钉在 v1：golden 由 v1 渲染，活动版本升到 v2 后这份基线仍要能逐字节复现。"""
+    data = json.loads(PACKAGED_REGISTRY.read_text(encoding="utf-8"))
+    pinned = {name: {"active": "v1"} for name in data["tasks"]}
+    path = root / "frozen-v1-registry.json"
+    path.write_text(json.dumps({"tasks": pinned}), encoding="utf-8")
+    return path
+
+
+def active_version(task: str) -> str:
+    """注册表里该任务当前生效的版本——盖章断言不写死版本号。"""
+    data = json.loads(PACKAGED_REGISTRY.read_text(encoding="utf-8"))
+    return data["tasks"][task]["active"]

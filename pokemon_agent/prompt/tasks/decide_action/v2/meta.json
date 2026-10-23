@@ -1,0 +1,8 @@
+{
+  "task": "decide_action",
+  "version": "v2",
+  "kind": "task",
+  "params": "DecideActionParams",
+  "reason": "泛化：移除与评测样本重合的特定任务示例",
+  "hash": "d457b7a203cd1e58dee26a79033188164ae2a466b827800a6ae82a56a2403f0d"
+}

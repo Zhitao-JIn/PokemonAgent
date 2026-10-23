@@ -1,0 +1,8 @@
+{
+  "task": "judge_success",
+  "version": "v2",
+  "kind": "task",
+  "params": "JudgeParams",
+  "reason": "泛化：移除与评测样本重合的特定任务示例",
+  "hash": "f3f336bb77761d351920fc4940e8720e237636a1c6a5fb55f30efc300b9d9b66"
+}

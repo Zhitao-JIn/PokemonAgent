@@ -1,0 +1,8 @@
+{
+  "task": "verify",
+  "version": "v2",
+  "kind": "task",
+  "params": "VerifyParams",
+  "reason": "泛化：移除与评测样本重合的特定任务示例",
+  "hash": "8d412ea38da8d83c3b4cfb9cb08374109522cbc95f8d856fd57db819e7f1dbd6"
+}

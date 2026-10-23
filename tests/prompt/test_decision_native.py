@@ -16,7 +16,7 @@ from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.world import ActionSpace, Facts, PlaceInWorld, TaskObservation, TaskScene
 from pokemon_agent.world.interface.domain.takeover_view import NamingView
 
-from .golden_cases import GoldenCase, parse_request
+from .golden_cases import GoldenCase, active_version, parse_request
 
 GOLDEN = Path(__file__).parent / "golden"
 
@@ -151,7 +151,10 @@ def test_real_choose_attempts_are_stamped_before_success_or_exhaustion(exhausted
         "decide_action",
         "decide_action_retry",
     ]
-    assert all(call.payload["prompt_version"] == "v1" for call in calls)
+    assert [call.payload["prompt_version"] for call in calls] == [
+        active_version("decide_action"),
+        active_version("decide_action_retry"),
+    ]
     assert len(calls[0].payload["prompt_hash"]) == 64
     assert calls[0].error_kind == "ParseFailure"
     assert bool(calls[-1].error_kind) == exhausted

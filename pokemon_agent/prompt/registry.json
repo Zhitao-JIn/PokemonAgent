@@ -4,10 +4,10 @@
       "active": "v1"
     },
     "verify": {
-      "active": "v1"
+      "active": "v2"
     },
     "summarize": {
-      "active": "v1"
+      "active": "v2"
     },
     "summarize_task": {
       "active": "v1"
@@ -46,16 +46,16 @@
       "active": "v1"
     },
     "judge_success": {
-      "active": "v1"
+      "active": "v2"
     },
     "decompose": {
-      "active": "v1"
+      "active": "v2"
     },
     "run_plan": {
       "active": "v1"
     },
     "decide_action": {
-      "active": "v1"
+      "active": "v2"
     },
     "decide_action_retry": {
       "active": "v1"

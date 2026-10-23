@@ -1,0 +1,8 @@
+{
+  "task": "summarize",
+  "version": "v2",
+  "kind": "task",
+  "params": "SummarizeParams",
+  "reason": "泛化：移除与评测样本重合的特定任务示例",
+  "hash": "2b6e1e249f1e5826d8af829d283e875f3c407a00c6f94907d012dcb9d109ead7"
+}

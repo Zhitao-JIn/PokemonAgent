@@ -16,7 +16,7 @@ from pokemon_agent.prompt import (
     VerifyParams,
 )
 
-from .golden_cases import GoldenCase, params_for
+from .golden_cases import GoldenCase, frozen_v1_registry, params_for
 from .legacy_adapter import UnrestorableRequest
 
 GOLDEN = Path(__file__).parent / "golden"
@@ -34,9 +34,9 @@ REQUESTS = [path for path in sorted(GOLDEN.glob("*/*.req.json")) if path.parent.
 
 
 @pytest.fixture(scope="module")
-def gateway() -> PromptGateway:
-    """同一活动注册表服务独立输入，避免每条 golden 重复启动。"""
-    return PromptGateway(None)
+def gateway(tmp_path_factory: pytest.TempPathFactory) -> PromptGateway:
+    """同一活动注册表服务独立输入，避免每条 golden 重复启动；黄金语料按捕获时的 v1 渲染。"""
+    return PromptGateway(frozen_v1_registry(tmp_path_factory.mktemp("frozen")))
 
 
 @pytest.mark.parametrize("path", REQUESTS, ids=lambda path: str(path.relative_to(GOLDEN)))

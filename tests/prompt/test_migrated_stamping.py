@@ -10,6 +10,8 @@ from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.prompt import PromptGateway, VerifyParams
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolVerifyReq
 
+from .golden_cases import active_version
+
 
 @pytest.mark.parametrize("exhausted", [False, True])
 def test_real_verify_capability_stamps_failed_and_successful_attempts(exhausted: bool) -> None:
@@ -32,7 +34,7 @@ def test_real_verify_capability_stamps_failed_and_successful_attempts(exhausted:
     assert len(calls) == len(provider.requests) == 2
     for call in calls:
         assert call.payload["prompt_task"] == "verify"
-        assert call.payload["prompt_version"] == "v1"
+        assert call.payload["prompt_version"] == active_version("verify")
         assert call.payload["prompt_hash"] == rendered.hash
         assert call.payload["prompt"] == rendered.text
     assert calls[0].error_kind == "ParseFailure"
