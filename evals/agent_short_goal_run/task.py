@@ -18,7 +18,7 @@ from evals.agent_short_goal_run.scorer.model_calls_scorer import model_calls_sco
 from evals.agent_short_goal_run.scorer.movement_scorer import movement_steps_scorer
 from evals.agent_short_goal_run.scorer.overshoot_scorer import post_completion_actions_scorer
 from evals.agent_short_goal_run.scorer.repeat_scorer import ineffective_repetition_scorer
-from evals.agent_short_goal_run.scorer.result_grade import result_model_scorer
+from evals.agent_short_goal_run.scorer.result_grade import llm_task_completion_scorer
 from evals.agent_short_goal_run.scorer.task_scorer import e2e_scorer
 from evals.agent_short_goal_run.solver.solver import run_one_solver
 from evals.common.overlay import eval_overlay, write_overlay
@@ -142,7 +142,7 @@ def agent_short_goal_run(
             model_calls_scorer(trace_backend, stall_limits),
             run_duration_scorer(trace_backend, stall_limits),
             success_cost_scorer(trace_backend, stall_limits),
-            *([result_model_scorer(trace_backend, grader)] if grader is not None else []),
+            *([llm_task_completion_scorer(trace_backend, grader)] if grader is not None else []),
         ],
         metadata={
             "dataset_version": version,

@@ -68,8 +68,8 @@ def _grading_prompt(sample: EvalSample, event: ParsedEvent) -> str:
 
 
 @scorer(metrics=[judged_accuracy(), judged_count()])
-def result_model_scorer(backend: str, grader: ResultGraderConfig) -> Scorer:
-    """独立于机械评分的一列模型结果分；无法判定不进分母。"""
+def llm_task_completion_scorer(backend: str, grader: ResultGraderConfig) -> Scorer:
+    """用独立 LLM 二元判定任务是否完成；不评过程质量，不可判不进分母。"""
 
     async def score(state: TaskState, target: Target) -> Score:
         sample_id = str(state.metadata["sample_id"])

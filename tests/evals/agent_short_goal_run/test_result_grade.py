@@ -13,7 +13,10 @@ from inspect_ai.util import Store, store_as
 from inspect_ai.util._store import init_subtask_store
 
 from evals.agent_short_goal_run.dataset.schemas import EvalSample, SampleStart
-from evals.agent_short_goal_run.scorer.result_grade import final_evidence, result_model_scorer
+from evals.agent_short_goal_run.scorer.result_grade import (
+    final_evidence,
+    llm_task_completion_scorer,
+)
 from evals.agent_short_goal_run.solver.record import AgentRunRecord
 from evals.runconfig import ResultGraderConfig
 from pokemon_agent.schemas.harness import TraceEvent
@@ -132,7 +135,7 @@ def grade(state: TaskState, configuration: ResultGraderConfig | None = None) -> 
         max_tokens=1024,
         timeout_s=120,
     )
-    return asyncio.run(result_model_scorer("local", configuration)(state, Target("")))
+    return asyncio.run(llm_task_completion_scorer("local", configuration)(state, Target("")))
 
 
 def test_grader_uses_latest_run_judge_text_and_its_own_output_contract(

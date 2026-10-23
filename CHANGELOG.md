@@ -1,3 +1,13 @@
+## 2026-10-23（613）—— LLM 任务完成判定 scorer 使用明确名称
+
+**改了什么**：将第九项 `result_model_scorer` 重命名为 `llm_task_completion_scorer`，同步 task 接线、评分单测和配置工厂测试，并明确 docstring 为独立 LLM 的任务完成二元判定；既有配置测试核对 Inspect 注册名。
+
+**为什么这么改**：原名称容易被理解为过程质量或多维 rubric 打分，新名称直接说明判定者是 LLM、判定对象是任务完成与否，与八项核心指标及机械成功判定区分清楚。
+
+**取舍**：只改 scorer 的公开函数名与新报告列名；配置键 `evaluation_models.result_grader`、模块路径、提示词、判据、材料选择、Qwen 型号和解析规则保持原样，不增加旧名别名。历史 `.eval` 不重写，其 `result_model_scorer` 列对应新名称；未增加真实模型调用。
+
+**影响面**：仅 scorer 名称、task 接线、对应测试与本日志；交接材料记录新旧列名、独立指标、验证方式和现存数据缺口。 定向回归 `171 passed in 5.38s`，ruff check 和 format --check（978 files）通过；本次没有真实模型调用。
+
 ## 2026-10-23（612）—— 短目标评测增加七个独立 trace 效率 scorer
 
 **改了什么**：保留原机械成功 scorer 与可选 Qwen 独立结果 scorer，为实际移动步数、决策动作数、无效重复率、达成后多余动作、模型调用数、运行耗时、每次成功成本各新增一个独立 Inspect scorer。新增纯计算 Protocol / Pydantic 结果契约、动作前后观测配对、成功/失败分别统计的中位数与 P90，以及未归并 epoch 的有效观测数量。每项输出单位、证据 UUID、终止原因、版本配置上下文路径；费用缺失时保留各类 token 用量。

@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from inspect_ai import Task
+from inspect_ai._util.registry import registry_info
 from inspect_ai.scorer import Scorer
 
 from evals import runconfig
@@ -74,7 +75,7 @@ def assembly(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Assembly:
     configuration = copy.deepcopy(load_config())
     configuration["models"] = {key: f"tested-{key}" for key in runconfig.MODEL_LINKS}
     seen: list[ResultGraderConfig] = []
-    real_factory = module.result_model_scorer
+    real_factory = module.llm_task_completion_scorer
 
     def capture(backend: str, grader: ResultGraderConfig) -> Scorer:
         seen.append(grader)
@@ -82,7 +83,7 @@ def assembly(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Assembly:
 
     monkeypatch.setattr(module, "load_config", lambda: copy.deepcopy(configuration))
     monkeypatch.setattr(module, "load_env_file", lambda: None)
-    monkeypatch.setattr(module, "result_model_scorer", capture)
+    monkeypatch.setattr(module, "llm_task_completion_scorer", capture)
 
     def build(override: str | None) -> Task:
         return module.agent_short_goal_run(
@@ -130,6 +131,7 @@ def test_task_defaults_disables_or_overrides_only_the_grader_model(
         assert seen == [] and len(task.scorer) == 8
     else:
         assert len(seen) == 1 and len(task.scorer) == 9
+        assert registry_info(task.scorer[-1]).name == "llm_task_completion_scorer"
         expected = {**evaluation_before["result_grader"]}
         if override is not None:
             expected["model"] = override
