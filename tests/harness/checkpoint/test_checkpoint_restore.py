@@ -1,7 +1,8 @@
 """从存档恢复的用法示范：run 级、episode 级存档各恢复出一条新执行线，在图里跑到 run 结束。
 
-**慢测试**（`pytestmark = slow`）：每个用例都跑整图 + 多次存档恢复，单个数十秒，默认跳过，
-用 `python -m pytest -m slow` 单独跑。
+**慢测试，且硬跳过**（`pytestmark = [slow, skip]`）：每个用例都跑整图 + 多次存档恢复，单个数十秒。
+`slow` 让默认运行把它们排除在外；`skip` 防止有人用 `-m slow` 覆盖默认选项后误跑。
+确需运行时，临时去掉下面的 `skip` 标记，本地单独跑，不提交。
 
 一次 run 自动存两级档（`<存档根>/<run_id>/<checkpoint_id>/manifest.json`，id 形如
 `<episode_id 或 run_id>@<branch>-<8 位随机 hex>`）：run 开局一份，每局开派之前（run 的 `act`
@@ -30,7 +31,10 @@ from pokemon_agent.harness.checkpoint import (
 )
 from pokemon_agent.harness.run.run_state import RunState
 
-pytestmark = pytest.mark.slow
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.skip(reason="存档恢复慢测试：硬跳过，防止 -m slow 覆盖默认选项后误跑；需要时临时去掉本标记"),
+]
 
 
 def _manifests(tmp_path: pathlib.Path, branch: str = "main") -> dict[str, CheckpointManifest]:

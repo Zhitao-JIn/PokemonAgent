@@ -1,3 +1,13 @@
+## 2026-10-23（624）—— 存档恢复慢测试加硬跳过，防止 -m 覆盖默认选项后误跑
+
+**改了什么**：`tests/harness/checkpoint/test_checkpoint_restore.py` 的 `pytestmark` 由单个 `slow` 改为 `[slow, skip]`；同步该文件头注释、`pyproject.toml` 中 `slow` 标记的注释、AGENTS.md 与 CLAUDE.md 的慢测试一句，去掉"用 `python -m pytest -m slow` 单独跑"的引导。`addopts` 的 `-m "not slow"` 与 `markers` 不动。
+
+**为什么这么改**：默认只靠 `addopts` 里的 `-m "not slow"` 排除慢测试，AI 执行方在命令行再传 `-m` 就会覆盖它，去跑三个各需数十秒的整图加多次存档恢复用例，拖慢验证且与"轻起点"改造后的存档语义不再对应。
+
+**取舍**：保留 `slow` 标记，默认运行仍是"取消选中"，计数不变；`-m slow` 覆盖后这三个用例变为 skipped 而不是真跑。需要运行时手工去掉 `skip` 标记，不提供环境变量开关，避免又多一条被绕过的路。本条由设计侧直接修改，未运行测试。
+
+**影响面**：仅这一个测试文件的标记、三处说明文字和本日志；生产代码、其他测试与 `addopts` 不变。
+
 ## 2026-10-23（613）—— LLM 任务完成判定 scorer 使用明确名称
 
 **改了什么**：将第九项 `result_model_scorer` 重命名为 `llm_task_completion_scorer`，同步 task 接线、评分单测和配置工厂测试，并明确 docstring 为独立 LLM 的任务完成二元判定；既有配置测试核对 Inspect 注册名。

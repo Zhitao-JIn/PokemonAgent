@@ -442,7 +442,7 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 
 规则见「可读性与可维护性 / 5. 测试是用法示范」。工具与硬性要求：
 
-- `pytest`。目录按 **模块 → 功能** 两级镜像被测包：`tests/<module>/[<feature>/]test_<name>.py`（`<module>` 与 `pokemon_agent/` 下的包同名，跨模块的端到端放 `tests/integration/`；文件名全仓唯一，不靠目录区分）。共享夹具 `_fake_run.py` / `_fake_langfuse.py` / `_harness_fixtures/` / `_doubles/` 留在 `tests/` 根，经 `pyproject.toml` 的 `pythonpath` 直接 import；测试文件之间不互相 import，共用的替身放 `_doubles/`。慢测试标 `@pytest.mark.slow`，默认不跑，用 `python -m pytest -m slow` 单独跑。
+- `pytest`。目录按 **模块 → 功能** 两级镜像被测包：`tests/<module>/[<feature>/]test_<name>.py`（`<module>` 与 `pokemon_agent/` 下的包同名，跨模块的端到端放 `tests/integration/`；文件名全仓唯一，不靠目录区分）。共享夹具 `_fake_run.py` / `_fake_langfuse.py` / `_harness_fixtures/` / `_doubles/` 留在 `tests/` 根，经 `pyproject.toml` 的 `pythonpath` 直接 import；测试文件之间不互相 import，共用的替身放 `_doubles/`。慢测试标 `@pytest.mark.slow`，默认不跑；**不要用 `-m` 覆盖默认选项去跑它们**，需要时在本地临时去掉文件里的 `skip` 标记（现有慢测试 `tests/harness/checkpoint/test_checkpoint_restore.py` 已加硬 `skip`，不提交这种临时改动）。
 - 必须存在的两个：**FakeLLM 跑完整 ReAct 循环且结果确定可复现**；
   **大脑在给定观测下选出预期动作**。
 - 测试不许连网、不许调真实模型、不许依赖时间戳精确值。
