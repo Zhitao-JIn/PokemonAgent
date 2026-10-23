@@ -397,6 +397,137 @@ def test_supplement_request_and_cost_gates_prevent_later_calls(
     assert reason == "因费用闸提前停止"
 
 
+def test_supplement2_args_enforce_authorized_limits(tmp_path: object) -> None:
+    args = probe.parse_args(["--out", str(tmp_path), "--suite", "supplement2"])
+    assert (args.max_requests, args.max_cost_usd) == (20, 0.03)
+    for option in (
+        ["--max-requests", "31"],
+        ["--max-cost-usd", "0.031"],
+        ["--cache-only"],
+        ["--candidates", "c2"],
+    ):
+        with pytest.raises(SystemExit):
+            probe.parse_args(["--out", str(tmp_path), "--suite", "supplement2", *option])
+
+
+def test_supplement2_schedule_is_twelve_calls_and_gates_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    items = probe.supplement2_candidates()
+    providers = {item.name: FakeProvider() for item in items}
+
+    records, reason = probe.execute_supplement2(
+        items, providers, probe.Budget(max_requests=30, max_cost=0.03)
+    )
+    assert len(records) == 12
+    assert sum(r.kind == "detail" for r in records) == 8
+    assert sum(r.kind == "split_image" for r in records) == 4
+    assert reason == ""
+
+    records, reason = probe.execute_supplement2(
+        items, providers, probe.Budget(max_requests=3, max_cost=0.03)
+    )
+    assert len(records) == 3
+    assert reason == "达到请求数上限"
+
+    records, reason = probe.execute_supplement2(
+        items, providers, probe.Budget(cost=0.024, max_cost=0.03)
+    )
+    assert records == []
+    assert reason == "因费用闸提前停止"
+
+
+@pytest.mark.parametrize(
+    "text,stripped,fenced",
+    [
+        ('{"left":"red","right":"blue"}', '{"left":"red","right":"blue"}', False),
+        ('```json\n{"left":"red","right":"blue"}\n```', '{"left":"red","right":"blue"}', True),
+        ("```\n{}\n```", "{}", True),
+        ("not JSON", "not JSON", False),
+    ],
+)
+def test_strip_fence_returns_body_and_flag(text: str, stripped: str, fenced: bool) -> None:
+    assert probe.strip_fence(text) == (stripped, fenced)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ('{"left":"红","right":"蓝"}', True),
+        ('{"left":"RED","right":"blue"}', True),
+        ('{"left":"蓝","right":"红"}', False),
+        ('{"left":"红"}', False),
+        ('{"images":[{"left":"red","right":"blue"}]}', False),
+        ("not JSON", False),
+    ],
+)
+def test_single_image_answer_requires_left_red_and_right_blue(text: str, expected: bool) -> None:
+    assert probe.single_image_answer_correct(text) is expected
+
+
+def test_supplement2_detail_instances_build_with_detail_and_zero_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from _doubles.http import FakeUrlopen, ok_body
+
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    for item in probe.supplement2_candidates()[:2]:
+        fenced = '```json\n{"images":[{"left":"red","right":"blue"}]}\n```'
+        fake = FakeUrlopen(body=ok_body(text=fenced))
+        monkeypatch.setattr("urllib.request.urlopen", fake)
+
+        result = probe.supplement2_call(item, item.build(), 1)
+
+        body = fake.calls[0]["json"]
+        assert body["max_completion_tokens"] == 2048
+        assert body["messages"][0]["role"] == "user"
+        assert body["messages"][0]["content"][1]["image_url"]["detail"] == item.image_detail
+        assert result.prompt_tokens == 11
+        assert result.image_correct is True
+        assert result.image_fence_removed is True
+
+
+def test_supplement2_split_image_keeps_cache_marker_and_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from _doubles.http import FakeUrlopen, ok_body
+
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    item = probe.supplement2_candidates()[2]
+    fake = FakeUrlopen(body=ok_body(text='{"left":"red","right":"blue"}', prompt_tokens=3000))
+    monkeypatch.setattr("urllib.request.urlopen", fake)
+
+    result = probe.supplement2_call(item, item.build(), 1)
+
+    messages = fake.calls[0]["json"]["messages"]
+    assert messages[0] == {"role": "developer", "content": item.prefix}
+    assert messages[1]["role"] == "user"
+    expected_text = probe.MARKER + probe.SPLIT_IMAGE_PROMPT
+    assert messages[1]["content"][0] == {"type": "text", "text": expected_text}
+    assert messages[1]["content"][1]["type"] == "image_url"
+    assert messages[1]["content"][1]["image_url"]["detail"] == "high"
+    assert result.cache_strategy == "split_messages"
+    assert result.image_correct is True
+
+
+def test_supplement2_dry_run_never_sends_and_requires_openai_key(
+    tmp_path: object, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    args = probe.parse_args(["--suite", "supplement2", "--out", str(tmp_path / "out"), "--dry-run"])
+
+    assert probe.run(args) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert len(result["configs"]) == 3
+    assert result["unavailable"] == {}
+    assert all("cache_marker" in config for config in result["configs"].values())
+    assert not args.out.exists()
+    monkeypatch.delenv("OPENAI_API_KEY")
+    assert probe.run(args) == 1
+    assert "fake-key" not in capsys.readouterr().out
+
+
 def test_supplement_dry_run_never_sends_and_requires_every_key(
     tmp_path: object, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:

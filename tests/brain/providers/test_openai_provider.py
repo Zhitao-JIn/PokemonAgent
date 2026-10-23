@@ -130,6 +130,97 @@ def test_key_has_no_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
         OpenAIProvider(temperature=0.0)
 
 
+def test_default_request_keeps_single_user_message(fake_urlopen: FakeUrlopen) -> None:
+    provider = OpenAIProvider(temperature=0.0)
+
+    provider.complete(LlmCompleteReq(prompt="rules<tail>dynamic"))
+
+    assert fake_urlopen.calls[0]["json"]["messages"] == [
+        {"role": "user", "content": "rules<tail>dynamic"}
+    ]
+
+
+def test_cache_marker_splits_text_once(fake_urlopen: FakeUrlopen) -> None:
+    provider = OpenAIProvider(temperature=0.0, cache_marker="<tail>")
+
+    provider.complete(LlmCompleteReq(prompt="rules<tail>one<tail>two"))
+
+    assert fake_urlopen.calls[0]["json"]["messages"] == [
+        {"role": "developer", "content": "rules"},
+        {"role": "user", "content": "<tail>one<tail>two"},
+    ]
+
+
+def test_cache_marker_keeps_images_in_user_message_in_order(fake_urlopen: FakeUrlopen) -> None:
+    fake_urlopen.next_body = ok_body(prompt_tokens=300)
+    images = ["data:image/png;base64,Zmlyc3Q=", "data:image/png;base64,c2Vjb25k"]
+    provider = OpenAIProvider(temperature=0.0, cache_marker="<tail>", image_detail="high")
+
+    provider.describe(VisionDescribeReq(prompt="rules<tail>dynamic", images=images))
+
+    assert fake_urlopen.calls[0]["json"]["messages"] == [
+        {"role": "developer", "content": "rules"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "<tail>dynamic"},
+                *[
+                    {"type": "image_url", "image_url": {"url": image, "detail": "high"}}
+                    for image in images
+                ],
+            ],
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    "marker,prompt",
+    [
+        (None, "rules<tail>dynamic"),
+        ("<tail>", "rules without marker"),
+        ("<tail>", "<tail>dynamic"),
+        ("", "rules<tail>dynamic"),
+    ],
+)
+def test_marker_absent_or_at_position_zero_keeps_single_message(
+    marker: str | None, prompt: str, fake_urlopen: FakeUrlopen
+) -> None:
+    provider = OpenAIProvider(temperature=0.0, cache_marker=marker)
+
+    provider.complete(LlmCompleteReq(prompt=prompt))
+
+    assert fake_urlopen.calls[0]["json"]["messages"] == [{"role": "user", "content": prompt}]
+
+
+def test_image_detail_is_added_to_every_image_url(fake_urlopen: FakeUrlopen) -> None:
+    fake_urlopen.next_body = ok_body(prompt_tokens=300)
+    images = ["data:image/png;base64,Zmlyc3Q=", "data:image/png;base64,c2Vjb25k"]
+    provider = OpenAIProvider(temperature=0.0, image_detail="original")
+
+    provider.describe(VisionDescribeReq(prompt="look", images=images))
+
+    assert fake_urlopen.calls[0]["json"]["messages"][0]["content"] == [
+        {"type": "text", "text": "look"},
+        *[
+            {"type": "image_url", "image_url": {"url": image, "detail": "original"}}
+            for image in images
+        ],
+    ]
+
+
+@pytest.mark.parametrize("detail", ["lowest", "medium", "", "HIGH"])
+def test_invalid_image_detail_fails_at_construction(detail: str) -> None:
+    with pytest.raises(ValueError, match="invalid OpenAI image detail"):
+        OpenAIProvider(temperature=0.0, image_detail=detail)
+
+
+def test_config_reports_cache_marker_with_empty_default(fake_urlopen: FakeUrlopen) -> None:
+    assert OpenAIProvider(temperature=0.0, cache_marker="<tail>").config()["cache_marker"] == (
+        "<tail>"
+    )
+    assert OpenAIProvider(temperature=0.0).config()["cache_marker"] == ""
+
+
 def test_prefix_selects_openai_and_unknown_error_lists_it() -> None:
     assert isinstance(provider_for("gpt-6-luna", temperature=0.0), OpenAIProvider)
     with pytest.raises(ValueError, match="gpt-"):

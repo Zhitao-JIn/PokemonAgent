@@ -869,14 +869,25 @@ class OpenAIProvider(_MultimodalMixin, _OpenAICompatibleBase):
         max_tokens: int = 25600,
         token_floor: int = IMAGE_TOKEN_FLOOR,
         effort: str = "medium",
+        cache_marker: str | None = None,
+        image_detail: str | None = None,
         **kw: object,
     ) -> None:
-        """校验 Luna 支持的 effort；密钥缺失和共同参数校验由基类处理。"""
+        """校验 Luna 支持的 effort 与图片 detail；密钥缺失和共同参数校验由基类处理。
+
+        `cache_marker` 与 `image_detail` 都是可选默认关：为 `None` 时请求形状与
+        从前逐字一致。`cache_marker` 只改 messages 的切分，`image_detail` 只改
+        图片块的 `image_url`，其余字段仍由各自的原生规则处理。
+        """
         if effort not in ("none", "low", "medium", "high", "xhigh", "max"):
             raise ValueError(f"invalid OpenAI effort: {effort!r}")
+        if image_detail is not None and image_detail not in ("low", "high", "auto", "original"):
+            raise ValueError(f"invalid OpenAI image detail: {image_detail!r}")
         super().__init__(model, temperature=temperature, max_tokens=max_tokens, **kw)  # type: ignore[arg-type]
         self._floor = token_floor
         self._effort = effort
+        self._cache_marker = cache_marker
+        self._image_detail = image_detail
 
     def _disable_thinking_payload(self) -> dict[str, object]:
         """显式选择 none，不使用推理 token。"""
@@ -886,6 +897,36 @@ class OpenAIProvider(_MultimodalMixin, _OpenAICompatibleBase):
         """使用构造时选定的 effort。"""
         return {"reasoning_effort": self._effort}
 
+    def _split_messages(self, content: list[dict] | str) -> list[dict] | None:
+        """按 `cache_marker` 首次出现处把文字切成 developer 与 user 两条消息。
+
+        前置条件：多模态 `content` 以文字块开头（`_send_multimodal` 保证）。
+        后置条件：返回 `None` 表示保持单条 user 消息；否则两条消息拼起来
+        不丢任何原文，图片块仍按原顺序留在 user 消息里。
+        """
+        if not self._cache_marker:
+            return None
+        if isinstance(content, str):
+            position = content.find(self._cache_marker)
+        else:
+            assert content and content[0]["type"] == "text", "expected leading text block"
+            position = str(content[0]["text"]).find(self._cache_marker)
+        if position <= 0:
+            return None
+        if isinstance(content, str):
+            return [
+                {"role": "developer", "content": content[:position]},
+                {"role": "user", "content": content[position:]},
+            ]
+        text = str(content[0]["text"])
+        return [
+            {"role": "developer", "content": text[:position]},
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": text[position:]}, *content[1:]],
+            },
+        ]
+
     def _build_request(
         self, content: list[dict] | str, think: bool
     ) -> tuple[str, dict[str, str], dict]:
@@ -894,7 +935,19 @@ class OpenAIProvider(_MultimodalMixin, _OpenAICompatibleBase):
         body["max_completion_tokens"] = body.pop("max_tokens")
         if body["reasoning_effort"] != "none":
             body.pop("temperature")
+        messages = self._split_messages(content)
+        if messages is not None:
+            body["messages"] = messages
         return url, headers, body
+
+    def _image_part(self, image_b64: str) -> dict:
+        """默认沿用基类图片块；给定 detail 时写进每个 image_url。"""
+        if self._image_detail is None:
+            return super()._image_part(image_b64)
+        return {
+            "type": "image_url",
+            "image_url": {"url": image_b64, "detail": self._image_detail},
+        }
 
     def config(self) -> dict[str, str]:
         """报告默认思考设置下是否发送温度；逐请求覆盖仍以实际 effort 为准。"""
@@ -902,6 +955,7 @@ class OpenAIProvider(_MultimodalMixin, _OpenAICompatibleBase):
             **super().config(),
             "effort": self._effort,
             "temperature_sent": str(not self._thinking or self._effort == "none").lower(),
+            "cache_marker": self._cache_marker or "",
         }
 
 

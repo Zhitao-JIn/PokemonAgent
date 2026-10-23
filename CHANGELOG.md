@@ -1,3 +1,13 @@
+## 2026-10-23（626）—— OpenAI provider 增加可选缓存分界与图片 detail，并补测 Luna
+
+**改了什么**：`OpenAIProvider` 新增两个可选构造参数。`cache_marker` 按标记首次出现处把文字切成 `developer` 与 `user` 两条消息；多模态请求里图片块仍留在 user 消息、顺序不变；标记缺失、为空或位置为 0 时维持单条 user 消息。`image_detail` 按官方枚举 `low` / `high` / `auto` / `original` 校验，写进每个 `image_url`。`config()` 如实上报 `cache_marker`（`None` 记空串）。探针新增 `--suite supplement2`：`high` 与 `auto` 两个 detail 实例各做 4 次单/双图 describe，一个 `cache_marker` 加图片的实例连续 4 次；判定前先剥 Markdown 围栏并单独记录围栏数。新增 provider 契约测试与脚本参数、调度、费用闸、围栏、构造、dry-run 测试。
+
+**为什么这么改**：625 实测单条 user 消息布局 7 次缓存命中全为 0、输入 3019 token，改成 developer/user 分消息后命中约 99%，所以把分消息做进生产 provider；Luna 在 160×144 小图上只计约 30 输出侧输入 token 且分不清左右半边，需要用官方 detail 参数验证能否改善。
+
+**取舍**：`cache_marker` 只改 `messages`，`max_completion_tokens`、`reasoning_effort` 与温度规则仍由原实现决定，不引入 `prompt_cache_key`；`image_detail` 默认 `None` 时逐字沿用基类图片块；两个参数都未接进配置，留待 623。探针只打 `high` 与 `auto`，`original` 仅作为合法枚举接受。
+
+**影响面**：默认行为不变，既有测试未改；`tests/brain` 与 `tests/scripts` 由 641 增至 669 passed，ruff check 与 format --check 通过。真实补测一次共 12 次请求，估算费用 0.000912 美元，未触发费用闸（硬上限 0.03 美元，闸在 0.024 美元）。`detail=high` 与 `detail=auto` 的单图输入都是 73 token、双图都是 103 token；两个实例的单图回答各 0/2 正确、双图各 0/2 正确。分消息带图实例 4/4 正确，输入 3082 token，第 2、3 次命中 2816 token，第 1、4 次命中 0。原始回答与逐次 usage 见 `.coordination/model-probe/20261023-supplement2/results.json`。
+
 ## 2026-10-23（625）—— 新增图片真实性与长前缀缓存补测套件
 
 **改了什么**：探针新增 `--suite supplement`，独立构造关闭图片 token 下限检查的实例，发送红蓝与绿黄双色图并按 JSON、张数与颜色真值判定回答；补测 Luna 单消息长前缀缓存及等待后的命中量、Claude 显式断点缓存，记录旧下限对比和未缓存输入量。扩展离线参数、图片、构造、调度、预算与 dry-run 测试。

@@ -31,6 +31,23 @@ PRICES = {
 }
 KEY_NAMES = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DASHSCOPE_API_KEY", "DEEPSEEK_API_KEY")
 MARKER = "\n<probe_tail>"
+SPLIT_IMAGE_PROMPT = (
+    '请分别说明这张图左半边和右半边的颜色，只输出 JSON：{"left": "...", "right": "..."}'
+)
+COLOR_NAMES = {
+    "红": "red",
+    "红色": "red",
+    "red": "red",
+    "蓝": "blue",
+    "蓝色": "blue",
+    "blue": "blue",
+    "绿": "green",
+    "绿色": "green",
+    "green": "green",
+    "黄": "yellow",
+    "黄色": "yellow",
+    "yellow": "yellow",
+}
 PREFIX = (
     "只遵守本段规则：选择一个合法按键，不执行动作，不添加解释或代码围栏。"
     "输出 JSON 对象，包含 action 和 why；action 只能是 up、down、left、right、a、b，"
@@ -125,13 +142,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidates", default="all")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--cache-only", action="store_true")
-    parser.add_argument("--suite", choices=("base", "supplement"), default="base")
+    parser.add_argument("--suite", choices=("base", "supplement", "supplement2"), default="base")
     parser.add_argument("--report-from", nargs="+", type=Path)
     parser.add_argument("--max-requests", type=int)
     parser.add_argument("--max-cost-usd", type=float)
     args = parser.parse_args(argv)
-    request_limit, cost_limit = (30, 0.08) if args.suite == "supplement" else (60, 0.3)
-    args.max_requests = request_limit if args.max_requests is None else args.max_requests
+    limits = {"base": (60, 0.3, 60), "supplement": (30, 0.08, 30), "supplement2": (30, 0.03, 20)}
+    request_limit, cost_limit, default_requests = limits[args.suite]
+    args.max_requests = default_requests if args.max_requests is None else args.max_requests
     args.max_cost_usd = cost_limit if args.max_cost_usd is None else args.max_cost_usd
     if not args.out.is_absolute() or not 1 <= args.max_requests <= request_limit:
         parser.error(f"absolute --out and 1..{request_limit} --max-requests required")
@@ -139,6 +157,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error(f"--max-cost-usd must be in (0, {cost_limit}]")
     if args.suite == "supplement" and (args.cache_only or args.candidates != "all"):
         parser.error("supplement has fixed candidates; do not combine --cache-only/--candidates")
+    if args.suite == "supplement2" and (args.cache_only or args.candidates != "all"):
+        parser.error("supplement2 has fixed candidates; do not combine --cache-only/--candidates")
     return args
 
 
@@ -285,7 +305,8 @@ def summary(
 ) -> str:
     """汇总 min/median/max 和文字第 2–6 次的 token 加权缓存率。"""
     lines = [
-        "|实例|缓存策略|可用性|成功率|时延 min/median/max 秒|缓存率 2–6|JSON|图片送达/正确|推理中位数|错误|",
+        "|实例|缓存策略|可用性|成功率|时延 min/median/max 秒|缓存率 2–6|"
+        "JSON|图片送达/正确|推理中位数|错误|",
         "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for item in items:
@@ -303,7 +324,8 @@ def summary(
         errors = errors if rows else unavailable.get(item.name, "未执行")
         reasoning = statistics.median(r.reasoning_tokens for r in success) if success else 0
         lines.append(
-            f"|{item.name}|{cache_strategy(item)}|{'可用' if success else '不可用/未证实'}|{len(success)}/{len(rows)}|"
+            f"|{item.name}|{cache_strategy(item)}|{'可用' if success else '不可用/未证实'}|"
+            f"{len(success)}/{len(rows)}|"
             f"{latency}|{rate}|{sum(r.json_valid for r in text)}/{len(text)}|"
             f"{sum(r.image_delivered is True for r in images)}/{len(images)}; "
             f"{sum(r.image_correct is True for r in images)}/{len(images)}|{reasoning}|{errors}|"
@@ -325,11 +347,12 @@ def run(args: argparse.Namespace) -> int:
     if args.report_from:
         return report_saved(args.out, args.report_from)
     load_environment(args.env_file)
-    items = (
-        supplement_candidates()
-        if args.suite == "supplement"
-        else candidates(args.candidates, args.cache_only)
-    )
+    if args.suite == "supplement2":
+        items = supplement2_candidates()
+    elif args.suite == "supplement":
+        items = supplement_candidates()
+    else:
+        items = candidates(args.candidates, args.cache_only)
     providers, unavailable = {}, {}
     for item in items:
         try:
@@ -339,13 +362,17 @@ def run(args: argparse.Namespace) -> int:
     if args.dry_run:
         configs = {n: p.config() for n, p in providers.items()}
         print(json.dumps(dict(configs=configs, unavailable=unavailable), ensure_ascii=False))
-        return 0 if providers and not (args.suite == "supplement" and unavailable) else 1
-    if args.suite == "supplement" and unavailable:
+        required = args.suite in ("supplement", "supplement2")
+        return 0 if providers and not (required and unavailable) else 1
+    if args.suite in ("supplement", "supplement2") and unavailable:
         print(json.dumps(dict(unavailable=unavailable), ensure_ascii=False))
         return 1
     args.out.mkdir(parents=True, exist_ok=False)
     budget = Budget(max_requests=args.max_requests, max_cost=args.max_cost_usd)
-    records, reason = execute(items, providers, unavailable, budget)
+    if args.suite == "supplement2":
+        records, reason = execute_supplement2(items, providers, budget)
+    else:
+        records, reason = execute(items, providers, unavailable, budget)
     payload = {
         "records": [r.model_dump() for r in records],
         "unavailable": unavailable,
@@ -355,7 +382,8 @@ def run(args: argparse.Namespace) -> int:
     (args.out / "results.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    renderer = supplement_summary if args.suite == "supplement" else summary
+    renderers = {"supplement": supplement_summary, "supplement2": supplement2_summary}
+    renderer = renderers.get(args.suite, summary)
     (args.out / "summary.md").write_text(
         renderer(items, records, unavailable, budget, reason), encoding="utf-8"
     )
@@ -429,10 +457,11 @@ def execute(
 
 
 class SupplementCandidate(Candidate):
-    """补测实例独立构造，token_floor 只对图片实例设为零。"""
+    """补测实例独立构造，token_floor 只对带图的图片实例设为零。"""
 
     purpose: str
     prefix: str = ""
+    image_detail: str | None = None
 
     def build(self) -> object:
         """按补测白名单构造，任一所需密钥缺失均拒绝真实运行。"""
@@ -444,8 +473,12 @@ class SupplementCandidate(Candidate):
         key_name = dict(zip(PRICES, KEY_NAMES, strict=True))[self.model]
         if not os.environ.get(key_name):
             raise RuntimeError(f"missing {key_name}")
-        options = {"cache_marker": self.cache_marker} if self.model.startswith("claude") else {}
-        if self.purpose == "image":
+        options = {}
+        if self.cache_marker is not None:
+            options["cache_marker"] = self.cache_marker
+        if self.image_detail is not None:
+            options["image_detail"] = self.image_detail
+        if self.purpose != "cache":
             options["token_floor"] = 0
         return factories[self.model](
             self.model,
@@ -492,22 +525,52 @@ def supplement_candidates() -> list[SupplementCandidate]:
     ]
 
 
+def supplement2_candidates() -> list[SupplementCandidate]:
+    """两个图片 detail 实例与一个分消息带图实例；静态前缀沿用同一文字单元。"""
+    unit = PREFIX[: len(PREFIX) // 18]
+    return [
+        SupplementCandidate(
+            name="luna_detail_high", model="gpt-6-luna", purpose="detail", image_detail="high"
+        ),
+        SupplementCandidate(
+            name="luna_detail_auto", model="gpt-6-luna", purpose="detail", image_detail="auto"
+        ),
+        SupplementCandidate(
+            name="luna_split_image",
+            model="gpt-6-luna",
+            purpose="split_image",
+            prefix=unit * 47,
+            cache_marker=MARKER,
+            image_detail="high",
+        ),
+    ]
+
+
+def strip_fence(text: str) -> tuple[str, bool]:
+    """剥掉包住整段回答的 Markdown 代码围栏，返回正文与是否曾带围栏。"""
+    fence = re.fullmatch(r"\s*```(?:json)?\s*\n?(.*?)\s*```\s*", text, re.S | re.I)
+    if fence is None:
+        return text, False
+    return fence[1], True
+
+
+def single_image_answer_correct(text: str) -> bool:
+    """判定单图 JSON `{"left": ..., "right": ...}` 是否为红左蓝右。"""
+    try:
+        value = json.loads(text)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(value, dict):
+        return False
+    actual = tuple(
+        COLOR_NAMES.get(str(value.get(side, "")).strip().lower()) for side in ("left", "right")
+    )
+    return actual == ("red", "blue")
+
+
 def image_answer_correct(text: str, count: int) -> bool:
     """要求 JSON、条数和每图左右颜色都一致，支持中英文颜色词。"""
-    colors = {
-        "红": "red",
-        "红色": "red",
-        "red": "red",
-        "蓝": "blue",
-        "蓝色": "blue",
-        "blue": "blue",
-        "绿": "green",
-        "绿色": "green",
-        "green": "green",
-        "黄": "yellow",
-        "黄色": "yellow",
-        "yellow": "yellow",
-    }
+    colors = COLOR_NAMES
     try:
         value = json.loads(text)
         rows = value.get("images") if isinstance(value, dict) else None
@@ -559,6 +622,21 @@ def supplement_response(item: SupplementCandidate, provider: object, index: int)
         marker = item.cache_marker or MARKER
         return provider.complete(
             LlmCompleteReq(prompt=item.prefix + marker + str(index)), timeout_s=item.timeout
+        )
+    if item.purpose == "split_image":
+        response = provider.describe(
+            VisionDescribeReq(
+                prompt=item.prefix + MARKER + SPLIT_IMAGE_PROMPT, images=[image_uri()]
+            ),
+            timeout_s=item.timeout,
+        )
+        return LlmCompleteResp(
+            text=response.text,
+            prompt_tokens=response.input_tokens,
+            completion_tokens=response.output_tokens,
+            cached_tokens=response.cached_tokens,
+            reasoning_tokens=response.reasoning_tokens,
+            truncated=response.truncated,
         )
     images = [image_uri()]
     if index > 2:
@@ -616,6 +694,51 @@ def supplement_call(item: SupplementCandidate, provider: object, index: int) -> 
     return add_diagnostics(result, item)
 
 
+def supplement2_call(item: SupplementCandidate, provider: object, index: int) -> SupplementRecord:
+    """调用一次；判定前先剥围栏，围栏事实单独记录。"""
+    result = SupplementRecord(
+        name=item.name,
+        kind=item.purpose,
+        index=index,
+        cache_strategy="split_messages" if item.purpose == "split_image" else "single_message",
+    )
+    result.image_count = 1 if item.purpose == "split_image" or index <= 2 else 2
+    started = time.monotonic()
+    try:
+        response = supplement_response(item, provider, index)
+        result = result.model_copy(update=response.model_dump())
+        result.text = redact(result.text)
+        result.uncached_input_tokens = max(result.prompt_tokens - result.cached_tokens, 0)
+        result.image_delivered = True
+        stripped, result.image_fence_removed = strip_fence(result.text)
+        try:
+            json.loads(stripped)
+            result.image_json_valid = True
+        except (ValueError, TypeError):
+            result.image_json_valid = False
+        result.image_correct = (
+            single_image_answer_correct(stripped)
+            if item.purpose == "split_image"
+            else image_answer_correct(stripped, result.image_count)
+        )
+    except Exception as error:
+        result.error, result.message = type(error).__name__, redact(str(error))
+        status = re.search(r"HTTP (\d{3})", str(error))
+        result.status = int(status[1]) if status else 0
+        if isinstance(error, EmptyCompletion):
+            result.completion_tokens, result.reasoning_tokens = (
+                error.completion_tokens,
+                error.reasoning_tokens,
+            )
+    result.latency = time.monotonic() - started
+    result.estimated_cost = estimate(
+        item.model, result.prompt_tokens, result.cached_tokens, result.completion_tokens
+    )
+    if result.error and result.status not in (400, 401, 403, 404, 429):
+        result.estimated_cost = estimate(item.model, len(item.prefix.encode()) + 5000, 0, 2048)
+    return result
+
+
 def execute_supplement(
     items: list[SupplementCandidate], providers: dict[str, object], budget: Budget
 ) -> tuple[list[SupplementRecord], str]:
@@ -657,13 +780,96 @@ def execute_supplement(
     return records, reason or budget.stopped()
 
 
+def execute_supplement2(
+    items: list[SupplementCandidate], providers: dict[str, object], budget: Budget
+) -> tuple[list[SupplementRecord], str]:
+    """两个 detail 实例各四次单/双图，分消息带图实例连续四次；无重试。"""
+    detail_items = [item for item in items if item.purpose == "detail"]
+    schedule = [(item, index) for index in range(1, 5) for item in detail_items]
+    schedule += [
+        (item, index) for item in items if item.purpose == "split_image" for index in range(1, 5)
+    ]
+    records, reason = [], ""
+    for item, index in schedule:
+        reason = budget.stopped()
+        if reason:
+            break
+        reserve = estimate(item.model, len(item.prefix.encode()) + 5000, 0, 2048)
+        if budget.cost + reserve > budget.max_cost:
+            reason = "剩余额度不足，因费用闸提前停止"
+            break
+        result = supplement2_call(item, providers[item.name], index)
+        records.append(result)
+        budget.requests += 1
+        budget.cost += result.estimated_cost
+        if result.status in (401, 403):
+            reason = "首次调用返回 401/403，停止"
+            break
+    return records, reason or budget.stopped()
+
+
+def supplement2_summary(
+    items: list[SupplementCandidate],
+    records: list[SupplementRecord],
+    unavailable: dict[str, str],
+    budget: Budget,
+    reason: str,
+) -> str:
+    """只列逐次数字与 min/median/max，不给出通过与否或型号能力结论。"""
+    lines = [
+        "图片 detail（token_floor=0，判定前剥离 Markdown 围栏）：",
+        "|实例|图数|正确|输入 token min/median/max|时延 min/median/max 秒|围栏数|",
+        "|---|---|---|---|---|---|",
+    ]
+    for item in (i for i in items if i.purpose == "detail"):
+        for count in (1, 2):
+            rows = [r for r in records if r.name == item.name and r.image_count == count]
+            correct = sum(r.image_correct is True for r in rows)
+            lines.append(
+                f"|{item.name}（detail={item.image_detail}）|{count}|{correct}/{len(rows)}|"
+                f"{spread([r.prompt_tokens for r in rows], 0)}|"
+                f"{spread([r.latency for r in rows])}|"
+                f"{sum(r.image_fence_removed for r in rows)}|"
+            )
+    lines += [
+        "",
+        "分消息 + 图片（developer/user 分界，image_detail=high）：",
+        "|实例|序号|输入 token|命中 token|时延秒|正确|围栏|错误|",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for row in (r for r in records if r.kind == "split_image"):
+        lines.append(
+            f"|{row.name}|{row.index}|{row.prompt_tokens}|{row.cached_tokens}|"
+            f"{row.latency:.3f}|{'是' if row.image_correct else '否'}|"
+            f"{'是' if row.image_fence_removed else '否'}|{row.error}|"
+        )
+    lines += [
+        "围栏数表示回答被 Markdown 代码围栏包住的次数；本套件判定前已剥离围栏。",
+        "输入 token 的数字来自响应的 usage；命中 token 仅 OpenAI 返回值。",
+        f"总请求数：{budget.requests}；估算费用：${budget.cost:.6f}；"
+        f"费用闸触发：{'是' if '费用闸' in reason else '否'}；停止原因：{reason or '完成'}。",
+    ]
+    if unavailable:
+        lines.append(str(unavailable))
+    return "\n".join(lines) + "\n"
+
+
+def spread(values: list[float], digits: int = 3) -> str:
+    """min/median/max 三值；没有样本时记破折号。"""
+    if not values:
+        return "—"
+    points = (min(values), statistics.median(values), max(values))
+    return "/".join(f"{value:.{digits}f}" for value in points)
+
+
 def supplement_image_lines(
     items: list[SupplementCandidate], records: list[SupplementRecord]
 ) -> list[str]:
     """列出颜色判定计数与旧 token 下限的数值对比。"""
     lines = [
         "图片（token_floor=0，仅本套件实例）：",
-        "|对象|单图严格正确|双图严格正确|JSON 合法|颜色诊断正确|围栏数|单图/双图输入 token|旧下限对比|",
+        "|对象|单图严格正确|双图严格正确|JSON 合法|颜色诊断正确|围栏数|"
+        "单图/双图输入 token|旧下限对比|",
         "|---|---|---|---|---|---|---|---|",
     ]
     for item in (i for i in items if i.purpose == "image"):
