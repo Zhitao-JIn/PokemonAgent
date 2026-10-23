@@ -1,3 +1,13 @@
+## 2026-10-23（620）—— 新增 Claude 原生 Messages provider 与离线契约测试
+
+**改了什么**：新增 `ClaudeProvider` 与 `claude-` 前缀选型，原生请求支持图片、adaptive thinking 和 effort；缓存由可选 `cache_marker` 指定分界，默认关闭；映射正文、usage、截断与空正文错误，配置明确记录 `temperature_sent=false`。新增假 HTTP 测试覆盖请求、响应、失败分类、总时长闸与既有请求回归。
+
+**为什么这么改**：Anthropic 原生接口的鉴权、消息块与响应结构不同，需要独立表达厂商协议，同时沿用既有传输、超时与失败分类，供各个大脑位置按型号前缀装配。
+
+**取舍**：不引入 SDK，不发送采样参数，不推断 prompt 的静态边界；只在显式标记前的非空前缀设置一个缓存断点。thinking 预算不另行配置，输出不足沿用截断和空正文流程；本检查点只用假响应，不验证真实模型效果。
+
+**影响面**：仅 provider 实现、新增测试与本日志；基类按 D13 抽出 `_build_request` 请求构造钩子，图片组装抽出 `_image_part` 钩子，传输和错误分类原样共用。钩子抽取后既有 provider 测试原样通过（154 passed）；不改既有厂商类、协议、prompt 或默认配置。
+
 ## 2026-10-23（624）—— 存档恢复慢测试加硬跳过，防止 -m 覆盖默认选项后误跑
 
 **改了什么**：`tests/harness/checkpoint/test_checkpoint_restore.py` 的 `pytestmark` 由单个 `slow` 改为 `[slow, skip]`；同步该文件头注释、`pyproject.toml` 中 `slow` 标记的注释、AGENTS.md 与 CLAUDE.md 的慢测试一句，去掉"用 `python -m pytest -m slow` 单独跑"的引导。`addopts` 的 `-m "not slow"` 与 `markers` 不动。

@@ -185,6 +185,28 @@ class _OpenAICompatibleBase:
         **各家格式不同，子类必须覆盖**。返回一个要 merge 进请求体顶层的字典片段。"""
         raise NotImplementedError(f"{type(self).__name__} 必须覆盖 _enable_thinking_payload()")
 
+    def _build_request(
+        self, content: list[dict] | str, think: bool
+    ) -> tuple[str, dict[str, str], dict]:
+        """构造请求三件套；调用方提供内容与思考开关，不执行网络操作。"""
+        body = {
+            "model": self._model,
+            "temperature": self._temperature,
+            "max_tokens": self._max_tokens,
+            "messages": [{"role": "user", "content": content}],
+        }
+        body.update(self._enable_thinking_payload() if think else self._disable_thinking_payload())
+        if self._json_mode:
+            body["response_format"] = {"type": "json_object"}
+        return (
+            f"{self._base}/chat/completions",
+            {
+                "content-type": "application/json",
+                "authorization": f"Bearer {self._key}",
+            },
+            body,
+        )
+
     def _post(
         self,
         content: list[dict] | str,
@@ -220,24 +242,13 @@ class _OpenAICompatibleBase:
         total_timeout = self._timeout + 15 if timeout_s is None else timeout_s
         if socket_timeout <= 0:
             raise ValueError("timeout_s must be positive")
-        body = {
-            "model": self._model,
-            "temperature": self._temperature,
-            "max_tokens": self._max_tokens,
-            "messages": [{"role": "user", "content": content}],
-        }
         think = self._thinking if thinking is None else thinking
-        body.update(self._enable_thinking_payload() if think else self._disable_thinking_payload())
-        if self._json_mode:
-            body["response_format"] = {"type": "json_object"}
+        url, headers, body = self._build_request(content, think)
 
         req = urllib.request.Request(
-            f"{self._base}/chat/completions",
+            url,
             data=json.dumps(body).encode(),
-            headers={
-                "content-type": "application/json",
-                "authorization": f"Bearer {self._key}",
-            },
+            headers=headers,
         )
 
         def _do_post() -> dict:
@@ -368,6 +379,10 @@ class _MultimodalMixin:
 
     _floor: int  # 由 __init__ 设置，见各 Provider 类
 
+    def _image_part(self, image_b64: str) -> dict:
+        """把调用方的完整图片 URI 转为请求块，默认保持 OpenAI 图片形状。"""
+        return {"type": "image_url", "image_url": {"url": image_b64}}
+
     def _prepare_images(self, images: list[str]) -> list[str]:
         """豆包专属：多帧拼一张网格图（保证发出去的**永远是一张图**）。
 
@@ -432,13 +447,7 @@ class _MultimodalMixin:
         content: list[dict[str, object]] = [{"type": "text", "text": prompt}]
         # 帧本身就是完整 data URI（0915 起唯一格式）——`image_url.url` 要的
         # 正是这个形状，**直接透传**，这里没有任何拼接。
-        content.extend(
-            {
-                "type": "image_url",
-                "image_url": {"url": image_b64},
-            }
-            for image_b64 in images
-        )
+        content.extend(self._image_part(image_b64) for image_b64 in images)
         text, n_in, n_out, n_cached, n_reason, cut = self._unpack(
             self._post(content, timeout_s=timeout_s)
         )
@@ -723,12 +732,136 @@ class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
         return {"thinking": {"type": "enabled"}}
 
 
+class ClaudeProvider(_MultimodalMixin, _OpenAICompatibleBase):
+    """Anthropic 原生 Messages API；复用传输、超时和错误分类。
+
+    只从 ANTHROPIC_API_KEY 取密钥；采样参数不发送。缓存默认关闭，
+    cache_marker 指定动态文字起点，匹配不到或没有静态前缀时不设断点。
+    """
+
+    BASE_URL = "https://api.anthropic.com/v1"
+    API_KEY_ENVS = ("ANTHROPIC_API_KEY",)
+
+    def __init__(
+        self,
+        model: str = "claude-haiku-5-5",
+        *,
+        temperature: float,
+        max_tokens: int = 25600,
+        token_floor: int = IMAGE_TOKEN_FLOOR,
+        effort: str = "high",
+        cache_marker: str | None = None,
+        **kw: object,
+    ) -> None:
+        """接收共同配置；非法 effort 抛 ValueError，密钥缺失由基类报错。
+
+        effort 仅在开启 thinking 时发送；temperature 仅记录、不发送。
+        """
+        if effort not in ("low", "medium", "high", "xhigh", "max"):
+            raise ValueError(f"invalid Claude effort: {effort!r}")
+        super().__init__(model, temperature=temperature, max_tokens=max_tokens, **kw)  # type: ignore[arg-type]
+        self._floor = token_floor
+        self._effort = effort
+        self._cache_marker = cache_marker
+
+    def _text_parts(self, prompt: str) -> list[dict]:
+        """按首次标记拆分文字，保留全部原文；空前缀不产生缓存块。"""
+        position = prompt.find(self._cache_marker) if self._cache_marker else -1
+        if position <= 0:
+            return [{"type": "text", "text": prompt}]
+        return [
+            {
+                "type": "text",
+                "text": prompt[:position],
+                "cache_control": {"type": "ephemeral"},
+            },
+            {"type": "text", "text": prompt[position:]},
+        ]
+
+    def _build_request(
+        self, content: list[dict] | str, think: bool
+    ) -> tuple[str, dict[str, str], dict]:
+        """构造原生请求；多模态内容须以文字块开头，图片保持原顺序。"""
+        if isinstance(content, str):
+            parts = self._text_parts(content)
+        else:
+            assert content and content[0]["type"] == "text", "expected leading text block"
+            parts = self._text_parts(content[0]["text"]) + content[1:]
+        body = {
+            "model": self._model,
+            "max_tokens": self._max_tokens,
+            "messages": [{"role": "user", "content": parts}],
+            "thinking": {"type": "adaptive" if think else "disabled"},
+        }
+        if think:
+            body["output_config"] = {"effort": self._effort}
+        return (
+            f"{self._base}/messages",
+            {
+                "content-type": "application/json",
+                "x-api-key": self._key,
+                "anthropic-version": "2023-06-01",
+            },
+            body,
+        )
+
+    def _image_part(self, image_b64: str) -> dict:
+        """调用方保证完整 PNG data URI；返回去掉 URI 头的原生图片块。"""
+        prefix = "data:image/png;base64,"
+        assert image_b64.startswith(prefix), "expected PNG data URI"
+        return {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": image_b64.removeprefix(prefix),
+            },
+        }
+
+    @staticmethod
+    def _unpack(resp: dict) -> tuple[str, int, int, int, int, bool]:
+        """合并所有正文块并换算 usage；无正文抛 EmptyCompletion。"""
+        text = "".join(
+            part.get("text", "") for part in resp.get("content", []) if part.get("type") == "text"
+        )
+        usage = resp.get("usage") or {}
+        completion_tokens = int(usage.get("output_tokens", 0))
+        reasoning_tokens = int(usage.get("reasoning_tokens", 0))
+        finish = str(resp.get("stop_reason") or "")
+        if not text.strip():
+            raise EmptyCompletion(completion_tokens, reasoning_tokens, finish)
+        cached_tokens = int(usage.get("cache_read_input_tokens", 0))
+        prompt_tokens = (
+            int(usage.get("input_tokens", 0))
+            + cached_tokens
+            + int(usage.get("cache_creation_input_tokens", 0))
+        )
+        return (
+            text,
+            prompt_tokens,
+            completion_tokens,
+            cached_tokens,
+            reasoning_tokens,
+            finish == "max_tokens",
+        )
+
+    def config(self) -> dict[str, str]:
+        """报告配置与采样参数未发送的事实，不包含密钥。"""
+        return {
+            **super().config(),
+            "temperature_sent": "false",
+            "effort": self._effort,
+            "cache_marker": self._cache_marker or "",
+        }
+
+
 # ---- 选型表：型号名 → 厂商类（0914 起） ----
 #
 _PROVIDER_PREFIXES: tuple[tuple[str, type[_OpenAICompatibleBase]], ...] = (
     ("deepseek", DeepSeekProvider),
     ("doubao", ArkProvider),
     ("qwen", QwenProvider),
+    ("claude-", ClaudeProvider),
 )
 """**前缀 → 厂商类**，按顺序匹配第一个命中的。加一家供应商 = 这里加一行（顺序即优先级）。"""
 
