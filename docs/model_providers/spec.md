@@ -54,7 +54,7 @@
 - 起点 pytest / ruff 不全绿；
 - 需要执行被禁止的 git 命令才能继续；
 - 需要任何未授权的真实模型调用；
-- 发现现有 `_post` 无法在不改变 Qwen / DeepSeek / Ark 行为的前提下复用（需要重构基类）。
+- 按 D13 拆出 `_build_request` 钩子后，Qwen / DeepSeek / Ark 的既有测试出现任何行为差异，或除 D13 规定之外还需要改基类。
 
 ## 六、非目标
 
