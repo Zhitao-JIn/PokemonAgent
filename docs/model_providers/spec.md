@@ -1,6 +1,7 @@
-# spec —— Claude / OpenAI 两个 provider 与选型落地（v1.1）
+# spec —— Claude / OpenAI 两个 provider 与选型落地（v1.2）
 
 > v1.1 修订原因：CP1 执行方核对官方文档发现 Haiku 5.5 无 thinking 预算，D4 的预算断言不成立，改为 adaptive + effort。
+> v1.2 修订原因：CP1 执行方发现 `_post` 把 OpenAI 请求形状写死，原生 Anthropic 请求无法复用；批准基类拆出 `_build_request` 钩子（D13）；同时发现 prompt 是整串文本、无静态/动态分界，缓存断点改为可选参数、默认关（D3）。
 
 > 依据：`docs/model_providers/intent.md`（搭配已定）。本文是执行依据；与 intent 不一致时以本文为准。
 > 编号：620（CP1）/ 621（CP2）/ 622（CP3）/ 623（CP4）。
@@ -11,7 +12,7 @@
 |---|---|---|
 | D1 | 新增 `ClaudeProvider`（前缀 `claude-`），**原生 Messages API**：`POST https://api.anthropic.com/v1/messages`，头 `x-api-key`、`anthropic-version: 2023-06-01`；key 从 `ANTHROPIC_API_KEY` 读（只读这一个名字，不读 `ANTHROPIC_AUTH_TOKEN`） | 不用 Anthropic 的 OpenAI 兼容层（无缓存、无 thinking 输出、`temperature<1` 报错）；不引入官方 SDK，沿用 urllib |
 | D2 | Claude 请求体**不带** `temperature` / `top_p` / `top_k`；构造函数仍收 `temperature`（接口不变），`config()` 里如实记 `temperature_sent=false` | `judge` 现配 0.0，Claude 上该值被忽略；可复现性靠评测重测 |
-| D3 | Claude 缓存：请求内容按「静态前缀 + 动态尾部」组块，在**静态前缀末尾**放一个 `cache_control: {"type":"ephemeral"}` 断点；静态前缀 = 现有 `prompt` 文本里图片之前的全部文字 | 实现只做一个断点，不做多断点；最小可缓存长度 512 token，不足时服务端不缓存也不报错 |
+| D3 | Claude 缓存（v1.2 修订）：构造参数 `cache_marker: str \| None = None`。为 `None` 时**不发任何 `cache_control`**；给定字符串时，把 prompt 在该字符串**首次出现处之前**切成静态前缀块，在这一块末尾放一个 `cache_control: {"type":"ephemeral"}` 断点，余下文字为动态尾部块（图片仍在最后）；找不到标记时退回不发断点。**默认关**，是否启用与用哪个标记，留待 CP3 探针和 CP4 视各位置 prompt 决定 | 现有 prompt 是一整个字符串，静态规则与动态素材之间没有标记；整块放断点只会白付 1.25 倍写入价而永远不命中。verify 位置每 run ≤70 次、约 1.8K token，不缓存的成本也只有几分钱 |
 | D4 | Claude thinking（v1.1 按官方文档修订）：`thinking=false` 发 `thinking: {"type":"disabled"}`，不发 effort；`thinking=true` 发 `thinking: {"type":"adaptive"}` 并带 `output_config: {"effort": <effort>}`（构造参数 `effort`，默认 `"high"`，取值 low / medium / high / xhigh / max）。官方已取消手动 thinking 预算（`budget_tokens` 会 400），所以**不做 max_tokens 与预算的比较断言**；thinking 的 token 计入 `max_tokens`，不够时由 `stop_reason == "max_tokens"` 报截断，调用方按现有截断流程处理 | Haiku 5.5 默认开自适应 thinking，必须显式关；字段名来自官方 Haiku 5.5 提示指南与迁移指南 |
 | D5 | Claude 响应解包：`content` 里取所有 `type=="text"` 块拼接；`usage.input_tokens + cache_read_input_tokens + cache_creation_input_tokens` 之和作为 `prompt_tokens`，`cache_read_input_tokens` 作为 `cached_tokens`；`stop_reason == "max_tokens"` 为截断；`reasoning_tokens` 取不到记 0；正文为空照旧抛 `EmptyCompletion` | 与现有 `_unpack` 返回的六元组同形，上层不改 |
 | D6 | Claude 图片：`{"type":"image","source":{"type":"base64","media_type":"image/png","data":<去掉 data URI 头的 base64>}}`；多图逐张发（不拼网格）；`describe()` 保持「文字在前、图在后」 | 与现有帧格式（完整 data URI）互转只在 provider 内部 |
@@ -21,6 +22,7 @@
 | D10 | `_PROVIDER_PREFIXES` 增加 `("claude-", ClaudeProvider)` 与 `("gpt-", OpenAIProvider)`，`provider_for` 的报错信息自动带上新前缀；豆包条目与类**原样保留** | 豆包不删 |
 | D11 | 最终搭配（CP4 才生效）：`text = qwen3.8-flash`（thinking 关，10 s）、`judge = gpt-6-luna`（thinking 关，45 s）、`verify = claude-haiku-5-5`（thinking 开，60 s）、`plan = deepseek-flash`（thinking 开，90 s，max_tokens 25600）；Qwen3.8-Flash 与 DeepSeek 型号字符串以官方文档与探针为准 | 见 intent 第四节 |
 | D12 | 探针脚本放 `scripts/probe_models.py`，真实调用只在 CP3 且需用户授权；默认不跑；结果落 `.coordination/model-probe/<时间戳>/`（不入 git） | |
+| D13 | 基类拆出一个请求构造钩子（v1.2 新增）：把 `_OpenAICompatibleBase._post` 里「拼 URL、请求头、请求体」抽成 `_build_request(self, content, think) -> tuple[str, dict[str, str], dict]`，默认实现**逐字保持**现有行为（`{base}/chat/completions`、Bearer 鉴权、`temperature` / `max_tokens`、thinking 载荷、`response_format`）；`_post` 其余部分（线程池总时长闸、错误分类）原样共用。`ClaudeProvider` 覆盖 `_build_request` 与 `_unpack`、并用 `_image_part` 钩子产生图片块；`OpenAIProvider`（CP2）覆盖 `_build_request` 改用 `max_completion_tokens` | 复用传输与错误分类，只在「请求怎么拼、响应怎么读」上分叉；Qwen / DeepSeek / Ark 行为不变由既有测试保证 |
 
 ## 二、检查点
 
