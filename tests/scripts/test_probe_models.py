@@ -286,3 +286,130 @@ def test_factory_forwards_claude_cache_marker(monkeypatch: pytest.MonkeyPatch) -
         {"type": "text", "text": "rules", "cache_control": {"type": "ephemeral"}},
         {"type": "text", "text": "<tail>dynamic"},
     ]
+
+
+def test_suite_defaults_preserve_base_and_limit_supplement(tmp_path: object) -> None:
+    base = probe.parse_args(["--out", str(tmp_path)])
+    extra = probe.parse_args(["--out", str(tmp_path), "--suite", "supplement"])
+    assert (base.suite, base.max_requests, base.max_cost_usd) == ("base", 60, 0.3)
+    assert (extra.max_requests, extra.max_cost_usd) == (30, 0.08)
+    for option in (["--max-requests", "31"], ["--max-cost-usd", "0.081"], ["--cache-only"]):
+        with pytest.raises(SystemExit):
+            probe.parse_args(["--out", str(tmp_path), "--suite", "supplement", *option])
+
+
+def test_green_yellow_png_keeps_default_red_blue_unchanged() -> None:
+    for uri, left, right in (
+        (probe.image_uri(), (255, 0, 0), (0, 0, 255)),
+        (probe.image_uri((0, 255, 0), (255, 255, 0)), (0, 255, 0), (255, 255, 0)),
+    ):
+        image = Image.open(io.BytesIO(base64.b64decode(uri.split(",", 1)[1])))
+        assert image.size == (160, 144)
+        assert image.getpixel((79, 72)) == left
+        assert image.getpixel((80, 72)) == right
+
+
+@pytest.mark.parametrize(
+    "text,count,expected",
+    [
+        ('{"images":[{"left":"红色","right":"蓝"}]}', 1, True),
+        ('{"images":[{"left":"RED","right":"blue"},{"left":"green","right":"黄色"}]}', 2, True),
+        ('{"images":[{"left":"红","right":"蓝"}]}', 2, False),
+        ('{"images":[{"left":"蓝","right":"红"}]}', 1, False),
+        ("not JSON", 1, False),
+        ('```json\n{"images":[{"left":"red","right":"blue"}]}\n```', 1, False),
+        ("[]", 1, False),
+        ('{"images":[null]}', 1, False),
+    ],
+)
+def test_image_answer_requires_json_count_and_true_colors(
+    text: str, count: int, expected: bool
+) -> None:
+    assert probe.image_answer_correct(text, count) is expected
+
+
+@pytest.mark.parametrize("position", [0, 1, 2])
+def test_supplement_image_instances_disable_token_floor_only_locally(
+    position: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from _doubles.http import FakeUrlopen, ok_body
+
+    for name in probe.KEY_NAMES[:3]:
+        monkeypatch.setenv(name, "fake-key")
+    item = probe.supplement_candidates()[position]
+    body = (
+        {
+            "content": [{"type": "text", "text": '{"images":[{"left":"red","right":"blue"}]}'}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }
+        if position == 0
+        else ok_body(text='{"images":[{"left":"red","right":"blue"}]}', prompt_tokens=1)
+    )
+    fake = FakeUrlopen(body=body)
+    monkeypatch.setattr("urllib.request.urlopen", fake)
+
+    result = probe.supplement_call(item, item.build(), 1)
+
+    assert result.error == ""
+    assert result.image_correct is True
+    assert result.prompt_tokens == 1
+    assert result.old_floor == 100
+    assert fake.calls[0]["json"].get("max_tokens", 2048) == 2048
+
+
+def test_supplement_schedule_is_twenty_five_requests_and_waits_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    items = probe.supplement_candidates()
+    providers = {item.name: FakeProvider() for item in items}
+    waits = []
+    monkeypatch.setattr(probe.time, "sleep", waits.append)
+
+    records, reason = probe.execute_supplement(
+        items, providers, probe.Budget(max_requests=30, max_cost=0.08)
+    )
+
+    assert len(records) == 25
+    assert sum(r.kind == "image" for r in records) == 12
+    assert sum(r.name == "luna_cache_long" for r in records) == 7
+    assert sum(r.name == "claude_cache_long" for r in records) == 6
+    assert waits == [15]
+    assert records[18].waited_seconds == 15
+    assert all(r.cache_creation_input_tokens is None for r in records)
+    assert reason == ""
+
+
+def test_supplement_request_and_cost_gates_prevent_later_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    items = probe.supplement_candidates()
+    providers = {item.name: FakeProvider() for item in items}
+    monkeypatch.setattr(probe.time, "sleep", lambda seconds: pytest.fail("must stop before wait"))
+    records, reason = probe.execute_supplement(
+        items, providers, probe.Budget(max_requests=3, max_cost=0.08)
+    )
+    assert len(records) == 3
+    assert reason == "达到请求数上限"
+    records, reason = probe.execute_supplement(
+        items, providers, probe.Budget(cost=0.064, max_cost=0.08)
+    )
+    assert records == []
+    assert reason == "因费用闸提前停止"
+
+
+def test_supplement_dry_run_never_sends_and_requires_every_key(
+    tmp_path: object, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    for name in probe.KEY_NAMES[:3]:
+        monkeypatch.setenv(name, "fake-key")
+    args = probe.parse_args(["--suite", "supplement", "--out", str(tmp_path / "out"), "--dry-run"])
+
+    assert probe.run(args) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert len(result["configs"]) == 5
+    assert result["unavailable"] == {}
+    assert not args.out.exists()
+    monkeypatch.delenv("OPENAI_API_KEY")
+    assert probe.run(args) == 1
+    assert "fake-key" not in capsys.readouterr().out

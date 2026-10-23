@@ -20,7 +20,7 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pokemon_agent.brain.errors import EmptyCompletion
-from pokemon_agent.brain.providers import provider_for
+from pokemon_agent.brain.providers import ClaudeProvider, OpenAIProvider, QwenProvider, provider_for
 from pokemon_agent.brain.schemas import LlmCompleteReq, LlmCompleteResp, VisionDescribeReq
 
 PRICES = {
@@ -38,6 +38,23 @@ PREFIX = (
 ) * 18
 
 
+class SplitPromptOpenAI(OpenAIProvider):
+    """仅用于缓存探针：固定规则放 developer 消息，动态尾部放 user 消息。"""
+
+    def _build_request(
+        self, content: list[dict] | str, think: bool
+    ) -> tuple[str, dict[str, str], dict]:
+        """调用方保证文字带分界标记；其余原生请求参数沿用生产实现。"""
+        assert isinstance(content, str) and MARKER in content, "expected marked text"
+        url, headers, body = super()._build_request(content, think)
+        prefix, tail = content.split(MARKER, 1)
+        body["messages"] = [
+            {"role": "developer", "content": prefix},
+            {"role": "user", "content": MARKER + tail},
+        ]
+        return url, headers, body
+
+
 class Candidate(BaseModel):
     """一个固定型号与思考模式的探测实例。"""
 
@@ -47,18 +64,23 @@ class Candidate(BaseModel):
     temperature: float = 0.0
     timeout: float = 60
     cache_marker: str | None = None
+    cache_probe: bool = False
 
     def build(self) -> object:
         """沿用生产选型工厂；effort 使用已验证的厂商默认值。"""
         if not os.environ.get(dict(zip(PRICES, KEY_NAMES, strict=True))[self.model]):
             raise RuntimeError("missing candidate API key")
-        return provider_for(
+        factory = (
+            SplitPromptOpenAI if self.cache_probe and self.model == "gpt-6-luna" else provider_for
+        )
+        options = {} if factory is SplitPromptOpenAI else {"cache_marker": self.cache_marker}
+        return factory(
             self.model,
             temperature=self.temperature,
             thinking=self.thinking,
-            max_tokens=4096 if self.thinking else 2048,
+            max_tokens=256 if self.cache_probe else (4096 if self.thinking else 2048),
             timeout=self.timeout,
-            cache_marker=self.cache_marker,
+            **options,
         )
 
 
@@ -77,6 +99,7 @@ class Record(LlmCompleteResp):
     message: str = ""
     status: int = 0
     estimated_cost: float = 0
+    cache_strategy: str = ""
 
 
 class Budget(BaseModel):
@@ -101,13 +124,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--env-file", type=Path)
     parser.add_argument("--candidates", default="all")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--max-requests", type=int, default=60)
-    parser.add_argument("--max-cost-usd", type=float, default=0.3)
+    parser.add_argument("--cache-only", action="store_true")
+    parser.add_argument("--suite", choices=("base", "supplement"), default="base")
+    parser.add_argument("--report-from", nargs="+", type=Path)
+    parser.add_argument("--max-requests", type=int)
+    parser.add_argument("--max-cost-usd", type=float)
     args = parser.parse_args(argv)
-    if not args.out.is_absolute() or not 1 <= args.max_requests <= 60:
-        parser.error("absolute --out and 1..60 --max-requests required")
-    if not 0 < args.max_cost_usd <= 0.3:
-        parser.error("--max-cost-usd must be in (0, 0.3]")
+    request_limit, cost_limit = (30, 0.08) if args.suite == "supplement" else (60, 0.3)
+    args.max_requests = request_limit if args.max_requests is None else args.max_requests
+    args.max_cost_usd = cost_limit if args.max_cost_usd is None else args.max_cost_usd
+    if not args.out.is_absolute() or not 1 <= args.max_requests <= request_limit:
+        parser.error(f"absolute --out and 1..{request_limit} --max-requests required")
+    if not 0 < args.max_cost_usd <= cost_limit:
+        parser.error(f"--max-cost-usd must be in (0, {cost_limit}]")
+    if args.suite == "supplement" and (args.cache_only or args.candidates != "all"):
+        parser.error("supplement has fixed candidates; do not combine --cache-only/--candidates")
     return args
 
 
@@ -132,23 +163,33 @@ def redact(text: str) -> str:
     return text.replace(PREFIX, "[prompt omitted]")[:1200]
 
 
-def image_uri() -> str:
-    """仅用标准库生成左红右蓝的 RGB PNG。"""
+def image_uri(
+    left: tuple[int, int, int] = (255, 0, 0), right: tuple[int, int, int] = (0, 0, 255)
+) -> str:
+    """仅用标准库生成双色 RGB PNG；调用方保证颜色是三个有效字节。"""
+    assert len(left) == len(right) == 3 and all(0 <= c <= 255 for c in (*left, *right))
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         return (
             struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
         )
 
-    pixels = (b"\0" + b"\xff\0\0" * 80 + b"\0\0\xff" * 80) * 144
+    pixels = (b"\0" + bytes(left) * 80 + bytes(right) * 80) * 144
     header = struct.pack(">IIBBBBB", 160, 144, 8, 2, 0, 0, 0)
     png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header)
     png += chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b"")
     return "data:image/png;base64," + base64.b64encode(png).decode()
 
 
-def candidates(selection: str) -> list[Candidate]:
+def candidates(selection: str, cache_only: bool = False) -> list[Candidate]:
     """四个候选先各安排一次，随后才安排思考对照实例。"""
+    if cache_only:
+        return [
+            Candidate(
+                name="c1_cache", model="claude-haiku-5-5", cache_marker=MARKER, cache_probe=True
+            ),
+            Candidate(name="c2_split", model="gpt-6-luna", cache_probe=True),
+        ]
     rows = [
         ("c1_off", "claude-haiku-5-5", False, 0.0, 60),
         ("c2_off", "gpt-6-luna", False, 0.0, 60),
@@ -185,7 +226,9 @@ def has_action(text: str) -> bool:
 
 def call(candidate: Candidate, provider: object, kind: str, index: int) -> Record:
     """调用一次，无重试；所有异常转为脱敏记录。"""
-    result = Record(name=candidate.name, kind=kind, index=index)
+    result = Record(
+        name=candidate.name, kind=kind, index=index, cache_strategy=cache_strategy(candidate)
+    )
     started = time.monotonic()
     try:
         if kind == "text":
@@ -242,8 +285,8 @@ def summary(
 ) -> str:
     """汇总 min/median/max 和文字第 2–6 次的 token 加权缓存率。"""
     lines = [
-        "|实例|可用性|成功率|时延 min/median/max 秒|缓存率 2–6|JSON|图片送达/正确|推理中位数|错误|",
-        "|---|---|---|---|---|---|---|---|---|",
+        "|实例|缓存策略|可用性|成功率|时延 min/median/max 秒|缓存率 2–6|JSON|图片送达/正确|推理中位数|错误|",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for item in items:
         rows = [r for r in records if r.name == item.name]
@@ -260,7 +303,7 @@ def summary(
         errors = errors if rows else unavailable.get(item.name, "未执行")
         reasoning = statistics.median(r.reasoning_tokens for r in success) if success else 0
         lines.append(
-            f"|{item.name}|{'可用' if success else '不可用/未证实'}|{len(success)}/{len(rows)}|"
+            f"|{item.name}|{cache_strategy(item)}|{'可用' if success else '不可用/未证实'}|{len(success)}/{len(rows)}|"
             f"{latency}|{rate}|{sum(r.json_valid for r in text)}/{len(text)}|"
             f"{sum(r.image_delivered is True for r in images)}/{len(images)}; "
             f"{sum(r.image_correct is True for r in images)}/{len(images)}|{reasoning}|{errors}|"
@@ -279,8 +322,15 @@ def summary(
 
 def run(args: argparse.Namespace) -> int:
     """先构造所有实例，dry-run 不发送；真实运行仅创建一次结果目录。"""
+    if args.report_from:
+        return report_saved(args.out, args.report_from)
     load_environment(args.env_file)
-    items, providers, unavailable = candidates(args.candidates), {}, {}
+    items = (
+        supplement_candidates()
+        if args.suite == "supplement"
+        else candidates(args.candidates, args.cache_only)
+    )
+    providers, unavailable = {}, {}
     for item in items:
         try:
             providers[item.name] = item.build()
@@ -289,7 +339,10 @@ def run(args: argparse.Namespace) -> int:
     if args.dry_run:
         configs = {n: p.config() for n, p in providers.items()}
         print(json.dumps(dict(configs=configs, unavailable=unavailable), ensure_ascii=False))
-        return 0 if providers else 1
+        return 0 if providers and not (args.suite == "supplement" and unavailable) else 1
+    if args.suite == "supplement" and unavailable:
+        print(json.dumps(dict(unavailable=unavailable), ensure_ascii=False))
+        return 1
     args.out.mkdir(parents=True, exist_ok=False)
     budget = Budget(max_requests=args.max_requests, max_cost=args.max_cost_usd)
     records, reason = execute(items, providers, unavailable, budget)
@@ -302,8 +355,9 @@ def run(args: argparse.Namespace) -> int:
     (args.out / "results.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    renderer = supplement_summary if args.suite == "supplement" else summary
     (args.out / "summary.md").write_text(
-        summary(items, records, unavailable, budget, reason), encoding="utf-8"
+        renderer(items, records, unavailable, budget, reason), encoding="utf-8"
     )
     print(f"requests={budget.requests} estimated_cost_usd={budget.cost:.6f}")
     return 0
@@ -312,6 +366,8 @@ def run(args: argparse.Namespace) -> int:
 def trials(items: list[Candidate]) -> list[tuple[Candidate, str, int]]:
     """基础测试优先，末尾添加额外缓存实例；调用方保证候选非空。"""
     assert items, "expected selected candidates"
+    if all(item.cache_probe for item in items):
+        return [(item, "text", index) for index in range(1, 7) for item in items]
     schedule = [
         (i, k, n)
         for n in range(1, 7)
@@ -333,6 +389,8 @@ def execute(
     budget: Budget,
 ) -> tuple[list[Record], str]:
     """执行基础与额外缓存测试；达到任一闸即停止，不重试。"""
+    if isinstance(items[0], SupplementCandidate):
+        return execute_supplement(items, providers, budget)
     records, blocked, first = [], set(), {}
     reason = ""
     schedule = trials(items)
@@ -368,6 +426,341 @@ def execute(
             break
     reason = reason or ("全部候选不可用/缺少 key" if not providers else budget.stopped())
     return records, reason
+
+
+class SupplementCandidate(Candidate):
+    """补测实例独立构造，token_floor 只对图片实例设为零。"""
+
+    purpose: str
+    prefix: str = ""
+
+    def build(self) -> object:
+        """按补测白名单构造，任一所需密钥缺失均拒绝真实运行。"""
+        factories = {
+            "claude-haiku-5-5": ClaudeProvider,
+            "gpt-6-luna": OpenAIProvider,
+            "qwen3.8-flash": QwenProvider,
+        }
+        key_name = dict(zip(PRICES, KEY_NAMES, strict=True))[self.model]
+        if not os.environ.get(key_name):
+            raise RuntimeError(f"missing {key_name}")
+        options = {"cache_marker": self.cache_marker} if self.model.startswith("claude") else {}
+        if self.purpose == "image":
+            options["token_floor"] = 0
+        return factories[self.model](
+            self.model,
+            temperature=self.temperature,
+            max_tokens=2048,
+            timeout=self.timeout,
+            thinking=False,
+            **options,
+        )
+
+
+class SupplementRecord(Record):
+    """额外保存旧下限比较和未缓存输入量，不伪称获得了原始缓存写入量。"""
+
+    image_count: int = 0
+    old_floor: int = 0
+    uncached_input_tokens: int = 0
+    cache_creation_input_tokens: int | None = None
+    waited_seconds: int = 0
+    image_json_valid: bool | None = None
+    image_colors_correct: bool | None = None
+    image_fence_removed: bool = False
+
+
+def supplement_candidates() -> list[SupplementCandidate]:
+    """按前次实测分词量近似三千 token，固定规则的文字单元保持一致。"""
+    unit = PREFIX[: len(PREFIX) // 18]
+    return [
+        SupplementCandidate(name="claude_images", model="claude-haiku-5-5", purpose="image"),
+        SupplementCandidate(name="luna_images", model="gpt-6-luna", purpose="image"),
+        SupplementCandidate(
+            name="qwen_images", model="qwen3.8-flash", purpose="image", temperature=0.3, timeout=30
+        ),
+        SupplementCandidate(
+            name="luna_cache_long", model="gpt-6-luna", purpose="cache", prefix=unit * 47
+        ),
+        SupplementCandidate(
+            name="claude_cache_long",
+            model="claude-haiku-5-5",
+            purpose="cache",
+            prefix=unit * 31,
+            cache_marker="\n### 当前输入\n",
+        ),
+    ]
+
+
+def image_answer_correct(text: str, count: int) -> bool:
+    """要求 JSON、条数和每图左右颜色都一致，支持中英文颜色词。"""
+    colors = {
+        "红": "red",
+        "红色": "red",
+        "red": "red",
+        "蓝": "blue",
+        "蓝色": "blue",
+        "blue": "blue",
+        "绿": "green",
+        "绿色": "green",
+        "green": "green",
+        "黄": "yellow",
+        "黄色": "yellow",
+        "yellow": "yellow",
+    }
+    try:
+        value = json.loads(text)
+        rows = value.get("images") if isinstance(value, dict) else None
+        if not isinstance(rows, list) or len(rows) != count:
+            return False
+        expected = [("red", "blue"), ("green", "yellow")][:count]
+        for row, truth in zip(rows, expected, strict=True):
+            if not isinstance(row, dict):
+                return False
+            actual = tuple(
+                colors.get(str(row.get(side, "")).strip().lower()) for side in ("left", "right")
+            )
+            if actual != truth:
+                return False
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def cache_strategy(item: Candidate) -> str:
+    """明确区分探针的分消息布局、单消息布局与 Claude 显式缓存断点。"""
+    if item.model.startswith("claude"):
+        return "explicit_marker" if item.cache_marker else "disabled"
+    if item.model == "gpt-6-luna":
+        return "split_messages" if item.cache_probe else "single_message"
+    return "implicit"
+
+
+def add_diagnostics(result: SupplementRecord, item: Candidate) -> SupplementRecord:
+    """添加诊断字段；不修改原来的严格 image_correct 评分。"""
+    result.cache_strategy = cache_strategy(item)
+    if result.kind != "image" or result.error:
+        return result
+    try:
+        json.loads(result.text)
+        result.image_json_valid = True
+    except (ValueError, TypeError):
+        result.image_json_valid = False
+    fence = re.fullmatch(r"\s*```(?:json)?\s*\n?(.*?)\s*```\s*", result.text, re.S | re.I)
+    result.image_fence_removed = fence is not None
+    diagnostic_text = fence[1] if fence else result.text
+    result.image_colors_correct = image_answer_correct(diagnostic_text, result.image_count)
+    return result
+
+
+def supplement_response(item: SupplementCandidate, provider: object, index: int) -> LlmCompleteResp:
+    """使用公开 complete/describe，保留生产响应映射，不读取或修改 provider 内部状态。"""
+    if item.purpose == "cache":
+        marker = item.cache_marker or MARKER
+        return provider.complete(
+            LlmCompleteReq(prompt=item.prefix + marker + str(index)), timeout_s=item.timeout
+        )
+    images = [image_uri()]
+    if index > 2:
+        images.append(image_uri((0, 255, 0), (255, 255, 0)))
+    response = provider.describe(
+        VisionDescribeReq(
+            prompt="请依次说出每张图左半边和右半边的颜色，只输出 JSON："
+            '{"images": [{"left": "...", "right": "..."}, ...]}',
+            images=images,
+        ),
+        timeout_s=item.timeout,
+    )
+    return LlmCompleteResp(
+        text=response.text,
+        prompt_tokens=response.input_tokens,
+        completion_tokens=response.output_tokens,
+        cached_tokens=response.cached_tokens,
+        reasoning_tokens=response.reasoning_tokens,
+        truncated=response.truncated,
+    )
+
+
+def supplement_call(item: SupplementCandidate, provider: object, index: int) -> SupplementRecord:
+    """调用一次并记录完整可见 usage；缓存写入量未暴露时保留为 null。"""
+    result = SupplementRecord(name=item.name, kind=item.purpose, index=index)
+    if item.purpose == "image":
+        result.image_count = 1 if index <= 2 else 2
+        result.old_floor = result.image_count * 100
+    started = time.monotonic()
+    try:
+        response = supplement_response(item, provider, index)
+        result = result.model_copy(update=response.model_dump())
+        result.text = redact(result.text)
+        result.uncached_input_tokens = max(result.prompt_tokens - result.cached_tokens, 0)
+        if item.purpose == "image":
+            result.image_delivered = True
+            result.image_correct = image_answer_correct(result.text, result.image_count)
+        else:
+            result.json_valid = has_action(result.text)
+    except Exception as error:
+        result.error, result.message = type(error).__name__, redact(str(error))
+        status = re.search(r"HTTP (\d{3})", str(error))
+        result.status = int(status[1]) if status else 0
+        if isinstance(error, EmptyCompletion):
+            result.completion_tokens, result.reasoning_tokens = (
+                error.completion_tokens,
+                error.reasoning_tokens,
+            )
+    result.latency = time.monotonic() - started
+    result.estimated_cost = estimate(
+        item.model, result.prompt_tokens, result.cached_tokens, result.completion_tokens
+    )
+    if result.error and result.status not in (400, 401, 403, 404, 429):
+        result.estimated_cost = estimate(item.model, len(item.prefix.encode()) + 5000, 0, 2048)
+    return add_diagnostics(result, item)
+
+
+def execute_supplement(
+    items: list[SupplementCandidate], providers: dict[str, object], budget: Budget
+) -> tuple[list[SupplementRecord], str]:
+    """图片先各做首次调用；Luna 连续六次、等待后第七次，Claude 连续六次。"""
+    image_items = [item for item in items if item.purpose == "image"]
+    schedule = [(item, index) for index in range(1, 5) for item in image_items]
+    schedule += [
+        (item, index)
+        for item in items
+        if item.purpose == "cache"
+        for index in range(1, 8 if item.model == "gpt-6-luna" else 7)
+    ]
+    records, blocked, first = [], set(), {}
+    reason = ""
+    for item, index in schedule:
+        reason = budget.stopped()
+        if reason:
+            break
+        if item.model in blocked:
+            continue
+        reserve = estimate(item.model, len(item.prefix.encode()) + 5000, 0, 2048)
+        if budget.cost + reserve > budget.max_cost:
+            reason = "剩余额度不足，因费用闸提前停止"
+            break
+        waited = item.name == "luna_cache_long" and index == 7
+        if waited:
+            time.sleep(15)
+        result = supplement_call(item, providers[item.name], index)
+        result.waited_seconds = 15 if waited else 0
+        records.append(result)
+        budget.requests += 1
+        budget.cost += result.estimated_cost
+        first.setdefault(item.model, not result.error)
+        if result.status in (401, 403):
+            blocked.add(item.model)
+        if len(first) == len(image_items) and not any(first.values()):
+            reason = "所有对象首次调用失败，停止"
+            break
+    return records, reason or budget.stopped()
+
+
+def supplement_image_lines(
+    items: list[SupplementCandidate], records: list[SupplementRecord]
+) -> list[str]:
+    """列出颜色判定计数与旧 token 下限的数值对比。"""
+    lines = [
+        "图片（token_floor=0，仅本套件实例）：",
+        "|对象|单图严格正确|双图严格正确|JSON 合法|颜色诊断正确|围栏数|单图/双图输入 token|旧下限对比|",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for item in (i for i in items if i.purpose == "image"):
+        groups = [
+            [r for r in records if r.name == item.name and r.image_count == count]
+            for count in (1, 2)
+        ]
+        counts = [f"{sum(r.image_correct is True for r in group)}/{len(group)}" for group in groups]
+        ranges = [
+            f"{min(r.prompt_tokens for r in group)}–{max(r.prompt_tokens for r in group)}"
+            if group
+            else "—"
+            for group in groups
+        ]
+        below = [
+            sum(not r.error and r.prompt_tokens < r.old_floor for r in group) for group in groups
+        ]
+        rows = [add_diagnostics(r, item) for group in groups for r in group]
+        valid = sum(r.image_json_valid is True for r in rows)
+        colors = sum(r.image_colors_correct is True for r in rows)
+        fences = sum(r.image_fence_removed for r in rows)
+        lines.append(
+            f"|{item.model}|{counts[0]}|{counts[1]}|{valid}/{len(rows)}|{colors}/{len(rows)}|"
+            f"{fences}|{ranges[0]}/{ranges[1]}|"
+            f"{below[0]} 次 <100；{below[1]} 次 <200|"
+        )
+    lines.append("颜色诊断允许移除外层 Markdown 围栏；严格正确评分仍要求原文是合法 JSON。")
+    return lines
+
+
+def supplement_summary(
+    items: list[SupplementCandidate],
+    records: list[SupplementRecord],
+    unavailable: dict[str, str],
+    budget: Budget,
+    reason: str,
+) -> str:
+    """只列观察数字，不给出通过与否或厂商能力结论。"""
+    lines = supplement_image_lines(items, records)
+    lines += [
+        "",
+        "缓存：",
+        "|对象|缓存策略|序号|输入 token|命中 token|未缓存输入量|时延秒|等待秒|错误|",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for row in (r for r in records if r.kind == "cache"):
+        lines.append(
+            f"|{row.name}|{row.cache_strategy}|{row.index}|{row.prompt_tokens}|{row.cached_tokens}|"
+            f"{row.uncached_input_tokens}|{row.latency:.3f}|{row.waited_seconds}|{row.error}|"
+        )
+    luna = [r for r in records if r.name == "luna_cache_long"]
+    if len(luna) == 7:
+        lines += [
+            f"Luna 第 6→7 次：命中 {luna[5].cached_tokens}→{luna[6].cached_tokens}；"
+            f"命中量是否变化：{'是' if luna[5].cached_tokens != luna[6].cached_tokens else '否'}。"
+        ]
+    lines += [
+        "Claude 原始 cache_creation_input_tokens 未由 provider 暴露，结果中为 null。",
+        "未缓存输入量=prompt_tokens−cached_tokens，包含普通输入与缓存写入，不能等同缓存写入量。",
+        "single_message 是原生产单消息布局；split_messages 是探针的 developer/user 分消息布局。",
+        f"总请求数：{budget.requests}；估算费用：${budget.cost:.6f}；"
+        f"费用闸触发：{'是' if '费用闸' in reason else '否'}；停止原因：{reason or '完成'}。",
+    ]
+    if unavailable:
+        lines.append(str(unavailable))
+    return "\n".join(lines) + "\n"
+
+
+def report_saved(output: Path, sources: list[Path]) -> int:
+    """离线重算既有结果，写入新目录；不加载密钥、不构造 provider、不发请求。"""
+    known = {i.name: i for i in [*supplement_candidates(), *candidates("all", cache_only=True)]}
+    records, budget = [], Budget()
+    for source in sources:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+        budget.requests += payload["budget"]["requests"]
+        budget.cost += payload["budget"]["cost"]
+        for raw in payload["records"]:
+            record = SupplementRecord.model_validate(raw)
+            if record.name in ("c1_cache", "c2_split"):
+                record.kind = "cache"
+            record.text, record.message = redact(record.text), redact(record.message)
+            record.uncached_input_tokens = max(record.prompt_tokens - record.cached_tokens, 0)
+            records.append(add_diagnostics(record, known[record.name]))
+    output.mkdir(parents=True, exist_ok=False)
+    payload = dict(
+        records=[r.model_dump() for r in records],
+        budget=budget.model_dump(),
+        source_files=[str(s) for s in sources],
+        additional_requests=0,
+    )
+    (output / "results.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    report = supplement_summary(list(known.values()), records, {}, budget, "离线重算，新增请求 0")
+    (output / "summary.md").write_text(report, encoding="utf-8")
+    print("additional_requests=0; source files unchanged")
+    return 0
 
 
 if __name__ == "__main__":
