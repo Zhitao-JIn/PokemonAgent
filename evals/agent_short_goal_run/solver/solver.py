@@ -113,7 +113,7 @@ def run_one_solver(
                     world=True,
                     memory=True,
                     knowledge_source=REPO_ROOT / "memory" / "knowledge_memory",
-                    admin=False,
+                    admin=True,
                     export_env=False,
                 ),
             )

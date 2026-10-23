@@ -1,3 +1,13 @@
+## 2026-10-23（610）—— 独立结果评分复用 run judge 视野并启用评测 memory 管理面
+
+**改了什么**：`agent_short_goal_run` 独立结果评分改用最后一条 run 层 `judge_success` 调用的 prompt 原文，显式忽略材料内部的输出格式要求，并在评分元数据保留 `judge_call_uuid`；该评测的临时 memory 服务启用 admin。新增 10 例评分测试，同步三处服务调用预期。
+
+**为什么这么改**：只提供最终 place / ram 无法验证 scene 与历史交互型判据；复用已有 judge 材料可恢复独立评分所需视野，memory 管理面则满足 harness 保存 checkpoint 的快照需求。
+
+**取舍**：只传文字、不传截图；真实 trace 核对发现门口第二轮最后一条 judge_call 属于 episode 子目标，因此按流顺序选择 `source=run.review_and_judge` 且 `prompt_task=judge_success` 的最后一条，即使预算结束前最后一次 run 判定早于 episode 结束也不混用子目标材料。选中 prompt 为空时不可判，不回退更早材料；不改内部 judge prompt、评分模型、解析或机械规则。
+
+**影响面**：仅评测评分器、短目标 solver、对应测试与本日志，不改 `pokemon_agent/`、trace 解析、数据集或服务实现。全量 pytest：`2447 passed, 25 skipped, 3 deselected, 59 warnings in 182.92s`；ruff 与两个边界脚本全绿。取首条、移除无材料保护、关闭 admin 的破坏验证分别得到 4、6、7 例预期失败，均逐字节恢复，恢复后定向测试 `29 passed`。
+
 <<<<<<< HEAD
 ## 2026-10-23（608）—— 评测入口自动管理 MCP 服务
 

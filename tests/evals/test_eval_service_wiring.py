@@ -87,7 +87,7 @@ def test_short_goal_closes_services_after_worker_error_or_timeout(
             "world": True,
             "memory": True,
             "knowledge_source": Path.cwd() / "memory" / "knowledge_memory",
-            "admin": False,
+            "admin": True,
             "export_env": False,
         },
     )

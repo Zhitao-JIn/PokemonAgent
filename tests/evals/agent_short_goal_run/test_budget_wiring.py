@@ -113,7 +113,7 @@ def test_solver_request_carries_the_config_file_path(tmp_path, monkeypatch):
                 "world": True,
                 "memory": True,
                 "knowledge_source": REPO_ROOT / "memory" / "knowledge_memory",
-                "admin": False,
+                "admin": True,
                 "export_env": False,
             },
         ),
