@@ -1,3 +1,13 @@
+## 2026-10-23（606）—— agent_short_goal_run 改用原始 .state 轻起点
+
+**改了什么**：`run_one` 从样本 `.state` 起跑并现建目标 `Task`；起点校验移到加载后、进 run 图前；样本契约允许旧 `archive` 标记及 `state` 标记，loader 只核 `.state` 文件与哈希。删除旧打包器、存档路径适配器及纯打包测试；更新对应 runner 与数据集测试。
+
+**为什么这么改**：run 级存档只携带可由样本重建的目标信息，并额外受 `state_schema_hash` 约束；直接用样本冻结的原始状态可减少状态模型演进对评测起点的影响。
+
+**取舍**：保留 `archive` 作为兼容字段但不读取；冻结数据集文件不变。`evals/common/capture_case.py`、`capture_batch.py`、`capture_pack.py` 的历史存档流程超出 CP1 允许文件范围，暂不改。
+
+**影响面**：只涉及 `evals/agent_short_goal_run/`、指定测试与本日志；未改 `pokemon_agent/` 或冻结数据文件。最终全量 pytest 为 2419 passed / 25 skipped / 3 deselected，ruff check 全绿、ruff format --check 957 files；`state_schema_hash=e3bd23162bfd0e85`。grep 仍发现 `evals/common/capture_case.py`、`capture_batch.py`、`capture_pack.py` 中的历史存档引用，超出本检查点允许修改范围。
+
 ## 2026-10-22（603）—— trace 文档遗留项：请求信封、覆盖链与接口注释对齐现状
 
 **改了什么**：599 之后残留的四处旧说法，逐项先读代码再改（只改 docstring/注释与一行文档）：① `schemas/harness/communication/FromHarnessToTraceToolAppendReq.py`：模块 docstring 的封套写法 `{uuid, kind, type, ts, meta, content}`（"封套四件"）改为八字段、`meta` 改为六键并写明"harness 交 `source`/`episode_id`/`task_id`/`step` 四件、`run_id`/`branch` 由 tool 层盖"；"只收三个裸参数"改为六个（补 `started_at`/`ended_at`）；类 docstring 的"落盘形状"代码块同步为八字段 + 六键 meta；`meta` 字段 docstring"恰好四件"改为"harness 四件 + tool 层两件 = 六件"，判据侧 `node_io._check_meta` 的说法从"核恰好四件"改为"核恰好六件（存档/恢复账另加 `checkpoint_id`，实测 META_KEYS 六键）"；"`run_id` 是落盘实例的标识、`store._stamp_run_id` 盖"改为"`run_id`/`branch` 是执行线标识、由 `TraceTool.append` → `_stamp_meta` 盖在头两个，trace 后端零持有只透传，调用方带了当场炸（`TraceTool.append` 入口 assert，实测）"；`ended_at` 与 `timings` 两条属性 docstring 的排序依据 `(ended_at, uuid)` → `(ended_at, seq)`。② `trace/store.py`：`__init__` docstring 覆盖链"启动参数 `--trace-root` → `build_real(trace_root=…)` → `TraceTool.build(trace_root=…)`"改为"配置 `paths.trace` → `build_real(config=…)` → `TraceTool.build(trace_root=…)`"（与 API.md §5.1 逐字同口径）；构造处注释"覆盖链上 `build_real(trace_root=…)` 的形参就是 `str | Path`"改为"上游 `TraceTool.build(trace_root=…)` 的形参是 `str | Path | None`"（`build_real` 现在只收 config，实测 build.py:101-106）。③ `trace/interface/event.py`：模块 docstring"`store.py` 真的读/真的算的那六样"→"那八样"（类 docstring 本来就是八样）；`meta` 属性 docstring 的键族 `{source, run_id, episode_id, step}` 那一族改为六键全列并注明后四件 harness 交、前两件 tool 层盖。④ `trace/interface/trace_port.py`：**核对后未改**——第 68 行"前置条件：`meta` 已带 `run_id` / `branch` 键（需要它们的实现就地 assert）"与现状一致：`LangfuseTrace.append` 确有 `assert "run_id" in stamped_meta and "branch" in stamped_meta`（langfuse_trace.py:133），`LocalTrace` 不需要这两个键、对 meta 不解释只透传，"需要它们的实现"这个条件句准确。⑤ `docs/eval/tasks-spec.md:102`：`RunStream.load` 的排序说法 `(ts, uuid)` → `(ended_at, seq)`（实际顺序来自 `TraceTool.read_events` 的 `(ended_at, seq)` 排序 + branch 过滤保序，`ts` 字段已不在封套里；签名 `(trace_root, run_id, branch, backend)` 核对一致未动）；同行路径 `evals/scorers/stream.py` 修正为真实位置 `evals/agent_short_goal_run/scorer/stream.py`。

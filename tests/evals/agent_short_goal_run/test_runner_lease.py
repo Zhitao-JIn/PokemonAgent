@@ -1,4 +1,4 @@
-"""每个评测样本的世界租约都在离开 runner 前归还，包括异常路径。"""
+"""单样本 run 直接加载原始状态，并在所有退出路径释放世界租约。"""
 
 import json
 from pathlib import Path
@@ -8,71 +8,89 @@ import pytest
 
 from evals.agent_short_goal_run.dataset.loader import load_samples
 from evals.agent_short_goal_run.solver.runner import one as runner
-from pokemon_agent.harness.checkpoint import CheckpointIncompatible
-from pokemon_agent.schemas.harness.domain import RunResult
 
 
-@pytest.mark.parametrize("failure", [None, RuntimeError, CheckpointIncompatible])
-def test_runner_releases_the_world_on_success_and_failure(
+@pytest.mark.parametrize("failure", [None, RuntimeError])
+def test_runner_releases_world_after_success_or_run_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: type[Exception] | None
 ) -> None:
     sample = load_samples()[0]
     events: list[str] = []
-    world = SimpleNamespace(release_lease=lambda: events.append("release"))
+    state_path = tmp_path / sample.dataset_version / sample.start.source_state
+    state_path.parent.mkdir(parents=True)
+    state_path.write_bytes(b"sample state")
+    monkeypatch.setattr(runner, "DATASET_DIR", tmp_path)
     monkeypatch.setattr(runner, "load_env_file", lambda path: None)
-    monkeypatch.setattr(runner, "prepare_archive", lambda sample, work: "manifest")
+
+    class FakeGame:
+        def use_start_state(self, path: Path) -> None:
+            assert path == state_path
+            events.append("state")
+
+        def release_lease(self) -> None:
+            events.append("release")
+
+    class FakeHarness:
+        def run(self, run_id: str, tasks: list, *, sample_id: str):
+            assert run_id == f"eval-{sample.sample_id}"
+            assert sample_id == sample.sample_id
+            events.append("run")
+            if failure is not None:
+                raise failure("run failed")
+            return SimpleNamespace(
+                model_dump_json=lambda **kwargs: '{"termination":"success"}', branch="main"
+            )
+
     monkeypatch.setattr(
-        runner, "build_real", lambda **kwargs: (SimpleNamespace(deps="runtime"), world)
+        runner,
+        "build_real",
+        lambda **kwargs: (FakeHarness(), FakeGame()),
     )
 
-    def restore(manifest: object, build_branch: object, sample_id: str) -> RunResult:
-        assert build_branch("main") == "runtime"
-        events.append("run")
-        if failure is not None:
-            raise failure("run failed")
-        return RunResult(run_id="r", sample_id=sample_id, branch="main")
+    runner.run_one(sample, tmp_path / "work", run_config_path="config.json")
 
-    monkeypatch.setattr(runner, "restore_run", restore)
-
-    runner.run_one(sample, tmp_path, run_config_path="config.json")
-
-    assert events == ["run", "release"]
-    record = json.loads((tmp_path / "run.json").read_text("utf-8"))
-    assert ("run failed" in record["error"]) == (failure is RuntimeError)
-    assert ("run failed" in record["invalid"]) == (failure is CheckpointIncompatible)
+    assert events == ["state", "run", "release"]
+    record = json.loads((tmp_path / "work" / "run.json").read_text("utf-8"))
+    assert bool(record["error"]) is (failure is RuntimeError)
+    assert not record["invalid"]
 
 
-@pytest.mark.parametrize("failure", [None, RuntimeError, CheckpointIncompatible])
 def test_consecutive_samples_can_acquire_the_same_world(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: type[Exception] | None
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     owned: list[str] = []
     samples = load_samples()[:2]
+    monkeypatch.setattr(runner, "DATASET_DIR", tmp_path / "dataset")
     monkeypatch.setattr(runner, "load_env_file", lambda path: None)
-    monkeypatch.setattr(runner, "prepare_archive", lambda sample, work: "manifest")
 
-    def build(**kwargs: object) -> tuple[SimpleNamespace, SimpleNamespace]:
+    class FakeGame:
+        def __init__(self, sample_id: str) -> None:
+            self.sample_id = sample_id
+
+        def use_start_state(self, path: Path) -> None:
+            assert self.sample_id in str(path)
+
+        def release_lease(self) -> None:
+            owned.clear()
+
+    class FakeHarness:
+        def run(self, run_id: str, tasks: list, *, sample_id: str):
+            return SimpleNamespace(
+                model_dump_json=lambda **kwargs: '{"termination":"success"}', branch="main"
+            )
+
+    def build(**kwargs: object) -> tuple[FakeHarness, FakeGame]:
         assert not owned, "previous sample still holds the lease"
-        config = kwargs["config"]
-        assert len(config) == 2
-        overlay = json.loads(Path(config[1]).read_text("utf-8"))
-        owned.append(overlay["run"]["run_id"])
-        return SimpleNamespace(deps="runtime"), SimpleNamespace(release_lease=owned.clear)
-
-    def restore(manifest: object, build_branch: object, sample_id: str) -> RunResult:
-        build_branch("main")
-        if failure is not None:
-            raise failure("run failed")
-        return RunResult(run_id="r", sample_id=sample_id, branch="main")
+        overlay = json.loads(Path(kwargs["config"][1]).read_text("utf-8"))
+        sample_id = overlay["run"]["run_id"].removeprefix("eval-")
+        owned.append(sample_id)
+        return FakeHarness(), FakeGame(sample_id)
 
     monkeypatch.setattr(runner, "build_real", build)
-    monkeypatch.setattr(runner, "restore_run", restore)
 
     for index, sample in enumerate(samples):
+        state_path = tmp_path / "dataset" / sample.dataset_version / sample.start.source_state
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_bytes(b"sample state")
         runner.run_one(sample, tmp_path / str(index), run_config_path="config.json")
-        record = json.loads((tmp_path / str(index) / "run.json").read_text("utf-8"))
-        assert bool(record["error"]) == (failure is RuntimeError)
-        assert bool(record["invalid"]) == (failure is CheckpointIncompatible)
         assert not owned
-
-    assert not owned

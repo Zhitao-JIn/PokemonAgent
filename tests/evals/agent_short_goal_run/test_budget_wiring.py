@@ -17,7 +17,6 @@ from evals.agent_short_goal_run.solver.worker import _execute
 from evals.agent_short_goal_run.task import agent_short_goal_run, write_run_config
 from evals.common.overlay import eval_overlay
 from evals.runconfig import load_config
-from pokemon_agent.schemas.harness.domain import RunResult
 from pokemon_agent.settings import ConfigValidationError
 from pokemon_agent.settings import load_config as load_app_config
 
@@ -132,50 +131,58 @@ def test_runner_reads_the_same_file_through_build_real(tmp_path, monkeypatch):
         seen.append((files[0], hashlib.sha256(files[0].read_bytes()).hexdigest(), len(files)))
         return real_load(overlays)
 
-    def fake_restore(manifest, build_branch, sample_id):
-        deps = build_branch("main")
-        budget = deps.config.budget
-        assert (budget.wall_clock_s, budget.max_episodes, budget.max_total_actions) == (600, 3, 60)
-        assert deps.config.run.run_id == f"eval-{SAMPLE_ID}"
-        return RunResult(run_id="r1", sample_id=sample_id, branch="main")
+    events = []
 
-    tools = SimpleNamespace(
-        **{
-            name: object()
-            for name in (
-                "chooser",
-                "judger",
-                "planner",
-                "reflector",
-                "verifier",
-                "decomposer",
-                "summarizer",
-                "run_summarizer",
-                "task_summarizer",
+    class FakeHarness:
+        def run(self, run_id, tasks, *, sample_id):
+            events.append(("run", run_id, tasks, sample_id))
+            return SimpleNamespace(
+                model_dump_json=lambda **kwargs: '{"termination":"success"}', branch="main"
             )
-        }
-    )
-    monkeypatch.setenv("MCP_MEMORY_SERVER_URL", "http://example")
-    monkeypatch.setenv("MCP_WORLD_SERVER_URL", "http://example")
+
+    class FakeGame:
+        def use_start_state(self, state_path):
+            events.append(("state", state_path))
+
+        def release_lease(self):
+            events.append(("release",))
+
+    def fake_build_real(*, config):
+        app = assembly.load_config(config).config
+        budget = app.budget
+        assert (budget.wall_clock_s, budget.max_episodes, budget.max_total_actions) == (600, 3, 60)
+        assert app.run.run_id == f"eval-{SAMPLE_ID}"
+        events.append(("build", config))
+        return FakeHarness(), FakeGame()
+
+    monkeypatch.setattr(runner, "build_real", fake_build_real)
     monkeypatch.setattr(assembly, "load_config", checked_load)
-    monkeypatch.setattr(assembly, "load_env_file", lambda: None)
-    monkeypatch.setattr(assembly, "assert_mcp_server_ready", lambda *args: {})
-    monkeypatch.setattr(
-        assembly.WorldMcpTool,
-        "build",
-        lambda *args, **kwargs: SimpleNamespace(release_lease=lambda: None),
-    )
-    monkeypatch.setattr(assembly.MemoryTool, "build", lambda **kwargs: object())
-    monkeypatch.setattr(assembly.TraceTool, "build", lambda **kwargs: object())
-    monkeypatch.setattr(assembly.BrainTool, "build", lambda **kwargs: tools)
-    monkeypatch.setattr(assembly, "build_saver", lambda root: None)
-    monkeypatch.setattr(assembly, "compile_task_graph", lambda: None)
-    monkeypatch.setattr(assembly, "compile_episode_graph", lambda: None)
-    monkeypatch.setattr(assembly, "compile_run_graph", lambda **kwargs: None)
     monkeypatch.setattr(runner, "load_env_file", lambda path: None)
-    monkeypatch.setattr(runner, "prepare_archive", lambda sample, work: "manifest")
-    monkeypatch.setattr(runner, "restore_run", fake_restore)
+    monkeypatch.setattr(runner, "DATASET_DIR", tmp_path / "dataset")
+    state_path = tmp_path / "dataset" / sample.dataset_version / sample.start.source_state
+    state_path.parent.mkdir(parents=True)
+    state_path.write_bytes(b"start")
 
     runner.run_one(sample, tmp_path / "sample", run_config_path=str(path))
 
     assert seen == [(path, digest, 2)]
+    assert events[0][0] == "build"
+    assert events[0][1][0] == str(path)
+    assert events[1] == ("state", state_path)
+    run_call = events[2]
+    assert run_call[0:2] == ("run", f"eval-{SAMPLE_ID}")
+    task = run_call[2][0]
+    assert (
+        task.task_id,
+        task.goal,
+        task.success_criteria,
+        task.max_steps,
+        task.initial_state_hint,
+    ) == (
+        sample.sample_id,
+        sample.goal,
+        sample.success_criteria,
+        sample.max_steps,
+        sample.initial_state_hint,
+    )
+    assert events[-1] == ("release",)

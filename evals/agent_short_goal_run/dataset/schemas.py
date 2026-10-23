@@ -9,33 +9,16 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class SampleStart(BaseModel):
-    """样本的起点：**一份已打包的 run 级存档**（`<version>/archives/` 下，含 manifest.json）。
+    """样本起点为版本目录内的原始 `.state` 文件及其内容哈希。"""
 
-    存档由本数据集的 build.pack 离线产出：原始 `.state` → manifest + world +
-    memory，`state_schema_hash` 盖当前的）。manifest 跟代码走，所以**存档不进冻结哈希**——
-    数据集冻结的是来源（`source_state` + `source_sha256`，打包工具与 check 双核）；代码动了
-    RunState 结构 → 存档过期（restore_run 拒载），重跑打包工具即可（0929 用户定向）。
-    """
-
-    kind: Literal["archive"]
-    archive: str = Field(
-        description="存档目录名（<version>/archives/<archive>/，含 manifest.json）"
-    )
-    source_state: str = Field(default="", description="打包来源的原始 .state（版本相对路径，留痕）")
-    source_sha256: str = Field(
-        default="", description="来源 .state 的哈希（打包工具与 check 双核）"
-    )
-
-    @model_validator(mode="after")
-    def _fields_match_kind(self) -> SampleStart:
-        """archive 起点的必填项。"""
-        if self.kind == "archive" and not self.archive:
-            raise ValueError("archive 起点要有存档目录名")
-        return self
+    kind: Literal["archive", "state"]
+    archive: str = Field(default="", description="旧数据兼容字段；读取时忽略")
+    source_state: str = Field(description="原始 .state（版本相对路径）")
+    source_sha256: str = Field(description="原始 .state 的字节哈希")
 
 
 class RubricLevel(BaseModel):

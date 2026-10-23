@@ -8,8 +8,6 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from pydantic import BaseModel
-
 from evals.agent_short_goal_run.dataset.schemas import EvalSample, Rubric
 from evals.dataset.errors import DatasetError
 from evals.dataset.io import contained_file, read_models, version_directory
@@ -80,22 +78,8 @@ def load(version: str = "v1", *, rule_ids: set[str] | None = None) -> list[EvalS
     return check(version, rule_ids)
 
 
-class _ArchiveFiles(BaseModel):
-    """冻结清单的文件引用；其余生产字段由恢复器消费。"""
-
-    world_file: str
-    memory_archive: str
-
-
 def _validate_start(sample: EvalSample, directory: Path) -> None:
-    """核本版本内的世界存档、记忆快照与来源哈希；失败抛 DatasetError。"""
-    manifest = contained_file(directory, f"archives/{sample.start.archive}/manifest.json")
-    [files] = read_models(manifest, _ArchiveFiles, json_lines=False)
-    contained_file(manifest.parent, files.world_file)
-    contained_file(directory, files.memory_archive)
-    if sample.start.source_state:
-        state = contained_file(directory, sample.start.source_state)
-        if sha256_of(state) != sample.start.source_sha256:
-            raise DatasetError(
-                f"{sample.sample_id}：来源 .state 哈希不符 {sample.start.source_state}"
-            )
+    """核本版本内的原始世界状态及其哈希；失败抛 DatasetError。"""
+    state = contained_file(directory, sample.start.source_state)
+    if sha256_of(state) != sample.start.source_sha256:
+        raise DatasetError(f"{sample.sample_id}：来源 .state 哈希不符 {sample.start.source_state}")

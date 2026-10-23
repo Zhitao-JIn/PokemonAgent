@@ -1,11 +1,9 @@
-"""跑一条样本（在独立子进程里，工作目录 = 仓库根）：直读打包好的起点存档 → 恢复 → 跑完一个 run。
+"""跑一条样本（在独立子进程里，工作目录 = 仓库根）：加载原始 `.state` → 跑完一个 run。
 
 只落盘、不判定。工作目录 `runs/<sample_id>[#e<n>]/` 下放本条样本独立的
 `trace/`、`memory/`、`checkpoints/`，最后写 `run.json`（`run_id`、`invalid`、`error`）
 与 `run_result.json`（`RunResult`，V8）。
-起点存档缺失或被拒载记 `invalid`（先跑
-`python -m evals.agent_short_goal_run.dataset.build.pack` 重打），
-run 自己出错只记 `error`——它是被测系统的问题，由红线 R1 判。
+起点校验不通过记 `invalid`，run 自己出错只记 `error`——它是被测系统的问题，由红线 R1 判。
 
 评测前置（本机跑评测前先满足）：①world server 已起（带或不带 `--state-file` 均可，
 `--watch`/`--speed` 在 server 命令行设置）；②memory server 已起并带 `--enable-admin`，
@@ -17,20 +15,17 @@ run 自己出错只记 `error`——它是被测系统的问题，由红线 R1 �
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from contextlib import ExitStack
 from pathlib import Path
 
+from evals.agent_short_goal_run.dataset.build.preconditions import validate_start
 from evals.agent_short_goal_run.dataset.loader import DATASET_DIR
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.common.overlay import sample_overlay, write_overlay
+from evals.dataset.errors import DatasetError
 from evals.paths import REPO_ROOT
+from pokemon_agent.brain import Task
 from pokemon_agent.build import build_real
 from pokemon_agent.env import load_env_file
-from pokemon_agent.harness import RunRuntime
-from pokemon_agent.harness.checkpoint import CheckpointIncompatible, restore_run
-
-from .archive import prepare_archive
 
 RUN_RECORD = "run.json"
 RUN_RESULT = "run_result.json"
@@ -43,7 +38,7 @@ def run_one(
     run_config_path: str,
     epoch: int = 1,
 ) -> None:
-    """跑一条样本并写 `run.json`。前置条件：当前工作目录是仓库根（存档清单里的路径相对它）。
+    """跑一条样本并写 `run.json`。前置条件：当前工作目录是仓库根。
 
     `epoch`：第几次重复（V2）。>1 时 run_id 加 `#e{n}` 后缀、调用方给独立工作目录——
     同一样本的各 epoch 互不残留（R3 的 eval_set 按 epoch 起子进程）。
@@ -55,61 +50,43 @@ def run_one(
     load_env_file(REPO_ROOT / ".env")
     work.mkdir(parents=True, exist_ok=True)
 
-    # 步骤 1：起点——直读数据层里**打包好的** run 级存档（打包是数据准备动作，见 data/pack.py）。
     run_id = run_id_for(sample.sample_id, epoch)
-    if not _has_start(sample, work, run_id):
-        return
-
-    with ExitStack() as cleanup:
-        build_branch = _branch_builder(work, run_id, run_config_path, cleanup)
-        try:
-            manifest = prepare_archive(sample, work / "start")
-            result = restore_run(manifest, build_branch, sample_id=sample.sample_id)
-            (work / RUN_RESULT).write_text(result.model_dump_json(indent=2), encoding="utf-8")
-        except CheckpointIncompatible as exc:
-            _record(work, run_id, invalid=f"存档拒载：{exc}")
-            return
-        except Exception as exc:  # noqa: BLE001 —— 运行错误保留给红线 R1
-            _record(work, run_id, error=f"{type(exc).__name__}: {exc}")
-            return
-    _record(work, run_id, branch=result.branch)
-
-
-def _has_start(sample: EvalSample, work: Path, run_id: str) -> bool:
-    """起点缺失时写明无效原因；不启动世界或模型。"""
-    manifest = (
-        DATASET_DIR / sample.dataset_version / "archives" / sample.start.archive / "manifest.json"
+    branch = "main"
+    sample_config, _digest = write_overlay(
+        work / f"config-{branch}.json", sample_overlay(run_id=run_id, branch=branch, work=work)
     )
-    if manifest.is_file():
-        return True
-    _record(
-        work,
-        run_id,
-        invalid=(
-            f"起点存档缺失：{manifest}"
-            "（python -m evals.agent_short_goal_run.dataset.build.pack 重打）"
-        ),
-    )
-    return False
-
-
-def _branch_builder(
-    work: Path,
-    run_id: str,
-    run_config_path: str,
-    cleanup: ExitStack,
-) -> Callable[[str], RunRuntime]:
-    """装配每条恢复执行线，并立即登记世界租约的退出清理。"""
-
-    def build_branch(branch: str) -> RunRuntime:
-        sample_config, _digest = write_overlay(
-            work / f"config-{branch}.json", sample_overlay(run_id=run_id, branch=branch, work=work)
-        )
+    game = None
+    try:
         harness, game = build_real(config=[run_config_path, sample_config])
-        cleanup.callback(game.release_lease)
-        return harness.deps
-
-    return build_branch
+        state_path = DATASET_DIR / sample.dataset_version / sample.start.source_state
+        game.use_start_state(state_path)
+        if sample.check_id in {"party_healed", "shop_cancelled"}:
+            perceived = game.perceive_task()
+            try:
+                validate_start(sample, perceived.ram, perceived.observation)
+            except DatasetError as exc:
+                _record(
+                    work,
+                    run_id,
+                    invalid=f"{sample.sample_id}（{sample.check_id}）：{exc}",
+                )
+                return
+        task = Task(
+            task_id=sample.sample_id,
+            goal=sample.goal,
+            success_criteria=sample.success_criteria,
+            max_steps=sample.max_steps,
+            initial_state_hint=sample.initial_state_hint,
+        )
+        result = harness.run(run_id, [task], sample_id=sample.sample_id)
+        (work / RUN_RESULT).write_text(result.model_dump_json(indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 —— 运行错误保留给红线 R1
+        _record(work, run_id, error=f"{type(exc).__name__}: {exc}")
+        return
+    finally:
+        if game is not None:
+            game.release_lease()
+    _record(work, run_id, branch=result.branch)
 
 
 def run_id_for(sample_id: str, epoch: int = 1) -> str:
