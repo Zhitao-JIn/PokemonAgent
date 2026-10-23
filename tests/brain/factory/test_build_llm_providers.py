@@ -189,7 +189,7 @@ def test_the_vision_dump_dir_reaches_every_provider() -> None:
 
 @pytest.mark.parametrize("field", ["text", "judge", "verify", "plan"])
 def test_an_unknown_model_prefix_fails_at_build_time(field: str) -> None:
-    config = BrainLlmConfig(**{field: _spec("gpt-4")})
+    config = BrainLlmConfig(**{field: _spec("unknown-model")})
 
-    with pytest.raises(ValueError, match="gpt-4"):
+    with pytest.raises(ValueError, match="unknown-model"):
         build_llm_providers(config)

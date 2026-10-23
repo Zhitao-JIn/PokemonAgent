@@ -855,6 +855,56 @@ class ClaudeProvider(_MultimodalMixin, _OpenAICompatibleBase):
         }
 
 
+class OpenAIProvider(_MultimodalMixin, _OpenAICompatibleBase):
+    """OpenAI Chat Completions；推理和 token 上限使用原生字段。"""
+
+    BASE_URL = "https://api.openai.com/v1"
+    API_KEY_ENVS = ("OPENAI_API_KEY",)
+
+    def __init__(
+        self,
+        model: str = "gpt-6-luna",
+        *,
+        temperature: float,
+        max_tokens: int = 25600,
+        token_floor: int = IMAGE_TOKEN_FLOOR,
+        effort: str = "medium",
+        **kw: object,
+    ) -> None:
+        """校验 Luna 支持的 effort；密钥缺失和共同参数校验由基类处理。"""
+        if effort not in ("none", "low", "medium", "high", "xhigh", "max"):
+            raise ValueError(f"invalid OpenAI effort: {effort!r}")
+        super().__init__(model, temperature=temperature, max_tokens=max_tokens, **kw)  # type: ignore[arg-type]
+        self._floor = token_floor
+        self._effort = effort
+
+    def _disable_thinking_payload(self) -> dict[str, object]:
+        """显式选择 none，不使用推理 token。"""
+        return {"reasoning_effort": "none"}
+
+    def _enable_thinking_payload(self) -> dict[str, object]:
+        """使用构造时选定的 effort。"""
+        return {"reasoning_effort": self._effort}
+
+    def _build_request(
+        self, content: list[dict] | str, think: bool
+    ) -> tuple[str, dict[str, str], dict]:
+        """保持共同请求形状；非 none 推理时不发送采样温度。"""
+        url, headers, body = super()._build_request(content, think)
+        body["max_completion_tokens"] = body.pop("max_tokens")
+        if body["reasoning_effort"] != "none":
+            body.pop("temperature")
+        return url, headers, body
+
+    def config(self) -> dict[str, str]:
+        """报告默认思考设置下是否发送温度；逐请求覆盖仍以实际 effort 为准。"""
+        return {
+            **super().config(),
+            "effort": self._effort,
+            "temperature_sent": str(not self._thinking or self._effort == "none").lower(),
+        }
+
+
 # ---- 选型表：型号名 → 厂商类（0914 起） ----
 #
 _PROVIDER_PREFIXES: tuple[tuple[str, type[_OpenAICompatibleBase]], ...] = (
@@ -862,6 +912,7 @@ _PROVIDER_PREFIXES: tuple[tuple[str, type[_OpenAICompatibleBase]], ...] = (
     ("doubao", ArkProvider),
     ("qwen", QwenProvider),
     ("claude-", ClaudeProvider),
+    ("gpt-", OpenAIProvider),
 )
 """**前缀 → 厂商类**，按顺序匹配第一个命中的。加一家供应商 = 这里加一行（顺序即优先级）。"""
 
@@ -875,6 +926,7 @@ def provider_for(
     json_mode: bool = False,
     thinking: bool = False,
     vision_dump_dir: str | None = None,
+    cache_marker: str | None = None,
 ) -> _OpenAICompatibleBase:
     """按型号名造一个 provider 实例——**"哪条链路接哪家厂商"的唯一判据**。
 
@@ -898,6 +950,8 @@ def provider_for(
 
     `vision_dump_dir`：非空时把实际送出的图落到该目录（排查用）。
 
+    `cache_marker`：Claude 的可选静态前缀分界；默认不传入厂商构造。
+
     `json_mode` / `thinking`：转发给 Provider 构造的 JSON 输出开关与思考模式开关，
     含义与前提见 `_OpenAICompatibleBase.__init__`；默认都是 `False`。
 
@@ -916,6 +970,8 @@ def provider_for(
             kwargs["json_mode"] = json_mode
             kwargs["thinking"] = thinking
             kwargs["vision_dump_dir"] = vision_dump_dir
+            if cache_marker is not None:
+                kwargs["cache_marker"] = cache_marker
             return provider_cls(model, temperature=temperature, **kwargs)
     known = " / ".join(f"{prefix}*" for prefix, _ in _PROVIDER_PREFIXES)
     raise ValueError(

@@ -58,7 +58,7 @@ def test_the_model_prefix_picks_the_vendor_case_insensitively_and_only_from_the_
     assert isinstance(provider, expected_cls)
 
 
-@pytest.mark.parametrize("model", ["xqwen", "gpt-4"])
+@pytest.mark.parametrize("model", ["xqwen", "unknown-model"])
 def test_an_unknown_prefix_raises_value_error_naming_the_model(
     model: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
