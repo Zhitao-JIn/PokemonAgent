@@ -45,7 +45,7 @@
   （world 归 server 持有，调用方持有 `WorldMcpTool`，账一律经 `deps.trace` 读写）。
 
 `build_real` 的取值全部来自配置，默认值见 `pokemon_agent/settings/default.json`：`models.{text,judge,verify,plan}`
-各带型号、温度、输出上限、单请求超时（plan 另有 `thinking`），`models.json_mode` 四条链路共用；`run.{run_id,branch}`；
+各带型号、温度、输出上限、单请求超时与 `thinking`（默认 `false`，plan 必填），`models.json_mode` 四条链路共用；`run.{run_id,branch}`；
 `paths.{runs_root,trace,memory,checkpoint,config_snapshot}`（相对路径以仓库根为基准，`runs_root` 默认 `"."`）；
 `services.{memory_server_url,world_server_url}`；`review.mode`（`off`/`human`/`ai`/`both`）；`checkpoint.enabled`；
 `debug.vision_dump_dir`。评测与实验写覆盖文件传入，例如 `build_real(config=["a.json", "b.json"])`。
@@ -56,7 +56,8 @@
 `config` 是 brain 自己的纯数据 `BrainLlmConfig`）；`build.py` 一个都不越过。
 
 - **厂商由型号名前缀决定**：`brain/providers.py::provider_for()` 查 `_PROVIDER_PREFIXES`
-  （顺序即优先级）：`deepseek` → `DeepSeekProvider`、`doubao` → `ArkProvider`、`qwen` → `QwenProvider`。
+  （顺序即优先级）：`deepseek` → `DeepSeekProvider`、`doubao` → `ArkProvider`、`qwen` → `QwenProvider`、
+  `claude-` → `ClaudeProvider`、`gpt-` → `OpenAIProvider`。
   前缀不认识 → **装配期** `ValueError`，不拖到第一次调用才 404。
 - **温度、输出上限、超时按链路配置**：每条链路的 `LinkSpec`（型号、`temperature`、`max_tokens`、`timeout_s`、`thinking`）
   取自 `models.*`，brain 里不再写死数字；默认值决策链温度 0.3，judge / verify / plan 为 0.0。
@@ -73,6 +74,8 @@
 | `ANTHROPIC_AUTH_TOKEN` | `QwenProvider.API_KEY_ENVS` | 同上，第 2 顺位备选 |
 | `ARK_API_KEY` | `ArkProvider.API_KEY_ENVS` | 火山方舟（`doubao*` 型号名） |
 | `DEEPSEEK_API_KEY` | `DeepSeekProvider.API_KEY_ENVS` | DeepSeek 官方 API |
+| `ANTHROPIC_API_KEY` | `ClaudeProvider.API_KEY_ENVS` | Anthropic 原生 Messages API |
+| `OPENAI_API_KEY` | `OpenAIProvider.API_KEY_ENVS` | OpenAI Chat Completions |
 | `VISION_DUMP_DIR` | `brain/providers.py::_DUMP_DIR` | 多模态请求图的 dump 目录（调试用），空 = 关 |
 
 **`.env` 的解析只有一处**：`pokemon_agent/env.py::load_env_file`（`setdefault` 语义：外部环境已有的同名变量优先；

@@ -341,7 +341,9 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 
 - 本阶段已有真实 provider，**各自住在消费它的模块里**（`providers/` 包已解散）：
   `QwenProvider`（DashScope，语言+视觉两用）、`ArkProvider`（火山方舟/豆包，
-  型号名必须带日期后缀）、`DeepSeekProvider`（DeepSeek 官方 API）住
+  型号名必须带日期后缀）、`DeepSeekProvider`（DeepSeek 官方 API）、
+  `ClaudeProvider`（Anthropic 原生 Messages API，`claude-` 前缀）、
+  `OpenAIProvider`（OpenAI Chat Completions，`gpt-` 前缀）住
   `brain/providers.py`；`LocalEmbeddingProvider` / `LocalRerankerProvider`（本地向量化与重排）
   住 `memory/fastembed_text.py` / `memory/fastembed_reranker.py`。
   它们通过**四个 Protocol** 接入：`LLMProvider` / `JudgeProvider`

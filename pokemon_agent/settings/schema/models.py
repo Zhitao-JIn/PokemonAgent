@@ -10,16 +10,21 @@ from .base import Section
 
 
 class ModelLink(Section):
-    """一条链路的模型选型。`timeout_s` 是 provider 的单请求 socket 超时。"""
+    """一条链路的模型选型。`timeout_s` 是 provider 的单请求 socket 超时。
+
+    `thinking` 默认关闭；需要开思考的位置显式写 `true`。plan 仍保持必填（见
+    `PlanModelLink`），其余三个位置可以省略。
+    """
 
     model: str = Field(min_length=1)
     temperature: float = Field(ge=0, le=2, allow_inf_nan=False)
     max_tokens: int = Field(gt=0)
     timeout_s: float = Field(gt=0, allow_inf_nan=False)
+    thinking: bool = False
 
 
 class PlanModelLink(ModelLink):
-    """plan 链路多一个思考模式开关；开启后 `timeout_s` 需按量级放宽（经验值 420）。"""
+    """plan 链路的思考开关保持必填；开启后 `timeout_s` 需按量级放宽（经验值 420）。"""
 
     thinking: bool
 

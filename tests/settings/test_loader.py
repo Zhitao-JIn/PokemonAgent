@@ -26,7 +26,7 @@ def test_default_alone_is_a_complete_valid_configuration() -> None:
     assert isinstance(resolved.config, AppConfig)
     assert len(resolved.sources) == 1 and resolved.sources[0].endswith("default.json")
     assert json.loads(resolved.merged_json)["budget"]["max_episodes"] == 10
-    assert resolved.config.models.text.model == "qwen-plus"
+    assert resolved.config.models.text.model == "qwen3.8-flash"
     assert resolved.config.review.mode == "off"
 
 

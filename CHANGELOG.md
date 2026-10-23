@@ -1,3 +1,13 @@
+## 2026-10-23（623）—— 默认模型切换到已定搭配，同步测试与 provider 文档
+
+**改了什么**：`default.json` 的 `models` 换成 `text` / `judge` = `qwen3.8-flash`（thinking 关，温度 0.3 / 0.0，max_tokens 25600，timeout 10 / 45 秒）、`verify` = `claude-haiku-5-5`（thinking 开，max_tokens 16000，timeout 60 秒）、`plan` = `deepseek-flash`（thinking 开，max_tokens 25600，timeout 90 秒）；`request_timeouts_s` 不动。`ModelLink` 增加 `thinking: bool = False`，`PlanModelLink` 的 `thinking` 仍为必填；新增 5 条 schema 测试，更新两处断言默认值的测试；`AGENTS.md` / `CLAUDE.md` / `docs/spec/brain/SPEC.md` / `docs/spec/build/SPEC.md` 补上 Claude 与 OpenAI 两个 provider、新默认型号、前缀顺序与 key 名。
+
+**为什么这么改**：选型由三轮真实探针定案。judge 原定 GPT-6 Luna，因 160×144 小图分不清左右半边、`detail` 参数无效且分消息缓存不稳，改用 Qwen3.8-Flash；verify 用 Claude Haiku 5.5（thinking 开），plan 用 DeepSeek V4.1 Flash（thinking 开）。切换前 schema 只允许 plan 配 `thinking`，verify 无法表达"开"，因此最小放宽 `ModelLink`；`PlanModelLink` 重声明 `thinking: bool`，plan 的必填语义与改动前一致。
+
+**取舍**：只改型号与超参，不接 `cache_marker` / `image_detail` / `effort` / `token_floor`（D16 取消）；`verify` 的 `max_tokens` 取 16000——Anthropic 对非流式的大 max_tokens 可能拒绝，本次未做真实调用验证；`request_timeouts_s` 保持 choose 25 / judge 60 / verify 60 / summarize 60；豆包 provider 与配置能力保留。本检查点未做任何质量评测，切换依据是探针事实与价格线，不是评测结论。
+
+**影响面**：默认型号从旧的 Qwen / 豆包组合切到新搭配；`text` / `judge` 显式写 `thinking: false`，`verify` 为 `true`，`plan` 仍必填。全量 pytest 为 3 failed / 2633 passed / 25 skipped / 3 deselected；失败的 3 条是起点已登记的沙箱 safe-delete 环境失败（`tests/evals/test_eval_service_wiring.py` 三个参数化用例），失败 node id 与起点完全相同；passed 由 2628 增至 2633（新增 5 条 schema 测试）。ruff check 与 format --check 全绿。离线装配检查用假 key 构造出 Qwen / Qwen / Claude / DeepSeek 四个 provider，未联网、未调用真实模型。
+
 ## 2026-10-23（626）—— OpenAI provider 增加可选缓存分界与图片 detail，并补测 Luna
 
 **改了什么**：`OpenAIProvider` 新增两个可选构造参数。`cache_marker` 按标记首次出现处把文字切成 `developer` 与 `user` 两条消息；多模态请求里图片块仍留在 user 消息、顺序不变；标记缺失、为空或位置为 0 时维持单条 user 消息。`image_detail` 按官方枚举 `low` / `high` / `auto` / `original` 校验，写进每个 `image_url`。`config()` 如实上报 `cache_marker`（`None` 记空串）。探针新增 `--suite supplement2`：`high` 与 `auto` 两个 detail 实例各做 4 次单/双图 describe，一个 `cache_marker` 加图片的实例连续 4 次；判定前先剥 Markdown 围栏并单独记录围栏数。新增 provider 契约测试与脚本参数、调度、费用闸、围栏、构造、dry-run 测试。

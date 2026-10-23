@@ -47,9 +47,9 @@ def test_task_writes_exact_overlay_bytes_and_matching_context(tmp_path, monkeypa
     assert (budget.reserve_s, budget.episode_max_tasks, budget.max_decompositions) == (60, 6, 12)
     assert (budget.task_max_steps, budget.min_request_s) == (12, 3)
     assert (app.models.plan.thinking, app.models.plan.max_tokens, app.models.plan.timeout_s) == (
-        False,
-        4096,
-        45,
+        True,
+        25600,
+        90,
     )
     assert app.models.text.model == cfg["models"]["text_model"]
 

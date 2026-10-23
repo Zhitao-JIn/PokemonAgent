@@ -116,23 +116,25 @@ brain 方言（`brain/interface/domain/`），全部 `pydantic.BaseModel`，零�
 
 | 字段 | 默认值 | 喂给 |
 |---|---|---|
-| `text` | `"qwen-plus"` | `choose()` |
-| `judge` | `"qwen3.8-max"` | `judge()` |
-| `verify` | `"doubao-seed-2-1-pro-260628"` | `verify()` / `summarize()` |
-| `plan` | `"doubao-seed-2-1-pro-260628"` | `plan()` |
-| `max_tokens` | `25600` | 四个 provider 共用 |
+| `text` | `"qwen3.8-flash"`（thinking 关） | `choose()` |
+| `judge` | `"qwen3.8-flash"`（thinking 关） | `judge()` |
+| `verify` | `"claude-haiku-5-5"`（thinking 开） | `verify()` / `summarize()` |
+| `plan` | `"deepseek-flash"`（thinking 开，必填） | `plan()` |
+| `max_tokens` | 各链路自配：text / judge / plan `25600`，verify `16000` | 四个 provider 各取自己的值 |
 
 厂商名只出现在默认值里；"哪条链路该接哪家"的知识在 `brain/build_llm_providers.py`。调用方是 `direct/brain_tool.py::BrainTool.build(...)`——**按需**：只传该层要的型号名，未传的位置 provider 为 `None`（0922 185）。它内部构造 `BrainLlmConfig`，装配点因此对 brain 零 import。
 
-`brain/providers.py` 的三个厂商类（都继承 `_MultimodalMixin` + `_OpenAICompatibleBase`，`complete()` 与 `describe()` 都有）：
+`brain/providers.py` 的五个厂商类（都继承 `_MultimodalMixin` + `_OpenAICompatibleBase`，`complete()` 与 `describe()` 都有）：
 
 | 类 | `BASE_URL` | `API_KEY_ENVS`（按序取第一个非空） | `model` 默认 |
 |---|---|---|---|
 | `QwenProvider` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `("DASHSCOPE_API_KEY", "ANTHROPIC_AUTH_TOKEN")` | `"qwen3.8-max"` |
 | `ArkProvider` | `https://ark.cn-beijing.volces.com/api/v3` | `("ARK_API_KEY",)` | 无（必须显式传带日期后缀的豆包型号名） |
 | `DeepSeekProvider` | `https://api.deepseek.com` | `("DEEPSEEK_API_KEY",)` | `"deepseek-flash"` |
+| `ClaudeProvider` | `https://api.anthropic.com/v1` | `("ANTHROPIC_API_KEY",)` | `"claude-haiku-5-5"` |
+| `OpenAIProvider` | `https://api.openai.com/v1` | `("OPENAI_API_KEY",)` | `"gpt-6-luna"` |
 
-- `provider_for(model, *, temperature, max_tokens=None, timeout=45)` 按 `_PROVIDER_PREFIXES`（顺序 `deepseek` → `doubao` → `qwen`）选类，是"型号名 → 厂商类"的唯一判据；`build_llm_providers()` 用它装配各条模型链路。
+- `provider_for(model, *, temperature, max_tokens=None, timeout=45)` 按 `_PROVIDER_PREFIXES`（顺序 `deepseek` → `doubao` → `qwen` → `claude-` → `gpt-`）选类，是"型号名 → 厂商类"的唯一判据；`build_llm_providers()` 用它装配各条模型链路。Claude 走原生 Messages API，OpenAI 走 Chat Completions，豆包条目原样保留。
 - `_disable_thinking_payload()` 必须被子类覆盖：Qwen 用扁平布尔 `{"enable_thinking": False}`，Ark 与 DeepSeek 用嵌套对象 `{"thinking": {"type": "disabled"}}`。
 - 一次调用 = 一次 HTTP 请求，provider **不重试、不重发**；4xx → `ProviderRejected`（调用方立即耗尽预算），5xx / 网络层 / 单请求总时长超闸 → `ToolTimeout`。
 - 密钥只从环境变量读；`config()` 自报配置进 run manifest，不含 key。
