@@ -1,4 +1,4 @@
-# spec —— Claude / OpenAI 两个 provider 与选型落地（v1.3）
+# spec —— Claude / OpenAI 两个 provider 与选型落地（v1.4）
 
 > v1.1 修订原因：CP1 执行方核对官方文档发现 Haiku 5.5 无 thinking 预算，D4 的预算断言不成立，改为 adaptive + effort。
 > v1.2 修订原因：CP1 执行方发现 `_post` 把 OpenAI 请求形状写死，原生 Anthropic 请求无法复用；批准基类拆出 `_build_request` 钩子（D13）；同时发现 prompt 是整串文本、无静态/动态分界，缓存断点改为可选参数、默认关（D3）。
@@ -6,6 +6,7 @@
 > 依据：`docs/model_providers/intent.md`（搭配已定）。本文是执行依据；与 intent 不一致时以本文为准。
 > 编号：620（CP1）/ 621（CP2）/ 622（CP3）/ 623（CP4）。
 > v1.3 修订原因：探针实测（`.coordination/model-probe/` 三个目录）显示：Luna 单条 user 消息 7/7 次缓存为 0，改成 developer + user 分消息后命中 99%；Luna 在 160×144 小图上分不清左右半边（Claude、Qwen 能分清）。新增 D14、D15 与检查点 626；原 CP4 改为在 626 之后做，并包含把 `cache_marker` / `image_detail` 接进配置（D16）。
+> v1.4 修订原因：626 补测显示 GPT-6 Luna 小图左右半边分不清且 detail 参数无效、分消息缓存不稳，judge 改为 Qwen3.8-Flash；D11 更新，D16（配置接线）取消，CP4 只改型号与文档。
 
 ## 一、决定表
 
@@ -21,12 +22,12 @@
 | D8 | OpenAI thinking：`thinking=false` → `reasoning_effort: "none"`；`thinking=true` → `reasoning_effort` 取构造参数 `effort`（默认 `"medium"`）；**以官方文档与探针为准**，若模型不接受 `none`，在汇报里写出实际报错与可用取值 | judge 用 Luna，不开重推理 |
 | D9 | 不改 `Action` 契约、不改 prompt 模板；`LLMProvider` / `JudgeProvider` 协议、`BrainLlmConfig` / `LinkSpec` 字段不变，**`effort` 暂不进配置**：provider 内部用默认值，配置化留到 CP4 视探针结果决定 | 控制检查点大小 |
 | D10 | `_PROVIDER_PREFIXES` 增加 `("claude-", ClaudeProvider)` 与 `("gpt-", OpenAIProvider)`，`provider_for` 的报错信息自动带上新前缀；豆包条目与类**原样保留** | 豆包不删 |
-| D11 | 最终搭配（CP4 才生效）：`text = qwen3.8-flash`（thinking 关，10 s）、`judge = gpt-6-luna`（thinking 关，45 s）、`verify = claude-haiku-5-5`（thinking 开，60 s）、`plan = deepseek-flash`（thinking 开，90 s，max_tokens 25600）；Qwen3.8-Flash 与 DeepSeek 型号字符串以官方文档与探针为准 | 见 intent 第四节 |
+| D11 | 最终搭配（CP4 才生效；v1.4 据探针修订）：`text = qwen3.8-flash`（thinking 关，temperature 0.3，max_tokens 25600，timeout 10 s）；`judge = qwen3.8-flash`（thinking 关，temperature 0.0，max_tokens 25600，timeout 45 s）；`verify = claude-haiku-5-5`（thinking 开，temperature 0.0（Claude 不发送），max_tokens 16000，timeout 60 s；effort 取 provider 默认 high；不配缓存标记）；`plan = deepseek-flash`（thinking 开，temperature 0.0，max_tokens 25600，timeout 90 s）。GPT-6 Luna 不进生产（见 intent） | 见 intent 第四节 |
 | D12 | 探针脚本放 `scripts/probe_models.py`，真实调用只在 CP3 且需用户授权；默认不跑；结果落 `.coordination/model-probe/<时间戳>/`（不入 git） | |
 | D13 | 基类拆出一个请求构造钩子（v1.2 新增）：把 `_OpenAICompatibleBase._post` 里「拼 URL、请求头、请求体」抽成 `_build_request(self, content, think) -> tuple[str, dict[str, str], dict]`，默认实现**逐字保持**现有行为（`{base}/chat/completions`、Bearer 鉴权、`temperature` / `max_tokens`、thinking 载荷、`response_format`）；`_post` 其余部分（线程池总时长闸、错误分类）原样共用。`ClaudeProvider` 覆盖 `_build_request` 与 `_unpack`、并用 `_image_part` 钩子产生图片块；`OpenAIProvider`（CP2）覆盖 `_build_request` 改用 `max_completion_tokens` | 复用传输与错误分类，只在「请求怎么拼、响应怎么读」上分叉；Qwen / DeepSeek / Ark 行为不变由既有测试保证 |
 | D14 | `OpenAIProvider` 增加构造参数 `cache_marker: str \| None = None`（v1.3）：为 `None` 或标记找不到（或位置为 0）时行为不变（单条 user 消息）；找到时请求体 `messages` 改为两条：`{"role":"developer","content": <标记之前的文字>}` 与 `{"role":"user","content": <标记起的文字，带图时为 [文字块, 图片块…]>}`。`config()` 如实报告 `cache_marker`。依据：实测分消息布局第 2–6 次命中约 99%，单消息 0% | 与 Claude 的 `cache_marker` 同名同语义，生产配置里同一个字段 |
 | D15 | `OpenAIProvider` 增加构造参数 `image_detail: str \| None = None`（v1.3）：不为 `None` 时在每个 `image_url` 里加 `"detail": <值>`（取值以官方文档为准，预期 low / high / auto），覆盖 `_image_part`；默认不变。依据：Luna 小图只算约 30 token，左右半边答错 | 先验证 `high` 是否能分清左右，再决定生产是否启用 |
-| D16 | （CP4 才做）`models.<slot>` 配置增加可选的 `cache_marker`、`image_detail`、`effort`、`token_floor` 并一路传到 provider 构造；字段缺省时行为与现在逐字一致；`verify` 位置的标记 `"\n## 目标\n"`，`judge` 位置的标记 `"\n## 检索到的相关知识（普遍规律，不是完成证据）"`——写入前须用真实渲染出的 prompt 核对每个标记在其中恰好首次出现在静态规则之后 | 同一 `verify` 位置也服务 summarize，其 prompt 没有该标记，自动退回不拆分 |
+| D16 | **取消**（v1.4）：不把 `cache_marker`、`image_detail`、`effort`、`token_floor` 接进配置；Claude 与 OpenAI 的这些参数保留为 provider 构造参数，生产使用默认值 | judge 不再用 OpenAI，verify 的缓存收益只有几分钱 |
 
 ## 二、检查点
 
@@ -36,7 +37,7 @@
 | CP2 | 621 | `OpenAIProvider`（D7、D8、D10 后半）+ 单元测试（mock HTTP） | 同上 | `max_completion_tokens`；`reasoning_effort` 两种取值；`cached_tokens` 读取；`provider_for("gpt-6-luna")` |
 | CP3 | 622 | `scripts/probe_models.py` + 其单元测试；**真实探针一次**（授权见交接消息） | `scripts/probe_models.py`、`tests/scripts/` 下新增文件、`CHANGELOG.md` | 汇报每个位置候选的：可用性、p50/p95 时延、缓存命中率、图片是否送达、thinking/effort 是否生效、JSON 输出是否合法；Qwen3.8-Flash 是否看图 |
 | CP3b | 626 | `OpenAIProvider` 加 `cache_marker`（D14）与 `image_detail`（D15）+ 单元测试；探针补测一次（Luna：detail="high" 的图片真实性；分消息 + 图片的组合）；不改配置 | `pokemon_agent/brain/providers.py`、`tests/brain/providers/test_openai_provider.py`、`scripts/probe_models.py`、`tests/scripts/`、`CHANGELOG.md` | 默认行为不变；真实结果原样汇报 |
-| CP4 | 623 | 按 D11 改 `default.json` 的 `models`；文档补两家 provider；若探针显示需要 `effort` 配置化则一并做（schema + `LinkSpec`） | `pokemon_agent/settings/default.json`、`pokemon_agent/settings/` 内必要的 schema、`docs/spec/brain/SPEC.md`、`docs/spec/build/SPEC.md`、`AGENTS.md`、`CLAUDE.md`、`CHANGELOG.md` | 只改选型，不含评测结论；全量 pytest 绿；默认配置能装配四个 provider |
+| CP4 | 623 | 按 D11 改 `default.json` 的 `models`（只改型号与超参，不接新配置字段，D16 取消）；同步依赖默认模型名的既有测试、`AGENTS.md` / `CLAUDE.md` / `docs/spec/brain/SPEC.md` / `docs/spec/build/SPEC.md` 中对 provider 与默认型号的描述（只补事实，不重写）；全量 pytest 跑一次 | `pokemon_agent/settings/default.json`、依赖该文件型号名的测试、上述四份文档、`CHANGELOG.md` | 只改选型，不含评测结论；全量 pytest 与 ruff 全绿；默认配置能装配四个 provider（不联网） |
 
 评分员配置（评测里的两个评分员 + 选用规则）与 `brain_verify` 评测**不在本 spec**：前者待探针通过后另立检查点；后者等用户回答 intent Q3 后另立。
 

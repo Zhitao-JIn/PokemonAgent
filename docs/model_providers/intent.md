@@ -131,13 +131,19 @@ plan + decompose（约 19 万输入、thinking 输出按 20 万 token 估）单 
 |---|---|---|---|
 | Qwen3.8-Flash | Claude Haiku 5.5 | GPT-6 Luna | 全部不开 thinking（Haiku 关自适应 thinking，Luna effort=none）；DeepSeek V4.1 Flash（thinking 关）作后备 |
 
-### 已定搭配（用户 2026-10-23 裁决：全部取候选 1）
+### 已定搭配（用户 2026-10-23 裁决；经三轮真实探针修订）
 
-verify / summarize = Claude Haiku 5.5（Anthropic，线内最强）、plan = DeepSeek V4.1 Flash（DeepSeek，thinking 开）、
-judge = GPT-6 Luna（OpenAI）、choose = Qwen3.8-Flash（Qwen）——四个位置四家厂商，三条厂商约束全部满足。
+| 位置 | 型号 | 说明 |
+|---|---|---|
+| verify / summarize | Claude Haiku 5.5（thinking 开，effort high） | 图片与缓存（显式断点）已验证；生产暂不设缓存标记，成本只有几分钱 |
+| plan / decompose | DeepSeek V4.1 Flash（thinking 开） | 图片全部通过，自动缓存约 80% |
+| judge | Qwen3.8-Flash（thinking 关） | 图片通过，自动缓存约 91%；**原定 GPT-6 Luna 因看不清小图左右半边（detail 参数无效）且分消息缓存不稳定而放弃** |
+| choose | Qwen3.8-Flash（thinking 关） | 时延中位数约 1.7 秒、最慢约 4.9 秒，低于 10 秒超时；与 judge 同厂商，约束未禁止 |
+
+厂商约束仍满足：plan（DeepSeek）≠ judge（Qwen）；verify（Anthropic）≠ choose、plan。生产不再使用 OpenAI；`OpenAIProvider` 保留，供评测评分员等用途。
 超出价格线的模型（MiMo-V2.6-Pro、GLM-5.2、Kimi K3、Qwen3.8-Max 等）不纳入；价格线不放宽。
-落地顺序：先写两个 provider 与探针，探针通过后切换 `default.json` 的 `models`；评测用于事后验证，不作为切换前提。
-若 Qwen3.8-Flash 探针不支持看图，choose 仍可用（观测主要是文字，图仅为附带记忆截图），但 verify / plan 的第三候选消失，需用户知悉。
+落地顺序：先写 provider 与探针（已完成），再切换 `default.json` 的 `models`；评测用于事后验证，不作为切换前提。
+choose 若评测显示 Qwen3.8-Flash 质量或时延不足，后备是 DeepSeek V4.1 Flash（关 thinking，探针时延中位数约 1.0 秒）。
 
 ### 选型理由
 
