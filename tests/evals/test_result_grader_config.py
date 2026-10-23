@@ -13,9 +13,22 @@ from inspect_ai._util.registry import registry_info
 from inspect_ai.scorer import Scorer
 
 from evals import runconfig
-from evals.runconfig import ResultGraderConfig, load_config, resolve_result_grader
+from evals.runconfig import (
+    ResultGraderConfig,
+    load_config,
+    resolve_grader,
+    resolve_result_grader,
+)
 
-GRADER_KEYS = ("model", "base_url", "api_key_env", "temperature", "max_tokens", "timeout_s")
+GRADER_KEYS = (
+    "model",
+    "base_url",
+    "api_key_env",
+    "temperature",
+    "max_tokens",
+    "timeout_s",
+    "thinking",
+)
 
 
 Assembly = tuple[dict[str, Any], list[ResultGraderConfig], Callable[[str | None], Task]]
@@ -27,15 +40,15 @@ def test_checked_in_grader_configuration_is_explicit_and_distinct() -> None:
     grader = resolve_result_grader(configuration["evaluation_models"])
 
     assert grader.model_dump() == {
-        "model": "openai-api/dashscope/qwen3.7-plus",
-        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "DASHSCOPE_API_KEY",
+        "model": "openai-api/deepseek/deepseek-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key_env": "DEEPSEEK_API_KEY",
         "temperature": 0.0,
-        "max_tokens": 1024,
-        "timeout_s": 120,
+        "max_tokens": 8192,
+        "timeout_s": 180,
+        "thinking": True,
     }
-    assert configuration["evaluation_models"]["test_text"] == "openai-api/deepseek/deepseek-flash"
-    assert grader.model.rsplit("/", 1)[-1] not in configuration["models"].values()
+    assert "test_text" not in configuration["evaluation_models"]
 
 
 def test_loading_config_requires_evaluation_models(
@@ -68,6 +81,133 @@ def test_result_grader_configuration_lists_every_missing_key(missing: list[str])
     assert all(key in str(caught.value) for key in missing)
 
 
+def test_resolve_grader_uses_configuration_without_an_override() -> None:
+    configuration = load_config()
+
+    grader = resolve_grader(configuration["evaluation_models"])
+
+    assert grader == resolve_result_grader(configuration["evaluation_models"])
+
+
+@pytest.mark.parametrize("disabled", ["none", "NoNe"])
+def test_resolve_grader_disables_scoring_without_reading_a_model(disabled: str) -> None:
+    configuration = load_config()
+
+    assert resolve_grader(configuration["evaluation_models"], disabled) is None
+
+
+def test_resolve_grader_override_changes_only_the_model() -> None:
+    configuration = load_config()
+    configured = resolve_result_grader(configuration["evaluation_models"])
+
+    grader = resolve_grader(configuration["evaluation_models"], "openai-api/vendor/other")
+
+    assert grader is not None
+    assert grader.model_dump() == {**configured.model_dump(), "model": "openai-api/vendor/other"}
+
+
+def test_resolve_grader_allows_the_same_model_as_a_tested_link() -> None:
+    configuration = load_config()
+    tested = configuration["models"]["plan_model"]
+    evaluation = copy.deepcopy(configuration["evaluation_models"])
+    evaluation["result_grader"]["model"] = tested
+
+    grader = resolve_grader(evaluation)
+
+    assert grader is not None and grader.model == tested
+
+
+def test_resolve_grader_still_requires_result_grader() -> None:
+    with pytest.raises(ValueError, match="result_grader"):
+        resolve_grader({})
+
+
+@pytest.mark.parametrize(
+    ("module_name", "task_name", "solver_name", "model_key"),
+    [
+        ("evals.brain_choose.task", "brain_choose", "choose_solver", "text_model"),
+        ("evals.brain_decompose.task", "brain_decompose", "decompose_solver", "plan_model"),
+        ("evals.brain_plan.task", "brain_plan", "plan_solver", "plan_model"),
+        ("evals.brain_summary.task", "brain_summary", "summary_solver", "verify_model"),
+    ],
+)
+def test_brain_tasks_assemble_without_a_test_text_key(
+    monkeypatch: pytest.MonkeyPatch,
+    module_name: str,
+    task_name: str,
+    solver_name: str,
+    model_key: str,
+) -> None:
+    module = importlib.import_module(module_name)
+    configuration = copy.deepcopy(load_config())
+    assert "test_text" not in configuration["evaluation_models"]
+    monkeypatch.setattr(module, "load_config", lambda: copy.deepcopy(configuration))
+    monkeypatch.setattr(module, "load_env_file", lambda: None)
+    monkeypatch.setattr(module, solver_name, lambda model: [])
+
+    task = getattr(module, task_name)()
+
+    assert (
+        task.metadata["grader_model"]
+        == configuration["evaluation_models"]["result_grader"]["model"]
+    )
+    assert task.metadata["tested_model"] == configuration["models"][model_key]
+
+
+def test_build_grader_model_reports_only_the_missing_environment_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from evals.common.grader_model import build_grader_model
+
+    monkeypatch.delenv("EVAL_TEST_GRADER_KEY", raising=False)
+    grader = ResultGraderConfig(
+        model="fake",
+        base_url="https://grader.invalid/v1",
+        api_key_env="EVAL_TEST_GRADER_KEY",
+        temperature=0.0,
+        max_tokens=1024,
+        timeout_s=120,
+        thinking=True,
+    )
+
+    with pytest.raises(ValueError, match="EVAL_TEST_GRADER_KEY") as caught:
+        build_grader_model(grader)
+
+    assert "fake-value" not in str(caught.value)
+
+
+@pytest.mark.parametrize(("thinking", "expected"), [(True, "enabled"), (False, "disabled")])
+def test_build_grader_model_reproduces_deepseek_thinking_payload(
+    monkeypatch: pytest.MonkeyPatch, thinking: bool, expected: str
+) -> None:
+    from evals.common.grader_model import build_grader_model
+
+    captured: dict[str, Any] = {}
+
+    def fake_model(model: str, **options: object) -> object:
+        captured.update(options)
+        return object()
+
+    monkeypatch.setenv("EVAL_TEST_GRADER_KEY", "fake-key")
+    monkeypatch.setattr("evals.common.grader_model.get_model", fake_model)
+    grader = ResultGraderConfig(
+        model="openai-api/deepseek/deepseek-flash",
+        base_url="https://api.deepseek.com",
+        api_key_env="EVAL_TEST_GRADER_KEY",
+        temperature=0.0,
+        max_tokens=8192,
+        timeout_s=180,
+        thinking=thinking,
+    )
+
+    build_grader_model(grader)
+
+    generation = captured["config"]
+    assert generation.extra_body == {"thinking": {"type": expected}}
+    assert generation.temperature == 0.0
+    assert (generation.max_tokens, generation.timeout) == (8192, 180)
+
+
 @pytest.fixture
 def assembly(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Assembly:
     """只组装 task；真实 scorer 工厂惰性构造，不触发模型调用。"""
@@ -96,24 +236,6 @@ def assembly(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Assembly:
     return configuration, seen, build
 
 
-@pytest.mark.parametrize("link", runconfig.MODEL_LINKS)
-@pytest.mark.parametrize("prefixed", [False, True])
-@pytest.mark.parametrize("origin", ["configured", "override"])
-def test_task_rejects_grader_matching_any_tested_model(
-    assembly: Assembly, link: str, prefixed: bool, origin: str
-) -> None:
-    configuration, seen, build = assembly
-    name = configuration["models"][link]
-    candidate = f"openai-api/vendor/{name}" if prefixed else name
-    if origin == "configured":
-        configuration["evaluation_models"]["result_grader"]["model"] = candidate
-
-    with pytest.raises(ValueError, match=name):
-        build(candidate if origin == "override" else None)
-
-    assert seen == []
-
-
 @pytest.mark.parametrize(
     "override", [None, "none", "NoNe", "openai-api/vendor/other-grader", "other-grader"]
 )
@@ -126,7 +248,6 @@ def test_task_defaults_disables_or_overrides_only_the_grader_model(
     task = build(override)
 
     assert configuration["evaluation_models"] == evaluation_before
-    assert evaluation_before["test_text"] == "openai-api/deepseek/deepseek-flash"
     if override is not None and override.lower() == "none":
         assert seen == [] and len(task.scorer) == 8
     else:

@@ -7,6 +7,7 @@ from inspect_ai.util import store_as
 from evals.agent_short_goal_run.scorer.judged import judged_accuracy, judged_count
 from evals.common.quality_metrics import quality_count, quality_mean
 from evals.common.source_quality import assess
+from evals.runconfig import ResultGraderConfig
 from pokemon_agent.brain.interface import Action
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 
@@ -40,12 +41,12 @@ def contract_scorer() -> Scorer:
 
 
 @scorer(metrics=[quality_mean(), quality_count()])
-def quality_scorer(grader_model: str) -> Scorer:
+def quality_scorer(grader: ResultGraderConfig | None) -> Scorer:
     """完整实际生产上下文交给 AI，允许多种动作与失败后合理纠偏。"""
 
     async def score(state: TaskState, target: Target) -> Score:
         case, record = Case.model_validate(state.metadata["case"]), store_as(Record)
         assert record.answer is not None
-        return await assess(grader_model, case.reference, record.answer, record.calls)
+        return await assess(grader, case.reference, record.answer, record.calls)
 
     return score

@@ -1,9 +1,7 @@
 """e2e 的模型结果评分：读取目标、判据与最终 run judge 的文字材料，不给过程评分。"""
 
-import os
 from pathlib import Path
 
-from inspect_ai.model import GenerateConfig, get_model
 from inspect_ai.scorer import NOANSWER, Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
@@ -14,6 +12,7 @@ from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.agent_short_goal_run.scorer import RunStream
 from evals.agent_short_goal_run.scorer.judged import judged_accuracy, judged_count
 from evals.agent_short_goal_run.solver.record import AgentRunRecord
+from evals.common.grader_model import build_grader_model
 from evals.runconfig import ResultGraderConfig
 from pokemon_agent.direct.trace import ParsedEvent
 
@@ -81,19 +80,7 @@ def llm_task_completion_scorer(backend: str, grader: ResultGraderConfig) -> Scor
         evidence = _final_judge_call(store_as(AgentRunRecord), backend)
         if evidence is None:
             return Score(value=NOANSWER, explanation="没有可用的 run 层 judge 材料")
-        api_key = os.environ.get(grader.api_key_env)
-        if not api_key:
-            raise ValueError(f"独立结果评分员缺少密钥环境变量：{grader.api_key_env}")
-        model = get_model(
-            grader.model,
-            config=GenerateConfig(
-                temperature=grader.temperature,
-                max_tokens=grader.max_tokens,
-                timeout=grader.timeout_s,
-            ),
-            base_url=grader.base_url,
-            api_key=api_key,
-        )
+        model = build_grader_model(grader)
         output = await model.generate(_grading_prompt(sample, evidence))
         metadata = {"raw": output.completion, "judge_call_uuid": evidence.uuid}
         try:

@@ -22,13 +22,7 @@ from evals.agent_short_goal_run.scorer.result_grade import llm_task_completion_s
 from evals.agent_short_goal_run.scorer.task_scorer import e2e_scorer
 from evals.agent_short_goal_run.solver.solver import run_one_solver
 from evals.common.overlay import eval_overlay, write_overlay
-from evals.runconfig import (
-    ResultGraderConfig,
-    load_config,
-    resolve_models,
-    resolve_result_grader,
-    validate_grader_independence,
-)
+from evals.runconfig import ResultGraderConfig, load_config, resolve_grader, resolve_models
 from pokemon_agent.env import load_env_file
 from pokemon_agent.settings import load_config as load_app_config
 
@@ -55,16 +49,10 @@ def _select(
 
 
 def _result_grader(
-    evaluation_models: Mapping[str, object], models: Mapping[str, str], grader_model: str | None
+    evaluation_models: Mapping[str, object], grader_model: str | None
 ) -> ResultGraderConfig | None:
-    """缺省读取完整配置；none 关闭，其他覆盖型号并在装配期检查独立性。"""
-    grader = resolve_result_grader(evaluation_models)
-    if grader_model is not None and grader_model.lower() == "none":
-        return None
-    if grader_model is not None:
-        grader = ResultGraderConfig.model_validate({**grader.model_dump(), "model": grader_model})
-    validate_grader_independence(grader, models)
-    return grader
+    """缺省读取完整配置；none 关闭，其他字符串只覆盖型号。"""
+    return resolve_grader(evaluation_models, grader_model)
 
 
 @task
@@ -100,7 +88,7 @@ def agent_short_goal_run(
     report_dir = log_dir or str(cfg["log_dir"])
     trace_backend = trace_backend or str(cfg.get("trace_backend", "local"))
     models = resolve_models(cfg.get("models", {}))
-    grader = _result_grader(cfg["evaluation_models"], models, grader_model)
+    grader = _result_grader(cfg["evaluation_models"], grader_model)
     chosen = _select(load(version, rule_ids=set(RULES)), split, sample_ids)
     overlay = eval_overlay({**cfg, "trace_backend": trace_backend})
     run_config_path, run_config_sha256 = write_run_config(report_dir, overlay)

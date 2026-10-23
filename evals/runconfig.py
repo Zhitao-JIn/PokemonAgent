@@ -54,6 +54,7 @@ class ResultGraderConfig(BaseModel):
     temperature: float = Field(ge=0)
     max_tokens: int = Field(gt=0)
     timeout_s: float = Field(gt=0)
+    thinking: bool
 
 
 def load_config() -> dict[str, Any]:
@@ -86,17 +87,17 @@ def resolve_result_grader(evaluation_models: Mapping[str, Any]) -> ResultGraderC
     return ResultGraderConfig.model_validate(values)
 
 
-def _model_name(model: str) -> str:
-    """仅剥离 Inspect 的 openai-api/<厂商>/ 前缀，保留型号其余部分。"""
-    parts = model.split("/", 2)
-    return parts[2] if len(parts) == 3 and parts[0] == "openai-api" else model
-
-
-def validate_grader_independence(grader: ResultGraderConfig, models: Mapping[str, str]) -> None:
-    """评分员不能与任一被测链路同型号；冲突时 ValueError 指明型号。"""
-    name = _model_name(grader.model)
-    if name in {_model_name(model) for model in models.values()}:
-        raise ValueError(f"独立结果评分员与被测模型冲突：{name}")
+def resolve_grader(
+    evaluation_models: Mapping[str, Any],
+    grader_model: str | None = None,
+) -> ResultGraderConfig | None:
+    """解析本次生效的评分员配置；`none` 关闭，其他字符串只覆盖型号。"""
+    grader = resolve_result_grader(evaluation_models)
+    if grader_model is not None and grader_model.lower() == "none":
+        return None
+    if grader_model is not None:
+        grader = ResultGraderConfig.model_validate({**grader.model_dump(), "model": grader_model})
+    return grader
 
 
 __all__ = [
@@ -105,7 +106,7 @@ __all__ = [
     "REQUIRED_KEYS",
     "ResultGraderConfig",
     "load_config",
+    "resolve_grader",
     "resolve_models",
     "resolve_result_grader",
-    "validate_grader_independence",
 ]

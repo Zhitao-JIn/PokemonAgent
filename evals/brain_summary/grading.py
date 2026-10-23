@@ -1,13 +1,13 @@
 """独立 AI 评分：只读取实际生产 prompt/images，未知与重大失真分别保留。"""
 
-import os
-
-from inspect_ai.model import ChatMessageSystem, get_model
+from inspect_ai.model import ChatMessageSystem
 from inspect_ai.scorer import NOANSWER, Score
 
+from evals.common.grader_model import build_grader_model
 from evals.common.review_generation import generate_review
 from evals.common.source_quality import source_message
 from evals.dataset.brain_calls.dataset_contract import ReferenceCase
+from evals.runconfig import ResultGraderConfig
 from pokemon_agent.schemas.harness import ModelCall
 
 from .contract import DIMENSIONS, Layer, SummaryAnswer, SummaryReview
@@ -63,20 +63,16 @@ def review_pass(review: SummaryReview) -> float | None:
 
 
 async def assess(
-    model: str,
+    grader: ResultGraderConfig | None,
     layer: Layer,
     reference: ReferenceCase,
     answer: SummaryAnswer,
     calls: list[ModelCall],
 ) -> Score:
     """禁用或无效评分返回未知并保留原因；传输失败上抛，不伪装成模型低分。"""
-    if model == "none":
+    if grader is None:
         return Score(value=NOANSWER, metadata={"layer": layer, "reason": "grader disabled"})
-    client = (
-        get_model(model, base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
-        if model.startswith("openai-api/deepseek/")
-        else get_model(model)
-    )
+    client = build_grader_model(grader)
     result = await generate_review(
         client,
         [ChatMessageSystem(content=RULES), source_message(reference, answer, calls)],
@@ -91,7 +87,7 @@ async def assess(
             explanation=f"无效摘要评分：{result.attempts[-1].error}",
             metadata={
                 "layer": layer,
-                "model": model,
+                "model": grader.model,
                 "raw": result.raw,
                 "grading_attempts": attempt_metadata,
             },
@@ -102,7 +98,7 @@ async def assess(
         explanation="；".join(item.reason for item in review.dimensions),
         metadata={
             "layer": layer,
-            "model": model,
+            "model": grader.model,
             "review": review.model_dump(mode="json"),
             "review_pass": review_pass(review),
             "raw": result.raw,

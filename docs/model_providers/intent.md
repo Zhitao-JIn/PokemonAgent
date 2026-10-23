@@ -25,7 +25,7 @@ choose、judge 调用量大、重要度较低，分到其余。三条厂商约�
 `default.json` 的 `models`：`text`=qwen-plus、`judge`=qwen3.8-max、`verify` 与 `plan`=doubao-seed-2-1-pro。
 `verify` 位置同时服务 verify 与 summarize 两个方法，`plan` 位置同时服务 plan 与 decompose。
 `_PROVIDER_PREFIXES` 只认 `deepseek` / `doubao` / `qwen`。`evals/config.json` 里评测的四个位置与评分员
-（`evaluation_models.test_text`）都是 deepseek-flash。`plan` 已按本意图先行打开 thinking
+（`evaluation_models.result_grader`）现已由评测配置分别指定。`plan` 已按本意图先行打开 thinking
 （`thinking: true`、`max_tokens: 25600`、`timeout_s: 90`），型号暂未换。
 
 ### 2. 每个位置的画像（`tracelog` 实测与 `default.json` 预算上限）

@@ -1,3 +1,13 @@
+## 2026-10-24（627）—— 评测被测模型对齐生产，评分员合并为单一 result_grader
+
+**改了什么**：`evals/config.json` 的 `models` 四条链路改为 `text` / `judge` = `qwen3.8-flash`、`verify` = `claude-haiku-5-5`、`plan` = `deepseek-flash`；删除 `evaluation_models.test_text`，六个评测统一读取 `result_grader`；`ResultGraderConfig` 新增必填 `thinking`，`result_grader` 换为 `openai-api/deepseek/deepseek-flash`（`https://api.deepseek.com`、`DEEPSEEK_API_KEY`、max_tokens 8192、timeout 180、thinking 开）。共用构造函数经 `GenerateConfig.extra_body={"thinking":{"type":"enabled"|"disabled"}}` 复现 DeepSeek provider 的请求形状。`runconfig` 新增 `resolve_grader`（None 用配置 / none 关闭 / 其他只覆盖 model），删除 `validate_grader_independence` 及全部调用点和 `tested_model` 参数；新增 `evals/common/grader_model.py::build_grader_model`；`advisory_quality` / `source_quality` / `brain_summary.grading` 的 `assess` 改为接收配置对象或 None；五个 `brain_*` 与 `agent_short_goal_run` 接入同一解析，task metadata 记录生效评分员型号（关闭记 none）。同步更新测试、`AGENTS.md` / `CLAUDE.md`、evals SPEC 与 eval_grade 说明。
+
+**为什么这么改**：此前评测的被测模型全是 deepseek-flash，与生产不一致；`brain_*` 的评分员读 `test_text`，既不走统一配置，plan 位置又与被测模型同为 deepseek-flash；评分模型构造与评分员解析分散在两处。评分员价格要压低，且 deepseek-flash 只与 plan 槽位重叠，用户明确接受 plan 评测自评。
+
+**取舍**：用户明确决定去掉独立性校验，plan 评测会自评，由使用者自行把握，代码里不做标记（无警告、无 metadata 标记）。`brain_judge` 的 `grader_model` 默认仍为 `"none"`；覆盖型号只换 `model`，`base_url` / `api_key_env` / 温度 / 上限 / 超时 / thinking 沿用配置，覆盖到不同端点需另改配置；DeepSeek provider 在 thinking 开时仍发送 `temperature`（服务端不生效），共用构造沿用该做法、不省略字段；不保留 `test_text` 兼容读取，也不加旧键别名。
+
+**影响面**：仅 `evals/`、`tests/evals/`、文档与本日志；不动 `pokemon_agent/`、数据集、机械判据、评分提示词与 solver；未调用真实模型。`tests/evals` 的 JUnit 为 397 tests / 0 failures / 0 errors / 0 skipped，`tests/prompt/test_boundary_guards.py` 16 passed，ruff check 与 format --check 全绿。此后评测被测模型与生产一致，历史评测结果与新结果不可直接横比；评分员由 qwen3.7-plus / deepseek-flash（无 thinking）变为 deepseek-flash thinking，历史评测分数同样不可直接横比。
+
 ## 2026-10-23（623）—— 默认模型切换到已定搭配，同步测试与 provider 文档
 
 **改了什么**：`default.json` 的 `models` 换成 `text` / `judge` = `qwen3.8-flash`（thinking 关，温度 0.3 / 0.0，max_tokens 25600，timeout 10 / 45 秒）、`verify` = `claude-haiku-5-5`（thinking 开，max_tokens 16000，timeout 60 秒）、`plan` = `deepseek-flash`（thinking 开，max_tokens 25600，timeout 90 秒）；`request_timeouts_s` 不动。`ModelLink` 增加 `thinking: bool = False`，`PlanModelLink` 的 `thinking` 仍为必填；新增 5 条 schema 测试，更新两处断言默认值的测试；`AGENTS.md` / `CLAUDE.md` / `docs/spec/brain/SPEC.md` / `docs/spec/build/SPEC.md` 补上 Claude 与 OpenAI 两个 provider、新默认型号、前缀顺序与 key 名。

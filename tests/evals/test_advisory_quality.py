@@ -18,12 +18,26 @@ from evals.common.advisory_quality import AdvisoryGrade, DimensionGrade, grade_v
 from evals.common.quality_metrics import quality_count, quality_mean
 from evals.dataset.brain_annotations.loader import load as annotations
 from evals.dataset.brain_calls.dataset_contract import ReferenceCase
+from evals.runconfig import ResultGraderConfig
 from pokemon_agent.brain.interface import Action
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceReq,
     FromHarnessToBrainToolChooseOnceResp,
     ModelCall,
 )
+
+
+def grader_config() -> ResultGraderConfig:
+    """测试用评分员配置；密钥由调用方用假值注入。"""
+    return ResultGraderConfig(
+        model="fake",
+        base_url="https://grader.invalid/v1",
+        api_key_env="EVAL_TEST_GRADER_KEY",
+        temperature=0.0,
+        max_tokens=1024,
+        timeout_s=120,
+        thinking=False,
+    )
 
 
 def test_recoverable_failures_are_scored_without_an_exhaustive_action_whitelist() -> None:
@@ -96,14 +110,30 @@ def test_missing_dimensions_are_unscored_instead_of_silently_ignored(
         async def generate(self, messages: list[ChatMessage]) -> SimpleNamespace:
             return SimpleNamespace(completion='{"criteria": []}')
 
-    monkeypatch.setattr(advisory_quality, "get_model", lambda model: Grader())
+    monkeypatch.setenv("EVAL_TEST_GRADER_KEY", "fake-key")
+    monkeypatch.setattr("evals.common.grader_model.get_model", lambda model, **kwargs: Grader())
 
     score = asyncio.run(
         advisory_quality.assess(
-            "fake",
+            grader_config(),
             case.reference,
             Action.model_validate({"sequence": [{"name": "right", "times": 1}]}),
             [ModelCall(payload={"prompt": "actual context"})],
+        )
+    )
+
+    assert score.value == NOANSWER
+
+
+def test_disabled_advisory_grader_returns_noanswer_without_a_model() -> None:
+    case = choose("v4")[0]
+
+    score = asyncio.run(
+        advisory_quality.assess(
+            None,
+            case.reference,
+            Action.model_validate({"sequence": [{"name": "right", "times": 1}]}),
+            [],
         )
     )
 
@@ -142,8 +172,10 @@ def test_unlisted_recovery_action_gets_ai_score_without_leaking_reference_to_cho
         "single_link_brain",
         lambda link, model: SimpleNamespace(chooser=SimpleNamespace(choose=invoke)),
     )
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
     monkeypatch.setattr(
-        advisory_quality, "get_model", lambda model: RecoveryGrader(case.reference, messages_seen)
+        "evals.common.grader_model.get_model",
+        lambda model, **kwargs: RecoveryGrader(case.reference, messages_seen),
     )
 
     log = eval(

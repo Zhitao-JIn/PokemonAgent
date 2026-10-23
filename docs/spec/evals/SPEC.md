@@ -259,9 +259,9 @@ inspect eval evals/brain_judge/task.py -T version=v4
 ```
 
 plan/decompose 的被测模型默认读 config.models.plan_model，语义评分模型默认读
-config.evaluation_models.test_text，分别可用 `-T model=...` 与 `-T grader_model=...` 覆盖。
+config.evaluation_models.result_grader，分别可用 `-T model=...` 与 `-T grader_model=...` 覆盖。
 `-T grader_model=none` 仅运行机械约束；不会产生语义通过率。
-这些是独立模型调用，不保证型号不同；需要不同型号时显式指定 grader_model。
+评分员与被测型号可以相同；代码里不做独立性校验。
 summary 的 99 条三层原料仍保留，本轮四个脑能力任务不新增 summary 公开入口。
 
 2026-10-19 历史审阅旁账位于 `evals/dataset/brain_annotations/v1`。

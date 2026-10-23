@@ -4,6 +4,8 @@ from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
 
+from evals.runconfig import ResultGraderConfig
+
 from .contract import Layer, SummaryAnswer
 from .dataset import Case
 from .grading import assess
@@ -38,12 +40,12 @@ def contract_scorer() -> Scorer:
 
 
 @scorer(metrics=[summary_quality()])
-def quality_scorer(model: str) -> Scorer:
+def quality_scorer(grader: ResultGraderConfig | None) -> Scorer:
     """只让评分员看本次真实发送账和候选正文，不传完整请求或来源章。"""
 
     async def score(state: TaskState, target: Target) -> Score:
         case, record = Case.model_validate(state.metadata["case"]), store_as(Record)
         assert record.answer is not None
-        return await assess(model, case.layer, case.reference, record.answer, record.calls)
+        return await assess(grader, case.layer, case.reference, record.answer, record.calls)
 
     return score

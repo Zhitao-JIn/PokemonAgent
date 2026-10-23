@@ -7,6 +7,7 @@ from inspect_ai.util import store_as
 from evals.agent_short_goal_run.scorer.judged import judged_accuracy, judged_count
 from evals.common.quality_metrics import quality_count, quality_mean
 from evals.common.source_quality import assess
+from evals.runconfig import ResultGraderConfig
 
 from .compare import contract_checks
 from .dataset import Case
@@ -27,12 +28,12 @@ def contract_scorer() -> Scorer:
 
 
 @scorer(metrics=[quality_mean(), quality_count()])
-def quality_scorer(grader_model: str) -> Scorer:
+def quality_scorer(grader: ResultGraderConfig | None) -> Scorer:
     """逐条量表有证据才能判；评分缺失或无法确定不计入语义分母。"""
 
     async def score(state: TaskState, target: Target) -> Score:
         case, record = Case.model_validate(state.metadata["case"]), store_as(Record)
         assert record.answer is not None, "solver must record an answer"
-        return await assess(grader_model, case.reference, record.answer, record.calls)
+        return await assess(grader, case.reference, record.answer, record.calls)
 
     return score

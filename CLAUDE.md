@@ -584,6 +584,6 @@ B 类每个状态一个 LLMTestCase，指标不调模型；缺标或无从判跳
 
 任务代码集中在 evals/<任务名>/，文件多时使用 dataset/、solver/、scorer/、compare/ 子包；各任务的数据版本紧邻加载代码。共享 DeepEval 运行器与 world 装配在 evals/common/；evals/dataset/ 只保留共用 frames/、io.py、errors.py。旧 tasks/、solvers/、scorers/ 槽位目录已删除。AGENTS 与 CLAUDE 的本节保持同步。
 
-`agent_short_goal_run` 的独立结果评分员由 `evals/config.json` 的 `evaluation_models.result_grader` 配置型号、地址、密钥环境变量名、温度、输出上限与超时；默认使用 DashScope 的 `qwen3.7-plus`，型号不得与被测四条链路中的任一型号相同。`grader_model` 缺省使用该配置，字符串 `none`（大小写不敏感）关闭独立评分，其他字符串只覆盖型号且仍检查独立性。`evaluation_models.test_text` 保持字符串，供独立脑能力评测使用。
+`agent_short_goal_run` 的独立结果评分员由 `evals/config.json` 的 `evaluation_models.result_grader` 配置型号、地址、密钥环境变量名、温度、输出上限与 thinking；默认使用 DeepSeek 的 `deepseek-flash`（thinking 开）。`grader_model` 缺省使用该配置，字符串 `none`（大小写不敏感）关闭独立评分，其他字符串只覆盖型号。`brain_*` 五个独立评测也统一读取 `evaluation_models.result_grader`；`grader_model=none` 关闭评分。代码里不再校验评分员与被测型号是否相同。
 
 真实模型测试使用配置型号。world 不调 LLM，memory 使用本地 embedding/reranker。harness_integrity 属于 tests 集成测试，不是公开评测任务。agent_short_goal_run 仍按最终机械结果、红线与独立模型结果评分；路径、步数与策略等仅用于诊断。

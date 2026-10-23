@@ -10,8 +10,22 @@ from inspect_ai.scorer import NOANSWER
 from evals.brain_plan.dataset import load
 from evals.common import source_quality
 from evals.common.source_quality import CriterionGrade, QualityGrade, grade_value
+from evals.runconfig import ResultGraderConfig
 from pokemon_agent.brain.interface import RunPlan
 from pokemon_agent.schemas.harness import ModelCall
+
+
+def grader_config() -> ResultGraderConfig:
+    """测试用评分员配置；密钥由调用方用假值注入。"""
+    return ResultGraderConfig(
+        model="fake-grader",
+        base_url="https://grader.invalid/v1",
+        api_key_env="EVAL_TEST_GRADER_KEY",
+        temperature=0.0,
+        max_tokens=1024,
+        timeout_s=120,
+        thinking=False,
+    )
 
 
 @pytest.mark.parametrize(
@@ -42,6 +56,21 @@ def test_missing_or_duplicate_rubric_items_are_not_valid_scores() -> None:
         grade_value(reference, QualityGrade(criteria=[item] * len(reference.criteria)))
 
 
+def test_disabled_source_grader_returns_noanswer_without_a_model() -> None:
+    case = load()[0]
+
+    score = asyncio.run(
+        source_quality.assess(
+            None,
+            case.reference,
+            RunPlan(why="测试规划依据"),
+            [ModelCall(payload={"prompt": "context"})],
+        )
+    )
+
+    assert score.value == NOANSWER
+
+
 def test_semantic_grader_gets_actual_context_images_candidate_and_separate_reference(
     monkeypatch,
 ) -> None:
@@ -64,11 +93,12 @@ def test_semantic_grader_gets_actual_context_images_candidate_and_separate_refer
                 )
             )
 
-    monkeypatch.setattr(source_quality, "get_model", lambda model: Grader())
+    monkeypatch.setenv("EVAL_TEST_GRADER_KEY", "fake-key")
+    monkeypatch.setattr("evals.common.grader_model.get_model", lambda model, **kwargs: Grader())
 
     score = asyncio.run(
         source_quality.assess(
-            "fake-grader",
+            grader_config(),
             case.reference,
             RunPlan(
                 why="测试规划依据",
@@ -90,11 +120,12 @@ def test_invalid_model_grade_is_unjudged_instead_of_a_success(monkeypatch) -> No
         async def generate(self, messages):
             return SimpleNamespace(completion='{"criteria": []}')
 
-    monkeypatch.setattr(source_quality, "get_model", lambda model: Grader())
+    monkeypatch.setenv("EVAL_TEST_GRADER_KEY", "fake-key")
+    monkeypatch.setattr("evals.common.grader_model.get_model", lambda model, **kwargs: Grader())
 
     score = asyncio.run(
         source_quality.assess(
-            "fake-grader",
+            grader_config(),
             case.reference,
             RunPlan(
                 why="测试规划依据",

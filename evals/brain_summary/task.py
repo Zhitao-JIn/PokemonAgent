@@ -7,7 +7,7 @@ from evals.brain_summary.contract import Layer
 from evals.brain_summary.dataset import DEFAULT_VERSION, load
 from evals.brain_summary.scorer import contract_scorer, quality_scorer
 from evals.brain_summary.solver import summary_solver
-from evals.runconfig import load_config
+from evals.runconfig import load_config, resolve_grader
 from pokemon_agent.env import load_env_file
 
 
@@ -22,7 +22,7 @@ def brain_summary(
     load_env_file()
     configuration = load_config()
     model = model or str(configuration["models"]["verify_model"])
-    grader_model = grader_model or str(configuration["evaluation_models"]["test_text"])
+    grader = resolve_grader(configuration["evaluation_models"], grader_model)
     cases = [case for case in load(version) if layer is None or case.layer == layer]
     if not cases:
         raise ValueError("summary layer selection is empty")
@@ -36,14 +36,14 @@ def brain_summary(
             for case in cases
         ],
         solver=summary_solver(model),
-        scorer=[contract_scorer(), quality_scorer(grader_model)],
+        scorer=[contract_scorer(), quality_scorer(grader)],
         model="none",
         fail_on_error=False,
         metadata={
             "capability": "summary",
             "dataset_version": version,
             "tested_model": model,
-            "grader_model": grader_model,
+            "grader_model": grader.model if grader is not None else "none",
             "layer": layer or "all",
         },
     )

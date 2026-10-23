@@ -38,7 +38,7 @@ solver 按精确信封调用生产 task_summarizer / summarizer / run_summarizer
 
 只评一层：`inspect eval evals/brain_summary/task.py -T layer=task`（也可 episode/run）。
 
-只评机械契约：追加 `-T grader_model=none`；solver 仍会调用被测生产模型。`-T model=型号` 覆盖被测 verify provider，`-T grader_model=评分型号` 覆盖独立评分员。未显式指定时沿用 evals/config.json 的 verify_model 与 evaluation_models.test_text。
+只评机械契约：追加 `-T grader_model=none`；solver 仍会调用被测生产模型。`-T model=型号` 覆盖被测 verify provider，`-T grader_model=评分型号` 覆盖独立评分员。未显式指定时沿用 evals/config.json 的 verify_model 与 evaluation_models.result_grader。
 
 质量/重大失真结论均是模型审阅，不能将假 provider/grader 的链路测试分数视为真实摘要质量成绩。
 

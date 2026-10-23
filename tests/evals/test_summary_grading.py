@@ -15,6 +15,7 @@ from evals.brain_summary.dataset import load
 from evals.brain_summary.grading import quality_value, review_pass
 from evals.brain_summary.metrics import summary_quality
 from evals.brain_summary.scorer import contract_checks
+from evals.runconfig import ResultGraderConfig
 from pokemon_agent.brain.interface import EpisodeSummary
 from pokemon_agent.schemas.harness import ModelCall
 
@@ -125,12 +126,22 @@ def test_malformed_grader_response_is_unscored(
         async def generate(self, messages: list[ChatMessage]) -> SimpleNamespace:
             return SimpleNamespace(completion=output)
 
-    monkeypatch.setattr(grading, "get_model", lambda model: Grader())
+    monkeypatch.setenv("EVAL_TEST_GRADER_KEY", "fake-key")
+    monkeypatch.setattr("evals.common.grader_model.get_model", lambda model, **kwargs: Grader())
     case = load()[0]
     answer = EpisodeSummary(summary="s", quality_score=0.1, quality_rationale="r")
+    grader = ResultGraderConfig(
+        model="fake",
+        base_url="https://grader.invalid/v1",
+        api_key_env="EVAL_TEST_GRADER_KEY",
+        temperature=0.0,
+        max_tokens=1024,
+        timeout_s=120,
+        thinking=False,
+    )
     score = asyncio.run(
         grading.assess(
-            "fake", case.layer, case.reference, answer, [ModelCall(payload={"prompt": "sent"})]
+            grader, case.layer, case.reference, answer, [ModelCall(payload={"prompt": "sent"})]
         )
     )
 
@@ -141,10 +152,10 @@ def test_disabled_grader_never_calls_a_model(monkeypatch: pytest.MonkeyPatch) ->
     def unexpected(*args: object, **kwargs: object) -> None:
         pytest.fail("disabled grader accessed a model")
 
-    monkeypatch.setattr(grading, "get_model", unexpected)
+    monkeypatch.setattr("evals.common.grader_model.get_model", unexpected)
     case = load()[0]
     answer = EpisodeSummary(summary="s", quality_score=0.1, quality_rationale="r")
 
-    score = asyncio.run(grading.assess("none", case.layer, case.reference, answer, []))
+    score = asyncio.run(grading.assess(None, case.layer, case.reference, answer, []))
 
     assert score.value == NOANSWER

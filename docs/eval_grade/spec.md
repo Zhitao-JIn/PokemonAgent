@@ -65,3 +65,5 @@
 ## 五、非目标 / 遗留
 
 judge_success 提示词前后冲突（「只看最后一帧」与「跨帧比较」）、门口样本第 2 次内部判定误判，待评分可用后以 prompt 实验另案处理；评测首次检索会下载 reranker 权重（>120 秒触发 MCP 超时），属环境问题，另行处理。
+
+已由 627 合并为单一 result_grader、换为 deepseek-flash thinking，并取消独立性校验。

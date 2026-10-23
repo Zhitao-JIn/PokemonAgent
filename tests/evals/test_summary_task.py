@@ -13,7 +13,7 @@ from inspect_ai import eval
 from inspect_ai.log import EvalLog
 from inspect_ai.model import ChatMessage, ContentImage
 
-from evals.brain_summary import dataset, grading, solver, task
+from evals.brain_summary import dataset, solver, task
 from evals.brain_summary.contract import DIMENSIONS
 from evals.dataset.errors import DatasetError
 from pokemon_agent.brain import Brain
@@ -93,7 +93,8 @@ def test_all_summary_layers_use_production_prompts_and_independent_review(
     cases[0].reference.criteria[0].instruction += " REF_ONLY_SENTINEL"
     monkeypatch.setattr(task, "load", lambda version: cases)
     grader = Grader()
-    monkeypatch.setattr(grading, "get_model", lambda model: grader)
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
+    monkeypatch.setattr("evals.common.grader_model.get_model", lambda model, **kwargs: grader)
     log = eval(
         task.brain_summary(model="fake-summary", grader_model="fake-grader"),
         log_dir=str(tmp_path),

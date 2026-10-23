@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 from inspect_ai import eval
 
-from evals.common import advisory_quality
 from pokemon_agent.brain.interface import Action, ActionSegment, Decomposition, RunPlan
 from pokemon_agent.schemas.harness import (
     FromHarnessToBrainToolChooseOnceResp,
@@ -102,7 +101,8 @@ def test_advisory_quality_scores_every_labelled_case_with_a_fake_grader(
     solver_name = "inspect_solver" if family == "choose" else "solver"
     solver_module = importlib.import_module(f"evals.brain_{family}.{solver_name}")
     monkeypatch.setattr(solver_module, "single_link_brain", lambda link, model: fake_port(family))
-    monkeypatch.setattr(advisory_quality, "get_model", lambda model: Grader())
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
+    monkeypatch.setattr("evals.common.grader_model.get_model", lambda model, **kwargs: Grader())
     task = getattr(module, f"brain_{family}")(version=VERSION, grader_model="fake-grader")
 
     log = eval(task, log_dir=str(tmp_path), display="none")[0]

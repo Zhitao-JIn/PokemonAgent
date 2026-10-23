@@ -108,7 +108,7 @@ def grading(
         grader.models.append({"model": model, **options})
         return grader
 
-    monkeypatch.setattr("evals.agent_short_goal_run.scorer.result_grade.get_model", fake_model)
+    monkeypatch.setattr("evals.common.grader_model.get_model", fake_model)
     state = TaskState(
         model="none",
         sample_id="demo",
@@ -134,6 +134,7 @@ def grade(state: TaskState, configuration: ResultGraderConfig | None = None) -> 
         temperature=0.0,
         max_tokens=1024,
         timeout_s=120,
+        thinking=False,
     )
     return asyncio.run(llm_task_completion_scorer("local", configuration)(state, Target("")))
 
@@ -236,6 +237,7 @@ def test_grader_passes_explicit_connection_generation_and_effective_model(
         temperature=0.23,
         max_tokens=37,
         timeout_s=13,
+        thinking=False,
     )
 
     result = grade(state, configuration)
@@ -246,6 +248,7 @@ def test_grader_passes_explicit_connection_generation_and_effective_model(
     assert options["api_key"] == "fake-key-for-test"
     generation = options["config"]
     assert (generation.temperature, generation.max_tokens, generation.timeout) == (0.23, 37, 13)
+    assert generation.extra_body == {"thinking": {"type": "disabled"}}
 
 
 def test_grader_requires_the_named_key_without_leaking_values(

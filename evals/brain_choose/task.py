@@ -6,7 +6,7 @@ from inspect_ai.dataset import Sample
 from evals.brain_choose.dataset import load
 from evals.brain_choose.inspect_scorer import contract_scorer, quality_scorer
 from evals.brain_choose.inspect_solver import choose_solver
-from evals.runconfig import load_config
+from evals.runconfig import load_config, resolve_grader
 from pokemon_agent.env import load_env_file
 
 
@@ -18,7 +18,7 @@ def brain_choose(
     load_env_file()
     configuration = load_config()
     model = model or str(configuration["models"]["text_model"])
-    grader_model = grader_model or str(configuration["evaluation_models"]["test_text"])
+    grader = resolve_grader(configuration["evaluation_models"], grader_model)
     cases = load(version)
     return Task(
         dataset=[
@@ -30,13 +30,13 @@ def brain_choose(
             for case in cases
         ],
         solver=choose_solver(model),
-        scorer=[contract_scorer(), quality_scorer(grader_model)],
+        scorer=[contract_scorer(), quality_scorer(grader)],
         model="none",
         fail_on_error=False,
         metadata={
             "capability": "choose",
             "dataset_version": version,
             "tested_model": model,
-            "grader_model": grader_model,
+            "grader_model": grader.model if grader is not None else "none",
         },
     )
