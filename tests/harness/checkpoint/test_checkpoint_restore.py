@@ -33,7 +33,7 @@ from pokemon_agent.harness.run.run_state import RunState
 
 pytestmark = [
     pytest.mark.slow,
-    pytest.mark.skip(reason="存档恢复慢测试：硬跳过，防止 -m slow 覆盖默认选项后误跑；需要时临时去掉本标记"),
+    pytest.mark.skip(reason="存档恢复慢测试，硬跳过；需要时临时去掉本标记"),
 ]
 
 
