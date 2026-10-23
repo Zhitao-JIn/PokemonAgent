@@ -20,13 +20,14 @@ ROM = REPO_ROOT / "assets" / "rom"
 def world_url() -> str:
     """读 MCP_WORLD_SERVER_URL 并探活 world server，返回地址。
 
-    失败：未配地址抛 McpTransportError（文案含变量名），地址不可达同样抛错。
+    失败：未配地址或地址不可达时抛 McpTransportError；评测 solver 会自动启动服务，
+    若 `MCP_WORLD_SERVER_URL` 已设置则复用它（调试用）。
     """
     load_env_file()
     url = env_str("MCP_WORLD_SERVER_URL")
     if not url:
         raise McpTransportError(
-            "world 只经 MCP：设 MCP_WORLD_SERVER_URL 或传 world_server_url，并先起 world server"
+            "评测脚本会启动 world server；若 MCP_WORLD_SERVER_URL 已设置则复用该服务"
         )
     assert_mcp_server_ready(url, "world")
     return url

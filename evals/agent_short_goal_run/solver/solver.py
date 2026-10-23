@@ -8,8 +8,10 @@ scorer 据此与 trace 打分。epochs 的圈号从 `state.epoch` 取。
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 from inspect_ai.event import InfoEvent
@@ -21,6 +23,7 @@ from evals.agent_short_goal_run.scorer.stream import RunStream
 from evals.agent_short_goal_run.solver.record import AgentRunRecord, RunOneRecord, RunOneRequest
 from evals.agent_short_goal_run.solver.runner.one import run_id_for
 from evals.agent_short_goal_run.solver.transcript import replay_into_transcript
+from evals.common.eval_services import eval_services
 from evals.paths import REPO_ROOT
 
 __all__ = ["Generate", "Solver", "TaskState", "run_id_for", "run_one_solver", "solver"]
@@ -102,7 +105,23 @@ def run_one_solver(
             version=version,
         )
         cmd = [sys.executable, "-m", "evals.agent_short_goal_run.solver.worker"]
+        stack = ExitStack()
+        entering = asyncio.create_task(
+            asyncio.to_thread(
+                stack.enter_context,
+                eval_services(
+                    world=True,
+                    memory=True,
+                    knowledge_source=REPO_ROOT / "memory" / "knowledge_memory",
+                    admin=False,
+                    export_env=False,
+                ),
+            )
+        )
+        entered = False
         try:
+            service_environment = await asyncio.shield(entering)
+            entered = True
             await asyncio.to_thread(
                 subprocess.run,
                 cmd,
@@ -110,6 +129,7 @@ def run_one_solver(
                 cwd=str(REPO_ROOT),
                 timeout=timeout,
                 check=False,
+                env={**os.environ, **service_environment},
             )
         except subprocess.TimeoutExpired:
             return _finish(
@@ -121,6 +141,17 @@ def run_one_solver(
                 models,
                 invalid="timeout",
             )
+        except asyncio.CancelledError:
+            if not entered:
+                try:
+                    await asyncio.shield(entering)
+                    entered = True
+                except BaseException:
+                    pass
+            raise
+        finally:
+            if entered:
+                await asyncio.shield(asyncio.to_thread(stack.close))
         return _finish(state, work, run_id_for(sample_id, epoch), trace_backend, transcript, models)
 
     return solve

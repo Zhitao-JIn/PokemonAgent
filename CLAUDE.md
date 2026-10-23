@@ -578,6 +578,8 @@ harness 经门面调模块的架构不变。
 
 B 类每个状态一个 LLMTestCase，指标不调模型；缺标或无从判跳过，不进分母。decode 的显式空值照常计分。DeepEval 原生输出帧级通过率与逐指标 Average Score/Pass Rate/Total，默认只列失败，有失败退出 1。memory 逐记录计存储、逐查询计 Recall@k 与 MRR，后两者看 Average Score。world 分 code/truth 与 pass.<脚本名>，每例子进程保留 300 秒超时。
 
+`agent_short_goal_run`、`world_script_execute` 与 `memory_store_recall` 的评测脚本会自行启动所需 MCP 服务；运行前不必手工启动服务或设置 `MCP_*_SERVER_URL`。若相应 URL 环境变量已设置，脚本会复用对应服务（调试用）。短目标评测按样本隔离 world / memory，world 脚本评测按用例隔离 world，memory 评测默认使用启用 admin 的临时空库；若复用已配置的 memory 服务，评测会先清空其数据。
+
 任务代码集中在 evals/<任务名>/，文件多时使用 dataset/、solver/、scorer/、compare/ 子包；各任务的数据版本紧邻加载代码。共享 DeepEval 运行器与 world 装配在 evals/common/；evals/dataset/ 只保留共用 frames/、io.py、errors.py。旧 tasks/、solvers/、scorers/ 槽位目录已删除。AGENTS 与 CLAUDE 的本节保持同步。
 
 真实模型测试使用配置型号。world 不调 LLM，memory 使用本地 embedding/reranker。harness_integrity 属于 tests 集成测试，不是公开评测任务。agent_short_goal_run 仍按最终机械结果、红线与独立模型结果评分；路径、步数与策略等仅用于诊断。

@@ -62,7 +62,7 @@ class ScriptRun(BaseModel):
 def run_case(
     case: ScriptCase, version: str = DEFAULT_VERSION, *, checkpoint: Path | None = None
 ) -> ScriptRun:
-    """在 MCP world server 上跑一条用例（同步，solver 放进线程里调）。
+    """在外层 `eval_services` 管理的 MCP world 上跑一条用例（同步）。
 
     步骤 1：起 world、按开跑前的键、读开跑帧。
     步骤 2：调脚本；脚本异常与 server 侧异常记为 crash。

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import pytest
 
 from evals.memory_store_recall import solver
@@ -26,20 +28,70 @@ def _dataset() -> MemoryDataset:
     )
 
 
+def _install_fake_services(monkeypatch: pytest.MonkeyPatch, events: list) -> None:
+    @contextmanager
+    def fake_services(**options):
+        events.append(("enter", options))
+        try:
+            yield {"MCP_MEMORY_SERVER_URL": "http://memory.fake"}
+        finally:
+            events.append(("exit",))
+
+    monkeypatch.setattr(solver, "eval_services", fake_services)
+
+
 def test_run_memory_requires_memory_url(monkeypatch: pytest.MonkeyPatch) -> None:
     """缺 MCP_MEMORY_SERVER_URL → McpTransportError（文案含变量名）。"""
+    events = []
     monkeypatch.setattr(solver, "load_env_file", lambda: None)
     monkeypatch.setattr(solver, "env_str", lambda name: None)
+    _install_fake_services(monkeypatch, events)
 
     with pytest.raises(McpTransportError, match="MCP_MEMORY_SERVER_URL"):
         solver.run_memory(_dataset(), k=1)
+    assert [event[0] for event in events] == ["enter", "exit"]
 
 
 def test_run_memory_requires_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     """health 的 admin 非 True → McpTransportError。"""
+    events = []
     monkeypatch.setattr(solver, "load_env_file", lambda: None)
     monkeypatch.setattr(solver, "env_str", lambda name: "http://fake")
     monkeypatch.setattr(solver, "assert_mcp_server_ready", lambda url, service: {"admin": False})
+    _install_fake_services(monkeypatch, events)
 
     with pytest.raises(McpTransportError, match="--enable-admin"):
         solver.run_memory(_dataset(), k=1)
+    assert [event[0] for event in events] == ["enter", "exit"]
+
+
+def test_run_memory_runs_inside_an_admin_enabled_temporary_service(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events = []
+    tool = object()
+    monkeypatch.setattr(solver, "load_env_file", lambda: None)
+    monkeypatch.setattr(solver, "env_str", lambda name: "http://memory.fake")
+    monkeypatch.setattr(solver, "assert_mcp_server_ready", lambda url, service: {"admin": True})
+    monkeypatch.setattr(solver.MemoryTool, "build", lambda **kwargs: tool)
+    monkeypatch.setattr(solver, "clear_memory", lambda received: events.append(("clear", received)))
+    monkeypatch.setattr(
+        solver,
+        "evaluate_memory",
+        lambda dataset, received, k: events.append(("evaluate", received)),
+    )
+    _install_fake_services(monkeypatch, events)
+    monkeypatch.chdir(tmp_path)
+
+    result = solver.run_memory(_dataset(), k=3)
+
+    assert result is None
+    assert events == [
+        (
+            "enter",
+            {"world": False, "memory": True, "admin": True, "knowledge_source": None},
+        ),
+        ("clear", tool),
+        ("evaluate", tool),
+        ("exit",),
+    ]

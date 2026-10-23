@@ -2,8 +2,8 @@
 
 从 worktree 根运行 python -m evals.dataset.brain_choose.build.collect
 --state <原始.state> --goal <目标> --criteria <单帧判据> --steps N --out <新目录>。
-先启动使用 ROM 的 world MCP server 和带 --enable-admin 的专用 memory MCP server，
-设置 MCP_WORLD_SERVER_URL、MCP_MEMORY_SERVER_URL 与模型密钥。memory server 应为本次
+公开评测 solver 会自行启动服务；已设置 MCP_*_SERVER_URL 时会复用对应服务（调试用）。
+本采集入口仍从环境变量连接调用方提供的 MCP 服务，并要求模型密钥。memory server 应为本次
 采集新建的空库，本入口不会清空它。模型选择沿用 evals/config.json。
 steps 是现有 harness 全局动作预算，含脚本内部按键；目标完成或其他生产终态可提前结束。
 输出保留请求、响应、运行配置、trace、快照与结算，不删除采集产物。

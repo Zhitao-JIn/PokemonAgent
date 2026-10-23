@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from evals.common.eval_services import eval_services
+
 from .dataset import ScriptCase
 from .dataset.loader import DEFAULT_VERSION
 from .solver import ScriptRun
@@ -41,7 +43,10 @@ def run_isolated(
     assert timeout > 0
     root = Path.cwd() / "eval_results"
     root.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=root, prefix="script-") as directory:
+    with (
+        eval_services(world=True, memory=False),
+        tempfile.TemporaryDirectory(dir=root, prefix="script-") as directory,
+    ):
         request = ScriptRequest(
             case=case,
             version=version,

@@ -1,3 +1,13 @@
+## 2026-10-23（608）—— 评测入口自动管理 MCP 服务
+
+**改了什么**：将 `eval_services` 接入 `agent_short_goal_run`、`world_script_execute` 与 `memory_store_recall`；更新评测提示、AGENTS / CLAUDE 说明，并增加服务生命周期与子进程环境传递测试。
+
+**为什么这么改**：评测服务应与样本或评测调用同生命周期；每次运行使用独立服务与临时数据，避免人工启动、共享端口和记忆库带来的串扰。
+
+**取舍**：短目标评测为每个样本隔离 world / memory，world 脚本为每个用例在父进程包裹 worker 以覆盖超时，memory 评测使用启用 admin 的空库；环境中已有 URL 时沿用对应服务。
+
+**影响面**：仅评测入口、评测说明、相关测试与本日志；未修改 `pokemon_agent/`、`evals/common/eval_services.py`、`overlay.py` 或冻结数据。验证：全量 pytest `2437 passed, 25 skipped, 3 deselected`；ruff check 全绿，ruff format --check 为 960 files。
+
 ## 2026-10-23（607）—— 新增评测服务生命周期上下文
 
 **改了什么**：新增 `evals/common/eval_services.py`，按次隔离启动 world / memory 服务，准备临时 knowledge，导出评测环境，并在退出时停止服务、归档日志与清理临时目录；新增假服务原语测试覆盖环境、复用、knowledge、权限、失败清理与并发隔离。

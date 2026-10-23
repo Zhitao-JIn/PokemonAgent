@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +17,7 @@ from evals.agent_short_goal_run.solver.solver import run_one_solver
 from evals.agent_short_goal_run.solver.worker import _execute
 from evals.agent_short_goal_run.task import agent_short_goal_run, write_run_config
 from evals.common.overlay import eval_overlay
+from evals.paths import REPO_ROOT
 from evals.runconfig import load_config
 from pokemon_agent.settings import ConfigValidationError
 from pokemon_agent.settings import load_config as load_app_config
@@ -59,11 +61,27 @@ def test_unknown_budget_field_is_rejected_before_worker_starts(tmp_path):
 
 def test_solver_request_carries_the_config_file_path(tmp_path, monkeypatch):
     captured = []
+    service_events = []
+
+    @contextmanager
+    def fake_services(**options):
+        service_events.append(("enter", options))
+        try:
+            yield {
+                "MCP_WORLD_SERVER_URL": "http://world.fake:41001",
+                "MCP_MEMORY_SERVER_URL": "http://memory.fake:41002",
+                "PYTHONUTF8": "1",
+                "PYTHONIOENCODING": "utf-8",
+            }
+        finally:
+            service_events.append(("exit",))
 
     def fake_subprocess(*args, **kwargs):
         captured.append(RunOneRequest.model_validate_json(kwargs["input"]))
+        captured.append(kwargs["env"])
         return subprocess.CompletedProcess(args, 0)
 
+    monkeypatch.setattr("evals.agent_short_goal_run.solver.solver.eval_services", fake_services)
     monkeypatch.setattr(subprocess, "run", fake_subprocess)
     state = TaskState(
         model="none",
@@ -84,8 +102,23 @@ def test_solver_request_carries_the_config_file_path(tmp_path, monkeypatch):
 
     asyncio.run(solve(state, None))
 
-    assert len(captured) == 1
+    assert len(captured) == 2
     assert captured[0].run_config_path == path
+    assert captured[1]["MCP_WORLD_SERVER_URL"] == "http://world.fake:41001"
+    assert captured[1]["MCP_MEMORY_SERVER_URL"] == "http://memory.fake:41002"
+    assert service_events == [
+        (
+            "enter",
+            {
+                "world": True,
+                "memory": True,
+                "knowledge_source": REPO_ROOT / "memory" / "knowledge_memory",
+                "admin": False,
+                "export_env": False,
+            },
+        ),
+        ("exit",),
+    ]
 
 
 def test_worker_passes_config_path_to_runner(tmp_path, monkeypatch):

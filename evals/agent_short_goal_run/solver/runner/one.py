@@ -5,11 +5,9 @@
 与 `run_result.json`（`RunResult`，V8）。
 起点校验不通过记 `invalid`，run 自己出错只记 `error`——它是被测系统的问题，由红线 R1 判。
 
-评测前置（本机跑评测前先满足）：①world server 已起（带或不带 `--state-file` 均可，
-`--watch`/`--speed` 在 server 命令行设置）；②memory server 已起并带 `--enable-admin`，
-且是评测专用实例（pack 与 memory_store_recall 会清空它，restore 会覆盖它）；
-③设好两个环境变量 `MCP_WORLD_SERVER_URL`、`MCP_MEMORY_SERVER_URL`
-（评测进程把它们写进每条样本的覆盖文件，被测系统本身只读配置）；④评测串行。
+评测 solver 会为每条样本启动独立 world 与 memory 服务，并复制仓库 knowledge；若设置了
+`MCP_WORLD_SERVER_URL` 或 `MCP_MEMORY_SERVER_URL`，对应服务会复用已有地址（调试用）。
+该样本结束后服务随之关闭。
 """
 
 from __future__ import annotations

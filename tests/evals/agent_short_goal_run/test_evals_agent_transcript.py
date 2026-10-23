@@ -4,6 +4,7 @@ import asyncio
 import json
 import subprocess
 from collections import Counter
+from contextlib import contextmanager
 
 import pytest
 from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
@@ -20,6 +21,7 @@ from evals.agent_short_goal_run.scorer.task_scorer import e2e_scorer
 from evals.agent_short_goal_run.solver.record import AgentRunRecord
 from evals.agent_short_goal_run.solver.solver import run_one_solver
 from evals.agent_short_goal_run.solver.transcript import replay_into_transcript
+from evals.paths import REPO_ROOT
 from pokemon_agent.direct.trace.content import EventMeta, ModelCallContent, OtherContent
 from pokemon_agent.direct.trace.parse import ParsedEvent
 
@@ -154,8 +156,22 @@ def test_solver_writes_store_and_scorer_uses_its_run_location(
     )
     (work / "run_result.json").write_text('{"termination":"success"}', encoding="utf-8")
     loads = []
+    service_events = []
+    service_urls = {
+        "MCP_WORLD_SERVER_URL": "http://world.fake",
+        "MCP_MEMORY_SERVER_URL": "http://memory.fake",
+    }
+
+    @contextmanager
+    def fake_services(**options):
+        service_events.append(("enter", options))
+        try:
+            yield service_urls
+        finally:
+            service_events.append(("exit",))
 
     def subprocess_run(*args, **kwargs):
+        assert all(kwargs["env"][key] == value for key, value in service_urls.items())
         if mode == "timeout":
             raise subprocess.TimeoutExpired("run-one", 1)
 
@@ -163,6 +179,7 @@ def test_solver_writes_store_and_scorer_uses_its_run_location(
         loads.append((root, run_id, branch, backend))
         return RunStream([])
 
+    monkeypatch.setattr("evals.agent_short_goal_run.solver.solver.eval_services", fake_services)
     monkeypatch.setattr(subprocess, "run", subprocess_run)
     monkeypatch.setattr(RunStream, "load", load)
     state = TaskState(
@@ -183,6 +200,19 @@ def test_solver_writes_store_and_scorer_uses_its_run_location(
     )
 
     asyncio.run(solve(state, None))
+    assert service_events == [
+        (
+            "enter",
+            {
+                "world": True,
+                "memory": True,
+                "knowledge_source": REPO_ROOT / "memory" / "knowledge_memory",
+                "admin": False,
+                "export_env": False,
+            },
+        ),
+        ("exit",),
+    ]
     record = store_as(AgentRunRecord)
     score = asyncio.run(
         e2e_scorer(stall_limits=(3, 3), trace_backend="langfuse")(state, Target(""))

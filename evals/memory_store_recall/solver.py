@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from evals.common.eval_services import eval_services
 from evals.common.memory_server import clear_memory
 from pokemon_agent.direct.interface.ports import MemoryToolPort
 from pokemon_agent.env import env_str, load_env_file
@@ -60,18 +61,21 @@ def evaluate_memory(dataset: MemoryDataset, tool: MemoryToolPort, k: int) -> Mem
 
 
 def run_memory(dataset: MemoryDataset, k: int) -> MemoryRun:
-    """先清空评测专用共享 server 再评测；真实本地 embedding 与 reranker。"""
+    """启动或复用 memory 服务，在隔离库中评测；使用真实本地 embedding 与 reranker。"""
     load_env_file()
-    url = env_str("MCP_MEMORY_SERVER_URL")
-    if not url:
-        raise McpTransportError(
-            "memory 只经 MCP：设 MCP_MEMORY_SERVER_URL 或传 memory_server_url，并先起 memory server"
-        )
-    health = assert_mcp_server_ready(url, "memory")
-    if health.get("admin") is not True:
-        raise McpTransportError("评测需要带 --enable-admin 的专用 memory server")
-    root_directory = Path.cwd() / "eval_results"
-    root_directory.mkdir(exist_ok=True)
-    tool = MemoryTool.build(memory_server_url=url, memory_root=root_directory)
-    clear_memory(tool)
-    return evaluate_memory(dataset, tool, k)
+    with eval_services(world=False, memory=True, admin=True, knowledge_source=None):
+        url = env_str("MCP_MEMORY_SERVER_URL")
+        if not url:
+            raise McpTransportError(
+                "评测脚本会启动 memory server；若 MCP_MEMORY_SERVER_URL 已设置则复用该服务"
+            )
+        health = assert_mcp_server_ready(url, "memory")
+        if health.get("admin") is not True:
+            raise McpTransportError(
+                "复用的 MCP_MEMORY_SERVER_URL 未启用 --enable-admin；清除此变量以自动启动"
+            )
+        root_directory = Path.cwd() / "eval_results"
+        root_directory.mkdir(exist_ok=True)
+        tool = MemoryTool.build(memory_server_url=url, memory_root=root_directory)
+        clear_memory(tool)
+        return evaluate_memory(dataset, tool, k)
