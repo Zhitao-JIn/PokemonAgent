@@ -16,8 +16,20 @@ from pokemon_agent.direct.trace.content import (
     RunEndContent,
     SenseFrameContent,
 )
-from pokemon_agent.schemas.harness import TraceKind
+from pokemon_agent.schemas.harness import TraceEvent, TraceKind
 from pokemon_agent.world.interface import DecodedText
+
+
+def _of_run(events: list[TraceEvent], run_id: str) -> list[ParsedEvent]:
+    """只留 `meta.run_id` 是本 run 的账。
+
+    local 后端的落盘根是**一个目录、多个 run 平铺**（`LocalTrace` 本身不持有 run 身份），
+    读侧不自己分就会把别的 run 的局与帧算进本 run 的证据链。langfuse 的 trace_id 虽已按
+    `(run_id, branch)` 决定，也照样过一遍——两个后端同一个后置条件，调用方不用分开想。
+
+    前置条件：`events` 已按 `(ts, uuid)` 升序（`TraceToolPort.read_events` 的后置条件）。
+    """
+    return [p for p in (parse(e) for e in events) if p.meta.run_id == run_id]
 
 
 @dataclass(frozen=True)
@@ -70,8 +82,12 @@ class RunStream:
         run-one 用哪种后端写，scorer 就用哪种读。
 
         读取用**空 meta 全量**（不走 TraceTool 的血缘可见性拼接——那条路在 branch 缺省
-        main 时只见父线，恢复线整个不可见，335 首跑实锤），分支过滤在本层自己做：
-        打分只需要本执行线的账，祖先线（打包种子等）明确排除。
+        main 时只见父线，恢复线整个不可见，335 首跑实锤），两级过滤都在本层做：
+        先按 `meta.run_id` 只留本 run（local 的落盘根是**多个 run 平铺**的一个目录，
+        不按 run 分目录；langfuse 的 trace_id 虽由 `(run_id, branch)` 决定，也照样过一遍），
+        再按 `meta.branch` 只留本执行线——打分只需要本执行线的账，祖先线（打包种子等）
+        明确排除。**run_id 过滤必须在 branch 自动检测之前**：否则别的 run 的
+        `checkpoint_restore` 会把 branch 选歪。
 
         **langfuse 寻址按 (run_id, branch)**（336 spec）：trace_id 由两者共同决定，
         所以 `branch` 必须来自 `run.json`（run-one 收尾时写入 `RunResult.branch`）；
@@ -79,14 +95,14 @@ class RunStream:
         """
         if backend == "local":
             tool = TraceTool.build(run_id=run_id, trace_root=trace_root, backend=backend)
-            parsed = [parse(e) for e in tool.read_events()]
+            parsed = _of_run(tool.read_events(), run_id)
             if branch is None:
                 restored = [p for p in parsed if p.kind == TraceKind.CHECKPOINT_RESTORE]
                 branch = restored[-1].meta.branch if restored else "main"
             return cls([p for p in parsed if p.meta.branch == branch])
         # langfuse：trace_id 按 (run_id, branch) 寻址——branch 必给。
         tool = TraceTool.build(run_id=run_id, branch=branch or "main", backend=backend)
-        parsed = [parse(e) for e in tool.read_events()]
+        parsed = _of_run(tool.read_events(), run_id)
         want = branch or "main"
         return cls([p for p in parsed if p.meta.branch == want])
 
@@ -108,8 +124,9 @@ class RunStream:
     def run_episodes(self) -> list[str]:
         """本执行线上开局过的全部 `episode_id`，按开局先后、去重。
 
-        run 粒度的取局口径：run 内只有一个 run goal，归属键是 `run_id`（`load` 已按 run
-        与分支过滤），不在 `episode_start.goal_id` 上——planner 合法拆解时会新建目标 id。
+        run 粒度的取局口径：run 内只有一个 run goal，归属键是 `run_id`——`load` 在读取时
+        按 `meta.run_id` 与 `meta.branch` 过滤，本类里的账已经只有这一个 run 的这一条执行线，
+        不看 `episode_start.goal_id`（planner 合法拆解时会新建目标 id）。
         """
         starts = (
             e
