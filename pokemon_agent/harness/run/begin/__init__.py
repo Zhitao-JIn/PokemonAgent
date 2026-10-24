@@ -2,6 +2,7 @@
 
 **不改任何一处 state**（返回空增量）。校验放在图里，是因为它守的是**图的不变式**——
 目标表里至多一条 `RUNNING`，这是 `act`（盖 `RUNNING`）/ `review_and_judge`（盖章）共同的前提。
+**表本身可以为空**（run goal 显式传入、执行目标全由 `plan_run` 建的那种调用），空表不是违约。
 
 开局账 `run_start` 记在这里（与 `run_end` 记在 `run_done` 对称）：一个 run 的起止都在图内的
 首尾两格；图外 `run_entry.new_run` 只记它亲手接住的 `run_error`。
@@ -21,9 +22,8 @@ from ..runtime import RunRuntime
 
 
 def begin(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
-    """校验初始目标表，记 `run_start`。**图的入口。**"""
-    # 步骤 1：校验。
-    assert state.goals, "begin() got an empty goal table"
+    """校验初始目标表，记 `run_start`。**图的入口。** 空表合法（由 `plan_run` 建目标）。"""
+    # 步骤 1：校验。空表是正常调度起点，不校验条数；只守"至多一条 RUNNING"。
     running = [e for e in state.goals if e.status is EntryStatus.RUNNING]
     assert len(running) <= 1, "at most one RUNNING goal is allowed"
 

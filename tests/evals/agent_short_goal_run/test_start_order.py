@@ -11,7 +11,6 @@ from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.agent_short_goal_run.solver.record import RunOneRecord
 from evals.agent_short_goal_run.solver.runner import one as runner
 from evals.agent_short_goal_run.solver.runner.failure import exception_leaves
-from pokemon_agent.brain import Task
 from pokemon_agent.schemas.harness import FromHarnessToGameToolResetReq
 
 
@@ -74,9 +73,9 @@ class ResettingHarness:
     def __init__(self, game: StartGame) -> None:
         self.game = game
 
-    def run(self, run_id: str, tasks: list[Task], *, sample_id: str) -> SimpleNamespace:
+    def run(self, run_id: str, goals: list, run_goal=None, *, start_task=None, sample_id=""):
         self.game.events.append("run")
-        self.game.reset(FromHarnessToGameToolResetReq(task=tasks[0]))
+        self.game.reset(FromHarnessToGameToolResetReq(task=start_task))
         assert self.game.state == [self.game.initial_ram]
         return SimpleNamespace(model_dump_json=lambda **kwargs: "{}", branch="main")
 

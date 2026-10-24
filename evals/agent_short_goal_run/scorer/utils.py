@@ -21,11 +21,21 @@ POKE_BALL = 0x04
 """精灵球的物品 ID。"""
 
 
-def target_frames(stream: RunStream, sample: EvalSample) -> list[Frame]:
-    """run 样本取整条执行线；较小粒度保留原目标对应局的范围。"""
+def target_episodes(stream: RunStream, sample: EvalSample) -> list[str]:
+    """这条样本要看证据的那些局。
+
+    run 粒度：整条执行线（`run_id` 已由 `RunStream.load` 定死，run 内只有一个 run goal，
+    plan 目标怎么拆、怎么改名都算同一条证据链）；更小粒度：原目标 id 下的局
+    （`episode_start.goal_id` 就是样本 id）。
+    """
     if sample.granularity == "run":
-        return stream.frames()
-    return stream.frames(stream.episodes_for(sample.sample_id))
+        return stream.run_episodes()
+    return stream.episodes_for(sample.sample_id)
+
+
+def target_frames(stream: RunStream, sample: EvalSample) -> list[Frame]:
+    """样本目标局里的全部帧（取局口径见 `target_episodes`）。"""
+    return stream.frames(target_episodes(stream, sample))
 
 
 def with_ram(frames: list[Frame]) -> list[Frame]:
@@ -79,6 +89,7 @@ __all__ = [
     "failed",
     "first_match",
     "passed",
+    "target_episodes",
     "target_frames",
     "unjudgeable",
     "with_ram",

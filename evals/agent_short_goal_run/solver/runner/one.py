@@ -23,7 +23,7 @@ from evals.agent_short_goal_run.solver.runner.failure import exception_leaves
 from evals.common.overlay import sample_overlay, write_overlay
 from evals.dataset.errors import DatasetError
 from evals.paths import REPO_ROOT
-from pokemon_agent.brain import Task
+from pokemon_agent.brain import Goal, Task
 from pokemon_agent.build import build_real
 from pokemon_agent.env import load_env_file
 from pokemon_agent.schemas.harness import (
@@ -54,20 +54,28 @@ def run_one(sample: EvalSample, work: Path, *, run_config_path: str, epoch: int 
     stage = "build"
     try:
         harness, game = build_real(config=[run_config_path, sample_config])
-        task = _task_for(sample)
+        start_task = _task_for(sample)
         stage = "start_state"
         state_path = DATASET_DIR / sample.dataset_version / sample.start.source_state
         game.use_start_state(state_path)
         if sample.check_id in {"party_healed", "shop_cancelled"}:
             stage = "preflight_reset"
-            game.reset(FromHarnessToGameToolResetReq(task=task))
+            game.reset(FromHarnessToGameToolResetReq(task=start_task))
             stage = "preflight_perceive"
             perceived = game.perceive_task()
             stage = "start_validation"
             if not _valid_start(sample, perceived, work, run_id):
                 return
         stage = "harness_run"
-        result = harness.run(run_id, [task], sample_id=sample.sample_id)
+        # 空目标表 + 显式 run goal：执行目标全部由 run planner 建，样本 id 不再当目标 id。
+        # `start_task` 只给世界 reset 用（样本的 `initial_state_hint` 经它带进去）。
+        result = harness.run(
+            run_id,
+            [],
+            run_goal=Goal(goal=sample.goal, criteria=sample.success_criteria),
+            start_task=start_task,
+            sample_id=sample.sample_id,
+        )
         stage = "write_result"
         (work / RUN_RESULT).write_text(result.model_dump_json(indent=2), encoding="utf-8")
     except Exception as exc:  # noqa: BLE001 —— 运行错误保留给红线 R1
@@ -83,7 +91,7 @@ def run_one(sample: EvalSample, work: Path, *, run_config_path: str, epoch: int 
 
 
 def _task_for(sample: EvalSample) -> Task:
-    """预检与正式 run 共用同一个任务内容。"""
+    """起点校验与正式 run 的 reset 共用同一个引导任务（它不是任何一局的执行目标）。"""
     return Task(
         task_id=sample.sample_id,
         goal=sample.goal,
