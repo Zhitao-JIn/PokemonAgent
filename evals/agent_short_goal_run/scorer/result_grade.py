@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from inspect_ai.model import ChatMessage, ChatMessageAssistant, ChatMessageUser, Model
 from inspect_ai.scorer import NOANSWER, Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import store_as
@@ -13,6 +14,7 @@ from evals.agent_short_goal_run.scorer import RunStream
 from evals.agent_short_goal_run.scorer.judged import judged_accuracy, judged_count
 from evals.agent_short_goal_run.solver.record import AgentRunRecord
 from evals.common.grader_model import build_grader_model
+from evals.common.review_generation import ReviewAttempt, ReviewResult
 from evals.runconfig import ResultGraderConfig
 from pokemon_agent.direct.trace import ParsedEvent
 
@@ -66,6 +68,33 @@ def _grading_prompt(sample: EvalSample, event: ParsedEvent) -> str:
     )
 
 
+async def _generate_grade(model: Model, prompt: str) -> ReviewResult[ResultGrade]:
+    """最多三次解析；只纠正格式，同一模型保留 Inspect 的累计用量。"""
+    conversation: list[ChatMessage] = [ChatMessageUser(content=prompt)]
+    result = ReviewResult[ResultGrade]()
+    for _ in range(3):
+        output = await model.generate(list(conversation))
+        attempt = ReviewAttempt(raw=output.completion)
+        result.attempts.append(attempt)
+        try:
+            result.review = ResultGrade.model_validate_json(
+                output.completion.strip().removeprefix("```json").removesuffix("```").strip()
+            )
+        except ValidationError as exc:
+            attempt.error = str(exc)
+            conversation.extend(
+                [
+                    ChatMessageAssistant(content=output.completion),
+                    ChatMessageUser(
+                        content='格式不正确。只回 {"achieved": true或false, "reason": "观测证据"}'
+                    ),
+                ]
+            )
+        else:
+            return result
+    return result
+
+
 @scorer(metrics=[judged_accuracy(), judged_count()])
 def llm_task_completion_scorer(backend: str, grader: ResultGraderConfig) -> Scorer:
     """用独立 LLM 二元判定任务是否完成；不评过程质量，不可判不进分母。"""
@@ -81,16 +110,17 @@ def llm_task_completion_scorer(backend: str, grader: ResultGraderConfig) -> Scor
         if evidence is None:
             return Score(value=NOANSWER, explanation="没有可用的 run 层 judge 材料")
         model = build_grader_model(grader)
-        output = await model.generate(_grading_prompt(sample, evidence))
-        metadata = {"raw": output.completion, "judge_call_uuid": evidence.uuid}
-        try:
-            grade = ResultGrade.model_validate_json(
-                output.completion.strip().removeprefix("```json").removesuffix("```").strip()
-            )
-        except ValidationError as exc:
+        result = await _generate_grade(model, _grading_prompt(sample, evidence))
+        metadata = {
+            "raw": result.raw,
+            "judge_call_uuid": evidence.uuid,
+            "attempts": [attempt.model_dump() for attempt in result.attempts],
+        }
+        grade = result.review
+        if grade is None:
             return Score(
                 value=NOANSWER,
-                explanation=f"评分解析失败：{exc}",
+                explanation=f"评分解析失败：{result.attempts[-1].error}",
                 metadata=metadata,
             )
         return Score(

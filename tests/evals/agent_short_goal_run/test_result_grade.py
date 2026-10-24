@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from inspect_ai.model import ModelOutput
+from inspect_ai.model import ChatMessage, ModelOutput
 from inspect_ai.scorer import NOANSWER, Score, Target
 from inspect_ai.solver import TaskState
 from inspect_ai.util import Store, store_as
@@ -29,13 +29,17 @@ class RecordingGrader:
 
     def __init__(self) -> None:
         self.prompts: list[str] = []
+        self.conversations: list[list[ChatMessage]] = []
+        self.replies: list[str] = []
         self.models: list[dict[str, object]] = []
         self.completion = '{"achieved": true, "reason": "两次对话"}'
 
-    async def generate(self, prompt: str) -> ModelOutput:
+    async def generate(self, prompt: list[ChatMessage]) -> ModelOutput:
         """Record the request and return the fixed reply without a model call."""
-        self.prompts.append(prompt)
-        return ModelOutput.from_content(model="fake-grader", content=self.completion)
+        self.conversations.append(prompt)
+        self.prompts.append(str(prompt[0].content))
+        completion = self.replies.pop(0) if self.replies else self.completion
+        return ModelOutput.from_content(model="fake-grader", content=completion)
 
 
 def write_call(
@@ -262,3 +266,30 @@ def test_grader_requires_the_named_key_without_leaking_values(
 
     assert "fake-key-for-test" not in str(caught.value)
     assert grader.models == [] and grader.prompts == []
+
+
+@pytest.mark.parametrize("succeeds", [True, False])
+def test_grader_retries_only_format_errors_and_keeps_all_attempts(
+    grading: tuple[TaskState, RecordingGrader, Path], succeeds: bool
+) -> None:
+    state, grader, _ = grading
+    bad = '{"decision": "achieved"}'
+    last = '{"achieved": true, "reason": "有观测证据"}' if succeeds else "not json"
+    grader.replies = [bad, bad, last]
+
+    result = grade(state)
+
+    assert result.value == ("C" if succeeds else NOANSWER)
+    assert len(grader.models) == 1
+    assert len(grader.conversations) == 3
+    attempts = result.metadata["attempts"]
+    assert [attempt["raw"] for attempt in attempts] == [bad, bad, last]
+    assert all(attempt["error"] for attempt in attempts[:2])
+    assert bool(attempts[2]["error"]) is (not succeeds)
+    assert result.metadata["raw"] == last
+    first, second, third = grader.conversations
+    assert len(first) == 1 and len(second) == 3 and len(third) == 5
+    assert third[:3] == second and second[:1] == first
+    assert third[-2].role == "assistant" and third[-2].content == bad
+    assert third[-1].role == "user"
+    assert third[-1].content == '格式不正确。只回 {"achieved": true或false, "reason": "观测证据"}'
