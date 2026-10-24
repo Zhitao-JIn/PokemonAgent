@@ -13,6 +13,7 @@ from evals.agent_short_goal_run.scorer.utils import (
     failed,
     first_match,
     passed,
+    target_episodes,
     target_frames,
     unjudgeable,
 )
@@ -67,7 +68,7 @@ def shop_menu_opened(stream: RunStream, sample: EvalSample) -> CheckVerdict:
 @rule("shop_all_npcs_interacted")
 def shop_all_npcs_interacted(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     """本 task 起点可见的每个 NPC 都至少产生过一次对话交互事件。"""
-    episodes = stream.episodes_for(sample.sample_id)
+    episodes = target_episodes(stream, sample)
     frames = stream.frames(episodes)
     if not frames:
         return unjudgeable("没有目标局的观测帧")
@@ -102,7 +103,7 @@ def shop_all_npcs_interacted(stream: RunStream, sample: EvalSample) -> CheckVerd
 @rule("shop_two_npcs_interacted")
 def shop_two_npcs_interacted(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     """本 task 起点可见的至少两位不同 NPC 各有一次对话交互事件。"""
-    episodes = stream.episodes_for(sample.sample_id)
+    episodes = target_episodes(stream, sample)
     frames = stream.frames(episodes)
     if not frames:
         return unjudgeable("没有目标局的观测帧")
@@ -164,7 +165,7 @@ def shop_item_selected(stream: RunStream, sample: EvalSample) -> CheckVerdict:
 @rule("shop_bought")
 def shop_bought(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     """本 task 历史中 `buy_item` 脚本以 `ok` 正常结束即买成。"""
-    episodes = stream.episodes_for(sample.sample_id)
+    episodes = target_episodes(stream, sample)
     if not episodes:
         return unjudgeable("没有目标局")
     calls = stream.in_episodes(episodes, "act_call")

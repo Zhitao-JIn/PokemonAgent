@@ -92,7 +92,7 @@ def test_valid_healing_start_reaches_run_after_perception(
             events.append("release")
 
     class FakeHarness:
-        def run(self, run_id: str, tasks: list, *, sample_id: str):
+        def run(self, run_id: str, goals: list, run_goal=None, *, start_task=None, sample_id=""):
             events.append("run")
             return SimpleNamespace(
                 model_dump_json=lambda **kwargs: '{"termination":"success"}', branch="main"

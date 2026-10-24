@@ -22,9 +22,12 @@ task 层的贴身限（`task_entry.task_budget`，按键数算），三层的分
 **函数名与 `episode_entry` 刻意不同**：那边是 `run_episode`（"跑一局"），
 这里是 `new_run`（"起一个 run"），两个入口名 grep 时不撞。
 
-**`goals` 进、`plan` 表的构造在这里**（0914 控制台改造）：调用方递的还是
-一个 `list[Task]`（实验层与核对脚本的口径不变——它们不该知道 `GoalEntry`），
-本函数把它包成初始目标表（全部 `PENDING`、`attempts=0`）。
+**`goals` 进、`plan` 表的构造在这里**（0914 控制台改造；1024 修正）：调用方递的还是一
+个 `list[Task]`（实验层与核对脚本的口径不变——它们不该知道 `GoalEntry`），
+本函数把它包成初始目标表（全部 `PENDING`、零尝试）。**这张表可以为空**——run 的总目标是
+调用方显式传入、run 内不可变的 `run_goal`，规划出的执行目标由 run planner 自己建
+（评测入口就是 `goals=[]` + 显式 `run_goal`）。`goals` 非空且没给 `run_goal` 时，
+仍按表文字拼一个（`default_run_goal`），旧调用方行为不变。
 """
 
 from __future__ import annotations
@@ -66,10 +69,35 @@ def initial_plan(goals: list[Task]) -> list[GoalEntry]:
 
 
 def default_run_goal(goals: list[Task]) -> Goal:
-    """调用方没给 `run_goal` 时，用初始目标表的文字拼一个（依次完成表上全部目标）。"""
+    """调用方没给 `run_goal` 时，用初始目标表的文字拼一个（依次完成表上全部目标）。
+
+    前置条件：`goals` 非空——空表没有文字可拼，那种调用必须显式给 `run_goal`。
+    """
+    assert goals, "default_run_goal() needs a non-empty goal table"
     return Goal(
         goal="依次完成：" + "；".join(task.goal for task in goals),
         criteria="；".join(task.success_criteria for task in goals),
+    )
+
+
+def start_task_for(run_id: str, run_goal: Goal) -> Task:
+    """合成 run 开局用的引导 `Task`：`goals` 为空时世界 reset 只有它可用。
+
+    世界端只把这个 Task 存下来做断言与"将来按任务选起始存档"
+    （`world/pyboy_world.py` 的 `reset`），真正的任务编排由 `plan_run` 逐局决定，
+    所以字段取 run 级口径、`task_id` 用 `run_id`（run 内唯一且可追溯）。
+
+    `max_steps=1`：`GameToolPort.reset` 的前置条件是 `max_steps > 0`，而这里的数字
+    不参与任何预算计算——第一局的目标预算来自 planner 的 `budget.limit`。
+
+    前置条件：`run_id` 非空（trace 归属章靠它）。
+    """
+    assert run_id, "start_task_for() got an empty run_id"
+    return Task(
+        task_id=run_id,
+        goal=run_goal.goal,
+        success_criteria=run_goal.criteria,
+        max_steps=1,
     )
 
 
@@ -80,6 +108,7 @@ def new_run(
     run_id: str,
     goals: list[Task],
     run_goal: Goal | None = None,
+    start_task: Task | None = None,
     checkpoint_only: bool = False,
     sample_id: str = "",
 ) -> RunResult:
@@ -102,11 +131,21 @@ def new_run(
     重开成 `PENDING`（"重试是 plan 的决策，不是自动动作"）。结算累积在 `episode_outputs`，
     这里组装汇总。
 
+    **`goals` 可以为空**：此时 `run_goal` 必给（assert）。空表表示"执行目标全部由 run
+    planner 建"，规划出的条目以 `plan-<run_id>-<n>` 为 id。`goals` 非空且 `run_goal`
+    缺省时，run goal 仍由表文字拼（`default_run_goal`），与旧行为一致。
+
+    `start_task`：世界 reset 用的 `Task`，只供 reset 断言与"将来按任务选起始存档"。
+    缺省取表序第一条；空表时由 `start_task_for(run_id, run_goal)` 合成（`max_steps=1`）。
+    需要 `initial_state_hint` 的调用方必须自己经 `start_task` 带进来。
+
     后置条件：正常路径 trace 里恰好多一条 RUN_START（`begin`）和一条 RUN_END（`run_done`）；
     异常路径补一条 RUN_ERROR 后原样抛出，不吞。
     """
     assert run_id, "new_run() got an empty run_id"
-    assert goals, "new_run() got an empty goal table"
+    assert goals or run_goal is not None, (
+        "new_run() needs either an initial goal table or an explicit run_goal"
+    )
     assert not checkpoint_only or deps.checkpointer is not None, (
         "checkpoint_only needs a checkpointer"
     )
@@ -126,10 +165,17 @@ def new_run(
         # （取舍见 `CHANGELOG.md` 2026-09-03 条目）。reset 住在这里（图外、"每 run
         # 恰好执行一次"的位置），"只做一次"由代码位置保证——不再需要
         # `world_reset_done` 那个跨局记号（2026-09-22 第 178 条删除）。
-        # task 取表序第一条（run 从第一个目标开局）；world 只拿它做断言与
-        # "将来按任务选起始存档"，真正的任务编排仍由 `dispatch` 逐局决定。
+        # 世界 reset 用的 Task：显式 `start_task` > 表序第一条 > 由 run goal 合成
+        # （空表口径）。world 只拿它做断言与"将来按任务选起始存档"，真正的任务编排
+        # 仍由 `dispatch`（非空表）或 `plan_run`（空表）逐局决定。
         # reset 走 `deps.game`（0928 起 run 层自己持有世界端口，与 episode 层同一实例）。
-        deps.game.reset(FromHarnessToGameToolResetReq(task=goals[0]))
+        if start_task is not None:
+            reset_task = start_task
+        elif goals:
+            reset_task = goals[0]
+        else:
+            reset_task = start_task_for(run_id, goal)
+        deps.game.reset(FromHarnessToGameToolResetReq(task=reset_task))
         if deps.checkpointer is not None:
             deps.checkpointer.save("run", run_id=run_id, step=state.step, state=state)
         if checkpoint_only:
@@ -228,5 +274,6 @@ __all__ = [
     "invoke_run",
     "new_run",
     "record_run_error",
+    "start_task_for",
     "thread_id",
 ]

@@ -75,6 +75,7 @@ class RunHarness:
         goals: list[Task],
         run_goal: Goal | None = None,
         *,
+        start_task: Task | None = None,
         checkpoint_only: bool = False,
         sample_id: str = "",
     ) -> RunResult:
@@ -84,8 +85,13 @@ class RunHarness:
         `run_entry.new_run`——本方法只是一道**外部调用面**。
 
         `goals` 是初始目标表（`list[Task]`）；run 内部把每条包成 `GoalEntry`
-        （`run_entry.initial_plan`），调用方不必认识那张表。
-        `run_goal` 不给时由目标表文字拼一个（`run_entry.default_run_goal`）。
+        （`run_entry.initial_plan`），调用方不必认识那张表。**可以为空**——这时执行目标
+        全部由 run planner 建，`run_goal` 必给：它是调用方显式传入、run 内不可变的
+        总目标（判定员问的那个靶子），与可编辑的目标表是两件事。
+        `goals` 非空且 `run_goal` 缺省时，run goal 仍由目标表文字拼一个
+        （`run_entry.default_run_goal`），旧调用方行为不变。
+        `start_task`：世界 reset 用的 `Task`（缺省取表序第一条，空表时按 run goal 合成）；
+        `initial_state_hint` 只能由调用方经它带进来。
         `checkpoint_only`：只存 run 级存档就返回，不进图（见 `run_entry.new_run`）。
         `sample_id`：eval 侧样本标识，原样带回 `RunResult.sample_id`（非 eval 缺省空串）。
         """
@@ -95,6 +101,7 @@ class RunHarness:
             run_id=run_id,
             goals=goals,
             run_goal=run_goal,
+            start_task=start_task,
             checkpoint_only=checkpoint_only,
             sample_id=sample_id,
         )

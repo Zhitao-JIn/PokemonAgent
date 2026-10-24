@@ -1,3 +1,33 @@
+## 2026-10-24（635）—— ROADMAP 占位：run 结束后的 run 级规划器（E8）
+
+**改了什么**：`docs/ROADMAP.md` 第三节 E 类总览加一行 E8（📋 / 工业 / 项目 1 / 详述 §4），第四节在 E7 与 J1 之间按 1.3 节模板加 E8 详述（问题、证据、占位方案、验收待定稿、非目标、参照），第五节叙事维度索引的"工业"一行由 `E1–E7` 改为 `E1–E8`。
+
+**为什么这么改**：633–634 把 run goal 与可编辑目标表分开之后，run goal 由调用方一次性传入、run 内不可变，plan 由 run planner 建；一次 run 结束后应重新规划下一个 run goal，但这一层现在没有承载者。先把这个位置记进路线图，下一轮讨论不必重新论证"这层不存在"。
+
+**取舍**：只占位——不实现、不设计、不新增代码。条目里的方案只是形状说明（与 `RunPlan` 同形、读 run 级结果、run 图不改、有自己的 trace 账名、占位可直通），验收写"待定稿"，非目标写明不进入 run 图内部、不改 `review_and_judge` 停机语义、不承诺实现时间；run goal 表的行状态与跨 run 持久化留给定稿。文件头的全局"最后核实：2026-09-24"未动：按现有惯例它只在整份对账时更新，此前的条目级改动也只改条目自己的日期（`9dfbbf1`、`218f599` 均如此）。
+
+**影响面**：只改 `docs/ROADMAP.md` 与本条日志；不改代码、测试、数据集、prompt、AGENTS.md / CLAUDE.md。全量 2658 passed / 25 skipped / 3 deselected（与起点一致，纯文档）；`ruff check` 与 `ruff format --check` 全绿。
+
+## 2026-10-24（634）—— run goal 由调用方显式传入、plan 初始可为空
+
+**改了什么**：`RunHarness.run(run_id, goals, run_goal=None, *, start_task=None, …)` 与 `run_entry.new_run` 增加 `start_task` 参数；`goals` 允许为空列表（此时 `run_goal` 必给，否则入口 assert 失败），`goals` 非空且 `run_goal` 缺省时仍按表文字拼（`default_run_goal`），旧调用方行为不变。新增 `run_entry.start_task_for(run_id, run_goal)`：按 run goal 合成世界 reset 用的引导 `Task`（`task_id=run_id`、文字取 run goal、`max_steps=1`）。`new_run` 的世界 reset 改为三级取值：显式 `start_task` → 表序第一条 → 空表时 `start_task_for`。`begin` 去掉"目标表非空"的断言，只留"至多一条 `RUNNING`"。`checkpoint/restore.open_branch` 的 reset 同样分两级（非空取 `goals[0].task`，空表用 `start_task_for(pre_run.run_id, pre_run.run_goal)`）。评测入口 `one.py` 改为 `harness.run(run_id, [], run_goal=Goal(sample.goal, sample.success_criteria), start_task=_task_for(sample), sample_id=sample.sample_id)`，样本 id 不再充当目标 id。
+
+**为什么这么改**：`new_run` 原先把同一个 `list[Task]` 既拼成 `run_goal`（`default_run_goal`）又包成 plan 第 0 行（`initial_plan`），评测入口又把 `task_id` 设成样本 id——run 总目标与可编辑目标表第 0 行成了同一份数据的两个副本。planner 把第 0 行标 `abandoned`、新建 `plan-<run_id>-1/-2` 是合法拆解，于是原样本 id 名下一局都没有，机械评分闸门判 unjudgeable（`knowledge_shop_interaction` 的实际故障；取局口径已在 633 修）。run goal 是调用方显式传入、run 内不可变的总目标，plan 初始为空、由 run planner 自己建执行目标——两件事必须在数据上分开，且不能用 prompt 禁止拆解。
+
+**取舍**：样本的 `max_steps` 不再约束第一局的 task 数（它只经引导 Task 进世界 reset，而 reset 只要求 `max_steps > 0`），改由 planner 给的 `budget.limit` 与配置的 run 级预算（`max_episodes`、`plan_max_new_goals`、`max_planning_rounds`）兜底——评测单样本的成本分布会变。`initial_state_hint` 只能由调用方经 `start_task` 带入；恢复路径合成的 Task 不带它（恢复随后紧接着 `load_state`，起点由存档决定）。合成 Task 的 `max_steps=1` 只满足世界端口下界，不参与任何预算计算。不改 `RunState` 字段、不改 `run_plan` prompt、不改 `review_and_judge` 的停机语义（`state_schema_hash` 改动前后均为 `e3bd23162bfd0e85`）。
+
+**影响面**：harness 的 run 入口、恢复路径与评测入口 `one.py`；`begin` 少一条断言（空表不再视为违约）。`run_start` 账在空 `run_goals` 下照常渲染与解析（`goals` / `success_criteria` 为空数组，`run_goal` / `run_criteria` 按显式值写入），`render.py` / `content.py` 未改。新增 9 条用例：空表跑通且 `episode_start.goal_id` 为 `plan-<run_id>-1`、reset 取合成 Task、显式 `start_task` 优先、`goals` 与 `run_goal` 都缺省时 assert、旧路径（`run_goal` 缺省 + 非空表）不变、空表 `run_start` 渲染解析、planner 首轮无新增时规划耗尽收尾、`start_task_for` 单测、空表存档经 `open_branch` 走 reset；另有 5 个评测侧假 harness 的签名与接线断言（`goals=[]`、`run_goal` 与 `start_task` 来自样本）同步更新。定向 `tests/harness` + `tests/evals/agent_short_goal_run`：378 passed / 3 deselected；全量 2658 passed / 25 skipped / 3 deselected；`ruff check` 与 `ruff format --check` 全绿；`tests/prompt/golden/run_plan/*` 无 diff（`tests/prompt` 354 passed / 25 skipped）。
+
+## 2026-10-24（633）—— 机械评分按 run 取局：run 粒度不再按目标 id 找局
+
+**改了什么**：`scorer/stream.py` 新增只读 `RunStream.run_episodes()`（本执行线上全部 `episode_start` 的 `episode_id`，按开局先后、去重）；`scorer/utils.py` 新增 `target_episodes(stream, sample)`——run 粒度返回 `run_episodes()`，episode / task 粒度仍返回 `episodes_for(sample.sample_id)`；`target_frames` 改为经它取帧；`scorer/registry.py` 的闸门与 `scorer/rules/shop.py` 三处（`shop_all_npcs_interacted`、`shop_two_npcs_interacted`、`shop_bought`）全部改用它。改完后 `episodes_for(sample.sample_id)` 只剩 `target_episodes` 一处调用点。闸门理由按粒度分措辞（run 记"本执行线"、其余记"这个目标"）。
+
+**为什么这么改**：样本 `knowledge_shop_interaction` 实跑成功（run 级判定员判 `goal_done`、2/2 局完成），机械评分却返回 N（unjudgeable）：planner 把原条目标为 abandoned、新建 `plan-<run_id>-1/-2`，局都挂在新 id 下，而闸门用 `episodes_for(sample.sample_id)` 精确匹配 `episode_start.goal_id`，原样本 id 名下一局都没有，判据根本没运行。run 内只有一个 run goal，归属键是 `run_id`（`RunStream.load` 已按 run 与分支过滤），合法拆解不该让证据消失。
+
+**取舍**：不动 `episodes_for` 的语义——episode / task 粒度仍按目标 id 取局（数据集 140 条都是 run 粒度，这条路径只作兼容保留）；不加目标血缘字段。副作用是 run 粒度的样本身份不再由账本内的目标 id 佐证，改由调用方按 `run_id_for(sample_id)` 定位账本保证，因此原用例 `test_an_unrelated_run_is_not_accepted_as_sample_evidence` 的语义对 run 粒度不再成立：改为 episode 粒度（保住"别的目标不能被当证据"这条），另加一条"run 样本空执行线仍 unjudgeable"钉住闸门。新增四条用例覆盖拆分账：run 粒度进判据且证据取全执行线、同账对 episode 粒度仍 unjudgeable、两位 NPC 的对话分散在两局仍判成、空执行线仍 unjudgeable。
+
+**影响面**：仅 `evals/agent_short_goal_run/scorer/{utils,registry,stream}.py`、`scorer/rules/shop.py` 与该测试文件；不改 harness、数据集、判据阈值与结论形状。破坏验证：把闸门临时改回 `episodes_for(sample.sample_id)`，两条新增拆分账用例失败，还原后通过。定向 tests/evals：408 passed / 0 failed（5 条既有 LangGraph 警告）；全量 2649 passed / 25 skipped / 3 deselected；`ruff check` 与 `ruff format --check` 通过。
+
 ## 2026-10-24（632）—— prompt 缓存友好排布：静态说明前移、变量内容后移
 
 **改了什么**：新建 `run_plan` v2、`summarize_run` v2、`summarize_task` v2、`judge_success` v3（旧版本原样保留），注册表切到新版本。每份模板把不随调用变化的角色、规则、输出格式、附图读法放在前面，把 `$goal`、`$goals`、`$history`、`$knowledge`、`$criteria`、`$steps_text` 等每次不同的内容放在最后；judge_success 的"如何读知识与流水"说明改为静态段，`$interrupt_rule` 移到变量段之前。措辞、变量集合、labels 与 assemble 契约不变。顺带修复 `lint_prompt_generalization.py` 在 Windows 中文控制台下按系统编码输出、测试按 UTF-8 解码导致的两条失败：脚本显式以 UTF-8 输出，测试子进程设 `PYTHONUTF8=1`。

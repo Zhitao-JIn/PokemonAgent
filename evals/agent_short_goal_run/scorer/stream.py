@@ -105,6 +105,19 @@ class RunStream:
         ends = self.of_kind(TraceKind.RUN_END)
         return ends[-1].content if ends else None  # type: ignore[return-value]
 
+    def run_episodes(self) -> list[str]:
+        """本执行线上开局过的全部 `episode_id`，按开局先后、去重。
+
+        run 粒度的取局口径：run 内只有一个 run goal，归属键是 `run_id`（`load` 已按 run
+        与分支过滤），不在 `episode_start.goal_id` 上——planner 合法拆解时会新建目标 id。
+        """
+        starts = (
+            e
+            for e in self.of_kind(TraceKind.EPISODE_START)
+            if isinstance(e.content, EpisodeStartContent)
+        )
+        return list(dict.fromkeys(e.meta.episode_id for e in starts))
+
     def episodes_for(self, goal_id: str) -> list[str]:
         """派给这个目标的各局 `episode_id`，按开局先后。"""
         return [

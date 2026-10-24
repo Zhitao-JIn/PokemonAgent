@@ -16,6 +16,7 @@ from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.agent_short_goal_run.scorer.verdict import CheckVerdict
 
 from .stream import RunStream
+from .utils import target_episodes
 
 Check = Callable[[RunStream, EvalSample], CheckVerdict]
 """一条机械判据。"""
@@ -42,8 +43,9 @@ def judge(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     """
     if sample.check_id is None:
         return CheckVerdict(outcome="unjudgeable", reason="样本不可机械判定（check_id 为空）")
-    if not stream.episodes_for(sample.sample_id):
-        return CheckVerdict(outcome="unjudgeable", reason="账本里没有派给这个目标的局")
+    if not target_episodes(stream, sample):
+        scope = "本执行线" if sample.granularity == "run" else "这个目标"
+        return CheckVerdict(outcome="unjudgeable", reason=f"账本里没有派给{scope}的局")
     return RULES[sample.check_id](stream, sample)
 
 

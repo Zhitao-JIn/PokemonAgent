@@ -52,7 +52,7 @@ def test_cancel_start_validation_controls_run(
             pass
 
     class FakeHarness:
-        def run(self, run_id: str, tasks: list, *, sample_id: str):
+        def run(self, run_id: str, goals: list, run_goal=None, *, start_task=None, sample_id=""):
             run_calls.append((run_id, sample_id))
             return SimpleNamespace(
                 model_dump_json=lambda **kwargs: '{"termination":"success"}', branch="main"

@@ -111,7 +111,16 @@ def open_branch(manifest_path: str | Path, build_branch: BuildBranch) -> OpenedB
     ck.memory.restore_memory(
         FromHarnessToMemoryToolRestoreMemoryReq(archive=manifest.memory_archive)
     )
-    ck.game.reset(FromHarnessToGameToolResetReq(task=pre_run.goals[0].task))
+    # run 的 reset Task：存档里的表序第一条；空表（执行目标全由 planner 建）按 run goal 合成。
+    ck.game.reset(
+        FromHarnessToGameToolResetReq(
+            task=(
+                pre_run.goals[0].task
+                if pre_run.goals
+                else run_entry.start_task_for(pre_run.run_id, pre_run.run_goal)
+            )
+        )
+    )
     ck.game.load_state(
         FromHarnessToGameToolLoadStateReq(path=str(path.parent / manifest.world_file))
     )

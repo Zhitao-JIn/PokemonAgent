@@ -167,8 +167,8 @@ def test_runner_reads_the_same_file_through_build_real(tmp_path, monkeypatch):
     events = []
 
     class FakeHarness:
-        def run(self, run_id, tasks, *, sample_id):
-            events.append(("run", run_id, tasks, sample_id))
+        def run(self, run_id, goals, run_goal=None, *, start_task=None, sample_id=""):
+            events.append(("run", run_id, goals, run_goal, start_task, sample_id))
             return SimpleNamespace(
                 model_dump_json=lambda **kwargs: '{"termination":"success"}', branch="main"
             )
@@ -204,7 +204,9 @@ def test_runner_reads_the_same_file_through_build_real(tmp_path, monkeypatch):
     assert events[1] == ("state", state_path)
     run_call = events[2]
     assert run_call[0:2] == ("run", f"eval-{SAMPLE_ID}")
-    task = run_call[2][0]
+    assert run_call[2] == [], "正式 run 的初目标表为空：执行目标全由 run planner 建"
+    assert (run_call[3].goal, run_call[3].criteria) == (sample.goal, sample.success_criteria)
+    task = run_call[4]
     assert (
         task.task_id,
         task.goal,
