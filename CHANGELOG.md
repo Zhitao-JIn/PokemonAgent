@@ -1,3 +1,13 @@
+## 2026-10-24（636）—— RunStream.load 按 run_id 过滤：评分不再跨 run 串账
+
+**改了什么**：`evals/agent_short_goal_run/scorer/stream.py` 的 `RunStream.load` 两条后端都在读回事件后先按 `meta.run_id` 过滤（新增模块级 `_of_run`），local 后端的 branch 自动检测改在这个过滤之后进行；langfuse 路径同样过一道（trace_id 已按 `(run_id, branch)` 寻址，结果不变，只是两个后端同一个后置条件）。`run_episodes()` 与 `evals/agent_short_goal_run/scorer/utils.py::target_episodes` 的 docstring 改为"归属键是 `run_id`，由 `load` 在读取时过滤"，删掉"已由 load 定死"的写法。
+
+**为什么这么改**：local 后端的落盘根是**多个 run 平铺的一个目录**（`LocalTrace` 不持有 run 身份），`TraceTool.read_events()` 空 meta 读全量，`load` 原先只按 `meta.branch` 过滤——于是传什么 run id 都读回同一份账。633 把 run 粒度样本的取局口径改成"本执行线全部局"（`run_episodes` / `target_episodes`），其注释与 spec 写的"`run_id` 已由 `load` 定死"对 local 后端并不成立：eval 默认每个样本一个独立 trace 目录所以平时不暴露，多个 run 共用一个目录时证据会串（离线实测：对一个不存在的 run id，`load` 仍读回同样的 276 条事件并判通过）。
+
+**取舍**：不加目标血缘字段，也不改 `TraceTool` 与存储层——`EventMeta.run_id` 每条账本来就有，过滤在评分侧的读口做一次就够。`load` 的签名与 `branch` 缺省自动检测语义不变，只是把 run_id 过滤排在自动检测之前：否则另一个 run 的 `checkpoint_restore` 会把 branch 选歪，本 run 的账反而被过滤成空。langfuse 路径的过滤是冗余保险，不改它的寻址方式与"`branch` 必给"的口径。
+
+**影响面**：只改评分侧的 `scorer/stream.py`、`scorer/utils.py` 与同目录测试；不改生产 harness、`pokemon_agent/` 下任何代码、其他评分器、数据集与 prompt。新增 3 条用例（同一落盘根两个 run：`load(A)` 的事件/局/帧不含 B；不存在的 run id 读回空账且机械判据 unjudgeable；B 有恢复线时 `load(A)` 的 branch 仍是 `main`）。破坏验证：临时去掉 local 路径的 run_id 过滤，3 条用例全部失败，还原后通过。定向 tests/evals 411 passed / 0 failed（5 条既有 LangGraph 警告）；全量 2661 passed / 25 skipped / 3 deselected；`ruff check` 与 `ruff format --check` 全绿。
+
 ## 2026-10-24（635）—— ROADMAP 占位：run 结束后的 run 级规划器（E8）
 
 **改了什么**：`docs/ROADMAP.md` 第三节 E 类总览加一行 E8（📋 / 工业 / 项目 1 / 详述 §4），第四节在 E7 与 J1 之间按 1.3 节模板加 E8 详述（问题、证据、占位方案、验收待定稿、非目标、参照），第五节叙事维度索引的"工业"一行由 `E1–E7` 改为 `E1–E8`。
