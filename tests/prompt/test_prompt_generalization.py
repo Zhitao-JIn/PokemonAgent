@@ -1,6 +1,7 @@
 """prompt 泛化 lint：抄了样本短语必须命中，活动注册表对 e2e 样本必须零命中。"""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ def run_lint(*arguments: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        env={**os.environ, "PYTHONUTF8": "1"},
         check=False,
     )
 

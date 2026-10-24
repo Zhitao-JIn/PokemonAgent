@@ -207,6 +207,8 @@ def inspected_files(directory: Path) -> list[Path]:
 
 
 def main() -> int:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="检查活动 prompt 是否照搬了 e2e 评测样本。")
     parser.add_argument("--samples", action="append", required=True, help="samples.jsonl，可重复")
     parser.add_argument(

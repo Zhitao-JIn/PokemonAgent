@@ -1,3 +1,13 @@
+## 2026-10-24（632）—— prompt 缓存友好排布：静态说明前移、变量内容后移
+
+**改了什么**：新建 `run_plan` v2、`summarize_run` v2、`summarize_task` v2、`judge_success` v3（旧版本原样保留），注册表切到新版本。每份模板把不随调用变化的角色、规则、输出格式、附图读法放在前面，把 `$goal`、`$goals`、`$history`、`$knowledge`、`$criteria`、`$steps_text` 等每次不同的内容放在最后；judge_success 的"如何读知识与流水"说明改为静态段，`$interrupt_rule` 移到变量段之前。措辞、变量集合、labels 与 assemble 契约不变。顺带修复 `lint_prompt_generalization.py` 在 Windows 中文控制台下按系统编码输出、测试按 UTF-8 解码导致的两条失败：脚本显式以 UTF-8 输出，测试子进程设 `PYTHONUTF8=1`。
+
+**为什么这么改**：上一轮通宵 baseline 实测整体缓存命中仅 40.9%，其中 plan 与 summarize_run 为 0%、summarize_task 7.8%，原因是这些模板把变化内容放在开头，前缀每次都不同。缓存按前缀命中，静态内容在前才能被复用；输出与思考 token 仍是主要成本，因此这是降低未命中输入成本的低风险一步。
+
+**取舍**：不改 summarize、verify、decide_action（后两者命中已较高或结构不同）；不改措辞，避免把排布效应与措辞效应混在一起，行为差异留给调优轮次评测。judge_success 会因 `$interrupt_rule` 是否启用而分成两种前缀。
+
+**影响面**：仅 prompt 模板与注册表、lint 脚本及其测试。golden 对拍仍钉 v1。
+
 ## 2026-10-24（630）—— 修复 e2e 起点预检顺序、worker 根因丢失与独立评分格式重试
 
 **改了什么**：`agent_short_goal_run` 对 `shop_cancelled` / `party_healed` 在起点观察前显式 reset，复用正式 run 的任务字段；正式 harness 的 reset、预算与 trace 流程不变。worker 将嵌套 ExceptionGroup 按深度优先顺序展开为含类型与消息的叶子列表，在原有字符串 `error` 中附失败阶段和列表，并输出 stderr；校验失败仍记字符串 `invalid`，不伪造 trace。`result_grade` 在格式解析失败时最多纠正重试 2 次（总共 3 次），同一个 Inspect Model 承担全部调用，metadata 追加每次原始输出和解析错误。补充两类起点顺序、重新 reset、失败记录兼容性、异常展开及评分重试的离线回归测试。
