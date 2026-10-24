@@ -9,6 +9,7 @@ from _doubles.script_frames import frame
 
 from evals.agent_short_goal_run.dataset.loader import load_samples
 from evals.agent_short_goal_run.solver.runner import one as runner
+from pokemon_agent.schemas.harness import FromHarnessToGameToolResetReq
 from pokemon_agent.world.interface import PartyMon
 
 
@@ -32,7 +33,12 @@ def test_invalid_healing_start_is_recorded_without_running(
         def use_start_state(self, path: Path) -> None:
             assert path == state_path
 
+        def reset(self, req: FromHarnessToGameToolResetReq) -> None:
+            assert req.task.task_id == sample.sample_id
+            self.ready = True
+
         def perceive_task(self):
+            assert getattr(self, "ready", False), "perceive_task() before reset()"
             return SimpleNamespace(ram=ram, observation=observation)
 
         def release_lease(self) -> None:
@@ -72,7 +78,13 @@ def test_valid_healing_start_reaches_run_after_perception(
             assert path == state_path
             events.append("state")
 
+        def reset(self, req: FromHarnessToGameToolResetReq) -> None:
+            assert req.task.task_id == sample.sample_id
+            self.ready = True
+            events.append("reset")
+
         def perceive_task(self):
+            assert getattr(self, "ready", False), "perceive_task() before reset()"
             events.append("perceive")
             return SimpleNamespace(ram=ram, observation=observation)
 
@@ -90,6 +102,6 @@ def test_valid_healing_start_reaches_run_after_perception(
 
     runner.run_one(sample, tmp_path / "work", run_config_path="config.json")
 
-    assert events == ["state", "perceive", "run", "release"]
+    assert events == ["state", "reset", "perceive", "run", "release"]
     record = json.loads((tmp_path / "work" / "run.json").read_text("utf-8"))
     assert not record["invalid"]

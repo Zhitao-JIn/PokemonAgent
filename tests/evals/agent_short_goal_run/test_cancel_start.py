@@ -9,6 +9,7 @@ from _doubles.script_frames import frame
 
 from evals.agent_short_goal_run.dataset.loader import load_samples
 from evals.agent_short_goal_run.solver.runner import one as runner
+from pokemon_agent.schemas.harness import FromHarnessToGameToolResetReq
 from pokemon_agent.world import TaskScene
 from pokemon_agent.world.interface import DecodedText
 
@@ -39,7 +40,12 @@ def test_cancel_start_validation_controls_run(
         def use_start_state(self, path: Path) -> None:
             assert path == state_path
 
+        def reset(self, req: FromHarnessToGameToolResetReq) -> None:
+            assert req.task.task_id == sample.sample_id
+            self.ready = True
+
         def perceive_task(self):
+            assert getattr(self, "ready", False), "perceive_task() before reset()"
             return SimpleNamespace(ram=ram, observation=observation)
 
         def release_lease(self) -> None:
