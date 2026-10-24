@@ -1,0 +1,8 @@
+{
+  "task": "judge_success",
+  "version": "v3",
+  "kind": "task",
+  "params": "JudgeParams",
+  "reason": "缓存友好排布：静态说明前移、每次不同的变量内容后移，措辞与契约不变",
+  "hash": "b0f6a536331c0eeb3e998a7252ba54327fac6040178e8172e5b9507cd890b2bb"
+}

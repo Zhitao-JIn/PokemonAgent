@@ -1,0 +1,8 @@
+{
+  "task": "summarize_task",
+  "version": "v2",
+  "kind": "task",
+  "params": "SummarizeTaskParams",
+  "reason": "缓存友好排布：静态说明前移、每次不同的变量内容后移，措辞与契约不变",
+  "hash": "c8c1b1dbb43b9e06f85a9f5b8c8aadd38b21038caba9dcc72abda038833cd8d6"
+}
