@@ -28,7 +28,7 @@ def _ball_result(frame: Frame) -> bool:
         return False
     text = " ".join(frame.text.dialog_text.casefold().split())
     return bool(
-        re.search(r"all right!.*was caught|(?:darn!|oh no!).*broke free", text)
+        re.search(r"all right!.*was caught|\bwas caught!|(?:darn!|oh no!).*broke free", text)
         or any(
             phrase in text
             for phrase in (

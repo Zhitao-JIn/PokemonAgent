@@ -1,0 +1,566 @@
+{
+  "run_plan": [
+    {
+      "sample_id": "knowledge_battle_action_menu",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf2-8c13-7814-ad0f-f72ec6a4c60d",
+        "prompt_sha256": "4cc0768ec72835e1e75a408688dfef1128b95fa23fc362342e81407498532ab1",
+        "reasoning_tokens": 232
+      },
+      "candidate": {
+        "uuid": "01a16d25-bf6a-7fc9-a8a5-70d3ee4d284c",
+        "prompt_sha256": "4cc0768ec72835e1e75a408688dfef1128b95fa23fc362342e81407498532ab1",
+        "reasoning_tokens": 212
+      }
+    },
+    {
+      "sample_id": "knowledge_battle_fight_menu",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf3-e6df-7268-991b-cac4a95e85a6",
+        "prompt_sha256": "2af3d1ee24627dfc7921ff8a5328742c60d2f03a15e8e8625f8f32a95ce21b9a",
+        "reasoning_tokens": 237
+      },
+      "candidate": {
+        "uuid": "01a16d27-4f14-7f28-aa2e-15f6bf2f5266",
+        "prompt_sha256": "2af3d1ee24627dfc7921ff8a5328742c60d2f03a15e8e8625f8f32a95ce21b9a",
+        "reasoning_tokens": 438
+      }
+    },
+    {
+      "sample_id": "knowledge_battle_item_use",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf9-865f-7352-b0aa-529dd671939a",
+        "prompt_sha256": "1f91f4eac8baa47aecca057913ecd2c81d73e0b242af2e22e46871b053a7f770",
+        "reasoning_tokens": 192
+      },
+      "candidate": {
+        "uuid": "01a16d2c-5418-72c3-9408-73e6a5ca8387",
+        "prompt_sha256": "1f91f4eac8baa47aecca057913ecd2c81d73e0b242af2e22e46871b053a7f770",
+        "reasoning_tokens": 382
+      }
+    },
+    {
+      "sample_id": "knowledge_battle_move_select",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf5-5719-71c1-bf6d-3673aac006fb",
+        "prompt_sha256": "144f8eb01e100117ce566e690632ac331499c695743d1690de23e1aab29a6aa4",
+        "reasoning_tokens": 331
+      },
+      "candidate": {
+        "uuid": "01a16d28-b41b-7e6f-b752-dc4c644880c7",
+        "prompt_sha256": "144f8eb01e100117ce566e690632ac331499c695743d1690de23e1aab29a6aa4",
+        "reasoning_tokens": 334
+      }
+    },
+    {
+      "sample_id": "knowledge_battle_pokemon_switch",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf7-640e-7d93-9251-6b4f64acc5f1",
+        "prompt_sha256": "c885aa6c604a98f033b8d19c237b8a26643b0463549cacadac2468e51e07ff7d",
+        "reasoning_tokens": 1080
+      },
+      "candidate": {
+        "uuid": "01a16d2a-ba71-754b-b9df-01fdc3764dd8",
+        "prompt_sha256": "c885aa6c604a98f033b8d19c237b8a26643b0463549cacadac2468e51e07ff7d",
+        "reasoning_tokens": 310
+      }
+    },
+    {
+      "sample_id": "knowledge_battle_run_attempt",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cfb-0cd8-72e2-b527-c6e93968d7c6",
+        "prompt_sha256": "441bca93fc78e68ae8a562ed15318e780b79639f513066ee139d59890e653d0b",
+        "reasoning_tokens": 144
+      },
+      "candidate": {
+        "uuid": "01a16d2e-2ddd-71b7-b458-10693d40929c",
+        "prompt_sha256": "441bca93fc78e68ae8a562ed15318e780b79639f513066ee139d59890e653d0b",
+        "reasoning_tokens": 208
+      }
+    },
+    {
+      "sample_id": "knowledge_catch_throw_ball",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16d05-aadc-7294-bf9a-0f0d25f37990",
+        "prompt_sha256": "1eeddc752c3a4cbab0c0b084aea3cc5278a1e7b6baeb38a4a1da0965f7f2065f",
+        "reasoning_tokens": 318
+      },
+      "candidate": {
+        "uuid": "01a16d38-673d-7de0-b29a-01399570549e",
+        "prompt_sha256": "1eeddc752c3a4cbab0c0b084aea3cc5278a1e7b6baeb38a4a1da0965f7f2065f",
+        "reasoning_tokens": 177
+      }
+    },
+    {
+      "sample_id": "knowledge_catch_weaken_target",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16d03-c0a7-76fc-a02f-748e33843d1f",
+        "prompt_sha256": "2aceea9c038617af1754b4e522c625da9af5cd85e23a63966c9f45e1b9d36bc9",
+        "reasoning_tokens": 196
+      },
+      "candidate": {
+        "uuid": "01a16d36-82e5-77df-8d42-71ddf1d9be5c",
+        "prompt_sha256": "2aceea9c038617af1754b4e522c625da9af5cd85e23a63966c9f45e1b9d36bc9",
+        "reasoning_tokens": 417
+      }
+    },
+    {
+      "sample_id": "knowledge_dialogue_advance",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cee-3310-76ba-bd89-975881367bec",
+        "prompt_sha256": "c0cb43398aae812e787c8ae773a4a55a104e8700c1c2aec9e72d610efdf9a1c2",
+        "reasoning_tokens": 207
+      },
+      "candidate": {
+        "uuid": "01a16d1f-6831-72e9-84f6-ee439f263019",
+        "prompt_sha256": "c0cb43398aae812e787c8ae773a4a55a104e8700c1c2aec9e72d610efdf9a1c2",
+        "reasoning_tokens": 193
+      }
+    },
+    {
+      "sample_id": "knowledge_door_transition",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16ce8-91c7-78c4-9fa8-1d098d1bd1bf",
+        "prompt_sha256": "2333d52e39ce9c0e4c411b4bdf89b012af520703381b8d81c2867faf8b948af9",
+        "reasoning_tokens": 1275
+      },
+      "candidate": {
+        "uuid": "01a16d18-693a-7933-8fc8-1ba2d6444d6d",
+        "prompt_sha256": "2333d52e39ce9c0e4c411b4bdf89b012af520703381b8d81c2867faf8b948af9",
+        "reasoning_tokens": 1213
+      }
+    },
+    {
+      "sample_id": "knowledge_movement_obstacle",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cec-ae82-7a97-96f1-cd3b7e136f44",
+        "prompt_sha256": "f0133562455da625472a1d92c4d01a1d5183d902d090c248a5ae2ef4a5e786c3",
+        "reasoning_tokens": 1467
+      },
+      "candidate": {
+        "uuid": "01a16d1d-b90f-7c13-94e2-bd5ca419da88",
+        "prompt_sha256": "f0133562455da625472a1d92c4d01a1d5183d902d090c248a5ae2ef4a5e786c3",
+        "reasoning_tokens": 301
+      }
+    },
+    {
+      "sample_id": "knowledge_npc_dialogue",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cea-d008-7ede-bd25-836e55c0dcda",
+        "prompt_sha256": "eb6fb50d209d10bee195857116638fd6928fe6cd5764c0cd455acc193e87de9b",
+        "reasoning_tokens": 663
+      },
+      "candidate": {
+        "uuid": "01a16d1b-ddfd-72a8-a28f-965b934be383",
+        "prompt_sha256": "eb6fb50d209d10bee195857116638fd6928fe6cd5764c0cd455acc193e87de9b",
+        "reasoning_tokens": 700
+      }
+    },
+    {
+      "sample_id": "knowledge_pokemon_center_enter",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16d09-880f-7aa8-8846-1d99f6e43d6d",
+        "prompt_sha256": "181697c4262779485c1f9829fb009a76fb1e6751c7fe4922ba79fa91d4208e67",
+        "reasoning_tokens": 1230
+      },
+      "candidate": {
+        "uuid": "01a16d3c-4dc3-7e50-a601-8d05d816f238",
+        "prompt_sha256": "181697c4262779485c1f9829fb009a76fb1e6751c7fe4922ba79fa91d4208e67",
+        "reasoning_tokens": 718
+      }
+    },
+    {
+      "sample_id": "knowledge_pokemon_center_heal",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16d0b-2339-7820-86ab-551c04186b2b",
+        "prompt_sha256": "450865f9b6136b6efad9e582c78aff0ff88acf2c6dede40a2e061ed391c07ea0",
+        "reasoning_tokens": 1317
+      },
+      "candidate": {
+        "uuid": "01a16d3e-5e17-7da7-96e6-59abce558b7b",
+        "prompt_sha256": "450865f9b6136b6efad9e582c78aff0ff88acf2c6dede40a2e061ed391c07ea0",
+        "reasoning_tokens": 907
+      }
+    },
+    {
+      "sample_id": "knowledge_shop_cancel_purchase",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16d02-3594-7ae4-9d39-9354434e228f",
+        "prompt_sha256": "ad809982f3daa770013732d161ee069eb37ef1e1e56fee05b1920b15a2cffc56",
+        "reasoning_tokens": 119
+      },
+      "candidate": {
+        "uuid": "01a16d35-2bba-7f23-894b-22ded43e69f8",
+        "prompt_sha256": "ad809982f3daa770013732d161ee069eb37ef1e1e56fee05b1920b15a2cffc56",
+        "reasoning_tokens": 154
+      }
+    },
+    {
+      "sample_id": "knowledge_shop_confirm_purchase",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cff-55ee-775c-a411-f717986dcdaf",
+        "prompt_sha256": "facf2eeef9869ded3a4d006cd5f9e1e7b984385bbcf2abc7ba1614e2d738cc05",
+        "reasoning_tokens": 175
+      },
+      "candidate": {
+        "uuid": "01a16d32-b4a0-777b-b461-1a64caee454b",
+        "prompt_sha256": "facf2eeef9869ded3a4d006cd5f9e1e7b984385bbcf2abc7ba1614e2d738cc05",
+        "reasoning_tokens": 165
+      }
+    },
+    {
+      "sample_id": "knowledge_shop_interaction",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cef-f6c5-7052-a3bd-6f4b7f8cf30e",
+        "prompt_sha256": "c63aea59ada334731f5c53812da7f2871d66d2974b3b047440a2731213aca0ea",
+        "reasoning_tokens": 2336
+      },
+      "candidate": {
+        "uuid": "01a16d21-1e6a-71f7-bf4f-d2a4f02ebe76",
+        "prompt_sha256": "c63aea59ada334731f5c53812da7f2871d66d2974b3b047440a2731213aca0ea",
+        "reasoning_tokens": 4205
+      }
+    },
+    {
+      "sample_id": "knowledge_shop_open_buy_menu",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cfc-c974-7711-8c35-b2d03661a768",
+        "prompt_sha256": "ca20a4f8288a50c5d4d9d6eebbe79821b5662254fba5dae8fa1964c8234cc306",
+        "reasoning_tokens": 242
+      },
+      "candidate": {
+        "uuid": "01a16d30-2b24-7fb2-91d3-19d83b3fd340",
+        "prompt_sha256": "ca20a4f8288a50c5d4d9d6eebbe79821b5662254fba5dae8fa1964c8234cc306",
+        "reasoning_tokens": 259
+      }
+    },
+    {
+      "sample_id": "knowledge_shop_select_item",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cfe-0867-7e5e-bc81-c8acea2485e1",
+        "prompt_sha256": "65c4aa28346aee92d52252a783a873cac4191b50bc835aa0900b534c72f84820",
+        "reasoning_tokens": 311
+      },
+      "candidate": {
+        "uuid": "01a16d31-7352-78f4-b4ff-4001fc3fb064",
+        "prompt_sha256": "65c4aa28346aee92d52252a783a873cac4191b50bc835aa0900b534c72f84820",
+        "reasoning_tokens": 294
+      }
+    },
+    {
+      "sample_id": "knowledge_wild_encounter",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16ce6-6cae-761d-aeab-6e1061ad5f52",
+        "prompt_sha256": "eb098b182a05cb3cca1e885d2715aaec92db87a79c13c5709d84222ede32fc3c",
+        "reasoning_tokens": 185
+      },
+      "candidate": {
+        "uuid": "01a16d15-040c-7b12-bb80-ed90a17ddd78",
+        "prompt_sha256": "eb098b182a05cb3cca1e885d2715aaec92db87a79c13c5709d84222ede32fc3c",
+        "reasoning_tokens": 584
+      }
+    }
+  ],
+  "decompose": [
+    {
+      "sample_id": "knowledge_battle_action_menu",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf2-be95-7039-9dce-4d1c0907fd3e",
+        "prompt_sha256": "413eaacb2b306415cda01b7e295bc10165b9fbe9da6e052604a254ce81b8bc45",
+        "reasoning_tokens": 791
+      },
+      "candidate": {
+        "uuid": "01a16d25-ecc4-7b1a-8dee-9cc34e620018",
+        "prompt_sha256": "413eaacb2b306415cda01b7e295bc10165b9fbe9da6e052604a254ce81b8bc45",
+        "reasoning_tokens": 232
+      }
+    },
+    {
+      "sample_id": "knowledge_battle_fight_menu",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf4-11ec-709f-b471-11886c2f9785",
+        "prompt_sha256": "c8b3cf472689713f71a38460d3c56ed3e9cfdff20062df85cadb8d807b958d91",
+        "reasoning_tokens": 304
+      },
+      "candidate": {
+        "uuid": "01a16d27-7826-7f5d-9e39-701575f8a327",
+        "prompt_sha256": "c8b3cf472689713f71a38460d3c56ed3e9cfdff20062df85cadb8d807b958d91",
+        "reasoning_tokens": 282
+      }
+    },
+    {
+      "sample_id": "knowledge_battle_item_use",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf9-bae0-72db-8384-7e1d284a56fd",
+        "prompt_sha256": "de3a9245e55d535b0556ce6621bc662011f794a601c967f687129afb41aa2a93",
+        "reasoning_tokens": 833
+      },
+      "candidate": {
+        "uuid": "01a16d2c-83f1-7b13-aec7-e3c37bff876f",
+        "prompt_sha256": "de3a9245e55d535b0556ce6621bc662011f794a601c967f687129afb41aa2a93",
+        "reasoning_tokens": 498
+      }
+    },
+    {
+      "sample_id": "knowledge_battle_move_select",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf5-92d0-769e-8d8f-80b5a47b474c",
+        "prompt_sha256": "bbf826676272facfcbbf8e357bdbb045b101adec29f2990d3ccab667b9cbc7a0",
+        "reasoning_tokens": 651
+      },
+      "candidate": {
+        "uuid": "01a16d28-ef59-792a-9566-11b36ee25fdd",
+        "prompt_sha256": "bbf826676272facfcbbf8e357bdbb045b101adec29f2990d3ccab667b9cbc7a0",
+        "reasoning_tokens": 814
+      }
+    },
+    {
+      "sample_id": "knowledge_battle_pokemon_switch",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf7-ad86-7b80-8d3f-5961ba89dadd",
+        "prompt_sha256": "42c1a4ec02fd7b4b138ffea2af538a4eb2bdd85b6ba955977c1e95a22f493f39",
+        "reasoning_tokens": 1460
+      },
+      "candidate": {
+        "uuid": "01a16d2a-eed0-7a18-9f0e-ad1228e8d78c",
+        "prompt_sha256": "42c1a4ec02fd7b4b138ffea2af538a4eb2bdd85b6ba955977c1e95a22f493f39",
+        "reasoning_tokens": 399
+      }
+    },
+    {
+      "sample_id": "knowledge_battle_run_attempt",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cfb-51a7-7cd9-a5dc-e5fd7d3552b1",
+        "prompt_sha256": "41a7f9903d267b766c405c2f8735adf147d4ba35989437cf99783c066c4818e1",
+        "reasoning_tokens": 621
+      },
+      "candidate": {
+        "uuid": "01a16d2e-55d0-7330-a49d-27b7889aa15e",
+        "prompt_sha256": "41a7f9903d267b766c405c2f8735adf147d4ba35989437cf99783c066c4818e1",
+        "reasoning_tokens": 284
+      }
+    },
+    {
+      "sample_id": "knowledge_catch_throw_ball",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16d05-e79f-7b20-b7ee-0e6bb67a9658",
+        "prompt_sha256": "a7c494e0e80113e5d4ba20407c5ef72435eb987b4a3c7ba91f49d4b88b846645",
+        "reasoning_tokens": 847
+      },
+      "candidate": {
+        "uuid": "01a16d38-a244-7a78-a3cb-875b0e6b4714",
+        "prompt_sha256": "a7c494e0e80113e5d4ba20407c5ef72435eb987b4a3c7ba91f49d4b88b846645",
+        "reasoning_tokens": 776
+      }
+    },
+    {
+      "sample_id": "knowledge_catch_weaken_target",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16d03-e779-7f9d-9056-dc306c8f297a",
+        "prompt_sha256": "41f60da1b34e4d2a064214bee0c0c5000e196763e2c6ec059c70f2aa0e0fc8e8",
+        "reasoning_tokens": 251
+      },
+      "candidate": {
+        "uuid": "01a16d36-b640-7dff-893e-d7c23525de5f",
+        "prompt_sha256": "41f60da1b34e4d2a064214bee0c0c5000e196763e2c6ec059c70f2aa0e0fc8e8",
+        "reasoning_tokens": 484
+      }
+    },
+    {
+      "sample_id": "knowledge_dialogue_advance",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cee-595f-7b11-8f3f-0f877e634db6",
+        "prompt_sha256": "85d3a442feb1cc2d7ef84cce28b5f5e8e2fd7edd2a621e99bf0853902d9c7252",
+        "reasoning_tokens": 349
+      },
+      "candidate": {
+        "uuid": "01a16d1f-8f32-7058-8067-a69a828eceeb",
+        "prompt_sha256": "85d3a442feb1cc2d7ef84cce28b5f5e8e2fd7edd2a621e99bf0853902d9c7252",
+        "reasoning_tokens": 183
+      }
+    },
+    {
+      "sample_id": "knowledge_door_transition",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16ce8-cb06-7df0-b1ac-88af504f367c",
+        "prompt_sha256": "0965ac6f7432f5340986b43a2e8c65dc2869327861ec55129507330f3934141f",
+        "reasoning_tokens": 1000
+      },
+      "candidate": {
+        "uuid": "01a16d18-a808-7229-af98-4d439dc7763c",
+        "prompt_sha256": "0965ac6f7432f5340986b43a2e8c65dc2869327861ec55129507330f3934141f",
+        "reasoning_tokens": 1461
+      }
+    },
+    {
+      "sample_id": "knowledge_movement_obstacle",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cec-d3da-7aad-9f9f-cba96cbaeac6",
+        "prompt_sha256": "b3a11b14ffd3724907e8a598e9ea21f2c0460bdb6e69301e2fd76a73f3ffae83",
+        "reasoning_tokens": 346
+      },
+      "candidate": {
+        "uuid": "01a16d1d-ee49-7964-865a-099f80c308d1",
+        "prompt_sha256": "b3a11b14ffd3724907e8a598e9ea21f2c0460bdb6e69301e2fd76a73f3ffae83",
+        "reasoning_tokens": 624
+      }
+    },
+    {
+      "sample_id": "knowledge_npc_dialogue",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cea-ff0f-7e0f-85b5-4c3edb29f97f",
+        "prompt_sha256": "d2a5811348b8c472a13d88a2c9a6418e629e4332117a8a9d5362702cd7f64c49",
+        "reasoning_tokens": 550
+      },
+      "candidate": {
+        "uuid": "01a16d1c-20bf-79cd-99b6-7564cb162293",
+        "prompt_sha256": "d2a5811348b8c472a13d88a2c9a6418e629e4332117a8a9d5362702cd7f64c49",
+        "reasoning_tokens": 1178
+      }
+    },
+    {
+      "sample_id": "knowledge_pokemon_center_enter",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16d09-c153-7c9d-9fe7-a586343556ca",
+        "prompt_sha256": "9f7564fce6f18fc8f23714e1ca97065c1bfd7ef08ec5c7351943a5b065721581",
+        "reasoning_tokens": 1196
+      },
+      "candidate": {
+        "uuid": "01a16d3c-87ed-7b02-838d-0fdaae0f4baa",
+        "prompt_sha256": "9f7564fce6f18fc8f23714e1ca97065c1bfd7ef08ec5c7351943a5b065721581",
+        "reasoning_tokens": 832
+      }
+    },
+    {
+      "sample_id": "knowledge_pokemon_center_heal",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16d0b-5fd4-702b-a9a5-1732ac014a6d",
+        "prompt_sha256": "53e04294b83580971fa268174dc8c12f49a3949f6bd2de1e62688b233fbabd85",
+        "reasoning_tokens": 1343
+      },
+      "candidate": {
+        "uuid": "01a16d3e-a500-7839-80a8-a78526daf998",
+        "prompt_sha256": "53e04294b83580971fa268174dc8c12f49a3949f6bd2de1e62688b233fbabd85",
+        "reasoning_tokens": 1366
+      }
+    },
+    {
+      "sample_id": "knowledge_shop_cancel_purchase",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16d02-7588-7c67-bba4-849075ff0b13",
+        "prompt_sha256": "98d7afebb73cef4945e5d42383369b8cdcc2e897a6018fb2eeb682eca200b0e4",
+        "reasoning_tokens": 1052
+      },
+      "candidate": {
+        "uuid": "01a16d35-4cb7-76a8-b5dc-1d07b53db694",
+        "prompt_sha256": "98d7afebb73cef4945e5d42383369b8cdcc2e897a6018fb2eeb682eca200b0e4",
+        "reasoning_tokens": 149
+      }
+    },
+    {
+      "sample_id": "knowledge_shop_confirm_purchase",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cff-b1a3-74a5-b089-a378d1c7c6a3",
+        "prompt_sha256": "ff35df4db7d7146a8a6b86f6416d3e4551f685ff9099209d76e6afb5d85e6cf3",
+        "reasoning_tokens": 2455
+      },
+      "candidate": {
+        "uuid": "01a16d32-eff4-7f98-8f5b-3bde2f68c354",
+        "prompt_sha256": "ff35df4db7d7146a8a6b86f6416d3e4551f685ff9099209d76e6afb5d85e6cf3",
+        "reasoning_tokens": 817
+      }
+    },
+    {
+      "sample_id": "knowledge_shop_interaction",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cf0-48b2-76bc-a8ef-2d1da7d5c812",
+        "prompt_sha256": "85b73cf054cf557c4372596bfc07bec7a06529d0e7d62225a93f07cb46f1a0cb",
+        "reasoning_tokens": 2082
+      },
+      "candidate": {
+        "uuid": "01a16d21-c193-77c9-8387-a26c1878df2f",
+        "prompt_sha256": "85b73cf054cf557c4372596bfc07bec7a06529d0e7d62225a93f07cb46f1a0cb",
+        "reasoning_tokens": 5758
+      }
+    },
+    {
+      "sample_id": "knowledge_shop_open_buy_menu",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cfc-f127-781e-9b02-e4432cb6e80f",
+        "prompt_sha256": "645e59c7049c27c057d13321433fdb89322c2f9172eca7b00afdd21da1c029a4",
+        "reasoning_tokens": 165
+      },
+      "candidate": {
+        "uuid": "01a16d30-5c8a-7079-933b-7e04d52c7ed8",
+        "prompt_sha256": "645e59c7049c27c057d13321433fdb89322c2f9172eca7b00afdd21da1c029a4",
+        "reasoning_tokens": 540
+      }
+    },
+    {
+      "sample_id": "knowledge_shop_select_item",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16cfe-4194-7da9-aa07-2d10ca31b892",
+        "prompt_sha256": "125ab8927665f9523954d11b9fbe2701092665b0780bfc7ffb6b08626bd0163d",
+        "reasoning_tokens": 616
+      },
+      "candidate": {
+        "uuid": "01a16d31-a107-7ebf-bf8a-837403cae4bb",
+        "prompt_sha256": "125ab8927665f9523954d11b9fbe2701092665b0780bfc7ffb6b08626bd0163d",
+        "reasoning_tokens": 351
+      }
+    },
+    {
+      "sample_id": "knowledge_wild_encounter",
+      "same_prompt": true,
+      "baseline": {
+        "uuid": "01a16ce6-c145-7a2c-aa09-beecd143cac8",
+        "prompt_sha256": "825a411799af497f23b8942a612aefe647d6bc03b58a9eba8ec959e15765678a",
+        "reasoning_tokens": 1952
+      },
+      "candidate": {
+        "uuid": "01a16d16-b7ed-758c-b968-15284889cdd4",
+        "prompt_sha256": "825a411799af497f23b8942a612aefe647d6bc03b58a9eba8ec959e15765678a",
+        "reasoning_tokens": 0
+      }
+    }
+  ]
+}
