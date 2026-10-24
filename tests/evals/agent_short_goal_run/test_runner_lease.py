@@ -31,7 +31,7 @@ def test_runner_releases_world_after_success_or_run_error(
             events.append("release")
 
     class FakeHarness:
-        def run(self, run_id: str, tasks: list, *, sample_id: str):
+        def run(self, run_id: str, goals: list, run_goal=None, *, start_task=None, sample_id=""):
             assert run_id == f"eval-{sample.sample_id}"
             assert sample_id == sample.sample_id
             events.append("run")
@@ -74,7 +74,7 @@ def test_consecutive_samples_can_acquire_the_same_world(
             owned.clear()
 
     class FakeHarness:
-        def run(self, run_id: str, tasks: list, *, sample_id: str):
+        def run(self, run_id: str, goals: list, run_goal=None, *, start_task=None, sample_id=""):
             return SimpleNamespace(
                 model_dump_json=lambda **kwargs: '{"termination":"success"}', branch="main"
             )
