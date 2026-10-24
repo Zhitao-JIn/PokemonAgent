@@ -1,3 +1,13 @@
+## 2026-10-24（635）—— ROADMAP 占位：run 结束后的 run 级规划器（E8）
+
+**改了什么**：`docs/ROADMAP.md` 第三节 E 类总览加一行 E8（📋 / 工业 / 项目 1 / 详述 §4），第四节在 E7 与 J1 之间按 1.3 节模板加 E8 详述（问题、证据、占位方案、验收待定稿、非目标、参照），第五节叙事维度索引的"工业"一行由 `E1–E7` 改为 `E1–E8`。
+
+**为什么这么改**：633–634 把 run goal 与可编辑目标表分开之后，run goal 由调用方一次性传入、run 内不可变，plan 由 run planner 建；一次 run 结束后应重新规划下一个 run goal，但这一层现在没有承载者。先把这个位置记进路线图，下一轮讨论不必重新论证"这层不存在"。
+
+**取舍**：只占位——不实现、不设计、不新增代码。条目里的方案只是形状说明（与 `RunPlan` 同形、读 run 级结果、run 图不改、有自己的 trace 账名、占位可直通），验收写"待定稿"，非目标写明不进入 run 图内部、不改 `review_and_judge` 停机语义、不承诺实现时间；run goal 表的行状态与跨 run 持久化留给定稿。文件头的全局"最后核实：2026-09-24"未动：按现有惯例它只在整份对账时更新，此前的条目级改动也只改条目自己的日期（`9dfbbf1`、`218f599` 均如此）。
+
+**影响面**：只改 `docs/ROADMAP.md` 与本条日志；不改代码、测试、数据集、prompt、AGENTS.md / CLAUDE.md。全量 2658 passed / 25 skipped / 3 deselected（与起点一致，纯文档）；`ruff check` 与 `ruff format --check` 全绿。
+
 ## 2026-10-24（634）—— run goal 由调用方显式传入、plan 初始可为空
 
 **改了什么**：`RunHarness.run(run_id, goals, run_goal=None, *, start_task=None, …)` 与 `run_entry.new_run` 增加 `start_task` 参数；`goals` 允许为空列表（此时 `run_goal` 必给，否则入口 assert 失败），`goals` 非空且 `run_goal` 缺省时仍按表文字拼（`default_run_goal`），旧调用方行为不变。新增 `run_entry.start_task_for(run_id, run_goal)`：按 run goal 合成世界 reset 用的引导 `Task`（`task_id=run_id`、文字取 run goal、`max_steps=1`）。`new_run` 的世界 reset 改为三级取值：显式 `start_task` → 表序第一条 → 空表时 `start_task_for`。`begin` 去掉"目标表非空"的断言，只留"至多一条 `RUNNING`"。`checkpoint/restore.open_branch` 的 reset 同样分两级（非空取 `goals[0].task`，空表用 `start_task_for(pre_run.run_id, pre_run.run_goal)`）。评测入口 `one.py` 改为 `harness.run(run_id, [], run_goal=Goal(sample.goal, sample.success_criteria), start_task=_task_for(sample), sample_id=sample.sample_id)`，样本 id 不再充当目标 id。
