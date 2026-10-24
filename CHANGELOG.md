@@ -18,6 +18,16 @@
 
 **影响面**：仅 evals 与测试（另有本条变更日志与协调台账），不改 pokemon_agent、数据集、机械判据或原评分提示词。此前评测中因格式失败的 N 在重跑后可能变为 C 或 I，旧结果不可直接横比。定向 tests/evals：404 passed / 0 failed（5 条现有 LangGraph durability 警告）；边界守卫：16 passed / 0 failed；ruff check 与 format --check 通过。使用上一轮 v20261021_merged_583 存档与本地真实 world 服务复现原始 before-reset 失败，修复后取消购买和治疗均感知及校验成功，二次 reset 后 RAM 一致；仅本机回环通信，模型调用 0 次，未读取 .env 或密钥。
 
+## 2026-10-24（629）—— e2e 通宵基线受启动顺序缺陷阻断，保存评分与费用记录
+
+**改了什么**：在 tune/e2e-overnight-2 工作区启动 deepseek-flash 的 20 例基线，发现开局失败后停止并保存原始 trace、Inspect 日志、20 行九项评分表、快照和诊断材料（不入库目录 `.coordination/e2e-overnight-2/`）。16 例评分落盘，其中 15 例有效运行均机械通过、独立结果通过 12 例、红线 0、动作数 43；另有 1 例运行完成但评分未落盘、1 例中断、2 例未启动。未建立新 prompt 版本、未改知识正文；evals/config.json 已逐字节还原。
+
+**为什么这么改**：取消购买样本在 harness.run 前观察起点，而 use_start_state 只绑定字节、尚未 reset 世界；独立 world 复现确认 perceive_task() before reset()。这是第 3 类启动代码缺陷，所需修复超出仅 prompt/knowledge 的授权，不能借调优掩盖。另记录两例评分输出格式失败及一例室内判据与观测不对齐，供设计侧另案。
+
+**取舍**：没有完整基线就不提出或接受补丁，也不为评分问题注入样本知识；保留不完整日志的真实状态，不重跑已启动样本。已落盘 agent 与评分员用量按忙时输入 ¥2、输出 ¥8／百万 token 合计 ¥4.033302；中断在途和可能未刷盘用量未知，不能声称这是总扣费或费用上界。
+
+**影响面**：生产代码、评分器、数据集、prompt 注册表及知识库均不变；只有本条变更记录入库候选，其余产物与编号台账不入库。最终 prompt 泛化 lint 0 命中、ruff check 通过，配置与初始备份、知识与初始快照、注册表与初始快照均字节一致。未执行任何提交类 git 命令。
+
 ## 2026-10-24（628）—— 生产 prompt 泛化：抹掉与 e2e 样本重合的示例，领域证据迁入知识库
 
 **改了什么**：`judge_success`、`decide_action`、`decompose`、`verify`、`summarize` 各建 `v2`（v1 原样保留），`pokemon_agent/prompt/registry.json` 把这五个 task 的 `active` 切到 v2；五份 `meta.json` 的 `reason` 写"泛化：移除与评测样本重合的特定任务示例"，hash 按 D7（LF 归一化后按文件名排序拼接 `assemble.py` + `prompt.md`）重算为 judge_success `f3f336bb…`、decide_action `d457b7a2…`、decompose `e96c1ced…`、verify `8d412ea3…`、summarize `2b6e1e24…`。judge_success 保留四类判据的结构、每类的核对方法与"证据必须在历史里真的看得见"，每类示例改成抽象写法；decide_action 的业务示例改"完整业务操作"、脚本 JSON 改占位符、拒绝原因只留规则、`known_objects` 示例改合成地图（地图A/地图B）与虚构招牌、跨障碍互动改按需检索、`shop_quit` 与"战斗里没有离开"改泛指；decompose / verify / summarize 各改两处示例，`applicable_scenes` 标签词表原样保留。五个知识文件（shop_purchase、catching_pokemon、battle_actions、pokemon_center、wild_encounters）末尾追加"判成功要看的证据"。新增 `scripts/lint_prompt_generalization.py`（规则 A：归一化后公共连续子串 ≥10 字符；规则 B：ASCII 台词短语大小写不敏感命中）、`scripts/lint_prompt_allow.txt`（当前为空）与 `tests/prompt/test_prompt_generalization.py`（假 prompt 必须命中并退出 1、活动注册表必须零命中）。golden 对拍改钉 v1（`tests/prompt/golden_cases.py::frozen_v1_registry`），三处盖章断言改读注册表（`active_version`）。
