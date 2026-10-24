@@ -1,3 +1,13 @@
+## 2026-10-24（633）—— 机械评分按 run 取局：run 粒度不再按目标 id 找局
+
+**改了什么**：`scorer/stream.py` 新增只读 `RunStream.run_episodes()`（本执行线上全部 `episode_start` 的 `episode_id`，按开局先后、去重）；`scorer/utils.py` 新增 `target_episodes(stream, sample)`——run 粒度返回 `run_episodes()`，episode / task 粒度仍返回 `episodes_for(sample.sample_id)`；`target_frames` 改为经它取帧；`scorer/registry.py` 的闸门与 `scorer/rules/shop.py` 三处（`shop_all_npcs_interacted`、`shop_two_npcs_interacted`、`shop_bought`）全部改用它。改完后 `episodes_for(sample.sample_id)` 只剩 `target_episodes` 一处调用点。闸门理由按粒度分措辞（run 记"本执行线"、其余记"这个目标"）。
+
+**为什么这么改**：样本 `knowledge_shop_interaction` 实跑成功（run 级判定员判 `goal_done`、2/2 局完成），机械评分却返回 N（unjudgeable）：planner 把原条目标为 abandoned、新建 `plan-<run_id>-1/-2`，局都挂在新 id 下，而闸门用 `episodes_for(sample.sample_id)` 精确匹配 `episode_start.goal_id`，原样本 id 名下一局都没有，判据根本没运行。run 内只有一个 run goal，归属键是 `run_id`（`RunStream.load` 已按 run 与分支过滤），合法拆解不该让证据消失。
+
+**取舍**：不动 `episodes_for` 的语义——episode / task 粒度仍按目标 id 取局（数据集 140 条都是 run 粒度，这条路径只作兼容保留）；不加目标血缘字段。副作用是 run 粒度的样本身份不再由账本内的目标 id 佐证，改由调用方按 `run_id_for(sample_id)` 定位账本保证，因此原用例 `test_an_unrelated_run_is_not_accepted_as_sample_evidence` 的语义对 run 粒度不再成立：改为 episode 粒度（保住"别的目标不能被当证据"这条），另加一条"run 样本空执行线仍 unjudgeable"钉住闸门。新增四条用例覆盖拆分账：run 粒度进判据且证据取全执行线、同账对 episode 粒度仍 unjudgeable、两位 NPC 的对话分散在两局仍判成、空执行线仍 unjudgeable。
+
+**影响面**：仅 `evals/agent_short_goal_run/scorer/{utils,registry,stream}.py`、`scorer/rules/shop.py` 与该测试文件；不改 harness、数据集、判据阈值与结论形状。破坏验证：把闸门临时改回 `episodes_for(sample.sample_id)`，两条新增拆分账用例失败，还原后通过。定向 tests/evals：408 passed / 0 failed（5 条既有 LangGraph 警告）；全量 2649 passed / 25 skipped / 3 deselected；`ruff check` 与 `ruff format --check` 通过。
+
 ## 2026-10-24（632）—— prompt 缓存友好排布：静态说明前移、变量内容后移
 
 **改了什么**：新建 `run_plan` v2、`summarize_run` v2、`summarize_task` v2、`judge_success` v3（旧版本原样保留），注册表切到新版本。每份模板把不随调用变化的角色、规则、输出格式、附图读法放在前面，把 `$goal`、`$goals`、`$history`、`$knowledge`、`$criteria`、`$steps_text` 等每次不同的内容放在最后；judge_success 的"如何读知识与流水"说明改为静态段，`$interrupt_rule` 移到变量段之前。措辞、变量集合、labels 与 assemble 契约不变。顺带修复 `lint_prompt_generalization.py` 在 Windows 中文控制台下按系统编码输出、测试按 UTF-8 解码导致的两条失败：脚本显式以 UTF-8 输出，测试子进程设 `PYTHONUTF8=1`。
