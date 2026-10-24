@@ -24,9 +24,9 @@ POKE_BALL = 0x04
 def target_episodes(stream: RunStream, sample: EvalSample) -> list[str]:
     """这条样本要看证据的那些局。
 
-    run 粒度：整条执行线（`run_id` 已由 `RunStream.load` 定死，run 内只有一个 run goal，
-    plan 目标怎么拆、怎么改名都算同一条证据链）；更小粒度：原目标 id 下的局
-    （`episode_start.goal_id` 就是样本 id）。
+    run 粒度：整条执行线（归属键是 `run_id`，由 `RunStream.load` 读取时按 `meta.run_id`
+    与 `meta.branch` 过滤；run 内只有一个 run goal，plan 目标怎么拆、怎么改名都算同一条
+    证据链）；更小粒度：原目标 id 下的局（`episode_start.goal_id` 就是样本 id）。
     """
     if sample.granularity == "run":
         return stream.run_episodes()
