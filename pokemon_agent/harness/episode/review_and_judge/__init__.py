@@ -8,7 +8,8 @@ TaskMemory 的章与任务表均保留机器判定，失败连击沿用 state �
 停没停、成没成都由 `termination` 推出（`Settled`）。
 
 ①机械：世界结束（`obs.done`）/ 停摆（`fail_streak >= loop.episode_stall_limit`）/
-task 数预算尽（`step >= goal.max_steps`）。②模型：派过 task 或规划后无待办时问
+task 数预算尽（`step >= config.budget.episode_max_tasks`，父级max_steps仅建议）。
+②模型：派过 task 或规划后无待办时问
 "本局目标达成没有"（素材是 perceive 装好的本局 TaskMemory）；判成时亮给人**审**——
 认账即 `GOAL_DONE`，推翻则本局继续。审格不重问模型：本局继续跑时，判定员的话与人的
 推翻理由写进 `last_judge`，由下一次 `plan_episode` 带给拆解。`reason` 不在这里写。
@@ -54,7 +55,7 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
     termination = mechanical_termination(
         world_ended=state.ep_ctx.observation.done,
         stalled=stalled,
-        exhausted=state.step >= state.goal.max_steps,
+        exhausted=state.step >= deps.config.budget.episode_max_tasks,
     )
     verdict = None
     feedback = None
@@ -63,6 +64,7 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
     if state.step > 0 or state.judge_trigger == "no_pending":
         meta = {"source": _SOURCE, "episode_id": ep, "task_id": "", "step": step}
         req = FromHarnessToBrainToolJudgeReq(
+            ram_observations=[],
             goal=current_goal(state),
             latest_planning=state.latest_planning,
             planning_round=state.decompositions_used,

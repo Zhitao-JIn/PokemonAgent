@@ -13,19 +13,19 @@
   "trace_backend": "local",
   "evaluation_models": {
     "result_grader": {
-      "model": "openai-api/deepseek/deepseek-flash",
-      "base_url": "https://api.deepseek.com",
-      "api_key_env": "DEEPSEEK_API_KEY",
+      "model": "openai-api/dashscope/qwen3.8-flash",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key_env": "DASHSCOPE_API_KEY",
       "temperature": 0.0,
       "max_tokens": 8192,
       "timeout_s": 180,
-      "thinking": true
+      "thinking": false
     }
   },
   "models": {
-    "text_model": "qwen3.8-flash",
-    "judge_model": "qwen3.8-flash",
-    "verify_model": "claude-haiku-5-5",
+    "text_model": "deepseek-flash",
+    "judge_model": "deepseek-flash",
+    "verify_model": "deepseek-flash",
     "plan_model": "deepseek-flash"
   }
 }

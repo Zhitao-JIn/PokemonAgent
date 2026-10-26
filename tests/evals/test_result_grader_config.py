@@ -40,13 +40,13 @@ def test_checked_in_grader_configuration_is_explicit_and_distinct() -> None:
     grader = resolve_result_grader(configuration["evaluation_models"])
 
     assert grader.model_dump() == {
-        "model": "openai-api/deepseek/deepseek-flash",
-        "base_url": "https://api.deepseek.com",
-        "api_key_env": "DEEPSEEK_API_KEY",
+        "model": "openai-api/dashscope/qwen3.8-flash",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "api_key_env": "DASHSCOPE_API_KEY",
         "temperature": 0.0,
         "max_tokens": 8192,
         "timeout_s": 180,
-        "thinking": True,
+        "thinking": False,
     }
     assert "test_text" not in configuration["evaluation_models"]
 

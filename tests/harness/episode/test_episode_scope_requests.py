@@ -139,9 +139,14 @@ def test_decompose_context_lists_episode_index_lines_not_full_text(tmp_path: Pat
     assert index_text(state.ep_ctx.episode_index[0]) in text
     assert "前局第二句" not in text and "data:image" not in text
     assert "task 第二句仍需完整读取" in text
-    assert "## 同目标的过往局(背景,不是本局完成的证据)" in text
     empty = request.model_copy(update={"episode_index": []})
-    assert "## 同目标的过往局" not in "\n".join(context_lines(empty))
+    assert index_text(state.ep_ctx.episode_index[0]) not in "\n".join(context_lines(empty))
+    params = DecomposeParams.model_validate(
+        {**request.model_dump(mode="json"), "terrain_meanings": TERRAIN_MEANING}
+    )
+    prompt = PromptGateway(None).render("decompose", params).text
+    rules = prompt.split("\n## 本次输入\n", 1)[0]
+    assert "背景索引是同目标的过往局，不是本局完成的证据" in rules
 
 
 def test_agent_revisions_respect_remaining_decomposition_budget(tmp_path: Path) -> None:

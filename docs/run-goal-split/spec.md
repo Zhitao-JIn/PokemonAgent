@@ -13,7 +13,7 @@
 | D5 | `begin` 去掉“目标表非空”的断言，保留“至多一条 RUNNING”。`run_entry.new_run` 去掉 `assert goals`，改为“`goals` 与 `run_goal` 至少给一个”。 | 空表是正常调度起点：首圈 `plan_run` 先于 `act` 执行（`run_graph.py:59-70`），planner 无新增时回 `review_and_judge` 并带 `judge_trigger="no_pending"`（`planning.py:56-64`）。 |
 | D6 | 评测入口 `one.py` 改为：`harness.run(run_id, [], run_goal=Goal(goal=sample.goal, criteria=sample.success_criteria), start_task=_task_for(sample), sample_id=sample.sample_id)`。预检路径（`one.py:61-68`）仍用 `_task_for`。 | 种子条目消失，样本 id 不再充当目标 id。 |
 | D7 | 不改 `RunState` 字段、不改 `run_plan` prompt、不改 `review_and_judge`。`state_schema_hash()`（`harness/checkpoint/manifest.py:105`）改动前后必须相同。 | 避免触发存档重打。 |
-| D8 | `sample.max_steps` 不再约束第一局的 task 数（它只经种子 Task 进入 `EpisodeInput.goal`，被 `episode_entry.py:64`、`:107` 使用）。改由 planner 的 `budget.limit` 与配置的 run 级预算（`max_episodes`、`plan_max_new_goals`、`max_planning_rounds`）兜底。 | 设计取舍，写进 CHANGELOG 的“取舍”。若执行方发现评分器或预算接线读取了 `sample.max_steps` 作为期望上限，按停止条件处理。 |
+| D8 | 641更新：sample.max_steps只用于种子Task与world reset，不约束第一局。planner的budget.limit仅建议；episode_max_tasks、task_max_steps、max_episodes及规划轮数等配置控制硬限。loop.plan_max_new_goals仅是单版新增建议量。 | 见[父级建议与配置硬预算](../budget/ADVISORY_AND_HARD_LIMITS.md)；新代码需重新冻结基线，历史评测不重评。 |
 | D9 | ROADMAP 占位：`docs/ROADMAP.md` 的 E 类总览表加一行 E8，第四节加 E8 详述条目，状态 📋，沿用 E7 的格式。 | 只占位，不承诺实现。 |
 
 ## 检查点

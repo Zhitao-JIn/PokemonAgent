@@ -1,0 +1,8 @@
+{
+  "task": "judge_success",
+  "version": "v5",
+  "kind": "task",
+  "params": "JudgeParams",
+  "reason": "run判定新增最近五次真实RAM读数与来源，保持固定规则前置",
+  "hash": "771bdcfe47f44ff85ca9779589cf0d7b57945ce3cc59d618e772a83f511d66e4"
+}

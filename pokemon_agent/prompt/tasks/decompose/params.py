@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, Field
 
+from ...budget import BudgetRecord
 from ...objects import ObjectFactEvent
 from ...observation import ObservationRecord
 from ...records import (
@@ -24,6 +25,7 @@ class DecomposeParams(BaseModel):
     max_tasks: int
     execution_order: list[str] = Field(default_factory=list)
     remaining_planning_rounds: int | None = None
+    budget_context: list[BudgetRecord] = Field(default_factory=list)
     human_note: str = ""
     terrain_meanings: dict[str, str]
 

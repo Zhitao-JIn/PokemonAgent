@@ -60,6 +60,7 @@ def _build(spec: LinkSpec | None, config: BrainLlmConfig) -> _OpenAICompatibleBa
         json_mode=config.json_mode,
         timeout=spec.timeout_s,
         thinking=spec.thinking,
+        cache_marker=spec.cache_marker,
         vision_dump_dir=config.vision_dump_dir,
     )
 

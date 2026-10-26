@@ -89,7 +89,7 @@ begin_episode ─► perceive[absorb_task → sense（内存观测）→ retriev
               ─► review_and_judge[定案上一个 task（盖章 → 人审 → 失败则放弃剩余 PENDING → settle_task）
                                   → 机械三类 → judge(goal × 任务表 × TaskMemory)（判成则人审）]
               ─► (done → episode_done) | plan_episode[没有 PENDING 才拆 → 追加新一版] ─► act[run_task] ─► perceive
-episode_done = verify_task_memories → summarize_episode → close_episode
+episode_done = summarize_episode → close_episode
              （没有 TaskMemory 时：leave_chapter → close_episode）
 ```
 
@@ -107,7 +107,7 @@ begin_task ─► perceive[sense（内存观测）→ detect_stall → store_ste
                        → store_object_semantic_memory → close_step → retrieve_act_memories → get_action_space]
            ─► review_and_judge[机械三类 → judge(task × 本 task 最近几条 ActMemory)]
            ─► (done → task_done) | plan_task[Chooser → 首段 times=1 | 脚本调用] ─► act[按键 | 跑脚本, step+1] ─► perceive
-task_done = verify_act_memories → summarize_task → close_task
+task_done = summarize_task → close_task
 ```
 
 - `sense` 每圈都取帧（步号 = `start_step + step`）；中间三个单元只在上一圈按过键时写
@@ -172,7 +172,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 | `decompose_call` | `plan_episode` |
 | `choose_call` | `plan_task` |
 | `judge_call`（+`why`） | 三层 `review_and_judge` |
-| `verify_call`（+`verdicts`） | `verify_act_memories` / `verify_task_memories` |
+| `verify_call`（+`verdicts`） | （2026-10-26 645 起主流程不再发；verify 并入 summarize，链路与词表保留） |
 | `summarize_task_call` | `summarize_task` |
 | `summarize_episode_call` | `summarize_episode` |
 | `summarize_run_call` | `run.summarize_run` |
@@ -186,7 +186,7 @@ run / task 两层的同名格用 `run.` / `task.` 前缀区分（episode 层不�
 | `decompose_verdict` | `plan_episode` | `tasks`（`task_id`/`goal`/`success_criteria`/`max_steps`）、`why`、`human_note` |
 | `choose_verdict` | `plan_task` | `sequence`（脚本调用时为空）、`input`、`output`、可选 `script`（`{name, args}`）/ `human_note` |
 | `judge_verdict` | 三层 `review_and_judge` | `termination`、`fail_streak`、`judge_reason`、`audit`（人对「已达成」的表态；没问人为空）、`human_note`（推翻理由） |
-| `verify_verdict` | `verify_act_memories` / `verify_task_memories` | `checked`、`negative` |
+| `verify_verdict` | （同上，主流程不再发） | `checked`、`negative` |
 
 **观测 / 动作**
 

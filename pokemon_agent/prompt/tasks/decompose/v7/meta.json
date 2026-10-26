@@ -1,0 +1,8 @@
+{
+  "task": "decompose",
+  "version": "v7",
+  "kind": "task",
+  "params": "DecomposeParams",
+  "reason": "修子任务要求不可见后台交互记录导致事实已完成仍续做，保持上层验收不变",
+  "hash": "9895eca4ee652392efa613b5640e1583257971d61c88e3e52afc384df983f1bc"
+}

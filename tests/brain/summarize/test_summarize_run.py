@@ -78,7 +78,7 @@ def test_run_summary_prompt_keeps_final_overturns_and_complete_episode_text_with
     ).summarize_run(req)
     prompt = provider.described[0].prompt
 
-    assert "总目标" in prompt and "人工判失败" in prompt and "overturned=true" in prompt
+    assert "总目标" in prompt and "人工判失败" in prompt and "（人审推翻）" in prompt
     assert "第二句完整保留" in prompt
     assert "data:image" not in prompt and "SECRET" not in prompt
     assert not result.run_memory.success

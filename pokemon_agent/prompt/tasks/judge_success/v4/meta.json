@@ -1,0 +1,8 @@
+{
+  "task": "judge_success",
+  "version": "v4",
+  "kind": "task",
+  "params": "JudgeParams",
+  "reason": "固定输出指令前置，目标及判据先于历史流水，原证据口径不变",
+  "hash": "4db37e93a537966aa4ea6463dacf9c2d78b82a9bfb757edd3b52919190863822"
+}

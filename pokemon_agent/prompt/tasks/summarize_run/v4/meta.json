@@ -1,0 +1,8 @@
+{
+  "task": "summarize_run",
+  "version": "v4",
+  "kind": "task",
+  "params": "SummarizeRunParams",
+  "reason": "针对两次长run摘要漏最外层闭合，缩短重复正文并明确JSON结束结构和证据保留",
+  "hash": "12e11e7f9dafca1e029a83ffc56bdc5396ad7be1dbdbbb0a2ac9164bad796af2"
+}

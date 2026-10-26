@@ -27,7 +27,6 @@ from pokemon_agent.direct.brain_tool import (
     RunSummarizer,
     Summarizer,
     TaskSummarizer,
-    Verifier,
 )
 from pokemon_agent.direct.trace import TraceTool
 from pokemon_agent.harness import EpisodeRuntime, RunHarness, RunRuntime, TaskRuntime
@@ -163,7 +162,6 @@ def assemble_runtime(
         judger=Judger(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         memory=memory,
         reflector=Reflector(),
-        verifier=Verifier(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         task_summarizer=TaskSummarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         trace=trace,
         reviewer=reviewer,
@@ -175,7 +173,6 @@ def assemble_runtime(
         memory=memory,
         decomposer=Decomposer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         judger=Judger(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
-        verifier=Verifier(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         summarizer=Summarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         trace=trace,
         reviewer=reviewer,

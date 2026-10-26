@@ -1,5 +1,7 @@
 """通过公共网关读取素材，测试不依赖 world/memory 的旧排版方法。"""
 
+import json
+
 from pydantic import BaseModel
 
 from pokemon_agent.prompt import (
@@ -7,9 +9,7 @@ from pokemon_agent.prompt import (
     JudgeParams,
     PromptGateway,
     RunPlanParams,
-    SummarizeRunParams,
     SummarizeTaskParams,
-    VerifyParams,
 )
 from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, RunMemory, TaskMemory
 
@@ -48,27 +48,13 @@ def index_text(memory: EpisodeMemory | RunMemory | TaskMemory) -> str:
 
 
 def record_text(memory: ActMemory | TaskMemory | EpisodeMemory) -> str:
-    """经任务素材出口取得单条完整正文。"""
-    data = memory.model_dump(mode="json")
+    """直接取活动 memory_records 的 plain 正文，不依赖任务的编号与标题。"""
     gateway = PromptGateway(None)
-    if isinstance(memory, EpisodeMemory):
-        params = SummarizeRunParams.model_validate(
-            {
-                "run_goal": "g",
-                "goals": [],
-                "episode_memories": [data],
-                "termination": "",
-                "judge_reason": "",
-                "episodes": 1,
-                "succeeded": 0,
-                "acts_used": 0,
-                "max_episodes": 1,
-            }
-        )
-        return gateway.render_history("summarize_run", params)[0]
-    return gateway.render_history(
-        "verify", VerifyParams.model_validate({"goal": "g", "entries": [data]})
-    )[0]
+    fragment = gateway._units["memory_records"]
+    params = fragment.params_type.model_validate(
+        {"mode": "plain", "entries": [memory.model_dump(mode="json")], "serialized": True}
+    )
+    return json.loads(gateway._compose("memory_records", params))[0]
 
 
 def observation_text(observation: BaseModel) -> str:

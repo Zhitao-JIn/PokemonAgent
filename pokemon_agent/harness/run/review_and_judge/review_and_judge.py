@@ -35,6 +35,7 @@ from ...judging import ask_judger, judge_reason, mechanical_termination, record_
 from ...reviewing import audit_judgement
 from ..run_state import RunState
 from ..runtime import RunRuntime
+from .recent_ram_observations import recent_ram_observations
 
 _SOURCE = "run.review_and_judge"
 
@@ -115,6 +116,11 @@ def review_and_judge(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str,
             run_index=ctx.run_index if ctx is not None else [],
             knowledge="\n\n".join(ctx.knowledge) if ctx is not None else "",
             observation=state.observation,
+            ram_observations=recent_ram_observations(
+                deps.trace.read_events(meta={"run_id": state.run_id, "branch": state.branch}),
+                run_id=state.run_id,
+                branch=state.branch,
+            ),
         )
         req.episode_memories = details
         verdict = ask_judger(deps.judger, deps.trace, req, **meta)

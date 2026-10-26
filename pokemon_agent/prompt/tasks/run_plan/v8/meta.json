@@ -1,0 +1,8 @@
+{
+  "task": "run_plan",
+  "version": "v8",
+  "kind": "task",
+  "params": "RunPlanParams",
+  "reason": "iter27规划14次格式错及长理由：预算对象说明结合why去重，降低重试和输出用量",
+  "hash": "1a5bf9785628742614edad925eb850f8e83de9cd78b7b3feb6e9e0e26d2c2f57"
+}

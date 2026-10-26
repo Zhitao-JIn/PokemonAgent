@@ -230,9 +230,10 @@ def test_zero_step_and_interrupt_do_not_ask_reviewer(
 
 def test_overturn_does_not_remove_the_mechanical_budget_boundary(tmp_path: Path) -> None:
     state, reviewer = _state(), Reviewer(AuditVerdict.OVERTURN)
-    state.step = state.task.max_steps
+    runtime = _runtime(tmp_path, reviewer, Judger(True))
+    state.step = runtime.context.config.budget.task_max_steps
 
-    updates = review_and_judge(state, _runtime(tmp_path, reviewer, Judger(True)))
+    updates = review_and_judge(state, runtime)
 
     assert updates["termination"] is Termination.BUDGET_EXHAUSTED
 

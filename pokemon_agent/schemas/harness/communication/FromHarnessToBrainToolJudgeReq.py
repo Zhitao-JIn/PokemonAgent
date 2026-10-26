@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_seri
 
 from pokemon_agent.brain.interface import Decomposition, Goal, RunPlan
 from pokemon_agent.schemas.harness.domain.goal_entry import GoalEntry
+from pokemon_agent.schemas.harness.domain.ram_observation import RamObservation
 from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
 from pokemon_agent.schemas.memory import (
     ActMemory,
@@ -39,6 +40,7 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     task_index：本 episode 内此前同目标 task 的无帧背景索引，只有 task 层填写。
     episode_index：本 run 内同一个 L1 goal 的其他局背景，只用 index_line 渲染。
     observation：episode / run 层当前画面；task 层留空。
+    ram_observations：仅 run 层填写，同执行线最近至多五次已落盘 RAM 读数；不补造历史。
     knowledge：三层各自检索到的领域知识。
     allow_interrupt：只有 task 层置真——prompt 多一段「是不是被打断了」的判法，
         判定员多回答一个 `interrupted`。另两层不问，结果里 `interrupted` 恒为假。
@@ -68,10 +70,11 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     allow_interrupt: bool = False
 
     known_objects: list[ObjectFactEvent] = Field(default_factory=list)
+    ram_observations: list[RamObservation] = Field(default_factory=list, max_length=5)
 
     @model_serializer(mode="wrap")
     def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
-        """历史请求未提供原始事件时保留原信封形状。"""
+        """历史对象事件保留原信封形状；RAM 空窗口统一输出空列表。"""
         data = handler(self)
         if "known_objects" not in self.model_fields_set:
             data.pop("known_objects", None)

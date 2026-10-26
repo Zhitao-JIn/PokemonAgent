@@ -75,13 +75,14 @@ from pokemon_agent.brain.errors import (
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.budget_provider import BudgetProvider, TimeoutProvider
 from pokemon_agent.direct.call_policy import CallPolicy
+from pokemon_agent.direct.judge_prompt_params import judge_prompt_params
+from pokemon_agent.direct.node_brain_factory import BrainLayer, NodeBrainFactory
 from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.prompt import (
     DecideActionParams,
-    DecideActionRetryParams,
     DecomposeParams,
-    JudgeParams,
+    OutputRetryParams,
     PromptGateway,
     RenderedPrompt,
     RunPlanParams,
@@ -230,7 +231,9 @@ class Planner:
 
     def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
         """渲染本轮规划并保留同源目标表与历史；重试保留全部调用账与版本戳。"""
-        params = RunPlanParams.model_validate(req.model_dump(mode="json"))
+        data = req.model_dump(mode="json")
+        data["terrain_meanings"] = TERRAIN_MEANING
+        params = RunPlanParams.model_validate(data)
         rendered_prompt = render_and_stamp(self._prompt_gateway, "run_plan", params, [])
         current_prompt = rendered_prompt
         goal_stack = self._prompt_gateway.render_history("run_plan", params, part="goals")
@@ -372,7 +375,9 @@ class Chooser:
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             nonlocal current_prompt
-            current_prompt = _retry_prompt(rendered_prompt, calls, self._prompt_gateway)
+            current_prompt = _retry_prompt(
+                rendered_prompt, calls, self._prompt_gateway, include_action_space_note=True
+            )
             return self._brain.choose(
                 prompt=current_prompt.text,
                 keys=list(req.space.names),
@@ -505,7 +510,7 @@ class Judger:
 
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         """渲染本层执行证据并判定；不允许的中断按解析失败重试，调用账保留版本戳。"""
-        params = JudgeParams.model_validate(req.model_dump(mode="json"))
+        params = judge_prompt_params(req)
         rendered_prompt = render_and_stamp(self._prompt_gateway, "judge_success", params, [])
         prompt = rendered_prompt.text
         goal = req.goal.goal
@@ -862,6 +867,7 @@ class BrainTool:
         cls,
         *,
         links: Sequence[BrainLink],
+        layer: BrainLayer | None = None,
         models: ModelsConfig,
         retry: RetryConfig,
         request_timeouts: RequestTimeoutsConfig,
@@ -876,6 +882,9 @@ class BrainTool:
         - run 层：`links=("plan", "judge")` → `planner` + `judger`；
         - episode 层：`links=("plan", "judge", "verify")` → `decomposer` 与其余；
         - task 层：`links=("text", "judge", "verify")` → `chooser` 等。
+
+        `layer`标识节点所属层；models.node_thinking配置的节点覆盖链路默认值。
+        节点覆盖使用独立provider，不在请求之间更改共享实例；旧调用方无节点覆盖时可省略layer。
 
         型号、温度、输出上限、超时、思考开关全部取自 `models`；重试预算与退避取自 `retry`；
         `prompt_registry` 为 None 时用随包空表，相对路径按仓库根解析；网关由九个能力对象共享。
@@ -907,6 +916,7 @@ class BrainTool:
                 max_tokens=chosen.max_tokens,
                 timeout_s=chosen.timeout_s,
                 thinking=getattr(chosen, "thinking", False),
+                cache_marker=chosen.cache_marker,
             )
 
         config = BrainLlmConfig(
@@ -917,77 +927,89 @@ class BrainTool:
             json_mode=models.json_mode,
             vision_dump_dir=vision_dump_dir,
         )
-        decide, judge_llm, verify_llm, plan_llm = build_llm_providers(config)
-        bounded = [
-            BudgetProvider(cast(TimeoutProvider, provider), deadline, limit, source)
-            if provider is not None
-            else None
-            for provider, limit, source in (
-                (decide, request_timeouts.choose, "choose"),
-                (judge_llm, request_timeouts.judge, "judge"),
-                (verify_llm, request_timeouts.verify, "verify"),
-                (plan_llm, models.plan.timeout_s, "plan"),
-            )
-        ]
-        decide, judge_llm, verify_llm, plan_llm = bounded
-        brain = Brain(
-            decide_llm=decide,
-            judge_llm=judge_llm,
-            verify_llm=verify_llm,
-            plan_llm=plan_llm,
-        )
 
-        def policy(timeout_s: float) -> CallPolicy:
-            return CallPolicy(retry=retry, request_timeout_s=timeout_s, image_cap=image_cap)
+        def build_brain(configuration: BrainLlmConfig) -> BrainPort:
+            """按固定选型构建独立provider；节点覆盖不修改共享实例。"""
+            decide, judge_llm, verify_llm, plan_llm = build_llm_providers(configuration)
+            bounded = [
+                BudgetProvider(cast(TimeoutProvider, provider), deadline, limit, source)
+                if provider is not None
+                else None
+                for provider, limit, source in (
+                    (decide, request_timeouts.choose, "choose"),
+                    (judge_llm, request_timeouts.judge, "judge"),
+                    (verify_llm, request_timeouts.verify, "verify"),
+                    (plan_llm, models.plan.timeout_s, "plan"),
+                )
+            ]
+            decide, judge_llm, verify_llm, plan_llm = bounded
+            return Brain(
+                decide_llm=decide,
+                judge_llm=judge_llm,
+                verify_llm=verify_llm,
+                plan_llm=plan_llm,
+            )
+
+        brain = build_brain(config)
+        nodes = NodeBrainFactory(brain, config, models, layer, build_brain)
+
+        def policy(capability: str, link: BrainLink, timeout_s: float) -> CallPolicy:
+            return CallPolicy(
+                retry=retry,
+                request_timeout_s=timeout_s,
+                image_cap=image_cap,
+                thinking_node=nodes.node(capability),
+                thinking=nodes.thinking(capability, link),
+            )
 
         return cls(
             planner=Planner(
-                brain,
-                policy=policy(models.plan.timeout_s),
+                nodes.brain("plan", "plan"),
+                policy=policy("plan", "plan", models.plan.timeout_s),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
             decomposer=Decomposer(
-                brain,
-                policy=policy(models.plan.timeout_s),
+                nodes.brain("decompose", "plan"),
+                policy=policy("decompose", "plan", models.plan.timeout_s),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
             chooser=Chooser(
-                brain,
-                policy=policy(request_timeouts.choose),
+                nodes.brain("choose", "text"),
+                policy=policy("choose", "text", request_timeouts.choose),
                 action_limits=action_limits,
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
             judger=Judger(
-                brain,
-                policy=policy(request_timeouts.judge),
+                nodes.brain("judge", "judge"),
+                policy=policy("judge", "judge", request_timeouts.judge),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
             reflector=Reflector(),
             verifier=Verifier(
-                brain,
-                policy=policy(request_timeouts.verify),
+                nodes.brain("verify", "verify"),
+                policy=policy("verify", "verify", request_timeouts.verify),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
             summarizer=Summarizer(
-                brain,
-                policy=policy(request_timeouts.summarize),
+                nodes.brain("summarize", "verify"),
+                policy=policy("summarize", "verify", request_timeouts.summarize),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
             run_summarizer=RunSummarizer(
-                brain,
-                policy=policy(request_timeouts.summarize),
+                nodes.brain("summarize_run", "verify"),
+                policy=policy("summarize_run", "verify", request_timeouts.summarize),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
             task_summarizer=TaskSummarizer(
-                brain,
-                policy=policy(request_timeouts.summarize),
+                nodes.brain("summarize_task", "verify"),
+                policy=policy("summarize_task", "verify", request_timeouts.summarize),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
@@ -1014,8 +1036,10 @@ def render_and_stamp(
     return rendered
 
 
-def _stamp_calls(calls: Sequence[ModelCall], rendered: RenderedPrompt) -> None:
-    """为已收编的每次尝试追加同一个版本戳，不覆盖已有账项。"""
+def _stamp_calls(
+    calls: Sequence[ModelCall], rendered: RenderedPrompt, policy: CallPolicy | None = None
+) -> None:
+    """为已收编尝试追加版本及节点开关；保留单次重试覆盖和原始账项。"""
     stamp = {
         "prompt_task": rendered.task,
         "prompt_version": rendered.version,
@@ -1023,6 +1047,15 @@ def _stamp_calls(calls: Sequence[ModelCall], rendered: RenderedPrompt) -> None:
     }
     for call in calls:
         call.payload.update(stamp)
+        if policy is not None and policy.thinking_node is not None:
+            call.payload["thinking_node"] = policy.thinking_node
+            call.payload["thinking_configured"] = str(policy.thinking).lower()
+            call.payload["thinking_effective"] = (
+                call.payload.get("thinking_override")
+                if call.payload.get("thinking_override") in ("true", "false")
+                and not call.payload.get("images")
+                else str(policy.thinking).lower()
+            )
     assert all(all(call.payload[key] == value for key, value in stamp.items()) for call in calls)
 
 
@@ -1078,12 +1111,12 @@ def _attempt_loop(
         except BudgetExhausted as exc:
             pending = [_adopt(call) for call in exc.calls] if rendered_prompt else exc.calls
             if rendered_prompt is not None:
-                _stamp_calls(pending, active_prompt())
+                _stamp_calls(pending, active_prompt(), policy)
             raise BudgetExhausted(source, [*calls, *pending], exc.reason) from exc
         except AttemptFailed as exc:
             call = _adopt(exc.call)
             if rendered_prompt is not None:
-                _stamp_calls([call], active_prompt())
+                _stamp_calls([call], active_prompt(), policy)
             calls.append(call)
             if (
                 call.error_kind == ProviderRejected.__name__
@@ -1101,7 +1134,7 @@ def _attempt_loop(
 
         pending = [_adopt(call) for call in result.calls]
         if rendered_prompt is not None:
-            _stamp_calls(pending, active_prompt())
+            _stamp_calls(pending, active_prompt(), policy)
         calls.extend(pending)
         return result, calls
 
@@ -1139,19 +1172,27 @@ def _illegal(why: str) -> Exception:
 
 
 def _retry_prompt(
-    base_prompt: RenderedPrompt, attempts: list[ModelCall], gateway: PromptGateway
+    base_prompt: RenderedPrompt,
+    attempts: list[ModelCall],
+    gateway: PromptGateway,
+    *,
+    include_action_space_note: bool = False,
 ) -> RenderedPrompt:
-    """解析失败组合纠正版本；首次调用和传输失败保留原始版本。"""
+    """解析失败组合纠正版本；首次调用和传输失败保留原始版本。
+
+    `include_action_space_note` 只有决策打开：动作空间那段说明只对 choose 成立。
+    """
     if not attempts or attempts[-1].error_kind not in _PARSE_ERROR_KINDS:
         return base_prompt
     last = attempts[-1]
     return gateway.render(
-        "decide_action_retry",
-        DecideActionRetryParams(
+        "output_retry",
+        OutputRetryParams(
             base_prompt=base_prompt.text,
             attempt=len(attempts) + 1,
             reason=last.error,
             raw=cast(str, last.payload.get("raw", ""))[:400],
+            include_action_space_note=include_action_space_note,
         ),
     )
 

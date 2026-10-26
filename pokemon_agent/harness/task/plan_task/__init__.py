@@ -23,27 +23,49 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 
+from ...planning_budgets import shared_budgets, task_budgets
 from ..task_runtime import TaskRuntime
 from ..task_state import TaskState
 
 
 def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
-    """问 chooser 出本键，写 `state.action` 一处。
+    """选择一项动作并记调用/结论账；调用方保证perceive已装好观测和动作空间。
 
-    前置条件：`state.task_ctx` 非空且 `task_ctx.action_space` 非空
-        （`perceive` 刚抄过动作边界）、`done` 为假（判停路由保证）。
-    后置条件：返回 `{"action": 单键动作}`。
-    失败：重试耗尽时抛 `MaxRetriesExceeded`（`link="choose"`），先留整条账。
+    失败时保留所有尝试账并抛MaxRetriesExceeded；成功返回一键或一个脚本。
     """
     deps = runtime.context
-    assert state.task_ctx is not None, "plan_task before perceive"
+    assert state.task_ctx.observation is not None, "plan_task before perceive"
     assert state.task_ctx.action_space is not None, "plan_task without an action space"
-    ep = state.episode_id
-    step = state.step + 1  # 账面步号 = 圈号（0928 定稿：dispatch 落 0、每圈取帧 +1）
+    meta = {
+        "source": "plan_task",
+        "episode_id": state.episode_id,
+        "task_id": state.task.task_id,
+        "step": state.step + 1,
+    }
+    action = _choose(deps, _request(state, deps), meta)
+    if action.script is None:
+        action = Action(sequence=[action.sequence[0].model_copy(update={"times": 1})])
+    deps.trace.append(
+        FromHarnessToTraceToolAppendReq(kind=TraceKind.CHOOSE_VERDICT, meta=meta, action=action)
+    )
+    return {"action": action}
 
-    # ========== 1. 组装 req（本 task 的目标 + 轻感知帧 + 受限空间 + 近期记忆） ==========
+
+def _request(state: TaskState, deps: TaskRuntime) -> FromHarnessToBrainToolChooseOnceReq:
+    """转换当前素材并保留history原列表；配置与父级建议分别传递。"""
     history = state.task_ctx.act_memories
     req = FromHarnessToBrainToolChooseOnceReq(
+        budget_context=task_budgets(
+            deps.config.budget,
+            advice=state.task.max_steps,
+            actions=state.step,
+        )
+        + shared_budgets(
+            deps.config.budget,
+            action_limit=state.actions_budget,
+            actions=state.step,
+            remaining_s=state.remaining_s,
+        ),
         goals=[Goal(goal=state.task.goal, criteria=state.task.success_criteria)],
         obs=state.task_ctx.observation,
         space=state.task_ctx.action_space,
@@ -58,68 +80,29 @@ def plan_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
         ),
     )
     req.memories = history
+    return req
 
-    # ========== 2. 问 chooser → 落账 → 取单键 ==========
+
+def _choose(
+    deps: TaskRuntime, req: FromHarnessToBrainToolChooseOnceReq, meta: dict[str, object]
+) -> Action:
+    """一次逻辑选择的全部调用先落盘；耗尽另记错误账再原样抛出。"""
     try:
-        resp = deps.chooser.choose(req)
+        response = deps.chooser.choose(req)
     except MaxRetriesExceeded as exc:
         deps.trace.append(
             FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.CHOOSE_CALL,
-                meta={
-                    "source": "plan_task",
-                    "episode_id": ep,
-                    "task_id": state.task.task_id,
-                    "step": step,
-                },
-                calls=list(exc.calls),
+                kind=TraceKind.CHOOSE_CALL, meta=meta, calls=list(exc.calls)
             )
         )
         deps.trace.append(
-            FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.CALL_EXHAUSTED,
-                meta={
-                    "source": "plan_task",
-                    "episode_id": ep,
-                    "task_id": state.task.task_id,
-                    "step": step,
-                },
-                link="choose",
-            )
+            FromHarnessToTraceToolAppendReq(kind=TraceKind.CALL_EXHAUSTED, meta=meta, link="choose")
         )
         raise
     deps.trace.append(
-        FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.CHOOSE_CALL,
-            meta={
-                "source": "plan_task",
-                "episode_id": ep,
-                "task_id": state.task.task_id,
-                "step": step,
-            },
-            calls=resp.calls,
-        )
+        FromHarnessToTraceToolAppendReq(kind=TraceKind.CHOOSE_CALL, meta=meta, calls=response.calls)
     )
-
-    # ========== 3. 单键化：取首段，写 THINK ==========
-    if resp.action.script is not None:
-        action = resp.action
-    else:
-        head = resp.action.sequence[0].model_copy(update={"times": 1})
-        action = Action(sequence=[head])
-    deps.trace.append(
-        FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.CHOOSE_VERDICT,
-            meta={
-                "source": "plan_task",
-                "episode_id": ep,
-                "task_id": state.task.task_id,
-                "step": step,
-            },
-            action=action,
-        )
-    )
-    return {"action": action}
+    return response.action
 
 
 __all__ = ["plan_task"]

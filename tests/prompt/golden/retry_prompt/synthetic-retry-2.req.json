@@ -7,7 +7,8 @@
     "base_prompt": "基础 prompt\n请输出 JSON。",
     "attempt": 3,
     "reason": "缺少 args",
-    "raw": ""
+    "raw": "",
+    "include_action_space_note": true
   },
   "max_segments": 3,
   "source_ref": ""

@@ -1,0 +1,213 @@
+"""decide_action v8：静态规则不变，历史相同字段显式引用。"""
+
+from __future__ import annotations
+
+import json
+import re
+from collections.abc import Sequence
+from pathlib import Path
+from string import Template
+
+from ...budget import render_budgets
+from ...interfaces.assembly import Compose
+from ...records import ActRecord, GoalDefinition, TaskRecord
+from ..fragments.human_note.params import HumanNoteParams
+from ..fragments.memory_records.params import MemoryParams
+from ..fragments.read_screen.params import ReadScreenParams
+from ..fragments.script_signature.params import ScriptSignatureParams
+from ..fragments.task_frame.params import TaskFrameParams
+from ..fragments.terrain_legend.params import TerrainLegendParams
+from .params import DecideActionParams
+
+_PARTS = dict(
+    re.findall(
+        r"<!-- part:(\w+) -->\n(.*?)\n<!-- endpart -->",
+        Path(__file__).with_name("prompt.md").read_text(encoding="utf-8"),
+        re.S,
+    )
+)
+_TEMPLATE = Template(_PARTS["main"])
+_LABELS = json.loads(_PARTS["labels"])
+_NAVIGATION_SCRIPTS = frozenset({"walk_to", "walk_to_adjacent", "face_direction", "exit_map"})
+
+
+def _split(text: str, marker: str) -> dict[str, str]:
+    """分段只修剪原先规则已经修剪的首尾空白。"""
+    sections: dict[str, str] = {}
+    name: str | None = None
+    lines: list[str] = []
+    for line in text.splitlines():
+        if line.startswith(marker):
+            if name is not None:
+                sections[name] = "\n".join(lines).strip()
+            name, lines = line.removeprefix(marker).strip(), []
+        elif name is not None:
+            lines.append(line)
+    if name is not None:
+        sections[name] = "\n".join(lines).strip()
+    return sections
+
+
+def _descriptions(request: DecideActionParams) -> dict[str, str]:
+    """同一个键按本帧 overlay 选固定说明。"""
+    sections = {
+        name: _split(body, "### ") for name, body in _split(_PARTS["button_help"], "## ").items()
+    }
+    overlay = request.observation.facts.overlay or "none"
+    return {
+        name: sections[overlay].get(name, sections["none"].get(name, ""))
+        for name in request.space.names
+    }
+
+
+def _map_guide(request: DecideActionParams, compose: Compose) -> str:
+    """脚本接管隐藏地图规则；其他场合从符号表排版。"""
+    if request.observation.covered_by_script:
+        return ""
+    return Template(_PARTS["map_hint"]).substitute(
+        terrain_legend=compose(
+            "terrain_legend", TerrainLegendParams(meanings=request.terrain_meanings)
+        ),
+        sample_map=_PARTS["sample_map"],
+    )
+
+
+def _memory_lines(
+    entries: Sequence[ActRecord | TaskRecord], mode: str, compose: Compose
+) -> list[str]:
+    """保留逐条素材边界与相邻帧去重。"""
+    return json.loads(
+        compose("memory_records", MemoryParams(mode=mode, entries=list(entries), serialized=True))
+    )
+
+
+def history_fields(text: str) -> dict[str, str]:
+    """保留每个观察字段的原文与多行布局；无法识别时拒绝精简。"""
+    fields: dict[str, str] = {}
+    key: str | None = None
+    for line in text.splitlines(keepends=True):
+        match = re.match(r"^  (\S+)\s{2,}", line)
+        if match:
+            key = match.group(1)
+            if key in fields:
+                return {}
+            fields[key] = line
+        elif key is not None:
+            fields[key] += line
+        elif line.strip():
+            return {}
+    return fields
+
+
+def compact_history(text: str) -> str:
+    """只引用与真实前帧完全相同的字段，保留变化原文及全部动作。"""
+    chunks = re.split(r"(?=\([^\n]*, step=\d+\) 当时看到：)", text)
+    rendered: list[str] = []
+    previous_after = ""
+    for chunk in chunks:
+        if "  之后变成：\n" not in chunk:
+            rendered.append(chunk)
+            continue
+        head, after = chunk.split("  之后变成：\n", 1)
+        before = head.split("当时看到：\n", 1)[-1].rsplit("\n  做了", 1)[0]
+        if "当时看到：（同上一条「之后变成」" in head:
+            before = previous_after
+        old_fields, new_fields = history_fields(before), history_fields(after)
+        equal = [key for key, value in new_fields.items() if old_fields.get(key) == value]
+        previous_after = after
+        if not equal:
+            rendered.append(chunk)
+            continue
+        reference = (
+            "  与本条「当时看到」逐字相同的后帧字段：" + "、".join(equal) + "（沿用前帧原文）\n"
+        )
+        kept = "".join(value for key, value in new_fields.items() if key not in equal)
+        replacement = head + "  之后变成：\n" + reference + kept
+        rendered.append(replacement if len(replacement) < len(chunk) else chunk)
+    return "".join(rendered)
+
+
+def _append_note(prompt: str, note: str, compose: Compose) -> str:
+    """非空人类插话在模型请求最后组合。"""
+    return prompt + compose("human_note", HumanNoteParams(note=note)) if note.strip() else prompt
+
+
+def _render_goals(goals: list[GoalDefinition]) -> str:
+    """消费原料并保留既有决策条件与排版。"""
+    return "\n".join(
+        (
+            _LABELS["L001"].format(g.goal, _LABELS["L000"] if i == 0 else "", g.criteria)
+            for i, g in enumerate(reversed(goals))
+        )
+    )
+
+
+def _actions(request: DecideActionParams, compose: Compose) -> str:
+    """按原有顺序显示脚本和按键，不改变动作边界。"""
+    space = request.space
+    key_lines = [
+        _LABELS["L004"].format(name, _descriptions(request).get(name, _LABELS["L003"]))
+        for name in space.names
+    ]
+    navigation_lines = [
+        _LABELS["L005"].format(
+            compose("script_signature", ScriptSignatureParams(entry=e)), e.description
+        )
+        for e in space.entries
+        if e.kind == "script" and space.mask.get(e.name, False) and (e.name in _NAVIGATION_SCRIPTS)
+    ]
+    business_lines = [
+        _LABELS["L006"].format(
+            compose("script_signature", ScriptSignatureParams(entry=e)), e.description
+        )
+        for e in space.entries
+        if e.kind == "script"
+        and space.mask.get(e.name, False)
+        and (e.name not in _NAVIGATION_SCRIPTS)
+    ]
+    action_sections = []
+    if navigation_lines:
+        action_sections.append(_LABELS["L007"] + "\n".join(navigation_lines))
+    if business_lines:
+        action_sections.append(_LABELS["L008"] + "\n".join(business_lines))
+    if key_lines:
+        action_sections.append(_LABELS["L009"] + "\n".join(key_lines))
+    return "\n\n".join(action_sections)
+
+
+def assemble(params: DecideActionParams, compose: Compose) -> str:
+    """消费原料并保留既有决策条件与排版。"""
+    request = params
+    goals, obs, space = (request.goals, request.observation, request.space)
+    assert space.names or space.entries, "build_prompt() got an empty action space"
+    assert not obs.done, "build_prompt() called on a finished episode"
+    assert goals, "build_prompt() got an empty goal stack"
+    facts = compose(
+        "task_frame",
+        TaskFrameParams(observation=request.observation, known_objects=request.known_objects),
+    )
+    recalled = "\n\n".join(_memory_lines(request.memories, "sequence", compose)) or _LABELS["L002"]
+    recalled = compact_history(recalled)
+    actions = _actions(request, compose)
+    return _append_note(
+        _TEMPLATE.substitute(
+            budgets=render_budgets(request.budget_context),
+            goals=_render_goals(goals),
+            status=_LABELS["L011"],
+            facts=facts,
+            map_guide=_map_guide(request, compose),
+            knowledge=request.knowledge or _LABELS["L012"],
+            memories=recalled,
+            task_index="\n".join(
+                _memory_lines([m], "index", compose)[0] for m in request.task_index
+            )
+            or _LABELS["L013"],
+            actions=actions,
+            repeat_hint=_PARTS["repeat_hint"],
+            max_segments=request.max_segments,
+            read_screen=compose("read_screen", ReadScreenParams()),
+            last_result=_LABELS["L014"].format(request.last_result) if request.last_result else "",
+        ),
+        request.human_note,
+        compose,
+    )

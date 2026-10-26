@@ -42,7 +42,7 @@ def _goal_section(goals: list[Goal]) -> str:
             memories=[],
         )
     )
-    return prompt.split("## 目标", 1)[1].split("## 当前状态", 1)[0]
+    return prompt.split("\n## 目标\n", 1)[1].split("\n## ", 1)[0]
 
 
 def _three_goals() -> list[Goal]:
@@ -112,11 +112,11 @@ def test_shop_prompt_lists_only_shop_scripts_and_requests_an_args_object() -> No
 
     prompt = build_prompt(request)
 
-    scripts = prompt.split("## 可调用的脚本", 1)[1]
+    scripts = prompt.split("\n## 当前现场\n", 1)[1].split("可用动作：", 1)[1]
     assert all(name in scripts for name in ("buy_item", "sell_item", "shop_quit"))
     assert "battle_fight" not in scripts and "walk_to" not in scripts
     assert '"args": {' in prompt
-    assert "你不直接按键" in prompt
+    assert "基础按键：" not in scripts
 
 
 def test_battle_navigation_prompt_exposes_directions_scripts_and_cursor() -> None:

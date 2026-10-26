@@ -10,9 +10,9 @@ from evals.common.legacy_requests.registry import REQUESTS as LEGACY
 from pokemon_agent.direct.brain_tool import decide_prompt_params
 from pokemon_agent.prompt import (
     DecideActionParams,
-    DecideActionRetryParams,
     DecomposeParams,
     JudgeParams,
+    OutputRetryParams,
     PromptGateway,
     RunPlanParams,
     SummarizeParams,
@@ -104,7 +104,7 @@ def render_case(case: GoldenCase, gateway: PromptGateway) -> bytes:
     """只经活动网关对冻结文本，不写入golden。"""
     if case.task == "retry_prompt":
         return gateway.render(
-            "decide_action_retry", DecideActionRetryParams.model_validate(case.request)
+            "output_retry", OutputRetryParams.model_validate(case.request)
         ).text.encode("utf-8")
     return gateway.render(case.task, params_for(case)).text.encode("utf-8")
 

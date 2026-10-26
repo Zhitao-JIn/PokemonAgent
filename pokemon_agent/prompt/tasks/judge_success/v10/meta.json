@@ -1,0 +1,8 @@
+{
+  "task": "judge_success",
+  "version": "v10",
+  "kind": "task",
+  "params": "JudgeParams",
+  "reason": "缓存优先：静态说明逐字保留，动态RAM五帧显式无损增量去重",
+  "hash": "ad7d0537322c429f602bbfc82b2511e8c90f1c3ed36f03069337d6358eaa4ca8"
+}

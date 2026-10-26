@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from pokemon_agent.brain.interface import Goal
 from pokemon_agent.schemas.harness.domain import GoalEntry, JudgeFeedback
+from pokemon_agent.schemas.harness.domain.budget_allowance import BudgetAllowance
 from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, RunMemory
 from pokemon_agent.world import TaskObservation
 
@@ -53,4 +54,6 @@ class FromHarnessToBrainToolPlanOnceReq(BaseModel):
         default=None, description="上一次 run 判定及人的表态；还没判过为 None"
     )
     max_push: int
+    budget_context: list[BudgetAllowance] = Field(default_factory=list)
+
     human_note: str = Field(default="", description="人对上一版规划的插话；空 = 没被插话")

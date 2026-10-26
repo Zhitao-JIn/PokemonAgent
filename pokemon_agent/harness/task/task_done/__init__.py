@@ -1,9 +1,9 @@
-"""`task_done` 格（task 层）：**标 → 蒸 → 结**。
+"""`task_done` 格（task 层）：**蒸 → 结**。
 
-    verify_act_memories → summarize_task → close_task
+    summarize_task → close_task
 
 素材是 perceive 装好的 `task_ctx.act_memories`（本格不查库）。没有 ActMemory 时跳过
-标与蒸（`reason` 留空、`memory` 为 None），结算照出。
+蒸（`reason` 留空、`memory` 为 None），结算照出。逐条正/负判断由 summarize_task 同一次调用完成。
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from ..task_state import TaskState
 from .close_task import close_task
 from .mechanical import mechanical_summary
 from .summarize_task import summarize_task
-from .verify_act_memories import verify_act_memories
 
 
 def task_done(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
@@ -31,9 +30,9 @@ def task_done(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]
         current = state.model_copy(update=inc)
         return {**inc, **close_task(current, runtime)}
 
-    # 步骤 1：有记忆才标、才蒸。
+    # 步骤 1：有记忆才蒸。
     if current.task_ctx.act_memories:
-        inc = compose_units(current, runtime, (verify_act_memories, summarize_task))
+        inc = compose_units(current, runtime, (summarize_task,))
         updates.update(inc)
         current = current.model_copy(update=inc)
 

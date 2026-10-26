@@ -15,4 +15,6 @@ class FromHarnessToGameToolPerceiveTaskResp(BaseModel):
 
     observation: TaskObservation = Field(description="这一帧的观测（带场合）")
     frame_png: str = Field(description="这一帧的原始画面（PNG data URI）")
-    ram: RamReadout | None = Field(default=None, description="这一帧的内存读数（只进 trace）")
+    ram: RamReadout | None = Field(
+        default=None, description="本帧内存读数，先落 trace；run 判定可按最近五次窗口读取"
+    )

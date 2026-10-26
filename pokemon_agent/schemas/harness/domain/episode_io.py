@@ -18,7 +18,7 @@ from .termination import Settled, Termination
 class EpisodeInput(BaseModel):
     """run 的 `act` 派一局时给的全部初值（`dispatch` 写进 `RunState.episode_input`）。
 
-    episode 的预算是 `goal.max_steps`，单位是 **task 数**（本层独立计数）。
+    `goal.max_steps` 是父级建议task数；硬上限由配置budget.episode_max_tasks提供。
     """
 
     run_id: str = Field(description="所属 run")

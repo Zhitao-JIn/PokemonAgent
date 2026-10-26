@@ -1,0 +1,8 @@
+{
+  "task": "decide_action",
+  "version": "v5",
+  "kind": "task",
+  "params": "DecideActionParams",
+  "reason": "分步缓存布局：固定字段读法与动作选择说明前置，保留全部动态材料和规则",
+  "hash": "bfdf957f0354dd2b31fe3ba82a3381cc176ab817cb7334e8263582436524925f"
+}

@@ -1,0 +1,8 @@
+{
+  "task": "judge_success",
+  "version": "v9",
+  "kind": "task",
+  "params": "JudgeParams",
+  "reason": "iter25前缀假成功重现：achieved理由需完整决定性证据，反查类别推断与下级结论替代",
+  "hash": "71d66321c65e7588df3b3ee38f534d5a46aede7cc612a4b46beb8034a7008550"
+}

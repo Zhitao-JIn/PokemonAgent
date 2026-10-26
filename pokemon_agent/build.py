@@ -17,7 +17,7 @@ task 图挂 `EpisodeRuntime.task_graph`，由上一层的 `act` 格取用。
 旧调用方拿到的 `harness.run(run_id, goals)` 是 run 级签名。
 
 **装配是"造三个 runtime + 编译三张图"**：`TaskRuntime`（task 层，v1 容器先行）
-→ `EpisodeRuntime`（`decomposer` / `judger` / `verifier` / `summarizer`，嵌套持有
+→ `EpisodeRuntime`（`decomposer` / `judger` / `summarizer`，嵌套持有
 `task`）→ `RunRuntime`（`planner` / `judger`，嵌套持有 `episode`）——
 `RunHarness(run_rt, run_graph)` 只收它与 run 图，不再逐个把同样的东西再递一遍（那会有两份真源，而
 "两边不是同一个对象"不报错）。`trace` / `memory` / `reviewer` / `game` 三层是
@@ -122,9 +122,10 @@ def build_real(
     )
 
     # 步骤 3：按层各造一份 brain，只装本层要的链路；型号与超参全取自 `models`。
-    def brain(*links: str) -> BrainTool:
+    def brain(layer: str, *links: str) -> BrainTool:
         return BrainTool.build(
             links=links,
+            layer=layer,
             models=app.models,
             prompt_registry=app.prompt.registry,
             retry=app.retry,
@@ -135,9 +136,9 @@ def build_real(
             deadline=deadline,
         )
 
-    run_brain = brain("plan", "judge")
-    episode_brain = brain("plan", "judge", "verify")
-    task_brain = brain("text", "judge", "verify")
+    run_brain = brain("run", "plan", "judge")
+    episode_brain = brain("episode", "plan", "judge", "verify")
+    task_brain = brain("task", "text", "judge", "verify")
 
     reviewer = ReviewerTool.build(app.review, flush=trace_tool.flush)
 
@@ -175,7 +176,6 @@ def build_real(
         judger=task_brain.judger,
         memory=memory,
         reflector=task_brain.reflector,
-        verifier=task_brain.verifier,
         task_summarizer=task_brain.task_summarizer,
         trace=trace_tool,
         reviewer=reviewer,
@@ -188,7 +188,6 @@ def build_real(
         memory=memory,
         decomposer=episode_brain.decomposer,
         judger=episode_brain.judger,
-        verifier=episode_brain.verifier,
         summarizer=episode_brain.summarizer,
         trace=trace_tool,
         reviewer=reviewer,

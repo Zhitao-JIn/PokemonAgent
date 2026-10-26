@@ -38,7 +38,6 @@ def summarize_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str,
     }
     req = FromHarnessToBrainToolSummarizeTaskReq(
         entries=state.task_ctx.act_memories,
-        verdicts=state.act_verdicts,
         entry_id=state.entry_id,
         task_id=state.task.task_id,
         episode_id=state.episode_id,
@@ -47,7 +46,7 @@ def summarize_task(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str,
         termination=state.termination,
         judge_reason=state.judge_reason,
         steps_used=state.step,
-        max_steps=state.task.max_steps,
+        max_steps=deps.config.budget.task_max_steps,
     )
 
     # 步骤 1：蒸馏；耗尽时记整条账 + call_exhausted 后上抛。

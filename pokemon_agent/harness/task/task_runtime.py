@@ -36,7 +36,6 @@ from pokemon_agent.direct.interface import (
     ReflectPort,
     TaskSummarizePort,
     TraceToolPort,
-    VerifyPort,
 )
 from pokemon_agent.settings import AppConfig
 
@@ -67,7 +66,6 @@ class TaskRuntime:
     **同一实例**）。"""
     reflector: ReflectPort
     """反思口（ActMemory 组装，**不调模型**）。"""
-    verifier: VerifyPort
     """校验口（`task_done` 筛 ActMemory 用；与 episode 层各自的 BrainTool 上
     那个**互不相干**——按需实例化，185）。"""
     task_summarizer: TaskSummarizePort

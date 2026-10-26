@@ -1,0 +1,8 @@
+{
+  "task": "goal",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "GoalParams",
+  "reason": "检查点 2：共享块渲染与稳定优先拼装",
+  "hash": "72afa1aa076c9775b5e7d804aeab5d8cb3bbfa184141891a27e3686a8ff91d5e"
+}

@@ -10,6 +10,7 @@ from tests.evals.agent_short_goal_run.test_evals_checks import frame, sample, st
     "text",
     [
         "All right! PIDGEY was caught!",
+        "PIDGEY was caught!",
         "Darn! The POKéMON broke free!",
         "Oh no! The POKéMON broke free!",
         "Aww! It appeared to be caught!",
@@ -33,6 +34,36 @@ def test_ball_consumption_without_a_result_is_not_sufficient():
     events = stream(frame(1, bag={4: 3}), frame(2, bag={4: 2}))
 
     assert judge(events, sample("ball_thrown")).outcome == "fail"
+
+
+def test_paginated_capture_result_is_recognized_from_the_complete_second_page() -> None:
+    events = stream(
+        frame(1, in_battle=True),
+        frame(2, in_battle=True, dialog="All right! PIDGEY was"),
+        frame(3, in_battle=True, dialog="PIDGEY was caught!"),
+    )
+
+    result = judge(events, sample("ball_thrown"))
+
+    assert result.outcome == "pass"
+    assert result.evidence == ["u3"]
+
+
+@pytest.mark.parametrize("text", ["All right! PIDGEY was", "RED used POKé BALL!", "caught"])
+def test_incomplete_capture_text_does_not_prove_a_ball_result(text: str) -> None:
+    events = stream(frame(1, in_battle=True), frame(2, in_battle=True, dialog=text))
+
+    result = judge(events, sample("ball_thrown"))
+
+    assert result.outcome == "fail"
+
+
+def test_complete_capture_text_at_start_is_not_new_progress() -> None:
+    events = stream(frame(1, dialog="PIDGEY was caught!"), frame(2))
+
+    result = judge(events, sample("ball_thrown"))
+
+    assert result.outcome == "unjudgeable"
 
 
 @pytest.mark.parametrize("text", ["Got away safel", "Can't escape!", "Can’t escape!"])

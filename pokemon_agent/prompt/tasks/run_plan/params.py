@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, Field
 
+from ...budget import BudgetRecord
 from ...objects import ObjectFactEvent
 from ...observation import ObservationRecord
 from ...records import (
@@ -23,6 +24,8 @@ class RunPlanParams(BaseModel):
     objects: list[ObjectFactEvent] = Field(default_factory=list)
     last_judge: JudgeFeedbackRecord | None = None
     max_push: int
+    terrain_meanings: dict[str, str] = Field(default_factory=dict)
+    budget_context: list[BudgetRecord] = Field(default_factory=list)
     human_note: str = ""
     execution_order: list[str] = Field(default_factory=list)
     remaining_planning_rounds: int | None = None

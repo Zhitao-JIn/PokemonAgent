@@ -1,0 +1,8 @@
+{
+  "task": "summarize",
+  "version": "v6",
+  "kind": "task",
+  "params": "SummarizeParams",
+  "reason": "verify 并入 summarize：逐 task 正/负判断改由蒸馏同一次调用完成，输入不再带外部标注",
+  "hash": "32666d46d804678af308a392e5bfc930ef3000a8b065142953bd7ba6498db708"
+}

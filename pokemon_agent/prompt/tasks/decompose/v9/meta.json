@@ -1,0 +1,8 @@
+{
+  "task": "decompose",
+  "version": "v9",
+  "kind": "task",
+  "params": "DecomposeParams",
+  "reason": "iter22商店短task与未触发备用条目增加编排调用：按完整可验收结果组织task",
+  "hash": "5a6655b4434b59f6aa18f0578c422695818645c1411d275337c8519196444c97"
+}

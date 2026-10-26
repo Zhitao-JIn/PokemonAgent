@@ -1,19 +1,19 @@
 {
   "tasks": {
     "memory_records": {
-      "active": "v1"
+      "active": "v2"
     },
     "verify": {
-      "active": "v2"
+      "active": "v4"
     },
     "summarize": {
-      "active": "v2"
+      "active": "v7"
     },
     "summarize_task": {
-      "active": "v2"
+      "active": "v8"
     },
     "summarize_run": {
-      "active": "v2"
+      "active": "v6"
     },
     "goal_table": {
       "active": "v1"
@@ -37,7 +37,7 @@
       "active": "v1"
     },
     "object_events": {
-      "active": "v1"
+      "active": "v2"
     },
     "takeover": {
       "active": "v1"
@@ -46,24 +46,39 @@
       "active": "v1"
     },
     "judge_success": {
-      "active": "v3"
+      "active": "v11"
     },
     "decompose": {
-      "active": "v2"
+      "active": "v10"
     },
     "run_plan": {
-      "active": "v2"
+      "active": "v9"
     },
     "decide_action": {
-      "active": "v2"
+      "active": "v10"
     },
-    "decide_action_retry": {
+    "output_retry": {
       "active": "v1"
     },
     "task_frame": {
       "active": "v1"
     },
     "script_signature": {
+      "active": "v1"
+    },
+    "prompt_layout": {
+      "active": "v1"
+    },
+    "goal": {
+      "active": "v1"
+    },
+    "knowledge": {
+      "active": "v1"
+    },
+    "distill_output": {
+      "active": "v1"
+    },
+    "image_reading": {
       "active": "v1"
     }
   }

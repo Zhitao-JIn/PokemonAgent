@@ -1,0 +1,8 @@
+{
+  "task": "verify",
+  "version": "v5",
+  "kind": "task",
+  "params": "VerifyParams",
+  "reason": "针对verify理由中裸双引号导致JSONDecodeError，简明充分理由并显式引用转义与索引完整性",
+  "hash": "603cee7f1a47fa80b605e74e785d1b3172c1027bf1f3a8ed4f48f0b5714b6437"
+}

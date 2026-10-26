@@ -1,0 +1,8 @@
+{
+  "task": "decompose",
+  "version": "v5",
+  "kind": "task",
+  "params": "DecomposeParams",
+  "reason": "减少连续过程的中间task与重复规划文字，保留验收边界和坐标角色",
+  "hash": "cc734141c2201e793857fa71673c3eb5d5d4f15bf4a74b421e6dd3982d22fa7c"
+}

@@ -13,7 +13,6 @@ from langgraph.graph.state import CompiledStateGraph
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
 from pokemon_agent.schemas.harness.domain import TaskInput, TaskOutput
 
-from ..budget_record import budget_meta, record_budget
 from .task_runtime import TaskRuntime
 from .task_state import TaskState
 
@@ -71,31 +70,19 @@ def begin_task(deps: TaskRuntime, task_input: TaskInput) -> TaskState:
         run_id=task_input.run_id,
         episode_id=task_input.episode_id,
         entry_id=task_input.entry_id,
-        task=task_input.task.model_copy(
-            update={
-                "max_steps": min(task_input.task.max_steps, deps.config.budget.task_max_steps),
-            }
-        ),
+        task=task_input.task,
         total_acts=task_input.total_acts,
         knowledge=task_input.knowledge,
         task_index=task_input.task_index,
         actions_budget=task_input.actions_budget,
         remaining_s=task_input.remaining_s,
     )
-    if state.task.max_steps != task_input.task.max_steps:
-        record_budget(
-            deps.trace,
-            budget_meta(state, "task", "begin_task"),
-            TraceKind.BUDGET_CLAMPED,
-            original=task_input.task.max_steps,
-            clamped=state.task.max_steps,
-        )
     return state
 
 
-def task_budget(task_input: TaskInput) -> int:
+def task_budget(max_steps: int) -> int:
     """task 图的 `recursion_limit`：键预算 × 每键节点数 + 余量（贴身闸）。"""
-    return task_input.task.max_steps * (NODES_PER_DECISION + NODES_PER_PRESS) + RECURSION_MARGIN
+    return max_steps * (NODES_PER_DECISION + NODES_PER_PRESS) + RECURSION_MARGIN
 
 
 def exc_snapshot(exc: Exception) -> str:
@@ -109,16 +96,18 @@ def run_task(deps: TaskRuntime, graph: CompiledStateGraph, *, task_input: TaskIn
     异常原样上抛（episode 层 `act` 接住并记 `task_error`）。
     """
     state = begin_task(deps, task_input)
-    final = graph.invoke(state, {"recursion_limit": task_budget(task_input)}, context=deps)
-    return close(final, task_input)
+    final = graph.invoke(
+        state, {"recursion_limit": task_budget(deps.config.budget.task_max_steps)}, context=deps
+    )
+    return close(final, task_input, hard_limit=deps.config.budget.task_max_steps)
 
 
-def close(final: dict[str, Any], task_input: TaskInput) -> TaskOutput:
+def close(final: dict[str, Any], task_input: TaskInput, *, hard_limit: int) -> TaskOutput:
     """取出 `close_task` 写好的结算，并断言键数没有越过预算。"""
     state = TaskState.model_validate(final)
     assert state.output is not None, "task graph ended without close_task"
-    assert state.output.steps_used <= task_input.task.max_steps, (
-        f"task ran {state.output.steps_used} keys > max_steps={task_input.task.max_steps}"
+    assert state.output.steps_used <= hard_limit, (
+        f"task ran {state.output.steps_used} keys > configured_limit={hard_limit}"
     )
     return state.output
 

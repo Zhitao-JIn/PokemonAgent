@@ -1,0 +1,8 @@
+{
+  "task": "distill_output",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "DistillOutputParams",
+  "reason": "检查点 4：同构蒸馏布局与共用规则，保留完整原料",
+  "hash": "af1699a02e2e98c27cb84394509a6da6b0af0093c9bd349a1cea17d0a2f3393e"
+}

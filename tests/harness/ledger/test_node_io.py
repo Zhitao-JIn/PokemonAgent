@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 from _fake_run import every, never, run_fake
 from _harness_fixtures import node_io
+from _harness_fixtures.app_config import app_config
 
 from pokemon_agent.harness.episode.episode_graph import compile_episode_graph
 from pokemon_agent.harness.run.run_graph import compile_run_graph
@@ -87,7 +88,13 @@ def test_a_normal_run_passes_every_check(events: list[dict]) -> None:
 
 def test_a_failed_task_is_followed_by_a_fresh_decomposition(tmp_path: Path) -> None:
     """task 靠预算收场（失败）→ 剩余链被清空 → 下一圈重拆；账照样走得通。"""
-    events = run_fake(tmp_path, task=never, episode=every(2), run=lambda asked: True)
+    events = run_fake(
+        tmp_path,
+        task=never,
+        episode=every(2),
+        run=lambda asked: True,
+        config=app_config(budget={"task_max_steps": 3}),
+    )
     _check_all(events)
     stream = [token for token, _ in node_io.episode_stream(events, EP1)]
     assert stream.count("decompose_verdict") == 2
@@ -134,7 +141,7 @@ def test_a_judge_overturn_leaves_task_settlements_mechanical(tmp_path: Path) -> 
     assert stamps and all(s["status"] == "completed" for s in stamps)
     assert all(s["overturned"] == "false" and s["audit"] == "" for s in stamps)
     assert all(not s["abandoned"] for s in stamps)
-    assert reviewer.audited == [EP1, "r1"]
+    assert reviewer.audited == [EP1, EP1, "r1"]
     end = next(_content(e) for e in events if e["kind"] == "task_end")
     assert end["termination"] == "goal_done"
 

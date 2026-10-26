@@ -1,7 +1,7 @@
 """`FromHarnessToBrainToolSummarizeTaskReq`：harness → `BrainTool` 的 task 蒸馏请求。
 
-**`entries` 装本 task 区间的全部 ActMemory，`verdicts` 是与之等长的正/负标注**——
-负样本不丢，和正样本一起作参考交给蒸馏（渲染时由 tool 层打标）。
+**`entries` 装本 task 区间的全部 ActMemory**；正/负判断由蒸馏那次调用自己做（verify 已并入，
+不再有单独的标注入参）。
 `prompt` 不在这里：`TaskSummarizer.summarize_task()` 入口处自己拼。
 """
 
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.brain.interface import VerifyVerdict
 from pokemon_agent.schemas.harness.domain.termination import Settled, Termination
 from pokemon_agent.schemas.memory import ActMemory
 
@@ -20,7 +19,6 @@ class FromHarnessToBrainToolSummarizeTaskReq(Settled, BaseModel):
     entries: list[ActMemory] = Field(
         min_length=1, description="本 task 区间的全部 ActMemory，按 step 升序"
     )
-    verdicts: list[VerifyVerdict] = Field(description="与 entries 等长的正/负标注")
     entry_id: str
     task_id: str = Field(description="本 task 的标识（来源章）")
     episode_id: str = Field(description="所属 episode 的标识（来源章）")

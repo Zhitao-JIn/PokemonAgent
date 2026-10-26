@@ -1,0 +1,8 @@
+{
+  "task": "decompose",
+  "version": "v3",
+  "kind": "task",
+  "params": "DecomposeParams",
+  "reason": "固定附图读法前置，通行图符号移入统一动态材料区",
+  "hash": "06f202192241e9002a7372de64e3f454ee9ce0813bc399beace5573088b9e741"
+}

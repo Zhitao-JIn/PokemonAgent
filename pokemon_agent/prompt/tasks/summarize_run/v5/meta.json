@@ -1,0 +1,8 @@
+{
+  "task": "summarize_run",
+  "version": "v5",
+  "kind": "task",
+  "params": "SummarizeRunParams",
+  "reason": "新token费用批次：删除run复盘字段与Markdown重复叙述，保留决定性证据和限制",
+  "hash": "299891ec27fec2f5dc7bfbf04296144ccd9702c1277b95e18e6d5e494b563bb1"
+}

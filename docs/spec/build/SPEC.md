@@ -5,6 +5,8 @@
 
 ## 一、职责与边界
 
+模型节点thinking覆盖的配置、节点映射和trace口径见 [NODE_THINKING.md](NODE_THINKING.md)。
+
 - **`build.py` 是全项目唯一 new 具体实现的地方**（AGENTS.md 三·3"组装只发生在一个地方"）。
   它只做一件事：造 `TaskRuntime` → `EpisodeRuntime` → `RunRuntime`（逐层嵌套），再用它们造 `RunHarness`。
 - **对四个独立模块零 import**：本文件顶部只 import `pokemon_agent.harness` / `harness.null_reviewer` /

@@ -122,7 +122,10 @@ def test_real_decomposition_entry_accepts_observation_without_status() -> None:
 
     assert "status" not in req.observation.model_dump()
     assert params.observation.status == ""
-    assert "全局坐标 地图12 x=3 y=4" in PromptGateway(None).render("decompose", params).text
+    text = PromptGateway(None).render("decompose", params).text
+    assert "- overlay: choice" in text
+    assert "YES" in text and "NO" in text
+    assert "全局坐标 地图12 x=3 y=4" not in text.split("## 当前现场", 1)[1]
 
 
 def test_live_overlay_prevents_empty_facts_status_fallback() -> None:

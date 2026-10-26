@@ -7,7 +7,8 @@
     "base_prompt": "基础 prompt\n请输出 JSON。",
     "attempt": 2,
     "reason": "动作不在空间内",
-    "raw": "{\"name\":\"unknown\"}"
+    "raw": "{\"name\":\"unknown\"}",
+    "include_action_space_note": true
   },
   "max_segments": 3,
   "source_ref": ""
