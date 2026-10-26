@@ -1,0 +1,8 @@
+{
+  "task": "output_retry",
+  "version": "v1",
+  "kind": "task",
+  "params": "OutputRetryParams",
+  "reason": "纠错附录由 plan、decompose、choose 三处共用；动作空间那段说明改成只在 choose 渲染",
+  "hash": "6fa95a845ec32c91fd75a139417b0340128a7dd326d1641b4e49ff9775862bd0"
+}

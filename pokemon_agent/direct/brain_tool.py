@@ -81,8 +81,8 @@ from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.prompt import (
     DecideActionParams,
-    DecideActionRetryParams,
     DecomposeParams,
+    OutputRetryParams,
     PromptGateway,
     RenderedPrompt,
     RunPlanParams,
@@ -373,7 +373,9 @@ class Chooser:
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
             nonlocal current_prompt
-            current_prompt = _retry_prompt(rendered_prompt, calls, self._prompt_gateway)
+            current_prompt = _retry_prompt(
+                rendered_prompt, calls, self._prompt_gateway, include_action_space_note=True
+            )
             return self._brain.choose(
                 prompt=current_prompt.text,
                 keys=list(req.space.names),
@@ -1168,19 +1170,27 @@ def _illegal(why: str) -> Exception:
 
 
 def _retry_prompt(
-    base_prompt: RenderedPrompt, attempts: list[ModelCall], gateway: PromptGateway
+    base_prompt: RenderedPrompt,
+    attempts: list[ModelCall],
+    gateway: PromptGateway,
+    *,
+    include_action_space_note: bool = False,
 ) -> RenderedPrompt:
-    """解析失败组合纠正版本；首次调用和传输失败保留原始版本。"""
+    """解析失败组合纠正版本；首次调用和传输失败保留原始版本。
+
+    `include_action_space_note` 只有决策打开：动作空间那段说明只对 choose 成立。
+    """
     if not attempts or attempts[-1].error_kind not in _PARSE_ERROR_KINDS:
         return base_prompt
     last = attempts[-1]
     return gateway.render(
-        "decide_action_retry",
-        DecideActionRetryParams(
+        "output_retry",
+        OutputRetryParams(
             base_prompt=base_prompt.text,
             attempt=len(attempts) + 1,
             reason=last.error,
             raw=cast(str, last.payload.get("raw", ""))[:400],
+            include_action_space_note=include_action_space_note,
         ),
     )
 

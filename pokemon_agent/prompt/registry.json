@@ -57,7 +57,7 @@
     "decide_action": {
       "active": "v7"
     },
-    "decide_action_retry": {
+    "output_retry": {
       "active": "v1"
     },
     "task_frame": {

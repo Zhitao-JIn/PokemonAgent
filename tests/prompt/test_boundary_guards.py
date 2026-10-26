@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts.check_prompt_boundary import python_files
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/check_prompt_boundary.py"
 
@@ -25,6 +27,19 @@ def test_the_real_repository_obeys_all_four_rules() -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert all(f"[ OK ] {rule}" in result.stdout for rule in "ABCD")
+
+
+def test_the_scan_ignores_the_gitignored_eval_results_archive(tmp_path: Path) -> None:
+    """`eval_results/` 是本地历史快照（.gitignore 第 48 行），不是活代码，规则扫不到它。"""
+    archived = tmp_path / "eval_results" / "iter00" / "bad.py"
+    archived.parent.mkdir(parents=True)
+    archived.write_text(
+        "from pokemon_agent.prompt.gateway import PromptGateway\n", encoding="utf-8"
+    )
+    live = tmp_path / "ok.py"
+    live.write_text("VALUE = 1\n", encoding="utf-8")
+
+    assert list(python_files(tmp_path)) == [live]
 
 
 @pytest.mark.parametrize(

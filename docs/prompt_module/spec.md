@@ -39,7 +39,7 @@
 | D9 | 网关加载时全量校验：注册的版本目录存在；`meta.hash` 与重算一致；契约类存在；每个 `compose` 引用的 fragment 已注册。任何一项不满足即抛异常 | 与「prompt 缺失不是可以兜底的情况」同一原则 |
 | D10 | 接线：`build_real` 把 `app.prompt.registry` 作为裸字段递给 `BrainTool.build(prompt_registry=...)`，后者内部造网关并注入 9 个能力对象；三次 `BrainTool.build` 各造一份（解析成本可忽略，不为此在装配点引入新类） | 保持「build.py 对 brain 零 import」「装配点只递裸字段」 |
 | D11 | 版本标识入账：能力对象渲染后，把 `prompt_task`、`prompt_version`、`prompt_hash` 三个字符串写进**每次尝试的** `ModelCall.payload`；不改 `ModelCall` 模型，不改 trace 词表 | F3；`payload` 本来就透传到 trace |
-| D12 | `decide_action` 的重试纠正说明单列为任务 `decide_action_retry`（入参 `base_prompt`、`attempt`、`reason`、`raw`） | 它有独立契约和独立调用点；仍沿用「追加、不重渲染」以保住前缀缓存 |
+| D12 | 重试纠正说明单列为任务 `output_retry`（入参 `base_prompt`、`attempt`、`reason`、`raw`、`include_action_space_note`），由 plan、decompose、choose 三处共用 | 它有独立契约和独立调用点；动作空间那段只对 choose 成立，按开关渲染；仍沿用「追加、不重渲染」以保住前缀缓存 |
 | D13 | 对拍输入：历史请求（F10）加合成用例（verify、summarize_task、summarize_run 以及 `decide_action` 的各分支）加真实 `ActMemory`（F10）。因 F11，历史输入进入新契约需经**文本→字段的一次性适配器**，该适配器只存在于 `tests/`，用「新渲染 = 旧文本」的往返来证明自己 | 无法无损还原的样本不入对拍集，数量如实汇报 |
 | D14 | 迁移期第一版**不改任何措辞**；差异即缺陷，不是「顺手优化」 | 措辞调整在 CP7 之后以新版本进行 |
 | D15 | 新增段 `prompt` 的键只有 `registry`；不在配置里放版本号 | 版本的真源只有一个：注册表 |
@@ -72,7 +72,7 @@ pokemon_agent/prompt/
 ├── registry.json          # 随包默认注册表
 └── tasks/
     ├── decide_action/{params.py, v1/{prompt.md, assemble.py, meta.json}}
-    ├── decide_action_retry/ ...
+    ├── output_retry/ ...
     ├── judge_success/ ...        ├── decompose/ ...      ├── run_plan/ ...
     ├── verify/ ...               ├── summarize/ ...      ├── summarize_task/ ...
     ├── summarize_run/ ...
@@ -93,7 +93,7 @@ pokemon_agent/prompt/
 | `decompose` | `Decompose` | `goal`、`observation`、`task_memories`、`task_table`、`episode_index`、`knowledge`、`last_judge`、`max_tasks`、`execution_order`、`remaining_planning_rounds`、`human_note`、`terrain_meanings` | `human_note`、`last_judge`、`task_table` | CP4 |
 | `run_plan` | `PlanOnce` | `run_goal`、`plan`（GoalRecord）、`details`、`run_index`、`knowledge`、`observation`、`objects`（原始事件）、`last_judge`、`max_push`、`human_note`、预算字段 | `human_note`、`last_judge`、`goal_table` | CP4 |
 | `decide_action` | `ChooseOnce` | `goals`、`observation`（含 overlay、`covered_by_script`、takeover 联合、结构化观测字段）、`space`（names、mask、entries）、`memories`、`knowledge`、`task_index`、`last_result`、`human_note`、`max_segments`、`known_objects`（原始事件）、`terrain_meanings` | `read_screen`、`human_note` | CP5 |
-| `decide_action_retry` | 本地 `RetryPromptReq` | `base_prompt`、`attempt`、`reason`、`raw` | — | CP5 |
+| `output_retry` | 本地 `RetryPromptReq` | `base_prompt`、`attempt`、`reason`、`raw`、`include_action_space_note` | — | CP5 |
 
 - **观测契约**（`ObservationRecord`）在 CP2 定形，随 CP3 首次被使用，最后在 CP5 补齐 `decide_action` 才用到的字段。它由 world 的 `TaskObservation` 转换而来；转换函数住在 `BrainTool` 一侧（tool 层），不住在 prompt 模块。
 - `ActRecord` 等记忆契约是**冗余类对象**：与 `schemas/memory` 同构的最小字段集，互不引用。
@@ -107,7 +107,7 @@ pokemon_agent/prompt/
 
 - 新增 `scripts/capture_prompt_golden.py`：按 D13 的三类来源生成对拍集，写入 `tests/prompt/golden/<task>/<case>.req.json`（输入）与 `<case>.prompt.txt`（旧 `build_prompt` 的输出）。
 - 历史请求：每个家族按 `case_id` 排序后等距抽样，每任务最多 30 条。先尝试 `model_validate` 为**当前**请求信封；失败的再尝试 `evals/common/legacy_requests/` 里同名旧类；仍失败的跳过并计数。
-- 合成用例：`verify`、`summarize_task`、`summarize_run` 各至少 5 条；`decide_action` 覆盖 overlay 三种、`covered_by_script`、各 takeover 视图类、`human_note`、`last_result`、`task_index` 有无、`known_objects` 有无、相邻帧去重命中与未命中；`decide_action_retry` 若干；`judge_success` 三层加 `allow_interrupt`。
+- 合成用例：`verify`、`summarize_task`、`summarize_run` 各至少 5 条；`decide_action` 覆盖 overlay 三种、`covered_by_script`、各 takeover 视图类、`human_note`、`last_result`、`task_index` 有无、`known_objects` 有无、相邻帧去重命中与未命中；`output_retry` 若干；`judge_success` 三层加 `allow_interrupt`。
 - 真实 `ActMemory`：从 `memory/step_memory/` 取 20 个，用于 `verify`、`summarize_task`。
 - 新增 `tests/prompt/test_golden_baseline.py`：对每个用例重新调用旧 `build_prompt`，断言与已存的 `.prompt.txt` 逐字节相等（证明基线可复现、旧代码未被动过）。
 - 不得调用真实模型；对拍集不得含密钥。
@@ -145,7 +145,7 @@ pokemon_agent/prompt/
 
 ### CP5 迁 `decide_action`（5a / 5b）
 
-- **5a**：`decide_action` 的 md 收编 `decide_action.md`、`button_help.md`、`map_hint.md`、`repeat_hint.md`、读图范例；按 overlay 选段，`terrain_legend` 的排版由 md 承担、符号表由入参 `terrain_meanings` 提供；`decide_action_retry` 单列。`MAP_HINT` / `BUTTON_HELP` / `REPEAT_HINT` 消失；`ActionSpace` 去掉 `descriptions` / `note` / `map_note`，`mcpclient/action_space.py` 不再补文案；MCP 契约、`docs/mcp/` 与相关 4 个测试同步。
+- **5a**：`decide_action` 的 md 收编 `decide_action.md`、`button_help.md`、`map_hint.md`、`repeat_hint.md`、读图范例；按 overlay 选段，`terrain_legend` 的排版由 md 承担、符号表由入参 `terrain_meanings` 提供；`output_retry` 单列。`MAP_HINT` / `BUTTON_HELP` / `REPEAT_HINT` 消失；`ActionSpace` 去掉 `descriptions` / `note` / `map_note`，`mcpclient/action_space.py` 不再补文案；MCP 契约、`docs/mcp/` 与相关 4 个测试同步。
 - **5b**：`task_frame` 的按场合投影、`known_objects` 渲染（harness 改传原始事件，`harness` 对 `direct.prompts` 的 import 清零）、脚本签名排版并入。
 - **核对点**：对拍一致；`BrainTool` 内不再有旧 `build_prompt` 调用。
 

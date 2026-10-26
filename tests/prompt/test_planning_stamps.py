@@ -57,7 +57,7 @@ def test_planning_and_judging_stamp_all_failed_and_successful_attempts(
 
     assert len(calls) == len(provider.requests) == 2
     for index, call in enumerate(calls):
-        expected_task = "decide_action_retry" if index and task != "judge_success" else task
+        expected_task = "output_retry" if index and task != "judge_success" else task
         assert call.payload["prompt_task"] == expected_task
         assert call.payload["prompt_version"] == active_version(expected_task)
         assert len(call.payload["prompt_hash"]) == 64
@@ -66,3 +66,33 @@ def test_planning_and_judging_stamp_all_failed_and_successful_attempts(
     )
     assert calls[0].error_kind == "ParseFailure"
     assert bool(calls[-1].error_kind) == exhausted
+
+
+@pytest.mark.parametrize("task", ["run_plan", "decompose"])
+def test_planning_retries_omit_the_action_space_note(task: str) -> None:
+    """动作空间那段说明只对决策成立：规划与拆解的重试附录不带它。"""
+    path = (
+        (GOLDEN / "run_plan/synthetic-empty.req.json")
+        if task == "run_plan"
+        else sorted((GOLDEN / "decompose").glob("history-*.req.json"))[0]
+    )
+    req = parse_request(GoldenCase.model_validate_json(path.read_bytes()))
+    if task == "run_plan":
+        req = req.model_copy(update={"details": []})
+    else:
+        req = req.model_copy(update={"task_memories": []})
+    provider = ScriptedLLM(
+        text_reply("invalid"),
+        text_reply('{"new_items":[],"execution_order":null,"why":"保留"}'),
+    )
+    capability = {"run_plan": Planner, "decompose": Decomposer}[task](
+        Brain(plan_llm=provider),
+        policy=call_policy(max_attempts=2),
+        prompt_gateway=PromptGateway(None),
+    )
+
+    getattr(capability, {"run_plan": "plan", "decompose": "decompose"}[task])(req)
+
+    retried = provider.requests[1].prompt
+    assert "上一次的输出不合法" in retried
+    assert "不在 action space 里" not in retried

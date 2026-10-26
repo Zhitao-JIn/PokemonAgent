@@ -11,7 +11,7 @@ from pokemon_agent.brain import Brain, Goal
 from pokemon_agent.direct.brain_tool import Chooser, decide_prompt_params
 from pokemon_agent.errors import MaxRetriesExceeded
 from pokemon_agent.mcpclient.action_space import action_space_for
-from pokemon_agent.prompt import DecideActionRetryParams, PromptGateway
+from pokemon_agent.prompt import OutputRetryParams, PromptGateway
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolChooseOnceReq
 from pokemon_agent.world import ActionSpace, Facts, PlaceInWorld, TaskObservation, TaskScene
 from pokemon_agent.world.interface.domain.takeover_view import NamingView
@@ -117,13 +117,13 @@ def test_frozen_action_space_ignores_retired_display_keys() -> None:
 )
 def test_retry_template_keeps_the_captured_bytes(path: Path) -> None:
     case = GoldenCase.model_validate_json(path.read_bytes())
-    params = DecideActionRetryParams.model_validate(case.request)
+    params = OutputRetryParams.model_validate(case.request)
 
-    actual = PromptGateway(None).render("decide_action_retry", params)
+    actual = PromptGateway(None).render("output_retry", params)
 
     expected = path.with_name(path.name.removesuffix(".req.json") + ".prompt.txt").read_bytes()
     assert actual.text.encode("utf-8") == expected
-    assert actual.task == "decide_action_retry"
+    assert actual.task == "output_retry"
 
 
 @pytest.mark.parametrize("exhausted", [False, True])
@@ -149,15 +149,32 @@ def test_real_choose_attempts_are_stamped_before_success_or_exhaustion(exhausted
     assert len(calls) == len(provider.requests) == 2
     assert [call.payload["prompt_task"] for call in calls] == [
         "decide_action",
-        "decide_action_retry",
+        "output_retry",
     ]
     assert [call.payload["prompt_version"] for call in calls] == [
         active_version("decide_action"),
-        active_version("decide_action_retry"),
+        active_version("output_retry"),
     ]
     assert len(calls[0].payload["prompt_hash"]) == 64
     assert calls[0].error_kind == "ParseFailure"
     assert bool(calls[-1].error_kind) == exhausted
+
+
+def test_choose_retry_appendix_carries_the_action_space_note() -> None:
+    req = native_request(Facts.Overlay.DIALOG)
+    provider = ScriptedLLM(text_reply("invalid"), text_reply('{"action":"up"}'))
+    chooser = Chooser(
+        Brain(decide_llm=provider),
+        policy=call_policy(max_attempts=2),
+        action_limits=ACTION_LIMITS,
+        prompt_gateway=PromptGateway(None),
+    )
+
+    chooser.choose(req)
+
+    retried = provider.requests[1].prompt
+    assert "上一次的输出不合法" in retried
+    assert "不在 action space 里" in retried
 
 
 def _business_marker(raw: dict) -> str:
@@ -260,7 +277,7 @@ def test_parse_timeout_success_preserves_input_and_attempt_specific_stamps(
 
     assert [call.payload["prompt_task"] for call in calls] == [
         "decide_action",
-        "decide_action_retry",
+        "output_retry",
         "decide_action",
     ]
     assert calls[0].payload["prompt_hash"] == calls[2].payload["prompt_hash"] == base.hash

@@ -24,12 +24,14 @@ class Violation:
 
 
 def python_files(root: Path) -> Iterator[Path]:
-    """Scan source files, excluding hidden worktrees, environments, and generated caches."""
+    """Scan source files, excluding hidden worktrees, environments, generated caches, and the
+    gitignored `eval_results` archive (frozen copies of older packages, not live code)."""
     for directory, names, files in os.walk(root):
         names[:] = sorted(
             name
             for name in names
-            if not name.startswith(".") and name not in {"__pycache__", "node_modules", "venv"}
+            if not name.startswith(".")
+            and name not in {"__pycache__", "node_modules", "venv", "eval_results"}
         )
         for name in sorted(files):
             if name.endswith(".py"):

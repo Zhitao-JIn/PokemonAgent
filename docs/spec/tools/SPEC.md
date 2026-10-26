@@ -163,7 +163,7 @@ prompt 的唯一出口是 `pokemon_agent/prompt/`：`PromptGateway.render(task, 
 版本；任务与片段按版本目录存放（`prompt.md` + `assemble.py`），没有 `version=` 参数，也没有
 模块级 prompt 常量。每次模型调用的账带 `prompt_task` / `prompt_version` / `prompt_hash`。
 world 与记忆对象只返回字段，措辞和渲染全部在 prompt 模块；`BrainTool` 负责把原始对象转成
-入参字段。`decide_action` 的重试段是独立任务 `decide_action_retry`。
+入参字段。`decide_action` 的重试段是独立任务 `output_retry`（三条规划/决策链路共用）。
 
 ## 七、当前状态与已知缺口
 
