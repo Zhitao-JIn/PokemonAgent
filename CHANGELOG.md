@@ -5,6 +5,13 @@
 **取舍**：只动测试，不动生产代码、不动 `evals/config.json`、不动 `tests/evals` 下的用例。store 隔离借用 inspect 的私有 `init_subtask_store`（`inspect_ai.util` 只公开 `store()` 这个只读入口，没有设置上下文的公开方法），限制在本文件的 autouse fixture 内并写了注释；`StoreModel` 本身"读值优先取 store"的行为不改。`test_world_case_caller_closes_world_service_after_each_worker_outcome` 三个参数化仍失败，原因是本机沙箱的 safe-delete 护栏在 `TemporaryDirectory` 清理时 `SystemExit(1)`，与仓库代码无关，本次不处理。
 **影响面**：全量 `3 failed, 2708 passed, 25 skipped, 3 deselected, 69 warnings in 344.00s (0:05:44)`，失败集合恰为上述三个沙箱用例；定向七目录 `3 failed, 1785 passed, 25 skipped, 3 deselected, 67 warnings in 241.24s (0:04:01)`；窄化复现（并发用例 + RAM 用例）由修复前的 1 failed 转为 `4 passed in 4.08s`。`ruff check` 与 `ruff format --check` 全绿（`1055 files already formatted`）。仅测试与 CHANGELOG 改动，prompt registry、版本目录与生产代码零改动。
 
+## 2026-10-26（648）—— judge 共用 prompt_layout，执行历史先于规划反馈与当前现场
+
+**改了什么**：基于活动 judge_success v8 新增 v11，按共享十块拼装判定输入；目标与判据共用 goal，知识共用 knowledge，背景索引、地图交互事实、完整执行历史、状态表及完整 latest_planning JSON、当前现场分别归块。当前现场使用 task_frame，RAM 记录随其后保留完整读数与来源。经用户补充裁决，三层请求统一传递 RAM 列表，空窗口统一序列化为 []，不新增 layer；只有非空窗口才追加 RAM 读法，task 的中断说明仍由 allow_interrupt 控制。
+**为什么这么改**：把每轮变化的规划与现场放到历史之后，让相邻调用更早共享固定规则和已有历史，并省去空知识与空 RAM 占位；字段省略与显式空值不应成为辨认层级的隐式协议。
+**取舍**：保留历史版本、完整三层记忆、规划 JSON、RAM time/seq/source/step/trace 元数据与图片收集顺序；辅助 render_history 保持原有独立契约。按补充裁决，run 没有 RAM 记录时也省略 RAM 说明。v8 会渲染显式传入的 task 当前观测，新版保留该能力，实际 task 请求仍不单列观测。离线字符前缀比较不等于 token 或真实缓存命中率；合成输入的 task/episode 字符数分别由 5171/5434 降至 4901/5192，run 由 6924 增至 6967。前缀比例随历史增长与 RAM 窗口变化位置而变，存在下降样例，不保证每种调用都改善；不调用真实模型。
+**影响面**：registry 的 judge_success 从 v8 切至 v11；三层共用请求的 RAM 空字段表示与 task/episode 请求构造同步，未新增素材、检索读口或响应字段。新增三层布局与图片顺序测试，旧排版断言同步，历史 golden 继续固定旧版本。前置全量为 2759 passed, 25 skipped, 3 deselected；最终全量为 2771 passed, 25 skipped, 3 deselected, 69 warnings in 281.21s (0:04:41)，失败集合为空。ruff check 为 All checks passed!，ruff format --check 为 1074 files already formatted；v11 哈希与内容一致，两种行尾口径的 diff stat 相同。
+
 ## 2026-10-26（647）—— 三个 plan 共用 prompt_layout，稳定规则与动态素材分块
 
 **改了什么**：新增 prompt_layout v1，统一十块名称、排序与空块省略；经用户批准新增 goal v1、knowledge v1 共用正文渲染。run_plan v9、decompose v10、decide_action v10 分别基于活动 v5、v8、v7，按稳定规则、目标与检索、完整历史、反馈、现场、预算、人类插话拼装；object_events v2 合并同格同键的对话前缀并去掉每行 episode_id。run_plan 新增 terrain_meanings 原料，由 Planner 传入世界符号表。修正新版本的旧标题引用，choose 的 RAM 说明进入规则且反馈块为空，清理旧标签与辅助历史中的第二套标题。新增渲染契约测试，并按用户逐次授权同步直接决策、内存观测、复核点与 episode 范围测试：辅助历史不再要求旧标题，空索引不产出索引行，完整 prompt 的规则仍保护“背景不是证据”提示；其余约束断言保持；prompt 模块 spec 补充现行共享布局约定。

@@ -1,0 +1,8 @@
+{
+  "task": "judge_success",
+  "version": "v11",
+  "kind": "task",
+  "params": "JudgeParams",
+  "reason": "检查点 3：三层判定共用十块布局，执行历史先于动态反馈与现场",
+  "hash": "80eb32161975ef773f95fab9846c8cd37fd5312652dc1c63a01a7fa03d2186be"
+}

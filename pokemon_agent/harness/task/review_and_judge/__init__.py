@@ -69,6 +69,7 @@ def review_and_judge(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[st
 def _request(state: TaskState) -> FromHarnessToBrainToolJudgeReq:
     """只装本 task 的目标、全部动作、背景与知识；绑定原始只读 history。"""
     req = FromHarnessToBrainToolJudgeReq(
+        ram_observations=[],
         goal=Goal(goal=state.task.goal, criteria=state.task.success_criteria),
         history=state.task_ctx.act_memories,
         allow_interrupt=True,

@@ -63,7 +63,8 @@ def test_task_index_is_rendered_by_index_line_in_both_prompts(script: bool) -> N
     assert "\n## 背景索引\n" not in empty
     empty_judge = render_verdict(FromHarnessToBrainToolJudgeReq(goal=choose.goals[0]))
     assert "## 本局内此前同目标的 task（背景，不是本 task 完成的证据）" not in empty_judge
-    assert "（没有检索到相关知识）" in empty_judge
+    assert "（没有检索到相关知识）" not in empty_judge
+    assert "\n## 检索知识\n" not in empty_judge
 
 
 @pytest.mark.parametrize("script", [False, True])

@@ -238,3 +238,21 @@ decide_action v10 分别以活动 v5、v8、v7 为基础；旧版和未启用实
   TaskObservation 的起名视图会展示目标和已输入文本；旧 Observation 缺少这些字段，
   两条输入路径分别验证可渲染与信息完整，不要求文本相等。
 - 三层历史全文及图片收集、去重、上限、顺序保持；output_retry、judge、summarize 的版本不变。
+
+## 2026-10-26：judge 共享布局（648）
+
+judge_success v11 基于原活动 v8，复用上节十块顺序与标题出口；v8 与未启用实验版本保留。
+
+- 规则正文三层共用；非空 RAM 窗口的读法及 task 的中断说明位于共用规则末尾。
+  不新增层级字段；按补充裁决，三层请求统一传 RAM 列表，省略字段与显式 [] 的序列化相同，
+  run 空窗口也省略 RAM 说明。allow_interrupt 仍是唯一中断开关，实际只由 task 开启。
+- 目标及判据使用 goal；知识全文使用 knowledge，空时整块省略。
+  三种索引用 memory_records 的 index 模式，标注“背景，不是完成证据”。
+  地图交互事实仍只由 episode 提供，使用 object_events，不改变地图范围或检索逻辑。
+- ActMemory sequence、TaskMemory 全文、EpisodeMemory 全文独立为本层历史，图像收集、
+  边界去重、上限与顺序保持。状态表及 latest_planning 在其后，规划四组字段、触发与版次完整保留。
+- 当前现场使用 task_frame 的场合投影，不带 known_objects 行；run 的 RAM 最近至多五条随后渲染，
+  原始 JSON 与 time/seq/source/step/trace 元数据保留。实际 task 请求没有单独观测；
+  与 v8 一样，显式传入观测的独立调用仍可渲染。预算及人类插话不新增。
+- 辅助 render_history 保留原有逐条素材契约，不代替模型 prompt 的块顺序。
+  历史 golden 继续固定捕获版本；不调用真实模型，不把字符前缀比例视作 token 或缓存命中率。

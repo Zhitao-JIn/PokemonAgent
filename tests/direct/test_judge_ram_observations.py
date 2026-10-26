@@ -123,8 +123,9 @@ def test_legacy_request_does_not_invent_ram_material() -> None:
     Judger(brain, policy=call_policy(), prompt_gateway=PromptGateway(None)).judge(request)
 
     assert request.ram_observations == []
-    assert "ram_observations" not in request.model_dump(mode="json")
-    assert "（本次未提供 RAM 观测）" in brain.prompt
+    assert request.model_dump(mode="json")["ram_observations"] == []
+    assert "（本次未提供 RAM 观测）" not in brain.prompt
+    assert "最近 RAM 观测" not in brain.prompt
 
 
 def test_judge_request_rejects_more_than_five_ram_observations() -> None:

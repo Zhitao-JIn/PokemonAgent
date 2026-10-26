@@ -64,6 +64,7 @@ def review_and_judge(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -
     if state.step > 0 or state.judge_trigger == "no_pending":
         meta = {"source": _SOURCE, "episode_id": ep, "task_id": "", "step": step}
         req = FromHarnessToBrainToolJudgeReq(
+            ram_observations=[],
             goal=current_goal(state),
             latest_planning=state.latest_planning,
             planning_round=state.decompositions_used,

@@ -74,10 +74,8 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
 
     @model_serializer(mode="wrap")
     def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
-        """历史请求未提供原始事件时保留原信封形状。"""
+        """历史对象事件保留原信封形状；RAM 空窗口统一输出空列表。"""
         data = handler(self)
         if "known_objects" not in self.model_fields_set:
             data.pop("known_objects", None)
-        if "ram_observations" not in self.model_fields_set:
-            data.pop("ram_observations", None)
         return data
