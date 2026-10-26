@@ -63,9 +63,9 @@ def test_run_plan_prompt_renders_all_details_run_index_knowledge_observation() -
     assert all(f"局{i}正文第二句" in prompt for i in range(3))
     assert index_text(request.run_index[0]) in prompt and "背景第二句" not in prompt
     assert "知识甲\n\n知识乙" in prompt and "地图12 x=3 y=5" in prompt
-    assert "## 本 run 每一局的正文(按执行顺序)" in prompt
-    assert "## 过往 run(背景,一行一条,不是本 run 的经历)" in prompt
-    assert "## 检索到的相关知识" in prompt and "## 当前画面" in prompt
+    assert "## 本层历史" in prompt
+    assert "## 背景索引" in prompt
+    assert "## 检索知识" in prompt and "## 当前现场" in prompt
     assert "局索引" not in prompt and "其中几局" not in prompt and "- e0:" not in prompt
     assert "data:image" not in prompt and "SECRET" not in prompt
     assert "## 附图的读法" in prompt
@@ -79,11 +79,11 @@ def test_run_history_starts_with_all_details_then_past_run_background() -> None:
     )
 
     assert blocks[:3] == [record_text(memory) for memory in request.details]
-    assert blocks[4] == "## 过往 run(背景,一行一条,不是本 run 的经历)"
-    assert blocks[5] == index_text(request.run_index[0])
+    assert blocks[3] == index_text(request.run_index[0])
+    assert len(blocks) == 4
 
 
-def test_an_empty_run_context_has_explicit_placeholders_without_the_old_index_field() -> None:
+def test_an_empty_run_context_omits_optional_blocks_without_the_old_index_field() -> None:
     request = FromHarnessToBrainToolPlanOnceReq(
         run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),
         run_id="r",
@@ -98,6 +98,5 @@ def test_an_empty_run_context_has_explicit_placeholders_without_the_old_index_fi
     )
 
     assert "index" not in type(request).model_fields
-    assert "（本 run 还没有跑完任何一局）" in prompt
-    assert "（没有过往 run）" in prompt and "（没有检索到相关知识）" in prompt
-    assert "（当前画面尚未取得）" in prompt
+    for title in ("本层历史", "背景索引", "检索知识", "当前现场", "状态与反馈"):
+        assert f"## {title}\n" not in prompt

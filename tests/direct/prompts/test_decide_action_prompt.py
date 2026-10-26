@@ -112,7 +112,7 @@ def test_shop_prompt_lists_only_shop_scripts_and_requests_an_args_object() -> No
 
     prompt = build_prompt(request)
 
-    scripts = prompt.split("## 可用动作", 1)[1]
+    scripts = prompt.split("\n## 当前现场\n", 1)[1].split("可用动作：", 1)[1]
     assert all(name in scripts for name in ("buy_item", "sell_item", "shop_quit"))
     assert "battle_fight" not in scripts and "walk_to" not in scripts
     assert '"args": {' in prompt

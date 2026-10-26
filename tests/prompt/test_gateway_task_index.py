@@ -60,7 +60,7 @@ def test_task_index_is_rendered_by_index_line_in_both_prompts(script: bool) -> N
     assert "不能用来断言当前目标已达成" in decision
     assert "背景，不是本 task 完成的证据" in verdict
     empty = decide_prompt(_choose(script, []))
-    assert "（本局内没有同目标的此前 task）" in empty
+    assert "\n## 背景索引\n" not in empty
     empty_judge = render_verdict(FromHarnessToBrainToolJudgeReq(goal=choose.goals[0]))
     assert "## 本局内此前同目标的 task（背景，不是本 task 完成的证据）" not in empty_judge
     assert "（没有检索到相关知识）" in empty_judge

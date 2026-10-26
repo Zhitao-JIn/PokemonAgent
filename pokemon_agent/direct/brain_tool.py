@@ -231,7 +231,9 @@ class Planner:
 
     def plan(self, req: FromHarnessToBrainToolPlanOnceReq) -> FromHarnessToBrainToolPlanOnceResp:
         """渲染本轮规划并保留同源目标表与历史；重试保留全部调用账与版本戳。"""
-        params = RunPlanParams.model_validate(req.model_dump(mode="json"))
+        data = req.model_dump(mode="json")
+        data["terrain_meanings"] = TERRAIN_MEANING
+        params = RunPlanParams.model_validate(data)
         rendered_prompt = render_and_stamp(self._prompt_gateway, "run_plan", params, [])
         current_prompt = rendered_prompt
         goal_stack = self._prompt_gateway.render_history("run_plan", params, part="goals")

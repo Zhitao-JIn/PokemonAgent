@@ -111,4 +111,7 @@ def test_a_standalone_copy_uses_packaged_units_with_a_registry_stored_elsewhere(
         "RunPlanParams",
         "DecideActionParams",
         "OutputRetryParams",
+        "GoalParams",
+        "KnowledgeParams",
+        "PromptLayoutParams",
     ]

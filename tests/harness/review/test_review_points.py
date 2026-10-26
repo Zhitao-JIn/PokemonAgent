@@ -113,7 +113,7 @@ def test_overturning_the_run_judge_keeps_the_run_going_and_tells_the_next_plan(
     assert run_verdicts[-1]["termination"] == "goal_done"
 
     plan_prompts = [_content(e)["prompt"] for e in _of(events, "plan_call", RUN_ID)]
-    assert "（还没有判定过）" in plan_prompts[0]
+    assert "（还没有判定过）" not in plan_prompts[0]
     assert any("人推翻了这个判定：第一个道馆还没打" in p for p in plan_prompts[1:])
 
 

@@ -235,10 +235,16 @@ def test_episode_prompt_keeps_existing_sections_after_memory_sense(tmp_path: Pat
     legacy_obs = Observation.model_validate(obs.model_dump())
     legacy_prompt = build_prompt(req.model_copy(update={"observation": legacy_obs}))
 
-    assert prompt == legacy_prompt
+    # 步骤 1：task_frame 展示起名视图，旧输入缺字段，等式守卫不再成立（CHANGELOG 647）。
     assert "None" not in prompt and "没做视觉感知" not in prompt
-    assert "## 当前画面\n  " in prompt
-    assert "## 检索到的相关知识\n（没有检索到相关知识）" in prompt
+    assert "None" not in legacy_prompt and "没做视觉感知" not in legacy_prompt
+    current_frame = prompt.split("\n## 当前现场\n", 1)[1].split("\n## ", 1)[0]
+    assert "起名：YOUR NAME?" in current_frame
+    assert "已输入：RED" in current_frame
+    for rendered in (prompt, legacy_prompt):
+        input_section = rendered.split("\n## 本次输入\n", 1)[1]
+        assert "\n## 当前现场\n" in input_section
+        assert "\n## 检索知识\n" not in rendered
     (tmp_path / "sense_prompt.txt").write_text(prompt, encoding="utf-8")
 
 

@@ -112,14 +112,15 @@ def test_retrieved_events_keep_filter_trace_and_old_model_input() -> None:
     assert trace.requests[0].refs == [e.place.key for e in events[:3]]
     prompt = provider.requests[0].prompt
     lines = [
-        "ep step1 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：进入新地图9",
-        "ep step2 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：无效果",
-        'ep step3 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：对话"你好"朋友"',
+        "step1 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：进入新地图9",
+        "step2 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：无效果",
+        'step3 站在 x=-2 y=3 按 a → 地图1 x=-2 y=4 的人：对话"你好"朋友"',
         '下一行"',
     ]
     positions = [prompt.index(line) for line in lines]
     assert positions == sorted(positions)
-    assert "ep step4" not in prompt
+    assert "step4 站在" not in prompt
+    assert "ep step" not in prompt
     assert response.calls[0].payload["prompt_task"] == "decompose"
 
 
@@ -150,5 +151,6 @@ def test_text_adapter_restores_only_information_present_in_the_text(outcome: str
 
     assert "run_id" not in raw[0] and "map_id" not in raw[0]["actor_place"]
     for line in text.splitlines():
-        assert line in actual.text
-    assert actual.text.index("ep step1") < actual.text.index("ep step2")
+        assert line.removeprefix("ep ") in actual.text
+    assert "ep step" not in actual.text
+    assert actual.text.index("step1 站在") < actual.text.index("step2 站在")

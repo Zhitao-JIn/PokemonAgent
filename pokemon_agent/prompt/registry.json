@@ -37,7 +37,7 @@
       "active": "v1"
     },
     "object_events": {
-      "active": "v1"
+      "active": "v2"
     },
     "takeover": {
       "active": "v1"
@@ -49,13 +49,13 @@
       "active": "v8"
     },
     "decompose": {
-      "active": "v8"
+      "active": "v10"
     },
     "run_plan": {
-      "active": "v5"
+      "active": "v9"
     },
     "decide_action": {
-      "active": "v7"
+      "active": "v10"
     },
     "output_retry": {
       "active": "v1"
@@ -64,6 +64,15 @@
       "active": "v1"
     },
     "script_signature": {
+      "active": "v1"
+    },
+    "prompt_layout": {
+      "active": "v1"
+    },
+    "goal": {
+      "active": "v1"
+    },
+    "knowledge": {
       "active": "v1"
     }
   }

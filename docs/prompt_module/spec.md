@@ -217,3 +217,24 @@ pokemon_agent/prompt/
 - world 的 RAM 解码（`screen_text.render_screen` 等）与 `TERRAIN_MEANING` 符号表。
 - `ActionEntry.description` / `ScriptParam.description`。
 - 真实模型运行；评测数据的重新采集。
+
+
+## 2026-10-26：plan 共享布局（647）
+
+本节补充三个 plan 的现行布局，不改写上面的迁移历史：run_plan v9、decompose v10、
+decide_action v10 分别以活动 v5、v8、v7 为基础；旧版和未启用实验版本保留。
+
+- prompt_layout v1 是模型输入的统一排序与标题出口：规则、目标、检索知识、背景索引、
+  地图交互事实、本层历史、状态与反馈、当前现场、预算与进度、人类插话。
+  规则位于“本次输入”之前；空白正文整块省略；规则及插话内部标题降一级。
+- goal v1 只输出列表正文和可选缩进判据；choose 当前目标排第一且保留唯一标记。
+  knowledge v1 按输入顺序以双换行连接全文，不截断、不补空占位；choose 保留原字符串入参。
+- 索引和历史使用 memory_records 的对应模式；当前现场均使用 task_frame，不带物体行。
+  物体正文使用 object_events v2：同格同键的对话后文以前文为前缀时只保留后文，逐行不带 episode_id。
+  choose 只在 walk/shop 且 overlay=none 时输出物体块；另两层维持原读口与范围。
+- 地形图例位于固定规则；run_plan 的 terrain_meanings 由 Planner 注入。
+  choose 的按键读法与 map_hint 位于规则，现场只列当前动作空间和上次结果；其反馈块为空。
+- decompose 的辅助 history 只返回本层历史、背景索引、物体正文，不渲染规则或地形图例。
+  TaskObservation 的起名视图会展示目标和已输入文本；旧 Observation 缺少这些字段，
+  两条输入路径分别验证可渲染与信息完整，不要求文本相等。
+- 三层历史全文及图片收集、去重、上限、顺序保持；output_retry、judge、summarize 的版本不变。

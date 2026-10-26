@@ -1,0 +1,8 @@
+{
+  "task": "knowledge",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "KnowledgeParams",
+  "reason": "检查点 2：共享块渲染与稳定优先拼装",
+  "hash": "3c09481e402e25b5566881ebbcb07e8192cd3196f248e469d00cf63f5458221a"
+}

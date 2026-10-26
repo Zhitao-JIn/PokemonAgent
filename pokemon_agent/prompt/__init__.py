@@ -5,6 +5,9 @@ from .gateway import PromptGateway, RenderedPrompt
 from .ram_observation import RamObservationRecord
 from .tasks.decide_action.params import DecideActionParams
 from .tasks.decompose.params import DecomposeParams
+from .tasks.fragments.goal.params import GoalParams
+from .tasks.fragments.knowledge.params import KnowledgeParams
+from .tasks.fragments.prompt_layout.params import PromptLayoutParams
 from .tasks.judge_success.params import JudgeParams
 from .tasks.output_retry.params import OutputRetryParams
 from .tasks.run_plan.params import RunPlanParams
@@ -27,4 +30,7 @@ __all__ = [
     "RunPlanParams",
     "DecideActionParams",
     "OutputRetryParams",
+    "GoalParams",
+    "KnowledgeParams",
+    "PromptLayoutParams",
 ]
