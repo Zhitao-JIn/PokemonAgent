@@ -22,6 +22,7 @@ from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...budget_nodes import stopped_updates
 from ...planning import apply_planning
+from ...planning_budgets import episode_budgets, shared_budgets
 from ...reviewing import ReviewRound, ask_inject, elicit_with_review
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState, current_goal, current_knowledge
@@ -130,7 +131,7 @@ def _ask_version(
     if used > deps.config.budget.max_decompositions:
         return Elicited(note=note, used=used - 1, termination=Termination.DECOMPOSITIONS_EXHAUSTED)
     try:
-        req = _request(deps, state, note)
+        req = _request(deps, state.model_copy(update={"decompositions_used": used - 1}), note)
         resp = _ask(deps, meta, req)
     except MaxRetriesExceeded:
         return Elicited(note=note, used=used, termination=Termination.ERROR)
@@ -180,6 +181,18 @@ def _request(
 ) -> FromHarnessToBrainToolDecomposeReq:
     """只装本轮素材；校验后绑定 state 的详情原列表，与判定共享只读输入。"""
     req = FromHarnessToBrainToolDecomposeReq(
+        budget_context=episode_budgets(
+            deps.config.budget,
+            advice=state.goal.max_steps,
+            tasks=state.step,
+            rounds=state.decompositions_used,
+        )
+        + shared_budgets(
+            deps.config.budget,
+            action_limit=state.actions_budget,
+            actions=state.total_acts,
+            remaining_s=state.remaining_s,
+        ),
         remaining_planning_rounds=deps.config.budget.max_decompositions - state.decompositions_used,
         execution_order=state.execution_order,
         goal=current_goal(state),

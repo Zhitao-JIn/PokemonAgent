@@ -35,13 +35,13 @@ harness/
 │   ├── perceive/{absorb_task, sense, retrieve_task_memories, retrieve_episode_index,
 │   │             retrieve_knowledge_semantic_memory, retrieve_object_semantic_memory, merge_retrieval}
 │   ├── review_and_judge/  plan_episode/  act/
-│   └── episode_done/{verify_task_memories, summarize_episode, close_episode}
+│   └── episode_done/{summarize_episode, close_episode}
 └── task/
     ├── task_entry.py（begin_task / run_task / close） task_graph.py task_state.py task_runtime.py frames.py
     ├── perceive/{sense, detect_stall, store_step_episode_memory, store_object_semantic_memory,
     │             close_step, retrieve_act_memories, get_action_space}
     ├── review_and_judge/  plan_task/  act/
-    └── task_done/{verify_act_memories, summarize_task, close_task}
+    └── task_done/{summarize_task, close_task}
 ```
 
 **格 = 文件夹**：图上一个节点是一个文件夹，格内多个单元由 `compose_units` 按序串接，顺序是契约。

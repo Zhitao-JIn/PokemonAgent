@@ -1,0 +1,8 @@
+{
+  "task": "summarize",
+  "version": "v5",
+  "kind": "task",
+  "params": "SummarizeParams",
+  "reason": "最后一轮episode摘要去重：字段分工，保全决定性原文/数值/对象时刻与负证据",
+  "hash": "4851dd90d8e9567c098ae5db4a62efa39f6b6a298f335110b76a494e97a08409"
+}

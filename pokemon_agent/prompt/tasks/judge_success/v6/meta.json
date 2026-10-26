@@ -1,0 +1,8 @@
+{
+  "task": "judge_success",
+  "version": "v6",
+  "kind": "task",
+  "params": "JudgeParams",
+  "reason": "避免把当前对象位置当成起点证据、用摘要完成叙述替代多对象逐项核验",
+  "hash": "0b565b1e91bd230a0e509373bca4bd0598fea28f1082488acabfac53adc6a127"
+}

@@ -1,0 +1,8 @@
+{
+  "task": "decide_action",
+  "version": "v8",
+  "kind": "task",
+  "params": "DecideActionParams",
+  "reason": "缓存优先动态历史去重：相同字段显式引用，变化及原始证据保全",
+  "hash": "307e8d2b42f5ba120ecc68aaca6a1ce9ca2c3c39495a39f6b56ef39e505225dd"
+}

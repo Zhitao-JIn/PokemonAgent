@@ -80,9 +80,11 @@ def test_overturning_the_episode_judge_keeps_it_running_and_tells_the_next_decom
     assert overturned[0]["human_note"] == "还没按「是」，球没拿到"
 
     decompose_prompts = [_content(e)["prompt"] for e in _of(events, "decompose_call", EP1)]
-    assert len(decompose_prompts) == 3
+    assert len(decompose_prompts) == 4
     assert "## 上一次本局判定" not in decompose_prompts[0]
-    assert "人推翻了这个判定：还没按「是」，球没拿到" in decompose_prompts[-1]
+    assert any(
+        "人推翻了这个判定：还没按「是」，球没拿到" in prompt for prompt in decompose_prompts[2:]
+    )
 
 
 def test_a_not_done_judgement_is_not_audited_but_reaches_the_next_decompose(

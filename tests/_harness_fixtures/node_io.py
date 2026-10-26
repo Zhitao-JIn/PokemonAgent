@@ -196,7 +196,6 @@ EPISODE_SOURCES: tuple[str, ...] = (
     "review_and_judge",
     "plan_episode",
     "episode.act",
-    "verify_task_memories",
     "summarize_episode",
     "leave_chapter",
     "close_episode",
@@ -214,7 +213,6 @@ TASK_SOURCES: tuple[str, ...] = (
     "task.review_and_judge",
     "plan_task",
     "act",
-    "verify_act_memories",
     "summarize_task",
     "close_task",
 )
@@ -267,7 +265,6 @@ NODE_FINGERPRINTS: dict[str, tuple[Styled, ...]] = {
     "review_and_judge": (("llm_outcome", "judge_verdict"),),
     "plan_episode": (("llm_outcome", "decompose_verdict"),),
     "episode.act": (("lifecycle", "task_error"),),
-    "verify_task_memories": (("llm_outcome", "verify_verdict"),),
     "summarize_episode": (("memory_io", "write_episode_memory"),),
     "leave_chapter": (("memory_io", "read_episode_memory"), ("memory_io", "write_episode_memory")),
     "close_episode": (("lifecycle", "episode_end"),),
@@ -282,7 +279,6 @@ NODE_FINGERPRINTS: dict[str, tuple[Styled, ...]] = {
     "store_object_semantic_memory": (("memory_io", "write_object_memory"),),
     "close_step": (("lifecycle", "advance_step"),),
     "retrieve_act_memories": (("memory_io", "read_act_memory"),),
-    "verify_act_memories": (("llm_outcome", "verify_verdict"),),
     "summarize_task": (("memory_io", "write_task_memory"),),
     "close_task": (("lifecycle", "task_end"),),
 }
@@ -308,7 +304,6 @@ CELL_SOURCES: dict[str, tuple[str, ...]] = {
     "episode.plan_episode": ("plan_episode",),
     "episode.act": ("episode.act",),
     "episode.episode_done": (
-        "verify_task_memories",
         "summarize_episode",
         "leave_chapter",
         "close_episode",
@@ -325,7 +320,7 @@ CELL_SOURCES: dict[str, tuple[str, ...]] = {
     "task.review_and_judge": ("task.review_and_judge",),
     "task.plan_task": ("plan_task",),
     "task.act": ("act",),
-    "task.task_done": ("verify_act_memories", "summarize_task", "close_task"),
+    "task.task_done": ("summarize_task", "close_task"),
 }
 """`层.格` → 格内发账的单元（= `meta.source` 的值）。
 
@@ -349,9 +344,7 @@ CONDITIONAL_NODES: dict[str, str] = {
     "store_step_episode_memory": "同上。",
     "close_step": "同上。",
     "store_object_semantic_memory": "只在判定出 object 交互事件时才写 `write_object_memory`。",
-    "verify_act_memories": "本 task 没有 ActMemory 时跳过。",
     "summarize_task": "本 task 没有 ActMemory 时跳过。",
-    "verify_task_memories": "本局没有 TaskMemory 时跳过。",
     "summarize_episode": "本局没有 TaskMemory 时跳过（改由 leave_chapter 补空章）。",
     "leave_chapter": "本局有 TaskMemory（走了蒸馏）时不补。",
     "run.act": (
@@ -377,7 +370,6 @@ KEY_CHAIN_SOURCES: frozenset[str] = frozenset(
 
 CLOSING_SOURCES: frozenset[str] = frozenset(
     {
-        "verify_task_memories",
         "summarize_episode",
         "leave_chapter",
         "close_episode",
@@ -438,11 +430,16 @@ EPISODE_NEXT: dict[str, frozenset[str]] = {
     "read_object_memory": frozenset({"judge_verdict", "settle_task"}),
     "settle_task": frozenset({"judge_verdict"}),
     "judge_verdict": frozenset(
-        {"decompose_verdict", TASK_TOKEN, "verify_verdict", "read_episode_memory", "episode_end"}
+        {
+            "decompose_verdict",
+            TASK_TOKEN,
+            "write_episode_memory",
+            "read_episode_memory",
+            "episode_end",
+        }
     ),
     "decompose_verdict": frozenset({TASK_TOKEN}),
     TASK_TOKEN: frozenset({"sense_frame"}),
-    "verify_verdict": frozenset({"write_episode_memory", "episode_end"}),
     "write_episode_memory": frozenset({"episode_end"}),
 }
 """episode 图：`perceive[sense_frame → read_task_memory → read_episode_memory → (read_knowledge)
@@ -450,8 +447,8 @@ EPISODE_NEXT: dict[str, frozenset[str]] = {
 → `review_and_judge[(settle_task) → judge_verdict]` →
 `plan_episode[decompose_verdict（没有 PENDING 才拆）]` →
 `act[一个 task]` → perceive …；
-判停后 `episode_done[(verify_verdict → write_episode_memory) → episode_end]`
-（本局没有 TaskMemory 时标与蒸都跳过，改由 `leave_chapter` 先查
+判停后 `episode_done[(judge_verdict → write_episode_memory) → episode_end]`
+（本局没有 TaskMemory 时蒸跳过，改由 `leave_chapter` 先查
 `read_episode_memory`、没有才补空章 `write_episode_memory`）。
 
 异常收尾的局：run 的 `act` 同样先查再补空章（`read_episode_memory` →
@@ -469,16 +466,15 @@ TASK_NEXT: dict[str, frozenset[str]] = {
     "advance_step": frozenset({"read_act_memory"}),
     "read_act_memory": frozenset({"get_action_space"}),
     "get_action_space": frozenset({"judge_verdict"}),
-    "judge_verdict": frozenset({"choose_verdict", "verify_verdict", "task_end"}),
+    "judge_verdict": frozenset({"choose_verdict", "write_task_memory", "task_end"}),
     "choose_verdict": frozenset({"act_call"}),
     "act_call": frozenset({"sense_frame"}),
-    "verify_verdict": frozenset({"write_task_memory", "task_end"}),
     "write_task_memory": frozenset({"task_end"}),
 }
 """task 图：`perceive[sense_frame → (check_stall → write_act_memory → write_object_memory?
 → advance_step) → read_act_memory → get_action_space]` → `review_and_judge[judge_verdict]`
 → `plan_task[choose_verdict]` → `act[act_call(key|script 形)]`
-→ perceive …；判停后 `task_done[(verify_verdict → write_task_memory) → task_end]`。
+→ perceive …；判停后 `task_done[(judge_verdict → write_task_memory) → task_end]`。
 
 `sense` 每圈都取帧（`sense_frame`）；首圈还没按过键，`sense_frame` 直接接 `read_act_memory`。"""
 

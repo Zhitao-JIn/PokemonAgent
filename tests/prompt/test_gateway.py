@@ -100,6 +100,7 @@ def test_a_standalone_copy_uses_packaged_units_with_a_registry_stored_elsewhere(
     assert module.__all__ == [
         "PromptGateway",
         "RenderedPrompt",
+        "RamObservationRecord",
         "PromptRegistryError",
         "VerifyParams",
         "SummarizeParams",

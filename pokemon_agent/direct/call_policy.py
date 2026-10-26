@@ -17,11 +17,15 @@ class CallPolicy:
 
     `retry`：重试预算与退避；`request_timeout_s`：这条链路单次请求的总时限（秒）；
     `image_cap`：喂给模型的历史图片上限（保留最新的）。
+    `thinking_node`与`thinking`：逻辑调用节点及装配后默认开关，供每次trace记账。
     """
 
     retry: RetryConfig
     request_timeout_s: float
     image_cap: int
+    thinking_node: str | None = None
+    thinking: bool | None = None
+    """节点及装配后的生效默认值；未提供时保留旧调用方的无节点语义。"""
 
 
 __all__ = ["CallPolicy"]

@@ -66,7 +66,7 @@ def run_episode(
     final = graph.invoke(
         state, {"recursion_limit": deps.config.loop.episode_recursion_limit}, context=deps
     )
-    return close(final, episode_input)
+    return close(final, episode_input, hard_limit=deps.config.budget.episode_max_tasks)
 
 
 def resume_episode(
@@ -97,15 +97,15 @@ def resume_episode(
     final = graph.invoke(
         None, {"recursion_limit": deps.config.loop.episode_recursion_limit}, context=deps
     )
-    return close(final, episode_input)
+    return close(final, episode_input, hard_limit=deps.config.budget.episode_max_tasks)
 
 
-def close(final: dict[str, Any], episode_input: EpisodeInput) -> EpisodeOutput:
+def close(final: dict[str, Any], episode_input: EpisodeInput, *, hard_limit: int) -> EpisodeOutput:
     """取出 `close_episode` 写好的结算，并断言 task 数没有越过预算。"""
     state = EpisodeRunState.model_validate(final)
     assert state.output is not None, "episode graph ended without close_episode"
-    assert state.output.tasks_used <= episode_input.goal.max_steps, (
-        f"episode ran {state.output.tasks_used} tasks > max_steps={episode_input.goal.max_steps}"
+    assert state.output.tasks_used <= hard_limit, (
+        f"episode ran {state.output.tasks_used} tasks > configured_limit={hard_limit}"
     )
     return state.output
 

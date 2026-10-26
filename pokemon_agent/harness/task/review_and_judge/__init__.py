@@ -33,7 +33,7 @@ def review_and_judge(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[st
     termination = mechanical_termination(
         world_ended=state.task_ctx.observation.done,
         stalled=state.stall_count >= deps.config.loop.act_stall_limit,
-        exhausted=state.step >= state.task.max_steps,
+        exhausted=state.step >= deps.config.budget.task_max_steps,
     )
     verdict = None
     feedback = None

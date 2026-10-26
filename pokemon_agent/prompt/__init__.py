@@ -2,6 +2,7 @@
 
 from .errors import PromptRegistryError
 from .gateway import PromptGateway, RenderedPrompt
+from .ram_observation import RamObservationRecord
 from .tasks.decide_action.params import DecideActionParams
 from .tasks.decide_action_retry.params import DecideActionRetryParams
 from .tasks.decompose.params import DecomposeParams
@@ -15,6 +16,7 @@ from .tasks.verify.params import VerifyParams
 __all__ = [
     "PromptGateway",
     "RenderedPrompt",
+    "RamObservationRecord",
     "PromptRegistryError",
     "VerifyParams",
     "SummarizeParams",

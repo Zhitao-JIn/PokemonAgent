@@ -1,0 +1,8 @@
+{
+  "task": "summarize_task",
+  "version": "v6",
+  "kind": "task",
+  "params": "SummarizeTaskParams",
+  "reason": "两条真实task摘要在critical_decisions后漏字段名；固定对象逐键填写，禁止无键名的数组/数值序列",
+  "hash": "172cc4e3b0670fdd69e772f68702ac79714968adeec9efa0a340bf976ec48775"
+}

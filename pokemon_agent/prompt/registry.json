@@ -1,19 +1,19 @@
 {
   "tasks": {
     "memory_records": {
-      "active": "v1"
+      "active": "v2"
     },
     "verify": {
-      "active": "v2"
+      "active": "v4"
     },
     "summarize": {
-      "active": "v2"
+      "active": "v6"
     },
     "summarize_task": {
-      "active": "v2"
+      "active": "v7"
     },
     "summarize_run": {
-      "active": "v2"
+      "active": "v3"
     },
     "goal_table": {
       "active": "v1"
@@ -46,16 +46,16 @@
       "active": "v1"
     },
     "judge_success": {
-      "active": "v3"
+      "active": "v8"
     },
     "decompose": {
-      "active": "v2"
+      "active": "v8"
     },
     "run_plan": {
-      "active": "v2"
+      "active": "v5"
     },
     "decide_action": {
-      "active": "v2"
+      "active": "v7"
     },
     "decide_action_retry": {
       "active": "v1"

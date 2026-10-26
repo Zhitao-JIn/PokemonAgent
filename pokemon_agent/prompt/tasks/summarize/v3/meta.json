@@ -1,0 +1,8 @@
+{
+  "task": "summarize",
+  "version": "v3",
+  "kind": "task",
+  "params": "SummarizeParams",
+  "reason": "Claude显式缓存分界：固定蒸馏说明前置，本局材料置于统一输入分界后",
+  "hash": "cd4e03c7d37fb66d1f985c34829e4b56e0cfaf6d94fcfbfa24d2fd333e6e88bd"
+}

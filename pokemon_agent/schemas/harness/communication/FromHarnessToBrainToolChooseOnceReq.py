@@ -10,6 +10,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
 from pokemon_agent.brain.interface import Goal
+from pokemon_agent.schemas.harness.domain.budget_allowance import BudgetAllowance
 from pokemon_agent.schemas.memory import ActMemory, ObjectFactEvent, TaskMemory
 from pokemon_agent.world import ActionSpace, TaskObservation
 
@@ -54,6 +55,8 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
         default_factory=list,
         description="本 episode 内、goal 与本 task 相同的此前 task，已去掉两张帧",
     )
+    budget_context: list[BudgetAllowance] = Field(default_factory=list)
+
     human_note: str = ""
 
     known_objects: list[ObjectFactEvent] = Field(default_factory=list)
@@ -62,6 +65,8 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
         """历史请求未提供原始事件时保留原信封形状。"""
         data = handler(self)
+        if "budget_context" not in self.model_fields_set:
+            data.pop("budget_context", None)
         if "known_objects" not in self.model_fields_set:
             data.pop("known_objects", None)
         return data

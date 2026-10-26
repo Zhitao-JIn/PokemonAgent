@@ -1,0 +1,8 @@
+{
+  "task": "verify",
+  "version": "v4",
+  "kind": "task",
+  "params": "VerifyParams",
+  "reason": "固定说明之后按目标、知识、变化记录排列，保留所有记录",
+  "hash": "250d39c70ca218ad2c4d8fe01a3dabcec64cad5eecd2025bbd3da6e3e42d42fd"
+}

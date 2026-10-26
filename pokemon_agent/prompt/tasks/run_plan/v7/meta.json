@@ -1,0 +1,8 @@
+{
+  "task": "run_plan",
+  "version": "v7",
+  "kind": "task",
+  "params": "RunPlanParams",
+  "reason": "iter24全量9次budget标量错误：消除budget与limit正整数的冲突措辞",
+  "hash": "88cde71a8e7ed362c37a15450d72025eb939e18b8339997359f95bcad3f0b24b"
+}

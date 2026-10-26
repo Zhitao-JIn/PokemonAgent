@@ -1,4 +1,4 @@
-"""`summarize_episode`：本局 TaskMemory（带正/负标）→ 一条 EpisodeMemory；写 `reason`/`memory`。
+"""`summarize_episode`：本局 TaskMemory →  一条 EpisodeMemory；写 `reason`/`memory`。
 
 `reason` 只在这里由 LLM 产出（`EpisodeSummary.reason`）。
 """
@@ -40,7 +40,6 @@ def summarize_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) 
     }
     req = FromHarnessToBrainToolSummarizeReq(
         entries=state.ep_ctx.task_memories,
-        verdicts=state.task_verdicts,
         episode_id=state.episode_id,
         run_id=state.run_id,
         run_goal=state.run_goal,
@@ -50,7 +49,7 @@ def summarize_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) 
         judge_reason=state.judge_reason,
         steps=state.step,
         acts_used=state.total_acts,
-        max_steps=state.goal.max_steps,
+        max_steps=deps.config.budget.episode_max_tasks,
     )
 
     # 步骤 1：蒸馏；耗尽时记整条账 + call_exhausted 后上抛。

@@ -1004,7 +1004,7 @@ def provider_for(
 
     `vision_dump_dir`：非空时把实际送出的图落到该目录（排查用）。
 
-    `cache_marker`：Claude 的可选静态前缀分界；默认不传入厂商构造。
+    `cache_marker`：Claude/OpenAI 的可选静态前缀分界；其他厂商使用自身自动缓存。
 
     `json_mode` / `thinking`：转发给 Provider 构造的 JSON 输出开关与思考模式开关，
     含义与前提见 `_OpenAICompatibleBase.__init__`；默认都是 `False`。
@@ -1024,7 +1024,7 @@ def provider_for(
             kwargs["json_mode"] = json_mode
             kwargs["thinking"] = thinking
             kwargs["vision_dump_dir"] = vision_dump_dir
-            if cache_marker is not None:
+            if cache_marker is not None and provider_cls in (ClaudeProvider, OpenAIProvider):
                 kwargs["cache_marker"] = cache_marker
             return provider_cls(model, temperature=temperature, **kwargs)
     known = " / ".join(f"{prefix}*" for prefix, _ in _PROVIDER_PREFIXES)

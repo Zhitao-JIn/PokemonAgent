@@ -56,7 +56,6 @@ from pokemon_agent.direct.interface import (
     MemoryToolPort,
     SummarizePort,
     TraceToolPort,
-    VerifyPort,
 )
 from pokemon_agent.settings import AppConfig
 
@@ -86,7 +85,6 @@ class EpisodeRuntime:
     """拆解口：`plan_episode` 在任务链空时问一次，把本局目标拆成任务链。"""
     judger: JudgePort
     """判定口（`review_and_judge` 问"本局目标达成没有"）。"""
-    verifier: VerifyPort
     """校验口（`episode_done` 给 TaskMemory 打正/负标）。"""
     summarizer: SummarizePort
     """蒸馏口（`episode_done` 产 EpisodeMemory 与 reason）。"""

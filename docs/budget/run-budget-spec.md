@@ -1,5 +1,7 @@
 # 分层运行预算（意图 + spec + 步骤）
 
+> **2026-10-25更新（641）**：D7的模型预算clamp/硬停语义已由[父级建议与配置硬预算](ADVISORY_AND_HARD_LIMITS.md)取代；父级预算仅建议，实际硬限由配置提供。下文保留历史设计决策。
+
 > **2026-10-21 起已被取代**：`RunBudget` / `RunConfig` / `load_run_config` 与 `run_config.json` 已随统一配置系统删除，预算现为 `AppConfig.budget`（`pokemon_agent/settings/`，CHANGELOG 567–573）；`build_real(config=…)` 的入参形态也已改为只收配置路径。本文保留为分层预算的设计依据，实现细节以代码为准。
 
 状态：v1.3，2026-10-14（v1.2：D13 接受哈希变化并重打存档，B3b 并入 B3；v1.3：D7 取消“模型漏给 max_steps 时补默认值”，删除 `task_default_steps`，原因见 D7）。用户已确认第七节第 1、1a 项（共用层数值、生产行为变严、评测与生产仅总量不同）；B1–B5 均可执行。第七节第 2、3 项仍待定，本项不实现。

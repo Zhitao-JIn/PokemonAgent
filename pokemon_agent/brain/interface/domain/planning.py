@@ -15,7 +15,7 @@ class PlanningUpdate(BaseModel):
 
 
 class TaskBudget(BaseModel):
-    """L1 子目标的单次 task 派发额度。"""
+    """L1 子目标的单次 task 派发建议额度。"""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     limit: int = Field(gt=0)
@@ -23,7 +23,7 @@ class TaskBudget(BaseModel):
 
 
 class ActionBudget(BaseModel):
-    """L2 子目标的单次动作额度。"""
+    """L2 子目标的单次动作建议额度。"""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     limit: int = Field(gt=0)

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from _harness_fixtures.app_config import reconfigure
 from _harness_fixtures.harness import build_fake
 
 from pokemon_agent.brain import Action, ActionSegment, ScriptCall, Task
@@ -36,6 +37,7 @@ class _Chooser:
 @pytest.mark.parametrize("script", [False, True])
 def test_one_round_produces_one_act_memory_even_for_scripts(tmp_path: Path, script: bool) -> None:
     fake = build_fake(tmp_path)
+    reconfigure(fake.run_rt, budget={"task_max_steps": 1})
     runtime = fake.run_rt.episode.task
     action = (
         Action(script=ScriptCall(name="advance_dialog"))

@@ -38,7 +38,7 @@
 
 ## 二、真值从哪来（机械判定器能读什么）
 
-**先说清两种"机械"**：agent 内部三层（run / episode / task）的 `review_and_judge` 里，成功（`goal_done`）**只由 LLM judge 读历史给出**，机械三类（世界结束 / 停摆 / 预算尽）只是兜底，而且 judge 的结论会覆盖它们。本节说的机械判定器是 **eval 在 agent 外面另建的一套**，用来给 LLM judge 对答案；它不进 agent 的决策（intent §六-2），所以 W2 不改变 agent 的任何行为。
+**先说清两种"机械"**：agent 内部三层（run / episode / task）的 `review_and_judge` 里，成功（`goal_done`）**只由 LLM judge 读历史给出**，机械三类（世界结束 / 停摆 / 预算尽）只是兜底，而且 judge 的结论会覆盖它们。本节说的机械判定器是 **eval 在 agent 外面另建的一套**，用来给 LLM judge 对答案；机械评分结论不注入 agent；原始 W2 不改变 agent 行为。637 按用户新要求增加的 run 判定 RAM 证据窗口是另行授权的输入契约变更，见下文。
 
 机械判定器**只读盘上 trace**（intent §六-4），不重新加载模拟器。下表是**现状**与 W4 / W1 / W2 落地后的对照。`sense_frame` 有两条产出路径
 （`world/pyboy_world.py`）：**看档**（问视觉模型，`perceived=true`）与**内存档**（`_ram_observe`，`perceived=false`）。
@@ -101,7 +101,7 @@
   `foe_hp` 从五档文字变成**精确数值**，下游同步：`tools/prompts/calls/judge_success.md` 的挡位说法改成数值、`act_memory` 的 `Facts` 快照同步、
   `experiment/tasks.py` 的 `catch_weaken_target` 判据改成数值比较。战斗状态框字段只在 `scene=battle` 或内存战斗标志非 0 时填（P0 定用哪个，建议内存标志）。
 
-- **W2（09-25 定）**：`sense_frame` 另记一个 `ram` 对象，**只进 trace、不进 agent 输入**，是机械判定读真值的唯一来源：
+- **W2（09-25 定；10-24 的 637 增加 run 判定例外）**：`sense_frame` 另记一个 `ram` 对象，先落 trace，是机械判定读真值的唯一来源。按用户确认的新观测契约，run 判定可读取同一 run、同一 branch 最近至多五条真实 RAM 观测；规划与动作调用不直接新增此通道。独立结果评分复用 run 判定文字，因此也能取得这一窗口。窗口不足五条全取、按 `(ended_at, seq)` 排序，不回读模拟器、不补造缺失历史。以下内容会随读数原样提供，不仅限于当前屏幕可见字段：
   - `in_battle`（`W_IS_IN_BATTLE`；`scene` 归视觉，"在不在战斗"的真值只能来自这里）；
   - `text_source`（`decode` / `vlm`：这一帧的文字字段来自屏幕解码还是视觉）；
   - `menu`：`wCurrentMenuItem` / `wMaxMenuItem` / `wTopMenuItemX`（核对光标用）；

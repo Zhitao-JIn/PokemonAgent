@@ -88,7 +88,7 @@ def start_task_for(run_id: str, run_goal: Goal) -> Task:
     所以字段取 run 级口径、`task_id` 用 `run_id`（run 内唯一且可追溯）。
 
     `max_steps=1`：`GameToolPort.reset` 的前置条件是 `max_steps > 0`，而这里的数字
-    不参与任何预算计算——第一局的目标预算来自 planner 的 `budget.limit`。
+    不参与任何预算计算——第一局建议预算来自planner，机械硬限来自配置。
 
     前置条件：`run_id` 非空（trace 归属章靠它）。
     """

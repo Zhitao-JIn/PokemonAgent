@@ -8,7 +8,7 @@
             task_outputs（本局全部 TaskOutput）                 perceive 写
     规划    tasks（任务表 TaskEntry）   plan_episode 追加、act 标 RUNNING、review 盖章
     判定    termination（done / success 由它推出）              review_and_judge 写
-    收尾    task_verdicts / reason / memory / output            episode_done 写
+    收尾    reason / memory / output            episode_done 写
 
 **一圈的数据流**：`act` 弹队首、拼 `TaskInput`、经 `task_entry.run_task` 跑子图，
 只把 `TaskOutput` 写进 `pending_task`、`step+1` → 回 `perceive`：先吸收
@@ -21,7 +21,7 @@
 `step + 1`，同圈所有账共用；与 `total_acts`（帧观测的局内累计键数，帧槽 /
 记忆坐标口径）解耦。task 层同式（`task_start` 落 0、`task 内 step + 1`）。
 
-**预算按本层单位**：`goal.max_steps` 是 **task 数**；`total_acts` 只作
+**预算按本层单位**：`goal.max_steps` 是父级建议 **task 数**，配置提供硬限；`total_acts` 只作
 键号基数与统计。活对象一个都不进来，它们住 `EpisodeRuntime`。
 """
 
@@ -30,7 +30,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from pokemon_agent.brain import Goal, Task
-from pokemon_agent.brain.interface import Decomposition, VerifyVerdict
+from pokemon_agent.brain.interface import Decomposition
 from pokemon_agent.schemas.harness.domain import (
     EpisodeOutput,
     JudgeFeedback,
@@ -84,7 +84,7 @@ class EpisodeRunState(Settled, BaseModel):
         default=0,
         ge=0,
         description=(
-            "已派 task 数——预算判据 `step >= goal.max_steps`；"
+            "已派 task 数——预算判据 `step >= config.budget.episode_max_tasks`；"
             "账面步号（圈号）= step + 1，与 total_acts 解耦（0928 定稿）"
         ),
     )
@@ -138,9 +138,6 @@ class EpisodeRunState(Settled, BaseModel):
         "下一次 plan_episode 放进拆解请求",
     )
 
-    task_verdicts: list[VerifyVerdict] = Field(
-        default_factory=list, description="与 task_memories 等长的正/负标注——正负都交给蒸馏作参考"
-    )
     reason: str = Field(default="", description="episode_done 里 LLM 写的结论说明")
     memory: EpisodeMemory | None = Field(
         default=None, description="episode_done 蒸出并落库的 EpisodeMemory"

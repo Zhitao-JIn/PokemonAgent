@@ -69,6 +69,43 @@ def test_all_positions_default_to_none() -> None:
     assert (decide, judge, verify, plan) == (None, None, None, None)
 
 
+def test_the_verify_factory_preserves_the_claude_cache_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    config = BrainLlmConfig(
+        verify=LinkSpec(
+            model="claude-haiku-5-5",
+            temperature=0.0,
+            max_tokens=16000,
+            timeout_s=60,
+            cache_marker="## 本次输入",
+        )
+    )
+
+    _, _, verify, _ = build_llm_providers(config)
+
+    assert verify is not None
+    assert verify.config()["cache_marker"] == "## 本次输入"
+
+
+def test_automatic_cache_providers_do_not_receive_an_explicit_boundary() -> None:
+    config = BrainLlmConfig(
+        verify=LinkSpec(
+            model="deepseek-flash",
+            temperature=0.0,
+            max_tokens=16000,
+            timeout_s=60,
+            cache_marker="## 本次输入",
+        )
+    )
+
+    _, _, verify, _ = build_llm_providers(config)
+
+    assert verify is not None
+    assert "cache_marker" not in verify.config()
+
+
 @pytest.mark.parametrize("field", ["text", "judge", "verify", "plan"])
 def test_each_position_builds_only_itself(field: str) -> None:
     config = BrainLlmConfig(**{field: _spec()})

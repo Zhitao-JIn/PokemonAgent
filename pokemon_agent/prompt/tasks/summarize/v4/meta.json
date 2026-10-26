@@ -1,0 +1,8 @@
+{
+  "task": "summarize",
+  "version": "v4",
+  "kind": "task",
+  "params": "SummarizeParams",
+  "reason": "减少摘要外层包装遗漏闭合错误和重复长叙述，保留全部字段/关键证据/素材",
+  "hash": "32b8971cef2e8567775ef73b83a48c46903fd3cac44205fccd82cdb73707dc8c"
+}

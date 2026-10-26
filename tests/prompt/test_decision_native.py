@@ -91,7 +91,7 @@ def test_a_script_only_action_space_lists_scripts_without_basic_keys() -> None:
     actual = PromptGateway(None).render("decide_action", decide_prompt_params(req, max_segments=3))
 
     assert "YOUR NAME?" in actual.text
-    assert "## 可调用的脚本" in actual.text
+    assert "## 可用动作" in actual.text
     scripts = [entry for entry in req.space.entries if req.space.mask.get(entry.name)]
     assert scripts
     assert all(entry.name in actual.text for entry in scripts)

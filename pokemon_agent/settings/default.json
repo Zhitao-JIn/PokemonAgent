@@ -3,8 +3,9 @@
   "models": {
     "text":   {"model": "qwen3.8-flash", "temperature": 0.3, "max_tokens": 25600, "timeout_s": 10, "thinking": false},
     "judge":  {"model": "qwen3.8-flash", "temperature": 0.0, "max_tokens": 25600, "timeout_s": 45, "thinking": false},
-    "verify": {"model": "claude-haiku-5-5", "temperature": 0.0, "max_tokens": 16000, "timeout_s": 60, "thinking": true},
+    "verify": {"model": "claude-haiku-5-5", "temperature": 0.0, "max_tokens": 16000, "timeout_s": 60, "thinking": false, "cache_marker": "## 本次输入"},
     "plan":   {"model": "deepseek-flash", "temperature": 0.0, "max_tokens": 25600, "timeout_s": 90, "thinking": true},
+    "node_thinking": {},
     "json_mode": true
   },
   "prompt": {"registry": null},

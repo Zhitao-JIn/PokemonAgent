@@ -1,0 +1,8 @@
+{
+  "task": "summarize_run",
+  "version": "v3",
+  "kind": "task",
+  "params": "SummarizeRunParams",
+  "reason": "Claude显式缓存分界：固定run总结说明与本次材料使用统一分界",
+  "hash": "95f130350b4c69532e45c9e60cbe49e681a3d8b72f8245ac1d0406cf82c83394"
+}

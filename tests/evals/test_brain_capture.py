@@ -113,7 +113,6 @@ def test_all_runtime_ports_are_recorded_in_separate_layer_directories(tmp_path: 
         decompose=invoke,
         choose=invoke,
         judge=invoke,
-        verify=invoke,
         reflect=invoke,
         summarize=invoke,
         summarize_task=invoke,
@@ -123,7 +122,6 @@ def test_all_runtime_ports_are_recorded_in_separate_layer_directories(tmp_path: 
         reviewer=NullReviewer(),
         chooser=original,
         judger=original,
-        verifier=original,
         reflector=original,
         task_summarizer=original,
     )
@@ -132,7 +130,6 @@ def test_all_runtime_ports_are_recorded_in_separate_layer_directories(tmp_path: 
         task=task,
         decomposer=original,
         judger=original,
-        verifier=original,
         summarizer=original,
     )
     runtime = SimpleNamespace(
@@ -151,18 +148,16 @@ def test_all_runtime_ports_are_recorded_in_separate_layer_directories(tmp_path: 
         (runtime, "run_summarizer", "summarize_run"),
         (episode, "decomposer", "decompose"),
         (episode, "judger", "judge"),
-        (episode, "verifier", "verify"),
         (episode, "summarizer", "summarize"),
         (task, "chooser", "choose"),
         (task, "judger", "judge"),
-        (task, "verifier", "verify"),
         (task, "reflector", "reflect"),
         (task, "task_summarizer", "summarize_task"),
     ):
         assert getattr(getattr(owner, field), method)(request) is expected
 
-    assert len(seen) == 12
+    assert len(seen) == 10
     assert all(item is request for item in seen)
-    assert len(list(tmp_path.rglob("*.request.json"))) == 12
+    assert len(list(tmp_path.rglob("*.request.json"))) == 10
     for layer in ("run", "episode", "task"):
         assert (tmp_path / layer / "judge/000001.response.json").exists()

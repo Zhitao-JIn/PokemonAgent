@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field
 
 from ...actions import ActionSpaceRecord
+from ...budget import BudgetRecord
 from ...objects import ObjectFactEvent
 from ...observation import ObservationRecord
 from ...records import ActRecord, GoalDefinition, TaskRecord
@@ -16,6 +17,7 @@ class DecideActionParams(BaseModel):
     knowledge: str = ""
     task_index: list[TaskRecord] = Field(default_factory=list)
     last_result: str = ""
+    budget_context: list[BudgetRecord] = Field(default_factory=list)
     human_note: str = ""
     max_segments: int
     terrain_meanings: dict[str, str]

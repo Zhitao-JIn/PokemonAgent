@@ -8,7 +8,7 @@
     决策    action（本圈那一个键或一条脚本）                  plan_task 写，perceive 消费后清
             last_report / last_result（上一动作是脚本时的报告与一行结果） act 写
     判定    termination（done / success 由它推出）                     review_and_judge 写
-    收尾    act_verdicts / reason / memory / output                 task_done 写
+    收尾    reason / memory / output                 task_done 写
 
 **一圈的数据流**：`perceive` 的 `sense` 取一帧落 `after_observation`（观测的局内累计键数 =
 `total_acts + step`；**账面步号** = `step + 1`，圈号语义：dispatch 落 0、每圈取帧 +1，
@@ -27,7 +27,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from pokemon_agent.brain import Action, Task
-from pokemon_agent.brain.interface import VerifyVerdict
 from pokemon_agent.schemas.harness.domain import JudgeFeedback, Settled, TaskOutput, Termination
 from pokemon_agent.schemas.memory import ActMemory, TaskMemory
 from pokemon_agent.world import ActionSpace, TaskObservation
@@ -51,7 +50,7 @@ class TaskState(Settled, BaseModel):
     run_id: str = Field(description="所属 run（ActMemory 归属章）")
     episode_id: str = Field(description="所属 episode（记忆按局分组）")
     entry_id: str
-    task: Task = Field(description="本 task：目标、判据、键预算 `max_steps`")
+    task: Task = Field(description="本 task：目标、判据、父级建议键数 `max_steps`，硬限来自配置")
     total_acts: int = Field(
         ge=0,
         description=(
@@ -77,7 +76,9 @@ class TaskState(Settled, BaseModel):
     )
 
     step: int = Field(
-        default=0, ge=0, description="本 task 已按键数——预算判据 `step >= task.max_steps`"
+        default=0,
+        ge=0,
+        description="本 task 已按键数——预算判据 `step >= config.budget.task_max_steps`",
     )
 
     task_ctx: TaskContext = Field(
@@ -123,9 +124,6 @@ class TaskState(Settled, BaseModel):
         default=None, description="启用 task 审点时的上次判定与复核意见；随图状态保存"
     )
 
-    act_verdicts: list[VerifyVerdict] = Field(
-        default_factory=list, description="与 act_memories 等长的正/负标注——正负都交给蒸馏作参考"
-    )
     reason: str = Field(default="", description="task_done 里 LLM 写的结论说明")
     memory: TaskMemory | None = Field(default=None, description="task_done 蒸出并落库的 TaskMemory")
     output: TaskOutput | None = Field(

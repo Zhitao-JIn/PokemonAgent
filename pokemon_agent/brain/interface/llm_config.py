@@ -20,7 +20,8 @@ class LinkSpec:
 
     `model`：型号名，前缀决定厂商（表在 `providers.py`）；`temperature`：采样温度；
     `max_tokens`：输出上限（思考 token 与正文共用这份额度）；`timeout_s`：单请求超时秒数
-    （总时长硬闸是它 +15）；`thinking`：是否开思考模式，只有规划位置会用到。
+    （总时长硬闸是它 +15）；`thinking`：是否开思考模式；`cache_marker`：静态前缀
+    与动态材料的可选分界文字，只对支持显式缓存分界的厂商生效。
     """
 
     model: str
@@ -28,6 +29,7 @@ class LinkSpec:
     max_tokens: int
     timeout_s: float
     thinking: bool = False
+    cache_marker: str | None = None
 
 
 @dataclass(frozen=True)

@@ -1,7 +1,5 @@
 """真正三层图在预算耗尽后机械收尾；假模型与假世界不访问网络。"""
 
-import json
-
 import pytest
 from _doubles.llm import ScriptedLLM, text_reply
 from _fake_run import GOAL, build_fake, every, never
@@ -113,7 +111,7 @@ def test_episode_limits_produce_failed_outcomes_and_run_end(tmp_path, limit, exp
     assert_mechanical_tail(fake)
 
 
-def test_task_clamp_records_both_values_without_changing_the_input(tmp_path):
+def test_task_preserves_parent_advice_without_clamping_the_input(tmp_path):
     fake = build_fake(tmp_path)
     task_input = TaskInput(
         entry_id=(GOAL.model_copy(update={"max_steps": 30})).task_id,
@@ -125,9 +123,8 @@ def test_task_clamp_records_both_values_without_changing_the_input(tmp_path):
 
     state = begin_task(fake.run_rt.episode.task, task_input)
 
-    assert task_input.task.max_steps == 30 and state.task.max_steps == 12
-    clamp = next(event for event in events(fake) if event.kind == TraceKind.BUDGET_CLAMPED)
-    assert json.loads(clamp.content) == {"original": "30", "clamped": "12"}
+    assert task_input.task.max_steps == 30 and state.task.max_steps == 30
+    assert not [event for event in events(fake) if event.kind == TraceKind.BUDGET_CLAMPED]
 
 
 def test_restored_action_and_decomposition_counters_do_not_reset(tmp_path):
@@ -196,5 +193,5 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
     assert all(call.payload["raw"] == raw for call in caught.value.calls)
 
 
-def test_state_schema_is_frozen_after_structured_observation_cleanup():
-    assert state_schema_hash() == "e3bd23162bfd0e85"
+def test_state_schema_is_frozen_after_advisory_budget_separation():
+    assert state_schema_hash() == "e96be379e39c0b39"

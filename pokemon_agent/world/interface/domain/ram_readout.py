@@ -1,4 +1,6 @@
-"""`RamReadout`：一帧的内存读数——只进 trace（`sense_frame.content.ram`），不进 agent 的任何输入。
+"""`RamReadout`：一帧的内存读数，先记入 trace（`sense_frame.content.ram`）。
+
+run 判定可从本执行线账本读取最近至多五条作为直接证据；规划与动作输入不直接增加该字段。
 
 它是测评机械判定读真值的唯一来源（`docs/eval/spec.md` W2）：战斗标志、屏幕解码是否覆盖、
 这一帧文字字段来自哪边、菜单光标变量、金钱、背包、队伍、战斗双方状态框。

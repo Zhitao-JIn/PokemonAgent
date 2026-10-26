@@ -84,6 +84,7 @@ def test_each_layer_builds_its_own_brain_from_the_configured_models(stubbed) -> 
         ("plan", "judge", "verify"),
         ("text", "judge", "verify"),
     ]
+    assert [kwargs["layer"] for kwargs in stubbed.brains] == ["run", "episode", "task"]
     assert all(kwargs["models"].plan.model == "deepseek-flash" for kwargs in stubbed.brains)
     assert all(kwargs["retry"].brain_max_attempts == 2 for kwargs in stubbed.brains)
 

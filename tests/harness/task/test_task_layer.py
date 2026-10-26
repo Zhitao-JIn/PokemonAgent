@@ -50,7 +50,7 @@ def test_task_graph_has_the_five_cells() -> None:
 
 def test_task_budget_is_keys_times_cells_plus_margin() -> None:
     """贴身限 = 键预算 × (决策 3 格 + act 1 格) + 余量——每键最坏 4 个 superstep。"""
-    assert task_budget(_input(10)) == 10 * (NODES_PER_DECISION + NODES_PER_PRESS) + RECURSION_MARGIN
+    assert task_budget(10) == 10 * (NODES_PER_DECISION + NODES_PER_PRESS) + RECURSION_MARGIN
 
 
 class _Trace:

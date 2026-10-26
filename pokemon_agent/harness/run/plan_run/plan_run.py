@@ -20,6 +20,7 @@ from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...budget_nodes import stopped_updates
 from ...planning import apply_planning
+from ...planning_budgets import run_budgets, time_budget
 from ...reviewing import ReviewRound, ask_inject, elicit_with_review
 from ..run_state import RunState
 from ..runtime import RunRuntime
@@ -83,6 +84,13 @@ def _request(
     ctx = state.plan_ctx
     assert ctx is not None, "plan before perceive"
     req = FromHarnessToBrainToolPlanOnceReq(
+        budget_context=run_budgets(
+            deps.config.budget,
+            episodes=state.step,
+            actions=state.actions_used,
+            rounds=deps.config.budget.max_planning_rounds - remaining,
+        )
+        + [time_budget(deps.config.budget, state.remaining_s)],
         run_id=state.run_id,
         run_goal=state.run_goal,
         plan=state.goals,
