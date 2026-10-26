@@ -3,6 +3,7 @@
 import ast
 import json
 from collections.abc import Callable
+from os.path import commonprefix
 from pathlib import Path
 
 import pytest
@@ -26,11 +27,11 @@ TASKS = ("run_plan", "decompose", "decide_action")
 
 BLOCK_NAMES = (
     "规则",
-    "目标",
     "检索知识",
+    "目标",
     "背景索引",
-    "地图交互事实",
     "本层历史",
+    "地图交互事实",
     "状态与反馈",
     "当前现场",
     "预算与进度",
@@ -122,6 +123,40 @@ def test_layout_owns_order_and_skips_whitespace_blocks(compose: Compose) -> None
     expected.insert(1, "## 本次输入")
     assert titles == expected
     assert "## 背景索引" not in text and "（无）" not in text
+
+
+def test_knowledge_stays_in_shared_prefix_when_only_the_goal_changes(compose: Compose) -> None:
+    blocks = {"规则": "共同规则", "检索知识": "知识首句。\n知识全文末句。", "目标": "读取招牌"}
+    first = PromptLayoutParams(blocks=blocks)
+    second = PromptLayoutParams(blocks={**blocks, "目标": "进入商店"})
+
+    texts = [compose("prompt_layout", params) for params in (first, second)]
+    shared = commonprefix(texts)
+
+    knowledge = "## 检索知识\n\n" + blocks["检索知识"]
+    assert knowledge in shared
+    assert len(shared) >= texts[0].index(knowledge) + len(knowledge)
+
+
+def test_objects_block_comes_after_history_so_history_stays_in_shared_prefix(
+    compose: Compose,
+) -> None:
+    blocks = {
+        "规则": "共同规则",
+        "目标": "读取招牌",
+        "本层历史": "历史首句。\n历史全文末句。",
+        "地图交互事实": "招牌原文。",
+    }
+    first = PromptLayoutParams(blocks=blocks)
+    second = PromptLayoutParams(blocks={**blocks, "地图交互事实": "招牌原文。新增交互事实。"})
+
+    texts = [compose("prompt_layout", params) for params in (first, second)]
+    shared = commonprefix(texts)
+
+    history = "## 本层历史\n\n" + blocks["本层历史"]
+    assert history in shared
+    assert len(shared) >= texts[0].index(history) + len(history)
+    assert all(text.index(history) < text.index("## 地图交互事实") for text in texts)
 
 
 @pytest.mark.parametrize("task", TASKS)

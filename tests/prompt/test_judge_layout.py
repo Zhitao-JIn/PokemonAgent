@@ -11,11 +11,11 @@ from tests.prompt.judge_layout_examples import old_gateway, params
 
 BLOCKS = (
     "规则",
-    "目标",
     "检索知识",
+    "目标",
     "背景索引",
-    "地图交互事实",
     "本层历史",
+    "地图交互事实",
     "状态与反馈",
     "当前现场",
     "预算与进度",
@@ -52,8 +52,20 @@ def test_three_layers_keep_order_and_all_execution_material(layer: str, tmp_path
     for memory in gateway.render_history("judge_success", material):
         if memory.startswith(("## task ", "## 局 ")):
             assert memory in text and memory in old
-    execution = text.split("\n## 本层历史\n", 1)[1].split("\n## 状态与反馈\n", 1)[0].strip()
+    execution = text.split("\n## 本层历史\n", 1)[1]
+    end = min(
+        (
+            execution.index(title)
+            for title in ("\n## 地图交互事实\n", "\n## 状态与反馈\n")
+            if title in execution
+        ),
+        default=len(execution),
+    )
+    execution = execution[:end].strip()
     assert execution in old
+    if layer == "episode":
+        objects = text.split("\n## 地图交互事实\n", 1)[1].split("\n## 状态与反馈\n", 1)[0].strip()
+        assert objects in text and objects in old
     if material.latest_planning is not None:
         assert material.latest_planning.model_dump_json() in text
         assert material.latest_planning.model_dump_json() in old

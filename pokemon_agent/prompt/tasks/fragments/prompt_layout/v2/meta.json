@@ -1,0 +1,8 @@
+{
+  "task": "prompt_layout",
+  "version": "v2",
+  "kind": "fragment",
+  "params": "PromptLayoutParams",
+  "reason": "按变化越慢越靠前排列知识、目标、历史与地图交互事实，延长共享前缀",
+  "hash": "52aab18e80a966b89fa649fed63e86e60eb3332e0112c11f1697ec34c55946c4"
+}
