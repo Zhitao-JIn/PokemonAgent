@@ -5,7 +5,7 @@
 但供应商实现（`QwenProvider` 等）只是恰好都实现了而已——**协议的归属看谁
 消费，不看谁实现**。这条路跟 `BrainPort` 走的一样：协议物理上挨着它的实现。
 
-**brain 自己持有带视觉能力的 provider**（0913 定案）：`judge_llm`/`verify_llm`
+**brain 自己持有带视觉能力的 provider**（0913 定案）：`judge_llm`/`summary_llm`
 要能"带得到图时走多模态、凑不齐时退化纯文本"，而 brain 接的
 `QwenProvider`/`ArkProvider` 本来就**同时实现 `complete()` 和 `describe()`**
 （都继承 `brain/providers.py` 的 `_MultimodalMixin`，那两个类现在也住在
@@ -48,7 +48,7 @@ class LLMProvider(Protocol):
 
 @runtime_checkable
 class JudgeProvider(LLMProvider, Protocol):
-    """`judge_llm`/`verify_llm` 两种调用都要用得到：带得到图时走 `describe()`
+    """`judge_llm`/`summary_llm` 两种调用都要用得到：带得到图时走 `describe()`
     多模态问一次；一张图都凑不齐时（`ActMemory` 没留下可用的截图文件名，
     或文件确实缺失）退化成纯文本，走 `LLMProvider.complete()` 兜底——
     两条链路不该因为一张便利副本缺失就直接判定失败。
@@ -56,7 +56,7 @@ class JudgeProvider(LLMProvider, Protocol):
     `describe()` 由本模块声明，使用 `brain/schemas/` 的请求和响应；
     协议不依赖其他领域模块。
 
-    `Brain.__init__` 用这个类型标 `judge_llm`/`verify_llm`，一眼能看出
+    `Brain.__init__` 用这个类型标 `judge_llm`/`summary_llm`，一眼能看出
     "这两个位置的 provider 比 `decide_llm`（只标 `LLMProvider`，带图与否由
     其 `multimodal` 标志决定，`choose()` 查表分派——0915 129）
     多担一个职责"。`QwenProvider`/`ArkProvider` 本来就两个方法都实现，

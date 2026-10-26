@@ -21,7 +21,7 @@ def brain_summary(
     """默认评三层；单层筛选只报该层，三层宏平均保留未知。"""
     load_env_file()
     configuration = load_config()
-    model = model or str(configuration["models"]["verify_model"])
+    model = model or str(configuration["models"]["summary_model"])
     grader = resolve_grader(configuration["evaluation_models"], grader_model)
     cases = [case for case in load(version) if layer is None or case.layer == layer]
     if not cases:

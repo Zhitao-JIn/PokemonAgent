@@ -78,7 +78,7 @@ def test_each_node_uses_its_configured_link(
 def test_three_providers_sum_tokens_and_explain_claude(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    snapshot(tmp_path, text="qwen-test", judge="deepseek-flash", verify="claude-haiku-5-5")
+    snapshot(tmp_path, text="qwen-test", judge="deepseek-flash", summary="claude-haiku-5-5")
     for number, node in enumerate(["task.choose", "episode.judge", "run.summarize"]):
         for repeat in range(2):
             write_call(tmp_path, f"{number}-{repeat}", thinking_node=node)
@@ -188,7 +188,7 @@ def test_manual_models_override_snapshot_through_cli(
     snapshot(tmp_path, text="deepseek-flash")
     write_call(tmp_path)
 
-    main([str(tmp_path), "--models", "text=qwen-test,judge=x,verify=y,plan=z"])
+    main([str(tmp_path), "--models", "text=qwen-test,judge=x,summary=y,plan=z"])
 
     output = capsys.readouterr().out
     assert "qwen-test" in output

@@ -23,9 +23,9 @@ MODEL_LINKS: dict[str, str] = {
     "plan_call": "plan_model",
     "decompose_call": "plan_model",
     "judge_call": "judge_model",
-    "verify_call": "verify_model",
-    "summarize_episode_call": "verify_model",
-    "summarize_task_call": "verify_model",
+    "verify_call": "summary_model",
+    "summarize_episode_call": "summary_model",
+    "summarize_task_call": "summary_model",
 }
 SPAN_OPEN: dict[str, str] = {f"{level}_start": level for level in ("run", "episode", "task")}
 SPAN_CLOSE: dict[str, str] = {

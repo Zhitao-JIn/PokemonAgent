@@ -37,7 +37,7 @@ REQUIRED_KEYS: tuple[str, ...] = (
 MODEL_LINKS: tuple[str, ...] = (
     "text_model",
     "judge_model",
-    "verify_model",
+    "summary_model",
     "plan_model",
 )
 """评测配置里的链路型号键（由 `overlay.py` 映射到 settings 的 models 各节）。"""

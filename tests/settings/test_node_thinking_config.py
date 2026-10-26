@@ -15,7 +15,7 @@ def test_node_thinking_is_optional_and_can_override_both_directions() -> None:
     models = ModelsConfig.model_validate_json(json.dumps(data))
 
     assert models.node_thinking == {"task.verify": True, "run.plan": False}
-    assert models.verify.thinking is False
+    assert models.summary.thinking is False
     assert models.plan.thinking is True
 
 

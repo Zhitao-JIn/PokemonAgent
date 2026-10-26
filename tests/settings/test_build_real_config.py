@@ -81,8 +81,8 @@ def test_each_layer_builds_its_own_brain_from_the_configured_models(stubbed) -> 
 
     assert [kwargs["links"] for kwargs in stubbed.brains] == [
         ("plan", "judge"),
-        ("plan", "judge", "verify"),
-        ("text", "judge", "verify"),
+        ("plan", "judge", "summary"),
+        ("text", "judge", "summary"),
     ]
     assert [kwargs["layer"] for kwargs in stubbed.brains] == ["run", "episode", "task"]
     assert all(kwargs["models"].plan.model == "deepseek-flash" for kwargs in stubbed.brains)

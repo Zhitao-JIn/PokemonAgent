@@ -39,7 +39,7 @@ class BrainLlmConfig:
     - `text`：`choose()` 的决策模型；
     - `judge`：`judge()` 的判定模型，**跟 `text` 分开是硬要求**（判定与决策误差同源会让
       "读错画面 → 以为达成 → 判成功"越走越顺，见 `Brain` 模块 docstring），同型号也不共用实例；
-    - `verify`：`verify()` / `summarize()` 的模型；
+    - `summary`：`verify()` / `summarize()` 的模型；
     - `plan`：`plan()` 与 `decompose()` 共用的规划模型；
     - `json_mode`：四个 provider 共用的 JSON 输出开关（请求体带 `response_format: json_object`）；
     - `vision_dump_dir`：非空时把实际送出的图落到该目录，排查用。
@@ -47,7 +47,7 @@ class BrainLlmConfig:
 
     text: LinkSpec | None = None
     judge: LinkSpec | None = None
-    verify: LinkSpec | None = None
+    summary: LinkSpec | None = None
     plan: LinkSpec | None = None
     json_mode: bool = False
     vision_dump_dir: str | None = None

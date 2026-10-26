@@ -16,7 +16,7 @@ from pokemon_agent.schemas.memory import EpisodeMemory
 def test_run_summary_uses_the_summary_provider_once_and_returns_its_own_dialect() -> None:
     summary = RunSummary(summary="复盘", quality_score=0.5, quality_rationale="q", markdown="全文")
     provider = ScriptedJudge(text_reply(summary.model_dump_json()))
-    brain = Brain(verify_llm=provider)
+    brain = Brain(summary_llm=provider)
 
     result = brain.summarize_run(
         prompt="规则和素材", goal="g", history=["h"], success=False, steps=1, max_steps=2
@@ -31,7 +31,7 @@ def test_run_summary_uses_the_summary_provider_once_and_returns_its_own_dialect(
 
 def test_run_summary_parse_failure_is_one_failed_attempt_without_internal_retry() -> None:
     provider = ScriptedJudge(text_reply("invalid"))
-    brain = Brain(verify_llm=provider)
+    brain = Brain(summary_llm=provider)
 
     with pytest.raises(SummarizeAttemptFailed) as caught:
         brain.summarize_run(
@@ -74,7 +74,7 @@ def test_run_summary_prompt_keeps_final_overturns_and_complete_episode_text_with
     )
 
     result = RunSummarizer(
-        Brain(verify_llm=provider), policy=call_policy(), prompt_gateway=PromptGateway(None)
+        Brain(summary_llm=provider), policy=call_policy(), prompt_gateway=PromptGateway(None)
     ).summarize_run(req)
     prompt = provider.described[0].prompt
 

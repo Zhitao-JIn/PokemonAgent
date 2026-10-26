@@ -1,8 +1,8 @@
 """四个 provider 槽位对六个方法的可用性矩阵，与「四个都给时各走各的」。
 
 `Brain.__init__` 的装配规则本身就是契约：`decide_llm` 只服务 `choose`，`judge_llm`
-只服务 `judge`，`verify_llm` 只服务 `verify` + `summarize`，`plan_llm` 只服务
-`plan` + `decompose`；其中只有 `verify_llm` / `plan_llm` 缺省时回退 `judge_llm`，
+只服务 `judge`，`summary_llm` 只服务 `verify` + `summarize`，`plan_llm` 只服务
+`plan` + `decompose`；其中只有 `summary_llm` / `plan_llm` 缺省时回退 `judge_llm`，
 `decide_llm` / `judge_llm` 永不回退。各方法目录已钉住入口 assert 文案与单项回退，
 本文件不重复，只钉这张矩阵与「各走各的、不串线」。只经六个公开方法测，不读私有属性。
 """
@@ -46,7 +46,7 @@ CALLS: dict[str, tuple[Callable[[Brain], object], str]] = {
     ),
 }
 
-SLOTS = ("decide_llm", "judge_llm", "verify_llm", "plan_llm")
+SLOTS = ("decide_llm", "judge_llm", "summary_llm", "plan_llm")
 METHODS = ("choose", "judge", "verify", "summarize", "plan", "decompose")
 
 # 只给某一个槽位、其余缺省时，六个方法里哪些可用（True）、哪些触发入口 AssertionError。
@@ -67,7 +67,7 @@ MATRIX: dict[str, dict[str, bool]] = {
         "plan": True,
         "decompose": True,
     },
-    "verify_llm": {
+    "summary_llm": {
         "choose": False,
         "judge": False,
         "verify": True,
@@ -120,7 +120,7 @@ def test_each_method_uses_its_own_provider_when_all_four_are_given() -> None:
             't": {"limit": 1, "unit": "actions"}}], "why": "next"}'
         ),
     )
-    brain = Brain(decide_llm=d, judge_llm=j, verify_llm=v, plan_llm=p)
+    brain = Brain(decide_llm=d, judge_llm=j, summary_llm=v, plan_llm=p)
 
     brain.choose(prompt="p", keys=["up"])
     brain.judge(prompt="p", goal="g", history=[])

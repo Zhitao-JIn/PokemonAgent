@@ -48,7 +48,7 @@ def invoke(
 @solver
 def summary_solver(model: str) -> Solver:
     """复用生产 verify provider；失败保留账并作为 Inspect sample error 上抛。"""
-    tools = single_link_brain("verify", model)
+    tools = single_link_brain("summary", model)
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         case, record = Case.model_validate(state.metadata["case"]), store_as(Record)

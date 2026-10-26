@@ -1,6 +1,6 @@
 """`build_llm_providers`：从 `BrainLlmConfig` 造出 `Brain` 要的四个 provider。
 
-四个位置（decide/judge/verify/plan）各带一份 `LinkSpec`（型号、温度、输出上限、超时、
+四个位置（decide/judge/summary/plan）各带一份 `LinkSpec`（型号、温度、输出上限、超时、
 思考开关），型号名按前缀选厂商类，位置间可任意混搭；这些值全由调用方给出，brain 里不
 写死任何数字。本文件不碰私有属性：配置经 `config()` 读，超时经手写假 `urlopen` 观察。
 """
@@ -64,9 +64,9 @@ def _spec(
 
 
 def test_all_positions_default_to_none() -> None:
-    decide, judge, verify, plan = build_llm_providers(BrainLlmConfig())
+    decide, judge, summary, plan = build_llm_providers(BrainLlmConfig())
 
-    assert (decide, judge, verify, plan) == (None, None, None, None)
+    assert (decide, judge, summary, plan) == (None, None, None, None)
 
 
 def test_the_verify_factory_preserves_the_claude_cache_boundary(
@@ -74,7 +74,7 @@ def test_the_verify_factory_preserves_the_claude_cache_boundary(
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     config = BrainLlmConfig(
-        verify=LinkSpec(
+        summary=LinkSpec(
             model="claude-haiku-5-5",
             temperature=0.0,
             max_tokens=16000,
@@ -83,15 +83,15 @@ def test_the_verify_factory_preserves_the_claude_cache_boundary(
         )
     )
 
-    _, _, verify, _ = build_llm_providers(config)
+    _, _, summary, _ = build_llm_providers(config)
 
-    assert verify is not None
-    assert verify.config()["cache_marker"] == "## 本次输入"
+    assert summary is not None
+    assert summary.config()["cache_marker"] == "## 本次输入"
 
 
 def test_automatic_cache_providers_do_not_receive_an_explicit_boundary() -> None:
     config = BrainLlmConfig(
-        verify=LinkSpec(
+        summary=LinkSpec(
             model="deepseek-flash",
             temperature=0.0,
             max_tokens=16000,
@@ -100,32 +100,32 @@ def test_automatic_cache_providers_do_not_receive_an_explicit_boundary() -> None
         )
     )
 
-    _, _, verify, _ = build_llm_providers(config)
+    _, _, summary, _ = build_llm_providers(config)
 
-    assert verify is not None
-    assert "cache_marker" not in verify.config()
+    assert summary is not None
+    assert "cache_marker" not in summary.config()
 
 
-@pytest.mark.parametrize("field", ["text", "judge", "verify", "plan"])
+@pytest.mark.parametrize("field", ["text", "judge", "summary", "plan"])
 def test_each_position_builds_only_itself(field: str) -> None:
     config = BrainLlmConfig(**{field: _spec()})
 
-    decide, judge, verify, plan = build_llm_providers(config)
+    decide, judge, summary, plan = build_llm_providers(config)
 
-    assert sum(p is not None for p in (decide, judge, verify, plan)) == 1
+    assert sum(p is not None for p in (decide, judge, summary, plan)) == 1
 
 
 def test_the_return_order_is_decide_judge_verify_plan_with_the_models_in_place() -> None:
     config = BrainLlmConfig(
         text=_spec("qwen3.8-max"),
         judge=_spec("qwen3.8-max"),
-        verify=_spec("doubao-seed-1-6-250615"),
+        summary=_spec("doubao-seed-1-6-250615"),
         plan=_spec("deepseek-v4-flash"),
     )
 
-    decide, judge, verify, plan = build_llm_providers(config)
+    decide, judge, summary, plan = build_llm_providers(config)
 
-    assert [p.config()["model"] for p in (decide, judge, verify, plan)] == [
+    assert [p.config()["model"] for p in (decide, judge, summary, plan)] == [
         "qwen3.8-max",
         "qwen3.8-max",
         "doubao-seed-1-6-250615",
@@ -150,30 +150,30 @@ def test_the_vendor_class_follows_the_model_prefix(model: str, provider_name: st
 
 
 def test_four_positions_with_the_same_model_still_get_distinct_instances() -> None:
-    config = BrainLlmConfig(text=_spec(), judge=_spec(), verify=_spec(), plan=_spec())
+    config = BrainLlmConfig(text=_spec(), judge=_spec(), summary=_spec(), plan=_spec())
 
-    decide, judge, verify, plan = build_llm_providers(config)
+    decide, judge, summary, plan = build_llm_providers(config)
 
-    assert len({id(p) for p in (decide, judge, verify, plan)}) == 4
+    assert len({id(p) for p in (decide, judge, summary, plan)}) == 4
 
 
 def test_temperature_and_max_tokens_come_from_each_positions_spec() -> None:
     config = BrainLlmConfig(
         text=_spec(temperature=0.3, max_tokens=7),
         judge=_spec(temperature=0.0, max_tokens=8),
-        verify=_spec(temperature=0.1, max_tokens=9),
+        summary=_spec(temperature=0.1, max_tokens=9),
         plan=_spec(temperature=0.2, max_tokens=10),
     )
 
-    decide, judge, verify, plan = build_llm_providers(config)
+    decide, judge, summary, plan = build_llm_providers(config)
 
-    assert [p.config()["temperature"] for p in (decide, judge, verify, plan)] == [
+    assert [p.config()["temperature"] for p in (decide, judge, summary, plan)] == [
         "0.3",
         "0.0",
         "0.1",
         "0.2",
     ]
-    assert [p.config()["max_tokens"] for p in (decide, judge, verify, plan)] == [
+    assert [p.config()["max_tokens"] for p in (decide, judge, summary, plan)] == [
         "7",
         "8",
         "9",
@@ -187,12 +187,12 @@ def test_single_request_timeouts_come_from_each_positions_spec(
     config = BrainLlmConfig(
         text=_spec(timeout_s=10),
         judge=_spec(timeout_s=45),
-        verify=_spec(timeout_s=46),
+        summary=_spec(timeout_s=46),
         plan=_spec(timeout_s=99),
     )
-    decide, judge, verify, plan = build_llm_providers(config)
+    decide, judge, summary, plan = build_llm_providers(config)
 
-    for provider in (decide, judge, verify, plan):
+    for provider in (decide, judge, summary, plan):
         provider.complete(LlmCompleteReq(prompt="hi"))
 
     assert captured_timeouts == [10, 45, 46, 99]
@@ -202,13 +202,13 @@ def test_thinking_is_a_per_position_switch() -> None:
     config = BrainLlmConfig(
         text=_spec(),
         judge=_spec(),
-        verify=_spec(),
+        summary=_spec(),
         plan=_spec(thinking=True),
     )
 
-    decide, judge, verify, plan = build_llm_providers(config)
+    decide, judge, summary, plan = build_llm_providers(config)
 
-    assert [p.config()["thinking"] for p in (decide, judge, verify, plan)] == [
+    assert [p.config()["thinking"] for p in (decide, judge, summary, plan)] == [
         "false",
         "false",
         "false",
@@ -224,7 +224,7 @@ def test_the_vision_dump_dir_reaches_every_provider() -> None:
     assert decide._vision_dump_dir == judge._vision_dump_dir == "dump"
 
 
-@pytest.mark.parametrize("field", ["text", "judge", "verify", "plan"])
+@pytest.mark.parametrize("field", ["text", "judge", "summary", "plan"])
 def test_an_unknown_model_prefix_fails_at_build_time(field: str) -> None:
     config = BrainLlmConfig(**{field: _spec("unknown-model")})
 

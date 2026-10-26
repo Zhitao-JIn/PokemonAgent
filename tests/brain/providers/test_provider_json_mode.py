@@ -100,7 +100,7 @@ def test_build_llm_providers_hands_json_mode_to_every_chain(
 
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
     spec = LinkSpec(model="deepseek-flash", temperature=0.0, max_tokens=100, timeout_s=45)
-    config = BrainLlmConfig(text=spec, judge=spec, verify=spec, plan=spec, json_mode=True)
+    config = BrainLlmConfig(text=spec, judge=spec, summary=spec, plan=spec, json_mode=True)
 
     # Act
     providers = build_llm_providers(config)
@@ -146,7 +146,7 @@ def test_build_llm_providers_turns_thinking_on_for_plan_only(
     thinking = LinkSpec(
         model="deepseek-flash", temperature=0.0, max_tokens=100, timeout_s=420, thinking=True
     )
-    config = BrainLlmConfig(text=plain, judge=plain, verify=plain, plan=thinking)
+    config = BrainLlmConfig(text=plain, judge=plain, summary=plain, plan=thinking)
 
     # Act
     decide, judge, verify, plan = build_llm_providers(config)
