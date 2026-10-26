@@ -1,0 +1,8 @@
+{
+  "task": "decompose",
+  "version": "v11",
+  "kind": "task",
+  "params": "DecomposeParams",
+  "reason": "模型只输出预算数值，固定单位由接口补齐",
+  "hash": "9084b6ba1b982611f93d8cdd30d3b45e5587c12d919f500e559ff8effa3e6613"
+}

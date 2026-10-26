@@ -1,6 +1,6 @@
 """`models` 段：每条模型链路的型号、温度、输出上限与单请求超时。
 
-链路名沿用 brain 的四个位置：text（决策 choose）、judge、verify、plan（规划与拆解）。
+链路名沿用 brain 的四个位置：text（决策 choose）、judge、summary、plan（规划与拆解）。
 型号名前缀决定厂商（表在 `brain/providers.py`），这里只存名字。
 """
 
@@ -52,7 +52,7 @@ class ModelsConfig(Section):
 
     text: ModelLink
     judge: ModelLink
-    verify: ModelLink
+    summary: ModelLink
     plan: PlanModelLink
     json_mode: bool
     node_thinking: dict[ThinkingNode, bool] = Field(default_factory=dict)

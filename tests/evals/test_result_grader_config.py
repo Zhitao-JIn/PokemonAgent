@@ -40,9 +40,9 @@ def test_checked_in_grader_configuration_is_explicit_and_distinct() -> None:
     grader = resolve_result_grader(configuration["evaluation_models"])
 
     assert grader.model_dump() == {
-        "model": "openai-api/dashscope/qwen3.8-flash",
-        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "DASHSCOPE_API_KEY",
+        "model": "openai/gpt-6-luna",
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
         "temperature": 0.0,
         "max_tokens": 8192,
         "timeout_s": 180,
@@ -128,7 +128,7 @@ def test_resolve_grader_still_requires_result_grader() -> None:
         ("evals.brain_choose.task", "brain_choose", "choose_solver", "text_model"),
         ("evals.brain_decompose.task", "brain_decompose", "decompose_solver", "plan_model"),
         ("evals.brain_plan.task", "brain_plan", "plan_solver", "plan_model"),
-        ("evals.brain_summary.task", "brain_summary", "summary_solver", "verify_model"),
+        ("evals.brain_summary.task", "brain_summary", "summary_solver", "summary_model"),
     ],
 )
 def test_brain_tasks_assemble_without_a_test_text_key(

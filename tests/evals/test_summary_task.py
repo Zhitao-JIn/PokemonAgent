@@ -76,7 +76,7 @@ def test_all_summary_layers_use_production_prompts_and_independent_review(
     provider = ScriptedJudge(
         *[vision_reply(answer.model_dump_json()) for _ in range(81)], multimodal=True
     )
-    brain = Brain(verify_llm=provider)
+    brain = Brain(summary_llm=provider)
     prompt_gateway = PromptGateway(None)
     tools = SimpleNamespace(
         summarizer=Summarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
@@ -93,7 +93,7 @@ def test_all_summary_layers_use_production_prompts_and_independent_review(
     cases[0].reference.criteria[0].instruction += " REF_ONLY_SENTINEL"
     monkeypatch.setattr(task, "load", lambda version: cases)
     grader = Grader()
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
     monkeypatch.setattr("evals.common.grader_model.get_model", lambda model, **kwargs: grader)
     log = eval(
         task.brain_summary(model="fake-summary", grader_model="fake-grader"),
@@ -104,7 +104,7 @@ def test_all_summary_layers_use_production_prompts_and_independent_review(
     assert log.status == "success" and log.results is not None
     assert log.results.total_samples == 81
     assert not [sample for sample in log.samples or [] if sample.error]
-    assert built == [{"verify": "fake-summary"}]
+    assert built == [{"summary": "fake-summary"}]
     assert len(provider.described) == len(grader.messages) == 81
     assert all("REF_ONLY_SENTINEL" not in request.prompt for request in provider.described)
     assert any("REF_ONLY_SENTINEL" in messages[1].content[0].text for messages in grader.messages)

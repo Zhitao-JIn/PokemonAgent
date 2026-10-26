@@ -8,6 +8,26 @@
 
 **影响面**：仅共享布局版本、活动片段注册、布局测试与本条日志；不改任务版本、检索逻辑、知识库内容或查询串构造。三个 summarize 节点的样例输出与 v1 逐字节一致。终点全量 pytest：2955 passed, 25 skipped, 3 deselected, 69 warnings in 238.70s (0:03:58)；prompt 测试 430 passed, 25 skipped；ruff check 与 ruff format --check 均通过。
 
+## 2026-10-26（655）—— 规划只输出预算数值，补齐固定单位并恢复包装后的模型身份
+
+**改了什么**：新增 run_plan v10 与 decompose v11，注册表切换新版本，明确模型只输出正整数 budget。brain 在解析时按能力补齐 tasks / actions，兼容既有显式预算对象；原始输出保持不变，成功的单位补齐记录随 normalizations 进入调用账。BudgetProvider 增加只读身份透传属性，真实装配后的成功账与失败账都能拿到实际 provider / model。
+
+**为什么这么改**：探针中的 budget=2 是层级已确定单位的合法预算量，不需要让模型重复填写固定常量，也不值得为此多调一次模型。原 prompt 同时要求嵌套对象和正整数建议，容易引发无意义重试。另一个探针缺陷来自装配包装层遗漏身份属性，直接构造 Brain 的替身测试绕过了该层，本次改用真实工厂加 HTTP 替身验证落盘。
+
+**取舍**：仅转换正整数，布尔、字符串、浮点数、零与负数仍拒绝；显式对象中的错误单位不覆盖，目标与验收条件不猜测补齐。单位保留在内部强类型预算结构中，跨层契约与冻结状态哈希不变。旧 prompt 版本不修改；保留 raw 并单列 normalizations，不伪造模型原始输出。无网络请求或真实模型调用。
+
+**影响面**：全量 2992 passed、25 skipped、3 deselected；规划相关 83 个测试通过，prompt 与规划回归 515 passed、25 skipped；最终相关用例 40 passed。身份透传临时清空后，两条真实装配往返用例均失败，还原后通过。新增预算补齐、严格拒绝、真实装配落盘、只读身份与 prompt 示例契约测试；既有未提交的 summary 命名和 GPT-6 Luna 评分配置保持。state_schema_hash 仍为 1a9f74c1c2370647。
+
+## 2026-10-26（654）—— summary 模型链路命名对齐，结果评分切换 OpenAI GPT-6 Luna
+
+**改了什么**：模型链路 verify 改名为 summary，贯通 settings、BrainLlmConfig、Brain 注入参数、tool 装配、评测配置和统计脚本；模型仍为 claude-haiku-5-5，原 verify 方法与 trace 事件名保持。结果评分器切换到 OpenAI 官方 gpt-6-luna，密钥变量为 OPENAI_API_KEY；原生 OpenAI 使用 reasoning_effort，不发送其他厂商的 thinking 字段。
+
+**为什么这么改**：这条模型链路承载摘要能力，名称与当前用途一致后，配置与装配不再需要用 verify 指代 summary。独立评分按指定的 GPT-6 Luna 型号接官方 API，避免沿用 DashScope 接入地址或不兼容的请求参数。
+
+**取舍**：只改链路名称，不改摘要、判定和校验行为；统计脚本继续识别历史快照的 verify / verify_model，新运行配置统一使用 summary / summary_model。评分器保留输出上限 8192、超时 180 秒、温度 0 和关闭思考的原有选择，关闭思考对应 OpenAI reasoning_effort=none。本次不修改第三方环境，不修复 BudgetProvider 的身份属性透传，也不重跑真实评测。
+
+**影响面**：全量 2955 passed、25 skipped、3 deselected；相关离线测试 192 passed，新增 OpenAI 评分器原生参数的两个替身用例；冻结 state_schema_hash 保持 1a9f74c1c2370647。历史探针配置可读回新的 summary 链路。另确认用户环境的 UTF-8 变量尚未进入当前进程；显式 -X utf8 后成功读取 808 条 Inspect 模型元数据，未调用模型。
+
 ## 2026-10-26（653）—— model_call 记录实际供应商与型号，token 统计优先读取账内身份
 
 **改了什么**：五个 provider 公开供应商短名与只读 model_name，Brain 六条链路的 12 处成功及失败账通过统一 _identity 写入 provider / model；summarize_run 复用 summarize。ModelCallContent 新增兼容旧账的空串默认字段。统计脚本优先使用账内身份，缺失时才回退节点与配置快照或 --models；按供应商与型号分组，不另输出来源分类或提示。

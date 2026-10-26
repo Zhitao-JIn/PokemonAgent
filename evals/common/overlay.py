@@ -20,7 +20,7 @@ from evals.runconfig import resolve_models
 _LINK_OF_PARAM = {
     "text_model": "text",
     "judge_model": "judge",
-    "verify_model": "verify",
+    "summary_model": "summary",
     "plan_model": "plan",
 }
 

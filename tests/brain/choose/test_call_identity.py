@@ -98,7 +98,7 @@ def test_each_call_keeps_the_actual_provider_identity_even_on_failure(
         decide_llm=providers["text"],
         judge_llm=providers["judge"],
         plan_llm=providers["plan"],
-        verify_llm=providers["verify"],
+        summary_llm=providers["verify"],
     )
     images = ["data:image/png;base64,AAAA"] if with_vision else []
 

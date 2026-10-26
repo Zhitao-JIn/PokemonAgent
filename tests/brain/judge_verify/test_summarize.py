@@ -56,7 +56,7 @@ def summary_json(**overrides: object) -> str:
 
 
 def test_a_bare_summary_object_parses() -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(summary_json())))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(summary_json())))
 
     result = brain.summarize(
         prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
@@ -77,7 +77,7 @@ def test_a_bare_summary_object_parses() -> None:
 
 def test_a_summary_wrapped_in_an_outer_object_parses_too() -> None:
     reply = json.dumps({"summary": json.loads(summary_json())})
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.summarize(
         prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
@@ -97,7 +97,7 @@ def test_a_summary_wrapped_in_an_outer_object_parses_too() -> None:
 
 
 def test_the_markdown_field_is_kept_on_the_summary() -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(summary_json(markdown="# a\n\nbody"))))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(summary_json(markdown="# a\n\nbody"))))
 
     result = brain.summarize(
         prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
@@ -107,7 +107,7 @@ def test_the_markdown_field_is_kept_on_the_summary() -> None:
 
 
 def test_a_filename_in_the_output_is_discarded() -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(summary_json(filename="x.md"))))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(summary_json(filename="x.md"))))
 
     result = brain.summarize(
         prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
@@ -118,7 +118,7 @@ def test_a_filename_in_the_output_is_discarded() -> None:
 
 def test_optional_fields_default_when_the_model_leaves_them_out() -> None:
     reply = json.dumps({"summary": "s", "quality_score": 0.5, "quality_rationale": "r"})
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.summarize(
         prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
@@ -137,7 +137,7 @@ def test_optional_fields_default_when_the_model_leaves_them_out() -> None:
 
 def test_a_json_fence_around_the_summary_is_tolerated() -> None:
     reply = "```json\n" + summary_json() + "\n```"
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.summarize(
         prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
@@ -150,7 +150,7 @@ def test_a_json_fence_around_the_summary_is_tolerated() -> None:
 def test_missing_required_fields_fail_as_parse_failure(missing_key: str) -> None:
     data = json.loads(summary_json())
     data.pop(missing_key)
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(json.dumps(data))))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(json.dumps(data))))
 
     with pytest.raises(SummarizeAttemptFailed) as excinfo:
         brain.summarize(
@@ -163,7 +163,7 @@ def test_missing_required_fields_fail_as_parse_failure(missing_key: str) -> None
 
 @pytest.mark.parametrize("score", [1.5, -0.1])
 def test_a_quality_score_outside_zero_to_one_fails_as_parse_failure(score: float) -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(summary_json(quality_score=score))))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(summary_json(quality_score=score))))
 
     with pytest.raises(SummarizeAttemptFailed) as excinfo:
         brain.summarize(
@@ -178,7 +178,7 @@ def test_a_quality_score_outside_zero_to_one_fails_as_parse_failure(score: float
 def test_non_json_or_non_object_output_fails_as_parse_failure_and_keeps_the_raw_text(
     reply: str,
 ) -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     with pytest.raises(SummarizeAttemptFailed) as excinfo:
         brain.summarize(
@@ -193,7 +193,7 @@ def test_non_json_or_non_object_output_fails_as_parse_failure_and_keeps_the_raw_
 
 def test_summarize_uses_the_verify_provider() -> None:
     verify = ScriptedJudge(text_reply(summary_json()))
-    brain = Brain(verify_llm=verify)
+    brain = Brain(summary_llm=verify)
 
     result = brain.summarize(
         prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
@@ -219,7 +219,7 @@ def test_images_go_through_describe_and_no_images_fall_back_to_complete() -> Non
     with_image = ScriptedJudge(vision_reply(summary_json()))
     without_image = ScriptedJudge(text_reply(summary_json()))
 
-    Brain(verify_llm=with_image).summarize(
+    Brain(summary_llm=with_image).summarize(
         prompt=PROMPT,
         goal=GOAL,
         history=HISTORY,
@@ -228,7 +228,7 @@ def test_images_go_through_describe_and_no_images_fall_back_to_complete() -> Non
         max_steps=10,
         images=[IMAGE],
     )
-    Brain(verify_llm=without_image).summarize(
+    Brain(summary_llm=without_image).summarize(
         prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
     )
 
@@ -239,7 +239,7 @@ def test_images_go_through_describe_and_no_images_fall_back_to_complete() -> Non
 
 
 def test_a_successful_attempt_returns_exactly_one_ledger_entry() -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(summary_json())))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(summary_json())))
 
     result = brain.summarize(
         prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
@@ -255,7 +255,7 @@ def test_a_successful_attempt_returns_exactly_one_ledger_entry() -> None:
 
 def test_a_provider_exception_becomes_an_attempt_failure_with_a_ledger_entry() -> None:
     timeout = ToolTimeout("gateway down")
-    brain = Brain(verify_llm=ScriptedJudge(timeout))
+    brain = Brain(summary_llm=ScriptedJudge(timeout))
 
     with pytest.raises(SummarizeAttemptFailed) as excinfo:
         brain.summarize(
@@ -277,7 +277,7 @@ def test_a_provider_exception_becomes_an_attempt_failure_with_a_ledger_entry() -
 
 def test_summarize_never_retries_by_itself() -> None:
     provider = ScriptedJudge(text_reply("nope"))
-    brain = Brain(verify_llm=provider)
+    brain = Brain(summary_llm=provider)
 
     with pytest.raises(SummarizeAttemptFailed):
         brain.summarize(

@@ -9,7 +9,7 @@ from pokemon_agent.brain.interface.llm_config import BrainLlmConfig
 from pokemon_agent.settings import ModelsConfig
 
 BrainLayer = Literal["run", "episode", "task"]
-ModelLinkName = Literal["text", "judge", "verify", "plan"]
+ModelLinkName = Literal["text", "judge", "summary", "plan"]
 
 
 class NodeBrainFactory:

@@ -57,7 +57,9 @@ def test_provider_gets_the_same_ordered_frames_and_caps_in_both_versions(
 
     for gateway in (old_gateway(tmp_path), PromptGateway(None)):
         provider = ScriptedJudge(vision_reply(reply))
-        tool = capabilities[task](Brain(verify_llm=provider), policy=policy, prompt_gateway=gateway)
+        tool = capabilities[task](
+            Brain(summary_llm=provider), policy=policy, prompt_gateway=gateway
+        )
         result = getattr(tool, task)(request)
         assert len(provider.described) == 1
         frames.append(provider.described[0].images)

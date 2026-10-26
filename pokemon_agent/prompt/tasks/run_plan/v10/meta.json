@@ -1,0 +1,8 @@
+{
+  "task": "run_plan",
+  "version": "v10",
+  "kind": "task",
+  "params": "RunPlanParams",
+  "reason": "模型只输出预算数值，固定单位由接口补齐",
+  "hash": "ae6b6f1a17f61867512b1fce4da3a263102e6f9e834453117a5e157873487de7"
+}

@@ -32,11 +32,11 @@ NODE_LINKS = {
     "run.judge": "judge",
     "episode.judge": "judge",
     "task.judge": "judge",
-    "episode.verify": "verify",
-    "task.verify": "verify",
-    "run.summarize": "verify",
-    "episode.summarize": "verify",
-    "task.summarize": "verify",
+    "episode.verify": "summary",
+    "task.verify": "summary",
+    "run.summarize": "summary",
+    "episode.summarize": "summary",
+    "task.summarize": "summary",
 }
 POLICY = (__doc__ or "").split("\nIdentity:")[0]
 CLAUDE_NOTE = "Claude: uncached includes cache_creation; trace cannot separate cache writes."
@@ -70,8 +70,12 @@ def model_snapshot(sample: Path) -> dict[str, str]:
                 models = object_value(json.loads(path.read_text(encoding="utf-8-sig")))
                 models = object_value(models.get("models", {}))
                 result = {}
-                for link in ("text", "judge", "verify", "plan"):
+                for link in ("text", "judge", "summary", "plan"):
                     value = models.get(link if name == "run_config.json" else f"{link}_model")
+                    if link == "summary" and value is None:
+                        value = models.get(
+                            "verify" if name == "run_config.json" else "verify_model"
+                        )
                     value = value.get("model") if isinstance(value, dict) else value
                     if isinstance(value, str) and value:
                         result[link] = value
@@ -220,8 +224,8 @@ def parse_models(value: str) -> dict[str, str]:
     result = {}
     for item in value.split(","):
         link, separator, model = item.partition("=")
-        if not separator or link not in {"text", "judge", "verify", "plan"} or not model:
-            raise argparse.ArgumentTypeError("--models requires text/judge/verify/plan=model")
+        if not separator or link not in {"text", "judge", "summary", "plan"} or not model:
+            raise argparse.ArgumentTypeError("--models requires text/judge/summary/plan=model")
         if link in result:
             raise argparse.ArgumentTypeError(f"Duplicate model link: {link}")
         result[link] = model

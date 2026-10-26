@@ -95,7 +95,7 @@ def test_models_config_accepts_mixed_thinking_links() -> None:
                 "timeout_s": 45,
                 "thinking": False,
             },
-            "verify": {
+            "summary": {
                 "model": "claude-haiku-5-5",
                 "temperature": 0.0,
                 "max_tokens": 16000,
@@ -113,7 +113,7 @@ def test_models_config_accepts_mixed_thinking_links() -> None:
         }
     )
 
-    assert [config.text.thinking, config.judge.thinking, config.verify.thinking] == [
+    assert [config.text.thinking, config.judge.thinking, config.summary.thinking] == [
         False,
         False,
         True,

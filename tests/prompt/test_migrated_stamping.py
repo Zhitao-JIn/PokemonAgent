@@ -19,7 +19,7 @@ def test_real_verify_capability_stamps_failed_and_successful_attempts(exhausted:
     provider = ScriptedJudge(*replies)
     gateway = PromptGateway(None)
     verifier = Verifier(
-        Brain(verify_llm=provider), policy=call_policy(max_attempts=2), prompt_gateway=gateway
+        Brain(summary_llm=provider), policy=call_policy(max_attempts=2), prompt_gateway=gateway
     )
     req = FromHarnessToBrainToolVerifyReq(entries=[], goal="确认")
     rendered = gateway.render("verify", VerifyParams(goal=req.goal, entries=[]))

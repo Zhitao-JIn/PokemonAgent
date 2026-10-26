@@ -137,8 +137,8 @@ def build_real(
         )
 
     run_brain = brain("run", "plan", "judge")
-    episode_brain = brain("episode", "plan", "judge", "verify")
-    task_brain = brain("task", "text", "judge", "verify")
+    episode_brain = brain("episode", "plan", "judge", "summary")
+    task_brain = brain("task", "text", "judge", "summary")
 
     reviewer = ReviewerTool.build(app.review, flush=trace_tool.flush)
 
@@ -159,7 +159,7 @@ def build_real(
             models={
                 "text": app.models.text.model,
                 "judge": app.models.judge.model,
-                "verify": app.models.verify.model,
+                "summary": app.models.summary.model,
                 "plan": app.models.plan.model,
             },
         )

@@ -132,7 +132,7 @@ from pokemon_agent.world import (
     ActionEntry,
 )
 
-BrainLink = Literal["text", "judge", "verify", "plan"]
+BrainLink = Literal["text", "judge", "summary", "plan"]
 """`BrainTool.build(links=…)` 可选的四条模型链路（对应配置文件 `models` 段的四个条目）。"""
 
 _Result = TypeVar("_Result")
@@ -880,8 +880,8 @@ class BrainTool:
         """按需装配：`links` 列出这一层要的链路，没列的位置 provider 为 `None`。
 
         - run 层：`links=("plan", "judge")` → `planner` + `judger`；
-        - episode 层：`links=("plan", "judge", "verify")` → `decomposer` 与其余；
-        - task 层：`links=("text", "judge", "verify")` → `chooser` 等。
+        - episode 层：`links=("plan", "judge", "summary")` → `decomposer` 与其余；
+        - task 层：`links=("text", "judge", "summary")` → `chooser` 等。
 
         `layer`标识节点所属层；models.node_thinking配置的节点覆盖链路默认值。
         节点覆盖使用独立provider，不在请求之间更改共享实例；旧调用方无节点覆盖时可省略layer。
@@ -922,7 +922,7 @@ class BrainTool:
         config = BrainLlmConfig(
             text=spec("text"),
             judge=spec("judge"),
-            verify=spec("verify"),
+            summary=spec("summary"),
             plan=spec("plan"),
             json_mode=models.json_mode,
             vision_dump_dir=vision_dump_dir,
@@ -930,7 +930,7 @@ class BrainTool:
 
         def build_brain(configuration: BrainLlmConfig) -> BrainPort:
             """按固定选型构建独立provider；节点覆盖不修改共享实例。"""
-            decide, judge_llm, verify_llm, plan_llm = build_llm_providers(configuration)
+            decide, judge_llm, summary_llm, plan_llm = build_llm_providers(configuration)
             bounded = [
                 BudgetProvider(cast(TimeoutProvider, provider), deadline, limit, source)
                 if provider is not None
@@ -938,15 +938,15 @@ class BrainTool:
                 for provider, limit, source in (
                     (decide, request_timeouts.choose, "choose"),
                     (judge_llm, request_timeouts.judge, "judge"),
-                    (verify_llm, request_timeouts.verify, "verify"),
+                    (summary_llm, request_timeouts.verify, "summary"),
                     (plan_llm, models.plan.timeout_s, "plan"),
                 )
             ]
-            decide, judge_llm, verify_llm, plan_llm = bounded
+            decide, judge_llm, summary_llm, plan_llm = bounded
             return Brain(
                 decide_llm=decide,
                 judge_llm=judge_llm,
-                verify_llm=verify_llm,
+                summary_llm=summary_llm,
                 plan_llm=plan_llm,
             )
 
@@ -990,26 +990,26 @@ class BrainTool:
             ),
             reflector=Reflector(),
             verifier=Verifier(
-                nodes.brain("verify", "verify"),
-                policy=policy("verify", "verify", request_timeouts.verify),
+                nodes.brain("verify", "summary"),
+                policy=policy("verify", "summary", request_timeouts.verify),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
             summarizer=Summarizer(
-                nodes.brain("summarize", "verify"),
-                policy=policy("summarize", "verify", request_timeouts.summarize),
+                nodes.brain("summarize", "summary"),
+                policy=policy("summarize", "summary", request_timeouts.summarize),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
             run_summarizer=RunSummarizer(
-                nodes.brain("summarize_run", "verify"),
-                policy=policy("summarize_run", "verify", request_timeouts.summarize),
+                nodes.brain("summarize_run", "summary"),
+                policy=policy("summarize_run", "summary", request_timeouts.summarize),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),
             task_summarizer=TaskSummarizer(
-                nodes.brain("summarize_task", "verify"),
-                policy=policy("summarize_task", "verify", request_timeouts.summarize),
+                nodes.brain("summarize_task", "summary"),
+                policy=policy("summarize_task", "summary", request_timeouts.summarize),
                 deadline=deadline,
                 prompt_gateway=prompt_gateway,
             ),

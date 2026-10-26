@@ -70,7 +70,7 @@ def preflight(directory: Path) -> None:
     samples = selected_samples(read_state(directory).sample_ids)
     app = capture_app_config(directory)
     BrainTool.build(
-        links=("text", "judge", "verify", "plan"),
+        links=("text", "judge", "summary", "plan"),
         models=app.models,
         retry=app.retry,
         request_timeouts=app.request_timeouts_s,

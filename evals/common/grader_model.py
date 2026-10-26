@@ -13,13 +13,15 @@ def build_grader_model(grader: ResultGraderConfig) -> Model:
     if not api_key:
         raise ValueError(f"独立结果评分员缺少密钥环境变量：{grader.api_key_env}")
     thinking = {"type": "enabled" if grader.thinking else "disabled"}
+    native_openai = grader.model.startswith("openai/")
     return get_model(
         grader.model,
         config=GenerateConfig(
             temperature=grader.temperature,
             max_tokens=grader.max_tokens,
             timeout=grader.timeout_s,
-            extra_body={"thinking": thinking},
+            reasoning_effort=("medium" if grader.thinking else "none") if native_openai else None,
+            extra_body={} if native_openai else {"thinking": thinking},
         ),
         base_url=grader.base_url,
         api_key=api_key,

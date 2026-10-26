@@ -45,7 +45,7 @@ VERDICTS = [
 
 
 def test_verdicts_come_back_the_same_length_as_the_entries_and_in_index_order() -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(json.dumps({"verdicts": VERDICTS}))))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(json.dumps({"verdicts": VERDICTS}))))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -59,7 +59,7 @@ def test_a_missing_index_is_marked_negative_not_a_parse_failure() -> None:
     reply = json.dumps(
         [{"index": 0, "positive": True, "why": "a"}, {"index": 2, "positive": True, "why": "c"}]
     )
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -79,7 +79,7 @@ def test_out_of_order_answers_are_returned_in_index_order() -> None:
             {"index": 1, "positive": False, "why": "b"},
         ]
     )
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -96,7 +96,7 @@ def test_duplicate_indexes_still_yield_one_verdict_per_entry() -> None:
             {"index": 2, "positive": True, "why": "c"},
         ]
     )
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -114,7 +114,7 @@ def test_indexes_outside_the_entries_are_dropped() -> None:
             {"index": -1, "positive": True, "why": "neg"},
         ]
     )
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -124,7 +124,7 @@ def test_indexes_outside_the_entries_are_dropped() -> None:
 
 def test_a_verdict_without_a_positive_field_counts_as_negative() -> None:
     reply = json.dumps([{"index": 0, "why": "x"}])
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -141,7 +141,7 @@ def test_a_verdict_without_a_positive_field_counts_as_negative() -> None:
     ],
 )
 def test_the_answer_may_be_a_bare_array_or_wrapped_in_verdicts_or_fenced(reply: str) -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -152,7 +152,7 @@ def test_the_answer_may_be_a_bare_array_or_wrapped_in_verdicts_or_fenced(reply: 
 
 @pytest.mark.parametrize("reply", ["nope", '{"foo": 1}', '[{"index": "abc"}]'])
 def test_unparseable_output_raises_instead_of_marking_everything_unreliable(reply: str) -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     with pytest.raises(VerifyAttemptFailed) as excinfo:
         brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
@@ -164,7 +164,7 @@ def test_unparseable_output_raises_instead_of_marking_everything_unreliable(repl
 
 
 def test_verify_does_no_filtering_of_its_own() -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(json.dumps(VERDICTS))))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(json.dumps(VERDICTS))))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -173,7 +173,7 @@ def test_verify_does_no_filtering_of_its_own() -> None:
 
 
 def test_no_entries_yield_no_verdicts() -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply("[]")))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply("[]")))
 
     result = brain.verify(prompt=PROMPT, entries=[], goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -194,7 +194,7 @@ def test_verify_falls_back_to_the_judge_provider_when_no_verify_provider_is_give
 def test_an_explicit_verify_provider_is_used_instead_of_the_judge_provider() -> None:
     judge = ScriptedJudge()
     verify = ScriptedJudge(text_reply(json.dumps(VERDICTS)))
-    brain = Brain(judge_llm=judge, verify_llm=verify)
+    brain = Brain(judge_llm=judge, summary_llm=verify)
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -207,10 +207,10 @@ def test_images_go_through_describe_and_no_images_fall_back_to_complete() -> Non
     with_image = ScriptedJudge(vision_reply(json.dumps(VERDICTS)))
     without_image = ScriptedJudge(text_reply(json.dumps(VERDICTS)))
 
-    Brain(verify_llm=with_image).verify(
+    Brain(summary_llm=with_image).verify(
         prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE, images=[IMAGE]
     )
-    Brain(verify_llm=without_image).verify(
+    Brain(summary_llm=without_image).verify(
         prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE
     )
 
@@ -221,7 +221,7 @@ def test_images_go_through_describe_and_no_images_fall_back_to_complete() -> Non
 
 
 def test_a_successful_attempt_returns_exactly_one_ledger_entry() -> None:
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(json.dumps(VERDICTS))))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(json.dumps(VERDICTS))))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -239,7 +239,7 @@ def test_a_successful_attempt_returns_exactly_one_ledger_entry() -> None:
 
 def test_a_provider_exception_becomes_an_attempt_failure_with_a_ledger_entry() -> None:
     timeout = ToolTimeout("gateway down")
-    brain = Brain(verify_llm=ScriptedJudge(timeout))
+    brain = Brain(summary_llm=ScriptedJudge(timeout))
 
     with pytest.raises(VerifyAttemptFailed) as excinfo:
         brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
@@ -259,7 +259,7 @@ def test_a_provider_exception_becomes_an_attempt_failure_with_a_ledger_entry() -
 
 def test_verify_never_retries_by_itself() -> None:
     provider = ScriptedJudge(text_reply("nope"))
-    brain = Brain(verify_llm=provider)
+    brain = Brain(summary_llm=provider)
 
     with pytest.raises(VerifyAttemptFailed):
         brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
@@ -287,7 +287,7 @@ def test_a_non_boolean_positive_is_a_parse_failure(bad_positive: object) -> None
     """
 
     reply = json.dumps([{"index": 0, "positive": bad_positive, "why": "x"}])
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     with pytest.raises(VerifyAttemptFailed) as excinfo:
         brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
@@ -305,7 +305,7 @@ def test_real_booleans_still_parse_normally() -> None:
             {"index": 2, "positive": True, "why": "c"},
         ]
     )
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -316,7 +316,7 @@ def test_a_missing_positive_key_is_still_a_negative_sample() -> None:
     """positive 键缺失 → 该条按负样本（不因非布尔校验变成解析失败）。"""
 
     reply = json.dumps([{"index": 0, "why": "没给 positive"}])
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 
@@ -336,7 +336,7 @@ def test_a_non_list_verdicts_is_a_parse_failure(bad_verdicts: object) -> None:
     """
 
     reply = json.dumps({"verdicts": bad_verdicts})
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     with pytest.raises(VerifyAttemptFailed) as excinfo:
         brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
@@ -355,7 +355,7 @@ def test_a_duplicate_index_takes_the_later_verdict() -> None:
             {"index": 2, "positive": True, "why": "c"},
         ]
     )
-    brain = Brain(verify_llm=ScriptedJudge(text_reply(reply)))
+    brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.verify(prompt=PROMPT, entries=ENTRIES, goal=GOAL, knowledge=KNOWLEDGE)
 

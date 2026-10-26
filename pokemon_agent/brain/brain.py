@@ -5,8 +5,8 @@
     choose     看着当前画面和可用动作，问一次模型选下一步  decide_llm
     judge      看着当前画面和目标，判达成没达成（三层共用）  judge_llm
     reflect    把这一键整理成一条可检索的经验            （本版无模型调用）
-    verify     给下级记忆逐条标正 / 负样本               verify_llm（缺省同 judge_llm）
-    summarize  用正负两组当参考蒸馏成一条上级记忆         verify_llm（缺省同 judge_llm）
+    verify     给下级记忆逐条标正 / 负样本               summary_llm（缺省同 judge_llm）
+    summarize  用正负两组当参考蒸馏成一条上级记忆         summary_llm（缺省同 judge_llm）
     plan       看 run 级历史 + 目标表，问一次模型该推什么目标 / 改哪行  plan_llm
     decompose  把 episode 目标拆成只靠观测 + 固定动作空间可完成的 task 链  plan_llm
 
@@ -92,6 +92,7 @@ from .interface import (
     VerifyVerdict,
 )
 from .interface.domain.judgement import Judgement
+from .planning_output import normalize_budget_amounts
 
 
 def _strip_json_fence(text: str) -> str:
@@ -139,7 +140,7 @@ class Brain:
         self,
         decide_llm: LLMProvider | None = None,
         judge_llm: JudgeProvider | None = None,
-        verify_llm: JudgeProvider | None = None,
+        summary_llm: JudgeProvider | None = None,
         plan_llm: LLMProvider | None = None,
     ) -> None:
         """依赖全部注入，类型标成接口而非实现（CLAUDE.md 第三节第 3 条）。
@@ -152,19 +153,19 @@ class Brain:
         `judge_llm` 单独一个参数、哪怕和 `decide_llm` 同型号：换判定模型时只改装配处，
         manifest 里两条链路也才看得出是可以分别选型的。
 
-        `verify_llm`：step 校验 / 蒸馏（`verify`/`summarize`）用的模型，单独一个参数——
+        `summary_llm`：step 校验 / 蒸馏（`verify`/`summarize`）用的模型，单独一个参数——
         跟 `judge_llm` 同理，哪怕型号相同也不共用同一个 provider 实例，manifest
         才看得出这条链路可以单独换型号/调参。缺省（`None`）回退到 `judge_llm`：
         两者都是"独立判定"性质，不传时沿用旧行为（复用同一个判定模型）。
 
         `plan_llm`：run 级规划（`plan`）用的模型，同样单独一个参数、
-        缺省回退到 `judge_llm`——跟 `verify_llm` 同理：规划和判定都不是"决策"，
+        缺省回退到 `judge_llm`——跟 `summary_llm` 同理：规划和判定都不是"决策"，
         分组更接近，装配处（`build.py`）实际也一直把这条链路的模型跟
         judge/verify 放在同一个供应商（火山方舟）下。类型是纯 `LLMProvider`
         （不是 `JudgeProvider`）：plan / decompose 与 choose 一样检查 multimodal
         标志，有图且可用时走 describe()，否则走 complete()。
 
-        `judge_llm`/`verify_llm` 的类型是 `JudgeProvider`（brain 自己的协议：
+        `judge_llm`/`summary_llm` 的类型是 `JudgeProvider`（brain 自己的协议：
         `complete()` + `describe()`），不是纯 `LLMProvider`——`judge()`/`verify()`/
         `summarize()` 带得到截图时会走 `describe()` 问一次多模态，一张图都
         凑不齐时才退化成 `complete()`。`decide_llm` 也一样：类型虽是纯
@@ -183,7 +184,7 @@ class Brain:
         """
         self._decide = decide_llm
         self._judge_llm = judge_llm
-        self._verify_llm = verify_llm or judge_llm
+        self._summary_llm = summary_llm or judge_llm
         self._plan_llm = plan_llm or judge_llm
         # `decide_action.md`/`judge_success.md`/`verify.md`/`run_plan.md`
         # 完全不在这里——六个方法都只接收调用方已经拼好的 prompt
@@ -389,9 +390,10 @@ class Brain:
 
         # 步骤 2：解析。
         parsed: RunPlan | None = None
+        normalizations: list[str] = []
         kind = reason = ""
         try:
-            parsed = self._parse_plan(text)
+            parsed, normalizations = self._parse_plan(text)
         except ParseFailure as exc:
             kind, reason = type(exc).__name__, str(exc)
 
@@ -405,6 +407,7 @@ class Brain:
                 "reasoning_tokens": str(n_reason),
                 "thinking_override": _override(thinking),
                 "ok": str(parsed is not None).lower(),
+                **({"normalizations": normalizations} if normalizations else {}),
                 "raw": text,
                 "prompt": prompt,
                 "images": sent_images,
@@ -486,9 +489,10 @@ class Brain:
 
         # 步骤 2：解析。
         parsed: Decomposition | None = None
+        normalizations: list[str] = []
         kind = reason = ""
         try:
-            parsed = self._parse_decomposition(text)
+            parsed, normalizations = self._parse_decomposition(text)
         except ParseFailure as exc:
             kind, reason = type(exc).__name__, str(exc)
         call = ModelCall(
@@ -500,6 +504,7 @@ class Brain:
                 "reasoning_tokens": str(n_reason),
                 "thinking_override": _override(thinking),
                 "ok": str(parsed is not None).lower(),
+                **({"normalizations": normalizations} if normalizations else {}),
                 "raw": text,
                 "prompt": prompt,
                 "images": sent_images,
@@ -514,8 +519,8 @@ class Brain:
         return DecomposeResult(decomposition=parsed, calls=[call])
 
     @staticmethod
-    def _parse_decomposition(text: str) -> Decomposition:
-        """把拆解模型的原始文本解析成 `Decomposition`；失败抛 `ParseFailure`。"""
+    def _parse_decomposition(text: str) -> tuple[Decomposition, list[str]]:
+        """解析拆解提案并返回固定单位注入记录；失败抛 `ParseFailure`。"""
         stripped = _strip_json_fence(text)
         try:
             raw = _load_json(stripped)
@@ -523,8 +528,9 @@ class Brain:
             raise ParseFailure(text, f"not valid json ({exc.msg})") from exc
         if not isinstance(raw, dict):
             raise ParseFailure(text, "top level is not an object")
+        raw, normalizations = normalize_budget_amounts(raw, "actions")
         try:
-            return Decomposition.model_validate(raw)
+            return Decomposition.model_validate(raw), normalizations
         except ValidationError as exc:
             raise ParseFailure(text, f"Decomposition 字段不合法：{exc.errors()[:1]}") from exc
 
@@ -702,18 +708,18 @@ class Brain:
         """
         count = len(entries)
 
-        assert self._verify_llm is not None, (
+        assert self._summary_llm is not None, (
             "verify() 需要一个 verify provider——这次装配没给它（按需装配）"
         )
         # 步骤 1：调模型。
         t0 = time.time()
         try:
-            text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
+            text, n_in, n_out, n_cached, n_reason = self._ask(self._summary_llm, prompt, images)
             t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
-                    **self._identity(self._verify_llm),
+                    **self._identity(self._summary_llm),
                     "ok": "false",
                     "prompt": prompt,
                     "images": list(images),
@@ -731,7 +737,7 @@ class Brain:
 
         call = ModelCall(
             payload={
-                **self._identity(self._verify_llm),
+                **self._identity(self._summary_llm),
                 "input_tokens": str(n_in),
                 "output_tokens": str(n_out),
                 "cached_tokens": str(n_cached),
@@ -848,18 +854,18 @@ class Brain:
         失败：模型调不通、输出解析不出，都抛 `SummarizeAttemptFailed`
         （附这次的账）——"这次没蒸出东西"由调用方的重试预算决定怎么收场。
         """
-        assert self._verify_llm is not None, (
+        assert self._summary_llm is not None, (
             "summarize() 需要一个 verify provider——这次装配没给它（按需装配）"
         )
         # 步骤 1：调模型。
         t0 = time.time()
         try:
-            text, n_in, n_out, n_cached, n_reason = self._ask(self._verify_llm, prompt, images)
+            text, n_in, n_out, n_cached, n_reason = self._ask(self._summary_llm, prompt, images)
             t1 = time.time()
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
-                    **self._identity(self._verify_llm),
+                    **self._identity(self._summary_llm),
                     "ok": "false",
                     "prompt": prompt,
                     "images": list(images),
@@ -876,7 +882,7 @@ class Brain:
 
         call = ModelCall(
             payload={
-                **self._identity(self._verify_llm),
+                **self._identity(self._summary_llm),
                 "input_tokens": str(n_in),
                 "output_tokens": str(n_out),
                 "cached_tokens": str(n_cached),
@@ -967,8 +973,8 @@ class Brain:
     # ---- 内部 ----
 
     @staticmethod
-    def _parse_plan(text: str) -> RunPlan:
-        """把规划模型的原始文本输出解析成 `RunPlan`；失败抛 `ParseFailure`。
+    def _parse_plan(text: str) -> tuple[RunPlan, list[str]]:
+        """解析规划提案并返回固定单位注入记录；失败抛 `ParseFailure`。
 
         先剥 ```json 围栏（模型最常见的格式偏差，`choose`/`_parse` 同样
         处理）——不剥的话 `json.loads` 会在第一个反引号处报"char 0"，误导成
@@ -981,8 +987,9 @@ class Brain:
             raise ParseFailure(text, f"not valid json ({exc.msg})") from exc
         if not isinstance(raw, dict):
             raise ParseFailure(text, "top level is not an object")
+        raw, normalizations = normalize_budget_amounts(raw, "tasks")
         try:
-            return RunPlan.model_validate(raw)
+            return RunPlan.model_validate(raw), normalizations
         except ValidationError as exc:
             raise ParseFailure(text, f"RunPlan 字段不合法：{exc.errors()[:1]}") from exc
 

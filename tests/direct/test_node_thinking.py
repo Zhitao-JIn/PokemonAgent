@@ -29,11 +29,11 @@ def tools(
     """装配真实tool，所有链路同型号便于核对节点隔离而不是型号差异。"""
     app = load_config().config
     data = app.models.model_dump(mode="json")
-    for name in ["text", "judge", "verify", "plan"]:
+    for name in ["text", "judge", "summary", "plan"]:
         data[name].update(model=model, thinking=default_thinking, cache_marker=None)
     data["node_thinking"] = overrides
     return BrainTool.build(
-        links=("text", "judge", "verify", "plan"),
+        links=("text", "judge", "summary", "plan"),
         models=ModelsConfig.model_validate_json(json.dumps(data)),
         layer=layer,
         retry=app.retry,
