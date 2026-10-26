@@ -6,6 +6,8 @@ from collections.abc import Sequence
 import pytest
 from _harness_fixtures.app_config import call_policy
 from _harness_fixtures.brain import _Brain
+from inspect_ai.util import Store
+from inspect_ai.util._store import init_subtask_store
 from pydantic import ValidationError
 
 from evals.agent_short_goal_run.scorer.result_grade import final_evidence
@@ -16,6 +18,14 @@ from pokemon_agent.direct.brain_tool import Judger
 from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolJudgeReq, TraceEvent
 from pokemon_agent.schemas.harness.domain.ram_observation import RamObservation
+
+
+@pytest.fixture(autouse=True)
+def _fresh_store() -> None:
+    """本文件用裸 AgentRunRecord 读 trace；StoreModel 读字段优先取 ambient store，同一进程里
+    先跑的 evals 用例会留下旧 work_dir。inspect_ai.util 没有公开的 store 上下文入口，只能借私有的
+    init_subtask_store 换一个空 store。"""
+    init_subtask_store(Store())
 
 
 class _RecordingBrain(_Brain):

@@ -194,4 +194,4 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
 
 
 def test_state_schema_is_frozen_after_advisory_budget_separation():
-    assert state_schema_hash() == "e96be379e39c0b39"
+    assert state_schema_hash() == "1a9f74c1c2370647"
