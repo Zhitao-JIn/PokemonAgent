@@ -256,3 +256,20 @@ judge_success v11 基于原活动 v8，复用上节十块顺序与标题出口�
   与 v8 一样，显式传入观测的独立调用仍可渲染。预算及人类插话不新增。
 - 辅助 render_history 保留原有逐条素材契约，不代替模型 prompt 的块顺序。
   历史 golden 继续固定捕获版本；不调用真实模型，不把字符前缀比例视作 token 或缓存命中率。
+
+## 2026-10-26：summarize 共享布局（649）
+
+summarize v7、summarize_task v8、summarize_run v6 分别基于原活动 v6、v7、v3；旧版及实验版本保留。
+
+- 规则先组合 distill_output v1、image_reading v1，再接各层自己的定位与判据读法。
+  三层现有 JSON 字段实际同为十项，字段名和含义不变；共享完整类型、稳定适用标签与压缩边界。
+  task 的三至五个 Markdown 要点、episode 的二至四个要点建议按层保留；run 保留完整复盘要求。
+- 附图按时间与历史对应，“最后一张最新”；若拼成三列网格，按行从左至右、从上至下读。
+  保留 task 相邻快照去重、episode 首末帧去重及 run 首末帧去重与数量帽说明，不修改图片通道。
+  两个片段后续可供 plan/judge 的新版本引用，本检查点不切换它们的版本。
+- 目标用 goal，不新增判据；task_id 留在目标块。三层历史均由 memory_records v2 编号，
+  task 相邻去重和三层正文不变；run 使用现有 summarize 编号模式渲染 EpisodeRecord，不恢复 verify 调用。
+- run 目标表使用 goal_table；表后为最近判定，保留终止类别、非空判定依据与各层原有成功标签。
+  空依据及空目标表不补占位；预算使用 BudgetRecord/render_budgets，run 同块保留成功局数、累计键数。
+- 测试辅助 record_text 直接调用已加载的 memory_records 片段 plain 模式，不再借 summarize_run。
+  历史 golden 固定旧版本；不改请求/响应契约，不调用真实模型。

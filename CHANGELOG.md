@@ -5,6 +5,13 @@
 **取舍**：只动测试，不动生产代码、不动 `evals/config.json`、不动 `tests/evals` 下的用例。store 隔离借用 inspect 的私有 `init_subtask_store`（`inspect_ai.util` 只公开 `store()` 这个只读入口，没有设置上下文的公开方法），限制在本文件的 autouse fixture 内并写了注释；`StoreModel` 本身"读值优先取 store"的行为不改。`test_world_case_caller_closes_world_service_after_each_worker_outcome` 三个参数化仍失败，原因是本机沙箱的 safe-delete 护栏在 `TemporaryDirectory` 清理时 `SystemExit(1)`，与仓库代码无关，本次不处理。
 **影响面**：全量 `3 failed, 2708 passed, 25 skipped, 3 deselected, 69 warnings in 344.00s (0:05:44)`，失败集合恰为上述三个沙箱用例；定向七目录 `3 failed, 1785 passed, 25 skipped, 3 deselected, 67 warnings in 241.24s (0:04:01)`；窄化复现（并发用例 + RAM 用例）由修复前的 1 failed 转为 `4 passed in 4.08s`。`ruff check` 与 `ruff format --check` 全绿（`1055 files already formatted`）。仅测试与 CHANGELOG 改动，prompt registry、版本目录与生产代码零改动。
 
+## 2026-10-26（649）—— 三个 summarize 共用布局、蒸馏输出与附图读法
+
+**改了什么**：基于活动 summarize v6、summarize_task v7、summarize_run v3 新增 v7、v8、v6；新增 distill_output v1 与 image_reading v1，共享完整 JSON 字段说明、紧凑规则与读图原则，保留分层建议与定位。三个任务使用 prompt_layout 的规则、目标、本层历史、状态与反馈、预算与进度；目标共用 goal，历史共用 memory_records v2 编号渲染，run 目标表改用 goal_table，终止类别与判定依据合为最近判定，预算改用 BudgetRecord 与 render_budgets。空依据和空目标表不补占位。
+**为什么这么改**：消除三份输出说明的措辞分叉，使字段约束与压缩边界由同一片段维护，动态原料按既有十块规则排列，并让三层输入先共享固定规则。
+**取舍**：三层当前输出字段实际同为十项；共享规则覆盖旧文本的不同要求，task 的三至五个与 episode 的二至四个 Markdown 要点建议分别保留，run 保留完整复盘要求。附图若拼成三列网格按行读取，保留各层帧来源、去重和 run 数量帽说明。成功标签、历史全文、图片采集与顺序及请求响应契约不变；不恢复 verify 调用，不修改 plan/judge 版本，两个片段后续可供它们新版本引用。三层合成输入的公共字符前缀由 1 增至 1406；输入字符数 task 1821→2664、episode 2889→2428、run 940→2274，共享完整规则令 task/run 变长，不宣称各节点 token 已减少。字符前缀不代表 token 或真实缓存命中率，不调用真实模型。
+**影响面**：只切换三个 summarize 任务与两个新片段的 registry，新增片段 Params 公开导出以供契约测试；不需新增任务入参或修改 brain_tool。历史 golden 保持固定旧版本。经用户裁决同步 __all__ 期望列表、让测试辅助 record_text 直接走 memory_records 的 plain 模式、保留“最后一张最新”措辞，并将旧 overturned=true 字面断言替换为 goal_table 的“（人审推翻）”，完整推翻理由断言不变。起点全量为 2771 passed, 25 skipped, 3 deselected, 69 warnings in 187.31s (0:03:07)；按后续“不用全量”指示不重跑全量，最终相关定向集 47 passed in 4.84s，新增回归 20 passed in 1.66s，失败集合为空。ruff check 为 All checks passed!，ruff format --check 为 1085 files already formatted；prompt 边界 A/B/C/D 通过。
+
 ## 2026-10-26（648）—— judge 共用 prompt_layout，执行历史先于规划反馈与当前现场
 
 **改了什么**：基于活动 judge_success v8 新增 v11，按共享十块拼装判定输入；目标与判据共用 goal，知识共用 knowledge，背景索引、地图交互事实、完整执行历史、状态表及完整 latest_planning JSON、当前现场分别归块。当前现场使用 task_frame，RAM 记录随其后保留完整读数与来源。经用户补充裁决，三层请求统一传递 RAM 列表，空窗口统一序列化为 []，不新增 layer；只有非空窗口才追加 RAM 读法，task 的中断说明仍由 allow_interrupt 控制。

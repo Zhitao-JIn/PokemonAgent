@@ -5,7 +5,9 @@ from .gateway import PromptGateway, RenderedPrompt
 from .ram_observation import RamObservationRecord
 from .tasks.decide_action.params import DecideActionParams
 from .tasks.decompose.params import DecomposeParams
+from .tasks.fragments.distill_output.params import DistillOutputParams
 from .tasks.fragments.goal.params import GoalParams
+from .tasks.fragments.image_reading.params import ImageReadingParams
 from .tasks.fragments.knowledge.params import KnowledgeParams
 from .tasks.fragments.prompt_layout.params import PromptLayoutParams
 from .tasks.judge_success.params import JudgeParams
@@ -30,6 +32,8 @@ __all__ = [
     "RunPlanParams",
     "DecideActionParams",
     "OutputRetryParams",
+    "DistillOutputParams",
+    "ImageReadingParams",
     "GoalParams",
     "KnowledgeParams",
     "PromptLayoutParams",

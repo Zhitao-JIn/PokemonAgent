@@ -7,13 +7,13 @@
       "active": "v4"
     },
     "summarize": {
-      "active": "v6"
-    },
-    "summarize_task": {
       "active": "v7"
     },
+    "summarize_task": {
+      "active": "v8"
+    },
     "summarize_run": {
-      "active": "v3"
+      "active": "v6"
     },
     "goal_table": {
       "active": "v1"
@@ -73,6 +73,12 @@
       "active": "v1"
     },
     "knowledge": {
+      "active": "v1"
+    },
+    "distill_output": {
+      "active": "v1"
+    },
+    "image_reading": {
       "active": "v1"
     }
   }

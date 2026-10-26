@@ -1,0 +1,8 @@
+{
+  "task": "image_reading",
+  "version": "v1",
+  "kind": "fragment",
+  "params": "ImageReadingParams",
+  "reason": "检查点 4：同构蒸馏布局与共用规则，保留完整原料",
+  "hash": "390f68a4efca3fba1c3572efd1fdedf5eb059520972ff8225775910182178bb2"
+}
