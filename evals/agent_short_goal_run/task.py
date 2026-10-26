@@ -51,7 +51,9 @@ def _select(
 def _result_grader(
     evaluation_models: Mapping[str, object], grader_model: str | None
 ) -> ResultGraderConfig | None:
-    """缺省读取完整配置；none 关闭，其他字符串只覆盖型号。"""
+    """缺省关闭独立模型评分；显式型号沿用评分配置，none 仍关闭。"""
+    if grader_model is None:
+        return None
     return resolve_grader(evaluation_models, grader_model)
 
 
@@ -68,7 +70,8 @@ def agent_short_goal_run(
 ) -> Task:
     """e2e 测评：dataset + solver + scorer（指标挂 scorer，epochs 走 `inspect eval --epochs`）。
 
-    `grader_model=None` 使用配置，字符串 none 关闭独立评分，其他字符串只覆盖型号。
+    `grader_model=None` 缺省只使用机械判据、红线与效率统计，不调用独立评分模型。
+    字符串 none 同样关闭；显式型号启用独立模型评分，其他参数沿用评分配置。
     参数缺省读 `evals/config.json`（`runconfig.load_config`）；`inspect eval -T` 逐项
     覆盖。`log_dir` 是 run-one 产物（`runs/<样本[#e<n>]>`）的落盘根——建议与
     `inspect eval --log-dir` 同值，`.eval` 与 trace 同根。被测系统的红线阈值

@@ -239,7 +239,7 @@ def assembly(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Assembly:
 @pytest.mark.parametrize(
     "override", [None, "none", "NoNe", "openai-api/vendor/other-grader", "other-grader"]
 )
-def test_task_defaults_disables_or_overrides_only_the_grader_model(
+def test_e2e_defaults_to_mechanical_scoring_and_only_explicit_models_enable_grading(
     assembly: Assembly, override: str | None
 ) -> None:
     configuration, seen, build = assembly
@@ -248,7 +248,7 @@ def test_task_defaults_disables_or_overrides_only_the_grader_model(
     task = build(override)
 
     assert configuration["evaluation_models"] == evaluation_before
-    if override is not None and override.lower() == "none":
+    if override is None or override.lower() == "none":
         assert seen == [] and len(task.scorer) == 8
     else:
         assert len(seen) == 1 and len(task.scorer) == 9

@@ -20,7 +20,7 @@ scene/screen/takeover 均覆盖 1045 帧；terrain 的 map_id/where/facing 各�
 |---|---|---|---|
 | brain_choose | 完整 choose 请求，默认 v4 的206条建议式参考 | Inspect AI 质量分、能力掩码与单步结构检查 | 决策模型和独立评分模型 |
 | brain_judge | 真值目标与观测历史交给生产判定器 | TP / FP / FN / TN 次数 | 判定模型 |
-| agent_short_goal_run | 完整系统执行目标，按最终结果判 | 机械结果、红线、独立 model-graded 结果 | 完整系统与结果评分模型 |
+| agent_short_goal_run | 完整系统执行目标，按最终结果判 | 默认机械结果与红线；独立模型结果评分仅显式开启 | 完整系统；显式开启时另调结果评分模型 |
 
 ## task 分层与描述
 
@@ -154,7 +154,7 @@ world_script_execute 共 106 例，统一按脚本的调用、结局与前后世
 
 memory_store_recall 初始冻结库为三条 knowledge 与三个相关性查询，可按同一 schema 扩充其他记忆类型。brain_judge 保留 v1 的四条契约示范，扩展 v2 用真实判定现场评估生产判定器。
 
-agent_short_goal_run 评分只看任务最终结果、红线和独立结果评分模型。路径、步骤、花费可留在日志用于诊断，不作为另一个 judge_process task 或成功评分。缺少可评分材料是 NOANSWER；基础设施或模型调用失败是 sample error，报告应同时披露错误数。
+agent_short_goal_run 默认以原始 trace 上的机械判据和红线给出成功评分，同时独立记录效率指标，不调用结果评分模型。当前配置的数据集每例均有已注册机械判据及正反例；证据不足仍是 NOANSWER，不补猜成功。独立模型评分仅在显式指定 `-T grader_model=<型号>` 时启用，作为诊断旁账，不替代机械真值。路径、步骤、花费不混入成功评分。基础设施或模型调用失败是 sample error，报告应同时披露错误数。
 
 agent_short_goal_run 的过程在 Inspect View 的 Transcript 中查看，Langfuse 仍可用于定位同一执行线。
 solver 在子进程结束后经 `RunStream.load` 读取 local / langfuse 类型化账本，按原顺序与

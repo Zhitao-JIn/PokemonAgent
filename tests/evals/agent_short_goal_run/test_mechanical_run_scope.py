@@ -150,6 +150,39 @@ def test_a_run_sample_without_any_episode_is_unjudgeable() -> None:
     assert result.outcome == "unjudgeable"
 
 
+@pytest.mark.parametrize(
+    ("place", "kind", "outcome"),
+    [
+        ((2, 5), "人", "dialog"),
+        ((9, 9), "人", "dialog"),
+        ((4, 3), "门", "dialog"),
+        ((4, 3), "人", "no_effect"),
+    ],
+)
+def test_two_npc_check_rejects_duplicate_unrelated_or_non_dialogue_evidence(
+    place: tuple[int, int], kind: str, outcome: str
+) -> None:
+    events = stream(
+        frame(1, people=((2, 5), (4, 3))),
+        _event(
+            "write_object_memory",
+            2,
+            OtherContent(object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}),
+        ),
+        _event(
+            "write_object_memory",
+            3,
+            OtherContent(
+                object_kind=kind, outcome=outcome, place={"map_id": 1, "x": place[0], "y": place[1]}
+            ),
+        ),
+    )
+
+    result = mechanical_scorer()(events, sample("shop_two_npcs_interacted"))
+
+    assert result.outcome == "fail"
+
+
 def test_an_episode_sample_is_not_judged_from_another_goal() -> None:
     """episode / task 粒度仍按目标 id 取局；run 粒度按 run 取（口径见上面的用例）。"""
     events = replanned_stream(frame(4, map_id=40))

@@ -86,14 +86,10 @@ def test_invalid_worker_record_does_not_read_or_count_an_execution(recorded_run)
     assert result.metadata["invalid"] is True
 
 
-def test_task_exposes_eight_independent_core_scorers_and_preserves_optional_qwen(
-    tmp_path, monkeypatch
-):
+def test_task_defaults_to_eight_core_scorers_without_a_model_grader(tmp_path, monkeypatch):
     monkeypatch.setattr("evals.agent_short_goal_run.task.load_env_file", lambda: None)
 
-    task = agent_short_goal_run(
-        samples=["knowledge_door_transition"], log_dir=str(tmp_path), grader_model="none"
-    )
+    task = agent_short_goal_run(samples=["knowledge_door_transition"], log_dir=str(tmp_path))
 
     assert [registry_info(item).name for item in task.scorer] == [
         "e2e_scorer",

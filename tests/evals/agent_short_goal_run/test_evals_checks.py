@@ -12,6 +12,7 @@ import pytest
 from evals.agent_short_goal_run.dataset import load
 from evals.agent_short_goal_run.dataset.schemas import EvalSample, SampleStart
 from evals.agent_short_goal_run.scorer import RULES, RunStream, judge
+from evals.runconfig import load_config
 from pokemon_agent.direct.trace import ParsedEvent
 from pokemon_agent.direct.trace.content import (
     ActCallContent,
@@ -396,3 +397,10 @@ def test_pokemon_switch_sample_has_a_registered_mechanical_rule() -> None:
 
     assert switch.check_id == "party_list_opened_in_battle"
     assert switch.check_id in RULES
+
+
+def test_configured_dataset_has_registered_checks_with_positive_and_negative_examples() -> None:
+    samples = load(str(load_config()["version"]), rule_ids=set(RULES))
+
+    assert samples
+    assert all(sample.check_id in RULES and sample.check_id in CASES for sample in samples)
