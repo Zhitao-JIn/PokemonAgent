@@ -49,10 +49,10 @@
       "active": "v11"
     },
     "decompose": {
-      "active": "v10"
+      "active": "v11"
     },
     "run_plan": {
-      "active": "v9"
+      "active": "v10"
     },
     "decide_action": {
       "active": "v10"

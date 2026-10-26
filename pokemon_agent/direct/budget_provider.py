@@ -49,6 +49,16 @@ class BudgetProvider:
         self._source = source
         self.multimodal = getattr(provider, "multimodal", True)
 
+    @property
+    def PROVIDER_NAME(self) -> str:
+        """透传实际供应商身份；旧替身未声明时返回空串。"""
+        return getattr(self._provider, "PROVIDER_NAME", "")
+
+    @property
+    def model_name(self) -> str:
+        """透传实际型号，不从配置推导或复制可变状态。"""
+        return getattr(self._provider, "model_name", "")
+
     def complete(self, req: LlmCompleteReq) -> LlmCompleteResp:
         """用剩余时间限制文本请求；不足时底层 provider 不会被调用。"""
         return self._provider.complete(req, timeout_s=self._allowed())

@@ -92,6 +92,7 @@ from .interface import (
     VerifyVerdict,
 )
 from .interface.domain.judgement import Judgement
+from .planning_output import normalize_budget_amounts
 
 
 def _strip_json_fence(text: str) -> str:
@@ -389,9 +390,10 @@ class Brain:
 
         # 步骤 2：解析。
         parsed: RunPlan | None = None
+        normalizations: list[str] = []
         kind = reason = ""
         try:
-            parsed = self._parse_plan(text)
+            parsed, normalizations = self._parse_plan(text)
         except ParseFailure as exc:
             kind, reason = type(exc).__name__, str(exc)
 
@@ -405,6 +407,7 @@ class Brain:
                 "reasoning_tokens": str(n_reason),
                 "thinking_override": _override(thinking),
                 "ok": str(parsed is not None).lower(),
+                **({"normalizations": normalizations} if normalizations else {}),
                 "raw": text,
                 "prompt": prompt,
                 "images": sent_images,
@@ -486,9 +489,10 @@ class Brain:
 
         # 步骤 2：解析。
         parsed: Decomposition | None = None
+        normalizations: list[str] = []
         kind = reason = ""
         try:
-            parsed = self._parse_decomposition(text)
+            parsed, normalizations = self._parse_decomposition(text)
         except ParseFailure as exc:
             kind, reason = type(exc).__name__, str(exc)
         call = ModelCall(
@@ -500,6 +504,7 @@ class Brain:
                 "reasoning_tokens": str(n_reason),
                 "thinking_override": _override(thinking),
                 "ok": str(parsed is not None).lower(),
+                **({"normalizations": normalizations} if normalizations else {}),
                 "raw": text,
                 "prompt": prompt,
                 "images": sent_images,
@@ -514,8 +519,8 @@ class Brain:
         return DecomposeResult(decomposition=parsed, calls=[call])
 
     @staticmethod
-    def _parse_decomposition(text: str) -> Decomposition:
-        """把拆解模型的原始文本解析成 `Decomposition`；失败抛 `ParseFailure`。"""
+    def _parse_decomposition(text: str) -> tuple[Decomposition, list[str]]:
+        """解析拆解提案并返回固定单位注入记录；失败抛 `ParseFailure`。"""
         stripped = _strip_json_fence(text)
         try:
             raw = _load_json(stripped)
@@ -523,8 +528,9 @@ class Brain:
             raise ParseFailure(text, f"not valid json ({exc.msg})") from exc
         if not isinstance(raw, dict):
             raise ParseFailure(text, "top level is not an object")
+        raw, normalizations = normalize_budget_amounts(raw, "actions")
         try:
-            return Decomposition.model_validate(raw)
+            return Decomposition.model_validate(raw), normalizations
         except ValidationError as exc:
             raise ParseFailure(text, f"Decomposition 字段不合法：{exc.errors()[:1]}") from exc
 
@@ -967,8 +973,8 @@ class Brain:
     # ---- 内部 ----
 
     @staticmethod
-    def _parse_plan(text: str) -> RunPlan:
-        """把规划模型的原始文本输出解析成 `RunPlan`；失败抛 `ParseFailure`。
+    def _parse_plan(text: str) -> tuple[RunPlan, list[str]]:
+        """解析规划提案并返回固定单位注入记录；失败抛 `ParseFailure`。
 
         先剥 ```json 围栏（模型最常见的格式偏差，`choose`/`_parse` 同样
         处理）——不剥的话 `json.loads` 会在第一个反引号处报"char 0"，误导成
@@ -981,8 +987,9 @@ class Brain:
             raise ParseFailure(text, f"not valid json ({exc.msg})") from exc
         if not isinstance(raw, dict):
             raise ParseFailure(text, "top level is not an object")
+        raw, normalizations = normalize_budget_amounts(raw, "tasks")
         try:
-            return RunPlan.model_validate(raw)
+            return RunPlan.model_validate(raw), normalizations
         except ValidationError as exc:
             raise ParseFailure(text, f"RunPlan 字段不合法：{exc.errors()[:1]}") from exc
 
