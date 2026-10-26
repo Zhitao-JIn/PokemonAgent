@@ -1,3 +1,13 @@
+## 2026-10-26（651）—— ROADMAP 状态对账：按 206–636 把过时条目改成现状、补登未登记的功能
+
+**改了什么**：`docs/ROADMAP.md` 最后核实日期由 09-24 改为 10-26。已有条目按现状改写：B0 / B1（记忆阶梯加 Run 一级、记忆只经 MCP）、B3、B8（三层感知范围）、B9、B10、D1、D2、E1、E3、E4（递归规划与三类判定）、E5（复核席重写为独立进程）、E8、F1、F2、F5、G1～G5、H1、H5、H9、I3、I5、I7。状态变化：E6 → ✅（world / memory 只保留 MCP 形态）；D3、F4、H3 → ↩️（视觉档删除、`real_check` 退役、观测台清退）；D2 → 💬；D1、F1、G1、G2、G4 → 🚧。新增条目：B12 记忆后端选型、B13 检索层可观测与精排、D5 RAM 屏幕解码、D6 world 脚本层、F6 测评体系、F7 端到端基线与 prompt 调优、I8 配置中心。第五节索引同步。
+
+**为什么这么改**：上一次对账停在 205（09-24），此后到 636 之间落地了测评体系、reviewer 重写、MCP-only、配置中心、prompt 模块、递归规划、brain_scope、模型选型等大块功能，ROADMAP 里要么没有，要么仍写着已被删除或取代的做法（例如视觉感知档、`check_checkpoint` 待跑、"每个 task 结束都会停下等人"）。
+
+**取舍**：只写 CHANGELOG 与仓库文档能核实的现状，不写尚无 CHANGELOG 条目的进行中工作；编号沿用原有 A～J 分类，新条目接在同类末尾，不改旧编号；已失效的条目标 ↩️ 保留而不删除，免得旧引用悬空。§4 只补动过的几条（B0、B2、B3、B8、E1、E8），其余新条目的详述指向各自的 `docs/` 文档。
+
+**影响面**：只改 `docs/ROADMAP.md` 与本条日志；不改代码、测试、数据集、prompt、AGENTS.md / CLAUDE.md。
+
 ## 2026-10-24（636）—— RunStream.load 按 run_id 过滤：评分不再跨 run 串账
 
 **改了什么**：`evals/agent_short_goal_run/scorer/stream.py` 的 `RunStream.load` 两条后端都在读回事件后先按 `meta.run_id` 过滤（新增模块级 `_of_run`），local 后端的 branch 自动检测改在这个过滤之后进行；langfuse 路径同样过一道（trace_id 已按 `(run_id, branch)` 寻址，结果不变，只是两个后端同一个后置条件）。`run_episodes()` 与 `evals/agent_short_goal_run/scorer/utils.py::target_episodes` 的 docstring 改为"归属键是 `run_id`，由 `load` 在读取时过滤"，删掉"已由 load 定死"的写法。
