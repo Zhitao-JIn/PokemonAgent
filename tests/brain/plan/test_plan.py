@@ -23,6 +23,8 @@ HISTORY = ["walked to the gym"]
 MAX_PUSH = 2
 
 LEDGER_KEYS = {
+    "provider",
+    "model",
     "input_tokens",
     "output_tokens",
     "cached_tokens",
@@ -270,6 +272,8 @@ def test_a_provider_exception_becomes_an_attempt_failure_with_a_ledger_entry() -
     assert "gateway down" in excinfo.value.call.error
     assert excinfo.value.__cause__ is timeout
     assert set(excinfo.value.call.payload) == {
+        "provider",
+        "model",
         "ok",
         "prompt",
         "images",

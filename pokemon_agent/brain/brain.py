@@ -252,6 +252,7 @@ class Brain:
         except Exception as exc:  # noqa: BLE001
             call = ModelCall(
                 payload={
+                    **self._identity(self._decide),
                     "ok": "false",
                     "prompt": prompt,
                     "images": sent_images,
@@ -283,6 +284,7 @@ class Brain:
         # 而 `raw` 让改进解析器之后能离线重算，不必再花钱重跑。
         call = ModelCall(
             payload={
+                **self._identity(self._decide),
                 "input_tokens": str(n_in),
                 "output_tokens": str(n_out),
                 "cached_tokens": str(n_cached),
@@ -372,6 +374,7 @@ class Brain:
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
+                    **self._identity(self._plan_llm),
                     "ok": "false",
                     "prompt": prompt,
                     "images": sent_images,
@@ -395,6 +398,7 @@ class Brain:
         # 一次模型调用 = 一条账，成功失败都留：失败的那次同样烧了 token。
         call = ModelCall(
             payload={
+                **self._identity(self._plan_llm),
                 "input_tokens": str(n_in),
                 "output_tokens": str(n_out),
                 "cached_tokens": str(n_cached),
@@ -467,6 +471,7 @@ class Brain:
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
+                    **self._identity(self._plan_llm),
                     "ok": "false",
                     "prompt": prompt,
                     "images": sent_images,
@@ -488,6 +493,7 @@ class Brain:
             kind, reason = type(exc).__name__, str(exc)
         call = ModelCall(
             payload={
+                **self._identity(self._plan_llm),
                 "input_tokens": str(n_in),
                 "output_tokens": str(n_out),
                 "cached_tokens": str(n_cached),
@@ -562,6 +568,7 @@ class Brain:
             kind = type(exc).__name__
             call = ModelCall(
                 payload={
+                    **self._identity(self._judge_llm),
                     "ok": "false",
                     "prompt": prompt,
                     "images": list(images),
@@ -578,6 +585,7 @@ class Brain:
 
         call = ModelCall(
             payload={
+                **self._identity(self._judge_llm),
                 "input_tokens": str(n_in),
                 "output_tokens": str(n_out),
                 "cached_tokens": str(n_cached),
@@ -598,6 +606,14 @@ class Brain:
             raise JudgeAttemptFailed(call)
 
         return JudgeResult(decision=decision, why=why, calls=[call])
+
+    @staticmethod
+    def _identity(llm: object) -> dict[str, str]:
+        """读取本次调用句柄的公开身份；旧替身缺少属性时记空串。"""
+        return {
+            "provider": getattr(llm, "PROVIDER_NAME", ""),
+            "model": getattr(llm, "model_name", ""),
+        }
 
     @staticmethod
     def _ask(
@@ -697,6 +713,7 @@ class Brain:
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
+                    **self._identity(self._verify_llm),
                     "ok": "false",
                     "prompt": prompt,
                     "images": list(images),
@@ -714,6 +731,7 @@ class Brain:
 
         call = ModelCall(
             payload={
+                **self._identity(self._verify_llm),
                 "input_tokens": str(n_in),
                 "output_tokens": str(n_out),
                 "cached_tokens": str(n_cached),
@@ -841,6 +859,7 @@ class Brain:
         except Exception as exc:  # noqa: BLE001  调不通也是"这一次失败"
             call = ModelCall(
                 payload={
+                    **self._identity(self._verify_llm),
                     "ok": "false",
                     "prompt": prompt,
                     "images": list(images),
@@ -857,6 +876,7 @@ class Brain:
 
         call = ModelCall(
             payload={
+                **self._identity(self._verify_llm),
                 "input_tokens": str(n_in),
                 "output_tokens": str(n_out),
                 "cached_tokens": str(n_cached),

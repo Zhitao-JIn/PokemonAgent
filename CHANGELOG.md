@@ -1,3 +1,13 @@
+## 2026-10-26（653）—— model_call 记录实际供应商与型号，token 统计优先读取账内身份
+
+**改了什么**：五个 provider 公开供应商短名与只读 model_name，Brain 六条链路的 12 处成功及失败账通过统一 _identity 写入 provider / model；summarize_run 复用 summarize。ModelCallContent 新增兼容旧账的空串默认字段。统计脚本优先使用账内身份，缺失时才回退节点与配置快照或 --models；按供应商与型号分组，不另输出来源分类或提示。
+
+**为什么这么改**：配置快照只是运行选型的推导材料，不能替代每次调用实际使用的句柄。把身份随调用账完整传递到落盘，才能在混合型号与配置变动后仍准确对比 token，也让失败调用保留身份。
+
+**取舍**：旧替身缺少身份属性时记空串，不扩大 provider Protocol 或 ModelCall 的形状；手工 --models 只补没有记录的字段，不覆盖账内事实。保留旧输入总量、缓存、输出和 reasoning 口径，失败调用仍单独计数、不进 token 求和；Claude 缓存写入仍含在输入未命中里，trace 没有单独字段，本次不补。未改提示词、模型配置、状态结构或生产用量累加逻辑。
+
+**影响面**：全量 2953 passed、25 skipped、3 deselected；相关 162 个测试通过，其中统计脚本 65 个；原有测试仅同步移除来源字段与提示的期望，数值断言不变；临时清空身份后 42 个身份用例失败，恢复后全部通过。冻结 state_schema_hash 保持 1a9f74c1c2370647。旧 iter32/B 仍为 87 次调用，输入 415725、缓存 180096、输出 27132、reasoning 9791，模型行及 8 个 category 与 cache_usage.csv 一致。仅使用替身和历史 trace，未联网或调用真实模型。
+
 ## 2026-10-26（652）—— 新增只读的 provider 与节点 token 统计脚本
 
 **改了什么**：新增 `scripts/token_usage_by_provider.py` 与合成 trace 单元测试，递归发现评测 trace，按 provider、模型、层级节点与 prompt 版本统计调用、失败及 token，支持按样本拆分、Markdown / CSV / JSON 和比较目录差值。模型由固定节点链路与最近配置快照推导，支持 `--models` 覆盖，并明确标注来源。

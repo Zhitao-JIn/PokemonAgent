@@ -1,15 +1,14 @@
 """Read-only, reproducible token accounting from runs/*/trace/*.json (standard library).
 Input total = input_tokens (includes hits); uncached = input_tokens - cached_tokens.
-Claude uncached includes cache_creation: trace has no separate cache-write field.
+Claude uncached includes cache_creation: trace cannot separate cache writes.
 Output = output_tokens, already including thinking/reasoning; reasoning is informational,
 never added again. Failed calls (ok=false or missing/invalid required token fields) are
 counted separately and excluded from sums; genuine zero is valid. Missing reasoning is
 left blank if absent; cache hits > input are reported without correction.
-Provider/model are inferred from thinking_node and configuration, NOT recorded per call.
-Nearest ancestor snapshot wins (run_config.json before baseline_context.json at same depth).
---models overrides links. Unknown nodes or absent models remain unknown.
-Comparison = comparison-directory minus positional inputs; percent uses positional inputs,
-blank when zero. Calls includes successful and failed calls.
+Comparison = comparison-directory minus inputs; percent uses inputs, blank when zero.
+Calls includes successful and failed calls.
+Identity: recorded provider/model win; --models overrides ONLY missing records, never facts.
+Fallback: thinking_node + nearest snapshot (run_config.json before baseline_context.json).
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ NODE_LINKS = {
     "episode.summarize": "verify",
     "task.summarize": "verify",
 }
-POLICY = __doc__ or ""
+POLICY = (__doc__ or "").split("\nIdentity:")[0]
 CLAUDE_NOTE = "Claude: uncached includes cache_creation; trace cannot separate cache writes."
 Row = dict[str, str | int | float | None]
 Tables = dict[str, list[Row]]
@@ -56,15 +55,13 @@ def object_value(value: object) -> dict[str, object]:
 
 def provider_for(model: str) -> str:
     """Map known model prefixes in one place; preserve unknown model names."""
-    if model == "unknown":
-        return "unknown"
-    return next(
-        (provider for prefix, provider in PROVIDER_PREFIXES if model.lower().startswith(prefix)),
-        f"unknown:{model}",
-    )
+    for prefix, provider in PROVIDER_PREFIXES:
+        if model.lower().startswith(prefix):
+            return provider
+    return model if model == "unknown" else f"unknown:{model}"
 
 
-def model_snapshot(sample: Path) -> tuple[dict[str, str], str]:
+def model_snapshot(sample: Path) -> dict[str, str]:
     """Find the nearest ancestor snapshot; at the same depth prefer run_config.json."""
     for directory in (sample, *sample.parents):
         for name in ("run_config.json", "baseline_context.json"):
@@ -78,8 +75,8 @@ def model_snapshot(sample: Path) -> tuple[dict[str, str], str]:
                     value = value.get("model") if isinstance(value, dict) else value
                     if isinstance(value, str) and value:
                         result[link] = value
-                return result, f"配置快照: {path.as_posix()}"
-    return {}, "unknown"
+                return result
+    return {}
 
 
 def discover(paths: Sequence[Path]) -> list[Path]:
@@ -88,19 +85,14 @@ def discover(paths: Sequence[Path]) -> list[Path]:
     for root in paths:
         if not root.is_dir():
             raise ValueError(f"Not a directory: {root}")
-        found.update(
-            p.resolve()
-            for p in root.rglob("*.json")
-            if p.parent.name == "trace" and p.parent.parent.parent.name == "runs"
-        )
+        matches = root.rglob("trace/*.json")
+        found.update(p.resolve() for p in matches if p.parent.parent.parent.name == "runs")
     return sorted(found)
 
 
 def token_value(value: object) -> int | None:
     """Accept nonnegative integers and digit strings; missing is distinct from zero."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int) and value >= 0:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
         return value
     if isinstance(value, str) and value.isascii() and value.isdigit():
         return int(value)
@@ -118,30 +110,28 @@ def read_calls(paths: Sequence[Path], overrides: dict[str, str]) -> tuple[list[R
             continue
         content = object_value(event.get("content", {}))
         sample = path.parent.parent
-        if sample not in snapshots:
+        recorded_provider, recorded_model = (content.get(key) for key in ("provider", "model"))
+        recorded = bool(recorded_provider and recorded_model)
+        if not recorded and sample not in snapshots:
             snapshots[sample] = model_snapshot(sample)
-        models, source = snapshots[sample]
+        models = snapshots.get(sample, {})
         node = str(content.get("thinking_node", "unknown"))
         link = NODE_LINKS.get(node)
-        model = overrides.get(link, models.get(link, "unknown"))
-        source = "手工指定" if link in overrides else source
+        model = recorded_model or overrides.get(link, models.get(link, "unknown"))
         if link is None:
-            node, source = "unknown", "unknown"
+            node = "unknown"
         task = str(content.get("prompt_task", "unknown"))
         row: Row = {
             "sample": sample.as_posix(),
-            "provider": provider_for(model),
+            "provider": recorded_provider or provider_for(model),
             "model": model,
             "node": f"{node.split('.')[0]}/{task}",
             "prompt_version": str(content.get("prompt_version", "unknown")),
-            "model_source": source,
             "trace": path.name,
         }
         row.update({key: token_value(content.get(key)) for key in (*TOKENS, "reasoning_tokens")})
-        row["failed_calls"] = int(
-            str(content.get("ok", "true")).lower() == "false"
-            or any(row[key] is None for key in TOKENS)
-        )
+        missing = any(row[key] is None for key in TOKENS)
+        row["failed_calls"] = int(str(content.get("ok", "true")).lower() == "false" or missing)
         total, cached = row["input_tokens"], row["cached_tokens"]
         if isinstance(total, int) and isinstance(cached, int) and cached > total:
             violations.append(dict(row))
@@ -150,7 +140,7 @@ def read_calls(paths: Sequence[Path], overrides: dict[str, str]) -> tuple[list[R
 
 
 def aggregate(calls: list[Row], dimensions: tuple[str, ...]) -> list[Row]:
-    """Sum only successful calls, retaining model provenance and missing reasoning."""
+    """Sum only successful calls, retaining model identity and missing reasoning."""
     grouped: dict[tuple[str, ...], list[Row]] = {}
     for call in calls:
         grouped.setdefault(tuple(str(call[key]) for key in dimensions), []).append(call)
@@ -164,19 +154,15 @@ def aggregate(calls: list[Row], dimensions: tuple[str, ...]) -> list[Row]:
             row[metric] = sum(values) if values or metric != "reasoning_tokens" else None
         total, cached = int(row["input_tokens"]), int(row["cached_tokens"])
         row.update(uncached_tokens=total - cached, hit_rate=cached / total if total else None)
-        row["model_source"] = "; ".join(sorted({str(call["model_source"]) for call in members}))
-        row["note"] = CLAUDE_NOTE if row["provider"] == "anthropic" else ""
+        row["note"] = CLAUDE_NOTE if row["provider"] in {"anthropic", "claude"} else ""
         rows.append(row)
     return rows
 
 
 def usage_tables(calls: list[Row], by_sample: bool) -> Tables:
     """Build the same stable groups for Markdown, CSV and JSON."""
-    groups = {
-        "provider": ("provider",),
-        "model": ("provider", "model"),
-        "node": ("provider", "node", "prompt_version"),
-    }
+    keys = ("provider", "model")
+    groups = {"provider": keys, "model": keys, "node": (*keys, "node", "prompt_version")}
     if by_sample:
         groups.update({f"sample_{name}": ("sample", *keys) for name, keys in list(groups.items())})
     return {name: aggregate(calls, keys) for name, keys in groups.items()}
@@ -185,10 +171,8 @@ def usage_tables(calls: list[Row], by_sample: bool) -> Tables:
 def compare_tables(before: Tables, after: Tables) -> Tables:
     """Union groups; delta is after minus before, percent is delta / before * 100."""
     tables: Tables = {}
-    for name, dimensions in (
-        ("provider", ("provider",)),
-        ("node", ("provider", "node", "prompt_version")),
-    ):
+    for name in ("provider", "node"):
+        dimensions = ("provider", "model", *(("node", "prompt_version") if name == "node" else ()))
         indexes = [
             {tuple(str(row[k]) for k in dimensions): row for row in data[name]}
             for data in (before, after)
@@ -198,14 +182,9 @@ def compare_tables(before: Tables, after: Tables) -> Tables:
             row: Row = dict(zip(dimensions, key, strict=True))
             for metric in ("uncached_tokens", "cached_tokens", "output_tokens"):
                 old, new = (int(index.get(key, {}).get(metric, 0)) for index in indexes)
-                row.update(
-                    {
-                        f"{metric}_before": old,
-                        f"{metric}_after": new,
-                        f"{metric}_delta": new - old,
-                        f"{metric}_percent": (new - old) / old * 100 if old else None,
-                    }
-                )
+                row[f"{metric}_before"], row[f"{metric}_after"] = old, new
+                row[f"{metric}_delta"] = new - old
+                row[f"{metric}_percent"] = (new - old) / old * 100 if old else None
             rows.append(row)
         tables[f"compare_{name}"] = rows
     return tables
@@ -252,7 +231,9 @@ def parse_models(value: str) -> dict[str, str]:
 def export_tables(tables: Tables, json_path: Path | None, csv_path: Path | None) -> None:
     """Write the shared tables and accounting metadata in both machine-readable formats."""
     if json_path:
-        payload = json.dumps({"policy": POLICY, "tables": tables}, ensure_ascii=False, indent=2)
+        payload = json.dumps(
+            {"policy": POLICY.strip(), "tables": tables}, ensure_ascii=False, indent=2
+        )
         json_path.write_text(payload + "\n", encoding="utf-8")
     if csv_path:
         keys = (key for rows in tables.values() for row in rows for key in row)
@@ -260,7 +241,7 @@ def export_tables(tables: Tables, json_path: Path | None, csv_path: Path | None)
         with csv_path.open("w", encoding="utf-8", newline="") as stream:
             writer = csv.DictWriter(stream, fieldnames=fields, lineterminator="\n")
             writer.writeheader()
-            writer.writerow({"section": "policy", "policy": POLICY})
+            writer.writerow({"section": "policy", "policy": POLICY.strip()})
             for name, rows in tables.items():
                 writer.writerows({"section": name, **row} for row in rows)
 

@@ -120,7 +120,15 @@ def test_a_provider_exception_becomes_an_attempt_failure_with_a_ledger_entry() -
     assert excinfo.value.call.payload["ok"] == "false"
     assert excinfo.value.__cause__ is timeout
     assert excinfo.value.source == "choose"
-    assert set(excinfo.value.call.payload) == {"ok", "prompt", "images", "started_at", "ended_at"}
+    assert set(excinfo.value.call.payload) == {
+        "provider",
+        "model",
+        "ok",
+        "prompt",
+        "images",
+        "started_at",
+        "ended_at",
+    }
     assert excinfo.value.call.payload["prompt"] == PROMPT
     assert excinfo.value.call.payload["images"] == []
 

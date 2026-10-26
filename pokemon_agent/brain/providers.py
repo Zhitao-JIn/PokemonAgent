@@ -90,6 +90,7 @@ class _OpenAICompatibleBase:
     这种"主 key 名 + 兜底名"的写法就是靠这个元组的顺序表达的）。
     """
 
+    PROVIDER_NAME: str = ""
     BASE_URL: str = ""
     API_KEY_ENVS: tuple[str, ...] = ()
 
@@ -168,6 +169,11 @@ class _OpenAICompatibleBase:
         )
         if not self._key:
             raise RuntimeError(f"{' / '.join(self.API_KEY_ENVS)} 均未设置")
+
+    @property
+    def model_name(self) -> str:
+        """返回构造时的型号；只读，不触发模型请求。"""
+        return self._model
 
     def _disable_thinking_payload(self) -> dict[str, object]:
         """关掉"思考模式"要合并进请求体的字段——**各家格式不同，子类必须覆盖**。
@@ -507,6 +513,7 @@ class QwenProvider(_MultimodalMixin, _OpenAICompatibleBase):
     历史上的 `qwen-plus`（纯文本）等都走这个类，换模型只改 `model=`。
     """
 
+    PROVIDER_NAME: str = "qwen"
     BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     API_KEY_ENVS = ("DASHSCOPE_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 
@@ -615,6 +622,7 @@ class ArkProvider(_MultimodalMixin, _OpenAICompatibleBase):
     调用方（verify/judge/未来的 plan 带图）传几张都不多花钱。
     """
 
+    PROVIDER_NAME: str = "ark"
     BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
     API_KEY_ENVS = ("ARK_API_KEY",)
 
@@ -692,6 +700,7 @@ class DeepSeekProvider(_MultimodalMixin, _OpenAICompatibleBase):
     是两笔账，收窄的只是这两者的**比**，不是判据本身。
     """
 
+    PROVIDER_NAME: str = "deepseek"
     BASE_URL = "https://api.deepseek.com"
     API_KEY_ENVS = ("DEEPSEEK_API_KEY",)
 
@@ -739,6 +748,7 @@ class ClaudeProvider(_MultimodalMixin, _OpenAICompatibleBase):
     cache_marker 指定动态文字起点，匹配不到或没有静态前缀时不设断点。
     """
 
+    PROVIDER_NAME: str = "claude"
     BASE_URL = "https://api.anthropic.com/v1"
     API_KEY_ENVS = ("ANTHROPIC_API_KEY",)
 
@@ -858,6 +868,7 @@ class ClaudeProvider(_MultimodalMixin, _OpenAICompatibleBase):
 class OpenAIProvider(_MultimodalMixin, _OpenAICompatibleBase):
     """OpenAI Chat Completions；推理和 token 上限使用原生字段。"""
 
+    PROVIDER_NAME: str = "openai"
     BASE_URL = "https://api.openai.com/v1"
     API_KEY_ENVS = ("OPENAI_API_KEY",)
 

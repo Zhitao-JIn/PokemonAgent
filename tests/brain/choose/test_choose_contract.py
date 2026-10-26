@@ -33,6 +33,8 @@ def test_the_ledger_carries_prompt_raw_and_token_counts_as_strings() -> None:
     call = result.calls[0]
     payload = call.payload
     assert set(payload) == {
+        "provider",
+        "model",
         "input_tokens",
         "output_tokens",
         "cached_tokens",

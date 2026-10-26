@@ -21,6 +21,8 @@ HISTORY = ["walked up", "pressed a"]
 IMAGE = "data:image/png;base64,AAAA"
 
 LEDGER_KEYS = {
+    "provider",
+    "model",
     "input_tokens",
     "output_tokens",
     "cached_tokens",
@@ -219,7 +221,15 @@ def test_a_provider_exception_becomes_an_attempt_failure_with_a_ledger_entry() -
     assert excinfo.value.call.error_kind == "ToolTimeout"
     assert "gateway down" in excinfo.value.call.error
     assert excinfo.value.__cause__ is timeout
-    assert set(excinfo.value.call.payload) == {"ok", "prompt", "images", "started_at", "ended_at"}
+    assert set(excinfo.value.call.payload) == {
+        "provider",
+        "model",
+        "ok",
+        "prompt",
+        "images",
+        "started_at",
+        "ended_at",
+    }
     assert excinfo.value.call.payload["ok"] == "false"
 
 

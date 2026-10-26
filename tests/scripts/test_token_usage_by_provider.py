@@ -72,7 +72,7 @@ def test_each_node_uses_its_configured_link(
 
     assert calls[0]["model"] == model
     assert calls[0]["provider"] == provider_for(model)
-    assert str(calls[0]["model_source"]).startswith("配置快照:")
+    assert "model_source" not in calls[0]
 
 
 def test_three_providers_sum_tokens_and_explain_claude(
@@ -96,7 +96,7 @@ def test_three_providers_sum_tokens_and_explain_claude(
     assert not violations
     assert "Claude: uncached includes cache_creation" in output
     assert "already including thinking/reasoning" in output
-    assert "NOT recorded per call" in output
+    assert "NOT recorded per call" not in output
 
 
 def test_failed_missing_and_zero_are_distinct(tmp_path: Path) -> None:
@@ -148,14 +148,13 @@ def test_snapshot_priority_and_nearest_ancestor_lookup(tmp_path: Path) -> None:
     baseline = tmp_path / "baseline_context.json"
     baseline.write_text(json.dumps({"models": {"text_model": "qwen-test"}}))
 
-    assert model_snapshot(path.parent.parent)[0] == {"text": "qwen-test"}
-    preferred = snapshot(tmp_path, text="deepseek-flash")
+    assert model_snapshot(path.parent.parent) == {"text": "qwen-test"}
+    snapshot(tmp_path, text="deepseek-flash")
     for root in [tmp_path, tmp_path / "runs", path.parent.parent]:
         calls, _ = read_calls([root], {})
         assert calls[0]["model"] == "deepseek-flash"
-        assert str(preferred.as_posix()) in str(calls[0]["model_source"])
     snapshot(path.parent.parent, text="claude-haiku-5-5")
-    assert model_snapshot(path.parent.parent)[0] == {"text": "claude-haiku-5-5"}
+    assert model_snapshot(path.parent.parent) == {"text": "claude-haiku-5-5"}
 
 
 @pytest.mark.parametrize("node", [None, "future.choose"])
@@ -180,7 +179,7 @@ def test_missing_snapshot_remains_unknown(tmp_path: Path) -> None:
     calls, _ = read_calls([tmp_path], {})
 
     assert calls[0]["model"] == calls[0]["provider"] == "unknown"
-    assert calls[0]["model_source"] == "unknown"
+    assert "model_source" not in calls[0]
 
 
 def test_manual_models_override_snapshot_through_cli(
@@ -192,7 +191,7 @@ def test_manual_models_override_snapshot_through_cli(
     main([str(tmp_path), "--models", "text=qwen-test,judge=x,verify=y,plan=z"])
 
     output = capsys.readouterr().out
-    assert "qwen-test" in output and "手工指定" in output
+    assert "qwen-test" in output
     assert "deepseek-flash" not in output
 
 
@@ -228,7 +227,7 @@ def test_exports_and_repeated_output_are_stable_and_discovery_is_selective(
 
     assert first == second
     report = json.loads(first[1])
-    assert "NOT recorded per call" in report["policy"]
+    assert "NOT recorded per call" not in report["policy"]
     assert sum(row["calls"] for row in report["tables"]["provider"]) == 2
     assert report["tables"]["sample_node"]
     with csv_path.open(encoding="utf-8", newline="") as stream:
@@ -267,3 +266,31 @@ def test_exports_cannot_write_into_input_directory(tmp_path: Path) -> None:
         main([str(tmp_path), "--json", str(tmp_path / "report.json")])
 
     assert not (tmp_path / "report.json").exists()
+
+
+@pytest.mark.parametrize("kind", ["none", "some", "all", "two_models"])
+def test_recorded_identity_wins_and_all_exports_omit_source_labels(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    root, report, exported = tmp_path / "input", tmp_path / "r.json", tmp_path / "r.csv"
+    snapshot(root, text="qwen-test")
+    for index in range(2):
+        recorded = kind in {"all", "two_models"} or (kind == "some" and index == 0)
+        model = "deepseek-other" if kind == "two_models" and index else "deepseek-flash"
+        identity = {"provider": "deepseek", "model": model} if recorded else {}
+        write_call(root, str(index), **identity)
+    arguments = [str(root), "--models", "text=deepseek-flash", "--compare", str(root)]
+
+    main([*arguments, "--json", str(report), "--csv", str(exported)])
+    output = capsys.readouterr().out
+    tables = json.loads(report.read_text(encoding="utf-8"))["tables"]
+
+    expected = {"deepseek-flash", "deepseek-other"} if kind == "two_models" else {"deepseek-flash"}
+    assert {row["model"] for row in tables["provider"]} == expected
+    assert all(
+        not {"source", "model_source"} & row.keys() for rows in tables.values() for row in rows
+    )
+    assert sum(row["calls"] for row in tables["provider"]) == 2
+    assert "NOT recorded per call" not in output
+    with exported.open(encoding="utf-8", newline="") as stream:
+        assert not {"source", "model_source"} & set(csv.DictReader(stream).fieldnames or [])
