@@ -1,6 +1,6 @@
 # spec —— 按步观察取代事件，摘要与索引重构
 
-> 版本 v1.2（2026-10-27 再修订：CP1 前置核对发现 `menu.py`、`shop.py` 有绕过 `run.finish()` 的出口，加入 CP1 允许范围并新增 D16）。v1.1（2026-10-27 修订：执行方前置核对发现 CP3 允许范围漏了摘要解析与输出模型；冻结 trace 不在 worktree 里，且旧 trace 没有 `observations`，D13 的核对方式改为转换器回放）。依据：`docs/step_observation/intent.md`（已确认）。基线：主线 `edc18ad319ce530f986f63744aff9fb73aa9e800`。
+> 版本 v1.3（2026-10-27 补充：CP1 验收后，D6 补一条 `settled=False` 的处理）。v1.2（2026-10-27 再修订：CP1 前置核对发现 `menu.py`、`shop.py` 有绕过 `run.finish()` 的出口，加入 CP1 允许范围并新增 D16）。v1.1（2026-10-27 修订：执行方前置核对发现 CP3 允许范围漏了摘要解析与输出模型；冻结 trace 不在 worktree 里，且旧 trace 没有 `observations`，D13 的核对方式改为转换器回放）。依据：`docs/step_observation/intent.md`（已确认）。基线：主线 `edc18ad319ce530f986f63744aff9fb73aa9e800`。
 > 凡"待执行方核实"的项，在对应检查点开头先核实，与此处不符就停下汇报。
 
 ## 一、决定表
@@ -12,7 +12,7 @@
 | D3 | 终态报告：MCP 服务端把 `observations` 以 `model_dump` 放进信封 `data` 顶层（`pokemon_agent/mcp_servers/world_server.py` 排在 `**result.data` 之后），客户端不改（扁平报告） | 与 665 的 `dialog` 同一条路径 |
 | D4 | 完整观察（`ActMemory.Observation`）新增 `ram: RamState | None`、`facing_object`、`settled: bool = True`；删除死字段 `overview`、`perceived`、`observation_flags`（含 `Observation.Facts` 里的 `overview` 与 `pokemon_agent/prompt/records.py` 里的同名字段；旧版本提示词文件不改） | `overview` 已无人赋值 |
 | D5 | `ActMemory` 新增 `observations: list[Observation.StepObs]`（`StepObservation` 的快照版，与 world 类型不互相引用，同现有 `Observation` 的做法）与 `outcome: ScriptOutcome | None`（`code`、`ok`、`summary`、`reason`，取自终态报告顶层，键动作为 `None`）；去掉 `result`、`dialog`。按键动作的 `observations` 为空列表 | 结局码不是观察差异推得出的 |
-| D6 | 差异函数（纯函数，不落盘、不进状态）：`changes(prev, next) -> list[Change]`，`Change` 为内部数据类（`kind`：`dialog_line` / `warp` / `money` / `bag` / `party` / `scene`；`step`、`place`、`object`、`text`）。判定：`dialog_text` 逐行与上一份不同才产出（同一行在别的文字之后再次出现算新的一条）；`map_id` 变 → `warp`；`ram.money` / `bag` / `party` 变 → 对应差值；`scene` / `overlay` 变 → `scene`。位置变化不产出。放在 `pokemon_agent/memory/changes.py` | 摘要事实块、评分、渲染共用 |
+| D6 | 差异函数（纯函数，不落盘、不进状态）：`changes(prev, next) -> list[Change]`，`Change` 为内部数据类（`kind`：`dialog_line` / `warp` / `money` / `bag` / `party` / `scene`；`step`、`place`、`object`、`text`）。判定：`dialog_text` 逐行与上一份不同才产出（同一行在别的文字之后再次出现算新的一条）；`map_id` 变 → `warp`；`ram.money` / `bag` / `party` 变 → 对应差值；`scene` / `overlay` 变 → `scene`。位置变化不产出。**`settled=False` 的观察不产出 `dialog_line`**（文字可能是半截，不当证据），其余字段（`warp`、钱、背包、队伍、场合）照常比较。放在 `pokemon_agent/memory/changes.py` | 摘要事实块、评分、渲染共用 |
 | D7 | `act` 写 `last_outcome`（脚本：结局，键：`None`）与 `last_observations`（脚本：紧凑观察序列，键：`[]`），取代 `last_result`、`last_event`；`last_report` 保留给 `detect_stall` 取 `code` / `ok`（若可改读 `last_outcome` 则一并改）。`result_line`、`describe_call` 删除 | "上一步发生了什么"改由结构化字段渲染 |
 | D8 | 提示词：`memory_records` 新增 v4（渲染 `outcome` 与 `observations` 经 `changes()` 得到的变化行，不再渲染 `result`、`dialog`），`decide_action` 新增版本（`last_result` 改为 `last_outcome` 与 `last_changes` 两个参数，措辞写在新版本 md 里）；旧版本文件不改；经 `registry.json` 切换激活版本 | 遵守"一个 md 一个版本" |
 | D9 | `TaskMemory`、`EpisodeMemory`、`RunMemory` 同形新增：`facts: list[Fact]`（`Fact` = `step`、`kind`、`place`、`object`、`text`，**机械**，task 层由 `changes()` 对本 task 的观察序列产生，episode 层 = 本局各 task 的 `facts` 按序拼接，run 层 = 各 episode 的拼接；**不截断**）、`pointers: list[str]`（子记录编号或步号区间，机械填）、`index: Index`（`headline`、`keys`、`evidence`，**LLM 产出**）。保留现有来源章与解读字段（`reason`、`summary`、`reusable_patterns`、`critical_decisions`、`failure_points` 等） | 事实全留，索引与解读同一次调用 |
