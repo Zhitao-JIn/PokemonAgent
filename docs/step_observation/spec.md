@@ -1,6 +1,6 @@
 # spec —— 按步观察取代事件，摘要与索引重构
 
-> 版本 v1.1（2026-10-27 修订：执行方前置核对发现 CP3 允许范围漏了摘要解析与输出模型；冻结 trace 不在 worktree 里，且旧 trace 没有 `observations`，D13 的核对方式改为转换器回放）。依据：`docs/step_observation/intent.md`（已确认）。基线：主线 `edc18ad319ce530f986f63744aff9fb73aa9e800`。
+> 版本 v1.2（2026-10-27 再修订：CP1 前置核对发现 `menu.py`、`shop.py` 有绕过 `run.finish()` 的出口，加入 CP1 允许范围并新增 D16）。v1.1（2026-10-27 修订：执行方前置核对发现 CP3 允许范围漏了摘要解析与输出模型；冻结 trace 不在 worktree 里，且旧 trace 没有 `observations`，D13 的核对方式改为转换器回放）。依据：`docs/step_observation/intent.md`（已确认）。基线：主线 `edc18ad319ce530f986f63744aff9fb73aa9e800`。
 > 凡"待执行方核实"的项，在对应检查点开头先核实，与此处不符就停下汇报。
 
 ## 一、决定表
@@ -20,6 +20,7 @@
 | D11 | 摘要提示词：三个摘要任务（task、episode、run）各出新版本，让 LLM 只写解读与索引，事实块由 harness 填；`index_line` 的渲染改读 `index` 字段（现有 `task_index`、`episode_index`、`run_index` 渲染函数换新版本）；旧版本不改 | LLM 不再转述事实 |
 | D12 | 删除对象记忆：`schemas/memory/datastore/object_memory.py`、`memory/` 里 `object_memory` 一族的存储与召回、`harness/task/perceive/store_object_semantic_memory/`、`harness/episode/perceive/retrieve_object_semantic_memory.py`、`harness/run/perceive/read_plan_context.py` 里的对象读取、`TraceKind` 里 `write_object_memory` / `read_object_memory`、`object_events` 提示词片段的接线、world 里"按键撞到什么就产出什么"的判定（`object_events.py` 只保留给 `facing_object` 用的 kind 查询）、`events[]` 与 `last_event`。旧记忆文件直接丢弃，不写兼容 | 对象记忆由观察序列取代 |
 | D13 | 评分器迁移：`evals/agent_short_goal_run/scorer/overshoot_scorer.py` 与 `scorer/rules/shop.py` 读 `write_object_memory` 的地方，改读 `act_call` 账里的 `observations` 与 `sense_frame` 里的观察（经 `changes()`）。**核对方式**：冻结 trace 在主仓库 `D:\Users\GummiGu\PycharmProjects\Pokemon_Agent\eval_results\`（被 git 忽略，worktree 里没有；**只读，不写、不删**），基线取 `full_eval_20261020_01`（含 `tasks/agent_short_goal_run*` 下各 run 的 `trace/` 与 `report.json` 的评分结果）。旧 trace 没有 `observations`，所以在**测试里**写一个转换器：把旧 `sense_frame` 的 `facts`（`landmarks`、`facing`、`dialog_text`、`scene`、`overlay`）与 `ram` 拼成 `StepObservation` 序列，喂给迁移后的规则，与旧规则（读 `write_object_memory`）在同一份 trace 上的结论逐条对照；转换器只放测试目录，不进生产。**允许的差异**：旧 trace 里脚本动作只有首尾两帧，由脚本内部中间帧才能看出的结论，新规则可能不同，逐条列出并说明，经设计侧认可；其余样本结论必须一致 | 旧 trace 没有新字段，只能用转换器近似回放 |
+| D16 | 所有在按键之后构造 `ScriptResult` 的脚本出口都必须带上 `observations`：`menu.py` 里按键之后直接构造 `ScriptResult` 的出口（约第 42、69、70 行）改走 `run.finish(...)`；`shop.py` 的买、卖包装层（约第 98–131、164–196 行）转发内层 `inner.observations`；`_enter_shop()` 的前置按键若无法在不改 `WorldConsole` 协议的前提下收进观察，在汇报里写明并记为已知限制，不强行改协议。没有按键就返回的早退出口（`rejected`、`unsupported_map` 等）不需要 | 否则这些脚本的中间过程仍然丢失 |
 | D14 | 预算语义不变：`max_steps` 仍数决策次数；观察条数单独统计，不占预算 | 现有样本预算不变 |
 | D15 | `state_schema_hash`：已无守卫测试，变化不挡路；若 checkpoint 相关测试因此失败，停下汇报 | 同 662–666 |
 
@@ -34,7 +35,7 @@
 
 ## 三、文件改动清单（允许范围）
 
-- CP1：`pokemon_agent/world/interface/domain/step_observation.py`（新）、`pokemon_agent/world/interface/domain/__init__.py` 与 `pokemon_agent/world/__init__.py`（仅导出）、`pokemon_agent/world/scripts/engine.py`、`control_flow.py`、`console_adapter.py`、`interface.py`（仅为读取所需）、`pokemon_agent/mcp_servers/world_server.py`（仅 D3 一处）、`pokemon_agent/direct/trace/render.py`、`content.py`、对应测试、`CHANGELOG.md`。
+- CP1：`pokemon_agent/world/interface/domain/step_observation.py`（新）、`pokemon_agent/world/interface/domain/__init__.py` 与 `pokemon_agent/world/__init__.py`（仅导出）、`pokemon_agent/world/scripts/engine.py`、`control_flow.py`、`console_adapter.py`、`interface.py`（仅为读取所需）、`pokemon_agent/world/scripts/menu.py`、`shop.py`（仅 D16）、`pokemon_agent/mcp_servers/world_server.py`（仅 D3 一处）、`pokemon_agent/direct/trace/render.py`、`content.py`、对应测试、`CHANGELOG.md`。
 - CP2：`pokemon_agent/schemas/memory/datastore/act_memory.py`、`pokemon_agent/memory/changes.py`（新）、`pokemon_agent/harness/task/act/act.py`、`task_state.py`、`harness/task/perceive/store_step_episode_memory.py`、`detect_stall.py`、`harness/task/script_report.py`（删）、`harness/task/plan_task/__init__.py`、`harness/task/review_and_judge/__init__.py`（仅取字段）、`pokemon_agent/prompt/records.py`、`pokemon_agent/prompt/tasks/fragments/memory_records/v4/`（新）、`pokemon_agent/prompt/tasks/decide_action/` 新版本目录、`pokemon_agent/prompt/registry.json`、`brain` 侧 reflect 的签名（若必须改，仅限去掉 `result` 参数）、对应测试、`CHANGELOG.md`。
 - CP3：`pokemon_agent/schemas/memory/datastore/task_memory.py`、`episode_memory.py`、`run_memory.py`、三个摘要节点（`harness/task/.../summarize_task`、`harness/episode/episode_done/summarize_episode.py`、`harness/run/.../summarize_run`，路径先核实）、`pokemon_agent/brain/interface/domain/episode_summary.py`（episode 与 task 两级共用的输出模型）、`run_summary.py`、`results.py`（仅在必须时）、`pokemon_agent/brain/brain.py`（摘要解析器 `_parse_summary` 与 run 摘要的解析，需保留 `index`）、`pokemon_agent/brain/interface/brain_port.py`（仅在签名必须变时）、`pokemon_agent/direct/brain_tool.py` 的 Summarizer 相关、三个摘要提示词任务的新版本目录、`prompt/registry.json`、对应测试、`CHANGELOG.md`。
 - CP4：D12 清单里的文件、`evals/agent_short_goal_run/scorer/overshoot_scorer.py`、`scorer/rules/shop.py`、对应测试、`CHANGELOG.md`。
