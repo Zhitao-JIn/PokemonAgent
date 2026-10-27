@@ -1,0 +1,69 @@
+# spec —— 按步观察取代事件，摘要与索引重构
+
+> 版本 v1。依据：`docs/step_observation/intent.md`（已确认）。基线：主线 `edc18ad319ce530f986f63744aff9fb73aa9e800`。
+> 凡"待执行方核实"的项，在对应检查点开头先核实，与此处不符就停下汇报。
+
+## 一、决定表
+
+| 编号 | 决定 | 取舍 |
+|---|---|---|
+| D1 | 新增紧凑观察模型 `StepObservation`（`pokemon_agent/world/interface/domain/step_observation.py`，经 `pokemon_agent.world` 导出）：`step`、`place`、`facing`、`scene`、`overlay`、`dialog_text`、`options`、`cursor`、`screen`、`ram: RamState | None`、`facing_object: FacingObject | None`、`battle_status: BattleStatus | None`（仅战斗中）、`settled: bool = True`。`RamState`（新）= `in_battle`、`money`、`bag`、`party`（种类、等级、HP、最大 HP、状态），由现有 `RamReadout` 读数构造；`FacingObject` = `kind`、`place`（无则整体为 `None`）。不带 `landmarks`、`cells`、`neighbor_cells`、`terrain_visible`、`option_grid`、`cursor_cell`、`option_annotations` | 脚本内每键一份，体积可控 |
+| D2 | 脚本每按一键，在现有稳定判定（`settle_screen`，连续 6 次轮询相同，不加强制等待）之后读一份 `StepObservation`，追加进 `ScriptRun.observations`；稳定判定超时（返回时 `waited >= timeout_frames`）则该份 `settled=False`。`ScriptResult` 新增顶层 `observations: list[StepObservation]`，`finish` 填入 | 首尾之外的中间过程可见 |
+| D3 | 终态报告：MCP 服务端把 `observations` 以 `model_dump` 放进信封 `data` 顶层（`pokemon_agent/mcp_servers/world_server.py` 排在 `**result.data` 之后），客户端不改（扁平报告） | 与 665 的 `dialog` 同一条路径 |
+| D4 | 完整观察（`ActMemory.Observation`）新增 `ram: RamState | None`、`facing_object`、`settled: bool = True`；删除死字段 `overview`、`perceived`、`observation_flags`（含 `Observation.Facts` 里的 `overview` 与 `pokemon_agent/prompt/records.py` 里的同名字段；旧版本提示词文件不改） | `overview` 已无人赋值 |
+| D5 | `ActMemory` 新增 `observations: list[Observation.StepObs]`（`StepObservation` 的快照版，与 world 类型不互相引用，同现有 `Observation` 的做法）与 `outcome: ScriptOutcome | None`（`code`、`ok`、`summary`、`reason`，取自终态报告顶层，键动作为 `None`）；去掉 `result`、`dialog`。按键动作的 `observations` 为空列表 | 结局码不是观察差异推得出的 |
+| D6 | 差异函数（纯函数，不落盘、不进状态）：`changes(prev, next) -> list[Change]`，`Change` 为内部数据类（`kind`：`dialog_line` / `warp` / `money` / `bag` / `party` / `scene`；`step`、`place`、`object`、`text`）。判定：`dialog_text` 逐行与上一份不同才产出（同一行在别的文字之后再次出现算新的一条）；`map_id` 变 → `warp`；`ram.money` / `bag` / `party` 变 → 对应差值；`scene` / `overlay` 变 → `scene`。位置变化不产出。放在 `pokemon_agent/memory/changes.py` | 摘要事实块、评分、渲染共用 |
+| D7 | `act` 写 `last_outcome`（脚本：结局，键：`None`）与 `last_observations`（脚本：紧凑观察序列，键：`[]`），取代 `last_result`、`last_event`；`last_report` 保留给 `detect_stall` 取 `code` / `ok`（若可改读 `last_outcome` 则一并改）。`result_line`、`describe_call` 删除 | "上一步发生了什么"改由结构化字段渲染 |
+| D8 | 提示词：`memory_records` 新增 v4（渲染 `outcome` 与 `observations` 经 `changes()` 得到的变化行，不再渲染 `result`、`dialog`），`decide_action` 新增版本（`last_result` 改为 `last_outcome` 与 `last_changes` 两个参数，措辞写在新版本 md 里）；旧版本文件不改；经 `registry.json` 切换激活版本 | 遵守"一个 md 一个版本" |
+| D9 | `TaskMemory`、`EpisodeMemory`、`RunMemory` 同形新增：`facts: list[Fact]`（`Fact` = `step`、`kind`、`place`、`object`、`text`，**机械**，task 层由 `changes()` 对本 task 的观察序列产生，episode 层 = 本局各 task 的 `facts` 按序拼接，run 层 = 各 episode 的拼接；**不截断**）、`pointers: list[str]`（子记录编号或步号区间，机械填）、`index: Index`（`headline`、`keys`、`evidence`，**LLM 产出**）。保留现有来源章与解读字段（`reason`、`summary`、`reusable_patterns`、`critical_decisions`、`failure_points` 等） | 事实全留，索引与解读同一次调用 |
+| D10 | 索引由三个摘要节点（task / episode / run）的现有 LLM 调用一并产出：输出模型新增 `index`。两条机械检查，不过就按现有契约失败路径重试：`keys` 每一项必须在 `facts` 的文本或观察的 `dialog_text` / `screen` 里字面出现；`headline` 里的成败词必须与来源章的 `termination` 一致。渲染成一行（`index_line`）：`[成败] headline（keys：…；含：evidence）`，成败与编号取自来源章 | 防止 LLM 写错或编造关键词 |
+| D11 | 摘要提示词：三个摘要任务（task、episode、run）各出新版本，让 LLM 只写解读与索引，事实块由 harness 填；`index_line` 的渲染改读 `index` 字段（现有 `task_index`、`episode_index`、`run_index` 渲染函数换新版本）；旧版本不改 | LLM 不再转述事实 |
+| D12 | 删除对象记忆：`schemas/memory/datastore/object_memory.py`、`memory/` 里 `object_memory` 一族的存储与召回、`harness/task/perceive/store_object_semantic_memory/`、`harness/episode/perceive/retrieve_object_semantic_memory.py`、`harness/run/perceive/read_plan_context.py` 里的对象读取、`TraceKind` 里 `write_object_memory` / `read_object_memory`、`object_events` 提示词片段的接线、world 里"按键撞到什么就产出什么"的判定（`object_events.py` 只保留给 `facing_object` 用的 kind 查询）、`events[]` 与 `last_event`。旧记忆文件直接丢弃，不写兼容 | 对象记忆由观察序列取代 |
+| D13 | 评分器迁移：`evals/agent_short_goal_run/scorer/overshoot_scorer.py` 与 `scorer/rules/shop.py` 读 `write_object_memory` 的地方，改读 `act_call` 账里的 `observations`（经 `changes()`）与 `ActMemory.observations`；迁移后现有 20 条短期样本的判据结论不变（用冻结 trace 回放核对） | 判据结论守恒 |
+| D14 | 预算语义不变：`max_steps` 仍数决策次数；观察条数单独统计，不占预算 | 现有样本预算不变 |
+| D15 | `state_schema_hash`：已无守卫测试，变化不挡路；若 checkpoint 相关测试因此失败，停下汇报 | 同 662–666 |
+
+## 二、检查点
+
+| 检查点 | 内容 | 验收核对点 |
+|---|---|---|
+| CP1 world 读取与账 | D1–D3，外加 `act_call` 账的 `observations`（`pokemon_agent/direct/trace/render.py`、`content.py`，同 665 的 `dialog` 做法）；**纯增量**：不删 `events`、`dialog`、`result`；测试 | 控制台替身跑一段脚本，`ScriptResult.observations` 条数等于内部按键数，每份带 `ram`、`facing_object`、`settled`；超时那一键 `settled=False`；经 `world_server` 信封与客户端重建后报告含 `observations`；`act_call` 账含它且 `parse()` 整局回环通过；现有测试全绿 |
+| CP2 记忆与渲染 | D4–D8：`Observation` 字段增删、`ActMemory` 换字段、差异函数、`act` 与 `store_step_episode_memory` 与 `detect_stall` 改读新字段、删 `result_line` / `describe_call`、提示词 v4 与 `decide_action` 新版本及激活 | `changes()` 的单测覆盖每种 `kind` 与"同行再次出现算新"；脚本一步的 `ActMemory` 含 `observations` 与 `outcome`，无 `result`、`dialog`；`last_outcome` / `last_changes` 渲染正确；旧版本提示词文件无改动；registry 激活新版本；全量测试通过 |
+| CP3 摘要与索引 | D9–D11：三个摘要模型与节点、`facts` 机械摘取、`pointers`、`index` 的产出与两条机械检查、三个摘要提示词新版本、`index_line` 渲染 | 事实块逐条来自观察（用固定观察序列断言）且不截断；`keys` 不在事实或观察里时重试；`headline` 成败与来源章不一致时重试；旧版本提示词文件无改动；三层 `index_line` 渲染正确 |
+| CP4 删对象记忆与评分器迁移 | D12–D13：删除清单、`events[]`、评分器迁移与回放核对 | 全仓无 `object_memory` / `store_object_semantic_memory` / `retrieve_object_semantic_memory` / `write_object_memory` / `events[]` / `result_line`（检索核对）；评分器迁移后冻结 trace 回放，现有 20 条判据结论不变；全量测试通过 |
+
+## 三、文件改动清单（允许范围）
+
+- CP1：`pokemon_agent/world/interface/domain/step_observation.py`（新）、`pokemon_agent/world/interface/domain/__init__.py` 与 `pokemon_agent/world/__init__.py`（仅导出）、`pokemon_agent/world/scripts/engine.py`、`control_flow.py`、`console_adapter.py`、`interface.py`（仅为读取所需）、`pokemon_agent/mcp_servers/world_server.py`（仅 D3 一处）、`pokemon_agent/direct/trace/render.py`、`content.py`、对应测试、`CHANGELOG.md`。
+- CP2：`pokemon_agent/schemas/memory/datastore/act_memory.py`、`pokemon_agent/memory/changes.py`（新）、`pokemon_agent/harness/task/act/act.py`、`task_state.py`、`harness/task/perceive/store_step_episode_memory.py`、`detect_stall.py`、`harness/task/script_report.py`（删）、`harness/task/plan_task/__init__.py`、`harness/task/review_and_judge/__init__.py`（仅取字段）、`pokemon_agent/prompt/records.py`、`pokemon_agent/prompt/tasks/fragments/memory_records/v4/`（新）、`pokemon_agent/prompt/tasks/decide_action/` 新版本目录、`pokemon_agent/prompt/registry.json`、`brain` 侧 reflect 的签名（若必须改，仅限去掉 `result` 参数）、对应测试、`CHANGELOG.md`。
+- CP3：`pokemon_agent/schemas/memory/datastore/task_memory.py`、`episode_memory.py`、`run_memory.py`、三个摘要节点（`harness/task/.../summarize_task`、`harness/episode/episode_done/summarize_episode.py`、`harness/run/.../summarize_run`，路径先核实）、`pokemon_agent/direct/brain_tool.py` 的 Summarizer 相关、三个摘要提示词任务的新版本目录、`prompt/registry.json`、对应测试、`CHANGELOG.md`。
+- CP4：D12 清单里的文件、`evals/agent_short_goal_run/scorer/overshoot_scorer.py`、`scorer/rules/shop.py`、对应测试、`CHANGELOG.md`。
+- 若某文件不存在或函数名不同，停下汇报，不自行改范围。
+
+## 四、待执行方先核实的事项
+
+1. 脚本每键之后读 `RamReadout` 与 `facing_object` 的最短路径：`console_adapter` 能否直接调现有读取函数，是否需要给 `WorldConsole` 协议加方法（只许加读方法）。
+2. 三个摘要节点的实际文件路径与 `Summarizer` 的输出模型位置；LLM 输出新增 `index` 的最小改法。
+3. 读侧对 `ActMemory`、三个摘要模型的字段假设：检索 `evals/`、`pokemon_agent/reviewer*`、`pokemon_agent/trace`、蒸馏与 `summarize`；是否严格校验未知字段。
+4. `detect_stall` 现在如何用 `result_line` 做停摆签名，换成 `outcome` 后签名是否等价。
+5. 评分器迁移所需的冻结 trace 样本位置（`eval_results/` 下），及现有 20 条判据结论的基准。
+6. `state_schema_hash` 相关测试：是否有除 662–666 已删守卫外的依赖。
+
+## 五、测试清单
+
+- CP1：见验收核对点；另加：无按键的脚本 `observations == []`；`facing_object` 在面朝人、门、招牌、空地时的取值。
+- CP2：见验收核对点；另加：旧记忆文件（缺 `observations`、`outcome`）可读，按默认值；`overview` 等死字段在 schema 与 `records.py` 中不存在。
+- CP3：见验收核对点；另加：episode 层 `facts` 恰是各 task `facts` 按序拼接。
+- CP4：见验收核对点。
+
+## 六、验证方式
+
+不调用真实模型，不启动模拟器，全部用手写替身、固定观察序列与冻结 trace。
+
+## 七、停止条件
+
+遇到下列任一情形停下汇报，不要重试、不要绕过：改动超出允许文件范围；起点不是全绿（除已知沙箱失败 `tests/evals/test_eval_service_wiring.py::test_world_case_caller_closes_world_service_after_each_worker_outcome` 外）；读侧严格校验未知字段（核实项 3）；`WorldConsole` 协议需要加读方法以外的改动；评分器迁移后任一现有样本判据结论改变；`state_schema_hash` 变化导致 checkpoint 相关测试需要改允许范围外的文件；需要执行被禁止的 git 命令；任何真实模型调用。
+
+## 八、非目标
+
+不改等待与稳定判定；不做渐进展开的检索 agent；不做摘取上限与折叠；不改机械判据本身；不改预算语义；文档（AGENTS.md、CLAUDE.md、`docs/`）同步另案处理。
