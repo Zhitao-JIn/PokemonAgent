@@ -1,4 +1,8 @@
-"""L0 原子采纳规划，保存表与派发顺序；无待办交 judge 复判。"""
+"""L0 原子采纳规划，保存表与派发顺序；无待办交 judge 复判。
+
+`loop.freeze_run_plan` 打开时整段规划退场（`_frozen`）：不调 planner、不问人审、不写规划账、
+不占规划轮数，只按调用方给的表逐条派发；任一条判负即 `FROZEN_ITEM_FAILED` 收尾。
+"""
 
 from typing import Any
 
@@ -15,7 +19,12 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.harness.domain import GoalEntry, ReviewMark, Termination
+from pokemon_agent.schemas.harness.domain import (
+    EntryStatus,
+    GoalEntry,
+    ReviewMark,
+    Termination,
+)
 from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...budget_nodes import stopped_updates
@@ -37,6 +46,8 @@ class PlanDraft(BaseModel):
 def plan_run(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
     """采纳整版后返回新表；无待办是正常调度状态。"""
     deps = runtime.context
+    if deps.config.loop.freeze_run_plan:
+        return _frozen(state, deps)
     meta = {
         "source": "plan_run",
         "episode_id": state.run_id,
@@ -75,6 +86,26 @@ def plan_run(state: RunState, runtime: Runtime[RunRuntime]) -> dict[str, Any]:
         "planning_rounds_used": draft.used,
         "judge_trigger": "no_pending" if not order else "normal",
     }
+
+
+def _frozen(state: RunState, deps: RunRuntime) -> dict[str, Any]:
+    """冻结的目标表：只按表序派发，不调 planner、不问人审、不写规划账、不占规划轮数。
+
+    前置条件：目标表非空（`new_run` 在开关打开时已断言）。
+    后置条件：只可能是三种增量之一——机械收尾（任一条判负 / 表已无待办）或"有 PENDING，
+    交给 `act`"；本函数从不改表，冻结层没有修订、重开与重试。
+    """
+    assert state.goals, "freeze_run_plan needs a non-empty goal table"
+    if any(_is_judged_failed(entry) for entry in state.goals):
+        return stopped_updates(state, deps, "run", "plan_run", Termination.FROZEN_ITEM_FAILED)
+    if not any(entry.status is EntryStatus.PENDING for entry in state.goals):
+        return stopped_updates(state, deps, "run", "plan_run", Termination.PLANNING_EXHAUSTED)
+    return {"judge_trigger": "normal"}
+
+
+def _is_judged_failed(entry: GoalEntry) -> bool:
+    """这一条是不是已经判负（冻结表里出现即为样本失败）。"""
+    return entry.status in (EntryStatus.FAILED, EntryStatus.ABANDONED)
 
 
 def _request(

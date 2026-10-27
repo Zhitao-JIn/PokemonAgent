@@ -13,7 +13,12 @@ class ActionLimitsConfig(Section):
 
 
 class LoopConfig(Section):
-    """三层停摆上限、规划建议量，以及 run / episode 图的 superstep 闸门（大数，不是预算）。"""
+    """三层停摆上限、规划建议量，以及 run / episode 图的 superstep 闸门（大数，不是预算）。
+
+    两个 `freeze_*` 是**评测专用**的规划层冻结开关（默认关）：关掉规划层的那一层不再调用
+    模型、不写规划账，只按事先给定的表逐条派发（语义见 `harness/run/plan_run` 与
+    `harness/episode/plan_episode`）。
+    """
 
     act_stall_limit: int = Field(gt=0)
     episode_stall_limit: int = Field(gt=0)
@@ -22,6 +27,8 @@ class LoopConfig(Section):
     plan_max_new_goals: int = Field(gt=0)
     episode_recursion_limit: int = Field(gt=0)
     run_recursion_limit: int = Field(gt=0)
+    freeze_run_plan: bool
+    freeze_episode_plan: bool
 
 
 class BudgetConfig(Section):

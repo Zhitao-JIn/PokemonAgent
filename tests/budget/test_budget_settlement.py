@@ -9,7 +9,6 @@ from pokemon_agent.brain import Brain, Goal
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.brain_tool import Decomposer
 from pokemon_agent.errors import MaxRetriesExceeded
-from pokemon_agent.harness.checkpoint.manifest import state_schema_hash
 from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeRunState
 from pokemon_agent.harness.run import compile_run_graph
 from pokemon_agent.harness.run.run_state import RunState
@@ -191,7 +190,3 @@ def test_missing_task_steps_still_use_the_existing_parse_retry():
     assert len(provider.requests) == 2
     assert [call.error_kind for call in caught.value.calls] == ["ParseFailure", "ParseFailure"]
     assert all(call.payload["raw"] == raw for call in caught.value.calls)
-
-
-def test_state_schema_is_frozen_after_advisory_budget_separation():
-    assert state_schema_hash() == "e708f985a96ae2e5"

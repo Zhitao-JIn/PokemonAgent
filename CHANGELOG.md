@@ -17,6 +17,35 @@
 **取舍**：`DialogCache` 保持"一次 `ingest` 一段"的旧行为，`advance_dialog` 的 `data["dialog"]` 一字不动，只在统一出口把段摊平成行——同名冲突靠服务端的覆盖顺序解决，改 `data["dialog"]` 的形状会牵连现有读方。不截断、不改等待与稳定检测、不改 `events[]` 与对象记忆、不改按键模式；旧记忆缺字段读作空列表，不写兼容逻辑。`result` 仍只有结局码：扁平报告里的 `summary` 在顶层，`result_line` 只从 `data` 取（改动前就是这样，本次不动）。
 
 **影响面**：生产代码七处（`world/scripts/control_flow.py`、`world/scripts/engine.py`、`mcp_servers/world_server.py`、`direct/trace/render.py`、`direct/trace/content.py`、`schemas/memory/datastore/act_memory.py`、`harness/task/perceive/store_step_episode_memory.py`），测试五处。`ActMemory` 不进 `state_schema_hash`（只覆盖三张状态模型），旧存档与旧记忆可读。相关目录 pytest 1136 passed、0 failed；`ruff check` 与 `ruff format --check` 通过。未调用真实模型、未启动模拟器。
+## 2026-10-27（664）—— 评测样本按档位冻结规划层：long 不变，mid 冻结目标表，short 再冻结 task 表
+
+**改了什么**：`EvalSample` 增 `tier`（`short` / `mid` / `long`，默认 `long`）与 `goals: list[SampleGoal]`（默认空）；新增 `SampleGoal`（`goal` / `success_criteria` / `max_steps` / `tasks`）与 `SampleTask`（`goal` / `success_criteria` / `max_steps`）。`loader.validate_tiers` 在加载期检查三档与内容是否自洽（mid 必须非空 goals 且各条不带 tasks；short 恰一条 goals 且 tasks 非空；long 不带 goals），不合规抛 `DatasetError`，`check()` / `load()` 都走它。`one.py` 拆出两个纯函数：`loop_overrides`（档位 → 样本级 `loop` 覆盖）与 `run_arguments`（档位 → 目标表 + `frozen_tasks`）。long 仍是空目标表 + `frozen_tasks=None` + 不覆盖配置；mid 把 goals 翻成目标表并在 overlay 里开 `freeze_run_plan`；short 只给一条目标、把它的 tasks 经 `frozen_tasks` 传入并同时开两个开关。目标 / task 身份按 D10 编成 `<sample_id>-g<n>` 与 `<sample_id>-g<n>-t<m>`。新增两个测试文件（加载期契约八条、组装三条），五个既有替身 harness 的 `run` 签名补 `frozen_tasks`。
+
+**为什么这么改**：三档评测要各自钉死一层规划，样本契约里就得能表达"这一层已经定了"。档位与内容对不上时（mid 带 task 表、short 没有 task 表、long 带目标表）只会在运行期表现成"开关开了没东西可派"，或悄悄退回自由规划——放在加载口上才能拦住整批。
+
+**取舍**：`state_schema_hash` 不变（评测样本不进状态，实测仍为 `4e3a8def0700d123`）；`loop` 覆盖只塞进 `one.py` 的样本 overlay 字典，没有改 `evals/common/overlay.py`；long 档连 `frozen_tasks` 关键字都传 `None`，调用形状与改动前一致；编号从 1 起、按样本 id 派生，不改用样本自带的标识。加载期只校三档的一致性，不为样本另造 `task_id`（那是 `one.py` 的职责）。
+
+**影响面**：三个生产文件 + 七个测试文件（含新增两个）；全量 pytest 3076 用例、3051 passed / 25 skipped / 0 failed（junit 计数，242.954s；3 条 `test_eval_service_wiring` 属沙箱 safe-delete 守卫的已知基线失败，按 spec §5.5 以 `--deselect` 排除）；`ruff check` 与 `ruff format --check`（1106 files）全绿。未调用真实模型、未启动模拟器。
+
+## 2026-10-27（663）—— 评测可冻结 episode 层拆解：样本给定 task 表，判负即收尾
+
+**改了什么**：`GoalEntry` 增 `frozen_tasks: list[Task]`（默认空）、`EpisodeInput` 增 `tasks: list[Task]`（默认空），run 的 `dispatch` 把所选条目的表带进这一局；`begin_episode` 在 `loop.freeze_episode_plan` 打开时按表序装初始任务表（每条 `TaskEntry`、`entry_id` 取样本 `task_id`、`round=1`、`PENDING`）并自己给出 `execution_order`，表空或同局 `task_id` 重复即断言失败；`plan_episode` 冻结时整段退场（不调 decomposer、不问人审、不写 `decompose_call` / `decompose_verdict`、不占 `decompositions_used`），任一条 `FAILED` / `ABANDONED` 以 `FROZEN_ITEM_FAILED` 收尾、已无 `PENDING` 时沿用 `DECOMPOSITIONS_EXHAUSTED`。入口侧 `new_run` / `RunHarness.run` 增关键字 `frozen_tasks: dict[str, list[Task]] | None`（键 = 目标条目的 `task_id`），`initial_plan` 把它挂到对应条目、键不在目标表里即断言失败。新增 episode 层七条与入口四条测试，`test_run_goal_split` 的 episode 桩补上 `config`（`begin_episode` 现在读开关）。
+
+**为什么这么改**：短期档考的是 choose 与 task 记忆，拆解层必须由样本钉死——本层不许改写表、失败即样本失败，否则拆解的随机性会污染下层观测；task 表也只能经 `harness.run` 一个口进来，所以要有一条从目标条目到 `EpisodeInput` 的合法通道。
+
+**取舍**：`tasks` 只在开关打开时被使用，关着时随 `EpisodeInput` 存着但不参与规划（用例钉死"关着就忽略"）；`frozen_tasks` 挂在 `GoalEntry` 上随 `RunState` 进 checkpoint，`state_schema_hash` 再次变化（`a78572c67ad5d4e9` → `4e3a8def0700d123`），守卫常量只更新值。冻结的是拆解不是判停，本局仍问 judge。`begin_episode` 从此读 `deps.config`——生产 `EpisodeRuntime` 本就有这个字段，只有桩成 `SimpleNamespace` 的测试需要补上。
+
+**影响面**：七个生产文件 + 四个测试文件（含新增两个）；全量 pytest 3065 用例、3040 passed / 25 skipped / 0 failed（junit 计数，246.774s；3 条 `test_eval_service_wiring` 属沙箱 safe-delete 守卫的已知基线失败，按 spec §5.5 以 `--deselect` 排除）；`ruff check` 与 `ruff format --check`（1104 files）全绿。未调用真实模型、未启动模拟器。
+
+## 2026-10-27（662）—— 评测可冻结 run 层规划：开关关时行为不变，冻结时按给定目标表派发、判负即收尾
+
+**改了什么**：`LoopConfig`（`settings/schema/loop.py`）与 `settings/default.json` 增两个默认关闭的开关 `freeze_run_plan` / `freeze_episode_plan`（本条只接 run 层，episode 分支在 663）；`Termination` 增 `frozen_item_failed`；`plan_run` 入口在 `freeze_run_plan` 打开时整段退场——不调 planner、不问 reviewer、不写 `plan_call` / `plan_verdict`、不占 `planning_rounds_used`：任一条目 `FAILED` / `ABANDONED` 立即以 `FROZEN_ITEM_FAILED` 收尾且不再派后面的条目，表里已无 `PENDING` 时沿用 `PLANNING_EXHAUSTED`；`new_run` 在开关打开而初始目标表为空时断言失败。测试侧新增 `tests/harness/run/test_frozen_run_plan.py` 六条（表序即派发序、planner 零调用且无规划账、首条判负后第二条不派发、表耗尽收尾、空表断言、开关关的对照组），配置侧加两条默认值与覆盖用例，`tests/_harness_fixtures/node_io.py` 的终止类别镜像补一行。
+
+**为什么这么改**：三档评测任务各要冻结一层规划，否则上层的随机拆法会污染下层成败、episode 边界也无法预先钉死。冻结的语义是"这张表本层不许改"：失败不重开、不重试、不续派，样本就此判负；判停仍归各层 `review_and_judge`——冻结的是规划，不是判定。
+
+**取舍**：冻结层不写规划账，读侧（`evals/agent_short_goal_run/scorer`、reviewer、`pokemon_agent/trace`、`summarize_run`）已逐个核对不依赖 `PLAN_CALL` / `PLAN_VERDICT` 的存在，只有 trace 的 parse/render 按 kind 建映射。`Termination` 多一个值会改 `state_schema_hash`（`1a9f74c1c2370647` → `a78572c67ad5d4e9`）：评测起点是原始 `.state`，不依赖存档结构，故只更新守卫常量那一行、没有为凑常量改别的东西。冻结层不调 planner 也就没有"重开"入口，表一旦判负就停在失败上——这是评测要的语义，不是通用运行时的默认（开关默认关）。
+
+**影响面**：五个生产文件 + 四个测试文件（含新增一个）；全量 pytest 3054 用例、3029 passed / 25 skipped / 0 failed（junit 计数，272.916s；3 条 `test_eval_service_wiring` 属沙箱 safe-delete 守卫的已知基线失败，按 spec §5.5 以 `--deselect` 排除）；定向 `tests/harness/run` + `tests/settings` 97 passed；`ruff check` 与 `ruff format --check`（1102 files）全绿。未调用真实模型、未启动模拟器。
 
 ## 2026-10-26（658）—— 只读统计 prompt 块构成、token 回归估计与共同前缀断点
 

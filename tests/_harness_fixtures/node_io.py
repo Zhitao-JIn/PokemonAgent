@@ -92,6 +92,7 @@ TERMINATIONS: frozenset[str] = frozenset(
         Termination.ACTIONS_EXHAUSTED.value,
         Termination.TASKS_EXHAUSTED.value,
         Termination.DECOMPOSITIONS_EXHAUSTED.value,
+        Termination.FROZEN_ITEM_FAILED.value,
         Termination.INTERRUPTED.value,
         Termination.ERROR.value,
     }

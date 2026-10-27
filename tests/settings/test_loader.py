@@ -41,6 +41,22 @@ def test_overlay_changes_only_the_keys_it_names(tmp_path: Path) -> None:
     assert config.models == base.models
 
 
+def test_the_plan_freezing_switches_default_to_off() -> None:
+    """两个冻结开关是评测专用覆盖项：保底配置里必须关着，缺一个都算配置不完整。"""
+    loop = load_config().config.loop
+
+    assert (loop.freeze_run_plan, loop.freeze_episode_plan) == (False, False)
+
+
+def test_an_overlay_can_freeze_one_planning_layer(tmp_path: Path) -> None:
+    """样本级覆盖只动它点名的那一层，另一层保持不冻结。"""
+    overlay = write(tmp_path, "freeze.json", {"loop": {"freeze_run_plan": True}})
+
+    loop = load_config(overlay).config.loop
+
+    assert loop.freeze_run_plan and not loop.freeze_episode_plan
+
+
 def test_later_overlays_win_and_lists_are_replaced_not_merged(tmp_path: Path) -> None:
     first = write(tmp_path, "a.json", {"review": {"layers": ["run", "episode", "task"]}})
     second = write(

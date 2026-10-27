@@ -1,4 +1,9 @@
-"""L1 原子采纳任务表规划；已有待办仍可修订，无待办交 judge。"""
+"""L1 原子采纳任务表规划；已有待办仍可修订，无待办交 judge。
+
+`loop.freeze_episode_plan` 打开时整段拆解退场（`_frozen`）：不调 decomposer、不问人审、
+不写拆解账、不占拆解轮数，只按 `begin_episode` 装好的表逐条派发；任一条判负即
+`FROZEN_ITEM_FAILED` 收尾，表跑光则沿用 `DECOMPOSITIONS_EXHAUSTED`。
+"""
 
 from __future__ import annotations
 
@@ -17,7 +22,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
-from pokemon_agent.schemas.harness.domain import ReviewMark, TaskEntry, Termination
+from pokemon_agent.schemas.harness.domain import EntryStatus, ReviewMark, TaskEntry, Termination
 from pokemon_agent.schemas.harness.domain.review_context import ReviewContext
 
 from ...budget_nodes import stopped_updates
@@ -44,6 +49,8 @@ class Elicited(BaseModel):
 def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> dict[str, Any]:
     """消费本次完整请求并返回结果；失败保留调用账，输入不被修改。"""
     deps = runtime.context
+    if deps.config.loop.freeze_episode_plan:
+        return _frozen(state, deps)
     meta = {
         "source": "plan_episode",
         "episode_id": state.episode_id,
@@ -68,6 +75,30 @@ def plan_episode(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> di
     assert resp is not None
 
     return _adopt(deps, state, meta, resp.decomposition, result.used, note)
+
+
+def _frozen(state: EpisodeRunState, deps: EpisodeRuntime) -> dict[str, Any]:
+    """冻结的任务表：只按表序派发，不调 decomposer、不问人审、不写拆解账、不占拆解轮数。
+
+    前置条件：任务表非空（`begin_episode` 在开关打开时已断言）。
+    后置条件：只可能是三种增量之一——机械收尾（任一条判负 / 表已无待办）或"有 PENDING，
+    交给 `act`"；本函数从不改表，冻结层没有修订、重开与重试。
+    """
+    assert state.tasks, "freeze_episode_plan needs a non-empty task table"
+    if any(_is_judged_failed(entry) for entry in state.tasks):
+        return stopped_updates(
+            state, deps, "episode", "plan_episode", Termination.FROZEN_ITEM_FAILED
+        )
+    if not any(entry.status is EntryStatus.PENDING for entry in state.tasks):
+        return stopped_updates(
+            state, deps, "episode", "plan_episode", Termination.DECOMPOSITIONS_EXHAUSTED
+        )
+    return {"judge_trigger": "normal"}
+
+
+def _is_judged_failed(entry: TaskEntry) -> bool:
+    """这一条是不是已经判负（冻结表里出现即为样本失败）。"""
+    return entry.status in (EntryStatus.FAILED, EntryStatus.ABANDONED)
 
 
 def _adopt(

@@ -167,7 +167,16 @@ def test_runner_reads_the_same_file_through_build_real(tmp_path, monkeypatch):
     events = []
 
     class FakeHarness:
-        def run(self, run_id, goals, run_goal=None, *, start_task=None, sample_id=""):
+        def run(
+            self,
+            run_id,
+            goals,
+            run_goal=None,
+            *,
+            start_task=None,
+            sample_id="",
+            frozen_tasks=None,
+        ):
             events.append(("run", run_id, goals, run_goal, start_task, sample_id))
             return SimpleNamespace(
                 model_dump_json=lambda **kwargs: '{"termination":"success"}', branch="main"

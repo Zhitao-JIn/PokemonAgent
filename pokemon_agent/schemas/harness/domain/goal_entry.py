@@ -10,6 +10,10 @@
 
 **表为准**：`status` 是最终定案（含人审推翻），记忆的章保留机器判定；两者不同时
 `overturned=True`，planner 读到的成败一律以表为准。
+
+**`frozen_tasks`**：评测样本事先给定的 task 表，随这一条目标进 episode
+（`dispatch` 带进 `EpisodeInput.tasks`）。只有 `loop.freeze_episode_plan` 打开时
+`begin_episode` 才用它装初始任务表；关着时它只是随状态存着的样本数据，不参与规划。
 """
 
 from __future__ import annotations
@@ -28,6 +32,11 @@ class GoalEntry(BaseModel):
     """
 
     task: Task = Field(description="任务本体（brain 的领域模型，一字不改）")
+    frozen_tasks: list[Task] = Field(
+        default_factory=list,
+        description="样本冻结的 task 表（`loop.freeze_episode_plan` 打开时本局直接用它，"
+        "不再问 decomposer）；空 = 本局自己拆。条目 `task_id` 在本局内必须唯一",
+    )
     status: EntryStatus = Field(
         default=EntryStatus.PENDING,
         description="编排状态。**至多一条 `RUNNING`**（dispatch 盖、review_and_judge 定案）",
