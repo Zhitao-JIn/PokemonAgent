@@ -234,13 +234,22 @@ def _run_script(  # noqa: ANN401 —— 脚本入参形状各异，tool 壳逐�
 
     `data.ok` 是**脚本语义成败**（bounce 的 `battle_started` 也算成功），
     信封顶层的 ok 只反映 `code == "ok"`——两者分工见 SPEC §3.1。
+
+    `dialog` 排在展开 `result.data` **之后**：`advance_dialog` 往 `data["dialog"]`
+    放过一份按段的旧值，这里用报告顶层的按行列表覆盖它（D9 同名冲突）。
     """
     denied = _take_lease(client_id)
     if denied is not None:
         return denied
     result = fn(_console(), **kwargs)
     return envelope(
-        data={"ok": result.ok, "code": result.code, **result.data, "calls": result.calls},
+        data={
+            "ok": result.ok,
+            "code": result.code,
+            **result.data,
+            "calls": result.calls,
+            "dialog": result.dialog,
+        },
         code=result.code,
         events=list(result.events),
     )

@@ -77,6 +77,11 @@ class ActRecord(BaseModel):
     action: str = Field()
     after: Observation = Field()
     result: str = Field(default="")
+    dialog: list[str] = Field(
+        default_factory=list,
+        description="脚本调用期间屏幕上依次出现的对话行（一行一个元素，不截断）；"
+        "按键动作与旧记忆为空列表",
+    )
     step: int = Field()
     episode_id: str = Field()
     task_id: str = Field(default="")

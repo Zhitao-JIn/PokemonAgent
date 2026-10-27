@@ -162,16 +162,36 @@ class ScriptRun:
         return self.finish(ok=True, code="ok")
 
     def finish(self, *, ok: bool, code: str, extra: dict[str, Any] | None = None) -> ScriptResult:
-        """把终态与业务载荷合成统一报告；不隐式执行恢复。"""
+        """把终态与业务载荷合成统一报告；不隐式执行恢复。
+
+        `dialog` 按行摊平：`DialogCache.deltas` 每次 `ingest` 一段（同帧多行用换行
+        拼在一起），报告里要的是"一行一个元素、按出现顺序、空行不要"。
+        """
         data = self._snapshot()
         if extra:
             data.update(extra)
-        return ScriptResult(ok=ok, code=code, data=data, events=self.events, calls=self.calls)
+        return ScriptResult(
+            ok=ok,
+            code=code,
+            data=data,
+            events=self.events,
+            calls=self.calls,
+            dialog=_dialog_lines(self),
+        )
 
 
 def _dialog_texts(run: ScriptRun) -> list[str]:
-    """本次调用累计的对话增量片段。"""
+    """本次调用累计的对话增量片段（按段，供 `advance_dialog` 的 `data["dialog"]`）。"""
     return list(run.dialog.deltas)
+
+
+def _dialog_lines(run: ScriptRun) -> list[str]:
+    """本次调用累计的对话行：把增量段摊平、丢空行，按出现顺序。
+
+    `finish` 用它填报告顶层 `dialog`——D9 的同名覆盖（服务端把这份放在
+    `advance_dialog` 的按段 `data["dialog"]` 之后）靠它保证最终是按行的那份。
+    """
+    return [line for chunk in run.dialog.deltas for line in chunk.splitlines() if line.strip()]
 
 
 def run_script(

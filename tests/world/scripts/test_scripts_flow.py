@@ -158,7 +158,47 @@ def test_advance_dialog_choice_freezes() -> None:
     assert res.data["dialog"] == ["要去冒险吗?"]
 
 
+def test_advance_dialog_report_dialog_splits_same_frame_lines() -> None:
+    """报告顶层 `dialog` 一行一个元素：同帧两行在 `data["dialog"]` 里仍是一段（旧口径不动）。"""
+    console = DialogConsole(
+        [
+            {"dialog_text": "第一行\n第二行"},
+            {"dialog_text": "第三行"},
+            {},
+        ]
+    )
+    res = advance_dialog(console, max_presses=30)
+
+    assert res.ok and res.code == "ok"
+    assert res.data["dialog"] == ["第一行\n第二行", "第三行"], "data 里那份按段，保持原样"
+    assert res.dialog == ["第一行", "第二行", "第三行"], "报告顶层按行摊平，顺序即出现顺序"
+
+
+def test_advance_dialog_report_dialog_keeps_repeated_line_once() -> None:
+    """同一次调用内同一句停在屏幕上多帧，`dialog` 只记一次（沿用 DialogCache 去重）。"""
+    console = DialogConsole(
+        [
+            {"dialog_text": "同一句"},
+            {"dialog_text": "同一句"},
+            {"dialog_text": "新一句"},
+            {},
+        ]
+    )
+    res = advance_dialog(console, max_presses=30)
+
+    assert res.dialog == ["同一句", "新一句"]
+
+
 # ---- wait_until_scene（附录 A #15）----
+
+
+def test_wait_until_scene_report_has_no_dialog() -> None:
+    """不按键的脚本调用：没有对话增量，`dialog` 是空列表。"""
+    console = SceneConsole(["walk", "party", "party"])
+    res = wait_until_scene(console, "party", timeout_s=5.0)
+
+    assert res.ok
+    assert res.dialog == []
 
 
 def test_wait_until_scene_success() -> None:

@@ -1,7 +1,7 @@
 {
   "tasks": {
     "memory_records": {
-      "active": "v2"
+      "active": "v3"
     },
     "verify": {
       "active": "v4"
