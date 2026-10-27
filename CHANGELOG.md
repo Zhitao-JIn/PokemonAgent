@@ -1,3 +1,13 @@
+## 2026-10-27（665）—— 脚本对话原文按行进 act_call 账与 ActMemory
+
+**改了什么**：`ScriptResult` 新增顶层 `dialog`（一行一个元素，默认空列表），`ScriptRun.finish` 把 `DialogCache` 的增量段按行摊平、丢空行后填入；MCP 服务端在信封 `data` 末尾透传 `"dialog": result.dialog`（排在 `**result.data` 之后，覆盖 `advance_dialog` 放进 `data["dialog"]` 的按段旧值）；`act_call` 账在 `events` 之后增加 `dialog`，解析模型 `ActCallContent` 同步新增 `dialog: list[str] | None`；`ActMemory` 新增独立字段 `dialog`，`store_step_episode_memory` 从扁平报告顶层取值，按键动作落空列表。测试新增：脚本层同帧多行拆行、单次调用去重、无对话为空；server 信封按行覆盖按段旧值；客户端重建报告仍带逐行 `dialog`；act_call 渲染与 `parse()` 整局回环；ActMemory 脚本 / 按键 / 缺字段三条分支。
+
+**为什么这么改**：脚本每按一键都把新出现的对话行收进 `DialogCache`，但脚本结束后只剩结局码加一行摘要，一口气按完的过场（进店自动触发的领包裹、长对话）的文字全部丢失；包裹这类过场不是按键打在物体上的，`events[]` 里也没有它。对话原文按行进账与记忆，评分与后续蒸馏才读得到收件人、地点这类证据。
+
+**取舍**：`DialogCache` 保持"一次 `ingest` 一段"的旧行为，`advance_dialog` 的 `data["dialog"]` 一字不动，只在统一出口把段摊平成行——同名冲突靠服务端的覆盖顺序解决，改 `data["dialog"]` 的形状会牵连现有读方。不截断、不改等待与稳定检测、不改 `events[]` 与对象记忆、不改按键模式；旧记忆缺字段读作空列表，不写兼容逻辑。`result` 仍只有结局码：扁平报告里的 `summary` 在顶层，`result_line` 只从 `data` 取（改动前就是这样，本次不动）。
+
+**影响面**：生产代码七处（`world/scripts/control_flow.py`、`world/scripts/engine.py`、`mcp_servers/world_server.py`、`direct/trace/render.py`、`direct/trace/content.py`、`schemas/memory/datastore/act_memory.py`、`harness/task/perceive/store_step_episode_memory.py`），测试五处。`ActMemory` 不进 `state_schema_hash`（只覆盖三张状态模型），旧存档与旧记忆可读。相关目录 pytest 1136 passed、0 failed；`ruff check` 与 `ruff format --check` 通过。未调用真实模型、未启动模拟器。
+
 ## 2026-10-26（658）—— 只读统计 prompt 块构成、token 回归估计与共同前缀断点
 
 **改了什么**：新增 prompt_block_usage 标准库脚本及合成 trace 测试，复用既有目录发现与 token 字段校验；按节点和 prompt 版本报告块、小节、知识条目重复、图片分布与前缀断点，并提供 Markdown / CSV / JSON。规范标题只认首次出现，块包含标题与空白，LF 归一化后断言字符守恒。

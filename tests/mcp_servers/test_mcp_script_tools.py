@@ -34,6 +34,26 @@ class _FakeWorld:
         raise AssertionError("脚本 tool 不应触碰原子层")
 
 
+class _DialogConsole(StubConsole):
+    """对话替身：每次按键换一屏，空屏即对话结束（advance_dialog 用）。"""
+
+    def __init__(self, frames: list[str]) -> None:
+        super().__init__()
+        self._frames = frames
+        self._i = 0
+
+    def press(self, key: str) -> None:  # noqa: ARG002
+        self._i = min(self._i + 1, len(self._frames) - 1)
+
+    def read(self) -> Any:  # noqa: ANN401
+        from pokemon_agent.world import ScreenText
+
+        return ScreenText(dialog_text=self._frames[self._i])
+
+    def scene(self) -> str:
+        return "dialog" if self._frames[self._i] else "walk"
+
+
 def _call(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
     from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -87,6 +107,17 @@ def test_walk_to_adjacent_forwarding(console: StubConsole) -> None:
     assert res["ok"] is True and res["code"] == "ok"
     assert res["data"]["final_pos"]["x"] == 16
     assert res["events"] == []
+    assert res["data"]["dialog"] == [], "没有对话的脚本调用，信封里是空列表"
+
+
+def test_advance_dialog_envelope_dialog_is_per_line(console: StubConsole) -> None:
+    """D9：`data["dialog"]` 最终是按行列表，覆盖 advance_dialog 放进 data 的按段旧值。"""
+    world_server.set_console_factory(lambda: _DialogConsole(["第一行\n第二行", "第三行", ""]))
+    res = _call("advance_dialog", {"max_presses": 10, "client_id": "t"})
+
+    assert res["ok"] is True and res["code"] == "ok"
+    assert res["data"]["dialog"] == ["第一行", "第二行", "第三行"], "一行一个元素"
+    assert res["data"]["presses"] == 2
 
 
 def test_walk_to_adjacent_blocked_envelope(console: StubConsole) -> None:

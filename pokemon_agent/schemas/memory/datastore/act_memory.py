@@ -181,6 +181,13 @@ class ActMemory(BaseModel):
         "脚本一次调用占一步、内部 N 键不展开（P5 定案），这个字段就是那一步的机械结局"
         "——判据只认达成的约定下，它是判停可直接采信的证据",
     )
+    dialog: list[str] = Field(
+        default_factory=list,
+        description="脚本调用期间屏幕上依次出现的对话**行**（一行一个元素，不截断）；"
+        "键动作为空列表。独立字段而不并进 `result`——`result` 是结局码那一句，"
+        "对话是过场原文，两者的读方（判停 / 蒸馏 / 评分）不同。"
+        "旧记忆没有这个字段，读作空列表",
+    )
 
     step: int = Field(
         description="该键按下**前**那一帧的本局累计键数（跨 task 连续，harness 盖章）——"

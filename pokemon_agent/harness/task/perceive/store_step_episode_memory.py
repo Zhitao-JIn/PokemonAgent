@@ -30,7 +30,8 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
     """反思这一步并落一条情景记忆。**不改状态字段，返回空增量。**
 
     before = `task_ctx.observation`、after = `after_observation`；上一圈没按键（首圈）时不写。
-    上一动作是脚本时，`result` 写结果那一句（结局码 + 摘要或原因）。
+    上一动作是脚本时，`result` 写结果那一句（结局码 + 摘要或原因）、`dialog` 写报告顶层的
+    对话行；按键动作两者分别为空串与空列表。
     """
     if state.action is None:
         return {}
@@ -44,8 +45,10 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
     )
 
     # 步骤 1：反思成一条情景记忆，盖 run_id 与前后两帧。
-    # 脚本动作把结果写进 `result`（一次调用占一步，结局码 + 摘要或原因就是那一步的机械结局）。
+    # 脚本动作把结果写进 `result`（一次调用占一步，结局码 + 摘要或原因就是那一步的机械结局），
+    # 对话原文进 `dialog`（报告顶层的按行列表；按键动作没有报告，落空列表）。
     script_result = result_line(state.last_report) if state.last_report is not None else ""
+    script_dialog = list((state.last_report or {}).get("dialog") or [])
     entry = deps.reflector.reflect(
         FromHarnessToBrainToolReflectReq(
             before=before,
@@ -61,6 +64,7 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
             "task_id": state.task.task_id,
             "before_frame": frame_b64(deps, ep, before.step),
             "after_frame": frame_b64(deps, ep, before.step + 1),
+            "dialog": script_dialog,
         }
     )
 
