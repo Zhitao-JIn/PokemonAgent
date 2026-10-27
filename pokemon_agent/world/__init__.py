@@ -57,6 +57,7 @@ from .interface import (
     WorldPort,
     terrain_legend,
 )
+from .interface.domain.step_observation import FacingObject, RamState, StepObservation
 
 if TYPE_CHECKING:
     from .pyboy_world import PyBoyWorld
@@ -73,6 +74,9 @@ __all__ = [
     "DOOR",
     "FACING_STEP",
     "Facts",
+    "FacingObject",
+    "RamState",
+    "StepObservation",
     "GRASS",
     "GRID_COLS",
     "GRID_ROWS",

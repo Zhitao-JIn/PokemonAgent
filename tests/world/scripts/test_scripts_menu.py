@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from pokemon_agent.world import PlaceInWorld, ScreenText
 from pokemon_agent.world.scripts.menu import open_menu_to
 
@@ -128,3 +130,45 @@ def test_open_menu_to_rejected_bad_target() -> None:
     console = MenuConsole()
     res = open_menu_to(console, "NOT_A_MENU_ITEM")
     assert not res.ok and res.code == "rejected"
+
+
+class ObservedMenuConsole(MenuConsole):
+    """记录每次实际按键，可分别模拟开菜单失败与选中失败。"""
+
+    def __init__(self, *, start_works: bool, select_works: bool) -> None:
+        super().__init__(select_works=select_works)
+        self.start_works = start_works
+        self.keys: list[str] = []
+
+    def press(self, key: str) -> None:
+        self.keys.append(key)
+        if key != "start" or self.start_works:
+            super().press(key)
+
+
+@pytest.mark.parametrize(
+    ("target", "start_works", "select_works", "keys", "scene", "code"),
+    [
+        ("POKéMON", True, True, ["start", "down", "a"], "party", "ok"),
+        ("ITEM", True, True, ["start", "down", "down", "a"], "bag", "ok"),
+        ("POKéMON", True, False, ["start", "down", "a"], "start_menu", "wrong_scene"),
+        ("POKéMON", False, True, ["start"], "walk", "wrong_scene"),
+    ],
+)
+def test_menu_keeps_observations_on_every_exit_after_keys(
+    target: str, start_works: bool, select_works: bool, keys: list[str], scene: str, code: str
+) -> None:
+    console = ObservedMenuConsole(start_works=start_works, select_works=select_works)
+
+    result = open_menu_to(console, target)
+
+    assert console.keys == keys
+    assert len(result.observations) == len(keys)
+    assert [observation.step for observation in result.observations] == list(
+        range(1, len(keys) + 1)
+    )
+    assert all(
+        observation.ram is not None and observation.settled for observation in result.observations
+    )
+    assert result.code == code and result.ok == (code == "ok")
+    assert result.data == {"scene": scene, "target": target}

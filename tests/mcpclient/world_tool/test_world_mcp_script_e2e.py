@@ -113,3 +113,50 @@ def test_world_mcp_tool_keeps_per_line_dialog_in_the_rebuilt_report() -> None:
     )
     assert resp.report is not None
     assert resp.report["dialog"] == ["第一行", "第二行", "第三行"]
+
+
+def test_script_observations_survive_the_server_client_and_trace_round_trip() -> None:
+    """替身逐键观察经真实 MCP 信封、客户端重建、trace 落盘再 parse，字段完整。"""
+    from tempfile import TemporaryDirectory
+
+    from pokemon_agent.brain.interface import ScriptCall
+    from pokemon_agent.direct.trace import TraceTool, parse
+    from pokemon_agent.mcp_servers import world_server
+    from pokemon_agent.mcpclient.world_tool import WorldMcpTool
+    from pokemon_agent.schemas.harness import (
+        FromHarnessToGameToolExecuteReq,
+        FromHarnessToTraceToolAppendReq,
+        TraceKind,
+    )
+    from pokemon_agent.world import StepObservation
+
+    console = _DialogConsole(["第一行", "第二行", ""])
+    world_server.start(_NoWorld(), rom="fake.rom")
+    world_server._lease_owner = None
+    world_server.set_console_factory(lambda: console)
+    action = Action(script=ScriptCall(name="advance_dialog", args={"max_presses": 10}))
+    tool = WorldMcpTool(_InlineClient(world_server), client_id="t")
+
+    response = tool.execute(
+        FromHarnessToGameToolExecuteReq(action=action, observation=_obs(TaskScene.DIALOG))
+    )
+
+    assert response.report is not None
+    snapshots = response.report["observations"]
+    assert len(snapshots) == response.report["presses"] == 2
+    assert [snapshot["dialog_text"] for snapshot in snapshots] == ["第二行", ""]
+    assert all(snapshot["ram"] is not None and snapshot["settled"] for snapshot in snapshots)
+    with TemporaryDirectory() as directory:
+        trace = TraceTool.build(run_id="r", trace_root=directory)
+        trace.append(
+            FromHarnessToTraceToolAppendReq(
+                kind=TraceKind.ACT_CALL,
+                meta={"source": "act", "episode_id": "ep", "task_id": "t", "step": 1},
+                action=action,
+                report=response.report,
+            )
+        )
+        (event,) = trace.read_events(meta={"run_id": "r"})
+        parsed = parse(event)
+    assert parsed.content.observations == [StepObservation.model_validate(s) for s in snapshots]
+    assert parsed.content.dialog == ["第一行", "第二行"]

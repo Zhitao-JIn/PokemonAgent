@@ -1,3 +1,13 @@
+## 2026-10-27（667）—— 脚本逐键紧凑观察进入终态报告与 act_call 账
+
+**改了什么**：新增并导出 `StepObservation`、`RamState`、`FacingObject`；`ScriptRun` 每键沿用现有稳定等待后读取屏幕、RAM 与朝向邻格物体，并在中断前追加观察，`finish` 填入 `ScriptResult.observations`。等待返回达到超时边界或严格超时抛出时，该键记 `settled=False`。MCP 服务端在业务 data 展开后序列化观察列表，客户端按现有扁平报告重建；`act_call` 渲染与严格解析模型同步携带观察。按 D16，菜单按键后的出口统一经 `run.finish()` 并保持原有 code/data；买卖包装层的成功、内层中止与对账失败出口均转发 `inner.observations`。
+
+**为什么这么改**：脚本首尾帧之间的对话、进门与背包变化需要有逐键原始证据，终态码与对象事件无法还原这些过程。这是取代 665–666 的 dialog 与 memory_records v3 的第一步；CP1 只增观察，旧字段与提示词版本保持现状。
+
+**取舍**：直接复用 `read_readout`、场景/叠加层分类、`WorldConsole` 的位置/朝向与 kind 查询，不扩展协议，也不额外推进帧。紧凑观察仅保存屏幕、游戏状态与面朝物体，不带完整地形或选项诊断。步号在每次 ScriptRun 内从 1 顺序编号，不改变 harness 的决策预算；旧报告缺观察字段仍可解析。D16 已知限制：`_enter_shop()` 成功时返回 None，走位、转向与打开菜单这几段独立 ScriptRun 的前置观察未汇总进买卖包装层；本次仅转发内层买卖脚本观察，不改 WorldConsole 协议。
+
+**影响面**：world 领域模型与导出、脚本现场与结果、MCP 服务端信封、trace 渲染与解析，以及对应替身测试。未修改 ActMemory、对象记忆、提示词、等待策略或评分器；未调用真实模型、未启动模拟器。相关目录 pytest 的 JUnit 计数为 tests=779、failures=0、errors=0、skipped=0；D16 定向测试 tests=25、failures=0、errors=0、skipped=0。
+
 ## 2026-10-27（666）—— memory_records v3：脚本对话行进记忆素材
 
 **改了什么**：新增共享片段 `memory_records` v3（`prompt.md` 只多一条 `dialog` 标签；`assemble.py` 在 v2 之上加 `dialog_render()`，脚本调用的对话行一行一条、全文不截断，`act_render` 里落在 `结果` 之后，`act_sequence` 里落在 `做了` 之后），`ActRecord` 新增 `dialog: list[str]`，注册表把 `memory_records.active` 从 v2 切到 v3；v1、v2 源文件未改。测试新增 `tests/prompt/test_memory_records_dialog.py`（结果行之后与顺序、`sequence` 无结果行时的位置、200 行不截断、空对话与 v2 逐字相同、旧版本按各自 `meta.hash` 仍可加载、注册表激活 v3），并补 `tests/prompt/test_reflector_structured.py` 的期望 `dialog: []` 与 `tests/budget/test_budget_settlement.py` 的冻结 hash。

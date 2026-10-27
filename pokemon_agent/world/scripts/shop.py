@@ -104,6 +104,7 @@ def buy_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
                 "inner_code": inner.code,
                 "reason": inner.data.get("reason", ""),
             },
+            observations=inner.observations,
         )
     money1, stock1 = console.money(), console.bag_count(item)
     if money0 - money1 != price * count or stock1 - stock0 != count:
@@ -117,6 +118,7 @@ def buy_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
                 "expected_spent": price * count,
                 "gained": stock1 - stock0,
             },
+            observations=inner.observations,
         )
     return ScriptResult(
         ok=True,
@@ -128,6 +130,7 @@ def buy_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
             "remaining_money": money1,
             "stock": stock1,
         },
+        observations=inner.observations,
     )
 
 
@@ -170,6 +173,7 @@ def sell_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
                 "inner_code": inner.code,
                 "reason": inner.data.get("reason", ""),
             },
+            observations=inner.observations,
         )
     money1, stock1 = console.money(), console.bag_count(item)
     if money1 - money0 != unit * count:
@@ -182,6 +186,7 @@ def sell_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
                 "earned": money1 - money0,
                 "expected_earned": unit * count,
             },
+            observations=inner.observations,
         )
     return ScriptResult(
         ok=True,
@@ -193,6 +198,7 @@ def sell_item(console: WorldConsole, item: str, count: int) -> ScriptResult:
             "remaining_money": money1,
             "stock": stock1,
         },
+        observations=inner.observations,
     )
 
 

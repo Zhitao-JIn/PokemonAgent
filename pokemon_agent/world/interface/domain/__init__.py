@@ -12,6 +12,9 @@ __all__ = [
     "DOOR",
     "FACING_STEP",
     "Facts",
+    "FacingObject",
+    "RamState",
+    "StepObservation",
     "GRASS",
     "LEDGE_DOWN",
     "LEDGE_LEFT",
@@ -87,6 +90,7 @@ from .screen_model import (
 )
 from .screen_text import ScreenText
 from .script_param import ScriptParam
+from .step_observation import FacingObject, RamState, StepObservation
 from .takeover_view import (
     BagEntry,
     BagView,

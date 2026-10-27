@@ -1,4 +1,4 @@
-"""统一脚本现场：按键、等待、事件与步骤记录按声明的策略执行。"""
+"""统一脚本现场：按键后记录紧凑观察，等待、事件与步骤记录遵循策略。"""
 
 from __future__ import annotations
 
@@ -6,8 +6,11 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from ..interface import Memory, PlaceInWorld, ScreenText, TaskScene
+from ..interface.domain.step_observation import FacingObject, RamState, StepObservation
 from ..object_events import judge_press
+from ..readout import read_readout
 from ..scene import classify_scene
+from ..screen_text import overlay_of
 from . import screen_steps
 from .control_flow import Abort, Halt, ScriptResult
 from .dialog_cache import DialogCache
@@ -39,6 +42,7 @@ class ScriptRun:
         self.scene = scene if scene is not None else self.scene_now()
         self.events: list[dict[str, Any]] = []
         self.steps: list[ScriptStep] = []
+        self.observations: list[StepObservation] = []
         self.dialog = DialogCache()
         self.calls: list[Any] = []
 
@@ -64,8 +68,13 @@ class ScriptRun:
         before = self.console.pos()
         facing = self.console.facing() if self.policy.collect_world_events else ""
         self.console.press(key)
-        frames = self.settle() if settle else 0
+        try:
+            frames = self.settle() if settle else 0
+        except Abort:
+            self._observe(self.screen(), settled=False)
+            raise
         text = self.screen()
+        self._observe(text, settled=frames < self.policy.wait.timeout_frames)
         after = self.console.pos()
         self.dialog.ingest(text.dialog_text)
         if self.policy.collect_world_events:
@@ -83,6 +92,30 @@ class ScriptRun:
         for interrupt in self.policy.interruptions:
             interrupt(self)
         return text, frames, after != before
+
+    def _observe(self, text: ScreenText, *, settled: bool) -> None:
+        """追加本键的只读快照；调用方已完成等待，读取不会推进帧或执行按键。"""
+        readout = read_readout(self.mem, text, text_source="decode")
+        place, facing = self.console.pos(), self.console.facing()
+        target = place.step_toward(facing) if facing else None
+        kind = self.console.object_kind(target.x, target.y) if target is not None else None
+        self.observations.append(
+            StepObservation(
+                step=len(self.observations) + 1,
+                place=place,
+                facing=facing,
+                scene=classify_scene(text, self.mem),
+                overlay=overlay_of(text),
+                dialog_text=text.dialog_text,
+                options=text.options,
+                cursor=text.cursor,
+                screen=text.screen,
+                ram=RamState.model_validate(readout.model_dump()),
+                facing_object=FacingObject(kind=kind, place=target) if kind and target else None,
+                battle_status=readout.battle if readout.in_battle else None,
+                settled=settled,
+            )
+        )
 
     def press(self, key: str, *, settle: bool = True) -> bool:
         """按一键，返回是否位移；声明的中断以 Halt 报告。"""
@@ -177,6 +210,7 @@ class ScriptRun:
             events=self.events,
             calls=self.calls,
             dialog=_dialog_lines(self),
+            observations=list(self.observations),
         )
 
 

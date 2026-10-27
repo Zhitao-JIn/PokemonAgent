@@ -151,3 +151,10 @@ def test_release_lease_allows_next_client(console: StubConsole) -> None:
     _call("release_lease", {"client_id": "a"})
     again = _call("walk_to_adjacent", {"direction": "west", "client_id": "b"})
     assert again["ok"] is True
+
+
+def test_script_without_keys_has_empty_observations_in_the_envelope(console: StubConsole) -> None:
+    """已经面朝目标时无需按键，MCP 仍显式携带空观察列表。"""
+    response = _call("face_direction", {"direction": "south", "client_id": "t"})
+
+    assert response["data"]["observations"] == []

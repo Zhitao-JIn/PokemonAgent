@@ -249,6 +249,9 @@ def _run_script(  # noqa: ANN401 —— 脚本入参形状各异，tool 壳逐�
             **result.data,
             "calls": result.calls,
             "dialog": result.dialog,
+            "observations": [
+                observation.model_dump(mode="json") for observation in result.observations
+            ],
         },
         code=result.code,
         events=list(result.events),

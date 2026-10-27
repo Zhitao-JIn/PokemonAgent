@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from pokemon_agent.world import PlaceInWorld, ScreenText
 from pokemon_agent.world.scripts import ScriptResult
+from pokemon_agent.world.scripts.engine import ScriptRun
 from pokemon_agent.world.scripts.shop import buy_item, sell_item
 
 GOODS = [
@@ -210,3 +213,60 @@ def test_sell_verify_failed_on_amount_mismatch() -> None:
     assert not res.ok and res.code == "verify_failed"
     assert res.data["earned"] == 200
     assert res.data["expected_earned"] == 100
+
+
+class ObservedShopConsole(ShopConsole):
+    """内层执行三个替身按键，再按模式给出成功、中止或对账不符的结果。"""
+
+    def __init__(self, mode: str) -> None:
+        super().__init__(bag={"ANTIDOTE": 3}, inner_mode="abort" if mode == "abort" else "ok")
+        self.mode = mode
+        self.keys: list[str] = []
+        self.inner_result: ScriptResult | None = None
+
+    def press(self, key: str) -> None:
+        self.keys.append(key)
+
+    def run_script(self, name: str, args: dict[str, str | int]) -> ScriptResult:
+        run = ScriptRun(self, budget=3, start_map_id=self.map_id(), start_pos=self.pos())
+        result = run.execute(["a", "down", "a"])
+        outcome = super().run_script(name, args)
+        result.ok, result.code, result.data = outcome.ok, outcome.code, outcome.data
+        if self.mode == "mismatch":
+            self._money += 1
+        self.inner_result = result
+        return result
+
+
+@pytest.mark.parametrize(("name", "item"), [("buy", "POKé BALL"), ("sell", "ANTIDOTE")])
+@pytest.mark.parametrize("mode", ["ok", "abort", "mismatch"])
+def test_shop_wrapper_preserves_inner_observations_and_business_result(
+    name: str, item: str, mode: str
+) -> None:
+    console = ObservedShopConsole(mode)
+    operation = buy_item if name == "buy" else sell_item
+
+    result = operation(console, item, 2)
+
+    assert console.inner_result is not None
+    assert result.observations == console.inner_result.observations
+    assert len(result.observations) == len(console.keys) == 3
+    assert [observation.step for observation in result.observations] == [1, 2, 3]
+    assert result.code == ("ok" if mode == "ok" else "verify_failed")
+    assert result.ok == (mode == "ok")
+    expected: dict[str, str | int] = {"item": item, "count": 2}
+    if mode == "abort":
+        expected.update(inner_code="step_timeout", reason="模拟走偏")
+    elif mode == "mismatch":
+        expected.update(
+            {"spent": 399, "expected_spent": 400, "gained": 2}
+            if name == "buy"
+            else {"earned": 101, "expected_earned": 100}
+        )
+    else:
+        expected.update(
+            {"spent": 400, "remaining_money": 2600, "stock": 2}
+            if name == "buy"
+            else {"earned": 100, "remaining_money": 3100, "stock": 1}
+        )
+    assert result.data == expected

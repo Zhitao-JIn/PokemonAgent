@@ -551,8 +551,8 @@ def act_call(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
     - **key 形**（原 `press_key` 原样随迁）：`{sequence:[{name,times}]}`，每按一个键
       记一条、记那一个键（单段、`times=1`）；
-    - **script 形**：`{script, args, ok, code, data?, events?, dialog?}`——脚本终态报告
-      原样进正文（`events[]` 是 P6 object 记忆批量摄取的原料，留在账上才算"发生过"；
+    - **script 形**：`{script, args, ok, code, data?, events?, dialog?, observations?}`
+      脚本终态报告原样进正文（`events[]` 是 P6 object 记忆批量摄取的原料，留在账上才算"发生过"；
       `dialog` 是调用期间屏幕上的对话行，一口气按完的过场只在这里留下文字）。
 
     **`dialog` 从扁平报告的顶层取，不从 `data` 里挖**：真实报告是
@@ -584,6 +584,8 @@ def act_call(req: FromHarnessToTraceToolAppendReq) -> Rendered:
             content["events"] = report["events"]
         if "dialog" in report:
             content["dialog"] = report["dialog"]
+        if "observations" in report:
+            content["observations"] = report["observations"]
         return Rendered(EventType.ACT, TraceKind.ACT_CALL, content)
     assert action is not None, "act_call 账要带动作（键形 action 或脚本 report）"
     return Rendered(EventType.ACT, TraceKind.ACT_CALL, {"sequence": action_sequence(action)})
