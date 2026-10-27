@@ -1,3 +1,13 @@
+## 2026-10-27（662）—— 评测可冻结 run 层规划：开关关时行为不变，冻结时按给定目标表派发、判负即收尾
+
+**改了什么**：`LoopConfig`（`settings/schema/loop.py`）与 `settings/default.json` 增两个默认关闭的开关 `freeze_run_plan` / `freeze_episode_plan`（本条只接 run 层，episode 分支在 663）；`Termination` 增 `frozen_item_failed`；`plan_run` 入口在 `freeze_run_plan` 打开时整段退场——不调 planner、不问 reviewer、不写 `plan_call` / `plan_verdict`、不占 `planning_rounds_used`：任一条目 `FAILED` / `ABANDONED` 立即以 `FROZEN_ITEM_FAILED` 收尾且不再派后面的条目，表里已无 `PENDING` 时沿用 `PLANNING_EXHAUSTED`；`new_run` 在开关打开而初始目标表为空时断言失败。测试侧新增 `tests/harness/run/test_frozen_run_plan.py` 六条（表序即派发序、planner 零调用且无规划账、首条判负后第二条不派发、表耗尽收尾、空表断言、开关关的对照组），配置侧加两条默认值与覆盖用例，`tests/_harness_fixtures/node_io.py` 的终止类别镜像补一行。
+
+**为什么这么改**：三档评测任务各要冻结一层规划，否则上层的随机拆法会污染下层成败、episode 边界也无法预先钉死。冻结的语义是"这张表本层不许改"：失败不重开、不重试、不续派，样本就此判负；判停仍归各层 `review_and_judge`——冻结的是规划，不是判定。
+
+**取舍**：冻结层不写规划账，读侧（`evals/agent_short_goal_run/scorer`、reviewer、`pokemon_agent/trace`、`summarize_run`）已逐个核对不依赖 `PLAN_CALL` / `PLAN_VERDICT` 的存在，只有 trace 的 parse/render 按 kind 建映射。`Termination` 多一个值会改 `state_schema_hash`（`1a9f74c1c2370647` → `a78572c67ad5d4e9`）：评测起点是原始 `.state`，不依赖存档结构，故只更新守卫常量那一行、没有为凑常量改别的东西。冻结层不调 planner 也就没有"重开"入口，表一旦判负就停在失败上——这是评测要的语义，不是通用运行时的默认（开关默认关）。
+
+**影响面**：五个生产文件 + 四个测试文件（含新增一个）；全量 pytest 3054 用例、3029 passed / 25 skipped / 0 failed（junit 计数，272.916s；3 条 `test_eval_service_wiring` 属沙箱 safe-delete 守卫的已知基线失败，按 spec §5.5 以 `--deselect` 排除）；定向 `tests/harness/run` + `tests/settings` 97 passed；`ruff check` 与 `ruff format --check`（1102 files）全绿。未调用真实模型、未启动模拟器。
+
 ## 2026-10-26（658）—— 只读统计 prompt 块构成、token 回归估计与共同前缀断点
 
 **改了什么**：新增 prompt_block_usage 标准库脚本及合成 trace 测试，复用既有目录发现与 token 字段校验；按节点和 prompt 版本报告块、小节、知识条目重复、图片分布与前缀断点，并提供 Markdown / CSV / JSON。规范标题只认首次出现，块包含标题与空白，LF 归一化后断言字符守恒。

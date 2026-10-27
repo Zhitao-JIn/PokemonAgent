@@ -135,6 +135,10 @@ def new_run(
     planner 建"，规划出的条目以 `plan-<run_id>-<n>` 为 id。`goals` 非空且 `run_goal`
     缺省时，run goal 仍由表文字拼（`default_run_goal`），与旧行为一致。
 
+    **`loop.freeze_run_plan` 打开时 `goals` 必须非空**（assert）：冻结层不调 planner，
+    空表就没有任何条目可派，静默退化成自由规划会是数据错误被藏起来（评测侧应当自己发现
+    样本没带目标表）。
+
     `start_task`：世界 reset 用的 `Task`，只供 reset 断言与"将来按任务选起始存档"。
     缺省取表序第一条；空表时由 `start_task_for(run_id, run_goal)` 合成（`max_steps=1`）。
     需要 `initial_state_hint` 的调用方必须自己经 `start_task` 带进来。
@@ -145,6 +149,9 @@ def new_run(
     assert run_id, "new_run() got an empty run_id"
     assert goals or run_goal is not None, (
         "new_run() needs either an initial goal table or an explicit run_goal"
+    )
+    assert not (deps.config.loop.freeze_run_plan and not goals), (
+        "new_run() needs an initial goal table while loop.freeze_run_plan is on"
     )
     assert not checkpoint_only or deps.checkpointer is not None, (
         "checkpoint_only needs a checkpointer"

@@ -20,7 +20,9 @@
     "episode_max_tasks_per_plan": 5,
     "plan_max_new_goals": 3,
     "episode_recursion_limit": 20000,
-    "run_recursion_limit": 200000
+    "run_recursion_limit": 200000,
+    "freeze_run_plan": false,
+    "freeze_episode_plan": false
   },
   "budget": {
     "max_episodes": 10,

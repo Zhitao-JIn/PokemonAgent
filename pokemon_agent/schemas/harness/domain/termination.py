@@ -29,6 +29,10 @@ class Termination(StrEnum):
     ACTIONS_EXHAUSTED = "actions_exhausted"
     TASKS_EXHAUSTED = "tasks_exhausted"
     DECOMPOSITIONS_EXHAUSTED = "decompositions_exhausted"
+    FROZEN_ITEM_FAILED = "frozen_item_failed"
+    """冻结的规划表里有条目判负（`FAILED` / `ABANDONED`）：本层不重开、不续派后面的条目，
+    直接以失败收尾——冻结表不允许被本层改写，失败即样本失败
+    （语义见 `plan_run` / `plan_episode`）。"""
     INTERRUPTED = "interrupted"
     """被意外打断（只出现在 task 层）：判定员判出现了 task 目标没预料到的变化（遇敌进战斗、
     剧情对话、被传送），目标此刻推不下去。不算达成；episode 不把它计入失败连击。"""
