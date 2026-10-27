@@ -1,0 +1,8 @@
+{
+  "task": "memory_records",
+  "version": "v3",
+  "kind": "fragment",
+  "params": "MemoryParams",
+  "reason": "脚本调用的对话行按行渲染在结果行之后；对话为空时与 v2 逐字相同",
+  "hash": "1f324c80a373bdf15e86f51c97a60889068b50a80700783985387b66e31a45d2"
+}

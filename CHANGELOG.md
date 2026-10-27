@@ -1,3 +1,13 @@
+## 2026-10-27（666）—— memory_records v3：脚本对话行进记忆素材
+
+**改了什么**：新增共享片段 `memory_records` v3（`prompt.md` 只多一条 `dialog` 标签；`assemble.py` 在 v2 之上加 `dialog_render()`，脚本调用的对话行一行一条、全文不截断，`act_render` 里落在 `结果` 之后，`act_sequence` 里落在 `做了` 之后），`ActRecord` 新增 `dialog: list[str]`，注册表把 `memory_records.active` 从 v2 切到 v3；v1、v2 源文件未改。测试新增 `tests/prompt/test_memory_records_dialog.py`（结果行之后与顺序、`sequence` 无结果行时的位置、200 行不截断、空对话与 v2 逐字相同、旧版本按各自 `meta.hash` 仍可加载、注册表激活 v3），并补 `tests/prompt/test_reflector_structured.py` 的期望 `dialog: []` 与 `tests/budget/test_budget_settlement.py` 的冻结 hash。
+
+**为什么这么改**：665 把脚本调用期间的对话原文按行写进 `act_call` 与 `ActMemory`，但 prompt 只渲染 `result`——领包裹那类过场的收件人、地点在账里、不在决策与蒸馏的上下文里。渲染进素材之后，agent 与两层蒸馏才读得到这些行。
+
+**取舍**：新开 v3 而不是改 v2（一个 md 一个版本、旧版不改）；`dialog` 为空时输出与 v2 逐字相同，token 增长只出现在真有对话的记录上；不截断、不设条数上限（200 行样例钉住）。`sequence` 形状没有 `result` 行，对话落在「做了」与「之后变成」之间——不是「result 之后」的字面位置，是同一语义空位，已由用户裁决接受。对话只按行加标签，不跨记录合并：同一句出现在两条记忆里是两帧各自的证据。
+
+**影响面**：`prompt/tasks/fragments/memory_records/v3/`（新增 `prompt.md`、`assemble.py`、`meta.json`）、`prompt/records.py` 一个字段、`prompt/registry.json` 一行；v1/v2 字节未动。`ActMemory.dialog` 经 `TaskState.task_ctx.act_memories` 嵌套进 `state_schema_hash`，冻结值 `1a9f74c1c2370647` → `e708f985a96ae2e5`（守卫常量同步改这一行）；该值之前的 harness checkpoint 因此拒载，评测起点用原始 `.state`、不依赖它（用户已确认接受）。全量 pytest：3063 tests、0 failed、25 skipped（`--deselect` 已知 3 条沙箱基线失败）；`ruff check` 与 `ruff format --check` 通过。未调用真实模型、未启动模拟器。
+
 ## 2026-10-27（665）—— 脚本对话原文按行进 act_call 账与 ActMemory
 
 **改了什么**：`ScriptResult` 新增顶层 `dialog`（一行一个元素，默认空列表），`ScriptRun.finish` 把 `DialogCache` 的增量段按行摊平、丢空行后填入；MCP 服务端在信封 `data` 末尾透传 `"dialog": result.dialog`（排在 `**result.data` 之后，覆盖 `advance_dialog` 放进 `data["dialog"]` 的按段旧值）；`act_call` 账在 `events` 之后增加 `dialog`，解析模型 `ActCallContent` 同步新增 `dialog: list[str] | None`；`ActMemory` 新增独立字段 `dialog`，`store_step_episode_memory` 从扁平报告顶层取值，按键动作落空列表。测试新增：脚本层同帧多行拆行、单次调用去重、无对话为空；server 信封按行覆盖按段旧值；客户端重建报告仍带逐行 `dialog`；act_call 渲染与 `parse()` 整局回环；ActMemory 脚本 / 按键 / 缺字段三条分支。

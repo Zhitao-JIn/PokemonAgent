@@ -45,6 +45,7 @@ def test_reflector_preserves_the_full_record_without_a_brain(path: Path) -> None
         "after": expected_snapshots[1],
         "action": "up",
         "result": "原样结果",
+        "dialog": [],
         "step": 7,
         "episode_id": "ep",
         "task_id": "",
