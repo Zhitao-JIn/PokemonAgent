@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
@@ -22,6 +22,91 @@ SNAPSHOT_BLIND: frozenset[str] = frozenset({"known_objects", "knowledge"})
 默认它应该进记忆，需要理由的是把它挡在外面——反过来的话，加字段的人得记得
 回来改清单，而忘了改不报错，只表现为某类画面的变化永远看不见。
 """
+
+
+class SnapshotPlace(BaseModel):
+    """独立的地图坐标快照。"""
+
+    map_id: int
+    x: int
+    y: int
+
+
+class SnapshotBagItem(BaseModel):
+    item_id: int
+    quantity: int
+
+
+class SnapshotPartyMon(BaseModel):
+    species: int
+    level: int
+    hp: int
+    max_hp: int
+    status: str
+
+
+class SnapshotRam(BaseModel):
+    """游戏状态快照，不依赖 world 的类型。"""
+
+    in_battle: bool
+    money: int
+    bag: list[SnapshotBagItem]
+    party: list[SnapshotPartyMon]
+
+
+class SnapshotFacingObject(BaseModel):
+    kind: str
+    place: SnapshotPlace
+
+
+class SnapshotCombatant(BaseModel):
+    name: str
+    level: int
+    hp: int
+    max_hp: int
+    status: str
+
+
+class SnapshotBattle(BaseModel):
+    mine: SnapshotCombatant
+    foe: SnapshotCombatant
+
+
+class SnapshotStep(BaseModel):
+    """脚本内部一键后的紧凑观察快照。"""
+
+    step: int
+    place: SnapshotPlace
+    facing: str
+    scene: str
+    overlay: str
+    dialog_text: str = ""
+    options: list[str] = Field(default_factory=list)
+    cursor: str = ""
+    screen: str = ""
+    ram: SnapshotRam | None = None
+    facing_object: SnapshotFacingObject | None = None
+    battle_status: SnapshotBattle | None = None
+    settled: bool = True
+
+
+class ScriptOutcome(BaseModel):
+    """脚本终态报告的机械结局。"""
+
+    code: str = ""
+    ok: bool = False
+    summary: str = ""
+    reason: str = ""
+
+
+class ObservationChange(BaseModel):
+    """跨层传递的一条观察差异。"""
+
+    kind: Literal["dialog_line", "warp", "money", "bag", "party", "scene"]
+    step: int
+    place: SnapshotPlace | None = None
+    object: SnapshotFacingObject | None = None
+    text: str
 
 
 class ActMemory(BaseModel):
@@ -47,7 +132,11 @@ class ActMemory(BaseModel):
     程序记忆、skill library（机制二）、值回填（机制三）都还没做。
     """
 
+    ScriptOutcome: ClassVar[type[ScriptOutcome]] = ScriptOutcome
+    Change: ClassVar[type[ObservationChange]] = ObservationChange
+
     class Observation(BaseModel):
+        StepObs: ClassVar[type[SnapshotStep]] = SnapshotStep
         """独立的结构化观测快照，由tool层从world观测转换，不依赖world行为。"""
 
         class Facts(BaseModel):
@@ -83,7 +172,6 @@ class ActMemory(BaseModel):
             dialog_text: str = ""
             options: list[str] = Field(default_factory=list)
             cursor: str | None = None
-            overview: str = ""
             map_id: int | None = None
             screen: str = ""
 
@@ -154,20 +242,9 @@ class ActMemory(BaseModel):
         )
         facts: Facts = Field(default_factory=Facts, description="结构化事实容器的快照")
         done: bool = Field(default=False, description="产生这份观测时世界层是否已经不在了")
-        perceived: bool = Field(
-            default=True,
-            description="仅为读取旧记忆保留的视觉感知标记，不影响当前渲染。",
-        )
-
-        observation_flags: list[str] = Field(default_factory=list)
-
-        @model_serializer(mode="wrap")
-        def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-            """保留旧记忆快照的序列化形状。"""
-            data = handler(self)
-            if "observation_flags" not in self.model_fields_set:
-                data.pop("observation_flags", None)
-            return data
+        ram: SnapshotRam | None = None
+        facing_object: SnapshotFacingObject | None = None
+        settled: bool = True
 
     before: Observation = Field(description="做决定时看到的画面")
     action: str = Field(
@@ -175,19 +252,8 @@ class ActMemory(BaseModel):
         "连按已经展开成多步，这里不再是链"
     )
     after: Observation = Field(description="执行之后的画面。**结果也是一次观察**")
-    result: str = Field(
-        default="",
-        description="脚本动作的终态报告摘要（`ok` / `verify_failed` 这类结局码）；键动作为空串。"
-        "脚本一次调用占一步、内部 N 键不展开（P5 定案），这个字段就是那一步的机械结局"
-        "——判据只认达成的约定下，它是判停可直接采信的证据",
-    )
-    dialog: list[str] = Field(
-        default_factory=list,
-        description="脚本调用期间屏幕上依次出现的对话**行**（一行一个元素，不截断）；"
-        "键动作为空列表。独立字段而不并进 `result`——`result` 是结局码那一句，"
-        "对话是过场原文，两者的读方（判停 / 蒸馏 / 评分）不同。"
-        "旧记忆没有这个字段，读作空列表",
-    )
+    observations: list[SnapshotStep] = Field(default_factory=list)
+    outcome: ScriptOutcome | None = None
 
     step: int = Field(
         description="该键按下**前**那一帧的本局累计键数（跨 task 连续，harness 盖章）——"

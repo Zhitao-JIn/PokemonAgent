@@ -1,7 +1,7 @@
 {
   "tasks": {
     "memory_records": {
-      "active": "v3"
+      "active": "v4"
     },
     "verify": {
       "active": "v4"
@@ -55,7 +55,7 @@
       "active": "v10"
     },
     "decide_action": {
-      "active": "v10"
+      "active": "v11"
     },
     "output_retry": {
       "active": "v1"

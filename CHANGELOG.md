@@ -1,3 +1,13 @@
+## 2026-10-27（668）—— 逐键观察与结构化脚本结局接入记忆
+
+**改了什么**：`ActMemory` 去掉 `result`、`dialog`，新增逐键 `observations` 与结构化 `outcome`；完整前后快照增加 RAM、面朝物体与稳定标志，不再存 `observation_flags`，旧记忆缺新字段仍可读取。`sense` 把 RAM 写入状态，`close_step` 与当前观察一并转正，反思从状态取前后 RAM、不读 trace 账；门面从同帧地标确定面朝物体。新增纯差异函数与 prompt 方言的 `ChangeRecord`，由 `BrainTool` 门面统一从相邻观察算出差异并传入选择、判定、校验、task 摘要；未稳定帧不产出对话行。`act` 写 `last_outcome` / `last_observations`，`last_event` 留待 CP4；移除旧脚本一行结果工具。
+
+**为什么这么改**：脚本内部观察保留对话、换图与游戏变量变化的直接证据，结构化结局保留无法从观察推得的业务结果；门面预先算差异，使 prompt 只接收字段，避免依赖 memory 实现。`detect_stall` 用脚本名、code 与成功结果顶层 summary/reason 构造签名：同 code 不同摘要可区分，失败脚本仍按脚本名和 code 判断重复。
+
+**取舍**：新增 `memory_records/v4` 与 `decide_action/v11` 并激活，取代 665–666 的 `ActMemory.dialog` 与 `memory_records/v3`；v3 及所有旧版本文件保留且不再激活，prompt 记录保留旧字段供旧版本渲染。为符合 `AGENTS.md` 的模块与函数行数要求，v4 分为主文件与辅助文件，主文件固定辅助文件摘要，版本元数据仍按 `assemble.py` 与 `prompt.md` 的原规则校验。完整观察的 RAM 随状态携带，不依赖 trace 后端读账；感知未提供 RAM 时对应快照为空。面朝物体只认当前帧相邻格的交互地标。
+
+**影响面**：动作记忆模型、task 节点与状态、reflect/choose 信封、brain 门面、prompt 记录与两个新版本，以及对应测试；对象记忆链和等待策略保持不变。D17 与 checkpoint 定向 JUnit：tests=12、failures=0、errors=0、skipped=0；RAM 生命周期定向 JUnit：tests=10、failures=0、errors=0、skipped=0；全量 JUnit：tests=3130、failures=0、errors=0、skipped=25（已排除指定的 3 条沙箱用例）。新增状态字段会改变 state_schema_hash，既有 checkpoint 相容性测试通过。`ruff check .` 与 `ruff format --check .` 通过；未调用真实模型、未启动模拟器。
+
 ## 2026-10-27（667）—— 脚本逐键紧凑观察进入终态报告与 act_call 账
 
 **改了什么**：新增并导出 `StepObservation`、`RamState`、`FacingObject`；`ScriptRun` 每键沿用现有稳定等待后读取屏幕、RAM 与朝向邻格物体，并在中断前追加观察，`finish` 填入 `ScriptResult.observations`。等待返回达到超时边界或严格超时抛出时，该键记 `settled=False`。MCP 服务端在业务 data 展开后序列化观察列表，客户端按现有扁平报告重建；`act_call` 渲染与严格解析模型同步携带观察。按 D16，菜单按键后的出口统一经 `run.finish()` 并保持原有 code/data；买卖包装层的成功、内层中止与对账失败出口均转发 `inner.observations`。

@@ -17,7 +17,7 @@ from ..task_state import TaskState
 
 
 def close_step(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
-    """转正新帧、清两个流转字段；上一圈按过键才记 `ADVANCE_STEP`。"""
+    """转正新帧与同帧 RAM、清流转字段；上一圈按过键才记 `ADVANCE_STEP`。"""
     after = state.after_observation
     assert after is not None, "close_step 之前 sense 必须已取帧"
     if state.action is not None:
@@ -37,8 +37,11 @@ def close_step(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any
             )
         )
     return {
-        "task_ctx": state.task_ctx.model_copy(update={"observation": after}),
+        "task_ctx": state.task_ctx.model_copy(
+            update={"observation": after, "ram": state.after_ram}
+        ),
         "after_observation": None,
+        "after_ram": None,
         "action": None,
     }
 

@@ -23,7 +23,7 @@ _SOURCE = "task.sense"
 
 
 def sense(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
-    """取一帧（只读内存与屏幕缓冲，带场合），写 `after_observation`。"""
+    """取一帧（只读内存与屏幕缓冲，带场合），写观察与同帧 RAM。"""
     deps = runtime.context
     episode_id, task_id = state.episode_id, state.task.task_id
     # 观测的 step 是局内累计键数（帧槽 / ActMemory 的键控来源）；账面步号另盖：
@@ -49,7 +49,7 @@ def sense(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
         )
     )
     remember_frame(deps, episode_id, obs_step, frame_png)
-    return {"after_observation": obs}
+    return {"after_observation": obs, "after_ram": ram}
 
 
 __all__ = ["sense"]

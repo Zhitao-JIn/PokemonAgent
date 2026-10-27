@@ -50,6 +50,8 @@ class FromHarnessToBrainToolChooseOnceReq(BaseModel):
     space: ActionSpace
     memories: list[ActMemory]
     last_result: str = ""
+    last_outcome: ActMemory.ScriptOutcome | None = None
+    last_changes: list[ActMemory.Change] = Field(default_factory=list)
     knowledge: str = ""
     task_index: list[TaskMemory] = Field(
         default_factory=list,

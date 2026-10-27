@@ -1,0 +1,8 @@
+{
+  "task": "memory_records",
+  "version": "v4",
+  "kind": "fragment",
+  "params": "MemoryParams",
+  "reason": "从逐键观察渲染变化与结构化结局",
+  "hash": "97d5b80cde688cccfe978092385e568469aa7d7fd3775362b8814975576277f3"
+}

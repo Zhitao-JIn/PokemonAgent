@@ -1,0 +1,8 @@
+{
+  "task": "decide_action",
+  "version": "v11",
+  "kind": "task",
+  "params": "DecideActionParams",
+  "reason": "上步脚本以结构化结局和观察变化呈现",
+  "hash": "6131a5a279e0889171a53a6d470aae25bf47b96b9e787bf35c1bb0e96ea8c829"
+}

@@ -13,9 +13,9 @@ from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Action
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
+from pokemon_agent.schemas.memory import ActMemory
 from pokemon_agent.world import TaskObservation
 
-from ..script_report import describe_call
 from ..task_runtime import TaskRuntime
 from ..task_state import TaskState
 
@@ -25,18 +25,21 @@ def compute_stall(
     action: Action,
     prev_key: str | None,
     prev_count: int,
-    report: dict[str, Any] | None = None,
+    outcome: ActMemory.ScriptOutcome | None = None,
 ) -> tuple[str, int]:
     """纯函数：这一个动作的停摆键与连续计数（与上一个相同则 +1，否则归 1）。
 
-    report：上一动作是脚本时的终态报告；按键为 None。
+    outcome：上一动作是脚本时的结构化结局；按键为 None。
     """
-    if report is None or action.script is None:
+    if outcome is None or action.script is None:
         tail = action.describe()
-    elif not report.get("ok"):
-        tail = f"{action.script.name} → {report.get('code', '')}"
+    elif not outcome.ok:
+        tail = f"{action.script.name} → {outcome.code}"
     else:
-        tail = describe_call(action, report)
+        detail = outcome.summary or outcome.reason
+        tail = f"{action.script.name} → {outcome.code}"
+        if detail:
+            tail += f"：{detail}"
     key = f"{after.stall_key()}|{tail}"
     count = prev_count + 1 if prev_key == key else 1
     return key, count
@@ -48,7 +51,11 @@ def detect_stall(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, A
         return {}
     assert state.after_observation is not None, "sense 没有产出新帧"
     key, count = compute_stall(
-        state.after_observation, state.action, state.stall_key, state.stall_count, state.last_report
+        state.after_observation,
+        state.action,
+        state.stall_key,
+        state.stall_count,
+        state.last_outcome,
     )
     runtime.context.trace.append(
         FromHarnessToTraceToolAppendReq(

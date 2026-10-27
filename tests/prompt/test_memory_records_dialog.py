@@ -166,10 +166,10 @@ def test_old_versions_still_load_against_their_recorded_hashes(tmp_path: Path) -
         assert rendered.text
 
 
-def test_package_registry_activates_v3(tmp_path: Path) -> None:
-    """随包注册表指向 v3；v3 的源文件与 meta.json 对得上（网关构造即校验）。"""
+def test_package_registry_activates_v4_and_preserves_v3(tmp_path: Path) -> None:
+    """活动版本为 v4，旧版 v3 仍可加载并渲染。"""
     data = json.loads(PACKAGE_REGISTRY.read_bytes())
-    assert data["tasks"]["memory_records"]["active"] == "v3"
+    assert data["tasks"]["memory_records"]["active"] == "v4"
 
     meta = json.loads((FRAGMENT / "v3/meta.json").read_bytes())
     assert meta["version"] == "v3" and meta["params"] == "MemoryParams"

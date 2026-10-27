@@ -79,6 +79,7 @@ from pokemon_agent.direct.judge_prompt_params import judge_prompt_params
 from pokemon_agent.direct.node_brain_factory import BrainLayer, NodeBrainFactory
 from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
+from pokemon_agent.memory.changes import changes
 from pokemon_agent.prompt import (
     DecideActionParams,
     DecomposeParams,
@@ -130,12 +131,15 @@ from pokemon_agent.world import (
     INTERACT_KEY,
     TERRAIN_MEANING,
     ActionEntry,
+    RamReadout,
+    TaskObservation,
 )
 
 BrainLink = Literal["text", "judge", "summary", "plan"]
 """`BrainTool.build(links=…)` 可选的四条模型链路（对应配置文件 `models` 段的四个条目）。"""
 
 _Result = TypeVar("_Result")
+_Record = TypeVar("_Record", bound=BaseModel)
 
 
 def cap_images(frames: Sequence[str], cap: int) -> list[str]:
@@ -321,6 +325,37 @@ class Decomposer:
 # ---- 决策 ----
 
 
+def _act_records(
+    entries: Sequence[ActMemory | TaskMemory], records: Sequence[_Record]
+) -> list[_Record]:
+    """将每条 act 的相邻观察差异填入 prompt 方言，其余记录原样返回。"""
+    assert len(entries) == len(records)
+    prepared: list[_Record] = []
+    for entry, record in zip(entries, records, strict=True):
+        if not isinstance(entry, ActMemory):
+            prepared.append(record)
+            continue
+        previous = entry.before
+        differences: list[dict[str, object]] = []
+        for observation in entry.observations:
+            for change in changes(previous, observation):
+                differences.append(
+                    {
+                        "step": change.step,
+                        "kind": change.kind,
+                        "place": change.place.model_dump() if change.place is not None else None,
+                        "object": change.object.model_dump() if change.object is not None else None,
+                        "text": change.text,
+                    }
+                )
+            previous = observation
+        payload = record.model_dump(mode="json")
+        payload["changes"] = differences
+        payload["outcome"] = entry.outcome.model_dump(mode="json") if entry.outcome else None
+        prepared.append(type(record).model_validate(payload))
+    return prepared
+
+
 def decide_prompt_params(
     req: FromHarnessToBrainToolChooseOnceReq, *, max_segments: int
 ) -> DecideActionParams:
@@ -332,7 +367,11 @@ def decide_prompt_params(
         max_segments=max_segments,
         terrain_meanings=TERRAIN_MEANING,
     )
-    return DecideActionParams.model_validate(data)
+    params = DecideActionParams.model_validate(data)
+    params.memories = _act_records(req.memories, params.memories)
+    if params.last_outcome is not None and params.memories and not params.last_changes:
+        params.last_changes = max(params.memories, key=lambda entry: entry.step).changes
+    return params
 
 
 class Chooser:
@@ -476,17 +515,38 @@ class Reflector:
         """用两帧结构化观测组装记忆，不调用模型或网关。
 
         前置：请求提供两帧任务观测和本步动作、坐标。
-        后置：保留快照与结果，仅剥离 SNAPSHOT_BLIND 中的检索字段；请求不变。
+        后置：保留快照、脚本结局与观察，仅剥离 SNAPSHOT_BLIND 中的检索字段；请求不变。
         """
         entry = ActMemory(
-            before=ActMemory.Observation.model_validate(_blind(req.before).model_dump(mode="json")),
+            before=_reflect_snapshot(req.before, req.before_ram),
             action=req.action.describe(),
-            after=ActMemory.Observation.model_validate(_blind(req.after).model_dump(mode="json")),
+            after=_reflect_snapshot(req.after, req.after_ram),
             step=req.step,
             episode_id=req.episode_id,
-            result=req.result,
+            outcome=req.outcome,
+            observations=req.observations,
         )
         return FromHarnessToBrainToolReflectResp(entry=entry)
+
+
+def _reflect_snapshot(obs: TaskObservation, ram: RamReadout | None) -> ActMemory.Observation:
+    """将当前观测、同帧 RAM 和面朝的相邻地标转成独立记忆快照。"""
+    raw = _blind(obs).model_dump(mode="json")
+    if ram is not None:
+        raw["ram"] = ram.model_dump(mode="json")
+    if obs.place is not None and obs.facts.facing in {"north", "south", "east", "west"}:
+        target = obs.place.step_toward(obs.facts.facing)
+        landmark = next(
+            (
+                mark
+                for mark in obs.facts.landmarks
+                if mark.place == target and mark.kind in {"人", "门", "招牌", "物"}
+            ),
+            None,
+        )
+        if landmark is not None:
+            raw["facing_object"] = {"kind": landmark.kind, "place": target.model_dump()}
+    return ActMemory.Observation.model_validate(raw)
 
 
 # ---- 判定 ----
@@ -511,6 +571,7 @@ class Judger:
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         """渲染本层执行证据并判定；不允许的中断按解析失败重试，调用账保留版本戳。"""
         params = judge_prompt_params(req)
+        params.history = _act_records(req.history, params.history)
         rendered_prompt = render_and_stamp(self._prompt_gateway, "judge_success", params, [])
         prompt = rendered_prompt.text
         goal = req.goal.goal
@@ -569,6 +630,7 @@ class Verifier:
     def verify(self, req: FromHarnessToBrainToolVerifyReq) -> FromHarnessToBrainToolVerifyResp:
         """校验完整素材；网关渲染 prompt 与逐条素材，所有尝试在收编后盖章。"""
         params = VerifyParams.model_validate(req.model_dump(mode="json"))
+        params.entries = _act_records(req.entries, params.entries)
         rendered_prompt = render_and_stamp(self._prompt_gateway, "verify", params, [])
         prompt = rendered_prompt.text
         records = self._prompt_gateway.render_history("verify", params)
@@ -789,6 +851,7 @@ class TaskSummarizer:
         params = SummarizeTaskParams.model_validate(
             {**req.model_dump(mode="json"), "success": req.success}
         )
+        params.entries = _act_records(req.entries, params.entries)
         rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize_task", params, [])
         prompt = rendered_prompt.text
         records = self._prompt_gateway.render_history("summarize_task", params)
