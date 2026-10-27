@@ -170,8 +170,9 @@ def _harness(
 
     monkeypatch.setattr(episode_entry, "run_episode", fake_run_episode)
     trace, memory, game = TraceTool(LocalTrace(root=tmp_path)), _Memory(), _Game()
+    config = app_config(budget={"max_episodes": 3, "max_planning_rounds": 2})
     deps = RunRuntime(
-        config=app_config(budget={"max_episodes": 3, "max_planning_rounds": 2}),
+        config=config,
         trace=trace,
         memory=memory,  # type: ignore[arg-type]
         reviewer=NullReviewer(),
@@ -179,7 +180,7 @@ def _harness(
         planner=planner,  # type: ignore[arg-type]
         judger=judger,  # type: ignore[arg-type]
         episode_graph=None,  # type: ignore[arg-type]
-        episode=SimpleNamespace(memory=memory, trace=trace),  # type: ignore[arg-type]
+        episode=SimpleNamespace(memory=memory, trace=trace, config=config),  # type: ignore[arg-type]
         game=game,  # type: ignore[arg-type]
     )
     return RunHarness(deps, compile_run_graph()), game

@@ -60,12 +60,28 @@ def exc_snapshot(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
-def initial_plan(goals: list[Task]) -> list[GoalEntry]:
+def initial_plan(
+    goals: list[Task], frozen_tasks: dict[str, list[Task]] | None = None
+) -> list[GoalEntry]:
     """把调用方给的 `list[Task]` 包成初始目标表（全 `PENDING`、零尝试）。
 
-    后置条件：返回条数与 `goals` 相等，顺序照原序（表序 = 派发顺序）。
+    前置条件：`frozen_tasks` 的键都在 `goals` 的 `task_id` 里——键是"哪一条目标"的归属，
+    指不到表里的条目就是调用方的 bug。
+    后置条件：返回条数与 `goals` 相等，顺序照原序（表序 = 派发顺序）；只有被点名的那几条
+    带冻结 task 表，其余为空表。
     """
-    return [GoalEntry(task=task, status=EntryStatus.PENDING) for task in goals]
+    frozen = frozen_tasks or {}
+    assert set(frozen) <= {task.task_id for task in goals}, (
+        "initial_plan() got frozen_tasks for goals outside the table"
+    )
+    return [
+        GoalEntry(
+            task=task,
+            status=EntryStatus.PENDING,
+            frozen_tasks=list(frozen.get(task.task_id, ())),
+        )
+        for task in goals
+    ]
 
 
 def default_run_goal(goals: list[Task]) -> Goal:
@@ -111,6 +127,7 @@ def new_run(
     start_task: Task | None = None,
     checkpoint_only: bool = False,
     sample_id: str = "",
+    frozen_tasks: dict[str, list[Task]] | None = None,
 ) -> RunResult:
     """跑完一个 run：载入世界起点，然后目标表逐个解决（每条一个 episode），返回 `RunResult`。
 
@@ -143,6 +160,10 @@ def new_run(
     缺省取表序第一条；空表时由 `start_task_for(run_id, run_goal)` 合成（`max_steps=1`）。
     需要 `initial_state_hint` 的调用方必须自己经 `start_task` 带进来。
 
+    `frozen_tasks`：样本事先给定的 task 表，键是目标条目的 `task_id`；由 `initial_plan`
+    挂到对应的 `GoalEntry.frozen_tasks`，再由 run 的 `act` 带进那一局的 `EpisodeInput`。
+    只有 `loop.freeze_episode_plan` 打开时 episode 层才会用它。缺省 None = 每条都自己拆。
+
     后置条件：正常路径 trace 里恰好多一条 RUN_START（`begin`）和一条 RUN_END（`run_done`）；
     异常路径补一条 RUN_ERROR 后原样抛出，不吞。
     """
@@ -162,7 +183,7 @@ def new_run(
     state = RunState(
         run_id=run_id,
         run_goal=goal,
-        goals=initial_plan(goals),
+        goals=initial_plan(goals, frozen_tasks),
     )
     # `run_id` 的真源在 `state.run_id`（186 起 id 归 state，runtime 不再复制）；
     # trace 事件的归属章由 `TraceTool.build(run_id=…)` 在构造期持有，与这里同值。

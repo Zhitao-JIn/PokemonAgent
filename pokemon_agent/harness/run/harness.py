@@ -78,6 +78,7 @@ class RunHarness:
         start_task: Task | None = None,
         checkpoint_only: bool = False,
         sample_id: str = "",
+        frozen_tasks: dict[str, list[Task]] | None = None,
     ) -> RunResult:
         """跑完一个 run，返回结构化结算 `RunResult`（V8）。
 
@@ -94,6 +95,8 @@ class RunHarness:
         `initial_state_hint` 只能由调用方经它带进来。
         `checkpoint_only`：只存 run 级存档就返回，不进图（见 `run_entry.new_run`）。
         `sample_id`：eval 侧样本标识，原样带回 `RunResult.sample_id`（非 eval 缺省空串）。
+        `frozen_tasks`：样本事先给定的 task 表，键是目标条目的 `task_id`（见
+        `run_entry.new_run`）；只有 `loop.freeze_episode_plan` 打开时 episode 层才用它。
         """
         return new_run(
             self.deps,
@@ -104,6 +107,7 @@ class RunHarness:
             start_task=start_task,
             checkpoint_only=checkpoint_only,
             sample_id=sample_id,
+            frozen_tasks=frozen_tasks,
         )
 
     # ---- 读账（薄委托给 deps.trace）----

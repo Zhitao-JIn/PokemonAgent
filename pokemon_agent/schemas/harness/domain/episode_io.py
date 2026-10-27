@@ -19,12 +19,18 @@ class EpisodeInput(BaseModel):
     """run 的 `act` 派一局时给的全部初值（`dispatch` 写进 `RunState.episode_input`）。
 
     `goal.max_steps` 是父级建议task数；硬上限由配置budget.episode_max_tasks提供。
+    `tasks` 是目标条目带下来的样本冻结任务表：`loop.freeze_episode_plan` 打开时
+    `begin_episode` 用它装初始任务表，关着时忽略（自由规划不看它）。
     """
 
     run_id: str = Field(description="所属 run")
     run_goal: str = Field(description="所属 run 的目标文本")
     episode_id: str = Field(description="本局标识 `{run_id}-ep{n}`")
     goal: Task = Field(description="本局唯一目标（task_id 即目标表条目的 task_id）")
+    tasks: list[Task] = Field(
+        default_factory=list,
+        description="冻结的 task 表（表序 = 派发顺序）；空 = 本局自己拆",
+    )
     actions_budget: int | None = Field(
         default=None, ge=0, description="开局剩余的跨局动作额度；None 不限"
     )

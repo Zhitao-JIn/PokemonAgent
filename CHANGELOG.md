@@ -1,3 +1,13 @@
+## 2026-10-27（663）—— 评测可冻结 episode 层拆解：样本给定 task 表，判负即收尾
+
+**改了什么**：`GoalEntry` 增 `frozen_tasks: list[Task]`（默认空）、`EpisodeInput` 增 `tasks: list[Task]`（默认空），run 的 `dispatch` 把所选条目的表带进这一局；`begin_episode` 在 `loop.freeze_episode_plan` 打开时按表序装初始任务表（每条 `TaskEntry`、`entry_id` 取样本 `task_id`、`round=1`、`PENDING`）并自己给出 `execution_order`，表空或同局 `task_id` 重复即断言失败；`plan_episode` 冻结时整段退场（不调 decomposer、不问人审、不写 `decompose_call` / `decompose_verdict`、不占 `decompositions_used`），任一条 `FAILED` / `ABANDONED` 以 `FROZEN_ITEM_FAILED` 收尾、已无 `PENDING` 时沿用 `DECOMPOSITIONS_EXHAUSTED`。入口侧 `new_run` / `RunHarness.run` 增关键字 `frozen_tasks: dict[str, list[Task]] | None`（键 = 目标条目的 `task_id`），`initial_plan` 把它挂到对应条目、键不在目标表里即断言失败。新增 episode 层七条与入口四条测试，`test_run_goal_split` 的 episode 桩补上 `config`（`begin_episode` 现在读开关）。
+
+**为什么这么改**：短期档考的是 choose 与 task 记忆，拆解层必须由样本钉死——本层不许改写表、失败即样本失败，否则拆解的随机性会污染下层观测；task 表也只能经 `harness.run` 一个口进来，所以要有一条从目标条目到 `EpisodeInput` 的合法通道。
+
+**取舍**：`tasks` 只在开关打开时被使用，关着时随 `EpisodeInput` 存着但不参与规划（用例钉死"关着就忽略"）；`frozen_tasks` 挂在 `GoalEntry` 上随 `RunState` 进 checkpoint，`state_schema_hash` 再次变化（`a78572c67ad5d4e9` → `4e3a8def0700d123`），守卫常量只更新值。冻结的是拆解不是判停，本局仍问 judge。`begin_episode` 从此读 `deps.config`——生产 `EpisodeRuntime` 本就有这个字段，只有桩成 `SimpleNamespace` 的测试需要补上。
+
+**影响面**：七个生产文件 + 四个测试文件（含新增两个）；全量 pytest 3065 用例、3040 passed / 25 skipped / 0 failed（junit 计数，246.774s；3 条 `test_eval_service_wiring` 属沙箱 safe-delete 守卫的已知基线失败，按 spec §5.5 以 `--deselect` 排除）；`ruff check` 与 `ruff format --check`（1104 files）全绿。未调用真实模型、未启动模拟器。
+
 ## 2026-10-27（662）—— 评测可冻结 run 层规划：开关关时行为不变，冻结时按给定目标表派发、判负即收尾
 
 **改了什么**：`LoopConfig`（`settings/schema/loop.py`）与 `settings/default.json` 增两个默认关闭的开关 `freeze_run_plan` / `freeze_episode_plan`（本条只接 run 层，episode 分支在 663）；`Termination` 增 `frozen_item_failed`；`plan_run` 入口在 `freeze_run_plan` 打开时整段退场——不调 planner、不问 reviewer、不写 `plan_call` / `plan_verdict`、不占 `planning_rounds_used`：任一条目 `FAILED` / `ABANDONED` 立即以 `FROZEN_ITEM_FAILED` 收尾且不再派后面的条目，表里已无 `PENDING` 时沿用 `PLANNING_EXHAUSTED`；`new_run` 在开关打开而初始目标表为空时断言失败。测试侧新增 `tests/harness/run/test_frozen_run_plan.py` 六条（表序即派发序、planner 零调用且无规划账、首条判负后第二条不派发、表耗尽收尾、空表断言、开关关的对照组），配置侧加两条默认值与覆盖用例，`tests/_harness_fixtures/node_io.py` 的终止类别镜像补一行。
