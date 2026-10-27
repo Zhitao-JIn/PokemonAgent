@@ -1,6 +1,6 @@
 # spec —— 评测时冻结规划层
 
-> 版本 v1。依据：`docs/eval_freeze/intent.md`。基线：主线 `e7155c3d922f28e92289e3deacf4f4fb02ad6582`。
+> 版本 v1.1（2026-10-27 修订：执行方前置核对发现 CP1 清单漏了 `termination.py` 与 `state_schema_hash` 守卫测试，CP3 的 short 档缺 `frozen_tasks` 入口，起点有 3 条沙箱环境失败；新增 D11、D12，调整 CP1、CP2 文件清单）。依据：`docs/eval_freeze/intent.md`。基线：主线 `e7155c3d922f28e92289e3deacf4f4fb02ad6582`。
 > 本 spec 里的函数与行为均由设计侧读代码核实；"待执行方核实"的项在对应检查点先核实，与此处不符就停下汇报。
 
 ## 一、决定表
@@ -18,6 +18,9 @@
 | D9 | `one.py` 按档位组装：`long` 传空目标表 + run goal（现状）；`mid` 传 `goals` 目标表 + `freeze_run_plan=true`；`short` 传单条带 `frozen_tasks` 的目标 + `freeze_episode_plan=true` 与 `freeze_run_plan=true`（run 层只有这一个目标，不再规划）。开关经样本级配置覆盖传入，不改全局默认 | 短期也冻结 run 层，避免 plan·L0 在单目标样本上自由改写 |
 | D10 | 冻结模式下 `run_goal` 仍显式传入（样本的 `goal`）；目标表条目的 `task_id` 取样本 `sample_id` 加序号（如 `<sample_id>-g1`），`task` 的 `task_id` 同理（`<sample_id>-g1-t1`） | 与 run-goal-split 的归属键约定一致（按 `run_id`，不按目标 id） |
 
+| D11 | `frozen_tasks` 的入口：`new_run` 与 `RunHarness.run` 新增关键字参数 `frozen_tasks: dict[str, list[Task]] | None = None`（键 = 目标表条目的 `task_id`），`initial_plan(goals, frozen_tasks)` 把它挂到对应 `GoalEntry.frozen_tasks`；键不在 `goals` 里时断言失败；缺省 `None` 行为与现状一致。CP2 完成 | 评测入口只能经 `harness.run` 传入，必须有合法入口 |
+| D12 | `state_schema_hash` 变化已接受：`Termination` 新增枚举值（CP1）与 `GoalEntry` / `EpisodeInput` 新字段（CP2）都会改它，评测起点是原始 `.state`，不依赖存档结构。守卫常量在 `tests/budget/test_budget_settlement.py` 的 `test_state_schema_is_frozen_after_advisory_budget_separation`：CP1、CP2 各自把常量改成当次算出的新值，汇报里写明旧值与新值，并在 CHANGELOG 条目里记一笔；不得为凑常量而改别的东西 | 评测不依赖旧存档结构；守卫要保留，只更新值 |
+
 ## 二、检查点
 
 | 检查点 | 内容 | 验收核对点 |
@@ -28,9 +31,9 @@
 
 ## 三、文件改动清单（允许范围）
 
-- CP1：`pokemon_agent/settings/schema/loop.py`、`pokemon_agent/settings/default.json`、`pokemon_agent/harness/run/plan_run/plan_run.py`、`pokemon_agent/harness/run/run_entry.py`、对应测试（`tests/harness/`、`tests/settings/` 下新增或修改）、`CHANGELOG.md`。
-- CP2：`pokemon_agent/schemas/harness/domain/goal_entry.py`、`pokemon_agent/schemas/harness/domain/episode_io.py`、`pokemon_agent/harness/run/act/dispatch.py`、`pokemon_agent/harness/episode/episode_entry.py`、`pokemon_agent/harness/episode/plan_episode/plan_episode.py`、对应测试、`CHANGELOG.md`；若 `state_schema_hash` 的测试夹具需同步，仅限这些夹具文件。
-- CP3：`evals/agent_short_goal_run/dataset/schemas.py`、`evals/agent_short_goal_run/dataset/loader.py`、`evals/agent_short_goal_run/solver/runner/one.py`、对应测试、`CHANGELOG.md`。
+- CP1：`pokemon_agent/settings/schema/loop.py`、`pokemon_agent/settings/default.json`、`pokemon_agent/schemas/harness/domain/termination.py`、`pokemon_agent/harness/run/plan_run/plan_run.py`、`pokemon_agent/harness/run/run_entry.py`、对应测试（`tests/harness/`、`tests/settings/` 下新增或修改）、`tests/budget/test_budget_settlement.py`（仅 `state_schema_hash` 守卫常量那一行）、`CHANGELOG.md`。
+- CP2：`pokemon_agent/schemas/harness/domain/goal_entry.py`、`pokemon_agent/schemas/harness/domain/episode_io.py`、`pokemon_agent/harness/run/act/dispatch.py`、`pokemon_agent/harness/run/run_entry.py`、`pokemon_agent/harness/run/harness.py`（D11；若另有声明 `harness.run` 签名的协议或端口文件，只改该签名并在汇报里列出）、`pokemon_agent/harness/episode/episode_entry.py`、`pokemon_agent/harness/episode/plan_episode/plan_episode.py`、对应测试、`tests/budget/test_budget_settlement.py`（仅守卫常量那一行）、`CHANGELOG.md`。
+- CP3：`evals/agent_short_goal_run/dataset/schemas.py`、`evals/agent_short_goal_run/dataset/loader.py`、`evals/agent_short_goal_run/solver/runner/one.py`（`loop` 覆盖在这里塞进 overlay 字典，不改 `evals/common/overlay.py`；经 D11 的 `frozen_tasks` 传入）、对应测试、`CHANGELOG.md`。
 - 路径以 `pokemon_agent/harness/run/run_entry.py` 的 `new_run` 为准核实；若某文件不存在或函数名不同，停下汇报。
 
 ## 四、待执行方先核实的事项（动手前必须核）
@@ -45,6 +48,10 @@
 - CP1：冻结关→现有测试不变；冻结开→planner 替身 0 次调用、派发顺序等于表序、第一条判负后第二条不派发且类别为 `FROZEN_ITEM_FAILED`、耗尽收尾类别为 `PLANNING_EXHAUSTED`；空表 + 冻结开→断言。
 - CP2：冻结开→decomposer 替身 0 次调用、task 顺序等于表序、第一个 task 判负后第二个不派发且类别为 `FROZEN_ITEM_FAILED`、耗尽类别为 `DECOMPOSITIONS_EXHAUSTED`；`tasks` 为空 + 冻结开→断言；冻结关且 `tasks` 非空→忽略 `tasks` 的行为须在测试里钉死（默认走自由规划，不使用它）。
 - CP3：三档各一条合法样本加载通过；`mid` 带 `tasks`、`short` 无 `tasks`、`long` 带 `goals` 三种非法组合各报 `DatasetError`；`one.py` 组装对三档产出的 `new_run` 入参与配置覆盖逐项断言（用替身 harness，不启动模拟器）。
+
+## 五点五、已知基线失败（环境原因，不属于本任务）
+
+起点全量 pytest 有 3 条失败：`tests/evals/test_eval_service_wiring.py::test_world_case_caller_closes_world_service_after_each_worker_outcome[success|timeout|worker_error]`。原因是该用例把模块级 `subprocess.run` 换成替身，而执行沙箱的 safe-delete 守卫在 `TemporaryDirectory` 清理时也调用 `subprocess.run`，被替身拦下；守卫的 `SystemExit` 还会吞掉 pytest 的统计尾行。处理方式：这 3 条视为已知基线失败；全量运行时加 `--deselect tests/evals/test_eval_service_wiring.py::test_world_case_caller_closes_world_service_after_each_worker_outcome` 以拿到完整统计尾行；每个检查点汇报时，除这 3 条外不得有任何新增失败。用户会在本机另行核对这 3 条在正常环境下是否通过。
 
 ## 六、验证方式
 
