@@ -73,7 +73,16 @@ class ResettingHarness:
     def __init__(self, game: StartGame) -> None:
         self.game = game
 
-    def run(self, run_id: str, goals: list, run_goal=None, *, start_task=None, sample_id=""):
+    def run(
+        self,
+        run_id: str,
+        goals: list,
+        run_goal=None,
+        *,
+        start_task=None,
+        sample_id="",
+        frozen_tasks=None,
+    ):
         self.game.events.append("run")
         self.game.reset(FromHarnessToGameToolResetReq(task=start_task))
         assert self.game.state == [self.game.initial_ram]

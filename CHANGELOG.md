@@ -1,3 +1,13 @@
+## 2026-10-27（664）—— 评测样本按档位冻结规划层：long 不变，mid 冻结目标表，short 再冻结 task 表
+
+**改了什么**：`EvalSample` 增 `tier`（`short` / `mid` / `long`，默认 `long`）与 `goals: list[SampleGoal]`（默认空）；新增 `SampleGoal`（`goal` / `success_criteria` / `max_steps` / `tasks`）与 `SampleTask`（`goal` / `success_criteria` / `max_steps`）。`loader.validate_tiers` 在加载期检查三档与内容是否自洽（mid 必须非空 goals 且各条不带 tasks；short 恰一条 goals 且 tasks 非空；long 不带 goals），不合规抛 `DatasetError`，`check()` / `load()` 都走它。`one.py` 拆出两个纯函数：`loop_overrides`（档位 → 样本级 `loop` 覆盖）与 `run_arguments`（档位 → 目标表 + `frozen_tasks`）。long 仍是空目标表 + `frozen_tasks=None` + 不覆盖配置；mid 把 goals 翻成目标表并在 overlay 里开 `freeze_run_plan`；short 只给一条目标、把它的 tasks 经 `frozen_tasks` 传入并同时开两个开关。目标 / task 身份按 D10 编成 `<sample_id>-g<n>` 与 `<sample_id>-g<n>-t<m>`。新增两个测试文件（加载期契约八条、组装三条），五个既有替身 harness 的 `run` 签名补 `frozen_tasks`。
+
+**为什么这么改**：三档评测要各自钉死一层规划，样本契约里就得能表达"这一层已经定了"。档位与内容对不上时（mid 带 task 表、short 没有 task 表、long 带目标表）只会在运行期表现成"开关开了没东西可派"，或悄悄退回自由规划——放在加载口上才能拦住整批。
+
+**取舍**：`state_schema_hash` 不变（评测样本不进状态，实测仍为 `4e3a8def0700d123`）；`loop` 覆盖只塞进 `one.py` 的样本 overlay 字典，没有改 `evals/common/overlay.py`；long 档连 `frozen_tasks` 关键字都传 `None`，调用形状与改动前一致；编号从 1 起、按样本 id 派生，不改用样本自带的标识。加载期只校三档的一致性，不为样本另造 `task_id`（那是 `one.py` 的职责）。
+
+**影响面**：三个生产文件 + 七个测试文件（含新增两个）；全量 pytest 3076 用例、3051 passed / 25 skipped / 0 failed（junit 计数，242.954s；3 条 `test_eval_service_wiring` 属沙箱 safe-delete 守卫的已知基线失败，按 spec §5.5 以 `--deselect` 排除）；`ruff check` 与 `ruff format --check`（1106 files）全绿。未调用真实模型、未启动模拟器。
+
 ## 2026-10-27（663）—— 评测可冻结 episode 层拆解：样本给定 task 表，判负即收尾
 
 **改了什么**：`GoalEntry` 增 `frozen_tasks: list[Task]`（默认空）、`EpisodeInput` 增 `tasks: list[Task]`（默认空），run 的 `dispatch` 把所选条目的表带进这一局；`begin_episode` 在 `loop.freeze_episode_plan` 打开时按表序装初始任务表（每条 `TaskEntry`、`entry_id` 取样本 `task_id`、`round=1`、`PENDING`）并自己给出 `execution_order`，表空或同局 `task_id` 重复即断言失败；`plan_episode` 冻结时整段退场（不调 decomposer、不问人审、不写 `decompose_call` / `decompose_verdict`、不占 `decompositions_used`），任一条 `FAILED` / `ABANDONED` 以 `FROZEN_ITEM_FAILED` 收尾、已无 `PENDING` 时沿用 `DECOMPOSITIONS_EXHAUSTED`。入口侧 `new_run` / `RunHarness.run` 增关键字 `frozen_tasks: dict[str, list[Task]] | None`（键 = 目标条目的 `task_id`），`initial_plan` 把它挂到对应条目、键不在目标表里即断言失败。新增 episode 层七条与入口四条测试，`test_run_goal_split` 的 episode 桩补上 `config`（`begin_episode` 现在读开关）。

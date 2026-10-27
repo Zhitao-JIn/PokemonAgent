@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from pathlib import Path
 
 from evals.agent_short_goal_run.dataset.schemas import EvalSample, Rubric
@@ -19,6 +20,43 @@ DATASET_DIR = Path(__file__).resolve().parent
 def load_samples(version: str = "v1") -> list[EvalSample]:
     """一个版本的全部样本，按文件顺序。失败：文件缺失或某行不合契约 → `DatasetError`。"""
     return read_models(version_directory(DATASET_DIR, version) / "samples.jsonl", EvalSample)
+
+
+def validate_tiers(samples: Sequence[EvalSample]) -> None:
+    """档位与冻结内容的一致性（D8）：三档各自的必需项，违反即 `DatasetError`。
+
+    - `long`：`goals` 为空（目标表由 planner 建，与现状一致）；
+    - `mid`：`goals` 非空、各条 `tasks` 全空（只冻结 episode 目标表）；
+    - `short`：`goals` 恰一条、它的 `tasks` 非空（连这一局的 task 表一起冻结）。
+
+    失败：任一档位不合规 → `DatasetError`（列出全部问题，不只第一条）。
+    """
+    problems: list[str] = []
+    for sample in samples:
+        goals = sample.goals
+        if sample.tier == "long":
+            if goals:
+                problems.append(f"{sample.sample_id}：long 档不该带 goals（{len(goals)} 条）")
+        elif sample.tier == "mid":
+            if not goals:
+                problems.append(f"{sample.sample_id}：mid 档需要非空 goals")
+            problems += [
+                f"{sample.sample_id}：mid 档第 {i} 条目标不该带 tasks"
+                for i, goal in enumerate(goals, start=1)
+                if goal.tasks
+            ]
+        else:
+            if len(goals) != 1:
+                problems.append(
+                    f"{sample.sample_id}：short 档需要恰一条 goals（实际 {len(goals)}）"
+                )
+            problems += [
+                f"{sample.sample_id}：short 档第 {i} 条目标需要非空 tasks"
+                for i, goal in enumerate(goals, start=1)
+                if not goal.tasks
+            ]
+    if problems:
+        raise DatasetError("\n".join(problems))
 
 
 def load_rubric(version: str = "v1") -> Rubric:
@@ -40,6 +78,7 @@ def check(version: str, rule_ids: set[str] | None = None) -> list[EvalSample]:
     失败：任一条不满足 → `DatasetError`（列出全部问题，不只第一条）。
     """
     samples = load_samples(version)
+    validate_tiers(samples)
     rubric = load_rubric(version)
     items = {i.item_id for i in rubric.items}
     lines = {r.line_id for r in rubric.red_lines}
@@ -69,6 +108,7 @@ __all__ = [
     "load_rubric",
     "load_samples",
     "sha256_of",
+    "validate_tiers",
 ]
 
 
