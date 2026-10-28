@@ -1,0 +1,307 @@
+[
+  {
+    "sample_id": "knowledge_wild_encounter",
+    "episode": {
+      "goal": "在草丛里一直走，直到撞上一只野生宝可梦",
+      "success_criteria": "scene 是 battle，或对话框里出现 `WILD ... appeared!`",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在草丛里一直走，直到撞上一只野生宝可梦",
+        "success_criteria": "scene 是 battle，或对话框里出现 `WILD ... appeared!`。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_door_transition",
+    "episode": {
+      "goal": "绕到建筑门口，走进去",
+      "success_criteria": "scene 是 indoor",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "绕到建筑门口，走进去",
+        "success_criteria": "scene 是 indoor。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_npc_dialogue",
+    "episode": {
+      "goal": "走到 NPC 面前按 a，让他说话",
+      "success_criteria": "overlay 是 dialog，且 dialog_text 非空",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "走到 NPC 面前按 a，让他说话",
+        "success_criteria": "overlay 是 dialog，且 dialog_text 非空。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_movement_obstacle",
+    "episode": {
+      "goal": "你在地图 12 的 x=9 y=12，正南方 y=13 这一整行被挡住了。绕过它，走到 y=14 或更南的地方",
+      "success_criteria": "where 那一行显示 map_id 仍是 12 且 y >= 14",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "你在地图 12 的 x=9 y=12，正南方 y=13 这一整行被挡住了。绕过它，走到 y=14 或更南的地方",
+        "success_criteria": "where 那一行显示 map_id 仍是 12 且 y >= 14。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_dialogue_advance",
+    "episode": {
+      "goal": "把对话一句一句按完，直到对话框消失",
+      "success_criteria": "历史里出现过 dialog_text，且这一帧 overlay 不是 dialog",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "把对话一句一句按完，直到对话框消失",
+        "success_criteria": "历史里出现过 dialog_text，且这一帧 overlay 不是 dialog。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_shop_interaction",
+    "episode": {
+      "goal": "与商店场景内至少两位不同 NPC 各完成一次对话",
+      "success_criteria": "起点观测中 kind=人 的地标至少有两位；本 task 历史中，至少两个不同起点 NPC 位置各有一条 object_kind=人、outcome=dialog 的交互记录。",
+      "max_steps": 2
+    },
+    "tasks": [
+      {
+        "goal": "与商店里的一位顾客（NPC，不是柜台后的店员）面对面完成一次对话",
+        "success_criteria": "面朝一位起点可见的顾客 NPC 按 a，对话框出现并被推进到消失；不购买商品。达成后立即停手，不再与其他人交互。",
+        "max_steps": 15
+      },
+      {
+        "goal": "与另一位不同的顾客（NPC，不是上一个 task 已对话过的那位、也不是柜台后的店员）完成一次对话",
+        "success_criteria": "面朝另一位起点可见的、此前未对话过的顾客 NPC 按 a，对话框出现并被推进到消失；不购买商品。达成后立即停手。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_battle_action_menu",
+    "episode": {
+      "goal": "在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标",
+      "success_criteria": "scene 是 battle、overlay 是 choice，且 cursor 是 RUN",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在当前战斗行动菜单中仅用方向键把光标移到 RUN，然后立即停手；不要按 a 确认，不要执行逃跑，不要离开战斗菜单，不要新增重新遇敌或逃跑收尾目标",
+        "success_criteria": "scene 是 battle、overlay 是 choice，且 cursor 是 RUN；达成后立即停手，不得按 a 确认。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_battle_fight_menu",
+    "episode": {
+      "goal": "在行动菜单里选 FIGHT，打开招式列表",
+      "success_criteria": "overlay 是 choice，且 options 是招式名（不再是 FIGHT / PKMN / ITEM / RUN）",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在行动菜单里选 FIGHT，打开招式列表",
+        "success_criteria": "overlay 是 choice，且 options 是招式名（不再是 FIGHT / PKMN / ITEM / RUN）。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_battle_move_select",
+    "episode": {
+      "goal": "在招式列表里选一个招式，按 a 把它打出去",
+      "success_criteria": "对话框里出现招式执行的结果文字（如 Critical hit! / It's super effective! / But, it failed! / Enemy ... fainted!），或对手 HP 挡位下降",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在招式列表里选一个招式，按 a 把它打出去",
+        "success_criteria": "对话框里出现招式执行的结果文字（如 Critical hit! / It's super effective! / But, it failed! / Enemy ... fainted!），或对手 HP 挡位下降。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_battle_pokemon_switch",
+    "episode": {
+      "goal": "在战斗中打开宝可梦列表",
+      "success_criteria": "overlay 是 choice，且 options 不再是 FIGHT / PKMN / ITEM / RUN，而是宝可梦名字",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在战斗中打开宝可梦列表",
+        "success_criteria": "overlay 是 choice，且 options 不再是 FIGHT / PKMN / ITEM / RUN，而是宝可梦名字。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_battle_item_use",
+    "episode": {
+      "goal": "在战斗中打开道具袋",
+      "success_criteria": "overlay 是 choice，且 options 是道具名（如 POKé BALL / POTION / ANTIDOTE）",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在战斗中打开道具袋",
+        "success_criteria": "overlay 是 choice，且 options 是道具名（如 POKé BALL / POTION / ANTIDOTE）。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_battle_run_attempt",
+    "episode": {
+      "goal": "在野生战斗里选 RUN 逃跑",
+      "success_criteria": "scene 变回 field，或对话框里出现逃跑失败文字（如 Can't escape!）",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在野生战斗里选 RUN 逃跑",
+        "success_criteria": "scene 变回 field，或对话框里出现逃跑失败文字（如 Can't escape!）。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_shop_open_buy_menu",
+    "episode": {
+      "goal": "在商店里选 BUY，打开商品列表",
+      "success_criteria": "scene 是 shop，且 options 是商品名（如 POKé BALL / POTION / ANTIDOTE）",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在商店里选 BUY，打开商品列表",
+        "success_criteria": "scene 是 shop，且 options 是商品名（如 POKé BALL / POTION / ANTIDOTE）。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_shop_select_item",
+    "episode": {
+      "goal": "在商品列表里选中一个商品，按 a 进入购买确认",
+      "success_criteria": "options 变成购买数量或 YES / NO，不再是商品名",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在商品列表里选中一个商品，按 a 进入购买确认",
+        "success_criteria": "options 变成购买数量或 YES / NO，不再是商品名。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_shop_confirm_purchase",
+    "episode": {
+      "goal": "从商店地板起点买下一件买得起的商品",
+      "success_criteria": "本 task 历史中出现 buy_item 脚本调用，且其终态报告为 ok=true、code=ok；该脚本已核对花费与背包增量。购买后商店窗口可以关闭。",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "从商店地板起点买下一件买得起的商品",
+        "success_criteria": "本 task 历史中出现 buy_item 脚本调用，且其终态报告为 ok=true、code=ok；该脚本已核对花费与背包增量。购买后商店窗口可以关闭。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_shop_cancel_purchase",
+    "episode": {
+      "goal": "在购买确认里选 NO 取消，退回商品列表",
+      "success_criteria": "scene 是 shop，且 options 又是商品名（如 POKé BALL / POTION），确认框已经不在",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在购买确认里选 NO 取消，退回商品列表",
+        "success_criteria": "scene 是 shop，且 options 又是商品名（如 POKé BALL / POTION），确认框已经不在。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_catch_weaken_target",
+    "episode": {
+      "goal": "打对手一下，让它掉血",
+      "success_criteria": "foe_hp 的当前值比历史里那几步低",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "打对手一下，让它掉血",
+        "success_criteria": "foe_hp 的当前值比历史里那几步低。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_catch_throw_ball",
+    "episode": {
+      "goal": "在战斗中打开背包，选精灵球扔出去",
+      "success_criteria": "对话框里出现投球结果文字（如 All right! ... was caught! / Darn! The POKéMON broke free!）",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "在战斗中打开背包，选精灵球扔出去",
+        "success_criteria": "对话框里出现投球结果文字（如 All right! ... was caught! / Darn! The POKéMON broke free!）。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_pokemon_center_enter",
+    "episode": {
+      "goal": "走进宝可梦中心",
+      "success_criteria": "scene 是 indoor，且 map_id 和历史里门外那几步不同（已经换过一次图）",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "走进宝可梦中心",
+        "success_criteria": "scene 是 indoor，且 map_id 和历史里门外那几步不同（已经换过一次图）。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  },
+  {
+    "sample_id": "knowledge_pokemon_center_heal",
+    "episode": {
+      "goal": "让护士把队伍治好",
+      "success_criteria": "对话框里出现治疗完成文字（如 We hope to see you again!）",
+      "max_steps": 1
+    },
+    "tasks": [
+      {
+        "goal": "让护士把队伍治好",
+        "success_criteria": "对话框里出现治疗完成文字（如 We hope to see you again!）。达成后立即停手，不再做与本 task 无关的操作。",
+        "max_steps": 15
+      }
+    ]
+  }
+]

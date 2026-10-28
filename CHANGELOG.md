@@ -1,3 +1,15 @@
+## 2026-10-28（679）—— 短期样本冻结版数据集
+
+**改了什么**：新增 `v20261028_short_frozen`，由 `v20261021_retest5` 构建；20 条样本仅更新 `dataset_version`、新增 `tier="short"` 与一条冻结 `goals`。task 表从设计文件原样复制，含 21 个 task；`knowledge_shop_interaction` 有 2 个，其余各 1 个。复制 22 个状态文件、`rubric.json` 与 `coverage.md`，并记录 `revision.json`。新增确定性构建脚本与合成样本构建逻辑测试。
+
+**为什么这么改**：短期评测需固定 plan·L1 task 表，避免 decomposer 的拆分差异混入 choose 与 task 记忆的评测结果；父版本保留为自由拆解对照。
+
+**取舍**：只冻结每条样本的一层 episode 目标与 task 表；除 `knowledge_shop_interaction` 外不拆成多 task。父版本及其起点、判据和其余样本字段保持不变；不改 loader、生产代码或设计文档。
+
+**影响面**：新增 dataset build 脚本与 task JSON、新版本目录（20 条样本、22 个 state）、构建测试；更新本 changelog。真实数据字段比较 20/20 通过，states 哈希 22/22 一致，`loader.load` / `validate_tiers` / `loader.check` 通过，重复构建的 `samples.jsonl` SHA-256 相同；两个需起点预检的样本通过模拟器 reset/perceive 校验，未运行真实模型或评测。
+
+**验证**：最终 JUnit 全量 pytest 3098 tests、0 failures、0 errors、25 skipped（按要求 deselect 一项）；ruff format、ruff check、ruff format --check 全绿。执行方报告的基线为 0 errors，未提供基线 skipped 数，故无法核对 skipped 是否相同。
+
 ## 2026-10-27（666）—— memory_records v3：脚本对话行进记忆素材
 
 **改了什么**：新增共享片段 `memory_records` v3（`prompt.md` 只多一条 `dialog` 标签；`assemble.py` 在 v2 之上加 `dialog_render()`，脚本调用的对话行一行一条、全文不截断，`act_render` 里落在 `结果` 之后，`act_sequence` 里落在 `做了` 之后），`ActRecord` 新增 `dialog: list[str]`，注册表把 `memory_records.active` 从 v2 切到 v3；v1、v2 源文件未改。测试新增 `tests/prompt/test_memory_records_dialog.py`（结果行之后与顺序、`sequence` 无结果行时的位置、200 行不截断、空对话与 v2 逐字相同、旧版本按各自 `meta.hash` 仍可加载、注册表激活 v3），并补 `tests/prompt/test_reflector_structured.py` 的期望 `dialog: []` 与 `tests/budget/test_budget_settlement.py` 的冻结 hash。

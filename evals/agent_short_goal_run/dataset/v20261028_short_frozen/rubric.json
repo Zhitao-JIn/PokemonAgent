@@ -1,0 +1,79 @@
+{
+  "version": "v20261021_retest4",
+  "items": [
+    {
+      "item_id": "decompose_quality",
+      "question": "这一版拆解出的 task 能不能执行、粒度合不合适、判据是不是只写画面证据",
+      "grader": "human",
+      "applies_to": "episode",
+      "levels": [
+        {
+          "score": 0,
+          "anchor": "有 task 不可执行（执行器按不到、看不到），或判据写了过程动词 / 画面上没有的证据"
+        },
+        {
+          "score": 1,
+          "anchor": "都可执行，但粒度明显过粗（一个 task 塞了几件事）或过细（一键一个 task）"
+        },
+        {
+          "score": 2,
+          "anchor": "都可执行、粒度合适、判据只写画面上核得到的证据"
+        }
+      ]
+    },
+    {
+      "item_id": "strategy_switch",
+      "question": "一个 task 停摆收尾之后，下一步有没有换策略",
+      "grader": "human",
+      "applies_to": "task",
+      "levels": [
+        {
+          "score": 0,
+          "anchor": "下一个 task 仍在重复同一个动作"
+        },
+        {
+          "score": 1,
+          "anchor": "换了动作，但方向或对象没变"
+        },
+        {
+          "score": 2,
+          "anchor": "换了方向或对象"
+        }
+      ]
+    },
+    {
+      "item_id": "redundant_path",
+      "question": "有没有少走冗余路（按键数、回到旧格的次数、无效按键数）",
+      "grader": "code",
+      "applies_to": "run",
+      "levels": [
+        {
+          "score": 0,
+          "anchor": "冗余明显：阈值待第一批数据标定"
+        },
+        {
+          "score": 1,
+          "anchor": "有少量冗余：阈值待第一批数据标定"
+        },
+        {
+          "score": 2,
+          "anchor": "基本没有冗余：阈值待第一批数据标定"
+        }
+      ]
+    }
+  ],
+  "red_lines": [
+    {
+      "line_id": "R1",
+      "question": "出错：run 以 error 收尾，或出现 run_error / episode_error（停摆不算）"
+    },
+    {
+      "line_id": "R2",
+      "question": "刹车失灵：连续失败达到停摆上限后，episode 仍在派 task，或 run 仍在开局"
+    },
+    {
+      "line_id": "R3",
+      "question": "谎报成功：run 以 goal_done 收尾，但样本目标的机械判据为 fail"
+    }
+  ]
+}
