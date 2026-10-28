@@ -45,6 +45,8 @@ docs/experiments/
 log
 *.egg-info/
 eval_results/
+/eval_assets_pack*/
+/eval_assets_pack*.zip
 
 .deepeval/
 eval_results/decode/
