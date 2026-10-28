@@ -87,3 +87,33 @@
 ## 九、不做
 
 不改 `pokemon_agent/`；不改父版本、`v20261028_short_frozen` 与其他版本；不调用真实模型；不为凑长改任务；不写读取真实数据集内容并断言的常驻测试；684（机械判据）在 683 验收后另行放行。
+
+## 十、684：五个机械判据（规则）
+
+> 前置：683 已合入（`v20261028_mid` 与 `PREFLIGHT_CHECK_IDS` 已在 main）。本节只加评分规则与它们的测试，不改数据集、不改 `pokemon_agent/`。
+
+### 10.1 约定
+
+1. 规则放 `evals/agent_short_goal_run/scorer/rules/` 下，导入即登记（沿用 `@rule("<check_id>")`、`CheckVerdict`、`utils.passed/failed/unjudgeable/first_match/target_frames/with_ram` 的写法；先读 `rules/center.py`、`rules/shop.py`、`rules/catch.py`、`rules/movement.py`、`scorer/npc_interactions.py`、`scorer/action_observations.py` 看现有判据怎么读帧、怎么读脚本内逐键观察）。新增模块可以按主题拆（例如 `rules/walk.py`、`rules/mid.py`），并在 `rules/__init__.py` 里导入。
+2. 取证据的口径：run 粒度，整条执行线上的全部帧（`target_frames`）；内存读数（`ram`：队伍、背包、钱、是否在战斗、状态）永远可信；对话文字只认屏幕解码（`Frame.text` 或逐键观察里的 `dialog_text`），不认视觉；位置与地图来自内存。"第 i 帧先后"用账本时间序判。
+3. 物品编号不要硬写：用 `pokemon_agent.world.items` 里的 `item_id(名字)`（`tests/world/test_items.py` 有用法）。精灵球 `POKé BALL`、`POTION`、`ANTIDOTE`、`PARLYZ HEAL`、`BURN HEAL`，包裹是 item 70。
+4. 结论三态：`pass`、`fail`、`unjudgeable`（账不够判，包括开局条件不满足）。失败要写清是哪一类（reason 文字），证据放 `evidence`（帧 uuid）。
+5. 每条规则至少一个正例、一个反例，按现有约定登记（`tests/evals/agent_short_goal_run/test_evals_checks.py` 的"每条已登记规则有正反例"与"配置的数据集所有 check_id 都已登记且有正反例"两个现有约束必须继续通过；先读该文件，照它的登记方式给五条规则各加一对）。再写合成账本测试覆盖各失败分支，全用合成数据，不读真实数据集内容并断言。
+
+### 10.2 五条规则（`check_id` 与逻辑）
+
+**`walk_to_pallet`**：起点帧 `map_id != 1` → unjudgeable；存在帧 i1 `map_id == 12`；存在帧 i2 晚于 i1 且 `map_id == 0`；存在帧 i3 晚于 i2 且 `map_id == 40`；终局不在战斗、无选项。失败分类：从未到 1 号道路 / 到了 12 没到 0 / 到了 0 没到 40 / 到了 40 但终局在战斗或停在选项里。reason 里附遇敌次数与战斗内帧数（统计即可，不进门槛）。
+
+**`heal_buy_return`**：起点没有受伤队员（任何一只 `0 < hp < max_hp` 都不成立）→ unjudgeable；存在帧 i_heal：`map_id == 41` 且全员满血；终局球 = 起点 + 2、钱 = 起点 − 400、除 item 70 外背包其余物品数量不变；购买成交帧 i_buy（球数首次等于起点 + 2 的帧）晚于 i_heal；终局 `(map_id, x, y)` 等于起点的 `(map_id, x, y)` 且不在战斗。失败分类：从未满血 / 没买到 2 球或花费不对 / 先买后治 / 没回到起点 / 背包有别的变化。
+
+**`catch_then_heal`**：终局队伍人数 = 起点 + 1；存在帧命中捕获成功（复用 `rules/catch.py` 里 `_ball_result` 的成功分支，或把它的成功判断抽成可复用的函数，**不要复制逻辑**）；存在治疗帧 i_heal 晚于捕获帧，`map_id == 41` 且全员满血；终局不在战斗、无选项、无起名键盘；对手 HP 从未为 0。失败分类：没抓到 / 抓到后没治好 / 先治后抓 / 终局停在起名或选项界面 / 把对手打倒了。
+
+**`customer_hint_purchase`**：解码文字（含脚本内逐键观察的 `dialog_text`，读法参照 `npc_interactions.py`）中先后出现两句台词：`This shop sells many ANTIDOTEs.` 与 `No! POTIONs are all sold out.`（容忍换行与大小写差异，不容忍缺词），记两句各自首次出现的位置 iA、iB；存在治疗帧 i_heal：`map_id == 41` 且全员满血；终局相对起点 `ANTIDOTE` +1、钱 −100，`POKé BALL`、`PARLYZ HEAL`、`BURN HEAL` 数量不变（不计 item 70）；购买成交帧 i_buy（ANTIDOTE 数量首次比起点多 1 的帧）；顺序 max(iA, iB) < i_heal < i_buy。失败分类：缺一句台词 / 没治好 / 买错东西或多买 / 钱不对 / 顺序不对。
+
+**`cure_poison_budget`**：起点第二只状态不是 PSN → unjudgeable；终局该只状态为 `ok`；全程没有任何一帧 `map_id == 41`；起点钱 − 终局钱 ∈ [100, 150]；钱首次减少的帧早于该只状态变 ok 的帧。失败分类：没治好 / 进过中心 / 花费不在区间 / 先治后花钱（状态变好早于花钱，视为不是靠买药治好）。
+
+### 10.3 验收（684）
+
+- 起点先取基线（`tests=2920` 为 main 在 683 合入后的数，以实测为准）；最终 failures=0、errors=0、skipped=72；守卫四条 `[ OK ]`；ruff 三项；两种 `git diff --stat` 逐行一致；`CHANGELOG.md` 顶部新增 684 条目。
+- 汇报里列：每条规则的正反例与覆盖的失败分支；改过的已有测试断言（预期没有）；如发现 `_ball_result` 之类的现有函数需要重构才能复用，说明做了什么、有没有改变原行为（现有测试必须仍过）。
+- 允许范围：`evals/agent_short_goal_run/scorer/rules/` 下的新增与 `rules/catch.py` 的最小重构、`rules/__init__.py`、`scorer/utils.py`（只许加小工具）、新增与登记正反例所需的测试文件及 `test_evals_checks.py`（只许追加）、`CHANGELOG.md`。不改数据集、`pokemon_agent/`、`docs/`。不启动模拟器，不调用真实模型。
