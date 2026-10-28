@@ -455,6 +455,27 @@ CASES = {
             _mid_frame(2, 1, party=((20, 20), (10, 20)), status=("ok", "PSN"), money=2000),
         ],
     ),
+    "leave_pallet_town": (
+        [
+            frame(1, map_id=38, party=()),
+            frame(2, map_id=37, party=()),
+            frame(3, map_id=0, party=()),
+            frame(4, map_id=40, party=()),
+            frame(5, map_id=0, party=()),
+            frame(6, map_id=40, party=((20, 20),)),
+            frame(7, map_id=0, party=((20, 20),)),
+            frame(8, map_id=12, party=((20, 20),)),
+        ],
+        [
+            frame(1, map_id=38, party=()),
+            frame(2, map_id=37, party=()),
+            frame(3, map_id=0, party=()),
+            frame(4, map_id=40, party=()),
+            frame(5, map_id=0, party=()),
+            frame(6, map_id=40, party=()),
+            frame(7, map_id=0, party=()),
+        ],
+    ),
 }
 """判据 → （正例帧，反例帧）。反例里带台词的几条，就是 judge 当年被台词骗到的样子。"""
 
@@ -525,6 +546,14 @@ def test_configured_dataset_has_registered_checks_with_positive_and_negative_exa
 
     assert samples
     assert all(sample.check_id in RULES and sample.check_id in CASES for sample in samples)
+
+
+def test_long_dataset_check_id_has_registered_examples() -> None:
+    samples = load("v20261028_long", rule_ids=set(RULES))
+
+    assert len(samples) == 1
+    assert samples[0].check_id == "leave_pallet_town"
+    assert samples[0].check_id in CASES
 
 
 @pytest.mark.parametrize(
@@ -805,3 +834,57 @@ def test_cure_poison_budget_detects_center_only_in_script_observations() -> None
 
     assert verdict.outcome == "fail"
     assert "曾进入宝可梦中心地图 41" in verdict.reason
+
+
+@pytest.mark.parametrize(
+    ("events", "reason_part"),
+    [
+        (
+            [
+                _mid_frame(1, 38, party=()),
+                _mid_frame(2, 37, party=()),
+                _mid_frame(3, 0, party=()),
+                _mid_frame(4, 40, party=()),
+                _mid_frame(5, 0, party=()),
+                _mid_frame(6, 40, party=((20, 20),)),
+                _mid_frame(7, 0, party=((20, 20),)),
+                _mid_frame(8, 12, party=((20, 20),)),
+            ],
+            "取得宝可梦后到达地图 12",
+        ),
+        ([_mid_frame(1, 38, party=()), _mid_frame(2, 37, party=())], "从未拿到宝可梦"),
+        (
+            [_mid_frame(1, 38, party=()), _mid_frame(2, 40, party=((20, 20),))],
+            "拿到了宝可梦但没到地图 12",
+        ),
+        (
+            [
+                _mid_frame(1, 38, party=()),
+                _mid_frame(2, 12, party=()),
+                _mid_frame(3, 40, party=((20, 20),)),
+            ],
+            "先到地图 12 再有宝可梦",
+        ),
+    ],
+)
+def test_leave_pallet_town_outcomes_and_failure_branches(
+    events: list[ParsedEvent], reason_part: str
+) -> None:
+    verdict = judge(stream(*events), sample("leave_pallet_town"))
+
+    assert reason_part in verdict.reason
+    if reason_part == "取得宝可梦后到达地图 12":
+        assert verdict.outcome == "pass"
+        assert "队伍≥1=5" in verdict.reason and "地图 12=7" in verdict.reason
+    else:
+        assert verdict.outcome == "fail"
+
+
+def test_leave_pallet_town_is_unjudgeable_when_start_map_is_not_bedroom() -> None:
+    verdict = judge(
+        stream(_mid_frame(1, 0, party=()), _mid_frame(2, 12, party=((20, 20),))),
+        sample("leave_pallet_town"),
+    )
+
+    assert verdict.outcome == "unjudgeable"
+    assert "起点地图不是 38" in verdict.reason
