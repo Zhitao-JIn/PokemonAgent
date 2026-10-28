@@ -1,3 +1,15 @@
+## 2026-10-29（696）—— 费用护栏：DeepSeek 余额轮询，20 元封顶
+
+**改了什么**：新增共享模型价格与费用估算模块；`probe_models.py` 改为导入并继续公开 `PRICES`、`estimate`。新增费用监视脚本，以 DeepSeek CNY 余额最小读数计算花费，达到阈值时终止子进程树；余额不可用时可从 trace token 用量估算并写入 JSON 报告。
+
+**为什么这么改**：长期数据集的真实模型尝试需要按人民币账户余额实施 20 元费用护栏，并保留 token 价格估算作为明确标注的后备。
+
+**取舍**：Windows 使用 `taskkill /T /F` 终止进程树，POSIX 对新进程组发送终止信号；估算复用 token 用量读取器与共享价格表。余额接口不可用且无 trace 后备时失败关闭，不启动被监视命令。
+
+**影响面**：新增 `scripts/model_prices.py`、`scripts/cost_guard.py` 与合成测试；只调整 `scripts/probe_models.py` 的价格导入；未修改既有测试断言或 `pokemon_agent/`。
+
+**验证**：基线 JUnit 为 2965 tests、0 failures、0 errors、72 skipped；最终 JUnit 为 2976 tests、0 failures、0 errors、72 skipped；提示词边界守卫 A–D 均为 `[ OK ]`；Ruff lint、import sorting 与 format 检查通过。无 `DEEPSEEK_API_KEY`，未执行真实余额请求。
+
 ## 2026-10-28（695）—— 旧采集管线退役：迁出共用原语、断开引用
 
 **改了什么**：将 `eval_services.py` 共用的五个服务原语从 `capture_services.py` 原样迁入；把 brain_calls 冻结数据校验所需的规范哈希实现留在校验模块并断开旧 exporter 引用；brain_choose collector 改用 `v20261021_retest5/states`；旧 audit 测试从脑调用录制测试中拆出。

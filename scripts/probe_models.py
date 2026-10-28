@@ -22,13 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pokemon_agent.brain.errors import EmptyCompletion
 from pokemon_agent.brain.providers import ClaudeProvider, OpenAIProvider, QwenProvider, provider_for
 from pokemon_agent.brain.schemas import LlmCompleteReq, LlmCompleteResp, VisionDescribeReq
+from scripts.model_prices import PRICES, estimate
 
-PRICES = {
-    "claude-haiku-5-5": (0.10, 0.01, 0.50),
-    "gpt-6-luna": (0.10, 0.01, 0.50),
-    "qwen3.8-flash": (0.12, 0.03, 0.40),
-    "deepseek-flash": (0.30, 0.06, 1.20),
-}
 KEY_NAMES = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DASHSCOPE_API_KEY", "DEEPSEEK_API_KEY")
 MARKER = "\n<probe_tail>"
 SPLIT_IMAGE_PROMPT = (
@@ -227,12 +222,6 @@ def candidates(selection: str, cache_only: bool = False) -> list[Candidate]:
         for n, m, t, v, s in rows
         if n[:2] in wanted
     ]
-
-
-def estimate(model: str, inputs: int, cached: int, outputs: int) -> float:
-    """输出已含 reasoning，不重复加算。"""
-    incoming, hit, outgoing = PRICES[model]
-    return (max(0, inputs - cached) * incoming + cached * hit + outputs * outgoing) / 1e6
 
 
 def has_action(text: str) -> bool:
