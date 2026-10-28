@@ -9,7 +9,7 @@ import pytest
 
 from pokemon_agent.mcp_servers import world_server
 from pokemon_agent.mcpclient.world_tool import WorldMcpTool
-from pokemon_agent.world import PlaceInWorld, TaskObservation, TaskScene
+from pokemon_agent.world import PlaceInWorld, ScreenText, TaskObservation, TaskScene
 
 ALL_BUTTONS = ["a", "b", "up", "down", "left", "right", "start", "select"]
 
@@ -61,6 +61,36 @@ class _FakeWorld:
         self.calls.append(("load_state", data))
 
 
+class _FakeWorldConsole:
+    """统一等待所需的合成控制台；每个 press 对应一个 MCP 原子按键。"""
+
+    def __init__(self, world: _FakeWorld) -> None:
+        from _doubles.world_console import FakeMemory
+
+        self.world = world
+        self.memory = FakeMemory()
+        self.rom = b""
+
+    def press(self, key: str) -> None:
+        self.world.calls.append(("step", ([((key), 1)], True)))
+        self.world._pos = (self.world._pos[0], self.world._pos[1] + 1, self.world._pos[2])
+
+    def tick(self, frames: int) -> None:  # noqa: ARG002
+        pass
+
+    def read(self) -> ScreenText:
+        return ScreenText()
+
+    def pos(self) -> PlaceInWorld:
+        return PlaceInWorld(map_id=self.world._pos[0], x=self.world._pos[1], y=self.world._pos[2])
+
+    def facing(self) -> str:
+        return ""
+
+    def scene(self) -> str:
+        return "walk"
+
+
 class _InMemoryClient:
     """把 in-memory MCP session 包成 `WorldMcpTool` 要的同步 client 形状。"""
 
@@ -90,7 +120,7 @@ def world(monkeypatch: pytest.MonkeyPatch) -> _FakeWorld:
     monkeypatch.setattr(world_server, "_world", instance)
     monkeypatch.setattr(world_server, "_rom", "fake.rom")
     monkeypatch.setattr(world_server, "_lease_owner", None)
-    monkeypatch.setattr(world_server, "_console_factory", None)
+    monkeypatch.setattr(world_server, "_console_factory", lambda: _FakeWorldConsole(instance))
     return instance
 
 

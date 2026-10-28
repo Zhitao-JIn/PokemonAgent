@@ -36,8 +36,6 @@ assert {b for buttons in OVERLAY_ACTIONS.values() for b in buttons} <= set(ALL_B
 
 GB_FPS = 60  # Game Boy 大约每秒 60 帧；下面几个常量都按这个换算成秒
 PRESS_FRAMES = 10  # 按键按住多少帧
-WITHIN_ACTION_FRAMES = 1 * GB_FPS  # 每次按键后推进一秒，保持动作连贯
-AFTER_ACTION_FRAMES = 0  # 最后一键已推进一秒，不再叠加固定尾部等待
 BOOT_FRAMES = 10 * GB_FPS  # 无存档时空转多少帧越过开机 logo
 
 
@@ -146,7 +144,7 @@ class PyBoyWorld:
         return list(ALL_BUTTONS)
 
     def step(self, segments: list[tuple[str, int]], *, settle: bool = True) -> None:
-        """按动作段推进固定帧数；调用方保证按键合法且已 reset。"""
+        """按动作段执行按键；等待由调用方统一处理。"""
         assert self._task is not None, "step() before reset()"
         assert not self._closed, "step() called after the window was closed"
 
@@ -158,11 +156,7 @@ class PyBoyWorld:
         for name, times in segments:
             for _ in range(times):
                 self._pyboy.button(name, delay=PRESS_FRAMES)
-                self._tick(WITHIN_ACTION_FRAMES)
-
-        # 步骤 3：按调用方要求等待游戏画面演化。
-        if settle and AFTER_ACTION_FRAMES:
-            self._tick(AFTER_ACTION_FRAMES)
+                self._tick(PRESS_FRAMES)
 
     def perceive_task(self) -> TaskPerceived:
         """task 层的一帧：**不问模型**，只读内存与屏幕缓冲（`task_perception.observe_task`）。"""

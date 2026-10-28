@@ -45,6 +45,7 @@ class WorldConsoleAdapter:
 
     def __init__(self, world: PyBoyWorld) -> None:
         self._w = world
+        self._cached_text: ScreenText | None = None
 
     @property
     def memory(self) -> Any:  # noqa: ANN401 —— Memory 协议按字节下标读
@@ -55,13 +56,18 @@ class WorldConsoleAdapter:
         return self._w._rom
 
     def press(self, key: str) -> None:
+        self._cached_text = None
         self._w._pyboy.button(key, delay=PRESS_FRAMES)
 
     def tick(self, frames: int) -> None:
         self._w._tick(frames)
+        if frames:
+            self._cached_text = None
 
     def read(self) -> ScreenText:
-        return read_screen_text(self.memory)
+        if self._cached_text is None:
+            self._cached_text = read_screen_text(self.memory)
+        return self._cached_text
 
     def map_id(self) -> int:
         return int(self.memory[W_CUR_MAP])

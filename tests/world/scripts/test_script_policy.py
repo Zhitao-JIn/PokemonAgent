@@ -115,7 +115,7 @@ def test_waiting_is_configured_for_a_step() -> None:
 
     run.press("a")
 
-    assert ticks == [2, 2, 2]
+    assert ticks == [2, 2]
 
 
 def test_blank_screen_does_not_end_wait_before_animation_lands() -> None:
@@ -133,7 +133,7 @@ def test_blank_screen_does_not_end_wait_before_animation_lands() -> None:
         budget=1,
         start_map_id=12,
         start_pos=console.pos(),
-        policy=ScriptPolicy(wait=StableWait(minimum_frames=64)),
+        policy=ScriptPolicy(wait=StableWait(stable_polls=16)),
     )
 
     run.press("down")

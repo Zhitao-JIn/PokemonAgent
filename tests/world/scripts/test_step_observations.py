@@ -73,7 +73,7 @@ def test_each_key_keeps_a_compact_snapshot_after_existing_stable_wait() -> None:
     assert len(result.observations) == len(console.presses) == 3
     assert [observation.step for observation in result.observations] == [1, 2, 3]
     assert [observation.dialog_text for observation in result.observations] == ["A", "B", "B"]
-    assert console.elapsed == 18
+    assert console.elapsed == 12
     for observation in result.observations:
         assert isinstance(observation, StepObservation)
         assert observation.settled and observation.facing_object is None

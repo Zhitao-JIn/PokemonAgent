@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from ..readout import read_party
@@ -22,8 +23,10 @@ from .engine import (
     ScriptRun,
     WorldConsole,
 )
+from .interruptions import field_policy
 from .movement import BUTTON_OF, _run, face_direction, walk_to
-from .policies import ScriptPolicy, StableWait
+from .policies import StableWait
+from .timing import HEAL_STABLE_POLLS, HEAL_TIMEOUT_FRAMES
 
 
 class _StillTalking(Exception):
@@ -120,6 +123,7 @@ def heal_at_center(console: WorldConsole, max_steps: int = 60) -> ScriptResult:
 
     # ③ 触发并推进对话（钩子在 YES/NO 选项处抛 choice_presented，就地确认 YES）
     run = _run(console, budget=max_steps)
+    run.policy = replace(run.policy, wait=_heal_wait())
     try:
         run.press("a")  # 开场白
         _advance_to_walk(run, console)
@@ -175,12 +179,17 @@ def _confirm_heal(console: WorldConsole) -> None:
         budget=0,
         start_map_id=console.map_id(),
         start_pos=console.pos(),
-        policy=ScriptPolicy(wait=StableWait(minimum_frames=64)),
+        policy=replace(field_policy(), wait=_heal_wait()),
     )
     text = console.read()
     if text.cursor and text.cursor != text.options[0]:
         run.press("up")
     run.press("a")
+
+
+def _heal_wait() -> StableWait:
+    """治疗链路的专用稳定帧数与总预算。"""
+    return StableWait(stable_polls=HEAL_STABLE_POLLS, timeout_frames=HEAL_TIMEOUT_FRAMES)
 
 
 def _heal_extra(run: ScriptRun, console: WorldConsole) -> dict[str, Any]:

@@ -36,6 +36,6 @@ def map_changed(run: ScriptRun) -> None:
 def field_policy() -> ScriptPolicy:
     """地图脚本显式选择三种中断。"""
     return ScriptPolicy(
-        wait=StableWait(minimum_frames=64),
+        wait=StableWait(stable_polls=16),
         interruptions=(battle_started, choice_presented, map_changed),
     )

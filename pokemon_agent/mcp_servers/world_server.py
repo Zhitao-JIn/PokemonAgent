@@ -194,8 +194,21 @@ def step(
     if denied is not None:
         return denied
     pairs = [(str(name), int(times)) for name, times in segments]
+    for name, _times in pairs:
+        assert name in _w().all_actions(), f"unknown action {name!r}"
     before = _w().perceive_task().observation.place
-    _w().step(pairs, settle=settle)
+    if settle:
+        from pokemon_agent.world.interface import TaskScene
+        from pokemon_agent.world.scripts.screen_wait import wait_settled
+
+        console = _console()
+        for name, times in pairs:
+            for _ in range(times):
+                before_scene = TaskScene(console.scene())
+                console.press(name)
+                wait_settled(console, before_scene=before_scene)
+    else:
+        _w().step(pairs, settle=False)
     after = _w().perceive_task().observation.place
     return envelope(data={"moved": before != after})
 

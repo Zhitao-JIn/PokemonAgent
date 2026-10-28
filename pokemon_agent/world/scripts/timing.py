@@ -6,6 +6,14 @@ STABLE_POLLS = 6
 """连续几次一模一样才算稳定（游戏处理按键时会擦掉 `▶` 重画，对话会逐字打出）。"""
 STEP_TIMEOUT_FRAMES = 900
 """一步最多等多少帧画面稳定（约 15 秒）。"""
+BATTLE_STABLE_POLLS = 45
+"""战斗类画面连续相同的比较次数（每次间隔 4 帧）。"""
+BATTLE_TIMEOUT_FRAMES = 1200
+"""战斗类等待的总帧预算。"""
+HEAL_STABLE_POLLS = 90
+"""治疗脚本画面连续相同的比较次数（每次间隔 4 帧）。"""
+HEAL_TIMEOUT_FRAMES = 1200
+"""治疗脚本等待的总帧预算。"""
 REWIND_LIMIT = 10
 """回初态最多按几次 B。"""
 ADVANCE_LIMIT = 30
