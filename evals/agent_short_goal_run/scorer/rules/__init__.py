@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from . import battle, catch, center, dialog, movement, shop
+from . import battle, catch, center, dialog, mid, movement, shop
 
-__all__ = ["battle", "catch", "center", "dialog", "movement", "shop"]
+__all__ = ["battle", "catch", "center", "dialog", "mid", "movement", "shop"]

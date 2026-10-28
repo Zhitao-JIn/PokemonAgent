@@ -11,13 +11,14 @@ from collections.abc import Callable
 
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.agent_short_goal_run.scorer.verdict import CheckVerdict
+from pokemon_agent.world.items import item_id
 
 from .stream import Frame, RunStream
 
 BATTLE_MENU: frozenset[str] = frozenset({"FIGHT", "PKMN", "ITEM", "RUN"})
 """战斗行动菜单的四项。"""
 
-POKE_BALL = 0x04
+POKE_BALL = item_id("POKé BALL")
 """精灵球的物品 ID。"""
 
 

@@ -22,13 +22,19 @@ def _foe_hp(frame: Frame) -> int | None:
     return ram.battle.foe.hp if ram is not None and ram.battle is not None else None
 
 
+def _ball_result_text(frame: Frame) -> str:
+    """捕捉结算文字；视觉帧返回空串。"""
+    if not frame.from_decode:
+        return ""
+    return " ".join(frame.text.dialog_text.casefold().split())
+
+
 def _ball_result(frame: Frame) -> bool:
     """只认实际解码的捕捉结算，不以道具光标或尚未结算的球数代替结果。"""
-    if not frame.from_decode:
-        return False
-    text = " ".join(frame.text.dialog_text.casefold().split())
+    text = _ball_result_text(frame)
     return bool(
-        re.search(r"all right!.*was caught|\bwas caught!|(?:darn!|oh no!).*broke free", text)
+        ball_caught(frame)
+        or re.search(r"(?:darn!|oh no!).*broke free", text)
         or any(
             phrase in text
             for phrase in (
@@ -38,6 +44,12 @@ def _ball_result(frame: Frame) -> bool:
             )
         )
     )
+
+
+def ball_caught(frame: Frame) -> bool:
+    """该帧是否明确解码出捕获成功。"""
+    text = _ball_result_text(frame)
+    return bool(re.search(r"all right!.*was caught|\bwas caught!", text))
 
 
 @rule("foe_hp_dropped")
@@ -74,4 +86,4 @@ def ball_thrown(stream: RunStream, sample: EvalSample) -> CheckVerdict:
     )
 
 
-__all__ = ["ball_thrown", "foe_hp_dropped"]
+__all__ = ["ball_caught", "ball_thrown", "foe_hp_dropped"]
