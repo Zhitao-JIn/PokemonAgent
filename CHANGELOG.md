@@ -1,3 +1,13 @@
+## 2026-10-28（684）—— 五个中期机械判据
+
+**改了什么**：新增 `walk_to_pallet`、`heal_buy_return`、`catch_then_heal`、`customer_hint_purchase`、`cure_poison_budget` 五条 run 粒度机械规则；复用中心满血、解码对话和背包/位置/战斗 RAM 证据，顾客逐键观察也纳入台词证据；为每条规则登记正反例并补充失败分支合成账本测试。捕获以队伍人数为准，不依赖台词；不进中心同时检查脚本内观察。
+
+**为什么这么改**：中期数据集的五个 `check_id` 需要按冻结判据机械评分，且判定必须由 RAM 与可追溯的解码账本完成。
+
+**取舍**：捕获成功以队伍人数变化为门槛，解码成功台词只作可选证据；`ball_caught()` 供其他规则复用。物品编号全部从 `item_id()` 解析。失败分支在 reason 中指出未满足的条件，非门槛遇敌指标只写入 walk 判据说明。
+
+**影响面**：新增 `scorer/rules/mid.py` 与规则合成测试；仅调整 catch 成功判定的可复用出口、规则导入和精灵球 ID 来源，不改数据集或 `pokemon_agent/`。
+
 ## 2026-10-28（683）—— 中期评测数据集 v20261028_mid
 
 **改了什么**：从 `v20261021_retest5` 构建 5 条 `tier="mid"` 样本与 13 个冻结 episode 目标，输出 5 个起点、coverage 与 revision。M2、M3、M5 用独立 PyBoy 实例派生；M3 同步改队伍 HP 与战斗缓存 HP。为五个新 check_id 添加起点预检，并将它们接入评测 runner；新增 `map_connections` 知识原子。
