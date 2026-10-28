@@ -1,7 +1,7 @@
 # intent —— 长期任务：开放探索与跨 run 记忆
 
 > 流程位置：**intent.md**（2026-10-28 重写，用户已确认主要决定）→ spec → plan → 落码
-> 关联：`docs/eval/mid_tasks/intent.md`（三档定义）、`docs/eval/datasets.md`、`docs/eval/task_boundary/intent.md`、ROADMAP F13、B15、B16
+> 关联：`docs/eval/tiers.md`（三档的性质、冻结、干扰分类；以它为准）、`docs/eval/mid_tasks/intent.md`、`docs/eval/datasets.md`、`docs/eval/task_boundary/intent.md`、ROADMAP F13、B15、B16
 > 前置实验结果：`experiment/long_verify/`（不入库）：冷启动、卧室起点、完整路线、文字线索普查。
 
 ## 一、一句话意图

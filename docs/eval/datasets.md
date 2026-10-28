@@ -2,7 +2,7 @@
 
 > 位置：`evals/agent_short_goal_run/dataset/`。现行版本只有三个；退役的旧版本（`v1`、`v2`、`v20261021_corrected`、`v20261021_current_state`、`v20261021_merged_583`、`v20261021_retest4`）已由 686 整理并删除，内容保存在 git tag `archive/eval-datasets-before-tidy-20261028`（取回：`git show <tag>:<路径>` 或 `git checkout <tag> -- <路径>`）。
 > 默认运行版本由 `evals/config.json` 的 `version` 指定（整理后为 `v20261028_short_frozen`）；`loader` 的三个函数不再有默认版本，必须显式传。
-> 三档任务的定义见 `docs/eval/mid_tasks/intent.md` 第二节：短期＝一个 episode、冻结 task 表；中期＝一个 run、冻结 episode 目标表；长期＝多个 run（未做，设计见 `docs/eval/long_tasks/intent.md`）。
+> 三档的性质、冻结与分层的关系、规划器条件的用法见 `docs/eval/tiers.md`（以它为准）；长期任务的设计见 `docs/eval/long_tasks/intent.md`。
 
 ## 一、现行版本
 
