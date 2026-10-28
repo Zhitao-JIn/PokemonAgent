@@ -40,3 +40,22 @@
 
 - 两条任务的 run 2 起点可加载，冻结记忆的 hash 可核；oracle 的 run 2 在带记忆设置下通过判据。
 - 关闭过往 run 索引后，同一批 agent 的成功率显著下降，或者至少 run 2 引用 run 1 关键词的比例下降，证明任务确实在考跨 run 记忆。
+
+## 评测入口调查结果（2026-10-28）：第二个 run 能不能带着第一个 run 的记忆起跑
+
+**现状：不能，但缺口小。** 读 `evals/common/eval_services.py`、`evals/agent_short_goal_run/solver/solver.py`、`solver/runner/one.py`、`evals/common/overlay.py` 与 `harness/run/perceive/read_plan_context.py`：
+
+- 每条样本启动一套**独立**的 memory 服务，根目录是 `tempfile.mkdtemp` 临时目录，里面只放从仓库 `memory/knowledge_memory` 复制来的知识 Markdown；样本结束整个目录 `rmtree`。所以第二个 run 起跑时 memory 里除知识外是空的，第一个 run 的记忆也没有被导出。
+- 好消息：规划层读"别的 run 的记忆"这条路本来就在（`_read_run_index` 读到的 run 记忆里滤掉 `run_id == 本 run` 的，其余都作为 run 索引），所以只要第二个 run 的 memory 根里放着第一个 run 的记忆文件，现有读取逻辑不用改。
+- 需要补的三处小改动（留给长期数据集的 spec）：
+  1. `eval_services` 增加可选的 `memory_seed`（一个目录，起服务前把它的内容复制进临时根的 `memory/`，做法同 `_prepare_knowledge`），每条样本仍然隔离，结束仍然清理；
+  2. 数据集样本新增可选字段 `initial_memory`（相对路径加 sha256，仅长期档允许），加载时核对哈希，`solver` 把它传给 `eval_services`；
+  3. 生成种子需要把第一个 run 的 memory 根在清理前导出：`eval_services` 增加可选的"退出前导出 memory 根到指定目录"。
+
+## 设计原则（用户确认）：不靠"中途藏起记忆"制造需要
+
+长期任务里，第二个 run 需要记忆，必须来自**游戏状态里本来就没有、只在上一个 run 里出现过的信息**（例如包裹的收件人只在托付对话里说过一次，之后画面、内存、背包里都没有），而不是我们把本来看得见的东西（知识库条目、地图连接）临时关掉。因此：
+
+- L1 保留包裹交付（第二个 run 起点在"已拿到包裹"之后，背包里有包裹，收件人只存在于第一个 run 的记忆里）；知识库在第二个 run 里**照常开着**。
+- 记忆开 / 关对照是评测运行设置里的消融（同一份数据集跑两遍），不是任务设计的一部分；任务本身不含"被藏起来的东西"。
+- 因此包裹交付的前置实验仍然需要：从 `knowledge_dialogue_advance` 起，核实托付对话逐句、包裹进背包的时刻与事件位、交付的时序与台词、第二个 run 的起点存档怎么产生（把托付对话按完后用游戏自己的状态保存，不改内存）。
