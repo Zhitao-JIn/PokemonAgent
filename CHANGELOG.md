@@ -1,3 +1,15 @@
+## 2026-10-28（672）—— 评分器改读逐键观察并回放旧 NPC 判据
+
+**改了什么**：商店两条 NPC 判据共用 `npc_interactions.py`，从 `write_act_memory` 的 `[before, *observations, after]` 经 `changes()` 提取面向人物的新增对话；overshoot 扫描点改为 `write_act_memory`。`world_script_execute` 的脚本报告改带 `observations`，自报面用 `changes()` 核对 `dialog_line`、`warp` 与对话片段，不再读事件报告。
+
+**为什么这么改**：CP4b 已停止生成世界事件及独立对话报告，评分证据应从逐键观察机械派生，维持既有判据语义并与新的执行账对齐。
+
+**取舍**：facing 缺失或非人物时不计 NPC；`settled=False` 文字由 `changes()` 排除。world_script_execute 数据集仍保留原期望格式，但扫描到的事件期望只有 `dialog`，没有无法由观察表达的 `still` 等种类。冻结 trace 转换器与旧规则参照只放在本机一次性脚本 `experiment/replay_npc_scorers.py`，不纳入常驻测试；未改数据集、冻结输入、parse 侧或 evals 中旧请求归档。
+
+**影响面**：agent_short_goal_run 的商店判据与 overshoot、world_script_execute 报告解析和自报比较，以及对应合成测试。`evals/` 其他位置仍有遗留 `object_memory` 字样：`evals/common/legacy_requests/plan.py` 与两份冻结 `evals/dataset/brain_calls/*/plan/plan.request.schema.json`；依 CP5 保留。
+
+**验证**：只读回放 20 条 trace-bearing 样本，19 条具备 `run_start`/`run_end` 完整边界；`report.json` 显示 20/20 样本有评分。两项 NPC 判据的新旧结论在 20 条上逐条一致，overshoot 值也全部一致；无允许差异或其他差异。全量 pytest JUnit tests=3100、failures=0、errors=0、skipped=97；ruff format、ruff check、ruff format --check 全绿。
+
 ## 2026-10-28（671）—— world 停止产出事件与独立对话报告
 
 **改了什么**：`ScriptResult` 与脚本 MCP `data` 不再包含 `events`、`dialog`；脚本逐键观察继续保留屏幕文字与逐键状态。按键 `step` 响应只保留 `moved`，`FromHarnessToGameToolExecuteResp` 不再含裸 `event`。删除 `DialogCache` 与 `judge_press` / `observe_step` 判定，只保留用于 `facing_object` 的 `INTERACTIVE` 地标类型；新写 `act_call` 不渲染旧事件和对话字段。

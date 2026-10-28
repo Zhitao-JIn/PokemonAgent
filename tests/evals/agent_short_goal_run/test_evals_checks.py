@@ -111,6 +111,41 @@ def _event(kind: str, n: int, content: object) -> ParsedEvent:
     )  # type: ignore[arg-type]
 
 
+def write_act_memory_event(
+    n: int,
+    person: tuple[int, int],
+    *,
+    text: str = "Hello.",
+    previous_text: str = "",
+    object_kind: str | None = "人",
+    settled: bool = True,
+) -> ParsedEvent:
+    """一条有结构化观察的动作记忆写账。"""
+    actor = {"map_id": 1, "x": 1, "y": 1}
+    target = {"map_id": 1, "x": person[0], "y": person[1]}
+    before = {
+        "step": n * 2 - 1,
+        "place": actor,
+        "facts": {"dialog_text": previous_text, "scene": "walk", "overlay": "none"},
+    }
+    after = {
+        "step": n * 2,
+        "place": actor,
+        "scene": "walk",
+        "overlay": "dialog",
+        "dialog_text": text,
+        "facing_object": (
+            {"kind": object_kind, "place": target} if object_kind is not None else None
+        ),
+        "settled": settled,
+    }
+    return _event(
+        "write_act_memory",
+        n,
+        OtherContent(before=before, action="a", after=after, observations=[], outcome=None),
+    )
+
+
 def stream(*frames: ParsedEvent) -> RunStream:
     """一局：开局账 + 这些帧。"""
     start = EpisodeStartContent(goal_id=GOAL, goal="g", success_criteria="c", max_steps=15)
@@ -180,59 +215,23 @@ CASES = {
     "shop_all_npcs_interacted": (
         [
             frame(1, people=((2, 5), (4, 3))),
-            _event(
-                "write_object_memory",
-                2,
-                OtherContent(
-                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
-                ),
-            ),
-            _event(
-                "write_object_memory",
-                3,
-                OtherContent(
-                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 4, "y": 3}
-                ),
-            ),
+            write_act_memory_event(2, (2, 5)),
+            write_act_memory_event(3, (4, 3)),
         ],
         [
             frame(1, people=((2, 5), (4, 3))),
-            _event(
-                "write_object_memory",
-                2,
-                OtherContent(
-                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
-                ),
-            ),
+            write_act_memory_event(2, (2, 5)),
         ],
     ),
     "shop_two_npcs_interacted": (
         [
             frame(1, people=((2, 5), (4, 3), (6, 4))),
-            _event(
-                "write_object_memory",
-                2,
-                OtherContent(
-                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
-                ),
-            ),
-            _event(
-                "write_object_memory",
-                3,
-                OtherContent(
-                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 4, "y": 3}
-                ),
-            ),
+            write_act_memory_event(2, (2, 5)),
+            write_act_memory_event(3, (4, 3)),
         ],
         [
             frame(1, people=((2, 5), (4, 3), (6, 4))),
-            _event(
-                "write_object_memory",
-                2,
-                OtherContent(
-                    object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
-                ),
-            ),
+            write_act_memory_event(2, (2, 5)),
         ],
     ),
     "shop_cancelled": (

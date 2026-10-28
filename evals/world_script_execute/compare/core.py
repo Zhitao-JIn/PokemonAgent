@@ -14,6 +14,7 @@ from evals.world_script_execute.solver import (
     ScriptReport,
     ScriptRun,
 )
+from pokemon_agent.memory.changes import Change, changes
 from pokemon_agent.world import RamReadout, TaskObservation
 from pokemon_agent.world.items import item_name
 
@@ -47,13 +48,17 @@ def probe(observation: TaskObservation, ram: RamReadout, key: str) -> str | int:
 def judge_case(case: ScriptCase, run: ScriptRun) -> ScriptVerdict:
     """判一条用例：自报面看报告，真值面看前后两帧。脚本崩溃时自报面直接判负。"""
     expect = case.expect
-    code = [f"脚本抛异常：{run.crash}"] if run.report is None else _judge_report(expect, run.report)
+    code = (
+        [f"脚本抛异常：{run.crash}"]
+        if run.report is None
+        else _judge_report(expect, run.report, run.before_observation)
+    )
     truth = _judge_truth(expect, run) + judge_declared_checks(expect, run)
     return ScriptVerdict(code_problems=code, truth_problems=truth)
 
 
-def _judge_report(expect: ScriptExpect, report: ScriptReport) -> list[str]:
-    """自报面：ok / code / data 子集 / events 子序列 / 对话片段。"""
+def _judge_report(expect: ScriptExpect, report: ScriptReport, before: TaskObservation) -> list[str]:
+    """自报面：ok / code / data 子集与由逐键观察派生的变化。"""
     problems: list[str] = []
     if report.ok is not expect.ok:
         problems.append(f"ok={report.ok}，期望 {expect.ok}")
@@ -67,13 +72,35 @@ def _judge_report(expect: ScriptExpect, report: ScriptReport) -> list[str]:
         got = report.data.get(key)
         if got != want:
             problems.append(f"data.{key}={got!r}，期望 {want!r}")
-    outcomes = iter(e.outcome for e in report.events)
-    if not all(want in outcomes for want in expect.events):
-        got = [e.outcome for e in report.events]
-        problems.append(f"events={got}，期望按序含 {expect.events}")
-    said = " ".join(e.text or "" for e in report.events if e.outcome == "dialog")
+    observed_changes = _observed_changes(before, report)
+    outcomes = [
+        "dialog" if change.kind == "dialog_line" else "warp"
+        for change in observed_changes
+        if change.kind in {"dialog_line", "warp"}
+    ]
+    if any(want not in {"dialog", "warp"} for want in expect.events):
+        problems.append(f"不支持由观察核对的事件种类：{expect.events}")
+    elif not _contains_in_order(outcomes, expect.events):
+        problems.append(f"events={outcomes}，期望按序含 {expect.events}")
+    said = " ".join(change.text for change in observed_changes if change.kind == "dialog_line")
     problems += [f"对话里没有 {want!r}" for want in expect.dialog if want not in said]
     return problems
+
+
+def _observed_changes(before: TaskObservation, report: ScriptReport) -> list[Change]:
+    """从脚本前帧和每键观察中取差异，确保首键变化也有比较基准。"""
+    frames = [before, *report.observations]
+    return [
+        change
+        for prev, next_ in zip(frames, frames[1:], strict=False)
+        for change in changes(prev, next_)
+    ]
+
+
+def _contains_in_order(actual: list[str], expected: list[str]) -> bool:
+    """判定期望结果种类是否按序出现在观察变化中。"""
+    iterator = iter(actual)
+    return all(item in iterator for item in expected)
 
 
 def _judge_truth(expect: ScriptExpect, run: ScriptRun) -> list[str]:

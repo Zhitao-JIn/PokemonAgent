@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import pytest
-from test_evals_checks import _event, frame, sample, stream
+from test_evals_checks import _event, frame, sample, stream, write_act_memory_event
 
 from evals.agent_short_goal_run.scorer import RunStream, mechanical_scorer
 from pokemon_agent.direct.trace import ParsedEvent
-from pokemon_agent.direct.trace.content import EpisodeStartContent, OtherContent
+from pokemon_agent.direct.trace.content import EpisodeStartContent
 
 
 def in_episode(episode_id: str, event: ParsedEvent) -> ParsedEvent:
@@ -107,7 +107,7 @@ def test_episode_sample_still_needs_its_own_goal_in_the_ledger() -> None:
     assert result.outcome == "unjudgeable"
 
 
-def test_two_npc_check_reads_dialog_events_from_a_later_episode() -> None:
+def test_two_npc_check_reads_observation_changes_from_a_later_episode() -> None:
     """两位 NPC 的对话分散在两局，且两局的目标 id 都是 planner 新建的。"""
     events = RunStream(
         [
@@ -116,23 +116,11 @@ def test_two_npc_check_reads_dialog_events_from_a_later_episode() -> None:
             started_episode("r-ep2", "plan-r-2", 2),
             in_episode(
                 "r-ep2",
-                _event(
-                    "write_object_memory",
-                    3,
-                    OtherContent(
-                        object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}
-                    ),
-                ),
+                write_act_memory_event(3, (2, 5)),
             ),
             in_episode(
                 "r-ep2",
-                _event(
-                    "write_object_memory",
-                    4,
-                    OtherContent(
-                        object_kind="人", outcome="dialog", place={"map_id": 1, "x": 4, "y": 3}
-                    ),
-                ),
+                write_act_memory_event(4, (4, 3)),
             ),
         ]
     )
@@ -164,17 +152,12 @@ def test_two_npc_check_rejects_duplicate_unrelated_or_non_dialogue_evidence(
 ) -> None:
     events = stream(
         frame(1, people=((2, 5), (4, 3))),
-        _event(
-            "write_object_memory",
-            2,
-            OtherContent(object_kind="人", outcome="dialog", place={"map_id": 1, "x": 2, "y": 5}),
-        ),
-        _event(
-            "write_object_memory",
+        write_act_memory_event(2, (2, 5)),
+        write_act_memory_event(
             3,
-            OtherContent(
-                object_kind=kind, outcome=outcome, place={"map_id": 1, "x": place[0], "y": place[1]}
-            ),
+            place,
+            text="Hello." if outcome == "dialog" else "",
+            object_kind=kind,
         ),
     )
 

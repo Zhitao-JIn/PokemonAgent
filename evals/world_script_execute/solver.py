@@ -7,35 +7,23 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from evals.common.world_case import read_frame, start_world, stop_world
 from evals.world_script_execute.dataset import ScriptCase
 from evals.world_script_execute.dataset.loader import DEFAULT_VERSION, state_path
-from evals.world_script_execute.dataset.schemas import EventOutcome
-from pokemon_agent.world import RamReadout, TaskObservation
+from pokemon_agent.world import RamReadout, StepObservation, TaskObservation
 
 logger = logging.getLogger(__name__)
 
 
-class ScriptEvent(BaseModel):
-    """脚本报告里的一条裸事件（mcp SPEC §3.4）；只钉判定要用的字段，其余原样保留。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    outcome: EventOutcome
-    object_kind: str | None = None
-    text: str | None = None
-    map_id: int | None = None
-
-
 class ScriptReport(BaseModel):
-    """脚本终态报告（`ScriptResult` 的 JSON 形状，calls 不进测评）。"""
+    """脚本终态报告；逐键 observations 是唯一脚本内过程材料。"""
 
     ok: bool
     code: str
     data: dict[str, Any] = Field(default_factory=dict)
-    events: list[ScriptEvent] = Field(default_factory=list)
+    observations: list[StepObservation] = Field(default_factory=list)
 
 
 class ScriptRun(BaseModel):
@@ -83,8 +71,12 @@ def run_case(
             report = ScriptReport(
                 ok=body["data"]["ok"],
                 code=body["data"]["code"],
-                data={k: v for k, v in body["data"].items() if k not in {"ok", "code", "calls"}},
-                events=body["events"],
+                data={
+                    k: v
+                    for k, v in body["data"].items()
+                    if k not in {"ok", "code", "calls", "observations"}
+                },
+                observations=body["data"]["observations"],
             )
         except Exception as exc:  # noqa: BLE001 —— 脚本的任何异常都是被测结论，留痕后判负
             crash = f"{type(exc).__name__}: {exc}"

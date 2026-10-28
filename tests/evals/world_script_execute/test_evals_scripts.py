@@ -16,6 +16,7 @@ from evals.world_script_execute.dataset.loader import DATASET_DIR, DEFAULT_VERSI
 from evals.world_script_execute.solver import (
     ScriptReport,
 )
+from pokemon_agent.world import Facts, PlaceInWorld, StepObservation, TaskScene
 from pokemon_agent.world.scripts.catalog import SCRIPT_FUNCS
 
 STATES = DATASET_DIR / DEFAULT_VERSION / "states"
@@ -25,6 +26,18 @@ def case_of(expect: ScriptExpect, script: str = "walk_to_adjacent") -> ScriptCas
     """一条最小用例。"""
     return ScriptCase(
         case_id="demo", matrix_row=3, script=script, state="s.state", expect=expect, basis="示范"
+    )
+
+
+def observation(step: int, *, text: str = "", map_id: int = 12) -> StepObservation:
+    """一条脚本内逐键观察，用于合成差异判定。"""
+    return StepObservation(
+        step=step,
+        place=PlaceInWorld(map_id=map_id, x=9, y=12),
+        facing="south",
+        scene=TaskScene.WALK,
+        overlay=Facts.Overlay.DIALOG if text else Facts.Overlay.NONE,
+        dialog_text=text,
     )
 
 
@@ -62,29 +75,64 @@ def test_a_wrong_result_code_fails_the_report_side_only() -> None:
     assert not verdict.truth_problems
 
 
-def test_expected_events_must_appear_in_order() -> None:
+def test_observation_changes_must_contain_expected_dialog_then_warp() -> None:
     case = case_of(ScriptExpect(ok=True, code="ok", events=["dialog", "warp"], delta={"x": 0}))
-    out_of_order = ScriptReport.model_validate(
-        {"ok": True, "code": "ok", "events": [{"outcome": "warp"}, {"outcome": "dialog"}]}
-    )
-
-    verdict = judge_case(case, run_of(out_of_order, frame(), frame()))
-
-    assert verdict.code_problems == ["events=['warp', 'dialog']，期望按序含 ['dialog', 'warp']"]
-
-
-def test_a_heal_counts_only_if_the_nurse_says_it_is_done() -> None:
-    case = case_of(
-        ScriptExpect(ok=True, code="ok", dialog=["fighting fit"], after={"party_hp_missing": 0}),
-        "heal_at_center",
-    )
-    report = ScriptReport.model_validate(
-        {"ok": True, "code": "ok", "events": [{"outcome": "dialog", "text": "Welcome to our"}]}
+    report = ScriptReport(
+        ok=True,
+        code="ok",
+        observations=[observation(1, text="Hello."), observation(2, text="", map_id=40)],
     )
 
     verdict = judge_case(case, run_of(report, frame(), frame()))
 
-    assert verdict.code_problems == ["对话里没有 'fighting fit'"]
+    assert not verdict.code_problems
+
+
+def test_observation_events_must_keep_expected_order() -> None:
+    case = case_of(ScriptExpect(ok=True, code="ok", events=["warp", "dialog"], delta={"x": 0}))
+    report = ScriptReport(
+        ok=True,
+        code="ok",
+        observations=[observation(1, text="Hello."), observation(2, text="", map_id=40)],
+    )
+
+    verdict = judge_case(case, run_of(report, frame(), frame()))
+
+    assert verdict.code_problems == ["events=['dialog', 'warp']，期望按序含 ['warp', 'dialog']"]
+
+
+def test_dialog_expectation_matches_text_from_observations() -> None:
+    case = case_of(
+        ScriptExpect(ok=True, code="ok", dialog=["fighting fit"], after={"party_hp_missing": 0}),
+        "heal_at_center",
+    )
+    report = ScriptReport(
+        ok=True,
+        code="ok",
+        observations=[
+            observation(1, text="Welcome to our"),
+            observation(2, text="Welcome to our fighting fit"),
+        ],
+    )
+
+    verdict = judge_case(case, run_of(report, frame(), frame()))
+
+    assert not verdict.code_problems
+
+
+def test_unsettled_observation_text_is_not_dialog_evidence() -> None:
+    case = case_of(
+        ScriptExpect(ok=True, code="ok", dialog=["partial"], after={"x": 9}), "advance_dialog"
+    )
+    report = ScriptReport(
+        ok=True,
+        code="ok",
+        observations=[observation(1, text="partial").model_copy(update={"settled": False})],
+    )
+
+    verdict = judge_case(case, run_of(report, frame(), frame()))
+
+    assert verdict.code_problems == ["对话里没有 'partial'"]
 
 
 def test_a_crashed_script_fails_without_a_report() -> None:

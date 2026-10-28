@@ -20,6 +20,8 @@ from evals.agent_short_goal_run.scorer.utils import (
 from evals.agent_short_goal_run.scorer.verdict import CheckVerdict
 from pokemon_agent.world import Facts, TaskScene
 
+from ..npc_interactions import interacted_npcs
+
 
 def _quantity_selected(frame: Frame) -> bool:
     """商店整屏 RAM 解码中有数量与总价的独立框；它不进入底部 dialog_text。"""
@@ -79,17 +81,9 @@ def shop_all_npcs_interacted(stream: RunStream, sample: EvalSample) -> CheckVerd
     }
     if not people:
         return unjudgeable("起点观测没有可核对的 NPC 地标")
-    interacted: dict[tuple[int, int, int], str] = {}
-    for event in stream.in_episodes(episodes, "write_object_memory"):
-        content = event.content.model_dump(mode="python")
-        place = content.get("place")
-        if content.get("object_kind") != "人" or content.get("outcome") != "dialog":
-            continue
-        if not isinstance(place, dict):
-            continue
-        key = (place.get("map_id"), place.get("x"), place.get("y"))
-        if key in people:
-            interacted[key] = event.uuid
+    interacted = {
+        key: value for key, value in interacted_npcs(stream, episodes).items() if key in people
+    }
     missing = people - set(interacted)
     if missing:
         return failed(f"还有 {len(missing)} 位起点 NPC 没有对话交互记录")
@@ -114,17 +108,9 @@ def shop_two_npcs_interacted(stream: RunStream, sample: EvalSample) -> CheckVerd
     }
     if len(people) < 2:
         return unjudgeable("起点观测不足两位可核对的 NPC 地标")
-    interacted: dict[tuple[int, int, int], str] = {}
-    for event in stream.in_episodes(episodes, "write_object_memory"):
-        content = event.content.model_dump(mode="python")
-        place = content.get("place")
-        if content.get("object_kind") != "人" or content.get("outcome") != "dialog":
-            continue
-        if not isinstance(place, dict):
-            continue
-        key = (place.get("map_id"), place.get("x"), place.get("y"))
-        if key in people:
-            interacted[key] = event.uuid
+    interacted = {
+        key: value for key, value in interacted_npcs(stream, episodes).items() if key in people
+    }
     if len(interacted) < 2:
         return failed(f"只与 {len(interacted)} 位不同 NPC 完成对话，至少需要 2 位")
     evidence = [interacted[key] for key in sorted(interacted)[:2]]
