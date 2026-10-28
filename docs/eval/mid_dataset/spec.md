@@ -18,7 +18,7 @@
 | D4 | 派生由 `dataset/build/mid_starts.py` 在独立模拟器里读原存档、改指定 RAM、另存（沿用 `injured_start.py` 的写法，目标已存在则拒绝覆盖）；`revision.json` 记每个文件的来源存档 sha256、被改地址与改前改后值、派生存档 sha256 |
 | D5 | 预算：样本 `max_steps`（run 动作预算）= ⌈3 × oracle_steps ÷ 10⌉ × 10；M1 取遇敌最多的 98 步：300；M2 83：250；M3 61：190；M4 108：330；M5 76：230。目标表里的 `max_steps`（建议 task 数）按第三节 |
 | D6 | `oracle_steps` 写进 `revision.json` 的每样本记录（不扩展 `EvalSample` 的字段；若 schema 里已有现成字段则用，没有就不加）。M1 另记无遇敌 6、中位 22、最大 98 与遇敌率 60% |
-| D7 | 起点预检：`dataset/build/preconditions.py` 为每个新 `check_id` 加起点预检（见第五节），预检不过的样本在 `loader.check` 阶段报错 |
+| D7 | 起点预检：`dataset/build/preconditions.py` 为每个新 `check_id` 加起点预检（见第五节），并导出一个常量 `PREFLIGHT_CHECK_IDS`（现有的 `party_healed`、`shop_cancelled` 加五个新 id）；评测入口 `solver/runner/one.py` 现在用写死的两元素集合决定哪些样本执行 reset、感知与 `validate_start`，**改为使用这个常量**（行为对旧两个 id 不变）。预检在评测运行时执行（要起模拟器），不在 `loader.check` 里；构建时由构建脚本另外用同一个函数对 5 个起点各验一次 |
 | D8 | `rubric.json` 原样复制父版本；`coverage.md` 新写：每样本一行（sample_id、tier、episode 数、check_id、起点文件、oracle_steps、预算） |
 | D9 | **知识库新增一条**（只服务 M1）：新建一份知识源与对应原子，机制与现有 12 条一致（先 `git grep -n "items_and_pickups.md"` 看现有原子怎么由源文件生成、`metadata.source` 与 `topic` 怎么取）。主题 `map_connections`，正文见第六节，逐字使用。`index.json`、`vectors.jsonl` 是被忽略的派生缓存，不提交 |
 | D10 | 机械判据（684）：五个新 `check_id` 的规则放 `scorer/rules/`，沿用现有规则的结构与"每条规则至少一个正例一个反例"的测试约定（`tests/evals/agent_short_goal_run/test_evals_checks.py` 的现有约束）；判据读逐键观察序列，逻辑以 intent 第五节各任务的"机械判据"为准，取值以第三节为准 |
@@ -53,10 +53,12 @@
 
 ## 五、起点预检（`preconditions.py`）
 
+运行时预检只能用 `validate_start(sample, ram, observation)` 拿到的东西（`RamReadout` 与 `TaskObservation`：场景、地图、队伍、钱、背包、是否在战斗、状态）。需要直接读内存的检查（例如事件位 `D74E`）只在构建时由构建脚本做，不进运行时预检。
+
 - `walk_to_pallet`：地图 1 且在行走场景、不在战斗；队伍两只、全员存活。
 - `heal_buy_return`：地图 1 且在行走场景；首只 HP 低于最大；球与钱等于起点值（球 4、钱 2000）。
 - `catch_then_heal`：在战斗中；对手为野生；己方出战宝可梦 HP 低于最大（队伍读数与战斗缓存读数一致）；背包有精灵球。
-- `customer_hint_purchase`：地图 42；钱 3000；背包无 item 70；`D74E` bit1 为 1（包裹这一幕已过去，进店不触发托付）。
+- `customer_hint_purchase`：地图 42；钱 3000；背包无 item 70。构建时另验 `D74E` bit1 为 1（包裹这一幕已过去，进店不触发托付），此项不进运行时预检。
 - `cure_poison_budget`：地图 1；第二只状态为 PSN；钱 2000；背包有 POTION。
 
 ## 六、知识条目正文（逐字）
