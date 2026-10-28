@@ -7,8 +7,9 @@
 - **A〔出边为零〕**：`trace/` 包内**没有任何文件** import `pokemon_agent`
   的其余部分（相对 import 解析成 `pokemon_agent.trace.*` 之后才算"自己"）。
   ⇒ "整体拷走即可当第三方模块用"这条字面成立。
-- **B〔入边只在 tools/〕**：`trace/` 与 `tools/` 之外的文件**不许** import
-  `pokemon_agent.trace`。⇒ trace 是独立模块，只有"桥"（tool 层）认识它；
+- **B〔入边只在 direct/〕**：`trace/` 与 `direct/` 之外的文件**不许** import
+  `pokemon_agent.trace`；唯一例外是独立启动入口 `reviewer/__main__.py`
+  （设计侧 2026-10-22 裁决）。⇒ trace 是独立模块，只有"桥"（tool 层）认识它；
   harness / schemas / api / build 一律经 `TraceToolPort` 或契约层说话。
 - **C〔契约层不依赖实现包〕**：`schemas/harness/domain/` **不许** import
   `pokemon_agent.trace`。⚠ **这一项不是"防环"**——trace 出边为零（A 项），
@@ -35,6 +36,16 @@ from collections.abc import Callable
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 PKG_ROOT = REPO_ROOT / "pokemon_agent"
+
+TRACE_ENTRY_DIRS = {"trace", "direct"}
+"""允许 import `pokemon_agent.trace` 的顶层目录：trace 自己 + tool 层门面 `direct/`。"""
+
+TRACE_ENTRY_EXCEPTION_FILES = {"reviewer/__main__.py"}
+"""顶层目录之外允许 import `pokemon_agent.trace` 的显式例外（相对 `PKG_ROOT` 的 posix 路径）。
+
+`reviewer/__main__.py` 是独立启动入口：自带只读 `LocalTrace` 读账、不经 tool 层，
+设计侧 2026-10-22 裁决保留为例外。
+"""
 
 
 def _module_name(path: pathlib.Path) -> str:
@@ -98,10 +109,14 @@ def _check_a() -> list[str]:
 
 
 def _check_b() -> list[str]:
-    """入边只在 tools/：trace 与 tools 之外的文件不许 import pokemon_agent.trace。"""
+    """入边只在 direct/：trace 与 direct 之外的文件不许 import pokemon_agent.trace。
+
+    显式例外见 `TRACE_ENTRY_EXCEPTION_FILES`（独立启动入口 `reviewer/__main__.py`）。
+    """
     bad: list[str] = []
     for path in _py_files(PKG_ROOT):
-        if path.relative_to(PKG_ROOT).parts[0] in {"trace", "tools"}:
+        rel = path.relative_to(PKG_ROOT)
+        if rel.parts[0] in TRACE_ENTRY_DIRS or rel.as_posix() in TRACE_ENTRY_EXCEPTION_FILES:
             continue
         for lineno, mod in _imports_of(path):
             if mod == "pokemon_agent.trace" or mod.startswith("pokemon_agent.trace."):
@@ -121,7 +136,7 @@ def _check_c() -> list[str]:
 
 CHECKS: list[tuple[str, str, Callable[[], list[str]]]] = [
     ("A", "trace 出边为零（可整体拷走）", _check_a),
-    ("B", "入口只在 tools/（其余层不认 trace）", _check_b),
+    ("B", "入口只在 direct/（reviewer/__main__.py 例外，其余层不认 trace）", _check_b),
     ("C", "契约层不依赖实现包（schemas/harness/domain 不 import trace）", _check_c),
 ]
 

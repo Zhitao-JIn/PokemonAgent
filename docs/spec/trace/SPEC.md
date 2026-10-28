@@ -11,7 +11,7 @@
 - **只保证一件事**：按时间记账。`type` / `kind` / `meta` / `content` 的**合法值域是声明方的事，trace 不认识**——所以 `TracePort.append()` 的前两个参数是裸 `str`。
 - **`meta` / `content` 是不透明载荷**：trace 只负责序列化成 JSON 字符串存储、读回时原样交还，**不解释里面装了什么**。
 - **零出边**：包内任何文件不 import `pokemon_agent` 的其余部分（可执行核对见 `scripts/check_trace_self_contained.py` 的 A 项）。
-- **入边只在 tool 层**：其余各层（`brain` / `harness` / `memory` / `world` / `schemas` / `vision` 与装配点 `build.py`）一律不 import 它——harness 只经 runtime 的 `trace`（`TraceToolPort`）说话（B 项）。
+- **入边只在 tool 层**：其余各层（`brain` / `harness` / `memory` / `world` / `schemas` / `vision` 与装配点 `build.py`）一律不 import 它——harness 只经 runtime 的 `trace`（`TraceToolPort`）说话（B 项）。唯一例外是独立启动入口 `reviewer/__main__.py`（自带只读 `LocalTrace` 读账，设计侧 2026-10-22 裁决）。
 - 统一出口 `trace/__init__.py` re-export：`Event`、`EventType`、`LocalTrace`、`LangfuseTrace`、`TracePort`、`new_event_uuid`。消费方写 `from pokemon_agent.trace import LocalTrace, TracePort`。
 
 ## 二、目录结构
@@ -118,12 +118,12 @@ trace/
 
 `scripts/check_trace_self_contained.py` 把"trace 自持"从一句声明变成可执行的事实。
 
-**怎么跑**：`python scripts/check_trace_self_contained.py`——退出码 0 = 全过。它只读 import 语句（AST），**不看 docstring 散文**（注释里提到 `pokemon_agent.trace` 不是依赖边）。实测（2026-10-22）：A / C 过，**B 挂**——脚本退出码 1，B 项报 6 处 violation。
+**怎么跑**：`python scripts/check_trace_self_contained.py`——退出码 0 = 全过。它只读 import 语句（AST），**不看 docstring 散文**（注释里提到 `pokemon_agent.trace` 不是依赖边）。实测：A / B / C 三项全过，退出码 0。
 
 | 项 | 名称 | 查什么 |
 |---|---|---|
 | A | trace 出边为零（可整体拷走） | `trace/` 包内没有任何文件 import `pokemon_agent` 的其余部分。相对 import 先按 PEP 328 解析成绝对模块名，解析后以 `pokemon_agent.trace` 开头才算"自己" |
-| B | 入口只在 `tools/`（其余层不认 trace） | **已知过时（2026-10-22，待另案处理）**：豁免目录仍写 `trace/` 与 `tools/` 两个顶层目录，而 tool 层现在住 `direct/trace/`（另有 `reviewer/__main__.py` 也 import trace）。当前 violation：`direct/trace/__init__.py`、`direct/trace/budget_render.py`、`direct/trace/render.py`、`reviewer/__main__.py` 共 6 处 import `pokemon_agent.trace`。修法是把豁免目录改成现状，本轮只标记、不动脚本 |
+| B | 入口只在 `direct/`（`reviewer/__main__.py` 例外） | `trace/` 与 tool 层门面 `direct/` 之外的文件不 import `pokemon_agent.trace`。显式例外只有 `reviewer/__main__.py`——独立启动入口，自带只读 `LocalTrace` 读账、不经 tool 层（设计侧 2026-10-22 裁决） |
 | C | `schemas/harness/domain` 不 import trace（契约层不依赖实现包） | ⚠ **不是防环**——trace 出边为零（A），任何 `X → trace` 的边都构不成回环；0916 实测四种加载顺序全不炸。守的是分层方向。B 已涵盖 C，单列是为了让失败信息直接指向哪条硬约束 |
 
 契约层的正解是**不 import**：`TraceEvent` 用结构化满足（字段结构对得上）而不是共享类型，`TRACE_SCHEMA_VERSION` 那份"本地声明一份"的副本已随封套改造删除。

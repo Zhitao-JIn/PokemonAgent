@@ -35,6 +35,7 @@ from pokemon_agent.trace import LangfuseTrace, LocalTrace, TracePort
 
 > **谁该调 trace**：只有 tool 层（`pokemon_agent/direct/trace/`）。harness / brain / memory /
 > world / schemas / `build.py` 一律不 import 本包，它们经 `TraceToolPort` 说话。
+> 显式例外是独立启动入口 `reviewer/__main__.py`（只读 `LocalTrace` 读账，设计侧 2026-10-22 裁决）。
 > 这条边界是可执行核对的，见本文第八节（8.1）。
 
 ---
@@ -445,7 +446,7 @@ python scripts/check_trace_self_contained.py
 | 项 | 名称 | 查什么 |
 |---|---|---|
 | A | trace 出边为零（可整体拷走） | `trace/` 包内没有任何文件 import `pokemon_agent` 的其余部分 |
-| B | 入口只在 `tools/` | **已知过时（2026-10-22，待另案处理）**：豁免目录仍写 `trace/` 与 `tools/` 两个顶层目录，而 tool 层现在住 `direct/trace/`（另有 `reviewer/__main__.py` 与 `mcpclient/` 侧也 import trace）。实测该脚本当前退出码 1：A / C 过，B 报 6 处 violation（`direct/trace/__init__.py`、`budget_render.py`、`render.py`、`reviewer/__main__.py`）。修法是把豁免目录改成现状，本轮只标记、不动脚本 |
+| B | 入口只在 `direct/`（`reviewer/__main__.py` 例外） | `trace/` 与 tool 层门面 `direct/` 之外的文件不 import `pokemon_agent.trace`。显式例外只有 `reviewer/__main__.py`——独立启动入口，自带只读 `LocalTrace` 读账、不经 tool 层（设计侧 2026-10-22 裁决）。实测脚本退出码 0，A / B / C 三项全过 |
 | C | `schemas/harness/domain` 不 import trace | ⚠ **不是防环**——trace 出边为零（A），任何 `X → trace` 的边都构不成回环，这里 import 它也不炸（0916 实测四种加载顺序全不炸）。守的是**分层方向**：契约层不反向依赖实现包 |
 
 ### 8.2 落盘契约（单元测试）

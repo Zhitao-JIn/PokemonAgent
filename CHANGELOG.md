@@ -1,3 +1,10 @@
+## 2026-10-28（682）—— trace 自持检查脚本与 langfuse 冒烟排序对齐现状
+
+**改了什么**：`scripts/check_trace_self_contained.py` 的 B 规则允许目录由 `{"trace", "tools"}` 改为 `{"trace", "direct"}`（tool 层门面现住 `direct/trace/`），新增 `TRACE_ENTRY_EXCEPTION_FILES = {"reviewer/__main__.py"}` 按相对包根的 posix 路径比较，并把模块 docstring、检查函数与标签同步；`scripts/langfuse_smoke.py` 的排序核对由 `(ended_at, uuid)` 改为 `(ended_at, seq)`，标签同步；`docs/spec/trace/API.md` 与 `SPEC.md` 对应表述改到位。
+**为什么这么改**：旧审计分支 `docs/audit-r1` 的 R1 第一个提交（当时编号 604，与后来的 CI 重写撞号，故按 682 重新记账）早已有这两处修正，但一直没有合入；合入前该脚本在 main 上直接报"1 条约束被破坏"（`reviewer/__main__.py` 导入 trace 的独立启动入口），冒烟脚本的排序键也和 `LangfuseTrace.read_events`、`LocalTrace` 实际使用的 `(ended_at, seq)` 不一致。
+**取舍**：只取这一个提交的脚本与 trace 文档部分；同分支的两个注释对齐提交（605、606）改的是迁移前的代码注释，大半已失效，不合入，旧稿存 `experiment/archive/`，在 ROADMAP B20 记为在新代码上重做。例外只开 `reviewer/__main__.py` 一个文件，A、C 两项与退出码语义未动。
+**影响面**：只涉及两个脚本与两份 trace 文档，不碰运行代码、测试与提示词。修正前脚本在 main 上退出码为 1，修正后三条约束全过、退出码 0，冒烟脚本编译通过；未跑全量测试，需在本机补跑。
+
 ## 2026-10-28（679）—— 短期样本冻结版数据集
 
 **改了什么**：新增 `v20261028_short_frozen`，由 `v20261021_retest5` 构建；20 条样本仅更新 `dataset_version`、新增 `tier="short"` 与一条冻结 `goals`。task 表从设计文件原样复制，含 21 个 task；`knowledge_shop_interaction` 有 2 个，其余各 1 个。复制 22 个状态文件、`rubric.json` 与 `coverage.md`，并记录 `revision.json`。新增确定性构建脚本与合成样本构建逻辑测试。

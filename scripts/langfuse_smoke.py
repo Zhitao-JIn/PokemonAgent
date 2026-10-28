@@ -455,8 +455,8 @@ check(
 
 kinds = [e.kind for e in events]
 check("run_start..run_end 全部在场", set(MAIN_EVENTS + RESTORE_EVENTS) <= set(kinds))
-keys = [(e.ended_at, e.uuid) for e in events]
-check("按 (ended_at, uuid) 升序（双时刻定案：按操作结束时刻排）", keys == sorted(keys))
+keys = [(e.ended_at, e.seq) for e in events]
+check("按 (ended_at, seq) 升序（双时刻定案：按操作结束时刻排）", keys == sorted(keys))
 model_events = [e for e in events if e.kind == "choose_call"]
 check(
     "model_call generation 投影无损",
