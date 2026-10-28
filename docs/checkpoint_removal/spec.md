@@ -58,3 +58,11 @@
 - **691 收窄**：只切运行路径的调用点，**不删 checkpoint 包、不删 checkpoint 专属 schema、不动 settings 的 `checkpoint` 节、不动 `pyproject.toml` 依赖**。具体：`build.py` 不再构建/注入 `Checkpointer` 与 saver，`run_graph` 普通 `compile()`，`run/act`、`episode_entry`、`task_entry`、`run_entry`、`harness.py` 里的存档与恢复分支，三层 runtime 的 `Checkpointer` 字段与注入。包本身变成无引用孤岛（运行路径零引用），**由旧采集管线最后的依赖继续让它可导入**，直到下面的决定做完。
 - **新增待决（不挡 691）**：旧采集管线怎么处理。选项：①整条删除（`capture_*` 十余个文件、`brain_capture.py`、两个测试文件，并处理 `export_dataset.py` 与 `frames/build/freeze.py` 的引用），数据重新生成时在新框架上另建采集；②保留并把 `capture_case` 改成从 `.state` 起点跑（等同评测入口 `run_one`）；③只做最小隔离：把对 checkpoint 包的三处引用换成明确的"已停用"异常，管线继续躺着。**设计侧倾向①**（它自 606 起不能运行，新框架重新生成数据（D33、B16）本来就要重新设计采集），但要先做一次只读盘点（`capture_*` 的依赖图与调用方）再定。必须在 692 之前定，因为 692 删 trace 的 checkpoint 账类型、694 删 memory 管理面，会让 checkpoint 包不可导入。
 - **692 因此扩大**：删 checkpoint 包与 checkpoint 专属 schema、settings 的 `checkpoint` 节与 `paths.checkpoint`、`pyproject` 的 saver 依赖（用户刷新 `uv.lock`）、trace 协议收窄（原 692 内容），并按上面的决定处理旧采集管线。691 不涉及这些。
+
+## 六、决定（用户，2026-10-28）：旧采集管线整条删除，数据按新格式重建
+
+用户判断旧采集管线与新框架不兼容，"直接按新格式来"：**选第五节的选项①，整条删除**，不改成从 `.state` 起点、不做最小隔离。新框架下的数据重新生成（B16、D33）时，按新格式（trace 加 `ActMemory` 的步观察）重新设计采集，不复用旧管线。
+
+- 新任务 **695：移除旧采集管线**。先做一次只读盘点（精确的删除清单、需要改引用的文件、对读取**已冻结数据**与对其他评测的影响、72 个 `D33` 跳过测试与它的关系），盘点由设计侧复核后再写 695 的执行消息；删除由用户做，执行方只改引用与测试。
+- **顺序**：691（收窄）→ 695 → 692 → 693 → 694 → 690。695 必须在 692 之前，因为 692 删 checkpoint 包后，旧采集管线里对它的引用会失效。
+- 已冻结的旧格式数据文件（`evals/dataset/brain_calls`、`brain_annotations`、`frames` 等）**不删**，它们是 72 个跳过测试在等的数据来源，处理方式随数据重新生成再定。
