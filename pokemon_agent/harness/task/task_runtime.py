@@ -25,7 +25,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from pokemon_agent.deadline import Deadline
 from pokemon_agent.direct.interface import (
@@ -40,9 +39,6 @@ from pokemon_agent.direct.interface import (
 from pokemon_agent.settings import AppConfig
 
 from ..interface.reviewer import Reviewer
-
-if TYPE_CHECKING:
-    from ..checkpoint import Checkpointer
 
 
 @dataclass
@@ -91,11 +87,7 @@ class TaskRuntime:
     写新帧时旧的 `after` 挪进 `before`（"为什么恰好两步"、跨局清空，都在
     `frames.remember_frame` 的 docstring 里）。唯一读者是 `after_frame`。"""
 
-    # ---- 存档：task 开局的世界快照由 `task_entry.begin_task` 调用 ----
-
-    checkpointer: Checkpointer | None = None
     deadline: Deadline | None = None
-    """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""
 
 
 __all__ = ["TaskRuntime"]

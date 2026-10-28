@@ -37,7 +37,6 @@ from pokemon_agent.direct.reviewer_tool import ReviewerTool
 from pokemon_agent.direct.trace import TraceTool, assert_server_ready
 from pokemon_agent.env import load_env_file
 from pokemon_agent.harness import EpisodeRuntime, RunHarness, RunRuntime, TaskRuntime
-from pokemon_agent.harness.checkpoint import Checkpointer, build_saver
 from pokemon_agent.harness.episode import compile_episode_graph
 from pokemon_agent.harness.run import compile_run_graph
 from pokemon_agent.harness.task import compile_task_graph
@@ -145,30 +144,10 @@ def build_real(
 
     reviewer = ReviewerTool.build(app.review, flush=trace_tool.flush)
 
-    # 步骤 4：编译三张图与存档器；只有 run 图挂 saver。
-    checkpoint_dir = resolve_path(app.paths, "checkpoint")
-    saver = build_saver(checkpoint_dir)
+    # 步骤 4：编译三张图。
     task_graph = compile_task_graph()
     episode_graph = compile_episode_graph()
-    run_graph = compile_run_graph(checkpointer=saver)
-    checkpointer = (
-        Checkpointer(
-            root=checkpoint_dir,
-            run_graph=run_graph,
-            game=game,
-            memory=memory,
-            trace=trace_tool,
-            branch=app.run.branch,
-            models={
-                "text": app.models.text.model,
-                "judge": app.models.judge.model,
-                "summary": app.models.summary.model,
-                "plan": app.models.plan.model,
-            },
-        )
-        if app.checkpoint.enabled
-        else None
-    )
+    run_graph = compile_run_graph()
 
     # 步骤 5：三层 runtime 嵌套成一份 context；trace / memory / reviewer / game 三层同一实例。
     task_rt = TaskRuntime(
@@ -182,7 +161,6 @@ def build_real(
         task_summarizer=task_brain.task_summarizer,
         trace=trace_tool,
         reviewer=reviewer,
-        checkpointer=checkpointer,
     )
     episode_rt = EpisodeRuntime(
         config=app,
@@ -196,7 +174,6 @@ def build_real(
         reviewer=reviewer,
         task_graph=task_graph,
         task=task_rt,
-        checkpointer=checkpointer,
     )
     run_rt = RunRuntime(
         config=app,
@@ -210,6 +187,5 @@ def build_real(
         judger=run_brain.judger,
         episode_graph=episode_graph,
         episode=episode_rt,
-        checkpointer=checkpointer,
     )
     return RunHarness(run_rt, run_graph), game
