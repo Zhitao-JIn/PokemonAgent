@@ -1,3 +1,15 @@
+## 2026-10-28（695）—— 旧采集管线退役：迁出共用原语、断开引用
+
+**改了什么**：将 `eval_services.py` 共用的五个服务原语从 `capture_services.py` 原样迁入；把 brain_calls 冻结数据校验所需的规范哈希实现留在校验模块并断开旧 exporter 引用；brain_choose collector 改用 `v20261021_retest5/states`；旧 audit 测试从脑调用录制测试中拆出。
+
+**为什么这么改**：旧 batch/case 管线已依赖退役的 archive 与 checkpoint 模块，不能运行；新 brain_choose collector 和通用评测服务仍需保留独立可用。
+
+**取舍**：不删除文件或冻结数据；共享录制与 review 能力保留，纯旧管线测试列给用户删除；旧 brain_calls exporter 的历史清单仍留在冻结 collection 元数据中。
+
+**影响面**：修改 eval_services、brain_calls build/verify/source_archive、brain_choose collect、brain_capture 测试；新增旧 audit 测试文件。未改 `pokemon_agent/`、文档或冻结数据文件。
+
+**验证**：基线 pytest 为 2961 tests、0 failures、0 errors、72 skipped；最终验证见本任务验收记录。
+
 ## 2026-10-28（686）—— 评测数据集整理
 
 **改了什么**：退役六个旧版本目录；将默认评测版本收口到 `v20261028_short_frozen`，数据集加载函数要求调用方显式传入版本；提示词泛化检查同时读取短期冻结与中期两份样本。

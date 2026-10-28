@@ -13,7 +13,7 @@ from pokemon_agent.schemas.harness import TraceKind
 
 SOURCE_KINDS: frozenset[str] = frozenset(
     {
-        # 数据集构建：export_dataset.load_events() 按这些调用账配对模型尝试
+        # 数据集来源核验：按这些调用账配对模型尝试
         TraceKind.CHOOSE_CALL,
         TraceKind.JUDGE_CALL,
         TraceKind.PLAN_CALL,
