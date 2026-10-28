@@ -129,7 +129,6 @@ def _request(
         run_index=ctx.run_index,
         knowledge=ctx.knowledge,
         observation=state.observation,
-        objects=ctx.objects,
         max_push=deps.config.loop.plan_max_new_goals,
         last_judge=state.last_judge,
         human_note=note,

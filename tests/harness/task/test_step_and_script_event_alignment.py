@@ -1,15 +1,13 @@
 """事件流对齐钉子：**同一操作序列，step 路径与脚本路径产出逐字段一致的事件。**
 
 - 两路径对齐钉子（判定收进 `world/object_events.py` 后的结构性保证，这里钉死）；
-- 入流过滤：普通移动零事件、blocked 零事件、门 warp 入流；
-- `rules.stamp_events` 补三章（episode_id/step）与三族落库类型组装。
+- 入流过滤：普通移动零事件、blocked 零事件、门 warp 入流。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from pokemon_agent.harness.task.perceive.store_object_semantic_memory.rules import stamp_events
 from pokemon_agent.world import PlaceInWorld, ScreenText, TaskObservation, TaskScene
 from pokemon_agent.world.interface import Facts
 from pokemon_agent.world.object_events import judge_press
@@ -184,40 +182,4 @@ def test_turning_first_produces_no_events() -> None:
     assert events == []
 
 
-# ---- ④ stamp_events：补三章 + 三族组装 ----
-
-
-def test_stamp_events_builds_typed_records() -> None:
-    dialog = {
-        "outcome": "dialog",
-        "actor_place": ACTOR.model_dump(),
-        "place": PERSON.model_dump(),
-        "object_kind": "人",
-        "button": "up",
-        "text": "你好！",
-    }
-    warp = {
-        "outcome": "warp",
-        "actor_place": DOOR.model_dump(),
-        "place": DOOR.model_dump(),
-        "object_kind": "门",
-        "button": "up",
-        "map_id": 1,
-    }
-    still = {
-        "outcome": "still",
-        "actor_place": ACTOR.model_dump(),
-        "place": PERSON.model_dump(),
-        "object_kind": "招牌",
-        "button": "up",
-    }
-    events = stamp_events([dialog, warp, still], episode_id="ep-1", step=7)
-    assert [type(e).__name__ for e in events] == [
-        "ObjectDialogEvent",
-        "ObjectWarpEvent",
-        "ObjectStillEvent",
-    ]
-    for e in events:
-        assert e.episode_id == "ep-1" and e.step == 7
-    assert events[0].text == "你好！"
-    assert events[1].map_id == 1
+# ---- ④ 入流过滤：先转向 ----

@@ -1,3 +1,15 @@
+## 2026-10-28（670）—— harness 停止写读对象记忆，删除 last_event
+
+**改了什么**：task 层 `perceive` 去掉 `store_object_semantic_memory` 单元并删除该目录（`_UNITS` 七→六，docstring 同步）；`act` 不再写 `last_event`（按键路径不再取 `resp.event`），`TaskState` 删该字段。episode 层 `perceive` 去掉 `retrieve_object_semantic_memory` 单元并删除该文件，`merge_retrieval` 只把 `ep_ctx` 原样交出，`EpisodeContext` 删 `object_semantic_events`。run 层 `read_plan_context` 不再召回落库对象事实、不再记 `read_object_memory` 账（读账由三种降为两种），`PlanContext` 删 `objects`。三处把物件填进请求的调用点（`plan_episode`、`review_and_judge`、`plan_run`）不再传 `known_objects=` / `objects=`；请求模型与 `prompt/` 里的对应参数保留默认值。
+
+**为什么这么改**：逐键观察（667–669）已经替代对象交互事实——每键的 `StepObservation` 与机械差异直接给出对话、换图、钱与背包变化，对象记忆这条链路只剩重复采集与一次多余召回。CP4 按"先停止产生与消费、再用旧数据核对、最后删除"拆开：本检查点只做第一步。
+
+**取舍**：只停 harness 的写与读——world 侧事件判定（CP4b）、trace 的 `render` / `parse` / `content` 与 `TraceKind`（CP4c 回放要读旧账）、`memory/` 与 `schemas/memory/object_memory.py`（CP5 删）都不动。`FromHarnessToBrainToolChooseOnceReq` / `DecomposeReq` / `JudgeReq` 的 `known_objects` 与 `PlanOnceReq.objects` 保留：旧提示词版本仍要渲染这些参数，删它们会连带改 `prompt/`，统一放 CP5。`run_result.py`、`schemas/harness/domain/run_io.py` 里的 `last_event` 是 trace 边界账的另一个概念（最后一条 trace 事件的 uuid），未动。
+
+**影响面**：task / episode / run 三层的 perceive 单元清单与状态模型、`read_plan_context` 的读账、三处请求组装、节点单元清单夹具与三个测试文件。不兼容旧数据：状态模型少一个字段，旧 checkpoint 按 `state_schema_hash` 拒绝加载；旧 trace 里的 `read_object_memory` / `write_object_memory` 账仍可解析（parse 侧未动）。
+
+**验证**：基线全量测试 tests=3113、failures=0、errors=0、skipped=25；改动后全量测试 tests=3111、failures=0、errors=0、skipped=25（少 2 条为删除的单元专属测试；两次均已排除沙箱专有失败 test_world_case_caller_closes_world_service_after_each_worker_outcome）；ruff check 与 ruff format --check 全绿。
+
 ## 2026-10-27（669）—— 摘要带来源指针与结构化索引，task 层机械摘取事实
 
 **改了什么**：`TaskMemory` 新增 `facts`（`Fact` = `step`、`kind`、`place`、`object`、`text`、`task_id`、`episode_id`，由 `memory/facts.py` 调 `changes()` 对本 task 的 `ActMemory` 序列相邻比较机械摘出，不截断、不去重）；`TaskMemory`、`EpisodeMemory`、`RunMemory` 同形新增 `pointers`（task 指向步号区间，episode 指向 task 编号，run 指向 episode 编号）与 `index`（`headline`、`keys`、`evidence`，由摘要的同一次 LLM 调用产出）。三个 `Summarize*Req` 新增 `grounding_texts`；摘要解析器核对 `keys` 每项字面出现在其中、`evidence` 取自固定词表（对话原文、状态变化、换图、失败原因）、`headline` 不含与来源章相反的结局词，不过按现有解析失败路径重试。新增 `memory_records` v5（`index` 模式读 `index` 字段，没有 `headline`（空章）时渲染`（无正文）`；详情渲染不渲染 `facts`）与 `summarize` v8、`summarize_task` v9、`summarize_run` v7，并经注册表激活。复核台 `reviewer/hub/context.py` 的三层索引行同步改成同一尾部格式。`write_task_memory` / `write_episode_memory` / `write_run_memory` 写账不含 `facts`、`pointers`，含 `index`，`WriteRunMemoryContent` 新增必填 `index`（空章写空 `Index`）。

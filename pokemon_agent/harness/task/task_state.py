@@ -13,7 +13,7 @@
 **一圈的数据流**：`perceive` 的 `sense` 取一帧落 `after_observation`（观测的局内累计键数 =
 `total_acts + step`；**账面步号** = `step + 1`，圈号语义：dispatch 落 0、每圈取帧 +1，
 同圈所有账共用）
-→ 有 `action`（上一圈按过键）才构造 ActMemory / 停摆 / object 事件 → `close_step` 把新帧转正进
+→ 有 `action`（上一圈按过键）才构造 ActMemory / 停摆 → `close_step` 把新帧转正进
 `task_ctx.observation` 并清 `action` → `review_and_judge` → `plan_task` 出一个键 → `act` 按键、
 `step+1` → 回 `perceive`。首圈 `action` 为 None：`sense` 取的就是开局帧，直接转正。
 
@@ -108,11 +108,6 @@ class TaskState(Settled, BaseModel):
     )
     last_outcome: ActMemory.ScriptOutcome | None = None
     last_observations: list[ActMemory.Observation.StepObs] = Field(default_factory=list)
-    last_event: dict[str, Any] | None = Field(
-        default=None,
-        description="上一个动作是按键时它的裸对象事件（P6 起 world 侧判定，随 step 响应带来）；"
-        "其它动作时为 None（act 每次覆盖）",
-    )
 
     termination: Termination | None = Field(
         default=None, description="终止类别；None = 还没停（`done` / `success` 由它推出）"

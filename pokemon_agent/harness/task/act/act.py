@@ -62,14 +62,12 @@ def act(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
                 ActMemory.Observation.StepObs.model_validate(item)
                 for item in (resp.report or {}).get("observations", [])
             ],
-            "last_event": None,  # 脚本的事件在 report.events[] 里
         }
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(kind=TraceKind.ACT_CALL, meta=meta, action=state.action)
     )
     return {
         "step": state.step + 1,
-        "last_event": resp.event,  # P6：world 侧判定的本键裸事件（可为 None）
         "last_report": None,
         "last_outcome": None,
         "last_observations": [],

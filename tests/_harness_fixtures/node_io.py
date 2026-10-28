@@ -193,7 +193,6 @@ EPISODE_SOURCES: tuple[str, ...] = (
     "retrieve_task_memories",
     "retrieve_episode_index",
     "retrieve_knowledge_semantic_memory",
-    "retrieve_object_semantic_memory",
     "review_and_judge",
     "plan_episode",
     "episode.act",
@@ -207,7 +206,6 @@ TASK_SOURCES: tuple[str, ...] = (
     "task.sense",
     "detect_stall",
     "store_step_episode_memory",
-    "store_object_semantic_memory",
     "close_step",
     "retrieve_act_memories",
     "get_action_space",
@@ -243,7 +241,6 @@ NODE_FINGERPRINTS: dict[str, tuple[Styled, ...]] = {
     "run.sense": (("view", "sense_frame"),),
     "run.perceive": (
         ("memory_io", "read_episode_memory"),
-        ("memory_io", "read_object_memory"),
         ("memory_io", "read_run_memory"),
     ),
     "run.retrieve_knowledge": (("memory_io", "read_knowledge"),),
@@ -262,7 +259,6 @@ NODE_FINGERPRINTS: dict[str, tuple[Styled, ...]] = {
     "retrieve_task_memories": (("memory_io", "read_task_memory"),),
     "retrieve_episode_index": (("memory_io", "read_episode_memory"),),
     "retrieve_knowledge_semantic_memory": (("memory_io", "read_knowledge"),),
-    "retrieve_object_semantic_memory": (("memory_io", "read_object_memory"),),
     "review_and_judge": (("llm_outcome", "judge_verdict"),),
     "plan_episode": (("llm_outcome", "decompose_verdict"),),
     "episode.act": (("lifecycle", "task_error"),),
@@ -277,7 +273,6 @@ NODE_FINGERPRINTS: dict[str, tuple[Styled, ...]] = {
     "task.sense": (("view", "sense_frame"),),
     "detect_stall": (("act", "check_stall"),),
     "store_step_episode_memory": (("memory_io", "write_act_memory"),),
-    "store_object_semantic_memory": (("memory_io", "write_object_memory"),),
     "close_step": (("lifecycle", "advance_step"),),
     "retrieve_act_memories": (("memory_io", "read_act_memory"),),
     "summarize_task": (("memory_io", "write_task_memory"),),
@@ -299,7 +294,6 @@ CELL_SOURCES: dict[str, tuple[str, ...]] = {
         "retrieve_task_memories",
         "retrieve_episode_index",
         "retrieve_knowledge_semantic_memory",
-        "retrieve_object_semantic_memory",
     ),
     "episode.review_and_judge": ("review_and_judge",),
     "episode.plan_episode": ("plan_episode",),
@@ -313,7 +307,6 @@ CELL_SOURCES: dict[str, tuple[str, ...]] = {
         "task.sense",
         "detect_stall",
         "store_step_episode_memory",
-        "store_object_semantic_memory",
         "close_step",
         "retrieve_act_memories",
         "get_action_space",
@@ -330,7 +323,7 @@ CELL_SOURCES: dict[str, tuple[str, ...]] = {
 SILENT_NODES: dict[str, str] = {}
 """**设计上不写账**的格——它们跑没跑 trace 答不了。
 
-（格内的 `merge_retrieval` 单元同理不写账：它只把四路检索拼进 `ep_ctx`。）"""
+（格内的 `merge_retrieval` 单元同理不写账：它只把三路检索拼进 `ep_ctx`。）"""
 
 CONDITIONAL_NODES: dict[str, str] = {
     "run.summarize_run": "无任何局摘要时不调模型，只写空章与 call_exhausted。",
@@ -344,7 +337,6 @@ CONDITIONAL_NODES: dict[str, str] = {
     "detect_stall": "同上。",
     "store_step_episode_memory": "同上。",
     "close_step": "同上。",
-    "store_object_semantic_memory": "只在判定出 object 交互事件时才写 `write_object_memory`。",
     "summarize_task": "本 task 没有 ActMemory 时跳过。",
     "summarize_episode": "本局没有 TaskMemory 时跳过（改由 leave_chapter 补空章）。",
     "leave_chapter": "本局有 TaskMemory（走了蒸馏）时不补。",
@@ -396,8 +388,7 @@ RUN_NEXT: dict[str, frozenset[str]] = {
     START: frozenset({"run_start"}),
     "run_start": frozenset({"sense_frame"}),
     "sense_frame": frozenset({"read_episode_memory"}),
-    "read_episode_memory": frozenset({"read_object_memory"}),
-    "read_object_memory": frozenset({"read_run_memory"}),
+    "read_episode_memory": frozenset({"read_run_memory"}),
     "read_run_memory": frozenset({"read_knowledge"}),
     "read_knowledge": frozenset({"judge_verdict", "settle_goal"}),
     "settle_goal": frozenset({"judge_verdict"}),
@@ -407,7 +398,7 @@ RUN_NEXT: dict[str, frozenset[str]] = {
     EPISODE_TOKEN: frozenset({"sense_frame"}),
 }
 """run 图：`begin[run_start]` → `perceive[run.sense 的 sense_frame → read_episode_memory →
-read_object_memory → read_run_memory → read_knowledge]` →
+read_run_memory → read_knowledge]` →
 `review_and_judge[(定案 settle_goal) → judge_verdict]` →
 `plan_run[plan_verdict（插话重问只落最后一版）]` → `act[一局]` → perceive …；
 判停后 `run_done[run_end]`。
@@ -425,10 +416,15 @@ EPISODE_NEXT: dict[str, frozenset[str]] = {
     "sense_frame": frozenset({"read_task_memory"}),
     "read_task_memory": frozenset({"read_episode_memory"}),
     "read_episode_memory": frozenset(
-        {"read_knowledge", "read_object_memory", "write_episode_memory", "episode_end"}
+        {
+            "read_knowledge",
+            "judge_verdict",
+            "settle_task",
+            "write_episode_memory",
+            "episode_end",
+        }
     ),
-    "read_knowledge": frozenset({"read_object_memory"}),
-    "read_object_memory": frozenset({"judge_verdict", "settle_task"}),
+    "read_knowledge": frozenset({"judge_verdict", "settle_task"}),
     "settle_task": frozenset({"judge_verdict"}),
     "judge_verdict": frozenset(
         {
@@ -443,8 +439,8 @@ EPISODE_NEXT: dict[str, frozenset[str]] = {
     TASK_TOKEN: frozenset({"sense_frame"}),
     "write_episode_memory": frozenset({"episode_end"}),
 }
-"""episode 图：`perceive[sense_frame → read_task_memory → read_episode_memory → (read_knowledge)
-→ read_object_memory]`（`read_knowledge` 只在首圈、场景变化、有 task 失败时出现）
+"""episode 图：`perceive[sense_frame → read_task_memory → read_episode_memory → (read_knowledge)]`
+（`read_knowledge` 只在首圈、场景变化、有 task 失败时出现）
 → `review_and_judge[(settle_task) → judge_verdict]` →
 `plan_episode[decompose_verdict（没有 PENDING 才拆）]` →
 `act[一个 task]` → perceive …；
@@ -462,8 +458,7 @@ TASK_NEXT: dict[str, frozenset[str]] = {
     "task_start": frozenset({"sense_frame"}),
     "sense_frame": frozenset({"check_stall", "read_act_memory"}),
     "check_stall": frozenset({"write_act_memory"}),
-    "write_act_memory": frozenset({"write_object_memory", "advance_step"}),
-    "write_object_memory": frozenset({"write_object_memory", "advance_step"}),
+    "write_act_memory": frozenset({"advance_step"}),
     "advance_step": frozenset({"read_act_memory"}),
     "read_act_memory": frozenset({"get_action_space"}),
     "get_action_space": frozenset({"judge_verdict"}),
@@ -472,7 +467,7 @@ TASK_NEXT: dict[str, frozenset[str]] = {
     "act_call": frozenset({"sense_frame"}),
     "write_task_memory": frozenset({"task_end"}),
 }
-"""task 图：`perceive[sense_frame → (check_stall → write_act_memory → write_object_memory?
+"""task 图：`perceive[sense_frame → (check_stall → write_act_memory
 → advance_step) → read_act_memory → get_action_space]` → `review_and_judge[judge_verdict]`
 → `plan_task[choose_verdict]` → `act[act_call(key|script 形)]`
 → perceive …；判停后 `task_done[(judge_verdict → write_task_memory) → task_end]`。
