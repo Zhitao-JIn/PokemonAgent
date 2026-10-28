@@ -102,6 +102,7 @@ def test_a_standalone_copy_uses_packaged_units_with_a_registry_stored_elsewhere(
         "RenderedPrompt",
         "RamObservationRecord",
         "PromptRegistryError",
+        "active_versions",
         "VerifyParams",
         "SummarizeParams",
         "SummarizeTaskParams",

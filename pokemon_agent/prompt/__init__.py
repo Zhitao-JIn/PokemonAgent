@@ -3,6 +3,7 @@
 from .errors import PromptRegistryError
 from .gateway import PromptGateway, RenderedPrompt
 from .ram_observation import RamObservationRecord
+from .registry import active_versions
 from .tasks.decide_action.params import DecideActionParams
 from .tasks.decompose.params import DecomposeParams
 from .tasks.fragments.distill_output.params import DistillOutputParams
@@ -23,6 +24,7 @@ __all__ = [
     "RenderedPrompt",
     "RamObservationRecord",
     "PromptRegistryError",
+    "active_versions",
     "VerifyParams",
     "SummarizeParams",
     "SummarizeTaskParams",

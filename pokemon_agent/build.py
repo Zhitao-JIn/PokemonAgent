@@ -73,7 +73,10 @@ def build_real(
     resolved = load_config(config)
     app = resolved.config
     load_env_file()
-    snapshot = write_snapshot(resolved, resolve_path(app.paths, "config_snapshot"), app.run.run_id)
+    prompts = BrainTool.prompt_versions(app.prompt.registry)
+    snapshot = write_snapshot(
+        resolved, resolve_path(app.paths, "config_snapshot"), app.run.run_id, prompts
+    )
     logger.info("生效配置 sha256=%s 快照=%s", resolved.sha256[:8], snapshot)
 
     budget = app.budget

@@ -965,6 +965,19 @@ class BrainTool:
     task_summarizer: TaskSummarizer
     run_summarizer: RunSummarizer
 
+    @staticmethod
+    def prompt_versions(prompt_registry: str | None) -> dict[str, dict[str, str]]:
+        """Return validated active prompt identities as plain fields for run snapshots."""
+        from pokemon_agent.prompt import active_versions
+
+        registry_path = Path(prompt_registry) if prompt_registry is not None else None
+        if registry_path is not None and not registry_path.is_absolute():
+            registry_path = Path(__file__).resolve().parents[2] / registry_path
+        return {
+            name: {"version": version, "hash": prompt_hash}
+            for name, (version, prompt_hash) in active_versions(registry_path).items()
+        }
+
     @classmethod
     def build(
         cls,

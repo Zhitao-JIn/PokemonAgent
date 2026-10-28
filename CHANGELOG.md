@@ -1,3 +1,15 @@
+## 2026-10-28（677）—— 运行配置快照记录提示词版本与 hash
+
+**改了什么**：每次 `build_real` 读取生效提示词 registry 与各版本 `meta.json`，将按名称排序的 `prompts` 映射传给配置快照写入函数；快照新增全部激活任务/片段的 `version` 与源文件 `hash`。
+
+**为什么这么改**：配置快照应能说明一次 run 使用了哪些提示词版本，便于和 trace 中的完整 prompt 文本共同追溯执行条件。
+
+**取舍**：registry 读取复用 `pokemon_agent.prompt.active_versions()` 与 `load_registry` 的目录发现、身份和 hash 校验，避免重复实现；`build.py` 经 `BrainTool.prompt_versions()` 获取纯字段数据后传给 settings，维持 build 隔离规则 C，settings 不依赖 prompt 实现。快照 sha256 由规范化的 `config` 与 `prompts` 一起计算，文件名沿用 `<run_id>-<sha256 前 8 位>.json`，因此提示词版本变化会改变快照身份；旧格式不做兼容。
+
+**影响面**：修改 `pokemon_agent/build.py`、`pokemon_agent/direct/brain_tool.py`、`pokemon_agent/prompt/registry.py` 及其公开导出、`pokemon_agent/settings/paths.py` 与对应测试。合成 registry 测试覆盖版本变化、缺 active 与缺 meta；真实 registry 的 `build_real` 快照包含 26 项。`capture_batch.py`、evals 与 settings 对 prompt 的依赖方向未变。
+
+**验证**：全量 pytest JUnit：tests=2880、failures=0、errors=0、skipped=72；按要求另 deselect 1 项。真实快照打印前五项及 26 项总数。ruff format、ruff check、ruff format --check 全绿。
+
 ## 2026-10-28（676）—— 删除对象记忆与提示词旧对象规则
 
 **改了什么**：删除对象记忆模型、存储/召回与 MCP 路由、对象事件请求、TraceKind 及写读账分发、世界对象事件模块和对象记忆评测请求分支；删除 ChooseOnce、Decompose、Judge 的 `known_objects` 与 PlanOnce 的 `objects` 输入。提示词中移除对象记忆参数与渲染，并删除 `object_events/v2`。依 D42 新建 `decide_action/v12` 并激活，删除 v11，去掉静态已知对象规则与地图交互事实说明；只更新 decide_action 的 prompt golden，内容仅删除对应规则段。保留 `facing_object` 行为；清理一份仍描述 `known_objects` 的活知识原子，删除 `synthetic-known-objects` 请求与输出 golden，并移除 `.gitignore` 中已不存在的 `memory/object_memory/` 规则，并从 9 份非历史 decide_action 合成请求夹具中移除已废弃 `known_objects` 地图说明。

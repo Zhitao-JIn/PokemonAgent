@@ -139,3 +139,10 @@ def load_registry(path: Path) -> dict[str, PromptUnit]:
     except (OSError, ValidationError, ImportError, SyntaxError, TypeError, ValueError) as error:
         raise PromptRegistryError(f"Cannot load registry {path}: {error}") from error
     return units
+
+
+def active_versions(registry_path: Path | None) -> dict[str, tuple[str, str]]:
+    """Return sorted active version and validated source hash for every registered unit."""
+    path = registry_path if registry_path is not None else Path(__file__).with_name("registry.json")
+    units = load_registry(path.resolve())
+    return {name: (unit.meta.version, unit.meta.hash) for name, unit in sorted(units.items())}
