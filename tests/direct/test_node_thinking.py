@@ -142,7 +142,7 @@ def test_verify_and_episode_summary_can_use_opposite_switches(isolated_http: Fak
     response(
         isolated_http,
         "deepseek-flash",
-        '{"summary":"s","quality_score":0.5,"quality_rationale":"q","markdown":"m"}',
+        '{"summary":"s","quality_score":0.5,"quality_rationale":"q","markdown":"m","index":{"headline":"观察","keys":[],"evidence":[]}}',
     )
 
     summary = tool.summarizer.summarize(
@@ -235,7 +235,7 @@ def test_run_and_task_summaries_do_not_inherit_episode_summary_override(
     response(
         isolated_http,
         "deepseek-flash",
-        '{"summary":"s","quality_score":0.5,"quality_rationale":"q","markdown":"m"}',
+        '{"summary":"s","quality_score":0.5,"quality_rationale":"q","markdown":"m","index":{"headline":"观察","keys":[],"evidence":[]}}',
     )
 
     run = tool.run_summarizer.summarize_run(run_req)

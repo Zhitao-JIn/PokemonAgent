@@ -14,6 +14,7 @@ class FromHarnessToBrainToolSummarizeRunReq(Settled, BaseModel):
     run_goal: str
     goals: list[GoalEntry]
     episode_memories: list[EpisodeMemory] = Field(min_length=1)
+    grounding_texts: list[str] = Field(default_factory=list)
     termination: Termination
     judge_reason: str
     episodes: int = Field(ge=0)

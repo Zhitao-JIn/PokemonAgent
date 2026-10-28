@@ -1,0 +1,8 @@
+{
+  "task": "memory_records",
+  "version": "v5",
+  "kind": "fragment",
+  "params": "MemoryParams",
+  "reason": "三级索引读取结构化 index",
+  "hash": "3ed28c51442ed9183dbe3299feb7dd2fb7a7def6632475b0d77c6afd313142c1"
+}

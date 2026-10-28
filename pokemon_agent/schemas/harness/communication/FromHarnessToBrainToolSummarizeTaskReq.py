@@ -24,6 +24,7 @@ class FromHarnessToBrainToolSummarizeTaskReq(Settled, BaseModel):
     episode_id: str = Field(description="所属 episode 的标识（来源章）")
     run_id: str = Field(description="所属 run 的标识（来源章）")
     goal: str = Field(description="本 task 的目标")
+    grounding_texts: list[str] = Field(default_factory=list)
     termination: Termination = Field(description="终止类别（`success` 由它推出）")
     judge_reason: str = Field(
         default="", description="判停时的判定依据——蒸馏写结论时的参考，不必复述"

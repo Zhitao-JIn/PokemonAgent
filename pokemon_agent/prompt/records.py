@@ -112,6 +112,12 @@ class ChangeRecord(BaseModel):
     text: str
 
 
+class IndexRecord(BaseModel):
+    headline: str = ""
+    keys: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+
+
 class TaskRecord(BaseModel):
     run_id: str = Field()
     episode_id: str = Field()
@@ -131,6 +137,7 @@ class TaskRecord(BaseModel):
     tags: list[str] = Field(default_factory=list)
     first_frame: str | None = Field(default=None)
     last_frame: str | None = Field(default=None)
+    index: IndexRecord = Field(default_factory=IndexRecord)
     markdown: str = Field(default="")
 
     @property
@@ -159,6 +166,7 @@ class EpisodeRecord(BaseModel):
     tags: list[str] = Field(default_factory=list)
     first_frame: str | None = Field(default=None)
     last_frame: str | None = Field(default=None)
+    index: IndexRecord = Field(default_factory=IndexRecord)
     markdown: str = Field(default="")
 
     @property
@@ -183,6 +191,7 @@ class RunRecord(BaseModel):
     quality_rationale: str = Field()
     applicable_scenes: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    index: IndexRecord = Field(default_factory=IndexRecord)
     markdown: str = Field(default="")
 
     @property

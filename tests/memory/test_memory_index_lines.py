@@ -1,6 +1,4 @@
-"""三级记忆索引及旧 payload 的用法示范。"""
-
-from collections.abc import Callable
+"""三级记忆索引的用法示范：有索引读结构化字段，空章渲染无正文。"""
 
 import pytest
 from _harness_fixtures.prompt_text import index_text, record_text
@@ -56,84 +54,27 @@ def _run(**changes: object) -> RunMemory:
     return RunMemory.model_validate(values)
 
 
-def test_episode_index_line_matches_fixed_sample() -> None:
-    memory = _episode()
-
-    result = index_text(memory)
-
-    assert (
-        result
-        == "- r1-ep2｜走到门口并进去｜成功｜goal_done｜3 task/17 键｜从野外绕到门口后进入室内。"
-    )
-
-
-def test_task_index_line_matches_fixed_sample() -> None:
-    memory = _task()
-
-    result = index_text(memory)
-
-    assert result == "- r1-ep2-t1｜走到门口｜成功｜goal_done｜5 键｜走到了门口。"
-
-
-def test_run_index_line_matches_fixed_sample() -> None:
-    memory = _run()
-
-    result = index_text(memory)
-
-    assert result == "- r1｜通关第一个道馆｜2/3 局成功｜goal_done｜三局里两局成功。"
-
-
 @pytest.mark.parametrize(
-    "text, expected",
+    "factory,identifier",
     [
-        *(("  首句" + mark + "后文  ", "首句" + mark) for mark in "。！？.!?"),
-        ("首句\n后文", "首句"),
-        ("首句\r\n后文", "首句"),
-        ("字" * 80, "字" * 80),
-        ("字" * 81 + "。", "字" * 80 + "…"),
-        ("3.14", "3."),
-        ("  ", "（无正文）"),
+        (_episode, "r1-ep2"),
+        (_task, "r1-ep2-t1"),
+        (_run, "r1"),
     ],
 )
-def test_first_sentence_stops_at_terminator_and_truncates_at_eighty_chars(
-    text: str, expected: str
-) -> None:
-    result = index_text(_episode(summary=text)).split("｜")[-1]
-
-    assert result == expected
-
-
-@pytest.mark.parametrize("factory", [_episode, _task, _run])
-def test_empty_summary_index_line_says_no_body(
-    factory: Callable[..., EpisodeMemory | TaskMemory | RunMemory],
-) -> None:
-    memory = factory(summary="  ")
+def test_index_reads_structured_index_and_source_status(factory, identifier: str) -> None:
+    memory = factory(index={"headline": "进入室内", "keys": ["门口"], "evidence": ["换图"]})
 
     result = index_text(memory)
 
-    assert result.endswith("｜（无正文）")
-
-
-@pytest.mark.parametrize("factory", [_episode, _task, _run])
-def test_index_line_writes_dash_when_termination_is_empty(
-    factory: Callable[..., EpisodeMemory | TaskMemory | RunMemory],
-) -> None:
-    memory = factory(termination="")
-
-    result = index_text(memory)
-
-    assert "｜-｜" in result
-    assert not memory.success
-
-
-def test_episode_memory_reads_old_payload_without_new_fields() -> None:
-    payload = _episode().model_dump(exclude={"run_goal", "first_frame", "last_frame"})
-
-    memory = EpisodeMemory.model_validate(payload)
-
-    assert memory.run_goal == ""
-    assert memory.first_frame is None
-    assert memory.last_frame is None
+    assert result.startswith(f"- {identifier}｜")
+    assert result.endswith("进入室内（keys：门口；含：换图）")
+    assert (
+        "未成功" in index_text(factory(termination="stalled", index=memory.index))
+        or factory is _run
+    )
+    assert "（keys：" not in index_text(factory())
+    assert index_text(factory()).endswith("（无正文）")
 
 
 def test_episode_render_never_prints_frames() -> None:

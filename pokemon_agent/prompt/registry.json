@@ -1,19 +1,19 @@
 {
   "tasks": {
     "memory_records": {
-      "active": "v4"
+      "active": "v5"
     },
     "verify": {
       "active": "v4"
     },
     "summarize": {
-      "active": "v7"
-    },
-    "summarize_task": {
       "active": "v8"
     },
+    "summarize_task": {
+      "active": "v9"
+    },
     "summarize_run": {
-      "active": "v6"
+      "active": "v7"
     },
     "goal_table": {
       "active": "v1"

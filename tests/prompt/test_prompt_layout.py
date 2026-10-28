@@ -286,6 +286,7 @@ def test_decompose_auxiliary_history_needs_no_rules_or_terrain() -> None:
 
     assert len(history) == 3
     assert "任务全文末句。" in history[0]
-    assert "局首句。" in history[1] and "局全文末句。" not in history[1]
+    assert "（无正文）" in history[1]
+    assert "局首句。" not in history[1] and "局全文末句。" not in history[1]
     assert "完整招牌原文。" in history[2]
     assert all("取得招牌文字" not in part and "继续核对" not in part for part in history)

@@ -169,7 +169,7 @@ def test_old_versions_still_load_against_their_recorded_hashes(tmp_path: Path) -
 def test_package_registry_activates_v4_and_preserves_v3(tmp_path: Path) -> None:
     """活动版本为 v4，旧版 v3 仍可加载并渲染。"""
     data = json.loads(PACKAGE_REGISTRY.read_bytes())
-    assert data["tasks"]["memory_records"]["active"] == "v4"
+    assert data["tasks"]["memory_records"]["active"] == "v5"
 
     meta = json.loads((FRAGMENT / "v3/meta.json").read_bytes())
     assert meta["version"] == "v3" and meta["params"] == "MemoryParams"

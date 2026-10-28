@@ -14,7 +14,7 @@ from .layout_examples import details_data, observation_data, plan_data, task_dat
 
 Material = SummarizeTaskParams | SummarizeParams | SummarizeRunParams
 OLD_VERSIONS = {"summarize_task": "v7", "summarize": "v6", "summarize_run": "v3"}
-NEW_VERSIONS = {"summarize_task": "v8", "summarize": "v7", "summarize_run": "v6"}
+NEW_VERSIONS = {"summarize_task": "v9", "summarize": "v8", "summarize_run": "v7"}
 
 
 def task_example() -> SummarizeTaskParams:

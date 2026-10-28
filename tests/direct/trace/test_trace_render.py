@@ -306,6 +306,7 @@ def test_write_episode_content_is_the_memory_body() -> None:
     body = _writes()["write_episode_memory"]
 
     assert set(body) == {
+        "index",
         "summary",
         "reusable_patterns",
         "critical_decisions",
@@ -476,3 +477,11 @@ def test_a_parse_failure_outside_the_summary_links_stays_a_call_failure() -> Non
     )
 
     assert [e.kind for e in events] == [TraceKind.CHOOSE_CALL, TraceKind.CALL_FAILED]
+
+
+def test_summary_ledgers_keep_index_without_facts_or_pointers() -> None:
+    writes = _writes()
+
+    for name in ("write_task_memory", "write_episode_memory", "write_run_memory"):
+        assert "index" in writes[name]
+        assert not {"facts", "pointers"} & set(writes[name])

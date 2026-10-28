@@ -276,6 +276,8 @@ class BrainPort(Protocol):
         steps: int,
         max_steps: int,
         images: Sequence[str] = (),
+        grounding_texts: Sequence[str] | None = None,
+        termination: str = "",
     ) -> SummarizeResult:
         """把**这一局**的步骤记录蒸馏成一条摘要（一条只对应一局）。
 
@@ -314,6 +316,8 @@ class BrainPort(Protocol):
         steps: int,
         max_steps: int,
         images: Sequence[str] = (),
+        grounding_texts: Sequence[str] | None = None,
+        termination: str = "",
     ) -> SummarizeRunResult:
         """一次 run 蒸馏，复用 summarize 的 provider；不持有状态、不重试。
 

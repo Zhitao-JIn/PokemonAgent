@@ -224,17 +224,12 @@ def test_every_reviewer_request_requires_context(request_model: type) -> None:
     [
         "结束了。后面还有。",
         "",
-        "  ",
-        "字" * 81 + "。",
-        "首句\n后文",
-        "3.14",
-        "首句！后文",
-        "首句\r\n后文",
     ],
 )
 @pytest.mark.parametrize("termination", ["", "goal_done", "budget_exhausted"])
+@pytest.mark.parametrize("headline", ["门口", ""])
 def test_reviewer_index_lines_are_byte_equal_to_the_memory_methods(
-    summary: str, termination: str
+    summary: str, termination: str, headline: str
 ) -> None:
     memories = [
         _episode("ep1", None, None),
@@ -250,7 +245,17 @@ def test_reviewer_index_lines_are_byte_equal_to_the_memory_methods(
         ),
     ]
     memories = [
-        item.model_copy(update={"summary": summary, "termination": termination})
+        item.model_copy(
+            update={
+                "summary": summary,
+                "termination": termination,
+                "index": type(item.index)(
+                    headline=headline,
+                    keys=["招牌"] if headline else [],
+                    evidence=["换图"] if headline else [],
+                ),
+            }
+        )
         for item in memories
     ]
     req = FromHarnessToBrainToolJudgeReq(

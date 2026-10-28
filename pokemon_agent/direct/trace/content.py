@@ -292,6 +292,12 @@ class ReadRunMemoryContent(_Content):
     timings: dict[str, float] | None = None
 
 
+class IndexContent(_Content):
+    headline: str = ""
+    keys: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+
+
 class WriteRunMemoryContent(_Content):
     """run 记忆派生正文，不含来源章坐标与计数。"""
 
@@ -305,3 +311,4 @@ class WriteRunMemoryContent(_Content):
     applicable_scenes: list[str]
     tags: list[str]
     markdown: str
+    index: IndexContent

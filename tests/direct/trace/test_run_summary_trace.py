@@ -46,6 +46,8 @@ def test_run_memory_trace_round_trips_three_registered_kinds(tmp_path: Path) -> 
 
     assert isinstance(events[0].content, ModelCallContent)
     assert isinstance(events[1].content, WriteRunMemoryContent)
+    assert events[1].content.index.headline == ""
+    assert events[1].content.index.keys == []
     assert isinstance(events[2].content, ReadRunMemoryContent)
     assert events[2].content.refs == ["r1"]
     assert not {"run_goal", "run_id", "episodes", "succeeded", "termination", "acts_used"} & set(

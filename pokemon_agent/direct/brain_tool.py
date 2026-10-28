@@ -80,6 +80,7 @@ from pokemon_agent.direct.node_brain_factory import BrainLayer, NodeBrainFactory
 from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.memory.changes import changes
+from pokemon_agent.memory.facts import task_facts
 from pokemon_agent.prompt import (
     DecideActionParams,
     DecomposeParams,
@@ -702,6 +703,12 @@ class Summarizer:
         self, req: FromHarnessToBrainToolSummarizeReq
     ) -> FromHarnessToBrainToolSummarizeResp:
         """蒸馏本局素材并组装 EpisodeMemory；来源章由请求提供，每次尝试保留版本戳。"""
+        grounding_texts = [
+            text
+            for entry in req.entries
+            for text in [*entry.index.keys, entry.index.headline, entry.goal]
+        ]
+        req = req.model_copy(update={"grounding_texts": grounding_texts})
         params = SummarizeParams.model_validate(
             {**req.model_dump(mode="json"), "success": req.success}
         )
@@ -726,6 +733,8 @@ class Summarizer:
                 steps=req.steps,
                 max_steps=req.max_steps,
                 images=images,
+                grounding_texts=req.grounding_texts,
+                termination=req.termination.value,
             )
 
         result, calls = _attempt_loop(
@@ -757,6 +766,8 @@ class Summarizer:
             applicable_scenes=summary.applicable_scenes,
             tags=summary.tags,
             markdown=summary.markdown,
+            index=summary.index.model_dump(),
+            pointers=[entry.task_id for entry in req.entries],
         )
         return FromHarnessToBrainToolSummarizeResp(
             summary=summary, episode_memory=episode_memory, calls=calls
@@ -789,6 +800,12 @@ class RunSummarizer:
         self, req: FromHarnessToBrainToolSummarizeRunReq
     ) -> FromHarnessToBrainToolSummarizeRunResp:
         """蒸馏最终目标表与局记忆；请求保证条目非空，所有尝试保留活动版本戳。"""
+        grounding_texts = [
+            text
+            for entry in req.episode_memories
+            for text in [*entry.index.keys, entry.index.headline, entry.goal]
+        ]
+        req = req.model_copy(update={"grounding_texts": grounding_texts})
         params = SummarizeRunParams.model_validate(req.model_dump(mode="json"))
         rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize_run", params, [])
         prompt = rendered_prompt.text
@@ -804,6 +821,8 @@ class RunSummarizer:
                 steps=req.episodes,
                 max_steps=req.max_episodes,
                 images=images,
+                grounding_texts=req.grounding_texts,
+                termination=req.termination.value,
             )
 
         result, calls = _attempt_loop(
@@ -821,6 +840,7 @@ class RunSummarizer:
             succeeded=req.succeeded,
             acts_used=req.acts_used,
             termination=req.termination.value,
+            pointers=[entry.episode_id for entry in req.episode_memories],
             **summary.model_dump(),
         )
         return FromHarnessToBrainToolSummarizeRunResp(
@@ -848,6 +868,15 @@ class TaskSummarizer:
         self, req: FromHarnessToBrainToolSummarizeTaskReq
     ) -> FromHarnessToBrainToolSummarizeTaskResp:
         """蒸馏本 task 的素材并组装 TaskMemory；请求保证条目非空，失败账随异常返回。"""
+        facts = task_facts(req.entries, req.task_id, req.episode_id)
+        grounding_texts = [fact.text for fact in facts]
+        for entry in req.entries:
+            for frame in [entry.before, *entry.observations, entry.after]:
+                if hasattr(frame, "facts"):
+                    grounding_texts.extend([frame.facts.dialog_text, frame.facts.screen])
+                else:
+                    grounding_texts.extend([frame.dialog_text, frame.screen])
+        req = req.model_copy(update={"grounding_texts": grounding_texts})
         params = SummarizeTaskParams.model_validate(
             {**req.model_dump(mode="json"), "success": req.success}
         )
@@ -866,6 +895,8 @@ class TaskSummarizer:
                 steps=req.steps_used,
                 max_steps=req.max_steps,
                 images=images,
+                grounding_texts=req.grounding_texts,
+                termination=req.termination.value,
             )
 
         result, calls = _attempt_loop(
@@ -898,6 +929,9 @@ class TaskSummarizer:
             first_frame=first,
             last_frame=last,
             markdown=summary.markdown,
+            facts=facts,
+            pointers=[f"{req.entries[0].step}-{req.entries[-1].after.step}"],
+            index=summary.index.model_dump(),
         )
         return FromHarnessToBrainToolSummarizeTaskResp(summary=summary, memory=memory, calls=calls)
 

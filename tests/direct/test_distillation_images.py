@@ -45,6 +45,7 @@ def test_provider_gets_the_same_ordered_frames_and_caps_in_both_versions(
     )
     reply = json.dumps(
         {
+            "index": {"headline": "探索", "keys": [], "evidence": []},
             "summary": "完整蒸馏正文",
             "reason": "完整结论",
             "quality_score": 0.5,

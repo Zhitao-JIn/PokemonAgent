@@ -1,3 +1,15 @@
+## 2026-10-27（669）—— 摘要带来源指针与结构化索引，task 层机械摘取事实
+
+**改了什么**：`TaskMemory` 新增 `facts`（`Fact` = `step`、`kind`、`place`、`object`、`text`、`task_id`、`episode_id`，由 `memory/facts.py` 调 `changes()` 对本 task 的 `ActMemory` 序列相邻比较机械摘出，不截断、不去重）；`TaskMemory`、`EpisodeMemory`、`RunMemory` 同形新增 `pointers`（task 指向步号区间，episode 指向 task 编号，run 指向 episode 编号）与 `index`（`headline`、`keys`、`evidence`，由摘要的同一次 LLM 调用产出）。三个 `Summarize*Req` 新增 `grounding_texts`；摘要解析器核对 `keys` 每项字面出现在其中、`evidence` 取自固定词表（对话原文、状态变化、换图、失败原因）、`headline` 不含与来源章相反的结局词，不过按现有解析失败路径重试。新增 `memory_records` v5（`index` 模式读 `index` 字段，没有 `headline`（空章）时渲染`（无正文）`；详情渲染不渲染 `facts`）与 `summarize` v8、`summarize_task` v9、`summarize_run` v7，并经注册表激活。复核台 `reviewer/hub/context.py` 的三层索引行同步改成同一尾部格式。`write_task_memory` / `write_episode_memory` / `write_run_memory` 写账不含 `facts`、`pointers`，含 `index`，`WriteRunMemoryContent` 新增必填 `index`（空章写空 `Index`）。
+
+**为什么这么改**：关键证据（收件人、顾客台词、哪一步进了背包）原来全靠 LLM 决定留不留，一行背景索引又是从摘要首句截的。事实块由 harness 机械摘出，索引由 LLM 与解读同一次产出并过机械检查，两者分开。
+
+**取舍**：`facts` 只放 task 层，episode 与 run 不拼接：背景索引每次规划都整条召回这些记忆，拼接会让记忆随层数成倍膨胀；原始事实经 `pointers` 下钻。`grounding_texts` 逐层取材，task 层用本 task 的 `facts` 与各条观察的 `dialog_text`、`screen`，episode、run 层只用下层已核对过的 `index.keys`、`headline` 与 `goal`，不向上携带原始观察文本。提示词默认不渲染 `facts`。取代关系：摘要记忆新增上述字段，`memory_records` v5 与三个摘要任务的新版本取代 v4 与旧版本，旧版本文件保留、不再激活。
+
+**验证**：全量测试 tests=3113、failures=0、errors=0、skipped=25（已排除沙箱专有失败 test_world_case_caller_closes_world_service_after_each_worker_outcome）；ruff check 与 ruff format --check 全绿。
+
+**影响面**：三个摘要记忆模型与摘要解析器、三个摘要器与请求信封、`memory/facts.py`、trace 写账渲染与 `WriteRunMemoryContent`、prompt 记录镜像与三个摘要任务及 `memory_records` 的新版本与注册表、复核台索引行及其逐字相等测试。不兼容旧记忆：旧记忆文件整体删除后重建，代码里没有读旧格式的分支。评测来源归档读取（`load_source_events`）改为只解析白名单种类。
+
 ## 2026-10-27（668）—— 逐键观察与结构化脚本结局接入记忆
 
 **改了什么**：`ActMemory` 去掉 `result`、`dialog`，新增逐键 `observations` 与结构化 `outcome`；完整前后快照增加 RAM、面朝物体与稳定标志，不再存 `observation_flags`，旧记忆缺新字段仍可读取。`sense` 把 RAM 写入状态，`close_step` 与当前观察一并转正，反思从状态取前后 RAM、不读 trace 账；门面从同帧地标确定面朝物体。新增纯差异函数与 prompt 方言的 `ChangeRecord`，由 `BrainTool` 门面统一从相邻观察算出差异并传入选择、判定、校验、task 摘要；未稳定帧不产出对话行。`act` 写 `last_outcome` / `last_observations`，`last_event` 留待 CP4；移除旧脚本一行结果工具。

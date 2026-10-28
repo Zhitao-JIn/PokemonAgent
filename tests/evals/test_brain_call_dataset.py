@@ -1,8 +1,10 @@
 """冻结现场的可重现核验：无本机采集目录、无模型、无网络。"""
 
 import copy
+import hashlib
 import json
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 
@@ -15,10 +17,15 @@ from evals.dataset.brain_calls.independent_reference import (
     summary_reference,
 )
 from evals.dataset.brain_calls.scope_audit import verify_scope
-from evals.dataset.brain_calls.source_archive import load_source_events, verify_sources
+from evals.dataset.brain_calls.source_archive import (
+    SourceArchiveManifest,
+    load_source_events,
+    verify_sources,
+)
 from evals.dataset.brain_calls.verify_dataset import verify, verify_pair
 from evals.dataset.brain_choose import load as load_choices
 from evals.dataset.brain_judge import load as load_judges
+from pokemon_agent.schemas.harness import TraceEvent
 from pokemon_agent.schemas.memory import EpisodeMemory
 
 ROOT = Path(__file__).resolve().parents[2] / "evals/dataset/brain_calls/v1"
@@ -168,3 +175,66 @@ def test_judge_metrics_keep_layers_and_do_not_count_a_run_as_a_task() -> None:
 
     assert metrics["layer.run.n"] == metrics["layer.task.n"] == 1
     assert metrics["overall_unique_tasks"] == metrics["overall_unique_episodes"] == 1
+
+
+def _source_event(kind: str, content: dict, seq: int) -> TraceEvent:
+    """一条最小可落盘事件；meta 只带来源包要求的最小身份。"""
+    return TraceEvent(
+        uuid=f"0000000{seq}-0000-0000-0000-000000000000",
+        seq=seq,
+        kind=kind,
+        type="memory_io" if kind.startswith("write_") else "brain_call",
+        started_at=float(seq),
+        ended_at=float(seq),
+        meta=json.dumps({"run_id": "r1", "branch": "main"}),
+        content=json.dumps(content, ensure_ascii=False),
+    )
+
+
+def test_source_archive_reader_parses_only_whitelisted_kinds(tmp_path: Path) -> None:
+    """缺 index 的旧写账不参与解析；白名单内的账照常类型化。"""
+    sample_id = "sample"
+    legacy_run_memory = {
+        "summary": "旧摘要",
+        "reason": "旧结论",
+        "reusable_patterns": [],
+        "critical_decisions": [],
+        "failure_points": [],
+        "quality_score": 0.5,
+        "quality_rationale": "旧评分",
+        "applicable_scenes": [],
+        "tags": [],
+        "markdown": "旧正文",
+    }
+    events = [
+        _source_event(
+            "episode_start",
+            {"goal_id": "g1", "goal": "走到门口", "success_criteria": "进屋", "max_steps": 3},
+            1,
+        ),
+        _source_event("write_run_memory", legacy_run_memory, 2),
+        _source_event("run_start", {"goals": ["总目标"], "success_criteria": ["通关"]}, 3),
+        _source_event("judge_call", {"ok": True}, 4),
+    ]
+    archive = tmp_path / "sources.zip"
+    entries = {}
+    with ZipFile(archive, "w") as stream:
+        for event in events:
+            name = f"work/runs/{sample_id}/trace/{event.uuid}.json"
+            data = event.model_dump_json().encode("utf-8")
+            stream.writestr(name, data)
+            entries[name] = hashlib.sha256(data).hexdigest()
+    (tmp_path / "sources.manifest.json").write_text(
+        SourceArchiveManifest(
+            archive=archive.name,
+            archive_sha256=hashlib.sha256(archive.read_bytes()).hexdigest(),
+            entries=entries,
+        ).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    parsed = load_source_events(tmp_path, sample_id)
+
+    assert [event.kind for event in parsed] == ["episode_start", "judge_call"]
+    assert parsed[0].content.goal_id == "g1"
+    assert parsed[1].content.ok is True
