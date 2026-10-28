@@ -21,7 +21,10 @@ import json
 import sys
 from pathlib import Path
 
-from evals.agent_short_goal_run.dataset.build.preconditions import validate_start
+from evals.agent_short_goal_run.dataset.build.preconditions import (
+    PREFLIGHT_CHECK_IDS,
+    validate_start,
+)
 from evals.agent_short_goal_run.dataset.loader import DATASET_DIR
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.agent_short_goal_run.solver.runner.failure import exception_leaves
@@ -108,7 +111,7 @@ def run_one(sample: EvalSample, work: Path, *, run_config_path: str, epoch: int 
         stage = "start_state"
         state_path = DATASET_DIR / sample.dataset_version / sample.start.source_state
         game.use_start_state(state_path)
-        if sample.check_id in {"party_healed", "shop_cancelled"}:
+        if sample.check_id in PREFLIGHT_CHECK_IDS:
             stage = "preflight_reset"
             game.reset(FromHarnessToGameToolResetReq(task=start_task))
             stage = "preflight_perceive"

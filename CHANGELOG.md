@@ -1,3 +1,15 @@
+## 2026-10-28（683）—— 中期评测数据集 v20261028_mid
+
+**改了什么**：从 `v20261021_retest5` 构建 5 条 `tier="mid"` 样本与 13 个冻结 episode 目标，输出 5 个起点、coverage 与 revision。M2、M3、M5 用独立 PyBoy 实例派生；M3 同步改队伍 HP 与战斗缓存 HP。为五个新 check_id 添加起点预检，并将它们接入评测 runner；新增 `map_connections` 知识原子。
+
+**为什么这么改**：中期评测固定 run 内的 episode 目标表，保证不同运行面对同一组目标；起点预检核实样本前提，M1 的地图连接知识给路线目标提供依据。
+
+**取舍**：运行时预检只读 `RamReadout` 与 `TaskObservation`；商店事件标志 `D74E` bit1 仅在构建时直接检查。M1、M4 保留父版状态，M2、M3、M5 只按 spec 指定 RAM 地址派生；不涉及 684 机械判据。
+
+**影响面**：新增中期数据集、构建与派生脚本、合成数据测试和知识原子；runner 仅将预检 id 集合改为导入常量，旧两个 id 的流程保持原样。M2 与 M5 派生状态哈希分别为 `b3a58c3b4e673d24c8a72aed561cad4e0a3d8916bf781912068ed45dc78981fd` 与 `57d61ce0d06f04ed8c1c0393ab12c8504c98ba69c449a8d1b702fe0362c8e934`，均与 spec 实验值一致；M3 解码起点显示 12/25。
+
+**验证**：构建期五条起点预检通过；`loader.load` 与 `loader.check` 均读到 5 条，`validate_tiers` 与 mid 目标表组装通过；重复构建 `samples.jsonl` SHA-256 相同。全量 pytest 基线 tests=2885、failures=0、errors=0、skipped=72；最终 tests=2905、failures=0、errors=0、skipped=72。提示词边界守卫 A–D 均为 `[ OK ]`；ruff format、ruff check、ruff format --check 全绿。
+
 ## 2026-10-28（682）—— trace 自持检查脚本与 langfuse 冒烟排序对齐现状
 
 **改了什么**：`scripts/check_trace_self_contained.py` 的 B 规则允许目录由 `{"trace", "tools"}` 改为 `{"trace", "direct"}`（tool 层门面现住 `direct/trace/`），新增 `TRACE_ENTRY_EXCEPTION_FILES = {"reviewer/__main__.py"}` 按相对包根的 posix 路径比较，并把模块 docstring、检查函数与标签同步；`scripts/langfuse_smoke.py` 的排序核对由 `(ended_at, uuid)` 改为 `(ended_at, seq)`，标签同步；`docs/spec/trace/API.md` 与 `SPEC.md` 对应表述改到位。
