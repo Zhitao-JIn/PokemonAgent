@@ -66,3 +66,17 @@
 - 新任务 **695：移除旧采集管线**。先做一次只读盘点（精确的删除清单、需要改引用的文件、对读取**已冻结数据**与对其他评测的影响、72 个 `D33` 跳过测试与它的关系），盘点由设计侧复核后再写 695 的执行消息；删除由用户做，执行方只改引用与测试。
 - **顺序**：691（收窄）→ 695 → 692 → 693 → 694 → 690。695 必须在 692 之前，因为 692 删 checkpoint 包后，旧采集管线里对它的引用会失效。
 - 已冻结的旧格式数据文件（`evals/dataset/brain_calls`、`brain_annotations`、`frames` 等）**不删**，它们是 72 个跳过测试在等的数据来源，处理方式随数据重新生成再定。
+
+## 七、695：移除旧采集管线（依据 `experiment/capture_inventory/inventory.md`，设计侧已复核）
+
+**更正一处我的误判**：686 验收时执行方报告过一条命中 `evals/brain_choose/build/collect.py:28`，我查了错误的路径（真实路径是 `evals/dataset/brain_choose/build/collect.py`），误判为"不存在的假命中"。实际它有一行 `STATES_DIR = REPO_ROOT / "evals/agent_short_goal_run/dataset/v1/states"`，指向 686 已退役的 `v1` 目录（这个 brain_choose 采集器是目前仍可用的、不依赖 checkpoint 的新式采集入口）。`v1/states` 的 20 个文件名在 `v20261021_retest5/states` 里全有，695 里一并改指过去。
+
+| 编号 | 决定 |
+|---|---|
+| E1 | 旧管线可整条退役：`evals/common/` 下 `capture_audit`、`capture_batch`、`capture_case`、`capture_configuration`、`capture_control`、`capture_export`、`capture_integrity`、`capture_pack`、`capture_selection`、`capture_state`、`capture_worker`，加 `evals/dataset/brain_calls/export_dataset.py`（旧生成器，不是 loader）；`capture_services.py` 在迁出通用原语后也删。**删除由用户做** |
+| E2 | **保留**：`brain_capture.py`、`recorded_ports.py`、`recorder.py`、`brain_link.py`、`review_generation.py`、`review_port.py`、`invocation.py`（被 `brain_choose` 新采集器、各脑能力评测与评分共用）；`capture_review.py` 保留 `RecordedReviewer`（`brain_capture` 用），它里面旧 audit 的部分若引用了将被删的模块，就把 `RecordedReviewer` 拆到不依赖被删模块的位置；`frames/build/freeze.py` 保留（独立的 frames 构建器） |
+| E3 | `capture_services.py` 里被 `eval_services.py` 共用的 5 个原语（`_memory_config`、`available_port`、`start_process`、`stop_process`、`wait_ready`）原样迁入 `eval_services.py`（688 也在改这个文件，合并先后见下），更新所有引用；生命周期相关测试保留 |
+| E4 | `evals/dataset/brain_choose/build/collect.py:28` 的 `STATES_DIR` 改指 `evals/agent_short_goal_run/dataset/v20261021_retest5/states`；核对该采集器的测试与文档引用 |
+| E5 | 旧生成入口断开：`evals/dataset/brain_calls/build.py` 与任何 CLI 注册点对 `export_dataset` 的引用；保留 `loader.py`（`load_inputs`、`load_references`）、`brain_annotations` loader、`frames` loader，冻结数据文件与 schema 一个字节不动 |
+| E6 | 测试：纯旧管线的三个测试模块（`tests/evals/test_capture_control.py`、`test_capture_selection.py`、`test_capture_provider_rejection.py`）由用户删除；`tests/evals/test_brain_capture.py` 混合了多层 Port 录制与旧 audit，**拆分**：录制部分保留，旧 audit 部分随旧管线删；`tests/test_evals_capture.py` 保留；72 个 `D33` 跳过测试与这条管线无关（它们等的是新格式重新生成的数据），695 后 skipped 仍应是 72 |
+| E7 | 与 688 的关系：两者都改 `evals/common/eval_services.py`，先合并的没冲突，后合并的要解一处冲突，合并时告诉设计侧 |
