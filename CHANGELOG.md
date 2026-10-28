@@ -1,3 +1,15 @@
+## 2026-10-28（695）—— 旧采集管线退役：迁出共用原语、断开引用
+
+**改了什么**：将 `eval_services.py` 共用的五个服务原语从 `capture_services.py` 原样迁入；把 brain_calls 冻结数据校验所需的规范哈希实现留在校验模块并断开旧 exporter 引用；brain_choose collector 改用 `v20261021_retest5/states`；旧 audit 测试从脑调用录制测试中拆出。
+
+**为什么这么改**：旧 batch/case 管线已依赖退役的 archive 与 checkpoint 模块，不能运行；新 brain_choose collector 和通用评测服务仍需保留独立可用。
+
+**取舍**：不删除文件或冻结数据；共享录制与 review 能力保留，纯旧管线测试列给用户删除；旧 brain_calls exporter 的历史清单仍留在冻结 collection 元数据中。
+
+**影响面**：修改 eval_services、brain_calls build/verify/source_archive、brain_choose collect、brain_capture 测试；新增旧 audit 测试文件。未改 `pokemon_agent/`、文档或冻结数据文件。
+
+**验证**：基线 pytest 为 2961 tests、0 failures、0 errors、72 skipped；最终验证见本任务验收记录。
+
 ## 2026-10-28（688）—— 长期数据集基础设施
 
 **改了什么**：为评测样本加入可选冻结记忆种子与知识主题排除字段，校验种子 manifest、文件哈希和知识主题；`eval_services` 支持复制种子、筛除知识原子与导出运行记忆；solver 接入样本设置与运行配置开关，并补充合成测试。
@@ -19,7 +31,6 @@
 **取舍**：文件清单只作用于 `git ls-files` 返回的路径；超过阈值的文件只在索引列明路径与大小，不进入包；CHANGELOG 摘录关键词只匹配条目标题行，不检查正文；遇到同名日期产物时失败关闭，不覆盖已有内容。
 
 **影响面**：新增打包脚本、清单和合成输入测试；仅修改 `.gitignore` 与本变更日志，不改评测实现、文档或数据集。
-
 
 ## 2026-10-28（686）—— 评测数据集整理
 

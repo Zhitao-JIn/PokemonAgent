@@ -1,7 +1,8 @@
 """用户本机串行采集 choose；仅显式运行 main 时装配真实链路。
 
 从 worktree 根运行 python -m evals.dataset.brain_choose.build.collect
---state <原始.state> --goal <目标> --criteria <单帧判据> --steps N --out <新目录>。
+--state <v20261021_retest5/states/内的.state>
+--goal <目标> --criteria <单帧判据> --steps N --out <新目录>。
 公开评测 solver 会自行启动服务；已设置 MCP_*_SERVER_URL 时会复用对应服务（调试用）。
 本采集入口仍从环境变量连接调用方提供的 MCP 服务，并要求模型密钥。memory server 应为本次
 采集新建的空库，本入口不会清空它。模型选择沿用 evals/config.json。
@@ -25,7 +26,7 @@ from pokemon_agent.brain.interface import Goal, Task
 from pokemon_agent.build import build_real
 from pokemon_agent.mcpclient.world_tool import WorldMcpTool
 
-STATES_DIR = REPO_ROOT / "evals/agent_short_goal_run/dataset/v1/states"
+STATES_DIR = REPO_ROOT / "evals/agent_short_goal_run/dataset/v20261021_retest5/states"
 
 
 def _release_world(game: WorldMcpTool) -> None:

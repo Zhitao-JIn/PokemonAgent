@@ -9,8 +9,14 @@ from evals.dataset.brain_choose.schemas import ActionMatcher
 from evals.paths import REPO_ROOT
 
 from .dataset_contract import DatasetManifest, InputCase, ReferenceCase
-from .export_dataset import canonical_digest
 from .source_archive import verify_sources
+
+
+def canonical_digest(value: object) -> str:
+    """结构化请求哈希，不依赖空白和换行。"""
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def verify_pair(

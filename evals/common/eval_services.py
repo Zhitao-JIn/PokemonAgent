@@ -5,22 +5,101 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
+import subprocess
+import sys
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from evals.common.capture_services import (
-    _memory_config,
-    available_port,
-    start_process,
-    stop_process,
-    wait_ready,
-)
+import httpx
+
 from evals.paths import REPO_ROOT
 
 __all__ = ["eval_services"]
+
+
+def available_port() -> int:
+    """选择本机空端口；启动时若发生竞争由子进程明确报错。"""
+    with socket.socket() as connection:
+        connection.bind(("127.0.0.1", 0))
+        return int(connection.getsockname()[1])
+
+
+def start_process(
+    arguments: list[str], log: Path, environment: dict[str, str]
+) -> subprocess.Popen[bytes]:
+    """启动无窗口子进程；独占日志文件，不打印部署凭据。"""
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("xb") as stream:
+        return subprocess.Popen(
+            [sys.executable, "-B", *arguments],
+            cwd=REPO_ROOT,
+            env=environment,
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+
+
+def wait_ready(process: subprocess.Popen[bytes], address: str) -> None:
+    """最多等待 60 秒探活；退出、坏状态或超时显式失败。"""
+    deadline = time.monotonic() + 60
+    with httpx.Client(timeout=2, trust_env=False) as client:
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError(f"service exited: {process.returncode}; see capture logs")
+            try:
+                response = client.get(address + "/health")
+            except httpx.TransportError:
+                time.sleep(0.5)
+                continue
+            if response.is_success and response.json().get("ready"):
+                return
+            time.sleep(0.5)
+    raise TimeoutError(f"service not ready: {address}")
+
+
+def stop_process(process: subprocess.Popen[bytes]) -> None:
+    """只停止本工具持有的子进程；已经结束的进程不再操作。"""
+    if process.poll() is None:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                check=False,
+            )
+            process.wait(timeout=15)
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=10)
+
+
+def _memory_config(directory: Path, port: int) -> Path:
+    """为本次 memory MCP 生成独立落盘根与监听地址配置。"""
+    path = directory / "memory-server-config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "paths": {"memory": str(directory / "memory")},
+                "services": {"memory_server_url": f"http://127.0.0.1:{port}"},
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 @contextmanager
