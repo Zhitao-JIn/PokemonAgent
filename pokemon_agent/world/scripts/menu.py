@@ -32,7 +32,7 @@ def open_menu_to(console: WorldConsole, target: str) -> ScriptResult:
         budget=0,
         start_map_id=console.map_id(),
         start_pos=console.pos(),
-        policy=ScriptPolicy(wait=StableWait(minimum_frames=64)),
+        policy=ScriptPolicy(wait=StableWait(stable_polls=16)),
     )
 
     # 确保在 start 菜单

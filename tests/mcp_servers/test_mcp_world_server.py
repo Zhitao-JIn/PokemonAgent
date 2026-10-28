@@ -15,7 +15,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from pokemon_agent.mcp_servers import world_server
-from pokemon_agent.world import ActionSpace, PlaceInWorld, TaskObservation, TaskScene
+from pokemon_agent.world import ActionSpace, PlaceInWorld, ScreenText, TaskObservation, TaskScene
 from pokemon_agent.world.action_space import compute_action_space
 
 ALL_BUTTONS = ["a", "b", "up", "down", "left", "right", "start", "select"]
@@ -69,6 +69,46 @@ class _FakeWorld:
         self.loaded.append(data)
 
 
+class _FakeWorldConsole:
+    """step tool 用合成 WorldConsole，记录逐键等待且不启动模拟器。"""
+
+    def __init__(self, world: _FakeWorld) -> None:
+        from _doubles.world_console import FakeMemory
+
+        self.world = world
+        self.memory = FakeMemory()
+        self.rom = b""
+        self.ticks: list[int] = []
+
+    def press(self, key: str) -> None:
+        self.world.steps.append(([(key, 1)], True))
+        if self.world._moves:
+            self.world._pos = (self.world._pos[0], self.world._pos[1] + 1, self.world._pos[2])
+
+    def tick(self, frames: int) -> None:
+        self.ticks.append(frames)
+
+    def read(self) -> ScreenText:
+        return ScreenText()
+
+    def pos(self) -> PlaceInWorld:
+        return PlaceInWorld(map_id=self.world._pos[0], x=self.world._pos[1], y=self.world._pos[2])
+
+    def scene(self) -> str:
+        return "walk"
+
+    def facing(self) -> str:
+        return ""
+
+
+@pytest.fixture(autouse=True)
+def fake_console_factory():  # noqa: ANN201
+    """step tool 默认使用与 fake world 配对的无模拟器 console。"""
+    world_server.set_console_factory(lambda: _FakeWorldConsole(world_server._w()))
+    yield
+    world_server.set_console_factory(None)
+
+
 @pytest.fixture()
 def server():  # noqa: ANN201
     """每个用例一个干净的世界与租约。"""
@@ -101,6 +141,28 @@ def test_step_preserves_settle_false_and_has_no_event_field() -> None:
 
     assert body["data"] == {"moved": False}
     assert world.steps == [([("a", 1)], False)]
+
+
+def test_step_tool_waits_each_key_like_script_run() -> None:
+    from pokemon_agent.world.scripts.engine import ScriptRun
+
+    world = _FakeWorld(moves=False)
+    console = _FakeWorldConsole(world)
+    world_server.start(world, rom="fake.rom")
+    world_server.set_console_factory(lambda: console)
+
+    body = world_server.step([["a", 1]], True, "c1")
+    tool_ticks = list(console.ticks)
+    script_console = _FakeWorldConsole(world)
+    ScriptRun(
+        script_console,
+        budget=1,
+        start_map_id=12,
+        start_pos=script_console.pos(),
+    ).press("a")
+
+    assert body["ok"] is True
+    assert tool_ticks == script_console.ticks == [4] * 6
 
 
 def test_step_reports_not_moved_when_the_world_did_not_move() -> None:

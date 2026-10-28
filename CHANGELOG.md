@@ -1,3 +1,15 @@
+## 2026-10-28（680）—— 按键后画面判稳统一为一条规则，参数按场景
+
+**改了什么**：新增统一 `wait_settled`，每 4 帧比较忽略 `▼` 的屏幕文字与玩家位置；默认、战斗类和治疗脚本分别采用 24/900、180/1200、360/1200 帧的静止阈值/总预算。单键 MCP 与脚本按键都逐键等待；移除单键固定推进与 `minimum_frames`，适配器缓存当前帧屏幕解码。
+
+**为什么这么改**：单键原先固定推进后立即读屏，战斗动画可能尚未更新；统一比较文字与位置，并在战斗期间提高静止阈值，可减少过早观察。
+
+**取舍**：战斗类由按键前场景或轮询中任一战斗分类触发粘性升级；治疗通过 `heal_at_center` 自己声明较长等待。保持按键帧数、`settle=False` 和其他自动推进常量不变。
+
+**影响面**：修改 world 按键执行、脚本等待策略、MCP step 与相关测试；为 MCP 假世界注入合成控制台，使集成测试覆盖逐键等待，不启动模拟器。
+
+**验证**：合成等待与相关 world / MCP 测试通过；提示词边界守卫 A–D 四项通过。全量 pytest JUnit：tests=2899、failures=0、errors=0、skipped=72（按要求 deselect 1 项；skipped 与基线相同）。ruff format、ruff check、ruff format --check 全绿；固定推进常量与 `minimum_frames` 检索无匹配。
+
 ## 2026-10-28（679）—— 短期样本冻结版数据集
 
 **改了什么**：新增 `v20261028_short_frozen`，由 `v20261021_retest5` 构建；20 条样本仅更新 `dataset_version`、新增 `tier="short"` 与一条冻结 `goals`。task 表从设计文件原样复制，含 21 个 task；`knowledge_shop_interaction` 有 2 个，其余各 1 个。复制 22 个状态文件、`rubric.json` 与 `coverage.md`，并记录 `revision.json`。新增确定性构建脚本与合成样本构建逻辑测试。

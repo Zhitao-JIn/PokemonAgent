@@ -15,7 +15,7 @@ from .control_flow import Abort, Halt, ScriptResult
 from .execution_types import ScriptStatus, ScriptStep
 from .interface import WorldConsole
 from .policies import ScriptPolicy
-from .screen_wait import settle_screen
+from .screen_wait import wait_settled
 from .tables import POKECENTER_LAYOUTS, SHOP_LAYOUTS, WARPS
 
 
@@ -56,20 +56,26 @@ class ScriptRun:
         return classify_scene(self.screen(), self.mem)
 
     def settle(self) -> int:
-        """按脚本等待策略推进；严格超时抛 Abort，其余返回等待帧数。"""
-        return settle_screen(self.console, self.policy.wait)
+        """按脚本等待策略推进并返回等待帧数。"""
+        return wait_settled(self.console, self.policy.wait).waited_frames
 
     def _press(self, key: str, *, settle: bool) -> tuple[ScreenText, int, bool]:
         """统一按键路径：推进、等待、记录观察并执行声明的中断。"""
         before = self.console.pos()
+        before_scene = self.scene_now()
         self.console.press(key)
         try:
-            frames = self.settle() if settle else 0
+            wait_result = (
+                wait_settled(self.console, self.policy.wait, before_scene=before_scene)
+                if settle
+                else None
+            )
         except Abort:
             self._observe(self.screen(), settled=False)
             raise
         text = self.screen()
-        self._observe(text, settled=frames < self.policy.wait.timeout_frames)
+        frames = wait_result.waited_frames if wait_result else 0
+        self._observe(text, settled=wait_result.settled if wait_result else True)
         after = self.console.pos()
         for interrupt in self.policy.interruptions:
             interrupt(self)
