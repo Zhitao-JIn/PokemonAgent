@@ -1,0 +1,45 @@
+## 文档规范与评测设计
+include: docs/eval/**
+include: docs/eval_start/**
+include: docs/eval_freeze/**
+include: docs/eval_grade/**
+include: docs/world_settle/**
+include: docs/spec/evals/**
+include: docs/failure_modes/**
+include: docs/budget/**
+include: docs/experiences/**
+include: docs/experiments/**
+include: docs/PLAN_labeling_1007.md
+include: docs/DECODER_*.md
+
+## 短期目标运行评测
+include: evals/agent_short_goal_run/**
+
+## 脑能力评测与共用模块
+include: evals/brain_*/**
+include: evals/common/**
+include: evals/decode/**
+include: evals/dataset/brain_annotations/**
+include: evals/dataset/brain_calls/**
+
+## 始终排除
+exclude: *.state
+exclude: *.zip
+exclude: *.png
+exclude: **/dataset/**/states/**
+exclude: eval_results/**
+exclude: **/eval_results/**
+
+## CHANGELOG 关键词
+keyword: 评测
+keyword: 测评
+keyword: 数据集
+keyword: 冻结
+keyword: 判稳
+keyword: 量表
+keyword: 判据
+keyword: 评分
+keyword: 样本
+keyword: 标注
+keyword: 起点
+keyword: agent_short_goal_run
