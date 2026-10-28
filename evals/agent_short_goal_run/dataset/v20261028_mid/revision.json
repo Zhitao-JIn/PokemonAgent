@@ -1,0 +1,95 @@
+{
+  "parent_version": "v20261021_retest5",
+  "change": "新增五条冻结 episode 目标的中期评测样本；M2、M3、M5 使用确定性 RAM 派生起点",
+  "samples": {
+    "mid_walk_to_pallet": {
+      "oracle_steps": 22,
+      "source_state": "states/knowledge_pokemon_center_enter.state",
+      "source_sha256": "dff9d4674faf6ee5893feccda6b72fb9f491a814fdd241150e314249aa0dae3a",
+      "output_state": "states/knowledge_pokemon_center_enter.state",
+      "state_sha256": "dff9d4674faf6ee5893feccda6b72fb9f491a814fdd241150e314249aa0dae3a",
+      "ram_edits": [],
+      "max_steps": 300,
+      "oracle_summary": {
+        "no_encounter": 6,
+        "median": 22,
+        "max": 98,
+        "encounter_rate": 0.6
+      }
+    },
+    "mid_heal_buy_return": {
+      "oracle_steps": 83,
+      "source_state": "states/knowledge_pokemon_center_enter.state",
+      "source_sha256": "dff9d4674faf6ee5893feccda6b72fb9f491a814fdd241150e314249aa0dae3a",
+      "output_state": "states/m2_bulbasaur_half_hp.state",
+      "state_sha256": "b3a58c3b4e673d24c8a72aed561cad4e0a3d8916bf781912068ed45dc78981fd",
+      "ram_edits": [
+        {
+          "address": "0xD16D",
+          "before": "0x19",
+          "after": "0x0C"
+        }
+      ],
+      "max_steps": 250
+    },
+    "mid_catch_then_heal": {
+      "oracle_steps": 61,
+      "source_state": "states/knowledge_catch_weaken_target.state",
+      "source_sha256": "7da2bb185f7469b0c9d148fb28f1c01cd897d0458da06842b3d2e0aa482287ee",
+      "output_state": "states/m3_bulbasaur_half_hp_battle.state",
+      "state_sha256": "3a4094c75cdd1b216894390a5cface2e3c559807d71c0b7dd3269ff77a382abb",
+      "ram_edits": [
+        {
+          "address": "0xD16D",
+          "before": "0x19",
+          "after": "0x0C"
+        },
+        {
+          "address": "0xD015",
+          "before": "0x00",
+          "after": "0x00"
+        },
+        {
+          "address": "0xD016",
+          "before": "0x19",
+          "after": "0x0C"
+        }
+      ],
+      "max_steps": 190
+    },
+    "mid_customers_hint_buy": {
+      "oracle_steps": 108,
+      "source_state": "states/knowledge_shop_interaction.state",
+      "source_sha256": "bddd2bdf21a73bc25e6af57f5ed1d4262625afef30532a15b76b81421f927fe3",
+      "output_state": "states/knowledge_shop_interaction.state",
+      "state_sha256": "bddd2bdf21a73bc25e6af57f5ed1d4262625afef30532a15b76b81421f927fe3",
+      "ram_edits": [],
+      "max_steps": 330
+    },
+    "mid_cure_poison_budget": {
+      "oracle_steps": 76,
+      "source_state": "states/knowledge_pokemon_center_enter.state",
+      "source_sha256": "dff9d4674faf6ee5893feccda6b72fb9f491a814fdd241150e314249aa0dae3a",
+      "output_state": "states/m5_pidgey_poisoned.state",
+      "state_sha256": "57d61ce0d06f04ed8c1c0393ab12c8504c98ba69c449a8d1b702fe0362c8e934",
+      "ram_edits": [
+        {
+          "address": "0xD19B",
+          "before": "0x00",
+          "after": "0x08"
+        }
+      ],
+      "max_steps": 230
+    }
+  },
+  "source_files": {
+    "mid_goals.json": "ede03ca06edd3281ee639ffdaffc18a679bbcd88e03765f6e9f46cea8d62a77e",
+    "parent_samples.jsonl": "cd89a710a81278143dfc1a26a74e0c736ef6f76bd6d079c02a70477b03db2712",
+    "parent_rubric.json": "62d15aef527feba5ceaf197b24168c22e0369c682bc3d3b601a929cae9580698",
+    "states/knowledge_pokemon_center_enter.state": "dff9d4674faf6ee5893feccda6b72fb9f491a814fdd241150e314249aa0dae3a",
+    "states/m2_bulbasaur_half_hp.state": "b3a58c3b4e673d24c8a72aed561cad4e0a3d8916bf781912068ed45dc78981fd",
+    "states/m3_bulbasaur_half_hp_battle.state": "3a4094c75cdd1b216894390a5cface2e3c559807d71c0b7dd3269ff77a382abb",
+    "states/knowledge_shop_interaction.state": "bddd2bdf21a73bc25e6af57f5ed1d4262625afef30532a15b76b81421f927fe3",
+    "states/m5_pidgey_poisoned.state": "57d61ce0d06f04ed8c1c0393ab12c8504c98ba69c449a8d1b702fe0362c8e934"
+  }
+}

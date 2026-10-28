@@ -1,0 +1,153 @@
+[
+  {
+    "sample_id": "mid_walk_to_pallet",
+    "source_sample_id": "knowledge_pokemon_center_enter",
+    "start_mode": "copy",
+    "output_state": "states/knowledge_pokemon_center_enter.state",
+    "goal": "走到真新镇，再走进大木研究所。",
+    "success_criteria": "人已进入大木研究所（地图 40）。",
+    "behavior": "按顺序完成离开常青市、到达真新镇和进入研究所；遇到战斗时处理后继续。",
+    "initial_state_hint": "常青市，地图 1；目前站在起点位置。",
+    "check_id": "walk_to_pallet",
+    "k_metric": "pass_at_k",
+    "max_steps": 300,
+    "oracle_steps": 22,
+    "oracle_summary": {
+      "no_encounter": 6,
+      "median": 22,
+      "max": 98,
+      "encounter_rate": 0.6
+    },
+    "goals": [
+      {
+        "goal": "离开常青市，到达 1 号道路",
+        "success_criteria": "人已到 1 号道路（地图 12）",
+        "max_steps": 4
+      },
+      {
+        "goal": "沿 1 号道路走到真新镇",
+        "success_criteria": "人已到达真新镇（地图 0）",
+        "max_steps": 12
+      },
+      {
+        "goal": "走进大木研究所",
+        "success_criteria": "人已进入大木研究所（地图 40）",
+        "max_steps": 6
+      }
+    ]
+  },
+  {
+    "sample_id": "mid_heal_buy_return",
+    "source_sample_id": "knowledge_pokemon_center_enter",
+    "start_mode": "derive",
+    "transform": "half_first_party_hp",
+    "output_state": "states/m2_bulbasaur_half_hp.state",
+    "goal": "先去宝可梦中心把队伍治好，再去商店买 2 个精灵球，最后回到你现在站的这个位置。",
+    "success_criteria": "队伍满血；精灵球比开始多 2 个、钱少 400；人回到了开始时站的格子。",
+    "behavior": "先治疗队伍，再买两颗精灵球，最后回到开始站的位置。",
+    "initial_state_hint": "常青市，地图 1；队伍首只宝可梦受伤。",
+    "check_id": "heal_buy_return",
+    "max_steps": 250,
+    "oracle_steps": 83,
+    "goals": [
+      {
+        "goal": "去宝可梦中心把队伍治好",
+        "success_criteria": "队伍每只都满血",
+        "max_steps": 6
+      },
+      {
+        "goal": "去商店买 2 个精灵球",
+        "success_criteria": "精灵球比开始多 2 个、钱少 400",
+        "max_steps": 6
+      },
+      {
+        "goal": "回到你开始时站的那个格子",
+        "success_criteria": "人站在开始时的格子上",
+        "max_steps": 6
+      }
+    ]
+  },
+  {
+    "sample_id": "mid_catch_then_heal",
+    "source_sample_id": "knowledge_catch_weaken_target",
+    "start_mode": "derive",
+    "transform": "half_first_party_and_battle_hp",
+    "output_state": "states/m3_bulbasaur_half_hp_battle.state",
+    "goal": "把眼前这只野生宝可梦抓住，然后把整支队伍（包括它）治到满血。",
+    "success_criteria": "队伍多了一只；战斗已结束；整支队伍满血，且是在抓到之后治的。",
+    "behavior": "先在战斗中完成抓捕并拒绝起名，再回城治疗整支队伍。",
+    "initial_state_hint": "1 号道路地图 12 的野生战斗中；己方出战宝可梦 HP 12/25，背包有精灵球。",
+    "check_id": "catch_then_heal",
+    "k_metric": "pass_at_k",
+    "max_steps": 190,
+    "oracle_steps": 61,
+    "goals": [
+      {
+        "goal": "把眼前这只野生宝可梦抓住",
+        "success_criteria": "队伍多了一只，战斗已结束，没有停在起名界面",
+        "max_steps": 8
+      },
+      {
+        "goal": "把整支队伍（包括它）治到满血",
+        "success_criteria": "队伍每只都满血，且治疗发生在抓到之后",
+        "max_steps": 6
+      }
+    ]
+  },
+  {
+    "sample_id": "mid_customers_hint_buy",
+    "source_sample_id": "knowledge_shop_interaction",
+    "start_mode": "copy",
+    "output_state": "states/knowledge_shop_interaction.state",
+    "goal": "先问问商店里的两位顾客，再去宝可梦中心把队伍治好，最后回商店买 1 件其中一位顾客提到过、店里又确实在卖的东西。",
+    "success_criteria": "两位顾客各说过话；队伍满血；买的是被提到且在售的那件；钱与背包只有这一笔变化。",
+    "behavior": "先问两位不同顾客，再离店治疗队伍，最后回商店购买顾客提及且在售的商品。",
+    "initial_state_hint": "在商店里（地图 42）；钱 3000，背包有 POTION。",
+    "check_id": "customer_hint_purchase",
+    "max_steps": 330,
+    "oracle_steps": 108,
+    "goals": [
+      {
+        "goal": "问商店里的两位顾客，听他们各说了什么",
+        "success_criteria": "两位不同的顾客都说过话",
+        "max_steps": 6
+      },
+      {
+        "goal": "去宝可梦中心把队伍治好",
+        "success_criteria": "队伍每只都满血",
+        "max_steps": 6
+      },
+      {
+        "goal": "回商店买 1 件被顾客提到过、店里又确实在卖的东西",
+        "success_criteria": "买的是被提到且在售的那件，钱与背包只有这一笔变化",
+        "max_steps": 6
+      }
+    ]
+  },
+  {
+    "sample_id": "mid_cure_poison_budget",
+    "source_sample_id": "knowledge_pokemon_center_enter",
+    "start_mode": "derive",
+    "transform": "poison_second_party_member",
+    "output_state": "states/m5_pidgey_poisoned.state",
+    "goal": "队伍里有宝可梦中毒了。不要去宝可梦中心，用别的办法把它治好，总共花的钱不超过 150。",
+    "success_criteria": "中毒的宝可梦恢复正常；全程没进过宝可梦中心；花费不超过 150。",
+    "behavior": "不进宝可梦中心，购买能治中毒的药物并从背包使用，控制花费在预算内。",
+    "initial_state_hint": "常青市地图 1；队伍第二只宝可梦中毒，背包有 POTION。",
+    "check_id": "cure_poison_budget",
+    "max_steps": 230,
+    "oracle_steps": 76,
+    "goals": [
+      {
+        "goal": "不进宝可梦中心，去商店买一件能治中毒的药，总共花的钱不超过 150",
+        "success_criteria": "买了药，花费不超过 150，没进过宝可梦中心",
+        "max_steps": 6
+      },
+      {
+        "goal": "不进宝可梦中心，用它把中毒的宝可梦治好",
+        "success_criteria": "中毒的宝可梦恢复正常，没进过宝可梦中心",
+        "max_steps": 6
+      }
+    ]
+  }
+]

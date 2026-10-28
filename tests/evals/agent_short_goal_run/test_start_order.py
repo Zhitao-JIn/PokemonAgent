@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from evals.agent_short_goal_run.dataset.build.preconditions import PREFLIGHT_CHECK_IDS
 from evals.agent_short_goal_run.dataset.loader import load_samples
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.agent_short_goal_run.solver.record import RunOneRecord
@@ -129,3 +130,45 @@ def test_preflight_loads_bound_state_and_preserves_harness_reset_and_failure_rec
         assert events == ["bind", "reset", "perceive", "validate", "run", "reset", "release"]
         assert not record.error
         assert (work / "run_result.json").is_file()
+
+
+@pytest.mark.parametrize(
+    "check_id",
+    [
+        "walk_to_pallet",
+        "heal_buy_return",
+        "catch_then_heal",
+        "customer_hint_purchase",
+        "cure_poison_budget",
+    ],
+)
+def test_mid_check_ids_use_preflight_reset_and_perceive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    check_id: str,
+) -> None:
+    assert check_id in PREFLIGHT_CHECK_IDS
+    base = next(item for item in load_samples() if item.check_id == "party_healed")
+    sample = base.model_copy(
+        update={
+            "sample_id": f"synthetic_{check_id}",
+            "dataset_version": "v20261028_mid",
+            "check_id": check_id,
+        }
+    )
+    game = StartGame(sample, fails=False)
+    work = tmp_path / "work"
+    monkeypatch.setattr(runner, "load_env_file", lambda path: None)
+
+    def validate(sample_arg: object, ram: object, observation: object) -> None:
+        assert ram is game.initial_ram
+        game.events.append("validate")
+
+    monkeypatch.setattr(runner, "build_real", lambda **kwargs: (ResettingHarness(game), game))
+    monkeypatch.setattr(runner, "validate_start", validate)
+
+    runner.run_one(sample, work, run_config_path="unused.json")
+
+    record = RunOneRecord.model_validate(json.loads((work / "run.json").read_text("utf-8")))
+    assert not record.invalid and not record.error
+    assert game.events == ["bind", "reset", "perceive", "validate", "run", "reset", "release"]
