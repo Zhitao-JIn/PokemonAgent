@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ....records import ActRecord, EpisodeRecord, RunRecord, TaskRecord
+from ....records import ActRecord, EpisodeRecord, IndexRecord, RunRecord, TaskRecord
 
 _LABELS = json.loads(
     Path(__file__)
@@ -36,6 +36,16 @@ def _option_layout(facts: ActRecord.Observation.Facts) -> str:
         for i, items in enumerate(grid)
     ]
     return head + "\n" + "\n".join(lines)
+
+
+def _append_index(lines: list[str], index: IndexRecord) -> None:
+    """把下层索引交给摘要调用，同时保留事实块不进入提示词。"""
+    if index.headline or index.keys or index.evidence:
+        lines.append(
+            _LABELS["index_detail"].format(
+                index.headline, "、".join(index.keys), "、".join(index.evidence)
+            )
+        )
 
 
 def task_render(self: TaskRecord) -> str:
@@ -69,6 +79,7 @@ def task_render(self: TaskRecord) -> str:
         lines.append(
             _LABELS["L033"].format(format(self.quality_score, ".2f"), self.quality_rationale)
         )
+    _append_index(lines, self.index)
     return "\n".join(lines)
 
 
@@ -86,6 +97,7 @@ def episode_render(self: EpisodeRecord) -> str:
     ]
     if self.reason:
         lines.append(_LABELS["L037"].format(self.reason))
+    _append_index(lines, self.index)
     if not self.summary.strip():
         lines.append(_LABELS["L038"].format(self.quality_rationale))
         return "\n".join(lines)
@@ -117,6 +129,7 @@ def run_render(self: RunRecord) -> str:
     ]
     if self.reason:
         lines.append(_LABELS["L048"].format(self.reason))
+    _append_index(lines, self.index)
     if not self.summary.strip():
         lines.append(_LABELS["L049"].format(self.quality_rationale))
         return "\n".join(lines)

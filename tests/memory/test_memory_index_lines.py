@@ -55,26 +55,24 @@ def _run(**changes: object) -> RunMemory:
 
 
 @pytest.mark.parametrize(
-    "factory,identifier",
+    "factory,prefix",
     [
-        (_episode, "r1-ep2"),
-        (_task, "r1-ep2-t1"),
-        (_run, "r1"),
+        (_episode, "- r1-ep2｜走到门口并进去｜成功｜goal_done｜3 task/17 键｜"),
+        (_task, "- r1-ep2-t1｜走到门口｜成功｜goal_done｜5 键｜"),
+        (_run, "- r1｜通关第一个道馆｜2/3 局成功｜goal_done｜"),
     ],
 )
-def test_index_reads_structured_index_and_source_status(factory, identifier: str) -> None:
+def test_index_reads_structured_index_and_source_status(factory, prefix: str) -> None:
     memory = factory(index={"headline": "进入室内", "keys": ["门口"], "evidence": ["换图"]})
 
     result = index_text(memory)
 
-    assert result.startswith(f"- {identifier}｜")
-    assert result.endswith("进入室内（keys：门口；含：换图）")
-    assert (
-        "未成功" in index_text(factory(termination="stalled", index=memory.index))
-        or factory is _run
-    )
-    assert "（keys：" not in index_text(factory())
-    assert index_text(factory()).endswith("（无正文）")
+    assert result == prefix + "进入室内（keys：门口；含：换图）"
+    stalled = index_text(factory(termination="stalled", index=memory.index))
+    assert "｜stalled｜" in stalled
+    if factory is not _run:
+        assert "｜未成功｜" in stalled
+    assert index_text(factory()).endswith("｜（无正文）")
 
 
 def test_episode_render_never_prints_frames() -> None:

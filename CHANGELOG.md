@@ -1,3 +1,13 @@
+## 2026-10-28（674）—— 摘要详情保留下层结构化索引
+
+**改了什么**：`memory_records` v5 的三层详情在索引非空时渲染 headline、keys 与 evidence，删除不再使用的首句截断标签，三个摘要任务的新版本按层写明关键词来源，并增加摘要门面的提示词材料断言；将摘要索引校验拆为独立函数，保持原有判定。
+
+**为什么这么改**：episode 与 run 的关键词核对来自下层索引，模型也需要在输入中看到这些索引，才能据此生成可核对的关键词。
+
+**取舍**：详情只增加下层索引，仍不渲染机械事实块；空索引不添加详情行。旧版本提示词保持不变。
+
+**影响面**：`memory_records` v5 的辅助渲染、标签与双重摘要校验，三个摘要任务的新版本、摘要解析器及摘要索引定向测试。
+
 ## 2026-10-28（670）—— harness 停止写读对象记忆，删除 last_event
 
 **改了什么**：task 层 `perceive` 去掉 `store_object_semantic_memory` 单元并删除该目录（`_UNITS` 七→六，docstring 同步）；`act` 不再写 `last_event`（按键路径不再取 `resp.event`），`TaskState` 删该字段。episode 层 `perceive` 去掉 `retrieve_object_semantic_memory` 单元并删除该文件，`merge_retrieval` 只把 `ep_ctx` 原样交出，`EpisodeContext` 删 `object_semantic_events`。run 层 `read_plan_context` 不再召回落库对象事实、不再记 `read_object_memory` 账（读账由三种降为两种），`PlanContext` 删 `objects`。三处把物件填进请求的调用点（`plan_episode`、`review_and_judge`、`plan_run`）不再传 `known_objects=` / `objects=`；请求模型与 `prompt/` 里的对应参数保留默认值。

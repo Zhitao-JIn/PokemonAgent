@@ -939,6 +939,33 @@ class Brain:
         )
 
     @staticmethod
+    def _valid_summary_index(
+        index: object, grounding_texts: Sequence[str], termination: str
+    ) -> bool:
+        """校验关键词来源、证据词表和标题结局词。"""
+        if not isinstance(index, dict):
+            return False
+        keys, evidence, headline = index.get("keys"), index.get("evidence"), index.get("headline")
+        if not isinstance(keys, list) or not all(
+            isinstance(key, str) and key and any(key in source for source in grounding_texts)
+            for key in keys
+        ):
+            return False
+        if not isinstance(evidence, list) or not all(
+            isinstance(item, str) and item in {"对话原文", "状态变化", "换图", "失败原因"}
+            for item in evidence
+        ):
+            return False
+        if not isinstance(headline, str):
+            return False
+        forbidden = (
+            ("失败", "未达成", "未完成", "没做成")
+            if termination == "goal_done"
+            else ("成功", "达成")
+        )
+        return not any(word in headline for word in forbidden)
+
+    @staticmethod
     def _parse_summary(
         text: str, grounding_texts: Sequence[str] | None = None, termination: str = ""
     ) -> EpisodeSummary | None:
@@ -961,31 +988,10 @@ class Brain:
         # 但字段已经不存在了——落盘用 uuid 命名，那一格从来没有读方。
         data.pop("filename", None)
         index = data.get("index")
-        if grounding_texts is not None:
-            if not isinstance(index, dict):
-                return None
-            keys = index.get("keys")
-            evidence = index.get("evidence")
-            headline = index.get("headline")
-            if not isinstance(keys, list) or not all(
-                isinstance(key, str) and key and any(key in source for source in grounding_texts)
-                for key in keys
-            ):
-                return None
-            if not isinstance(evidence, list) or not all(
-                isinstance(item, str) and item in {"对话原文", "状态变化", "换图", "失败原因"}
-                for item in evidence
-            ):
-                return None
-            if not isinstance(headline, str):
-                return None
-            forbidden = (
-                ("失败", "未达成", "未完成", "没做成")
-                if termination == "goal_done"
-                else ("成功", "达成")
-            )
-            if any(word in headline for word in forbidden):
-                return None
+        if grounding_texts is not None and not Brain._valid_summary_index(
+            index, grounding_texts, termination
+        ):
+            return None
         try:
             return EpisodeSummary(
                 summary=data["summary"],

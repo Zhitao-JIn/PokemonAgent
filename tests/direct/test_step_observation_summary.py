@@ -66,6 +66,15 @@ def test_summary_checks_each_layer_grounding_and_retries(layer: str) -> None:
 
     assert len(provider.requests) == len(result.calls) == 2
     assert result.summary.index.keys == [accepted]
+    restriction = {
+        "summarize_task": "观察变化文本",
+        "summarize": "下层 task 记忆的 index.keys",
+        "summarize_run": "下层 episode 记忆的 index.keys",
+    }
+    assert restriction[layer] in provider.requests[-1].prompt
+    if layer != "summarize_task":
+        assert accepted in provider.requests[-1].prompt
+        assert "下层" in provider.requests[-1].prompt
     memory = getattr(
         result,
         {"summarize_task": "memory", "summarize": "episode_memory", "summarize_run": "run_memory"}[

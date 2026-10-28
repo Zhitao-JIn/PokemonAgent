@@ -20,7 +20,7 @@ _LABELS = json.loads(
     .split("<!-- labels -->\n", 1)[1]
 )
 _EXTRA_ORDER = ("my_name", "my_level", "my_hp", "foe_name", "foe_level", "foe_hp")
-_HELPER_HASH = "b2e6b4e6ed3e1c3df259048e2e10f7c708954ad348f8e546c74c705323fef93c"
+_HELPER_HASH = "5e9b8fb05b34593ec445d31919b236c4b046327a5a90f7ddbf40170aeaac5507"
 _HELPER_PATH = Path(__file__).with_name("render_helpers.py")
 if sha256(_HELPER_PATH.read_bytes().replace(b"\r\n", b"\n")).hexdigest() != _HELPER_HASH:
     raise ValueError("memory_records v5 helper hash mismatch")

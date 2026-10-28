@@ -5,6 +5,8 @@
 
 只输出单层 JSON，字段为 summary、reason、reusable_patterns、critical_decisions、failure_points、quality_score、quality_rationale、applicable_scenes、tags、markdown、index。index 包含 headline（不写成功、失败等结局词）、keys（仅取自输入原料的原文字词）、evidence（只能从“对话原文”“状态变化”“换图”“失败原因”中选择的数组）。事实由程序记录，不要生成事实块。其余字段写有依据的解读和可复用经验；quality_score 在 0 到 1 之间，列表无内容时用空数组。
 
+keys 仅从动作历史中观察的对话原文、屏幕文字 或观察变化文本取原文，不从目标、推理和结论取词。
+
 <!-- labels -->
 {
   "recent": "### 最近判定",
