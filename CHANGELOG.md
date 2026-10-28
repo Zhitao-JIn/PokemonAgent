@@ -1,3 +1,15 @@
+## 2026-10-28（678）—— 删除 act_call 账里旧的 events 与 dialog 字段
+
+**改了什么**：移除 `ActCallContent.events` 与 `ActCallContent.dialog` 及其旧格式说明；保留 `observations` 和 `ACT_CALL` 解析注册。更新 act_call 节点契约夹具与新写账测试，删除仅验证旧 events/dialog trace 解析的测试。确认 MCP 客户端没有读取信封 `events`，从共享信封及对应 MCP 断言中移除该字段。
+
+**为什么这么改**：逐键观察已取代 world 事件与对话报告，ActCallContent 不再解析为新账模型；按 D21 不兼容旧数据，旧 trace 将整体清理，不保留旧格式兼容路径。
+
+**取舍**：`mcp_servers/common.py` 同时用于 world 与 memory。检索确认两类客户端均不读取响应 `events`，memory 服务调用也未传入该参数，故一并移除通用字段；不改评测数据、`parse.py` 的 `ACT_CALL` 分派或其他 `events`/`dialog` 概念。
+
+**影响面**：修改 trace 正文模型、共享 MCP 信封、act_call 测试夹具及相关测试；删除 1 个仅验证旧 events/dialog 格式的解析测试，该测试未被跳过。
+
+**验证**：全量 pytest JUnit：tests=2879、failures=0、errors=0、skipped=72；按要求另 deselect 1 项。删除的旧格式测试未被跳过。ruff format、ruff check、ruff format --check 全绿；边界守卫 A、B、C、D 全部通过；26 个激活提示词 hash 均通过注册表校验。
+
 ## 2026-10-28（677）—— 运行配置快照记录提示词版本与 hash
 
 **改了什么**：每次 `build_real` 读取生效提示词 registry 与各版本 `meta.json`，将按名称排序的 `prompts` 映射传给配置快照写入函数；快照新增全部激活任务/片段的 `version` 与源文件 `hash`。

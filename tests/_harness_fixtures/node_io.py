@@ -1038,7 +1038,7 @@ _STRUCTURED_CONTENT: dict[str, dict[str, type]] = {
     "sense_frame": {"facts": dict},
     "settle_task": {"abandoned": list},
     "choose_verdict": {"sequence": list},
-    "act_call": {"sequence": list, "args": dict, "events": list},
+    "act_call": {"sequence": list, "args": dict},
 }
 """正文里那几处**结构化数据**的期望类型——「别再 `json.dumps` 一次」。
 

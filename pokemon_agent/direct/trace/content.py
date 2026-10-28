@@ -117,11 +117,8 @@ class ChooseVerdictContent(_Content):
 class ActCallContent(_Content):
     """`act_call` 的正文——key / script 两形（P5）：
 
-    key 形只有 `sequence`；script 形只有 `script`/`args`/`ok`/`code`（+可选
-    `data`/`events`/`dialog`/`observations`）。两形恰好一个非空，由解析器按字段区分。
-
-    `dialog` 是脚本调用期间屏幕上依次出现的对话**行**（扁平报告里的按行列表，
-    不是 `advance_dialog` 那份按段的 `data["dialog"]`）；按键形没有这个键。
+    key 形只有 `sequence`；script 形使用 `script`/`args`/`ok`/`code`，可带
+    `data` 与 `observations`。两形恰好一个非空，由解析器按字段区分。
     """
 
     sequence: list[Segment] = Field(default_factory=list)
@@ -130,8 +127,6 @@ class ActCallContent(_Content):
     ok: str | None = None
     code: str | None = None
     data: dict[str, Any] | None = None
-    events: list[dict[str, Any]] | None = None
-    dialog: list[str] | None = None
     observations: list[StepObservation] | None = None
 
 

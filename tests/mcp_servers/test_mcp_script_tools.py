@@ -106,7 +106,7 @@ def test_walk_to_adjacent_forwarding(console: StubConsole) -> None:
     res = _call("walk_to_adjacent", {"direction": "east", "client_id": "t"})
     assert res["ok"] is True and res["code"] == "ok"
     assert res["data"]["final_pos"]["x"] == 16
-    assert res["events"] == []
+    assert "events" not in res
     assert "events" not in res["data"] and "dialog" not in res["data"]
     assert res["data"]["observations"]
 
