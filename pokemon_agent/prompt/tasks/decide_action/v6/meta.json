@@ -1,8 +1,0 @@
-{
-  "task": "decide_action",
-  "version": "v6",
-  "kind": "task",
-  "params": "DecideActionParams",
-  "reason": "固定说明后相对稳定的目标、知识和动作能力先于逐步观测与记忆",
-  "hash": "43912fe08bf164d29b1f83cdae33474a6a6cb7f1b3d220816b18eb66d078a9e8"
-}

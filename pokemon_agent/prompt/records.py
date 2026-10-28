@@ -36,7 +36,6 @@ class ActRecord(BaseModel):
             dialog_text: str = ""
             options: list[str] = Field(default_factory=list)
             cursor: str | None = None
-            overview: str = Field(default="", description="仅旧版本片段使用")
             walk_map: str = ""
             map_id: int | None = None
             screen: str = ""
@@ -70,8 +69,9 @@ class ActRecord(BaseModel):
         scene: str = Field(default="")
         facts: Facts = Field(default_factory=Facts)
         done: bool = Field(default=False)
-        perceived: bool = Field(default=True, description="仅旧版本片段使用")
-        observation_flags: list[str] = Field(default_factory=list, description="仅旧版本片段使用")
+        observation_flags: list[str] = Field(
+            default_factory=list, description="当前帧渲染用于生成观察限制提示"
+        )
 
     class Outcome(BaseModel):
         code: str = ""

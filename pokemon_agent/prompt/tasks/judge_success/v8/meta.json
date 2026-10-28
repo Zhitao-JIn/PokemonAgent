@@ -1,8 +1,0 @@
-{
-  "task": "judge_success",
-  "version": "v8",
-  "kind": "task",
-  "params": "JudgeParams",
-  "reason": "iter23全量两例假成功：通用对象参照时刻与完整结果证据闭合规则",
-  "hash": "e58310395fbeec9e9734f6d9369141765caf832409194df5150b2416851d52d5"
-}

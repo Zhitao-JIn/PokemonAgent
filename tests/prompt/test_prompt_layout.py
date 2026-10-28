@@ -68,21 +68,6 @@ def compose(tmp_path_factory: pytest.TempPathFactory) -> Compose:
     return render
 
 
-@pytest.fixture(scope="module")
-def old_gateway(tmp_path_factory: pytest.TempPathFactory) -> PromptGateway:
-    data = json.loads(REGISTRY.read_bytes())
-    for task, version in (
-        ("run_plan", "v5"),
-        ("decompose", "v8"),
-        ("decide_action", "v7"),
-        ("object_events", "v1"),
-    ):
-        data["tasks"][task] = {"active": version}
-    path = tmp_path_factory.mktemp("old_plan_registry") / "registry.json"
-    path.write_text(json.dumps(data), encoding="utf-8")
-    return PromptGateway(path)
-
-
 @pytest.mark.parametrize("criteria", ["", "明确判据"])
 def test_goal_preserves_text_and_only_adds_supplied_criteria(
     criteria: str, compose: Compose
@@ -231,26 +216,6 @@ def test_three_plans_omit_all_empty_optional_blocks(task: str) -> None:
     for block in ("检索知识", "背景索引", "地图交互事实", "本层历史", "人类插话"):
         assert f"\n## {block}\n" not in text
     assert "（没有检索到相关知识）" not in text.split("## 本次输入", 1)[1]
-
-
-@pytest.mark.parametrize("task", TASKS)
-def test_history_is_the_complete_existing_memory_rendering(
-    task: str, old_gateway: PromptGateway
-) -> None:
-    params = examples()[task]
-    original = old_gateway.render(task, params).text
-    markers = {
-        "run_plan": ("## 本 run 每一局的正文(按执行顺序)", "## 最近判定与复核反馈"),
-        "decompose": ("## 本局已跑的 task", "## 同目标的过往局"),
-        "decide_action": ("## 相关记忆\n", "\n---\n"),
-    }
-    start, end = markers[task]
-    expected = original.split(start, 1)[1].split(end, 1)[0].strip()
-
-    text = PromptGateway(None).render(task, params).text
-
-    assert expected and expected in text
-    assert "知识甲全文\n\n知识乙全文" in text
 
 
 def test_object_dialogue_prefixes_collapse_only_for_the_same_cell_and_key() -> None:

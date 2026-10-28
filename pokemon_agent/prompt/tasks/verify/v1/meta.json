@@ -1,8 +1,0 @@
-{
-  "task": "verify",
-  "version": "v1",
-  "kind": "task",
-  "params": "VerifyParams",
-  "reason": "CP3 首版迁移，保留旧措辞与条件",
-  "hash": "4d8adcbdc0ce3873de8f759276856b5ceb5ed38594ac1ada3fa94ea648023dca"
-}

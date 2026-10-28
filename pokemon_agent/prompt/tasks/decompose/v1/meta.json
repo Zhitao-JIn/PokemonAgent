@@ -1,8 +1,0 @@
-{
-  "task": "decompose",
-  "version": "v1",
-  "kind": "task",
-  "params": "DecomposeParams",
-  "reason": "CP4 首版迁移，共用片段保留旧措辞与次序",
-  "hash": "488bf1e5f362d8b2a19cdf76943f802092f0aa48955eaa0d353e362302a5f453"
-}

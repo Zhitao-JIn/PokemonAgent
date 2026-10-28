@@ -1,8 +1,0 @@
-{
-  "task": "summarize_task",
-  "version": "v1",
-  "kind": "task",
-  "params": "SummarizeTaskParams",
-  "reason": "CP3 首版迁移，保留旧措辞与条件",
-  "hash": "36e096b1085387ea5b002a5970410723eb1e9bbe85db344a2d474eac3053afc5"
-}

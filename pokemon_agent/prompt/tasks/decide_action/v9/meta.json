@@ -1,8 +1,0 @@
-{
-  "task": "decide_action",
-  "version": "v9",
-  "kind": "task",
-  "params": "DecideActionParams",
-  "reason": "最后一轮无引用动态历史排版精简，保留全部字段及屏幕/菜单多行布局",
-  "hash": "1f0e99b174562b4c62f054ee3dacb3c28cd70f296d97972e1b906a6e5e6ba2d3"
-}

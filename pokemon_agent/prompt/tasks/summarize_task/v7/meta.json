@@ -1,8 +1,0 @@
-{
-  "task": "summarize_task",
-  "version": "v7",
-  "kind": "task",
-  "params": "SummarizeTaskParams",
-  "reason": "verify 并入 summarize_task：逐键正/负判断改由蒸馏同一次调用完成，输入不再带外部标注",
-  "hash": "4cbc22ec7d2b53605e4fe2e0ff69222c7bf80f26d35dbd9e778dd01950cd5ee3"
-}

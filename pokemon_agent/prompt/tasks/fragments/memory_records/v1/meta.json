@@ -1,8 +1,0 @@
-{
-  "task": "memory_records",
-  "version": "v1",
-  "kind": "fragment",
-  "params": "MemoryParams",
-  "reason": "CP3 首版迁移，保留旧措辞与条件",
-  "hash": "4fb6fb7e57cc32770b287ccf26e3e557bb9d64e053ea5ff5ad8ef23197e2bb33"
-}

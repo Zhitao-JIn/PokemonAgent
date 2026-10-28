@@ -1,8 +1,0 @@
-{
-  "task": "decide_action",
-  "version": "v4",
-  "kind": "task",
-  "params": "DecideActionParams",
-  "reason": "统一main模板：删除独立script文案与旧分流，保留全部按键/脚本能力及固定前缀布局",
-  "hash": "ce9b565f75a4138f0bd7b411dbd93372dfb5128d7efd05cef65aa7ea4faf21a3"
-}

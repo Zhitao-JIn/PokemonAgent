@@ -1,13 +1,11 @@
 """三层判定共享布局，执行证据与规划主张完整且位置固定。"""
 
-from pathlib import Path
-
 import pytest
 
 from pokemon_agent.direct.judge_prompt_params import judge_prompt_params
 from pokemon_agent.prompt import PromptGateway
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolJudgeReq
-from tests.prompt.judge_layout_examples import old_gateway, params
+from tests.prompt.judge_layout_examples import params
 
 BLOCKS = (
     "规则",
@@ -21,58 +19,6 @@ BLOCKS = (
     "预算与进度",
     "人类插话",
 )
-
-
-@pytest.mark.parametrize("layer", ["task", "episode", "run"])
-def test_three_layers_keep_order_and_all_execution_material(layer: str, tmp_path: Path) -> None:
-    material = params()[layer]
-    gateway = PromptGateway(None)
-    text = gateway.render("judge_success", material).text
-    previous = old_gateway(tmp_path)
-    old = previous.render("judge_success", material).text
-
-    headings = [line[3:] for line in text.splitlines() if line.startswith("## ")]
-    present = [name for name in headings if name in BLOCKS]
-    assert present == [name for name in BLOCKS if name in present]
-    assert text.split("## 本次输入", 1)[0].splitlines()[0] == "## 规则"
-    assert [h for h in headings[: headings.index("本次输入")]] == ["规则"]
-    assert "- 读取招牌" in text and "  判据：取得招牌文字" in text
-    assert material.knowledge in text
-    assert "背景，不是完成证据。" in text
-    assert "\n## 预算与进度\n" not in text and "\n## 人类插话\n" not in text
-    assert ("\n## 地图交互事实\n" in text) == (layer == "episode")
-    assert ("\n## 状态与反馈\n" in text) == (layer != "task")
-    assert ("\n## 当前现场\n" in text) == (layer != "task")
-    assert ("最近 RAM 观测怎么读" in text) == (layer == "run")
-    assert ("task 意外打断" in text) == (layer == "task")
-    assert "（本次未提供 RAM 观测）" not in text
-    assert gateway.render_history("judge_success", material) == previous.render_history(
-        "judge_success", material
-    )
-    for memory in gateway.render_history("judge_success", material):
-        if memory.startswith(("## task ", "## 局 ")):
-            assert memory in text and memory in old
-    execution = text.split("\n## 本层历史\n", 1)[1]
-    end = min(
-        (
-            execution.index(title)
-            for title in ("\n## 地图交互事实\n", "\n## 状态与反馈\n")
-            if title in execution
-        ),
-        default=len(execution),
-    )
-    execution = execution[:end].strip()
-    assert execution in old
-    if layer == "episode":
-        objects = text.split("\n## 地图交互事实\n", 1)[1].split("\n## 状态与反馈\n", 1)[0].strip()
-        assert objects in text and objects in old
-    if material.latest_planning is not None:
-        assert material.latest_planning.model_dump_json() in text
-        assert material.latest_planning.model_dump_json() in old
-        assert text.index("\n## 本层历史\n") < text.index("\n## 状态与反馈\n")
-        assert text.index("\n## 状态与反馈\n") < text.index("\n## 当前现场\n")
-    else:
-        assert "## 第 1 步" in text and "之后变成" in text
 
 
 def test_ram_metadata_and_full_json_follow_current_observation() -> None:

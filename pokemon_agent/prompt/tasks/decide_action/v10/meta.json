@@ -1,8 +1,0 @@
-{
-  "task": "decide_action",
-  "version": "v10",
-  "kind": "task",
-  "params": "DecideActionParams",
-  "reason": "检查点 2：共享块渲染与稳定优先拼装",
-  "hash": "c9bd7a0755e893a94f26165cd731985f3862479be104323c2931fd54ddae786b"
-}

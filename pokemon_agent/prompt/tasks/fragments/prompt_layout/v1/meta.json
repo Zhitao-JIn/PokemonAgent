@@ -1,8 +1,0 @@
-{
-  "task": "prompt_layout",
-  "version": "v1",
-  "kind": "fragment",
-  "params": "PromptLayoutParams",
-  "reason": "检查点 2：共享块渲染与稳定优先拼装",
-  "hash": "28a346aca181f843d4d28edcf37ae49636f5523d9f0053bd4866043e4cf97186"
-}

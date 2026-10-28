@@ -1,8 +1,0 @@
-{
-  "task": "memory_records",
-  "version": "v2",
-  "kind": "fragment",
-  "params": "MemoryParams",
-  "reason": "verify 并入 summarize：蒸馏模式没有外部标注时只按序编号，不再给每条贴【未校验】",
-  "hash": "e1d3f7715904bafb3e107c28afd695f8baf3bbb6e2e45887bd97282ce99c60e5"
-}

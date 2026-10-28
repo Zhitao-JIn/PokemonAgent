@@ -1,8 +1,0 @@
-{
-  "task": "summarize_task",
-  "version": "v4",
-  "kind": "task",
-  "params": "SummarizeTaskParams",
-  "reason": "Claude显式缓存分界：保留v3压缩规则，将本次task材料题头统一为缓存分界",
-  "hash": "0153e7aa12e18a5d81a73932c0f7f83b692e5ecf6854618030a19e24508df9e3"
-}

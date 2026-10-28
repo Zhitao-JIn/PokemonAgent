@@ -1,3 +1,15 @@
+## 2026-10-28（673）—— 清理未激活提示词版本与冻结基线
+
+**改了什么**：删除非激活提示词版本：decide_action v1–v10、decompose v1–v10、judge_success v1–v10、run_plan v1–v9、summarize v1–v7、summarize_task v1–v8、summarize_run v1–v6、verify v1–v3/v5、memory_records v1–v4、object_events v1、prompt_layout v1，以及无调用者的 decide_action_retry/v1。移除 201 个固定到旧版本的测试 case，涵盖旧版 golden 对拍、历史版本渲染、跨旧新版本逐字节比较与旧版本专用记忆片段；`ActRecord` 删除 `overview` 与 `perceived`，保留 `observation_flags` 并说明其当前帧渲染用途。
+
+**为什么这么改**：当前提示词注册表已明确唯一生效版本；保留不再调用的版本与冻结对拍会让旧接口继续成为维护负担。历史追溯依靠 tag `before-cleanup-20261028` 和 trace 中保存的完整 prompt 文本。
+
+**取舍**：激活版本目录、registry、golden 请求文件、对象记忆参数及激活的 `object_events/v2` 均保留。`test_migrated_stamping.py` 和按当前网关渲染的测试保留；删除旧版本专属对拍。冻结旧版本的测试中原有 25 个动态跳过 case 随测试删除，D33 其余跳过规则不变。
+
+**影响面**：仅提示词版本文件、旧版本专属 prompt 测试与 `pokemon_agent/prompt/records.py`；不改激活版本内容及 hash，不改对象记忆、数据集、parse 侧或 docs。
+
+**验证**：registry 中 27 个激活项的重算 hash 均与 `meta.json` 一致，`PromptGateway(None)` 加载成功；prompt 测试 268 passed。全量 pytest JUnit：tests=2899、failures=0、errors=0、skipped=72，命令另有 6 deselected；删除的旧版本基线中原有 25 个动态跳过 case。ruff format、ruff check、ruff format --check 全绿。
+
 ## 2026-10-28（672）—— 评分器改读逐键观察并回放旧 NPC 判据
 
 **改了什么**：商店两条 NPC 判据共用 `npc_interactions.py`，从 `write_act_memory` 的 `[before, *observations, after]` 经 `changes()` 提取面向人物的新增对话；overshoot 扫描点改为 `write_act_memory`。`world_script_execute` 的脚本报告改带 `observations`，自报面用 `changes()` 核对 `dialog_line`、`warp` 与对话片段，不再读事件报告。

@@ -1,8 +1,0 @@
-{
-  "task": "run_plan",
-  "version": "v6",
-  "kind": "task",
-  "params": "RunPlanParams",
-  "reason": "iter21规划budget标量错误：明确嵌套对象并给完整通用示例",
-  "hash": "577b1ecdae830fef0c179a27141ceeb7152be469968c39ee964db88568441531"
-}

@@ -1,8 +1,0 @@
-{
-  "task": "summarize_task",
-  "version": "v3",
-  "kind": "task",
-  "params": "SummarizeTaskParams",
-  "reason": "紧凑task摘要：减少重复叙述，保留前后变化、终止与正负证据",
-  "hash": "3b1357fc56992020df707111b422b6705cb69b9eacfff6856ba83094e4a299ca"
-}

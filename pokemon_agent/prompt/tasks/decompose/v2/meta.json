@@ -1,8 +1,0 @@
-{
-  "task": "decompose",
-  "version": "v2",
-  "kind": "task",
-  "params": "DecomposeParams",
-  "reason": "泛化：移除与评测样本重合的特定任务示例",
-  "hash": "e96c1ced9177de6b1e84753fdd77c3bbddd70ddbf7e1208da07b7a3a59b5105a"
-}

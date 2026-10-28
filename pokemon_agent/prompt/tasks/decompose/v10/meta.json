@@ -1,8 +1,0 @@
-{
-  "task": "decompose",
-  "version": "v10",
-  "kind": "task",
-  "params": "DecomposeParams",
-  "reason": "检查点 2：共享块渲染与稳定优先拼装",
-  "hash": "a751038da82df4498ff4fa891a0d8b68dee36edddf48132b41f973ac4372c90d"
-}

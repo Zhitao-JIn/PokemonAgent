@@ -1,8 +1,0 @@
-{
-  "task": "decompose",
-  "version": "v8",
-  "kind": "task",
-  "params": "DecomposeParams",
-  "reason": "父级建议与配置硬限分离，动态预算列出单位、来源和已用剩余",
-  "hash": "7c2cf0a67a354b39975a72ca0300f5e457c85401d504f6e4d87fbbd26b44967a"
-}

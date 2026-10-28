@@ -1,8 +1,0 @@
-{
-  "task": "run_plan",
-  "version": "v3",
-  "kind": "task",
-  "params": "RunPlanParams",
-  "reason": "固定说明后父目标、知识和背景先于变化的规划状态、现场与历史",
-  "hash": "e0d449bde70a7c5f844496261c2453deab81b6c01e61c77618a9f496a357db8d"
-}
