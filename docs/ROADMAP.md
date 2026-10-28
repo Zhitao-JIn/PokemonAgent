@@ -367,6 +367,7 @@
 - 记忆体量：`facts` 全留、不截断，task 层记录会变大；背景索引每次规划整条召回记忆，所以 `facts` 不放 episode 与 run，写账里也不含 `facts`；上线后实测 token 与记忆文件体积，再决定上限与折叠。
 - 稳定判定在打字中途停顿时可能读到半截，探针 `experiment/probe_settle.py` 已写未运行；观察带 `settled` 标记兜底。
 - 渐进展开的检索 agent（B15）尚未做；本条只铺好下钻路径。
+- **跳过的测试待恢复（D33）**：冻结的旧格式评测数据（`evals/dataset/brain_calls/` 等）不迁移，审计这些数据的测试用 `@pytest.mark.skip(reason="D33: …")` 跳过（不删除），`git grep -n "D33:" -- tests` 可找全；整套框架做完、用新框架重新生成数据后，取消跳过并修到全绿。
 
 **后续清理（CP5，待立 spec）**：顺序固定，依 P-2：① CP3、CP4 验收；② 打 git tag 作历史存档；③ 删除非激活的提示词版本目录及其冻结基线测试，以及 `prompt/records.py`、各 `params.py` 里只给旧版本用的旧字段；④ 对象记忆整体删除（不再被旧版本的 `objects` 参数卡住），连同不再产生的 `TraceKind` 与解析；⑤ 把当次激活的各任务提示词版本与 hash 写进评测批次清单（现在 trace 只存 prompt 全文，不存版本名与 hash）；⑥ 最后删旧数据（`memory/`、`tracelog/`、`checkpoints/`、`eval_results/` 里的旧运行产物）。其中评分器迁移须在删旧 trace 之前用旧 trace 回放核对完。
 
