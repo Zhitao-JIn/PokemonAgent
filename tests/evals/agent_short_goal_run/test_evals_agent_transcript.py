@@ -197,6 +197,7 @@ def test_solver_writes_store_and_scorer_uses_its_run_location(
         timeout=1,
         transcript=mode != "disabled",
         trace_backend="langfuse",
+        version="v20261021_retest5",
     )
 
     asyncio.run(solve(state, None))

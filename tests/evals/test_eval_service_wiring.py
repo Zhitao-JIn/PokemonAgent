@@ -12,10 +12,13 @@ import pytest
 from _doubles.script_frames import frame, run_of
 from inspect_ai.solver import TaskState
 
+from evals.agent_short_goal_run.dataset.loader import load_samples
 from evals.agent_short_goal_run.solver.solver import run_one_solver
 from evals.world_script_execute import isolated
 from evals.world_script_execute.dataset.schemas import ScriptCase, ScriptExpect
 from evals.world_script_execute.solver import ScriptRun
+
+DATASET_VERSION = "v20261021_retest5"
 
 
 def _task_state(sample_id: str) -> TaskState:
@@ -25,7 +28,7 @@ def _task_state(sample_id: str) -> TaskState:
         epoch=1,
         input="run",
         messages=[],
-        metadata={"sample_id": sample_id, "dataset_version": "v1"},
+        metadata={"sample_id": sample_id, "dataset_version": DATASET_VERSION},
     )
 
 
@@ -67,20 +70,22 @@ def test_short_goal_closes_services_after_worker_error_or_timeout(
 
     monkeypatch.setattr("evals.agent_short_goal_run.solver.solver.eval_services", fake_services)
     monkeypatch.setattr(subprocess, "run", fake_subprocess)
+    sample_id = load_samples(DATASET_VERSION)[0].sample_id
     solve = run_one_solver(
         report_dir=str(tmp_path / outcome),
         run_config_path="config.json",
         models={},
         timeout=12,
         transcript=False,
+        version=DATASET_VERSION,
     )
 
     if outcome == "timeout":
-        result = asyncio.run(solve(_task_state(f"sample-{outcome}"), None))
+        result = asyncio.run(solve(_task_state(sample_id), None))
         assert result.output.completion == "timeout"
     else:
         with pytest.raises(RuntimeError, match="worker failed"):
-            asyncio.run(solve(_task_state(f"sample-{outcome}"), None))
+            asyncio.run(solve(_task_state(sample_id), None))
     assert events[0] == (
         "enter",
         {
@@ -124,18 +129,20 @@ def test_concurrent_short_goal_samples_receive_distinct_service_environments(
 
     monkeypatch.setattr("evals.agent_short_goal_run.solver.solver.eval_services", fake_services)
     monkeypatch.setattr(subprocess, "run", fake_subprocess)
+    sample_ids = [sample.sample_id for sample in load_samples(DATASET_VERSION)[:2]]
     solve = run_one_solver(
         report_dir=str(tmp_path),
         run_config_path="config.json",
         models={},
         timeout=12,
         transcript=False,
+        version=DATASET_VERSION,
     )
 
     async def run_both() -> None:
         await asyncio.gather(
-            solve(_task_state("sample-a"), None),
-            solve(_task_state("sample-b"), None),
+            solve(_task_state(sample_ids[0]), None),
+            solve(_task_state(sample_ids[1]), None),
         )
 
     asyncio.run(run_both())

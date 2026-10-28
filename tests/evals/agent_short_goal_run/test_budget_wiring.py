@@ -89,7 +89,7 @@ def test_solver_request_carries_the_config_file_path(tmp_path, monkeypatch):
         epoch=1,
         input="run",
         messages=[],
-        metadata={"sample_id": SAMPLE_ID, "dataset_version": "v1"},
+        metadata={"sample_id": SAMPLE_ID, "dataset_version": "v20261021_retest5"},
     )
     path = str(tmp_path / "run_config.json")
     solve = run_one_solver(
@@ -98,6 +98,7 @@ def test_solver_request_carries_the_config_file_path(tmp_path, monkeypatch):
         models={},
         timeout=600,
         transcript=False,
+        version="v20261021_retest5",
     )
 
     asyncio.run(solve(state, None))
@@ -138,7 +139,7 @@ def test_worker_passes_config_path_to_runner(tmp_path, monkeypatch):
         sample_id=SAMPLE_ID,
         models={},
         trace_backend="local",
-        version="v1",
+        version="v20261021_retest5",
     )
 
     _execute(RunOneRequest.model_validate_json(request.model_dump_json()))

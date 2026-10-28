@@ -29,6 +29,8 @@ REQUIRED_KEYS: tuple[str, ...] = (
     "epochs",
     "log_dir",
     "trace_backend",
+    "ignore_initial_memory",
+    "export_memory_dir",
     "models",
     "evaluation_models",
 )

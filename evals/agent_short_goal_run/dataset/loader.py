@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from evals.agent_short_goal_run.dataset.schemas import EvalSample, Rubric
 from evals.dataset.errors import DatasetError
@@ -55,6 +56,8 @@ def validate_tiers(samples: Sequence[EvalSample]) -> None:
                 for i, goal in enumerate(goals, start=1)
                 if not goal.tasks
             ]
+        if sample.initial_memory is not None and sample.tier != "long":
+            problems.append(f"{sample.sample_id}：initial_memory 只允许 long 档")
     if problems:
         raise DatasetError("\n".join(problems))
 
@@ -91,6 +94,8 @@ def check(version: str, rule_ids: set[str] | None = None) -> list[EvalSample]:
         if s.dataset_version != version:
             problems.append(f"{s.sample_id}：dataset_version={s.dataset_version}")
         _validate_start(s, DATASET_DIR / version)
+        problems += _validate_initial_memory(s, DATASET_DIR / version)
+        problems += _validate_knowledge_topics(s.knowledge_exclude_topics)
         if rule_ids is not None and s.check_id is not None and s.check_id not in rule_ids:
             problems.append(f"{s.sample_id}：判据 {s.check_id} 未登记")
         problems += [f"{s.sample_id}：rubric 条目 {i} 未定义" for i in s.rubric if i not in items]
@@ -123,3 +128,72 @@ def _validate_start(sample: EvalSample, directory: Path) -> None:
     state = contained_file(directory, sample.start.source_state)
     if sha256_of(state) != sample.start.source_sha256:
         raise DatasetError(f"{sample.sample_id}：来源 .state 哈希不符 {sample.start.source_state}")
+
+
+def _validate_initial_memory(sample: EvalSample, directory: Path) -> list[str]:
+    """校验种子路径、manifest 哈希、文件清单和文件内容哈希。"""
+    seed = sample.initial_memory
+    if seed is None:
+        return []
+    relative = PurePosixPath(seed.path)
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or "\\" in seed.path
+        or PureWindowsPath(seed.path).drive
+    ):
+        return [f"{sample.sample_id}：initial_memory.path 必须是版本目录内相对路径"]
+    root = (directory / Path(*relative.parts)).resolve()
+    if not root.is_relative_to(directory.resolve()) or not root.is_dir():
+        return [f"{sample.sample_id}：initial_memory 目录不存在或越界：{seed.path}"]
+    manifest = root / "MANIFEST.json"
+    if not manifest.is_file():
+        return [f"{sample.sample_id}：缺少 MANIFEST.json"]
+    if sha256_of(manifest) != seed.manifest_sha256:
+        return [f"{sample.sample_id}：MANIFEST.json 哈希不符"]
+    problems: list[str] = []
+    try:
+        entries = json.loads(manifest.read_text(encoding="utf-8"))["files"]
+        listed = {entry["path"]: entry["sha256"] for entry in entries}
+    except (ValueError, KeyError, TypeError) as error:
+        return [f"{sample.sample_id}：MANIFEST.json 格式错误：{error}"]
+    all_paths = {path.relative_to(root).as_posix() for path in root.rglob("*")}
+    actual = {name for name in all_paths if (root / name).is_file()}
+    if "knowledge_memory" in {part for item in all_paths for part in PurePosixPath(item).parts}:
+        problems.append(f"{sample.sample_id}：种子不允许包含 knowledge_memory")
+    expected = set(listed) | {"MANIFEST.json"}
+    if actual != expected:
+        problems.append(f"{sample.sample_id}：种子文件与 manifest 清单不一致")
+    for name, digest in listed.items():
+        item = PurePosixPath(name)
+        if item.is_absolute() or ".." in item.parts or "\\" in name:
+            problems.append(f"{sample.sample_id}：manifest 路径不安全：{name}")
+            continue
+        path = (root / Path(*item.parts)).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            problems.append(f"{sample.sample_id}：manifest 文件缺失或越界：{name}")
+        elif sha256_of(path) != digest:
+            problems.append(f"{sample.sample_id}：种子文件哈希不符：{name}")
+    return problems
+
+
+def _validate_knowledge_topics(topics: list[str]) -> list[str]:
+    """仅允许引用仓库知识库 frontmatter metadata.topic 中真实存在的主题。"""
+    known: set[str] = set()
+    for path in (REPO_ROOT / "memory" / "knowledge_memory").glob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        if not text.startswith("---\n"):
+            continue
+        end = text.find("\n---\n", 4)
+        if end < 0:
+            continue
+        try:
+            metadata = json.loads(text[4:end])
+        except json.JSONDecodeError:
+            continue
+        topic = metadata.get("metadata", {}).get("topic") if isinstance(metadata, dict) else None
+        if isinstance(topic, str):
+            known.add(topic)
+    return [
+        f"knowledge_exclude_topics 中主题不存在：{topic}" for topic in topics if topic not in known
+    ]
