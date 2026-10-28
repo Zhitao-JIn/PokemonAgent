@@ -49,3 +49,12 @@
 ## 四、用户的动作
 
 删除清单（691、692 之后各一次，698 之前）：`pokemon_agent/harness/checkpoint/`、`tests/harness/checkpoint/`、`docs/checkpoint/`、`docs/spec/checkpoint/`（若存在）；在本机运行 `uv lock` 刷新 `uv.lock`。
+
+## 五、修订（2026-10-28，691 执行时发现）：旧采集管线依赖 checkpoint 包
+
+**发现**：`evals/common/capture_batch.py`、`capture_case.py`、`capture_worker.py` 直接导入 checkpoint 包（`state_schema_hash`、`restore_run`）。进一步核查：这条**旧采集管线**（"重打二十起点并串行采集全脑"，用来产出 `evals/dataset/brain_calls` 一类旧格式冻结数据）**自 606 起就已经不能运行**：`capture_case.py` 导入的 `evals/agent_short_goal_run/solver/runner/archive.py::prepare_archive` 在提交 `5f555a3`（606，"改用原始 `.state` 轻起点"）里被删除，模块导入即失败。只有 `capture_control.py` 与 `capture_selection.py` 有测试（2 个测试文件）；`capture_export.py`、`capture_integrity.py` 与 `evals/dataset/brain_calls/export_dataset.py` 还导入 `capture_batch` 里的类型。盘点把 `capture_control.py` 判为"保留"，是因为没发现整条管线都挂在 checkpoint 上，这一条更正。
+
+**决定（本轮）**：
+- **691 收窄**：只切运行路径的调用点，**不删 checkpoint 包、不删 checkpoint 专属 schema、不动 settings 的 `checkpoint` 节、不动 `pyproject.toml` 依赖**。具体：`build.py` 不再构建/注入 `Checkpointer` 与 saver，`run_graph` 普通 `compile()`，`run/act`、`episode_entry`、`task_entry`、`run_entry`、`harness.py` 里的存档与恢复分支，三层 runtime 的 `Checkpointer` 字段与注入。包本身变成无引用孤岛（运行路径零引用），**由旧采集管线最后的依赖继续让它可导入**，直到下面的决定做完。
+- **新增待决（不挡 691）**：旧采集管线怎么处理。选项：①整条删除（`capture_*` 十余个文件、`brain_capture.py`、两个测试文件，并处理 `export_dataset.py` 与 `frames/build/freeze.py` 的引用），数据重新生成时在新框架上另建采集；②保留并把 `capture_case` 改成从 `.state` 起点跑（等同评测入口 `run_one`）；③只做最小隔离：把对 checkpoint 包的三处引用换成明确的"已停用"异常，管线继续躺着。**设计侧倾向①**（它自 606 起不能运行，新框架重新生成数据（D33、B16）本来就要重新设计采集），但要先做一次只读盘点（`capture_*` 的依赖图与调用方）再定。必须在 692 之前定，因为 692 删 trace 的 checkpoint 账类型、694 删 memory 管理面，会让 checkpoint 包不可导入。
+- **692 因此扩大**：删 checkpoint 包与 checkpoint 专属 schema、settings 的 `checkpoint` 节与 `paths.checkpoint`、`pyproject` 的 saver 依赖（用户刷新 `uv.lock`）、trace 协议收窄（原 692 内容），并按上面的决定处理旧采集管线。691 不涉及这些。
