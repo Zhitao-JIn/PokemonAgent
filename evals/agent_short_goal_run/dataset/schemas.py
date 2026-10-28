@@ -77,6 +77,13 @@ class Rubric(BaseModel):
     red_lines: list[RedLine]
 
 
+class InitialMemory(BaseModel):
+    """版本目录内冻结记忆种子的相对目录及 MANIFEST.json 字节哈希。"""
+
+    path: str
+    manifest_sha256: str
+
+
 class EvalSample(BaseModel):
     """一条样本。"""
 
@@ -98,6 +105,8 @@ class EvalSample(BaseModel):
     goals: list[SampleGoal] = Field(
         default_factory=list, description="冻结的 episode 目标表（long 档必须为空）"
     )
+    initial_memory: InitialMemory | None = None
+    knowledge_exclude_topics: list[str] = Field(default_factory=list)
     initial_state_hint: str = ""
     behavior: str = Field(description="可行 behavior：合理路径的边界描述，路径层 rubric 的参照")
     check_id: str | None = Field(
@@ -111,6 +120,7 @@ class EvalSample(BaseModel):
 
 __all__ = [
     "EvalSample",
+    "InitialMemory",
     "RedLine",
     "Rubric",
     "RubricItem",

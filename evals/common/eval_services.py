@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
@@ -28,6 +29,9 @@ def eval_services(
     world: bool,
     memory: bool,
     knowledge_source: Path | None = None,
+    memory_seed: Path | None = None,
+    knowledge_exclude_topics: set[str] | list[str] | None = None,
+    export_memory_to: Path | None = None,
     admin: bool = False,
     export_env: bool = True,
 ) -> Iterator[dict[str, str]]:
@@ -52,7 +56,12 @@ def eval_services(
                 ports=ports,
             )
         if memory:
-            _prepare_knowledge(root, knowledge_source)
+            _prepare_memory(
+                root,
+                knowledge_source,
+                memory_seed,
+                set(knowledge_exclude_topics or ()),
+            )
             _prepare_service(
                 name="memory",
                 requested=True,
@@ -62,6 +71,11 @@ def eval_services(
                 processes=processes,
                 logs=logs,
                 admin=admin,
+                reuse_existing=(
+                    memory_seed is None
+                    and not knowledge_exclude_topics
+                    and export_memory_to is None
+                ),
                 ports=ports,
             )
         if export_env:
@@ -85,20 +99,89 @@ def eval_services(
                 raise stop_error
         finally:
             try:
+                if export_memory_to is not None and memory:
+                    _export_memory(root / "memory", export_memory_to)
                 _copy_logs(logs)
             finally:
                 shutil.rmtree(root, ignore_errors=True)
 
 
-def _prepare_knowledge(root: Path, source: Path | None) -> None:
+def _prepare_memory(
+    root: Path,
+    knowledge_source: Path | None,
+    memory_seed: Path | None,
+    excluded_topics: set[str],
+) -> None:
+    """复制种子与筛选后的知识文件到本次服务的记忆根。"""
+    target_root = root / "memory"
+    if memory_seed is not None:
+        if ".." in Path(memory_seed).parts:
+            raise ValueError(f"memory_seed path must not escape through '..': {memory_seed}")
+        source = memory_seed.resolve()
+        if not source.is_dir():
+            raise ValueError(f"memory_seed must be a directory: {memory_seed}")
+        if (source / "knowledge_memory").exists():
+            raise ValueError("memory_seed must not contain knowledge_memory")
+        for item in source.rglob("*"):
+            relative = item.relative_to(source)
+            if item.is_symlink():
+                raise ValueError(f"memory_seed contains a symlink: {relative}")
+            target = target_root / relative
+            if target.exists():
+                raise FileExistsError(f"memory seed would overwrite {target}")
+            if item.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            elif item.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, target)
+    _prepare_knowledge(root, knowledge_source, excluded_topics)
+
+
+def _prepare_knowledge(root: Path, source: Path | None, excluded_topics: set[str]) -> None:
     """建立干净 knowledge collection，仅复制源目录内的 Markdown 文件。"""
     target = root / "memory" / "knowledge_memory"
     target.mkdir(parents=True, exist_ok=True)
     if source is None:
         return
     for path in source.glob("*.md"):
-        if path.is_file():
+        if path.is_file() and _knowledge_topic(path) not in excluded_topics:
             shutil.copy2(path, target / path.name)
+
+
+def _knowledge_topic(path: Path) -> str | None:
+    """读取 JSON frontmatter 的 metadata.topic；无效或缺失时返回 None。"""
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---\n"):
+        return None
+    end = text.find("\n---\n", 4)
+    if end < 0:
+        return None
+    try:
+        metadata = json.loads(text[4:end])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    values = metadata.get("metadata", {})
+    return values.get("topic") if isinstance(values, dict) else None
+
+
+def _export_memory(source: Path, destination: Path) -> None:
+    """复制记忆根中的持久记录，排除知识与可重建缓存。"""
+    target = destination.resolve()
+    if target.exists():
+        raise FileExistsError(f"export_memory_to already exists: {destination}")
+    target.mkdir(parents=True)
+    for item in source.rglob("*"):
+        relative = item.relative_to(source)
+        if "knowledge_memory" in relative.parts or item.name in {"index.json", "vectors.jsonl"}:
+            continue
+        output = target / relative
+        if item.is_dir():
+            output.mkdir(parents=True, exist_ok=True)
+        elif item.is_file():
+            output.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, output)
 
 
 def _prepare_service(
@@ -112,11 +195,12 @@ def _prepare_service(
     logs: list[Path],
     ports: set[int],
     admin: bool = False,
+    reuse_existing: bool = True,
 ) -> None:
     """复用已有服务地址，或启动本次所需服务并等待探活。"""
     if not requested:
         return
-    existing = os.environ.get(variable)
+    existing = os.environ.get(variable) if reuse_existing else None
     if existing:
         print(f"eval_services: reusing {variable}={existing}")
         env[variable] = existing

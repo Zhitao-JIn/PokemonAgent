@@ -223,3 +223,86 @@ def test_eval_services_overlapping_contexts_are_independent(monkeypatch, tmp_pat
 
     second.__exit__(None, None, None)
     assert len(calls["stop"]) == 2
+
+
+def test_eval_services_seeds_and_filters_knowledge(monkeypatch, tmp_path) -> None:
+    calls = _install_fakes(monkeypatch, tmp_path)
+    monkeypatch.setenv("MCP_MEMORY_SERVER_URL", "http://preconfigured.example")
+    seed = tmp_path / "seed"
+    (seed / "run_memory").mkdir(parents=True)
+    (seed / "run_memory" / "seed.json").write_text("seed", encoding="utf-8")
+    knowledge = tmp_path / "knowledge"
+    knowledge.mkdir()
+    (knowledge / "keep.md").write_text(
+        '---\n{ "metadata": {"topic": "keep"} }\n---\nbody', encoding="utf-8"
+    )
+    (knowledge / "skip.md").write_text(
+        '---\n{ "metadata": {"topic": "skip"} }\n---\nbody', encoding="utf-8"
+    )
+
+    with services.eval_services(
+        world=False,
+        memory=True,
+        memory_seed=seed,
+        knowledge_source=knowledge,
+        knowledge_exclude_topics=["skip"],
+        export_env=False,
+    ) as environment:
+        assert environment["MCP_MEMORY_SERVER_URL"] == "http://127.0.0.1:41000"
+        assert len(calls["start"]) == 1
+        root = tmp_path / "service-root-0" / "memory"
+        assert (root / "run_memory" / "seed.json").read_text(encoding="utf-8") == "seed"
+        assert [path.name for path in (root / "knowledge_memory").iterdir()] == ["keep.md"]
+
+
+@pytest.mark.parametrize("invalid", ["knowledge_memory", "../seed"])
+def test_eval_services_rejects_unsafe_memory_seed(monkeypatch, tmp_path, invalid) -> None:
+    _install_fakes(monkeypatch, tmp_path)
+    seed = tmp_path / "seed"
+    if invalid == "knowledge_memory":
+        (seed / invalid).mkdir(parents=True)
+        memory_seed = seed
+    else:
+        seed.mkdir()
+        memory_seed = seed / invalid
+    with (
+        pytest.raises(ValueError, match="knowledge_memory|directory|escape"),
+        services.eval_services(world=False, memory=True, memory_seed=memory_seed, export_env=False),
+    ):
+        pytest.fail("invalid seed should fail before service startup")
+
+
+def test_eval_services_exports_memory_without_derived_files(monkeypatch, tmp_path) -> None:
+    _install_fakes(monkeypatch, tmp_path)
+    destination = tmp_path / "export"
+    with services.eval_services(
+        world=False,
+        memory=True,
+        export_memory_to=destination,
+        export_env=False,
+    ):
+        source = tmp_path / "service-root-0" / "memory"
+        records = source / "run_memory"
+        records.mkdir()
+        (records / "record.json").write_text("record", encoding="utf-8")
+        (records / "index.json").write_text("index", encoding="utf-8")
+        knowledge = source / "knowledge_memory"
+        knowledge.mkdir(exist_ok=True)
+        (knowledge / "lesson.md").write_text("lesson", encoding="utf-8")
+
+    assert (destination / "run_memory" / "record.json").is_file()
+    assert not (destination / "run_memory" / "index.json").exists()
+    assert not (destination / "knowledge_memory").exists()
+
+
+def test_eval_services_export_rejects_existing_target(monkeypatch, tmp_path) -> None:
+    _install_fakes(monkeypatch, tmp_path)
+    destination = tmp_path / "already-there"
+    destination.mkdir()
+    with (
+        pytest.raises((FileExistsError, ValueError)),
+        services.eval_services(
+            world=False, memory=True, export_memory_to=destination, export_env=False
+        ),
+    ):
+        pass

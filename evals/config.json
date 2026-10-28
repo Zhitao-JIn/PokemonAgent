@@ -11,6 +11,8 @@
   "epochs": 1,
   "log_dir": "eval_results/inspect",
   "trace_backend": "local",
+  "ignore_initial_memory": false,
+  "export_memory_dir": null,
   "evaluation_models": {
     "result_grader": {
       "model": "openai/gpt-6-luna",

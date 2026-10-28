@@ -123,6 +123,8 @@ def agent_short_goal_run(
             trace_backend=trace_backend,
             version=version,
             transcript=transcript,
+            ignore_initial_memory=bool(cfg["ignore_initial_memory"]),
+            export_memory_dir=cfg["export_memory_dir"],
         ),
         scorer=[
             e2e_scorer(stall_limits=stall_limits, trace_backend=trace_backend),

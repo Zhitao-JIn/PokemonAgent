@@ -19,6 +19,7 @@ from inspect_ai.log._transcript import transcript as sample_transcript
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.util import store_as
 
+from evals.agent_short_goal_run.dataset.loader import load_samples
 from evals.agent_short_goal_run.scorer.stream import RunStream
 from evals.agent_short_goal_run.solver.record import AgentRunRecord, RunOneRecord, RunOneRequest
 from evals.agent_short_goal_run.solver.runner.one import run_id_for
@@ -83,6 +84,8 @@ def run_one_solver(
     trace_backend: str = "local",
     version: str = "v1",
     transcript: bool = True,
+    ignore_initial_memory: bool = False,
+    export_memory_dir: str | None = None,
 ) -> Solver:
     """被测对象槽位：起 worker 子进程跑完一条样本。
 
@@ -93,6 +96,7 @@ def run_one_solver(
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         sample_id = str(state.metadata["sample_id"])
+        sample = next(item for item in load_samples(version) if item.sample_id == sample_id)
         epoch = int(state.epoch)
         work = work_dir_of(report_dir, sample_id, epoch)
         request = RunOneRequest(
@@ -104,18 +108,34 @@ def run_one_solver(
             trace_backend=trace_backend,
             version=version,
         )
+        service_options: dict[str, object] = {
+            "world": True,
+            "memory": True,
+            "knowledge_source": REPO_ROOT / "memory" / "knowledge_memory",
+            "admin": True,
+            "export_env": False,
+        }
+        if sample.initial_memory is not None and not ignore_initial_memory:
+            service_options["memory_seed"] = (
+                REPO_ROOT
+                / "evals"
+                / "agent_short_goal_run"
+                / "dataset"
+                / version
+                / sample.initial_memory.path
+            )
+        if sample.knowledge_exclude_topics:
+            service_options["knowledge_exclude_topics"] = sample.knowledge_exclude_topics
+        if export_memory_dir:
+            service_options["export_memory_to"] = Path(export_memory_dir) / (
+                sample_id if epoch == 1 else f"{sample_id}#e{epoch}"
+            )
         cmd = [sys.executable, "-m", "evals.agent_short_goal_run.solver.worker"]
         stack = ExitStack()
         entering = asyncio.create_task(
             asyncio.to_thread(
                 stack.enter_context,
-                eval_services(
-                    world=True,
-                    memory=True,
-                    knowledge_source=REPO_ROOT / "memory" / "knowledge_memory",
-                    admin=True,
-                    export_env=False,
-                ),
+                eval_services(**service_options),
             )
         )
         entered = False
