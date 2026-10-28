@@ -121,11 +121,14 @@ def build_fake(
     reviewer = reviewer or NullReviewer()
     saver = build_saver(tmp_path / "checkpoints") if checkpoints else None
     task_graph, episode_graph = compile_task_graph(), compile_episode_graph()
-    run_graph = compile_run_graph(checkpointer=saver)
+    run_graph = compile_run_graph()
+    checkpointer_graph = compile_run_graph()
+    if saver is not None:
+        checkpointer_graph.checkpointer = saver
     checkpointer = (
         Checkpointer(
             root=tmp_path / "checkpoints",
-            run_graph=run_graph,
+            run_graph=checkpointer_graph,
             game=game,
             memory=memory,
             trace=trace,
@@ -135,8 +138,9 @@ def build_fake(
         else None
     )
     run_rt = assemble_runtime(
-        brain, game, memory, trace, reviewer, checkpointer, task_graph, episode_graph, config
+        brain, game, memory, trace, reviewer, task_graph, episode_graph, config
     )
+    run_rt.checkpointer = checkpointer
     return FakeRun(RunHarness(run_rt, run_graph), run_rt, trace, game, memory, checkpointer)
 
 
@@ -146,7 +150,6 @@ def assemble_runtime(
     memory: _Memory,
     trace: TraceTool,
     reviewer: Reviewer,
-    checkpointer: Checkpointer | None,
     task_graph: CompiledStateGraph,
     episode_graph: CompiledStateGraph,
     config: AppConfig = DEFAULT_APP_CONFIG,
@@ -165,7 +168,6 @@ def assemble_runtime(
         task_summarizer=TaskSummarizer(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         trace=trace,
         reviewer=reviewer,
-        checkpointer=checkpointer,
     )
     episode_rt = EpisodeRuntime(
         config=config,
@@ -178,7 +180,6 @@ def assemble_runtime(
         reviewer=reviewer,
         task_graph=task_graph,
         task=task_rt,
-        checkpointer=checkpointer,
     )
     return RunRuntime(
         config=config,
@@ -191,7 +192,6 @@ def assemble_runtime(
         judger=Judger(brain, policy=call_policy(), prompt_gateway=prompt_gateway),
         episode_graph=episode_graph,
         episode=episode_rt,
-        checkpointer=checkpointer,
     )
 
 

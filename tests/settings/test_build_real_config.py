@@ -44,10 +44,9 @@ def stubbed(tmp_path, monkeypatch):
     monkeypatch.setattr(assembly.MemoryTool, "build", lambda **kwargs: object())
     monkeypatch.setattr(assembly.TraceTool, "build", trace_build)
     monkeypatch.setattr(assembly.BrainTool, "build", brain_build)
-    monkeypatch.setattr(assembly, "build_saver", lambda root: None)
     monkeypatch.setattr(assembly, "compile_task_graph", lambda: None)
     monkeypatch.setattr(assembly, "compile_episode_graph", lambda: None)
-    monkeypatch.setattr(assembly, "compile_run_graph", lambda **kwargs: None)
+    monkeypatch.setattr(assembly, "compile_run_graph", lambda: None)
     monkeypatch.setattr(assembly, "assert_mcp_server_ready", lambda *args: {})
     real_snapshot = assembly.write_snapshot
     monkeypatch.setattr(

@@ -64,9 +64,7 @@ class _Trace:
 def test_begin_task_takes_no_frame() -> None:
     """入口只落一条 `task_start`、装初值，**不取帧**——开局帧由图内 perceive 的 `sense` 取。"""
     trace = _Trace()
-    state = begin_task(
-        SimpleNamespace(trace=trace, checkpointer=None, config=DEFAULT_APP_CONFIG), _input()
-    )
+    state = begin_task(SimpleNamespace(trace=trace, config=DEFAULT_APP_CONFIG), _input())
 
     assert state.task_ctx.observation is None
     assert state.after_observation is None and state.action is None

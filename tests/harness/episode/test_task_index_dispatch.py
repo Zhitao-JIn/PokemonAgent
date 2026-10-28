@@ -62,7 +62,6 @@ def test_task_index_lists_prior_tasks_with_the_same_goal_in_this_episode_only() 
     task_input = dispatch_task(state)["task_input"]
     task = begin_task(
         SimpleNamespace(
-            checkpointer=None,
             config=DEFAULT_APP_CONFIG,
             trace=SimpleNamespace(append=lambda req: None),
         ),

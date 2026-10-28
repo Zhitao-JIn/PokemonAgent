@@ -76,7 +76,6 @@ class RunHarness:
         run_goal: Goal | None = None,
         *,
         start_task: Task | None = None,
-        checkpoint_only: bool = False,
         sample_id: str = "",
         frozen_tasks: dict[str, list[Task]] | None = None,
     ) -> RunResult:
@@ -93,7 +92,6 @@ class RunHarness:
         （`run_entry.default_run_goal`），旧调用方行为不变。
         `start_task`：世界 reset 用的 `Task`（缺省取表序第一条，空表时按 run goal 合成）；
         `initial_state_hint` 只能由调用方经它带进来。
-        `checkpoint_only`：只存 run 级存档就返回，不进图（见 `run_entry.new_run`）。
         `sample_id`：eval 侧样本标识，原样带回 `RunResult.sample_id`（非 eval 缺省空串）。
         `frozen_tasks`：样本事先给定的 task 表，键是目标条目的 `task_id`（见
         `run_entry.new_run`）；只有 `loop.freeze_episode_plan` 打开时 episode 层才用它。
@@ -105,7 +103,6 @@ class RunHarness:
             goals=goals,
             run_goal=run_goal,
             start_task=start_task,
-            checkpoint_only=checkpoint_only,
             sample_id=sample_id,
             frozen_tasks=frozen_tasks,
         )

@@ -44,7 +44,6 @@ episode 节点从此**看不见** planner（原来只是"不读"，现在是"结
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from langgraph.graph.state import CompiledStateGraph
 
@@ -61,9 +60,6 @@ from pokemon_agent.settings import AppConfig
 
 from ..interface.reviewer import Reviewer
 from ..task.task_runtime import TaskRuntime
-
-if TYPE_CHECKING:
-    from ..checkpoint import Checkpointer
 
 
 @dataclass
@@ -113,11 +109,7 @@ class EpisodeRuntime:
     # episode 层自己取的帧（完整档）不进帧槽，`sense_frame` 账直接带图；槽只服务 task 层
     # ActMemory 的前后两张图（见 `task/frames.py`）。
 
-    # ---- 存档：episode 层自己不存（episode 级存档在 run 的 `act` 开头）；三层同形持有 ----
-
-    checkpointer: Checkpointer | None = None
     deadline: Deadline | None = None
-    """存档器（`build.py` 造，三层 runtime 持有**同一实例**）；None = 不存档（测试或开关关闭）。"""
 
 
 __all__ = ["EpisodeRuntime"]

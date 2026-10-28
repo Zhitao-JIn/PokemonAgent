@@ -1,5 +1,4 @@
-"""episode 图的**图外侧门**：`begin_episode`（装配初值）/ `run_episode`（进图取结算）/
-`resume_episode`（从存下的状态接着跑）/ `close`。
+"""episode 图的**图外侧门**：`begin_episode`（装配初值）/ `run_episode`（进图取结算）/ `close`。
 
 与 `task_entry` / `run_entry` 同形：run 的 `act` 只调 `run_episode`。入口只写开局账、装初值，
 **不接异常**——整局异常由接住它的 run 层 `act` 记 `episode_error`（谁接住谁记账）；
@@ -14,7 +13,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from langgraph.config import get_config
 from langgraph.graph.state import CompiledStateGraph
 
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
@@ -94,37 +92,6 @@ def run_episode(
     return close(final, episode_input, hard_limit=deps.config.budget.episode_max_tasks)
 
 
-def resume_episode(
-    deps: EpisodeRuntime,
-    graph: CompiledStateGraph,
-    state: EpisodeRunState,
-    *,
-    episode_input: EpisodeInput,
-) -> EpisodeOutput:
-    """从存下的状态接着跑完一局（恢复到某个 task 时由 run 的 `act` 调），取结算。
-
-    `state` 是 episode 图"进 `act`、派目标 task 前"那一刻：以 `plan_episode` 的名义写进本次 run 的
-    `act` 的命名空间，下一格就是 `act`，再 `invoke(None)`。不写 `episode_start`——这一局的开局账
-    在父线上、分叉点之前。异常原样上抛（同 `run_episode`）。
-
-    前置条件：在 run 的 `act` 里调用（执行上下文里带着 run 图的 saver）。
-    """
-    assert state.episode_id == episode_input.episode_id, "存下的状态不是将派的这一局"
-    # 步骤 1：写进本次 act 的命名空间，核下一格是 act（核对用 get_config()，它带着 saver）。
-    config = get_config()
-    graph.update_state(
-        config,
-        {name: getattr(state, name) for name in EpisodeRunState.model_fields},
-        as_node="plan_episode",
-    )
-    assert graph.get_state(config).next == ("act",), "写入后 episode 图下一格不是 act"
-    # 步骤 2：接着跑，取结算。
-    final = graph.invoke(
-        None, {"recursion_limit": deps.config.loop.episode_recursion_limit}, context=deps
-    )
-    return close(final, episode_input, hard_limit=deps.config.budget.episode_max_tasks)
-
-
 def close(final: dict[str, Any], episode_input: EpisodeInput, *, hard_limit: int) -> EpisodeOutput:
     """取出 `close_episode` 写好的结算，并断言 task 数没有越过预算。"""
     state = EpisodeRunState.model_validate(final)
@@ -135,4 +102,4 @@ def close(final: dict[str, Any], episode_input: EpisodeInput, *, hard_limit: int
     return state.output
 
 
-__all__ = ["begin_episode", "close", "exc_snapshot", "resume_episode", "run_episode"]
+__all__ = ["begin_episode", "close", "exc_snapshot", "run_episode"]

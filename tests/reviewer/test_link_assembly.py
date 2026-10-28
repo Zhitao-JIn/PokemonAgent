@@ -69,10 +69,9 @@ def test_build_real_hands_the_same_reviewer_to_all_three_layers(
     monkeypatch.setattr(assembly.MemoryTool, "build", lambda **kwargs: object())
     monkeypatch.setattr(assembly.TraceTool, "build", lambda **kwargs: trace)
     monkeypatch.setattr(assembly.BrainTool, "build", lambda **kwargs: tools)
-    monkeypatch.setattr(assembly, "build_saver", lambda root: None)
     monkeypatch.setattr(assembly, "compile_task_graph", lambda: None)
     monkeypatch.setattr(assembly, "compile_episode_graph", lambda: None)
-    monkeypatch.setattr(assembly, "compile_run_graph", lambda **kwargs: None)
+    monkeypatch.setattr(assembly, "compile_run_graph", lambda: None)
     monkeypatch.setattr(assembly, "assert_mcp_server_ready", lambda *args: {})
 
     harness, _ = assembly.build_real(overlay)
