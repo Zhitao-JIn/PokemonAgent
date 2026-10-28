@@ -188,7 +188,7 @@ def test_solver_writes_store_and_scorer_uses_its_run_location(
         epoch=1,
         input="run",
         messages=[],
-        metadata={"sample_id": sample_id, "dataset_version": "v1"},
+        metadata={"sample_id": sample_id, "dataset_version": "v20261021_retest5"},
     )
     solve = run_one_solver(
         report_dir=str(tmp_path),

@@ -99,7 +99,9 @@ def test_preflight_loads_bound_state_and_preserves_harness_reset_and_failure_rec
     check_id: str,
     fails: bool,
 ) -> None:
-    sample = next(item for item in load_samples() if item.check_id == check_id)
+    sample = next(
+        item for item in load_samples("v20261028_short_frozen") if item.check_id == check_id
+    )
     game = StartGame(sample, fails)
     events = game.events
     work = tmp_path / "work"
@@ -148,7 +150,9 @@ def test_mid_check_ids_use_preflight_reset_and_perceive(
     check_id: str,
 ) -> None:
     assert check_id in PREFLIGHT_CHECK_IDS
-    base = next(item for item in load_samples() if item.check_id == "party_healed")
+    base = next(
+        item for item in load_samples("v20261028_short_frozen") if item.check_id == "party_healed"
+    )
     sample = base.model_copy(
         update={
             "sample_id": f"synthetic_{check_id}",

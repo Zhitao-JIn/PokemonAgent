@@ -154,7 +154,7 @@ def test_runner_reads_the_same_file_through_build_real(tmp_path, monkeypatch):
         tmp_path,
         {"budget": {"wall_clock_s": 600, "max_episodes": 3, "max_total_actions": 60}},
     )
-    sample = next(s for s in load_samples() if s.sample_id == SAMPLE_ID)
+    sample = next(s for s in load_samples("v20261021_retest5") if s.sample_id == SAMPLE_ID)
     seen = []
 
     real_load = assembly.load_config

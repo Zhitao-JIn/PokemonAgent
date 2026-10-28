@@ -23,7 +23,9 @@ def test_cancel_start_validation_controls_run(
     options: list[str],
     valid: bool,
 ) -> None:
-    sample = next(item for item in load_samples() if item.check_id == "shop_cancelled")
+    sample = next(
+        item for item in load_samples("v20261028_short_frozen") if item.check_id == "shop_cancelled"
+    )
     observation, ram = frame()
     observation = observation.model_copy(update={"scene": TaskScene.SHOP_ITEMS})
     ram = ram.model_copy(

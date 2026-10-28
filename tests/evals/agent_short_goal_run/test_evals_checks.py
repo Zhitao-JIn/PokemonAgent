@@ -513,7 +513,7 @@ def test_shop_menu_is_unjudgeable_when_only_the_previous_frame_is_decoded() -> N
 
 
 def test_pokemon_switch_sample_has_a_registered_mechanical_rule() -> None:
-    samples = load(rule_ids=set(RULES))
+    samples = load("v20261028_short_frozen", rule_ids=set(RULES))
     switch = next(s for s in samples if s.sample_id == "knowledge_battle_pokemon_switch")
 
     assert switch.check_id == "party_list_opened_in_battle"

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from evals.agent_short_goal_run.dataset.loader import DATASET_DIR, load_samples
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.common.capture_audit import CaptureAudit, audit_capture
+from evals.common.capture_selection import CAPTURE_DATASET_VERSION
 from evals.common.capture_services import capture_services, start_process, stop_process
 from evals.common.invocation import write_record
 from evals.paths import REPO_ROOT
@@ -201,7 +202,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     load_env_file()
-    samples = load_samples()
+    samples = load_samples(CAPTURE_DATASET_VERSION)
     if len(samples) != 20:
         raise ValueError("expected exactly twenty frozen samples")
     directory = args.out.resolve()

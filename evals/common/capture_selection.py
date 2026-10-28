@@ -3,10 +3,12 @@
 from evals.agent_short_goal_run.dataset.loader import load_samples
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
 
+CAPTURE_DATASET_VERSION = "v20261021_retest5"
+
 
 def selected_samples(sample_ids: list[str] | None) -> list[EvalSample]:
     """None 选择全部；空、重复和未知 ID 明确拒绝，不静默扩大采集范围。"""
-    samples = load_samples()
+    samples = load_samples(CAPTURE_DATASET_VERSION)
     if sample_ids is None:
         return samples
     if not sample_ids or len(set(sample_ids)) != len(sample_ids):

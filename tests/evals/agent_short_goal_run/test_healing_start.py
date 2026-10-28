@@ -17,7 +17,9 @@ from pokemon_agent.world.interface import PartyMon
 def test_invalid_healing_start_is_recorded_without_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hp: int
 ) -> None:
-    sample = next(item for item in load_samples() if item.check_id == "party_healed")
+    sample = next(
+        item for item in load_samples("v20261028_short_frozen") if item.check_id == "party_healed"
+    )
     observation, ram = frame()
     ram = ram.model_copy(
         update={"party": [PartyMon(species=1, level=5, hp=hp, max_hp=20, status="ok")]}
@@ -61,7 +63,9 @@ def test_invalid_healing_start_is_recorded_without_running(
 def test_valid_healing_start_reaches_run_after_perception(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sample = next(item for item in load_samples() if item.check_id == "party_healed")
+    sample = next(
+        item for item in load_samples("v20261028_short_frozen") if item.check_id == "party_healed"
+    )
     observation, ram = frame()
     ram = ram.model_copy(
         update={"party": [PartyMon(species=1, level=5, hp=10, max_hp=20, status="ok")]}

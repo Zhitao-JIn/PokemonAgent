@@ -31,7 +31,7 @@ def test_invalid_selection_is_rejected_before_creating_an_output(
 
 
 def test_complement_selects_only_the_six_unfinished_cases_in_dataset_order() -> None:
-    samples = load_samples()
+    samples = load_samples("v20261021_retest5")
     completed = {sample.sample_id for sample in samples[:14]}
     remaining = [sample.sample_id for sample in samples if sample.sample_id not in completed]
 
@@ -49,7 +49,7 @@ def test_resume_preserves_the_selected_subset_and_rejects_a_new_selection(
     import evals.common.capture_control as control
 
     monkeypatch.setattr(control, "start_process", lambda *args: SimpleNamespace(pid=123))
-    ids = [sample.sample_id for sample in load_samples()[-6:]]
+    ids = [sample.sample_id for sample in load_samples("v20261021_retest5")[-6:]]
     state = launch(tmp_path / "batch", sample_ids=ids)
     state.status = "failed"
     save_state(tmp_path / "batch", state)
@@ -62,7 +62,7 @@ def test_resume_preserves_the_selected_subset_and_rejects_a_new_selection(
 
 
 def test_a_subset_audit_requires_exactly_the_fixed_source_cases(tmp_path: Path) -> None:
-    ids = [sample.sample_id for sample in load_samples()[-2:]]
+    ids = [sample.sample_id for sample in load_samples("v20261021_retest5")[-2:]]
     pack = PackReport(
         git_head="fixed",
         schema_hash="schema",

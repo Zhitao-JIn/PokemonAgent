@@ -14,7 +14,7 @@ from evals.agent_short_goal_run.solver.runner import one as runner
 def test_runner_releases_world_after_success_or_run_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: type[Exception] | None
 ) -> None:
-    sample = load_samples()[0]
+    sample = load_samples("v20261028_short_frozen")[0]
     events: list[str] = []
     state_path = tmp_path / sample.dataset_version / sample.start.source_state
     state_path.parent.mkdir(parents=True)
@@ -68,7 +68,7 @@ def test_consecutive_samples_can_acquire_the_same_world(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     owned: list[str] = []
-    samples = load_samples()[:2]
+    samples = load_samples("v20261028_short_frozen")[:2]
     monkeypatch.setattr(runner, "DATASET_DIR", tmp_path / "dataset")
     monkeypatch.setattr(runner, "load_env_file", lambda path: None)
 

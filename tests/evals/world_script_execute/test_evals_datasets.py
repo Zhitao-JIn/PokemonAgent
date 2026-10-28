@@ -49,7 +49,7 @@ def test_each_dataset_returns_frozen_typed_samples(name, count):
     }
     dataset = importlib.import_module(modules.get(name, f"evals.dataset.{name}"))
 
-    rows = dataset.load()
+    rows = dataset.load("v20261021_retest5") if name == "agent_short_goal_run" else dataset.load()
 
     assert len(rows) == count
     assert all(isinstance(row, BaseModel) for row in rows)
@@ -72,7 +72,7 @@ def test_source_states_stay_inside_the_dataset_version_and_match_their_hashes():
     from evals.world_script_execute.dataset import load as load_world
     from evals.world_script_execute.dataset.loader import state_path
 
-    for sample in load_agent():
+    for sample in load_agent("v20261021_retest5"):
         version = AGENT_ROOT / sample.dataset_version
         source = contained_file(version, sample.start.source_state)
         assert source.is_relative_to(version.resolve())
@@ -103,32 +103,35 @@ def test_duplicate_truth_is_a_named_dataset_failure(tmp_path, monkeypatch):
 def test_changed_source_state_fails_the_frozen_hash_check(tmp_path, monkeypatch):
     from evals.agent_short_goal_run.dataset import loader
 
-    shutil.copytree(loader.DATASET_DIR / "v1", tmp_path / "v1")
-    sample = loader.load()[0]
-    (tmp_path / "v1" / sample.start.source_state).write_bytes(b"changed")
+    version = "v20261021_retest5"
+    shutil.copytree(loader.DATASET_DIR / version, tmp_path / version)
+    sample = loader.load(version)[0]
+    (tmp_path / version / sample.start.source_state).write_bytes(b"changed")
     monkeypatch.setattr(loader, "DATASET_DIR", tmp_path)
 
     with pytest.raises(DatasetError, match="哈希"):
-        loader.load()
+        loader.load(version)
 
 
 def test_missing_source_state_fails_the_frozen_file_check(tmp_path, monkeypatch):
     from evals.agent_short_goal_run.dataset import loader
 
-    shutil.copytree(loader.DATASET_DIR / "v1", tmp_path / "v1")
-    sample = loader.load()[0]
-    (tmp_path / "v1" / sample.start.source_state).unlink()
+    version = "v20261021_retest5"
+    shutil.copytree(loader.DATASET_DIR / version, tmp_path / version)
+    sample = loader.load(version)[0]
+    (tmp_path / version / sample.start.source_state).unlink()
     monkeypatch.setattr(loader, "DATASET_DIR", tmp_path)
 
     with pytest.raises(DatasetError, match="缺失"):
-        loader.load()
+        loader.load(version)
 
 
 def test_archive_marker_and_state_kind_ignore_archive_directory(tmp_path, monkeypatch):
     from evals.agent_short_goal_run.dataset import loader
 
-    shutil.copytree(loader.DATASET_DIR / "v1", tmp_path / "v1")
-    samples_path = tmp_path / "v1" / "samples.jsonl"
+    version = "v20261021_retest5"
+    shutil.copytree(loader.DATASET_DIR / version, tmp_path / version)
+    samples_path = tmp_path / version / "samples.jsonl"
     rows = [json.loads(line) for line in samples_path.read_text("utf-8").splitlines()]
     rows[0]["start"]["archive"] = "archive-does-not-exist"
     rows[1]["start"]["kind"] = "state"
@@ -136,7 +139,7 @@ def test_archive_marker_and_state_kind_ignore_archive_directory(tmp_path, monkey
     samples_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", "utf-8")
     monkeypatch.setattr(loader, "DATASET_DIR", tmp_path)
 
-    loaded = loader.load()
+    loaded = loader.load(version)
 
     assert loaded[0].start.kind == "archive"
     assert loaded[0].start.archive == "archive-does-not-exist"

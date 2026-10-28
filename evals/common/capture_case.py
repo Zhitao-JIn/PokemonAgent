@@ -10,6 +10,7 @@ from evals.agent_short_goal_run.solver.runner.archive import prepare_archive
 from evals.agent_short_goal_run.solver.runner.one import run_id_for
 from evals.common.brain_capture import record_brain_calls
 from evals.common.capture_configuration import capture_overlay
+from evals.common.capture_selection import CAPTURE_DATASET_VERSION
 from evals.common.invocation import write_record
 from evals.common.overlay import sample_overlay, write_overlay
 from pokemon_agent.build import build_real
@@ -63,7 +64,7 @@ def main() -> None:
     parser.add_argument("--sample", required=True)
     parser.add_argument("--out", required=True, type=Path)
     arguments = parser.parse_args()
-    samples = {sample.sample_id: sample for sample in load_samples()}
+    samples = {sample.sample_id: sample for sample in load_samples(CAPTURE_DATASET_VERSION)}
     if arguments.sample not in samples:
         raise ValueError("unknown sample")
     capture_case(samples[arguments.sample], arguments.out.resolve(), arguments.archive_root)

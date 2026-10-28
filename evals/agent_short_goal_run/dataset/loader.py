@@ -17,7 +17,7 @@ from evals.paths import REPO_ROOT
 DATASET_DIR = Path(__file__).resolve().parent
 
 
-def load_samples(version: str = "v1") -> list[EvalSample]:
+def load_samples(version: str) -> list[EvalSample]:
     """一个版本的全部样本，按文件顺序。失败：文件缺失或某行不合契约 → `DatasetError`。"""
     return read_models(version_directory(DATASET_DIR, version) / "samples.jsonl", EvalSample)
 
@@ -59,7 +59,7 @@ def validate_tiers(samples: Sequence[EvalSample]) -> None:
         raise DatasetError("\n".join(problems))
 
 
-def load_rubric(version: str = "v1") -> Rubric:
+def load_rubric(version: str) -> Rubric:
     """一个版本的 rubric 与红线定义。"""
     [rubric] = read_models(
         version_directory(DATASET_DIR, version) / "rubric.json", Rubric, json_lines=False
@@ -112,7 +112,7 @@ __all__ = [
 ]
 
 
-def load(version: str = "v1", *, rule_ids: set[str] | None = None) -> list[EvalSample]:
+def load(version: str, *, rule_ids: set[str] | None = None) -> list[EvalSample]:
     """读取并核冻结，返回样本；文件、哈希与引用错误抛 DatasetError。"""
     version_directory(DATASET_DIR, version)
     return check(version, rule_ids)

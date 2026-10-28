@@ -13,8 +13,9 @@ SAMPLES = (
     / "evals"
     / "agent_short_goal_run"
     / "dataset"
-    / "v20261021_merged_583"
-    / "samples.jsonl"
+    / "v20261028_short_frozen"
+    / "samples.jsonl",
+    REPO_ROOT / "evals" / "agent_short_goal_run" / "dataset" / "v20261028_mid" / "samples.jsonl",
 )
 
 
@@ -70,7 +71,8 @@ def test_a_prompt_copying_a_sample_phrase_is_reported_with_its_sample_id(
 
 
 def test_the_active_registry_matches_no_e2e_sample_text() -> None:
-    result = run_lint("--samples", str(SAMPLES))
+    arguments = tuple(argument for path in SAMPLES for argument in ("--samples", str(path)))
+    result = run_lint(*arguments)
 
     assert result.returncode == 0, result.stdout
     assert "命中 0 处" in result.stdout
