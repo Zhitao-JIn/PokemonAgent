@@ -1,8 +1,0 @@
-{
-  "task": "decompose",
-  "version": "v4",
-  "kind": "task",
-  "params": "DecomposeParams",
-  "reason": "token效率单步假设：分离对象/执行位置，保留可执行待办并合并中间步骤",
-  "hash": "d01c7511e07e4f11209b3df824c7a03f6b710b0885e2a57e0f894947c856ed95"
-}

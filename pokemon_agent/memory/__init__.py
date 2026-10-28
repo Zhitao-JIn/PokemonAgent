@@ -5,8 +5,8 @@
   实现与算法，不需要回头翻本项目的 `interfaces/`（0910 拍板，见 ROADMAP 第 24 条）。
 - `store.py`：统一记录存储（`LocalMemoryStore`）——一条记录一个 `<uuid>.json/.md`
   文件 + 每文件夹倒排索引（`index.json`，派生物、写穿、可自愈重建）+ 向量
-  sidecar。四类记忆（step_memory / object_memory / episode_memory /
-  knowledge_memory）**共用一个 `memory/` 根、各占一个子文件夹、各一个实例**；
+  sidecar。五类记忆（step_memory / task_memory / episode_memory /
+  run_memory / knowledge_memory）**共用一个 `memory/` 根、各占一个子文件夹、各一个实例**；
   全项目不按 run 分层，`run_id` 是 metadata 里的普通过滤字段（0910 重构）。
   **快照也住这里**（0916）：`snapshot(name)` 把整个根打成
   `memory/snapshots/<name>.zip`、`restore(zip)` 以 zip 为准还原回来——zip 由本层
@@ -37,15 +37,13 @@
 **`MemoryStorePort` 完全不透明**：`put`/`get_many`/`filter`/`delete_many`/`snapshot`
 这一整套协议只认 `metadata: dict[str, str]` + `payload: dict` 两个裸字段，
 `store.py` 的实现同理，从来不 import、不需要知道 `ActMemory`/
-`EpisodeMemory`/`ObjectFactEvent` 这三个类具体长什么样。按"数据形状只有在
+`EpisodeMemory` 等跨层数据模型具体长什么样。按"数据形状只有在
 某个模块的 Port/实现真的需要构造或消费它的具体样子时，才归那个模块自己"
-这条边界，这三个类因此**不在**这个包里——它们是 `schemas.memory` 的东西
+这条边界，这些模型因此**不在**这个包里——它们是 `schemas.memory` 的东西
 （本项目自己的跨层契约层），"发生了什么、影响了谁"的语义判定/组装分别在
-`brain.brain.py::reflect()`、`harness/episode/store/store_object_semantic_memory/rules.py`、
 tool 层（`mcpclient/memory_local.py`）完成，见 `pokemon_agent/schemas/memory/
 __init__.py` 的说明。
 
-object 的交互判定在 harness（`harness/episode/store/store_object_semantic_memory/rules.py`）。
 
 本文件是统一出口：**对外契约 + 实现类 + 两个注入协议**都从这里 re-export，
 消费方写 `from pokemon_agent.memory import X`，不深到子目录的模块文件。

@@ -127,6 +127,8 @@ def test_visual_empty_reply_retry_records_false_without_a_thinking_field() -> No
         quality_score=0.5,
         quality_rationale="q",
         first_frame=FRAMES[0],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     request = FromHarnessToBrainToolPlanOnceReq(
         run_goal=Goal(goal="测试父目标", criteria="测试父验收条件"),

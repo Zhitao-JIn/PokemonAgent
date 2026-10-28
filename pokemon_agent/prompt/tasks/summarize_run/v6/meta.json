@@ -1,8 +1,0 @@
-{
-  "task": "summarize_run",
-  "version": "v6",
-  "kind": "task",
-  "params": "SummarizeRunParams",
-  "reason": "检查点 4：同构蒸馏布局与共用规则，保留完整原料",
-  "hash": "23ad159124e776d025f71961cea56f256c152876dc219f030d544b7d834c1083"
-}

@@ -79,6 +79,8 @@ from pokemon_agent.direct.judge_prompt_params import judge_prompt_params
 from pokemon_agent.direct.node_brain_factory import BrainLayer, NodeBrainFactory
 from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
+from pokemon_agent.memory.changes import changes
+from pokemon_agent.memory.facts import task_facts, task_step_range
 from pokemon_agent.prompt import (
     DecideActionParams,
     DecomposeParams,
@@ -130,12 +132,15 @@ from pokemon_agent.world import (
     INTERACT_KEY,
     TERRAIN_MEANING,
     ActionEntry,
+    RamReadout,
+    TaskObservation,
 )
 
 BrainLink = Literal["text", "judge", "summary", "plan"]
 """`BrainTool.build(links=…)` 可选的四条模型链路（对应配置文件 `models` 段的四个条目）。"""
 
 _Result = TypeVar("_Result")
+_Record = TypeVar("_Record", bound=BaseModel)
 
 
 def cap_images(frames: Sequence[str], cap: int) -> list[str]:
@@ -321,6 +326,37 @@ class Decomposer:
 # ---- 决策 ----
 
 
+def _act_records(
+    entries: Sequence[ActMemory | TaskMemory], records: Sequence[_Record]
+) -> list[_Record]:
+    """将每条 act 的相邻观察差异填入 prompt 方言，其余记录原样返回。"""
+    assert len(entries) == len(records)
+    prepared: list[_Record] = []
+    for entry, record in zip(entries, records, strict=True):
+        if not isinstance(entry, ActMemory):
+            prepared.append(record)
+            continue
+        previous = entry.before
+        differences: list[dict[str, object]] = []
+        for observation in entry.observations:
+            for change in changes(previous, observation):
+                differences.append(
+                    {
+                        "step": change.step,
+                        "kind": change.kind,
+                        "place": change.place.model_dump() if change.place is not None else None,
+                        "object": change.object.model_dump() if change.object is not None else None,
+                        "text": change.text,
+                    }
+                )
+            previous = observation
+        payload = record.model_dump(mode="json")
+        payload["changes"] = differences
+        payload["outcome"] = entry.outcome.model_dump(mode="json") if entry.outcome else None
+        prepared.append(type(record).model_validate(payload))
+    return prepared
+
+
 def decide_prompt_params(
     req: FromHarnessToBrainToolChooseOnceReq, *, max_segments: int
 ) -> DecideActionParams:
@@ -332,7 +368,11 @@ def decide_prompt_params(
         max_segments=max_segments,
         terrain_meanings=TERRAIN_MEANING,
     )
-    return DecideActionParams.model_validate(data)
+    params = DecideActionParams.model_validate(data)
+    params.memories = _act_records(req.memories, params.memories)
+    if params.last_outcome is not None and params.memories and not params.last_changes:
+        params.last_changes = max(params.memories, key=lambda entry: entry.step).changes
+    return params
 
 
 class Chooser:
@@ -476,17 +516,38 @@ class Reflector:
         """用两帧结构化观测组装记忆，不调用模型或网关。
 
         前置：请求提供两帧任务观测和本步动作、坐标。
-        后置：保留快照与结果，仅剥离 SNAPSHOT_BLIND 中的检索字段；请求不变。
+        后置：保留快照、脚本结局与观察，仅剥离 SNAPSHOT_BLIND 中的检索字段；请求不变。
         """
         entry = ActMemory(
-            before=ActMemory.Observation.model_validate(_blind(req.before).model_dump(mode="json")),
+            before=_reflect_snapshot(req.before, req.before_ram),
             action=req.action.describe(),
-            after=ActMemory.Observation.model_validate(_blind(req.after).model_dump(mode="json")),
+            after=_reflect_snapshot(req.after, req.after_ram),
             step=req.step,
             episode_id=req.episode_id,
-            result=req.result,
+            outcome=req.outcome,
+            observations=req.observations,
         )
         return FromHarnessToBrainToolReflectResp(entry=entry)
+
+
+def _reflect_snapshot(obs: TaskObservation, ram: RamReadout | None) -> ActMemory.Observation:
+    """将当前观测、同帧 RAM 和面朝的相邻地标转成独立记忆快照。"""
+    raw = _blind(obs).model_dump(mode="json")
+    if ram is not None:
+        raw["ram"] = ram.model_dump(mode="json")
+    if obs.place is not None and obs.facts.facing in {"north", "south", "east", "west"}:
+        target = obs.place.step_toward(obs.facts.facing)
+        landmark = next(
+            (
+                mark
+                for mark in obs.facts.landmarks
+                if mark.place == target and mark.kind in {"人", "门", "招牌", "物"}
+            ),
+            None,
+        )
+        if landmark is not None:
+            raw["facing_object"] = {"kind": landmark.kind, "place": target.model_dump()}
+    return ActMemory.Observation.model_validate(raw)
 
 
 # ---- 判定 ----
@@ -511,6 +572,7 @@ class Judger:
     def judge(self, req: FromHarnessToBrainToolJudgeReq) -> FromHarnessToBrainToolJudgeResp:
         """渲染本层执行证据并判定；不允许的中断按解析失败重试，调用账保留版本戳。"""
         params = judge_prompt_params(req)
+        params.history = _act_records(req.history, params.history)
         rendered_prompt = render_and_stamp(self._prompt_gateway, "judge_success", params, [])
         prompt = rendered_prompt.text
         goal = req.goal.goal
@@ -569,6 +631,7 @@ class Verifier:
     def verify(self, req: FromHarnessToBrainToolVerifyReq) -> FromHarnessToBrainToolVerifyResp:
         """校验完整素材；网关渲染 prompt 与逐条素材，所有尝试在收编后盖章。"""
         params = VerifyParams.model_validate(req.model_dump(mode="json"))
+        params.entries = _act_records(req.entries, params.entries)
         rendered_prompt = render_and_stamp(self._prompt_gateway, "verify", params, [])
         prompt = rendered_prompt.text
         records = self._prompt_gateway.render_history("verify", params)
@@ -640,6 +703,13 @@ class Summarizer:
         self, req: FromHarnessToBrainToolSummarizeReq
     ) -> FromHarnessToBrainToolSummarizeResp:
         """蒸馏本局素材并组装 EpisodeMemory；来源章由请求提供，每次尝试保留版本戳。"""
+        grounding_texts = [
+            text
+            for entry in req.entries
+            for text in [*entry.index.keys, entry.index.headline, entry.goal]
+            if text
+        ]
+        req = req.model_copy(update={"grounding_texts": grounding_texts})
         params = SummarizeParams.model_validate(
             {**req.model_dump(mode="json"), "success": req.success}
         )
@@ -664,6 +734,8 @@ class Summarizer:
                 steps=req.steps,
                 max_steps=req.max_steps,
                 images=images,
+                grounding_texts=req.grounding_texts,
+                termination=req.termination.value,
             )
 
         result, calls = _attempt_loop(
@@ -695,6 +767,8 @@ class Summarizer:
             applicable_scenes=summary.applicable_scenes,
             tags=summary.tags,
             markdown=summary.markdown,
+            index=summary.index.model_dump(),
+            pointers=[entry.task_id for entry in req.entries],
         )
         return FromHarnessToBrainToolSummarizeResp(
             summary=summary, episode_memory=episode_memory, calls=calls
@@ -727,6 +801,12 @@ class RunSummarizer:
         self, req: FromHarnessToBrainToolSummarizeRunReq
     ) -> FromHarnessToBrainToolSummarizeRunResp:
         """蒸馏最终目标表与局记忆；请求保证条目非空，所有尝试保留活动版本戳。"""
+        grounding_texts = [
+            text
+            for entry in req.episode_memories
+            for text in [*entry.index.keys, entry.index.headline, entry.goal]
+        ]
+        req = req.model_copy(update={"grounding_texts": grounding_texts})
         params = SummarizeRunParams.model_validate(req.model_dump(mode="json"))
         rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize_run", params, [])
         prompt = rendered_prompt.text
@@ -742,6 +822,8 @@ class RunSummarizer:
                 steps=req.episodes,
                 max_steps=req.max_episodes,
                 images=images,
+                grounding_texts=req.grounding_texts,
+                termination=req.termination.value,
             )
 
         result, calls = _attempt_loop(
@@ -759,6 +841,7 @@ class RunSummarizer:
             succeeded=req.succeeded,
             acts_used=req.acts_used,
             termination=req.termination.value,
+            pointers=[entry.episode_id for entry in req.episode_memories],
             **summary.model_dump(),
         )
         return FromHarnessToBrainToolSummarizeRunResp(
@@ -786,12 +869,27 @@ class TaskSummarizer:
         self, req: FromHarnessToBrainToolSummarizeTaskReq
     ) -> FromHarnessToBrainToolSummarizeTaskResp:
         """蒸馏本 task 的素材并组装 TaskMemory；请求保证条目非空，失败账随异常返回。"""
+        facts = task_facts(req.entries, req.task_id, req.episode_id)
         params = SummarizeTaskParams.model_validate(
             {**req.model_dump(mode="json"), "success": req.success}
         )
+        params.entries = _act_records(req.entries, params.entries)
         rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize_task", params, [])
         prompt = rendered_prompt.text
         records = self._prompt_gateway.render_history("summarize_task", params)
+        grounding_texts = [fact.text for fact in facts if fact.text and fact.text in prompt]
+        for entry in req.entries:
+            for frame in (entry.before, entry.after):
+                if not frame.settled:
+                    continue
+                observation_facts = frame.facts
+                grounding_texts.extend(
+                    line
+                    for text in (observation_facts.dialog_text, observation_facts.screen)
+                    for line in text.splitlines()
+                    if line and line in prompt
+                )
+        req = req.model_copy(update={"grounding_texts": grounding_texts})
         images, _snapshots = dedup_snapshots(list(req.entries))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
@@ -803,6 +901,8 @@ class TaskSummarizer:
                 steps=req.steps_used,
                 max_steps=req.max_steps,
                 images=images,
+                grounding_texts=req.grounding_texts,
+                termination=req.termination.value,
             )
 
         result, calls = _attempt_loop(
@@ -835,6 +935,9 @@ class TaskSummarizer:
             first_frame=first,
             last_frame=last,
             markdown=summary.markdown,
+            facts=facts,
+            pointers=task_step_range(req.entries),
+            index=summary.index.model_dump(),
         )
         return FromHarnessToBrainToolSummarizeTaskResp(summary=summary, memory=memory, calls=calls)
 
@@ -861,6 +964,19 @@ class BrainTool:
     summarizer: Summarizer
     task_summarizer: TaskSummarizer
     run_summarizer: RunSummarizer
+
+    @staticmethod
+    def prompt_versions(prompt_registry: str | None) -> dict[str, dict[str, str]]:
+        """Return validated active prompt identities as plain fields for run snapshots."""
+        from pokemon_agent.prompt import active_versions
+
+        registry_path = Path(prompt_registry) if prompt_registry is not None else None
+        if registry_path is not None and not registry_path.is_absolute():
+            registry_path = Path(__file__).resolve().parents[2] / registry_path
+        return {
+            name: {"version": version, "hash": prompt_hash}
+            for name, (version, prompt_hash) in active_versions(registry_path).items()
+        }
 
     @classmethod
     def build(

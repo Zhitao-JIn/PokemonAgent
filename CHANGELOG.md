@@ -10,6 +10,145 @@
 
 **验证**：最终 JUnit 全量 pytest 3098 tests、0 failures、0 errors、25 skipped（按要求 deselect 一项）；ruff format、ruff check、ruff format --check 全绿。执行方报告的基线为 0 errors，未提供基线 skipped 数，故无法核对 skipped 是否相同。
 
+## 2026-10-28（678）—— 删除 act_call 账里旧的 events 与 dialog 字段
+
+**改了什么**：移除 `ActCallContent.events` 与 `ActCallContent.dialog` 及其旧格式说明；保留 `observations` 和 `ACT_CALL` 解析注册。更新 act_call 节点契约夹具与新写账测试，删除仅验证旧 events/dialog trace 解析的测试。确认 MCP 客户端没有读取信封 `events`，从共享信封及对应 MCP 断言中移除该字段。
+
+**为什么这么改**：逐键观察已取代 world 事件与对话报告，ActCallContent 不再解析为新账模型；按 D21 不兼容旧数据，旧 trace 将整体清理，不保留旧格式兼容路径。
+
+**取舍**：`mcp_servers/common.py` 同时用于 world 与 memory。检索确认两类客户端均不读取响应 `events`，memory 服务调用也未传入该参数，故一并移除通用字段；不改评测数据、`parse.py` 的 `ACT_CALL` 分派或其他 `events`/`dialog` 概念。
+
+**影响面**：修改 trace 正文模型、共享 MCP 信封、act_call 测试夹具及相关测试；删除 1 个仅验证旧 events/dialog 格式的解析测试，该测试未被跳过。
+
+**验证**：全量 pytest JUnit：tests=2879、failures=0、errors=0、skipped=72；按要求另 deselect 1 项。删除的旧格式测试未被跳过。ruff format、ruff check、ruff format --check 全绿；边界守卫 A、B、C、D 全部通过；26 个激活提示词 hash 均通过注册表校验。
+
+## 2026-10-28（677）—— 运行配置快照记录提示词版本与 hash
+
+**改了什么**：每次 `build_real` 读取生效提示词 registry 与各版本 `meta.json`，将按名称排序的 `prompts` 映射传给配置快照写入函数；快照新增全部激活任务/片段的 `version` 与源文件 `hash`。
+
+**为什么这么改**：配置快照应能说明一次 run 使用了哪些提示词版本，便于和 trace 中的完整 prompt 文本共同追溯执行条件。
+
+**取舍**：registry 读取复用 `pokemon_agent.prompt.active_versions()` 与 `load_registry` 的目录发现、身份和 hash 校验，避免重复实现；`build.py` 经 `BrainTool.prompt_versions()` 获取纯字段数据后传给 settings，维持 build 隔离规则 C，settings 不依赖 prompt 实现。快照 sha256 由规范化的 `config` 与 `prompts` 一起计算，文件名沿用 `<run_id>-<sha256 前 8 位>.json`，因此提示词版本变化会改变快照身份；旧格式不做兼容。
+
+**影响面**：修改 `pokemon_agent/build.py`、`pokemon_agent/direct/brain_tool.py`、`pokemon_agent/prompt/registry.py` 及其公开导出、`pokemon_agent/settings/paths.py` 与对应测试。合成 registry 测试覆盖版本变化、缺 active 与缺 meta；真实 registry 的 `build_real` 快照包含 26 项。`capture_batch.py`、evals 与 settings 对 prompt 的依赖方向未变。
+
+**验证**：全量 pytest JUnit：tests=2880、failures=0、errors=0、skipped=72；按要求另 deselect 1 项。真实快照打印前五项及 26 项总数。ruff format、ruff check、ruff format --check 全绿。
+
+## 2026-10-28（676）—— 删除对象记忆与提示词旧对象规则
+
+**改了什么**：删除对象记忆模型、存储/召回与 MCP 路由、对象事件请求、TraceKind 及写读账分发、世界对象事件模块和对象记忆评测请求分支；删除 ChooseOnce、Decompose、Judge 的 `known_objects` 与 PlanOnce 的 `objects` 输入。提示词中移除对象记忆参数与渲染，并删除 `object_events/v2`。依 D42 新建 `decide_action/v12` 并激活，删除 v11，去掉静态已知对象规则与地图交互事实说明；只更新 decide_action 的 prompt golden，内容仅删除对应规则段。保留 `facing_object` 行为；清理一份仍描述 `known_objects` 的活知识原子，删除 `synthetic-known-objects` 请求与输出 golden，并移除 `.gitignore` 中已不存在的 `memory/object_memory/` 规则，并从 9 份非历史 decide_action 合成请求夹具中移除已废弃 `known_objects` 地图说明。
+
+**为什么这么改**：逐键观察和记忆摘要已取代对象记忆链；不再传入的对象字段与静态对象规则会继续制造失效接口和冲突依据，应整体清理。
+
+**取舍**：decide_action 从 v11 切换到 v12，缓存前缀因此改变一次；其余激活版本就地清理并保持渲染 golden 不变。decide_action golden 仅移除对象规则文本，其他任务 golden 与冻结 schema、冻结数据不改。旧 trace 的 ActCall `events`/`dialog` 解析保留到 CP5d；历史追溯依赖 tag `before-cleanup-20261028`。未增加 D33 跳过，保留 `facing_object` 的地标筛选与观察逻辑。
+
+**影响面**：删除对象记忆与对象事件的生产模型、端点、trace 路由和专用测试；按 CP5b 范围调整 memory、trace、MCP、prompt、world 测试。提示词 hash：decide_action v11 `6131a5a279e0889171a53a6d470aae25bf47b96b9e787bf35c1bb0e96ea8c829` → v12 `f342e780ec400533a44bbdb52f12a21119eb2922de29f970611425b3b01409cf`；observation/v1 `19b9e325f9cd7923cb509620eba20e0724f8815220f2495e5021991269b1b584` → `ab6ebb334d9cfa32a4604bfbbbc6255686ab1c4f81f4a74f36fcd4920d8272d0`；task_frame/v1 `8ea456e8867db3b7eac7552806da716e94a5b7d3dbd8a0f467f873518fa32bbd` → `85668c8c63667e8c999f12d2f9e036ccbd46689c243e9e229b118f52b28efb62`；decompose/v11 `9084b6ba1b982611f93d8cdd30d3b45e5587c12d919f500e559ff8effa3e6613` → `38d1149f941fec3e62390087979c6f4751af3ae71fb558261eee5457275be855`；judge_success/v11 `80eb32161975ef773f95fab9846c8cd37fd5312652dc1c63a01a7fa03d2186be` → `b88846bfc3a68fd148c6102c463684a6c76b15f1db011fad812d6f3e48f35bca`；run_plan/v10 `ae6b6f1a17f61867512b1fce4da3a263102e6f9e834453117a5e157873487de7` → `aee7ffc0ac022ab684e1a2476c91f0697adb452cff2a1d9ec3dfb69cbfdda9ae`。
+
+**验证**：所有 26 个激活版本的重算 `meta.hash` 匹配，memory_records/v5 的 `_HELPER_HASH` 链也匹配。删除 `synthetic-known-objects` 案例使收集数减少 1。全量 pytest JUnit：tests=2874、failures=0、errors=0、skipped=72，另有 1 项按要求 deselect；ruff format、ruff check、ruff format --check 全绿。
+
+## 2026-10-28（675）—— 摘要机械事实收尾与严格来源索引
+
+**改了什么**：task、episode、run 的机械收尾现在分别填充可从已有动作记忆推导的 `facts` 与来源 `pointers`，无证据时显式写空章。`Fact.step` 记录局内动作结束步号，`Fact.sub` 记录脚本内按键观察序号；task 指针步号区间包含首尾。摘要 `grounding_texts` 只收实际渲染给模型的文字。摘要端口与记忆字段按 D30 严格必填，旧格式缺字段会报错；`Fact` 数据形状归属 `schemas/memory/datastore`。按 D33 根因规则，将 72 个只审计冻结旧格式数据且因旧记忆缺字段失败的测试以统一 `D33:` 原因跳过，分布于 18 个文件；合成数据的平台测试保持运行。
+
+**为什么这么改**：摘要的事实与来源必须从记忆原料机械得到，避免预算终止或异常收尾漏失；步号区分局内与脚本内坐标；关键词依据必须与模型实际可见输入一致。冻结评测数据尚待整套框架完成后重新生成，严格的新格式契约不应为旧数据静默降级。
+
+**取舍**：不改冻结数据、不加兼容默认值，也不扩大 `changes()` 可摘取的事实种类。仅当 traceback 第一处根因是加载 `evals/dataset/` 或 `eval_results/` 下的旧格式文件才跳过；测试自建对象缺字段仍修夹具。
+
+**影响面**：三层机械摘要收尾、事实模型与摘取、摘要输入来源校验、记忆模型必填字段及相关测试；新增 D33 跳过标记位于 18 个测试文件。旧提示词版本与数据文件不变。
+
+**验证**：全量 pytest（排除指定单一沙箱用例）JUnit tests=3126、failures=0、errors=0、skipped=97；ruff check 与 ruff format --check 全绿。D33 72 个跳过与原有 25 个跳过相加，与 JUnit 一致。
+
+## 2026-10-28（674）—— 摘要详情保留下层结构化索引
+
+**改了什么**：`memory_records` v5 的三层详情在索引非空时渲染 headline、keys 与 evidence，删除不再使用的首句截断标签，三个摘要任务的新版本按层写明关键词来源，并增加摘要门面的提示词材料断言；将摘要索引校验拆为独立函数，保持原有判定。
+
+**为什么这么改**：episode 与 run 的关键词核对来自下层索引，模型也需要在输入中看到这些索引，才能据此生成可核对的关键词。
+
+**取舍**：详情只增加下层索引，仍不渲染机械事实块；空索引不添加详情行。旧版本提示词保持不变。
+
+**影响面**：`memory_records` v5 的辅助渲染、标签与双重摘要校验，三个摘要任务的新版本、摘要解析器及摘要索引定向测试。
+
+## 2026-10-28（673）—— 清理未激活提示词版本与冻结基线
+
+**改了什么**：删除非激活提示词版本：decide_action v1–v10、decompose v1–v10、judge_success v1–v10、run_plan v1–v9、summarize v1–v7、summarize_task v1–v8、summarize_run v1–v6、verify v1–v3/v5、memory_records v1–v4、object_events v1、prompt_layout v1，以及无调用者的 decide_action_retry/v1。移除 201 个固定到旧版本的测试 case，涵盖旧版 golden 对拍、历史版本渲染、跨旧新版本逐字节比较与旧版本专用记忆片段；`ActRecord` 删除 `overview` 与 `perceived`，保留 `observation_flags` 并说明其当前帧渲染用途。
+
+**为什么这么改**：当前提示词注册表已明确唯一生效版本；保留不再调用的版本与冻结对拍会让旧接口继续成为维护负担。历史追溯依靠 tag `before-cleanup-20261028` 和 trace 中保存的完整 prompt 文本。
+
+**取舍**：激活版本目录、registry、golden 请求文件、对象记忆参数及激活的 `object_events/v2` 均保留。`test_migrated_stamping.py` 和按当前网关渲染的测试保留；删除旧版本专属对拍。冻结旧版本的测试中原有 25 个动态跳过 case 随测试删除，D33 其余跳过规则不变。
+
+**影响面**：仅提示词版本文件、旧版本专属 prompt 测试与 `pokemon_agent/prompt/records.py`；不改激活版本内容及 hash，不改对象记忆、数据集、parse 侧或 docs。
+
+**验证**：registry 中 27 个激活项的重算 hash 均与 `meta.json` 一致，`PromptGateway(None)` 加载成功；prompt 测试 268 passed。全量 pytest JUnit：tests=2899、failures=0、errors=0、skipped=72，命令另有 6 deselected；删除的旧版本基线中原有 25 个动态跳过 case。ruff format、ruff check、ruff format --check 全绿。
+
+## 2026-10-28（672）—— 评分器改读逐键观察并回放旧 NPC 判据
+
+**改了什么**：商店两条 NPC 判据共用 `npc_interactions.py`，从 `write_act_memory` 的 `[before, *observations, after]` 经 `changes()` 提取面向人物的新增对话；overshoot 扫描点改为 `write_act_memory`。`world_script_execute` 的脚本报告改带 `observations`，自报面用 `changes()` 核对 `dialog_line`、`warp` 与对话片段，不再读事件报告。
+
+**为什么这么改**：CP4b 已停止生成世界事件及独立对话报告，评分证据应从逐键观察机械派生，维持既有判据语义并与新的执行账对齐。
+
+**取舍**：facing 缺失或非人物时不计 NPC；`settled=False` 文字由 `changes()` 排除。world_script_execute 数据集仍保留原期望格式，但扫描到的事件期望只有 `dialog`，没有无法由观察表达的 `still` 等种类。冻结 trace 转换器与旧规则参照只放在本机一次性脚本 `experiment/replay_npc_scorers.py`，不纳入常驻测试；未改数据集、冻结输入、parse 侧或 evals 中旧请求归档。
+
+**影响面**：agent_short_goal_run 的商店判据与 overshoot、world_script_execute 报告解析和自报比较，以及对应合成测试。`evals/` 其他位置仍有遗留 `object_memory` 字样：`evals/common/legacy_requests/plan.py` 与两份冻结 `evals/dataset/brain_calls/*/plan/plan.request.schema.json`；依 CP5 保留。
+
+**验证**：只读回放 20 条 trace-bearing 样本，19 条具备 `run_start`/`run_end` 完整边界；`report.json` 显示 20/20 样本有评分。两项 NPC 判据的新旧结论在 20 条上逐条一致，overshoot 值也全部一致；无允许差异或其他差异。全量 pytest JUnit tests=3100、failures=0、errors=0、skipped=97；ruff format、ruff check、ruff format --check 全绿。
+
+## 2026-10-28（671）—— world 停止产出事件与独立对话报告
+
+**改了什么**：`ScriptResult` 与脚本 MCP `data` 不再包含 `events`、`dialog`；脚本逐键观察继续保留屏幕文字与逐键状态。按键 `step` 响应只保留 `moved`，`FromHarnessToGameToolExecuteResp` 不再含裸 `event`。删除 `DialogCache` 与 `judge_press` / `observe_step` 判定，只保留用于 `facing_object` 的 `INTERACTIVE` 地标类型；新写 `act_call` 不渲染旧事件和对话字段。
+
+**为什么这么改**：逐键 `StepObservation` 已承载每键的可见文字与状态变化，另行累积世界事件和对话报告造成重复事实，也让脚本与按键两条路径使用不同的观察口径。
+
+**取舍**：旧 trace 的 `parse.py` / `content.py` 保留至 CP5，供 CP4c 回放；`mcp_servers/common.py` 不改，因此通用 MCP 信封仍有其既有的空事件列表，但 world 脚本业务数据不再写入事件。评分器迁移留给 CP4c；本次 CP4c 跳过 0 个测试。
+
+**影响面**：world 脚本执行器、策略与中断、脚本终态和 MCP world 执行响应、act_call 新写账渲染及相关脚本/服务器/客户端/trace 测试；删除 `dialog_cache.py`、world 事件判定测试与脚本事件对齐测试。`evals/` 与旧提示词目录未改。
+
+**验证**：全量 pytest（排除指定沙箱用例）JUnit tests=3093、failures=0、errors=0、skipped=97；CP4c 新增跳过=0。`ruff format .`、`ruff check .`、`ruff format --check .` 全绿。
+
+## 2026-10-28（670）—— harness 停止写读对象记忆，删除 last_event
+
+**改了什么**：task 层 `perceive` 去掉 `store_object_semantic_memory` 单元并删除该目录（`_UNITS` 七→六，docstring 同步）；`act` 不再写 `last_event`（按键路径不再取 `resp.event`），`TaskState` 删该字段。episode 层 `perceive` 去掉 `retrieve_object_semantic_memory` 单元并删除该文件，`merge_retrieval` 只把 `ep_ctx` 原样交出，`EpisodeContext` 删 `object_semantic_events`。run 层 `read_plan_context` 不再召回落库对象事实、不再记 `read_object_memory` 账（读账由三种降为两种），`PlanContext` 删 `objects`。三处把物件填进请求的调用点（`plan_episode`、`review_and_judge`、`plan_run`）不再传 `known_objects=` / `objects=`；请求模型与 `prompt/` 里的对应参数保留默认值。
+
+**为什么这么改**：逐键观察（667–669）已经替代对象交互事实——每键的 `StepObservation` 与机械差异直接给出对话、换图、钱与背包变化，对象记忆这条链路只剩重复采集与一次多余召回。CP4 按"先停止产生与消费、再用旧数据核对、最后删除"拆开：本检查点只做第一步。
+
+**取舍**：只停 harness 的写与读——world 侧事件判定（CP4b）、trace 的 `render` / `parse` / `content` 与 `TraceKind`（CP4c 回放要读旧账）、`memory/` 与 `schemas/memory/object_memory.py`（CP5 删）都不动。`FromHarnessToBrainToolChooseOnceReq` / `DecomposeReq` / `JudgeReq` 的 `known_objects` 与 `PlanOnceReq.objects` 保留：旧提示词版本仍要渲染这些参数，删它们会连带改 `prompt/`，统一放 CP5。`run_result.py`、`schemas/harness/domain/run_io.py` 里的 `last_event` 是 trace 边界账的另一个概念（最后一条 trace 事件的 uuid），未动。
+
+**影响面**：task / episode / run 三层的 perceive 单元清单与状态模型、`read_plan_context` 的读账、三处请求组装、节点单元清单夹具与三个测试文件。不兼容旧数据：状态模型少一个字段，旧 checkpoint 按 `state_schema_hash` 拒绝加载；旧 trace 里的 `read_object_memory` / `write_object_memory` 账仍可解析（parse 侧未动）。
+
+**验证**：基线全量测试 tests=3113、failures=0、errors=0、skipped=25；改动后全量测试 tests=3111、failures=0、errors=0、skipped=25（少 2 条为删除的单元专属测试；两次均已排除沙箱专有失败 test_world_case_caller_closes_world_service_after_each_worker_outcome）；ruff check 与 ruff format --check 全绿。
+
+## 2026-10-27（669）—— 摘要带来源指针与结构化索引，task 层机械摘取事实
+
+**改了什么**：`TaskMemory` 新增 `facts`（`Fact` = `step`、`kind`、`place`、`object`、`text`、`task_id`、`episode_id`，由 `memory/facts.py` 调 `changes()` 对本 task 的 `ActMemory` 序列相邻比较机械摘出，不截断、不去重）；`TaskMemory`、`EpisodeMemory`、`RunMemory` 同形新增 `pointers`（task 指向步号区间，episode 指向 task 编号，run 指向 episode 编号）与 `index`（`headline`、`keys`、`evidence`，由摘要的同一次 LLM 调用产出）。三个 `Summarize*Req` 新增 `grounding_texts`；摘要解析器核对 `keys` 每项字面出现在其中、`evidence` 取自固定词表（对话原文、状态变化、换图、失败原因）、`headline` 不含与来源章相反的结局词，不过按现有解析失败路径重试。新增 `memory_records` v5（`index` 模式读 `index` 字段，没有 `headline`（空章）时渲染`（无正文）`；详情渲染不渲染 `facts`）与 `summarize` v8、`summarize_task` v9、`summarize_run` v7，并经注册表激活。复核台 `reviewer/hub/context.py` 的三层索引行同步改成同一尾部格式。`write_task_memory` / `write_episode_memory` / `write_run_memory` 写账不含 `facts`、`pointers`，含 `index`，`WriteRunMemoryContent` 新增必填 `index`（空章写空 `Index`）。
+
+**为什么这么改**：关键证据（收件人、顾客台词、哪一步进了背包）原来全靠 LLM 决定留不留，一行背景索引又是从摘要首句截的。事实块由 harness 机械摘出，索引由 LLM 与解读同一次产出并过机械检查，两者分开。
+
+**取舍**：`facts` 只放 task 层，episode 与 run 不拼接：背景索引每次规划都整条召回这些记忆，拼接会让记忆随层数成倍膨胀；原始事实经 `pointers` 下钻。`grounding_texts` 逐层取材，task 层用本 task 的 `facts` 与各条观察的 `dialog_text`、`screen`，episode、run 层只用下层已核对过的 `index.keys`、`headline` 与 `goal`，不向上携带原始观察文本。提示词默认不渲染 `facts`。取代关系：摘要记忆新增上述字段，`memory_records` v5 与三个摘要任务的新版本取代 v4 与旧版本，旧版本文件保留、不再激活。
+
+**验证**：全量测试 tests=3113、failures=0、errors=0、skipped=25（已排除沙箱专有失败 test_world_case_caller_closes_world_service_after_each_worker_outcome）；ruff check 与 ruff format --check 全绿。
+
+**影响面**：三个摘要记忆模型与摘要解析器、三个摘要器与请求信封、`memory/facts.py`、trace 写账渲染与 `WriteRunMemoryContent`、prompt 记录镜像与三个摘要任务及 `memory_records` 的新版本与注册表、复核台索引行及其逐字相等测试。不兼容旧记忆：旧记忆文件整体删除后重建，代码里没有读旧格式的分支。评测来源归档读取（`load_source_events`）改为只解析白名单种类。
+
+## 2026-10-27（668）—— 逐键观察与结构化脚本结局接入记忆
+
+**改了什么**：`ActMemory` 去掉 `result`、`dialog`，新增逐键 `observations` 与结构化 `outcome`；完整前后快照增加 RAM、面朝物体与稳定标志，不再存 `observation_flags`，旧记忆缺新字段仍可读取。`sense` 把 RAM 写入状态，`close_step` 与当前观察一并转正，反思从状态取前后 RAM、不读 trace 账；门面从同帧地标确定面朝物体。新增纯差异函数与 prompt 方言的 `ChangeRecord`，由 `BrainTool` 门面统一从相邻观察算出差异并传入选择、判定、校验、task 摘要；未稳定帧不产出对话行。`act` 写 `last_outcome` / `last_observations`，`last_event` 留待 CP4；移除旧脚本一行结果工具。
+
+**为什么这么改**：脚本内部观察保留对话、换图与游戏变量变化的直接证据，结构化结局保留无法从观察推得的业务结果；门面预先算差异，使 prompt 只接收字段，避免依赖 memory 实现。`detect_stall` 用脚本名、code 与成功结果顶层 summary/reason 构造签名：同 code 不同摘要可区分，失败脚本仍按脚本名和 code 判断重复。
+
+**取舍**：新增 `memory_records/v4` 与 `decide_action/v11` 并激活，取代 665–666 的 `ActMemory.dialog` 与 `memory_records/v3`；v3 及所有旧版本文件保留且不再激活，prompt 记录保留旧字段供旧版本渲染。为符合 `AGENTS.md` 的模块与函数行数要求，v4 分为主文件与辅助文件，主文件固定辅助文件摘要，版本元数据仍按 `assemble.py` 与 `prompt.md` 的原规则校验。完整观察的 RAM 随状态携带，不依赖 trace 后端读账；感知未提供 RAM 时对应快照为空。面朝物体只认当前帧相邻格的交互地标。
+
+**影响面**：动作记忆模型、task 节点与状态、reflect/choose 信封、brain 门面、prompt 记录与两个新版本，以及对应测试；对象记忆链和等待策略保持不变。D17 与 checkpoint 定向 JUnit：tests=12、failures=0、errors=0、skipped=0；RAM 生命周期定向 JUnit：tests=10、failures=0、errors=0、skipped=0；全量 JUnit：tests=3130、failures=0、errors=0、skipped=25（已排除指定的 3 条沙箱用例）。新增状态字段会改变 state_schema_hash，既有 checkpoint 相容性测试通过。`ruff check .` 与 `ruff format --check .` 通过；未调用真实模型、未启动模拟器。
+
+## 2026-10-27（667）—— 脚本逐键紧凑观察进入终态报告与 act_call 账
+
+**改了什么**：新增并导出 `StepObservation`、`RamState`、`FacingObject`；`ScriptRun` 每键沿用现有稳定等待后读取屏幕、RAM 与朝向邻格物体，并在中断前追加观察，`finish` 填入 `ScriptResult.observations`。等待返回达到超时边界或严格超时抛出时，该键记 `settled=False`。MCP 服务端在业务 data 展开后序列化观察列表，客户端按现有扁平报告重建；`act_call` 渲染与严格解析模型同步携带观察。按 D16，菜单按键后的出口统一经 `run.finish()` 并保持原有 code/data；买卖包装层的成功、内层中止与对账失败出口均转发 `inner.observations`。
+
+**为什么这么改**：脚本首尾帧之间的对话、进门与背包变化需要有逐键原始证据，终态码与对象事件无法还原这些过程。这是取代 665–666 的 dialog 与 memory_records v3 的第一步；CP1 只增观察，旧字段与提示词版本保持现状。
+
+**取舍**：直接复用 `read_readout`、场景/叠加层分类、`WorldConsole` 的位置/朝向与 kind 查询，不扩展协议，也不额外推进帧。紧凑观察仅保存屏幕、游戏状态与面朝物体，不带完整地形或选项诊断。步号在每次 ScriptRun 内从 1 顺序编号，不改变 harness 的决策预算；旧报告缺观察字段仍可解析。D16 已知限制：`_enter_shop()` 成功时返回 None，走位、转向与打开菜单这几段独立 ScriptRun 的前置观察未汇总进买卖包装层；本次仅转发内层买卖脚本观察，不改 WorldConsole 协议。
+
+**影响面**：world 领域模型与导出、脚本现场与结果、MCP 服务端信封、trace 渲染与解析，以及对应替身测试。未修改 ActMemory、对象记忆、提示词、等待策略或评分器；未调用真实模型、未启动模拟器。相关目录 pytest 的 JUnit 计数为 tests=779、failures=0、errors=0、skipped=0；D16 定向测试 tests=25、failures=0、errors=0、skipped=0。
+
+
 ## 2026-10-27（666）—— memory_records v3：脚本对话行进记忆素材
 
 **改了什么**：新增共享片段 `memory_records` v3（`prompt.md` 只多一条 `dialog` 标签；`assemble.py` 在 v2 之上加 `dialog_render()`，脚本调用的对话行一行一条、全文不截断，`act_render` 里落在 `结果` 之后，`act_sequence` 里落在 `做了` 之后），`ActRecord` 新增 `dialog: list[str]`，注册表把 `memory_records.active` 从 v2 切到 v3；v1、v2 源文件未改。测试新增 `tests/prompt/test_memory_records_dialog.py`（结果行之后与顺序、`sequence` 无结果行时的位置、200 行不截断、空对话与 v2 逐字相同、旧版本按各自 `meta.hash` 仍可加载、注册表激活 v3），并补 `tests/prompt/test_reflector_structured.py` 的期望 `dialog: []` 与 `tests/budget/test_budget_settlement.py` 的冻结 hash。

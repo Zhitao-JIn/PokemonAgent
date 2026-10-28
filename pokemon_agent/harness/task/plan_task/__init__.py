@@ -71,7 +71,7 @@ def _request(state: TaskState, deps: TaskRuntime) -> FromHarnessToBrainToolChoos
         space=state.task_ctx.action_space,
         memories=history,
         task_index=state.task_index,
-        last_result=state.last_result,
+        last_outcome=state.last_outcome,
         knowledge="\n\n".join(state.knowledge),
         human_note=(
             state.last_judge.note

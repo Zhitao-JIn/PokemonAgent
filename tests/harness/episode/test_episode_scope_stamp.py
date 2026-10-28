@@ -27,6 +27,9 @@ def _task(index: int, first: str | None, last: str | None) -> TaskMemory:
         quality_rationale="q",
         first_frame=first,
         last_frame=last,
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -77,6 +80,7 @@ def test_empty_chapter_carries_run_goal_and_no_frames() -> None:
         reason="error",
         source="test",
         step=0,
+        pointers=[],
     )
 
     assert memory.run_goal == "总目标"

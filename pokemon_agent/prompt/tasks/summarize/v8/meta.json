@@ -1,0 +1,8 @@
+{
+  "task": "summarize",
+  "version": "v8",
+  "kind": "task",
+  "params": "SummarizeParams",
+  "reason": "解读与索引同次产出，事实由程序摘取",
+  "hash": "28fa88d4d66f0df8f4445222bc62a16b19f467cbe194415bd7c0b128e3d3c19b"
+}

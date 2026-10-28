@@ -11,39 +11,30 @@ from pokemon_agent.schemas.reviewer.interaction import Ask
 from ..view.render import text_without_frames
 
 
-def _first_sentence(text: str) -> str:
-    """取首句，最多八十字符；超长追加省略号，空白返回无正文。"""
-    sentence = text.strip()
-    for index, character in enumerate(sentence):
-        if character in "。！？.!?":
-            sentence = sentence[: index + 1]
-            break
-        if character in "\r\n":
-            sentence = sentence[:index]
-            break
-    sentence = sentence.strip()
-    if not sentence:
-        return "（无正文）"
-    return sentence[:80] + "…" if len(sentence) > 80 else sentence
-
-
 def _index_line(item: object) -> str:
-    """从三级记忆的来源章和正文首句生成复核台索引。"""
+    """从来源章与结构化索引生成复核台索引。"""
+    if isinstance(item, (EpisodeMemory, TaskMemory, RunMemory)):
+        index = item.index
+        tail = (
+            f"{index.headline}（keys：{'、'.join(index.keys)}；含：{'、'.join(index.evidence)}）"
+            if index.headline
+            else "（无正文）"
+        )
     if isinstance(item, EpisodeMemory):
         return (
             f"- {item.episode_id}｜{item.goal}｜{'成功' if item.success else '未成功'}｜"
             f"{item.termination or '-'}｜{item.steps} task/{item.acts_used} 键｜"
-            f"{_first_sentence(item.summary)}"
+            f"{tail}"
         )
     if isinstance(item, TaskMemory):
         return (
             f"- {item.task_id}｜{item.goal}｜{'成功' if item.success else '未成功'}｜"
-            f"{item.termination or '-'}｜{item.steps_used} 键｜{_first_sentence(item.summary)}"
+            f"{item.termination or '-'}｜{item.steps_used} 键｜{tail}"
         )
     if isinstance(item, RunMemory):
         return (
             f"- {item.run_id}｜{item.run_goal}｜{item.succeeded}/{item.episodes} 局成功｜"
-            f"{item.termination or '-'}｜{_first_sentence(item.summary)}"
+            f"{item.termination or '-'}｜{tail}"
         )
     raise TypeError(f"不认识的记忆类型：{type(item)!r}")
 

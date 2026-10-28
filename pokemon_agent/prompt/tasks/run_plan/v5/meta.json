@@ -1,8 +1,0 @@
-{
-  "task": "run_plan",
-  "version": "v5",
-  "kind": "task",
-  "params": "RunPlanParams",
-  "reason": "父级建议与配置硬限分离，动态预算列出单位、来源和已用剩余",
-  "hash": "3f36d9b2e4181c1d990c8c648226b292b1821bb885f2891be81efea077ff50aa"
-}

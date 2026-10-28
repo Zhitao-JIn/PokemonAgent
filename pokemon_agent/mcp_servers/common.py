@@ -2,7 +2,7 @@
 
 所有 MCP tool 的返回统一为信封 dict（§SPEC 3.1）：
 
-    {"ok": bool, "code": str, "data": ..., "events": [...], "error": str|null}
+    {"ok": bool, "code": str, "data": ..., "error": str|null}
 
 transport 级失败（JSON-RPC error）不经信封——由 mcpclient 翻译成 Python 异常。
 """
@@ -85,15 +85,13 @@ def envelope(
     data: Any = None,  # noqa: ANN401 —— 信封载荷是任意 JSON 化结构
     *,
     code: str = "ok",
-    events: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """成功信封。data 为载荷；events 为裸事件流（memory 能力面恒为空列表）。"""
+    """成功信封。data 为载荷。"""
     assert code in _CODES, f"unknown outcome code: {code!r}"
     return {
         "ok": code == "ok",
         "code": code,
         "data": data,
-        "events": events if events is not None else [],
         "error": None,
     }
 
@@ -128,8 +126,6 @@ def fail(
     code: str,
     error: str,
     data: Any = None,  # noqa: ANN401 —— 同上
-    *,
-    events: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """失败信封。code 为失败结局码（≠ok），error 为人类可读补充。"""
     assert code in _CODES and code != "ok", f"bad failure code: {code!r}"
@@ -137,6 +133,5 @@ def fail(
         "ok": False,
         "code": code,
         "data": data,
-        "events": events if events is not None else [],
         "error": error,
     }

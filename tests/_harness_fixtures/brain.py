@@ -180,6 +180,8 @@ class _Brain:
         steps: int,
         max_steps: int,
         images: Sequence[str] = (),
+        grounding_texts: Sequence[str] | None = None,
+        termination: str = "",
     ) -> SummarizeResult:
         summary = EpisodeSummary(
             summary="s", reason="原因", quality_score=0.5, quality_rationale="q"
@@ -197,6 +199,8 @@ class _Brain:
         steps: int,
         max_steps: int,
         images: Sequence[str] = (),
+        grounding_texts: Sequence[str] | None = None,
+        termination: str = "",
     ) -> SummarizeRunResult:
         """假 run 蒸馏与真实 BrainPort 同签名，返回可落库正文及一次调用账。"""
         summary = RunSummary(

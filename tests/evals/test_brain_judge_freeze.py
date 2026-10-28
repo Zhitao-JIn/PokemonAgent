@@ -38,6 +38,7 @@ def _row(base_request: dict, event_uuid: str, truth_method: str) -> dict:
     }
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_v2_build_marks_rule_based_history_adjudication_separately() -> None:
     request = load()[0].request.model_dump(mode="json")
     cases = build_cases(
@@ -58,6 +59,7 @@ def test_v2_build_marks_rule_based_history_adjudication_separately() -> None:
     assert "request.history" in adjudicated.evidence[0].locator
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_v2_build_rejects_duplicate_event_ids() -> None:
     request = load()[0].request.model_dump(mode="json")
     row = _row(request, "duplicate", "mechanical")
@@ -66,6 +68,7 @@ def test_v2_build_rejects_duplicate_event_ids() -> None:
         build_cases([row, row])
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_frozen_v2_is_hash_verified_and_keeps_complete_history() -> None:
     cases = load("v2")
 

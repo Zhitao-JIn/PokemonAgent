@@ -3,7 +3,7 @@
     身份    run_id / episode_id / goal                        begin_episode 写，全程只读
     计数    step（已派 task 数） / total_acts（累计键数）         act 写 / perceive 写
             fail_streak（连续失败 task 数）                     perceive 写
-    感知    ep_ctx（当前帧 + 本局 TaskMemory + 跨局摘要 + 知识 + 物件）  perceive 写
+    感知    ep_ctx（当前帧 + 本局 TaskMemory + 跨局摘要 + 知识）  perceive 写
             pending_task（刚跑完的 TaskOutput，格间流转）        act 写、perceive 吸收后清
             task_outputs（本局全部 TaskOutput）                 perceive 写
     规划    tasks（任务表 TaskEntry）   plan_episode 追加、act 标 RUNNING、review 盖章
@@ -12,7 +12,7 @@
 
 **一圈的数据流**：`act` 弹队首、拼 `TaskInput`、经 `task_entry.run_task` 跑子图，
 只把 `TaskOutput` 写进 `pending_task`、`step+1` → 回 `perceive`：先吸收
-`pending_task`（键数、失败连击、`task_outputs`），再 `sense` 取一帧（内存观测）、做四路检索。
+`pending_task`（键数、失败连击、`task_outputs`），再 `sense` 取一帧（内存观测）、做三路检索。
 判定、拆解、收尾都只用 perceive 装好的 `ep_ctx`，不再自己查库。
 每个子执行结算后若继续，`plan_episode` 都问 decomposer 修订任务表，包括仍有待办时。
 应用修订后无待办则携最新规划回 judge 复判，不直接派发或认定失败。
@@ -39,7 +39,7 @@ from pokemon_agent.schemas.harness.domain import (
     TaskOutput,
     Termination,
 )
-from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, TaskMemory
+from pokemon_agent.schemas.memory import EpisodeMemory, TaskMemory
 from pokemon_agent.world import TaskObservation
 
 
@@ -65,7 +65,6 @@ class EpisodeContext(BaseModel):
     knowledge_at_tasks: int = Field(
         default=0, ge=0, description="上次检索知识时已结算的 task 数；此后有 task 失败就重查"
     )
-    object_semantic_events: list[ObjectFactEvent] = Field(default_factory=list)
 
 
 class EpisodeRunState(Settled, BaseModel):
@@ -111,7 +110,7 @@ class EpisodeRunState(Settled, BaseModel):
         default=0, ge=0, description="连续失败 task 数——停摆判据 `>= EPISODE_STALL_LIMIT`"
     )
 
-    ep_ctx: EpisodeContext = Field(description="当前帧 + 四路检索；begin_episode 放开局帧")
+    ep_ctx: EpisodeContext = Field(description="当前帧 + 三路检索；begin_episode 放开局帧")
     pending_task: TaskOutput | None = Field(
         default=None, description="刚跑完的 task 结算；perceive 吸收后清"
     )

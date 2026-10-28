@@ -19,9 +19,9 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
+from pokemon_agent.schemas.memory import ActMemory
 
 from ..frames import frame_b64
-from ..script_report import result_line
 from ..task_runtime import TaskRuntime
 from ..task_state import TaskState
 
@@ -30,8 +30,7 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
     """反思这一步并落一条情景记忆。**不改状态字段，返回空增量。**
 
     before = `task_ctx.observation`、after = `after_observation`；上一圈没按键（首圈）时不写。
-    上一动作是脚本时，`result` 写结果那一句（结局码 + 摘要或原因）、`dialog` 写报告顶层的
-    对话行；按键动作两者分别为空串与空列表。
+    上一动作是脚本时写入结构化结局与逐键观察；按键动作分别为空与空列表。
     """
     if state.action is None:
         return {}
@@ -45,10 +44,6 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
     )
 
     # 步骤 1：反思成一条情景记忆，盖 run_id 与前后两帧。
-    # 脚本动作把结果写进 `result`（一次调用占一步，结局码 + 摘要或原因就是那一步的机械结局），
-    # 对话原文进 `dialog`（报告顶层的按行列表；按键动作没有报告，落空列表）。
-    script_result = result_line(state.last_report) if state.last_report is not None else ""
-    script_dialog = list((state.last_report or {}).get("dialog") or [])
     entry = deps.reflector.reflect(
         FromHarnessToBrainToolReflectReq(
             before=before,
@@ -56,7 +51,10 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
             after=after,
             episode_id=ep,
             step=before.step,
-            result=script_result,
+            outcome=state.last_outcome,
+            observations=state.last_observations,
+            before_ram=state.task_ctx.ram,
+            after_ram=state.after_ram,
         )
     ).entry.model_copy(
         update={
@@ -64,11 +62,16 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
             "task_id": state.task.task_id,
             "before_frame": frame_b64(deps, ep, before.step),
             "after_frame": frame_b64(deps, ep, before.step + 1),
-            "dialog": script_dialog,
         }
     )
 
     # 步骤 2：落库并记账。
+    _write_entry(deps, state, entry)
+    return {}
+
+
+def _write_entry(deps: TaskRuntime, state: TaskState, entry: ActMemory) -> None:
+    """保存一条动作记忆并写同一条账。"""
     deps.memory.memorize(
         FromHarnessToMemoryToolMemorizeReq(
             records=[FromHarnessToMemoryToolMemorizeRecord(kind="act", payload=entry.model_dump())]
@@ -79,11 +82,10 @@ def store_step_episode_memory(state: TaskState, runtime: Runtime[TaskRuntime]) -
             kind=TraceKind.WRITE_ACT_MEMORY,
             meta={
                 "source": "store_step_episode_memory",
-                "episode_id": ep,
+                "episode_id": state.episode_id,
                 "task_id": state.task.task_id,
                 "step": state.step + 1,
             },
             entry=entry,
         )
     )
-    return {}

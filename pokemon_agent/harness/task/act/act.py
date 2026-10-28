@@ -2,7 +2,7 @@
 **只有它推进世界。**
 
 `settle=True` 恒定（键）：每键之后都要判停与决策，那一帧必须等世界走完。脚本由
-world 执行到底，终态报告落 `last_report`、一行结果落 `last_result` 给下一轮决策与记忆。
+world 执行到底，终态报告、结局和逐键观察留给下一轮决策与记忆。
 脚本一次调用占 harness 账一步（内部 N 键不展开，P5 定案）。
 感知新帧、停摆与 ActMemory 都在下一圈的 `perceive`；`action` 留在 state 上给它消费。
 """
@@ -18,8 +18,8 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToTraceToolAppendReq,
     TraceKind,
 )
+from pokemon_agent.schemas.memory import ActMemory
 
-from ..script_report import describe_call
 from ..task_runtime import TaskRuntime
 from ..task_state import TaskState
 
@@ -29,7 +29,7 @@ def act(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
 
     `action` 留给下一圈 perceive 消费。
     前置条件：`state.action` 非空（`plan_task` 写的）。
-    后置条件：脚本时 `last_report` 是终态报告、`last_result` 是一行结果；按键时为 None / 空串。
+    后置条件：脚本时保留终态报告、结局与观察；按键时结局为空、观察为空列表。
     """
     deps = runtime.context
     assert state.action is not None, "act before plan_task"
@@ -57,17 +57,20 @@ def act(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[str, Any]:
         return {
             "step": state.step + 1,
             "last_report": resp.report,
-            "last_result": describe_call(state.action, resp.report or {}),
-            "last_event": None,  # 脚本的事件在 report.events[] 里
+            "last_outcome": ActMemory.ScriptOutcome.model_validate(resp.report or {}),
+            "last_observations": [
+                ActMemory.Observation.StepObs.model_validate(item)
+                for item in (resp.report or {}).get("observations", [])
+            ],
         }
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(kind=TraceKind.ACT_CALL, meta=meta, action=state.action)
     )
     return {
         "step": state.step + 1,
-        "last_event": resp.event,  # P6：world 侧判定的本键裸事件（可为 None）
         "last_report": None,
-        "last_result": "",
+        "last_outcome": None,
+        "last_observations": [],
     }
 
 

@@ -1,10 +1,6 @@
 """三层蒸馏的离线全文原料与旧版本注册表。"""
 
-import json
-from pathlib import Path
-
 from pokemon_agent.prompt import (
-    PromptGateway,
     SummarizeParams,
     SummarizeRunParams,
     SummarizeTaskParams,
@@ -13,8 +9,7 @@ from pokemon_agent.prompt import (
 from .layout_examples import details_data, observation_data, plan_data, task_data
 
 Material = SummarizeTaskParams | SummarizeParams | SummarizeRunParams
-OLD_VERSIONS = {"summarize_task": "v7", "summarize": "v6", "summarize_run": "v3"}
-NEW_VERSIONS = {"summarize_task": "v8", "summarize": "v7", "summarize_run": "v6"}
+NEW_VERSIONS = {"summarize_task": "v9", "summarize": "v8", "summarize_run": "v7"}
 
 
 def task_example() -> SummarizeTaskParams:
@@ -29,6 +24,8 @@ def task_example() -> SummarizeTaskParams:
             "before": before,
             "after": after,
             "action": "a",
+            "observations": [],
+            "outcome": None,
             "before_frame": "A",
             "after_frame": "B",
         },
@@ -39,6 +36,8 @@ def task_example() -> SummarizeTaskParams:
             "before": after,
             "after": before,
             "action": "b",
+            "observations": [],
+            "outcome": None,
             "before_frame": "B",
             "after_frame": "C",
         },
@@ -121,14 +120,3 @@ def examples() -> dict[str, Material]:
         "summarize": episode_example(),
         "summarize_run": run_example(),
     }
-
-
-def old_gateway(directory: Path) -> PromptGateway:
-    """旧版固定 v7/v6/v3；活动 registry 不改动。"""
-    source = Path(__file__).resolve().parents[2] / "pokemon_agent/prompt/registry.json"
-    data = json.loads(source.read_bytes())
-    for task, version in OLD_VERSIONS.items():
-        data["tasks"][task]["active"] = version
-    path = directory / "summarize-old-registry.json"
-    path.write_text(json.dumps(data), encoding="utf-8")
-    return PromptGateway(path)

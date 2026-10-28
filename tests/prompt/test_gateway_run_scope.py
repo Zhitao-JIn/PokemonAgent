@@ -21,6 +21,8 @@ def _request() -> FromHarnessToBrainToolPlanOnceReq:
             quality_score=0.5,
             quality_rationale="q",
             first_frame="data:image/png;base64,SECRET",
+            pointers=[],
+            index={"headline": "", "keys": [], "evidence": []},
         )
         for i in range(3)
     ]
@@ -32,6 +34,8 @@ def _request() -> FromHarnessToBrainToolPlanOnceReq:
         summary="背景首句。背景第二句不要展示。",
         quality_score=0.5,
         quality_rationale="q",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     observation = TaskObservation(
         step=3,

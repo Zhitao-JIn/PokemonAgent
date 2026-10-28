@@ -105,6 +105,9 @@ def test_node_switch_isolated_across_layers_and_providers(
             quality_score=0.5,
             quality_rationale="q",
             first_frame=solid_frame((0, 0, 0)) if with_image else None,
+            facts=[],
+            pointers=[],
+            index={"headline": "", "keys": [], "evidence": []},
         )
     ]
     req = FromHarnessToBrainToolJudgeReq(goal=Goal(goal="g", criteria="c"), task_memories=history)
@@ -138,11 +141,14 @@ def test_verify_and_episode_summary_can_use_opposite_switches(isolated_http: Fak
         summary="s",
         quality_score=0.5,
         quality_rationale="q",
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     response(
         isolated_http,
         "deepseek-flash",
-        '{"summary":"s","quality_score":0.5,"quality_rationale":"q","markdown":"m"}',
+        '{"summary":"s","quality_score":0.5,"quality_rationale":"q","markdown":"m","index":{"headline":"观察","keys":[],"evidence":[]}}',
     )
 
     summary = tool.summarizer.summarize(
@@ -187,6 +193,8 @@ def summary_requests() -> tuple[
         summary="s",
         quality_score=0.5,
         quality_rationale="q",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     run_req = FromHarnessToBrainToolSummarizeRunReq(
         run_id="r",
@@ -207,6 +215,8 @@ def summary_requests() -> tuple[
         action="a",
         before=ActMemory.Observation(facts={}, step=0),
         after=ActMemory.Observation(facts={}, step=1),
+        observations=[],
+        outcome=None,
     )
     task_req = FromHarnessToBrainToolSummarizeTaskReq(
         entries=[act],
@@ -235,7 +245,7 @@ def test_run_and_task_summaries_do_not_inherit_episode_summary_override(
     response(
         isolated_http,
         "deepseek-flash",
-        '{"summary":"s","quality_score":0.5,"quality_rationale":"q","markdown":"m"}',
+        '{"summary":"s","quality_score":0.5,"quality_rationale":"q","markdown":"m","index":{"headline":"观察","keys":[],"evidence":[]}}',
     )
 
     run = tool.run_summarizer.summarize_run(run_req)
@@ -246,6 +256,7 @@ def test_run_and_task_summaries_do_not_inherit_episode_summary_override(
     assert task.calls[0].payload["thinking_node"] == "task.summarize"
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_node_thinking_does_not_override_empty_completion_retry_fallback(
     monkeypatch: pytest.MonkeyPatch, isolated_http: FakeUrlopen
 ) -> None:

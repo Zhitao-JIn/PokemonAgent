@@ -228,7 +228,6 @@ def _request(
         execution_order=state.execution_order,
         goal=current_goal(state),
         observation=state.ep_ctx.observation,
-        known_objects=state.ep_ctx.object_semantic_events,
         task_memories=state.ep_ctx.task_memories,
         task_table=state.tasks,
         episode_index=state.ep_ctx.episode_index,

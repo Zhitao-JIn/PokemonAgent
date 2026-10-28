@@ -96,6 +96,8 @@ def _state() -> TaskState:
             after=ActMemory.Observation(facts={"overlay": "none"}, step=i + 1),
             before_frame="data:image/png;base64,A",
             after_frame="data:image/png;base64,B" if i == 1 else None,
+            observations=[],
+            outcome=None,
         )
         for i in (1, 2)
     ]
@@ -117,6 +119,9 @@ def _state() -> TaskState:
                 summary="旧任务首句。背景全文不应展开。",
                 quality_score=0.5,
                 quality_rationale="示例",
+                facts=[],
+                pointers=[],
+                index={"headline": "", "keys": [], "evidence": []},
             )
         ],
         task=Task(task_id="t1", goal="进门", success_criteria="在屋内", max_steps=5),

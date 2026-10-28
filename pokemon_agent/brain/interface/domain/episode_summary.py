@@ -14,6 +14,12 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class SummaryIndex(BaseModel):
+    headline: str = ""
+    keys: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+
+
 class EpisodeSummary(BaseModel):
     """**蒸馏出的响应**：情景记忆内容协议。
 
@@ -41,5 +47,7 @@ class EpisodeSummary(BaseModel):
     quality_rationale: str = Field(description="质量评分的理由")
     applicable_scenes: list[str] = Field(default_factory=list, description="此记忆适用的游戏场景")
     tags: list[str] = Field(default_factory=list, description="记忆标签（导航/战斗/物品收集等）")
+
+    index: SummaryIndex = Field(default_factory=SummaryIndex)
 
     markdown: str = Field(default="", description="要原样保存的 Markdown 记忆正文")

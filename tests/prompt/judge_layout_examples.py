@@ -1,10 +1,7 @@
 """判定三层的离线原料和固定 v8 的临时注册表。"""
 
-import json
-from pathlib import Path
-
 from pokemon_agent.direct.judge_prompt_params import judge_prompt_params
-from pokemon_agent.prompt import JudgeParams, PromptGateway
+from pokemon_agent.prompt import JudgeParams
 from pokemon_agent.schemas.harness import FromHarnessToBrainToolJudgeReq
 from pokemon_agent.schemas.harness.domain.ram_observation import RamObservation
 from tests.prompt.layout_examples import (
@@ -45,7 +42,6 @@ def requests() -> dict[str, FromHarnessToBrainToolJudgeReq]:
     choose = plans["decide_action"].model_dump(mode="json")
     episode = plans["decompose"].model_dump(mode="json")
     run = plans["run_plan"].model_dump(mode="json")
-    episode["known_objects"][0]["actor_place"]["map_id"] = 1
     base = {"goal": choose["goals"][-1], "knowledge": choose["knowledge"]}
     data = {
         "task": dict(
@@ -57,7 +53,6 @@ def requests() -> dict[str, FromHarnessToBrainToolJudgeReq]:
             task_table=episode["task_table"],
             episode_index=details_data(),
             observation=observation_data(),
-            known_objects=episode["known_objects"],
         ),
         "run": dict(
             base,
@@ -73,6 +68,10 @@ def requests() -> dict[str, FromHarnessToBrainToolJudgeReq]:
 def _request(name: str, data: dict) -> FromHarnessToBrainToolJudgeReq:
     """两层规划保留全部四组字段；三层均显式填写 RAM 窗口。"""
     data["ram_observations"] = []
+    if name == "task":
+        data["history"] = [
+            {**entry, "observations": [], "outcome": None} for entry in data["history"]
+        ]
     if name != "task":
         data.update(
             latest_planning={
@@ -98,13 +97,3 @@ def _request(name: str, data: dict) -> FromHarnessToBrainToolJudgeReq:
 def params() -> dict[str, JudgeParams]:
     """经生产 tool 边界转成 prompt 的独立参数。"""
     return {name: judge_prompt_params(request) for name, request in requests().items()}
-
-
-def old_gateway(directory: Path) -> PromptGateway:
-    """只在临时目录固定 v8，不修改活动 registry。"""
-    source = Path(__file__).resolve().parents[2] / "pokemon_agent/prompt/registry.json"
-    registry = json.loads(source.read_bytes())
-    registry["tasks"]["judge_success"]["active"] = "v8"
-    path = directory / "judge-v8-registry.json"
-    path.write_text(json.dumps(registry), encoding="utf-8")
-    return PromptGateway(path)

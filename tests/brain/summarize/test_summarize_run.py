@@ -14,12 +14,25 @@ from pokemon_agent.schemas.memory import EpisodeMemory
 
 
 def test_run_summary_uses_the_summary_provider_once_and_returns_its_own_dialect() -> None:
-    summary = RunSummary(summary="复盘", quality_score=0.5, quality_rationale="q", markdown="全文")
+    summary = RunSummary(
+        summary="复盘",
+        quality_score=0.5,
+        quality_rationale="q",
+        markdown="全文",
+        index={"headline": "阶段结论", "keys": [], "evidence": []},
+    )
     provider = ScriptedJudge(text_reply(summary.model_dump_json()))
     brain = Brain(summary_llm=provider)
 
     result = brain.summarize_run(
-        prompt="规则和素材", goal="g", history=["h"], success=False, steps=1, max_steps=2
+        prompt="规则和素材",
+        goal="g",
+        history=["h"],
+        success=False,
+        steps=1,
+        max_steps=2,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     assert isinstance(result.summary, RunSummary)
@@ -35,7 +48,14 @@ def test_run_summary_parse_failure_is_one_failed_attempt_without_internal_retry(
 
     with pytest.raises(SummarizeAttemptFailed) as caught:
         brain.summarize_run(
-            prompt="p", goal="g", history=["h"], success=False, steps=1, max_steps=2
+            prompt="p",
+            goal="g",
+            history=["h"],
+            success=False,
+            steps=1,
+            max_steps=2,
+            grounding_texts=["source"],
+            termination="goal_done",
         )
 
     assert len(provider.requests) == 1
@@ -45,7 +65,13 @@ def test_run_summary_parse_failure_is_one_failed_attempt_without_internal_retry(
 def test_run_summary_prompt_keeps_final_overturns_and_complete_episode_text_without_frames() -> (
     None
 ):
-    summary = RunSummary(summary="复盘", quality_score=0.5, quality_rationale="q", markdown="全文")
+    summary = RunSummary(
+        summary="复盘",
+        quality_score=0.5,
+        quality_rationale="q",
+        markdown="全文",
+        index={"headline": "阶段结论", "keys": [], "evidence": []},
+    )
     provider = ScriptedJudge(vision_reply(summary.model_dump_json()), multimodal=True)
     task = Task(task_id="g1", goal="局目标", success_criteria="c", max_steps=2)
     memory = EpisodeMemory(
@@ -59,6 +85,8 @@ def test_run_summary_prompt_keeps_final_overturns_and_complete_episode_text_with
         quality_score=0.5,
         quality_rationale="q",
         first_frame="data:image/png;base64,SECRET",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     req = FromHarnessToBrainToolSummarizeRunReq(
         run_id="r1",

@@ -1,8 +1,0 @@
-{
-  "task": "decide_action",
-  "version": "v7",
-  "kind": "task",
-  "params": "DecideActionParams",
-  "reason": "父级建议与配置硬限分离，动态预算列出单位、来源和已用剩余",
-  "hash": "9c93766bec83cd4a7671ac5e12c71d0463e4d2355d986be89d4f8f32ba51b8e9"
-}

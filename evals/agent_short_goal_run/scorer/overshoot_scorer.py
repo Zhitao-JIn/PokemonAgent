@@ -27,7 +27,7 @@ def measure_overshoot(stream: RunStream, sample: EvalSample) -> Measurement:
         return Measurement(unit="actions", explanation="No factual completion check")
     check = mechanical_scorer()
     for index, event in enumerate(stream.events):
-        if event.kind not in {"sense_frame", "act_call", "write_object_memory"}:
+        if event.kind not in {"sense_frame", "act_call", "write_act_memory"}:
             continue
         result = check(RunStream(stream.events[: index + 1]), sample)
         if result.outcome == "pass":

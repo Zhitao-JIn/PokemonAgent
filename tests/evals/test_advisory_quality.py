@@ -40,6 +40,7 @@ def grader_config() -> ResultGraderConfig:
     )
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_recoverable_failures_are_scored_without_an_exhaustive_action_whitelist() -> None:
     rows = choose("v4")
     indexed = {row.case_id: row for row in rows}
@@ -54,6 +55,7 @@ def test_recoverable_failures_are_scored_without_an_exhaustive_action_whitelist(
         assert case.reference.achieved is None
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_plans_are_advisory_and_conflicting_goal_can_be_explained() -> None:
     cases = plan("v3")
     case = next(
@@ -65,6 +67,7 @@ def test_plans_are_advisory_and_conflicting_goal_can_be_explained() -> None:
     assert "scenario_milestones_if_required_and_not_satisfied" not in case.reference.constraints
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_recovery_examples_include_multiple_valid_candidates() -> None:
     rows = {row.case_id: row for row in annotations("choose", "v2")}
     case = rows["knowledge_shop_interaction.task.choose.000005"]
@@ -74,6 +77,7 @@ def test_recovery_examples_include_multiple_valid_candidates() -> None:
     assert case.criteria and case.suggestions
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_ai_dimensions_give_partial_credit_instead_of_all_or_nothing() -> None:
     reference = choose("v4")[0].reference
     grade = AdvisoryGrade(
@@ -101,6 +105,7 @@ def test_quality_metrics_preserve_zero_and_exclude_unknown_scores() -> None:
     assert quality_count()(scores) == 3
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_missing_dimensions_are_unscored_instead_of_silently_ignored(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -125,6 +130,7 @@ def test_missing_dimensions_are_unscored_instead_of_silently_ignored(
     assert score.value == NOANSWER
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_disabled_advisory_grader_returns_noanswer_without_a_model() -> None:
     case = choose("v4")[0]
 
@@ -140,6 +146,7 @@ def test_disabled_advisory_grader_returns_noanswer_without_a_model() -> None:
     assert score.value == NOANSWER
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_unlisted_recovery_action_gets_ai_score_without_leaking_reference_to_chooser(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

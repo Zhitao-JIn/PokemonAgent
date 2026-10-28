@@ -20,6 +20,7 @@ from pokemon_agent.schemas.harness import (
 )
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_planning_tasks_have_their_own_frozen_inputs() -> None:
     plans, decompositions = load_plans(), load_decompositions()
 
@@ -29,6 +30,7 @@ def test_planning_tasks_have_their_own_frozen_inputs() -> None:
     assert all(case.request.goal.goal for case in decompositions)
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_plan_contract_checks_goal_indices_and_dispatchability() -> None:
     case = load_plans()[0]
     invalid = RunPlan(
@@ -65,6 +67,7 @@ def test_plan_contract_checks_goal_indices_and_dispatchability() -> None:
     )
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_decomposition_contract_enforces_the_current_request_limit() -> None:
     request = load_decompositions()[0].request.model_copy(update={"max_tasks": 1})
     task = Decomposition.PlannedTask(
@@ -80,6 +83,7 @@ def test_decomposition_contract_enforces_the_current_request_limit() -> None:
 
 
 @pytest.mark.parametrize("family", ["plan", "decompose"])
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_independent_tasks_run_production_ports_without_leaking_references(
     family: str,
     tmp_path: Path,

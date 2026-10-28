@@ -1,19 +1,19 @@
 {
   "tasks": {
     "memory_records": {
-      "active": "v3"
+      "active": "v5"
     },
     "verify": {
       "active": "v4"
     },
     "summarize": {
-      "active": "v7"
-    },
-    "summarize_task": {
       "active": "v8"
     },
+    "summarize_task": {
+      "active": "v9"
+    },
     "summarize_run": {
-      "active": "v6"
+      "active": "v7"
     },
     "goal_table": {
       "active": "v1"
@@ -36,9 +36,6 @@
     "terrain_legend": {
       "active": "v1"
     },
-    "object_events": {
-      "active": "v2"
-    },
     "takeover": {
       "active": "v1"
     },
@@ -55,7 +52,7 @@
       "active": "v10"
     },
     "decide_action": {
-      "active": "v10"
+      "active": "v12"
     },
     "output_retry": {
       "active": "v1"

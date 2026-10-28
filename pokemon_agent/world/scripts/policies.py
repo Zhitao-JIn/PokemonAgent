@@ -42,5 +42,4 @@ class ScriptPolicy:
     after: Hook | None = None
     on_error: Hook | None = None
     reset: Reset | None = None
-    collect_world_events: bool = False
     record_steps: bool = False

@@ -39,10 +39,8 @@ def open_menu_to(console: WorldConsole, target: str) -> ScriptResult:
     if console.scene() != "start_menu":
         run.press("start")
         if console.scene() != "start_menu":
-            return ScriptResult(
-                ok=False,
-                code="wrong_scene",
-                data={"scene": console.scene(), "target": target},
+            return _finish_menu(
+                run, ok=False, code="wrong_scene", scene=console.scene(), target=target
             )
 
     # 相对当前光标移动
@@ -66,8 +64,15 @@ def open_menu_to(console: WorldConsole, target: str) -> ScriptResult:
     scene = console.scene()
     expected = TARGET_SCENE.get(target)
     if scene != "start_menu" and (expected is None or scene == expected):
-        return ScriptResult(ok=True, code="ok", data={"scene": scene, "target": target})
-    return ScriptResult(ok=False, code="wrong_scene", data={"scene": scene, "target": target})
+        return _finish_menu(run, ok=True, code="ok", scene=scene, target=target)
+    return _finish_menu(run, ok=False, code="wrong_scene", scene=scene, target=target)
+
+
+def _finish_menu(run: ScriptRun, *, ok: bool, code: str, scene: str, target: str) -> ScriptResult:
+    """经统一出口带回逐键观察，业务 data 保持原有的 scene 与 target 两项。"""
+    result = run.finish(ok=ok, code=code)
+    result.data = {"scene": scene, "target": target}
+    return result
 
 
 __all__ = ["open_menu_to"]

@@ -186,20 +186,18 @@ def step(
     settle: bool = True,
     client_id: str | None = None,
 ) -> dict[str, Any]:
-    """**唯一按键执行口**：按一段键推进世界。
+    """**唯一按键执行口**：按一段键推进世界并报告位置是否变化。
 
     `segments`：`[[按键名, 连按次数], ...]`（MCP 的 JSON 没有元组，用二元数组）。
-    返回 `{moved, event}`——`event` 是本键的裸对象事件（P6 起 world 侧判定，
-    与脚本报告 `events[]` 同一裁判同一形状；普通移动 / blocked 为 `null`）。
     """
     denied = _take_lease(client_id)
     if denied is not None:
         return denied
     pairs = [(str(name), int(times)) for name, times in segments]
-    from pokemon_agent.world.object_events import observe_step
-
-    moved, event = observe_step(_w(), pairs, settle=settle)
-    return envelope(data={"moved": moved, "event": event})
+    before = _w().perceive_task().observation.place
+    _w().step(pairs, settle=settle)
+    after = _w().perceive_task().observation.place
+    return envelope(data={"moved": before != after})
 
 
 @mcp.tool()
@@ -230,13 +228,11 @@ def _run_script(  # noqa: ANN401 —— 脚本入参形状各异，tool 壳逐�
     client_id: str | None,
     **kwargs: Any,  # noqa: ANN401
 ) -> dict[str, Any]:
-    """脚本 tool 统一通道：租约 → 执行 → 终态报告进信封（events 裸事件化）。
+    """脚本 tool 统一通道：租约 → 执行 → 终态报告进信封。
 
     `data.ok` 是**脚本语义成败**（bounce 的 `battle_started` 也算成功），
     信封顶层的 ok 只反映 `code == "ok"`——两者分工见 SPEC §3.1。
 
-    `dialog` 排在展开 `result.data` **之后**：`advance_dialog` 往 `data["dialog"]`
-    放过一份按段的旧值，这里用报告顶层的按行列表覆盖它（D9 同名冲突）。
     """
     denied = _take_lease(client_id)
     if denied is not None:
@@ -248,10 +244,11 @@ def _run_script(  # noqa: ANN401 —— 脚本入参形状各异，tool 壳逐�
             "code": result.code,
             **result.data,
             "calls": result.calls,
-            "dialog": result.dialog,
+            "observations": [
+                observation.model_dump(mode="json") for observation in result.observations
+            ],
         },
         code=result.code,
-        events=list(result.events),
     )
 
 

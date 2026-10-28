@@ -31,6 +31,9 @@ def _memory() -> TaskMemory:
         summary="走到门口。然后转身。",
         quality_score=0.5,
         quality_rationale="q",
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 

@@ -1,8 +1,0 @@
-{
-  "task": "decide_action",
-  "version": "v3",
-  "kind": "task",
-  "params": "DecideActionParams",
-  "reason": "缓存布局：将按场合有无变化的地图说明移至固定方法说明之后，素材和规则原文不变",
-  "hash": "4049499969e69e7ed4d48cbb00d0f1cb5127b6c043244bac9fceb553511d0a0e"
-}

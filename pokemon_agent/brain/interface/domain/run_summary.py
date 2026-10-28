@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from .episode_summary import SummaryIndex
+
 
 class RunSummary(BaseModel):
     """整次 run 的复盘产物；字段与 EpisodeSummary 同形。"""
@@ -23,5 +25,7 @@ class RunSummary(BaseModel):
     quality_rationale: str = Field(description="质量评分的理由")
     applicable_scenes: list[str] = Field(default_factory=list, description="此记忆适用的游戏场景")
     tags: list[str] = Field(default_factory=list, description="记忆标签（导航/战斗/物品收集等）")
+
+    index: SummaryIndex = Field(default_factory=SummaryIndex)
 
     markdown: str = Field(default="", description="要原样保存的 Markdown 记忆正文")

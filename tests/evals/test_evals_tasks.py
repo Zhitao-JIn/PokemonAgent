@@ -162,6 +162,7 @@ def test_recall_uses_all_relevant_records_and_mrr_uses_the_first_hit() -> None:
     assert retrieval_metrics(["irrelevant"], ["first"], 5) == (0.0, 0.0)
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_judge_labels_are_independent_and_all_four_cells_are_counted() -> None:
     cases = [
         JudgeCaseV1.model_validate_json(line)

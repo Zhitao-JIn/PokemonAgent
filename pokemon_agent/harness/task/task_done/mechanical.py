@@ -2,6 +2,7 @@
 
 from langgraph.runtime import Runtime
 
+from pokemon_agent.memory.facts import task_facts, task_step_range
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolMemorizeRecord,
     FromHarnessToMemoryToolMemorizeReq,
@@ -9,6 +10,7 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 from pokemon_agent.schemas.memory import TaskMemory
+from pokemon_agent.schemas.memory.datastore.task_memory import MemoryIndex
 
 from ..task_runtime import TaskRuntime
 from ..task_state import TaskState
@@ -31,6 +33,9 @@ def mechanical_summary(state: TaskState, runtime: Runtime[TaskRuntime]) -> dict[
         summary=reason,
         quality_score=0,
         quality_rationale="预算停止，未调用模型评价",
+        facts=task_facts(state.task_ctx.act_memories, state.task.task_id, state.episode_id),
+        pointers=task_step_range(state.task_ctx.act_memories),
+        index=MemoryIndex(),
     )
     runtime.context.memory.memorize(
         FromHarnessToMemoryToolMemorizeReq(

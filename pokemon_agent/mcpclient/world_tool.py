@@ -178,9 +178,7 @@ class WorldMcpTool:
                 action.script.name,
                 {**action.script.args, "client_id": self._client_id},
             )
-            return FromHarnessToGameToolExecuteResp(
-                report={**body["data"], "events": body.get("events", [])}
-            )
+            return FromHarnessToGameToolExecuteResp(report=body["data"])
         assert len(action.sequence) == 1, (
             "execute() 只接受单键动作；连按应由 Harness 的循环展开成多步"
         )
@@ -194,7 +192,7 @@ class WorldMcpTool:
                 "client_id": self._client_id,
             },
         )
-        return FromHarnessToGameToolExecuteResp(event=body["data"].get("event"))
+        return FromHarnessToGameToolExecuteResp()
 
     def save_state(
         self, req: FromHarnessToGameToolSaveStateReq

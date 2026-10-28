@@ -125,7 +125,10 @@ def _stored(deps: SimpleNamespace, episode_id: str) -> list[EpisodeMemory]:
         )
     )
     return [
-        EpisodeMemory(**item.payload, markdown=item.content)
+        EpisodeMemory(
+            **item.payload,
+            markdown=item.content,
+        )
         for item in resp.items
         if item.kind == "episode"
     ]
@@ -148,6 +151,7 @@ def _leave(deps: SimpleNamespace) -> EpisodeMemory:
         reason="error: IllegalAction",
         source="run.act",
         step=0,
+        pointers=[],
     )
 
 
@@ -186,6 +190,8 @@ def test_an_episode_that_already_has_a_memory_is_left_alone(memory: MemoryTool) 
                         quality_score=0.3,
                         quality_rationale="没走通",
                         markdown="# 本局复盘\n\n撞了三次墙",
+                        pointers=[],
+                        index={"headline": "", "keys": [], "evidence": []},
                     ).model_dump(),
                 )
             ]
@@ -224,6 +230,8 @@ def test_a_chapter_renders_without_a_fake_body() -> None:
         summary="",
         quality_score=0.0,
         quality_rationale="本局没有产出可蒸馏的正文",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
     text = record_text(chapter)
@@ -249,6 +257,8 @@ def test_store_refuses_a_body_that_is_only_half_there(memory: MemoryTool) -> Non
         summary="其实有正文",
         quality_score=0.0,
         quality_rationale="桩",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
     with pytest.raises(AssertionError, match="同真同假"):

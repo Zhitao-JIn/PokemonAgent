@@ -97,6 +97,8 @@ def test_runs_all_reaches_the_real_mcp_run_family_without_a_run_filter(tmp_path:
                     markdown=name,
                     quality_score=0.5,
                     quality_rationale="example",
+                    pointers=[],
+                    index={"headline": "", "keys": [], "evidence": []},
                 ).model_dump(),
             }
             for name in ("old-run", "current-run")

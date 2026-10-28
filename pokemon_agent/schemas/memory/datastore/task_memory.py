@@ -26,6 +26,14 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from .fact import Fact
+
+
+class MemoryIndex(BaseModel):
+    headline: str = ""
+    keys: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+
 
 class TaskMemory(BaseModel):
     """一条 task 记忆——**本 task ActMemory 的派生视图**（一 task 一条）。"""
@@ -66,6 +74,10 @@ class TaskMemory(BaseModel):
     last_frame: str | None = Field(
         default=None, description="本 task 末键的 after 帧（PNG data URI，可空）"
     )
+
+    facts: list[Fact]
+    pointers: list[str]
+    index: MemoryIndex
 
     markdown: str = Field(default="", description="LLM 生成的完整记忆正文（.md 主内容）")
 

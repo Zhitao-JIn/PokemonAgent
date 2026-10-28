@@ -1,4 +1,4 @@
-"""统一脚本现场：按键、等待、事件与步骤记录按声明的策略执行。"""
+"""统一脚本现场：按键后记录紧凑观察，等待与步骤记录遵循策略。"""
 
 from __future__ import annotations
 
@@ -6,11 +6,12 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from ..interface import Memory, PlaceInWorld, ScreenText, TaskScene
-from ..object_events import judge_press
+from ..interface.domain.step_observation import FacingObject, RamState, StepObservation
+from ..readout import read_readout
 from ..scene import classify_scene
+from ..screen_text import overlay_of
 from . import screen_steps
 from .control_flow import Abort, Halt, ScriptResult
-from .dialog_cache import DialogCache
 from .execution_types import ScriptStatus, ScriptStep
 from .interface import WorldConsole
 from .policies import ScriptPolicy
@@ -37,9 +38,8 @@ class ScriptRun:
         self.start_pos = start_pos
         self.policy = policy if policy is not None else ScriptPolicy()
         self.scene = scene if scene is not None else self.scene_now()
-        self.events: list[dict[str, Any]] = []
         self.steps: list[ScriptStep] = []
-        self.dialog = DialogCache()
+        self.observations: list[StepObservation] = []
         self.calls: list[Any] = []
 
     @property
@@ -60,29 +60,44 @@ class ScriptRun:
         return settle_screen(self.console, self.policy.wait)
 
     def _press(self, key: str, *, settle: bool) -> tuple[ScreenText, int, bool]:
-        """统一按键路径：推进、等待、记录增量与事件、执行声明的中断。"""
+        """统一按键路径：推进、等待、记录观察并执行声明的中断。"""
         before = self.console.pos()
-        facing = self.console.facing() if self.policy.collect_world_events else ""
         self.console.press(key)
-        frames = self.settle() if settle else 0
+        try:
+            frames = self.settle() if settle else 0
+        except Abort:
+            self._observe(self.screen(), settled=False)
+            raise
         text = self.screen()
+        self._observe(text, settled=frames < self.policy.wait.timeout_frames)
         after = self.console.pos()
-        self.dialog.ingest(text.dialog_text)
-        if self.policy.collect_world_events:
-            self.events.extend(
-                judge_press(
-                    actor_place=before,
-                    facing_before=facing,
-                    button=key,
-                    times=1,
-                    after_place=after,
-                    dialog_text=text.dialog_text,
-                    kind_at=lambda p: self.console.object_kind(p.x, p.y),
-                )
-            )
         for interrupt in self.policy.interruptions:
             interrupt(self)
         return text, frames, after != before
+
+    def _observe(self, text: ScreenText, *, settled: bool) -> None:
+        """追加本键的只读快照；调用方已完成等待，读取不会推进帧或执行按键。"""
+        readout = read_readout(self.mem, text, text_source="decode")
+        place, facing = self.console.pos(), self.console.facing()
+        target = place.step_toward(facing) if facing else None
+        kind = self.console.object_kind(target.x, target.y) if target is not None else None
+        self.observations.append(
+            StepObservation(
+                step=len(self.observations) + 1,
+                place=place,
+                facing=facing,
+                scene=classify_scene(text, self.mem),
+                overlay=overlay_of(text),
+                dialog_text=text.dialog_text,
+                options=text.options,
+                cursor=text.cursor,
+                screen=text.screen,
+                ram=RamState.model_validate(readout.model_dump()),
+                facing_object=FacingObject(kind=kind, place=target) if kind and target else None,
+                battle_status=readout.battle if readout.in_battle else None,
+                settled=settled,
+            )
+        )
 
     def press(self, key: str, *, settle: bool = True) -> bool:
         """按一键，返回是否位移；声明的中断以 Halt 报告。"""
@@ -162,11 +177,7 @@ class ScriptRun:
         return self.finish(ok=True, code="ok")
 
     def finish(self, *, ok: bool, code: str, extra: dict[str, Any] | None = None) -> ScriptResult:
-        """把终态与业务载荷合成统一报告；不隐式执行恢复。
-
-        `dialog` 按行摊平：`DialogCache.deltas` 每次 `ingest` 一段（同帧多行用换行
-        拼在一起），报告里要的是"一行一个元素、按出现顺序、空行不要"。
-        """
+        """把终态与业务载荷合成统一报告；不隐式执行恢复。"""
         data = self._snapshot()
         if extra:
             data.update(extra)
@@ -174,24 +185,9 @@ class ScriptRun:
             ok=ok,
             code=code,
             data=data,
-            events=self.events,
             calls=self.calls,
-            dialog=_dialog_lines(self),
+            observations=list(self.observations),
         )
-
-
-def _dialog_texts(run: ScriptRun) -> list[str]:
-    """本次调用累计的对话增量片段（按段，供 `advance_dialog` 的 `data["dialog"]`）。"""
-    return list(run.dialog.deltas)
-
-
-def _dialog_lines(run: ScriptRun) -> list[str]:
-    """本次调用累计的对话行：把增量段摊平、丢空行，按出现顺序。
-
-    `finish` 用它填报告顶层 `dialog`——D9 的同名覆盖（服务端把这份放在
-    `advance_dialog` 的按段 `data["dialog"]` 之后）靠它保证最终是按行的那份。
-    """
-    return [line for chunk in run.dialog.deltas for line in chunk.splitlines() if line.strip()]
 
 
 def run_script(
@@ -216,7 +212,6 @@ __all__ = [
     "WARPS",
     "SHOP_LAYOUTS",
     "POKECENTER_LAYOUTS",
-    "DialogCache",
     "ScriptResult",
     "ScriptRun",
     "WorldConsole",

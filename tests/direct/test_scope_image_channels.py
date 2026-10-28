@@ -81,6 +81,8 @@ class _RecordingBrain(_Brain):
         steps: int,
         max_steps: int,
         images: Sequence[str] = (),
+        grounding_texts: Sequence[str] | None = None,
+        termination: str = "",
     ) -> SummarizeRunResult:
         self.frames["summarize_run"], self.prompts["summarize_run"] = list(images), prompt
         return super().summarize_run(
@@ -91,6 +93,8 @@ class _RecordingBrain(_Brain):
             steps=steps,
             max_steps=max_steps,
             images=images,
+            grounding_texts=grounding_texts,
+            termination=termination,
         )
 
 
@@ -106,6 +110,8 @@ def _episode(first: str | None, last: str | None, number: int = 0) -> EpisodeMem
         quality_rationale="q",
         first_frame=first,
         last_frame=last,
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -122,6 +128,9 @@ def _task(first: str | None, last: str | None, number: int = 0) -> TaskMemory:
         quality_rationale="q",
         first_frame=first,
         last_frame=last,
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 

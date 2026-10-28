@@ -97,15 +97,13 @@ _RENDERERS = {
     TraceKind.GET_ACTION_SPACE: render.action_space,
     TraceKind.JUDGE_VERDICT: render.judge_verdict,
     TraceKind.VERIFY_VERDICT: render.verify_verdict,
-    # 六条读口共用 `retrieve_node` 一个渲染函数，账名由 `req.kind` 定。
+    # 五条读口共用 `retrieve_node` 一个渲染函数，账名由 `req.kind` 定。
     TraceKind.READ_ACT_MEMORY: render.retrieve_node,
     TraceKind.READ_EPISODE_MEMORY: render.retrieve_node,
     TraceKind.READ_RUN_MEMORY: render.retrieve_node,
     TraceKind.READ_KNOWLEDGE: render.retrieve_node,
-    TraceKind.READ_OBJECT_MEMORY: render.retrieve_node,
     TraceKind.READ_TASK_MEMORY: render.retrieve_node,
     TraceKind.WRITE_ACT_MEMORY: render.memory_write,
-    TraceKind.WRITE_OBJECT_MEMORY: render.object_note,
     TraceKind.WRITE_EPISODE_MEMORY: render.episode_memory_write,
     TraceKind.WRITE_RUN_MEMORY: render.run_memory_write,
     TraceKind.WRITE_TASK_MEMORY: render.task_memory_write,

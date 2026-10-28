@@ -12,7 +12,6 @@
 
     act（单步情景）      等值筛（episode_id）+ step 数值升序
     task（一层一条）     等值筛（episode_id）+ total_acts 升序
-    object（一格事件）   等值筛（map/place）+ step 数值升序
     episode（跨局摘要）  hint 等值筛（run_id/episode_id）自然序 / query 语义 rank
     run（整次摘要）      runs=all 全部读出，按 run_id 自然序；按 run 落盘
     knowledge（先验）    纯语义检索（BM25 + 向量 + reranker）+ 判重

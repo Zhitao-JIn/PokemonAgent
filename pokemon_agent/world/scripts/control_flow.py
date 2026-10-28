@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..interface.domain.step_observation import StepObservation
 from .execution_types import ScriptReason
 
 
@@ -18,20 +19,13 @@ class Halt(Exception):
 
 @dataclass
 class ScriptResult:
-    """一次脚本调用的终态报告（统一带 `events[]` 与现状快照）。
-
-    `dialog` 是本次调用累计的对话**行**（不是帧、不是段）：脚本每按一键都会把
-    屏幕上新出现的对话行收进 `DialogCache`，`finish` 把它摊平成一行一个元素。
-    一口气按完的过场（领包裹、长对话）只在这里留下文字——`events[]` 记的是
-    打在物体上的结果，不是屏幕上的话。
-    """
+    """一次脚本调用的终态报告，含逐键 observations 与现状快照。"""
 
     ok: bool
     code: str
     data: dict[str, Any] = field(default_factory=dict)
-    events: list[dict[str, Any]] = field(default_factory=list)
     calls: list[Any] = field(default_factory=list)
-    dialog: list[str] = field(default_factory=list)
+    observations: list[StepObservation] = field(default_factory=list)
 
 
 class Abort(Exception):  # noqa: N818 —— 脚本内部的控制流信号，不出本包

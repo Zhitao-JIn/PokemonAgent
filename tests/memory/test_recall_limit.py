@@ -30,6 +30,8 @@ def capability(tmp_path: Path) -> MemoryCapability:
             markdown="field",
             quality_score=0.5,
             quality_rationale="example",
+            pointers=[],
+            index={"headline": "", "keys": [], "evidence": []},
         )
         records.extend(
             [
@@ -90,6 +92,8 @@ def test_run_only_recall_respects_optional_limit(
                 summary="",
                 quality_score=0.5,
                 quality_rationale="example",
+                pointers=[],
+                index={"headline": "", "keys": [], "evidence": []},
             ).model_dump(),
         }
         for index in range(10)

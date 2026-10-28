@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from .task_memory import MemoryIndex
+
 
 class RunMemory(BaseModel):
     """本 run 全部 EpisodeMemory 的蒸馏正文与 harness 来源章。"""
@@ -27,6 +29,9 @@ class RunMemory(BaseModel):
     quality_rationale: str = Field(description="质量评分的理由")
     applicable_scenes: list[str] = Field(default_factory=list, description="此记忆适用的游戏场景")
     tags: list[str] = Field(default_factory=list, description="记忆标签（导航/战斗/物品收集等）")
+
+    pointers: list[str]
+    index: MemoryIndex
 
     markdown: str = Field(default="", description="LLM 生成的完整记忆正文（.md 主内容）")
 

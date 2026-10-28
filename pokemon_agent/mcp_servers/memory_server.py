@@ -79,7 +79,7 @@ def recall(
     conditions: dict[str, str] | None = None,
     limit: int | None = 8,
 ) -> dict[str, Any]:
-    """统一回忆口：跨全部记忆族（act / task / episode / object / knowledge）检索。
+    """统一回忆口：跨全部记忆族（act / task / episode / run / knowledge）检索。
 
     不需要指定记忆种类——给一句 query（想回忆什么）和可选的上下文 hint：
     conditions 可带 episode_id（圈本局）、map_id / place（圈某格或某图）。
@@ -98,9 +98,9 @@ def recall(
 def memorize(records: list[dict[str, Any]]) -> dict[str, Any]:
     """统一记忆口：把一批记忆写进记忆库，按每条的 kind 判别落族。
 
-    records 每条：{"kind": "act"|"task"|"episode"|"object"|"knowledge"|"run", "payload": {...}}。
+    records 每条：{"kind": "act"|"task"|"episode"|"knowledge"|"run", "payload": {...}}。
     payload 形状按 kind 对应各自 schema 的 model_dump（act=ActMemory、
-    task=TaskMemory、episode=EpisodeMemory、object=ObjectFactEvent、
+    task=TaskMemory、episode=EpisodeMemory、
     knowledge={topic, content, source}）。
     返回实际落库条目（被判重跳过的不在其中）。
     """

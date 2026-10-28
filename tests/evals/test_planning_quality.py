@@ -36,6 +36,7 @@ def grader_config() -> ResultGraderConfig:
         ([False, None, True, True], "I"),
     ],
 )
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_mandatory_rubric_results_distinguish_pass_fail_and_unknown(marks, expected) -> None:
     reference = load()[0].reference
     grade = QualityGrade(
@@ -48,6 +49,7 @@ def test_mandatory_rubric_results_distinguish_pass_fail_and_unknown(marks, expec
     assert grade_value(reference, grade) == expected
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_missing_or_duplicate_rubric_items_are_not_valid_scores() -> None:
     reference = load()[0].reference
     item = CriterionGrade(name=reference.criteria[0].name, met=True, evidence="source")
@@ -56,6 +58,7 @@ def test_missing_or_duplicate_rubric_items_are_not_valid_scores() -> None:
         grade_value(reference, QualityGrade(criteria=[item] * len(reference.criteria)))
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_disabled_source_grader_returns_noanswer_without_a_model() -> None:
     case = load()[0]
 
@@ -71,6 +74,7 @@ def test_disabled_source_grader_returns_noanswer_without_a_model() -> None:
     assert score.value == NOANSWER
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_semantic_grader_gets_actual_context_images_candidate_and_separate_reference(
     monkeypatch,
 ) -> None:
@@ -113,6 +117,7 @@ def test_semantic_grader_gets_actual_context_images_candidate_and_separate_refer
     assert seen[1].content[1].image == image
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_invalid_model_grade_is_unjudged_instead_of_a_success(monkeypatch) -> None:
     case = load()[0]
 

@@ -12,7 +12,7 @@ class FromHarnessToMemoryToolRecallItem(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["act", "task", "episode", "object", "knowledge", "run"] = Field(
+    kind: Literal["act", "task", "episode", "knowledge", "run"] = Field(
         description="这条来自哪个记忆族"
     )
     uuid: str = Field(description="记忆层生成的记录 uuid")

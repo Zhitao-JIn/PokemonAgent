@@ -3,7 +3,6 @@
 from pydantic import BaseModel, Field
 
 from ...budget import BudgetRecord
-from ...objects import ObjectFactEvent
 from ...observation import ObservationRecord
 from ...records import (
     EpisodeRecord,
@@ -21,7 +20,6 @@ class RunPlanParams(BaseModel):
     run_index: list[RunRecord] = Field(default_factory=list)
     knowledge: list[str] = Field(default_factory=list)
     observation: ObservationRecord | None = None
-    objects: list[ObjectFactEvent] = Field(default_factory=list)
     last_judge: JudgeFeedbackRecord | None = None
     max_push: int
     terrain_meanings: dict[str, str] = Field(default_factory=dict)

@@ -3,8 +3,7 @@
 这个文件钉三件事，都是"读错不会报错、只会让规划变蠢"的地方：
 
 1. **素材是 memory，不是 trace**：`plan` 向 `MemoryToolPort` 要本 run 的
-   `episode_memory`（带 `run_id` 条件）与 `object_memory`（不带 `map_id`——
-   run 级没有"当前地图"）。原先它读全量事件流，那条路已经断掉。
+   `episode_memory`（带 `run_id` 条件）。原先它读全量事件流，那条路已经断掉。
 2. **详情按执行顺序排**：`episode_id` 是 `{run_id}-ep{n}`，**字典序在 n≥10 时会乱**
    （`ep10 < ep2`）。排序键取 `state.episode_outputs`（执行序 append 的机械记录）。
 3. **详情是本 run 全部局**：更早的成功局同样保留，规划与判定共用这份详情。
@@ -118,6 +117,8 @@ def _memory(episode_id: str, success: bool, goal: str = "某目标") -> EpisodeM
         summary=f"{episode_id} 的总结",
         quality_score=0.5,
         quality_rationale="桩",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -195,8 +196,8 @@ def _run_once(
 # ---- 素材来自记忆 ----
 
 
-def test_plan_asks_memory_for_this_run_and_for_no_particular_map() -> None:
-    """素材从记忆里取：摘要限本 run，地图事实**不**按地图筛（run 级没有当前地图）。"""
+def test_plan_asks_memory_for_episode_summaries_from_this_run() -> None:
+    """素材从记忆里取：摘要限本 run。"""
     memory = _Memory([_memory("r1-ep1", True)], ["r1-ep1"])
     deps = _deps(memory, _BrainTool())
 

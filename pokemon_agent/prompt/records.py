@@ -36,7 +36,6 @@ class ActRecord(BaseModel):
             dialog_text: str = ""
             options: list[str] = Field(default_factory=list)
             cursor: str | None = None
-            overview: str = ""
             walk_map: str = ""
             map_id: int | None = None
             screen: str = ""
@@ -70,8 +69,15 @@ class ActRecord(BaseModel):
         scene: str = Field(default="")
         facts: Facts = Field(default_factory=Facts)
         done: bool = Field(default=False)
-        perceived: bool = Field(default=True)
-        observation_flags: list[str] = Field(default_factory=list)
+        observation_flags: list[str] = Field(
+            default_factory=list, description="当前帧渲染用于生成观察限制提示"
+        )
+
+    class Outcome(BaseModel):
+        code: str = ""
+        ok: bool = False
+        summary: str = ""
+        reason: str = ""
 
     before: Observation = Field()
     action: str = Field()
@@ -82,12 +88,34 @@ class ActRecord(BaseModel):
         description="脚本调用期间屏幕上依次出现的对话行（一行一个元素，不截断）；"
         "按键动作与旧记忆为空列表",
     )
+    changes: list[ChangeRecord] = Field(default_factory=list)
+    outcome: Outcome | None = None
     step: int = Field()
     episode_id: str = Field()
     task_id: str = Field(default="")
     run_id: str = Field(default="")
     before_frame: str | None = Field(default=None)
     after_frame: str | None = Field(default=None)
+
+
+class ChangeRecord(BaseModel):
+    """门面计算的单条观察差异，供提示词排版。"""
+
+    class Object(BaseModel):
+        kind: str
+        place: ActRecord.Observation.Place
+
+    step: int
+    kind: str
+    place: ActRecord.Observation.Place | None = None
+    object: Object | None = None
+    text: str
+
+
+class IndexRecord(BaseModel):
+    headline: str = ""
+    keys: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
 
 
 class TaskRecord(BaseModel):
@@ -109,6 +137,7 @@ class TaskRecord(BaseModel):
     tags: list[str] = Field(default_factory=list)
     first_frame: str | None = Field(default=None)
     last_frame: str | None = Field(default=None)
+    index: IndexRecord = Field(default_factory=IndexRecord)
     markdown: str = Field(default="")
 
     @property
@@ -137,6 +166,7 @@ class EpisodeRecord(BaseModel):
     tags: list[str] = Field(default_factory=list)
     first_frame: str | None = Field(default=None)
     last_frame: str | None = Field(default=None)
+    index: IndexRecord = Field(default_factory=IndexRecord)
     markdown: str = Field(default="")
 
     @property
@@ -161,6 +191,7 @@ class RunRecord(BaseModel):
     quality_rationale: str = Field()
     applicable_scenes: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    index: IndexRecord = Field(default_factory=IndexRecord)
     markdown: str = Field(default="")
 
     @property

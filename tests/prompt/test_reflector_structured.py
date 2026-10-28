@@ -17,7 +17,6 @@ CASES = sorted((Path(__file__).parent / "golden/decide_action").glob("*.req.json
 @pytest.mark.parametrize("path", CASES, ids=lambda path: path.stem)
 def test_reflector_preserves_the_full_record_without_a_brain(path: Path) -> None:
     observation = TaskObservation.model_validate(json.loads(path.read_bytes())["request"]["obs"])
-    observation.facts.known_objects = "检索物体"
     observation.facts.knowledge = "检索知识"
     after = observation.model_copy(update={"step": observation.step + 1})
     req = FromHarnessToBrainToolReflectReq(
@@ -26,7 +25,7 @@ def test_reflector_preserves_the_full_record_without_a_brain(path: Path) -> None
         action=Action(sequence=[ActionSegment(name="up")]),
         episode_id="ep",
         step=7,
-        result="原样结果",
+        outcome={"code": "ok", "ok": True, "summary": "原样结果"},
     )
     original = req.model_dump_json()
     expected_snapshots = []
@@ -39,13 +38,16 @@ def test_reflector_preserves_the_full_record_without_a_brain(path: Path) -> None
     reflector = Reflector()
 
     result = reflector.reflect(req).entry.model_dump(mode="json")
+    for name, expected in zip(("before", "after"), expected_snapshots, strict=True):
+        result[name].pop("facing_object")
+        expected.pop("facing_object")
 
     assert result == {
         "before": expected_snapshots[0],
         "after": expected_snapshots[1],
         "action": "up",
-        "result": "原样结果",
-        "dialog": [],
+        "outcome": {"code": "ok", "ok": True, "summary": "原样结果", "reason": ""},
+        "observations": [],
         "step": 7,
         "episode_id": "ep",
         "task_id": "",

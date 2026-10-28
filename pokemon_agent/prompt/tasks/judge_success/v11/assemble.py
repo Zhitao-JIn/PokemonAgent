@@ -22,7 +22,6 @@ from ..fragments.goal_table.params import GoalTableParams
 from ..fragments.judge_interrupt.params import JudgeInterruptParams
 from ..fragments.knowledge.params import KnowledgeParams
 from ..fragments.memory_records.params import MemoryParams
-from ..fragments.object_events.params import ObjectEventsParams
 from ..fragments.observation.params import ObservationParams
 from ..fragments.prompt_layout.params import Block, PromptLayoutParams
 from ..fragments.read_screen.params import ReadScreenParams
@@ -117,9 +116,7 @@ def memory_blocks(params: JudgeParams, compose: Compose) -> list[str]:
             _LABELS["L008"].format(
                 compose(
                     "observation",
-                    ObservationParams(
-                        observation=params.observation, known_objects=params.known_objects
-                    ),
+                    ObservationParams(observation=params.observation),
                 )
             )
         )
@@ -214,9 +211,7 @@ def assemble(params: JudgeParams, compose: Compose) -> str:
         if params.knowledge
         else "",
         Block.INDEX: _indices(params, compose),
-        Block.OBJECTS: compose("object_events", ObjectEventsParams(events=params.known_objects))
-        if params.known_objects
-        else "",
+        Block.OBJECTS: "",
         Block.HISTORY: _executed(params, compose),
         Block.FEEDBACK: _feedback(params, compose),
         Block.FRAME: _current(params, compose),

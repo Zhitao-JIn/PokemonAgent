@@ -10,10 +10,11 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pokemon_agent.brain.interface import Action
-from pokemon_agent.world import TaskObservation
+from pokemon_agent.schemas.memory import ActMemory
+from pokemon_agent.world import RamReadout, TaskObservation
 
 
 class FromHarnessToBrainToolReflectReq(BaseModel):
@@ -29,5 +30,7 @@ class FromHarnessToBrainToolReflectReq(BaseModel):
     after: TaskObservation
     episode_id: str = ""
     step: int = 0
-    result: str = ""
-    """脚本动作的终态报告摘要（结局码）；键动作为空串。原样进 `ActMemory.result`。"""
+    outcome: ActMemory.ScriptOutcome | None = None
+    observations: list[ActMemory.Observation.StepObs] = Field(default_factory=list)
+    before_ram: RamReadout | None = None
+    after_ram: RamReadout | None = None

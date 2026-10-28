@@ -837,6 +837,8 @@ class Brain:
         steps: int,
         max_steps: int,
         images: Sequence[str] = (),
+        grounding_texts: Sequence[str],
+        termination: str,
     ) -> SummarizeResult:
         """一次蒸馏尝试：问一次模型、解析摘要。**不重试**——重试是调用方的循环。
 
@@ -878,7 +880,7 @@ class Brain:
             raise SummarizeAttemptFailed(call) from exc
 
         # 步骤 2：解析摘要。
-        summary = self._parse_summary(text)
+        summary = self._parse_summary(text, grounding_texts, termination)
 
         call = ModelCall(
             payload={
@@ -912,6 +914,8 @@ class Brain:
         steps: int,
         max_steps: int,
         images: Sequence[str] = (),
+        grounding_texts: Sequence[str],
+        termination: str,
     ) -> SummarizeRunResult:
         """问一次现有蒸馏 provider，交回 run 方言；失败沿用 SummarizeAttemptFailed。
 
@@ -927,13 +931,44 @@ class Brain:
             steps=steps,
             max_steps=max_steps,
             images=images,
+            grounding_texts=grounding_texts,
+            termination=termination,
         )
         return SummarizeRunResult(
             summary=RunSummary.model_validate(result.summary.model_dump()), calls=result.calls
         )
 
     @staticmethod
-    def _parse_summary(text: str) -> EpisodeSummary | None:
+    def _valid_summary_index(
+        index: object, grounding_texts: Sequence[str], termination: str
+    ) -> bool:
+        """校验关键词来源、证据词表和标题结局词。"""
+        if not isinstance(index, dict):
+            return False
+        keys, evidence, headline = index.get("keys"), index.get("evidence"), index.get("headline")
+        if not isinstance(keys, list) or not all(
+            isinstance(key, str) and key and any(key in source for source in grounding_texts)
+            for key in keys
+        ):
+            return False
+        if not isinstance(evidence, list) or not all(
+            isinstance(item, str) and item in {"对话原文", "状态变化", "换图", "失败原因"}
+            for item in evidence
+        ):
+            return False
+        if not isinstance(headline, str):
+            return False
+        forbidden = (
+            ("失败", "未达成", "未完成", "没做成")
+            if termination == "goal_done"
+            else ("成功", "达成")
+        )
+        return not any(word in headline for word in forbidden)
+
+    @staticmethod
+    def _parse_summary(
+        text: str, grounding_texts: Sequence[str], termination: str
+    ) -> EpisodeSummary | None:
         """把蒸馏输出解析成 `EpisodeSummary`；解析不出来返回 `None`。
 
         整段输出可以是「摘要对象本身」，也可以是「带 `summary` 字段的外层对象」
@@ -952,6 +987,11 @@ class Brain:
         # `filename` 从输出里**丢掉**（0914 98 全退）：模型可能还在给，
         # 但字段已经不存在了——落盘用 uuid 命名，那一格从来没有读方。
         data.pop("filename", None)
+        index = data.get("index")
+        if not Brain._valid_summary_index(index, grounding_texts, termination):
+            return None
+        if str(data.get("summary", "")).strip() and not index["headline"].strip():
+            return None
         try:
             return EpisodeSummary(
                 summary=data["summary"],
@@ -964,6 +1004,7 @@ class Brain:
                 applicable_scenes=data.get("applicable_scenes", []),
                 tags=data.get("tags", []),
                 markdown=markdown,
+                index=index or {},
             )
         except Exception:  # noqa: BLE001  字段不全，留 None
             return None

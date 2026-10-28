@@ -1,0 +1,8 @@
+{
+  "task": "summarize_run",
+  "version": "v7",
+  "kind": "task",
+  "params": "SummarizeRunParams",
+  "reason": "解读与索引同次产出，事实由程序摘取",
+  "hash": "06e5704ddd8e180185f91db88afb889e0fc63aadbaed403a9a9f7a81becdab32"
+}

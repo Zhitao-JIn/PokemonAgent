@@ -44,10 +44,7 @@ class Facts(BaseModel):
     class Landmark(BaseModel):
         """世界里格子上的一个东西：门 / 招牌 / 人 / 物 / 石。类型和位置都来自模拟器内存。
 
-        **没有名字。** 名字在总览画面里没有可观测的证据，只能靠走过去交互再记住——
-        那正是语义记忆（object）的活（"物"除外——拾取瞬间弹出的对话文字本身就是
-        名字，见
-        `harness/episode/store/store_object_semantic_memory/rules.py::_pickup_or_still`）。
+        **没有名字。** 名字在总览画面里没有可观测的证据，只能靠走过去交互再观察。
 
         **存 `map_id`/`x`/`y` 三个原始字段，不直接嵌 `PlaceInWorld`。** 不是不想用
         `PlaceInWorld`（`.place` 属性就是现拼一个给调用方）——这个模块要保持
@@ -86,8 +83,7 @@ class Facts(BaseModel):
     landmarks: list[Landmark] = Field(
         default_factory=list,
         description="这一帧屏幕上的地标（门/招牌/人/物/石），来自 `TerrainMap.landmarks()`。"
-        "**结构化原件**——判定层（`harness/episode/store/store_object_semantic_memory/"
-        "rules.py`）直接用，不用再从"
+        "**结构化原件**——世界观察直接提供，不用再从"
         "渲染出去的文本反解一遍。空列表就是这一帧没有地标，不是漏填",
     )
     dialog_text: str = Field(default="", description="对话框里的文字，overlay=DIALOG 时才有")
@@ -146,7 +142,7 @@ class Facts(BaseModel):
     def exclude(self, keys: frozenset[str]) -> Facts:
         """去掉指定的动态字段（`model_extra` 里的），返回新副本。
 
-        用于写记忆前过滤掉不该进记忆的字段（如 `known_objects`/`knowledge`）——
+        用于写记忆前过滤掉不该进记忆的临时检索字段——
         这些不是 RAM/视觉产出的"事实"，是别处临时塞进来的检索结果，本来就不该
         进 `Facts` 的具名字段，只可能以动态字段的形式出现。**直接改 `model_extra`
         字典，不走 model_dump()/model_validate() 那一趟**——去掉几个键不需要

@@ -1,8 +1,0 @@
-{
-  "task": "summarize_task",
-  "version": "v5",
-  "kind": "task",
-  "params": "SummarizeTaskParams",
-  "reason": "修critical_decisions对象数组违约及散落数组的JSON语法错误，保留紧凑证据和原始素材",
-  "hash": "2721369163597dd7275c85d8f413b8855095699156e290724a445c91a91d96f8"
-}

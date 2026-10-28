@@ -1,8 +1,0 @@
-{
-  "task": "verify",
-  "version": "v3",
-  "kind": "task",
-  "params": "VerifyParams",
-  "reason": "Claude显式缓存分界：固定说明前置，本次目标/记录/知识置于统一输入分界后",
-  "hash": "5a1aafd7e9d017f34d7eedb6fda905f174714955e823bb40ccedaa4b567f2e26"
-}

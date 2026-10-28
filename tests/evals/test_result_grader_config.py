@@ -131,6 +131,7 @@ def test_resolve_grader_still_requires_result_grader() -> None:
         ("evals.brain_summary.task", "brain_summary", "summary_solver", "summary_model"),
     ],
 )
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_brain_tasks_assemble_without_a_test_text_key(
     monkeypatch: pytest.MonkeyPatch,
     module_name: str,

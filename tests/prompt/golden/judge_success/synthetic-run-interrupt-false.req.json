@@ -59,7 +59,13 @@
         ],
         "first_frame": null,
         "last_frame": null,
-        "markdown": "本局记录"
+        "markdown": "本局记录",
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       }
     ],
     "task_index": [],
@@ -81,7 +87,13 @@
         "quality_rationale": "预算不足",
         "applicable_scenes": [],
         "tags": [],
-        "markdown": ""
+        "markdown": "",
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       }
     ],
     "observation": {

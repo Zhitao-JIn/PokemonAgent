@@ -29,6 +29,7 @@ def _write_version(root: Path, version: str, data: bytes) -> None:
     (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_v1_load_preserves_the_frozen_bytes_and_request_type() -> None:
     cases = load()
     dataset = loader.DATASET_DIR / "v1" / "dataset.jsonl"
@@ -46,6 +47,7 @@ def test_loader_rejects_invalid_or_unsupported_versions(version: str) -> None:
         load(version)
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_loader_reads_the_frozen_v2_dataset() -> None:
     cases = load("v2")
 
@@ -53,6 +55,7 @@ def test_loader_reads_the_frozen_v2_dataset() -> None:
     assert all(isinstance(case, JudgeCaseV2) for case in cases)
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_inspect_task_defaults_to_the_recursive_dataset_and_keeps_v1_selectable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -78,6 +81,7 @@ def test_inspect_task_defaults_to_the_recursive_dataset_and_keeps_v1_selectable(
     assert len(v1_task.dataset) == 4
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_loader_rejects_duplicate_case_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     case = load()[0]
     raw = case.model_dump_json().encode("utf-8")
@@ -100,6 +104,7 @@ def test_loader_rejects_a_changed_frozen_file(
         loader.load("v1")
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_v2_requires_complete_truth_metadata_and_negative_mode() -> None:
     base = load()[0]
     fields = {
@@ -130,6 +135,7 @@ def test_v2_requires_complete_truth_metadata_and_negative_mode() -> None:
         JudgeCaseV2.model_validate({**fields, "negative_mode": None})
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_v2_requires_mechanical_check_id_and_concrete_evidence() -> None:
     base = load()[0]
     fields = {

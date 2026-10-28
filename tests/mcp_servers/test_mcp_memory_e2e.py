@@ -3,10 +3,10 @@
 **钉住的事**（MCP 化定案 2026-09-29）：
 
 1. 默认注册表仅暴露 `recall` / `memorize`；管理面只在 enable_admin 时开放；
-2. `memorize` 按 kind 判别落五族（act / task / episode / object / knowledge），
+2. `memorize` 按 kind 判别落五族（act / task / episode / run / knowledge），
    knowledge 判重（同 topic + 正文逐字）跳过；
 3. `recall` 分族规则：`conditions.episode_id` 圈本局（act step 升序 + task）、
-   `conditions.place` 圈格（object）、`query` 走 episode / knowledge 语义检索；
+   `conditions.run_id` 圈摘要、`query` 走 episode / knowledge 语义检索；
 4. **双路径对齐**：经 MCP 调 server 与进程内直调 `MemoryCapability.recall`，
    同输入结果逐字段一致（一份实现两模式共用的验证）。
 
@@ -51,7 +51,14 @@ EP = "e1"
 def _act_payload(step: int = 1) -> dict[str, Any]:
     obs = ActMemory.Observation(facts={"overlay": "none"}, step=step)
     return ActMemory(
-        before=obs, action="up", after=obs, step=step, episode_id=EP, run_id=RUN
+        before=obs,
+        action="up",
+        after=obs,
+        step=step,
+        episode_id=EP,
+        run_id=RUN,
+        observations=[],
+        outcome=None,
     ).model_dump()
 
 
@@ -68,6 +75,9 @@ def _task_payload(task_id: str = "t1") -> dict[str, Any]:
         summary="沿空地向北走到草丛边。",
         quality_score=0.5,
         quality_rationale="常规移动。",
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     ).model_dump()
 
 
@@ -83,23 +93,8 @@ def _episode_payload() -> dict[str, Any]:
         quality_score=0.5,
         quality_rationale="常规。",
         applicable_scenes=["walk"],
-    ).model_dump()
-
-
-def _object_payload(step: int = 1) -> dict[str, Any]:
-    from pokemon_agent.schemas.memory.datastore.object_memory import ObjectDialogEvent
-
-    place = ObjectDialogEvent.Place(map_id=12, x=13, y=8)
-    return ObjectDialogEvent(
-        outcome="dialog",
-        episode_id=EP,
-        step=step,
-        run_id=RUN,
-        place=place,
-        actor_place=place,
-        object_kind="人",
-        button="a",
-        text="你好。",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     ).model_dump()
 
 
@@ -159,7 +154,6 @@ def test_memorize_dispatches_kinds_and_recall_filters_by_hint(tmp_path):
         {"kind": "act", "payload": _act_payload(step=2)},
         {"kind": "task", "payload": _task_payload()},
         {"kind": "episode", "payload": _episode_payload()},
-        {"kind": "object", "payload": _object_payload(step=1)},
         {"kind": "knowledge", "payload": _knowledge_payload()},
         # 判重：同 topic + 正文逐字相同 → 跳过
         {"kind": "knowledge", "payload": _knowledge_payload()},
@@ -168,8 +162,8 @@ def test_memorize_dispatches_kinds_and_recall_filters_by_hint(tmp_path):
     async def flow(session: Any) -> None:
         body = await _call(session, "memorize", {"records": records})
         assert body["ok"] is True
-        # 7 条输入、1 条判重跳过 → 落库 6 条
-        assert len(body["data"]["stored"]) == 6
+        # 6 条输入、1 条判重跳过 → 落库 5 条
+        assert len(body["data"]["stored"]) == 5
 
         # episode_id hint：act（step 升序）+ task 命中
         body = await _call(
@@ -180,14 +174,6 @@ def test_memorize_dispatches_kinds_and_recall_filters_by_hint(tmp_path):
         assert "act" in kinds and "task" in kinds
         act_steps = [item["payload"]["step"] for item in items if item["kind"] == "act"]
         assert act_steps == sorted(act_steps), "act 按 step 升序"
-
-        # place/map_id hint：object 命中
-        body = await _call(
-            session,
-            "recall",
-            {"query": "", "conditions": {"map_id": "12", "place": "12:13:8"}, "limit": 8},
-        )
-        assert any(item["kind"] == "object" for item in body["data"]["items"])
 
         # query 语义：episode / knowledge 命中
         body = await _call(session, "recall", {"query": "草丛", "conditions": {}, "limit": 8})

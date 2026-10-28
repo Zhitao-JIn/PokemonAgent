@@ -1,8 +1,0 @@
-{
-  "task": "run_plan",
-  "version": "v2",
-  "kind": "task",
-  "params": "RunPlanParams",
-  "reason": "缓存友好排布：静态说明前移、每次不同的变量内容后移，措辞与契约不变",
-  "hash": "6de105a7c3e439bd19ce9bf926da207e8d09a42436419602f11f76c11d02bb0d"
-}

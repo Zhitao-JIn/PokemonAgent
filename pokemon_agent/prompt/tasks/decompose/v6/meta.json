@@ -1,8 +1,0 @@
-{
-  "task": "decompose",
-  "version": "v6",
-  "kind": "task",
-  "params": "DecomposeParams",
-  "reason": "针对五次success_criteria数组错误显式声明字符串类型和通用完整JSON形状",
-  "hash": "61d63df9361ad6af6c129440a121539cf4ab4e1a9e0b3aaa54e18ba3be52bb4a"
-}

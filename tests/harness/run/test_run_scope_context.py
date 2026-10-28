@@ -69,6 +69,8 @@ def _episode(run: str, episode: str) -> EpisodeMemory:
         summary=episode,
         quality_score=0.5,
         quality_rationale="q",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -82,6 +84,8 @@ def _run(run: str, goal: str) -> RunMemory:
         quality_score=0.5,
         quality_rationale="q",
         markdown="复盘正文",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -141,7 +145,6 @@ def test_read_plan_context_records_read_run_memory_account(tmp_path: Path) -> No
 
     assert [event.kind for event in events] == [
         "read_episode_memory",
-        "read_object_memory",
         "read_run_memory",
     ]
     assert events[-1].content.query == "runs=all" and events[-1].content.refs == ["past"]
@@ -161,7 +164,7 @@ def test_run_knowledge_is_retrieved_every_round_into_plan_ctx(tmp_path: Path) ->
         state = state.model_copy(update=retrieve_run_knowledge(state, runtime))
 
     assert memory.knowledge_queries == 2 and state.plan_ctx.knowledge == ["知识2"]
-    assert state.plan_ctx.details is original.details and state.plan_ctx.objects is original.objects
+    assert state.plan_ctx.details is original.details
     assert state.plan_ctx.run_index is original.run_index
     requests = [req for req in memory.requests if req.query]
     assert all(
@@ -203,9 +206,7 @@ def test_run_perceive_passes_the_new_context_to_the_knowledge_unit(tmp_path: Pat
 
 
 def test_run_knowledge_requires_the_sensed_observation(tmp_path: Path) -> None:
-    state = _state().model_copy(
-        update={"observation": None, "plan_ctx": PlanContext(details=[], objects=[])}
-    )
+    state = _state().model_copy(update={"observation": None, "plan_ctx": PlanContext(details=[])})
     memory = _RecordingMemory()
 
     with pytest.raises(AssertionError, match="before sense"):

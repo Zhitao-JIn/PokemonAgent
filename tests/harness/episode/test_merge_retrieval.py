@@ -32,14 +32,14 @@ def test_merge_preserves_the_structured_context() -> None:
     assert result["ep_ctx"].observation.place.x == 16
 
 
-def test_legacy_object_text_is_not_a_context_field() -> None:
-    assert "object_semantic_memory" not in EpisodeContext.model_fields
+def test_removed_semantic_retrieval_is_not_a_context_field() -> None:
+    assert "semantic_memory" not in EpisodeContext.model_fields
     original = state()
     assert not original.ep_ctx.observation.facts.model_extra
 
 
 def test_dynamic_snapshot_blind_fields_can_still_be_removed() -> None:
-    facts = Facts(overlay=Facts.Overlay.NONE, known_objects="retrieved")
-    clean = facts.exclude(frozenset({"known_objects"}))
+    facts = Facts(overlay=Facts.Overlay.NONE, transient_retrieval="retrieved")
+    clean = facts.exclude(frozenset({"transient_retrieval"}))
     assert not clean.model_extra
     assert clean.overlay == facts.overlay

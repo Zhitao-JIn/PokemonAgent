@@ -1,8 +1,0 @@
-{
-  "task": "judge_success",
-  "version": "v7",
-  "kind": "task",
-  "params": "JudgeParams",
-  "reason": "修文本前缀被常识补全导致假成功，按判据关键文字核验而不继承摘要/下层完成叙述",
-  "hash": "11819ec474ec01c1d44c1c264f3d57f2b97bbcc1483219ad148268e887772897"
-}

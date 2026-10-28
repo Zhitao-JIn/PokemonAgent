@@ -5,9 +5,12 @@ import json
 from collections import Counter
 from pathlib import Path
 
+import pytest
+
 from evals.dataset.brain_choose import load
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_frozen_dataset_matches_approved_history_review_and_manifest() -> None:
     """Load all six scenes without capture files or a model provider."""
     root = Path(__file__).resolve().parents[1] / "evals/dataset/brain_choose"

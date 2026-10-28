@@ -9,11 +9,11 @@ from __future__ import annotations
 from _doubles.memory import DeterministicEmbedder, OverlapReranker
 
 from pokemon_agent.memory.recall import MemoryCapability
-from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, TaskMemory
+from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, RunMemory, TaskMemory
 
 _RUN = "r1"
 _EP = "e1"
-_KINDS = ("step_memory", "object_memory", "episode_memory", "knowledge_memory")
+_KINDS = ("step_memory", "task_memory", "episode_memory", "run_memory", "knowledge_memory")
 
 
 def _capability(tmp_path) -> MemoryCapability:
@@ -23,7 +23,14 @@ def _capability(tmp_path) -> MemoryCapability:
 def _act(step: int = 1) -> dict:
     obs = ActMemory.Observation(facts={"overlay": "none"}, step=step)
     return ActMemory(
-        before=obs, action="up", after=obs, step=step, episode_id=_EP, run_id=_RUN
+        before=obs,
+        action="up",
+        after=obs,
+        step=step,
+        episode_id=_EP,
+        run_id=_RUN,
+        observations=[],
+        outcome=None,
     ).model_dump()
 
 
@@ -40,6 +47,9 @@ def _task() -> dict:
         summary="沿空地向北走到草丛边。",
         quality_score=0.5,
         quality_rationale="常规移动。",
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     ).model_dump()
 
 
@@ -53,23 +63,8 @@ def _episode(episode_id: str) -> dict:
         quality_score=0.0,
         quality_rationale="-",
         markdown="一。",
-    ).model_dump()
-
-
-def _object(step: int = 1) -> dict:
-    from pokemon_agent.schemas.memory.datastore.object_memory import ObjectDialogEvent
-
-    place = ObjectDialogEvent.Place(map_id=12, x=13, y=8)
-    return ObjectDialogEvent(
-        outcome="dialog",
-        episode_id=_EP,
-        step=step,
-        run_id=_RUN,
-        place=place,
-        actor_place=place,
-        object_kind="人",
-        button="a",
-        text="你好。",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     ).model_dump()
 
 
@@ -81,6 +76,21 @@ def _knowledge(text: str = "草丛里会遇到野生宝可梦。") -> dict:
         "run_id": _RUN,
         "episode_id": _EP,
     }
+
+
+def _run(summary: str) -> dict:
+    return RunMemory(
+        run_id=_RUN,
+        run_goal="走到草丛",
+        episodes=1,
+        succeeded=1,
+        summary=summary,
+        quality_score=0.5,
+        quality_rationale="常规。",
+        markdown=summary,
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
+    ).model_dump()
 
 
 def test_root_property_reports_memory_under_cwd_by_default(tmp_path, monkeypatch) -> None:
@@ -111,7 +121,7 @@ def test_tool_defaults_put_each_family_under_the_shared_root(tmp_path, monkeypat
 
 
 def test_explicit_memory_root_wins_over_the_default(tmp_path) -> None:
-    """显式给 `memory_root` 时四族全落在它下面（缺省不被用到）（原 119）。"""
+    """显式给 `memory_root` 时全部记忆族落在它下面（缺省不被用到）（原 119）。"""
 
     # Act
     MemoryCapability(DeterministicEmbedder(), OverlapReranker(), memory_root=tmp_path)
@@ -122,7 +132,7 @@ def test_explicit_memory_root_wins_over_the_default(tmp_path) -> None:
 
 
 def test_restore_refreshes_every_family_not_just_step_memory(tmp_path) -> None:
-    """restore 之后五族的内存态都重读——快照后新写的各族记录都不该从旧缓存里冒出来（原 238）。"""
+    """restore 之后各记忆族的内存态都重读——快照后新写的记录不该从旧缓存里冒出来（原 238）。"""
 
     # Arrange
     capability = _capability(tmp_path)
@@ -131,8 +141,8 @@ def test_restore_refreshes_every_family_not_just_step_memory(tmp_path) -> None:
             {"kind": "act", "payload": _act(step=1)},
             {"kind": "task", "payload": _task()},
             {"kind": "episode", "payload": _episode("r1-ep1")},
-            {"kind": "object", "payload": _object(step=1)},
             {"kind": "knowledge", "payload": _knowledge()},
+            {"kind": "run", "payload": _run("run one")},
         ]
     )
     archive = capability.snapshot("s1")
@@ -143,8 +153,8 @@ def test_restore_refreshes_every_family_not_just_step_memory(tmp_path) -> None:
             {"kind": "act", "payload": _act(step=2)},
             {"kind": "task", "payload": _task()},
             {"kind": "episode", "payload": _episode("r1-ep2")},
-            {"kind": "object", "payload": _object(step=2)},
             {"kind": "knowledge", "payload": _knowledge(text="草丛里可能有稀有宝可梦。")},
+            {"kind": "run", "payload": _run("run two")},
         ]
     )
 
@@ -168,5 +178,7 @@ def test_restore_refreshes_every_family_not_just_step_memory(tmp_path) -> None:
         if item["kind"] == "episode"
     ]
     assert episode_ids == ["r1-ep1"], f"episode 族的内存态也要跟着刷，实为 {episode_ids}"
-    assert [item["payload"]["step"] for item in capability.recall("", {"place": "12:13:8"})] == [1]
     assert len([item for item in capability.recall("草丛", {}) if item["kind"] == "knowledge"]) == 1
+    assert [item["payload"]["summary"] for item in capability.recall("", {"runs": "all"})] == [
+        "run one"
+    ]

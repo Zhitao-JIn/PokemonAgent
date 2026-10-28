@@ -1,4 +1,4 @@
-"""Frozen replay envelopes and explicit gateway conversion; no baseline generation."""
+"""Captured request envelopes and active-version prompt stamps."""
 
 import json
 from pathlib import Path
@@ -7,13 +7,10 @@ from typing import Literal
 from pydantic import BaseModel, JsonValue
 
 from evals.common.legacy_requests.registry import REQUESTS as LEGACY
-from pokemon_agent.direct.brain_tool import decide_prompt_params
 from pokemon_agent.prompt import (
     DecideActionParams,
     DecomposeParams,
     JudgeParams,
-    OutputRetryParams,
-    PromptGateway,
     RunPlanParams,
     SummarizeParams,
     SummarizeRunParams,
@@ -21,9 +18,6 @@ from pokemon_agent.prompt import (
     VerifyParams,
 )
 from pokemon_agent.schemas import harness as h
-from pokemon_agent.world import TERRAIN_MEANING
-
-from .legacy_adapter import adapt_request
 
 CURRENT: dict[str, type[BaseModel]] = {
     "choose": h.FromHarnessToBrainToolChooseOnceReq,
@@ -76,51 +70,9 @@ def parse_request(case: GoldenCase) -> BaseModel:
     return cls.model_validate(case.request)
 
 
-def params_for(case: GoldenCase) -> BaseModel:
-    """历史兼容只读原始JSON，保留被新信封忽略的旧值，不补造语义。"""
-    adapted = adapt_request(case.request)
-    req = parse_request(case.model_copy(update={"request": adapted.request}))
-    data = req.model_dump(mode="json")
-    if case.task in {"summarize", "summarize_task"}:
-        data["success"] = req.success
-    data.update(adapted.request)
-    if case.task == "decompose":
-        data["terrain_meanings"] = TERRAIN_MEANING
-    if case.task == "decide_action":
-        converted = decide_prompt_params(req, max_segments=case.max_segments).model_dump(
-            mode="json"
-        )
-        observation = {**converted["observation"], **adapted.request["obs"]}
-        converted.update(
-            {key: value for key, value in adapted.request.items() if key not in {"obs", "space"}}
-        )
-        converted["observation"] = observation
-        data = converted
-    data.update(adapted.prompt_fields)
-    return CONTRACTS[case.task].model_validate(data)
-
-
-def render_case(case: GoldenCase, gateway: PromptGateway) -> bytes:
-    """只经活动网关对冻结文本，不写入golden。"""
-    if case.task == "retry_prompt":
-        return gateway.render(
-            "output_retry", OutputRetryParams.model_validate(case.request)
-        ).text.encode("utf-8")
-    return gateway.render(case.task, params_for(case)).text.encode("utf-8")
-
-
 PACKAGED_REGISTRY = (
     Path(__file__).resolve().parents[2] / "pokemon_agent" / "prompt" / "registry.json"
 )
-
-
-def frozen_v1_registry(root: Path) -> Path:
-    """把每个单元钉在 v1：golden 由 v1 渲染，活动版本升到 v2 后这份基线仍要能逐字节复现。"""
-    data = json.loads(PACKAGED_REGISTRY.read_text(encoding="utf-8"))
-    pinned = {name: {"active": "v1"} for name in data["tasks"]}
-    path = root / "frozen-v1-registry.json"
-    path.write_text(json.dumps({"tasks": pinned}), encoding="utf-8")
-    return path
 
 
 def active_version(task: str) -> str:

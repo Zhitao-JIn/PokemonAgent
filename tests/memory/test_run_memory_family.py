@@ -33,6 +33,8 @@ def _run(run_id: str = "r1") -> RunMemory:
         markdown="# 运行总结\n完成两局。",
         quality_score=0.5,
         quality_rationale="示例",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -48,6 +50,8 @@ def _episode(run_id: str, episode_id: str, run_goal: str, goal_id: str = "g1") -
         markdown="到了。",
         quality_score=0.5,
         quality_rationale="示例",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 

@@ -2,7 +2,6 @@
 
 from pydantic import BaseModel, Field
 
-from ...objects import ObjectFactEvent
 from ...observation import ObservationRecord
 from ...ram_observation import RamObservationRecord
 from ...records import (
@@ -34,5 +33,4 @@ class JudgeParams(BaseModel):
     knowledge: str = ""
     allow_interrupt: bool = False
 
-    known_objects: list[ObjectFactEvent] = Field(default_factory=list)
     ram_observations: list[RamObservationRecord] = Field(default_factory=list, max_length=5)

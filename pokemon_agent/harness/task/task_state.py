@@ -3,17 +3,17 @@
     身份    run_id / episode_id / task / total_acts        begin_task 写，全程只读
     计数    step（本 task 已按键数）                         act 写
     感知    task_ctx（当前帧 + 本 task ActMemory + 受限动作空间）  perceive 写
-            after_observation（本圈 sense 取的新帧，格内流转） perceive 首单元写、close_step 清
+            after_observation / after_ram（本圈新帧与其内存读数） sense 写、close_step 清
     停摆    stall_key / stall_count                          perceive 写
     决策    action（本圈那一个键或一条脚本）                  plan_task 写，perceive 消费后清
-            last_report / last_result（上一动作是脚本时的报告与一行结果） act 写
+            last_report / last_outcome / last_observations（上一脚本报告、结局与逐键观察） act 写
     判定    termination（done / success 由它推出）                     review_and_judge 写
     收尾    reason / memory / output                 task_done 写
 
 **一圈的数据流**：`perceive` 的 `sense` 取一帧落 `after_observation`（观测的局内累计键数 =
 `total_acts + step`；**账面步号** = `step + 1`，圈号语义：dispatch 落 0、每圈取帧 +1，
 同圈所有账共用）
-→ 有 `action`（上一圈按过键）才构造 ActMemory / 停摆 / object 事件 → `close_step` 把新帧转正进
+→ 有 `action`（上一圈按过键）才构造 ActMemory / 停摆 → `close_step` 把新帧转正进
 `task_ctx.observation` 并清 `action` → `review_and_judge` → `plan_task` 出一个键 → `act` 按键、
 `step+1` → 回 `perceive`。首圈 `action` 为 None：`sense` 取的就是开局帧，直接转正。
 
@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 from pokemon_agent.brain import Action, Task
 from pokemon_agent.schemas.harness.domain import JudgeFeedback, Settled, TaskOutput, Termination
 from pokemon_agent.schemas.memory import ActMemory, TaskMemory
-from pokemon_agent.world import ActionSpace, TaskObservation
+from pokemon_agent.world import ActionSpace, RamReadout, TaskObservation
 
 
 class TaskContext(BaseModel):
@@ -38,6 +38,7 @@ class TaskContext(BaseModel):
     observation: TaskObservation | None = Field(
         default=None, description="当前帧（下一个键按下之前的那一帧）；首圈 perceive 前为 None"
     )
+    ram: RamReadout | None = Field(default=None, description="与 observation 同帧的内存读数")
     action_space: ActionSpace | None = Field(default=None, description="本键允许的动作边界")
     act_memories: list[ActMemory] = Field(
         default_factory=list, description="本 task 已写的全部 ActMemory（按 step 升序）"
@@ -88,6 +89,10 @@ class TaskState(Settled, BaseModel):
         default=None, description="本圈 sense 刚取的新帧——perceive 格内流转，出格前恒为 None"
     )
 
+    after_ram: RamReadout | None = Field(
+        default=None, description="与 after_observation 同帧的内存读数；close_step 后清空"
+    )
+
     stall_key: str | None = Field(
         default=None, description="上一键的停摆键；None = 还没有可比的历史"
     )
@@ -101,16 +106,8 @@ class TaskState(Settled, BaseModel):
         description="上一个动作是脚本时它的终态报告（{ok, code, data, events, calls}）；"
         "其它动作时为 None（act 每次覆盖）",
     )
-    last_result: str = Field(
-        default="",
-        description="上一个动作是脚本时的一行结果（调用 → 结局码：摘要或原因），喂下一轮决策；"
-        "其它动作时为空串（act 每次覆盖）",
-    )
-    last_event: dict[str, Any] | None = Field(
-        default=None,
-        description="上一个动作是按键时它的裸对象事件（P6 起 world 侧判定，随 step 响应带来）；"
-        "其它动作时为 None（act 每次覆盖）",
-    )
+    last_outcome: ActMemory.ScriptOutcome | None = None
+    last_observations: list[ActMemory.Observation.StepObs] = Field(default_factory=list)
 
     termination: Termination | None = Field(
         default=None, description="终止类别；None = 还没停（`done` / `success` 由它推出）"

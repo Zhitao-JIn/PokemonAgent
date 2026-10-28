@@ -24,6 +24,7 @@ class FromHarnessToBrainToolSummarizeReq(Settled, BaseModel):
     run_goal: str = Field(description="所属 run 的目标文本，来源章")
     goal_id: str = Field(default="", description="来源章：本局所属 L1 goal 的 task_id")
     goal: str = Field(description="本局目标")
+    grounding_texts: list[str] = Field(default_factory=list)
     termination: Termination = Field(description="终止类别（`success` 由它推出）")
     judge_reason: str = Field(
         default="", description="判停时的判定依据——蒸馏写结论时的参考，不必复述"

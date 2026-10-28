@@ -21,7 +21,6 @@ from .engine import (
     ScriptResult,
     ScriptRun,
     WorldConsole,
-    _dialog_texts,
 )
 from .movement import BUTTON_OF, _run, face_direction, walk_to
 from .policies import ScriptPolicy, StableWait
@@ -186,7 +185,6 @@ def _confirm_heal(console: WorldConsole) -> None:
 
 def _heal_extra(run: ScriptRun, console: WorldConsole) -> dict[str, Any]:
     return {
-        "dialog": _dialog_texts(run),
         "final_screen_text": console.read().screen,
     }
 

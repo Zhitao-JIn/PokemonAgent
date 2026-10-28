@@ -43,6 +43,8 @@ def _memory(run: str, episode: str, goal: str, goal_id: str = "g") -> EpisodeMem
         markdown="完整正文",
         quality_score=0.5,
         quality_rationale="q",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 

@@ -29,9 +29,17 @@ CALLS: dict[str, tuple[Callable[[Brain], object], str]] = {
     ),
     "summarize": (
         lambda brain: brain.summarize(
-            prompt="p", goal="g", history=["h"], success=True, steps=1, max_steps=2
+            prompt="p",
+            goal="g",
+            history=["h"],
+            success=True,
+            steps=1,
+            max_steps=2,
+            grounding_texts=["source"],
+            termination="goal_done",
         ),
-        '{"summary": "s", "quality_score": 0.5, "quality_rationale": "q"}',
+        '{"summary": "s", "quality_score": 0.5, "quality_rationale": "q", '
+        '"index": {"headline": "复盘", "keys": [], "evidence": []}}',
     ),
     "plan": (
         lambda brain: brain.plan(prompt="p", goal_stack=[], history=[], max_push=1),
@@ -111,7 +119,10 @@ def test_each_method_uses_its_own_provider_when_all_four_are_given() -> None:
     j = ScriptedJudge(text_reply('{"decision": "achieved", "why": "observed evidence"}'))
     v = ScriptedJudge(
         text_reply('[{"index": 0, "positive": true, "why": "w"}]'),
-        text_reply('{"summary": "s", "quality_score": 0.5, "quality_rationale": "q"}'),
+        text_reply(
+            '{"summary": "s", "quality_score": 0.5, "quality_rationale": "q", '
+            '"index": {"headline": "复盘", "keys": [], "evidence": []}}'
+        ),
     )
     p = ScriptedJudge(
         text_reply('{"why": "retain existing work"}'),
@@ -124,8 +135,17 @@ def test_each_method_uses_its_own_provider_when_all_four_are_given() -> None:
 
     brain.choose(prompt="p", keys=["up"])
     brain.judge(prompt="p", goal="g", history=[])
-    brain.verify(prompt="p", entries=["e"], goal="g", knowledge="k")
-    brain.summarize(prompt="p", goal="g", history=["h"], success=True, steps=1, max_steps=2)
+    (brain.verify(prompt="p", entries=["e"], goal="g", knowledge="k"),)
+    brain.summarize(
+        prompt="p",
+        goal="g",
+        history=["h"],
+        success=True,
+        steps=1,
+        max_steps=2,
+        grounding_texts=["source"],
+        termination="goal_done",
+    )
     brain.plan(prompt="p", goal_stack=[], history=[], max_push=1)
     brain.decompose(prompt="p", goal="g", context=[], max_tasks=1)
 

@@ -30,7 +30,6 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.memory import (
     ActMemory,
     EpisodeMemory,
-    ObjectDialogEvent,
     RunMemory,
     TaskMemory,
 )
@@ -180,22 +179,13 @@ def _step_memory() -> ActMemory:
         step=3,
         episode_id=EP,
         run_id=RUN,
+        observations=[],
+        outcome=None,
     )
 
 
 def _writes() -> dict[str, object]:
     """三个写口各渲染一次——正文形状逐个验，封套不在这条路上（见模块 docstring）。"""
-    place = ObjectDialogEvent.Place(map_id=12, x=13, y=8)
-    dialog = ObjectDialogEvent(
-        episode_id=EP,
-        step=3,
-        run_id=RUN,
-        place=place,
-        actor_place=place,
-        object_kind="人",
-        button="a",
-        text="你好",
-    )
     episode = EpisodeMemory(
         episode_id=EP,
         run_id=RUN,
@@ -208,6 +198,8 @@ def _writes() -> dict[str, object]:
         # `markdown` **给了值**：正好用来证明它在正文里原样带着，
         # 而不是"没给所以没有"。
         markdown="# 本局\n",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     run_memory = RunMemory(
         run_id=RUN,
@@ -218,6 +210,8 @@ def _writes() -> dict[str, object]:
         quality_score=0.8,
         quality_rationale="可复用",
         markdown="# run\n",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     rendered = {
         "write_act_memory": render.memory_write(
@@ -230,18 +224,6 @@ def _writes() -> dict[str, object]:
                     "step": 3,
                 },
                 entry=_step_memory(),
-            )
-        ),
-        "write_object_memory": render.object_note(
-            FromHarnessToTraceToolAppendReq(
-                kind=TraceKind.WRITE_OBJECT_MEMORY,
-                meta={
-                    "source": "store_object_semantic_memory",
-                    "episode_id": EP,
-                    "task_id": EP,
-                    "step": 3,
-                },
-                event=dialog,
             )
         ),
         "write_task_memory": render.task_memory_write(
@@ -261,6 +243,9 @@ def _writes() -> dict[str, object]:
                     quality_score=0.8,
                     quality_rationale="可复用",
                     markdown="# 本 task\n",
+                    facts=[],
+                    pointers=[],
+                    index={"headline": "", "keys": [], "evidence": []},
                 ),
             )
         ),
@@ -306,6 +291,7 @@ def test_write_episode_content_is_the_memory_body() -> None:
     body = _writes()["write_episode_memory"]
 
     assert set(body) == {
+        "index",
         "summary",
         "reusable_patterns",
         "critical_decisions",
@@ -329,9 +315,7 @@ def test_write_content_is_the_record_body_not_the_envelope() -> None:
       正文里再出现一次就是"同一件事两处说"，而两处迟早会不一样（0914 之前它们
       和正文混在同一个 payload 里，"以哪一份为准"永远说不清）。
       **禁列 = 封套六件 + `meta` 四件 + 两张帧，没有例外**——`kind` / `type` 是
-      封套的名字，所以 `ObjectFactEvent` 自己那两个字段已改名
-      （`outcome` / `object_kind`，见 `schemas/memory/datastore/object_memory.py`），
-      正文键从此与封套词表不相交；
+      封套的名字，正文键从此与封套词表不相交；
     - **两边同表**：核对脚本（`node_io`）与渲染层各存一份"正文必填键"表，且刻意
       不互相 import（核对脚本只读账、不读实现）——代价是这个漂移风险，判据就是
       这条测试：三本写账**真渲一遍**，把出来的键集与 node_io 那张表对一遍
@@ -392,7 +376,7 @@ def test_a_think_account_carries_only_the_sequence() -> None:
 
 
 def test_a_read_account_hands_the_manifest_through_as_a_list() -> None:
-    """六条读口的正文是 `{query, refs}`，**`refs` 是数组**（0914 跟进）。
+    """读口正文是 `{query, refs}`，**`refs` 是数组**（0914 跟进）。
 
     它当年是拼成一行的字符串，于是判据侧得记住"哪条读口按什么数条数"（坐标里带
     空格、文件名不带）；清单压成字符串，代价就转嫁给每个读它的人。现在
@@ -401,19 +385,19 @@ def test_a_read_account_hands_the_manifest_through_as_a_list() -> None:
     """
     content = render.retrieve_node(
         FromHarnessToTraceToolAppendReq(
-            kind=TraceKind.READ_OBJECT_MEMORY,
+            kind=TraceKind.READ_ACT_MEMORY,
             meta={
-                "source": "retrieve_object_semantic_memory",
+                "source": "task.perceive",
                 "episode_id": EP,
                 "task_id": EP,
                 "step": 0,
             },
-            query="map_id=12 before_step=3",
-            refs=["12:13:8", "12:13:9"],
+            query="episode_id=ep1",
+            refs=["(ep1, 1)", "(ep1, 2)"],
         )
     ).content
 
-    assert content == {"query": "map_id=12 before_step=3", "refs": ["12:13:8", "12:13:9"]}
+    assert content == {"query": "episode_id=ep1", "refs": ["(ep1, 1)", "(ep1, 2)"]}
 
 
 def test_structured_content_is_an_object_not_a_json_string() -> None:
@@ -476,3 +460,11 @@ def test_a_parse_failure_outside_the_summary_links_stays_a_call_failure() -> Non
     )
 
     assert [e.kind for e in events] == [TraceKind.CHOOSE_CALL, TraceKind.CALL_FAILED]
+
+
+def test_summary_ledgers_keep_index_without_facts_or_pointers() -> None:
+    writes = _writes()
+
+    for name in ("write_task_memory", "write_episode_memory", "write_run_memory"):
+        assert "index" in writes[name]
+        assert not {"facts", "pointers"} & set(writes[name])

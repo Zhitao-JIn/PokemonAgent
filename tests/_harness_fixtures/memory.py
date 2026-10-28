@@ -146,9 +146,17 @@ class _Memory:
             elif record.kind == "task":
                 self.tasks.append(TaskMemory.model_validate(record.payload))
             elif record.kind == "run":
-                self.runs.append(RunMemory(**record.payload))
+                self.runs.append(
+                    RunMemory(
+                        **record.payload,
+                    )
+                )
             elif record.kind == "episode":
-                self.episodes.append(EpisodeMemory(**record.payload))
+                self.episodes.append(
+                    EpisodeMemory(
+                        **record.payload,
+                    )
+                )
             stored.append(FromHarnessToMemoryToolMemorizedRecord(kind=record.kind, uuid=uuid_))
             if self._snapshot_dir is not None:
                 root = self._snapshot_dir / "records"

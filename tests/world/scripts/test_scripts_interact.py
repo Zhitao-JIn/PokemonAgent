@@ -123,7 +123,8 @@ def test_talk_two_frames_full_dialog_back_to_field() -> None:
     )
     res = talk_to_adjacent_npc(console, "east")
     assert res.ok and res.code == "ok"
-    assert res.data["dialog"] == ["框1", "框2"]
+    assert [observation.dialog_text for observation in res.observations] == ["", "框1", "框2", ""]
+    assert "dialog" not in res.data
 
 
 def test_talk_from_shop_returns_when_the_shop_scene_is_restored() -> None:
@@ -138,7 +139,12 @@ def test_talk_from_shop_returns_when_the_shop_scene_is_restored() -> None:
     result = talk_to_adjacent_npc(console, "east")
 
     assert result.ok and result.code == "ok"
-    assert result.data["dialog"] == ["Welcome!"]
+    assert [observation.dialog_text for observation in result.observations] == [
+        "",
+        "Welcome!",
+        "",
+    ]
+    assert "dialog" not in result.data
 
 
 def test_talk_choice_presented_freezes_with_dialog() -> None:
@@ -156,7 +162,12 @@ def test_talk_choice_presented_freezes_with_dialog() -> None:
     res = talk_to_adjacent_npc(console, "east")
     assert not res.ok and res.code == "choice_presented"
     assert res.data["choice"] == "YES / NO"
-    assert res.data["dialog"] == ["要去冒险吗?"]
+    assert [observation.dialog_text for observation in res.observations] == [
+        "",
+        "要去冒险吗?",
+        "",
+    ]
+    assert "dialog" not in res.data
 
 
 def test_talk_no_npc_in_front() -> None:
@@ -171,7 +182,7 @@ def test_talk_press_a_no_response() -> None:
     console = TalkConsole(_ground(), start=(15, 8), npcs={(16, 8)}, script=[{}])
     res = talk_to_adjacent_npc(console, "east")
     assert not res.ok and res.code == "no_response"
-    assert res.data["dialog"] == []
+    assert "dialog" not in res.data
 
 
 def test_talk_trainer_battle_with_dialog() -> None:
@@ -184,7 +195,12 @@ def test_talk_trainer_battle_with_dialog() -> None:
     )
     res = talk_to_adjacent_npc(console, "east")
     assert res.code == "battle_started"
-    assert res.data["dialog"] == ["你瞅啥!", "对战!"]
+    assert [observation.dialog_text for observation in res.observations] == [
+        "",
+        "你瞅啥!",
+        "对战!",
+    ]
+    assert "dialog" not in res.data
 
 
 def test_talk_npc_walked_away_after_step() -> None:
@@ -202,7 +218,12 @@ def test_talk_default_direction_uses_facing() -> None:
     )
     console._facing = "south"
     res = talk_to_adjacent_npc(console)
-    assert res.ok and res.data["dialog"] == ["嗨"]
+    assert res.ok and [observation.dialog_text for observation in res.observations] == [
+        "",
+        "嗨",
+        "",
+    ]
+    assert "dialog" not in res.data
 
 
 def test_talk_budget_exhausted_still_talking() -> None:
