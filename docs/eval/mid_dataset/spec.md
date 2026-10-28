@@ -106,14 +106,14 @@
 
 **`heal_buy_return`**：起点没有受伤队员（任何一只 `0 < hp < max_hp` 都不成立）→ unjudgeable；存在帧 i_heal：`map_id == 41` 且全员满血；终局球 = 起点 + 2、钱 = 起点 − 400、除 item 70 外背包其余物品数量不变；购买成交帧 i_buy（球数首次等于起点 + 2 的帧）晚于 i_heal；终局 `(map_id, x, y)` 等于起点的 `(map_id, x, y)` 且不在战斗。失败分类：从未满血 / 没买到 2 球或花费不对 / 先买后治 / 没回到起点 / 背包有别的变化。
 
-**`catch_then_heal`**：终局队伍人数 = 起点 + 1；存在帧命中捕获成功（复用 `rules/catch.py` 里 `_ball_result` 的成功分支，或把它的成功判断抽成可复用的函数，**不要复制逻辑**）；存在治疗帧 i_heal 晚于捕获帧，`map_id == 41` 且全员满血；终局不在战斗、无选项、无起名键盘；对手 HP 从未为 0。失败分类：没抓到 / 抓到后没治好 / 先治后抓 / 终局停在起名或选项界面 / 把对手打倒了。
+**`catch_then_heal`**：终局队伍人数 = 起点 + 1；捕获帧 i_catch = 队伍人数首次等于起点 + 1 的带内存读数的帧（以内存为真值，**不要求**账里留有 `was caught` 台词：投球脚本会自动推进，模型调用之间的观察可能直接到捕获后的起名阶段，台词常常没被保存；若同一帧或更早的帧解码出 `was caught` 成功台词，可作为附加证据写进 evidence，但不是门槛）；存在治疗帧 i_heal 晚于捕获帧，`map_id == 41` 且全员满血；终局不在战斗、无选项、无起名键盘；对手 HP 从未为 0。失败分类：没抓到 / 抓到后没治好 / 先治后抓 / 终局停在起名或选项界面 / 把对手打倒了。
 
 **`customer_hint_purchase`**：解码文字（含脚本内逐键观察的 `dialog_text`，读法参照 `npc_interactions.py`）中先后出现两句台词：`This shop sells many ANTIDOTEs.` 与 `No! POTIONs are all sold out.`（容忍换行与大小写差异，不容忍缺词），记两句各自首次出现的位置 iA、iB；存在治疗帧 i_heal：`map_id == 41` 且全员满血；终局相对起点 `ANTIDOTE` +1、钱 −100，`POKé BALL`、`PARLYZ HEAL`、`BURN HEAL` 数量不变（不计 item 70）；购买成交帧 i_buy（ANTIDOTE 数量首次比起点多 1 的帧）；顺序 max(iA, iB) < i_heal < i_buy。失败分类：缺一句台词 / 没治好 / 买错东西或多买 / 钱不对 / 顺序不对。
 
-**`cure_poison_budget`**：起点第二只状态不是 PSN → unjudgeable；终局该只状态为 `ok`；全程没有任何一帧 `map_id == 41`；起点钱 − 终局钱 ∈ [100, 150]；钱首次减少的帧早于该只状态变 ok 的帧。失败分类：没治好 / 进过中心 / 花费不在区间 / 先治后花钱（状态变好早于花钱，视为不是靠买药治好）。
+**`cure_poison_budget`**：起点第二只状态不是 PSN → unjudgeable；终局该只状态为 `ok`；全程没有进过地图 41：既没有任何带内存读数的帧 `map_id == 41`，脚本内逐键观察（读法同 `customer_hint_purchase` 取对话的方式，取观察里的 `place.map_id`）里也没有 41，防止一次脚本调用进出中心而被漏掉；起点钱 − 终局钱 ∈ [100, 150]；钱首次减少的帧早于该只状态变 ok 的帧。失败分类：没治好 / 进过中心 / 花费不在区间 / 先治后花钱（状态变好早于花钱，视为不是靠买药治好）。
 
 ### 10.3 验收（684）
 
 - 起点先取基线（`tests=2920` 为 main 在 683 合入后的数，以实测为准）；最终 failures=0、errors=0、skipped=72；守卫四条 `[ OK ]`；ruff 三项；两种 `git diff --stat` 逐行一致；`CHANGELOG.md` 顶部新增 684 条目。
 - 汇报里列：每条规则的正反例与覆盖的失败分支；改过的已有测试断言（预期没有）；如发现 `_ball_result` 之类的现有函数需要重构才能复用，说明做了什么、有没有改变原行为（现有测试必须仍过）。
-- 允许范围：`evals/agent_short_goal_run/scorer/rules/` 下的新增与 `rules/catch.py` 的最小重构、`rules/__init__.py`、`scorer/utils.py`（只许加小工具）、新增与登记正反例所需的测试文件及 `test_evals_checks.py`（只许追加）、`CHANGELOG.md`。不改数据集、`pokemon_agent/`、`docs/`。不启动模拟器，不调用真实模型。
+- 允许范围：`evals/agent_short_goal_run/scorer/rules/` 下的新增与 `rules/catch.py` 的最小重构（对外复用的函数用公开名字，不要把带下划线的私有名放进 `__all__`）、`rules/__init__.py`、`scorer/utils.py`（只许加小工具）、新增与登记正反例所需的测试文件及 `test_evals_checks.py`（只许追加）、`CHANGELOG.md`。不改数据集、`pokemon_agent/`、`docs/`。不启动模拟器，不调用真实模型。
