@@ -77,9 +77,7 @@ def _state() -> RunState:
         pointers=[],
         index={"headline": "", "keys": [], "evidence": []},
     )
-    context = PlanContext(
-        details=details, objects=[], run_index=[background], knowledge=["知识甲", "知识乙"]
-    )
+    context = PlanContext(details=details, run_index=[background], knowledge=["知识甲", "知识乙"])
     observation = TaskObservation(
         step=3,
         scene=TaskScene.WALK,

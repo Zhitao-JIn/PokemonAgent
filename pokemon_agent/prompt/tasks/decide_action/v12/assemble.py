@@ -1,4 +1,4 @@
-"""decide_action v11：同构布局。"""
+"""decide_action v12：同构布局。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from ..fragments.goal.params import GoalParams
 from ..fragments.human_note.params import HumanNoteParams
 from ..fragments.knowledge.params import KnowledgeParams
 from ..fragments.memory_records.params import MemoryParams
-from ..fragments.object_events.params import ObjectEventsParams
 from ..fragments.prompt_layout.params import Block, PromptLayoutParams
 from ..fragments.read_screen.params import ReadScreenParams
 from ..fragments.script_signature.params import ScriptSignatureParams
@@ -120,7 +119,7 @@ def _frame(params: DecideActionParams, compose: Compose) -> str:
 
 
 def assemble(params: DecideActionParams, compose: Compose) -> str:
-    """v11：同构布局；动作与现场在输入区，按键与地图读法在规则区。"""
+    """v12：同构布局；动作与现场在输入区，按键与地图读法在规则区。"""
     assert params.space.names or params.space.entries, "build_prompt() got an empty action space"
     assert not params.observation.done, "build_prompt() called on a finished episode"
     assert params.goals, "build_prompt() got an empty goal stack"
@@ -133,13 +132,7 @@ def assemble(params: DecideActionParams, compose: Compose) -> str:
         if params.knowledge
         else "",
         Block.INDEX: "\n".join(_memory_lines(params.task_index, "index", compose)),
-        Block.OBJECTS: compose("object_events", ObjectEventsParams(events=params.known_objects))
-        if (
-            params.known_objects
-            and params.observation.scene in {"walk", "shop"}
-            and (params.observation.facts.overlay or "none") == "none"
-        )
-        else "",
+        Block.OBJECTS: "",
         Block.HISTORY: "\n\n".join(_memory_lines(params.memories, "sequence", compose)),
         Block.FEEDBACK: "",
         Block.FRAME: _frame(params, compose),

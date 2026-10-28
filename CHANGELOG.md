@@ -1,3 +1,15 @@
+## 2026-10-28（676）—— 删除对象记忆与提示词旧对象规则
+
+**改了什么**：删除对象记忆模型、存储/召回与 MCP 路由、对象事件请求、TraceKind 及写读账分发、世界对象事件模块和对象记忆评测请求分支；删除 ChooseOnce、Decompose、Judge 的 `known_objects` 与 PlanOnce 的 `objects` 输入。提示词中移除对象记忆参数与渲染，并删除 `object_events/v2`。依 D42 新建 `decide_action/v12` 并激活，删除 v11，去掉静态已知对象规则与地图交互事实说明；只更新 decide_action 的 prompt golden，内容仅删除对应规则段。保留 `facing_object` 行为；清理一份仍描述 `known_objects` 的活知识原子，删除 `synthetic-known-objects` 请求与输出 golden，并移除 `.gitignore` 中已不存在的 `memory/object_memory/` 规则，并从 9 份非历史 decide_action 合成请求夹具中移除已废弃 `known_objects` 地图说明。
+
+**为什么这么改**：逐键观察和记忆摘要已取代对象记忆链；不再传入的对象字段与静态对象规则会继续制造失效接口和冲突依据，应整体清理。
+
+**取舍**：decide_action 从 v11 切换到 v12，缓存前缀因此改变一次；其余激活版本就地清理并保持渲染 golden 不变。decide_action golden 仅移除对象规则文本，其他任务 golden 与冻结 schema、冻结数据不改。旧 trace 的 ActCall `events`/`dialog` 解析保留到 CP5d；历史追溯依赖 tag `before-cleanup-20261028`。未增加 D33 跳过，保留 `facing_object` 的地标筛选与观察逻辑。
+
+**影响面**：删除对象记忆与对象事件的生产模型、端点、trace 路由和专用测试；按 CP5b 范围调整 memory、trace、MCP、prompt、world 测试。提示词 hash：decide_action v11 `6131a5a279e0889171a53a6d470aae25bf47b96b9e787bf35c1bb0e96ea8c829` → v12 `f342e780ec400533a44bbdb52f12a21119eb2922de29f970611425b3b01409cf`；observation/v1 `19b9e325f9cd7923cb509620eba20e0724f8815220f2495e5021991269b1b584` → `ab6ebb334d9cfa32a4604bfbbbc6255686ab1c4f81f4a74f36fcd4920d8272d0`；task_frame/v1 `8ea456e8867db3b7eac7552806da716e94a5b7d3dbd8a0f467f873518fa32bbd` → `85668c8c63667e8c999f12d2f9e036ccbd46689c243e9e229b118f52b28efb62`；decompose/v11 `9084b6ba1b982611f93d8cdd30d3b45e5587c12d919f500e559ff8effa3e6613` → `38d1149f941fec3e62390087979c6f4751af3ae71fb558261eee5457275be855`；judge_success/v11 `80eb32161975ef773f95fab9846c8cd37fd5312652dc1c63a01a7fa03d2186be` → `b88846bfc3a68fd148c6102c463684a6c76b15f1db011fad812d6f3e48f35bca`；run_plan/v10 `ae6b6f1a17f61867512b1fce4da3a263102e6f9e834453117a5e157873487de7` → `aee7ffc0ac022ab684e1a2476c91f0697adb452cff2a1d9ec3dfb69cbfdda9ae`。
+
+**验证**：所有 26 个激活版本的重算 `meta.hash` 匹配，memory_records/v5 的 `_HELPER_HASH` 链也匹配。删除 `synthetic-known-objects` 案例使收集数减少 1。全量 pytest JUnit：tests=2874、failures=0、errors=0、skipped=72，另有 1 项按要求 deselect；ruff format、ruff check、ruff format --check 全绿。
+
 ## 2026-10-28（673）—— 清理未激活提示词版本与冻结基线
 
 **改了什么**：删除非激活提示词版本：decide_action v1–v10、decompose v1–v10、judge_success v1–v10、run_plan v1–v9、summarize v1–v7、summarize_task v1–v8、summarize_run v1–v6、verify v1–v3/v5、memory_records v1–v4、object_events v1、prompt_layout v1，以及无调用者的 decide_action_retry/v1。移除 201 个固定到旧版本的测试 case，涵盖旧版 golden 对拍、历史版本渲染、跨旧新版本逐字节比较与旧版本专用记忆片段；`ActRecord` 删除 `overview` 与 `perceived`，保留 `observation_flags` 并说明其当前帧渲染用途。

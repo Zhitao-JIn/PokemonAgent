@@ -8,7 +8,6 @@ from pathlib import Path
 
 from ...budget import render_budgets
 from ...interfaces.assembly import Compose
-from ...objects import ObjectFactEvent
 from ...records import (
     ActRecord,
     EpisodeRecord,
@@ -23,7 +22,6 @@ from ..fragments.human_note.params import HumanNoteParams
 from ..fragments.knowledge.params import KnowledgeParams
 from ..fragments.last_judge.params import LastJudgeParams
 from ..fragments.memory_records.params import MemoryParams
-from ..fragments.object_events.params import ObjectEventsParams
 from ..fragments.prompt_layout.params import Block, PromptLayoutParams
 from ..fragments.task_frame.params import TaskFrameParams
 from ..fragments.terrain_legend.params import TerrainLegendParams
@@ -67,11 +65,6 @@ def _last_judge(feedback: JudgeFeedbackRecord, compose: Compose) -> list[str]:
     return json.loads(compose("last_judge", LastJudgeParams(feedback=feedback, serialized=True)))
 
 
-def _events(events: Sequence[ObjectFactEvent], compose: Compose) -> str:
-    """空事件不产生文本；非空事件按步号稳定排版。"""
-    return compose("object_events", ObjectEventsParams(events=list(events))) if events else ""
-
-
 def detail_blocks(details: Sequence[EpisodeRecord], compose: Compose) -> list[str]:
     """消费独立原料，保留旧措辞、条件与顺序。"""
     return [_record(memory, compose) for memory in details]
@@ -82,18 +75,11 @@ def run_index_lines(memories: Sequence[RunRecord], compose: Compose) -> list[str
     return [_index(memory, compose) for memory in memories]
 
 
-def object_lines(objects: Sequence[ObjectFactEvent], compose: Compose) -> list[str]:
-    """消费独立原料，保留旧措辞、条件与顺序。"""
-    rendered = _events(objects, compose)
-    return rendered.splitlines() if rendered else []
-
-
 def history_blocks(params: RunPlanParams, compose: Compose) -> list[str]:
     """消费独立原料，保留旧措辞、条件与顺序。"""
     blocks = detail_blocks(params.details, compose)
     background = run_index_lines(params.run_index, compose)
-    objects = object_lines(params.objects, compose)
-    return blocks + background + objects
+    return blocks + background
 
 
 def _budgets(params: RunPlanParams) -> str:
@@ -126,7 +112,7 @@ def assemble(params: RunPlanParams, compose: Compose) -> str:
         if params.knowledge
         else "",
         Block.INDEX: "\n".join(run_index_lines(params.run_index, compose)),
-        Block.OBJECTS: _events(params.objects, compose),
+        Block.OBJECTS: "",
         Block.HISTORY: "\n\n".join(detail_blocks(params.details, compose)),
         Block.FEEDBACK: "\n".join(
             _goal_table(params.plan, compose)

@@ -37,7 +37,7 @@
   `decompose_verdict`、`judge_call` ↔ `judge_verdict`、`verify_call` ↔ `verify_verdict`、
   `summarize_task_call` ↔ `write_task_memory`、`summarize_episode_call` ↔ `write_episode_memory`；
 - **记忆读写用全名**：`read_<记忆名>` / `write_<记忆名>`（act_memory / task_memory /
-  episode_memory / object_memory / knowledge）；
+  episode_memory / knowledge）；
 - **动作动词在前**：`act_call`（P5，原 `press_key`）/ `check_stall` / `advance_step`
   / `get_action_space`；
 - **生命周期三件套**：`<层>_start` 在该层入口、`<层>_end` 在该层 `*_done`、`<层>_error` 由
@@ -156,7 +156,7 @@ class TraceKind(StrEnum):
     REVIEW_AUDIT = "review_audit"
     """审：认 / 推翻，推翻时的理由。"""
 
-    # ---- 记忆读：**六条读口一个形状**（`content = {count, query, refs}`）----
+    # ---- 记忆读：**五条读口一个形状**（`content = {query, refs}`）----
     #
     # 此前六条读口**共用一个派发键** `RETRIEVE_NODE`，账名由 `render.retrieve_node`
     # 按 `req.read_kind` 现翻（`"step"` → `read_step`……）——一维信息寄居在
@@ -166,20 +166,18 @@ class TraceKind(StrEnum):
     READ_EPISODE_MEMORY = "read_episode_memory"
     READ_RUN_MEMORY = "read_run_memory"
     READ_KNOWLEDGE = "read_knowledge"
-    READ_OBJECT_MEMORY = "read_object_memory"
 
     # ---- 记忆写：**三本账一个形状**（`content` + `meta`）----
     #
     # （`write_knowledge` 已整账删除，0914 跟进：knowledge 由人管理，根本没有
     # 计划走"模型写知识"这条路——见 CHANGELOG 补记五。）
     #
-    # 0914 改名：此前成员值是 `memory_write` / `object_note` /
-    # `episode_memory_write` / `knowledge_write`，而落盘账名是
-    # `write_step` / `write_object_memory` / `write_episode_memory` / `write_knowledge`
+    # 0914 改名：此前成员值是 `memory_write` / `episode_memory_write` /
+    # `knowledge_write`，而落盘账名是
+    # `write_step` / `write_episode_memory` / `write_knowledge`
     # ——同一个东西两个名字。现在值就是账名。
     WRITE_ACT_MEMORY = "write_act_memory"
     WRITE_TASK_MEMORY = "write_task_memory"
-    WRITE_OBJECT_MEMORY = "write_object_memory"
     WRITE_EPISODE_MEMORY = "write_episode_memory"
     WRITE_RUN_MEMORY = "write_run_memory"
     BUDGET_CLAMPED = "budget_clamped"

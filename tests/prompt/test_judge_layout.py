@@ -27,7 +27,6 @@ def test_ram_metadata_and_full_json_follow_current_observation() -> None:
     frame = text.split("\n## 当前现场\n", 1)[1]
 
     assert frame.index("- overlay: none") < frame.index("### 最近 RAM 观测")
-    assert "known_objects" not in frame
     for number, entry in enumerate(material.ram_observations, start=1):
         line = (
             f"观测 {number}｜time={entry.observed_at}｜seq={entry.sequence}｜source={entry.source}"
@@ -81,5 +80,5 @@ def test_empty_run_ram_drops_reading_rules_without_losing_other_blocks() -> None
     text = PromptGateway(None).render("judge_success", material).text
 
     assert "最近 RAM 观测" not in text
-    assert "\n## 当前现场\n" in text and "局全文末句。" in text
+    assert "\n## 当前现场\n" in text and "局全文包含完整招牌原文。" in text
     assert material.latest_planning.model_dump_json() in text

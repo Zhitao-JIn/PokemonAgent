@@ -17,7 +17,6 @@ CASES = sorted((Path(__file__).parent / "golden/decide_action").glob("*.req.json
 @pytest.mark.parametrize("path", CASES, ids=lambda path: path.stem)
 def test_reflector_preserves_the_full_record_without_a_brain(path: Path) -> None:
     observation = TaskObservation.model_validate(json.loads(path.read_bytes())["request"]["obs"])
-    observation.facts.known_objects = "检索物体"
     observation.facts.knowledge = "检索知识"
     after = observation.model_copy(update={"step": observation.step + 1})
     req = FromHarnessToBrainToolReflectReq(

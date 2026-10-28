@@ -39,7 +39,7 @@ def test_live_feedback_and_budget_changes_do_not_change_the_static_prefix(task: 
 
 @pytest.mark.parametrize("task", TASKS)
 @pytest.mark.parametrize("overlay", ["none", "dialog", "choice"])
-def test_every_plan_uses_the_same_scene_projection_without_object_lines(
+def test_every_plan_uses_the_same_scene_projection_without_retrieval_lines(
     task: str,
     overlay: str,
 ) -> None:
@@ -65,31 +65,3 @@ def test_every_plan_uses_the_same_scene_projection_without_object_lines(
     text = PromptGateway(None).render(task, params).text
 
     assert expected in text
-    assert "- known_objects:" not in text.split("\n## 当前现场\n", 1)[1]
-    if task == "decide_action" and overlay != "none":
-        assert "\n## 地图交互事实\n" not in text
-        assert "完整招牌原文。" not in text
-    else:
-        assert "完整招牌原文。" in text.split("\n## 地图交互事实\n", 1)[1]
-
-
-@pytest.mark.parametrize("scene", ["walk", "shop", "dialog", "start_menu"])
-@pytest.mark.parametrize("overlay", ["none", "dialog", "choice"])
-def test_choose_keeps_the_original_object_visibility(scene: str, overlay: str) -> None:
-    params = examples()["decide_action"]
-    obs = params.observation.model_copy(
-        update={
-            "scene": scene,
-            "facts": params.observation.facts.model_copy(update={"overlay": overlay}),
-        }
-    )
-
-    text = (
-        PromptGateway(None)
-        .render("decide_action", params.model_copy(update={"observation": obs}))
-        .text
-    )
-
-    visible = scene in {"walk", "shop"} and overlay == "none"
-    assert ("\n## 地图交互事实\n" in text) == visible
-    assert ("完整招牌原文。" in text) == visible

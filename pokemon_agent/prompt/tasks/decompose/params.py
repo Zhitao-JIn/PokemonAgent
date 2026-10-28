@@ -3,7 +3,6 @@
 from pydantic import BaseModel, Field
 
 from ...budget import BudgetRecord
-from ...objects import ObjectFactEvent
 from ...observation import ObservationRecord
 from ...records import (
     EpisodeRecord,
@@ -28,5 +27,3 @@ class DecomposeParams(BaseModel):
     budget_context: list[BudgetRecord] = Field(default_factory=list)
     human_note: str = ""
     terrain_meanings: dict[str, str]
-
-    known_objects: list[ObjectFactEvent] = Field(default_factory=list)

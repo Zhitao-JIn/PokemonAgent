@@ -6,10 +6,9 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
-SNAPSHOT_BLIND: frozenset[str] = frozenset({"known_objects", "knowledge"})
+SNAPSHOT_BLIND: frozenset[str] = frozenset({"knowledge"})
 """**不进记忆的字段。** 记忆里每一项都必须跨步骤成立，这两项都不成立：
 
-- `known_objects`：跨 episode 的流水，不是"这一帧看到了什么"。
 - `knowledge`：语义记忆的检索结果，本来就不是观察。它走
   `ChooseOnceReq.knowledge`（`episode/decide/think_action.py` 从
   `state.knowledge_semantic_memory` 现算文本装进去），不折进

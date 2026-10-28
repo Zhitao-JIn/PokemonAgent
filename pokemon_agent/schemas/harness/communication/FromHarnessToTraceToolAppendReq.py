@@ -50,7 +50,6 @@ from pokemon_agent.schemas.harness.domain.termination import Termination
 from pokemon_agent.schemas.memory import (
     ActMemory,
     EpisodeMemory,
-    ObjectFactEvent,
     RunMemory,
     TaskMemory,
 )
@@ -160,7 +159,7 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     它做过"检索器承诺命中几条"的第二个来源，与 `refs` 组成"承诺 vs 清单"的
     交叉校验。但六条读口**交上来的永远是 `len(<同一个集合>)`**——`read_step` 数
     `memories`、`read_episode_memory` 数 `episode_memories`、两条 knowledge 数 `contents`
-    （与 `sources` 成对产出、恒等长）、`read_object_memory` 数 `events`、
+    （与 `sources` 成对产出、恒等长）、
     `read_verify_step` 数 `entries`。两份来源其实是同一份，于是它成了纯粹派生。
     `refs` 改成数组之后，长度直接数得出来——`retrieve_node` 不再读本字段，
     判据侧（`node_io`）也不再核它。**留着槽**是为了让还按老路传 `count=` 的调用方
@@ -199,7 +198,6 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     | `read_step` / `read_verify_step` | `"(episode_id, step)"` 坐标 |
     | `read_episode_memory` | 跨局摘要的 `episode_id` |
     | `read_knowledge` / `read_verify_knowledge` | 命中记录的 `source` 文件名 |
-    | `read_object_memory` | 物体格键 `12:13:8`（`PlaceInWorld.key`） |
 
     **它是数组，不是拼成一行的字符串**（0914 跟进）：`content` 已经是 JSON，
     把清单压成 `"a b c"` 只会把分词规则转嫁给每个读它的人——判据侧曾为此维护一张
@@ -208,7 +206,6 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
     entry: ActMemory | None = None
     memory: EpisodeMemory | TaskMemory | RunMemory | None = None
     """RunMemory 为 run 收尾蒸馏的存储形状，供 write_run_memory 写账。"""
-    event: ObjectFactEvent | None = None
     reason: str | None = None
 
     # ---- 判定 / 校验 / 规划结论 ----

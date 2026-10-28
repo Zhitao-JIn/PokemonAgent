@@ -18,7 +18,6 @@ from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
 from pokemon_agent.schemas.memory import (
     ActMemory,
     EpisodeMemory,
-    ObjectFactEvent,
     RunMemory,
     TaskMemory,
 )
@@ -69,13 +68,10 @@ class FromHarnessToBrainToolJudgeReq(BaseModel):
     knowledge: str = ""
     allow_interrupt: bool = False
 
-    known_objects: list[ObjectFactEvent] = Field(default_factory=list)
     ram_observations: list[RamObservation] = Field(default_factory=list, max_length=5)
 
     @model_serializer(mode="wrap")
     def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
         """历史对象事件保留原信封形状；RAM 空窗口统一输出空列表。"""
         data = handler(self)
-        if "known_objects" not in self.model_fields_set:
-            data.pop("known_objects", None)
         return data

@@ -42,7 +42,6 @@ def requests() -> dict[str, FromHarnessToBrainToolJudgeReq]:
     choose = plans["decide_action"].model_dump(mode="json")
     episode = plans["decompose"].model_dump(mode="json")
     run = plans["run_plan"].model_dump(mode="json")
-    episode["known_objects"][0]["actor_place"]["map_id"] = 1
     base = {"goal": choose["goals"][-1], "knowledge": choose["knowledge"]}
     data = {
         "task": dict(
@@ -54,7 +53,6 @@ def requests() -> dict[str, FromHarnessToBrainToolJudgeReq]:
             task_table=episode["task_table"],
             episode_index=details_data(),
             observation=observation_data(),
-            known_objects=episode["known_objects"],
         ),
         "run": dict(
             base,

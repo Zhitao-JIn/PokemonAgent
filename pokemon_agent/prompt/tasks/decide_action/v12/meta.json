@@ -1,0 +1,8 @@
+{
+  "task": "decide_action",
+  "version": "v12",
+  "kind": "task",
+  "params": "DecideActionParams",
+  "reason": "静态对象事实规则已移除",
+  "hash": "f342e780ec400533a44bbdb52f12a21119eb2922de29f970611425b3b01409cf"
+}

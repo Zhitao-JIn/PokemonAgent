@@ -1,4 +1,4 @@
-"""capability 的 recall：分族路由（act/task/object/episode 摘要/knowledge）与截断、limit 前置。
+"""capability 的 recall：分族路由（act/task/episode 摘要/knowledge）与截断、limit 前置。
 
 只经 `MemoryCapability.recall` 公开口；各族顺序（act step 升序 → task total_acts 升序、
 episode 摘要自然序）是读口自己的约定，调用方不传排序参数。
@@ -69,23 +69,6 @@ def _episode(episode_id: str, markdown: str = "", summary: str = "") -> dict:
     ).model_dump()
 
 
-def _object(step: int = 1, episode_id: str = _EP) -> dict:
-    from pokemon_agent.schemas.memory.datastore.object_memory import ObjectDialogEvent
-
-    place = ObjectDialogEvent.Place(map_id=12, x=13, y=8)
-    return ObjectDialogEvent(
-        outcome="dialog",
-        episode_id=episode_id,
-        step=step,
-        run_id=_RUN,
-        place=place,
-        actor_place=place,
-        object_kind="人",
-        button="a",
-        text="你好。",
-    ).model_dump()
-
-
 def test_recall_by_episode_id_returns_acts_in_step_order_then_tasks(tmp_path) -> None:
     """同局 recall：先 act（step 升序），后 task（total_acts 升序）——与写入顺序无关。
 
@@ -112,29 +95,6 @@ def test_recall_by_episode_id_returns_acts_in_step_order_then_tasks(tmp_path) ->
     assert kinds == ["act", "act", "task", "task"]
     assert [item["payload"]["step"] for item in items[:2]] == [1, 2]
     assert [item["payload"]["total_acts"] for item in items[2:]] == [2, 5]
-
-
-def test_recall_by_place_or_map_id_routes_to_object_family(tmp_path) -> None:
-    """conditions 带 place 或 map_id → object 族（step 升序；O6 修复后同实例须按序写）。"""
-
-    # Arrange
-    capability = _capability(tmp_path)
-    capability.memorize(
-        [
-            {"kind": "object", "payload": _object(step=1)},
-            {"kind": "object", "payload": _object(step=2)},
-            {"kind": "act", "payload": _act(step=1)},
-        ]
-    )
-
-    # Act
-    by_place = capability.recall("", {"place": "12:13:8"})
-    by_map = capability.recall("", {"map_id": "12"})
-
-    # Assert
-    assert [item["kind"] for item in by_place] == ["object", "object"]
-    assert [item["payload"]["step"] for item in by_place] == [1, 2]
-    assert [item["kind"] for item in by_map] == ["object", "object"]
 
 
 def test_recall_by_run_id_returns_episode_summaries_in_natural_order(tmp_path) -> None:

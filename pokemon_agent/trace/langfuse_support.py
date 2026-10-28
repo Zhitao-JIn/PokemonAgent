@@ -38,7 +38,6 @@ RETRIEVE_KINDS = frozenset(
         "read_act_memory",
         "read_episode_memory",
         "read_knowledge",
-        "read_object_memory",
         "read_task_memory",
     }
 )

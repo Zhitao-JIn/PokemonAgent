@@ -560,14 +560,13 @@ _contract(
     "`ram` 是内存读数对象，没有就缺省，都不进必填表）",
 )
 
-# ---- 记忆读：六条读口**一个形状**（`content = {query, refs}`）----
+# ---- 记忆读：五条读口**一个形状**（`content = {query, refs}`）----
 _READ_SHAPE = "query refs"
 _READ_WHY = {
     "read_act_memory": "本 task 的 ActMemory（task.perceive）",
     "read_episode_memory": "跨局摘要记忆检索",
     "read_run_memory": "run 记忆检索",
     "read_knowledge": "知识库检索（主循环）",
-    "read_object_memory": "地图事实检索",
     "read_task_memory": "本局 TaskMemory（episode.perceive）",
 }
 for _kind, _why in _READ_WHY.items():
@@ -580,7 +579,6 @@ _WRITE_BODY_KEYS: dict[str, str] = {
         "reason summary reusable_patterns critical_decisions failure_points quality_score"
         " quality_rationale tags markdown"
     ),
-    "write_object_memory": "outcome object_kind place actor_place button",
     "write_run_memory": (
         "reason summary reusable_patterns critical_decisions failure_points quality_score"
         " quality_rationale applicable_scenes tags markdown"
@@ -631,12 +629,10 @@ _WRITE_FORBIDDEN_KEYS: frozenset[str] = frozenset(
   **来源章**——真源在 `task_start`/`task_end`、`episode_start`/`episode_end`，正文只装蒸馏内容。
 
 **`kind` / `type` 在禁列里，没有例外**（0914 跟进）：它们是封套的名字，正文里
-出现就叫撞名——记录自己的那两个概念已经改名（`ObjectFactEvent` 的判别键叫
-`outcome`、物体类别叫 `object_kind`），谁再把 `type`/`kind` 塞回正文，这里当场炸。"""
+出现就叫撞名，谁再把 `type`/`kind` 塞回正文，这里当场炸。"""
 _WRITE_WHY = {
     "write_act_memory": "一条按键情景记忆落库（正文 = `ActMemory` 去掉坐标与两张图）",
     "write_task_memory": "一条 task 记忆落库（正文 = 蒸馏各字段 + markdown；章与代表帧不落）",
-    "write_object_memory": "一条对象交互事件落库（正文 = 事件本体，物体格在 `content.place`）",
     "write_run_memory": "整次 run 的派生摘要落库，来源章不落正文",
     "write_episode_memory": "一局的跨局摘要落库（正文 = 蒸馏各字段 + `markdown`，**章不落**）",
 }
@@ -911,9 +907,7 @@ def _check_write_body(events: Sequence[Event]) -> None:
 
     1. **不把已经住在别处的东西抄回来**（`_WRITE_FORBIDDEN_KEYS`）：身份、坐标、
        两张帧、以及封套那六个名字，正文里再出现一次就是"同一件事两处说"——
-       而两处迟早会不一样。**禁列里没有例外**：`write_object_memory` 的记录本来叫
-       `type`/`kind`，与封套撞名 → 记录那两个字段已改名（`outcome` / `object_kind`），
-       正文从此与封套的词表不相交；
+       而两处迟早会不一样。**禁列里没有例外**：正文从此与封套的词表不相交；
     2. **知识账的正文是数组**：一批一条账，逐元素只许有 `topic` / `content`
        （`KnowledgeRecord.source` 不进账：它由 `meta` 的 `run_id`/`episode_id`
        推得出来、又在批内恒定，见 `render.knowledge_write` 的说明）；
@@ -998,21 +992,19 @@ def _keys_of(event: Event, field: str) -> list[str]:
 def _check_read_accounts(events: Sequence[Event]) -> None:
     """检索账**内容自洽**：说了问了什么（`query`），命中清单是**字符串数组**（`refs`）。
 
-    **`query` 为空在这一族里没有合法情形**：六条读口各有一条实打实的检索条件
-    （四条等值过滤、两条 BM25 检索词），写不出条件就是漏交——而漏交之后
+    **`query` 为空在这一族里没有合法情形**：五条读口各有一条实打实的检索条件，
+    写不出条件就是漏交——而漏交之后
     "命中为空"就永远解释不清（是条件错了还是库里没有）。
 
     **空 `refs` 就是 0 条**，不是特例：这一路没命中是合法的。
 
     ⚠ **`count` 已删**（0914 跟进）：它做过"检索器承诺几条"的第二个来源，
-    但六条读口**都是 `len(<同一个集合>)`**——`read_step` 数 `memories`、
-    `read_episode_memory` 数 `episode_memories`、两条 knowledge 数 `contents`（与
-    `sources` 成对产出、恒等长）、`read_object_memory` 数 `events`、`read_verify_step`
-    数 `entries`。既然 `refs` 现在是数组、`count` 恒等于它的长度，那个字段就是
+    但五条读口**都是 `len(<同一个集合>)`**——各自返回的 refs 数组本身就是清单。
+    既然 `refs` 现在是数组、`count` 恒等于它的长度，那个字段就是
     纯粹的派生——**留着只会多一个能和真相对不上的地方**。
 
     **为什么以前不是数组**：`refs` 曾是**裸字符串**（调用方各拼各的格式：坐标
-    写 `(ep, step)`、知识写文件名、物体写 `12:13:8`），于是本模块当时不得不维
+    写 `(ep, step)`、知识写文件名），于是本模块当时不得不维
     一张"哪条读口按什么数条数"的表——`read_knowledge` 的 5 个文件名一个括号
     都没有，把"一律数括号"那条判据当场打成假警。**把结构化数据落成字符串，
     代价就转嫁给每个读它的人**；`content` 已经是 JSON 之后，这份代价没有理由

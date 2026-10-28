@@ -11,7 +11,7 @@ from pokemon_agent.brain.interface import Goal
 from pokemon_agent.schemas.harness.domain.budget_allowance import BudgetAllowance
 from pokemon_agent.schemas.harness.domain.judge_feedback import JudgeFeedback
 from pokemon_agent.schemas.harness.domain.task_entry import TaskEntry
-from pokemon_agent.schemas.memory import EpisodeMemory, ObjectFactEvent, TaskMemory
+from pokemon_agent.schemas.memory import EpisodeMemory, TaskMemory
 from pokemon_agent.world import TaskObservation
 
 
@@ -44,14 +44,10 @@ class FromHarnessToBrainToolDecomposeReq(BaseModel):
 
     human_note: str = Field(default="", description="人对上一版拆解的插话；空 = 没被插话")
 
-    known_objects: list[ObjectFactEvent] = Field(default_factory=list)
-
     @model_serializer(mode="wrap")
     def serialize_incremental(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
         """历史请求未提供原始事件时保留原信封形状。"""
         data = handler(self)
         if "budget_context" not in self.model_fields_set:
             data.pop("budget_context", None)
-        if "known_objects" not in self.model_fields_set:
-            data.pop("known_objects", None)
         return data

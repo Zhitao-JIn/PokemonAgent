@@ -10,13 +10,12 @@
 
     memory/
     ├── step_memory/       # 每族一个 LocalMemoryStore 实例
-    │   ├── <uuid>.json    # json 类记录（step_memory / object_memory）：
+    │   ├── <uuid>.json    # json 类记录（step_memory）：
     │   │                  #   {"uuid", "metadata", "payload", "text"}
     │   ├── <uuid>.md      # md 类记录（episode_memory / knowledge_memory）：
     │   │                  #   JSON frontmatter（uuid/metadata/payload）+ 正文（text）
     │   ├── index.json     # 本文件夹的倒排索引（派生物、写穿、可自愈重建）
     │   └── vectors.jsonl  # 语义检索向量缓存 sidecar（有 text 的文件夹才有意义）
-    ├── object_memory/     # 同上
     ├── episode_memory/    # 同上
     ├── knowledge_memory/  # 同上
     └── snapshots/         # 快照 zip（0916，由 memory 自己管理，harness 只给名字）
@@ -68,7 +67,7 @@ if TYPE_CHECKING:
 # md 类 kind：记录是 frontmatter + 正文的 markdown；其余 kind 是整文件 JSON。
 _MD_KINDS = frozenset({"episode_memory", "knowledge_memory", "run_memory"})
 
-_KINDS = frozenset({"step_memory", "task_memory", "object_memory", *_MD_KINDS})
+_KINDS = frozenset({"step_memory", "task_memory", *_MD_KINDS})
 """合法的 kind（= 子目录名 = collection 名，项目无关的概念）。"""
 
 SNAPSHOTS_DIRNAME = "snapshots"

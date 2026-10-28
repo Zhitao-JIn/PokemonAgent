@@ -18,7 +18,7 @@ def details_data() -> list[dict[str, JsonValue]]:
             "run_id": "r",
             "goal": "读取招牌",
             "steps": 1,
-            "summary": "局首句。局全文末句。",
+            "summary": "局首句。局全文包含完整招牌原文。",
             "quality_score": 0.5,
             "quality_rationale": "核验",
             "pointers": [],
@@ -52,13 +52,12 @@ def budget_context_data() -> list[dict[str, JsonValue]]:
 
 
 def run_example() -> RunPlanParams:
-    """含历史全文、索引、物体和反馈的 run。"""
+    """含历史全文、索引和反馈的 run。"""
     return RunPlanParams.model_validate(
         {
             "run_goal": {"goal": "读取招牌", "criteria": "取得招牌文字"},
             "plan": plan_data(),
             "observation": observation_data(),
-            "objects": [object_data()],
             "details": details_data(),
             "run_index": run_index_data(),
             "terrain_meanings": {".": "可走", "#": "墙"},
@@ -87,20 +86,6 @@ def observation_data() -> dict[str, JsonValue]:
     }
 
 
-def object_data() -> dict[str, JsonValue]:
-    """坐标与字面内容保留为原始字段。"""
-    return {
-        "episode_id": "example-episode",
-        "step": 1,
-        "actor_place": {"x": 2, "y": 3},
-        "place": {"map_id": 1, "x": 2, "y": 2},
-        "button": "a",
-        "object_kind": "招牌",
-        "outcome": "dialog",
-        "text": "完整招牌原文。",
-    }
-
-
 def task_data() -> dict[str, JsonValue]:
     """含全文与首末图的 task。"""
     return {
@@ -111,7 +96,7 @@ def task_data() -> dict[str, JsonValue]:
         "termination": "goal_done",
         "steps_used": 2,
         "total_acts": 2,
-        "summary": "任务首句。任务全文末句。",
+        "summary": "任务首句。完整招牌原文。",
         "quality_score": 0.5,
         "quality_rationale": "核验",
         "facts": [],
@@ -128,7 +113,6 @@ def episode_example(base: dict[str, JsonValue]) -> DecomposeParams:
         {
             **base,
             "goal": base["run_goal"],
-            "known_objects": base["objects"],
             "max_tasks": 2,
             "task_memories": [task_data()],
             "episode_index": base["details"],
@@ -143,7 +127,6 @@ def choose_example(base: dict[str, JsonValue]) -> DecideActionParams:
         {
             **base,
             "goals": [{"goal": "背景目标", "criteria": "背景判据"}, base["run_goal"]],
-            "known_objects": base["objects"],
             "space": {"names": ["up", "a"]},
             "knowledge": "\n\n".join(base["knowledge"]),
             "task_index": [task_data()],

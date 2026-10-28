@@ -37,6 +37,8 @@ if TYPE_CHECKING:
 
 from ..interface import PlaceInWorld, ScreenText, TerrainMap
 
+_INTERACTIVE = ("人", "招牌", "门", "物")
+
 
 class WorldConsoleAdapter:
     """脚本层的 `WorldConsole` 实现：包住 `PyBoyWorld`，零新判定。"""
@@ -106,12 +108,11 @@ class WorldConsoleAdapter:
         return False
 
     def object_kind(self, x: int, y: int) -> str | None:
-        """这一格的交互物 kind（P6 判事件用）：`read_terrain` 的物体表直读。"""
-        from ..object_events import INTERACTIVE
+        """返回面前地标的种类，供逐步观察生成 `facing_object`。"""
         from ..ram import read_terrain
 
         for mark in read_terrain(self.memory).landmarks():
-            if mark.place.x == x and mark.place.y == y and mark.kind in INTERACTIVE:
+            if mark.place.x == x and mark.place.y == y and mark.kind in _INTERACTIVE:
                 return mark.kind
         return None
 

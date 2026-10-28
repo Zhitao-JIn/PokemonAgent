@@ -10,7 +10,7 @@
   `conditions` 只放上下文 hint（`episode_id` / `map_id` / `place`），底层按
   hint 分族圈定 + 语义检索，融合排序后返回混合条目（每条自带 `kind` 身份）；
 - `memorize(records)`：统一记忆口。records 按 `kind` 判别落族
-  （act / task / episode / run / knowledge / object），metadata 拼装、knowledge 判重、
+  （act / task / episode / run / knowledge），metadata 拼装、knowledge 判重、
   step 单调前置校验——全部沿用原 `MemoryTool` 的既有规则。
 
 **MemoryStorePort 的 11 个方法在本模块之后是内部接口**：能力面（recall/memorize）
@@ -19,13 +19,12 @@
 
 from __future__ import annotations
 
-import json
 import re
 import zipfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
 from pokemon_agent.memory import EmbeddingProviderPort, LocalMemoryStore, RerankerProviderPort
 from pokemon_agent.memory.retrieval import RRF_K
@@ -33,7 +32,6 @@ from pokemon_agent.schemas.memory import (
     ActMemory,
     EpisodeMemory,
     KnowledgeRecord,
-    ObjectFactEvent,
     RunMemory,
     TaskMemory,
 )
@@ -44,7 +42,6 @@ _KIND_DIRS: dict[str, str] = {
     "task": "task_memory",
     "episode": "episode_memory",
     "run": "run_memory",
-    "object": "object_memory",
     "knowledge": "knowledge_memory",
 }
 
@@ -95,7 +92,6 @@ class MemoryCapability:
             for kind, dirname in _KIND_DIRS.items()
         }
         self._step_max: dict[str, int] = {}
-        self._object_max: dict[str, int] = {}
 
     # ---- 内部：store 便捷访问与单调校验 ----
 
@@ -110,7 +106,6 @@ class MemoryCapability:
     def _sync_max_caches(self) -> None:
         """restore（覆盖）后盘上换了内容，append 单调缓存不再可信——清掉重查。"""
         self._step_max.clear()
-        self._object_max.clear()
 
     def _check_step_monotonic(
         self, episode_id: str, step: int, max_cache: dict[str, int], kind: str
@@ -148,8 +143,6 @@ class MemoryCapability:
 
         分族规则（机械，无启发式）：
         - `conditions["episode_id"]` → act（step 升序）+ task（total_acts 升序）；
-        - `conditions["place"]` / `conditions["map_id"]` / `conditions["run_id"]`
-          → object（step 升序）；
         - `conditions["run_id"]` / `conditions["episode_id"]` → episode 摘要
           （无 query 时按 conditions 等值 filter 全量自然序；有 query 走语义 rank）；
         - `conditions["goal_id"]` 与 run_id → 本 run 同一 L1 goal 的 episode 摘要；
@@ -175,18 +168,6 @@ class MemoryCapability:
         if episode_id:
             items.extend(self._recall_acts(episode_id))
             items.extend(self._recall_tasks(episode_id))
-
-        place = conditions.get("place")
-        map_id = conditions.get("map_id")
-        if place or map_id or run_id:
-            object_conditions: dict[str, str] = {}
-            if map_id:
-                object_conditions["map_id"] = map_id
-            if place:
-                object_conditions["place"] = place
-            if run_id:
-                object_conditions["run_id"] = run_id
-            items.extend(self._recall_objects(object_conditions))
 
         if run_id or episode_id or goal_id or query:
             items.extend(self._recall_episode_summaries(query, conditions, retrieval_limit))
@@ -241,28 +222,6 @@ class MemoryCapability:
                 }
             )
         items.sort(key=lambda item: item["payload"].get("total_acts", 0))
-        return items
-
-    def _recall_objects(self, conditions: dict[str, str]) -> list[dict[str, Any]]:
-        """object 交互事件，step 升序。score 恒 None。"""
-        store = self._store("object")
-        adapter = TypeAdapter(ObjectFactEvent)
-        items: list[dict[str, Any]] = []
-        for uuid_, _meta, payload, _text in store.get_many(store.filter(conditions)):
-            try:
-                event = adapter.validate_python(payload)
-            except ValidationError:
-                continue
-            items.append(
-                {
-                    "kind": "object",
-                    "uuid": uuid_,
-                    "score": None,
-                    "content": json.dumps(event.model_dump(mode="json"), ensure_ascii=False),
-                    "payload": payload,
-                }
-            )
-        items.sort(key=lambda item: item["payload"].get("step", 0))
         return items
 
     def _recall_episode_summaries(
@@ -381,8 +340,6 @@ class MemoryCapability:
                 uuid_ = self._memorize_episode(payload)
             elif kind == "run":
                 uuid_ = self._memorize_run(payload)
-            elif kind == "object":
-                uuid_ = self._memorize_object(payload)
             else:
                 uuid_ = self._memorize_knowledge(payload)
             if uuid_:
@@ -456,25 +413,6 @@ class MemoryCapability:
             text=memory.markdown,
         )
 
-    def _memorize_object(self, payload: dict[str, Any]) -> str:
-        """落一条 object 交互事件（step 单调 + place 键拼装）。"""
-        adapter = TypeAdapter(ObjectFactEvent)
-        event = adapter.validate_python(payload)
-        self._check_step_monotonic(event.episode_id, event.step, self._object_max, "object")
-        uuid_ = self._store("object").put(
-            metadata={
-                "run_id": event.run_id,
-                "episode_id": event.episode_id,
-                "step": str(event.step),
-                "map_id": str(event.place.map_id),
-                "place": event.place.key,
-            },
-            payload=event.model_dump(),
-            text="",
-        )
-        self._advance_step_cache(event.episode_id, event.step, self._object_max)
-        return uuid_
-
     def _memorize_knowledge(self, payload: dict[str, Any]) -> str:
         """落一条 knowledge（判重 topic+正文逐字；落盘形态与手工先验一致）。
 
@@ -515,7 +453,7 @@ class MemoryCapability:
                 ):
                     raise AssertionError(f"restore() 拒绝不安全的归档条目：{filename!r}")
         unpacked = self._store("act").restore(archive)
-        for kind in ("task", "episode", "object", "knowledge", "run"):
+        for kind in ("task", "episode", "knowledge", "run"):
             self._store(kind).reload()
         self._sync_max_caches()
         return unpacked

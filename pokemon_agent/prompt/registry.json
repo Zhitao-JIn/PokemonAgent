@@ -36,9 +36,6 @@
     "terrain_legend": {
       "active": "v1"
     },
-    "object_events": {
-      "active": "v2"
-    },
     "takeover": {
       "active": "v1"
     },
@@ -55,7 +52,7 @@
       "active": "v10"
     },
     "decide_action": {
-      "active": "v11"
+      "active": "v12"
     },
     "output_retry": {
       "active": "v1"

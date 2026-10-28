@@ -184,7 +184,7 @@ class BrainPort(Protocol):
           **签名刻意不动**——它收下的本来就是"一排已经渲染好的文本"。
         - `history`：run 级的"发生过什么"——**已渲染好的文本序列**，
           本项目把它折成"局索引 + 详情 + 地图交互事实"（`plan` 节点从
-          `episode_memory` / `object_memory` 取，见 `docs/PLAN_planner_v2.md` S2）。
+          `episode_memory` 取，见 `docs/PLAN_planner_v2.md` S2）。
           **不是 `TraceEvent`**——事件流是 harness 的过程账，渲染成文本是调用方的事。
         - `max_push`：这一次最多新增几个目标。**是给模型的建议上限**——
           本项目不在 harness 侧截断（截掉就是静默丢目标，见 `PlanOnceReq.max_push`）。

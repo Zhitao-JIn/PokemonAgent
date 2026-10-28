@@ -8,9 +8,40 @@ from pathlib import Path
 from ....interfaces.assembly import Compose
 from ....observation import ObservationRecord
 from ..memory_records.params import MemoryParams
-from ..object_events.params import ObjectEventsParams
 from ..takeover.params import TakeoverParams
 from .params import TaskFrameParams
+
+_FRAME_FACT_KEYS = frozenset(
+    {
+        "where",
+        "facing",
+        "landmarks",
+        "walk_map",
+        "neighbors",
+        "dialog_text",
+        "screen",
+        "options",
+        "option_layout",
+        "option_details",
+        "cursor",
+    }
+)
+
+_FRAME_FACT_KEYS = frozenset(
+    {
+        "where",
+        "facing",
+        "landmarks",
+        "walk_map",
+        "neighbors",
+        "dialog_text",
+        "screen",
+        "options",
+        "option_layout",
+        "option_details",
+        "cursor",
+    }
+)
 
 _LABELS = json.loads(
     Path(__file__)
@@ -20,7 +51,7 @@ _LABELS = json.loads(
 )
 
 
-def render_frame(observation: ObservationRecord, known_objects: list, compose: Compose) -> str:
+def render_frame(observation: ObservationRecord, compose: Compose) -> str:
     """按场合投影原始字段，保留旧条件与排版。"""
     header = _LABELS["L000"].format(str(observation.covered_by_script).lower())
     if observation.covered_by_script:
@@ -55,9 +86,11 @@ def render_frame(observation: ObservationRecord, known_objects: list, compose: C
     facts = json.loads(
         compose("memory_records", MemoryParams(mode="facts", entries=[], observation=observation))
     )
-    facts.pop("known_objects", None)
-    if known_objects:
-        facts["known_objects"] = compose("object_events", ObjectEventsParams(events=known_objects))
+    facts = {
+        key: value
+        for key, value in facts.items()
+        if key in _FRAME_FACT_KEYS or key.startswith(("my_", "foe_"))
+    }
     fields = _visible_fields(observation, facts)
     lines = [_LABELS["L008"].format(observation.scene), header]
     lines.append(_LABELS["L009"].format(observation.facts.overlay or "none"))
@@ -84,7 +117,7 @@ def _visible_fields(observation: ObservationRecord, facts: dict[str, str]) -> li
     """按场合投影原始字段，保留旧条件与排版。"""
     overlay = observation.facts.overlay or "none"
     if observation.scene in {"walk", "shop"} and overlay == "none":
-        keys = ["where", "facing", "landmarks", "known_objects"]
+        keys = ["where", "facing", "landmarks"]
         keys.append("walk_map" if facts.get("walk_map") else "neighbors")
         fields = [(key, facts.get(key, "")) for key in keys]
     elif overlay == "dialog" and observation.scene not in {"pokemon_info", "start_menu", "title"}:
@@ -148,4 +181,4 @@ def _notes(observation: ObservationRecord) -> list[str]:
 
 def assemble(params: TaskFrameParams, compose: Compose) -> str:
     """返回当前操作所需的可见事实。"""
-    return render_frame(params.observation, params.known_objects, compose)
+    return render_frame(params.observation, compose)

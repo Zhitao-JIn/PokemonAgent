@@ -70,23 +70,6 @@ def _episode(episode_id: str = "r1-ep1", markdown: str = "", summary: str = "") 
     ).model_dump()
 
 
-def _object(step: int = 1, episode_id: str = _EP) -> dict:
-    from pokemon_agent.schemas.memory.datastore.object_memory import ObjectDialogEvent
-
-    place = ObjectDialogEvent.Place(map_id=12, x=13, y=8)
-    return ObjectDialogEvent(
-        outcome="dialog",
-        episode_id=episode_id,
-        step=step,
-        run_id=_RUN,
-        place=place,
-        actor_place=place,
-        object_kind="人",
-        button="a",
-        text="你好。",
-    ).model_dump()
-
-
 def _knowledge(topic: str = "草丛", text: str = "草丛里会遇到野生宝可梦。") -> dict:
     return {
         "topic": topic,
@@ -210,47 +193,6 @@ def test_memorize_episode_accepts_both_empty(tmp_path) -> None:
 
     # Assert
     assert [entry["kind"] for entry in stored] == ["episode"]
-
-
-def test_memorize_object_stores_place_key_and_map_metadata(tmp_path) -> None:
-    """object 的 place 与 map_id 可经 recall(place=…) 命中，content 是事件 JSON。"""
-
-    # Arrange
-    capability = _capability(tmp_path)
-
-    # Act
-    capability.memorize([{"kind": "object", "payload": _object(step=1)}])
-
-    # Assert
-    items = capability.recall("", {"place": "12:13:8"})
-    assert len(items) == 1
-    assert items[0]["kind"] == "object"
-    assert "你好" in items[0]["content"]
-
-
-def test_memorize_object_rejects_lower_step_within_same_episode(tmp_path) -> None:
-    """object 的 step 同样单调：同局内更小 step 触发断言（新实例缓存重建的场景，同用例 2）。"""
-
-    # Arrange
-    capability = _capability(tmp_path)
-    capability.memorize([{"kind": "object", "payload": _object(step=2)}])
-
-    # Act / Assert
-    restarted = _capability(tmp_path)
-    with pytest.raises(AssertionError):
-        restarted.memorize([{"kind": "object", "payload": _object(step=1)}])
-
-
-def test_memorize_object_rejects_lower_step_in_same_instance(tmp_path) -> None:
-    """O6 回归（object 族）：同一实例内先写 step 6 再写 step 3 → 断言。"""
-
-    # Arrange
-    capability = _capability(tmp_path)
-    capability.memorize([{"kind": "object", "payload": _object(step=6)}])
-
-    # Act / Assert
-    with pytest.raises(AssertionError):
-        capability.memorize([{"kind": "object", "payload": _object(step=3)}])
 
 
 def test_memorize_knowledge_skips_identical_topic_and_text(tmp_path) -> None:

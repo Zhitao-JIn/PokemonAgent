@@ -22,7 +22,6 @@ from ..fragments.human_note.params import HumanNoteParams
 from ..fragments.knowledge.params import KnowledgeParams
 from ..fragments.last_judge.params import LastJudgeParams
 from ..fragments.memory_records.params import MemoryParams
-from ..fragments.object_events.params import ObjectEventsParams
 from ..fragments.prompt_layout.params import Block, PromptLayoutParams
 from ..fragments.task_frame.params import TaskFrameParams
 from ..fragments.task_table.params import TaskTableParams
@@ -97,9 +96,7 @@ def material_blocks(params: DecomposeParams, compose: Compose) -> dict[Block, st
         if params.knowledge
         else "",
         Block.INDEX: "\n".join(_index(entry, compose) for entry in params.episode_index),
-        Block.OBJECTS: compose("object_events", ObjectEventsParams(events=params.known_objects))
-        if params.known_objects
-        else "",
+        Block.OBJECTS: "",
         Block.HISTORY: "\n\n".join(_record(entry, compose) for entry in params.task_memories),
         Block.FEEDBACK: "\n".join(
             _task_table(params.task_table, compose)
@@ -120,12 +117,7 @@ def assemble(params: DecomposeParams, compose: Compose) -> str:
 
 
 def history(params: DecomposeParams, compose: Compose) -> list[str]:
-    """只产出本层历史、背景索引与物体正文，不渲染规则或地形图例。"""
+    """只产出本层历史与背景索引，不渲染规则或地形图例。"""
     records = _records(params.task_memories, "plain", compose)
     indices = _records(params.episode_index, "index", compose)
-    objects = (
-        compose("object_events", ObjectEventsParams(events=params.known_objects))
-        if params.known_objects
-        else ""
-    )
-    return records + indices + ([objects] if objects else [])
+    return records + indices

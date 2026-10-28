@@ -201,7 +201,6 @@ def test_task_observation_is_written_as_memory_with_retrieval_fields_filtered(
 ) -> None:
     fake = build_fake(tmp_path)
     obs = observation()
-    obs.facts.known_objects = "临时物件检索结果"
     obs.facts.knowledge = "临时知识检索结果"
     req = FromHarnessToBrainToolReflectReq(
         before=obs,
@@ -215,8 +214,7 @@ def test_task_observation_is_written_as_memory_with_retrieval_fields_filtered(
 
     for stored in (entry.before, entry.after):
         assert stored.scene == "naming"
-        assert not {"known_objects", "knowledge"} & set(stored.facts.model_dump())
-    assert obs.facts.known_objects == "临时物件检索结果"
+        assert "knowledge" not in stored.facts.model_dump()
     assert obs.facts.knowledge == "临时知识检索结果"
 
 

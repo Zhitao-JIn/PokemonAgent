@@ -27,7 +27,6 @@ SOURCE_KINDS: frozenset[str] = frozenset(
         TraceKind.SENSE_FRAME,
         # 机械判据：rules/shop.py 读执行动作与对象记忆
         TraceKind.ACT_CALL,
-        TraceKind.WRITE_OBJECT_MEMORY,
     }
 )
 """来源归档里数据集构建与评测实际消费的账；其余账按原样跳过（D22）。"""

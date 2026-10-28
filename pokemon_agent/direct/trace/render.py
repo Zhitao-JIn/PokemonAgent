@@ -77,7 +77,6 @@ from pokemon_agent.schemas.harness import (
 from pokemon_agent.schemas.memory import (
     ActMemory,
     EpisodeMemory,
-    ObjectFactEvent,
     RunMemory,
 )
 from pokemon_agent.trace import EventType
@@ -593,9 +592,8 @@ def act_call(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 # ⚠️ 判据是"存在反函数"：能否从这份对象无损还原出源记录的字段。
 # `ActMemory.render()` 那种渲染文本（`… 做了 up 之后变成：…`）人能读，
 # 但想拿 `action` / `stop` 只能写正则去切——分词一旦和措辞漂移，统计会
-# **静默地**错。散文还有一个更硬的毛病：`write_object_memory` 原先把 `button` /
-# `map_id` 压进 `x=13 y=8 按 a` 里，账上那份就不再是记录的副本、而是一句
-# **转述**（真源被丢）。
+# **静默地**错。散文还有一个更硬的毛病：结构化字段被压进转述文本，账上那份就
+# 不再是记录的副本、而是一句转述（真源被丢）。
 
 
 def _body(model: BaseModel, *, drop: frozenset[str]) -> dict[str, Any]:
@@ -644,12 +642,6 @@ _TASK_BODY_DROP = frozenset(
 
 章（`goal`/`success`/`termination`/`steps_used`/`total_acts`）的真源是 `task_start` /
 `task_end`；正文只装 LLM 蒸馏出的那些字段（含 `reason`）。"""
-
-_OBJECT_BODY_DROP = frozenset({"episode_id", "step", "run_id"})
-"""`ObjectFactEvent` 里不进 `content` 的字段——同 `_STEP_BODY_DROP` 的头三个。
-
-事件本体（`place` / `actor_place` / `kind` / `button` / `text`|`map_id`）全在；
-物体格的检索键 `place.key` 是 `place` 的派生物，读的人从 `content.place` 现算即可。"""
 
 _EPISODE_BODY_DROP = frozenset(
     {
@@ -723,28 +715,6 @@ def check_stall(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         EventType.ACT,
         TraceKind.CHECK_STALL,
         {"stall_key": req.stall_key, "stall_count": str(req.stall_count)},
-    )
-
-
-def object_note(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """语义记忆和情景记忆是两回事，分开写——见 `memory_write`。
-
-    **`content` 是事件本体的那份对象**（`type` / `kind` / `button` /
-    `actor_place` / `place`，按子类再带 `text` 或 `map_id`）——事件就是存储的
-    真源，trace 里这份副本让 replay 不必回读事件库。
-
-    **物体格不单记**：它是 `content.place` 的派生物（`map_id:x:y`），
-    同一条账里存两份就是"同一件事写两遍"。
-
-    **原先这里是一段散文 + 三个顶层键**（`key` / `landmark_kind` / `actor`），
-    散文里 `button`、`actor_place` 的坐标、`warp` 的目标地图都只剩几个互相
-    挨着的词——取回来要正则切，**真源（记录）在账上被丢掉了**。
-
-    前置条件：req.event 非 None。
-    """
-    event: ObjectFactEvent = req.event
-    return Rendered(
-        EventType.MEMORY_IO, TraceKind.WRITE_OBJECT_MEMORY, _body(event, drop=_OBJECT_BODY_DROP)
     )
 
 
@@ -880,15 +850,14 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """**每一次检索的唯一形状**：`{query, refs}`——问了什么、命中是谁。
 
     六条读口全走这一个渲染函数，形状**逐字相同**；**账名由 `req.kind` 定**
-    （`READ_ACT_MEMORY`/`READ_EPISODE_MEMORY`/`READ_KNOWLEDGE`/`READ_OBJECT_MEMORY`/
-    `READ_TASK_MEMORY`，各占一个 kind）：
+    （`READ_ACT_MEMORY`/`READ_EPISODE_MEMORY`/`READ_KNOWLEDGE`/`READ_TASK_MEMORY`，
+    各占一个 kind）：
 
     | `kind` | `query` 里是什么 | `refs` 里一条是什么 |
     |---|---|---|
     | `read_act_memory` | `episode_id=…`（整局） | `"(episode_id, step)"` 坐标 |
     | `read_episode_memory` | `run_id=…`（等值） | 局 `episode_id` |
     | `read_knowledge` | **BM25 检索词原文** | 命中记录的 `source` 文件名 |
-    | `read_object_memory` | `map_id=… before_step=…` | 物体格 `place.key` |
     | `read_task_memory` | `episode_id=…` | task 记忆坐标 |
 
     **`query` 记的是真正交给记忆读口的东西，不加包装**：四条按等值条件查的写
@@ -896,7 +865,7 @@ def retrieve_node(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
     **为什么只有一种形状**：`refs` 答"读到的是哪几条"、`query` 答"按什么查的"
     ——这两件事就是检索的全部产出，**正文一个字节都不落这里**：单步记忆按坐标回
-    `memory/step_memory/`；对象档案与知识正文在决策账单的 `prompt` 里；跨局摘要在
+    `memory/step_memory/`；知识正文在决策账单的 `prompt` 里；跨局摘要在
     `write_episode_memory` 那条账上。
 
     **`refs` 是数组、没有 `count`**（0914 跟进）：清单压成一行字符串时，读的人要
