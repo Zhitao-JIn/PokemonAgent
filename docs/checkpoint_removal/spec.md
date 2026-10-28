@@ -80,3 +80,11 @@
 | E5 | 旧生成入口断开：`evals/dataset/brain_calls/build.py` 与任何 CLI 注册点对 `export_dataset` 的引用；保留 `loader.py`（`load_inputs`、`load_references`）、`brain_annotations` loader、`frames` loader，冻结数据文件与 schema 一个字节不动 |
 | E6 | 测试：纯旧管线的三个测试模块（`tests/evals/test_capture_control.py`、`test_capture_selection.py`、`test_capture_provider_rejection.py`）由用户删除；`tests/evals/test_brain_capture.py` 混合了多层 Port 录制与旧 audit，**拆分**：录制部分保留，旧 audit 部分随旧管线删；`tests/test_evals_capture.py` 保留；72 个 `D33` 跳过测试与这条管线无关（它们等的是新格式重新生成的数据），695 后 skipped 仍应是 72 |
 | E7 | 与 688 的关系：两者都改 `evals/common/eval_services.py`，先合并的没冲突，后合并的要解一处冲突，合并时告诉设计侧 |
+
+## 八、进展与 692 拆分（2026-10-29）
+
+- **已完成**：695（旧采集管线退役，17 个文件已删）、691（运行路径调用点已切断，`restore_run` 因此运行时已坏，是死代码，随包一起删）。
+- **692 拆成两步**（改动面太大，一步做风险高）：
+  - **692a**：删除 checkpoint 包与它的专属 schema、settings 的 `checkpoint` 节与 `paths.checkpoint`、`pyproject.toml` 的 saver 依赖、仍引用这些的测试夹具与测试、`review_loop.py` 等非 trace 的残余引用。执行方先把引用全部切断并列出删除清单，**用户删除包目录与它的测试目录**，再回来跑全量。
+  - **692b**：收窄 trace 协议（`checkpoint_save` / `checkpoint_restore` / checkpoint 错误账类型、渲染、`lineage.py`、Langfuse 恢复祖先锚、`FromHarnessToTraceToolAppendReq` 里的相关字段、`scripts/langfuse_smoke.py` 与 `scripts/langfuse_tree_rehearsal.py`、trace 相关测试）。依赖 692a 先合并。
+- 顺序：692a → 692b → 693（`branch` 常量化）→ 694（memory 管理面）→ 696 → 690。
