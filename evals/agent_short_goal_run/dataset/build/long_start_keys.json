@@ -1,0 +1,140 @@
+{
+  "source": "experiment/long_verify/long_preflight.py 与 long_preflight.json",
+  "startup_wait_frames": 3000,
+  "post_key_wait_frames": 180,
+  "wait_limit_frames": 2400,
+  "keys": [
+    {
+      "key": "start",
+      "held_frames": 60
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "down",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "down",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    },
+    {
+      "key": "a",
+      "held_frames": 10
+    }
+  ]
+}

@@ -16,6 +16,7 @@ PREFLIGHT_CHECK_IDS = frozenset(
         "catch_then_heal",
         "customer_hint_purchase",
         "cure_poison_budget",
+        "leave_pallet_town",
     }
 )
 
@@ -100,6 +101,20 @@ def validate_start(
     ):
         raise DatasetError(
             f"{sample.sample_id}：中毒起点须在地图 1、第二只中毒、钱 2000 且有 POTION"
+        )
+    if check_id == "leave_pallet_town" and (
+        ram is None
+        or observation is None
+        or place is None
+        or place.map_id != 38
+        or observation.scene is not TaskScene.WALK
+        or ram.in_battle
+        or ram.party
+        or ram.bag
+        or ram.money != 3000
+    ):
+        raise DatasetError(
+            f"{sample.sample_id}：长期起点须在卧室地图 38 行走，未战斗、队伍与背包为空、钱 3000"
         )
 
 

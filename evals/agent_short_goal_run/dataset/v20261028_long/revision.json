@@ -1,0 +1,60 @@
+{
+  "change": "新增长期开放探索样本：从新游戏卧室起步，离开真新镇",
+  "samples": {
+    "long_leave_pallet_town": {
+      "oracle_steps": 238,
+      "milestones": {
+        "下楼到地图 37": 10,
+        "真新镇室外地图 0": 24,
+        "大木拦路": 74,
+        "选宝可梦界面": 104,
+        "选好宝可梦": 131,
+        "对战开始": 160,
+        "对战结束": 207,
+        "出研究所": 220,
+        "进入地图 12": 238
+      },
+      "max_steps": 720,
+      "start_readout": {
+        "map_id": 38,
+        "position": [
+          3,
+          6
+        ],
+        "party": [],
+        "bag": [],
+        "money": 3000,
+        "D74E": "0x00"
+      }
+    }
+  },
+  "source_files": {
+    "long_start_keys.json": "23c2ca25466de0d9f2c84e444043d1b33d7ebcb7af51d2a4ddaec87da42abe95",
+    "states/new_game_bedroom.state": "95b2cabd5b83d7d6922f4504f6602bd4d121de146b34c1a59db13c8a8a977158",
+    "route.json": "0bbd8c98547bd15bab84d2295f7566e85650374455cf09e367790ef74cc6a1c2"
+  },
+  "cold_start_readouts": [
+    {
+      "scene": "walk",
+      "map_id": 38,
+      "x": 3,
+      "y": 6,
+      "party": [],
+      "bag": [],
+      "money": 3000,
+      "D74E": 0,
+      "frames": 9000
+    },
+    {
+      "scene": "walk",
+      "map_id": 38,
+      "x": 3,
+      "y": 6,
+      "party": [],
+      "bag": [],
+      "money": 3000,
+      "D74E": 0,
+      "frames": 9000
+    }
+  ]
+}
