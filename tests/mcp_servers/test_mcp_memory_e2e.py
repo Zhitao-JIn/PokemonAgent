@@ -51,7 +51,14 @@ EP = "e1"
 def _act_payload(step: int = 1) -> dict[str, Any]:
     obs = ActMemory.Observation(facts={"overlay": "none"}, step=step)
     return ActMemory(
-        before=obs, action="up", after=obs, step=step, episode_id=EP, run_id=RUN
+        before=obs,
+        action="up",
+        after=obs,
+        step=step,
+        episode_id=EP,
+        run_id=RUN,
+        observations=[],
+        outcome=None,
     ).model_dump()
 
 
@@ -68,6 +75,9 @@ def _task_payload(task_id: str = "t1") -> dict[str, Any]:
         summary="沿空地向北走到草丛边。",
         quality_score=0.5,
         quality_rationale="常规移动。",
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     ).model_dump()
 
 
@@ -83,6 +93,8 @@ def _episode_payload() -> dict[str, Any]:
         quality_score=0.5,
         quality_rationale="常规。",
         applicable_scenes=["walk"],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     ).model_dump()
 
 

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from pokemon_agent.memory.facts import Fact
+from .fact import Fact
 
 
 class MemoryIndex(BaseModel):
@@ -75,9 +75,9 @@ class TaskMemory(BaseModel):
         default=None, description="本 task 末键的 after 帧（PNG data URI，可空）"
     )
 
-    facts: list[Fact] = Field(default_factory=list)
-    pointers: list[str] = Field(default_factory=list)
-    index: MemoryIndex = Field(default_factory=MemoryIndex)
+    facts: list[Fact]
+    pointers: list[str]
+    index: MemoryIndex
 
     markdown: str = Field(default="", description="LLM 生成的完整记忆正文（.md 主内容）")
 

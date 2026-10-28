@@ -47,6 +47,9 @@ def _task(number: int, first: str | None, last: str | None) -> TaskMemory:
         quality_rationale="q",
         first_frame=first,
         last_frame=last,
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -60,6 +63,8 @@ def _act(step: int, first: str, last: str) -> ActMemory:
         after=ActMemory.Observation(facts={"overlay": "none"}, step=step + 1),
         before_frame=first,
         after_frame=last,
+        observations=[],
+        outcome=None,
     )
 
 
@@ -114,6 +119,8 @@ def test_judger_sends_capped_episode_frames_when_history_is_empty() -> None:
         quality_rationale="q",
         first_frame="frame-0",
         last_frame="frame-1",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     frames = [f"frame-{index}" for index in range(24)]
     memories = [

@@ -41,7 +41,14 @@
         ],
         "first_frame": null,
         "last_frame": null,
-        "markdown": "进门记录"
+        "markdown": "进门记录",
+        "facts": [],
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       }
     ],
     "task_table": [
@@ -93,7 +100,13 @@
         ],
         "first_frame": null,
         "last_frame": null,
-        "markdown": "本局记录"
+        "markdown": "本局记录",
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       }
     ],
     "run_index": [],

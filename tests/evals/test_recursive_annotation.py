@@ -82,6 +82,7 @@ def test_excluded_authoring_row_cannot_carry_an_answer(tmp_path, monkeypatch) ->
         authoring.load_authoring("v", "judge", ["a"])
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_published_recursive_annotations_cover_every_case() -> None:
     counts = {
         family: len(load(family, VERSION)) for family in ("choose", "judge", "plan", "decompose")

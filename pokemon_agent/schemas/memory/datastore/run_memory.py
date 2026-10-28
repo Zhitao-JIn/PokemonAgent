@@ -30,8 +30,8 @@ class RunMemory(BaseModel):
     applicable_scenes: list[str] = Field(default_factory=list, description="此记忆适用的游戏场景")
     tags: list[str] = Field(default_factory=list, description="记忆标签（导航/战斗/物品收集等）")
 
-    pointers: list[str] = Field(default_factory=list)
-    index: MemoryIndex = Field(default_factory=MemoryIndex)
+    pointers: list[str]
+    index: MemoryIndex
 
     markdown: str = Field(default="", description="LLM 生成的完整记忆正文（.md 主内容）")
 

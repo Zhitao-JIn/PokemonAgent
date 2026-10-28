@@ -25,6 +25,9 @@ def _memory(task_id: str, order: int, goal: str = "去门口", episode: str = "e
         quality_rationale="q",
         first_frame="FIRST",
         last_frame="LAST",
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 

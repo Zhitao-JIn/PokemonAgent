@@ -104,7 +104,11 @@ class _Memory:
         stored = []
         for record in req.records:
             if record.kind == "episode":
-                self.stored.append(EpisodeMemory(**record.payload))
+                self.stored.append(
+                    EpisodeMemory(
+                        **record.payload,
+                    )
+                )
             stored.append(
                 FromHarnessToMemoryToolMemorizedRecord(
                     kind=record.kind, uuid=f"{record.kind}-{len(self.stored)}"

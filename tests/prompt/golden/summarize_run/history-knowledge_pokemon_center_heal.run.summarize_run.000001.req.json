@@ -85,7 +85,13 @@
         "tags": [],
         "first_frame": null,
         "last_frame": null,
-        "markdown": ""
+        "markdown": "",
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       },
       {
         "episode_id": "eval-knowledge_pokemon_center_heal-ep2",
@@ -107,7 +113,13 @@
         "tags": [],
         "first_frame": null,
         "last_frame": null,
-        "markdown": ""
+        "markdown": "",
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       },
       {
         "episode_id": "eval-knowledge_pokemon_center_heal-ep3",
@@ -129,7 +141,13 @@
         "tags": [],
         "first_frame": null,
         "last_frame": null,
-        "markdown": ""
+        "markdown": "",
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       }
     ],
     "termination": "stalled",

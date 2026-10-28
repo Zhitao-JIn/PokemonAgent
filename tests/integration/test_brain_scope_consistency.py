@@ -55,6 +55,8 @@ def _seed_details(fake: FakeRun) -> None:
             quality_rationale="固定样例",
             first_frame=f"frame-{index * 2}",
             last_frame=f"frame-{index * 2 + 1}",
+            pointers=[],
+            index={"headline": "", "keys": [], "evidence": []},
         )
         for index in range(12)
     )
@@ -76,6 +78,9 @@ def _seed_details(fake: FakeRun) -> None:
                     quality_rationale="固定样例",
                     first_frame="shared-frame",
                     last_frame="shared-frame",
+                    facts=[],
+                    pointers=[],
+                    index={"headline": "", "keys": [], "evidence": []},
                 )
             )
 
@@ -97,6 +102,8 @@ def _seed_indexes(fake: FakeRun) -> None:
             summary="过往 run。\n第二句。",
             quality_score=0.5,
             quality_rationale="固定样例",
+            pointers=[],
+            index={"headline": "", "keys": [], "evidence": []},
         )
     )
     fake.memory.tasks.append(

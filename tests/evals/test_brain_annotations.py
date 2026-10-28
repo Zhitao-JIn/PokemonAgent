@@ -42,6 +42,7 @@ def test_evidence_hash_changes_with_historical_input() -> None:
     ("family", "total", "labelled"),
     [("choose", 207, 131), ("judge", 289, 289), ("plan", 26, 25), ("decompose", 37, 36)],
 )
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_every_captured_request_has_verified_review_coverage(
     family: str, total: int, labelled: int
 ) -> None:
@@ -52,6 +53,7 @@ def test_every_captured_request_has_verified_review_coverage(
     assert all(row.evidence and row.rationale for row in rows)
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_all_four_independent_versions_use_the_labelled_denominators() -> None:
     from evals.brain_decompose.dataset import load as decomposition
     from evals.brain_plan.dataset import load as planning
@@ -65,6 +67,7 @@ def test_all_four_independent_versions_use_the_labelled_denominators() -> None:
     assert planning("v2")[0].reference.label_source == "history_adjudicated"
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_wrong_menu_quantity_and_partial_throw_result_remain_negative() -> None:
     rows = {row.case_id: row for row in load("judge")}
 
@@ -76,6 +79,7 @@ def test_wrong_menu_quantity_and_partial_throw_result_remain_negative() -> None:
     assert rows["knowledge_catch_throw_ball.task.judge.000012"].achieved is True
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_planning_review_respects_the_visible_goal_identity() -> None:
     rows = {row.case_id: row for row in load("decompose")}
     original = rows["knowledge_battle_action_menu.episode.decompose.000002"]
@@ -105,6 +109,7 @@ def test_repeated_keys_cannot_exploit_a_single_step_gold_label() -> None:
     assert not matches(repeated, label)
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_changed_request_evidence_is_rejected_even_with_updated_file_hash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

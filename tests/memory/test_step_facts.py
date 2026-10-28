@@ -23,6 +23,7 @@ def test_facts_preserve_all_observed_changes_and_sources() -> None:
                     "before": before,
                     "after": after,
                     "observations": [middle],
+                    "outcome": None,
                     "action": "a",
                     "step": step,
                     "task_id": "t",

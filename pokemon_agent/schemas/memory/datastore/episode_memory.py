@@ -95,8 +95,8 @@ class EpisodeMemory(BaseModel):
         description="本局最后一个 task 的末帧（按执行序，PNG data URI；None = 缺帧或空章）",
     )
 
-    pointers: list[str] = Field(default_factory=list)
-    index: MemoryIndex = Field(default_factory=MemoryIndex)
+    pointers: list[str]
+    index: MemoryIndex
 
     markdown: str = Field(default="", description="LLM 生成的完整记忆正文（.md 主内容）")
 

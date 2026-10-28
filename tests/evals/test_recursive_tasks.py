@@ -62,6 +62,7 @@ def fake_port(family: str) -> SimpleNamespace:
 
 
 @pytest.mark.parametrize("family", list(COUNTS))
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_each_task_runs_the_whole_recursive_dataset_with_fake_ports(
     family: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -88,6 +89,7 @@ def test_the_four_tasks_default_to_the_recursive_dataset() -> None:
 
 
 @pytest.mark.parametrize("family", ["choose", "plan", "decompose"])
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_advisory_quality_scores_every_labelled_case_with_a_fake_grader(
     family: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

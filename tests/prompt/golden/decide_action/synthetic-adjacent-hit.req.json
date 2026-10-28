@@ -313,7 +313,9 @@
         "task_id": "task-1",
         "run_id": "run-1",
         "before_frame": null,
-        "after_frame": null
+        "after_frame": null,
+        "observations": [],
+        "outcome": null
       },
       {
         "before": {
@@ -369,7 +371,9 @@
         "task_id": "task-1",
         "run_id": "run-1",
         "before_frame": null,
-        "after_frame": null
+        "after_frame": null,
+        "observations": [],
+        "outcome": null
       }
     ],
     "last_result": "",

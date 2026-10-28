@@ -17,6 +17,8 @@ def _episode(**changes: object) -> EpisodeMemory:
         summary="从野外绕到门口后进入室内。之后又在室内走了几步。",
         quality_score=0.5,
         quality_rationale="示例",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     values.update(changes)
     return EpisodeMemory.model_validate(values)
@@ -34,6 +36,9 @@ def _task(**changes: object) -> TaskMemory:
         summary="走到了门口。后来又转身。",
         quality_score=0.5,
         quality_rationale="示例",
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     values.update(changes)
     return TaskMemory.model_validate(values)
@@ -49,6 +54,8 @@ def _run(**changes: object) -> RunMemory:
         summary="三局里两局成功。第三局卡在迷宫。",
         quality_score=0.5,
         quality_rationale="示例",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     values.update(changes)
     return RunMemory.model_validate(values)

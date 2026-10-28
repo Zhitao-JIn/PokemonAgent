@@ -69,6 +69,8 @@ def _episode(run: str, episode: str) -> EpisodeMemory:
         summary=episode,
         quality_score=0.5,
         quality_rationale="q",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -82,6 +84,8 @@ def _run(run: str, goal: str) -> RunMemory:
         quality_score=0.5,
         quality_rationale="q",
         markdown="复盘正文",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 

@@ -25,6 +25,8 @@ def test_run_memory_trace_round_trips_three_registered_kinds(tmp_path: Path) -> 
         markdown="复盘",
         quality_score=0.5,
         quality_rationale="q",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
     trace.append(

@@ -11,6 +11,7 @@ from pokemon_agent.schemas.harness import (
     TraceKind,
 )
 from pokemon_agent.schemas.memory import EpisodeMemory, RunMemory
+from pokemon_agent.schemas.memory.datastore.task_memory import MemoryIndex
 
 from ..run_state import RunState
 from ..runtime import RunRuntime
@@ -30,6 +31,8 @@ def _chapter(state: RunState, reason: str) -> RunMemory:
         summary="",
         quality_score=0.0,
         quality_rationale=reason,
+        pointers=[output.episode_id for output in state.episode_outputs],
+        index=MemoryIndex(),
     )
 
 

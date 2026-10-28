@@ -25,7 +25,14 @@ def _act(step: int = 1, episode_id: str = _EP) -> dict:
     place = ActMemory.Observation.Place(map_id=12, x=13, y=8)
     obs = ActMemory.Observation(facts={"overlay": "none"}, step=step, place=place)
     return ActMemory(
-        before=obs, action="up", after=obs, step=step, episode_id=episode_id, run_id=_RUN
+        before=obs,
+        action="up",
+        after=obs,
+        step=step,
+        episode_id=episode_id,
+        run_id=_RUN,
+        observations=[],
+        outcome=None,
     ).model_dump()
 
 
@@ -42,6 +49,9 @@ def _task(task_id: str = "t1", episode_id: str = _EP) -> dict:
         summary="沿空地向北走到草丛边。",
         quality_score=0.5,
         quality_rationale="常规移动。",
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     ).model_dump()
 
 
@@ -55,6 +65,8 @@ def _episode(episode_id: str = "r1-ep1", markdown: str = "", summary: str = "") 
         quality_score=0.0,
         quality_rationale="-",
         markdown=markdown,
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     ).model_dump()
 
 

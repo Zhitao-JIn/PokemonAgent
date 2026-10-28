@@ -36,6 +36,8 @@ def _state(with_memory: bool = True) -> RunState:
             markdown="素材。",
             quality_score=0.5,
             quality_rationale="q",
+            pointers=[],
+            index={"headline": "", "keys": [], "evidence": []},
         )
         if with_memory
         else None
@@ -142,6 +144,8 @@ def test_run_summary_failure_degrades_to_an_empty_chapter(tmp_path: Path, failur
         "无可蒸素材" if failure == "empty" else type(error).__name__
     ) in memory.quality_rationale
     assert memory.episodes == 2 and memory.succeeded == 1 and memory.acts_used == 11
+    assert memory.pointers == ["r1-ep1", "r1-ep2"]
+    assert memory.index.headline == ""
     assert any(event.kind == "call_exhausted" for event in events)
     assert any(event.kind == "summarize_run_call" for event in events) == (failure != "empty")
 

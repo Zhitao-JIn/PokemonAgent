@@ -25,6 +25,9 @@ def _task_memory(i: int) -> TaskMemory:
         summary="按了 up，位置北移一格",
         quality_score=0.9,
         quality_rationale="前后帧一致",
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -67,6 +70,8 @@ def test_build_prompt_still_renders_act_memories_via_sequence() -> None:
         action="up",
         before={"step": 0, "status": "站立", "map_id": 12},
         after={"step": 1, "status": "站立", "map_id": 12},
+        observations=[],
+        outcome=None,
     )
     req = FromHarnessToBrainToolVerifyReq(entries=[act], goal="向北走一步")
     prompt = (

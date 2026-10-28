@@ -32,7 +32,13 @@
         "tags": [],
         "first_frame": null,
         "last_frame": null,
-        "markdown": ""
+        "markdown": "",
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       }
     ],
     "task_index": [],

@@ -837,8 +837,8 @@ class Brain:
         steps: int,
         max_steps: int,
         images: Sequence[str] = (),
-        grounding_texts: Sequence[str] | None = None,
-        termination: str = "",
+        grounding_texts: Sequence[str],
+        termination: str,
     ) -> SummarizeResult:
         """一次蒸馏尝试：问一次模型、解析摘要。**不重试**——重试是调用方的循环。
 
@@ -914,8 +914,8 @@ class Brain:
         steps: int,
         max_steps: int,
         images: Sequence[str] = (),
-        grounding_texts: Sequence[str] | None = None,
-        termination: str = "",
+        grounding_texts: Sequence[str],
+        termination: str,
     ) -> SummarizeRunResult:
         """问一次现有蒸馏 provider，交回 run 方言；失败沿用 SummarizeAttemptFailed。
 
@@ -967,7 +967,7 @@ class Brain:
 
     @staticmethod
     def _parse_summary(
-        text: str, grounding_texts: Sequence[str] | None = None, termination: str = ""
+        text: str, grounding_texts: Sequence[str], termination: str
     ) -> EpisodeSummary | None:
         """把蒸馏输出解析成 `EpisodeSummary`；解析不出来返回 `None`。
 
@@ -988,9 +988,9 @@ class Brain:
         # 但字段已经不存在了——落盘用 uuid 命名，那一格从来没有读方。
         data.pop("filename", None)
         index = data.get("index")
-        if grounding_texts is not None and not Brain._valid_summary_index(
-            index, grounding_texts, termination
-        ):
+        if not Brain._valid_summary_index(index, grounding_texts, termination):
+            return None
+        if str(data.get("summary", "")).strip() and not index["headline"].strip():
             return None
         try:
             return EpisodeSummary(

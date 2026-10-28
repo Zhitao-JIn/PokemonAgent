@@ -9,6 +9,7 @@ from langgraph.runtime import Runtime
 
 from pokemon_agent.brain import Task
 from pokemon_agent.brain.interface import Decomposition
+from pokemon_agent.harness.episode.episode_done.leave_chapter import leave_chapter
 from pokemon_agent.harness.episode.episode_state import EpisodeContext, EpisodeRunState
 from pokemon_agent.harness.episode.plan_episode.plan_episode import plan_episode
 from pokemon_agent.harness.episode.review_and_judge import review_and_judge
@@ -24,7 +25,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToReviewerInjectResp,
     ModelCall,
 )
-from pokemon_agent.schemas.harness.domain import TaskEntry
+from pokemon_agent.schemas.harness.domain import TaskEntry, Termination
 from pokemon_agent.schemas.memory import EpisodeMemory, TaskMemory
 from pokemon_agent.world import TERRAIN_MEANING, Facts, TaskObservation, TaskScene
 
@@ -84,6 +85,9 @@ def _state() -> EpisodeRunState:
         quality_score=0.5,
         quality_rationale="q",
         first_frame="data:image/png;base64,TASK",
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     episode = EpisodeMemory(
         run_id="other",
@@ -95,6 +99,8 @@ def _state() -> EpisodeRunState:
         quality_score=0.5,
         quality_rationale="q",
         first_frame="data:image/png;base64,PRIOR",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     observation = TaskObservation(
         scene=TaskScene.WALK,
@@ -243,3 +249,13 @@ def context_lines(req: FromHarnessToBrainToolDecomposeReq) -> list[str]:
         {**req.model_dump(mode="json"), "terrain_meanings": TERRAIN_MEANING}
     )
     return PromptGateway(None).render_history("decompose", params)
+
+
+def test_budget_episode_chapter_points_to_existing_task_memories(tmp_path: Path) -> None:
+    fake = build_fake(tmp_path)
+    state = _state().model_copy(update={"termination": Termination.BUDGET_EXHAUSTED})
+
+    memory = leave_chapter(state, Runtime(context=fake.run_rt.episode))["memory"]
+
+    assert memory.pointers == ["t"]
+    assert memory.index.headline == ""

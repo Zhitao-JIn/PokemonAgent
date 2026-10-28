@@ -252,8 +252,8 @@ class ActMemory(BaseModel):
         "连按已经展开成多步，这里不再是链"
     )
     after: Observation = Field(description="执行之后的画面。**结果也是一次观察**")
-    observations: list[SnapshotStep] = Field(default_factory=list)
-    outcome: ScriptOutcome | None = None
+    observations: list[SnapshotStep]
+    outcome: ScriptOutcome | None
 
     step: int = Field(
         description="该键按下**前**那一帧的本局累计键数（跨 task 连续，harness 盖章）——"

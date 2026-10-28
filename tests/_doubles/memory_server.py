@@ -59,6 +59,8 @@ def act(step: int) -> dict[str, Any]:
         step=step,
         run_id="run",
         episode_id="episode",
+        observations=[],
+        outcome=None,
     ).model_dump()
     return {"kind": "act", "payload": payload}
 

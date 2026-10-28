@@ -17,6 +17,32 @@ from pokemon_agent.schemas.harness import (
 from tests.prompt.distillation_examples import examples
 
 
+class _GroundingBrain(Brain):
+    def summarize(self, **kwargs):
+        self.grounding_texts = kwargs["grounding_texts"]
+        return super().summarize(**kwargs)
+
+    def summarize_run(self, **kwargs):
+        self.grounding_texts = kwargs["grounding_texts"]
+        return super().summarize_run(**kwargs)
+
+
+def _strict_data(layer: str) -> dict[str, object]:
+    data = examples()[layer].model_dump(mode="json")
+    if layer == "summarize_task":
+        for entry in data["entries"]:
+            entry["observations"] = []
+            entry["outcome"] = None
+    elif layer == "summarize":
+        for entry in data["entries"]:
+            entry["facts"] = []
+            entry["pointers"] = []
+    else:
+        for entry in data["episode_memories"]:
+            entry["pointers"] = []
+    return data
+
+
 def reply(key: str, *, headline: str = "探索", evidence: str = "对话原文") -> str:
     return json.dumps(
         {
@@ -36,7 +62,7 @@ def reply(key: str, *, headline: str = "探索", evidence: str = "对话原文")
 
 @pytest.mark.parametrize("layer", ["summarize_task", "summarize", "summarize_run"])
 def test_summary_checks_each_layer_grounding_and_retries(layer: str) -> None:
-    data = examples()[layer].model_dump(mode="json")
+    data = _strict_data(layer)
     data.update(run_id="r", episode_id="e", entry_id="entry", run_goal="总目标")
     if layer == "summarize_task":
         for entry in data["entries"]:
@@ -58,14 +84,17 @@ def test_summary_checks_each_layer_grounding_and_retries(layer: str) -> None:
         request = FromHarnessToBrainToolSummarizeRunReq.model_validate(data)
         kind, accepted = RunSummarizer, "局索引词"
     provider = ScriptedJudge(text_reply(reply("虚构词")), text_reply(reply(accepted)))
-    tool = kind(
-        Brain(summary_llm=provider), policy=call_policy(), prompt_gateway=PromptGateway(None)
-    )
+    brain = _GroundingBrain(summary_llm=provider)
+    tool = kind(brain, policy=call_policy(), prompt_gateway=PromptGateway(None))
 
     result = getattr(tool, layer)(request)
 
     assert len(provider.requests) == len(result.calls) == 2
     assert result.summary.index.keys == [accepted]
+    missing_sources = [
+        source for source in brain.grounding_texts if source not in provider.requests[-1].prompt
+    ]
+    assert not missing_sources, missing_sources
     restriction = {
         "summarize_task": "观察变化文本",
         "summarize": "下层 task 记忆的 index.keys",
@@ -82,7 +111,9 @@ def test_summary_checks_each_layer_grounding_and_retries(layer: str) -> None:
         ],
     )
     if layer == "summarize_task":
-        assert memory.pointers == [f"{request.entries[0].step}-{request.entries[-1].after.step}"]
+        assert memory.pointers == [
+            f"{request.entries[0].before.step}-{request.entries[-1].after.step}"
+        ]
     elif layer == "summarize":
         assert memory.pointers == [item.task_id for item in request.entries]
     else:
@@ -98,7 +129,7 @@ def test_summary_checks_each_layer_grounding_and_retries(layer: str) -> None:
     ],
 )
 def test_invalid_headline_or_evidence_uses_existing_retry(bad: dict[str, str]) -> None:
-    data = examples()["summarize_task"].model_dump(mode="json")
+    data = _strict_data("summarize_task")
     data.update(run_id="r", episode_id="e", entry_id="entry", termination="goal_done")
     for entry in data["entries"]:
         entry["before_frame"] = entry["after_frame"] = None
@@ -127,7 +158,7 @@ def test_invalid_headline_or_evidence_uses_existing_retry(bad: dict[str, str]) -
     ],
 )
 def test_every_forbidden_outcome_word_retries(termination: str, headline: str) -> None:
-    data = examples()["summarize_task"].model_dump(mode="json")
+    data = _strict_data("summarize_task")
     data.update(run_id="r", episode_id="e", entry_id="entry", termination=termination)
     for entry in data["entries"]:
         entry["before_frame"] = entry["after_frame"] = None
@@ -144,3 +175,22 @@ def test_every_forbidden_outcome_word_retries(termination: str, headline: str) -
 
     assert len(result.calls) == 2
     assert result.calls[0].error_kind == "ParseFailure"
+
+
+def test_nonempty_summary_requires_a_headline_and_retries() -> None:
+    data = _strict_data("summarize_task")
+    data.update(run_id="r", episode_id="e", entry_id="entry", termination="goal_done")
+    for entry in data["entries"]:
+        entry["before_frame"] = entry["after_frame"] = None
+        entry["before"]["facts"]["screen"] = "探索依据"
+    request = FromHarnessToBrainToolSummarizeTaskReq.model_validate(data)
+    provider = ScriptedJudge(
+        text_reply(reply("探索依据", headline="")), text_reply(reply("探索依据"))
+    )
+    result = TaskSummarizer(
+        Brain(summary_llm=provider), policy=call_policy(), prompt_gateway=PromptGateway(None)
+    ).summarize_task(request)
+
+    assert len(result.calls) == 2
+    assert result.calls[0].error_kind == "ParseFailure"
+    assert result.summary.index.headline == "探索"

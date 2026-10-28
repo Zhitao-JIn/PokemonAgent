@@ -289,7 +289,14 @@
         ],
         "first_frame": null,
         "last_frame": null,
-        "markdown": "进门记录"
+        "markdown": "进门记录",
+        "facts": [],
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       }
     ],
     "human_note": ""

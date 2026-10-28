@@ -110,6 +110,8 @@ def _episode(first: str | None, last: str | None, number: int = 0) -> EpisodeMem
         quality_rationale="q",
         first_frame=first,
         last_frame=last,
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -126,6 +128,9 @@ def _task(first: str | None, last: str | None, number: int = 0) -> TaskMemory:
         quality_rationale="q",
         first_frame=first,
         last_frame=last,
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 

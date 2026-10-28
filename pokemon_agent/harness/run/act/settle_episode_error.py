@@ -35,6 +35,7 @@ def settle_episode_error(
         reason=reason,
         source=source,
         step=0,
+        pointers=[],
     )
     deps.trace.append(
         FromHarnessToTraceToolAppendReq(

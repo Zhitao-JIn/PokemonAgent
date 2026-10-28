@@ -30,7 +30,13 @@
         "quality_rationale": "预算不足",
         "applicable_scenes": [],
         "tags": [],
-        "markdown": ""
+        "markdown": "",
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       }
     ],
     "knowledge": [],

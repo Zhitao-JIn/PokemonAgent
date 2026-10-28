@@ -61,6 +61,8 @@ def _state() -> RunState:
             summary=f"局{i}首句。局{i}详情第二句。",
             quality_score=0.5,
             quality_rationale="q",
+            pointers=[],
+            index={"headline": "", "keys": [], "evidence": []},
         )
         for i in range(3)
     ]
@@ -72,6 +74,8 @@ def _state() -> RunState:
         summary="背景首句。背景第二句不该全文出现。",
         quality_score=0.5,
         quality_rationale="q",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     context = PlanContext(
         details=details, objects=[], run_index=[background], knowledge=["知识甲", "知识乙"]

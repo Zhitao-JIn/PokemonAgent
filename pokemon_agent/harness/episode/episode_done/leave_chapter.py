@@ -25,6 +25,7 @@ from pokemon_agent.schemas.harness import (
 )
 from pokemon_agent.schemas.harness.domain import Termination
 from pokemon_agent.schemas.memory import EpisodeMemory
+from pokemon_agent.schemas.memory.datastore.task_memory import MemoryIndex
 
 from ..episode_runtime import EpisodeRuntime
 from ..episode_state import EpisodeRunState
@@ -47,6 +48,7 @@ def store_empty_chapter(
     reason: str,
     source: str,
     step: int,
+    pointers: list[str],
 ) -> EpisodeMemory:
     """这一局在记忆里还没有记录就补一张空章（记 `write_episode_memory`），返回那条记录。"""
     assert episode_id, "store_empty_chapter() needs a non-empty episode_id"
@@ -76,6 +78,8 @@ def store_empty_chapter(
         summary="",
         quality_score=0.0,
         quality_rationale=CHAPTER_RATIONALE,
+        pointers=pointers,
+        index=MemoryIndex(),
     )
     deps.memory.memorize(
         FromHarnessToMemoryToolMemorizeReq(
@@ -111,6 +115,7 @@ def leave_chapter(state: EpisodeRunState, runtime: Runtime[EpisodeRuntime]) -> d
         reason=state.reason,
         source="leave_chapter",
         step=state.step + 1,  # 收尾账同圈中式：圈号 = 已派 task 数 + 1（0928 定稿）
+        pointers=[memory.task_id for memory in state.ep_ctx.task_memories],
     )
     return {"memory": stored}
 

@@ -118,6 +118,8 @@ def _memory(episode_id: str, success: bool, goal: str = "某目标") -> EpisodeM
         summary=f"{episode_id} 的总结",
         quality_score=0.5,
         quality_rationale="桩",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 

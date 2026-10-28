@@ -51,7 +51,13 @@
         ],
         "first_frame": null,
         "last_frame": null,
-        "markdown": "本局记录"
+        "markdown": "本局记录",
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       }
     ],
     "termination": "goal_done",

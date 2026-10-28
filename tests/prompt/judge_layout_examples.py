@@ -73,6 +73,10 @@ def requests() -> dict[str, FromHarnessToBrainToolJudgeReq]:
 def _request(name: str, data: dict) -> FromHarnessToBrainToolJudgeReq:
     """两层规划保留全部四组字段；三层均显式填写 RAM 窗口。"""
     data["ram_observations"] = []
+    if name == "task":
+        data["history"] = [
+            {**entry, "observations": [], "outcome": None} for entry in data["history"]
+        ]
     if name != "task":
         data.update(
             latest_planning={

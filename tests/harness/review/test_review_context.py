@@ -39,6 +39,8 @@ def _episode(identifier: str, first: str | None, last: str | None) -> EpisodeMem
         quality_rationale="示例",
         first_frame=first,
         last_frame=last,
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -55,6 +57,9 @@ def _task(identifier: str, first: str | None, last: str | None) -> TaskMemory:
         quality_rationale="示例",
         first_frame=first,
         last_frame=last,
+        facts=[],
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
 
 
@@ -84,6 +89,8 @@ def _brain_input(kind: str) -> BrainInput:
                     summary="背景首句。后文",
                     quality_score=0.5,
                     quality_rationale="q",
+                    pointers=[],
+                    index={"headline": "", "keys": [], "evidence": []},
                 )
             ],
         )
@@ -242,6 +249,8 @@ def test_reviewer_index_lines_are_byte_equal_to_the_memory_methods(
             summary="样本",
             quality_score=0.5,
             quality_rationale="示例",
+            pointers=[],
+            index={"headline": "", "keys": [], "evidence": []},
         ),
     ]
     memories = [

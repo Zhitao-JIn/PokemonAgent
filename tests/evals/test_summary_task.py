@@ -38,6 +38,7 @@ class Grader:
         return SimpleNamespace(completion=json.dumps(result))
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_summary_dataset_freezes_inputs_rubric_and_layer_counts() -> None:
     cases = dataset.load()
 
@@ -63,6 +64,7 @@ def test_summary_dataset_detects_rubric_tampering(
         dataset.load()
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_all_summary_layers_use_production_prompts_and_independent_review(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

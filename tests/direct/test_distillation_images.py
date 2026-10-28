@@ -34,6 +34,16 @@ def test_provider_gets_the_same_ordered_frames_and_caps_in_both_versions(
         "summarize_run": RunSummarizer,
     }
     data = examples()[task].model_dump(mode="json")
+    empty_index = {"headline": "", "keys": [], "evidence": []}
+    if task == "summarize_task":
+        for entry in data["entries"]:
+            entry.update(observations=[], outcome=None)
+    elif task == "summarize":
+        for entry in data["entries"]:
+            entry.update(facts=[], pointers=[], index=empty_index.copy())
+    else:
+        for entry in data["episode_memories"]:
+            entry.update(pointers=[], index=empty_index.copy())
     request = contracts[task].model_validate(
         {
             **data,

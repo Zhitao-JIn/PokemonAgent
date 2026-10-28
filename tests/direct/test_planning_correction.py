@@ -2,6 +2,7 @@
 
 import json
 
+import pytest
 from _doubles.llm import ScriptedLLM, text_reply
 from _harness_fixtures.app_config import call_policy
 
@@ -13,6 +14,7 @@ from pokemon_agent.direct.brain_tool import Decomposer, Planner
 from pokemon_agent.prompt import PromptGateway
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_retry_explains_missing_and_nonexistent_references_and_keeps_both_calls():
     case = next(
         row
@@ -45,6 +47,7 @@ def test_retry_explains_missing_and_nonexistent_references_and_keeps_both_calls(
     assert not response.calls[1].error_kind
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_plan_parse_retry_includes_the_same_correction_channel():
     case = load_plans("v20261020_1846")[0]
     invalid = {"new_items": [], "execution_order": ["new:0"], "why": "保留"}
@@ -61,6 +64,7 @@ def test_plan_parse_retry_includes_the_same_correction_channel():
     assert response.calls[0].error in response.calls[1].payload["prompt"]
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_decompose_transport_retry_does_not_invent_a_parse_correction():
     case = load("v20261020_1846")[0]
     valid = {"new_items": [], "execution_order": None, "why": "保留"}

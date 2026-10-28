@@ -21,6 +21,8 @@ def details_data() -> list[dict[str, JsonValue]]:
             "summary": "局首句。局全文末句。",
             "quality_score": 0.5,
             "quality_rationale": "核验",
+            "pointers": [],
+            "index": {"headline": "", "keys": [], "evidence": []},
             "first_frame": "FRAME_FIRST",
             "last_frame": "FRAME_LAST",
         }
@@ -38,6 +40,8 @@ def run_index_data() -> list[dict[str, JsonValue]]:
             "summary": "背景首句。背景正文不作本层证据。",
             "quality_score": 0.5,
             "quality_rationale": "核验",
+            "pointers": [],
+            "index": {"headline": "", "keys": [], "evidence": []},
         }
     ]
 
@@ -110,6 +114,9 @@ def task_data() -> dict[str, JsonValue]:
         "summary": "任务首句。任务全文末句。",
         "quality_score": 0.5,
         "quality_rationale": "核验",
+        "facts": [],
+        "pointers": [],
+        "index": {"headline": "", "keys": [], "evidence": []},
         "first_frame": "FRAME_FIRST",
         "last_frame": "FRAME_LAST",
     }
@@ -147,6 +154,8 @@ def choose_example(base: dict[str, JsonValue]) -> DecideActionParams:
                     "before": observation_data(),
                     "after": observation_data(),
                     "action": "a",
+                    "observations": [],
+                    "outcome": None,
                     "result": "动作完整结果",
                     "before_frame": "FRAME_FIRST",
                     "after_frame": "FRAME_LAST",

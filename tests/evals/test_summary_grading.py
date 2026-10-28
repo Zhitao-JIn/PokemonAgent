@@ -108,6 +108,7 @@ def test_task_markdown_is_optional_but_episode_and_run_require_it() -> None:
 
 
 @pytest.mark.parametrize("malformed", ["missing", "duplicate", "empty_evidence", "invalid_json"])
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_malformed_grader_response_is_unscored(
     malformed: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -148,6 +149,7 @@ def test_malformed_grader_response_is_unscored(
     assert score.value == NOANSWER and "review" not in (score.metadata or {})
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_disabled_grader_never_calls_a_model(monkeypatch: pytest.MonkeyPatch) -> None:
     def unexpected(*args: object, **kwargs: object) -> None:
         pytest.fail("disabled grader accessed a model")

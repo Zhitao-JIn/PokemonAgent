@@ -80,7 +80,7 @@ from pokemon_agent.direct.node_brain_factory import BrainLayer, NodeBrainFactory
 from pokemon_agent.direct.planning_validation import validate_result
 from pokemon_agent.errors import BudgetExhausted, MaxRetriesExceeded
 from pokemon_agent.memory.changes import changes
-from pokemon_agent.memory.facts import task_facts
+from pokemon_agent.memory.facts import task_facts, task_step_range
 from pokemon_agent.prompt import (
     DecideActionParams,
     DecomposeParams,
@@ -707,6 +707,7 @@ class Summarizer:
             text
             for entry in req.entries
             for text in [*entry.index.keys, entry.index.headline, entry.goal]
+            if text
         ]
         req = req.model_copy(update={"grounding_texts": grounding_texts})
         params = SummarizeParams.model_validate(
@@ -869,14 +870,6 @@ class TaskSummarizer:
     ) -> FromHarnessToBrainToolSummarizeTaskResp:
         """蒸馏本 task 的素材并组装 TaskMemory；请求保证条目非空，失败账随异常返回。"""
         facts = task_facts(req.entries, req.task_id, req.episode_id)
-        grounding_texts = [fact.text for fact in facts]
-        for entry in req.entries:
-            for frame in [entry.before, *entry.observations, entry.after]:
-                if hasattr(frame, "facts"):
-                    grounding_texts.extend([frame.facts.dialog_text, frame.facts.screen])
-                else:
-                    grounding_texts.extend([frame.dialog_text, frame.screen])
-        req = req.model_copy(update={"grounding_texts": grounding_texts})
         params = SummarizeTaskParams.model_validate(
             {**req.model_dump(mode="json"), "success": req.success}
         )
@@ -884,6 +877,19 @@ class TaskSummarizer:
         rendered_prompt = render_and_stamp(self._prompt_gateway, "summarize_task", params, [])
         prompt = rendered_prompt.text
         records = self._prompt_gateway.render_history("summarize_task", params)
+        grounding_texts = [fact.text for fact in facts if fact.text and fact.text in prompt]
+        for entry in req.entries:
+            for frame in (entry.before, entry.after):
+                if not frame.settled:
+                    continue
+                observation_facts = frame.facts
+                grounding_texts.extend(
+                    line
+                    for text in (observation_facts.dialog_text, observation_facts.screen)
+                    for line in text.splitlines()
+                    if line and line in prompt
+                )
+        req = req.model_copy(update={"grounding_texts": grounding_texts})
         images, _snapshots = dedup_snapshots(list(req.entries))
 
         def attempt(nth: int, calls: list[ModelCall]) -> object:
@@ -930,7 +936,7 @@ class TaskSummarizer:
             last_frame=last,
             markdown=summary.markdown,
             facts=facts,
-            pointers=[f"{req.entries[0].step}-{req.entries[-1].after.step}"],
+            pointers=task_step_range(req.entries),
             index=summary.index.model_dump(),
         )
         return FromHarnessToBrainToolSummarizeTaskResp(summary=summary, memory=memory, calls=calls)

@@ -67,7 +67,9 @@
         "task_id": "task-1",
         "run_id": "run-1",
         "before_frame": null,
-        "after_frame": null
+        "after_frame": null,
+        "observations": [],
+        "outcome": null
       },
       {
         "before": {
@@ -123,7 +125,9 @@
         "task_id": "task-1",
         "run_id": "run-1",
         "before_frame": null,
-        "after_frame": null
+        "after_frame": null,
+        "observations": [],
+        "outcome": null
       }
     ],
     "task_memories": [],
@@ -157,7 +161,14 @@
         ],
         "first_frame": null,
         "last_frame": null,
-        "markdown": "进门记录"
+        "markdown": "进门记录",
+        "facts": [],
+        "pointers": [],
+        "index": {
+          "headline": "",
+          "keys": [],
+          "evidence": []
+        }
       }
     ],
     "episode_index": [],

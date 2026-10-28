@@ -31,7 +31,13 @@ REPLIES = {
     "judge": '{"decision": "continue", "why": "not yet"}',
     "verify": '[{"index": 0, "positive": true, "why": "observed"}]',
     "summarize": json.dumps(
-        {"summary": "s", "quality_score": 0.5, "quality_rationale": "q", "markdown": "m"}
+        {
+            "summary": "s",
+            "quality_score": 0.5,
+            "quality_rationale": "q",
+            "markdown": "m",
+            "index": {"headline": "复盘", "keys": [], "evidence": []},
+        }
     ),
 }
 REPLIES["summarize_run"] = REPLIES["summarize"]
@@ -73,6 +79,8 @@ def invoke(brain: Brain, capability: str, images: list[str]) -> list[ModelCall]:
                 steps=1,
                 max_steps=2,
                 images=images,
+                grounding_texts=[],
+                termination="goal_done",
             )
     return result.calls
 

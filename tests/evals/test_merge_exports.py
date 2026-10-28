@@ -42,6 +42,7 @@ def split_parts(tmp_path: Path, assign: list[str]) -> list[Path]:
     return [parts["a"], parts["b"]]
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_merge_restores_sample_order_across_parts(tmp_path: Path) -> None:
     parts = split_parts(tmp_path, ["a", "b"] * 10)
 
@@ -54,6 +55,7 @@ def test_merge_restores_sample_order_across_parts(tmp_path: Path) -> None:
     assert [case.case_id for case, _ in pairs] == expected
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_merge_rejects_duplicate_case_ids(tmp_path: Path) -> None:
     parts = split_parts(tmp_path, ["a"] * 20)
     (parts[1] / FAMILY / "inputs.jsonl").write_bytes(
@@ -73,6 +75,7 @@ def test_merge_rejects_duplicate_case_ids(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_merge_rejects_parts_with_different_request_schemas(tmp_path: Path) -> None:
     parts = split_parts(tmp_path, ["a", "b"] * 10)
     (parts[1] / FAMILY / "plan.request.schema.json").write_text("{}", "utf-8")

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from _harness_fixtures.app_config import DEFAULT_APP_CONFIG
 from langgraph.runtime import Runtime
+from pydantic import ValidationError
 
 from pokemon_agent.brain import Action, ActionSegment, ScriptCall, Task
 from pokemon_agent.direct.brain_tool import Reflector
@@ -130,21 +131,15 @@ def test_key_action_memory_has_no_script_outcome_or_observations() -> None:
     assert payload["observations"] == [] and payload["outcome"] is None
 
 
-def test_old_memory_without_new_fields_and_with_old_flags_is_readable() -> None:
+def test_memory_without_observations_or_outcome_is_rejected() -> None:
     memory, trace = _Memory(), _Trace()
     state = _state(Action(sequence=[ActionSegment(name="up")]), None)
     payload = _store(state, memory, trace)
-    legacy = {
-        key: value for key, value in payload.items() if key not in {"observations", "outcome"}
-    }
-    legacy["before"]["observation_flags"] = ["no_text"]
-    legacy["before"]["perceived"] = True
-    legacy["before"]["facts"]["overview"] = "old"
+    payload.pop("observations")
+    payload.pop("outcome")
 
-    entry = ActMemory.model_validate(legacy)
-
-    assert entry.observations == [] and entry.outcome is None
-    assert "observation_flags" not in entry.before.model_dump()
+    with pytest.raises(ValidationError):
+        ActMemory.model_validate(payload)
 
 
 def _ram(money: int) -> RamReadout:

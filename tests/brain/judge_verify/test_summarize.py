@@ -50,6 +50,7 @@ def summary_json(**overrides: object) -> str:
         "applicable_scenes": ["route 2"],
         "tags": ["navigation"],
         "markdown": "# notes",
+        "index": {"headline": "north road", "keys": [], "evidence": ["状态变化"]},
     }
     data.update(overrides)
     return json.dumps(data)
@@ -59,7 +60,14 @@ def test_a_bare_summary_object_parses() -> None:
     brain = Brain(summary_llm=ScriptedJudge(text_reply(summary_json())))
 
     result = brain.summarize(
-        prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+        prompt=PROMPT,
+        goal=GOAL,
+        history=HISTORY,
+        success=True,
+        steps=3,
+        max_steps=10,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     summary = result.summary
@@ -80,7 +88,14 @@ def test_a_summary_wrapped_in_an_outer_object_parses_too() -> None:
     brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.summarize(
-        prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+        prompt=PROMPT,
+        goal=GOAL,
+        history=HISTORY,
+        success=True,
+        steps=3,
+        max_steps=10,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     summary = result.summary
@@ -100,7 +115,14 @@ def test_the_markdown_field_is_kept_on_the_summary() -> None:
     brain = Brain(summary_llm=ScriptedJudge(text_reply(summary_json(markdown="# a\n\nbody"))))
 
     result = brain.summarize(
-        prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+        prompt=PROMPT,
+        goal=GOAL,
+        history=HISTORY,
+        success=True,
+        steps=3,
+        max_steps=10,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     assert result.summary.markdown == "# a\n\nbody"
@@ -110,18 +132,39 @@ def test_a_filename_in_the_output_is_discarded() -> None:
     brain = Brain(summary_llm=ScriptedJudge(text_reply(summary_json(filename="x.md"))))
 
     result = brain.summarize(
-        prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+        prompt=PROMPT,
+        goal=GOAL,
+        history=HISTORY,
+        success=True,
+        steps=3,
+        max_steps=10,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     assert "filename" not in result.summary.model_dump()
 
 
 def test_optional_fields_default_when_the_model_leaves_them_out() -> None:
-    reply = json.dumps({"summary": "s", "quality_score": 0.5, "quality_rationale": "r"})
+    reply = json.dumps(
+        {
+            "summary": "s",
+            "quality_score": 0.5,
+            "quality_rationale": "r",
+            "index": {"headline": "复盘", "keys": [], "evidence": []},
+        }
+    )
     brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.summarize(
-        prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+        prompt=PROMPT,
+        goal=GOAL,
+        history=HISTORY,
+        success=True,
+        steps=3,
+        max_steps=10,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     summary = result.summary
@@ -140,7 +183,14 @@ def test_a_json_fence_around_the_summary_is_tolerated() -> None:
     brain = Brain(summary_llm=ScriptedJudge(text_reply(reply)))
 
     result = brain.summarize(
-        prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+        prompt=PROMPT,
+        goal=GOAL,
+        history=HISTORY,
+        success=True,
+        steps=3,
+        max_steps=10,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     assert result.summary.summary == "took the north road"
@@ -154,7 +204,14 @@ def test_missing_required_fields_fail_as_parse_failure(missing_key: str) -> None
 
     with pytest.raises(SummarizeAttemptFailed) as excinfo:
         brain.summarize(
-            prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+            prompt=PROMPT,
+            goal=GOAL,
+            history=HISTORY,
+            success=True,
+            steps=3,
+            max_steps=10,
+            grounding_texts=["source"],
+            termination="goal_done",
         )
 
     assert excinfo.value.call.error_kind == "ParseFailure"
@@ -167,7 +224,14 @@ def test_a_quality_score_outside_zero_to_one_fails_as_parse_failure(score: float
 
     with pytest.raises(SummarizeAttemptFailed) as excinfo:
         brain.summarize(
-            prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+            prompt=PROMPT,
+            goal=GOAL,
+            history=HISTORY,
+            success=True,
+            steps=3,
+            max_steps=10,
+            grounding_texts=["source"],
+            termination="goal_done",
         )
 
     assert excinfo.value.call.error_kind == "ParseFailure"
@@ -182,7 +246,14 @@ def test_non_json_or_non_object_output_fails_as_parse_failure_and_keeps_the_raw_
 
     with pytest.raises(SummarizeAttemptFailed) as excinfo:
         brain.summarize(
-            prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+            prompt=PROMPT,
+            goal=GOAL,
+            history=HISTORY,
+            success=True,
+            steps=3,
+            max_steps=10,
+            grounding_texts=["source"],
+            termination="goal_done",
         )
 
     assert excinfo.value.call.error_kind == "ParseFailure"
@@ -196,7 +267,14 @@ def test_summarize_uses_the_verify_provider() -> None:
     brain = Brain(summary_llm=verify)
 
     result = brain.summarize(
-        prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+        prompt=PROMPT,
+        goal=GOAL,
+        history=HISTORY,
+        success=True,
+        steps=3,
+        max_steps=10,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     assert result.summary
@@ -208,7 +286,14 @@ def test_summarize_falls_back_to_the_judge_provider_when_no_verify_provider_is_g
     brain = Brain(judge_llm=judge)
 
     result = brain.summarize(
-        prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+        prompt=PROMPT,
+        goal=GOAL,
+        history=HISTORY,
+        success=True,
+        steps=3,
+        max_steps=10,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     assert result.summary
@@ -227,9 +312,18 @@ def test_images_go_through_describe_and_no_images_fall_back_to_complete() -> Non
         steps=3,
         max_steps=10,
         images=[IMAGE],
+        grounding_texts=["source"],
+        termination="goal_done",
     )
     Brain(summary_llm=without_image).summarize(
-        prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+        prompt=PROMPT,
+        goal=GOAL,
+        history=HISTORY,
+        success=True,
+        steps=3,
+        max_steps=10,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     assert with_image.described == [VisionDescribeReq(images=[IMAGE], prompt=PROMPT)]
@@ -242,7 +336,14 @@ def test_a_successful_attempt_returns_exactly_one_ledger_entry() -> None:
     brain = Brain(summary_llm=ScriptedJudge(text_reply(summary_json())))
 
     result = brain.summarize(
-        prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+        prompt=PROMPT,
+        goal=GOAL,
+        history=HISTORY,
+        success=True,
+        steps=3,
+        max_steps=10,
+        grounding_texts=["source"],
+        termination="goal_done",
     )
 
     call = result.calls[0]
@@ -259,7 +360,14 @@ def test_a_provider_exception_becomes_an_attempt_failure_with_a_ledger_entry() -
 
     with pytest.raises(SummarizeAttemptFailed) as excinfo:
         brain.summarize(
-            prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+            prompt=PROMPT,
+            goal=GOAL,
+            history=HISTORY,
+            success=True,
+            steps=3,
+            max_steps=10,
+            grounding_texts=["source"],
+            termination="goal_done",
         )
 
     assert excinfo.value.call.error_kind == "ToolTimeout"
@@ -281,7 +389,14 @@ def test_summarize_never_retries_by_itself() -> None:
 
     with pytest.raises(SummarizeAttemptFailed):
         brain.summarize(
-            prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+            prompt=PROMPT,
+            goal=GOAL,
+            history=HISTORY,
+            success=True,
+            steps=3,
+            max_steps=10,
+            grounding_texts=["source"],
+            termination="goal_done",
         )
 
     assert len(provider.requests) == 1
@@ -292,5 +407,12 @@ def test_calling_summarize_without_any_provider_trips_the_entry_assert() -> None
 
     with pytest.raises(AssertionError, match="verify provider"):
         brain.summarize(
-            prompt=PROMPT, goal=GOAL, history=HISTORY, success=True, steps=3, max_steps=10
+            prompt=PROMPT,
+            goal=GOAL,
+            history=HISTORY,
+            success=True,
+            steps=3,
+            max_steps=10,
+            grounding_texts=["source"],
+            termination="goal_done",
         )

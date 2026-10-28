@@ -180,6 +180,8 @@ def _step_memory() -> ActMemory:
         step=3,
         episode_id=EP,
         run_id=RUN,
+        observations=[],
+        outcome=None,
     )
 
 
@@ -208,6 +210,8 @@ def _writes() -> dict[str, object]:
         # `markdown` **给了值**：正好用来证明它在正文里原样带着，
         # 而不是"没给所以没有"。
         markdown="# 本局\n",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     run_memory = RunMemory(
         run_id=RUN,
@@ -218,6 +222,8 @@ def _writes() -> dict[str, object]:
         quality_score=0.8,
         quality_rationale="可复用",
         markdown="# run\n",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     rendered = {
         "write_act_memory": render.memory_write(
@@ -261,6 +267,9 @@ def _writes() -> dict[str, object]:
                     quality_score=0.8,
                     quality_rationale="可复用",
                     markdown="# 本 task\n",
+                    facts=[],
+                    pointers=[],
+                    index={"headline": "", "keys": [], "evidence": []},
                 ),
             )
         ),

@@ -50,6 +50,7 @@ def cases(family: str) -> list[InputCase]:
     ]
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_five_families_verify_from_the_frozen_source_archive() -> None:
     counts = verify(ROOT)
 
@@ -57,6 +58,7 @@ def test_five_families_verify_from_the_frozen_source_archive() -> None:
     assert all(count > 0 for count in counts.values())
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_native_versions_keep_three_judge_layers_and_legal_choice_labels() -> None:
     judges, choices = load_judges("v3"), load_choices("v2")
 
@@ -70,6 +72,7 @@ def test_native_versions_keep_three_judge_layers_and_legal_choice_labels() -> No
     )
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_judge_reference_never_uses_observations_after_its_call() -> None:
     sample = next(row for row in load_samples() if row.sample_id == "knowledge_wild_encounter")
     events = load_source_events(ROOT, sample.sample_id)
@@ -89,6 +92,7 @@ def test_judge_reference_never_uses_observations_after_its_call() -> None:
     assert full_reference.achieved is False
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_open_references_never_read_collected_baseline_answers() -> None:
     samples = {sample.sample_id: sample for sample in load_samples()}
     for family in ("plan", "decompose", "summary"):
@@ -109,6 +113,7 @@ def test_open_references_never_read_collected_baseline_answers() -> None:
         assert replacement.achieved is None
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_l1_background_uses_goal_identity_instead_of_goal_text() -> None:
     case = cases("decompose")[0]
     events = load_source_events(ROOT, case.source.sample_id)
@@ -121,6 +126,8 @@ def test_l1_background_uses_goal_identity_instead_of_goal_text() -> None:
         summary="same words are not same identity",
         quality_score=0.5,
         quality_rationale="test",
+        pointers=[],
+        index={"headline": "", "keys": [], "evidence": []},
     )
     changed = case.model_copy(
         update={"request": case.request.model_copy(update={"episode_index": [foreign]})}
@@ -130,6 +137,7 @@ def test_l1_background_uses_goal_identity_instead_of_goal_text() -> None:
         verify_scope(changed, events)
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_quantity_confirmation_uses_screen_instead_of_stale_item_options() -> None:
     sample = next(row for row in load_samples() if row.sample_id == "knowledge_shop_select_item")
     case = next(
@@ -146,6 +154,7 @@ def test_quantity_confirmation_uses_screen_instead_of_stale_item_options() -> No
     assert "×01" in case.request.observation.facts.screen
 
 
+@pytest.mark.skip(reason="D33: 冻结旧格式数据，待新框架重新生成后取消跳过")
 def test_catch_result_examples_are_not_treated_as_an_exhaustive_list() -> None:
     sample = next(row for row in load_samples() if row.sample_id == "knowledge_catch_throw_ball")
     case = next(

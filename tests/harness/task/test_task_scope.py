@@ -58,6 +58,8 @@ def _state() -> TaskState:
             action="up",
             before=ActMemory.Observation(facts={"overlay": "none"}, step=index),
             after=ActMemory.Observation(facts={"overlay": "none"}, step=index + 1),
+            observations=[],
+            outcome=None,
         )
         for index in range(10)
     ]
