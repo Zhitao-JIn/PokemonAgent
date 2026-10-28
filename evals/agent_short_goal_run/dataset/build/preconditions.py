@@ -1,5 +1,7 @@
 """起点条件检查；运行时只使用世界公开的 RAM 读数与 task 观测。"""
 
+import re
+
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.dataset.errors import DatasetError
 from pokemon_agent.world import RamReadout, TaskObservation, TaskScene
@@ -75,6 +77,7 @@ def validate_start(
             or not 0 < ram.party[0].hp < ram.party[0].max_hp
             or battle.mine.hp != ram.party[0].hp
             or battle.mine.max_hp != ram.party[0].max_hp
+            or not _decoded_hp_matches(observation, ram.party[0].hp, ram.party[0].max_hp)
             or _quantity(ram, POKE_BALL) < 1
         ):
             raise DatasetError(f"{sample.sample_id}：抓捕起点须为野生战斗，己方受伤读数一致且有球")
@@ -102,6 +105,12 @@ def validate_start(
 
 def _quantity(ram: RamReadout, item_id: int) -> int:
     return sum(item.quantity for item in ram.bag if item.item_id == item_id)
+
+
+def _decoded_hp_matches(observation: TaskObservation, hp: int, max_hp: int) -> bool:
+    """Require a screen-decoded HP fraction matching the first party member."""
+    fractions = re.findall(r"(?<!\d)(\d+)\s*/\s*(\d+)(?!\d)", observation.facts.screen)
+    return (str(hp), str(max_hp)) in fractions
 
 
 __all__ = ["PREFLIGHT_CHECK_IDS", "validate_start"]

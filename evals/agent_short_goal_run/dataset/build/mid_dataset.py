@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import shutil
@@ -9,7 +10,11 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from evals.agent_short_goal_run.dataset.build.mid_starts import write_derived_starts
+from evals.agent_short_goal_run.dataset.build.mid_starts import (
+    m3_hp_consistency_issues,
+    regenerate_m3_dataset,
+    write_derived_starts,
+)
 from evals.agent_short_goal_run.dataset.build.preconditions import validate_start
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
 from evals.agent_short_goal_run.solver.runner.one import run_arguments
@@ -130,7 +135,7 @@ def _write_dataset(
         )
         model = EvalSample.model_validate(sample)
         if validate:
-            ram, observation, event_flags = _perceive_state(copied_state)
+            ram, observation, event_flags, m3_hud = _perceive_state(copied_state)
             validate_start(model, ram, observation)
             if entry["check_id"] == "customer_hint_purchase" and event_flags & 0x02 == 0:
                 raise ValueError("customer_hint_purchase requires D74E bit1=1 at build time")
@@ -142,6 +147,14 @@ def _write_dataset(
                         "M3 decoded battle HP must be 12/25, got "
                         f"{observation.takeover.mine.hp}/{observation.takeover.mine.max_hp}"
                     )
+                issues = m3_hp_consistency_issues(
+                    ram.party[0].hp,
+                    observation.takeover.mine.hp,
+                    observation.facts.screen,
+                    m3_hud,
+                )
+                if issues:
+                    raise ValueError(f"M3 HP/HUD inconsistency: {', '.join(issues)}")
         goals_for_runner, frozen_tasks = run_arguments(model)
         if not goals_for_runner or frozen_tasks is not None:
             raise ValueError(f"mid plan assembly invalid for {model.sample_id}")
@@ -227,12 +240,12 @@ def _state_records(
     return records
 
 
-def _perceive_state(state_path: Path) -> tuple[RamReadout, TaskObservation, int]:
+def _perceive_state(state_path: Path) -> tuple[RamReadout, TaskObservation, int, list[int]]:
     """加载真实起点并复用世界的 RAM/屏幕解码实现，不推进按键。"""
     from pyboy import PyBoy
 
     from pokemon_agent.world.ram import map_settled, read_terrain
-    from pokemon_agent.world.screen_text import read_screen_text
+    from pokemon_agent.world.screen_text import read_screen_text, read_tiles
     from pokemon_agent.world.task_perception import observe_task
 
     emulator = PyBoy("assets/rom", window="null", sound_emulated=False)
@@ -253,14 +266,33 @@ def _perceive_state(state_path: Path) -> tuple[RamReadout, TaskObservation, int]
             rom=Path("assets/rom").read_bytes(),
             closed=False,
         )
-        return perceived.ram, perceived.observation, memory[0xD74E]
+        tiles = read_tiles(memory)
+        return (
+            perceived.ram,
+            perceived.observation,
+            memory[0xD74E],
+            tiles[9][12:18],
+        )
     finally:
         emulator.stop(save=False)
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--regenerate-m3", action="store_true")
+    args = parser.parse_args()
     goals_path = Path(__file__).with_name("mid_goals.json")
-    print(build_dataset(DATA_ROOT, goals_path))
+    if args.regenerate_m3:
+        print(
+            regenerate_m3_dataset(
+                DATA_ROOT / PARENT_VERSION,
+                DATA_ROOT / NEW_VERSION,
+                rom=Path("assets/rom"),
+                perceive_state=_perceive_state,
+            )
+        )
+    else:
+        print(build_dataset(DATA_ROOT, goals_path))
 
 
 if __name__ == "__main__":

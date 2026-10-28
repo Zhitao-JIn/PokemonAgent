@@ -8,8 +8,15 @@ from types import SimpleNamespace
 
 import pytest
 
+from evals.agent_short_goal_run.dataset.build import mid_starts, preconditions
 from evals.agent_short_goal_run.dataset.build.mid_dataset import build_dataset
-from evals.agent_short_goal_run.dataset.build.mid_starts import derive_m2, derive_m3, derive_m5
+from evals.agent_short_goal_run.dataset.build.mid_starts import (
+    derive_m2,
+    derive_m3,
+    derive_m5,
+    m3_hp_consistency_issues,
+    m3_hud_bar_tiles,
+)
 from evals.agent_short_goal_run.dataset.build.preconditions import validate_start
 from evals.agent_short_goal_run.dataset.loader import validate_tiers
 from evals.agent_short_goal_run.dataset.schemas import EvalSample
@@ -152,16 +159,135 @@ class FakeMemory:
 def test_mid_ram_transforms_set_expected_bytes_and_refuse_wrong_source_values() -> None:
     m2 = FakeMemory({0xD16D: 0x19})
     assert derive_m2(m2) == [{"address": 0xD16D, "before": 0x19, "after": 0x0C}]
-    m3 = FakeMemory({0xD16D: 0x19, 0xD015: 0, 0xD016: 0x19})
+    m3 = FakeMemory(
+        {
+            0xD16D: 0x19,
+            0xD015: 0,
+            0xD016: 0x19,
+            0xC3A0 + 9 * 20 + 14: 0x6B,
+            0xC3A0 + 9 * 20 + 15: 0x6B,
+            0xC3A0 + 9 * 20 + 16: 0x6B,
+            0xC3A0 + 9 * 20 + 17: 0x6B,
+            0xC3A0 + 10 * 20 + 12: 0xF8,
+            0xC3A0 + 10 * 20 + 13: 0xFB,
+        }
+    )
     assert [(edit["address"], edit["after"]) for edit in derive_m3(m3)] == [
         (0xD16D, 0x0C),
         (0xD015, 0),
         (0xD016, 0x0C),
+        (0xC3A0 + 9 * 20 + 14, 0x6A),
+        (0xC3A0 + 9 * 20 + 15, 0x63),
+        (0xC3A0 + 9 * 20 + 16, 0x63),
+        (0xC3A0 + 9 * 20 + 17, 0x63),
+        (0xC3A0 + 10 * 20 + 12, 0xF7),
+        (0xC3A0 + 10 * 20 + 13, 0xF8),
     ]
     m5 = FakeMemory({0xD19B: 0})
     assert derive_m5(m5) == [{"address": 0xD19B, "before": 0, "after": 8}]
     with pytest.raises(ValueError, match="expected RAM"):
         derive_m2(FakeMemory({0xD16D: 0x0C}))
+
+
+def test_m3_hp_consistency_accepts_matching_decoded_hud_and_bar() -> None:
+    screen = " PIDGEY\n HP:[██████]\n BULBASAUR\n HP:[██▉   ]\n 12/ 25"
+    assert m3_hud_bar_tiles(12, 25) == [0x6B, 0x6B, 0x6A, 0x63, 0x63, 0x63]
+    assert m3_hp_consistency_issues(12, 12, screen, [0x6B, 0x6B, 0x6A, 0x63, 0x63, 0x63]) == []
+
+
+@pytest.mark.parametrize(
+    ("party_hp", "battle_hp", "screen", "tiles", "expected"),
+    [
+        (12, 17, "12/ 25", [0x6B, 0x6B, 0x6A, 0x63, 0x63, 0x63], "battle cache"),
+        (12, 12, "25/ 25", [0x6B, 0x6B, 0x6A, 0x63, 0x63, 0x63], "decoded HUD"),
+        (12, 12, "12/ 25", [0x6B] * 6, "bar tiles"),
+    ],
+)
+def test_m3_hp_consistency_reports_each_mismatch(
+    party_hp: int, battle_hp: int, screen: str, tiles: list[int], expected: str
+) -> None:
+    assert expected in "; ".join(m3_hp_consistency_issues(party_hp, battle_hp, screen, tiles))
+
+
+def test_m3_regeneration_updates_only_its_state_and_hash_references(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dataset_root = tmp_path / "dataset"
+    output = dataset_root / "v20261028_mid"
+    states = output / "states"
+    states.mkdir(parents=True)
+    parent = dataset_root / "v20261021_retest5"
+    parent.mkdir(parents=True)
+    (states / "m3_bulbasaur_half_hp_battle.state").write_bytes(b"old m3")
+    untouched = {
+        "knowledge_pokemon_center_enter.state": b"m1",
+        "m2_bulbasaur_half_hp.state": b"m2",
+        "knowledge_shop_interaction.state": b"m4",
+        "m5_pidgey_poisoned.state": b"m5",
+    }
+    for name, content in untouched.items():
+        (states / name).write_bytes(content)
+    m3_row = _sample("mid_catch_then_heal", "m3_bulbasaur_half_hp_battle.state")
+    m3_row["start"]["kind"] = "state"
+    m3_row["start"]["source_sha256"] = "a" * 64
+    m3_row["check_id"] = "catch_then_heal"
+    other_row = _sample("other", "other.state")
+    (output / "samples.jsonl").write_text(
+        json.dumps(m3_row, separators=(",", ":"))
+        + "\n"
+        + json.dumps(other_row, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+    revision = {
+        "samples": {
+            "mid_catch_then_heal": {
+                "state_sha256": "a" * 64,
+                "ram_edits": [],
+                "max_steps": 190,
+            }
+        },
+        "source_files": {"states/m3_bulbasaur_half_hp_battle.state": "a" * 64},
+    }
+    (output / "revision.json").write_text(json.dumps(revision), encoding="utf-8")
+
+    def regenerate(_rom: Path, _parent: Path, target_dir: Path) -> dict[str, object]:
+        (target_dir / "m3_bulbasaur_half_hp_battle.state").write_bytes(b"new m3")
+        return {
+            "source_sha256": "b" * 64,
+            "sha256": "c" * 64,
+            "edits": [
+                {"address": 0xD16D, "before": 25, "after": 12},
+                {"address": 0xC3A0 + 9 * 20 + 14, "before": 0x6B, "after": 0x6A},
+            ],
+        }
+
+    monkeypatch.setattr(mid_starts, "write_derived_m3_state", regenerate)
+    monkeypatch.setattr(preconditions, "validate_start", lambda *_args: None)
+    perceived = (
+        SimpleNamespace(party=[SimpleNamespace(hp=12)]),
+        SimpleNamespace(
+            takeover=SimpleNamespace(mine=SimpleNamespace(hp=12)),
+            facts=SimpleNamespace(screen="12/25"),
+        ),
+        0,
+        [0x6B, 0x6B, 0x6A, 0x63, 0x63, 0x63],
+    )
+    mid_starts.regenerate_m3_dataset(
+        parent,
+        output,
+        rom=tmp_path / "rom",
+        perceive_state=lambda _path: perceived,
+    )
+
+    assert (states / "m3_bulbasaur_half_hp_battle.state").read_bytes() == b"new m3"
+    assert {name: (states / name).read_bytes() for name in untouched} == untouched
+    lines = (output / "samples.jsonl").read_text(encoding="utf-8").splitlines()
+    assert json.loads(lines[0])["start"]["source_sha256"] == "c" * 64
+    assert lines[1] == json.dumps(other_row, separators=(",", ":"))
+    updated_revision = json.loads((output / "revision.json").read_text(encoding="utf-8"))
+    assert updated_revision["samples"]["mid_catch_then_heal"]["state_sha256"] == "c" * 64
+    assert updated_revision["samples"]["mid_catch_then_heal"]["screen_edits"][0]["row"] == 9
 
 
 def _runtime(
@@ -216,7 +342,10 @@ def _runtime(
     else:
         battle = None
     observation = SimpleNamespace(
-        place=SimpleNamespace(map_id=map_id), scene=scene, takeover=battle
+        place=SimpleNamespace(map_id=map_id),
+        scene=scene,
+        takeover=battle,
+        facts=SimpleNamespace(screen="12/ 25" if check_id == "catch_then_heal" else ""),
     )
     if not valid:
         if check_id == "walk_to_pallet":

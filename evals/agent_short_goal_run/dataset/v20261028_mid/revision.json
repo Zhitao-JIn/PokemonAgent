@@ -37,7 +37,7 @@
       "source_state": "states/knowledge_catch_weaken_target.state",
       "source_sha256": "7da2bb185f7469b0c9d148fb28f1c01cd897d0458da06842b3d2e0aa482287ee",
       "output_state": "states/m3_bulbasaur_half_hp_battle.state",
-      "state_sha256": "3a4094c75cdd1b216894390a5cface2e3c559807d71c0b7dd3269ff77a382abb",
+      "state_sha256": "6d936589a796280a4f8db78f961d1b2021a4cdf618363dd83d50c6e8de26c3b9",
       "ram_edits": [
         {
           "address": "0xD16D",
@@ -55,7 +55,51 @@
           "after": "0x0C"
         }
       ],
-      "max_steps": 190
+      "max_steps": 190,
+      "screen_edits": [
+        {
+          "address": "0xC462",
+          "before": "0x6B",
+          "after": "0x6A",
+          "row": 9,
+          "column": 14
+        },
+        {
+          "address": "0xC463",
+          "before": "0x6B",
+          "after": "0x63",
+          "row": 9,
+          "column": 15
+        },
+        {
+          "address": "0xC464",
+          "before": "0x6B",
+          "after": "0x63",
+          "row": 9,
+          "column": 16
+        },
+        {
+          "address": "0xC465",
+          "before": "0x6B",
+          "after": "0x63",
+          "row": 9,
+          "column": 17
+        },
+        {
+          "address": "0xC474",
+          "before": "0xF8",
+          "after": "0xF7",
+          "row": 10,
+          "column": 12
+        },
+        {
+          "address": "0xC475",
+          "before": "0xFB",
+          "after": "0xF8",
+          "row": 10,
+          "column": 13
+        }
+      ]
     },
     "mid_customers_hint_buy": {
       "oracle_steps": 108,
@@ -88,7 +132,7 @@
     "parent_rubric.json": "62d15aef527feba5ceaf197b24168c22e0369c682bc3d3b601a929cae9580698",
     "states/knowledge_pokemon_center_enter.state": "dff9d4674faf6ee5893feccda6b72fb9f491a814fdd241150e314249aa0dae3a",
     "states/m2_bulbasaur_half_hp.state": "b3a58c3b4e673d24c8a72aed561cad4e0a3d8916bf781912068ed45dc78981fd",
-    "states/m3_bulbasaur_half_hp_battle.state": "3a4094c75cdd1b216894390a5cface2e3c559807d71c0b7dd3269ff77a382abb",
+    "states/m3_bulbasaur_half_hp_battle.state": "6d936589a796280a4f8db78f961d1b2021a4cdf618363dd83d50c6e8de26c3b9",
     "states/knowledge_shop_interaction.state": "bddd2bdf21a73bc25e6af57f5ed1d4262625afef30532a15b76b81421f927fe3",
     "states/m5_pidgey_poisoned.state": "57d61ce0d06f04ed8c1c0393ab12c8504c98ba69c449a8d1b702fe0362c8e934"
   }

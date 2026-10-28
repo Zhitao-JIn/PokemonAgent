@@ -3,10 +3,25 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from pokemon_agent.world.ram import W_BATTLE_MON_HP
+from pokemon_agent.world.ram import W_BATTLE_MON_HP, W_TILEMAP
+
+M3_OUTPUT = "m3_bulbasaur_half_hp_battle.state"
+M3_HUD_EDITS = (
+    # wTileMap rows 9 and 10: 12/25 HP bar and numerator digits.
+    (W_TILEMAP + 9 * 20 + 14, 0x6B, 0x6A),
+    (W_TILEMAP + 9 * 20 + 15, 0x6B, 0x63),
+    (W_TILEMAP + 9 * 20 + 16, 0x6B, 0x63),
+    (W_TILEMAP + 9 * 20 + 17, 0x6B, 0x63),
+    (W_TILEMAP + 10 * 20 + 12, 0xF8, 0xF7),
+    (W_TILEMAP + 10 * 20 + 13, 0xFB, 0xF8),
+)
 
 PARENT_STATES = {
     "knowledge_pokemon_center_enter.state": (
@@ -46,7 +61,152 @@ def derive_m3(memory: object) -> list[dict[str, int]]:
             },
         ]
     )
+    for address, expected, value in M3_HUD_EDITS:
+        edits.append(_set_byte(memory, address, expected, value))
     return edits
+
+
+def m3_hp_consistency_issues(
+    party_hp: int,
+    battle_hp: int,
+    screen_text: str,
+    hud_tiles: list[int],
+    *,
+    max_hp: int = 25,
+) -> list[str]:
+    """Return mismatches among M3 party/cache HP, decoded HUD text and its six bar tiles."""
+    issues: list[str] = []
+    if party_hp != battle_hp:
+        issues.append("party and battle cache HP differ")
+    fractions = re.findall(r"(?<!\d)(\d+)\s*/\s*(\d+)(?!\d)", screen_text)
+    if (str(party_hp), str(max_hp)) not in fractions:
+        issues.append("decoded HUD HP differs")
+    expected_bar = m3_hud_bar_tiles(party_hp, max_hp)
+    if hud_tiles != expected_bar:
+        issues.append("HUD bar tiles differ")
+    return issues
+
+
+def m3_hud_bar_tiles(hp: int, max_hp: int = 25) -> list[int]:
+    """Map HP to the six bar tiles, matching the game's observed 8-pixel segments."""
+    if not 0 <= hp <= max_hp or max_hp <= 0:
+        raise ValueError(f"invalid HP {hp}/{max_hp}")
+    filled_pixels = hp * 48 // max_hp
+    full_tiles, partial_pixels = divmod(filled_pixels, 8)
+    tiles = [0x6B] * full_tiles
+    if partial_pixels:
+        tiles.append(0x63 + partial_pixels)
+    return tiles[:6] + [0x63] * max(0, 6 - len(tiles))
+
+
+def write_derived_m3_state(rom: Path, parent_dir: Path, target_dir: Path) -> dict[str, object]:
+    """Explicitly regenerate only the M3 state, replacing that exact output file."""
+    from pyboy import PyBoy
+
+    source = parent_dir / "states" / "knowledge_catch_weaken_target.state"
+    _verify_source(source, source.name)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    destination = target_dir / M3_OUTPUT
+    emulator = PyBoy(str(rom), window="null", sound_emulated=False)
+    try:
+        with source.open("rb") as stream:
+            emulator.load_state(stream)
+        edits = derive_m3(emulator.memory)
+        with destination.open("wb") as stream:
+            emulator.save_state(stream)
+    finally:
+        emulator.stop(save=False)
+    return {
+        "source_sha256": sha256_of(source),
+        "edits": edits,
+        "sha256": sha256_of(destination),
+    }
+
+
+def regenerate_m3_dataset(
+    parent_dir: Path,
+    output_dir: Path,
+    *,
+    rom: Path,
+    perceive_state: Callable[[Path], tuple[Any, Any, int, list[int]]],
+) -> dict[str, object]:
+    """Replace the single M3 start and refresh only its sample and revision hashes."""
+    from evals.agent_short_goal_run.dataset.build.preconditions import validate_start
+    from evals.agent_short_goal_run.dataset.schemas import EvalSample
+
+    states_dir = output_dir / "states"
+    state_path = states_dir / M3_OUTPUT
+    if not state_path.is_file():
+        raise FileNotFoundError(state_path)
+    other_hashes = {
+        path.name: sha256_of(path)
+        for path in states_dir.iterdir()
+        if path.is_file() and path.name != M3_OUTPUT
+    }
+    record = write_derived_m3_state(rom, parent_dir, states_dir)
+    if any(sha256_of(states_dir / name) != digest for name, digest in other_hashes.items()):
+        raise OSError("M3 regeneration changed another dataset state")
+
+    sample_path = output_dir / "samples.jsonl"
+    rows = sample_path.read_text(encoding="utf-8").splitlines()
+    m3_row = next(json.loads(line) for line in rows if '"mid_catch_then_heal"' in line)
+    sample = EvalSample.model_validate(m3_row)
+    ram, observation, _event_flags, hud = perceive_state(state_path)
+    validate_start(sample, ram, observation)
+    assert observation.takeover is not None
+    issues = m3_hp_consistency_issues(
+        ram.party[0].hp, observation.takeover.mine.hp, observation.facts.screen, hud
+    )
+    if issues:
+        raise ValueError(f"regenerated M3 HP/HUD inconsistency: {', '.join(issues)}")
+
+    updated_rows = []
+    found = False
+    for line in rows:
+        data = json.loads(line)
+        if data["sample_id"] == "mid_catch_then_heal":
+            data["start"]["source_sha256"] = record["sha256"]
+            line = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+            found = True
+        updated_rows.append(line)
+    if not found:
+        raise ValueError("M3 sample missing from samples.jsonl")
+    sample_path.write_text("\n".join(updated_rows) + "\n", encoding="utf-8", newline="\n")
+
+    revision_path = output_dir / "revision.json"
+    revision = json.loads(revision_path.read_text(encoding="utf-8"))
+    sample_record = revision["samples"]["mid_catch_then_heal"]
+    sample_record["state_sha256"] = record["sha256"]
+    sample_record["ram_edits"] = [
+        _edit_json(edit) for edit in record["edits"] if edit["address"] >= 0xD000
+    ]
+    sample_record["screen_edits"] = [
+        _screen_edit_json(edit)
+        for edit in record["edits"]
+        if 0xC3A0 <= edit["address"] < 0xC3A0 + 360
+    ]
+    revision["source_files"][f"states/{M3_OUTPUT}"] = record["sha256"]
+    revision_path.write_text(
+        json.dumps(revision, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
+    return record
+
+
+def _edit_json(edit: dict[str, int]) -> dict[str, str]:
+    return {
+        "address": f"0x{edit['address']:04X}",
+        "before": f"0x{edit['before']:02X}",
+        "after": f"0x{edit['after']:02X}",
+    }
+
+
+def _screen_edit_json(edit: dict[str, int]) -> dict[str, str | int]:
+    offset = edit["address"] - 0xC3A0
+    return {
+        **_edit_json(edit),
+        "row": offset // 20,
+        "column": offset % 20,
+    }
 
 
 def derive_m5(memory: object) -> list[dict[str, int]]:
@@ -116,4 +276,12 @@ def _verify_source(source: Path, filename: str) -> None:
         raise ValueError(f"source state hash mismatch for {filename}: {actual}")
 
 
-__all__ = ["derive_m2", "derive_m3", "derive_m5", "write_derived_starts"]
+__all__ = [
+    "derive_m2",
+    "derive_m3",
+    "derive_m5",
+    "m3_hp_consistency_issues",
+    "m3_hud_bar_tiles",
+    "write_derived_m3_state",
+    "write_derived_starts",
+]
