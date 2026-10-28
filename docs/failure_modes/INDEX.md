@@ -1,6 +1,6 @@
 # 失败模式索引
 
-整理于2026-10-25，当前共 **50个模式，每个模式一个文件**。按机制归并重复案例，保留历史修正和证据强弱；原始三轮coordination、结果和经验文档不移动、不覆盖。
+整理于2026-10-25，当前共 **53个模式，每个模式一个文件**。按机制归并重复案例，保留历史修正和证据强弱；原始三轮coordination、结果和经验文档不移动、不覆盖。
 
 ## 最新预算设计结论（用户已确认，待实现）
 
@@ -69,6 +69,9 @@
 | FM-048 | [把我方HP下降当作对方受伤证据](FM-048-hp-owner-confused-in-success-evidence.md) | 历史判定假阳 | 仅历史经验二级证据；原始批次trace不在本工作区 |
 | FM-049 | [界面说明文字被计入菜单选项](FM-049-instruction-text-counted-as-menu-option.md) | 历史观测/判定 | 仅历史经验二级证据；当前未复现 |
 | FM-050 | [目标只到中间菜单却继续操作到成交状态](FM-050-overshooting-menu-goal-before-stopping.md) | 历史验收/过冲 | 历史二级证据；近期仍需看overshoot |
+| FM-051 | [记忆写入路径回读 trace 账](FM-051-memory-write-path-reads-trace-ledger.md) | 编排执行/性能与耦合 | 评审阶段发现，修法已定（D17），待合入 |
+| FM-052 | [脚本结果摘要读错报告层级，只剩结局码](FM-052-script-result-line-reads-nested-data.md) | 编排执行/观测缺失 | 已由 step-observation CP2 取代；影响未做对照实验 |
+| FM-053 | [脚本内的对话与自动过场不进账](FM-053-script-internal-dialog-not-recorded.md) | 观测与记忆缺失 | 逐键观察已合入分支，自动过场需实测核对 |
 
 ## 来源覆盖与追溯
 

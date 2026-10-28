@@ -70,6 +70,17 @@
   按来源定可信度才能挡住批量投毒。
 - **落地方式**：证据强度按**来源类型查表**决定，不由 LLM 给数值（见 B1 的来源标签）。
 
+### P-2 不兼容旧数据
+
+**项目里不写读旧格式数据的逻辑。** 记忆文件、trace、checkpoint、数据集产物的格式一旦变更，
+改动合入后把旧数据整体删除、需要时重新生成；代码里不保留"旧数据缺字段时回退""读旧版本形状"的分支，
+也不为此保留测试。
+
+- **提出**：2026-10-28（用户）。第一次完整应用见 B16（`docs/step_observation/spec.md` 的 D21）。
+- **不算兼容逻辑的**：空章（整局异常或没有 task 可蒸时，只有来源章的记录）是现有的正常概念；字段默认值可以用于空章，不用于读旧文件。
+- **历史追溯靠 git，不靠目录**：旧提示词版本、旧字段、旧 `TraceKind` 在清理时直接删除，清理前打 git tag 作为存档；评测端每个 run 的 trace 里本来就存有当时发出的完整 prompt 文本。
+- **顺序**：先用旧数据把迁移后的行为核对完（例如评分器迁移用旧 trace 回放），核对通过再删旧数据。
+
 ---
 
 ## 三、全部条目总览
@@ -105,6 +116,9 @@
 | B11 | 高质量记忆样本导出 | 📋 | 工业 | 1 | 原 19 | 待重写 |
 | B12 | 记忆后端选型 | 💬 | 科研 | 1 | 新：Graphiti 探针（564/565）结论为原生 `not_suitable`（元数据不落盘不过滤、episode 无向量），随后横向调研 Cognee / Hindsight / Graphiti / neo4j-agent-memory / Mem0 / LangMem（566）：没有单一库五项原生齐备，过滤先于截断（元数据下推）谁都没做；建议的下一步是给探针加 Cognee 后端实测三个未知项（`docs/spec/memory/MEMORY_BACKEND_SURVEY.md`）；现有 `LocalMemoryStore` 仍是生产实现，没有换库计划 | 待讨论 |
 | B13 | 检索层可观测与精排 | 🚧 | 底座 | 1 | 新：RAG 第一批已落地——检索分段计时随返回值出（324）、BM25 语料与内容 hash 持久化使 `refresh_changed` 不再整库重算（328、506）、向量打分 numpy 化并自动压实 sidecar（329）；RAG-3（精排截断）等真机分段账，金标集等用户背书（`docs/rag/intent.md`） | 待讨论 |
+| B14 | 知识库原子化与标签化 | 📋 | 科研 | 1 | 新：`knowledge_memory` 现有 12 条按“一个文件只说一件事”拆成约 24 个原子，其中 4 个是现有内容缺失或过薄的空缺（绕障方法、商店数量框与确认框、`buy_item` 脚本及其成功证据、战斗队伍与背包列表）；记录 metadata 增加 `scene` / `action` / `evidence` 单值标签；20 个评测样本各标注所需原子，作为检索金标。依据：探针 probe04（36 次调用）与离线 BM25 复现——期望文件进前 5 的样本只有 14/20，`wild_encounters` / `battle_confirmation` 几乎对所有任务都被召回。测评：改前先在同一 HEAD 测基线（检索层 Recall@5 与知识块长度；端到端 `agent_short_goal_run` 的 `pass^k` 与 token），改后重测；评测样本同时是写作依据，新原子须通过泛化检查（B9），最终进步建议补留出样本报告。排在 G7 之后；检索过滤、run 级检索每圈重查另案 | 待讨论 |
+| B15 | 记忆树与按需展开 | 💬 | 科研 | 1 | 新：把 Act → Task → Episode → Run 四级记忆按树组织；brain 默认只看到折叠的一行索引，自己选择展开哪些节点（取该节点全文或下一层），而不是由各格按固定范围一次性灌入（现行范围见 B8 / brain_scope：本单元子节点全文＋同目标下过往单元的一行索引，L0 仅保留最近 K 局详情）。与 B8 的分工：B8 决定“用哪种形态的经验”，本条决定“一次读多少、读哪些”。未定：树节点与索引的格式、展开的调用形式（工具 / 决策动作）、展开次数与 token 预算、与 L0 最近 K 局规则的关系、评测方式（评测范围里此前未立 memory-expansion 任务）；方案未拍板，依赖 brain_scope 落地；**与 B16 的衔接**：B16 让 `facts` 只留在 task 层、episode 与 run 只带 `pointers` 与 `index`，下钻路径与读取点（`dispatch_task._task_index`、`retrieve_episode_index`、`_read_run_index`）已就位，本条只需把这三处的"一次取全部"换成按需展开 | 待讨论 |
+| B16 | 按步观察取代事件；摘要事实块与索引 | 🚧 | 底座 | 1 | 新：脚本内每键一份紧凑观察，`ActMemory` 携带观察序列与结构化结局，对象记忆整体删除；摘要分来源章、事实块（机械、仅 task 层）、解读（LLM）与索引（LLM，`headline`/`keys`/`evidence`）；分支 `feat/step-observation`（667–670），CP1、CP2 已提交，CP3、CP4 待做 | §4 |
 
 ### C. 失败模式专项机制
 
@@ -149,6 +163,12 @@
 | F5 | 存档片段回归门禁 | 📋 | 工业 | 1 | 新：难点存档片段组成回归集；改动后 CI 自动跑，指标退化则拒绝合入；失败片段自动回流进回归集；现状：评测样本集已有（20 个原始 `.state` 起点，606），尚未接入 CI 门禁（604 的 CI 只跑 lint / 边界脚本 / 测试） | 待讨论 |
 | F6 | 测评体系（尺子） | 🚧 | 底座 | 1 | 新：详见 `docs/eval/`、`docs/spec/evals/SPEC.md`。现状：九个公开任务登记在 `evals/registry.py`——B 类用 DeepEval（decode、memory_store_recall、world_script_execute，432–438），C 类用 Inspect AI（brain_choose / plan / decompose / judge / summary 与 agent_short_goal_run，546–570）；冻结数据集按版本发布（366、407、565–568），e2e 起点为原始 `.state`（606）；评测所需 world / memory 服务按次隔离、自动起停（607、608）；agent_short_goal_run 同时给机械成功、红线、七项 trace 效率 scorer（612）与独立 LLM 结果评分员（610、611），评分格式有限重试（579、630），run 粒度按 run 取局、按 `run_id` 读账（633、636）；数据集不照搬 WikiSkill 的三分切分（316）。未做：`verify` 等其余能力的独立评测，对外无偏数字所需的切分与多 epoch 汇总 | `docs/eval/intent.md` |
 | F7 | 端到端基线与 prompt 调优 | 🚧 | 底座 | 1 | 新：生产 prompt 泛化——移除与 e2e 样本重合的特定示例，领域证据迁入知识库（628）；prompt 重排为静态说明前移、变量内容后移（632）；通宵基线（20 例）首轮被起点预检顺序等缺陷阻断，16 例评分落盘（15 例有效运行机械全过、独立结果通过 12、红线 0，629），随后修起点预检顺序、worker 根因展开与评分格式重试（630）；稳定的基线数字尚未形成 | 待讨论 |
+| F8 | 评测任务分三档，并按档冻结规划层 | 🚧 | 底座 | 1 | 新：短期（一个 episode，冻结 plan·L1 的 task 表）、中期（一个 run，冻结 plan·L0 的 episode 目标表）、长期（多个 run，只冻结 run goal）；冻结机制已合入（662–664：两个开关、`frozen_item_failed`、`frozen_tasks` 入口、样本 `tier`/`goals`）；样本本身未建；意图见 `docs/eval_freeze/`、`docs/eval/mid_tasks/intent.md` | 待讨论 |
+| F9 | 中期任务 5 条（M1–M5） | 📋 | 底座 | 1 | 新：包裹送达、治疗买球回原位、抓捕后治疗、顾客线索购买、解毒预算；每条一个 run、2–3 个自然 episode，证据—使用表与机械判据已写；M1、M4 依赖 B16（脚本内对话进观察）；冻结前需在模拟器里核实若干事实并写 oracle；意图见 `docs/eval/mid_tasks/intent.md`（待确认，已含 episode 目标表） | 待讨论 |
+| F10 | 短期样本冻结版（20 条） | 📋 | 底座 | 1 | 新：为现有 20 条各写固定 task 表，建新数据集版本；单步样本 task 表只有一条；依赖 F8 的冻结机制；意图见 `docs/eval/short_frozen/intent.md`（待确认，数据集目录命名待定） | 待讨论 |
+| F11 | 指标与二分量表 | 📋 | 底座 | 1 | 新：端到端指标、逐节点指标（契约 / 真值 / 量表三层，真值只给任务判定与记忆检索）、数据集质量门禁；量表全部二分，LLM 标注、人工审核（"否"与"未知"逐条看、"是"抽 20%）；已提交 `docs/eval/metrics/`（85e7003），量表上模型评分前需先做两位人工评分者互评 | 待讨论 |
+| F12 | 任务边界六要素与对照实验 | 📋 | 科研 | 1 | 新：范围、完成信号、停手、约束、放弃条件、锚点；对照实验（全边界 / 只写目的 / 留一法）排在中期、长期任务建好之后；前提是机械判据接受无边界目标文的所有合理读法；意图见 `docs/eval/task_boundary/intent.md`（待确认） | 待讨论 |
+| F13 | 长期任务与跨 run 的非空记忆起点 | 💬 | 科研 | 1 | 新：长期任务（多个 run）需要"带着过往 run 的索引起跑"的起点，现有存档都是空记忆；怎么造（把 M1 拆成两个 run、第二个 run 接第一个的记忆继续）尚未设计，依赖 B16 与 P-2（迁移后的新格式记忆） | 待讨论 |
 
 ### G. 模型、prompt 与成本治理
 
@@ -327,6 +347,35 @@
 
 ---
 
+### B16 脚本内的中间过程不可见，事件散在五处形状不一
+
+状态：🚧 ｜ 叙事：底座 ｜ 归属：项目 1 ｜ 依赖：B13、B15 ｜ 最后核实：2026-10-27
+
+**问题**：脚本一次调用只有首尾两份观察，中间的对话、换图、背包变化只剩一行结局码；"事件"散在 world 的物体交互事件、对象记忆、`ActMemory.result`、`ActMemory.dialog` 与脚本报告的 `code`/`summary`/`reason` 五处，各有各的形状；自动过场（进店领包裹）没有物体被撞到，连事件也没有。
+
+**证据**：见 FM-051、FM-052、FM-053。真实 trace 的脚本 `act_call` 只有五个字段；`result_line` 读不存在的嵌套 `data`；`observation` 里没有钱、背包、队伍（只在 trace 的 `RamReadout` 里）。
+
+**方案**：`docs/step_observation/`（intent、spec v1.12、plan）。要点：
+- 脚本每键之后（沿用 24 帧稳定判定）读一份紧凑观察，带 `ram`、`facing_object`、`settled`；
+- `ActMemory` 携带 `observations` 与结构化 `outcome`，去掉 `result`、`dialog`；差异函数 `changes()` 只由 `direct/brain_tool.py` 这一层调用，`prompt/` 只接收预先算好的 `ActRecord.changes`；
+- 摘要三块：来源章（机械）、`facts`（机械，**只放 task 层**，不去重不截断）、解读与 `index`（LLM，同一次调用）；episode、run 只带 `pointers` 与 `index`；两条索引检查（`keys` 字面有出处、`headline` 成败与来源章一致）；
+- 对象记忆整体删除，评分器改读观察序列。
+
+**验收**：一次进店领包裹的脚本调用，观察序列里依次读到进门、对话各行、背包多出包裹；task 摘要的事实块含这些行，索引关键词含收件人；全仓无 `object_memory`、`events[]`、`result_line`；评分器迁移后现有短期样本判据结论不变（旧 trace 经转换器回放，缺中间帧的差异逐条说明）。
+
+**风险与待办**：
+- 记忆体量：`facts` 全留、不截断，task 层记录会变大；背景索引每次规划整条召回记忆，所以 `facts` 不放 episode 与 run，写账里也不含 `facts`；上线后实测 token 与记忆文件体积，再决定上限与折叠。
+- 稳定判定在打字中途停顿时可能读到半截，探针 `experiment/probe_settle.py` 已写未运行；观察带 `settled` 标记兜底。
+- 渐进展开的检索 agent（B15）尚未做；本条只铺好下钻路径。
+
+**后续清理（CP5，待立 spec）**：顺序固定，依 P-2：① CP3、CP4 验收；② 打 git tag 作历史存档；③ 删除非激活的提示词版本目录及其冻结基线测试，以及 `prompt/records.py`、各 `params.py` 里只给旧版本用的旧字段；④ 对象记忆整体删除（不再被旧版本的 `objects` 参数卡住），连同不再产生的 `TraceKind` 与解析；⑤ 把当次激活的各任务提示词版本与 hash 写进评测批次清单（现在 trace 只存 prompt 全文，不存版本名与 hash）；⑥ 最后删旧数据（`memory/`、`tracelog/`、`checkpoints/`、`eval_results/` 里的旧运行产物）。其中评分器迁移须在删旧 trace 之前用旧 trace 回放核对完。
+
+**非目标**：不改等待与稳定判定；不做渐进展开；不改机械判据；不改预算语义（一个决策仍算一步，观察条数单独统计）。
+
+**参照**：`docs/script_dialog/`（665–666，被本条取代）；`docs/eval/mid_tasks/intent.md`（M1、M4 依赖本条）。
+
+---
+
 ### C1 前沿模型漏掉长距离前置条件
 
 状态：💬 ｜ 叙事：科研 ｜ 归属：项目 1 ｜ 依赖：E4 ｜ 最后核实：2026-09-24
@@ -455,7 +504,7 @@ run goal 表的行状态与跨 run 持久化（大概率落在 run memory 一层
 
 ## 五、叙事维度索引
 
-- **科研**：A2 A3 · B0 B2–B7 B9 B10 B12 · C1–C3 · D2–D4 · F2 F3 · G6
+- **科研**：A2 A3 · B0 B2–B7 B9 B10 B12 B14 B15 · C1–C3 · D2–D4 · F2 F3 · G6
 - **工业**：B11 · E1–E8 · F5 · G1–G5 G7 · H1–H9 · J1 J3
 - **底座**：B1 B13 · D5 D6 · F1 F4 F6 F7 · I1–I8 · J2
 - **共**：A1 A4 D1
