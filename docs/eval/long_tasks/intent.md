@@ -63,7 +63,7 @@
 
 ## 五、待确认
 
-1. **冻结记忆由哪个模型产出、愿不愿意花这笔钱**：一次真实 run 的步数估计是 oracle 的几倍（第三层 238 步，约几百到一千多个决策），一次性花费，需要用户确认并指定模型（摘要模型默认用评测配置里的 `summary_model`，还是单独指定）。
+1. **冻结记忆由哪个模型产出（用户已定：deepseek4.1flash，choose、decompose、plan、summary 全用它，这样种子里不混别的模型的口味）**：完整的模型标识字符串以评测配置里的写法为准，待用户给出；一次真实 run 的步数估计是 oracle 的几倍（第三层 238 步，约几百到一千多个决策），一次性花费。成功标准事先写死：最多跑 5 次，取第一次到达判据的那次冻结，5 次全部留档，不事后挑选。
 2. **是否移除 checkpointer 的图内恢复与存档体系**：用户决定"不做真正的恢复"，现有 `pokemon_agent/harness/checkpoint/`（checkpointer、restore、saver、manifest）、trace 的血缘与 `checkpoint_restore` 账、评测 scorer 对分支的自动检测、memory 服务的 `restore` 管理接口、`docs/checkpoint/` 都与它有关。先做一次只读盘点（哪些要删、哪些要留作启动时恢复），再写移除 spec；这是独立的任务，不挡长期数据集的 spec。
 3. 先建哪几层（建议先第三层）。
 
