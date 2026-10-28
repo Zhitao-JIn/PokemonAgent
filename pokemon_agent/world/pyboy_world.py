@@ -156,6 +156,7 @@ class PyBoyWorld:
         for name, times in segments:
             for _ in range(times):
                 self._pyboy.button(name, delay=PRESS_FRAMES)
+                self._tick(PRESS_FRAMES)
 
     def perceive_task(self) -> TaskPerceived:
         """task 层的一帧：**不问模型**，只读内存与屏幕缓冲（`task_perception.observe_task`）。"""
