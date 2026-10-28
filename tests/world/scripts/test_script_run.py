@@ -1,7 +1,4 @@
-"""ScriptRun 骨架单测（FakeConsole）：三钩子各一条、预算耗尽一条、对话增量三例。
-
-**对得上谁**：与 P2 `world_server.step` 的钩子判定一致——battle / choice / map_changed
-终止 + 对话增量缓存。脚本逻辑（P4）在骨架上叠主循环，本文件只验骨架本身。
+"""ScriptRun 骨架单测（FakeConsole）：三钩子、预算耗尽与逐键观察。
 
 `FakeConsole` 不接真模拟器：帧序列 / map_id / 坐标都由测试脚本编排，钩子与缓存
 行为因此可确定性复现。
@@ -14,7 +11,7 @@ from typing import Any
 from _doubles.world_console import FakeConsole
 
 from pokemon_agent.world import ScreenText
-from pokemon_agent.world.scripts.engine import DialogCache, ScriptRun
+from pokemon_agent.world.scripts.engine import ScriptRun
 from pokemon_agent.world.scripts.interruptions import field_policy
 
 
@@ -30,7 +27,7 @@ def test_hook_battle_started() -> None:
     res = _run([ScreenText(), ScreenText(in_battle=True)], ["a"])
     assert res.code == "battle_started"
     assert res.ok is False
-    assert res.events == []  # battle 是终止钩子，不进 events[]
+    assert "events" not in vars(res) and "dialog" not in vars(res)
 
 
 def test_hook_choice_presented() -> None:
@@ -41,12 +38,11 @@ def test_hook_choice_presented() -> None:
     assert res.data["choice"] == "YES / NO"
 
 
-def test_hook_map_changed_terminates_without_object_event() -> None:
-    """换图 → `map_changed` 终止。脚下/邻格没有"门"物件时，warp 事件不产
-    （P6 起事件判定在 `judge_press`，普通边缘出口不是交互物）。"""
+def test_hook_map_changed_terminates() -> None:
+    """换图 → `map_changed` 终止。"""
     res = _run([ScreenText(), ScreenText()], ["a"], map_id=13)
     assert res.code == "map_changed"
-    assert res.events == []
+    assert "events" not in vars(res) and "dialog" not in vars(res)
 
 
 def test_budget_exhausted() -> None:
@@ -56,22 +52,8 @@ def test_budget_exhausted() -> None:
     assert res.ok is False
 
 
-def test_dialog_cache_three_examples() -> None:
-    """对话增量三例（§3.5）：首框全量 / 滚动增量 / 全已见无事件。"""
-    cache = DialogCache()
-    assert cache.ingest("A\nB\nC") == "A\nB\nC"  # 首框全量
-    assert cache.ingest("A\nB\nC\nD") == "D"  # 滚动增量（只新增末行）
-    assert cache.ingest("A\nB\nC") == ""  # 全已见 → 无事件
-    cache.reset()
-    assert cache.ingest("A\nB\nC") == "A\nB\nC"  # 清空后重新全量
-
-
-def test_dialog_deltas_collected_across_steps() -> None:
-    """ScriptRun 层面：逐键推进，对话增量按帧累积进 `dialog.deltas`，不重复。
-
-    P6 起脚本的对话载荷与事件分流：增量在 `dialog.deltas`（脚本结果载荷用），
-    `events[]` 由 `judge_press` 统一判（无交互物 → 空列表）。
-    """
+def test_script_report_carries_observations_without_event_or_dialog_fields() -> None:
+    """脚本逐键观察保留屏幕文字，终态对象不再带事件或单独对话字段。"""
     frames = [
         ScreenText(screen="x"),
         ScreenText(screen="x", dialog_text="A\nB"),
@@ -83,5 +65,5 @@ def test_dialog_deltas_collected_across_steps() -> None:
     )
     res = run.execute(["a", "a"])
     assert res.ok is True
-    assert run.dialog.deltas == ["A\nB", "C"]
-    assert res.events == []
+    assert [observation.dialog_text for observation in res.observations] == ["A\nB", "A\nB\nC"]
+    assert "events" not in vars(res) and "dialog" not in vars(res)

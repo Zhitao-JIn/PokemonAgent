@@ -6,14 +6,7 @@
 
 from __future__ import annotations
 
-from .engine import (
-    DialogCache,
-    Halt,
-    ScriptResult,
-    ScriptRun,
-    WorldConsole,
-    run_script,
-)
+from .engine import Halt, ScriptResult, ScriptRun, WorldConsole, run_script
 from .flow import advance_dialog, wait_until_scene
 from .interact import interact_facing, talk_to_adjacent_npc
 from .menu import open_menu_to
@@ -21,7 +14,6 @@ from .movement import bounce_in_tall_grass, circle_walk, face_direction, walk_to
 from .navigation import exit_map, heal_at_center
 
 __all__ = [
-    "DialogCache",
     "Halt",
     "ScriptResult",
     "ScriptRun",

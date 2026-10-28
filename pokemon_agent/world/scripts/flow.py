@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .engine import Halt, ScriptResult, ScriptRun, WorldConsole, _dialog_texts
+from .engine import Halt, ScriptResult, ScriptRun, WorldConsole
 from .movement import _run
 from .timing import POLL_FRAMES
 
@@ -23,13 +23,12 @@ def advance_dialog(console: WorldConsole, max_presses: int = 30) -> ScriptResult
     - 进战斗 → `battle_started`。
     """
     run = _run(console, budget=max_presses)
-    run.dialog.ingest(console.read().dialog_text)
     presses = 0
     try:
         while presses < max_presses:
             if run.budget <= 0:
                 return run.finish(
-                    ok=False, code="still_talking", extra=_adv_extra(run, console, presses)
+                    ok=False, code="still_talking", extra=_adv_extra(console, presses)
                 )
             run.budget -= 1
             presses += 1
@@ -37,10 +36,10 @@ def advance_dialog(console: WorldConsole, max_presses: int = 30) -> ScriptResult
             text = console.read()
             # 对话结束：场合回野外且无对话文字、无光标（不该有光标，但兜底）
             if console.scene() == _WALK or (not text.dialog_text and not text.has_cursor):
-                return run.finish(ok=True, code="ok", extra=_adv_extra(run, console, presses))
-        return run.finish(ok=False, code="still_talking", extra=_adv_extra(run, console, presses))
+                return run.finish(ok=True, code="ok", extra=_adv_extra(console, presses))
+        return run.finish(ok=False, code="still_talking", extra=_adv_extra(console, presses))
     except Halt as halt:
-        extra: dict[str, Any] = _adv_extra(run, console, presses)
+        extra: dict[str, Any] = _adv_extra(console, presses)
         extra.update(halt.extra)
         if halt.code == "choice_presented":
             # 对话里嵌了选项：冻结，已收文本照带
@@ -48,10 +47,9 @@ def advance_dialog(console: WorldConsole, max_presses: int = 30) -> ScriptResult
         return run.finish(ok=halt.ok, code=halt.code, extra=extra)
 
 
-def _adv_extra(run: ScriptRun, console: WorldConsole, presses: int) -> dict[str, Any]:
+def _adv_extra(console: WorldConsole, presses: int) -> dict[str, Any]:
     return {
         "presses": presses,
-        "dialog": _dialog_texts(run),
         "final_screen_text": console.read().screen,
     }
 

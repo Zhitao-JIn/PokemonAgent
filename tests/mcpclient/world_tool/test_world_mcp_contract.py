@@ -1,4 +1,4 @@
-"""MCP 门面的事件、静态文案与执行前置契约。"""
+"""MCP 门面的按键执行、静态文案与执行前置契约。"""
 
 from __future__ import annotations
 
@@ -28,39 +28,11 @@ def _observation(scene: TaskScene, overlay: Facts.Overlay) -> TaskObservation:
     )
 
 
-def _after_press_frame(observation: TaskObservation, pressed: bool) -> TaskObservation:
-    """假世界按键前无对话、按键后出现固定对话，仍由真判定器决定是否产生事件。"""
-    return observation.model_copy(
-        update={
-            "facts": observation.facts.model_copy(
-                update={"dialog_text": "你好。" if pressed else ""}
-            )
-        }
-    )
-
-
-@pytest.mark.parametrize("mode", ["dialog", "null", "missing"])
-def test_execute_returns_the_event_the_server_judged(
-    tool: WorldMcpTool, world: Any, client: Any, monkeypatch: pytest.MonkeyPatch, mode: str
+def test_execute_key_response_has_no_event_field(
+    tool: WorldMcpTool, world: Any, client: Any
 ) -> None:
-    """真 observe_step 判定对话或无事件，MCP 信封中的事件原样进入 Port。"""
+    """单键执行只转发 step，不再构造 world event 响应字段。"""
     observation = _observation(TaskScene.WALK, Facts.Overlay.NONE)
-    observation.facts = Facts(
-        facing="south",
-        landmarks=[Facts.Landmark(kind="人", map_id=12, x=13, y=9)] if mode == "dialog" else [],
-    )
-    monkeypatch.setattr(
-        world, "_observation", lambda: _after_press_frame(observation, bool(world.calls))
-    )
-    original = client.call_tool_sync
-
-    def call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        body = original(name, arguments)
-        if mode == "missing":
-            body["data"].pop("event")
-        return body
-
-    monkeypatch.setattr(client, "call_tool_sync", call)
 
     response = tool.execute(
         FromHarnessToGameToolExecuteReq(
@@ -69,20 +41,10 @@ def test_execute_returns_the_event_the_server_judged(
         )
     )
 
-    expected = (
-        {
-            "outcome": "dialog",
-            "actor_place": observation.place.model_dump(),
-            "place": {"map_id": 12, "x": 13, "y": 9},
-            "object_kind": "人",
-            "button": "a",
-            "text": "你好。",
-        }
-        if mode == "dialog"
-        else None
-    )
-    assert response.event == expected
+    assert response.report is None
+    assert "event" not in type(response).model_fields
     assert client.calls[0][0] == "step" and len(client.calls) == 1
+    assert world.calls[-1][0] == "step"
 
 
 @pytest.mark.parametrize(

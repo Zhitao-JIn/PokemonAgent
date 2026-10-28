@@ -1,3 +1,15 @@
+## 2026-10-28（671）—— world 停止产出事件与独立对话报告
+
+**改了什么**：`ScriptResult` 与脚本 MCP `data` 不再包含 `events`、`dialog`；脚本逐键观察继续保留屏幕文字与逐键状态。按键 `step` 响应只保留 `moved`，`FromHarnessToGameToolExecuteResp` 不再含裸 `event`。删除 `DialogCache` 与 `judge_press` / `observe_step` 判定，只保留用于 `facing_object` 的 `INTERACTIVE` 地标类型；新写 `act_call` 不渲染旧事件和对话字段。
+
+**为什么这么改**：逐键 `StepObservation` 已承载每键的可见文字与状态变化，另行累积世界事件和对话报告造成重复事实，也让脚本与按键两条路径使用不同的观察口径。
+
+**取舍**：旧 trace 的 `parse.py` / `content.py` 保留至 CP5，供 CP4c 回放；`mcp_servers/common.py` 不改，因此通用 MCP 信封仍有其既有的空事件列表，但 world 脚本业务数据不再写入事件。评分器迁移留给 CP4c；本次 CP4c 跳过 0 个测试。
+
+**影响面**：world 脚本执行器、策略与中断、脚本终态和 MCP world 执行响应、act_call 新写账渲染及相关脚本/服务器/客户端/trace 测试；删除 `dialog_cache.py`、world 事件判定测试与脚本事件对齐测试。`evals/` 与旧提示词目录未改。
+
+**验证**：全量 pytest（排除指定沙箱用例）JUnit tests=3093、failures=0、errors=0、skipped=97；CP4c 新增跳过=0。`ruff format .`、`ruff check .`、`ruff format --check .` 全绿。
+
 ## 2026-10-28（675）—— 摘要机械事实收尾与严格来源索引
 
 **改了什么**：task、episode、run 的机械收尾现在分别填充可从已有动作记忆推导的 `facts` 与来源 `pointers`，无证据时显式写空章。`Fact.step` 记录局内动作结束步号，`Fact.sub` 记录脚本内按键观察序号；task 指针步号区间包含首尾。摘要 `grounding_texts` 只收实际渲染给模型的文字。摘要端口与记忆字段按 D30 严格必填，旧格式缺字段会报错；`Fact` 数据形状归属 `schemas/memory/datastore`。按 D33 根因规则，将 72 个只审计冻结旧格式数据且因旧记忆缺字段失败的测试以统一 `D33:` 原因跳过，分布于 18 个文件；合成数据的平台测试保持运行。

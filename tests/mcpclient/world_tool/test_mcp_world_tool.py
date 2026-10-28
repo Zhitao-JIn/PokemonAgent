@@ -115,7 +115,8 @@ def test_shop_quit_returns_its_report_over_real_mcp_transport(tool: WorldMcpTool
     assert response.report["code"] == "ok"
     assert response.report["status"] == "done"
     assert response.report["steps"]
-    assert response.report["events"] == []
+    assert "events" not in response.report and "dialog" not in response.report
+    assert response.report["observations"]
 
 
 def test_shop_quit_rejects_wrong_scene_with_a_named_report(tool: WorldMcpTool) -> None:

@@ -92,8 +92,8 @@ def test_world_mcp_tool_executes_script_over_mcp() -> None:
     assert console.facing() == "west"
 
 
-def test_world_mcp_tool_keeps_per_line_dialog_in_the_rebuilt_report() -> None:
-    """客户端重建报告后仍带 `dialog`，且是逐行列表（D3 透传 / D9 覆盖）。"""
+def test_world_mcp_tool_rebuilt_report_has_observations_without_legacy_fields() -> None:
+    """客户端重建脚本报告时只保留逐键观察，不再带事件与独立对话字段。"""
     from pokemon_agent.brain.interface import ScriptCall
     from pokemon_agent.mcp_servers import world_server
     from pokemon_agent.mcpclient.world_tool import WorldMcpTool
@@ -112,7 +112,8 @@ def test_world_mcp_tool_keeps_per_line_dialog_in_the_rebuilt_report() -> None:
         )
     )
     assert resp.report is not None
-    assert resp.report["dialog"] == ["第一行", "第二行", "第三行"]
+    assert "events" not in resp.report and "dialog" not in resp.report
+    assert [item["dialog_text"] for item in resp.report["observations"]] == ["第三行", ""]
 
 
 def test_script_observations_survive_the_server_client_and_trace_round_trip() -> None:
@@ -159,4 +160,5 @@ def test_script_observations_survive_the_server_client_and_trace_round_trip() ->
         (event,) = trace.read_events(meta={"run_id": "r"})
         parsed = parse(event)
     assert parsed.content.observations == [StepObservation.model_validate(s) for s in snapshots]
-    assert parsed.content.dialog == ["第一行", "第二行"]
+    assert "dialog" not in response.report and "events" not in response.report
+    assert "dialog" not in parsed.content.model_fields_set

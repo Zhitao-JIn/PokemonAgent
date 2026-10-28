@@ -1,7 +1,7 @@
 """脚本 tool 注册层单测：world_server 的脚本 API 信封与转发。
 
 **对得上谁**：脚本函数本体已在 test_scripts_* 里逐条验过；本文件只验
-**server 壳**——tool 暴露、参数转发、租约、信封 code/events 装配
+**server 壳**——tool 暴露、参数转发、租约与信封 code 装配
 （`set_console_factory` 注入替身，不起真模拟器）。
 """
 
@@ -107,16 +107,18 @@ def test_walk_to_adjacent_forwarding(console: StubConsole) -> None:
     assert res["ok"] is True and res["code"] == "ok"
     assert res["data"]["final_pos"]["x"] == 16
     assert res["events"] == []
-    assert res["data"]["dialog"] == [], "没有对话的脚本调用，信封里是空列表"
+    assert "events" not in res["data"] and "dialog" not in res["data"]
+    assert res["data"]["observations"]
 
 
-def test_advance_dialog_envelope_dialog_is_per_line(console: StubConsole) -> None:
-    """D9：`data["dialog"]` 最终是按行列表，覆盖 advance_dialog 放进 data 的按段旧值。"""
+def test_advance_dialog_envelope_uses_observations(console: StubConsole) -> None:
+    """脚本信封以逐键观察携带文字，不添加单独的 dialog 报告字段。"""
     world_server.set_console_factory(lambda: _DialogConsole(["第一行\n第二行", "第三行", ""]))
     res = _call("advance_dialog", {"max_presses": 10, "client_id": "t"})
 
     assert res["ok"] is True and res["code"] == "ok"
-    assert res["data"]["dialog"] == ["第一行", "第二行", "第三行"], "一行一个元素"
+    assert "dialog" not in res["data"] and "events" not in res["data"]
+    assert [item["dialog_text"] for item in res["data"]["observations"]] == ["第三行", ""]
     assert res["data"]["presses"] == 2
 
 

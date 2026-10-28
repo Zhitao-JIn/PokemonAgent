@@ -133,7 +133,13 @@ def test_advance_dialog_three_frames_to_end() -> None:
     )
     res = advance_dialog(console, max_presses=30)
     assert res.ok and res.code == "ok"
-    assert res.data["dialog"] == ["第一句", "第二句", "第三句"]
+    assert [observation.dialog_text for observation in res.observations] == [
+        "第一句",
+        "第二句",
+        "第三句",
+        "",
+    ]
+    assert "dialog" not in res.data
 
 
 def test_advance_dialog_still_talking_within_budget() -> None:
@@ -155,11 +161,12 @@ def test_advance_dialog_choice_freezes() -> None:
     res = advance_dialog(console, max_presses=30)
     assert not res.ok and res.code == "choice_presented"
     assert res.data["choice"] == "YES / NO"
-    assert res.data["dialog"] == ["要去冒险吗?"]
+    assert res.observations[0].dialog_text == "要去冒险吗?"
+    assert "dialog" not in res.data
 
 
-def test_advance_dialog_report_dialog_splits_same_frame_lines() -> None:
-    """报告顶层 `dialog` 一行一个元素：同帧两行在 `data["dialog"]` 里仍是一段（旧口径不动）。"""
+def test_advance_dialog_observations_keep_same_frame_lines() -> None:
+    """逐键观察保留同帧原始对话文字，终态载荷不另写对话字段。"""
     console = DialogConsole(
         [
             {"dialog_text": "第一行\n第二行"},
@@ -170,12 +177,16 @@ def test_advance_dialog_report_dialog_splits_same_frame_lines() -> None:
     res = advance_dialog(console, max_presses=30)
 
     assert res.ok and res.code == "ok"
-    assert res.data["dialog"] == ["第一行\n第二行", "第三行"], "data 里那份按段，保持原样"
-    assert res.dialog == ["第一行", "第二行", "第三行"], "报告顶层按行摊平，顺序即出现顺序"
+    assert [observation.dialog_text for observation in res.observations] == [
+        "第一行\n第二行",
+        "第三行",
+        "",
+    ]
+    assert "dialog" not in res.data and "dialog" not in vars(res)
 
 
-def test_advance_dialog_report_dialog_keeps_repeated_line_once() -> None:
-    """同一次调用内同一句停在屏幕上多帧，`dialog` 只记一次（沿用 DialogCache 去重）。"""
+def test_advance_dialog_observations_keep_repeated_frames() -> None:
+    """观察逐帧记录重复文字，不再用报告层的对话缓存去重。"""
     console = DialogConsole(
         [
             {"dialog_text": "同一句"},
@@ -186,19 +197,26 @@ def test_advance_dialog_report_dialog_keeps_repeated_line_once() -> None:
     )
     res = advance_dialog(console, max_presses=30)
 
-    assert res.dialog == ["同一句", "新一句"]
+    assert [observation.dialog_text for observation in res.observations] == [
+        "同一句",
+        "同一句",
+        "新一句",
+        "",
+    ]
+    assert "dialog" not in vars(res)
 
 
 # ---- wait_until_scene（附录 A #15）----
 
 
-def test_wait_until_scene_report_has_no_dialog() -> None:
-    """不按键的脚本调用：没有对话增量，`dialog` 是空列表。"""
+def test_wait_until_scene_report_has_no_observations() -> None:
+    """不按键的脚本调用没有逐键观察。"""
     console = SceneConsole(["walk", "party", "party"])
     res = wait_until_scene(console, "party", timeout_s=5.0)
 
     assert res.ok
-    assert res.dialog == []
+    assert res.observations == []
+    assert "dialog" not in vars(res)
 
 
 def test_wait_until_scene_success() -> None:

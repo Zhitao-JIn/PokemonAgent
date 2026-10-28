@@ -26,7 +26,7 @@ class _FakeWorld:
 
     def __init__(self, *, moves: bool = True) -> None:
         self.reset_calls: list[dict[str, Any]] = []
-        self.steps: list[list[tuple[str, int]]] = []
+        self.steps: list[tuple[list[tuple[str, int]], bool]] = []
         self.loaded: list[bytes] = []
         self._pos = (12, 13, 8)
         self._moves = moves
@@ -55,7 +55,7 @@ class _FakeWorld:
         )()
 
     def step(self, segments: list[tuple[str, int]], *, settle: bool = True) -> None:
-        self.steps.append(list(segments))
+        self.steps.append((list(segments), settle))
         if self._moves:
             self._pos = (self._pos[0], self._pos[1] + 1, self._pos[2])
 
@@ -87,16 +87,28 @@ def test_step_is_the_only_key_execution_gate_and_reports_moved(server: _FakeWorl
     body = world_server.step([["up", 1]], True, "c1")
 
     assert body["ok"] is True
-    assert server.steps == [[("up", 1)]], "MCP 的二元数组还原成 world 的 (键名, 次数) 元组"
+    assert server.steps == [([("up", 1)], True)], "MCP 的二元数组还原成 world 的键与 settle"
     assert body["data"]["moved"] is True
-    assert body["data"]["event"] is None, "event 字段形状先定，判定前移是 P6"
+    assert set(body["data"]) == {"moved"}
+
+
+def test_step_preserves_settle_false_and_has_no_event_field() -> None:
+    world = _FakeWorld(moves=False)
+    world_server.start(world, rom="fake.rom")
+    world_server._lease_owner = None
+
+    body = world_server.step([["a", 1]], False, "c1")
+
+    assert body["data"] == {"moved": False}
+    assert world.steps == [([("a", 1)], False)]
 
 
 def test_step_reports_not_moved_when_the_world_did_not_move() -> None:
     """撞墙没动 → moved=False（blocked 的机械依据，不需要 world 额外报告）。"""
     world_server.start(_FakeWorld(moves=False), rom="fake.rom")
     world_server._lease_owner = None
-    assert world_server.step([["up", 1]], True, "c1")["data"]["moved"] is False
+    body = world_server.step([["up", 1]], True, "c1")
+    assert body["data"] == {"moved": False}
 
 
 def test_get_action_space_exposes_one_flat_namespace() -> None:

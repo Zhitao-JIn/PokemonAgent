@@ -34,9 +34,8 @@ def map_changed(run: ScriptRun) -> None:
 
 
 def field_policy() -> ScriptPolicy:
-    """地图脚本显式选择三种中断，并记录统一世界事件。"""
+    """地图脚本显式选择三种中断。"""
     return ScriptPolicy(
         wait=StableWait(minimum_frames=64),
         interruptions=(battle_started, choice_presented, map_changed),
-        collect_world_events=True,
     )

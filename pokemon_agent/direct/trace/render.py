@@ -551,14 +551,8 @@ def act_call(req: FromHarnessToTraceToolAppendReq) -> Rendered:
 
     - **key 形**（原 `press_key` 原样随迁）：`{sequence:[{name,times}]}`，每按一个键
       记一条、记那一个键（单段、`times=1`）；
-    - **script 形**：`{script, args, ok, code, data?, events?, dialog?, observations?}`
-      脚本终态报告原样进正文（`events[]` 是 P6 object 记忆批量摄取的原料，留在账上才算"发生过"；
-      `dialog` 是调用期间屏幕上的对话行，一口气按完的过场只在这里留下文字）。
-
-    **`dialog` 从扁平报告的顶层取，不从 `data` 里挖**：真实报告是
-    `{ok, code, **result.data, calls, dialog}`（`advance_dialog` 另有一份按段的
-    `data["dialog"]` 已被服务端覆盖），所以 `if "data" in report` 那条嵌套分支在真实
-    路径上不触发，别照它写。
+    - **script 形**：`{script, args, ok, code, data?, observations?}`
+      脚本终态报告的业务字段与逐键 observations 进正文。
 
     和 `choose_verdict` 共用 `action_sequence`，但关系是 1:N：`choose_verdict` 落在
     链首那一步、记整条链；这里每执行一个动作记一条。
@@ -580,10 +574,6 @@ def act_call(req: FromHarnessToTraceToolAppendReq) -> Rendered:
         }
         if "data" in report:
             content["data"] = report["data"]
-        if "events" in report:
-            content["events"] = report["events"]
-        if "dialog" in report:
-            content["dialog"] = report["dialog"]
         if "observations" in report:
             content["observations"] = report["observations"]
         return Rendered(EventType.ACT, TraceKind.ACT_CALL, content)
