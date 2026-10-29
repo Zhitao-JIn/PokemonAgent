@@ -85,10 +85,6 @@ __all__ = [
     "FromHarnessToMemoryToolQueryKnowledgeResp",
     "FromHarnessToMemoryToolQueryRecentActMemoriesReq",
     "FromHarnessToMemoryToolQueryRecentActMemoriesResp",
-    "FromHarnessToMemoryToolRestoreMemoryReq",
-    "FromHarnessToMemoryToolRestoreMemoryResp",
-    "FromHarnessToMemoryToolSnapshotMemoryReq",
-    "FromHarnessToMemoryToolSnapshotMemoryResp",
     "FromHarnessToMemoryToolStoreActMemoryReq",
     "FromHarnessToMemoryToolStoreEpisodeSummaryReq",
     "FromHarnessToMemoryToolStoreTaskMemoryReq",
@@ -200,18 +196,6 @@ from .communication.FromHarnessToMemoryToolRecallReq import (
 from .communication.FromHarnessToMemoryToolRecallResp import (
     FromHarnessToMemoryToolRecallItem,
     FromHarnessToMemoryToolRecallResp,
-)
-from .communication.FromHarnessToMemoryToolRestoreMemoryReq import (
-    FromHarnessToMemoryToolRestoreMemoryReq,
-)
-from .communication.FromHarnessToMemoryToolRestoreMemoryResp import (
-    FromHarnessToMemoryToolRestoreMemoryResp,
-)
-from .communication.FromHarnessToMemoryToolSnapshotMemoryReq import (
-    FromHarnessToMemoryToolSnapshotMemoryReq,
-)
-from .communication.FromHarnessToMemoryToolSnapshotMemoryResp import (
-    FromHarnessToMemoryToolSnapshotMemoryResp,
 )
 from .communication.FromHarnessToMemoryToolStoreActMemoryReq import (
     FromHarnessToMemoryToolStoreActMemoryReq,

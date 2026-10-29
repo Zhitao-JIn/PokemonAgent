@@ -1,6 +1,5 @@
 """假检索 provider 下的 run 落盘、等值召回和整库恢复。"""
 
-import zipfile
 from pathlib import Path
 
 import pytest
@@ -136,40 +135,3 @@ def test_recall_runs_hint_lists_every_run_memory_and_no_episode(tmp_path: Path) 
 
     assert [item["payload"]["run_id"] for item in items] == ["r1", "r2", "r10"]
     assert all(item["kind"] == "run" for item in items)
-
-
-def test_restore_reloads_the_run_memory_family(tmp_path: Path) -> None:
-    capability = _capability(tmp_path)
-    writer = _capability(tmp_path / "source")
-    writer.memorize([{"kind": "run", "payload": _run("r1").model_dump()}])
-    archive = writer.snapshot("before")
-    capability.memorize([{"kind": "run", "payload": _run("r2").model_dump()}])
-
-    capability.restore(archive)
-    items = capability.recall("", {"runs": "all"}, limit=8)
-
-    assert [item["payload"]["run_id"] for item in items] == ["r1"]
-
-
-def test_restore_with_an_empty_archive_clears_run_memory(tmp_path: Path) -> None:
-    capability = _capability(tmp_path)
-    capability.memorize(
-        [
-            {"kind": "run", "payload": _run().model_dump()},
-            {"kind": "episode", "payload": _episode("r1", "e1", "目标").model_dump()},
-        ]
-    )
-    archive = tmp_path / "empty.zip"
-    with zipfile.ZipFile(archive, "w"):
-        pass
-
-    capability.restore(archive)
-
-    for conditions in (
-        {"runs": "all"},
-        {"run_id": "r1"},
-        {"run_id": "r1", "goal_id": "g1"},
-        {"episode_id": "e1"},
-        {},
-    ):
-        assert capability.recall("", conditions, limit=8) == []

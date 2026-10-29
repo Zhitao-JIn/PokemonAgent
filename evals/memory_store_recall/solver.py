@@ -1,11 +1,8 @@
 """真实记忆存储与检索 solver，运行记录供 scorer 读取。"""
 
-from pathlib import Path
-
 from pydantic import BaseModel, Field
 
 from evals.common.eval_services import eval_services
-from evals.common.memory_server import clear_memory
 from pokemon_agent.direct.interface.ports import MemoryToolPort
 from pokemon_agent.env import env_str, load_env_file
 from pokemon_agent.mcpclient import McpTransportError, assert_mcp_server_ready
@@ -63,19 +60,14 @@ def evaluate_memory(dataset: MemoryDataset, tool: MemoryToolPort, k: int) -> Mem
 def run_memory(dataset: MemoryDataset, k: int) -> MemoryRun:
     """启动或复用 memory 服务，在隔离库中评测；使用真实本地 embedding 与 reranker。"""
     load_env_file()
-    with eval_services(world=False, memory=True, admin=True, knowledge_source=None):
+    if env_str("MCP_MEMORY_SERVER_URL"):
+        raise McpTransportError("评测必须使用隔离的临时 memory 服务，请清除 MCP_MEMORY_SERVER_URL")
+    with eval_services(world=False, memory=True, knowledge_source=None):
         url = env_str("MCP_MEMORY_SERVER_URL")
         if not url:
             raise McpTransportError(
                 "评测脚本会启动 memory server；若 MCP_MEMORY_SERVER_URL 已设置则复用该服务"
             )
-        health = assert_mcp_server_ready(url, "memory")
-        if health.get("admin") is not True:
-            raise McpTransportError(
-                "复用的 MCP_MEMORY_SERVER_URL 未启用 --enable-admin；清除此变量以自动启动"
-            )
-        root_directory = Path.cwd() / "eval_results"
-        root_directory.mkdir(exist_ok=True)
-        tool = MemoryTool.build(memory_server_url=url, memory_root=root_directory)
-        clear_memory(tool)
+        assert_mcp_server_ready(url, "memory")
+        tool = MemoryTool.build(memory_server_url=url)
         return evaluate_memory(dataset, tool, k)

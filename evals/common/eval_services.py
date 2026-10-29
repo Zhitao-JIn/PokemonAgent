@@ -111,7 +111,6 @@ def eval_services(
     memory_seed: Path | None = None,
     knowledge_exclude_topics: set[str] | list[str] | None = None,
     export_memory_to: Path | None = None,
-    admin: bool = False,
     export_env: bool = True,
 ) -> Iterator[dict[str, str]]:
     """启动本次评测需要的隔离服务，并在离开时恢复环境与清理资源。"""
@@ -149,7 +148,6 @@ def eval_services(
                 env=env,
                 processes=processes,
                 logs=logs,
-                admin=admin,
                 reuse_existing=(
                     memory_seed is None
                     and not knowledge_exclude_topics
@@ -273,7 +271,6 @@ def _prepare_service(
     processes: list,
     logs: list[Path],
     ports: set[int],
-    admin: bool = False,
     reuse_existing: bool = True,
 ) -> None:
     """复用已有服务地址，或启动本次所需服务并等待探活。"""
@@ -311,8 +308,6 @@ def _prepare_service(
             "--config",
             str(_memory_config(root, port)),
         ]
-        if admin:
-            arguments.append("--enable-admin")
         arguments.extend(["--port", str(port)])
     process = start_process(arguments, log, child_env)
     processes.append(process)

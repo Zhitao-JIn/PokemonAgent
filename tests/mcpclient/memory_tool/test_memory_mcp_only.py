@@ -1,4 +1,4 @@
-"""memory 只经 MCP 装配，四个 Port 信封通过真实服务端往返。"""
+"""memory 只经 MCP 装配，能力信封通过真实服务端往返。"""
 
 import json
 from pathlib import Path
@@ -11,8 +11,6 @@ from pokemon_agent.mcpclient.memory_local import MemoryTool
 from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolMemorizeReq,
     FromHarnessToMemoryToolRecallReq,
-    FromHarnessToMemoryToolRestoreMemoryReq,
-    FromHarnessToMemoryToolSnapshotMemoryReq,
 )
 
 
@@ -52,15 +50,10 @@ def test_build_real_without_memory_url_fails_at_assembly(
         assembly.build_real(overlay)
 
 
-def test_memory_tool_round_trips_all_four_calls_through_a_real_server(tmp_path: Path) -> None:
-    """记忆、快照、恢复、召回均走 MCP，客户端路径不暴露服务端路径。"""
+def test_memory_tool_round_trips_memory_and_recall_through_a_real_server(tmp_path: Path) -> None:
+    """记忆与召回均走 MCP，客户端不接触服务端本地路径。"""
     with memory_server_context(tmp_path / "server", tmp_path / "client") as (capability, tool):
         stored = tool.memorize(FromHarnessToMemoryToolMemorizeReq(records=[act(1)]))
-        snapshot = tool.snapshot_memory(FromHarnessToMemoryToolSnapshotMemoryReq(name="roundtrip"))
-        capability.memorize([act(9)])
-        restored = tool.restore_memory(
-            FromHarnessToMemoryToolRestoreMemoryReq(archive=snapshot.archive)
-        )
         recalled = tool.recall(
             FromHarnessToMemoryToolRecallReq(query="", conditions={"episode_id": "episode"})
         )
@@ -69,6 +62,3 @@ def test_memory_tool_round_trips_all_four_calls_through_a_real_server(tmp_path: 
         assert stored.stored[0].kind == recalled.items[0].kind == "act"
         assert stored.stored[0].uuid == recalled.items[0].uuid
         assert recalled.items[0].payload == act(1)["payload"]
-        assert restored.unpacked == 2
-        assert Path(snapshot.archive) == tmp_path / "client" / "snapshots" / "roundtrip.zip"
-        assert Path(snapshot.archive).is_file()

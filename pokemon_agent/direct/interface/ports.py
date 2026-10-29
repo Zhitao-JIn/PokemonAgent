@@ -69,10 +69,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolMemorizeResp,
     FromHarnessToMemoryToolRecallReq,
     FromHarnessToMemoryToolRecallResp,
-    FromHarnessToMemoryToolRestoreMemoryReq,
-    FromHarnessToMemoryToolRestoreMemoryResp,
-    FromHarnessToMemoryToolSnapshotMemoryReq,
-    FromHarnessToMemoryToolSnapshotMemoryResp,
     FromHarnessToTraceToolAppendReq,
     TraceEvent,
 )
@@ -255,7 +251,7 @@ class GameToolPort(Protocol):
 
 @runtime_checkable
 class MemoryToolPort(Protocol):
-    """Harness 读写记忆的接口：统一回忆（recall）+ 统一记忆（memorize）+ 运维快照。
+    """Harness 读写记忆的接口：统一回忆（recall）+ 统一记忆（memorize）。
 
     **MCP 化定案（2026-09-29）**：查询侧与写侧各收敛为一个口——调用方**不显式
     指定记忆种类**，种类由产生方天然决定、由底层分族规则圈定（同 chooser 的
@@ -267,9 +263,6 @@ class MemoryToolPort(Protocol):
     - `memorize`：统一记忆口。records 按 kind 判别落族（act/task/episode/
       object/knowledge），种类由产生方天然决定（判定层产 object 事件、蒸馏产
       summary、act 环产 act 记忆）——调用方不猜种类，只报身份；
-    - `snapshot_memory` / `restore_memory`：运维快照（checkpoint 专用），
-      **不进 MCP 注册表**——MCP 面只暴露 recall / memorize 两个能力。
-
     前置/后置条件详见各方法与 `FromHarnessToMemoryToolRecall*` /
     `FromHarnessToMemoryToolMemorize*` 信封定义。
     """
@@ -294,18 +287,6 @@ class MemoryToolPort(Protocol):
         后置条件：`resp.stored` 是 `req.records` 的子序列（knowledge 判重跳过的
         不在其中），顺序一致。
         """
-        ...
-
-    def snapshot_memory(
-        self, req: FromHarnessToMemoryToolSnapshotMemoryReq
-    ) -> FromHarnessToMemoryToolSnapshotMemoryResp:
-        """把整个记忆库打成一个 zip，返回它的路径（checkpoint 专用）。"""
-        ...
-
-    def restore_memory(
-        self, req: FromHarnessToMemoryToolRestoreMemoryReq
-    ) -> FromHarnessToMemoryToolRestoreMemoryResp:
-        """用一个 zip 把记忆库还原到那一刻——以 zip 为准（checkpoint 专用）。"""
         ...
 
 

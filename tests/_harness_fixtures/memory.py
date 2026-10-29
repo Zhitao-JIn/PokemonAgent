@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import pickle
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -22,10 +21,6 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolRecallItem,
     FromHarnessToMemoryToolRecallReq,
     FromHarnessToMemoryToolRecallResp,
-    FromHarnessToMemoryToolRestoreMemoryReq,
-    FromHarnessToMemoryToolRestoreMemoryResp,
-    FromHarnessToMemoryToolSnapshotMemoryReq,
-    FromHarnessToMemoryToolSnapshotMemoryResp,
 )
 from pokemon_agent.schemas.memory import ActMemory, EpisodeMemory, RunMemory, TaskMemory
 
@@ -46,33 +41,13 @@ Policy = Callable[[int], bool]
 
 
 class _Memory:
-    """只记在内存里的记忆库；快照把三张表 pickle 进 `<snapshot_dir>/<name>.pkl`。"""
+    """只记在内存里的记忆库。"""
 
-    def __init__(self, snapshot_dir: Path | None = None) -> None:
+    def __init__(self, _snapshot_dir: Path | None = None) -> None:
         self.acts: list = []
         self.tasks: list = []
         self.episodes: list = []
         self.runs: list = []
-        self._snapshot_dir = snapshot_dir
-
-    def snapshot_memory(
-        self, req: FromHarnessToMemoryToolSnapshotMemoryReq
-    ) -> FromHarnessToMemoryToolSnapshotMemoryResp:
-        assert self._snapshot_dir is not None, "这份假记忆没给快照目录"
-        self._snapshot_dir.mkdir(parents=True, exist_ok=True)
-        path = self._snapshot_dir / f"{req.name}.pkl"
-        path.write_bytes(pickle.dumps((self.acts, self.tasks, self.episodes, self.runs)))
-        return FromHarnessToMemoryToolSnapshotMemoryResp(archive=str(path))
-
-    def restore_memory(
-        self, req: FromHarnessToMemoryToolRestoreMemoryReq
-    ) -> FromHarnessToMemoryToolRestoreMemoryResp:
-        self.acts, self.tasks, self.episodes, self.runs = pickle.loads(
-            Path(req.archive).read_bytes()
-        )
-        return FromHarnessToMemoryToolRestoreMemoryResp(
-            unpacked=len(self.acts) + len(self.tasks) + len(self.episodes) + len(self.runs)
-        )
 
     def recall(self, req: FromHarnessToMemoryToolRecallReq) -> FromHarnessToMemoryToolRecallResp:
         time.sleep(_MOCK_DELAY_SECONDS)
@@ -158,8 +133,4 @@ class _Memory:
                     )
                 )
             stored.append(FromHarnessToMemoryToolMemorizedRecord(kind=record.kind, uuid=uuid_))
-            if self._snapshot_dir is not None:
-                root = self._snapshot_dir / "records"
-                root.mkdir(parents=True, exist_ok=True)
-                (root / f"{uuid_}.json").write_text(record.model_dump_json(), encoding="utf-8")
         return FromHarnessToMemoryToolMemorizeResp(stored=stored)

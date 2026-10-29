@@ -1,16 +1,13 @@
 """记忆层：对外契约 + 统一记录存储 + 混合检索。
 
 - `ports.py`：本层的对外契约（`MemoryStorePort`）——写入 / 等值过滤检索 /
-  语义检索 / 删除 / 快照。**与实现同住一包**：拷走 `memory/` 就同时拿到契约、
+  语义检索 / 删除。**与实现同住一包**：拷走 `memory/` 就同时拿到契约、
   实现与算法，不需要回头翻本项目的 `interfaces/`（0910 拍板，见 ROADMAP 第 24 条）。
 - `store.py`：统一记录存储（`LocalMemoryStore`）——一条记录一个 `<uuid>.json/.md`
   文件 + 每文件夹倒排索引（`index.json`，派生物、写穿、可自愈重建）+ 向量
   sidecar。五类记忆（step_memory / task_memory / episode_memory /
   run_memory / knowledge_memory）**共用一个 `memory/` 根、各占一个子文件夹、各一个实例**；
   全项目不按 run 分层，`run_id` 是 metadata 里的普通过滤字段（0910 重构）。
-  **快照也住这里**（0916）：`snapshot(name)` 把整个根打成
-  `memory/snapshots/<name>.zip`、`restore(zip)` 以 zip 为准还原回来——zip 由本层
-  管理，调用方只给名字。
 - `retrieval.py`：语义检索用的混合检索纯函数（BM25 bigram + embedding
   余弦 + RRF + reranker 精排），只认字符串，不认任何记忆类型。**这五个函数不在
   本包的出口上**——它们只被 `store.py` 的 `rank()` 串联调用，而"要不要把它们逐个
@@ -34,7 +31,7 @@
   挤进同一个名字里——"角色 + 本地性"由类名说，"具体后端是哪家"由模块名说
   （`fastembed_text.py` / `fastembed_reranker.py`）。
 
-**`MemoryStorePort` 完全不透明**：`put`/`get_many`/`filter`/`delete_many`/`snapshot`
+**`MemoryStorePort` 完全不透明**：`put`/`get_many`/`filter`/`delete_many`
 这一整套协议只认 `metadata: dict[str, str]` + `payload: dict` 两个裸字段，
 `store.py` 的实现同理，从来不 import、不需要知道 `ActMemory`/
 `EpisodeMemory` 等跨层数据模型具体长什么样。按"数据形状只有在
@@ -47,7 +44,7 @@ __init__.py` 的说明。
 
 本文件是统一出口：**对外契约 + 实现类 + 两个注入协议**都从这里 re-export，
 消费方写 `from pokemon_agent.memory import X`，不深到子目录的模块文件。
-`retrieval.py` 的纯函数与 `SNAPSHOTS_DIRNAME` 这类实现细节**不在这里**——
+`retrieval.py` 的纯函数等实现细节**不在这里**——
 要对它们做单测就地 `from pokemon_agent.memory.retrieval import …`。
 """
 
