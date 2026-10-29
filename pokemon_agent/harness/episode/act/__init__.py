@@ -8,7 +8,7 @@
 失败）兜成一份 `ERROR` 的 `TaskOutput`——这一局照常往下走，review 把它盖成 FAILED；
 别的异常是 bug，记完原样上抛。
 task 子图由装配点（`build.py`）编译，经 `runtime.context.task_graph` 递来。
-派发（`dispatch_task`）与异常收场（`settle_task_error`）各住一个文件，恢复路径（`harness/checkpoint`）复用同一份。
+派发（`dispatch_task`）与异常收场（`settle_task_error`）各住一个文件。
 """
 
 from __future__ import annotations

@@ -10,7 +10,6 @@ from pydantic import Field, model_validator
 
 from .base import Section
 from .deployment import (
-    CheckpointSection,
     DebugSection,
     PathsSection,
     RunSection,
@@ -39,7 +38,6 @@ class AppConfig(Section):
     memory: MemoryConfig
     review: ReviewConfig
     trace: TraceSection
-    checkpoint: CheckpointSection
     paths: PathsSection
     services: ServicesSection
     debug: DebugSection

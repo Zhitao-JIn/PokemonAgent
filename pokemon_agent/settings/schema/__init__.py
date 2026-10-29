@@ -3,7 +3,6 @@
 from .app_config import AppConfig
 from .base import Section
 from .deployment import (
-    CheckpointSection,
     DebugSection,
     PathsSection,
     RunSection,
@@ -22,7 +21,6 @@ __all__ = [
     "ActionLimitsConfig",
     "AppConfig",
     "BudgetConfig",
-    "CheckpointSection",
     "DebugSection",
     "LoopConfig",
     "MemoryConfig",

@@ -49,10 +49,7 @@ class LineCounts(BaseModel):
 
 
 class RunResult(BaseModel):
-    """`RunHarness.run` / `restore_run` / `resume` 的返回值。
-
-    `checkpoint_only` 时 outcomes 为空、usage 为空——那不是一次执行，是打包存档。
-    """
+    """`RunHarness.run` 的返回值。"""
 
     run_id: str
     sample_id: str = Field(

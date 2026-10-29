@@ -21,10 +21,9 @@ def test_relative_roots_resolve_against_the_repository_not_the_working_directory
 
 
 def test_absolute_roots_and_entries_are_used_as_given(tmp_path: Path) -> None:
-    paths = app_config(paths={"runs_root": str(tmp_path), "checkpoint": str(tmp_path / "ck")}).paths
+    paths = app_config(paths={"runs_root": str(tmp_path)}).paths
 
     assert resolve_path(paths, "memory") == tmp_path / "memory"
-    assert resolve_path(paths, "checkpoint") == tmp_path / "ck"
 
 
 def test_snapshot_records_sources_digest_and_effective_values(tmp_path: Path) -> None:

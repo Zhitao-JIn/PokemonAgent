@@ -1,4 +1,4 @@
-"""落盘与外部服务相关的小段：run / trace / checkpoint / paths / services / debug。
+"""落盘与外部服务相关的小段：run / trace / paths / services / debug。
 
 密钥（各家 API Key、Langfuse 连接信息）不在这里，仍只在 `.env`。
 """
@@ -23,12 +23,6 @@ class TraceSection(Section):
     backend: Literal["local", "langfuse"]
 
 
-class CheckpointSection(Section):
-    """自动存档总开关。"""
-
-    enabled: bool
-
-
 class PathsSection(Section):
     """落盘根目录。相对路径按**仓库根**解析（不跟启动目录走）。
 
@@ -38,7 +32,6 @@ class PathsSection(Section):
     runs_root: str = Field(min_length=1)
     trace: str = Field(min_length=1)
     memory: str = Field(min_length=1)
-    checkpoint: str = Field(min_length=1)
     config_snapshot: str = Field(min_length=1)
 
 

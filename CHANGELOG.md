@@ -22,6 +22,18 @@
 
 **验证**：基线 pytest 为 2961 tests、0 failures、0 errors、72 skipped；最终验证见本任务验收记录。
 
+## 2026-10-29（692a）—— 移除恢复体系：切断对 checkpoint 包的全部引用
+
+**改了什么**：移除 checkpoint 专属配置与 saver 依赖；切断普通 harness、测试夹具和相关测试对恢复包的依赖；更新恢复专属说明，保留 trace 协议中的共享 `CheckpointMark`。
+
+**为什么这么改**：项目决定只在启动时按 `.state` 初始化世界，不做图内恢复；恢复包随之成为待用户删除的孤岛。
+
+**取舍**：保留启动时世界状态加载、通用世界状态读写 API、trace 仍消费的 `CheckpointMark`，以及 world_script_execute 自己的执行前快照；trace 账、Langfuse 恢复锚与 memory 管理面留给后续任务。
+
+**影响面**：settings、harness/world 接口说明、direct GameToolPort 说明、评测 overlay、测试装配与配置测试、`pyproject.toml`；未改 checkpoint 包、trace 实现及其专属测试。
+
+**验证**：基线 JUnit：2965 tests、0 failures、0 errors、72 skipped。全量 JUnit：2965 tests、1 failure、0 errors、72 skipped；唯一失败是待用户删除目录中的 `test_restore_empty_plan` 仍访问已移除的测试夹具 Checkpointer。忽略 `tests/harness/checkpoint` 与屏蔽 checkpoint 包并忽略该目录的 JUnit 均为 2962 tests、0 failures、0 errors、72 skipped；提示词边界守卫四项 `[ OK ]`，Ruff 三项通过。
+
 ## 2026-10-29（691）—— 移除恢复体系：切断运行路径
 
 **改了什么**：装配与 run 图改为普通三图编译；移除 run/episode/task 运行时的存档注入、入口存档与图内恢复分支，并调整依赖这些接口的测试装配。

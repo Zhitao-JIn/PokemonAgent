@@ -171,13 +171,12 @@ class TaskSummarizePort(Protocol):
 
 @runtime_checkable
 class GameToolPort(Protocol):
-    """Harness 操作世界的接口：执行、开局、感知、存读档。
+    """Harness 操作世界的接口：执行、开局、感知与世界状态读写。
 
     这是第一跳（harness → 门面），入参与返回一律是信封；门面往里调 world
     走裸参数，那一跳不造信封。
 
-    **存读档**（`save_state` / `load_state`）只服务 checkpointer（checkpoint SPEC §一）：
-    存的是模拟器完整状态，文件路径由 harness 给，读写文件在本层。
+    `save_state` / `load_state` 读写模拟器完整状态；文件路径由 harness 给，文件操作在本层。
     """
 
     def get_action_space(

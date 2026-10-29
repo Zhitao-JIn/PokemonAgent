@@ -54,7 +54,7 @@ def _build_loop(
     ask_reviewer: Callable[[Outcome, ReviewRound], ReviewMark],
     max_agent_rounds: int,
 ) -> CompiledStateGraph:
-    """只调度本次重问的 ask/review；关闭 checkpoint，避免改变外层恢复拓扑。"""
+    """只调度本次重问的 ask/review。"""
 
     def ask(state: _LoopState) -> dict[str, Any]:
         number = state.round + 1
@@ -80,4 +80,4 @@ def _build_loop(
     graph.add_edge(START, "ask")
     graph.add_edge("ask", "review")
     graph.add_conditional_edges("review", lambda state: END if state.done else "ask")
-    return graph.compile(checkpointer=False)
+    return graph.compile()

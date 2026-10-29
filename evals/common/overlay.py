@@ -43,7 +43,6 @@ def sample_overlay(*, run_id: str, branch: str, work: Path) -> dict[str, Any]:
             "runs_root": str(work),
             "trace": "trace",
             "memory": "memory",
-            "checkpoint": "checkpoints",
             "config_snapshot": "config_snapshots",
         },
         "services": {

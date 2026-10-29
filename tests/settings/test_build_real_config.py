@@ -57,7 +57,6 @@ def stubbed(tmp_path, monkeypatch):
         data = {
             "paths": {"runs_root": str(tmp_path)},
             "services": {"world_server_url": "http://w", "memory_server_url": "http://m"},
-            "checkpoint": {"enabled": False},
             **extra,
         }
         path = tmp_path / "overlay.json"

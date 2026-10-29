@@ -30,7 +30,6 @@ from pokemon_agent.direct.brain_tool import (
 )
 from pokemon_agent.direct.trace import TraceTool
 from pokemon_agent.harness import EpisodeRuntime, RunHarness, RunRuntime, TaskRuntime
-from pokemon_agent.harness.checkpoint import Checkpointer, build_saver
 from pokemon_agent.harness.episode import compile_episode_graph
 from pokemon_agent.harness.interface.reviewer import Reviewer
 from pokemon_agent.harness.null_reviewer import NullReviewer
@@ -83,7 +82,6 @@ class FakeRun:
     trace: TraceTool
     game: _Game
     memory: _Memory
-    checkpointer: Checkpointer | None
 
 
 GOAL = Task(task_id="g1", goal="到达A", success_criteria="在A", max_steps=3)
@@ -106,8 +104,8 @@ def build_fake(
     backend: str = "local",
     config: AppConfig = DEFAULT_APP_CONFIG,
 ) -> FakeRun:
-    """装配一套假 run（`build.py` 的假件版）。`checkpoints=True` 时挂 sqlite saver 与存档器，
-    库与存档都放在 `tmp_path/checkpoints/`；`branch` 给恢复出来的执行线用。
+    """装配一套假 run（`build.py` 的假件版）。
+
     `backend` 透传给 `TraceTool.build`（`"langfuse"` = 写本机 Langfuse，不落本地账）。
     """
     brain = _Brain(task, episode, run, tasks_per_plan, fail_on_decompose)
@@ -119,29 +117,12 @@ def build_fake(
         backend=backend,
     )
     reviewer = reviewer or NullReviewer()
-    saver = build_saver(tmp_path / "checkpoints") if checkpoints else None
     task_graph, episode_graph = compile_task_graph(), compile_episode_graph()
     run_graph = compile_run_graph()
-    checkpointer_graph = compile_run_graph()
-    if saver is not None:
-        checkpointer_graph.checkpointer = saver
-    checkpointer = (
-        Checkpointer(
-            root=tmp_path / "checkpoints",
-            run_graph=checkpointer_graph,
-            game=game,
-            memory=memory,
-            trace=trace,
-            branch=branch,
-        )
-        if saver is not None
-        else None
-    )
     run_rt = assemble_runtime(
         brain, game, memory, trace, reviewer, task_graph, episode_graph, config
     )
-    run_rt.checkpointer = checkpointer
-    return FakeRun(RunHarness(run_rt, run_graph), run_rt, trace, game, memory, checkpointer)
+    return FakeRun(RunHarness(run_rt, run_graph), run_rt, trace, game, memory)
 
 
 def assemble_runtime(
