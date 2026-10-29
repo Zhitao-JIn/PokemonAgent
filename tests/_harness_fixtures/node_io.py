@@ -67,10 +67,6 @@ Styled = tuple[str, str]
 """`(type, kind)` —— 一种账的**指纹单位**（两个字段都住封套顶层）。"""
 
 META_KEYS: tuple[str, ...] = ("run_id", "branch", "source", "episode_id", "task_id", "step")
-"""封套 `meta` 的六个键——每一笔账都恰好是这几个；存档与恢复两本账另加 `checkpoint_id`。"""
-
-CHECKPOINT_ID_KINDS: frozenset[str] = frozenset({"checkpoint_save", "checkpoint_restore"})
-"""meta 里多带 `checkpoint_id` 的账：这个 id 把新线的恢复账与父线上的分叉点连起来。"""
 
 BOOLEAN_LOWER: frozenset[str] = frozenset({"true", "false"})
 """布尔字面量的**唯一**合法集合。"""
@@ -226,12 +222,8 @@ ENTRY_SOURCES: tuple[str, ...] = (
 （`run_start` / `run_end` 在 run 图的 `begin` / `run_done`；
 `episode_error` / `task_error` 在上一层的 `act`）。"""
 
-CHECKPOINT_SOURCES: tuple[str, ...] = ("checkpoint.save", "checkpoint.restore")
-"""存档一族的发账位置（`harness/checkpoint/`）：存档点由图外入口与 run 的 `act` 调用，
-账归存档器自己记。"""
-
 KNOWN_SOURCES: frozenset[str] = frozenset(
-    RUN_SOURCES + EPISODE_SOURCES + TASK_SOURCES + ENTRY_SOURCES + CHECKPOINT_SOURCES
+    RUN_SOURCES + EPISODE_SOURCES + TASK_SOURCES + ENTRY_SOURCES
 )
 """`meta.source` 的值域——**所有会发账的位置**。错字、空串、随手编的名字当场炸。"""
 
@@ -699,20 +691,6 @@ _contract(
     "蒸馏答了但解析不了（`link` 为 `summarize` / `summarize_task`；取代那次的 `call_failed`）",
 )
 
-# ---- 存档一族（`docs/checkpoint/spec.md`）：**不进流**，条数随存档开关浮动 ----
-_contract(("lifecycle", "checkpoint_save"), "level manifest_path", "存下一份存档（id 在 meta）")
-_contract(
-    ("lifecycle", "checkpoint_restore"),
-    "level manifest_path",
-    "从存档恢复出新执行线（新执行线第一条账；id 在 meta，父线由同 id 的存档账推出）",
-)
-_contract(("error", "checkpoint_error"), "checkpoint_id stage error", "存档失败，run 照常继续")
-
-CHECKPOINT_KINDS: frozenset[str] = frozenset(
-    {"checkpoint_save", "checkpoint_restore", "checkpoint_error"}
-)
-"""存档一族三本账：旁路记账，不属于任何一张图的拓扑，所以不进流。"""
-
 # ---- 问人两本账（`harness/reviewing.py`）：**不进流**，条数随人插话几轮浮动 ----
 _contract(
     ("lifecycle", "review_inject"),
@@ -856,7 +834,7 @@ def _contract_for(key: Styled) -> tuple[frozenset[str], str]:
 
 
 def _check_meta(events: Sequence[Event]) -> None:
-    """每笔账的 `meta` **恰好是那六件标签**（存档 / 恢复账另加 `checkpoint_id`），坐标不空，
+    """每笔账的 `meta` **恰好是那六件标签**，坐标不空，
     `step` 是非负整数。
 
     多出来的键说明有人绕开 `TraceTool.append` 自己拼 meta——"同一件事两处说"的开始。
@@ -864,9 +842,7 @@ def _check_meta(events: Sequence[Event]) -> None:
     """
     for event in events:
         meta = meta_of(event)
-        expected = set(META_KEYS) | (
-            {"checkpoint_id"} if kind_of(event) in CHECKPOINT_ID_KINDS else set()
-        )
+        expected = set(META_KEYS)
         assert set(meta) == expected, (
             f"{styled(event)} 的 meta 键是 {sorted(meta)}，应为 {sorted(expected)}"
         )
@@ -1147,38 +1123,11 @@ def branch_of(event: Event) -> str:
     return str(meta_of(event).get("branch", "main"))
 
 
-def branch_view(events: Sequence[Event], branch: str = "main") -> list[Event]:
-    """一条执行线看得见的账：父线截至分叉点 + 自己的全部账（checkpoint spec §六）。
-
-    血缘从账本身读：恢复出来的执行线第一条账是 `checkpoint_restore`，meta 带 `checkpoint_id`；
-    同 id 的 `checkpoint_save` 在哪条线上，那条线就是父线，它本身就是分叉点（含它），逐级上溯。
-    核对时按执行线分别核。与 `TraceTool.read_events` 各推一遍，互为对照。
-    """
-    own = [event for event in events if branch_of(event) == branch]
-    if not own or kind_of(own[0]) != "checkpoint_restore":
-        return own
-    checkpoint_id = meta_of(own[0])["checkpoint_id"]
-    saves = [
-        event
-        for event in events
-        if kind_of(event) == "checkpoint_save"
-        and meta_of(event).get("checkpoint_id") == checkpoint_id
-    ]
-    assert len(saves) == 1, (
-        f"执行线 {branch} 的存档 {checkpoint_id} 对上 {len(saves)} 条 checkpoint_save"
-    )
-    parent = branch_view(events, branch_of(saves[0]))
-    uuids = [str(event.get("uuid", "")) for event in parent]
-    cut = str(saves[0].get("uuid", ""))
-    assert cut in uuids, f"执行线 {branch} 的分叉点 {cut} 不在父线 {branch_of(saves[0])} 的账里"
-    return [*parent[: uuids.index(cut) + 1], *own]
-
-
 def _is_activity(event: Event) -> bool:
-    """进流的账：`model_call` / `error` 两类不进（条数随重试浮动）；存档与问人的账不进（旁路）。"""
+    """进流的账：`model_call` / `error` 两类不进（条数随重试浮动）；问人的账不进（旁路）。"""
     return (
         str(event.get("type", "")) not in ("model_call", "error")
-        and str(event.get("kind", "")) not in CHECKPOINT_KINDS | REVIEW_KINDS
+        and str(event.get("kind", "")) not in REVIEW_KINDS
     )
 
 

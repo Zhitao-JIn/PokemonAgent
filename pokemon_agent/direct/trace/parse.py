@@ -18,8 +18,6 @@ from .content import (
     ActCallContent,
     CallExhaustedContent,
     CallFailedContent,
-    CheckpointRestoreContent,
-    CheckpointSaveContent,
     CheckStallContent,
     ChooseVerdictContent,
     DecomposeVerdictContent,
@@ -75,8 +73,6 @@ CONTENT_MODELS: dict[str, type[BaseModel]] = {
     TraceKind.CALL_FAILED: CallFailedContent,
     TraceKind.CALL_EXHAUSTED: CallExhaustedContent,
     TraceKind.SUMMARY_PARSE_ERROR: SummaryParseErrorContent,
-    TraceKind.CHECKPOINT_SAVE: CheckpointSaveContent,
-    TraceKind.CHECKPOINT_RESTORE: CheckpointRestoreContent,
     TraceKind.SETTLE_GOAL: SettleGoalContent,
 }
 """账名 → 正文模型。键是 `TraceKind`（`StrEnum`，与落盘的 `kind` 字符串逐字相等）。"""

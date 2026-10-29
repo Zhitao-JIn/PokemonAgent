@@ -34,6 +34,18 @@
 
 **验证**：基线 pytest 为 2961 tests、0 failures、0 errors、72 skipped；最终验证见本任务验收记录。
 
+## 2026-10-29（692b）—— 移除恢复体系：收窄 trace 协议
+
+**改了什么**：删除恢复账类型、正文模型、解析与渲染、执行线血缘拼接和 Langfuse 恢复祖先锚；trace append 信封移除 `CheckpointMark`；评分读取固定为传入的 branch（默认 `main`）；调整 Langfuse 演示、测试夹具与 trace 账契约。
+
+**为什么这么改**：项目决定只在启动时按 `.state` 初始化世界，不做图内恢复；trace 不再需要保存、恢复和分叉血缘协议。
+
+**取舍**：保留普通 branch scope 与按 `(run_id, branch)` 的 Langfuse 定址；纯恢复测试文件与恢复线测试由用户删除，混合测试只移除恢复专属部分。
+
+**影响面**：schemas、direct trace、trace、agent_short_goal_run scorer、Langfuse 演示与相关测试；未改 memory 管理面、branch 配置与 world_script_execute 快照。
+
+**验证**：基线 JUnit 为 2986 tests、0 failures、0 errors、72 skipped。全量收集因待用户删除的纯恢复文件 `test_trace_branch.py` 无法导入，JUnit 记录 1 test、0 failures、1 error、0 skipped；屏蔽 `lineage.py` 与 `checkpoint_mark.py`、忽略该测试文件后为 2978 tests、0 failures、0 errors、72 skipped。提示词边界守卫 A–D 均为 `[ OK ]`；Ruff lint、import sorting 与 format 检查通过。
+
 ## 2026-10-29（692a）—— 移除恢复体系：切断对 checkpoint 包的全部引用
 
 **改了什么**：移除 checkpoint 专属配置与 saver 依赖；切断普通 harness、测试夹具和相关测试对恢复包的依赖；更新恢复专属说明，保留 trace 协议中的共享 `CheckpointMark`。

@@ -58,7 +58,6 @@ from pokemon_agent.trace.langfuse_support import (
 
 from . import render
 from .budget_render import budget_record
-from .lineage import BranchEdge, Fork, branch_graph, lineage_of
 from .parse import CONTENT_MODELS, MODEL_CALL_KINDS, ParsedEvent, parse
 
 _RENDERERS = {
@@ -112,9 +111,6 @@ _RENDERERS = {
     TraceKind.DECOMPOSE_VERDICT: render.decompose_verdict,
     TraceKind.SETTLE_GOAL: render.settle_goal,
     TraceKind.SETTLE_TASK: render.settle_task,
-    TraceKind.CHECKPOINT_SAVE: render.checkpoint_save,
-    TraceKind.CHECKPOINT_RESTORE: render.checkpoint_restore,
-    TraceKind.CHECKPOINT_ERROR: render.checkpoint_error,
     TraceKind.REVIEW_INJECT: render.review_inject,
     TraceKind.REVIEW_AUDIT: render.review_audit,
 }
@@ -180,8 +176,7 @@ class TraceTool:
 
     **本对象自身的状态只有构造期常量**：它不跨步骤攒东西。构造期常量是本执行线
     的两个身份件——`run_id` 与 `branch`（0927 定案：执行线标识住本层，append 时
-    盖进 meta；trace 后端不再持有）；血缘每次读时从账本推（`lineage.py`），
-    读侧据此拼出"这条执行线看得见的全部账"。
+    盖进 meta；trace 后端不再持有）。
     """
 
     def __init__(
@@ -293,32 +288,15 @@ class TraceTool:
     def read_events(self, meta: dict[str, Any] | None = None) -> list[TraceEvent]:
         """（契约见 `TraceToolPort.read_events`）读取 + 还原成项目事件形状。
 
-        `meta` 原样转给 `TracePort.read_events`——交集匹配怎么做是存储层的事，
-        本层只做形状还原（`Event` 协议 → `TraceEvent`）与**按血缘拼接**：
-
-        - `meta` 为空：不过滤，返回 backend 当前可见的全部事件（与血缘无关）；
-        - `meta` 自带 `branch` 键：按调用方给的分支读，不拼血缘；
-        - 其余：本分支的全部匹配事件，加上血缘里每个祖先分支"分叉点及之前"的匹配事件
-          ——即这条执行线看得见的全部账。血缘每次现推（`lineage.lineage_of`），不缓存。
+        `meta` 原样转给 `TracePort.read_events`；未指定 branch 时限定在本执行线。
 
         后置条件：按 `(ended_at, seq)` 升序（0928 325：同刻决胜看 append 序）。
         """
-        if not meta or "branch" in meta:
+        if not meta:
             return [_to_trace_event(e) for e in self._trace.read_events(meta)]
-        # 步骤 1：本分支全取；祖先各取分叉点及之前。
-        picked: list[Event] = list(self._trace.read_events({**meta, "branch": self._branch}))
-        for fork in lineage_of(self._trace.read_events(), self._branch):
-            assert meta.get("run_id", fork.run_id) == fork.run_id, "血缘不会跨 run"
-            picked.extend(
-                e
-                for e in self._trace.read_events(
-                    {**meta, "run_id": fork.run_id, "branch": fork.branch}
-                )
-                if (e.ended_at, e.seq) <= (fork.ended_at, fork.seq)
-            )
-        # 步骤 2：合并后按操作结束序排好（同刻按 append 序决胜，0928 325）。
-        picked.sort(key=lambda e: (e.ended_at, e.seq))
-        return [_to_trace_event(e) for e in picked]
+        query = dict(meta)
+        query.setdefault("branch", self._branch)
+        return [_to_trace_event(e) for e in self._trace.read_events(query)]
 
 
 def _as_list(rendered: render.RenderedEvent) -> Iterable[render.Rendered]:
@@ -329,15 +307,11 @@ def _as_list(rendered: render.RenderedEvent) -> Iterable[render.Rendered]:
 
 
 __all__ = [
-    "BranchEdge",
     "CONTENT_MODELS",
-    "Fork",
     "MODEL_CALL_KINDS",
     "ParsedEvent",
     "TraceTool",
     "assert_server_ready",
-    "branch_graph",
-    "lineage_of",
     "parse",
     "render_request",
 ]

@@ -40,7 +40,6 @@ from pokemon_agent.brain.interface import (
     VerifyVerdict,
 )
 from pokemon_agent.schemas.harness.domain import TraceKind
-from pokemon_agent.schemas.harness.domain.checkpoint_mark import CheckpointMark
 from pokemon_agent.schemas.harness.domain.episode_io import EpisodeOutput
 from pokemon_agent.schemas.harness.domain.goal_entry import GoalEntry
 from pokemon_agent.schemas.harness.domain.review_mark import ReviewMark
@@ -100,7 +99,7 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
       `KnowledgeRecord.source` 混**：那个是"这条知识出自哪一局"，是记录自己的
       元数据；这个说的是"这条 trace 由谁写出"，两处同名不同层。
     - **`episode_id` / `step`**：这条账发在哪一局、哪一步。判据侧
-      （`node_io._check_meta`）核"恰好六件"（存档 / 恢复账另加 `checkpoint_id`）——
+      （`node_io._check_meta`）核"恰好六件"——
       多签的东西要先进判据，不是自由槽。
 
     **`run_id` / `branch` 不在这里**：它们是执行线标识，由 tool 层在 append 时盖
@@ -257,8 +256,6 @@ class FromHarnessToTraceToolAppendReq(BaseModel):
 
     0914 控制台改造后它挂在 `THINK` 上——插话的唯一落点是决策那一格
     （`press_key` 自己没有 LLM 调用），所以"人说了什么"天然属于那条链的账。"""
-    checkpoint: CheckpointMark | None = None
-    """存档三本账（`checkpoint_*`）的素材。"""
     report: dict[str, Any] | None = None
     """脚本执行账（`act_call` script 形）的素材：脚本终态报告
     （`{ok, code, data, events, calls}` 的 JSON 形状）原样。"""

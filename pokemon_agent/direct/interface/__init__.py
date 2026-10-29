@@ -17,8 +17,7 @@
 初始化顺序回环。所以这里不做 `__getattr__`，全部立即导入。
 
 **本包只装抽象，不装实现**：四个插件住在上一层的 `brain_tool.py`/
-`game_tools.py`/`memory_tool.py`/`trace/`（checkpoint 那一个已在步 5b 解散，
-随后存档链整体删除——本层已无任何存档相关的 Port 与实现），由
+`game_tools.py`/`memory_tool.py`/`trace/`（旧恢复 Port 已解散），由
 收窄后的 `pokemon_agent.tools` 按需懒加载。本包**不**顺手 re-export 它们，
 否则这次拆分就白做了。
 

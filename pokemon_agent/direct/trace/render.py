@@ -1036,48 +1036,6 @@ def settle_goal(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     )
 
 
-def checkpoint_save(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """存下一份存档：级别、清单路径（存档 id 在 meta 里，这条账就是从它恢复出的新线的分叉点）。
-
-    前置条件：req.checkpoint 非 None 且带清单路径；`req.meta` 带 `checkpoint_id`。
-    """
-    mark = req.checkpoint
-    assert mark is not None and mark.manifest_path
-    assert req.meta.get("checkpoint_id"), "checkpoint_save 的 meta 必须带 checkpoint_id"
-    return Rendered(
-        EventType.LIFECYCLE,
-        TraceKind.CHECKPOINT_SAVE,
-        {"level": mark.level, "manifest_path": mark.manifest_path},
-    )
-
-
-def checkpoint_restore(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """从存档恢复：新执行线的第一条账。父线与分叉点由 meta 里的 `checkpoint_id` 对上同 id 的
-    `checkpoint_save` 推出，这里不另记。
-
-    前置条件：req.checkpoint 非 None 且带清单路径；`req.meta` 带 `checkpoint_id`。
-    """
-    mark = req.checkpoint
-    assert mark is not None and mark.manifest_path
-    assert req.meta.get("checkpoint_id"), "checkpoint_restore 的 meta 必须带 checkpoint_id"
-    return Rendered(
-        EventType.LIFECYCLE,
-        TraceKind.CHECKPOINT_RESTORE,
-        {"level": mark.level, "manifest_path": mark.manifest_path},
-    )
-
-
-def checkpoint_error(req: FromHarnessToTraceToolAppendReq) -> Rendered:
-    """存档失败：哪一份、哪一步、异常快照。前置条件：req.checkpoint 带 stage，req.error 非 None。"""
-    mark = req.checkpoint
-    assert mark is not None and mark.stage and req.error is not None
-    return Rendered(
-        EventType.ERROR,
-        TraceKind.CHECKPOINT_ERROR,
-        {"checkpoint_id": mark.checkpoint_id, "stage": mark.stage, "error": req.error},
-    )
-
-
 def review_inject(req: FromHarnessToTraceToolAppendReq) -> Rendered:
     """插话一次：表单种类、人的回话（空串 = 没意见）、是不是人真答的、等了多久。
 

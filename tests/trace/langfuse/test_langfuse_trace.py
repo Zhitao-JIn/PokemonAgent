@@ -1,8 +1,8 @@
 """`LangfuseTrace` 的用法示范与契约钉子：注入 fake client，全程零联网。
 
 **为什么这个文件值钱**：Langfuse 路径把项目事件封套塞进 Langfuse observation、
-把 scope 层级映射成父子 span、把恢复线伪造的祖先锚接进 scope 注册表——这一整层
-转换没有任何编译器保护，错一步就是"trace 落了但读不回"或"恢复线挂错爹"。
+把 scope 层级映射成父子 span——这一整层
+转换没有任何编译器保护，错一步就是"trace 落了但读不回"或"层级锚点挂错"。
 一条测试就是一句话的可执行版本（`AGENTS.md` 第五节）。
 
 **全部离线**：SDK client 用 `tests/_fake_langfuse.py` 的记录型假件注入
@@ -17,11 +17,10 @@ from __future__ import annotations
 
 import json
 import re
-from functools import partial
 from typing import Any
 
 import pytest
-from _fake_langfuse import FakeLangfuseClient, FakeObservation
+from _fake_langfuse import FakeLangfuseClient
 
 from pokemon_agent.trace import LangfuseTrace, TracePort
 
@@ -81,7 +80,7 @@ def test_the_same_seed_shares_one_trace_and_different_seeds_do_not() -> None:
     """同一 `seed` 恒得同一 Langfuse trace_id；不同 run 不共 trace。
 
     seed → trace_id 的确定性在调用方两步（`create_trace_id(seed=…)` → 递
-    trace_id）——同 seed 的两条执行线（main / restore）因此住同一条 trace。
+    trace_id）——同 seed 的多次构造因此得到同一条 trace_id。
     构造期不落 observation——observation 要到首笔账才有。
     """
     client = FakeLangfuseClient()
@@ -98,7 +97,7 @@ def test_the_same_seed_shares_one_trace_and_different_seeds_do_not() -> None:
         o.trace_context["trace_id"] for o in client.observations if o.name == "branch:main"
     ]
     assert len(branch_ids) == 3
-    assert branch_ids[0] == branch_ids[1], "同 seed 恒同 trace（恢复出的 branch 也住同一条 trace）"
+    assert branch_ids[0] == branch_ids[1], "同 seed 恒同 trace"
     assert branch_ids[0] != branch_ids[2], "不同 run 不混在同一 trace"
 
 
@@ -489,208 +488,6 @@ def test_pagination_stops_when_the_cursor_is_missing_or_repeats() -> None:
     assert len(stuck_client.get_many_calls) == 2
     assert stuck_client.get_many_calls[0].get("cursor") is None
     assert stuck_client.get_many_calls[1].get("cursor") == "same"
-
-
-# ---- 恢复线：branch 成根 + 伪造祖先锚 ----
-
-
-def _main_with_save(client: FakeLangfuseClient, checkpoint_id: str) -> LangfuseTrace:
-    """主线：run_start + 一笔 `checkpoint_save`（meta 带 checkpoint_id）。"""
-    main = _trace(client)
-    main.append("lifecycle", "run_start", _meta(episode_id="", task_id=""), {})
-    main.append(
-        "lifecycle",
-        "checkpoint_save",
-        _meta(step=6, checkpoint_id=checkpoint_id),
-        {"level": "episode"},
-    )
-    return main
-
-
-def _fakes_of(client: FakeLangfuseClient) -> list[FakeObservation]:
-    """全部伪造 scope（synthetic 标记）。"""
-    return [
-        o
-        for o in client.observations
-        if isinstance(o.metadata, dict) and o.metadata.get("synthetic") is True
-    ]
-
-
-def test_an_episode_level_restore_fake_run_start_anchors_the_new_branch() -> None:
-    """episode 级恢复：branch 顶层成根，伪造 run_start 锚，恢复账与后续账都挂它下面。"""
-    client = FakeLangfuseClient()
-    main = _main_with_save(client, "cp-1")
-
-    child = _trace(client)
-    child_meta = partial(_meta, branch="restore-1")
-    restore_uuid = child.append(
-        "lifecycle",
-        "checkpoint_restore",
-        child_meta(step=6, checkpoint_id="cp-1"),
-        {"level": "episode", "manifest_path": "checkpoints/x/manifest.json"},
-    )
-    episode_uuid = child.append("lifecycle", "episode_start", child_meta(task_id=""), {})
-    run_end_uuid = child.append("lifecycle", "run_end", child_meta(episode_id="", task_id=""), {})
-
-    branch_scope = client.observation_named("branch:restore-1")
-    fake_anchors = [o for o in _fakes_of(client) if o.name == "run_start (fake)"]
-    assert len(fake_anchors) == 1, (
-        "伪造的 run_start (fake) 锚恰有一个（主线那份是真账，不带 synthetic）"
-    )
-    fake_run = fake_anchors[0]
-    assert "parent_span_id" not in branch_scope.trace_context, "恢复 branch 自己就是顶层根"
-    assert branch_scope.metadata["parent_checkpoint_id"] == "cp-1"
-    assert fake_run.metadata["scope_kind"] == "run" and fake_run.metadata["synthetic"] is True
-    assert fake_run.trace_context["parent_span_id"] == branch_scope.id
-    assert client.observation_of(restore_uuid).trace_context["parent_span_id"] == fake_run.id, (
-        "恢复账挂伪造 run_start 下（checkpoint_restore 当子集）"
-    )
-    assert client.observation_of(episode_uuid).trace_context["parent_span_id"] == fake_run.id, (
-        "后续真 episode_start 同样挂伪造 run_start 下"
-    )
-    assert client.observation_of(run_end_uuid).trace_context["parent_span_id"] == fake_run.id, (
-        "run_end 挂伪造 run_start 下——恢复线的 run 层锚由它顶替"
-    )
-    assert not client.observation_named("run_end").metadata.get("synthetic")
-    assert main.read_events({"branch": "main"}), "父线自己的账原样可读"
-
-
-def test_a_run_level_restore_replays_a_real_run_start() -> None:
-    """run 级恢复不伪造：恢复账挂 branch scope，真 run_start 随 begin 重记、与之并列。"""
-    client = FakeLangfuseClient()
-    _main_with_save(client, "cp-1")
-
-    child = _trace(client)
-    child_meta = partial(_meta, branch="restore-2")
-    restore_uuid = child.append(
-        "lifecycle",
-        "checkpoint_restore",
-        child_meta(step=0, checkpoint_id="cp-1"),
-        {"level": "run", "manifest_path": "checkpoints/x/manifest.json"},
-    )
-    run_uuid = child.append("lifecycle", "run_start", child_meta(episode_id="", task_id=""), {})
-    episode_uuid = child.append(
-        "lifecycle", "episode_start", child_meta(episode_id="ep-2", task_id=""), {}
-    )
-
-    branch_scope = client.observation_named("branch:restore-2")
-    restore_obs = client.observation_of(restore_uuid)
-    run_obs = client.observation_of(run_uuid)
-    assert restore_obs.trace_context["parent_span_id"] == branch_scope.id, (
-        "run 级恢复账挂 branch scope"
-    )
-    assert run_obs.trace_context["parent_span_id"] == branch_scope.id, "真 run_start 与恢复账并列"
-    assert not _fakes_of(client), "run 级恢复一个伪造锚都不需要"
-    assert client.observation_of(episode_uuid).trace_context["parent_span_id"] == run_obs.id, (
-        "真 run_start 注册为 run 层锚，后续照常挂它"
-    )
-
-
-def test_a_task_level_restore_eagerly_fakes_both_anchors_and_hangs_restore_under_episode() -> None:
-    """task 级恢复：伪造两层齐——run_start (fake) 后用恢复账 meta 的 episode_id
-    当场伪造 episode_start (fake)，checkpoint_restore 挂伪造 episode 锚下（0927 定稿）。"""
-    client = FakeLangfuseClient()
-    _main_with_save(client, "cp-1")
-
-    child = _trace(client)
-    child_meta = partial(_meta, branch="restore-3")
-    restore_uuid = child.append(
-        "lifecycle",
-        "checkpoint_restore",
-        child_meta(episode_id="ep-9", task_id="task-9", step=6, checkpoint_id="cp-1"),
-        {"level": "task", "manifest_path": "checkpoints/x/manifest.json"},
-    )
-    task_uuid = child.append(
-        "lifecycle", "task_start", child_meta(episode_id="ep-9", task_id="task-9", step=6), {}
-    )
-    press_uuid = child.append(
-        "act", "press_key", child_meta(episode_id="ep-9", task_id="task-9", step=6), {"key": "a"}
-    )
-    episode_end_uuid = child.append(
-        "lifecycle", "episode_end", child_meta(episode_id="ep-9", task_id=""), {}
-    )
-    run_end_uuid = child.append("lifecycle", "run_end", child_meta(episode_id="", task_id=""), {})
-
-    fake_anchors = _fakes_of(client)
-    assert [o.name for o in fake_anchors] == [
-        "run_start (fake)",
-        "episode_start (ep-9) (fake)",
-    ], "伪造恰好两层，都在恢复账那一笔时建（meta 带 episode_id，不用等）"
-    fake_run = fake_anchors[0]
-    fake_episode = fake_anchors[1]
-    branch_scope = client.observation_named("branch:restore-3")
-    assert fake_run.trace_context["parent_span_id"] == branch_scope.id
-    assert fake_episode.trace_context["parent_span_id"] == fake_run.id
-    assert fake_episode.metadata["episode_id"] == "ep-9"
-    assert client.observation_of(restore_uuid).trace_context["parent_span_id"] == fake_episode.id, (
-        "恢复账挂伪造 episode_start (fake) 下——加两层再挂"
-    )
-    assert client.observation_of(task_uuid).trace_context["parent_span_id"] == fake_episode.id, (
-        "续跑的 task_start 挂伪造 episode 锚下"
-    )
-    press_obs = client.observation_of(press_uuid)
-    assert press_obs.trace_context["parent_span_id"] == client.observation_of(task_uuid).id, (
-        "恢复线操作账同样挂 task_start 锚下（step 不建 scope）"
-    )
-    assert press_obs.name == "step:6 press_key", "step 号前缀标注在账名上"
-    assert (
-        client.observation_of(episode_end_uuid).trace_context["parent_span_id"] == fake_episode.id
-    ), "episode_end 挂伪造 episode 锚下"
-    assert client.observation_of(run_end_uuid).trace_context["parent_span_id"] == fake_run.id, (
-        "run_end 回挂伪造 run_start (fake) 下"
-    )
-
-
-def test_a_task_level_restore_without_episode_id_falls_back_to_lazy_faking() -> None:
-    """task 级恢复但 meta 缺 episode_id：恢复账先挂伪造 run 锚，episode 锚等第一笔带号的账再补。"""
-    client = FakeLangfuseClient()
-    _main_with_save(client, "cp-1")
-
-    child = _trace(client)
-    child_meta = partial(_meta, branch="restore-5")
-    restore_uuid = child.append(
-        "lifecycle",
-        "checkpoint_restore",
-        child_meta(episode_id="", task_id="", step=6, checkpoint_id="cp-1"),
-        {"level": "task", "manifest_path": "checkpoints/x/manifest.json"},
-    )
-    task_uuid = child.append(
-        "lifecycle", "task_start", child_meta(episode_id="ep-9", task_id="task-9", step=6), {}
-    )
-
-    fake_anchors = _fakes_of(client)
-    assert [o.name for o in fake_anchors] == [
-        "run_start (fake)",
-        "episode_start (ep-9) (fake)",
-    ], "第二层是懒伪造：第一笔带 episode_id 的账（task_start）触发"
-    fake_run = fake_anchors[0]
-    fake_episode = fake_anchors[1]
-    assert client.observation_of(restore_uuid).trace_context["parent_span_id"] == fake_run.id, (
-        "没号可伪造，恢复账先挂伪造 run_start (fake) 下"
-    )
-    assert client.observation_of(task_uuid).trace_context["parent_span_id"] == fake_episode.id
-
-
-def test_restored_line_read_side_stays_flat_and_branch_filtered() -> None:
-    """伪造 scope 不进 read_events；读侧仍是平的账本、按 branch 筛。"""
-    client = FakeLangfuseClient()
-    _main_with_save(client, "cp-1")
-
-    child = _trace(client)
-    child_meta = partial(_meta, branch="restore-4")
-    child.append(
-        "lifecycle",
-        "checkpoint_restore",
-        child_meta(step=6, checkpoint_id="cp-1"),
-        {"level": "episode", "manifest_path": "checkpoints/x/manifest.json"},
-    )
-    child.append("lifecycle", "episode_start", child_meta(task_id=""), {})
-
-    events = child.read_events({"branch": "restore-4"})
-    assert [e.kind for e in events] == ["checkpoint_restore", "episode_start"], (
-        "伪造 scope 不带封套，read_events 读不到；本分支只有这两笔"
-    )
-    assert all(json.loads(e.meta)["branch"] == "restore-4" for e in events)
 
 
 # ---- 生命周期 ----

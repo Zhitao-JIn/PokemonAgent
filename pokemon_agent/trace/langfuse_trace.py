@@ -18,18 +18,6 @@
   并注册 `("episode", branch, episode_id)` / `("task", …)` 锚。**step 不建 scope**
   （0928 定稿：Dashboard 三层 step 平铺观感乱）——真 task 层账直接挂 task 锚下，
   step 号标注进账名（`kind (step:N)`），`task_start` 是最小的分组锚。
-- **恢复线伪造缺失的祖先锚**：恢复线首笔账是 `checkpoint_restore`，其 content 带
-  恢复级别（`render.checkpoint_restore` 从 `CheckpointMark.level` 渲来）：
-  `level="episode"` 伪造一层 `run_start (fake)` scope（恢复账与后续真 `episode_start`
-  都挂它下面）；`level="task"` 连伪造两层——`run_start (fake)` 之后用恢复账 meta 里的
-  `episode_id` 当场伪造 `episode_start (ep-N) (fake)`，`checkpoint_restore` 挂伪造
-  episode 锚下（meta 缺 `episode_id` 时退回懒伪造：恢复账先挂 run 锚，等第一笔带
-  `episode_id` 的账再补）；`level="run"` 不伪造——`begin` 会重记
-  真 `run_start`，恢复账先挂 branch scope、与之并列。
-- **伪造 scope 只当父锚**：名字带 `(fake)` 后缀，metadata 带 `synthetic=True`，
-  不带事件封套，`read_events` 永远读不到它们；血缘事实（谁从哪个 checkpoint 分出）不在树边上，
-  由账本 meta（`checkpoint_restore`/`checkpoint_save` 的 `checkpoint_id`）推
-  （`direct/trace/lineage.py`），本地 JSON backend 照样能推。
 """
 
 from __future__ import annotations
@@ -75,8 +63,6 @@ _ANCHOR_KINDS = frozenset(
         "task_start",
         "task_end",
         "task_error",
-        "checkpoint_save",
-        "checkpoint_restore",
     }
 )
 """生命周期锚账的 kind——这些账即便 meta 带真 task 号也不标 `step:N`：
@@ -97,7 +83,7 @@ class LangfuseTrace:
         """绑定一条已定好的 Langfuse trace 并创建（或注入）SDK 客户端。
 
         `trace_id` 由调用方（tool 层）用 `client.create_trace_id(seed=run_id)` 造好
-        递进来——同一 run 的所有执行线（main / restore-*）住同一条 trace，靠的正是
+        递进来——同一 run 与 branch 定址得到同一条 trace，靠的正是
         "同 seed 同 trace_id"。本模块对 run_id / branch **零持有**：两者只作为
         `meta` 的键随每笔账进来（tool 层盖章），路由与 scope 命名读 meta。
         """
@@ -107,7 +93,6 @@ class LangfuseTrace:
         self._client = client if client is not None else build_client_from_environment()
         self._scopes: dict[tuple[str, ...], str] = {}
         self._branch_scope_id: str | None = None
-        self._faked_run_scope = False
 
     def append(
         self,
@@ -146,7 +131,7 @@ class LangfuseTrace:
             stamped_meta,
             content,
         )
-        parent_id = self._parent_for(kind, stamped_meta, content)
+        parent_id = self._parent_for(kind, stamped_meta)
         metadata = self._observation_metadata(event_uuid, kind, type, stamped_meta)
         metadata["seq"] = seq
         context = {"trace_id": self._trace_id}
@@ -227,12 +212,10 @@ class LangfuseTrace:
 
     # ---- 父解析与 scope 注册表 ----
 
-    def _parent_for(self, kind: str, meta: dict[str, Any], content: Any = None) -> str:
+    def _parent_for(self, kind: str, meta: dict[str, Any]) -> str:
         run_id = str(meta.get("run_id", ""))
         branch = str(meta["branch"])
         branch_scope = self._ensure_branch_scope(meta)
-        if kind == "checkpoint_restore":
-            return self._restore_parent(meta, content, branch_scope)
         if kind == "run_start":
             return branch_scope
         if kind in {"episode_start", "episode_end", "episode_error"}:
@@ -259,23 +242,8 @@ class LangfuseTrace:
             episode_scope = self._episode_scope(meta, branch_scope)
             if episode_scope:
                 return episode_scope
-        # run 层账（episode_id 缺省或等于 run_id）：挂 run_start 锚（真记或伪造），
-        # 没有则 branch scope。
+        # run 层账（episode_id 缺省或等于 run_id）：挂 run_start 锚，没有则 branch scope。
         return self._scopes.get(("run",), branch_scope)
-
-    def _restore_parent(self, meta: dict[str, Any], content: Any, branch_scope: str) -> str:
-        """恢复账的挂点：episode 级伪造 run 锚后挂它下；task 级连伪造两层、
-        恢复账挂伪造 episode 锚下；run 级挂 branch scope。"""
-        level = content.get("level") if isinstance(content, dict) else None
-        if level == "episode":
-            return self._ensure_fake_run_scope(meta, branch_scope)
-        if level == "task":
-            run_scope = self._ensure_fake_run_scope(meta, branch_scope)
-            episode = str(meta.get("episode_id", ""))
-            if not episode:
-                return run_scope
-            return self._ensure_fake_episode_scope(meta, run_scope)
-        return branch_scope
 
     def _observation_metadata(
         self, event_uuid: str, kind: str, event_type: str, meta: dict[str, Any]
@@ -307,67 +275,19 @@ class LangfuseTrace:
                 "run_id": str(meta.get("run_id", "")),
                 "branch": branch,
             }
-            checkpoint_id = str(meta.get("checkpoint_id", ""))
-            if checkpoint_id:
-                metadata["parent_checkpoint_id"] = checkpoint_id
             self._branch_scope_id = create_scope_observation(
                 self._client, self._trace_id, f"branch:{branch}", metadata, None
             )
             self._scopes[("branch", branch)] = self._branch_scope_id
         return self._branch_scope_id
 
-    def _ensure_fake_run_scope(self, meta: dict[str, Any], branch_scope: str) -> str:
-        """episode/task 级恢复：伪造 run_start 锚（真 `begin` 被跳过，不会重记）。"""
-        run_scope = self._scopes.get(("run",))
-        if run_scope is not None:
-            return run_scope
-        metadata = {
-            "scope_kind": "run",
-            "run_id": str(meta.get("run_id", "")),
-            "branch": str(meta["branch"]),
-            "synthetic": True,
-        }
-        run_scope = create_scope_observation(
-            self._client, self._trace_id, "run_start (fake)", metadata, branch_scope
-        )
-        self._scopes[("run",)] = run_scope
-        self._faked_run_scope = True
-        return run_scope
-
-    def _ensure_fake_episode_scope(self, meta: dict[str, Any], run_scope: str) -> str:
-        """task 级恢复：伪造 episode_start 锚（真 episode_start 属于父线，不会重记）。"""
-        branch = str(meta["branch"])
-        episode = str(meta.get("episode_id", ""))
-        assert episode, "伪造 episode 锚前必须先拿到 episode 号（调用方保证）"
-        key = ("episode", branch, episode)
-        if key in self._scopes:
-            return self._scopes[key]
-        metadata = {
-            "scope_kind": "episode",
-            "run_id": str(meta.get("run_id", "")),
-            "branch": branch,
-            "episode_id": episode,
-            "synthetic": True,
-        }
-        self._scopes[key] = create_scope_observation(
-            self._client,
-            self._trace_id,
-            f"episode_start ({episode}) (fake)",
-            metadata,
-            run_scope,
-        )
-        return self._scopes[key]
-
     def _episode_scope(self, meta: dict[str, Any], branch_scope: str) -> str:
-        """episode 锚：有真 scope 用真 scope；task 级恢复（伪造过 run 锚）则懒伪造一层。"""
+        """episode 锚：有真 scope 用真 scope；尚未开始时回退到 branch scope。"""
         branch = str(meta["branch"])
         episode = str(meta.get("episode_id", ""))
         key = ("episode", branch, episode)
         if key in self._scopes:
             return self._scopes[key]
-        run_scope = self._scopes.get(("run",))
-        if run_scope is not None and self._faked_run_scope and episode:
-            return self._ensure_fake_episode_scope(meta, run_scope)
         return branch_scope
 
     @staticmethod
@@ -386,8 +306,7 @@ class LangfuseTrace:
         为什么是前缀：Dashboard 树形视图同级按 startTime 排（时间序天然就是产生序），
         账名不参与排序——前缀的价值在**行首扫读**：step 边界在名字开头一眼可见，
         不同 step 的账平铺在同一个 task 锚下时不至于混作一团。
-        生命周期锚账（task 层 `*_start/*_end/*_error` 与 checkpoint 两账）不标——
-        它们的名字是树形结构与恢复伪造的匹配键，必须稳定。
+        task 层 `*_start/*_end/*_error` 生命周期锚账不标，它们的名字是树形结构匹配键。
         """
         if kind in _ANCHOR_KINDS or not LangfuseTrace._is_task_step_account(meta):
             return kind

@@ -37,7 +37,6 @@
 from __future__ import annotations
 
 from .audit_verdict import AuditVerdict
-from .checkpoint_mark import CheckpointMark
 from .entry_status import EntryStatus
 from .episode_io import EpisodeInput, EpisodeOutput
 from .goal_entry import GoalEntry
@@ -52,7 +51,6 @@ from .trace_kind import TraceKind
 
 __all__ = [
     "AuditVerdict",
-    "CheckpointMark",
     "EpisodeInput",
     "EpisodeOutput",
     "EpisodeBound",
