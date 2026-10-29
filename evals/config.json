@@ -3,6 +3,12 @@
   "split": "val",
   "samples": [],
   "timeout": 600,
+  "budget_derivation": {
+    "seconds_per_action": 40,
+    "reserve_s": 120,
+    "timeout_margin_s": 300,
+    "long_max_episodes": 6
+  },
   "budget": {
     "wall_clock_s": 600,
     "max_episodes": 3,

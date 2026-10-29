@@ -1,7 +1,7 @@
 """solver 向回放与评分交接的单样本运行记录。"""
 
 from inspect_ai.util import StoreModel
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RunOneRecord(BaseModel):
@@ -23,6 +23,7 @@ class RunOneRequest(BaseModel):
     models: dict[str, str]
     trace_backend: str
     version: str
+    effective_budget: dict[str, int] = Field(default_factory=dict)
 
 
 class AgentRunRecord(StoreModel):

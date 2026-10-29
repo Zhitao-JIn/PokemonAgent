@@ -86,7 +86,14 @@ def run_arguments(sample: EvalSample) -> tuple[list[Task], dict[str, list[Task]]
     return goals, frozen or None
 
 
-def run_one(sample: EvalSample, work: Path, *, run_config_path: str, epoch: int = 1) -> None:
+def run_one(
+    sample: EvalSample,
+    work: Path,
+    *,
+    run_config_path: str,
+    epoch: int = 1,
+    effective_budget: dict[str, int] | None = None,
+) -> None:
     """跑一条样本并写 `run.json`。前置条件：当前工作目录是仓库根。
     `epoch` 从 1 起；>1 时 run_id 加 `#e{n}`，调用方须提供独立工作目录。
     `run_config_path` 是预算、型号及 trace 后端覆盖层，与样本覆盖层一起交给装配点。
@@ -99,6 +106,11 @@ def run_one(sample: EvalSample, work: Path, *, run_config_path: str, epoch: int 
     run_id = run_id_for(sample.sample_id, epoch)
     branch = "main"
     overlay = sample_overlay(run_id=run_id, branch=branch, work=work)
+    if effective_budget is not None:
+        overlay["budget"] = {
+            key: effective_budget[key]
+            for key in ("max_total_actions", "wall_clock_s", "max_episodes")
+        }
     overrides = loop_overrides(sample)
     if overrides:
         overlay["loop"] = overrides
@@ -117,7 +129,7 @@ def run_one(sample: EvalSample, work: Path, *, run_config_path: str, epoch: int 
             stage = "preflight_perceive"
             perceived = game.perceive_task()
             stage = "start_validation"
-            if not _valid_start(sample, perceived, work, run_id):
+            if not _valid_start(sample, perceived, work, run_id, effective_budget):
                 return
         stage = "harness_run"
         # 目标表与 frozen_tasks 由档位决定（`run_arguments`）：long 仍是空表 + None，
@@ -138,12 +150,17 @@ def run_one(sample: EvalSample, work: Path, *, run_config_path: str, epoch: int 
         leaves = json.dumps(
             [leaf.model_dump() for leaf in exception_leaves(exc)], ensure_ascii=False
         )
-        _record(work, run_id, error=f"stage={stage}; {type(exc).__name__}: {exc}; leaves={leaves}")
+        _record(
+            work,
+            run_id,
+            error=f"stage={stage}; {type(exc).__name__}: {exc}; leaves={leaves}",
+            budget=effective_budget,
+        )
         return
     finally:
         if game is not None:
             game.release_lease()
-    _record(work, run_id, branch=result.branch)
+    _record(work, run_id, branch=result.branch, budget=effective_budget)
 
 
 def _task_for(sample: EvalSample) -> Task:
@@ -158,13 +175,22 @@ def _task_for(sample: EvalSample) -> Task:
 
 
 def _valid_start(
-    sample: EvalSample, perceived: FromHarnessToGameToolPerceiveTaskResp, work: Path, run_id: str
+    sample: EvalSample,
+    perceived: FromHarnessToGameToolPerceiveTaskResp,
+    work: Path,
+    run_id: str,
+    budget: dict[str, int],
 ) -> bool:
     """原样执行起点判据；数据不合格只记 invalid，不进入正式 run。"""
     try:
         validate_start(sample, perceived.ram, perceived.observation)
     except DatasetError as exc:
-        _record(work, run_id, invalid=f"{sample.sample_id}（{sample.check_id}）：{exc}")
+        _record(
+            work,
+            run_id,
+            invalid=f"{sample.sample_id}（{sample.check_id}）：{exc}",
+            budget=budget,
+        )
         return False
     return True
 
@@ -176,10 +202,18 @@ def run_id_for(sample_id: str, epoch: int = 1) -> str:
 
 
 def _record(
-    work: Path, run_id: str, *, invalid: str = "", error: str = "", branch: str = ""
+    work: Path,
+    run_id: str,
+    *,
+    invalid: str = "",
+    error: str = "",
+    branch: str = "",
+    budget: dict[str, int] | None = None,
 ) -> None:
     """写本条样本的批跑小结。`branch` 给 scorer 定位 langfuse trace（按 branch 寻址）。"""
     payload = {"run_id": run_id, "invalid": invalid, "error": error, "branch": branch}
+    if budget is not None:
+        payload["effective_budget"] = budget
     (work / RUN_RECORD).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     if invalid or error:
         print(f"{run_id}: {invalid or error}", file=sys.stderr)

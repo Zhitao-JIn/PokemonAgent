@@ -35,6 +35,7 @@ def _execute(request: RunOneRequest) -> None:
         Path(request.work_dir),
         run_config_path=request.run_config_path,
         epoch=request.epoch,
+        effective_budget=request.effective_budget,
     )
 
 

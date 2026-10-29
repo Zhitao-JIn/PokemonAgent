@@ -21,6 +21,7 @@ from evals.agent_short_goal_run.scorer.repeat_scorer import ineffective_repetiti
 from evals.agent_short_goal_run.scorer.result_grade import llm_task_completion_scorer
 from evals.agent_short_goal_run.scorer.task_scorer import e2e_scorer
 from evals.agent_short_goal_run.solver.solver import run_one_solver
+from evals.common.budget import derive_sample_budget
 from evals.common.overlay import eval_overlay, write_overlay
 from evals.runconfig import ResultGraderConfig, load_config, resolve_grader, resolve_models
 from pokemon_agent.env import load_env_file
@@ -88,6 +89,7 @@ def agent_short_goal_run(
     split = split if split is not None else (str(cfg["split"]) if cfg["split"] else None)
     sample_ids = samples if samples is not None else [str(s) for s in cfg.get("samples", [])]
     timeout = timeout if timeout is not None else int(cfg["timeout"])
+    cfg["timeout"] = timeout
     report_dir = log_dir or str(cfg["log_dir"])
     trace_backend = trace_backend or str(cfg.get("trace_backend", "local"))
     models = resolve_models(cfg.get("models", {}))
@@ -104,6 +106,10 @@ def agent_short_goal_run(
                 "models": models,
                 "sample_ids": [s.sample_id for s in chosen],
                 "timeout": timeout,
+                "budget_derivation": cfg.get("budget_derivation", {}),
+                "sample_budgets": {
+                    sample.sample_id: derive_sample_budget(sample, cfg) for sample in chosen
+                },
                 "trace_backend": trace_backend,
             },
             ensure_ascii=False,
@@ -125,6 +131,7 @@ def agent_short_goal_run(
             transcript=transcript,
             ignore_initial_memory=bool(cfg["ignore_initial_memory"]),
             export_memory_dir=cfg["export_memory_dir"],
+            budget_config=cfg,
         ),
         scorer=[
             e2e_scorer(stall_limits=stall_limits, trace_backend=trace_backend),

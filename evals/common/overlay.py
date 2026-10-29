@@ -15,6 +15,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from evals.agent_short_goal_run.dataset.schemas import EvalSample
+from evals.common.budget import derive_sample_budget
 from evals.runconfig import resolve_models
 
 _LINK_OF_PARAM = {
@@ -35,9 +37,16 @@ def eval_overlay(cfg: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def sample_overlay(*, run_id: str, branch: str, work: Path) -> dict[str, Any]:
+def sample_overlay(
+    *,
+    run_id: str,
+    branch: str,
+    work: Path,
+    sample: EvalSample | None = None,
+    config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """一条样本一个分支的运行时事实：身份、落盘目录、服务地址（取自评测进程环境）。"""
-    return {
+    overlay: dict[str, Any] = {
         "run": {"run_id": run_id, "branch": branch},
         "paths": {
             "runs_root": str(work),
@@ -50,6 +59,12 @@ def sample_overlay(*, run_id: str, branch: str, work: Path) -> dict[str, Any]:
             "memory_server_url": os.environ.get("MCP_MEMORY_SERVER_URL") or None,
         },
     }
+    if sample is not None and config is not None:
+        budget = derive_sample_budget(sample, config)
+        overlay["budget"] = {
+            key: budget[key] for key in ("max_total_actions", "wall_clock_s", "max_episodes")
+        }
+    return overlay
 
 
 def write_overlay(path: Path, overlay: Mapping[str, Any]) -> tuple[Path, str]:

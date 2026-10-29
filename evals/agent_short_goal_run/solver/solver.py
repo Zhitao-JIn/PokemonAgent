@@ -24,8 +24,10 @@ from evals.agent_short_goal_run.scorer.stream import RunStream
 from evals.agent_short_goal_run.solver.record import AgentRunRecord, RunOneRecord, RunOneRequest
 from evals.agent_short_goal_run.solver.runner.one import run_id_for
 from evals.agent_short_goal_run.solver.transcript import replay_into_transcript
+from evals.common.budget import derive_sample_budget, sample_timeout
 from evals.common.eval_services import eval_services
 from evals.paths import REPO_ROOT
+from evals.runconfig import load_config
 
 __all__ = ["Generate", "Solver", "TaskState", "run_id_for", "run_one_solver", "solver"]
 
@@ -86,6 +88,7 @@ def run_one_solver(
     transcript: bool = True,
     ignore_initial_memory: bool = False,
     export_memory_dir: str | None = None,
+    budget_config: dict[str, object] | None = None,
 ) -> Solver:
     """被测对象槽位：起 worker 子进程跑完一条样本。
 
@@ -97,6 +100,8 @@ def run_one_solver(
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         sample_id = str(state.metadata["sample_id"])
         sample = next(item for item in load_samples(version) if item.sample_id == sample_id)
+        effective_budget = derive_sample_budget(sample, budget_config or load_config())
+        effective_timeout = sample_timeout(sample, budget_config or load_config())
         epoch = int(state.epoch)
         work = work_dir_of(report_dir, sample_id, epoch)
         request = RunOneRequest(
@@ -107,6 +112,7 @@ def run_one_solver(
             models=models,
             trace_backend=trace_backend,
             version=version,
+            effective_budget=effective_budget,
         )
         service_options: dict[str, object] = {
             "world": True,
@@ -147,7 +153,7 @@ def run_one_solver(
                 cmd,
                 input=request.model_dump_json().encode(),
                 cwd=str(REPO_ROOT),
-                timeout=timeout,
+                timeout=effective_timeout,
                 check=False,
                 env={**os.environ, **service_environment},
             )

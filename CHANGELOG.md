@@ -1,3 +1,15 @@
+## 2026-10-29（706）—— 评测运行预算按样本接线
+
+**改了什么**：新增档位预算推导与配置默认值；中期、长期按样本 `max_steps` 写入运行预算和进程时限；短期保持配置值。有效预算写入单样本配置覆盖、`run.json` 与 `baseline_context.json`，并新增合成测试。
+
+**为什么这么改**：统一的 60 个动作与 600 秒上限会截断中期和长期样本，样本定义的预算需要接入实际运行。
+
+**取舍**：短期保持现状；中期与长期按 `sample.max_steps` 推导，每动作按 40 秒计算，依据审计记录的约 38 秒，并加配置的时间余量。
+
+**影响面**：评测配置、overlay、task、solver 与 runner；未改 `pokemon_agent/`、数据集、评分规则或既有测试断言。
+
+**验证**：基线 pytest 为 2986 tests、0 failures、0 errors、72 skipped；最终为 2994 tests、0 failures、0 errors、72 skipped。预算合成测试 8 项通过；提示词边界守卫 A–D 均为 `[ OK ]`；Ruff format 检查通过。全仓 Ruff lint 与 import sorting 被未修改的 `scripts/langfuse_tree_rehearsal.py` import 排序问题阻塞。数据集 `load/check` 条数为短期 20、中期 5、长期 1、retest5 20。
+
 ## 2026-10-29（696）—— 费用护栏：DeepSeek 余额轮询，20 元封顶
 
 **改了什么**：新增共享模型价格与费用估算模块；`probe_models.py` 改为导入并继续公开 `PRICES`、`estimate`。新增费用监视脚本，以 DeepSeek CNY 余额最小读数计算花费，达到阈值时终止子进程树；余额不可用时可从 trace token 用量估算并写入 JSON 报告。

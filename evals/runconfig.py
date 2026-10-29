@@ -42,6 +42,13 @@ MODEL_LINKS: tuple[str, ...] = (
     "summary_model",
     "plan_model",
 )
+
+BUDGET_DERIVATION_DEFAULTS: dict[str, int] = {
+    "seconds_per_action": 40,
+    "reserve_s": 120,
+    "timeout_margin_s": 300,
+    "long_max_episodes": 6,
+}
 """评测配置里的链路型号键（由 `overlay.py` 映射到 settings 的 models 各节）。"""
 
 
@@ -67,6 +74,8 @@ def load_config() -> dict[str, Any]:
     missing = [key for key in REQUIRED_KEYS if key not in cfg]
     if missing:
         raise ValueError(f"config.json 缺键：{missing}（配置必须全填，无缺省）")
+    cfg.setdefault("budget_derivation", dict(BUDGET_DERIVATION_DEFAULTS))
+    cfg.setdefault("budget_derivation", dict(BUDGET_DERIVATION_DEFAULTS))
     return cfg
 
 
@@ -104,6 +113,7 @@ def resolve_grader(
 
 __all__ = [
     "CONFIG_PATH",
+    "BUDGET_DERIVATION_DEFAULTS",
     "MODEL_LINKS",
     "REQUIRED_KEYS",
     "ResultGraderConfig",
