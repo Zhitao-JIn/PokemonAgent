@@ -17,7 +17,7 @@
 
 1. **大脑不持有任何状态。** `brain/` 下的代码不许有跨步骤的实例变量、不许有模块级可变全局。
    每一步的全部输入都来自参数，全部记忆都来自工具调用。
-   *为什么*：大脑无状态是整个架构的地基，一旦漏了状态，harness 的 trace / replay / checkpoint 全部失真。
+   *为什么*：大脑无状态是整个架构的地基，一旦漏了状态，harness 的 trace / replay 全部失真。
 
 2. **`brain` / `memory` / `trace` / `world` 是四个独立第三方模块，各自只暴露一个 Port。**
    `brain/` 不许 import `harness/`、`world/`、`memory/` 的任何东西——它只依赖**自己声明的
@@ -50,9 +50,9 @@
    *为什么*：接口边界靠类型说话；后面接约束解码时 schema 直接复用。
 
 6. **每一步都必须产出 trace 事件。** 没有 trace 的执行路径视为未完成。
-   *为什么*：trace 是 replay、checkpoint、成本统计的共同底座，后补代价极高。
+   *为什么*：trace 是 replay、成本统计的共同底座，后补代价极高。
 
-7. **不兼容旧数据。** 记忆文件、trace、checkpoint、数据集产物的格式一旦变更，改动合入后把旧数据整体
+7. **不兼容旧数据。** 记忆文件、trace、数据集产物的格式一旦变更，改动合入后把旧数据整体
    删除、需要时重新生成；代码里不写读旧格式的分支，不写"旧数据缺字段时回退"，也不为此保留测试，
    新增的必填字段不给默认值（让旧数据被误读时响亮地失败）。空章（只有来源章的记录）是正常概念，
    不算旧数据。历史追溯靠 git（清理前打 tag）与每次调用 trace 里存的完整 prompt 文本，不靠目录里
@@ -220,9 +220,9 @@ pokemon_agent/
 ├── harness/          控制循环本体（LangGraph 状态图），全项目唯一写 trace 的地方。
 │                     **只依赖 direct / mcpclient / schemas 三层，不依赖 trace 的实现**
 │                     （trace 也是独立模块，只通过 Port 说话）
-│                     checkpoint/：三级存档（run 开局 / 每局开派前 / 每个 task 开局）
-│                     + 图内恢复到任意一级（Checkpointer / restore_run；血缘从 trace 推，
-│                     见 docs/spec/checkpoint/）；reviewing.py：问人的唯一入口（每问记一笔）
+│                     reviewing.py：问人的唯一入口（每问记一笔）。**不做图内存档与恢复**
+│                     （2026-10-29 整体移除，691–694）：只在启动时按 `.state` 恢复世界，
+│                     memory 只是指向一个新的记忆仓库（评测里起服务前复制种子目录）
 ├── world/            WorldPort 实现：PyBoy + 内存观测 + 世界语义常量
 │                     （INTERACT_KEY / DIRECTION_KEYS——"这个世界怎么按键"的知识）
 ├── direct/           Harness 伸向 brain / trace 的手（原 `tools/` 的 brain/trace 半边，
@@ -274,8 +274,8 @@ pokemon_agent/
 │                     后端进程，不依赖 brain
 ├── experiment/       实验任务定义（tasks.py）、experiment_states/（钉死存档）、
 │                     real_check/（真实链路核对：维度 1 harness / 2 trace /
-│                     3 checkpoint / 4 memory / 6 memory roundtrip；编号 5
-│                     随旧 restore 维度一起删了）——仓库根级，不在包内
+│                     4 memory / 6 memory roundtrip；编号 3（checkpoint）与
+│                     5（restore）随恢复体系一起删了）——仓库根级，不在包内
 ├── settings/         **全项目唯一的配置中心**（取代旧 `config.py` / `run_config.py` /
 │                     `run_budget.py`）：全部 JSON。`default.json` 是随包保底值，启动时
 │                     可叠任意多个覆盖文件（深合并：dict 递归、list/标量整体替换），
@@ -295,11 +295,10 @@ CHANGELOG.md       变更日志，每次改动追加
 pyproject.toml
 ```
 
-memory MCP 默认只注册 recall / memorize；checkpoint 需要的 snapshot_memory /
-restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 MemoryAdminDisabled。
-快照传 zip 内容与 sha256，不共享文件路径；客户端 memory_root 只管本地 snapshots，
-服务端根由 --memory-root 指定。原始 zip 上限 256 MiB，不安全条目由 MemoryCapability
-在删除前统一拒绝，两种模式一致。管理面契约见 docs/mcp/memory-admin-spec.md。
+memory MCP 只注册 recall / memorize。原先给 checkpoint 用的 snapshot_memory /
+restore_memory 与服务端 --enable-admin 已于 2026-10-29（694）整体移除；评测里 memory
+用**隔离的临时库**（`evals/common/eval_services.py` 起服务前可复制种子目录进临时根，
+退出前可导出），不再有任何"清理或恢复共享库"的管理面；服务端根由 --memory-root 指定。
 
 **分层原则（三条）：**
 
@@ -444,14 +443,14 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
   （生产者维度下线；**"谁发的"这一维 0914 改由 `meta.source` 回答**——那是
   "发送位置"，与"链路"不是一回事）、`valid`（恢复链已删，新写入恒真）。
 - trace 是**追加写的事件序列**，不是可变状态快照——但这说的是 trace 自身的写入
-  方式，不是 checkpoint 的存储形态。详见 `docs/ROADMAP.md` 第 16 条。
+  方式。详见 `docs/ROADMAP.md` 第 16 条。
 - 本阶段 `LocalTrace`（一条事件一个 json）就够，但接口按"能落盘、能重放"设计。
 
 ## 十、测试
 
 规则见「可读性与可维护性 / 5. 测试是用法示范」。工具与硬性要求：
 
-- `pytest`。目录按 **模块 → 功能** 两级镜像被测包：`tests/<module>/[<feature>/]test_<name>.py`（`<module>` 与 `pokemon_agent/` 下的包同名，跨模块的端到端放 `tests/integration/`；文件名全仓唯一，不靠目录区分）。共享夹具 `_fake_run.py` / `_fake_langfuse.py` / `_harness_fixtures/` / `_doubles/` 留在 `tests/` 根，经 `pyproject.toml` 的 `pythonpath` 直接 import；测试文件之间不互相 import，共用的替身放 `_doubles/`。慢测试标 `@pytest.mark.slow`，默认不跑；**不要用 `-m` 覆盖默认选项去跑它们**，需要时在本地临时去掉文件里的 `skip` 标记（现有慢测试 `tests/harness/checkpoint/test_checkpoint_restore.py` 已加硬 `skip`，不提交这种临时改动）。
+- `pytest`。目录按 **模块 → 功能** 两级镜像被测包：`tests/<module>/[<feature>/]test_<name>.py`（`<module>` 与 `pokemon_agent/` 下的包同名，跨模块的端到端放 `tests/integration/`；文件名全仓唯一，不靠目录区分）。共享夹具 `_fake_run.py` / `_fake_langfuse.py` / `_harness_fixtures/` / `_doubles/` 留在 `tests/` 根，经 `pyproject.toml` 的 `pythonpath` 直接 import；测试文件之间不互相 import，共用的替身放 `_doubles/`。慢测试标 `@pytest.mark.slow`，默认不跑；**不要用 `-m` 覆盖默认选项去跑它们**，需要时在本地临时去掉文件里的 `skip` 标记（不提交这种临时改动）。
 - 必须存在的两个：**FakeLLM 跑完整 ReAct 循环且结果确定可复现**；
   **大脑在给定观测下选出预期动作**。
 - 测试不许连网、不许调真实模型、不许依赖时间戳精确值。
@@ -485,7 +484,7 @@ restore_memory 由服务端 --enable-admin 开放，未开放时门面明确报 
 已是 **brain 的内部协议**，随 provider 搬进 `brain/schemas/`，图片通道供判定器等使用。包内按种类落到
 `communication/` `domain/` `datastore/`。schemas 侧**不给 tool 门面单开子包**——
 `direct/interface/` 四张门面协议（`GameToolPort` / `MemoryToolPort` / `BrainToolPort` /
-`TraceToolPort`；存档那一张 `CheckpointToolPort` 已解散——存档归 harness 自己的状态模型），
+`TraceToolPort`；存档那一张 `CheckpointToolPort` 早已解散，存档与恢复体系本身也已于 2026-10-29 整体移除），
 harness 经门面调模块的架构不变。
 
 **`schemas/review_backend/communication/`** 与 **`schemas/agent_reviewer/communication/`** 是 Web Reviewer / Agent Reviewer 这套跨进程 WS 转发层的信封——跳 B（后端↔前端 `/ui`）、跳 C（后端↔agent 独立进程，地址走 `.env` 的 `AGENT_REVIEWER_URL`），与跳 A（`schemas/harness/communication/`，harness↔后端 `/harness`）同形：都带 `msg` 标签、`model_dump_json()` 走 WS 文本帧；`ProposedAnswer` 单源定义在 `review_backend/communication/`，跳 B `proposal` 与跳 C `proposal` 共用同一模型；`FromFrontendToReviewBackendAnswerReq.by` 字面量含 `human`/`agent`/`timeout`，`FromReviewBackendToFrontendAskReq.deadline` 为 `float | None`（人模式传 `None`，AI 模式后端填倒计时）。它们**不属于铁律 1 的「Harness↔门面」那一跳**，是 harness 之外的独立跨进程转发层（后端只做无状态转发，不持有 transcript）。
