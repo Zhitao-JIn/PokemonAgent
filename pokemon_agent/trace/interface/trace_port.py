@@ -18,7 +18,7 @@
 **已删的两件**（0914 封套改造）：`read_event(event_id)`——它是"按 id 取单条"的
 唯一入口，而那个能力随 `frame_png` 一起下线（画面真源搬到
 `memory/step_memory/`）。此前的 `cursor()` / `read_disk_events()` / `void_after()`
-随 checkpoint 恢复链删掉（0913 第 57 条）；`read_screenshot` 随截图副本删掉。
+随恢复链删掉（0913 第 57 条）；`read_screenshot` 随截图副本删掉。
 
 **读能力只剩一条通用读方法**：`read_events` ——不做掩码、不做游标、不打标，
 只回答"当前存储实现可读到什么"。

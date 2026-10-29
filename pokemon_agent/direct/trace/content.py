@@ -207,16 +207,6 @@ class SummaryParseErrorContent(_Content):
     reason: str
 
 
-class CheckpointSaveContent(_Content):
-    level: str
-    manifest_path: str
-
-
-class CheckpointRestoreContent(_Content):
-    level: str
-    manifest_path: str
-
-
 class SettleGoalContent(_Content):
     goal_id: str
     status: str
@@ -245,7 +235,6 @@ class EventMeta(BaseModel):
     episode_id: str = ""
     task_id: str = ""
     step: int = Field(default=0, ge=0)
-    checkpoint_id: str = Field(default="", description="只有存档 / 恢复两本账带：连起新线与分叉点")
 
 
 __all__ = [
@@ -253,8 +242,6 @@ __all__ = [
     "CallExhaustedContent",
     "CallFailedContent",
     "CheckStallContent",
-    "CheckpointRestoreContent",
-    "CheckpointSaveContent",
     "ChooseVerdictContent",
     "DecomposeVerdictContent",
     "DecomposedTask",

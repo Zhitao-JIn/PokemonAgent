@@ -1,7 +1,6 @@
 """`RunStream`：一条样本 run 的全部账，类型化后按层取用。
 
-只读盘上 trace（经 `pokemon_agent.direct.trace.parse`），不重新加载模拟器。样本从存档恢复，
-账本里有打包时的 `main` 线（只有一条 `checkpoint_save`）与恢复出的新执行线；只取后者。
+只读盘上 trace（经 `pokemon_agent.direct.trace.parse`），不重新加载模拟器。
 """
 
 from __future__ import annotations
@@ -72,39 +71,32 @@ class RunStream:
         cls,
         trace_root: str | Path,
         run_id: str,
-        branch: str | None = None,
+        branch: str | None = "main",
         backend: str = "local",
     ) -> RunStream:
-        """读一个 run 的账；`branch` 缺省自动检测（local）或由调用方必给（langfuse）。
+        """读一个 run 的账；`branch` 缺省为 `main`，也可显式指定。
 
         `backend`：与 TraceTool.build 同语义——`local` 读 `trace_root` 下的本地账，
         `langfuse` 直接问本机 Langfuse 服务（`trace_root` 忽略，不传）。**与写账侧同源**：
         run-one 用哪种后端写，scorer 就用哪种读。
 
-        读取用**空 meta 全量**（不走 TraceTool 的血缘可见性拼接——那条路在 branch 缺省
-        main 时只见父线，恢复线整个不可见，335 首跑实锤），两级过滤都在本层做：
+        local 后端读取平铺目录中的事件后按 run 与 branch 筛选；Langfuse 以
+        `(run_id, branch)` 定址后执行同样的过滤：
         先按 `meta.run_id` 只留本 run（local 的落盘根是**多个 run 平铺**的一个目录，
         不按 run 分目录；langfuse 的 trace_id 虽由 `(run_id, branch)` 决定，也照样过一遍），
-        再按 `meta.branch` 只留本执行线——打分只需要本执行线的账，祖先线（打包种子等）
-        明确排除。**run_id 过滤必须在 branch 自动检测之前**：否则别的 run 的
-        `checkpoint_restore` 会把 branch 选歪。
+        再按 `meta.branch` 只留指定执行线。
 
-        **langfuse 寻址按 (run_id, branch)**（336 spec）：trace_id 由两者共同决定，
-        所以 `branch` 必须来自 `run.json`（run-one 收尾时写入 `RunResult.branch`）；
-        没给则退 `main`——大概率读不到账 → unjudgeable。
+        Langfuse trace id 仍按 `(run_id, branch)` 寻址。
         """
+        selected_branch = branch or "main"
         if backend == "local":
             tool = TraceTool.build(run_id=run_id, trace_root=trace_root, backend=backend)
             parsed = _of_run(tool.read_events(), run_id)
-            if branch is None:
-                restored = [p for p in parsed if p.kind == TraceKind.CHECKPOINT_RESTORE]
-                branch = restored[-1].meta.branch if restored else "main"
-            return cls([p for p in parsed if p.meta.branch == branch])
-        # langfuse：trace_id 按 (run_id, branch) 寻址——branch 必给。
-        tool = TraceTool.build(run_id=run_id, branch=branch or "main", backend=backend)
+            return cls([p for p in parsed if p.meta.branch == selected_branch])
+        # langfuse：trace_id 按 (run_id, branch) 寻址。
+        tool = TraceTool.build(run_id=run_id, branch=selected_branch, backend=backend)
         parsed = _of_run(tool.read_events(), run_id)
-        want = branch or "main"
-        return cls([p for p in parsed if p.meta.branch == want])
+        return cls([p for p in parsed if p.meta.branch == selected_branch])
 
     @property
     def branch(self) -> str:

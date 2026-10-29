@@ -20,7 +20,6 @@ from evals.agent_short_goal_run.scorer import RunStream, mechanical_scorer
 from pokemon_agent.brain import Task
 from pokemon_agent.direct.trace import TraceTool
 from pokemon_agent.schemas.harness import FromHarnessToTraceToolAppendReq, TraceKind
-from pokemon_agent.schemas.harness.domain import CheckpointMark
 from pokemon_agent.world import Facts, TaskObservation, TaskScene
 
 
@@ -48,19 +47,9 @@ def _append(
     )
 
 
-def _write_run(
-    root: pathlib.Path, run_id: str, *, branch: str = "main", with_restore: bool = False
-) -> None:
-    """一个 run 的最小落盘账：恢复账（可选）+ 一局开局账 + 一帧。"""
+def _write_run(root: pathlib.Path, run_id: str, *, branch: str = "main") -> None:
+    """一个 run 的最小落盘账：一局开局账 + 一帧。"""
     tool = TraceTool.build(run_id=run_id, trace_root=root, branch=branch)
-    if with_restore:
-        _append(
-            tool,
-            TraceKind.CHECKPOINT_RESTORE,
-            episode_id=run_id,
-            meta={"checkpoint_id": f"{run_id}@main-0001"},
-            checkpoint=CheckpointMark(level="run", manifest_path="checkpoints/x/manifest.json"),
-        )
     _append(
         tool,
         TraceKind.EPISODE_START,
@@ -101,14 +90,3 @@ def test_an_unknown_run_id_reads_nothing_and_is_unjudgeable(tmp_path: pathlib.Pa
 
     assert stream.events == []
     assert mechanical_scorer()(stream, sample("map_changed")).outcome == "unjudgeable"
-
-
-def test_branch_autodetect_is_not_polluted_by_another_runs_restore(
-    tmp_path: pathlib.Path,
-) -> None:
-    """B 有恢复线、A 没有：load(A) 的 branch 仍是 main（自动检测在 run_id 过滤之后）。"""
-    _write_run(tmp_path, "run-a")
-    _write_run(tmp_path, "run-b", branch="b-fork", with_restore=True)
-
-    assert RunStream.load(tmp_path, "run-a").branch == "main"
-    assert RunStream.load(tmp_path, "run-b").branch == "b-fork"

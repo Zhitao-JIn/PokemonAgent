@@ -2,7 +2,7 @@
 外加 brain 那族按能力拆开的**八张单方法口**（`PlanPort`/`DecomposePort`/`ChoosePort`/`JudgePort`/
 `ReflectPort`/`VerifyPort`/`SummarizePort`/`TaskSummarizePort`）——harness 认识的工具门面。
 
-（曾是五张整口：`CheckpointToolPort` 已在步 5b 解散；`BrainToolPort` 七方法总口
+（曾是五张整口：旧恢复专用 Port 已在步 5b 解散；`BrainToolPort` 七方法总口
 0922 185 按能力拆开——一个接口方法超 6 个就该拆，且"按消费方切口"后，runtime 字段
 能写成 `planner: PlanPort` 这类窄类型，"不属于本层的方法"在类型上就调不出来。）
 
@@ -321,8 +321,8 @@ class TraceToolPort(Protocol):
 
     **读方法也在这张端口上**：`read_events`。**边界从此对称**——
     写者与读者都只有 tool 层，harness / api 一律不 import `pokemon_agent.trace`。
-    原 `cursor` / `read_disk_events` / `void_after` 三件是 checkpoint 存档与恢复
-    专用，随恢复链一起删掉了（见 `CHANGELOG.md` 2026-09-13 第 57 条）；
+    原 `cursor` / `read_disk_events` / `void_after` 三件已随恢复链一起删掉了
+    （见 `CHANGELOG.md` 2026-09-13 第 57 条）；
     `read_screenshot` 随截图副本删（0913 晚）；`read_event(id)` 随
     `frame_png` 一起删（0914 封套改造——画面真源已是 `memory/step_memory/`）。
     剩下的一条是**通用读**，不做掩码、不做游标、不打标。

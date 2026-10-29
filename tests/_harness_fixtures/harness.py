@@ -99,7 +99,6 @@ def build_fake(
     fail_on_press: int | None = None,
     fail_on_decompose: int | None = None,
     reviewer: Reviewer | None = None,
-    checkpoints: bool = False,
     branch: str = "main",
     backend: str = "local",
     config: AppConfig = DEFAULT_APP_CONFIG,

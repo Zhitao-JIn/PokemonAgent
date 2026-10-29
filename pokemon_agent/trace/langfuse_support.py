@@ -108,9 +108,8 @@ class LangfuseClientPort(Protocol):
 def langfuse_trace_seed(run_id: str, branch: str) -> str:
     """Langfuse trace 的 seed：**一次执行尝试 (run_id, branch) = 一个 trace**（0929 定案）。
 
-    同 `(run_id, branch)` 重入 = 事件追加进同一 trace（预期内；branch 每次 restore 随机
-    新发，实际不重入）；不同 branch / epoch / 样本各自独立 trace。寻址规则见
-    `docs/PLAN_trace_branch_addressing.md`。
+    同 `(run_id, branch)` 重入 = 事件追加进同一 trace；不同 branch / epoch / 样本各自独立
+    trace。寻址规则见 `docs/PLAN_trace_branch_addressing.md`。
     """
     return f"{run_id}::{branch}"
 
@@ -358,10 +357,7 @@ def value_of(value: object | None, key: str, default: Any = None) -> Any:
 def observation_time_bounds() -> tuple[datetime, datetime]:
     """Bound API queries: from the earliest allowed time to one second past now.
 
-    下界不用"本实例构造时刻"：同一个 run 恢复后是新进程新实例，上一实例写的
-    `checkpoint_save` / 历史 observation 时间在本实例之前——拿构造时刻当下界
-    会把它们全部挡在门外（血缘 lookup 与 `read_events` 都会瞎）。兜底取 API
-    允许的最早有效时间，数据集由 `trace_id` 限定（见 langfuse-spec §六）。
+    使用 API 允许的最早有效时间，数据集由 `trace_id` 限定（见 langfuse-spec §六）。
     """
     start = datetime.fromtimestamp(0.0, tz=UTC)
     return start, datetime.now(UTC) + timedelta(seconds=1)

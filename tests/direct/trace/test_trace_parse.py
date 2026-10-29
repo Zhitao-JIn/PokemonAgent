@@ -44,7 +44,7 @@ from pokemon_agent.world.interface import (
 
 def test_every_modelled_account_of_a_whole_run_parses_into_its_model(tmp_path) -> None:
     """正常整局的建模账都读成它的模型；差集（只有异常 run 才产的账）手工补最小事件覆盖。"""
-    run = run_fake(tmp_path / "normal", checkpoints=True)
+    run = run_fake(tmp_path / "normal")
     events = [TraceEvent.model_validate(e) for e in run]
 
     parsed = [parse(e) for e in events]

@@ -1,3 +1,15 @@
+## 2026-10-29（692b）—— 移除恢复体系：收窄 trace 协议
+
+**改了什么**：删除恢复账类型、正文模型、解析与渲染、执行线血缘拼接和 Langfuse 恢复祖先锚；trace append 信封移除 `CheckpointMark`；评分读取固定为传入的 branch（默认 `main`）；调整 Langfuse 演示、测试夹具与 trace 账契约。
+
+**为什么这么改**：项目决定只在启动时按 `.state` 初始化世界，不做图内恢复；trace 不再需要保存、恢复和分叉血缘协议。
+
+**取舍**：保留普通 branch scope 与按 `(run_id, branch)` 的 Langfuse 定址；纯恢复测试文件与恢复线测试由用户删除，混合测试只移除恢复专属部分。
+
+**影响面**：schemas、direct trace、trace、agent_short_goal_run scorer、Langfuse 演示与相关测试；未改 memory 管理面、branch 配置与 world_script_execute 快照。
+
+**验证**：基线 JUnit 为 2986 tests、0 failures、0 errors、72 skipped。全量收集因待用户删除的纯恢复文件 `test_trace_branch.py` 无法导入，JUnit 记录 1 test、0 failures、1 error、0 skipped；屏蔽 `lineage.py` 与 `checkpoint_mark.py`、忽略该测试文件后为 2978 tests、0 failures、0 errors、72 skipped。提示词边界守卫 A–D 均为 `[ OK ]`；Ruff lint、import sorting 与 format 检查通过。
+
 ## 2026-10-29（696）—— 费用护栏：DeepSeek 余额轮询，20 元封顶
 
 **改了什么**：新增共享模型价格与费用估算模块；`probe_models.py` 改为导入并继续公开 `PRICES`、`estimate`。新增费用监视脚本，以 DeepSeek CNY 余额最小读数计算花费，达到阈值时终止子进程树；余额不可用时可从 trace token 用量估算并写入 JSON 报告。
