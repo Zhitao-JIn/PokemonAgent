@@ -57,7 +57,6 @@ def test_build_real_hands_the_same_reviewer_to_all_three_layers(
                 "review": {"mode": "human", "link_url": "ws://127.0.0.1:9"},
                 "paths": {"runs_root": str(tmp_path)},
                 "services": {"world_server_url": "http://w", "memory_server_url": "http://m"},
-                "checkpoint": {"enabled": False},
             }
         ),
         encoding="utf-8",

@@ -17,7 +17,7 @@ def settle_task_error(
 
     `steps_used` 从账上数（这个 task 已落的 `act_call` 条数）：动作已经做出去了，
     下一个 task 的键号基数得跟着往后挪，否则帧号会重。
-    source：接住异常的位置（`"episode.act"` / `"checkpoint.restore"`），
+    source：接住异常的位置（`"episode.act"`），
         记进 `task_error` 的 `meta.source`。
     """
     task_id = task_input.task.task_id

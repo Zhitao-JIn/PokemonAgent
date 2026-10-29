@@ -126,7 +126,7 @@ def _state() -> EpisodeRunState:
 def _requests(
     state: EpisodeRunState, root: Path
 ) -> tuple[FromHarnessToBrainToolDecomposeReq, FromHarnessToBrainToolJudgeReq]:
-    fake = build_fake(root, checkpoints=False)
+    fake = build_fake(root)
     decomposer, judger = _Decomposer(), _Judger()
     deps = fake.run_rt.episode
     deps.decomposer, deps.judger = decomposer, judger
@@ -156,7 +156,7 @@ def test_decompose_context_lists_episode_index_lines_not_full_text(tmp_path: Pat
 
 
 def test_agent_revisions_respect_remaining_decomposition_budget(tmp_path: Path) -> None:
-    fake = build_fake(tmp_path, checkpoints=False)
+    fake = build_fake(tmp_path)
     decomposer, reviewer = _Decomposer(), _RevisingReviewer()
     deps = fake.run_rt.episode
     deps.decomposer = decomposer

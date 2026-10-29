@@ -57,8 +57,7 @@
     "agent_base_url": "https://api.deepseek.com"
   },
   "trace": {"backend": "local"},
-  "checkpoint": {"enabled": true},
-  "paths": {"runs_root": ".", "trace": "tracelog", "memory": "memory", "checkpoint": "checkpoints", "config_snapshot": "config_snapshots"},
+  "paths": {"runs_root": ".", "trace": "tracelog", "memory": "memory", "config_snapshot": "config_snapshots"},
   "services": {"memory_server_url": null, "world_server_url": null},
   "debug": {"vision_dump_dir": null},
   "eval": null

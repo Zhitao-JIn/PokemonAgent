@@ -101,7 +101,7 @@ def _state() -> RunState:
 def _requests(
     state: RunState, root: Path
 ) -> tuple[FromHarnessToBrainToolPlanOnceReq, FromHarnessToBrainToolJudgeReq]:
-    fake = build_fake(root, checkpoints=False)
+    fake = build_fake(root)
     planner, judger = _Planner(), _Judger()
     fake.run_rt.planner, fake.run_rt.judger = planner, judger
     runtime = Runtime(context=fake.run_rt)
@@ -143,7 +143,7 @@ def test_run_judge_keeps_the_existing_empty_details_case_without_plan_context(
     tmp_path: Path,
 ) -> None:
     state = _state().model_copy(update={"plan_ctx": None})
-    fake, judger = build_fake(tmp_path, checkpoints=False), _Judger()
+    fake, judger = build_fake(tmp_path), _Judger()
     fake.run_rt.judger = judger
 
     review_and_judge(state, Runtime(context=fake.run_rt))

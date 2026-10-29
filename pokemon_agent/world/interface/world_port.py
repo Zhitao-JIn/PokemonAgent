@@ -87,8 +87,8 @@ class WorldPort(Protocol):
     def save_state(self) -> bytes:
         """把模拟器的**完整状态**（CPU、内存、画面）导出成字节串。**不推进世界**。
 
-        给 checkpointer 用：与 `load_state` 成对，`load_state(save_state())` 之后
-        世界与导出那一刻逐字节相同。
+        导出模拟器完整状态，供需要保存当前世界状态的调用方使用；与 `load_state` 成对，
+        `load_state(save_state())` 之后世界与导出那一刻逐字节相同。
         后置条件：返回非空字节串。
         """
         ...

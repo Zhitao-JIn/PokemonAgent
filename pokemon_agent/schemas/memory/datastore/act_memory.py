@@ -262,8 +262,7 @@ class ActMemory(BaseModel):
     task_id: str = Field(default="", description="这条经验属于哪个 task（harness 盖章）")
     run_id: str = Field(
         default="",
-        description="这条经验来自哪个 run——checkpoint 恢复的落盘签名三元组之一"
-        "（run_id/episode_id/step），由 Harness 盖章（大脑不知道自己在哪个 run）",
+        description="这条经验来自哪个 run——由 Harness 盖章（大脑不知道自己在哪个 run）",
     )
 
     before_frame: str | None = Field(

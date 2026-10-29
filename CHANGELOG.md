@@ -1,3 +1,15 @@
+## 2026-10-29（692a）—— 移除恢复体系：切断对 checkpoint 包的全部引用
+
+**改了什么**：移除 checkpoint 专属配置与 saver 依赖；切断普通 harness、测试夹具和相关测试对恢复包的依赖；更新恢复专属说明，保留 trace 协议中的共享 `CheckpointMark`。
+
+**为什么这么改**：项目决定只在启动时按 `.state` 初始化世界，不做图内恢复；恢复包随之成为待用户删除的孤岛。
+
+**取舍**：保留启动时世界状态加载、通用世界状态读写 API、trace 仍消费的 `CheckpointMark`，以及 world_script_execute 自己的执行前快照；trace 账、Langfuse 恢复锚与 memory 管理面留给后续任务。
+
+**影响面**：settings、harness/world 接口说明、direct GameToolPort 说明、评测 overlay、测试装配与配置测试、`pyproject.toml`；未改 checkpoint 包、trace 实现及其专属测试。
+
+**验证**：基线 JUnit：2965 tests、0 failures、0 errors、72 skipped。全量 JUnit：2965 tests、1 failure、0 errors、72 skipped；唯一失败是待用户删除目录中的 `test_restore_empty_plan` 仍访问已移除的测试夹具 Checkpointer。忽略 `tests/harness/checkpoint` 与屏蔽 checkpoint 包并忽略该目录的 JUnit 均为 2962 tests、0 failures、0 errors、72 skipped；提示词边界守卫四项 `[ OK ]`，Ruff 三项通过。
+
 ## 2026-10-28（695）—— 旧采集管线退役：迁出共用原语、断开引用
 
 **改了什么**：将 `eval_services.py` 共用的五个服务原语从 `capture_services.py` 原样迁入；把 brain_calls 冻结数据校验所需的规范哈希实现留在校验模块并断开旧 exporter 引用；brain_choose collector 改用 `v20261021_retest5/states`；旧 audit 测试从脑调用录制测试中拆出。

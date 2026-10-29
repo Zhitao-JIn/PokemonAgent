@@ -279,7 +279,7 @@ def test_brain_scope_consistency_across_three_graphs(
     recordings: list[_Recording] = []
 
     for seeded in (False, True):
-        fake = build_fake(tmp_path / str(seeded), checkpoints=False, tasks_per_plan=1)
+        fake = build_fake(tmp_path / str(seeded), tasks_per_plan=1)
         _seed_details(fake)
         if seeded:
             _seed_indexes(fake)

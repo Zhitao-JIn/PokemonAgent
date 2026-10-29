@@ -17,7 +17,7 @@ def settle_episode_error(
     """补空章 → 记 `episode_error`；`AgentError` 兜成 `ERROR` 结算，别的原样上抛。
 
     补空章保证"一局恰好一条 EpisodeMemory"：episode 图已经死了，只能由接住它的人代写。
-    source：接住异常的位置（`"run.act"` / `"checkpoint.restore"`），
+    source：接住异常的位置（`"run.act"`），
         记进空章与 `episode_error` 的 `source`。
     """
     episode_id = episode_input.episode_id

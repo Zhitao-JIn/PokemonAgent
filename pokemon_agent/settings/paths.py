@@ -13,7 +13,7 @@ from .schema import PathsSection, ResolvedConfig
 REPO_ROOT = Path(__file__).resolve().parents[2]
 """仓库根：本文件的上上上级目录（与 `env.py` 找 `.env` 的口径一致）。"""
 
-PathName = Literal["trace", "memory", "checkpoint", "config_snapshot"]
+PathName = Literal["trace", "memory", "config_snapshot"]
 
 
 def resolve_path(paths: PathsSection, name: PathName) -> Path:
