@@ -54,10 +54,10 @@ def test_recall_forwards_all_hints_without_adding_run_scope_and_removes_images()
 
 
 @pytest.mark.parametrize("which, expected", [("before", BEFORE), ("after", AFTER)])
-def test_real_mcp_frame_queries_reach_steps_beyond_eight_with_admin_disabled(
+def test_real_mcp_frame_queries_reach_steps_beyond_eight(
     tmp_path: Path, which: str, expected: str
 ) -> None:
-    with memory_server_context(tmp_path / "server", tmp_path / "client", enable_admin=False) as (
+    with memory_server_context(tmp_path / "server", tmp_path / "client") as (
         capability,
         tool,
     ):
@@ -81,7 +81,7 @@ def test_real_mcp_frame_queries_reach_steps_beyond_eight_with_admin_disabled(
 
 
 def test_runs_all_reaches_the_real_mcp_run_family_without_a_run_filter(tmp_path: Path) -> None:
-    with memory_server_context(tmp_path / "server", tmp_path / "client", enable_admin=False) as (
+    with memory_server_context(tmp_path / "server", tmp_path / "client") as (
         capability,
         tool,
     ):
@@ -113,7 +113,7 @@ def test_runs_all_reaches_the_real_mcp_run_family_without_a_run_filter(tmp_path:
 def test_recall_may_refresh_derived_caches_but_never_changes_memory_record_text(
     tmp_path: Path,
 ) -> None:
-    with memory_server_context(tmp_path / "server", tmp_path / "client", enable_admin=False) as (
+    with memory_server_context(tmp_path / "server", tmp_path / "client") as (
         capability,
         tool,
     ):

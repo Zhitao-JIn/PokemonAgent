@@ -1,4 +1,4 @@
-"""run_memory 改走 MCP：缺地址与缺 admin 都明确失败。"""
+"""run_memory 只使用隔离的临时 MCP memory 服务。"""
 
 from __future__ import annotations
 
@@ -52,29 +52,30 @@ def test_run_memory_requires_memory_url(monkeypatch: pytest.MonkeyPatch) -> None
     assert [event[0] for event in events] == ["enter", "exit"]
 
 
-def test_run_memory_requires_admin(monkeypatch: pytest.MonkeyPatch) -> None:
-    """health 的 admin 非 True → McpTransportError。"""
+def test_run_memory_rejects_an_external_memory_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    """已有 MCP_MEMORY_SERVER_URL 时拒绝复用，避免触碰共享记忆库。"""
     events = []
+    monkeypatch.setenv("MCP_MEMORY_SERVER_URL", "http://memory.shared")
     monkeypatch.setattr(solver, "load_env_file", lambda: None)
-    monkeypatch.setattr(solver, "env_str", lambda name: "http://fake")
-    monkeypatch.setattr(solver, "assert_mcp_server_ready", lambda url, service: {"admin": False})
     _install_fake_services(monkeypatch, events)
 
-    with pytest.raises(McpTransportError, match="--enable-admin"):
+    with pytest.raises(
+        McpTransportError, match="评测必须使用隔离的临时 memory 服务，请清除 MCP_MEMORY_SERVER_URL"
+    ):
         solver.run_memory(_dataset(), k=1)
-    assert [event[0] for event in events] == ["enter", "exit"]
+    assert events == []
 
 
-def test_run_memory_runs_inside_an_admin_enabled_temporary_service(
+def test_run_memory_runs_inside_an_isolated_temporary_service_without_clearing(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     events = []
     tool = object()
     monkeypatch.setattr(solver, "load_env_file", lambda: None)
-    monkeypatch.setattr(solver, "env_str", lambda name: "http://memory.fake")
-    monkeypatch.setattr(solver, "assert_mcp_server_ready", lambda url, service: {"admin": True})
+    memory_urls = iter([None, "http://memory.fake"])
+    monkeypatch.setattr(solver, "env_str", lambda name: next(memory_urls))
+    monkeypatch.setattr(solver, "assert_mcp_server_ready", lambda url, service: {})
     monkeypatch.setattr(solver.MemoryTool, "build", lambda **kwargs: tool)
-    monkeypatch.setattr(solver, "clear_memory", lambda received: events.append(("clear", received)))
     monkeypatch.setattr(
         solver,
         "evaluate_memory",
@@ -89,9 +90,8 @@ def test_run_memory_runs_inside_an_admin_enabled_temporary_service(
     assert events == [
         (
             "enter",
-            {"world": False, "memory": True, "admin": True, "knowledge_source": None},
+            {"world": False, "memory": True, "knowledge_source": None},
         ),
-        ("clear", tool),
         ("evaluate", tool),
         ("exit",),
     ]

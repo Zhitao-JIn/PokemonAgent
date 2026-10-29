@@ -13,15 +13,14 @@
   （act / task / episode / run / knowledge），metadata 拼装、knowledge 判重、
   step 单调前置校验——全部沿用原 `MemoryTool` 的既有规则。
 
-**MemoryStorePort 的 11 个方法在本模块之后是内部接口**：能力面（recall/memorize）
+**MemoryStorePort 的存储方法在本模块之后是内部接口**：能力面（recall/memorize）
 是对外契约，存储原语不再是跨层 Port。
 """
 
 from __future__ import annotations
 
 import re
-import zipfile
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
@@ -102,10 +101,6 @@ class MemoryCapability:
 
     def _store(self, kind: str) -> LocalMemoryStore:
         return self._stores[kind]
-
-    def _sync_max_caches(self) -> None:
-        """restore（覆盖）后盘上换了内容，append 单调缓存不再可信——清掉重查。"""
-        self._step_max.clear()
 
     def _check_step_monotonic(
         self, episode_id: str, step: int, max_cache: dict[str, int], kind: str
@@ -429,31 +424,3 @@ class MemoryCapability:
             payload={},
             text=record.text,
         )
-
-    # ---- 运维（MCP 管理面需 --enable-admin） ----
-
-    def snapshot(self, name: str) -> Path:
-        """整个记忆根打包成 zip（打的是整个根，不是某一族）。"""
-        return self._store("act").snapshot(name)
-
-    def restore(self, archive: str | Path) -> int:
-        """以 zip 为准还原整个根；六族内存态重读、单调缓存清空。
-
-        不安全条目在删除前抛 AssertionError，库保持不变。
-        """
-        with zipfile.ZipFile(archive) as snapshot:
-            for entry in snapshot.infolist():
-                filename = entry.orig_filename
-                path = PurePosixPath(filename)
-                if (
-                    path.is_absolute()
-                    or ".." in path.parts
-                    or "\\" in filename
-                    or any(PureWindowsPath(part).drive for part in path.parts)
-                ):
-                    raise AssertionError(f"restore() 拒绝不安全的归档条目：{filename!r}")
-        unpacked = self._store("act").restore(archive)
-        for kind in ("task", "episode", "knowledge", "run"):
-            self._store(kind).reload()
-        self._sync_max_caches()
-        return unpacked

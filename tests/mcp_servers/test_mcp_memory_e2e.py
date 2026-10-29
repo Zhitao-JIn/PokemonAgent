@@ -2,7 +2,7 @@
 
 **钉住的事**（MCP 化定案 2026-09-29）：
 
-1. 默认注册表仅暴露 `recall` / `memorize`；管理面只在 enable_admin 时开放；
+1. 默认注册表仅暴露 `recall` / `memorize`；
 2. `memorize` 按 kind 判别落五族（act / task / episode / run / knowledge），
    knowledge 判重（同 topic + 正文逐字）跳过；
 3. `recall` 分族规则：`conditions.episode_id` 圈本局（act step 升序 + task）、
@@ -136,7 +136,7 @@ async def _call(session: Any, name: str, arguments: dict[str, Any]) -> dict[str,
 
 
 def test_registry_exposes_exactly_recall_and_memorize(tmp_path):
-    """注册表恰好两条能力：recall / memorize——运维（snapshot 等）不进 MCP 面。"""
+    """默认注册表恰好暴露 recall / memorize 两项能力。"""
     _build_capability(tmp_path)
 
     async def flow(session: Any) -> list[str]:
@@ -205,30 +205,3 @@ def test_dual_path_alignment_capability_vs_server(tmp_path):
 
     # 同一份实现（server 只是薄壳委托 capability）——逐字段一致
     assert via_mcp == direct
-
-
-def test_admin_round_trip_uses_the_same_capability_and_preserves_default_registry(tmp_path):
-    """开管理面后可经 SDK 拍档回档；关闭后仍只有两条默认工具。"""
-    capability = _build_capability(tmp_path)
-    memory_server.start(capability, enable_admin=True)
-
-    async def flow(session: Any) -> None:
-        await _call(session, "memorize", {"records": [{"kind": "act", "payload": _act_payload(1)}]})
-        snapshot = await _call(session, "snapshot_memory", {"name": "a"})
-        await _call(session, "memorize", {"records": [{"kind": "act", "payload": _act_payload(2)}]})
-        restored = await _call(
-            session,
-            "restore_memory",
-            {
-                "archive_base64": snapshot["data"]["archive_base64"],
-                "sha256": snapshot["data"]["sha256"],
-            },
-        )
-        assert restored["ok"]
-        result = await _call(session, "recall", {"query": "", "conditions": {"episode_id": EP}})
-        assert len(result["data"]["items"]) == 1
-
-    try:
-        asyncio.run(_with_server(flow))
-    finally:
-        memory_server.start(capability)

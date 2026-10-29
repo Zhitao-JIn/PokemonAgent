@@ -112,7 +112,6 @@ def run_one_solver(
             "world": True,
             "memory": True,
             "knowledge_source": REPO_ROOT / "memory" / "knowledge_memory",
-            "admin": True,
             "export_env": False,
         }
         if sample.initial_memory is not None and not ignore_initial_memory:

@@ -80,8 +80,6 @@ def recall(tool: MemoryTool) -> list[dict[str, Any]]:
 def memory_server_context(
     memory_root: Path | None,
     snapshot_root: Path,
-    *,
-    enable_admin: bool = True,
 ) -> Iterator[tuple[MemoryCapability, MemoryTool]]:
     """临时注入真能力与内存传输，退出时关闭客户端并恢复服务端全局；不可并行。"""
     with pytest.MonkeyPatch.context() as patch:
@@ -90,14 +88,13 @@ def memory_server_context(
         server_instance.tool()(memory_server.memorize)
         server_instance.custom_route("/health", methods=["GET"])(memory_server.health)
         patch.setattr(memory_server, "mcp", server_instance)
-        patch.setattr(memory_server, "_admin_enabled", False)
         patch.setattr(memory_server, "_capability", None)
         server = MemoryCapability(Embedder(), Reranker(), memory_root=memory_root)
-        memory_server.start(server, enable_admin=enable_admin)
+        memory_server.start(server)
         client = InMemoryClient("in-memory")
         try:
             client.start()
-            yield server, MemoryTool(MemoryMcpTool(client, snapshot_root=snapshot_root))
+            yield server, MemoryTool(MemoryMcpTool(client))
         finally:
             client.stop()
 
@@ -107,11 +104,3 @@ def remote(tmp_path: Path) -> Iterator[tuple[MemoryCapability, MemoryTool]]:
     """每例隔离服务端记忆根与客户端快照根。"""
     with memory_server_context(tmp_path / "server", tmp_path / "client") as connected:
         yield connected
-
-
-@contextmanager
-def server_archive_limit(limit: int) -> Iterator[None]:
-    """临时缩小服务端归档上限，退出时恢复模块状态；仅与串行服务端夹具同用。"""
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(memory_server, "MAX_ARCHIVE_BYTES", limit)
-        yield

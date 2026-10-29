@@ -134,7 +134,6 @@ def test_health_route_reports_ready_only_after_capability_injection(
             body = after.json()
             assert body["status"] == "ok"
             assert body["ready"] is True
-            assert body["admin"] is False
             assert body["root"] == str(capability.root), "探活要能看出连的是哪个库"
         finally:
             memory_server._capability = None

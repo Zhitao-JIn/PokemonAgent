@@ -1,9 +1,5 @@
 """memory server：MCP 注册表暴露 memory 的能力面——`recall` / `memorize` 两个 tool。
 
-**默认注册表只暴露能力**：任何 MCP 客户端
-（agentic memory / 前端人格 agent / harness 经 mcpclient）可发现并调用的就是
-这两个动作；snapshot/restore 仅在 --enable-admin 时开放，count 仍不开放。
-
 tool 函数体是薄壳：信封组装（`common.envelope`）+ 委托 `memory.recall.MemoryCapability`
 （分族分流、融合排序、kind 判别落族的**唯一实现**，进程内模式与 server 模式共用）。
 
@@ -12,18 +8,13 @@ tool 函数体是薄壳：信封组装（`common.envelope`）+ 委托 `memory.re
     python -m pokemon_agent.mcp_servers.memory_server [--config 覆盖文件.json ...]
 
 落盘根、embedding / reranker 型号、融合参数与监听地址全部来自配置（`paths.memory`、
-`memory.*`、`services.memory_server_url`）；命令行只剩覆盖文件与管理面开关。
+`memory.*`、`services.memory_server_url`）；命令行只接受覆盖文件与监听地址。
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
-import io
-import tempfile
 import threading
-import zipfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -34,7 +25,6 @@ from starlette.responses import JSONResponse
 
 from pokemon_agent.mcp_servers.common import (
     HEALTH_PATH,
-    MAX_ARCHIVE_BYTES,
     MCP_PATH,
     envelope,
     fail,
@@ -49,21 +39,13 @@ SERVICE_NAME = "pokemon-memory"
 """健康检查里报的服务名——探活时"连的是不是 memory server"一眼可辨。"""
 
 _capability: MemoryCapability | None = None
-_admin_enabled = False
 _lock = threading.Lock()
 
 
-def start(capability: MemoryCapability, *, enable_admin: bool = False) -> None:
+def start(capability: MemoryCapability) -> None:
     """注入能力实现（构造期一次）。tool 函数体全部经它委托。"""
-    global _capability, _admin_enabled
-    if _admin_enabled:
-        mcp.remove_tool("snapshot_memory")
-        mcp.remove_tool("restore_memory")
+    global _capability
     _capability = capability
-    _admin_enabled = enable_admin
-    if enable_admin:
-        mcp.tool()(snapshot_memory)
-        mcp.tool()(restore_memory)
 
 
 def _cap() -> MemoryCapability:
@@ -112,49 +94,6 @@ def memorize(records: list[dict[str, Any]]) -> dict[str, Any]:
     return envelope(data={"stored": stored})
 
 
-def snapshot_memory(name: str) -> dict[str, Any]:
-    """返回完整 zip 内容与 sha256；名字契约或体积不满足时返回 rejected。"""
-    try:
-        with _lock:
-            archive = _cap().snapshot(name)
-            if archive.stat().st_size > MAX_ARCHIVE_BYTES:
-                return fail("rejected", "snapshot archive exceeds MAX_ARCHIVE_BYTES")
-            data = archive.read_bytes()
-            if len(data) > MAX_ARCHIVE_BYTES:
-                return fail("rejected", "snapshot archive exceeds MAX_ARCHIVE_BYTES")
-    except (AssertionError, OSError) as exc:
-        return fail("rejected", str(exc))
-    return envelope(
-        data={
-            "name": name,
-            "archive_base64": base64.b64encode(data).decode("ascii"),
-            "sha256": hashlib.sha256(data).hexdigest(),
-            "size": len(data),
-        }
-    )
-
-
-def restore_memory(archive_base64: str, sha256: str) -> dict[str, Any]:
-    """校验 zip 后从根外临时文件恢复；失败返回 rejected，临时文件始终清理。"""
-    try:
-        if len(archive_base64) > 4 * ((MAX_ARCHIVE_BYTES + 2) // 3):
-            raise ValueError("restore archive exceeds MAX_ARCHIVE_BYTES")
-        data = base64.b64decode(archive_base64, validate=True)
-        if len(data) > MAX_ARCHIVE_BYTES:
-            raise ValueError("restore archive exceeds MAX_ARCHIVE_BYTES")
-        if hashlib.sha256(data).hexdigest() != sha256:
-            raise ValueError("restore archive sha256 mismatch")
-        if not zipfile.is_zipfile(io.BytesIO(data)):
-            raise ValueError("restore archive is not a zip")
-        with _lock, tempfile.TemporaryDirectory(dir=_cap().root.resolve().parent) as directory:
-            archive = Path(directory) / "restore.zip"
-            archive.write_bytes(data)
-            unpacked = _cap().restore(archive)
-    except (AssertionError, ValueError, OSError, zipfile.BadZipFile) as exc:
-        return fail("rejected", str(exc))
-    return envelope(data={"unpacked": unpacked})
-
-
 @mcp.custom_route(HEALTH_PATH, methods=["GET"])
 async def health(_request: Request) -> JSONResponse:
     """健康检查（**普通 HTTP，不是 MCP tool**）：探活与运维用。
@@ -169,7 +108,6 @@ async def health(_request: Request) -> JSONResponse:
             ready=capability is not None,
             root=str(capability.root) if capability is not None else None,
             transport=MCP_PATH,
-            admin=_admin_enabled,
         )
     )
 
@@ -192,7 +130,6 @@ def main() -> None:
     parser.add_argument(
         "--port", type=int, default=None, help="覆盖配置里 memory_server_url 的端口"
     )
-    parser.add_argument("--enable-admin", action="store_true", help="开放快照与恢复管理工具")
     args = parser.parse_args()
 
     from pokemon_agent.memory import LocalEmbeddingProvider, LocalRerankerProvider
@@ -207,7 +144,7 @@ def main() -> None:
         fuse_multiplier=app.memory.fuse_multiplier,
         fuse_floor=app.memory.fuse_floor,
     )
-    start(capability, enable_admin=args.enable_admin)
+    start(capability)
     mcp.settings.host = host
     mcp.settings.port = port
     assert mcp.settings.streamable_http_path == MCP_PATH, (

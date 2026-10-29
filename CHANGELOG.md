@@ -1,3 +1,15 @@
+## 2026-10-29（694）—— 移除恢复体系：memory 管理面
+
+**改了什么**：移除 memory MCP 的 `snapshot_memory` / `restore_memory`、admin 开关、客户端与 Port 方法、信封导出，以及 store 层通用 zip 快照/恢复实现；评测服务不再接收 admin 参数。`memory_store_recall` 改为拒绝复用外部 memory 服务，并在独立临时库中运行，不再清库。
+
+**为什么这么改**：memory 管理面只为已移除的 checkpoint 恢复服务；评测种子通过复制目录准备。`memory_store_recall` 启动隔离的空服务，不需要清库，复用外部库则可能破坏用户数据。
+
+**取舍**：store 快照/恢复没有非 MCP 生产调用者，一并移除；纯管理面与纯算法测试、四个旧信封源码留待用户删除。保留 `eval_services` 的种子复制、知识主题排除与记忆导出行为。
+
+**影响面**：memory server、mcpclient、memory Port/store、评测服务与 `memory_store_recall`；不改 trace 侧协议或 world/frame 快照。修改了依赖已删除接口的测试和夹具。
+
+**验证**：基线 JUnit 为 2986 tests、0 failures、0 errors、72 skipped；忽略四个待用户删除的纯管理/快照测试文件后，最终为 2954 tests、0 failures、0 errors、72 skipped。688 的 `eval_services` 合成测试 16 项、长期数据集基础设施测试 9 项通过；默认工具列表为 `memorize` / `recall`。提示词边界守卫 A–D 均为 `[ OK ]`；`ruff format --check .` 通过。`ruff check .` 与 `ruff check --select I .` 均报告 `scripts/langfuse_tree_rehearsal.py` 一处导入排序错误，该脚本属于本任务不改的 692b trace 范围。
+
 ## 2026-10-29（696）—— 费用护栏：DeepSeek 余额轮询，20 元封顶
 
 **改了什么**：新增共享模型价格与费用估算模块；`probe_models.py` 改为导入并继续公开 `PRICES`、`estimate`。新增费用监视脚本，以 DeepSeek CNY 余额最小读数计算花费，达到阈值时终止子进程树；余额不可用时可从 trace token 用量估算并写入 JSON 报告。

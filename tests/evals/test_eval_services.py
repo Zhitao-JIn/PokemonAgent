@@ -121,10 +121,8 @@ def test_eval_services_reuses_both_urls_without_starting_processes(monkeypatch, 
     assert calls["start"] == calls["stop"] == []
 
 
-def test_eval_services_copies_only_knowledge_markdown_and_honors_admin(
-    monkeypatch, tmp_path
-) -> None:
-    calls = _install_fakes(monkeypatch, tmp_path)
+def test_eval_services_copies_only_knowledge_markdown(monkeypatch, tmp_path) -> None:
+    _install_fakes(monkeypatch, tmp_path)
     source = tmp_path / "knowledge-source"
     source.mkdir()
     (source / "lesson.md").write_text("lesson", encoding="utf-8")
@@ -132,17 +130,13 @@ def test_eval_services_copies_only_knowledge_markdown_and_honors_admin(
     (source / "vectors.jsonl").write_text("{}", encoding="utf-8")
 
     with services.eval_services(
-        world=False, memory=True, knowledge_source=source, admin=True, export_env=False
+        world=False, memory=True, knowledge_source=source, export_env=False
     ):
         target = tmp_path / "service-root-0" / "memory" / "knowledge_memory"
         assert [path.name for path in target.iterdir()] == ["lesson.md"]
-        arguments = calls["start"][0][0]
-        assert "--enable-admin" in arguments
-
-    with services.eval_services(world=False, memory=True, admin=False, export_env=False):
+    with services.eval_services(world=False, memory=True, export_env=False):
         target = tmp_path / "service-root-1" / "memory" / "knowledge_memory"
         assert list(target.iterdir()) == []
-        assert "--enable-admin" not in calls["start"][1][0]
 
 
 def test_eval_services_skips_unrequested_services_and_knowledge_copy(monkeypatch, tmp_path) -> None:

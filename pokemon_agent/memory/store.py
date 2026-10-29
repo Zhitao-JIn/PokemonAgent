@@ -2,9 +2,8 @@
 
 **只做六件事**：写入（uuid 记录文件 + 倒排索引写穿）、按 uuid 点查、等值过滤检索
 （倒排索引取交集）、语义检索（内部调 `memory/retrieval.py::hybrid_retrieve`，
-对外不透明）、删除（摘出索引 + unlink）、快照（打包整个记忆根成 zip / 用 zip
-还原回来）。不理解 metadata/payload/text 是什么、不理解 text 说的是什么——分层
-原则见 AGENTS.md 四。
+对外不透明）、删除（摘出索引 + unlink）。不理解 metadata/payload/text 是什么、
+不理解 text 说的是什么——分层原则见 AGENTS.md 四。
 
 ## 落盘布局（整个记忆库一个根，四族各占一个子文件夹）
 
@@ -18,7 +17,6 @@
     │   └── vectors.jsonl  # 语义检索向量缓存 sidecar（有 text 的文件夹才有意义）
     ├── episode_memory/    # 同上
     ├── knowledge_memory/  # 同上
-    └── snapshots/         # 快照 zip（0916，由 memory 自己管理，harness 只给名字）
 
 ## 索引是派生物，不是第二真相
 
@@ -43,11 +41,8 @@ import hashlib
 import json
 import os
 import pathlib
-import shutil
-import tempfile
 import time
 import uuid as uuid_module
-import zipfile
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -69,9 +64,6 @@ _MD_KINDS = frozenset({"episode_memory", "knowledge_memory", "run_memory"})
 
 _KINDS = frozenset({"step_memory", "task_memory", *_MD_KINDS})
 """合法的 kind（= 子目录名 = collection 名，项目无关的概念）。"""
-
-SNAPSHOTS_DIRNAME = "snapshots"
-"""快照 zip 在记忆根下的存放子目录名（0916）。**由本模块管**，harness 只给 zip 名。"""
 
 
 def _default_root() -> pathlib.Path:
@@ -192,8 +184,7 @@ class LocalMemoryStore:
 
         当前没有生产代码调用它（跨局摘要的容量淘汰已于 2026-10-16 删除）。
         **0916 起不再有"归档"**：原先的 `archive_many` 把文件搬进
-        `memory/voided-<ts>/<kind>/` 留档，换成快照（`snapshot()` / `restore()`）之后
-        那套中间态没有了意义——要留档就在淘汰之前先拍一张快照，淘汰本身该是干脆的。
+        `memory/voided-<ts>/<kind>/` 留档，淘汰本身应是干脆的。
 
         走这条路之后，被删的记录会在**下次启动**时从向量 sidecar 里自然消失：
         `_load_vectors` 只认活着的 uuid（见 `_vectors_for`）。
@@ -389,121 +380,6 @@ class LocalMemoryStore:
     def count(self) -> int:
         """当前在索引里的记录条数（不含已删的）。"""
         return len(self._uuids)
-
-    def reload(self) -> None:
-        """把内存态（倒排索引 / uuid 集合 / mtime / 向量缓存）从盘上重新读一遍。
-
-        唯一调用方是 `MemoryTool.restore_memory()`：恢复是**整根覆盖**，而每个
-        实例只刷新自己那一个 kind 的内存态，另外三个得由调用方挨个叫一下。
-        平时不需要它——`put` / `delete_many` 都是写穿（内存态与盘上同步）。
-
-        代价与构造期一样：对账通过时只读 `index.json`，不读记录文件。
-        """
-        self._vectors = None
-        self._load_or_rebuild()
-
-    # ---- 快照（0916：zip 由 memory 自己管，调用方只给名字） ----
-
-    def snapshot(self, name: str) -> pathlib.Path:
-        """把**整个记忆根**打包成一个 zip，返回 zip 路径（同名覆盖）。
-
-        **打的是整个根，不是本实例的 kind**：四个 store 共享一个 `memory/` 根，
-        "这一族"和"整个库"在快照这个语义下不是一回事——调用方要的是一份能整体
-        还原的存档，不是一族的碎片。所以任意一个 store 上的 `snapshot()` 拿到活的
-        都一样（幂等）。
-
-        zip 落在 `<根>/snapshots/<name>.zip`——**路径由本层决定**（harness 只给
-        `name`）。
-
-        **先在根外面打，再挪进来**（0916 修）：zip 的落点在根**里面**，而 zip
-        正被写入时它自己也在根里——直接 `make_archive(root_dir=root)` 会把一个
-        边写边长的 zip 当成待打包文件读进去，自我引用到卡死（真机 2.5 分钟没
-        出来，faulthandler 卡在 `zipfile.write`）。所以先在系统临时目录把 zip
-        打好（并顺手排除 `snapshots/`，否则每次快照都把上一次的 zip 套进来），
-        最后 `os.replace` 挪到目标位置——跨盘时 replace 会失败，用
-        `shutil.move` 兜底。
-
-        前置条件：`name` 非空、不含路径分隔符（它只是文件名，不是路径）。
-        后置条件：zip 里每个 kind 子目录的记录文件与 `index.json` 都在、且不含
-            `snapshots/`；返回的路径已存在于盘上。
-        """
-        assert name, "snapshot() needs a non-empty name"
-        assert pathlib.PurePath(name).name == name, (
-            f"snapshot() 的 name 只能是文件名，不能带路径分隔符：{name!r}"
-        )
-        root = self._dir.parent
-        dest_dir = root / SNAPSHOTS_DIRNAME
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / f"{name}.zip"
-
-        # 在根**外面**打：临时目录里造一个 zip，条目路径写成相对记忆根的
-        # （`step_memory/xxx.json`），恢复时直接解回根下、不必剥前缀。
-        with tempfile.TemporaryDirectory() as staging:
-            staged = pathlib.Path(staging) / f"{name}.zip"
-            with zipfile.ZipFile(staged, "w", zipfile.ZIP_DEFLATED) as zf:
-                for path in sorted(root.rglob("*")):
-                    if not path.is_file():
-                        continue
-                    rel = path.relative_to(root)
-                    if rel.parts[0] == SNAPSHOTS_DIRNAME:
-                        continue  # 快照自己不进快照，否则层层嵌套
-                    zf.write(path, rel.as_posix())
-            shutil.move(str(staged), str(dest))
-        return dest
-
-    def restore(self, archive: str | pathlib.Path) -> int:
-        """用一个 zip 把记忆根**还原到那一刻**，返回解出的文件数。
-
-        **以 zip 为准**（0916 定稿）：zip 里有的记录文件按 zip 写（同名直接盖），
-        **zip 里没有的记录文件从库里删掉**。这正是"恢复到某个存档"的定义——
-        库里比 zip 多出来的那些，就是存档之后才写进去的，留着就不是那一刻了
-        （越恢复越多，快照也就失去了"能整体还原"的意义）。
-
-        实现上**不必先清空整根**：先删多出来的、再写 zip 里的就够——`index.json`
-        与 `vectors.jsonl` 是随 zip 一起回来的派生文件，直接被覆盖掉，不必重算。
-        `snapshots/` 不在 `_KINDS` 里，永远不参与扫描，zip 自己不会被这次还原删掉。
-
-        恢复之后四个 store 的**内存态必须重读**：`index.json` 随 zip 一起回来了，
-        对账（文件集合 vs 索引 uuid 集合）会认定它是对的——被删掉的记录于是
-        不会从旧内存态里冒出来。所以本方法末尾重放一次 `_load_or_rebuild()`。
-
-        前置条件：`archive` 指向一个存在的 zip（不检查它是不是本层打出来的——
-            "用别的 zip 恢复"是合法用法，那正是"覆盖读取"的价值）。
-        后置条件：各 kind 子目录的内容与 zip 逐条对应；本实例的内存态与盘上一致；
-            返回解出的文件数。
-        """
-        path = pathlib.Path(archive)
-        assert path.is_file(), f"restore() 要一个存在的 zip：{path}"
-        root = self._dir.parent
-        with zipfile.ZipFile(path, "r") as zf:
-            # 只认"<kind>/<file>"这一层——zip 可能来自别处，里面的路径形状未必是
-            # 本层写的，防一手目录穿越。
-            entries: list[tuple[str, str]] = []
-            for item in zf.infolist():
-                if item.is_dir():
-                    continue
-                parts = pathlib.PurePosixPath(item.filename).parts
-                if len(parts) != 2 or parts[0] not in _KINDS:
-                    continue
-                entries.append((parts[0], parts[1]))
-
-            # 先删：库里 zip 没有的文件，都是"拍完快照之后多出来的"。
-            kept = set(entries)
-            for kind in _KINDS:
-                kind_dir = root / kind
-                if not kind_dir.is_dir():
-                    continue
-                for existing in sorted(kind_dir.iterdir()):
-                    if existing.is_file() and (kind, existing.name) not in kept:
-                        existing.unlink()
-
-            # 再写：zip 里的每个条目按原路径落回。
-            for kind, filename in entries:
-                target = root / kind / filename
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(zf.read(f"{kind}/{filename}"))
-        self._load_or_rebuild()
-        return len(entries)
 
     # ---- 记录文件（真相层） ----
 

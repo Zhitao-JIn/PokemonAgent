@@ -208,7 +208,6 @@ def test_solver_writes_store_and_scorer_uses_its_run_location(
                 "world": True,
                 "memory": True,
                 "knowledge_source": REPO_ROOT / "memory" / "knowledge_memory",
-                "admin": True,
                 "export_env": False,
             },
         ),

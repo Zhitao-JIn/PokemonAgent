@@ -1,8 +1,7 @@
 """`MemoryToolPort` 的实现：Harness 和记忆库之间那层门面。**不碰世界。**
 
 **MCP 化收敛（2026-09-29 定案）**：本类收敛为四个方法——`recall` / `memorize`
-（能力面，MCP 注册表同款）+ `snapshot_memory` / `restore_memory`（checkpoint 运维，
-经 --enable-admin 开放）。原 15+ 个按种类分方法的查询/写入全部删除：调用方**不显式指定
+（能力面，MCP 注册表同款）。原 15+ 个按种类分方法的查询/写入全部删除：调用方**不显式指定
 记忆种类**，种类由产生方天然决定、由分族规则圈定（同 chooser 的统一动作掩码）。
 
 **能力实现位于 memory server**，本类只通过 `MemoryMcpTool` 访问 MCP，
@@ -29,16 +28,7 @@ from pokemon_agent.schemas.harness import (
     FromHarnessToMemoryToolRecallItem,
     FromHarnessToMemoryToolRecallReq,
     FromHarnessToMemoryToolRecallResp,
-    FromHarnessToMemoryToolRestoreMemoryReq,
-    FromHarnessToMemoryToolRestoreMemoryResp,
-    FromHarnessToMemoryToolSnapshotMemoryReq,
-    FromHarnessToMemoryToolSnapshotMemoryResp,
 )
-
-
-def _default_root() -> Path:
-    """缺省落盘根：**进程启动目录**下的 `memory/`（与 `memory/store.py` 同一条规矩）。"""
-    return Path.cwd() / "memory"
 
 
 class MemoryTool:
@@ -57,7 +47,7 @@ class MemoryTool:
     ) -> MemoryTool:
         """连接 memory server；空地址抛 ValueError，传输失败向上传递。
 
-        地址必须非空；memory_root 仅指定客户端快照根，缺省为启动目录下的 memory/。
+        地址必须非空；memory_root 为兼容装配字段，不参与客户端记忆存储。
         本方法启动客户端但不探活，装配点负责在 run 开始前检查 /health。
         """
         if not memory_server_url.strip():
@@ -67,8 +57,7 @@ class MemoryTool:
 
         client = McpClient(mcp_endpoint(memory_server_url))
         client.start()
-        snapshot_root = Path(memory_root) if memory_root is not None else _default_root()
-        return cls(MemoryMcpTool(client, snapshot_root=snapshot_root))
+        return cls(MemoryMcpTool(client))
 
     # ---- 能力面：统一回忆 / 统一记忆 ----
 
@@ -87,19 +76,3 @@ class MemoryTool:
         return FromHarnessToMemoryToolMemorizeResp(
             stored=[FromHarnessToMemoryToolMemorizedRecord(**s) for s in stored]
         )
-
-    # ---- 运维：快照 / 恢复（checkpoint 专用，MCP 需 --enable-admin） ----
-
-    def snapshot_memory(
-        self, req: FromHarnessToMemoryToolSnapshotMemoryReq
-    ) -> FromHarnessToMemoryToolSnapshotMemoryResp:
-        """把整个记忆库打成一个 zip，返回它的路径。"""
-        archive = self._client.snapshot(req.name)
-        return FromHarnessToMemoryToolSnapshotMemoryResp(archive=str(archive))
-
-    def restore_memory(
-        self, req: FromHarnessToMemoryToolRestoreMemoryReq
-    ) -> FromHarnessToMemoryToolRestoreMemoryResp:
-        """用一个 zip 把记忆库还原到那一刻——以 zip 为准；单调缓存清掉。"""
-        unpacked = self._client.restore(req.archive)
-        return FromHarnessToMemoryToolRestoreMemoryResp(unpacked=unpacked)
